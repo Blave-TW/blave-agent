@@ -391,6 +391,11 @@ if (!process.versions.electron) {
     && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
   ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略照舊 lib.note.paid", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); if \(c\.pub\) note\.textContent = t\("lib\.pub"\); break;/.test(src) && STR.zh["lib.note.paid"] === "從 Blave Agent 餘額扣款。");
+  ok("③ 已安裝:頁首只有「打開這支策略」+「再下載一份」、鈕下不寫說明句(lib.note.installed 連字串一起拿掉,覆蓋說明搬進確認框)", !/lib\.note\.installed/.test(src) && !("lib.note.installed" in STR.zh) && !("lib.note.installed" in STR.en)
+    && /case "installed":\n\s*row\.append\(btn\("btn-fill", t\("lib\.open"\)[^\n]*btn\("btn-quiet", t\("lib\.again"\), \(b\) => libAsk\(s, b\)\)\);\n\s*break;/.test(src));
+  { const css = read(path.join(R, "library.css")), at = css.indexOf("@container (min-width: 640px)"), wide = css.slice(at, css.indexOf("\n}", at));
+    ok("③ 寬版 @container 寫在基礎 .lib-cta 之後(權重一樣、後寫的贏;寫在前面 flex-end 永遠被 flex-start 蓋掉)", at > css.indexOf(".lib-cta { display: flex;") && at > css.indexOf(".lib-cta .err {") && css.indexOf(".lib-cta { display: flex;") >= 0);
+    ok("③ 寬版頁首:.lib-cta 靠右(flex-end、280px)但不 text-align: right;說明句 / 錯誤行撐滿、靠左", /\.lib-cta \{ align-items: flex-end; max-width: 280px; \}/.test(wide) && !/text-align: right/.test(wide) && /\.lib-cta \.note, \.lib-cta \.err \{ align-self: stretch; text-align: left; \}/.test(wide)); }
   ok("③ 快取作廢的四個事件都接了:登出 / 兩條登入路徑 → libInvalidate;設定關掉 → libRefresh;主行程登出(clearToken)、換 token、下載 404 都清 libCache;購買成功後 libRefresh", (appSrc.match(/if \(typeof libInvalidate === "function"\) libInvalidate\(\);/g) || []).length === 3
     && /if \(typeof libRefresh === "function"\) libRefresh\(\);/.test(cutFn(appSrc, "setClose")) && /libCache = null;/.test(cutFn(mainSrc, "clearToken")) && (mainSrc.match(/^\s*libCache = null;/gm) || []).length === 4
     && /libSend\(s\); libRefresh\(\); return;/.test(src) && /function libRepaint\(\) \{ if \(\$\("lib"\)\.hidden\) return; LIB\.reports\.clear\(\); libPaint\(\); if \(LIB\.data && LIB\.data\.lang !== LANG\) libLoad\(false\); \}/.test(src) && /window\.addEventListener\("focus", \(\) => \{ libRefresh\(\); libIdeaSync\(\); \}\);/.test(src));
@@ -421,7 +426,7 @@ if (!process.versions.electron) {
     vm.createContext(F);
     vm.runInContext(block.replace(/^const /gm, "var ") + `
       var LIB = { pending: null, noNew: null, dlFail: null, data: { dataAccess: "billed" }, installed: {} }, running = false, csTitle = "", RP = { list: [{ name: "old", mtime: 1 }] }, paneSt = { chat: { off: false } };
-      var t = (k) => STR[k], libEnv = () => env, envCanSwitch = () => true, paneToggle = () => {}, csStartNew = () => {}, libSync = () => {}, libCtaMain = () => null, libCloudList = () => [];
+      var t = (k, p) => STR[k].replace(/[{]([a-z]+)[}]/g, (m, n) => (p && n in p ? p[n] : m)), libEnv = () => env, ctaState = "free", libCtaOf = () => ({ state: ctaState }), libWhere = () => STR["lib.where." + (env === "cloud" ? "cloud" : "local")], envCanSwitch = () => true, paneToggle = () => {}, csStartNew = () => {}, libSync = () => {}, libCtaMain = () => null, libCloudList = () => [];
       var libTrack = (n) => calls.track.push(n), libBlocked = () => {}, libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
       var confirmBox = (o) => calls.box.push(o), submitMessage = async (m, o) => { calls.sent.push(m); calls.opts.push(o); return subOk; };
       var chatViewing = () => ({ env: env === "cloud" ? "cloud" : "local", strategy: "seen" });
@@ -497,6 +502,16 @@ if (!process.versions.electron) {
     const z = STR.zh;
     ok("⑥ 確認框:本機第一段是 lib.cf.l1Local;billed 時 required / 未標出資料費那一行、none 不出;雲端用 lib.cf.l1、不出資料費", L72 === [z["lib.cf.l1Local"], z["lib.cf.l2"], z["lib.note.billed"]].join("|") && L101 === [z["lib.cf.l1Local"], z["lib.cf.l2"]].join("|")
       && Lnull === L72 && Lcloud === [z["lib.cf.l1"], z["lib.cf.l2"]].join("|"), JSON.stringify([L72, L101, Lnull, Lcloud]));
+    { const box = () => F.calls.box[F.calls.box.length - 1], pick = () => ({ title: box().title, lines: box().lines.join("|"), ok: box().ok });
+      F.libAsk(s101); const fresh = pick();
+      F.ctaState = "installed"; F.libAsk(s101); const again = pick(); F.libAsk(s72); const againFee = pick(); F.env = "cloud"; F.libAsk(s101); const againCloud = pick(); F.env = "local"; F.ctaState = "free";
+      ok("⑥ 確認框(未安裝):標題 lib.cf.title、內文不帶覆蓋那句、鈕 lib.cf.ok", fresh.title === "下載「BTC 通道動能共振」？" && fresh.lines === [z["lib.cf.l1Local"], z["lib.cf.l2"]].join("|") && fresh.ok === z["lib.cf.ok"], JSON.stringify(fresh));
+      ok("⑥ 確認框(已安裝 → 再下載一份):標題 lib.cf.titleAgain、第一行 lib.cf.l0Again 帶 libWhere(本機 / 雲端各自)、其餘照舊(資料費那行照出)、鈕 lib.cf.okAgain",
+        again.title === "再下載一份「BTC 通道動能共振」？" && again.ok === "覆蓋並回測"
+        && again.lines === ["會整份覆蓋" + z["lib.where.local"] + "的策略清單裡同名的那支，並重跑回測。", z["lib.cf.l1Local"], z["lib.cf.l2"]].join("|")
+        && againFee.lines === ["會整份覆蓋" + z["lib.where.local"] + "的策略清單裡同名的那支，並重跑回測。", z["lib.cf.l1Local"], z["lib.cf.l2"], z["lib.note.billed"]].join("|")
+        && againCloud.lines === ["會整份覆蓋" + z["lib.where.cloud"] + "的策略清單裡同名的那支，並重跑回測。", z["lib.cf.l1"], z["lib.cf.l2"]].join("|"), JSON.stringify([again, againFee, againCloud]));
+      ok("⑥ Again 三個 key zh / en 都有;en 帶 {title} / {where}", ["lib.cf.titleAgain", "lib.cf.l0Again", "lib.cf.okAgain"].every((k) => STR.zh[k] && STR.en[k]) && STR.en["lib.cf.titleAgain"].includes("{title}") && STR.en["lib.cf.l0Again"].includes("{where}")); }
     ok("⑥ 代下載中不開購買框(買完接著的 libSend 會被擋,變成付了錢沒裝)", /if \(LIB\.buying !== null \|\| LIB\.pending\) return;/.test(cutFn(src, "libBuyBox")));
     ok("⑥ 購買框的資料費那一行跟確認框用同一支 libFeeLine", /if \(libFeeLine\(libEnv\(\), LIB\.data \? LIB\.data\.dataAccess : null, libNeeds\(s\)\)\) extra\.appendChild\(libEl\("p", "cf-note", t\("lib\.note\.billed"\)\)\);/.test(cutFn(src, "libBuyBox")));
   })());
@@ -688,10 +703,10 @@ app.whenReady().then(async () => {
     await stratRefresh(true); libTurnEnd(); await new Promise((r) => setTimeout(r, 40));
     const libHidden = document.getElementById("lib").hidden, rp = document.getElementById("rp").hidden, sel = RP.name;
     await libOpen(); await new Promise((r) => setTimeout(r, 40)); const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0];
-    return { patches: window.__lib.patches, installed: LIB.installed, libHidden, rp, sel, pending: LIB.pending, btn: b.textContent, quiet: q("#lib-cta .btn-quiet").map((x) => x.textContent).join(), note: q("#lib-cta .note")[0].textContent, detail: libBag().detail }; })()`);
-  ok("④ turn-end:本機清單多了 btc_channel → 對照表記 101 → btc_channel(寫進主行程)、不自動選中新策略(策略庫留著、報告頁不出現);同一支詳情 → 已安裝態(打開這支策略 + 再下載一份)",
+    return { patches: window.__lib.patches, installed: LIB.installed, libHidden, rp, sel, pending: LIB.pending, btn: b.textContent, quiet: q("#lib-cta .btn-quiet").map((x) => x.textContent).join(), note: q("#lib-cta .note")[0].textContent, noteHidden: q("#lib-cta .note")[0].hidden, detail: libBag().detail }; })()`);
+  ok("④ turn-end:本機清單多了 btc_channel → 對照表記 101 → btc_channel(寫進主行程)、不自動選中新策略(策略庫留著、報告頁不出現);同一支詳情 → 已安裝態(打開這支策略 + 再下載一份,鈕下沒有說明句)",
     JSON.stringify(r.patches) === '[{"id":101,"name":"btc_channel"}]' && r.installed["101"] === "btc_channel" && !r.libHidden && r.rp && r.sel === null && r.pending === null && r.detail === 101
-    && r.btn === (await T("lib.open")) && r.quiet === (await T("lib.again")) && r.note === (await T("lib.note.installed", { where: await T("lib.where.local") })), JSON.stringify(r));
+    && r.btn === (await T("lib.open")) && r.quiet === (await T("lib.again")) && r.note === "" && r.noteHidden, JSON.stringify(r));
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; document.getElementById("lib-back").click(); const tag = q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), focus = document.activeElement && document.activeElement.dataset.id;
     window.__lib.strats = []; await stratRefresh(false); await new Promise((r) => setTimeout(r, 40));
     return { tag, focus, after: q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), patches: window.__lib.patches.length, installed: Object.keys(LIB.installed).length }; })()`);

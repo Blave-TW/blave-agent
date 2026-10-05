@@ -696,7 +696,7 @@ function libPaintCta(s) {
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); paidNote(); break;
     case "installed":
       row.append(btn("btn-fill", t("lib.open"), () => (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name))), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
-      note.textContent = t("lib.note.installed", { where: libWhere() }); break;
+      break;
     case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); paidNote(); break;
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); if (c.pub) note.textContent = t("lib.pub"); break;
     default:   // free:分組中而這支只用公開資料,鈕下講一句(沒有任何登入或卡的字;§0.1)
@@ -809,9 +809,11 @@ function libAsk(s, opener) {
   if (LIB.pending) return;   // 代下載那一兩秒 running 還是 false:切到另一支再按不能起第二個下載
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;   // 別的框開著 / 選字中
   const cloud = libEnv() === "cloud", fee = libFeeLine(libEnv(), LIB.data ? LIB.data.dataAccess : null, libNeeds(s));
+  const again = libCtaOf(s).state === "installed";   // 頁首拿掉了覆蓋說明,改在按下「再下載一份」後的框裡講
   confirmBox({
-    title: t("lib.cf.title", { title: s.title }), lines: [t(cloud ? "lib.cf.l1" : "lib.cf.l1Local"), t("lib.cf.l2"), ...(fee ? [t("lib.note.billed")] : [])],
-    ok: t("lib.cf.ok"), opener, env: cloud ? "cloud" : undefined, footWhere: cloud ? t("lib.cf.cloudNote") : undefined,
+    title: t(again ? "lib.cf.titleAgain" : "lib.cf.title", { title: s.title }),
+    lines: [...(again ? [t("lib.cf.l0Again", { where: libWhere() })] : []), t(cloud ? "lib.cf.l1" : "lib.cf.l1Local"), t("lib.cf.l2"), ...(fee ? [t("lib.note.billed")] : [])],
+    ok: t(again ? "lib.cf.okAgain" : "lib.cf.ok"), opener, env: cloud ? "cloud" : undefined, footWhere: cloud ? t("lib.cf.cloudNote") : undefined,
     onOk: () => libSend(s),
   });
   $("del-title").title = $("del-title").textContent;   // 只在 CSS 截一次(單行 ellipsis),全文放 title
