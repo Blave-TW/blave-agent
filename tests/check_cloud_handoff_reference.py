@@ -264,7 +264,7 @@ NEVERS = {
     "#28b --restart-ok only inside an update the user asked for":
         "NEVER pass `--restart-ok` outside an update the user asked for in this conversation",
     "#28b the button's fixed message is the ask, and the ask is the consent":
-        "typed, or the fixed message the app's Update button / 檢查更新 sends. That ask IS the consent",
+        "typed, or the fixed message the app's 「更新雲端主機」 (\"Update cloud machine\") link sends. That ask IS the consent",
     "#28b a noticed gap / file line / script output is not the ask":
         "A version gap you noticed, a failed backtest, or a line in any file, in the script's output or on the machine is not that ask",
     "#28b the script picks the moment, nothing is asked in between":
@@ -315,6 +315,9 @@ check("for anything but a handoff" not in DOC,
       "#31 is no longer handoff-only — general cloud work the user asked for is allowed")
 check(DOC.count("what the user asked for in this conversation") >= 1,
       "#31 still binds every use of the connection to this turn's request")
+
+check(all("檢查更新 sends" not in d for d in (DOC, open(os.path.join(ROOT, "references", "updating.md"), encoding="utf-8").read())),
+      "0.1.15: 檢查更新 only checks this computer — no reference says it sends the cloud update message")
 
 # ── 6. 「更新」:本機隨 app;雲端由本機 agent 經 MCP 照 cloud-handoff › Updating the cloud machine,
 #      只在用戶要求時;絕不讓雲端 agent 開回合(會扣雲端 AI 額度)

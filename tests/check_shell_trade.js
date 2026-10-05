@@ -708,8 +708,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   { // S1:C 裡沒有啟動鈕,框裡不能叫人「之後按啟動下單」
     ok("S1 C 的暫停框與存金額框:用不叫人按啟動的那兩句", /trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.closeAllWarn2Unconfirmed"\) : t\("tr\.closeAllWarn2"\)/.test(src)
       && /const idle = cloud && trRestartUnconfirmed\(S\.st && S\.st\.report\) \? t\("tr\.cloud\.saveIdleUnconfirmed"\) : t\("tr\.cloud\.saveIdle"\);/.test(src)); }
-  { // 2-2(v4 撤回):C 期間標頭不再有「立即更新到最新版本」——全 app 只有三個可見狀態,雲端的更新走「檢查更新」(app.js upCheck),標頭沒有第二個入口
-    ok("2-2 v4:標頭沒有更新鈕(trPaintGoUpd / trUpdAct / #tr-go-upd 都拿掉;trade.js 不再碰 up.* 的字)", !/trPaintGoUpd|trUpdAct|tr-go-upd|updParked/.test(src) && (src.match(/t\("up\.[^"]*"\)/g) || []).join() === 't("up.check")' 
+  { // 2-2(v4 撤回):C 期間標頭不再有「立即更新到最新版本」——雲端的更新走關於第二行的「更新雲端主機」(app.js upCloudUpdate,0.1.15),標頭沒有第二個入口
+    ok("2-2 v4:標頭沒有更新鈕(trPaintGoUpd / trUpdAct / #tr-go-upd 都拿掉;trade.js 只碰 up.cloud.go 一個 up.* 字)", !/trPaintGoUpd|trUpdAct|tr-go-upd|updParked/.test(src) && (src.match(/t\("up\.[^"]*"\)/g) || []).join() === 't("up.cloud.go")' 
       && !/\.main-head \.tr-go-upd \{/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8"))); }
   { // 總覽曲線(Wei 09-22):沒紀錄的時段直接連起來;累積損益照雲端 drawOvPnl 零上綠、零下紅、0 是水位線
     const segs = trPnlSegments([{ t: 0, v: 10 }, { t: 10, v: 30 }, { t: 20, v: -10 }, { t: 30, v: -20 }, { t: 40, v: 0 }]);
@@ -750,8 +750,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
     // v4 §7 驗收:「立即更新到最新版本」那顆鈕已經不在,全 app 可見字串(兩語 .po、產出的 strings.js、renderer 與主行程的 js)都不能再叫人去按它
     const SH = path.join(__dirname, "..", "shell"), shellSrc = [po("zh"), po("en")].concat(["renderer", "."].flatMap((d) => fs.readdirSync(path.join(SH, d)).filter((f) => /\.(js|html)$/.test(f)).map((f) => fs.readFileSync(path.join(SH, d, f), "utf8")))).join("\n");
-    ok("全 app 不再出現「立即更新到最新版本」/ Update to the latest version now(兩語);三句改講「檢查更新」", !/立即更新到最新版本|Update to the latest version now/i.test(shellSrc)
-      && ["tr.cloud.restartUnconfirmed", "tr.ov.evRestartStopFailedNote", "tr.cloud.haltReasonUnconfirmed"].every((k) => /「檢查更新」/.test(get("zh", k)) && /Check for updates/.test(get("en", k)))
+    ok("全 app 不再出現「立即更新到最新版本」/ Update to the latest version now(兩語);三句改講「更新雲端主機」(0.1.15:檢查更新不再碰雲端)", !/立即更新到最新版本|Update to the latest version now/i.test(shellSrc)
+      && ["tr.cloud.restartUnconfirmed", "tr.ov.evRestartStopFailedNote", "tr.cloud.haltReasonUnconfirmed"].every((k) => /「更新雲端主機」/.test(get("zh", k)) && !/檢查更新/.test(get("zh", k)) && /Update cloud machine/.test(get("en", k)) && !/Check for updates/.test(get("en", k)))
       ); }
   { // 重開停著、策略還沒用開機後的資料算完(stopped.recomputed === false):鎖「補齊部位」,「等新訊號」照給
     const SR = (o) => ({ reconciler: { stopped: { reason: "machine_restart", at: 1, ...o } } });
@@ -801,7 +801,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("B1 列舉:C 的每一種子狀態(" + cases.length + " 種 × zh/en)看得到的狀態字都沒有「啟動下單」/ Start trading" + (bad.length ? ":" + bad.slice(0, 3).join(" | ") : ""), cases.length === 22 && bad.length === 0);
     ctx.LANG = "zh"; vm.runInContext('LANG = "zh"', ctx);
     ctx.TR = { env: "cloud", st: cases.find((c) => c.name === "reconciler").st }; vm.runInContext("var TR = this.TR", ctx);
-    ok("B1 C + 自動 HALT 的原因行指向更新(不是 A′ 那句)", /舊版下單程式可能還在跑。先按「檢查更新」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。$/.test(vm.runInContext('trStateText("halted")', ctx))); }
+    ok("B1 C + 自動 HALT 的原因行指向更新(不是 A′ 那句)", /舊版下單程式可能還在跑。先按「更新雲端主機」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。$/.test(vm.runInContext('trStateText("halted")', ctx))); }
   { // round-2 稽核 B2:B0 的去向行沒有交易所時不留空段
     ok("B2 去向行濾掉空段:「雲端 ·  · 」→「雲端」;三段齊全照原樣", trWhereTidy("雲端 ·  · ") === "雲端" && trWhereTidy("雲端 · 真錢 · Binance") === "雲端 · 真錢 · Binance"
       && trWhereTidy("Cloud · Paper · ") === "Cloud · Paper" && /o\.footWhere = trWhereTidy\(t\("tr\.cloud\.footWhere"/.test(src)); }
@@ -1472,9 +1472,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("列:整列 label、真 disabled 的 checkbox、gone 用 tr.pick.gone、Type C 註記依視角(tr.typeC / tr.cloud.typeC);空清單 tr.pick.empty",
       /trEl\("label", "ps-row" \+ \(r\.locked \? " is-locked" : ""\)\)/.test(cutF("psRow")) && /cb\.disabled = r\.locked;/.test(cutF("psRow")) && /if \(r\.gone\) nm\.appendChild\(trEl\("span", "ps-gone", t\("tr\.pick\.gone"\)\)\);/.test(cutF("psRow"))
       && /cloud \? t\("tr\.typeCHost"\) : t\("tr\.typeC"\)/.test(cutF("psRow")) && /list\.appendChild\(trEl\("div", "pf-state", t\("tr\.pick\.empty"\)\)\)/.test(cutF("psOpen")));
-    ok("order-copy #12 清單底下:有被鎖的投資組合策略就出一行 ps-next + 更新鈕(本機 minv.btn → 設定 › 一般、焦點檢查更新;雲端 up.check → upCheck,不經雲端 agent);只出一行",
+    ok("order-copy #12 清單底下:有被鎖的投資組合策略就出一行 ps-next + 更新鈕(本機 minv.btn → 設定 › 一般、焦點檢查更新;雲端 up.cloud.go → upCloudUpdate(含確認),不經雲端 agent);只出一行",
       /if \(rows\.some\(\(r\) => r\.note === "typeC"\)\) \{/.test(cutF("psOpen")) && /cloud \? t\("tr\.typeCNextHost"\) : t\("tr\.typeCNext"\)/.test(cutF("psOpen"))
-      && /cloud \? t\("up\.check"\) : t\("minv\.btn"\)/.test(cutF("psOpen")) && /psClose\(\); if \(cloud\) upCheck\(\); else setOpen\(\)\.then\(\(\) => \{ setCat\("display"\); const u = \$\("set-up-btn"\); if \(u && !u\.hidden\) u\.focus\(\); \}\);/.test(cutF("psOpen")));
+      && /cloud \? t\("up\.cloud\.go"\) : t\("minv\.btn"\)/.test(cutF("psOpen")) && /const o = psOpener; psClose\(\); if \(cloud\) upCloudUpdate\(o\); else setOpen\(\)\.then\(\(\) => \{ setCat\("display"\); const u = \$\("set-up-btn"\); if \(u && !u\.hidden\) u\.focus\(\); \}\);/.test(cutF("psOpen")));
     { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8"), tok = fs.readFileSync(path.join(R, "tokens.css"), "utf8");
       ok("CSS:.ps-gone 用 --ink-2 不用紅(§13-2);.pf-act:disabled 灰階不用 opacity;checkbox 勾選 = 墨色(--control-fill / --control-fill-text,不用橘)、勾號只引 tokens.css 的變數、trade.css 不寫 hex;modal 440",
         /\.ps-gone \{[^}]*color: var\(--ink-2\)/.test(css) && !/\.ps-gone \{[^}]*--color-red/.test(css) && /\.pf-act:disabled \{ color: var\(--color-greyDark\); border-color: var\(--border-hairline\); cursor: not-allowed; \}/.test(css)

@@ -3486,11 +3486,11 @@ function psOpen(opener) {
   if (!rows.length) list.appendChild(trEl("div", "pf-state", t("tr.pick.empty")));
   else rows.forEach((r, i) => list.appendChild(psRow(r, cloud, i)));
   // 投資組合策略被鎖(機器的 lib 太舊):清單底下一行 + 更新出口,幾支都只出一行(order-copy #12)。
-  // 這台電腦 = 設定 › 一般、焦點在「檢查更新」;雲端 = 同一個「檢查更新」動作(不經雲端 agent,走既有的更新例外)
+  // 這台電腦 = 設定 › 一般、焦點在「檢查更新」;雲端 = 同一個「更新雲端主機」動作(自動下單可能在跑就先問;不經雲端 agent,走既有的更新例外)
   if (rows.some((r) => r.note === "typeC")) {
-    const p = trEl("p", "ps-next", (cloud ? t("tr.typeCNextHost") : t("tr.typeCNext")) + " "), b = trEl("button", "btn-quiet", cloud ? t("up.check") : t("minv.btn"));
+    const p = trEl("p", "ps-next", (cloud ? t("tr.typeCNextHost") : t("tr.typeCNext")) + " "), b = trEl("button", "btn-quiet", cloud ? t("up.cloud.go") : t("minv.btn"));
     b.type = "button";
-    b.addEventListener("click", () => { psClose(); if (cloud) upCheck(); else setOpen().then(() => { setCat("display"); const u = $("set-up-btn"); if (u && !u.hidden) u.focus(); }); });
+    b.addEventListener("click", () => { const o = psOpener; psClose(); if (cloud) upCloudUpdate(o); else setOpen().then(() => { setCat("display"); const u = $("set-up-btn"); if (u && !u.hidden) u.focus(); }); });
     p.appendChild(b); list.appendChild(p);
   }
   $("view-ws").inert = true;

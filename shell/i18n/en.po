@@ -664,8 +664,8 @@ msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in y
 msgid "up.check"
 msgstr "Check for updates"
 
-msgid "up.check.cloudTip"
-msgstr "Also checks the cloud machine; if it is behind, it is updated right away, no questions"
+msgid "up.cloud.go"
+msgstr "Update cloud machine"
 
 msgid "cn.current"
 msgstr "In use"
@@ -3177,13 +3177,13 @@ msgid "tm.stMayTrade"
 msgstr "May still be trading"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "The machine restarted, but we couldn’t confirm trading stopped — your positions may still be traded. Press Pause trading first, then Check for updates to bring the machine up to date."
+msgstr "The machine restarted, but we couldn’t confirm trading stopped — your positions may still be traded. Press Pause trading first, then Update cloud machine to bring the machine up to date."
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "Machine restarted — trading may not have stopped"
 
 msgid "tr.ov.evRestartStopFailedNote"
-msgstr "press Pause trading first, then Check for updates; the workspace is out of date"
+msgstr "press Pause trading first, then Update cloud machine; the workspace is out of date"
 
 msgid "tr.haltReasonAll"
 msgstr "No orders are going out — exits and stops won’t run either. Once the problem is fixed, press Start trading; if you’re not sure what caused it, ask the agent in chat."
@@ -3201,7 +3201,7 @@ msgid "tr.orderFailedLastWhy"
 msgstr "Last order failed: {why}"
 
 msgid "tr.cloud.haltReasonUnconfirmed"
-msgstr "An old version of the trading program may still be running. Press Check for updates first to bring the machine up to date; if you’re not sure why it paused, ask the agent in chat."
+msgstr "An old version of the trading program may still be running. Press Update cloud machine first to bring the machine up to date; if you’re not sure why it paused, ask the agent in chat."
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "Cumulative PnL curve, {a} to {b}, {n} records"
@@ -3399,6 +3399,33 @@ msgstr "New version downloaded"
 
 msgid "up.row.applying"
 msgstr "Updating…"
+
+msgid "up.row.cloudName"
+msgstr "Cloud machine"
+
+msgid "up.row.cloudNew"
+msgstr "Update available {lv}"
+
+msgid "up.row.cloudNewBare"
+msgstr "Update available"
+
+msgid "up.cf.title"
+msgstr "Update the cloud machine?"
+
+msgid "up.cf.body1"
+msgstr "Auto-trading is running on the cloud machine. If the update changes the trading code, auto-trading restarts on the new version."
+
+msgid "up.cf.body1Unconfirmed"
+msgstr "After the machine restarted, we couldn’t confirm auto-trading had stopped. Once the trading code is on the new version, it stays stopped until you press Start trading."
+
+msgid "up.cf.body2"
+msgstr "Positions stay open. If an order is being sent, the restart waits for it to finish; if no gap comes up, only the files are updated and auto-trading stays on the old code."
+
+msgid "up.cf.detail"
+msgstr "Official files you changed are replaced with the official versions; the old copies are backed up. Your own order integrations are left alone."
+
+msgid "up.cf.ok"
+msgstr "Update"
 
 msgid "up.restart"
 msgstr "Restart to finish updating"

@@ -131,17 +131,18 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
 
 /* ── V6-05 兩邊的「更新」指示(v4:關於一行 + 聊天那一格;沒有更新鈕、沒有 S0–S7)── */
 {
-  const upPlan = eval("(" + fnSrc(app, "upPlan") + ")");
+  const UP_RETRY_MS = 3 * 60000, upPlan = eval("(" + fnSrc(app, "upPlan") + ")");
   const P = (cv, lv, ph, x) => upPlan({ up: { phase: ph || "idle", current: "0.0.5", checkedAt: 1 }, cloud: { config_version: cv, latest_config_version: lv }, kind: "running", localTurn: false, mem: {}, now: 0, cloudStale: false, wu: null, ...(x || {}) });
   const same = P("2026-09-23-b", "2026-09-23-b"), lag = P("2026-09-23-b", "2026-09-24");
-  ok("V6-05", "雲端 VERSION 落後 → cloudLag、關於列不寫「已是最新版」(也沒有第四個狀態;更新走檢查更新→本機 agent)", lag.cloudLag === true && lag.row.status === null && lag.slot === null);
-  ok("V6-05", "雲端 VERSION 等於最新 → 已是最新版、沒有東西可按(VERSION 沒 bump 的 lib 改動雲端永遠看不到)", same.cloudLag === false && same.row.status[0] === "up.row.latest" && same.slot === null && same.link.kind === "check");
+  ok("V6-05", "雲端 VERSION 落後 → cloudLag;第一行(電腦版)照寫已是最新版,第二行寫「有新版 {lv}」+ 更新雲端主機(0.1.15 拆兩行;更新走本機 agent)", lag.cloudLag === true && lag.row.status[0] === "up.row.latest" && lag.slot === null
+    && lag.cloud.status[0] === "up.row.cloudNew" && lag.cloud.status[1].lv === "2026-09-24" && lag.cloud.link.kind === "cloud");
+  ok("V6-05", "雲端 VERSION 等於最新 → 第二行已是最新版、沒有東西可按(VERSION 沒 bump 的 lib 改動雲端永遠看不到)", same.cloudLag === false && same.cloud.status[0] === "up.row.latest" && same.cloud.link === null && same.slot === null && same.link.kind === "check");
   const loc = P("2026-09-24", "2026-09-24", "ready");
   ok("V6-05", "這台電腦那一半只看 app 更新器(外殼版號),跟 workspace VERSION 無關:ready → 「重新啟動以完成更新」", loc.slot && loc.slot.kind === "restart" && loc.link.kind === "restart" && loc.row.status[0] === "up.row.ready");
   const both = P("2026-09-23-b", "2026-09-24", "ready");
   ok("V6-05", "兩邊都有新版:app 那半照樣給重新啟動;雲端那半不擋它", both.slot && both.slot.kind === "restart" && both.cloudLag === true);
   const unk = P(null, "2026-09-24");
-  ok("V6-05", "雲端還沒回報版號(舊機器 / 讀不到)→ 不算落後、不寫雲端那段(不猜)", unk.cloudLag === false && !unk.row.segs.some((s) => s[0] === "up.row.cloud"));
+  ok("V6-05", "雲端還沒回報版號(舊機器 / 讀不到)→ 不算落後、不出第二行(不猜)", unk.cloudLag === false && unk.cloud === null && !unk.row.segs.some((s) => /^up\.row\.cloud/.test(s[0])));
   const applying = P("2026-09-23-b", "2026-09-24", "idle", { wu: { state: "applying" } });
   ok("V6-05", "新形狀:報告帶 workspace_update.state = applying → 那一格「更新中…」;舊形狀(沒有那個欄位)沒有 (c)", applying.slot && applying.slot.kind === "applying" && lag.slot === null);
 }

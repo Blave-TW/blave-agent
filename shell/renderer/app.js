@@ -513,13 +513,14 @@ function privPaint() {
 /* 「一般」頁最下面的「關於」一行 + 聊天輸入列右上那一格 + 選單列那一行(proposal-desktop-update-flow-v4 §2–§4)。
    全 app 只有三個可見狀態:(a) 沒有東西 (b)「重新啟動以完成更新」= app 新版已暫存好(updater.js ready;下單中是 blocked,鈕不出、
    只在關於列寫「結束 Blave 時安裝」)(c)「更新中…」= 雲端主機正在換檔(報告的 workspace_update.state = applying)。
-   雲端那半仍由本機 agent 經 MCP 去做(Wei 09-22:app 不得觸發雲端 agent 回合),但零選擇:「檢查更新」= app 重查一次 +
-   雲端強制刷新一次報告,報告說落後就在本機聊天送那一句固定的話(up.c.msg)。報告還沒有 workspace_update 欄位之前,
+   雲端那半仍由本機 agent 經 MCP 去做(Wei 09-22:app 不得觸發雲端 agent 回合)。關於分兩行(0.1.15,10-04 一按「檢查更新」就把
+   真錢下單中的雲端主機更新並重啟):第一行只管電腦版,「檢查更新」= app 重查 + 雲端唯讀刷新,永遠不送訊息;第二行是雲端主機,
+   「更新雲端主機」才在本機聊天送那一句固定的話(up.c.msg),自動下單可能在跑時先問。報告還沒有 workspace_update 欄位之前,
    (c) 由那一回合推得(送出的那一回合在跑、或之後碰過雲端的回合在跑),事後那一行由版號追上推得(只有 from → to)。
    決策全在 upPlan / upDoneLine(純函式,tests/check_shell_settings.js 直接跑);upPaint 只照它畫。 */
 var UPD = { cloudTurn: false, turnCloud: false, session: null, lagCv: null, done: null };
 const UP_SESSION_IDLE_MS = 30 * 60000;   // 更新期間 30 分鐘沒有回合就結束(兜底)
-/* 更新期間裡最後一個回合結束滿 3 分鐘(> 雲端 2 分鐘一次的回報,成功的更新這時一定已經回報),再按「檢查更新」而雲端仍落後 = 上一次沒成功:
+/* 更新期間裡最後一個回合結束滿 3 分鐘(> 雲端 2 分鐘一次的回報,成功的更新這時一定已經回報),再按「更新雲端主機」而雲端仍落後 = 上一次沒成功:
    允許重送。不然讀不到最新版號(lv null)時更新期間只能等 30 分鐘閒置才結束,這段時間按了沒有任何反應(設計複稽核 R4) */
 const UP_RETRY_MS = 3 * 60000;
 /* 每次畫之前看一眼雲端:更新期間什麼時候結束、版號追上時記一筆給事後那一行的退路。純函式(只改 mem)。
@@ -561,9 +562,11 @@ function upWu(report) {
     replaced: Array.isArray(w.replaced_changed) ? w.replaced_changed.length : 0, dir: typeof w.backup_dir === "string" && UP_WU_DIR_RE.test(w.backup_dir) ? w.backup_dir : null,
     restartStopped: w.restart_stopped === true, ts: typeof w.ts === "number" ? w.ts : str(w.ts, 40) };
 }
-/* o:{ up(updater 狀態), cloud(雲端 snapshot 的 cloud 那一塊), kind(envCloudKind), localTurn, mem(UPD), now, cloudStale, wu(upWu), checking(按了檢查更新、還沒回來) }
-   回 { slot, row: { segs, status }, link, spin, cloudLag }。字一律回 [key, vars]。
-   slot = null | { kind: "restart" | "applying", disabled, ask? };link = { kind: "check" | "restart", disabled, ask? }(ask = 下單中,按了先問,字尾「…」) */
+/* o:{ up(updater 狀態), cloud(雲端 snapshot 的 cloud 那一塊), kind(envCloudKind), localTurn, mem(UPD), now, cloudStale, wu(upWu), checking(按了檢查更新、還沒回來),
+   exec(trExecState(雲端), cloudBusy(按了更新雲端主機、還在刷新) }
+   回 { slot, row: { segs, status }, link, spin, cloudLag, cloud }。字一律回 [key, vars]。
+   slot = null | { kind: "restart" | "applying", disabled, ask? };link = { kind: "check" | "restart", disabled, ask? }(ask = 下單中,按了先問,字尾「…」)
+   cloud = null(沒有第二行)| { segs, status, link: null | { kind: "cloud", disabled, spin, ask } } */
 function upPlan(o) {
   const st = o.up || {}, ph = st.phase, mem = o.mem || {}, c = o.cloud || {}, wu = o.wu || null, turn = !!o.localTurn;
   const cv = o.kind === "running" ? c.config_version || null : null, lv = c.latest_config_version || null;
@@ -577,20 +580,35 @@ function upPlan(o) {
   // 已按了確認、主行程正在收工 / 安裝(st.restarting):那一格與關於列的連結都換「重新啟動中…」、停用
   const restarting = !!st.restarting;
   const slot = restarting ? { kind: "restarting", disabled: true } : applying ? { kind: "applying", disabled: false } : ready ? { kind: "restart", disabled: turn, ask } : null;
+  // 第一行只講電腦版:雲端落後、換檔中都不影響它
   const segs = [];
   if (st.current) segs.push(["up.row.app", { av: st.current }]);
-  if (o.kind === "stopped" || o.kind === "unreach") segs.push(["up.row.cloudOff"]);
-  else if (cv) segs.push(["up.row.cloud", { cv }]);   // 版號讀不到(舊機器 / api 快取 null)就不寫雲端那段,不印「雲端主機 null」
   let status = null;
-  if (applying) status = ["up.row.applying"];
-  else if (ready) status = ["up.row.ready"];
+  if (ready) status = ["up.row.ready"];
   else if (ph === "error" && st.error === "INSTALL_FAILED") status = ["up.installFailed", { nv: st.version || "" }];
   /* 「已是最新版」只在查過之後才接上:啟動後 30 秒(updater FIRST_CHECK_MS)才第一次查,checkedAt 只有 update-not-available 會寫;
-     檢查中沿用上一次的結論(圓環在連結上)。雲端已知落後而還沒在換檔時也不寫——那不是最新版,但沒有第四個狀態可講 */
-  else if ((ph === "idle" || ph === "checking") && st.checkedAt > 0 && !cloudLag) status = ["up.row.latest"];
-  const spin = !applying && !!(o.checking || ph === "checking");
-  const link = restarting ? { kind: "restarting", disabled: true } : applying ? { kind: "check", disabled: true } : ready ? { kind: "restart", disabled: turn, ask } : { kind: "check", disabled: spin };
-  return { slot, row: { segs, status }, link, spin, cloudLag };
+     檢查中沿用上一次的結論(圓環在連結上) */
+  else if ((ph === "idle" || ph === "checking") && st.checkedAt > 0) status = ["up.row.latest"];
+  const spin = !!(o.checking || ph === "checking");
+  const link = restarting ? { kind: "restarting", disabled: true } : ready ? { kind: "restart", disabled: turn, ask } : { kind: "check", disabled: spin };
+  /* 第二行(雲端主機):只在主機在跑或停機時出現。版號讀不到(舊機器 / api 快取 null)不印「雲端主機 null」;
+     重開沒能確認停住而版號一樣(cloudStale)不寫有新版,連結照出。
+     ask:自動下單在跑、重開沒能確認停住(含模擬)、或讀不到下單狀態 → 按了先問;已暫停 / 停了 / 沒連帳戶才直接送。
+     停用一定講原因(canon Disabled):本機回合在跑 → title up.busy;刷新中 → 16/2 圓環;送出後前 3 分鐘(UP_RETRY_MS,上一次還沒回報)
+     不出連結、寫「更新中…」,滿 3 分鐘還落後才把連結放回來(重送) */
+  let cloud = null;
+  if (o.kind === "stopped") cloud = { segs: [["up.row.cloudOff"]], status: null, link: null };
+  else if (o.kind === "running" && (cv || cloudLag)) {
+    const csegs = [cv ? ["up.row.cloud", { cv }] : ["up.row.cloudName"]];
+    if (applying) cloud = { segs: csegs, status: ["up.row.applying"], link: null };
+    else if (!cloudLag) cloud = { segs: csegs, status: ["up.row.latest"], link: null };
+    else if (!turn && !!mem.session && (o.now || 0) - (mem.session.lastTurnAt || mem.session.startAt) < UP_RETRY_MS) cloud = { segs: csegs, status: ["up.row.applying"], link: null };
+    else {
+      cloud = { segs: csegs, status: cv && lv && cv !== lv ? ["up.row.cloudNew", { lv }] : !lv && c.config_supports_wf === false ? ["up.row.cloudNewBare"] : null,
+        link: { kind: "cloud", disabled: turn || !!o.cloudBusy, spin: !!o.cloudBusy, ask: ["halted", "dead", "noaccount"].indexOf(o.exec) < 0 } };
+    }
+  }
+  return { slot, row: { segs, status }, link, spin, cloudLag, cloud };
 }
 /* 事後那一行(§3):做完那一刻在聊天講一次,不進關於列。回 { key(講過就不再講), head, tail, view: null | "local" | "cloud", dir } 或 null。
    報告有 workspace_update:done 依 outcome 講——updated + 主機暫停中(restart_stopped;gated 重啟時 restarted 也會是 true,暫停那句優先——用戶得知道仍沒在下單)
@@ -665,10 +683,12 @@ function upView(L) {
 }
 function upLocalTurn() { try { return running === true; } catch (_) { return false; } }   // app.js 還沒跑到 `let running` 那一行時讀它會丟 TDZ
 var UP_CHECKING = false;   // 按了「檢查更新」、兩邊都還沒回來:連結上是圓環
+var UP_CLOUD_BUSY = false;   // 按了「更新雲端主機」、刷新還沒回來:那顆停用,不重複送
 function upNow() {
   const cst = TR_BAGS.cloud.st, kind = cst ? envCloudKind(cst) : "loading";
   return upPlan({ up: UP, cloud: (cst && cst.cloud) || null, kind, localTurn: upLocalTurn(), mem: UPD, now: Date.now(),
-    cloudStale: !!(cst && trRestartUnconfirmed(cst.report)), wu: kind === "running" ? upWu(cst.report) : null, checking: UP_CHECKING });
+    cloudStale: !!(cst && trRestartUnconfirmed(cst.report)), wu: kind === "running" ? upWu(cst.report) : null, checking: UP_CHECKING,
+    exec: cst ? trExecState(cst) : "loading", cloudBusy: UP_CLOUD_BUSY });
 }
 /* 一回合結束了(turn-end 叫;回合出錯 / 沒回覆 / 分類過的錯誤都算 fault)。只管更新期間內的回合。
    回合出錯、或整回合沒碰雲端主機:什麼都沒換,更新期間到此為止(之後無關的回合不再被畫成更新中);
@@ -692,9 +712,16 @@ function upPaint() {
   const btn = $("set-up-btn"); btn.textContent = ""; btn.dataset.kind = p.link.kind;
   if (p.spin) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); btn.append(sp); btn.setAttribute("aria-label", t("up.check")); }
   else { btn.append(p.link.kind === "restarting" ? t("up.restarting") : p.link.kind === "restart" ? t("up.restart") + (p.link.ask ? "…" : "") : t("up.check")); btn.removeAttribute("aria-label"); }
-  // 「檢查更新」在有雲端主機在跑時也會把它更新掉(v4 零選擇):hover 先講,用戶才不會以為只查了 app
-  const tip = p.link.kind === "check" && kind === "running" ? t("up.check.cloudTip") : "";
-  btn.disabled = !!p.link.disabled; btn.title = p.link.kind === "restart" && p.link.disabled ? t("up.busy") : tip;
+  btn.disabled = !!p.link.disabled; btn.title = p.link.kind === "restart" && p.link.disabled ? t("up.busy") : "";
+  // 第二行:雲端主機(版號 · 狀態 + 「更新雲端主機」;會先問時字尾「…」)
+  const crow = $("set-upc"), cline = $("set-upc-line"), cbtn = $("set-upc-btn");
+  crow.hidden = !p.cloud; cline.textContent = "";
+  if (p.cloud) p.cloud.segs.concat(p.cloud.status ? [p.cloud.status] : []).forEach((s, i) => { if (i) cline.append(" · "); upRich(cline, s[0], s[1], { mono: ["cv", "lv"] }); });
+  const cl = p.cloud && p.cloud.link;
+  cbtn.hidden = !cl; cbtn.textContent = "";
+  if (cl && cl.spin) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); cbtn.append(sp); cbtn.setAttribute("aria-label", t("up.cloud.go")); }
+  else { if (cl) cbtn.append(t("up.cloud.go") + (cl.ask ? "…" : "")); cbtn.removeAttribute("aria-label"); }
+  cbtn.disabled = !!(cl && cl.disabled); cbtn.title = cl && cl.disabled && !cl.spin ? t("up.busy") : "";
   // 聊天輸入列右上那一格(照網頁 .ws-update):更新中不可點(aria-disabled,不是 disabled:讀屏停得上去、字色不退成停用灰)
   const w = $("ws-update");
   if (w) {
@@ -708,27 +735,52 @@ function upPaint() {
   }
   upSayLines(cst);
 }
-/* 「檢查更新」:app 重查一次 + 雲端強制刷新一次報告;報告說落後(而且主機沒在換檔、這裡沒有回合在跑、也不在更新期間)就在本機聊天
-   送那一句固定的話,本機 agent 經 MCP 去做(零選擇)。結果沒變就回到原樣,什麼都不說 */
+/* 「檢查更新」:app 重查一次 + 雲端唯讀刷新一次報告(第二行的版號跟著新)。永遠不送訊息——雲端更新只走「更新雲端主機」 */
 async function upCheck() {
   if (UP_CHECKING) return;
   UP_CHECKING = true; upPaint();
-  try { await Promise.all([window.blave.updateCheck().then(upRefresh).catch(() => {}), upCloudRecheck()]); }
+  try { await Promise.all([window.blave.updateCheck().then(upRefresh).catch(() => {}), upCloudRefresh()]); }
   finally { UP_CHECKING = false; upPaint(); }
 }
-async function upCloudRecheck() {
-  if (typeof window.blave.cloudRefresh !== "function" || typeof trPoll !== "function") return;
-  try { await window.blave.cloudRefresh(); } catch (_) { return; }   // 主行程沒回:這次不動雲端
+/* 回 false = 主行程沒回(這次不動雲端) */
+async function upCloudRefresh() {
+  if (typeof window.blave.cloudRefresh !== "function" || typeof trPoll !== "function") return false;
+  try { await window.blave.cloudRefresh(); } catch (_) { return false; }
   // app.js 不自己讀交易狀態:標記要重讀、跑一輪輪詢(trade.js 那一份就是畫面用的);在途那一輪結束會立刻再跑一次,等它把記號清掉
   ENV.cloudDirty = true; await trPoll();
   for (let i = 0; i < 30 && ENV.cloudDirty; i++) await new Promise((r) => setTimeout(r, 100));
-  const p = upNow();
-  const sessionLive = !!UPD.session && Date.now() - (UPD.session.lastTurnAt || UPD.session.startAt) < UP_RETRY_MS;
-  if (!p.cloudLag || (p.slot && p.slot.kind === "applying") || upLocalTurn() || sessionLive) return;
+  return true;
+}
+/* 確認框鈕正上方那一行:雲端 · 真錢/模擬 · 交易所。讀雲端那一袋,跟現在看的是哪一邊無關 */
+function upCloudWhere(cst) {
+  const r = cst && cst.report, id = (r && trVenueIds(r)[0]) || null;
+  return trWhereTidy(t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(envMoney(cst)), venue: trVenueLabel(id, true) }));
+}
+/* 「更新雲端主機」(關於第二行、投資組合被鎖那一行的雲端入口):先刷新一次,還落後才動;自動下單可能在跑就先問,
+   已暫停 / 停了 / 沒連帳戶直接送。opener = 確認框關掉後焦點回去的鈕 */
+async function upCloudUpdate(opener) {
+  if (UP_CLOUD_BUSY) return;
+  trackFeature("cloud_upd_open");
+  UP_CLOUD_BUSY = true; upPaint();
+  let fresh = false;
+  try { fresh = await upCloudRefresh(); } finally { UP_CLOUD_BUSY = false; upPaint(); }
+  if (!fresh) return;
+  const p = upNow(), cl = p.cloud && p.cloud.link;
+  if (!cl || cl.disabled) return;
+  if (!cl.ask) { await upCloudSend(); return; }
+  // 在跑:改到下單程式才用新版重啟;重開沒確認停住 / 讀不到:新版下單程式起來會先停住(有重開紀錄時,雲端的更新腳本只重啟會先停住的那一版)
+  const lead = trExecState(TR_BAGS.cloud.st) === "running" ? "up.cf.body1" : "up.cf.body1Unconfirmed";
+  confirmBox({ title: t("up.cf.title"), lines: [t(lead), t("up.cf.body2")], details: [{ text: t("up.cf.detail") }], ok: t("up.cf.ok"),
+    opener: opener || $("set-upc-btn"), env: "cloud", footWhere: upCloudWhere(TR_BAGS.cloud.st), onOk: () => { upCloudSend(); }, onCancel: () => { trackFeature("cloud_upd_cancel"); } });
+}
+async function upCloudSend() {
+  const p = upNow();   // 確認框開著的期間可能已經換檔 / 有回合開跑:再看一次
+  if (!(p.cloud && p.cloud.link && !p.cloud.link.disabled)) return;
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡
   const c = (TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}, now = Date.now();
   Object.assign(UPD, { done: null, cloudTurn: true, session: { startAt: now, lastTurnAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null } });
-  await submitMessage(t("up.c.msg"), { viewing: { env: "cloud" } });
+  const sentOk = await submitMessage(t("up.c.msg"), { viewing: { env: "cloud" } });
+  if (sentOk) trackFeature("cloud_upd_ok");
   if (!upLocalTurn()) upTurnEnded(true);   // 沒送出去(上一輪還在跑 / 版本被停用)、或回合在回來之前就結束了(同步拋錯):不進更新期間
 }
 async function upInstall() {
@@ -741,6 +793,7 @@ window.blave.onUpdateState((st) => { UP = st; upPaint(); });
 upRefresh();
 $("ws-update").addEventListener("click", () => { if ($("ws-update").dataset.kind === "restart") upInstall(); });
 $("set-up-btn").addEventListener("click", () => { const k = $("set-up-btn").dataset.kind; if (k === "restart") upInstall(); else if (k === "check") upCheck(); });   // restarting:什麼都不做
+$("set-upc-btn").addEventListener("click", () => upCloudUpdate($("set-upc-btn")));
 /* 安裝識別碼(設定 › 一般 › 關於,全 app 只這一處):只收 UUID 的形狀(它會被畫出來、放進剪貼簿);追蹤關掉也照出——
    要求刪除的是關掉之前送出去的那些。每次切到「一般」重讀 */
 var INSTALL_ID = null, INSTALL_ID_T = 0;   // var:同 UP,這一行還沒跑到就被 setCat 叫到也不會撞 TDZ
@@ -1349,8 +1402,8 @@ function rpWfAsk(name, lookback, step, rerun, opener, begin) {
     // 新的一次送出:補抓的次數重新起算(不然上一段抓滿 8 次、中間沒切過視窗的話,這一段一次都不抓;0.1.11 code 複驗 R-P2-1)
     onOk: () => { if (typeof begin === "function") begin(); rpWfAuto.delete(name); submitMessage(t("wf.msgRun", { name, lookback: String(lookback), step: String(step) })).then((ok) => { if (ok) trackFeature("wf_requested"); resolve(ok ? turnSeq : false); }); } }));
 }
-// 雲端主機太舊:去設定 › 更新(同 versions.js verNeedUpdate)——電腦版更新雲端一律開本機回合走 MCP,不觸發雲端回合
-function rpWfUpdate() { setOpen().then(() => { setCat("display"); const b = $("set-up-btn"); if (b && !b.hidden) b.focus(); }); }
+// 雲端主機太舊:去設定 › 一般、焦點在「更新雲端主機」(同 versions.js verNeedUpdate)——電腦版更新雲端一律開本機回合走 MCP,不觸發雲端回合
+function rpWfUpdate() { setOpen().then(() => { setCat("display"); const b = $("set-upc-btn"); if (b && !b.hidden) b.focus(); }); }
 // 回合開始 / 結束、雲端版本旗標翻面:已送出態翻了整片重畫(舊結果回來或換新的),否則就地換鈕態
 function rpWfSync() {
   const B = rpBag(), R = window.BlaveReport || {};
@@ -1619,7 +1672,7 @@ function delConfirm(m, opener) {
      那個選項的 ok、按下去做它的 onOk。warn = 掛在那個選項裡的情境句;disabled + why = 這個選項現在不能選,說明換成原因句(aria-describedby 指它)。
      choicesLabel = 這一組的名字(只給讀屏)。這時 lines 是最上面的狀態句(主墨)。
    keep = 常駐的安全句(每次都要看的);details = [{ label, text | items }] 收在「細節」裡(看懂一次就好的),detailsOpen = 預設展開 */
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen }) {
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel }) {
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   $("del-title").textContent = title;
   $("del-cancel").textContent = cancel || t("del.cancel");
@@ -1646,7 +1699,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
     const d = mk("details", "cf-more"), sm = mk("summary", "", t("cf.more")), cv = mk("span", "cv7"), inner = mk("div", "cf-more-in");
     cv.setAttribute("aria-hidden", "true"); sm.appendChild(cv); d.open = !!detailsOpen;
     details.forEach((g) => {
-      const box = mk("div"); box.appendChild(mk("span", "lbl", g.label));
+      const box = mk("div"); if (g.label) box.appendChild(mk("span", "lbl", g.label));
       if (g.items) { const ul = mk("ul"); g.items.forEach((x) => ul.appendChild(mk("li", "", x))); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
       inner.appendChild(box);
     });
@@ -1664,7 +1717,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   $("del-alt").classList.toggle("cf-alt-danger", !!(alt && alt.danger));
   $("del-modal").classList.toggle("has-alt", !!alt);
   $("del-modal").classList.toggle("has-choices", !!choices);
-  delCtx = { custom: true, onOk: choices ? null : onOk, onAlt: alt && alt.onOk, opener };
+  delCtx = { custom: true, onOk: choices ? null : onOk, onAlt: alt && alt.onOk, opener, onCancel };
   $("view-ws").inert = true; $("set-scrim").inert = true;
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
@@ -1677,6 +1730,7 @@ function delClose(deleted) {
   sc.classList.remove("open"); sc.hidden = true;
   $("view-ws").inert = false; $("set-scrim").inert = false;
   const c = delCtx; delCtx = null;
+  if (c && c.onCancel && !c.acted) c.onCancel();   // 取消 / ✕ / Esc / 框外 / 被程式收掉都算沒按主鈕
   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕、也不該看到上一個的「雲端」記號
   $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt", "has-choices"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
   $("del-env").hidden = true; $("del-where").hidden = true; $("del-modal").querySelector(".modal-head").classList.remove("cloud"); $("del-cancel").hidden = false; $("del-cancel").textContent = t("del.cancel");
@@ -1687,9 +1741,9 @@ $("del-cancel").addEventListener("click", () => delClose(false));
 $("del-close").addEventListener("click", () => delClose(false));
 $("del-scrim").addEventListener("mousedown", (e) => { if (e.target === $("del-scrim")) delClose(false); });
 $("del-scrim").addEventListener("keydown", (e) => trapTab(e, $("del-modal")));
-$("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; delClose(false); if (go) go(); });
+$("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; if (delCtx) delCtx.acted = true; delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
-  if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
+  if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; delCtx.acted = true; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
   const m = delCtx && delCtx.m; if (!m) return;
   if (!(await window.blave.deleteSession(m.id))) { delClose(false); return; }
   if (m.id === sessionId) { csStartNew(); csShowList(true); } else await csRenderList();

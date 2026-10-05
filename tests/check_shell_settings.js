@@ -1,4 +1,4 @@
-// 設定 modal 的兩塊畫面邏輯(shell/renderer/app.js):「關於」那一行 + 聊天那一格 + 事後那一行(upPlan / upDoneLine / upPaint,v4)、帳號與方案(planPaint 最上面那一組、登出)。
+// 設定 modal 的兩塊畫面邏輯(shell/renderer/app.js):「關於」兩行(0.1.15:電腦版 / 雲端主機)+ 聊天那一格 + 事後那一行(upPlan / upDoneLine / upPaint,v4)、帳號與方案(planPaint 最上面那一組、登出)。
 // 從原文切出函式,配一個最小的假 DOM 跑。跑法:node tests/check_shell_settings.js
 const fs = require("fs"), path = require("path");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -35,40 +35,46 @@ const store = {}; const lsGet = (k) => (k in store ? store[k] : null), lsSet = (
 const calls = []; let UP = null, hasToken = false, cloudSt = null, startOk = true;
 const window = { blave: { updateCheck: () => { calls.push("check"); return Promise.resolve(true); }, updateInstall: () => { calls.push("install"); return Promise.resolve({ ok: true }); },
   updateState: () => Promise.resolve(UP), updateShowBackup: () => { calls.push("showBackup"); return Promise.resolve(true); }, cloudRefresh: () => { refreshes++; return Promise.resolve(); } } };
-/* 「關於」一行 + 聊天那一格 + 事後一行(v4:upPlan / upDoneLine 決策、upPaint 照畫、upCheck / upInstall 動作)。雲端那一袋、聊天送出用假的。
+/* 「關於」兩行 + 聊天那一格 + 事後一行(upPlan / upDoneLine 決策、upPaint 照畫;upCheck 只查不送、upCloudUpdate 先問再送、upInstall)。雲端那一袋、聊天送出、確認框用假的。
    Wei 09-22 原則不變:用本機 app 不得觸發雲端 agent 回合——雲端那半在本機聊天送一句(帶 viewing env:cloud),不送雲端指令 */
 const TR_BAGS = { cloud: { st: null, reqIds: {} } };
 let running = false, LANG = "zh", sent = [];
 const envCloudKind = (st) => (st && st.kind) || "loading";
 const trRestartUnconfirmed = (r) => { const x = r && r.reconciler && r.reconciler.stopped; return !!(x && x.reason === "machine_restart" && x.gated === false); };   // 同 trade.js(那邊有自己的測試)
 const submitMessage = async (msg, o) => { sent.push([msg, o]); if (startOk) running = true; return startOk; };   // 真的那支一開跑就把 running 設起來
+// 「更新雲端主機」的確認框與下單狀態(0.1.15):確認框記下參數,按不按由測試決定;下單狀態由假雲端那一袋的 exec 給(沒給 = running)
+const boxes = [], confirmBox = (o) => { boxes.push(o); }, featured = [], trackFeature = (n) => { featured.push(n); };
+const trExecState = (st) => (st && st.exec) || "running";
+const trVenueIds = () => ["binance"], trVenueLabel = (id) => id, envMoney = () => "real", envMoneyText = (m) => m, trWhereTidy = (x) => x;
 const paneSt = { chat: { off: false } }, paneToggle = () => {};
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
-var CS_BOOTED = false, UP_CHECKING = false;
+var CS_BOOTED = false, UP_CHECKING = false, UP_CLOUD_BUSY = false;
 var UP_LINE_OF = new WeakMap();
-eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upDoneLine", "upBackupLine", "upRich", "upPaintLine", "upSayLines", "upSayLine", "upRelang", "upView", "upLocalTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
-eval(["upCheck", "upCloudRecheck", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
+eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upCloudWhere", "upDoneLine", "upBackupLine", "upRich", "upPaintLine", "upSayLines", "upSayLine", "upRelang", "upView", "upLocalTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
+eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
 eval(src.match(/^function upRefresh\(\) \{[^\n]*\}$/m)[0]);
-eval([/^\$\("ws-update"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 兩個入口的接線
+eval([/^\$\("ws-update"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-upc-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 三個入口的接線
 const stepWhere = (c) => (c && c.where) || "local";
 const C = { current: "0.0.7", version: "0.0.8" };
 const cloud = (o, kind) => ({ kind: kind || "running", cloud: { config_version: "2026-09-24-b", latest_config_version: "2026-09-24-b", ...((o && o.cloud) || {}) }, report: (o && o.report) || {} });
 const plan = (up, st, x) => upPlan({ up, cloud: st && st.cloud, kind: st ? envCloudKind(st) : "loading", localTurn: false, mem: {}, now: 0, cloudStale: !!(st && trRestartUnconfirmed(st.report)), wu: st ? upWu(st.report) : null, ...(x || {}) });
 const paint = (up, st) => { UP = up; TR_BAGS.cloud.st = st === undefined ? TR_BAGS.cloud.st : st; upPaint(); const b = $("set-up-btn"), w = $("ws-update");
-  return { line: $("set-up-line").textContent, link: b.textContent, kind: b.dataset.kind, dis: b.disabled, spin: b.children.some((c) => c && c.className === "spin16"), title: b.title,
+  const cb = $("set-upc-btn");
+  return { cspin: cb.children.some((c) => c && c.className === "spin16"), caria: cb.attrs["aria-label"], ctitle: cb.title, line: $("set-up-line").textContent, cline: $("set-upc").hidden ? null : $("set-upc-line").textContent, clink: cb.hidden ? null : cb.textContent, cdis: cb.disabled, link: b.textContent, kind: b.dataset.kind, dis: b.disabled, spin: b.children.some((c) => c && c.className === "spin16"), title: b.title,
     slot: w.hidden ? null : w.firstElementChild.textContent, slotKind: w.dataset.kind, slotDis: w.disabled, slotAria: w.attrs["aria-disabled"], status: w.classList.has("is-status"), slotTitle: w.title }; };
 const mono = (n, s) => (n.children || []).some((c) => c && c.className === "mono" && c.textContent === s);
 // ── 關於那一行:七種寫法(§4)。字一律由 upPlan 決定,upPaint 用「 · 」接、版號 mono ──
 const idle = { ...C, phase: "idle", checkedAt: 1 }, fresh = { ...C, phase: "idle" };
 let p = paint(idle, cloud());
-ok("① 查完、都最新:Blave {av} · 雲端主機 {cv} · 已是最新版;連結是檢查更新(可按)", p.line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-24-b"} · up.row.latest' && p.link === "up.check" && p.kind === "check" && !p.dis && !p.spin);
-ok("① 兩個版號各自包在 .mono 裡", mono($("set-up-line"), "0.0.7") && mono($("set-up-line"), "2026-09-24-b"));
+ok("① 查完、都最新:第一行 Blave {av} · 已是最新版 + 檢查更新(可按);第二行 雲端主機 {cv} · 已是最新版、沒有連結", p.line === 'up.row.app{"av":"0.0.7"} · up.row.latest' && p.link === "up.check" && p.kind === "check" && !p.dis && !p.spin
+  && p.cline === 'up.row.cloud{"cv":"2026-09-24-b"} · up.row.latest' && p.clink === null);
+ok("① 兩個版號各自包在 .mono 裡(各在自己那一行)", mono($("set-up-line"), "0.0.7") && mono($("set-upc-line"), "2026-09-24-b"));
 p = paint(fresh, cloud());
-ok("② 還沒查完(啟動 30 秒內):只寫兩個版本、不寫狀態字、不寫「檢查中」;連結照舊", p.line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-24-b"}' && p.link === "up.check" && !/checking/.test(p.line));
+ok("② 還沒查完(啟動 30 秒內):第一行只寫版本、不寫狀態字、不寫「檢查中」;連結照舊;第二行不受影響", p.line === 'up.row.app{"av":"0.0.7"}' && p.link === "up.check" && !/checking/.test(p.line) && p.cline === 'up.row.cloud{"cv":"2026-09-24-b"} · up.row.latest');
 { const upd = fs.readFileSync(path.join(R, "..", "updater.js"), "utf8");
   ok("② 那 30 秒來自 updater.js 的 FIRST_CHECK_MS;「已是最新版」只認 checkedAt,而 checkedAt 只有 update-not-available 會寫", /const FIRST_CHECK_MS = 30 \* 1000;/.test(upd) && (upd.match(/checkedAt/g) || []).length === 1 && /update-not-available", \(\) => set\(\{ phase: "idle", version: null, checkedAt: Date\.now\(\) \}\)/.test(upd)
-    && /st\.checkedAt > 0 && !cloudLag\) status = \["up\.row\.latest"\]/.test(fnSrc("upPlan"))); }
+    && /st\.checkedAt > 0\) status = \["up\.row\.latest"\]/.test(fnSrc("upPlan"))); }
 UP_CHECKING = true; p = paint(idle, cloud()); UP_CHECKING = false;
 ok("③ 按下檢查更新的那幾秒:連結本身變成 16/2 圓環(停用、aria-label 留著檢查更新),狀態字沿用上一次的「已是最新版」,沒有「檢查中」", p.spin && p.dis && p.link === "" && $("set-up-btn").attrs["aria-label"] === "up.check" && /up\.row\.latest$/.test(p.line));
 p = paint({ ...idle, phase: "checking" }, cloud());
@@ -79,21 +85,34 @@ p = paint({ ...C, phase: "blocked" }, cloud());
 ok("⑤ app 已下載、下單中(0.1.10):狀態字同樣「新版已下載」,連結是「重新啟動以完成更新…」(按了主行程先問)", /up\.row\.ready$/.test(p.line) && p.link === "up.restart…" && p.kind === "restart" && !p.dis);
 const applying = cloud({ report: { workspace_update: { state: "applying", ts: 1 } } });
 p = paint(idle, applying);
-ok("⑥ 雲端換檔中(報告 workspace_update.state = applying):狀態字「更新中…」,檢查更新停用、沒有圓環", /up\.row\.applying$/.test(p.line) && p.link === "up.check" && p.dis && !p.spin);
+ok("⑥ 雲端換檔中(報告 workspace_update.state = applying):第二行「雲端主機 {cv} · 更新中…」、沒有連結;第一行照舊、檢查更新可按", p.cline === 'up.row.cloud{"cv":"2026-09-24-b"} · up.row.applying' && p.clink === null
+  && p.line === 'up.row.app{"av":"0.0.7"} · up.row.latest' && p.link === "up.check" && !p.dis && !p.spin);
 p = paint(idle, cloud({ cloud: { config_version: "2026-09-22-p" } }, "stopped"));
-ok("⑦ 雲端停機:雲端那段寫「雲端主機（停機）」、不帶版號;讀不到也是", p.line === 'up.row.app{"av":"0.0.7"} · up.row.cloudOff · up.row.latest' && /up\.row\.cloudOff/.test(paint(idle, cloud({}, "unreach")).line));
+ok("⑦ 雲端停機:第二行「雲端主機（停機）」、不帶版號、沒有連結;讀不到就不出第二行", p.line === 'up.row.app{"av":"0.0.7"} · up.row.latest' && p.cline === "up.row.cloudOff" && p.clink === null && paint(idle, cloud({}, "unreach")).cline === null);
 p = paint(idle, cloud({}, "none"));
-ok("⑧ 沒雲端主機:Blave {av} · 已是最新版;沒登入 / 還沒讀到 / 啟動中同樣不寫雲端那段", p.line === 'up.row.app{"av":"0.0.7"} · up.row.latest' && paint(idle, cloud({}, "signedOut")).line === p.line && paint(idle, null).line === p.line && paint(idle, cloud({}, "starting")).line === p.line);
-ok("雲端版號讀不到(舊機器 / api 快取 null):不印「雲端主機 null」", paint(idle, cloud({ cloud: { config_version: null } })).line === 'up.row.app{"av":"0.0.7"} · up.row.latest');
-ok("雲端已知落後而沒在換檔:不寫「已是最新版」(那不是真話),也沒有第四個狀態", paint(idle, cloud({ cloud: { config_version: "2026-09-22-p" } })).line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-22-p"}'
-  && plan(idle, cloud({ cloud: { config_version: "2026-09-22-p" } })).cloudLag === true && plan(idle, cloud({ report: { reconciler: { stopped: { reason: "machine_restart", gated: false } } } })).cloudLag === true);
+ok("⑧ 沒雲端主機:Blave {av} · 已是最新版、沒有第二行;沒登入 / 還沒讀到 / 啟動中同樣不出", p.line === 'up.row.app{"av":"0.0.7"} · up.row.latest' && p.cline === null && ["signedOut", "starting"].every((k) => paint(idle, cloud({}, k)).cline === null) && paint(idle, null).cline === null);
+ok("雲端版號讀不到(舊機器 / api 快取 null):不印「雲端主機 null」、不出第二行", paint(idle, cloud({ cloud: { config_version: null } })).cline === null);
+{ const lag = paint(idle, cloud({ cloud: { config_version: "2026-09-22-p" } }));
+  ok("雲端已知落後:第一行照寫「已是最新版」(只講電腦版);第二行「雲端主機 {cv} · 有新版 {lv}」+「更新雲端主機…」(自動下單在跑,會先問)", lag.line === 'up.row.app{"av":"0.0.7"} · up.row.latest'
+    && lag.cline === 'up.row.cloud{"cv":"2026-09-22-p"} · up.row.cloudNew{"lv":"2026-09-24-b"}' && lag.clink === "up.cloud.go…" && !lag.cdis && mono($("set-upc-line"), "2026-09-24-b")
+    && plan(idle, cloud({ cloud: { config_version: "2026-09-22-p" } })).cloudLag === true); }
+{ const halted = paint(idle, { ...cloud({ cloud: { config_version: "2026-09-22-p" } }), exec: "halted" }), stale = paint(idle, cloud({ report: { reconciler: { stopped: { reason: "machine_restart", gated: false } } } }));
+  ok("已暫停 / 停了 / 沒連帳戶:連結不加「…」(不會先問);重開沒確認停住而版號一樣:不寫有新版、連結照出(會先問)", halted.clink === "up.cloud.go"
+    && ["dead", "noaccount"].every((ex) => paint(idle, { ...cloud({ cloud: { config_version: "2026-09-22-p" } }), exec: ex }).clink === "up.cloud.go")
+    && stale.cline === 'up.row.cloud{"cv":"2026-09-24-b"}' && stale.clink === "up.cloud.go…" && plan(idle, cloud({ report: { reconciler: { stopped: { reason: "machine_restart", gated: false } } } })).cloudLag === true); }
+{ const lagSt = cloud({ cloud: { config_version: "2026-09-22-p" } });
+  UP_CLOUD_BUSY = true; const busy = paint(idle, lagSt); UP_CLOUD_BUSY = false;
+  running = true; const turn = paint(idle, lagSt); running = false;
+  ok("停用一定講原因(canon Disabled):刷新中 = 16/2 圓環(aria-label 留著更新雲端主機、不掛 title);本機回合在跑 = 停用 + title up.busy;可按時沒有 title",
+    busy.cspin && busy.cdis && busy.caria === "up.cloud.go" && busy.ctitle === "" && !turn.cspin && turn.cdis && turn.ctitle === "up.busy" && turn.clink === "up.cloud.go…" && paint(idle, lagSt).ctitle === ""); }
+ok("讀不到最新版號但 lib 沒有 walk_forward:第二行寫「· 有新版」(不帶版號)+ 連結", paint(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: false } })).cline === 'up.row.cloud{"cv":"2026-09-24-b"} · up.row.cloudNewBare');
 ok("雲端主機的 lib 沒有 walk_forward(config_supports_wf false):就算 api 讀不到最新版號(lv null)也算落後——樣本外驗證的〔去更新〕→「檢查更新」才有出口(稽核 P2-5);true / 缺欄位照舊",
   plan(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: false } })).cloudLag === true && plan(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: true } })).cloudLag === false
   && plan(idle, cloud({ cloud: { latest_config_version: null } })).cloudLag === false && plan(idle, cloud({ cloud: { config_supports_wf: false } }, "stopped")).cloudLag === false);
-ok("安裝失敗:關於列那一句沿用 up.installFailed;查失敗什麼都不說", /up\.installFailed\{"nv":"0\.0\.8"\}$/.test(paint({ ...C, phase: "error", error: "INSTALL_FAILED" }, cloud()).line) && paint({ ...C, phase: "error", error: "CHECK_FAILED" }, cloud()).line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-24-b"}');
-ok("背景下載 / 暫存中 / 沒有更新來源:關於列不寫狀態字(沒有東西可等)", ["downloading", "staging", "off"].every((ph) => paint({ ...C, phase: ph }, cloud()).line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-24-b"}'));
-ok("狀態字不換色:upPlan 不回任何 cls,CSS 沒有 .st.up / .st.ok / 兩行版的 id", !("cls" in plan(idle, cloud()).row) && !/\.set-about \.st|set-up-(ver|txt|cver|ctxt|cnote|lbtn|head)|up-dot/.test(css + html + src));
-ok("DOM:關於只有一行 + 一個文字連結;那一行 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-up-btn"><\/button>/.test(html)
+ok("安裝失敗:關於列那一句沿用 up.installFailed;查失敗什麼都不說", /up\.installFailed\{"nv":"0\.0\.8"\}$/.test(paint({ ...C, phase: "error", error: "INSTALL_FAILED" }, cloud()).line) && paint({ ...C, phase: "error", error: "CHECK_FAILED" }, cloud()).line === 'up.row.app{"av":"0.0.7"}');
+ok("背景下載 / 暫存中 / 沒有更新來源:關於列不寫狀態字(沒有東西可等)", ["downloading", "staging", "off"].every((ph) => paint({ ...C, phase: ph }, cloud()).line === 'up.row.app{"av":"0.0.7"}'));
+ok("狀態字不換色:upPlan 不回任何 cls,CSS 沒有 .st.up / .st.ok / 舊兩行版的 id;檢查更新不再掛「也會更新雲端」的 hover(up.check.cloudTip 刪了)", !("cls" in plan(idle, cloud()).row) && !("cls" in plan(idle, cloud()).cloud) && !/\.set-about \.st|set-up-(ver|txt|cver|ctxt|cnote|lbtn|head)|up-dot/.test(css + html + src) && !/cloudTip/.test(src + fs.readFileSync(path.join(R, "strings.js"), "utf8")));
+ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新;第二行 #set-upc(預設 hidden)雲端主機 + 更新雲端主機;兩行都 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-up-btn"><\/button>\s*<\/div>\s*<div class="set-up-row" id="set-upc" hidden>\s*<p class="set-up-line" id="set-upc-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-upc-btn" hidden><\/button>/.test(html)
   && (() => { const span = html.slice(html.indexOf('id="ws-update"'), html.indexOf("</button>", html.indexOf('id="ws-update"'))); return !/data-i18n/.test(span) && /<span><\/span>/.test(span); })());
 // ── 聊天輸入列右上那一格:(b) 重新啟動以完成更新 / (c) 更新中… / 沒有東西 ──
 p = paint({ ...C, phase: "ready" }, cloud());
@@ -115,7 +134,7 @@ ok("(b) 下單中(blocked,0.1.10):那一格照出,字尾接「…」(按了主�
 p = paint(idle, applying);
 ok("(c) 雲端換檔中:同一格不可點的「更新中…」(aria-disabled,不是 disabled;is-status;沒有時鐘、沒有百分比)", p.slot === "up.applying" && p.slotKind === "applying" && p.slotAria === "true" && !p.slotDis && p.status && !/\d/.test(p.slot));
 p = paint({ ...C, phase: "ready" }, applying);
-ok("(c) 壓過 (b):雲端換檔中時那一格是更新中,關於列的連結停用", p.slot === "up.applying" && p.link === "up.check" && p.dis);
+ok("(c) 壓過 (b):雲端換檔中時那一格是更新中;關於第一行照舊給重新啟動(只管電腦版;回合在跑時另有 up.busy 擋)", p.slot === "up.applying" && p.link === "up.restart" && !p.dis);
 p = paint(idle, cloud());
 ok("(a) 兩邊都最新:那一格什麼都不出", p.slot === null);
 ok("(a) 背景下載 / 暫存中 / 檢查中:那一格也不出", ["downloading", "staging", "checking"].every((ph) => paint({ ...C, phase: ph }, cloud()).slot === null));
@@ -145,24 +164,35 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   running = false;
   document.activeElement = $("ws-update"); paint(idle, cloud());
   ok("那一格收掉時焦點交給輸入框(不掉到 BODY)", document.activeElement === $("ta"));
-  // ── 檢查更新(§2):app 重查一次 + 雲端強制刷新一次報告;報告說落後就在本機聊天送那一句(本機 agent 去做),沒落後什麼都不說 ──
+  // ── 檢查更新(§2,0.1.15):app 重查一次 + 雲端唯讀刷新一次報告;永遠不送訊息。雲端更新只走第二行的「更新雲端主機」 ──
   calls.length = 0; sent.length = 0; refreshes = 0; polls = 0; ENV.cloudDirty = false; running = false;
   cloudSt = cloud(); paint(idle, cloud());
   let pr = upCheck(); const during = paint(idle);
   await pr;
-  ok("檢查更新:兩件事都做(updateCheck + cloudRefresh),期間連結是圓環、做完回原樣;沒落後就不送任何訊息、不改狀態字", calls.join() === "check" && refreshes === 1 && during.spin && during.dis && !paint(idle).spin && sent.length === 0 && /up\.row\.latest$/.test(paint(idle).line));
-  ok("檢查更新:刷新完標記雲端要重讀並立刻輪詢一次(畫面上的版號跟著新);app.js 不自己讀交易狀態", polls === 1 && !/tradeStatus/.test(fnSrc("upCloudRecheck")));
-  calls.length = 0; sent.length = 0; refreshes = 0; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" } }); TR_BAGS.cloud.st = cloudSt;
+  ok("檢查更新:兩件事都做(updateCheck + cloudRefresh),期間連結是圓環、做完回原樣;不送任何訊息、不改狀態字", calls.join() === "check" && refreshes === 1 && during.spin && during.dis && !paint(idle).spin && sent.length === 0 && /up\.row\.latest$/.test(paint(idle).line));
+  ok("檢查更新:刷新完標記雲端要重讀並立刻輪詢一次(第二行的版號跟著新);app.js 不自己讀交易狀態", polls === 1 && !/tradeStatus/.test(fnSrc("upCloudRefresh")));
+  calls.length = 0; sent.length = 0; refreshes = 0; boxes.length = 0; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" } }); TR_BAGS.cloud.st = cloudSt;
   await upCheck();
-  ok("檢查更新:報告說落後 → 在本機聊天送那一句固定的話、帶 viewing env:cloud(同今天那顆鈕的雲端路徑;沒有雲端指令、沒有新指令)、開一段更新期間",
-    calls.join() === "check" && refreshes === 1 && sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && UPD.cloudTurn === true && UPD.session && UPD.session.fromCv === "2026-09-22-p" && UPD.session.nv === "2026-09-24-b"
-    && !/cloudSend|update_workspace/.test(fnSrc("upCloudRecheck")) && TR_BAGS.cloud.st === cloudSt);
+  ok("檢查更新:報告說落後、自動下單在跑 → 只查電腦版 + 刷新,不送、不開確認框、不進更新期間(10-04 事故)", calls.join() === "check" && refreshes === 1 && sent.length === 0 && boxes.length === 0 && UPD.session === null && TR_BAGS.cloud.st === cloudSt);
+  cloudSt = { ...cloud({ cloud: { config_version: "2026-09-22-p" } }), exec: "halted" }; await upCheck();
+  ok("檢查更新:落後、已暫停也一樣不送;upCheck / upCloudRefresh 原文沒有 submitMessage", sent.length === 0 && !/submitMessage|up\.c\.msg/.test(fnSrc("upCheck") + fnSrc("upCloudRefresh")));
+  // ── 更新雲端主機:自動下單在跑 → 先問;按下才照既有路徑送 up.c.msg ──
+  cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" } }); TR_BAGS.cloud.st = cloudSt; paint(idle, cloudSt); refreshes = 0; boxes.length = 0;
+  await $("set-upc-btn").onclick();
+  const bx = boxes[0] || {};
+  ok("更新雲端主機(自動下單在跑):先刷新一次、跳確認框(雲端樣式、footWhere、焦點回這顆鈕),按下之前什麼都不送", refreshes === 1 && boxes.length === 1 && sent.length === 0 && bx.env === "cloud" && bx.footWhere === 'tr.cloud.footWhere{"where":"env.cloud","money":"real","venue":"binance"}'
+    && bx.opener === $("set-upc-btn") && bx.title === "up.cf.title" && bx.ok === "up.cf.ok" && JSON.stringify(bx.lines) === '["up.cf.body1","up.cf.body2"]' && bx.details[0].text === "up.cf.detail" && !bx.details[0].label);
+  bx.onOk(); await new Promise((r) => setImmediate(r));
+  ok("…按「更新」:在本機聊天送那一句固定的話、帶 viewing env:cloud(沒有雲端指令、沒有新指令)、開一段更新期間",
+    sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && UPD.cloudTurn === true && UPD.session && UPD.session.fromCv === "2026-09-22-p" && UPD.session.nv === "2026-09-24-b"
+    && !/cloudSend|update_workspace/.test(fnSrc("upCloudUpdate") + fnSrc("upCloudSend")));
   ok("接線:那一句仍是 up.c.msg(zh / en 都在);沒有別的 up.c.* 字串", /"up\.c\.msg": "把雲端主機更新到最新版本"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")) && (fs.readFileSync(path.join(R, "strings.js"), "utf8").match(/"up\.c\.[a-zA-Z]+":/g) || []).length === 2);
   // (c) 的退路:報告還沒有 workspace_update 欄位時,由那一回合推得
   p = paint(idle, cloudSt);
-  ok("(c) 退路:送出的那一回合在跑 → 那一格「更新中…」、關於列「更新中…」、連結停用(報告沒有 workspace_update)", running === true && p.slot === "up.applying" && /up\.row\.applying$/.test(p.line) && p.dis);
-  calls.length = 0; sent.length = 0; running = false; await upCheck(); running = true;   // 回合剛結束、更新期間還在(等版號追上)
-  ok("更新期間內再按檢查更新:重查 app、刷新報告,但不再送第二句", calls.join() === "check" && sent.length === 0 && UPD.session !== null);
+  ok("(c) 退路:送出的那一回合在跑 → 那一格「更新中…」、第二行「更新中…」沒有連結;第一行不受影響(報告沒有 workspace_update)", running === true && p.slot === "up.applying" && /up\.row\.applying$/.test(p.cline) && p.clink === null && /up\.row\.latest$/.test(p.line));
+  sent.length = 0; boxes.length = 0; running = false; await upCloudUpdate(); running = true;   // 回合剛結束、更新期間還在(等版號追上)
+  ok("更新期間內(3 分鐘內,上一次還沒回報)再按更新雲端主機:不再送第二句、不開確認框;第二行寫「更新中…」、沒有連結(不是無聲灰掉)", sent.length === 0 && boxes.length === 0 && UPD.session !== null
+    && ((running = false), (() => { const q = paint(idle, cloudSt); return /up\.row\.applying$/.test(q.cline) && q.clink === null; })()) && ((running = true), true));
   refreshes = 0; polls = 0; UPD.turnCloud = true; upTurnEnded(false); running = false; p = paint(idle, cloudSt); await new Promise((r) => setImmediate(r));
   ok("回合(碰過雲端)正常結束:立刻強制問一次雲端、標記重讀並輪詢;那一格收起(沒有回合在跑就不是更新中);更新期間留著等版號追上", refreshes === 1 && polls === 1 && p.slot === null && UPD.session !== null && UPD.cloudTurn === false);
   running = true; p = paint(idle, cloudSt);
@@ -173,27 +203,32 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   ok("回合出錯:更新期間到此為止(之後無關的回合不再被畫成更新中)", UPD.session === null && ((running = true), paint(idle, cloudSt).slot === null) && ((running = false), true));
   Object.assign(UPD, { cloudTurn: true, turnCloud: false, session: { startAt: 1, lastTurnAt: 1, fromCv: "a", nv: "b" } }); upTurnEnded(false);
   ok("送出的那一回合正常結束但整回合沒碰雲端(例如要先登入):更新期間收掉", UPD.session === null);
-  calls.length = 0; sent.length = 0; running = false; startOk = false; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" } }); await upCheck();
-  ok("聊天沒送出去(上一輪還在跑 / 版本被停用):不進更新期間", sent.length === 1 && UPD.session === null && UPD.cloudTurn === false);
-  startOk = true; sent.length = 0; running = true; await upCheck(); running = false;
-  ok("這台電腦有回合在跑時按檢查更新:重查、刷新,不送(送不出去)", sent.length === 0);
-  { // R4:更新期間裡最後一個回合結束滿 3 分鐘(雲端早該回報了)仍落後 = 上一次沒成功 → 再按檢查更新要重送;還沒滿 3 分鐘照舊不送
-    const lag = cloud({ cloud: { config_version: "2026-09-22-p", latest_config_version: null, config_supports_wf: false } }); cloudSt = lag; TR_BAGS.cloud.st = lag;
-    UPD.session = { startAt: Date.now() - UP_RETRY_MS + 20000, lastTurnAt: Date.now() - UP_RETRY_MS + 20000, fromCv: "2026-09-22-p", nv: null }; UPD.cloudTurn = false; sent.length = 0; await upCheck();
+  const halted = (o, kind) => ({ ...cloud(o, kind), exec: "halted" });
+  sent.length = 0; boxes.length = 0; running = false; startOk = false; cloudSt = halted({ cloud: { config_version: "2026-09-22-p" } }); await upCloudUpdate();
+  ok("已暫停:不問、直接送;聊天沒送出去(上一輪還在跑 / 版本被停用)就不進更新期間", boxes.length === 0 && sent.length === 1 && UPD.session === null && UPD.cloudTurn === false);
+  startOk = true; sent.length = 0; running = true; await upCloudUpdate(); running = false;
+  ok("這台電腦有回合在跑時按更新雲端主機:刷新,不送(送不出去)", sent.length === 0 && boxes.length === 0);
+  { // R4:更新期間裡最後一個回合結束滿 3 分鐘(雲端早該回報了)仍落後 = 上一次沒成功 → 再按更新雲端主機要重送;還沒滿 3 分鐘照舊不送
+    const lag = halted({ cloud: { config_version: "2026-09-22-p", latest_config_version: null, config_supports_wf: false } }); cloudSt = lag; TR_BAGS.cloud.st = lag;
+    UPD.session = { startAt: Date.now() - UP_RETRY_MS + 20000, lastTurnAt: Date.now() - UP_RETRY_MS + 20000, fromCv: "2026-09-22-p", nv: null }; UPD.cloudTurn = false; sent.length = 0; await upCloudUpdate();
     const early = sent.length;
-    UPD.session = { startAt: Date.now() - UP_RETRY_MS - 1000, lastTurnAt: Date.now() - UP_RETRY_MS - 1000, fromCv: "2026-09-22-p", nv: null }; UPD.cloudTurn = false; sent.length = 0; await upCheck(); running = false;
+    UPD.session = { startAt: Date.now() - UP_RETRY_MS - 1000, lastTurnAt: Date.now() - UP_RETRY_MS - 1000, fromCv: "2026-09-22-p", nv: null }; UPD.cloudTurn = false; sent.length = 0; await upCloudUpdate(); running = false;
     ok("R4 讀不到最新版號時的更新期間:最後一回合結束未滿 3 分鐘不重送;滿 3 分鐘還落後就重送、開一段新的更新期間(不必等 30 分鐘閒置)",
       UP_RETRY_MS === 3 * 60000 && early === 0 && sent.length === 1 && sent[0][0] === "up.c.msg" && UPD.session && Date.now() - UPD.session.startAt < 5000);
     UPD.session = null; UPD.cloudTurn = false; }
-  sent.length = 0; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" }, report: { workspace_update: { state: "applying", ts: 2 } } }); await upCheck();
-  ok("主機自己正在換檔(applying)時按檢查更新:不送", sent.length === 0);
-  sent.length = 0; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" } }, "stopped"); await upCheck();
-  ok("雲端停機:不送(讀不到也是)", sent.length === 0 && ((cloudSt = cloud({}, "unreach")), await upCheck(), sent.length === 0));
+  sent.length = 0; cloudSt = halted({ cloud: { config_version: "2026-09-22-p" }, report: { workspace_update: { state: "applying", ts: 2 } } }); await upCloudUpdate();
+  ok("主機自己正在換檔(applying)時按更新雲端主機:不送", sent.length === 0);
+  sent.length = 0; cloudSt = halted({ cloud: { config_version: "2026-09-22-p" } }, "stopped"); await upCloudUpdate();
+  ok("雲端停機:不送(讀不到也是)", sent.length === 0 && ((cloudSt = halted({}, "unreach")), await upCloudUpdate(), sent.length === 0));
+  sent.length = 0; boxes.length = 0; cloudSt = halted({ cloud: { config_version: "2026-09-22-p" } }); TR_BAGS.cloud.st = cloudSt; running = false; UPD.session = null;
+  { const real = window.blave.cloudRefresh; window.blave.cloudRefresh = () => Promise.reject(new Error("main threw")); await upCloudUpdate(); window.blave.cloudRefresh = real; }
+  ok("刷新失敗(主行程沒回):這次不動雲端,不送也不問", sent.length === 0 && boxes.length === 0);
   ok("接線:submitMessage 每一句都把 turnCloud 歸零;tool chunk 第一次帶 where: cloud 就記下並重畫;turn-end 把出錯交給 upTurnEnded;busyStep 不碰 UPD",
     /UPD\.turnCloud = false;[^\n]*\n\s*running = true; sendBtnSync\(\);/.test(fnSrc("submitMessage")) && !/UPD\.done/.test(fnSrc("submitMessage"))
     && /if \(!UPD\.turnCloud && stepWhere\(c\) === "cloud"\) \{ UPD\.turnCloud = true; upPaint\(\); \}\s*busyStep\(c\);/.test(src)
     && /const faulted = !stopped && \(r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut\);/.test(src) && /upTurnEnded\(faulted\);\s*running = false;/.test(src) && !/UPD/.test(fnSrc("busyStep")));
-  ok("接線:關於的連結 = 重新啟動 / 檢查更新;那一格只有 restart 會做事;沒有 upGo / 兩顆鈕 / 每秒重畫 / open-about", /const k = \$\("set-up-btn"\)\.dataset\.kind; if \(k === "restart"\) upInstall\(\); else if \(k === "check"\) upCheck\(\);/.test(src) && /if \(\$\("ws-update"\)\.dataset\.kind === "restart"\) upInstall\(\);/.test(src)
+  ok("接線:關於第一行的連結 = 重新啟動 / 檢查更新;第二行 = upCloudUpdate;那一格只有 restart 會做事;up.c.msg 只在 upCloudSend 送;沒有 upGo / 每秒重畫 / open-about", /const k = \$\("set-up-btn"\)\.dataset\.kind; if \(k === "restart"\) upInstall\(\); else if \(k === "check"\) upCheck\(\);/.test(src) && /if \(\$\("ws-update"\)\.dataset\.kind === "restart"\) upInstall\(\);/.test(src)
+    && /\$\("set-upc-btn"\)\.addEventListener\("click", \(\) => upCloudUpdate\(\$\("set-upc-btn"\)\)\);/.test(src) && (src.match(/t\("up\.c\.msg"\)/g) || []).length === 1 && /t\("up\.c\.msg"\)/.test(fnSrc("upCloudSend")) && !/upCloudRecheck/.test(src)
     && !/upGo|upInstallLocal|UP_TICK|upClock|onOpenAbout|doneChatHidden|UP_REPORT_WAIT_MS/.test(src));
   // ── 主機刪掉又重開:落後 / 追上 / 更新期間都是那台的事,清掉 ──
   { const T0 = 1e12, ses = { session: { startAt: T0, lastTurnAt: T0, fromCv: "a", nv: "b" }, cloudTurn: true, lagCv: "a", done: null };

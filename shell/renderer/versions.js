@@ -410,11 +410,11 @@ function verGuard(side, B, n, cur, amt) {
   confirmBox({ title: t("ver.guardTitle"), lines: [], extra, ok: t("ver.guardOk", { v: "v" + n }), opener: c.opener, env: c.env, footWhere: c.footWhere,
     onOk: () => verSend(t("ver.msgFork", vars)).then((ok) => { if (ok) trackFeature("version_fork"); }) });
 }
-// 雲端主機的 lib 還不會就地還原:主鈕 = minv.btn 那一套(設定 › 一般、焦點在「檢查更新」);不退回交給 agent 的固定訊息
+// 雲端主機的 lib 還不會就地還原:主鈕 = minv.btn 那一套(設定 › 一般、焦點在「更新雲端主機」);不退回交給 agent 的固定訊息
 function verNeedUpdate(side, B, n, opener) {
   const c = verBoxCtx(side, B);
   confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.needUpdate")], ok: t("minv.btn"), opener: opener || c.opener, env: c.env, footWhere: c.footWhere,
-    onOk: () => setOpen().then(() => { setCat("display"); const b = $("set-up-btn"); if (b && !b.hidden) b.focus(); }) });
+    onOk: () => setOpen().then(() => { setCat("display"); const b = $("set-upc-btn"); if (b && !b.hidden) b.focus(); }) });
 }
 function verRestoreAsk() {
   const B = rpBag(), side = verSideOf(B), S = VS[side];
