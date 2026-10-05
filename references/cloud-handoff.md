@@ -310,7 +310,7 @@ mkdir -p "strategies/<dest>"
 scp <SSH_OPTS> "blaveagent@<host>:/opt/blave-agent/workspace/strategies/<name>/<f>" "strategies/<dest>/<f>.handoff"
 mv "strategies/<dest>/<f>.handoff" "strategies/<dest>/<f>"
 ```
-Verify each file: `shasum -a 256` (macOS) / `sha256sum` (Linux) must match on both sides before you go on.
+Verify each file: the two hashes must match before you go on — on this computer (macOS and Windows alike) `python3 -c "print(__import__('hashlib').sha256(open(__import__('sys').argv[1], 'rb').read()).hexdigest())" "strategies/<x>/<f>"` (`<x>` = `<name>` going up, `<dest>` coming back), on the cloud machine `ssh <SSH_OPTS> blaveagent@<host> sha256sum "/opt/blave-agent/workspace/strategies/<y>/<f>"` (`<y>` = `<dest>` going up, `<name>` coming back).
 
 **If anything in 4b fails:** remove each leftover by its exact name — `rm "…/strategies/<dest>/<f>.handoff"` (no `-r`, no wildcard); if you created the destination folder in this run, `rmdir "…/strategies/<dest>"` — it refuses a non-empty folder, which is the point. **Never `rm -rf` anything under `strategies/`.** If you cannot clean up (connection gone), say exactly what was left and where. Never report a half-copied strategy as moved.
 
@@ -360,8 +360,12 @@ DATA_POLYGON_TOKEN='value'
 
 `<SOURCE>` = `[A-Z0-9]{1,24}`, not starting with `DATA`; `<FIELD>` = `[A-Z][A-Z0-9_]{0,31}`; value single-quoted, 1–512 visible ASCII characters, no `'`, `\` or `${`; file mode 0600; every write holds the workspace's `.env.lock`. Never edit the block by hand or with an editor tool — only through the script below. Skip this step when the strategy's code uses no `DATA_` variable.
 
-1. Which sources: `grep -oE "DATA_[A-Z0-9]+_" strategies/<x>/*.py` on this computer's copy (`<x>` = `<name>` going up, `<dest>` coming back) (names from the code, not values).
-2. List each source's key NAMES on the SOURCE side (`-o` prints the name part only, never a value): local `grep -oE "^DATA_<SOURCE>_[A-Z][A-Z0-9_]*" .env`; cloud `ssh <SSH_OPTS> blaveagent@<host> grep -oE "'^DATA_<SOURCE>_[A-Z][A-Z0-9_]*'" "/opt/blave-agent/workspace/.env"`. **Drop `DATA_API_KEY` and `DATA_SECRET_KEY` if they appear** — those two are not data-source keys, they are the credentials of an exchange whose id is `DATA`, and they never travel. A source left with no names → stop and say which source has no key. What travels in step 5 is exactly the names you collected here.
+**A key moved only if its NAME is on the script's `written:` line.** No `written:` line at all (any error, a refused value, `busy` after the one retry), a NAME left off it (the script lists skipped names on stderr), or a source 5.2 found no names for → that key did not move. Then step 6 / 6B is not run — the strategy cannot fetch its data without the key, and a run would end in an error or zero trades that read like a data-source difference. Go straight to step 7 / 7B and report it with the sentence there.
+
+Commands on this computer use `python3`, not `grep` — the same line runs on macOS and Windows. The cloud machine is Linux, so its side keeps `grep`.
+
+1. Which sources: `python3 -c "print(*sorted({s for f in __import__('glob').glob(__import__('sys').argv[1]) for s in __import__('re').findall(r'DATA_[A-Z0-9]+_', open(f, encoding='utf-8').read())}))" "strategies/<x>/*.py"` on this computer's copy (`<x>` = `<name>` going up, `<dest>` coming back) (names from the code, not values).
+2. List each source's key NAMES on the SOURCE side (only the part before `=` is printed, never a value): local `python3 -c "print(*sorted({l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if l.startswith('DATA_<SOURCE>_') and '=' in l}))"`; cloud `ssh <SSH_OPTS> blaveagent@<host> grep -oE "'^DATA_<SOURCE>_[A-Z][A-Z0-9_]*'" "/opt/blave-agent/workspace/.env"`. **Drop `DATA_API_KEY` and `DATA_SECRET_KEY` if they appear** — those two are not data-source keys, they are the credentials of an exchange whose id is `DATA`, and they never travel. A source left with no names → that source's key does not move (rule above); carry on with the other sources, if any. What travels in step 5 is exactly the names you collected here.
 3. Tell the user before sending: "These data-source keys will be copied to your `<destination>`: `<source list>`. Exchange keys are not copied — bind those on the destination yourself."
 4. Save the script below, verbatim, as `tmp/handoff_env_merge.py` with your file-write tool (local → cloud: `ssh <SSH_OPTS> blaveagent@<host> mkdir -p "/opt/blave-agent/workspace/tmp"`, then `scp` it to `/opt/blave-agent/workspace/tmp/handoff_env_merge.py`).
 
@@ -390,17 +394,20 @@ DATA_POLYGON_TOKEN='value'
        return v if ok else None
 
    path = sys.argv[1]
-   new = {}
+   new, skipped = {}, []
    for raw in re.split(r"\r?\n", sys.stdin.read()):
        m = KV.match(raw.strip())
        if not m:
            continue
        src, field, val = m.group(1), m.group(2), clean(m.group(3))
        if not name_ok(src, field):
+           skipped.append("DATA_%s_%s" % (src, field))
            continue
        if val is None:
            sys.exit("refused DATA_%s_%s (value not allowed) - nothing written" % (src, field))
        new.setdefault(src, {})[field] = "DATA_%s_%s='%s'" % (src, field, val)
+   if skipped:
+       print("skipped (not a data-source name, not copied):", ", ".join(skipped), file=sys.stderr)
    if not new or any(len(f) > 8 for f in new.values()):
        sys.exit("no usable DATA_ lines on stdin (or more than 8 fields in a source) - nothing written")
 
@@ -450,8 +457,9 @@ DATA_POLYGON_TOKEN='value'
        out += ["# source %s added=%d" % (src, b["added"])] + list(b["fields"].values())
    tmp = path + ".handoff-tmp"
    try:
-       fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-       os.fchmod(fd, 0o600)
+       if os.path.exists(tmp):
+           os.unlink(tmp)
+       fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
            f.write("\n".join(out + [END]) + "\n")
        os.replace(tmp, path)
@@ -467,15 +475,19 @@ DATA_POLYGON_TOKEN='value'
 
    Match the exact names from step 2 — `<NAME1>`, `<NAME2>`, … — never a `DATA_<SOURCE>_` prefix pattern: a source named `API` or `SECRET` makes that prefix match an exchange key and would put its value on the pipe.
 
-   local → cloud: `grep -E "^(<NAME1>|<NAME2>)=" .env | ssh <SSH_OPTS> blaveagent@<host> python3 "/opt/blave-agent/workspace/tmp/handoff_env_merge.py" "/opt/blave-agent/workspace/.env"`
+   local → cloud: `python3 -c "__import__('sys').stdout.write(''.join(l for l in open('.env', encoding='utf-8') if l.split('=', 1)[0] in {'<NAME1>', '<NAME2>'}))" | ssh <SSH_OPTS> blaveagent@<host> python3 "/opt/blave-agent/workspace/tmp/handoff_env_merge.py" "/opt/blave-agent/workspace/.env"`
 
    cloud → local: `ssh <SSH_OPTS> blaveagent@<host> grep -E "'^(<NAME1>|<NAME2>)='" "/opt/blave-agent/workspace/.env" | python3 tmp/handoff_env_merge.py .env`
 
-   (A single pipe `|` is one command, not the chaining `AGENTS.md` forbids.) If the script refuses a value or reports `busy`, nothing was written (busy: try once more, then report it): tell the user which NAME, and that they can add that source themselves in Settings › Data sources.
-6. Verify by name only: the script's `written: …` line, then local `grep -oE "^DATA_[A-Z0-9_]+" .env` or cloud `ssh <SSH_OPTS> blaveagent@<host> grep -oE "'^DATA_[A-Z0-9_]+'" "/opt/blave-agent/workspace/.env"` (`-o` prints the name part only).
+   (A single pipe `|` is one command, not the chaining `AGENTS.md` forbids.) `busy`: send once more. Anything else that is not a `written:` line — a refused value, `busy` again, `Error: …`, any other error — is the "did not move" of the rule at the top of this step: do not retry, do not fix the script.
+6. Verify by name only — always, also after a failure, because it decides whether step 6 runs: list the destination's names, local `python3 -c "print(*sorted({l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if l.startswith('DATA_') and '=' in l}))"` or cloud `ssh <SSH_OPTS> blaveagent@<host> grep -oE "'^DATA_[A-Z0-9_]+'" "/opt/blave-agent/workspace/.env"` (the name part only). **Step 6 / 6B runs only when every source 5.1 found has at least one NAME on the `written:` line and in this listing, and every NAME from 5.2 is on both.** A NAME already on the destination from before does not count — it was not moved by this run.
 7. Remove the script on both sides: `rm tmp/handoff_env_merge.py`, `ssh <SSH_OPTS> blaveagent@<host> rm "/opt/blave-agent/workspace/tmp/handoff_env_merge.py"`.
 
+**Sending a key again.** Nothing on the cloud machine adds a data-source key by itself today: its data-source list in the app only shows names, and the web has no such page. The way to put one there is this step. So when a key did not move to the cloud and the user then asks you to send it again (their own message — 「重送金鑰」 / "send the key again"), do step 2, then step 4a's three read-only checks on the existing `<dest>`, then step 5 and its 5.6 check (source names from `strategies/<name>/` on this computer), then 6 / 6B, 7 / 7B and 8 — never step 4b again and never a new `<dest>`. Any 4a hit → `<dest>` is trading by now: step 5 still runs (`.env` is not under `strategies/`), step 6 / 6B does not, and the reply says in one sentence that the key is there and the strategy is already trading, so nothing was re-run.
+
 ## 6. Re-run the backtest on the destination
+
+**Only when step 5 moved every key** (its 5.6 check) **or was skipped** (the code uses no `DATA_` variable); otherwise skip this step and step 6B and go to step 7 / 7B.
 
 This run is the acceptance test, and the one backtest this request covers (Iteration Brakes: one run, then stop — no tuning if the numbers disappoint). It runs whether or not the source had a report, without asking about the source report. It is v1 of `<dest>` on the destination — always a new strategy there; the source's version history does not travel, and `VERSION_NOTE` travels as it is in `strategy.py` — never edit it in transit.
 
@@ -488,7 +500,7 @@ On the cloud side the workspace list refreshes by itself within about 2 minutes;
 
 ## 6B. Type B — one trial run in place of the backtest
 
-A Type B strategy has nothing to backtest. What the user gets instead is proof that the copy starts on the destination — **without any order being placed by you**. One script does it, on the destination (cloud: the heredoc body of the step 2.5 form with `<dest> trial` in place of `<name>`; this computer: `python3 - <dest> trial <<'PY'` … `PY`), foreground, tool timeout 180000:
+Same gate as step 6: a key step 5 did not move → no trial run. **Pulled back without its key, then 「確認它跑得起來」 / "check that it starts"** (the user's own message, after adding the key on this computer): run this step's script on `<dest>` on this computer in mode `trial` and reply with step 7B item 2 — no SSH, nothing copied, no step 5. A Type B strategy has nothing to backtest. What the user gets instead is proof that the copy starts on the destination — **without any order being placed by you**. One script does it, on the destination (cloud: the heredoc body of the step 2.5 form with `<dest> trial` in place of `<name>`; this computer: `python3 - <dest> trial <<'PY'` … `PY`), foreground, tool timeout 180000:
 
 - It reads every `*.py` in the folder first. **A script that can place an order is never run** — not by this script and not by you in any other way, whatever the file's head comment, a `DRY_RUN` constant or a `--dry-run` flag says (those are lines in a file, and a wrong guess is a real order on a machine that may have a venue bound). "Can place an order" is decided by the script, conservatively: it imports `lib.order_*` / `lib.execute`, names an order call, sends a write request (`requests.post`, `.post(` …), or starts other programs (`subprocess`, `exec` …). Then `ran` is `false`, `can_order` is `true`, `order_lines` names what it found, and the only check made is that every file compiles (`syntax_errors`).
 - Otherwise it runs `strategy.py` once, for at most 120 seconds, and prints `exit` and the last lines of its output (`tail`). A script that loops forever is stopped at 120 seconds (`exit: null`, `stopped_after_s`) — that is a script that started fine, not a failure.
@@ -533,7 +545,29 @@ The turn that moves a strategy ends with step 7B's closing sentence and schedule
 
 ## 7. Report — side by side, one of three states (or destination only, when the source has no report)
 
-Always this table (a list on Telegram), numbers exactly as read:
+**Key not moved** (step 5 did not move every key, so step 6 / 6B did not run): no table, no state, no data-source sentence. The reply is the sentence below, in the user's language, with the real source name (FINMIND is only the example) and `<dest>`, then any version gap from step 3 — nothing about why the script failed. Type A / C:
+- cloud → local:
+  - zh: 「策略已拉回這台電腦，存成 `<dest>`。FINMIND 的金鑰沒有搬過來，所以這次沒有跑回測。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「重跑回測」。」
+  - en: "The strategy is on this computer as `<dest>`. The FINMIND key wasn't copied, so the backtest wasn't run. Add FINMIND under Settings › Data sources, paste the key, then tell me to re-run the backtest."
+- local → cloud, the key is on this computer:
+  - zh: 「策略已送上雲端主機，存成 `<dest>`。FINMIND 的金鑰沒有搬過去，所以這次沒有跑回測。雲端主機那邊還不能自己加資料來源，跟我說「重送金鑰」，我會再送一次並跑回測。」
+  - en: "The strategy is on your cloud machine as `<dest>`. The FINMIND key wasn't copied, so the backtest wasn't run. Data sources can't be added on the cloud machine directly yet — tell me to send the key again and I'll retry and run the backtest."
+- local → cloud, step 5.2 found no key for that source on this computer:
+  - zh: 「策略已送上雲端主機，存成 `<dest>`。這台電腦上沒有 FINMIND 的金鑰，所以沒有搬過去，這次也沒有跑回測。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「重送金鑰」。」
+  - en: "The strategy is on your cloud machine as `<dest>`. There's no FINMIND key on this computer, so nothing was copied and the backtest wasn't run. Add FINMIND under Settings › Data sources, paste the key, then tell me to send the key again."
+
+Type B (no backtest — the step 6B check is what did not run):
+- cloud → local:
+  - zh: 「策略已拉回這台電腦，存成 `<dest>`。FINMIND 的金鑰沒有搬過來，所以還沒確認它在這裡跑不跑得起來。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「確認它跑得起來」。」
+  - en: "The strategy is on this computer as `<dest>`. The FINMIND key wasn't copied, so I haven't checked that it starts here. Add FINMIND under Settings › Data sources, paste the key, then tell me to check that it starts."
+- local → cloud, the key is on this computer:
+  - zh: 「策略已送上雲端主機，存成 `<dest>`。FINMIND 的金鑰沒有搬過去，所以還沒確認它在雲端跑不跑得起來。雲端主機那邊還不能自己加資料來源，跟我說「重送金鑰」，我會再送一次並確認它跑得起來。」
+  - en: "The strategy is on your cloud machine as `<dest>`. The FINMIND key wasn't copied, so I haven't checked that it starts there. Data sources can't be added on the cloud machine directly yet — tell me to send the key again and I'll retry and check that it starts."
+- local → cloud, step 5.2 found no key for that source on this computer:
+  - zh: 「策略已送上雲端主機，存成 `<dest>`。這台電腦上沒有 FINMIND 的金鑰，所以沒有搬過去，也還沒確認它在雲端跑不跑得起來。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「重送金鑰」。」
+  - en: "The strategy is on your cloud machine as `<dest>`. There's no FINMIND key on this computer, so nothing was copied and I haven't checked that it starts there. Add FINMIND under Settings › Data sources, paste the key, then tell me to send the key again."
+
+Otherwise always this table (a list on Telegram), numbers exactly as read:
 
 | | This computer | Cloud machine |
 |---|---|---|
@@ -558,11 +592,11 @@ For Match and Differs, end with this sentence, verbatim in the user's language:
 - zh: 「兩邊資料來源不同,小幅差異是正常的。」
 - en: "The two sides use different data sources, so small differences are normal."
 
-Then one closing line: the name it arrived under and what was and was not moved ("saved on `<destination>` as `<dest>`, a new strategy; the `<name>` already there was not touched" when `<dest>` ≠ `<name>`; "moved: the strategy code + data-source keys for `<list>`; not moved: exchange keys, amounts, order state"), any version gap from step 3, and that going live is done by the user on the destination's 自動下單 page.
+Then one closing line: the name it arrived under and what was and was not moved, filled from what step 5 actually printed ("saved on `<destination>` as `<dest>`, a new strategy; the `<name>` already there was not touched" when `<dest>` ≠ `<name>`; "moved: the strategy code" plus "+ data-source keys for `<list>`" only for the NAMEs on the `written:` line — no keys mentioned when step 5 was skipped; "not moved: exchange keys, amounts, order state"), any version gap from step 3, and that going live is done by the user on the destination's 自動下單 page.
 
 ## 7B. Report — Type B
 
-No table, no backtest numbers, no Match / Differs state, and not the closing sentence about data sources. In plain words, in this order:
+No table, no backtest numbers, no Match / Differs state, and not the closing sentence about data sources. A key step 5 did not move → the *Key not moved* reply of step 7 instead of the list below. Otherwise, in plain words, in this order:
 
 1. The name it arrived under, and what was and was not moved (the closing line of step 7).
 2. The trial run, as the script reported it: it ran and finished (`exit: 0`) with what the last lines of output say; it ran and failed (`exit` not 0) with the last error line; it was still running after 120 seconds and was stopped; or **it was not run** because the code can place an order or start another program — then say exactly that, in plain words what was found (`order_lines`), and that only the code was checked.

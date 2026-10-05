@@ -186,7 +186,7 @@ check("$SSH_OPTS" not in DOC, "no $SSH_OPTS anywhere — as an undefined variabl
 optless = [c for c in cmds if re.match(r"(ssh|scp) ", c) and "<SSH_OPTS>" not in c and "…" not in c]
 check(not optless, f"every ssh/scp command carries <SSH_OPTS> ({optless[:2]})")
 # the send pipe matches exact key names, so an exchange whose id is DATA never puts a value on the pipe
-check("^DATA_(<SRC" not in DOC and DOC.count("^(<NAME1>|<NAME2>)=") == 2,
+check("^DATA_(<SRC" not in DOC and DOC.count("^(<NAME1>|<NAME2>)=") == 1 and DOC.count("in {'<NAME1>', '<NAME2>'}") == 1,
       "step 5 sends the exact names collected in 5.2, not a DATA_<SOURCE>_ prefix")
 check(DOC.count("Drop `DATA_API_KEY` and `DATA_SECRET_KEY`") == 1, "5.2 names the two exchange keys that must not travel")
 check({c for c in cmds if "rm -r" in c and c != "rm -rf"} == {"rm -rf tmp/cloud-handoff", 'ssh <SSH_OPTS> blaveagent@<host> rm -rf "/tmp/oc-config"'},
@@ -768,6 +768,122 @@ for name, doc in (("cloud-handoff.md", DOC), ("updating.md", UPD)):
     check(not said, f"D8 {name}: no reply sentence still says 下單程式 / the order program {said[:2]}")
 check("「新檔已在機器上，但自動下單仍在跑舊版。」 / \"The new files are on the machine, but auto-trading is still on the old code.\"" in DOC,
       "D8 cloud-handoff.md U7: restart_failed sentence uses 自動下單 / auto-trading")
+
+# desktop 0.1.15 設計稽核:Windows 內附 Python 沒有 os.fchmod → 腳本 AttributeError、什麼都沒寫;
+# 第 5 節失敗後照跑第 6 節(錯誤或 0 筆交易被判成「資料來源不同」);第 7 節寫死「金鑰已搬」。
+def _between(doc, a, b):
+    i = doc.find(a)
+    return doc[i:doc.find(b, i + 1)] if i >= 0 else ""
+
+KEY_RULES = {
+    "5: moved only when its NAME is on written:": "**A key moved only if its NAME is on the script's `written:` line.**",
+    "5: not moved → step 6 / 6B not run": "Then step 6 / 6B is not run",
+    "5.6: gate on written: AND the destination listing": "**Step 6 / 6B runs only when every source 5.1 found has at least one NAME on the `written:` line and in this listing, and every NAME from 5.2 is on both.**",
+    "5: sending a key again never re-copies code": "never step 4b again and never a new `<dest>`",
+    "5: sending a key again runs 4a's trading checks first": "then step 4a's three read-only checks on the existing `<dest>`",
+    "5: sending a key again to a trading <dest> → no step 6": "Any 4a hit → `<dest>` is trading by now: step 5 still runs (`.env` is not under `strategies/`), step 6 / 6B does not",
+    "6: gated on step 5": "**Only when step 5 moved every key** (its 5.6 check) **or was skipped**",
+    "6B: same gate": "Same gate as step 6: a key step 5 did not move → no trial run.",
+    "7: key-not-moved state": "**Key not moved** (step 5 did not move every key, so step 6 / 6B did not run): no table",
+    "7: pull-back failure zh": "「策略已拉回這台電腦，存成 `<dest>`。FINMIND 的金鑰沒有搬過來，所以這次沒有跑回測。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「重跑回測」。」",
+    "7: pull-back failure en": "\"The strategy is on this computer as `<dest>`. The FINMIND key wasn't copied, so the backtest wasn't run. Add FINMIND under Settings › Data sources, paste the key, then tell me to re-run the backtest.\"",
+    "7: closing line filled from written:": "only for the NAMEs on the `written:` line",
+    "7B: defers to the key-not-moved reply": "A key step 5 did not move → the *Key not moved* reply of step 7",
+    "7: send failure zh (A/C)": "「策略已送上雲端主機，存成 `<dest>`。FINMIND 的金鑰沒有搬過去，所以這次沒有跑回測。雲端主機那邊還不能自己加資料來源，跟我說「重送金鑰」，我會再送一次並跑回測。」",
+    "7: send failure en (A/C)": "\"The strategy is on your cloud machine as `<dest>`. The FINMIND key wasn't copied, so the backtest wasn't run. Data sources can't be added on the cloud machine directly yet — tell me to send the key again and I'll retry and run the backtest.\"",
+    "7: no key here zh (A/C)": "「策略已送上雲端主機，存成 `<dest>`。這台電腦上沒有 FINMIND 的金鑰，所以沒有搬過去，這次也沒有跑回測。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「重送金鑰」。」",
+    "7: no key here en (A/C)": "\"The strategy is on your cloud machine as `<dest>`. There's no FINMIND key on this computer, so nothing was copied and the backtest wasn't run. Add FINMIND under Settings › Data sources, paste the key, then tell me to send the key again.\"",
+    "7: pull-back failure zh (B)": "「策略已拉回這台電腦，存成 `<dest>`。FINMIND 的金鑰沒有搬過來，所以還沒確認它在這裡跑不跑得起來。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「確認它跑得起來」。」",
+    "7: pull-back failure en (B)": "\"The strategy is on this computer as `<dest>`. The FINMIND key wasn't copied, so I haven't checked that it starts here. Add FINMIND under Settings › Data sources, paste the key, then tell me to check that it starts.\"",
+    "7: send failure zh (B)": "「策略已送上雲端主機，存成 `<dest>`。FINMIND 的金鑰沒有搬過去，所以還沒確認它在雲端跑不跑得起來。雲端主機那邊還不能自己加資料來源，跟我說「重送金鑰」，我會再送一次並確認它跑得起來。」",
+    "7: send failure en (B)": "\"The strategy is on your cloud machine as `<dest>`. The FINMIND key wasn't copied, so I haven't checked that it starts there. Data sources can't be added on the cloud machine directly yet — tell me to send the key again and I'll retry and check that it starts.\"",
+    "7: no key here zh (B)": "「策略已送上雲端主機，存成 `<dest>`。這台電腦上沒有 FINMIND 的金鑰，所以沒有搬過去，也還沒確認它在雲端跑不跑得起來。到 設定 › 資料來源 新增 FINMIND、貼上金鑰，再跟我說「重送金鑰」。」",
+    "7: no key here en (B)": "\"The strategy is on your cloud machine as `<dest>`. There's no FINMIND key on this computer, so nothing was copied and I haven't checked that it starts there. Add FINMIND under Settings › Data sources, paste the key, then tell me to send the key again.\"",
+    "6B: 確認它跑得起來 after a pull-back runs the trial here": "**Pulled back without its key, then 「確認它跑得起來」 / \"check that it starts\"** (the user's own message, after adding the key on this computer): run this step's script on `<dest>` on this computer in mode `trial`",
+}
+def keys_fails(doc):
+    s5, s6, s6b = _between(doc, "## 5. ", "## 6. "), _between(doc, "## 6. ", "## 6B."), _between(doc, "## 6B.", "## 6C.")
+    s7, s7b = _between(doc, "## 7. ", "## 7B."), _between(doc, "## 7B.", "## 8.")
+    where = {"5": s5, "5.6": s5, "6": s6, "6B": s6b, "7": s7, "7B": s7b}
+    bad = [k for k, n in KEY_RULES.items() if n not in where[k.split(":")[0]]]
+    if "試跑" in s7 or "trial run\" in place" in s7:
+        bad.append("7: Type B reply still built by swapping 回測 → 試跑")
+    if "fchmod" in doc:
+        bad.append("os.fchmod back in the merge script (Windows Python has none)")
+    if "moved: the strategy code + data-source keys" in doc:
+        bad.append("closing line hard-codes the keys as moved")
+    if "add that source themselves in Settings › Data sources" in doc:
+        bad.append("cloud failure sends the user to a read-only Data sources page")
+    # `grep DATA_ .env` is NEVER #32's example of what not to run, not a step
+    local = [c for c in cmds if re.match(r"(grep|sha256sum) ", c) and c != "grep DATA_ .env"] + (["shasum"] if "shasum" in doc else [])
+    if local:
+        bad.append(f"a grep / shasum command runs on this computer (none on Windows): {local[:1]}")
+    return bad
+check(keys_fails(DOC) == [], f"0.1.15 key-move rules all present ({keys_fails(DOC)})")
+def red_keys(label, old, new):
+    m = DOC.replace(old, new, 1)
+    check(m != DOC and keys_fails(m) != [], f"mutation goes red: {label}")
+red_keys("gate counts only 5.2 names (a source with no key passes)", "every source 5.1 found has at least one NAME on the `written:` line and in this listing, and every NAME from 5.2 is on both", "every NAME from 5.2 is on the `written:` line and in this listing")
+red_keys("key resend skips the trading check", "then step 4a's three read-only checks on the existing `<dest>`, then", "then")
+red_keys("Type B swap sentence back", "nothing about why the script failed. Type A / C:", "nothing about why the script failed. Type B: 「試跑」 / \"trial run\" in place of 「回測」 / \"backtest\". Type A / C:")
+red_keys("pull-back trigger for Type B dropped from 6B", "**Pulled back without its key, then", "**Pulled back, then")
+red_keys("fchmod back", "       fd = os.open(tmp,", "       os.fchmod(0, 0o600)\n       fd = os.open(tmp,")
+red_keys("step 6 runs after a failed step 5", "**Only when step 5 moved every key**", "**Always**")
+red_keys("closing line hard-coded again", '"moved: the strategy code" plus', '"moved: the strategy code + data-source keys for `<list>`" plus')
+red_keys("wrong fix back", "do not retry, do not fix the script.", "tell the user to add that source themselves in Settings › Data sources.")
+red_keys("local verify back to shasum", "on this computer (macOS and Windows alike) `python3 -c", "on this computer `shasum -a 256` or `python3 -c")
+
+# the merge script as Windows runs it: no os.fchmod, no fcntl
+KW = tempfile.mkdtemp(prefix="handoff-win-")
+KMERGE, KENV = os.path.join(KW, "merge.py"), os.path.join(KW, ".env")
+open(KMERGE, "w").write(script)
+open(KENV, "w").write("OKX_API_KEY=k\n")
+WIN = ("import os, sys, runpy\nsys.modules['fcntl'] = None\nif hasattr(os, 'fchmod'):\n    del os.fchmod\n"
+       "sys.argv = sys.argv[1:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n")
+r = subprocess.run([sys.executable, "-c", WIN, KMERGE, KENV], input="DATA_FRED_TOKEN=win-v1\nDATA_API_KEY=venue-v2\n",
+                   capture_output=True, text=True)
+check(r.returncode == 0 and r.stdout.strip() == "written: DATA_FRED_TOKEN" and "DATA_FRED_TOKEN='win-v1'" in open(KENV).read(),
+      f"Windows-shaped run (no fchmod, no fcntl) writes the key ({r.stdout.strip()!r} {r.stderr.strip()!r})")
+check(stat.S_IMODE(os.stat(KENV).st_mode) == 0o600, ".env still 0600 without fchmod (os.open mode)")
+check("skipped" in r.stderr and "DATA_API_KEY" in r.stderr and "venue-v2" not in r.stderr + r.stdout and "DATA_API_KEY" not in r.stdout,
+      "a skipped venue-shaped name is named on stderr (name only), never on the written: line")
+open(KENV + ".handoff-tmp", "w").write("stale")
+os.chmod(KENV + ".handoff-tmp", 0o644)
+r = subprocess.run([sys.executable, "-c", WIN, KMERGE, KENV], input="DATA_FRED_TOKEN=win-v3\n", capture_output=True, text=True)
+check(r.returncode == 0 and stat.S_IMODE(os.stat(KENV).st_mode) == 0o600 and not os.path.exists(KENV + ".handoff-tmp"),
+      "a stale 0644 temp file left by a killed run does not make .env 0644")
+
+# the this-computer one-liners, run as written: names out, values never
+def doc_cmd(start):
+    c = [x for x in cmds if x.startswith(start)]
+    return c[0] if c else ""
+os.makedirs(os.path.join(KW, "strategies", "s1"))
+open(os.path.join(KW, "strategies", "s1", "strategy.py"), "w").write("import os\nk = os.environ['DATA_FRED_TOKEN']\nx = 'DATA_POLY_KEY'\n")
+open(KENV, "w").write("OKX_API_KEY=okx-v\nDATA_FRED_TOKEN='fred-v'\nDATA_FRED_REGION=us-v\nDATA_FREDX_TOKEN=fx-v\nDATA_API_KEY=venue-v\n")
+def sh(c):
+    return subprocess.run(["/bin/sh", "-c", c.replace("python3 ", shlex_q(sys.executable) + " ", 1)], cwd=KW, capture_output=True, text=True)
+def shlex_q(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+c51 = doc_cmd("python3 -c \"print(*sorted({s for f in")
+r = sh(c51.replace("<x>", "s1"))
+check(c51 and r.returncode == 0 and r.stdout.split() == ["DATA_FRED_", "DATA_POLY_"], f"5.1 lists the sources the code names ({r.stdout.strip()!r})")
+c52 = doc_cmd("python3 -c \"print(*sorted({l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if l.startswith('DATA_<SOURCE>_')")
+r = sh(c52.replace("<SOURCE>", "FRED"))
+check(c52 and r.returncode == 0 and r.stdout.split() == ["DATA_FRED_REGION", "DATA_FRED_TOKEN"] and "-v" not in r.stdout,
+      f"5.2 local lists one source's names, no value, not a look-alike source ({r.stdout.strip()!r})")
+c56 = doc_cmd("python3 -c \"print(*sorted({l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if l.startswith('DATA_') and")
+r = sh(c56)
+check(c56 and r.returncode == 0 and "DATA_FRED_TOKEN" in r.stdout.split() and "-v" not in r.stdout, f"5.6 local lists names only ({r.stdout.strip()!r})")
+c55 = [x for x in cmds if x.startswith("python3 -c \"__import__('sys').stdout.write(")]
+r = sh(c55[0].split(" | ssh ")[0].replace("<NAME1>", "DATA_FRED_TOKEN").replace("<NAME2>", "DATA_FRED_REGION")) if c55 else None
+check(r is not None and r.stdout == "DATA_FRED_TOKEN='fred-v'\nDATA_FRED_REGION=us-v\n",
+      f"5.5 local→cloud left side puts exactly the named lines on the pipe ({r.stdout if r else None!r})")
+c4b = [x for x in cmds if "hashlib" in x]
+r = sh(c4b[0].replace("<x>", "s1").replace("<f>", "strategy.py")) if c4b else None
+import hashlib
+check(r is not None and r.stdout.strip() == hashlib.sha256(open(os.path.join(KW, "strategies", "s1", "strategy.py"), "rb").read()).hexdigest(),
+      "4b local hash one-liner prints the file's sha256")
+shutil.rmtree(KW)
 
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)
