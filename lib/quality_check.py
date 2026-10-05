@@ -9,7 +9,8 @@ strategy is submitted to the marketplace or run after being purchased.
 Usage:
     python3 lib/quality_check.py strategies/xyz.py
 
-Exit codes:
+First output line (the verdict to act on): RESULT: clean | run-as-is | do-not-run
+Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
     0 — clean
     1 — warnings only (review before running/submitting)
     2 — critical issues, file unreadable, or no file argument (do NOT run/submit)
@@ -673,19 +674,26 @@ def _w(line: int, msg: str) -> dict:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # The first line is the verdict. On Windows a run wrapped in `powershell -Command` (Codex)
+    # comes back as exit 1 for both 1 and 2, so the exit code is only a fallback. A console
+    # that cannot encode the icons must not crash into an exit 1 either.
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
     if len(sys.argv) < 2:
-        # exit 2, not 0 — a missing argument must never read as a passing scan
+        # do-not-run / exit 2, not 0 — a missing argument must never read as a passing scan
+        print("RESULT: do-not-run")
         print("Usage: python3 lib/quality_check.py <strategy_file.py>")
         sys.exit(2)
 
     results = check(sys.argv[1])
+    criticals = [r for r in results if r["level"] == "CRITICAL"]
+    print("RESULT: " + ("do-not-run" if criticals else "run-as-is" if results else "clean"))
 
     if not results:
         print("✅ No issues found.")
         sys.exit(0)
-
-    criticals = [r for r in results if r["level"] == "CRITICAL"]
-    warnings  = [r for r in results if r["level"] == "WARNING"]
 
     print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {sys.argv[1]}:\n")
     for r in results:

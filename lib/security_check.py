@@ -4,7 +4,8 @@ Static security analysis for marketplace strategies.
 Usage:
     python3 lib/security_check.py strategies/xyz.py
 
-Exit codes:
+First output line (the verdict to act on): RESULT: clean | ask-user | do-not-run
+Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
     0 — clean
     1 — warnings only (review before running)
     2 — critical issues (do NOT run)
@@ -173,18 +174,23 @@ def _w(line: int, msg: str) -> dict:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # First line = the verdict (same reason as lib/quality_check.py: on Windows, `powershell -Command`
+    # folds exit 1 and 2 into 1, so the exit code is only a fallback).
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
     if len(sys.argv) < 2:
         print("Usage: python3 lib/security_check.py <strategy_file.py>")
         sys.exit(0)
 
     results = check(sys.argv[1])
+    criticals = [r for r in results if r["level"] == "CRITICAL"]
+    print("RESULT: " + ("do-not-run" if criticals else "ask-user" if results else "clean"))
 
     if not results:
         print("✅ No issues found.")
         sys.exit(0)
-
-    criticals = [r for r in results if r["level"] == "CRITICAL"]
-    warnings  = [r for r in results if r["level"] == "WARNING"]
 
     print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {sys.argv[1]}:\n")
     for r in results:

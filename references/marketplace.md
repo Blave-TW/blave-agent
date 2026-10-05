@@ -50,16 +50,16 @@ GET /openclaw/marketplace/strategies/{id}
 5. **Check for multi-strategy bundle** — scan the file for lines matching `# ===== STRATEGY \d+:`:
    - If found: split into separate files (see "Deploying a multi-strategy bundle" below), security scan and deploy each one individually
    - If not found: proceed as single strategy
-6. **Security scan** — run `python3 lib/security_check.py tmp/<filename>.py`
-   - Exit 0 (clean) → move it (`mv`, never `cp` — a copy leaves the download behind in `tmp/`) to `strategies/<name>/strategy.py` and proceed (`mkdir -p strategies/<name>`; `<name>` = the file's `STRATEGY_NAME`)
-   - Exit 1 (warnings) → show findings to user, ask for confirmation; if confirmed, move to `strategies/<name>/strategy.py` and run
-   - Exit 2 (critical) → show findings, delete `tmp/<filename>.py`, do NOT run
-   - The layout is always `strategies/<name>/strategy.py`, never a flat `strategies/<name>.py` — the template's `sys.path.insert(0, parent.parent.parent)` and the runner's `stats.json` output both assume that depth; a flat file dies with `No module named 'lib'`
-7. **Quality scan** (Type A and C — skip only Type B) — run `python3 lib/quality_check.py strategies/<name>/strategy.py`
-   - Exit 0 (clean) → proceed
-   - Exit 1 (warnings) → **run it as it is — never stop to ask, never edit the downloaded code.** The user asked for an install and a backtest; a warning does not change that. After the run, say each warning once in the reply, in one plain sentence about what the user will see (「回測圖上不會有指標線」) — no constant names, no tool names.
-   - Exit 2 (critical) → show findings, do NOT run — a broken `compute_signals()` contract means the backtest about to run produces garbage results
-8. **Run it — MANDATORY, never skip:** `python3 strategies/<name>/strategy.py` — or `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py` when `<name>` is already a key of `amounts` in `manager/portfolio_config.json` (a re-install over a picked strategy, amount 0 included), otherwise the run is a quiet live tick with no version and no chart (`references/deployment.md` › *Live vs Backtest*). Every run writes `strategies/<name>/stats.json` (metrics + daily returns); that file is what makes the strategy selectable in the web workspace's 下單設定 › 選擇策略 picker — a downloaded-but-never-run strategy is invisible there and reads as a broken install. Report the resulting stats to the user.
+6. **Security scan** — run `python3 lib/security_check.py tmp/<filename>.py`. **Decide on its first output line, `RESULT: …`, never on the exit code** — the exit code (0 / 1 / 2) is only a fallback for an old checker that prints no `RESULT:` line: on Windows a command wrapped in PowerShell comes back as exit 1 for both 1 and 2. The same holds for every `lib/security_check.py` and `lib/quality_check.py` run in this file.
+   - `RESULT: clean` → go on to step 7
+   - `RESULT: ask-user` (warnings) → show findings to user, ask for confirmation; if confirmed, go on to step 7
+   - `RESULT: do-not-run` (critical) → show findings, delete `tmp/<filename>.py`, do NOT run
+7. **Quality scan, then move** — still on the download: `python3 lib/quality_check.py tmp/<filename>.py` (Type A and C — a Type B skips the scan and is moved as is). **Nothing goes into `strategies/` before this scan has passed:** a refused download then leaves no strategy folder behind, and a re-download over an installed strategy of the same name leaves the user's installed copy untouched.
+   - `RESULT: clean` → move it
+   - `RESULT: run-as-is` (warnings only) → move it and **run it as it is — never stop to ask, never edit the downloaded code.** The user asked for an install and a backtest; a warning does not change that. After the run, say each warning once in the reply, in one plain sentence about what the user will see (「回測圖上不會有指標線」) — no constant names, no tool names.
+   - `RESULT: do-not-run` (critical) → do NOT move it and do NOT run it — a broken `compute_signals()` contract means the backtest would produce garbage. Delete `tmp/<filename>.py` (step 9) and reply that it was not installed, with the reason in one plain sentence (「這支策略的訊號函式沒有回傳值，跑出來的回測會是錯的，所以沒有裝」). If it already sits in `strategies/` (moved before this scan), delete `strategies/<name>/` only when this install created that folder; a folder that existed before this install is the user's and stays.
+   - Move = `mv` (never `cp` — a copy leaves the download behind in `tmp/`) to `strategies/<name>/strategy.py` (`mkdir -p strategies/<name>`; `<name>` = the file's `STRATEGY_NAME`). The layout is always `strategies/<name>/strategy.py`, never a flat `strategies/<name>.py` — the template's `sys.path.insert(0, parent.parent.parent)` and the runner's `stats.json` output both assume that depth; a flat file dies with `No module named 'lib'`
+8. **Run it — MANDATORY, never skip** (unless step 6 or 7 said `do-not-run`): `python3 strategies/<name>/strategy.py` — or `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py` when `<name>` is already a key of `amounts` in `manager/portfolio_config.json` (a re-install over a picked strategy, amount 0 included), otherwise the run is a quiet live tick with no version and no chart (`references/deployment.md` › *Live vs Backtest*). Every run writes `strategies/<name>/stats.json` (metrics + daily returns); that file is what makes the strategy selectable in the web workspace's 下單設定 › 選擇策略 picker — a downloaded-but-never-run strategy is invisible there and reads as a broken install. Report the resulting stats to the user.
 9. **Leave nothing of the download in `tmp/`.** However the flow ended — installed, refused or failed — delete every `tmp/<filename>.py` this install wrote (split bundle files included) before the reply. The same holds for the fork, bundle and shared flows below.
 
 Purchases and shared-with-me are separate lists — checking only purchases will miss shared strategies.
@@ -70,8 +70,8 @@ On the desktop app a library pick arrives as 「策略庫的「{title}」（#{id
 
 1. **Do not call the Strategy Library API for it** — no `/code`, no lists. This workspace may hold no Blave key this turn (no card, or this hour's data fee not covered), and the code is already here.
 2. `tmp/library_<id>.py` missing → say the download did not arrive and ask the user to press the button again; never fetch it some other way.
-3. `tmp/library_<id>.security.json` present → the platform's server-side scan of someone else's code. If its `findings` list is not empty, show them to the user and ask before going on, exactly like a `lib/security_check.py` exit 1.
-4. Continue the install flow above from step 5 (bundle check → security scan → quality scan → run) with `tmp/library_<id>.py` as the downloaded file.
+3. `tmp/library_<id>.security.json` present → the platform's server-side scan of someone else's code. If its `findings` list is not empty, show them to the user and ask before going on, exactly like a `lib/security_check.py` `RESULT: ask-user`.
+4. Continue the install flow above from step 5 (bundle check → security scan → quality scan → move → run) with `tmp/library_<id>.py` as the downloaded file.
 5. Step 9 applies: delete `tmp/library_<id>.py` and `tmp/library_<id>.security.json` before the reply.
 
 Whether the backtest needs Blave data changes none of this. A strategy on public klines runs without data access; one that needs Blave data stops at its first Blave call with `DataAccessError`, and only then does the desktop data-access rule apply.
@@ -84,9 +84,9 @@ The older 「幫我下載官方策略「{title}」（#{id}）…」 / 「幫我�
 
 1. Identify the base strategy: if the message names it (title or #id), use that; otherwise list accessible strategies (official + purchases + shared-with-me, merged) and let the user pick.
 2. `GET /openclaw/marketplace/strategies/{id}/code` → save to `tmp/<filename>.py`.
-3. **Security scan** — `python3 lib/security_check.py tmp/<filename>.py`, same exit rules as installing (exit 2 → delete, do not proceed).
+3. **Security scan, then quality scan, both on the download** — `python3 lib/security_check.py tmp/<filename>.py`, decided on its `RESULT:` line as when installing (`do-not-run` → delete, do not proceed); then (Type A/C) `python3 lib/quality_check.py tmp/<filename>.py` before anything is saved under `strategies/` — `do-not-run`: delete `tmp/<filename>.py`, create no fork, tell the user why in one plain sentence; `run-as-is`: go on, the baseline runs anyway (step 5).
 4. **Rename before anything runs.** Pick a NEW `STRATEGY_NAME` (ask the user or default to `<orig>_custom`), set `DISPLAY_NAME`/`DESCRIPTION` to describe the user's variant (a fork is a draft — it has no schedule or order settings until the user deploys it), and save to `strategies/<new_name>/strategy.py`. Never overwrite or collide with an installed copy of the original — the fork is a separate strategy from day one.
-5. **Run the baseline backtest immediately** (Type A/C): `python3 lib/quality_check.py strategies/<new_name>/strategy.py` first, then `python3 strategies/<new_name>/strategy.py` — quality exit 1: run the baseline anyway and mention each warning in the report, do not stop to ask (a missing `PLOT_SERIES` gets added when the user asks for changes); exit 2: do NOT run. This baseline run is part of the fork request itself, not an extra iteration under Iteration Brakes. It writes `stats.json`, which also makes the fork selectable in the 下單設定 › 選擇策略 picker — without it the fork is invisible there.
+5. **Run the baseline backtest immediately** (Type A/C): `python3 strategies/<new_name>/strategy.py` — step 3's quality scan said `run-as-is`: run the baseline anyway and mention each warning in the report, do not stop to ask (a missing `PLOT_SERIES` gets added when the user asks for changes). This baseline run is part of the fork request itself, not an extra iteration under Iteration Brakes. It writes `stats.json`, which also makes the fork selectable in the 下單設定 › 選擇策略 picker — without it the fork is invisible there.
 6. **A fork is a draft, not a deployment.** Do not schedule it, do not add it to the 下單組合. From here it is the user's own strategy: follow `references/strategy-code.md`, and backtest again after any change before live use. Iteration Brakes apply as usual after the baseline run. (One exception: a fork built to replace a LIVE strategy is deployed and funded at the end of the fork-and-switch flow in `references/strategy-code.md` › *Editing a live strategy* — that flow's own steps govern when.)
 7. Report the baseline stats, tell the user what the base strategy does (from its description/report), and ask what they want to change — do not invent modifications on your own.
 
@@ -97,10 +97,10 @@ When the downloaded code contains `# ===== STRATEGY N: <name> =====` markers, tr
 1. Split the code at each `# ===== STRATEGY N:` line into N separate strings
 2. Save each to `tmp/<name_slug>.py` (derive slug from the strategy name after the colon)
 3. Run `python3 lib/security_check.py` on **each** file separately
-   - If any file exits 2 (critical) → delete that file, do NOT run it; continue with the others
-   - If any file exits 1 (warnings) → show findings, ask user for confirmation before moving
-4. Move approved files to `strategies/<name_slug>/strategy.py` (one directory per strategy) — the directory name MUST equal the file's `STRATEGY_NAME` (the runner writes `stats.json` under `strategies/<STRATEGY_NAME>/`, and the web only sees a backtest whose `stats.json` sits next to its `strategy.py`): set `STRATEGY_NAME = "<name_slug>"` in each split file
-5. Run `python3 lib/quality_check.py strategies/<name_slug>/strategy.py` on each Type A/C file (skip only Type B) — exit 1: run it as it is and mention the warning in the reply (step 7 of the install flow); exit 2: do NOT run that file
+   - `RESULT: do-not-run` (critical) → delete that file, do NOT run it; continue with the others
+   - `RESULT: ask-user` (warnings) → show findings, ask user for confirmation before going on with it
+4. Set `STRATEGY_NAME = "<name_slug>"` in each split file still in `tmp/`, then run `python3 lib/quality_check.py tmp/<name_slug>.py` on each Type A/C file (skip only Type B) — `run-as-is`: run it as it is and mention the warning in the reply (step 7 of the install flow); `do-not-run`: delete that file, do NOT move or run it, and say why; continue with the others
+5. Move approved files to `strategies/<name_slug>/strategy.py` (one directory per strategy) — the directory name MUST equal the file's `STRATEGY_NAME` (the runner writes `stats.json` under `strategies/<STRATEGY_NAME>/`, and the web only sees a backtest whose `stats.json` sits next to its `strategy.py`)
 6. Run each: `python3 strategies/<name_slug>/strategy.py` (`BLAVE_MODE=backtest python3 …` for any slug already in the order settings — same rule as step 8 of the install flow)
 
 Example: a file containing two strategies marked as `# ===== STRATEGY 1: BTC SMA Cross =====` and `# ===== STRATEGY 2: ETH RSI Fade =====` should produce `strategies/btc_sma_cross/strategy.py` and `strategies/eth_rsi_fade/strategy.py`.
@@ -144,10 +144,10 @@ Response: `[{id, title, description, category, shared_at}, ...]`
 2. User picks one → `GET /openclaw/marketplace/strategies/{id}/code`
 3. Save code to `tmp/<filename>.py` (NOT strategies/ yet; `mkdir -p tmp` first)
 4. **Security scan** — run `python3 lib/security_check.py tmp/<filename>.py`
-   - Exit 0 (clean) → move to `strategies/<name>/strategy.py` and proceed (`<name>` = the file's `STRATEGY_NAME`)
-   - Exit 1 (warnings) → show findings to user, ask for confirmation; if confirmed, move to `strategies/<name>/strategy.py` and run
-   - Exit 2 (critical) → show findings, delete `tmp/<filename>.py`, do NOT run
-5. **Quality scan** (Type A and C — skip only Type B) — run `python3 lib/quality_check.py strategies/<name>/strategy.py`; exit 1: run it as it is and mention the warning in the reply (step 7 of the install flow); exit 2: do NOT run
+   - `RESULT: clean` → go on to step 5
+   - `RESULT: ask-user` (warnings) → show findings to user, ask for confirmation; if confirmed, go on to step 5
+   - `RESULT: do-not-run` (critical) → show findings, delete `tmp/<filename>.py`, do NOT run
+5. **Quality scan, then move** (Type A and C — skip only Type B) — run `python3 lib/quality_check.py tmp/<filename>.py`; `run-as-is`: run it as it is and mention the warning in the reply (step 7 of the install flow); `do-not-run`: delete `tmp/<filename>.py`, do NOT move or run it, and say why. Then move it (`mv`) to `strategies/<name>/strategy.py` (`<name>` = the file's `STRATEGY_NAME`)
 6. **Run it — MANDATORY, never skip:** `python3 strategies/<name>/strategy.py` (`BLAVE_MODE=backtest python3 …` when `<name>` is already in the order settings) — writes `stats.json`, which the 下單設定 › 選擇策略 picker requires (same as step 8 of the install flow above, escape hatch included). Report the stats to the user.
 
 ## Strategy report (performance data)
