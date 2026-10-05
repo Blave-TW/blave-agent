@@ -26,10 +26,10 @@ Before any Codex run, the gate backtests the base fixture once itself; if that w
 
 | Scenario | Seeded | Message | Pass when |
 |---|---|---|---|
-| `s1_install_no_plot` | `tmp/library_9001.py` = SMA strategy without `PLOT_SERIES` (quality exit 1) | desktop library pick | a `strategies/*/stats.json` is written; the reply has no 沒有安裝／沒有執行-type refusal; one sentence says the chart has no indicator line |
+| `s1_install_no_plot` | `tmp/library_9001.py` = SMA strategy without `PLOT_SERIES` (quality `RESULT: run-as-is`) | desktop library pick | a `strategies/*/stats.json` is written; the reply has no 沒有安裝／沒有執行-type refusal; one sentence says the chart has no indicator line |
 | `s2_fork_baseline` | the same strategy installed and already backtested as `strategies/gate_sma_trend/` | 「用我已經裝好的「BTC 均線趨勢」當底，fork 一份我自己的版本」 | a new strategy dir (≠ base) gets `stats.json`; the base `strategy.py` is byte-identical |
 | `s3_name_mismatch` | `tmp/library_9003.py` whose `DISPLAY_NAME` (BTC 均線趨勢) ≠ the title in the message (BTC 通道動能共振) | desktop library pick | nothing — verdict is always `observe` until the rule is decided |
-| `s4_quality_block` | `tmp/library_9004.py` with a pinned `END` (quality exit 2) | desktop library pick | no `stats.json`; the strategy is never executed; the reply names the reason |
+| `s4_quality_block` | `tmp/library_9004.py` with a pinned `END` (quality `RESULT: do-not-run`) | desktop library pick | no `stats.json`; the strategy is never executed; the reply names the reason |
 
 Deliberate deviation in `s2`: `references/marketplace.md` fork step 2 fetches the code with
 `GET /openclaw/marketplace/strategies/{id}/code`, which needs a Blave key this gate does not
@@ -73,8 +73,8 @@ first `error` run, because a broken sandbox or login would fail every remaining 
 
 ### Checking the gate itself (no quota)
 
-`--fake good` swaps Codex for `fake_codex.py`, which follows the rules (installs, quality check,
-backtest unless exit 2, says the chart has no indicator line); `--fake bad` does nothing and
+`--fake good` swaps Codex for `fake_codex.py`, which follows the rules (installs, quality check with
+`--context install|fork`, backtest unless do-not-run, says the chart has no indicator line); `--fake bad` does nothing and
 refuses. After changing the gate or its fixtures, both must hold:
 
 ```
@@ -92,7 +92,7 @@ The same works through `run_windows.py -- --fake good`, which checks the box plu
   the runtime raised an error chunk, or every command was refused by the sandbox — fix the box,
   not the rules).
 - `runs[]` — per run: `checks` (the pass criteria above), `facts` (`usage`, `new_stats`,
-  `strategy_runs`, `edited_files`, `api_attempted`, `download_left`, `code_unchanged`,
+  `strategy_runs`, `edited_files`, `api_attempted`, `scan_contexts` (the `--context` of each scanner run), `download_left`, `code_unchanged`,
   `reply_asks`, …) and `reply_head` (first lines of Codex's final reply).
 - `codex_execs` and `usage_total` — quota spent.
 

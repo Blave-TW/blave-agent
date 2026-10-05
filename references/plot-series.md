@@ -113,10 +113,9 @@ entries/exits (anything from `_add_indicators`, a `rolling`/`ewm` window, an alp
 twstock feed) — without it the workspace has no indicator pane. Only a pure price rule
 (e.g. Close breaks a fixed level) may omit it. `lib/quality_check.py` flags a missing
 declaration as WARNING and the backtest runner prints the same hint. This applies to
-strategies you write or edit: when installing a library strategy as is, or running a fresh
-fork's baseline, do not add `PLOT_SERIES` — run it unchanged (`references/marketplace.md`,
-step 7 of the install flow / step 5 of the fork flow); add it later only if the user asks
-to change the strategy.
+strategies you write or edit: a library strategy installed as is and a fresh fork's baseline
+run unchanged (`lib/quality_check.py --context install|fork` says so in its `NEXT:` line);
+add it later only if the user asks to change the strategy.
 
 Declare only the 1–2 series that **explain the entry/exit decisions** — the indicator
 the thresholds are applied to is almost always the right choice. Do NOT dump every

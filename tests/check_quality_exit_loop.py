@@ -303,18 +303,18 @@ check(r.returncode == 1 and "baseline run of a fresh fork: run it unchanged" in 
       "CLI exit-1 footer does not tell a library install to stop and ask")
 agents_lines = open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read().splitlines()
 agents = [l for l in agents_lines if "MUST declare `PLOT_SERIES`" in l]
-check(len(agents) == 1 and "you write or edit" in agents[0] and "step 7 of the install flow / step 5 of the fork flow" in agents[0]
-      and "when installing a library strategy as is" in agents[0] and "fresh fork's baseline" in agents[0] and "only if the user asks" in agents[0],
-      "AGENTS.md PLOT_SERIES rule is scoped to own strategies, library installs → marketplace step 7, later user edits allowed")
+check(len(agents) == 1 and "you write or edit" in agents[0] and "the quality check's `NEXT:` line" in agents[0]
+      and "a library strategy installed as is" in agents[0] and "fresh fork's baseline run unchanged" in agents[0] and "only if the user asks" in agents[0],
+      "AGENTS.md PLOT_SERIES rule is scoped to own strategies, library installs / fork baselines run unchanged (NEXT line), later user edits allowed")
 report = [l for l in agents_lines if l.startswith("- **Reporting a backtest")]
 check(len(report) == 1 and "you wrote or edited: add `PLOT_SERIES` or ask" in report[0]
-      and "installed as is" in report[0] and "fresh fork's baseline" in report[0] and "step 7 of the install flow / step 5 of the fork flow" in report[0]
+      and "installed as is" in report[0] and "fresh fork's baseline" in report[0] and "no edit, no question" in report[0]
       and "chart → add `PLOT_SERIES` or ask" not in report[0],
-      "AGENTS.md › Reporting a backtest: add-or-ask only for own strategies, library installs → marketplace step 7")
+      "AGENTS.md › Reporting a backtest: add-or-ask only for own strategies, library installs say it in one sentence")
 mk = open(os.path.join(ROOT, "references", "marketplace.md"), encoding="utf-8").read()
 fork5 = mk[mk.index("5. **Run the baseline backtest immediately**"):]
 fork5 = fork5[:fork5.index("\n")]
-check("`run-as-is`: run the baseline anyway" in fork5 and "do not stop to ask" in fork5,
+check("a `run-as-is` scan runs it unchanged too (its `NEXT:` line)" in fork5,
       "marketplace fork step 5: a run-as-is quality scan runs the baseline instead of falling back to 'confirm with user'")
 
 # The verdict is the first output line. Codex on Windows runs commands through `powershell -Command`,
@@ -413,20 +413,28 @@ check(not _re.search(r"(?im)^\s*-\s*Exit [012]\b|\bexits? [12]\b(?! for both)|qu
 for v in ("`RESULT: clean`", "`RESULT: run-as-is`", "`RESULT: do-not-run`", "`RESULT: ask-user`"):
     check(v in install, f"install steps 6–7 name {v}")
 q = mk[mk.index("7. **Quality scan, then move**"):mk.index("8. **Run it")]
-check("python3 lib/quality_check.py tmp/<filename>.py" in q and "Nothing goes into `strategies/` before this scan has passed" in q
+check("python3 lib/quality_check.py --context install tmp/<filename>.py" in q and "Nothing goes into `strategies/` before this scan has passed" in q
       and q.index("RESULT: do-not-run") < q.index("Move = `mv`"),
       "install step 7: the quality scan runs on the download in tmp/, before the move")
-check("do NOT move it and do NOT run it" in q and "Delete `tmp/<filename>.py`" in q and "not installed" in q
+check("`RESULT: do-not-run` → not installed: delete `tmp/<filename>.py`" in q and "say why in one plain sentence" in q
       and "only when this install created that folder" in q and "existed before this install is the user's and stays" in q,
       "install step 7 do-not-run: nothing moved, download deleted, reply says why; a folder that existed before is never deleted")
 check("quality_check.py strategies/" not in mk[:mk.index("## Strategy report")],
       "install / desktop / fork / bundle / shared flows never quality-scan a file already in strategies/")
 fork3 = mk[mk.index("3. **Security scan, then quality scan, both on the download**"):]
 fork3 = fork3[:fork3.index("\n")]
-check("quality_check.py tmp/<filename>.py" in fork3 and "create no fork" in fork3, "fork: quality scan on the download before anything is saved")
+check("quality_check.py --context fork tmp/<filename>.py" in fork3 and "security_check.py --context fork tmp/<filename>.py" in fork3
+      and "create no fork" in fork3, "fork: both scans on the download with --context fork, before anything is saved")
+# Every scanner call in the agent's docs names its context (before the file), so the NEXT line is printed.
+
+for _p in glob.glob(os.path.join(ROOT, "references", "*.md")) + [os.path.join(ROOT, "AGENTS.md")]:
+    for _m in _re.finditer(r"python3? lib/(?:quality|security)_check\.py(?: (\S+))?", open(_p, encoding="utf-8").read()):
+        check(_m.group(1) == "--context", f"{os.path.basename(_p)}: {_m.group(0)!r} passes --context first")
 lib = open(os.path.join(ROOT, "references", "lib.md"), encoding="utf-8").read()
 check("`RESULT: clean` / `RESULT: run-as-is` / `RESULT: do-not-run`; decide on that line, and treat output with no `RESULT:` line" in lib
-      and "Never decide on the exit code" in lib, "lib.md › quality_check: decide on the RESULT line; none = do-not-run")
+      and "Never decide on the exit code" in lib and "The second line, `NEXT: …`, is what to do now in that context — follow it." in lib
+      and "Run with `--context edit` on any Type A/C strategy you wrote or changed" in lib,
+      "lib.md › quality_check: decide on the RESULT line (none = do-not-run), follow NEXT; own strategies use --context edit")
 win = [l for l in agents_lines if "Get-Content" in l]
 check(len(win) == 1 and "with python (`encoding='utf-8'`)" in win[0] and "Set-Content" in win[0] and "`.env`" in win[0],
       "AGENTS.md: on Windows read/write strategy files, .env and references with python utf-8, never Get-Content / Set-Content")

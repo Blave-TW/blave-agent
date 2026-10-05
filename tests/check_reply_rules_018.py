@@ -57,11 +57,14 @@ t("#29 AGENTS › Charts:資料夾圖檔出現在回測分頁只限雲端 web,�
 mk = read("references", "marketplace.md")
 quality = [l for l in mk.splitlines() if "quality_check.py" in l or "RESULT: run-as-is" in l]
 install = mk[mk.index("7. **Quality scan, then move**"):mk.index("8. **Run it")]
-t("#32 安裝流程的品質掃描 exit 1:照原樣跑、不問、不改下載的碼、回覆提一句",
-  "run it as it is" in install and "never stop to ask" in install and "never edit the downloaded code" in install
-  and "ask for confirmation" not in install)
+# 0.1.16 起「照原樣跑、不問、不改碼、回覆提一句」由 quality_check --context install 的 NEXT 行講(tests/check_scan_context.py 鎖字句)
+t("#32 安裝流程的品質掃描 run-as-is:照 NEXT 行(照原樣跑、不問)、回覆用白話提每個警告",
+  "--context install" in install and "do what its `NEXT:` line says" in install and "move it, then step 8" in install
+  and "no constant names, no tool names" in install and "ask for confirmation" not in install)
 asks = [l for l in quality if "quality_check.py" in l and re.search(r"run-as-is`?: confirm", l)]
-t("#32 bundle / shared 兩條流程的品質掃描 run-as-is 也不再問", not asks and mk.count("`run-as-is`: run it as it is") == 2)
+scans = [l for l in quality if "lib/quality_check.py --context install tmp/" in l]
+t("#32 bundle / shared 兩條流程的品質掃描也帶 --context install、跟 NEXT 行,不再問",
+  not asks and len(scans) == 3 and all("NEXT:" in l for l in scans))
 security = mk[mk.index("6. **Security scan**"):mk.index("7. **Quality scan, then move**")]
 t("#32 安全掃描的警告照舊要問(不放寬)", "`RESULT: ask-user` (warnings) → show findings to user, ask for confirmation" in security)
 t("#36 下載檔用 mv 不用 cp;流程結束 tmp/ 不留下載檔",

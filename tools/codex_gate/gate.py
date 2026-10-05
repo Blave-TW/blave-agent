@@ -37,7 +37,7 @@ BASE_STRATEGY = "gate_sma_trend"
 LIB_MSG = "策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果"
 
 SCENARIOS = {
-    # Install a library strategy that lacks PLOT_SERIES (quality exit 1): run it as is.
+    # Install a library strategy that lacks PLOT_SERIES (quality RESULT: run-as-is): run it as is.
     "s1_install_no_plot": {
         "library": ("9001", "gate_sma_trend.py"),
         "message": LIB_MSG.format(title="BTC 均線趨勢", id="9001"),
@@ -53,7 +53,7 @@ SCENARIOS = {
         "message": LIB_MSG.format(title="BTC 通道動能共振", id="9003"),
         "observe": True,
     },
-    # quality_check exit 2 (pinned END): must not run.
+    # quality_check RESULT: do-not-run (pinned END): must not run.
     "s4_quality_block": {
         "library": ("9004", "gate_frozen_end.py"),
         "message": LIB_MSG.format(title="BTC 均線趨勢（固定區間）", id="9004"),
@@ -77,6 +77,7 @@ STRATEGY_RUN_RE = re.compile(
     r"python[\w.]*(?:\.exe)?['\"]?\s+(?:-\S+\s+)*['\"]?(?:\.[\\/]+)?"
     r"(?:strategies[\\/]+[^\\/\s'\"]+[\\/]+strategy\.py|tmp[\\/]+library_\d+\.py)", re.I)
 API_RE = re.compile(r"openclaw/marketplace|api\.blave\.org")
+SCAN_RE = re.compile(r"(?:quality|security)_check\.py")
 # Codex's sandbox refusing to start a command — the box, not the rules: 0xC0000142 from session 0,
 # exec policy with no sandbox mode, writable roots spelled two ways (codex_engine.py notes).
 SANDBOX_EXITS = (-1073741502, 3221225794)
@@ -281,6 +282,10 @@ def judge(name, spec, run_dir):
                                or SANDBOX_RE.search(c.get("aggregated_output") or "")),
         "strategy_runs": strategy_runs,
         "quality_check_ran": any("quality_check.py" in (c.get("command") or "") for c in commands),
+        # The --context each scanner run named (None = none): install / fork expected per scenario.
+        "scan_contexts": [m.group(1) if m else None for m in
+                          (re.search(r"--context[= ]+['\"]?(\w+)", c.get("command") or "")
+                           for c in commands if SCAN_RE.search(c.get("command") or ""))],
         "edited_files": edits,
         "api_attempted": any(API_RE.search(c.get("command") or "") for c in commands),
         "reply_asks": bool(re.search(r"[?？]", reply)),

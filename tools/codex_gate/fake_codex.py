@@ -1,7 +1,7 @@
 """Stand-in for `codex exec --json` so the gate's plumbing and judges can be checked
 without spending ChatGPT quota (gate.py --fake good|bad).
 
-good: does what the rules ask — install / fork, quality check, backtest unless exit 2,
+good: does what the rules ask — install / fork, quality check with --context, backtest unless do-not-run,
       deletes the download, says the chart has no indicator line.
 bad:  touches nothing and replies that it did not install — every judged scenario fails.
 Reads the prompt on stdin and `-C <cwd>` from argv, like the real binary.
@@ -51,7 +51,8 @@ def good(cwd, prompt, py):
         with open(dest, "w", encoding="utf-8") as f:
             f.write(code)
     rel = os.path.relpath(dest, cwd)
-    if sh(cwd, 1, py, os.path.join("lib", "quality_check.py"), rel) == 2:
+    ctx = "install" if lib else "fork"
+    if sh(cwd, 1, py, os.path.join("lib", "quality_check.py"), "--context", ctx, rel) == 2:
         return "這支策略的結束日期寫死了，品質檢查判定為嚴重問題，所以我沒有跑回測。"
     sh(cwd, 2, py, rel)
     return "裝好了，回測跑完。這支策略沒有宣告要畫的線，所以回測圖上不會有指標線。"

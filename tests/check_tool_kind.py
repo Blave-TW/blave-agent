@@ -91,6 +91,7 @@ case("Bash", {"command": "python3 lib/walk_forward.py strategies/btc_rsi/strateg
 case("Bash", {"command": "python3 lib/validation.py"}, "validate")
 case("Bash", {"command": "python3 lib/quality_check.py strategies/btc_rsi/strategy.py"}, "check")
 case("Bash", {"command": "python3 lib/security_check.py x"}, "check")
+case("Bash", {"command": "python3 lib/quality_check.py --context install tmp/library_9001.py"}, "check")
 case("Bash", {"command": "python3 lib/lint_export.py x"}, "check")
 case("Bash", {"command": "python3 lib/capital_worker.py --once"}, "account")
 case("Bash", {"command": "python3 lib/account_binance.py"}, "account")
