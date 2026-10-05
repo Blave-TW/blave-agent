@@ -5,7 +5,8 @@
    - 名稱來自 .env(agent 寫得到的檔)與策略檔:一律 textContent。
    - 雲端視角:只列雲端主機回報的名稱,不能加也不能刪(這一版沒有把金鑰送上雲端的路)。
    用到 app.js 的 $ / t / confirmBox / setFocusGuard / srSay 與 trade.js 的 ENV——都在呼叫時才取,載入順序不拘。 */
-const SRC = { view: "list", items: [], cloud: null, edit: null, rows: [], err: null, busy: false, loaded: false };
+/* missing = 策略用到、清單上沒有的來源(主行程 list() 給);fixed = 從缺金鑰列按「新增」時鎖住的名稱;focusMiss = 策略頁「去資料來源」來的,畫好清單把焦點交給第一列缺金鑰列 */
+const SRC = { view: "list", items: [], missing: [], cloud: null, edit: null, fixed: null, rows: [], err: null, busy: false, loaded: false, focusMiss: false };
 const SRC_NAME_MAX = 24, SRC_FIELD_MAX = 32, SRC_MAX_FIELDS = 8, SRC_CHIPS = ["KEY", "SECRET", "TOKEN"];
 const SRC_ERR = { NAME_EMPTY: "src.errName", NAME_FORMAT: "src.errName", NAME_RESERVED: "src.errReserved", NAME_DUP: "src.errDup",
   FIELD_FORMAT: "src.errField", FIELD_RESERVED: "src.errFieldReserved", FIELD_DUP: "src.errFieldDup", BAD_VALUE: "src.errValue", BUSY: "src.errBusy" };
@@ -15,13 +16,14 @@ const srcIsCloud = () => typeof ENV === "object" && ENV && ENV.cur === "cloud";
 const srcUpper = (v, re, max) => String(v || "").toUpperCase().replace(re, "").slice(0, max);
 
 async function srcLoad() {
-  SRC.view = "list"; SRC.err = null;
+  SRC.view = "list"; SRC.err = null; SRC.fixed = null;
   if (srcIsCloud()) {
     try { const st = await window.blave.cloudStatus(); const c = st && st.cloud; SRC.cloud = c && c.code === "OK" && Array.isArray(c.data_sources) ? c.data_sources : []; }
     catch (_) { SRC.cloud = []; }
   } else {
     SRC.cloud = null;
-    try { const r = await window.blave.dataSrcList(); SRC.items = r && r.ok && Array.isArray(r.sources) ? r.sources : []; } catch (_) { SRC.items = []; }
+    try { const r = await window.blave.dataSrcList(); SRC.items = r && r.ok && Array.isArray(r.sources) ? r.sources : []; SRC.missing = r && r.ok && Array.isArray(r.missing) ? r.missing : []; }
+    catch (_) { SRC.items = []; SRC.missing = []; }
   }
   SRC.loaded = true; srcPaint();
 }
@@ -34,18 +36,21 @@ function srcPaint() {
 function srcPaintList(box) {
   const cloud = SRC.cloud != null;
   const names = cloud ? SRC.cloud.filter((n) => /^[A-Z0-9]{1,24}$/.test(n)) : SRC.items;
+  const missing = cloud ? [] : SRC.missing;   // 雲端視角不畫:缺不缺是拿這台電腦的策略比的
+  const focusMiss = SRC.focusMiss; SRC.focusMiss = false;
   const head = srcMk("div", "src-head");
   head.append(srcMk("p", "priv-lead", t(cloud ? "src.cloudLead" : "src.lead")));
-  if (!cloud && names.length) head.append(srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)));
+  if (!cloud && (names.length || missing.length)) head.append(srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)));
   box.append(head);
   if (!SRC.loaded) return;
-  if (!names.length) {
+  if (!names.length && !missing.length) {
     const e = srcMk("div", "src-empty");
     if (cloud) e.append(srcMk("p", "", t("src.cloudEmpty")));
     else { e.append(srcMk("p", "", t("src.empty1")), srcMk("p", "", t("src.empty2", { ex: "fred" })), srcBtn("btn-out", t("src.add"), () => srcOpenForm(null))); }
     box.append(e); return;
   }
   const rows = srcMk("div", "src-rows");
+  missing.forEach((it) => rows.append(srcMissRow(it)));
   names.forEach((it) => {
     const row = srcMk("div", "src-row"), n = srcMk("div", "n");
     n.append(srcMk("b", "mono", cloud ? it : it.name));
@@ -64,25 +69,39 @@ function srcPaintList(box) {
     rows.append(row);
   });
   box.append(rows);
+  if (focusMiss) { const b = rows.querySelector("[data-miss] .btn-quiet") || head.querySelector(".btn-out"); if (b) b.focus(); }
+}
+/* 還沒有金鑰的那一列:小字「還沒有金鑰 · 用到它的策略:…」,狀態詞(第一個「 · 」之前)包 .st 升一階;動作只有「新增」(名稱鎖住、欄位預填) */
+function srcMissRow(it) {
+  const row = srcMk("div", "src-row"), n = srcMk("div", "n"); row.dataset.miss = it.name;
+  n.append(srcMk("b", "mono", it.name));
+  const text = t("src.rowMissing", { names: (it.usedBy || []).join("、") }), cut = text.indexOf(" · ");
+  const small = srcMk("small"); small.title = text;
+  if (cut > 0) small.append(srcMk("span", "st", text.slice(0, cut)), document.createTextNode(text.slice(cut))); else small.textContent = text;
+  n.append(small); row.append(n);
+  const acts = srcMk("div", "acts"); acts.append(srcBtn("btn-quiet", t("src.addMissing"), () => srcOpenForm(null, it))); row.append(acts);
+  return row;
 }
 
-function srcOpenForm(it) {
-  SRC.view = "form"; SRC.edit = it ? it.name : null; SRC.err = null; SRC.busy = false;
-  SRC.rows = it ? it.fields.map((f) => ({ name: f, stored: true })) : [{ name: "KEY", stored: false }];
+// it = 修改那一列;miss = 從缺金鑰列新增(名稱鎖住、欄位照程式碼預填,仍可改可加,焦點直接到第一個貼金鑰的框)
+function srcOpenForm(it, miss) {
+  SRC.view = "form"; SRC.edit = it ? it.name : null; SRC.fixed = !it && miss ? miss.name : null; SRC.err = null; SRC.busy = false;
+  const pre = SRC.fixed && Array.isArray(miss.fields) ? miss.fields.slice(0, SRC_MAX_FIELDS) : [];
+  SRC.rows = it ? it.fields.map((f) => ({ name: f, stored: true })) : pre.length ? pre.map((f) => ({ name: f, stored: false })) : [{ name: "KEY", stored: false }];
   srcPaint();
-  const first = $("set-src").querySelector(it ? ".src-val .btn-quiet" : "#src-name"); if (first) first.focus();
+  const first = $("set-src").querySelector(it ? ".src-val .btn-quiet" : SRC.fixed ? ".src-value" : "#src-name"); if (first) first.focus();
 }
 /* 離開表單(關設定、切到別的分類)時把表單連同輸入框一起丟掉:貼了沒存的明文金鑰不留在 DOM 裡(稽核 S3)。不搶焦點 */
-function srcClear() { if (SRC.view === "list" && !SRC.rows.length) return; SRC.view = "list"; SRC.edit = null; SRC.rows = []; SRC.err = null; $("set-src").querySelectorAll(".src-value").forEach((el) => { el.value = ""; }); srcPaint(); }
-function srcBack() { SRC.view = "list"; SRC.edit = null; SRC.rows = []; SRC.err = null; srcPaint(); const b = $("set-src").querySelector(".btn-out, .btn-quiet"); if (b) b.focus(); }
+function srcClear() { if (SRC.view === "list" && !SRC.rows.length) return; SRC.view = "list"; SRC.edit = null; SRC.fixed = null; SRC.rows = []; SRC.err = null; $("set-src").querySelectorAll(".src-value").forEach((el) => { el.value = ""; }); srcPaint(); }
+function srcBack() { SRC.view = "list"; SRC.edit = null; SRC.fixed = null; SRC.rows = []; SRC.err = null; srcPaint(); const b = $("set-src").querySelector(".btn-out, .btn-quiet"); if (b) b.focus(); }
 function srcVars(name, rows) { return rows.filter((r) => r.name).map((r) => `DATA_${name || "…"}_${r.name}`).join("、"); }
 function srcPaintForm(box) {
-  const editing = SRC.edit != null;
+  const editing = SRC.edit != null, locked = editing || SRC.fixed != null;
   box.append(srcBtn("btn-quiet src-back", "‹ " + t("src.back"), srcBack));
   const form = srcMk("div", "src-form");
-  const nameL = srcMk("label", "src-l", t(editing ? "src.nameLocked" : "src.name")); nameL.htmlFor = "src-name";
+  const nameL = srcMk("label", "src-l", t(locked ? "src.nameLocked" : "src.name")); nameL.htmlFor = "src-name";
   const name = srcMk("input", "f-input mono"); name.id = "src-name"; name.type = "text"; name.maxLength = SRC_NAME_MAX;
-  name.autocomplete = "off"; name.spellcheck = false; name.value = SRC.edit || ""; name.readOnly = editing;
+  name.autocomplete = "off"; name.spellcheck = false; name.value = SRC.edit || SRC.fixed || ""; name.readOnly = locked;
   const howto = srcMk("p", "cx-manual-note");
   const paintHowto = () => { howto.textContent = t("src.howto", { vars: srcVars(name.value, SRC.rows), name: (name.value || "…").toLowerCase() }); };
   name.addEventListener("input", () => { const v = srcUpper(name.value, /[^A-Z0-9]/g, SRC_NAME_MAX); if (v !== name.value) name.value = v; srcSetErr(null); paintHowto(); srcGate(); });
@@ -172,7 +191,7 @@ async function srcSave() {
       fields: inputs.map((el) => { const v = el.querySelector(".src-value"); return { name: el.querySelector(".src-fname").value, value: v ? v.value : null }; }) });
   } catch (_) { res = null; }
   SRC.busy = false;
-  if (res && res.ok) { inputs.forEach((el) => { const v = el.querySelector(".src-value"); if (v) v.value = ""; }); await srcLoad(); srSay(t("src.saved")); return; }
+  if (res && res.ok) { inputs.forEach((el) => { const v = el.querySelector(".src-value"); if (v) v.value = ""; }); await srcLoad(); srSay(t("src.saved")); if (typeof rpSrcChanged === "function") rpSrcChanged(); return; }
   if ($("src-save")) $("src-save").textContent = t("src.save");
   const code = res && res.error, key = SRC_ERR[code] || "src.errSave";
   srcSetErr({ key, vars: { name, field: (res && res.field) || "" } }, !/^NAME_/.test(code || ""));
@@ -189,6 +208,7 @@ async function srcDelete(it, opener) {
     if (r && !r.ok && r.error === "IN_USE") { srcBlocked(it, r.names || [], opener); return; }   // 按下去之前的那一刻開始下單了
     if (r && !r.ok && r.error === "CONFIG_UNREADABLE") { srcBlockedText(it, t("src.delCfgUnread"), opener); return; }   // 下單中但讀不到金額設定:分不出有沒有在用
     await srcLoad();
+    if (r && r.ok && typeof rpSrcChanged === "function") rpSrcChanged();
     if (!r || !r.ok) { const b = $("set-src"); const e = srcMk("p", "plan-err"); e.setAttribute("role", "status"); e.append(srcMk("span", "fault-mark"), srcMk("span", null, t(r && r.error === "BUSY" ? "src.errBusy" : "src.errSave"))); b.append(e); }
   } });
 }

@@ -2713,6 +2713,12 @@ msgstr "名稱（英文字母與數字，之後不能改）"
 msgid "src.nameLocked"
 msgstr "名稱"
 
+msgid "src.rowMissing"
+msgstr "還沒有金鑰 · 用到它的策略：{names}"
+
+msgid "src.addMissing"
+msgstr "新增"
+
 msgid "src.fields"
 msgstr "欄位"
 
@@ -3061,6 +3067,27 @@ msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數
 
 msgid "rp.noBtB"
 msgstr "警示、選股、網格這類策略不做回測，所以只看得到程式碼。"
+
+msgid "rp.missKey.one"
+msgstr "缺 {a} 的金鑰，回測跑不起來。"
+
+msgid "rp.missKey.two"
+msgstr "缺 {a}、{b} 的金鑰，回測跑不起來。"
+
+msgid "rp.missKey.many"
+msgstr "缺 {a}、{b} 等 {n} 個來源的金鑰，回測跑不起來。"
+
+msgid "rp.missKeyB.one"
+msgstr "缺 {a} 的金鑰，這支跑不起來。"
+
+msgid "rp.missKeyB.two"
+msgstr "缺 {a}、{b} 的金鑰，這支跑不起來。"
+
+msgid "rp.missKeyB.many"
+msgstr "缺 {a}、{b} 等 {n} 個來源的金鑰，這支跑不起來。"
+
+msgid "rp.missKey.go"
+msgstr "去資料來源"
 
 msgid "cx.ip.cloudNote"
 msgstr "這是雲端主機現在的對外 IP。"

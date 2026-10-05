@@ -118,7 +118,28 @@ function pyLock({ python, lockFile, timeoutMs = 10000, spawnFn = spawn, exists =
   });
 }
 
-/* opts:{ envFile, lock() → Promise<release>, strategies?() → [{ name, displayName, file }], trading?() → { live, amounts }, now? } */
+/* 一支策略用到的來源 → 欄位(正規式與判準同 main.js stratDataSources)。掃的檔案也同它:資料夾裡所有 .py(helper 檔也算),
+   沒給 dir 才只讀 file——兩頁的「缺金鑰」口徑要一樣,不然策略頁講缺、資料來源頁卻沒有那一列可以按 */
+function stratUses(s) {
+  let files = [];
+  if (s.dir) { try { files = fs.readdirSync(s.dir).filter((f) => f.endsWith(".py")).slice(0, 50).map((f) => path.join(s.dir, f)); } catch (_) { return new Map(); } }
+  else if (s.file) files = [s.file];
+  const out = new Map();
+  for (const p of files) {
+    let src = "";
+    try { const st = fs.lstatSync(p); if (!st.isFile() || st.size > CODE_MAX) continue; src = fs.readFileSync(p, "utf8"); } catch (_) { continue; }
+    for (const m of src.matchAll(/\bDATA_([A-Z0-9]{1,24})_([A-Z][A-Z0-9_]{0,31})\b/g)) {
+      if (checkName(m[1]) || checkField(m[1], m[2])) continue;
+      if (!out.has(m[1])) out.set(m[1], new Set());
+      out.get(m[1]).add(m[2]);
+    }
+  }
+  return out;
+}
+// 策略用到、清單裡沒有的來源(只比來源,不比欄位)。have = list() 的來源名
+const missingOf = (used, have) => (Array.isArray(used) ? used : []).filter((n) => !have.includes(n));
+
+/* opts:{ envFile, lock() → Promise<release>, strategies?() → [{ name, displayName, file, dir? }], trading?() → { live, amounts }, now? } */
 function createDataSrc(opts) {
   const now = opts.now || (() => Math.floor(Date.now() / 1000));
   const read = () => { try { return fs.readFileSync(opts.envFile, "utf8"); } catch (e) { if (e.code === "ENOENT") return ""; throw e; } };
@@ -165,12 +186,27 @@ function createDataSrc(opts) {
   }
 
   return {
-    // 只回名稱、欄位名、建立時間、誰用到——**沒有值**
+    /* 只回名稱、欄位名、建立時間、誰用到——**沒有值**。missing = 本機策略用到、清單裡沒有的來源(「還沒有金鑰」那幾列),
+       usedBy 的判準同 usage()(程式碼裡出現 DATA_<來源>_),fields = 程式碼裡寫到的欄位名(給新增表單預填) */
     list() {
-      let doc; try { doc = parse(read()); } catch (_) { return { ok: false, error: "READ_FAILED", sources: [] }; }
+      let doc; try { doc = parse(read()); } catch (_) { return { ok: false, error: "READ_FAILED", sources: [], missing: [] }; }
       const names = [...doc.sources.keys()].slice(0, MAX_SOURCES), use = usage(names);
-      return { ok: true, sources: names.map((n) => ({ name: n, fields: [...doc.sources.get(n).fields.keys()], added: doc.sources.get(n).added || null, usedBy: use.get(n).map((s) => s.label) })) };
+      const sources = names.map((n) => ({ name: n, fields: [...doc.sources.get(n).fields.keys()], added: doc.sources.get(n).added || null, usedBy: use.get(n).map((s) => s.label) }));
+      const miss = new Map();
+      let strategies = []; try { strategies = (opts.strategies && opts.strategies()) || []; } catch (_) { /* 讀不到就當沒有人用 */ }
+      for (const s of strategies) {
+        for (const [n, fields] of stratUses(s)) {
+          if (names.includes(n)) continue;
+          if (!miss.has(n)) miss.set(n, { name: n, usedBy: [], fields: new Set() });
+          const m = miss.get(n); m.usedBy.push(String(s.displayName || s.name).slice(0, 80)); fields.forEach((f) => m.fields.add(f));
+        }
+      }
+      const missing = [...miss.values()].sort((a, b) => (a.name < b.name ? -1 : 1)).slice(0, MAX_SOURCES)
+        .map((m) => ({ name: m.name, usedBy: m.usedBy, fields: [...m.fields].sort().slice(0, MAX_FIELDS) }));
+      return { ok: true, sources, missing };
     },
+    // 策略頁(main.js loadStrategy)用:清單上的來源名,同 list() 的 sources,但不掃策略檔
+    names() { try { return [...parse(read()).sources.keys()].slice(0, MAX_SOURCES); } catch (_) { return null; } },
     /* 新增或修改。fields:[{ name, value }];value 是字串 = 寫入 / 取代,null = 留著已存的那個(只有修改時、而且那個欄位真的存在才行)。
        沒列到的舊欄位 = 拿掉。isNew 時名稱不可已存在;修改時必須已存在。 */
     save(input) {
@@ -212,4 +248,4 @@ function createDataSrc(opts) {
   };
 }
 
-module.exports = { createDataSrc, pyLock, parse, render, checkName, checkField, cleanValue, envName, venueShaped, BEGIN, END, MAX_FIELDS, MAX_SOURCES, VALUE_MAX };
+module.exports = { createDataSrc, missingOf, stratUses, pyLock, parse, render, checkName, checkField, cleanValue, envName, venueShaped, BEGIN, END, MAX_FIELDS, MAX_SOURCES, VALUE_MAX };

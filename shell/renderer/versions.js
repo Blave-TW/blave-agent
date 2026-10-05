@@ -315,7 +315,7 @@ function verShowTab(tab) {
   });
   if (typeof rpTabRevealSelected === "function") rpTabRevealSelected();
   const why = !pd ? "ver.frozenTab" : pd.status === "failed" ? "ver.frozenRerunFailed" : "ver.frozenRerun";
-  nobt.dataset.i18n = why; nobt.textContent = t(why); nobt.hidden = false;
+  nobt.classList.remove("is-miss"); nobt.dataset.i18n = why; nobt.textContent = t(why); nobt.hidden = false;   // 時光機開著:講的是舊版,缺金鑰那態讓位
   const w = $("rp-wait");
   for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = true;
   if (!S.blob) {

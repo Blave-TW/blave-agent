@@ -665,6 +665,9 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp-tab:disabled { color: var(--color-greyDark); cursor: not-allowed; }
 .rp-nobt { margin: 0; padding: var(--space-12) var(--space-24) 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .rp-nobt[hidden] { display: none; }
+/* 缺金鑰(app.js rpNobtPaint):同一格換成「文字＋去資料來源」一列。必須被讀到的暗底次要字升 ink-2;:not([hidden]) 讓雲端載入中收起時不被 flex 撐回來 */
+.rp-nobt.is-miss:not([hidden]) { display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; color: var(--ink-2); }
+.rp-nobt.is-miss .t { flex: 1 1 220px; min-width: 0; }
 .rp-tabs[hidden] { display: none; }   /* 雲端報告還在路上 / 讀不到時收起(rpBodyPaint) */
 .rp-panel { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-24); }
 .rp-panel[hidden] { display: none; }

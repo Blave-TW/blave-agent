@@ -2713,6 +2713,12 @@ msgstr "Name (letters and digits; can’t be changed later)"
 msgid "src.nameLocked"
 msgstr "Name"
 
+msgid "src.rowMissing"
+msgstr "No key yet · used by: {names}"
+
+msgid "src.addMissing"
+msgstr "Add"
+
 msgid "src.fields"
 msgstr "Fields"
 
@@ -3061,6 +3067,27 @@ msgstr "This strategy has no backtest results yet, so only the code is shown. To
 
 msgid "rp.noBtB"
 msgstr "Alerts, screeners, grids and similar strategies aren’t backtested, so only the code is shown."
+
+msgid "rp.missKey.one"
+msgstr "Missing the {a} key, so the backtest can’t run."
+
+msgid "rp.missKey.two"
+msgstr "Missing the {a} and {b} keys, so the backtest can’t run."
+
+msgid "rp.missKey.many"
+msgstr "Missing keys for {a}, {b} and {k} more, so the backtest can’t run."
+
+msgid "rp.missKeyB.one"
+msgstr "Missing the {a} key, so this strategy can’t run."
+
+msgid "rp.missKeyB.two"
+msgstr "Missing the {a} and {b} keys, so this strategy can’t run."
+
+msgid "rp.missKeyB.many"
+msgstr "Missing keys for {a}, {b} and {k} more, so this strategy can’t run."
+
+msgid "rp.missKey.go"
+msgstr "Open Data Sources"
 
 msgid "cx.ip.cloudNote"
 msgstr "This is the cloud machine’s current public IP."
