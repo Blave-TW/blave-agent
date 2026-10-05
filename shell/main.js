@@ -432,6 +432,24 @@ function loadDataKey() {
     return ok(k.api_key) && ok(k.secret_key) ? k : null;
   } catch (_) { return null; }
 }
+/* 自帶 API 金鑰:一次一把。密文帶型別標記再驗 preset 在內建表上——safeStorage 的密文沒有完整性保護,
+   agent 把 blave-token.bin 換進來,轉送口不能把 Blave token 當供應商金鑰送出去。拿不到加密能力時不落地 */
+const llmKeyPath = () => path.join(app.getPath("userData"), "apikey.bin");
+function saveLlmKey(preset, key) {
+  if (!Object.prototype.hasOwnProperty.call(require("./llmrelay").PRESETS, preset)) return false;
+  if (typeof key !== "string" || !/^[\x21-\x7e]{8,400}$/.test(key) || !safeStorage.isEncryptionAvailable()) return false;
+  fs.writeFileSync(llmKeyPath(), safeStorage.encryptString(JSON.stringify({ kind: "llm_key", preset, key })), { mode: 0o600 });
+  return true;
+}
+function loadLlmKey() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const k = JSON.parse(safeStorage.decryptString(fs.readFileSync(llmKeyPath())));
+    return k && k.kind === "llm_key" && Object.prototype.hasOwnProperty.call(require("./llmrelay").PRESETS, k.preset)
+      && typeof k.key === "string" && /^[\x21-\x7e]{8,400}$/.test(k.key) ? { preset: k.preset, key: k.key } : null;
+  } catch (_) { return null; }
+}
+function clearLlmKey() { try { fs.unlinkSync(llmKeyPath()); } catch (_) {} }
 function clearDataKey() {
   try { fs.unlinkSync(dataKeyPath()); } catch (_) {}
   syncDataEnv(false);
@@ -2357,6 +2375,12 @@ function browserNotify(kind) {
 function turnCreds(kind, signedIn, included, handoffOn) {
   return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true, mcp: handoffOn === true && signedIn === true };
 }
+/* 這一輪 LLM 憑證進子行程環境的那一塊(純函式;tests/check_shell_apikey_isolation.js 拿它組 env)。
+   自帶金鑰只給轉送口的位址與一次性 token,真金鑰從來不經過這裡 */
+function llmEnv(acct, relay) {
+  if (relay) return { BLAVE_LLM_RELAY_URL: relay.url, BLAVE_LLM_RELAY_TOKEN: relay.token };
+  return acct ? { BLAVE_PROXY_TOKEN: acct } : {};
+}
 const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAGE_STDIN_MAX
 /* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
    只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
@@ -2378,6 +2402,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const codexBin = conn.kind === "codex" ? await codexBinNow() : null;
   if (conn.kind === "codex" && !codexBin) throw new Error("AGENT_BIN_MISSING");
   const useCodex = !!codexBin;
+  const llmKey = conn.kind === "apikey" ? loadLlmKey() : null;
+  if (conn.kind === "apikey" && !llmKey) throw new Error("apikey missing");
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
@@ -2413,7 +2439,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 沒掛上時照 off(用戶在設定 › 隱私關的)/ unavailable(開著但這一輪起不來)給 agent 不同的說法
   let brWanted = true; try { brWanted = browser().enabled(); } catch (_) { /* 連物件都建不起來:當成起不來 */ }
   const brState = brMount && mcpFile ? "on" : brWanted ? "unavailable" : "off";
-  const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); };
+  // 轉送口起不來就整輪失敗,絕不退回別的引擎(同 Codex 的理由:靜默換一條帳)。緊貼 turnDone 起,中間沒有會拋的步驟
+  let relay = null;
+  try { relay = llmKey ? await require("./llmrelay").startRelay({ preset: llmKey.preset, key: llmKey.key }) : null; }
+  catch (err) { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); throw err; }
+  const relayPreset = relay ? require("./llmrelay").PRESETS[llmKey.preset] : null;
+  const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); if (relay) relay.stop(); };
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -2424,7 +2455,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 有帳號 token = 用 Blave AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
     // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
     // runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。
-    ...(acct ? { BLAVE_PROXY_TOKEN: acct } : {}),
+    ...llmEnv(acct, relay),
     // 接入碼只在 Codex 引擎進環境(Claude 走 --mcp-config 的檔)。Codex 預設會把整份環境(含 *TOKEN*)傳給 agent 跑的
     // shell,codex_engine 掛上時用 filters 只拔這一個、並關掉會繞過 filters 的 shell_snapshot
     ...(useCodex && mcpFile && mcpMount ? { BLAVE_MCP_TOKEN: mcpMount.accessCode, BLAVE_MCP_URL: mcpMount.url } : {}),
@@ -2462,7 +2493,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 不靠引擎那邊看不見的預設。只有型錄拿不到(沒畫選擇器)時兩個才是 null——
     // 那時 Claude / Blave AI 照舊送 Sonnet(proxy 也認裸 id),Codex 什麼都不帶(runtime 用「有沒有明確
     // 帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m <那個名字>`)。
-    ...(model ? ["--model", model] : useCodex ? [] : ["--model", CLAUDE_DEFAULT]),
+    ...(relayPreset ? ["--model", relayPreset.models.indexOf(model) >= 0 ? model : relayPreset.defaultModel]
+      : model ? ["--model", model] : useCodex ? [] : ["--model", CLAUDE_DEFAULT]),
     ...(effort ? ["--effort", effort] : []),
     // 回覆語言跟著用戶打的字走,不跟介面(Wei):刻意**不帶** --ui-lang。runtime 的順序是
     // 「機器設定 > ui_lang > 看訊息猜」,電腦版沒有機器設定,不帶就落到最後一項。

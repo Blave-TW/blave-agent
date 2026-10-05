@@ -24,6 +24,8 @@ const write = (dir, obj) => fs.writeFileSync(path.join(dir, FILE), JSON.stringif
   t("S1:整份換成舊版明文 {kind:blave} → 不認", a.reopen().store.load() === null);
   fs.unlinkSync(path.join(a.dir, KEY_FILE)); write(a.dir, { kind: "blave", at: "x" });
   t("S1:連金鑰檔一起刪掉、再寫明文 blave → 不認(明文只遷移自帶 CLI 的那兩種)", a.reopen().store.load() === null);
+  write(a.dir, { kind: "apikey", at: "x" });
+  t("S1:連金鑰檔一起刪掉、再寫明文 apikey → 不認(不然 agent 能替用戶接上他的供應商金鑰)", a.reopen().store.load() === null);
   write(a.dir, { kind: "blave", mac: "0".repeat(64), tok: "fpA" });
   t("S1:亂填一個 mac → 不認", a.reopen().store.load() === null); }
 
