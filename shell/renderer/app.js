@@ -688,9 +688,12 @@ var UP_CHECKING = false;   // 按了「檢查更新」、兩邊都還沒回來:�
 var UP_CLOUD_BUSY = false;   // 按了「更新雲端主機」、刷新還沒回來:那顆停用,不重複送
 function upNow() {
   const cst = TR_BAGS.cloud.st, kind = cst ? envCloudKind(cst) : "loading";
+  // 主機在跑、但回報不新鮮(連不上 / 429 / 睡醒太久沒同步:cloud.js 留著舊畫面、alive=false):裡面的「已暫停」「對帳器沒在跑」
+  // 都不能信(用戶可能已在 web / TG 恢復下單),一律當讀不到 → 更新雲端主機先問
+  const exec = !cst ? "loading" : kind === "running" && !cst.alive ? "unknown" : trExecState(cst);
   return upPlan({ up: UP, cloud: (cst && cst.cloud) || null, kind, localTurn: upLocalTurn(), mem: UPD, now: Date.now(),
     cloudStale: !!(cst && trRestartUnconfirmed(cst.report)), wu: kind === "running" ? upWu(cst.report) : null, checking: UP_CHECKING,
-    exec: cst ? trExecState(cst) : "loading", cloudBusy: UP_CLOUD_BUSY });
+    exec, cloudBusy: UP_CLOUD_BUSY });
 }
 /* 一回合結束了(turn-end 叫;回合出錯 / 沒回覆 / 分類過的錯誤都算 fault)。只管更新期間內的回合。
    回合出錯、或整回合沒碰雲端主機:什麼都沒換,更新期間到此為止(之後無關的回合不再被畫成更新中);
