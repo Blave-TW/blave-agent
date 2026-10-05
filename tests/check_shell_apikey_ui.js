@@ -77,6 +77,10 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
     const body = (n) => cut(main, "function " + n + "(", "\n}\n");
     t("loadLlmKey 的呼叫點只有 saveConnection / llmKeyInfo / llmKeyTest / apikeyModels / runTurn", JSON.stringify(owners.sort()) === JSON.stringify(["apikeyModels", "llmKeyInfo", "llmKeyTest", "runTurn", "saveConnection"]) || (console.log("      呼叫點:", owners.join()), false));
     t("交給畫面的 llmKeyInfo / apikeyModels 不碰 .key", !/\.key\b/.test(body("llmKeyInfo")) && !/\bk\.key\b/.test(body("apikeyModels"))); }
+  t("load-connection:連的是 apikey 但金鑰檔不在 → null(回連結畫面);runTurn 不用這道,照原紀錄讀金鑰、讀不到拋 APIKEY_MISSING(不換引擎)",
+    /handle\("load-connection", \(\) => \{ const c = loadConnection\(\); return c && c\.kind === "apikey" && !fs\.existsSync\(llmKeyPath\(\)\) \? null : c; \}\);/.test(main)
+    && /const conn = loadConnection\(\) \|\| \{\};/.test(cut(main, "async function runTurn", "\n}\n")) && /if \(conn\.kind === "apikey" && !llmKey\) throw new Error\("APIKEY_MISSING"\);/.test(main));
+  t("saveConnection:kind apikey 沒有驗過的金鑰就不存", /if \(kind === "apikey" && !loadLlmKey\(\)\) return false;/.test(cut(main, "async function saveConnection", "\n}\n")));
   api.llmKeyRemove();
   t("remove:刪檔;目前連的是 apikey 就一起清掉連結", !fs.existsSync(file) && conn.cleared === 1 && (await api.llmKeyTest()).code === "MISSING");
   mock.close();
