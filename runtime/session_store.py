@@ -144,12 +144,17 @@ def _llm_summarize(prior_summary, to_fold):
         f"<<<OLD-SUMMARY-{t}>>>\n{prior_summary or '（無）'}\n<<<END-{t}>>>\n\n"
         f"<<<NEW-TURNS-{t}>>>\n{fold_text}\n<<<END-{t}>>>"
     )
-    body = json.dumps({
+    payload = {
         "model": SUMMARY_MODEL,
         "max_tokens": SUMMARY_MAX_TOKENS,
         "system": _SUMMARY_SYSTEM,
         "messages": [{"role": "user", "content": user_content}],
-    }).encode()
+    }
+    # DeepSeek 預設開思考:背景摘要不需要,思考只吃 max_tokens 與時間(Wei:思考常開只限用戶對話)。
+    # 明寫 disabled,不靠 proxy 補——proxy 對沒帶 thinking 的請求不再預設關。只在 DeepSeek 帶,換模型不送它不認得的欄位
+    if "deepseek" in SUMMARY_MODEL.lower():
+        payload["thinking"] = {"type": "disabled"}
+    body = json.dumps(payload).encode()
     req = urllib.request.Request(
         PROXY_BASE_URL + "/v1/messages",
         data=body,

@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **背景摘要關思考(`session_store._llm_summarize`)**:滾動摘要請求明寫 `thinking: {"type": "disabled"}`(只在 `SUMMARY_MODEL` 是 DeepSeek 時帶),不再靠 proxy 對沒帶 thinking 的請求預設關;DeepSeek 思考常開只限用戶對話。測試 `tests/check_summary_thinking_off.py`。
 
 ## 1.1.114 — 2026-10-05(desktop 0.1.15)
 
