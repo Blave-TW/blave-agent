@@ -9,7 +9,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> 本文译自英文版 README 的 commit [`1ac250b`](https://github.com/Blave-TW/blave-agent/blob/1ac250b/README.md)，只涵盖变动较少的段落；最新消息、交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md)，只涵盖变动较少的段落；最新消息、交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -56,7 +56,7 @@ agent 上网查数据用的是 app 内置的浏览器：它正在读哪一页，
 - macOS 13 以上。打包版是通用版：Apple Silicon 与 Intel 同一个安装文件。
 - 或 Windows 10、11，x64（Electron 44 支持的版本；ARM 版尚未测试）。Windows 安装文件还没有代码签名，第一次安装时 Windows 会先弹出安全警告：点说明文字下方的链接，再点底部多出来的按钮。
 - Node.js 22.12 以上与 npm（`shell/package.json` › `engines`）
-- `PATH` 上有 `python3`。打包版自带 Python 3.12；从源代码跑时，venv 用的是你系统的 `python3`。
+- `PATH` 上有 `python3`（Windows 是 `python`）。打包版自带 Python 3.12；从源代码跑时，venv 用的是你系统的 Python。
 - 已安装并登录的 Claude Code 或 Codex，或一个 Blave 账号
 
 ```
@@ -64,6 +64,15 @@ git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
+```
+
+Windows 在 PowerShell 里跑（用 `npm.cmd`：PowerShell 的执行策略挡下 `npm` 脚本时也能跑）：
+
+```powershell
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent\shell
+npm.cmd install
+npm.cmd start
 ```
 
 第一次打开时，选 agent 用哪个 AI：
@@ -85,7 +94,7 @@ npm start
 | C | 投资组合：N 个标的加一组权重（总和不超过 1），定期再平衡 | 必做 |
 | B | 其余全部：选股器、网格、套利、警示、一次性下单 | 不做 |
 
-界面语言跟着系统语言（英文或繁体中文）。要强制指定：`BLAVE_LANG=zh npm start`。
+界面语言跟着系统语言（英文或繁体中文）。要强制指定：`BLAVE_LANG=zh npm start`（PowerShell：`$env:BLAVE_LANG="zh"; npm.cmd start`）。
 
 ## 最新消息
 

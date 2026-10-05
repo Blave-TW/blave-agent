@@ -8,7 +8,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> この文書は英語版 README の commit [`1ac250b`](https://github.com/Blave-TW/blave-agent/blob/1ac250b/README.md) から翻訳したもので、変更の少ない節だけを訳しています。最新情報、対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
+> この文書は英語版 README の commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md) から翻訳したもので、変更の少ない節だけを訳しています。最新情報、対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -55,7 +55,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - macOS 13 以降。パッケージ版はユニバーサルビルドで、Apple Silicon と Intel のどちらも 1 つのダウンロードで動きます。
 - または Windows 10、11 の x64（Electron 44 が対応するバージョン。ARM は未テスト）。Windows インストーラーにはまだコード署名がないため、初回インストール時に Windows が警告を表示します。説明文の下にあるリンクをクリックし、続けて画面の下に増えたボタンをクリックしてください。
 - Node.js 22.12 以降と npm（`shell/package.json` › `engines`）
-- `PATH` 上の `python3`。パッケージ版は Python 3.12 を同梱しています。ソースから実行する場合は、システムの `python3` で venv を作成します。
+- `PATH` 上の `python3`（Windows では `python`）。パッケージ版は Python 3.12 を同梱しています。ソースから実行する場合は、システムの Python で venv を作成します。
 - インストールしてサインイン済みの Claude Code または Codex、あるいは Blave アカウント
 
 ```
@@ -63,6 +63,15 @@ git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
+```
+
+Windows では PowerShell で実行します（PowerShell の実行ポリシーで `npm` スクリプトがブロックされても、`npm.cmd` なら動きます）：
+
+```powershell
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent\shell
+npm.cmd install
+npm.cmd start
 ```
 
 初回起動時に、エージェントを動かす AI を選びます：
@@ -84,7 +93,7 @@ npm start
 | C | ポートフォリオ：N 銘柄と、合計が 1 以下のウェイトベクトル。スケジュールでリバランス | 必須 |
 | B | それ以外すべて：スクリーナー、グリッド、アービトラージ、アラート、単発の執行 | なし |
 
-インターフェースはシステムの言語に従います（英語または繁体字中国語）。上書きするには：`BLAVE_LANG=en npm start`。
+インターフェースはシステムの言語に従います（英語または繁体字中国語）。上書きするには：`BLAVE_LANG=en npm start`（PowerShell：`$env:BLAVE_LANG="en"; npm.cmd start`）。
 
 ## 最新情報
 
