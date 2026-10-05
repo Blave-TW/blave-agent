@@ -281,7 +281,7 @@ NEVERS = {
     "stricter is defined: forbids more, never permits, never requires": "stricter means it forbids more — never that it permits more, and never that it requires an action",
     "remote AGENTS.md missing: stop": "`No such file` → stop; do not proceed under this file alone.",
     "remote AGENTS.md missing: not updatable from here (no loop through the button)":
-        "A machine that old cannot be updated from here — *Updating the cloud machine* needs that file too, and the app's Update button would only land back on this line.",
+        "A machine that old cannot be updated from here — *Updating the cloud machine* needs that file too, and the app's 「更新雲端主機」 (\"Update cloud machine\") link would only land back on this line.",
     "remote AGENTS.md missing: user says 更新 on the web, their credit choice":
         "open the cloud workspace on blave.org and say 「更新」 there: that runs on the cloud machine's own agent and uses their cloud AI credit, which is theirs to choose",
     "connection options from step 2 only": "Connection options come from this file's step 2 only",
@@ -397,7 +397,7 @@ UPD_NEEDLES = {
     "the old ask lines are named as forbidden, reconciler running or not": "no 「要更新雲端主機，需要你先確認：」, no 「回「好」就開始。」, no 「要更新嗎?」, whether or not the reconciler is running",
     "manual escape hatch: the user said beforehand to keep a file": "**Manual escape hatch:** only when the user said in this conversation, before asking for the update, to keep a file (「先不要換 X 檔」",
     "no guarantee you cannot keep": "Never add a guarantee you cannot keep",
-    "button message is the ask, nothing more asked": "The Update button's fixed message is the ask; nothing more is needed and nothing more is asked.",
+    "button message is the ask, nothing more asked": "The fixed message of the app's 「更新雲端主機」 (\"Update cloud machine\") link is the ask; nothing more is needed and nothing more is asked.",
     "kept file: not updated, no VERSION": "it is then kept, listed as \"not updated\", the rest is updated, and `VERSION` is not written",
     "apply command": 'ssh <SSH_OPTS> blaveagent@<host> python3 "/tmp/oc-config/manager/update_workspace.py" apply --clone "/tmp/oc-config" --workspace "/opt/blave-agent/workspace" --expect-head <commit> --allow <files> --restart-ok --wait-busy 600',
     "--allow every changed file as printed, minus the kept ones": "`--allow <files>`: every `changed_here` file U3 printed, comma-separated, exactly as printed",
