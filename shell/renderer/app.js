@@ -308,6 +308,8 @@ async function blaveGo(b) {
   if (oauthPending) { window.blave.cancelOAuth(); return; }
   // 手上已經有 token:直接切過去,不再開一次瀏覽器。
   if (await window.blave.hasBlaveToken()) {
+    // 從別的引擎切回來時 hasToken 本來就是 true:只有真的翻轉(登出後再按)才作廢策略庫/報告快取
+    if (!hasToken) { hasToken = true; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); }
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
     return;
@@ -320,7 +322,7 @@ async function blaveGo(b) {
   try {
     // 同意頁的 <lang> 收 en/zh/cn/…,跟我們的語系代號同一組,直接送。
     await window.blave.startOAuth(LANG);
-    acct = null;
+    hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
   } catch (e) {
@@ -2572,7 +2574,7 @@ function blaveLoginFlow(card) {
     card.set({ calm: true, text: t("oauth.opened"), label: t("oauth.cancel"), out: true, on: () => window.blave.cancelOAuth() });
     try {
       await window.blave.startOAuth(LANG);
-      oauthPending = false; waitChanged(); acct = null;
+      oauthPending = false; waitChanged(); hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
       mpInit("blave");                         // 失效期間型錄抓回來是空的
       card.set(resendState(card, t("fault.authOk")));
       acctPrecheck();
