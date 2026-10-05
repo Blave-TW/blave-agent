@@ -44,6 +44,8 @@ function detectingRows() {
   [["claude", "Claude Code"], ["codex", "Codex"]].forEach(([kind, name]) => {
     rows.appendChild(row({ name, kind, st: t("cn.detecting"), stClass: "" }));
   });
+  // API 金鑰那一列不偵測(「重新偵測」只管兩個 CLI):照上一次知道的畫
+  const ak = typeof akConnRow === "function" ? akConnRow() : null; if (ak) rows.appendChild(ak);
   MDL.busy = true; mdlPaint();
 }
 
@@ -52,6 +54,7 @@ async function detect() {
   detectingRows();
   setHint(null);
   lastDetect = await window.blave.detectAgents();
+  if (typeof akSetInfo === "function") akSetInfo(lastDetect.apikey);   // 存了哪一家 + 上架清單(主行程從不給金鑰值)
   paintRows(lastDetect);
   // 連結畫面上本機兩個都不能用:是狀態不是失敗,但「沒連上任何 AI 的安裝」只有這裡答得出為什麼
   if (!$("view-connect").hidden && !localReady) trackEvent("connect_failed", { kind: "no_local" });
@@ -60,7 +63,8 @@ async function detect() {
 }
 function paintRows(d) {
   const rows = $("agent-rows"); rows.innerHTML = "";
-  localReady = !!((d.claude.installed && d.claude.loggedIn) || (d.codex.installed && d.codex.loggedIn));
+  // 存過一把驗過的金鑰也算「現在就走得通」(mockup A1′):Blave 那顆退成描邊
+  localReady = !!((d.claude.installed && d.claude.loggedIn) || (d.codex.installed && d.codex.loggedIn) || (d.apikey && d.apikey.saved));
   // 本機兩顆「連結」一律描邊:填色只給其中一顆,兩顆讀起來像不一樣的東西(Wei 兩次點名)。
   // 唯一的填色留給「登入 Blave」——而且只在沒有任何本機 agent 可用時(paintBlaveBtn)。
   const localBtnCls = () => "btn-out";
@@ -89,6 +93,7 @@ function paintRows(d) {
   } else {
     rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.notFound"), stClass: "" }));
   }
+  const ak = typeof akConnRow === "function" ? akConnRow() : null; if (ak) rows.appendChild(ak);
   MDL.busy = false; mdlPaint();
 }
 
@@ -137,6 +142,7 @@ let cur = null;
 async function connect(kind, info) {
   // 主行程用它當下偵測到的路徑存;偵測不到了(CLI 剛被移掉)回 false:留在連結頁重新偵測,不進一個送不出訊息的工作頁
   if ((await window.blave.saveConnection({ kind, path: info.path, email: info.email || null })) === false) {
+    if (kind === "apikey") { detect(); return; }   // 金鑰檔不見了:重偵測,那一列會變回「設定」
     trackEvent("connect_failed", { kind: kind === "codex" ? "codex_gone" : "claude_gone" });
     detect(); return;
   }
@@ -173,7 +179,7 @@ const MDL = { busy: false };
    這一頁每次重畫都是新節點(setHint 會觸發),等待狀態要在資料裡,不能只靠改那顆鈕的字(改完就被重畫吃掉)。 */
 /* 就緒是預設,不講:能用的列 st = null,只有不能用的列講狀態(尚未登入 / 未偵測到)。
    「改成用這個」三列同一個字「使用」(cn.use)——Blave 走 blaveGo、本機走 connect,對用戶是同一個動作 */
-function mdlOptions(d, curKind, tok, pend) {
+function mdlOptions(d, curKind, tok, pend, ak) {
   const p = pend || {};
   const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: "cn.blave.descSet",   // 設定頁先講怎麼收錢;連結畫面那張卡(cn.blave.desc)先講贈額,兩句不同
     st: tok ? null : { key: "st.notSignedIn" },
@@ -188,6 +194,13 @@ function mdlOptions(d, curKind, tok, pend) {
       act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
       isCur: ready && curKind === kind });
   });
+  // API 金鑰(0.1.16):同一組第三列。沒有上架的供應商就不出(不做 fake door);存過 = 名字換成那一家、多一顆「修改」
+  const presets = ak && Array.isArray(ak.presets) ? ak.presets : [];
+  if (presets.length) {
+    const s = ak.saved ? presets.find((x) => x.id === ak.saved) : null;
+    out.push({ kind: "apikey", name: s ? s.name : null, nameKey: s ? null : "ak.row", desc: s ? "ak.yours" : null, names: s ? null : presets.map((x) => x.name),
+      st: null, act: s ? (curKind === "apikey" ? null : "cn.use") : "ak.setup", isCur: !!s && curKind === "apikey", edit: !!s });
+  }
   return out;
 }
 // 「重新偵測」只在本機有一個不能用的時候出:兩個都就緒時再偵測也不會有不同的結果。d = 上一次偵測的結果(偵測中照上一次的畫,鈕停用)
@@ -198,16 +211,18 @@ function mdlAct(o, b) {
   if (o.act === "login.cancel") return window.blave.cancelAgentLogin();
   if (o.act === "oauth.cancel") return window.blave.cancelOAuth();
   if (o.kind === "blave") return blaveGo(b);
+  if (o.kind === "apikey") return o.act === "ak.setup" ? akOpen("set") : connect("apikey", {});
   if (o.act === "cn.signIn") return localLogin(o.kind, b);
   return connect(o.kind, (lastDetect && lastDetect[o.kind]) || {});
 }
 function mdlPaint() {
   const box = $("set-model"); if (!box) return;
+  if (typeof akSetForm === "function" && akSetForm(box)) return;   // API 金鑰子頁開著(renderer/apikey.js):同一個節點,不重畫
   const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
   const focusKind = box.contains(document.activeElement) ? (document.activeElement.closest("[data-kind]") || {}).dataset : null;
   box.textContent = "";
   const pend = { login: loginPending, oauth: oauthPending };
-  const opts = mdlOptions(MDL.busy ? null : lastDetect, cur, hasToken, pend);
+  const opts = mdlOptions(MDL.busy ? null : lastDetect, cur, hasToken, pend, typeof AK === "object" ? AK.info : null);
   const waiting = !!(pend.login || pend.oauth);
   const grp = (headKey, descKey) => {
     const g = el("div", "cn-grp"), h = el("div", "cn-grp-h");
@@ -222,8 +237,10 @@ function mdlPaint() {
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
     // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就只講怎麼收錢那半句
     if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc))); }
+    else if (o.names) tc.appendChild(el("p", "m", o.names.join(t("ak.sep"))));
     r.appendChild(tc);
     if (o.st) r.appendChild(el("span", "st", t(o.st.key)));
+    if (o.edit) { const e = el("button", "btn-quiet", t("ak.edit")); e.type = "button"; e.disabled = waiting; e.addEventListener("click", () => akOpen("set")); r.appendChild(e); }
     if (o.isCur) r.appendChild(el("span", "cn-cur", t("cn.current")));
     // 等待中:只有那一顆能按(取消),其餘鎖住
     else if (o.act) { const b = el("button", "pf-act", t(o.act)); b.type = "button"; b.disabled = waiting && o.act !== "login.cancel" && o.act !== "oauth.cancel"; b.addEventListener("click", () => mdlAct(o, b)); r.appendChild(b); }
@@ -231,7 +248,7 @@ function mdlPaint() {
   };
   put(grp("cn.blave.group")[1], opts[0]);
   const [lg, local] = grp("cn.local.label", "cn.local.desc");
-  opts.slice(1).forEach((o) => put(local, o));
+  opts.slice(1).forEach((o) => put(local, o));   // Claude Code、Codex、API 金鑰(有上架的供應商才有)
   // 本機那一組最後一列底下的安靜文字鈕(不佔組標題)
   if (mdlNeedsRedetect(lastDetect)) {
     const m = el("p", "cn-more"), b = el("button", "btn-quiet", t("cn.redetect")); m.dataset.kind = "redetect";
@@ -375,6 +392,7 @@ function setCat(cat) {
   });
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
+  if (cat !== "model" && typeof akClear === "function") akClear();   // API 金鑰子頁:離開這一類就把沒存的金鑰從輸入框清掉
   if (cat === "model") mdlPaint();
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "rules") rulesOpen(); else rulesClear();   // Agent 規則(renderer/rules.js):離開這一類就丟掉沒存的編輯
@@ -401,6 +419,7 @@ function setClose() {
   if (sc.hidden) return;
   if (oauthPending || planLoginBusy) window.blave.cancelOAuth();   // 關掉 modal 就沒有地方按取消了
   srcClear();   // 資料來源的表單:貼了沒存的金鑰不留在關掉的框裡
+  if (typeof akClear === "function") akClear();   // API 金鑰子頁同理
   rulesClear();   // Agent 規則:沒存的編輯 / 確認 / 「其他」的草稿不留
   sc.classList.remove("open");
   sc.hidden = true;
@@ -894,6 +913,7 @@ async function mpInit(kind) {
   if (MP.kind !== kind) return;
   MP.models = (opt && opt.models) || [];
   MP.defaultModel = (opt && opt.defaultModel) || null;
+  MP.provider = (opt && opt.provider) || null;   // 自帶金鑰:選單底部計費句的那一家
   // model-prefs.json 是磁碟上的檔案:內容壞掉(`"x"`、`[]`、`{"codex":"abc"}`)時
   // 正規化成空的,而不是讓 effort 怎麼點都沒反應、要刪檔才會好。
   MP.prefs = isObj(prefs) ? prefs : {};
@@ -967,6 +987,13 @@ function mpPaint() {
 /* 引擎是 Blave AI 時,選單底部常駐一句「按用量從 Blave 餘額扣款 · 餘額 N TWD」(e2e 0.1.8 #101:切過去之後沒有任何地方講會扣款)。
    花錢前最後一個停留點是輸入框,所以放這裡;讀不到餘額只出前半句——那半句是規則,永遠成立。別的引擎整句與分隔線都不出 */
 function mpBillPaint() {
+  // 自帶 API 金鑰:錢由供應商收,只出規則那一句(沒有 Blave 餘額)。audit §2 聊天列
+  if (cur === "apikey" && MP.provider) {
+    $("mp-bill-div").hidden = false; $("mp-bill").hidden = false;
+    $("mp-bill-rule").textContent = t("ak.bill", { p: MP.provider });
+    $("mp-bill-sep").hidden = true; $("mp-bill-bal").hidden = true; $("mp-bill-bal").textContent = "";
+    return;
+  }
   const on = cur === "blave", n = on ? balNow() : null;
   $("mp-bill-div").hidden = !on; $("mp-bill").hidden = !on;
   if (!on) return;
@@ -2314,7 +2341,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     // 暖機期間按了停止:主行程還沒有回合可停,在這裡收掉,不送出
     if (turnStopped) { turnStopped = false; unlock(); bubble.remove(); if (lastUserTyped) stopRestore(msg); return false; }
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
-    turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
+    turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCap = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
     const r = await window.blave.sendMessage({
       sessionId, message: msg, handoff: opts && opts.handoff, note: lastUserNote, model: MP.model, effort: mpEffort(), viewing });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
@@ -2460,6 +2487,8 @@ function classifyFault(text) {
   // 一顆儲值鈕。開頭這句是 Claude Code 的固定前綴(實測 403 那次逐字對過)。
   // Claude Code 沒登入時吐的是這句(實測,隔離設定目錄跑一輪):「Not logged in · Please run /login」。
   // /login 是 CLI 互動模式的指令,在我們這裡不存在——原樣顯示等於叫用戶去按一顆沒有的鈕。
+  // 自帶 API 金鑰:401/403 不是 CLI 登入、402 不是 Blave 餘額(creditFlow 會去畫 Blave 帳號卡)——要排在下面兩條之前
+  if (cur === "apikey" && typeof akFault === "function") { const f = akFault(text, turnCap); if (f) return f; }
   if (cur === "claude" && /^Not logged in\b|Please run \/login/.test(text || "")) return localAuthFault("claude");
   const m = /^(?:Failed to authenticate\. )?API Error: (40[123])\b/.exec(text || "");
   if (!m) return null;
@@ -2790,7 +2819,7 @@ function planVars() {
     v: num(s.verify_amount || tr.verify_amount), t: s.trial_days || tr.days || "", q: num(s.trial_ai_credit || tr.ai_credit),
     top: num(s.auto_topup_amount || tr.auto_topup_amount), r: num(s.data_hourly),
     d: left > 0 ? planDate(pl.trial_free_until) : "", n: left > 0 ? left : 0,
-    name: cur === "codex" ? "Codex" : "Claude Code" };
+    name: cur === "codex" ? "Codex" : cur === "apikey" ? (MP.provider || t("ak.row")) : "Claude Code" };
 }
 function planOpen() { setOpen().then(() => setCat("plan")); }
 // 主機運行中那格的主鈕:關設定、切到雲端視角(走切換器同一個守門入口 envSwitchGuarded,trade.js);不外開網頁
@@ -3030,7 +3059,7 @@ function addFault(f) {
   if (f.flow === "blave") return blaveLoginFlow(card);
   if (f.flow === "credit") return creditFlow(card);
   card.set({ text: f.text, label: f.label, on: f.act,
-             second: f.resend ? { label: t("fault.resend"), on: () => { if (!running && lastUserText) submitMessage(lastUserText); } } : null });
+             second: f.second ? f.second : f.resend ? { label: t("fault.resend"), on: () => { if (!running && lastUserText) submitMessage(lastUserText); } } : null });
 }
 
 /* 回合進行中的文字先不進回覆區。串流當下還不知道這段後面有沒有工具呼叫:有的話它是過場旁白
@@ -3112,6 +3141,8 @@ window.blave.onTurnEvent((c) => {
     actToolPrep(c);
   } else if (c.type === "thinking") {
     busyReason(c.text || "");
+  } else if (c.type === "llm_cap") {
+    turnCap = true;
   } else if (c.type === "error") {
     turnErrored = true;
     if (typeof sugCollapse === "function") sugCollapse();
@@ -3127,7 +3158,8 @@ window.blave.onTurnEvent((c) => {
 // turnFaulted:這一輪已經畫過分類過的錯誤卡。不能用 faultShown 判——它在吞掉 not_started 那句時
 // 就被歸零了,回合結束時再看會以為沒畫過,多畫一張登入卡。
 let turnModel = null, turnGotReply = false, turnErrored = false, turnFaulted = false;
-let turnLimit = false, turnChanged = false;   // 這一輪畫過用量上限卡 / 做過會改東西的步驟(limitSwallow)
+let turnLimit = false, turnChanged = false;
+let turnCap = false;   // 這一輪轉送口回報過每輪用量上限(自帶 API 金鑰;main.js 在 429 寫回之前送 llm_cap)   // 這一輪畫過用量上限卡 / 做過會改東西的步驟(limitSwallow)
 let turnBubble = null, turnHadTool = false;   // 這一輪「你的那則」與「有沒有工具收據」:停止收泡泡用(見 onTurnEnd)
 // 這一輪的回覆帶了哪些卡片標記(paintAi 從文字裡拿出來的);回合結束才出卡,不插在串流中間
 let turnCards = [];
@@ -3144,7 +3176,7 @@ window.blave.onTurnEnd(async (r) => {
   stratRefresh(true).catch(() => {}).then(() => { if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); });   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
   // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
   const exitLine = r.code !== 0 && !stopped
-    ? (/AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
+    ? (/AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : /APIKEY_MISSING/.test(r.errTail || "") ? t("APIKEY_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
     : null;
   // 不靠錯誤字串認登入失效(兩家 CLI 的措辭會變):本機 agent 這一輪出錯或沒有任何回覆時,直接問
   // CLI 現在是不是登入狀態。沒登入 → 只出登入卡,那串給工程師看的錯誤丟掉;有登入 → 才畫通用訊息。
@@ -3164,6 +3196,8 @@ window.blave.onTurnEnd(async (r) => {
   if (!loggedOut && r.code === 0) dataTurnEnd();
   if (planDonePending) planSayDone();
   if (loggedOut) addFault(localAuthFault(cur));
+  // 上限到了但引擎那句錯誤沒以回覆的形式出來(走 error chunk 或直接結束):照樣講「這一輪用量到上限」
+  else if (!stopped && cur === "apikey" && turnCap && !turnFaulted && typeof akFault === "function") { turnFaulted = true; addFault(akFault("API Error: 429", true)); }
   else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); }
   pendingErr = [];
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
@@ -3309,6 +3343,7 @@ function applyStatic() {
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
   if (typeof upRelang === "function") upRelang();   // 聊天裡那則更新 / 換官方檔的通知
   if (typeof resRelang === "function") resRelang();   // 聊天結果卡(renderer/results.js)
+  if (typeof akRelang === "function") akRelang();     // API 金鑰表單(renderer/apikey.js)
   if (typeof xpRelang === "function") xpRelang();     // 轉出卡(renderer/export.js)
   youRelang();                                        // 固定觸發句的摘要泡泡
   acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)

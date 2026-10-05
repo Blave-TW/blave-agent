@@ -26,7 +26,7 @@ msgid "cn.blave.switch"
 msgstr "切換"
 
 msgid "cn.local.label"
-msgstr "這台電腦上的 agent"
+msgstr "用你自己的 AI"
 
 msgid "cn.local.desc"
 msgstr "Blave 不收 AI 費用"
@@ -5996,3 +5996,118 @@ msgstr "agent 也改了規則，這裡顯示的是這台電腦上的最新內容
 
 msgid "rlang.changed"
 msgstr "回覆語言在這台電腦上改了，這裡顯示的是最新設定。"
+
+# 自帶 API 金鑰(0.1.16;renderer/apikey.js)。{p} = 供應商名(DeepSeek),{s} = HTTP 狀態碼
+msgid "ak.row"
+msgstr "API 金鑰"
+
+msgid "ak.yours"
+msgstr "你的 API 金鑰"
+
+msgid "ak.saved"
+msgstr "金鑰已存"
+
+msgid "ak.setup"
+msgstr "設定"
+
+msgid "ak.sep"
+msgstr "、"
+
+msgid "ak.edit"
+msgstr "修改"
+
+msgid "ak.titleCn"
+msgstr "用 API 金鑰連結"
+
+msgid "ak.titleSet"
+msgstr "API 金鑰"
+
+msgid "ak.provider"
+msgstr "供應商"
+
+msgid "ak.key"
+msgstr "API 金鑰"
+
+msgid "ak.paste"
+msgstr "貼上金鑰"
+
+msgid "ak.payg"
+msgstr "只收按量計費的 API 金鑰；Coding Plan 這類月費方案的金鑰不能用。"
+
+msgid "ak.getKey"
+msgstr "到 {p} 申請金鑰"
+
+msgid "ak.ruleMac"
+msgstr "費用由 {p} 直接向你收。金鑰存在這台電腦的鑰匙圈，agent 讀不到。"
+
+msgid "ak.ruleWin"
+msgstr "費用由 {p} 直接向你收。金鑰加密存在這台電腦。"
+
+msgid "ak.testConnect"
+msgstr "測試並連結"
+
+msgid "ak.testSave"
+msgstr "測試並儲存"
+
+msgid "ak.remove"
+msgstr "移除金鑰"
+
+msgid "ak.rmTitle"
+msgstr "移除 {p} 金鑰？"
+
+msgid "ak.rmBody"
+msgstr "這台電腦上的金鑰會被刪掉，之後要用得重新貼上。"
+
+msgid "ak.rmBodyCur"
+msgstr "你現在用的就是這把金鑰。移除後會回到選擇 AI 的畫面。"
+
+msgid "ak.savedDone"
+msgstr "金鑰已存。"
+
+msgid "ak.e.key"
+msgstr "{p} 不認這把金鑰（{s}）。確認貼上的是 API 金鑰本身、而且沒有停用。什麼都沒有改變。"
+
+msgid "ak.e.shape"
+msgstr "這看起來不是完整的 API 金鑰。確認整串都貼上了。什麼都沒有改變。"
+
+msgid "ak.e.credit"
+msgstr "{p} 帳戶餘額不足（402）。到 {p} 儲值後再試一次。"
+
+msgid "ak.e.rate"
+msgstr "{p} 現在限流（429）。等一下再試一次。"
+
+msgid "ak.e.net"
+msgstr "連不到 {p}。檢查網路後再試一次。"
+
+msgid "ak.e.other"
+msgstr "{p} 回了錯誤（{s}）。什麼都沒有改變，等一下再試一次。"
+
+msgid "ak.e.seal"
+msgstr "這台電腦現在沒辦法加密儲存金鑰，所以沒有存。什麼都沒有改變。"
+
+msgid "ak.bill"
+msgstr "用你的 {p} 金鑰，費用由 {p} 收"
+
+msgid "ak.f.key"
+msgstr "{p} 不認這把金鑰（{s}），這一輪沒有跑。金鑰可能被停用或換過了。"
+
+msgid "ak.f.keyBtn"
+msgstr "修改金鑰"
+
+msgid "ak.f.credit"
+msgstr "{p} 帳戶餘額不足（402），這一輪沒有跑完。到 {p} 儲值後再送一次。"
+
+msgid "ak.f.rate"
+msgstr "{p} 現在限流（429），這一輪沒有跑完。等一下再送一次。"
+
+msgid "ak.f.compat"
+msgstr "{p} 不接受這一輪的請求（400）。這通常是 Blave 這邊的相容性問題，不是你的金鑰或設定。先換一個模型再試。"
+
+msgid "ak.f.net"
+msgstr "連不到 {p}，這一輪沒有跑完。檢查網路後再送一次。"
+
+msgid "ak.f.cap"
+msgstr "這一輪用量到上限，停在這裡。要繼續就再送一次，上限每一輪重新計算。"
+
+msgid "APIKEY_MISSING"
+msgstr "這台電腦上找不到你的 API 金鑰了。到 設定 › 模型接入 重新設定。"

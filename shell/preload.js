@@ -105,6 +105,12 @@ contextBridge.exposeInMainWorld("blave", {
   cancelOAuth: () => ipcRenderer.invoke("cancel-oauth"),
   clearConnection: () => ipcRenderer.invoke("clear-connection"),
   hasBlaveToken: () => ipcRenderer.invoke("has-blave-token"),
+  // 自帶 API 金鑰(renderer/apikey.js):金鑰值只經過 apikeySet 一次(主行程先打供應商驗過才存);test 重驗已存的那把、remove 刪掉、cancel 中止驗證。
+  // **沒有讀出金鑰的路**:回應只有 { ok, code, status },存了哪一家跟著 detectAgents 回來(apikey.saved)
+  apikeySet: (a) => ipcRenderer.invoke("apikey-set", { preset: a && a.preset, key: a && a.key, connect: !!a && a.connect === true }),
+  apikeyTest: () => ipcRenderer.invoke("apikey-test"),
+  apikeyRemove: () => ipcRenderer.invoke("apikey-remove"),
+  apikeyCancel: () => ipcRenderer.invoke("apikey-cancel"),
   // 策略庫(renderer/library.js):清單由主行程打 api(畫面的 CSP 不外連);購買帶登入憑證、只在主行程;已安裝對照表存 userData
   libraryList: (lang, force) => ipcRenderer.invoke("library-list", lang, force),
   libraryReport: (id, lang) => ipcRenderer.invoke("library-report", id, lang),

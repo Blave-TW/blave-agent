@@ -83,7 +83,7 @@ async function unit() {
   const abs = await req(base, { headers: { "x-api-key": relay.token }, target: "http://api.deepseek.com/v1/messages" });
   t("絕對 URL 當 request target → 400", abs.status === 400);
   t("被擋的請求一筆都沒到上游", mock.log.length === 2);
-  t("型錄外的 model 改寫成預設;沒帶 thinking 補 disabled", mock.log[0].body.model === "deepseek-v4-pro" && JSON.stringify(mock.log[0].body.thinking) === '{"type":"disabled"}');
+  t("型錄外的 model 改寫成預設;沒帶 thinking 不補(思考常開,照引擎帶的轉)", mock.log[0].body.model === "deepseek-v4-pro" && !("thinking" in mock.log[0].body));
   await req(base, { headers: { "x-api-key": relay.token }, body: '{"model":"claude-haiku-9","thinking":{"type":"adaptive"},"messages":[]}' });
   t("型錄外的 model 改寫、帶了 thinking 不動(同 proxy.py)", mock.log[2].body.model === "deepseek-v4-pro" && mock.log[2].body.thinking.type === "adaptive" && relay.stats.rewrites >= 1);
   const cap = await req(base, { headers: { "x-api-key": relay.token } });
@@ -104,7 +104,7 @@ async function unit() {
   t("llmEnv:Blave AI 行為不變;自己的 CLI 什麼都不帶", llmEnv("acct-x", null).BLAVE_PROXY_TOKEN === "acct-x" && Object.keys(llmEnv(null, null)).length === 0);
   t("runTurn 用 llmEnv 組 env、turnDone 收掉轉送口", /\.\.\.llmEnv\(acct, relay\),/.test(src) && /if \(relay\) relay\.stop\(\); \};/.test(src));
   const turnSrc = cut("async function runTurn", "\n}\n");
-  t("runTurn 裡真金鑰只交給 startRelay(llmKey.key 只出現一次)", (turnSrc.match(/llmKey\.key/g) || []).length === 1 && /startRelay\(\{ preset: llmKey\.preset, key: llmKey\.key \}\)/.test(turnSrc));
+  t("runTurn 裡真金鑰只交給 startRelay(llmKey.key 只出現一次)", (turnSrc.match(/llmKey\.key/g) || []).length === 1 && /startRelay\(\{ preset: llmKey\.preset, key: llmKey\.key, onEvent: onRelay \}\)/.test(turnSrc));
 }
 
 const PROBE = String.raw`

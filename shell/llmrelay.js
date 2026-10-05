@@ -12,9 +12,8 @@ const http = require("http");
 const https = require("https");
 const crypto = require("crypto");
 
-/* 每一家上架前都要過自家 e2e(G2)。DeepSeek 的兩條特殊處理照 api/openclaw/proxy.py `_proxy_deepseek`:
-   thinking 只在請求沒帶時補 disabled(CLI 2.1.281 對非 Claude 型號一律送 {type:"adaptive"},實測——所以這條現在等於不觸發,
-   跟 Blave AI 線上行為一致;要不要改成強制覆寫,等 G2 e2e 定);空回應重試見 handback 規格,原型不做。 */
+/* 每一家上架前都要過自家 e2e(G2)。thinking 一律照引擎帶的轉(Wei:思考模式常開、深度跟著模型選單的 low/high/max),
+   轉送口不補也不改;空回應重試見 handback 規格,原型不做。name / keysUrl 給畫面(連結表單與模型選單),不是秘密。 */
 const PRESETS = Object.freeze({
   deepseek: Object.freeze({
     origin: "https://api.deepseek.com",
@@ -22,7 +21,9 @@ const PRESETS = Object.freeze({
     authHeader: "x-api-key",
     models: Object.freeze(["deepseek-v4-pro", "deepseek-v4-flash"]),
     defaultModel: "deepseek-v4-pro",
-    thinkingOffWhenAbsent: true,
+    name: "DeepSeek",
+    modelNames: Object.freeze({ "deepseek-v4-pro": "DeepSeek V4 Pro", "deepseek-v4-flash": "DeepSeek V4 Flash" }),
+    keysUrl: "https://platform.deepseek.com/api_keys",
   }),
 });
 
@@ -81,7 +82,6 @@ function startRelay(opts, presets = PRESETS) {
       if (!body || typeof body !== "object" || Array.isArray(body)) return anthropicError(res, 400, "invalid_request_error", "body must be a JSON object", true);
       // 型錄外的 id(CLI 的旁支請求可能帶別的)改寫成預設、不回 400:回 400 整輪就死,花費一樣受上限約束
       if (p.models.indexOf(body.model) < 0) { onEvent({ type: "model_rewrite", from: String(body.model).slice(0, 80), to: p.defaultModel }); stats.rewrites++; body.model = p.defaultModel; }
-      if (p.thinkingOffWhenAbsent && !("thinking" in body)) body.thinking = { type: "disabled" };
       const out = Buffer.from(JSON.stringify(body));
       const headers = { "content-type": "application/json", "content-length": out.length };
       for (const h of FWD_HEADERS) if (typeof req.headers[h] === "string") headers[h] = req.headers[h];
@@ -127,4 +127,32 @@ function startRelay(opts, presets = PRESETS) {
   });
 }
 
-module.exports = { startRelay, PRESETS, DEFAULT_LIMITS };
+/* 「測試並連結」:主行程拿用戶剛貼的金鑰直接打供應商一次最小請求(不經轉送口、不經 agent),驗過才存。
+   回 { code, status } —— 沒有金鑰、沒有回應內文(錯誤字串可能夾著金鑰的片段)。
+   code:OK / KEY(401、403)/ CREDIT(402)/ RATE(429)/ NET(連不到、逾時)/ CANCELED / OTHER(其餘狀態碼,帶 status) */
+const VERIFY_TIMEOUT_MS = 20000;
+function verifyKey(preset, key, opts = {}, presets = PRESETS) {
+  const p = Object.prototype.hasOwnProperty.call(presets, preset) ? presets[preset] : null;
+  if (!p) return Promise.resolve({ code: "OTHER", status: 0 });
+  if (typeof key !== "string" || !key || /[\u0000-\u001f\u007f\s]/.test(key)) return Promise.resolve({ code: "KEY", status: 0 });
+  const up = new URL(p.origin), agent = up.protocol === "https:" ? https : http;
+  const out = Buffer.from(JSON.stringify({ model: p.defaultModel, max_tokens: 1, messages: [{ role: "user", content: "hi" }] }));
+  const headers = { "content-type": "application/json", "content-length": out.length, "anthropic-version": "2023-06-01" };
+  headers[p.authHeader] = p.authHeader === "authorization" ? "Bearer " + key : key;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (!done) { done = true; resolve(r); } };
+    const r = agent.request({ protocol: up.protocol, hostname: up.hostname, port: up.port || undefined, method: "POST",
+      path: p.prefix + "/v1/messages", headers, timeout: opts.timeoutMs || VERIFY_TIMEOUT_MS, signal: opts.signal }, (res) => {
+      res.resume();
+      const st = res.statusCode || 0;
+      res.on("end", () => finish({ code: st >= 200 && st < 300 ? "OK" : st === 401 || st === 403 ? "KEY" : st === 402 ? "CREDIT" : st === 429 ? "RATE" : "OTHER", status: st }));
+      res.on("error", () => finish({ code: "NET", status: 0 }));
+    });
+    r.on("timeout", () => r.destroy(new Error("timeout")));
+    r.on("error", (e) => finish({ code: e && e.name === "AbortError" ? "CANCELED" : "NET", status: 0 }));
+    r.end(out);
+  });
+}
+
+module.exports = { startRelay, verifyKey, PRESETS, DEFAULT_LIMITS };

@@ -388,7 +388,7 @@ ok("連結畫面那張卡不再搬進設定(兩邊各畫各的,共用的是底�
 ok("登入 / 連結完重畫之後,焦點回同一列的鈕(兩個表面都靠 data-kind)", /if \(kind\) div\.dataset\.kind = kind;/.test(src) && /r\.dataset\.kind = o\.kind;/.test(src) && /host\(\)\.querySelector\('\[data-kind="' \+ kind \+ '"\] button'\)/.test(src));
 ok("模型接入頁的小框鈕只亮這一頁(不動全站的 .pf-act);「使用中」= 灰填 + 加粗 + 列尾三個字", /#set-model \.pf-act\{[^}]*--ink-2/.test(css) && /\.cn-opt\.is-cur\{background:var\(--surface-muted\)\}/.test(css) && /\.cn-opt\.is-cur \.n\{font-weight:600\}/.test(css));
 ok("字串:設定頁那一列是「Blave AI」,連結畫面的動詞句「用 Blave AI」照舊", /msgid "cn\.blave\.name"\nmsgstr "Blave AI"/.test(PO2[0]) && /msgid "cn\.blave\.title"\nmsgstr "用 Blave AI"/.test(PO2[0]) && /data-i18n="cn\.blave\.title"/.test(html));
-ok("字串:本機那一組改成「這台電腦上的 agent」,群組小標「由 Blave 提供」", /msgid "cn\.local\.label"\nmsgstr "這台電腦上的 agent"/.test(PO2[0]) && /msgid "cn\.blave\.group"\nmsgstr "由 Blave 提供"/.test(PO2[0]));
+ok("字串:本機那一組改成「用你自己的 AI」(0.1.16 API 金鑰同組一列,audit 方案一),群組小標「由 Blave 提供」", /msgid "cn\.local\.label"\nmsgstr "用你自己的 AI"/.test(PO2[0]) && /msgid "cn\.blave\.group"\nmsgstr "由 Blave 提供"/.test(PO2[0]));
 
 // 重畫吃掉焦點 → Esc 關不掉設定(R3-1:「重新偵測」那一顆被銷毀時踩到)
 ok("重新偵測那一組掛的是 data-kind(焦點還原查的就是它),不是 data-k", /m\.dataset\.kind = "redetect";/.test(src) && !/dataset\.k = /.test(fnSrc("mdlPaint")) && /querySelector\('\[data-kind="' \+ focusKind\.kind \+ '"\] button'\)/.test(src));

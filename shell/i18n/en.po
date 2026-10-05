@@ -26,7 +26,7 @@ msgid "cn.blave.switch"
 msgstr "Switch"
 
 msgid "cn.local.label"
-msgstr "Agents on this computer"
+msgstr "Use your own AI"
 
 msgid "cn.local.desc"
 msgstr "No AI charges from Blave"
@@ -5994,3 +5994,118 @@ msgstr "The agent changed the rules too — this is what’s on this computer no
 
 msgid "rlang.changed"
 msgstr "The reply language changed on this computer — this is the current setting."
+
+# 自帶 API 金鑰(0.1.16;renderer/apikey.js)。{p} = 供應商名(DeepSeek),{s} = HTTP 狀態碼
+msgid "ak.row"
+msgstr "API key"
+
+msgid "ak.yours"
+msgstr "Your API key"
+
+msgid "ak.saved"
+msgstr "Key saved"
+
+msgid "ak.setup"
+msgstr "Set up"
+
+msgid "ak.sep"
+msgstr ", "
+
+msgid "ak.edit"
+msgstr "Edit"
+
+msgid "ak.titleCn"
+msgstr "Connect with an API key"
+
+msgid "ak.titleSet"
+msgstr "API key"
+
+msgid "ak.provider"
+msgstr "Provider"
+
+msgid "ak.key"
+msgstr "API key"
+
+msgid "ak.paste"
+msgstr "Paste your key"
+
+msgid "ak.payg"
+msgstr "Pay-as-you-go API keys only. Keys from monthly plans such as a Coding Plan won't work."
+
+msgid "ak.getKey"
+msgstr "Get a key from {p}"
+
+msgid "ak.ruleMac"
+msgstr "{p} bills you directly. Your key stays in this computer's keychain, where the agent can't read it."
+
+msgid "ak.ruleWin"
+msgstr "{p} bills you directly. Your key is stored encrypted on this computer."
+
+msgid "ak.testConnect"
+msgstr "Test and connect"
+
+msgid "ak.testSave"
+msgstr "Test and save"
+
+msgid "ak.remove"
+msgstr "Remove key"
+
+msgid "ak.rmTitle"
+msgstr "Remove your {p} key?"
+
+msgid "ak.rmBody"
+msgstr "The key is deleted from this computer. To use it again, you'll need to paste it again."
+
+msgid "ak.rmBodyCur"
+msgstr "You're using this key right now. After you remove it, you'll go back to choosing an AI."
+
+msgid "ak.savedDone"
+msgstr "Key saved."
+
+msgid "ak.e.key"
+msgstr "{p} didn't accept this key ({s}). Check that you pasted the API key itself and that it's still active. Nothing was changed."
+
+msgid "ak.e.shape"
+msgstr "That doesn't look like a complete API key. Check that you pasted all of it. Nothing was changed."
+
+msgid "ak.e.credit"
+msgstr "Your {p} balance is too low (402). Top up at {p}, then try again."
+
+msgid "ak.e.rate"
+msgstr "{p} is rate-limiting right now (429). Wait a moment and try again."
+
+msgid "ak.e.net"
+msgstr "Couldn't reach {p}. Check your connection and try again."
+
+msgid "ak.e.other"
+msgstr "{p} returned an error ({s}). Nothing was changed. Try again in a moment."
+
+msgid "ak.e.seal"
+msgstr "This computer can't store the key encrypted right now, so it wasn't saved. Nothing was changed."
+
+msgid "ak.bill"
+msgstr "Uses your {p} key, billed by {p}"
+
+msgid "ak.f.key"
+msgstr "{p} rejected your key ({s}), so this turn didn't run. The key may have been disabled or replaced."
+
+msgid "ak.f.keyBtn"
+msgstr "Edit key"
+
+msgid "ak.f.credit"
+msgstr "Your {p} balance is too low (402), so this turn didn't finish. Top up at {p}, then send again."
+
+msgid "ak.f.rate"
+msgstr "{p} is rate-limiting right now (429), so this turn didn't finish. Wait a moment, then send again."
+
+msgid "ak.f.compat"
+msgstr "{p} didn't accept this turn's request (400). This is usually a compatibility issue on Blave's side, not your key or settings. Try a different model."
+
+msgid "ak.f.net"
+msgstr "Couldn't reach {p}, so this turn didn't finish. Check your connection, then send again."
+
+msgid "ak.f.cap"
+msgstr "This turn reached its usage limit and stopped here. Send again to continue; the limit resets every turn."
+
+msgid "APIKEY_MISSING"
+msgstr "Your API key is no longer on this computer. Set it up again in Settings › Model access."
