@@ -122,8 +122,9 @@ write, cache read, output). Prices are TWD per 1M tokens (`LLM_PRICING`):
 | deepseek-v4-pro | 24.75 | 24.75 | 0.825 | 74.25 |
 
 - Claude prices = list price USD × 1.25 × 32 TWD/USD; DeepSeek = list price RMB × 4.4 × 1.25.
-- **DeepSeek peak surcharge: ×2 during Beijing 09:00–12:00 and 14:00–18:00** (the proxy doubles
-  the token counts before deducting). No surcharge on Claude models.
+- **DeepSeek peak surcharge: ×2 on weekdays (Mon–Fri) during Beijing 09:00–12:00 and 14:00–18:00**
+  (the proxy doubles the token counts before deducting). Weekends have no surcharge. No surcharge on
+  Claude models.
 - **Web search: 0.4 TWD per search, Claude models only** (Anthropic server-side tool). DeepSeek
   paths never bill it.
 - Model match order (`_get_llm_pricing`): `deepseek-v4-pro` → any other `deepseek` (flash) →
@@ -163,7 +164,7 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
   bill. (Even under the old per-hour data fee, bunching only mattered because the fee was
   per-active-hour, never per call.) Schedule crons on what the strategy needs, not on billing.
 - 「聊天用 Flash、寫 code 才換 Pro 省錢嗎？」— Yes, that is a real saving: flash is roughly a third
-  of pro per token, and the switch is per session with no restart. Mention the DeepSeek peak-hour
+  of pro per token, and the switch is per session with no restart. Mention the DeepSeek weekday peak-hour
   ×2 and that Claude models cost more but have no surcharge.
 - 「停機會不會扣錢？」— Yes, a stopped machine is still billed the server hour; only deleting it
   stops the meter.

@@ -150,8 +150,8 @@ def _llm_summarize(prior_summary, to_fold):
         "system": _SUMMARY_SYSTEM,
         "messages": [{"role": "user", "content": user_content}],
     }
-    # DeepSeek 預設開思考:背景摘要不需要,思考只吃 max_tokens 與時間(Wei:思考常開只限用戶對話)。
-    # 明寫 disabled,不靠 proxy 補——proxy 對沒帶 thinking 的請求不再預設關。只在 DeepSeek 帶,換模型不送它不認得的欄位
+    # 幕後呼叫:思考開關由 proxy 照 X-Blave-Purpose 判(規則只放 proxy 與轉送口兩處,呼叫點不各自決定)。
+    # thinking 欄位留著當舊 proxy 的退路,只在 DeepSeek 帶,換模型不送它不認得的欄位
     if "deepseek" in SUMMARY_MODEL.lower():
         payload["thinking"] = {"type": "disabled"}
     body = json.dumps(payload).encode()
@@ -161,6 +161,7 @@ def _llm_summarize(prior_summary, to_fold):
         headers={
             "content-type": "application/json",
             "x-api-key": f"proxy-{os.environ.get('BLAVE_PROXY_TOKEN', '')}",
+            "X-Blave-Purpose": "background",
         },
     )
     try:

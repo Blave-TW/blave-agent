@@ -14,8 +14,8 @@ const https = require("https");
 const crypto = require("crypto");
 const { StringDecoder } = require("string_decoder");
 
-/* 每一家上架前都要過自家 e2e(G2)。thinking 一律照引擎帶的轉(Wei:思考模式常開、深度跟著模型選單的 low/high/max),
-   轉送口不補也不改(空回應重試見 startRelay 裡的 retryOr)。name / keysUrl 給畫面(連結表單與模型選單),不是秘密。 */
+/* 每一家上架前都要過自家 e2e(G2)。思考規則見 thinkingPolicy(跟 api proxy 同一條判準);空回應重試見 startRelay 裡的 retryOr。
+   name / keysUrl 給畫面(連結表單與模型選單),不是秘密。 */
 const PRESETS = Object.freeze({
   deepseek: Object.freeze({
     origin: "https://api.deepseek.com",
@@ -23,7 +23,7 @@ const PRESETS = Object.freeze({
     authHeader: "x-api-key",
     models: Object.freeze(["deepseek-v4-pro", "deepseek-v4-flash"]),
     defaultModel: "deepseek-v4-pro",
-    cheapModel: "deepseek-v4-flash",   // 型錄外的 id(CLI 的旁支請求)改寫成這顆:那類請求不需要最貴的
+    cheapModel: "deepseek-v4-flash",   // 幕後請求一律改寫成這顆(見 thinkingPolicy)
     name: "DeepSeek",
     modelNames: Object.freeze({ "deepseek-v4-pro": "DeepSeek V4 Pro", "deepseek-v4-flash": "DeepSeek V4 Flash" }),
     keysUrl: "https://platform.deepseek.com/api_keys",
@@ -76,6 +76,23 @@ function jsonIsEmpty(m) {
 }
 const FWD_HEADERS = ["anthropic-version", "accept"];
 
+/* 思考規則(Wei 拍板,api proxy 同一條):
+   - 幕後雜事一律走便宜那顆、關思考:型錄外的 id(引擎的 small/fast)、沒帶工具的請求(實測 CLI 2.1.281 的標題請求用主模型 id、
+     tools 是空陣列;WebFetch 摘要同類)、或呼叫端標了 x-blave-purpose: background。
+   - 其餘是主回合:一律開思考,強度(output_config.effort)照引擎帶的;沒帶或帶 disabled 都改成 adaptive。
+   直接改 body;回 true = 幕後 */
+function thinkingPolicy(p, body, purpose) {
+  const background = p.models.indexOf(body.model) < 0 || !(Array.isArray(body.tools) && body.tools.length > 0)
+    || String(purpose || "").toLowerCase() === "background";
+  if (background) {
+    body.model = p.cheapModel;
+    body.thinking = { type: "disabled" };
+  } else if (!body.thinking || typeof body.thinking !== "object" || body.thinking.type === "disabled") {
+    body.thinking = { type: "adaptive" };
+  }
+  return background;
+}
+
 function anthropicError(res, status, type, message, noRetry, extra) {
   const h = { "content-type": "application/json", ...(extra || {}) };
   if (noRetry) h["x-should-retry"] = "false";
@@ -102,7 +119,7 @@ function startRelay(opts, presets = PRESETS) {
   const token = crypto.randomBytes(32).toString("hex");
   const up = new URL(p.origin);
   const agent = up.protocol === "https:" ? https : http;
-  const stats = { requests: 0, outputTokens: 0, reserved: 0, inflight: 0, capHit: false, rewrites: 0, rejected: 0, emptyRetries: 0, queued: 0 };
+  const stats = { requests: 0, outputTokens: 0, reserved: 0, inflight: 0, capHit: false, rewrites: 0, rejected: 0, emptyRetries: 0, queued: 0, background: 0 };
   let revoked = false, port = 0;
   const queue = [];
 
@@ -160,8 +177,10 @@ function startRelay(opts, presets = PRESETS) {
       let body;
       try { body = JSON.parse(Buffer.concat(bufs).toString("utf8")); } catch (_) { body = null; }
       if (!body || typeof body !== "object" || Array.isArray(body)) return anthropicError(res, 400, "invalid_request_error", "body must be a JSON object", true);
-      // 型錄外的 id(CLI 的旁支請求可能帶別的)改寫成預設、不回 400:回 400 整輪就死,花費一樣受上限約束
-      if (p.models.indexOf(body.model) < 0) { onEvent({ type: "model_rewrite", from: String(body.model).slice(0, 80), to: p.cheapModel }); stats.rewrites++; body.model = p.cheapModel; }
+      // 型錄外的 id 不回 400(回 400 整輪就死),跟其他幕後請求一起改寫成便宜那顆、關思考
+      const from = body.model;
+      if (thinkingPolicy(p, body, req.headers["x-blave-purpose"])) stats.background++;
+      if (from !== body.model) { onEvent({ type: "model_rewrite", from: String(from).slice(0, 80), to: body.model }); stats.rewrites++; }
       // 沒有 max_tokens 就沒辦法預扣;上游本來也會 400
       if (!Number.isInteger(body.max_tokens) || body.max_tokens < 1) return anthropicError(res, 400, "invalid_request_error", "max_tokens must be a positive integer", true);
       const base = { "content-type": "application/json" };
@@ -339,4 +358,4 @@ function verifyKey(preset, key, opts = {}, presets = PRESETS) {
   });
 }
 
-module.exports = { startRelay, verifyKey, PRESETS, DEFAULT_LIMITS };
+module.exports = { startRelay, verifyKey, thinkingPolicy, PRESETS, DEFAULT_LIMITS };

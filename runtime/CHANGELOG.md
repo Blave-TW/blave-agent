@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **背景摘要關思考(`session_store._llm_summarize`)**:滾動摘要請求明寫 `thinking: {"type": "disabled"}`(只在 `SUMMARY_MODEL` 是 DeepSeek 時帶),不再靠 proxy 對沒帶 thinking 的請求預設關;DeepSeek 思考常開只限用戶對話。測試 `tests/check_summary_thinking_off.py`。
+- **背景摘要標成幕後呼叫(`session_store._llm_summarize`;要 api proxy 先上)**:滾動摘要請求帶 header `X-Blave-Purpose: background`,proxy 照它走幕後規則(flash、關思考);`thinking: {"type": "disabled"}` 欄位留著當舊 proxy 的退路(只在 `SUMMARY_MODEL` 是 DeepSeek 時帶)。思考規則只放 proxy 與電腦版轉送口兩處,呼叫點不各自決定。測試 `tests/check_summary_thinking_off.py`。
 
 ## 1.1.114 — 2026-10-05(desktop 0.1.15)
 
