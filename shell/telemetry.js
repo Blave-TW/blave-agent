@@ -23,7 +23,7 @@ const EVENTS = {
   acct_card_shown: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
   acct_card_click: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
   acct_card_back: { state: ["ready", "no_card", "no_credit"] },
-  turn_failed: { reason: ["402", "403", "429", "engine_missing", "other"] },
+  turn_failed: { reason: ["402", "403", "429", "engine_missing", "other", "cap"] },   // cap = 自帶 API 金鑰撞到這一輪的用量上限(0.1.16)
   connect_failed: { kind: ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local",
     // 0.1.16 自帶 API 金鑰:「測試並連結 / 儲存」驗不過(金鑰不認、餘額不足、連不到、其他);取消不算
     "apikey_key", "apikey_credit", "apikey_net", "apikey_other"] },

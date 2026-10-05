@@ -218,7 +218,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
 
   // ── 0.1.9「卡在哪一步」九個事件(canon product-telemetry 登記表;研究 desktop-usage-2026-09-29 §5)──
   { const NEW = { acct_card_shown: ["card", ["pre_card", "pre_credit", "turn_card", "turn_credit"]], acct_card_click: ["card", ["pre_card", "pre_credit", "turn_card", "turn_credit"]],
-      acct_card_back: ["state", ["ready", "no_card", "no_credit"]], turn_failed: ["reason", ["402", "403", "429", "engine_missing", "other"]],
+      acct_card_back: ["state", ["ready", "no_card", "no_credit"]], turn_failed: ["reason", ["402", "403", "429", "engine_missing", "other", "cap"]],
       connect_failed: ["kind", ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local", "apikey_key", "apikey_credit", "apikey_net", "apikey_other"]],
       first_reply_done: ["kind", ["blave", "claude", "codex", "apikey"]], plan_start_res: ["result", ["ok", "no_card", "no_credit", "error"]],
       update_failed: ["stage", ["check", "download", "staging", "install", "other"]],
@@ -283,8 +283,11 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       && /if \(fresh && hasToken\) \{ acct = fresh; acctPaint\(\); \}/.test(appSrc9));
     const T = [[{ flow: "credit" }, "API Error: 402 {}", "402"], [{ flow: "blave" }, "Failed to authenticate. API Error: 403 x", "403"], [null, "API Error: 429 {\"type\":\"error\"}", "429"],
       [null, "Failed to authenticate. API Error: 429 x", "429"], [null, "API Error: 500 Internal", "other"], [{ flow: "local", kind: "claude" }, "Not logged in · Please run /login", null],
-      [null, "你問的 API Error: 402 是交易所回的", null], [null, "BTC 今天漲了 3%", null], [{ limit: true }, "You've hit your session limit · resets 1:50pm", null]];
-    t("turnFailOf:402 / 403 跟 classifyFault、429 另認、其他 API Error 開頭 → other、回覆裡提到 API Error(沒錨在開頭)不算", T.every(([f, txt, want]) => fail(f, txt) === want) && T.every(([f, txt]) => { const v = fail(f, txt); return v === null || EVENTS.turn_failed.reason.includes(v); }));
+      [null, "你問的 API Error: 402 是交易所回的", null], [null, "BTC 今天漲了 3%", null], [{ limit: true }, "You've hit your session limit · resets 1:50pm", null],
+      [{ cap: true, text: "ak.f.cap" }, "API Error: 429 {\"error\":{\"message\":\"turn usage limit reached\"}}", "cap"], [{ text: "ak.f.rate" }, "API Error: 429 x", "429"]];
+    t("turnFailOf:402 / 403 跟 classifyFault、自帶金鑰的每輪上限 → cap(供應商 429 照舊 429)、429 另認、其他 API Error 開頭 → other、回覆裡提到 API Error(沒錨在開頭)不算", T.every(([f, txt, want]) => fail(f, txt) === want) && T.every(([f, txt]) => { const v = fail(f, txt); return v === null || EVENTS.turn_failed.reason.includes(v); }));
+    t("回合結束:自帶金鑰這一輪收過 llm_cap、沒按停止 → turn_failed 記 cap(上限那句走 error chunk、turnFailOf 看不到時也一樣),要在送出之前",
+      /if \(!stopped && cur === "apikey" && turnCap\) turnFail = "cap";/.test(appSrc9) && appSrc9.indexOf('turnCap) turnFail = "cap";') < appSrc9.indexOf('trackEvent("turn_failed"'));
     t("回合結束:faulted 或認到原因才送 turn_failed(按停止不送);AGENT_BIN_MISSING → engine_missing、沒認到 → other;送完清掉",
       /busyEnd\(faulted\);\n\s*if \(!stopped && \(faulted \|\| turnFail\)\) trackEvent\("turn_failed", \{ reason: \/AGENT_BIN_MISSING\/\.test\(r\.errTail \|\| ""\) \? "engine_missing" : turnFail \|\| "other" \}\);\n\s*turnFail = null;/.test(appSrc9));
     t("first_reply_done 只在畫進回覆泡泡、而且那段不是錯誤字串時送(分類過的錯誤卡在前面就 return 了)", /turnGotReply = true;\n\s*if \(!fail\) trackEvent\("first_reply_done", \{ kind: cur \}\);/.test(appSrc9)

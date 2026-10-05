@@ -3083,8 +3083,10 @@ function draftShow() {
   ACT.lastDelta = now;
 }
 /* 回合失敗的原因類別(turn_failed,canon 登記表):402 / 403 跟著 classifyFault 的分類;429 它不分類(照舊出通用句),這裡另外認;
-   其他 API Error 開頭的算 other。回 null = 這段不是錯誤(是真回覆)。純函式,tests/check_shell_telemetry.js 切出來跑 */
+   其他 API Error 開頭的算 other;自帶 API 金鑰撞到我們自己的每輪上限(這一輪收過 llm_cap)算 cap,跟供應商的 429 分開。
+   回 null = 這段不是錯誤(是真回覆)。純函式,tests/check_shell_telemetry.js 切出來跑 */
 function turnFailOf(f, text) {
+  if (f && f.cap) return "cap";
   if (f && f.flow === "credit") return "402";
   if (f && f.flow === "blave") return "403";
   const m = /^(?:Failed to authenticate\. )?API Error: (\d{3})\b/.exec(text || "");
@@ -3189,6 +3191,8 @@ window.blave.onTurnEnd(async (r) => {
   }
   if (liveBubble && liveBubble._raw != null) paintAi(liveBubble, liveBubble._raw, false);   // 定稿:不再藏半截標記
   if (typeof xpTurnEnd === "function") xpTurnEnd(liveBubble);   // 定稿之後才掛轉出卡:paintAi 會清空泡泡
+  // 上限的那句沒以回覆的形式出來(走 error chunk 或直接結束)時 turnFailOf 看不到:這一輪收過 llm_cap 就照樣記 cap
+  if (!stopped && cur === "apikey" && turnCap) turnFail = "cap";
   const faulted = !stopped && (r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut);   // 同 upTurnEnded 的判準
   busyEnd(faulted);
   if (!stopped && (faulted || turnFail)) trackEvent("turn_failed", { reason: /AGENT_BIN_MISSING/.test(r.errTail || "") ? "engine_missing" : turnFail || "other" });
