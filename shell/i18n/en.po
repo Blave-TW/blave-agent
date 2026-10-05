@@ -4097,9 +4097,6 @@ msgstr "If the backtest uses Blave data, the data fee is charged per clock hour 
 msgid "lib.note.paid"
 msgstr "Charged to your Blave Agent balance."
 
-msgid "lib.note.installed"
-msgstr "Already in the strategy list on {where}. Downloading again overwrites the one with the same name and reruns the backtest."
-
 msgid "lib.note.pending"
 msgstr "Progress is in the chat on the right."
 
@@ -4153,6 +4150,15 @@ msgstr "This goes to the agent on your cloud machine; this computer isn't affect
 
 msgid "lib.cf.ok"
 msgstr "Download & Backtest"
+
+msgid "lib.cf.titleAgain"
+msgstr "Download \"{title}\" Again?"
+
+msgid "lib.cf.l0Again"
+msgstr "This overwrites the one with the same name in the strategy list on {where} and reruns the backtest."
+
+msgid "lib.cf.okAgain"
+msgstr "Overwrite & Backtest"
 
 msgid "lib.msg"
 msgstr "Download the official strategy \"{title}\" (#{id}) and run a backtest to see the results."
@@ -4706,9 +4712,6 @@ msgstr "(optional)"
 
 msgid "idea.topicPh"
 msgstr "e.g. funding rate, opening-range breakout"
-
-msgid "idea.noOrders"
-msgstr "No orders are placed."
 
 msgid "idea.cost"
 msgstr "This turn is billed by Blave AI usage from your balance; the more pages it reads, the more it uses."

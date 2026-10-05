@@ -4098,9 +4098,6 @@ msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費�
 msgid "lib.note.paid"
 msgstr "從 Blave Agent 餘額扣款。"
 
-msgid "lib.note.installed"
-msgstr "已在{where}的策略清單。再下載一份會整份覆蓋同名的那支，並重跑回測。"
-
 msgid "lib.note.pending"
 msgstr "進度在右邊的對話。"
 
@@ -4154,6 +4151,15 @@ msgstr "這一句會送給雲端主機上的 agent；這台電腦不受影響。
 
 msgid "lib.cf.ok"
 msgstr "下載並回測"
+
+msgid "lib.cf.titleAgain"
+msgstr "再下載一份「{title}」？"
+
+msgid "lib.cf.l0Again"
+msgstr "會整份覆蓋{where}的策略清單裡同名的那支，並重跑回測。"
+
+msgid "lib.cf.okAgain"
+msgstr "覆蓋並回測"
 
 msgid "lib.msg"
 msgstr "幫我下載官方策略「{title}」（#{id}），跑一次回測看看結果"
@@ -4708,9 +4714,6 @@ msgstr "（選填）"
 
 msgid "idea.topicPh"
 msgstr "例如：資金費率、開盤區間突破、外資連買"
-
-msgid "idea.noOrders"
-msgstr "不會下單。"
 
 msgid "idea.cost"
 msgstr "這一輪按 Blave AI 的用量從餘額扣，讀的網頁越多用量越大。"

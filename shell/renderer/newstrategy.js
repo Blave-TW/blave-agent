@@ -125,7 +125,8 @@ function ideaRefresh() {
   $("idea-opt").textContent = libJoin("", t("idea.opt"));
   $("idea-preview").textContent = msg || "";
   // 自帶 Claude Code / Codex 的人不經 Blave 扣款:費用句只對 Blave AI 講
-  $("idea-hint").textContent = libJoin(t("idea.noOrders"), typeof cur !== "undefined" && cur === "blave" ? t("idea.cost") : "");
+  const hint = typeof cur !== "undefined" && cur === "blave" ? t("idea.cost") : "";
+  $("idea-hint").textContent = hint; $("idea-hint").hidden = !hint;
   $("idea-submit").disabled = !msg || IDEA.sending || st !== "free";
   if (!IDEA.sending) $("idea-msg").textContent = st === "busy" ? t("turn.busy") : st === "stopped" ? t("ho.gate.stopped") : st === "stale" ? t("ho.gate.stale") : IDEA.fail ? t("modal.sendFailed") : "";
 }

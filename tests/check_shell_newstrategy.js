@@ -80,7 +80,8 @@ if (!process.versions.electron) {
     && /e\.key === "Enter" && \(e\.isComposing \|\| e\.keyCode === 229\)\) e\.preventDefault\(\);/.test(src) && /if \(ideaGate\(\) !== "free"\) \{ ideaRefresh\(\); return; \}/.test(cutFn(src, "ideaSend")) && /env: "local", cloud: null/.test(cutFn(src, "ideaGate"))
     && /if \(!ok\) \{ IDEA\.fail = true; ideaRefresh\(\); return; \}[\s\S]*ideaClose\(\);[\s\S]*\$\("idea-modal"\)\.reset\(\);[\s\S]*trackEvent\("idea_sent", \{ from \}\)/.test(cutFn(src, "ideaSend")) && /trapTab\(e, g\("idea-modal"\)\)/.test(src)
     && /\$\("idea-scrim"\)\.hidden/.test(cutFn(read(path.join(R, "trade.js")), "envCanSwitch")) && /if \(!\$\("idea-scrim"\)\.hidden\) ideaRefresh\(\);/.test(cutFn(src, "nsSync")) && /if \(!\$\("idea-scrim"\)\.hidden\) ideaRefresh\(\);/.test(cutFn(src, "nsRepaint")));
-  ok("② 誠實句(§5.2):一律「不會下單。」,引擎是 Blave AI 才接 idea.cost", /libJoin\(t\("idea\.noOrders"\), typeof cur !== "undefined" && cur === "blave" \? t\("idea\.cost"\) : ""\)/.test(cutFn(src, "ideaRefresh")));
+  ok("② 框底那句:只在引擎是 Blave AI 時講 idea.cost,其他引擎整行 hidden(不留空白);「不會下單。」連字串一起拿掉", /const hint = typeof cur !== "undefined" && cur === "blave" \? t\("idea\.cost"\) : "";\n\s*\$\("idea-hint"\)\.textContent = hint; \$\("idea-hint"\)\.hidden = !hint;/.test(cutFn(src, "ideaRefresh"))
+    && !/idea\.noOrders/.test(src) && !("idea.noOrders" in STR.zh) && !("idea.noOrders" in STR.en) && !!STR.zh["idea.cost"] && !!STR.en["idea.cost"]);
   { const keys = [...new Set([...src.matchAll(/\bt\("(ns\.[^"]+)"/g)].map((m) => m[1]).concat([...html.matchAll(/data-i18n(?:-aria|-ph)?="(ns\.[^"]+)"/g)].map((m) => m[1])))];
     const missing = keys.filter((k) => !(k in STR.zh) || !(k in STR.en));
     ok("② 用到的 " + keys.length + " 個 ns.* key zh / en 都齊;zh 全形標點", missing.length === 0 && Object.keys(STR.zh).filter((k) => k.startsWith("ns.")).every((k) => !/[一-鿿][,.?:;!]/.test(STR.zh[k])), missing); }
