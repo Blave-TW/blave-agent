@@ -25,7 +25,7 @@ Overfitting: parameters that just happen to fit past data.
 - Every Type A backtest runs a Monte Carlo permutation test by default (MCPT, `lib/validation.py`) and records a p-value: could shuffled data have done as well?
 - A parameter scan (`lib/param_scan.py`) looks for a plateau of parameters that all work, not the single best cell.
 - Rolling walk-forward (`lib/walk_forward.py`) measures out-of-sample performance.
-- The fee has to match the real market. A fee of 0 is flagged by `lib/quality_check.py` and treated as a bug.
+- The fee should match the real market. `lib/quality_check.py` warns about a fee of 0 but does not force a change.
 - One idea gets one backtest by default. A poor result is reported as it is; the agent does not quietly re-tune the parameters until the numbers look good (see *Iteration Brakes* in [`AGENTS.md`](AGENTS.md)).
 
 ### See Whether Live Runs the Code You Backtested

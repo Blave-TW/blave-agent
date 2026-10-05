@@ -27,7 +27,7 @@ Sobreajuste: parámetros que solo por casualidad encajan con los datos pasados.
 - Cada backtest de Tipo A ejecuta por defecto una prueba de permutación de Monte Carlo (MCPT, `lib/validation.py`) y registra un valor p: ¿unos datos barajados podrían haberlo hecho igual de bien?
 - Un barrido de parámetros (`lib/param_scan.py`) busca una meseta de parámetros que funcionen todos, no la mejor celda aislada.
 - Un walk-forward móvil (`lib/walk_forward.py`) mide el rendimiento fuera de muestra.
-- La comisión tiene que corresponder al mercado real. Una comisión de 0 la marca `lib/quality_check.py` y se trata como un bug.
+- La comisión debería corresponder al mercado real. Con una comisión de 0, `lib/quality_check.py` avisa, pero no obliga a cambiarla.
 - Por defecto, una idea recibe un solo backtest. Un mal resultado se informa tal cual; el agente no reajusta los parámetros a escondidas hasta que los números se vean bien (consulta *Iteration Brakes* en [`AGENTS.md`](AGENTS.md)).
 
 ### Comprueba si en vivo corre el código que pasó el backtest

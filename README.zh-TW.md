@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 - 每次 Type A 回測預設都會跑蒙地卡羅排列檢定（MCPT，`lib/validation.py`），記下 p 值：把資料打亂之後，能不能做出一樣好的成績？
 - 參數掃描（`lib/param_scan.py`）找的是「一整片都有效」的參數平台，不是最高的那一格。
 - 滾動式樣本外驗證（walk-forward，`lib/walk_forward.py`）量樣本外的表現。
-- 手續費要符合真實市場。填 0 會被 `lib/quality_check.py` 標出來，並當成 bug 處理。
+- 手續費應該符合真實市場。填 0 時 `lib/quality_check.py` 會提出警告，但不強制修改。
 - 一個想法預設只回測一次。結果不好就照實回報，agent 不會偷偷調參數調到數字好看（見 [`AGENTS.md`](AGENTS.md) 的 *Iteration Brakes*）。
 
 ### 看得到實盤跑的是不是回測那份

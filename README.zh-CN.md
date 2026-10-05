@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 - 每次 Type A 回测默认都会跑蒙特卡洛排列检验（MCPT，`lib/validation.py`），记下 p 值：把数据打乱之后，能不能做出一样好的成绩？
 - 参数扫描（`lib/param_scan.py`）找的是「一整片都有效」的参数平台，不是最高的那一格。
 - 滚动式样本外验证（walk-forward，`lib/walk_forward.py`）量样本外的表现。
-- 手续费要符合真实市场。填 0 会被 `lib/quality_check.py` 标出来，并当成 bug 处理。
+- 手续费应该符合真实市场。填 0 时 `lib/quality_check.py` 会提出警告，但不强制修改。
 - 一个想法默认只回测一次。结果不好就照实回报，agent 不会偷偷调参数调到数字好看（见 [`AGENTS.md`](AGENTS.md) 的 *Iteration Brakes*）。
 
 ### 看得到实盘跑的是不是回测那份

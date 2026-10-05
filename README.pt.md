@@ -27,7 +27,7 @@ Overfitting: parâmetros que só por acaso se encaixam nos dados passados.
 - Todo backtest de Tipo A roda por padrão um teste de permutação de Monte Carlo (MCPT, `lib/validation.py`) e registra um valor p: dados embaralhados poderiam ter se saído tão bem?
 - Uma varredura de parâmetros (`lib/param_scan.py`) procura um platô de parâmetros que funcionam todos, não a melhor célula isolada.
 - Um walk-forward móvel (`lib/walk_forward.py`) mede o desempenho fora da amostra.
-- A taxa tem que corresponder à do mercado real. Uma taxa 0 é sinalizada por `lib/quality_check.py` e tratada como bug.
+- A taxa deve corresponder à do mercado real. Com taxa 0, `lib/quality_check.py` emite um aviso, mas não obriga a mudá-la.
 - Por padrão, uma ideia recebe um único backtest. Um resultado ruim é relatado como está; o agente não reajusta os parâmetros às escondidas até os números ficarem bonitos (veja *Iteration Brakes* em [`AGENTS.md`](AGENTS.md)).
 
 ### Veja se ao vivo roda o código que passou pelo backtest

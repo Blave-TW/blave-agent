@@ -27,7 +27,7 @@ Overfitting: tham số chỉ tình cờ khớp với dữ liệu quá khứ.
 - Mỗi lần backtest Type A, mặc định đều chạy kiểm định hoán vị Monte Carlo (MCPT, `lib/validation.py`) và ghi lại p-value: dữ liệu bị xáo trộn có làm được tốt như vậy không?
 - Quét tham số (`lib/param_scan.py`) tìm một cao nguyên tham số mà cả vùng đều hiệu quả, không phải một ô tốt nhất.
 - Walk-forward cuốn chiếu (`lib/walk_forward.py`) đo hiệu quả ngoài mẫu.
-- Phí phải khớp với thị trường thật. Phí bằng 0 sẽ bị `lib/quality_check.py` đánh dấu và xử lý như một lỗi.
+- Phí nên khớp với thị trường thật. Phí bằng 0 sẽ bị `lib/quality_check.py` cảnh báo, nhưng không bắt buộc phải sửa.
 - Mặc định, mỗi ý tưởng chỉ backtest một lần. Kết quả kém thì báo đúng như vậy; agent không âm thầm chỉnh lại tham số cho đến khi con số trông đẹp (xem *Iteration Brakes* trong [`AGENTS.md`](AGENTS.md)).
 
 ### Biết được khi chạy thật có đúng là code đã backtest
