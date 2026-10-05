@@ -395,13 +395,17 @@
               <select class="set-sel" id="set-lang"></select>
             </span>
           </div>
-          <!-- 關於(這一頁最下面;版本唯一出現處):一行「Blave {app} · 雲端主機 {ws} · 已是最新版」+ 右邊一個文字連結(檢查更新 / 重新啟動以完成更新)。
-               字與連結由 app.js 的 upPaint 依 upPlan 畫;沒主機 / 沒登入時雲端那一段不寫 -->
+          <!-- 關於(這一頁最下面;版本唯一出現處):第一行「Blave {app} · 已是最新版」+ 文字連結(檢查更新 / 重新啟動以完成更新),只管電腦版;
+               第二行「雲端主機 {ws} · 有新版 {lv}」+「更新雲端主機」,只在主機在跑或停機時出現。字與連結由 app.js 的 upPaint 依 upPlan 畫 -->
           <div class="set-about" id="set-up">
             <h6 class="set-gl" data-i18n="up.about"></h6>
             <div class="set-up-row">
               <p class="set-up-line" id="set-up-line" role="status"></p>
               <button type="button" class="btn-quiet" id="set-up-btn"></button>
+            </div>
+            <div class="set-up-row" id="set-upc" hidden>
+              <p class="set-up-line" id="set-upc-line" role="status"></p>
+              <button type="button" class="btn-quiet" id="set-upc-btn" hidden></button>
             </div>
             <!-- 安裝識別碼(只在這裡一處):回報問題、要求刪除使用資料時附上。追蹤關掉也照出——要刪的是關掉之前送出的那些。
                  值由 app.js 的 aboutIdLoad 填;讀不到或不是 UUID 的形狀就整段不出 -->

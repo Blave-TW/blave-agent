@@ -664,8 +664,8 @@ msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用
 msgid "up.check"
 msgstr "檢查更新"
 
-msgid "up.check.cloudTip"
-msgstr "也會檢查雲端主機；落後就直接更新，不再問"
+msgid "up.cloud.go"
+msgstr "更新雲端主機"
 
 msgid "cn.current"
 msgstr "使用中"
@@ -3177,13 +3177,13 @@ msgid "tm.stMayTrade"
 msgstr "可能仍在下單"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "主機重開後，沒能確認自動下單已經停下，部位可能還在被交易。先按「暫停下單」，再按「檢查更新」把主機更新到最新版本。"
+msgstr "主機重開後，沒能確認自動下單已經停下，部位可能還在被交易。先按「暫停下單」，再按「更新雲端主機」把主機更新到最新版本。"
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "主機重開，自動下單可能沒停住"
 
 msgid "tr.ov.evRestartStopFailedNote"
-msgstr "先按「暫停下單」，再按「檢查更新」；workspace 還是舊版"
+msgstr "先按「暫停下單」，再按「更新雲端主機」；workspace 還是舊版"
 
 msgid "tr.haltReasonAll"
 msgstr "什麼單都不下——平倉與停損也不會執行。問題處理好之後，再按「啟動下單」；不確定原因，可以在聊天請 agent 查。"
@@ -3201,7 +3201,7 @@ msgid "tr.orderFailedLastWhy"
 msgstr "上次下單失敗：{why}"
 
 msgid "tr.cloud.haltReasonUnconfirmed"
-msgstr "舊版下單程式可能還在跑。先按「檢查更新」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。"
+msgstr "舊版下單程式可能還在跑。先按「更新雲端主機」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。"
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "累積損益曲線，{a} 到 {b}，{n} 筆"
@@ -3399,6 +3399,33 @@ msgstr "新版已下載"
 
 msgid "up.row.applying"
 msgstr "更新中…"
+
+msgid "up.row.cloudName"
+msgstr "雲端主機"
+
+msgid "up.row.cloudNew"
+msgstr "有新版 {lv}"
+
+msgid "up.row.cloudNewBare"
+msgstr "有新版"
+
+msgid "up.cf.title"
+msgstr "更新雲端主機？"
+
+msgid "up.cf.body1"
+msgstr "自動下單正在雲端主機上跑。更新動到下單程式時，會用新版重新啟動自動下單。"
+
+msgid "up.cf.body1Unconfirmed"
+msgstr "主機重開後，沒能確認自動下單已經停下。下單程式換成新版就會先停住，按「啟動下單」才會繼續。"
+
+msgid "up.cf.body2"
+msgstr "部位不會平倉。正在送出的單會等它完成才重啟；一直等不到空檔，就只換檔，自動下單先留在舊版。"
+
+msgid "up.cf.detail"
+msgstr "你改過的官方檔會換成官方版，舊檔另存備份；你自建的下單整合不動。"
+
+msgid "up.cf.ok"
+msgstr "更新"
 
 msgid "up.restart"
 msgstr "重新啟動以完成更新"
