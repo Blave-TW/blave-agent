@@ -15,3 +15,4 @@
 .kf-act { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-8); }
 .kf-act .btn-quiet { margin-right: auto; }
 .kf-act .btn-out .spin16 { vertical-align: -3px; }
+.ak-prov { display: block; font-size: 13px; line-height: 1.5; color: var(--ink); }

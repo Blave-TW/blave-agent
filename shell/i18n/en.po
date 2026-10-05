@@ -6030,7 +6030,7 @@ msgid "ak.paste"
 msgstr "Paste your key"
 
 msgid "ak.payg"
-msgstr "Pay-as-you-go API keys only. Keys from monthly plans such as a Coding Plan won't work."
+msgstr "Pay-as-you-go API keys only. Keys from monthly plans, such as a Coding Plan, won't work."
 
 msgid "ak.getKey"
 msgstr "Get a key from {p}"
@@ -6066,7 +6066,7 @@ msgid "ak.e.key"
 msgstr "{p} didn't accept this key ({s}). Check that you pasted the API key itself and that it's still active. Nothing was changed."
 
 msgid "ak.e.shape"
-msgstr "That doesn't look like a complete API key. Check that you pasted all of it. Nothing was changed."
+msgstr "That doesn't look like a complete API key. Part of it may be missing, or it may contain a space or line break. Copy the whole key again and paste it. Nothing was changed."
 
 msgid "ak.e.credit"
 msgstr "Your {p} balance is too low (402). Top up at {p}, then try again."
@@ -6078,10 +6078,13 @@ msgid "ak.e.net"
 msgstr "Couldn't reach {p}. Check your connection and try again."
 
 msgid "ak.e.other"
-msgstr "{p} returned an error ({s}). Nothing was changed. Try again in a moment."
+msgstr "{p} returned an error ({s}). Try again in a moment. Nothing was changed."
+
+msgid "ak.e.unknown"
+msgstr "Couldn't verify this key with {p}. Try again in a moment. Nothing was changed."
 
 msgid "ak.e.seal"
-msgstr "This computer can't store the key encrypted right now, so it wasn't saved. Nothing was changed."
+msgstr "This computer can't store the key encrypted right now, so it wasn't saved. Restart Blave and try again."
 
 msgid "ak.bill"
 msgstr "Uses your {p} key, billed by {p}"
@@ -6090,7 +6093,7 @@ msgid "ak.f.key"
 msgstr "{p} rejected your key ({s}), so this turn didn't run. The key may have been disabled or replaced."
 
 msgid "ak.f.keyBtn"
-msgstr "Edit key"
+msgstr "Edit Key"
 
 msgid "ak.f.credit"
 msgstr "Your {p} balance is too low (402), so this turn didn't finish. Top up at {p}, then send again."
@@ -6105,7 +6108,7 @@ msgid "ak.f.net"
 msgstr "Couldn't reach {p}, so this turn didn't finish. Check your connection, then send again."
 
 msgid "ak.f.cap"
-msgstr "This turn reached its usage limit and stopped here. Send again to continue; the limit resets every turn."
+msgstr "This turn hit Blave's per-turn usage limit and stopped here, so a single turn can't run up a large bill. Send again to continue."
 
 msgid "APIKEY_MISSING"
 msgstr "Your API key is no longer on this computer. Set it up again in Settings › Model access."

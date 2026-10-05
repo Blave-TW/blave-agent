@@ -6032,7 +6032,7 @@ msgid "ak.paste"
 msgstr "貼上金鑰"
 
 msgid "ak.payg"
-msgstr "只收按量計費的 API 金鑰；Coding Plan 這類月費方案的金鑰不能用。"
+msgstr "只能用按量計費的 API 金鑰。Coding Plan 這類月費方案的金鑰不能用。"
 
 msgid "ak.getKey"
 msgstr "到 {p} 申請金鑰"
@@ -6068,7 +6068,7 @@ msgid "ak.e.key"
 msgstr "{p} 不認這把金鑰（{s}）。確認貼上的是 API 金鑰本身、而且沒有停用。什麼都沒有改變。"
 
 msgid "ak.e.shape"
-msgstr "這看起來不是完整的 API 金鑰。確認整串都貼上了。什麼都沒有改變。"
+msgstr "這不像完整的 API 金鑰：可能少貼了一段，或夾了空格、換行。整串重新複製後再貼一次。什麼都沒有改變。"
 
 msgid "ak.e.credit"
 msgstr "{p} 帳戶餘額不足（402）。到 {p} 儲值後再試一次。"
@@ -6080,10 +6080,13 @@ msgid "ak.e.net"
 msgstr "連不到 {p}。檢查網路後再試一次。"
 
 msgid "ak.e.other"
-msgstr "{p} 回了錯誤（{s}）。什麼都沒有改變，等一下再試一次。"
+msgstr "{p} 回了錯誤（{s}）。等一下再試一次。什麼都沒有改變。"
+
+msgid "ak.e.unknown"
+msgstr "沒能跟 {p} 確認這把金鑰。等一下再試一次。什麼都沒有改變。"
 
 msgid "ak.e.seal"
-msgstr "這台電腦現在沒辦法加密儲存金鑰，所以沒有存。什麼都沒有改變。"
+msgstr "這台電腦現在沒辦法把金鑰加密保存，所以沒有存。重新打開 Blave 再試一次。"
 
 msgid "ak.bill"
 msgstr "用你的 {p} 金鑰，費用由 {p} 收"
@@ -6107,7 +6110,7 @@ msgid "ak.f.net"
 msgstr "連不到 {p}，這一輪沒有跑完。檢查網路後再送一次。"
 
 msgid "ak.f.cap"
-msgstr "這一輪用量到上限，停在這裡。要繼續就再送一次，上限每一輪重新計算。"
+msgstr "這一輪碰到 Blave 設的每輪用量上限，先停在這裡，免得一輪花太多。要繼續就再送一次。"
 
 msgid "APIKEY_MISSING"
 msgstr "這台電腦上找不到你的 API 金鑰了。到 設定 › 模型接入 重新設定。"

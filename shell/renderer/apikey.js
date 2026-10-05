@@ -56,12 +56,17 @@ function akFormNode(f) {
   const root = akMk("div", set ? "ak-sub" : "kf");
   if (set) root.append(akBtn("btn-quiet src-back", "‹ " + t("set.cat.model"), () => akClose()));
   root.append(akMk("h6", null, t(set ? "ak.titleSet" : "ak.titleCn")));
-  const pf = akMk("div", "fld"), pl = akMk("label", "fld-l", t("ak.provider")), pw = akMk("span", "f-selw"), sel = akMk("select", "f-input");
-  sel.id = "ak-provider"; pl.htmlFor = "ak-provider";
-  akPresets().forEach((x) => { const o = akMk("option", null, x.name); o.value = x.id; sel.append(o); });
-  sel.value = p.id;
-  sel.addEventListener("change", () => { const v = f.el.input ? f.el.input.value : ""; f.preset = sel.value; akMount(v); });
-  pw.append(sel); pf.append(pl, pw);
+  // 只有一家:「供應商」是靜態文字,不畫只有一個選項的下拉(設計師稽核);兩家以上才用 select
+  const pf = akMk("div", "fld"), multi = akPresets().length > 1;
+  let sel = null;
+  if (multi) {
+    const pl = akMk("label", "fld-l", t("ak.provider")), pw = akMk("span", "f-selw"); sel = akMk("select", "f-input");
+    sel.id = "ak-provider"; pl.htmlFor = "ak-provider";
+    akPresets().forEach((x) => { const o = akMk("option", null, x.name); o.value = x.id; sel.append(o); });
+    sel.value = p.id;
+    sel.addEventListener("change", () => { const v = f.el.input ? f.el.input.value : ""; f.preset = sel.value; akMount(v); });
+    pw.append(sel); pf.append(pl, pw);
+  } else pf.append(akMk("span", "fld-l", t("ak.provider")), akMk("span", "ak-prov", p.name));
   const kfld = akMk("div", "fld"), kl = akMk(storedOk ? "span" : "label", "fld-l", t("ak.key")), val = akMk("span", "src-val");
   let input = null;
   if (storedOk) val.append(akMk("span", "src-saved", t("src.saved")), akBtn("btn-quiet", t("src.replace"), () => { f.replacing = true; akMount(); }));
@@ -106,7 +111,7 @@ function akErrText(r, p) {
   const code = r && r.code, s = r && r.status ? String(r.status) : "";
   if (code === "KEY") return s ? t("ak.e.key", { p, s }) : t("ak.e.shape");
   if (AK_ERR[code]) return t(AK_ERR[code], { p });
-  return t("ak.e.other", { p, s: s || "—" });
+  return s ? t("ak.e.other", { p, s }) : t("ak.e.unknown", { p });   // 沒有狀態碼(IPC 沒回、主行程拋了)就不寫一個假的括號
 }
 function akErr(r) {
   const f = AK.form; if (!f) return;

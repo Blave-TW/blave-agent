@@ -143,6 +143,17 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   t("驗證錯誤句:401 帶狀態碼、形狀不對另一句、402 / 429 / 網路 / 加密不可用各一句、取消與 BUSY 不出句", R.akErrText({ code: "KEY", status: 401 }, "DeepSeek") === 'ak.e.key{"p":"DeepSeek","s":"401"}' && R.akErrText({ code: "KEY", status: 0 }, "DeepSeek") === "ak.e.shape"
     && R.akErrText({ code: "CREDIT", status: 402 }, "D").startsWith("ak.e.credit") && R.akErrText({ code: "RATE" }, "D").startsWith("ak.e.rate") && R.akErrText({ code: "NET" }, "D").startsWith("ak.e.net")
     && R.akErrText({ code: "NO_SEAL" }, "D") === 'ak.e.seal{"p":"D"}' && R.akErrText({ code: "OTHER", status: 500 }, "D").startsWith("ak.e.other") && R.akErrText({ code: "CANCELED" }) === null && R.akErrText({ code: "BUSY" }) === null && R.akErrText({ ok: true }) === null);
+  t("沒有狀態碼(IPC 沒回 / status 0)→ ak.e.unknown;有狀態碼才用 ak.e.other", R.akErrText(null, "D") === 'ak.e.unknown{"p":"D"}' && R.akErrText({ code: "OTHER", status: 0 }, "D") === 'ak.e.unknown{"p":"D"}' && R.akErrText({ code: "OTHER", status: 503 }, "D") === 'ak.e.other{"p":"D","s":"503"}');
+  t("上限卡只有一顆「再送一次」", !cap.second && cap.label === "fault.resend");
+  { // 只有一家供應商:「供應商」是靜態文字,不畫 select;兩家以上才畫(假 DOM 跑 akFormNode)
+    const mk = (tag) => { const n = { tag, cls: "", children: [], attrs: {}, style: {}, set className(v) { this.cls = v; }, get className() { return this.cls; }, set textContent(v) { this._t = v; this.children = []; }, get textContent() { return this._t || ""; },
+      append(...c) { this.children.push(...c); }, appendChild(c) { this.children.push(c); }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, querySelectorAll: () => [], get firstChild() { return this.children[0]; } }; return n; };
+    const doc = { createElement: mk, createTextNode: (x) => ({ tag: "#text", _t: x, children: [] }) };
+    const all = (n, out = []) => { if (n && n.tag) { out.push(n); (n.children || []).forEach((c) => all(c, out)); } return out; };
+    const build = (presets) => new Function("document", "window", "t", "cur", akSrc.replace(/^const /gm, "var ") + "; AK.info = { saved: null, presets: P }; return akFormNode({ where: 'cn', preset: P[0].id, replacing: false, el: {} });".replace("P", "arguments[4]").replace("P[0]", "arguments[4][0]"))(doc, { blave: { platform: "darwin" } }, (k) => k, null, presets);
+    const one = all(build([{ id: "deepseek", name: "DeepSeek", keysUrl: "https://x" }]));
+    const two = all(build([{ id: "deepseek", name: "DeepSeek", keysUrl: "https://x" }, { id: "kimi", name: "Kimi", keysUrl: "https://y" }]));
+    t("一家:沒有 select、靜態文字是 DeepSeek;兩家:有 select", !one.some((n) => n.tag === "select") && one.some((n) => n.cls === "ak-prov" && n._t === "DeepSeek") && two.some((n) => n.tag === "select")); }
   t("畫面不保存金鑰:apikey.js 只在 akSubmit 把輸入框的值交給 apikeySet;收表單先清空輸入框", /window\.blave\.apikeySet\(\{ preset: f\.preset, key: input\.value, connect: f\.where === "cn" \}\)/.test(akSrc)
     && !/AK\.[\w.]+\s*=\s*[^;\n]*\.value/.test(akSrc) && /if \(f\.el\.input\) f\.el\.input\.value = "";\s*AK\.form = null;/.test(akSrc) && /akClear\(\)/.test(cut(app, "function setClose()", "\n}")));
 
@@ -168,6 +179,15 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   t("Windows 那句不講「agent 讀不到」(同一個系統用戶解得開 DPAPI)", !/讀不到/.test(po.zh["ak.ruleWin"]) && !/can't read/.test(po.en["ak.ruleWin"]) && /加密存在這台電腦/.test(po.zh["ak.ruleWin"]) && /讀不到/.test(po.zh["ak.ruleMac"]));
   t("只開按量計費:表單有一句講清楚 Coding Plan 類不能用", /按量計費/.test(po.zh["ak.payg"]) && /Coding Plan/.test(po.zh["ak.payg"]) && /ak\.payg/.test(akSrc));
   t("組名改成「用你自己的 AI」(連結畫面與設定共用)", po.zh["cn.local.label"] === "用你自己的 AI" && po.en["cn.local.label"] === "Use your own AI");
+  { const W = { "ak.payg": ["只能用按量計費的 API 金鑰。Coding Plan 這類月費方案的金鑰不能用。", "Pay-as-you-go API keys only. Keys from monthly plans, such as a Coding Plan, won't work."],
+      "ak.e.shape": ["這不像完整的 API 金鑰：可能少貼了一段，或夾了空格、換行。整串重新複製後再貼一次。什麼都沒有改變。", "That doesn't look like a complete API key. Part of it may be missing, or it may contain a space or line break. Copy the whole key again and paste it. Nothing was changed."],
+      "ak.e.other": ["{p} 回了錯誤（{s}）。等一下再試一次。什麼都沒有改變。", "{p} returned an error ({s}). Try again in a moment. Nothing was changed."],
+      "ak.e.unknown": ["沒能跟 {p} 確認這把金鑰。等一下再試一次。什麼都沒有改變。", "Couldn't verify this key with {p}. Try again in a moment. Nothing was changed."],
+      "ak.e.seal": ["這台電腦現在沒辦法把金鑰加密保存，所以沒有存。重新打開 Blave 再試一次。", "This computer can't store the key encrypted right now, so it wasn't saved. Restart Blave and try again."],
+      "ak.f.cap": ["這一輪碰到 Blave 設的每輪用量上限，先停在這裡，免得一輪花太多。要繼續就再送一次。", "This turn hit Blave's per-turn usage limit and stopped here, so a single turn can't run up a large bill. Send again to continue."],
+      "ak.f.keyBtn": ["修改金鑰", "Edit Key"] };
+    const bad = Object.keys(W).filter((k) => po.zh[k] !== W[k][0] || po.en[k].replace(/\\"/g, '"') !== W[k][1]);
+    t("設計師稽核定稿的字逐字相同" + (bad.length ? ":不同 " + bad : ""), bad.length === 0); }
   t("中文句子用全形標點(括號、逗號、句號)", akKeys.every((k) => !/[(),]/.test(po.zh[k].replace(/\{[ps]\}/g, ""))));
 
   fs.rmSync(dir, { recursive: true, force: true });
