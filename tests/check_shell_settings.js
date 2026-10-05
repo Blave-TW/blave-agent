@@ -57,7 +57,8 @@ eval(src.match(/^function upRefresh\(\) \{[^\n]*\}$/m)[0]);
 eval([/^\$\("ws-update"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-upc-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 三個入口的接線
 const stepWhere = (c) => (c && c.where) || "local";
 const C = { current: "0.0.7", version: "0.0.8" };
-const cloud = (o, kind) => ({ kind: kind || "running", cloud: { config_version: "2026-09-24-b", latest_config_version: "2026-09-24-b", ...((o && o.cloud) || {}) }, report: (o && o.report) || {} });
+// alive = cloud.js status() 的「主機在跑而且回報夠新」;過期那條路在 check_shell_cloud_update.js
+const cloud = (o, kind) => ({ kind: kind || "running", alive: true, cloud: { config_version: "2026-09-24-b", latest_config_version: "2026-09-24-b", ...((o && o.cloud) || {}) }, report: (o && o.report) || {} });
 const plan = (up, st, x) => upPlan({ up, cloud: st && st.cloud, kind: st ? envCloudKind(st) : "loading", localTurn: false, mem: {}, now: 0, cloudStale: !!(st && trRestartUnconfirmed(st.report)), wu: st ? upWu(st.report) : null, ...(x || {}) });
 const paint = (up, st) => { UP = up; TR_BAGS.cloud.st = st === undefined ? TR_BAGS.cloud.st : st; upPaint(); const b = $("set-up-btn"), w = $("ws-update");
   const cb = $("set-upc-btn");

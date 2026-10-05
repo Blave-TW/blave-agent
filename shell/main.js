@@ -25,6 +25,12 @@ if (process.platform === "win32") app.setAppUserModelId("org.blave.desktop");
 if (app.isPackaged && require("./package.json").blaveRelease
     && ["remote-debugging-port", "remote-debugging-pipe"].some((f) => app.commandLine.hasSwitch(f))) app.exit(1);
 
+/* 開發版專用(BLAVE_HEADLESS=1):主視窗照常渲染但不顯示、不進 Dock、不搶前景——背景自動化經除錯埠操作與截圖用。
+   打包版不看這個變數(純函式;tests/check_shell_headless.js)。 */
+function headlessOn(env, isPackaged) { return !isPackaged && !!env && env.BLAVE_HEADLESS === "1"; }
+const HEADLESS = headlessOn(process.env, app.isPackaged);
+if (HEADLESS && app.dock) app.dock.hide();
+
 // macOS GUI app 的 PATH 是極簡的(實測 /usr/bin:/bin 下找不到 claude),
 // 所以先跑一次使用者的登入 shell 解析出真正的 PATH,偵測與之後 spawn 引擎共用。
 // 見 .claude/output/desktop-v1/2026-09-18-agent-detection.md。
@@ -691,7 +697,7 @@ async function startOAuth(lang) {
   libCache = null;                    // 同理:策略庫的 purchased / is_owner 是帳號的
   accountStatus();                    // 登入完成就把 app 的現況(使用事件開關、連的 AI)帶給 api,不等畫面去問
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
-  app.focus({ steal: true });
+  if (!HEADLESS) app.focus({ steal: true });
   return { ok: true };
 }
 
@@ -2639,7 +2645,9 @@ function createWindow() {
     // 改那顆就要改這裡。原本寫 #10151c —— H≈215,正是 canon › 色溫 點名要避開的
     // Tailwind slate 地帶,開窗與 resize 的瞬間看得到。
     backgroundColor: "#0f161a",
+    ...(HEADLESS ? { show: false, paintWhenInitiallyHidden: true } : {}),
     webPreferences: {
+      ...(HEADLESS ? { backgroundThrottling: false } : {}),   // 看不見的視窗預設會被節流:計時器變慢、畫面停更,截到的是舊的
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       // 發佈版連 DevTools 本身都關掉(選單已經不放;這是縱深:哪天有人加回快捷鍵或 openDevTools 也開不起來)
@@ -3105,6 +3113,7 @@ const venueName = (id) => (!id ? "" : id === "paper" ? tmLabels.paperVenue : TT.
 function showMain() {
   const w = BrowserWindow.getAllWindows()[0];
   if (!w) { createWindow(); return; }
+  if (HEADLESS) return;
   if (w.isMinimized()) w.restore(); w.show(); w.focus();
 }
 async function pauseFromMenu() {

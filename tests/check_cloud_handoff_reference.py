@@ -852,6 +852,10 @@ os.chmod(KENV + ".handoff-tmp", 0o644)
 r = subprocess.run([sys.executable, "-c", WIN, KMERGE, KENV], input="DATA_FRED_TOKEN=win-v3\n", capture_output=True, text=True)
 check(r.returncode == 0 and stat.S_IMODE(os.stat(KENV).st_mode) == 0o600 and not os.path.exists(KENV + ".handoff-tmp"),
       "a stale 0644 temp file left by a killed run does not make .env 0644")
+os.symlink(os.path.join(KW, "gone"), KENV + ".handoff-tmp")
+r = subprocess.run([sys.executable, "-c", WIN, KMERGE, KENV], input="DATA_FRED_TOKEN=win-v4\n", capture_output=True, text=True)
+check(r.returncode == 0 and "DATA_FRED_TOKEN='win-v4'" in open(KENV).read() and not os.path.lexists(KENV + ".handoff-tmp") and not os.path.exists(os.path.join(KW, "gone")),
+      f"a dangling symlink left at the temp name is cleared, not followed ({r.stdout.strip()!r} {r.stderr.strip()!r})")
 
 # the this-computer one-liners, run as written: names out, values never
 def doc_cmd(start):
@@ -859,7 +863,7 @@ def doc_cmd(start):
     return c[0] if c else ""
 os.makedirs(os.path.join(KW, "strategies", "s1"))
 open(os.path.join(KW, "strategies", "s1", "strategy.py"), "w").write("import os\nk = os.environ['DATA_FRED_TOKEN']\nx = 'DATA_POLY_KEY'\n")
-open(KENV, "w").write("OKX_API_KEY=okx-v\nDATA_FRED_TOKEN='fred-v'\nDATA_FRED_REGION=us-v\nDATA_FREDX_TOKEN=fx-v\nDATA_API_KEY=venue-v\n")
+open(KENV, "w").write("OKX_API_KEY=okx-v\nDATA_FRED_TOKEN='fred-v'\nDATA_FRED_REGION=us-v\nDATA_FREDX_TOKEN=fx-v\nDATA_API_KEY=venue-v\nDATA_FRED_lower=lo-v\nDATA_FRED_BAD KEY=sp-v\nDATA_FRED_=empty-v\n")
 def sh(c):
     return subprocess.run(["/bin/sh", "-c", c.replace("python3 ", shlex_q(sys.executable) + " ", 1)], cwd=KW, capture_output=True, text=True)
 def shlex_q(s):
@@ -867,10 +871,10 @@ def shlex_q(s):
 c51 = doc_cmd("python3 -c \"print(*sorted({s for f in")
 r = sh(c51.replace("<x>", "s1"))
 check(c51 and r.returncode == 0 and r.stdout.split() == ["DATA_FRED_", "DATA_POLY_"], f"5.1 lists the sources the code names ({r.stdout.strip()!r})")
-c52 = doc_cmd("python3 -c \"print(*sorted({l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if l.startswith('DATA_<SOURCE>_')")
+c52 = doc_cmd("python3 -c \"print(*sorted({n for n in (l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if '=' in l) if __import__('re').fullmatch(r'DATA_<SOURCE>_[A-Z][A-Z0-9_]*', n)")
 r = sh(c52.replace("<SOURCE>", "FRED"))
 check(c52 and r.returncode == 0 and r.stdout.split() == ["DATA_FRED_REGION", "DATA_FRED_TOKEN"] and "-v" not in r.stdout,
-      f"5.2 local lists one source's names, no value, not a look-alike source ({r.stdout.strip()!r})")
+      f"5.2 local lists one source's names, no value, not a look-alike source, nothing outside the name format ({r.stdout.strip()!r})")
 c56 = doc_cmd("python3 -c \"print(*sorted({l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if l.startswith('DATA_') and")
 r = sh(c56)
 check(c56 and r.returncode == 0 and "DATA_FRED_TOKEN" in r.stdout.split() and "-v" not in r.stdout, f"5.6 local lists names only ({r.stdout.strip()!r})")

@@ -191,7 +191,7 @@ def version_note_of(code):
     """The VERSION_NOTE a piece of stored code declares (last module-level string assignment,
     as exec would leave it), stripped; '' when absent or unparsable. ast, never exec."""
     try:
-        tree = ast.parse(code)
+        tree = ast.parse(code.lstrip('\ufeff'))   # stored code keeps a BOM (the bytes are hashed as-is)
     except (SyntaxError, ValueError):
         return ''
     note = ''

@@ -325,6 +325,8 @@ async function blaveGo(b) {
   if (oauthPending) { window.blave.cancelOAuth(); return; }
   // 手上已經有 token:直接切過去,不再開一次瀏覽器。
   if (await window.blave.hasBlaveToken()) {
+    // 從別的引擎切回來時 hasToken 本來就是 true:只有真的翻轉(登出後再按)才作廢策略庫/報告快取
+    if (!hasToken) { hasToken = true; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); }
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
     return;
@@ -337,7 +339,7 @@ async function blaveGo(b) {
   try {
     // 同意頁的 <lang> 收 en/zh/cn/…,跟我們的語系代號同一組,直接送。
     await window.blave.startOAuth(LANG);
-    acct = null;
+    hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
   } catch (e) {
@@ -707,9 +709,12 @@ var UP_CHECKING = false;   // 按了「檢查更新」、兩邊都還沒回來:�
 var UP_CLOUD_BUSY = false;   // 按了「更新雲端主機」、刷新還沒回來:那顆停用,不重複送
 function upNow() {
   const cst = TR_BAGS.cloud.st, kind = cst ? envCloudKind(cst) : "loading";
+  // 主機在跑、但回報不新鮮(連不上 / 429 / 睡醒太久沒同步:cloud.js 留著舊畫面、alive=false):裡面的「已暫停」「對帳器沒在跑」
+  // 都不能信(用戶可能已在 web / TG 恢復下單),一律當讀不到 → 更新雲端主機先問
+  const exec = !cst ? "loading" : kind === "running" && !cst.alive ? "unknown" : trExecState(cst);
   return upPlan({ up: UP, cloud: (cst && cst.cloud) || null, kind, localTurn: upLocalTurn(), mem: UPD, now: Date.now(),
     cloudStale: !!(cst && trRestartUnconfirmed(cst.report)), wu: kind === "running" ? upWu(cst.report) : null, checking: UP_CHECKING,
-    exec: cst ? trExecState(cst) : "loading", cloudBusy: UP_CLOUD_BUSY });
+    exec, cloudBusy: UP_CLOUD_BUSY });
 }
 /* 一回合結束了(turn-end 叫;回合出錯 / 沒回覆 / 分類過的錯誤都算 fault)。只管更新期間內的回合。
    回合出錯、或整回合沒碰雲端主機:什麼都沒換,更新期間到此為止(之後無關的回合不再被畫成更新中);
@@ -2598,7 +2603,7 @@ function blaveLoginFlow(card) {
     card.set({ calm: true, text: t("oauth.opened"), label: t("oauth.cancel"), out: true, on: () => window.blave.cancelOAuth() });
     try {
       await window.blave.startOAuth(LANG);
-      oauthPending = false; waitChanged(); acct = null;
+      oauthPending = false; waitChanged(); hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
       mpInit("blave");                         // 失效期間型錄抓回來是空的
       card.set(resendState(card, t("fault.authOk")));
       acctPrecheck();

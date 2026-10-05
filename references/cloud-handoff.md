@@ -365,7 +365,7 @@ DATA_POLYGON_TOKEN='value'
 Commands on this computer use `python3`, not `grep` — the same line runs on macOS and Windows. The cloud machine is Linux, so its side keeps `grep`.
 
 1. Which sources: `python3 -c "print(*sorted({s for f in __import__('glob').glob(__import__('sys').argv[1]) for s in __import__('re').findall(r'DATA_[A-Z0-9]+_', open(f, encoding='utf-8').read())}))" "strategies/<x>/*.py"` on this computer's copy (`<x>` = `<name>` going up, `<dest>` coming back) (names from the code, not values).
-2. List each source's key NAMES on the SOURCE side (only the part before `=` is printed, never a value): local `python3 -c "print(*sorted({l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if l.startswith('DATA_<SOURCE>_') and '=' in l}))"`; cloud `ssh <SSH_OPTS> blaveagent@<host> grep -oE "'^DATA_<SOURCE>_[A-Z][A-Z0-9_]*'" "/opt/blave-agent/workspace/.env"`. **Drop `DATA_API_KEY` and `DATA_SECRET_KEY` if they appear** — those two are not data-source keys, they are the credentials of an exchange whose id is `DATA`, and they never travel. A source left with no names → that source's key does not move (rule above); carry on with the other sources, if any. What travels in step 5 is exactly the names you collected here.
+2. List each source's key NAMES on the SOURCE side (only the part before `=` is printed, never a value): local `python3 -c "print(*sorted({n for n in (l.split('=', 1)[0] for l in open('.env', encoding='utf-8') if '=' in l) if __import__('re').fullmatch(r'DATA_<SOURCE>_[A-Z][A-Z0-9_]*', n)}))"`; cloud `ssh <SSH_OPTS> blaveagent@<host> grep -oE "'^DATA_<SOURCE>_[A-Z][A-Z0-9_]*'" "/opt/blave-agent/workspace/.env"`. **Drop `DATA_API_KEY` and `DATA_SECRET_KEY` if they appear** — those two are not data-source keys, they are the credentials of an exchange whose id is `DATA`, and they never travel. A source left with no names → that source's key does not move (rule above); carry on with the other sources, if any. What travels in step 5 is exactly the names you collected here.
 3. Tell the user before sending: "These data-source keys will be copied to your `<destination>`: `<source list>`. Exchange keys are not copied — bind those on the destination yourself."
 4. Save the script below, verbatim, as `tmp/handoff_env_merge.py` with your file-write tool (local → cloud: `ssh <SSH_OPTS> blaveagent@<host> mkdir -p "/opt/blave-agent/workspace/tmp"`, then `scp` it to `/opt/blave-agent/workspace/tmp/handoff_env_merge.py`).
 
@@ -457,14 +457,14 @@ Commands on this computer use `python3`, not `grep` — the same line runs on ma
        out += ["# source %s added=%d" % (src, b["added"])] + list(b["fields"].values())
    tmp = path + ".handoff-tmp"
    try:
-       if os.path.exists(tmp):
+       if os.path.lexists(tmp):
            os.unlink(tmp)
        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
            f.write("\n".join(out + [END]) + "\n")
        os.replace(tmp, path)
    except Exception as e:
-       if os.path.exists(tmp):
+       if os.path.lexists(tmp):
            os.unlink(tmp)
        sys.exit("Error: %s" % type(e).__name__)
    print("written:", ", ".join(sorted("DATA_%s_%s" % (s, f) for s in new for f in new[s])))

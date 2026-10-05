@@ -55,17 +55,25 @@ t("#29 AGENTS › Charts:資料夾圖檔出現在回測分頁只限雲端 web,�
   "the desktop backtest tab shows none" in agents and "heatmap and grid are in the 參數掃描 tab" in agents)
 
 mk = read("references", "marketplace.md")
-quality = [l for l in mk.splitlines() if "quality_check.py" in l or l.lstrip().startswith("- Exit 1")]
-install = mk[mk.index("7. **Quality scan**"):mk.index("8. **Run it")]
+quality = [l for l in mk.splitlines() if "quality_check.py" in l or "RESULT: run-as-is" in l]
+install = mk[mk.index("7. **Quality scan, then move**"):mk.index("8. **Run it")]
 t("#32 安裝流程的品質掃描 exit 1:照原樣跑、不問、不改下載的碼、回覆提一句",
   "run it as it is" in install and "never stop to ask" in install and "never edit the downloaded code" in install
   and "ask for confirmation" not in install)
-asks = [l for l in quality if "quality_check.py" in l and re.search(r"exit 1: confirm", l)]
-t("#32 bundle / shared 兩條流程的品質掃描 exit 1 也不再問", not asks and mk.count("exit 1: run it as it is") == 2)
-security = mk[mk.index("6. **Security scan**"):mk.index("7. **Quality scan**")]
-t("#32 安全掃描的警告照舊要問(不放寬)", "Exit 1 (warnings) → show findings to user, ask for confirmation" in security)
+asks = [l for l in quality if "quality_check.py" in l and re.search(r"run-as-is`?: confirm", l)]
+t("#32 bundle / shared 兩條流程的品質掃描 run-as-is 也不再問", not asks and mk.count("`run-as-is`: run it as it is") == 2)
+security = mk[mk.index("6. **Security scan**"):mk.index("7. **Quality scan, then move**")]
+t("#32 安全掃描的警告照舊要問(不放寬)", "`RESULT: ask-user` (warnings) → show findings to user, ask for confirmation" in security)
 t("#36 下載檔用 mv 不用 cp;流程結束 tmp/ 不留下載檔",
-  "`mv`, never `cp`" in security and "Leave nothing of the download in `tmp/`" in mk)
+  "`mv` (never `cp`" in install and "Leave nothing of the download in `tmp/`" in mk)
+# 10-04 Windows 測試機:Codex 看到 #101 檔頭「RSI + Bollinger Bands」與 rsi_bb_reversal,判定跟「BTC 通道動能共振」不符而拒裝
+names = [l for l in mk.splitlines() if l.startswith("**Listing name vs code.**")]
+desktop = section(mk, "## Desktop-downloaded picks")
+t("#101 名稱不符:DISPLAY_NAME/SYMBOL/INTERVAL/方向一致就照裝、檔頭與 STRATEGY_NAME 不同不停、回覆提一句;標的/週期/方向不符照樣問",
+  len(names) == 1 and "`DISPLAY_NAME`, `SYMBOL`, `INTERVAL` and long/short side match" in names[0]
+  and "is not a reason to stop" in names[0] and "one sentence in the reply" in names[0]
+  and "does not match, stop before moving it into `strategies/` (step 7) and ask the user" in names[0])
+t("#101 名稱不符:電腦版下載那一節明確套用這條", "*Listing name vs code* above applies." in desktop)
 
 t("#66 AGENTS › Response Style:只提存在的檔案,觸發才寫的 log 不算已建立",
   "Name only files and outputs that exist" in style and "has not been created yet" in style)

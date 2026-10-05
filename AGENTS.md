@@ -129,6 +129,7 @@ A report is a document the user reads in the Reports list (web: 「報告」 in 
 - One-off scripts → `tmp/` (workspace-relative), never workspace root or `strategies/`; delete yours before you reply, and never copy from a script already in `tmp/` (stale leftovers — `lib/` and `references/` are the reference)
 - **NEVER write `except Exception: pass`** — always `except Exception as e: print(f"Error: {e}")`
 - NEVER chain commands with `&&`, `||`, or `;` — run ONE command at a time, on Windows too
+- On Windows, read and write strategy files, `.env` and `references/` with python (`encoding='utf-8'`), never `Get-Content` / `Set-Content` — PowerShell 5.1 garbles UTF-8 Chinese
 - Run `python3 file.py` / `node file.js` directly; a `tmp/` script importing `lib` → `python3 -m tmp.x`
 - `python3 strategies/<name>/strategy.py` (from the workspace) is a backtest unless the strategy is in the 下單設定 — then a quiet live tick (`references/deployment.md` › *Live vs Backtest*). `$BLAVE_AGENT_HOME` per runtime: `references/lib.md` › *`lib/notify.py`* — check, don't assume
 

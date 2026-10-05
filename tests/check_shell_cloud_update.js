@@ -18,8 +18,9 @@ const submitMessage = async (msg, o) => { sent.push([msg, o]); running = true; r
 const confirmBox = (o) => { boxes.push(o); };
 let tracked = []; const trackFeature = (n) => { tracked.push(n); };
 const envCloudKind = (st) => (st && st.kind) || "loading";
-const trExecState = (st) => (st && st.exec) || "loading";
-const trRestartUnconfirmed = (r) => { const x = r && r.reconciler && r.reconciler.stopped; return !!(x && x.reason === "machine_restart" && x.gated === false); };
+// 下單狀態用 trade.js 的真 trExecState(稽核 P1:mock 成 st.exec 時看不到「過期回報」那條路)
+const cutLine = (s, name) => { const i = s.indexOf("function " + name + "("), e = s.indexOf("\n", i), l = s.slice(i, e); return /\}\s*(\/\/.*)?$/.test(l) && !/\{\s*$/.test(l) ? l : cut(s, name); };   // 一行寫完的函式不能切到下一個 "\n}"
+eval(["trHasAccount", "trRestartStopped", "trRestartUnconfirmed", "trRestartKind", "trExecState"].map((n) => cutLine(trsrc, n)).join("\n"));
 const trVenueIds = (r) => (r && r.venue ? [r.venue] : []), trVenueLabel = (id) => id || "", envMoney = (st) => (st && st.report && st.report.venue === "paper" ? "paper" : "real");
 const envMoneyText = (m) => (m === "paper" ? "模擬" : "真錢"), trWhereTidy = (s) => s;
 const paneSt = { chat: { off: false } }, paneToggle = () => {}, upPaint = () => {}, upRefresh = () => Promise.resolve(), $ = (id) => ({ id });
@@ -30,7 +31,11 @@ var UP_CHECKING = false, UP_CLOUD_BUSY = false;
 eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upLocalTurn", "upNow", "upTurnEnded", "upCloudWhere"].map((n) => fnOr(n)).join("\n"));
 eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend"].map((n) => fnOr(n, true)).join("\n"));
 
-const st = (exec, o) => ({ kind: "running", exec, cloud: { config_version: "2026-10-04-c", latest_config_version: "2026-10-04-d", ...((o && o.cloud) || {}) }, report: { venue: "binance", ...((o && o.report) || {}) } });
+// 每個下單狀態對到一份會讓真 trExecState 回出那個值的回報(alive = cloud.js 的「主機在跑而且回報夠新」)
+const REP = { running: {}, halted: { halt: { halted: true } }, dead: { reconciler: { alive: false } }, noaccount: { venue: null },
+  unconfirmed: {}, unknown: { error: "build failed", venues: null } };
+const st = (exec, o) => ({ kind: "running", alive: !(o && o.alive === false), cloud: { config_version: "2026-10-04-c", latest_config_version: "2026-10-04-d", ...((o && o.cloud) || {}) },
+  report: exec === "loading" ? null : { venue: "binance", venues: {}, reconciler: { alive: true }, ...(REP[exec] || {}), ...((o && o.report) || {}) } });
 const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent = []; boxes = []; tracked = []; checks = 0; refreshes = 0; Object.assign(UPD, { cloudTurn: false, turnCloud: false, session: null, lagCv: null, done: null }); };
 
 (async () => {
@@ -62,6 +67,12 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
   for (const ex of ["loading", "unknown"]) {
     reset(st(ex)); await upCloudUpdate();
     ok("更新雲端主機:" + ex + "(讀不到下單狀態)→ 當成可能在跑,先問;第一句用沒能確認停下那句", boxes.length === 1 && sent.length === 0 && boxes[0].lines[0] === "up.cf.body1Unconfirmed");
+  }
+  ok("st() 造出的回報經真 trExecState 得到預期的狀態", ["running", "halted", "dead", "noaccount", "unknown", "loading"].every((ex) => trExecState(st(ex)) === ex)
+    && trExecState(st("unconfirmed", { report: { reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } } })) === "unconfirmed");
+  for (const [ex, why] of [["running", "回報寫對帳器在跑"], ["halted", "回報寫已暫停(用戶可能已在 web / TG 恢復)"], ["dead", "回報寫對帳器沒在跑"]]) {
+    reset(st(ex, { alive: false })); await upCloudUpdate();
+    ok("主機在跑但回報過期(alive:false;連不上 / 429 / 睡醒)+ " + why + " → 一律先問,第一句用沒能確認停下那句", boxes.length === 1 && sent.length === 0 && boxes[0].lines[0] === "up.cf.body1Unconfirmed");
   }
   reset(st("running", { cloud: { latest_config_version: "2026-10-04-c" } })); await upCloudUpdate();
   ok("雲端已是最新(沒有落後也沒有重開未確認):更新雲端主機什麼都不做", boxes.length === 0 && sent.length === 0);

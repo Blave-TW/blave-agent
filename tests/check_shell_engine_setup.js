@@ -264,7 +264,9 @@ const venvDir = (r) => path.join(r.base, "venv");
 
   // ── 關 app / 為了更新重開:收掉正在跑的 pip(稽核 0.1.12 P1-1)──
   { const a = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: ["Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl (10.1 MB)"] } : { code: 0 }) });
-    const p = a.S.ensure().then(() => null, (e) => e); await new Promise((r) => setTimeout(r, 30));
+    // 等到 pip 真的卡在那個套件才收(固定 30ms 真時鐘在慢機器上還沒裝到 → abort() 回 false、ensure 永遠不回;稽核跑 12 次掛 3 次)
+    const atArg = async (r, arg) => { for (let k = 0; k < 2000 && !(r.lastChild && r.calls.length && r.calls[r.calls.length - 1].args.includes(arg)); k++) await new Promise((x) => setTimeout(x, 5)); };
+    const p = a.S.ensure().then(() => null, (e) => e); await atArg(a, pin("pandas"));
     const lock = path.join(venvDir(a), ".blave-install.lock");
     const hadLock = fs.existsSync(lock), wasBusy = a.S.busy();
     const stopped = await a.S.abort(); const e = await p;
@@ -273,7 +275,7 @@ const venvDir = (r) => path.join(r.base, "venv");
     ok("abort():沒在裝時立刻回 false", (await a.S.abort()) === false);
     // 裝到美股那組時關 app(稽核 0.1.12 複驗 P2):不能被記成「美股那組失敗」,ensure 也不能當成裝好了
     const o2 = rig({ deps: DEPS17, behave: (bin, args) => (args.includes(US[0]) ? { hang: true } : { code: 0 }) });
-    const p2 = o2.S.ensure().then(() => "resolved", (x) => x); await new Promise((r) => setTimeout(r, 30));
+    const p2 = o2.S.ensure().then(() => "resolved", (x) => x); await atArg(o2, US[0]);
     const busyUs = o2.S.busy() && o2.S.snapshot().cur.name === nm(US[0]);
     await o2.S.abort(); const r2 = await p2, s2 = o2.S.snapshot();
     ok("裝美股那組時被收掉:ensure 拋出(aborted)、沒有 warn、不送 engine_opt_fail 也不送 engine_setup、美股那組記號沒寫", busyUs && r2 !== "resolved" && r2.aborted === true && !s2.warn && o2.tracked.length === 0
