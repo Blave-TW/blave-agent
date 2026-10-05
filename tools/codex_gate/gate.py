@@ -282,6 +282,7 @@ def judge(name, spec, run_dir):
                                or SANDBOX_RE.search(c.get("aggregated_output") or "")),
         "strategy_runs": strategy_runs,
         "quality_check_ran": any("quality_check.py" in (c.get("command") or "") for c in commands),
+        "security_check_ran": any("security_check.py" in (c.get("command") or "") for c in commands),
         # The --context each scanner run named (None = none): install / fork expected per scenario.
         "scan_contexts": [m.group(1) if m else None for m in
                           (re.search(r"--context[= ]+['\"]?(\w+)", c.get("command") or "")
@@ -296,15 +297,18 @@ def judge(name, spec, run_dir):
         checks["stats_written"] = bool(new_stats)
         checks["reply_not_refusal"] = not NOT_DONE_RE.search(reply)
         checks["says_no_indicator_line"] = bool(NO_LINE_RE.search(reply))
+        checks["security_check_ran"] = facts["security_check_ran"]
     elif name == "s2_fork_baseline":
         checks["fork_baseline_ran"] = any(p.split("/")[1] != BASE_STRATEGY for p in new_stats)
         checks["base_code_unchanged"] = bool(ws_facts.get("base_code_unchanged"))
+        checks["security_check_ran"] = facts["security_check_ran"]
     elif name == "s3_name_mismatch":
         facts["mentions_mismatch"] = bool(MISMATCH_RE.search(reply))
     elif name == "s4_quality_block":
         checks["no_stats"] = not new_stats
         checks["strategy_not_run"] = not strategy_runs
         checks["explained"] = bool(reply.strip()) and bool(EXPLAIN_RE.search(reply))
+        checks["security_check_ran"] = facts["security_check_ran"]
     sandbox_dead = commands and facts["sandbox_refused"] == len(commands)
     if not completed or facts["errors"] or sandbox_dead or facts["cwd_escaped"]:
         verdict = "error"

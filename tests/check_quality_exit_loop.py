@@ -302,15 +302,20 @@ check(r.returncode == 1 and "baseline run of a fresh fork: run it unchanged" in 
       and r.stdout.index("fresh fork") < r.stdout.index("Otherwise confirm"),
       "CLI exit-1 footer does not tell a library install to stop and ask")
 agents_lines = open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read().splitlines()
-agents = [l for l in agents_lines if "MUST declare `PLOT_SERIES`" in l]
-check(len(agents) == 1 and "you write or edit" in agents[0] and "the quality check's `NEXT:` line" in agents[0]
-      and "a library strategy installed as is" in agents[0] and "fresh fork's baseline run unchanged" in agents[0] and "only if the user asks" in agents[0],
-      "AGENTS.md PLOT_SERIES rule is scoped to own strategies, library installs / fork baselines run unchanged (NEXT line), later user edits allowed")
+# 10-05 Wei: a missing PLOT_SERIES in a strategy being edited is a question for the user, not a MUST.
+agents = [l for l in agents_lines if l.startswith("**`PLOT_SERIES` puts the indicator on the trade chart**")]
+check(len(agents) == 1 and "MUST declare `PLOT_SERIES`" not in "\n".join(agents_lines)
+      and "ask the user whether to add it" in agents[0] and "not a rule to enforce" in agents[0]
+      and "a library strategy installed as is and a fresh fork's baseline run unchanged" in agents[0],
+      "AGENTS.md PLOT_SERIES: no MUST; editing asks the user, library installs / fork baselines run unchanged")
 report = [l for l in agents_lines if l.startswith("- **Reporting a backtest")]
-check(len(report) == 1 and "you wrote or edited: add `PLOT_SERIES` or ask" in report[0]
+check(len(report) == 1 and "you wrote or edited: ask whether to add `PLOT_SERIES`" in report[0]
       and "installed as is" in report[0] and "fresh fork's baseline" in report[0] and "no edit, no question" in report[0]
-      and "chart → add `PLOT_SERIES` or ask" not in report[0],
-      "AGENTS.md › Reporting a backtest: add-or-ask only for own strategies, library installs say it in one sentence")
+      and "add `PLOT_SERIES` or ask" not in report[0],
+      "AGENTS.md › Reporting a backtest: own strategies ask about PLOT_SERIES, library installs say it in one sentence")
+ps = open(os.path.join(ROOT, "references", "plot-series.md"), encoding="utf-8").read()
+check("**mandatory**" not in ps and "ask the user whether to add it" in ps,
+      "plot-series.md: declaring is not mandatory any more; editing asks the user")
 mk = open(os.path.join(ROOT, "references", "marketplace.md"), encoding="utf-8").read()
 fork5 = mk[mk.index("5. **Run the baseline backtest immediately**"):]
 fork5 = fork5[:fork5.index("\n")]

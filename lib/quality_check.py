@@ -67,7 +67,10 @@ def txf_settlement_findings(filepath: str) -> list[dict]:
 def plot_series_findings(filepath: str) -> list[dict]:
     """PLOT_SERIES check only — the runner's non-blocking backtest hint."""
     tree = _parse_for_runner(filepath)
-    return _check_plot_series(tree) if tree is not None else []
+    found = _check_plot_series(tree) if tree is not None else []
+    # The CLI message keeps its old wording (output without --context is frozen); the runner
+    # prints this one after every backtest, where an own strategy's missing line is a question.
+    return [dict(f, msg=f["msg"][:f["msg"].index(" — ") + 3] + _PLOT_SERIES_RUNNER_HINT) for f in found]
 
 
 def exit_loop_findings(filepath: str) -> list[dict]:
@@ -330,6 +333,13 @@ _PLOT_SERIES_FIX = (
     "sub-pane) or {\"SMA fast\": (\"SMA_F\", {\"overlay\": True})} (price units, "
     "overlay); the column must exist in the df fetch_data returns. See AGENTS.md › "
     "Backtest Output, references/plot-series.md, examples/btc_ti_5min/strategy.py."
+)
+
+
+_PLOT_SERIES_RUNNER_HINT = (
+    "the backtest tab's trade chart gets no indicator line. A library strategy installed as is, or "
+    "a fresh fork's baseline: leave it and say so in one sentence. A strategy you wrote or are "
+    "editing: ask the user whether to add PLOT_SERIES (references/plot-series.md)."
 )
 
 
@@ -697,63 +707,76 @@ CHECK_LEVELS = {
     "exit_loop": "WARNING",
 }
 CONTEXTS = ("install", "fork", "edit")
+# WARNINGs that refuse the file in these contexts: an unfinished template is not installed or forked.
+BLOCKS_IN = {"template": ("install", "fork")}
 
 # install / fork run a WARNING-only file unchanged (references/marketplace.md); the reply then
 # says what the user will see, one plain sentence per warning.
 USER_EFFECT = {
-    "template": "parts of the strategy logic look unfinished, so the results may mean little",
     "fee": "the backtest counts no trading fee, so the returns look better than they would be",
     "plot_series": "the backtest chart has no indicator line",
     "spot_short": "its short signals stay flat because spot cannot short",
     "exit_loop": "its stop / target exits are custom code rather than the standard exit helper",
 }
-# edit: the agent's own code, so each warning is fixed (AGENTS.md › PLOT_SERIES, strategy-code.md
-# › spot long-only / Exits); FEE=0 can be real, so the warning's own condition stays.
+# edit: the user decides whether a warning gets fixed; this is what fixing it would mean.
 EDIT_FIX = {
     "template": "fill in the unfinished template logic",
-    "fee": "use a realistic FEE unless the venue really charges none",
+    "fee": "use the venue's real fee",
     "plot_series": "declare PLOT_SERIES",
     "spot_short": "make compute_signals long-only",
-    "exit_loop": "use lib.exits.apply_exits (if it cannot model the rule, tell the user instead)",
+    "exit_loop": "use lib.exits.apply_exits",
 }
 
 
+def blocks(context, finding: dict) -> bool:
+    return finding["level"] == "CRITICAL" or context in BLOCKS_IN.get(finding["check"], ())
+
+
+def verdict(context, findings: list) -> str:
+    if any(blocks(context, f) for f in findings):
+        return "do-not-run"
+    return "run-as-is" if findings else "clean"
+
+
 def next_line(context: str, findings: list) -> str:
-    criticals = [f for f in findings if f["level"] == "CRITICAL"]
+    blocked = any(blocks(context, f) for f in findings)
     warns = list(dict.fromkeys(f["check"] for f in findings if f["level"] == "WARNING"))
     if context == "install":
-        if criticals:
-            return ("NEXT: Stop — do not move or run it; delete the download and tell the user in one "
-                    "plain sentence why it was not installed.")
+        if blocked:
+            return ("NEXT: Stop — do not install it: delete this file (in a bundle, only this file) and "
+                    "tell the user in one plain sentence why it was not installed.")
         if warns:
-            return ("NEXT: Move it into strategies/ and run it unchanged — do not edit the code, do not "
-                    "ask; after the run tell the user, one plain sentence each: "
-                    + "; ".join(USER_EFFECT[w] for w in warns) + ".")
-        return "NEXT: Move it into strategies/ and run the backtest."
+            return ("NEXT: Go on with the install flow (references/marketplace.md, steps 7–8) and run it "
+                    "unchanged — do not edit the code and do not ask about these warnings; after the run "
+                    "tell the user, one plain sentence each: " + "; ".join(USER_EFFECT[w] for w in warns) + ".")
+        return "NEXT: Go on with the install flow (references/marketplace.md, steps 7–8)."
     if context == "fork":
-        if criticals:
-            return ("NEXT: Stop — create no fork; delete the download and tell the user in one plain "
-                    "sentence why.")
+        if blocked:
+            return "NEXT: Stop — create no fork: delete this file and tell the user in one plain sentence why."
         if warns:
-            return ("NEXT: Save the fork under its new name and run the baseline unchanged — do not fix "
-                    "anything or ask now (fix only when the user asks for changes); in the report tell "
-                    "the user, one plain sentence each: " + "; ".join(USER_EFFECT[w] for w in warns) + ".")
-        return "NEXT: Save the fork under its new name and run the baseline backtest."
-    fixes = "; ".join(EDIT_FIX[w] for w in warns)
-    if criticals:
-        return ("NEXT: Do not backtest or submit it — fix every critical finding above"
-                + (f", and also: {fixes}" if fixes else "") + "; then run this check again.")
+            return ("NEXT: Go on with the fork flow (references/marketplace.md, steps 4–5) and run the "
+                    "baseline unchanged — do not fix these warnings or ask about them now (fix only if the "
+                    "user asks for changes); in the report tell the user, one plain sentence each: "
+                    + "; ".join(USER_EFFECT[w] for w in warns) + ".")
+        return "NEXT: Go on with the fork flow (references/marketplace.md, steps 4–5)."
+    if blocked:
+        return "NEXT: Do not backtest or submit it — fix every critical finding above, then run this check again."
     if warns:
-        return f"NEXT: Before the backtest or a submission: {fixes}; then run this check again."
-    return "NEXT: Run the backtest."
+        return ("NEXT: Before the backtest or a submission, tell the user each warning in plain words and ask "
+                "whether to fix it (" + "; ".join(EDIT_FIX[w] for w in warns) + "); if the user accepts it "
+                "as it is, go on without fixing it or running this check again.")
+    return "NEXT: Go on — backtest or submit it."
 
 
 def parse_args(argv: list):
-    """(file or None, context or None); ValueError on a missing or unknown --context value."""
+    """(file or None, context or None); ValueError on a bad, missing or repeated --context and on
+    more than one file — a second file would otherwise go unscanned behind the first one's verdict."""
     path, context, i = None, None, 0
     while i < len(argv):
         a = argv[i]
         if a == "--context" or a.startswith("--context="):
+            if context is not None:
+                raise ValueError("--context given more than once")
             if a == "--context":
                 i += 1
                 value = argv[i] if i < len(argv) else ""
@@ -764,6 +787,8 @@ def parse_args(argv: list):
             context = value
         elif path is None:
             path = a
+        else:
+            raise ValueError("scan one file at a time")
         i += 1
     return path, context
 
@@ -801,8 +826,8 @@ if __name__ == "__main__":
 
         results = check(path)
         criticals = [r for r in results if r["level"] == "CRITICAL"]
-        _verdict("do-not-run" if criticals else "run-as-is" if results else "clean",
-                 next_line(_context, results) if _context else None)
+        v = verdict(_context, results)
+        _verdict(v, next_line(_context, results) if _context else None)
 
         if not results:
             print("✅ No issues found.")
@@ -814,7 +839,7 @@ if __name__ == "__main__":
             print(f"  {icon} Line {r['line']}: {r['msg']}")
 
         if _context:   # the NEXT line already said what to do
-            return 2 if criticals else 1
+            return 2 if v == "do-not-run" else 1
         print()
         if criticals:
             print("❌ CRITICAL issues — do NOT run/submit this strategy without fixing them.")

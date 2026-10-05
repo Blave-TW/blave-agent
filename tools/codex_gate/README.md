@@ -26,15 +26,17 @@ Before any Codex run, the gate backtests the base fixture once itself; if that w
 
 | Scenario | Seeded | Message | Pass when |
 |---|---|---|---|
-| `s1_install_no_plot` | `tmp/library_9001.py` = SMA strategy without `PLOT_SERIES` (quality `RESULT: run-as-is`) | desktop library pick | a `strategies/*/stats.json` is written; the reply has no 沒有安裝／沒有執行-type refusal; one sentence says the chart has no indicator line |
-| `s2_fork_baseline` | the same strategy installed and already backtested as `strategies/gate_sma_trend/` | 「用我已經裝好的「BTC 均線趨勢」當底，fork 一份我自己的版本」 | a new strategy dir (≠ base) gets `stats.json`; the base `strategy.py` is byte-identical |
+| `s1_install_no_plot` | `tmp/library_9001.py` = SMA strategy without `PLOT_SERIES` (quality `RESULT: run-as-is`) | desktop library pick | a `strategies/*/stats.json` is written; the reply has no 沒有安裝／沒有執行-type refusal; one sentence says the chart has no indicator line; `security_check` ran |
+| `s2_fork_baseline` | the same strategy installed and already backtested as `strategies/gate_sma_trend/` | 「用我已經裝好的「BTC 均線趨勢」當底，fork 一份我自己的版本」 | a new strategy dir (≠ base) gets `stats.json`; the base `strategy.py` is byte-identical; `security_check` ran |
 | `s3_name_mismatch` | `tmp/library_9003.py` whose `DISPLAY_NAME` (BTC 均線趨勢) ≠ the title in the message (BTC 通道動能共振) | desktop library pick | nothing — verdict is always `observe` until the rule is decided |
-| `s4_quality_block` | `tmp/library_9004.py` with a pinned `END` (quality `RESULT: do-not-run`) | desktop library pick | no `stats.json`; the strategy is never executed; the reply names the reason |
+| `s4_quality_block` | `tmp/library_9004.py` with a pinned `END` (quality `RESULT: do-not-run`) | desktop library pick | no `stats.json`; the strategy is never executed; the reply names the reason; `security_check` ran |
 
 Deliberate deviation in `s2`: `references/marketplace.md` fork step 2 fetches the code with
 `GET /openclaw/marketplace/strategies/{id}/code`, which needs a Blave key this gate does not
 have. The base is therefore an installed local strategy. `facts.api_attempted` records whether
-Codex tried the API anyway, so an environment stop can be told apart from a rule stop.
+Codex tried the API anyway, so an environment stop can be told apart from a rule stop. The same
+deviation weakens `security_check_ran` in `s2`: fork step 3 scans a download and here there is
+none, so a Codex that skips the scan on a local base fails that check — read it before blaming the rules.
 
 Fork step 7 legitimately ends by asking what to change; "did not stop" means the baseline ran.
 
@@ -73,8 +75,8 @@ first `error` run, because a broken sandbox or login would fail every remaining 
 
 ### Checking the gate itself (no quota)
 
-`--fake good` swaps Codex for `fake_codex.py`, which follows the rules (installs, quality check with
-`--context install|fork`, backtest unless do-not-run, says the chart has no indicator line); `--fake bad` does nothing and
+`--fake good` swaps Codex for `fake_codex.py`, which follows the rules (installs, security and quality check with
+`--context install|fork` on the download, backtest unless do-not-run, says the chart has no indicator line); `--fake bad` does nothing and
 refuses. After changing the gate or its fixtures, both must hold:
 
 ```

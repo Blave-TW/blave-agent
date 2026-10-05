@@ -2,10 +2,11 @@
 Static security analysis for marketplace strategies.
 
 Usage:
-    python3 lib/security_check.py [--context install|fork|edit] strategies/xyz.py
+    python3 lib/security_check.py [--context install|fork] strategies/xyz.py
 
 First output line (the verdict to act on): RESULT: clean | ask-user | do-not-run
-With --context, the second line is `NEXT: <what to do now>` (contexts as in lib/quality_check.py).
+With --context, the second line is `NEXT: <what to do now>` for a library / shared
+download installed as is (install) or a fork's download (fork).
 --context goes before the file: an older checker then reads it as the path and says do-not-run.
 Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
     0 — clean
@@ -178,29 +179,27 @@ def _w(line: int, msg: str) -> dict:
 
 # ── NEXT line ─────────────────────────────────────────────────────────────────
 
-CONTEXTS = ("install", "fork", "edit")
+CONTEXTS = ("install", "fork")   # only downloads are scanned (references/marketplace.md)
 
 
 def next_line(context: str, verdict: str) -> str:
-    if context == "edit":
-        # references/ never send the agent's own code through this scan, so there is no
-        # edit-specific rule: the verdict's plain meaning.
-        return {"clean": "NEXT: Go on.",
-                "ask-user": "NEXT: Show these findings to the user and confirm before running it.",
-                "do-not-run": "NEXT: Do not run it without manual review."}[verdict]
-    stop = "create no fork" if context == "fork" else "do not run it"
-    return {"clean": "NEXT: Go on with the next step.",
+    stop = ("delete this file and create no fork" if context == "fork"
+            else "delete this file (in a bundle, only this file) and do not run it")
+    return {"clean": "NEXT: Go on with the next step of the flow.",
             "ask-user": ("NEXT: Show these findings to the user and wait — go on only after a yes; "
-                         f"a no ends it: delete the download and {stop}."),
-            "do-not-run": f"NEXT: Stop — show the findings, delete the download and {stop}."}[verdict]
+                         f"a no ends it: {stop}."),
+            "do-not-run": f"NEXT: Stop — show the findings, {stop}."}[verdict]
 
 
 def parse_args(argv: list):
-    """(file or None, context or None); ValueError on a missing or unknown --context value."""
+    """(file or None, context or None); ValueError on a bad, missing or repeated --context and on
+    more than one file — a second file would otherwise go unscanned behind the first one's verdict."""
     path, context, i = None, None, 0
     while i < len(argv):
         a = argv[i]
         if a == "--context" or a.startswith("--context="):
+            if context is not None:
+                raise ValueError("--context given more than once")
             if a == "--context":
                 i += 1
                 value = argv[i] if i < len(argv) else ""
@@ -211,6 +210,8 @@ def parse_args(argv: list):
             context = value
         elif path is None:
             path = a
+        else:
+            raise ValueError("scan one file at a time")
         i += 1
     return path, context
 

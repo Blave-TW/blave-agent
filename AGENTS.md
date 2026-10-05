@@ -157,7 +157,7 @@ Read `references/billing.md` first (desktop: its *Desktop app* section) — neve
 Every backtest costs the user real credit. These limits are absolute; no goal justifies breaking them.
 
 - **Default: ONE backtest per user request, then STOP.** Report the result — good or bad — and wait. Do NOT adjust parameters and re-run on your own; a poor result is a valid stopping point: report it honestly, say why you think it failed, propose next steps.
-- **Reporting a backtest: the first sentence says how it did against its benchmark** (`Benchmark Return [%]` in `stats.json`): 「賺了 298%，但輸給單純持有的 783%」. Name what the user sees (「回測分頁」), no engineering names; no indicator line on the chart → a strategy you wrote or edited: add `PLOT_SERIES` or ask; a library strategy installed as is, or a fresh fork's baseline run: say it in one sentence, no edit, no question.
+- **Reporting a backtest: the first sentence says how it did against its benchmark** (`Benchmark Return [%]` in `stats.json`): 「賺了 298%，但輸給單純持有的 783%」. Name what the user sees (「回測分頁」), no engineering names; no indicator line on the chart → a strategy you wrote or edited: ask whether to add `PLOT_SERIES`; a library strategy installed as is, or a fresh fork's baseline run: say it in one sentence, no edit, no question.
 - **A poor result is not permission to widen scope.** Test ONLY the indicator/data/symbol asked for; offer the wider version as an option.
 - **Iterating requires explicit user permission** ("自己調", "幫我優化", "掃參數"). Even then: max 3 iterations, then stop and report. One `lib/param_scan.py` run = ONE iteration.
 - **Two identical results in a row = malfunction.** Stop and tell the user.
@@ -182,7 +182,7 @@ Clearing (`clear_halt`) is ONLY done when the user explicitly asks to resume —
 
 Never call `bt.plot()`. Never edit or hand-copy the `chart/` folder `run()` writes.
 
-**Type A strategies you write or edit that are driven by any computed or external indicator MUST declare `PLOT_SERIES`** (thresholds as `"levels"`) — only a pure price rule may omit it. Read `references/plot-series.md`. Exception: a library strategy installed as is and a fresh fork's baseline run unchanged (the quality check's `NEXT:` line says so); add it later only if the user asks to change the strategy.
+**`PLOT_SERIES` puts the indicator on the trade chart** (thresholds as `"levels"`) — declare it when you write an indicator-driven Type A strategy; read `references/plot-series.md`. A missing one is a quality-check warning, not a rule to enforce: in a strategy you are editing, ask the user whether to add it (`--context edit` says so); a library strategy installed as is and a fresh fork's baseline run unchanged.
 
 ## Manager & Reconciler
 
