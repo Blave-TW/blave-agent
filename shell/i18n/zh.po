@@ -83,7 +83,7 @@ msgid "OAUTH_DENIED"
 msgstr "你在瀏覽器取消了授權。"
 
 msgid "KEYCHAIN_UNAVAILABLE"
-msgstr "這台電腦無法安全儲存憑證（Keychain 不可用），沒有保存。"
+msgstr "這台電腦無法安全儲存憑證，沒有保存。"
 
 msgid "TOKEN_EXCHANGE_FAILED"
 msgstr "授權碼換不到 token。"
@@ -661,6 +661,10 @@ msgstr "語言"
 msgid "up.installFailed"
 msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用程式」資料夾裡（不是從下載的磁碟映像直接開），再檢查一次"
 
+# Windows 沒有「應用程式」資料夾與磁碟映像那一關;裝不上多半是安裝檔被擋或被佔用
+msgid "up.installFailed.win"
+msgstr "{nv} 下載好了，但沒有裝成功。再檢查一次；還是不行的話，到 blave.org 重新下載安裝檔來裝"
+
 msgid "up.check"
 msgstr "檢查更新"
 
@@ -688,6 +692,9 @@ msgstr "刪除？"
 
 msgid "strat.del"
 msgstr "移到垃圾桶"
+
+msgid "strat.del.win"
+msgstr "移到資源回收筒"
 
 # 策略列的兩段式刪除:武裝後的字講去向(刪策略是進系統垃圾桶,可復原;e2e 0.1.8 #73)。.win = Windows 的說法
 msgid "strat.delConfirm"
@@ -2629,6 +2636,9 @@ msgstr "Secret Key 對不上這把 API Key，沒有儲存。從 Binance 重新�
 
 msgid "cx.chk.clock"
 msgstr "這台電腦的時間跟 Binance 差太多，沒辦法檢查，沒有儲存。到系統設定打開「自動設定時間」，再連一次。"
+
+msgid "cx.chk.clock.win"
+msgstr "這台電腦的時間跟 Binance 差太多，沒辦法檢查，沒有儲存。到 Windows 設定 › 時間與語言 › 日期和時間，打開「自動設定時間」，再連一次。"
 
 msgid "cx.chk.rate"
 msgstr "Binance 暫時限制了這個 IP 的請求，沒辦法檢查，沒有儲存。請等幾分鐘再試；連續重試會讓限制變長。"
