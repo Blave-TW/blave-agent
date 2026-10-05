@@ -69,4 +69,60 @@ t("which 在 win32:cwd 釘 System32、where 的輸出先過 winOnPath 才 pickWi
   /run\(path\.win32\.join\(sys32, "where\.exe"\), \[name\], envPath, 5000, sys32\)/.test(src) && /pickWinBin\(winOnPath\(r\.stdout, envPath\)\)/.test(src)
   && /function run\(cmd, args, envPath, timeout = 10000, cwd = undefined\)/.test(src) && /execFile\(w\.file, args, \{ timeout, cwd,/.test(src));
 t("which 在 win32 用 System32\\where.exe;run 只對 .cmd/.bat 開 shell", /const sys32 = path\.win32\.join\(process\.env\.SystemRoot \|\| "C:\\\\Windows", "System32"\)/.test(src) && /const cmdWrap = \(bin\) => \(process\.platform === "win32" && \/\\\.\(cmd\|bat\)\$\/i\.test\(bin\)/.test(src));
-console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+// ── 偵測紀錄 + 登入檢查上限(0.1.15):紀錄只有檔種/回傳碼/逾時/耗時/登入與否,不帶路徑與 CLI 輸出 ──
+const bk = src.match(/^function binKind\(p\) \{[\s\S]*?\n\}/m), rr = src.match(/^const runRec = .*$/m), dl = src.match(/^function detectLogWrite\(f, entry\) \{[\s\S]*?\n\}/m),
+  dm = src.match(/^const DETECT_LOG_MAX = .*$/m), rn = src.match(/^function run\(cmd, args, envPath, timeout = 10000, cwd = undefined\) \{[\s\S]*?\n\}/m), cw = src.match(/^const cmdWrap = .*$/m);
+if (!bk || !rr || !dl || !dm || !rn || !cw) { console.log("FAIL  找不到 binKind / runRec / detectLogWrite / DETECT_LOG_MAX / run / cmdWrap"); process.exit(1); }
+eval(bk[0]); eval(rr[0].replace(/^const /, "var ")); eval(dm[0].replace(/^const /, "var ")); eval(dl[0]); eval(cw[0].replace(/^const /, "var ")); eval(rn[0]);
+var wsfile = require(path.join(__dirname, "..", "shell", "wsfile.js")), { execFile } = require("child_process"), os = require("os");
+t("binKind:exe / cmd / bat / ps1 / 無副檔名 shim / ChatGPT 內附 / 一般 POSIX / 沒有",
+  binKind("C:\\u\\.local\\bin\\claude.exe") === "exe" && binKind("C:\\r\\npm\\codex.cmd") === "cmd" && binKind("C:\\r\\x.BAT") === "cmd" && binKind("C:\\r\\npm\\codex.ps1") === "ps1"
+  && binKind("C:\\Users\\u\\AppData\\Roaming\\npm\\codex") === "shim" && binKind("/Applications/ChatGPT.app/Contents/Resources/codex") === "chatgpt"
+  && binKind("/opt/homebrew/bin/codex") === "posix" && binKind(null) === "none" && binKind("") === "none");
+t("runRec 只取 code / timedOut / ms(stdout 有 email,不進紀錄)", JSON.stringify(runRec({ code: 1, timedOut: false, ms: 9, stdout: "{\"email\":\"a@b\"}", stderr: "x" })) === '{"code":1,"timedOut":false,"ms":9}');
+const LOGF = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "blave-detect-")), "state", "detect.log");
+detectLogWrite(LOGF, { n: 0 });
+t("detectLogWrite:state 資料夾不在也建、一行一筆 JSON", fs.readFileSync(LOGF, "utf8") === '{"n":0}\n');
+for (let i = 1; i <= 400; i++) detectLogWrite(LOGF, { n: i, pad: "x".repeat(300) });
+{ const lines = fs.readFileSync(LOGF, "utf8").split("\n").filter(Boolean);
+  // 超過 DETECT_LOG_MAX 才收成最近 DETECT_LOG_KEEP 行,所以行數在 KEEP 到「MAX 塞得下的行數」之間
+  t("detectLogWrite:超過大小上限就收成最近 " + DETECT_LOG_KEEP + " 行(最後一筆在、最舊的不在),檔不會一直長",
+    fs.statSync(LOGF).size <= DETECT_LOG_MAX + 400 && lines.length >= DETECT_LOG_KEEP && lines.length < 400 && JSON.parse(lines[lines.length - 1]).n === 400 && !lines.some((l) => JSON.parse(l).n < 100), lines.length); }
+t("detectLogWrite:寫不進去(路徑是檔案)不拋", (() => { try { detectLogWrite(path.join(LOGF, "x", "y.log"), { n: 1 }); return true; } catch (_) { return false; } })());
+t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10 秒、which 仍 5 秒",
+  /^const LOGIN_CHECK_MS = 20000;$/m.test(src) && /run\(claudeBin, \["auth", "status"\], envPath, LOGIN_CHECK_MS\)/.test(src) && /run\(codexBin, \["login", "status"\], envPath, LOGIN_CHECK_MS\)/.test(src)
+  && (src.match(/envPath, 5000/g) || []).length === 2);
+{ const body = src.slice(src.indexOf("async function detectAgents() {"), src.indexOf("\n}\n", src.indexOf("async function detectAgents() {")));
+  t("detectAgents:每次寫一行紀錄到 BASE/state/detect.log;紀錄物件只經 runRec / binKind / loggedIn 填,沒有 path、email、stdout",
+    /detectLogWrite\(path\.join\(BASE, "state", "detect\.log"\), \{ ts: new Date\(\)\.toISOString\(\), os: process\.platform, \.\.\.rec \}\)/.test(body)
+    && !/rec\.\w+\.(path|email|stdout|stderr)\b/.test(body)
+    && [...body.matchAll(/rec\.\w+\.(\w+) = /g)].map((m) => m[1]).every((k) => ["bin", "json", "loggedIn"].includes(k))
+    && [...body.matchAll(/Object\.assign\(rec\.\w+, (\w+)\(/g)].every((m) => m[1] === "runRec")); }
+{ const w = src.slice(src.indexOf("async function which(name, envPath, seen) {"), src.indexOf("async function codexBinNow()"));
+  t("which / codexPath 往 seen 寫的只有 where(檔種清單)/ whereTimedOut / found(檔種)", [...w.matchAll(/seen\.(\w+) = /g)].map((m) => m[1]).every((k) => ["where", "whereTimedOut", "found"].includes(k))
+    && /seen\.where = r\.code === 0 \? winOnPath\(r\.stdout, envPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.map\(binKind\)/.test(w) && /seen\.found = binKind\(found\)/.test(w)); }
+(async () => {
+  const slow = await run(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], process.env.PATH, 150);
+  t("run:逾時 → timedOut=true、ms ≥ 上限(以前只看得到 code,分不出逾時)", slow.timedOut === true && slow.ms >= 150 && slow.ms < 4000, slow);
+  const bad = await run(process.execPath, ["-e", "process.exit(3)"], process.env.PATH, 5000);
+  t("run:非 0 結束 → code=3、timedOut=false", bad.code === 3 && bad.timedOut === false && bad.ms >= 0);
+  const none = await run(path.join(os.tmpdir(), "no-such-bin-" + process.pid), [], process.env.PATH, 5000);
+  t("run:執行檔不在 → code=ENOENT、timedOut=false", none.code === "ENOENT" && none.timedOut === false);
+  const good = await run(process.execPath, ["-e", "process.stdout.write('ok')"], process.env.PATH, 5000);
+  t("run:正常 → code=0、stdout 照舊", good.code === 0 && good.stdout === "ok" && good.timedOut === false);
+  // 兩條登入檢查同時跑:detectAgents 原文配假的 which / run(各 300ms),整次要遠小於 600ms;依序跑就會 ≥ 600
+  { const da = src.match(/^async function detectAgents\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
+    if (!da || !dw) t("找得到 detectAgents / detectWhy", false);
+    else { const runs = [], logged = [];
+      const mkDetect = new Function("loginShellPath", "which", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process",
+        dw[0] + "\n" + da[0] + "\nreturn detectAgents;");
+      const slow = (v) => new Promise((r) => setTimeout(() => r(v), 300));
+      const detect = mkDetect(async () => "/usr/bin", async (n) => "/opt/" + n, async () => "/opt/codex",
+        (bin, args, envPath, ms) => { runs.push([bin, ms, Date.now()]); return slow(bin.endsWith("claude") ? { code: 0, stdout: '{"loggedIn":true}', timedOut: false, ms: 300 } : { code: null, stdout: "", timedOut: true, ms: 300 }); },
+        binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" });
+      const t0 = Date.now(), d = await detect(), took = Date.now() - t0;
+      t("detectAgents:claude 與 codex 的登入檢查同時開跑(兩條各 300ms,整次 < 500ms;依序會 ≥ 600)、各帶 20 秒上限", took < 500 && runs.length === 2 && Math.abs(runs[0][2] - runs[1][2]) < 100 && runs.every((r) => r[1] === 20000), { took, runs });
+      t("…結果照舊組回去:claude 登入、codex 逾時 → why=codex_timeout;紀錄一行", d.claude.loggedIn === true && d.claude.why === null && d.codex.installed && d.codex.loggedIn === false && d.codex.why === "codex_timeout"
+        && logged.length === 1 && logged[0].codex.timedOut === true && logged[0].claude.loggedIn === true); } }
+  console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+})();

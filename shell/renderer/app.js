@@ -55,6 +55,8 @@ async function detect() {
   paintRows(lastDetect);
   // 連結畫面上本機兩個都不能用:是狀態不是失敗,但「沒連上任何 AI 的安裝」只有這裡答得出為什麼
   if (!$("view-connect").hidden && !localReady) trackEvent("connect_failed", { kind: "no_local" });
+  // 同一個畫面:每個不能用的 CLI 各一則「為什麼」(值由主行程 detectWhy 判;外殼每日同值只送一次)
+  if (!$("view-connect").hidden) ["claude", "codex"].forEach((k) => { if (lastDetect[k] && lastDetect[k].why) trackEvent("detect_fail", { why: lastDetect[k].why }); });
 }
 function paintRows(d) {
   const rows = $("agent-rows"); rows.innerHTML = "";

@@ -38,6 +38,11 @@ _LINE_LIMIT = 16 * 1024 * 1024
 # (default 32 KiB). Ours is 39 KB (2026-09-19), so the tail rules would vanish unannounced.
 _PROJECT_DOC_MAX_BYTES = 262144
 _SHELL_WRAPPERS = ("sh", "bash", "zsh")
+# Windows: Codex runs `powershell.exe [-NoLogo] [-NoProfile] -Command <script>` and prepends
+# this exact line to the script (codex-rs/shell-command/src/powershell.rs, UTF8_OUTPUT_PREFIX).
+_POWERSHELLS = ("powershell", "pwsh")
+_PS_FLAGS = ("-nologo", "-noprofile")
+_PS_UTF8_PREFIX = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n"
 # `blave` MCP for the desktop shell. The shell puts the access code in this variable (Codex
 # turns only) and the server URL in BLAVE_MCP_URL; Codex reads the token itself from the env
 # named by bearer_token_env_var, so the code never appears on argv or in Codex's own logs.
@@ -367,14 +372,29 @@ def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_ur
 
 def _unwrap_shell(command):
     """`/bin/zsh -lc 'python3 lib/x.py'` → `python3 lib/x.py`, so the receipt summary and
-    touched-strategy detection see the command the model wrote, not Codex's wrapper."""
+    touched-strategy detection see the command the model wrote, not Codex's wrapper.
+    Windows: `'C:\\...\\powershell.exe' -Command 'try { … } catch {}\n<script>'` → `<script>`.
+    item.command is codex's shlex_join of argv, so shlex.split gives the argv back."""
     try:
         tokens = shlex.split(command)
     except ValueError:
         return command
-    if len(tokens) == 3 and os.path.basename(tokens[0]) in _SHELL_WRAPPERS \
-            and tokens[1] in ("-lc", "-c"):
+    if not tokens:
+        return command
+    exe = re.split(r"[\\/]", tokens[0])[-1].lower()
+    if exe.endswith(".exe"):
+        exe = exe[:-4]
+    if len(tokens) == 3 and exe in _SHELL_WRAPPERS and tokens[1] in ("-lc", "-c"):
         return tokens[2]
+    if exe in _POWERSHELLS:
+        i = 1
+        while i < len(tokens) and tokens[i].lower() in _PS_FLAGS:
+            i += 1
+        if i == len(tokens) - 2 and tokens[i].lower() in ("-command", "-c"):
+            script = tokens[i + 1].lstrip()
+            if script.startswith(_PS_UTF8_PREFIX):
+                script = script[len(_PS_UTF8_PREFIX):]
+            return script.strip() or command
     return command
 
 

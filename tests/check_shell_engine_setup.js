@@ -297,27 +297,37 @@ const venvDir = (r) => path.join(r.base, "venv");
     let e = null; try { await st.S.ensure(); } catch (x) { e = x; }
     const s = st.S.snapshot();
     ok("下載中 idleMs 沒有新資料:停下、kind=net(呈現成網路中斷)、訊息「no data for …」不帶路徑", e && /^no data for \d+s$/.test(e.message) && s.err.kind === "net" && s.err.name === "pandas" && st.tracked.join() === "engine_setup:first_net", { m: e && e.message, err: s.err });
-    const ins = rig({ realNow: true, idleMs: 20, pkgMs: 120, behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: ["Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl (10.1 MB)", "Progress 10051279 of 10051279", "Installing collected packages: pandas"] } : { code: 0 }) });
-    let e2 = null; try { await ins.S.ensure(); } catch (x) { e2 = x; }
+    // 假時鐘(同下面兩段的理由):真時鐘時 spawn 到第一行之間事件迴圈卡 20ms 就會先以 net 停掉。進了安裝階段才把假時鐘推過 idleMs,
+    // 沒照「安裝階段不算」的實作在這裡就以 net 停;照了的,只有 pkgMs(真的 120ms 計時器)會停
+    const ins = rig({ idleMs: 20, pkgMs: 120, behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: ["Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl (10.1 MB)", "Progress 10051279 of 10051279", "Installing collected packages: pandas"] } : { code: 0 }) });
+    let e2 = null; const pIns = ins.S.ensure().catch((x) => { e2 = x; });
+    for (let k = 0; k < 2000 && !(ins.S.busy() && ins.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
+    ins.tick(1000); await pIns;
     ok("安裝階段(Installing collected packages 之後)不出聲:不算沒資料,只有總上限會停 → timeout", e2 && ins.S.snapshot().err.kind === "timeout" && /^timed out after/.test(e2.message), e2 && e2.message);
-    let n = 0; const flow = rig({ realNow: true, idleMs: 40, behave: (bin, args) => {
+    // 下面兩段用假時鐘(10-04 runner 紅過):真時鐘時 idleMs 40 對每 15ms 一行只有 25ms 餘裕,慢機器的事件迴圈一卡就被停,
+    // 之後測試自己送的 close 0 被當成「no data」。假時鐘每行前推 15ms、看門狗(watchMs 5)照真時間跑:實作對時靜默最多 15、
+    // 機器多慢都不會停;有輸出卻不重算靜默的話,第 3 行起靜默就超過 40,中間那段真的 sleep 讓看門狗看得到 → 被停
+    const wd = () => new Promise((r) => setTimeout(r, 25));   // 看門狗至少跑過 5 輪
+    const atPandas = async (r) => { for (let k = 0; k < 2000 && !(r.lastChild && r.calls[r.calls.length - 1].args.includes(pin("pandas"))); k++) await new Promise((x) => setTimeout(x, 5)); };
+    let n = 0; const flow = rig({ idleMs: 40, behave: (bin, args) => {
       if (!args.includes(pin("pandas"))) return { code: 0 };
       return { hang: true, out: ["Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl (10.1 MB)"] }; } });
     const pr = flow.S.ensure().then(() => "ok", (x) => x.message);
     // 慢但一直有資料:每 15ms 來一行 Progress,總共 120ms(遠超過 idleMs)→ 不會被停
-    await new Promise((r) => setTimeout(r, 20));
+    await atPandas(flow);
     const c = flow.calls.length; let bytes = 0;
     const child = flow.lastChild;
     ok("(測試接線)拿得到正在跑的假子行程", !!child);
-    if (child) { for (n = 0; n < 8; n++) { await new Promise((r) => setTimeout(r, 15)); bytes += 100000; child.stdout.emit("data", "Progress " + bytes + " of 10051279\n"); }
+    if (child) { for (n = 0; n < 8; n++) { flow.tick(15); await wd(); bytes += 100000; child.stdout.emit("data", "Progress " + bytes + " of 10051279\n"); }
       ok("慢但一直有資料進來(8 × 15ms,共 120ms > idleMs 40ms):沒被停", flow.S.busy() && flow.S.snapshot().phase === "run");
       child.emit("close", 0); }
     ok("…之後正常裝完", (await pr) === "ok" && flow.calls.length >= c);
     // 解析相依的那段(Collecting … / Using cached …)沒有 bytes,但有輸出:也算有在動
-    const col = rig({ realNow: true, idleMs: 40, behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true } : { code: 0 }) });
-    const pc = col.S.ensure().then(() => "ok", (x) => x.message); await new Promise((r) => setTimeout(r, 10));
+    const col = rig({ idleMs: 40, behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true } : { code: 0 }) });
+    const pc = col.S.ensure().then(() => "ok", (x) => x.message);
+    await atPandas(col);
     const cc = col.lastChild;
-    for (let k = 0; k < 8; k++) { await new Promise((r) => setTimeout(r, 15)); cc.stdout.emit("data", "Collecting dep" + k + " (from pandas==3.0.6)\n"); }
+    for (let k = 0; k < 8; k++) { col.tick(15); await wd(); cc.stdout.emit("data", "Collecting dep" + k + " (from pandas==3.0.6)\n"); }
     ok("解析中一直有輸出(沒有 bytes、共 120ms > idleMs):不算沒資料、沒被停", col.S.busy() && col.S.snapshot().phase === "run");
     cc.emit("close", 0); ok("…之後正常裝完", (await pc) === "ok"); }
 
