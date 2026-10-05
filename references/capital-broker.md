@@ -57,19 +57,19 @@ prefer the near-month aliases, or the V2.13.54+ `bstrCIDTandem`(`FITX`) + `bstrS
 
 ---
 
-## Step 0 — Determine Scope & Platform
+## Step 0 — Determine Platform, then Scope
 
-**Ask the user:**
-> 你要交易股票、期貨（大台/小台/微台），還是兩者都要？
+**First, before asking anything**, confirm the workspace is a **Windows x64 cloud machine**:
 
-Then confirm the workspace is a **Windows x64 cloud machine**:
-
-- **Desktop app** (`BLAVE_AGENT_LOCAL=1`, Mac or Windows PC): stop here — install nothing, download
-  nothing. Tell the user 「電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」
+- **Desktop app** (`BLAVE_AGENT_LOCAL=1`, Mac or Windows PC): stop here — ask nothing more, install
+  nothing, download nothing. Tell the user 「電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」
   / "The desktop app can't connect to Capital yet. Capital needs a Windows cloud machine: choose Windows
   when you launch one on the web (it can't be changed afterward)."
 - **Linux cloud machine**: this broker cannot run there — escalate to Blave ops for a Windows machine
-  before continuing.
+  and stop.
+
+**Then ask the user:**
+> 你要交易股票、期貨（大台/小台/微台），還是兩者都要？
 
 ---
 

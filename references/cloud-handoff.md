@@ -237,7 +237,9 @@ Source = this workspace for local → cloud; the cloud workspace for cloud → l
    -o BatchMode=yes -o ConnectTimeout=15
    ```
 
-   **Windows desktop app** (the OS check in `AGENTS.md` answers `Windows`): paste the block without its second line — no `ControlMaster`, `ControlPath` or `ControlPersist`. Connection sharing has never been run on a real Windows machine, and nothing here needs it: each call simply opens its own connection. Everything else is the same, the `chmod 600` in step 2.1 included. If `ssh` there refuses the key file as unprotected or too open, report the exact message and stop — never loosen or copy the key elsewhere.
+   **Windows desktop app** (the OS check in `AGENTS.md` answers `Windows`):
+   - Your shell tool is PowerShell (the Codex engine): stop before calling `get_ssh_access`. Every command in this file needs the Git Bash shell the Claude Code engine runs there (`chmod`, heredocs, `|` into `ssh`, `rm -rf`). Tell the user 「Windows 電腦版目前要用 Claude Code 引擎才能操作雲端主機，Codex 還不行。到 設定 › 模型接入 換成 Claude Code，再跟我說一次。」 / "On the Windows desktop app, working on the cloud machine needs the Claude Code engine for now; Codex can't do it yet. Switch to Claude Code in Settings › Model access, then ask me again."
+   - Otherwise paste the block without its second line — no `ControlMaster`, `ControlPath` or `ControlPersist`. Connection sharing has never been run on a real Windows machine, and nothing here needs it: each call simply opens its own connection. Everything else is the same, the `chmod 600` in step 2.1 included. If `ssh` refuses the key file as unprotected or too open, report the exact message and stop — never loosen or copy the key elsewhere.
 
 3. Test: `ssh <SSH_OPTS> blaveagent@<host> cat "/opt/blave-agent/workspace/VERSION"`. The remote workspace is always `/opt/blave-agent/workspace`. Use absolute remote paths, quoted. A remote command is parsed by a second shell, so the quotes are not what keeps it safe — the character allow-lists on `<name>` (step 1.1) and `<f>` (step 4b) are. A value that fails its allow-list is never pasted into a command, quoted or not: stop and report it, and never widen the allow-list yourself.
 4. The certificate lasts 15 minutes. If a later command fails with a permission error, call `get_ssh_access` again, overwrite the two files, and repeat the command once.
@@ -613,4 +615,5 @@ No table, no backtest numbers, no Match / Differs state, and not the closing sen
 ssh <SSH_OPTS> -O exit blaveagent@<host>
 rm -rf tmp/cloud-handoff
 ```
+Windows desktop app: run only `rm -rf tmp/cloud-handoff` — step 2.2 left out the control socket, so `-O exit` has nothing to close and would fail.
 Both commands print nothing when they work, and nothing more is run to look at the result: a command that failed says so itself. Cleanup is an internal step — the reply never mentions it, the folder or the connection: not as an opening line, not as a closing one, not in a list of what was done. **The reply's first sentence is about what the user asked for** — what was done, or what could not be. Another handoff later starts again from step 2.

@@ -889,12 +889,19 @@ check(r is not None and r.stdout.strip() == hashlib.sha256(open(os.path.join(KW,
       "4b local hash one-liner prints the file's sha256")
 shutil.rmtree(KW)
 
-# Windows desktop: ssh multiplexing is unverified there, so step 2.2 drops the three Control* options on that branch only
-win_ssh = re.search(r"\*\*Windows desktop app\*\* \(the OS check in `AGENTS\.md` answers `Windows`\): paste the block without its second line[^\n]*", DOC)
-check(win_ssh is not None and all(f"`{k}`" in win_ssh.group(0) for k in ("ControlMaster", "ControlPath", "ControlPersist"))
-      and "never been run on a real Windows machine" in win_ssh.group(0) and "report the exact message and stop" in win_ssh.group(0)
+# Windows desktop: Codex's shell there is PowerShell (runtime/codex_engine.py), so it stops; Claude Code (Git Bash)
+# drops the Control* line (unverified there), and step 8 then skips `-O exit`, which would fail with no ControlPath
+win_ssh = re.search(r"\*\*Windows desktop app\*\* \(the OS check in `AGENTS\.md` answers `Windows`\):\n((?:   - [^\n]*\n){2})", DOC)
+wb = win_ssh.group(1) if win_ssh else ""
+check(win_ssh is not None and "Your shell tool is PowerShell (the Codex engine): stop before calling `get_ssh_access`" in wb
+      and "設定 › 模型接入" in wb and "Settings › Model access" in wb
+      and all(f"`{k}`" in wb for k in ("ControlMaster", "ControlPath", "ControlPersist"))
+      and "never been run on a real Windows machine" in wb and "report the exact message and stop" in wb
       and "-o ControlMaster=auto -o ControlPath=tmp/cloud-handoff/cm-%C -o ControlPersist=10m" in DOC,
-      "step 2.2: the Windows desktop branch drops the Control* line (unverified there), stops on a key-permission refusal; macOS keeps it")
+      "step 2.2: Windows desktop — Codex (PowerShell) stops, Claude Code drops the Control* line; macOS keeps it")
+s8 = DOC[DOC.index("## 8. Clean up"):]
+check("```\nssh <SSH_OPTS> -O exit blaveagent@<host>\nrm -rf tmp/cloud-handoff\n```\nWindows desktop app: run only `rm -rf tmp/cloud-handoff`" in s8,
+      "step 8: Windows desktop skips `-O exit` (no control socket there) and only removes tmp/cloud-handoff")
 
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)
