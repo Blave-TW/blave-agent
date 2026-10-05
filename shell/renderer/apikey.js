@@ -104,7 +104,7 @@ function akGate() {
   if (f.busy) { e.primary.className = "btn-out"; e.primary.append(akMk("span", "spin16"), document.createTextNode(" " + t("login.cancel"))); e.primary.disabled = false; }
   else { e.primary.className = "btn-fill"; e.primary.textContent = e.primaryText; e.primary.disabled = !!e.input && !e.input.value.trim(); }
 }
-const AK_ERR = { KEY: "ak.e.key", CREDIT: "ak.e.credit", RATE: "ak.e.rate", NET: "ak.e.net", NO_SEAL: "ak.e.seal" };
+const AK_ERR = { KEY: "ak.e.key", CREDIT: "ak.e.credit", RATE: "ak.e.rate", NET: "ak.e.net", NO_SEAL: "ak.e.seal", CONN: "ak.e.conn" };
 /* 驗證結果的代號 → 句子(純;tests/check_shell_apikey_ui.js 切出來跑)。null = 不出句子(成功、取消、同時按兩次) */
 function akErrText(r, p) {
   if (r && (r.ok || r.code === "CANCELED" || r.code === "BUSY")) return null;
@@ -134,6 +134,8 @@ async function akSubmit() {
   catch (_) { r = null; }
   if (AK.form !== f) return;   // 等待中表單被收掉了(關設定)
   f.busy = false; akGate();
+  // 金鑰已存、只差切換:記成已存(取消回連結畫面時那一列是對的);輸入框留著,再按一次就是重來一遍
+  if (r && r.code === "CONN") AK.info = { ...(AK.info || { presets: akPresets() }), saved: f.preset };
   if (!(r && r.ok)) { akErr(r || { code: "OTHER", status: 0 }); return; }
   if (input) input.value = "";
   AK.info = { ...(AK.info || { presets: akPresets() }), saved: f.preset };

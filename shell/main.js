@@ -480,7 +480,8 @@ async function llmKeySet(a) {
   const r = await llmKeyCheck(preset, key);
   if (r.code !== "OK") { if (r.code !== "CANCELED" && r.code !== "BUSY") tm().track("connect_failed", { kind: LLM_FAIL_KIND[r.code] || "apikey_other" }); return { ok: false, code: r.code, status: r.status }; }
   if (!saveLlmKey(preset, key)) return { ok: false, code: "NO_SEAL", status: 0 };
-  if (a.connect === true) return { ok: await saveConnection({ kind: "apikey" }), code: "OK", status: r.status };
+  // 金鑰已存、只是切換連結沒成:給自己的代號,不要讓畫面拿 200 拼成「回了錯誤 (200)」
+  if (a.connect === true) return (await saveConnection({ kind: "apikey" })) ? { ok: true, code: "OK", status: r.status } : { ok: false, code: "CONN", status: 0 };
   return { ok: true, code: "OK", status: r.status };
 }
 async function llmKeyTest() {
@@ -2685,9 +2686,9 @@ app.whenReady().then(() => {
   handle("detect-agents", () => detectAgents().then((d) => ({ ...d, apikey: llmKeyInfo() })));
   handle("feature-flags", () => ({ cloudHandoff: cloudHandoffOn() }), { cloudHandoff: false });   // 畫面只拿得到開關,拿不到碼
   handle("save-connection", (_e, choice) => saveConnection(choice), false);
-  // 開 app 時畫面用它決定進不進工作頁:連的是 apikey 但金鑰檔不在了,就回連結畫面重選,不進一個每句都失敗的工作頁。
+  // 開 app 時畫面用它決定進不進工作頁:連的是 apikey 但金鑰讀不到了,就回連結畫面重選,不進一個每句都失敗的工作頁。
   // 只擋在這裡——runTurn 照原紀錄跑、讀不到金鑰就整輪失敗(APIKEY_MISSING),絕不退回去跑別的引擎
-  handle("load-connection", () => { const c = loadConnection(); return c && c.kind === "apikey" && !fs.existsSync(llmKeyPath()) ? null : c; });
+  handle("load-connection", () => { const c = loadConnection(); return c && c.kind === "apikey" && !loadLlmKey() ? null : c; });   // 解得開才算:檔在但被換掉或換了機器的密文一樣當沒有
   handle("open-external", (_e, url) => openWebSafe(url), false);
   // 引擎裝好(或本來就在)之後才起本機常駐程式
   handle("ensure-engine", () => ensureEngineShared().then((r) => { tradeStartIfReady(); return r; }));

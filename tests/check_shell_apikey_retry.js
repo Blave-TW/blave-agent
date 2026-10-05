@@ -101,7 +101,7 @@ const noPing = (s) => s.replace(/event: ping\ndata: \{"type": "ping"\}\n\n/g, ""
     x = await run([{ blocks: [THINK] }, { status: 529 }], { emptyRetries: 1 }, stream);
     t(`${m}:重送回錯誤 → 交出前一則空回應(不是 529)`, x.calls === 2 && x.r.status === 200 && /hmm/.test(x.r.body));
 
-    x = await run([{ blocks: [THINK] }, { blocks: [THINK] }, { blocks: [TEXT] }], { maxOutputTokens: 6 }, stream);
+    x = await run([{ blocks: [THINK] }, { blocks: [THINK] }, { blocks: [TEXT] }], { maxOutputTokens: 6, minOutputTokens: 1 }, stream);
     t(`${m}:重送的輸出 token 也算進上限(第二次之後超過就停)`, x.calls === 2 && x.stats.outputTokens >= 6 && x.stats.capHit);
   }
   console.log(fails ? `\n${fails} 項失敗` : "\n全部通過");

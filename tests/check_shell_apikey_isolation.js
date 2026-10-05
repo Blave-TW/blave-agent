@@ -84,8 +84,8 @@ async function unit() {
   t("絕對 URL 當 request target → 400", abs.status === 400);
   t("被擋的請求一筆都沒到上游", mock.log.length === 2);
   t("型錄外的 model 改寫成預設;沒帶 thinking 不補(思考常開,照引擎帶的轉)", mock.log[0].body.model === "deepseek-v4-pro" && !("thinking" in mock.log[0].body));
-  await req(base, { headers: { "x-api-key": relay.token }, body: '{"model":"claude-haiku-9","thinking":{"type":"adaptive"},"messages":[]}' });
-  t("型錄外的 model 改寫、帶了 thinking 不動(同 proxy.py)", mock.log[2].body.model === "deepseek-v4-pro" && mock.log[2].body.thinking.type === "adaptive" && relay.stats.rewrites >= 1);
+  await req(base, { headers: { "x-api-key": relay.token }, body: '{"model":"claude-haiku-9","max_tokens":5,"thinking":{"type":"adaptive"},"messages":[]}' });
+  t("型錄外的 model 改寫成型錄裡最便宜的(flash)、帶了 thinking 不動", mock.log[2].body.model === "deepseek-v4-flash" && mock.log[2].body.thinking.type === "adaptive" && relay.stats.rewrites >= 1);
   const cap = await req(base, { headers: { "x-api-key": relay.token } });
   t("每輪筆數上限到 → 429 + x-should-retry: false、不到上游、stats.capHit", cap.status === 429 && cap.headers["x-should-retry"] === "false" && mock.log.length === 3 && relay.stats.capHit);
   relay.stop();
@@ -94,7 +94,7 @@ async function unit() {
   relay.stop();
   t("stop() 叫兩次不拋", true);
 
-  const relay2 = await startRelay({ preset: "mock", key: SENTINEL, limits: { maxOutputTokens: 3 } }, mockPresets(mock.url));
+  const relay2 = await startRelay({ preset: "mock", key: SENTINEL, limits: { maxOutputTokens: 3, minOutputTokens: 1 } }, mockPresets(mock.url));
   await req(relay2.url + "/v1/messages", { headers: { "x-api-key": relay2.token } });
   const cap2 = await req(relay2.url + "/v1/messages", { headers: { "x-api-key": relay2.token } });
   t("輸出 token 上限(從回應的 usage 加總)到 → 下一筆 429", relay2.stats.outputTokens === 3 && cap2.status === 429 && cap2.headers["x-should-retry"] === "false");

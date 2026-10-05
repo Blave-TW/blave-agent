@@ -6083,6 +6083,9 @@ msgstr "{p} returned an error ({s}). Try again in a moment. Nothing was changed.
 msgid "ak.e.unknown"
 msgstr "Couldn't verify this key with {p}. Try again in a moment. Nothing was changed."
 
+msgid "ak.e.conn"
+msgstr "Your key was saved, but Blave couldn't switch to {p}. Try again."
+
 msgid "ak.e.seal"
 msgstr "This computer can't store the key encrypted right now, so it wasn't saved. Restart Blave and try again."
 

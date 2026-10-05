@@ -3165,8 +3165,8 @@ window.blave.onTurnEvent((c) => {
 // turnFaulted:這一輪已經畫過分類過的錯誤卡。不能用 faultShown 判——它在吞掉 not_started 那句時
 // 就被歸零了,回合結束時再看會以為沒畫過,多畫一張登入卡。
 let turnModel = null, turnGotReply = false, turnErrored = false, turnFaulted = false;
-let turnLimit = false, turnChanged = false;
-let turnCap = false;   // 這一輪轉送口回報過每輪用量上限(自帶 API 金鑰;main.js 在 429 寫回之前送 llm_cap)   // 這一輪畫過用量上限卡 / 做過會改東西的步驟(limitSwallow)
+let turnLimit = false, turnChanged = false;   // 這一輪畫過用量上限卡 / 做過會改東西的步驟(limitSwallow)
+let turnCap = false;   // 這一輪轉送口回報過每輪用量上限(自帶 API 金鑰;main.js 在 429 寫回之前送 llm_cap)
 let turnBubble = null, turnHadTool = false;   // 這一輪「你的那則」與「有沒有工具收據」:停止收泡泡用(見 onTurnEnd)
 // 這一輪的回覆帶了哪些卡片標記(paintAi 從文字裡拿出來的);回合結束才出卡,不插在串流中間
 let turnCards = [];

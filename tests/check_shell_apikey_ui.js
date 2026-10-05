@@ -47,12 +47,12 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "apikey-ui-"));
   const mock = await mockProvider((k) => (k === SECRET ? 200 : 401));
   const P = presetsFor(mock.url);
-  const tracked = [], conn = { saved: [], cleared: 0, kind: null };
+  const tracked = [], conn = { saved: [], cleared: 0, kind: null, fail: false };
   const env = {
     fs, path, safeStorage: { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from("ENC" + Buffer.from(s).toString("base64")), decryptString: (b) => Buffer.from(String(b).slice(3), "base64").toString() },
     app: { getPath: () => dir }, tm: () => ({ track: (e, p) => tracked.push(e + ":" + (p && p.kind)) }),
     require: (m) => (m === "./llmrelay" ? { PRESETS: P, verifyKey: (pr, k, o) => relayMod.verifyKey(pr, k, o, P) } : require(m)),
-    saveConnection: async (c) => { conn.saved.push(c.kind); conn.kind = c.kind; return true; },
+    saveConnection: async (c) => { if (conn.fail) return false; conn.saved.push(c.kind); conn.kind = c.kind; return true; },
     loadConnection: () => (conn.kind ? { kind: conn.kind } : null), clearConnection: () => { conn.cleared++; conn.kind = null; },
   };
   const block = cut(main, "const llmKeyPath =", "function clearDataKey");
@@ -67,6 +67,10 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
     && (await api.llmKeySet({ preset: "evil", key: SECRET })).code === "KEY" && mock.hits.length === 1);
   const good = await api.llmKeySet({ preset: "deepseek", key: SECRET, connect: true });
   t("set 驗過:存檔(密文帶型別標記)、connect:true 時連結存成 apikey", good.ok === true && good.code === "OK" && fs.existsSync(file) && conn.saved.join() === "apikey" && api.loadLlmKey().key === SECRET && noKey(good));
+  conn.fail = true;
+  const cf = await api.llmKeySet({ preset: "deepseek", key: SECRET, connect: true });
+  conn.fail = false;
+  t("金鑰驗過、存了,但切換連結失敗 → CONN(不是 OK + 200 讓畫面拼成「回了錯誤 (200)」)", cf.ok === false && cf.code === "CONN" && cf.status === 0 && api.loadLlmKey().key === SECRET && noKey(cf));
   const info = api.llmKeyInfo();
   t("畫面拿得到的(detect 的 apikey 欄位)只有存了哪一家與上架清單,沒有金鑰", info.saved === "deepseek" && info.presets.length === 1 && info.presets[0].name === "DeepSeek" && /^https:\/\//.test(relayMod.PRESETS.deepseek.keysUrl) && noKey(info) && !("key" in info));
   t("detect-agents 的回應掛的是 llmKeyInfo()(不是 loadLlmKey)", /handle\("detect-agents", \(\) => detectAgents\(\)\.then\(\(d\) => \(\{ \.\.\.d, apikey: llmKeyInfo\(\) \}\)\)\)/.test(main));
@@ -75,10 +79,12 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   { // 列舉每一個 loadLlmKey() 呼叫點所在的函式:明文金鑰只該出現在這幾處;其中交給畫面的兩支(llmKeyInfo / apikeyModels)根本不碰 .key
     const owners = [...main.matchAll(/(function )?loadLlmKey\(\)/g)].filter((m) => !m[1]).map((m) => { const f = [...main.slice(0, m.index).matchAll(/(?:async )?function (\w+)\(/g)].pop(); return f ? f[1] : "?"; });
     const body = (n) => cut(main, "function " + n + "(", "\n}\n");
-    t("loadLlmKey 的呼叫點只有 saveConnection / llmKeyInfo / llmKeyTest / apikeyModels / runTurn", JSON.stringify(owners.sort()) === JSON.stringify(["apikeyModels", "llmKeyInfo", "llmKeyTest", "runTurn", "saveConnection"]) || (console.log("      呼叫點:", owners.join()), false));
+    t("loadLlmKey 的呼叫點只有 saveConnection / llmKeyInfo / llmKeyTest / apikeyModels / runTurn / createWindow(load-connection 只看解不解得開)", JSON.stringify(owners.sort()) === JSON.stringify(["apikeyModels", "createWindow", "llmKeyInfo", "llmKeyTest", "runTurn", "saveConnection"]) || (console.log("      呼叫點:", owners.join()), false));
     t("交給畫面的 llmKeyInfo / apikeyModels 不碰 .key", !/\.key\b/.test(body("llmKeyInfo")) && !/\bk\.key\b/.test(body("apikeyModels"))); }
-  t("load-connection:連的是 apikey 但金鑰檔不在 → null(回連結畫面);runTurn 不用這道,照原紀錄讀金鑰、讀不到拋 APIKEY_MISSING(不換引擎)",
-    /handle\("load-connection", \(\) => \{ const c = loadConnection\(\); return c && c\.kind === "apikey" && !fs\.existsSync\(llmKeyPath\(\)\) \? null : c; \}\);/.test(main)
+  { const keep = fs.readFileSync(file); fs.writeFileSync(file, "ENCgarbage");
+    t("金鑰檔在但解不開(被換掉、換了機器)→ loadLlmKey 回 null", api.loadLlmKey() === null); fs.writeFileSync(file, keep); }
+  t("load-connection:連的是 apikey 但金鑰解不開(不只是檔不在)→ null(回連結畫面);runTurn 不用這道,照原紀錄讀金鑰、讀不到拋 APIKEY_MISSING(不換引擎)",
+    /handle\("load-connection", \(\) => \{ const c = loadConnection\(\); return c && c\.kind === "apikey" && !loadLlmKey\(\) \? null : c; \}\);/.test(main)
     && /const conn = loadConnection\(\) \|\| \{\};/.test(cut(main, "async function runTurn", "\n}\n")) && /if \(conn\.kind === "apikey" && !llmKey\) throw new Error\("APIKEY_MISSING"\);/.test(main));
   t("saveConnection:kind apikey 沒有驗過的金鑰就不存", /if \(kind === "apikey" && !loadLlmKey\(\)\) return false;/.test(cut(main, "async function saveConnection", "\n}\n")));
   api.llmKeyRemove();
@@ -119,7 +125,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   // ── ⑤ 每輪上限:cap 事件先於 429 回應 ──
   { const m = await mockProvider(() => 200), order = [];
     const relay = await relayMod.startRelay({ preset: "deepseek", key: SECRET, limits: { maxRequests: 1 }, onEvent: (e) => { if (e.type === "cap") order.push("cap"); } }, presetsFor(m.url));
-    const hit = () => new Promise((r) => { const q = http.request({ host: "127.0.0.1", port: relay.port, method: "POST", path: "/v1/messages", headers: { "x-api-key": relay.token, "content-type": "application/json" } }, (res) => { res.resume(); res.on("end", () => { order.push(String(res.statusCode)); r(); }); }); q.end('{"model":"deepseek-v4-pro","messages":[]}'); });
+    const hit = () => new Promise((r) => { const q = http.request({ host: "127.0.0.1", port: relay.port, method: "POST", path: "/v1/messages", headers: { "x-api-key": relay.token, "content-type": "application/json" } }, (res) => { res.resume(); res.on("end", () => { order.push(String(res.statusCode)); r(); }); }); q.end('{"model":"deepseek-v4-pro","max_tokens":5,"messages":[]}'); });
     await hit(); await hit();
     t("上限到:cap 事件在 429 回到 CLI 之前就發了", order.join() === "200,cap,429");
     relay.stop(); m.close(); }
@@ -142,7 +148,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
     t("classifyFault 的 apikey 分支排在 CLI 登入、Blave 402、localAuthFault 之前", iAk > 0 && iAk < iLocal && iAk < iCredit && iAk < iAuth); }
   t("驗證錯誤句:401 帶狀態碼、形狀不對另一句、402 / 429 / 網路 / 加密不可用各一句、取消與 BUSY 不出句", R.akErrText({ code: "KEY", status: 401 }, "DeepSeek") === 'ak.e.key{"p":"DeepSeek","s":"401"}' && R.akErrText({ code: "KEY", status: 0 }, "DeepSeek") === "ak.e.shape"
     && R.akErrText({ code: "CREDIT", status: 402 }, "D").startsWith("ak.e.credit") && R.akErrText({ code: "RATE" }, "D").startsWith("ak.e.rate") && R.akErrText({ code: "NET" }, "D").startsWith("ak.e.net")
-    && R.akErrText({ code: "NO_SEAL" }, "D") === 'ak.e.seal{"p":"D"}' && R.akErrText({ code: "OTHER", status: 500 }, "D").startsWith("ak.e.other") && R.akErrText({ code: "CANCELED" }) === null && R.akErrText({ code: "BUSY" }) === null && R.akErrText({ ok: true }) === null);
+    && R.akErrText({ code: "NO_SEAL" }, "D") === 'ak.e.seal{"p":"D"}' && R.akErrText({ code: "CONN", status: 0 }, "D") === 'ak.e.conn{"p":"D"}' && R.akErrText({ code: "OTHER", status: 500 }, "D").startsWith("ak.e.other") && R.akErrText({ code: "CANCELED" }) === null && R.akErrText({ code: "BUSY" }) === null && R.akErrText({ ok: true }) === null);
   t("沒有狀態碼(IPC 沒回 / status 0)→ ak.e.unknown;有狀態碼才用 ak.e.other", R.akErrText(null, "D") === 'ak.e.unknown{"p":"D"}' && R.akErrText({ code: "OTHER", status: 0 }, "D") === 'ak.e.unknown{"p":"D"}' && R.akErrText({ code: "OTHER", status: 503 }, "D") === 'ak.e.other{"p":"D","s":"503"}');
   t("上限卡只有一顆「再送一次」", !cap.second && cap.label === "fault.resend");
   { // 只有一家供應商:「供應商」是靜態文字,不畫 select;兩家以上才畫(假 DOM 跑 akFormNode)

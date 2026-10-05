@@ -6085,6 +6085,9 @@ msgstr "{p} 回了錯誤（{s}）。等一下再試一次。什麼都沒有改�
 msgid "ak.e.unknown"
 msgstr "沒能跟 {p} 確認這把金鑰。等一下再試一次。什麼都沒有改變。"
 
+msgid "ak.e.conn"
+msgstr "金鑰已經存好，但沒能切換成用 {p}。再試一次。"
+
 msgid "ak.e.seal"
 msgstr "這台電腦現在沒辦法把金鑰加密保存，所以沒有存。重新打開 Blave 再試一次。"
 
