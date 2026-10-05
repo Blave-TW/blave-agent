@@ -1017,7 +1017,7 @@ function loadStrategy(name) {
   // 逐欄檢查在 renderer/report-robust.js 的 sanitizeScan / report-wf.js 的 sanitizeWf
   const scan = readResultJson(path.join(dir, "scan.json")), wf = readResultJson(path.join(dir, "wf.json"));
   try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
-  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), versions: stratVersions(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
+  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
 }
 /* 轉出檔(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 存的三個固定檔名)。
    讀檔規則同 runtime `_read_export`:regular file、≤256KB;讀不到那一份就當沒有(不猜、不報錯)。
@@ -1193,6 +1193,14 @@ function stratDataSources(dir) {
     for (const m of src.matchAll(/\bDATA_([A-Z0-9]{1,24})_([A-Z][A-Z0-9_]{0,31})\b/g)) if (!checkName(m[1]) && !checkField(m[1], m[2])) out.add(m[1]);
   }
   return [...out].sort();
+}
+
+/* 策略頁「缺金鑰」那一格:用到、但設定 › 資料來源清單上沒有的來源(datasrc.js 只回名稱,不碰值)。
+   清單讀不到 / 還沒建好 = 不講缺(講錯比不講糟:會叫人去補一把其實在的金鑰) */
+let dataSrc = null;
+function stratMissingSources(dir) {
+  const have = dataSrc && dataSrc.names();
+  return have ? require("./datasrc").missingOf(stratDataSources(dir), have) : [];
 }
 
 // 刪策略 = 整個資料夾丟進系統的垃圾桶(shell.trashItem),不是 rm:裡面有用戶的程式碼
@@ -2781,10 +2789,10 @@ app.whenReady().then(() => {
   /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
      之後任何一支都不把值交回去——list 只有名稱與欄位名。四支都走 handle()(只收自家頁面,拒絕時回各自的形狀);參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
      不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */
-  const dataSrc = require("./datasrc").createDataSrc({
+  dataSrc = require("./datasrc").createDataSrc({
     envFile: path.join(WS, ".env"),
     lock: require("./datasrc").pyLock({ python: VENV_PY, lockFile: path.join(WS, ".env.lock") }),
-    strategies: () => listStrategies().map((s) => ({ name: s.name, displayName: s.displayName, file: path.join(STRAT_DIR(), s.name, "strategy.py") })),
+    strategies: () => listStrategies().map((s) => ({ name: s.name, displayName: s.displayName, file: path.join(STRAT_DIR(), s.name, "strategy.py"), dir: path.join(STRAT_DIR(), s.name) })),
     // cfgNull:下單中但回報讀不到設定檔(config: null)——擋刪清單不能當空的(datasrc.js)
     trading: () => { const r = tradeLive() && tradeHost().status().report; return { live: !!r, amounts: r && r.config && r.config.amounts, cfgNull: !!r && r.config === null }; },
   });

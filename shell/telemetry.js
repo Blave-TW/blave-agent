@@ -100,7 +100,9 @@ const EVENTS = {
     "suggest_closed",
     // 關於第二行「更新雲端主機」(0.1.15;renderer/app.js upCloudUpdate / upCloudSend):按下(含投資組合被鎖那一行的雲端入口)、
     // 確認或直接送出且回合真的跑起來、確認框沒按主鈕就收掉
-    "cloud_upd_open", "cloud_upd_ok", "cloud_upd_cancel"] },
+    "cloud_upd_open", "cloud_upd_ok", "cloud_upd_cancel",
+    // 缺資料來源金鑰(0.1.15;renderer/app.js rpGoDataSrc):按策略頁缺金鑰那一格的「去資料來源」,不帶來源名
+    "missing_key_go"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

@@ -228,7 +228,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
 
 // ── 沒有回測時,分頁列正下方那一句(兩個視角同一段)──
 ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/div>\s*<!--[^>]*-->\s*<p class="rp-nobt" id="rp-nobt" data-i18n="rp\.noBt" hidden><\/p>\s*<div class="rp-panel" id="rp-bt"/.test(html)
-  && /const nb = \$\("rp-nobt"\); nb\.hidden = has;/.test(fnOf(appSrc, "rpShowTab")));
+  && /rpNobtPaint\(B, has\);/.test(fnOf(appSrc, "rpShowTab")) && /nb\.classList\.remove\("is-miss"\); nb\.hidden = has;/.test(fnOf(appSrc, "rpNobtPaint")));
 
 // ── 側欄:再點一次選中的那支 = 取消選取、中欄回 welcome(Wei 09-23)。真的跑 stratRefresh 畫列、按列上的 click ──
 (async () => {
@@ -238,6 +238,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
     addEventListener(ev, fn) { (this.on[ev] = this.on[ev] || []).push(fn); }, append(...c) { c.forEach((x) => this.appendChild(x)); },
     appendChild(c) { if (typeof c === "string") c = { tag: "#text", textContent: c, kids: [], className: "" }; if (c && typeof c === "object") { c.parent = this; this.kids.push(c); } return c; }, remove() { if (this.parent) this.parent.kids = this.parent.kids.filter((x) => x !== this); },
     get isConnected() { return !!this.parent && this.parent.kids.includes(this); },
+    get classList() { const n = this, has = () => n.className.split(/\s+/).filter(Boolean); return { add: (c) => { if (!has().includes(c)) n.className = [...has(), c].join(" "); }, remove: (c) => { n.className = has().filter((x) => x !== c).join(" "); }, contains: (c) => has().includes(c) }; },
     focus() { doc.activeElement = this; }, click() { (this.on.click || []).forEach((f) => f({ currentTarget: this })); },
     querySelectorAll(sel) { const cls = sel.replace(/^\./, ""), out = []; const walk = (x) => x.kids.forEach((k) => { if ((" " + k.className + " ").includes(" " + cls + " ")) out.push(k); walk(k); }); walk(this); return out; } };
     return n; };
@@ -278,7 +279,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
       api: { loadStrategy: (n) => new Promise((res) => pendingLoads.push({ n, res })) } };
     const scope = { $: $2, document: doc, t: (k) => k, ENV: { cur: "cloud", sig: {} }, TR_BAGS: { cloud: C, local: { open: false } }, RP: { name: null }, RPC: { name: null, data: null, tab: "bt", drawn: {} },
       trAlert: () => {}, srSay: (x) => said.push(x), hoPaint: () => {}, window: {} };
-    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpTab"), fnOf(appSrc, "rpShowTab"),
+    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpTab"), fnOf(appSrc, "rpShowTab"), fnOf(appSrc, "rpMissKey"), fnOf(appSrc, "rpNobtPaint"),
       appSrc.slice(appSrc.indexOf("const RPC_CACHE = new Map();"), appSrc.indexOf("async function rpCloudSelect(")).replace(/^const |^let /gm, "var "),
       "var rpCloudSelect = async " + fnOf(appSrc, "rpCloudSelect").replace(/^async /, ""),
       "var trPaint = () => envShowMain();"].join("\n");

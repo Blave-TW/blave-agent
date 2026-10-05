@@ -1295,10 +1295,7 @@ function rpShowTab(tab) {
     b.disabled = !has && b.dataset.tab !== "code";
   });
   if (typeof rpTabRevealSelected === "function") rpTabRevealSelected();   // 測試會單獨切出 rpShowTab 來跑,守一下
-  // 同一個 has:沒有回測就在分頁列正下方講一句(兩個視角都出)。Type B 本來就沒有回測,不叫人去跑(e2e 0.1.8 #67);
-  // key 放在 data-i18n 上,切語言時 applyStatic 照這個 key 重譯
-  const nb = $("rp-nobt"); nb.hidden = has;
-  nb.dataset.i18n = typeof xpIsTypeB === "function" && xpIsTypeB(B.data) ? "rp.noBtB" : "rp.noBt"; nb.textContent = t(nb.dataset.i18n);
+  rpNobtPaint(B, has);
   for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = k !== tab;
   if (!has || B.drawn[tab]) return;
   B.drawn[tab] = true;
@@ -1310,11 +1307,37 @@ function rpShowTab(tab) {
   // 樣本外驗證(report-wf.js 同樣不碰桌面版全域;閘門、送出、回合狀態都從這裡交進去)
   if (tab === "wf" && R.renderWf) R.renderWf($("rp-wf"), rpWfData(B.data, B.name), rpWfOpts());
 }
+/* 分頁列正下方那一格(#rp-nobt),三態互斥:缺金鑰 > Type B 沒有回測 > 沒有回測。
+   缺金鑰只在這台電腦的視角講(missingSources 是主行程拿這台的資料來源清單比出來的),有沒有回測都講:舊數字還在,但下一次跑不起來。
+   Type B 本來就沒有回測,不叫人去跑(e2e 0.1.8 #67)。一般兩態的 key 放在 data-i18n 上,切語言時 applyStatic 照 key 重譯;
+   缺金鑰那態有鈕,拿掉 data-i18n(不然 applyStatic 的 textContent 會把鈕洗掉),由 applyStatic 叫這支重畫 */
+function rpMissKey(miss, typeB) {
+  const k = (typeB ? "rp.missKeyB" : "rp.missKey") + (miss.length === 1 ? ".one" : miss.length === 2 ? ".two" : ".many");
+  return t(k, { a: miss[0], b: miss[1] || "", n: miss.length, k: miss.length - 2 });
+}
+function rpNobtPaint(B, has) {
+  const nb = $("rp-nobt"), typeB = typeof xpIsTypeB === "function" && xpIsTypeB(B.data);
+  const miss = B === RP && !(typeof ENV !== "undefined" && ENV.cur === "cloud") && B.data && Array.isArray(B.data.missingSources) ? B.data.missingSources.filter((x) => typeof x === "string" && x) : [];
+  if (!miss.length) {
+    nb.classList.remove("is-miss"); nb.hidden = has;
+    nb.dataset.i18n = typeof xpIsTypeB === "function" && xpIsTypeB(B.data) ? "rp.noBtB" : "rp.noBt"; nb.textContent = t(nb.dataset.i18n);
+    return;
+  }
+  delete nb.dataset.i18n; nb.textContent = ""; nb.classList.add("is-miss"); nb.hidden = false;
+  const txt = document.createElement("span"); txt.className = "t"; txt.textContent = rpMissKey(miss, typeB);
+  const go = document.createElement("button"); go.type = "button"; go.className = "btn-out"; go.textContent = t("rp.missKey.go");
+  go.addEventListener("click", rpGoDataSrc);
+  nb.append(txt, go);
+}
 // 交給 report-robust.js 的環境:回合狀態(busy + 序號)與這一袋是哪一邊(scope:本機 / 雲端同名策略的「已送出」不互相污染)
 function rpRobOpts() {
   const R = window.BlaveReport || {};
   return { t, busy: running, turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, buildMeta: R.buildMeta, resync: rpRobSync, refocus: rpRobRefocus };
 }
+// 「去資料來源」:開設定 › 資料來源;清單畫好後焦點交給第一列缺金鑰列的「新增」(srcPaintList 消費 SRC.focusMiss)
+function rpGoDataSrc() { trackFeature("missing_key_go"); setOpen().then(() => { if ($("set-scrim").hidden) return; SRC.focusMiss = true; setCat("src"); }); }
+// 資料來源存好 / 刪掉之後:看著的那支重讀,缺金鑰那一格跟著變(stratReload 自己守「現在畫的是不是這台電腦那袋」)
+function rpSrcChanged() { if (RP.name) stratReload(RP.name); }
 /* 「開始掃描 / 重新掃描」:確認框 → 固定訊息進對話(同雲端工作頁 robAskScan)。不覆寫 viewing:rpBag()===RPC ⇔ ENV.cur==="cloud" ⇔ chatViewing 本來就回 env:cloud,
    而且還帶著 strategy 欄位(覆寫成 { env } 會把它丟掉)。回 Promise<turn|false> = 跑起來的那一回合的序號;取消的話不會 resolve(模組不等它,沒有東西掛在上面)。
    info(report-robust.js scanInfo):這次會用的期間 / 手續費(現在的回測)列在框裡;重新掃描另列上次的兩軸,訊息寫明範圍(spec-0.1.12-scan-stale §4) */
@@ -3295,6 +3318,7 @@ function applyStatic() {
   if (typeof rptRepaint === "function") rptRepaint();   // 報告清單 / 閱讀頁 / 新增報告框(renderer/reports.js)
   if (typeof nsRepaint === "function") nsRepaint();     // 新增策略框的預覽句與閘門句(renderer/newstrategy.js)
   if (typeof brRepaint === "function") brRepaint();     // 內建瀏覽器的區塊與展開層(renderer/browser.js)
+  if ($("rp-nobt").classList.contains("is-miss")) rpNobtPaint(rpBag(), true);   // 缺金鑰那一格沒有 data-i18n(裡面有鈕),自己重畫
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
