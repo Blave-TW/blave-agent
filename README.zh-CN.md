@@ -9,7 +9,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> 本文译自英文版 README 的 commit [`1ac250b`](https://github.com/Blave-TW/blave-agent/blob/1ac250b/README.md)，只涵盖变动较少的段落；最新消息、交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`0d0b880`](https://github.com/Blave-TW/blave-agent/blob/0d0b880/README.md)，只涵盖变动较少的段落；最新消息、交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
