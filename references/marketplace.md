@@ -62,6 +62,8 @@ GET /openclaw/marketplace/strategies/{id}
 8. **Run it — MANDATORY, never skip:** `python3 strategies/<name>/strategy.py` — or `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py` when `<name>` is already a key of `amounts` in `manager/portfolio_config.json` (a re-install over a picked strategy, amount 0 included), otherwise the run is a quiet live tick with no version and no chart (`references/deployment.md` › *Live vs Backtest*). Every run writes `strategies/<name>/stats.json` (metrics + daily returns); that file is what makes the strategy selectable in the web workspace's 下單設定 › 選擇策略 picker — a downloaded-but-never-run strategy is invisible there and reads as a broken install. Report the resulting stats to the user.
 9. **Leave nothing of the download in `tmp/`.** However the flow ended — installed, refused or failed — delete every `tmp/<filename>.py` this install wrote (split bundle files included) before the reply. The same holds for the fork, bundle and shared flows below.
 
+**Listing name vs code.** A library title is the listing name; the code's header comment and `STRATEGY_NAME` may still carry the research name (#101 「BTC 通道動能共振」 ships as `rsi_bb_reversal`, header "RSI + Bollinger Bands"). When the code's `DISPLAY_NAME`, `SYMBOL`, `INTERVAL` and long/short side match what the pick and its listing say, install it — a different header comment or `STRATEGY_NAME` is not a reason to stop. Mention it in one sentence in the reply. When `SYMBOL`, `INTERVAL` or the side does not match, stop before running and ask the user. This holds for every install in this file: desktop picks, bundles and shared strategies.
+
 Purchases and shared-with-me are separate lists — checking only purchases will miss shared strategies.
 
 ## Desktop-downloaded picks
@@ -71,7 +73,7 @@ On the desktop app a library pick arrives as 「策略庫的「{title}」（#{id
 1. **Do not call the Strategy Library API for it** — no `/code`, no lists. This workspace may hold no Blave key this turn (no card, or this hour's data fee not covered), and the code is already here.
 2. `tmp/library_<id>.py` missing → say the download did not arrive and ask the user to press the button again; never fetch it some other way.
 3. `tmp/library_<id>.security.json` present → the platform's server-side scan of someone else's code. If its `findings` list is not empty, show them to the user and ask before going on, exactly like a `lib/security_check.py` exit 1.
-4. Continue the install flow above from step 5 (bundle check → security scan → quality scan → run) with `tmp/library_<id>.py` as the downloaded file.
+4. Continue the install flow above from step 5 (bundle check → security scan → quality scan → run) with `tmp/library_<id>.py` as the downloaded file. *Listing name vs code* above applies.
 5. Step 9 applies: delete `tmp/library_<id>.py` and `tmp/library_<id>.security.json` before the reply.
 
 Whether the backtest needs Blave data changes none of this. A strategy on public klines runs without data access; one that needs Blave data stops at its first Blave call with `DataAccessError`, and only then does the desktop data-access rule apply.
