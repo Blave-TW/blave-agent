@@ -889,5 +889,12 @@ check(r is not None and r.stdout.strip() == hashlib.sha256(open(os.path.join(KW,
       "4b local hash one-liner prints the file's sha256")
 shutil.rmtree(KW)
 
+# Windows desktop: ssh multiplexing is unverified there, so step 2.2 drops the three Control* options on that branch only
+win_ssh = re.search(r"\*\*Windows desktop app\*\* \(the OS check in `AGENTS\.md` answers `Windows`\): paste the block without its second line[^\n]*", DOC)
+check(win_ssh is not None and all(f"`{k}`" in win_ssh.group(0) for k in ("ControlMaster", "ControlPath", "ControlPersist"))
+      and "never been run on a real Windows machine" in win_ssh.group(0) and "report the exact message and stop" in win_ssh.group(0)
+      and "-o ControlMaster=auto -o ControlPath=tmp/cloud-handoff/cm-%C -o ControlPersist=10m" in DOC,
+      "step 2.2: the Windows desktop branch drops the Control* line (unverified there), stops on a key-permission refusal; macOS keeps it")
+
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)

@@ -237,6 +237,8 @@ Source = this workspace for local → cloud; the cloud workspace for cloud → l
    -o BatchMode=yes -o ConnectTimeout=15
    ```
 
+   **Windows desktop app** (the OS check in `AGENTS.md` answers `Windows`): paste the block without its second line — no `ControlMaster`, `ControlPath` or `ControlPersist`. Connection sharing has never been run on a real Windows machine, and nothing here needs it: each call simply opens its own connection. Everything else is the same, the `chmod 600` in step 2.1 included. If `ssh` there refuses the key file as unprotected or too open, report the exact message and stop — never loosen or copy the key elsewhere.
+
 3. Test: `ssh <SSH_OPTS> blaveagent@<host> cat "/opt/blave-agent/workspace/VERSION"`. The remote workspace is always `/opt/blave-agent/workspace`. Use absolute remote paths, quoted. A remote command is parsed by a second shell, so the quotes are not what keeps it safe — the character allow-lists on `<name>` (step 1.1) and `<f>` (step 4b) are. A value that fails its allow-list is never pasted into a command, quoted or not: stop and report it, and never widen the allow-list yourself.
 4. The certificate lasts 15 minutes. If a later command fails with a permission error, call `get_ssh_access` again, overwrite the two files, and repeat the command once.
 5. **One-call form — a Python script run there, in one call.** Anything that would otherwise be several `ssh … cat` / `grep` / `test` calls goes into one script, sent on stdin as a quoted heredoc (nothing is copied, nothing is left on the machine, and `'PY'` in quotes keeps this computer's shell from touching the text):
