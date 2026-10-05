@@ -347,13 +347,43 @@ rc, first, _ = cli("security_check.py", 'x = 1\n')
 rc2, first2, _ = cli("security_check.py", SEC_BAD)
 check(first == "RESULT: clean" and rc == 0 and first2 == "RESULT: do-not-run" and rc2 == 2,
       f"security_check: first line RESULT: clean / do-not-run ({first!r} {rc}, {first2!r} {rc2})")
-check('"ask-user" if results' in open(os.path.join(ROOT, "lib", "security_check.py"), encoding="utf-8").read(),
-      "security_check has an ask-user verdict for warnings only")
+rc, first, _ = cli("security_check.py", 'import requests\nrequests.get("http://example.com")\n')
+check(first == "RESULT: ask-user" and rc == 1, f"security_check warnings only: RESULT: ask-user, exit 1 ({first!r}, {rc})")
+rc, first, _ = cli("security_check.py")
+check(first == "RESULT: do-not-run" and rc == 2, f"security_check with no file argument: RESULT: do-not-run, exit 2 ({first!r}, {rc})")
+# A scanner that cannot read the file, or crashes, must say do-not-run — a bare exit 1 would read as
+# run-as-is (quality) / ask-user (security).
+LATIN1 = b'# -*- coding: latin-1 -*-\nNAME = "caf\xe9"\ndef compute_signals(df):\n    return df.close\n'
+for tool in ("quality_check.py", "security_check.py"):
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as f:
+        f.write(LATIN1)
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "lib", tool), f.name], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    os.unlink(f.name)
+    check((r.stdout.splitlines() or [""])[0] == "RESULT: do-not-run" and r.returncode == 2 and "Traceback" not in r.stderr,
+          f"{tool}: a file it cannot decode (latin-1 coding cookie) → RESULT: do-not-run, exit 2 ({r.stdout[:40]!r}, {r.returncode})")
+    boom = ("import ast, runpy, sys\n"
+            "def _boom(*a, **k):\n    raise RuntimeError('boom')\n"
+            "ast.parse = _boom\nsys.argv = sys.argv[1:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n")
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(CLEAN)
+    r = subprocess.run([sys.executable, "-c", boom, os.path.join(ROOT, "lib", tool), f.name], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    os.unlink(f.name)
+    check((r.stdout.splitlines() or [""])[0] == "RESULT: do-not-run" and r.returncode == 2 and "RuntimeError" in r.stderr and "Traceback" not in r.stderr,
+          f"{tool}: an unexpected error inside the scan → RESULT: do-not-run, exit 2 ({r.stdout[:40]!r}, {r.returncode}, {r.stderr[-80:]!r})")
 
 # references decide on the RESULT line, never on exit 1 / exit 2
 install = mk[mk.index("6. **Security scan**"):mk.index("8. **Run it")]
-check("Decide on its first output line, `RESULT: …`, never on the exit code" in install and "exit 1 for both 1 and 2" in install,
-      "marketplace install step 6: decide on RESULT:, exit code only as a fallback (Windows folds 1 and 2)")
+check("Decide on its `RESULT: …` line (printed first), never on the exit code" in install and "exit 1 for both 1 and 2" in install,
+      "marketplace install step 6: decide on RESULT:, never on the exit code (Windows folds 1 and 2)")
+check("Output with no `RESULT:` line (an old checker, or the scan itself failed) counts as `RESULT: do-not-run`" in install
+      and "fallback" not in install,
+      "marketplace install step 6: no RESULT line = do-not-run (no falling back to exit codes)")
+step8 = mk[mk.index("8. **Run it"):]; step8 = step8[:step8.index("\n")]
+shared6 = mk[mk.index("6. **Run it — MANDATORY", mk.index("## Load shared strategies")):]; shared6 = shared6[:shared6.index("\n")]
+check("unless step 6 or 7 said `do-not-run`, or the user said no at step 6's `ask-user`" in step8
+      and "unless step 4 or 5 said `do-not-run`, or the user said no at step 4's `ask-user`" in shared6
+      and "unless step 3 stopped it" in fork5 and "one stopped at step 3 or 4 is not run" in mk,
+      "install step 8 / shared step 6 MANDATORY runs, fork baseline and bundle runs all skip a do-not-run and a declined ask-user")
 import re as _re
 check(not _re.search(r"(?im)^\s*-\s*Exit [012]\b|\bexits? [12]\b(?! for both)|quality exit 1|exit 1: run|exit 2: do NOT", mk),
       "marketplace.md has no checker decision written as exit 1 / exit 2 any more")
@@ -372,7 +402,8 @@ fork3 = mk[mk.index("3. **Security scan, then quality scan, both on the download
 fork3 = fork3[:fork3.index("\n")]
 check("quality_check.py tmp/<filename>.py" in fork3 and "create no fork" in fork3, "fork: quality scan on the download before anything is saved")
 lib = open(os.path.join(ROOT, "references", "lib.md"), encoding="utf-8").read()
-check("`RESULT: clean` / `RESULT: run-as-is` / `RESULT: do-not-run`; decide on that line" in lib, "lib.md › quality_check: decide on the RESULT line")
+check("`RESULT: clean` / `RESULT: run-as-is` / `RESULT: do-not-run`; decide on that line, and treat output with no `RESULT:` line" in lib
+      and "Never decide on the exit code" in lib, "lib.md › quality_check: decide on the RESULT line; none = do-not-run")
 win = [l for l in agents_lines if "Get-Content" in l]
 check(len(win) == 1 and "with python (`encoding='utf-8'`)" in win[0] and "Set-Content" in win[0] and "`.env`" in win[0],
       "AGENTS.md: on Windows read/write strategy files, .env and references with python utf-8, never Get-Content / Set-Content")

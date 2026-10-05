@@ -8,7 +8,7 @@ First output line (the verdict to act on): RESULT: clean | ask-user | do-not-run
 Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
     0 — clean
     1 — warnings only (review before running)
-    2 — critical issues (do NOT run)
+    2 — critical issues, file unreadable, no file argument, or the scan itself failed (do NOT run)
 """
 
 import ast
@@ -42,12 +42,15 @@ _EXEC_RE = re.compile(r"\b(eval|exec|compile)\s*\(")
 
 def check(filepath: str) -> list[dict]:
     """Return list of findings: {level: 'CRITICAL'|'WARNING', line: int, msg: str}"""
-    source = Path(filepath).read_text(encoding="utf-8")
+    try:
+        source = Path(filepath).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot read file: {e}"}]
     findings = []
 
     try:
         tree = ast.parse(source)
-    except SyntaxError as e:
+    except (SyntaxError, ValueError) as e:
         return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot parse file: {e}"}]
 
     findings += _ast_checks(tree)
@@ -174,33 +177,51 @@ def _w(line: int, msg: str) -> dict:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # First line = the verdict (same reason as lib/quality_check.py: on Windows, `powershell -Command`
-    # folds exit 1 and 2 into 1, so the exit code is only a fallback).
-    try:
-        sys.stdout.reconfigure(errors="replace")
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-    if len(sys.argv) < 2:
-        print("Usage: python3 lib/security_check.py <strategy_file.py>")
-        sys.exit(0)
+    # The verdict line comes first. On Windows a run wrapped in `powershell -Command` (Codex)
+    # comes back as exit 1 for both 1 and 2, so the exit code is only a fallback — and a crash
+    # must never surface as a bare exit 1 (read as "ask-user"): any unexpected error is do-not-run.
+    _verdict_out = False
 
-    results = check(sys.argv[1])
-    criticals = [r for r in results if r["level"] == "CRITICAL"]
-    print("RESULT: " + ("do-not-run" if criticals else "ask-user" if results else "clean"))
+    def _verdict(v):
+        global _verdict_out
+        print("RESULT: " + v, flush=True)
+        _verdict_out = True
 
-    if not results:
-        print("✅ No issues found.")
-        sys.exit(0)
+    def _main() -> int:
+        try:
+            sys.stdout.reconfigure(errors="replace")
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+        if len(sys.argv) < 2:
+            _verdict("do-not-run")
+            print("Usage: python3 lib/security_check.py <strategy_file.py>")
+            return 2
 
-    print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {sys.argv[1]}:\n")
-    for r in results:
-        icon = "❌" if r["level"] == "CRITICAL" else "⚠️ "
-        print(f"  {icon} Line {r['line']}: {r['msg']}")
+        results = check(sys.argv[1])
+        criticals = [r for r in results if r["level"] == "CRITICAL"]
+        _verdict("do-not-run" if criticals else "ask-user" if results else "clean")
 
-    print()
-    if criticals:
-        print("❌ CRITICAL issues — do NOT run this strategy without manual review.")
-        sys.exit(2)
-    else:
+        if not results:
+            print("✅ No issues found.")
+            return 0
+
+        print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {sys.argv[1]}:\n")
+        for r in results:
+            icon = "❌" if r["level"] == "CRITICAL" else "⚠️ "
+            print(f"  {icon} Line {r['line']}: {r['msg']}")
+
+        print()
+        if criticals:
+            print("❌ CRITICAL issues — do NOT run this strategy without manual review.")
+            return 2
         print("⚠️  Warnings only — confirm with user before running.")
-        sys.exit(1)
+        return 1
+
+    try:
+        _code = _main()
+    except Exception as e:
+        if not _verdict_out:
+            _verdict("do-not-run")
+        print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
+        _code = 2
+    sys.exit(_code)
