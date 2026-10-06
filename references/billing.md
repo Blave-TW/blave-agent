@@ -123,7 +123,7 @@ write, cache read, output). Prices are TWD per 1M tokens (`LLM_PRICING`):
 
 - Claude prices = list price USD × 1.25 × 32 TWD/USD; DeepSeek = list price RMB × 4.4 × 1.25.
 - **DeepSeek peak surcharge: ×2 on weekdays (Mon–Fri) during Beijing 09:00–12:00 and 14:00–18:00**
-  (the proxy doubles the token counts before deducting). Weekends have no surcharge. No surcharge on
+  (the proxy doubles the token counts before deducting). Weekends and Chinese public holidays have no surcharge. No surcharge on
   Claude models.
 - **Web search: 0.4 TWD per search, Claude models only** (Anthropic server-side tool). DeepSeek
   paths never bill it.

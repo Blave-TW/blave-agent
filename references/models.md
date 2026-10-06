@@ -38,7 +38,7 @@ authenticates every model call you make). Do not look for `get-api-key.py` (old-
 not present here) and do not use the Blave API key from the workspace `.env` (that is a
 different credential system; it cannot query the proxy). Match the user's request against the
 `id` field of the returned models — note some carry a peak-hour pricing multiplier (see `note`
-field, e.g. DeepSeek 2x on weekdays (Mon–Fri) during Beijing 09:00-12:00 / 14:00-18:00; no surcharge on weekends).
+field, e.g. DeepSeek 2x on weekdays (Mon–Fri) during Beijing 09:00-12:00 / 14:00-18:00; no surcharge on weekends or Chinese public holidays).
 
 **Switch:** every turn's system prompt carries a runtime-injected section
 (「查詢 / 切換模型（本 runtime 專屬規則）」) containing the exact switch command with your
@@ -83,7 +83,7 @@ curl -s -H "x-api-key: $KEY" https://api.blave.org/openclaw/proxy/v1/models
 ```
 Match the user's request (e.g. "Opus", "DeepSeek Flash") against the `id` field of the returned
 models — note some carry a peak-hour pricing multiplier (see `note` field, e.g. DeepSeek 2x on weekdays (Mon–Fri) during
-Beijing 09:00-12:00 / 14:00-18:00; no surcharge on weekends).
+Beijing 09:00-12:00 / 14:00-18:00; no surcharge on weekends or Chinese public holidays).
 
 **Step 2 — update the config with the exact `id` string from Step 1:**
 ```python
