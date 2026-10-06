@@ -23,12 +23,11 @@ function wdMode(signedIn, s, da, trialLeft) {
 /* ── 純邏輯到此 ── */
 
 const WD_P = "p", WD_B = "b";
-/* 台指期 K 線(日線與分線同一列)現在走 Blave。免費的期交所日線接進 lib/data.py 之後把這個翻成 WD_P,那一列就移到免費欄 */
-const WD_TXF_KLINE_SRC = WD_B;
 const WD_MARKETS = ["crypto", "tw", "txf"];
 /* 每一列:[id, 市場, 來源, 進目錄, 歡迎頁順序(0 = 只進目錄)]。字在 .po:wd.r.<id>.nm / .fq / .sn(目錄的起始)/ .us(可以回測);
    歡迎頁的列另有 .sy(起始年短句)/ .tx(起手句);WD_NT 有 .nt(目錄的補充小字)、WD_WN 有 .wn(歡迎頁列尾補充)、WD_WNM 有 .wnm(歡迎頁短名)。
-   順序照 mockup §2;歡迎頁對比版照來源分欄、單一清單照這裡的順序號 */
+   順序照 mockup §2;歡迎頁對比版照來源分欄、單一清單照這裡的順序號。
+   台指期 K 線拆兩列:txd 日線免費(期交所 futDataDown,lib/data.py fetch_txf_daily_public,1998-07-21 起)、txk 分線走 Blave */
 const WD_ROWS = [
   ["bnk", "crypto", WD_P, 1, 1], ["fng", "crypto", WD_P, 1, 2], ["ti", "crypto", WD_B, 1, 3], ["conc", "crypto", WD_B, 1, 4],
   ["whale", "crypto", WD_B, 1, 0], ["liq", "crypto", WD_B, 1, 5], ["sent", "crypto", WD_B, 1, 0], ["dir", "crypto", WD_B, 1, 0],
@@ -36,11 +35,11 @@ const WD_ROWS = [
   ["twd", "tw", WD_P, 1, 1], ["twm", "tw", WD_B, 1, 4], ["inst", "tw", WD_B, 1, 2], ["mg", "tw", WD_B, 1, 0], ["hold", "tw", WD_B, 1, 0],
   ["fh", "tw", WD_B, 1, 0], ["br", "tw", WD_B, 1, 5], ["fin", "tw", WD_B, 1, 0], ["rev", "tw", WD_B, 1, 3], ["val", "tw", WD_B, 1, 0],
   ["div", "tw", WD_B, 1, 0],
-  ["txk", "txf", WD_TXF_KLINE_SRC, 1, 1], ["txio", "txf", WD_B, 1, 2], ["fi", "txf", WD_B, 1, 3], ["big", "txf", WD_B, 1, 0],
-  ["opt", "txf", WD_B, 1, 0], ["pcr", "txf", WD_B, 0, 4], ["exd", "txf", WD_B, 1, 0], ["sf", "txf", WD_B, 1, 0],
+  ["txd", "txf", WD_P, 1, 1], ["txk", "txf", WD_B, 1, 2], ["txio", "txf", WD_B, 1, 3], ["fi", "txf", WD_B, 1, 4], ["big", "txf", WD_B, 1, 0],
+  ["opt", "txf", WD_B, 1, 0], ["pcr", "txf", WD_B, 0, 5], ["exd", "txf", WD_B, 1, 0], ["sf", "txf", WD_B, 1, 0],
 ];
-const WD_NT = new Set(["bnk", "fng", "ti", "conc", "whale", "liq", "sent", "dir", "top", "fr", "twd", "inst", "fh", "fin", "val", "txk", "txio", "opt", "exd", "sf"]);
-const WD_WN = new Set(["twd"]);
+const WD_NT = new Set(["bnk", "fng", "ti", "conc", "whale", "liq", "sent", "dir", "top", "fr", "twd", "inst", "fh", "fin", "val", "txd", "txk", "txio", "opt", "exd", "sf"]);
+const WD_WN = new Set(["twd", "txd"]);
 /* 歡迎頁用短名(.wnm)的列:目錄留長名,清單那一欄窄、長名會把小字擠到第二行 */
 const WD_WNM = new Set(["bnk"]);
 const WD = { mk: "crypto", all: false, key: "", filled: "", pubAsked: false };
@@ -119,9 +118,7 @@ function wdPaint() {
       const col = wdEl("div", "wl-col"), h = wdEl("div", "wl-colh"); h.appendChild(wdEl("span", "wl-cap", t(src === WD_P ? "wd.col.free" : "wd.col.blave")));
       if (src === WD_B) { const nt = wdEl("span", "wl-note"); wdNote(m.k, v, nt); if (nt.childNodes.length) h.appendChild(nt); }
       col.appendChild(h);
-      const rows = wdWel(WD.mk).filter((r) => r[2] === src);
-      if (!rows.length) col.appendChild(wdEl("p", "wl-empty", wdT("wd.empty.", WD.mk)));   // 免費欄空著的市場照實寫一句;.po 只放真的會空的市場
-      rows.forEach((r) => col.appendChild(wdRow(r[0])));
+      wdWel(WD.mk).filter((r) => r[2] === src).forEach((r) => col.appendChild(wdRow(r[0])));   // 三個市場兩欄都有列(tests/check_shell_welcome_data.js 列舉)
       body.appendChild(col);
     });
   } else { const col = wdEl("div", "wl-col"); wdWel(WD.mk).forEach((r) => col.appendChild(wdRow(r[0]))); body.appendChild(col); }

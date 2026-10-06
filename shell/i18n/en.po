@@ -6195,9 +6195,6 @@ msgstr "Top Up"
 msgid "wd.state.trial"
 msgstr "Trial: this data is free until {d}."
 
-msgid "wd.empty.txf"
-msgstr "No free source for TAIEX futures prices yet."
-
 msgid "wd.all"
 msgstr "See All Data"
 
@@ -6604,14 +6601,38 @@ msgstr "1994-10-01"
 msgid "wd.r.div.us"
 msgstr "Strategies around ex-dividend dates"
 
+msgid "wd.r.txd.nm"
+msgstr "TAIEX futures daily bars (front-month continuous)"
+
+msgid "wd.r.txd.nt"
+msgstr "Source: Taiwan Futures Exchange; mini and micro contracts backtest on the same price series; on a cloud machine this goes through Blave, from 2011-01-03"
+
+msgid "wd.r.txd.fq"
+msgstr "Daily"
+
+msgid "wd.r.txd.sn"
+msgstr "1998-07-21"
+
+msgid "wd.r.txd.sy"
+msgstr "from 1998"
+
+msgid "wd.r.txd.wn"
+msgstr "source: TAIFEX"
+
+msgid "wd.r.txd.us"
+msgstr "Swing and trend strategies on TAIEX futures"
+
+msgid "wd.r.txd.tx"
+msgstr "TAIEX futures daily bars, 20-day / 60-day moving-average cross, flat on settlement day"
+
 msgid "wd.r.txk.nm"
-msgstr "TAIEX futures klines (front-month continuous)"
+msgstr "TAIEX futures intraday bars (front-month continuous)"
 
 msgid "wd.r.txk.nt"
 msgstr "Mini and micro contracts backtest on the same price series"
 
 msgid "wd.r.txk.fq"
-msgstr "Daily, 1 to 60 min"
+msgstr "1 to 60 min"
 
 msgid "wd.r.txk.sn"
 msgstr "2011-01-03"
@@ -6620,7 +6641,7 @@ msgid "wd.r.txk.sy"
 msgstr "from 2011"
 
 msgid "wd.r.txk.us"
-msgstr "Intraday and swing strategies on TAIEX futures"
+msgstr "Intraday strategies on TAIEX futures"
 
 msgid "wd.r.txk.tx"
 msgstr "TAIEX futures 1-minute bars, fast/slow moving-average cross, flat before settlement"

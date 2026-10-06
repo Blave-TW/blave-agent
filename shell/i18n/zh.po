@@ -6197,9 +6197,6 @@ msgstr "儲值"
 msgid "wd.state.trial"
 msgstr "試用中：這些資料免費用到 {d}。"
 
-msgid "wd.empty.txf"
-msgstr "台指期價格目前沒有免費來源。"
-
 msgid "wd.all"
 msgstr "看全部資料"
 
@@ -6606,14 +6603,38 @@ msgstr "1994-10-01"
 msgid "wd.r.div.us"
 msgstr "除權息前後的策略"
 
+msgid "wd.r.txd.nm"
+msgstr "台指期日線（近月連續）"
+
+msgid "wd.r.txd.nt"
+msgstr "來源：臺灣期貨交易所；小台、微台用同一條價格回測；雲端主機上走 Blave，2011-01-03 起"
+
+msgid "wd.r.txd.fq"
+msgstr "日"
+
+msgid "wd.r.txd.sn"
+msgstr "1998-07-21"
+
+msgid "wd.r.txd.sy"
+msgstr "1998 年起"
+
+msgid "wd.r.txd.wn"
+msgstr "來源期交所"
+
+msgid "wd.r.txd.us"
+msgstr "台指期波段、趨勢策略"
+
+msgid "wd.r.txd.tx"
+msgstr "台指期日線，20 日與 60 日均線交叉，結算日不留倉"
+
 msgid "wd.r.txk.nm"
-msgstr "台指期 K 線（近月連續）"
+msgstr "台指期分線（近月連續）"
 
 msgid "wd.r.txk.nt"
 msgstr "小台、微台用同一條價格回測"
 
 msgid "wd.r.txk.fq"
-msgstr "日、1 至 60 分"
+msgstr "1 至 60 分"
 
 msgid "wd.r.txk.sn"
 msgstr "2011-01-03"
@@ -6622,7 +6643,7 @@ msgid "wd.r.txk.sy"
 msgstr "2011 年起"
 
 msgid "wd.r.txk.us"
-msgstr "台指期日內、波段策略"
+msgstr "台指期日內策略"
 
 msgid "wd.r.txk.tx"
 msgstr "台指期 1 分線，快慢均線交叉，結算前平倉"

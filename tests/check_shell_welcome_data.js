@@ -69,13 +69,20 @@ if (!process.versions.electron) {
   ok("② 每一列的字 zh / en 都齊(" + ROWS.length + " 列、目錄 " + CAT.length + " 列、歡迎頁 " + WEL.length + " 列)", missing.length === 0, missing.join(", "));
   const extra = []; for (const L of ["zh", "en"]) for (const k of Object.keys(STR[L])) if (k.startsWith("wd.r.") && !ROWS.some((r) => k.startsWith("wd.r." + r[0] + "."))) extra.push(L + ":" + k);
   ok("② 字串表沒有多出不在 WD_ROWS 的列(拿掉的列字也要一起拿掉:BingX、CME／ICE、公開大盤、公開期貨法人、異常漲跌)", extra.length === 0, extra.join(", "));
-  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.mk.txfo", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.outNoNum", "wd.note.none", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.empty.txf", "wd.all", "wd.less", "wd.sep", "wd.h.data", "wd.h.fq", "wd.h.sn", "wd.h.src", "wd.h.us", "wd.src.p", "wd.src.b", "wd.foot.1", "wd.foot.2"];
-  ok("② 固定字 " + fixed.length + " 個 zh / en 都有;免費欄會空著的市場只有台指期(wd.empty.txf)", fixed.every((k) => STR.zh[k] && STR.en[k]) && WEL.filter((r) => r[1] === "txf" && r[2] === TAB.WD_P).length === 0 && ["crypto", "tw"].every((mk) => WEL.some((r) => r[1] === mk && r[2] === TAB.WD_P)));
+  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.mk.txfo", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.outNoNum", "wd.note.none", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.less", "wd.sep", "wd.h.data", "wd.h.fq", "wd.h.sn", "wd.h.src", "wd.h.us", "wd.src.p", "wd.src.b", "wd.foot.1", "wd.foot.2"];
+  ok("② 固定字 " + fixed.length + " 個 zh / en 都有;三個市場的歡迎頁兩欄都有列(免費欄空著那句 wd.empty.* 與 .wl-empty 隨台指期免費日線退役)", fixed.every((k) => STR.zh[k] && STR.en[k]) && ["crypto", "tw", "txf"].every((mk) => [TAB.WD_P, TAB.WD_B].every((sr) => WEL.some((r) => r[1] === mk && r[2] === sr)))
+    && !Object.keys(STR.zh).concat(Object.keys(STR.en)).some((k) => k.startsWith("wd.empty.")) && !/wl-empty|wd\.empty/.test(src + css));
   const wd = (L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.")).map((k) => STR[L][k]);
   ok("② 字裡不出現「付費」/ paid;價格只在 wd.note.billed 一句({r} 由 account_status 下發,不寫死 2 TWD);試用天數也是 {t}", !wd("zh").some((s) => /付費/.test(s)) && !wd("en").some((s) => /\bpaid\b/i.test(s))
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && /\{r\}/.test(STR[L][k])).join() === "wd.note.billed") && !wd("zh").concat(wd("en")).some((s) => /\d\s*TWD/.test(s))
     && ["zh", "en"].every((L) => /\{t\}/.test(STR[L]["wd.note.out"]) && /\{t\}/.test(STR[L]["wd.note.none"]) && /\{d\}/.test(STR[L]["wd.state.trial"])));
-  ok("② 台指期 K 線那一列的來源是一個常數(WD_TXF_KLINE_SRC;免費日線接上後翻成 WD_P 就移到免費欄),現在是 Blave", /const WD_TXF_KLINE_SRC = WD_B;/.test(src) && ROWS.find((r) => r[0] === "txk")[2] === TAB.WD_B && /\["txk", "txf", WD_TXF_KLINE_SRC, 1, 1\]/.test(src));
+  { const txd = ROWS.find((r) => r[0] === "txd"), txk = ROWS.find((r) => r[0] === "txk");
+    ok("② 台指期 K 線拆兩列:txd 日線在免費欄第一列(1998-07-21 起、列尾標來源期交所,同 lib/data.py _TXF_PUBLIC_START 那個月)、txk 分線在 Blave 欄(頻率不再含日線);WD_TXF_KLINE_SRC 常數退役",
+      !!txd && !!txk && txd[2] === TAB.WD_P && txd[4] === 1 && txk[2] === TAB.WD_B && txk[4] === 2 && !/WD_TXF_KLINE_SRC/.test(src) && TAB.WD_WN.has("txd")
+      && STR.zh["wd.r.txd.sn"] === "1998-07-21" && STR.en["wd.r.txd.sn"] === "1998-07-21" && /1998/.test(STR.zh["wd.r.txd.sy"]) && /1998/.test(STR.en["wd.r.txd.sy"])
+      && /期交所/.test(STR.zh["wd.r.txd.wn"]) && /TAIFEX/.test(STR.en["wd.r.txd.wn"]) && /臺灣期貨交易所/.test(STR.zh["wd.r.txd.nt"]) && /Taiwan Futures Exchange/.test(STR.en["wd.r.txd.nt"])
+      && !/日/.test(STR.zh["wd.r.txk.fq"]) && !/daily/i.test(STR.en["wd.r.txk.fq"])
+      && /_TXF_PUBLIC_START = '1998-07-01'/.test(read(path.join(SHELL, "..", "lib", "data.py"))) && /"fetch_txf_daily_public"/.test(read(path.join(SHELL, "..", "lib", "quality_check.py")))); }
   ok("② 起手句六句對得到 examples/(五句在這一版的清單上;WTI 那句隨商品市場一起拿掉:起始年待確認)", ["tsmc_ma", "txf_ma_1m", "tw100_foreign_zscore", "tw2317_broker_zscore", "btc_ti_5min"].every((d) => fs.existsSync(path.join(SHELL, "..", "examples", d, "strategy.py")))
     && ["twd", "txk", "inst", "br", "ti"].every((id) => WEL.some((r) => r[0] === id)) && !ROWS.some((r) => r[1] === "cmd"));
 
@@ -105,7 +112,7 @@ app.whenReady().then(async () => {
   const snap = () => js(`(() => { const body = $("wl-body"), cols = [...body.querySelectorAll(":scope > .wl-col")];
     const rc = (c) => { const r = c.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
     return { visible: !$("main-empty").hidden && !$("wl").hidden, cmp2: body.classList.contains("cmp2"), cols: cols.map((c) => ({ cap: (c.querySelector(".wl-cap") || {}).textContent || "", note: (c.querySelector(".wl-note") || {}).textContent || "",
-        rows: c.querySelectorAll(".wd-row").length, empty: (c.querySelector(".wl-empty") || {}).textContent || "", locked: c.querySelectorAll(".wd-row[disabled], .wd-row[aria-disabled], .wd-row.is-locked").length,
+        rows: c.querySelectorAll(".wd-row").length, locked: c.querySelectorAll(".wd-row[disabled], .wd-row[aria-disabled], .wd-row.is-locked").length,
         dim: [...c.querySelectorAll(".wd-row")].some((b) => parseFloat(getComputedStyle(b).opacity) < 1), r: rc(c) })),
       state: $("wl-state").textContent, stateBtn: !!$("wl-state").querySelector("button"), seg: !$("wl-seg").hidden, all: $("wl-all").textContent, text: $("wl").textContent,
       table: !!body.querySelector("table.wd-cat"), th: body.querySelectorAll("table.wd-cat th").length, tags: body.querySelectorAll(".wd-tag").length, groups: body.querySelectorAll("tr.g").length, trs: body.querySelectorAll("tbody tr:not(.g)").length,
@@ -132,9 +139,10 @@ app.whenReady().then(async () => {
   w.setSize(1000, 900); await wait(400); s = await snap();
   ok("③ 1000 寬(中欄 < 700):上下疊、免費欄在上", s.cmp2 && s.cols.length === 2 && s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
   w.setSize(1600, 900); await wait(400);
-  // 台指期:免費欄空著照實寫一句
+  // 台指期:免費欄是日線那一列(期交所),分線在 Blave 欄
   await js(`$("wl-seg").querySelector('[data-mk="txf"]').click()`); await wait(50); s = await snap();
-  ok("③ 切到台指期:免費欄沒有列、寫「台指期價格目前沒有免費來源。」;Blave 欄 4 列(含台指期 K 線:WD_TXF_KLINE_SRC 現在是 Blave)", s.cols[0].rows === 0 && s.cols[0].empty === Z["wd.empty.txf"] && s.cols[1].rows === 4, JSON.stringify(s.cols.map((c) => [c.rows, c.empty])));
+  ok("③ 切到台指期:免費欄 1 列(台指期日線,小字帶「1998 年起」與「來源期交所」)、Blave 欄 4 列(第一列是分線)", s.cols[0].rows === 1 && s.cols[1].rows === 4
+    && (await js(`(() => { const c = $("wl-body").querySelectorAll(".wl-col"), a = c[0].querySelector(".wd-row"), b = c[1].querySelector(".wd-row"); return a.dataset.id === "txd" && b.dataset.id === "txk" && a.querySelector(".wd-mt").textContent === [t("wd.r.txd.fq"), t("wd.r.txd.sy"), t("wd.r.txd.wn")].join(t("wd.sep")); })()`)), JSON.stringify(s.cols.map((c) => c.rows)));
   ok("③ 分段選中態跟著換", (await js(`[...$("wl-seg").querySelectorAll("button")].map((b) => b.getAttribute("aria-pressed")).join()`)) === "false,false,true");
   await js(`$("wl-seg").querySelector('[data-mk="crypto"]').click()`); await wait(50);
   // 登入後的各種狀態

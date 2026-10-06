@@ -31,7 +31,6 @@
 .wd-row:hover .wd-l2 { color: var(--ink); }
 .wd-gl { flex: none; color: var(--ink-3); }
 .wd-tx { overflow-wrap: anywhere; }
-.wl-empty { margin: 0; padding: var(--space-12); font-size: 13px; color: var(--ink-3); }
 .wl-foot { margin-top: var(--space-16); padding: 0 var(--space-12); }
 /* 「看全部資料」:安靜文字鈕,字級拉到 13/500 墨色、底線色退到框線;熱區 44 高(.btn-quiet::before 是 app.css 那條 44 寬熱區) */
 .wl-foot .btn-quiet { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 500; color: var(--ink); text-decoration-color: var(--border-frame); }
