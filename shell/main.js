@@ -646,7 +646,14 @@ function getJSON(url, headers) {
   });
 }
 
-async function startOAuth(lang) {
+/* 登入完成要不要把 app 拉回前景(純函式;tests/check_shell_login_focus.js)。為了用 Blave AI 而登入、帳號還不能跑
+   (沒綁卡 / 沒額度)時留在瀏覽器:授權完成頁上有「前往綁卡 / 儲值」,搶回來他就看不到。其餘一律搶;查不到(null)也搶。 */
+const LOGIN_ACCT_WAIT_MS = 3000;
+function loginFocus(forBlaveAi, s) {
+  return forBlaveAi === true && !!s && s.can_run === false && (s.reason === "NO_CARD" || s.reason === "NO_CREDIT") ? "stay" : "steal";
+}
+
+async function startOAuth(lang, forBlaveAi) {
   cancelOAuth();
   const verifier = b64url(crypto.randomBytes(32));
   const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
@@ -732,9 +739,14 @@ async function startOAuth(lang) {
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
   if (_balance) _balance.reset();     // 餘額也是
   libCache = null;                    // 同理:策略庫的 purchased / is_owner 是帳號的
-  accountStatus();                    // 登入完成就把 app 的現況(使用事件開關、連的 AI)帶給 api,不等畫面去問
+  // 登入完成就把 app 的現況(使用事件開關、連的 AI)帶給 api,不等畫面去問。丟例外也不能讓已經存好 token 的登入變失敗
+  const acctNow = accountStatus().catch(() => null);
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
-  if (!HEADLESS) app.focus({ steal: true });
+  // 只有 Blave AI 那條要先看帳號能不能跑(最多等 3 秒,逾時當查不到 → 照舊搶);其他登入不等。
+  let timer = null;
+  const s = forBlaveAi ? await Promise.race([acctNow, new Promise((ok) => { timer = setTimeout(() => ok(null), LOGIN_ACCT_WAIT_MS); })]) : null;
+  clearTimeout(timer);
+  if (!HEADLESS && loginFocus(forBlaveAi, s) === "steal") app.focus({ steal: true });
   return { ok: true };
 }
 
@@ -2953,7 +2965,7 @@ app.whenReady().then(() => {
   handle("reply-lang-save", (_e, a) => agentRules().save("reply_lang_set", { lang: a && typeof a.lang === "string" ? a.lang : null, custom: a && typeof a.custom === "string" ? a.custom : "" }), { ok: false, error: "NOT_ALLOWED" });
   handle("load-model-prefs", () => loadModelPrefs());
   handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
-  handle("start-oauth", (_e, lang) => startOAuth(lang === "en" ? "en" : "zh"));   // 語言段會拼進同意頁的路徑:只認兩個值(稽核 R6)
+  handle("start-oauth", (_e, lang, intent) => startOAuth(lang === "en" ? "en" : "zh", intent === "blave"));   // 語言段會拼進同意頁的路徑:只認兩個值(稽核 R6)
   handle("cancel-oauth", () => cancelOAuth());
   handle("clear-connection", () => clearConnection());
   handle("has-blave-token", () => !!loadToken());

@@ -103,7 +103,7 @@ contextBridge.exposeInMainWorld("blave", {
   modelOptions: (kind) => ipcRenderer.invoke("model-options", kind),
   loadModelPrefs: () => ipcRenderer.invoke("load-model-prefs"),
   saveModelPrefs: (prefs) => ipcRenderer.invoke("save-model-prefs", prefs),
-  startOAuth: (lang) => ipcRenderer.invoke("start-oauth", lang),
+  startOAuth: (lang, intent) => ipcRenderer.invoke("start-oauth", lang, intent),
   cancelOAuth: () => ipcRenderer.invoke("cancel-oauth"),
   clearConnection: () => ipcRenderer.invoke("clear-connection"),
   hasBlaveToken: () => ipcRenderer.invoke("has-blave-token"),
