@@ -8,13 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **策略回報多帶 `type`／`market`(漏斗事件拆分用)**:`strategy_reporter` 從策略檔讀型別(檔頭 `# Type:` 的 A/B/C,規則同電腦版 `export.js`;沒檔頭但回測是組合 → C)與市場(原始碼引用了哪個 `lib.data` 抓價函式:`crypto`／`tw_index_futures`／`tw_stock_futures`／`tw_stock`／`us_stock`／`global_futures`／`mixed`;`fetch_twfutures_ohlcv` 看 `SYMBOL` 是不是 TXF/MXF/TMF 分台指期與個股期貨,沒有字面 `SYMBOL` 就不猜)。判不出來就不帶欄位,抽取失敗不影響回報。不改回報指紋:既有策略要等下一次內容或回測變動才會補上這兩欄。api 先上(舊 api 照收、只是不讀)。`tests/check_strategy_type_market.py`。
+(none)
 
 ## 1.1.115 — 2026-10-06(desktop 0.1.16)
 
 - **外殼總覽(desktop 0.1.16;不在 runtime/ 但同一批出貨;api 必須先上:`openclaw/desktop_telemetry.py` 白名單、proxy 的幕後 id `deepseek/deepseek-background`、思考規則)**:自帶 API 金鑰(`shell/llmrelay.js` 本機轉送口,目前只有 DeepSeek:真金鑰不進任何子行程、只認寫死的目的地;每輪用量上限與並行排隊、DeepSeek 思考模式空回應重試、主回合開思考／幕後改 flash 關思考;連結畫面與設定 › 模型接入可貼金鑰、選模型,主鈕「連結」／「儲存」;`shell/connstore.js` 存連線)、埋點新值(`connect_done`／`first_reply_done` 的 kind `apikey`、`connect_failed` 的 `apikey_key／apikey_credit／apikey_net／apikey_other`、`turn_failed` 的 reason `cap`、`feature_used` 的 `apikey_setup`);Windows 補齊(寫死 Mac 的字分平台、缺金鑰策略頁的「去資料來源」回合中停用);雲端視角開著的策略在平台換了內容就補抓報告(回合結束那次早於同步、網頁發起的回合)。測試 `tests/check_shell_apikey_*.js`、`tests/check_shell_telemetry.js`、`tests/check_shell_missing_key.js`、`tests/check_shell_cloud_refetch.js`。
 - **引擎旁支請求改走幕後 id(`agent_turn.background_model_env`;要 api proxy 先上)**:主模型是 DeepSeek 時(Blave AI proxy 與電腦版自帶金鑰轉送口兩種),`ANTHROPIC_SMALL_FAST_MODEL` 與 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 設成 `deepseek/deepseek-background`(不在型錄裡),引擎的標題、WebFetch 摘要等旁支請求帶這個 id,proxy／轉送口照幕後規則改 flash、關思考;原本引擎沿用主模型 id,分不出旁支。本機自己的訂閱與 Claude 主模型不設。測試 `tests/check_background_model_env.py`。
 - **背景摘要標成幕後呼叫(`session_store._llm_summarize`;要 api proxy 先上)**:滾動摘要請求帶 header `X-Blave-Purpose: background`,proxy 照它走幕後規則(flash、關思考);`thinking: {"type": "disabled"}` 欄位留著當舊 proxy 的退路(只在 `SUMMARY_MODEL` 是 DeepSeek 時帶)。思考規則只放 proxy 與電腦版轉送口兩處,呼叫點不各自決定。測試 `tests/check_summary_thinking_off.py`。
+- **策略回報多帶 `type`／`market`(漏斗事件拆分用)**:`strategy_reporter` 從策略檔讀型別(檔頭 `# Type:` 的 A/B/C,規則同電腦版 `export.js`;沒檔頭但回測是組合 → C)與市場(原始碼引用了哪個 `lib.data` 抓價函式:`crypto`／`tw_index_futures`／`tw_stock_futures`／`tw_stock`／`us_stock`／`global_futures`／`mixed`;`fetch_twfutures_ohlcv` 看 `SYMBOL` 是不是 TXF/MXF/TMF 分台指期與個股期貨,沒有字面 `SYMBOL` 就不猜)。判不出來就不帶欄位,抽取失敗不影響回報。不改回報指紋:既有策略要等下一次內容或回測變動才會補上這兩欄。api 先上(舊 api 照收、只是不讀)。`tests/check_strategy_type_market.py`。
 
 ## 1.1.114 — 2026-10-05(desktop 0.1.15)
 
