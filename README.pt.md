@@ -8,7 +8,7 @@ Grátis e de código aberto. Conecte seu Claude Code ou Codex. Você descreve a 
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | **Português** | [Tiếng Việt](README.vi.md)
 
-> Esta tradução foi feita a partir do README em inglês no commit [`0d0b880`](https://github.com/Blave-TW/blave-agent/blob/0d0b880/README.md) e cobre só as seções que mudam pouco. Novidades, exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
+> Esta tradução foi feita a partir do README em inglês no commit [`b7a18f9`](https://github.com/Blave-TW/blave-agent/blob/b7a18f9/README.md) e cobre só as seções que mudam pouco. Novidades, exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 

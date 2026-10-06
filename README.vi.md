@@ -8,7 +8,7 @@ Miễn phí, mã nguồn mở. Kết nối Claude Code hoặc Codex của bạn.
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | **Tiếng Việt**
 
-> Bản dịch này dịch từ README tiếng Anh tại commit [`0d0b880`](https://github.com/Blave-TW/blave-agent/blob/0d0b880/README.md) và chỉ gồm các phần ít thay đổi. Tin mới, sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch này dịch từ README tiếng Anh tại commit [`b7a18f9`](https://github.com/Blave-TW/blave-agent/blob/b7a18f9/README.md) và chỉ gồm các phần ít thay đổi. Tin mới, sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
