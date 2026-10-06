@@ -11,7 +11,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 ## 1.1.116 — 2026-10-06(desktop 0.1.17)
 
 - **外殼與設定層總覽(desktop 0.1.17;大半不在 runtime/ 但同一批出貨)。兩條出貨順序:① 遙測白名單新增五個值(`feature_used` 的 `welcome_data_row`／`welcome_data_all`／`attach_file`／`attach_image`／`attach_paste`),api `openclaw/desktop_telemetry.py` 先上;② 台指期 K 線快取 `twfutures3_*`:api 換月口徑部署並重建驗收完,這批才進 main——過去月份只抓一次、之後不重抓,機器先更新會把舊口徑的月份存進新前綴,事後改不回來。內外盤不換前綴(仍是 `twfutures_bav`)、改成讀取時過濾,不受這條順序限制**:
-  - 歡迎頁資料清單(`shell/renderer/welcome.js`):依市場列出可回測的資料,沒有 Blave 資料時兩欄對比(免費／Blave 資料),有的時候單一清單(看 `account_status` 的 `data_access`);整列可點、那一句落進輸入框不送出;「看全部資料」展開 app 內完整目錄;台指期 K 線拆成日線(免費)與分線(Blave 資料)兩列;起手籤 `chat-eg` 退役。
+  - 歡迎頁資料清單(`shell/renderer/welcome.js`):依市場列出可回測的資料,沒有 Blave 資料時兩欄對比(免費／Blave 資料),有的時候單一清單(看 `account_status` 的 `data_access`);整列可點、那一句落進輸入框不送出;「看全部資料」用瀏覽器開網站的資料文件頁(加密 `blave.org/docs/<lang>/data_crypto`、台股與台指期 `data_twstock`;app 內沒有完整目錄);台指期 K 線拆成日線(免費)與分線(Blave 資料)兩列;起手籤 `chat-eg` 退役。
   - 聊天附件(`shell/attach.js`、`shell/renderer/app.js`):輸入框迴紋針、拖放、貼上剪貼簿,單檔 5 MiB,隨下一句送出;落地 `workspace/tmp/inbound/`,訊息尾端補的那一行逐字同 `web_bridge.py`;主模型是 DeepSeek 而附件是圖時 chip 標「不讀圖」。
   - 免費台指期日線(`lib/data.py` `fetch_txf_daily_public`):電腦版 TXF／MXF／TMF 日線直接向期交所抓近月連續(1998 起),不需要 Blave 資料;有 Blave 資料時 2011 年以前的部分同樣由期交所補在前面。連續合約換月口徑改成結算日整天到期月、15:00 夜盤起才是次月;`txf_settlement_mask` 認順延的結算日。
   - 看盤板移除:runtime 那一半見下一條;設定層刪 `lib/watch.py` 與 `references/watchboard.md`,`AGENTS.md` 改成一句「已移除」。

@@ -278,9 +278,9 @@
             <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁第二顆) -->
             <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
           </div>
-          <!-- 可以回測的資料(renderer/welcome.js;設計 mockup data-scope §1 / §2):取代了原本第四顆「回測一支 BTC 20/50 均線策略」的起手籤。
+          <!-- 可以回測的資料(renderer/welcome.js;設計 mockup data-scope §1):取代了原本第四顆「回測一支 BTC 20/50 均線策略」的起手籤。
                依市場分段;帳號狀態決定兩欄對比(免費 vs Blave 資料)或單一清單;整列可點 → 那一句落進輸入框不送出;
-               「看全部資料」把同一塊換成完整目錄(app 內)。列由 wdPaint 畫,#wl-all 的字跟著模式換、不掛 data-i18n -->
+               「看全部資料」用瀏覽器開網站的資料文件頁(welcome.js wdDocs)。列由 wdPaint 畫 -->
           <div class="wl" id="wl">
             <div class="wl-top">
               <span class="wl-cap" data-i18n="wd.title"></span>
@@ -291,7 +291,7 @@
               </span>
             </div>
             <div class="wl-body" id="wl-body"></div>
-            <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button"></button><p class="wl-state" id="wl-state" aria-live="polite"></p></div>
+            <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd.all"></button><p class="wl-state" id="wl-state" aria-live="polite"></p></div>
           </div>
         </div>
       </div>

@@ -1,10 +1,10 @@
-/* 歡迎頁的資料清單(0.1.17;設計:.claude/output/designer/data-scope-2026-10/mockup-data-scope.html §1 歡迎頁、§2 目錄)。
+/* 歡迎頁的資料清單(0.1.17;設計:.claude/output/designer/data-scope-2026-10/mockup-data-scope.html §1 歡迎頁)。
    工作頁沒選策略時的空狀態,籤下面列「可以回測的資料」:依市場分段,每一列一行 = 資料名 + 緊跟在後的小字(頻率・起始年),
    整列可點 →「跟我討論要怎麼用〈資料名〉做策略」落進輸入框、**不送出**(每列掛一句現成想法的版本字太多,退役)。帳號狀態決定版本:
    - 兩欄對比(免費,不用帳號 vs Blave 資料):沒登入、沒綁卡、有卡沒主機按小時付、餘額不夠、查不到。右欄不上鎖不變灰,價格只出現在那一句。
    - 單一清單(不出任何價格字):資料已經含在裡面——綁卡試用中、名下有主機、API 方案(pricing §2.3 blave_data_included 是 api 算的,
      這裡只讀 account_status 的 data_access 三態,同 app.js dataAccessOf)。
-   「看全部資料」把同一塊換成完整目錄(同一張表的完整版,app 內、不外開)。字全在 .po(wd.*);
+   「看全部資料」用瀏覽器開網站的資料文件頁(每份資料的頻率、起始、來源在那邊維護;app 內沒有完整目錄)。字全在 .po(wd.*);
    起始年查不到的列不放(BingX、CME／ICE 商品、公開大盤與公開期貨法人:另一條線在量,之後補)。
    接線:app.js 的 acctPaint / acctPrecheck / applyStatic / acctSignOut 叫 wdPaint(),檔尾補畫漏掉的第一次;index.html 的 #wl 骨架;welcome.css。 */
 
@@ -30,31 +30,19 @@ function wdAsk(tpl, name) {
 /* ── 純邏輯到此 ── */
 
 const WD_P = "p", WD_B = "b";
-const WD_MARKETS = ["crypto", "tw", "txf"];
-/* 每一列:[id, 市場, 來源, 進目錄, 歡迎頁順序(0 = 只進目錄)]。字在 .po:wd.r.<id>.nm / .fq / .sn(目錄的起始)/ .us(可以回測);
-   歡迎頁的列另有 .sy(起始年短句)/ .an(代進 wd.ask 那一句的名字:不帶括號說明;列上顯示的仍是 .nm / .wnm);
-   WD_NT 有 .nt(目錄的補充小字)、WD_WNM 有 .wnm(歡迎頁短名)。
-   順序照 mockup §2;歡迎頁對比版照來源分欄、單一清單照這裡的順序號。
+/* 每一列:[id, 市場, 來源];陣列順序就是畫面順序(對比版照來源分欄、單一清單照這裡)。字在 .po:wd.r.<id>.nm(列上顯示的名字)/
+   .fq(頻率)/ .sy(起始年短句)/ .an(代進 wd.ask 那一句的名字:不帶括號說明)。
    台指期 K 線拆兩列:txd 日線免費(期交所 futDataDown,lib/data.py fetch_txf_daily_public,1998-07-21 起)、txk 分線走 Blave */
 const WD_ROWS = [
-  ["bnk", "crypto", WD_P, 1, 1], ["fng", "crypto", WD_P, 1, 2], ["ti", "crypto", WD_B, 1, 3], ["conc", "crypto", WD_B, 1, 4],
-  ["whale", "crypto", WD_B, 1, 0], ["liq", "crypto", WD_B, 1, 5], ["sent", "crypto", WD_B, 1, 0], ["dir", "crypto", WD_B, 1, 0],
-  ["top", "crypto", WD_B, 1, 0], ["fr", "crypto", WD_B, 1, 6],
-  ["twd", "tw", WD_P, 1, 1], ["twm", "tw", WD_B, 1, 4], ["inst", "tw", WD_B, 1, 2], ["mg", "tw", WD_B, 1, 0], ["hold", "tw", WD_B, 1, 0],
-  ["fh", "tw", WD_B, 1, 0], ["br", "tw", WD_B, 1, 5], ["fin", "tw", WD_B, 1, 0], ["rev", "tw", WD_B, 1, 3], ["val", "tw", WD_B, 1, 0],
-  ["div", "tw", WD_B, 1, 0],
-  ["txd", "txf", WD_P, 1, 1], ["txk", "txf", WD_B, 1, 2], ["txio", "txf", WD_B, 1, 3], ["fi", "txf", WD_B, 1, 4], ["big", "txf", WD_B, 1, 0],
-  ["opt", "txf", WD_B, 1, 0], ["pcr", "txf", WD_B, 0, 5], ["exd", "txf", WD_B, 1, 0], ["sf", "txf", WD_B, 1, 0],
+  ["bnk", "crypto", WD_P], ["fng", "crypto", WD_P], ["ti", "crypto", WD_B], ["conc", "crypto", WD_B], ["liq", "crypto", WD_B], ["fr", "crypto", WD_B],
+  ["twd", "tw", WD_P], ["inst", "tw", WD_B], ["rev", "tw", WD_B], ["twm", "tw", WD_B], ["br", "tw", WD_B],
+  ["txd", "txf", WD_P], ["txk", "txf", WD_B], ["txio", "txf", WD_B], ["fi", "txf", WD_B], ["pcr", "txf", WD_B],
 ];
-const WD_NT = new Set(["bnk", "fng", "ti", "conc", "whale", "liq", "sent", "dir", "top", "fr", "twd", "inst", "fh", "fin", "val", "txd", "txk", "txio", "opt", "exd", "sf"]);
-/* 歡迎頁用短名(.wnm)的列:目錄留長名,清單那一欄窄、長名會把小字擠到第二行。twd / br 只有英文縮短,中文的 .wnm 照抄 .nm */
-const WD_WNM = new Set(["bnk", "txd", "txk", "twd", "br"]);
-const WD = { mk: "crypto", all: false, key: "", pre: "", filled: "", pubAsked: false };
+const WD = { mk: "crypto", key: "", pre: "", filled: "", pubAsked: false };
 
 const wdEl = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 /* 列的字:key 先組好再查(check_shell_strings 的閘門只認字面 key;每一列每個欄位兩語齊不齊由 tests/check_shell_welcome_data.js 列舉) */
 const wdK = (id, f) => { const k = "wd.r." + id + "." + f; return t(k); };
-const wdT = (prefix, name) => { const k = prefix + name; return t(k); };
 /* 右欄那句(對比版)。沒登入 / 沒綁卡是一顆文字鈕,開設定 › 帳號與方案(那一頁自己有登入與綁卡鈕、自己的埋點);
    餘額不夠是一句 + 「儲值」鈕;按小時付只有一句(整個歡迎頁唯一出現價格的地方);查不到不講 */
 function wdNote(k, v, into) {
@@ -66,7 +54,7 @@ function wdNote(k, v, into) {
 }
 function wdRow(id) {
   const b = wdEl("button", "wd-row"); b.type = "button"; b.dataset.id = id;
-  const l1 = wdEl("span", "wd-l1"); l1.append(wdEl("span", "wd-nm", wdK(id, WD_WNM.has(id) ? "wnm" : "nm")), wdEl("span", "wd-mt", wdK(id, "fq") + t("wd.sep") + wdK(id, "sy")));
+  const l1 = wdEl("span", "wd-l1"); l1.append(wdEl("span", "wd-nm", wdK(id, "nm")), wdEl("span", "wd-mt", wdK(id, "fq") + t("wd.sep") + wdK(id, "sy")));
   b.appendChild(l1);
   b.addEventListener("click", () => wdFill(wdAsk(t("wd.ask"), wdK(id, "an"))));
   return b;
@@ -82,28 +70,11 @@ function wdFill(text) {
   WD.filled = ta.value; autosize(); ta.focus();
   trackFeature("welcome_data_row");
 }
-const wdWel = (mk) => WD_ROWS.filter((r) => r[1] === mk && r[4] > 0).sort((a, b) => a[4] - b[4]);
-/* 完整目錄(mockup §2):一張表、依市場分組;「來源」欄只在對比版出(資料已含的人不必分);窄欄時 welcome.css 把列改成一塊一塊 */
-function wdCatalog(src) {
-  const wrap = wdEl("div", "wd-catw"), tbl = wdEl("table", "wd-cat"), thead = wdEl("thead"), hr = wdEl("tr"), tb = wdEl("tbody");
-  const cols = ["data", "fq", "sn"].concat(src ? ["src"] : [], ["us"]);
-  cols.forEach((k) => { const th = wdEl("th", "", wdT("wd.h.", k)); th.scope = "col"; hr.appendChild(th); });
-  thead.appendChild(hr);
-  let last = "";
-  WD_ROWS.filter((r) => r[3]).forEach(([id, mk, s]) => {
-    if (mk !== last) { last = mk; const g = wdEl("tr", "g"), td = wdEl("td"); td.colSpan = cols.length; td.appendChild(wdEl("span", "wl-cap", wdT("wd.mk.", mk === "txf" ? "txfo" : mk))); g.appendChild(td); tb.appendChild(g); }
-    const tr = wdEl("tr"), nm = wdEl("td", "nm", wdK(id, "nm"));
-    if (WD_NT.has(id)) nm.appendChild(wdEl("small", "", wdK(id, "nt")));
-    tr.append(nm, wdEl("td", "fq", wdK(id, "fq")), wdEl("td", "sn", wdK(id, "sn")));
-    if (src) { const td = wdEl("td", "sr"); td.appendChild(wdEl("span", "wd-tag" + (s === WD_P ? " line" : ""), t(s === WD_P ? "wd.src.p" : "wd.src.b"))); tr.appendChild(td); }
-    tr.appendChild(wdEl("td", "us", wdK(id, "us")));
-    tb.appendChild(tr);
-  });
-  tbl.append(thead, tb);
-  const foot = wdEl("div", "wd-foot"); if (src) foot.appendChild(wdEl("p", "", t("wd.foot.1")));   // 那一句在解釋「公開 / Blave」標籤,沒有來源欄就不講
-  foot.appendChild(wdEl("p", "", t("wd.foot.2")));
-  wrap.append(tbl, foot);
-  return wrap;
+const wdWel = (mk) => WD_ROWS.filter((r) => r[1] === mk);
+/* 「看全部資料」:外開網站的資料文件頁,跟著目前的市場分頁與語言;台指期在台股那一頁。清單畫面不動 */
+function wdDocs() {
+  trackFeature("welcome_data_all");
+  window.blave.openExternal(docsUrl(WD.mk === "crypto" ? "data_crypto" : "data_twstock"));
 }
 /* 重畫。指紋沒變就不碰 DOM(account_status 每一輪回合結束都會重讀,hover 與焦點不能被洗掉)。
    沒登入時那句要的試用天數來自公開價目(app.js pubLoad,一次,拿不到就用不帶數字的句子) */
@@ -111,16 +82,14 @@ function wdPaint() {
   const box = $("wl"); if (!box) return;
   const s = hasToken ? acct : null, v = planVars(), m = wdMode(hasToken, s, dataAccessOf(s), v.n);
   if (!hasToken && !pub && !WD.pubAsked) { WD.pubAsked = true; pubLoad().then(() => wdPaint()); }
-  const key = JSON.stringify([LANG, m.k, m.cmp, WD.mk, WD.all, v.t, v.r, v.d]);
+  const key = JSON.stringify([LANG, m.k, m.cmp, WD.mk, v.t, v.r, v.d]);
   if (key === WD.key) return;
   WD.key = key;
-  const seg = $("wl-seg"); seg.hidden = WD.all;
-  seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === WD.mk)));
+  $("wl-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === WD.mk)));
   const st = $("wl-state"), body = $("wl-body"); st.textContent = ""; body.textContent = "";
-  body.classList.toggle("cmp2", m.cmp && !WD.all);
+  body.classList.toggle("cmp2", m.cmp);
   if (m.k === "trial") st.textContent = t("wd.state.trial", v);
-  if (WD.all) { if (m.cmp) wdNote(m.k, v, st); body.appendChild(wdCatalog(m.cmp)); }
-  else if (m.cmp) {
+  if (m.cmp) {
     [WD_P, WD_B].forEach((src) => {
       const col = wdEl("div", "wl-col"), h = wdEl("div", "wl-colh"); h.appendChild(wdEl("span", "wl-cap", t(src === WD_P ? "wd.col.free" : "wd.col.blave")));
       if (src === WD_B) { const nt = wdEl("span", "wl-note"); wdNote(m.k, v, nt); if (nt.childNodes.length) h.appendChild(nt); }
@@ -129,10 +98,9 @@ function wdPaint() {
       body.appendChild(col);
     });
   } else { const col = wdEl("div", "wl-col"); wdWel(WD.mk).forEach((r) => col.appendChild(wdRow(r[0]))); body.appendChild(col); }
-  $("wl-all").textContent = t(WD.all ? "wd.less" : "wd.all");
 }
 $("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mk]"); if (!b || b.dataset.mk === WD.mk) return; WD.mk = b.dataset.mk; wdPaint(); });
-$("wl-all").addEventListener("click", () => { WD.all = !WD.all; if (WD.all) trackFeature("welcome_data_all"); wdPaint(); });
+$("wl-all").addEventListener("click", wdDocs);
 /* 補畫第一次:app.js 開場的 applyStatic 用 typeof wdPaint 判斷,它若在這支載入前就跑過(設定裡選過語言時是同步跑的;
    沒選過則看語系的 IPC 多快回來),那一次會跳過,沒登入的人清單就空到換語言或登入為止。
    只在 applyStatic 已經跑過時補(#wl-seg 的 aria-label 是它填的):還沒跑的話它等一下自己會畫,這裡搶先畫會閃一下英文 */

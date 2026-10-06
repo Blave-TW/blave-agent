@@ -21,7 +21,6 @@
 }
 .wc-h { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }   /* = trade.css .cv-open h4 */
 .wc-inner:has(.wl) .wc-chips { margin-top: var(--space-12); justify-content: flex-start; }
-.wc-inner:has(.wd-catw) { max-width: 1040px; }   /* 完整目錄開著時放寬:780 的表格模式英文會溢出、小字折成五行 */
 .wl { width: 100%; margin-top: var(--space-32); }
 .wl-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8) var(--space-16); flex-wrap: wrap; padding: 0; }
 .wl-cap { font-size: 13px; font-weight: 600; color: var(--ink-3); }
@@ -31,8 +30,8 @@
 .wl-col { min-width: 0; }
 .wl-colh { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4) var(--space-12); flex-wrap: wrap; padding: 0 0 var(--space-8); border-bottom: 0; margin-bottom: 0; }
 .wl-note { font-size: 12px; line-height: 1.5; color: var(--ink-3); }
-.wl-note .btn-quiet, .wl-state .btn-quiet { font-size: inherit; color: var(--ink-2); }
-.wl-note .btn-quiet:hover, .wl-state .btn-quiet:hover { color: var(--ink); }
+.wl-note .btn-quiet { font-size: inherit; color: var(--ink-2); }
+.wl-note .btn-quiet:hover { color: var(--ink); }
 .wd-row {
   display: grid; align-content: center; width: 100%; min-height: 44px; padding: var(--space-8) var(--space-16);
   grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-12); align-items: center;
@@ -66,37 +65,5 @@
   .wl-body.cmp2 .wl-col > * { min-width: 0; }
   .wl-body.cmp2 .wl-col:first-child > * { grid-column: 1; }
   .wl-body.cmp2 .wl-col:last-child > * { grid-column: 2; }
-}
-
-/* 完整目錄(mockup §2):一張表,市場分組列是小標 */
-.wd-catw { min-width: 0; }
-.wd-cat { width: 100%; border-collapse: collapse; font-size: 13px; }
-.wd-cat th { text-align: left; font-weight: 600; font-size: 12px; color: var(--ink-3); padding: 7px var(--space-12); border-bottom: 1px solid var(--border-hairline); white-space: nowrap; }
-.wd-cat td { padding: 9px var(--space-12); border-bottom: 1px solid var(--border-hairline); vertical-align: top; line-height: 1.6; }
-.wd-cat tr.g td { padding-top: var(--space-24); }
-.wd-cat tbody tr:first-child.g td { padding-top: var(--space-12); }
-.wd-cat td.nm { color: var(--ink); min-width: 160px; }
-.wd-cat td.nm small { display: block; font-size: 12px; color: var(--ink-3); line-height: 1.5; }
-.wd-cat td.fq, .wd-cat td.sn { white-space: nowrap; color: var(--ink-2); }
-.wd-cat td.sn { font-variant-numeric: tabular-nums; }
-.wd-cat td.us { color: var(--ink-2); min-width: 180px; }
-/* Mini tag(canon › Mini tag:18 高、micro 角、11/600、.04em;同 library.css .lib .tag):Blave = 填色、公開 = 描邊 */
-.wd-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; background: var(--surface-muted); color: var(--ink-2); }
-.wd-tag.line { background: transparent; border: 1px solid var(--border-frame); }
-.wd-foot { margin-top: var(--space-16); padding: 0 var(--space-12); display: grid; gap: var(--space-8); }
-.wd-foot p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
-/* 窄欄:表格改成一列一塊(不橫捲);欄頭藏起來,頻率與起始併成一行小字。左右內距 12 = 上面標題列與清單列的縮排,左緣同一條線 */
-@container (max-width: 859.98px) {
-  .wd-cat thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .wd-cat, .wd-cat tbody, .wd-cat tr, .wd-cat td { display: block; }
-  .wd-cat tr { padding: var(--space-12); border-bottom: 1px solid var(--border-hairline); }
-  .wd-cat tr.g { padding: var(--space-24) var(--space-12) var(--space-4); border-bottom: 0; }
-  .wd-cat tbody tr:first-child.g { padding-top: var(--space-4); }
-  .wd-cat td, .wd-cat tr.g td { padding: 0; border: 0; }
-  .wd-cat td.nm, .wd-cat td.us { min-width: 0; }
-  .wd-cat td.fq, .wd-cat td.sn { display: inline; white-space: normal; font-size: 12px; }
-  .wd-cat td.fq::after { content: "\3000"; }
-  .wd-cat td.sr { margin: var(--space-6) 0; }
-  .wd-cat td.us { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .wd-row, .wd-row::after { transition: none; } }

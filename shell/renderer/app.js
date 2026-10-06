@@ -2832,6 +2832,8 @@ function dataReadyText(s) {
 /* 服務條款 / 隱私權政策(法遵稽核:app 裡本來一個入口都沒有)。網址帶目前的介面語言,zh 的人不會落到英文頁
    (web 的路由是 /disclaimer/<lang>/…)。外開走既有的 openExternal(主行程的 externalUrl 已經認得 blave.org) */
 const legalUrl = (page) => "https://blave.org/disclaimer/" + LANG + "/" + page;
+/* 網站的資料文件頁(web 的路由是 /docs/<lang>/…);歡迎頁「看全部資料」外開用(renderer/welcome.js wdDocs) */
+const docsUrl = (page) => "https://blave.org/docs/" + LANG + "/" + page;
 function acctSub(s) { return s && s.trial_eligible ? t("acct.sub", acctVars(s)) : null; }
 // 不能跑時的鈕與句子(預檢卡與 402 卡共用的那半);where = "pre"(預檢卡)| "turn"(402 卡),埋點分卡用
 function acctAction(s, where) {
@@ -3537,7 +3539,7 @@ function applyStatic() {
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
-  if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單(renderer/welcome.js 用 t() 現組的列);放最後:#wl-all 的字不掛 data-i18n
+  if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單(renderer/welcome.js 用 t() 現組的列);放最後:列的字不掛 data-i18n
 }
 
 (async () => {
