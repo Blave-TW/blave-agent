@@ -16,7 +16,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const KINDS = ["blave", "claude", "codex"];
+const KINDS = ["blave", "claude", "codex", "apikey"];
 const FILE = "connect.json", KEY_FILE = "connect-key.bin";
 
 const clean = (v, max) => (typeof v === "string" && v.length > 0 && v.length <= max && !/[\u0000-\u001f\u007f]/.test(v) ? v : null);
@@ -24,8 +24,9 @@ const clean = (v, max) => (typeof v === "string" && v.length > 0 && v.length <= 
 function normalize(choice) {
   if (!choice || typeof choice !== "object" || Array.isArray(choice) || KINDS.indexOf(choice.kind) < 0) return null;
   const p = clean(choice.path, 1024);
-  if (choice.kind !== "blave" && !(p && path.isAbsolute(p))) return null;
-  return { kind: choice.kind, path: choice.kind === "blave" ? null : p, email: clean(choice.email, 254) };
+  const noPath = choice.kind === "blave" || choice.kind === "apikey";   // apikey 不 spawn 任何用戶的執行檔
+  if (!noPath && !(p && path.isAbsolute(p))) return null;
+  return { kind: choice.kind, path: noPath ? null : p, email: clean(choice.email, 254) };
 }
 const macOf = (key, r) => crypto.createHmac("sha256", key).update(JSON.stringify([r.kind, r.path, r.email, r.at, r.tok])).digest("hex");
 // 先驗形狀才比:檔案是 agent 寫得到的——64 個非 ASCII 字元長度對、轉成 Buffer 卻不一樣長,timingSafeEqual 會直接拋(稽核 R1)
@@ -67,7 +68,8 @@ function createConnStore(opts) {
     }
     // 沒有金鑰 = 舊版留下的明文檔(或金鑰被刪了)。「用自己的 CLI」照認並補上 MAC;**blave 不認**——
     // 不然刪掉金鑰再寫一份明文就繞過去了。代價:舊版連 Blave AI 的人升上來要再按一次連結。
-    if (r.kind === "blave") return null;
+    // apikey 同理:它會讓外殼拿出用戶的供應商金鑰花錢,而且舊版沒有這種紀錄,沒有要遷移的
+    if (r.kind === "blave" || r.kind === "apikey") return null;
     const migrated = { ...r, at: r.at || now(), tok: null };
     write(migrated);
     return migrated;

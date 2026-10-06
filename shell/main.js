@@ -264,6 +264,7 @@ async function saveConnection(choice) {
   const kind = choice && choice.kind;
   let agentPath = null;
   if (kind === "claude" || kind === "codex") { agentPath = ((await detectAgents())[kind] || {}).path || null; if (!agentPath) return false; }
+  if (kind === "apikey" && !loadLlmKey()) return false;   // 連得上的前提是這台電腦上有一把驗過的金鑰
   const saved = connStore().save({ kind, path: agentPath, email: choice && choice.email });
   if (!saved) return false;
   tm().track("connect_done", { kind: saved.kind });
@@ -437,6 +438,62 @@ function loadDataKey() {
     const ok = (v) => typeof v === "string" && /^[A-Za-z0-9_\-]{8,200}$/.test(v);
     return ok(k.api_key) && ok(k.secret_key) ? k : null;
   } catch (_) { return null; }
+}
+/* 自帶 API 金鑰:一次一把。密文帶型別標記再驗 preset 在內建表上——safeStorage 的密文沒有完整性保護,
+   agent 把 blave-token.bin 換進來,轉送口不能把 Blave token 當供應商金鑰送出去。拿不到加密能力時不落地 */
+const llmKeyPath = () => path.join(app.getPath("userData"), "apikey.bin");
+function saveLlmKey(preset, key) {
+  if (!Object.prototype.hasOwnProperty.call(require("./llmrelay").PRESETS, preset)) return false;
+  if (typeof key !== "string" || !/^[\x21-\x7e]{8,400}$/.test(key) || !safeStorage.isEncryptionAvailable()) return false;
+  fs.writeFileSync(llmKeyPath(), safeStorage.encryptString(JSON.stringify({ kind: "llm_key", preset, key })), { mode: 0o600 });
+  return true;
+}
+function loadLlmKey() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const k = JSON.parse(safeStorage.decryptString(fs.readFileSync(llmKeyPath())));
+    return k && k.kind === "llm_key" && Object.prototype.hasOwnProperty.call(require("./llmrelay").PRESETS, k.preset)
+      && typeof k.key === "string" && /^[\x21-\x7e]{8,400}$/.test(k.key) ? { preset: k.preset, key: k.key } : null;
+  } catch (_) { return null; }
+}
+function clearLlmKey() { try { fs.unlinkSync(llmKeyPath()); } catch (_) {} }
+/* 畫面要知道的只有「存了哪一家」與上架清單(名字、申請金鑰的網址)——永遠不含金鑰值 */
+function llmKeyInfo() {
+  const P = require("./llmrelay").PRESETS, k = loadLlmKey();
+  return { saved: k ? k.preset : null, presets: Object.keys(P).map((id) => ({ id, name: P[id].name, keysUrl: P[id].keysUrl })) };
+}
+/* 設定 › 模型接入與連結畫面的三個動作(set / test / remove)。金鑰值只從 renderer 經過 set 一次;
+   驗證由這個行程直接打供應商(llmrelay.verifyKey),不經轉送口、不經 agent。回應只有代號與狀態碼,不 log。
+   同時只驗一把:cancel 只中止這一個請求(畫面的「取消等待」) */
+let llmVerify = null;
+const LLM_FAIL_KIND = { KEY: "apikey_key", CREDIT: "apikey_credit", NET: "apikey_net" };
+async function llmKeyCheck(preset, key) {
+  if (llmVerify) return { code: "BUSY", status: 0 };
+  const ac = new AbortController(); llmVerify = ac;
+  try { return await require("./llmrelay").verifyKey(preset, key, { signal: ac.signal }); }
+  finally { llmVerify = null; }
+}
+async function llmKeySet(a) {
+  const preset = a && typeof a.preset === "string" ? a.preset : "", key = a && typeof a.key === "string" ? a.key.trim() : "";
+  if (!Object.prototype.hasOwnProperty.call(require("./llmrelay").PRESETS, preset) || !/^[\x21-\x7e]{8,400}$/.test(key)) return { ok: false, code: "KEY", status: 0 };
+  if (!safeStorage.isEncryptionAvailable()) return { ok: false, code: "NO_SEAL", status: 0 };
+  const r = await llmKeyCheck(preset, key);
+  if (r.code !== "OK") { if (r.code !== "CANCELED" && r.code !== "BUSY") tm().track("connect_failed", { kind: LLM_FAIL_KIND[r.code] || "apikey_other" }); return { ok: false, code: r.code, status: r.status }; }
+  if (!saveLlmKey(preset, key)) return { ok: false, code: "NO_SEAL", status: 0 };
+  // 金鑰已存、只是切換連結沒成:給自己的代號,不要讓畫面拿 200 拼成「回了錯誤 (200)」
+  if (a.connect === true) return (await saveConnection({ kind: "apikey" })) ? { ok: true, code: "OK", status: r.status } : { ok: false, code: "CONN", status: 0 };
+  return { ok: true, code: "OK", status: r.status };
+}
+async function llmKeyTest() {
+  const k = loadLlmKey();
+  if (!k) return { ok: false, code: "MISSING", status: 0 };
+  const r = await llmKeyCheck(k.preset, k.key);
+  return { ok: r.code === "OK", code: r.code, status: r.status };
+}
+function llmKeyRemove() {
+  clearLlmKey();
+  if ((loadConnection() || {}).kind === "apikey") clearConnection();
+  return true;
 }
 function clearDataKey() {
   try { fs.unlinkSync(dataKeyPath()); } catch (_) {}
@@ -2159,7 +2216,17 @@ async function modelOptions(kind) {
     const d = models.find((m) => /deepseek.*pro/.test(m.id)) || models.find((m) => /sonnet/.test(m.id)) || models[0];
     return { models, defaultModel: d ? d.id : null, successors: BLAVE_SUCCESSORS };
   }
+  if (kind === "apikey") return apikeyModels();
   return { models: CLAUDE_MODELS, defaultModel: CLAUDE_DEFAULT, successors: CLAUDE_SUCCESSORS };
+}
+/* 自帶金鑰:型錄 = 存的那一家在轉送口內建表上的型號(不打網路)。DeepSeek 思考常開(Wei),深度只有 low/high/max、預設 high,
+   沒有「關閉」那一格。provider 給選單底部的計費句 */
+function apikeyModels() {
+  const k = loadLlmKey(), p = k ? require("./llmrelay").PRESETS[k.preset] : null;
+  if (!p) return { models: [], defaultModel: null };
+  const efforts = k.preset === "deepseek" ? DEEPSEEK_EFFORTS : [];
+  return { models: p.models.map((id) => ({ id, name: p.modelNames[id] || id, efforts, defaultEffort: efforts.length ? "high" : null })),
+           defaultModel: p.defaultModel, provider: p.name };
 }
 
 // 選擇按引擎各記一組,跨重啟保留:{ codex: { model, efforts: { <model>: <level> } }, … }
@@ -2363,6 +2430,12 @@ function browserNotify(kind) {
 function turnCreds(kind, signedIn, included, handoffOn) {
   return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true, mcp: handoffOn === true && signedIn === true };
 }
+/* 這一輪 LLM 憑證進子行程環境的那一塊(純函式;tests/check_shell_apikey_isolation.js 拿它組 env)。
+   自帶金鑰只給轉送口的位址與一次性 token,真金鑰從來不經過這裡 */
+function llmEnv(acct, relay) {
+  if (relay) return { BLAVE_LLM_RELAY_URL: relay.url, BLAVE_LLM_RELAY_TOKEN: relay.token };
+  return acct ? { BLAVE_PROXY_TOKEN: acct } : {};
+}
 const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAGE_STDIN_MAX
 /* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
    只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
@@ -2384,6 +2457,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const codexBin = conn.kind === "codex" ? await codexBinNow() : null;
   if (conn.kind === "codex" && !codexBin) throw new Error("AGENT_BIN_MISSING");
   const useCodex = !!codexBin;
+  const llmKey = conn.kind === "apikey" ? loadLlmKey() : null;
+  if (conn.kind === "apikey" && !llmKey) throw new Error("APIKEY_MISSING");
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
@@ -2419,7 +2494,14 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 沒掛上時照 off(用戶在設定 › 隱私關的)/ unavailable(開著但這一輪起不來)給 agent 不同的說法
   let brWanted = true; try { brWanted = browser().enabled(); } catch (_) { /* 連物件都建不起來:當成起不來 */ }
   const brState = brMount && mcpFile ? "on" : brWanted ? "unavailable" : "off";
-  const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); };
+  // 轉送口起不來就整輪失敗,絕不退回別的引擎(同 Codex 的理由:靜默換一條帳)。緊貼 turnDone 起,中間沒有會拋的步驟
+  let relay = null;
+  // 每輪上限到的那一刻(轉送口回 429 之前)先告訴畫面:CLI 接著吐的 429 是我們的上限,不是供應商限流
+  const onRelay = (ev) => { if (ev && ev.type === "cap" && win && !win.isDestroyed()) win.webContents.send("turn-event", { type: "llm_cap" }); };
+  try { relay = llmKey ? await require("./llmrelay").startRelay({ preset: llmKey.preset, key: llmKey.key, onEvent: onRelay }) : null; }
+  catch (err) { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); throw err; }
+  const relayPreset = relay ? require("./llmrelay").PRESETS[llmKey.preset] : null;
+  const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); if (relay) relay.stop(); };
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -2430,7 +2512,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 有帳號 token = 用 Blave AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
     // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
     // runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。
-    ...(acct ? { BLAVE_PROXY_TOKEN: acct } : {}),
+    ...llmEnv(acct, relay),
     // 接入碼只在 Codex 引擎進環境(Claude 走 --mcp-config 的檔)。Codex 預設會把整份環境(含 *TOKEN*)傳給 agent 跑的
     // shell,codex_engine 掛上時用 filters 只拔這一個、並關掉會繞過 filters 的 shell_snapshot
     ...(useCodex && mcpFile && mcpMount ? { BLAVE_MCP_TOKEN: mcpMount.accessCode, BLAVE_MCP_URL: mcpMount.url } : {}),
@@ -2468,7 +2550,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 不靠引擎那邊看不見的預設。只有型錄拿不到(沒畫選擇器)時兩個才是 null——
     // 那時 Claude / Blave AI 照舊送 Sonnet(proxy 也認裸 id),Codex 什麼都不帶(runtime 用「有沒有明確
     // 帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m <那個名字>`)。
-    ...(model ? ["--model", model] : useCodex ? [] : ["--model", CLAUDE_DEFAULT]),
+    ...(relayPreset ? ["--model", relayPreset.models.indexOf(model) >= 0 ? model : relayPreset.defaultModel]
+      : model ? ["--model", model] : useCodex ? [] : ["--model", CLAUDE_DEFAULT]),
     ...(effort ? ["--effort", effort] : []),
     // 回覆語言跟著用戶打的字走,不跟介面(Wei):刻意**不帶** --ui-lang。runtime 的順序是
     // 「機器設定 > ui_lang > 看訊息猜」,電腦版沒有機器設定,不帶就落到最後一項。
@@ -2600,10 +2683,12 @@ app.whenReady().then(() => {
     return file === path.join(__dirname, "renderer", "index.html") && e.senderFrame === e.sender.mainFrame;
   };
   const handle = (channel, fn, denied = null) => ipcMain.handle(channel, (e, ...a) => (fromOurPage(e) ? fn(e, ...a) : denied));
-  handle("detect-agents", () => detectAgents());
+  handle("detect-agents", () => detectAgents().then((d) => ({ ...d, apikey: llmKeyInfo() })));
   handle("feature-flags", () => ({ cloudHandoff: cloudHandoffOn() }), { cloudHandoff: false });   // 畫面只拿得到開關,拿不到碼
   handle("save-connection", (_e, choice) => saveConnection(choice), false);
-  handle("load-connection", () => loadConnection());
+  // 開 app 時畫面用它決定進不進工作頁:連的是 apikey 但金鑰讀不到了,就回連結畫面重選,不進一個每句都失敗的工作頁。
+  // 只擋在這裡——runTurn 照原紀錄跑、讀不到金鑰就整輪失敗(APIKEY_MISSING),絕不退回去跑別的引擎
+  handle("load-connection", () => { const c = loadConnection(); return c && c.kind === "apikey" && !loadLlmKey() ? null : c; });   // 解得開才算:檔在但被換掉或換了機器的密文一樣當沒有
   handle("open-external", (_e, url) => openWebSafe(url), false);
   // 引擎裝好(或本來就在)之後才起本機常駐程式
   handle("ensure-engine", () => ensureEngineShared().then((r) => { tradeStartIfReady(); return r; }));
@@ -2832,6 +2917,12 @@ app.whenReady().then(() => {
   handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
   handle("cancel-agent-login", () => cancelAgentLogin());
   handle("stop-turn", () => stopTurn(), false);
+  // 自帶 API 金鑰:只有 set(驗過才存)/ test(重驗已存的那把)/ remove,加一支不帶值的取消。**沒有任何一支把金鑰交回畫面**
+  const llmDenied = { ok: false, code: "NOT_ALLOWED", status: 0 };
+  handle("apikey-set", (_e, a) => llmKeySet(a && typeof a === "object" ? { preset: a.preset, key: a.key, connect: a.connect === true } : null), llmDenied);
+  handle("apikey-test", () => llmKeyTest(), llmDenied);
+  handle("apikey-remove", () => llmKeyRemove(), false);
+  handle("apikey-cancel", () => { if (!llmVerify) return false; llmVerify.abort(); return true; }, false);
   ipcMain.handle("send-message", async (e, payload) => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
     if (activeTurn || turnStarting || restarting) return { busy: true };   // 更新重開收工中:開了也會被砍掉

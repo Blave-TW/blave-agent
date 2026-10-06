@@ -9,6 +9,7 @@ const src = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const cut = (from, to) => { const a = src.indexOf(from), b = src.indexOf(to, a); if (a < 0 || b < 0) { console.log("FAIL  main.js 裡找不到 " + from); process.exit(1); } return src.slice(a, b); };
 eval(cut("const WIN_ENV_DROP", "// ~/Blave 的官方檔案").replace(/^const /gm, "var "));
+eval(cut("function llmEnv", "const MESSAGE_MAX_BYTES"));
 
 const MUST = ["SystemRoot", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATHEXT", "COMSPEC"];
 const penv = {
@@ -90,8 +91,8 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
     Object.keys(obj).join() === "PATH,HOME,USER,LANG,TMPDIR,BLAVE_KLINE_SOURCE,BLAVE_AGENT_HOME,BLAVE_AGENT_STATE" && obj.PATH === "/Users/u/Blave/venv/bin:/usr/bin:/bin");
   // agent 回合那個物件:同樣切出來算(dataAccess=ours、沒 token、沒 MCP、沒圖片接收端)
   const a = src.indexOf("const env = {", src.indexOf("async function runTurn(")), b = src.indexOf("\n  };", a);
-  const turn = new Function("path", "os", "process", "BASE", "WS", "VENV_PY", "VENV_BIN", "PY_ENV", "envPath", "acct", "useCodex", "mcpFile", "mcpMount", "dataAccess", "dataAccessWhy", "signedIn", "imgPort", "imgToken", "sessionId", "turnStopFile", "brMount", "brState", "TURN_NOTES", "note",
-    src.slice(a, b + 4) + "\n return env;")(path, os, { env: { USER: "u", LOGNAME: "u", TMPDIR: "/t", LANG: "zh_TW.UTF-8" } }, "/Users/u/Blave", "/Users/u/Blave/workspace", "/Users/u/Blave/venv/bin/python", "bin", {}, "/opt/homebrew/bin:/usr/bin", null, false, null, null, "ours", () => "unknown", true, 0, "", "s1", null, null, "off", ["report_once"], null);
+  const turn = new Function("path", "os", "process", "BASE", "WS", "VENV_PY", "VENV_BIN", "PY_ENV", "envPath", "acct", "useCodex", "mcpFile", "mcpMount", "dataAccess", "dataAccessWhy", "signedIn", "imgPort", "imgToken", "sessionId", "turnStopFile", "brMount", "brState", "TURN_NOTES", "note", "llmEnv", "relay",
+    src.slice(a, b + 4) + "\n return env;")(path, os, { env: { USER: "u", LOGNAME: "u", TMPDIR: "/t", LANG: "zh_TW.UTF-8" } }, "/Users/u/Blave", "/Users/u/Blave/workspace", "/Users/u/Blave/venv/bin/python", "bin", {}, "/opt/homebrew/bin:/usr/bin", null, false, null, null, "ours", () => "unknown", true, 0, "", "s1", null, null, "off", ["report_once"], null, llmEnv, null);
   t("agent 回合(darwin)的白名單 key 逐一相同:PATH HOME BLAVE_PYTHON USER LOGNAME TMPDIR BLAVE_AGENT_BASE BLAVE_AGENT_WORKSPACE BLAVE_AGENT_HOME BLAVE_AGENT_STATE BLAVE_AGENT_DB BLAVE_KLINE_SOURCE BLAVE_DATA_ACCESS BLAVE_BROWSER LANG",
     Object.keys(turn).join() === "PATH,HOME,BLAVE_PYTHON,USER,LOGNAME,TMPDIR,BLAVE_AGENT_BASE,BLAVE_AGENT_WORKSPACE,BLAVE_AGENT_HOME,BLAVE_AGENT_STATE,BLAVE_AGENT_DB,BLAVE_KLINE_SOURCE,BLAVE_DATA_ACCESS,BLAVE_BROWSER,LANG"
     && turn.BLAVE_BROWSER === "off" && /const brState = brMount && mcpFile \? "on" : brWanted \? "unavailable" : "off";/.test(src)

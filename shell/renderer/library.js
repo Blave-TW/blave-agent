@@ -59,7 +59,7 @@ function libSplit(list, grouping) {
 /* 找點子四個入口共用的條件(§1.4;c = { env, browserOn, engine, signedIn, canRun }):這台電腦、內建瀏覽器開著、引擎跑得動。
    Blave AI 要登入而且帳號能跑(查不到 canRun 不算擋);還沒連引擎不出 */
 function libIdeaOn(c) {
-  const engineOk = c.engine === "claude" || c.engine === "codex" || (c.engine === "blave" && c.signedIn === true && c.canRun !== false);
+  const engineOk = c.engine === "claude" || c.engine === "codex" || c.engine === "apikey" || (c.engine === "blave" && c.signedIn === true && c.canRun !== false);
   return c.env === "local" && c.browserOn === true && engineOk;
 }
 // 代下載沒成的那句:主行程判的 kind(+ 畫面自己的 unsent)→ 字串 key;認不得的一律當 fail

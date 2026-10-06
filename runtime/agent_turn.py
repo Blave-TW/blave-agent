@@ -67,6 +67,24 @@ PROXY_ENV = {
     "ANTHROPIC_API_KEY": f"proxy-{os.environ.get('BLAVE_PROXY_TOKEN', '')}",
 }
 
+
+# 引擎的 small/fast 模型(標題、WebFetch 摘要等旁支請求)。主模型是 DeepSeek 時設成這個不在型錄裡的 id,
+# proxy 與電腦版轉送口認得它是幕後、改走 flash 關思考;不設的話引擎沿用主模型 id,跟主回合分不出來。
+# 不能用 deepseek-v4-flash:用戶可以選 flash 當主模型。兩個變數都設:CLI 先看 SMALL_FAST,沒有才看 DEFAULT_HAIKU
+BACKGROUND_MODEL = "deepseek/deepseek-background"
+
+
+def background_model_env(model):
+    if not model or "deepseek" not in str(model).lower():
+        return {}
+    return {"ANTHROPIC_SMALL_FAST_MODEL": BACKGROUND_MODEL, "ANTHROPIC_DEFAULT_HAIKU_MODEL": BACKGROUND_MODEL}
+
+
+def _relay_mode():
+    """電腦版自帶 API 金鑰:外殼只在這個模式帶這兩個變數(shell/main.js llmEnv)。"""
+    return bool(os.environ.get("BLAVE_LLM_RELAY_URL") and os.environ.get("BLAVE_LLM_RELAY_TOKEN"))
+
+
 # Restrict to what a headless trading agent actually needs — the SDK's full
 # default toolset burned 22k+ tokens on a single trivial turn in testing.
 ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
@@ -3973,7 +3991,13 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # MUST stay strictly below the bridges' turn timeouts (telegram_bridge 2000s,
     # web_bridge TURN_TIMEOUT 2100s) or a rule-abiding long backtest gets the
     # whole turn killed instead. Names verified inside claude 2.1.239.
-    if not os.environ.get("BLAVE_PROXY_TOKEN"):
+    if _relay_mode():
+        # 電腦版自帶 API 金鑰:CLI 打外殼的本機轉送口,手上只有這一輪的轉送 token,真金鑰在外殼那邊
+        # (shell/llmrelay.js)。轉送 token 走 AUTH_TOKEN(Bearer);ANTHROPIC_API_KEY 必須不存在,CLI 讓它優先
+        turn_env["ANTHROPIC_BASE_URL"] = os.environ["BLAVE_LLM_RELAY_URL"]
+        turn_env["ANTHROPIC_AUTH_TOKEN"] = os.environ["BLAVE_LLM_RELAY_TOKEN"]
+        turn_env.pop("ANTHROPIC_API_KEY", None)
+    elif not os.environ.get("BLAVE_PROXY_TOKEN"):
         # 本機模式(電腦版):沒有 proxy token = 用戶自己的訂閱。這兩個必須
         # 「不存在」而不是留空——CLI 明講 API key 優先於 claude.ai 登入,
         # 留著就是 401(2026-09-18 實測)。
@@ -3982,6 +4006,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # Keychain 認的是 USER,外殼 spawn 這支時要帶齊(見 shell/main.js)。
         turn_env.pop("ANTHROPIC_BASE_URL", None)
         turn_env.pop("ANTHROPIC_API_KEY", None)
+    if _relay_mode() or os.environ.get("BLAVE_PROXY_TOKEN"):
+        turn_env.update(background_model_env(model))
     turn_env.update({
         "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS": "1800000",
         "BASH_MAX_TIMEOUT_MS": "1800000",
@@ -4012,7 +4038,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         turn_env["BLAVE_WEB_SESSION"] = sink.session_id
 
     sysprompt_path = _write_system_prompt_file(
-        agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
+        agents_md + ('' if _relay_mode() else model_catalog_rule(session_id)) + python_rule() + data_access_rule()
         + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web) + turn_note_rule(sink)
         + preferences_rule()
         + reply_lang_rule(lang_msg, reply_lang)

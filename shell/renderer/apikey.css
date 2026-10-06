@@ -1,0 +1,18 @@
+/* 自帶 API 金鑰(renderer/apikey.js)。規格:mockup-desktop-other-models.html 方案一 A1′–A4。
+   欄位、錯誤列、誠實句、子頁返回都沿用既有的 .fld / .f-input / .src-val / .plan-err / .plan-rule / .src-back;這裡只有這張表自己的排列。 */
+.cn-row .n small { display: block; font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kf { padding: var(--space-16); }
+.kf h6, .ak-sub h6 { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--ink); }
+.ak-sub h6 { margin-top: var(--space-12); }
+.ak-sub .src-back { text-decoration: none; }
+.kf .f-input, .ak-sub .f-input { height: 34px; }
+.kf .f-input.is-err, .ak-sub .f-input.is-err { border-color: var(--color-red); }
+.ak-slot { margin: var(--space-8) 0 0; }
+.ak-slot .plan-err { margin: 0; }
+.ak-note { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.kf-link { margin: var(--space-8) 0 0; }
+.kf .plan-rule, .ak-sub .plan-rule { margin: var(--space-16) 0 var(--space-12); }
+.kf-act { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-8); }
+.kf-act .btn-quiet { margin-right: auto; }
+.kf-act .btn-out .spin16 { vertical-align: -3px; }
+.ak-prov { display: block; font-size: 13px; line-height: 1.5; color: var(--ink); }

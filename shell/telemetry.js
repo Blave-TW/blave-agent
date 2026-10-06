@@ -14,7 +14,7 @@ const crypto = require("crypto");
 const EVENTS = {
   app_first_open: null,
   app_open: null,            // 每次啟動送一則;api 以「每安裝每 UTC 日」去重(留存、版本觸及率靠它)
-  connect_done: { kind: ["blave", "claude", "codex"] },
+  connect_done: { kind: ["blave", "claude", "codex", "apikey"] },
   login_done: null,
   first_backtest_done: null,
   trade_started: { venue_kind: ["paper", "real"] },
@@ -23,9 +23,11 @@ const EVENTS = {
   acct_card_shown: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
   acct_card_click: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
   acct_card_back: { state: ["ready", "no_card", "no_credit"] },
-  turn_failed: { reason: ["402", "403", "429", "engine_missing", "other"] },
-  connect_failed: { kind: ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local"] },
-  first_reply_done: { kind: ["blave", "claude", "codex"] },
+  turn_failed: { reason: ["402", "403", "429", "engine_missing", "other", "cap"] },   // cap = 自帶 API 金鑰撞到這一輪的用量上限(0.1.16)
+  connect_failed: { kind: ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local",
+    // 0.1.16 自帶 API 金鑰:「測試並連結 / 儲存」驗不過(金鑰不認、餘額不足、連不到、其他);取消不算
+    "apikey_key", "apikey_credit", "apikey_net", "apikey_other"] },
+  first_reply_done: { kind: ["blave", "claude", "codex", "apikey"] },
   plan_start_res: { result: ["ok", "no_card", "no_credit", "error"] },
   update_failed: { stage: ["check", "download", "staging", "install", "other"] },
   lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit"] },
@@ -102,7 +104,9 @@ const EVENTS = {
     // 確認或直接送出且回合真的跑起來、確認框沒按主鈕就收掉
     "cloud_upd_open", "cloud_upd_ok", "cloud_upd_cancel",
     // 缺資料來源金鑰(0.1.15;renderer/app.js rpGoDataSrc):按策略頁缺金鑰那一格的「去資料來源」,不帶來源名
-    "missing_key_go"] },
+    "missing_key_go",
+    // 自帶 API 金鑰(0.1.16;renderer/apikey.js):按 API 金鑰那一列的「設定」(連結畫面或設定 › 模型接入)。測試成功 = connect_done kind=apikey
+    "apikey_setup"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
@@ -220,7 +224,7 @@ function createTelemetry(opts) {
    是設定值,不是使用事件:「使用事件」開關、現在連的是哪個 AI、本機有沒有跑過回測(只有 bt / none)。api 的提醒信
    看到 off 就不寄(隱私權政策 §9.1),連的 AI 與回測過沒有也以這份為準。關掉時只送 off,其他都不送;
    沒登入時 account_status 本來就不打。 */
-const ENGINES = ["blave", "claude", "codex"];
+const ENGINES = ["blave", "claude", "codex", "apikey"];
 function statusHeaders(enabled, kind, backtested) {
   if (enabled !== true) return { "X-Blave-Telemetry": "off" };
   return { "X-Blave-Telemetry": "on", "X-Blave-Engine": ENGINES.indexOf(kind) >= 0 ? kind : "none",

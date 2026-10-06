@@ -66,7 +66,7 @@ t("rename 失敗 → 暫存檔不留", fs.readdirSync(WS).every((x) => !x.starts
   t("未登入 → 兩個都不帶(不管連的是誰、不管 included 傳了什麼)", ["blave", "claude", "codex", undefined].every((k) => row(k, false, true) === "--"));
   t("含不含資料查不到(null / undefined / 非布林)→ 當沒有", [null, undefined, 1, "true"].every((v) => row("claude", true, v) === "--"));
   t("signedIn 不是布林 true → 當沒登入", row("blave", "yes", true) === "--"); }
-t("接線:帳號 token 吃 plan.proxyToken、只進 BLAVE_PROXY_TOKEN", /const acct = plan\.proxyToken \? loadToken\(\) : null;/.test(src) && /\.\.\.\(acct \? \{ BLAVE_PROXY_TOKEN: acct \} : \{\}\)/.test(src));
+t("接線:帳號 token 吃 plan.proxyToken、只進 BLAVE_PROXY_TOKEN", /const acct = plan\.proxyToken \? loadToken\(\) : null;/.test(src) && /\.\.\.llmEnv\(acct, relay\),/.test(src) && /return acct \? \{ BLAVE_PROXY_TOKEN: acct \} : \{\};/.test(src));
 t("接線:資料 key 吃 plan.dataKey,而且只經 syncDataEnv 進 workspace .env 的 managed block", /const dataAccess = syncDataEnv\(plan\.dataKey\);/.test(src) && (src.match(/syncDataEnv\(/g) || []).length === 3 && !/syncDataEnv\([^)]*useBlave/.test(src));
 t("接線:含不含資料只在有登入時才去問", /turnCreds\(conn\.kind, signedIn, signedIn && await hasBlaveData\(\), cloudHandoffOn\(\)\)/.test(src));
 { const i = src.indexOf("function turnCreds("); let d = 0, end = -1; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) { end = k + 1; break; } }

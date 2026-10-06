@@ -122,8 +122,8 @@ const doc = { activeElement: null, createElement: el, createTextNode: (s) => ({ 
   ok("CSS:.is-miss 的 flex 不蓋過 [hidden](:not([hidden]))、文字 ink-2、不寫死 hex", /\.rp-nobt\.is-miss:not\(\[hidden\]\) \{ display: flex; align-items: center; gap: var\(--space-12\); flex-wrap: wrap; color: var\(--ink-2\); \}/.test(css) && /\.rp-nobt\.is-miss \.t \{ flex: 1 1 220px; min-width: 0; \}/.test(css));
   ok("存檔 / 刪除成功後通知策略頁重讀", /rpSrcChanged\(\); return; \}/.test(cut(fs.readFileSync(path.join(R, "datasrc.js"), "utf8"), "srcSave")) && /if \(r && r\.ok && typeof rpSrcChanged === "function"\) rpSrcChanged\(\);/.test(fs.readFileSync(path.join(R, "datasrc.js"), "utf8")) && /stratReload\(RP\.name\)/.test(cut(app, "rpSrcChanged")));
   ok("「去資料來源」開設定 › 資料來源並要求焦點交給缺金鑰列", /SRC\.focusMiss = true; setCat\("src"\);/.test(cut(app, "rpGoDataSrc")));
-  ok("「去資料來源」按下就送 feature_used missing_key_go(字面、不帶來源名),名字在白名單最後", /^function rpGoDataSrc\(\) \{ trackFeature\("missing_key_go"\);/.test(cut(app, "rpGoDataSrc"))
-    && (() => { const N = require("../shell/telemetry.js").EVENTS.feature_used.name; return N[N.length - 1] === "missing_key_go" && "missing_key_go".length <= 16; })());
+  ok("「去資料來源」按下就送 feature_used missing_key_go(字面、不帶來源名),名字在白名單上、後面只接 0.1.16 的 apikey_setup", /^function rpGoDataSrc\(\) \{ trackFeature\("missing_key_go"\);/.test(cut(app, "rpGoDataSrc"))
+    && (() => { const N = require("../shell/telemetry.js").EVENTS.feature_used.name; return N.slice(-2).join() === "missing_key_go,apikey_setup" && "missing_key_go".length <= 16; })());
 
   // ================= renderer:設定 › 資料來源 =================
   const rsrc = fs.readFileSync(path.join(R, "datasrc.js"), "utf8");

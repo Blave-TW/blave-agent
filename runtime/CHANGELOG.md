@@ -8,7 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **引擎旁支請求改走幕後 id(`agent_turn.background_model_env`;要 api proxy 先上)**:主模型是 DeepSeek 時(Blave AI proxy 與電腦版自帶金鑰轉送口兩種),`ANTHROPIC_SMALL_FAST_MODEL` 與 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 設成 `deepseek/deepseek-background`(不在型錄裡),引擎的標題、WebFetch 摘要等旁支請求帶這個 id,proxy／轉送口照幕後規則改 flash、關思考;原本引擎沿用主模型 id,分不出旁支。本機自己的訂閱與 Claude 主模型不設。測試 `tests/check_background_model_env.py`。
+- **背景摘要標成幕後呼叫(`session_store._llm_summarize`;要 api proxy 先上)**:滾動摘要請求帶 header `X-Blave-Purpose: background`,proxy 照它走幕後規則(flash、關思考);`thinking: {"type": "disabled"}` 欄位留著當舊 proxy 的退路(只在 `SUMMARY_MODEL` 是 DeepSeek 時帶)。思考規則只放 proxy 與電腦版轉送口兩處,呼叫點不各自決定。測試 `tests/check_summary_thinking_off.py`。
 
 ## 1.1.114 — 2026-10-05(desktop 0.1.15)
 

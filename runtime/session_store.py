@@ -144,18 +144,24 @@ def _llm_summarize(prior_summary, to_fold):
         f"<<<OLD-SUMMARY-{t}>>>\n{prior_summary or '（無）'}\n<<<END-{t}>>>\n\n"
         f"<<<NEW-TURNS-{t}>>>\n{fold_text}\n<<<END-{t}>>>"
     )
-    body = json.dumps({
+    payload = {
         "model": SUMMARY_MODEL,
         "max_tokens": SUMMARY_MAX_TOKENS,
         "system": _SUMMARY_SYSTEM,
         "messages": [{"role": "user", "content": user_content}],
-    }).encode()
+    }
+    # 幕後呼叫:思考開關由 proxy 照 X-Blave-Purpose 判(規則只放 proxy 與轉送口兩處,呼叫點不各自決定)。
+    # thinking 欄位留著當舊 proxy 的退路,只在 DeepSeek 帶,換模型不送它不認得的欄位
+    if "deepseek" in SUMMARY_MODEL.lower():
+        payload["thinking"] = {"type": "disabled"}
+    body = json.dumps(payload).encode()
     req = urllib.request.Request(
         PROXY_BASE_URL + "/v1/messages",
         data=body,
         headers={
             "content-type": "application/json",
             "x-api-key": f"proxy-{os.environ.get('BLAVE_PROXY_TOKEN', '')}",
+            "X-Blave-Purpose": "background",
         },
     )
     try:
