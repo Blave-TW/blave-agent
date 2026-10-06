@@ -6,7 +6,8 @@ clock is frozen at 2026-09-26 10:00 Taipei so "today" and the current month neve
   - gate: without BLAVE_AGENT_LOCAL=1 every *_public fetch raises and makes no request
   - index / turnover: one request per month, ROC dates, same columns and units as Blave
   - 三大法人 / 融資: one request per trading day taken from the index (holidays cost nothing);
-    外資自營商 in dealer, 融資 in 張 and 融資金額 仟元 × 1,000 = 元
+    foreign + trust + dealer = 合計 (外資自營商 already inside 自營商), 融資 in 張 and
+    融資金額 仟元 × 1,000 = 元
   - a no-data answer for a past trading day raises instead of caching a hole
   - TAIFEX: POST, cp950 CSV; an end past the last published day (HTML answer) steps back a
     day at a time; an HTML answer for a window that ended over a week ago raises
@@ -156,9 +157,9 @@ check(len(bfi) == len(raw) and {p["dayDate"] for _, p in bfi} == {d.strftime("%Y
       f"BFI82U asked once per trading day in the index ({len(bfi)}), no holiday requests")
 last = inst.loc["2026-09-24"]
 check(list(inst.columns) == D._TWMARKET_INST_COLUMNS and last["foreign"] == -32964613655.0
-      and last["investment_trust"] == -12823263300.0 and last["dealer"] == 4235536088.0 - 2897105667.0 + 0.0
+      and last["investment_trust"] == -12823263300.0 and last["dealer"] == 4235536088.0 - 2897105667.0
       and last["total"] == -44449446534.0 and inst.attrs.get("source") == "TWSE",
-      "BFI82U: net 元, 外資 excludes 外資自營商 (counted in dealer), 合計 as TWSE prints it")
+      "BFI82U: net 元, foreign / trust / dealer as printed, 合計 as TWSE prints it")
 mg = D.fetch_twmarket_margin_public("2026-09-01", "2026-09-26")
 m = mg.loc["2026-09-24"]
 check(list(mg.columns) == D._TWMARKET_MARGIN_COLUMNS and m["margin_balance"] == 9279712.0
@@ -178,8 +179,8 @@ def foreign_dealer(j):
     return j
 s = fresh(patch={"twse_bfi82u_20260924.json": foreign_dealer})
 inst2 = D.fetch_twmarket_institutional_public("2026-09-01", "2026-09-26").loc["2026-09-24"]
-check(inst2["foreign"] == -32964613655.0 and inst2["dealer"] == 4235536088.0 - 2897105667.0 + 60.0,
-      "外資自營商 non-zero: counted in dealer, foreign unchanged")
+check(inst2["foreign"] == -32964613655.0 and inst2["dealer"] == 4235536088.0 - 2897105667.0,
+      "外資自營商 non-zero: already inside 自營商, added to neither foreign nor dealer")
 def neighbour(j):
     j["data"] = [["115/08/31", "1.00", "2.00", "0.50", "1.50"]] + j["data"]
     return j

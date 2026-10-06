@@ -3684,11 +3684,53 @@ def fetch_twmarket_turnover(start, end, headers):
     )
 
 
+def _inst_off_total(df):
+    """Rows where foreign + investment_trust + dealer is not 合計 (NaN counts as off)."""
+    return ~((df['foreign'] + df['investment_trust'] + df['dealer'] - df['total']).abs() <= 0.5)
+
+
+_INST_SUM_MAX_DROPS = 3
+
+
+def _drop_twmarket_inst_off_total():
+    """The Blave series used to add 外資自營商 to dealer a second time (it is already inside
+    自營商), and past rows in the cache are never re-fetched. Delete the cached file while any row
+    is off 合計; mark it good once a file passes, so a copy downloaded before the api served the
+    fix is dropped again instead of frozen. At most one drop per UTC day and
+    _INST_SUM_MAX_DROPS in all: a row the api itself still serves off 合計 must not cost a full
+    re-download on every call. NaN rows are skipped (a source gap, not this bug)."""
+    path = _single_path('twmarket_institutional', {'id': 'TWSE'})
+    good = path.with_name(f'{path.name}.dealer_sum')
+    if good.exists():
+        return
+    try:
+        df = pd.read_parquet(path, columns=_TWMARKET_INST_COLUMNS)
+    except Exception:
+        return                            # nothing cached yet, or an old monthly dir not migrated
+    drops = path.with_name(f'{path.name}.dealer_sum_drops')
+    try:
+        days = drops.read_text().split()
+    except OSError:
+        days = []
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    try:
+        if not _inst_off_total(df.dropna()).any() or len(days) >= _INST_SUM_MAX_DROPS:
+            good.touch()
+            drops.unlink(missing_ok=True)
+        elif today not in days:
+            path.unlink(missing_ok=True)
+            drops.write_text(' '.join(days + [today]))
+    except OSError:
+        return                            # file in use (Windows) — try again next call
+
+
 def fetch_twmarket_institutional(start, end, headers):
     """全市場三大法人每日買賣超. Returns DataFrame with columns:
     foreign / investment_trust / dealer / total,皆為淨買賣超金額（元,買 - 賣）。
-    2004-04-07 起。外資自營商計入 dealer,不計入 foreign。
+    2004-04-07 起。foreign + investment_trust + dealer = total:外資自營商已含在 dealer
+    (自營商)裡,foreign 不含外資自營商。
     個股層級請改用 fetch_twstock_institutional。"""
+    _drop_twmarket_inst_off_total()
     return _extend_cache_monthly(
         'twmarket_institutional', {'id': 'TWSE'},
         lambda s, e: _fetch_twmarket_raw('institutional', _TWMARKET_INST_COLUMNS, s, e, headers),
@@ -4194,7 +4236,13 @@ PUBLIC_SOURCE_EN = {_TW_PUBLIC_SOURCE_ZH: _TW_PUBLIC_SOURCE_EN, _TWSE_SOURCE_ZH:
 # TWSE answers 200 + stat for everything: these mean "no rows for that date", anything
 # else non-OK (throttle, layout change) raises and is never cached as an empty day.
 _TWSE_NO_DATA = ('很抱歉', '沒有符合條件', '查詢日期大於', '查詢日期小於')
-_BFI82U_BUCKET = {'外資及陸資(不含外資自營商)': 'foreign', '外資自營商': 'dealer', '投信': 'investment_trust',
+# BFI82U row names changed twice per side: 外資 → 外資及陸資 (2009-05) → 外資及陸資(不含外資自營商)
+# + 外資自營商 (2017-12-18); 自營商 → 自營商(自行買賣) + 自營商(避險) (2014-12-01). One day only ever
+# carries one era's names, so each bucket is summed from rows that never overlap. 外資自營商 maps to
+# None: TWSE already counts it inside 自營商 and leaves it out of 合計, so foreign + investment_trust
+# + dealer = 合計 on every day.
+_BFI82U_BUCKET = {'外資': 'foreign', '外資及陸資': 'foreign', '外資及陸資(不含外資自營商)': 'foreign',
+                  '外資自營商': None, '投信': 'investment_trust', '自營商': 'dealer',
                   '自營商(自行買賣)': 'dealer', '自營商(避險)': 'dealer', '合計': 'total'}
 _TAIFEX_INST_COMMODITY = {'TX': 'TXF', 'MTX': 'MXF', 'TMF': 'TMF'}
 _TAIFEX_INVESTOR = {'外資及陸資': 'foreign', '外資': 'foreign', '投信': 'investment_trust', '自營商': 'dealer'}
@@ -4263,12 +4311,16 @@ def _twse_daily_raw(url, label, params, cols, parse, s, e):
 def _bfi82u_row(j):
     net = {}
     for x in j.get('data') or []:
-        bucket = _BFI82U_BUCKET.get(str(x[0]).strip())
-        if bucket:
+        name = str(x[0]).strip()
+        if name not in _BFI82U_BUCKET:   # an unmapped rename would be cached as a NaN column for good
+            raise TwPublicUnavailable(f'TWSE BFI82U: unknown row {name[:20]}')
+        bucket = _BFI82U_BUCKET[name]
+        if bucket is not None:
             net[bucket] = net.get(bucket, 0.0) + _tw_num(x[3])
-    if 'total' not in net:
-        raise TwPublicUnavailable('TWSE BFI82U: no 合計 row')
-    return tuple(net.get(c, float('nan')) for c in _TWMARKET_INST_COLUMNS)
+    out = tuple(net.get(c, float('nan')) for c in _TWMARKET_INST_COLUMNS)
+    if np.isnan(out).any():   # a missing row or '--' would be cached as NaN for good
+        raise TwPublicUnavailable(f'TWSE BFI82U: missing or blank row ({sorted(net)})')
+    return out
 
 
 def _mi_margn_row(j):
@@ -4282,9 +4334,10 @@ def _mi_margn_row(j):
     return _tw_num(m[5]), _tw_num(m[4]), _tw_num(v[5]) * 1000, _tw_num(s[5]), _tw_num(s[4])
 
 
-def _public_series(kind, raw, start, end, source):
+def _public_series(kind, raw, start, end, source, month_by_month=False):
     _tw_market_public_gate()
-    df = _extend_cache_monthly('twmarket_public', {'kind': kind}, raw, start, end)
+    df = _extend_cache_monthly('twmarket_public', {'kind': kind}, raw, start, end,
+                               month_by_month=month_by_month)
     df.attrs['source'] = source
     return df
 
@@ -4304,12 +4357,39 @@ def fetch_twmarket_turnover_public(start, end):
     return _public_series('turnover', raw, start, end, 'TWSE')
 
 
+def _drop_bfi82u_stale_months():
+    """Months cached by older mappings are wrong and, being past, never re-fetched: up to 2017-12
+    NaN foreign (dealer up to 2014-11) from the unmapped old row names, and from 2017-12-18
+    dealer + 外資自營商 again. Both show as foreign + investment_trust + dealer ≠ total, so delete
+    exactly those month files once. Only the broken months go (a kind/version bump would
+    re-download every correct day at 3 s each); the marker makes it a single pass per machine."""
+    d = _monthly_cache_dir('twmarket_public', {'kind': 'institutional'})
+    marker = d / '.bfi82u_dealer_sum'
+    if marker.exists():
+        return
+    for path in d.glob('*.parquet'):
+        try:
+            if not set(_TWMARKET_INST_COLUMNS) <= set(pq.read_schema(path).names):
+                continue                      # empty-month marker
+            if _inst_off_total(pd.read_parquet(path, columns=_TWMARKET_INST_COLUMNS)).any():
+                path.unlink(missing_ok=True)
+        except Exception:
+            path.unlink(missing_ok=True)      # unreadable → re-fetch, as _extend_cache_monthly would
+    d.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+
 def fetch_twmarket_institutional_public(start, end):
     """fetch_twmarket_institutional from TWSE BFI82U, one trading day per request (net 元;
-    外資自營商 counted in dealer, as the Blave series)."""
+    foreign + investment_trust + dealer = total, as the Blave series: 外資自營商 is already inside
+    自營商 and is not added again). From 2004-05-03; before 2017-12-18 TWSE prints one 外資(及陸資)
+    row with no 外資自營商 split, and it lands in foreign."""
+    _tw_market_public_gate()
+    _drop_bfi82u_stale_months()
     raw = lambda s, e: _twse_daily_raw(_TWSE_BFI82U, 'BFI82U', lambda d: {'type': 'day', 'dayDate': d},
                                        _TWMARKET_INST_COLUMNS, _bfi82u_row, s, e)
-    return _public_series('institutional', raw, start, end, 'TWSE')
+    # one request per day: a cold ten-year span is hours, so each month is kept as it lands
+    return _public_series('institutional', raw, start, end, 'TWSE', month_by_month=True)
 
 
 def fetch_twmarket_margin_public(start, end):
@@ -4317,7 +4397,7 @@ def fetch_twmarket_margin_public(start, end):
     (balances in 張, margin_balance_value 元 = 融資金額仟元 × 1,000)."""
     raw = lambda s, e: _twse_daily_raw(_TWSE_MI_MARGN, 'MI_MARGN', lambda d: {'date': d, 'selectType': 'MS'},
                                        _TWMARKET_MARGIN_COLUMNS, _mi_margn_row, s, e)
-    return _public_series('margin', raw, start, end, 'TWSE')
+    return _public_series('margin', raw, start, end, 'TWSE', month_by_month=True)
 
 
 def _tw_public_post(url, data, tries=3):

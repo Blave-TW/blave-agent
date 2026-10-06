@@ -418,8 +418,11 @@ taiex = fetch_twmarket_index("2024-01-01", "2026-07-28", hdrs)   # DatetimeIndex
 Notes:
 - `TAIEX` is the only supported `index_id`; any other value returns 400. The index carries no
   volume column — market turnover comes from `fetch_twmarket_turnover`, keyed on the same dates.
-- In `fetch_twmarket_institutional`, 外資自營商 (foreign dealers' own account) is counted in
-  `dealer`, not in `foreign` — the same bucketing FinMind uses.
+- In `fetch_twmarket_institutional`, `foreign + investment_trust + dealer = total` on every day,
+  as TWSE publishes it. 外資自營商 (foreign dealers' own account) is already inside 自營商, so it
+  is part of `dealer` once and never part of `foreign` (`foreign` is 外資及陸資(不含外資自營商)).
+  TWSE prints 外資自營商 as its own row only from 2017-12-18; before that there is one
+  外資(及陸資) row, taken whole as `foreign` (in both this series and the key-free twin).
 - Margin balances are whole-market; `margin_balance_value` is the only TWD column, the rest are lots.
 - TXO put/call ratio is a futures/options dataset — see `fetch_twfutures_pcr` in
   `references/twfutures.md`, not here.
@@ -433,7 +436,7 @@ Notes:
   (`futContractsDateDown`), never through a Blave server. They run only on the user's own
   computer (`BLAVE_AGENT_LOCAL=1`; elsewhere they raise `TwPublicUnavailable`), one request every
   3 seconds to twse.com.tw (1 s to TAIFEX); 三大法人 and 融資 cost one request per trading day on a
-  cold cache. The TAIEX report
+  cold cache. The key-free 三大法人 starts 2004-05-03 (ask from May 2004, not April). The TAIEX report
   templates use them when this turn has no Blave data access; prefer the Blave functions
   otherwise. Anything citing them carries the attribution line `資料來源:臺灣證券交易所網站`
   / `資料來源:臺灣期貨交易所(政府資料開放授權)` (`df.attrs['source']` = `TWSE` / `TAIFEX`) —
