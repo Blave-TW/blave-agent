@@ -862,6 +862,19 @@ function setAttachment(file, from) {
   attachedFile = file || null; attachedFrom = attachedFile ? from || "file" : null;
   $("attach-chip").hidden = !attachedFile;
   $("attach-name").textContent = attachedFile ? attachedFile.name : "";
+  attachHintPaint();
+}
+/* 選的模型不讀圖:api proxy 的 _proxy_deepseek 把 Anthropic 格式的 body(含 image block)原樣轉給 DeepSeek 的 Anthropic 相容端點、
+   不檢查也不剝圖,而 DeepSeek 官方文件明列那條端點不支援 image block → 圖被靜默略過(runtime/model_prefs.py 在雲端的對策是該輪換 Claude;
+   電腦版模型是畫面選的、自帶金鑰也沒有 Claude 可退)。Blave AI 的 deepseek/* 與自帶金鑰的 deepseek-* 都算;看 mime 不看來源(貼上的圖一樣不讀)。
+   chip 上掛一句次要字(模型名進字),不擋送出;換模型跟著重畫(mpPaint)。純函式 attachNoImage,tests/check_shell_attach.js 從原文切出來跑 */
+function attachNoImage(file, modelId) { return !!file && /^image\//.test(file.type || "") && /^deepseek(\/|-)/.test(modelId || ""); }
+function attachHintPaint() {
+  const h = $("attach-hint"), on = attachNoImage(attachedFile, MP.model);
+  h.hidden = !on;
+  if (!on) { h.textContent = ""; h.removeAttribute("title"); h.removeAttribute("aria-label"); return; }
+  const m = mpCur(), model = m ? m.name : MP.model;
+  h.textContent = t("ws.attachNoImage", { model }); h.title = t("ws.attachNoImageLong", { model }); h.setAttribute("aria-label", h.title);
 }
 /* 選到 / 拖到 / 貼上一個檔:太大就講一行(同雲端 addNotice);from = file | paste */
 function takeAttachment(file, from) {
@@ -891,7 +904,8 @@ const ATTACH_FAIL_RE = /\n?\[\u7528\u6236\u9644\u4e86\u4e00\u500b\u6a94\u6848\u4
 function splitAttachNote(content) {
   const s = typeof content === "string" ? content : "";
   let m = ATTACH_NOTE_RE.exec(s);
-  if (m) return { text: s.slice(0, m.index), attachment: m[1] };
+  // 落地檔名撞名時 web_bridge 規則加了 `<10 位秒數>_` 前綴:畫回去要跟送出當下看到的一樣,剝掉(原檔名剛好長這樣的極少數會被多剝,只影響顯示)
+  if (m) return { text: s.slice(0, m.index), attachment: m[1].replace(/^\d{10}_/, "") };
   m = ATTACH_FAIL_RE.exec(s);
   if (m) return { text: s.slice(0, m.index), attachment: null };
   return { text: s, attachment: null };
@@ -1053,6 +1067,7 @@ function mpPaint() {
   note.textContent = has ? "" : t("mp.none");
   note.hidden = !note.textContent;
   mpBillPaint();
+  attachHintPaint();   // 換模型:chip 上「不讀圖」那句跟著重算(mpPaint 只在進工作頁之後跑,attachedFile 早已宣告)
 }
 /* 引擎是 Blave AI 時,選單底部常駐一句「按用量從 Blave 餘額扣款 · 餘額 N TWD」(e2e 0.1.8 #101:切過去之後沒有任何地方講會扣款)。
    花錢前最後一個停留點是輸入框,所以放這裡;讀不到餘額只出前半句——那半句是規則,永遠成立。別的引擎整句與分隔線都不出 */
@@ -3477,6 +3492,7 @@ function applyStatic() {
   if (typeof akRelang === "function") akRelang();     // API 金鑰表單(renderer/apikey.js)
   if (typeof xpRelang === "function") xpRelang();     // 轉出卡(renderer/export.js)
   youRelang();                                        // 固定觸發句的摘要泡泡
+  attachHintPaint();                                  // chip 上「不讀圖」那句帶模型名,不掛 data-i18n
   acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();

@@ -115,6 +115,13 @@ msgid "ws.attachTooLarge"
 msgstr "File too large — the limit is 5MB."
 
 # 選了之後檔被移走 / 刪掉,送出那一刻讀不到(雲端用通用錯誤句;電腦版沒有通用句,講清楚)
+msgid "ws.attachNoImage"
+msgstr "{model} can't read images"
+
+# title／aria 的長句
+msgid "ws.attachNoImageLong"
+msgstr "{model} can't read images — this one will be skipped."
+
 msgid "ws.attachReadFail"
 msgstr "Couldn't read that file. Please attach it again."
 

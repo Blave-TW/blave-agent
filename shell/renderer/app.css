@@ -488,18 +488,19 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .btn-attach { width: 32px; height: 32px; flex: 0 0 32px; display: flex; align-items: center; justify-content: center;
   border-radius: var(--radius-sm); color: var(--ink-2);
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
-.btn-attach:hover:not(:disabled) { background: var(--surface-muted); color: var(--ink); }
-.btn-attach:disabled { color: var(--color-greyDark); cursor: not-allowed; }
+.btn-attach:hover { background: var(--surface-muted); color: var(--ink); }
 .attach-chip { display: flex; align-items: center; gap: var(--space-4); width: fit-content; max-width: 100%; margin-bottom: var(--space-8);
   padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8); border: 1px solid var(--border-hairline); border-radius: var(--radius-sm);
   font-size: 12px; line-height: 1.5; color: var(--ink); }
 .attach-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 模型不讀圖的次要字(設計稽核):12px --ink-3,跟檔名隔 --space-8(chip 的 gap 4 + 這裡 4);不擋送出、不上色 */
+.attach-hint { flex: none; margin-left: var(--space-4); color: var(--ink-3); white-space: nowrap; }
 .attach-clear { flex: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-micro);
   color: var(--ink-3); font-size: 11px; line-height: 1;
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .attach-clear:hover { background: var(--surface-muted); color: var(--ink); }
-/* 檔案拖到輸入框上方:外框提一階當落點提示(電腦版才有拖放) */
-.chat-input.is-drag { border-color: var(--ink-3); }
+/* 檔案拖到輸入框上方:外框改虛線當落點提示(設計稽核:不加色不加底;排在 :focus-within 之後才蓋得過它) */
+.chat-input.is-drag { border-color: var(--ink); border-style: dashed; }
 /* 面板的定位基準是整個輸入框(.chat-input),不是這顆觸發鈕:聊天欄最窄 320,
    寫死 360 寬、從觸發鈕左緣長出去的面板會超出視窗右緣被切掉(Wei 截圖) */
 .mp { min-width: 0; }

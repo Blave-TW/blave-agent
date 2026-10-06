@@ -53,10 +53,19 @@ try {
   const consts = (appSrc.match(/const ATTACH_NOTE_RE = [^\n]+\nconst ATTACH_FAIL_RE = [^\n]+\n/) || [""])[0];
   const split = vm.runInNewContext(consts + "(" + cut("splitAttachNote") + ")");
   const ok1 = split(at.withNote("幫我看這份", "1759700000_data.csv")), ok2 = split(at.withNote("", "圖 1.png")), f1 = split(at.withNote("看一下", null));
-  t("splitAttachNote:逐字稿尾端那一行拆掉、檔名拿回來(撞名前綴 / 中文檔名 / 純附件 / 接收失敗 / 沒附件)",
-    JSON.stringify(ok1) === '{"text":"幫我看這份","attachment":"1759700000_data.csv"}' && JSON.stringify(ok2) === '{"text":"","attachment":"圖 1.png"}' && JSON.stringify(f1) === '{"text":"看一下","attachment":null}'
+  t("splitAttachNote:逐字稿尾端那一行拆掉、檔名拿回來;撞名落地的 `<10 位秒數>_` 前綴剝掉 = 送出當下看到的檔名(中文檔名 / 純附件 / 接收失敗 / 沒附件)",
+    JSON.stringify(ok1) === '{"text":"幫我看這份","attachment":"data.csv"}' && JSON.stringify(ok2) === '{"text":"","attachment":"圖 1.png"}' && JSON.stringify(f1) === '{"text":"看一下","attachment":null}'
     && JSON.stringify(split("普通一句")) === '{"text":"普通一句","attachment":null}' && JSON.stringify(split(null)) === '{"text":"","attachment":null}', { ok1, ok2, f1 });
   t("…那一行只認在尾端(用戶自己在句子中間打出同樣的字不算)", split(at.NOTE_OK.replace("{name}", "a") + "\n後面還有話").attachment === null);
+  { const dir = fs.mkdtempSync(path.join(TMP, "clash-")); at.save(dir, { name: "report.csv", data: b64("1") }); const second = at.save(dir, { name: "report.csv", data: b64("2") });
+    t("撞名真實情境:第二份落地成 <秒>_report.csv,重開還原後泡泡與標題都顯示 report.csv", /^\d{10}_report\.csv$/.test(second) && split(at.withNote("再看一次", second)).attachment === "report.csv" && split(at.withNote("", second)).attachment === "report.csv"); }
+  t("…只剝 10 位秒數 + 底線:9 位 / 11 位 / 沒底線不動", split(at.withNote("", "123456789_a.csv")).attachment === "123456789_a.csv" && split(at.withNote("", "12345678901_a.csv")).attachment === "12345678901_a.csv" && split(at.withNote("", "1759700000a.csv")).attachment === "1759700000a.csv");
+  // 模型不讀圖的提示(設計稽核 3):看 mime 與模型 id,Blave AI 的 deepseek/* 與自帶金鑰的 deepseek-* 都算;貼上的圖一樣算
+  const noImg = vm.runInNewContext("(" + cut("attachNoImage") + ")");
+  t("attachNoImage:圖 + DeepSeek(兩種 id 形狀)→ true;非圖 / Claude / 沒檔 / 沒模型 → false", noImg({ type: "image/png" }, "deepseek/deepseek-v4-pro") && noImg({ type: "image/jpeg" }, "deepseek-v4-flash") && !noImg({ type: "text/csv" }, "deepseek/deepseek-v4-pro") && !noImg({ type: "image/png" }, "anthropic/claude-sonnet-5-5") && !noImg({ type: "image/png" }, "claude-sonnet-5-5") && !noImg(null, "deepseek/deepseek-v4-pro") && !noImg({ type: "image/png" }, null) && !noImg({ type: "image/png" }, "x-deepseek"));
+  t("提示畫在 chip 檔名後(次要字,帶模型名、title 與 aria 用長句);setAttachment / mpPaint(換模型)/ 換語言都重畫;不擋送出", /<span class="attach-name" id="attach-name"><\/span>[\s\S]{0,200}<span class="attach-hint" id="attach-hint" role="note" hidden><\/span>/.test(html)
+    && /h\.textContent = t\("ws\.attachNoImage", \{ model \}\); h\.title = t\("ws\.attachNoImageLong", \{ model \}\); h\.setAttribute\("aria-label", h\.title\);/.test(cut("attachHintPaint")) && /const m = mpCur\(\), model = m \? m\.name : MP\.model;/.test(cut("attachHintPaint"))
+    && /\$\("attach-name"\)\.textContent = attachedFile \? attachedFile\.name : "";\n\s*attachHintPaint\(\);/.test(cut("setAttachment")) && /attachHintPaint\(\);[^\n]*\n\}/.test(cut("mpPaint")) && /youRelang\(\);[^\n]*\n\s*attachHintPaint\(\);/.test(appSrc) && !/attachNoImage\(/.test(cut("sendDraft") + (appSrc.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0]));
   const map = vm.runInNewContext((appSrc.match(/const ATTACH_FEATURE = \{[^}]*\};/) || [""])[0] + "ATTACH_FEATURE"), kind = vm.runInNewContext("(" + cut("attachKind") + ")");
   const feat = (f, from) => map[kind(f, from)];
   t("埋點名:貼上 → attach_paste(不分圖或檔);選檔 / 拖放的圖 → attach_image;其他 → attach_file", feat({ type: "image/png" }, "paste") === "attach_paste" && feat({ type: "image/jpeg" }, "file") === "attach_image" && feat({ type: "text/csv" }, "file") === "attach_file" && feat({ type: "" }, "file") === "attach_file" && feat(null, undefined) === "attach_file");
@@ -81,12 +90,13 @@ try {
   t("telemetry 不記檔名:trackFeature 只收名字", !/trackFeature\([^)]*\.name/.test(appSrc));
 
   // ── 3. 畫面與字串 ──
-  t("index.html:chip(檔名 + ✕)在更新那一格之下、建議列之上(同雲端的順序)、迴紋針在工具列最左、hidden file input", /<div class="attach-chip" id="attach-chip" hidden>\s*<span class="attach-name" id="attach-name"><\/span>\s*<button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws\.attachRemove">✕<\/button>/.test(html)
+  t("index.html:chip(檔名 + ✕)在更新那一格之下、建議列之上(同雲端的順序)、迴紋針在工具列最左、hidden file input", /<div class="attach-chip" id="attach-chip" hidden>\s*<span class="attach-name" id="attach-name"><\/span>[\s\S]{0,200}<span class="attach-hint" id="attach-hint" role="note" hidden><\/span>\s*<button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws\.attachRemove">✕<\/button>/.test(html)
     && html.indexOf('id="ws-update"') < html.indexOf('id="attach-chip"') && html.indexOf('id="attach-chip"') < html.indexOf('id="sug-wrap"') && /<div class="ci-bar">\s*<!--[\s\S]*?-->\s*<input type="file" id="attach-input" hidden \/>\s*<button class="btn-attach" id="attach-btn" type="button" data-i18n-aria="ws\.attach">/.test(html));
   const st = fs.readFileSync(path.join(R, "strings.js"), "utf8");
-  t("四個字串 en / zh 都有;zh 全形標點;太大那句同雲端 workspace_attach_too_large", ["ws.attach", "ws.attachRemove", "ws.attachTooLarge", "ws.attachReadFail"].every((k) => (st.match(new RegExp('"' + k.replace(".", "\\.") + '": "', "g")) || []).length === 2)
-    && st.includes('"ws.attachTooLarge": "檔案太大，上限 5MB。"') && st.includes('"ws.attachTooLarge": "File too large — the limit is 5MB."') && st.includes('"ws.attach": "附加檔案"') && st.includes('"ws.attachRemove": "移除附件"') && /"ws\.attachReadFail": "[^"]*。"/.test(st));
+  t("六個字串 en / zh 都有;zh 全形標點;太大那句同雲端 workspace_attach_too_large;不讀圖兩句照設計稽核", ["ws.attach", "ws.attachRemove", "ws.attachTooLarge", "ws.attachReadFail", "ws.attachNoImage", "ws.attachNoImageLong"].every((k) => (st.match(new RegExp('"' + k.replace(".", "\\.") + '": "', "g")) || []).length === 2)
+    && st.includes('"ws.attachTooLarge": "檔案太大，上限 5MB。"') && st.includes('"ws.attachTooLarge": "File too large — the limit is 5MB."') && st.includes('"ws.attach": "附加檔案"') && st.includes('"ws.attachRemove": "移除附件"') && /"ws\.attachReadFail": "[^"]*。"/.test(st) && st.includes('"ws.attachNoImage": "{model} 不讀圖"') && st.includes('"ws.attachNoImageLong": "{model} 不讀圖，這張會被略過。"') && st.includes(`"ws.attachNoImage": "{model} can't read images"`) && st.includes(`"ws.attachNoImageLong": "{model} can't read images — this one will be skipped."`));
   const css = fs.readFileSync(path.join(R, "app.css"), "utf8");
+  t("app.css:拖放落點 = 虛線 + --ink、排在 :focus-within 之後;提示字 --ink-3、與檔名隔 8;沒有沒人用的 .btn-attach:disabled", css.includes(".chat-input.is-drag { border-color: var(--ink); border-style: dashed; }") && css.indexOf(".chat-input:focus-within {") < css.indexOf(".chat-input.is-drag {") && /\.attach-hint \{ flex: none; margin-left: var\(--space-4\); color: var\(--ink-3\);/.test(css) && /\.attach-chip \{[^}]*gap: var\(--space-4\)/.test(css) && !css.includes(".btn-attach:disabled"));
   t("app.css:.btn-attach / .attach-chip / .attach-name / .attach-clear / 拖放落點提示,不寫死色碼", [".btn-attach {", ".attach-chip {", ".attach-name {", ".attach-clear {", ".chat-input.is-drag {"].every((s) => css.includes(s)) && !/#[0-9a-f]{3,6}\b/i.test(css.split(".btn-attach {")[1].split(".chat-input.is-drag {")[1].split("\n")[0] + css.split(".btn-attach {")[1].split("/* 檔案拖到")[0]));
 } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
 console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

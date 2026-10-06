@@ -312,6 +312,8 @@
              chip 是輸入框的狀態,送出後泡泡末行的「📎 檔名」另外畫(addMsg),重開 app 從逐字稿尾端那行還原 -->
         <div class="attach-chip" id="attach-chip" hidden>
           <span class="attach-name" id="attach-name"></span>
+          <!-- 選的模型不讀圖(DeepSeek):次要字,字由 attachHintPaint 組(帶模型名,不掛 data-i18n) -->
+          <span class="attach-hint" id="attach-hint" role="note" hidden></span>
           <button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws.attachRemove">✕</button>
         </div>
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
