@@ -328,4 +328,5 @@ df = fetch_twfutures_bid_ask_vol("2024-01-01", "2024-03-31", hdrs)
 **Notes:**
 - bid_vol = 內盤 (seller-initiated / 主動賣), ask_vol = 外盤 (buyer-initiated / 主動買). `ask_vol - bid_vol` is the net aggressive-buy pressure.
 - Includes both day (08:45–13:45 TWN) and night (15:00–next day 05:00 TWN) sessions.
+- Settlement day follows the bars' roll rule: no rows start between 13:30 and 14:59 (the expiring month has stopped trading; the next month enters with the 15:00 session).
 - Auto-chunked at 31 days per request — no need to split manually.

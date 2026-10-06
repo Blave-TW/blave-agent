@@ -1,7 +1,8 @@
 """fetch_twfutures_ohlcv cache namespace: every series (TXF with its MXF/TMF/R1 spellings, and
 the stock futures) uses twfutures3_*, so the months cached before the 2026-10 settlement-day
 rebuild — twfutures_* for TXF, twfutures2_* for stock futures — are re-fetched once. The batch
-form goes through the same path. No network.
+form goes through the same path, and the TXF bid/ask volume moved with them (twfutures_bav →
+twfutures3_bav: its settlement-day 13:30–14:59 rows were dropped server-side). No network.
 
 Run: cd blave-agent && .venv/bin/python tests/check_twfutures_cache_prefix.py
 """
@@ -46,5 +47,9 @@ for schema in ("1m", "1d"):
 seen.clear()
 d.fetch_twfutures_ohlcv_batch(["TXF", "CDF", "TMF"], "5m", "2024-01-01", "2024-01-31", {})
 assert sorted(seen) == [("twfutures3_5m", "CDF"), ("twfutures3_5m", "TXF"), ("twfutures3_5m", "TXF")], seen
+
+seen.clear()
+d.fetch_twfutures_bid_ask_vol("2024-01-01", "2024-01-31", {})
+assert seen == [("twfutures3_bav", "TXF")], seen
 
 print("ok")

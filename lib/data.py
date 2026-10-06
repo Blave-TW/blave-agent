@@ -4007,8 +4007,9 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
     if txf_daily_desktop and _no_data_access(headers):
         return fetch_txf_daily_public(start, end, traded)
     # Past months are never re-fetched, so a server-side rebuild needs a fresh namespace:
-    # twfutures2 (2026-10-03, stock futures re-stamped), twfutures3 (2026-10, every series —
-    # settlement day is the expiring month all day, the next month from the 15:00 session).
+    # twfutures2 (2026-10-03, stock futures re-stamped), twfutures3 (2026-10, every series and
+    # the bid/ask volume — settlement day is the expiring month all day, the next month from
+    # the 15:00 session).
     # The TAIFEX head below covers everything before the Blave series: asking Blave for those
     # months would only leave empty markers that are re-asked every day.
     blave_start = max(start, _TXF_BLAVE_START[:8] + '01') if txf_daily_desktop else start
@@ -4528,10 +4529,11 @@ def fetch_twfutures_bid_ask_vol(start, end, headers):
     Columns: bid_vol (內盤口數), ask_vol (外盤口數), total_vol (總口數).
     Both day session (08:45-13:45 TWN) and night session included.
     (History range: see the blave-quant skill / Notion API doc.)
-    Monthly cache: cache/twfutures_bav_TXF/YYYY-MM.parquet
+    Monthly cache: cache/twfutures3_bav_TXF/YYYY-MM.parquet — twfutures3 like the bars: the
+    2026-10 server rebuild dropped the settlement-day rows starting 13:30–14:59.
     """
     result = _extend_cache_monthly(
-        'twfutures_bav', {'symbol': 'TXF'},
+        'twfutures3_bav', {'symbol': 'TXF'},
         lambda s, e: _fetch_twfutures_bid_ask_vol_raw(s, e, headers),
         start, end,
         empty_marker_ttl_hours=24,   # history is backfilled progressively server-side
