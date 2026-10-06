@@ -125,6 +125,8 @@ OHLC sanity checks).
 
 - `fetch_twstock_ohlcv(stock_id, schema, headers, start=None, end=None, adjust=False)` →
   DataFrame with Open/High/Low/Close/Volume, UTC index (Asia/Taipei for `1d`).
+  `headers` is the third argument here, unlike the other kline fetchers; the usual
+  order `(stock_id, schema, start, end, headers)` is accepted too.
   `schema`: `'1m'`/`'5m'`/`'15m'`/`'30m'`/`'60m'`/`'1d'`. **Volume is in lots (張),
   not shares.** Bars carry minute-START labels; the 13:30 Taipei bar is the closing
   auction. History from 2019-01. `adjust=True` returns forward-adjusted (後復權)

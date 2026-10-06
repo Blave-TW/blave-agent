@@ -8,6 +8,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **外殼與設定層總覽(desktop 0.1.17;大半不在 runtime/ 但同一批出貨)。兩條出貨順序:① 遙測白名單新增五個值(`feature_used` 的 `welcome_data_row`／`welcome_data_all`／`attach_file`／`attach_image`／`attach_paste`),api `openclaw/desktop_telemetry.py` 先上;② 台指期 K 線快取 `twfutures3_*`:api 換月口徑部署並重建驗收完,這批才進 main——過去月份只抓一次、之後不重抓,機器先更新會把舊口徑的月份存進新前綴,事後改不回來。內外盤不換前綴(仍是 `twfutures_bav`)、改成讀取時過濾,不受這條順序限制**:
+  - 歡迎頁資料清單(`shell/renderer/welcome.js`):依市場列出可回測的資料,沒有 Blave 資料時兩欄對比(免費／Blave 資料),有的時候單一清單(看 `account_status` 的 `data_access`);整列可點、那一句落進輸入框不送出;「看全部資料」展開 app 內完整目錄;台指期 K 線拆成日線(免費)與分線(Blave 資料)兩列;起手籤 `chat-eg` 退役。
+  - 聊天附件(`shell/attach.js`、`shell/renderer/app.js`):輸入框迴紋針、拖放、貼上剪貼簿,單檔 5 MiB,隨下一句送出;落地 `workspace/tmp/inbound/`,訊息尾端補的那一行逐字同 `web_bridge.py`;主模型是 DeepSeek 而附件是圖時 chip 標「不讀圖」。
+  - 免費台指期日線(`lib/data.py` `fetch_txf_daily_public`):電腦版 TXF／MXF／TMF 日線直接向期交所抓近月連續(1998 起),不需要 Blave 資料;有 Blave 資料時 2011 年以前的部分同樣由期交所補在前面。連續合約換月口徑改成結算日整天到期月、15:00 夜盤起才是次月;`txf_settlement_mask` 認順延的結算日。
+  - 看盤板移除:runtime 那一半見下一條;設定層刪 `lib/watch.py` 與 `references/watchboard.md`,`AGENTS.md` 改成一句「已移除」。
+  - 本批修正(`AGENTS.md`、`references/`、`lib/data.py`):①回測／掃參／樣本外驗證／validation 的 Bash `timeout` 文件明寫一律 1800000——原本只寫「≤ 10 分鐘用工具自己的 timeout」,agent 給 600000,每句第一次回測都被 `bg_guard_reason` 擋一次、畫面多一行「沒成功：跑回測」(hook 不變);②`fetch_twfutures_bid_ask_vol`:結算日 13:30 收盤到 15:00 夜盤之間的列改在回傳前濾掉(逐日判分鐘標籤,規則同 api 重建腳本),既有快取不必重抓;冷抓改走 `_retry_get`、一個月一次請求、抓到一個月就存一個月(中斷後再跑只補缺的);③`fetch_twstock_ohlcv` 也收其他 K 線 fetcher 的參數順序 `(stock_id, schema, start, end, headers)`。測試 `tests/check_twfutures_bav_settlement.py`、`tests/check_twstock_ohlcv_arg_order.py`。
 - **看盤板移除:runtime 不再執行、計數、上傳(`report_runner`、`report_uploader`、`strategy_reporter`、`file_watcher`、`atomic_file`、`agent_turn`、`web_bridge`;這一版必須先於 api 拆 `/openclaw/agent/watch/*` 上線——舊 runtime 的 watch job 到點照跑,每跑一次就 PUT 一次已刪的端點、吃 404、data 檔搬進 `watch/data/failed/`,沒有人會讓它停)**:
   - `report_jobs/<id>/job.json` 帶 `"kind": "watch"` 的 job 不再是登記:不排程、不執行(`report_runner.py <id>`、「立即執行」回 rc 2,不跑 `run.py`、不寫 `runs.jsonl`)、不佔每機 20 個名額、不出現在 `report_schedules`(欄位壞掉的也不列成錯誤列;整份 JSON 解不開的認不出 kind,照舊列錯誤)。
   - `report_uploader` 不碰 `workspace/watch/`:不 POST `/watch/ops`、不 PUT `/watch/data/<id>`,不建 `watch/ops`、`watch/data`,不清 `watch/data/*.files`,不讀寫 `state/watch_uploads.json`;runtime 啟動時的暫存檔清掃也不再進 `watch/`。機器上既有的檔案(`workspace/watch/`、watch job 目錄與腳本、`state/watch_uploads.json`)原封不動。
