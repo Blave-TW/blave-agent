@@ -1,39 +1,59 @@
-/* 歡迎頁的資料清單(renderer/welcome.js;mockup data-scope §1 / §2)。
-   列沿用「建議下一步」的列(suggest.css .sug-item:8/12 內距、sm 角、hover 填 --surface-muted、字 13/1.6),一列一行:小字緊跟在名字後面、靠左(它在描述這份資料,不是要上下比的數字),
-   放不下時小字整段折到名字下面;整列可點、列與列緊貼,所以列高下限 44 就是熱區(單行時字在 44 裡垂直置中);
+/* 歡迎頁(renderer/welcome.js;mockup welcome-directions A2)。
+   全部靠左、同一條軸 = 卡的左緣:記號、標題、三顆籤、小標、頁尾都貼這條線,只有列的字在卡內內縮 16。
+   整份清單是一張卡(--surface-card、--radius-lg),沒有包裝元素:列自己上底色、頭尾兩列收圓角、列之間 hairline(welcome.js 的 DOM 不必動)。
+   一列一行:名字靠左、小字靠右成欄、行尾 ›;放不下時小字整段折到名字下面;整列可點、列與列緊貼,所以列高下限 44 就是熱區(單行時字在 44 裡垂直置中);
    市場分段沿用 .lib-seg(Outlined control segment);小標同 .sug-cap(13/600 --ink-3);文字鈕沿用 .btn-quiet。
    兩欄 vs 上下疊看中欄寬、不看視窗寬:.main-empty 是容器,內容寬 ≥ 700 才並排;免費欄永遠在前(窄時在上)。 */
 .main-empty { container-type: inline-size; }
 /* 清單在籤下面之後,內容高度隨市場／模式變,垂直置中會跳:改上對齊、頂部留 32(不用 min-height 鎖高) */
 .wc-inner { width: 100%; max-width: 780px; }
 .wc-inner:has(.wl) { margin: 0 0 auto; padding-top: var(--space-32); }
+.wc-inner:has(.wl) { align-items: stretch; }
+/* logo 尺寸／顏色(待 Wei 定):只改下面兩行的值 */
+.wc-inner:has(.wl) .wc-mark {
+  align-self: flex-start;
+  width: var(--space-32);
+  color: var(--ink);
+}
+.wc-h { margin: var(--space-16) 0 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }   /* = trade.css .cv-open h4 */
+.wc-inner:has(.wl) .wc-chips { margin-top: var(--space-12); justify-content: flex-start; }
 .wc-inner:has(.wd-catw) { max-width: 1040px; }   /* 完整目錄開著時放寬:780 的表格模式英文會溢出、小字折成五行 */
 .wl { width: 100%; margin-top: var(--space-32); }
-.wl-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8) var(--space-16); flex-wrap: wrap; padding: 0 var(--space-12); }
+.wl-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8) var(--space-16); flex-wrap: wrap; padding: 0; }
 .wl-cap { font-size: 13px; font-weight: 600; color: var(--ink-3); }
-.wl-state { margin: var(--space-8) 0 0; padding: 0 var(--space-12); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.wl-state { margin: 0; padding: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .wl-state:empty { display: none; }
-.wl-body { margin-top: var(--space-16); display: grid; grid-template-columns: 1fr; gap: var(--space-24); }
+.wl-body { margin-top: var(--space-12); display: grid; grid-template-columns: 1fr; gap: var(--space-24); }
 .wl-col { min-width: 0; }
-.wl-colh { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4) var(--space-12); flex-wrap: wrap; padding: 0 var(--space-12) var(--space-8); border-bottom: 1px solid var(--border-hairline); margin-bottom: var(--space-4); }
+.wl-colh { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4) var(--space-12); flex-wrap: wrap; padding: 0 0 var(--space-8); border-bottom: 0; margin-bottom: 0; }
 .wl-note { font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .wl-note .btn-quiet, .wl-state .btn-quiet { font-size: inherit; color: var(--ink-2); }
 .wl-note .btn-quiet:hover, .wl-state .btn-quiet:hover { color: var(--ink); }
 .wd-row {
-  display: grid; align-content: center; width: 100%; min-height: 44px; padding: var(--space-8) var(--space-12);
-  text-align: left; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.6;
+  display: grid; align-content: center; width: 100%; min-height: 44px; padding: var(--space-8) var(--space-16);
+  grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-12); align-items: center;
+  background: var(--surface-card); border-bottom: 1px solid var(--border-hairline); border-radius: 0;
+  text-align: left; font-size: 13px; line-height: 1.6;
   transition: background var(--motion-fast) var(--ease-standard);
 }
+/* 行尾 ›(= library.css .lib-row .go)用 ::after,不加 DOM 節點;替代文字給空字串,讀屏不念 */
+.wd-row::after { content: "›" / ""; color: var(--ink-3); font-size: 14px; line-height: 1; transition: color var(--motion-fast) var(--ease-standard); }
+/* 卡的四個角:每欄第一列(單一清單沒有欄頭 → :first-child;對比版 → 欄頭後那一列)與最後一列。
+   兩欄並排時 .wl-col 是 display: contents,但父子關係不變,這三個選擇器照樣選到各欄自己的頭尾 */
+.wd-row:first-child, .wl-colh + .wd-row { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
+.wd-row:last-child { border-bottom: 0; border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
 .wd-row:hover { background: var(--surface-muted); }
 .wd-row:hover .wd-mt { color: var(--ink-2); }   /* --ink-3 壓在 hover 底色上對比不到 4.5:1 */
+.wd-row:hover::after { color: var(--ink); }
 .wd-row:focus-visible { outline-offset: -2px; }
-.wd-l1 { display: flex; align-items: baseline; justify-content: flex-start; gap: var(--space-2) var(--space-12); flex-wrap: wrap; }
+.wd-l1 { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-12); flex-wrap: wrap; }
 .wd-nm { color: var(--ink); font-weight: 500; }
 .wd-mt { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }   /* 不 nowrap:窄欄自然折行,不溢出 */
-.wl-foot { margin-top: var(--space-16); padding: 0 var(--space-12); }
-/* 「看全部資料」:安靜文字鈕,字級拉到 13/500 墨色、底線色退到框線;熱區 44 高(.btn-quiet::before 是 app.css 那條 44 寬熱區) */
-.wl-foot .btn-quiet { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 500; color: var(--ink); text-decoration-color: var(--border-frame); }
-.wl-foot .btn-quiet:hover { color: var(--ink-2); }
+/* 頁尾:「看全部資料」在左、狀態句(試用到期日)在右,同一行;放不下時狀態句折到下一行 */
+.wl-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4) var(--space-16); flex-wrap: wrap; margin-top: var(--space-4); padding: 0; }
+/* 「看全部資料」:安靜文字鈕;熱區 44 高(.btn-quiet::before 是 app.css 那條 44 寬熱區) */
+.wl-foot > .btn-quiet { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink-2); }
+.wl-foot > .btn-quiet:hover { color: var(--ink); }
 /* 兩欄並排:兩欄的子項(欄頭、每一列)直接排進同一張格線,同一橫排同高——右欄欄頭那句折成兩行時,兩條 hairline 與第一列仍對齊。
    .wl-col 變成 display: contents 後自己的 min-width: 0 不作用,改掛到子項 */
 @container (min-width: 700px) {
@@ -75,4 +95,4 @@
   .wd-cat td.sr { margin: var(--space-6) 0; }
   .wd-cat td.us { font-size: 12px; }
 }
-@media (prefers-reduced-motion: reduce) { .wd-row { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .wd-row, .wd-row::after { transition: none; } }

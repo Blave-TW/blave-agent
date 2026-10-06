@@ -6142,6 +6142,9 @@ msgstr "Your API key is no longer on this computer. Set it up again in Settings 
 # ── Welcome-page data list (renderer/welcome.js; mockup data-scope §1 / §2) ──
 # Numbers in the right-column notes ({t} trial days, {r} TWD per hour, {d} trial end) come from account_status / public pricing, never hard-coded; NoNum variants when unavailable.
 # The word "paid" never appears; the price shows exactly once (wd.note.billed).
+msgid "wd.start"
+msgstr "Start a strategy"
+
 msgid "wd.title"
 msgstr "Data You Can Backtest"
 

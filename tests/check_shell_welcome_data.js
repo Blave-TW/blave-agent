@@ -1,13 +1,14 @@
 // 歡迎頁的資料清單(shell/renderer/welcome.js + welcome.css + index.html #wl;設計 mockup data-scope §1 / §2)。
 //   ① 純邏輯 wdMode(從原文切出來跑):帳號狀態 → 對比版 / 單一清單——沒登入、查不到、舊 api、沒綁卡、餘額不夠、按小時付 → 兩欄對比;
 //      綁卡試用中、名下有主機、API 方案(data_access = included)→ 單一清單;試用那句只在名下沒主機時講
-//   ② 原文鎖:index.html 骨架(三顆籤後面是 #wl、起手籤 #chat-eg 退役)、welcome.css(.main-empty 是容器、≥700 才兩欄、不寫 hex)、
+//   ② 原文鎖:index.html 骨架(記號 → 標題「開始一支策略」→ 三顆籤 → #wl、狀態句在頁尾、起手籤 #chat-eg 退役)、welcome.css(.main-empty 是容器、≥700 才兩欄、不寫 hex)、
 //      app.js 四個重畫入口、welcome.js 在 app.js 之後、telemetry 白名單尾端兩個名字(≤16 字、api 端同一份)、
 //      每一列的字 zh / en 兩語齊全(列舉 WD_ROWS,不抽樣)、字裡沒有「付費」、價格數字不寫死({r} 只在 wd.note.billed)
 //      一列一行(名字 + 小字,沒有第二行起手句);點列 = 「跟我討論要怎麼用〈資料名〉做策略」(模板 wd.ask × 每列的 .an):
 //      wdRow / wdFill / wdAsk 原文接假 DOM 在純 node 跑(run_all 不起 Electron),歡迎頁每一列 × 兩語逐列組句子
 //   ③ Electron(offscreen、show:false,不會出現在螢幕上):對比版兩欄且免費在前、右欄不上鎖不變灰、單一清單一欄且無 TWD 字樣、
 //      點列 → 那一句落進輸入框、不送出、自己打的草稿留著;列高與熱區實測 ≥ 44、窄欄小字折到名字下面;
+//      A2 版面:記號／標題／籤／小標／卡／頁尾同一條左軸、清單是一張卡(列有底色、頭尾收圓角,兩欄各一張)、小字靠右成欄、hover 換色、狀態句在頁尾同一行;
 //      中欄 <700 上下疊;看全部資料 = 同一塊換成目錄(對比版多「來源」欄)
 // 跑法:node tests/check_shell_welcome_data.js(③ 要 BLAVE_TEST_WINDOW=1,①② 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
@@ -44,11 +45,14 @@ if (!process.versions.electron) {
   const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl"'));
   ok("② index.html:三顆籤(#chat-lib / #chat-idea / #chat-ns)之後是 #wl,起手籤 #chat-eg 退役;#wl 在 .wc-inner 裡、#main-empty 裡", /id="chat-lib"[\s\S]*id="chat-idea"[\s\S]*id="chat-ns"/.test(chips) && !html.includes('id="chat-eg"') && !/ws\.chatExample/.test(html + appSrc)
     && html.indexOf('id="wl"') > html.indexOf('id="main-empty"') && html.indexOf('id="wl"') < html.indexOf("</section>", html.indexOf('id="main-empty"')));
-  ok("② #wl 骨架:小標 wd.title、市場分段 #wl-seg(.lib-seg 配方、三格 crypto / tw / txf、加密預設選中)、#wl-state aria-live、#wl-body、#wl-all 是 .btn-quiet 且不掛 data-i18n(字跟著模式換)",
+  ok("② 標題:h4.wc-h(wd.start)在記號之後、三顆籤之前;兩語的字是「開始一支策略」/ Start a strategy;整份 index.html 只有一個",
+    /<\/svg>\s*<h4 class="wc-h" data-i18n="wd\.start"><\/h4>\s*<div class="wc-chips">/.test(html.slice(html.indexOf('class="wc-mark"'), html.indexOf('id="chat-lib"'))) && html.split('class="wc-h"').length === 2
+    && STR.zh["wd.start"] === "開始一支策略" && STR.en["wd.start"] === "Start a strategy");
+  ok("② #wl 骨架:小標 wd.title、市場分段 #wl-seg(.lib-seg 配方、三格 crypto / tw / txf、加密預設選中)、#wl-body、頁尾 .wl-foot 裡依序是 #wl-all(.btn-quiet、不掛 data-i18n,字跟著模式換)與 #wl-state(aria-live);狀態句不在清單上面",
     /<span class="wl-cap" data-i18n="wd\.title"><\/span>/.test(html) && /<span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html)
     && (html.slice(html.indexOf('id="wl-seg"'), html.indexOf("</span>", html.indexOf('id="wl-seg"'))).match(/data-mk="(crypto|tw|txf)" aria-pressed="(true|false)" data-i18n="wd\.mk\.\1"/g) || []).length === 3
-    && /data-mk="crypto" aria-pressed="true"/.test(html) && /<p class="wl-state" id="wl-state" aria-live="polite"><\/p>/.test(html) && /<div class="wl-body" id="wl-body"><\/div>/.test(html)
-    && /<button class="btn-quiet" id="wl-all" type="button"><\/button>/.test(html));
+    && /data-mk="crypto" aria-pressed="true"/.test(html) && /<div class="wl-body" id="wl-body"><\/div>\s*<div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button"><\/button><p class="wl-state" id="wl-state" aria-live="polite"><\/p><\/div>/.test(html)
+    && html.split('id="wl-state"').length === 2);
   ok("② 載入順序:welcome.css 有載;welcome.js 在 app.js 之後(用 app.js 的 $ / t / acct / planVars / autosize / trackFeature;放最後一支,不插進 app.js → suggest.js 之間)", /<link rel="stylesheet" href="welcome\.css">/.test(html) && html.indexOf('src="welcome.js"') > html.indexOf('src="app.js"') && (html.match(/<script src="[^"]+"><\/script>/g) || []).pop() === '<script src="welcome.js"></script>');
   ok("② app.js 四個重畫入口:acctPaint(帳號狀態變)、acctPrecheck(能跑的人不走 acctPaint)、applyStatic 最後(換語言)、acctSignOut(登出)",
     /wdPaint\(\)/.test(cutFn(appSrc, "acctPaint")) && /acct = await window\.blave\.accountStatus\(\); acctAt = Date\.now\(\);\n[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc)
@@ -75,7 +79,7 @@ if (!process.versions.electron) {
   ok("② 每一列的字 zh / en 都齊(" + ROWS.length + " 列、目錄 " + CAT.length + " 列、歡迎頁 " + WEL.length + " 列)", missing.length === 0, missing.join(", "));
   const extra = []; for (const L of ["zh", "en"]) for (const k of Object.keys(STR[L])) if (k.startsWith("wd.r.") && !ROWS.some((r) => k.startsWith("wd.r." + r[0] + "."))) extra.push(L + ":" + k);
   ok("② 字串表沒有多出不在 WD_ROWS 的列(拿掉的列字也要一起拿掉:BingX、CME／ICE、公開大盤、公開期貨法人、異常漲跌)", extra.length === 0, extra.join(", "));
-  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.mk.txfo", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.outNoNum", "wd.note.none", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.less", "wd.sep", "wd.h.data", "wd.h.fq", "wd.h.sn", "wd.h.src", "wd.h.us", "wd.src.p", "wd.src.b", "wd.foot.1", "wd.foot.2"];
+  const fixed = ["wd.start", "wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.mk.txfo", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.outNoNum", "wd.note.none", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.less", "wd.sep", "wd.h.data", "wd.h.fq", "wd.h.sn", "wd.h.src", "wd.h.us", "wd.src.p", "wd.src.b", "wd.foot.1", "wd.foot.2"];
   ok("② 固定字 " + fixed.length + " 個 zh / en 都有;三個市場的歡迎頁兩欄都有列(免費欄空著那句 wd.empty.* 與 .wl-empty 隨台指期免費日線退役)", fixed.every((k) => STR.zh[k] && STR.en[k]) && ["crypto", "tw", "txf"].every((mk) => [TAB.WD_P, TAB.WD_B].every((sr) => WEL.some((r) => r[1] === mk && r[2] === sr)))
     && !Object.keys(STR.zh).concat(Object.keys(STR.en)).some((k) => k.startsWith("wd.empty.")) && !/wl-empty|wd\.empty/.test(src + css));
   const wd = (L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.")).map((k) => STR[L][k]);
@@ -101,9 +105,24 @@ if (!process.versions.electron) {
       txKeys.length === 0 && !/wd\.r\.[a-z0-9]+\.tx"/.test(po) && !/"tx"/.test(code) && !/wd-l2|wd-gl|wd-tx/.test(src + css) && !ROWS.some((r) => r[1] === "cmd"), txKeys.join(", "));
     ok("② 點列接的是討論句:wdRow 的 click = wdFill(wdAsk(t(\"wd.ask\"), wdK(id, \"an\")));列裡只有 .wd-l1 一行(名字 + 小字,小字 = 頻率・起始年)",
       /l1\.append\(wdEl\("span", "wd-nm", [^\n]*\), wdEl\("span", "wd-mt", wdK\(id, "fq"\) \+ t\("wd\.sep"\) \+ wdK\(id, "sy"\)\)\);\n\s*b\.appendChild\(l1\);\n\s*b\.addEventListener\("click", \(\) => wdFill\(wdAsk\(t\("wd\.ask"\), wdK\(id, "an"\)\)\)\);/.test(cutFn(src, "wdRow")));
-    ok("② welcome.css:列高下限 44、只剩一行時垂直置中(.wd-row 是 grid,align-content: center)、內距 8/12 不變;小字跟在名字後面靠左(.wd-l1 flex-start、間距 12、baseline、放不下整段折行)",
-      /\.wd-row \{\s*display: grid; align-content: center; width: 100%; min-height: 44px; padding: var\(--space-8\) var\(--space-12\);/.test(css)
-      && /\.wd-l1 \{ display: flex; align-items: baseline; justify-content: flex-start; gap: var\(--space-2\) var\(--space-12\); flex-wrap: wrap; \}/.test(css) && !/space-between/.test(css.slice(css.indexOf(".wd-row"), css.indexOf(".wl-foot"))));
+    ok("② welcome.css:列高下限 44、只剩一行時垂直置中(.wd-row 是 grid,align-content: center)、內距 8/16(卡內距);小字靠右成欄(.wd-l1 space-between、間距 12、baseline、放不下整段折行)",
+      /\.wd-row \{\s*display: grid; align-content: center; width: 100%; min-height: 44px; padding: var\(--space-8\) var\(--space-16\);/.test(css)
+      && /\.wd-l1 \{ display: flex; align-items: baseline; justify-content: space-between; gap: var\(--space-2\) var\(--space-12\); flex-wrap: wrap; \}/.test(css));
+    ok("② welcome.css(A2):清單在時 .wc-inner 子項靠左撐滿;記號的寬與色各自一行(待 Wei 定,只改值);標題 20/600;籤靠左、離標題 12;小標列與頁尾不內縮(同一條左軸)",
+      /\.wc-inner:has\(\.wl\) \{ align-items: stretch; \}/.test(css) && /\.wc-inner:has\(\.wl\) \.wc-mark \{\n  align-self: flex-start;\n  width: var\(--[a-z0-9-]+\);\n  color: var\(--[a-zA-Z0-9-]+\);\n\}/.test(css)
+      && /\.wc-h \{ margin: var\(--space-16\) 0 0; font-size: 20px; font-weight: 600; line-height: 1\.4; color: var\(--ink\); \}/.test(css)
+      && /\.wc-inner:has\(\.wl\) \.wc-chips \{ margin-top: var\(--space-12\); justify-content: flex-start; \}/.test(css)
+      && /\.wl-top \{[^}]*padding: 0; \}/.test(css) && /\.wl-colh \{[^}]*padding: 0 0 var\(--space-8\); border-bottom: 0; margin-bottom: 0; \}/.test(css)
+      && /\.wl-foot \{ display: flex; align-items: center; justify-content: space-between; gap: var\(--space-4\) var\(--space-16\); flex-wrap: wrap; margin-top: var\(--space-4\); padding: 0; \}/.test(css)
+      && /\.wl-state \{ margin: 0; padding: 0; /.test(css) && /\.wl-foot > \.btn-quiet \{ display: inline-flex; align-items: center; min-height: 44px; color: var\(--ink-2\); \}/.test(css));
+    ok("② welcome.css(A2):清單是一張卡——列自己上 --surface-card、列間 hairline、頭尾兩列收 --radius-lg(每欄第一列 = :first-child 或欄頭後那一列);行尾 › 用 ::after(替代文字空字串,不加 DOM);hover 底換 --surface-muted、小字換 --ink-2、› 換 --ink;focus 外框內縮;減少動態連 ::after 一起收",
+      /\.wd-row \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto; column-gap: var\(--space-12\); align-items: center;[^}]*background: var\(--surface-card\); border-bottom: 1px solid var\(--border-hairline\); border-radius: 0;/.test(css)
+      && /\.wd-row::after \{ content: "›" \/ ""; color: var\(--ink-3\); font-size: 14px; line-height: 1; transition: color var\(--motion-fast\) var\(--ease-standard\); \}/.test(css)
+      && /\.wd-row:first-child, \.wl-colh \+ \.wd-row \{ border-top-left-radius: var\(--radius-lg\); border-top-right-radius: var\(--radius-lg\); \}/.test(css)
+      && /\.wd-row:last-child \{ border-bottom: 0; border-bottom-left-radius: var\(--radius-lg\); border-bottom-right-radius: var\(--radius-lg\); \}/.test(css)
+      && /\.wd-row:hover \{ background: var\(--surface-muted\); \}/.test(css) && /\.wd-row:hover \.wd-mt \{ color: var\(--ink-2\); \}/.test(css) && /\.wd-row:hover::after \{ color: var\(--ink\); \}/.test(css)
+      && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after \{ transition: none; \} \}/.test(css)
+      && !/wd-go|"go"/.test(src));
     ok("② 完整目錄:開著時 .wc-inner 放寬到 1040、「一列一塊」的斷點 860(兩欄清單的 700 不動)、一列一塊時列與分組列左右內距 12(左緣對齊標題);單一清單(沒有來源欄)不講 wd.foot.1",
       /\.wc-inner:has\(\.wd-catw\) \{ max-width: 1040px; \}/.test(css) && /@container \(max-width: 859\.98px\) \{\s*\.wd-cat thead/.test(css) && !/699\.98/.test(css) && /@container \(min-width: 700px\) \{\s*\.wl-body\.cmp2/.test(css)
       && /\.wd-cat tr \{ padding: var\(--space-12\); /.test(css) && /\.wd-cat tr\.g \{ padding: var\(--space-24\) var\(--space-12\) var\(--space-4\); /.test(css) && /\.wd-cat tbody tr:first-child\.g \{ padding-top: var\(--space-4\); \}/.test(css)
@@ -233,15 +252,41 @@ app.whenReady().then(async () => {
     const r = b.getBoundingClientRect(), n = b.querySelector(".wd-nm").getBoundingClientRect(), m = b.querySelector(".wd-mt").getBoundingClientRect(), x = r.left + r.width / 2;
     let hit = 0; for (let y = Math.floor(r.top) - 2; y <= Math.ceil(r.bottom) + 2; y++) { const e = document.elementFromPoint(x, y); if (e && (e === b || b.contains(e))) hit++; }   // 整數 y:elementFromPoint 的命中測試以整 px 為單位,列的起點常落在 .5
     return { id: b.dataset.id, kids: b.children.length, l1: b.firstElementChild.className + ":" + b.firstElementChild.children.length, h: r.height, hit, one: m.top < n.bottom - 2, mid: Math.abs((n.top + n.bottom) / 2 - (r.top + r.bottom) / 2),
-      nmLeft: n.left - r.left, gap: m.left - n.right, mtLeft: m.left - r.left, over: b.scrollWidth - b.clientWidth, mt: b.querySelector(".wd-mt").textContent }; })`);
+      nmLeft: n.left - r.left, gap: m.left - n.right, mtLeft: m.left - r.left, mtRight: m.right, col: [...$("wl-body").querySelectorAll(".wl-col")].indexOf(b.closest(".wl-col")), over: b.scrollWidth - b.clientWidth, mt: b.querySelector(".wd-mt").textContent }; })`);
   let g = await geo();
-  ok("③ 每一列只有 .wd-l1 一行(名字 + 小字)、小字 = 頻率・起始年;列高與實測熱區都 ≥ 44;放得下的列是單行:高剛好 44、字垂直置中、名字內距 12、小字緊跟在名字後面隔 12(不靠右)",
-    g.length === 6 && g.every((x) => x.kids === 1 && x.l1 === "wd-l1:2" && x.h >= 43.99 && x.hit >= 44 && x.over <= 0 && Math.abs(x.nmLeft - 12) < 0.6 && x.mt === Z["wd.r." + x.id + ".fq"] + Z["wd.sep"] + Z["wd.r." + x.id + ".sy"])
-    && g.filter((x) => x.one).length >= 5 && g.filter((x) => x.one).every((x) => Math.abs(x.h - 44) < 0.01 && x.mid <= 1.5 && Math.abs(x.gap - 12) < 0.6)
+  // 成欄:同一欄裡單行的列,小字右緣同一條 x(行尾 › 的左邊);名字與小字之間至少隔 12
+  const colRight = (g) => [0, 1].every((c) => { const v = g.filter((x) => x.col === c && x.one).map((x) => x.mtRight); return v.length > 0 && Math.max(...v) - Math.min(...v) < 0.6; });
+  ok("③ 每一列只有 .wd-l1 一行(名字 + 小字)、小字 = 頻率・起始年;列高與實測熱區都 ≥ 44;放得下的列是單行:高剛好 44、字垂直置中、名字內距 16、小字靠右——同一欄的小字右緣貼齊成欄(不跟在名字後面)",
+    g.length === 6 && g.every((x) => x.kids === 1 && x.l1 === "wd-l1:2" && x.h >= 43.99 && x.hit >= 44 && x.over <= 0 && Math.abs(x.nmLeft - 16) < 0.6 && x.mt === Z["wd.r." + x.id + ".fq"] + Z["wd.sep"] + Z["wd.r." + x.id + ".sy"])
+    && g.filter((x) => x.one).length >= 5 && g.filter((x) => x.one).every((x) => Math.abs(x.h - 44) < 0.01 && x.mid <= 1.5 && x.gap >= 11.4) && colRight(g) && g.some((x) => x.one && x.gap > 40)
     && (await js(`!$("wl-body").querySelector(".wd-l2, .wd-gl, .wd-tx")`)), JSON.stringify(g));
   await js(`$("wl-body").style.width = "200px"`); await wait(50); g = await geo();
-  ok("③ 欄很窄(200):小字整段折到名字下面、靠左(跟名字同一條左緣)、列跟著長高、不橫向溢出", g.every((x) => !x.one && Math.abs(x.mtLeft - 12) < 0.6 && x.h > 44 && x.hit >= 44 && x.over <= 0), JSON.stringify(g));
+  ok("③ 欄很窄(200):小字整段折到名字下面、靠左(跟名字同一條左緣)、列跟著長高、不橫向溢出", g.every((x) => !x.one && Math.abs(x.mtLeft - 16) < 0.6 && x.h > 44 && x.hit >= 44 && x.over <= 0), JSON.stringify(g));
   await js(`$("wl-body").style.width = ""`); await wait(50);
+  // A2:清單是一張卡。token 的實際值從一顆探針讀(不寫死色碼);每欄的列:底色、四個角、列間線、行尾 ›、列與列緊貼
+  const card = () => js(`(() => { const pr = document.createElement("i"); pr.style.cssText = "position:absolute;background:var(--surface-card);color:var(--ink-2);border-radius:var(--radius-lg)"; document.body.appendChild(pr);
+    const ps = getComputedStyle(pr), tok = { bg: ps.backgroundColor, ink2: ps.color, lg: ps.borderTopLeftRadius }; pr.remove();
+    const tx = (e) => { const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect(); }, q = (s) => document.querySelector(s), foot = q(".wl-foot").getBoundingClientRect(), st = $("wl-state"), all = tx($("wl-all"));
+    return { tok, cols: [...$("wl-body").querySelectorAll(".wl-col")].map((c) => [...c.querySelectorAll(".wd-row")].map((b) => { const s = getComputedStyle(b), r = b.getBoundingClientRect();
+        return { bg: s.backgroundColor, rad: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].join(" "), bb: s.borderBottomWidth, go: getComputedStyle(b, "::after").content, kids: b.children.length, l: r.left, r: r.right, t: r.top, b: r.bottom }; })),
+      axis: { mark: q(".wc-mark").getBoundingClientRect().left, h: tx(q(".wc-h")).left, chip: q(".wc-chip:not([hidden])").getBoundingClientRect().left, title: tx(q(".wl-top .wl-cap")).left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
+      order: [q(".wc-mark").getBoundingClientRect().bottom, q(".wc-h").getBoundingClientRect().top, q(".wc-h").getBoundingClientRect().bottom, q(".wc-chips").getBoundingClientRect().top, q(".wc-chips").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
+      h: q(".wc-h").textContent, hTag: q(".wc-h").tagName, stIn: st.parentElement === q(".wl-foot") && st.previousElementSibling === $("wl-all"), stMid: st.textContent ? (tx(st).top + tx(st).bottom) / 2 - (all.top + all.bottom) / 2 : null, stRight: st.textContent ? foot.right - tx(st).right : null, footRight: foot.right - Math.max(...[...document.querySelectorAll(".wd-row")].map((b) => b.getBoundingClientRect().right)),
+      over: $("main-empty").scrollWidth - $("main-empty").clientWidth }; })()`);
+  const cardOk = (k) => k.tok.lg !== "0px" && !/rgba\(0, 0, 0, 0\)|transparent/.test(k.tok.bg) && k.cols.every((rows) => rows.length > 0 && rows.every((x, i) => { const first = i === 0, last = i === rows.length - 1, lg = k.tok.lg, z = "0px";
+    return x.bg === k.tok.bg && x.rad === [first ? lg : z, first ? lg : z, last ? lg : z, last ? lg : z].join(" ") && x.bb === (last ? "0px" : "1px") && /›/.test(x.go) && /\/ ""$/.test(x.go) && x.kids === 1 && (first || Math.abs(x.t - rows[i - 1].b) < 0.6); }));
+  const axisOk = (k) => { const v = Object.values(k.axis).filter((x) => x !== null); return Math.max(...v) - Math.min(...v) <= 0.6; };
+  let k = await card();
+  ok("③ A2 兩欄:兩欄各自是一張完整的卡(列 = --surface-card;各欄第一列上兩角、最後一列下兩角 = --radius-lg,中間的列直角;列間 1px 線、最後一列沒有;列緊貼;行尾 › 是 ::after、列裡沒有多的節點),兩張卡之間有欄距 16、等寬",
+    k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
+  ok("③ A2 同一條左軸:記號、標題、第一顆籤、小標、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號 → 標題(h4「開始一支策略」)→ 三顆籤 → 清單",
+    axisOk(k) && k.h === Z["wd.start"] && k.hTag === "H4" && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5), JSON.stringify([k.axis, k.order, k.h]));
+  { // hover:底換 --surface-muted、小字從 --ink-3 換 --ink-2(ink-3 壓在 hover 底上不到 4.5:1)、› 換色
+    const tgt = `$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row")`, look = () => js(`(() => { const b = ${tgt}; return { on: b.matches(":hover"), mt: getComputedStyle(b.querySelector(".wd-mt")).color, bg: getComputedStyle(b).backgroundColor, go: getComputedStyle(b, "::after").color }; })()`);
+    const pt = await js(`(() => { const b = ${tgt}; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    const h0 = await look(); w.webContents.sendInputEvent({ type: "mouseMove", x: pt.x, y: pt.y }); await wait(400); const h1 = await look();
+    w.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 }); await wait(400); const h2 = await look();
+    ok("③ A2 hover:滑到列上 → 底色換掉、小字換成 --ink-2、› 換色;移開全部回來", !h0.on && h1.on && !h2.on && h0.bg === k.tok.bg && h1.bg !== h0.bg && h0.mt !== k.tok.ink2 && h1.mt === k.tok.ink2 && h1.go !== h0.go && JSON.stringify(h2) === JSON.stringify(h0), JSON.stringify([h0, h1, h2, k.tok])); }
   { const sh = await js(`[...$("wl-seg").querySelectorAll("button")].map((b) => { b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(), x = r.left + r.width / 2, cy = (r.top + r.bottom) / 2; let hit = 0;
       for (let y = Math.floor(cy) - 30; y <= Math.ceil(cy) + 30; y++) { if (document.elementFromPoint(x, y) === b) hit++; } return { h: r.height, hit }; })`);
     ok("③ 市場分段三格的熱區實測 ≥ 44(視覺 30 高、::before 上下外擴,沒有被容器裁掉)", sh.length === 3 && sh.every((x) => x.h === 30 && x.hit >= 44), JSON.stringify(sh)); }
@@ -265,6 +310,10 @@ app.whenReady().then(async () => {
   ok("③ 餘額不夠 → 對比版;右欄「餘額不夠付這小時的資料」+「儲值」鈕", s.cmp2 && s.cols[1].note.startsWith(Z["wd.note.nobal"]) && s.cols[1].note.endsWith(Z["wd.note.topup"]) && (await js(`$("wl-body").querySelector(".wl-note button").textContent`)) === Z["wd.note.topup"], s.cols[1].note);
   await paint(`${base}; acct.data_access = "included"; acct.data_included = true; acct.plan.trial_free_until = new Date(Date.now() + 5 * ${DAY}).toISOString()`); s = await snap();
   ok("③ 綁卡試用中 → 單一清單:一欄、加密 6 列、沒有欄小標、狀態句「試用中：這些資料免費用到 …」、沒有 TWD", !s.cmp2 && s.cols.length === 1 && s.cols[0].rows === 6 && s.cols[0].cap === "" && s.state.startsWith(Z["wd.state.trial"].split("{d}")[0]) && !/TWD/.test(s.text), JSON.stringify([s.cols.length, s.cols[0] && s.cols[0].rows, s.state]));
+  k = await card(); g = await geo();
+  ok("③ A2 單一清單:一張完整的卡(沒有欄頭,第一列 = :first-child 收上兩角、最後一列收下兩角)、左軸同一條、六列小字右緣成欄", k.cols.length === 1 && k.cols[0].length === 6 && cardOk(k) && axisOk(k) && k.axis.colh === null && k.over <= 0
+    && g.every((x) => x.one && Math.abs(x.nmLeft - 16) < 0.6) && Math.max(...g.map((x) => x.mtRight)) - Math.min(...g.map((x) => x.mtRight)) < 0.6, JSON.stringify([k, g.map((x) => x.mtRight)]));
+  ok("③ A2 頁尾:狀態句(試用到期)在 .wl-foot 裡、接在「看全部資料」後面,同一行、靠右貼齊卡的右緣", k.stIn && Math.abs(k.stMid) <= 1.5 && Math.abs(k.stRight) < 0.6 && Math.abs(k.footRight) < 0.6, JSON.stringify([k.stIn, k.stMid, k.stRight, k.footRight]));
   await paint(`${base}; acct.data_access = "included"; acct.data_included = true; acct.plan.state = "running"; acct.plan.trial_free_until = new Date(Date.now() + 5 * ${DAY}).toISOString()`); s = await snap();
   ok("③ 名下有主機(含試用日期還在)→ 單一清單、狀態句空(不講「免費到」)、沒有價格字", !s.cmp2 && s.cols.length === 1 && s.state === "" && !/TWD/.test(s.text));
   ok("③ 單一清單的列照順序號:加密 bnk / fng / ti / conc / liq / fr", (await js(`[...$("wl-body").querySelectorAll(".wd-row")].map((b) => b.dataset.id).join()`)) === "bnk,fng,ti,conc,liq,fr");
@@ -275,7 +324,7 @@ app.whenReady().then(async () => {
   await js(`$("wl-all").click()`); await wait(50); s = await snap();
   ok("③ 再按一次 → 回到清單、分段回來", !s.table && s.seg && s.cols.length === 1 && s.all === Z["wd.all"]);
   await paint(`${base}`); await js(`$("wl-all").click()`); await wait(50); s = await snap();
-  ok("③ 對比版的目錄多「來源」欄:5 欄、每列一個 Mini tag(公開 / Blave)、狀態列講那一句(按小時那句)", s.table && s.th === 5 && s.tags === CAT.length && s.state === Z["wd.note.billed"].replace("{r}", "2") && (await js(`$("wl-body").querySelectorAll(".wd-tag.line").length`)) === CAT.filter((r) => r[2] === TAB.WD_P).length, JSON.stringify([s.th, s.tags, s.state]));
+  ok("③ 對比版的目錄多「來源」欄:5 欄、每列一個 Mini tag(公開 / Blave)、狀態句講那一句(按小時那句,在頁尾)", s.table && s.th === 5 && s.tags === CAT.length && s.state === Z["wd.note.billed"].replace("{r}", "2") && (await js(`$("wl-body").querySelectorAll(".wd-tag.line").length`)) === CAT.filter((r) => r[2] === TAB.WD_P).length, JSON.stringify([s.th, s.tags, s.state]));
   ok("③ 對比版的目錄腳兩句都在(wd.foot.1 + wd.foot.2)", (await js(`[...$("wl-body").querySelectorAll(".wd-foot p")].map((p) => p.textContent).join("|")`)) === Z["wd.foot.1"] + "|" + Z["wd.foot.2"]);
   // 目錄的兩種模式:中欄 ≥ 860 是表格(.wc-inner 放寬到 1040)、以下是一列一塊;量左緣與橫向溢出(zh / en)
   const cat = () => js(`(() => { const q = (s) => $("wl").querySelector(s), tx = (e) => { if (!e) return null; const r = document.createRange(); r.selectNodeContents(e); return Math.round(r.getBoundingClientRect().left * 10) / 10; };
@@ -284,18 +333,20 @@ app.whenReady().then(async () => {
       over: [me.scrollWidth - me.clientWidth, cw.scrollWidth - cw.clientWidth, Math.round((tb.getBoundingClientRect().right - cw.getBoundingClientRect().right) * 10) / 10],
       left: { title: tx(q(".wl-top .wl-cap")), state: tx($("wl-state")), group: tx(q("tr.g .wl-cap")), name: tx(q(row + "td.nm")), fq: tx(q(row + "td.fq")), src: tx(q(row + "td.sr")), us: tx(q(row + "td.us")), foot: tx(q(".wd-foot p")), all: tx($("wl-all")) },
       ntLines: Math.max(...[...$("wl").querySelectorAll("td.nm small")].map((e) => Math.round(e.getBoundingClientRect().height / 18))) }; })()`);
-  const same = (o) => { const v = Object.values(o).filter((x) => x !== null); return v.length >= 8 && Math.max(...v) - Math.min(...v) <= 0.5; };
+  // A2 之後目錄有兩條左緣:標題與「收起」鈕在軸上(= 列的分隔線左端);列裡的字(分組標籤、資料名、頻率、來源標籤、可以回測、目錄腳)內縮 12。狀態句搬到頁尾、跟「收起」鈕同一塊
+  const same = (o) => { const ax = [o.title, o.all], inn = [o.group, o.name, o.fq, o.src, o.us, o.foot];
+    return ax.concat(inn).every((x) => x !== null) && Math.abs(ax[0] - ax[1]) <= 0.5 && Math.max(...inn) - Math.min(...inn) <= 0.5 && Math.abs(Math.min(...inn) - ax[0] - 12) <= 0.5 && o.state !== null && o.state >= ax[0] - 0.5; };
   for (const L of ["zh", "en"]) {
     await js(`setLang("${L}"); applyStatic(); true`); w.setSize(1600, 900); await wait(400);
     let c = await cat();
     ok("③ 目錄(" + L + ")中欄 ≥ 860 → 表格模式:.wc-inner 放寬(> 780、≤ 1040)、沒有橫向溢出、名字下的補充小字最多三行(780 寬時英文折到五行)", c.cont >= 860 && c.td === "table-cell" && c.inner > 780 && c.inner <= 1040 && c.over.every((x) => x <= 0.5) && c.ntLines <= 3, JSON.stringify(c));
     w.setSize(1320, 900); await wait(400); c = await cat();
-    ok("③ 目錄(" + L + ")中欄 700–859 → 一列一塊(td 變 block、欄頭藏起來)、不橫捲;標題、狀態句、分組標籤、資料名、頻率、來源標籤、可以回測、目錄腳、「收起」鈕的左緣同一條線", c.cont >= 700 && c.cont < 860 && c.td === "block" && c.thW <= 1 && c.over.every((x) => x <= 0.5) && same(c.left), JSON.stringify(c));
+    ok("③ 目錄(" + L + ")中欄 700–859 → 一列一塊(td 變 block、欄頭藏起來)、不橫捲;標題與「收起」鈕在左軸上,分組標籤、資料名、頻率、來源標籤、可以回測、目錄腳內縮 12 同一條線;標題是該語的 wd.start", c.cont >= 700 && c.cont < 860 && c.td === "block" && c.thW <= 1 && c.over.every((x) => x <= 0.5) && same(c.left) && (await js(`document.querySelector(".wc-h").textContent`)) === STR[L]["wd.start"], JSON.stringify(c));
   }
   await js(`setLang("zh"); applyStatic(); true`);
   w.setSize(1000, 900); await wait(400);
   { const c = await cat();
-    ok("③ 窄欄的目錄:表格改成一列一塊(td 變 block、欄頭藏起來),不橫捲,左緣同一條線", c.td === "block" && c.thW <= 1 && c.over.every((x) => x <= 0.5) && same(c.left), JSON.stringify(c)); }
+    ok("③ 窄欄的目錄:表格改成一列一塊(td 變 block、欄頭藏起來),不橫捲,左緣兩條線(軸 / 內縮 12)", c.td === "block" && c.thW <= 1 && c.over.every((x) => x <= 0.5) && same(c.left), JSON.stringify(c)); }
   await js(`$("wl-all").click()`); await wait(50);
   // 指紋:狀態沒變就不重畫(焦點不被洗掉)
   ok("③ 帳號狀態沒變再 wdPaint:DOM 不重建(焦點留在列上)", (await js(`(() => { const b = $("wl-body").querySelector(".wd-row"); b.focus(); wdPaint(); return document.activeElement === b; })()`)));

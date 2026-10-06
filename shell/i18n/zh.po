@@ -6146,6 +6146,9 @@ msgstr "這台電腦上找不到你的 API 金鑰了。到 設定 › 模型接�
 # ── 歡迎頁的資料清單(renderer/welcome.js;mockup data-scope §1 / §2)──
 # 右欄那幾句的數字(試用天數 {t}、每小時 {r} TWD、試用到期 {d})都來自 account_status / 公開價目,不寫死;拿不到用 NoNum 那句。
 # 整頁不出現「付費」兩個字;價格只在 wd.note.billed 出現一次。
+msgid "wd.start"
+msgstr "開始一支策略"
+
 msgid "wd.title"
 msgstr "可以回測的資料"
 

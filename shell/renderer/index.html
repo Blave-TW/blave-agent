@@ -261,12 +261,13 @@
       <!-- 起手範例放在中欄(Wei):聊天欄只留一句話;中欄本來就空著,範例鈕在這裡
            同時交代了「這一欄之後會出現什麼」。點了直接送出。 -->
       <div class="main-empty" id="main-empty">
-        <!-- 照雲端工作頁的 welcome(workspace.html `.main-welcome`):品牌記號當浮水印,
-             只比背景亮一階、不加底板——留白就是頁面本身;下面是起手短籤。沒有說明句。 -->
+        <!-- 全部靠左、同一條軸:品牌記號 → 標題「開始一支策略」→ 起手短籤 → 資料清單(一張卡)。
+             記號與籤的基礎值在 app.css(照雲端工作頁的 welcome),靠左、尺寸與顏色由 welcome.css 蓋 -->
         <div class="wc-inner">
           <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
             <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
           </svg>
+          <h4 class="wc-h" data-i18n="wd.start"></h4>
           <div class="wc-chips">
             <!-- 「看現成策略」開策略庫(不送訊息;同雲端歡迎頁那顆 workspace_chip_free) -->
             <button class="wc-chip" id="chat-lib" type="button" data-i18n="lib.chip"></button>
@@ -287,9 +288,8 @@
                 <button type="button" data-mk="txf" aria-pressed="false" data-i18n="wd.mk.txf"></button>
               </span>
             </div>
-            <p class="wl-state" id="wl-state" aria-live="polite"></p>
             <div class="wl-body" id="wl-body"></div>
-            <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button"></button></div>
+            <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button"></button><p class="wl-state" id="wl-state" aria-live="polite"></p></div>
           </div>
         </div>
       </div>
