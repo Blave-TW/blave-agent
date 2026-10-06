@@ -112,13 +112,16 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   t("main.js:雲端狀態只推給自家頁面的視窗", /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("cloud-state"/.test(mainSrc));
   t("main.js:不在啟動時就開始輪詢(懶啟動)", !/^\s*cloudHost\(\)\.start\(\);/m.test(mainSrc));
   // 列舉:app_secret 讀出來的地方就這幾個(多一個就要有人看過它交給了誰)
-  // 第 4 個 = mcpCode() 的 getCreds(換 `blave` MCP 的接入碼;只交給 mcpcode.js 去打 api,不進 agent、不進 renderer——tests/check_shell_mcp_code.js)
-  // 第 5 個 = cloudCmd() 的 getCreds(對雲端主機下指令;同樣只交給 cloudcmd.js 去打 api——tests/check_shell_cloud_cmd.js)
-  // 第 7 個 = shareClient() 的 getCreds(報告公開分享;只交給 reportshare.js 去打 /oauth/desktop/share/*——tests/check_shell_report_share.js)
-  // 第 8 個 = balanceHost() 的 getCreds(讀自己的 Blave 餘額;只交給 balance.js 去打 /oauth/desktop/balance——tests/check_shell_balance.js)
-  t("main.js:loadAppSecret( 的出現次數沒有變多(第六處 = 策略庫購買 libraryPurchase,同 planStart 那一級;第七處 = 報告分享 shareClient;第八處 = 餘額 balanceHost)", (mainSrc.match(/loadAppSecret\(/g) || []).length === 8
-    && /createShareClient\(\{\n    apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b, [^\n]*\{ timeout: SHARE_UPLOAD_TIMEOUT_MS \} : undefined\), readLocal: reportForShare,\n    logError: rptLogError, log: \(m\) => console\.error\("\[share\] " \+ m\), store: RS\.createShareStore\(path\.join\(BASE, "state", "report-shares\.json"\)\),\n    getCreds: \(\) => \{ const token = loadToken\(\); return token \? \{ token, appSecret: loadAppSecret\(\) \} : null; \},\n  \}\);/.test(mainSrc)
-    && /createMcpCode\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\s*getCreds: \(\) => \{ const token = loadToken\(\); return token \? \{ token, appSecret: loadAppSecret\(\) \} : null; \} \}\);/.test(mainSrc));
+  // loadAppSecret( 四處 = 定義、blaveCreds()、planStart、策略庫購買 libraryPurchase
+  // loadSecret: loadAppSecret 一處 = rotator() 交給 tokenrotate.js,只拿去打 /oauth/desktop/rotate(tests/check_shell_token_rotate.js)
+  // blaveCreds 只交給五個 getCreds:cloudHost / cloudCmd(tests/check_shell_cloud_cmd.js)/ balanceHost(tests/check_shell_balance.js)/
+  //   shareClient(tests/check_shell_report_share.js)/ mcpCode(tests/check_shell_mcp_code.js);另一處是 currentWho(只回 who,不帶憑證)
+  t("main.js:app_secret 的去向沒有變多(loadAppSecret 四處、交給輪替一處、blaveCreds 只進五個 getCreds 與 currentWho)",
+    (mainSrc.match(/loadAppSecret\(/g) || []).length === 4 && (mainSrc.match(/\bloadAppSecret\b/g) || []).length === 5 && (mainSrc.match(/loadSecret: loadAppSecret,/g) || []).length === 1
+    && (mainSrc.match(/\bblaveCreds\b/g) || []).length === 7 && (mainSrc.match(/getCreds: blaveCreds\b/g) || []).length === 5
+    && /const currentWho = \(\) => \{ const c = blaveCreds\(\); return c \? c\.who : null; \};/.test(mainSrc)
+    && /createShareClient\(\{\n    apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b, [^\n]*\{ timeout: SHARE_UPLOAD_TIMEOUT_MS \} : undefined\), readLocal: reportForShare,\n    logError: rptLogError, log: \(m\) => console\.error\("\[share\] " \+ m\), store: RS\.createShareStore\(path\.join\(BASE, "state", "report-shares\.json"\)\),\n    getCreds: blaveCreds,\n  \}\);/.test(mainSrc)
+    && /createMcpCode\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\s*getCreds: blaveCreds \}\);/.test(mainSrc));
   t("main.js:登出時清掉雲端宿主手上的東西(讀、寫兩支都要:在途的指令回來時是上一個人的)",
     /if \(_cloud\) _cloud\.reset\(\);/.test(mainSrc) && /if \(_cloudCmd\) _cloudCmd\.reset\(\);/.test(mainSrc));
   t("main.js:app_secret 只交給 cloudHost 與 planStart,不出現在任何 webContents.send / env 裡", !/webContents\.send\([^)]*appSecret/.test(mainSrc) && !/env:[^}]*loadAppSecret/.test(mainSrc));

@@ -7,6 +7,7 @@
 //
 // 這個檔不 require electron;HTTP、憑證、讀本機報告都由呼叫端注入(測試用假的)。
 // 三行勾選的字面一改就換(契約 §1「字面一有變動,聲明版本就進位」);web report_share.js 送同一個值
+const { whoOf } = require("./tokenrotate");
 const DISCLAIMER_VERSION = "rs-ack-2026.09.28";
 // = web/app/legal.py TOS_VERSION(api 沒有端點給這個值;tests/check_shell_report_share.js 在 monorepo 版面比對兩邊)
 const TOS_VERSION = "2026-10-05";
@@ -144,7 +145,7 @@ function createShareClient(opts) {
     let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
     if (!c || !c.token) return { code: "NO_LOGIN" };
     if (!c.appSecret) return { code: "RELOGIN" };   // 舊登入沒有 app_secret
-    return { token: c.token, appSecret: c.appSecret };
+    return { token: c.token, appSecret: c.appSecret, who: c.who };
   }
   async function call(op, view, id, extra) {
     if (VIEWS.indexOf(view) < 0 || typeof id !== "string" || !ID_RE.test(id)) return { res: null, code: "BAD_ARGS" };
@@ -158,7 +159,7 @@ function createShareClient(opts) {
     let res = null;
     try { res = await opts.post(opts.apiBase + EP[op], { token: c.token, app_secret: c.appSecret, ...fields }); } catch (_) { /* 連不上 */ }
     let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
-    if (!cur || cur.token !== c.token) return { res: null, code: "UNREACH" };
+    if (!cur || whoOf(cur) !== whoOf(c)) return { res: null, code: "UNREACH" };
     return { res, code: res && res.status === 200 ? "OK" : failCode(res, op) };
   }
   return {

@@ -30,6 +30,7 @@
 //      不沿用的話,502 / 504 這種含糊情況會變成同一個動作執行兩次——這正是冪等在防的事。
 //   4. `kind: "rejected"` 的 `error` 是用戶主機寫的字串、**長度無上限、不可信**:照 `trade.js:608` 截 200 字 + textContent。
 const crypto = require("crypto");
+const { whoOf } = require("./tokenrotate");
 
 const ENDPOINT = "/oauth/desktop/cloud/command";
 const ACK_ENDPOINT = "/oauth/desktop/cloud/command/ack";
@@ -93,12 +94,12 @@ function createCloudCmd(opts) {
 
   const creds = () => { let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到 */ } return c && c.token && c.appSecret ? c : null; };
   const sleep = (ms) => new Promise((r) => setT(r, ms));
-  /* 這一趟還算不算數:世代沒被加過(沒人登出 / 換帳號),而且現在登入的仍是送出時那顆 token。
+  /* 這一趟還算不算數:世代沒被加過(沒人登出 / 換帳號),而且現在登入的仍是送出時那次登入(who;token 會輪替,不拿它比)。
      **讀不到憑證不算換人**:`safeStorage` 暫時不可用、鑰匙圈被鎖都會讓 getCreds 回 null,把它當成登出的話,
      20 秒的 ack 窗裡每一輪都是一個「在途的全部平倉被作廢成結果不明」的窗口。登出由 `reset()` 負責
      (S2 必須把它接在登出路徑上,同 `if (_mcp) _mcp.reset();`),換帳號由下一次 send 的 token 比對負責。
      每一輪只叫一次:getCreds 是 safeStorage 解密 + 讀檔,不是免費的。 */
-  const ours = (mine, token) => { if (mine !== gen) return false; const cur = creds(); return !cur || cur.token === token; };
+  const ours = (mine, me) => { if (mine !== gen) return false; const cur = creds(); return !cur || whoOf(cur) === me; };
 
   /* 送一個指令並等機器的回條。
        args    — 形狀見契約 §2(api 端 `_cloud_command_args` 再驗一次);沒有就給 {}
@@ -111,9 +112,9 @@ function createCloudCmd(opts) {
     if (!REQUEST_ID_RE.test(requestId)) return { ok: false, error: "BAD_ARGS", kind: KIND.BAD_ARGS, requestId: null };
     const c = creds();
     if (!c) { if (owner !== null) { gen++; owner = null; } return { ok: false, error: "NO_LOGIN", kind: KIND.NO_LOGIN, requestId }; }
-    if (owner !== null && owner !== c.token) gen++;   // 換了人:上一個人還在途的指令,回應回來時丟掉
-    owner = c.token;
-    const mine = gen, token = c.token;
+    if (owner !== null && owner !== whoOf(c)) gen++;   // 換了人:上一個人還在途的指令,回應回來時丟掉
+    owner = whoOf(c);
+    const mine = gen, token = c.token, me = owner;
     // 換人 / 登出時丟掉在途的那一份。桶要看丟在哪一段:還沒排進佇列 = 確定沒送出;已經排進去了 = 結果不明
     const dropped = (queued) => ({ ok: false, error: "ACCOUNT_CHANGED", kind: queued ? "unknown" : "undelivered", requestId });
 
@@ -134,7 +135,7 @@ function createCloudCmd(opts) {
     // 先看回應再判要不要丟(interpret 是純函式、不帶機密,重排安全)。排隊那一段的 await 已經由 skipped 處理(那時確定沒上線);
     // 走到這裡的一定是請求已經打上線的——api 已經回了 queued 卻說「沒送到」,用戶會去重按一次全部平倉
     const r = interpret(res);
-    if (!ours(mine, token)) return dropped(r.code === "QUEUED" || r.code === "UNKNOWN_RESULT");
+    if (!ours(mine, me)) return dropped(r.code === "QUEUED" || r.code === "UNKNOWN_RESULT");
     if (r.code !== "QUEUED")
       return { ok: false, error: r.code, kind: KIND[r.code] || "undelivered", requestId, machineState: r.machineState || null };
 
@@ -150,7 +151,7 @@ function createCloudCmd(opts) {
       let ackRes = null;
       // 憑證用送出時讀到的那一份(它本來就在這個閉包的記憶體裡):一輪只讀一次,而且讀失敗不影響在途的這一顆
       try { ackRes = await opts.post(opts.apiBase + ACK_ENDPOINT, { token, app_secret: c.appSecret, id }); } catch (_) { /* 連不上:再問 */ }
-      if (!ours(mine, token)) return dropped(true);   // 要回結果了才比對現在是誰
+      if (!ours(mine, me)) return dropped(true);   // 要回結果了才比對現在是誰
       const a = interpretAck(ackRes);
       if (a.state === "DONE")
         return a.ok ? { ok: true, result: a.result, requestId, id, duplicate }

@@ -34,6 +34,9 @@ function run(throwing) {
     tm: () => ({ start: () => { if (throwing.has("tm")) throw new Error("tm"); } }),
     updater: () => ({ start: () => { if (throwing.has("updater")) throw new Error("updater"); } }),
     minGate: () => ({ start: () => { if (throwing.has("gate")) throw new Error("gate"); } }),
+    // 0.1.16 帳號 token 輪替:開 app 檢查一次、之後定期;回合狀態是 main.js 既有那一對
+    activeTurn: null, turnStarting: false, ROTATE_MIN_LEFT_MS: 0, ROTATE_CHECK_MS: 1e9, setInterval: () => ({ unref() {} }),
+    rotator: () => { if (throwing.has("rotate")) throw new Error("rotate"); return { ensure: () => Promise.resolve() }; },
     moveChecked: false, askMoveToApps: () => Promise.resolve(false),   // 0.1.10 搬到「應用程式」那一問(tests/check_shell_update_restart.js 另外測)
     console: { error: (m) => errors.push(m) },
   };
@@ -45,9 +48,9 @@ function run(throwing) {
 }
 let r = run(new Set());
 ok("正常啟動:畫面交字後選單重建成中文", r.registered && r.log.includes("menu:檔案"), r);
-r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state"]));
-ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / 版本閘 / app 現況回報都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
-  r.registered && r.log.includes("menu:檔案") && r.errors.length === 8 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
+r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state", "rotate"]));
+ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / 版本閘 / app 現況回報 / token 輪替都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
+  r.registered && r.log.includes("menu:檔案") && r.errors.length === 9 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
 r = run(new Set(["tray"]));
 ok("選單列(traySync)拋例外:選單照樣先重建成中文", r.log.includes("menu:檔案") && r.errors.some((e) => /tray failed/.test(e)), r);
 console.log(red ? `\n${red} FAILED` : "\nALL PASS");

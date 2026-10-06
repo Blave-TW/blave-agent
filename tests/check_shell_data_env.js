@@ -73,7 +73,7 @@ t("接線:含不含資料只在有登入時才去問", /turnCreds\(conn\.kind, s
   const tc = eval("(" + src.slice(i, end) + ")");
   t("第三欄 mcp(契約 §2.3):自帶 CLI + 登入 → proxyToken:false、mcp:true;沒登入三個全 false;功能關 → mcp 一律 false", ["claude", "codex"].every((k) => { const r = tc(k, true, false, true); return r.proxyToken === false && r.mcp === true; })
     && ["claude", "codex", "blave"].every((k) => { const r = tc(k, false, false, true); return !r.proxyToken && !r.dataKey && !r.mcp; }) && ["claude", "codex", "blave"].every((k) => tc(k, true, true, false).mcp === false)); }
-t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份 + syncDataEnv(false)", /async function signOutBlave\(\)[\s\S]{0,600}?\n  clearToken\(\);/.test(src) && /function clearToken\(\) \{[\s\S]{0,120}?\n  clearDataKey\(\);/.test(src) && /function clearDataKey\(\) \{\s*\n\s*try \{ fs\.unlinkSync\(dataKeyPath\(\)\); \} catch \(_\) \{\}\s*\n\s*syncDataEnv\(false\);/.test(src));
+t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份 + syncDataEnv(false)", /async function signOutBlave\(\)[\s\S]{0,600}?\n  clearToken\(\);/.test(src) && /function clearToken\(\) \{[\s\S]{0,240}?\n  clearDataKey\(\);/.test(src) && /function clearDataKey\(\) \{\s*\n\s*try \{ fs\.unlinkSync\(dataKeyPath\(\)\); \} catch \(_\) \{\}\s*\n\s*syncDataEnv\(false\);/.test(src));
 // 沒有主機也能買資料(spec data-without-machine-pricing §E):account_status 的 data_access 三態 → 寫不寫資料 key → BLAVE_DATA_ACCESS。
 // included 與 billed 都算有資料;none 沒有;舊 api 沒有 data_access(外殼比 api 先出)→ 退回布林 data_included,跟以前一樣。
 // 真的跑 main.js 的 dataAccessOf + hasBlaveData(account_status 用假的)→ turnCreds → syncDataEnv → spawn 那一行的對應

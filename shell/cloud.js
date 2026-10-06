@@ -11,6 +11,7 @@
 //   - 停機的主機會留著 24 小時的舊快取:alive 只在「主機運行中而且回報夠新」時為真,否則舊快取會被畫成下單中。
 //
 // 這個檔不 require electron;HTTP 由呼叫端注入(測試用假的)。
+const whoOf = (c) => (c && c.token ? c.who || c.token : null);   // = tokenrotate.js 的 whoOf;抄一行是因為這個檔不 require 任何東西
 const ENDPOINT = "/oauth/desktop/cloud/state";
 const EVENTS_ENDPOINT = "/oauth/desktop/cloud/events";
 const STRATEGY_ENDPOINT = "/oauth/desktop/cloud/strategy";
@@ -217,7 +218,7 @@ function interpretImage(res) {
 /* opts:{ apiBase, getCreds() → { token, appSecret } | null, post(url, body) → Promise<{status, body}>, onChange?(snapshot), now?, setTimer?, clearTimer? }
    onChange 在狀態的「摘要」變了才叫(切換器上的另一邊狀態靠它),不是每次輪詢都叫。
 
-   **這份 snapshot 是誰的**(稽核 M1、M2):手上的東西綁著「拿到它的那顆 token」(只在這個閉包的記憶體裡比對,不往外交)。
+   **這份 snapshot 是誰的**(稽核 M1、M2):手上的東西綁著「拿到它的那次登入」(getCreds 的 who;token 會輪替,不拿它比)(只在這個閉包的記憶體裡比對,不往外交)。
      - 這一輪要用的 token 跟手上那份的 owner 不同 = 換了人(登出、重新登入成別的帳號):先整包丟掉並通知畫面,才去打。
      - 每次 reset / 換人世代 +1;在途的請求回來時世代對不上就整包丟——登出的那一刻還在路上的回應,不會把上一個人的部位寫回來。
      - 連不上時「留著上一份」只限同一個 owner。
@@ -252,7 +253,7 @@ function createCloudHost(opts) {
         let res = null;
         try { res = await opts.post(opts.apiBase + endpoint, { token: tok, app_secret: c.appSecret, days: d, ...(ccy ? { currency: ccy } : {}) }); } catch (_) { /* 連不上 */ }
         let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
-        if ((cur && cur.token ? cur.token : null) !== tok) return unreachable();
+        if (whoOf(cur) !== whoOf(c)) return unreachable();
         return interpretFn(res, ccy);
       })().finally(() => { inflight = null; key = null; });
       return inflight;
@@ -260,7 +261,7 @@ function createCloudHost(opts) {
   }
   let stInflight = null, stName = null;   // 單支策略:同一支在途共用。不另設最小間隔——那會把「連點兩支」畫成讀不到;重複打由在途共用擋,速率由 api 的明細桶擋
   /* 報告那三支(清單 / 本體 / 圖)共用的讀法:同 strategy()——不留在這個閉包、不進 snapshot()、不落地;不碰 gen / owner;
-     換人只用本地的 token 比對;同一個 key 在途就共用。快取在 main.js(5 分鐘、登出清掉),不在這裡 */
+     換人只用本地的 who 比對;同一個 key 在途就共用。快取在 main.js(5 分鐘、登出清掉),不在這裡 */
   const rptInflight = new Map();   // key → Promise
   function readOnce(endpoint, key, extra, interpretFn, unreachable) {
     const k = endpoint + "|" + key;
@@ -272,7 +273,7 @@ function createCloudHost(opts) {
       let res = null;
       try { res = await opts.post(opts.apiBase + endpoint, { token: tok, app_secret: c.appSecret, ...extra }); } catch (_) { /* 連不上 */ }
       let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
-      if ((cur && cur.token ? cur.token : null) !== tok) return unreachable();
+      if (whoOf(cur) !== whoOf(c)) return unreachable();
       return interpretFn(res);
     })().finally(() => { rptInflight.delete(k); });
     rptInflight.set(k, p);
@@ -295,16 +296,17 @@ function createCloudHost(opts) {
     inflight = (async () => {
       let creds = null; try { creds = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
       const tok = creds && creds.token ? creds.token : null;
-      if (tok !== owner && owner !== null) drop();            // 換了人:先丟掉上一個人的東西
+      const me = whoOf(creds);
+      if (me !== owner && owner !== null) drop();            // 換了人:先丟掉上一個人的東西
       if (!tok) { if (snap.code !== "NO_LOGIN") drop(); return snap; }
-      if (!creds.appSecret) { gen++; owner = tok; snap = { code: "NO_APP_SECRET" }; fetchedAt = now(); emit(); return snap; }
-      const mine = ++gen; owner = tok; lastTryAt = now();
+      if (!creds.appSecret) { gen++; owner = me; snap = { code: "NO_APP_SECRET" }; fetchedAt = now(); emit(); return snap; }
+      const mine = ++gen; owner = me; lastTryAt = now();
       let res = null;
       try { res = await opts.post(opts.apiBase + ENDPOINT, { token: tok, app_secret: creds.appSecret }); } catch (_) { /* 連不上 */ }
       if (mine !== gen) return snap;                           // 這段期間登出 / 換人了:這份回應不是現在這個人的,整包丟
       // 沒有人叫 reset() 也一樣(稽核 N1):回應回來時再看一次現在是誰——請求在路上的時候換了帳號,這份就是上一個人的
       let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
-      if ((cur && cur.token ? cur.token : null) !== tok) { drop(); return snap; }
+      if (whoOf(cur) !== me) { drop(); return snap; }
       let next = interpret(res);
       // 連不上 / 被限速 / 非預期的 4xx·5xx:留著**同一個人**的上一份畫面(標成不是現況),不要把畫面清空。401 不留——憑證被撤銷了
       const soft = next.code === "OFFLINE" || next.code === "RATE_LIMITED" || next.code === "BAD_RESPONSE";
@@ -345,7 +347,7 @@ function createCloudHost(opts) {
     /* 事件清單(點擊驅動:畫面問一次打一次)。跟狀態輪詢是兩個速率桶,所以不共用上面那組 inflight / 退讓。
        手上不留一份:不寫進這個閉包、不進 snapshot()、當然也不落地——直接回給呼叫端(同檔頭第 10 行)。
        **不碰 gen / owner**:動了的話,在途的那一輪狀態輪詢回來會對不上世代、把自己丟掉。
-       換人只用本地的 token 比對(請求在路上時登出 / 換帳號 → 這份是上一個人的,丟掉)。
+       換人只用本地的 who 比對(請求在路上時登出 / 換帳號 → 這份是上一個人的,丟掉)。
        自己的節流(同 refresh 的 MIN_GAP_MS,只是另一個桶):在途時共用同一個請求、兩次真的請求之間至少隔
        EVENTS_MIN_GAP_MS——renderer 寫壞的迴圈不能把 detail 桶打到 429(那會讓畫面長期停在「讀不到」)。
        擋下來的那一次回 UNREACH:這一輪確實沒讀到,但**不是**「沒有事件」。唯一的呼叫點自己就有 60 秒的閘,平常碰不到這裡。 */
@@ -361,18 +363,18 @@ function createCloudHost(opts) {
         let res = null;
         try { res = await opts.post(opts.apiBase + EVENTS_ENDPOINT, { token: tok, app_secret: c.appSecret, days: d }); } catch (_) { /* 連不上 */ }
         let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
-        if ((cur && cur.token ? cur.token : null) !== tok) return UNREACHABLE();
+        if (whoOf(cur) !== whoOf(c)) return UNREACHABLE();
         return interpretEvents(res);
       })().finally(() => { evInflight = null; });
       return evInflight;
     },
     /* 權益曲線與當日損益、組合績效(總覽分頁開著時 60 秒各問一次、切區間再問一次)。做法同事件清單:不留在這個閉包、
-       不進 snapshot()、不落地;不碰 gen / owner;換人只用本地的 token 比對;各自的最小間隔 + 在途共用(readDetail)。
+       不進 snapshot()、不落地;不碰 gen / owner;換人只用本地的 who 比對;各自的最小間隔 + 在途共用(readDetail)。
        回 { code: "OK" | "UNREACH", curve } / { code, perf }。 */
     overview: readDetail(OVERVIEW_ENDPOINT, interpretOverview, OVERVIEW_UNREACHABLE),
     performance: readDetail(PERFORMANCE_ENDPOINT, interpretPerformance, PERF_UNREACHABLE),
     /* 單支策略的報告(點擊驅動:側欄點一支打一次)。跟事件清單同一種做法:不留在這個閉包、不進 snapshot()、不落地,
-       直接回給呼叫端;不碰 gen / owner;換人只用本地的 token 比對。名字是 renderer 給的雲端字串,原樣進 body(api 只當比對 key)。 */
+       直接回給呼叫端;不碰 gen / owner;換人只用本地的 who 比對。名字是 renderer 給的雲端字串,原樣進 body(api 只當比對 key)。 */
     async strategy(name) {
       if (typeof name !== "string" || !name || name.length > 200) return STRATEGY_UNREACHABLE();
       if (stInflight && stName === name) return stInflight;
@@ -384,7 +386,7 @@ function createCloudHost(opts) {
         let res = null;
         try { res = await opts.post(opts.apiBase + STRATEGY_ENDPOINT, { token: tok, app_secret: c.appSecret, name }); } catch (_) { /* 連不上 */ }
         let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
-        if ((cur && cur.token ? cur.token : null) !== tok) return STRATEGY_UNREACHABLE();
+        if (whoOf(cur) !== whoOf(c)) return STRATEGY_UNREACHABLE();
         return interpretStrategy(res, name);
       })().finally(() => { stInflight = null; stName = null; });
       return stInflight;

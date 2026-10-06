@@ -31,7 +31,7 @@ fs.mkdirSync(path.join(sd, "b")); fs.writeFileSync(path.join(sd, "b", "stats.jso
 t("anyBacktest:沒目錄 false、只有策略碼 false、有一支 stats.json 就 true", noDir === false && onlyCode === false && anyBacktest(sd) === true);
 
 const main = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
-const fnStart = main.indexOf("async function accountStatus()");
+const fnStart = main.indexOf("async function accountStatus(");
 const fn = main.slice(fnStart, main.indexOf("\n}\n", fnStart));
 t("accountStatus 帶上 statusHeaders(開關來源是 telemetry 的 isEnabled、engine 來自連結紀錄的 kind、回測看 strategies)",
   /const conn = loadConnection\(\), on = tm\(\)\.isEnabled\(\)/.test(fn) && /T\.statusHeaders\(on, conn && conn\.kind, btSeen\)/.test(fn)

@@ -128,7 +128,7 @@ if (!process.versions.electron) {
     // main.js 的 cloudReports / cloudReport:快取 5 分鐘綁 token、圖逐張換 / 去重 / 上限 20 / 單張失敗不擋
     const img = (i) => ({ type: "image", sha256: String(i).padStart(64, "0"), alt: "x" });
     const hostCalls = []; let tok = "T", now = 1e6;
-    M.loadToken = () => tok; M.Date = { now: () => now };
+    M.loadToken = () => tok; M.currentWho = () => tok; M.Date = { now: () => now };
     M.cloudHost = () => ({ reports: async () => { hostCalls.push("reports"); return { code: "OK", reports: [{ id: "a", title: "A" }] }; },
       report: async (id) => { hostCalls.push("report:" + id); return id === "a" ? { code: "OK", report: { id: "a", blocks: [img(1), img(2), img(1), { type: "text", markdown: "x" }].concat(Array.from({ length: 25 }, (_, i) => img(10 + i))) } } : id === "none" ? { code: "OK", report: null } : { code: "UNREACH", report: null }; },
       image: async (sha) => { hostCalls.push("image:" + sha.slice(-2)); return sha.endsWith("02") ? { code: "UNREACH", image: null } : sha.endsWith("11") ? { code: "OK", image: null } : { code: "OK", image: { mime: "image/png", b64: "QUJD" } }; } });
