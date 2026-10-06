@@ -36,13 +36,14 @@ function world(o = {}) {
   const w = { clock: 1e12, token: o.token === undefined ? mint() : o.token, secret: o.secret === undefined ? "appsec-1" : o.secret, saveOk: true, saves: 0, hooks: [] };
   w.api = fakeApi(w.token); w.api.clock = () => w.clock;
   w.rot = R.createRotator({ dir, apiBase: "https://api.test", post: w.api.post, now: () => w.clock,
-    loadToken: () => w.token, saveToken: (v) => { w.saves++; if (!w.saveOk) return false; w.token = v; return true; },
+    loadToken: () => (w.readNull ? null : w.token), saveToken: (v) => { w.saves++; if (w.saveThrow) throw new Error("ENOSPC"); if (!w.saveOk) return false; w.token = v; return true; },
     loadSecret: () => w.secret, beforeSave: () => w.hooks.push("before:" + w.token), afterSave: () => w.hooks.push("after:" + w.token) });
   w.expFile = path.join(dir, R.EXP_FILE);
   w.writeExp = (tok, ms) => fs.writeFileSync(w.expFile, JSON.stringify({ fp: require("crypto").createHash("sha256").update(tok).digest("hex").slice(0, 16), exp: w.clock + ms }));
   return w;
 }
 const tick = () => new Promise((r) => setImmediate(r));
+process.exitCode = 1;   // 哪個 await 掛住、事件迴圈空了就會靜靜地以 0 結束:沒跑到最後一行不算過
 
 (async () => {
   // ── 沒有期限的舊 token(0.1.15 以前)一開就換;舊值進寬限、寬限過後伺服器不認 ──
@@ -98,6 +99,33 @@ const tick = () => new Promise((r) => setImmediate(r));
     w.saveOk = true; w.clock += 61 * 1000;
     const r2 = await w.rot.ensure(12 * H);
     t("一分鐘後拿舊值再換:伺服器走寬限分支發新的,本機存的 = 伺服器現值", r2 === "rotated" && w.api.posts[1].b.token === old && w.token === w.api.cur, { r2 }); }
+
+  { const w = world(), old = w.token; w.saveThrow = true;   // 稽核 P1:writeFileSync 中途拋(磁碟滿 / 防毒鎖檔)
+    const r = await w.rot.ensure(12 * H);
+    t("saveToken 拋例外 → 當 save_failed:檔裡還是舊的、短退讓,不穿出去", r === "save_failed" && w.token === old && w.rot.state().backoffMs === R.SAVE_RETRY_MS && w.api.cur !== old, { r });
+    t("退讓期間不再送", (await w.rot.ensure(12 * H)) === "skipped" && w.api.posts.length === 1);
+    w.saveThrow = false; w.clock += R.SAVE_RETRY_MS + 1;
+    t("一分鐘後拿寬限內的舊值再換成功,本機存的 = 伺服器現值", (await w.rot.ensure(12 * H)) === "rotated" && w.api.posts[1].b.token === old && w.token === w.api.cur); }
+
+  // ── Keychain 那一刻讀不到(稽核 P2):不是換了人,不當 stale 丟掉;一分鐘後拿寬限舊值再換 ──
+  { const w = world(), old = w.token; w.api.hold = true;
+    const p = w.rot.ensure(12 * H); await tick();
+    w.readNull = true; w.api.hold = false; w.api.release(); const r = await p;
+    t("200 回來時 loadToken 回 null → unreadable:不存、不當 stale、短退讓", r === "unreadable" && w.saves === 0 && w.token === old && w.rot.state().backoffMs === R.SAVE_RETRY_MS, { r });
+    w.readNull = false;
+    t("退讓期間不再送", (await w.rot.ensure(12 * H)) === "skipped" && w.api.posts.length === 1);
+    w.clock += R.SAVE_RETRY_MS + 1;
+    t("一分鐘後拿檔裡那顆(伺服器的寬限舊值)再換成功", (await w.rot.ensure(12 * H)) === "rotated" && w.api.posts[1].b.token === old && w.token === w.api.cur); }
+  { const w = world(); w.api.hold = true;
+    const p = w.rot.ensure(12 * H); await tick();
+    w.token = mint(); w.api.release();
+    t("真的換了顆(重新登入)仍是 stale,不退讓", (await p) === "stale" && w.rot.state().backoffMs === 0); }
+
+  // ── 登出前 pause(稽核 P2):撤銷等網路的這段期間 ensure / recover 都不送;reset 解除 ──
+  { const w = world(), cur = w.token; w.rot.pause();
+    t("pause 後 ensure 不送(回 paused)、recover 回 false 不送", (await w.rot.ensure(12 * H)) === "paused" && (await w.rot.recover(cur)) === false && w.api.posts.length === 0 && w.rot.state().paused === true);
+    w.rot.reset();
+    t("reset 解除暫停,之後照常輪替", w.rot.state().paused === false && (await w.rot.ensure(12 * H)) === "rotated"); }
 
   // ── 新值第一次被拒:拿寬限內的舊值補救;每顆只補救一次 ──
   { const w = world(), A = w.token;
@@ -189,7 +217,9 @@ const tick = () => new Promise((r) => setImmediate(r));
   const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   const body = (name) => { const i = main.indexOf("function " + name + "("); let d = 0; for (let k = main.indexOf("{", main.indexOf(")", i)); k < main.length; k++) { if (main[k] === "{") d++; else if (main[k] === "}" && --d === 0) return main.slice(i, k + 1); } return ""; };
   const so = body("signOutBlave");
-  t("登出:先 settle 在途的輪替,才讀要撤銷的 token", so.indexOf("rotator().settle()") >= 0 && so.indexOf("rotator().settle()") < so.indexOf("loadToken()"));
+  t("登出:先 settle 在途的輪替、pause 住定期檢查,才讀要撤銷的 token;clearToken(reset)在撤銷之後", so.indexOf("rotator().settle()") >= 0 && so.indexOf("rotator().settle()") < so.indexOf("rotator().pause()")
+    && so.indexOf("rotator().pause()") < so.indexOf("loadToken()") && so.indexOf("oauth/desktop/revoke") < so.indexOf("clearToken()"));
+  t("saveToken 寫旁邊再 rename(原子;寫到一半失敗不留空檔 / 半截)", /const tmp = tokenPath\(\) \+ "\.tmp";\n  fs\.writeFileSync\(tmp, safeStorage\.encryptString\(tok\), \{ mode: 0o600 \}\);\n  fs\.renameSync\(tmp, tokenPath\(\)\);/.test(body("saveToken")));
   t("clearToken 清掉輪替器(寬限舊值、期限檔)", body("clearToken").indexOf("rotator().reset()") >= 0);
   const oa = body("startOAuth");
   t("登入:/token 帶 expiring: true;settle 後才讀上一顆;存檔後 reset + noteLogin(expires_in)", /expiring: true/.test(oa)

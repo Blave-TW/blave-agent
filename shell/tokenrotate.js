@@ -35,7 +35,7 @@ function createRotator(opts) {
   const now = opts.now || (() => Date.now());
   const log = opts.log || (() => {});
   const expFile = path.join(opts.dir, EXP_FILE);
-  let inflight = null, gen = 0, prev = null, backoffUntil = 0, deadFor = null, recovered = null;
+  let inflight = null, gen = 0, prev = null, backoffUntil = 0, deadFor = null, recovered = null, paused = false;
 
   function readExp(tok) {
     try {
@@ -58,12 +58,18 @@ function createRotator(opts) {
     let res = null;
     try { res = await opts.post(opts.apiBase + ENDPOINT, { token: present, app_secret: secret }); } catch (_) { /* 連不上 */ }
     // 在途時登出 / 重新登入 / 別人換掉了檔:這份回應不是現在手上這顆的
-    if (mine !== gen || opts.loadToken() !== cur) return "stale";
+    if (mine !== gen) return "stale";
+    const held = opts.loadToken();
+    // Keychain 這一刻讀不到(鑰匙圈鎖住、safeStorage 暫時不可用)不是換了人:檔裡還是 cur,伺服器已把它排進寬限——
+    // 不存、不當 stale,一分鐘後拿它再換(寬限分支會再發一顆);當 stale 丟掉的話寬限過了就只剩重新登入
+    if (held === null) { backoffUntil = now() + SAVE_RETRY_MS; log("rotate: token unreadable"); return "unreadable"; }
+    if (held !== cur) return "stale";
     const st = res && res.status, b = (res && res.body) || {};
     if (st === 200 && typeof b.access_token === "string" && TOKEN_RE.test(b.access_token)) {
       try { if (opts.beforeSave) opts.beforeSave(); } catch (_) { /* 掛勾壞掉不影響換檔 */ }
-      // 寫不進去:檔裡還是 cur,伺服器把它當寬限內的舊值——稍後拿它再換一次(伺服器會再發一顆蓋掉這顆沒存下來的)
-      if (!opts.saveToken(b.access_token)) { backoffUntil = now() + SAVE_RETRY_MS; log("rotate: save failed"); return "save_failed"; }
+      // 寫不進去(回 false 或拋:磁碟滿、鎖檔):檔裡還是 cur,伺服器把它當寬限內的舊值——稍後拿它再換一次(伺服器會再發一顆蓋掉這顆沒存下來的)
+      let saved = false; try { saved = opts.saveToken(b.access_token); } catch (_) { saved = false; }
+      if (!saved) { backoffUntil = now() + SAVE_RETRY_MS; log("rotate: save failed"); return "save_failed"; }
       writeExp(b.access_token, Number(b.expires_in));
       prev = { token: cur, until: now() + GRACE_MS };
       backoffUntil = 0; deadFor = null;
@@ -88,6 +94,7 @@ function createRotator(opts) {
   return {
     /* 剩不到 minLeftMs(或沒有期限)就輪替。退讓中、這顆 401 過、沒有 app_secret → 不送 */
     ensure(minLeftMs) {
+      if (paused) return Promise.resolve("paused");
       const cur = opts.loadToken();
       if (!cur) return Promise.resolve("none");
       const exp = readExp(cur);
@@ -100,6 +107,7 @@ function createRotator(opts) {
        那顆當現值時,只有舊值換得動),沒有就拿被拒的這顆換(過期未撤銷的照樣換得動)。回 true = 換到新的了 */
     async recover(rejected) {
       while (inflight) await inflight.catch(() => {});
+      if (paused) return false;
       const cur = opts.loadToken();
       if (!cur) return false;
       if (cur !== rejected) return true;          // 已經換過了
@@ -110,12 +118,15 @@ function createRotator(opts) {
     },
     /* 等在途的 rotate 落地(登出 / 重新登入前叫:要撤銷的是換完之後那顆) */
     settle: () => (inflight ? inflight.then(() => {}, () => {}) : Promise.resolve()),
-    /* 登出 / 換帳號:丟掉記憶體裡的舊值、作廢在途的回應、刪期限檔 */
-    reset() { gen++; prev = null; backoffUntil = 0; deadFor = null; recovered = null; clearExp(); },
+    /* 登出前(settle 之後、撤銷之前)叫:撤銷在等網路的這段期間 ensure / recover 都不送——換了,撤銷比的就是舊值,
+       伺服器留一列沒人持有的。reset()(登出完成 / 重新登入)解除 */
+    pause() { paused = true; },
+    /* 登出 / 換帳號:丟掉記憶體裡的舊值、作廢在途的回應、刪期限檔、解除暫停 */
+    reset() { gen++; prev = null; backoffUntil = 0; deadFor = null; recovered = null; paused = false; clearExp(); },
     /* 登入拿到新 token 時記期限(沒有 expires_in 就清掉,下次啟動照舊式 token 輪替) */
     noteLogin(tok, expiresIn) { writeExp(tok, Number(expiresIn)); },
-    state: () => ({ prev: !!prevLive(), backoffMs: Math.max(0, backoffUntil - now()), inflight: !!inflight }),   // 給測試看的:沒有 token 本身
+    state: () => ({ prev: !!prevLive(), backoffMs: Math.max(0, backoffUntil - now()), inflight: !!inflight, paused }),   // 給測試看的:沒有 token 本身
   };
 }
 
-module.exports = { createRotator, whoOf, ENDPOINT, EXP_FILE, GRACE_MS, BACKOFF_MS, UNAVAILABLE_MS };
+module.exports = { createRotator, whoOf, ENDPOINT, EXP_FILE, GRACE_MS, BACKOFF_MS, UNAVAILABLE_MS, SAVE_RETRY_MS };

@@ -358,7 +358,10 @@ function b64url(buf) {
 // 寧可每次重新授權,也不要在開源軟體裡留一個明文的計費憑證。
 function saveToken(tok) {
   if (!safeStorage.isEncryptionAvailable()) return false;
-  fs.writeFileSync(tokenPath(), safeStorage.encryptString(tok), { mode: 0o600 });
+  // 先寫旁邊再 rename(同目錄、原子):寫到一半失敗(磁碟滿、防毒鎖檔)不能留下空檔或半截——那會被讀成「沒登入」
+  const tmp = tokenPath() + ".tmp";
+  fs.writeFileSync(tmp, safeStorage.encryptString(tok), { mode: 0o600 });
+  fs.renameSync(tmp, tokenPath());
   return true;
 }
 function loadToken() {
@@ -573,6 +576,7 @@ function syncDataEnv(want) {
    沒成功就提醒用戶到網站的「裝置」頁再撤一次。 */
 async function signOutBlave() {
   await rotator().settle();   // 在途的輪替先落地:要撤的是換完之後那顆,撤舊值伺服器回 200 卻沒撤到
+  rotator().pause();          // 撤銷要等網路(最長 20 秒),這段期間定期檢查不許再換:換了就撤不到、伺服器留一列沒人持有的
   const tok = loadToken();
   let revoked = false;
   if (tok) {
