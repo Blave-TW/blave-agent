@@ -8,7 +8,7 @@ Miễn phí, mã nguồn mở. Kết nối Claude Code hoặc Codex của bạn.
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | **Tiếng Việt**
 
-> Bản dịch này dịch từ README tiếng Anh tại commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md) và chỉ gồm các phần ít thay đổi. Tin mới, sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch này dịch từ README tiếng Anh tại commit [`0d0b880`](https://github.com/Blave-TW/blave-agent/blob/0d0b880/README.md) và chỉ gồm các phần ít thay đổi. Tin mới, sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -27,7 +27,7 @@ Overfitting: tham số chỉ tình cờ khớp với dữ liệu quá khứ.
 - Mỗi lần backtest Type A, mặc định đều chạy kiểm định hoán vị Monte Carlo (MCPT, `lib/validation.py`) và ghi lại p-value: dữ liệu bị xáo trộn có làm được tốt như vậy không?
 - Quét tham số (`lib/param_scan.py`) tìm một cao nguyên tham số mà cả vùng đều hiệu quả, không phải một ô tốt nhất.
 - Walk-forward cuốn chiếu (`lib/walk_forward.py`) đo hiệu quả ngoài mẫu.
-- Phí phải khớp với thị trường thật. Phí bằng 0 sẽ bị `lib/quality_check.py` đánh dấu và xử lý như một lỗi.
+- Phí nên khớp với thị trường thật. Phí bằng 0 sẽ bị `lib/quality_check.py` cảnh báo, nhưng không bắt buộc phải sửa.
 - Mặc định, mỗi ý tưởng chỉ backtest một lần. Kết quả kém thì báo đúng như vậy; agent không âm thầm chỉnh lại tham số cho đến khi con số trông đẹp (xem *Iteration Brakes* trong [`AGENTS.md`](AGENTS.md)).
 
 ### Biết được khi chạy thật có đúng là code đã backtest

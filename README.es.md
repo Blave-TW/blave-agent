@@ -8,7 +8,7 @@ Gratis y de código abierto. Conecta tu Claude Code o Codex. Tú describes la id
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> Esta traducción parte del README en inglés en el commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md) y cubre solo las secciones que cambian poco. Las novedades, los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
+> Esta traducción parte del README en inglés en el commit [`0d0b880`](https://github.com/Blave-TW/blave-agent/blob/0d0b880/README.md) y cubre solo las secciones que cambian poco. Las novedades, los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -27,7 +27,7 @@ Sobreajuste: parámetros que solo por casualidad encajan con los datos pasados.
 - Cada backtest de Tipo A ejecuta por defecto una prueba de permutación de Monte Carlo (MCPT, `lib/validation.py`) y registra un valor p: ¿unos datos barajados podrían haberlo hecho igual de bien?
 - Un barrido de parámetros (`lib/param_scan.py`) busca una meseta de parámetros que funcionen todos, no la mejor celda aislada.
 - Un walk-forward móvil (`lib/walk_forward.py`) mide el rendimiento fuera de muestra.
-- La comisión tiene que corresponder al mercado real. Una comisión de 0 la marca `lib/quality_check.py` y se trata como un bug.
+- La comisión debería corresponder al mercado real. Con una comisión de 0, `lib/quality_check.py` avisa, pero no obliga a cambiarla.
 - Por defecto, una idea recibe un solo backtest. Un mal resultado se informa tal cual; el agente no reajusta los parámetros a escondidas hasta que los números se vean bien (consulta *Iteration Brakes* en [`AGENTS.md`](AGENTS.md)).
 
 ### Comprueba si en vivo corre el código que pasó el backtest

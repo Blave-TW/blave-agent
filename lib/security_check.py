@@ -2,9 +2,12 @@
 Static security analysis for marketplace strategies.
 
 Usage:
-    python3 lib/security_check.py strategies/xyz.py
+    python3 lib/security_check.py [--context install|fork] strategies/xyz.py
 
 First output line (the verdict to act on): RESULT: clean | ask-user | do-not-run
+With --context, the second line is `NEXT: <what to do now>` for a library / shared
+download installed as is (install) or a fork's download (fork).
+--context goes before the file: an older checker then reads it as the path and says do-not-run.
 Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
     0 — clean
     1 — warnings only (review before running)
@@ -174,6 +177,45 @@ def _w(line: int, msg: str) -> dict:
     return {"level": "WARNING", "line": line, "msg": msg}
 
 
+# ── NEXT line ─────────────────────────────────────────────────────────────────
+
+CONTEXTS = ("install", "fork")   # only downloads are scanned (references/marketplace.md)
+
+
+def next_line(context: str, verdict: str) -> str:
+    stop = ("delete this file and create no fork" if context == "fork"
+            else "delete this file (in a bundle, only this file) and do not run it")
+    return {"clean": "NEXT: Go on with the next step of the flow.",
+            "ask-user": ("NEXT: Show these findings to the user and wait — go on only after a yes; "
+                         f"a no ends it: {stop}."),
+            "do-not-run": f"NEXT: Stop — show the findings, {stop}."}[verdict]
+
+
+def parse_args(argv: list):
+    """(file or None, context or None); ValueError on a bad, missing or repeated --context and on
+    more than one file — a second file would otherwise go unscanned behind the first one's verdict."""
+    path, context, i = None, None, 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--context" or a.startswith("--context="):
+            if context is not None:
+                raise ValueError("--context given more than once")
+            if a == "--context":
+                i += 1
+                value = argv[i] if i < len(argv) else ""
+            else:
+                value = a.split("=", 1)[1]
+            if value not in CONTEXTS:
+                raise ValueError(f"--context must be one of {', '.join(CONTEXTS)} (got {value!r})")
+            context = value
+        elif path is None:
+            path = a
+        else:
+            raise ValueError("scan one file at a time")
+        i += 1
+    return path, context
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -181,23 +223,32 @@ if __name__ == "__main__":
     # comes back as exit 1 for both 1 and 2, so the exit code is only a fallback — and a crash
     # must never surface as a bare exit 1 (read as "ask-user"): any unexpected error is do-not-run.
     _verdict_out = False
+    _context = None
 
     def _verdict(v):
         global _verdict_out
-        print("RESULT: " + v, flush=True)
+        print("RESULT: " + v + ("\n" + next_line(_context, v) if _context else ""), flush=True)
         _verdict_out = True
 
     def _main() -> int:
+        global _context
         try:
             sys.stdout.reconfigure(errors="replace")
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
-        if len(sys.argv) < 2:
+        try:
+            path, ctx = parse_args(sys.argv[1:])
+        except ValueError as e:
+            _verdict("do-not-run")
+            print(f"Error: {e}")
+            return 2
+        if path is None:
             _verdict("do-not-run")
             print("Usage: python3 lib/security_check.py <strategy_file.py>")
             return 2
+        _context = ctx
 
-        results = check(sys.argv[1])
+        results = check(path)
         criticals = [r for r in results if r["level"] == "CRITICAL"]
         _verdict("do-not-run" if criticals else "ask-user" if results else "clean")
 
@@ -205,11 +256,13 @@ if __name__ == "__main__":
             print("✅ No issues found.")
             return 0
 
-        print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {sys.argv[1]}:\n")
+        print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {path}:\n")
         for r in results:
             icon = "❌" if r["level"] == "CRITICAL" else "⚠️ "
             print(f"  {icon} Line {r['line']}: {r['msg']}")
 
+        if _context:   # the NEXT line already said what to do
+            return 2 if criticals else 1
         print()
         if criticals:
             print("❌ CRITICAL issues — do NOT run this strategy without manual review.")

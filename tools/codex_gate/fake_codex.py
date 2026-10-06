@@ -1,7 +1,8 @@
 """Stand-in for `codex exec --json` so the gate's plumbing and judges can be checked
 without spending ChatGPT quota (gate.py --fake good|bad).
 
-good: does what the rules ask — install / fork, quality check, backtest unless exit 2,
+good: does what the rules ask — install / fork, security + quality check with --context on the
+      download, backtest unless do-not-run,
       deletes the download, says the chart has no indicator line.
 bad:  touches nothing and replies that it did not install — every judged scenario fails.
 Reads the prompt on stdin and `-C <cwd>` from argv, like the real binary.
@@ -36,24 +37,25 @@ def strategy_name(path):
 def good(cwd, prompt, py):
     lib = re.search(r"（#(\d+)）已經下載好了", prompt)
     if lib:
-        src = os.path.join(cwd, "tmp", f"library_{lib.group(1)}.py")
-        name = strategy_name(src)
-        dest = os.path.join(cwd, "strategies", name, "strategy.py")
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.move(src, dest)
+        ctx, scan = "install", os.path.join(cwd, "tmp", f"library_{lib.group(1)}.py")
+        name = strategy_name(scan)
     else:
-        base = os.path.join(cwd, "strategies", "gate_sma_trend", "strategy.py")
-        name = "gate_sma_trend_custom"
-        dest = os.path.join(cwd, "strategies", name, "strategy.py")
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(base, encoding="utf-8") as f:
+        ctx, name = "fork", "gate_sma_trend_custom"
+        scan = os.path.join(cwd, "tmp", f"{name}.py")
+        with open(os.path.join(cwd, "strategies", "gate_sma_trend", "strategy.py"), encoding="utf-8") as f:
             code = f.read().replace('"gate_sma_trend"', f'"{name}"')
-        with open(dest, "w", encoding="utf-8") as f:
+        with open(scan, "w", encoding="utf-8") as f:
             f.write(code)
-    rel = os.path.relpath(dest, cwd)
-    if sh(cwd, 1, py, os.path.join("lib", "quality_check.py"), rel) == 2:
+    rel = os.path.relpath(scan, cwd)
+    refused = (sh(cwd, 1, py, os.path.join("lib", "security_check.py"), "--context", ctx, rel) == 2
+               or sh(cwd, 2, py, os.path.join("lib", "quality_check.py"), "--context", ctx, rel) == 2)
+    if refused:
+        os.remove(scan)
         return "這支策略的結束日期寫死了，品質檢查判定為嚴重問題，所以我沒有跑回測。"
-    sh(cwd, 2, py, rel)
+    dest = os.path.join(cwd, "strategies", name, "strategy.py")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.move(scan, dest)
+    sh(cwd, 3, py, os.path.relpath(dest, cwd))
     return "裝好了，回測跑完。這支策略沒有宣告要畫的線，所以回測圖上不會有指標線。"
 
 

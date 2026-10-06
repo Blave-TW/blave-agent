@@ -7,9 +7,14 @@ pinned END date (which freezes a deployed strategy's signals forever), before a
 strategy is submitted to the marketplace or run after being purchased.
 
 Usage:
-    python3 lib/quality_check.py strategies/xyz.py
+    python3 lib/quality_check.py [--context install|fork|edit] strategies/xyz.py
 
 First output line (the verdict to act on): RESULT: clean | run-as-is | do-not-run
+With --context, the second line is `NEXT: <what to do now>` for that situation:
+    install — a library / shared strategy installed as is
+    fork    — an existing strategy taken as the base of the user's own
+    edit    — a strategy the agent wrote or is changing (also before a marketplace submission)
+--context goes before the file: an older checker then reads it as the path and says do-not-run.
 Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
     0 — clean
     1 — warnings only (review before running/submitting)
@@ -22,22 +27,24 @@ from pathlib import Path
 
 
 def check(filepath: str) -> list[dict]:
-    """Return list of findings: {level: 'CRITICAL'|'WARNING', line: int, msg: str}"""
+    """Return list of findings: {level: 'CRITICAL'|'WARNING', line: int, msg: str, check: id}"""
     try:
         source = Path(filepath).read_text(encoding="utf-8-sig")   # a Windows editor's BOM is not a syntax error
     except (OSError, UnicodeDecodeError) as e:
-        return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot read file: {e}"}]
+        return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot read file: {e}", "check": "read"}]
 
     try:
         tree = ast.parse(source)
     except (SyntaxError, ValueError) as e:
-        return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot parse file: {e}"}]
+        return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot parse file: {e}", "check": "read"}]
 
-    findings = (
-        _check_fee(tree) + _check_compute_signals(tree)
-        + _check_txf_settlement_mask(tree) + _check_plot_series(tree)
-        + _check_end(tree) + _check_spot_short(tree) + _check_exit_loop(tree)
-    )
+    findings = []
+    for check_id, fn in _CHECKS:
+        for f in fn(tree):
+            # _check_compute_signals reports a broken contract (CRITICAL) and an unfilled
+            # template (WARNING); they are acted on differently, so they get separate ids.
+            f["check"] = "template" if check_id == "compute_signals" and f["level"] == "WARNING" else check_id
+            findings.append(f)
     return sorted(findings, key=lambda f: f["line"])
 
 
@@ -60,7 +67,10 @@ def txf_settlement_findings(filepath: str) -> list[dict]:
 def plot_series_findings(filepath: str) -> list[dict]:
     """PLOT_SERIES check only — the runner's non-blocking backtest hint."""
     tree = _parse_for_runner(filepath)
-    return _check_plot_series(tree) if tree is not None else []
+    found = _check_plot_series(tree) if tree is not None else []
+    # The CLI message keeps its old wording (output without --context is frozen); the runner
+    # prints this one after every backtest, where an own strategy's missing line is a question.
+    return [dict(f, msg=f["msg"][:f["msg"].index(" — ") + 3] + _PLOT_SERIES_RUNNER_HINT) for f in found]
 
 
 def exit_loop_findings(filepath: str) -> list[dict]:
@@ -323,6 +333,13 @@ _PLOT_SERIES_FIX = (
     "sub-pane) or {\"SMA fast\": (\"SMA_F\", {\"overlay\": True})} (price units, "
     "overlay); the column must exist in the df fetch_data returns. See AGENTS.md › "
     "Backtest Output, references/plot-series.md, examples/btc_ti_5min/strategy.py."
+)
+
+
+_PLOT_SERIES_RUNNER_HINT = (
+    "the backtest tab's trade chart gets no indicator line. A library strategy installed as is, or "
+    "a fresh fork's baseline: leave it and say so in one sentence. A strategy you wrote or are "
+    "editing: ask the user whether to add PLOT_SERIES (references/plot-series.md)."
 )
 
 
@@ -671,6 +688,111 @@ def _w(line: int, msg: str) -> dict:
     return {"level": "WARNING", "line": line, "msg": msg}
 
 
+# ── Check registry and the NEXT line ────────────────────────────────────────────
+
+# The order is the old concatenation order; findings are sorted by line afterwards.
+_CHECKS = (
+    ("fee", _check_fee),
+    ("compute_signals", _check_compute_signals),
+    ("txf_mask", _check_txf_settlement_mask),
+    ("plot_series", _check_plot_series),
+    ("end", _check_end),
+    ("spot_short", _check_spot_short),
+    ("exit_loop", _check_exit_loop),
+)
+# Every id a finding can carry, with its level. tests/check_scan_context.py enumerates it.
+CHECK_LEVELS = {
+    "read": "CRITICAL", "compute_signals": "CRITICAL", "txf_mask": "CRITICAL", "end": "CRITICAL",
+    "template": "WARNING", "fee": "WARNING", "plot_series": "WARNING", "spot_short": "WARNING",
+    "exit_loop": "WARNING",
+}
+CONTEXTS = ("install", "fork", "edit")
+# WARNINGs that refuse the file in these contexts: an unfinished template is not installed or forked.
+BLOCKS_IN = {"template": ("install", "fork")}
+
+# install / fork run a WARNING-only file unchanged (references/marketplace.md); the reply then
+# says what the user will see, one plain sentence per warning.
+USER_EFFECT = {
+    "fee": "the backtest counts no trading fee, so the returns look better than they would be",
+    "plot_series": "the backtest chart has no indicator line",
+    "spot_short": "its short signals stay flat because spot cannot short",
+    "exit_loop": "its stop / target exits are custom code rather than the standard exit helper",
+}
+# edit: the user decides whether a warning gets fixed; this is what fixing it would mean.
+EDIT_FIX = {
+    "template": "fill in the unfinished template logic",
+    "fee": "use the venue's real fee",
+    "plot_series": "declare PLOT_SERIES",
+    "spot_short": "make compute_signals long-only",
+    "exit_loop": "use lib.exits.apply_exits",
+}
+
+
+def blocks(context, finding: dict) -> bool:
+    return finding["level"] == "CRITICAL" or context in BLOCKS_IN.get(finding["check"], ())
+
+
+def verdict(context, findings: list) -> str:
+    if any(blocks(context, f) for f in findings):
+        return "do-not-run"
+    return "run-as-is" if findings else "clean"
+
+
+def next_line(context: str, findings: list) -> str:
+    blocked = any(blocks(context, f) for f in findings)
+    warns = list(dict.fromkeys(f["check"] for f in findings if f["level"] == "WARNING"))
+    if context == "install":
+        if blocked:
+            return ("NEXT: Stop — do not install it: delete this file (in a bundle, only this file) and "
+                    "tell the user in one plain sentence why it was not installed.")
+        if warns:
+            return ("NEXT: Go on with the install flow (references/marketplace.md, steps 7–8) and run it "
+                    "unchanged — do not edit the code and do not ask about these warnings; after the run "
+                    "tell the user, one plain sentence each: " + "; ".join(USER_EFFECT[w] for w in warns) + ".")
+        return "NEXT: Go on with the install flow (references/marketplace.md, steps 7–8)."
+    if context == "fork":
+        if blocked:
+            return "NEXT: Stop — create no fork: delete this file and tell the user in one plain sentence why."
+        if warns:
+            return ("NEXT: Go on with the fork flow (references/marketplace.md, steps 4–5) and run the "
+                    "baseline unchanged — do not fix these warnings or ask about them now (fix only if the "
+                    "user asks for changes); in the report tell the user, one plain sentence each: "
+                    + "; ".join(USER_EFFECT[w] for w in warns) + ".")
+        return "NEXT: Go on with the fork flow (references/marketplace.md, steps 4–5)."
+    if blocked:
+        return "NEXT: Do not backtest or submit it — fix every critical finding above, then run this check again."
+    if warns:
+        return ("NEXT: Before the backtest or a submission, tell the user each warning in plain words and ask "
+                "whether to fix it (" + "; ".join(EDIT_FIX[w] for w in warns) + "); if the user accepts it "
+                "as it is, go on without fixing it or running this check again.")
+    return "NEXT: Go on — backtest or submit it."
+
+
+def parse_args(argv: list):
+    """(file or None, context or None); ValueError on a bad, missing or repeated --context and on
+    more than one file — a second file would otherwise go unscanned behind the first one's verdict."""
+    path, context, i = None, None, 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--context" or a.startswith("--context="):
+            if context is not None:
+                raise ValueError("--context given more than once")
+            if a == "--context":
+                i += 1
+                value = argv[i] if i < len(argv) else ""
+            else:
+                value = a.split("=", 1)[1]
+            if value not in CONTEXTS:
+                raise ValueError(f"--context must be one of {', '.join(CONTEXTS)} (got {value!r})")
+            context = value
+        elif path is None:
+            path = a
+        else:
+            raise ValueError("scan one file at a time")
+        i += 1
+    return path, context
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -678,35 +800,46 @@ if __name__ == "__main__":
     # comes back as exit 1 for both 1 and 2, so the exit code is only a fallback — and a crash
     # must never surface as a bare exit 1 (read as "run-as-is"): any unexpected error is do-not-run.
     _verdict_out = False
+    _context = None
 
-    def _verdict(v):
+    def _verdict(v, nxt=None):
         global _verdict_out
-        print("RESULT: " + v, flush=True)
+        print("RESULT: " + v + ("\n" + nxt if nxt else ""), flush=True)
         _verdict_out = True
 
     def _main() -> int:
+        global _context
         try:
             sys.stdout.reconfigure(errors="replace")
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
-        if len(sys.argv) < 2:
+        try:
+            path, _context = parse_args(sys.argv[1:])
+        except ValueError as e:
+            _verdict("do-not-run")
+            print(f"Error: {e}")
+            return 2
+        if path is None:
             _verdict("do-not-run")
             print("Usage: python3 lib/quality_check.py <strategy_file.py>")
             return 2
 
-        results = check(sys.argv[1])
+        results = check(path)
         criticals = [r for r in results if r["level"] == "CRITICAL"]
-        _verdict("do-not-run" if criticals else "run-as-is" if results else "clean")
+        v = verdict(_context, results)
+        _verdict(v, next_line(_context, results) if _context else None)
 
         if not results:
             print("✅ No issues found.")
             return 0
 
-        print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {sys.argv[1]}:\n")
+        print(f"{'❌' if criticals else '⚠️ '} {len(results)} issue(s) found in {path}:\n")
         for r in results:
             icon = "❌" if r["level"] == "CRITICAL" else "⚠️ "
             print(f"  {icon} Line {r['line']}: {r['msg']}")
 
+        if _context:   # the NEXT line already said what to do
+            return 2 if v == "do-not-run" else 1
         print()
         if criticals:
             print("❌ CRITICAL issues — do NOT run/submit this strategy without fixing them.")
@@ -721,7 +854,8 @@ if __name__ == "__main__":
         _code = _main()
     except Exception as e:
         if not _verdict_out:
-            _verdict("do-not-run")
+            _verdict("do-not-run", next_line(_context, [{"level": "CRITICAL", "check": "read"}])
+                     if _context else None)
         print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
         _code = 2
     sys.exit(_code)

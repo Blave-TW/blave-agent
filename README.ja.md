@@ -8,7 +8,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> この文書は英語版 README の commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md) から翻訳したもので、変更の少ない節だけを訳しています。最新情報、対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
+> この文書は英語版 README の commit [`0d0b880`](https://github.com/Blave-TW/blave-agent/blob/0d0b880/README.md) から翻訳したもので、変更の少ない節だけを訳しています。最新情報、対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -27,7 +27,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - Type A のバックテストでは、毎回デフォルトでモンテカルロ順列検定（MCPT、`lib/validation.py`）を実行し、p 値を記録します。データをシャッフルしても同じくらいの成績が出せたのではないか、を確かめるためです。
 - パラメータ探索（`lib/param_scan.py`）が探すのは、いちばん成績のよい 1 マスではなく、どれを選んでも機能するパラメータの平坦域です。
 - ローリング walk-forward（`lib/walk_forward.py`）でアウトオブサンプルの成績を測ります。
-- 手数料は実際の市場に合わせる必要があります。手数料 0 は `lib/quality_check.py` が検出し、バグとして扱います。
+- 手数料は実際の市場に合わせるべきです。手数料 0 は `lib/quality_check.py` が警告しますが、変更を強制はしません。
 - 1 つのアイデアにつき、バックテストはデフォルトで 1 回です。結果が悪ければそのまま報告し、数字がよく見えるまでこっそりパラメータを調整し直すことはしません（[`AGENTS.md`](AGENTS.md) の *Iteration Brakes* を参照）。
 
 ### 実運用で動いているのがバックテストしたコードかがわかる

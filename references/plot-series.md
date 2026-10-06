@@ -108,15 +108,13 @@ chars (truncated). A series with no valid level simply has no `levels` field.
 
 ## When to declare (and when not to)
 
-Declaring is **mandatory** whenever a computed or external indicator drives the
-entries/exits (anything from `_add_indicators`, a `rolling`/`ewm` window, an alpha or
-twstock feed) — without it the workspace has no indicator pane. Only a pure price rule
-(e.g. Close breaks a fixed level) may omit it. `lib/quality_check.py` flags a missing
-declaration as WARNING and the backtest runner prints the same hint. This applies to
-strategies you write or edit: when installing a library strategy as is, or running a fresh
-fork's baseline, do not add `PLOT_SERIES` — run it unchanged (`references/marketplace.md`,
-step 7 of the install flow / step 5 of the fork flow); add it later only if the user asks
-to change the strategy.
+Declare it when you write a strategy whose entries/exits a computed or external indicator
+drives (anything from `_add_indicators`, a `rolling`/`ewm` window, an alpha or twstock
+feed) — without it the workspace has no indicator pane. A pure price rule (e.g. Close
+breaks a fixed level) needs none. `lib/quality_check.py` flags a missing declaration as a
+WARNING and the backtest runner prints a hint; neither is a reason to add it on your own.
+In a strategy you are editing, ask the user whether to add it (`--context edit`); a library
+strategy installed as is and a fresh fork's baseline run unchanged (`--context install|fork`).
 
 Declare only the 1–2 series that **explain the entry/exit decisions** — the indicator
 the thresholds are applied to is almost always the right choice. Do NOT dump every
