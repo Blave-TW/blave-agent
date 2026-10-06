@@ -161,7 +161,7 @@ npm.cmd start
 | 路徑 | 裡面是什麼 |
 |---|---|
 | `AGENTS.md` | agent 的行為規則：先驗證再回報、迭代上限、資料來源、上線紅線。從這裡讀起。 |
-| `lib/` | 共用函式庫：資料、回測、MCPT、參數掃描、樣本外驗證、報告、圖表、看盤板、交易所帳戶與下單（`account_*.py`、`order_*.py`）、緊急停止（`guard.py`） |
+| `lib/` | 共用函式庫：資料、回測、MCPT、參數掃描、樣本外驗證、報告、圖表、交易所帳戶與下單（`account_*.py`、`order_*.py`）、緊急停止（`guard.py`） |
 | `strategies/` | 策略範本。你自己的策略也放這裡，已被 git 忽略。 |
 | `examples/` | 完整的參考策略（加密貨幣、原油、台股、台指期）與匯出範本，見 [`examples/README.md`](examples/README.md) |
 | `references/` | agent 動手前要讀的文件：函式簽名、策略程式規則、部署、券商串接、報告格式 |

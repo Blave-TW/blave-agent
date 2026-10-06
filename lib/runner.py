@@ -788,11 +788,7 @@ def _picked_for_trading(name):
     restore() gate in lib/strategy.py:164-177, which is why the read stays CWD-relative
     (that gate detects a divergent cwd through it — do not make the path absolute): from
     anywhere but the workspace root the amounts read empty and this returns False, which is
-    the fail-open direction — a hand-run becomes a backtest, never a live tick.
-
-    .claude/docs/watchboard.md §3.3a widens the scheduled set to "in the 下單設定 OR on the
-    watchboard"; once that lands, amounts alone no longer equal "scheduled" and this check
-    has to read the watch markers too."""
+    the fail-open direction — a hand-run becomes a backtest, never a live tick."""
     try:
         from lib.portfolio import strategy_amounts   # lazy: heavy module; only a run WITHOUT BLAVE_MODE gets here
         return name in strategy_amounts()

@@ -121,35 +121,10 @@ PING_INTERVAL = 60
 # (1.0.71 image 實測)。憑證以外的錯誤不算,計數歸零。
 TLS_FAIL_LIMIT = 5
 
-# 看盤脈絡的長度上限。api 端(openclaw/webchat.py `_clamp_viewing_context`)已經
-# 剪過一次,這裡再剪一次不是重複:runtime 5 分鐘自動全機隊更新、api 部署是手動的,
-# 新 runtime 完全可能在還沒部署剪裁的 api 上跑,而這些字串直接進 LLM prompt 也直接
-# 進 argv。兩邊值一樣,沒有共用模組可 import(不同機器上的不同 process)。
+# 視圖代號的形狀。api 端(openclaw/webchat.py `_clamp_viewing_context`)已經剪過一次,
+# 這裡再驗一次不是重複:runtime 5 分鐘自動全機隊更新、api 部署是手動的,新 runtime
+# 完全可能在還沒部署剪裁的 api 上跑,而這個字串直接進 LLM prompt 也直接進 argv。
 _VIEWING_VIEW_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
-VIEWING_WIDGETS_MAX = 24
-VIEWING_WIDGET_LABEL_MAX = 64
-
-
-def clamp_viewing(view, widgets):
-    """回傳 (view, widgets) 的安全版本:形狀不對就當沒有,太長就剪。
-
-    控制字元與中括號一併剝掉:這些字串會進 prompt 裡一段 [ ] 包起來的單行脈絡,
-    換行或一個 ] 就足以提前關掉那一段,後面的內容會被當成指令讀。"""
-    if not isinstance(view, str) or not _VIEWING_VIEW_RE.fullmatch(view):
-        view = None
-    if isinstance(widgets, list):
-        clean = []
-        for item in widgets[:VIEWING_WIDGETS_MAX]:
-            if isinstance(item, str):
-                label = "".join(
-                    c for c in item if ord(c) >= 32 and c not in "[]"
-                )[:VIEWING_WIDGET_LABEL_MAX].strip()
-                if label:
-                    clean.append(label)
-        widgets = clean or None
-    else:
-        widgets = None
-    return view, widgets
 
 
 def poll_once():
@@ -307,7 +282,7 @@ def save_attachment(attachment):
 
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
-                   attachment_name=None, viewing_view=None, viewing_widgets=None,
+                   attachment_name=None, viewing_view=None,
                    ui_lang=None, stop_file=None):
     """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
     keep_fresh thread (every slot in _running), not by this loop."""
@@ -325,17 +300,9 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
         cmd.append(f"--viewing-strategy={viewing_strategy}")
     if viewing_tab in ("code", "data"):
         cmd.append(f"--viewing-tab={viewing_tab}")
-    viewing_view, viewing_widgets = clamp_viewing(viewing_view, viewing_widgets)
-    if viewing_view:
+    if isinstance(viewing_view, str) and _VIEWING_VIEW_RE.fullmatch(viewing_view):
         cmd.append(f"--viewing-view={viewing_view}")
-    if viewing_widgets:
-        # 一個 JSON 參數,不是每張卡一個旗標:清單本來就是一個值,重複旗標會讓
-        # argv 長度隨板子大小漂移。ensure_ascii 保持預設:argv 純 ASCII,Windows
-        # 那半機隊不吃 codepage 的虧——代價是中文一字膨脹成 \uXXXX 六個字元,
-        # 上面剪過之後最壞(24 張卡 × 64 個中文字)約 9KB,離 Linux 單一參數 128KB
-        # 與 Windows 命令列 32K 都還很遠。
-        cmd.append(f"--viewing-widgets={json.dumps(viewing_widgets)}")
-    # 頁面 <lang>;白名單外當沒送(同 clamp_viewing:新 runtime 可能跑在還沒部署 clamp 的 api 上)
+    # 頁面 <lang>;白名單外當沒送(同 viewing_view:新 runtime 可能跑在還沒部署 clamp 的 api 上)
     if ui_lang in strategy_reporter.REPLY_LANGS:
         cmd.append(f"--ui-lang={ui_lang}")
     # `--` terminates options so a message starting with '-' (or literally '--help')
@@ -537,7 +504,6 @@ def _ingest(m):
         "viewing_strategy": ctx.get("viewing_strategy"),
         "viewing_tab": ctx.get("viewing_tab"),
         "viewing_view": ctx.get("viewing_view"),
-        "viewing_widgets": ctx.get("viewing_widgets"),
         "ui_lang": ctx.get("ui_lang"),
         "ts": m.get("timestamp") or int(time.time() * 1000),
     }
@@ -589,7 +555,6 @@ def _worker(session_id, entry, slot):
                        viewing_tab=entry.get("viewing_tab"),
                        attachment_name=entry.get("attachment_name"),
                        viewing_view=entry.get("viewing_view"),
-                       viewing_widgets=entry.get("viewing_widgets"),
                        ui_lang=entry.get("ui_lang"), stop_file=stop_file)
     except Exception as e:
         print(f"[web_bridge] turn {session_id} crashed before/at spawn: {e}", file=sys.stderr)

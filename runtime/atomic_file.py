@@ -128,7 +128,7 @@ def sweep_runtime_temps(workspace, state_dir):
     n = sweep_stale(workspace, only=".env")
     for d in (workspace, os.path.join(workspace, "manager"), os.path.join(workspace, "state"),
               os.path.join(workspace, "state", "heartbeat"), os.path.join(workspace, "reports"),
-              os.path.join(workspace, "watch"), state_dir):
+              state_dir):
         n += sweep_stale(d)
     return n
 

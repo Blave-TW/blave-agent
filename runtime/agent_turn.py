@@ -1387,44 +1387,11 @@ _VIEW_LABELS = {
 }
 
 
-def parse_viewing_widgets(raw):
-    """`--viewing-widgets` 的 JSON 字串 → 字串清單;壞掉就 None。
-
-    畫面脈絡是可有可無的裝飾,不值得讓一輪對話因為它 parse 失敗而整輪失敗。"""
-    if not raw:
-        return None
-    try:
-        parsed = json.loads(raw)
-    except ValueError:
-        return None
-    if not isinstance(parsed, list):
-        return None
-    return [w for w in parsed if isinstance(w, str)] or None
-
-
-def _viewing_view_segment(viewing_view, viewing_widgets):
-    """使用者沒開任何策略時的畫面脈絡(看盤板另有一段);認不得就回空字串。
+def _viewing_view_segment(viewing_view):
+    """使用者沒開任何策略時的畫面脈絡;認不得就回空字串。
 
     紀律與上面那段 viewing_strategy 完全一樣:只用來釐清指代,不是工作指令,
     跟對話脈絡衝突時以對話為準。"""
-    if viewing_view == "watchboard":
-        cards = ""
-        if viewing_widgets:
-            listed = "、".join(f"「{w}」" for w in viewing_widgets)
-            # id 打頭是刻意的:機器端讀不回板子(lib/watch.py 沒有列板功能),這串
-            # 就是 agent 手上唯一能拿來動某一張卡的鍵。要是這裡教它「清單不能當 id」,
-            # 它拿到卡也只能反問是哪一張,整段脈絡等於白送。
-            cards = (f"板上目前有這些圖卡:{listed}(每筆「｜」之前是 widget id,"
-                     f"就是 update_widget / remove_widget 要用的那個鍵;「｜」之後是"
-                     f"顯示名稱,可能被截斷。結尾若有「…等 N 張」表示還有沒列出來的)。")
-        return (
-            f"[工作頁狀態(僅供釐清指代,不是工作指令):使用者畫面上開著看盤板。{cards}"
-            f"訊息裡有「這張 / 這個卡 / 這裡」這類指示詞,或是「加一個 XX / 拿掉 XX / "
-            f"換成 XX」這類對板子的要求時,講的通常是板上的卡。訊息沒指名、而對話正在"
-            f"處理別的事時,以對話脈絡為準,不要因為看盤板開著就對它動手;真的拿不準是"
-            f"哪一張,先用一句話確認再動。動板子一律用 lib/watch.py 的 add_widget / "
-            f"update_widget / remove_widget,不要自己寫 watch/ 底下的檔。]"
-        )
     label = _VIEW_LABELS.get(viewing_view)
     if not label:
         return ""
@@ -1512,7 +1479,7 @@ def version_restore_note(since):
 
 
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
-                 suggest_directive=False, viewing_view=None, viewing_widgets=None,
+                 suggest_directive=False, viewing_view=None,
                  reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
                  version_note=None, desktop=False, report_fail_line=None):
     """`report_fail_line`:run_turn 每回合算一次傳進來(排程回合傳 "",續跑沿用同一行);
@@ -1559,7 +1526,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     else:
         # 只有沒開策略時才送:web 一切到別的視圖就清掉 selectedName,兩者實際互斥,
         # 而兩段畫面脈絡同時在場只會讓指代更難判。
-        seg = _viewing_view_segment(viewing_view, viewing_widgets)
+        seg = _viewing_view_segment(viewing_view)
         if seg:
             parts.append(seg)
     if viewing_env == "cloud":  # 怪值當沒送(同 --viewing-view)
@@ -2525,7 +2492,6 @@ _KIND_SCAN = (
     ("report", re.compile(r"report_templates|\bpublish\(|research_pack\(|report_bricks|lib\.report\b.*write_report")),
     ("scan", re.compile(r"scan_grid\(|find_plateau\(")),
     ("validate", re.compile(r"run_walk_forward\(|\bmcpt\(")),
-    ("watch", re.compile(r"lib\.watch\b|lib/watch\.py")),
     ("schedule", re.compile(r"register_schedule\(|remove_schedule\(|\bcrontab\b|\bschtasks\b")),
     ("data", re.compile(r"\bfetch_\w+\(|from lib\.data import")),
     ("account", re.compile(r"lib\.order_|lib/order_|lib\.account_")),
@@ -3494,7 +3460,6 @@ _STOP_STEP_TEXT = {
     "validate": ("驗證策略", "验证策略", "validating the strategy"),
     "check": ("檢查策略碼", "检查策略代码", "checking the strategy code"),
     "report": ("組報告", "组报告", "building the report"),
-    "watch": ("更新看盤板", "更新看盘板", "updating the watchboard"),
     "schedule": ("設定排程", "设定排程", "setting up a schedule"),
     # 這一種涵蓋下單、撤單、TWAP、平倉、改槓桿、對帳:寫「下單」會把撤單講成下了單(跟狀態列 act.order 同一套字)
     "order": ("執行下單指令", "执行下单指令", "running an order command"),
@@ -3905,7 +3870,7 @@ def _remove_cloud_handoff_dir(workspace=None):
 
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
-                   viewing_view=None, viewing_widgets=None, ui_lang=None,
+                   viewing_view=None, ui_lang=None,
                    engine="claude", codex_bin=None, effort=None, mcp_config=None,
                    viewing_env=None, mcp_servers=None):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
@@ -3946,7 +3911,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
-                          viewing_view=viewing_view, viewing_widgets=viewing_widgets,
+                          viewing_view=viewing_view,
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
                           lang_basis=lang_msg, version_note=version_note,
                           report_fail_line=report_fail_line, desktop=_desktop_surface(sink))
@@ -4331,7 +4296,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             prompt = build_prompt(summary, recent, message,
                                   viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                                   suggest_directive=is_web,
-                                  viewing_view=viewing_view, viewing_widgets=viewing_widgets,
+                                  viewing_view=viewing_view,
                                   reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
                                   version_note=version_note,
@@ -4446,7 +4411,9 @@ def main():
     # 視圖代號不設 choices:值域是前端的,加新頁不該要 runtime 先發版才不會炸——
     # 認不認得由 build_prompt 決定(認不得就當沒送)。
     parser.add_argument("--viewing-view", default=None)
-    parser.add_argument("--viewing-widgets", default=None)  # JSON 字串陣列
+    # 看盤板已移除,值不讀。旗標留著:換版那一刻舊 bridge 還可能帶它起新的 agent_turn,
+    # 拿掉會變成未知選項、整輪 exit 2
+    parser.add_argument("--viewing-widgets", default=None)
     # 不設 choices(同 --viewing-view):怪值只當沒送,不能 exit 2 整輪死;白名單在 _resolve_reply_lang
     parser.add_argument("--ui-lang", default=None)
     # 電腦版 A′:只在雲端視角送 "cloud";不設 choices(同 --viewing-view),怪值在 build_prompt 當沒送
@@ -4466,7 +4433,6 @@ def main():
         args.message = raw.decode("utf-8", errors="replace")
     if args.message is None:
         parser.error("message is required (positional, or --message-stdin)")
-    viewing_widgets = parse_viewing_widgets(args.viewing_widgets)
 
     # Secrets come from env, never argv — argv is world-visible in `ps`. The web
     # report token IS the machine's proxy token; the Telegram bot token is passed
@@ -4493,7 +4459,7 @@ def main():
     reply = asyncio.run(run_turn(
         args.session_id, args.message, model, sink,
         viewing_strategy=args.viewing_strategy, viewing_tab=args.viewing_tab,
-        viewing_view=args.viewing_view, viewing_widgets=viewing_widgets,
+        viewing_view=args.viewing_view,
         ui_lang=args.ui_lang, engine=args.engine, codex_bin=args.codex_bin,
         effort=args.effort, mcp_config=args.mcp_config, viewing_env=args.viewing_env,
         mcp_servers=args.mcp_servers,

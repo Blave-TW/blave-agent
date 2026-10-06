@@ -293,8 +293,6 @@ if POSIX:
         os.makedirs(out)
         RU.REPORTS_DIR = os.path.join(w, "reports")
         RU.SENT_DIR, RU.FAILED_DIR = os.path.join(RU.REPORTS_DIR, "sent"), os.path.join(RU.REPORTS_DIR, "failed")
-        RU.WATCH_DIR = os.path.join(w, "watch")
-        RU.WATCH_DATA_DIR = os.path.join(RU.WATCH_DIR, "data")
         return w, out
 
     def put(d, name, body="x", age=0):

@@ -1257,19 +1257,6 @@ def _can_report():
     )
 
 
-def _can_watch():
-    """Can this runtime ship watchboard ops / data (.claude/docs/watchboard.md §5.3b)?
-    Same stance as _can_report: the uploader is one file across releases, so the
-    question is whether THIS copy carries the watch sweep — a text probe, not an
-    import, for the reason above."""
-    try:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "report_uploader.py"), encoding="utf-8") as f:
-            return "def run_watch_once(" in f.read()
-    except OSError:
-        return False
-
-
 def report_schedules():
     """The `report_schedules` list (.claude/docs/report-schedules.md §5): one entry per
     workspace/report_jobs/<id>/ — the registration plus the last runs.jsonl line and
@@ -1288,8 +1275,6 @@ def report_schedules():
             out.append({"id": job_id, "error": err})
             continue
         cron = job["schedule"]["cron"]
-        if job.get("kind") == "watch":
-            continue  # a watchboard widget's schedule, not a report — the board shows it
         pending = job.get("pending")
         last = report_runner.last_run(job_id)
         entry = {
@@ -1579,7 +1564,7 @@ def report_cache(strategies, token=None, image_sigs=None, record=True):
     landed.
 
     The manifest carries the piggyback fields: config_version so the web can flag an
-    outdated workspace config, can_report / can_watch so it can gate those features on
+    outdated workspace config, can_report so it can gate reports on
     this machine, the scheduled-report registry for the 管理定期報告 modal, and the raw
     常駐規則 file (preferences) for the 「Agent 常駐規則」 settings pane.
 
@@ -1633,7 +1618,7 @@ def report_cache(strategies, token=None, image_sigs=None, record=True):
             refused.add(name)
 
     payload = {"names": names, "markers": markers, "round": round_id,
-               "can_report": _can_report(), "can_watch": _can_watch()}
+               "can_report": _can_report()}
     version = _config_version()
     if version:
         payload["config_version"] = version

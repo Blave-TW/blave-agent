@@ -44,7 +44,7 @@ ok("讀不懂的時間、不認得的時區 → 空字串(那一句不寫時間,
 ok("沒跑起來的兩種一律吞;「中途斷了」只在沒做過會改東西的步驟時吞;步數上限、認不得的代號照出", L.limitSwallow("not_started", false) && L.limitSwallow("not_started_upstream", true) && L.limitSwallow("partial", false)
   && !L.limitSwallow("partial", true) && !L.limitSwallow("max_turns", false) && !L.limitSwallow(undefined, false));
 ok("只讀的步驟是一張表:搜尋、讀網頁、讀檔、抓資料、查帳戶在內;下單、改檔、寫策略、排程、操作網頁、跑回測、認不出來的都不在", ["search", "web_read", "file_read", "data", "account", "status"].every((k) => L.LIMIT_READONLY.includes(k))
-  && ["order", "file_write", "strategy_write", "schedule", "web_act", "backtest", "scan", "report", "watch", "install", "cloud", "live_tick", "unknown"].every((k) => !L.LIMIT_READONLY.includes(k)));
+  && ["order", "file_write", "strategy_write", "schedule", "web_act", "backtest", "scan", "report", "install", "cloud", "live_tick", "unknown"].every((k) => !L.LIMIT_READONLY.includes(k)));
 
 // ---- 4. 接線與字串
 ok("classifyFault 先認用量上限;卡上的鈕開「設定 › 模型接入」", /function classifyFault\(text\) \{\n  const lim = limitMatch\(text, cur\);/.test(src) && /act: \(\) => setOpen\(\)\.then\(\(\) => setCat\("model"\)\) \};/.test(src)

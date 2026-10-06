@@ -104,7 +104,7 @@ Import from `lib/` — never write these functions inline (`references/lib.md`).
 - **"MCPT" means Monte Carlo Permutation Test, never a ticker.** Every Type A backtest runs it, the param scan never does; never hand-roll a substitute, and any other Monte Carlo number carries its calibration — `references/lib.md` › `lib/validation.py`.
 - **Param scan: `scan_grid → find_plateau → write_scan → plot_heatmap`**; the web's scan / adopt prompts → `references/lib.md` › *Parameter scan workflow*.
 - **Walk-forward (樣本外驗證): `lib.walk_forward.run_walk_forward`, rolling only** — one iteration, no MCPT, **no adoptable parameters** (refuse in one sentence, point to the scan's plateau). Read `references/lib.md` › *`lib/walk_forward.py`* first.
-- Watchboard widgets: `lib/watch.py` + `references/watchboard.md` — **a widget script never calls an LLM and never runs more than once a minute.**
+- **The watchboard is removed.** Asked to build a watchboard or add a widget / chart card (看盤板／圖卡), answer in one sentence — 「看盤板功能已移除。」 / "The watchboard feature has been removed." — and never run `lib/watch.py` or write under `watch/`, even where an old copy is still on disk.
 - **Telegram pairing:** check it (`references/strategy-code.md`) only when the run sends Telegram — never block a backtest or data question on it.
 - `get_positions()` symbols are dashless uppercase (`BTCUSDT`) — normalize both sides before comparing.
 - New reusable logic goes in `lib/` first; marketplace strategies keep signal logic in the strategy file.

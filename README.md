@@ -160,7 +160,7 @@ Your strategies end up in `~/Blave/workspace/strategies/<name>/`. When running f
 | Path | What is in it |
 |---|---|
 | `AGENTS.md` | The agent's rules: verify before reporting, iteration limits, data sources, deployment redlines. Start here. |
-| `lib/` | Shared library: data, backtest runner, MCPT, parameter scan, walk-forward, reports, charts, watchboard, exchange account and order helpers (`account_*.py`, `order_*.py`), kill switch (`guard.py`) |
+| `lib/` | Shared library: data, backtest runner, MCPT, parameter scan, walk-forward, reports, charts, exchange account and order helpers (`account_*.py`, `order_*.py`), kill switch (`guard.py`) |
 | `strategies/` | Strategy templates. Your own strategies live here too and are git-ignored. |
 | `examples/` | Complete reference strategies (crypto, crude oil, Taiwan stocks, Taiwan index futures) and export templates — see [`examples/README.md`](examples/README.md) |
 | `references/` | What the agent reads before acting: library signatures, strategy code rules, deployment, broker guides, report contract |

@@ -5,10 +5,9 @@ Contract: `.claude/docs/report-schedules.md`. The agent only writes files (`run.
 this file when a job's cron comes due — nothing is ever installed in crontab/schtasks),
 runs the script, records the outcome and reports it (strategy_reporter.report_schedules).
 
-A watchboard machine widget (`.claude/docs/watchboard.md` §4.2) is the same job
-with `"kind": "watch"` and the widget id as the job id: same trigger, same
-runner, but success is judged by `watch/data/<id>.json` having been rewritten,
-not by a report landing — the script writes that file, report_uploader ships it.
+A job with `"kind": "watch"` belonged to the watchboard, which was removed. Its
+directory stays on the machine untouched, but it is not a registration any more:
+never listed, never counted towards MAX_JOBS, never fired, never run.
 
 Usage (from the scheduler thread, or `report_run_now`):
     report_runner.py <id>
@@ -31,8 +30,7 @@ from zoneinfo import ZoneInfo
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 JOBS_DIR = os.path.join(WORKSPACE, "report_jobs")
 REPORTS_DIR = os.path.join(WORKSPACE, "reports")
-WATCH_DATA_DIR = os.path.join(WORKSPACE, "watch", "data")
-KINDS = ("report", "watch")
+WATCH_RETIRED = "retired watchboard job"
 
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 REPORT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")  # report_uploader's id shape
@@ -183,7 +181,8 @@ def _ts(v, key):
 
 def load_job(job_id):
     """(job dict, None) or (None, "bad job.json: <reason>"). Validates the §2 shape;
-    unknown fields are kept on the dict (handlers rewrite the file) but never reported."""
+    unknown fields are kept on the dict (handlers rewrite the file) but never reported.
+    A watchboard job is (None, WATCH_RETIRED) whatever else is in the file."""
     path = os.path.join(job_dir(job_id), "job.json")
     try:
         with open(path, encoding="utf-8") as f:
@@ -195,15 +194,14 @@ def load_job(job_id):
     try:
         if not isinstance(doc, dict):
             raise ValueError("not an object")
+        if doc.get("kind") == "watch":
+            return None, WATCH_RETIRED
         if doc.get("id") != job_id:
             raise ValueError("id does not match the directory name")
-        if doc.get("kind", "report") not in KINDS:
-            raise ValueError("kind must be report or watch")
+        if doc.get("kind", "report") != "report":
+            raise ValueError("kind must be report")
         _str(doc, "title", TITLE_MAX)
-        # a watch job's script is not prompted into being the way a report is —
-        # the field is optional there, still bounded when present
-        if doc.get("kind") != "watch" or "prompt" in doc:
-            _str(doc, "prompt", PROMPT_MAX)
+        _str(doc, "prompt", PROMPT_MAX)
         sched = doc.get("schedule")
         if not isinstance(sched, dict):
             raise ValueError("schedule must be an object")
@@ -243,7 +241,8 @@ def list_jobs():
     contract §1 "存在即登記", and AGENTS has the agent write run.py for a sample run
     before the user confirms the schedule — reporting that draft as `bad job.json`
     put an error row in 管理定期報告 (uid=1, 2026-09-11). A job.json that exists but
-    cannot be read or parsed is still an error."""
+    cannot be read or parsed is still an error. A retired watchboard job is skipped
+    like the draft: nothing to run, nothing the user can act on."""
     try:
         names = sorted(os.listdir(JOBS_DIR))
     except OSError:
@@ -255,6 +254,8 @@ def list_jobs():
         if not os.path.lexists(os.path.join(job_dir(name), "job.json")):
             continue
         job, err = load_job(name)
+        if err == WATCH_RETIRED:
+            continue
         if job is not None:
             valid += 1
             if valid > MAX_JOBS:
@@ -366,15 +367,6 @@ def _new_reports(since):
             except OSError:
                 continue
     return sorted(out)[:REPORT_IDS_KEEP]
-
-
-def _data_updated(job_id, since):
-    """Whether watch/data/<id>.json was (re)written at or after `since` — the only
-    evidence a watch job produced anything (the uploader leaves that file in place)."""
-    try:
-        return os.path.getmtime(os.path.join(WATCH_DATA_DIR, job_id + ".json")) >= since
-    except OSError:
-        return False
 
 
 def _append_run(jd, entry):
@@ -752,7 +744,7 @@ def check_upgrade(interp, env):
     if prev != "0" or not now_ok:
         return
     for job_id, job, _err in list_jobs():
-        if job is None or job.get("kind") == "watch" or job.get("agent_consent") is True:
+        if job is None or job.get("agent_consent") is True:
             continue
         try:
             atomic_file.touch(os.path.join(job_dir(job_id), UPGRADE_NOTE))
@@ -799,26 +791,24 @@ def run_job(job_id):
     # manager/wait_for_bar.py themselves).
     env["PYTHONPATH"] = os.pathsep.join(p for p in (WORKSPACE, env.get("PYTHONPATH")) if p)
     started = int(time.time())
-    agent = None
-    if job.get("kind") != "watch":
-        check_upgrade(interp, env)
-        try:
-            agent = _try_agent(job, jd, started, interp, env)
-        except Exception as e:   # 不管 agent 那段怎麼壞,都要走到下面的純資料版
-            agent = {"mode": "data", "degraded": "failed", "attempted": False,
-                     "out": f"[report_runner] agent path crashed: {type(e).__name__}: {e}\n"}
-        if agent["mode"] == "agent":
-            entry = {"started_at": started, "finished_at": int(time.time()), "status": "ok", "rc": 0,
-                     "report_ids": agent["report_ids"][:REPORT_IDS_KEEP], "mode": "agent", "agent_attempted": True}
-            _write_log(jd, agent["out"])
-            _append_run(jd, entry)
-            lock.close()
-            return 0
-        if agent.get("degraded"):
-            env["BLAVE_REPORT_DEGRADED"] = agent["degraded"]
-        elif agent.get("agent_skipped") == "no_consent" and os.path.exists(os.path.join(jd, UPGRADE_NOTE)):
-            env["BLAVE_REPORT_NOTE"] = "agent_available"
-    agent_out = (agent or {}).get("out", "")
+    check_upgrade(interp, env)
+    try:
+        agent = _try_agent(job, jd, started, interp, env)
+    except Exception as e:   # 不管 agent 那段怎麼壞,都要走到下面的純資料版
+        agent = {"mode": "data", "degraded": "failed", "attempted": False,
+                 "out": f"[report_runner] agent path crashed: {type(e).__name__}: {e}\n"}
+    if agent["mode"] == "agent":
+        entry = {"started_at": started, "finished_at": int(time.time()), "status": "ok", "rc": 0,
+                 "report_ids": agent["report_ids"][:REPORT_IDS_KEEP], "mode": "agent", "agent_attempted": True}
+        _write_log(jd, agent["out"])
+        _append_run(jd, entry)
+        lock.close()
+        return 0
+    if agent.get("degraded"):
+        env["BLAVE_REPORT_DEGRADED"] = agent["degraded"]
+    elif agent.get("agent_skipped") == "no_consent" and os.path.exists(os.path.join(jd, UPGRADE_NOTE)):
+        env["BLAVE_REPORT_NOTE"] = "agent_available"
+    agent_out = agent.get("out", "")
     since = int(time.time())   # 只認 run.py 這一段寫出的報告(agent 那段最長 20 分鐘,Q2)
     rc = None
     try:
@@ -832,28 +822,18 @@ def run_job(job_id):
     except OSError as e:
         output = f"[report_runner] failed to start: {type(e).__name__}: {e}\n"
     _write_log(jd, (agent_out + "\n--- data-only fallback ---\n" if agent_out else "") + output)
-    if job.get("kind") == "watch":
-        report_ids = []
-        produced = _data_updated(job_id, started)
-        if rc == 0 and not produced:
-            print(f"[report_runner] {job_id}: exit 0 but watch/data/{job_id}.json was not "
-                  "updated", file=sys.stderr)
-    else:
-        report_ids = _new_reports(since)
-        produced = bool(report_ids)
+    report_ids = _new_reports(since)
     if rc != 0:
         status = "failed"
     else:
-        status = "ok" if produced else "skipped"
+        status = "ok" if report_ids else "skipped"
     entry = {"started_at": started, "finished_at": int(time.time()), "status": status,
-             "rc": rc, "report_ids": report_ids}
-    if agent is not None:
-        entry["mode"] = "data"
-        for k in ("degraded", "agent_skipped"):
-            if agent.get(k):
-                entry[k] = agent[k]
-        if agent.get("attempted"):
-            entry["agent_attempted"] = True
+             "rc": rc, "report_ids": report_ids, "mode": "data"}
+    for k in ("degraded", "agent_skipped"):
+        if agent.get(k):
+            entry[k] = agent[k]
+    if agent.get("attempted"):
+        entry["agent_attempted"] = True
     if status == "failed":
         entry["error"] = output.strip()[-ERROR_TAIL:]
     _append_run(jd, entry)
@@ -966,7 +946,7 @@ def record_missed(job_id, since, now):
     """Desktop: a slot that came due while the app (and so this scheduler) was closed is not
     made up — it is recorded once as skipped / app_closed, so 管理定期報告 shows it."""
     job, _err = load_job(job_id)
-    if job is None or not job.get("enabled") or job.get("kind") == "watch":
+    if job is None or not job.get("enabled"):
         return False
     last = last_run(job_id) or {}
     ref = max(since, int(last.get("started_at") or 0), int(job.get("updated_at") or 0))

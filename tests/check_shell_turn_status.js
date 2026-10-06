@@ -119,7 +119,7 @@ ok("每個 runtime 會送的 kind(加 thinking／reply／code_prep／need_user)�
 { const stepKinds = [...new Set(kinds.concat(Object.keys(STRINGS.en).filter((k) => k.indexOf("act.") === 0).map((k) => k.slice(4))))].filter((k) => !["silent", "thinking", "reply", "code_prep", "need_user"].includes(k));
   const gone = stepKinds.filter((k) => !STRINGS.en["step." + k] || !zh.includes(`"step.${k}":`));
   const zhOf = (k) => (zh.match(new RegExp('"' + k.replace(".", "\\.") + '": "([^"]*)"')) || [])[1] || "";
-  ok("每個會列成步驟的 kind 兩語都有 step.* 字;中文的完成式不帶「正在」", stepKinds.length >= 26 && !gone.length && stepKinds.every((k) => zhOf("step." + k) && zhOf("step." + k).indexOf("正在") < 0), gone); }
+  ok("每個會列成步驟的 kind 兩語都有 step.* 字;中文的完成式不帶「正在」", stepKinds.length >= 25 && !gone.length && stepKinds.every((k) => zhOf("step." + k) && zhOf("step." + k).indexOf("正在") < 0), gone); }
 ok("步數字串拿掉(「執行中 · 第 N 步」)、不再用 turn.running", !/turn\.running/.test(strings) && !/turn\.running/.test(src));
 ok("讀屏:受詞與秒數 aria-hidden;label 只在字變了才寫", /obj\.className = "think-obj"; obj\.hidden = true; obj\.setAttribute\("aria-hidden", "true"\);/.test(src)
   && /if \(busy\.verb\.textContent !== label\) busy\.verb\.textContent = label;/.test(src));
