@@ -3990,12 +3990,18 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
     SYMBOL='TMF' fetches TXF bars while the order layer trades TM0000.
 
     For 1d: index is Asia/Taipei tz so df.index[-1].date() returns the correct trading date.
+
+    TXF '1d' on the desktop with no Blave data access this turn comes from TAIFEX instead
+    (fetch_txf_daily_public — same frame, attrs['source'] = 'TAIFEX'); every other case is
+    the Blave series as before, and intraday schemas always are.
     """
     symbol = symbol.upper()
     if symbol.endswith('R1') and len(symbol) > 2:
         symbol = symbol[:-2]
     if symbol in ('MXF', 'TMF'):
         symbol = 'TXF'
+    if symbol == 'TXF' and schema == '1d' and _txf_daily_goes_public(headers):
+        return fetch_txf_daily_public(start, end)
     # 2026-10 server rebuild re-stamped stock-futures bars (end-of-minute, halved volume,
     # R1 roll) but past months are never re-fetched, so they need a fresh namespace.
     # TXF content was unchanged and keeps its cache.
@@ -4366,6 +4372,116 @@ def fetch_twfutures_institutional_public(futures_id, start, end):
     if commodity is None:
         raise TwPublicUnavailable(f'TAIFEX institutional: {futures_id} not supported on the key-free path')
     return _public_series(f'futinst_{fid}', lambda s, e: _taifex_inst_raw(commodity, s, e), start, end, 'TAIFEX')
+
+
+# ── TXF daily bars straight from TAIFEX (free, no key) ───────────────────────
+# The key-free twin of fetch_twfutures_ohlcv('TXF', '1d'): TAIFEX 期貨每日交易行情 (futDataDown,
+# one CSV row per contract month and session) stitched into a near-month continuous series of
+# the same shape. Desktop only, like the series above. Where it differs from the Blave series
+# (settlement-day close, holiday-eve evening session, spread-leg volume): references/twfutures.md.
+_TAIFEX_FUT_DAILY = 'https://www.taifex.com.tw/cht/3/futDataDown'
+_TXF_PUBLIC_START = '1998-07-01'   # 臺股期貨 listed 1998-07-21; nothing earlier on futDataDown
+
+
+def _taifex_fut_daily_window(commodity, first, last):
+    """One futDataDown POST for the calendar window [first, last] (dates, both inclusive) →
+    (rows, col). TAIFEX caps a query at one month (an HTML alert past that — never a CSV); a
+    window before listing or past the last published day answers the header alone."""
+    r = _tw_public_post(_TAIFEX_FUT_DAILY, {'down_type': '1', 'commodity_id': commodity,
+                                             'queryStartDate': first.strftime('%Y/%m/%d'),
+                                             'queryEndDate': last.strftime('%Y/%m/%d')})
+    lines = [ln for ln in r.content.decode('cp950', errors='replace').splitlines() if ln.strip()]
+    if not lines or '交易日期' not in lines[0]:
+        raise TwPublicUnavailable(f'TAIFEX futDataDown {commodity} {first}–{last}: not a CSV answer')
+    rows = list(csv.reader(lines))
+    col = {name.strip(): i for i, name in enumerate(rows[0])}
+    need = ('交易日期', '到期月份(週別)', '開盤價', '最高價', '最低價', '收盤價', '成交量', '交易時段')
+    if any(n not in col for n in need):
+        raise TwPublicUnavailable(f'TAIFEX futDataDown: unexpected header {sorted(col)[:6]}')
+    return rows[1:], col
+
+
+def _taifex_near_month_bars(rows, col):
+    """Per-contract session rows → one bar per trading date on the near month: the lowest
+    outright month (YYYYMM — no weeklies, no calendar spreads) with a 一般 row that day, so on
+    settlement day still the expiring month, holiday-shifted settlements included (the listing
+    rule the api's R1 backfill uses). TAIFEX dates a 盤後 row by the business day it settles
+    to, so a date's bar is its 盤後 row (Open, High/Low) then its 一般 row (Close), Volume both;
+    a date whose 一般 row is not out yet has no bar. Index naive UTC (Taipei midnight − 8h),
+    the shape fetch_twfutures_ohlcv('1d') caches."""
+    by_date = {}
+    for x in rows:
+        month = x[col['到期月份(週別)']].strip()
+        if len(month) != 6 or not month.isdigit():
+            continue
+        o = _tw_num(x[col['開盤價']])
+        if o != o:
+            continue   # listed, no trade
+        h, lo, c = (_tw_num(x[col[k]]) for k in ('最高價', '最低價', '收盤價'))
+        # a single-trade session prints '-' for high/low
+        h, lo = (h if h == h else max(o, c)), (lo if lo == lo else min(o, c))
+        date = x[col['交易日期']].strip().replace('/', '-')
+        sessions = by_date.setdefault(date, {}).setdefault(month, {})
+        sessions[x[col['交易時段']].strip()] = (o, h, lo, c, _tw_num(x[col['成交量']]))
+    out = []
+    for date, months in by_date.items():
+        near = min((m for m, s in months.items() if '一般' in s), default=None)
+        if near is None:
+            continue
+        o, h, lo, c, v = months[near]['一般']
+        night = months[near].get('盤後')
+        if night:
+            o, h, lo, v = night[0], max(h, night[1]), min(lo, night[2]), v + night[4]
+        out.append((pd.Timestamp(date) - pd.Timedelta(hours=8), o, h, lo, c, v))
+    df = pd.DataFrame(out, columns=['time'] + _TW_DAILY_COLS).set_index('time').sort_index()
+    return df.astype(float)
+
+
+def _taifex_txf_daily_raw(s, e):
+    """Bars for the dates [s, e], one POST per window of at most one month. A long-settled
+    window with no rows is an outage (TX has traded every month since listing), raised so it
+    is never cached as an empty month."""
+    today = datetime.now(_TPE).date()
+    first, last = pd.Timestamp(s).date(), pd.Timestamp(e).date()
+    rows, col, cursor = [], None, first
+    while cursor <= last:
+        w_end = min(last, (pd.Timestamp(cursor) + pd.DateOffset(months=1)).date())
+        chunk, col = _taifex_fut_daily_window('TX', cursor, w_end)
+        rows.extend(chunk)
+        cursor = w_end + timedelta(days=1)
+    if not rows and (last - first).days >= 12 and (today - last).days > 12:
+        raise TwPublicUnavailable(f'TAIFEX futDataDown TX {first}–{last}: no rows for a settled window')
+    return _taifex_near_month_bars(rows, col)
+
+
+def fetch_txf_daily_public(start, end=None):
+    """fetch_twfutures_ohlcv('TXF', '1d') from TAIFEX futDataDown — the same frame (Open/High/
+    Low/Close/Volume in contracts, Asia/Taipei midnight index), no Blave key. Desktop only
+    (tw_market_public_allowed); attrs['source'] = 'TAIFEX'. One request per month through the
+    monthly cache (cache/twfutures_public_1d_TXF/: a past month is fetched once and kept, the
+    current month is re-asked from its last bar), so a cold 1998→today backfill is ~340
+    requests at one per second. History from 1998-07-21; an earlier start is clamped."""
+    _tw_market_public_gate()
+    df = _extend_cache_monthly('twfutures_public_1d', {'symbol': 'TXF'}, _taifex_txf_daily_raw,
+                               max(start, _TXF_PUBLIC_START), end, month_by_month=True)
+    df = _sanity_check_ohlc(df, 'TXF 1d taifex')
+    if not df.empty:
+        df = df.copy()
+        df.index = pd.to_datetime(df.index, utc=True).tz_convert('Asia/Taipei')
+    df.attrs['source'] = 'TAIFEX'
+    return df
+
+
+def _txf_daily_goes_public(headers):
+    """The desktop with no Blave data access this turn: TXF daily bars come from TAIFEX instead
+    of failing. With access — or on a cloud machine — the Blave series, exactly as before."""
+    if not tw_market_public_allowed():
+        return False
+    try:
+        _check_data_access(headers)
+    except DataAccessError:
+        return True
+    return False
 
 
 def fetch_twfutures_bid_ask_vol(start, end, headers):

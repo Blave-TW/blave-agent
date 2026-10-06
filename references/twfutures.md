@@ -194,6 +194,37 @@ oi_series = front_month.set_index("date")["open_interest"]
 
 ---
 
+## TXF daily bars without Blave data (desktop only)
+
+`fetch_twfutures_ohlcv('TXF' | 'MXF' | 'TMF', '1d', start, end, headers)` on the desktop app with
+no Blave data access this turn returns the same frame from TAIFEX instead of failing
+(`fetch_txf_daily_public(start, end)` — 期貨每日交易行情 `futDataDown`, cp950 CSV, one request per
+month, cached per month under `cache/twfutures_public_1d_TXF/`; history from **1998-07-21**; a cold
+1998→today backfill is ~340 requests at one per second, ~8 minutes, resumable). With access it is
+the Blave series exactly as before; intraday schemas have no key-free path. `df.attrs['source']`
+= `TAIFEX`; **any report or reply citing these bars carries `資料來源:臺灣期貨交易所(政府資料開放授權)`**
+(en: `Source: Taiwan Futures Exchange (Open Government Data License)`).
+
+Near-month stitching: per trading date the lowest listed outright month with a day-session row
+(weeklies and calendar spreads ignored); the 盤後 row TAIFEX dates to that business day opens the
+bar and widens high/low, the 一般 row closes it, volume is both sessions. Where this differs from
+the Blave series (measured 2024-08 → 2026-09, 515 common days, OHLC otherwise exact):
+- **Settlement day** keeps the expiring contract to its 13:30 close (holiday-shifted
+  settlements included). Blave switches to the next month from 13:31, so its close is the next
+  month's 13:45 — the two closes differ by the inter-month basis (−363 … +378 points over 25
+  settlements in the sample); open / high / low match. `txf_settlement_mask` zeroes the
+  position on that bar either way.
+- **Evening session before a holiday** goes to the next trading day's bar (TAIFEX's own
+  dating). Blave's shift rule puts it on a bar dated the holiday itself, so the Blave series
+  has a bar on e.g. 2024-10-10 or 2026-02-12 and its next trading day opens with the day
+  session; here the next trading day opens with that evening's open.
+- **Volume** includes calendar-spread legs (TAIFEX daily count): ~0.7 % above the Blave 1-minute
+  sum on an ordinary day.
+- Today's day-session row appears about an hour after 13:45; before that the day has no bar
+  (the current month is re-asked from its last bar on every call).
+
+---
+
 ## Stock Futures Batch Daily (個股期貨)
 
 231 Taiwan individual stock futures (股票期貨) — one contract per underlying listed common stock (e.g. `CDF` → 2330 台積電).
