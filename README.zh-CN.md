@@ -57,7 +57,7 @@ agent 上网查数据用的是 app 内置的浏览器：它正在读哪一页，
 - 或 Windows 10、11，x64（Electron 44 支持的版本；ARM 版尚未测试）。Windows 安装文件还没有代码签名，第一次安装时 Windows 会先弹出安全警告：点说明文字下方的链接，再点底部多出来的按钮。
 - Node.js 22.12 以上与 npm（`shell/package.json` › `engines`）
 - `PATH` 上有 `python3`（Windows 是 `python`）。打包版自带 Python 3.12；从源代码跑时，venv 用的是你系统的 Python。
-- 已安装并登录的 Claude Code 或 Codex，或一个 Blave 账号
+- 已安装并登录的 Claude Code 或 Codex、一把按量付费的 DeepSeek API 密钥，或一个 Blave 账号
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -78,6 +78,7 @@ npm.cmd start
 第一次打开时，选 agent 用哪个 AI：
 
 - **自己的 Claude Code 或 Codex。** 不需要 Blave 账号，Blave 不收 AI 费用。app 只负责启动 CLI，你的 Claude Code、Codex 登录凭证留在 CLI 自己手上。
+- **自己的 API 密钥（DeepSeek）。** 粘贴按量付费的密钥，DeepSeek 直接向你收费，Blave 不收 AI 费用。密钥留在这台电脑的钥匙串（Windows 上加密存储），agent 读不到：请求由 app 在本机转发。
 - **Blave AI。** 登录 Blave 账号，按用量计费。
 
 接着讲你的想法，例如：

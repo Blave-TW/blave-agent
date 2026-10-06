@@ -54,7 +54,7 @@ You need:
 - Or Windows 10 or 11, x64 (the versions Electron 44 supports; ARM not tested). The Windows installer is not code-signed yet, so SmartScreen warns on first install: choose More info › Run anyway.
 - Node.js 22.12 or later, with npm (`shell/package.json` › `engines`)
 - `python3` on your `PATH` (`python` on Windows). The packaged app bundles its own Python 3.12; running from source uses your system Python to create the venv.
-- Claude Code or Codex installed and signed in, or a Blave account
+- Claude Code or Codex installed and signed in, a pay-as-you-go DeepSeek API key, or a Blave account
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -75,6 +75,7 @@ npm.cmd start
 On first launch you choose what powers the agent:
 
 - **Your own Claude Code or Codex.** No Blave account needed, and Blave charges nothing for the AI. The app only launches the CLI; your Claude Code or Codex credentials stay with it.
+- **Your own API key (DeepSeek).** Paste a pay-as-you-go key; DeepSeek bills you directly and Blave charges nothing for the AI. The key stays in this computer's keychain (stored encrypted on Windows) and never reaches the agent: the app relays its requests locally.
 - **Blave AI.** Sign in with a Blave account; billed by usage.
 
 Then describe an idea. For example:

@@ -56,7 +56,7 @@ Bạn cần:
 - Hoặc Windows 10, 11, x64 (các phiên bản Electron 44 hỗ trợ; ARM chưa kiểm thử). Trình cài đặt chưa có chữ ký mã, nên lần cài đầu tiên Windows sẽ cảnh báo: nhấn vào liên kết bên dưới đoạn mô tả, rồi nhấn nút mới hiện ra ở bên dưới.
 - Node.js 22.12 trở lên, kèm npm (`shell/package.json` › `engines`)
 - `python3` trong `PATH` của bạn (`python` trên Windows). App đóng gói có sẵn Python 3.12 riêng; khi chạy từ mã nguồn, Python của hệ thống được dùng để tạo venv.
-- Claude Code hoặc Codex đã cài và đăng nhập, hoặc một tài khoản Blave
+- Claude Code hoặc Codex đã cài và đăng nhập, một API key DeepSeek trả theo mức dùng, hoặc một tài khoản Blave
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -77,6 +77,7 @@ npm.cmd start
 Lần mở đầu tiên, bạn chọn AI nào chạy agent:
 
 - **Claude Code hoặc Codex của chính bạn.** Không cần tài khoản Blave, và Blave không thu phí AI. App chỉ khởi chạy CLI; thông tin đăng nhập Claude Code hoặc Codex của bạn vẫn nằm ở CLI.
+- **API key của chính bạn (DeepSeek).** Dán một key trả theo mức dùng; DeepSeek tính phí trực tiếp với bạn và Blave không thu phí AI. Key nằm trong keychain của máy này (mã hóa trên Windows) và agent không đọc được: app chuyển tiếp yêu cầu ngay trên máy.
 - **Blave AI.** Đăng nhập bằng tài khoản Blave; tính phí theo mức dùng.
 
 Sau đó, hãy nói ý tưởng của bạn. Ví dụ:

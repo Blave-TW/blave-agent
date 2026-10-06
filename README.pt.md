@@ -56,7 +56,7 @@ Você precisa de:
 - Ou Windows 10 ou 11, x64 (as versões que o Electron 44 suporta; ARM não testado). O instalador ainda não tem assinatura de código, então o Windows avisa na primeira instalação: clique no link abaixo do texto e depois no botão novo que aparece embaixo.
 - Node.js 22.12 ou superior, com npm (`shell/package.json` › `engines`)
 - `python3` no seu `PATH` (`python` no Windows). O app empacotado traz o próprio Python 3.12; rodando a partir do código-fonte, o Python do seu sistema é usado para criar o venv.
-- Claude Code ou Codex instalado e com login feito, ou uma conta Blave
+- Claude Code ou Codex instalado e com login feito, uma chave de API da DeepSeek com pagamento por uso, ou uma conta Blave
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -77,6 +77,7 @@ npm.cmd start
 Na primeira abertura, você escolhe o que move o agente:
 
 - **Seu próprio Claude Code ou Codex.** Não precisa de conta Blave, e a Blave não cobra nada pela IA. O app só inicia o CLI; suas credenciais do Claude Code ou do Codex ficam com ele.
+- **Sua própria chave de API (DeepSeek).** Cole uma chave de pagamento por uso; a DeepSeek cobra você diretamente e a Blave não cobra nada pela IA. A chave fica no chaveiro deste computador (criptografada no Windows) e nunca chega ao agente: o app repassa as requisições localmente.
 - **Blave AI.** Entre com uma conta Blave; cobrada por uso.
 
 Depois, descreva uma ideia. Por exemplo:

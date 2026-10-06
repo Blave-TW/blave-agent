@@ -56,7 +56,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - または Windows 10、11 の x64（Electron 44 が対応するバージョン。ARM は未テスト）。Windows インストーラーにはまだコード署名がないため、初回インストール時に Windows が警告を表示します。説明文の下にあるリンクをクリックし、続けて画面の下に増えたボタンをクリックしてください。
 - Node.js 22.12 以降と npm（`shell/package.json` › `engines`）
 - `PATH` 上の `python3`（Windows では `python`）。パッケージ版は Python 3.12 を同梱しています。ソースから実行する場合は、システムの Python で venv を作成します。
-- インストールしてサインイン済みの Claude Code または Codex、あるいは Blave アカウント
+- インストールしてサインイン済みの Claude Code または Codex、従量課金の DeepSeek API キー、あるいは Blave アカウント
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -77,6 +77,7 @@ npm.cmd start
 初回起動時に、エージェントを動かす AI を選びます：
 
 - **自分の Claude Code または Codex。** Blave アカウントは不要で、Blave は AI の料金を一切請求しません。アプリは CLI を起動するだけで、Claude Code や Codex の認証情報は CLI 側に残ります。
+- **自分の API キー（DeepSeek）。** 従量課金のキーを貼り付けます。料金は DeepSeek から直接請求され、Blave は AI の料金を一切請求しません。キーはこのコンピューターのキーチェーンに残り（Windows では暗号化して保存）、agent からは読めません。リクエストはアプリがローカルで中継します。
 - **Blave AI。** Blave アカウントでサインインします。従量課金です。
 
 あとはアイデアを話すだけです。たとえば：

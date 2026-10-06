@@ -55,7 +55,7 @@ agent 上網查資料用的是 app 內建的瀏覽器：它正在讀哪一頁，
 - 或 Windows 10、11，x64（Electron 44 支援的版本；ARM 版尚未測試）。Windows 安裝檔還沒有程式碼簽章，第一次安裝時 SmartScreen 會跳出警告：按「其他資訊」再按「仍要執行」。
 - Node.js 22.12 以上與 npm（`shell/package.json` › `engines`）
 - `PATH` 上有 `python3`（Windows 是 `python`）。打包版自帶 Python 3.12；從原始碼跑時，venv 用的是你系統的 Python。
-- 已安裝並登入的 Claude Code 或 Codex，或一個 Blave 帳號
+- 已安裝並登入的 Claude Code 或 Codex、一把隨用隨付的 DeepSeek API 金鑰，或一個 Blave 帳號
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -76,6 +76,7 @@ npm.cmd start
 第一次開啟時，選 agent 用哪個 AI：
 
 - **自己的 Claude Code 或 Codex。** 不需要 Blave 帳號，Blave 不收 AI 費用。app 只負責啟動 CLI，你的 Claude Code、Codex 登入憑證留在 CLI 自己手上。
+- **自己的 API 金鑰（DeepSeek）。** 貼上隨用隨付的金鑰，DeepSeek 直接向你收費，Blave 不收 AI 費用。金鑰留在這台電腦的鑰匙圈（Windows 上加密儲存），agent 讀不到：請求由 app 在本機轉送。
 - **Blave AI。** 登入 Blave 帳號，按用量計費。
 
 接著講你的想法，例如：
