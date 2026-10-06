@@ -110,7 +110,10 @@ const EVENTS = {
     // 綁卡／儲值入口(0.1.16;預檢卡與 402 卡另有 acct_card_click):bind_* 鈕字是綁卡、topup_* 是儲值／加值,後半是入口——
     // set = 設定 › 帳號與方案(含錯誤列的鈕)、data = 沒有資料權限卡、cloud = 雲端開通頁與雲端停機的加值鈕、lib = 策略庫閘門與買策略沒卡那一框。
     // 送出點 renderer/app.js bindGo(…)、renderer/library.js libTrack;策略庫 unknown(「帳號與方案」描邊鈕)不記
-    "bind_set", "topup_set", "bind_data", "topup_data", "bind_cloud", "topup_cloud", "bind_lib", "topup_lib"] },
+    "bind_set", "topup_set", "bind_data", "topup_data", "bind_cloud", "topup_cloud", "bind_lib", "topup_lib",
+    // 聊天附件(0.1.17;renderer/app.js submitMessage):帶附件的那一句回合真的跑起來才送,只分來源不記檔名——
+    // attach_paste = 在輸入框貼上剪貼簿的(不分圖或檔)、attach_image = 選檔 / 拖放的圖(mime image/*)、attach_file = 選檔 / 拖放的其他檔
+    "attach_file", "attach_image", "attach_paste"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

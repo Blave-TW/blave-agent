@@ -32,7 +32,7 @@ t("runtime 認得 --message-stdin,而且訊息的位置參數變選填(機隊照
    雲端視角的每一輪都會被 argparse 當未知旗標、exit 2。這一條紅 = 外殼不可以先出貨。契約:值只有 cloud;同一輪的
    --viewing-strategy 指的是雲端那一份同名策略;runtime 把「做在雲端主機」寫進 prompt,並在 tool chunk 帶 where("cloud"|"local")給動作列的 .wtag。 */
 t("runtime 認得 --viewing-env(runtime 那半;沒接上前外殼不可以出貨)", (() => { const rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8"); return /add_argument\("--viewing-env"/.test(rt); })());
-t("runTurn 真的把它接上 spawn 的參數", /\.\.\.viewingArgs\(viewing\),/.test(mainSrc) && /effort: rawEffort, viewing, note \}/.test(mainSrc));
+t("runTurn 真的把它接上 spawn 的參數", /\.\.\.viewingArgs\(viewing\),/.test(mainSrc) && /effort: rawEffort, viewing, note, attachment \}/.test(mainSrc));
 t("send-message:turnStarting 在第一個 await 之前就立起(挪到後面,連按兩下會 spawn 兩顆 agent 搶同一個 session.db)", (() => { const i = mainSrc.indexOf('ipcMain.handle("send-message"'), body = mainSrc.slice(i, mainSrc.indexOf("runTurn(win, payload)", i)).replace(/\/\/.*$/gm, ""); const a = body.indexOf("turnStarting = true"), w = body.indexOf("await "); return a > 0 && w > 0 && a < w; })());
 t("send-message 只收自家頁面(會 spawn agent、花 AI 額度)", /ipcMain\.handle\("send-message", async \(e, payload\) => \{\s*if \(!fromOurPage\(e\)\) return/.test(mainSrc));
 
@@ -47,5 +47,5 @@ t("renderer:雲端視角帶 env=cloud,而且指的是雲端那一份(RPC),不是
 t("renderer:雲端視角的自動下單頁 → portfolio + env=cloud;雲端沒有主機可看(#tr 與 #rp 都藏著)→ 只有 env", JSON.stringify(chatViewing(base({ ENV: { cur: "cloud" }, $: hid(["rp"]) }))) === '{"env":"cloud","view":"portfolio"}'
   && JSON.stringify(chatViewing(base({ ENV: { cur: "cloud" }, $: hid(["rp", "tr"]) }))) === '{"env":"cloud"}');
 t("renderer:報告沒畫出來(hidden / 還沒載到)→ 只有 env", JSON.stringify(chatViewing(base({ $: hid(["rp"]) }))) === '{"env":"local"}' && JSON.stringify(chatViewing(base({ RP: { name: "s1", data: null, tab: "code" } }))) === '{"env":"local"}');
-t("renderer:送出時真的帶上,而且 viewing 在畫「你的那則」之前取一次(送出當下定案);你的那則下面不再掛 .wtag", /const viewing = opts && opts\.viewing && typeof opts\.viewing === "object" \? opts\.viewing : chatViewing\(\);[\s\S]{0,900}const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg\);/.test(appSrc) && /effort: mpEffort\(\), viewing \}\)/.test(appSrc) && !/whereTag\(viewing/.test(appSrc));
+t("renderer:送出時真的帶上,而且 viewing 在畫「你的那則」之前取一次(送出當下定案);你的那則下面不再掛 .wtag", /const viewing = opts && opts\.viewing && typeof opts\.viewing === "object" \? opts\.viewing : chatViewing\(\);[\s\S]{0,900}const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachment \? attachment\.name : null\);/.test(appSrc) && /effort: mpEffort\(\), viewing, attachment: att \}\)/.test(appSrc) && !/whereTag\(viewing/.test(appSrc));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

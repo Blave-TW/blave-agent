@@ -2475,12 +2475,20 @@ const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAG
 /* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
    只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
 const TURN_NOTES = ["report_once", "report_recur"];
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note }) {
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note, attachment }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
   // 訊息走 stdin:不是字串的話 stdin.end() 會拋、留下一支等不到 EOF 的子行程(稽核 R4)。上限同 runtime 的 --message-stdin
   if (typeof message !== "string" || Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
+  // 聊天附件(shell/attach.js):同雲端那條契約——落地 workspace/tmp/inbound/、訊息尾端補一行給引擎;
+  // 存失敗也照跑回合(補「接收失敗」那行,讓 agent 請用戶重傳),形狀不對才整輪不跑
+  if (attachment != null) {
+    const at = require("./attach");
+    if (!at.validate(attachment)) throw new Error("bad attachment");
+    message = at.withNote(message, at.save(WS, attachment));
+    if (Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
+  }
   imgWin = win;
   const envPath = await loginShellPath();
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude

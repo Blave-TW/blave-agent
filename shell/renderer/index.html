@@ -308,6 +308,12 @@
         <!-- 更新那一格:照網頁工作頁 #ws_update(輸入列右上方一行安靜小字)。只有兩種:app 新版已暫存好 → 「重新啟動以完成更新」(可點);
              雲端主機正在換檔 → 不可點的「更新中…」。其餘時候不出。字由 upPaint 決定:**不掛 data-i18n**,換語言時的通用迴圈會把它洗成另一個狀態的字 -->
         <button type="button" class="ws-update" id="ws-update" hidden><span></span></button>
+        <!-- 待送附件 chip(照雲端 #attach_chip):檔名 + ✕,隨下一句送出;單檔,再選就取代。
+             chip 是輸入框的狀態,送出後泡泡末行的「📎 檔名」另外畫(addMsg),重開 app 從逐字稿尾端那行還原 -->
+        <div class="attach-chip" id="attach-chip" hidden>
+          <span class="attach-name" id="attach-name"></span>
+          <button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws.attachRemove">✕</button>
+        </div>
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
@@ -329,6 +335,14 @@
         <div class="chat-input">
           <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
           <div class="ci-bar">
+            <!-- 迴紋針(照雲端 #attach_btn,同一顆中性 ghost):雲端放輸入列最左,電腦版的輸入框是上下兩層,放工具列最左。
+                 電腦版另外收拖放到輸入框與貼上剪貼簿的圖(原生能力,雲端沒有) -->
+            <input type="file" id="attach-input" hidden />
+            <button class="btn-attach" id="attach-btn" type="button" data-i18n-aria="ws.attach">
+              <svg class="icon-attach" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M14.29 7.37l-6.13 6.13a4 4 0 01-5.66-5.66l6.13-6.13a2.67 2.67 0 013.77 3.77l-6.13 6.13a1.33 1.33 0 01-1.89-1.89l5.66-5.65" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
             <div class="mp" id="mp" hidden>
               <button class="mp-trigger" id="mp-trigger" type="button"
                       aria-haspopup="dialog" aria-expanded="false" aria-controls="mp-panel">

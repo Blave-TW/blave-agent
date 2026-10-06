@@ -157,7 +157,7 @@ ok("③ C:工作頁一打開就跟主行程對一次快照(背景安裝可能早
 ok("③ 舊的灰字進度不在了(onEngineProgress / addMsg(\"sys\", t(key)))", !/onEngineProgress/.test(appSrc + src) && !/addMsg\("sys", t\(key\)\)/.test(appSrc));
 ok("③ 安裝中送出:卡移到那句底下(泡泡 → 卡)", /engAfter\(bubble\)/.test(submit));
 ok("③ 失敗:泡泡留著(engHold)、不收回輸入框;卡上沒畫出來(只修 venv)才退回失敗卡", /engHold\(msg, opts, bubble\); unlock\(\); return false;/.test(submit) && /faultCard\(\)\.set\(\{ text: t\("turn\.engineFailed"/.test(submit));
-ok("③ 重試:同一個泡泡、同一句話再走一次 submitMessage(裝好就送出)", /submitMessage\(h\.msg, Object\.assign\(\{\}, h\.opts, \{ bubble: h\.bubble \}\)\)/.test(src) && /opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg\)/.test(submit));
+ok("③ 重試:同一個泡泡、同一句話再走一次 submitMessage(裝好就送出)", /submitMessage\(h\.msg, Object\.assign\(\{\}, h\.opts, \{ bubble: h\.bubble \}\)\)/.test(src) && /opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachment \? attachment\.name : null\)/.test(submit));
 ok("③ 換送別句:等著的那句收掉(留著會像已經送出)", /engDropHeld\(\)/.test(submit));
 ok("③ 安裝中按停止:這句不送、放回輸入框、安裝照跑——停止那條路完全不碰卡", /if \(engineWait && engineAbort\)/.test(stop) && !/ENG\b|eng[A-Z]\w*\(/.test(stop) && /engineAbort = \(\) => \{ unlock\(\); unsend\(\); \};/.test(submit));
 ok("③ 卡的去留只看快照:engPaint 只有在 done 才收(停止 / 失敗都不收)", /if \(ENG\.card && s\.phase === "done"\) engDone\(s\);/.test(src) && (src.match(/ENG\.card = null/g) || []).length === 1);

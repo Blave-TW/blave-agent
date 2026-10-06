@@ -39,8 +39,8 @@ else {
     && r.steps[0].summary === "strategies/ lib/data.py" && !!r.steps[r.steps.length - 1].more, { out: out.stdout.slice(-120), r });
 }
 
-ok("接線:歷史的 assistant 走 addHistoryAi(user 照舊 addMsg)",
-  /x\.turn\.role === "user" \? addMsg\("you", x\.turn\.content\) : addHistoryAi\(x\.turn\.content\)/.test(src));
+ok("接線:歷史的 assistant 走 addHistoryAi(user 走 addHistoryYou:拆掉附件那行再 addMsg)",
+  /x\.turn\.role === "user" \? addHistoryYou\(x\.turn\.content\) : addHistoryAi\(x\.turn\.content\)/.test(src));
 const hist = cut("function addHistoryAi(", "async function csOpen(");
 ok("收據畫在回覆上面、只剩收據時不畫空泡泡", /appendChild\(receiptFold\(r\.steps\)\);\n\s*if \(!r\.steps \|\| r\.text\.trim\(\)\) addMsg\("ai", r\.text\);/.test(hist));
 const fold = cut("function receiptFold(", "function addHistoryAi(");
