@@ -6,10 +6,13 @@
    itself: months cached before the rebuild and a fresh fetch from the rebuilt server return
    the same frame. The minute label is told per day (08:45 open without zero-volume rows =
    START, the 13:30 row goes; 08:46 open with zero-volume rows = END, the 13:30 row stays;
-   anything else loses only 13:31–14:59). Postponed settlement counts; no other day loses a row.
+   anything else loses only 13:31–14:59). Settlement day = the third Wednesday, or the listed
+   day it was postponed to; no other day loses a row — in particular a hole in the cache (the
+   third Wednesday missing, a whole month missing) never turns the next day into one.
 
-② Cold fetch: one request per month through _retry_get, each month written as it arrives, so
-   a call that dies part-way resumes with the months it lacks.
+② Cold fetch: one request per month through _retry_get, two tries each, each month written
+   as it arrives, so a call that dies part-way resumes with the months it lacks. Nothing is
+   asked before the first day the server has (2018-02-22).
 
 Run: cd blave-agent && .venv/bin/python tests/check_twfutures_bav_settlement.py
 """
@@ -88,7 +91,7 @@ def _write_cache(df):
     return folder
 
 
-calls, failing, flaky = [], set(), set()
+calls, starts, failing, flaky = [], [], set(), set()
 served = [None]
 
 
@@ -111,6 +114,7 @@ def _get(url, **kw):
     start, end = kw["params"]["start"], kw["params"]["end"]
     assert (pd.Timestamp(end) - pd.Timestamp(start)).days <= 31, (start, end)       # the endpoint's cap
     calls.append(start[:7])
+    starts.append(start)
     if start[:7] in failing or (start[:7] in flaky and calls.count(start[:7]) == 1):
         raise requests.exceptions.ReadTimeout("read timeout=60")
     df = served[0]
@@ -165,13 +169,36 @@ assert not _hm(_fetch("2026-02-20", "2026-02-28"), "2026-02-23") & window
 _write_cache(old[old.index >= pd.Timestamp("2024-01-18", tz=TPE)])
 assert len(_hm(_fetch("2024-01-01", "2024-01-31"), "2024-01-18")) == 311
 
-# the third Wednesday closed for one day (2013-08-21 typhoon → settled 08-22): the day before
-# keeps its 13:31–13:45, the settlement day loses them
-typhoon = _store("2013-08-01", "2013-08-31", "end", {"2013-08-22": ("end", True)}, closed={"2013-08-21"})
-_write_cache(typhoon)
-got13 = _fetch("2013-08-01", "2013-08-31")
-assert len(_hm(got13, "2013-08-20")) == 311 and not _hm(got13, "2013-08-22") & window
-assert len(typhoon) - len(got13) == 15
+# every postponed settlement on the list: the closed third Wednesday's month loses exactly the
+# listed day's window, the days around it nothing (three are older than what the fetcher
+# serves or than this test's cache, so the filter is called directly)
+assert sorted(d._TXF_POSTPONED_SETTLEMENT.items()) == [
+    ("2013-08-21", "2013-08-22"), ("2015-02-18", "2015-02-24"), ("2023-01-18", "2023-01-30"), ("2026-02-18", "2026-02-23")]
+for wed, settled in d._TXF_POSTPONED_SETTLEMENT.items():
+    last = str((pd.Timestamp(wed) + pd.offsets.MonthEnd(0)).date())
+    month = _store(wed[:8] + "01", last, "end", {settled: ("end", True)}, closed={wed}).tz_localize(None)
+    kept = d._drop_txf_settlement_window(month)
+    lost = month.index.difference(kept.index).tz_localize("UTC").tz_convert(TPE)
+    assert set(lost.strftime("%Y-%m-%d")) == {settled} and len(lost) == 15, (wed, sorted(set(lost.strftime("%Y-%m-%d"))))
+    assert lost.min().strftime("%H:%M") == "13:31" and "13:30" in _hm(kept, settled)
+
+# ═══ holes in the cache are not closed markets ══════════════════════════════════════════════
+# The third Wednesday's rows are missing (the server skipped that day; a past month is never
+# fetched again): the month loses nothing, and the day after is an ordinary day.
+no_wed = _store("2024-03-01", "2024-03-31", "start", closed={"2024-03-20"})
+_write_cache(no_wed)
+got_hole = _fetch("2024-03-01", "2024-03-31")
+assert calls == [] and len(got_hole) == len(no_wed), (calls, len(got_hole), len(no_wed))
+assert len(_hm(got_hole, "2024-03-21")) == 300 + 11
+# A whole month is missing (cached as an empty month): the first day after it — nine days
+# past that month's third Wednesday — is an ordinary day; the real settlement days still go.
+around = pd.concat([_store("2024-01-01", "2024-01-31", "start"), _store("2024-03-01", "2024-03-31", "start")])
+folder = _write_cache(around)
+pd.DataFrame().to_parquet(folder / "2024-02.parquet")
+got_hole = _fetch("2024-01-01", "2024-03-31")
+lost = around.tz_localize(None).index.difference(got_hole.index).tz_localize("UTC").tz_convert(TPE)
+assert calls == [] and sorted(set(lost.strftime("%Y-%m-%d"))) == ["2024-01-17", "2024-03-20"], (calls, lost)
+assert len(lost) == 15 * 2 and len(_hm(got_hole, "2024-03-01")) == 300 + 11
 
 # ═══ the same frame from the rebuilt server, fetched cold ═══════════════════════════════════
 # The rebuild deleted START days from 13:30 and END days from 13:31, and left the day whose
@@ -195,7 +222,7 @@ try:
     raise AssertionError("a month that never answers must raise")
 except requests.exceptions.ReadTimeout:
     pass
-assert calls == ["2024-01", "2024-02", "2024-03"] + ["2024-04"] * 6, calls       # _retry_get: six tries
+assert calls == ["2024-01", "2024-02", "2024-03"] + ["2024-04"] * 2, calls       # two tries, ≈2 min at worst
 assert sorted(p.stem for p in folder.glob("*.parquet")) == ["2024-01", "2024-02", "2024-03"]
 
 failing.clear()
@@ -207,5 +234,16 @@ assert len(list(folder.glob("*.parquet"))) == 6
 assert whole.index.min() == pd.Timestamp("2024-01-01 00:46") and whole.index.max() == pd.Timestamp("2024-06-28 07:10")
 calls.clear()
 assert _fetch("2024-01-01", "2024-06-30").equals(whole) and calls == []
+
+# ═══ nothing is asked before the first day the server has ═══════════════════════════════════
+served[0] = _store("2018-02-22", "2018-03-30", "end")
+d._CACHE_DIR = Path(tempfile.mkdtemp())
+starts.clear()
+early = _fetch("2017-11-01", "2018-03-31")
+assert starts == ["2018-02-22", "2018-03-01"], starts
+assert sorted(p.stem for p in (d._CACHE_DIR / "twfutures_bav_TXF").glob("*.parquet")) == ["2018-02", "2018-03"]
+assert early.index.min() == pd.Timestamp("2018-02-22 00:46")
+starts.clear()
+assert _fetch("2015-01-01", "2017-12-31").empty and starts == []
 
 print("ok")

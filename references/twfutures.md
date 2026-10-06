@@ -322,7 +322,7 @@ fair_basis = futures_price - (spot_index - remaining)
 
 ## Bid/Ask Volume (TaiwanFuturesBidAskVolume)
 
-TXF 1-minute bid/ask volume aggregated from tick data, including both day and night sessions (backfilled history; earliest date — see the blave-quant skill). Max 31 days per request — the lib auto-chunks.
+TXF 1-minute bid/ask volume aggregated from tick data, including both day and night sessions. History from 2018-02-22 — an earlier `start` is clamped to it. Max 31 days per request — the lib auto-chunks.
 
 ```python
 from lib.data import fetch_twfutures_bid_ask_vol
@@ -336,4 +336,4 @@ df = fetch_twfutures_bid_ask_vol("2024-01-01", "2024-03-31", hdrs)
 - bid_vol = 內盤 (seller-initiated / 主動賣), ask_vol = 外盤 (buyer-initiated / 主動買). `ask_vol - bid_vol` is the net aggressive-buy pressure.
 - Includes both day (08:45–13:45 TWN) and night (15:00–next day 05:00 TWN) sessions.
 - Settlement day follows the bars' roll rule: no rows start between 13:30 and 14:59 (the expiring month has stopped trading; the next month enters with the 15:00 session). The fetcher applies this on return, so months cached before the server-side rebuild need no re-fetch — the cache folder stays `twfutures_bav_TXF`.
-- One request and one cache file per month — no need to split manually; a cold fetch that is cut short resumes with the months it lacks.
+- One request and one cache file per month — no need to split manually; a cold fetch that is cut short resumes with the months it lacks. A month the server does not answer raises after two tries (about 2 minutes) — run the same call again.
