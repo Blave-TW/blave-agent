@@ -27,7 +27,7 @@ const sm = src.slice(src.indexOf("function showMain() {"), src.indexOf("async fu
 t("showMain:隱藏模式在 show / focus 之前就返回(視窗不在時照樣建)", /if \(!w\) \{ createWindow\(\); return; \}\n  if \(HEADLESS\) return;\n  if \(w\.isMinimized\(\)\) w\.restore\(\); w\.show\(\); w\.focus\(\);/.test(sm));
 // 主行程裡把主視窗叫出來的路只有 showMain 一條:多一處 .show() / app.focus 就要有人看過它在隱藏模式下會不會冒出來
 t("主視窗的 w.show() 只在 showMain;其餘 .show() 都是系統通知", (code.match(/\bw(in)?\.show\(\)/g) || []).length === 1 && sm.includes("w.show()"));
-t("app.focus 只有一處,而且隱藏模式不叫", (code.match(/app\.focus\(/g) || []).length === 1 && /^  if \(!HEADLESS\) app\.focus\(\{ steal: true \}\);$/m.test(src));
+t("app.focus 只有一處,而且隱藏模式不叫", (code.match(/app\.focus\(/g) || []).length === 1 && /^  if \(!HEADLESS && loginFocus\(forBlaveAi, s\) === "steal"\) app\.focus\(\{ steal: true \}\);$/m.test(src));
 t("沒有 moveTop / showInactive / dock.show / dock.bounce 這類別的路", !/\.moveTop\(|\.showInactive\(|dock\.show\(|dock\.bounce\(|setAlwaysOnTop\(/.test(code));
 
 console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

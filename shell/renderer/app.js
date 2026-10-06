@@ -337,8 +337,8 @@ async function blaveGo(b) {
   setHint({ text: t("oauth.opened") });   // setHint 會重畫兩個表面
   waitChanged();
   try {
-    // 同意頁的 <lang> 收 en/zh/cn/…,跟我們的語系代號同一組,直接送。
-    await window.blave.startOAuth(LANG);
+    // 同意頁的 <lang> 收 en/zh/cn/…,跟我們的語系代號同一組,直接送。"blave" = 為了用 Blave AI 登入:還不能跑就不搶前景(main.js loginFocus)
+    await window.blave.startOAuth(LANG, "blave");
     hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
