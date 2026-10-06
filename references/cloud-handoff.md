@@ -495,7 +495,7 @@ Commands on this computer use `python3`, not `grep` — the same line runs on ma
 
 This run is the acceptance test, and the one backtest this request covers (Iteration Brakes: one run, then stop — no tuning if the numbers disappoint). It runs whether or not the source had a report, without asking about the source report. It is v1 of `<dest>` on the destination — always a new strategy there; the source's version history does not travel, and `VERSION_NOTE` travels as it is in `strategy.py` — never edit it in transit.
 
-- Tell the user how long it should take before starting (Long Jobs). Foreground, explicit long timeout.
+- Tell the user how long it should take before starting (Long Jobs). Foreground, your shell-command tool's timeout set to 1800000 ms (the call returns as soon as the run ends; the runtime refuses a backtest launch with less).
 - local → cloud: `ssh <SSH_OPTS> blaveagent@<host> "cd /opt/blave-agent/workspace && python3 strategies/<dest>/strategy.py"` — one of the chained remote forms step 2.2 lists (and only those): a single quoted remote command, and the strategy must run from the workspace root.
 - cloud → local: `python3 strategies/<dest>/strategy.py` from this workspace.
 - Read the six numbers from the destination's fresh `stats.json` (`ssh … cat` piped into a local one-line `python3 -c`, or locally). A run that errored or left no `stats.json` is "could not run" — quote the last error line.

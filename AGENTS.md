@@ -144,7 +144,7 @@ RAM is shared with the agent runtime: an unbounded process freezes the whole mac
 ## Long Jobs (> ~2 min: param scans, deep-history / big-universe backtests, cold cache)
 
 - **Say how long it will take and how you will report BEFORE starting** (Telegram: `lib.notify.send_text` first).
-- **≤ 10 min → foreground with the Bash tool's own timeout (never a `timeout` command); longer → background to `tmp/<job>.log`, poll every 2–3 min, relay the newest progress line**; a stale log = hang → report, don't restart.
+- **≤ 10 min → foreground with the Bash tool's `timeout` set to 1800000 — on every backtest / param scan / walk-forward / validation launch, short ones included (the call returns as soon as the run ends; a smaller value is refused; never a `timeout` command); longer → background to `tmp/<job>.log`, poll every 2–3 min, relay the newest progress line**; a stale log = hang → report, don't restart.
 - **The end of the turn is the end — there is no "later".** Never promise 「完成後我會回報」 unless a registered schedule will do it, never arm a watcher; not finished → say what and why, what is kept, and the words that continue it. A job over one turn (~25 min) is said so BEFORE starting, with a shorter version offered.
 - Report elapsed time. Read `references/deployment.md` › *Long jobs — progress reporting* / *When the job does not finish in the turn*.
 
