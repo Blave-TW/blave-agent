@@ -6055,7 +6055,7 @@ msgid "ak.testConnect"
 msgstr "Connect"
 
 msgid "ak.testSave"
-msgstr "Test and save"
+msgstr "Save"
 
 msgid "ak.remove"
 msgstr "Remove key"

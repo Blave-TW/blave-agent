@@ -6057,7 +6057,7 @@ msgid "ak.testConnect"
 msgstr "連結"
 
 msgid "ak.testSave"
-msgstr "測試並儲存"
+msgstr "儲存"
 
 msgid "ak.remove"
 msgstr "移除金鑰"
