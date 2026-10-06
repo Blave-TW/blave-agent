@@ -3684,12 +3684,16 @@ def _inst_off_total(df):
     return ~((df['foreign'] + df['investment_trust'] + df['dealer'] - df['total']).abs() <= 0.5)
 
 
+_INST_SUM_MAX_DROPS = 3
+
+
 def _drop_twmarket_inst_off_total():
     """The Blave series used to add 外資自營商 to dealer a second time (it is already inside
     自營商), and past rows in the cache are never re-fetched. Delete the cached file while any row
-    is off 合計; mark it good only once a file passes, so a copy downloaded before the api served
-    the fix is dropped again on the next call instead of frozen. NaN rows are skipped: they
-    cannot be told apart from a source gap and would re-download forever."""
+    is off 合計; mark it good once a file passes, so a copy downloaded before the api served the
+    fix is dropped again instead of frozen. At most one drop per UTC day and
+    _INST_SUM_MAX_DROPS in all: a row the api itself still serves off 合計 must not cost a full
+    re-download on every call. NaN rows are skipped (a source gap, not this bug)."""
     path = _single_path('twmarket_institutional', {'id': 'TWSE'})
     good = path.with_name(f'{path.name}.dealer_sum')
     if good.exists():
@@ -3698,10 +3702,21 @@ def _drop_twmarket_inst_off_total():
         df = pd.read_parquet(path, columns=_TWMARKET_INST_COLUMNS)
     except Exception:
         return                            # nothing cached yet, or an old monthly dir not migrated
-    if _inst_off_total(df.dropna()).any():
-        path.unlink(missing_ok=True)
-    else:
-        good.touch()
+    drops = path.with_name(f'{path.name}.dealer_sum_drops')
+    try:
+        days = drops.read_text().split()
+    except OSError:
+        days = []
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    try:
+        if not _inst_off_total(df.dropna()).any() or len(days) >= _INST_SUM_MAX_DROPS:
+            good.touch()
+            drops.unlink(missing_ok=True)
+        elif today not in days:
+            path.unlink(missing_ok=True)
+            drops.write_text(' '.join(days + [today]))
+    except OSError:
+        return                            # file in use (Windows) — try again next call
 
 
 def fetch_twmarket_institutional(start, end, headers):

@@ -11,8 +11,9 @@ dealer twice) get fetched again exactly once. No network: answers recorded 2026-
   - a cached month that is off 合計 (NaN, or dealer with 外資自營商 added again) is re-fetched;
     clean months are not; the sweep is a single pass, so a later call makes no BFI82U request
   - a fetch cut short keeps the months already fetched (one request per day: month by month)
-  - the Blave series cache: a file off 合計 is dropped on every call until a download passes
-    (an api still serving the old dealer cannot freeze it), then never read again
+  - the Blave series cache: a file off 合計 is dropped (at most once a day, three times in all)
+    until a download passes, so an api still serving the old dealer cannot freeze it and a row
+    the api keeps off 合計 cannot cost a re-download on every call; then never read again
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_bfi82u_legacy_rows.py
 """
@@ -196,18 +197,54 @@ D._fetch_twmarket_raw = blave_raw
 blave = D._single_path("twmarket_institutional", {"id": "TWSE"})
 good = blave.with_name(blave.name + ".dealer_sum")
 dealer = lambda: D.fetch_twmarket_institutional("2024-03-01", "2024-03-31", {}).loc["2024-03-15", "dealer"]
+drops = blave.with_name(blave.name + ".dealer_sum_drops")
 first = dealer()                       # cold, api still on the old dealer
 second = dealer()                      # off 合計 → dropped, re-downloaded (still old)
-check(first == second == OLD_DEALER_20240315 and len(raw_calls) == 2 and not good.exists(),
-      f"api not fixed yet: off-合計 file dropped and re-downloaded each call ({len(raw_calls)}), not marked good")
+third = dealer()                       # same day: not dropped again
+check(first == second == third == OLD_DEALER_20240315 and len(raw_calls) == 2 and not good.exists(),
+      f"api not fixed yet: dropped and re-downloaded once that day ({len(raw_calls)} downloads), not marked good")
+NOW = _real_dt(2026, 10, 7, 10, 0, tzinfo=D._TPE)
 served[0] = "fixed"
-third = dealer()
-fourth = dealer()
-check(third == fourth == WANT["20240315"][2] and len(raw_calls) == 3 and good.exists(),
-      f"api fixed: next call replaces the file, the one after passes and marks it good ({len(raw_calls)} downloads)")
+fourth = dealer()                      # next day: dropped again, the api now serves the fix
+fifth = dealer()
+check(fourth == fifth == WANT["20240315"][2] and len(raw_calls) == 3 and good.exists()
+      and not drops.exists(),
+      f"api fixed: next day's drop downloads the fix, the call after passes and marks it good ({len(raw_calls)})")
 served[0] = "old"
 check(dealer() == WANT["20240315"][2] and len(raw_calls) == 3,
       "marked good: never re-checked or re-downloaded")
+
+# an api that keeps one row off 合計: three daily drops, then it is left as it is
+good.unlink()
+blave.unlink()
+raw_calls.clear()
+for day in (8, 9, 10, 11, 12):
+    NOW = _real_dt(2026, 10, day, 10, 0, tzinfo=D._TPE)
+    dealer()
+    dealer()
+check(len(raw_calls) == 4 and good.exists() and not drops.exists(),
+      f"api still off 合計: cold + 3 daily drops = {len(raw_calls)} downloads over 5 days, then marked good")
+
+# Windows: the cached file is held open elsewhere, unlink raises — the fetch still answers
+good.unlink()
+drops.unlink(missing_ok=True)
+_real_unlink = Path.unlink
+
+
+def _busy(self, missing_ok=False):
+    if self == blave:
+        raise PermissionError(32, "in use")
+    return _real_unlink(self, missing_ok=missing_ok)
+
+
+Path.unlink = _busy
+try:
+    busy = dealer()
+    busy_ok = busy == OLD_DEALER_20240315 and not good.exists() and not drops.exists()
+except OSError:
+    busy_ok = False
+Path.unlink = _real_unlink
+check(busy_ok, "cached file in use: no exception, served from cache, nothing marked")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)
