@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **策略回報多帶 `type`／`market`(漏斗事件拆分用)**:`strategy_reporter` 從策略檔讀型別(檔頭 `# Type:` 的 A/B/C,規則同電腦版 `export.js`;沒檔頭但回測是組合 → C)與市場(原始碼引用了哪個 `lib.data` 抓價函式:`crypto`／`tw_index_futures`／`tw_stock_futures`／`tw_stock`／`us_stock`／`global_futures`／`mixed`;`fetch_twfutures_ohlcv` 看 `SYMBOL` 是不是 TXF/MXF/TMF 分台指期與個股期貨,沒有字面 `SYMBOL` 就不猜)。判不出來就不帶欄位,抽取失敗不影響回報。不改回報指紋:既有策略要等下一次內容或回測變動才會補上這兩欄。api 先上(舊 api 照收、只是不讀)。`tests/check_strategy_type_market.py`。
 
 ## 1.1.115 — 2026-10-06(desktop 0.1.16)
 

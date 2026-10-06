@@ -199,6 +199,100 @@ def strategy_consts(src):
     return out
 
 
+# Telemetry attributes for the platform's funnel events (strategy_created / backtest_done /
+# deployed). Both are read from the strategy FILE, so they exist from the first report and
+# for Type B too; neither may ever block a report — unknown is None, and absent on the wire.
+# Computed in scan() only: signature() runs after every tool step and must not pay a second
+# ast.parse per file (strategy_consts is mirrored verbatim in api and cannot share its tree).
+# Same rule as the desktop app (shell/renderer/export.js xpIsTypeB / xpIsPortfolio);
+# re.ASCII so `# Type: C組合` matches as it does in JS, where \b is ASCII-only.
+_TYPE_RE = re.compile(r"^#\s*Type:\s*([ABC])\b", re.M | re.ASCII)
+# lib.data price fetchers → market. Only PRICE fetchers: a BTC strategy that reads a Taiwan
+# flow as a feature still fetches its bars with fetch_kline.
+_TW_FUTURES = "tw_futures"   # internal: resolved by SYMBOL below, never reported
+_PRICE_FETCHERS = {
+    "fetch_kline": "crypto", "fetch_kline_batch": "crypto", "fetch_bingx_kline": "crypto",
+    "fetch_twstock_price": "tw_stock", "fetch_twstock_price_adj": "tw_stock",
+    "fetch_twstock_price_batch": "tw_stock", "fetch_twstock_price_adj_batch": "tw_stock",
+    "fetch_twstock_ohlcv": "tw_stock",
+    "fetch_twfutures_ohlcv": _TW_FUTURES, "fetch_twfutures_ohlcv_batch": _TW_FUTURES,
+    "fetch_stock_futures_batch_daily": "tw_stock_futures",
+    "fetch_usstock_price": "us_stock",
+    "fetch_db_kline": "global_futures",
+}
+_TW_INDEX_FUTURES = ("TXF", "MXF", "TMF")
+_FETCHER_NAME_RE = re.compile(r"\bfetch_[a-z0-9_]+\b")
+_SYMBOL_RE = re.compile(r'''^\s*SYMBOL\s*=\s*["']([^"']*)["']''', re.M)
+
+
+def strategy_type(src):
+    """'A' / 'B' / 'C' from the `# Type:` header comment (first 2000 chars), else None."""
+    m = _TYPE_RE.search(src[:2000])
+    return m.group(1) if m else None
+
+
+def _referenced_fetchers(src):
+    """(names of the lib.data price fetchers the source refers to, its literal SYMBOL or
+    None). `ast`, so comments and string literals never count and a name is matched whole.
+    Falls back to regexes over comment-stripped lines when the file does not parse."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+        m = _SYMBOL_RE.search(code)
+        return ({n for n in _FETCHER_NAME_RE.findall(code) if n in _PRICE_FETCHERS},
+                m.group(1) if m else None)
+    found, symbol = set(), None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            found.add(node.attr)
+        elif isinstance(node, ast.ImportFrom):   # `import fetch_kline as fk` hides the name
+            found.update(a.name for a in node.names)
+        if symbol is None and isinstance(node, ast.Assign) \
+                and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str) \
+                and any(isinstance(t, ast.Name) and t.id == "SYMBOL" for t in node.targets):
+            symbol = node.value.value   # first assignment wins, as strategy_consts
+    return found & set(_PRICE_FETCHERS), symbol
+
+
+def strategy_market(src):
+    """Which market the strategy's prices come from: crypto / tw_index_futures /
+    tw_stock_futures / tw_stock / us_stock / global_futures / mixed (two or more), or None
+    (no lib.data price fetcher — the user's own data — or not decidable).
+
+    fetch_twfutures_ohlcv[_batch] serves index and stock futures alike, so SYMBOL decides:
+    TXF / MXF / TMF (R1 suffix accepted, as the fetcher does) is the index; any other
+    literal SYMBOL is a stock future. No literal SYMBOL → None rather than a guess."""
+    fetchers, symbol = _referenced_fetchers(src)
+    kinds = {_PRICE_FETCHERS[n] for n in fetchers}
+    if _TW_FUTURES in kinds:
+        kinds.discard(_TW_FUTURES)
+        sym = re.sub(r"[^A-Z0-9]", "", symbol.upper()) if symbol else ""
+        if sym.endswith("R1") and len(sym) > 2:
+            sym = sym[:-2]
+        # an undecidable futures leg next to another market is still two markets
+        kinds.add(("tw_index_futures" if sym in _TW_INDEX_FUTURES else "tw_stock_futures")
+                  if sym else None)
+    if len(kinds) > 1:
+        return "mixed"
+    return kinds.pop() if kinds else None
+
+
+def _type_market(s):
+    """{type, market} for one scanned strategy, unknowns left out. Telemetry only: a failure
+    here never costs the strategy its report."""
+    try:
+        src = s.get("code") or ""
+        attrs = {"type": strategy_type(src) or ("C" if s.get("is_portfolio") else None),
+                 "market": strategy_market(src)}
+    except Exception as e:
+        print(f"strategy_reporter: type/market skipped for {s.get('name')}: {e!r}", file=sys.stderr)
+        return {}
+    return {k: v for k, v in attrs.items() if v}
+
+
 def _extract(path, fallback_name):
     try:
         # utf-8 explicit: Windows opens with the locale codepage and strategies
@@ -628,6 +722,7 @@ def scan(include_newborn=False):
         # here must not be the only defense). False when unknown — fail open,
         # see is_portfolio_stats.
         s["is_portfolio"] = is_portfolio_stats(bt)
+        s.update(_type_market(s))   # the header wins; no header but a Type C backtest → C
     return strategies
 
 
