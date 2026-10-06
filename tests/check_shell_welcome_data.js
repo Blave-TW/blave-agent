@@ -1,14 +1,14 @@
 // 歡迎頁的資料清單(shell/renderer/welcome.js + welcome.css + index.html #wl;設計 mockup data-scope §1 / §2)。
 //   ① 純邏輯 wdMode(從原文切出來跑):帳號狀態 → 對比版 / 單一清單——沒登入、查不到、舊 api、沒綁卡、餘額不夠、按小時付 → 兩欄對比;
 //      綁卡試用中、名下有主機、API 方案(data_access = included)→ 單一清單;試用那句只在名下沒主機時講
-//   ② 原文鎖:index.html 骨架(記號 → 標題「開始一支策略」→ 三顆籤 → #wl、狀態句在頁尾、起手籤 #chat-eg 退役)、welcome.css(.main-empty 是容器、≥700 才兩欄、不寫 hex)、
+//   ② 原文鎖:index.html 骨架(記號與標題「開始一支策略」並排一行 → 三顆籤 → #wl、狀態句在頁尾、起手籤 #chat-eg 退役)、welcome.css(.main-empty 是容器、≥700 才兩欄、不寫 hex)、
 //      app.js 四個重畫入口、welcome.js 在 app.js 之後、telemetry 白名單尾端兩個名字(≤16 字、api 端同一份)、
 //      每一列的字 zh / en 兩語齊全(列舉 WD_ROWS,不抽樣)、字裡沒有「付費」、價格數字不寫死({r} 只在 wd.note.billed)
 //      一列一行(名字 + 小字,沒有第二行起手句);點列 = 「跟我討論要怎麼用〈資料名〉做策略」(模板 wd.ask × 每列的 .an):
 //      wdRow / wdFill / wdAsk 原文接假 DOM 在純 node 跑(run_all 不起 Electron),歡迎頁每一列 × 兩語逐列組句子
 //   ③ Electron(offscreen、show:false,不會出現在螢幕上):對比版兩欄且免費在前、右欄不上鎖不變灰、單一清單一欄且無 TWD 字樣、
 //      點列 → 那一句落進輸入框、不送出、自己打的草稿留著;列高與熱區實測 ≥ 44、窄欄小字折到名字下面;
-//      A2 版面:記號／標題／籤／小標／卡／頁尾同一條左軸、清單是一張卡(列有底色、頭尾收圓角,兩欄各一張)、小字靠右成欄、hover 換色、狀態句在頁尾同一行;
+//      A2 版面:記號與標題同一行(記號在左、圖形對標題中線)、記號／籤／小標／卡／頁尾同一條左軸、清單是一張卡(列有底色、頭尾收圓角,兩欄各一張)、小字靠右成欄、hover 換色、狀態句在頁尾同一行;
 //      中欄 <700 上下疊;看全部資料 = 同一塊換成目錄(對比版多「來源」欄)
 // 跑法:node tests/check_shell_welcome_data.js(③ 要 BLAVE_TEST_WINDOW=1,①② 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
@@ -45,8 +45,8 @@ if (!process.versions.electron) {
   const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl"'));
   ok("② index.html:三顆籤(#chat-lib / #chat-idea / #chat-ns)之後是 #wl,起手籤 #chat-eg 退役;#wl 在 .wc-inner 裡、#main-empty 裡", /id="chat-lib"[\s\S]*id="chat-idea"[\s\S]*id="chat-ns"/.test(chips) && !html.includes('id="chat-eg"') && !/ws\.chatExample/.test(html + appSrc)
     && html.indexOf('id="wl"') > html.indexOf('id="main-empty"') && html.indexOf('id="wl"') < html.indexOf("</section>", html.indexOf('id="main-empty"')));
-  ok("② 標題:h4.wc-h(wd.start)在記號之後、三顆籤之前;兩語的字是「開始一支策略」/ Start a strategy;整份 index.html 只有一個",
-    /<\/svg>\s*<h4 class="wc-h" data-i18n="wd\.start"><\/h4>\s*<div class="wc-chips">/.test(html.slice(html.indexOf('class="wc-mark"'), html.indexOf('id="chat-lib"'))) && html.split('class="wc-h"').length === 2
+  ok("② 標題:.wc-head 裡依序是記號 svg.wc-mark 與 h4.wc-h(wd.start),整行在三顆籤之前;兩語的字是「開始一支策略」/ Start a strategy;整份 index.html 只有一個",
+    /<div class="wc-head">\s*<svg class="wc-mark"[^>]*>\s*<path [^>]*\/>\s*<\/svg>\s*<h4 class="wc-h" data-i18n="wd\.start"><\/h4>\s*<\/div>\s*<div class="wc-chips">/.test(html.slice(html.indexOf('class="wc-inner"'), html.indexOf('id="chat-lib"'))) && html.split('class="wc-h"').length === 2 && html.split('class="wc-mark"').length === 2
     && STR.zh["wd.start"] === "開始一支策略" && STR.en["wd.start"] === "Start a strategy");
   ok("② #wl 骨架:小標 wd.title、市場分段 #wl-seg(.lib-seg 配方、三格 crypto / tw / txf、加密預設選中)、#wl-body、頁尾 .wl-foot 裡依序是 #wl-all(.btn-quiet、不掛 data-i18n,字跟著模式換)與 #wl-state(aria-live);狀態句不在清單上面",
     /<span class="wl-cap" data-i18n="wd\.title"><\/span>/.test(html) && /<span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html)
@@ -108,9 +108,10 @@ if (!process.versions.electron) {
     ok("② welcome.css:列高下限 44、只剩一行時垂直置中(.wd-row 是 grid,align-content: center)、內距 8/16(卡內距);小字靠右成欄(.wd-l1 space-between、間距 12、baseline、放不下整段折行)",
       /\.wd-row \{\s*display: grid; align-content: center; width: 100%; min-height: 44px; padding: var\(--space-8\) var\(--space-16\);/.test(css)
       && /\.wd-l1 \{ display: flex; align-items: baseline; justify-content: space-between; gap: var\(--space-2\) var\(--space-12\); flex-wrap: wrap; \}/.test(css));
-    ok("② welcome.css(A2):清單在時 .wc-inner 子項靠左撐滿;記號的寬與色各自一行(待 Wei 定,只改值);標題 20/600;籤靠左、離標題 12;小標列與頁尾不內縮(同一條左軸)",
-      /\.wc-inner:has\(\.wl\) \{ align-items: stretch; \}/.test(css) && /\.wc-inner:has\(\.wl\) \.wc-mark \{\n  align-self: flex-start;\n  width: var\(--[a-z0-9-]+\);\n  color: var\(--[a-zA-Z0-9-]+\);\n\}/.test(css)
-      && /\.wc-h \{ margin: var\(--space-16\) 0 0; font-size: 20px; font-weight: 600; line-height: 1\.4; color: var\(--ink\); \}/.test(css)
+    ok("② welcome.css(A2):清單在時 .wc-inner 子項靠左撐滿;記號與標題並排一行(.wc-head:flex、置中、隔 12);記號的寬與色各自一行(只改值),上面空的那段用負 margin 切掉;標題 20/600、不留上距;籤靠左、離那一行 12;小標列與頁尾不內縮(同一條左軸)",
+      /\.wc-inner:has\(\.wl\) \{ align-items: stretch; \}/.test(css) && /\.wc-inner:has\(\.wl\) \.wc-head \{ display: flex; align-items: center; gap: var\(--space-12\); \}/.test(css)
+      && /\.wc-inner:has\(\.wl\) \.wc-mark \{\n  width: var\(--[a-z0-9-]+\);\n  color: var\(--[a-zA-Z0-9-]+\);\n  margin-top: calc\(-1 \* var\(--[a-z0-9-]+\)\);\n\}/.test(css)
+      && /\.wc-h \{ margin: 0; font-size: 20px; font-weight: 600; line-height: 1\.4; color: var\(--ink\); \}/.test(css)
       && /\.wc-inner:has\(\.wl\) \.wc-chips \{ margin-top: var\(--space-12\); justify-content: flex-start; \}/.test(css)
       && /\.wl-top \{[^}]*padding: 0; \}/.test(css) && /\.wl-colh \{[^}]*padding: 0 0 var\(--space-8\); border-bottom: 0; margin-bottom: 0; \}/.test(css)
       && /\.wl-foot \{ display: flex; align-items: center; justify-content: space-between; gap: var\(--space-4\) var\(--space-16\); flex-wrap: wrap; margin-top: var\(--space-4\); padding: 0; \}/.test(css)
@@ -269,8 +270,9 @@ app.whenReady().then(async () => {
     const tx = (e) => { const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect(); }, q = (s) => document.querySelector(s), foot = q(".wl-foot").getBoundingClientRect(), st = $("wl-state"), all = tx($("wl-all"));
     return { tok, cols: [...$("wl-body").querySelectorAll(".wl-col")].map((c) => [...c.querySelectorAll(".wd-row")].map((b) => { const s = getComputedStyle(b), r = b.getBoundingClientRect();
         return { bg: s.backgroundColor, rad: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].join(" "), bb: s.borderBottomWidth, go: getComputedStyle(b, "::after").content, kids: b.children.length, l: r.left, r: r.right, t: r.top, b: r.bottom }; })),
-      axis: { mark: q(".wc-mark").getBoundingClientRect().left, h: tx(q(".wc-h")).left, chip: q(".wc-chip:not([hidden])").getBoundingClientRect().left, title: tx(q(".wl-top .wl-cap")).left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
-      order: [q(".wc-mark").getBoundingClientRect().bottom, q(".wc-h").getBoundingClientRect().top, q(".wc-h").getBoundingClientRect().bottom, q(".wc-chips").getBoundingClientRect().top, q(".wc-chips").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
+      axis: { mark: q(".wc-mark").getBoundingClientRect().left, chip: q(".wc-chip:not([hidden])").getBoundingClientRect().left, title: tx(q(".wl-top .wl-cap")).left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
+      order: [q(".wc-head").getBoundingClientRect().bottom, q(".wc-chips").getBoundingClientRect().top, q(".wc-chips").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
+      head: (() => { const sh = q(".wc-mark path").getBoundingClientRect(), h = q(".wc-h").getBoundingClientRect(), t = tx(q(".wc-h")); return { gap: t.left - sh.right, mid: (sh.top + sh.bottom) / 2 - (h.top + h.bottom) / 2, shH: sh.height, lineH: h.height, toChips: q(".wc-chips").getBoundingClientRect().top - q(".wc-head").getBoundingClientRect().bottom }; })(),
       h: q(".wc-h").textContent, hTag: q(".wc-h").tagName, stIn: st.parentElement === q(".wl-foot") && st.previousElementSibling === $("wl-all"), stMid: st.textContent ? (tx(st).top + tx(st).bottom) / 2 - (all.top + all.bottom) / 2 : null, stRight: st.textContent ? foot.right - tx(st).right : null, footRight: foot.right - Math.max(...[...document.querySelectorAll(".wd-row")].map((b) => b.getBoundingClientRect().right)),
       over: $("main-empty").scrollWidth - $("main-empty").clientWidth }; })()`);
   const cardOk = (k) => k.tok.lg !== "0px" && !/rgba\(0, 0, 0, 0\)|transparent/.test(k.tok.bg) && k.cols.every((rows) => rows.length > 0 && rows.every((x, i) => { const first = i === 0, last = i === rows.length - 1, lg = k.tok.lg, z = "0px";
@@ -279,8 +281,10 @@ app.whenReady().then(async () => {
   let k = await card();
   ok("③ A2 兩欄:兩欄各自是一張完整的卡(列 = --surface-card;各欄第一列上兩角、最後一列下兩角 = --radius-lg,中間的列直角;列間 1px 線、最後一列沒有;列緊貼;行尾 › 是 ::after、列裡沒有多的節點),兩張卡之間有欄距 16、等寬",
     k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
-  ok("③ A2 同一條左軸:記號、標題、第一顆籤、小標、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號 → 標題(h4「開始一支策略」)→ 三顆籤 → 清單",
-    axisOk(k) && k.h === Z["wd.start"] && k.hTag === "H4" && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5), JSON.stringify([k.axis, k.order, k.h]));
+  ok("③ A2 同一條左軸:記號、第一顆籤、小標、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號與標題那一行 → 三顆籤(隔 12)→ 清單",
+    axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toChips - 12) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
+  ok("③ A2 記號與標題並排:同一行、記號在左(圖形右緣到標題的字隔 12)、圖形的垂直中線對到標題那行字的中線(差 ≤ 1)、圖形不比那行字高;標題是 h4「開始一支策略」",
+    Math.abs(k.head.gap - 12) < 0.6 && Math.abs(k.head.mid) <= 1 && k.head.shH <= k.head.lineH && k.head.shH >= 16 && k.h === Z["wd.start"] && k.hTag === "H4", JSON.stringify([k.head, k.h, k.hTag]));
   { // hover:底換 --surface-muted、小字從 --ink-3 換 --ink-2(ink-3 壓在 hover 底上不到 4.5:1)、› 換色
     const tgt = `$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row")`, look = () => js(`(() => { const b = ${tgt}; return { on: b.matches(":hover"), mt: getComputedStyle(b.querySelector(".wd-mt")).color, bg: getComputedStyle(b).backgroundColor, go: getComputedStyle(b, "::after").color }; })()`);
     const pt = await js(`(() => { const b = ${tgt}; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);

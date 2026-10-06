@@ -1,5 +1,5 @@
 /* 歡迎頁(renderer/welcome.js;mockup welcome-directions A2)。
-   全部靠左、同一條軸 = 卡的左緣:記號、標題、三顆籤、小標、頁尾都貼這條線,只有列的字在卡內內縮 16。
+   全部靠左、同一條軸 = 卡的左緣:記號(與標題並排一行,記號在左)、三顆籤、小標、頁尾都貼這條線,只有列的字在卡內內縮 16。
    整份清單是一張卡(--surface-card、--radius-lg),沒有包裝元素:列自己上底色、頭尾兩列收圓角、列之間 hairline(welcome.js 的 DOM 不必動)。
    一列一行:名字靠左、小字靠右成欄、行尾 ›;放不下時小字整段折到名字下面;整列可點、列與列緊貼,所以列高下限 44 就是熱區(單行時字在 44 裡垂直置中);
    市場分段沿用 .lib-seg(Outlined control segment);小標同 .sug-cap(13/600 --ink-3);文字鈕沿用 .btn-quiet。
@@ -9,13 +9,17 @@
 .wc-inner { width: 100%; max-width: 780px; }
 .wc-inner:has(.wl) { margin: 0 0 auto; padding-top: var(--space-32); }
 .wc-inner:has(.wl) { align-items: stretch; }
-/* logo 尺寸／顏色(待 Wei 定):只改下面兩行的值 */
+/* 記號與標題並排一行:記號在左、標題在右,隔 12,整行貼左軸 */
+.wc-inner:has(.wl) .wc-head { display: flex; align-items: center; gap: var(--space-12); }
+/* logo 尺寸／顏色:只改 width 與 color 這兩行的值。
+   圖形只佔 viewBox 下面 3/4(最高點在 y=45/180),上面那 1/4 是空的:用負 margin 切掉,垂直置中的才是圖形本身、對到標題那行字的中線。
+   改寬度時 margin-top 跟著改成寬的 1/4 */
 .wc-inner:has(.wl) .wc-mark {
-  align-self: flex-start;
   width: var(--space-32);
   color: var(--ink);
+  margin-top: calc(-1 * var(--space-8));
 }
-.wc-h { margin: var(--space-16) 0 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }   /* = trade.css .cv-open h4 */
+.wc-h { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }   /* = trade.css .cv-open h4 */
 .wc-inner:has(.wl) .wc-chips { margin-top: var(--space-12); justify-content: flex-start; }
 .wc-inner:has(.wd-catw) { max-width: 1040px; }   /* 完整目錄開著時放寬:780 的表格模式英文會溢出、小字折成五行 */
 .wl { width: 100%; margin-top: var(--space-32); }
