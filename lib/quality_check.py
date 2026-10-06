@@ -746,10 +746,11 @@ def next_line(context: str, findings: list) -> str:
             return ("NEXT: Stop — do not install it: delete this file (in a bundle, only this file) and "
                     "tell the user in one plain sentence why it was not installed.")
         if warns:
-            return ("NEXT: Go on with the install flow (references/marketplace.md, steps 7–8) and run it "
-                    "unchanged — do not edit the code and do not ask about these warnings; after the run "
+            return ("NEXT: Go on with the install flow in references/marketplace.md — the steps after its "
+                    "quality scan (move, then run as that flow says) — and run it unchanged — do not edit the code and do not ask about these warnings; after the run "
                     "tell the user, one plain sentence each: " + "; ".join(USER_EFFECT[w] for w in warns) + ".")
-        return "NEXT: Go on with the install flow (references/marketplace.md, steps 7–8)."
+        return ("NEXT: Go on with the install flow in references/marketplace.md — the steps after its "
+                "quality scan (move, then run as that flow says).")
     if context == "fork":
         if blocked:
             return "NEXT: Stop — create no fork: delete this file and tell the user in one plain sentence why."

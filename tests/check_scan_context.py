@@ -87,7 +87,7 @@ STOP = {
     "edit": ["Do not backtest or submit", "fix every critical finding", "run this check again"],
 }
 GO = {
-    "install": ["Go on with the install flow", "steps 7–8", "run it unchanged", "do not edit the code",
+    "install": ["Go on with the install flow", "the steps after its quality scan (move, then run as that flow says)", "run it unchanged", "do not edit the code",
                 "do not ask about these warnings", "one plain sentence each"],
     "fork": ["Go on with the fork flow", "steps 4–5", "run the baseline unchanged",
              "do not fix these warnings or ask about them now", "one plain sentence each"],
@@ -119,7 +119,7 @@ for cid, src in SAMPLES.items():
                   for w in ("do not ask;", "do not ask,", "never ask")),
           f"{cid}: no NEXT line forbids asking outright (Listing name vs code may still ask)")
 
-for ctx, want in (("install", "NEXT: Go on with the install flow (references/marketplace.md, steps 7–8)."),
+for ctx, want in (("install", "NEXT: Go on with the install flow in references/marketplace.md — the steps after its quality scan (move, then run as that flow says)."),
                   ("fork", "NEXT: Go on with the fork flow (references/marketplace.md, steps 4–5)."),
                   ("edit", "NEXT: Go on — backtest or submit it.")):
     rc, lines = cli("quality_check.py", CLEAN, f"--context={ctx}")
