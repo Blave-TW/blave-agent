@@ -8,7 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **看盤板移除:runtime 不再執行、計數、上傳(`report_runner`、`report_uploader`、`strategy_reporter`、`file_watcher`、`atomic_file`、`agent_turn`、`web_bridge`;這一版必須先於 api 拆 `/openclaw/agent/watch/*` 上線——舊 runtime 的 watch job 到點照跑,每跑一次就 PUT 一次已刪的端點、吃 404、data 檔搬進 `watch/data/failed/`,沒有人會讓它停)**:
+  - `report_jobs/<id>/job.json` 帶 `"kind": "watch"` 的 job 不再是登記:不排程、不執行(`report_runner.py <id>`、「立即執行」回 rc 2,不跑 `run.py`、不寫 `runs.jsonl`)、不佔每機 20 個名額、不出現在 `report_schedules`(欄位壞掉的也不列成錯誤列;整份 JSON 解不開的認不出 kind,照舊列錯誤)。
+  - `report_uploader` 不碰 `workspace/watch/`:不 POST `/watch/ops`、不 PUT `/watch/data/<id>`,不建 `watch/ops`、`watch/data`,不清 `watch/data/*.files`,不讀寫 `state/watch_uploads.json`;runtime 啟動時的暫存檔清掃也不再進 `watch/`。機器上既有的檔案(`workspace/watch/`、watch job 目錄與腳本、`state/watch_uploads.json`)原封不動。
+  - 策略回報的 manifest 不再帶 `can_watch`(api 那把 key 24 小時 TTL 自己過期)。
+  - Windows `file_watcher` 不再看 `watch/ops`、`watch/data`。Linux 的 `blave-agent-reports.path` 在 api repo,那兩行 `PathModified` 還在:目錄沒人寫就不觸發,觸發了也只多掃一次 `reports/`;api 拆看盤板時一併拿掉。
+  - 對話脈絡不再讀也不再傳 `viewing_widgets`(`web_bridge` 丟掉 context 那一欄、`clamp_viewing` 拿掉)。`agent_turn` 的 `--viewing-widgets` 旗標留著、值不讀:換版那一刻舊 bridge 還可能帶它起新的 `agent_turn`,拿掉會變未知選項、整輪 exit 2。`--viewing-view=watchboard` 落到「認不得的視圖 → 不加脈絡」。
+  - 工具分類拿掉 `watch`(`_KIND_SCAN`、`_STOP_STEP_TEXT`),外殼的 `act.watch`／`step.watch` 兩語字串同步刪(`shell/i18n/*.po`、`strings.js`)。還留著舊 `lib/watch.py` 的機器若呼叫它,狀態列顯示通用字(`unknown`)。
+  - 測試 `tests/check_watch_retired.py`:一台留著 watch job(每分鐘)、待送 ops／data 的舊機器樹,旁邊放滿 20 個報告 job 與一份報告——報告 job 照排照跑、報告照送,watch 那邊零執行、零請求、檔案原樣(對未改的 runtime 會紅)。
 
 ## 1.1.115 — 2026-10-06(desktop 0.1.16)
 

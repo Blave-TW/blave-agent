@@ -109,7 +109,6 @@ case("Bash", {"command": "python3 tmp/brief.py"}, "report", note="publish() insi
 case("Bash", {"command": "python3 -c 'from lib import report_bricks'"}, "report")
 case("Bash", {"command": "python3 -c 'from lib.param_scan import scan_grid; scan_grid(x)'"}, "scan")
 case("Bash", {"command": "python3 -c 'from lib.validation import mcpt; mcpt(x)'"}, "validate")
-case("Bash", {"command": "python3 -c 'import lib.watch as w; w.push(x)'"}, "watch")
 case("Bash", {"command": "crontab -l"}, "schedule")
 case("Bash", {"command": "python3 -c \"from lib.data import fetch_kline; fetch_kline('ETHUSDT', '1h')\""}, "data", "ETHUSDT")
 case("Bash", {"command": "python3 -c 'import lib.account_okx as a; a.balances()'"}, "account")
@@ -157,7 +156,7 @@ case("WebFetch", {"url": "https://news.example.co.uk/a"}, "web_read", "example.c
 # every kind of the table has a positive example
 TABLE = {"search", "web_read", "web_read_many", "web_act", "silent", "docs", "strategy_read", "file_read",
          "files", "strategy_write", "file_write", "delegate", "cloud", "unknown", "backtest", "live_tick",
-         "scan", "validate", "check", "account", "order", "report", "watch", "schedule", "data", "install",
+         "scan", "validate", "check", "account", "order", "report", "schedule", "data", "install",
          "status"}
 missing = TABLE - seen
 print(("PASS " if not missing else "FAIL ") + f"every kind in the table has an example (missing: {sorted(missing)})")

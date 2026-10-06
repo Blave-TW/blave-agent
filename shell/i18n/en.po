@@ -191,9 +191,6 @@ msgstr "Checking strategy code"
 msgid "act.report"
 msgstr "Building the report"
 
-msgid "act.watch"
-msgstr "Updating the watchboard"
-
 msgid "act.schedule"
 msgstr "Setting up a schedule"
 
@@ -278,9 +275,6 @@ msgstr "Checked strategy code"
 
 msgid "step.report"
 msgstr "Built the report"
-
-msgid "step.watch"
-msgstr "Updated the watchboard"
 
 msgid "step.schedule"
 msgstr "Set up a schedule"

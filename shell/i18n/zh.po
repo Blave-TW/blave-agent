@@ -191,9 +191,6 @@ msgstr "正在檢查策略碼"
 msgid "act.report"
 msgstr "正在組報告"
 
-msgid "act.watch"
-msgstr "正在更新看盤板"
-
 msgid "act.schedule"
 msgstr "正在設定排程"
 
@@ -278,9 +275,6 @@ msgstr "檢查策略碼"
 
 msgid "step.report"
 msgstr "組報告"
-
-msgid "step.watch"
-msgstr "更新看盤板"
 
 msgid "step.schedule"
 msgstr "設定排程"
