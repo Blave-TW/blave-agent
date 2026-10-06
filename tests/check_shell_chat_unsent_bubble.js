@@ -10,8 +10,8 @@ const src = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 
 const sub = (src.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0];
-ok("泡泡留住節點+unsend(收回泡泡;打字的才塞回輸入框,固定句不塞)",
-  /const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachment \? attachment\.name : null\);/.test(sub) && /const unsend = \(\) => \{ bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachment, lastUserFrom\); \};/.test(sub));
+ok("泡泡留住節點+unsend(收回泡泡;打字的才塞回輸入框,固定句不塞;帶的檔放不回 chip 時泡泡不收——行為在 check_shell_attach.js 實跑)",
+  /const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachment \? attachment\.name : null\);/.test(sub) && /const unsend = \(\) => \{ if \(!attachment \|\| !attachedFile \|\| attachedFile === attachment\) bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachment, lastUserFrom\); \};/.test(sub));
 ok("busy(上一輪還在跑):收回泡泡再上系統行", /unsend\(\); addMsg\("sys", t\("turn\.busy"\)\)\.dataset\.i18n = "turn\.busy"; unlock\(\); return false;/.test(sub));
 ok("版本閘 blocked:收回泡泡", /minv\.chat[\s\S]{0,200}unsend\(\); unlock\(\); return false;/.test(sub));
 ok("暖機中按停止:收回泡泡(還原照舊只認打字的)", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); unsend\(\); return false; \}/.test(sub));

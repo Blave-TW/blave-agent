@@ -47,8 +47,8 @@ const WD_ROWS = [
   ["opt", "txf", WD_B, 1, 0], ["pcr", "txf", WD_B, 0, 5], ["exd", "txf", WD_B, 1, 0], ["sf", "txf", WD_B, 1, 0],
 ];
 const WD_NT = new Set(["bnk", "fng", "ti", "conc", "whale", "liq", "sent", "dir", "top", "fr", "twd", "inst", "fh", "fin", "val", "txd", "txk", "txio", "opt", "exd", "sf"]);
-/* 歡迎頁用短名(.wnm)的列:目錄留長名,清單那一欄窄、長名會把小字擠到第二行 */
-const WD_WNM = new Set(["bnk", "txd", "txk"]);
+/* 歡迎頁用短名(.wnm)的列:目錄留長名,清單那一欄窄、長名會把小字擠到第二行。twd / br 只有英文縮短,中文的 .wnm 照抄 .nm */
+const WD_WNM = new Set(["bnk", "txd", "txk", "twd", "br"]);
 const WD = { mk: "crypto", all: false, key: "", pre: "", filled: "", pubAsked: false };
 
 const wdEl = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };

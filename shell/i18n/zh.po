@@ -6432,6 +6432,9 @@ msgstr "資金費率"
 msgid "wd.r.twd.nm"
 msgstr "個股日線（原始與還原）"
 
+msgid "wd.r.twd.wnm"
+msgstr "個股日線（原始與還原）"
+
 msgid "wd.r.twd.nt"
 msgstr "上櫃股可回到 1990 年代；雲端主機上走 Blave，1994-10-01 起"
 
@@ -6529,6 +6532,9 @@ msgid "wd.r.fh.us"
 msgstr "外資持股比變化"
 
 msgid "wd.r.br.nm"
+msgstr "分點買賣超、八大行庫"
+
+msgid "wd.r.br.wnm"
 msgstr "分點買賣超、八大行庫"
 
 msgid "wd.r.br.fq"

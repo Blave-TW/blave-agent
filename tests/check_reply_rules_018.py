@@ -15,6 +15,7 @@
   第七批:#143 #167 回覆裡的時間換成用戶的時區並標明;#148 被要求上線時先講最近一次回測對比基準的結果。
   第九批:#2 前後比較用同一個基準;自己換算的數字寫公式與輸入日期、拿不到就寫「—」不硬算;百分位不當排名。
   第九批:#3 沒有要提議時回覆就此結束,不交代「沒有建議」、不更正自己的上一句。
+  0.1.17 e2e:「跟我討論要怎麼用…做策略」的回覆以編號提案收尾、標一個預設、缺的細節自己填不逐項問;台指期日線策略的 START 用最早可得日、不用 2011。
   第七批:開了就讀(實測開 6 頁只讀 3 頁,中時與鉅亨三頁開了沒讀);新聞與數字先讀媒體或官方原文,論壇貼文 / 轉述 / 聚合頁要標明。
 
 跑法:cd blave-agent && python3 tests/check_reply_rules_018.py
@@ -173,6 +174,21 @@ t("#5B 規則:AGENTS › Reports 的自訂報告那一句改成從 quickstart() 
 t("#143 #167 時間:回覆、表格、報告裡的時間一律換成用戶的時區並標明;不寫其實是 UTC 的「今天 21:34」,不出「時間(UTC)」欄(AGENTS › Response Style,一句)",
   len([l for l in style.splitlines() if l.startswith("- **Clock times are the user's, and say whose:**")]) == 1 and "converted to the user's timezone" in style and "named once" in style
   and "never a bare 「今天 21:34」 that is really UTC" in style and "no 「時間(UTC)」 column unless the user asked for UTC" in style)
+# 0.1.17 e2e:歡迎頁點列送出的討論句,回合 1 以三個問題收尾(方向／標的／週期),跟畫面上的建議句各講各的。
+# runtime 的結尾規則只管「提議下一步的問句」,問用戶偏好的問句不在它的範圍內
+discuss = [l for l in style.splitlines() if l.startswith("- **Asked to discuss how to build a strategy from some data")]
+t("0.1.17 討論型開場:編號提案收尾、標一個預設、回編號就開始做;缺的細節用預設並寫明、不逐項問、最多一個問題;建議句出自同一組提案(AGENTS › Response Style,一句)",
+  len(discuss) == 1 and "end on your numbered proposals with one marked as the recommended default" in discuss[0] and "replying with a number starts the build" in discuss[0]
+  and "(symbol, interval, contract, capital)" in discuss[0] and "not asked one by one" in discuss[0] and "at most one clarifying question" in discuss[0] and "picked from those same proposals" in discuss[0])
+# 0.1.17 e2e:歡迎頁寫「1998 年起」,agent 寫出的台指期日線策略 START 卻是 2011-01-03(讀了 twfutures.md 裡 Blave 序列的起點就拿來用)
+_dp = read("lib", "data.py")
+_listed = re.search(r"_TAIFEX_INDEX_FUT_LISTED = \{'TXF': '([\d-]+)', 'MXF': '([\d-]+)', 'TMF': '([\d-]+)'\}", _dp).groups()
+_blave0 = re.search(r"_TXF_BLAVE_START = '([\d-]+)'", _dp).group(1)
+_start = " ".join(section(read("references", "twfutures.md"), "## TXF daily bars back to 1998").split())
+t("0.1.17 台指期日線策略的 START:電腦版預設用最早可得日(三個合約的日期逐字同 lib/data.py),2011-01-03 只是 Blave 序列的起點、分線與雲端主機日線才從那天起(references/twfutures.md)",
+  f"defaults to the first bar this fetch returns — TXF `{_listed[0]}`, MXF `{_listed[1]}`, with or without Blave data; TMF `{_listed[2]}` without Blave data (with it `{_blave0}`" in _start
+  and f"`{_blave0}` is where the Blave series begins, not a default" in _start and "only for intraday schemas and for `'1d'` on a cloud machine" in _start
+  and f"- **Cloud machine:** Blave only, from {_blave0}." in _start)
 live_rule = [l for l in agents.splitlines() if l.startswith("**Asked to put a strategy live, say first how its latest backtest did against its benchmark**")]
 t("#148 被要求上線:先講這支最近一次回測對比基準的結果,尤其輸給持有或沒過顯著性;決定權在用戶(AGENTS › Strategy Deployment,一句)",
   len(live_rule) == 1 and "trailed buy-and-hold or did not pass significance" in live_rule[0] and "The decision stays the user's" in live_rule[0]

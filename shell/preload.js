@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("blave", {
   // 聊天附件檔名上限:主行程 shell/attach.js 的 ATTACH_NAME_MAX,經 webPreferences.additionalArguments 進來(數字只寫在那一處)。0 = 沒拿到:畫面不擋,仍由主行程擋
-  attachNameMax: Number((process.argv.find((a) => a.indexOf("--blave-attach-name-max=") === 0) || "").split("=")[1]) || 0,
+  attachNameMax: Number(((process.argv || []).find((a) => a.indexOf("--blave-attach-name-max=") === 0) || "").split("=")[1]) || 0,
   platform: process.platform,   // app.js 掛到 <html data-platform>:Windows 的捲軸樣式只認這個記號
   detectAgents: () => ipcRenderer.invoke("detect-agents"),
   saveConnection: (choice) => ipcRenderer.invoke("save-connection", choice),

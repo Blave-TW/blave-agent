@@ -91,8 +91,8 @@ if (!process.versions.electron) {
       && !/日/.test(STR.zh["wd.r.txk.fq"]) && !/daily/i.test(STR.en["wd.r.txk.fq"])
       && /"fetch_txf_daily_public"/.test(read(path.join(SHELL, "..", "lib", "quality_check.py"))), JSON.stringify([listed.slice(1), STR.zh["wd.r.txd.nt"], STR.en["wd.r.txd.nt"]]));
     const wn = ["zh", "en"].flatMap((L) => Object.keys(STR[L]).filter((k) => /^wd\.r\..*\.wn$/.test(k)).map((k) => L + ":" + k));
-    ok("② 歡迎頁列的小字只有「頻率・起始年」:列尾補充 .wn 與 WD_WN 退役(兩語字串表沒有 wd.r.*.wn);歡迎頁短名 .wnm = bnk / txd / txk,短名不帶「近月連續」那個括號",
-      wn.length === 0 && !/WD_WN\b|"wn"/.test(src) && [...TAB.WD_WNM].sort().join() === "bnk,txd,txk"
+    ok("② 歡迎頁列的小字只有「頻率・起始年」:列尾補充 .wn 與 WD_WN 退役(兩語字串表沒有 wd.r.*.wn);歡迎頁短名 .wnm = bnk / txd / txk / twd / br(後兩個只有英文縮短,中文照抄 .nm),短名不帶「近月連續」那個括號",
+      wn.length === 0 && !/WD_WN\b|"wn"/.test(src) && [...TAB.WD_WNM].sort().join() === "bnk,br,twd,txd,txk" && ["twd", "br"].every((id) => STR.zh["wd.r." + id + ".wnm"] === STR.zh["wd.r." + id + ".nm"] && STR.en["wd.r." + id + ".wnm"].length < STR.en["wd.r." + id + ".nm"].length)
       && ["zh", "en"].every((L) => ["txd", "txk"].every((id) => !/[()（）]/.test(STR[L]["wd.r." + id + ".wnm"]) && /[()（）]/.test(STR[L]["wd.r." + id + ".nm"]))), wn.join(", ")); }
   // ── 一列一行、點列 = 討論句(起手句 .tx 退役)──
   { const po = read(path.join(SHELL, "i18n", "zh.po")) + read(path.join(SHELL, "i18n", "en.po")), code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
@@ -191,7 +191,8 @@ app.whenReady().then(async () => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // 畫面的量測:版本、欄數、每欄的小標與列數、幾何、右欄有沒有被鎖、狀態句、目錄
   const snap = () => js(`(() => { const body = $("wl-body"), cols = [...body.querySelectorAll(":scope > .wl-col")];
-    const rc = (c) => { const r = c.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+    // 欄的範圍 = 它子項的聯集:兩欄並排時 .wl-col 是 display: contents,自己沒有盒子(getBoundingClientRect 全 0,並排的斷言會假綠)
+    const rc = (c) => { const k = [...c.children].map((e) => e.getBoundingClientRect()); return { left: Math.min(...k.map((r) => r.left)), right: Math.max(...k.map((r) => r.right)), top: Math.min(...k.map((r) => r.top)), bottom: Math.max(...k.map((r) => r.bottom)) }; };
     return { visible: !$("main-empty").hidden && !$("wl").hidden, cmp2: body.classList.contains("cmp2"), cols: cols.map((c) => ({ cap: (c.querySelector(".wl-cap") || {}).textContent || "", note: (c.querySelector(".wl-note") || {}).textContent || "",
         rows: c.querySelectorAll(".wd-row").length, locked: c.querySelectorAll(".wd-row[disabled], .wd-row[aria-disabled], .wd-row.is-locked").length,
         dim: [...c.querySelectorAll(".wd-row")].some((b) => parseFloat(getComputedStyle(b).opacity) < 1), r: rc(c) })),
@@ -207,6 +208,13 @@ app.whenReady().then(async () => {
   ok("③ 歡迎頁可見;沒登入 → 兩欄對比:第一欄「免費，不用帳號」第二欄「Blave 資料」;加密:免費 2 列、Blave 4 列", s.visible && s.cmp2 && s.cols.length === 2 && s.cols[0].cap === Z["wd.col.free"] && s.cols[1].cap === Z["wd.col.blave"] && s.cols[0].rows === 2 && s.cols[1].rows === 4, JSON.stringify(s.cols.map((c) => [c.cap, c.rows])));
   ok("③ 右欄不上鎖、不變灰;右欄那句是「登入並綁卡後就能用」(公開價目拿不到 → 不帶數字那句)、是一顆鈕", s.cols[1].locked === 0 && !s.cols[1].dim && s.cols[1].note === Z["wd.note.outNoNum"] && (await js(`!!$("wl-body").querySelector(".wl-note button")`)));
   ok("③ 1600 寬:兩欄並排、免費欄在左", s.cols[1].r.left >= s.cols[0].r.right - 1 && Math.abs(s.cols[0].r.top - s.cols[1].r.top) < 2, JSON.stringify([s.cols[0].r, s.cols[1].r]));
+  { // 兩欄的欄頭與列共用橫排:右欄那句折成兩行時,兩條 hairline 與第一列仍在同一條 y(原本各排各的,錯開一行字高)
+    const al = () => js(`[...$("wl-body").querySelectorAll(".wl-col")].map((c) => { const h = c.querySelector(".wl-colh"), hr = h.getBoundingClientRect(), cap = h.querySelector(".wl-cap").getBoundingClientRect(), n = h.querySelector(".wl-note");
+      return { hTop: hr.top, hBot: hr.bottom, rTop: c.querySelector(".wd-row").getBoundingClientRect().top, wrapped: !!n && n.getBoundingClientRect().top >= cap.bottom - 2 }; })`);
+    const same = (a) => Math.abs(a[0].hTop - a[1].hTop) < 0.5 && Math.abs(a[0].hBot - a[1].hBot) < 0.5 && Math.abs(a[0].rTop - a[1].rTop) < 0.5;
+    const a1 = await al(); await js(`$("wl-body").style.width = "300px"`); await wait(50); const a2 = await al(), s2 = await snap(); await js(`$("wl-body").style.width = ""`); await wait(50);
+    ok("③ 兩欄並排:欄頭同高、hairline 同一條 y、第一列同 y;把欄擠窄讓右欄那句折到第二行,三者仍對齊、仍是左右兩欄", same(a1) && !a1[1].wrapped && a2[1].wrapped && !a2[0].wrapped && same(a2) && a2[1].hBot - a2[1].hTop > a1[1].hBot - a1[1].hTop + 10
+      && s2.cols[1].r.left >= s2.cols[0].r.right - 1, JSON.stringify([a1, a2])); }
   ok("③ 「看全部資料」鈕字、市場分段看得到、沒有 TWD 字樣(沒登入不講價)", s.all === Z["wd.all"] && s.seg && !/TWD/.test(s.text));
   // 點列:落進輸入框、不送出
   await js(`$("wl-body").querySelector(".wl-col .wd-row").click()`); await wait(50); s = await snap();
