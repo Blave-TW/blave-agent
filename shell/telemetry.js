@@ -106,7 +106,11 @@ const EVENTS = {
     // 缺資料來源金鑰(0.1.15;renderer/app.js rpGoDataSrc):按策略頁缺金鑰那一格的「去資料來源」,不帶來源名
     "missing_key_go",
     // 自帶 API 金鑰(0.1.16;renderer/apikey.js):按 API 金鑰那一列的「設定」(連結畫面或設定 › 模型接入)。測試成功 = connect_done kind=apikey
-    "apikey_setup"] },
+    "apikey_setup",
+    // 綁卡／儲值入口(0.1.16;預檢卡與 402 卡另有 acct_card_click):bind_* 鈕字是綁卡、topup_* 是儲值／加值,後半是入口——
+    // set = 設定 › 帳號與方案(含錯誤列的鈕)、data = 沒有資料權限卡、cloud = 雲端開通頁與雲端停機的加值鈕、lib = 策略庫閘門與買策略沒卡那一框。
+    // 送出點 renderer/app.js bindGo(…)、renderer/library.js libTrack;策略庫 unknown(「帳號與方案」描邊鈕)不記
+    "bind_set", "topup_set", "bind_data", "topup_data", "bind_cloud", "topup_cloud", "bind_lib", "topup_lib"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

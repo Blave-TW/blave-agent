@@ -532,7 +532,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const envPlanChanged = undefined;
   hasToken = true; cur = "claude";
   let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));   // 餘額由 balLoad 讀進 balLast(主行程的端點);這裡直接給值
-  eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint"));
+  eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint")); eval(src.match(/^function bindGo\(.*$/m)[0]);
   // 最上面一組(.plan-id):帳號列 → 訊息格 → 餘額列;餘額列是這一組的第三個子節點
   const balRow = () => dom["set-plan"].children[0].children[0].children[2];
   { planPaint(); const row = balRow(), val = row.children[1];

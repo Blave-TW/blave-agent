@@ -1558,7 +1558,7 @@ function trPaintHead() {
     b = trEl("button", "btn-fill"); b.type = "button"; b.id = "tr-go";
     b.addEventListener("click", () => {
       // 雲端停機時這顆是「加值」(外開瀏覽器):主機不在,送什麼都是 409
-      if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") { window.blave.openExternal(acctUrl()); return; }
+      if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") { bindGo("topup_cloud"); return; }
       if (trStartPending(TR.pending) || trHaltInFlight(TR.pending, Date.now())) return;   // 啟動在途:主鈕講實話、不能按,暫停走旁邊那顆(#tr-go-stop);暫停在途:停用
       // 換金鑰後要回答「還是同一個帳戶嗎」:這顆就是「確認帳戶」(不給啟動下單——機器會回 held、HALT 照舊)
       if (envHeadState(TR.st, Date.now()) === "halted" && trAcctAsk(trReport())) { if (!TR.pending) trAskAccount(b); return; }
@@ -3879,7 +3879,6 @@ function envPaintEmpty(kind, pid) {
   if (view === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
   const page = trEl("div", "cv-open"); box.appendChild(page);
   const btn = (cls, label, on, k) => { const b = trEl("button", cls, label); b.type = "button"; b.dataset.k = k; if (on) b.addEventListener("click", on); return b; };
-  const ext = (u) => () => window.blave.openExternal(u);
   if (view === "unreach") { page.appendChild(trEl("p", "cv-p", t("env.empty.unreach"))); return; }
   // ready:行為同 starting——不畫 env.open.h 那三條賣點、不畫價格。它不是開通頁了,是一句交代
   if (view === "ready") page.append(trEl("h4", "", t("ho.ready.h")), trEl("p", "cv-p", t("ho.ready.body", { id: pid })));
@@ -3902,13 +3901,13 @@ function envPaintEmpty(kind, pid) {
   const after = () => { ENV.sig.empty = null; ENV.cloudDirty = true; trPollSoon(0); };
   let main = null, side = null;
   if (err && err.key === "plan.err.relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
-  else if (err && err.key === "plan.err.nocard") main = btn("btn-fill", t("plan.addCard"), ext(acctUrl()), "main");
-  else if (err && err.key === "plan.err.credit") main = btn("btn-fill", t("plan.addCredit"), ext(acctUrl()), "main");
+  else if (err && err.key === "plan.err.nocard") main = btn("btn-fill", t("plan.addCard"), () => bindGo("bind_cloud"), "main");
+  else if (err && err.key === "plan.err.credit") main = btn("btn-fill", t("plan.addCredit"), () => bindGo("topup_cloud"), "main");
   // 主鈕的 data-k 照樣是 "main":登入前按的那顆也是 main,所以人回來時焦點正好落在它身上(下面那段依 data-k 還原焦點),按 Enter 就走
   else if (view === "ready") { main = btn("btn-fill", t("ho.back.btn"), () => hoBack(pid), "main"); side = btn("btn-quiet", t("ho.ready.stay"), () => { hoStay(); after(); }, "stay"); }
   else if (view === "out") { main = planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin, "main") : btn("btn-fill", t("cn.blave.btn"), () => Promise.resolve(planLogin()).then(after), "main"); side = trEl("span", "wait", planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli")); }
   else if (view === "relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
-  else if (view === "card") { main = btn("btn-fill", t("plan.addCard"), ext(acctUrl()), "main"); side = more(); }
+  else if (view === "card") { main = btn("btn-fill", t("plan.addCard"), () => bindGo("bind_cloud"), "main"); side = more(); }
   else if (view === "start") { main = btn("btn-fill", t("plan.start"), planAsk, "main"); main.disabled = !(v.p && v.h); side = more(); }
   else if (view === "starting") { main = slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); after(); }, "main") : btn("btn-fill", t("plan.starting"), null, "main"); main.disabled = !slow; }
   else { main = btn("btn-out", t("plan.recheck"), () => { acctCheck(); if (typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh(); after(); }, "main"); side = more(); }

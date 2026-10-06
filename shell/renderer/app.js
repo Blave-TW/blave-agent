@@ -2688,6 +2688,9 @@ const creditCards = [];                     // 402 那張(可能不只一張:他
 const acctVars = (s) => ({ q: s.trial_ai_credit, t: s.trial_days, lo: s.auto_topup_min, a: s.auto_topup_amount, m: s.min_topup });
 const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#topup";
 const usageUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop";
+/* 預檢卡 / 402 卡以外的綁卡／儲值入口:按下先記哪個入口(feature_used bind_*／topup_*,canon product-telemetry),再外開。
+   直接叫 window.blave.trackFeature:tests/check_shell_telemetry.js 掃送出點只認字面名字,這裡的變數不算送出點,呼叫端那個字面才算 */
+function bindGo(name) { try { window.blave.trackFeature(name); } catch (_) { } window.blave.openExternal(acctUrl()); }
 /* 資料狀態(同 main.js dataAccessOf):"included" 免費含在裡面、"billed" 按有用到的整點小時收、"none" 這一小時付不出來;
    null = 舊 api 沒有 data_access(或值認不得)→ 照舊只看布林 data_included。included 與 billed 都算拿得到資料 */
 function dataAccessOf(s) {
@@ -2790,7 +2793,7 @@ function dataCardState() {
   /* 付不出這一小時(spec-data-without-machine-flow §3):出口是錢包,不是主機——沒綁卡 → 綁卡(有試用就講送幾天);
      有卡 → 儲值。兩格都不提主機。account_status 刻意不回餘額,所以不講「餘額 N TWD」 */
   if (dataAccessOf(acct) === "none") {
-    const top = { label: t(acct.reason === "NO_CARD" ? "acct.addCard" : "fault.noCreditBtn"), on: () => window.blave.openExternal(acctUrl()) };
+    const top = { label: t(acct.reason === "NO_CARD" ? "acct.addCard" : "fault.noCreditBtn"), on: () => bindGo(acct.reason === "NO_CARD" ? "bind_data" : "topup_data") };
     if (acct.reason === "NO_CARD") return { ...top, text: t("data.noCard"), sub: acct.trial_eligible && v.t ? t("data.noCardSub", v) : null };
     return { ...top, text: v.r ? t("data.noBalance", v) : t("data.noBalanceNoNum"), sub: t("data.noBalanceSub") };
   }
@@ -2922,8 +2925,8 @@ function planPaint() {
     out:      { h: hasNum ? "pv.h.offer" : "pv.h.offerNoNum", lead: hasNum ? offerLead() : t(pvK("pv.d.noPrice")), rule: hasNum ? t(pvK("pv.f.out"), v) : "", wait: planLoginBusy ? t("pv.w.waiting") : t("pv.w.out"),
                 acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     unknown:  { h: "pv.h.unknown", lead: t("pv.d.unknown"), acts: [btn("btn-out", t("plan.recheck"), () => acctCheck())] },
-    offer:    { h: "pv.h.offer", lead: offerLead(), rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))] },
-    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: t("pv.f.noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))] },
+    offer:    { h: "pv.h.offer", lead: offerLead(), rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: t("pv.f.noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     trial:    { st: ["on", t("pv.st.trial", v)], h: "pv.h.ready", lead: t(pvK("pv.d.trial"), v), rule: t("pv.f.trial", v), acts: [btn("btn-out", t("plan.start"), planAsk, !(v.p && v.h))] },
     plan:     { st: ["", t("pv.st.none")], h: "pv.h.plan", lead: t("pv.d.plan", v), rule: t("pv.f.plan", v), acts: [btn("btn-fill", t("plan.start"), planAsk, !(v.p && v.h))] },
     included: { st: ["on", t("pv.st.ok")], h: "pv.h.ready", lead: t("pv.d.included", v), rule: t("pv.f.plan", v), acts: [btn("btn-out", t("plan.start"), planAsk, !(v.p && v.h))] },
@@ -2932,13 +2935,13 @@ function planPaint() {
                 acts: [btn("btn-quiet", t("pv.usage"), ext(usageUrl())), btn("btn-out", t("plan.start"), planAsk, !(v.p && v.h))] },
     // 付不出這一小時:唯一的主鈕是儲值;主機降成安靜文字鈕——這一刻推銷一台更貴的東西是錯的
     none:     { st: ["bad", t("pv.st.noData")], h: "pv.h.none", lead: v.r ? t("pv.d.none", v) : t("pv.d.noneNoNum"),
-                acts: [btn("btn-quiet", t("plan.start"), planAsk, !(v.p && v.h)), btn("btn-fill", t("fault.noCreditBtn"), ext(acctUrl()))] },
+                acts: [btn("btn-quiet", t("plan.start"), planAsk, !(v.p && v.h)), btn("btn-fill", t("fault.noCreditBtn"), () => bindGo("topup_set"))] },
     starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"),
                 acts: [slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); }) : btn("btn-fill", t("plan.starting"), null, true)] },
     running:  { st: ["on", t("plan.st.running")], h: "pv.h.running", lead: t("pv.d.running"), rule: t("pv.f.running", v),
                 acts: [btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.switchCloud"), planToCloud)] },
     stopped:  { st: ["bad", v.m ? t("plan.st.stopped", v) : t("plan.st.stoppedNoAmt")], h: "pv.h.stopped", lead: t("pv.d.stopped", v),
-                acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planWebUrl())), btn("btn-fill", t("plan.addCredit"), ext(acctUrl()))] },
+                acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planWebUrl())), btn("btn-fill", t("plan.addCredit"), () => bindGo("topup_set"))] },
   }[view];
 
   if (view !== planLastView) { if (planLastView && !box.hidden) srSay(t(V.h, v)); planLastView = view; }
@@ -2968,8 +2971,8 @@ function planPaint() {
   if (V.wait) act.append(el("span", "wait", V.wait));
   let acts = V.acts;
   if (err && err.key === "plan.err.relogin") acts = [btn("btn-fill", t("plan.relogin"), planRelogin)];
-  else if (err && err.key === "plan.err.nocard") acts = [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))];
-  else if (err && err.key === "plan.err.credit") acts = [btn("btn-fill", t("plan.addCredit"), ext(acctUrl()))];
+  else if (err && err.key === "plan.err.nocard") acts = [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))];
+  else if (err && err.key === "plan.err.credit") acts = [btn("btn-fill", t("plan.addCredit"), () => bindGo("topup_set"))];
   acts.forEach((b, i) => { b.dataset.k = view + ":" + i; act.append(b); });
   foot.append(act); box.append(sc, foot);
   // 重畫前焦點在這一頁的鈕上 → 還給同一顆(或現在的主鈕);那顆是 disabled 就退到左側的分類鈕——焦點掉到

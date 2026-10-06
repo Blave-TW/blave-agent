@@ -556,7 +556,7 @@ function libGateBtn(why) {
   const trial = typeof acct !== "undefined" && acct && acct.trial_eligible === false ? false : true;
   const tDays = typeof planVars === "function" ? planVars().t : "";
   const b = libEl("button", why === "unknown" ? "btn-out" : "btn-fill", why === "no_balance" ? t("lib.gate.topup") : why === "unknown" ? t("pv.e.btn") : trial && tDays ? t("lib.gate.bindCard", { t: tDays }) : t("plan.addCard"));
-  b.type = "button"; b.addEventListener("click", () => planOpen());
+  b.type = "button"; b.addEventListener("click", () => { if (why !== "unknown") libTrack(why === "no_balance" ? "topup_lib" : "bind_lib"); planOpen(); });
   return b;
 }
 // 「登入 Blave」(詳情主鈕與沒登入那組的閘門卡同一顆):開 設定 › 帳號與方案
@@ -883,7 +883,7 @@ function libBuyBox(s, stage, opener, o) {
   } else if (stage === "topup") {
     confirmBox({ title, lines: [t("lib.buy.topup", { balance: libBalanceText(o.balance), price })], ok: t("lib.buy.charge"), opener, onOk: () => libPurchase(s, true) });
   } else if (stage === "noCard") {
-    confirmBox({ title, lines: [t("lib.buy.noCard")], ok: t("acct.addCard"), opener, onOk: () => planOpen() });
+    confirmBox({ title, lines: [t("lib.buy.noCard")], ok: t("acct.addCard"), opener, onOk: () => { libTrack("bind_lib"); planOpen(); } });
   } else {
     confirmBox({ title, lines: [t("lib.buy.inProgress")], ok: t("cdel.gotIt"), single: true, opener, onOk: () => {} });
   }
