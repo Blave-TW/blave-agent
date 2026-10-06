@@ -2486,12 +2486,14 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 訊息走 stdin:不是字串的話 stdin.end() 會拋、留下一支等不到 EOF 的子行程(稽核 R4)。上限同 runtime 的 --message-stdin
   if (typeof message !== "string" || Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
   // 聊天附件(shell/attach.js):同雲端那條契約——落地 workspace/tmp/inbound/、訊息尾端補一行給引擎;
-  // 存失敗也照跑回合(補「接收失敗」那行,讓 agent 請用戶重傳),形狀不對才整輪不跑
-  if (attachment != null) {
-    const at = require("./attach");
-    if (!at.validate(attachment)) throw new Error("bad attachment");
-    message = at.withNote(message, at.save(WS, attachment));
-    if (Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
+  // 存失敗也照跑回合(補「接收失敗」那行,讓 agent 請用戶重傳),形狀不對才整輪不跑。
+  // 這裡只驗不存:落地排在下面「這一輪不跑」的檢查(Codex 不見了、金鑰不見了)之後,不然那兩條路會留下沒有回合的檔。
+  // 長度先拿最長的那一行量(撞名落地的 `<10 位秒數>_` 前綴;「接收失敗」那行比它短)
+  const at = attachment != null ? require("./attach") : null;
+  if (at) {
+    const v = at.validate(attachment);
+    if (!v) throw new Error("bad attachment");
+    if (Buffer.byteLength(at.withNote(message, "0000000000_" + v.name), "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
   }
   imgWin = win;
   const envPath = await loginShellPath();
@@ -2506,6 +2508,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const useCodex = !!codexBin;
   const llmKey = conn.kind === "apikey" ? loadLlmKey() : null;
   if (conn.kind === "apikey" && !llmKey) throw new Error("APIKEY_MISSING");
+  if (at) message = at.withNote(message, at.save(WS, attachment));
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
@@ -2702,6 +2705,8 @@ function createWindow() {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       // 發佈版連 DevTools 本身都關掉(選單已經不放;這是縱深:哪天有人加回快捷鍵或 openDevTools 也開不起來)
       devTools: !(app.isPackaged && require("./package.json").blaveRelease),
+      // 聊天附件的檔名上限只寫在 shell/attach.js:經 preload 交給畫面,選檔那一刻就擋(主行程回絕時 send-message 已經回 started)
+      additionalArguments: ["--blave-attach-name-max=" + require("./attach").ATTACH_NAME_MAX],
     },
   });
   guardNavigation(win);
@@ -3022,6 +3027,7 @@ app.whenReady().then(() => {
   app.on("browser-window-blur", (_e, w) => { cloudHost().setForeground(false); tellActive(w, false); });   // 背景時輪詢放慢到 60 秒
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
   startStep("tray", trayStart);
+  startStep("inbound prune", () => require("./attach").prune(WS));   // 聊天附件放超過七天的(雲端由 runtime/prune_job.py 清)
   startStep("telemetry", () => tm().start());
   // 帳號 token 輪替:開 app 就檢查一次(0.1.15 以前沒有期限的那顆在這裡第一次換掉),之後每 10 分鐘看一次。
   // 回合進行中不換:那顆在 agent 的環境裡,換了它 10 分鐘後就失效。第二份 app 不碰(兩份同時換,先回來的那顆會作廢)

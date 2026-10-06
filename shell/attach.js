@@ -18,6 +18,7 @@ const INBOUND = ["tmp", "inbound"];         // workspace 底下的落地位置,�
 const NOTE_OK = "[用戶傳了檔案：tmp/inbound/{name}，請先讀取檔案內容再回應]";
 const NOTE_FAIL = "[用戶附了一個檔案但接收失敗，請告知用戶重傳]";
 const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+const INBOUND_KEEP_MS = 7 * 24 * 3600 * 1000;   // 同 runtime/prune_job.py INBOUND_RETENTION_DAYS
 
 /* api 那一段的消毒:basename、去掉控制字元(< 32)、空的或太長就不收。回 null = 不合法 */
 function sanitizeName(raw) {
@@ -53,11 +54,31 @@ function save(workspace, att) {
   try {
     const dir = path.join(workspace, ...INBOUND);
     fs.mkdirSync(dir, { recursive: true });
+    prune(workspace);
     let name = v.name;
     if (fs.existsSync(path.join(dir, name))) name = `${Math.floor(Date.now() / 1000)}_${name}`;
     fs.writeFileSync(path.join(dir, name), v.bytes, { mode: 0o600, flag: "wx" });
     return name;
   } catch (_) { return null; }
+}
+
+/* 七天清掃:雲端是 runtime/prune_job.py 的排程在清,電腦版不跑那支,由外殼啟動時與每次落地前清。
+   只清 workspace/tmp/inbound 這一層、放超過七天的一般檔案:lstat 不跟 symlink(連結與子目錄都不動);
+   tmp 或 inbound 被換成連到別處的 symlink(agent 寫得到 workspace)就整個不清。回刪掉幾個。 */
+function prune(workspace, now) {
+  let removed = 0;
+  try {
+    const dir = path.join(workspace, ...INBOUND);
+    if (fs.realpathSync(dir) !== path.join(fs.realpathSync(workspace), ...INBOUND)) return 0;
+    const cutoff = (now == null ? Date.now() : now) - INBOUND_KEEP_MS;
+    for (const name of fs.readdirSync(dir)) {
+      try {
+        const p = path.join(dir, name), st = fs.lstatSync(p);
+        if (st.isFile() && st.mtimeMs < cutoff) { fs.unlinkSync(p); removed++; }
+      } catch (_) { /* 這一個刪不掉:下次再清 */ }
+    }
+  } catch (_) { /* 目錄不存在 = 沒收過檔 */ }
+  return removed;
 }
 
 /* 使用者訊息 + 給引擎那一行(同 web_bridge:純附件時只有那一行) */
@@ -66,4 +87,4 @@ function withNote(message, savedName) {
   return message ? `${message}\n${note}` : note;
 }
 
-module.exports = { ATTACH_MAX_BYTES, ATTACH_DATA_MAX, ATTACH_NAME_MAX, ATTACH_MIME_MAX, NOTE_OK, NOTE_FAIL, sanitizeName, validate, save, withNote };
+module.exports = { ATTACH_MAX_BYTES, ATTACH_DATA_MAX, ATTACH_NAME_MAX, ATTACH_MIME_MAX, NOTE_OK, NOTE_FAIL, sanitizeName, validate, save, prune, withNote };

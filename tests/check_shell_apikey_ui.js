@@ -134,9 +134,11 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
 
   // ── ⑥ 回合失敗分類(renderer/apikey.js akFault / akErrText) ──
   const tt = (k, v) => k + (v ? JSON.stringify(v) : "");
-  const R = new Function("t", "MP", "running", "lastUserText", "submitMessage", "setOpen", "setCat", "mpOpen", "akOpen_", akSrc.replace(/^const /gm, "var ") + "; return { akFault, akErrText };")(tt, { provider: "DeepSeek" }, false, "", () => {}, () => Promise.resolve(), () => {}, () => {});
+  let resent = 0;
+  const R = new Function("t", "MP", "resendLast", "setOpen", "setCat", "mpOpen", "akOpen_", akSrc.replace(/^const /gm, "var ") + "; return { akFault, akErrText };")(tt, { provider: "DeepSeek" }, () => { resent++; }, () => Promise.resolve(), () => {}, () => {});
   const cap = R.akFault('API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"turn usage limit reached"}}', true);
-  t("這一輪收過 llm_cap 的 429 → 「這一輪用量到上限」卡(可再送一次)", cap && cap.cap === true && cap.text === "ak.f.cap" && cap.label === "fault.resend");
+  cap.act();
+  t("這一輪收過 llm_cap 的 429 → 「這一輪用量到上限」卡(可再送一次:走 app.js 的 resendLast,純附件那句與它帶的檔也重送)", cap && cap.cap === true && cap.text === "ak.f.cap" && cap.label === "fault.resend" && resent === 1);
   t("沒收過 llm_cap 的 429 → 供應商限流", R.akFault("API Error: 429 x", false).text.startsWith("ak.f.rate"));
   t("401 / 403 → 金鑰被拒,鈕「修改金鑰」", R.akFault("API Error: 401 x", false).text.startsWith("ak.f.key") && R.akFault("Failed to authenticate. API Error: 403 x", false).label === "ak.f.keyBtn");
   const f402 = R.akFault("API Error: 402 x", false);

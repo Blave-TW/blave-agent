@@ -95,7 +95,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   const R = path.join(__dirname, "..", "shell", "renderer");
   const hoSrc = fs.readFileSync(path.join(R, "handoff.js"), "utf8"), appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
   t("接線:確認框 onOk 帶 handoff 方向;submitMessage 原樣轉進 payload;重送(lastUserText)不帶", /submitMessage\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)/.test(hoSrc)
-    && /async function submitMessage\(msg, opts\)/.test(appSrc) && /message: msg, handoff: opts && opts\.handoff, note: lastUserNote, model:/.test(appSrc) && !/submitMessage\(lastUserText, /.test(appSrc));
+    && /async function submitMessage\(msg, opts\)/.test(appSrc) && /message: msg, handoff: opts && opts\.handoff, note: lastUserNote, model:/.test(appSrc) && (appSrc.match(/submitMessage\(lastUserText\b[^\n]*/g) || []).every((x) => !/handoff/.test(x)) && /function resendLast\(\) \{ return canResend\(\) \? submitMessage\(lastUserText, \{ attachment: lastUserAttachment, from: lastUserFrom \}\) : Promise\.resolve\(false\); \}/.test(appSrc));
   t("主行程:標記只認 \"up\" 且旗標要開;事件掛在 runTurn 的 then(spawn + stdin 成功),不在 catch", /const cloudUp = cloudHandoffOn\(\) && payload && payload\.handoff === "up";/.test(mainSrc)
     && /runTurn\(win, payload\)\.then\(\(\) => \{ if \(cloudUp\) tm\(\)\.track\("cloud_started"\); \}\)\.catch\(/.test(mainSrc));
   const hi = mainSrc.indexOf('ipcMain.handle("send-message", async (e, payload) => {');

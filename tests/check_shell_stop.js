@@ -90,7 +90,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     (id) => els[id], (k) => k, () => {}, () => {}, { blave: { stopTurn: async () => false } });
   await R3.stopTurn();
   ok("暖機中按停止:記住要停", R3.stopped === true);
-  ok("…submitMessage 暖機完就收掉、原句放回", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg\); return false; \}/.test(appSrc));
+  ok("…submitMessage 暖機完就收掉、原句放回", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); unsend\(\); return false; \}/.test(appSrc) && /const unsend = \(\) => \{ bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachment, lastUserFrom\); \};/.test(appSrc));
   els.ta.value = ""; R.stopRestore("幫我跑 BTC 回側");
   ok("停下後原句放回空的輸入框", els.ta.value === "幫我跑 BTC 回側" && els.ta.focused);
   els.ta.value = "改成 ETH"; R.stopRestore("幫我跑 BTC 回側");
@@ -99,7 +99,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const endCut = cutFrom(appSrc, "window.blave.onTurnEnd(async (r) => {", "/* 側欄 / 聊天欄");
   ok("turn-end:停止不算失敗(不問登入、不攤收據、保險殺掉的結束碼不顯示)", /const stopped = turnStopped; turnStopped = false;/.test(endCut)
     && /const exitLine = r\.code !== 0 && !stopped/.test(endCut) && /if \(!stopped && \(cur === "claude"/.test(endCut) && /const faulted = !stopped && \(/.test(endCut));
-  ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; sendBtnSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) \{/.test(endCut) && /stopRestore\(lastUserText\);/.test(endCut));
+  ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; sendBtnSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) \{/.test(endCut) && /stopRestore\(lastUserText, lastUserAttachment, lastUserFrom\);/.test(endCut));
   // 只放回用戶自己打的:把 submitMessage 裡算來源的那一行切出來跑
   const typedLine = /addMsg\("you", msg, attachment \? attachment\.name : null\); (lastUserTyped = [^;]+;) lastUserText = msg;/.exec(appSrc);
   ok("來源那一行在 submitMessage 裡", !!typedLine);
@@ -107,7 +107,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     return seq.map(([msg, opts]) => { eval(typedLine[1]); lastUserText = msg; return lastUserTyped; }); };
   ok("手打的放回;送上雲端 / 策略庫 / 報告這些代組的句子不放回", JSON.stringify(origin([["嗨", { typed: true }], ["把策略送上雲端", { handoff: "up" }], ["用這支策略", undefined]])) === "[true,false,false]");
   ok("重送同一句:沿用原句的來源(手打的重送仍放回,代組的重送仍不放回)", JSON.stringify(origin([["嗨", { typed: true }], ["嗨", undefined], ["掃描參數", undefined], ["掃描參數", undefined]])) === "[true,true,false,false]");
-  ok("輸入框送出帶 typed(只有這一個呼叫點帶)", /\$\("ta"\)\.value = ""; autosize\(\);\n[^\n]*\n\s*const ok = await submitMessage\(msg, \{ typed: true, attachment, from: attachedFrom \}\);/.test(appSrc)
+  ok("輸入框送出帶 typed(只有這一個呼叫點帶)", /\$\("ta"\)\.value = ""; autosize\(\);\n[^\n]*\n\s*await submitMessage\(msg, \{ typed: true, attachment, from: attachedFrom \}\);/.test(appSrc)
     && ["handoff.js", "library.js", "reports.js", "newstrategy.js"].every((f) => !/typed: true/.test(fs.readFileSync(path.join(SH, "renderer", f), "utf8")))
     && (appSrc.match(/typed: true/g) || []).length === 1);
   const html = fs.readFileSync(path.join(SH, "renderer", "index.html"), "utf8"), css = fs.readFileSync(path.join(SH, "renderer", "app.css"), "utf8");

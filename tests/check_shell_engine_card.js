@@ -185,7 +185,7 @@ ok("③ 顏色只用 token(不寫死 hex、不寫死毫秒)", !/#[0-9a-fA-F]{3,8
       window: { blave: {
         ensureEngine: () => { log.push("ensureEngine"); return new Promise((ok, no) => { resolveEngine = ok; rejectEngine = no; }); },
         engineState: async () => ({ phase: "fail", show: true }),
-        sendMessage: async (p) => { log.push("send:" + p.message); return { started: true }; },
+        sendMessage: async (p) => { log.push("send:" + p.message + (p.attachment ? "+" + p.attachment.name : "")); return { started: true }; },
         stopTurn: async () => { log.push("stopTurn-ipc"); return true; } } },
       addMsg: (cls, text) => { const b = { cls, text, isConnected: true, remove() { this.isConnected = false; log.push("bubble-removed"); } }; log.push("bubble:" + text); return b; },
       stopRestore: (t) => log.push("restore:" + t), trackFeature: (n) => log.push("track:" + n),
@@ -196,7 +196,7 @@ ok("③ 顏色只用 token(不寫死 hex、不寫死毫秒)", !/#[0-9a-fA-F]{3,8
     };
     const ctx = new Proxy(known, { has: () => true, get: (o, k) => (k === Symbol.unscopables ? undefined : k in o ? o[k] : k in globalThis ? globalThis[k] : any), set: (o, k, v) => { o[k] = v; return true; } });
     const api = new Function("ctx", "with (ctx) { let running = false;\n" + vars[0] + "\n" + SUB + "\n" + STOP + "\n return { submitMessage, stopTurn, get running() { return running; }, get engineWait() { return engineWait; } }; }")(ctx);
-    return { api, log, held, resolve: () => resolveEngine(), reject: (e) => rejectEngine(e) };
+    return { api, log, held, known, resolve: () => resolveEngine(), reject: (e) => rejectEngine(e) };
   };
   { const r = mkRig(); const p = r.api.submitMessage("hi", { typed: true }); await tick();
     const waiting = r.api.running && r.api.engineWait;
@@ -206,6 +206,17 @@ ok("③ 顏色只用 token(不寫死 hex、不寫死毫秒)", !/#[0-9a-fA-F]{3,8
     ok("④ 沒按停止:裝好就送出那句", r.log.includes("send:hi") && r.log.includes("busyStart"), r.log); }
   { const r = mkRig(); const p = r.api.submitMessage("hi", { typed: true }); await tick(); r.reject(new Error("pip")); const res = await p;
     ok("④ 安裝失敗:泡泡留著(engHold)、不放回輸入框、輸入框解鎖", res === false && r.held.length === 1 && r.held[0].msg === "hi" && !r.log.includes("bubble-removed") && !r.log.some((x) => /^restore:/.test(x)) && !r.api.running, r.log); }
+  // 帶附件的那句安裝失敗 → chip 留著(檔還沒送);按重試送出去之後 chip 要清,不然下一句會再帶一次同一個檔(稽核 0.1.17)
+  { const r = mkRig(), file = { name: "a.csv", type: "text/csv" };
+    r.known.attachedFile = file; r.known.setAttachment = (f) => { r.known.attachedFile = f || null; r.log.push("chip:" + (f ? f.name : "cleared")); }; r.known.readAttachment = async () => "eA==";
+    const p = r.api.submitMessage("hi", { typed: true, attachment: file, from: "file" }); await tick(); r.reject(new Error("pip")); const res = await p;
+    const heldChip = res === false && r.held.length === 1 && r.held[0].opts.attachment === file && r.known.attachedFile === file && !r.log.includes("chip:cleared");
+    const h = r.held[0], p2 = r.api.submitMessage(h.msg, Object.assign({}, h.opts, { bubble: h.bubble })); await tick(); r.resolve(); const res2 = await p2;   // engRetry 就是這樣呼叫的(下面 retryRig 驗)
+    ok("④ 帶附件的那句安裝失敗:chip 留著;重試送出(帶同一個檔、同一個泡泡)之後 chip 清掉", heldChip && res2 === true && r.log.includes("send:hi+a.csv") && r.log.includes("chip:cleared") && r.known.attachedFile === null && r.log.filter((x) => /^bubble:/.test(x)).length === 1, r.log); }
+  { const r = mkRig(), file = { name: "a.csv", type: "text/csv" }, other = { name: "b.csv", type: "text/csv" };
+    r.known.attachedFile = other; r.known.setAttachment = () => r.log.push("chip:touched"); r.known.readAttachment = async () => "eA==";
+    const p = r.api.submitMessage("hi", { typed: true, attachment: file, from: "file" }); await tick(); r.resolve(); const res = await p;
+    ok("④ …送出途中 chip 已經換成別的檔:不清(那是下一句要帶的)", res === true && r.log.includes("send:hi+a.csv") && !r.log.includes("chip:touched"), r.log); }
   // engRetry:同一個對話、沒有回合在跑 → 同一個泡泡再送;回合在跑 → 那句留著只重裝;換了對話 → 泡泡收掉只重裝
   const retryRig = (o) => {
     const log = [], bubble = { isConnected: true, remove() { this.isConnected = false; log.push("bubble-removed"); } };

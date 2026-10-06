@@ -1,6 +1,8 @@
 // 聊天附件(0.1.17):跟雲端同一條契約。
 //   1. shell/attach.js(主行程):消毒 / 上限同 api openclaw/webchat.py,落地與給引擎的兩行逐字同 runtime/web_bridge.py
-//   2. renderer/app.js:chip 流程(選 / 拖 / 貼 → chip → 隨下一句送出 → 送出去了才清)、太大擋在畫面、純附件可送、重送不重送檔
+//   2. renderer/app.js:chip 流程(選 / 拖 / 貼 → chip → 隨下一句送出 → 送出去了才清)、太大與空檔擋在畫面、純附件可送、
+//      重送連檔一起送、停止時檔跟句子一起放回、貼上有字就貼字、拖文字進輸入框不攔
+//   4. 落地排在「這一輪不跑」的檢查之後;workspace/tmp/inbound 放超過七天的由外殼清(只清那一層的一般檔案)
 //   3. 畫面拿不到路徑:只交位元組,主行程不接路徑;埋點三個名字在白名單、≤16 字、不記檔名
 // 跑法:node tests/check_shell_attach.js
 const fs = require("fs"), os = require("os"), path = require("path"), vm = require("vm");
@@ -39,12 +41,36 @@ try {
   t("訊息 + 那一行;純附件只有那一行;存失敗換成接收失敗那行", at.withNote("看一下", "a.csv") === "看一下\n" + at.NOTE_OK.replace("{name}", "a.csv") && at.withNote("", "a.csv") === at.NOTE_OK.replace("{name}", "a.csv") && at.withNote("看一下", null) === "看一下\n" + at.NOTE_FAIL);
   t("attach.js 不寫 log、不碰 console / telemetry", !/console\.|require\("\.\/telemetry|\.track\(/.test(fs.readFileSync(path.join(SHELL, "attach.js"), "utf8")));
 
+  // ── 七天清掃(電腦版不跑 runtime/prune_job.py)──
+  { const ws = fs.mkdtempSync(path.join(TMP, "prune-")), inb = path.join(ws, "tmp", "inbound"), outside = fs.mkdtempSync(path.join(TMP, "outside-"));
+    fs.mkdirSync(path.join(inb, "sub"), { recursive: true });
+    const now = Date.now(), day = 86400e3, old = (p, days) => { const tt = new Date(now - days * day); fs.utimesSync(p, tt, tt); };
+    const w = (p, days) => { fs.writeFileSync(p, "x"); old(p, days); return p; };
+    const fOld = w(path.join(inb, "old.csv"), 8), fNew = w(path.join(inb, "new.csv"), 6), fSub = w(path.join(inb, "sub", "old-in-sub.csv"), 30), fOut = w(path.join(outside, "victim.txt"), 30);
+    fs.symlinkSync(fOut, path.join(inb, "link-to-file")); fs.symlinkSync(outside, path.join(inb, "link-to-dir"));
+    try { fs.lutimesSync(path.join(inb, "link-to-file"), new Date(now - 30 * day), new Date(now - 30 * day)); } catch (_) { /* 平台不支援就算了:連結本來就不是一般檔案 */ }
+    old(path.join(inb, "sub"), 30);
+    const n = at.prune(ws, now);
+    t("prune:只刪 inbound 這一層放超過七天的一般檔案;七天內的、子目錄(與裡面的舊檔)、symlink 與它指到的檔都不動", n === 1 && !fs.existsSync(fOld) && fs.existsSync(fNew) && fs.existsSync(fSub) && fs.existsSync(fOut) && fs.lstatSync(path.join(inb, "link-to-file")).isSymbolicLink() && fs.lstatSync(path.join(inb, "link-to-dir")).isSymbolicLink() && fs.existsSync(path.join(outside, "victim.txt")), { n });
+    // inbound / tmp 被換成連到外面的 symlink:整個不清(不然等於替 agent 刪 workspace 以外的檔)
+    const ws2 = fs.mkdtempSync(path.join(TMP, "prune2-")); fs.mkdirSync(path.join(ws2, "tmp")); fs.symlinkSync(outside, path.join(ws2, "tmp", "inbound"));
+    const ws3 = fs.mkdtempSync(path.join(TMP, "prune3-")), out3 = fs.mkdtempSync(path.join(TMP, "outside3-")); fs.mkdirSync(path.join(out3, "inbound")); const fOut3 = w(path.join(out3, "inbound", "victim.txt"), 30); fs.symlinkSync(out3, path.join(ws3, "tmp"));
+    t("prune:inbound 或 tmp 是連到別處的 symlink → 一個都不刪", at.prune(ws2, now) === 0 && fs.existsSync(fOut) && at.prune(ws3, now) === 0 && fs.existsSync(fOut3));
+    t("prune:目錄不存在(沒收過檔)→ 0、不拋、不建目錄", at.prune(path.join(TMP, "nope"), now) === 0 && !fs.existsSync(path.join(TMP, "nope")));
+    const ws4 = fs.mkdtempSync(path.join(TMP, "prune4-")); at.save(ws4, { name: "first.txt", data: b64("1") }); old(path.join(ws4, "tmp", "inbound", "first.txt"), 9); at.save(ws4, { name: "second.txt", data: b64("2") });
+    t("落地新附件時順手清:九天前那個不見了、剛存的還在", !fs.existsSync(path.join(ws4, "tmp", "inbound", "first.txt")) && fs.existsSync(path.join(ws4, "tmp", "inbound", "second.txt")));
+    t("外殼啟動時清一次(startStep,失敗不擋啟動);七天同 runtime/prune_job.py", /startStep\("inbound prune", \(\) => require\("\.\/attach"\)\.prune\(WS\)\);/.test(mainSrc) && /INBOUND_RETENTION_DAYS = 7\b/.test(fs.readFileSync(path.join(ROOT, "runtime", "prune_job.py"), "utf8")) && /const INBOUND_KEEP_MS = 7 \* 24 \* 3600 \* 1000;/.test(fs.readFileSync(path.join(SHELL, "attach.js"), "utf8"))); }
+
   // ── main.js 接線 ──
   const rt = (mainSrc.match(/async function runTurn\(win, \{[^}]*\}\) \{[\s\S]*?\n\}/) || [""])[0];
-  t("runTurn 收 attachment:驗形狀(壞的整輪不跑)→ 落地 workspace/tmp/inbound → withNote 接在訊息尾端 → 再量一次 stdin 上限",
-    /async function runTurn\(win, \{ sessionId, message, [^}]*attachment \}\)/.test(rt) && /if \(!at\.validate\(attachment\)\) throw new Error\("bad attachment"\);/.test(rt)
-    && /message = at\.withNote\(message, at\.save\(WS, attachment\)\);/.test(rt) && (rt.match(/Buffer\.byteLength\(message, "utf8"\) > MESSAGE_MAX_BYTES\) throw new Error\("bad message"\)/g) || []).length === 2
-    && rt.indexOf("at.withNote(") < rt.indexOf("child.stdin.end(message)"));
+  t("runTurn 收 attachment:先驗形狀(壞的整輪不跑)與加上那一行之後的 stdin 上限 → 落地 workspace/tmp/inbound → withNote 接在訊息尾端",
+    /async function runTurn\(win, \{ sessionId, message, [^}]*attachment \}\)/.test(rt)
+    && /const v = at\.validate\(attachment\);\n\s*if \(!v\) throw new Error\("bad attachment"\);\n\s*if \(Buffer\.byteLength\(at\.withNote\(message, "0000000000_" \+ v\.name\), "utf8"\) > MESSAGE_MAX_BYTES\) throw new Error\("bad message"\);/.test(rt)
+    && /if \(at\) message = at\.withNote\(message, at\.save\(WS, attachment\)\);/.test(rt) && rt.indexOf("at.save(") < rt.indexOf("child.stdin.end(message)"));
+  { const iVal = rt.indexOf("at.validate(attachment)"), iSave = rt.indexOf("at.save(WS, attachment)"), iCodex = rt.indexOf('throw new Error("AGENT_BIN_MISSING")'), iKey = rt.indexOf('throw new Error("APIKEY_MISSING")');
+    t("落地排在「這一輪不跑」的檢查之後:Codex 不見 / 金鑰不見那兩條路不留沒有回合的檔(整支 runTurn 只落地一次)", iVal > 0 && iCodex > iVal && iKey > iVal && iSave > iCodex && iSave > iKey && (rt.match(/at\.save\(/g) || []).length === 1, { iVal, iCodex, iKey, iSave });
+    const bl = (x) => Buffer.byteLength(x, "utf8");
+    t("…事先量長度用的那一行是最長的:撞名前綴剛好 10 位秒數 + 底線,而且不比「接收失敗」那行短(1 個字的檔名也是)", bl(at.withNote("", "0000000000_a")) >= bl(at.withNote("", null)) && bl(at.withNote("", "0000000000_a")) === bl(at.withNote("", `${Math.floor(Date.now() / 1000)}_a`))); }
   t("主行程不接路徑:runTurn / attach.js 沒有從 attachment 拿 path 去 copy", !/attachment\.path|copyFileSync|webUtils/.test(rt + fs.readFileSync(path.join(SHELL, "attach.js"), "utf8")) && !/webUtils|getPathForFile/.test(preSrc));
   t("preload 的 sendMessage 整包交給 send-message(attachment 隨 payload 走,沒有另一條通道)", /sendMessage: \(payload\) => ipcRenderer\.invoke\("send-message", payload\)/.test(preSrc));
 
@@ -65,7 +91,7 @@ try {
   t("attachNoImage:圖 + DeepSeek(兩種 id 形狀)→ true;非圖 / Claude / 沒檔 / 沒模型 → false", noImg({ type: "image/png" }, "deepseek/deepseek-v4-pro") && noImg({ type: "image/jpeg" }, "deepseek-v4-flash") && !noImg({ type: "text/csv" }, "deepseek/deepseek-v4-pro") && !noImg({ type: "image/png" }, "anthropic/claude-sonnet-5-5") && !noImg({ type: "image/png" }, "claude-sonnet-5-5") && !noImg(null, "deepseek/deepseek-v4-pro") && !noImg({ type: "image/png" }, null) && !noImg({ type: "image/png" }, "x-deepseek"));
   t("提示畫在 chip 檔名後(次要字,帶模型名、title 與 aria 用長句);setAttachment / mpPaint(換模型)/ 換語言都重畫;不擋送出", /<span class="attach-name" id="attach-name"><\/span>[\s\S]{0,200}<span class="attach-hint" id="attach-hint" role="note" hidden><\/span>/.test(html)
     && /h\.textContent = t\("ws\.attachNoImage", \{ model \}\); h\.title = t\("ws\.attachNoImageLong", \{ model \}\); h\.setAttribute\("aria-label", h\.title\);/.test(cut("attachHintPaint")) && /const m = mpCur\(\), model = m \? m\.name : MP\.model;/.test(cut("attachHintPaint"))
-    && /\$\("attach-name"\)\.textContent = attachedFile \? attachedFile\.name : "";\n\s*attachHintPaint\(\);/.test(cut("setAttachment")) && /attachHintPaint\(\);[^\n]*\n\}/.test(cut("mpPaint")) && /youRelang\(\);[^\n]*\n\s*attachHintPaint\(\);/.test(appSrc) && !/attachNoImage\(/.test(cut("sendDraft") + (appSrc.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0]));
+    && /\$\("attach-name"\)\.textContent = attachedFile \? attachedFile\.name : "";\n[^\n]*\n\s*attachHintPaint\(\);/.test(cut("setAttachment")) && /attachHintPaint\(\);[^\n]*\n\}/.test(cut("mpPaint")) && /youRelang\(\);[^\n]*\n\s*attachHintPaint\(\);/.test(appSrc) && !/attachNoImage\(/.test(cut("sendDraft") + (appSrc.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0]));
   const map = vm.runInNewContext((appSrc.match(/const ATTACH_FEATURE = \{[^}]*\};/) || [""])[0] + "ATTACH_FEATURE"), kind = vm.runInNewContext("(" + cut("attachKind") + ")");
   const feat = (f, from) => map[kind(f, from)];
   t("埋點名:貼上 → attach_paste(不分圖或檔);選檔 / 拖放的圖 → attach_image;其他 → attach_file", feat({ type: "image/png" }, "paste") === "attach_paste" && feat({ type: "image/jpeg" }, "file") === "attach_image" && feat({ type: "text/csv" }, "file") === "attach_file" && feat({ type: "" }, "file") === "attach_file" && feat(null, undefined) === "attach_file");
@@ -74,16 +100,78 @@ try {
   t("選檔 / 拖放 / 貼上三個入口都走 takeAttachment:太大講一行(同雲端 addNotice)、不掛 chip", /if \(file\.size > ATTACH_MAX_BYTES\) \{ addMsg\("sys", t\("ws\.attachTooLarge"\)\)\.dataset\.i18n = "ws\.attachTooLarge"; return false; \}/.test(cut("takeAttachment"))
     && /const ATTACH_MAX_BYTES = 5 \* 1024 \* 1024;/.test(appSrc) && /\$\("attach-input"\)\.value = "";[^\n]*\n\s*takeAttachment\(f, "file"\);/.test(appSrc) && /addEventListener\("drop", [^\n]*takeAttachment\(f, "file"\)/.test(appSrc) && /addEventListener\("paste", [\s\S]{0,300}?takeAttachment\(f, "paste"\)/.test(appSrc));
   t("迴紋針 → 開檔案框;✕ → 清 chip", /\$\("attach-btn"\)\.addEventListener\("click", \(\) => \$\("attach-input"\)\.click\(\)\);/.test(appSrc) && /\$\("attach-clear"\)\.addEventListener\("click", \(\) => \{ setAttachment\(null\);/.test(appSrc));
-  t("拖放只認輸入框:視窗其他地方 drop 一律 preventDefault 不開檔、不收", /document\.addEventListener\("drop", \(e\) => \{ e\.preventDefault\(\);[^\n]*if \(!ciBox\.contains\(e\.target\)\) return;/.test(appSrc));
-  t("貼上:剪貼簿沒檔就讓文字照常貼(不 preventDefault)", /const f = e\.clipboardData && e\.clipboardData\.files && e\.clipboardData\.files\[0\];\n\s*if \(!f\) return;\n\s*e\.preventDefault\(\);/.test(appSrc));
+  t("檔名截尾時全名在 title(長檔名看得到副檔名);清 chip 時一併清掉", /\$\("attach-name"\)\.title = attachedFile \? attachedFile\.name : "";/.test(cut("setAttachment")));
+  { // 空檔:選到那一刻就講、不掛 chip(主行程不收 0 位元組,等它回絕時 chip 已清、埋點已送)。真的跑 takeAttachment
+    const msgs = [], set = [];
+    const mkTake = (blave) => new Function("addMsg", "t", "setAttachment", "ATTACH_MAX_BYTES", "window", cut("takeAttachment") + "; return takeAttachment;")((cls, text) => { const m = { cls, text, dataset: {} }; msgs.push(m); return m; }, (k) => k, (f, from) => set.push([f, from]), at.ATTACH_MAX_BYTES, { blave });
+    const take = mkTake({ attachNameMax: at.ATTACH_NAME_MAX });
+    const r0 = take({ size: 0, name: "empty.csv" }, "file"), n0 = set.length, rBig = take({ size: at.ATTACH_MAX_BYTES + 1, name: "big.bin" }, "file"), r1 = take({ size: 1, name: "a" }, "paste");
+    t("takeAttachment:0 位元組 → 講「檔案是空的」、不掛 chip;太大照舊;1 byte 掛上", r0 === false && n0 === 0 && msgs[0].cls === "sys" && msgs[0].text === "ws.attachEmpty" && msgs[0].dataset.i18n === "ws.attachEmpty" && rBig === false && msgs[1].text === "ws.attachTooLarge" && r1 === true && set.length === 1 && set[0][1] === "paste", { r0, rBig, r1, msgs });
+    t("…主行程確實不收空檔(畫面那一道擋的就是這個)", at.validate({ name: "empty.csv", data: "" }) === null);
+    // 檔名太長:同一類(主行程回絕時已經回了 started)。上限只有主行程那一個數字,經 additionalArguments → preload → window.blave.attachNameMax
+    const nSet = set.length, nMsg = msgs.length, long = "長".repeat(at.ATTACH_NAME_MAX) + "x", edge = "x".repeat(at.ATTACH_NAME_MAX);
+    const rLong = take({ size: 1, name: long }, "file"), longMsg = msgs[nMsg], rEdge = take({ size: 1, name: edge }, "file");
+    t("takeAttachment:檔名超過上限 → 講「檔名太長」、不掛 chip;剛好等於上限照掛(跟主行程同一條線)", rLong === false && set.length === nSet + 1 && longMsg && longMsg.text === "ws.attachNameLong" && longMsg.dataset.i18n === "ws.attachNameLong" && rEdge === true && set[nSet][0].name === edge
+      && at.validate({ name: long, data: b64("x") }) === null && !!at.validate({ name: edge, data: b64("x") }), { rLong, rEdge, longMsg });
+    t("…上限沒交過來(0 / 沒這個欄位)→ 畫面不擋,仍由主行程擋", mkTake({ attachNameMax: 0 })({ size: 1, name: long }, "file") === true && mkTake({})({ size: 1, name: long }, "file") === true);
+    const preLine = (preSrc.match(/^\s*attachNameMax: ([^\n]*?),\n/m) || [])[1] || "null", argOf = (argv) => new Function("process", "return " + preLine)({ argv });
+    t("上限的來源只有 shell/attach.js:main.js 用 additionalArguments 帶 ATTACH_NAME_MAX、preload 從 process.argv 讀;app.js 與 preload 都不寫數字", /additionalArguments: \["--blave-attach-name-max=" \+ require\("\.\/attach"\)\.ATTACH_NAME_MAX\],/.test(mainSrc)
+      && argOf(["electron", "--x=1", "--blave-attach-name-max=" + at.ATTACH_NAME_MAX]) === at.ATTACH_NAME_MAX && argOf(["electron"]) === 0 && argOf(["electron", "--blave-attach-name-max=abc"]) === 0
+      && /const nameMax = window\.blave\.attachNameMax;/.test(cut("takeAttachment")) && !/\b\d{2,}\b/.test(cut("takeAttachment")) && !/\d/.test(preLine.replace("[1]", "").replace("=== 0", "").replace("|| 0", "")), { preLine }); }
+  { // 拖放:兩支純函式真的跑
+    const D = vm.runInNewContext(cut("dragHasFiles") + "\n" + cut("dragIsText") + "\n({ dragHasFiles, dragIsText })");
+    const el = (editable) => ({ nodeType: 1, closest: (sel) => (sel === "textarea, input, [contenteditable]" && editable ? {} : null) });
+    const txt = { types: ["text/plain", "text/html"] }, files = { types: ["Files"] }, both = { types: ["text/uri-list", "Files"] };
+    t("dragHasFiles:types 含 Files 才算檔(選取的文字 / 沒有 dataTransfer 不算)", D.dragHasFiles(files) && D.dragHasFiles(both) && !D.dragHasFiles(txt) && !D.dragHasFiles(null) && !D.dragHasFiles({}));
+    t("dragIsText:拖的是文字而且落在可打字的欄位 → 不攔;落在別處、或拖的是檔 → 照舊攔", D.dragIsText({ target: el(true), dataTransfer: txt }) && D.dragIsText({ target: { nodeType: 3, parentElement: el(true) }, dataTransfer: txt })
+      && !D.dragIsText({ target: el(false), dataTransfer: txt }) && !D.dragIsText({ target: el(true), dataTransfer: files }) && !D.dragIsText({ target: el(true), dataTransfer: both }) && !D.dragIsText({ target: null, dataTransfer: txt })); }
+  t("拖放接線:dragenter / dragover / drop 三支都先放行文字(不 preventDefault);檔案只認輸入框,視窗其他地方照舊攔、不收;落點提示只給檔案",
+    /\["dragenter", "dragover"\]\.forEach\(\(ev\) => document\.addEventListener\(ev, \(e\) => \{ if \(dragIsText\(e\)\) return; e\.preventDefault\(\);/.test(appSrc)
+    && /document\.addEventListener\("drop", \(e\) => \{ if \(dragIsText\(e\)\) return; e\.preventDefault\(\);[^\n]*if \(!ciBox\.contains\(e\.target\)\) return;/.test(appSrc)
+    && /ciBox\.addEventListener\("dragover", \(e\) => \{ if \(dragHasFiles\(e\.dataTransfer\)\) ciBox\.classList\.add\("is-drag"\); \}\);/.test(appSrc));
+  { // 貼上:把真的那支 handler 掛到假的 #ta 上,餵假的 clipboardData
+    const pasteSrc = (appSrc.match(/\$\("ta"\)\.addEventListener\("paste", [\s\S]*?\n\}\);/) || [""])[0];
+    let handler = null; const taken = [];
+    new Function("$", "takeAttachment", cut("pasteFile") + "\n" + pasteSrc)(() => ({ addEventListener: (n, fn) => { if (n === "paste") handler = fn; } }), (f, from) => { taken.push([f, from]); return true; });
+    const cd = (files, text) => ({ files, getData: (k) => (k === "text/plain" ? text || "" : "") });
+    const paste = (c) => { const e = { clipboardData: c, prevented: false, preventDefault() { this.prevented = true; } }; const n = taken.length; handler(e); return (e.prevented ? "attach" : "text") + ":" + (taken.length - n); };
+    const png = { name: "image.png", type: "image/png" }, csv = { name: "報告 Q3.csv", type: "text/csv" }, b = { name: "b.txt", type: "text/plain" };
+    t("貼上:剪貼簿同時有字與圖(試算表複製儲存格)→ 不攔、字照常貼、不掛 chip", !!handler && paste(cd([png], "12\t34\n56\t78")) === "text:0" && paste(cd([png], "營收 1,234")) === "text:0");
+    t("貼上:只有圖 / 檔沒有字(截圖、複製的圖)→ 當附件(from = paste)", paste(cd([png], "")) === "attach:1" && paste(cd([png], " \n")) === "attach:1" && paste({ files: [png] }) === "attach:1" && taken[taken.length - 1][0] === png && taken[taken.length - 1][1] === "paste");
+    t("貼上:從檔案管理員複製的檔(字只是檔名或路徑,多檔一行一個)仍當附件;字多了別的就貼字", paste(cd([csv], "報告 Q3.csv")) === "attach:1" && paste(cd([csv], "/Users/me/Desktop/報告 Q3.csv")) === "attach:1" && paste(cd([csv, b], "報告 Q3.csv\rb.txt")) === "attach:1" && paste(cd([csv], "報告 Q3.csv 幫我看")) === "text:0" && paste(cd([csv, b], "報告 Q3.csv\n別的字")) === "text:0");
+    t("貼上:剪貼簿沒檔 → 文字照常貼(不 preventDefault)", paste(cd([], "純文字")) === "text:0" && paste(null) === "text:0" && paste({}) === "text:0"); }
   const sd = cut("sendDraft"), sub = (appSrc.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0];
-  t("sendDraft:純附件可送;送出去了(ok)才清 chip,沒送出去留著", /if \(\(!msg && !attachment\) \|\| running\) return;/.test(sd) && /const ok = await submitMessage\(msg, \{ typed: true, attachment, from: attachedFrom \}\);\n\s*if \(ok && attachedFile === attachment\) setAttachment\(null\);/.test(sd));
+  t("sendDraft:純附件可送;chip 不在這裡清(由 submitMessage 在 started 那一刻清:還掛著同一個檔才清)", /if \(\(!msg && !attachment\) \|\| running\) return;/.test(sd) && /await submitMessage\(msg, \{ typed: true, attachment, from: attachedFrom \}\);/.test(sd) && !/setAttachment\(/.test(sd)
+    && /if \(r\.started && attachment && attachedFile === attachment\) setAttachment\(null\);\n\s*if \(r\.started\) \{/.test(sub) && (sub.match(/setAttachment\(/g) || []).length === 1);
   t("submitMessage:純附件可送;泡泡末行畫檔名;送出那一刻才讀位元組(讀不到 → 講一行、收泡泡、chip 留著);payload 帶 { name, mime, data }",
     /if \(\(!msg && !attachment\) \|\| running\) return false;/.test(sub) && /addMsg\("you", msg, attachment \? attachment\.name : null\)/.test(sub)
     && /att = \{ name: attachment\.name, mime: attachment\.type \|\| "application\/octet-stream", data: await readAttachment\(attachment\) \};/.test(sub)
     && /catch \(_\) \{ addMsg\("sys", t\("ws\.attachReadFail"\)\)\.dataset\.i18n = "ws\.attachReadFail"; unsend\(\); unlock\(\); return false; \}/.test(sub) && /viewing, attachment: att \}\);/.test(sub));
   t("…回合跑起來才送 attach_* 埋點(chat_sent 之後);busy / 版本閘那幾條不送", /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); if \(attachment\) trackFeature\(ATTACH_FEATURE\[attachKind\(attachment, opts && opts\.from\)\]\); return true; \}/.test(sub) && (sub.match(/attachKind\(/g) || []).length === 1);
-  t("重送只重送句子(lastUserText = msg,不含檔);檔名不進 lastUserText", /lastUserText = msg;/.test(sub) && !/lastUserText = [^;]*attachment/.test(sub));
+  t("上一句帶的檔另外記(lastUserAttachment / lastUserFrom;沒帶 = null);檔名不進 lastUserText", /lastUserText = msg;/.test(sub) && !/lastUserText = [^;]*attachment/.test(sub) && /lastUserAttachment = attachment; lastUserFrom = attachment \? \(opts && opts\.from\) \|\| "file" : null;/.test(sub));
+  { // 「再送一次」:真的跑 canResend / resendLast
+    const line = (name) => (appSrc.match(new RegExp("^function " + name + "\\(\\)[^\\n]*$", "m")) || [""])[0];
+    const rig = (text, att, running) => { const calls = []; const api = new Function("submitMessage", "running", "lastUserText", "lastUserAttachment", "lastUserFrom", line("canResend") + "\n" + line("resendLast") + "\nreturn { canResend, resendLast };")((m, o) => { calls.push([m, o]); return Promise.resolve(true); }, !!running, text, att, att ? "paste" : null); return { api, calls }; };
+    const file = { name: "a.csv", type: "text/csv" };
+    const pure = rig("", file), both = rig("看一下", file), txt = rig("嗨", null), none = rig("", null), busy = rig("嗨", file, true);
+    pure.api.resendLast(); both.api.resendLast(); txt.api.resendLast(); none.api.resendLast(); busy.api.resendLast();
+    t("重送:純附件那句(字是空的)也送得出去,而且帶同一個檔與來源", pure.api.canResend() && pure.calls.length === 1 && pure.calls[0][0] === "" && pure.calls[0][1].attachment === file && pure.calls[0][1].from === "paste", pure.calls);
+    t("重送:帶字的那句連檔一起;沒帶檔的照舊只送句子;沒有上一句 / 回合在跑 → 不送", both.calls[0][0] === "看一下" && both.calls[0][1].attachment === file && txt.calls.length === 1 && txt.calls[0][1].attachment === null && !none.api.canResend() && none.calls.length === 0 && busy.calls.length === 0);
+    const akSrc = fs.readFileSync(path.join(R, "apikey.js"), "utf8");
+    t("每一顆重送鈕都走 resendLast(app.js 四處 + apikey.js);沒有只看 lastUserText 的閘", ((appSrc + akSrc).match(/submitMessage\(lastUserText/g) || []).length === 1 && !/!lastUserText\b|&& lastUserText\)/.test(appSrc + akSrc)
+      && (appSrc.match(/resendLast\(\)/g) || []).length >= 4 && /const resend = \(\) => \{ resendLast\(\); \};/.test(akSrc) && /if \(!canResend\(\)\) return; if \(dataCard === card\) dataCard = null;/.test(appSrc)); }
+  { // 停止還原:真的跑 stopRestore 與 turn-end 那一段
+    const mk = (chip) => { const els = { ta: { value: "", focused: false, focus() { this.focused = true; } } }, st = { set: [] };
+      const fn = new Function("$", "autosize", "st", "chip", "let attachedFile = chip; const setAttachment = (f, from) => { attachedFile = f; st.set.push([f, from]); };\n" + cut("stopRestore") + "\nreturn stopRestore;")((id) => els[id], () => {}, st, chip); return { fn, ta: els.ta, st }; };
+    const file = { name: "a.csv" }, other = { name: "b.csv" };
+    const a = mk(null); a.fn("", file, "paste"); const b2 = mk(other); b2.fn("看一下", file, "file"); const c = mk(null); c.fn("看一下", file, "file"); const d = mk(null); d.fn("", null);
+    t("stopRestore:純附件那句 → 檔放回 chip(帶原來的來源)、輸入框不動、游標回輸入框", a.st.set.length === 1 && a.st.set[0][0] === file && a.st.set[0][1] === "paste" && a.ta.value === "" && a.ta.focused);
+    t("stopRestore:字與檔一起放回;chip 已經掛了別的檔 → 不蓋,字照樣放回;什麼都沒有 → 不動", c.st.set.length === 1 && c.ta.value === "看一下" && b2.st.set.length === 0 && b2.ta.value === "看一下" && d.st.set.length === 0 && !d.ta.focused);
+    const stopBlk = (appSrc.match(/if \(stopped && lastUserTyped\) \{[\s\S]*?\n  \}/) || [""])[0];
+    const end = (o) => { const log = []; new Function("stopped", "lastUserTyped", "lastUserText", "lastUserAttachment", "lastUserFrom", "attachedFile", "turnGotReply", "turnHadTool", "turnBubble", "stopRestore", stopBlk)(true, true, o.text, o.att, "file", o.chip, !!o.reply, false, { parentNode: {}, remove: () => log.push("bubble-removed") }, (x, f, from) => log.push("restore:" + x + ":" + (f ? f.name : "-") + ":" + from)); return log.join(); };
+    t("停止(turn-end):純附件那句不再無聲消失——泡泡收回、檔回到 chip", end({ text: "", att: file, chip: null }) === "bubble-removed,restore::a.csv:file", end({ text: "", att: file, chip: null }));
+    t("…chip 被回合中另外掛的檔佔住(放不回去)→ 泡泡留著;沒帶檔的句子照舊收泡泡;有回覆的照舊留泡泡、檔仍放回", end({ text: "", att: file, chip: other }) === "restore::a.csv:file" && end({ text: "嗨", att: null, chip: other }) === "bubble-removed,restore:嗨:-:file" && end({ text: "嗨", att: file, chip: null, reply: true }) === "restore:嗨:a.csv:file");
+    t("沒送出去的路(unsend:busy / 版本閘 / 暖機中停止 / 引擎起不來)也把這一句帶的檔放回(重送失敗時 chip 是空的)", /const unsend = \(\) => \{ bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachment, lastUserFrom\); \};/.test(sub)); }
   t("addMsg:帶檔名時泡泡多一行「📎 檔名」(同雲端;無縮圖)", /if \(attachment\) b\.appendChild\(document\.createTextNode\(\(text \? "\\n" : ""\) \+ "📎 " \+ attachment\)\);/.test(cut("addMsg")));
   t("舊對話畫回去:使用者那句走 addHistoryYou(拆掉那一行、畫 📎);標題不帶那一行", /x\.turn\.role === "user" \? addHistoryYou\(x\.turn\.content\)/.test(appSrc) && /function addHistoryYou\(content\) \{ const a = splitAttachNote\(content\); return addMsg\("you", a\.text, a\.attachment\); \}/.test(appSrc) && /csTitle = first\.text \|\| \(first\.attachment \? "📎 " \+ first\.attachment : ""\);/.test(appSrc));
   t("畫面拿不到路徑:app.js 沒讀 File.path、沒有 webUtils", !/\.path\b[^\n]*attach|webUtils|getPathForFile/i.test(appSrc.split("聊天附件")[1] || "x"));
@@ -93,10 +181,13 @@ try {
   t("index.html:chip(檔名 + ✕)在更新那一格之下、建議列之上(同雲端的順序)、迴紋針在工具列最左、hidden file input", /<div class="attach-chip" id="attach-chip" hidden>\s*<span class="attach-name" id="attach-name"><\/span>[\s\S]{0,200}<span class="attach-hint" id="attach-hint" role="note" hidden><\/span>\s*<button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws\.attachRemove">✕<\/button>/.test(html)
     && html.indexOf('id="ws-update"') < html.indexOf('id="attach-chip"') && html.indexOf('id="attach-chip"') < html.indexOf('id="sug-wrap"') && /<div class="ci-bar">\s*<!--[\s\S]*?-->\s*<input type="file" id="attach-input" hidden \/>\s*<button class="btn-attach" id="attach-btn" type="button" data-i18n-aria="ws\.attach">/.test(html));
   const st = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+  t("空檔那句 en / zh 都有、zh 全形標點", (st.match(/"ws\.attachEmpty": "/g) || []).length === 2 && st.includes('"ws.attachEmpty": "這個檔案是空的，沒有內容可以傳。"'));
+  t("檔名太長那句 en / zh 都有、zh 全形標點", (st.match(/"ws\.attachNameLong": "/g) || []).length === 2 && st.includes('"ws.attachNameLong": "檔名太長，請改短一點再傳。"'));
   t("六個字串 en / zh 都有;zh 全形標點;太大那句同雲端 workspace_attach_too_large;不讀圖兩句照設計稽核", ["ws.attach", "ws.attachRemove", "ws.attachTooLarge", "ws.attachReadFail", "ws.attachNoImage", "ws.attachNoImageLong"].every((k) => (st.match(new RegExp('"' + k.replace(".", "\\.") + '": "', "g")) || []).length === 2)
     && st.includes('"ws.attachTooLarge": "檔案太大，上限 5MB。"') && st.includes('"ws.attachTooLarge": "File too large — the limit is 5MB."') && st.includes('"ws.attach": "附加檔案"') && st.includes('"ws.attachRemove": "移除附件"') && /"ws\.attachReadFail": "[^"]*。"/.test(st) && st.includes('"ws.attachNoImage": "{model} 不讀圖"') && st.includes('"ws.attachNoImageLong": "{model} 不讀圖，這張會被略過。"') && st.includes(`"ws.attachNoImage": "{model} can't read images"`) && st.includes(`"ws.attachNoImageLong": "{model} can't read images — this one will be skipped."`));
   const css = fs.readFileSync(path.join(R, "app.css"), "utf8");
   t("app.css:拖放落點 = 虛線 + --ink、排在 :focus-within 之後;提示字 --ink-3、與檔名隔 8;沒有沒人用的 .btn-attach:disabled", css.includes(".chat-input.is-drag { border-color: var(--ink); border-style: dashed; }") && css.indexOf(".chat-input:focus-within {") < css.indexOf(".chat-input.is-drag {") && /\.attach-hint \{ flex: none; margin-left: var\(--space-4\); color: var\(--ink-3\);/.test(css) && /\.attach-chip \{[^}]*gap: var\(--space-4\)/.test(css) && !css.includes(".btn-attach:disabled"));
+  t("app.css:✕ 看得到的是 20px、熱區用 ::before 外擴 4px = 28×28(桌面下限 24)", /\.attach-clear \{ position: relative; flex: none; width: 20px; height: 20px;/.test(css) && css.includes('.attach-clear::before { content: ""; position: absolute; inset: -4px; }'));
   t("app.css:.btn-attach / .attach-chip / .attach-name / .attach-clear / 拖放落點提示,不寫死色碼", [".btn-attach {", ".attach-chip {", ".attach-name {", ".attach-clear {", ".chat-input.is-drag {"].every((s) => css.includes(s)) && !/#[0-9a-f]{3,6}\b/i.test(css.split(".btn-attach {")[1].split(".chat-input.is-drag {")[1].split("\n")[0] + css.split(".btn-attach {")[1].split("/* 檔案拖到")[0]));
 } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
 console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -111,6 +111,14 @@ msgstr "移除附件"
 msgid "ws.attachTooLarge"
 msgstr "檔案太大，上限 5MB。"
 
+# 0 位元組的檔:選到 / 拖到 / 貼上那一刻就講(雲端照收空檔;電腦版主行程不收,見 shell/attach.js validate)
+msgid "ws.attachEmpty"
+msgstr "這個檔案是空的，沒有內容可以傳。"
+
+# 檔名超過主行程的上限(shell/attach.js ATTACH_NAME_MAX;雲端是 api 回 400、通用錯誤句)
+msgid "ws.attachNameLong"
+msgstr "檔名太長，請改短一點再傳。"
+
 # 選了之後檔被移走 / 刪掉,送出那一刻讀不到(雲端用通用錯誤句;電腦版沒有通用句,講清楚)
 msgid "ws.attachNoImage"
 msgstr "{model} 不讀圖"
@@ -6248,7 +6256,7 @@ msgid "wd.r.bnk.sn"
 msgstr "2020-01-01 或上市日"
 
 msgid "wd.r.bnk.sy"
-msgstr "2020 年或上市日起"
+msgstr "2020 年起"
 
 msgid "wd.r.bnk.us"
 msgstr "均線、通道、突破這類只看價量的策略"

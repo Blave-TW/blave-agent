@@ -484,7 +484,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .ci-bar { display: flex; align-items: center; gap: var(--space-8); margin-left: calc(-1 * var(--space-8)); }
 .ci-bar .btn-send { margin-left: auto; }
 /* 附件(照雲端 workspace.css 的 .btn-attach / .attach-chip,色換成外殼的 token):
-   迴紋針 = 32px 中性 ghost(同 .mp-trigger 的 hover 語言);chip = 輸入框上方一行 12px hairline 框,檔名截尾 + 20px ✕ */
+   迴紋針 = 32px 中性 ghost(同 .mp-trigger 的 hover 語言);chip = 輸入框上方一行 12px hairline 框,檔名截尾(全名在 title)+ 20px ✕ */
 .btn-attach { width: 32px; height: 32px; flex: 0 0 32px; display: flex; align-items: center; justify-content: center;
   border-radius: var(--radius-sm); color: var(--ink-2);
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
@@ -495,10 +495,12 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .attach-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 模型不讀圖的次要字(設計稽核):12px --ink-3,跟檔名隔 --space-8(chip 的 gap 4 + 這裡 4);不擋送出、不上色 */
 .attach-hint { flex: none; margin-left: var(--space-4); color: var(--ink-3); white-space: nowrap; }
-.attach-clear { flex: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-micro);
+.attach-clear { position: relative; flex: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-micro);
   color: var(--ink-3); font-size: 11px; line-height: 1;
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .attach-clear:hover { background: var(--surface-muted); color: var(--ink); }
+/* 熱區 28×28(看得到的仍是 20px):桌面熱區下限 24 */
+.attach-clear::before { content: ""; position: absolute; inset: -4px; }
 /* 檔案拖到輸入框上方:外框改虛線當落點提示(設計稽核:不加色不加底;排在 :focus-within 之後才蓋得過它) */
 .chat-input.is-drag { border-color: var(--ink); border-style: dashed; }
 /* 面板的定位基準是整個輸入框(.chat-input),不是這顆觸發鈕:聊天欄最窄 320,
