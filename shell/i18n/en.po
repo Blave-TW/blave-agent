@@ -6052,7 +6052,7 @@ msgid "ak.ruleWin"
 msgstr "{p} bills you directly. Your key is stored encrypted on this computer."
 
 msgid "ak.testConnect"
-msgstr "Test and connect"
+msgstr "Connect"
 
 msgid "ak.testSave"
 msgstr "Test and save"

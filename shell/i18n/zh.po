@@ -6054,7 +6054,7 @@ msgid "ak.ruleWin"
 msgstr "費用由 {p} 直接向你收。金鑰加密存在這台電腦。"
 
 msgid "ak.testConnect"
-msgstr "測試並連結"
+msgstr "連結"
 
 msgid "ak.testSave"
 msgstr "測試並儲存"
