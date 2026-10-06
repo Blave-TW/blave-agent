@@ -12,12 +12,13 @@ msgstr "Use Blave AI"
 msgid "cn.blave.desc"
 msgstr "First card adds 100 TWD of AI credit, then pay per use"
 
+# 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到贈額數字時用這句
 msgid "cn.blave.descSet"
-msgstr "Pay per use, charged to your Blave balance. A first card adds {q} TWD of AI credit."
+msgstr "First card adds {q} TWD of AI credit"
 
-# 拿不到贈額數字時(離線、api 沒回)只講怎麼收錢那半句
+# 已登入、或拿不到贈額數字時(離線、api 沒回):只講怎麼收錢
 msgid "cn.blave.descSetNoNum"
-msgstr "Pay per use, charged to your Blave balance."
+msgstr "Pay per use from your Blave balance"
 
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
@@ -48,9 +49,6 @@ msgstr "You can switch at any time."
 
 msgid "st.signedIn"
 msgstr "Signed in"
-
-msgid "st.notSignedIn"
-msgstr "Not signed in"
 
 msgid "st.notFound"
 msgstr "Not found"
@@ -1200,9 +1198,6 @@ msgstr "Sign In and Switch"
 
 msgid "cn.blave.name"
 msgstr "Blave AI"
-
-msgid "cn.blave.group"
-msgstr "Provided by Blave"
 
 msgid "acct.out.1"
 msgstr "After signing out, this computer no longer gets Blave data."

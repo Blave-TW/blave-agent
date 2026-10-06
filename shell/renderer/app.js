@@ -5,7 +5,8 @@ function row({ name, st, stClass, action, cur, kind }) {
   const div = document.createElement("div");
   if (kind) div.dataset.kind = kind;
   div.className = "cn-row" + (stClass === "" ? " off" : "") + (cur ? " is-cur" : "");
-  const stSpan = stClass === "on"
+  // 列尾只放一樣:有「登入」鈕的列不再並排「尚未登入」(同一件事講兩次)——那種列不給 st,這一格就不畫
+  const stSpan = !st ? "" : stClass === "on"
     ? `<span class="cn-st on"><span class="dot"></span>${st}</span>`
     : `<span class="cn-st ${stClass}">${st}</span>`;
   div.innerHTML = `<span class="n">${name}</span>${stSpan}`;
@@ -76,7 +77,7 @@ function paintRows(d) {
       cur: cur === "claude",
       action: cur === "claude" ? null : btn(localBtnCls(), t("cn.connect"), () => connect("claude", d.claude)) }));
   } else if (d.claude.installed) {
-    rows.appendChild(row({ name: "Claude Code", kind: "claude", st: t("st.notSignedIn"), stClass: "up",
+    rows.appendChild(row({ name: "Claude Code", kind: "claude",
       action: btn("btn-out", t("cn.signIn"), (e) => localLogin("claude", e.currentTarget)) }));
   } else {
     const r = row({ name: "Claude Code", kind: "claude", st: t("st.notFound"), stClass: "" });
@@ -88,7 +89,7 @@ function paintRows(d) {
       cur: cur === "codex",
       action: cur === "codex" ? null : btn(localBtnCls(), t("cn.connect"), () => connect("codex", d.codex)) }));
   } else if (d.codex.installed) {
-    rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.notSignedIn"), stClass: "up",
+    rows.appendChild(row({ name: "Codex", kind: "codex",
       action: btn("btn-out", t("cn.signIn"), (e) => localLogin("codex", e.currentTarget)) }));
   } else {
     rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.notFound"), stClass: "" }));
@@ -177,12 +178,13 @@ function paintBlaveBtn() {
 const MDL = { busy: false };
 /* pend = { login:"claude"|"codex"|null, oauth:bool }:等待中的那一列,鈕變「取消等待」而不是變灰——
    這一頁每次重畫都是新節點(setHint 會觸發),等待狀態要在資料裡,不能只靠改那顆鈕的字(改完就被重畫吃掉)。 */
-/* 就緒是預設,不講:能用的列 st = null,只有不能用的列講狀態(尚未登入 / 未偵測到)。
+/* 就緒是預設,不講:能用的列 st = null。列尾只放一樣:有鈕(或「使用中」)的列也不講——「尚未登入」+〔登入〕是同一件事講兩次,
+   所以只有沒鈕可按的列才有狀態字(偵測中… / 未偵測到)。
    「改成用這個」三列同一個字「使用」(cn.use)——Blave 走 blaveGo、本機走 connect,對用戶是同一個動作 */
 function mdlOptions(d, curKind, tok, pend, ak) {
   const p = pend || {};
-  const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: "cn.blave.descSet",   // 設定頁先講怎麼收錢;連結畫面那張卡(cn.blave.desc)先講贈額,兩句不同
-    st: tok ? null : { key: "st.notSignedIn" },
+  const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: tok ? "cn.blave.descSetNoNum" : "cn.blave.descSet",   // 沒登入講首次綁卡的贈額(數字來自 api,mdlPaint 填;拿不到就退成扣款那句),登入後只講怎麼收錢
+    st: null,
     // 已經有 token 就不必再跑一次 OAuth:切回去是一個選擇,不是重新授權
     act: p.oauth ? "oauth.cancel" : curKind === "blave" ? null : tok ? "cn.use" : curKind ? "cn.blave.signinSwitch" : "cn.blave.btn",
     isCur: curKind === "blave" }];
@@ -190,7 +192,7 @@ function mdlOptions(d, curKind, tok, pend, ak) {
     const x = (d && d[kind]) || {}, ready = !!(x.installed && x.loggedIn);
     out.push({ kind, name, desc: null,
       // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
-      st: d === null ? { key: "cn.detecting" } : ready ? null : { key: x.installed ? "st.notSignedIn" : "st.notFound" },
+      st: d === null ? { key: "cn.detecting" } : x.installed ? null : { key: "st.notFound" },
       act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
       isCur: ready && curKind === kind });
   });
@@ -201,6 +203,7 @@ function mdlOptions(d, curKind, tok, pend, ak) {
     out.push({ kind: "apikey", name: s ? s.name : null, nameKey: s ? null : "ak.row", desc: s ? "ak.yours" : null, names: s ? null : presets.map((x) => x.name),
       st: null, act: s ? (curKind === "apikey" ? null : "cn.use") : "ak.setup", isCur: !!s && curKind === "apikey", edit: !!s });
   }
+  out.forEach((o) => { if (o.act || o.isCur) o.st = null; });   // 列尾只放一樣(偵測中又在等登入的那一列:只留「取消等待」)
   return out;
 }
 // 「重新偵測」只在本機有一個不能用的時候出:兩個都就緒時再偵測也不會有不同的結果。d = 上一次偵測的結果(偵測中照上一次的畫,鈕停用)
@@ -224,18 +227,22 @@ function mdlPaint() {
   const pend = { login: loginPending, oauth: oauthPending };
   const opts = mdlOptions(MDL.busy ? null : lastDetect, cur, hasToken, pend, typeof AK === "object" ? AK.info : null);
   const waiting = !!(pend.login || pend.oauth);
+  // 第一組(Blave AI 一列)不給小標:底下只有一列,而且那一列就叫 Blave AI
   const grp = (headKey, descKey) => {
-    const g = el("div", "cn-grp"), h = el("div", "cn-grp-h");
-    h.appendChild(el("span", null, t(headKey)));
-    // 小標與後面那句同為 12px --ink-3,只隔 8px 會連起來讀成一句:中間放一個「·」分開
-    if (descKey) { const sep = el("span", "sep", "·"); sep.setAttribute("aria-hidden", "true"); h.append(sep, el("span", "m", t(descKey))); }
-    const o = el("div", "cn-opts"); g.append(h, o); box.appendChild(g); return [g, o];
+    const g = el("div", "cn-grp"), o = el("div", "cn-opts");
+    if (headKey) {
+      const h = el("div", "cn-grp-h"); h.appendChild(el("span", null, t(headKey)));
+      // 小標與後面那句同為 12px --ink-3,只隔 8px 會連起來讀成一句:中間放一個「·」分開
+      if (descKey) { const sep = el("span", "sep", "·"); sep.setAttribute("aria-hidden", "true"); h.append(sep, el("span", "m", t(descKey))); }
+      g.appendChild(h);
+    }
+    g.appendChild(o); box.appendChild(g); return [g, o];
   };
   const put = (into, o) => {
     const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "")); r.dataset.kind = o.kind;
     if (o.isCur) r.setAttribute("aria-current", "true");
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
-    // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就只講怎麼收錢那半句
+    // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就退成怎麼收錢那句
     if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc))); }
     else if (o.names) tc.appendChild(el("p", "m", o.names.join(t("ak.sep"))));
     r.appendChild(tc);
@@ -246,7 +253,7 @@ function mdlPaint() {
     else if (o.act) { const b = el("button", "pf-act", t(o.act)); b.type = "button"; b.disabled = waiting && o.act !== "login.cancel" && o.act !== "oauth.cancel"; b.addEventListener("click", () => mdlAct(o, b)); r.appendChild(b); }
     into.appendChild(r);
   };
-  put(grp("cn.blave.group")[1], opts[0]);
+  put(grp(null)[1], opts[0]);
   const [lg, local] = grp("cn.local.label", "cn.local.desc");
   opts.slice(1).forEach((o) => put(local, o));   // Claude Code、Codex、API 金鑰(有上架的供應商才有)
   // 本機那一組最後一列底下的安靜文字鈕(不佔組標題)

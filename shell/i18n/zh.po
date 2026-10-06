@@ -12,12 +12,13 @@ msgstr "用 Blave AI"
 msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
+# 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到贈額數字時用這句
 msgid "cn.blave.descSet"
-msgstr "按用量從 Blave 餘額扣款。首次綁卡送 {q} TWD 的 AI 額度。"
+msgstr "首次綁卡送 {q} TWD 的 AI 額度，之後按用量計費"
 
-# 拿不到贈額數字時(離線、api 沒回)只講怎麼收錢那半句
+# 已登入、或拿不到贈額數字時(離線、api 沒回):只講怎麼收錢
 msgid "cn.blave.descSetNoNum"
-msgstr "按用量從 Blave 餘額扣款。"
+msgstr "按用量從 Blave 餘額扣款"
 
 msgid "cn.blave.btn"
 msgstr "登入 Blave"
@@ -48,9 +49,6 @@ msgstr "連結後可以隨時更換。"
 
 msgid "st.signedIn"
 msgstr "已登入"
-
-msgid "st.notSignedIn"
-msgstr "尚未登入"
 
 msgid "st.notFound"
 msgstr "未偵測到"
@@ -1202,9 +1200,6 @@ msgstr "登入並切換"
 
 msgid "cn.blave.name"
 msgstr "Blave AI"
-
-msgid "cn.blave.group"
-msgstr "由 Blave 提供"
 
 msgid "acct.out.1"
 msgstr "登出之後，這台電腦不再取得 Blave 的資料。"

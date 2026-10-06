@@ -357,17 +357,27 @@ let M = mdlOptions(D, "claude", true);
   ok("② 模型選單底部:引擎是 Blave AI 才出(連同分隔線);讀不到餘額只出規則那半句;打開選單與回合結束重讀", /const on = cur === "blave", n = on \? balNow\(\) : null;\s*\$\("mp-bill-div"\)\.hidden = !on; \$\("mp-bill"\)\.hidden = !on;/.test(src) && /\$\("mp-bill-sep"\)\.hidden = !n; \$\("mp-bill-bal"\)\.hidden = !n;/.test(src)
     && /<p class="mp-note" id="mp-note" aria-live="polite"><\/p>\s*<!--[^>]*-->\s*<div class="mp-div" id="mp-bill-div" hidden><\/div>\s*<p class="mp-note mp-bill" id="mp-bill" hidden>/.test(html)
     && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(cut("mpOpen")) && /\n  if \(cur === "blave" && hasToken\) balLoad\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
-  ok("③ 模型接入:Blave AI 那一列先講怎麼收錢(cn.blave.descSet);連結畫面那張卡的 cn.blave.desc 不動", M[0].desc === "cn.blave.descSet" && /data-i18n="cn\.blave\.desc"/.test(html) && /msgid "cn\.blave\.desc"\nmsgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"/.test(PO2[0])
-    && /msgid "cn\.blave\.descSet"\nmsgstr "按用量從 Blave 餘額扣款。首次綁卡送 \{q\} TWD 的 AI 額度。"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1])); }
-ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」;用中的那一列沒有動作(列尾「使用中」);不能用的列才講(尚未登入 + 登入)", M.length === 3 && shape(M[0]) === "blave|false||cn.use" && shape(M[1]) === "claude|true||null" && shape(M[2]) === "codex|false|st.notSignedIn|cn.signIn");
+  ok("③ 模型接入:Blave AI 那一列登入後只講怎麼收錢(descSetNoNum)、沒登入講首次綁卡的贈額(descSet,帶 {q});連結畫面那張卡的 cn.blave.desc 不動", M[0].desc === "cn.blave.descSetNoNum" && mdlOptions(D, "claude", false)[0].desc === "cn.blave.descSet" && mdlOptions(D, null, false, { oauth: true })[0].desc === "cn.blave.descSet"
+    && /data-i18n="cn\.blave\.desc"/.test(html) && /msgid "cn\.blave\.desc"\nmsgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1]));
+  ok("③ 兩句各一行、句尾不加句號(寬度預算:zh ≤ 346px、en ≤ 302px,設計師量的)", /msgid "cn\.blave\.descSet"\nmsgstr "首次綁卡送 \{q\} TWD 的 AI 額度，之後按用量計費"\n/.test(PO2[0]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "按用量從 Blave 餘額扣款"\n/.test(PO2[0])
+    && /msgid "cn\.blave\.descSet"\nmsgstr "First card adds \{q\} TWD of AI credit"\n/.test(PO2[1]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "Pay per use from your Blave balance"\n/.test(PO2[1])
+    && /\.cn-opt \.m\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/.test(css)); }
+ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」;用中的那一列沒有動作(列尾「使用中」);裝了沒登入的列只有〔登入〕,不再並排「尚未登入」", M.length === 3 && shape(M[0]) === "blave|false||cn.use" && shape(M[1]) === "claude|true||null" && shape(M[2]) === "codex|false||cn.signIn");
+{ // 列尾只放一樣:有鈕(或「使用中」)的列沒有狀態字——列舉 引擎 × token × 等待 × 偵測結果,不是抽樣
+  const DS = [null, D, { claude: { installed: false }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false }, codex: { installed: false } }];
+  const AKS = [null, { saved: null, presets: [{ id: "x", name: "X" }] }, { saved: "x", presets: [{ id: "x", name: "X" }] }];
+  const bad = []; let n = 0;
+  DS.forEach((d) => [null, "blave", "claude", "codex", "apikey"].forEach((c) => [true, false].forEach((tok) => [null, { oauth: true }, { login: "claude" }, { login: "codex" }].forEach((p) => AKS.forEach((ak) =>
+    mdlOptions(d, c, tok, p, ak).forEach((o) => { n++; if (o.st && (o.act || o.isCur)) bad.push(shape(o)); if (o.kind === "blave" && o.st) bad.push("blave:" + shape(o)); if (o.st && !["cn.detecting", "st.notFound"].includes(o.st.key)) bad.push("key:" + shape(o)); }))))));
+  ok("列尾只放一樣:有鈕或「使用中」的列 st = null;Blave 那一列永遠沒有狀態字;剩下的狀態字只有「偵測中…」「未偵測到」(" + n + " 列)", n > 1000 && bad.length === 0); }
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
   && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl + fnSrc("mdlPaint")));
-ok("沒登入 Blave、現在用的是本機 agent:那一列是「登入並切換」(不是「登入 Blave」)", mdlOptions(D, "claude", false)[0].act === "cn.blave.signinSwitch" && mdlOptions(D, null, false)[0].act === "cn.blave.btn" && mdlOptions(D, "claude", false)[0].st.key === "st.notSignedIn");
+ok("沒登入 Blave、現在用的是本機 agent:那一列是「登入並切換」(不是「登入 Blave」)", mdlOptions(D, "claude", false)[0].act === "cn.blave.signinSwitch" && mdlOptions(D, null, false)[0].act === "cn.blave.btn" && mdlOptions(D, "claude", false)[0].st === null && mdlOptions(D, null, false)[0].st === null);
 M = mdlOptions({ claude: { installed: false }, codex: { installed: false } }, "blave", true);
 ok("用的是 Blave AI:那一列 is-cur、沒有動作、不講狀態;沒裝的兩列「未偵測到」、沒有鈕", shape(M[0]) === "blave|true||null" && shape(M[1]) === "claude|false|st.notFound|null" && shape(M[2]) === "codex|false|st.notFound|null");
 M = mdlOptions(D, "claude", false, { login: "codex" });
 ok("等待登入中:那一列變「取消等待」(這一頁每次重畫都是新節點,等待狀態要在資料裡);其餘鈕由 waiting 鎖住", M[2].act === "login.cancel" && /b\.disabled = waiting && o\.act !== "login\.cancel"/.test(src) && /if \(o\.act === "login\.cancel"\) return window\.blave\.cancelAgentLogin\(\)/.test(src));
-ok("等待 OAuth 中:Blave 那一列變「取消」,等待結束會重畫(不然「取消」留在畫面上)", mdlOptions(D, "claude", false, { oauth: true })[0].act === "oauth.cancel" && /oauthPending = false;\n    b\.textContent = was;\n    waitChanged\(\);/.test(src));
+ok("等待 OAuth 中:Blave 那一列只有「取消等待」(沒有狀態字),等待結束會重畫(不然「取消」留在畫面上)", shape(mdlOptions(D, "claude", false, { oauth: true })[0]) === "blave|false||oauth.cancel" && /oauthPending = false;\n    b\.textContent = was;\n    waitChanged\(\);/.test(src));
 M = mdlOptions(null, "claude", true);
 ok("偵測中:兩列只換狀態字、不給動作(列數不變);Blave 那一列不受偵測影響", shape(M[1]) === "claude|false|cn.detecting|null" && shape(M[2]) === "codex|false|cn.detecting|null" && M[0].act === "cn.use");
 ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出、還沒偵測過不出", !mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } })
@@ -384,15 +394,44 @@ ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出
   lastDetect = { claude: { installed: true, loggedIn: false }, codex: { installed: false } }; cur = "blave"; mdlPaint();
   all = walk($("set-model")); const more = all.find((n) => n._cls === "cn-more"), rb = more && more.children[0];
   const grpH = all.filter((n) => n._cls === "cn-grp-h");
-  ok("一個沒登入:那一列「尚未登入」+〔登入〕,沒裝的「未偵測到」沒有鈕;本機那組底下出安靜的「重新偵測」、組標題裡沒有鈕",
-    all.some((n) => n._cls === "st" && n.textContent === "st.notSignedIn") && all.some((n) => n._cls === "st" && n.textContent === "st.notFound")
+  ok("一個沒登入:那一列只有〔登入〕(沒有「尚未登入」),沒裝的「未偵測到」沒有鈕;本機那組底下出安靜的「重新偵測」、組標題裡沒有鈕",
+    all.filter((n) => n._cls === "st").map((n) => n.textContent).join() === "st.notFound"
     && all.filter((n) => n._cls === "pf-act").map((n) => n.textContent).join() === "cn.signIn" && !!rb && rb._cls === "btn-quiet" && rb.textContent === "cn.redetect" && more.dataset.kind === "redetect"
-    && grpH.every((h) => !walk(h).some((c) => /pf-act|btn-quiet/.test(c._cls)))); }
+    && grpH.every((h) => !walk(h).some((c) => /pf-act|btn-quiet/.test(c._cls))));
+  // 列 = 文字欄 + 列尾;列尾放了什麼(class:字)。Blave AI 那一列的說明是 .t 的第二個子節點
+  const rows = () => walk($("set-model")).filter((n) => /^cn-opt( |$)/.test(n._cls)).map((r) => ({ kind: r.dataset.kind, desc: (r.children[0].children[1] || {}).textContent, tail: r.children.slice(1).map((c) => c._cls + ":" + c.textContent) }));
+  const blave = () => rows()[0], grps = () => $("set-model").children.filter((n) => n._cls === "cn-grp");
+  ok("第一組(Blave AI)沒有小標:只有 .cn-opts;第二組的小標「用你自己的 AI · Blave 不收 AI 費用」照舊;cn.blave.group 兩語都刪了", grps().length === 2 && grps()[0].children.map((c) => c._cls).join() === "cn-opts"
+    && grps()[1].children[0]._cls === "cn-grp-h" && /^cn\.local\.label·cn\.local\.desc$/.test(grps()[1].children[0].textContent) && grpH.length === 1
+    && !/cn\.blave\.group/.test(src + PO2[0] + PO2[1]) && /\.cn-grp>\.cn-opts:first-child\{margin-top:0\}/.test(css));
+  lastDetect = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false } };
+  hasToken = false; cur = "claude"; mdlPaint(); const outNum = blave();
+  planVars = () => ({ q: "" }); mdlPaint(); const outNoNum = blave();
+  planVars = () => ({ q: "100" }); oauthPending = true; mdlPaint(); const waitOauth = blave(), lockedWhileWait = rows().slice(1).map((r) => r.tail.join()).join("|");
+  oauthPending = false; loginPending = "codex"; mdlPaint(); const waitLogin = rows();
+  loginPending = null; hasToken = true; mdlPaint(); const inIdle = blave();
+  cur = "blave"; mdlPaint(); const inCur = blave();
+  ok("Blave AI 的說明:沒登入 + 有數字 → 贈額句(數字來自 planVars);沒登入 + 拿不到數字 → 扣款句;已登入(不管用不用)→ 扣款句", outNum.desc === 'cn.blave.descSet{"q":"100"}' && outNoNum.desc === "cn.blave.descSetNoNum" && inIdle.desc === "cn.blave.descSetNoNum" && inCur.desc === "cn.blave.descSetNoNum");
+  ok("Blave AI 的列尾只有一樣:沒登入 = 一顆鈕(沒有「尚未登入」)、等待登入中 = 只有「取消等待」、已登入 = 「使用」、使用中 = 「使用中」",
+    outNum.tail.join() === "pf-act:cn.blave.signinSwitch" && waitOauth.tail.join() === "pf-act:oauth.cancel" && waitOauth.desc === 'cn.blave.descSet{"q":"100"}' && inIdle.tail.join() === "pf-act:cn.use" && inCur.tail.join() === "cn-cur:cn.current"
+    && lockedWhileWait === "cn-cur:cn.current|pf-act:cn.signIn");
+  ok("本機登入等待中:那一列只有「取消等待」;每一列的列尾都只有一樣", waitLogin[2].tail.join() === "pf-act:login.cancel" && waitLogin.every((r) => r.tail.length === 1));
+  hasToken = true; cur = null; lastDetect = null;
+  // 連結畫面(另一份 DOM:row / paintRows):同一條規則——有〔登入〕鈕的列不並排「尚未登入」;沒鈕可按的(偵測中… / 未偵測到)照講
+  var localReady = false, paintBlaveBtn = () => {}, connect = () => {}, localLogin = () => {}, btn = (cls, text) => { const b = el(); b.className = cls; b.textContent = text; return b; };
+  eval(fnSrc("row")); eval(fnSrc("paintRows")); eval(fnSrc("detectingRows"));
+  const cnRows = (fn) => { delete dom["agent-rows"]; fn(); return $("agent-rows").children.map((r) => [r.dataset.kind, (r.innerHTML.match(/class="cn-st[^"]*">([^<]*)/) || [, ""])[1], r.children.map((c) => c._cls + ":" + c.textContent).join("+")].join("|")).join(" "); };
+  ok("連結畫面:裝了沒登入的列只有〔登入〕(沒有 .cn-st);沒裝的「未偵測到」、偵測中的「偵測中…」照講、沒有鈕",
+    cnRows(() => paintRows({ claude: { installed: true, loggedIn: false }, codex: { installed: false } })) === "claude||btn-out:cn.signIn codex|st.notFound|"
+    && cnRows(() => paintRows({ claude: { installed: false }, codex: { installed: true, loggedIn: false } })) === "claude|st.notFound| codex||btn-out:cn.signIn"
+    && cnRows(detectingRows) === "claude|cn.detecting| codex|cn.detecting|");
+  ok("連結畫面:等待登入中是同一顆鈕換字(「取消等待」),那一列本來就沒有狀態字;Blave 那一格只有標題、說明與一顆鈕", /b\.textContent = t\("login\.cancel"\);/.test(fnSrc("localLogin")) && !/st\.notSignedIn/.test(src + PO2[0] + PO2[1])
+    && /<div class="cn-sec cn-blave">\s*<!--[^>]*-->\s*<p class="cn-head">\s*<span class="cn-ttl" data-i18n="cn\.blave\.title"><\/span>\s*<span class="cn-meta" data-i18n="cn\.blave\.desc"><\/span>\s*<\/p>\s*<span class="cn-cur" id="cn-blave-cur" hidden><\/span>\s*<button class="btn-fill" id="btn-blave" type="button"><\/button>/.test(html)); }
 ok("連結畫面那張卡不再搬進設定(兩邊各畫各的,共用的是底下的邏輯)", !/set-model"\)\.appendChild\(document\.querySelector\("\.cn-card"\)\)/.test(src) && !/\$\("cn-foot"\)\.before\(/.test(src) && /function mdlPaint\(\)/.test(src) && /id="set-model"[^>]*><\/div>/.test(html));
 ok("登入 / 連結完重畫之後,焦點回同一列的鈕(兩個表面都靠 data-kind)", /if \(kind\) div\.dataset\.kind = kind;/.test(src) && /r\.dataset\.kind = o\.kind;/.test(src) && /host\(\)\.querySelector\('\[data-kind="' \+ kind \+ '"\] button'\)/.test(src));
 ok("模型接入頁的小框鈕只亮這一頁(不動全站的 .pf-act);「使用中」= 灰填 + 加粗 + 列尾三個字", /#set-model \.pf-act\{[^}]*--ink-2/.test(css) && /\.cn-opt\.is-cur\{background:var\(--surface-muted\)\}/.test(css) && /\.cn-opt\.is-cur \.n\{font-weight:600\}/.test(css));
 ok("字串:設定頁那一列是「Blave AI」,連結畫面的動詞句「用 Blave AI」照舊", /msgid "cn\.blave\.name"\nmsgstr "Blave AI"/.test(PO2[0]) && /msgid "cn\.blave\.title"\nmsgstr "用 Blave AI"/.test(PO2[0]) && /data-i18n="cn\.blave\.title"/.test(html));
-ok("字串:本機那一組改成「用你自己的 AI」(0.1.16 API 金鑰同組一列,audit 方案一),群組小標「由 Blave 提供」", /msgid "cn\.local\.label"\nmsgstr "用你自己的 AI"/.test(PO2[0]) && /msgid "cn\.blave\.group"\nmsgstr "由 Blave 提供"/.test(PO2[0]));
+ok("字串:本機那一組改成「用你自己的 AI」(0.1.16 API 金鑰同組一列,audit 方案一);「由 Blave 提供」那個小標拿掉了(底下只有一列,而且那一列就叫 Blave AI)", /msgid "cn\.local\.label"\nmsgstr "用你自己的 AI"/.test(PO2[0]) && !/cn\.blave\.group|由 Blave 提供|Provided by Blave/.test(PO2[0] + PO2[1]));
 
 // 重畫吃掉焦點 → Esc 關不掉設定(R3-1:「重新偵測」那一顆被銷毀時踩到)
 ok("重新偵測那一組掛的是 data-kind(焦點還原查的就是它),不是 data-k", /m\.dataset\.kind = "redetect";/.test(src) && !/dataset\.k = /.test(fnSrc("mdlPaint")) && /querySelector\('\[data-kind="' \+ focusKind\.kind \+ '"\] button'\)/.test(src));
