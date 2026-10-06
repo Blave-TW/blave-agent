@@ -2464,7 +2464,9 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (!(opts && opts.bubble) && typeof engDropHeld === "function") engDropHeld();   // 安裝失敗時留著等重試的那句:換送別句就不會再送了
   const bubble = opts && opts.bubble && opts.bubble.isConnected ? opts.bubble : addMsg("you", msg, attachment ? attachment.name : null); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
   lastUserAttachment = attachment; lastUserFrom = attachment ? (opts && opts.from) || "file" : null;
-  const unsend = () => { bubble.remove(); if (lastUserTyped) stopRestore(msg, attachment, lastUserFrom); };   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩
+  // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩。這一句帶的檔放不回 chip(重送時用戶已另外掛了別的檔)→ 泡泡不收,
+  // 不然那個檔連同純附件那一句無聲消失(同 turn-end 的 attBack)
+  const unsend = () => { if (!attachment || !attachedFile || attachedFile === attachment) bubble.remove(); if (lastUserTyped) stopRestore(msg, attachment, lastUserFrom); };
   if (typeof engAfter === "function") engAfter(bubble);   // 安裝中送出:進度卡移到這句底下
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)

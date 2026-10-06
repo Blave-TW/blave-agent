@@ -216,6 +216,13 @@ month, cached per month under `cache/twfutures_public_1d_TXF/`; a cold 1998→to
 - **MXF / TMF** read the same TX prices, and the TAIFEX part starts on that contract's own
   listing day: MXF 2001-04-09, TMF 2024-07-29 (so TMF with Blave data has no TAIFEX part).
 
+**Backtest `START` of a `'1d'` strategy on the desktop defaults to the first bar this fetch
+returns — TXF `1998-07-21`, MXF `2001-04-09`, with or without Blave data; TMF `2024-07-29`
+without Blave data (with it `2011-01-03`: the Blave series is already the deeper one).**
+`2011-01-03` is where the Blave series begins, not a default — it is the earliest `START` only
+for intraday schemas and for `'1d'` on a cloud machine. A later `START` is a choice you state
+with its reason; never write 「資料從 2011 年起」 for desktop TXF / MXF daily bars.
+
 **Whenever `attrs['source']` names `TAIFEX`, any report or reply citing the bars carries
 `資料來源:臺灣期貨交易所(政府資料開放授權)`** (en: `Source: Taiwan Futures Exchange (Open
 Government Data License)`).

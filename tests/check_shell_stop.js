@@ -90,7 +90,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     (id) => els[id], (k) => k, () => {}, () => {}, { blave: { stopTurn: async () => false } });
   await R3.stopTurn();
   ok("暖機中按停止:記住要停", R3.stopped === true);
-  ok("…submitMessage 暖機完就收掉、原句放回", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); unsend\(\); return false; \}/.test(appSrc) && /const unsend = \(\) => \{ bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachment, lastUserFrom\); \};/.test(appSrc));
+  ok("…submitMessage 暖機完就收掉、原句放回", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); unsend\(\); return false; \}/.test(appSrc) && /const unsend = \(\) => \{ if \(!attachment \|\| !attachedFile \|\| attachedFile === attachment\) bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachment, lastUserFrom\); \};/.test(appSrc));
   els.ta.value = ""; R.stopRestore("幫我跑 BTC 回側");
   ok("停下後原句放回空的輸入框", els.ta.value === "幫我跑 BTC 回側" && els.ta.focused);
   els.ta.value = "改成 ETH"; R.stopRestore("幫我跑 BTC 回側");

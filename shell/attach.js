@@ -31,18 +31,19 @@ function sanitizeName(raw) {
   return out;
 }
 
-/* renderer 交來的附件驗形狀(同 api /send 的檢查):不合法回 null,合法回只含三個驗過欄位的新物件 */
+/* renderer 交來的附件驗形狀(檔名、大小、base64 同 api /send 的檢查):不合法回 null,合法回只含三個驗過欄位的新物件。
+   mime 跟 api 不同、不拿來拒收:電腦版落地只寫位元組,之後沒有任何地方讀它,太長或不是字串就當沒給——
+   xlsx / docx / pptx 的 MIME 是 65 / 71 / 73 字,超過 ATTACH_MIME_MAX;拒收的話 send-message 已經回了 started,畫面只剩「bad attachment」 */
 function validate(att) {
   if (!att || typeof att !== "object" || Array.isArray(att)) return null;
   const name = sanitizeName(att.name);
   if (!name) return null;
   const data = att.data;
   if (typeof data !== "string" || data.length > ATTACH_DATA_MAX || data.length % 4 !== 0 || !B64_RE.test(data)) return null;
-  const mime = att.mime;
-  if (mime != null && (typeof mime !== "string" || mime.length > ATTACH_MIME_MAX)) return null;
+  const mime = typeof att.mime === "string" && att.mime.length <= ATTACH_MIME_MAX ? att.mime : null;
   const bytes = Buffer.from(data, "base64");
   if (!bytes.length || bytes.length > ATTACH_MAX_BYTES) return null;
-  return { name, mime: typeof mime === "string" ? mime : null, bytes };
+  return { name, mime, bytes };
 }
 
 /* VM 那一段的落地:workspace/tmp/inbound/<name>,撞名加 `<秒>_` 前綴(同 web_bridge.save_attachment)。

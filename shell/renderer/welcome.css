@@ -25,6 +25,7 @@
   transition: background var(--motion-fast) var(--ease-standard);
 }
 .wd-row:hover { background: var(--surface-muted); }
+.wd-row:hover .wd-mt { color: var(--ink-2); }   /* --ink-3 壓在 hover 底色上對比不到 4.5:1 */
 .wd-row:focus-visible { outline-offset: -2px; }
 .wd-l1 { display: flex; align-items: baseline; justify-content: flex-start; gap: var(--space-2) var(--space-12); flex-wrap: wrap; }
 .wd-nm { color: var(--ink); font-weight: 500; }
@@ -33,8 +34,14 @@
 /* 「看全部資料」:安靜文字鈕,字級拉到 13/500 墨色、底線色退到框線;熱區 44 高(.btn-quiet::before 是 app.css 那條 44 寬熱區) */
 .wl-foot .btn-quiet { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 500; color: var(--ink); text-decoration-color: var(--border-frame); }
 .wl-foot .btn-quiet:hover { color: var(--ink-2); }
+/* 兩欄並排:兩欄的子項(欄頭、每一列)直接排進同一張格線,同一橫排同高——右欄欄頭那句折成兩行時,兩條 hairline 與第一列仍對齊。
+   .wl-col 變成 display: contents 後自己的 min-width: 0 不作用,改掛到子項 */
 @container (min-width: 700px) {
-  .wl-body.cmp2 { grid-template-columns: 1fr 1fr; gap: var(--space-16); }
+  .wl-body.cmp2 { grid-template-columns: 1fr 1fr; gap: 0 var(--space-16); grid-auto-flow: row dense; }
+  .wl-body.cmp2 .wl-col { display: contents; }
+  .wl-body.cmp2 .wl-col > * { min-width: 0; }
+  .wl-body.cmp2 .wl-col:first-child > * { grid-column: 1; }
+  .wl-body.cmp2 .wl-col:last-child > * { grid-column: 2; }
 }
 
 /* 完整目錄(mockup §2):一張表,市場分組列是小標 */

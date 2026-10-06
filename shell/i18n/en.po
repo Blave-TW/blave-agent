@@ -109,13 +109,13 @@ msgid "ws.attachRemove"
 msgstr "Remove Attachment"
 
 msgid "ws.attachTooLarge"
-msgstr "File too large — the limit is 5MB."
+msgstr "File is too large. The limit is 5 MB."
 
 msgid "ws.attachEmpty"
-msgstr "That file is empty — there's nothing to send."
+msgstr "This file is empty. There's nothing to send."
 
 msgid "ws.attachNameLong"
-msgstr "That file name is too long — shorten it and try again."
+msgstr "File name is too long. Shorten it and try again."
 
 # 選了之後檔被移走 / 刪掉,送出那一刻讀不到(雲端用通用錯誤句;電腦版沒有通用句,講清楚)
 msgid "ws.attachNoImage"
@@ -123,7 +123,7 @@ msgstr "{model} can't read images"
 
 # title／aria 的長句
 msgid "ws.attachNoImageLong"
-msgstr "{model} can't read images — this one will be skipped."
+msgstr "{model} can't read images. This one will be skipped."
 
 msgid "ws.attachReadFail"
 msgstr "Couldn't read that file. Please attach it again."
@@ -6237,10 +6237,10 @@ msgstr "Current values only, no history, so not usable for backtests: Taiwan rea
 
 # Per row: nm name / wnm short name on the welcome list (the catalog keeps the long one) / nt catalog note / fq frequency / sn catalog start / sy welcome start (short) / us backtest ideas / an the name as it goes into wd.ask (welcome rows only; no parenthetical, never a coin or symbol)
 msgid "wd.r.bnk.nm"
-msgstr "Perpetual futures klines (Binance USDT-M)"
+msgstr "Perpetual futures klines (Binance USDT‑M)"
 
 msgid "wd.r.bnk.wnm"
-msgstr "Perpetual futures klines (Binance)"
+msgstr "Perp klines (Binance)"
 
 msgid "wd.r.bnk.nt"
 msgstr "Includes tokenized US-stock perps (AAPL, NVDA, TSLA, SPY, QQQ…), listed from 2026"
@@ -6321,7 +6321,7 @@ msgid "wd.r.conc.us"
 msgstr "Enter and exit when the long/short account ratio drifts from its mean"
 
 msgid "wd.r.conc.an"
-msgstr "Position Concentration"
+msgstr "the Position Concentration indicator"
 
 msgid "wd.r.whale.nm"
 msgstr "Whale Alerts"
@@ -6428,8 +6428,11 @@ msgstr "funding rates"
 msgid "wd.r.twd.nm"
 msgstr "Stock daily bars (raw and adjusted)"
 
+msgid "wd.r.twd.wnm"
+msgstr "Stock daily bars"
+
 msgid "wd.r.twd.nt"
-msgstr "OTC stocks reach back to the 1990s; on a cloud machine this goes through Blave, from 1994-10-01"
+msgstr "OTC stocks from the 1990s; on a cloud machine, via Blave from 1994‑10‑01"
 
 msgid "wd.r.twd.fq"
 msgstr "Daily"
@@ -6526,6 +6529,9 @@ msgstr "Changes in the foreign ownership ratio"
 
 msgid "wd.r.br.nm"
 msgstr "Broker-branch flows, top 8 banks"
+
+msgid "wd.r.br.wnm"
+msgstr "Broker-branch flows"
 
 msgid "wd.r.br.fq"
 msgstr "Daily"
