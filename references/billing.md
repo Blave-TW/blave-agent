@@ -81,7 +81,7 @@ Japanese, Vietnamese, Spanish and Portuguese site faces display USD at 30 TWD/US
   it does.
 - **Blave data is bundled.** An account that owns a machine (running or stopped) is never charged
   `usage_blave` (`deduct_blave_api_credit` short-circuits on `has_machine`). Every `lib/data.py`
-  fetch, backtest, param scan, cron-scheduled strategy, watchboard script and scheduled report is
+  fetch, backtest, param scan, cron-scheduled strategy and scheduled report is
   covered by the hour already paid.
 - Free trial (card-bound, 14 days, Linux Starter only): the server hour is not charged and no
   transaction row is written for it.
@@ -143,7 +143,6 @@ None of these add anything beyond the server hour already paid:
 - A backtest, param scan or MCPT run — CPU on the machine. (The chat turn that launches it and
   reads its output is billed as LLM tokens like any other turn.)
 - A deployed strategy on the system cron / Scheduled Task (`wait_for_bar.py`, `run_strategy.sh`).
-- A watchboard widget script (`lib/watch.py`; deterministic code by contract).
 - A scheduled report's data-only fallback (`report_jobs/<id>/run.py`). On a cloud machine, a job the user agreed to (`agent_consent`) also runs a scheduled **agent turn** that narrates it, billed as LLM tokens like a chat turn on whatever model they use at the time — about 12–18 TWD per run on Claude (web search included), about 1 on DeepSeek, capped at 1.0 USD (~40 TWD) per run (`lib.report.scheduled_cost()`). Not on the desktop in this version.
 - Any `lib/data.py` fetch, cached or not — data is bundled.
 - Telegram / web notifications sent by scripts.
@@ -168,6 +167,6 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
   ×2 and that Claude models cost more but have no surcharge.
 - 「停機會不會扣錢？」— Yes, a stopped machine is still billed the server hour; only deleting it
   stops the meter.
-- 「回測／掃參數／看盤板／定期報告會扣錢嗎？」— Nothing beyond the server hour; the only extra is
+- 「回測／掃參數／定期報告會扣錢嗎？」— Nothing beyond the server hour; the only extra is
   the LLM tokens of the chat turn you are in.
 - 「Web search 會扣錢嗎？」— 0.4 TWD per search on Claude models; not billed on DeepSeek.
