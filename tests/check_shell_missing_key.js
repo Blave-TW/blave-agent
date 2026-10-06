@@ -84,13 +84,20 @@ const doc = { activeElement: null, createElement: el, createTextNode: (s) => ({ 
   const tt = (k, v) => { let s = ZH[k] || k; if (v) for (const x in v) s = s.split("{" + x + "}").join(v[x]); return s; };
   const nb = el("p"); nb.id = "rp-nobt"; nb.dataset.i18n = "rp.noBt"; nb.hidden = true;
   const env = { cur: "local" }, RP = { name: "a" }, RPC = { name: "a" };
-  const paint = new Function("$", "t", "document", "ENV", "RP", "xpIsTypeB", "rpGoDataSrc", cut(app, "rpMissKey") + cut(app, "rpNobtPaint") + "return rpNobtPaint;")(
-    () => nb, tt, doc, env, RP, (d) => !!d.typeB, () => {});
+  const turn = { running: false };
+  const [paint, missSync] = new Function("$", "t", "document", "ENV", "RP", "xpIsTypeB", "rpGoDataSrc", "turn", "with (turn) { " + cut(app, "rpMissKey") + cut(app, "rpNobtPaint") + cut(app, "rpMissSync") + "return [rpNobtPaint, rpMissSync]; }")(
+    () => nb, tt, doc, env, RP, (d) => !!d.typeB, () => {}, turn);
   const state = () => ({ hidden: nb.hidden, miss: nb.classList.contains("is-miss"), i18n: nb.dataset.i18n, text: nb.textContent, btn: nb.children.filter((c) => c.tagName === "BUTTON").length });
   RP.data = { missingSources: ["FINMIND"] }; paint(RP, false);
   let s1 = state();
   ok("缺一把、沒回測:缺金鑰態(.is-miss、拿掉 data-i18n、文字＋一顆鈕)", !s1.hidden && s1.miss && s1.i18n === undefined && s1.btn === 1 && s1.text.startsWith("缺 FINMIND 的金鑰，回測跑不起來。") && s1.text.endsWith("去資料來源"), JSON.stringify(s1));
   paint(RP, true); ok("有回測也出", !nb.hidden && nb.classList.contains("is-miss"));
+  { const btn = () => nb.children.find((c) => c.tagName === "BUTTON");
+    turn.running = true; RP.data = { missingSources: ["FINMIND"] }; paint(RP, false); const a = btn().disabled === true;
+    turn.running = false; missSync(); const b = btn().disabled === false;
+    turn.running = true; missSync(); const c = btn().disabled === true;
+    turn.running = false; paint(RP, false); const d = btn().disabled === false;
+    ok("回合進行中「去資料來源」停用、結束恢復;回合開始 / 結束的三處都叫 rpMissSync", a && b && c && d && (app.match(/stratDelSync\(\); rpMissSync\(\);/g) || []).length === 3, JSON.stringify({ a, b, c, d })); }
   RP.data = { missingSources: ["FINMIND"], typeB: true }; paint(RP, false);
   ok("缺金鑰 > Type B:Type B 句尾換「這支跑不起來」,不出 rp.noBtB", state().miss && state().text.startsWith("缺 FINMIND 的金鑰，這支跑不起來。") && !state().text.includes(ZH["rp.noBtB"]));
   RP.data = { missingSources: ["FINMIND", "FRED"] }; paint(RP, false);

@@ -668,6 +668,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     var CXF = { env: "cloud" }, cxCloudIp = () => "1.2.3.4", trSendError = (r) => (r.machineState === "stopped" ? "" : "send:" + r.error);
     eval(src.slice(src.indexOf("function cxChkTextCloud("), src.indexOf("const cxCalm")));
     const T = (code, detail) => cxChkTextCloud({ code, detail: detail || {} });
+    { const ST = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
+      ok("本機時鐘不準:Windows 換 cx.chk.clock.win(Windows 設定的路徑,不寫「系統設定」)", /c === "CLOCK" \? t\(window\.blave\.platform === "win32" \? "cx\.chk\.clock\.win" : "cx\.chk\.clock"\)/.test(src)
+        && /Windows 設定 › 時間與語言/.test(ST.zh["cx.chk.clock.win"]) && !/系統設定/.test(ST.zh["cx.chk.clock.win"]) && /Windows Settings/.test(ST.en["cx.chk.clock.win"])); }
     ok("S5 每個代號一句;時鐘 / 網路 / 限速三種用雲端版", T("CLOCK") === "cx.chk.clockCloud" && T("NETWORK") === "cx.chk.networkCloud" && T("RATE_LIMITED") === "cx.chk.rateCloud"
       && T("RATE_BANNED") === "cx.chk.bannedCloud" && T("RATE_BACKOFF") === "cx.chk.backoffCloud" && T("IP_OR_KEY") === "cx.chk.ipOrKey" && T("INCOMPLETE_PAIR") === "cx.chk.incomplete" && T("TRADING_DISABLED") === "cx.chk.trading");
     ok("S5 提領開著主機一樣擋,同一句;拒絕原文截 200、結果不明不叫人重按、主機停了講停機", T("WITHDRAW_ENABLED") === "cx.chk.withdraw"

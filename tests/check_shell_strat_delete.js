@@ -207,6 +207,8 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("武裝後的字 = 傳進來的 key(移到垃圾桶？),鈕的實寬寫在列上;失焦還原、沒有執行;沒給 key 照舊「刪除？」", armed && back && plain.textContent === "刪除？");
   ok("策略列傳 strat.delConfirm(Windows 傳 .win);對話列仍走確認框(刪對話救不回來)", /\}, false, window\.blave\.platform === "win32" \? "strat\.delConfirm\.win" : "strat\.delConfirm"\);/.test(fnOf(appSrc, "stratRefresh"))
     && /armedDelete\(row, t\("cs\.del"\), \(btn\) => delConfirm\(m, btn\), true\);/.test(appSrc));
+  ok("策略列刪除鈕的讀屏文字 Windows 傳 strat.del.win(資源回收筒)", /armedDelete\(wrap, t\(window\.blave\.platform === "win32" \? "strat\.del\.win" : "strat\.del"\)/.test(fnOf(appSrc, "stratRefresh"))
+    && STR.zh["strat.del.win"] === "移到資源回收筒" && STR.en["strat.del.win"] === "Move to Recycle Bin");
   ok("兩語的字都講去向;列的右內距照鈕的實寬讓位", STR.zh["strat.delConfirm"] === "移到垃圾桶？" && STR.en["strat.delConfirm"] === "Move to Trash?" && STR.zh["strat.delConfirm.win"] === "移到資源回收筒？" && STR.en["strat.delConfirm.win"] === "Move to Recycle Bin?"
     && /\.strat-wrap:has\(\.cs-del\.is-armed\) \.strat-row \{ padding-right: calc\(var\(--armed-w, 84px\) \+ 16px\); \}/.test(css)); }
 

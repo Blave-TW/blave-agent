@@ -8,7 +8,7 @@ Grátis e de código aberto. Conecte seu Claude Code ou Codex. Você descreve a 
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | **Português** | [Tiếng Việt](README.vi.md)
 
-> Esta tradução foi feita a partir do README em inglês no commit [`1ac250b`](https://github.com/Blave-TW/blave-agent/blob/1ac250b/README.md) e cobre só as seções que mudam pouco. Novidades, exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
+> Esta tradução foi feita a partir do README em inglês no commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md) e cobre só as seções que mudam pouco. Novidades, exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -55,7 +55,7 @@ Você precisa de:
 - macOS 13 ou superior. O app empacotado é um build universal: Apple Silicon e Intel, um único download.
 - Ou Windows 10 ou 11, x64 (as versões que o Electron 44 suporta; ARM não testado). O instalador ainda não tem assinatura de código, então o Windows avisa na primeira instalação: clique no link abaixo do texto e depois no botão novo que aparece embaixo.
 - Node.js 22.12 ou superior, com npm (`shell/package.json` › `engines`)
-- `python3` no seu `PATH`. O app empacotado traz o próprio Python 3.12; rodando a partir do código-fonte, o `python3` do seu sistema é usado para criar o venv.
+- `python3` no seu `PATH` (`python` no Windows). O app empacotado traz o próprio Python 3.12; rodando a partir do código-fonte, o Python do seu sistema é usado para criar o venv.
 - Claude Code ou Codex instalado e com login feito, ou uma conta Blave
 
 ```
@@ -63,6 +63,15 @@ git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
+```
+
+No Windows, no PowerShell (`npm.cmd` funciona mesmo quando a política de execução do PowerShell bloqueia o script `npm`):
+
+```powershell
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent\shell
+npm.cmd install
+npm.cmd start
 ```
 
 Na primeira abertura, você escolhe o que move o agente:
@@ -84,7 +93,7 @@ Antes de escrever código, o agente classifica cada ideia em um de três tipos:
 | C | Um portfólio: N símbolos e um vetor de pesos que soma no máximo 1, rebalanceado conforme um calendário | Obrigatório |
 | B | Todo o resto: screeners, grids, arbitragem, alertas, execução pontual | Nenhum |
 
-A interface segue o idioma do sistema (inglês ou chinês tradicional). Para forçar: `BLAVE_LANG=en npm start`.
+A interface segue o idioma do sistema (inglês ou chinês tradicional). Para forçar: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
 
 ## Novidades
 

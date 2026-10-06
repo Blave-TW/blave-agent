@@ -3172,7 +3172,7 @@ function cxChkText(r) {
   if (CXF.env === "cloud") return cxChkTextCloud(r);
   return c === "WITHDRAW_ENABLED" ? t("cx.chk.withdraw") : c === "TRADING_DISABLED" ? (CXF.ip ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
     : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
-    : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t("cx.chk.clock") : c === "RATE_LIMITED" ? t("cx.chk.rate") : c === "NETWORK" ? t("cx.chk.network")
+    : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t(window.blave.platform === "win32" ? "cx.chk.clock.win" : "cx.chk.clock") : c === "RATE_LIMITED" ? t("cx.chk.rate") : c === "NETWORK" ? t("cx.chk.network")
     : c === "SEND_FAILED" ? cxSendFailText(r)
     : t("cx.chk.unknown");
 }

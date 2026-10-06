@@ -53,7 +53,7 @@ You need:
 - macOS 13 or later. The packaged app is a universal build: Apple Silicon and Intel, one download.
 - Or Windows 10 or 11, x64 (the versions Electron 44 supports; ARM not tested). The Windows installer is not code-signed yet, so SmartScreen warns on first install: choose More info › Run anyway.
 - Node.js 22.12 or later, with npm (`shell/package.json` › `engines`)
-- `python3` on your `PATH`. The packaged app bundles its own Python 3.12; running from source uses your system `python3` to create the venv.
+- `python3` on your `PATH` (`python` on Windows). The packaged app bundles its own Python 3.12; running from source uses your system Python to create the venv.
 - Claude Code or Codex installed and signed in, or a Blave account
 
 ```
@@ -61,6 +61,15 @@ git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
+```
+
+On Windows, in PowerShell (`npm.cmd` runs even when PowerShell's execution policy blocks the `npm` script):
+
+```powershell
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent\shell
+npm.cmd install
+npm.cmd start
 ```
 
 On first launch you choose what powers the agent:
@@ -82,7 +91,7 @@ The agent sorts every idea into one of three types before writing code:
 | C | A portfolio: N symbols and a weight vector that sums to at most 1, rebalanced on a schedule | Required |
 | B | Everything else: screeners, grids, arbitrage, alerts, one-off execution | None |
 
-The interface follows the system language (English or Traditional Chinese). To override: `BLAVE_LANG=en npm start`.
+The interface follows the system language (English or Traditional Chinese). To override: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
 
 ## News
 
@@ -137,10 +146,10 @@ If a strategy should keep running with your computer off, Blave Agent runs the s
 
 ## Running From Source: What Goes Where
 
-The first time you connect, the app prepares `~/Blave/`:
+The first time you connect, the app prepares `~/Blave/` (`%USERPROFILE%\Blave\` on Windows):
 
 - `~/Blave/workspace/` — `lib/`, `manager/`, `references/`, `examples/`, `allocators/`, the strategy templates, `AGENTS.md`, `CLAUDE.md` and `VERSION`, copied from this checkout
-- `~/Blave/venv/` — created with `python3 -m venv`, then `claude-agent-sdk`, cryptography, pandas, numpy, matplotlib, pyarrow, requests, python-dotenv and scipy are installed with pip
+- `~/Blave/venv/` — created with `python3 -m venv` (`python -m venv` on Windows), then `claude-agent-sdk`, cryptography, pandas, numpy, matplotlib, pyarrow, requests, python-dotenv and scipy are installed with pip
 - `~/Blave/state/` — chat sessions, chat images and trading state
 
 Your strategies end up in `~/Blave/workspace/strategies/<name>/`. When running from source, the official files are copied again on every launch, so edit `lib/` in the checkout, not in `~/Blave/workspace/`. Your strategies, `.env` and state are never overwritten.

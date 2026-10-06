@@ -4,7 +4,8 @@ Use this document when a user asks to connect their **Capital Securities (群益
 **Capital Futures (群益期貨)** account to Blave Agent — same corporate group, same underlying API,
 one certificate covers both markets. The integration uses the official **Capital API**
 (`SKCOM.dll`, a Windows COM component) — **Windows-only**, so this broker requires a
-**Windows Blave Agent workspace**. There is no cross-platform package (unlike SinoPac/President).
+**Windows cloud machine**. The desktop app (`BLAVE_AGENT_LOCAL=1`) cannot connect to Capital on
+any OS, Windows PC included — see Step 0. There is no cross-platform package (unlike SinoPac/President).
 
 Steps 1–6 (verification test + agreement, certificate, component install, login, accounts) are
 **shared** by both markets. Order placement diverges — see Step 7a (Futures) / Step 7b (Securities).
@@ -56,13 +57,19 @@ prefer the near-month aliases, or the V2.13.54+ `bstrCIDTandem`(`FITX`) + `bstrS
 
 ---
 
-## Step 0 — Determine Scope & Platform
+## Step 0 — Determine Platform, then Scope
 
-**Ask the user:**
+**First, before asking anything**, confirm the workspace is a **Windows x64 cloud machine**:
+
+- **Desktop app** (`BLAVE_AGENT_LOCAL=1`, Mac or Windows PC): stop here — ask nothing more, install
+  nothing, download nothing. Tell the user 「電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」
+  / "The desktop app can't connect to Capital yet. Capital needs a Windows cloud machine: choose Windows
+  when you launch one on the web (it can't be changed afterward)."
+- **Linux cloud machine**: this broker cannot run there — escalate to Blave ops for a Windows machine
+  and stop.
+
+**Then ask the user:**
 > 你要交易股票、期貨（大台/小台/微台），還是兩者都要？
-
-Then confirm the workspace is **Windows x64**. If the user is on a Linux workspace, this broker
-cannot run there — escalate to Blave ops for a Windows machine before continuing.
 
 ---
 

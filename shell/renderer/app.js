@@ -589,7 +589,7 @@ function upPlan(o) {
   if (st.current) segs.push(["up.row.app", { av: st.current }]);
   let status = null;
   if (ready) status = ["up.row.ready"];
-  else if (ph === "error" && st.error === "INSTALL_FAILED") status = ["up.installFailed", { nv: st.version || "" }];
+  else if (ph === "error" && st.error === "INSTALL_FAILED") status = [o.win ? "up.installFailed.win" : "up.installFailed", { nv: st.version || "" }];
   /* 「已是最新版」只在查過之後才接上:啟動後 30 秒(updater FIRST_CHECK_MS)才第一次查,checkedAt 只有 update-not-available 會寫;
      檢查中沿用上一次的結論(圓環在連結上) */
   else if ((ph === "idle" || ph === "checking") && st.checkedAt > 0) status = ["up.row.latest"];
@@ -695,7 +695,7 @@ function upNow() {
   const exec = !cst ? "loading" : kind === "running" && !cst.alive ? "unknown" : trExecState(cst);
   return upPlan({ up: UP, cloud: (cst && cst.cloud) || null, kind, localTurn: upLocalTurn(), mem: UPD, now: Date.now(),
     cloudStale: !!(cst && trRestartUnconfirmed(cst.report)), wu: kind === "running" ? upWu(cst.report) : null, checking: UP_CHECKING,
-    exec, cloudBusy: UP_CLOUD_BUSY });
+    exec, cloudBusy: UP_CLOUD_BUSY, win: window.blave.platform === "win32" });
 }
 /* 一回合結束了(turn-end 叫;回合出錯 / 沒回覆 / 分類過的錯誤都算 fault)。只管更新期間內的回合。
    回合出錯、或整回合沒碰雲端主機:什麼都沒換,更新期間到此為止(之後無關的回合不再被畫成更新中);
@@ -1134,7 +1134,7 @@ async function stratRefresh(turnEnd) {
     // 列尾是刪除鈕,不是 Sharpe(Wei):數字在報告裡就有,清單上要的是能整理。
     // 按鈕不能包按鈕,所以外面多一層 wrap,刪除鈕絕對定位在列尾(同對話清單)。
     const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row";
-    const del = armedDelete(wrap, t("strat.del"), async () => {
+    const del = armedDelete(wrap, t(window.blave.platform === "win32" ? "strat.del.win" : "strat.del"), async () => {
       const r = await window.blave.deleteStrategy(x.name);
       if (r === true) { (await stratRefreshAt(x.name)).focus(); return; }
       // 沒刪成一律開框講原因,包括裸 false / null(IPC 被擋)與沒見過的 code。資料夾不在 = 先重讀,關框後焦點回到同位置那一列
@@ -1331,7 +1331,7 @@ function rpNobtPaint(B, has) {
   delete nb.dataset.i18n; nb.textContent = ""; nb.classList.add("is-miss"); nb.hidden = false;
   const txt = document.createElement("span"); txt.className = "t"; txt.textContent = rpMissKey(miss, typeB);
   const go = document.createElement("button"); go.type = "button"; go.className = "btn-out"; go.textContent = t("rp.missKey.go");
-  go.addEventListener("click", rpGoDataSrc);
+  go.disabled = running; go.addEventListener("click", rpGoDataSrc);
   nb.append(txt, go);
 }
 // 交給 report-robust.js 的環境:回合狀態(busy + 序號)與這一袋是哪一邊(scope:本機 / 雲端同名策略的「已送出」不互相污染)
@@ -1342,6 +1342,8 @@ function rpRobOpts() {
 // 「去資料來源」:開設定 › 資料來源;清單畫好後焦點交給第一列缺金鑰列的「新增」(srcPaintList 消費 SRC.focusMiss)
 function rpGoDataSrc() { trackFeature("missing_key_go"); setOpen().then(() => { if ($("set-scrim").hidden) return; SRC.focusMiss = true; setCat("src"); }); }
 // 資料來源存好 / 刪掉之後:看著的那支重讀,缺金鑰那一格跟著變(stratReload 自己守「現在畫的是不是這台電腦那袋」)
+// 回合在跑時設定入口(#ws-conn)是鎖的,這顆也是開設定,跟著鎖;只有缺金鑰那態有鈕
+function rpMissSync() { const g = $("rp-nobt").querySelector("button"); if (g) g.disabled = running; }
 function rpSrcChanged() { if (RP.name) stratReload(RP.name); }
 /* 「開始掃描 / 重新掃描」:確認框 → 固定訊息進對話(同雲端工作頁 robAskScan)。不覆寫 viewing:rpBag()===RPC ⇔ ENV.cur==="cloud" ⇔ chatViewing 本來就回 env:cloud,
    而且還帶著 strategy 欄位(覆寫成 { env } 會把它丟掉)。回 Promise<turn|false> = 跑起來的那一回合的序號;取消的話不會 resolve(模組不等它,沒有東西掛在上面)。
@@ -2281,7 +2283,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (!msg || running) return false;
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; sendBtnSync(); stratDelSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
+  running = true; sendBtnSync(); stratDelSync(); rpMissSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
@@ -2299,7 +2301,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
-  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
+  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 引擎還沒裝好時由安裝進度卡交代(engine.js),指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     engineWait = true;
@@ -3175,7 +3177,7 @@ window.blave.onTurnEnd(async (r) => {
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
   if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeq, faulted || stopped, { refetch: rpWfRefetch });
   upTurnEnded(faulted);
-  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
+  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
   if (stopped && lastUserTyped) {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複

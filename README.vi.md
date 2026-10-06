@@ -8,7 +8,7 @@ Miễn phí, mã nguồn mở. Kết nối Claude Code hoặc Codex của bạn.
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | **Tiếng Việt**
 
-> Bản dịch này dịch từ README tiếng Anh tại commit [`1ac250b`](https://github.com/Blave-TW/blave-agent/blob/1ac250b/README.md) và chỉ gồm các phần ít thay đổi. Tin mới, sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch này dịch từ README tiếng Anh tại commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md) và chỉ gồm các phần ít thay đổi. Tin mới, sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -55,7 +55,7 @@ Bạn cần:
 - macOS 13 trở lên. App đóng gói là bản universal: chip Apple và Intel, một lần tải.
 - Hoặc Windows 10, 11, x64 (các phiên bản Electron 44 hỗ trợ; ARM chưa kiểm thử). Trình cài đặt chưa có chữ ký mã, nên lần cài đầu tiên Windows sẽ cảnh báo: nhấn vào liên kết bên dưới đoạn mô tả, rồi nhấn nút mới hiện ra ở bên dưới.
 - Node.js 22.12 trở lên, kèm npm (`shell/package.json` › `engines`)
-- `python3` trong `PATH` của bạn. App đóng gói có sẵn Python 3.12 riêng; khi chạy từ mã nguồn, `python3` của hệ thống được dùng để tạo venv.
+- `python3` trong `PATH` của bạn (`python` trên Windows). App đóng gói có sẵn Python 3.12 riêng; khi chạy từ mã nguồn, Python của hệ thống được dùng để tạo venv.
 - Claude Code hoặc Codex đã cài và đăng nhập, hoặc một tài khoản Blave
 
 ```
@@ -63,6 +63,15 @@ git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
+```
+
+Trên Windows, chạy trong PowerShell (`npm.cmd` vẫn chạy được khi chính sách thực thi của PowerShell chặn script `npm`):
+
+```powershell
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent\shell
+npm.cmd install
+npm.cmd start
 ```
 
 Lần mở đầu tiên, bạn chọn AI nào chạy agent:
@@ -84,7 +93,7 @@ Trước khi viết code, agent xếp mỗi ý tưởng vào một trong ba lo�
 | C | Một danh mục: N mã và một vector tỷ trọng có tổng tối đa là 1, tái cân bằng theo lịch | Bắt buộc |
 | B | Mọi thứ còn lại: bộ lọc, lưới, chênh lệch giá, cảnh báo, thực thi một lần | Không |
 
-Giao diện theo ngôn ngữ hệ thống (tiếng Anh hoặc tiếng Trung phồn thể). Để chỉ định: `BLAVE_LANG=en npm start`.
+Giao diện theo ngôn ngữ hệ thống (tiếng Anh hoặc tiếng Trung phồn thể). Để chỉ định: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
 
 ## Tin mới
 

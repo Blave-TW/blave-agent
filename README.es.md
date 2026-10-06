@@ -8,7 +8,7 @@ Gratis y de código abierto. Conecta tu Claude Code o Codex. Tú describes la id
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> Esta traducción parte del README en inglés en el commit [`1ac250b`](https://github.com/Blave-TW/blave-agent/blob/1ac250b/README.md) y cubre solo las secciones que cambian poco. Las novedades, los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
+> Esta traducción parte del README en inglés en el commit [`925b386`](https://github.com/Blave-TW/blave-agent/blob/925b386/README.md) y cubre solo las secciones que cambian poco. Las novedades, los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -55,7 +55,7 @@ Necesitas:
 - macOS 13 o superior. La app empaquetada es una compilación universal: Apple Silicon e Intel, una sola descarga.
 - O Windows 10 u 11, x64 (las versiones que soporta Electron 44; ARM no está probado). El instalador aún no tiene firma de código, así que Windows avisa en la primera instalación: haz clic en el enlace que aparece debajo del texto y luego en el botón nuevo que aparece abajo.
 - Node.js 22.12 o superior, con npm (`shell/package.json` › `engines`)
-- `python3` en tu `PATH`. La app empaquetada trae su propio Python 3.12; al ejecutar desde el código fuente se usa el `python3` de tu sistema para crear el venv.
+- `python3` en tu `PATH` (`python` en Windows). La app empaquetada trae su propio Python 3.12; al ejecutar desde el código fuente se usa el Python de tu sistema para crear el venv.
 - Claude Code o Codex instalado y con sesión iniciada, o una cuenta de Blave
 
 ```
@@ -63,6 +63,15 @@ git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
+```
+
+En Windows, en PowerShell (`npm.cmd` funciona aunque la directiva de ejecución de PowerShell bloquee el script `npm`):
+
+```powershell
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent\shell
+npm.cmd install
+npm.cmd start
 ```
 
 En el primer inicio eliges qué impulsa al agente:
@@ -84,7 +93,7 @@ Antes de escribir código, el agente clasifica cada idea en uno de tres tipos:
 | C | Un portafolio: N símbolos y un vector de pesos que suma como máximo 1, rebalanceado según un calendario | Obligatorio |
 | B | Todo lo demás: screeners, grids, arbitraje, alertas, ejecución puntual | Ninguno |
 
-La interfaz sigue el idioma del sistema (inglés o chino tradicional). Para forzarlo: `BLAVE_LANG=en npm start`.
+La interfaz sigue el idioma del sistema (inglés o chino tradicional). Para forzarlo: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
 
 ## Novedades
 

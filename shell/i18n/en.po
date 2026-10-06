@@ -83,7 +83,7 @@ msgid "OAUTH_DENIED"
 msgstr "You cancelled the authorization in the browser."
 
 msgid "KEYCHAIN_UNAVAILABLE"
-msgstr "This computer can't store credentials securely (Keychain unavailable), so nothing was saved."
+msgstr "This computer can't store credentials securely, so nothing was saved."
 
 msgid "TOKEN_EXCHANGE_FAILED"
 msgstr "Could not exchange the authorization code for a token."
@@ -661,6 +661,10 @@ msgstr "Language"
 msgid "up.installFailed"
 msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in your Applications folder (not opened straight from the disk image), then check again"
 
+# Windows 沒有「應用程式」資料夾與磁碟映像那一關;裝不上多半是安裝檔被擋或被佔用
+msgid "up.installFailed.win"
+msgstr "{nv} was downloaded but couldn’t be installed. Check again; if it still fails, download the installer from blave.org and run it"
+
 msgid "up.check"
 msgstr "Check for updates"
 
@@ -688,6 +692,9 @@ msgstr "Delete?"
 
 msgid "strat.del"
 msgstr "Move to Trash"
+
+msgid "strat.del.win"
+msgstr "Move to Recycle Bin"
 
 # 策略列的兩段式刪除:武裝後的字講去向(刪策略是進系統垃圾桶,可復原;e2e 0.1.8 #73)。.win = Windows 的說法
 msgid "strat.delConfirm"
@@ -2629,6 +2636,9 @@ msgstr "The Secret Key doesn’t match this API Key, so it was not saved. Copy t
 
 msgid "cx.chk.clock"
 msgstr "This computer’s clock is too far off Binance’s, so the key couldn’t be checked and was not saved. Turn on automatic date and time in System Settings, then connect again."
+
+msgid "cx.chk.clock.win"
+msgstr "This computer’s clock is too far off Binance’s, so the key couldn’t be checked and was not saved. In Windows Settings › Time & language › Date & time, turn on “Set time automatically”, then connect again."
 
 msgid "cx.chk.rate"
 msgstr "Binance is temporarily limiting requests from this IP, so the key couldn’t be checked and was not saved. Wait a few minutes before trying again. Repeated retries extend the limit."

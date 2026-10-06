@@ -54,7 +54,7 @@ agent 上網查資料用的是 app 內建的瀏覽器：它正在讀哪一頁，
 - macOS 13 以上。打包版是通用版：Apple Silicon 與 Intel 同一個安裝檔。
 - 或 Windows 10、11，x64（Electron 44 支援的版本；ARM 版尚未測試）。Windows 安裝檔還沒有程式碼簽章，第一次安裝時 SmartScreen 會跳出警告：按「其他資訊」再按「仍要執行」。
 - Node.js 22.12 以上與 npm（`shell/package.json` › `engines`）
-- `PATH` 上有 `python3`。打包版自帶 Python 3.12；從原始碼跑時，venv 用的是你系統的 `python3`。
+- `PATH` 上有 `python3`（Windows 是 `python`）。打包版自帶 Python 3.12；從原始碼跑時，venv 用的是你系統的 Python。
 - 已安裝並登入的 Claude Code 或 Codex，或一個 Blave 帳號
 
 ```
@@ -62,6 +62,15 @@ git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
+```
+
+Windows 在 PowerShell 裡跑（用 `npm.cmd`：PowerShell 的執行原則擋下 `npm` 指令碼時也能跑）：
+
+```powershell
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent\shell
+npm.cmd install
+npm.cmd start
 ```
 
 第一次開啟時，選 agent 用哪個 AI：
@@ -83,7 +92,7 @@ npm start
 | C | 投資組合：N 個標的加一組權重（總和不超過 1），定期再平衡 | 必做 |
 | B | 其餘全部：選股器、網格、套利、警示、一次性下單 | 不做 |
 
-介面語言跟著系統語系（英文或繁體中文）。要強制指定：`BLAVE_LANG=zh npm start`。
+介面語言跟著系統語系（英文或繁體中文）。要強制指定：`BLAVE_LANG=zh npm start`（PowerShell：`$env:BLAVE_LANG="zh"; npm.cmd start`）。
 
 ## 最新消息
 
@@ -138,10 +147,10 @@ npm start
 
 ## 從原始碼跑：檔案放在哪
 
-第一次連結時，app 會準備好 `~/Blave/`：
+第一次連結時，app 會準備好 `~/Blave/`（Windows 是 `%USERPROFILE%\Blave\`）：
 
 - `~/Blave/workspace/`——從這份 checkout 複製 `lib/`、`manager/`、`references/`、`examples/`、`allocators/`、兩支策略範本、`AGENTS.md`、`CLAUDE.md` 與 `VERSION`
-- `~/Blave/venv/`——用 `python3 -m venv` 建立，再用 pip 裝 `claude-agent-sdk`、cryptography、pandas、numpy、matplotlib、pyarrow、requests、python-dotenv、scipy
+- `~/Blave/venv/`——用 `python3 -m venv`（Windows 是 `python -m venv`）建立，再用 pip 裝 `claude-agent-sdk`、cryptography、pandas、numpy、matplotlib、pyarrow、requests、python-dotenv、scipy
 - `~/Blave/state/`——對話紀錄、對話圖片與下單狀態
 
 你的策略會在 `~/Blave/workspace/strategies/<name>/`。從原始碼執行時，官方檔案每次啟動都會重新複製一次，所以要改 `lib/` 請改 checkout 裡的那份，不要改 `~/Blave/workspace/` 裡的。你的策略、`.env` 與 state 不會被覆寫。
