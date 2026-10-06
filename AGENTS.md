@@ -200,7 +200,7 @@ Another weighting method is **always a new `allocators/<name>/allocator.py`** (`
 **Web-initiated exchange connect** (key already stored): follow `references/exchange-connect.md` (read-only validation first, no orders ever). **Taiwan brokers route by VENUE, not by phrasing** — even for that handoff, go straight to their own doc:
 - **SinoPac (永豐金):** `references/sinopac-broker.md`
 - **President Futures (統一期貨):** `references/president-broker.md`
-- **Capital Futures (群益期貨):** `references/capital-broker.md` (Windows cloud machine only — never on the desktop app, Mac or Windows)
+- **Capital Futures (群益期貨):** `references/capital-broker.md` (Windows cloud machine only — the desktop app never connects it; from the desktop's cloud view, send the user to the blave.org cloud workspace per its Step 0)
 - **Paper trading (模擬交易):** pre-built — **never hand-write a paper lib**; `references/lib.md` › *Paper venue — web handoff*.
 
 **One machine, one trading venue.** Venue credentials enter `.env` only through the platform writer (web bind or `lib.venue.bind`), which evicts the previous pair — never write or delete those lines yourself; stale keys → ask the user to rebind.

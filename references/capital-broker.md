@@ -61,10 +61,20 @@ prefer the near-month aliases, or the V2.13.54+ `bstrCIDTandem`(`FITX`) + `bstrS
 
 **First, before asking anything**, confirm the workspace is a **Windows x64 cloud machine**:
 
-- **Desktop app** (`BLAVE_AGENT_LOCAL=1`, Mac or Windows PC): stop here — ask nothing more, install
-  nothing, download nothing. Tell the user 「電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」
-  / "The desktop app can't connect to Capital yet. Capital needs a Windows cloud machine: choose Windows
-  when you launch one on the web (it can't be changed afterward)."
+- **Desktop app** (`BLAVE_AGENT_LOCAL=1`, Mac or Windows PC) — two cases, told apart by the runtime's
+  view line. Either way stop here: ask nothing more, install nothing, download nothing, touch neither
+  this computer nor the cloud machine.
+  - **Connecting Capital on this computer** (no cloud-view line this turn): tell the user
+    「電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」
+    / "The desktop app can't connect to Capital yet. Capital needs a Windows cloud machine: choose Windows
+    when you launch one on the web (it can't be changed afterward)."
+  - **Setting up Capital on the user's existing Windows cloud machine from the cloud view** (the runtime
+    says this turn was sent in the 雲端主機 view — e.g. the desktop app's Capital setup box handed it to
+    you): the setup has to be walked by the agent on that machine. Do not tell them to launch a Windows
+    machine; tell them
+    「群益的開通要在雲端主機上、跟那台主機的 agent 一起做：請到 blave.org 的雲端工作頁，跟它說要開通群益，它會一步步帶你。」
+    / "Capital setup has to be done with the agent on your cloud machine: open your cloud workspace on
+    blave.org and tell it you want to set up Capital — it will walk you through each step."
 - **Linux cloud machine**: this broker cannot run there — escalate to Blave ops for a Windows machine
   and stop.
 
