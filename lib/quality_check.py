@@ -534,7 +534,7 @@ _DESKTOP_PUBLIC_DATA = frozenset({
     "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_usstock_price",
     "fetch_fear_greed", "fetch_binance_ticker_24h",
     "fetch_tw_announcements_public", "fetch_twfutures_institutional_public",
-    "fetch_twmarket_index_public", "fetch_twmarket_institutional_public",
+    "fetch_txf_daily_public", "fetch_twmarket_index_public", "fetch_twmarket_institutional_public",
     "fetch_twmarket_margin_public", "fetch_twmarket_turnover_public",
     "fetch_twse_day_all_public", "tw_market_public_allowed",
     "align_feed", "feed_available_at", "join_tw_flow", "normalize_symbol",
