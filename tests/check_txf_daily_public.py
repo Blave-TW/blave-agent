@@ -16,6 +16,11 @@ month, per contract and session) stitched into the near-month series fetch_twfut
     month with no rows raise and cache nothing; the current month may be empty
   - routing: desktop + no Blave data access → TAIFEX for TXF / MXF / TXFR1 '1d' only;
     with access, or any intraday schema, the Blave path exactly as before
+  - head: desktop + access + a start before the Blave series (2011-01-03) → the TAIFEX bars
+    in front of the recorded Blave ones, attrs['source'] = 'TAIFEX/Blave'; 20 trading days
+    each side of the seam with no repeated and no missing day against TAIFEX's own calendar;
+    TAIFEX down → the Blave series alone plus a warning; a cloud machine never asks TAIFEX
+  - MXF / TMF: the TAIFEX bars start on that contract's listing day (2001-04-09 / 2024-07-29)
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_txf_daily_public.py
 """
@@ -59,7 +64,9 @@ class Frozen(_real_dt):
 D.datetime = Frozen
 D.time.sleep = lambda s: None
 
-MONTHS = {"1998-07": "futDataDown_TX_1998-07.csv", "2026-02": "futDataDown_TX_2026-02.csv",
+MONTHS = {"1998-07": "futDataDown_TX_1998-07.csv", "2001-04": "futDataDown_TX_2001-04.csv",
+          "2010-12": "futDataDown_TX_2010-12.csv", "2011-01": "futDataDown_TX_2011-01.csv",
+          "2026-02": "futDataDown_TX_2026-02.csv",
           "2026-09": "futDataDown_TX_2026-09.csv", "2026-10": "futDataDown_TX_2026-10_to_10-06.csv"}
 HEADER = (FIX / MONTHS["2026-09"]).read_bytes().splitlines()[0]
 
@@ -120,9 +127,14 @@ def bar(df, day):
 blave_calls = []
 
 
+BLAVE_2011 = pd.read_csv(FIX / "blave_txf_1d_2011-01-03_2011-02-15.csv", index_col="time", parse_dates=True)
+
+
 def _blave_raw(symbol, schema, start, end, headers):
     D._check_data_access(headers)   # what the real _fetch_twfutures_raw does first
     blave_calls.append((symbol, schema))
+    if start < "2012":              # the recorded Blave series: nothing before 2011-01-03
+        return BLAVE_2011[BLAVE_2011.index >= pd.Timestamp(start)]
     idx = pd.DatetimeIndex(["2026-09-01 16:00"])
     return pd.DataFrame({"Open": 1.0, "High": 1.0, "Low": 1.0, "Close": 1.0, "Volume": 1.0}, index=idx)
 
@@ -246,6 +258,72 @@ check(df.attrs.get("source") == "TAIFEX" and not blave_calls, "scheduled desktop
 df = D.fetch_twfutures_ohlcv("TXF", "1d", "2026-09-01", "2026-09-30", {"api-key": "k"})
 check(blave_calls == [("TXF", "1d")], "scheduled desktop run with a key: Blave")
 os.environ.pop("BLAVE_SCHEDULED_RUN", None)
+
+# ── TAIFEX head in front of the Blave series ──
+def calendar(*months):
+    days = set()
+    for ym in months:
+        for line in (FIX / MONTHS[ym]).read_bytes().decode("cp950").splitlines()[1:]:
+            x = line.split(",")
+            if x[17].strip() == "一般":
+                days.add(x[0].replace("/", "-"))
+    return sorted(days)
+
+
+KEY = {"api-key": "k"}
+SEAM = pd.Timestamp("2011-01-03", tz="Asia/Taipei")
+s = fresh()
+blave_calls.clear()
+df = D.fetch_twfutures_ohlcv("TXF", "1d", "2010-12-01", "2011-02-15", KEY)
+check(df.attrs.get("source") == "TAIFEX/Blave" and blave_calls == [("TXF", "1d")],
+      "desktop + access + start before 2011-01-03: both sources, tagged TAIFEX/Blave")
+before, after = df[df.index < SEAM].tail(20), df[df.index >= SEAM].head(20)
+got = [t.strftime("%Y-%m-%d") for t in pd.concat([before, after]).index]
+want = [d for d in calendar("2010-12", "2011-01") if "2010-12-01" < d]
+check(len(before) == 20 and len(after) == 20 and not df.index.duplicated().any() and df.index.is_monotonic_increasing
+      and got == want[-len(got):] and got[19:21] == ["2010-12-31", "2011-01-03"],
+      f"seam: 20 trading days each side, no repeated and no missing day against TAIFEX's calendar ({got[0]} … {got[-1]})")
+check(bar(df, "2010-12-31") == (8892.0, 8997.0, 8892.0, 8988.0, 88956.0) and bar(df, "2011-01-03") == (9000.0, 9030.0, 8995.0, 9020.0, 61366.0),
+      "seam: 2010-12-31 is the TAIFEX row, 2011-01-03 the Blave bar, no price adjustment")
+os.environ["BLAVE_DATA_ACCESS"] = "0"
+tx = D.fetch_twfutures_ohlcv("TXF", "1d", "2010-12-01", "2011-01-31", {})
+os.environ.pop("BLAVE_DATA_ACCESS", None)
+same = [d for d in after.index if d in tx.index and after.loc[d, "Close"] == tx.loc[d, "Close"]]
+check(len(same) == 19 and [d.strftime("%Y-%m-%d") for d in after.index if d not in same] == ["2011-01-19"],
+      "the 20 Blave days after the seam close where TAIFEX does, bar the 01-19 settlement day recorded under the old 13:31 roll")
+n = len(s.posts)
+df = D.fetch_twfutures_ohlcv("TXF", "1d", "2011-01-03", "2011-02-15", KEY)
+check(len(s.posts) == n and "source" not in df.attrs, "a start on or after 2011-01-03: no TAIFEX request")
+
+s = fresh(html_for=("2010-12",))
+import contextlib
+import io
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    df = D.fetch_twfutures_ohlcv("TXF", "1d", "2010-12-01", "2011-02-15", KEY)
+check(df.index[0] == SEAM and "source" not in df.attrs and "TAIFEX unavailable" in buf.getvalue(),
+      "TAIFEX down: the Blave series alone, with a printed warning — never a failed fetch")
+
+s = fresh()
+os.environ.pop("BLAVE_AGENT_LOCAL", None)
+df = D.fetch_twfutures_ohlcv("TXF", "1d", "2010-12-01", "2011-02-15", KEY)
+check(not s.posts and df.index[0] == SEAM and "source" not in df.attrs, "cloud machine: Blave alone from 2011-01-03, no TAIFEX request")
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+
+# ── MXF / TMF: TAIFEX bars only from the contract's own listing day ──
+s = fresh()
+tx, mx = D.fetch_txf_daily_public("2001-04-01", "2001-04-30"), D.fetch_txf_daily_public("2001-04-01", "2001-04-30", "MXF")
+check(tx.index[0] == pd.Timestamp("2001-04-02", tz="Asia/Taipei") and mx.index[0] == pd.Timestamp("2001-04-09", tz="Asia/Taipei")
+      and mx.equals(tx[tx.index >= mx.index[0]]), "MXF: the same TX bars, from 2001-04-09 (MTX listing day)")
+s = fresh()
+df = D.fetch_txf_daily_public("2010-12-01", "2010-12-31", "TMF")
+check(df.empty and not s.posts and df.attrs["source"] == "TAIFEX", "TMF before 2024-07-29: empty, no request")
+df = D.fetch_twfutures_ohlcv("TMF", "1d", "2010-12-01", "2011-02-15", KEY)
+check(not s.posts and df.index[0] == SEAM and "source" not in df.attrs, "TMF with access: no TAIFEX head (not listed before 2011), Blave from 2011-01-03")
+os.environ["BLAVE_DATA_ACCESS"] = "0"
+df = D.fetch_twfutures_ohlcv("MXF", "1d", "2001-04-01", "2001-04-30", {})
+check(df.index[0] == pd.Timestamp("2001-04-09", tz="Asia/Taipei"), "MXF with no access: from its listing day too")
+os.environ.pop("BLAVE_DATA_ACCESS", None)
 
 print("\nFAILS:", fails)
 sys.exit(1 if fails else 0)

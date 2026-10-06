@@ -3978,7 +3978,7 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
     Volume is in contracts (口數).
 
     A Shioaji-style 'R1' suffix (TXFR1, MXFR1, CDFR1…) is accepted and mapped to
-    the endpoint's own name (TXF…): the underlying series IS the R1 continuous
+    the endpoint's own name (TXF…): the underlying series is the continuous
     near-month, only the naming differs. 'R2' (next-month continuous) is NOT this
     data and is deliberately not mapped — it still 400s server-side.
 
@@ -3991,25 +3991,31 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
 
     For 1d: index is Asia/Taipei tz so df.index[-1].date() returns the correct trading date.
 
-    TXF '1d' on the desktop with no Blave data access this turn comes from TAIFEX instead
-    (fetch_txf_daily_public — same frame, attrs['source'] = 'TAIFEX'); every other case is
-    the Blave series as before, and intraday schemas always are.
+    TXF '1d' on the desktop (BLAVE_AGENT_LOCAL=1) reaches back to 1998: with no Blave data
+    access this turn the whole frame comes from TAIFEX (fetch_txf_daily_public, attrs['source']
+    = 'TAIFEX'); with access the Blave series is unchanged and a `start` before its first bar
+    (2011-01-03) gets the TAIFEX bars in front of it (attrs['source'] = 'TAIFEX/Blave'). A
+    cloud machine, and every intraday schema, is the Blave series alone as before.
     """
     symbol = symbol.upper()
     if symbol.endswith('R1') and len(symbol) > 2:
         symbol = symbol[:-2]
+    traded = symbol
     if symbol in ('MXF', 'TMF'):
         symbol = 'TXF'
-    if symbol == 'TXF' and schema == '1d' and _txf_daily_goes_public(headers):
-        return fetch_txf_daily_public(start, end)
-    # 2026-10 server rebuild re-stamped stock-futures bars (end-of-minute, halved volume,
-    # R1 roll) but past months are never re-fetched, so they need a fresh namespace.
-    # TXF content was unchanged and keeps its cache.
-    prefix = 'twfutures' if symbol == 'TXF' else 'twfutures2'
+    txf_daily_desktop = symbol == 'TXF' and schema == '1d' and tw_market_public_allowed()
+    if txf_daily_desktop and _no_data_access(headers):
+        return fetch_txf_daily_public(start, end, traded)
+    # Past months are never re-fetched, so a server-side rebuild needs a fresh namespace:
+    # twfutures2 (2026-10-03, stock futures re-stamped), twfutures3 (2026-10, every series —
+    # settlement day is the expiring month all day, the next month from the 15:00 session).
+    # The TAIFEX head below covers everything before the Blave series: asking Blave for those
+    # months would only leave empty markers that are re-asked every day.
+    blave_start = max(start, _TXF_BLAVE_START[:8] + '01') if txf_daily_desktop else start
     df = _extend_cache_monthly(
-        f'{prefix}_{schema}', {'symbol': symbol},
+        f'twfutures3_{schema}', {'symbol': symbol},
         lambda s, e: _fetch_twfutures_raw_smart(symbol, schema, s, e, headers),
-        start, end,
+        blave_start, end,
         empty_marker_ttl_hours=24,   # history is backfilled progressively server-side
     )
     df = _sanity_check_ohlc(df, f'{symbol} {schema} twfutures')
@@ -4018,6 +4024,8 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
         # so the index date matches the actual trading date.
         df = df.copy()
         df.index = pd.to_datetime(df.index, utc=True).tz_convert('Asia/Taipei')
+    if txf_daily_desktop and start < _TXF_BLAVE_START:
+        df = _txf_daily_with_taifex_head(df, traded, start, end)
     return df
 
 
@@ -4377,10 +4385,14 @@ def fetch_twfutures_institutional_public(futures_id, start, end):
 # ── TXF daily bars straight from TAIFEX (free, no key) ───────────────────────
 # The key-free twin of fetch_twfutures_ohlcv('TXF', '1d'): TAIFEX 期貨每日交易行情 (futDataDown,
 # one CSV row per contract month and session) stitched into a near-month continuous series of
-# the same shape. Desktop only, like the series above. Where it differs from the Blave series
-# (settlement-day close, holiday-eve evening session, spread-leg volume): references/twfutures.md.
+# the same shape. Desktop only, like the series above. Settlement day is the expiring month on
+# both; where it differs from the Blave series (holiday-eve evening session, spread-leg
+# volume): references/twfutures.md.
 _TAIFEX_FUT_DAILY = 'https://www.taifex.com.tw/cht/3/futDataDown'
-_TXF_PUBLIC_START = '1998-07-01'   # 臺股期貨 listed 1998-07-21; nothing earlier on futDataDown
+_TXF_BLAVE_START = '2011-01-03'    # first bar of the Blave continuous series
+# First trading day on futDataDown per contract (MTX and TMF probed 2026-10-06): the key-free
+# bars are TX prices for all three, served only from the day the traded contract existed.
+_TAIFEX_INDEX_FUT_LISTED = {'TXF': '1998-07-21', 'MXF': '2001-04-09', 'TMF': '2024-07-29'}
 
 
 def _taifex_fut_daily_window(commodity, first, last):
@@ -4404,8 +4416,8 @@ def _taifex_fut_daily_window(commodity, first, last):
 def _taifex_near_month_bars(rows, col):
     """Per-contract session rows → one bar per trading date on the near month: the lowest
     outright month (YYYYMM — no weeklies, no calendar spreads) with a 一般 row that day, so on
-    settlement day still the expiring month, holiday-shifted settlements included (the listing
-    rule the api's R1 backfill uses). TAIFEX dates a 盤後 row by the business day it settles
+    settlement day still the expiring month, holiday-shifted settlements included (the rule
+    the Blave continuous series follows too). TAIFEX dates a 盤後 row by the business day it settles
     to, so a date's bar is its 盤後 row (Open, High/Low) then its 一般 row (Close), Volume both;
     a date whose 一般 row is not out yet has no bar. Index naive UTC (Taipei midnight − 8h),
     the shape fetch_twfutures_ohlcv('1d') caches."""
@@ -4454,34 +4466,60 @@ def _taifex_txf_daily_raw(s, e):
     return _taifex_near_month_bars(rows, col)
 
 
-def fetch_txf_daily_public(start, end=None):
+def fetch_txf_daily_public(start, end=None, symbol='TXF'):
     """fetch_twfutures_ohlcv('TXF', '1d') from TAIFEX futDataDown — the same frame (Open/High/
     Low/Close/Volume in contracts, Asia/Taipei midnight index), no Blave key. Desktop only
     (tw_market_public_allowed); attrs['source'] = 'TAIFEX'. One request per month through the
     monthly cache (cache/twfutures_public_1d_TXF/: a past month is fetched once and kept, the
     current month is re-asked from its last bar), so a cold 1998→today backfill is ~340
-    requests at one per second. History from 1998-07-21; an earlier start is clamped."""
+    requests at one per second. History from 1998-07-21; an earlier start is clamped.
+    symbol 'MXF' / 'TMF': the same TX bars, from that contract's own listing day on."""
     _tw_market_public_gate()
-    df = _extend_cache_monthly('twfutures_public_1d', {'symbol': 'TXF'}, _taifex_txf_daily_raw,
-                               max(start, _TXF_PUBLIC_START), end, month_by_month=True)
+    listed = _TAIFEX_INDEX_FUT_LISTED.get(symbol)
+    if listed is None:
+        raise TwPublicUnavailable(f'TAIFEX daily bars: {symbol} is not TXF / MXF / TMF')
+    start = max(start, listed[:8] + '01')
+    if end is not None and end < start:
+        df = pd.DataFrame(columns=_TW_DAILY_COLS, dtype=float)
+    else:
+        df = _extend_cache_monthly('twfutures_public_1d', {'symbol': 'TXF'}, _taifex_txf_daily_raw,
+                                   start, end, month_by_month=True)
     df = _sanity_check_ohlc(df, 'TXF 1d taifex')
     if not df.empty:
         df = df.copy()
         df.index = pd.to_datetime(df.index, utc=True).tz_convert('Asia/Taipei')
+        df = df[df.index >= pd.Timestamp(listed, tz='Asia/Taipei')]
     df.attrs['source'] = 'TAIFEX'
     return df
 
 
-def _txf_daily_goes_public(headers):
-    """The desktop with no Blave data access this turn: TXF daily bars come from TAIFEX instead
-    of failing. With access — or on a cloud machine — the Blave series, exactly as before."""
-    if not tw_market_public_allowed():
-        return False
+def _no_data_access(headers):
     try:
         _check_data_access(headers)
     except DataAccessError:
         return True
     return False
+
+
+def _txf_daily_with_taifex_head(blave, traded, start, end):
+    """The Blave daily series with the TAIFEX bars before its first bar in front (no price
+    adjustment — both are unadjusted near-month prices). TAIFEX being unreachable leaves the
+    Blave series as it was, with a printed warning, never a failed fetch."""
+    first = blave.index[0] if not blave.empty else None
+    head_end = (first - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if first is not None else end
+    try:
+        head = fetch_txf_daily_public(start, head_end, traded)
+    except (TwPublicUnavailable, requests.exceptions.RequestException) as e:
+        print(f"  ⚠️  {traded} daily bars before {_TXF_BLAVE_START}: TAIFEX unavailable "
+              f"({type(e).__name__}: {str(e)[:120]}) — returning the Blave series only")
+        return blave
+    if first is not None and not head.empty:
+        head = head[head.index < first]
+    if head.empty:
+        return blave
+    df = pd.concat([head, blave]) if first is not None else head
+    df.attrs['source'] = 'TAIFEX/Blave' if first is not None else 'TAIFEX'
+    return df
 
 
 def fetch_twfutures_bid_ask_vol(start, end, headers):
@@ -4583,22 +4621,32 @@ def fetch_stock_futures_ohlcv_symbols(headers):
 
 def txf_settlement_mask(index):
     """Return a boolean Series (same index) that is True on the last bar strictly
-    before each TAIFEX monthly settlement (3rd Wednesday, 13:30 TWN).
+    before each TAIFEX monthly settlement (13:30 TWN on the 3rd Wednesday, or on the
+    next day the market traded when that Wednesday was closed — 2013-08-22, 2015-02-24,
+    2023-01-30, 2026-02-23).
 
     Interval-agnostic: 1m data marks the 13:29 bar, 60m data marks the 13:00 bar,
     etc. Applies to every TAIFEX monthly-settled product — TXF and individual
     stock futures share the same settlement calendar — and MUST be applied by any
-    strategy on `fetch_twfutures_*` data: the source is Shioaji's R1 continuous
-    near-month series, which switches contracts at settlement WITHOUT price
-    adjustment, so an unmasked position books the contract-basis gap as fake PnL
-    (measured 2018-2026 across 10 stock futures: mean +0.36%/roll, std 3.9%,
-    August dividend-season mean -1.9%).
+    strategy on `fetch_twfutures_*` data: the source is a continuous near-month
+    series (the expiring month through its 13:30 close on settlement day, the next
+    month from the 15:00 session) WITHOUT price adjustment, so an unmasked position
+    books the contract-basis gap as fake PnL (measured 2018-2026 across 10 stock
+    futures: mean +0.36%/roll, std 3.9%, August dividend-season mean -1.9%).
+
+    A postponed settlement is read from the index itself, not from a calendar: a 3rd
+    Wednesday with no day-session bar (08:00–13:59 TWN; any bar for daily data) moves
+    the settlement to the next date that has one, and the Wednesday keeps its own mark,
+    so a symbol that merely did not trade that day is flattened once more, never less.
+    Blind spot: a daily series that carries a bar on the holiday itself (the Blave 1d
+    series dates a holiday-eve evening session that way) looks open on that Wednesday.
 
     Usage in compute_signals:
         settle = txf_settlement_mask(df.index)
         signal[settle] = 0.0        # Type A;  Type C: weights.loc[settle] = 0.0
         return signal, settle       # settle doubles as exec_at_close
     """
+    import bisect
     import datetime
     from zoneinfo import ZoneInfo   # stdlib — no pytz dependency (pandas 3.x stopped pulling it in;
                                     # a fresh Windows box had no pytz and every 台指期 backtest died here)
@@ -4614,6 +4662,11 @@ def txf_settlement_mask(index):
                     return d
             d = d + datetime.timedelta(days=1)
 
+    def _moment(d):
+        ts = pd.Timestamp(datetime.datetime(d.year, d.month, d.day, 13, 30, tzinfo=twn)
+                          .astimezone(datetime.timezone.utc))
+        return ts.tz_localize(None) if index.tz is None else ts
+
     mask  = pd.Series(False, index=index)
     start = index.min()
     end   = index.max()
@@ -4625,22 +4678,29 @@ def txf_settlement_mask(index):
     if pd.notna(bar):
         end = end + bar
 
-    year, month = start.year, start.month
-    while True:
-        wed = _third_wed(year, month)
-        ts_settle = pd.Timestamp(
-            datetime.datetime(wed.year, wed.month, wed.day, 13, 30, tzinfo=twn)
-            .astimezone(datetime.timezone.utc)
-        )
-        if index.tz is None:
-            ts_settle = ts_settle.tz_localize(None)
-        if ts_settle > end:
-            break
+    local = (index.tz_localize('UTC') if index.tz is None else index).tz_convert(twn)
+    daily = pd.notna(bar) and bar >= pd.Timedelta(days=1)
+    day_session = local if daily else local[(local.hour >= 8) & (local.hour < 14)]
+    open_days = sorted(set(day_session.normalize().unique().date))
+    open_set = set(open_days)
+
+    def _mark(ts_settle):
         # last bar with label strictly before the settlement moment; guard
         # against marking a far-away bar when the symbol has a data gap
         pos = index.searchsorted(ts_settle) - 1
         if pos >= 0 and (ts_settle - index[pos]) <= pd.Timedelta(days=1):
             mask.iloc[pos] = True
+
+    year, month = start.year, start.month
+    while True:
+        wed = _third_wed(year, month)
+        if _moment(wed) > end:
+            break
+        _mark(_moment(wed))
+        if wed not in open_set:
+            nxt = open_days[bisect.bisect_right(open_days, wed):][:1]
+            if nxt and (nxt[0] - wed).days <= 14 and _moment(nxt[0]) <= end:
+                _mark(_moment(nxt[0]))
         month += 1
         if month > 12:
             month, year = 1, year + 1

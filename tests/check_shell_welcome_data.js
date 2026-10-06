@@ -77,12 +77,12 @@ if (!process.versions.electron) {
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && /\{r\}/.test(STR[L][k])).join() === "wd.note.billed") && !wd("zh").concat(wd("en")).some((s) => /\d\s*TWD/.test(s))
     && ["zh", "en"].every((L) => /\{t\}/.test(STR[L]["wd.note.out"]) && /\{t\}/.test(STR[L]["wd.note.none"]) && /\{d\}/.test(STR[L]["wd.state.trial"])));
   { const txd = ROWS.find((r) => r[0] === "txd"), txk = ROWS.find((r) => r[0] === "txk");
-    ok("② 台指期 K 線拆兩列:txd 日線在免費欄第一列(1998-07-21 起、列尾標來源期交所,同 lib/data.py _TXF_PUBLIC_START 那個月)、txk 分線在 Blave 欄(頻率不再含日線);WD_TXF_KLINE_SRC 常數退役",
+    ok("② 台指期 K 線拆兩列:txd 日線在免費欄第一列(1998-07-21 起、列尾標來源期交所,同 lib/data.py _TAIFEX_INDEX_FUT_LISTED 的 TXF)、txk 分線在 Blave 欄(頻率不再含日線);WD_TXF_KLINE_SRC 常數退役",
       !!txd && !!txk && txd[2] === TAB.WD_P && txd[4] === 1 && txk[2] === TAB.WD_B && txk[4] === 2 && !/WD_TXF_KLINE_SRC/.test(src) && TAB.WD_WN.has("txd")
       && STR.zh["wd.r.txd.sn"] === "1998-07-21" && STR.en["wd.r.txd.sn"] === "1998-07-21" && /1998/.test(STR.zh["wd.r.txd.sy"]) && /1998/.test(STR.en["wd.r.txd.sy"])
       && /期交所/.test(STR.zh["wd.r.txd.wn"]) && /TAIFEX/.test(STR.en["wd.r.txd.wn"]) && /臺灣期貨交易所/.test(STR.zh["wd.r.txd.nt"]) && /Taiwan Futures Exchange/.test(STR.en["wd.r.txd.nt"])
       && !/日/.test(STR.zh["wd.r.txk.fq"]) && !/daily/i.test(STR.en["wd.r.txk.fq"])
-      && /_TXF_PUBLIC_START = '1998-07-01'/.test(read(path.join(SHELL, "..", "lib", "data.py"))) && /"fetch_txf_daily_public"/.test(read(path.join(SHELL, "..", "lib", "quality_check.py")))); }
+      && /'TXF': '1998-07-21'/.test(read(path.join(SHELL, "..", "lib", "data.py"))) && /"fetch_txf_daily_public"/.test(read(path.join(SHELL, "..", "lib", "quality_check.py")))); }
   ok("② 起手句六句對得到 examples/(五句在這一版的清單上;WTI 那句隨商品市場一起拿掉:起始年待確認)", ["tsmc_ma", "txf_ma_1m", "tw100_foreign_zscore", "tw2317_broker_zscore", "btc_ti_5min"].every((d) => fs.existsSync(path.join(SHELL, "..", "examples", d, "strategy.py")))
     && ["twd", "txk", "inst", "br", "ti"].every((id) => WEL.some((r) => r[0] === id)) && !ROWS.some((r) => r[1] === "cmd"));
 

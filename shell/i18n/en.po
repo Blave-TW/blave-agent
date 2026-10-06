@@ -6605,7 +6605,7 @@ msgid "wd.r.txd.nm"
 msgstr "TAIEX futures daily bars (front-month continuous)"
 
 msgid "wd.r.txd.nt"
-msgstr "Source: Taiwan Futures Exchange; mini and micro contracts backtest on the same price series; on a cloud machine this goes through Blave, from 2011-01-03"
+msgstr "Source: Taiwan Futures Exchange; with Blave data, bars from 2011-01-03 on are Blave's continuous contract, and a cloud machine has only that part; mini and micro contracts backtest on the same price series, the exchange part starting on their own listing days (2001-04-09, 2024-07-29)"
 
 msgid "wd.r.txd.fq"
 msgstr "Daily"

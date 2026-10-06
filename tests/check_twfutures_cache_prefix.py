@@ -1,6 +1,7 @@
-"""fetch_twfutures_ohlcv cache namespace: stock futures (and their R1 spelling) use
-twfutures2_* so the pre-rebuild past months are dropped; TXF and its MXF/TMF aliases keep
-twfutures_*. The batch form goes through the same path. No network.
+"""fetch_twfutures_ohlcv cache namespace: every series (TXF with its MXF/TMF/R1 spellings, and
+the stock futures) uses twfutures3_*, so the months cached before the 2026-10 settlement-day
+rebuild — twfutures_* for TXF, twfutures2_* for stock futures — are re-fetched once. The batch
+form goes through the same path. No network.
 
 Run: cd blave-agent && .venv/bin/python tests/check_twfutures_cache_prefix.py
 """
@@ -33,18 +34,17 @@ def _fake_extend(prefix, params, fetch_raw_fn, start, end, **kw):
 d._extend_cache_monthly = _fake_extend
 
 cases = {
-    "CDF": ("twfutures2", "CDF"), "CDFR1": ("twfutures2", "CDF"), "ccf": ("twfutures2", "CCF"),
-    "TXF": ("twfutures", "TXF"), "TXFR1": ("twfutures", "TXF"), "MXF": ("twfutures", "TXF"),
-    "TMF": ("twfutures", "TXF"), "MXFR1": ("twfutures", "TXF"),
+    "CDF": "CDF", "CDFR1": "CDF", "ccf": "CCF",
+    "TXF": "TXF", "TXFR1": "TXF", "MXF": "TXF", "TMF": "TXF", "MXFR1": "TXF",
 }
 for schema in ("1m", "1d"):
-    for sym, (pre, canon) in cases.items():
+    for sym, canon in cases.items():
         seen.clear()
         d.fetch_twfutures_ohlcv(sym, schema, "2024-01-01", "2024-01-31", {})
-        assert seen == [(f"{pre}_{schema}", canon)], (sym, schema, seen)
+        assert seen == [(f"twfutures3_{schema}", canon)], (sym, schema, seen)
 
 seen.clear()
 d.fetch_twfutures_ohlcv_batch(["TXF", "CDF", "TMF"], "5m", "2024-01-01", "2024-01-31", {})
-assert sorted(seen) == [("twfutures2_5m", "CDF"), ("twfutures_5m", "TXF"), ("twfutures_5m", "TXF")], seen
+assert sorted(seen) == [("twfutures3_5m", "CDF"), ("twfutures3_5m", "TXF"), ("twfutures3_5m", "TXF")], seen
 
 print("ok")

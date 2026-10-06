@@ -280,7 +280,7 @@ No futures deployment has run live yet — when one does, harvest the working pa
   until it completes
 - One Shioaji connection per account at a time; multi-process setups must each login/logout
 - System clock must be accurate — NTP sync fixes login timeouts
-- `TXFR1` always points to the near-month contract (auto-rolls after settlement)
+- `TXFR1` always points to the near-month contract; Shioaji flips it to the next month at 13:31 on settlement day, while the backtest series (`fetch_twfutures_ohlcv`) stays on the expiring month until the 15:00 session
 
 ---
 

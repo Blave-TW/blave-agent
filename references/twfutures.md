@@ -190,34 +190,45 @@ oi_series = front_month.set_index("date")["open_interest"]
 - `contract_date` 含 `/` 的為價差合約（e.g. `202505/202506`），通常過濾掉
 - `trading_session = "position"` 為正規盤，`"after_market"` 為盤後交易
 - 近月連續序列需自行用成交量或到期日判斷；TXF 分K 仍使用 `/twfutures/ohlcv/TXF/<schema>`
-- `fetch_twfutures_ohlcv` 也接受 Shioaji 式 `R1` 連續月命名（`TXFR1`→`TXF` 自動映射，底層資料本來就是 R1 連續序列）；`R2`（次月連續）不是這條資料、不映射。映射只在 lib 層——直接打 API 端點仍須用 `TXF` 這種無後綴名稱，`TXFR1` 會 400。查 `fetch_stock_futures_ohlcv_symbols` 白名單前也要先去掉 `R1` 後綴（它回的是無後綴名稱）
+- `fetch_twfutures_ohlcv` also accepts Shioaji-style `R1` names (`TXFR1` → `TXF`, mapped in the lib only: the API endpoints take the bare `TXF`, `TXFR1` is a 400; strip `R1` before checking the `fetch_stock_futures_ohlcv_symbols` whitelist too). The series is the near-month continuous one under the roll rule below — Shioaji's live `R1` alias flips to the next month at 13:31 on settlement day, the series does not until 15:00. `R2` (next-month continuous) is not this data and is not mapped
 
 ---
 
-## TXF daily bars without Blave data (desktop only)
+## TXF daily bars back to 1998 (desktop only)
 
-`fetch_twfutures_ohlcv('TXF' | 'MXF' | 'TMF', '1d', start, end, headers)` on the desktop app with
-no Blave data access this turn returns the same frame from TAIFEX instead of failing
+**Roll rule of the continuous near-month series (TXF, MXF, stock futures; minute and daily
+alike):** settlement day is the expiring month for the whole day — its day session ends with
+the 13:30 bar, there are no 13:31–14:59 bars, and the next month starts with the 15:00 evening
+session; the daily bar of settlement day is the expiring month's. Settlement is the 3rd
+Wednesday, or the next trading day when that Wednesday is closed. No price adjustment.
+
+`fetch_twfutures_ohlcv('TXF' | 'MXF' | 'TMF', '1d', start, end, headers)` on the desktop app
+(`BLAVE_AGENT_LOCAL=1`) reaches back to **1998-07-21** with TAIFEX's own daily bars
 (`fetch_txf_daily_public(start, end)` — 期貨每日交易行情 `futDataDown`, cp950 CSV, one request per
-month, cached per month under `cache/twfutures_public_1d_TXF/`; history from **1998-07-21**; a cold
-1998→today backfill is ~340 requests at one per second, ~8 minutes, resumable). With access it is
-the Blave series exactly as before; intraday schemas have no key-free path. `df.attrs['source']`
-= `TAIFEX`; **any report or reply citing these bars carries `資料來源:臺灣期貨交易所(政府資料開放授權)`**
-(en: `Source: Taiwan Futures Exchange (Open Government Data License)`).
+month, cached per month under `cache/twfutures_public_1d_TXF/`; a cold 1998→today backfill is
+~340 requests at one per second, ~8 minutes, resumable):
+- **No Blave data access this turn:** the whole frame is TAIFEX — `df.attrs['source']` = `TAIFEX`.
+- **With Blave data:** the Blave series is unchanged (from 2011-01-03, the same bars a cloud
+  machine trades on) and a `start` before that gets the TAIFEX bars in front of it, up to the
+  bar before Blave's first — `df.attrs['source']` = `TAIFEX/Blave`. If TAIFEX cannot be reached
+  the Blave series comes back alone with a printed ⚠️ line.
+- **Cloud machine:** Blave only, from 2011-01-03. Intraday schemas have no key-free path anywhere.
+- **MXF / TMF** read the same TX prices, and the TAIFEX part starts on that contract's own
+  listing day: MXF 2001-04-09, TMF 2024-07-29 (so TMF with Blave data has no TAIFEX part).
 
-Near-month stitching: per trading date the lowest listed outright month with a day-session row
-(weeklies and calendar spreads ignored); the 盤後 row TAIFEX dates to that business day opens the
-bar and widens high/low, the 一般 row closes it, volume is both sessions. Where this differs from
-the Blave series (measured 2024-08 → 2026-09, 515 common days, OHLC otherwise exact):
-- **Settlement day** keeps the expiring contract to its 13:30 close (holiday-shifted
-  settlements included). Blave switches to the next month from 13:31, so its close is the next
-  month's 13:45 — the two closes differ by the inter-month basis (−363 … +378 points over 25
-  settlements in the sample); open / high / low match. `txf_settlement_mask` zeroes the
-  position on that bar either way.
+**Whenever `attrs['source']` names `TAIFEX`, any report or reply citing the bars carries
+`資料來源:臺灣期貨交易所(政府資料開放授權)`** (en: `Source: Taiwan Futures Exchange (Open
+Government Data License)`).
+
+TAIFEX stitching: per trading date the lowest listed outright month with a day-session row
+(weeklies and calendar spreads ignored) — the same settlement-day rule as above; the 盤後 row
+TAIFEX dates to that business day opens the bar and widens high/low, the 一般 row closes it,
+volume is both sessions. Where the TAIFEX bars differ from the Blave ones (measured 2024-08 →
+2026-09, 515 common days, OHLC otherwise exact):
 - **Evening session before a holiday** goes to the next trading day's bar (TAIFEX's own
   dating). Blave's shift rule puts it on a bar dated the holiday itself, so the Blave series
   has a bar on e.g. 2024-10-10 or 2026-02-12 and its next trading day opens with the day
-  session; here the next trading day opens with that evening's open.
+  session; on the TAIFEX bars the next trading day opens with that evening's open.
 - **Volume** includes calendar-spread legs (TAIFEX daily count): ~0.7 % above the Blave 1-minute
   sum on an ordinary day.
 - Today's day-session row appears about an hour after 13:45; before that the day has no bar
