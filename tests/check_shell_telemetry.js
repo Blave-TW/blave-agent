@@ -129,7 +129,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   t("不是自家頁面:回 busy、不送", s.r.busy === true && s.events === "");
   // ── feature_used:名字是白名單,兩端同一份;renderer 每個送出點的名字都在表上;主行程拒絕表外的名字 ──
   const FEATURES = EVENTS.feature_used.name, trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8");
-  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 69 個 + browser_open_ext + suggest_shown / suggest_clicked + 規則四個 + 樣本外驗證兩個 + 更新提示兩個 + 0.1.12 六個 + 0.1.13 五個 + suggest_closed + 0.1.15 更新雲端主機三個 + missing_key_go + 0.1.16 apikey_setup = 97 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5、聊天結果卡 +2、報告存成 PDF +1、設定 › 公開連結 +1、送進 TradingView +7;library_comm 沒送出點但 0.1.5 還在送,留到它退場;batch 6:+browser_open_ext;0.1.9 建議下一步 +2、設定 › Agent 規則 +4;0.1.10 樣本外驗證 +2(report_wf / wf_requested)、更新提示 +2(update_restart / app_move);0.1.12 安裝進度卡 engine_retry、市場對應 pick_gate_lock、策略庫成功筆記 library_note、交還鈕 browser_hb_head / browser_hb_chat、部位表點策略名 trade_strat_open,依序放最後;0.1.13 策略庫轉換 lib_installed / library_no_new、下單 UX 第 3 級槓桿勾選 trade_lev_ack、部位表拆解 trade_net_open、拒單請 agent 查原因 trade_err_ask 接在後面;建議下一步的關閉 suggest_closed 接在後面;0.1.15 關於第二行 cloud_upd_open / cloud_upd_ok / cloud_upd_cancel 接在後面、缺金鑰「去資料來源」missing_key_go 接在後面;0.1.16 自帶 API 金鑰 apikey_setup 接在最後)", ONCE_OF(fs) && FEATURES.length === 97 && FEATURES[69] === "browser_open_ext" && FEATURES.slice(70).join() === "suggest_shown,suggest_clicked,settings_rules,rules_save,rules_delete,reply_lang_set,report_wf,wf_requested,update_restart,app_move,engine_retry,pick_gate_lock,library_note,browser_hb_head,browser_hb_chat,trade_strat_open,lib_installed,library_no_new,trade_lev_ack,trade_net_open,trade_err_ask,suggest_closed,cloud_upd_open,cloud_upd_ok,cloud_upd_cancel,missing_key_go,apikey_setup" && FEATURES[68] === "tv_fail_compile" && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[57] === "version_fork" && FEATURES[58] === "result_report" && FEATURES[59] === "result_strategy" && FEATURES[60] === "report_pdf" && FEATURES[61] === "share_list_open" && FEATURES.slice(62, 70).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext" && FEATURES.every((n) => n.length <= 16) && FEATURES[20] === "library_comm");
+  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 69 個 + browser_open_ext + suggest_shown / suggest_clicked + 規則四個 + 樣本外驗證兩個 + 更新提示兩個 + 0.1.12 六個 + 0.1.13 五個 + suggest_closed + 0.1.15 更新雲端主機三個 + missing_key_go + 0.1.16 apikey_setup + 0.1.16 綁卡／儲值入口八個 = 105 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5、聊天結果卡 +2、報告存成 PDF +1、設定 › 公開連結 +1、送進 TradingView +7;library_comm 沒送出點但 0.1.5 還在送,留到它退場;batch 6:+browser_open_ext;0.1.9 建議下一步 +2、設定 › Agent 規則 +4;0.1.10 樣本外驗證 +2(report_wf / wf_requested)、更新提示 +2(update_restart / app_move);0.1.12 安裝進度卡 engine_retry、市場對應 pick_gate_lock、策略庫成功筆記 library_note、交還鈕 browser_hb_head / browser_hb_chat、部位表點策略名 trade_strat_open,依序放最後;0.1.13 策略庫轉換 lib_installed / library_no_new、下單 UX 第 3 級槓桿勾選 trade_lev_ack、部位表拆解 trade_net_open、拒單請 agent 查原因 trade_err_ask 接在後面;建議下一步的關閉 suggest_closed 接在後面;0.1.15 關於第二行 cloud_upd_open / cloud_upd_ok / cloud_upd_cancel 接在後面、缺金鑰「去資料來源」missing_key_go 接在後面;0.1.16 自帶 API 金鑰 apikey_setup 接在後面;0.1.16 綁卡／儲值入口 bind_* / topup_* 八個接在最後)", ONCE_OF(fs) && FEATURES.length === 105 && FEATURES[69] === "browser_open_ext" && FEATURES.slice(70).join() === "suggest_shown,suggest_clicked,settings_rules,rules_save,rules_delete,reply_lang_set,report_wf,wf_requested,update_restart,app_move,engine_retry,pick_gate_lock,library_note,browser_hb_head,browser_hb_chat,trade_strat_open,lib_installed,library_no_new,trade_lev_ack,trade_net_open,trade_err_ask,suggest_closed,cloud_upd_open,cloud_upd_ok,cloud_upd_cancel,missing_key_go,apikey_setup,bind_set,topup_set,bind_data,topup_data,bind_cloud,topup_cloud,bind_lib,topup_lib" && FEATURES[68] === "tv_fail_compile" && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[57] === "version_fork" && FEATURES[58] === "result_report" && FEATURES[59] === "result_strategy" && FEATURES[60] === "report_pdf" && FEATURES[61] === "share_list_open" && FEATURES.slice(62, 70).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext" && FEATURES.every((n) => n.length <= 16) && FEATURES[20] === "library_comm");
   // 兩端漂移:api/openclaw/desktop_telemetry.py 的 EVENTS["feature_used"] 逐字同一份(同 check_runtime_mirror:要 monorepo 版面)
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 白名單比對(需要 monorepo 版面:../api/openclaw/desktop_telemetry.py)");
@@ -152,6 +152,15 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       if (!names.length) bad.push(f + ": " + arg);
       for (const n of names) { used.add(n); if (FEATURES.indexOf(n) < 0) bad.push(f + ": " + n); }
     }
+    // 綁卡／儲值入口走 bindGo("…")(app.js;記完就外開),呼叫常在 btn(…) 的引數裡、後面不是 `);`,另掃一次;同樣只認字面或兩個字面的三元
+    for (const m of src.matchAll(/(?<!function )\bbindGo\(((?:[^()]|\([^()]*\))*)\)/g)) {
+      const arg = m[1].trim(), names = [];
+      let mm;
+      if ((mm = /^"([a-z_]+)"$/.exec(arg))) names.push(mm[1]);
+      else if ((mm = /^[^?]+ \? "([a-z_]+)" : "([a-z_]+)"$/.exec(arg))) names.push(mm[1], mm[2]);
+      if (!names.length) bad.push(f + ": bindGo(" + arg + ")");
+      for (const n of names) { used.add(n); if (FEATURES.indexOf(n) < 0) bad.push(f + ": " + n); }
+    }
   }
   t("renderer 每個 trackFeature 送出點的名字都在白名單上、都是字面(沒有拿變數當名字)", bad.length === 0 && used.size > 0);
   if (bad.length) console.log("      " + bad.join("\n      "));
@@ -171,6 +180,40 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     for (const n of ["update_restart", "app_move"]) if (mainS.includes('tm().track("feature_used", { name: "' + n + '" })')) MAIN_SENT.push(n); }
   const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0 && RESERVED.indexOf(n) < 0 && DROPPED.indexOf(n) < 0 && MAIN_SENT.indexOf(n) < 0);
   t("白名單上每個名字都有送出點(library_comm / browser_source / tv_read / tv_fix / tv_fail_compile 例外:留給舊外殼;pick_gate_lock 0.1.12 起無送出點)", noSender.length === 0 && LEGACY.concat(RESERVED, DROPPED).every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
+  /* 綁卡／儲值入口一個都不能漏(0.1.16):外開綁卡／儲值頁(acctUrl)的地方只准兩個——預檢卡 / 402 卡的 acctAction(記 acct_card_click)
+     與 bindGo(記 bind_* / topup_*);以後誰再寫一顆 openExternal(acctUrl()) 卻沒記,這條就紅。
+     策略庫兩個入口開的是設定 › 帳號與方案(planOpen)、不經 acctUrl,逐一釘住;每個 bind_* / topup_* 都要真的有入口在送 */
+  { const BIND = FEATURES.filter((n) => /^(bind|topup)_/.test(n)), srcs = {};
+    for (const f of fs.readdirSync(R).filter((n) => /\.js$/.test(n))) srcs[f] = fs.readFileSync(path.join(R, f), "utf8");
+    const acctUses = [];
+    for (const f in srcs) for (const m of srcs[f].matchAll(/acctUrl\(\)/g)) {
+      const line = srcs[f].slice(srcs[f].lastIndexOf("\n", m.index) + 1, srcs[f].indexOf("\n", m.index));
+      acctUses.push(f + ": " + line.trim());
+    }
+    const okUse = (u) => /^app\.js: function bindGo\(name\) \{ try \{ window\.blave\.trackFeature\(name\); \} catch/.test(u)
+      || /^app\.js: return \{ label: [^\n]*on: \(\) => \{ acctClicked\(where, s\); window\.blave\.openExternal\(acctUrl/.test(u);
+    const stray = acctUses.filter((u) => !okUse(u));
+    const app = srcs["app.js"], tr = srcs["trade.js"], lib = srcs["library.js"];
+    const sites = {
+      "app 資料權限卡(綁卡/儲值)": /const top = \{ label: t\(acct\.reason === "NO_CARD" \? "acct\.addCard" : "fault\.noCreditBtn"\), on: \(\) => bindGo\(acct\.reason === "NO_CARD" \? "bind_data" : "topup_data"\) \};/.test(app),
+      "app 方案頁 offer / noTrial 綁卡": (app.match(/btn\("btn-fill", t\("plan\.addCard"\), \(\) => bindGo\("bind_set"\)\)\] \}/g) || []).length === 2,
+      "app 方案頁 none 儲值": /btn\("btn-fill", t\("fault\.noCreditBtn"\), \(\) => bindGo\("topup_set"\)\)\] \}/.test(app),
+      "app 方案頁 stopped 加值": /btn\("btn-quiet", t\("plan\.manageStopped"\), ext\(planWebUrl\(\)\)\), btn\("btn-fill", t\("plan\.addCredit"\), \(\) => bindGo\("topup_set"\)\)\] \}/.test(app),
+      "app 方案頁錯誤列 nocard / credit": /err\.key === "plan\.err\.nocard"\) acts = \[btn\("btn-fill", t\("plan\.addCard"\), \(\) => bindGo\("bind_set"\)\)\];\n\s*else if \(err && err\.key === "plan\.err\.credit"\) acts = \[btn\("btn-fill", t\("plan\.addCredit"\), \(\) => bindGo\("topup_set"\)\)\];/.test(app),
+      "trade 雲端停機主鈕加值": /envCloudKind\(TR\.st\) === "stopped"\) \{ bindGo\("topup_cloud"\); return; \}/.test(tr),
+      "trade 開通頁錯誤列 nocard / credit": /err\.key === "plan\.err\.nocard"\) main = btn\("btn-fill", t\("plan\.addCard"\), \(\) => bindGo\("bind_cloud"\), "main"\);\n\s*else if \(err && err\.key === "plan\.err\.credit"\) main = btn\("btn-fill", t\("plan\.addCredit"\), \(\) => bindGo\("topup_cloud"\), "main"\);/.test(tr),
+      "trade 開通頁 card 綁卡": /view === "card"\) \{ main = btn\("btn-fill", t\("plan\.addCard"\), \(\) => bindGo\("bind_cloud"\), "main"\);/.test(tr),
+      "library 閘門鈕(unknown 不記)": /function libGateBtn\(why\) \{[\s\S]*?b\.addEventListener\("click", \(\) => \{ if \(why !== "unknown"\) libTrack\(why === "no_balance" \? "topup_lib" : "bind_lib"\); planOpen\(\); \}\);\n\s*return b;\n\}/.test(lib),
+      "library 買策略沒卡那一框": /t\("lib\.buy\.noCard"\)\], ok: t\("acct\.addCard"\), opener, onOk: \(\) => \{ libTrack\("bind_lib"\); planOpen\(\); \} \}\);/.test(lib),
+    };
+    const miss = Object.keys(sites).filter((k) => !sites[k]);
+    t("綁卡／儲值入口全部有送:acctUrl 只在 acctAction 與 bindGo 兩處、十個入口各送對的 bind_* / topup_*、八個名字都有送出點", BIND.length === 8 && acctUses.length === 2 && !stray.length && !miss.length && BIND.every((n) => used.has(n)));
+    if (stray.length) console.log("      沒記的 acctUrl:" + stray.map((u) => u.slice(0, 90)).join(" | "));
+    if (miss.length) console.log("      入口對不上:" + miss.join(", "));
+    // bindGo 本身:先記再外開,記失敗不擋外開
+    const bg = /function bindGo\(name\) \{[^\n]*\}/.exec(app), calls = [];
+    if (bg) new Function("window", "acctUrl", bg[0] + "\nbindGo(\"bind_set\");")({ blave: { trackFeature: (n) => { calls.push("t:" + n); throw new Error("x"); }, openExternal: (u) => calls.push("o:" + u) } }, () => "U");
+    t("…bindGo 先送 feature_used 再外開同一頁;送的那一步丟例外也照樣外開", calls.join() === "t:bind_set,o:U"); }
   t("送出點只在功能那一層:report 五個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、樣本外驗證在 rpWfAsk 送出成功、聊天在 started、停止在 stopTurn 按下、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
     /const RP_TAB_FEATURE = \{ bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", code: "report_code" \};\n\$\("rp-tabs"\)\.addEventListener\("click", \(e\) => \{[^\n]*\n\s*const b = e\.target\.closest\("\.rp-tab"\); if \(!b \|\| b\.disabled\) return;\n\s*rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\);\n/.test(appSrc)
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))
