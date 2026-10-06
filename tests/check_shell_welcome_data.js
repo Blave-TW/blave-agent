@@ -1,7 +1,7 @@
 // 歡迎頁的資料清單(shell/renderer/welcome.js + welcome.css + index.html #wl;設計 mockup data-scope §1 / §2)。
 //   ① 純邏輯 wdMode(從原文切出來跑):帳號狀態 → 對比版 / 單一清單——沒登入、查不到、舊 api、沒綁卡、餘額不夠、按小時付 → 兩欄對比;
 //      綁卡試用中、名下有主機、API 方案(data_access = included)→ 單一清單;試用那句只在名下沒主機時講
-//   ② 原文鎖:index.html 骨架(記號與標題「開始一支策略」並排一行 → 三顆籤 → #wl、狀態句在頁尾、起手籤 #chat-eg 退役)、welcome.css(.main-empty 是容器、≥700 才兩欄、不寫 hex)、
+//   ② 原文鎖:index.html 骨架(記號與標題「開始一支策略」並排一行 → 三顆籤 → #wl、狀態句在頁尾、起手籤 #chat-eg 退役)、welcome.css(.main-empty 是容器、≥760 才兩欄、不寫 hex)、
 //      app.js 四個重畫入口、welcome.js 在 app.js 之後、telemetry 白名單尾端兩個名字(≤16 字、api 端同一份)、
 //      每一列的字 zh / en 兩語齊全(列舉 WD_ROWS,不抽樣)、字裡沒有「付費」、價格數字不寫死({r} 只在 wd.note.billed)
 //      一列一行(名字 + 小字,沒有第二行起手句);點列 = 「跟我討論要怎麼用〈資料名〉做策略」(模板 wd.ask × 每列的 .an):
@@ -9,7 +9,7 @@
 //   ③ Electron(offscreen、show:false,不會出現在螢幕上):對比版兩欄且免費在前、右欄不上鎖不變灰、單一清單一欄且無 TWD 字樣、
 //      點列 → 那一句落進輸入框、不送出、自己打的草稿留著;列高與熱區實測 ≥ 44、窄欄小字折到名字下面;
 //      A2 版面:記號與標題同一行(記號在左、圖形對標題中線)、記號／籤／小標／卡／頁尾同一條左軸、清單是一張卡(列有底色、頭尾收圓角,兩欄各一張)、小字靠右成欄、hover 換色、狀態句在頁尾同一行;
-//      中欄 <700 上下疊;看全部資料 = 同一塊換成目錄(對比版多「來源」欄)
+//      中欄 <760 上下疊;看全部資料 = 同一塊換成目錄(對比版多「來源」欄)
 // 跑法:node tests/check_shell_welcome_data.js(③ 要 BLAVE_TEST_WINDOW=1,①② 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
@@ -58,8 +58,8 @@ if (!process.versions.electron) {
     /wdPaint\(\)/.test(cutFn(appSrc, "acctPaint")) && /acct = await window\.blave\.accountStatus\(\); acctAt = Date\.now\(\);\n[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc)
     && /\[data-i18n-aria\]"\)\.forEach[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);[^\n]*\n\}/.test(appSrc) && /hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc));
   ok("② 起手籤整個拿掉:app.js 沒有 chat-eg,兩語字串表與 .po 都沒有 ws.chatExample", !/chat-eg/.test(appSrc) && !("ws.chatExample" in STR.zh) && !("ws.chatExample" in STR.en) && !/ws\.chatExample/.test(read(path.join(SHELL, "i18n", "zh.po")) + read(path.join(SHELL, "i18n", "en.po"))));
-  ok("② welcome.css:.main-empty 是容器(container-type)、兩欄只在 ≥700 的容器查詢裡、免費欄不靠 order 換位(DOM 順序就是免費在前)、不寫 hex、減少動態有收;小字不 nowrap(設計稽核 2);清單在時 .wc-inner 上對齊不置中(稽核 4);目錄分組標籤用 .wl-cap(稽核 1)",
-    /\.main-empty \{ container-type: inline-size; \}/.test(css) && /@container \(min-width: 700px\) \{\s*\.wl-body\.cmp2 \{ grid-template-columns: 1fr 1fr;/.test(css)
+  ok("② welcome.css:.main-empty 是容器(container-type)、兩欄只在 ≥760 的容器查詢裡、免費欄不靠 order 換位(DOM 順序就是免費在前)、不寫 hex、減少動態有收;小字不 nowrap(設計稽核 2);清單在時 .wc-inner 上對齊不置中(稽核 4);目錄分組標籤用 .wl-cap(稽核 1)",
+    /\.main-empty \{ container-type: inline-size; \}/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2 \{ grid-template-columns: 1fr 1fr;/.test(css)
     && /\.wl-body \{[^}]*grid-template-columns: 1fr;/.test(css) && !/\border:\s*-?\d/.test(css) && !/#[0-9a-fA-F]{3,8}\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")) && /prefers-reduced-motion/.test(css)
     && !/\.wd-mt \{[^}]*nowrap/.test(css) && /\.wc-inner:has\(\.wl\) \{ margin: 0 0 auto; padding-top: var\(--space-32\); \}/.test(css) && !/wd-cap/.test(src + css) && /wdEl\("span", "wl-cap"/.test(src));
   ok("② 右欄不上鎖不變灰:welcome.js 不給列 disabled / aria-disabled / 鎖的 class;每一列都是 button", !/disabled|is-locked|lock/i.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && /wdEl\("button", "wd-row"\)/.test(src));
@@ -124,8 +124,8 @@ if (!process.versions.electron) {
       && /\.wd-row:hover \{ background: var\(--surface-muted\); \}/.test(css) && /\.wd-row:hover \.wd-mt \{ color: var\(--ink-2\); \}/.test(css) && /\.wd-row:hover::after \{ color: var\(--ink\); \}/.test(css)
       && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after \{ transition: none; \} \}/.test(css)
       && !/wd-go|"go"/.test(src));
-    ok("② 完整目錄:開著時 .wc-inner 放寬到 1040、「一列一塊」的斷點 860(兩欄清單的 700 不動)、一列一塊時列與分組列左右內距 12(左緣對齊標題);單一清單(沒有來源欄)不講 wd.foot.1",
-      /\.wc-inner:has\(\.wd-catw\) \{ max-width: 1040px; \}/.test(css) && /@container \(max-width: 859\.98px\) \{\s*\.wd-cat thead/.test(css) && !/699\.98/.test(css) && /@container \(min-width: 700px\) \{\s*\.wl-body\.cmp2/.test(css)
+    ok("② 完整目錄:開著時 .wc-inner 放寬到 1040、「一列一塊」的斷點 860(兩欄清單的斷點另計:760)、一列一塊時列與分組列左右內距 12(左緣對齊標題);單一清單(沒有來源欄)不講 wd.foot.1",
+      /\.wc-inner:has\(\.wd-catw\) \{ max-width: 1040px; \}/.test(css) && /@container \(max-width: 859\.98px\) \{\s*\.wd-cat thead/.test(css) && !/699\.98/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css)
       && /\.wd-cat tr \{ padding: var\(--space-12\); /.test(css) && /\.wd-cat tr\.g \{ padding: var\(--space-24\) var\(--space-12\) var\(--space-4\); /.test(css) && /\.wd-cat tbody tr:first-child\.g \{ padding-top: var\(--space-4\); \}/.test(css)
       && /if \(src\) foot\.appendChild\(wdEl\("p", "", t\("wd\.foot\.1"\)\)\);/.test(cutFn(src, "wdCatalog")) && (cutFn(src, "wdCatalog").match(/wd\.foot\.1/g) || []).length === 1);
     ok("② 第一次上色不靠載入順序:welcome.js 檔尾在 applyStatic 已經跑過時(#wl-seg 的 aria-label 是它填的)自己補畫一次", /\nif \(\$\("wl-seg"\)\.hasAttribute\("aria-label"\)\) wdPaint\(\);\n$/.test(src) && /id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html) && !/id="wl-seg"[^>]*\saria-label=/.test(html));
@@ -296,7 +296,7 @@ app.whenReady().then(async () => {
     ok("③ 市場分段三格的熱區實測 ≥ 44(視覺 30 高、::before 上下外擴,沒有被容器裁掉)", sh.length === 3 && sh.every((x) => x.h === 30 && x.hit >= 44), JSON.stringify(sh)); }
   // 窄:上下疊、免費在上
   w.setSize(1000, 900); await wait(400); s = await snap();
-  ok("③ 1000 寬(中欄 < 700):上下疊、免費欄在上", s.cmp2 && s.cols.length === 2 && s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
+  ok("③ 1000 寬(中欄 < 760):上下疊、免費欄在上", s.cmp2 && s.cols.length === 2 && s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
   w.setSize(1600, 900); await wait(400);
   // 台指期:免費欄是日線那一列(期交所),分線在 Blave 欄
   await js(`$("wl-seg").querySelector('[data-mk="txf"]').click()`); await wait(50); s = await snap();

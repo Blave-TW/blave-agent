@@ -3,7 +3,7 @@
    整份清單是一張卡(--surface-card、--radius-lg),沒有包裝元素:列自己上底色、頭尾兩列收圓角、列之間 hairline(welcome.js 的 DOM 不必動)。
    一列一行:名字靠左、小字靠右成欄、行尾 ›;放不下時小字整段折到名字下面;整列可點、列與列緊貼,所以列高下限 44 就是熱區(單行時字在 44 裡垂直置中);
    市場分段沿用 .lib-seg(Outlined control segment);小標同 .sug-cap(13/600 --ink-3);文字鈕沿用 .btn-quiet。
-   兩欄 vs 上下疊看中欄寬、不看視窗寬:.main-empty 是容器,內容寬 ≥ 700 才並排;免費欄永遠在前(窄時在上)。 */
+   兩欄 vs 上下疊看中欄寬、不看視窗寬:.main-empty 是容器,內容寬 ≥ 760 才並排(700 時每欄 344、列內可用 294,最長的英文列要 314 會折行——設計稽核);免費欄永遠在前(窄時在上)。 */
 .main-empty { container-type: inline-size; }
 /* 清單在籤下面之後,內容高度隨市場／模式變,垂直置中會跳:改上對齊、頂部留 32(不用 min-height 鎖高) */
 .wc-inner { width: 100%; max-width: 780px; }
@@ -60,7 +60,7 @@
 .wl-foot > .btn-quiet:hover { color: var(--ink); }
 /* 兩欄並排:兩欄的子項(欄頭、每一列)直接排進同一張格線,同一橫排同高——右欄欄頭那句折成兩行時,兩條 hairline 與第一列仍對齊。
    .wl-col 變成 display: contents 後自己的 min-width: 0 不作用,改掛到子項 */
-@container (min-width: 700px) {
+@container (min-width: 760px) {
   .wl-body.cmp2 { grid-template-columns: 1fr 1fr; gap: 0 var(--space-16); grid-auto-flow: row dense; }
   .wl-body.cmp2 .wl-col { display: contents; }
   .wl-body.cmp2 .wl-col > * { min-width: 0; }
