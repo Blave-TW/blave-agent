@@ -3679,11 +3679,38 @@ def fetch_twmarket_turnover(start, end, headers):
     )
 
 
+def _inst_off_total(df):
+    """Rows where foreign + investment_trust + dealer is not 合計 (NaN counts as off)."""
+    return ~((df['foreign'] + df['investment_trust'] + df['dealer'] - df['total']).abs() <= 0.5)
+
+
+def _drop_twmarket_inst_off_total():
+    """The Blave series used to add 外資自營商 to dealer a second time (it is already inside
+    自營商), and past rows in the cache are never re-fetched. Delete the cached file while any row
+    is off 合計; mark it good only once a file passes, so a copy downloaded before the api served
+    the fix is dropped again on the next call instead of frozen. NaN rows are skipped: they
+    cannot be told apart from a source gap and would re-download forever."""
+    path = _single_path('twmarket_institutional', {'id': 'TWSE'})
+    good = path.with_name(f'{path.name}.dealer_sum')
+    if good.exists():
+        return
+    try:
+        df = pd.read_parquet(path, columns=_TWMARKET_INST_COLUMNS)
+    except Exception:
+        return                            # nothing cached yet, or an old monthly dir not migrated
+    if _inst_off_total(df.dropna()).any():
+        path.unlink(missing_ok=True)
+    else:
+        good.touch()
+
+
 def fetch_twmarket_institutional(start, end, headers):
     """全市場三大法人每日買賣超. Returns DataFrame with columns:
     foreign / investment_trust / dealer / total,皆為淨買賣超金額（元,買 - 賣）。
-    2004-04-07 起。外資自營商計入 dealer,不計入 foreign。
+    2004-04-07 起。foreign + investment_trust + dealer = total:外資自營商已含在 dealer
+    (自營商)裡,foreign 不含外資自營商。
     個股層級請改用 fetch_twstock_institutional。"""
+    _drop_twmarket_inst_off_total()
     return _extend_cache_monthly(
         'twmarket_institutional', {'id': 'TWSE'},
         lambda s, e: _fetch_twmarket_raw('institutional', _TWMARKET_INST_COLUMNS, s, e, headers),
@@ -4178,9 +4205,11 @@ PUBLIC_SOURCE_EN = {_TW_PUBLIC_SOURCE_ZH: _TW_PUBLIC_SOURCE_EN, _TWSE_SOURCE_ZH:
 _TWSE_NO_DATA = ('很抱歉', '沒有符合條件', '查詢日期大於', '查詢日期小於')
 # BFI82U row names changed twice per side: 外資 → 外資及陸資 (2009-05) → 外資及陸資(不含外資自營商)
 # + 外資自營商 (2017-12-18); 自營商 → 自營商(自行買賣) + 自營商(避險) (2014-12-01). One day only ever
-# carries one era's names, so each bucket is summed from rows that never overlap.
+# carries one era's names, so each bucket is summed from rows that never overlap. 外資自營商 maps to
+# None: TWSE already counts it inside 自營商 and leaves it out of 合計, so foreign + investment_trust
+# + dealer = 合計 on every day.
 _BFI82U_BUCKET = {'外資': 'foreign', '外資及陸資': 'foreign', '外資及陸資(不含外資自營商)': 'foreign',
-                  '外資自營商': 'dealer', '投信': 'investment_trust', '自營商': 'dealer',
+                  '外資自營商': None, '投信': 'investment_trust', '自營商': 'dealer',
                   '自營商(自行買賣)': 'dealer', '自營商(避險)': 'dealer', '合計': 'total'}
 _TAIFEX_INST_COMMODITY = {'TX': 'TXF', 'MTX': 'MXF', 'TMF': 'TMF'}
 _TAIFEX_INVESTOR = {'外資及陸資': 'foreign', '外資': 'foreign', '投信': 'investment_trust', '自營商': 'dealer'}
@@ -4253,7 +4282,8 @@ def _bfi82u_row(j):
         if name not in _BFI82U_BUCKET:   # an unmapped rename would be cached as a NaN column for good
             raise TwPublicUnavailable(f'TWSE BFI82U: unknown row {name[:20]}')
         bucket = _BFI82U_BUCKET[name]
-        net[bucket] = net.get(bucket, 0.0) + _tw_num(x[3])
+        if bucket is not None:
+            net[bucket] = net.get(bucket, 0.0) + _tw_num(x[3])
     out = tuple(net.get(c, float('nan')) for c in _TWMARKET_INST_COLUMNS)
     if np.isnan(out).any():   # a missing row or '--' would be cached as NaN for good
         raise TwPublicUnavailable(f'TWSE BFI82U: missing or blank row ({sorted(net)})')
@@ -4294,20 +4324,21 @@ def fetch_twmarket_turnover_public(start, end):
     return _public_series('turnover', raw, start, end, 'TWSE')
 
 
-def _drop_bfi82u_nan_months():
-    """Before the pre-2017-12-18 row names were mapped, months up to 2017-12 were cached with
-    NaN foreign (and dealer up to 2014-11) — past months are never re-fetched, so delete those
-    files once to have them fetched again. Only the broken months go (a kind/version bump would
+def _drop_bfi82u_stale_months():
+    """Months cached by older mappings are wrong and, being past, never re-fetched: up to 2017-12
+    NaN foreign (dealer up to 2014-11) from the unmapped old row names, and from 2017-12-18
+    dealer + 外資自營商 again. Both show as foreign + investment_trust + dealer ≠ total, so delete
+    exactly those month files once. Only the broken months go (a kind/version bump would
     re-download every correct day at 3 s each); the marker makes it a single pass per machine."""
     d = _monthly_cache_dir('twmarket_public', {'kind': 'institutional'})
-    marker = d / '.bfi82u_legacy_rows'
+    marker = d / '.bfi82u_dealer_sum'
     if marker.exists():
         return
     for path in d.glob('*.parquet'):
         try:
-            if not {'foreign', 'dealer'} <= set(pq.read_schema(path).names):
+            if not set(_TWMARKET_INST_COLUMNS) <= set(pq.read_schema(path).names):
                 continue                      # empty-month marker
-            if pd.read_parquet(path, columns=['foreign', 'dealer']).isna().any().any():
+            if _inst_off_total(pd.read_parquet(path, columns=_TWMARKET_INST_COLUMNS)).any():
                 path.unlink(missing_ok=True)
         except Exception:
             path.unlink(missing_ok=True)      # unreadable → re-fetch, as _extend_cache_monthly would
@@ -4317,10 +4348,11 @@ def _drop_bfi82u_nan_months():
 
 def fetch_twmarket_institutional_public(start, end):
     """fetch_twmarket_institutional from TWSE BFI82U, one trading day per request (net 元;
-    外資自營商 counted in dealer, as the Blave series). From 2004-05-03; before 2017-12-18 TWSE
-    prints one 外資(及陸資) row with no 外資自營商 split, and it lands in foreign."""
+    foreign + investment_trust + dealer = total, as the Blave series: 外資自營商 is already inside
+    自營商 and is not added again). From 2004-05-03; before 2017-12-18 TWSE prints one 外資(及陸資)
+    row with no 外資自營商 split, and it lands in foreign."""
     _tw_market_public_gate()
-    _drop_bfi82u_nan_months()
+    _drop_bfi82u_stale_months()
     raw = lambda s, e: _twse_daily_raw(_TWSE_BFI82U, 'BFI82U', lambda d: {'type': 'day', 'dayDate': d},
                                        _TWMARKET_INST_COLUMNS, _bfi82u_row, s, e)
     # one request per day: a cold ten-year span is hours, so each month is kept as it lands

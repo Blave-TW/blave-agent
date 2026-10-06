@@ -416,10 +416,11 @@ taiex = fetch_twmarket_index("2024-01-01", "2026-07-28", hdrs)   # DatetimeIndex
 Notes:
 - `TAIEX` is the only supported `index_id`; any other value returns 400. The index carries no
   volume column — market turnover comes from `fetch_twmarket_turnover`, keyed on the same dates.
-- In `fetch_twmarket_institutional`, 外資自營商 (foreign dealers' own account) is counted in
-  `dealer`, not in `foreign` — the same bucketing FinMind uses. TWSE prints 外資自營商 as its own
-  row only from 2017-12-18; before that there is one 外資(及陸資) row, taken whole as `foreign`
-  (in both this series and the key-free twin).
+- In `fetch_twmarket_institutional`, `foreign + investment_trust + dealer = total` on every day,
+  as TWSE publishes it. 外資自營商 (foreign dealers' own account) is already inside 自營商, so it
+  is part of `dealer` once and never part of `foreign` (`foreign` is 外資及陸資(不含外資自營商)).
+  TWSE prints 外資自營商 as its own row only from 2017-12-18; before that there is one
+  外資(及陸資) row, taken whole as `foreign` (in both this series and the key-free twin).
 - Margin balances are whole-market; `margin_balance_value` is the only TWD column, the rest are lots.
 - TXO put/call ratio is a futures/options dataset — see `fetch_twfutures_pcr` in
   `references/twfutures.md`, not here.

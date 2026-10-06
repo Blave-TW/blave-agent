@@ -1,17 +1,18 @@
 """Minimal check: TWSE BFI82U row names from every era land in the right fetch_twmarket_institutional
-column, and months cached while the old names were unmapped (NaN foreign / dealer) get fetched
-again exactly once. No network: answers recorded 2026-10-06 (tests/fixtures/tw_market_public/
-twse_bfi82u_legacy_eras.json), the index of trading days is stubbed.
+column, and months cached under an older mapping (NaN foreign / dealer, or 外資自營商 counted in
+dealer twice) get fetched again exactly once. No network: answers recorded 2026-10-06
+(tests/fixtures/tw_market_public/twse_bfi82u_legacy_eras.json), the index of trading days is stubbed.
 
   - 2004-05-03 外資 / 自營商, 2009-05-15 外資及陸資 / 自營商, 2017-12-15 外資及陸資 / 自營商(自行買賣)
     + 自營商(避險), 2017-12-18 外資及陸資(不含外資自營商) + 外資自營商, 2024-03-15 the same with a
-    non-zero 外資自營商: no NaN, nets as TWSE prints them (= FinMind / the Blave series). Before
-    2017-12-18 the three buckets add up to 合計; from then on they do not (TWSE leaves 外資自營商,
-    already inside 自營商, out of 合計, and the series puts it in dealer), so only values are checked
+    non-zero 外資自營商: no NaN, nets as TWSE prints them (= FinMind / the Blave series), and on
+    every day foreign + investment_trust + dealer = 合計 (外資自營商 is already inside 自營商)
   - an unknown row name, a missing bucket row or a '--' value raises instead of caching NaN
-  - a cached month with NaN foreign or dealer is re-fetched; clean months are not; the sweep is
-    a single pass, so a later call makes no BFI82U request
+  - a cached month that is off 合計 (NaN, or dealer with 外資自營商 added again) is re-fetched;
+    clean months are not; the sweep is a single pass, so a later call makes no BFI82U request
   - a fetch cut short keeps the months already fetched (one request per day: month by month)
+  - the Blave series cache: a file off 合計 is dropped on every call until a download passes
+    (an api still serving the old dealer cannot freeze it), then never read again
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_bfi82u_legacy_rows.py
 """
@@ -46,22 +47,21 @@ def check(cond, msg):
 
 
 # foreign, investment_trust, dealer, total — TWSE 買賣差額, identical to FinMind on each day
+OLD_DEALER_20240315 = 1309064588 - 5302430482 - 56080   # 外資自營商 counted in dealer again
 WANT = {
     "20040503": (-6599853336, -255269212, -2487324350, -9342446898),
     "20090515": (-2987265191, None, None, None),
     "20171215": (-4280447060, -146756178, -287719946 - 2702385082, -7417308266),
-    "20171218": (-126160633, 1015915590, -47890474 - 130946756 + 0, 710917727),
-    # 外資自營商 -56,080: in foreign instead of dealer, both columns are off by it
-    "20240315": (-11716251664, 2089574058, 1309064588 - 5302430482 - 56080, -13620043500),
+    "20171218": (-126160633, 1015915590, -47890474 - 130946756, 710917727),
+    # 外資自營商 -56,080: in foreign or in dealer, that column is off by it and the sum breaks
+    "20240315": (-11716251664, 2089574058, 1309064588 - 5302430482, -13620043500),
 }
 for day, want in WANT.items():
     got = D._bfi82u_row(ERAS[day])
     names = [r[0] for r in ERAS[day]["data"]]
-    sums = got[0] + got[1] + got[2] == got[3] if day < "20171218" else True
     check(not any(math.isnan(v) for v in got)
-          and all(w is None or g == w for g, w in zip(got, want)) and sums,
-          f"{day} {names[:-1]}: no NaN, nets as printed"
-          + (", foreign+trust+dealer = 合計" if day < "20171218" else ""))
+          and all(w is None or g == w for g, w in zip(got, want)) and got[0] + got[1] + got[2] == got[3],
+          f"{day} {names[:-1]}: no NaN, nets as printed, foreign+trust+dealer = 合計")
 
 
 def raises(body):
@@ -142,14 +142,18 @@ pd.DataFrame([[nan, -146756178.0, -2990105028.0, -7417308266.0],
 clean = pd.DataFrame([[1.0, 2.0, 3.0, 6.0]], columns=cols, index=pd.to_datetime(["2018-01-02"]))
 clean.to_parquet(cache / "2018-01.parquet")
 pd.DataFrame().to_parquet(cache / "2010-02.parquet")   # empty-month marker
+# as the double-counting mapping cached it: dealer includes 外資自營商, so the sum is 56,080 off
+pd.DataFrame([[-11716251664.0, 2089574058.0, float(OLD_DEALER_20240315), -13620043500.0]],
+             columns=cols, index=pd.to_datetime(["2024-03-15"])).to_parquet(cache / "2024-03.parquet")
 
 df = D.fetch_twmarket_institutional_public("2004-05-01", "2004-05-31")
 check(s.days == ["20040503"] and df.loc["2004-05-03", "foreign"] == -6599853336.0
       and df.loc["2004-05-03", "dealer"] == -2487324350.0,
       f"2004-05 cached with NaN foreign/dealer: re-fetched ({s.days}), now 外資 / 自營商 values")
-check(not (cache / "2017-12.parquet").exists() and (cache / "2018-01.parquet").exists()
-      and (cache / "2010-02.parquet").exists(),
-      "same pass dropped 2017-12 (NaN on 12-15 only), kept the clean month and the empty marker")
+check(not (cache / "2017-12.parquet").exists() and not (cache / "2024-03.parquet").exists()
+      and (cache / "2018-01.parquet").exists() and (cache / "2010-02.parquet").exists(),
+      "same pass dropped 2017-12 (NaN on 12-15 only) and 2024-03 (外資自營商 in dealer twice), "
+      "kept the clean month and the empty marker")
 s.days.clear()
 df = D.fetch_twmarket_institutional_public("2017-12-01", "2017-12-31")
 check(s.days == ["20171215", "20171218"] and not df.isna().any().any()
@@ -173,8 +177,37 @@ except D.TwPublicUnavailable:
     cut = True
 check(cut and s.days == ["20240315", "20240401"] and (cache / "2024-03.parquet").exists()
       and not (cache / "2024-04.parquet").exists()
-      and pd.read_parquet(cache / "2024-03.parquet").loc["2024-03-15", "dealer"] == -3993421974.0,
-      "fetch cut short in 2024-04: 2024-03 already cached, not fetched again next run")
+      and pd.read_parquet(cache / "2024-03.parquet").loc["2024-03-15", "dealer"] == WANT["20240315"][2],
+      "2024-03 re-fetched with dealer = 自營商 only; fetch cut short in 2024-04 keeps 2024-03 on disk")
+
+# ── Blave series cache: dropped while off 合計, until a download passes ──
+api_rows = {"old": OLD_DEALER_20240315, "fixed": WANT["20240315"][2]}
+served, raw_calls = ["old"], []
+
+
+def blave_raw(endpoint, columns, start, end, headers):
+    raw_calls.append((start, end))
+    f, t, _, tot = WANT["20240315"]
+    return pd.DataFrame([[float(f), float(t), float(api_rows[served[0]]), float(tot)]],
+                        columns=columns, index=pd.to_datetime(["2024-03-15"]))
+
+
+D._fetch_twmarket_raw = blave_raw
+blave = D._single_path("twmarket_institutional", {"id": "TWSE"})
+good = blave.with_name(blave.name + ".dealer_sum")
+dealer = lambda: D.fetch_twmarket_institutional("2024-03-01", "2024-03-31", {}).loc["2024-03-15", "dealer"]
+first = dealer()                       # cold, api still on the old dealer
+second = dealer()                      # off 合計 → dropped, re-downloaded (still old)
+check(first == second == OLD_DEALER_20240315 and len(raw_calls) == 2 and not good.exists(),
+      f"api not fixed yet: off-合計 file dropped and re-downloaded each call ({len(raw_calls)}), not marked good")
+served[0] = "fixed"
+third = dealer()
+fourth = dealer()
+check(third == fourth == WANT["20240315"][2] and len(raw_calls) == 3 and good.exists(),
+      f"api fixed: next call replaces the file, the one after passes and marks it good ({len(raw_calls)} downloads)")
+served[0] = "old"
+check(dealer() == WANT["20240315"][2] and len(raw_calls) == 3,
+      "marked good: never re-checked or re-downloaded")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)
