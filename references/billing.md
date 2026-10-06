@@ -118,7 +118,7 @@ write, cache read, output). Prices are TWD per 1M tokens (`LLM_PRICING`):
 | Fable 5.1 | 400 | 500 | 10 | 2000 |
 | Opus 4.8 (legacy) | 200 | 250 | 20 | 1000 |
 | Fable 5 (legacy) | 400 | 500 | 40 | 2000 |
-| deepseek-v4-flash | 8.25 | 8.25 | 0.275 | 24.75 |
+| deepseek-v4-flash | 5.5 | 5.5 | 0.11 | 22 |
 | deepseek-v4-pro | 24.75 | 24.75 | 0.825 | 74.25 |
 
 - Claude prices = list price USD × 1.25 × 32 TWD/USD; DeepSeek = list price RMB × 4.4 × 1.25.
