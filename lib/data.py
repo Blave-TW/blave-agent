@@ -4060,11 +4060,19 @@ def fetch_twfutures_ohlcv_batch(symbols, schema, start, end, headers, max_worker
     return results
 
 
+_TW_BAV_START = '2018-02-22'   # first row the server has (blave-quant-skill: "Data from 2018-02-22 (TXF)")
+
+
 def _fetch_twfutures_bid_ask_vol_raw(start, end, headers):
     """Raw bid/ask vol for [start, end], one request per ≤31 days (the endpoint's cap), so a
-    calendar month is one request. The endpoint reads through end + 1 day by itself."""
+    calendar month is one request. The endpoint reads through end + 1 day by itself.
+
+    Two tries per request (≈2 min at worst: 60 s × 2 + 2 s), not _retry_get's six (≈7 min): a
+    live tick must not sit that long, and a cold backfill resumes from the months already
+    cached. Nothing is asked before _TW_BAV_START — a range with no data at all is a 503 that
+    makes the server query its upstream again on every try."""
     _check_data_access(headers)
-    s = datetime.strptime(start, '%Y-%m-%d')
+    s = datetime.strptime(max(start, _TW_BAV_START), '%Y-%m-%d')
     e = datetime.utcnow() if not end else datetime.strptime(end, '%Y-%m-%d')
 
     rows, cursor = [], s
@@ -4072,6 +4080,7 @@ def _fetch_twfutures_bid_ask_vol_raw(start, end, headers):
         chunk_end = min(cursor + timedelta(days=31), e)
         r = _retry_get(
             f'{BASE}/studio/market/twfutures/bid_ask_vol/TXF',
+            max_retries=2,
             headers=headers,
             params={'start': cursor.strftime('%Y-%m-%d'), 'end': chunk_end.strftime('%Y-%m-%d')},
             timeout=60,
@@ -4517,6 +4526,19 @@ def _txf_daily_with_taifex_head(blave, traded, start, end):
     return df
 
 
+# Third Wednesday that was closed → the day TXF settled instead. Every case since the Blave TXF
+# series begins (2011), the same four txf_settlement_mask's docstring and the API's settlement
+# calendar name; the two inside the bid/ask history (2018-02-22 on) were checked against the
+# server's own TXF bar and bid/ask stores, where they are the only third Wednesdays without a
+# day session. A postponement after 2026 is not here until someone adds it.
+_TXF_POSTPONED_SETTLEMENT = {
+    '2013-08-21': '2013-08-22',   # typhoon
+    '2015-02-18': '2015-02-24',   # Lunar New Year
+    '2023-01-18': '2023-01-30',   # Lunar New Year
+    '2026-02-18': '2026-02-23',   # Lunar New Year
+}
+
+
 def _drop_txf_settlement_window(df):
     """Bid/ask rows without the ones between the expiring month's 13:30 close and the 15:00
     night open on monthly settlement days — the continuous series is the expiring month for
@@ -4530,18 +4552,24 @@ def _drop_txf_settlement_window(df):
     month's last minute and stays. Any other day loses only 13:31–14:59, which is past the
     close under either label.
 
-    Settlement days come from txf_settlement_mask (postponed ones included): a mark sitting in
-    a day session before 13:30 is that day's own last row. The first day of the frame is never
-    taken as one — nothing before it shows whether the third Wednesday was closed."""
-    if len(df.index) < 2:
+    Settlement day = the third Wednesday, or its entry in _TXF_POSTPONED_SETTLEMENT — a fixed
+    calendar, NOT txf_settlement_mask's reading of the index: there a third Wednesday without
+    rows moves the settlement to the next day that has some, which is right for flattening a
+    position (once too often costs nothing) and wrong for deleting rows, because a hole in the
+    cache looks exactly like a closed market. A third Wednesday with no rows and no entry
+    deletes nothing; a postponed settlement not listed yet is left to the server, which no
+    longer produces those rows."""
+    if df.empty:
         return df
     utc = df.index.tz_localize('UTC') if df.index.tz is None else df.index.tz_convert('UTC')
     local = utc.tz_convert('Asia/Taipei')
     hm = local.hour * 100 + local.minute
     day = local.normalize()
-    session = (hm >= 845) & (hm < 1500)
-    marked = day[txf_settlement_mask(df.index).to_numpy() & (hm >= 800) & (hm < 1330)]
-    on_settle = session & day.isin(marked[marked > day[session].min()])
+    settle = []
+    for first in pd.date_range(local.min().strftime('%Y-%m-01'), local.max().strftime('%Y-%m-%d'), freq='MS'):
+        wed = (first + pd.Timedelta(days=(2 - first.weekday()) % 7 + 14)).strftime('%Y-%m-%d')
+        settle.append(_TXF_POSTPONED_SETTLEMENT.get(wed, wed))
+    on_settle = (hm >= 845) & (hm < 1500) & day.isin(pd.DatetimeIndex(settle, tz='Asia/Taipei'))
     if not on_settle.any():
         return df
     rows = pd.DataFrame({'day': day[on_settle], 'hm': hm[on_settle],
@@ -4557,7 +4585,7 @@ def fetch_twfutures_bid_ask_vol(start, end, headers):
 
     Columns: bid_vol (內盤口數), ask_vol (外盤口數), total_vol (總口數).
     Both day session (08:45-13:45 TWN) and night session included.
-    (History range: see the blave-quant skill / Notion API doc.)
+    History from 2018-02-22; an earlier start is clamped to it.
     Monthly cache: cache/twfutures_bav_TXF/YYYY-MM.parquet, one request and one file per
     month, so a cold fetch cut short resumes with the months it lacks. Settlement day follows
     the bars' roll rule — no rows between the 13:30 close and the 15:00 night open — applied
@@ -4567,14 +4595,13 @@ def fetch_twfutures_bid_ask_vol(start, end, headers):
     result = _extend_cache_monthly(
         'twfutures_bav', {'symbol': 'TXF'},
         lambda s, e: _fetch_twfutures_bid_ask_vol_raw(s, e, headers),
-        start[:8] + '01', end,       # whole first month: the filter reads its third Wednesday
+        max(start, _TW_BAV_START), end,
         empty_marker_ttl_hours=24,   # history is backfilled progressively server-side
         month_by_month=True,
     )
     if result.empty:
         return result
     result = _drop_txf_settlement_window(result)
-    result = result[result.index >= pd.Timestamp(start)]
     for col in ['bid_vol', 'ask_vol', 'total_vol']:
         if col in result.columns:
             result[col] = result[col].astype(int)

@@ -14,7 +14,7 @@ cache/
 │   ├── 2020-03.parquet
 │   ├── 2020-04.parquet
 │   └── ...
-├── twfutures_bav_TXF/         ← bid/ask vol (monthly since 2022-01)
+├── twfutures_bav_TXF/         ← bid/ask vol (monthly since 2018-02)
 │   └── ...
 ├── twstock_price_2330.parquet      ← daily 台股/台市 datasets: ONE file per stock, coverage meta in the parquet footer (see below)
 ├── twstock_daily_2330_twse/   ← 台股日K from the exchange itself (src = twse / tpex / finmind), monthly files
