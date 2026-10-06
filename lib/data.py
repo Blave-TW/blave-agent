@@ -4254,9 +4254,10 @@ def _bfi82u_row(j):
             raise TwPublicUnavailable(f'TWSE BFI82U: unknown row {name[:20]}')
         bucket = _BFI82U_BUCKET[name]
         net[bucket] = net.get(bucket, 0.0) + _tw_num(x[3])
-    if 'total' not in net:
-        raise TwPublicUnavailable('TWSE BFI82U: no 合計 row')
-    return tuple(net.get(c, float('nan')) for c in _TWMARKET_INST_COLUMNS)
+    out = tuple(net.get(c, float('nan')) for c in _TWMARKET_INST_COLUMNS)
+    if np.isnan(out).any():   # a missing row or '--' would be cached as NaN for good
+        raise TwPublicUnavailable(f'TWSE BFI82U: missing or blank row ({sorted(net)})')
+    return out
 
 
 def _mi_margn_row(j):
@@ -4270,9 +4271,10 @@ def _mi_margn_row(j):
     return _tw_num(m[5]), _tw_num(m[4]), _tw_num(v[5]) * 1000, _tw_num(s[5]), _tw_num(s[4])
 
 
-def _public_series(kind, raw, start, end, source):
+def _public_series(kind, raw, start, end, source, month_by_month=False):
     _tw_market_public_gate()
-    df = _extend_cache_monthly('twmarket_public', {'kind': kind}, raw, start, end)
+    df = _extend_cache_monthly('twmarket_public', {'kind': kind}, raw, start, end,
+                               month_by_month=month_by_month)
     df.attrs['source'] = source
     return df
 
@@ -4321,7 +4323,8 @@ def fetch_twmarket_institutional_public(start, end):
     _drop_bfi82u_nan_months()
     raw = lambda s, e: _twse_daily_raw(_TWSE_BFI82U, 'BFI82U', lambda d: {'type': 'day', 'dayDate': d},
                                        _TWMARKET_INST_COLUMNS, _bfi82u_row, s, e)
-    return _public_series('institutional', raw, start, end, 'TWSE')
+    # one request per day: a cold ten-year span is hours, so each month is kept as it lands
+    return _public_series('institutional', raw, start, end, 'TWSE', month_by_month=True)
 
 
 def fetch_twmarket_margin_public(start, end):
@@ -4329,7 +4332,7 @@ def fetch_twmarket_margin_public(start, end):
     (balances in 張, margin_balance_value 元 = 融資金額仟元 × 1,000)."""
     raw = lambda s, e: _twse_daily_raw(_TWSE_MI_MARGN, 'MI_MARGN', lambda d: {'date': d, 'selectType': 'MS'},
                                        _TWMARKET_MARGIN_COLUMNS, _mi_margn_row, s, e)
-    return _public_series('margin', raw, start, end, 'TWSE')
+    return _public_series('margin', raw, start, end, 'TWSE', month_by_month=True)
 
 
 def _tw_public_post(url, data, tries=3):
