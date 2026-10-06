@@ -1239,6 +1239,12 @@ function rpBodyPaint(B) {
 /* 點過的雲端報告留一份:再點同一支先畫這份、背景再抓(同網頁工作頁「先有東西、抓到才換」);rpcSeq = 最後一次點的那一趟 */
 const RPC_CACHE = new Map();
 let rpcSeq = 0;
+/* 雲端主機把新結果同步到平台比回合結束晚幾秒到幾十秒,回合結束那一次重抓常拿到舊的;從網頁發起的回合這裡也收不到結束。
+   由清單輪詢接(rpCloudWatch):開著那支的內容指紋變了才補抓。基準在選中時記,選的那一下已經抓過;回合中只記欠著,結束時補 */
+const RPC_SEEN = { name: null, sig: null };
+let rpcOwed = false;
+// api 逐檔的 sig;部署前寫入的舊快取沒有 sig 才看 updated_at。兩個都沒有 = null = 不追蹤(否則每輪都當成變了)
+function rpCloudSig(x) { return !x ? null : x.sig != null ? x.sig : x.mtime != null ? x.mtime : null; }
 // 還沒拿到報告時那一袋的 data:頁首先放清單上的名字,本體由 rpBodyPaint 畫等待 / 讀不到
 function rpPending(name, state) {
   const x = envCloudList(TR_BAGS.cloud.st).find((y) => y.name === name);
@@ -1251,7 +1257,8 @@ function rpCloudPaint() {
 async function rpCloudSelect(name, force) {
   if (name === RPC.name && !force) return;
   const seq = ++rpcSeq;
-  RPC.name = name; RPC.drawn = {};
+  RPC.name = name; RPC.drawn = {}; rpcOwed = false;
+  if (RPC_SEEN.name !== name) { RPC_SEEN.name = name; RPC_SEEN.sig = name ? rpCloudSig(envCloudList(TR_BAGS.cloud.st).find((y) => y.name === name)) : null; }
   if (name && typeof libLeave === "function") libLeave("cloud");   // 雲端視角的策略庫也收(renderer/library.js)
   if (name && typeof rptLeave === "function") rptLeave("cloud");   // 雲端視角的報告也收(renderer/reports.js)
   ENV.sig.side = null;                            // 側欄的 aria-current 跟著換
@@ -1282,6 +1289,36 @@ async function rpCloudSelect(name, force) {
 function rpCloudPrune(list) {
   for (const k of [...RPC_CACHE.keys()]) if (!list.some((x) => x.name === k)) RPC_CACHE.delete(k);   // 不在清單上的報告不留
   if (RPC.name && !list.some((x) => x.name === RPC.name)) rpCloudSelect(null);
+}
+// 清單輪詢每輪叫:只在雲端視角比(本機視角不動基準,切回來那一輪 trPoll 立刻再跑,照樣比得出來)
+function rpCloudWatch(list) {
+  if (ENV.cur !== "cloud" || !RPC.name || RPC_SEEN.name !== RPC.name) return;
+  const sig = rpCloudSig(list.find((x) => x.name === RPC.name));
+  if (sig == null || sig === RPC_SEEN.sig) return;
+  RPC_SEEN.sig = sig;
+  if (running) { rpcOwed = true; return; }
+  rpCloudRefetch(RPC.name);
+}
+/* 報告會畫出來的「有新結果」:live 策略每根 K 重寫 stats(K 線尾、進出場、績效都會動),那些不算——只看明確回測的時戳、碼、掃描、
+   樣本外、版本、名字說明。舊 stats 沒有 Generated At 才退回整份比 */
+function rpCloudShownSig(d) {
+  if (!d) return "";
+  const s = d.stats || null, ga = s ? (s["Generated At"] != null ? s["Generated At"] : JSON.stringify(s)) : null;
+  return JSON.stringify([d.pending || null, d.displayName, d.description, d.code, ga, d.scan || null, d.wf || null, d.versions || null]);
+}
+/* 輪詢接到的補抓:同 rpWfRefetch 只在背景抓、不先畫。有新結果 → 整片重畫;只是 live 的每根 K 變動 → 只換資料,眼前這一頁不拆(K 線縮放、
+   焦點不被每根 K 重設),別的分頁切過去再畫 */
+function rpCloudRefetch(name) {
+  rpcOwed = false;
+  const seq = rpcSeq;
+  Promise.resolve(TR_BAGS.cloud.api.loadStrategy(name)).then((d) => {
+    if (!d || seq !== rpcSeq || RPC.name !== name) return;
+    if (running) { rpcOwed = true; return; }   // 抓的期間回合開跑了:同一道守門,結束再補
+    const was = RPC.data;
+    RPC_CACHE.set(name, d); RPC.data = d;
+    if (rpCloudShownSig(was) !== rpCloudShownSig(d)) { RPC.drawn = {}; rpCloudPaint(); }
+    else RPC.drawn = RPC.tab && RPC.drawn[RPC.tab] ? { [RPC.tab]: true } : {};
+  }).catch(() => {});
 }
 
 /* 重新畫報告時停在哪個分頁:沒有回測 → 程式碼。還原後重跑中 / 沒完成(stats.json 已移開)不算沒有回測:
@@ -3184,6 +3221,7 @@ window.blave.onTurnEnd(async (r) => {
   }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
+  else if (rpcOwed && RPC.name) rpCloudRefetch(RPC.name);   // 回合中輪詢看到開著那支變了(例如網頁發起的雲端回合):這時才補
   mpTurnEnd();
   if (typeof sugTurnEnd === "function") sugTurnEnd(!stopped && !faulted);   // 建議列停一拍才長出,那時回覆與下面兩行的卡都已掛好(renderer/suggest.js)
   if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
