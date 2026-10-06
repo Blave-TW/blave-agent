@@ -112,7 +112,10 @@ const EVENTS = {
     // 送出點 renderer/app.js bindGo(…)、renderer/library.js libTrack;策略庫 unknown(「帳號與方案」描邊鈕)不記
     "bind_set", "topup_set", "bind_data", "topup_data", "bind_cloud", "topup_cloud", "bind_lib", "topup_lib",
     // 歡迎頁的資料清單(0.1.17;renderer/welcome.js):點一列、那一句落進輸入框(不送出);按「看全部資料」展開目錄(收起不記)
-    "welcome_data_row", "welcome_data_all"] },
+    "welcome_data_row", "welcome_data_all",
+    // 聊天附件(0.1.17;renderer/app.js submitMessage):帶附件的那一句回合真的跑起來才送,只分來源不記檔名——
+    // attach_paste = 在輸入框貼上剪貼簿的(不分圖或檔)、attach_image = 選檔 / 拖放的圖(mime image/*)、attach_file = 選檔 / 拖放的其他檔
+    "attach_file", "attach_image", "attach_paste"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

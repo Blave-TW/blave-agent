@@ -101,6 +101,27 @@ msgstr "Message the agent"
 msgid "ws.waitTurn"
 msgstr "The previous turn is still running. Press Enter again when it finishes."
 
+# 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;單檔、5 MiB)
+msgid "ws.attach"
+msgstr "Attach File"
+
+msgid "ws.attachRemove"
+msgstr "Remove Attachment"
+
+msgid "ws.attachTooLarge"
+msgstr "File too large — the limit is 5MB."
+
+# 選了之後檔被移走 / 刪掉,送出那一刻讀不到(雲端用通用錯誤句;電腦版沒有通用句,講清楚)
+msgid "ws.attachNoImage"
+msgstr "{model} can't read images"
+
+# title／aria 的長句
+msgid "ws.attachNoImageLong"
+msgstr "{model} can't read images — this one will be skipped."
+
+msgid "ws.attachReadFail"
+msgstr "Couldn't read that file. Please attach it again."
+
 # 輸入框上方建議列的小標與 group 名稱(renderer/suggest.js);逐字同 web workspace_sug_group
 msgid "ws.sugGroup"
 msgstr "Suggested Next Steps"

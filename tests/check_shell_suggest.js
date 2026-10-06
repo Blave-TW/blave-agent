@@ -154,7 +154,7 @@ ok("sugItems:items 不是陣列 → 空", ctx.sugItems({ items: "a" }).length ==
 
   // ── 接線(原文) ──
   const sub = cut(app, "async function submitMessage(msg, opts)", "UPD.turnCloud = false;");
-  ok("submitMessage 開頭收合(打字、點建議、轉出、交接…任何入口)", /if \(!msg \|\| running\) return false;\n\s*if \(typeof sugCollapse === "function"\) sugCollapse\(\);/.test(sub));
+  ok("submitMessage 開頭收合(打字、點建議、轉出、交接…任何入口)", /if \(\(!msg && !attachment\) \|\| running\) return false;\n\s*if \(typeof sugCollapse === "function"\) sugCollapse\(\);/.test(sub));
   ok("換對話 / 新對話(csClearChat)收合", /function csClearChat\(\) \{[\s\S]*?sugCollapse\(\)[\s\S]*?\n\}/.test(app));
   ok("turn-event:suggestions → sugChunk、error → sugCollapse", /c\.type === "suggestions"\) \{\n\s*if \(typeof sugChunk === "function"\) sugChunk\(c\);/.test(app) && /c\.type === "error"\) \{\n\s*turnErrored = true;\n\s*if \(typeof sugCollapse === "function"\) sugCollapse\(\);/.test(app));
   const end = cut(app, "window.blave.onTurnEnd(async (r) => {", "\n});\n");

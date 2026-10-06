@@ -101,6 +101,27 @@ msgstr "跟 agent 說一句話"
 msgid "ws.waitTurn"
 msgstr "上一輪還在跑，結束後再按 Enter 送出。"
 
+# 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;單檔、5 MiB)
+msgid "ws.attach"
+msgstr "附加檔案"
+
+msgid "ws.attachRemove"
+msgstr "移除附件"
+
+msgid "ws.attachTooLarge"
+msgstr "檔案太大，上限 5MB。"
+
+# 選了之後檔被移走 / 刪掉,送出那一刻讀不到(雲端用通用錯誤句;電腦版沒有通用句,講清楚)
+msgid "ws.attachNoImage"
+msgstr "{model} 不讀圖"
+
+# title／aria 的長句
+msgid "ws.attachNoImageLong"
+msgstr "{model} 不讀圖，這張會被略過。"
+
+msgid "ws.attachReadFail"
+msgstr "讀不到這個檔案，請重新附加。"
+
 # 輸入框上方建議列的小標與 group 名稱(renderer/suggest.js);逐字同 web workspace_sug_group
 msgid "ws.sugGroup"
 msgstr "建議下一步"

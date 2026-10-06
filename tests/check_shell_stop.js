@@ -101,13 +101,13 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     && /const exitLine = r\.code !== 0 && !stopped/.test(endCut) && /if \(!stopped && \(cur === "claude"/.test(endCut) && /const faulted = !stopped && \(/.test(endCut));
   ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; sendBtnSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) \{/.test(endCut) && /stopRestore\(lastUserText\);/.test(endCut));
   // 只放回用戶自己打的:把 submitMessage 裡算來源的那一行切出來跑
-  const typedLine = /addMsg\("you", msg\); (lastUserTyped = [^;]+;) lastUserText = msg;/.exec(appSrc);
+  const typedLine = /addMsg\("you", msg, attachment \? attachment\.name : null\); (lastUserTyped = [^;]+;) lastUserText = msg;/.exec(appSrc);
   ok("來源那一行在 submitMessage 裡", !!typedLine);
   const origin = (seq) => { let lastUserTyped = false, lastUserText = "";
     return seq.map(([msg, opts]) => { eval(typedLine[1]); lastUserText = msg; return lastUserTyped; }); };
   ok("手打的放回;送上雲端 / 策略庫 / 報告這些代組的句子不放回", JSON.stringify(origin([["嗨", { typed: true }], ["把策略送上雲端", { handoff: "up" }], ["用這支策略", undefined]])) === "[true,false,false]");
   ok("重送同一句:沿用原句的來源(手打的重送仍放回,代組的重送仍不放回)", JSON.stringify(origin([["嗨", { typed: true }], ["嗨", undefined], ["掃描參數", undefined], ["掃描參數", undefined]])) === "[true,true,false,false]");
-  ok("輸入框送出帶 typed(只有這一個呼叫點帶)", /\$\("ta"\)\.value = ""; autosize\(\);\n\s*submitMessage\(msg, \{ typed: true \}\);/.test(appSrc)
+  ok("輸入框送出帶 typed(只有這一個呼叫點帶)", /\$\("ta"\)\.value = ""; autosize\(\);\n[^\n]*\n\s*const ok = await submitMessage\(msg, \{ typed: true, attachment, from: attachedFrom \}\);/.test(appSrc)
     && ["handoff.js", "library.js", "reports.js", "newstrategy.js"].every((f) => !/typed: true/.test(fs.readFileSync(path.join(SH, "renderer", f), "utf8")))
     && (appSrc.match(/typed: true/g) || []).length === 1);
   const html = fs.readFileSync(path.join(SH, "renderer", "index.html"), "utf8"), css = fs.readFileSync(path.join(SH, "renderer", "app.css"), "utf8");

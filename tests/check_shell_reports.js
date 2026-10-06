@@ -56,7 +56,7 @@ if (!process.versions.electron) {
   { const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8"), mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8");
     ok("① 接線:rptSend 送的是泡泡那一句 + 指示的代號;字串表不再有 msgOnce / msgRecur(沒有東西會把它接回訊息裡)", /const msg = rptCompose\(desc, LANG, t\("rpt\.new\.msgLead"\)\);/.test(src) && /submitMessage\(msg, \{ note: rptNote\(desc\) \}\)/.test(src)
       && !("rpt.new.msgOnce" in STR.zh) && !("rpt.new.msgRecur" in STR.zh) && !("rpt.new.msgOnce" in STR.en) && !/msgOnce|msgRecur/.test(src));
-    ok("① 指示跟著那一輪存:重送同一句沿用(不從訊息本文推回來);泡泡畫的就是送出去的訊息本文", /lastUserNote = opts && typeof opts\.note === "string" \? opts\.note : msg === lastUserText \? lastUserNote : null;\s*[^\n]*engDropHeld\(\);[^\n]*\n\s*const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg\);/.test(appSrc)
+    ok("① 指示跟著那一輪存:重送同一句沿用(不從訊息本文推回來);泡泡畫的就是送出去的訊息本文", /lastUserNote = opts && typeof opts\.note === "string" \? opts\.note : msg === lastUserText \? lastUserNote : null;\s*[^\n]*engDropHeld\(\);[^\n]*\n\s*const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachment \? attachment\.name : null\);/.test(appSrc)
       && /message: msg, handoff: opts && opts\.handoff, note: lastUserNote,/.test(appSrc));
     ok("① 主行程只認表上的代號,用環境變數交給 runtime(不進 argv、不進訊息);runtime 的表有同樣兩個代號", /const TURN_NOTES = \["report_once", "report_recur"\];/.test(mainSrc2) && /\.\.\.\(TURN_NOTES\.indexOf\(note\) >= 0 \? \{ BLAVE_TURN_NOTE: note \} : \{\}\),/.test(mainSrc2)
       && /"report_once": \(/.test(rt) && /"report_recur": \(/.test(rt)); }
