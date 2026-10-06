@@ -394,7 +394,7 @@ const STRINGS = {
     "pv.e.sub.old": "After that, data comes with the Blave Agent Cloud Plan at {p} TWD a month.",
     "pv.e.unknown": "This computer can’t reach Blave data yet. The account status couldn’t be checked. Check again under Settings › Account & plan.",
     "pv.e.btn": "Account & Plan",
-    "cn.blave.signinSwitch": "Sign In and Switch",
+    "cn.blave.signinSwitch": "Sign in and switch",
     "cn.blave.name": "Blave AI",
     "acct.out.1": "After signing out, this computer no longer gets Blave data.",
     "acct.out.2": "Chats and strategies stay on this computer and aren’t affected.",

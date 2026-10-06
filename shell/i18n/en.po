@@ -1194,7 +1194,7 @@ msgid "pv.e.btn"
 msgstr "Account & Plan"
 
 msgid "cn.blave.signinSwitch"
-msgstr "Sign In and Switch"
+msgstr "Sign in and switch"
 
 msgid "cn.blave.name"
 msgstr "Blave AI"

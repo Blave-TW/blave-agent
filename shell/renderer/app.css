@@ -985,6 +985,8 @@ body.resizing * { cursor: col-resize !important; }
 .cn-opt .cn-cur{flex:none;min-width:52px;text-align:right;font-size:12px;font-weight:600;color:var(--ink)}
 /* 這一頁的小框鈕比別處亮一階:它是這一列的主要動作 */
 #set-model .pf-act{min-width:52px;text-align:center;color:var(--ink-2);border-color:var(--border-frame)}
+/* 上面那條帶 id,會蓋掉 trade.css 的 .pf-act:disabled——等待登入時被鎖住的鈕要照樣變灰 */
+#set-model .pf-act:disabled{color:var(--color-greyDark);border-color:var(--border-hairline)}
 #set-model .cn-hint{margin:0}
 /* 連結畫面尾註下那一句 */
 /* 確認框:三句各自一段 */
