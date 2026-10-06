@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="export.css">
 <link rel="stylesheet" href="versions.css">
 <link rel="stylesheet" href="engine.css">
+<link rel="stylesheet" href="welcome.css">
 </head><body>
 
 <!-- ============ 連結畫面(獨立畫面,不是 modal) ============ -->
@@ -273,7 +274,22 @@
             <button class="wc-chip" id="chat-idea" type="button" data-i18n="idea.chip" hidden></button>
             <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁第二顆) -->
             <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
-            <button class="wc-chip" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
+          </div>
+          <!-- 可以回測的資料(renderer/welcome.js;設計 mockup data-scope §1 / §2):取代了原本第四顆「回測一支 BTC 20/50 均線策略」的起手籤。
+               依市場分段;帳號狀態決定兩欄對比(免費 vs Blave 資料)或單一清單;整列可點 → 那一句落進輸入框不送出;
+               「看全部資料」把同一塊換成完整目錄(app 內)。列由 wdPaint 畫,#wl-all 的字跟著模式換、不掛 data-i18n -->
+          <div class="wl" id="wl">
+            <div class="wl-top">
+              <span class="wl-cap" data-i18n="wd.title"></span>
+              <span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd.title">
+                <button type="button" data-mk="crypto" aria-pressed="true" data-i18n="wd.mk.crypto"></button>
+                <button type="button" data-mk="tw" aria-pressed="false" data-i18n="wd.mk.tw"></button>
+                <button type="button" data-mk="txf" aria-pressed="false" data-i18n="wd.mk.txf"></button>
+              </span>
+            </div>
+            <p class="wl-state" id="wl-state" aria-live="polite"></p>
+            <div class="wl-body" id="wl-body"></div>
+            <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button"></button></div>
           </div>
         </div>
       </div>
@@ -678,4 +694,5 @@
 <script src="browser.js"></script>
 <script src="pine-install.js"></script>
 <script src="engine.js"></script>
+<script src="welcome.js"></script>
 </body></html>
