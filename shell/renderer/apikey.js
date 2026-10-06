@@ -3,7 +3,7 @@
    - 金鑰值只活在輸入框裡:按「測試並…」時讀一次、經 apikeySet 送出,不進這個檔的任何狀態;離開表單就清掉輸入框、丟掉節點(同資料來源,稽核 S3)。
    - 主行程從不把金鑰交回來:畫面只知道存了哪一家(AK.info.saved)與上架清單(名字、申請金鑰的網址)。
    用到 app.js 的 $ / t / cur / connect / enterWorkspace / mdlPaint / setOpen / setCat / setClose / confirmBox / srSay / trackFeature / detect /
-   paintBlaveBtn / submitMessage / mpOpen / running / lastUserText——都在呼叫時才取,載入順序不拘。 */
+   paintBlaveBtn / resendLast / mpOpen——都在呼叫時才取,載入順序不拘。 */
 const AK = { info: null, form: null };   // info = { saved: preset id | null, presets: [{ id, name, keysUrl }] };form = 開著的那張表單
 const akMk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 const akBtn = (cls, text, fn) => { const b = akMk("button", cls, text); b.type = "button"; b.addEventListener("click", fn); return b; };
@@ -182,7 +182,7 @@ function akFault(text, capped) {
   const m = AK_FAULT_RE.exec(text || ""), net = AK_NET_RE.test(text || "");
   if (!m && !net) return null;
   const p = akTurnProvider(), s = m ? m[1] : "";
-  const resend = () => { if (!running && lastUserText) submitMessage(lastUserText); };
+  const resend = () => { resendLast(); };
   const toModels = () => setOpen().then(() => setCat("model"));
   if (s === "429" && capped) return { cap: true, text: t("ak.f.cap"), label: t("fault.resend"), act: resend };
   if (s === "401" || s === "403") return { text: t("ak.f.key", { p, s }), label: t("ak.f.keyBtn"), act: () => toModels().then(() => akOpen("set")) };

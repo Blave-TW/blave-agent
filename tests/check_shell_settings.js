@@ -672,14 +672,14 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
 // 聊天裡「拿不到資料」那張卡(spec-data-without-machine-flow §3):none 的出口是錢包(儲值 / 綁卡),不是主機;
 // 從 none 回來時,按小時付的那條要講「會收錢」,免費那條照舊「可以用了」。真的跑 dataCardState / acctPaint / maybeDataCard
 { const mkCard = () => { const c = { states: [] }; c.set = (x) => { c.states.push(x); c.last = x; }; return c; };
-  let acct = null, hasToken = true, cur = "claude", dataCard = null, acctCard = null, sessionId = "s1", turnFaulted = false, running = false, lastUserText = "q", acctGone = null;   // acctGone:acctPaint 補記 acct_card_back 用的,這裡沒按過卡上的鈕
+  let acct = null, hasToken = true, cur = "claude", dataCard = null, acctCard = null, sessionId = "s1", turnFaulted = false, running = false, lastUserText = "q", lastUserAttachment = null, lastUserFrom = null, acctGone = null;   // acctGone:acctPaint 補記 acct_card_back 用的,這裡沒按過卡上的鈕
   const creditCards = [], dataCardSessions = new Set(); let turnCards = [];
   let V = { t: 14, p: "1,440", r: "2" };
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};
   const acctUrl = () => "topup", faultCard = () => mkCard(), submitMessage = async () => true, $ = () => ({ focus() {} });
   const acctSub = () => null, acctAction = () => ({}), resendSecond = () => null;
   eval(fnSrc("dataAccessOf")); eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
-  eval(fnSrc("dataReadyText")); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
+  eval(fnSrc("dataReadyText")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
   const A = (o) => ({ can_run: true, plan: { state: "none" }, ...o });
   acct = A({ data_access: "none", reason: "NO_CREDIT", data_hourly: 2 });
   let c = dataCardState();

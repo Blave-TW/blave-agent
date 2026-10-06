@@ -863,6 +863,7 @@ function setAttachment(file, from) {
   attachedFile = file || null; attachedFrom = attachedFile ? from || "file" : null;
   $("attach-chip").hidden = !attachedFile;
   $("attach-name").textContent = attachedFile ? attachedFile.name : "";
+  $("attach-name").title = attachedFile ? attachedFile.name : "";   // 檔名截尾時看得到全名(含副檔名)
   attachHintPaint();
 }
 /* 選的模型不讀圖:api proxy 的 _proxy_deepseek 把 Anthropic 格式的 body(含 image block)原樣轉給 DeepSeek 的 Anthropic 相容端點、
@@ -877,9 +878,11 @@ function attachHintPaint() {
   const m = mpCur(), model = m ? m.name : MP.model;
   h.textContent = t("ws.attachNoImage", { model }); h.title = t("ws.attachNoImageLong", { model }); h.setAttribute("aria-label", h.title);
 }
-/* 選到 / 拖到 / 貼上一個檔:太大就講一行(同雲端 addNotice);from = file | paste */
+/* 選到 / 拖到 / 貼上一個檔:太大就講一行(同雲端 addNotice);from = file | paste。
+   空檔也在這裡擋:主行程(shell/attach.js validate)不收 0 位元組,而它回絕時 send-message 已經回 started——chip 清了、埋點送了才冒出一句英文錯誤 */
 function takeAttachment(file, from) {
   if (!file) return false;
+  if (file.size === 0) { addMsg("sys", t("ws.attachEmpty")).dataset.i18n = "ws.attachEmpty"; return false; }
   if (file.size > ATTACH_MAX_BYTES) { addMsg("sys", t("ws.attachTooLarge")).dataset.i18n = "ws.attachTooLarge"; return false; }
   setAttachment(file, from);
   return true;
@@ -918,15 +921,33 @@ $("attach-input").addEventListener("change", () => {
   takeAttachment(f, "file");
 });
 $("attach-clear").addEventListener("click", () => { setAttachment(null); $("ta").focus(); });
-// 拖放:只認拖到輸入框上;整個視窗一律 preventDefault,不然 Chromium 會把檔案當頁面開(導覽守門擋得住,但畫面會閃)
+/* 拖放:檔案只認拖到輸入框上,視窗其他地方一律 preventDefault(不然 Chromium 會把檔案當頁面開;導覽守門擋得住,但畫面會閃)。
+   拖的不是檔案(選取的文字)而且落在可打字的欄位上 → 不攔,讓它照常插進去;落在別處照舊攔(連結丟到頁面上會被當成導覽)。
+   兩支純函式,tests/check_shell_attach.js 從原文切出來跑 */
+function dragHasFiles(dt) { return !!dt && Array.prototype.indexOf.call(dt.types || [], "Files") >= 0; }
+function dragIsText(e) {
+  const el = e.target && (e.target.nodeType === 1 ? e.target : e.target.parentElement);
+  return !dragHasFiles(e.dataTransfer) && !!el && !!el.closest("textarea, input, [contenteditable]");
+}
 const ciBox = document.querySelector(".chat-input");
-["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = ciBox.contains(e.target) ? "copy" : "none"; }));
-document.addEventListener("drop", (e) => { e.preventDefault(); ciBox.classList.remove("is-drag"); if (!ciBox.contains(e.target)) return; const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) takeAttachment(f, "file"); });
-ciBox.addEventListener("dragover", () => ciBox.classList.add("is-drag"));
+["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => { if (dragIsText(e)) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = dragHasFiles(e.dataTransfer) && ciBox.contains(e.target) ? "copy" : "none"; }));
+document.addEventListener("drop", (e) => { if (dragIsText(e)) return; e.preventDefault(); ciBox.classList.remove("is-drag"); if (!ciBox.contains(e.target)) return; const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) takeAttachment(f, "file"); });
+ciBox.addEventListener("dragover", (e) => { if (dragHasFiles(e.dataTransfer)) ciBox.classList.add("is-drag"); });
 ciBox.addEventListener("dragleave", (e) => { if (!ciBox.contains(e.relatedTarget)) ciBox.classList.remove("is-drag"); });
-// 貼上:剪貼簿裡有檔(截圖、從 Finder 複製的檔)就當附件,文字照常貼
+/* 貼上要不要當附件:回要掛的 File,或 null = 讓文字照常貼(不 preventDefault)。
+   剪貼簿同時有字與圖(從 Excel / Numbers / Word 複製儲存格:text/plain 加一張 PNG)→ 用戶要貼的是字,不攔;
+   只有檔沒有字(截圖、複製的圖)→ 附件。從 Finder 複製的檔會連檔名(或路徑)一起以 text/plain 進來:字剛好就是那幾個檔名時仍算檔。
+   純函式,tests/check_shell_attach.js 從原文切出來跑 */
+function pasteFile(cd) {
+  const files = cd && cd.files, f = files && files[0];
+  if (!f) return null;
+  const text = String((cd.getData && cd.getData("text/plain")) || "").trim();
+  if (!text) return f;
+  const names = Array.prototype.map.call(files, (x) => x.name);
+  return text.split(/[\r\n]+/).every((line) => names.indexOf(line.trim().split(/[\\/]/).pop()) >= 0) ? f : null;
+}
 $("ta").addEventListener("paste", (e) => {
-  const f = e.clipboardData && e.clipboardData.files && e.clipboardData.files[0];
+  const f = pasteFile(e.clipboardData);
   if (!f) return;
   e.preventDefault();
   takeAttachment(f, "paste");
@@ -2404,10 +2425,11 @@ async function stopTurn() {
   try { ok = await window.blave.stopTurn(); } catch (_) { ok = false; }
   if (!ok && !engineWait && running) { turnStopping = false; turnStopped = false; sendBtnSync(); }   // 沒送到:讓用戶再按一次
 }
-function stopRestore(text) {
-  if (!text) return;
+function stopRestore(text, attachment, from) {   // attachment:那一句帶的 File,跟句子一起放回 chip(chip 空著才放:用戶之後另外掛的不蓋)
+  if (attachment && !attachedFile) setAttachment(attachment, from);
+  if (!text && !attachment) return;
   const ta = $("ta");
-  ta.value = ta.value.trim() ? text + "\n" + ta.value : text;
+  if (text) ta.value = ta.value.trim() ? text + "\n" + ta.value : text;
   autosize(); ta.focus();
 }
 async function sendDraft() {
@@ -2415,13 +2437,14 @@ async function sendDraft() {
   const attachment = attachedFile;   // 純附件(沒打字)也可以送,同雲端
   if ((!msg && !attachment) || running) return;
   $("ta").value = ""; autosize();
-  // 送出去了才清 chip:沒送出去的路(busy / 版本閘 / 引擎起不來)把句子還原到輸入框、檔也留著,不靜默消失
-  const ok = await submitMessage(msg, { typed: true, attachment, from: attachedFrom });
-  if (ok && attachedFile === attachment) setAttachment(null);
+  // chip 由 submitMessage 在送出去的那一刻清(安裝失敗後按「重試」送出的也走那裡);沒送出去的路(busy / 版本閘 / 引擎起不來)把句子還原到輸入框、檔也留著,不靜默消失
+  await submitMessage(msg, { typed: true, attachment, from: attachedFrom });
 }
-/* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框。 */
+/* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框的字;這一句帶的檔送出去了就把 chip 清掉。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
-  // opts.attachment:這一句帶的 File(sendDraft 才有)。重送只重送句子、不重送檔(同雲端:檔名另存,「再送一次」只拿句子)
+  // opts.attachment:這一句帶的 File(sendDraft,以及重送 / 安裝失敗後重試帶的同一個)。
+  // 「再送一次」連檔一起重送(resendLast)——跟雲端不同:雲端的重送鈕出現時檔已經落在機器上,這裡 started 回來時主行程還沒落地,
+  // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送
   const attachment = opts && opts.attachment ? opts.attachment : null;
   if ((!msg && !attachment) || running) return false;
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
@@ -2437,7 +2460,8 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   lastUserNote = opts && typeof opts.note === "string" ? opts.note : msg === lastUserText ? lastUserNote : null;
   if (!(opts && opts.bubble) && typeof engDropHeld === "function") engDropHeld();   // 安裝失敗時留著等重試的那句:換送別句就不會再送了
   const bubble = opts && opts.bubble && opts.bubble.isConnected ? opts.bubble : addMsg("you", msg, attachment ? attachment.name : null); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
-  const unsend = () => { bubble.remove(); if (lastUserTyped) stopRestore(msg); };   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩
+  lastUserAttachment = attachment; lastUserFrom = attachment ? (opts && opts.from) || "file" : null;
+  const unsend = () => { bubble.remove(); if (lastUserTyped) stopRestore(msg, attachment, lastUserFrom); };   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩
   if (typeof engAfter === "function") engAfter(bubble);   // 安裝中送出:進度卡移到這句底下
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
@@ -2461,7 +2485,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
       unsend(); unlock(); return false;
     }
     // 暖機期間按了停止:主行程還沒有回合可停,在這裡收掉,不送出
-    if (turnStopped) { turnStopped = false; unlock(); bubble.remove(); if (lastUserTyped) stopRestore(msg); return false; }
+    if (turnStopped) { turnStopped = false; unlock(); unsend(); return false; }
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCap = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
     // 附件:送出那一刻才讀位元組(同雲端 readAttachment);選了之後檔被移走 / 刪掉會讀失敗——講一行、chip 留著,不靜默消失
@@ -2473,6 +2497,8 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     const r = await window.blave.sendMessage({
       sessionId, message: msg, handoff: opts && opts.handoff, note: lastUserNote, model: MP.model, effort: mpEffort(), viewing, attachment: att });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
+    // 送出去了才清 chip(還掛著同一個檔才清:送出途中換掛的不動)。放在這裡不放 sendDraft:安裝失敗後按「重試」送出的那句不經 sendDraft,chip 留著的話下一句會再帶一次同一個檔
+    if (r.started && attachment && attachedFile === attachment) setAttachment(null);
     if (r.started) { busyStart(); trackFeature("chat_sent"); if (attachment) trackFeature(ATTACH_FEATURE[attachKind(attachment, opts && opts.from)]); return true; }
     if (r.blocked === "UPDATE_REQUIRED") {
       // 不是「上一輪還在跑」:這個版本被停用了,要更新才能繼續。鈕帶去 設定 › 一般 最下面的「關於」(那裡有更新鈕)
@@ -2674,11 +2700,12 @@ function faultCard() {
 
 /* 「再送一次」(設計師 M3):不自動重送(那句話可能是下單,而且已經隔了好幾分鐘,最後一步留給人),
    也不要他重打(那一輪沒跑是我們知道的事)。不碰輸入框——他可能已經在打下一句。 */
-let lastUserText = "";
+let lastUserText = "", lastUserAttachment = null, lastUserFrom = null;   // 上一句的字、它帶的 File(沒有 = null)與來源(file / paste)
+function canResend() { return !running && !!(lastUserText || lastUserAttachment); }   // 純附件那句(字是空的)也能重送
+function resendLast() { return canResend() ? submitMessage(lastUserText, { attachment: lastUserAttachment, from: lastUserFrom }) : Promise.resolve(false); }
 function resendState(card, okText) {
   return { calm: true, text: okText, label: t("fault.resend"), on: async () => {
-    if (running || !lastUserText) return;
-    if (await submitMessage(lastUserText)) {
+    if (await resendLast()) {
       card.set({ calm: true, text: okText, label: t("fault.resendDone"), disabled: true });
       $("ta").focus();
     }
@@ -2840,7 +2867,7 @@ function acctPaint() {
   // 長任務跑到 25+ 次時多幾次預檢會把一筆 LLM 擠成 429——稽核抓的)
   if (s.can_run) creditCards.length = 0;
 }
-function resendSecond() { return { label: t("fault.resend"), on: () => { if (!running && lastUserText) submitMessage(lastUserText); } }; }
+function resendSecond() { return { label: t("fault.resend"), on: () => { resendLast(); } }; }
 let acctPending = 0;
 async function acctCheck() {
   if (!hasToken) { acct = null; planWatchIdle(); return; }   // 帳號狀態跟「有沒有登入」走,不看連的是誰
@@ -2905,7 +2932,7 @@ function dataCardSync(s) {
   const key = JSON.stringify([st.text, st.sub || null, st.label || null]);
   if (dataCard._key === key) return;
   dataCard._key = key;
-  if (ready) { const card = dataCard, go = st.on; st.on = async () => { if (running || !lastUserText) return; if (dataCard === card) dataCard = null; await go(); }; }
+  if (ready) { const card = dataCard, go = st.on; st.on = async () => { if (!canResend()) return; if (dataCard === card) dataCard = null; await go(); }; }
   dataCard.set(st);
 }
 function maybeDataCard() {
@@ -3192,7 +3219,7 @@ function addFault(f) {
   if (f.flow === "blave") return blaveLoginFlow(card);
   if (f.flow === "credit") return creditFlow(card);
   card.set({ text: f.text, label: f.label, on: f.act,
-             second: f.second ? f.second : f.resend ? { label: t("fault.resend"), on: () => { if (!running && lastUserText) submitMessage(lastUserText); } } : null });
+             second: f.second ? f.second : f.resend ? { label: t("fault.resend"), on: () => { resendLast(); } } : null });
 }
 
 /* 回合進行中的文字先不進回覆區。串流當下還不知道這段後面有沒有工具呼叫:有的話它是過場旁白
@@ -3345,8 +3372,10 @@ window.blave.onTurnEnd(async (r) => {
   if (stopped && lastUserTyped) {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複
-    if (!turnGotReply && !turnHadTool && turnBubble && turnBubble.parentNode) turnBubble.remove();
-    stopRestore(lastUserText);
+    // 那一句帶的檔跟句子一起放回 chip。用戶在回合中另外掛了別的檔(chip 被佔)就放不回去:這時泡泡不收,不然那個檔連同純附件那一句無聲消失
+    const attBack = !lastUserAttachment || !attachedFile || attachedFile === lastUserAttachment;
+    if (attBack && !turnGotReply && !turnHadTool && turnBubble && turnBubble.parentNode) turnBubble.remove();
+    stopRestore(lastUserText, lastUserAttachment, lastUserFrom);
   }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);

@@ -111,6 +111,10 @@ msgstr "移除附件"
 msgid "ws.attachTooLarge"
 msgstr "檔案太大，上限 5MB。"
 
+# 0 位元組的檔:選到 / 拖到 / 貼上那一刻就講(雲端照收空檔;電腦版主行程不收,見 shell/attach.js validate)
+msgid "ws.attachEmpty"
+msgstr "這個檔案是空的，沒有內容可以傳。"
+
 # 選了之後檔被移走 / 刪掉,送出那一刻讀不到(雲端用通用錯誤句;電腦版沒有通用句,講清楚)
 msgid "ws.attachNoImage"
 msgstr "{model} 不讀圖"
