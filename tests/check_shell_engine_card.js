@@ -167,7 +167,7 @@ ok("③ 卡的去留只看快照:engPaint 只有在 done 才收(停止 / 失敗�
     && /faultCard\(\)\.set\(\{ calm: true, text: t\("eng\.optFail"\), sub \}\)/.test(w) && /if \(ENG\.warned \|\| !s\.warn\) return;\s*ENG\.warned = true;/.test(w) && !/label|retry/.test(w));
   ok("③ 美股那組的字 zh / en 都有、不寫死套件名與版本", ["zh", "en"].every((lg) => ctx.STRINGS[lg]["eng.optFail"] && !/yfinance|==/.test(ctx.STRINGS[lg]["eng.optFail"]))); }
 ok("③ 換對話 / 開新對話清掉聊天欄後補回安裝卡(fail 沒有每秒重畫,不補就連重試鈕一起不見):csClearChat 最後、csOpen 畫完舊回合之後",
-  /engReattach\(\);[^\n]*\n\}/.test(cut(appSrc, "function csClearChat(")) && /addHistoryAi\(x\.turn\.content\)\)\);\n\s*\$\("chat-eg"\)\.hidden = true;\n\s*if \(typeof engReattach === "function"\) engReattach\(\);/.test(cut(appSrc, "async function csOpen("))
+  /engReattach\(\);[^\n]*\n\}/.test(cut(appSrc, "function csClearChat(")) && /addHistoryAi\(x\.turn\.content\)\)\);\n\s*if \(typeof engReattach === "function"\) engReattach\(\);/.test(cut(appSrc, "async function csOpen("))
   && /function engReattach\(\) \{ if \(ENG\.card\) ENG\.card\.remove\(\); engPaint\(\); \}/.test(src));
 ok("③ index.html:engine.css 有載、engine.js 在 app.js 之後", /<link rel="stylesheet" href="engine\.css">/.test(html) && html.indexOf('src="engine.js"') > html.indexOf('src="app.js"'));
 ok("③ reduced-motion:app.css 那條 `* { animation:none !important }` 之外,這張卡的轉圈照轉", /@media \(prefers-reduced-motion: reduce\) \{ \.eng-card \.spin16 \{ animation: trSpin 1s linear infinite !important; \} \}/.test(css) && /\* \{ transition: none !important; animation: none !important; \}/.test(read(path.join(R, "app.css"))));

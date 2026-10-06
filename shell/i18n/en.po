@@ -88,9 +88,6 @@ msgstr "This computer can't store credentials securely, so nothing was saved."
 msgid "TOKEN_EXCHANGE_FAILED"
 msgstr "Could not exchange the authorization code for a token."
 
-msgid "ws.chatExample"
-msgstr "Backtest a BTC 20/50 moving-average strategy"
-
 msgid "ws.strategies"
 msgstr "Strategies"
 
@@ -6125,3 +6122,592 @@ msgstr "This turn hit Blave's per-turn usage limit and stopped here, so a single
 
 msgid "APIKEY_MISSING"
 msgstr "Your API key is no longer on this computer. Set it up again in Settings › Model access."
+
+# ── Welcome-page data list (renderer/welcome.js; mockup data-scope §1 / §2) ──
+# Numbers in the right-column notes ({t} trial days, {r} TWD per hour, {d} trial end) come from account_status / public pricing, never hard-coded; NoNum variants when unavailable.
+# The word "paid" never appears; the price shows exactly once (wd.note.billed).
+msgid "wd.title"
+msgstr "Data You Can Backtest"
+
+msgid "wd.mk.crypto"
+msgstr "Crypto"
+
+msgid "wd.mk.tw"
+msgstr "Taiwan Stocks"
+
+msgid "wd.mk.txf"
+msgstr "TAIEX Futures"
+
+msgid "wd.mk.txfo"
+msgstr "TAIEX Futures and Options"
+
+msgid "wd.col.free"
+msgstr "Free, No Account Needed"
+
+msgid "wd.col.blave"
+msgstr "Blave Data"
+
+msgid "wd.note.out"
+msgstr "Sign in and add a card: {t} days of Blave data free"
+
+msgid "wd.note.outNoNum"
+msgstr "Sign in and add a card to use it"
+
+msgid "wd.note.none"
+msgstr "Add a card: {t} days of Blave data free"
+
+msgid "wd.note.noneNoNum"
+msgstr "Add a card to use it"
+
+msgid "wd.note.billed"
+msgstr "{r} TWD for each hour you use it, charged once per hour"
+
+msgid "wd.note.billedNoNum"
+msgstr "Only hours you use it are charged, once per hour"
+
+msgid "wd.note.nobal"
+msgstr "Balance is too low for this hour's data"
+
+msgid "wd.note.topup"
+msgstr "Top Up"
+
+msgid "wd.state.trial"
+msgstr "Trial: this data is free until {d}."
+
+msgid "wd.empty.txf"
+msgstr "No free source for TAIEX futures prices yet."
+
+msgid "wd.all"
+msgstr "See All Data"
+
+msgid "wd.less"
+msgstr "Hide All Data"
+
+msgid "wd.sep"
+msgstr " · "
+
+msgid "wd.h.data"
+msgstr "Data"
+
+msgid "wd.h.fq"
+msgstr "Frequency"
+
+msgid "wd.h.sn"
+msgstr "From"
+
+msgid "wd.h.src"
+msgstr "Source"
+
+msgid "wd.h.us"
+msgstr "Backtest Ideas"
+
+msgid "wd.src.p"
+msgstr "Public"
+
+msgid "wd.src.b"
+msgstr "Blave"
+
+msgid "wd.foot.1"
+msgstr "“Public” = this computer fetches it straight from the exchange, no Blave and no account; replies and reports built on public Taiwan data carry the exchange's source notice. “Blave” = provided through Blave."
+
+msgid "wd.foot.2"
+msgstr "Current values only, no history, so not usable for backtests: Taiwan real-time quotes (about every 10 s), the macro calendar (rolling ~5 weeks), news headlines (up to 31 days)."
+
+# Per row: nm name / nt catalog note / fq frequency / sn catalog start / sy welcome start (short) / wn welcome trailing note / us backtest ideas / tx starter sentence (whole row clickable, fills the input box)
+msgid "wd.r.bnk.nm"
+msgstr "Perpetual futures klines (Binance USDT-M)"
+
+msgid "wd.r.bnk.wnm"
+msgstr "Perpetual futures klines (Binance)"
+
+msgid "wd.r.bnk.nt"
+msgstr "Includes tokenized US-stock perps (AAPL, NVDA, TSLA, SPY, QQQ…), listed from 2026"
+
+msgid "wd.r.bnk.fq"
+msgstr "1 min to 1 day"
+
+msgid "wd.r.bnk.sn"
+msgstr "2020-01-01 or listing date"
+
+msgid "wd.r.bnk.sy"
+msgstr "from 2020 or listing"
+
+msgid "wd.r.bnk.us"
+msgstr "Price-and-volume strategies: moving averages, bands, breakouts"
+
+msgid "wd.r.bnk.tx"
+msgstr "Long BTC when the close drops below the lower Bollinger band, exit at the middle band, 1-hour bars"
+
+msgid "wd.r.fng.nm"
+msgstr "Fear & Greed Index"
+
+msgid "wd.r.fng.nt"
+msgstr "Source: alternative.me"
+
+msgid "wd.r.fng.fq"
+msgstr "Daily"
+
+msgid "wd.r.fng.sn"
+msgstr "2018-02-01"
+
+msgid "wd.r.fng.sy"
+msgstr "from 2018"
+
+msgid "wd.r.fng.us"
+msgstr "Enter and exit at sentiment extremes"
+
+msgid "wd.r.fng.tx"
+msgstr "Buy BTC when Fear & Greed is below 20, exit above 80, daily bars"
+
+msgid "wd.r.ti.nm"
+msgstr "Taker Intensity"
+
+msgid "wd.r.ti.nt"
+msgstr "Blave indicator"
+
+msgid "wd.r.ti.fq"
+msgstr "5 min to 1 day"
+
+msgid "wd.r.ti.sn"
+msgstr "2020-01-01 or listing date"
+
+msgid "wd.r.ti.sy"
+msgstr "from 2020"
+
+msgid "wd.r.ti.us"
+msgstr "Trend or reversal on aggressive buy/sell imbalance"
+
+msgid "wd.r.ti.tx"
+msgstr "Long BTC when Taker Intensity spikes, exit when it fades, 5-minute bars"
+
+msgid "wd.r.conc.nm"
+msgstr "Position Concentration"
+
+msgid "wd.r.conc.nt"
+msgstr "Blave indicator"
+
+msgid "wd.r.conc.fq"
+msgstr "5 min to 1 day"
+
+msgid "wd.r.conc.sn"
+msgstr "2021-05-11"
+
+msgid "wd.r.conc.sy"
+msgstr "from 2021"
+
+msgid "wd.r.conc.us"
+msgstr "Enter and exit when the long/short account ratio drifts from its mean"
+
+msgid "wd.r.conc.tx"
+msgstr "Long BTC when concentration runs high, exit when it reverts to the mean, 1-hour bars"
+
+msgid "wd.r.whale.nm"
+msgstr "Whale Alerts"
+
+msgid "wd.r.whale.nt"
+msgstr "Blave indicator"
+
+msgid "wd.r.whale.fq"
+msgstr "Hourly, daily"
+
+msgid "wd.r.whale.sn"
+msgstr "2021-12-01"
+
+msgid "wd.r.whale.us"
+msgstr "Large-holder moves as entry conditions"
+
+msgid "wd.r.liq.nm"
+msgstr "Liquidations"
+
+msgid "wd.r.liq.nt"
+msgstr "BTC and ETH earliest, other coins later"
+
+msgid "wd.r.liq.fq"
+msgstr "Hourly, daily"
+
+msgid "wd.r.liq.sn"
+msgstr "2023-01-01"
+
+msgid "wd.r.liq.sy"
+msgstr "from 2023"
+
+msgid "wd.r.liq.us"
+msgstr "Rebound or continuation after a liquidation cascade"
+
+msgid "wd.r.liq.tx"
+msgstr "Fade BTC after a liquidation spike, 1-hour bars"
+
+msgid "wd.r.sent.nm"
+msgstr "Market Sentiment"
+
+msgid "wd.r.sent.nt"
+msgstr "Blave indicator"
+
+msgid "wd.r.sent.fq"
+msgstr "Hourly, daily"
+
+msgid "wd.r.sent.sn"
+msgstr "2020-01-01"
+
+msgid "wd.r.sent.us"
+msgstr "Sentiment as a filter"
+
+msgid "wd.r.dir.nm"
+msgstr "Market Direction"
+
+msgid "wd.r.dir.nt"
+msgstr "One market-wide series, not per coin"
+
+msgid "wd.r.dir.fq"
+msgstr "Hourly, daily"
+
+msgid "wd.r.dir.sn"
+msgstr "2024-12-27"
+
+msgid "wd.r.dir.us"
+msgstr "Market direction as a filter"
+
+msgid "wd.r.top.nm"
+msgstr "Blave Top Trader Exposure"
+
+msgid "wd.r.top.nt"
+msgstr "One market-wide series, not per coin"
+
+msgid "wd.r.top.fq"
+msgstr "Hourly, daily"
+
+msgid "wd.r.top.sn"
+msgstr "2025-03-03"
+
+msgid "wd.r.top.us"
+msgstr "Follow or fade the top traders' net position"
+
+msgid "wd.r.fr.nm"
+msgstr "Funding Rate"
+
+msgid "wd.r.fr.nt"
+msgstr "Binance, OKX, BingX, Bybit"
+
+msgid "wd.r.fr.fq"
+msgstr "Hourly, daily"
+
+msgid "wd.r.fr.sn"
+msgstr "2025-09-30"
+
+msgid "wd.r.fr.sy"
+msgstr "from 2025-09"
+
+msgid "wd.r.fr.us"
+msgstr "Contrarian at extreme funding; only about a year of history"
+
+msgid "wd.r.fr.tx"
+msgstr "Short when funding is extremely high, exit when it normalizes, daily bars"
+
+msgid "wd.r.twd.nm"
+msgstr "Stock daily bars (raw and adjusted)"
+
+msgid "wd.r.twd.nt"
+msgstr "OTC stocks reach back to the 1990s; on a cloud machine this goes through Blave, from 1994-10-01"
+
+msgid "wd.r.twd.fq"
+msgstr "Daily"
+
+msgid "wd.r.twd.sn"
+msgstr "Listed stocks 2010-01-04"
+
+msgid "wd.r.twd.sy"
+msgstr "listed stocks from 2010"
+
+msgid "wd.r.twd.wn"
+msgstr "first fetch about 36 s per stock-year"
+
+msgid "wd.r.twd.us"
+msgstr "Moving-average and momentum strategies on a single stock; the first fetch takes about 36 s per stock-year"
+
+msgid "wd.r.twd.tx"
+msgstr "TSMC 20-day / 60-day moving-average cross, backtested on adjusted daily bars"
+
+msgid "wd.r.twm.nm"
+msgstr "Stock intraday bars"
+
+msgid "wd.r.twm.fq"
+msgstr "1 to 60 min"
+
+msgid "wd.r.twm.sn"
+msgstr "2019-01-01"
+
+msgid "wd.r.twm.sy"
+msgstr "from 2019"
+
+msgid "wd.r.twm.us"
+msgstr "Day-trading and intraday strategies"
+
+msgid "wd.r.twm.tx"
+msgstr "TSMC 5-minute bars, opening-range breakout, flat before the close"
+
+msgid "wd.r.inst.nm"
+msgstr "Institutional flows per stock"
+
+msgid "wd.r.inst.nt"
+msgstr "Foreign, investment trust, dealer"
+
+msgid "wd.r.inst.fq"
+msgstr "Daily"
+
+msgid "wd.r.inst.sn"
+msgstr "2005-01-01"
+
+msgid "wd.r.inst.sy"
+msgstr "from 2005"
+
+msgid "wd.r.inst.us"
+msgstr "Pick stocks by foreign or trust net buying"
+
+msgid "wd.r.inst.tx"
+msgstr "Top 100 by market cap, buy the 10 with the strongest foreign net buying, rebalance monthly"
+
+msgid "wd.r.mg.nm"
+msgstr "Margin and short balances"
+
+msgid "wd.r.mg.fq"
+msgstr "Daily"
+
+msgid "wd.r.mg.sn"
+msgstr "1994-10-01"
+
+msgid "wd.r.mg.us"
+msgstr "Sharp margin drops or short spikes as conditions"
+
+msgid "wd.r.hold.nm"
+msgstr "Shareholder count and holding distribution"
+
+msgid "wd.r.hold.fq"
+msgstr "Weekly"
+
+msgid "wd.r.hold.sn"
+msgstr "2010-01-01"
+
+msgid "wd.r.hold.us"
+msgstr "Stocks where large holders are accumulating"
+
+msgid "wd.r.fh.nm"
+msgstr "Foreign holdings, securities lending"
+
+msgid "wd.r.fh.nt"
+msgstr "Lending from 2001-05-01"
+
+msgid "wd.r.fh.fq"
+msgstr "Daily"
+
+msgid "wd.r.fh.sn"
+msgstr "2004-02-01"
+
+msgid "wd.r.fh.us"
+msgstr "Changes in the foreign ownership ratio"
+
+msgid "wd.r.br.nm"
+msgstr "Broker-branch flows, top 8 banks"
+
+msgid "wd.r.br.fq"
+msgstr "Daily"
+
+msgid "wd.r.br.sn"
+msgstr "2021-06-30"
+
+msgid "wd.r.br.sy"
+msgstr "from 2021-06"
+
+msgid "wd.r.br.us"
+msgstr "A specific branch buying several days in a row"
+
+msgid "wd.r.br.tx"
+msgstr "Fade Hon Hai when a specific branch's net flow drifts far from its mean, daily bars"
+
+msgid "wd.r.fin.nm"
+msgstr "Financial statements: income, balance sheet, cash flow"
+
+msgid "wd.r.fin.nt"
+msgstr "Balance sheet from 2011-12-01, cash flow from 2008-06-01"
+
+msgid "wd.r.fin.fq"
+msgstr "Quarterly"
+
+msgid "wd.r.fin.sn"
+msgstr "1990-03-01"
+
+msgid "wd.r.fin.us"
+msgstr "Factor picks such as gross margin or ROE, rebalance quarterly"
+
+msgid "wd.r.rev.nm"
+msgstr "Monthly revenue"
+
+msgid "wd.r.rev.fq"
+msgstr "Monthly"
+
+msgid "wd.r.rev.sn"
+msgstr "2000-01-01"
+
+msgid "wd.r.rev.sy"
+msgstr "from 2000"
+
+msgid "wd.r.rev.us"
+msgstr "Revenue-growth picks, rebalance monthly"
+
+msgid "wd.r.rev.tx"
+msgstr "Stocks whose monthly revenue growth has risen three months in a row, equal weight, rebalance monthly"
+
+msgid "wd.r.val.nm"
+msgstr "P/E, P/B, dividend yield, market cap"
+
+msgid "wd.r.val.nt"
+msgstr "Market cap from 2004-01-01"
+
+msgid "wd.r.val.fq"
+msgstr "Daily"
+
+msgid "wd.r.val.sn"
+msgstr "2005-10-01"
+
+msgid "wd.r.val.us"
+msgstr "Low-P/E or high-yield baskets; top-N by market cap as the universe"
+
+msgid "wd.r.div.nm"
+msgstr "Dividend events"
+
+msgid "wd.r.div.fq"
+msgstr "Event"
+
+msgid "wd.r.div.sn"
+msgstr "1994-10-01"
+
+msgid "wd.r.div.us"
+msgstr "Strategies around ex-dividend dates"
+
+msgid "wd.r.txk.nm"
+msgstr "TAIEX futures klines (front-month continuous)"
+
+msgid "wd.r.txk.nt"
+msgstr "Mini and micro contracts backtest on the same price series"
+
+msgid "wd.r.txk.fq"
+msgstr "Daily, 1 to 60 min"
+
+msgid "wd.r.txk.sn"
+msgstr "2011-01-03"
+
+msgid "wd.r.txk.sy"
+msgstr "from 2011"
+
+msgid "wd.r.txk.us"
+msgstr "Intraday and swing strategies on TAIEX futures"
+
+msgid "wd.r.txk.tx"
+msgstr "TAIEX futures 1-minute bars, fast/slow moving-average cross, flat before settlement"
+
+msgid "wd.r.txio.nm"
+msgstr "TAIEX futures bid/ask volume"
+
+msgid "wd.r.txio.nt"
+msgstr "Includes the night session"
+
+msgid "wd.r.txio.fq"
+msgstr "1 min"
+
+msgid "wd.r.txio.sn"
+msgstr "2018-02-22"
+
+msgid "wd.r.txio.sy"
+msgstr "from 2018"
+
+msgid "wd.r.txio.us"
+msgstr "Intraday strategies on bid/ask imbalance"
+
+msgid "wd.r.txio.tx"
+msgstr "Go with the TAIEX futures bid/ask imbalance, day session only, 1-minute bars"
+
+msgid "wd.r.fi.nm"
+msgstr "Futures institutional positions"
+
+msgid "wd.r.fi.fq"
+msgstr "Daily"
+
+msgid "wd.r.fi.sn"
+msgstr "2018-06-05"
+
+msgid "wd.r.fi.sy"
+msgstr "from 2018"
+
+msgid "wd.r.fi.us"
+msgstr "Foreign net futures position as a filter"
+
+msgid "wd.r.fi.tx"
+msgstr "Only go long TAIEX futures while foreign net longs are rising, daily bars"
+
+msgid "wd.r.big.nm"
+msgstr "Large-trader positions, futures and options"
+
+msgid "wd.r.big.fq"
+msgstr "Daily"
+
+msgid "wd.r.big.sn"
+msgstr "1998-07-01"
+
+msgid "wd.r.big.us"
+msgstr "Large traders' net position"
+
+msgid "wd.r.opt.nm"
+msgstr "Options institutional positions, Put/Call Ratio"
+
+msgid "wd.r.opt.nt"
+msgstr "Put/Call Ratio from 2001-12-24"
+
+msgid "wd.r.opt.fq"
+msgstr "Daily"
+
+msgid "wd.r.opt.sn"
+msgstr "2018-06-05"
+
+msgid "wd.r.opt.us"
+msgstr "Options positioning as a long/short filter"
+
+msgid "wd.r.pcr.nm"
+msgstr "Put/Call Ratio"
+
+msgid "wd.r.pcr.fq"
+msgstr "Daily"
+
+msgid "wd.r.pcr.sy"
+msgstr "from 2001"
+
+msgid "wd.r.pcr.tx"
+msgstr "Long TAIEX futures when the Put/Call Ratio is above a threshold, daily bars"
+
+msgid "wd.r.exd.nm"
+msgstr "TAIEX ex-dividend points"
+
+msgid "wd.r.exd.nt"
+msgstr "Includes a 120-day forward estimate"
+
+msgid "wd.r.exd.fq"
+msgstr "Daily"
+
+msgid "wd.r.exd.sn"
+msgstr "2003-01-02"
+
+msgid "wd.r.exd.us"
+msgstr "Adjust the futures basis"
+
+msgid "wd.r.sf.nm"
+msgstr "Single-stock futures"
+
+msgid "wd.r.sf.nt"
+msgstr "Intraday bars for some contracts only"
+
+msgid "wd.r.sf.fq"
+msgstr "Daily"
+
+msgid "wd.r.sf.sn"
+msgstr "Varies by contract"
+
+msgid "wd.r.sf.us"
+msgstr "Daily-bar strategies on single-stock futures"

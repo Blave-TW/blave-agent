@@ -297,6 +297,7 @@ async function acctSignOut() {
   if (!hasToken || running || oauthPending || planLoginBusy) return;
   const r = await window.blave.signOutBlave();
   hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
+  if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單退回沒登入那一版
   RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
   if (typeof libInvalidate === "function") libInvalidate();   // 策略庫的 purchased / 閘門是這個帳號的
   if (typeof rptInvalidate === "function") rptInvalidate();   // 雲端報告也是
@@ -1574,8 +1575,6 @@ function csClearChat() {
 function csStartNew() {
   sessionId = csNewId(); csTitle = "";
   csRemember(); csClearChat(); csRenderHead(); csShowList(false);
-  // 起手範例只在「沒選策略的歡迎畫面 + 還沒講過話」時有意義
-  $("chat-eg").hidden = false;
   $("ta").focus();
 }
 /* 被停止 / 中途出錯的回合,runtime 在逐字稿那一輪回覆的尾端附一行給**下一輪 agent** 看的收據
@@ -1687,7 +1686,6 @@ async function csOpen(id) {
     .sort((a, b) => a.ts - b.ts)
     .reduce(histFixOrder, [])
     .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addMsg("you", x.turn.content) : addHistoryAi(x.turn.content)));
-  $("chat-eg").hidden = true;
   if (typeof engReattach === "function") engReattach();   // 舊回合畫回去之後,安裝進度卡移到最下面(csClearChat 補回來時在最上面)
   csRenderHead(); csShowList(false); scrollChat();
 }
@@ -1882,13 +1880,6 @@ let turnSeq = 0;   // 回合序號:每跑起來一輪 +1。參數掃描分頁的
 let liveBubble = null;
 
 function scrollChat() { $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight; chatEdge(); }
-
-// 起手範例:點了直接送,不要只是把字填進去讓人再按一次。
-$("chat-eg").addEventListener("click", () => {
-  $("ta").value = t("ws.chatExample");
-  autosize();
-  sendDraft();
-});
 
 /* ── agent 回覆的顯示 ─────────────────────────────────
    原文留在 el._raw(串流是一段一段接上來的),畫面由 paintAi 重畫。做兩件事:
@@ -2350,7 +2341,6 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   running = true; sendBtnSync(); stratDelSync(); rpMissSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
-  $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
   const viewing = opts && opts.viewing && typeof opts.viewing === "object" ? opts.viewing : chatViewing();
   // 泡泡留住節點:沒送出去的路(busy / 版本閘 / 暖機中停止 / 引擎起不來)要收回泡泡+還原到輸入框,
@@ -2749,6 +2739,7 @@ function acctPaint() {
   });
   dataCardSync(s);
   if (typeof libIdeaPaint === "function") libIdeaPaint();   // 帳號能不能跑變了:Blave AI 的找點子入口跟著
+  if (typeof wdPaint === "function") wdPaint();             // 歡迎頁的資料清單:對比版 / 單一清單跟著 data_access 換(renderer/welcome.js)
   if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
   planWatch(s);
   // 能跑了就不必再盯:清掉名單,視窗回前景不再打 account_status(它跟 LLM 共用每分鐘 30 次的桶,
@@ -3078,6 +3069,7 @@ async function acctPrecheck() {
   if (!hasToken) { acct = null; planWatchIdle(); return; }
   acct = await window.blave.accountStatus(); acctAt = Date.now();
   if (acct) planWatch(acct);                  // 方案狀態(側欄那行字、啟動中的輪詢)不看能不能跑
+  if (typeof wdPaint === "function") wdPaint();   // 能跑的人不會走到下面的 acctPaint,歡迎頁的清單在這裡換版
   if (cur !== "blave") return;                // 預檢卡講的是「Blave AI 能不能跑」,自帶 CLI 的人用不到
   if (!acct || acct.can_run) return;
   acctCard = faultCard();
@@ -3409,6 +3401,7 @@ function applyStatic() {
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+  if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單(renderer/welcome.js 用 t() 現組的列);放最後:#wl-all 的字不掛 data-i18n
 }
 
 (async () => {
