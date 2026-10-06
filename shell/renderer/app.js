@@ -884,6 +884,9 @@ function takeAttachment(file, from) {
   if (!file) return false;
   if (file.size === 0) { addMsg("sys", t("ws.attachEmpty")).dataset.i18n = "ws.attachEmpty"; return false; }
   if (file.size > ATTACH_MAX_BYTES) { addMsg("sys", t("ws.attachTooLarge")).dataset.i18n = "ws.attachTooLarge"; return false; }
+  // 檔名太長:跟空檔同一個理由先擋。上限是主行程的那一個數字(preload 交過來),這裡不另外寫
+  const nameMax = window.blave.attachNameMax;
+  if (nameMax > 0 && file.name.length > nameMax) { addMsg("sys", t("ws.attachNameLong")).dataset.i18n = "ws.attachNameLong"; return false; }
   setAttachment(file, from);
   return true;
 }

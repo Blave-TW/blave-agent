@@ -2705,6 +2705,8 @@ function createWindow() {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       // 發佈版連 DevTools 本身都關掉(選單已經不放;這是縱深:哪天有人加回快捷鍵或 openDevTools 也開不起來)
       devTools: !(app.isPackaged && require("./package.json").blaveRelease),
+      // 聊天附件的檔名上限只寫在 shell/attach.js:經 preload 交給畫面,選檔那一刻就擋(主行程回絕時 send-message 已經回 started)
+      additionalArguments: ["--blave-attach-name-max=" + require("./attach").ATTACH_NAME_MAX],
     },
   });
   guardNavigation(win);

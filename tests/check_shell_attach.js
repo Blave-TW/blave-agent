@@ -103,10 +103,21 @@ try {
   t("檔名截尾時全名在 title(長檔名看得到副檔名);清 chip 時一併清掉", /\$\("attach-name"\)\.title = attachedFile \? attachedFile\.name : "";/.test(cut("setAttachment")));
   { // 空檔:選到那一刻就講、不掛 chip(主行程不收 0 位元組,等它回絕時 chip 已清、埋點已送)。真的跑 takeAttachment
     const msgs = [], set = [];
-    const take = new Function("addMsg", "t", "setAttachment", "ATTACH_MAX_BYTES", cut("takeAttachment") + "; return takeAttachment;")((cls, text) => { const m = { cls, text, dataset: {} }; msgs.push(m); return m; }, (k) => k, (f, from) => set.push([f, from]), at.ATTACH_MAX_BYTES);
-    const r0 = take({ size: 0, name: "empty.csv" }, "file"), n0 = set.length, rBig = take({ size: at.ATTACH_MAX_BYTES + 1 }, "file"), r1 = take({ size: 1, name: "a" }, "paste");
+    const mkTake = (blave) => new Function("addMsg", "t", "setAttachment", "ATTACH_MAX_BYTES", "window", cut("takeAttachment") + "; return takeAttachment;")((cls, text) => { const m = { cls, text, dataset: {} }; msgs.push(m); return m; }, (k) => k, (f, from) => set.push([f, from]), at.ATTACH_MAX_BYTES, { blave });
+    const take = mkTake({ attachNameMax: at.ATTACH_NAME_MAX });
+    const r0 = take({ size: 0, name: "empty.csv" }, "file"), n0 = set.length, rBig = take({ size: at.ATTACH_MAX_BYTES + 1, name: "big.bin" }, "file"), r1 = take({ size: 1, name: "a" }, "paste");
     t("takeAttachment:0 位元組 → 講「檔案是空的」、不掛 chip;太大照舊;1 byte 掛上", r0 === false && n0 === 0 && msgs[0].cls === "sys" && msgs[0].text === "ws.attachEmpty" && msgs[0].dataset.i18n === "ws.attachEmpty" && rBig === false && msgs[1].text === "ws.attachTooLarge" && r1 === true && set.length === 1 && set[0][1] === "paste", { r0, rBig, r1, msgs });
-    t("…主行程確實不收空檔(畫面那一道擋的就是這個)", at.validate({ name: "empty.csv", data: "" }) === null); }
+    t("…主行程確實不收空檔(畫面那一道擋的就是這個)", at.validate({ name: "empty.csv", data: "" }) === null);
+    // 檔名太長:同一類(主行程回絕時已經回了 started)。上限只有主行程那一個數字,經 additionalArguments → preload → window.blave.attachNameMax
+    const nSet = set.length, nMsg = msgs.length, long = "長".repeat(at.ATTACH_NAME_MAX) + "x", edge = "x".repeat(at.ATTACH_NAME_MAX);
+    const rLong = take({ size: 1, name: long }, "file"), longMsg = msgs[nMsg], rEdge = take({ size: 1, name: edge }, "file");
+    t("takeAttachment:檔名超過上限 → 講「檔名太長」、不掛 chip;剛好等於上限照掛(跟主行程同一條線)", rLong === false && set.length === nSet + 1 && longMsg && longMsg.text === "ws.attachNameLong" && longMsg.dataset.i18n === "ws.attachNameLong" && rEdge === true && set[nSet][0].name === edge
+      && at.validate({ name: long, data: b64("x") }) === null && !!at.validate({ name: edge, data: b64("x") }), { rLong, rEdge, longMsg });
+    t("…上限沒交過來(0 / 沒這個欄位)→ 畫面不擋,仍由主行程擋", mkTake({ attachNameMax: 0 })({ size: 1, name: long }, "file") === true && mkTake({})({ size: 1, name: long }, "file") === true);
+    const preLine = (preSrc.match(/^\s*attachNameMax: ([^\n]*?),\n/m) || [])[1] || "null", argOf = (argv) => new Function("process", "return " + preLine)({ argv });
+    t("上限的來源只有 shell/attach.js:main.js 用 additionalArguments 帶 ATTACH_NAME_MAX、preload 從 process.argv 讀;app.js 與 preload 都不寫數字", /additionalArguments: \["--blave-attach-name-max=" \+ require\("\.\/attach"\)\.ATTACH_NAME_MAX\],/.test(mainSrc)
+      && argOf(["electron", "--x=1", "--blave-attach-name-max=" + at.ATTACH_NAME_MAX]) === at.ATTACH_NAME_MAX && argOf(["electron"]) === 0 && argOf(["electron", "--blave-attach-name-max=abc"]) === 0
+      && /const nameMax = window\.blave\.attachNameMax;/.test(cut("takeAttachment")) && !/\b\d{2,}\b/.test(cut("takeAttachment")) && !/\d/.test(preLine.replace("[1]", "").replace("=== 0", "").replace("|| 0", "")), { preLine }); }
   { // 拖放:兩支純函式真的跑
     const D = vm.runInNewContext(cut("dragHasFiles") + "\n" + cut("dragIsText") + "\n({ dragHasFiles, dragIsText })");
     const el = (editable) => ({ nodeType: 1, closest: (sel) => (sel === "textarea, input, [contenteditable]" && editable ? {} : null) });
@@ -171,6 +182,7 @@ try {
     && html.indexOf('id="ws-update"') < html.indexOf('id="attach-chip"') && html.indexOf('id="attach-chip"') < html.indexOf('id="sug-wrap"') && /<div class="ci-bar">\s*<!--[\s\S]*?-->\s*<input type="file" id="attach-input" hidden \/>\s*<button class="btn-attach" id="attach-btn" type="button" data-i18n-aria="ws\.attach">/.test(html));
   const st = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   t("空檔那句 en / zh 都有、zh 全形標點", (st.match(/"ws\.attachEmpty": "/g) || []).length === 2 && st.includes('"ws.attachEmpty": "這個檔案是空的，沒有內容可以傳。"'));
+  t("檔名太長那句 en / zh 都有、zh 全形標點", (st.match(/"ws\.attachNameLong": "/g) || []).length === 2 && st.includes('"ws.attachNameLong": "檔名太長，請改短一點再傳。"'));
   t("六個字串 en / zh 都有;zh 全形標點;太大那句同雲端 workspace_attach_too_large;不讀圖兩句照設計稽核", ["ws.attach", "ws.attachRemove", "ws.attachTooLarge", "ws.attachReadFail", "ws.attachNoImage", "ws.attachNoImageLong"].every((k) => (st.match(new RegExp('"' + k.replace(".", "\\.") + '": "', "g")) || []).length === 2)
     && st.includes('"ws.attachTooLarge": "檔案太大，上限 5MB。"') && st.includes('"ws.attachTooLarge": "File too large — the limit is 5MB."') && st.includes('"ws.attach": "附加檔案"') && st.includes('"ws.attachRemove": "移除附件"') && /"ws\.attachReadFail": "[^"]*。"/.test(st) && st.includes('"ws.attachNoImage": "{model} 不讀圖"') && st.includes('"ws.attachNoImageLong": "{model} 不讀圖，這張會被略過。"') && st.includes(`"ws.attachNoImage": "{model} can't read images"`) && st.includes(`"ws.attachNoImageLong": "{model} can't read images — this one will be skipped."`));
   const css = fs.readFileSync(path.join(R, "app.css"), "utf8");

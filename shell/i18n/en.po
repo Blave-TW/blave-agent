@@ -114,6 +114,9 @@ msgstr "File too large — the limit is 5MB."
 msgid "ws.attachEmpty"
 msgstr "That file is empty — there's nothing to send."
 
+msgid "ws.attachNameLong"
+msgstr "That file name is too long — shorten it and try again."
+
 # 選了之後檔被移走 / 刪掉,送出那一刻讀不到(雲端用通用錯誤句;電腦版沒有通用句,講清楚)
 msgid "ws.attachNoImage"
 msgstr "{model} can't read images"
