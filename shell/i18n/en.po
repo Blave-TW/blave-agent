@@ -6198,6 +6198,10 @@ msgstr "Hide All Data"
 msgid "wd.sep"
 msgstr " · "
 
+# Clicking a welcome row drops this sentence into the input box (not sent); {name} = that row's wd.r.<id>.an
+msgid "wd.ask"
+msgstr "Let's discuss how to build a strategy with {name}"
+
 msgid "wd.h.data"
 msgstr "Data"
 
@@ -6225,7 +6229,7 @@ msgstr "“Public” = this computer fetches it straight from the exchange, no B
 msgid "wd.foot.2"
 msgstr "Current values only, no history, so not usable for backtests: Taiwan real-time quotes (about every 10 s), the macro calendar (rolling ~5 weeks), news headlines (up to 31 days)."
 
-# Per row: nm name / nt catalog note / fq frequency / sn catalog start / sy welcome start (short) / wn welcome trailing note / us backtest ideas / tx starter sentence (whole row clickable, fills the input box)
+# Per row: nm name / wnm short name on the welcome list (the catalog keeps the long one) / nt catalog note / fq frequency / sn catalog start / sy welcome start (short) / us backtest ideas / an the name as it goes into wd.ask (welcome rows only; no parenthetical, never a coin or symbol)
 msgid "wd.r.bnk.nm"
 msgstr "Perpetual futures klines (Binance USDT-M)"
 
@@ -6247,8 +6251,8 @@ msgstr "from 2020 or listing"
 msgid "wd.r.bnk.us"
 msgstr "Price-and-volume strategies: moving averages, bands, breakouts"
 
-msgid "wd.r.bnk.tx"
-msgstr "Long BTC when the close drops below the lower Bollinger band, exit at the middle band, 1-hour bars"
+msgid "wd.r.bnk.an"
+msgstr "perpetual futures klines"
 
 msgid "wd.r.fng.nm"
 msgstr "Fear & Greed Index"
@@ -6268,8 +6272,8 @@ msgstr "from 2018"
 msgid "wd.r.fng.us"
 msgstr "Enter and exit at sentiment extremes"
 
-msgid "wd.r.fng.tx"
-msgstr "Buy BTC when Fear & Greed is below 20, exit above 80, daily bars"
+msgid "wd.r.fng.an"
+msgstr "the Fear & Greed Index"
 
 msgid "wd.r.ti.nm"
 msgstr "Taker Intensity"
@@ -6289,8 +6293,8 @@ msgstr "from 2020"
 msgid "wd.r.ti.us"
 msgstr "Trend or reversal on aggressive buy/sell imbalance"
 
-msgid "wd.r.ti.tx"
-msgstr "Long BTC when Taker Intensity spikes, exit when it fades, 5-minute bars"
+msgid "wd.r.ti.an"
+msgstr "the Taker Intensity indicator"
 
 msgid "wd.r.conc.nm"
 msgstr "Position Concentration"
@@ -6310,8 +6314,8 @@ msgstr "from 2021"
 msgid "wd.r.conc.us"
 msgstr "Enter and exit when the long/short account ratio drifts from its mean"
 
-msgid "wd.r.conc.tx"
-msgstr "Long BTC when concentration runs high, exit when it reverts to the mean, 1-hour bars"
+msgid "wd.r.conc.an"
+msgstr "Position Concentration"
 
 msgid "wd.r.whale.nm"
 msgstr "Whale Alerts"
@@ -6346,8 +6350,8 @@ msgstr "from 2023"
 msgid "wd.r.liq.us"
 msgstr "Rebound or continuation after a liquidation cascade"
 
-msgid "wd.r.liq.tx"
-msgstr "Fade BTC after a liquidation spike, 1-hour bars"
+msgid "wd.r.liq.an"
+msgstr "liquidation data"
 
 msgid "wd.r.sent.nm"
 msgstr "Market Sentiment"
@@ -6412,8 +6416,8 @@ msgstr "from 2025-09"
 msgid "wd.r.fr.us"
 msgstr "Contrarian at extreme funding; only about a year of history"
 
-msgid "wd.r.fr.tx"
-msgstr "Short when funding is extremely high, exit when it normalizes, daily bars"
+msgid "wd.r.fr.an"
+msgstr "funding rates"
 
 msgid "wd.r.twd.nm"
 msgstr "Stock daily bars (raw and adjusted)"
@@ -6430,14 +6434,11 @@ msgstr "Listed stocks 2010-01-04"
 msgid "wd.r.twd.sy"
 msgstr "listed stocks from 2010"
 
-msgid "wd.r.twd.wn"
-msgstr "first fetch about 36 s per stock-year"
-
 msgid "wd.r.twd.us"
 msgstr "Moving-average and momentum strategies on a single stock; the first fetch takes about 36 s per stock-year"
 
-msgid "wd.r.twd.tx"
-msgstr "TSMC 20-day / 60-day moving-average cross, backtested on adjusted daily bars"
+msgid "wd.r.twd.an"
+msgstr "Taiwan stock daily bars"
 
 msgid "wd.r.twm.nm"
 msgstr "Stock intraday bars"
@@ -6454,8 +6455,8 @@ msgstr "from 2019"
 msgid "wd.r.twm.us"
 msgstr "Day-trading and intraday strategies"
 
-msgid "wd.r.twm.tx"
-msgstr "TSMC 5-minute bars, opening-range breakout, flat before the close"
+msgid "wd.r.twm.an"
+msgstr "Taiwan stock intraday bars"
 
 msgid "wd.r.inst.nm"
 msgstr "Institutional flows per stock"
@@ -6475,8 +6476,8 @@ msgstr "from 2005"
 msgid "wd.r.inst.us"
 msgstr "Pick stocks by foreign or trust net buying"
 
-msgid "wd.r.inst.tx"
-msgstr "Top 100 by market cap, buy the 10 with the strongest foreign net buying, rebalance monthly"
+msgid "wd.r.inst.an"
+msgstr "Taiwan stock institutional flows"
 
 msgid "wd.r.mg.nm"
 msgstr "Margin and short balances"
@@ -6532,8 +6533,8 @@ msgstr "from 2021-06"
 msgid "wd.r.br.us"
 msgstr "A specific branch buying several days in a row"
 
-msgid "wd.r.br.tx"
-msgstr "Fade Hon Hai when a specific branch's net flow drifts far from its mean, daily bars"
+msgid "wd.r.br.an"
+msgstr "broker-branch flows"
 
 msgid "wd.r.fin.nm"
 msgstr "Financial statements: income, balance sheet, cash flow"
@@ -6565,8 +6566,8 @@ msgstr "from 2000"
 msgid "wd.r.rev.us"
 msgstr "Revenue-growth picks, rebalance monthly"
 
-msgid "wd.r.rev.tx"
-msgstr "Stocks whose monthly revenue growth has risen three months in a row, equal weight, rebalance monthly"
+msgid "wd.r.rev.an"
+msgstr "Taiwan monthly revenue data"
 
 msgid "wd.r.val.nm"
 msgstr "P/E, P/B, dividend yield, market cap"
@@ -6598,8 +6599,11 @@ msgstr "Strategies around ex-dividend dates"
 msgid "wd.r.txd.nm"
 msgstr "TAIEX futures daily bars (front-month continuous)"
 
+msgid "wd.r.txd.wnm"
+msgstr "TAIEX futures daily bars"
+
 msgid "wd.r.txd.nt"
-msgstr "Source: Taiwan Futures Exchange; with Blave data, Blave's continuous contract takes over from 2011"
+msgstr "Mini from 2001-04-09, micro from 2024-07-29"
 
 msgid "wd.r.txd.fq"
 msgstr "Daily"
@@ -6610,17 +6614,17 @@ msgstr "1998-07-21"
 msgid "wd.r.txd.sy"
 msgstr "from 1998"
 
-msgid "wd.r.txd.wn"
-msgstr "source: TAIFEX"
-
 msgid "wd.r.txd.us"
 msgstr "Swing and trend strategies on TAIEX futures"
 
-msgid "wd.r.txd.tx"
-msgstr "TAIEX futures daily bars, 20-day / 60-day moving-average cross, flat on settlement day"
+msgid "wd.r.txd.an"
+msgstr "TAIEX futures daily bars"
 
 msgid "wd.r.txk.nm"
 msgstr "TAIEX futures intraday bars (front-month continuous)"
+
+msgid "wd.r.txk.wnm"
+msgstr "TAIEX futures intraday bars"
 
 msgid "wd.r.txk.nt"
 msgstr "Mini and micro contracts backtest on the same price series"
@@ -6637,8 +6641,8 @@ msgstr "from 2011"
 msgid "wd.r.txk.us"
 msgstr "Intraday strategies on TAIEX futures"
 
-msgid "wd.r.txk.tx"
-msgstr "TAIEX futures 1-minute bars, fast/slow moving-average cross, flat before settlement"
+msgid "wd.r.txk.an"
+msgstr "TAIEX futures intraday bars"
 
 msgid "wd.r.txio.nm"
 msgstr "TAIEX futures bid/ask volume"
@@ -6658,8 +6662,8 @@ msgstr "from 2018"
 msgid "wd.r.txio.us"
 msgstr "Intraday strategies on bid/ask imbalance"
 
-msgid "wd.r.txio.tx"
-msgstr "Go with the TAIEX futures bid/ask imbalance, day session only, 1-minute bars"
+msgid "wd.r.txio.an"
+msgstr "TAIEX futures bid/ask volume"
 
 msgid "wd.r.fi.nm"
 msgstr "Futures institutional positions"
@@ -6676,8 +6680,8 @@ msgstr "from 2018"
 msgid "wd.r.fi.us"
 msgstr "Foreign net futures position as a filter"
 
-msgid "wd.r.fi.tx"
-msgstr "Only go long TAIEX futures while foreign net longs are rising, daily bars"
+msgid "wd.r.fi.an"
+msgstr "institutional futures positions"
 
 msgid "wd.r.big.nm"
 msgstr "Large-trader positions, futures and options"
@@ -6715,8 +6719,8 @@ msgstr "Daily"
 msgid "wd.r.pcr.sy"
 msgstr "from 2001"
 
-msgid "wd.r.pcr.tx"
-msgstr "Long TAIEX futures when the Put/Call Ratio is above a threshold, daily bars"
+msgid "wd.r.pcr.an"
+msgstr "the Put/Call Ratio"
 
 msgid "wd.r.exd.nm"
 msgstr "TAIEX ex-dividend points"
