@@ -6200,6 +6200,10 @@ msgstr "收起全部資料"
 msgid "wd.sep"
 msgstr "・"
 
+# 點歡迎頁的一列 → 這一句落進輸入框(不送出);{name} = 那一列的 wd.r.<id>.an
+msgid "wd.ask"
+msgstr "跟我討論要怎麼用{name}做策略"
+
 msgid "wd.h.data"
 msgstr "資料"
 
@@ -6227,7 +6231,7 @@ msgstr "「公開」＝這台電腦直接向交易所抓，不經 Blave、不用
 msgid "wd.foot.2"
 msgstr "只有現在、沒有歷史，不能拿來回測：台股即時報價（約 10 秒更新）、總經行事曆（滾動約五週）、新聞標題（最多 31 天）。"
 
-# 每一列:nm 資料名 / nt 目錄的補充小字 / fq 頻率 / sn 目錄的起始 / sy 歡迎頁的起始年短句 / wn 歡迎頁列尾補充 / us 可以回測 / tx 起手句(整列可點、落進輸入框)
+# 每一列:nm 資料名 / wnm 歡迎頁短名(目錄留長名)/ nt 目錄的補充小字 / fq 頻率 / sn 目錄的起始 / sy 歡迎頁的起始年短句 / us 可以回測 / an 代進 wd.ask 的資料名(只有歡迎頁的列有;不帶括號說明,不加幣種或標的)
 msgid "wd.r.bnk.nm"
 msgstr "永續合約 K 線（Binance，USDT 本位）"
 
@@ -6249,8 +6253,8 @@ msgstr "2020 年或上市日起"
 msgid "wd.r.bnk.us"
 msgstr "均線、通道、突破這類只看價量的策略"
 
-msgid "wd.r.bnk.tx"
-msgstr "BTC 收盤跌破布林通道下軌時做多，回到中軌出場，1 小時線"
+msgid "wd.r.bnk.an"
+msgstr "永續合約 K 線"
 
 msgid "wd.r.fng.nm"
 msgstr "恐懼貪婪指數"
@@ -6270,8 +6274,8 @@ msgstr "2018 年起"
 msgid "wd.r.fng.us"
 msgstr "情緒極端時進出場"
 
-msgid "wd.r.fng.tx"
-msgstr "恐懼貪婪指數低於 20 時買 BTC，高於 80 出場，日線"
+msgid "wd.r.fng.an"
+msgstr "恐懼貪婪指數"
 
 msgid "wd.r.ti.nm"
 msgstr "多空力道"
@@ -6291,8 +6295,8 @@ msgstr "2020 年起"
 msgid "wd.r.ti.us"
 msgstr "主動買賣失衡的順勢或反轉"
 
-msgid "wd.r.ti.tx"
-msgstr "BTC 多空力道衝高時做多，回落出場，5 分線"
+msgid "wd.r.ti.an"
+msgstr "多空力道指標"
 
 msgid "wd.r.conc.nm"
 msgstr "籌碼集中度"
@@ -6312,8 +6316,8 @@ msgstr "2021 年起"
 msgid "wd.r.conc.us"
 msgstr "多空帳戶比偏離均值時進出場"
 
-msgid "wd.r.conc.tx"
-msgstr "BTC 籌碼集中度偏高時做多，回到均值出場，1 小時線"
+msgid "wd.r.conc.an"
+msgstr "籌碼集中度"
 
 msgid "wd.r.whale.nm"
 msgstr "巨鯨警報"
@@ -6348,8 +6352,8 @@ msgstr "2023 年起"
 msgid "wd.r.liq.us"
 msgstr "爆倉潮之後的反彈或延續"
 
-msgid "wd.r.liq.tx"
-msgstr "BTC 爆倉量暴增之後反向進場，1 小時線"
+msgid "wd.r.liq.an"
+msgstr "爆倉資料"
 
 msgid "wd.r.sent.nm"
 msgstr "市場情緒"
@@ -6414,8 +6418,8 @@ msgstr "2025-09 起"
 msgid "wd.r.fr.us"
 msgstr "費率極端時的反向策略；歷史只有一年左右"
 
-msgid "wd.r.fr.tx"
-msgstr "資金費率極端偏高時做空，回到正常出場，日線"
+msgid "wd.r.fr.an"
+msgstr "資金費率"
 
 msgid "wd.r.twd.nm"
 msgstr "個股日線（原始與還原）"
@@ -6432,14 +6436,11 @@ msgstr "上市 2010-01-04"
 msgid "wd.r.twd.sy"
 msgstr "上市股 2010 年起"
 
-msgid "wd.r.twd.wn"
-msgstr "第一次抓，每檔每年約 36 秒"
-
 msgid "wd.r.twd.us"
 msgstr "單一個股的均線、動能策略；第一次抓，上市股每檔每年約 36 秒"
 
-msgid "wd.r.twd.tx"
-msgstr "台積電 20 日與 60 日均線交叉，用還原日線回測"
+msgid "wd.r.twd.an"
+msgstr "個股日線"
 
 msgid "wd.r.twm.nm"
 msgstr "個股分線"
@@ -6456,8 +6457,8 @@ msgstr "2019 年起"
 msgid "wd.r.twm.us"
 msgstr "當沖、盤中策略"
 
-msgid "wd.r.twm.tx"
-msgstr "台積電 5 分線，開盤區間突破進場，收盤前平倉"
+msgid "wd.r.twm.an"
+msgstr "個股分線"
 
 msgid "wd.r.inst.nm"
 msgstr "個股三大法人"
@@ -6477,8 +6478,8 @@ msgstr "2005 年起"
 msgid "wd.r.inst.us"
 msgstr "跟著外資或投信買超選股"
 
-msgid "wd.r.inst.tx"
-msgstr "台股市值前 100 檔，買外資買超最強的 10 檔，每月換股"
+msgid "wd.r.inst.an"
+msgstr "個股三大法人"
 
 msgid "wd.r.mg.nm"
 msgstr "融資融券"
@@ -6534,8 +6535,8 @@ msgstr "2021-06 起"
 msgid "wd.r.br.us"
 msgstr "特定分點連續買超"
 
-msgid "wd.r.br.tx"
-msgstr "鴻海特定分點買賣超偏離均值時反向進場，日線"
+msgid "wd.r.br.an"
+msgstr "分點買賣超"
 
 msgid "wd.r.fin.nm"
 msgstr "財報：損益表、資產負債表、現金流量表"
@@ -6567,8 +6568,8 @@ msgstr "2000 年起"
 msgid "wd.r.rev.us"
 msgstr "營收年增選股，每月換股"
 
-msgid "wd.r.rev.tx"
-msgstr "月營收年增率連續三個月走高的股票，等權重，每月換股"
+msgid "wd.r.rev.an"
+msgstr "月營收"
 
 msgid "wd.r.val.nm"
 msgstr "本益比、淨值比、殖利率、市值"
@@ -6600,8 +6601,11 @@ msgstr "除權息前後的策略"
 msgid "wd.r.txd.nm"
 msgstr "台指期日線（近月連續）"
 
+msgid "wd.r.txd.wnm"
+msgstr "台指期日線"
+
 msgid "wd.r.txd.nt"
-msgstr "來源：臺灣期貨交易所；有 Blave 資料時 2011 年起接 Blave 連續合約"
+msgstr "小台 2001-04-09、微台 2024-07-29 起"
 
 msgid "wd.r.txd.fq"
 msgstr "日"
@@ -6612,17 +6616,17 @@ msgstr "1998-07-21"
 msgid "wd.r.txd.sy"
 msgstr "1998 年起"
 
-msgid "wd.r.txd.wn"
-msgstr "來源期交所"
-
 msgid "wd.r.txd.us"
 msgstr "台指期波段、趨勢策略"
 
-msgid "wd.r.txd.tx"
-msgstr "台指期日線，20 日與 60 日均線交叉，結算日不留倉"
+msgid "wd.r.txd.an"
+msgstr "台指期日線"
 
 msgid "wd.r.txk.nm"
 msgstr "台指期分線（近月連續）"
+
+msgid "wd.r.txk.wnm"
+msgstr "台指期分線"
 
 msgid "wd.r.txk.nt"
 msgstr "小台、微台用同一條價格回測"
@@ -6639,8 +6643,8 @@ msgstr "2011 年起"
 msgid "wd.r.txk.us"
 msgstr "台指期日內策略"
 
-msgid "wd.r.txk.tx"
-msgstr "台指期 1 分線，快慢均線交叉，結算前平倉"
+msgid "wd.r.txk.an"
+msgstr "台指期分線"
 
 msgid "wd.r.txio.nm"
 msgstr "台指期內外盤"
@@ -6660,8 +6664,8 @@ msgstr "2018 年起"
 msgid "wd.r.txio.us"
 msgstr "內外盤失衡的日內策略"
 
-msgid "wd.r.txio.tx"
-msgstr "台指期內外盤失衡時順勢進場，只做日盤，1 分線"
+msgid "wd.r.txio.an"
+msgstr "台指期內外盤"
 
 msgid "wd.r.fi.nm"
 msgstr "期貨三大法人"
@@ -6678,8 +6682,8 @@ msgstr "2018 年起"
 msgid "wd.r.fi.us"
 msgstr "外資期貨淨部位當濾網"
 
-msgid "wd.r.fi.tx"
-msgstr "外資期貨淨多單增加時才做多台指期，日線"
+msgid "wd.r.fi.an"
+msgstr "期貨三大法人"
 
 msgid "wd.r.big.nm"
 msgstr "期貨與選擇權大額交易人"
@@ -6717,8 +6721,8 @@ msgstr "日"
 msgid "wd.r.pcr.sy"
 msgstr "2001 年起"
 
-msgid "wd.r.pcr.tx"
-msgstr "Put/Call Ratio 高於門檻時做多台指期，日線"
+msgid "wd.r.pcr.an"
+msgstr "Put/Call Ratio"
 
 msgid "wd.r.exd.nm"
 msgstr "加權指數除息點數"
