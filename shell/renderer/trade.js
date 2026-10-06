@@ -746,7 +746,7 @@ function envCloudList(st) {
   const a = st && st.cloud && Array.isArray(st.cloud.strategies) ? st.cloud.strategies : [];
   return a.filter((x) => x && typeof x.name === "string" && x.name).map((x) => ({
     name: x.name, displayName: typeof x.display_name === "string" && x.display_name ? x.display_name : x.name,
-    hasBacktest: x.has_backtest === true, mtime: x.updated_at == null ? null : x.updated_at, remote: true,
+    hasBacktest: x.has_backtest === true, mtime: x.updated_at == null ? null : x.updated_at, sig: typeof x.sig === "string" && x.sig ? x.sig : null, remote: true,
     symbol: typeof x.symbol === "string" && x.symbol ? x.symbol : null, portfolio: x.is_portfolio === true }));
 }
 /* 雲端那一邊現在是哪一種(主行程 cloud.js 的 code + machine.state):
@@ -1136,6 +1136,7 @@ async function trPoll() {
         if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; C.ov.curveErr = false; C.ov.perf = null; C.ov.perfErr = false; }   // ui 與 uiErr、curve 與 curveErr 各是一組,一起清
         if (typeof rpCloudPrune === "function") rpCloudPrune(C.list);   // 看著的那支被雲端刪了 / 換了帳號:報告收掉、回自動下單頁
         if (typeof libCloudChanged === "function") libCloudChanged(C.list);   // 策略庫雲端視角的「已安裝」(renderer/library.js):清單多了那支才算下載完成
+        if (typeof rpCloudWatch === "function") rpCloudWatch(C.list);   // 開著那支在平台上換了內容(回合結束後才同步到、或網頁發起的回合):補抓
         if (typeof rpWfSync === "function") rpWfSync();   // 雲端主機的 config_supports_wf 翻面:樣本外驗證分頁跟著換(落後態 ↔ 旋鈕)
       } catch (_) { }
     }
