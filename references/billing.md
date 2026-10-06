@@ -163,8 +163,8 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
   fee at all; data is inside the server hour. Spacing or bunching crons changes nothing on the
   bill. (Even under the old per-hour data fee, bunching only mattered because the fee was
   per-active-hour, never per call.) Schedule crons on what the strategy needs, not on billing.
-- 「聊天用 Flash、寫 code 才換 Pro 省錢嗎？」— Yes, that is a real saving: flash is roughly a third
-  of pro per token, and the switch is per session with no restart. Mention the DeepSeek weekday peak-hour
+- 「聊天用 Flash、寫 code 才換 Pro 省錢嗎？」— Yes, that is a real saving: flash costs about a quarter
+  of pro on input and under a third on output (5.5 vs 24.75 and 22 vs 74.25 TWD per million tokens), and the switch is per session with no restart. Mention the DeepSeek weekday peak-hour
   ×2 and that Claude models cost more but have no surcharge.
 - 「停機會不會扣錢？」— Yes, a stopped machine is still billed the server hour; only deleting it
   stops the meter.
