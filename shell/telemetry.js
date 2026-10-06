@@ -1,6 +1,6 @@
 // Blave 電腦版 — 使用追蹤(主行程用)。契約:blave-canon output/backend/2026-09-21-desktop-telemetry-contract.md
 //
-// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十二個事件、每個事件的屬性都是列舉——
+// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十三個事件、每個事件的屬性都是列舉——
 // 這個檔**沒有任何自由文字的入口**:對話、策略碼、策略名、標的、金額、部位、金鑰、路徑進不來,
 // 不是靠呼叫端自律,是 track() 只認下面這張表(api 端還有同一張白名單再擋一次)。
 //
@@ -25,7 +25,7 @@ const EVENTS = {
   acct_card_back: { state: ["ready", "no_card", "no_credit"] },
   turn_failed: { reason: ["402", "403", "429", "engine_missing", "other", "cap"] },   // cap = 自帶 API 金鑰撞到這一輪的用量上限(0.1.16)
   connect_failed: { kind: ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local",
-    // 0.1.16 自帶 API 金鑰:「測試並連結 / 儲存」驗不過(金鑰不認、餘額不足、連不到、其他);取消不算
+    // 0.1.16 自帶 API 金鑰:「連結 / 儲存」驗不過(金鑰不認、餘額不足、連不到、其他);取消不算
     "apikey_key", "apikey_credit", "apikey_net", "apikey_other"] },
   first_reply_done: { kind: ["blave", "claude", "codex", "apikey"] },
   plan_start_res: { result: ["ok", "no_card", "no_credit", "error"] },

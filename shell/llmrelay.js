@@ -331,7 +331,7 @@ function startRelay(opts, presets = PRESETS) {
   });
 }
 
-/* 「測試並連結」:主行程拿用戶剛貼的金鑰直接打供應商一次最小請求(不經轉送口、不經 agent),驗過才存。
+/* 「連結」:主行程拿用戶剛貼的金鑰直接打供應商一次最小請求(不經轉送口、不經 agent),驗過才存。
    回 { code, status } —— 沒有金鑰、沒有回應內文(錯誤字串可能夾著金鑰的片段)。
    code:OK / KEY(401、403)/ CREDIT(402)/ RATE(429)/ NET(連不到、逾時)/ CANCELED / OTHER(其餘狀態碼,帶 status) */
 const VERIFY_TIMEOUT_MS = 20000;
