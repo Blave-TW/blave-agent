@@ -172,6 +172,15 @@ def _check_fee(tree: ast.AST) -> list[dict]:
 
 # ── compute_signals contract check ──────────────────────────────────────────────
 
+# lib helpers that turn an indicator into a position by themselves (lib/strategy.py) — a
+# strategy built on one has no comparison of its own. A closed list on purpose: the helpers
+# that only reshape an existing signal (apply_exits, apply_vol_scaling, clamp_spot,
+# settlement_signals_from_db) return flat for an unfilled template's all-NaN signal, so
+# calling them proves nothing. tests/check_quality_template_helpers.py enumerates
+# lib/strategy.py and lib/exits.py, so a new helper there has to be put on one side.
+_SIGNAL_HELPERS = {"threshold_position", "hysteresis"}
+
+
 def _check_compute_signals(tree: ast.AST) -> list[dict]:
     fn = next(
         (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "compute_signals"),
@@ -195,9 +204,11 @@ def _check_compute_signals(tree: ast.AST) -> list[dict]:
     # boilerplate `if __name__ == '__main__'` is itself a Compare node. WARNING
     # only — a strategy whose comparisons all live in numpy calls could trip this.
     # `if MARKET == "spot": signal = signal.clip(lower=0.0)` ships in TEMPLATE_A — not signal logic.
+    # A call to a _SIGNAL_HELPERS function is signal logic too: the comparison is inside lib.
     has_logic = any(
         (isinstance(n, ast.Compare) and not (isinstance(n.left, ast.Name) and n.left.id == "MARKET"))
         or isinstance(n, (ast.For, ast.While))
+        or (isinstance(n, ast.Call) and _call_name(n) in _SIGNAL_HELPERS)
         for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
         for n in ast.walk(f)
     )
