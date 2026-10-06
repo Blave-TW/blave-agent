@@ -299,7 +299,7 @@ function isOurPageUrl(u) {
 function cloudHost() {
   if (!_cloud) _cloud = require("./cloud").createCloudHost({
     apiBase: API_BASE, post: (u, b) => postJSON(u, b),
-    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
+    getCreds: blaveCreds,
     // 送的是部位與權益:只送給載入自家 index.html 的視窗(今天全 app 只有一個視窗;哪天多了第二個,也不會漏過去)
     onChange: (snap) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("cloud-state", snap); },
   });
@@ -312,7 +312,7 @@ let _capital = null;   // 雲端群益開通(cloud_capital.js):選好的 pfx 只
 function cloudCmd() {
   if (!_cloudCmd) _cloudCmd = require("./cloudcmd").createCloudCmd({
     apiBase: API_BASE, post: (u, b) => postJSON(u, b),
-    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
+    getCreds: blaveCreds,
   });
   return _cloudCmd;
 }
@@ -369,6 +369,7 @@ function loadToken() {
 }
 function clearToken() {
   try { fs.unlinkSync(tokenPath()); } catch (_) {}
+  rotator().reset();   // 寬限內的舊值與期限檔也是這個帳號的
   libCache = null;   // 策略庫清單帶著這個帳號的 purchased:登出就丟
   clearDataKey();
   clearAppSecret();
@@ -394,11 +395,37 @@ function loadAppSecret() {
 function clearAppSecret() {
   try { fs.unlinkSync(appSecretPath()); } catch (_) {}
 }
+/* 帳號 token 輪替(tokenrotate.js):token 每 24 小時換一顆,所以「token 換了」不再等於「換了人」。
+   who = 這次登入的身分(app_secret 跟著同一列走、輪替不變、重新登入才換;舊登入沒有它就退回 token),
+   拿來比對「在途的回應還是不是現在這個人的」;token 只拿來送。 */
+const ROTATE_MIN_LEFT_MS = 12 * 3600 * 1000;   // 回合開始前與定期檢查都保證至少這麼久:回合中途不換(換了舊值 10 分鐘後失效)
+const ROTATE_CHECK_MS = 10 * 60 * 1000;
+let _rot = null;
+function rotator() {
+  if (!_rot) _rot = require("./tokenrotate").createRotator({
+    dir: app.getPath("userData"), apiBase: API_BASE, post: (u, b) => postJSON(u, b),
+    loadToken, saveToken, loadSecret: loadAppSecret,
+    // 連結紀錄綁的是 token 指紋:換檔前先讀進記憶體(不然 reseal 沒有東西可綁),換完綁到新的這顆
+    beforeSave: () => connStore().load(), afterSave: () => connStore().reseal(),
+    log: (m) => console.log("[token] " + m),
+  });
+  return _rot;
+}
+function acctWho(token, secret) {
+  return token ? crypto.createHash("sha256").update(secret ? "s:" + secret : "t:" + token).digest("hex").slice(0, 32) : null;
+}
+function blaveCreds() {
+  const token = loadToken();
+  if (!token) return null;
+  const appSecret = loadAppSecret();
+  return { token, appSecret, who: acctWho(token, appSecret) };
+}
+const currentWho = () => { const c = blaveCreds(); return c ? c.who : null; };
 /* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
 let _balance = null;
 function balanceHost() {
   if (!_balance) _balance = require("./balance").createBalance({ apiBase: API_BASE, post: (u, b) => postJSON(u, b),
-    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; } });
+    getCreds: blaveCreds });
   return _balance;
 }
 /* 啟動雲端方案。回 { state } 或 { error }(穩定代號,畫面自己換成句子):
@@ -545,6 +572,7 @@ function syncDataEnv(want) {
    撤銷是 best-effort:沒網路也要登得出去。回傳 revoked 讓畫面知道伺服器那邊有沒有成功,
    沒成功就提醒用戶到網站的「裝置」頁再撤一次。 */
 async function signOutBlave() {
+  await rotator().settle();   // 在途的輪替先落地:要撤的是換完之後那顆,撤舊值伺服器回 200 卻沒撤到
   const tok = loadToken();
   let revoked = false;
   if (tok) {
@@ -668,6 +696,7 @@ async function startOAuth(lang) {
   const r = await postJSON(`${API_BASE}/oauth/desktop/token`, {
     grant_type: "authorization_code", client_id: CLIENT_ID,
     code, code_verifier: verifier, redirect_uri: redirectUri,
+    expiring: true,   // 要有期限的那種(24 小時、靠輪替續);舊 api 忽略、回應沒有 expires_in
   });
   if (r.status !== 200 || !r.body.access_token) {
     throw new Error("TOKEN_EXCHANGE_FAILED");
@@ -675,10 +704,13 @@ async function startOAuth(lang) {
   // 重新登入(方案頁的「重新登入」、登入失效後的原地登入)時手上還有上一顆 token:新的換到手之後把舊的
   // 撤銷掉——不然伺服器上那顆連同它的資料 key 會一直活著,「已授權的電腦」也會多一列同名的裝置。
   // best-effort:撤不掉不影響這次登入。
+  await rotator().settle();
   const prevToken = loadToken();
   if (!saveToken(r.body.access_token)) {
     throw new Error("KEYCHAIN_UNAVAILABLE");
   }
+  rotator().reset();   // 上一個帳號 / 上一顆的寬限舊值不能拿來補救這一顆
+  rotator().noteLogin(r.body.access_token, r.body.expires_in);
   if (prevToken && prevToken !== r.body.access_token) {
     postJSON(`${API_BASE}/oauth/desktop/revoke`, { token: prevToken }).catch(() => {});
   }
@@ -1666,7 +1698,7 @@ function shareClient() {
   if (!_share) _share = RS.createShareClient({
     apiBase: API_BASE, post: (u, b) => postJSON(u, b, /\/share\/(publish|update)$/.test(u) ? { timeout: SHARE_UPLOAD_TIMEOUT_MS } : undefined), readLocal: reportForShare,
     logError: rptLogError, log: (m) => console.error("[share] " + m), store: RS.createShareStore(path.join(BASE, "state", "report-shares.json")),
-    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
+    getCreds: blaveCreds,
   });
   return _share;
 }
@@ -1697,8 +1729,8 @@ function pdfDirSet(dir) { uiPrefsPatch({ pdfDir: dir }); }
 // 雲端那一份:閱讀頁剛讀過的就在 rptCloudDocs 裡——同一個 stored_at 的本體不會變,過了 5 分鐘也照用(存檔框要馬上開);不在才重抓
 async function pdfLoadDoc(view, id, ver) {
   if (view === "local") return reportLoad(id);
-  const token = loadToken(), hit = rptCloudDocs.get(id + "|" + (Number.isInteger(ver) ? ver : ""));
-  if (token && hit && hit.owner === token && hit.r.report) return hit.r;
+  const who = currentWho(), hit = rptCloudDocs.get(id + "|" + (Number.isInteger(ver) ? ver : ""));
+  if (who && hit && hit.owner === who && hit.r.report) return hit.r;
   const r = await cloudReport(id, ver);
   return r.code === "OK" && r.report ? r : null;
 }
@@ -1724,7 +1756,7 @@ function reportPdf() {
   });
   return _pdf;
 }
-/* 雲端視角:平台的索引與 S3 本體(停機也讀得到)。兩支各快取 5 分鐘(清單 per 帳號、本體 per id),綁著拿到它的那顆 token——
+/* 雲端視角:平台的索引與 S3 本體(停機也讀得到)。兩支各快取 5 分鐘(清單 per 帳號、本體 per id),綁著拿到它的那次登入(who)——
    換帳號就對不上、登出時 clearToken 整組清掉;「新增報告」送出後的等待期間 renderer 帶 force 重問。
    圖:對 image block 的每個 sha256 打一次 /cloud/strategy_image(同一份去重、逐張、最多 20 張——超過的留給渲染器畫失敗框),
    單張失敗不擋整份。回 { code, report, images };report: null = 平台沒這份 */
@@ -1732,21 +1764,21 @@ let rptCloudList = null;   // { owner, at, r }
 const rptCloudDocs = new Map();   // id → { owner, at, r }
 function rptCloudInvalidate() { rptCloudList = null; rptCloudDocs.clear(); }
 async function cloudReports(force) {
-  const token = loadToken();
-  if (!token) return { code: "UNREACH", reports: [] };
-  if (!force && rptCloudList && rptCloudList.owner === token && Date.now() - rptCloudList.at < ACCT_FRESH_MS) return rptCloudList.r;
+  const who = currentWho();
+  if (!who) return { code: "UNREACH", reports: [] };
+  if (!force && rptCloudList && rptCloudList.owner === who && Date.now() - rptCloudList.at < ACCT_FRESH_MS) return rptCloudList.r;
   const r = await cloudHost().reports();
-  if (r.code === "OK") rptCloudList = { owner: token, at: Date.now(), r };
+  if (r.code === "OK") rptCloudList = { owner: who, at: Date.now(), r };
   return r;
 }
 // ver = renderer 從清單拿到的 stored_at(同 id 覆寫後索引會換),進快取 key:沒帶就只以 id 快取
 async function cloudReport(id, ver) {
   const miss = { code: "UNREACH", report: null, images: {} };
   if (typeof id !== "string" || !RPT_ID_RE.test(id)) return miss;
-  const token = loadToken();
-  if (!token) return miss;
+  const who = currentWho();
+  if (!who) return miss;
   const ck = id + "|" + (Number.isInteger(ver) ? ver : ""), hit = rptCloudDocs.get(ck);
-  if (hit && hit.owner === token && Date.now() - hit.at < ACCT_FRESH_MS) return hit.r;
+  if (hit && hit.owner === who && Date.now() - hit.at < ACCT_FRESH_MS) return hit.r;
   const r = await cloudHost().report(id);
   if (r.code !== "OK") return miss;
   const images = {};
@@ -1765,7 +1797,7 @@ async function cloudReport(id, ver) {
   }
   const out = { code: "OK", report: r.report, images };
   if (r.report) {   // 「平台沒這份」不記 5 分鐘:uploader 下一輪就可能把它送上去
-    rptCloudDocs.set(ck, { owner: token, at: Date.now(), r: out });
+    rptCloudDocs.set(ck, { owner: who, at: Date.now(), r: out });
     while (rptCloudDocs.size > RPT_CLOUD_DOCS_MAX) rptCloudDocs.delete(rptCloudDocs.keys().next().value);
   }
   return out;
@@ -1847,19 +1879,22 @@ const BLAVE_STRENGTH = [/fable/, /opus/, /sonnet/, /haiku/, /deepseek.*pro/, /de
 /* 帳號能不能用 Blave AI(綁卡流程用)。回 api 的 account_status 原樣,或 null(沒 token / 打不到 /
    舊 api)。null 時 renderer 不猜——沿用「沒額度 → 儲值」那組舊文案。 */
 let btSeen = false;
-async function accountStatus() {
+async function accountStatus(retried) {
   const acct = loadToken();
   if (!acct) return null;
+  const who = currentWho();
   try {
     // 順帶帶上 app 的現況(使用事件開關、連的是哪個 AI;見 telemetry.js statusHeaders)——提醒信靠它尊重「關掉」
     const conn = loadConnection(), on = tm().isEnabled(), T = require("./telemetry");
     if (on && !btSeen) btSeen = T.anyBacktest(STRAT_DIR());   // 回測過就不會變回沒有:找到一次之後不再掃
     const state = T.statusHeaders(on, conn && conn.kind, btSeen);
     const r = await getJSON(`${API_BASE}/openclaw/proxy/v1/account_status`, { "x-api-key": `proxy-${acct}`, ...state });
+    // 這顆被拒(過期,或輪替的回應沒收到):拿寬限內的舊值或它自己換一次,換到就再問一次。撤銷的換不動,照舊回 null
+    if (!retried && r.status === 403 && r.body && r.body.error_code === "ACCOUNT_TOKEN_INVALID" && await rotator().recover(acct)) return accountStatus(true);
     if (r.status !== 200) return null;
     const b = r.body && (r.body.data || r.body);
     if (!(b && typeof b.can_run === "boolean")) return null;
-    if (loadToken() !== acct) return null;          // 在途時登出 / 換了帳號:舊帳號的答案不寫回、不回給畫面
+    if (currentWho() !== who) return null;          // 在途時登出 / 換了帳號:舊帳號的答案不寫回、不回給畫面
     lastAcct = { at: Date.now(), body: b };
     return b;
   } catch (_) { return null; }
@@ -2386,7 +2421,7 @@ let _mcp = null;
 const mcpDir = () => path.join(app.getPath("userData"), "mcp");   // workspace 以外:agent 的工作目錄裡看不到它
 function mcpCode() {
   if (!_mcp) _mcp = require("./mcpcode").createMcpCode({ apiBase: API_BASE, post: (u, b) => postJSON(u, b),
-    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; } });
+    getCreds: blaveCreds });
   return _mcp;
 }
 /* 內建瀏覽器(shell/browser/;spec .claude/output/specs/desktop-browser-agent-tools-2026-09-26.md)。
@@ -2465,6 +2500,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // token 還在 Keychain 裡——照「有 token 就帶」會讓他以為在用自己的訂閱、實際上燒 Blave 額度
   // 資料則相反——**看有沒有登入,不看連的是誰**:登入 Blave 是帳號的事,資料 key 是另一把縮權的 key
   // (不能呼叫 LLM),給自帶 CLI 的人不會燒到他的 AI 額度;沒有主機 / 試用 / 方案時它按小時收資料費,不碰 AI 額度。
+  // 進環境的是這一輪開始時最新的那顆;剩不到 12 小時先換,回合中途就不必換(定期檢查在回合進行中不動它)
+  if (conn.kind === "blave" && loadToken()) await rotator().ensure(ROTATE_MIN_LEFT_MS);
   const signedIn = !!loadToken();
   const plan = turnCreds(conn.kind, signedIn, signedIn && await hasBlaveData(), cloudHandoffOn());
   const useBlave = conn.kind === "blave";
@@ -2974,6 +3011,13 @@ app.whenReady().then(() => {
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
   startStep("tray", trayStart);
   startStep("telemetry", () => tm().start());
+  // 帳號 token 輪替:開 app 就檢查一次(0.1.15 以前沒有期限的那顆在這裡第一次換掉),之後每 10 分鐘看一次。
+  // 回合進行中不換:那顆在 agent 的環境裡,換了它 10 分鐘後就失效。第二份 app 不碰(兩份同時換,先回來的那顆會作廢)
+  if (app.hasSingleInstanceLock()) startStep("token rotate", () => {
+    const tick = () => { if (!(activeTurn || turnStarting)) rotator().ensure(ROTATE_MIN_LEFT_MS).catch(() => {}); };
+    tick();
+    const t = setInterval(tick, ROTATE_CHECK_MS); if (t.unref) t.unref();
+  });
   startStep("app state", () => { accountStatus(); });   // 已登入就補報一次現況:關掉開關之後沒再用的人,下次開 app 就送到(沒登入不打)
   startStep("updater", () => updater().start());
   startStep("min version gate", () => minGate().start());

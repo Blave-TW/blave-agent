@@ -17,6 +17,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { whoOf } = require("./tokenrotate");
 
 const ENDPOINT = "/oauth/desktop/cloud/mcp_code";
 const CODE_RE = /^blv_[A-Za-z0-9_-]{16,200}$/;
@@ -43,26 +44,26 @@ function interpret(res) {
 /* opts:{ apiBase, getCreds() → { token, appSecret } | null, post(url, body) → Promise<{status, body}>, now? } */
 function createMcpCode(opts) {
   const now = opts.now || (() => Date.now());
-  let held = null, owner = null, gen = 0, inflight = null, backoff = null;   // backoff = { token, until, fail }
+  let held = null, owner = null, gen = 0, inflight = null, backoff = null;   // backoff = { who, until, fail }
 
   const creds = () => { let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到 = 沒登入 */ } return c && c.token && c.appSecret ? c : null; };
   const age = () => (held ? now() - held.at : Infinity);
   const usable = () => !!held && age() >= 0 && age() < held.expiresInMs - SAFETY_MS;
-  /* 退讓綁在**賺到它的那顆 token** 上,不跟著 owner / held 走(稽核登記 + 第三輪複查 7):
+  /* 退讓綁在**賺到它的那次登入**(who;token 會輪替)上,不跟著 owner / held 走(稽核登記 + 第三輪複查 7):
        - 同一個人登出再登入、或這一輪憑證讀不到(Keychain 失敗、登出搶在 await 後面):退讓留著。帳號桶是 12 次 / 小時,
          清掉的話「登出再登入」就成了繞過 429 的按鈕。所以 drop() 永遠不碰 backoff。
-       - 換成別的帳號:token 對不上就不算數,B 不會被 A 的退讓連坐(桶是帳號桶);A 的那筆在 B 進來時丟掉。 */
-  const waiting = (tok) => !!backoff && backoff.token === tok && now() < backoff.until;
+       - 換成別的帳號:who 對不上就不算數,B 不會被 A 的退讓連坐(桶是帳號桶);A 的那筆在 B 進來時丟掉。 */
+  const waiting = (me) => !!backoff && backoff.who === me && now() < backoff.until;
   function drop() { gen++; held = null; owner = null; }
 
   async function fetchOne(c) {
-    const mine = ++gen; owner = c.token;
+    const mine = ++gen; owner = whoOf(c);
     let res = null; try { res = await opts.post(opts.apiBase + ENDPOINT, { token: c.token, app_secret: c.appSecret }); } catch (_) { /* 連不上 */ }
     const cur = creds();
-    if (mine !== gen || !cur || cur.token !== c.token) return;       // 這段期間登出 / 換人了:這份回應不是現在這個人的
+    if (mine !== gen || !cur || whoOf(cur) !== whoOf(c)) return;       // 這段期間登出 / 換人了:這份回應不是現在這個人的
     const r = interpret(res);
     if (r.code === "OK") { held = { accessCode: r.accessCode, url: r.url, expiresInMs: r.expiresInMs, renewAfterMs: r.renewAfterMs, at: now() }; backoff = null; return; }
-    backoff = { token: c.token, until: now() + (BACKOFF_MS[r.code] || BACKOFF_MS.OFFLINE), fail: r.code };
+    backoff = { who: whoOf(c), until: now() + (BACKOFF_MS[r.code] || BACKOFF_MS.OFFLINE), fail: r.code };
     if (r.code === "AUTH" || r.code === "NO_MACHINE") held = null;   // 憑證被撤 / 主機沒了:手上那顆也不該再用
   }
 
@@ -71,15 +72,15 @@ function createMcpCode(opts) {
     async get() {
       const c = creds();
       if (!c) { if (held || owner) drop(); return null; }
-      if (owner !== null && owner !== c.token) drop();               // 換了人:先丟掉上一個人的碼
-      if (backoff && backoff.token !== c.token) backoff = null;      // 上一個人的退讓也丟掉——桶是帳號桶
+      if (owner !== null && owner !== whoOf(c)) drop();               // 換了人:先丟掉上一個人的碼
+      if (backoff && backoff.who !== whoOf(c)) backoff = null;      // 上一個人的退讓也丟掉——桶是帳號桶
       const needs = !usable() || age() >= held.renewAfterMs;
-      if (needs && !waiting(c.token)) {
+      if (needs && !waiting(whoOf(c))) {
         if (!inflight) inflight = fetchOne(c).catch(() => {}).finally(() => { inflight = null; });
         await inflight;
       }
       const again = creds();
-      if (!again || again.token !== c.token) { drop(); return null; }   // 這段期間登出 / 換人了
+      if (!again || whoOf(again) !== whoOf(c)) { drop(); return null; }   // 這段期間登出 / 換人了
       return usable() ? { accessCode: held.accessCode, url: held.url } : null;
     },
     reset() { drop(); },                                             // 登出:丟掉碼、作廢在途的請求;**退讓留著**(同一個人再登入不能繞過 429)

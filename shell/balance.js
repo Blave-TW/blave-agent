@@ -5,6 +5,7 @@
    api 還沒部署的 404 / 連不上 / 欄位不是數字):畫面畫「—」,不把讀不到畫成 0(那會被讀成「這個人沒錢」)。
    節流:HOLD_MS 內重複讀用上一次的答案(讀不到也算一次答案——429 之後馬上再打只會再吃一次 429);api 是每帳號每分鐘 20 次。
    不寫檔、不 log。登出 / 換帳號由 main.js 呼叫 reset()。 */
+const whoOf = (c) => (c && c.token ? c.who || c.token : null);   // = tokenrotate.js 的 whoOf;抄一行是因為這個檔不 require 任何東西
 const ENDPOINT = "/oauth/desktop/balance";
 const HOLD_MS = 10 * 1000;
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
@@ -21,17 +22,17 @@ function createBalance({ apiBase, post, getCreds, now }) {
   async function read() {
     const c = getCreds();
     if (!c || !c.token || !c.appSecret) return null;
-    if (last && last.token === c.token && clock() - last.at < HOLD_MS) return last.value;
-    if (flight && flight.token === c.token) return flight.p;
+    if (last && last.who === whoOf(c) && clock() - last.at < HOLD_MS) return last.value;
+    if (flight && flight.who === whoOf(c)) return flight.p;
     const p = (async () => {
       let value = null;
       try { value = interpret(await post(apiBase + ENDPOINT, { token: c.token, app_secret: c.appSecret })); } catch (_) { value = null; }
       const cur = getCreds();
-      if (!cur || cur.token !== c.token) return null;   // 在途時登出 / 換了帳號:上一個帳號的數字不回給畫面、也不記
-      last = { token: c.token, at: clock(), value };
+      if (whoOf(cur) !== whoOf(c)) return null;   // 在途時登出 / 換了帳號:上一個帳號的數字不回給畫面、也不記
+      last = { who: whoOf(c), at: clock(), value };
       return value;
     })();
-    flight = { token: c.token, p };
+    flight = { who: whoOf(c), p };
     try { return await p; } finally { if (flight && flight.p === p) flight = null; }
   }
   return { read, reset: () => { last = null; flight = null; } };

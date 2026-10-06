@@ -86,7 +86,7 @@ const mk = (reply, o) => { const sent = []; let creds = (o && o.creds) || { toke
   ok("登出、登入、換帳號都把上一個數字清掉", (app.match(/acct = null; balLast = null;/g) || []).length === 3);
   // ---- 4
   ok("IPC 走 handle()(只收自家頁面);renderer 拿到的只有 balanceHost().read() 的結果", /handle\("balance", \(\) => balanceHost\(\)\.read\(\)\);/.test(mainSrc) && /balance: \(\) => ipcRenderer\.invoke\("balance"\)/.test(preload)
-    && /require\("\.\/balance"\)\.createBalance\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\n    getCreds: \(\) => \{ const token = loadToken\(\); return token \? \{ token, appSecret: loadAppSecret\(\) \} : null; \} \}\);/.test(mainSrc));
+    && /require\("\.\/balance"\)\.createBalance\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\n    getCreds: blaveCreds \}\);/.test(mainSrc));
   ok("登出與登入換帳號都叫 reset()", (mainSrc.match(/if \(_balance\) _balance\.reset\(\);/g) || []).length === 2);
   { const src = fs.readFileSync(path.join(SHELL, "balance.js"), "utf8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     ok("balance.js 不寫檔、不 log、不 require 任何東西", !/require\(/.test(src) && !/console\.|writeFile|appendFile/.test(src)); }
