@@ -915,7 +915,7 @@ def _halt_and_tell(kind):
     try:
         from lib.guard import trip_halt
         trip_halt(f"統一期貨登入被擋({kind}),Blave 已先停止下單 / 統一 login blocked ({kind})",
-                  "president")
+                  "president_connect")
     except Exception as e:
         print(f"[president_connect] halt failed ({type(e).__name__})", file=sys.stderr)
     try:

@@ -168,8 +168,9 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
   /* 選好憑證:找到的那張(PSCCA 最新)或「選別的檔案」那張 + 憑證密碼 → cert。成功才把憑證密碼存起來 */
   async function certUse(a) {
     const d = load(); if (!d) return { code: "NO_CREDS" };
-    const caPw = a && typeof a.caPassword === "string" ? a.caPassword : "";
-    if (!CA_PW_RE.test(caPw)) return { code: "BAD_PW" };
+    // null = 沿用存著的那組(改交易密碼後用同一張憑證重綁)
+    const caPw = a && typeof a.caPassword === "string" ? a.caPassword : d.ca_password;
+    if (typeof caPw !== "string" || !CA_PW_RE.test(caPw)) return { code: a && typeof a.caPassword === "string" ? "BAD_PW" : "NO_CA_PW" };
     const src = a && a.source === "picked" ? picked : (listCerts()[0] || {}).p;
     if (!src) return { code: "PFX_NONE_FOUND" };
     const h = host(); if (!h || typeof h.sealPresident !== "function") return { code: "DAEMON_DOWN" };

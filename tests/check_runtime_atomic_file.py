@@ -643,6 +643,7 @@ REVIEWED = {
     ("capital_connect.py", "_write_vault"): "already a random temp name (secrets.token_hex), its own ACL steps",
     ("local_daemon.py", "_link_current"): "os.symlink(tmp) never follows an existing name (EEXIST)",
     ("local_daemon.py", "_spawn_locked"): "reconciler.log rotation: renames the log, writes nothing",
+    ("president_connect.py", "_spawn"): "president_worker.log rotation (desktop): renames the log, writes nothing",
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
     ("telegram_pairing.py", "replace_retry"): "the replace callable atomic_file.replacing is handed",

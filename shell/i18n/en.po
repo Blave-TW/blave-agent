@@ -6392,3 +6392,435 @@ msgstr "from 2001"
 
 msgid "wd.r.pcr.an"
 msgstr "the Put/Call Ratio"
+
+msgid "pres.venue"
+msgstr "President Futures"
+
+msgid "pres.title"
+msgstr "Connect President Futures"
+
+msgid "pres.next"
+msgstr "Next"
+
+msgid "pres.later"
+msgstr "Later"
+
+msgid "pres.retry"
+msgstr "Try again"
+
+msgid "pres.copy"
+msgstr "Copy"
+
+msgid "pres.copied"
+msgstr "Copied"
+
+msgid "pres.noMove"
+msgstr "This computer hasn’t reported progress. Press again; a step that’s still running won’t run twice."
+
+msgid "pres.mac.lead"
+msgstr "President Futures needs Windows."
+
+msgid "pres.mac.hint"
+msgstr "The Mac desktop app can’t connect to President Futures. With a Windows cloud machine, you can use Remote Desktop from your Mac to apply for the certificate on it."
+
+msgid "pres.dual.lead"
+msgstr "President Futures is already connected on your cloud machine."
+
+msgid "pres.dual.hint"
+msgstr "If both place orders on the same account, each treats the other’s orders as manual trades. To use it on this computer, unbind it on the cloud side first."
+
+msgid "pres.prep.looking"
+msgstr "Looking for a President certificate on this computer…"
+
+msgid "pres.prep.found"
+msgstr "Found a President certificate on this computer, expiring {date}."
+
+msgid "pres.prep.foundNoDate"
+msgstr "Found a President certificate on this computer."
+
+msgid "pres.prep.need"
+msgstr "One more thing first: your broker rep needs to enable API trading and give you a test account."
+
+msgid "pres.prep.mail"
+msgstr "I’ve received President’s API test account email"
+
+msgid "pres.prep.mailHint"
+msgstr "Your rep emails you once it’s enabled; it works right away. President requires one test order in the test environment first — Blave places it for you."
+
+msgid "pres.script.h"
+msgstr "What to tell your broker rep"
+
+msgid "pres.script.have"
+msgstr "Hello, I’m the owner of futures account (your 11-digit account). I’d like to enable API trading on this account and get an API test account. Do I need to register an IP for production?"
+
+msgid "pres.script.none"
+msgstr "Hello, I’m the owner of futures account (your 11-digit account). I’d like: 1. API trading permission; 2. permission to apply for a computer certificate (I don’t have one yet); 3. an API test account. Do I need to register an IP for production?"
+
+msgid "pres.script.report"
+msgstr "Hello, I’m the owner of futures account {acct}. I placed a test order through the API in the test environment: {when}, buy 1 Micro TAIEX, accepted. Please enable production API trading. Thank you."
+
+msgid "pres.none.lead"
+msgstr "This computer doesn’t have a President certificate yet. Follow these steps; your progress is kept."
+
+msgid "pres.none.s1"
+msgstr "Call your broker rep to enable access and get a test account"
+
+msgid "pres.none.s1sub"
+msgstr "API trading, certificate application permission, a test account. Hotline {tel}"
+
+msgid "pres.none.s2"
+msgstr "After your rep’s email arrives, press Open 憑證e總管"
+
+msgid "pres.none.s2sub"
+msgstr "Log in with the same password you trade with in the President app, enter the SMS code, and set a certificate password. The SMS code is valid for 5 minutes."
+
+msgid "pres.tcem.open"
+msgstr "Open 憑證e總管"
+
+msgid "pres.tcem.hash"
+msgstr "The downloaded 憑證e總管 doesn’t match the official version, so Blave didn’t open it. President’s certificate center is open in your browser — download it there."
+
+msgid "pres.tcem.download"
+msgstr "Couldn’t download 憑證e總管. President’s certificate center is open in your browser — download it there."
+
+msgid "pres.tcem.fail"
+msgstr "憑證e總管 didn’t open. Press again."
+
+msgid "pres.wait.lead"
+msgstr "Finish applying in the 憑證e總管 window; this continues automatically."
+
+msgid "pres.wait.hint"
+msgstr "When it asks where to save, keep its default folder."
+
+msgid "pres.wait.again"
+msgstr "Open 憑證e總管 again"
+
+msgid "pres.form.acct"
+msgstr "Futures account"
+
+msgid "pres.form.acctHint"
+msgstr "11 digits, including the branch code in front."
+
+msgid "pres.form.acctErr"
+msgstr "The futures account is 11 digits."
+
+msgid "pres.form.pw"
+msgstr "Trading password"
+
+msgid "pres.form.pwHint"
+msgstr "The same password you trade with in the President app. The test environment uses it too."
+
+msgid "pres.form.store"
+msgstr "Your account and trading password are stored encrypted on this computer, never uploaded, and the agent can’t read them."
+
+msgid "pres.form.go"
+msgstr "Start"
+
+msgid "pres.ph.prep"
+msgstr "Preparation"
+
+msgid "pres.ph.test"
+msgstr "Test environment (President requires one test order first)"
+
+msgid "pres.ph.live"
+msgstr "Production"
+
+msgid "pres.s.setup"
+msgstr "Install President’s order component"
+
+msgid "pres.s.setupRun"
+msgstr "Installing…"
+
+msgid "pres.s.setupFail"
+msgstr "President’s order component didn’t install."
+
+msgid "pres.s.cert"
+msgstr "Choose certificate"
+
+msgid "pres.s.certRun"
+msgstr "Checking certificate…"
+
+msgid "pres.s.certExp"
+msgstr "Expires {date}"
+
+msgid "pres.s.tprobe"
+msgstr "Confirm login (test host)"
+
+msgid "pres.s.tprobeDone"
+msgstr "Test host"
+
+msgid "pres.s.torder"
+msgstr "Place a test order"
+
+msgid "pres.s.torderDone"
+msgstr "Accepted"
+
+msgid "pres.s.orderRun"
+msgstr "Sending…"
+
+msgid "pres.s.treport"
+msgstr "Tell your broker rep"
+
+msgid "pres.s.treportDone"
+msgstr "Enabled by rep"
+
+msgid "pres.s.probe"
+msgstr "Confirm login (production host)"
+
+msgid "pres.s.probeRun"
+msgstr "Confirming…"
+
+msgid "pres.s.probeDone"
+msgstr "Futures account"
+
+msgid "pres.s.worker"
+msgstr "Start the order program"
+
+msgid "pres.s.workerRun"
+msgstr "Starting…"
+
+msgid "pres.s.workerFail"
+msgstr "The order program couldn’t read the account. Try again; if it still fails, check Settings › Account."
+
+msgid "pres.cert.name"
+msgstr "President certificate"
+
+msgid "pres.cert.exp"
+msgstr "Expires {date} · on this computer"
+
+msgid "pres.cert.here"
+msgstr "On this computer"
+
+msgid "pres.cert.picked"
+msgstr "The certificate file you chose"
+
+msgid "pres.cert.pickedD"
+msgstr "On this computer"
+
+msgid "pres.cert.pw"
+msgstr "Certificate password"
+
+msgid "pres.cert.pwHint"
+msgstr "The one you set when applying for the certificate — not your trading password. Leave blank if you never set one."
+
+msgid "pres.cert.use"
+msgstr "Use this certificate"
+
+msgid "pres.cert.other"
+msgstr "Choose another file"
+
+msgid "pres.cert.local"
+msgstr "Checked on this computer; nothing is uploaded."
+
+msgid "pres.pfx.errPw"
+msgstr "Wrong certificate password. This is checked on this computer without contacting President, so it doesn’t count as a login attempt."
+
+msgid "pres.pfx.errExpired"
+msgstr "This certificate expired on {date}. Renew it in 憑證e總管, then choose it again."
+
+msgid "pres.pfx.errIssuer"
+msgstr "This isn’t a President Futures certificate. Press Choose another file and pick the one in the PSCCA folder."
+
+msgid "pres.pfx.errFile"
+msgstr "This file isn’t a certificate. Press Choose another file and pick the one ending in .pfx."
+
+msgid "pres.pfx.errRead"
+msgstr "This computer couldn’t read that certificate file. Press Choose another file and pick it again."
+
+msgid "pres.pfx.errNone"
+msgstr "The certificate file is gone. Press Choose another file and pick the one in the PSCCA folder."
+
+msgid "pres.pfx.errImport"
+msgstr "The certificate wasn’t saved. Press Use this certificate again."
+
+msgid "pres.t.hostDo"
+msgstr "President’s rule: log in to the test environment and place one test order; production opens after you tell your rep. Enter the host address from the test account email."
+
+msgid "pres.t.url"
+msgstr "Test host address (from the email)"
+
+msgid "pres.t.urlHint"
+msgstr "Copy it as written; Blave handles the format. The account, password and certificate are the same ones."
+
+msgid "pres.t.probe"
+msgstr "Confirm login"
+
+msgid "pres.t.notReady"
+msgstr "The test environment step isn’t connected in this version yet, so the flow stops here. Blave won’t log in to the production host or use up a login attempt."
+
+msgid "pres.t.fail"
+msgstr "The test host didn’t let Blave log in. Check the address in the email and your trading password, then try again."
+
+msgid "pres.t.orderDo"
+msgstr "Blave places a buy of 1 Micro TAIEX in the test environment. It never fills and doesn’t touch your money."
+
+msgid "pres.t.order"
+msgstr "Place test order"
+
+msgid "pres.t.orderAgain"
+msgstr "Place again"
+
+msgid "pres.t.orderFail"
+msgstr "President’s test environment didn’t accept this order. It doesn’t count as a login attempt."
+
+msgid "pres.t.reportDo"
+msgstr "Test order: {when}, buy 1 Micro TAIEX, accepted. Tell your rep (phone, LINE, or reply to the test account email):"
+
+msgid "pres.t.reportHint"
+msgstr "It works as soon as your rep enables it. Press the button below and Blave confirms on the production host — no need to choose the certificate again."
+
+msgid "pres.t.opened"
+msgstr "My rep says it’s enabled"
+
+msgid "pres.t.later"
+msgstr "Come back later"
+
+msgid "pres.pw.lead"
+msgstr "Enter the new trading password; Blave confirms again with the same certificate."
+
+msgid "pres.pw.hint"
+msgstr "Only a different password tries again."
+
+msgid "pres.pw.go"
+msgstr "Confirm with new password"
+
+msgid "pres.err.password"
+msgstr "President says the trading password is wrong. Blave stopped logging in so President doesn’t lock your account (three wrong tries lock it). Only a different password tries again."
+
+msgid "pres.err.unknown"
+msgstr "President refused the login without a reason. Most often the trading password is wrong, or API access isn’t enabled yet. Blave stopped logging in so it doesn’t use up President’s three tries."
+
+msgid "pres.err.unknownOnce"
+msgstr "Password and access are confirmed — try once more"
+
+msgid "pres.err.onceHint"
+msgstr "That retry works once; if it still fails, change the password at President."
+
+msgid "pres.err.cert"
+msgstr "This computer can’t open this certificate. Blave stopped logging in; President wasn’t contacted. Choose another certificate to try again."
+
+msgid "pres.err.certMismatch"
+msgstr "This certificate doesn’t belong to account {acct} — maybe a family member’s or another account’s. Blave stopped logging in; use this account’s certificate, or change the account, to try again."
+
+msgid "pres.err.certSwap"
+msgstr "Choose another certificate"
+
+msgid "pres.err.acctSwap"
+msgstr "Change account"
+
+msgid "pres.err.blocked"
+msgstr "President locked this account (too many wrong passwords). Unlock it in the President app, on its website or through your rep, then press I’ve unlocked it."
+
+msgid "pres.err.unlocked"
+msgstr "I’ve unlocked it at President"
+
+msgid "pres.err.blocked2"
+msgstr "Still can’t log in after unlocking. Change the trading password at President, then confirm with the new one."
+
+msgid "pres.err.maint"
+msgstr "President is under maintenance daily 05:30–05:50 and Blave doesn’t log in then. It confirms again automatically after 05:50."
+
+msgid "pres.err.transient"
+msgstr "President is busy right now; Blave tries again later. It doesn’t count as a login attempt."
+
+msgid "pres.err.host"
+msgstr "Couldn’t reach President’s host. The password wasn’t sent, so it doesn’t count."
+
+msgid "pres.err.timeout"
+msgstr "President didn’t answer in time. This may have counted as a login; one more timeout and Blave stops logging in."
+
+msgid "pres.err.nocreds"
+msgstr "The order program on this computer didn’t get the credentials. Close and reopen this window; if it persists, connect again."
+
+msgid "pres.err.noSeal"
+msgstr "This computer’s encrypted storage isn’t available, so nothing was saved. Try again after signing in to your Windows account."
+
+msgid "pres.err.rebound"
+msgstr "The President credentials bound on this computer differ from the saved ones. Connect again."
+
+msgid "pres.err.generic"
+msgstr "That step didn’t work. Try again."
+
+msgid "pres.done.lead"
+msgstr "Connected to President Futures"
+
+msgid "pres.done.equity"
+msgstr "Equity"
+
+msgid "pres.done.acct"
+msgstr "Account"
+
+msgid "pres.done.acctV"
+msgstr "Futures {acct}"
+
+msgid "pres.done.can"
+msgstr "Tradable"
+
+msgid "pres.done.canV"
+msgstr "TAIEX futures: big, mini, micro"
+
+msgid "pres.done.exp"
+msgstr "Certificate expires"
+
+msgid "pres.done.expV"
+msgstr "{date} ({n} days left)"
+
+msgid "pres.done.n1"
+msgstr "Blave places orders only while it’s open. With open positions Blave keeps the computer awake, but if you quit Blave or shut down, positions stay at President and aren’t closed — night session 15:00–05:00 included."
+
+msgid "pres.done.n2"
+msgstr "Blave manages only its own positions. It won’t close or add to trades you place in the President app; don’t trade the same product and month as a strategy by hand — Blave can’t tell them apart."
+
+msgid "pres.done.go"
+msgstr "Set up strategy orders"
+
+msgid "pres.held.lead"
+msgstr "{n} lot(s) open at President; this computer stays awake."
+
+msgid "pres.held.sub"
+msgstr "If you quit Blave or shut down, these positions aren’t closed."
+
+msgid "pres.renew.lead"
+msgstr "Your President certificate expires {date}, in {n} days."
+
+msgid "pres.renew.expired"
+msgstr "Your President certificate expired on {date}."
+
+msgid "pres.renew.sub"
+msgstr "After it expires President refuses logins and strategies stop. Renew it, then choose the new one in Auto trading › Connect."
+
+msgid "pres.renew.open"
+msgstr "Renew in 憑證e總管"
+
+msgid "pres.renew.pause"
+msgstr "Pause President strategies"
+
+msgid "pres.first.title"
+msgstr "First real-money start"
+
+msgid "pres.first.row"
+msgstr "{name}: {n} {unit}"
+
+msgid "pres.first.equity"
+msgstr "President account equity {v}."
+
+msgid "pres.first.equityNone"
+msgstr "President account equity not read yet."
+
+msgid "pres.first.margin"
+msgstr "Margin per lot follows President’s announcement; orders are refused when margin is short. President has no simulated environment for users — these lots are real money."
+
+msgid "pres.first.ok"
+msgstr "Continue"
+
+msgid "pres.quit.title"
+msgstr "Quit Blave?"
+
+msgid "pres.quit.body"
+msgstr "{lots} lot(s) are still open at President. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the President app."
+
+msgid "pres.ev.blocked"
+msgstr "President login blocked"
+
+msgid "pres.ev.blockedN"
+msgstr "Blave paused trading so President doesn’t lock the account. Open Blave to fix the login."

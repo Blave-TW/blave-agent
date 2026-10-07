@@ -1093,7 +1093,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const S2 = (() => { const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
         return (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); })();
       // 群益開通清單右側的短結果(renderer/capital.js capRow 的 .cap-r):列的狀態,不掛在任何控件上
-      const STATUS_ONLY = ["tr.loading", "cn.detecting", "cx.ip.loading", "tr.cloud.hdConnecting", "cap.s.setupRun", "cap.pfx.importing", "cap.s.readRun", "cap.s.querying"];
+      const STATUS_ONLY = ["tr.loading", "cn.detecting", "cx.ip.loading", "tr.cloud.hdConnecting", "cap.s.setupRun", "cap.pfx.importing", "cap.s.readRun", "cap.s.querying",
+        "pres.s.setupRun", "pres.s.orderRun", "pres.s.probeRun", "pres.s.workerRun"];   // 統一清單列右側(renderer/president.js 同 capRow)
       const prog = Object.keys(S2.zh).filter((k) => /中…$/.test(S2.zh[k]) && STATUS_ONLY.indexOf(k) < 0);
       const RD = path.join(__dirname, "..", "shell", "renderer");
       const files = fs.readdirSync(RD).filter((f) => f.endsWith(".js") && f !== "strings.js" && f !== "i18n.js");
@@ -1600,7 +1601,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("接線:連接框兩個視角都列群益;這台電腦選到群益只出 Mac / Windows 那句、沒有主鈕;cx.acct.meta 換成不再說抓資料的那句",
       /\{ const g2 = document\.createElement\("optgroup"\); g2\.label = t\("cap\.group\.tw"\);/.test(src) && /go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
       && /t\(window\.blave\.platform === "win32" \? "cx\.cap\.localWin" : "cx\.cap\.localMac"\)/.test(src)
-      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| sel\.value === CAPITAL \? sel\.value : PAPER;/.test(src)
+      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| sel\.value === CAPITAL \|\| \(sel\.value === "president" && CXF\.env === "local"\) \? sel\.value : PAPER;/.test(src)
+      && /if \(CXF\.env === "local"\) \{ const op = trEl\("option", "", t\("pres\.venue"\)\); op\.value = "president";/.test(src)
       && /"cx\.acct\.meta": "只用來下單和讀帳戶。一次只能連一個。"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8")));
     ok("接線:選擇策略框沒有 #ps-next、psOpen 不送 pick_gate_lock、外殼不讀 market_gate",
       !/ps-next/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8")) && !/pick_gate_lock/.test(src) && !/market_gate/.test(src)); }

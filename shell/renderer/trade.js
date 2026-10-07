@@ -977,6 +977,7 @@ function trVenueLabel(id, short) {
   if (!id) return "";
   if (id === PAPER) return short ? t("cx.paperShort") : t("cx.paper");
   if (id === "capital") return t("cap.venue");   // 群益(雲端視角,renderer/capital.js)
+  if (id === "president") return t("pres.venue");   // 統一期貨(這台電腦視角,renderer/president.js)
   if (Object.prototype.hasOwnProperty.call(CX_VENUES, id)) return CX_VENUES[id].label;   // Gate.io、OKX:首字大寫會寫錯
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
@@ -1069,6 +1070,8 @@ function trPushLabels() {
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
     quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), ok: t("tm.ok"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
     quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
+    presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }),   // 結束攔截:統一還有部位(主行程填口數)
+    ev_president_login_blocked: t("pres.ev.blocked"), ev_president_login_blocked_n: t("pres.ev.blockedN"),
     updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
     ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evHaltNote"), ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
@@ -1806,7 +1809,9 @@ function trBothReal() {
   box.append(trEl("strong", "", t("tr.cloud.bothReal.h")), " " + t("tr.cloud.bothReal.b"));
   row.append(mark, box); return row;
 }
-function trAskStart(opener) {
+function trAskStart(opener, presOk) {
+  // 第一次用真錢啟動統一策略(這台電腦):先多一道口數＋權益數的確認(renderer/president.js presFirstGate)
+  if (!presOk && typeof presFirstGate === "function") return presFirstGate(() => trAskStart(opener, true), opener);
   const r = trReport() || {}, canWait = r.can_wait_start === true, cloud = TR.env === "cloud";
   if (trZView(envHeadState(TR.st, Date.now()), r).off) return;   // 第二道:沒有策略設金額時啟動下單不送(鈕本來就停用)
   /* 順序照雲端:先送所選指令(resume_wait 的 gate 要先落地),對帳器沒在跑再叫它起來。
@@ -1869,6 +1874,7 @@ function trSetTab(tab, focus) {
 function trPaint() {
   if (!envPaint()) return;                         // 雲端沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):中欄是空態,這一頁不畫
   trPaintHead();
+  if (typeof presBannerPaint === "function") presBannerPaint();
   if (!TR.open) return;
   // unknown(狀態檔這一輪沒寫出來)也走這個版面,但畫的是一段說明、不是 onboard——標題列的暫停鈕還在
   const state = trExecState(TR.st), assumed = TR.env === "cloud" && state === "noaccount" && trCxAssumed(TR.cxSaved, Date.now());
@@ -2623,7 +2629,9 @@ function trPaintSet() {
   if (id && id !== PAPER) row.appendChild(trEl("span", "mode real", t("tr.mode.real")));   // 模擬以外都是真錢
   // 三態:讀得到帳戶 = 綠點;讀過而失敗 = 紅記號;還沒讀過(剛綁上那幾秒)= 圓環 + 「串接中…」(.cx-wait 那組,spec-desktop-006 §1.3 D)
   // 群益在雲端開通中(spec w-row-pending):讀帳失敗是預期的,不畫紅;靜態實心點 +「開通中」+「繼續」回到清單
-  const capWip = ro && trCapWip(r, id);
+  // 統一在這台電腦開通中(d-row-pending)同一個長相:讀帳失敗是預期的(worker 還沒寫第一份快照)
+  const presW = !ro && id === "president" && typeof presWip === "function" && presWip(r);
+  const capWip = (ro && trCapWip(r, id)) || presW;
   const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict)), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
   if (capWip) st.appendChild(trEl("span", "cap-dot"));
   else if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));
@@ -2632,7 +2640,9 @@ function trPaintSet() {
   st.appendChild(trEl("span", "", capWip ? t("cap.pending") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
-  if (capWip) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
+  if (capWip && !presW) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
+  // 統一:「繼續」回到清單當下那一步
+  if (presW) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
   // 「重新測試」在讀帳失敗 / 金鑰重查出事(紅記號 + 串接失敗)時畫,Binance 重查的灰記號(沒設白名單、現貨 / 合約沒開)也畫——
   // 它是 24 小時自動重查之前唯一能叫 binanceRecheck 的入口(Wei 0.0.6)。乾淨的已連接與串接中都沒有東西要重試;鈕消失時焦點由最後一行交給設定分頁
@@ -2683,6 +2693,7 @@ function trPaintSet() {
 function trEnvNames(id) {
   if (id === PAPER) return ["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"];
   if (id === CAPITAL) return ["capital_api_key", "capital_password"];   // 只有雲端解得了(capUnbindSend;名字由主行程決定)
+  if (id === "president") return ["president_account", "president_password", "president_ca_password", "president_ca_path", "president_url"];   // = daemon.js PRESIDENT_ENV
   const v = Object.prototype.hasOwnProperty.call(CX_VENUES, id) ? CX_VENUES[id] : null;
   return v ? [v.env + "_API_KEY", v.env + "_SECRET_KEY"].concat(v.pass ? [v.env + "_PASSPHRASE"] : []) : [];
 }
@@ -2693,7 +2704,9 @@ function trUnbind(opener) {
     onOk: async () => {
       const mine = () => TR === S && S.open;
       S.unbinding = true; if (mine()) trPaintSet();
-      const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) }) : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
+      // 統一(這台電腦):機器上的五行與憑證先拿掉,成功了主行程才丟掉它存的帳密(presidentUnbind)
+      const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) })
+        : id === "president" ? await window.blave.presidentUnbind() : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
       S.unbinding = false; S.sig = {};
       // 失敗文案帶 S.env:跨 await 之後 TR 可能已經是另一邊,不帶會拿本機那組「這台電腦」的句子
       if (!res || !res.ok) { trAlert(trSendError(res, "unbind", S.env), "noaccount", S); if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }
@@ -3099,15 +3112,15 @@ const CXF = { env: "local", venue: PAPER, apiKey: "", secret: "", passphrase: ""
 const cxBag = () => TR_BAGS[CXF.env === "cloud" ? "cloud" : "local"];
 // 雲端主機現在的對外 IP(cloud.js 只在 running 時交出來;停機的主機沒有固定 IP)
 function cxCloudIp() { const c = TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud; const ip = c && c.machine && c.machine.public_ip; return typeof ip === "string" && ip ? ip : null; }
-function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; if (typeof capForget === "function") capForget(); }
+function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; if (typeof capForget === "function") capForget(); if (typeof presForget === "function") presForget(); }
 /* 兩個視角共用這個框(spec-desktop-cloud-s5 §2:只差五處)。雲端只在主機 running 時開得起來。 */
-function cxModalOpen(opener, venue) {   // venue:設定分頁群益「繼續」直接帶進群益那條(只有雲端)
+function cxModalOpen(opener, venue) {   // venue:設定分頁群益「繼續」直接帶進群益那條(只有雲端);統一「繼續」只有這台電腦
   const env = ENV.cur;
   if (TR.env !== env || !$("cx-scrim").hidden) return;
   if (env === "cloud" && envCloudKind(TR_BAGS.cloud.st) !== "running") return;
   CXF.env = env;
   const L = cxBag(); L.cx = { busy: false, err: null, retest: false };
-  cxOpener = opener || null; cxForget(); CXF.venue = venue === CAPITAL && env === "cloud" ? CAPITAL : PAPER; CXF.storeOpen = false;
+  cxOpener = opener || null; cxForget(); CXF.venue = venue === CAPITAL && env === "cloud" ? CAPITAL : venue === "president" && env === "local" ? venue : PAPER; CXF.storeOpen = false;
   if (CXF.venue === CAPITAL && typeof capResume === "function") capResume();
   $("view-ws").inert = true;
   const sc = $("cx-scrim"); sc.hidden = false;
@@ -3210,11 +3223,14 @@ function cxVenueField(L) {
   cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
   sel.appendChild(g);
   // 群益:兩個視角都列(Wei 0.1.12)。這台電腦選到它只出一句說明(電腦版不接群益),雲端照舊交給 capital.js
-  { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw"); const oc = trEl("option", "", t("cap.venue")); oc.value = CAPITAL; g2.appendChild(oc); sel.appendChild(g2); }
+  // 統一期貨:只在這台電腦視角(雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。Mac 也列,選了講一句(d-mac)
+  { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw"); const oc = trEl("option", "", t("cap.venue")); oc.value = CAPITAL; g2.appendChild(oc);
+    if (CXF.env === "local") { const op = trEl("option", "", t("pres.venue")); op.value = "president"; g2.appendChild(op); }
+    sel.appendChild(g2); }
   sel.value = CXF.venue; sel.disabled = !!L.cx.busy || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
   sel.addEventListener("change", () => {
-    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || sel.value === CAPITAL ? sel.value : PAPER;
-    cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== PAPER && CXF.venue !== CAPITAL && CXF.ip === undefined) cxIpLookup();
+    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || sel.value === CAPITAL || (sel.value === "president" && CXF.env === "local") ? sel.value : PAPER;
+    cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== PAPER && CXF.venue !== CAPITAL && CXF.venue !== "president" && CXF.ip === undefined) cxIpLookup();
   });
   w.appendChild(sel); lab.appendChild(w);
   return lab;
@@ -3222,6 +3238,11 @@ function cxVenueField(L) {
 function cxModalPaint() {
   if (CXF.venue === CAPITAL && CXF.env === "cloud") return capPaint();   // 群益整個框交給 capital.js
   if (typeof capFootRestore === "function") capFootRestore();
+  if (CXF.venue === "president" && CXF.env === "local") {   // 統一整個框交給 president.js;第一次進來先問主行程存了什麼、看 PSCCA
+    if (!PRES.started) { PRES.started = true; presResume(); }
+    return presPaint();
+  }
+  if (typeof presFootRestore === "function") presFootRestore();
   const L = cxBag(), box = $("cx-body"), go = $("cx-go"), cloud = CXF.env === "cloud";
   // 這台電腦選到群益:沒有金鑰欄、沒有主鈕(雲端開機頁做不到預選 Windows,先只放說明)
   go.hidden = !cloud && CXF.venue === CAPITAL;
@@ -3381,6 +3402,7 @@ async function cxConnectCloud() {
 }
 async function cxConnect() {
   if (CXF.venue === CAPITAL) { if (CXF.env === "cloud" && ENV.cur === "cloud" && !$("cx-scrim").hidden) return capPrimary(); return; }
+  if (CXF.venue === "president") { if (CXF.env === "local" && ENV.cur === "local" && !$("cx-scrim").hidden) return presPrimary(); return; }
   if (CXF.env === "cloud") { if (!TR_BAGS.cloud.cx.busy && !$("cx-scrim").hidden && ENV.cur === "cloud") return cxConnectCloud(); return; }
   const L = TR_BAGS.local;
   if (L.cx.busy || ENV.cur !== "local" || $("cx-scrim").hidden) return;

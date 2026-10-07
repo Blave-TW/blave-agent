@@ -17,7 +17,10 @@ const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "creden
 // 只有主行程送得出的(send(…, { trusted: true })):設定 › Agent 規則的兩個寫入(shell/agentrules.js)。不放進 UI_COMMANDS:
 // renderer 的寫入必須經過 rules-save / reply-lang-save 那兩支 IPC——「規則檔讀不到就不寫」那道閘在那裡,通用的 trade-send 繞得過它;
 // api 的雲端白名單(CLOUD_COMMANDS = UI_COMMANDS + …,api/tests/check_desktop_cloud_command.py 釘住)也就不跟著變。
-const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set"]);
+// president_local(統一本機開通,shell/president_local.js)也只有主行程送:帳密在這裡封裝,renderer 碰不到密文以外的東西;
+// 它不在 api 的任何清單(runtime local_daemon.LOCAL_ONLY)
+const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local"]);
+const PRESIDENT_OPS = ["setup", "cert", "secrets", "probe", "start", "stop"];   // = runtime president_connect.LOCAL_OPS
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
@@ -47,7 +50,9 @@ const TRUSTED_SETS = [
   { BYBIT_API_KEY: ANY_KEY, BYBIT_SECRET_KEY: ANY_KEY },
 ];
 const TRUSTED_CRED_KEYS = Object.assign({}, ...TRUSTED_SETS);
-const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS)]);
+// 統一的五行由 president_local 的 cert 步寫(runtime local_bind_gate);解除綁定是安全方向,renderer 可以拿掉
+const PRESIDENT_ENV = ["PRESIDENT_ACCOUNT", "PRESIDENT_PASSWORD", "PRESIDENT_CA_PASSWORD", "PRESIDENT_CA_PATH", "PRESIDENT_URL"];
+const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS), ...PRESIDENT_ENV]);
 const sameKeys = (o, set) => { const a = Object.keys(o), b = Object.keys(set); return a.length === b.length && a.every((k) => Object.prototype.hasOwnProperty.call(set, k)); };
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;
 const PREFS_RULES_CEILING = 100, PREFS_RULE_CHARS_CEILING = 1000;
@@ -95,6 +100,13 @@ function argsOk(cmd, a, trusted) {
      版號同 main.js versionN。有金額的策略由機器端的 restore() 在動檔前拒絕,這一層只擋形狀 */
   if (cmd === "version_restore") return keys.length === 2 && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.name)
     && Number.isInteger(a.n) && a.n > 0 && a.n <= 1000000;
+  // 密文只驗形狀(base64、長度);內容由 daemon 解開後再驗
+  if (cmd === "president_local") {
+    if (PRESIDENT_OPS.indexOf(a.op) < 0) return false;
+    if (a.op === "cert" || a.op === "secrets") return keys.length === 2 && typeof a.sealed === "string" && a.sealed.length > 0 && a.sealed.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(a.sealed);
+    if (a.op === "probe") return keys.every((k) => k === "op" || k === "after_unlock") && (a.after_unlock === undefined || a.after_unlock === true);
+    return keys.length === 1;
+  }
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
 }
 function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,
@@ -328,6 +340,12 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     return out.slice(-500);
   }
 
-  return { start, stop, send, status, equity, events, noteQuit, _eqTick: eqTick, isRunning: () => !!child };
+  // 統一本機開通的封裝(shell/president_local.sealFor):金鑰由這次啟動的 secret 衍生,daemon 沒在跑就沒有
+  function sealPresident(obj) { return child && secret ? require("./president_local").sealFor(secret, obj) : null; }
+
+  // 統一還有幾口在倉(結束攔截、防睡眠用;帳戶讀取器讀不到 = 0)
+  function presidentLots() { return require("./president_local").heldLots(status().report); }
+
+  return { start, stop, send, status, equity, events, noteQuit, sealPresident, presidentLots, _eqTick: eqTick, isRunning: () => !!child };
 }
-module.exports = { createDaemonHost, UI_COMMANDS, MAIN_ONLY_COMMANDS, argsOk };
+module.exports = { createDaemonHost, UI_COMMANDS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, argsOk };

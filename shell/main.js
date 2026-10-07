@@ -1,7 +1,7 @@
 // Blave 電腦版 — Electron 主行程(v1 骨架)
 // 只做三件事:開視窗、偵測本機 agent(IPC)、記住使用者的連結選擇。
 // 引擎 spawn 在第 4 步接,不在這裡。
-const { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, Notification, dialog, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, Notification, dialog, nativeImage, powerSaveBlocker } = require("electron");
 const http = require("http");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
@@ -2337,8 +2337,33 @@ function tradeHost() {
         ...PY_ENV }),   // 打包版不讓 Python 把 __pycache__ 寫進 .app(簽章後 bundle 一變 codesign --verify 就不過)
       log: (m) => console.error("[trade]", m),
     });
+    // 統一(只有 Windows):有部位時不睡、daemon 重起後補交帳密——跟著常駐程式走,5 秒一輪
+    if (WIN) { const tm = setInterval(() => startStep("president", presSync), 5000); if (tm.unref) tm.unref(); }
   }
   return _tradeHost;
+}
+/* 統一期貨本機開通(president_local.js;畫面 renderer/president.js)。帳密與憑證密碼只在這個行程經過、safeStorage 存;
+   送給 daemon 時用它這次啟動的 secret 封裝(daemon.sealPresident)。只有 Windows 走得到 */
+let _president = null;
+function president() {
+  if (!_president) _president = require("./president_local").createPresident({
+    userData: app.getPath("userData"), home: process.env.USERPROFILE || os.homedir(),
+    seal: { available: () => safeStorage.isEncryptionAvailable(), encrypt: (v) => safeStorage.encryptString(v), decrypt: (b) => safeStorage.decryptString(b) },
+    host: () => _tradeHost,
+    pickFile: async () => { const w = BrowserWindow.getAllWindows()[0]; const r = await dialog.showOpenDialog(w, { properties: ["openFile"], filters: [{ name: "PFX", extensions: ["pfx"] }] }); return r.canceled ? null : r.filePaths[0]; },
+    openExternal: (u) => shell.openExternal(u),
+  });
+  return _president;
+}
+/* 有統一部位才讓電腦不睡(Wei 10-07);沒部位、app 收工就放掉。daemon 每次起來都是空手:存著的帳密再交一次 */
+let presBlocker = null;
+function presSync() {
+  if (!_tradeHost || !WIN) return;
+  const r = _tradeHost.status().report; if (!r) return;
+  const held = president().heldLots(r) > 0;
+  if (held && presBlocker === null) presBlocker = powerSaveBlocker.start("prevent-app-suspension");
+  else if (!held && presBlocker !== null) { powerSaveBlocker.stop(presBlocker); presBlocker = null; }
+  president().resync(r).catch(() => {});
 }
 /* 設定 › Agent 規則:這台電腦的常駐規則與回覆語言(agentrules.js)。讀是 runtime 的 python、寫是 daemon 的指令。 */
 let _agentRules = null;
@@ -2899,6 +2924,23 @@ app.whenReady().then(() => {
   handle("capital-upload", (_e, pw) => capital().upload(pw), capDenied);
   handle("capital-unbind", () => capital().unbind(), capDenied);
   handle("capital-forget", () => { if (_capital) _capital.forget(); return true; }, false);
+  // 統一本機開通(president_local.js):回給畫面的只有代號、張數、到期日、帳號(不是秘密);密碼送進來一次、拿不回去
+  const presDenied = { code: "NOT_ALLOWED" };
+  handle("president-info", () => president().info(), presDenied);
+  handle("president-creds", (_e, a) => president().saveCreds({ account: a && a.account, password: a && a.password }), presDenied);
+  handle("president-scan", () => president().scan(), presDenied);
+  handle("president-pick", () => president().pickOther(), presDenied);
+  handle("president-tcem", () => president().openTcem(), presDenied);
+  handle("president-cert", (_e, a) => president().certUse({ caPassword: a && typeof a.caPassword === "string" ? a.caPassword : null, source: a && a.source === "picked" ? "picked" : "found" }), presDenied);
+  handle("president-step", (_e, name, o) => president().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true) }), presDenied);
+  handle("president-test", (_e, name) => president().testStep(String(name || "")), presDenied);
+  // 解除綁定:機器上那五行 + 憑證檔(runtime drop_vault)先走,成功了才丟這裡存的帳密
+  handle("president-unbind", async () => {
+    const h = tradeHost(), PE = require("./daemon").PRESIDENT_ENV;
+    const r = await h.send("credentials_remove", { env: PE.map((k) => k.toLowerCase()) });
+    if (r && r.ok) president().forget();
+    return r;
+  }, { ok: false, error: "NOT_ALLOWED" });
   // Binance 真錢連接:四支都只收自家頁面。金鑰只在 binance-connect 經過一次,形狀先驗(binance_link.keyShapeOk),不回傳、不 log
   ipcMain.handle("binance-ip", (e) => (fromOurPage(e) ? binanceLink().ip() : null));
   ipcMain.handle("binance-state", (e) => (fromOurPage(e) ? binanceLink().state() : null));
@@ -3090,6 +3132,9 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
   quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel", ok: "OK",
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
+  // 統一有部位時結束 Blave(Wei 10-07:擋一下、講白不會平倉)
+  presQuitTitle: "Quit Blave?", presQuitBody: "{lots} lot(s) are still open at 統一期貨 (President Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 統一 app.",
+  ev_president_login_blocked: "統一期貨 login blocked", ev_president_login_blocked_n: "Blave paused trading so 統一 doesn't lock the account. Open Blave to fix the login.",
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
@@ -3343,8 +3388,9 @@ function traySync() {
    - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
-const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped"];   // 全部六型(標籤用)
-const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的四型
+// president_login_blocked:統一登入被擋、Blave 已先暫停(Wei 10-07 定 P1;notifications.md 歸級待補)
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped", "president_login_blocked"];   // 全部七型(標籤用)
+const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的五型
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
@@ -3463,16 +3509,19 @@ app.on("before-quit", (e) => {
   if (restarting === "stopping") { e.preventDefault(); return; }
   // 自動下單還在跑:結束 = 停止下單、部位留著不平——先問一次(從選單列「結束 Blave…」、Cmd+Q、Dock 結束都走這裡)
   const live = !quitting && !quitConfirmed && tradeMaybeLive();
-  if (live) {
+  // 統一還有部位(不論在不在下單):同一道框改講「這幾口不會平倉」(設計稿 d-quit;不替用戶平倉、不給第三顆鈕)
+  const presLots = !quitting && !quitConfirmed && _tradeHost && _tradeHost.presidentLots ? _tradeHost.presidentLots() : 0;
+  if (live || presLots > 0) {
     e.preventDefault();
     if (quitAsking) return;   // 框還開著又按一次 Cmd+Q:不疊第二個(稽核 M2)
     try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
     quitAsking = true;
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
-    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTitle,
+    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: presLots > 0 ? tmLabels.presQuitTitle : tmLabels.quitTitle,
       // 雲端也「確定在下單」時多一句:結束這個 app 不影響雲端。不確定就不說(那一句是在替雲端做保證)
-      detail: TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
-      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; if (_tradeHost) _tradeHost.noteQuit(); app.quit(); } }, () => { quitAsking = false; });
+      detail: presLots > 0 ? tmLabels.presQuitBody.replace("{lots}", () => String(presLots))
+        : TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
+      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; if (_tradeHost && live) _tradeHost.noteQuit(); app.quit(); } }, () => { quitAsking = false; });
     return;
   }
   // 本機 agent 回合還在跑(可能正在更新雲端主機):結束會把它斷掉,先問一次(同自動下單那一道;已經確認過就不再問)
