@@ -1,6 +1,6 @@
 // Blave 電腦版 — 使用追蹤(主行程用)。契約:blave-canon output/backend/2026-09-21-desktop-telemetry-contract.md
 //
-// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十三個事件、每個事件的屬性都是列舉——
+// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十六個事件、每個事件的屬性都是列舉——
 // 這個檔**沒有任何自由文字的入口**:對話、策略碼、策略名、標的、金額、部位、金鑰、路徑進不來,
 // 不是靠呼叫端自律,是 track() 只認下面這張表(api 端還有同一張白名單再擋一次)。
 //
@@ -10,6 +10,16 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+
+// 策略三步的 kind = 「型別.市場」(0.1.18):型別 A／B／C 照策略檔頭 `# Type:`、市場照 runtime strategy_reporter.strategy_market,
+// 都由 runtime/local_daemon.strategy_kinds 判好寫進狀態檔,這裡只把市場換成短碼(`C.tw_index_futures` 超過 16 字)。
+// 判不出來 = unk。這張對照表是唯一的一份;api 的 STRATEGY_KINDS 逐值逐序同 STRAT_KINDS
+const STRAT_MARKETS = { crypto: "crypto", tw_index_futures: "tw_idx_fut", tw_stock_futures: "tw_stk_fut", tw_stock: "tw_stock",
+  us_stock: "us_stock", global_futures: "global_fut", mixed: "mixed" };
+const STRAT_KINDS = ["A.crypto", "A.tw_idx_fut", "A.tw_stk_fut", "A.tw_stock", "A.us_stock", "A.global_fut", "A.mixed", "A.unk",
+  "B.crypto", "B.tw_idx_fut", "B.tw_stk_fut", "B.tw_stock", "B.us_stock", "B.global_fut", "B.mixed", "B.unk",
+  "C.crypto", "C.tw_idx_fut", "C.tw_stk_fut", "C.tw_stock", "C.us_stock", "C.global_fut", "C.mixed", "C.unk",
+  "unk.crypto", "unk.tw_idx_fut", "unk.tw_stk_fut", "unk.tw_stock", "unk.us_stock", "unk.global_fut", "unk.mixed", "unk.unk"];
 
 const EVENTS = {
   app_first_open: null,
@@ -43,6 +53,11 @@ const EVENTS = {
   idea_sent: { from: ["welcome", "lib_head", "lib_empty"] },
   // 0.1.15 偵測失敗(renderer 送,只在連結畫面偵測完時):本機那個 CLI 為什麼不能用。值由主行程 detectWhy 判,語意見 canon 登記表
   detect_fail: { why: ["claude_none", "claude_timeout", "claude_nonzero", "claude_badjson", "codex_none", "codex_shim", "codex_timeout", "codex_nonzero"] },
+  // 本機策略的三步(0.1.18;主行程送,strategySteps):新建、第一次有回測、第一次配了錢(同雲端的 deployed;按下啟動下單另有 trade_started)。
+  // 每支策略每步只送一次(本機記策略資料夾名的雜湊,名字不出門),升級那一刻已經在的只記不送
+  strat_created: { kind: STRAT_KINDS },
+  strat_backtested: { kind: STRAT_KINDS },
+  strat_deployed: { kind: STRAT_KINDS },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -121,10 +136,15 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
-  "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail"];
+  "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
+  "strat_created", "strat_backtested", "strat_deployed"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
+// 策略三步:每分鐘看一次狀態檔(daemon 每 15 秒寫);步驟 → 事件。已送過的雜湊每步最多留這麼多個(超過丟最舊的)
+const STRAT_MS = 60 * 1000;
+const STRAT_STEPS = { created: "strat_created", backtested: "strat_backtested", deployed: "strat_deployed" };
+const STRAT_KEEP = 5000;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
 const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail"];
 const DAY_RE = /^[0-9]{8}$/;
@@ -156,6 +176,9 @@ function createTelemetry(opts) {
   const dailyOf = (raw) => raw && typeof raw === "object" && DAY_RE.test(raw.day) && Array.isArray(raw.keys)
     ? { day: raw.day, keys: raw.keys.filter((k) => typeof k === "string") } : { day: today(), keys: [] };
   const dailyKeys = () => { if (st.daily.day !== today()) st.daily = { day: today(), keys: [] }; return st.daily.keys; };   // 換日清掉
+  // 策略三步「送過了」的雜湊:{created, backtested, deployed} 各一串。沒有 / 形狀不對 = null = 還沒 seed(見 strategySteps)
+  const stratOf = (raw) => raw && typeof raw === "object" && Object.keys(STRAT_STEPS).every((k) => Array.isArray(raw[k]))
+    ? Object.fromEntries(Object.keys(STRAT_STEPS).map((k) => [k, raw[k].filter((h) => typeof h === "string")])) : null;
   function load() {
     if (st) return st;
     let raw = null, exists = false;
@@ -163,15 +186,15 @@ function createTelemetry(opts) {
     const ok = raw && typeof raw === "object" && UUID.test(raw.install_id);
     // 檔案在、但讀不出來:不知道用戶關過沒有 → 當成關(「關掉」這個決定不能因為壞檔就靜默變回開)
     st = ok ? { install_id: raw.install_id, enabled: raw.enabled !== false && (raw.enabled === true || DEFAULT_ON),
-        sent: Array.isArray(raw.sent) ? raw.sent.filter((e) => ONCE.indexOf(e) >= 0) : [], daily: dailyOf(raw.daily) }
-      : { install_id: crypto.randomUUID(), enabled: exists ? false : DEFAULT_ON, sent: [], daily: dailyOf(null) };
+        sent: Array.isArray(raw.sent) ? raw.sent.filter((e) => ONCE.indexOf(e) >= 0) : [], daily: dailyOf(raw.daily), strat: stratOf(raw.strat) }
+      : { install_id: crypto.randomUUID(), enabled: exists ? false : DEFAULT_ON, sent: [], daily: dailyOf(null), strat: null };
     if (!ok) save();
     return st;
   }
   function save() {
     try {   // tmp + rename:寫到一半當機不會留下壞檔
       const tmp = file + ".tmp";
-      fs.writeFileSync(tmp, JSON.stringify({ install_id: st.install_id, enabled: st.enabled, sent: st.sent, daily: st.daily }), { mode: 0o600 });
+      fs.writeFileSync(tmp, JSON.stringify({ install_id: st.install_id, enabled: st.enabled, sent: st.sent, daily: st.daily, strat: st.strat }), { mode: 0o600 });
       fs.renameSync(tmp, file);
     } catch (_) { /* 記不住=下次多送一則,api 會去重 */ }
   }
@@ -188,7 +211,8 @@ function createTelemetry(opts) {
     if (typeof tok === "string" && tok) b.token = tok;
     return b;
   }
-  function track(event, props) {
+  // done(r):只有真的排出門的那則才會叫,r = post 的回應(送不出去是 null)。給 strategySteps 記帳用
+  function track(event, props, done) {
     try {
       const s = load();
       if (!s.enabled) return false;
@@ -202,13 +226,61 @@ function createTelemetry(opts) {
       // fire-and-forget。只送一次 / 每日一次的在 2xx 之後才記帳:離線的第一次啟動不該讓 app_first_open 永遠消失(api 會去重)
       if (once || daily) inflight.add(key);
       // 出門前再看一次開關:排進去之後、真的送出之前被關掉的,也不送(「關掉就立刻停止傳送」是寫給用戶看的承諾)
+      let resp = null;
       Promise.resolve().then(() => (s.enabled ? opts.post(opts.endpoint, b) : null)).then((r) => {
+        resp = r || null;
         const okR = r && r.status >= 200 && r.status < 300;
         if (once && okR && s.sent.indexOf(event) < 0) { s.sent.push(event); save(); }
         if (daily && okR && dailyKeys().indexOf(key) < 0) { dailyKeys().push(key); save(); }
-      }).catch(() => {}).then(() => inflight.delete(key));
+      }).catch(() => {}).then(() => { inflight.delete(key); if (typeof done === "function") { try { done(resp); } catch (_) { /* 追蹤永遠不能炸 */ } } });
       return true;
     } catch (_) { return false; }   // 追蹤永遠不能炸掉呼叫端
+  }
+  /* 策略三步(0.1.18)。kinds = runtime/local_daemon.strategy_kinds 寫進狀態檔的 {資料夾名: {type, market, bt, funded}}(null = 這輪不知道,整輪跳過)。
+     資料夾名只在這裡變成雜湊(sha256 前 16 hex)、存在本機狀態檔,不出門;出門的只有 kind。
+     - 第一次拿到 kinds(狀態檔沒有 strat):每支策略已經到的步驟全記成送過、一則都不送——不然升級那一刻每台把存量灌一輪(同 api 第一份回報只 seed)。
+     - 之後新到的步驟才送。關著時發生的直接記成送過(重新打開不補);今天同 kind 已經有一列的也直接記(api 反正只留一列)。
+     - 有回應就記(含 4xx:api 不收的值重送也不會收);送不出去(離線)下一輪再試。 */
+  const stratHash = (name) => crypto.createHash("sha256").update(name).digest("hex").slice(0, 16);
+  const stratKind = (k) => (["A", "B", "C"].indexOf(k.type) >= 0 ? k.type : "unk") + "."
+    + (typeof k.market === "string" && Object.prototype.hasOwnProperty.call(STRAT_MARKETS, k.market) ? STRAT_MARKETS[k.market] : "unk");
+  const stratDue = (k, step) => step === "created" || (step === "backtested" ? k.bt === true : k.funded === true);
+  function stratNote(step, h) {
+    const a = st.strat[step];
+    if (a.indexOf(h) < 0) { a.push(h); if (a.length > STRAT_KEEP) a.splice(0, a.length - STRAT_KEEP); }
+  }
+  function strategySteps(kinds) {
+    try {
+      if (!kinds || typeof kinds !== "object" || Array.isArray(kinds)) return 0;
+      const s = load();
+      const rows = Object.keys(kinds).filter((n) => kinds[n] && typeof kinds[n] === "object").map((n) => ({ h: stratHash(n), k: kinds[n] }));
+      if (!s.strat) {
+        s.strat = { created: [], backtested: [], deployed: [] };
+        for (const r of rows) for (const step of Object.keys(STRAT_STEPS)) if (stratDue(r.k, step)) stratNote(step, r.h);
+        save();
+        return 0;
+      }
+      let went = 0, dirty = false;
+      for (const r of rows) {
+        for (const step of Object.keys(STRAT_STEPS)) {
+          if (!stratDue(r.k, step) || s.strat[step].indexOf(r.h) >= 0) continue;
+          const ev = STRAT_STEPS[step], kind = stratKind(r.k), ik = ev + "#" + r.h;
+          if (inflight.has(ik)) continue;
+          if (!s.enabled || dailyKeys().indexOf(ev + ":" + kind) >= 0) { stratNote(step, r.h); dirty = true; continue; }
+          inflight.add(ik);
+          const out = track(ev, { kind }, (resp) => { inflight.delete(ik); if (resp && resp.status) { stratNote(step, r.h); save(); } });
+          if (out) went++; else inflight.delete(ik);   // 同 kind 那一則還在路上:下一輪它記好了,這支就走上面「今天已經有一列」
+        }
+      }
+      if (dirty) save();
+      return went;
+    } catch (_) { return 0; }   // 追蹤永遠不能炸
+  }
+  let stratTimer = null;
+  function stratStart() {
+    if (stratTimer || typeof opts.strategies !== "function") return;
+    stratTimer = setInterval(() => { try { strategySteps(opts.strategies()); } catch (_) { /* 追蹤永遠不能炸 */ } }, opts.strategiesMs || STRAT_MS);
+    if (stratTimer.unref) stratTimer.unref();
   }
   let beat = null;
   function beatStart() {
@@ -221,7 +293,8 @@ function createTelemetry(opts) {
   }
   return {
     track,
-    start() { track("app_first_open"); track("app_open"); beatStart(); },   // 關掉 / 已送過:track 自己會擋;心跳的計時器只排一次
+    start() { track("app_first_open"); track("app_open"); beatStart(); stratStart(); },   // 關掉 / 已送過:track 自己會擋;心跳與策略三步的計時器各只排一次
+    strategySteps,
     isEnabled: () => load().enabled,
     // 重新打開立即恢復:這次啟動的那兩則補送(app_open 由 api 每日去重;app_first_open 送過就不會再送)
     setEnabled(on) { const was = load().enabled; st.enabled = !!on; save(); if (st.enabled && !was) this.start(); },
@@ -249,4 +322,4 @@ function anyBacktest(stratDir) {
   return false;
 }
 
-module.exports = { createTelemetry, EVENTS, FROM_RENDERER, statusHeaders, anyBacktest };
+module.exports = { createTelemetry, EVENTS, FROM_RENDERER, STRAT_KINDS, STRAT_MARKETS, statusHeaders, anyBacktest };

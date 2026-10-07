@@ -1,4 +1,4 @@
-// shell/telemetry.js:二十三個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
+// shell/telemetry.js:二十六個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
 // 跑法:node tests/check_shell_telemetry.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const { createTelemetry, EVENTS, FROM_RENDERER } = require("../shell/telemetry.js");
@@ -28,7 +28,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("二十三個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 23 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 26 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -451,6 +451,84 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     else { const api = fs.readFileSync(apiPy15, "utf8"), got = {};
       for (const m of api.matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
       t("api desktop_telemetry.EVENTS 的 detect_fail = 外殼這份(屬性名、值、順序、不是 once)", !!got.detect_fail && got.detect_fail.key === "why" && JSON.stringify(got.detect_fail.vals) === JSON.stringify(WHY) && got.detect_fail.once === false); } }
+  // ── 0.1.18 策略三步(主行程送;kinds 由 runtime/local_daemon.strategy_kinds 寫進狀態檔)──
+  { const { STRAT_KINDS, STRAT_MARKETS } = require("../shell/telemetry.js");
+    const tmSrc18 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8"), mainSrc18 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    const SE = ["strat_created", "strat_backtested", "strat_deployed"];
+    const MK = ["crypto", "tw_idx_fut", "tw_stk_fut", "tw_stock", "us_stock", "global_fut", "mixed", "unk"];
+    const WANT = ["A", "B", "C", "unk"].flatMap((ty) => MK.map((m) => ty + "." + m));
+    t("strat_*:三個事件、一個屬性 kind、值 = 型別 4 × 市場 8(逐序)、名字與值都 ≤16 字、值裡沒有 api dedupe_key 的分隔符 :",
+      JSON.stringify(STRAT_KINDS) === JSON.stringify(WANT) && SE.every((ev) => ev.length <= 16 && JSON.stringify(EVENTS[ev]) === JSON.stringify({ kind: WANT })) && WANT.every((v) => v.length <= 16 && v.indexOf(":") < 0));
+    t("…市場短碼對照涵蓋 runtime strategy_market 的七個值(另加 unk)",
+      JSON.stringify(Object.keys(STRAT_MARKETS)) === JSON.stringify(["crypto", "tw_index_futures", "tw_stock_futures", "tw_stock", "us_stock", "global_futures", "mixed"])
+      && JSON.stringify(Object.values(STRAT_MARKETS).concat("unk")) === JSON.stringify(MK));
+    // runtime 那份市場清單(strategy_reporter._PRICE_FETCHERS 的值 + 兩個台指期分支 + mixed)跟外殼的對照表沒有漏
+    { const rp = fs.readFileSync(path.join(__dirname, "..", "runtime", "strategy_reporter.py"), "utf8");
+      const fet = rp.match(/_PRICE_FETCHERS = \{([\s\S]*?)\n\}/), vals = new Set(fet ? [...fet[1].matchAll(/: "([a-z_]+)"/g)].map((m) => m[1]) : []);
+      ["tw_index_futures", "tw_stock_futures", "mixed"].forEach((v) => vals.add(v));
+      t("…runtime strategy_market 會回的每個值都在外殼對照表裡(新增市場時這格紅)", vals.size === 7 && [...vals].every((v) => Object.prototype.hasOwnProperty.call(STRAT_MARKETS, v)), [...vals]); }
+    t("…每日去重(DAILY)、不是 once、畫面送不了(不在 FROM_RENDERER)", SE.every((ev) => new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !new RegExp('const ONCE = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !FROM_RENDERER.includes(ev)));
+    t("main.js:strategies 讀 daemon 狀態檔的 strategy_kinds", /strategies: \(\) => \(_tradeHost \? \(\(_tradeHost\.status\(\)\.report \|\| \{\}\)\.strategy_kinds \|\| null\) : null\),/.test(mainSrc18));
+    const apiPy18 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
+    if (!fs.existsSync(apiPy18)) console.log("SKIP  api 端 strat_* 比對(需要 monorepo 版面)");
+    else { const api = fs.readFileSync(apiPy18, "utf8"), m = api.match(/^STRATEGY_KINDS = \(([^()]*)\)/m);
+      const apiKinds = m ? [...m[1].matchAll(/"([^"]+)"/g)].map((v) => v[1]) : null;
+      t("api STRATEGY_KINDS = 外殼 STRAT_KINDS(逐值逐序)", JSON.stringify(apiKinds) === JSON.stringify(STRAT_KINDS));
+      t("api EVENTS 的三個 strat_* = kind: STRATEGY_KINDS、不是 once", SE.every((ev) => new RegExp('^    "' + ev + '": \\{"props": \\{"kind": STRATEGY_KINDS\\}, "once": False\\},$', "m").test(api))); }
+
+    // 行為:一個假的狀態檔序列,看出門的事件
+    const K = (type, market, bt, funded) => ({ type, market, bt, funded });
+    const dirS = fs.mkdtempSync(path.join(TMP_ROOT, "d-")); let clockS = Date.UTC(2026, 9, 7, 3, 0, 0);
+    let x = mk(dirS, { now: () => clockS }); x.tm.installId();   // 先讓狀態檔存在
+    t("kinds 是 null / 不是物件:整輪跳過、不 seed", x.tm.strategySteps(null) === 0 && x.tm.strategySteps([]) === 0 && x.tm.strategySteps("x") === 0 && JSON.parse(fs.readFileSync(path.join(dirS, "telemetry.json"), "utf8")).strat === null);
+    const exist = { old_momo_SECRET: K("A", "crypto", true, true), old_draft: K(null, null, false, false) };
+    t("第一次拿到 kinds(升級那一刻):存量全記成送過、一則都不送", x.tm.strategySteps(exist) === 0 && (await tick(), x.sent.length === 0));
+    const j0 = JSON.parse(fs.readFileSync(path.join(dirS, "telemetry.json"), "utf8")).strat;
+    t("…狀態檔記的是雜湊(16 hex)不是名字;已到的步驟才記", j0.created.length === 2 && j0.backtested.length === 1 && j0.deployed.length === 1 && j0.created.every((h) => /^[0-9a-f]{16}$/.test(h)) && !JSON.stringify(j0).includes("momo"));
+    t("…再看一次同一份:不送", x.tm.strategySteps(exist) === 0);
+    x = mk(dirS, { now: () => clockS });   // 重開 app:讀回狀態檔
+    const s1 = { ...exist, tx_trend_SECRET: K("A", "tw_index_futures", false, false) };
+    t("重開後新的一支:送 strat_created kind=A.tw_idx_fut", x.tm.strategySteps(s1) === 1); await tick();
+    t("…出門的只有 kind、沒有名字", x.sent.length === 1 && x.sent[0].event === "strat_created" && JSON.stringify(x.sent[0].props) === '{"kind":"A.tw_idx_fut"}' && !JSON.stringify(x.sent[0]).includes("SECRET") && !JSON.stringify(x.sent[0]).includes("tx_trend"));
+    t("…同一支再看一次:不送", x.tm.strategySteps(s1) === 0);
+    s1.tx_trend_SECRET = K("A", "tw_index_futures", true, false);
+    t("同一支回測好了:送 strat_backtested", x.tm.strategySteps(s1) === 1); await tick();
+    s1.tx_trend_SECRET = K("A", "tw_index_futures", true, true);
+    t("配了錢:送 strat_deployed;已送過的兩步不重送", x.tm.strategySteps(s1) === 1); await tick();
+    t("…三則依序", x.sent.map((b) => b.event + "=" + b.props.kind).join() === "strat_created=A.tw_idx_fut,strat_backtested=A.tw_idx_fut,strat_deployed=A.tw_idx_fut");
+    // 同日同 kind 的第二支:api 只會留一列,外殼不再出門、直接記成送過
+    const s2 = { ...s1, eth_SECRET: K("A", "crypto", false, false), btc_SECRET: K("A", "crypto", false, false) };
+    const n2 = x.tm.strategySteps(s2); await tick();
+    t("同一輪兩支同 kind:只出門一則(第二支等那則記好)", n2 === 1 && x.sent.length === 4 && x.sent[3].props.kind === "A.crypto");
+    t("…下一輪:第二支直接記成送過、不出門", x.tm.strategySteps(s2) === 0 && x.sent.length === 4 && x.tm.strategySteps(s2) === 0);
+    clockS += 24 * 3600 * 1000;
+    t("換日之後已記的不會再送", x.tm.strategySteps(s2) === 0);
+    // 型別 / 市場判不出來、或不在表上 → unk
+    const s3 = { ...s2, a_SECRET: K(null, null, false, false), b_SECRET: K("C", "us_stock", false, false), c_SECRET: K("Z", "BTCUSDT", false, false), d_SECRET: K("B", "constructor", false, false) };
+    x.tm.strategySteps(s3); await tick(); x.tm.strategySteps(s3); await tick();
+    t("判不出來 / 表外的值 → unk;出門的 kind 全在列舉裡", JSON.stringify(x.sent.slice(4).map((b) => b.props.kind).sort()) === JSON.stringify(["B.unk", "C.us_stock", "unk.unk"]) && x.sent.every((b) => STRAT_KINDS.includes(b.props.kind)));
+    // 關著時發生的:記成送過,重新打開不補
+    x.tm.setEnabled(false);
+    const s4 = { ...s3, off_SECRET: K("B", "crypto", false, false) };
+    const before = x.sent.length;
+    t("關掉追蹤時新的一支:不送", x.tm.strategySteps(s4) === 0);
+    x.tm.setEnabled(true); await tick();
+    t("…重新打開:不補送那一支(只補啟動那兩則)", x.tm.strategySteps(s4) === 0 && (await tick(), x.sent.slice(before).every((b) => b.event === "app_first_open" || b.event === "app_open")));
+    // 送不出去(離線)下一輪再試;有回應(含 4xx)就記
+    let mode = "down"; const sentF = [];
+    const f = createTelemetry({ dir: fs.mkdtempSync(path.join(TMP_ROOT, "d-")), endpoint: "https://x/t", appVersion: "0.3.1", osVersion: "15.5", lang: "zh-TW",
+      post: (u, b) => { sentF.push(b); return mode === "down" ? Promise.reject(new Error("offline")) : Promise.resolve({ status: mode === "400" ? 400 : 200 }); } });
+    f.strategySteps({});
+    const sf = { n1_SECRET: K("A", "crypto", false, false) };
+    f.strategySteps(sf); await tick(); f.strategySteps(sf); await tick();
+    t("離線:每一輪都再試(沒記)", sentF.length === 2);
+    mode = "400"; f.strategySteps(sf); await tick();
+    t("api 回 400(例如 api 還沒上這個事件):記成送過,不再重送", sentF.length === 3 && f.strategySteps(sf) === 0 && (await tick(), sentF.length === 3));
+    // 計時器:start() 排一次,讀 opts.strategies()
+    let calls = 0;
+    const tmr = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { strategies: () => { calls++; return null; }, strategiesMs: 10 });
+    tmr.tm.start(); tmr.tm.start(); await new Promise((r) => setTimeout(r, 55));
+    t("start() 排計時器讀 strategies()(重複 start 不重排)", calls >= 3 && calls <= 6, calls); }
   console.log(red ? red + " 紅" : "ALL PASS");
 } finally { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); }
   process.exit(red ? 1 : 0);

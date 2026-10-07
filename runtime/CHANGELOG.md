@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版策略三步的判定(`local_daemon.strategy_kinds`;desktop 0.1.18,外殼 `shell/telemetry.js` 的 `strat_created`／`strat_backtested`／`strat_deployed` 讀它;api `openclaw/desktop_telemetry.py` 白名單先上)**:daemon 每次寫 `state/local_status.json` 多帶 `strategy_kinds = {資料夾名: {type, market, bt, funded}}`——type／market 直接用 `strategy_reporter` 那一套(檔頭 `# Type:`,沒檔頭但回測是組合 → C;市場看引用哪個 `lib.data` 抓價函式),判不出是 null;`bt` = 有 stats.json;`funded` = 資料夾名或 `STRATEGY_NAME` 在 portfolio config 有 > 0 的金額(沒有 `amounts` 退回 `weights`,同 api `agent_overview._funded`)。按檔案 mtime／大小快取,沒變不重讀;只有沒檔頭的策略才讀 stats.json。config 讀不出來或策略資料夾讀不到時寫 null(不是 `{}`:外殼拿第一份當存量 seed,錯的 `{}` 會讓既有策略全變成新的)。算失敗只寫 null、不影響狀態檔。資料夾名只留在本機,外殼雜湊後記帳、出門的只有 `型別.市場`。測試 `tests/check_local_strategy_kinds.py`、`tests/check_shell_telemetry.js`。
+
 ## 1.1.116 — 2026-10-06(desktop 0.1.17)
 
 - **外殼與設定層總覽(desktop 0.1.17;大半不在 runtime/ 但同一批出貨)。兩條出貨順序:① 遙測白名單新增五個值(`feature_used` 的 `welcome_data_row`／`welcome_data_all`／`attach_file`／`attach_image`／`attach_paste`),api `openclaw/desktop_telemetry.py` 先上;② 台指期 K 線快取 `twfutures3_*`:api 換月口徑部署並重建驗收完,這批才進 main——過去月份只抓一次、之後不重抓,機器先更新會把舊口徑的月份存進新前綴,事後改不回來。內外盤不換前綴(仍是 `twfutures_bav`)、改成讀取時過濾,不受這條順序限制**:
