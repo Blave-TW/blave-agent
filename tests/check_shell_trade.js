@@ -49,6 +49,10 @@ ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", t
   ok("worker ok 之後照一般狀態機(halted)", trExecState(st({ venues: VP, account: accP, president_connect: pcOk, halt: { halted: true }, reconciler: { alive: false } })) === "halted");
   ok("對帳器在跑(開通過、之後 worker 失敗)不算 setup:暫停鈕要在", trExecState(st({ venues: VP, account: accP, president_connect: { worker: { status: "failed" } }, halt: {}, reconciler: { alive: true }, daemon: { reconciler: { running: true } } })) === "running");
   ok("還綁著別家(模擬)就不是 setup", trExecState(st({ venues: { ...VP, ...V }, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false } })) === "dead");
+  // 稽核 integ-0118 B-2:雲端那份狀態(st.cloud)不進 setup——「繼續」開的框只接這台電腦的統一,雲端照一般狀態機、開通交給網頁
+  { const cloudSt = { alive: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: VP, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false } } };
+    ok("B-2 雲端視角:同一份開通中的回報不是 setup(dead,照一般狀態機);setup 分支畫「繼續」只在這台電腦", trExecState(cloudSt) === "dead" && !trSetupOnly(cloudSt)
+      && trExecState(st(cloudSt.report)) === "setup" && /if \(state === "setup" && !stopped && TR\.env === "local"\) \{/.test(src)); }
   ok("沒有 president_connect(不是統一、或舊狀態檔)照舊", trExecState(st({ venues: VP, account: accP, halt: {}, reconciler: { alive: false } })) === "dead");
   ok("接線:setup 的標頭句「統一期貨 · 開通中」、頂列短詞「開通中」、切換器詞 cap.pending、主鈕換「繼續」回開通清單、別的態把它拿掉",
     /if \(state === "setup"\) return trVenueLabel\("president", true\) \+ " · " \+ t\("cap\.pending"\);/.test(src)
