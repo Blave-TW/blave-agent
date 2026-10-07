@@ -442,7 +442,7 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
             msg = f"群益只回報成交 {got:g}/{lots} 口,Blave 照 {got:g} 口記——請到群益下單軟體確認 {symbol} 的實際部位"
         if result.get('error'):
             msg += f"({result['error']})"
-        _record_order_error(symbol, 'capital', msg)
+        _record_order_error(symbol, venue_traits.CAPITAL, msg)
     return {
         'avg_price':       result.get('avg_fill_price') or 0.0,
         'executed_qty':    result.get('fill_qty') or 0.0,
