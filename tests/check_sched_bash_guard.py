@@ -74,6 +74,7 @@ BLOCK = [
     "python3 -c \"import command_listener; command_listener._cmd_amounts({})\"",
     "python3 -c \"import importlib.util as u; s = u.spec_from_file_location('x', '/opt/blave-agent/current/x.py')\"",
     "python3 /opt/blave-agent/current/capital_connect.py", "python3 -c \"from lib import capital_vault\"",
+    "python C:\\blave-agent\\current\\president_test_order.py C:\\blave-agent\\workspace",
     "BLAVE_MODE='live' python3 strategies/x/strategy.py",
     # 印整個環境(排程回合的環境裡有 proxy token)
     "env", "env | grep KEY", "printenv", "printenv ANTHROPIC_API_KEY", "export -p", "cat /proc/self/environ",

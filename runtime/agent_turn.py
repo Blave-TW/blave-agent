@@ -1198,7 +1198,7 @@ SCHED_ORDER_LIB = "order_(?:binance|bingx|bybit|capital|gateio|okx|paper|preside
 # 這幾個名字不會出現在敘事裡,光出現就擋;execute / venue / portfolio 是一般英文字,只在 lib. 之後或 from lib import 裡擋
 SCHED_TRADE_BARE = SCHED_ORDER_LIB + "|venue_wiring|capital_vault|capital_worker|president_vault|president_worker"
 SCHED_TRADE_LIB = SCHED_TRADE_BARE + "|execute|venue|portfolio"
-SCHED_TRADE_RUNTIME = "command_listener|local_daemon|web_bridge|capital_connect|president_connect"
+SCHED_TRADE_RUNTIME = "command_listener|local_daemon|web_bridge|capital_connect|president_connect|president_test_order"
 SCHED_TRADE_MANAGER = ("close_symbol|flatten|stop_strategy|reconciler|run_strategy|start_reconciler\\w*|manager|seed_ledger"
                        "|update_workspace|wait_for_bar")
 # 換目錄(`cd manager && python3 close_symbol.py`,Bash 的 cwd 跨呼叫保留)就沒有 manager/ 前綴:夠獨特的名字光出現就擋,

@@ -114,17 +114,37 @@ The platform's connect steps (`runtime/president_connect.py`) take the account a
 from the form, the `.pfx` and its password as an encrypted upload (or, for a certificate the user
 applied for on the machine over RDP, only its password — Step 2), install `unitrade`, log in once
 read-only and install the worker. Afterwards `.env` holds only sentinels (`president_password=vault:…`,
-`president_ca_password=vault:ca`), `president_ca_path` points at `<base>\credentials\president.pfx`
-and the secrets sit in the vault. Never rewrite those lines, never write the vault or the `.pfx`, never
+`president_ca_password=vault:ca`), `president_ca_path` points at `<base>\credentials\president.pfx`,
+both hosts are written (`president_url` and `president_test_url`) and the secrets sit in the vault. Never rewrite those lines, never write the vault or the `.pfx`, never
 run the steps by hand; if the user asks you to bind it, send them to the page. Unbinding (or binding
 another venue) removes all seven lines, the vault, the `.pfx` and the worker service. The `.env` block
 above is for a machine set up by hand (development / test host).
 
+**Test environment first (cloud binding).** 統一 opens production API access only after the user
+has placed one order on the **test host** with the test account their broker rep mailed (same
+trading password, same certificate) and reported it to the rep. So a newly bound account starts in
+the test environment (`"live": false` in the vault); the connect page then walks:
+`president_host {"url": <the address from the mail>}` (the platform turns `test167.pfctrade.com`
+into `https://test167.testpfctrade.com`) → login on the test host → `president_test_order` (one
+TMF near-month market IOC buy; the test host answers `0000` and never fills; if a fill ever
+arrives, one close-only IOC sell follows) → the page shows the order time and order number for the
+user to read to the rep → when the rep says production is open, `president_host {"env": "live"}`
+→ login on `viploginm` → `president_finish`. No certificate re-upload at the switch. While in the
+test environment the worker service is removed and its snapshot deleted, so no strategy trades;
+the worker is installed only after a login passed on the production host. A rebind of the same
+account keeps its environment; a new account starts in test. Only two hosts are accepted by this
+flow: `test167(.test)pfctrade.com` and `viploginm.pfctrade.com`.
+
+A wrong password on the test host counts in the same local login block as production (the block
+fingerprint has no host). Whether 統一 itself counts test-host failures toward the account's three
+wrong logins is unconfirmed — treat it as if it does.
+
 Production, only after the broker's production mail AND the user's explicit go-ahead, is switched
-on by the platform's 統一期貨 binding flow — it writes `"live": true` into
-`<base>/credentials/president_vault.json`. **You cannot switch it on:** never write that file, and a
-`PRESIDENT_LIVE` line in `.env` is refused (the libs raise rather than log in). `.env` carries only
-the production host:
+on by the platform's 統一期貨 connect flow (`president_host {"env": "live"}`) — it writes
+`"live": true` into `<base>/credentials/president_vault.json`. **You cannot switch it on:** never
+write that file, never run `runtime/president_test_order.py` or the connect steps yourself, and a
+`PRESIDENT_LIVE` line in `.env` is refused (the libs raise rather than log in). The production host
+in `.env`:
 
 ```
 president_url=https://viploginm.pfctrade.com
@@ -364,7 +384,8 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 3. `python lib/president_worker.py --once` exits 0; the probe lists the positions and equity.
 4. One test order through `order_president.place_futures_market_order({}, "TMF", "buy", 1,
    "entry")` returns `ack == '0000'` (the test host will not fill it). The user reports the test to
-   the broker rep and waits for the production mail.
+   the broker rep and waits for the production mail. (On a cloud machine bound through the web page
+   the page places this order itself — `president_test_order` — not you.)
 5. Production (switched on by the binding flow + `president_url`) only with the user's explicit go-ahead;
    repeat 3–4 there with the smallest order (TMF 1 lot) and confirm equity matches the broker's app.
 

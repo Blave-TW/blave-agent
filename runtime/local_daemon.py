@@ -112,7 +112,7 @@ ALLOWED = frozenset({
 CLOUD_ONLY = frozenset({
     "capital_setup", "capital_pfx_key", "capital_pfx", "capital_probe", "capital_finish",
     "president_setup", "president_pfx_key", "president_pfx", "president_pfx_local", "president_probe",
-    "president_finish",
+    "president_host", "president_test_order", "president_finish",
 })
 # Not in the api's list at all: the desktop's own 統一期貨 connect flow
 # (runtime/president_connect.local_dispatch). Only the app's main process sends

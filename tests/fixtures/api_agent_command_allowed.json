@@ -1,5 +1,5 @@
 {
- "source": "api/openclaw/agent_command.py ALLOWED at api commit 665c452a (branch president-api-018, adds president_pfx_local)",
+ "source": "api/openclaw/agent_command.py ALLOWED at api branch president-api-018 (adds president_host, president_test_order after president_pfx_local)",
  "note": "tests/check_local_daemon.py compares runtime/local_daemon.py ALLOWED + CLOUD_ONLY to this list every run, and this list to the api's own when the api source is next to this repo (monorepo layout or BLAVE_API_DIR). A new api command: update this file and local_daemon.py in the same change.",
  "allowed": [
   "amounts",
@@ -21,11 +21,13 @@
   "manage_optimize",
   "preferences_set",
   "president_finish",
+  "president_host",
   "president_pfx",
   "president_pfx_key",
   "president_pfx_local",
   "president_probe",
   "president_setup",
+  "president_test_order",
   "reply_lang_set",
   "report_delete",
   "report_edit_pending",

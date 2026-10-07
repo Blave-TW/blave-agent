@@ -181,8 +181,10 @@ check("3 .env: account, sentinels, the fixed path, the production host — no pa
       f"president_account={ACCT}" in env and "president_password=vault:" + pc.vault_fingerprint(ACCT, PW) in env
       and "president_ca_password=vault:ca" in env and f"president_ca_path={P['pfx']}" in env
       and "president_url=https://viploginm.pfctrade.com" in env and PW not in env and CAPW not in env, env)
-check("3 the passwords are in memory only: no vault file", not os.path.exists(P["vault"])
-      and pc._LOCAL["secrets"] == {"account": ACCT, "password": PW, "ca_password": CAPW, "live": True})
+check("3 the passwords are in memory only: no vault file; a new account starts on the TEST host whatever the app sent",
+      not os.path.exists(P["vault"]) and pc._LOCAL["secrets"] == {"account": ACCT, "password": PW, "ca_password": CAPW, "live": False}
+      and pc.read_status()["env"] == "test" and r["env"] == "test")
+check("3 .env carries both hosts (switching never rewrites it)", "president_test_url=https://test167.testpfctrade.com" in env)
 st = json.dumps(pc.read_status())
 check("3 the status: cert ok with its expiry, nothing personal",
       pc.read_status()["cert"]["status"] == "ok" and "Z123456789" not in st and "PSC_" not in st and PW not in st)
@@ -199,7 +201,7 @@ check("5 another password than .env was bound with → REBOUND, nothing loaded",
       and pc._LOCAL["secrets"] is None)
 check("5 another account → REBOUND",
       code_of(lambda: pc.local_dispatch({"op": "secrets", "sealed": node_seal(dict(GOOD, account="70000099999"))}, D)) == "REBOUND")
-g = dict(GOOD)
+g = dict(GOOD, live=False)
 g.pop("src")
 check("5 the bound ones load", pc.local_dispatch({"op": "secrets", "sealed": node_seal(g)}, D) == {"secrets": "ok"}
       and pc._LOCAL["secrets"]["password"] == PW)
@@ -219,15 +221,45 @@ def child(env_extra, line=None):
 
 
 got = child(pc.child_flags(), pc.secret_line())
-check("6 a child given the line logs in with it: passwords and production from memory",
-      got == {"pw": PW, "ca": CAPW, "live": True}, got)
+check("6 a child given the line logs in with it: passwords and the environment from memory",
+      got == {"pw": PW, "ca": CAPW, "live": False}, got)
+pc._LOCAL["secrets"]["live"] = True
+got = child(pc.child_flags(), pc.secret_line())
+check("6 …production when the bundle says so", got == {"pw": PW, "ca": CAPW, "live": True}, got)
+pc._LOCAL["secrets"]["live"] = False
 open(P["vault"], "w").write(json.dumps({"president_password": "from-file", "live": True}))
 got = child({"BLAVE_AGENT_LOCAL": "1"})
 check("6 the agent's own process (desktop, no line): cannot log in — and a vault file is never read",
       got.get("err") == "RuntimeError", got)
 os.remove(P["vault"])
-check("6 the line holds the passwords and production, not the account", json.loads(pc.secret_line()) == {
-    "president_password": PW, "president_ca_password": CAPW, "live": True})
+check("6 the line holds the passwords and the environment, not the account", json.loads(pc.secret_line()) == {
+    "president_password": PW, "president_ca_password": CAPW, "live": False})
+
+# ── 6b. test environment (the cloud's president_host / president_test_order, same runtime code) ──
+probes = []
+real_probe = pc.run_probe
+pc.run_probe = lambda push=None, after_unlock=False: probes.append(pc.current_env()) or (
+    pc._update("probe", status="ok", state="ok", env=pc.current_env()) and {"state": "ok", "env": pc.current_env()})
+check("6b start before production → TEST_ENV (the worker never runs on the test host)",
+      code_of(lambda: pc.local_dispatch({"op": "start"}, D).run()) == "TEST_ENV")
+check("6b a host outside the two allowed → HOST_NOT_ALLOWED, before anything runs",
+      code_of(lambda: pc.local_dispatch({"op": "host", "url": "evil.example.com"}, D)) == "HOST_NOT_ALLOWED")
+check("6b host takes exactly one of env / url", code_of(lambda: pc.local_dispatch({"op": "host"}, D)) == "BAD_ARGS"
+      and code_of(lambda: pc.local_dispatch({"op": "host", "env": "prod"}, D)) == "BAD_ARGS")
+r6 = pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).run()
+check("6b the address as mailed → the test host, then the probe there", r6["env"] == "test" and probes[-1] == "test"
+      and pc.read_status()["probe"]["env"] == "test")
+ran = []
+real_order = pc.run_test_order
+pc.run_test_order = lambda push=None: ran.append(pc.current_env()) or {"state": "accepted"}
+pc.local_dispatch({"op": "test_order"}, D).run()
+check("6b test order after a test-host probe", ran == ["test"])
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6b 營業員說開好了 = host live: bundle switched, probe on production",
+      pc._LOCAL["secrets"]["live"] is True and probes[-1] == "live" and pc.read_status()["env"] == "live")
+check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order"}, D)) == "LIVE_ENV")
+pc.local_dispatch({"op": "host", "env": "test"}, D).run()
+pc.run_probe, pc.run_test_order = real_probe, real_order
 
 # ── 7. reconciler ──
 spawned = []
@@ -285,7 +317,7 @@ finally:
     pr.stdin.close()
 peek = json.load(open(os.path.join(WS, "peek.json"))) if os.path.exists(os.path.join(WS, "peek.json")) else None
 check("7 run_reconciler hands the line to lib.president_vault before the strategy code runs",
-      peek == {"president_password": PW, "president_ca_password": CAPW, "live": True}, peek)
+      peek == {"president_password": PW, "president_ca_password": CAPW, "live": False}, peek)
 
 # ── 8. blocked login ──
 from lib import president_vault as pv  # noqa: E402
