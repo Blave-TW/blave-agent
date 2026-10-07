@@ -116,7 +116,7 @@ async function presResume() {
   PRES.info = info;
   const pc = presPC();
   if (info && info.saved && pc) { PRES.phase = "flow"; PRES.gotMail = true; }
-  else presScan();
+  presScan();   // 清單裡「選憑證」那張卡也要到期日
   presPaint();
 }
 async function presScan() {
