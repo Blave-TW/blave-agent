@@ -186,16 +186,18 @@ for v in ("2.0.9", "1.0.120", None, ""):
     t(f"⑥ engine {v!r} → deny, no rewrite", hs.get("permissionDecision") == "deny" and "updatedInput" not in hs, hs)
 at._ENGINE["cli_version"] = "2.1.281"
 
-# ⑥ 排程回合:兩道 hook 都掛在 PreToolUse/Bash;一條回測啟動指令同時碰到排程守門(lib/execute)時,
-# 這道改寫放行、那道照 deny——引擎端 deny 贏,這裡只驗兩道各自的輸出沒被對方影響
+# ⑥ 排程回合:這道與排程守門都掛在 PreToolUse/Bash(券商密鑰檔、密鑰入碼那兩道也在,對這條指令不表態);
+# 一條回測啟動指令同時碰到排程守門(lib/execute)時,這道改寫放行、那道照 deny——引擎端 deny 贏,
+# 這裡只驗兩道各自的輸出沒被對方影響
 o2 = _Options(env={"BASH_MAX_TIMEOUT_MS": str(CAP)})
 at._mount_turn_hooks(o2, object(), True)
 bash_hooks = [h for m in o2.hooks["PreToolUse"] if m["matcher"] == "Bash" for h in m["hooks"]]
-t("⑥ scheduled turn mounts both Bash guards", len(bash_hooks) == 2, o2.hooks)
+mounted = {h.__qualname__.split(".")[0] for h in bash_hooks}
+t("⑥ scheduled turn mounts both Bash guards", {"_bg_guard_hooks", "_sched_bash_guard_hooks"} <= mounted, o2.hooks)
 sched_cmd = "python3 strategies/x/strategy.py --with lib/execute.py"
 outs = [asyncio.run(h({"tool_name": "Bash", "tool_input": {"command": sched_cmd, "timeout": 600000}}, "t2", None))
         for h in bash_hooks]
-decisions = sorted((o_.get("hookSpecificOutput") or {}).get("permissionDecision") for o_ in outs)
+decisions = sorted(d for d in ((o_.get("hookSpecificOutput") or {}).get("permissionDecision") for o_ in outs) if d)
 t("⑥ one hook rewrites (allow), the scheduled guard still denies", decisions == ["allow", "deny"]
   and any(at.SCHED_BASH_DENY_REASON == (o_.get("hookSpecificOutput") or {}).get("permissionDecisionReason") for o_ in outs),
   outs)
