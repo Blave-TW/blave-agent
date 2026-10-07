@@ -1272,6 +1272,13 @@ def bg_guard_check(tool_input, need_ms):
         timeout = 0
     if timeout >= need_ms:
         return None, None
+    if need_ms < _BG_REWRITE_MIN_MS:
+        # 不給數字:給了 agent 就照那個 timeout 重送、下一次檢查放行,回測照跑、回合結束被殺
+        return "timeout", (
+            "Refused by the Blave runtime — this starts a backtest / scan, and less than 5 minutes remain in this "
+            "turn: it would be killed when the turn ends and its result lost. Do not start it in this turn, in the "
+            "foreground or the background; follow references/deployment.md › When the job does not finish in the "
+            "turn — say what is not done yet and the words that continue it in the next turn.")
     return "timeout", (
         "Refused by the Blave runtime — this starts a backtest / scan, and with `timeout` "
         + (str(timeout) if timeout else "unset (default 120000)") + " the engine moves it to the background "
@@ -1290,7 +1297,7 @@ _ENGINE = {"cli_version": None}
 # 被殺的那條路,而且這次連拒絕提醒都沒有,所以版本不夠就退回拒絕。
 _BG_REWRITE_MIN_CLI = (2, 0, 10)
 # 改寫的下限 = 續跑判斷的同一個數(_RESUME_MIN_TOOL_SEC:剩的不夠跑一支像樣的指令就不續跑);need_ms 比這還小時,
-# 靜默放行等於讓一個注定跑不完的回測開跑,拒絕訊息反而會叫 agent 別這樣啟動。
+# 靜默放行等於讓一個注定跑不完的回測開跑,所以拒絕、而且拒絕訊息叫 agent 這一輪別啟動(bg_guard_check)。
 _BG_REWRITE_MIN_MS = 300 * 1000
 
 

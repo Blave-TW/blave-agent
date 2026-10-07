@@ -165,8 +165,12 @@ o.env = {"BASH_MAX_TIMEOUT_MS": str(CAP)}
 at.time.monotonic = lambda: real() + 1560      # 剩 2000 − 150 − 1560 = 290 s < 300 s 下限
 try:
     hs = run({"command": LAUNCH[0], "timeout": 60000}).get("hookSpecificOutput") or {}
-    t("⑥ need_ms below the floor → deny with the usual reason, no rewrite", hs.get("permissionDecision") == "deny"
-      and "updatedInput" not in hs and re.search(r"set to 2(?:89|90)\d{3}\b", hs.get("permissionDecisionReason", "")), hs)
+    rs = hs.get("permissionDecisionReason", "")
+    t("⑥ need_ms below the floor → deny, no rewrite, told not to start this turn, no resendable timeout figure",
+      hs.get("permissionDecision") == "deny" and "updatedInput" not in hs and "Do not start it in this turn" in rs
+      and "When the job does not finish in the turn" in rs and not re.search(r"\d{4,}", rs), hs)
+    t("⑥ …same text when the engine is too old to rewrite (the floor refusal does not depend on the version)",
+      at.bg_guard_check({"command": LAUNCH[0], "timeout": 60000}, 290000)[1] == rs)
 finally:
     at.time.monotonic = real
 at.time.monotonic = lambda: real() + 1540      # 剩 310 s ≥ 300 s:改寫成剩下的
