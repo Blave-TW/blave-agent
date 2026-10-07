@@ -25,6 +25,12 @@ Scenarios (each in its own child process and scratch dir):
   A2  the user closes 1 of the bot's 2, signal 0: sell 1 only, book written off to 0.
   A3  manual close, then the signal flips to -1 (2 lots): the short entry waits for the
       confirmed read, never sells more than 2 in total.
+  A4  the user closes 1 of the bot's 2, the signal halves (target 1): the user's close already
+      did the reduce — nothing is sent, the book comes down to 1 on the confirmed read (it
+      used to sell the last lot, leave the book at 1 over an empty account, and never notice);
+      the exit then sells exactly that 1 lot.
+  A5  the user closes 1 of the bot's 3, the signal goes to 1/3 (target 1): sells 1, not 2,
+      and the book ends at what the account holds.
   F   a plain flip +2 -> -2 with nothing manual, the entry leg reading a snapshot from
       before its own close: the entry waits a round, no order error (統一 used to re-split
       the entry against that stale snapshot, try a second close and log a P1).
@@ -236,7 +242,7 @@ def child(venue, sid, tmp):
     os.environ["BLAVE_AGENT_HOME"] = os.environ["BLAVECLAW_HOME"] = tmp
     w = {"capital": capital_world, "president": president_world}[venue](tmp)
     freeze_clock(w)
-    w.setup(1 if sid[0] in "BRH" else 2)
+    w.setup(1 if sid[0] in "BRH" else 3 if sid == "A5" else 2)
     from lib import guard, portfolio
     state = {"rec": None}
     tg = []
@@ -337,6 +343,23 @@ def child(venue, sid, tmp):
         sent_after = [o for r in log[2:] for o in r["sent"]]
         ok = [o["lots"] for o in sent_after] == [1] and w.net() == 0 and ledger_txf(last) == 0
         why = f"after closing 1 by hand: sent={sent_after}, broker={w.rows}, book TXF={ledger_txf(last)}"
+    elif sid in ("A4", "A5"):
+        w.rows = {k: v - 1 for k, v in w.rows.items()}
+        w.signal(0.5 if sid == "A4" else 1 / 3)
+        round_("user closed 1 by hand, signal cut to 1 lot")
+        time.sleep(5.5)
+        round_("next round, >=5 s later")
+        mid = round_("converged")
+        sent_mid = [o["lots"] for r in log[2:] for o in r["sent"]]
+        held_mid, book_mid = w.net(), ledger_txf(mid)
+        w.signal(0)
+        last = round_("signal -> 0")
+        ok = (sent_mid == ([] if sid == "A4" else [1]) and held_mid == 1 and book_mid == 1
+              and [o["lots"] for o in last["sent"]] == [1] and w.net() == 0 and ledger_txf(last) == 0
+              and not errors() and not last["halt"])
+        why = (f"after closing 1 by hand and a partial reduce: sent={sent_mid}, broker net={held_mid}, "
+               f"book TXF={book_mid}; then signal 0 sent={last['sent']}, broker={w.rows}, "
+               f"book TXF={ledger_txf(last)}")
     elif sid == "A3":
         w.rows = {}
         w.signal(-1)
@@ -499,7 +522,7 @@ def main():
     verbose = "-v" in sys.argv
     failed, xfail = [], []
     for venue in venues:
-        for sid in ("A", "A2", "A3", "F", "M", "M2", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
+        for sid in ("A", "A2", "A3", "A4", "A5", "F", "M", "M2", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
             cid = f"{venue}:{sid}"
             tmp = tempfile.mkdtemp(prefix=f"ledgerpaths-{venue}-{sid}-")
             try:

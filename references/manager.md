@@ -500,13 +500,16 @@ real capital `self_ledger` deployment.
 (`lib/portfolio.py::hand_wired_reduce_cap`, inside `reconcile()` so a hand-edited reconciler
 gets it too). 群益 orders go out with `sNewClose=2` (auto new/close), which never refuses a sell
 larger than the long held — the rest OPENS a short; 統一 refuses it locally and the book was
-never corrected. So a close sends at most min(book, account) lots from that round's
-read (the months the book holds, see below). An account read short of the book goes through the same
-`note_account_short` two-read confirmation as the crypto wiring, with one difference: an
-unconfirmed empty read sends NOTHING (crypto sends the book's quantity and lets the venue's
-reduce-only refuse it). A confirmed short on a full close writes the rest off
-(`apply_ledger_writeoff`), and a flip's entry leg waits for that confirmation
-(`account_short_pending`). Pinned in `tests/check_capital_ledger_paths.py`, which drives
+never corrected. So a close never sends more than the account holds in that round's read
+(the months the book holds, see below), and lots the account is already short of the book
+(closed by hand) count as part of the reduce: book 3, account 2, target 1 sends 1, not 2. An
+account read short of the book goes through the same `note_account_short` two-read
+confirmation as the crypto wiring, with one difference: an unconfirmed empty read sends NOTHING
+(crypto sends the book's quantity and lets the venue's reduce-only refuse it). A confirmed short
+on a full close writes the rest off (`apply_ledger_writeoff`); on a partial reduce the book is
+brought down to what the account holds before the send (audit `ledger_writeoff` with
+`partial: true`). A flip's entry leg waits for that confirmation (`account_short_pending`). A
+manual close with the signal unchanged is still not noticed (no reduce leg reads the account). Pinned in `tests/check_capital_ledger_paths.py`, which drives
 `reconcile()` with the daemon's own `_get_positions_guarded` / `place_order`.
 
 **Contract months (hand-wired TW futures: 群益, 統一).** A book row also records which contract

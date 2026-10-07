@@ -1600,41 +1600,71 @@ def settle_expired_months(actual, venue=_CURRENT, now=None):
     return changed
 
 
-def _rebase_ledger_symbol(symbol, venue, months):
+def _rebase_ledger_symbol(symbol, venue, months, qty=None):
     """One symbol's book restarts now at `months` ({} = flat) — a lots row,
-    so its cost is its quantity."""
+    so its cost is its quantity. With `qty` and months=None the lots have no
+    known month (the seed row is then read as a guessed front month)."""
     guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     seed = _load_ledger_seed()
-    qty = float(sum(months.values()))
-    seed['symbols'][_seed_key(symbol, venue)] = {
-        'size': qty, 'qty': qty, 'ts': datetime.utcnow().isoformat(), 'venue': venue,
-        'symbol': symbol, 'months': dict(months)}
+    qty = float(sum(months.values())) if qty is None else float(qty)
+    row = {'size': qty, 'qty': qty, 'ts': datetime.utcnow().isoformat(), 'venue': venue,
+           'symbol': symbol}
+    if months is not None:
+        row['months'] = dict(months)
+    seed['symbols'][_seed_key(symbol, venue)] = row
     _save_ledger_seed(seed)
 
 
-def hand_wired_reduce_cap(symbol, sub_diff, book_signed, account_row):
+def hand_wired_reduce_cap(symbol, sub_diff, book_signed, account_row, venue=_CURRENT):
     """(signed lots to send, writeoff reason | None) for a self_ledger reduce
     leg on a hand-wired venue (lib.venue_traits: 群益, 統一). Neither refuses a
     close larger than what is held the way a crypto reduce-only order is
     refused: 群益 sends sNewClose=2 (auto new/close), so the rest OPENS the
     other side; 統一 refuses it locally, every round, and the book is never
     corrected. lib.venue_wiring._book_reduce_qty's rule, on the round's own
-    account read (lots): never more than min(book, account). Unlike crypto, an
-    unconfirmed empty read sends nothing instead of the book's quantity. A
-    full close on a confirmed short read (note_account_short) writes the rest
-    of the book off. Lives here, not in the reconciler's blocks, so a
-    hand-edited reconciler still gets it."""
+    account read (lots): never more than the account holds. Unlike crypto, an
+    unconfirmed empty read sends nothing instead of the book's quantity.
+
+    The lots the account is short of the book (the user closed them by hand)
+    already did that much of the reduce, so only the rest is sent: book 3,
+    account 2, target 1 sends 1, not 2. On a confirmed short read
+    (note_account_short) a full close writes the rest of the book off after its
+    fill (the reason returned); a partial one brings the book down to what the
+    account holds right here, before the send — otherwise the gap is never
+    reconciled until the next flat and every later add stacks on a book that
+    is wrong. Lives here, not in the reconciler's blocks, so a hand-edited
+    reconciler still gets it."""
     owned, want = abs(book_signed), abs(sub_diff)
     row = account_row or {}
     side = 'long' if book_signed > 0 else 'short'
     held = float(row.get('size') or 0) if row.get('side') == side else 0.0
     short = held < owned - 1e-9
     confirmed = note_account_short(symbol, short)
+    send = max(0.0, min(want - max(0.0, owned - held), held))
     reason = None
-    if confirmed and short and want >= owned - 1e-9:
+    if confirmed and short:
         reason = 'account holds none of it' if held <= 0 else 'account held less than the book'
-    send = min(want, held)
+        if want < owned - 1e-9:
+            _rebase_to_account(symbol, _resolve_venue(venue), book_signed, held, row, reason)
+            reason = None
     return (send if sub_diff > 0 else -send), reason
+
+
+def _rebase_to_account(symbol, venue, book_signed, held, row, reason):
+    signed = held if book_signed > 0 else -held
+    months = row.get('months') if row.get('side') == ('long' if book_signed > 0 else 'short') else {}
+    if not isinstance(months, dict) or abs(sum(months.values()) - signed) > 1e-9:
+        months = None  # a month split that does not add up is not trusted: guessed front month
+    _rebase_ledger_symbol(symbol, venue, months, qty=signed)
+    seen = _load_account_short()
+    short = seen.pop(symbol, None)
+    if short:
+        _save_account_short(seen)
+    logging.warning(f"[ledger] {symbol}: book {book_signed:+g} lots, the account holds {signed:+g} "
+                    f"— book brought down to the account ({reason})")
+    guard.audit('ledger_writeoff', symbol=symbol, reason=reason, partial=True, venue=venue,
+                qty=book_signed - signed, cost=book_signed - signed,
+                short_first=datetime.utcfromtimestamp(short['first']).isoformat() if short else None)
 
 
 def _report_ledger_adoption():
@@ -2816,19 +2846,20 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             cap_writeoff = None
             if (reduce_only and ledger is not None
                     and venue_traits.has(order.get('exchange') or ledger_venue, 'hand_wired')):
-                capped, cap_writeoff = hand_wired_reduce_cap(symbol, sub_diff, a_signed,
-                                                             actual.get(symbol))
+                capped, cap_writeoff = hand_wired_reduce_cap(
+                    symbol, sub_diff, a_signed, actual.get(symbol),
+                    venue=order.get('exchange') or ledger_venue)
                 if abs(capped) < 0.5:  # the hand-wired place_order's half-lot gate
                     if cap_writeoff:
                         apply_ledger_writeoff(symbol, cap_writeoff)
-                    else:
+                    elif account_short_pending(symbol):
                         logging.warning(f"[reconcile] {symbol} close {sub_diff:+g} lots not sent — "
                                         f"the account holds less than the book; waiting for "
                                         f"a second read to confirm")
                     continue
                 if abs(capped) < abs(sub_diff):
                     logging.warning(f"[reconcile] {symbol} close {sub_diff:+g} lots capped to "
-                                    f"{capped:+g} — what the account holds")
+                                    f"{capped:+g} — the account holds less than the book")
                     sub_diff = capped
 
             # self_ledger flip: the close leg just read the account short of

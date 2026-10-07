@@ -257,7 +257,7 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   re-derived month: after a roll the near month is no longer the contract that is held. A root open
   in two months is refused; close each by its month code.
 - **Close vs entry is decided by the book, never by the broker's net.** `reconcile()` splits a
-  flip into a reduce_only close (capped at min(book, account) by `hand_wired_reduce_cap`, so a lot
+  flip into a reduce_only close (capped at the account by `hand_wired_reduce_cap`, so a lot
   the user holds in the same month is never closed as the bot's) and an entry; the reconciler's
   統一 block sends a reduce_only leg as a close and anything else as an entry. The entry right
   after a flip's close usually reads a snapshot from before that close → `EntryDeferred`, sent
