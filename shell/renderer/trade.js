@@ -96,6 +96,8 @@ function trCapWip(r, id) { const c = id === "capital" && r && r.capital_connect;
    worker.ok_at = 開通過(runtime 在 worker 第一次 ok 寫、之後登入失敗不清):開通過又停掉的(機器重開落在維護時段、改了密碼)
    只看 status 會被當成開通中,暫停鈕與「部位沒人管」的紅字整個被吞(稽核 integ-0118 B-1) */
 function trPresWip(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !(c.worker && (c.worker.status === "ok" || c.worker.ok_at)); }
+// 開通過、之後 worker 失敗停掉(登入失敗 / 沒寫出快照):不是開通中,但「確認登入」只在開通框裡——設定 › 帳戶 那一列仍要給「繼續」進框,不然沒有出口
+function trPresStopped(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !!c.worker && c.worker.status === "failed" && !trPresWip(r, id); }
 function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id); }); }
 /* 綁著的只有開通中的統一、對帳器也沒在跑 = 開通還沒做完(0.1.18 Wei 實測:存了帳密、憑證 ok、probe 還在跑,頁面就講
    「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在。
@@ -2641,7 +2643,7 @@ function trPaintSet() {
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;
-  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id)])) return;
+  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), !ro && id === "president" && [presWip(r), trPresStopped(r, id)]])) return;
   const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
@@ -2653,6 +2655,8 @@ function trPaintSet() {
   // 群益在雲端開通中(spec w-row-pending):讀帳失敗是預期的,不畫紅;靜態實心點 +「開通中」+「繼續」回到清單
   // 統一在這台電腦開通中(d-row-pending)同一個長相:讀帳失敗是預期的(worker 還沒寫第一份快照)
   const presW = !ro && id === "president" && typeof presWip === "function" && presWip(r);
+  // 開通過又停掉的(稽核 integ-0118 B-1):畫紅記號「串接失敗」,但「繼續」照給——「確認登入」只在開通框裡
+  const presIn = presW || (!ro && trPresStopped(r, id));
   const capWip = (ro && trCapWip(r, id)) || presW;
   const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict)), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
   if (capWip) st.appendChild(trEl("span", "cap-dot"));
@@ -2663,8 +2667,8 @@ function trPaintSet() {
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
   if (capWip && !presW) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
-  // 統一:「繼續」回到清單當下那一步
-  if (presW) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
+  // 統一:「繼續」回到清單當下那一步(開通中、或開通過又停掉 → 那一類登入失敗的列與「確認登入」)
+  if (presIn) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
   // 「重新測試」在讀帳失敗 / 金鑰重查出事(紅記號 + 串接失敗)時畫,Binance 重查的灰記號(沒設白名單、現貨 / 合約沒開)也畫——
   // 它是 24 小時自動重查之前唯一能叫 binanceRecheck 的入口(Wei 0.0.6)。乾淨的已連接與串接中都沒有東西要重試;鈕消失時焦點由最後一行交給設定分頁

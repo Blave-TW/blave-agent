@@ -42,6 +42,12 @@ ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", t
     ok("B-1 …重開沒停住 = unconfirmed(可能仍在下單)", trExecState(st({ venues: VP, account: accP, president_connect: pcF, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })) === "unconfirmed");
     ok("B-1 …HALT 中 = halted(解除暫停鈕照一般狀態機畫);讀帳失敗列為串接失敗", trExecState(st({ venues: VP, account: accP, president_connect: pcF, halt: { halted: true }, reconciler: { alive: false } })) === "halted"
       && J(trFailedIds({ venues: VP, account: accP, president_connect: pcF })) === J(["president"]));
+    ok("B-1 開通過又停掉:設定 › 帳戶 那一列不是開通中、但「繼續」照給(「確認登入」只在開通框裡);從沒 ok 過的是開通中、ok 的兩者皆非",
+      trPresStopped({ president_connect: pcF }, "president") && !trPresWip({ president_connect: pcF }, "president")
+      && !trPresStopped({ president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD" } } }, "president") && trPresWip({ president_connect: { worker: { status: "failed" } } }, "president")
+      && !trPresStopped({ president_connect: pcOk }, "president") && !trPresStopped({ president_connect: pcF }, "paper")
+      && /const presIn = presW \|\| \(!ro && trPresStopped\(r, id\)\);/.test(src) && /if \(presIn\) \{ const go = trEl\("button", "pf-act main-act", t\("cap\.continue"\)\);[^\n]*"pres-continue"/.test(src)
+      && /!ro && id === "president" && \[presWip\(r\), trPresStopped\(r, id\)\]\]\)\) return;/.test(src));
     ok("B-1 從沒 ok 過的 worker 碰到機器重開(停著 / 沒停住):也不是 setup——重開警示一律優先", trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, ...mr })) === "halted"
       && trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })) === "unconfirmed"); }
   ok("統一開通中:不算串接失敗;worker ok 之後讀帳失敗才算", J(trFailedIds({ venues: VP, account: accP, president_connect: pcW })) === J([])
