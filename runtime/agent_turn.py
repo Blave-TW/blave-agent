@@ -144,6 +144,18 @@ CREDENTIAL_RULES = [f"{tool}({_abs_rule_path(CREDENTIALS_DIR)}/{g})"
                     for tool in ("Read", "Edit") for g in CREDENTIAL_SECRET_GLOBS]
 PROTECTED_EDIT_RULES.extend(CREDENTIAL_RULES)
 
+# The code that is handed the 群益 / 統一 trading and certificate passwords (the vault readers,
+# the login workers, the order and account libs, and the two manager scripts that get the
+# desktop daemon's stdin line): an agent that edits one gets the passwords out on the next
+# run (audit 2026-10-07 S1; Wei: freeze them). Every turn, chat and scheduled; the runtime's
+# own update writes them, never the agent. Bash writes go through _secret_code_bash_guard.
+SECRET_CODE_FILES = (
+    "lib/president_vault.py", "lib/president_worker.py", "lib/order_president.py", "lib/account_president.py",
+    "lib/capital_vault.py", "lib/capital_worker.py", "lib/order_capital.py", "lib/account_capital.py",
+    "manager/reconciler.py", "manager/flatten.py",
+)
+PROTECTED_EDIT_RULES.extend(f"Edit(/{f})" for f in SECRET_CODE_FILES)
+
 
 # 模型(尤其較弱的 instruction-following)看到 prompt 裡的逐字稿格式,會在寫完
 # 回覆後「順著格式續寫下一個 user 回合」——實測 deepseek-v4-pro 捏造了一整則
@@ -1328,6 +1340,46 @@ def cred_bash_denied(cmd):
     return bool(CRED_BASH_DENY_RE.search(cmd or ""))
 
 
+# Bash that names one of SECRET_CODE_FILES and writes, moves, deletes or replaces something.
+# Reading them (cat, grep, python -c "import ...") and running them stay allowed. A speed bump
+# like the credentials guard: a path assembled at run time is not caught.
+_SECRET_CODE_NAME_RE = re.compile(
+    r"(?:^|[\\/\s'\"`=(])(?:" + "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
+    + r")\.py\b", re.IGNORECASE)
+_NAMES_ALT = "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
+_REDIRECT_INTO_RE = re.compile(r">>?\s*['\"]?[^\s;&|'\"]*(?:" + _NAMES_ALT + r")\.py\b", re.IGNORECASE)
+_WRITE_MARK_RE = re.compile(
+    r"\btee\b|\bsed\b[^|;&]*\s-[a-zA-Z]*i|\bperl\b[^|;&]*\s-[a-zA-Z]*i|\b(?:cp|mv|rm|ln|install|truncate|patch|dd)\b"
+    r"|\b(?:copy|move|del|erase|ren|rename|xcopy|robocopy)\b|(?:Set|Add|Clear)-Content|Out-File|(?:Remove|Move|Copy|Rename|New)-Item"
+    r"|\bopen\([^)]*['\"][^'\"]*[wax+]|write_(?:text|bytes)|\bunlink\(|\bos\.(?:replace|rename|remove)\b|shutil\."
+    r"|\bgit\b[^|;&]*\b(?:checkout|restore|apply|am|reset|stash|mv|rm)\b",
+    re.IGNORECASE)
+SECRET_CODE_DENY_REASON = (
+    "Refused by the Blave runtime — the broker login code (lib/*president*, lib/*capital* vault/worker/order/account, "
+    "manager/reconciler.py, manager/flatten.py) is handed the user's trading passwords, so it is never written, moved "
+    "or replaced from the agent; only a Blave update changes it. Read it if you need to; put new helpers in a new "
+    "file. Do not retry it another way."
+)
+
+
+def secret_code_bash_denied(cmd):
+    cmd = cmd or ""
+    # a redirect counts only INTO one of them (`... > tmp/log 2>&1` while running one is fine)
+    return bool(_REDIRECT_INTO_RE.search(cmd) or (_SECRET_CODE_NAME_RE.search(cmd) and _WRITE_MARK_RE.search(cmd)))
+
+
+def _secret_code_bash_guard_hooks(options):
+    """PreToolUse:Bash,任何回合:改／搬／刪拿得到券商密碼的程式檔的指令拒絕。"""
+    async def guard(input_data, _tool_use_id, _context):
+        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
+        if not isinstance(cmd, str) or not secret_code_bash_denied(cmd):
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": SECRET_CODE_DENY_REASON}}
+
+    return _add_hook(options, "PreToolUse", "Bash", guard)
+
+
 def _cred_bash_guard_hooks(options):
     """PreToolUse:Bash,任何回合:讀／抄／改 credentials 底下券商密鑰檔的指令拒絕。"""
     async def guard(input_data, _tool_use_id, _context):
@@ -1366,6 +1418,7 @@ def _mount_turn_hooks(options, sink, scheduled, lang_msg=None, reply_lang=None):
     # SDK 沒有 hooks 時 _add_hook 不掛(fail-open)。
     _bg_guard_hooks(options)
     _cred_bash_guard_hooks(options)
+    _secret_code_bash_guard_hooks(options)
     if isinstance(sink, LocalSink):
         # 語言與排程器兩道只在電腦版(實測過本機 CLI);機隊另外驗過再開
         _lang_hooks(options, lang_reminder(lang_msg, reply_lang))

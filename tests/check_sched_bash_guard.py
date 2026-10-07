@@ -287,13 +287,14 @@ def mounted(sink, scheduled):
 local = at.LocalSink.__new__(at.LocalSink)
 BG = "_bg_guard_hooks.<locals>.guard"   # 背景回測守門每個回合都掛(tests/check_bg_backtest_guard.py)
 CRED = "_cred_bash_guard_hooks.<locals>.guard"   # credentials 守門每個回合都掛(tests/check_cred_guard.py)
-t("④ 排程回合、非電腦版 sink:掛上 Bash 守門", mounted(_Remote(), True) == [BG, CRED, "_sched_bash_guard_hooks.<locals>.guard"],
+CODE = "_secret_code_bash_guard_hooks.<locals>.guard"   # 券商密碼程式檔守門,同樣每個回合(tests/check_secret_code_guard.py)
+t("④ 排程回合、非電腦版 sink:掛上 Bash 守門", mounted(_Remote(), True) == [BG, CRED, CODE, "_sched_bash_guard_hooks.<locals>.guard"],
   mounted(_Remote(), True))
-t("④ 非排程回合(雲端):只有背景與 credentials 守門", mounted(_Remote(), False) == [BG, CRED], mounted(_Remote(), False))
+t("④ 非排程回合(雲端):只有背景與 credentials 守門", mounted(_Remote(), False) == [BG, CRED, CODE], mounted(_Remote(), False))
 t("④ 非排程回合(電腦版):只有排程器那一道,沒有這道",
-  mounted(local, False) == [BG, CRED, "_sched_guard_hooks.<locals>.guard"], mounted(local, False))
+  mounted(local, False) == [BG, CRED, CODE, "_sched_guard_hooks.<locals>.guard"], mounted(local, False))
 t("④ 排程回合(電腦版):四道並存", sorted(mounted(local, True)) == sorted(
-    [BG, CRED, "_sched_guard_hooks.<locals>.guard", "_sched_bash_guard_hooks.<locals>.guard"]), mounted(local, True))
+    [BG, CRED, CODE, "_sched_guard_hooks.<locals>.guard", "_sched_bash_guard_hooks.<locals>.guard"]), mounted(local, True))
 
 before = list(at.PROTECTED_EDIT_RULES)
 t("⑤ 非排程回合不禁 Read(/.env)", "Read(/.env)" not in before)

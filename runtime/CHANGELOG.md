@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **拿得到券商密碼的程式 agent 改不得(稽核 S1,Wei 拍板)**:`lib/president_{vault,worker}.py`、`lib/{order,account}_president.py`、
+  群益對應四支、`manager/reconciler.py`、`manager/flatten.py` 進每個回合(聊天與排程)的 `Edit(...)` 禁止規則(涵蓋 Write／MultiEdit);
+  新 Bash hook `_secret_code_bash_guard_hooks`:重導向進去、sed -i、cp／mv／rm、open(...,'w')、Set-Content、git checkout 這幾支一律拒;
+  讀與照常執行放行。減速帶:執行時組出的路徑擋不到(`tests/check_secret_code_guard.py` KNOWN_GAPS)。
 - **登入被封鎖只停那一家(雲端與電腦版共用,manager/reconciler + lib/president_vault.login_paused)**:統一登入被封鎖時,
   routing 到 president 的策略不下單(`place_order` 回 False)、讀持倉失敗當本輪跳過(不計數、不 HALT),其他交易所照跑;
   事件 `venue_login_blocked`(P1,cause venue)一次,狀態落 `state/venue_pause.json`,回報帶 `venue_pause`(`paused_blocked`)。
