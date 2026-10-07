@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一登入封鎖檔搬進 `<base>/credentials/`(稽核 S2)**:`lib/president_vault.BLOCK` 跟 vault 同目錄,舊的 `state/` 那份第一次讀時搬過去
+  (連 claim);agent 守門的 Read／Edit 規則與 Bash 擋字加上 `*login_block*`。
 - **拿得到券商密碼的程式 agent 改不得(稽核 S1,Wei 拍板)**:`lib/president_{vault,worker}.py`、`lib/{order,account}_president.py`、
   群益對應四支、`manager/reconciler.py`、`manager/flatten.py` 進每個回合(聊天與排程)的 `Edit(...)` 禁止規則(涵蓋 Write／MultiEdit);
   新 Bash hook `_secret_code_bash_guard_hooks`:重導向進去、sed -i、cp／mv／rm、open(...,'w')、Set-Content、git checkout 這幾支一律拒;

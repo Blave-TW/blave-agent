@@ -11,6 +11,7 @@ other venues keep trading; once a login passes they resume by themselves.
      (no three-strikes HALT)
   4. the login passes (the lib clears the block) → one venue_login_restored, the next
      round is forced, 統一 legs go out again
+  6. the block file lives in <base>/credentials (the agent's guards cover it); the old state/ copy moves over
   5. the lib side: login_paused() is read-only (never takes the released try), only
      for the credentials in use, and a released block still pauses until a login passes
 
@@ -105,6 +106,23 @@ check(pv.login_paused() is None, "5 a block for other credentials is not ours")
 pv.resolve = lambda _i=None: dict(creds, url="x", live=False)
 pv._clear()
 check(pv.login_paused() is None, "5 a login that passed (the lib's _clear) lifts it")
+
+# 6 where the block lives: next to the vault (agent guards cover credentials/), the old state/ spot moved over once
+pv2 = importlib.reload(president_vault)
+check(os.path.dirname(pv2.BLOCK) == os.path.dirname(pv2.VAULT) and os.path.basename(os.path.dirname(pv2.BLOCK)) == "credentials"
+      and os.sep + "state" + os.sep not in pv2.BLOCK, "6 the block file sits in <base>/credentials, not the agent's state/")
+tmpb = tempfile.mkdtemp(prefix="vpause-mig-")
+pv2.BLOCK = os.path.join(tmpb, "credentials", "president_login_block.json")
+pv2.LEGACY_BLOCK = os.path.join(tmpb, "workspace", "state", "president_login_block.json")
+os.makedirs(os.path.dirname(pv2.LEGACY_BLOCK))
+open(pv2.LEGACY_BLOCK, "w").write(json.dumps({"fp": "abc", "kind": "PASSWORD", "at": 5}))
+open(pv2.LEGACY_BLOCK + ".claim", "w").close()
+got = pv2._read_block()
+check(got.get("fp") == "abc" and os.path.exists(pv2.BLOCK) and os.path.exists(pv2.BLOCK + ".claim")
+      and not os.path.exists(pv2.LEGACY_BLOCK) and not os.path.exists(pv2.LEGACY_BLOCK + ".claim"),
+      "6 an old block in state/ is moved over on first read (claim too) and not left behind")
+open(pv2.LEGACY_BLOCK, "w").write(json.dumps({"fp": "stale"}))
+check(pv2._read_block().get("fp") == "abc", "6 a new block already in place wins over a stale copy dropped in state/")
 
 guard.trip_halt = real_trip
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all ok'}")

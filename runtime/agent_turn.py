@@ -139,7 +139,7 @@ def _abs_rule_path(path):
 # `//`-anchored rule. Edit is denied too — a written "live": true is how production gets
 # switched on. Bash goes through _cred_bash_guard_hooks.
 CREDENTIALS_DIR = os.path.join(os.path.dirname(os.path.abspath(WORKSPACE)), "credentials")
-CREDENTIAL_SECRET_GLOBS = ("*vault*", "*pfx*", "capital_stage/**", "president_logs/**")
+CREDENTIAL_SECRET_GLOBS = ("*vault*", "*pfx*", "capital_stage/**", "president_logs/**", "*login_block*")
 CREDENTIAL_RULES = [f"{tool}({_abs_rule_path(CREDENTIALS_DIR)}/{g})"
                     for tool in ("Read", "Edit") for g in CREDENTIAL_SECRET_GLOBS]
 PROTECTED_EDIT_RULES.extend(CREDENTIAL_RULES)
@@ -1325,7 +1325,7 @@ def bg_guard_reason(tool_input, need_ms):
 # listing piped into a reader, is not caught (tests/check_cred_guard.py KNOWN_GAPS).
 CRED_BASH_DENY_RE = re.compile(
     r"\b(?:capital|president)_vault\.json\b|\b(?:capital|president)_pfx_key\b|\bpresident\.pfx\b"
-    r"|\bcapital_stage\b|\bpresident_logs\b"
+    r"|\bcapital_stage\b|\bpresident_logs\b|\bpresident_login_block\b"
     r"|credentials[\\/]+[^\s;&|'\"`<>]*(?:[*?]|\.pfx\b)",
     re.IGNORECASE)
 CRED_BASH_DENY_REASON = (

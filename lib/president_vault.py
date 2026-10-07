@@ -27,7 +27,7 @@ goes through sanitize() first.
 
 統一 locks an account after three wrong logins. A CERT*/PASSWORD answer blocks
 every further login on this machine with the same credentials
-(state/president_login_block.json, keyed on their fingerprint — no secret is
+(<base>/credentials/president_login_block.json, keyed on their fingerprint — no secret is
 written) until `.env` changes or the user releases it (`python
 lib/president_worker.py --unblock`, only after they unlocked the account at the
 broker) — a release allows one login, and its failure blocks again; one
@@ -63,7 +63,11 @@ from urllib.parse import urlparse
 _WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(_WS, ".env")
 VAULT = os.path.join(os.path.dirname(_WS), "credentials", "president_vault.json")
-BLOCK = os.path.join(_WS, "state", "president_login_block.json")
+# Next to the vault, not in state/: the agent's guards cover credentials/, and a block the
+# agent could delete would let a worker that restarts on its own spend the broker's three
+# tries (audit 2026-10-07 S2). The old spot is moved over on first read.
+BLOCK = os.path.join(os.path.dirname(VAULT), "president_login_block.json")
+LEGACY_BLOCK = os.path.join(_WS, "state", "president_login_block.json")
 # The SDK's own logs carry the login id (the national id) and every order: next
 # to the vault (credentials\ — SYSTEM + Administrators on a cloud box), not in
 # the agent's state/. Removed with the vault on unbind.
@@ -344,7 +348,27 @@ def fingerprint(creds):
     return hashlib.sha256(f"president-login-v2\0{raw}".encode()).hexdigest()[:16]
 
 
+def _migrate_block():
+    """A block written before it moved: carried over once (a move, so an agent
+    cannot keep a stale copy around to resurrect), its claim with it."""
+    if os.path.exists(BLOCK) or not os.path.exists(LEGACY_BLOCK):
+        return
+    try:
+        os.makedirs(os.path.dirname(BLOCK), exist_ok=True)
+        with open(LEGACY_BLOCK, encoding="utf-8") as f:
+            b = json.load(f)
+        if isinstance(b, dict):
+            replace_json(BLOCK, b)
+        os.remove(LEGACY_BLOCK)
+        if os.path.exists(LEGACY_BLOCK + ".claim"):
+            os.close(os.open(BLOCK + ".claim", os.O_CREAT | os.O_WRONLY))
+            os.remove(LEGACY_BLOCK + ".claim")
+    except (OSError, ValueError):
+        pass
+
+
 def _read_block():
+    _migrate_block()
     try:
         with open(BLOCK, encoding="utf-8") as f:
             b = json.load(f)
