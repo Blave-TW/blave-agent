@@ -371,6 +371,26 @@ peek = json.load(open(os.path.join(WS, "peek.json"))) if os.path.exists(os.path.
 check("7 run_reconciler hands the line to lib.president_vault before the strategy code runs",
       peek == {"president_password": PW, "president_ca_password": CAPW, "live": False}, peek)
 
+# ── 7b. a new bundle respawns the reconciler only between rounds, off the command thread (audit #7) ──
+import threading as _th  # noqa: E402
+sup2 = ld.ReconcilerSupervisor(WS, cl._local_child_env, lambda pid: "", lambda **kw: kw, secret_line=pc.secret_line)
+resp = []
+sup2.respawn_if_running = lambda why: resp.append(why)
+marker = os.path.join(WS, "state", "execution", "round")
+hold = os.path.join(WS, "state", "execution", "hold")
+os.makedirs(os.path.dirname(marker), exist_ok=True)
+open(marker, "w").write("1")
+t0 = time.time()
+th = sup2.respawn_when_idle("test", wait_s=30, poll_s=0.05)
+check("7b the caller is not blocked (it returns at once on its own thread)", time.time() - t0 < 1 and th.is_alive())
+time.sleep(0.4)
+check("7b mid-round (marker up): no respawn yet, new rounds held", resp == [] and os.path.exists(hold))
+os.remove(marker)
+th.join(5)
+check("7b round over → respawned once, hold released", resp == ["test"] and not os.path.exists(hold))
+check("7b the daemon wires the bundle hand-over to respawn_when_idle",
+      'respawn_when_idle("統一期貨 credentials handed over")' in open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read())
+
 # ── 8. blocked login ──
 from lib import president_vault as pv  # noqa: E402
 

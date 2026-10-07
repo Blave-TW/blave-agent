@@ -687,6 +687,8 @@ CREATE_REVIEWED = {
 }
 # plain writes: open / os.fdopen with "w" / "x" / "+" (not "a": the list above), write_text / write_bytes
 WRITE_REVIEWED = {
+    ("local_daemon.py", "_run"): "state/execution/hold: a pid marker the reconciler only checks for existence (same as manager/update_workspace.py)",
+    ("local_daemon.py", "respawn_when_idle"): "the same hold marker (the scan attributes the nested _run to both)",
     ("agent_turn.py", "_image_quota_line"): "BASE/state (strategy_reporter.STATE_DIR): outside the desktop Codex sandbox; cloud runtime = agent user",
     ("agent_turn.py", "_write_system_prompt_file"): "fd from tempfile.mkstemp (O_EXCL, random name) in BASE/state",
     ("capital_connect.py", "_write_vault"): "random temp name, its own ACL steps (cloud Windows, SYSTEM)",

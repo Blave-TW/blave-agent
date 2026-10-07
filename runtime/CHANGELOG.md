@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **交 secrets 重起 reconciler 不再卡指令迴圈、不在送單中途砍(稽核 B5/#7)**:`ReconcilerSupervisor.respawn_when_idle` 在自己的執行緒
+  寫 `state/execution/hold`(擋新一輪)、等 `state/execution/round` 清掉(最多 600 秒,同 update_workspace)才 respawn。
 - **測試主機過了、第一次切正式回 UNKNOWN 不封鎖(稽核 B6,Wei 拍板)**:`president_host`／本機 `host` 切 live 前若測試主機 probe 已過,
   那次 probe 帶 `--first-live`;lib `FIRST_LIVE_GRACE` 把那一次 UNKNOWN 記一筆(`live_grace_used`)、不封鎖,回 `LIVE_NOT_OPEN`
   → probe state **`live_not_open`**(新值,網頁要接);之後的 UNKNOWN 照舊一次就封。PASSWORD／CERT 永不寬限。

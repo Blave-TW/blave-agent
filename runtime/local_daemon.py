@@ -524,6 +524,7 @@ class ReconcilerSupervisor:
         # 統一期貨: the order lib logs in from the reconciler, and its passwords
         # exist only in this process — they go down the stdin pipe as the first line
         self._secret_line = secret_line
+        self._idle_lock = threading.Lock()
         self._lock = threading.RLock()
         self._proc = None
         self._wanted = False
@@ -560,6 +561,43 @@ class ReconcilerSupervisor:
             self._wanted = False
             self._respawn_at = None
             return self._stop_locked(why or f"stop (last command: {self.asked_by})")
+
+    # manager/reconciler.py ROUND_MARKER_PATH / UPDATE_HOLD_PATH: the round marker is up
+    # while a round's synchronous order legs (and their reply wait) run; the hold keeps a
+    # new round from starting meanwhile — the same pair manager/update_workspace.py uses
+    ROUND_MARKER = os.path.join("state", "execution", "round")
+    UPDATE_HOLD = os.path.join("state", "execution", "hold")
+    IDLE_WAIT_S = 600
+
+    def respawn_when_idle(self, why, wait_s=None, poll_s=0.5):
+        """respawn_if_running, but never between an order leg and its reply (a 統一
+        market order waits up to 15 s for it, and the fill would go unrecorded):
+        hold new rounds, wait for the round marker to clear, then respawn. Runs on
+        its own thread — the caller (a command handler) must not block the queue."""
+        def _run():
+            with self._idle_lock:
+                hold = os.path.join(self.ws, self.UPDATE_HOLD)
+                marker = os.path.join(self.ws, self.ROUND_MARKER)
+                try:
+                    os.makedirs(os.path.dirname(hold), exist_ok=True)
+                    with open(hold, "w") as f:
+                        f.write(str(os.getpid()))
+                except OSError:
+                    hold = None
+                try:
+                    deadline = time.time() + (self.IDLE_WAIT_S if wait_s is None else wait_s)
+                    while os.path.exists(marker) and time.time() < deadline:
+                        time.sleep(poll_s)
+                    self.respawn_if_running(why)
+                finally:
+                    if hold:
+                        try:
+                            os.remove(hold)
+                        except OSError:
+                            pass
+        t = threading.Thread(target=_run, daemon=True, name="reconciler-respawn")
+        t.start()
+        return t
 
     def respawn_if_running(self, why):
         """A running reconciler got its stdin line at spawn: new credentials need a new one."""
@@ -1040,7 +1078,7 @@ class Daemon:
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
                                          | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT"})
         self.pc.set_seal_key(self.secret)
-        self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_if_running("統一期貨 credentials handed over")
+        self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("統一期貨 credentials handed over")
         self.pc._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
