@@ -18,14 +18,11 @@
 
 /* ── 純邏輯(tests/check_shell_library.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
 const LIB_DAY = 86400000;
-const LIB_TW_SYM_RE = /^(TXF|MXF|TMF|\d{4,6}[A-Z]?)$/;
 const LIB_PAIR_RE = /^([A-Z0-9]{1,10})USDT$/;
-// 分段只做前端篩選:category 含 TW / 台 → 台股;api 的 category 值不一致(trend / bundle 都有),用 report.symbol 是不是台指期 / 純數字股票代號輔助;判不出的歸加密
+// 清單只有公開策略,api 在 approve / 官方上架時把 category 收斂成固定幾個值;Crypto / TW Stock 以外(US Stock、Forex、Other)沒有分頁,只在「全部」
 function libMarket(s) {
-  const cat = s && typeof s.category === "string" ? s.category : "";
-  if (/(^|[^A-Za-z])TW([^A-Za-z]|$)|\u53f0/.test(cat)) return "tw";   // \u53f0 = 台
-  const sym = s && s.report && typeof s.report.symbol === "string" ? s.report.symbol : "";
-  return LIB_TW_SYM_RE.test(sym) ? "tw" : "crypto";
+  const cat = s && s.category;
+  return cat === "Crypto" ? "crypto" : cat === "TW Stock" ? "tw" : "other";
 }
 function libDays(from, to) {
   const t0 = Date.parse(typeof from === "string" ? from : ""), t1 = Date.parse(typeof to === "string" ? to : "");

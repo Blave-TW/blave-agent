@@ -57,9 +57,10 @@ if (!process.versions.electron) {
   const block = src.slice(a, b);
   ok("① 純邏輯區塊不碰 DOM / i18n", !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
   const P = {}; vm.createContext(P); vm.runInContext(block.replace(/^const /gm, "var "), P);
-  ok("① 市場分段:category 含 TW / 台 → 台股;否則看 symbol(TXF / 純數字代號 → 台股);其餘與空標的 → 加密", P.libMarket({ category: "TW Stock" }) === "tw" && P.libMarket({ category: "台股", report: { symbol: "BTCUSDT" } }) === "tw"
-    && P.libMarket({ category: "trend", report: { symbol: "TXF" } }) === "tw" && P.libMarket({ category: "bundle", report: { symbol: "2330" } }) === "tw" && P.libMarket({ category: "Crypto", report: { symbol: "BTCUSDT" } }) === "crypto"
-    && P.libMarket({ category: "network", report: { symbol: "" } }) === "crypto" && P.libMarket({}) === "crypto" && P.libMarket(null) === "crypto");
+  ok("① 市場分段:category 正好是 Crypto → 加密、TW Stock → 台股;其餘(US Stock / Forex / Other / 未知 / 缺)只在全部", P.libMarket({ category: "TW Stock" }) === "tw" && P.libMarket({ category: "Crypto", report: { symbol: "TXF" } }) === "crypto"
+    && ["US Stock", "Forex", "Other", "台股", "trend", "crypto", ""].every((c) => P.libMarket({ category: c, report: { symbol: "TXF" } }) === "other") && P.libMarket({}) === "other" && P.libMarket(null) === "other"
+    && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }], "crypto").map((s) => s.id).join() === "2"
+    && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }], "all").length === 2);
   const v = P.libVisible(LIST, "all");
   ok("① 一份清單(0.1.6 §2.1):官方或已驗證在前(其中已驗證 → 樣本長 → 新;官方但未驗證的 #86 墊在這一段尾)、未驗證的社群策略在最後(同一套排序:樣本同長就新的先);回的是陣列", Array.isArray(v) && v.map((s) => s.id).join() === "74,101,72,5,9,86,12,8");
   ok("① 分段:台股 1 支;加密 7 支(2 支未驗證在尾);沒有的市場空陣列", P.libVisible(LIST, "tw").map((s) => s.id).join() === "74" && P.libVisible(LIST, "crypto").map((s) => s.id).join() === "101,72,5,9,86,12,8"
