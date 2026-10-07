@@ -691,6 +691,13 @@ apart; a row still held past that time is a postponed settlement and stays the b
 **Unverified:** whether `GetOpenInterest` keeps a settled month's row after cash settlement (統一
 does; if 群益 does too, the book keeps that month as held and the strategy does not re-enter —
 check on the first real settlement day, 2026-10-21).
+**Known gap — same-month netting:** the account nets one contract month. If the user holds the
+opposite side in the month the bot enters, the bot's entry closes the user's lots at the broker and
+nothing records it (futures have no `netted_qty` yet), so the bot's exit does not hand them back
+(`tests/check_capital_ledger_paths.py` M2, known bug). Say it to the user in plain words before a
+群益 futures strategy goes live, and whenever they mention trading the same contract by hand: the bot
+cannot tell its lots from theirs inside one contract month; keep manual positions in another month or
+another root, never the opposite side in the month the bot trades.
 
 ### Account Snapshot Worker (`blave-agent-capital` service)
 

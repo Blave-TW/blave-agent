@@ -272,7 +272,10 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 - **Known gap — same-month netting:** a futures account nets one contract. If the user holds the
   opposite side in the month the bot enters, the bot's entry closes the user's lots at the broker
   and nothing records it (futures have no `netted_qty` yet), so the bot's exit does not hand them
-  back (`tests/check_capital_ledger_paths.py` M2, known bug).
+  back (`tests/check_capital_ledger_paths.py` M2, known bug). **Say it to the user in plain words**
+  before a 統一 futures strategy goes live, and whenever they mention trading the same contract by
+  hand: the bot cannot tell its lots from theirs inside one contract month; keep manual positions in
+  another month or another root (MXF / TMF), never the opposite side in the month the bot trades.
 - **One account, two machines** (cloud + desktop on the same 統一 account): safe only when they
   trade **different roots** (TXF vs MXF vs TMF — separate contracts, separate books). On the same
   root the two books net at the broker: no order ever exceeds what the account holds, but one
