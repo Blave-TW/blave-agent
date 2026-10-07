@@ -9,9 +9,8 @@ other venues keep trading; once a login passes they resume by themselves.
      file says paused_blocked (what the report carries)
   3. a failed 統一 position read while paused skips the round without counting
      (no three-strikes HALT)
-  4. the login passes (the lib clears the block) → one venue_login_recovered, the next
+  4. the login passes (the lib clears the block) → one venue_login_restored, the next
      round is forced, 統一 legs go out again
-  6. the block file lives in <base>/credentials (the agent's guards cover it); the old state/ copy moves over
   5. the lib side: login_paused() is read-only (never takes the released try), only
      for the credentials in use, and a released block still pauses until a login passes
 
@@ -27,7 +26,6 @@ os.makedirs("state", exist_ok=True)
 open("manager/portfolio_config.json", "w").write(json.dumps(
     {"self_ledger": False, "exchanges": {"txf_trend": "president", "btc_trend": "binance"}}))
 
-open("manager/last_reconcile.json", "w").write(json.dumps({"actual": {"TXF": {"side": "long", "size": 1}, "MXF": {"size": 0}}}))
 from lib import guard, president_vault  # noqa: E402
 from manager import reconciler as rec  # noqa: E402
 
@@ -54,8 +52,7 @@ guard.trip_halt = lambda *a, **k: halts.append(a)
 # 1 / 2
 for _ in range(3):
     rec._sync_venue_pauses(now=1000)
-check(evs == [("venue_login_blocked", {"venue": "president", "kind": "password", "symbols": "TXF"})],
-      f"2 one venue_login_blocked per block, payload as api's contract {{venue, kind(lower), symbols}} ({evs})")
+check(evs == [("venue_login_blocked", {"venue": "president", "kind": "PASSWORD"})], f"2 one venue_login_blocked per block ({evs})")
 doc = json.load(open(rec.VENUE_PAUSE_PATH))
 check(doc.get("president", {}).get("state") == "paused_blocked" and "binance" not in doc, f"2 state file: 統一 paused_blocked, binance not ({doc})")
 r1 = rec.place_order("TXF", 1, exchange="president")
@@ -82,8 +79,8 @@ check(skipped == 5 and rec._consecutive_failures == before and not halts,
 # 4
 state["kind"] = None
 restored = rec._sync_venue_pauses(now=1000 + 600)
-check(restored is True and evs[-1] == ("venue_login_recovered", {"venue": "president"}),
-      f"4 login passed: one venue_login_recovered, the next round forced ({evs[-1]})")
+check(restored is True and evs[-1] == ("venue_login_restored", {"venue": "president", "minutes": 10}),
+      f"4 login passed: one venue_login_restored, the next round forced ({evs[-1]})")
 check(rec._sync_venue_pauses(now=1700) is False and len(evs) == 2, "4 …once")
 sent.clear()
 rec.place_order("TXF", 1, exchange="president")
@@ -108,45 +105,6 @@ check(pv.login_paused() is None, "5 a block for other credentials is not ours")
 pv.resolve = lambda _i=None: dict(creds, url="x", live=False)
 pv._clear()
 check(pv.login_paused() is None, "5 a login that passed (the lib's _clear) lifts it")
-
-# 6 where the block lives: next to the vault (agent guards cover credentials/), the old state/ spot moved over once
-pv2 = importlib.reload(president_vault)
-check(os.path.dirname(pv2.BLOCK) == os.path.dirname(pv2.VAULT) and os.path.basename(os.path.dirname(pv2.BLOCK)) == "credentials"
-      and os.sep + "state" + os.sep not in pv2.BLOCK, "6 the block file sits in <base>/credentials, not the agent's state/")
-tmpb = tempfile.mkdtemp(prefix="vpause-mig-")
-pv2.BLOCK = os.path.join(tmpb, "credentials", "president_login_block.json")
-pv2.LEGACY_BLOCK = os.path.join(tmpb, "workspace", "state", "president_login_block.json")
-os.makedirs(os.path.dirname(pv2.LEGACY_BLOCK))
-open(pv2.LEGACY_BLOCK, "w").write(json.dumps({"fp": "abc", "kind": "PASSWORD", "at": 5}))
-open(pv2.LEGACY_BLOCK + ".claim", "w").close()
-got = pv2._read_block()
-check(got.get("fp") == "abc" and os.path.exists(pv2.BLOCK) and os.path.exists(pv2.BLOCK + ".claim")
-      and not os.path.exists(pv2.LEGACY_BLOCK) and not os.path.exists(pv2.LEGACY_BLOCK + ".claim"),
-      "6 an old block in state/ is moved over on first read (claim too) and not left behind")
-open(pv2.LEGACY_BLOCK, "w").write(json.dumps({"fp": "stale"}))
-check(pv2._read_block().get("fp") == "abc", "6 a new block already in place wins over a stale copy dropped in state/")
-
-# 7 B6: the first production login after the test host — an unclassified refusal is "not opened yet", once
-pv3 = importlib.reload(president_vault)
-pv3.BLOCK = os.path.join(tempfile.mkdtemp(prefix="vpause-grace-"), "president_login_block.json")
-live = dict(creds, live=True)
-pv3.FIRST_LIVE_GRACE = True
-k1 = pv3._refused(live, "UNKNOWN")
-b1 = pv3._read_block()
-check(k1 == "LIVE_NOT_OPEN" and not pv3._blocking(b1) and b1.get("live_grace_used") is True and b1.get("at"),
-      "7 first production UNKNOWN after the test host → live_not_open, recorded, NOT blocked")
-k2 = pv3._refused(live, "UNKNOWN")
-check(k2 == "UNKNOWN" and pv3._blocking(pv3._read_block()), "7 the next UNKNOWN blocks as before")
-os.remove(pv3.BLOCK)
-check(pv3._refused(live, "PASSWORD") == "PASSWORD" and pv3._blocking(pv3._read_block()), "7 a PASSWORD is never graced")
-os.remove(pv3.BLOCK)
-pv3.FIRST_LIVE_GRACE = False
-check(pv3._refused(live, "UNKNOWN") == "UNKNOWN" and pv3._blocking(pv3._read_block()), "7 without --first-live: UNKNOWN blocks at once")
-os.remove(pv3.BLOCK)
-pv3.FIRST_LIVE_GRACE = True
-check(pv3._refused(dict(creds, live=False), "UNKNOWN") == "UNKNOWN", "7 a test-host UNKNOWN is never graced")
-src_w = open(os.path.join(ROOT, "lib", "president_worker.py"), encoding="utf-8").read()
-check('president_vault.FIRST_LIVE_GRACE = "--first-live" in sys.argv[1:]' in src_w, "7 the worker's --once takes --first-live")
 
 guard.trip_halt = real_trip
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all ok'}")

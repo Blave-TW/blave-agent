@@ -116,7 +116,7 @@ _ACCOUNT, _SECRET, _CA_PW = "president_account", "president_password", "presiden
 LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "password",
                 "BLOCKED": "blocked", "MAINTENANCE": "maintenance", "HOST": "host",
                 "TIMEOUT": "timeout", "TRANSIENT": "retry_later", "NON_TEST_SERVER": "unknown",
-                "LIVE_NOT_OPEN": "live_not_open", "UNKNOWN": "unknown"}
+                "UNKNOWN": "unknown"}
 
 _SECTIONS = ("setup", "cert", "probe", "test_order", "worker")
 # desktop state, this process only (see "desktop app" below)
@@ -524,20 +524,13 @@ def probe_state(obj, exit_code):
     return {"state": "unknown"}
 
 
-def _worker_run(flag, timeout, what, extra=()):
+def _worker_run(flag, timeout, what):
     if _LOCAL["secrets"] is not None:
-        return _local_run(None, timeout, what, argv=[_paths()["worker"], flag, *extra])
-    return cc._run_quiet([_python(), _paths()["worker"], flag, *extra], timeout, what)
+        return _local_run(flag, timeout, what)
+    return cc._run_quiet([_python(), _paths()["worker"], flag], timeout, what)
 
 
-def _first_live(target):
-    """Switching test → production right after a test-host login passed: that
-    production probe gets the one-time grace (lib/president_vault.FIRST_LIVE_GRACE)."""
-    probe = (read_status() or {}).get("probe") or {}
-    return target == "live" and current_env() == "test" and probe.get("state") == "ok" and probe.get("env") == "test"
-
-
-def run_probe(push=None, after_unlock=False, first_live=False):
+def run_probe(push=None, after_unlock=False):
     env = current_env()
     _update("probe", status="running", reset=True, env=env)
     if push:
@@ -550,8 +543,7 @@ def run_probe(push=None, after_unlock=False, first_live=False):
             _refuse("UNBLOCK_USED", "this block was already released once — re-enter the password")
     started = time.time() - 1
     try:
-        rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe",
-                         extra=("--first-live",) if first_live else ()).returncode
+        rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe").returncode
     except RuntimeError:
         rc = None
     try:
@@ -657,41 +649,6 @@ def _import_cert(args, push, source, pick):
             "probe": run_probe(push)}
 
 
-def live_in_use():
-    """Why leaving production now would strand real trading, or None: 統一 positions
-    in the worker's last snapshot, or a strategy routed to 統一 with an amount. On
-    the test host the order lib resolves test hosts and the snapshot is deleted,
-    so every exit / stop would fail while the real position sits there (audit B3)."""
-    import venue_traits
-    why = []
-    try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json"), encoding="utf-8") as f:
-            cfg = json.load(f)
-        ex, amt = cfg.get("exchanges") or {}, cfg.get("amounts") or {}
-        funded = sorted(n for n, v in ex.items() if v == venue_traits.PRESIDENT
-                        and isinstance(amt.get(n), (int, float)) and amt.get(n) > 0)
-        if funded:
-            why.append(f"{len(funded)} strategy(ies) routed to it have amounts")
-    except (OSError, ValueError, AttributeError):
-        pass
-    try:
-        with open(_paths()["snapshot"], encoding="utf-8") as f:
-            rows = (json.load(f) or {}).get("positions") or []
-        lots = sum(abs(int(r.get("net") or 0)) for r in rows if isinstance(r, dict))
-        if lots:
-            why.append(f"{lots} lot(s) open")
-    except (OSError, ValueError, AttributeError, TypeError):
-        pass
-    return "; ".join(why) or None
-
-
-def _refuse_leaving_live(target):
-    if target == "test" and current_env() == "live":
-        why = live_in_use()
-        if why:
-            _refuse("LIVE_IN_USE", f"not switching to the test host: {why} — close them and set the amounts to 0 first")
-
-
 def run_host(args, push=None):
     """Switch environments, then log in once there. Test-host logins share the
     production login block: lib/president_vault.fingerprint() hashes the
@@ -700,8 +657,6 @@ def run_host(args, push=None):
     test-host failure toward the account's three wrong logins is 待確認 —
     sharing the block is the conservative reading."""
     target = args["env"] if "env" in args else normalize_host(args["url"])
-    _refuse_leaving_live(target)
-    first = _first_live(target)
     if not _env_urls_ok():
         _refuse("REBIND", "bind the account again — this binding predates the test environment")
     vault = _read_vault()
@@ -712,7 +667,7 @@ def run_host(args, push=None):
     _update(env=target)
     if target == "test":
         _leave_production()
-    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push, first_live=first)}
+    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
 
 
 def _taipei_iso(ts):
@@ -844,7 +799,6 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
             _refuse("BAD_ARGS", "president_host takes {\"env\": \"test\"|\"live\"} or {\"url\": \"...\"}")
         if "url" in args:
             normalize_host(args["url"])  # refused here, before the lock and the status
-        _refuse_leaving_live(args["env"] if "env" in args else normalize_host(args["url"]))
     elif args:
         _refuse("BAD_ARGS", f"{cmd} takes no arguments")
     if cmd in ("president_host", "president_test_order") and not _read_vault().get(_SECRET):
@@ -914,10 +868,8 @@ _SEAL_INFO = b"president-local-seal-v1"
 _SEAL_AAD = b"president-local-v1"
 SEALED_MAX_CHARS = 8192
 LOCAL_RESPAWN_S = 10
-# api openclaw/agent_events: broker_cert_expiring (P2) / broker_cert_expiring_live (P1),
-# {venue, days, not_after, stage}; tightest stage first, only that one
-CERT_NOTICE_DAYS = ((0, "broker_cert_expiring_live"), (7, "broker_cert_expiring_live"),
-                    (31, "broker_cert_expiring"))
+CERT_NOTICE_DAYS = ((0, "president_cert_expired"), (7, "president_cert_expiry_near"),
+                    (31, "president_cert_expiring"))
 _CHILD_FLAGS = {"BLAVE_PRESIDENT_LOCAL": "1", "BLAVE_PRESIDENT_STDIN": "1"}
 _ACCOUNT_RE = re.compile(r"^[0-9]{11}$")
 
@@ -991,7 +943,7 @@ def local_bind_gate(env):
     want = _bound_env(b) if b else None
     got = {k.casefold(): v for k, v in env.items()}
     if not want or any(got.get(k) != v for k, v in want.items()) or set(got) != set(want) \
-            or not os.path.isfile(_pfx_staged()):
+            or not os.path.isfile(_paths()["pfx"]):
         _refuse("NOT_CHECKED", "統一期貨 is bound from the app's connect flow on this computer")
 
 
@@ -1171,17 +1123,14 @@ def _block_on_file():
 
 
 def _cert_notice(now=None):
-    """Desktop: one event per stage per certificate (31 days P2; 7 days and expired P1),
-    only the tightest stage reached. A cloud box's are judged by the platform from the
-    report's president_connect.cert.not_after (kept as is)."""
+    """One event per threshold per certificate: 31 days (P2), 7 days, expired (P1)."""
     st = read_status() or {}
     cert = st.get("cert") or {}
     exp = cert.get("not_after")
     if cert.get("status") != "ok" or not isinstance(exp, str):
         return
     try:
-        import calendar
-        ts = calendar.timegm(time.strptime(exp, "%Y-%m-%dT%H:%M:%SZ"))
+        ts = time.mktime(time.strptime(exp, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
     except ValueError:
         return
     days = (ts - (now or time.time())) / 86400
@@ -1190,16 +1139,13 @@ def _cert_notice(now=None):
         sent = {"not_after": exp, "sent": []}
     for limit, ev in CERT_NOTICE_DAYS:
         if days <= limit:
-            if limit not in sent["sent"]:
+            if ev not in sent["sent"]:
                 try:
                     import events
-                    import venue_traits
-                    events.append(ev, {"venue": venue_traits.PRESIDENT, "days": max(0, int(days)), "not_after": exp,
-                                       "stage": limit})
+                    events.append(ev, {"days": max(0, int(days)), "not_after": exp})
                 except Exception:
                     pass
-                # the looser stages count as told: crossing 7 days never fires 31 afterwards
-                sent["sent"] = sorted(set(sent["sent"]) | {x for x, _ in CERT_NOTICE_DAYS if x >= limit})
+                sent["sent"] = sent["sent"] + [ev]
                 _update(cert_notified=sent)
             return
 
@@ -1231,23 +1177,11 @@ def local_shutdown():
     _LOCAL["secrets"] = None
 
 
-def _pfx_staged():
-    return _paths()["pfx"] + ".staged"
-
-
 def _local_cert(b, push):
-    """The new certificate is staged next to the old one and only put in place
-    once .env took the binding; anything failing before that leaves the old
-    certificate, .env and the handed-over passwords as they were (a new file
-    next to the old password would be a CERT login → a block). Nothing logs in
-    meanwhile: the worker is stopped first, and the in-memory bundle is cleared
-    for the swap itself so a flatten / probe cannot start on a half-swapped pair."""
     _update("cert", status="importing", error=None, source="local", reset=True)
     if push:
         push()
     p = _paths()
-    staged = _pfx_staged()
-    old_secrets, was_running = _LOCAL["secrets"], _LOCAL["worker"].running()
     try:
         try:
             with open(b["src"], "rb") as f:
@@ -1260,33 +1194,15 @@ def _local_cert(b, push):
         same = _env_account() == b["account"]
         b = dict(b, live=b["live"] if same else False)
         os.makedirs(p["cred"], exist_ok=True)
-        with atomic_file.replacing(staged, "wb", perm=0o600) as f:
+        with atomic_file.replacing(p["pfx"], "wb", perm=0o600) as f:
             f.write(data)
         data = None
-        _LOCAL["worker"].stop("certificate being replaced")
         _LOCAL["pending"] = b
         try:
             _cl()._cmd_credentials({"env": _bound_env(b)})
         finally:
             _LOCAL["pending"] = None
-        _LOCAL["secrets"] = None
-        try:
-            os.replace(staged, p["pfx"])
-        except OSError as e:
-            # .env already names the new binding: no pair is complete, so nothing logs in
-            _refuse("VAULT_FAILED", f"certificate not put in place ({type(e).__name__}) — choose it again")
     except Exception as e:
-        try:
-            os.remove(staged)
-        except OSError:
-            pass
-        if not str(e).startswith("VAULT_FAILED"):
-            _LOCAL["secrets"] = old_secrets
-            if was_running and not _LOCAL["worker"].running():
-                try:  # the old pair is intact: put back what was running
-                    _LOCAL["worker"].start()
-                except Exception:
-                    pass
         _update("cert", status="failed", error=cc._code(e, "IMPORT_FAILED"),
                 not_after=getattr(e, "not_after", None))
         raise
@@ -1295,6 +1211,7 @@ def _local_cert(b, push):
     _update(env="live" if b["live"] else "test")
     _update("cert", status="ok", error=None, source="local", not_after=meta["not_after"],
             issuer_checked=meta["issuer_checked"])
+    _LOCAL["worker"].stop("certificate replaced")
     _set_secrets(b)
     return {"cert": {"not_after": meta["not_after"], "issuer_checked": meta["issuer_checked"]},
             "env": "live" if b["live"] else "test"}
@@ -1312,15 +1229,13 @@ def _local_host(target, push):
     """president_host on the desktop: the same switch, kept in the bundle (the
     app saves the env it asked for; a daemon restart gets it back with the
     secrets), the reconciler re-handed its line, then the probe there."""
-    _refuse_leaving_live(target)
-    first = _first_live(target)
     s = _LOCAL["secrets"]
     if (s["live"] is True) != (target == "live"):
         _set_secrets(dict(s, live=target == "live"))
     _update(env=target)
     if target == "test":
         _leave_production()
-    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push, first_live=first)}
+    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
 
 
 def _local_start(push):
@@ -1378,7 +1293,6 @@ def _local_jobs(op, args):
             _refuse("CERT_MISSING", "choose the certificate first")
         if op == "host":
             target = args["env"] if "env" in args else normalize_host(args["url"])
-            _refuse_leaving_live(target)
             return lambda push: _local_host(target, push)
         if current_env() != "test":
             _refuse("LIVE_ENV", "test orders run only on the test host")

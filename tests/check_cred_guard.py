@@ -40,9 +40,6 @@ want = [f"{tool}({anchor}/{g})" for tool in ("Read", "Edit")
         for g in ("*vault*", "*pfx*", "capital_stage/**", "president_logs/**")]
 t("① 每個回合的 disallowed 規則含 credentials 的 Read + Edit 八條,錨在 //<base>/credentials", all(r in rules for r in want),
   [r for r in want if r not in rules])
-t("① 統一的登入封鎖檔(搬進 credentials/,稽核 S2)也在 Read + Edit 規則裡;Bash 提到它就拒",
-  f"Read({anchor}/*login_block*)" in rules and f"Edit({anchor}/*login_block*)" in rules
-  and at.cred_bash_denied("del ..\\credentials\\president_login_block.json") and at.cred_bash_denied("rm president_login_block.json"))
 t("① 錨是 //(絕對),不是單斜線(那會錨到 workspace)", anchor.startswith("//") and not any(
     r.startswith(("Read(/credentials", "Edit(/credentials")) for r in rules))
 _real_abspath = at.os.path.abspath

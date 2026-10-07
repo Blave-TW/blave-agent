@@ -59,15 +59,11 @@ t("時間解析:垃圾不炸、回 NaN", [null, undefined, "", "yesterday", {}, 
   t("畫面交給主行程的字:重開那一型用定稿標題與 P1 內文(不講時間);舊的 downtime_paused 標籤退場",
     /ev_machine_restart_stopped: t\("tr\.ov\.evRestartStopped"\), ev_machine_restart_stopped_n: t\("tm\.evRestartStoppedNote"\)/.test(tr) && !/ev_downtime_paused/.test(tr + src)); }
 t("每個 P1 型別在 tmLabels 都有標題與註解", P1_TYPES.every((ty) => src.includes("ev_" + ty + ":") && src.includes("ev_" + ty + "_n:")));
-// 券商線(契約 api openclaw/agent_events):封鎖只停那一家、不 HALT;P1 = venue_login_blocked / ledger_misorder / broker_cert_expiring_live,
-// 本機 P2(不亮紅點)= venue_login_recovered / broker_cert_expiring
-{ const o2 = p1Pick([ev(70, "venue_login_blocked", { venue: "president", kind: "password" }), ev(71, "venue_login_recovered", { venue: "president" }),
-    ev(72, "ledger_misorder", { venue: "president", symbol: "TXF", kind: "over", paused: 1 }), ev(73, "broker_cert_expiring", { stage: 31 }), ev(74, "broker_cert_expiring_live", { stage: 7 })], 60, NOW);
-  t("五型本機都發", types(o2) === "venue_login_blocked:70,venue_login_recovered:71,ledger_misorder:72,broker_cert_expiring:73,broker_cert_expiring_live:74");
-  t("P1 / P2 分得開(P2 不亮紅點)", ["venue_login_blocked", "ledger_misorder", "broker_cert_expiring_live"].every((x) => P1_TYPES.indexOf(x) >= 0)
-    && ["venue_login_recovered", "broker_cert_expiring"].every((x) => P1_TYPES.indexOf(x) < 0 && P2_EVENT_TYPES.indexOf(x) >= 0)
+// 統一登入被封鎖(Wei 10-07):只停統一的策略、不 HALT;P1 venue_login_blocked 一則,恢復是 P2 venue_login_restored(不亮紅點)
+{ const o2 = p1Pick([ev(70, "venue_login_blocked", { venue: "president", kind: "PASSWORD" }), ev(71, "venue_login_restored", { venue: "president" })], 60, NOW);
+  t("封鎖(P1)與恢復(P2)本機都發", types(o2) === "venue_login_blocked:70,venue_login_restored:71");
+  t("封鎖是 P1、恢復不是(P2 不亮紅點)", P1_TYPES.indexOf("venue_login_blocked") >= 0 && P1_TYPES.indexOf("venue_login_restored") < 0 && P2_EVENT_TYPES.indexOf("venue_login_restored") >= 0
     && /if \(P2_EVENT_TYPES\.indexOf\(e\.type\) < 0\) p1Badge\+\+;/.test(src));
-  t("P2 兩型也有標題與註解", P2_EVENT_TYPES.every((ty) => src.includes("ev_" + ty + ":") && src.includes("ev_" + ty + "_n:")));
-  t("舊名字(president_login_blocked、venue_login_restored、president_cert_*)不發也不在外殼", p1Pick([ev(75, "president_login_blocked", {}), ev(76, "venue_login_restored", {}), ev(77, "president_cert_expired", {})], 60, NOW).show.length === 0
-    && !/president_login_blocked|venue_login_restored|president_cert_/.test(src)); }
+  t("恢復那則也有標題與註解", src.includes("ev_venue_login_restored:") && src.includes("ev_venue_login_restored_n:"));
+  t("舊的 president_login_blocked 不發", p1Pick([ev(72, "president_login_blocked", {})], 60, NOW).show.length === 0); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

@@ -299,7 +299,7 @@ sys.modules["unitrade"], sys.modules["unitrade.unitrade"] = ut, utu
 
 
 def script():
-    for path in (P["test_order"], os.path.join(P["cred"], "president_login_block.json")):
+    for path in (P["test_order"], os.path.join(WS, "state", "president_login_block.json")):
         if os.path.exists(path):
             os.remove(path)
     rc = pto.main(["president_test_order.py", WS])
@@ -345,7 +345,7 @@ rc, out = script()
 check("5 a wrong password → the login class only, no order, no broker text",
       not orders and out == {"error": "統一期貨 login failed: PASSWORD", "read_at": out["read_at"]}, out)
 check("5 …and it is the shared login block (the same one production logins check)",
-      json.load(open(os.path.join(P["cred"], "president_login_block.json"))).get("kind") == "PASSWORD")
+      json.load(open(os.path.join(WS, "state", "president_login_block.json"))).get("kind") == "PASSWORD")
 SDK["login_ok"], SDK["login_error"] = True, ""
 check("5 the script imports nothing but the stdlib at module level (the runtime health check imports it)",
       all(not l.startswith(("import president", "from president", "import unitrade", "from unitrade", "from lib",
@@ -360,11 +360,10 @@ runs.clear()
 ANS = {"probe": {"ok": True, "equity": 1.0, "test_mode": False}}
 r = run_cmd("president_host", {"env": "live"})
 st = pc.read_status()
-check("6 營業員說開好了 → production: vault on, probe on viploginm recorded env live, no re-upload, worker untouched;"
-      " right after a passed test-host login that probe carries --first-live (audit B6)",
+check("6 營業員說開好了 → production: vault on, probe on viploginm recorded env live, no re-upload, worker untouched",
       json.load(open(P["vault"]))["live"] is True and r["env"] == "live" and r["url"] == "https://viploginm.pfctrade.com"
       and r["probe"]["env"] == "live" and st["env"] == "live" and open(P["pfx"], "rb").read() == pfx_before
-      and not popen and runs == [["president_worker.py", "--once", "--first-live"]], (r, popen, runs))
+      and not popen and runs == [["president_worker.py", "--once"]], (r, popen))
 check("6 the test order record stays (the report screen reads its time and number)",
       st["test_order"]["orderno"] == "A0001")
 check("6 a test order now → LIVE_ENV", refused(lambda: pc.dispatch("president_test_order", {}, D), "LIVE_ENV") is True)

@@ -1069,18 +1069,8 @@ def _book_hold(venue, verdict, detail, now=None):
 # 封鎖期間只暫停 routing 到那家的策略:place_order 對它回 False、讀持倉失敗當本輪跳過
 # (不計數、不 HALT);其他交易所的策略照跑。用戶在統一解鎖或改密碼、重新確認登入成功
 # (lib 清掉封鎖)之後自動恢復,照差額繼續跑。轉態各發一次事件:venue_login_blocked(P1,
-# cause venue;{venue, kind, symbols})、venue_login_recovered(P2;{venue})——契約在 api
-# openclaw/agent_events。狀態落檔給回報(paused_blocked)與重啟後不重發。不 HALT。
+# cause venue)、venue_login_restored(P2)。狀態落檔給回報(paused_blocked)與重啟後不重發。
 _venue_pause = {}
-# lib's login classes → the event's kind (api: password / timeout / unknown / cert)
-_LOGIN_KIND = {"PASSWORD": "password", "TIMEOUT": "timeout", "CERT": "cert", "CERT_MISMATCH": "cert"}
-
-
-def _paused_symbols():
-    """The symbols the last good read held — what now sits unmanaged."""
-    held = [k for k, v in _last_actual().items()
-            if isinstance(v, dict) and isinstance(v.get('size'), (int, float)) and v['size']]
-    return ",".join(sorted(held)) or None
 
 
 def _venue_login_paused(venue):
@@ -1121,11 +1111,11 @@ def _sync_venue_pauses(now=None):
             new[venue]['kind'] = kind
             if venue not in _venue_pause:
                 logging.warning(f"[reconciler] {venue} login blocked ({kind}) — its strategies paused")
-                events.emit('venue_login_blocked', venue=venue, kind=_LOGIN_KIND.get(kind, "unknown"),
-                            symbols=_paused_symbols())
+                events.emit('venue_login_blocked', venue=venue, kind=kind)
         elif venue in _venue_pause:
             logging.info(f"[reconciler] {venue} login passed — its strategies resume")
-            events.emit('venue_login_recovered', venue=venue)
+            events.emit('venue_login_restored', venue=venue,
+                        minutes=int((now - _venue_pause[venue].get('since', now)) // 60))
             restored = True
     if new != _venue_pause:
         _venue_pause = new

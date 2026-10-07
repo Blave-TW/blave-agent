@@ -190,34 +190,6 @@ check("3 the status: cert ok with its expiry, nothing personal",
       pc.read_status()["cert"]["status"] == "ok" and "Z123456789" not in st and "PSC_" not in st and PW not in st)
 check("3 the result carries no secret", PW not in json.dumps(r) and CAPW not in json.dumps(r))
 
-# ── 3b. rebinding with another certificate: staged, put in place only after .env took it ──
-OTHER = os.path.join(PSCCA, "other.pfx")
-open(OTHER, "wb").write(make_pfx(CAPW))
-old_pfx, old_env, old_sec = open(P["pfx"], "rb").read(), open(ENV).read(), dict(pc._LOCAL["secrets"])
-stops = []
-real_stop = pc._LOCAL["worker"].stop
-pc._LOCAL["worker"].stop = lambda why="": stops.append(why)
-real_cc = cl._cmd_credentials
-
-
-def boom(args):
-    raise RuntimeError(".env unreadable (OSError) — try again")
-
-
-cl._cmd_credentials = boom
-check("3b .env write fails → refused, the old certificate, .env and passwords untouched, nothing staged left",
-      code_of(lambda: cert(dict(GOOD, src=OTHER))) not in (None, "OK") and open(P["pfx"], "rb").read() == old_pfx
-      and open(ENV).read() == old_env and pc._LOCAL["secrets"] == old_sec and not os.path.exists(P["pfx"] + ".staged"))
-check("3b …and the worker was stopped before anything was swapped", stops == ["certificate being replaced"], stops)
-seen_at_write = []
-cl._cmd_credentials = lambda args: seen_at_write.append(open(P["pfx"], "rb").read() == old_pfx) or real_cc(args)
-cert(dict(GOOD, src=OTHER))
-check("3b success: while .env is written the old certificate is still the one in place; afterwards the new one is",
-      seen_at_write == [True] and open(P["pfx"], "rb").read() == open(OTHER, "rb").read() and not os.path.exists(P["pfx"] + ".staged"))
-cl._cmd_credentials = real_cc
-pc._LOCAL["worker"].stop = real_stop
-cert(GOOD)
-
 # ── 4. bind gate ──
 check("4 a 統一 write that did not come from the cert step → NOT_CHECKED",
       code_of(lambda: cl._cmd_credentials({"env": pc._bound_env(GOOD)})) == "NOT_CHECKED")
@@ -274,9 +246,6 @@ check("6b a host outside the two allowed → HOST_NOT_ALLOWED, before anything r
       code_of(lambda: pc.local_dispatch({"op": "host", "url": "evil.example.com"}, D)) == "HOST_NOT_ALLOWED")
 check("6b host takes exactly one of env / url", code_of(lambda: pc.local_dispatch({"op": "host"}, D)) == "BAD_ARGS"
       and code_of(lambda: pc.local_dispatch({"op": "host", "env": "prod"}, D)) == "BAD_ARGS")
-firsts = []
-pc.run_probe = lambda push=None, after_unlock=False, first_live=False: firsts.append(first_live) or probes.append(pc.current_env()) or (
-    pc._update("probe", status="ok", state="ok", env=pc.current_env()) and {"state": "ok", "env": pc.current_env()})
 r6 = pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).run()
 check("6b the address as mailed → the test host, then the probe there", r6["env"] == "test" and probes[-1] == "test"
       and pc.read_status()["probe"]["env"] == "test")
@@ -286,30 +255,9 @@ pc.run_test_order = lambda push=None: ran.append(pc.current_env()) or {"state": 
 pc.local_dispatch({"op": "test_order"}, D).run()
 check("6b test order after a test-host probe", ran == ["test"])
 pc.local_dispatch({"op": "host", "env": "live"}, D).run()
-check("6b B6: only the first switch to production after a passed test-host login gets the grace", firsts == [False, True], firsts)
 check("6b 營業員說開好了 = host live: bundle switched, probe on production",
       pc._LOCAL["secrets"]["live"] is True and probes[-1] == "live" and pc.read_status()["env"] == "live")
 check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order"}, D)) == "LIVE_ENV")
-CFG = os.path.join(WS, "manager", "portfolio_config.json")
-open(CFG, "w").write(json.dumps({"exchanges": {"txf": "president", "btc": "binance"}, "amounts": {"txf": 1, "btc": 100}}))
-check("6b a funded 統一 strategy → back to the test host refused LIVE_IN_USE (desktop), nothing switched",
-      code_of(lambda: pc.local_dispatch({"op": "host", "env": "test"}, D)) == "LIVE_IN_USE" and pc._LOCAL["secrets"]["live"] is True)
-check("6b …the address form too", code_of(lambda: pc.local_dispatch({"op": "host", "url": "test167.pfctrade.com"}, D)) == "LIVE_IN_USE")
-open(CFG, "w").write(json.dumps({"exchanges": {"txf": "president", "btc": "binance"}, "amounts": {"txf": 0, "btc": 100}}))
-os.makedirs(os.path.dirname(P["snapshot"]), exist_ok=True)
-open(P["snapshot"], "w").write(json.dumps({"ok": True, "positions": [{"root": "TMF", "net": -2}]}))
-check("6b 統一 lots open (no amounts) → still refused", code_of(lambda: pc.local_dispatch({"op": "host", "env": "test"}, D)) == "LIVE_IN_USE")
-check("6b another venue's amounts alone do not count", (os.remove(P["snapshot"]), pc.live_in_use())[1] is None)
-open(P["snapshot"], "w").write(json.dumps({"ok": True, "positions": [{"root": "TMF", "net": 1}]}))
-sec_keep = pc._LOCAL["secrets"]
-pc._LOCAL["secrets"] = None
-open(P["vault"], "w").write(json.dumps({"president_password": PW, "live": True}))
-check("6b the cloud's run_host refuses the same way (before touching the vault)",
-      code_of(lambda: pc.run_host({"env": "test"})) == "LIVE_IN_USE" and json.load(open(P["vault"]))["live"] is True)
-os.remove(P["vault"])
-pc._LOCAL["secrets"] = sec_keep
-os.remove(P["snapshot"])
-open(CFG, "w").write("{}")
 pc.local_dispatch({"op": "host", "env": "test"}, D).run()
 pc.run_probe, pc.run_test_order = real_probe, real_order
 
@@ -461,28 +409,6 @@ w.respawn_at = 0
 pc.local_tick()
 check("8 a block for other credentials is not ours: the worker comes back", spawns == [1], spawns)
 os.remove(pv.BLOCK)
-
-# ── 8b. certificate expiry (desktop): api's broker_cert_expiring(_live), only the tightest stage ──
-evs.clear()
-exp_ts = int(time.time()) + 20 * 86400
-pc._update("cert", status="ok", not_after=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(exp_ts)))
-pc._update(cert_notified=None)
-pc._cert_notice()
-pc._cert_notice()
-check("8b 20 days left: one broker_cert_expiring (P2), stage 31, payload {venue, days, not_after, stage}",
-      len(evs) == 1 and evs[0][0] == "broker_cert_expiring" and evs[0][1]["venue"] == "president"
-      and evs[0][1]["stage"] == 31 and evs[0][1]["days"] in (19, 20), evs)
-evs.clear()
-pc._cert_notice(now=exp_ts - 3 * 86400)
-check("8b 3 days left: broker_cert_expiring_live (P1) stage 7, nothing for 31 again",
-      [(e[0], e[1]["stage"]) for e in evs] == [("broker_cert_expiring_live", 7)], evs)
-evs.clear()
-pc._update(cert_notified=None)
-pc._cert_notice(now=exp_ts + 86400)
-pc._cert_notice(now=exp_ts + 2 * 86400)
-check("8b first seen already expired: only stage 0 (the tightest), once", [(e[0], e[1]["stage"]) for e in evs] == [("broker_cert_expiring_live", 0)], evs)
-check("8b the report keeps cert.not_after as is (the platform judges cloud boxes from it)",
-      pc.read_status()["cert"]["not_after"] == time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(exp_ts)))
 
 # ── 9. unbind / flatten ──
 flat = []

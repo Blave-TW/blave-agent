@@ -3135,10 +3135,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 統一有部位時結束 Blave(Wei 10-07:擋一下、講白不會平倉)
   presQuitTitle: "Quit Blave?", presQuitBody: "{lots} lot(s) are still open at 統一期貨 (President Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 統一 app.",
   ev_venue_login_blocked: "President Futures login blocked — its strategies paused", ev_venue_login_blocked_n: "Other exchanges keep trading. Unlock or change the password at President, then confirm the login in Blave; President strategies resume by themselves once it passes.",
-  ev_venue_login_recovered: "President Futures login is back", ev_venue_login_recovered_n: "President strategies resumed and continue from the current gap.",
-  ev_ledger_misorder: "An order did not match Blave's book", ev_ledger_misorder_n: "Open Blave to check the position at the broker.",
-  ev_broker_cert_expiring_live: "Broker certificate expires soon", ev_broker_cert_expiring_live_n: "Renew it before it expires, or that broker's strategies stop.",
-  ev_broker_cert_expiring: "Broker certificate expires within 31 days", ev_broker_cert_expiring_n: "Renew it in 憑證e總管, then choose the new one under Connect.",
+  ev_venue_login_restored: "President Futures login is back", ev_venue_login_restored_n: "President strategies resumed and continue from the current gap.",
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
@@ -3392,13 +3389,11 @@ function traySync() {
    - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
-// 券商三型(契約 api openclaw/agent_events):venue_login_blocked 某家登入被封鎖、只停那一家的策略(manager/reconciler);
-// ledger_misorder 帳本對不上的錯單;broker_cert_expiring_live 憑證 7 天內到期或已過期
-const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped",
-  "venue_login_blocked", "ledger_misorder", "broker_cert_expiring_live"];   // 全部九型(標籤用)
-const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的七型
-// 本機也發、但是 P2(不亮紅點):登入恢復(那一家的策略已自動接著跑)、憑證 31 天內到期
-const P2_EVENT_TYPES = ["venue_login_recovered", "broker_cert_expiring"];
+// venue_login_blocked:某家登入被封鎖、只停那一家的策略(manager/reconciler,Wei 10-07;notifications.md 待登記)
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped", "venue_login_blocked"];   // 全部七型(標籤用)
+const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的五型
+// 本機也發、但是 P2(不亮紅點):登入恢復、那一家的策略已自動接著跑
+const P2_EVENT_TYPES = ["venue_login_restored"];
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發

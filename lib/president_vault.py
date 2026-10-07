@@ -27,7 +27,7 @@ goes through sanitize() first.
 
 統一 locks an account after three wrong logins. A CERT*/PASSWORD answer blocks
 every further login on this machine with the same credentials
-(<base>/credentials/president_login_block.json, keyed on their fingerprint — no secret is
+(state/president_login_block.json, keyed on their fingerprint — no secret is
 written) until `.env` changes or the user releases it (`python
 lib/president_worker.py --unblock`, only after they unlocked the account at the
 broker) — a release allows one login, and its failure blocks again; one
@@ -63,11 +63,7 @@ from urllib.parse import urlparse
 _WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(_WS, ".env")
 VAULT = os.path.join(os.path.dirname(_WS), "credentials", "president_vault.json")
-# Next to the vault, not in state/: the agent's guards cover credentials/, and a block the
-# agent could delete would let a worker that restarts on its own spend the broker's three
-# tries (audit 2026-10-07 S2). The old spot is moved over on first read.
-BLOCK = os.path.join(os.path.dirname(VAULT), "president_login_block.json")
-LEGACY_BLOCK = os.path.join(_WS, "state", "president_login_block.json")
+BLOCK = os.path.join(_WS, "state", "president_login_block.json")
 # The SDK's own logs carry the login id (the national id) and every order: next
 # to the vault (credentials\ — SYSTEM + Administrators on a cloud box), not in
 # the agent's state/. Removed with the vault on unbind.
@@ -182,8 +178,6 @@ class LoginError(RuntimeError):
         "BLOCKED": "a previous login with these credentials was refused — not attempted until "
                    "the credentials in .env change (統一 locks the account after three wrong logins)",
         "NON_TEST_SERVER": "the server is not a test server and production is not switched on",
-        "LIVE_NOT_OPEN": "the first production login after the test host was refused without a reason — "
-                         "production API access is probably not open yet; not blocked this once",
         "UNKNOWN": "the broker refused the login",
     }
 
@@ -359,27 +353,7 @@ def fingerprint(creds):
     return hashlib.sha256(f"president-login-v2\0{raw}".encode()).hexdigest()[:16]
 
 
-def _migrate_block():
-    """A block written before it moved: carried over once (a move, so an agent
-    cannot keep a stale copy around to resurrect), its claim with it."""
-    if os.path.exists(BLOCK) or not os.path.exists(LEGACY_BLOCK):
-        return
-    try:
-        os.makedirs(os.path.dirname(BLOCK), exist_ok=True)
-        with open(LEGACY_BLOCK, encoding="utf-8") as f:
-            b = json.load(f)
-        if isinstance(b, dict):
-            replace_json(BLOCK, b)
-        os.remove(LEGACY_BLOCK)
-        if os.path.exists(LEGACY_BLOCK + ".claim"):
-            os.close(os.open(BLOCK + ".claim", os.O_CREAT | os.O_WRONLY))
-            os.remove(LEGACY_BLOCK + ".claim")
-    except (OSError, ValueError):
-        pass
-
-
 def _read_block():
-    _migrate_block()
     try:
         with open(BLOCK, encoding="utf-8") as f:
             b = json.load(f)
@@ -447,33 +421,6 @@ def blocked(creds):
     """The class that blocks a login with exactly these credentials, or None
     (taking the released try when there is one — see _gate)."""
     return _gate(creds)[0]
-
-
-# The first production login after the test host passed (president_worker --once
-# --first-live): an unclassified refusal there is most likely "the broker has not
-# opened production API access yet", not a wrong password (the same password just
-# logged in on the test host). That one is recorded but not blocked — once per
-# credentials; any later UNKNOWN blocks as before (Wei 2026-10-07, audit B6).
-FIRST_LIVE_GRACE = False
-
-
-def _take_live_grace(creds):
-    fp = fingerprint(creds)
-    b = _read_block()
-    if b.get("fp") != fp:
-        b = {"fp": fp, "unknown": 0, "timeout": 0}
-    if b.get("live_grace_used") or _blocking(b):
-        return False
-    _write_block(dict(b, live_grace_used=True, at=int(time.time()), last="LIVE_NOT_OPEN"))
-    return True
-
-
-def _refused(creds, kind):
-    """Record a refused login; the class the caller raises."""
-    if kind == "UNKNOWN" and FIRST_LIVE_GRACE and creds.get("live") and _take_live_grace(creds):
-        return "LIVE_NOT_OPEN"
-    _record(creds, kind)
-    return kind
 
 
 def login_paused():
@@ -626,13 +573,14 @@ def login(creds, log_dir):
             kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
             # an SDK that raised on an answer it could not parse may still have
             # been refused a wrong password: same rule as a refusal it returned
-            kind = _refused(creds, kind)
+            _record(creds, kind)
             if released_try and kind == "HOST":
                 _give_back_try()
             raise LoginError(kind)
         resp = box["resp"]
         if not resp.ok:
-            kind = _refused(creds, classify(resp.error))
+            kind = classify(resp.error)
+            _record(creds, kind)
             if released_try and kind == "HOST":
                 _give_back_try()
             raise LoginError(kind)
