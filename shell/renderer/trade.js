@@ -961,8 +961,8 @@ const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, 
   bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", noWdCheck: true, ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" } };
 const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit"];
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
-// 不在連接框那五家裡的兩個帳戶(lib/account_paper.py、account_capital.py)
-const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD" };
+// 不在連接框那五家裡的三個帳戶(lib/account_paper.py、account_capital.py、account_president.py)
+const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD" };
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)
 function trVenueCcy(id) {
   if (Object.prototype.hasOwnProperty.call(TR_VENUE_CCY_OTHER, id)) return TR_VENUE_CCY_OTHER[id];
