@@ -190,6 +190,34 @@ check("3 the status: cert ok with its expiry, nothing personal",
       pc.read_status()["cert"]["status"] == "ok" and "Z123456789" not in st and "PSC_" not in st and PW not in st)
 check("3 the result carries no secret", PW not in json.dumps(r) and CAPW not in json.dumps(r))
 
+# ── 3b. rebinding with another certificate: staged, put in place only after .env took it ──
+OTHER = os.path.join(PSCCA, "other.pfx")
+open(OTHER, "wb").write(make_pfx(CAPW))
+old_pfx, old_env, old_sec = open(P["pfx"], "rb").read(), open(ENV).read(), dict(pc._LOCAL["secrets"])
+stops = []
+real_stop = pc._LOCAL["worker"].stop
+pc._LOCAL["worker"].stop = lambda why="": stops.append(why)
+real_cc = cl._cmd_credentials
+
+
+def boom(args):
+    raise RuntimeError(".env unreadable (OSError) — try again")
+
+
+cl._cmd_credentials = boom
+check("3b .env write fails → refused, the old certificate, .env and passwords untouched, nothing staged left",
+      code_of(lambda: cert(dict(GOOD, src=OTHER))) not in (None, "OK") and open(P["pfx"], "rb").read() == old_pfx
+      and open(ENV).read() == old_env and pc._LOCAL["secrets"] == old_sec and not os.path.exists(P["pfx"] + ".staged"))
+check("3b …and the worker was stopped before anything was swapped", stops == ["certificate being replaced"], stops)
+seen_at_write = []
+cl._cmd_credentials = lambda args: seen_at_write.append(open(P["pfx"], "rb").read() == old_pfx) or real_cc(args)
+cert(dict(GOOD, src=OTHER))
+check("3b success: while .env is written the old certificate is still the one in place; afterwards the new one is",
+      seen_at_write == [True] and open(P["pfx"], "rb").read() == open(OTHER, "rb").read() and not os.path.exists(P["pfx"] + ".staged"))
+cl._cmd_credentials = real_cc
+pc._LOCAL["worker"].stop = real_stop
+cert(GOOD)
+
 # ── 4. bind gate ──
 check("4 a 統一 write that did not come from the cert step → NOT_CHECKED",
       code_of(lambda: cl._cmd_credentials({"env": pc._bound_env(GOOD)})) == "NOT_CHECKED")

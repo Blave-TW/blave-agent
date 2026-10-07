@@ -943,7 +943,7 @@ def local_bind_gate(env):
     want = _bound_env(b) if b else None
     got = {k.casefold(): v for k, v in env.items()}
     if not want or any(got.get(k) != v for k, v in want.items()) or set(got) != set(want) \
-            or not os.path.isfile(_paths()["pfx"]):
+            or not os.path.isfile(_pfx_staged()):
         _refuse("NOT_CHECKED", "統一期貨 is bound from the app's connect flow on this computer")
 
 
@@ -1177,11 +1177,23 @@ def local_shutdown():
     _LOCAL["secrets"] = None
 
 
+def _pfx_staged():
+    return _paths()["pfx"] + ".staged"
+
+
 def _local_cert(b, push):
+    """The new certificate is staged next to the old one and only put in place
+    once .env took the binding; anything failing before that leaves the old
+    certificate, .env and the handed-over passwords as they were (a new file
+    next to the old password would be a CERT login → a block). Nothing logs in
+    meanwhile: the worker is stopped first, and the in-memory bundle is cleared
+    for the swap itself so a flatten / probe cannot start on a half-swapped pair."""
     _update("cert", status="importing", error=None, source="local", reset=True)
     if push:
         push()
     p = _paths()
+    staged = _pfx_staged()
+    old_secrets, was_running = _LOCAL["secrets"], _LOCAL["worker"].running()
     try:
         try:
             with open(b["src"], "rb") as f:
@@ -1194,15 +1206,33 @@ def _local_cert(b, push):
         same = _env_account() == b["account"]
         b = dict(b, live=b["live"] if same else False)
         os.makedirs(p["cred"], exist_ok=True)
-        with atomic_file.replacing(p["pfx"], "wb", perm=0o600) as f:
+        with atomic_file.replacing(staged, "wb", perm=0o600) as f:
             f.write(data)
         data = None
+        _LOCAL["worker"].stop("certificate being replaced")
         _LOCAL["pending"] = b
         try:
             _cl()._cmd_credentials({"env": _bound_env(b)})
         finally:
             _LOCAL["pending"] = None
+        _LOCAL["secrets"] = None
+        try:
+            os.replace(staged, p["pfx"])
+        except OSError as e:
+            # .env already names the new binding: no pair is complete, so nothing logs in
+            _refuse("VAULT_FAILED", f"certificate not put in place ({type(e).__name__}) — choose it again")
     except Exception as e:
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+        if not str(e).startswith("VAULT_FAILED"):
+            _LOCAL["secrets"] = old_secrets
+            if was_running and not _LOCAL["worker"].running():
+                try:  # the old pair is intact: put back what was running
+                    _LOCAL["worker"].start()
+                except Exception:
+                    pass
         _update("cert", status="failed", error=cc._code(e, "IMPORT_FAILED"),
                 not_after=getattr(e, "not_after", None))
         raise
@@ -1211,7 +1241,6 @@ def _local_cert(b, push):
     _update(env="live" if b["live"] else "test")
     _update("cert", status="ok", error=None, source="local", not_after=meta["not_after"],
             issuer_checked=meta["issuer_checked"])
-    _LOCAL["worker"].stop("certificate replaced")
     _set_secrets(b)
     return {"cert": {"not_after": meta["not_after"], "issuer_checked": meta["issuer_checked"]},
             "env": "live" if b["live"] else "test"}

@@ -644,6 +644,7 @@ REVIEWED = {
     ("local_daemon.py", "_link_current"): "os.symlink(tmp) never follows an existing name (EEXIST)",
     ("local_daemon.py", "_spawn_locked"): "reconciler.log rotation: renames the log, writes nothing",
     ("president_connect.py", "_spawn"): "president_worker.log rotation (desktop): renames the log, writes nothing",
+    ("president_connect.py", "_local_cert"): "staged certificate (written by atomic_file.replacing) put in place after .env took the binding",
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
     ("telegram_pairing.py", "replace_retry"): "the replace callable atomic_file.replacing is handed",
