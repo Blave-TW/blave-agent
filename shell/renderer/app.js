@@ -2029,7 +2029,7 @@ function paintAi(el, raw, live) {
   el.textContent = "";
   mdPaint(el, r.blocks);
 }
-/* 送出後泡泡末行的附件:迴紋針(複製輸入框那顆 .icon-attach,不另畫一個)+ 檔名。建 element,檔名走文字節點(不拼 innerHTML) */
+/* 送出後泡泡末行的附件:迴紋針(複製輸入框那顆 .icon-attach,不另畫一個)+ 檔名。建 element,檔名走文字節點(不拼 HTML 字串) */
 function attachLine(name) {
   const s = document.createElement("span"); s.className = "msg-attach";
   s.append($("attach-btn").querySelector(".icon-attach").cloneNode(true), document.createTextNode(name));

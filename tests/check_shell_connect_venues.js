@@ -154,7 +154,7 @@ app.whenReady().then(async () => {
   await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null); })()`);
   await wait(150);
   // 群益兩個視角都列(1ac250b,Wei 0.1.12):這台電腦選到它只出一句說明,沒有金鑰欄、沒有主鈕
-  ok("③ 這台電腦:模擬 + 五家 + 「台股」組的群益", J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "capital"])
+  ok("③ 這台電腦:模擬 + 五家 + 「台股」組的群益與統一(0.1.18 起統一只在這台電腦視角列)", J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "capital", "president"])
     && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(`[t("cx.group.crypto"), t("cap.group.tw")]`)));
   await pick("capital");
   const capLocal = await js(`(() => { const p = $("cx-body").querySelectorAll(".cap-lead"); return { lead: p.length === 1 ? p[0].textContent : null, want: t(window.blave.platform === "win32" ? "cx.cap.localWin" : "cx.cap.localMac"), goHidden: $("cx-go").hidden, inputs: $("cx-body").querySelectorAll("input").length, sel: $("cx-venue").value }; })()`);
