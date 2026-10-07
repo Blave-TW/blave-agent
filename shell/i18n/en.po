@@ -6423,11 +6423,7 @@ msgstr "President Futures needs Windows."
 msgid "pres.mac.hint"
 msgstr "The Mac desktop app can’t connect to President Futures. With a Windows cloud machine, you can use Remote Desktop from your Mac to apply for the certificate on it."
 
-msgid "pres.dual.lead"
-msgstr "President Futures is already connected on your cloud machine."
 
-msgid "pres.dual.hint"
-msgstr "If both place orders on the same account, each treats the other’s orders as manual trades. To use it on this computer, unbind it on the cloud side first."
 
 msgid "pres.prep.looking"
 msgstr "Looking for a President certificate on this computer…"
@@ -6681,22 +6677,18 @@ msgid "pres.pw.go"
 msgstr "Confirm with new password"
 
 msgid "pres.err.password"
-msgstr "President says the trading password is wrong. Blave stopped logging in so President doesn’t lock your account (three wrong tries lock it). Only a different password tries again."
+msgstr "President says the trading password is wrong."
 
 msgid "pres.err.unknown"
-msgstr "President refused the login without a reason. Most often the trading password is wrong, or API access isn’t enabled yet. Blave stopped logging in so it doesn’t use up President’s three tries."
+msgstr "President refused the login without a reason. Most often the trading password is wrong, or API access isn't enabled yet."
 
-msgid "pres.err.unknownOnce"
-msgstr "Password and access are confirmed — try once more"
 
-msgid "pres.err.onceHint"
-msgstr "That retry works once; if it still fails, change the password at President."
 
 msgid "pres.err.cert"
-msgstr "This computer can’t open this certificate. Blave stopped logging in; President wasn’t contacted. Choose another certificate to try again."
+msgstr "This computer can't open this certificate, or its password is wrong."
 
 msgid "pres.err.certMismatch"
-msgstr "This certificate doesn’t belong to account {acct} — maybe a family member’s or another account’s. Blave stopped logging in; use this account’s certificate, or change the account, to try again."
+msgstr "This certificate doesn't belong to account {acct} — maybe a family member's or another account's."
 
 msgid "pres.err.certSwap"
 msgstr "Choose another certificate"
@@ -6704,26 +6696,16 @@ msgstr "Choose another certificate"
 msgid "pres.err.acctSwap"
 msgstr "Change account"
 
-msgid "pres.err.blocked"
-msgstr "President locked this account (too many wrong passwords). Unlock it in the President app, on its website or through your rep, then press I’ve unlocked it."
 
-msgid "pres.err.unlocked"
-msgstr "I’ve unlocked it at President"
 
-msgid "pres.err.blocked2"
-msgstr "Still can’t log in after unlocking. Change the trading password at President, then confirm with the new one."
 
 msgid "pres.err.maint"
-msgstr "President is under maintenance daily 05:30–05:50 and Blave doesn’t log in then. It confirms again automatically after 05:50."
+msgstr "President is under maintenance daily 05:30–05:50; Blave doesn't log in then."
 
-msgid "pres.err.transient"
-msgstr "President is busy right now; Blave tries again later. It doesn’t count as a login attempt."
 
-msgid "pres.err.host"
-msgstr "Couldn’t reach President’s host. The password wasn’t sent, so it doesn’t count."
 
 msgid "pres.err.timeout"
-msgstr "President didn’t answer in time. This may have counted as a login; one more timeout and Blave stops logging in."
+msgstr "Couldn't reach President, or it didn't answer in time."
 
 msgid "pres.err.nocreds"
 msgstr "The order program on this computer didn’t get the credentials. Close and reopen this window; if it persists, connect again."
@@ -6776,20 +6758,10 @@ msgstr "{n} lot(s) open at President; this computer stays awake."
 msgid "pres.held.sub"
 msgstr "If you quit Blave or shut down, these positions aren’t closed."
 
-msgid "pres.renew.lead"
-msgstr "Your President certificate expires {date}, in {n} days."
 
-msgid "pres.renew.expired"
-msgstr "Your President certificate expired on {date}."
 
-msgid "pres.renew.sub"
-msgstr "After it expires President refuses logins and strategies stop. Renew it, then choose the new one in Auto trading › Connect."
 
-msgid "pres.renew.open"
-msgstr "Renew in 憑證e總管"
 
-msgid "pres.renew.pause"
-msgstr "Pause President strategies"
 
 msgid "pres.first.title"
 msgstr "First real-money start"
@@ -6815,23 +6787,18 @@ msgstr "Quit Blave?"
 msgid "pres.quit.body"
 msgstr "{lots} lot(s) are still open at President. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the President app."
 
-msgid "pres.ev.blocked"
-msgstr "President Futures login blocked — its strategies paused"
 
-msgid "pres.ev.blockedN"
-msgstr "Other exchanges keep trading. Unlock or change the password at President, then in Blave Auto trading › Connect press I’ve unlocked it, or confirm with the new password. President strategies resume by themselves once the login passes."
 
-msgid "pres.ev.restored"
-msgstr "President Futures login is back"
 
-msgid "pres.ev.restoredN"
-msgstr "President strategies resumed and continue from the current gap."
 
-msgid "pres.paused.lead"
-msgstr "President Futures login is blocked; its strategies are paused."
 
-msgid "pres.paused.sub"
-msgstr "Other exchanges keep trading. Unlock or change the password at President, then confirm the login under Connect; strategies resume once it passes."
 
-msgid "pres.paused.go"
-msgstr "Fix the login"
+
+msgid "pres.err.stopNote"
+msgstr "Blave stopped logging in and won't retry by itself. When it's fixed, press Confirm login — each press is one real login. Three wrong passwords lock the President account; if it's locked, ask your broker rep to unlock it."
+
+msgid "pres.err.confirm"
+msgstr "Confirm login"
+
+msgid "pres.err.changePw"
+msgstr "Change the trading password"

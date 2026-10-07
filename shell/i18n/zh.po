@@ -6427,11 +6427,7 @@ msgstr "統一期貨需要 Windows。"
 msgid "pres.mac.hint"
 msgstr "電腦版 Mac 不支援統一。改用 Windows 雲端主機的話，可以從 Mac 用遠端桌面連進主機申請憑證。"
 
-msgid "pres.dual.lead"
-msgstr "這個統一帳號已經連在你的雲端主機上。"
 
-msgid "pres.dual.hint"
-msgstr "兩邊同時用同一個帳戶下單，會互相把對方的單當成手動交易。要在這台電腦用，先到雲端那邊解除綁定。"
 
 msgid "pres.prep.looking"
 msgstr "正在找這台電腦的統一憑證…"
@@ -6685,22 +6681,18 @@ msgid "pres.pw.go"
 msgstr "用新密碼確認"
 
 msgid "pres.err.password"
-msgstr "統一說交易密碼不對。Blave 已先停止登入，免得統一鎖住你的帳號（連錯三次就會鎖）。輸入不同的密碼才會再試。"
+msgstr "統一說交易密碼不對。"
 
 msgid "pres.err.unknown"
-msgstr "統一拒絕了登入，沒有說原因。最常見的是交易密碼不對，或營業員還沒幫這個帳號開 API 權限。Blave 已先停止登入，免得用掉統一的三次機會。"
+msgstr "統一拒絕了登入，沒有說原因。最常見是交易密碼不對，或營業員還沒開 API 權限。"
 
-msgid "pres.err.unknownOnce"
-msgstr "密碼和權限都確認過了，再試一次"
 
-msgid "pres.err.onceHint"
-msgstr "「再試一次」只能用一次，還是不行就要到統一改密碼。"
 
 msgid "pres.err.cert"
-msgstr "這台電腦打不開這張憑證。Blave 已先停止登入，這次沒有連到統一。換一張憑證才會再試。"
+msgstr "這台電腦打不開這張憑證，或憑證密碼不對。"
 
 msgid "pres.err.certMismatch"
-msgstr "這張憑證不是帳號 {acct} 的，可能是家人或另一個帳號的。Blave 已先停止登入；換上這個帳號的憑證，或改帳號，才會再試。"
+msgstr "這張憑證不是帳號 {acct} 的，可能是家人或另一個帳號的。"
 
 msgid "pres.err.certSwap"
 msgstr "換一張憑證"
@@ -6708,26 +6700,16 @@ msgstr "換一張憑證"
 msgid "pres.err.acctSwap"
 msgstr "改帳號"
 
-msgid "pres.err.blocked"
-msgstr "統一已鎖住這個帳號（密碼錯太多次）。到統一 app、網站或請營業員解鎖後，回來按「我已在統一解鎖」。"
 
-msgid "pres.err.unlocked"
-msgstr "我已在統一解鎖"
 
-msgid "pres.err.blocked2"
-msgstr "解鎖後還是登不進去。到統一改交易密碼，再用新密碼確認。"
 
 msgid "pres.err.maint"
-msgstr "統一每天 05:30 到 05:50 維護，這段時間不登入。05:50 之後會自動再確認，不用做什麼。"
+msgstr "統一每天 05:30 到 05:50 維護，這段時間不登入。"
 
-msgid "pres.err.transient"
-msgstr "統一暫時忙不過來，Blave 稍後會自己再試，不算登入次數。"
 
-msgid "pres.err.host"
-msgstr "連不到統一的主機。這次密碼還沒送出，不算登入次數。"
 
 msgid "pres.err.timeout"
-msgstr "統一沒有及時回應。這次可能已經算一次登入；再逾時一次，Blave 就會先停止登入。"
+msgstr "連不到統一，或統一沒有及時回應。"
 
 msgid "pres.err.nocreds"
 msgstr "這台電腦的下單程式沒拿到帳密。關掉這個框再打開一次；還是一樣就重新開通。"
@@ -6780,20 +6762,10 @@ msgstr "統一有 {n} 口在倉，電腦會保持清醒。"
 msgid "pres.held.sub"
 msgstr "結束 Blave 或關機，這些部位不會自動平倉。"
 
-msgid "pres.renew.lead"
-msgstr "統一期貨的憑證 {date} 到期，還有 {n} 天。"
 
-msgid "pres.renew.expired"
-msgstr "統一期貨的憑證已在 {date} 到期。"
 
-msgid "pres.renew.sub"
-msgstr "到期後統一不接受登入，策略會停下來。展延後到自動下單 › 連接，選新的那張。"
 
-msgid "pres.renew.open"
-msgstr "開啟憑證e總管展延"
 
-msgid "pres.renew.pause"
-msgstr "先暫停統一策略"
 
 msgid "pres.first.title"
 msgstr "第一次用真錢下單"
@@ -6819,23 +6791,18 @@ msgstr "結束 Blave？"
 msgid "pres.quit.body"
 msgstr "統一還有 {lots} 口在倉。結束後策略不會再下單，這些部位也不會自動平倉，要自己在統一 app 處理。"
 
-msgid "pres.ev.blocked"
-msgstr "統一期貨登入被封鎖，統一的策略已暫停"
 
-msgid "pres.ev.blockedN"
-msgstr "其他交易所的策略照常。到統一解鎖或改密碼後，在 Blave 自動下單 › 連接統一按「我已在統一解鎖」或用新密碼確認；登入成功後統一的策略會自動恢復。"
 
-msgid "pres.ev.restored"
-msgstr "統一期貨登入恢復了"
 
-msgid "pres.ev.restoredN"
-msgstr "統一的策略已自動恢復，照目前的差額繼續跑。"
 
-msgid "pres.paused.lead"
-msgstr "統一期貨登入被封鎖，統一的策略暫停中。"
 
-msgid "pres.paused.sub"
-msgstr "其他交易所照常。到統一解鎖或改密碼，再到連接統一重新確認登入；成功後自動恢復。"
 
-msgid "pres.paused.go"
-msgstr "處理登入"
+
+msgid "pres.err.stopNote"
+msgstr "Blave 已停止登入，不會自己重試。確認沒問題後按「確認登入」，每按一次就真的登入一次。統一密碼連錯三次會鎖帳號，鎖了請聯絡營業員解鎖。"
+
+msgid "pres.err.confirm"
+msgstr "確認登入"
+
+msgid "pres.err.changePw"
+msgstr "改交易密碼"

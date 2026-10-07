@@ -11,11 +11,11 @@ if (a < 0 || b < 0) { console.log("FAIL  president.js 找不到純邏輯段的�
 const head = src.slice(0, src.indexOf("let PRES = presBlank();"));   // 常數 + presBlank
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.presView = presView; this.presRunning = presRunning; this.presBlank = presBlank; this.presDaysLeft = presDaysLeft;"
-  + " this.presRenewDue = presRenewDue; this.presFirstRows = presFirstRows; this.presMaintOver = presMaintOver; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW;", ctx);
-const { presView, presRunning, presDaysLeft, presRenewDue, presFirstRows, presMaintOver } = ctx;
+  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW;", ctx);
+const { presView, presRunning, presDaysLeft, presFirstRows } = ctx;
 
 const NOW = 1790000000 * 1000, S = NOW / 1000;
-const W = { win: true, dual: false, now: NOW };
+const W = { win: true, now: NOW };
 const ui = (o) => Object.assign(ctx.presBlank(), { phase: "flow" }, o || {});
 const pc = (o) => Object.assign({ v: 1, updated_at: S - 5, busy: null, setup: { status: "ok", at: S - 100 }, cert: { status: "idle", at: null },
   probe: { status: "idle", at: null }, worker: { status: "idle", at: null } }, o || {});
@@ -23,8 +23,7 @@ const view = (c, u, x) => presView(c, u || ui(), x || W);
 const CERT_OK = { status: "ok", at: S - 50, not_after: "2027-09-30T00:00:00Z" };
 
 // 入口
-ok("Mac → d-mac(不管狀態)", view(pc(), ui(), { win: false, dual: false, now: NOW }) === "d-mac");
-ok("雲端已綁統一 → d-dual(Q6 擋)", view(pc(), ui(), { win: true, dual: true, now: NOW }) === "d-dual");
+ok("Mac → d-mac(不管狀態)", view(pc(), ui(), { win: false, now: NOW }) === "d-mac");
 ok("事前準備:還沒看完 PSCCA → d-prep-load", view(null, ui({ phase: "prep" })) === "d-prep-load");
 ok("事前準備:找到憑證 → d-prep", view(null, ui({ phase: "prep", scan: { found: 1, expiry: "2027/09/30", newestAt: 1 } })) === "d-prep");
 ok("事前準備:沒有 → d-prep-none", view(null, ui({ phase: "prep", scan: { found: 0, expiry: null, newestAt: 0 } })) === "d-prep-none");
@@ -53,35 +52,34 @@ ok("測試單成功 → d-t-report;被拒 → d-t-order-fail", view(pc({ env: "t
 ok("測試主機登入失敗 → 同一組畫面(掛在測試那一列)", view(pc({ env: "test", cert: CERT_OK, probe: { status: "failed", state: "unknown", env: "test", at: S - 3 } })) === "d-UNKNOWN");
 ok("切了正式、還沒確認 → 回報那一步(營業員說開好了可以再按);測試主機那次的 ok 不算正式", view(pc({ env: "live", cert: CERT_OK })) === "d-t-report"
   && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 3 } })) === "d-t-report");
-// 正式登入的每一個結果(runtime LOGIN_STATES 的值 + unblock_used / no_credentials)
-const STATES = { password: "d-PASSWORD", unknown: "d-UNKNOWN", cert_mismatch: "d-CERT_MISMATCH", cert: "d-CERT", blocked: "d-BLOCKED",
-  unblock_used: "d-BLOCKED2", maintenance: "d-MAINTENANCE", host: "d-HOST", timeout: "d-TIMEOUT", retry_later: "d-TRANSIENT", no_credentials: "d-NOCREDS" };
+// 登入失敗的每一類(runtime LOGIN_STATES 的值 + no_credentials):只用來顯示,哪一類都停下來等「確認登入」
+const STATES = { password: "d-PASSWORD", unknown: "d-UNKNOWN", cert_mismatch: "d-CERT_MISMATCH", cert: "d-CERT",
+  maintenance: "d-MAINTENANCE", timeout: "d-TIMEOUT", no_credentials: "d-NOCREDS" };
 for (const [st, v] of Object.entries(STATES)) ok(`probe ${st} → ${v}`, view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: st, env: "live", at: S - 3 } })) === v);
 ok("PRES_PROBE_VIEW 只有這幾個(多一個少一個都要補畫面)", Object.keys(ctx.PRES_PROBE_VIEW).sort().join() === Object.keys(STATES).sort().join());
 ok("沒見過的 state → d-UNKNOWN(最保守那一組,講 Blave 已先停止)", view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: "weird", at: S - 3 } })) === "d-UNKNOWN");
 ok("改密碼中(recheck)→ d-pw", view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: "password", at: S - 3 } }), ui({ recheck: true })) === "d-pw");
 ok("正式登入過 → d-finish(自動啟動)", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } })) === "d-finish");
 ok("下單程式好了 → d-done", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "ok", at: S - 3 } })) === "d-done");
-ok("下單程式失敗 → d-finish-fail;被擋(BLOCKED:*)→ 那個類別的畫面,不再自動啟動", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "WORKER_FAILED", at: S - 3 } })) === "d-finish-fail"
-  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "BLOCKED:PASSWORD", at: S - 3 } })) === "d-PASSWORD"
-  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "BLOCKED:UNKNOWN", at: S - 3 } })) === "d-BLOCKED"
-  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 1 }, worker: { status: "failed", error: "BLOCKED:UNKNOWN", at: S - 3 } })) === "d-finish");
-// 橫幅與確認
-const day = 86400 * 1000, iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
-ok("到期剩 28 天 → 橫幅(28);剩 40 天 → 不出;過期 → 負數(過期那一句)", presRenewDue(pc({ cert: { status: "ok", not_after: iso(NOW + 28.5 * day) } }), NOW) === 28
-  && presRenewDue(pc({ cert: { status: "ok", not_after: iso(NOW + 40 * day) } }), NOW) === null && presRenewDue(pc({ cert: { status: "ok", not_after: iso(NOW - 2 * day) } }), NOW) < 0);
-ok("憑證沒好不出到期橫幅", presRenewDue(pc({ cert: { status: "failed", not_after: iso(NOW + day) } }), NOW) === null && presDaysLeft("x", NOW) === null);
+ok("下單程式失敗 → d-finish-fail;它自己登入失敗停了(LOGIN_FAILED:<類別>)→ 那一類的畫面,不自動重啟",
+  view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "WORKER_FAILED", at: S - 3 } })) === "d-finish-fail"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD", at: S - 3 } })) === "d-PASSWORD"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", at: S - 3 } })) === "d-TIMEOUT"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "LOGIN_FAILED:WEIRD", at: S - 3 } })) === "d-UNKNOWN");
+ok("用戶按了「確認登入」而且過了(probe 比那次失敗新)→ 往下啟動", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 1 }, worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD", at: S - 3 } })) === "d-finish");
 ok("第一次真錢的口數列:有金額的策略、排序、四捨五入", JSON.stringify(presFirstRows({ b: 2, a: 1.4, z: 0, x: "3" })) === JSON.stringify([{ name: "a", lots: 1 }, { name: "b", lots: 2 }]));
-const tp = (h, m) => Date.UTC(2026, 9, 8, h - 8, m);   // 台北時間 → UTC ms
-ok("維護 05:30–05:50 台北:05:40 不重試、05:50 起重試", !presMaintOver(tp(5, 40)) && presMaintOver(tp(5, 50)) && presMaintOver(tp(9, 0)));
 
 // Wei 10-07:「收到測試帳號信」只是提醒,不擋「下一步」;憑證e總管做完、偵測到新檔就直接到帳密
 { const sync = src.slice(src.indexOf("function presSyncGo("), src.indexOf("function presPrimary("));
   const scan = src.slice(src.indexOf("async function presScan("), src.indexOf("function presWatch("));
   ok("勾選不擋下一步(presSyncGo 不看 gotMail)", sync.length > 0 && !/gotMail/.test(sync));
   ok("偵測到新憑證 → 直接到帳密表單、停止輪詢", /PRES\.waitTcem = false;[^\n]*PRES\.phase = "form"; presWatch\(false\);/.test(scan)); }
-{ const ban = src.slice(src.indexOf("function presBannerPaint("), src.indexOf("function presHeldLots("));
-  ok("自動下單頁:統一登入被封鎖時有一條橫幅(讀回報的 venue_pause paused_blocked),帶去處理登入", /venue_pause\[PRESIDENT\]\.state === "paused_blocked"/.test(ban) && /cxModalOpen\(null, PRESIDENT\)/.test(ban)); }
+{ const body = src.slice(src.indexOf("function presProbeBody("), src.indexOf("function presTestHostBody("));
+  const adv = src.slice(src.indexOf("function presAdvance("), src.indexOf("// ── DOM"));
+  ok("失敗畫面:一顆「確認登入」(每按一次送一次 probe)+ 停止與三次鎖帳那一句;沒有解鎖鈕", /capBtn\("btn-fill", t\("pres\.err\.confirm"\), \(\) => presStep\("probe"\)/.test(body)
+    && /pres\.err\.stopNote/.test(body) && !/unlock|afterUnlock/i.test(src));
+  ok("沒有任何自動再登入(presAdvance 不送 probe / host)", !/presStep\("probe"/.test(adv) && !/presHost\(/.test(adv));
+  ok("沒有到期橫幅、沒有雙邊檢查", !/presRenewDue|presDual|venue_pause/.test(src)); }
 // 字串:president.js / trade.js 用到的 pres.* 兩語都有
 const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
 const sctx = {}; vm.createContext(sctx); vm.runInContext(strings + "\nthis.S = STRINGS;", sctx);
