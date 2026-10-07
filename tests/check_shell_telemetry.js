@@ -479,8 +479,10 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     // 行為:一個假的狀態檔序列,看出門的事件
     const K = (type, market, bt, funded) => ({ type, market, bt, funded });
     const dirS = fs.mkdtempSync(path.join(TMP_ROOT, "d-")); let clockS = Date.UTC(2026, 9, 7, 3, 0, 0);
-    let x = mk(dirS, { now: () => clockS }); x.tm.installId();   // 先讓狀態檔存在
-    t("kinds 是 null / 不是物件:整輪跳過、不 seed", x.tm.strategySteps(null) === 0 && x.tm.strategySteps([]) === 0 && x.tm.strategySteps("x") === 0 && JSON.parse(fs.readFileSync(path.join(dirS, "telemetry.json"), "utf8")).strat === null);
+    // 升級:舊版(0.1.17 以前)留下的狀態檔有 install_id、沒有 strat
+    fs.writeFileSync(path.join(dirS, "telemetry.json"), JSON.stringify({ install_id: require("crypto").randomUUID(), enabled: true, sent: ["app_first_open"] }));
+    let x = mk(dirS, { now: () => clockS });
+    t("kinds 是 null / 不是物件:整輪跳過、不 seed", x.tm.strategySteps(null) === 0 && x.tm.strategySteps([]) === 0 && x.tm.strategySteps("x") === 0 && JSON.parse(fs.readFileSync(path.join(dirS, "telemetry.json"), "utf8")).strat == null);
     const exist = { old_momo_SECRET: K("A", "crypto", true, true), old_draft: K(null, null, false, false) };
     t("第一次拿到 kinds(升級那一刻):存量全記成送過、一則都不送", x.tm.strategySteps(exist) === 0 && (await tick(), x.sent.length === 0));
     const j0 = JSON.parse(fs.readFileSync(path.join(dirS, "telemetry.json"), "utf8")).strat;
@@ -514,6 +516,14 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     t("關掉追蹤時新的一支:不送", x.tm.strategySteps(s4) === 0);
     x.tm.setEnabled(true); await tick();
     t("…重新打開:不補送那一支(只補啟動那兩則)", x.tm.strategySteps(s4) === 0 && (await tick(), x.sent.slice(before).every((b) => b.event === "app_first_open" || b.event === "app_open")));
+    // 真新安裝(沒有狀態檔):不 seed,引擎一裝好 agent 就寫出的第一支照送
+    { const dN = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), n = mk(dN);
+      const first = { first_SECRET: K("A", "crypto", false, false) };
+      t("新安裝:第一次拿到 kinds 就送第一支的 strat_created(不當存量吞掉)", n.tm.strategySteps(first) === 1 && (await tick(), n.sent.length === 1 && n.sent[0].event === "strat_created" && n.sent[0].props.kind === "A.crypto"));
+      t("…之後同一支不重送", n.tm.strategySteps(first) === 0);
+      const dB = fs.mkdtempSync(path.join(TMP_ROOT, "d-")); fs.writeFileSync(path.join(dB, "telemetry.json"), "{broken");
+      mk(dB).tm.installId();
+      t("狀態檔在但壞了:照升級處理(strat 留 null 等 seed)", JSON.parse(fs.readFileSync(path.join(dB, "telemetry.json"), "utf8")).strat === null); }
     // 送不出去(離線)下一輪再試;有回應(含 4xx)就記
     let mode = "down"; const sentF = [];
     const f = createTelemetry({ dir: fs.mkdtempSync(path.join(TMP_ROOT, "d-")), endpoint: "https://x/t", appVersion: "0.3.1", osVersion: "15.5", lang: "zh-TW",

@@ -185,9 +185,12 @@ function createTelemetry(opts) {
     try { const txt = fs.readFileSync(file, "utf8"); exists = true; raw = JSON.parse(txt); } catch (_) { /* 沒檔 = 新安裝;有檔但壞了 = 見下 */ }
     const ok = raw && typeof raw === "object" && UUID.test(raw.install_id);
     // 檔案在、但讀不出來:不知道用戶關過沒有 → 當成關(「關掉」這個決定不能因為壞檔就靜默變回開)
+    // 沒檔 = 真新安裝、不可能有存量:策略三步從空的開始,不 seed——seed 只給升級(有檔沒 strat),
+    // 否則引擎一裝好 agent 就寫出的第一支會在第一次 tick 被當成存量吞掉
     st = ok ? { install_id: raw.install_id, enabled: raw.enabled !== false && (raw.enabled === true || DEFAULT_ON),
         sent: Array.isArray(raw.sent) ? raw.sent.filter((e) => ONCE.indexOf(e) >= 0) : [], daily: dailyOf(raw.daily), strat: stratOf(raw.strat) }
-      : { install_id: crypto.randomUUID(), enabled: exists ? false : DEFAULT_ON, sent: [], daily: dailyOf(null), strat: null };
+      : { install_id: crypto.randomUUID(), enabled: exists ? false : DEFAULT_ON, sent: [], daily: dailyOf(null),
+        strat: exists ? null : { created: [], backtested: [], deployed: [] } };
     if (!ok) save();
     return st;
   }
@@ -238,7 +241,7 @@ function createTelemetry(opts) {
   }
   /* 策略三步(0.1.18)。kinds = runtime/local_daemon.strategy_kinds 寫進狀態檔的 {資料夾名: {type, market, bt, funded}}(null = 這輪不知道,整輪跳過)。
      資料夾名只在這裡變成雜湊(sha256 前 16 hex)、存在本機狀態檔,不出門;出門的只有 kind。
-     - 第一次拿到 kinds(狀態檔沒有 strat):每支策略已經到的步驟全記成送過、一則都不送——不然升級那一刻每台把存量灌一輪(同 api 第一份回報只 seed)。
+     - 升級後第一次拿到 kinds(狀態檔在、沒有 strat):每支策略已經到的步驟全記成送過、一則都不送——不然升級那一刻每台把存量灌一輪(同 api 第一份回報只 seed)。
      - 之後新到的步驟才送。關著時發生的直接記成送過(重新打開不補);今天同 kind 已經有一列的也直接記(api 反正只留一列)。
      - 有回應就記(含 4xx:api 不收的值重送也不會收);送不出去(離線)下一輪再試。 */
   const stratHash = (name) => crypto.createHash("sha256").update(name).digest("hex").slice(0, 16);
