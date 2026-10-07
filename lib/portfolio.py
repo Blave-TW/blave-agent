@@ -1357,13 +1357,17 @@ def _months_step(r, before, q, month, ts):
 def book_months_of(rows):
     """{symbol: {'YYYY-MM', …} | None} from ledger_positions() rows that carry
     months (TW futures) — what lib.president_contracts.bot_rows and the 群益
-    read take as `book_months`. None for a row whose month was guessed: the
-    calendar keeps deciding that root, as before months were recorded."""
+    read take as `book_months`. None for a row whose month was guessed, and
+    for a row with no months at all (a book replayed with no venue to ask,
+    book_venue() None): the calendar keeps deciding that root, as before
+    months were recorded. Leaving such a row out would read as "the book
+    holds none of this root" and turn the bot's own lots into manual ones."""
     out = {}
     for symbol, row in (rows or {}).items():
-        if 'months' not in row:
+        if 'months' not in row or row.get('months_guess'):
+            out[symbol] = None
             continue
-        out[symbol] = None if row.get('months_guess') else set(row['months'])
+        out[symbol] = set(row['months'])
     return out
 
 

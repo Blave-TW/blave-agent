@@ -490,6 +490,14 @@ keep, residue, manual = pc.bot_rows([R("TXFJ6"), R("TXFL6", -1), R("MXFL6")], No
 check([r["productid"] for r in keep] == ["TXFJ6"] and not residue
       and [r["productid"] for r in manual] == ["TXFL6", "MXFL6"],
       "manual far months are set apart (never raised): the bot's J6 is still kept", (keep, manual))
+from lib.portfolio import book_months_of  # noqa: E402
+bm = book_months_of({"TXF": {"side": "long", "size": 2.0, "qty": 2.0},
+                     "MXF": {"side": "long", "size": 1.0, "qty": 1.0, "months": {"2026-10": 1.0}}})
+keep, residue, manual = pc.bot_rows([R("TXFJ6", 2), R("MXFJ6")], None, T(2026, 10, 1, 10, 0), book_months=bm)
+check(bm == {"TXF": None, "MXF": {"2026-10"}} and not manual
+      and [r["productid"] for r in keep] == ["TXFJ6", "MXFJ6"],
+      "a book row with no months (replayed with no venue) leaves its root to the calendar — "
+      "never 'the book holds none of it', which made the bot's own lots manual", (bm, manual))
 check(raises(op.PresidentError, lambda: op.entry_contract(
     "TXF", ROWS_J + [{"root": "TXF", "productid": "TXFK6", "net": 1}], T(2026, 10, 21, 9, 0))) is not None,
       "two months already held → no entry")
