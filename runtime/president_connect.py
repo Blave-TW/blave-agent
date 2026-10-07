@@ -868,8 +868,10 @@ _SEAL_INFO = b"president-local-seal-v1"
 _SEAL_AAD = b"president-local-v1"
 SEALED_MAX_CHARS = 8192
 LOCAL_RESPAWN_S = 10
-CERT_NOTICE_DAYS = ((0, "president_cert_expired"), (7, "president_cert_expiry_near"),
-                    (31, "president_cert_expiring"))
+# api openclaw/agent_events: broker_cert_expiring (P2) / broker_cert_expiring_live (P1),
+# {venue, days, not_after, stage}; tightest stage first, only that one
+CERT_NOTICE_DAYS = ((0, "broker_cert_expiring_live"), (7, "broker_cert_expiring_live"),
+                    (31, "broker_cert_expiring"))
 _CHILD_FLAGS = {"BLAVE_PRESIDENT_LOCAL": "1", "BLAVE_PRESIDENT_STDIN": "1"}
 _ACCOUNT_RE = re.compile(r"^[0-9]{11}$")
 
@@ -1123,14 +1125,17 @@ def _block_on_file():
 
 
 def _cert_notice(now=None):
-    """One event per threshold per certificate: 31 days (P2), 7 days, expired (P1)."""
+    """Desktop: one event per stage per certificate (31 days P2; 7 days and expired P1),
+    only the tightest stage reached. A cloud box's are judged by the platform from the
+    report's president_connect.cert.not_after (kept as is)."""
     st = read_status() or {}
     cert = st.get("cert") or {}
     exp = cert.get("not_after")
     if cert.get("status") != "ok" or not isinstance(exp, str):
         return
     try:
-        ts = time.mktime(time.strptime(exp, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+        import calendar
+        ts = calendar.timegm(time.strptime(exp, "%Y-%m-%dT%H:%M:%SZ"))
     except ValueError:
         return
     days = (ts - (now or time.time())) / 86400
@@ -1139,13 +1144,16 @@ def _cert_notice(now=None):
         sent = {"not_after": exp, "sent": []}
     for limit, ev in CERT_NOTICE_DAYS:
         if days <= limit:
-            if ev not in sent["sent"]:
+            if limit not in sent["sent"]:
                 try:
                     import events
-                    events.append(ev, {"days": max(0, int(days)), "not_after": exp})
+                    import venue_traits
+                    events.append(ev, {"venue": venue_traits.PRESIDENT, "days": max(0, int(days)), "not_after": exp,
+                                       "stage": limit})
                 except Exception:
                     pass
-                sent["sent"] = sent["sent"] + [ev]
+                # the looser stages count as told: crossing 7 days never fires 31 afterwards
+                sent["sent"] = sorted(set(sent["sent"]) | {x for x, _ in CERT_NOTICE_DAYS if x >= limit})
                 _update(cert_notified=sent)
             return
 

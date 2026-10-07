@@ -378,6 +378,28 @@ pc.local_tick()
 check("8 a block for other credentials is not ours: the worker comes back", spawns == [1], spawns)
 os.remove(pv.BLOCK)
 
+# ── 8b. certificate expiry (desktop): api's broker_cert_expiring(_live), only the tightest stage ──
+evs.clear()
+exp_ts = int(time.time()) + 20 * 86400
+pc._update("cert", status="ok", not_after=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(exp_ts)))
+pc._update(cert_notified=None)
+pc._cert_notice()
+pc._cert_notice()
+check("8b 20 days left: one broker_cert_expiring (P2), stage 31, payload {venue, days, not_after, stage}",
+      len(evs) == 1 and evs[0][0] == "broker_cert_expiring" and evs[0][1]["venue"] == "president"
+      and evs[0][1]["stage"] == 31 and evs[0][1]["days"] in (19, 20), evs)
+evs.clear()
+pc._cert_notice(now=exp_ts - 3 * 86400)
+check("8b 3 days left: broker_cert_expiring_live (P1) stage 7, nothing for 31 again",
+      [(e[0], e[1]["stage"]) for e in evs] == [("broker_cert_expiring_live", 7)], evs)
+evs.clear()
+pc._update(cert_notified=None)
+pc._cert_notice(now=exp_ts + 86400)
+pc._cert_notice(now=exp_ts + 2 * 86400)
+check("8b first seen already expired: only stage 0 (the tightest), once", [(e[0], e[1]["stage"]) for e in evs] == [("broker_cert_expiring_live", 0)], evs)
+check("8b the report keeps cert.not_after as is (the platform judges cloud boxes from it)",
+      pc.read_status()["cert"]["not_after"] == time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(exp_ts)))
+
 # ── 9. unbind / flatten ──
 flat = []
 

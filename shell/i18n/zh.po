@@ -6839,3 +6839,48 @@ msgstr "其他交易所照常。到統一解鎖或改密碼，再到連接統一
 
 msgid "pres.paused.go"
 msgstr "處理登入"
+
+msgid "tr.ov.evLoginBlocked"
+msgstr "{venue}登入被封鎖，只停{venue}的策略"
+
+msgid "tr.ov.evLoginBlockedNote"
+msgstr "其他交易所照常。到{venue}解鎖或改密碼，再到連接重新確認登入；成功後自動恢復。"
+
+msgid "tr.ov.evLoginBack"
+msgstr "{venue}登入恢復，策略已自動接著跑"
+
+msgid "tr.ov.evLoginBackNote"
+msgstr "照目前的差額繼續。"
+
+msgid "tr.ov.evMisorder"
+msgstr "有一筆單跟 Blave 的帳本對不上"
+
+msgid "tr.ov.evMisorderNote"
+msgstr "{sym}：到券商 app 確認部位。"
+
+msgid "tr.ov.evMisorderPaused"
+msgstr "{sym}：已先暫停這個商品，到券商 app 確認部位。"
+
+msgid "tr.ov.evLedgerShort"
+msgstr "{sym} 帳戶比 Blave 的帳本少 {qty}"
+
+msgid "tr.ov.evLedgerShortNote"
+msgstr "可能是在券商 app 手動平掉了；Blave 已照帳戶對齊。"
+
+msgid "tr.ov.evManualMonth"
+msgstr "{contract} 有 {qty} 口不是 Blave 下的，沒算進策略"
+
+msgid "tr.ov.evManualMonthNote"
+msgstr "Blave 不會平也不會加碼你手動的部位。"
+
+msgid "tr.ov.evCertSoon"
+msgstr "{venue}的憑證 {days} 天後到期"
+
+msgid "tr.ov.evCertLive"
+msgstr "{venue}的憑證只剩 {days} 天"
+
+msgid "tr.ov.evCertExpired"
+msgstr "{venue}的憑證已經過期"
+
+msgid "tr.ov.evCertNote"
+msgstr "用憑證e總管展延，再到連接選新的那張；過期後策略會停。"

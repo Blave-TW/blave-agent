@@ -9,7 +9,7 @@ other venues keep trading; once a login passes they resume by themselves.
      file says paused_blocked (what the report carries)
   3. a failed 統一 position read while paused skips the round without counting
      (no three-strikes HALT)
-  4. the login passes (the lib clears the block) → one venue_login_restored, the next
+  4. the login passes (the lib clears the block) → one venue_login_recovered, the next
      round is forced, 統一 legs go out again
   6. the block file lives in <base>/credentials (the agent's guards cover it); the old state/ copy moves over
   5. the lib side: login_paused() is read-only (never takes the released try), only
@@ -27,6 +27,7 @@ os.makedirs("state", exist_ok=True)
 open("manager/portfolio_config.json", "w").write(json.dumps(
     {"self_ledger": False, "exchanges": {"txf_trend": "president", "btc_trend": "binance"}}))
 
+open("manager/last_reconcile.json", "w").write(json.dumps({"actual": {"TXF": {"side": "long", "size": 1}, "MXF": {"size": 0}}}))
 from lib import guard, president_vault  # noqa: E402
 from manager import reconciler as rec  # noqa: E402
 
@@ -53,7 +54,8 @@ guard.trip_halt = lambda *a, **k: halts.append(a)
 # 1 / 2
 for _ in range(3):
     rec._sync_venue_pauses(now=1000)
-check(evs == [("venue_login_blocked", {"venue": "president", "kind": "PASSWORD"})], f"2 one venue_login_blocked per block ({evs})")
+check(evs == [("venue_login_blocked", {"venue": "president", "kind": "password", "symbols": "TXF"})],
+      f"2 one venue_login_blocked per block, payload as api's contract {{venue, kind(lower), symbols}} ({evs})")
 doc = json.load(open(rec.VENUE_PAUSE_PATH))
 check(doc.get("president", {}).get("state") == "paused_blocked" and "binance" not in doc, f"2 state file: 統一 paused_blocked, binance not ({doc})")
 r1 = rec.place_order("TXF", 1, exchange="president")
@@ -80,8 +82,8 @@ check(skipped == 5 and rec._consecutive_failures == before and not halts,
 # 4
 state["kind"] = None
 restored = rec._sync_venue_pauses(now=1000 + 600)
-check(restored is True and evs[-1] == ("venue_login_restored", {"venue": "president", "minutes": 10}),
-      f"4 login passed: one venue_login_restored, the next round forced ({evs[-1]})")
+check(restored is True and evs[-1] == ("venue_login_recovered", {"venue": "president"}),
+      f"4 login passed: one venue_login_recovered, the next round forced ({evs[-1]})")
 check(rec._sync_venue_pauses(now=1700) is False and len(evs) == 2, "4 …once")
 sent.clear()
 rec.place_order("TXF", 1, exchange="president")

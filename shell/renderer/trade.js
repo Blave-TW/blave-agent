@@ -1072,7 +1072,10 @@ function trPushLabels() {
     quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
     presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }),   // 結束攔截:統一還有部位(主行程填口數)
     ev_venue_login_blocked: t("pres.ev.blocked"), ev_venue_login_blocked_n: t("pres.ev.blockedN"),   // 目前只有統一會被封鎖(字是統一的)
-    ev_venue_login_restored: t("pres.ev.restored"), ev_venue_login_restored_n: t("pres.ev.restoredN"),
+    ev_venue_login_recovered: t("pres.ev.restored"), ev_venue_login_recovered_n: t("pres.ev.restoredN"),
+    ev_ledger_misorder: t("tr.ov.evMisorder"), ev_ledger_misorder_n: t("tr.ov.evMisorderNote"),
+    ev_broker_cert_expiring_live: t("tr.ov.evCertLive"), ev_broker_cert_expiring_live_n: t("tr.ov.evCertNote"),
+    ev_broker_cert_expiring: t("tr.ov.evCertSoon"), ev_broker_cert_expiring_n: t("tr.ov.evCertNote"),
     updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
     ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evHaltNote"), ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
@@ -2996,6 +2999,17 @@ function trEventText(type, d) {
   }
   if (type === "exchange_unreachable") return [t("tr.ov.evExUnreach", v), t("tr.ov.evExUnreachNote")];
   if (type === "exchange_recovered") return [t("tr.ov.evExBack", v), null];
+  // 券商線(契約 api openclaw/agent_events):統一登入封鎖／恢復、帳本對不上、憑證到期
+  if (type === "venue_login_blocked") return [t("tr.ov.evLoginBlocked", v), t("tr.ov.evLoginBlockedNote", v)];
+  if (type === "venue_login_recovered") return [t("tr.ov.evLoginBack", v), t("tr.ov.evLoginBackNote")];
+  if (type === "ledger_misorder") return [t("tr.ov.evMisorder"), t(Number(d.paused) === 1 ? "tr.ov.evMisorderPaused" : "tr.ov.evMisorderNote", { sym: trDisplay(String(d.symbol || "")) })];
+  if (type === "ledger_short") return [t("tr.ov.evLedgerShort", { sym: trDisplay(String(d.symbol || "")), qty: d.qty == null ? "—" : String(d.qty) }), t("tr.ov.evLedgerShortNote")];
+  if (type === "manual_month_excluded") return [t("tr.ov.evManualMonth", { contract: String(d.contract || "—"), qty: d.qty == null ? "—" : String(d.qty) }), t("tr.ov.evManualMonthNote")];
+  if (type === "broker_cert_expiring" || type === "broker_cert_expiring_live") {
+    const days = Number(d.days);
+    return [t(type === "broker_cert_expiring_live" && days <= 0 ? "tr.ov.evCertExpired" : type === "broker_cert_expiring_live" ? "tr.ov.evCertLive" : "tr.ov.evCertSoon",
+      { venue: v.venue, days: isFinite(days) ? String(days) : "—" }), t("tr.ov.evCertNote")];
+  }
   if (type === "bar_stale") return [t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v)];
   if (type === "execution_fallback_market") return [t("tr.ov.evExecFallback"), t("tr.ov.evExecFallbackNote")];
   if (type === "execution_interrupted") return [t("tr.ov.evExecInterrupted"), t("tr.ov.evExecInterruptedNote")];

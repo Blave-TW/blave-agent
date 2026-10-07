@@ -6835,3 +6835,48 @@ msgstr "Other exchanges keep trading. Unlock or change the password at President
 
 msgid "pres.paused.go"
 msgstr "Fix the login"
+
+msgid "tr.ov.evLoginBlocked"
+msgstr "{venue} login blocked — only its strategies paused"
+
+msgid "tr.ov.evLoginBlockedNote"
+msgstr "Other exchanges keep trading. Unlock or change the password at {venue}, then confirm the login under Connect; strategies resume once it passes."
+
+msgid "tr.ov.evLoginBack"
+msgstr "{venue} login is back; its strategies resumed"
+
+msgid "tr.ov.evLoginBackNote"
+msgstr "They continue from the current gap."
+
+msgid "tr.ov.evMisorder"
+msgstr "An order did not match Blave's book"
+
+msgid "tr.ov.evMisorderNote"
+msgstr "{sym}: check the position in the broker's app."
+
+msgid "tr.ov.evMisorderPaused"
+msgstr "{sym}: paused for now — check the position in the broker's app."
+
+msgid "tr.ov.evLedgerShort"
+msgstr "{sym}: the account holds {qty} less than Blave's book"
+
+msgid "tr.ov.evLedgerShortNote"
+msgstr "Probably closed by hand in the broker's app; Blave aligned to the account."
+
+msgid "tr.ov.evManualMonth"
+msgstr "{contract}: {qty} lot(s) not placed by Blave were left out of the strategy"
+
+msgid "tr.ov.evManualMonthNote"
+msgstr "Blave won't close or add to your own positions."
+
+msgid "tr.ov.evCertSoon"
+msgstr "{venue} certificate expires in {days} days"
+
+msgid "tr.ov.evCertLive"
+msgstr "{venue} certificate has {days} days left"
+
+msgid "tr.ov.evCertExpired"
+msgstr "{venue} certificate has expired"
+
+msgid "tr.ov.evCertNote"
+msgstr "Renew it in 憑證e總管 and choose the new one under Connect; strategies stop once it expires."
