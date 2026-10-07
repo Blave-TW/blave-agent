@@ -51,7 +51,8 @@ const TRUSTED_SETS = [
 ];
 const TRUSTED_CRED_KEYS = Object.assign({}, ...TRUSTED_SETS);
 // 統一的五行由 president_local 的 cert 步寫(runtime local_bind_gate);解除綁定是安全方向,renderer 可以拿掉
-const PRESIDENT_ENV = ["PRESIDENT_ACCOUNT", "PRESIDENT_PASSWORD", "PRESIDENT_CA_PASSWORD", "PRESIDENT_CA_PATH", "PRESIDENT_URL"];
+// = runtime president_connect._bound_env 寫的六行(稽核 S4:少一行解綁後會留 PRESIDENT_TEST_URL)
+const PRESIDENT_ENV = ["PRESIDENT_ACCOUNT", "PRESIDENT_PASSWORD", "PRESIDENT_CA_PASSWORD", "PRESIDENT_CA_PATH", "PRESIDENT_URL", "PRESIDENT_TEST_URL"];
 const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS), ...PRESIDENT_ENV]);
 const sameKeys = (o, set) => { const a = Object.keys(o), b = Object.keys(set); return a.length === b.length && a.every((k) => Object.prototype.hasOwnProperty.call(set, k)); };
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;

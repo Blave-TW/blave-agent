@@ -2697,7 +2697,7 @@ function trPaintSet() {
 function trEnvNames(id) {
   if (id === PAPER) return ["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"];
   if (id === CAPITAL) return ["capital_api_key", "capital_password"];   // 只有雲端解得了(capUnbindSend;名字由主行程決定)
-  if (id === "president") return ["president_account", "president_password", "president_ca_password", "president_ca_path", "president_url"];   // = daemon.js PRESIDENT_ENV
+  if (id === "president") return ["president_account", "president_password", "president_ca_password", "president_ca_path", "president_url", "president_test_url"];   // = daemon.js PRESIDENT_ENV
   const v = Object.prototype.hasOwnProperty.call(CX_VENUES, id) ? CX_VENUES[id] : null;
   return v ? [v.env + "_API_KEY", v.env + "_SECRET_KEY"].concat(v.pass ? [v.env + "_PASSPHRASE"] : []) : [];
 }

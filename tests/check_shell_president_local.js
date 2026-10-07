@@ -131,7 +131,11 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
     && !D.argsOk("president_local", { op: "cert" }, true) && !D.argsOk("president_local", { op: "cert", sealed: "not base64!" }, true)
     && !D.argsOk("president_local", { op: "probe", after_unlock: false }, true) && !D.argsOk("president_local", { op: "start", x: 1 }, true)
     && !D.argsOk("president_local", { op: "rm" }, true));
-  ok("7 renderer 解得了統一的五行(安全方向)", D.argsOk("credentials_remove", { env: D.PRESIDENT_ENV.map((k) => k.toLowerCase()) }, false));
+  ok("7 renderer 解得了統一的六行(安全方向)", D.argsOk("credentials_remove", { env: D.PRESIDENT_ENV.map((k) => k.toLowerCase()) }, false));
+  { const src = fs.readFileSync(path.join(__dirname, "..", "runtime", "president_connect.py"), "utf8");
+    const be = src.slice(src.indexOf("def _bound_env("), src.indexOf("def local_bind_gate("));
+    const keys = [...be.matchAll(/"(president_[a-z_]+)"|(_ACCOUNT|_SECRET|_CA_PW)\b/g)].map((m) => m[1] || { _ACCOUNT: "president_account", _SECRET: "president_password", _CA_PW: "president_ca_password" }[m[2]]);
+    ok("7 解綁清單 = runtime 綁定時寫的每一行(S4:不留 PRESIDENT_TEST_URL)", [...new Set(keys)].sort().join() === D.PRESIDENT_ENV.map((k) => k.toLowerCase()).sort().join(), [...new Set(keys)]); }
   ok("7 renderer 寫不了統一(綁定只走 cert 步)", !D.argsOk("credentials", { env: { PRESIDENT_ACCOUNT: "70000011234" } }, false)
     && !D.argsOk("credentials", { env: { PRESIDENT_ACCOUNT: "70000011234" } }, true));
   const dh = D.createDaemonHost({ python: "py", script: "x", base: tmp, workspace: tmp, env: {}, spawnFn: () => { throw new Error("no"); } });
