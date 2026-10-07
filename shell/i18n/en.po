@@ -1567,6 +1567,12 @@ msgstr "After you quit and reopen Blave, trading stays paused until you press St
 msgid "tr.means.4"
 msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
 
+msgid "tr.keep.pres"
+msgstr "Only Blave’s own share is traded; don’t trade the same product and month by hand as a strategy — Blave can’t tell them apart."
+
+msgid "tr.means.presNight"
+msgstr "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on."
+
 msgid "tr.tab.over"
 msgstr "Overview"
 
@@ -6736,10 +6742,10 @@ msgid "pres.done.expV"
 msgstr "{date} ({n} days left)"
 
 msgid "pres.done.n1"
-msgstr "Blave places orders only while it’s open. With open positions Blave keeps the computer awake, but if you quit Blave or shut down, positions stay at President and aren’t closed — night session 15:00–05:00 included."
+msgstr "Quit Blave or shut down and orders stop; positions stay at President and aren’t closed."
 
 msgid "pres.done.n2"
-msgstr "Blave manages only its own positions. It won’t close or add to trades you place in the President app; don’t trade the same product and month as a strategy by hand — Blave can’t tell them apart."
+msgstr "Blave manages only its own orders and never touches trades you place by hand."
 
 msgid "pres.done.go"
 msgstr "Set up strategy orders"

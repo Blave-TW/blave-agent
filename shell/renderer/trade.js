@@ -1810,7 +1810,8 @@ function trBookBaseline(r) {
 function trStartNotes(o) {
   const keep = [], items = [], details = [];
   if (o.own && o.real) {
-    keep.push(t(o.book === "none" ? "tr.keep.ownFirst" : o.book === "built" ? "tr.keep.ownBuilt" : "tr.keep.own"));
+    // 統一(這台電腦):同月份手動交易分不清那一句取代加密口吻的三種說法(完成頁那段說明搬過來的,設計師裁定)
+    keep.push(t(o.pres ? "tr.keep.pres" : o.book === "none" ? "tr.keep.ownFirst" : o.book === "built" ? "tr.keep.ownBuilt" : "tr.keep.own"));
     if (o.book === "none") details.push({ label: t("tr.det.own"), text: t("tr.det.ownRule") });
   }
   if (o.cloud) {
@@ -1820,6 +1821,7 @@ function trStartNotes(o) {
     keep.push(t("tr.keep.sleep"));
     if (o.real) keep.push(t("tr.means.4"));
     items.push(t("tr.means.1"), o.paper ? t("tr.means.2p") : t("tr.means.2", { venue: o.venue }), t("tr.means.3"));
+    if (o.pres) items.push(t("tr.means.presNight"));   // 台指期夜盤也會下單、電腦要一直開著
   }
   return { keep, details: details.concat([{ label: t(o.cloud ? "tr.det.cloud" : "tr.det.local"), items }]) };
 }
@@ -1852,7 +1854,7 @@ function trAskStart(opener, presOk) {
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
   const recomputing = trRecomputing(r), rkS = trRestartKind(r);
-  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)) });
+  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), pres: !cloud && trVenueId() === "president" });
   const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
   const money = real ? "Real" : "";
   confirmBox(trCloudBox(Object.assign({
