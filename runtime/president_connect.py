@@ -37,8 +37,8 @@ Steps, in the order the page walks them:
                      year's renewal — then the same vault write and probe as
                      president_pfx. Only the platform copies from PSCCA; no
                      code here runs, drives or logs in to 憑證e總管.
-  president_probe    `lib/president_worker.py --once`; {"after_unlock": true}
-                     runs `--unblock` first (the lib allows that once per block).
+  president_probe    `lib/president_worker.py --once`: the user's 「確認登入」 — one real
+                     login, even after a failed one stopped logins (lib STOP).
                      Logs in to whichever environment is current.
   president_host     {"env": "test"|"live"} or {"url": <as the user pasted it>}:
                      switch environments (the vault's "live"), then the probe.
@@ -114,14 +114,12 @@ CA_SENTINEL = "vault:ca"
 _ACCOUNT, _SECRET, _CA_PW = "president_account", "president_password", "president_ca_password"
 # lib/president_worker.py's LoginError classes → the page's states
 LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "password",
-                "BLOCKED": "blocked", "MAINTENANCE": "maintenance", "HOST": "host",
-                "TIMEOUT": "timeout", "TRANSIENT": "retry_later", "NON_TEST_SERVER": "unknown",
+                "MAINTENANCE": "maintenance", "TIMEOUT": "timeout", "NON_TEST_SERVER": "unknown",
                 "UNKNOWN": "unknown"}
 
 _SECTIONS = ("setup", "cert", "probe", "test_order", "worker")
 # desktop state, this process only (see "desktop app" below)
-_LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None,
-          "cert_check_at": 0.0}
+_LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None}
 _busy = threading.Lock()
 _status_lock = threading.Lock()
 
@@ -530,17 +528,12 @@ def _worker_run(flag, timeout, what):
     return cc._run_quiet([_python(), _paths()["worker"], flag], timeout, what)
 
 
-def run_probe(push=None, after_unlock=False):
+def run_probe(push=None):
     env = current_env()
     _update("probe", status="running", reset=True, env=env)
     if push:
         push()
     p = _paths()
-    if after_unlock:
-        r = _worker_run("--unblock", 60, "unblock")
-        if r.returncode != 0:
-            _update("probe", status="failed", state="unblock_used")
-            _refuse("UNBLOCK_USED", "this block was already released once — re-enter the password")
     started = time.time() - 1
     try:
         rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe").returncode
@@ -650,12 +643,7 @@ def _import_cert(args, push, source, pick):
 
 
 def run_host(args, push=None):
-    """Switch environments, then log in once there. Test-host logins share the
-    production login block: lib/president_vault.fingerprint() hashes the
-    account, passwords and certificate, not the host, so a wrong password on
-    the test host blocks production logins too. Whether 統一 itself counts a
-    test-host failure toward the account's three wrong logins is 待確認 —
-    sharing the block is the conservative reading."""
+    """Switch environments, then log in once there (the user's press: a real login)."""
     target = args["env"] if "env" in args else normalize_host(args["url"])
     if not _env_urls_ok():
         _refuse("REBIND", "bind the account again — this binding predates the test environment")
@@ -768,7 +756,7 @@ _JOBS = {
     "president_setup": lambda args, push: run_setup(push),
     "president_pfx": lambda args, push: run_pfx(args, push),
     "president_pfx_local": lambda args, push: run_pfx_local(args, push),
-    "president_probe": lambda args, push: run_probe(push, after_unlock=bool(args)),
+    "president_probe": lambda args, push: run_probe(push),
     "president_host": lambda args, push: run_host(args, push),
     "president_test_order": lambda args, push: run_test_order(push),
     "president_finish": lambda args, push: run_finish(push),
@@ -791,8 +779,8 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
     if cmd in ("president_pfx", "president_pfx_local"):
         cc.check_pfx_args(args)
     elif cmd == "president_probe":
-        if args and not (set(args) == {"after_unlock"} and args["after_unlock"] is True):
-            _refuse("BAD_ARGS", "president_probe takes nothing or {\"after_unlock\": true}")
+        if args:
+            _refuse("BAD_ARGS", "president_probe takes no arguments")
     elif cmd == "president_host":
         if not (isinstance(args, dict) and len(args) == 1 and (
                 args.get("env") in ("test", "live") or isinstance(args.get("url"), str))):
@@ -837,7 +825,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
 # ── desktop app (BLAVE_AGENT_LOCAL=1, Windows) ───────────────────────────────
 # The commands above refuse in local mode. The app drives its own flow through
 # ONE daemon command only its main process can send, `president_local`
-# {op, sealed?, after_unlock?} (runtime/local_daemon.LOCAL_ONLY):
+# {op, sealed?, env? | url?} (runtime/local_daemon.LOCAL_ONLY):
 #   setup    unitrade into the desktop's venv (the worker's interpreter)
 #   cert     {sealed: account, password, ca_password, live, src}: the file the
 #            user chose (their PSCCA folder, or one they picked) is opened and
@@ -848,7 +836,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
 #   secrets  {sealed: account, password, ca_password, live}: the app re-sends
 #            the bundle after every daemon start; refused unless it is the
 #            account and password .env was bound with
-#   probe    `president_worker.py --once` ({after_unlock: true}: --unblock first)
+#   probe    `president_worker.py --once` (the user's 「確認登入」)
 #   host     {env: test|live} or {url}: the cloud's president_host — switch
 #            environments ("live" in the bundle; a new account starts on the
 #            test host, the same rule as the cloud), then the probe
@@ -868,8 +856,6 @@ _SEAL_INFO = b"president-local-seal-v1"
 _SEAL_AAD = b"president-local-v1"
 SEALED_MAX_CHARS = 8192
 LOCAL_RESPAWN_S = 10
-CERT_NOTICE_DAYS = ((0, "president_cert_expired"), (7, "president_cert_expiry_near"),
-                    (31, "president_cert_expiring"))
 _CHILD_FLAGS = {"BLAVE_PRESIDENT_LOCAL": "1", "BLAVE_PRESIDENT_STDIN": "1"}
 _ACCOUNT_RE = re.compile(r"^[0-9]{11}$")
 
@@ -996,7 +982,8 @@ class _LocalWorker:
     """lib/president_worker.py as this daemon's child (an NSSM LocalSystem
     service on a user's own computer would hand SYSTEM to whatever writes the
     workspace — the agent). Restarted after it exits, except while its login
-    is blocked; stopped with the daemon. Read-only: it never sends an order."""
+    stopped on a failed login (exit LOGIN_STOPPED_EXIT); stopped with the daemon. Read-only:
+    it never sends an order."""
 
     def __init__(self):
         self.proc = None
@@ -1062,9 +1049,10 @@ class _LocalWorker:
         except OSError:
             pass
 
-    def tick(self, blocked):
+    def tick(self):
         with self.lock:
-            if not self.wanted or self.proc is None or self.proc.poll() is None or blocked:
+            if not self.wanted or self.proc is None or self.proc.poll() is None \
+                    or self.proc.poll() == LOGIN_STOPPED_EXIT:
                 return
             if self.respawn_at is None:
                 self.respawn_at = time.time() + LOCAL_RESPAWN_S
@@ -1103,68 +1091,28 @@ class _LocalWorker:
 _LOCAL["worker"] = _LocalWorker()
 
 
-def _block_on_file():
-    """(kind, mark) of the lib's login block for the credentials handed over,
-    or None. mark tells one block from the next (a release and a new failure)."""
-    s = _LOCAL["secrets"]
-    if not s:
-        return None
+LOGIN_STOPPED_EXIT = 3  # = lib/president_worker.LOGIN_STOPPED_EXIT
+
+
+def _login_stop():
+    """The class of the failed login that stopped logins (lib/president_vault STOP), or None."""
     try:
         from lib import president_vault as pv
-        b = pv._read_block()
-        fp = pv.fingerprint({"account": s["account"], "password": s["password"],
-                             "ca_path": _paths()["pfx"], "ca_password": s["ca_password"]})
-        if b.get("fp") != fp or not pv._blocking(b) or b.get("allow_once"):
-            return None
+        return pv.stopped()
     except Exception:
         return None
-    kind = str(b.get("kind") or "UNKNOWN")
-    return kind, f"{fp}:{b.get('at')}"
-
-
-def _cert_notice(now=None):
-    """One event per threshold per certificate: 31 days (P2), 7 days, expired (P1)."""
-    st = read_status() or {}
-    cert = st.get("cert") or {}
-    exp = cert.get("not_after")
-    if cert.get("status") != "ok" or not isinstance(exp, str):
-        return
-    try:
-        ts = time.mktime(time.strptime(exp, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
-    except ValueError:
-        return
-    days = (ts - (now or time.time())) / 86400
-    sent = st.get("cert_notified") if isinstance(st.get("cert_notified"), dict) else {}
-    if sent.get("not_after") != exp:
-        sent = {"not_after": exp, "sent": []}
-    for limit, ev in CERT_NOTICE_DAYS:
-        if days <= limit:
-            if ev not in sent["sent"]:
-                try:
-                    import events
-                    events.append(ev, {"days": max(0, int(days)), "not_after": exp})
-                except Exception:
-                    pass
-                sent["sent"] = sent["sent"] + [ev]
-                _update(cert_notified=sent)
-            return
 
 
 def local_tick():
-    """local_daemon's supervise loop, once a second."""
-    blocked = _block_on_file()
-    if blocked:
-        st = read_status() or {}
-        if st.get("block_seen") != blocked[1]:
-            _update(block_seen=blocked[1])
-            # the page shows why; pausing 統一's strategies and telling the user is
-            # manager/reconciler's job (venue_login_blocked) — the same on a cloud box
-            _update("worker", status="failed", error=f"BLOCKED:{blocked[0]}",
-                    wanted=_LOCAL["worker"].wanted)
-    _LOCAL["worker"].tick(bool(blocked))
-    if time.time() - _LOCAL["cert_check_at"] > 600:
-        _LOCAL["cert_check_at"] = time.time()
-        _cert_notice()
+    """local_daemon's supervise loop, once a second: a worker that stopped on a failed
+    login is not restarted; the page shows the class and a 「確認登入」."""
+    w = _LOCAL["worker"]
+    p = w.proc
+    stopped = p is not None and p.poll() == LOGIN_STOPPED_EXIT
+    if stopped and w.wanted:
+        w.wanted = False
+        _update("worker", status="failed", error=f"LOGIN_FAILED:{_login_stop() or 'UNKNOWN'}", wanted=False)
+    w.tick()
 
 
 def local_info():
@@ -1262,8 +1210,9 @@ def _local_start(push):
                             return {"worker": "ok"}
             except (OSError, ValueError, AttributeError):
                 pass
-            if _block_on_file():
-                _refuse("BLOCKED", "the 統一 login is blocked")
+            p = _LOCAL["worker"].proc
+            if p is not None and p.poll() == LOGIN_STOPPED_EXIT:
+                _refuse("LOGIN_FAILED", "the 統一 worker's login failed")
             time.sleep(2)
         _refuse("WORKER_FAILED", "the 統一 worker wrote no good snapshot in time")
     except Exception as e:
@@ -1285,7 +1234,7 @@ def _local_jobs(op, args):
             _refuse("NO_SECRETS", "the app has not handed over the 統一 credentials")
         if not os.path.isfile(_paths()["pfx"]):
             _refuse("CERT_MISSING", "choose the certificate first")
-        return lambda push: run_probe(push, after_unlock=args.get("after_unlock") is True)
+        return lambda push: run_probe(push)
     if op in ("host", "test_order"):
         if _LOCAL["secrets"] is None:
             _refuse("NO_SECRETS", "the app has not handed over the 統一 credentials")
@@ -1313,14 +1262,12 @@ def local_dispatch(args, deferred_cls, push=None):
         _refuse("NOT_LOCAL", "president_local runs on the desktop app only")
     op = args.get("op") if isinstance(args, dict) else None
     allowed = {"op", "sealed"} if op in ("cert", "secrets") else \
-        {"op", "after_unlock"} if op == "probe" else {"op", "env", "url"} if op == "host" else {"op"}
+        {"op", "env", "url"} if op == "host" else {"op"}
     if op not in LOCAL_OPS or set(args) - allowed:
         _refuse("BAD_ARGS", "unknown president_local shape")
     if op == "host" and not (len(args) == 2 and (args.get("env") in ("test", "live")
                                                  or isinstance(args.get("url"), str))):
         _refuse("BAD_ARGS", "host takes {env: test|live} or {url}")
-    if op == "probe" and "after_unlock" in args and args["after_unlock"] is not True:
-        _refuse("BAD_ARGS", "after_unlock must be true")
     if not IS_WINDOWS:
         _refuse("NOT_WINDOWS", "統一期貨 needs Windows")
     if op == "stop":

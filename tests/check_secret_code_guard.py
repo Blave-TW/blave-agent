@@ -53,7 +53,7 @@ DENY = [
     "tee lib/account_president.py < x", "Copy-Item x.py lib\\capital_worker.py",
 ]
 ALLOW = [
-    "cat lib/president_vault.py", "grep -n live lib/president_vault.py", "python lib/president_worker.py --unblock",
+    "cat lib/president_vault.py", "grep -n live lib/president_vault.py",
     "python lib/president_worker.py --once > tmp/probe.log 2>&1", "python -c \"from lib import order_president\"",
     "python3 manager/flatten.py", "sed -n 1,40p manager/reconciler.py", "cp lib/runner.py tmp/runner_copy.py",
     "echo hi > tmp/notes.txt",

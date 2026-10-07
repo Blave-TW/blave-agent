@@ -1375,12 +1375,12 @@ def build_report():
         report["capital_connect"] = cap
     pres = _read_json(os.path.join(WORKSPACE_STATE, "president_connect.json"))
     if isinstance(pres, dict):
+        # a failed 統一 login stopped logins (lib/president_vault STOP): {kind, at} — the
+        # page shows the class and a 「確認登入」; nothing retries by itself
+        stop = _read_json(os.path.join(WORKSPACE_STATE, "president_login_stop.json"))
+        if isinstance(stop, dict):
+            pres = dict(pres, login_stop={"kind": str(stop.get("kind") or "UNKNOWN"), "at": stop.get("at")})
         report["president_connect"] = pres
-    # venues whose login is blocked: only their strategies are paused
-    # (manager/reconciler _sync_venue_pauses) — {venue: {state: paused_blocked, kind, since}}
-    vp = _read_json(os.path.join(WORKSPACE_STATE, "venue_pause.json"))
-    if isinstance(vp, dict) and vp:
-        report["venue_pause"] = vp
     return report
 
 

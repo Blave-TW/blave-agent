@@ -15,9 +15,12 @@ query is made and the last good snapshot is re-stamped with `maintenance`
 set — the market is closed then, so the carried positions are still true,
 and a planned outage never reads as a dead worker.
 
+A failed login stops it for good (exit LOGIN_STOPPED_EXIT, which its supervisor —
+NSSM's AppExit, the desktop daemon — does not restart) and every later login on
+this machine refuses until the user confirms one (lib/president_vault STOP).
+
 Run: python lib/president_worker.py              (daemon)
-     python lib/president_worker.py --unblock    (the user unlocked the account at the broker)
-     python lib/president_worker.py --once       (one read → state/president_probe.json)
+     python lib/president_worker.py --once       (the user's 「確認登入」: one real login + read → state/president_probe.json)
      python lib/president_worker.py --install    (Windows: NSSM service blave-agent-president)
      python lib/president_worker.py --uninstall
 """
@@ -204,9 +207,19 @@ def _backoff_and_exit(error):
     sys.exit(1)
 
 
-def _login():
+LOGIN_STOPPED_EXIT = 3
+
+
+def _login_stopped(err):
+    """A login failed: write it, exit for good — no backoff, no retry (統一 locks after three)."""
+    _write_snapshot({"ok": False, "error": err, "login_stopped": True})
+    _log(f"login failed — stopped until the user confirms the login again: {err}")
+    sys.exit(LOGIN_STOPPED_EXIT)
+
+
+def _login(explicit=False):
     creds = president_vault.resolve()
-    api = president_vault.login(creds, SDK_LOG_DIR)
+    api = president_vault.login(creds, SDK_LOG_DIR, explicit=explicit)
     accounts = api.get_accounts() or []
     if not accounts:
         api.logout()
@@ -238,7 +251,7 @@ def run_once():
     """Log in, read once, write state/president_probe.json, log out. Exit 0/2."""
     api = None
     try:
-        api, actno = _login()
+        api, actno = _login(explicit=True)
         snap = read_account(api, actno)
         _atomic_write(PROBE_PATH, dict(snap, read_at=time.time(), test_mode=api.test_mode))
         _log(f"probe ok equity={snap['equity']} margin_error={snap['margin_error']} "
@@ -283,10 +296,13 @@ def main():
                 _log(f"tick skipped: {president_vault.sanitize(str(e))}")
                 _sleep_until_refresh()
                 continue
+            except president_vault.LoginError as e:
+                if e.kind == "MAINTENANCE":
+                    _sleep_until_refresh()
+                    continue
+                _login_stopped(president_vault.sanitize(str(e)))
             except Exception as e:
                 if api is None:
-                    # the login itself failed: no second attempt now (a wrong password
-                    # retried in a loop is how accounts get locked) — back off
                     err = president_vault.sanitize(f"{type(e).__name__}: {e}")
                     _log(f"login failed: {err}")
                     _backoff_and_exit(err)
@@ -296,6 +312,8 @@ def main():
                 try:
                     api, actno = _login()
                     snap = read_account(api, actno)
+                except president_vault.LoginError as e2:
+                    _login_stopped(president_vault.sanitize(str(e2)))
                 except Exception as e2:
                     err = president_vault.sanitize(f"{type(e2).__name__}: {e2}")
                     _log(f"tick failed: {president_vault.sanitize(f'{type(e).__name__}: {e}')} / retry: {err}")
@@ -367,6 +385,8 @@ def install():
                  ("set", SERVICE, "AppStdout", log),
                  ("set", SERVICE, "AppStderr", log),
                  ("set", SERVICE, "Start", "SERVICE_AUTO_START"),
+                 # a failed login exits LOGIN_STOPPED_EXIT: NSSM must not restart it into another try
+                 ("set", SERVICE, "AppExit", str(LOGIN_STOPPED_EXIT), "Exit"),
                  ("start", SERVICE)):
         if _nssm(*step, timeout=90) != 0:
             _log(f"install: nssm {step[0]} {step[2] if step[0] == 'set' else ''} failed")
@@ -383,9 +403,6 @@ def install():
         except (OSError, ValueError):
             continue
         if (snap.get("read_at") or 0) >= started:
-            if not snap.get("ok") and any(k in str(snap.get("error")) for k in president_vault.AUTH_CLASSES
-                                          + ("BLOCKED",)):
-                _nssm("stop", SERVICE, timeout=90)  # a refused login must not be retried by restarts
             _log(f"install: service running, first snapshot ok={snap.get('ok')} "
                  f"error={snap.get('error')}")
             return 0 if snap.get("ok") else 2
@@ -410,14 +427,6 @@ if __name__ == "__main__":
         sys.exit(install())
     if "--uninstall" in sys.argv[1:]:
         sys.exit(uninstall())
-    if "--unblock" in sys.argv[1:]:
-        # only after the user says the account is unlocked at the broker
-        state = president_vault.unblock()
-        _log({"released": "unblock: one login allowed; a failure blocks again",
-              "none": "unblock: nothing was blocked",
-              "used": "unblock: refused — this block was already released once; it lifts "
-                      "only when the credentials in .env change"}[state])
-        sys.exit(0 if state != "used" else 2)
     try:
         main()
     except KeyboardInterrupt:  # `nssm stop` sends Ctrl-C; main's finally already logged out

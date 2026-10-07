@@ -135,9 +135,9 @@ the worker is installed only after a login passed on the production host. A rebi
 account keeps its environment; a new account starts in test. Only two hosts are accepted by this
 flow: `test167(.test)pfctrade.com` and `viploginm.pfctrade.com`.
 
-A wrong password on the test host counts in the same local login block as production (the block
-fingerprint has no host). Whether 統一 itself counts test-host failures toward the account's three
-wrong logins is unconfirmed — treat it as if it does.
+A failed login on the test host stops logins exactly like one on production (one stop per machine).
+Whether 統一 itself counts test-host failures toward the account's three wrong logins is
+unconfirmed — treat it as if it does.
 
 Production, only after the broker's production mail AND the user's explicit go-ahead, is switched
 on by the platform's 統一期貨 connect flow (`president_host {"env": "live"}`) — it writes
@@ -159,37 +159,21 @@ is not a test server is refused. The libs read `.env` themselves (one parser: BO
 pair of surrounding quotes removed, nothing else interpreted) — a mapping passed by a caller is
 ignored.
 
-**Wrong credentials are not retried.** 統一 locks an account after three wrong logins. A login the
-broker refuses for the password or the certificate (or one it refuses for a reason the libs can't
-classify, or two timeouts in a row) writes `state/president_login_block.json`; every later login on this machine — worker,
-probe, orders — is refused locally until the credentials in `.env` change. Never delete that file
-to retry. Two ways out, both the user's call:
-- the password / certificate password was wrong → the user gives the right one and `.env` is
-  updated (a changed value lifts the block);
-- the account was locked at the broker and the user says they have unlocked it there (統一's app,
-  online unlock or the broker rep) → run `python lib/president_worker.py --unblock`. That allows
-  exactly **one** login; if it fails on the password or certificate, the block is back at once.
-  **Each block can be released once** — a second `--unblock` answers "refused"; after that only
-  changed credentials in `.env` lift it (and if those fail too, that is a new block with its own
-  one release). **One** refusal the libs cannot classify blocks too: the broker's real
-  wrong-password text has not been observed, and the user's own typo in the app plus two of ours
-  would lock the account. A `.pfx` this identity cannot read is refused as `CERT` and blocked
-  without contacting the broker (the SDK sends the password before it opens the certificate). A
-  released try that could not connect (`HOST` — name resolution, connection refused, connect
-  timeout, TLS) never reached the password check,
-  so it is given back; a `TIMEOUT` — including a connection aborted or reset after the request
-  went out — is spent (the broker may have checked the password), and so is a `TRANSIENT` one.
-  Timeouts count: **two in a row** with no good login between them block (one does not — a short
-  network outage is a run of timeouts on a right password, and `--unblock` answers "none" while
-  only one is on record). `TRANSIENT` — the SDK's own non-credential refusals (per-minute cap
-  `超過每分鐘限制`, the broker's back end down, maintenance) — never counts; the worker backs off
-  and retries. The certificate is fingerprinted by the `.pfx` file's bytes, so rewriting
-  `president_ca_path` with an equivalent spelling (case, `.\`, relative) does not count as new
-  credentials; a renewed certificate does. Never run it on your own initiative — every
-  try counts toward 統一's three. Login errors come back as a
-class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `TRANSIENT`, `MAINTENANCE`,
-`BLOCKED`, `UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
-national id, so it is never passed on. No login is attempted in 05:30–05:50.
+**A failed login stops — nothing retries by itself.** 統一 locks an account after three wrong
+logins. ANY failed login (password, certificate, a refusal the libs can't classify, a timeout or no
+connection) writes `state/president_login_stop.json` with its class; from then on every login on
+this machine — worker, orders, a flatten — is refused locally as `STOPPED` without contacting the
+broker, the worker exits and is not restarted, and the reconciler skips 統一 legs (one log line a
+round, no order_error per leg). Only the user's **「確認登入」** on the connect page (the platform's
+probe, `lib/president_worker.py --once`) tries again — one real login per press — and a login that
+passes removes the stop. Never delete that file, never run `--once` or any login on your own
+initiative: every try counts toward 統一's three. If the account is locked, the user asks their
+broker rep to unlock it, then presses 「確認登入」. A `.pfx` this identity cannot read is refused as
+`CERT` without contacting the broker (the SDK sends the password before it opens the certificate).
+Login errors come back as a class only (`PASSWORD`, `CERT`, `CERT_MISMATCH`, `UNKNOWN`, `TIMEOUT`,
+`MAINTENANCE`; `STOPPED` for a login refused locally) — for display; every class stops the same
+way. The broker's own text for a certificate that is not this account's contains the national id,
+so it is never passed on. No login is attempted in 05:30–05:50 (that is not a failure).
 
 ---
 

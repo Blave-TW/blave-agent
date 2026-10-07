@@ -224,7 +224,7 @@ for order, want in (({"result": "rejected", "sent_at": SENT, "productid": "TMFJ6
                     ({"result": "accepted", "filled": True, "closed": True, "sent_at": SENT},
                      {"state": "accepted", "filled": True, "closed": True}),
                     ({"error": "統一期貨 login failed: PASSWORD"}, {"state": "password"}),
-                    ({"error": "統一期貨 login failed: BLOCKED"}, {"state": "blocked"}),
+                    ({"error": "統一期貨 login failed: TIMEOUT"}, {"state": "timeout"}),
                     ({"result": "live_refused"}, {"state": "live_refused"}),
                     ({"error": "KeyError"}, {"state": "unknown"})):
     ANS = {"order": order}
@@ -299,7 +299,7 @@ sys.modules["unitrade"], sys.modules["unitrade.unitrade"] = ut, utu
 
 
 def script():
-    for path in (P["test_order"], os.path.join(WS, "state", "president_login_block.json")):
+    for path in (P["test_order"], os.path.join(WS, "state", "president_login_stop.json")):
         if os.path.exists(path):
             os.remove(path)
     rc = pto.main(["president_test_order.py", WS])
@@ -344,8 +344,8 @@ SDK["test_mode"], SDK["login_ok"], SDK["login_error"] = True, False, "使用者�
 rc, out = script()
 check("5 a wrong password → the login class only, no order, no broker text",
       not orders and out == {"error": "統一期貨 login failed: PASSWORD", "read_at": out["read_at"]}, out)
-check("5 …and it is the shared login block (the same one production logins check)",
-      json.load(open(os.path.join(WS, "state", "president_login_block.json"))).get("kind") == "PASSWORD")
+check("5 …and it stops logins like any failed login (the same stop production logins check)",
+      json.load(open(os.path.join(WS, "state", "president_login_stop.json"))).get("kind") == "PASSWORD")
 SDK["login_ok"], SDK["login_error"] = True, ""
 check("5 the script imports nothing but the stdlib at module level (the runtime health check imports it)",
       all(not l.startswith(("import president", "from president", "import unitrade", "from unitrade", "from lib",

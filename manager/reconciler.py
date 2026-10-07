@@ -23,7 +23,6 @@ UNREACHABLE_EVENT_AFTER_S = 1800  # 暫時性錯誤連續這麼久 → exchange_
 ACCOUNT_GUARD_PATH = 'state/venue_account.json'  # 帳戶守門:交易所帳號 id + 待確認
 ACCOUNT_ID_READ_PATH = 'state/account_id_read.json'  # 最近一次帳號 id 讀取的結果,給平台看
 OUTAGE_PATH = 'state/reconciler_outage.json'  # 進行中的暫時性斷線(重啟後接續計時)
-VENUE_PAUSE_PATH = 'state/venue_pause.json'   # 登入被封鎖而暫停的 venue(只停那一家的策略;見 _sync_venue_pauses)
 OUTAGE_STALE_S = 3600  # 存檔的最後一次失敗比這還舊 → 載入時丟掉(daemon 停過一陣子)
 ERROR_NOTIFY_COOLDOWN_S = 3600  # 對帳失敗通知最多每小時一則。計時是 per-process、
                                # 不分錯誤種類(一小時內換一種失敗也一樣被壓下,
@@ -649,10 +648,9 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         # the record landed mid-round: the legs left in this round are not sent
         logging.info(f"[reconciler] {symbol}: machine restarted — not sent until 啟動下單")
         return False
-    if exchange and _venue_pause.get(exchange):
-        # that venue's login is blocked: its strategies hold (no order, nothing
-        # counted as a failure); every other venue's legs go on
-        logging.info(f"[reconciler] {symbol}: {exchange} login blocked — not sent until a login passes")
+    if exchange == venue_traits.PRESIDENT and _president_login_stopped():
+        # a 統一 login failed: nothing logs in until the user confirms it (lib/president_vault
+        # STOP) — skip, not an order_error per leg; other venues' legs go on
         return False
     if exchange == venue_traits.PRESIDENT and not _president_credentials_ready():
         # desktop, right after the daemon (re)started: the app hands the passwords over
@@ -1064,69 +1062,27 @@ def _book_hold(venue, verdict, detail, now=None):
     raise ReadSkipped(f"account id unverified: {detail}")
 
 
-# ── 登入被封鎖的 venue:只停那一家(Wei 2026-10-07) ─────────────────────────
-# 統一期貨錯三次會鎖帳號,所以它的 lib 在一次認證失敗就封鎖登入(lib/president_vault)。
-# 封鎖期間只暫停 routing 到那家的策略:place_order 對它回 False、讀持倉失敗當本輪跳過
-# (不計數、不 HALT);其他交易所的策略照跑。用戶在統一解鎖或改密碼、重新確認登入成功
-# (lib 清掉封鎖)之後自動恢復,照差額繼續跑。轉態各發一次事件:venue_login_blocked(P1,
-# cause venue)、venue_login_restored(P2)。狀態落檔給回報(paused_blocked)與重啟後不重發。
-_venue_pause = {}
+_stop_noted_round = None
+_round_no = 0
 
 
-def _venue_login_paused(venue):
-    if venue == venue_traits.PRESIDENT:
-        try:
-            from lib import president_vault
-            return president_vault.login_paused()
-        except Exception as e:
-            logging.warning(f"[reconciler] {venue} login block unreadable ({type(e).__name__})")
-    return None
+def _next_round():
+    global _round_no
+    _round_no += 1
 
 
-def _load_venue_pause():
+def _president_login_stopped():
+    """True while a failed 統一 login has stopped logins. One audit line per round."""
+    global _stop_noted_round
     try:
-        with open(VENUE_PAUSE_PATH) as f:
-            doc = json.load(f)
-    except (OSError, ValueError):
-        return {}
-    return {k: v for k, v in doc.items() if isinstance(v, dict)} if isinstance(doc, dict) else {}
-
-
-def _sync_venue_pauses(now=None):
-    """Once per loop tick: the routed venues whose login is blocked. True when
-    one just came back (its round is due now, not at the next heartbeat)."""
-    global _venue_pause
-    now = time.time() if now is None else now
-    if not _venue_pause:
-        _venue_pause = _load_venue_pause()
-    try:
-        routed = {v for v in (load_portfolio_config().get('exchanges') or {}).values() if v}
+        from lib import president_vault
+        kind = president_vault.stopped()
     except Exception:
         return False
-    new, restored = {}, False
-    for venue in sorted(routed | set(_venue_pause)):
-        kind = _venue_login_paused(venue) if venue in routed else None
-        if kind:
-            new[venue] = _venue_pause.get(venue) or {'state': 'paused_blocked', 'kind': kind, 'since': int(now)}
-            new[venue]['kind'] = kind
-            if venue not in _venue_pause:
-                logging.warning(f"[reconciler] {venue} login blocked ({kind}) — its strategies paused")
-                events.emit('venue_login_blocked', venue=venue, kind=kind)
-        elif venue in _venue_pause:
-            logging.info(f"[reconciler] {venue} login passed — its strategies resume")
-            events.emit('venue_login_restored', venue=venue,
-                        minutes=int((now - _venue_pause[venue].get('since', now)) // 60))
-            restored = True
-    if new != _venue_pause:
-        _venue_pause = new
-        try:
-            tmp = VENUE_PAUSE_PATH + '.tmp'
-            with open(tmp, 'w') as f:
-                json.dump(new, f)
-            os.replace(tmp, VENUE_PAUSE_PATH)
-        except OSError as e:
-            logging.warning(f"[reconciler] venue pause state not persisted: {e}")
-    return restored
+    if kind and _stop_noted_round != _round_no:
+        _stop_noted_round = _round_no
+        logging.warning(f"[reconciler] 統一 login stopped ({kind}) — its legs skipped until the user confirms the login")
+    return bool(kind)
 
 
 def _get_positions_guarded(now=None):
@@ -1150,9 +1106,9 @@ def _get_positions_guarded(now=None):
             venue = _current_venue()
         except Exception as ve:
             logging.warning(f"[reconciler] venue lookup failed ({ve})")
-        if venue and _venue_pause.get(venue):
-            # a blocked login reads nothing; that is the pause, not an outage
-            raise ReadSkipped(f"{venue} login blocked — round skipped", original=e) from e
+        if venue == venue_traits.PRESIDENT and _president_login_stopped():
+            # the worker stopped on a failed login and wrote no snapshot: not an outage
+            raise ReadSkipped(f"{venue} login stopped — round skipped", original=e) from e
         kind = _classify(venue, e)
         _on_read_failure(venue, e, kind, now)
         if kind == venue_errors.TRANSIENT:
@@ -1427,8 +1383,6 @@ if __name__ == '__main__':
         if _idle_logged:
             logging.info("[reconciler] venue bound again — resuming reconciliation")
             _idle_logged = False
-        if _sync_venue_pauses():
-            force_next = True
 
         try:
             # Inside the try: this json-loads portfolio_config.json, which the
@@ -1446,6 +1400,7 @@ if __name__ == '__main__':
         if changed or force_next or heartbeat_due:
             logging.info(f"State changed: {changed} — running reconciliation")
             _round_marker(True)
+            _next_round()
             try:
                 orders = reconcile(
                     get_positions_fn=_get_positions_guarded,

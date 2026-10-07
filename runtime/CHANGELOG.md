@@ -8,32 +8,27 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一登入失敗就停、不自動重試(Wei 10-07 MVP;取代原本的指紋封鎖／一次放行／逾時計次／TRANSIENT)**:任何登入失敗
+  (密碼、憑證、不明、逾時/連不到)寫 `state/president_login_stop.json`(只有類別),之後這台機器上的登入(worker、下單、平倉)
+  一律本機拒 `STOPPED`、不碰券商;worker 以 exit 3 退出,NSSM `AppExit 3 Exit`／電腦版 daemon 都不重起;reconciler 統一腿跳過
+  (一輪一行 log,不記 order_error)。只有用戶按「確認登入」(probe = `president_worker.py --once`,`login(explicit=True)`)才真的
+  再登一次,過了就清掉。`--unblock`、`president_probe {"after_unlock"}`、本機 `after_unlock` 都拿掉;probe state 少了
+  `blocked`／`unblock_used`／`retry_later`／`host`(連不到併進 `timeout`)。回報的 `president_connect` 多 `login_stop: {kind, at}`。
+  測試單(`president_test_order`)也是用戶按的,走 explicit。
 - **電腦版 secrets 補交前統一腿跳過這輪(稽核 B7)**:daemon 剛起來、reconciler 拿到空行時,`lib/president_vault.credentials_ready()`
   為 False,`manager/reconciler.place_order` 對 president 回 False(不記 order_error);交到之後 reconciler 重起就照常。
 - **交 secrets 重起 reconciler 不再卡指令迴圈、不在送單中途砍(稽核 B5/#7)**:`ReconcilerSupervisor.respawn_when_idle` 在自己的執行緒
   寫 `state/execution/hold`(擋新一輪)、等 `state/execution/round` 清掉(最多 600 秒,同 update_workspace)才 respawn。
-- **測試主機過了、第一次切正式回 UNKNOWN 不封鎖(稽核 B6,Wei 拍板)**:`president_host`／本機 `host` 切 live 前若測試主機 probe 已過,
-  那次 probe 帶 `--first-live`;lib `FIRST_LIVE_GRACE` 把那一次 UNKNOWN 記一筆(`live_grace_used`)、不封鎖,回 `LIVE_NOT_OPEN`
-  → probe state **`live_not_open`**(新值,網頁要接);之後的 UNKNOWN 照舊一次就封。PASSWORD／CERT 永不寬限。
-- **有統一部位或有配金額的統一策略時,不准切回測試主機(稽核 B3)**:雲端 `president_host` 與電腦版 `president_local host`
-  在派工前就拒,新錯誤碼 `LIVE_IN_USE`(`live_in_use()`:快照裡的口數、routing 到 president 且金額 > 0 的策略)。
-- **統一登入封鎖檔搬進 `<base>/credentials/`(稽核 S2)**:`lib/president_vault.BLOCK` 跟 vault 同目錄,舊的 `state/` 那份第一次讀時搬過去
-  (連 claim);agent 守門的 Read／Edit 規則與 Bash 擋字加上 `*login_block*`。
 - **拿得到券商密碼的程式 agent 改不得(稽核 S1,Wei 拍板)**:`lib/president_{vault,worker}.py`、`lib/{order,account}_president.py`、
   群益對應四支、`manager/reconciler.py`、`manager/flatten.py` 進每個回合(聊天與排程)的 `Edit(...)` 禁止規則(涵蓋 Write／MultiEdit);
   新 Bash hook `_secret_code_bash_guard_hooks`:重導向進去、sed -i、cp／mv／rm、open(...,'w')、Set-Content、git checkout 這幾支一律拒;
   讀與照常執行放行。減速帶:執行時組出的路徑擋不到(`tests/check_secret_code_guard.py` KNOWN_GAPS)。
-- **登入被封鎖只停那一家(雲端與電腦版共用,manager/reconciler + lib/president_vault.login_paused)**:統一登入被封鎖時,
-  routing 到 president 的策略不下單(`place_order` 回 False)、讀持倉失敗當本輪跳過(不計數、不 HALT),其他交易所照跑;
-  事件 `venue_login_blocked`(P1,cause venue)一次,狀態落 `state/venue_pause.json`,回報帶 `venue_pause`(`paused_blocked`)。
-  解鎖或改密碼後重新確認登入成功(lib 清掉封鎖)→ 自動恢復、照差額繼續,事件 `venue_login_restored`(P2)。不再 HALT。
 - **統一期貨電腦版(Windows 本機)開通**:新的 daemon 指令 `president_local`(`LOCAL_ONLY`,不在 api 清單、只有 app 主行程送得出),
   op = setup／cert／secrets／probe／start／stop。帳密與憑證密碼存在 app 的 safeStorage,經 daemon secret 衍生的 AES-GCM 封裝送進來,
   只留在 daemon 記憶體;要登入的子行程(worker、probe、對帳器、平倉)從 stdin 第一行拿(`BLAVE_PRESIDENT_STDIN`),
   不落檔、不進環境變數,agent 的回合拿不到。cert 步在本機開檔(密碼錯／不是憑證／過期不碰統一)後**複製**到
   `credentials\president.pfx`,.env 經 `_cmd_credentials` 寫哨兵(新閘門 `local_bind_gate`:只收 cert 步剛驗過的那組)。
-  worker 改由 daemon 帶起(不裝 NSSM)、退出自動重起,被擋期間不重起;
-  憑證到期 31／7／0 天各一則事件(`president_cert_expiring`／`_expiry_near`／`_expired`,**通知等級待在 notifications.md 歸級**)。
+  worker 改由 daemon 帶起(不裝 NSSM);它登入失敗就停(exit 3),不重起。
   需要 lib 同版(`president_vault` 的記憶體路徑)。測試環境走雲端同一份 runtime 程式(op host／test_order 叫 `run_probe`、
   `run_test_order`、`normalize_host`;新帳號先測試主機,`start` 只在正式且正式 probe 過,否則 `TEST_ENV`)。
 - **統一測試環境(新指令 `president_host`、`president_test_order`)**:統一要用戶先用營業員給的測試帳號在測試主機下一筆單、
@@ -60,7 +55,6 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 - **統一 SDK log 搬進 `credentials\`**:SDK 自己的 log(登入帳號=身分證號、每張單)從 `state/president_logs/` 改寫到
   `<base>/credentials/president_logs/`(跟 vault 同 ACL);解綁／逐出時連同舊位置一起刪。agent 每個回合禁 `Read(/state/president_logs/**)`,
   排程回合 Bash 守門擋 `president_logs`。
-- **統一 probe 狀態多一個 `retry_later`**:lib 新的 `TRANSIENT` 登入類(每分鐘上限、券商後台連線、維護)對應到它。
 - **統一憑證上傳與綁定不互蓋**:`president_pfx` 的 vault 寫入失敗時把剛落地的 `president.pfx` 刪掉(否則新憑證配舊／空密碼,
   一次 probe 就燒掉券商三次之一);`president_probe`／`president_finish` 的關卡除了憑證檔也要 vault 裡有 `president_ca_password`
   (看鍵在不在,空字串是合法密碼);`divert_credentials` 先拿 `_busy`,有步驟在跑回 `BUSY`;`run_pfx` 寫 vault 前重讀,

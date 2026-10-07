@@ -15,7 +15,7 @@
      login before the certificate → CERT_MISSING (an unreadable pfx is a CERT block in the lib);
      args shapes; one long step at a time; an interrupted step is swept
   4. probe: every login class the lib writes maps to a state, no text passes; a stale probe file
-     is not trusted; after_unlock runs --unblock first and stops on a spent release; finish needs a
+     is not trusted; the probe is one explicit login (--once); finish needs a
      passed probe
   5. upload (needs `cryptography`): the envelope opens once with 統一's own key file (群益's is not
      touched); a wrong certificate password is refused before anything is written (no broker
@@ -237,10 +237,10 @@ d0 = pc.dispatch("president_probe", {}, D)
 check("3 …with its password in the vault (an empty one is a password) the probe runs", isinstance(d0, D))
 d0.cleanup()
 os.remove(P["pfx"])
-check("3 args: no-arg steps refuse args; probe takes only {after_unlock: true}; pfx needs key_id + envelope",
+check("3 args: no-arg steps refuse args (the probe too — no after_unlock any more); pfx needs key_id + envelope",
       refused(lambda: pc.dispatch("president_setup", {"x": 1}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_finish", {"x": 1}, D), "BAD_ARGS") is True
-      and refused(lambda: pc.dispatch("president_probe", {"after_unlock": 1}, D), "BAD_ARGS") is True
+      and refused(lambda: pc.dispatch("president_probe", {"after_unlock": True}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_pfx", {"key_id": "x"}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_pfx_local", {}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_pfx_key", {"x": 1}, D), "BAD_ARGS") is True
@@ -265,8 +265,7 @@ d2.cleanup()
 
 # ── 4. probe / finish ──
 for kind, state in (("CERT_MISMATCH", "cert_mismatch"), ("CERT", "cert"), ("PASSWORD", "password"),
-                    ("BLOCKED", "blocked"), ("MAINTENANCE", "maintenance"), ("HOST", "host"),
-                    ("TIMEOUT", "timeout"), ("TRANSIENT", "retry_later"), ("UNKNOWN", "unknown")):
+                    ("MAINTENANCE", "maintenance"), ("TIMEOUT", "timeout"), ("UNKNOWN", "unknown")):
     err = pv.sanitize(f"LoginError: {pv.LoginError(kind)}")
     got = pc.probe_state({"ok": False, "error": err, "read_at": 1}, 2)
     check(f"4 lib {kind} → {state}, no text", got == {"state": state}, got)
@@ -309,13 +308,9 @@ check("4 a probe file older than this run is not trusted", pc.run_probe()["state
 runs.clear()
 ANS = {"probe": {"ok": False, "error": pv.sanitize(f"LoginError: {pv.LoginError('PASSWORD')}"),
                  "read_at": time.time() + 5}}
-st = pc.run_probe(after_unlock=True)
-check("4 after_unlock: --unblock first, then the probe", runs == [[P["worker"], "--unblock"], [P["worker"], "--once"]]
+st = pc.run_probe()
+check("4 the probe is the user's 「確認登入」: --once only (one real login; no --unblock exists)", runs == [[P["worker"], "--once"]]
       and st == {"state": "password", "env": "live"}, runs)
-runs.clear()
-ANS = {"--unblock": 2}
-check("4 a spent release → UNBLOCK_USED, no login", refused(lambda: pc.run_probe(after_unlock=True), "UNBLOCK_USED") is True
-      and runs == [[P["worker"], "--unblock"]])
 check("4 finish without a passed probe → PROBE_NOT_OK", refused(pc.run_finish, "PROBE_NOT_OK") is True)
 pc._update("probe", state="ok", env="test")
 check("4 finish after a probe that passed on the test host → PROBE_NOT_OK", refused(pc.run_finish, "PROBE_NOT_OK") is True)

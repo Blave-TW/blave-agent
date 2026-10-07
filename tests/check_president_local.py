@@ -14,7 +14,8 @@ in-memory path + local_daemon wiring) — no network, no broker, no Windows.
      process (BLAVE_AGENT_LOCAL=1, no line) cannot log in; nothing is read from a vault file
   7. the reconciler: the supervisor writes the line first and flags it; run_reconciler hands it
      to lib.president_vault before the strategy code runs
-  8. blocked login: no HALT here (the reconciler pauses 統一's strategies), the worker is not restarted while blocked
+  8. a failed login stops logins (every caller), only an explicit 「確認登入」 tries again; the worker exits for good and
+     is never restarted (desktop supervisor, NSSM AppExit)
   9. unbind: worker stopped, passwords dropped, certificate gone; a flatten gets the line on stdin
  10. dispatch: refused off the desktop; president_local is a local-only daemon command
 
@@ -238,7 +239,7 @@ check("6 the line holds the passwords and the environment, not the account", jso
 # ── 6b. test environment (the cloud's president_host / president_test_order, same runtime code) ──
 probes = []
 real_probe = pc.run_probe
-pc.run_probe = lambda push=None, after_unlock=False: probes.append(pc.current_env()) or (
+pc.run_probe = lambda push=None: probes.append(pc.current_env()) or (
     pc._update("probe", status="ok", state="ok", env=pc.current_env()) and {"state": "ok", "env": pc.current_env()})
 check("6b start before production → TEST_ENV (the worker never runs on the test host)",
       code_of(lambda: pc.local_dispatch({"op": "start"}, D).run()) == "TEST_ENV")
@@ -379,8 +380,9 @@ check("7c empty line (not handed over yet): not ready, the 統一 leg is skipped
 got = run_peek2(pc.secret_line())
 check("7c with the line: ready, the leg goes out", got is not None and got["ready"] is True and got["sent"] == 1, got)
 
-# ── 8. blocked login ──
+# ── 8. a failed login stops: no automatic re-login anywhere; 「確認登入」 tries once per press (Wei 10-07 MVP) ──
 from lib import president_vault as pv  # noqa: E402
+import types as _types  # noqa: E402
 
 halts, evs = [], []
 import lib.guard as guard  # noqa: E402
@@ -388,27 +390,118 @@ import events  # noqa: E402
 
 guard.trip_halt = lambda reason, source: halts.append((reason, source))
 events.append = lambda t, payload=None, ts=None: evs.append((t, payload))
-fp = pv.fingerprint({"account": ACCT, "password": PW, "ca_path": P["pfx"], "ca_password": CAPW})
-pv.BLOCK = os.path.join(WS, "state", "president_login_block.json")
-pv._write_block({"fp": fp, "kind": "PASSWORD", "at": 1})
+SDK = {"logins": 0, "ok": False, "error": "使用者密碼錯誤"}
+
+
+class FakeUnitrade:
+    test_mode = False
+
+    def login(self, *a):
+        SDK["logins"] += 1
+        return _types.SimpleNamespace(ok=SDK["ok"], error=SDK["error"])
+
+    def logout(self):
+        pass
+
+    def get_accounts(self):
+        return ["a1"]
+
+
+fake_ut = _types.ModuleType("unitrade")
+fake_utu = _types.ModuleType("unitrade.unitrade")
+fake_utu.Unitrade = FakeUnitrade
+sys.modules["unitrade"], sys.modules["unitrade.unitrade"] = fake_ut, fake_utu
+pv.in_login_maintenance = lambda now=None: False
+creds = {"url": "https://viploginm.pfctrade.com", "account": ACCT, "password": PW, "ca_path": P["pfx"],
+         "ca_password": CAPW, "live": True}
+logdir = os.path.join(BASE, "sdklogs")
+try:
+    os.remove(pv.STOP)
+except OSError:
+    pass
+
+
+def login_kind(**kw):
+    try:
+        pv.login(creds, logdir, **kw)
+    except pv.LoginError as e:
+        return e.kind
+    return "OK"
+
+
+check("8 a wrong password → PASSWORD, one broker login, logins stopped", login_kind() == "PASSWORD" and SDK["logins"] == 1 and pv.stopped() == "PASSWORD")
+for _ in range(3):
+    login_kind()
+check("8 stopped: every later login (worker, order lib, flatten) refuses STOPPED without contacting the broker",
+      login_kind() == "STOPPED" and SDK["logins"] == 1)
+check("8 「確認登入」(explicit) is a real login every press — and a failure keeps the stop",
+      login_kind(explicit=True) == "PASSWORD" and SDK["logins"] == 2 and pv.stopped() == "PASSWORD")
+SDK["ok"] = True
+check("8 a confirmed login that passes lifts the stop", login_kind(explicit=True) == "OK" and SDK["logins"] == 3 and pv.stopped() is None)
+check("8 …then ordinary logins go through again", login_kind() == "OK" and SDK["logins"] == 4)
+SDK["ok"], SDK["error"] = False, "Read timed out"
+check("8 a timeout stops too (any login failure)", login_kind() == "TIMEOUT" and pv.stopped() == "TIMEOUT")
+pv.in_login_maintenance = lambda now=None: True
+os.remove(pv.STOP)
+check("8 maintenance is never attempted and never stops", login_kind() == "MAINTENANCE" and pv.stopped() is None and SDK["logins"] == 5)
+pv.in_login_maintenance = lambda now=None: False
+SDK["error"] = "使用者密碼錯誤"
+
+# the worker: a failed login exits LOGIN_STOPPED_EXIT for good (no backoff, no retry)
+import lib.president_worker as pw  # noqa: E402
+pv.use_local_secrets({"president_password": PW, "president_ca_password": CAPW, "live": True})
+pw.maintenance = lambda now=None: None
+code = None
+n0 = SDK["logins"]
+try:
+    pw.main()
+except SystemExit as e:
+    code = e.code
+snap = json.load(open(pw.OUT_PATH))
+check("8 the worker: one login, then exit LOGIN_STOPPED_EXIT with the class in its snapshot (no sleep, no second try)",
+      code == pw.LOGIN_STOPPED_EXIT == pc.LOGIN_STOPPED_EXIT and SDK["logins"] == n0 + 1 and snap.get("login_stopped") is True
+      and "PASSWORD" in snap.get("error", ""), (code, snap))
+check("8 NSSM is told not to restart that exit (cloud)", '("set", SERVICE, "AppExit", str(LOGIN_STOPPED_EXIT), "Exit")'
+      in open(os.path.join(ROOT, "lib", "president_worker.py"), encoding="utf-8").read())
+check("8 the worker has no --unblock any more", "--unblock" not in open(os.path.join(ROOT, "lib", "president_worker.py"), encoding="utf-8").read())
+
+# the desktop supervisor: an exit 3 is not restarted, the status says why
 w = pc._LOCAL["worker"]
-w.wanted, w.proc = True, type("Dead", (), {"poll": lambda self: 1, "pid": 1})()
+w.wanted, w.proc, w.respawn_at = True, type("Dead", (), {"poll": lambda self: pc.LOGIN_STOPPED_EXIT, "pid": 1})(), 0
 spawns = []
 w._spawn = lambda: spawns.append(1)
-for _ in range(3):
+for _ in range(5):
     pc.local_tick()
-check("8 a block on the desktop: NO HALT and no event from here — pausing 統一's strategies and telling the user "
-      "is manager/reconciler's (venue_login_blocked, tests/check_venue_login_pause.py), the same on a cloud box",
-      not halts and not evs, (halts, evs))
-w.respawn_at = 0
+check("8 desktop: a worker that stopped on a failed login is never restarted", spawns == [] and w.wanted is False)
+check("8 …the status names the class (the page shows it with 「確認登入」)",
+      pc.read_status()["worker"]["error"] == "LOGIN_FAILED:PASSWORD" and pc.read_status()["worker"]["status"] == "failed")
+check("8 no HALT and no event for it", not halts and not evs, (halts, evs))
+w.wanted, w.proc, w.respawn_at = True, type("Dead", (), {"poll": lambda self: 1, "pid": 1})(), 0
 pc.local_tick()
-check("8 the worker is not restarted while blocked", spawns == [])
-check("8 the status says why (the page shows the blocked-login screen)", pc.read_status()["worker"]["error"] == "BLOCKED:PASSWORD")
-pv._write_block({"fp": "other", "kind": "PASSWORD", "at": 3})
-w.respawn_at = 0
-pc.local_tick()
-check("8 a block for other credentials is not ours: the worker comes back", spawns == [1], spawns)
-os.remove(pv.BLOCK)
+check("8 a worker that died of something else (not a login) is restarted as before", spawns == [1])
+
+# the reconciler while stopped: 統一 legs skipped (no order lib call, no order_error flood, one log line a round);
+# other venues' legs go on; the confirmed login lifts it
+import logging as _logging  # noqa: E402
+from manager import reconciler as rec  # noqa: E402
+sent_r, logs = [], []
+rec._HAND_WIRED[rec.venue_traits.PRESIDENT] = (lambda: {}, lambda *a, **k: sent_r.append(("president", a)) or {"executed_qty": 1})
+import lib.execute as _ex  # noqa: E402
+_ex.dispatch_order = lambda symbol, diff, **k: sent_r.append((k.get("exchange"), symbol)) or {"executed_qty": 1}
+_h = _logging.Handler()
+_h.emit = lambda r: logs.append(r.getMessage())
+_logging.getLogger().addHandler(_h)
+pv.use_local_secrets({"president_password": PW, "president_ca_password": CAPW, "live": True})
+rec._next_round()
+r1 = [rec.place_order("TXF", 1, exchange="president") for _ in range(3)]
+r2 = rec.place_order("BTCUSDT", 100, exchange="binance")
+check("8 reconciler: 統一 legs skipped while stopped (False, the order lib never called), a crypto leg goes out",
+      r1 == [False] * 3 and not [x for x in sent_r if x[0] == "president"] and ("binance", "BTCUSDT") in sent_r and r2)
+check("8 …one log line for the round, not one per leg", sum("login stopped" in m for m in logs) == 1, logs)
+os.remove(pv.STOP)
+rec.place_order("TXF", 1, exchange="president")
+check("8 after the confirmed login (stop gone) 統一 legs go out", [x for x in sent_r if x[0] == "president"])
+_logging.getLogger().removeHandler(_h)
 
 # ── 9. unbind / flatten ──
 flat = []

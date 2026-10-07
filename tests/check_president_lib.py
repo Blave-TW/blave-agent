@@ -91,7 +91,7 @@ check(raises(ValueError, lambda: op.near_month("TXF", LISTED, datetime(2026, 10,
 
 # ── 3. host gate + the one .env parser ───────────────────────────────────────
 president_vault.ENV_PATH = os.path.join(TMP, ".env")
-president_vault.BLOCK = os.path.join(TMP, "state", "president_login_block.json")
+president_vault.STOP = os.path.join(TMP, "state", "president_login_stop.json")
 president_vault.VAULT = os.path.join(TMP, "credentials", "president_vault.json")
 os.makedirs(os.path.dirname(president_vault.VAULT), exist_ok=True)
 PFX = os.path.join(TMP, "c.pfx")
@@ -600,7 +600,7 @@ with op._send_lock():
     took = _t.time() - t0
 check(took < 5, "killed holder → the lock is free at once (no stale-file wait)", took)
 
-# ── 6. login: no national id leaves, auth failures block every later login ──
+# ── 6. login: no national id leaves, any failed login stops every later one until the user confirms ──
 import contextlib, io  # noqa: E402
 president_vault.in_login_maintenance = lambda now=None: False
 president_worker.maintenance = lambda now=None: None
@@ -648,102 +648,57 @@ check(rc == 2 and "CERT_MISMATCH" in probe, "certificate/account mismatch is cla
 leaks = [where for where, txt in (("probe", probe), ("stdout", out.getvalue()))
          if "A123456789" in txt or "PSCNET" in txt or "subject" in txt]
 check(not leaks, "the national id / certificate never reaches the probe file or stdout", leaks)
+STOP = president_vault.STOP
 n = FakeUnitrade.logins
 e = raises(president_vault.LoginError, lambda: president_vault.login(creds, president_worker.SDK_LOG_DIR))
-check(e is not None and e.kind == "BLOCKED" and FakeUnitrade.logins == n,
-      "after an auth failure every later login is refused without reaching the broker", e)
-block = open(president_vault.BLOCK, encoding="utf-8").read()
-check("P" not in json.loads(block).values() and "A123456789" not in block, "the block file holds no secret", block)
-envfile(dict(BASE, president_password="P2"))
-LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
-api2 = president_vault.login(president_vault.resolve(), president_worker.SDK_LOG_DIR)
-check(FakeUnitrade.logins == n + 1 and not os.path.exists(president_vault.BLOCK),
-      "changed credentials in .env lift the block; a good login clears it")
-api2.logout()
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="[APGW]something unexpected")]
-creds2 = president_vault.resolve()
-e1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-e = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(e1.kind == "UNKNOWN" and e is not None and e.kind == "BLOCKED" and FakeUnitrade.logins == n + 2,
-      "ONE unclassifiable rejection blocks the next try (the real wrong-password text is unverified)", e)
-os.remove(president_vault.BLOCK)
-n = FakeUnitrade.logins
-LOGIN_SCRIPT[:] = [ValueError("unexpected reply layout")]
-e1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-e = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(e1 is not None and e1.kind == "UNKNOWN" and e is not None and e.kind == "BLOCKED"
-      and FakeUnitrade.logins == n + 1,
-      "ONE unclassifiable failure the SDK RAISED on blocks too (it may have been a wrong password)", (e1, e))
-os.remove(president_vault.BLOCK)
-LOGIN_SCRIPT[:] = [ConnectionError("Failed to establish a new connection")]
-e1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(e1 is not None and e1.kind == "HOST" and not os.path.exists(president_vault.BLOCK),
-      "a raised connection failure (never reached the broker) does not block", e1)
+check(e is not None and e.kind == "STOPPED" and FakeUnitrade.logins == n,
+      "after a failed login every later login is refused without reaching the broker (no automatic retry)", e)
+stop = open(STOP, encoding="utf-8").read()
+check(json.loads(stop).get("kind") == "CERT_MISMATCH" and "A123456789" not in stop and "P" not in json.loads(stop).values(),
+      "the stop file holds the class only — no secret, no id", stop)
 LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤,請重新輸入!")]
-check(raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind
-      == "PASSWORD", "a password answer is PASSWORD")
-os.remove(president_vault.BLOCK)
-for text, kind in (("Timeout", "TIMEOUT"),
-                   ("HTTPSConnectionPool(host='x'): Max retries exceeded (Caused by NewConnectionError("
-                    "'Failed to establish a new connection'))", "HOST"),
-                   ("HTTPSConnectionPool(host='x'): Max retries exceeded (Caused by NameResolutionError())", "HOST"),
-                   ("('Connection aborted.', RemoteDisconnected('Remote end closed connection'))", "TIMEOUT"),
-                   ("HTTPSConnectionPool(host='x'): Read timed out. (read timeout=30)", "TIMEOUT"),
-                   ("HTTPSConnectionPool(host='x'): Max retries exceeded", "TIMEOUT")):
-    os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
-    LOGIN_SCRIPT[:] = [Resp(ok=False, error=text), Resp(ok=True, error="")]
-    got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+with contextlib.redirect_stdout(io.StringIO()):
+    rc = president_worker.run_once()
+check(rc == 2 and FakeUnitrade.logins == n + 1 and "PASSWORD" in open(president_worker.PROBE_PATH, encoding="utf-8").read(),
+      "the user's 「確認登入」 (--once, explicit) reaches the broker even while stopped — once per press")
+envfile(dict(BASE, president_password="P2"))
+check(raises(president_vault.LoginError, lambda: president_vault.login(president_vault.resolve(), president_worker.SDK_LOG_DIR)).kind
+      == "STOPPED", "new credentials in .env do not lift the stop by themselves (only a confirmed login does)")
+LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
+api2 = president_vault.login(president_vault.resolve(), president_worker.SDK_LOG_DIR, explicit=True)
+check(FakeUnitrade.logins == n + 2 and not os.path.exists(STOP), "a confirmed login that passes clears the stop")
+api2.logout()
+creds2 = president_vault.resolve()
+# every failure stops, whatever its class (display only)
+for script, kind in (([Resp(ok=False, error="[APGW]something unexpected")], "UNKNOWN"),
+                     ([ValueError("unexpected reply layout")], "UNKNOWN"),
+                     ([ConnectionError("Failed to establish a new connection")], "TIMEOUT"),
+                     ([Resp(ok=False, error="HTTPSConnectionPool(host='x'): Max retries exceeded (Caused by NameResolutionError())")], "TIMEOUT"),
+                     ([Resp(ok=False, error="('Connection aborted.', RemoteDisconnected('Remote end closed connection'))")], "TIMEOUT"),
+                     ([Resp(ok=False, error="HTTPSConnectionPool(host='x'): Read timed out. (read timeout=30)")], "TIMEOUT"),
+                     ([Resp(ok=False, error="Timeout")], "TIMEOUT"),
+                     ([Resp(ok=False, error="密碼錯誤,請重新輸入!")], "PASSWORD"),
+                     ([Resp(ok=False, error="超過每分鐘限制!")], "UNKNOWN")):
+    os.path.exists(STOP) and os.remove(STOP)
+    LOGIN_SCRIPT[:] = list(script)
     n = FakeUnitrade.logins
-    president_vault.login(creds2, president_worker.SDK_LOG_DIR).logout()
-    check(got.kind == kind and FakeUnitrade.logins == n + 1 and not os.path.exists(president_vault.BLOCK),
-          f"{kind}: one does not block — the next login reaches the broker (and a good one clears the count)")
-
-# TIMEOUT counts: TIMEOUT_BLOCK_AT in a row block (the broker may have checked the password each time);
-# the login thread outliving LOGIN_TIMEOUT_S counts the same as a timeout text
-check(president_vault.TIMEOUT_BLOCK_AT == 2, "two timeouts in a row block", president_vault.TIMEOUT_BLOCK_AT)
+    got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    got2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    check(got.kind == kind and got2.kind == "STOPPED" and FakeUnitrade.logins == n + 1 and president_vault.stopped() == kind,
+          f"{script[0]!r:.60} → {kind}, logins stop (the next one never reaches the broker)")
 real_lt = president_vault.LOGIN_TIMEOUT_S
 president_vault.LOGIN_TIMEOUT_S = 0.2
-for label, script in (("timeout texts", [Resp(ok=False, error="Timeout"), Resp(ok=False, error="Read timed out")]),
-                      ("a login thread that never answers",
-                       [lambda: _t.sleep(0.6) or Resp(ok=True, error=""), lambda: _t.sleep(0.6) or Resp(ok=True, error="")])):
-    os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
-    LOGIN_SCRIPT[:] = list(script)
-    g1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-    check(g1.kind == "TIMEOUT" and president_vault.unblock() == "none",
-          f"{label}: one TIMEOUT on record blocks nothing, so --unblock has nothing to release (and keeps its one use)")
-    g2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-    n = FakeUnitrade.logins
-    g3 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-    check(g2.kind == "TIMEOUT" and g3.kind == "BLOCKED" and FakeUnitrade.logins == n,
-          f"{label}: the second TIMEOUT in a row blocks; the third login never reaches the broker")
-    check(president_vault.unblock() == "released", f"{label}: that block has its one release")
+os.remove(STOP)
+LOGIN_SCRIPT[:] = [lambda: _t.sleep(0.6) or Resp(ok=True, error="")]
+g1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(g1.kind == "TIMEOUT" and president_vault.stopped() == "TIMEOUT", "a login thread that never answers → TIMEOUT, stopped")
 president_vault.LOGIN_TIMEOUT_S = real_lt
-os.remove(president_vault.BLOCK)
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="Timeout"), Resp(ok=False, error="[APGW]something unexpected")]
-raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind
-      == "BLOCKED", "a TIMEOUT then an UNKNOWN: blocked (UNKNOWN still blocks at one)")
-os.remove(president_vault.BLOCK)
-
-# TRANSIENT: the SDK's own non-credential refusals never count (the worker backs off); a text that
-# also names the password stays PASSWORD
-for text in ("超過每分鐘限制!", "DB連線錯誤", "後臺連線失敗", "系統維護中,請稍後再試"):
-    LOGIN_SCRIPT[:] = [Resp(ok=False, error=text), Resp(ok=False, error=text), Resp(ok=True, error="")]
-    g1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-    g2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-    n = FakeUnitrade.logins
-    president_vault.login(creds2, president_worker.SDK_LOG_DIR).logout()
-    check(g1.kind == g2.kind == "TRANSIENT" and FakeUnitrade.logins == n + 1 and not os.path.exists(president_vault.BLOCK),
-          f"{text!r} → TRANSIENT twice, nothing recorded, the next login reaches the broker")
+check(not hasattr(president_vault, "unblock") and not hasattr(president_vault, "TIMEOUT_BLOCK_AT")
+      and not hasattr(president_vault, "TRANSIENT_TEXTS"), "no release-once, no timeout counting, no TRANSIENT class any more")
 check(president_vault.classify("密碼錯誤 系統維護") == "PASSWORD" and president_vault.classify("登入失敗!") == "UNKNOWN",
-      "a credential word wins over a transient one; the SDK's bare 登入失敗 stays UNKNOWN")
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="超過每分鐘限制!")]
-with contextlib.redirect_stdout(io.StringIO()):
-    president_worker.run_once()
-check("TRANSIENT" in open(president_worker.PROBE_PATH, encoding="utf-8").read(), "the probe file names TRANSIENT")
+      "a credential word wins; the SDK's bare 登入失敗 is UNKNOWN")
 
-# the block file and the send marker never write through a symlink parked at a fixed temp name, and
+# the stop file and the send marker never write through a symlink parked at a fixed temp name, and
 # their temps are named the way runtime/atomic_file's start-up sweep recognizes
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 import atomic_file as _af  # noqa: E402
@@ -753,7 +708,7 @@ temps = []
 _real_replace = os.replace
 os.replace = lambda a, b: temps.append(os.path.basename(a)) or _real_replace(a, b)
 try:
-    for target, write in ((president_vault.BLOCK, lambda: president_vault._write_block({"fp": "x"})),
+    for target, write in ((STOP, lambda: president_vault._stop("UNKNOWN")),
                           (op.LAST_ORDER_PATH, lambda: op._mark_order_sent("TMFJ6"))):
         os.path.lexists(target + ".tmp") and os.remove(target + ".tmp")
         os.symlink(bait, target + ".tmp")
@@ -765,91 +720,25 @@ finally:
     os.replace = _real_replace
 check(len(temps) == 2 and all(_af.is_own_temp(t) for t in temps),
       "both temps carry atomic_file's .<name>.<12 hex>.tmp shape (swept after a crash)", temps)
-os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
-# an unreadable .pfx: refused and blocked before any broker contact (the SDK sends the password first)
+os.path.exists(STOP) and os.remove(STOP)
+# an unreadable .pfx: refused and stopped before any broker contact (the SDK sends the password first)
 n = FakeUnitrade.logins
-gone = dict(creds2, ca_path=os.path.join(TMP, "missing.pfx"))
-got = raises(president_vault.LoginError, lambda: president_vault.login(gone, president_worker.SDK_LOG_DIR))
-got2 = raises(president_vault.LoginError, lambda: president_vault.login(gone, president_worker.SDK_LOG_DIR))
-check(got.kind == "CERT" and got2.kind == "BLOCKED" and FakeUnitrade.logins == n,
-      "unreadable .pfx → CERT, blocked, the broker never contacted")
-os.remove(president_vault.BLOCK)
-president_vault.in_login_maintenance = lambda now=None: True
 LOGIN_SCRIPT[:] = []
-got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(got.kind == "MAINTENANCE", "no login is attempted in 05:30–05:50")
+got = raises(president_vault.LoginError, lambda: president_vault.login(dict(creds2, ca_path="/nope.pfx"), president_worker.SDK_LOG_DIR))
+check(got.kind == "CERT" and president_vault.stopped() == "CERT" and FakeUnitrade.logins == n,
+      "unreadable .pfx → CERT, stopped, the broker never contacted")
+os.remove(STOP)
+president_vault.in_login_maintenance = lambda now=None: True
+got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR, explicit=True))
+check(got.kind == "MAINTENANCE" and not os.path.exists(STOP), "no login is attempted in 05:30–05:50, and that is no stop")
+president_vault.in_login_maintenance = lambda now=None: False
 check(president_vault.sanitize("x A123456789 TWA1234567891 {'a': 1} y") == "x <id> <id> {…} y",
       "sanitize strips ids and blobs")
 for pid in ("A123456789", "B287654321", "A800000014", "F912345678", "AB12345678", "TWA8000000141"):
     got = president_vault.sanitize(f"sign error {pid} tail")
     check(pid not in got and president_vault.classify(f":!! {pid}") == "CERT_MISMATCH",
           f"id shape {pid[:2]}… stripped and classified", got)
-
-# unblock: one try, a failure re-blocks, a success clears
-os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
-president_vault.in_login_maintenance = lambda now=None: False
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
-raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(president_vault.unblock() == "released", "--unblock releases the block")
-n = FakeUnitrade.logins
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
-got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-got2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(got.kind == "PASSWORD" and got2.kind == "BLOCKED" and FakeUnitrade.logins == n + 1,
-      "after --unblock exactly one login reaches the broker; its failure blocks again")
-n = FakeUnitrade.logins
-check(president_vault.unblock() == "used"
-      and raises(president_vault.LoginError,
-                 lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind == "BLOCKED"
-      and FakeUnitrade.logins == n,
-      "a second --unblock on the same block is refused; no login reaches the broker")
-os.remove(president_vault.BLOCK)
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
-raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-president_vault.unblock()
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="Max retries exceeded (Caused by NameResolutionError())"),
-                   Resp(ok=True, error="")]
-got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(got.kind == "HOST", "the released try hit a network error")
-president_vault.login(creds2, president_worker.SDK_LOG_DIR).logout()
-check(not os.path.exists(president_vault.BLOCK) and not os.path.exists(president_vault.BLOCK + ".claim"),
-      "a network failure did not spend it: the next login went through and cleared the block")
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
-raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-president_vault.unblock()
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
-raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(president_vault.unblock() == "used", "spent")
 creds3 = dict(creds2, password="P3")
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
-raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
-check(president_vault.unblock() == "released", "new credentials failing → a new block with its own release")
-LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
-president_vault.login(creds3, president_worker.SDK_LOG_DIR).logout()
-
-# a released try that times out is spent (the broker may have checked the password)
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
-raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
-president_vault.unblock()
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="Timeout")]
-got = raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
-n = FakeUnitrade.logins
-got2 = raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
-check(got.kind == "TIMEOUT" and got2.kind == "BLOCKED" and FakeUnitrade.logins == n,
-      "a TIMEOUT on the released try is not given back")
-os.remove(president_vault.BLOCK)
-
-# the certificate is fingerprinted by its bytes: equivalent path spellings are one certificate
-pfx = os.path.join(TMP, "Cert.pfx")
-open(pfx, "wb").write(b"pfx-bytes-1")
-a1 = dict(creds3, ca_path=pfx)
-for alias in (pfx.replace("Cert.pfx", "./Cert.pfx"), os.path.relpath(pfx), pfx + ""):
-    check(president_vault.fingerprint(dict(a1, ca_path=alias)) == president_vault.fingerprint(a1),
-          f"same certificate via {alias!r} → same fingerprint")
-open(pfx, "wb").write(b"pfx-bytes-renewed")
-fp_new = president_vault.fingerprint(a1)
-open(pfx, "wb").write(b"pfx-bytes-1")
-check(fp_new != president_vault.fingerprint(a1), "a renewed certificate (new bytes) is a new fingerprint")
 
 # ── 7. reconciler block: split close / entry, never open behind an unconfirmed close ──
 os.makedirs("manager", exist_ok=True)

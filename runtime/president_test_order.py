@@ -14,7 +14,8 @@ Test environment only, checked three times: president_connect refuses the
 command unless the vault is off production; here the lib's own resolve() must
 say not live and give a *.testpfctrade.com host; and the lib's login refuses a
 server that does not report itself a test server. The login is the lib's one
-login path (president_vault.login: the shared login block, maintenance window,
+login path (president_vault.login, explicit — the user pressed it: one real login per press; a
+failure stops logins like any other; maintenance window,
 logout on every failure).
 
 Only the stdlib and runtime/atomic_file at import time (the runtime health
@@ -115,7 +116,7 @@ def run(workspace):
         return {"result": "live_refused"}
     from unitrade.unitrade import DOrderObject
 
-    api = pv.login(creds, pv.SDK_LOG_DIR)
+    api = pv.login(creds, pv.SDK_LOG_DIR, explicit=True)
     try:
         if api.test_mode is not True:  # login() already refuses this; kept next to the send
             return {"result": "live_refused"}

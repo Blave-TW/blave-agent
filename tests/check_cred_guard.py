@@ -3,7 +3,7 @@
   ① 每個回合的 disallowed 規則含 Read 與 Edit 這幾組檔名,錨在 `//<base>/credentials`(單斜線會錨到
      workspace);Windows 路徑換成 `/c/…`;rdp_password.txt(references/capital-broker.md 叫 agent 讀它)不在裡面
   ② Bash:cat / type / Get-Content / copy / python open / glob 進 credentials 一律 deny,理由回給模型;
-     不碰這些檔的日常指令(含 lib/president_worker.py --unblock、讀 rdp_password.txt、列目錄)放行
+     不碰這些檔的日常指令(含 lib/president_worker.py --once、讀 rdp_password.txt、列目錄)放行
   ③ 每個回合都掛(雲端、電腦版、排程與否)
 這是減速帶不是邊界:拆字、執行時組出檔名、列目錄再接讀取的寫法列在 KNOWN_GAPS,釘住「現在擋不到」。
 
@@ -71,7 +71,7 @@ BLOCK = [
     r"CAT ../Credentials/President_Vault.json",
 ]
 ALLOW = [
-    r"python lib/president_worker.py --unblock", r"python lib/president_worker.py --once",
+    r"python lib/president_worker.py --once",
     r"type C:\blave-agent\credentials\rdp_password.txt", r"dir C:\blave-agent\credentials",
     r"python3 -c \"from lib import president_vault; print(president_vault.in_login_maintenance())\"",
     r"cat state/president_account.json", r"python3 -m lib.report_templates", r"grep -r vault references/",

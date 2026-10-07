@@ -19,24 +19,19 @@ used. The vault keeps this out of the agent's ordinary write path; on a cloud
 box the agent runs as SYSTEM like the worker, so — as lib/capital_vault says
 of its own file — it stops accidents, not a SYSTEM process set on bypassing it.
 
-Login failures leave this module as a CLASS only (CERT_MISMATCH, CERT,
-PASSWORD, HOST, TIMEOUT, TRANSIENT, MAINTENANCE, BLOCKED, UNKNOWN), never the broker's
-text: when the certificate does not match the account, the SDK's message is
-f"{national id} {certificate json}". Every broker string that is passed on
-goes through sanitize() first.
+Login failures leave this module as a CLASS only (PASSWORD, CERT, CERT_MISMATCH,
+UNKNOWN, TIMEOUT, MAINTENANCE — display only), never the broker's text: when the
+certificate does not match the account, the SDK's message is
+f"{national id} {certificate json}". Every broker string that is passed on goes
+through sanitize() first.
 
-統一 locks an account after three wrong logins. A CERT*/PASSWORD answer blocks
-every further login on this machine with the same credentials
-(state/president_login_block.json, keyed on their fingerprint — no secret is
-written) until `.env` changes or the user releases it (`python
-lib/president_worker.py --unblock`, only after they unlocked the account at the
-broker) — a release allows one login, and its failure blocks again; one
-unclassifiable rejection blocks too — whether the broker answered it or the SDK
-raised on it — because an unknown text may be a wrong password. A TIMEOUT
-counts too, and TIMEOUT_BLOCK_AT of them in a row block (see there). A
-TRANSIENT answer (a known non-credential refusal: the per-minute cap, the
-broker's back end down, maintenance) never counts — the worker backs off. No
-login is attempted in the broker's 05:30–05:50 login maintenance.
+統一 locks an account after three wrong logins, so a failed login STOPS logging in
+on this machine: any failure (MAINTENANCE aside — that is never attempted) writes
+state/president_login_stop.json with its class, and every later login refuses
+with STOPPED without contacting the broker — the worker, the order lib, a flatten.
+Only an explicit login (`president_worker.py --once`, the user's 「確認登入」)
+tries again, once per press, and a login that passes removes the stop. There is
+no automatic retry of any kind (Wei 2026-10-07).
 
 Desktop app (Windows): there is no vault file. The app keeps the trading and
 certificate passwords in the OS's encrypted store and hands them to the local
@@ -63,7 +58,6 @@ from urllib.parse import urlparse
 _WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(_WS, ".env")
 VAULT = os.path.join(os.path.dirname(_WS), "credentials", "president_vault.json")
-BLOCK = os.path.join(_WS, "state", "president_login_block.json")
 # The SDK's own logs carry the login id (the national id) and every order: next
 # to the vault (credentials\ — SYSTEM + Administrators on a cloud box), not in
 # the agent's state/. Removed with the vault on unbind.
@@ -76,31 +70,8 @@ LIVE_HOSTS = ("viploginm.pfctrade.com", "viploginb.pfctrade.com")
 TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")  # no ZoneInfo: Windows has no tz database
 LOGIN_MAINTENANCE = (dtime(5, 30), dtime(5, 50))
 _SECRETS = ("president_password", "president_ca_password")
-AUTH_CLASSES = ("CERT_MISMATCH", "CERT", "PASSWORD")
-# The broker's real wrong-password text has not been seen (it is only guessed
-# from the SDK's own strings): an unclassifiable refusal may be a wrong password,
-# and the user's own typo in the app plus two of ours locks the account — so one
-# unclassifiable refusal blocks.
-UNKNOWN_BLOCK_AT = 1
-# A login that timed out may have had its password checked before the broker went
-# quiet, so it counts — but not at 1: a bare "Max retries exceeded" /
-# ConnectionError also lands in TIMEOUT, and the worker re-logs in after every
-# backoff, so a short network outage is a run of TIMEOUTs on a password that is
-# right (the broker counts only wrong ones), and one release per block would be
-# spent on the network. A wrong password normally gets a fast refusal (PASSWORD /
-# UNKNOWN → blocked at once); two timeouts in a row with no good login between
-# them is where "the broker may be counting these" outweighs "the network is
-# flaky". Worst case left: two silent wrong-password checks + the user's own
-# typo in the app = the broker's three.
-TIMEOUT_BLOCK_AT = 2
-# Refusals the SDK names that are not about the credentials (lib core/error and
-# core/httpclient 1.0.0.7: MSG012 per-minute cap, the back end's DB / host link).
-# Matched only after every credential class, so a text that also names the
-# password stays PASSWORD.
-TRANSIENT_TEXTS = ("超過每分鐘限制", "DB連線錯誤", "後臺連線失敗",
-                   # 待補:統一 maintenance text seen outside 05:30–05:50 has not been captured;
-                   # "維護" is the guess until a real one is
-                   "維護")
+# a failed login stops further logins until the user confirms one (see the docstring)
+STOP = os.path.join(_WS, "state", "president_login_stop.json")
 # How long after a send the worker's next read must START before it counts as
 # showing that send (order lib close check, reconciler Read-Your-Writes). An IOC
 # market order is filled or killed at the exchange within the second; what is
@@ -171,12 +142,10 @@ class LoginError(RuntimeError):
         "CERT_MISMATCH": "the certificate does not belong to this account",
         "CERT": "the certificate or its password was refused",
         "PASSWORD": "the account or trading password was refused",
-        "HOST": "the login host could not be reached",
-        "TIMEOUT": "the login did not answer in time",
-        "TRANSIENT": "the broker turned the login away for a reason that is not the credentials — retried later",
+        "TIMEOUT": "the login host could not be reached or did not answer in time",
         "MAINTENANCE": "broker login maintenance (05:30–05:50 Taipei) — not attempted",
-        "BLOCKED": "a previous login with these credentials was refused — not attempted until "
-                   "the credentials in .env change (統一 locks the account after three wrong logins)",
+        "STOPPED": "an earlier login failed — not attempted until the user confirms the login again "
+                   "(統一 locks the account after three wrong logins)",
         "NON_TEST_SERVER": "the server is not a test server and production is not switched on",
         "UNKNOWN": "the broker refused the login",
     }
@@ -208,22 +177,15 @@ def classify(text):
         return "CERT_MISMATCH"
     if "憑證" in s or re.search(r"\b50(1[0-3]|6[01]|70)\b", s):
         return "CERT"
-    # HOST only when the request never reached the broker; a connection that
-    # broke after the request went out (aborted / reset / read timeout) may
-    # already have had its password checked — that is TIMEOUT, never given back
+    # the broker unreachable or silent (no connection, reset, read timeout): one class
     if any(t in s for t in ("Connection aborted", "RemoteDisconnected", "Connection reset",
-                            "ConnectionResetError", "ReadTimeout", "Read timed out")):
-        return "TIMEOUT"
-    if any(t in s for t in ("NameResolution", "getaddrinfo", "Failed to establish", "ConnectTimeout",
-                            "Connection refused", "SSLError", "CERTIFICATE_VERIFY_FAILED")):
-        return "HOST"
-    if (s.strip() == "Timeout" or "timed out" in s.lower() or "Max retries" in s
-            or "ConnectionError" in s):
+                            "ConnectionResetError", "ReadTimeout", "Read timed out", "NameResolution",
+                            "getaddrinfo", "Failed to establish", "ConnectTimeout", "Connection refused",
+                            "SSLError", "CERTIFICATE_VERIFY_FAILED", "Max retries", "ConnectionError")) \
+            or s.strip() == "Timeout" or "timed out" in s.lower():
         return "TIMEOUT"
     if any(t in s for t in ("密碼", "查無此使用者", "使用者密碼未設定")):
         return "PASSWORD"
-    if any(t in s for t in TRANSIENT_TEXTS):
-        return "TRANSIENT"
     return "UNKNOWN"
 
 
@@ -323,7 +285,7 @@ def resolve(_ignored=None):
             "ca_password": creds["president_ca_password"], "live": live()}
 
 
-# ── login block (shared by every caller on this machine) ─────────────────────
+# ── login stop (shared by every caller on this machine) ─────────────────────
 
 def _pfx_readable(ca_path):
     try:
@@ -331,35 +293,6 @@ def _pfx_readable(ca_path):
             return True
     except (OSError, TypeError):
         return False
-
-
-def _cert_identity(ca_path):
-    """The certificate as the fingerprint sees it: a hash of the .pfx file's
-    bytes, so `C:\\x.pfx`, `c:\\x.pfx`, a relative path or an 8.3 short name
-    are one certificate (rewriting .env with an equivalent spelling must not
-    look like new credentials and buy a fresh wrong-password try), while a
-    renewed certificate (new bytes) is a real change. Unreadable file → its
-    normalized absolute path (the SDK will fail on it anyway)."""
-    try:
-        with open(ca_path, "rb") as f:
-            return "sha256:" + hashlib.sha256(f.read()).hexdigest()
-    except OSError:
-        return "path:" + os.path.normcase(os.path.abspath(ca_path or ""))
-
-
-def fingerprint(creds):
-    raw = "\0".join([creds.get("account") or "", creds.get("password") or "",
-                      _cert_identity(creds.get("ca_path")), creds.get("ca_password") or ""])
-    return hashlib.sha256(f"president-login-v2\0{raw}".encode()).hexdigest()[:16]
-
-
-def _read_block():
-    try:
-        with open(BLOCK, encoding="utf-8") as f:
-            b = json.load(f)
-        return b if isinstance(b, dict) else {}
-    except (OSError, ValueError):
-        return {}
 
 
 def replace_json(path, obj):
@@ -384,115 +317,30 @@ def replace_json(path, obj):
         raise
 
 
-def _write_block(block):
+def stopped():
+    """The class of the failed login that stopped logins here, or None."""
     try:
-        replace_json(BLOCK, block)
+        with open(STOP, encoding="utf-8") as f:
+            st = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return "UNKNOWN"  # unreadable is not "clear"
+    return str(st.get("kind") or "UNKNOWN") if isinstance(st, dict) else "UNKNOWN"
+
+
+def _stop(kind):
+    try:
+        replace_json(STOP, {"kind": kind, "at": int(time.time())})
     except OSError:
         pass
-
-
-def _blocking(b):
-    return (b.get("kind") in AUTH_CLASSES or int(b.get("unknown") or 0) >= UNKNOWN_BLOCK_AT
-            or int(b.get("timeout") or 0) >= TIMEOUT_BLOCK_AT)
-
-
-def _gate(creds):
-    """(blocking class or None, whether this call took the released try).
-    A block the user released (unblock()) lets exactly ONE login through: the
-    first caller to create the claim file takes it and the block goes back to
-    closed before the login is even tried, so a failure re-blocks at once and
-    two racing processes cannot both spend a try."""
-    b = _read_block()
-    if b.get("fp") != fingerprint(creds):
-        return None, False
-    if not _blocking(b):
-        return None, False
-    if b.get("allow_once"):
-        try:
-            os.close(os.open(BLOCK + ".claim", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-        except OSError:
-            return b.get("kind") or "UNKNOWN", False  # another process took the one try
-        _write_block(dict(b, allow_once=False))
-        return None, True
-    return b.get("kind") or "UNKNOWN", False
-
-
-def blocked(creds):
-    """The class that blocks a login with exactly these credentials, or None
-    (taking the released try when there is one — see _gate)."""
-    return _gate(creds)[0]
-
-
-def login_paused():
-    """The class blocking logins with the credentials in use, or None. Read-only
-    (never takes the released try). A released block still counts: the venue's
-    strategies stay paused until a login has actually passed (_clear), which
-    is what lifts the pause in manager/reconciler. Credentials that cannot be
-    resolved → None (that failure is reported where the login happens)."""
-    try:
-        creds = resolve()
-    except Exception:
-        return None
-    b = _read_block()
-    if b.get("fp") != fingerprint(creds) or not _blocking(b):
-        return None
-    return str(b.get("kind") or "UNKNOWN")
-
-
-def _give_back_try():
-    """The released try never reached the broker (HOST: no connection), so it
-    did not count there and is not spent here. A TIMEOUT is not given back —
-    the broker may have checked the password before going quiet."""
-    b = _read_block()
-    if b.get("fp"):
-        try:
-            os.remove(BLOCK + ".claim")
-        except OSError:
-            pass
-        _write_block(dict(b, allow_once=True))
-
-
-def unblock():
-    """The user says the account is unlocked at the broker (and the password is
-    right): allow ONE login with the blocked credentials. Once per block — a
-    second release needs changed credentials in .env (which is a new block if
-    they fail too). Returns "released", "none" (nothing blocked) or "used"."""
-    b = _read_block()
-    if not b.get("fp") or not _blocking(b):
-        return "none"  # a single TIMEOUT on record blocks nothing: no release to spend on it
-    if b.get("unblock_used"):
-        return "used"
-    try:
-        os.remove(BLOCK + ".claim")
-    except OSError:
-        pass
-    _write_block(dict(b, allow_once=True, unblock_used=True, released_at=int(time.time())))
-    return "released"
-
-
-def _record(creds, kind):
-    fp = fingerprint(creds)
-    b = _read_block()
-    if b.get("fp") != fp:
-        b = {"fp": fp, "unknown": 0, "timeout": 0}
-    if kind in AUTH_CLASSES:
-        b.update(kind=kind, at=int(time.time()))
-        _write_block(b)
-    elif kind in ("UNKNOWN", "TIMEOUT"):
-        field = kind.lower()
-        b.update(at=int(time.time()), **{field: int(b.get(field) or 0) + 1})
-        if b.get("kind") not in AUTH_CLASSES:
-            b["kind"] = kind
-        _write_block(b)
 
 
 def _clear():
-    # a good login: whatever was blocked was other credentials (or these, now fixed)
-    for path in (BLOCK, BLOCK + ".claim"):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+    try:
+        os.remove(STOP)
+    except OSError:
+        pass
 
 
 def in_login_maintenance(now=None):
@@ -530,23 +378,25 @@ def _pin_sdk_logs(log_dir):
             mod.os = proxy
 
 
-def login(creds, log_dir):
+def login(creds, log_dir, explicit=False):
     """A logged-in Unitrade, or LoginError. The caller MUST logout() in a
     finally: the SDK starts non-daemon threads (logger, sockets) at login and a
     process that exits without logout() hangs on them forever — failed logins
     included (measured on the test host 2026-09-30). The returned object is
-    logged out here on every failure path."""
+    logged out here on every failure path.
+
+    A failure stops logins (STOP); after that only `explicit` (the user's
+    「確認登入」 through president_worker --once) contacts the broker again."""
     import threading
 
     if in_login_maintenance():
         raise LoginError("MAINTENANCE")
-    kind, released_try = _gate(creds)
-    if kind:
-        raise LoginError("BLOCKED")
+    if not explicit and stopped():
+        raise LoginError("STOPPED")
     if not _pfx_readable(creds.get("ca_path")):
         # the SDK sends the password before it opens the certificate: an unreadable
         # .pfx would spend a broker login try for nothing
-        _record(creds, "CERT")
+        _stop("CERT")
         raise LoginError("CERT")
 
     from unitrade.unitrade import Unitrade
@@ -567,24 +417,19 @@ def login(creds, log_dir):
     t.join(LOGIN_TIMEOUT_S)
     try:
         if t.is_alive():
-            _record(creds, "TIMEOUT")
+            _stop("TIMEOUT")
             raise LoginError("TIMEOUT")
         if "exc" in box:
             kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
-            # an SDK that raised on an answer it could not parse may still have
-            # been refused a wrong password: same rule as a refusal it returned
-            _record(creds, kind)
-            if released_try and kind == "HOST":
-                _give_back_try()
+            _stop(kind)
             raise LoginError(kind)
         resp = box["resp"]
         if not resp.ok:
             kind = classify(resp.error)
-            _record(creds, kind)
-            if released_try and kind == "HOST":
-                _give_back_try()
+            _stop(kind)
             raise LoginError(kind)
         if not creds["live"] and api.test_mode is not True:
+            _stop("UNKNOWN")
             raise LoginError("NON_TEST_SERVER")
         _clear()
         return api
