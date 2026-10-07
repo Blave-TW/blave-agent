@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **啟動清暫存檔納入 `<base>/credentials`**:綁定被砍在半途時留下的 vault 明文暫存檔(`.<name>.<12 hex>.tmp`)開機清掉;
+  列不到的目錄(ACL)照舊略過。
 - **統一 SDK log 搬進 `credentials\`**:SDK 自己的 log(登入帳號=身分證號、每張單)從 `state/president_logs/` 改寫到
   `<base>/credentials/president_logs/`(跟 vault 同 ACL);解綁／逐出時連同舊位置一起刪。agent 每個回合禁 `Read(/state/president_logs/**)`,
   排程回合 Bash 守門擋 `president_logs`。

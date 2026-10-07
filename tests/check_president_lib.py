@@ -743,6 +743,28 @@ with contextlib.redirect_stdout(io.StringIO()):
     president_worker.run_once()
 check("TRANSIENT" in open(president_worker.PROBE_PATH, encoding="utf-8").read(), "the probe file names TRANSIENT")
 
+# the block file and the send marker never write through a symlink parked at a fixed temp name, and
+# their temps are named the way runtime/atomic_file's start-up sweep recognizes
+sys.path.insert(0, os.path.join(ROOT, "runtime"))
+import atomic_file as _af  # noqa: E402
+bait = os.path.join(TMP, "bait.txt")
+open(bait, "w").write("untouched")
+temps = []
+_real_replace = os.replace
+os.replace = lambda a, b: temps.append(os.path.basename(a)) or _real_replace(a, b)
+try:
+    for target, write in ((president_vault.BLOCK, lambda: president_vault._write_block({"fp": "x"})),
+                          (op.LAST_ORDER_PATH, lambda: op._mark_order_sent("TMFJ6"))):
+        os.path.lexists(target + ".tmp") and os.remove(target + ".tmp")
+        os.symlink(bait, target + ".tmp")
+        write()
+        check(open(bait).read() == "untouched" and json.load(open(target)),
+              f"{os.path.basename(target)}: a symlink at the fixed .tmp name is not written through")
+        os.remove(target + ".tmp")
+finally:
+    os.replace = _real_replace
+check(len(temps) == 2 and all(_af.is_own_temp(t) for t in temps),
+      "both temps carry atomic_file's .<name>.<12 hex>.tmp shape (swept after a crash)", temps)
 os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
 # an unreadable .pfx: refused and blocked before any broker contact (the SDK sends the password first)
 n = FakeUnitrade.logins

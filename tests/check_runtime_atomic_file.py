@@ -622,9 +622,16 @@ if POSIX:
     for nm in ("..env.cccccccccccc.tmp", "..env.dddddddddddd", os.path.join("manager", ".account.json.eeeeeeeeeeee.tmp")):
         open(os.path.join(ws2, nm), "w").close()
         os.utime(os.path.join(ws2, nm), (time_now - 3600, time_now - 3600))
+    cred2 = os.path.join(BASE, "credentials")
+    os.makedirs(cred2, exist_ok=True)
+    for nm in (".president_vault.json.ffffffffffff.tmp", "president_vault.json"):
+        open(os.path.join(cred2, nm), "w").close()
+        os.utime(os.path.join(cred2, nm), (time_now - 3600, time_now - 3600))
     A.sweep_runtime_temps(ws2, os.path.join(BASE, "boot-state"))
     check(not [x for x in os.listdir(ws2) if x.startswith("..env.")] and os.listdir(os.path.join(ws2, "manager")) == [],
           "sweep_runtime_temps at start: .env temps (both namings) and manager/ temps from a crash are cleared")
+    check(os.listdir(cred2) == ["president_vault.json"],
+          "sweep_runtime_temps: a killed vault write's plaintext temp in <base>/credentials is cleared, the vault kept")
 src_ld = open(os.path.join(RUNTIME, "local_daemon.py"), encoding="utf-8").read()
 src_cl = open(os.path.join(RUNTIME, "command_listener.py"), encoding="utf-8").read()
 check("atomic_file.sweep_runtime_temps(ws," in src_ld and "atomic_file.sweep_runtime_temps(WORKSPACE," in src_cl.split("def run(", 1)[1],

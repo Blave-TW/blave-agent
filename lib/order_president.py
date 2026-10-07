@@ -268,10 +268,7 @@ def _mark_order_sent(productid):
     d = _last_orders()
     d[productid] = time.time()
     try:
-        os.makedirs(os.path.dirname(LAST_ORDER_PATH), exist_ok=True)
-        with open(LAST_ORDER_PATH + ".tmp", "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(LAST_ORDER_PATH + ".tmp", LAST_ORDER_PATH)
+        president_vault.replace_json(LAST_ORDER_PATH, d)
     except OSError as e:
         raise PresidentError(f"the send marker could not be written ({type(e).__name__}) — "
                              f"not sending")

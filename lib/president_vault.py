@@ -46,6 +46,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import time
 from datetime import datetime, time as dtime, timedelta, timezone
 from urllib.parse import urlparse
@@ -291,12 +292,31 @@ def _read_block():
         return {}
 
 
+def replace_json(path, obj):
+    """json.dump to `path` through a fresh O_EXCL temp named the way
+    runtime/atomic_file names its own (.<name>.<12 hex>.tmp), so a symlink the
+    agent parks at a fixed `path.tmp` is never written through and the runtime's
+    start-up sweep clears what a killed writer leaves. lib/ cannot import
+    runtime/atomic_file (separate update channels). Raises OSError."""
+    d, base = os.path.split(path)
+    os.makedirs(d, exist_ok=True)
+    tmp = os.path.join(d, f".{base}.{secrets.token_hex(6)}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o666)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _write_block(block):
     try:
-        os.makedirs(os.path.dirname(BLOCK), exist_ok=True)
-        with open(BLOCK + ".tmp", "w", encoding="utf-8") as f:
-            json.dump(block, f)
-        os.replace(BLOCK + ".tmp", BLOCK)
+        replace_json(BLOCK, block)
     except OSError:
         pass
 
