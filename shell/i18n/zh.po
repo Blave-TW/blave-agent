@@ -6520,6 +6520,18 @@ msgstr "確認登入（測試主機）"
 msgid "pres.s.tprobeDone"
 msgstr "測試主機"
 
+msgid "pres.s.skipped"
+msgstr "已略過"
+
+msgid "pres.t.skip"
+msgstr "已經開過正式權限？直接登入正式主機"
+
+msgid "pres.t.back"
+msgstr "改做測試單"
+
+msgid "pres.err.unknownSkipped"
+msgstr "如果營業員還沒開正式權限，請先做上面的測試單。"
+
 msgid "pres.s.torder"
 msgstr "下一筆測試單"
 

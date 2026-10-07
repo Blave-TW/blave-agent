@@ -1229,9 +1229,20 @@ def _local_host(target, push):
     s = _LOCAL["secrets"]
     if (s["live"] is True) != (target == "live"):
         _set_secrets(dict(s, live=target == "live"))
-    _update(env=target)
+    st = read_status() or {}
     if target == "test":
+        _update(env=target)
         _leave_production()
+        if st.get("test_skipped"):
+            # back from a skip: the switch only — the test-host row takes the login (its URL comes
+            # from the broker's mail), so no probe against the default test host here
+            _update(env=target, test_skipped=False)
+            _update("probe", reset=True, status="idle")
+            return {"env": target, "url": ENV_URLS[target]}
+        return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
+    # production before a test order = the user skipped the test section (production access already
+    # open: a reinstall, a second computer); the pages grey those rows out, they stay doable
+    _update(env=target, test_skipped=(st.get("test_order") or {}).get("status") != "ok")
     return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
 
 

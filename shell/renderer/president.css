@@ -1,6 +1,6 @@
 /* 統一本機開通(mockup-president-onboarding 電腦版 d-*)。清單、欄位、紅字、帳戶列沿用 capital.css 的 .cap-* 與 .cx-* 殼;
    這裡只有統一多出來的:清單裡的段落小標、找到的憑證卡、待辦編號、回報營業員的兩個值、權益數大字、自動下單頁的橫幅。token 同 tokens.css */
-.pres-steps .pres-ph { list-style: none; margin-top: var(--space-4); font-size: 12px; color: var(--ink-3); }
+.pres-steps .pres-ph { list-style: none; margin-top: var(--space-4); font-size: 12px; color: var(--ink-3); display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
 .pres-steps .pres-ph:first-child { margin-top: 0; }
 .pres-report { margin-top: var(--space-8); }
 .pres-report dd { display: flex; align-items: center; gap: var(--space-8); user-select: text; }

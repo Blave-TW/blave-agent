@@ -6516,6 +6516,18 @@ msgstr "Confirm login (test host)"
 msgid "pres.s.tprobeDone"
 msgstr "Test host"
 
+msgid "pres.s.skipped"
+msgstr "Skipped"
+
+msgid "pres.t.skip"
+msgstr "Already have production access? Log in to the production host"
+
+msgid "pres.t.back"
+msgstr "Do the test order instead"
+
+msgid "pres.err.unknownSkipped"
+msgstr "If your rep hasn’t opened production access yet, do the test order above first."
+
 msgid "pres.s.torder"
 msgstr "Place a test order"
 

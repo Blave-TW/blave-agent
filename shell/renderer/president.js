@@ -327,7 +327,9 @@ function presProbeBody(view, pc) {
     : view === "d-CERT" || view === "d-CERT_MISMATCH" ? [capBtn("btn-quiet", t("pres.err.certSwap"), () => { PRES.recert = true; presPaint(); }, "pres-recert"),
       capBtn("btn-quiet", t("pres.err.acctSwap"), () => { PRES.phase = "form"; presPaint(); }, "pres-acct-swap")] : [];
   const notSent = presRowErr("probe");
-  return capFrag(capErr(t(KEY[view] || "pres.err.nocreds", { acct }), view === "d-MAINTENANCE"), notSent ? capErr(notSent) : presP("cx-hint", t("pres.err.stopNote")), capActs(confirm, ...extra));
+  // 略過測試段直接登正式、被拒沒說原因:多半是營業員還沒開正式權限——指回上面的測試單(不自動重試)
+  const skipNote = view === "d-UNKNOWN" && pc && pc.env === "live" && pc.test_skipped === true ? presP("cx-hint", t("pres.err.unknownSkipped")) : null;
+  return capFrag(capErr(t(KEY[view] || "pres.err.nocreds", { acct }), view === "d-MAINTENANCE"), skipNote, notSent ? capErr(notSent) : presP("cx-hint", t("pres.err.stopNote")), capActs(confirm, ...extra));
 }
 function presTestHostBody(view) {
   const f = document.createDocumentFragment();
@@ -360,11 +362,14 @@ function presRows(view, pc) {
   const runRow = (name, right) => (nm ? capRow("cur", name, "", nm) : capRow("run", name, right));
   // 在跑的優先:這台電腦說那一步正在跑,就不講「沒有開始」
   const run = presRunning(pc, PRES.sent, Date.now()), rowErr = (step) => (run === step ? null : presRowErr(step));
-  const ol = trEl("ol", "cap-steps pres-steps"), ph = (k) => { const li = trEl("li", "pres-ph", t(k)); li.setAttribute("aria-hidden", "true"); ol.appendChild(li); };
+  // 段標題:字對讀屏藏(列名自己會講),右邊可掛一顆鈕(測試段的「直接登入正式主機」)
+  const ol = trEl("ol", "cap-steps pres-steps"), ph = (k, btn) => { const li = trEl("li", "pres-ph"), s = trEl("span", "", t(k)); s.setAttribute("aria-hidden", "true"); li.appendChild(s); if (btn) li.appendChild(btn); ol.appendChild(li); };
   const add = (li) => ol.appendChild(li);
   const exp = capDate(cert.not_after), certDone = exp ? t("pres.s.certExp", { date: exp }) : "";
-  const env = pc && pc.env === "live" ? "live" : "test", live = env === "live";
+  const env = pc && pc.env === "live" ? "live" : "test", live = env === "live", off = PRES.busy || presDown() || !!(pc && pc.busy);
   const probe = presSec(pc, "probe"), to = presSec(pc, "test_order");
+  // 已經開過正式權限的(Wei 本人、換電腦重裝):不必走測試段——host live 切正式＋登入,runtime 記 test_skipped、三列標「已略過」(仍可回頭做)
+  const skipped = live && !!pc && pc.test_skipped === true;
   // 登入失敗與改密碼:掛在登入那個環境的那一列
   const probeErr = Object.values(PRES_PROBE_VIEW).concat(["NOCREDS"]).indexOf(view.slice(2)) >= 0;
   const errRow = (name) => view === "d-pw" ? capRow("bad", name, "", presPwBody(t("pres.pw.lead")))
@@ -378,19 +383,21 @@ function presRows(view, pc) {
   if (view === "d-cert-run") add(runRow(t("pres.s.cert"), t("pres.s.certRun")));
   else if (certNow) add(capRow(view === "d-cert-err" || rowErr("cert") ? "bad" : "cur", t("pres.s.cert"), "", presCertBody(pc, view)));
   else add(capRow(cert.status === "ok" ? "done" : "todo", t("pres.s.cert"), cert.status === "ok" ? certDone : ""));
-  ph("pres.ph.test");
-  const tProbed = live || (probe.status === "ok" && probe.env === "test") || to.status === "ok" || to.status === "failed";
+  ph("pres.ph.test", !live && to.status !== "ok" ? capBtn("btn-quiet", t("pres.t.skip"), () => presHost("live"), "pres-skip-test", off) : null);
+  const tProbed = (live && !skipped) || (probe.status === "ok" && probe.env === "test") || to.status === "ok" || to.status === "failed";
+  const skipRight = skipped ? t("pres.s.skipped") : "";
   if (view === "d-t-host") add(capRow(rowErr("probe") ? "bad" : "cur", t("pres.s.tprobe"), "", presTestHostBody(view)));
   else if (view === "d-t-probe") add(runRow(t("pres.s.tprobe"), t("pres.s.probeRun")));
   else if (!live && (probeErr || view === "d-pw")) add(errRow(t("pres.s.tprobe")));
-  else add(capRow(tProbed ? "done" : "todo", t("pres.s.tprobe"), tProbed ? t("pres.s.tprobeDone") : ""));
+  else if (skipped && !tProbed) add(capRow("todo", t("pres.s.tprobe"), skipRight, capActs(capBtn("btn-quiet", t("pres.t.back"), () => presStep("host", { env: "test" }), "pres-test-back", off))));   // 回頭做:只切回測試環境,登入由這一列(信上的網址)來
+  else add(capRow(tProbed ? "done" : "todo", t("pres.s.tprobe"), tProbed ? t("pres.s.tprobeDone") : skipRight));
   if (view === "d-t-order" || view === "d-t-order-fail") add(capRow(view === "d-t-order-fail" || rowErr("test_order") ? "bad" : "cur", t("pres.s.torder"), "", capFrag(capDo(t("pres.t.orderDo")),
     rowErr("test_order") ? capErr(rowErr("test_order")) : view === "d-t-order-fail" ? capErr(t("pres.t.orderFail")) : null,   // 剛沒送出去的錯比上一次的被拒新
     capActs(capBtn(view === "d-t-order-fail" ? "btn-out" : "btn-fill", t(view === "d-t-order-fail" ? "pres.t.orderAgain" : "pres.t.order"), () => presStep("test_order"), "pres-torder", PRES.busy || presDown())))));
   else if (view === "d-t-order-run") add(runRow(t("pres.s.torder"), t("pres.s.orderRun")));
-  else add(capRow(live || to.status === "ok" ? "done" : "todo", t("pres.s.torder"), live || to.status === "ok" ? t("pres.s.torderDone") : ""));
+  else { const d = (live && !skipped) || to.status === "ok"; add(capRow(d ? "done" : "todo", t("pres.s.torder"), d ? t("pres.s.torderDone") : skipRight)); }
   if (view === "d-t-report") add(capRow(rowErr("probe") ? "bad" : "cur", t("pres.s.treport"), "", presTestReportBody(pc)));
-  else add(capRow(live ? "done" : "todo", t("pres.s.treport"), live ? t("pres.s.treportDone") : ""));
+  else add(capRow(live && !skipped ? "done" : "todo", t("pres.s.treport"), live && !skipped ? t("pres.s.treportDone") : skipRight));
   ph("pres.ph.live");
   if (view === "d-probe") add(runRow(t("pres.s.probe"), t("pres.s.probeRun")));
   else if (live && (probeErr || view === "d-pw")) add(errRow(t("pres.s.probe")));

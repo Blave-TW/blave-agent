@@ -334,7 +334,22 @@ pc.local_dispatch({"op": "host", "env": "live"}, D).run()
 check("6b 營業員說開好了 = host live: bundle switched, probe on production",
       pc._LOCAL["secrets"]["live"] is True and probes[-1] == "live" and pc.read_status()["env"] == "live")
 check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order"}, D)) == "LIVE_ENV")
+# 6e. production access already open (a reinstall, a second computer): host live straight from the test section
+pc._update("test_order", status="ok")
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6e host live after a test order: not a skip", pc.read_status().get("test_skipped") is False)
+pc._update("test_order", reset=True, status="idle")
 pc.local_dispatch({"op": "host", "env": "test"}, D).run()
+n_probes = len(probes)
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6e host live with no test order = the test section skipped: env live, probe on production, test_skipped",
+      pc.read_status()["env"] == "live" and probes[-1] == "live" and pc.read_status().get("test_skipped") is True
+      and pc._LOCAL["secrets"]["live"] is True)
+n_probes = len(probes)
+pc.local_dispatch({"op": "host", "env": "test"}, D).run()
+check("6e …back to the test section from a skip: the switch only (no login against the default test host), rows doable again",
+      pc.read_status()["env"] == "test" and len(probes) == n_probes and pc.read_status().get("test_skipped") is False
+      and pc.read_status()["probe"]["status"] == "idle", json.dumps(pc.read_status()["probe"]))
 pc.run_probe, pc.run_test_order = real_probe, real_order
 
 # ── 7. reconciler ──
