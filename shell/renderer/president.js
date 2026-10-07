@@ -500,8 +500,8 @@ function presHeldLots(report) {
   const p = a && a.positions && typeof a.positions === "object" ? a.positions : {};
   return Object.keys(p).reduce((n, k) => { const s = p[k] && Number(p[k].size); return n + (isFinite(s) && s > 0 ? Math.round(s) : 0); }, 0);
 }
-// 設定 › 帳戶 「開通中＋繼續」:帳密存了、下單程式還沒起來
-function presWip(r) { const c = r && r.president_connect; return !!c && typeof c === "object" && !(c.worker && c.worker.status === "ok"); }
+// 設定 › 帳戶 「開通中＋繼續」:帳密存了、下單程式從來沒起來過(worker.ok_at = 起來過;同 trade.js trPresWip)
+function presWip(r) { const c = r && r.president_connect; return !!c && typeof c === "object" && !(c.worker && (c.worker.status === "ok" || c.worker.ok_at)); }
 /* 第一次用真錢啟動統一策略:多一道確認(各策略口數 + 權益數),按了繼續才進一般的啟動框。這台電腦記住按過(localStorage) */
 const PRES_FIRST_KEY = "tr_pres_first_ok";
 function presFirstGate(next, opener) {

@@ -732,7 +732,7 @@ def run_finish(push=None):
     except Exception as e:
         _update("worker", status="failed", error=cc._code(e, "WORKER_FAILED"))
         raise
-    _update("worker", status="ok", error=None)
+    _update("worker", status="ok", error=None, ok_at=int(time.time()))
     return {"worker": "ok"}
 
 
@@ -1252,7 +1252,10 @@ def _local_start(push):
                 if os.path.getmtime(out) >= t0:
                     with open(out, encoding="utf-8") as f:
                         if (json.load(f) or {}).get("ok") is True:
-                            _update("worker", status="ok", error=None, wanted=True)
+                            # ok_at outlives every later failure (_update merges; only a new
+                            # certificate resets the section): the pages tell "never finished
+                            # onboarding" from "onboarded, then the login failed" by it
+                            _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
                             return {"worker": "ok"}
             except (OSError, ValueError, AttributeError):
                 pass

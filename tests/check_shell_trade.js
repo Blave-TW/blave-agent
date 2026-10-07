@@ -33,6 +33,17 @@ ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", t
   const appRestart = { reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false, wanted: false } } };
   ok("統一開通中 = setup(HALT 在、app 重開過那組欄位在,也一樣)", trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: { halted: true }, ...appRestart })) === "setup"
     && trExecState(st({ venues: VP, account: null, president_connect: { worker: { status: "running" } }, halt: {}, reconciler: { alive: false } })) === "setup");
+  // 稽核 integ-0118 B-1:開通過(runtime 寫 worker.ok_at、之後失敗不清)、worker 才登入失敗停掉(機器重開落在維護時段 / 改密碼)——不是開通中:
+  // 重開警示(B / C)與解除暫停鈕要在、讀帳失敗列為串接失敗、選單列不講「尚未啟動下單」(check_shell_tray_resident.js)
+  { const pcF = { worker: { status: "failed", error: "LOGIN_FAILED:MAINTENANCE", ok_at: 5, wanted: false, at: 9 } };
+    const mr = { reconciler: { alive: false, stopped: { reason: "machine_restart", at: 7 } }, daemon: { reconciler: { running: false, wanted: false } } };
+    const S1 = st({ venues: VP, account: accP, president_connect: pcF, halt: {}, ...mr });
+    ok("B-1 開通過→維護時段重開→登入失敗:重開停著 = halted(B,機器重開),不是 setup", trExecState(S1) === "halted" && trRestartKind(S1.report) === "machine" && !trSetupOnly(S1));
+    ok("B-1 …重開沒停住 = unconfirmed(可能仍在下單)", trExecState(st({ venues: VP, account: accP, president_connect: pcF, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })) === "unconfirmed");
+    ok("B-1 …HALT 中 = halted(解除暫停鈕照一般狀態機畫);讀帳失敗列為串接失敗", trExecState(st({ venues: VP, account: accP, president_connect: pcF, halt: { halted: true }, reconciler: { alive: false } })) === "halted"
+      && J(trFailedIds({ venues: VP, account: accP, president_connect: pcF })) === J(["president"]));
+    ok("B-1 從沒 ok 過的 worker 碰到機器重開(停著 / 沒停住):也不是 setup——重開警示一律優先", trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, ...mr })) === "halted"
+      && trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })) === "unconfirmed"); }
   ok("統一開通中:不算串接失敗;worker ok 之後讀帳失敗才算", J(trFailedIds({ venues: VP, account: accP, president_connect: pcW })) === J([])
     && J(trFailedIds({ venues: VP, account: accP, president_connect: pcOk })) === J(["president"]));
   ok("worker ok 之後照一般狀態機(halted)", trExecState(st({ venues: VP, account: accP, president_connect: pcOk, halt: { halted: true }, reconciler: { alive: false } })) === "halted");

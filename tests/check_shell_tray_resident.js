@@ -151,7 +151,14 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
     const rs = { halt: { halted: true }, reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false, wanted: false } } };
     t("統一開通中:notStarted 而不是 paused;worker ok 之後照舊 paused;對帳器在跑就不算開通中", S0([{ running: true, alive: true, report: { venues: VP, president_connect: wip, ...rs } }]) === "notStarted"
       && S0([{ running: true, alive: true, report: { venues: VP, president_connect: { worker: { status: "ok" } }, ...rs } }]) === "paused"
-      && S0([{ running: true, alive: true, report: { venues: VP, president_connect: wip, halt: { halted: true }, reconciler: { alive: true }, daemon: { reconciler: { running: true } } } }]) === "paused"); }
+      && S0([{ running: true, alive: true, report: { venues: VP, president_connect: wip, halt: { halted: true }, reconciler: { alive: true }, daemon: { reconciler: { running: true } } } }]) === "paused");
+    // 稽核 integ-0118 B-1:開通過(worker.ok_at)、之後登入失敗停掉 → 照一般狀態機;機器重開過的一律不講「尚未啟動下單」
+    const failed = { worker: { status: "failed", error: "LOGIN_FAILED:MAINTENANCE", ok_at: 5 } }, mr = { reconciler: { alive: false, stopped: { reason: "machine_restart", at: 7 } }, daemon: { reconciler: { running: false, wanted: false } } };
+    t("B-1 開通過→重開→登入失敗:paused(HALT)/ paused(重開停著)/ mayTrade(沒停住),不是 notStarted;從沒 ok 過但機器重開過也是 paused",
+      S0([{ running: true, alive: true, report: { venues: VP, president_connect: failed, ...rs } }]) === "paused"
+      && S0([{ running: true, alive: true, report: { venues: VP, president_connect: failed, halt: {}, ...mr } }]) === "paused"
+      && S0([{ running: true, alive: true, report: { venues: VP, president_connect: failed, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } } }]) === "mayTrade"
+      && S0([{ running: true, alive: true, report: { venues: VP, president_connect: wip, halt: {}, ...mr } }]) === "paused"); }
   t("…讀不到時沒有上次的場所 / 場所長得不像 id:不帶交易所名(用「這台電腦：{state}」那個樣板)", !TT.localLine({ running: true, alive: true, report: { error: "x" } }, "<b>").money && !TT.localLine({ running: true, alive: true, report: { error: "x" } }, null).money);
   t("statusLine:沒有 money 的那幾態走不帶 {money} 的樣板;字沒交就整行不出", TT.statusLine(L.stLocalOnly, { state: "none" }, L) === locOnly(zh("tr.noAccount")) && TT.statusLine(L.stLocalOnly, { state: "none" }, { ...L, noAccount: "" }) === null
     && TT.statusLine(L.stLocal, { money: "real", venue: "okx", state: "onZ" }, L) === loc("OKX · " + zh("tr.runningZ")));

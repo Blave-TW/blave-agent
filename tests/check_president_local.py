@@ -517,6 +517,37 @@ w.wanted, w.proc, w.respawn_at = True, type("Dead", (), {"poll": lambda self: 1,
 pc.local_tick()
 check("8 a worker that died of something else (not a login) is restarted as before", spawns == [1])
 
+# 8d. onboarded, then the login failed (audit integ-0118 B-1): the first ok writes worker.ok_at and no failure
+# path clears it — the pages tell "never finished onboarding" from "onboarded, then stopped" by it
+env_before = pc.read_status().get("env")
+pc._update(env="live")
+pc._update("worker", reset=True, status="idle")
+pc._update("probe", status="ok", state="ok", env="live")
+pc._LOCAL["secrets"]["live"] = True
+real_start, real_finish_timeout = w.start, pc.FINISH_TIMEOUT_S
+w.start = lambda: open(os.path.join(WS, "state", "president_account.json"), "w").write('{"ok": true}')
+pc.FINISH_TIMEOUT_S = 5
+pc._local_start(None)
+ok_at = pc.read_status()["worker"].get("ok_at")
+check("8d the first good snapshot writes worker.ok_at", isinstance(ok_at, int) and ok_at > 0, pc.read_status()["worker"])
+w.wanted, w.proc, w.respawn_at = True, type("Dead", (), {"poll": lambda self: pc.LOGIN_STOPPED_EXIT, "pid": 1})(), 0
+pc.local_tick()
+w8 = pc.read_status()["worker"]
+check("8d …a later login failure (local_tick) keeps it next to status=failed", w8["status"] == "failed" and w8.get("ok_at") == ok_at, w8)
+w.start = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+code_of(lambda: pc._local_start(None))
+w8 = pc.read_status()["worker"]
+check("8d …a failed restart (_local_start) keeps it too", w8["status"] == "failed" and w8.get("ok_at") == ok_at, w8)
+w.start, pc.FINISH_TIMEOUT_S = real_start, real_finish_timeout
+real_rq = pc.cc._run_quiet
+pc.cc._run_quiet = lambda argv, timeout, what: subprocess.CompletedProcess(argv, 0)
+pc._update("worker", reset=True, status="idle")
+pc.run_finish()
+check("8d the cloud's run_finish writes ok_at as well", isinstance(pc.read_status()["worker"].get("ok_at"), int))
+pc.cc._run_quiet = real_rq
+pc._update(env=env_before)
+pc._LOCAL["secrets"]["live"] = env_before == "live"
+
 # the reconciler while stopped: 統一 legs skipped (no order lib call, no order_error flood, one log line a round);
 # other venues' legs go on; the confirmed login lifts it
 import logging as _logging  # noqa: E402
