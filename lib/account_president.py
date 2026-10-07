@@ -71,15 +71,23 @@ def position_rows():
     return list(_read_snapshot().get("positions", []))
 
 
-def bot_position_rows(now=None):
+def bot_position_rows(now=None, book_months=None):
     """The held rows the bot trades on (lib/president_contracts.bot_rows) —
     what the reconciler reads, what flatten reads and what the order lib
     checks a close against. Settled residue of an expired month is dropped
     (logged, never closed — it was cash-settled); a month the bot does not
     trade (the user's own, opened in the app) is left out (logged once per
-    position), so it neither blocks the bot's rows nor gets closed by them."""
+    position), so it neither blocks the bot's rows nor gets closed by them.
+    book_months: the bot's book months per root (see bot_rows) — without it
+    the calendar decides which months are the bot's."""
+    return split_position_rows(now, book_months)[0]
+
+
+def split_position_rows(now=None, book_months=None):
+    """(keep, residue, manual) — bot_position_rows plus what it left out."""
     snap = _read_snapshot()
-    keep, residue, manual = _contracts.bot_rows(snap.get("positions", []), snap.get("listed"), now)
+    keep, residue, manual = _contracts.bot_rows(snap.get("positions", []), snap.get("listed"), now,
+                                                book_months)
     for r in residue:
         logging.info(f"[president] {r['productid']} {r['net']:+d}: past its settlement and not "
                      f"listed — treated as settled, ignored")
@@ -88,7 +96,26 @@ def bot_position_rows(now=None):
             _manual_logged.add((r["productid"], r["net"]))
             logging.warning(f"[president] {r['productid']} {r['net']:+d}: a month the bot does not "
                             f"trade (opened in the app) — left out, Blave never touches it")
-    return keep
+    return keep, residue, manual
+
+
+def contract_month(code):
+    """'YYYY-MM' of a 統一 month contract code (TXFJ6), None for anything else —
+    lib.portfolio's book records the month a fill landed in with it."""
+    try:
+        return _contracts.ym(*_contracts.month_of(code))
+    except (ValueError, TypeError):
+        return None
+
+
+def listed_months(root):
+    """{'YYYY-MM', …} of `root`'s contracts the broker lists now, or None when
+    the worker could not read the list — lib.portfolio tells a cash-settled
+    month from a holiday-postponed one with it."""
+    listed = (_read_snapshot().get("listed") or {}).get(str(root).upper())
+    if not listed:
+        return None
+    return {m for m in (contract_month(c) for c in listed) if m}
 
 
 def classify(exc):
@@ -100,14 +127,14 @@ def classify(exc):
     return None
 
 
-def get_positions(env: dict) -> dict:
+def get_positions(env: dict, book_months=None) -> dict:
     """{canonical: {'side', 'size', 'productid'}} with size in LOTS, canonical
-    = TXF/MXF/TMF, from bot_position_rows(). One root open in two contract months
-    fails the read: summed, a long J6 and a short K6 would read as flat and the
-    reconciler would trade on top of both; lib/order_president adds to a held
-    month, so the bot's own orders do not get here."""
+    = TXF/MXF/TMF, from bot_position_rows(book_months=…). One root open in two
+    contract months fails the read: summed, a long J6 and a short K6 would read
+    as flat and the reconciler would trade on top of both; lib/order_president
+    adds to a held month, so the bot's own orders do not get here."""
     months = {}
-    for r in bot_position_rows():
+    for r in bot_position_rows(book_months=book_months):
         months.setdefault(r["root"], []).append(r)
     out = {}
     for root, rows in months.items():

@@ -322,11 +322,19 @@ def _capital_get_positions():
     after this machine's last capital order (_capital_check_snapshot_caught_up)
     — raises CapitalCacheLagError in that post-order window instead of
     returning stale positions."""
+    from lib import account_capital
     from lib.account_capital import get_positions as _acct_positions, get_query_started_at
     from lib.order_capital import CAPITAL_FUT_RE
+    from lib.portfolio import book_months
     raw = _acct_positions({})  # env unused — reads state/capital_account.json
     _capital_check_snapshot_caught_up(get_query_started_at())
-    net, months = {}, {}
+    # the contract months the bot's book holds per root: a month it does not hold
+    # is the user's and stays out of the read (None = no book, a guessed month or
+    # an account lib without contract_month: every month counts, as before)
+    contract_month = getattr(account_capital, 'contract_month', None)
+    owned_by_root = book_months(venue_traits.CAPITAL) if contract_month else None
+    contract_month = contract_month or (lambda _code: None)
+    net, months, by_month, manual = {}, {}, {}, []
     for resolved_sym, pos in raw.items():
         # Anchored root+YYMM: a TX-prefixed option row (TXO22000J6) must never
         # count as an actual TXF position — the diff would send a real 大台 order.
@@ -360,8 +368,16 @@ def _capital_get_positions():
                                        f"{pos.get('side')!r}, expected long/short — "
                                        f"trading paused rather than guess its direction")
                 size = float(pos['size'])
-                net[canon] = net.get(canon, 0.0) + (size if pos['side'] == 'long' else -size)
+                signed = size if pos['side'] == 'long' else -size
+                ym = contract_month(sym)
+                owned = (None if owned_by_root is None
+                         else owned_by_root.get(canon, set()))
+                if owned is not None and ym not in owned:
+                    manual.append((sym, signed))
+                    break
+                net[canon] = net.get(canon, 0.0) + signed
                 months.setdefault(canon, []).append(sym)
+                by_month.setdefault(canon, {})[ym] = by_month.get(canon, {}).get(ym, 0.0) + signed
                 break
         else:
             logging.warning(f"[reconciler/capital] position {resolved_sym!r} matched no "
@@ -374,10 +390,29 @@ def _capital_get_positions():
             # it becomes the near month.
             logging.warning(f"[reconciler/capital] {canon} held in several contract months "
                             f"{sorted(syms)} — reading net {net[canon]:+g} lots")
+    _note_manual_months(venue_traits.CAPITAL, manual)
     return {
-        canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': venue_traits.CAPITAL}
+        canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': venue_traits.CAPITAL,
+                'months': {m: q for m, q in by_month[canon].items() if m and q}}
         for canon, n in net.items() if n != 0
     }
+
+
+_manual_noted = set()
+
+
+def _note_manual_months(venue, rows):
+    """A held contract month the bot's book does not hold is the user's: left
+    out of the read. Audited once per (contract, lots) per process
+    (`manual_month_excluded`). notifications.md has no event type for it yet —
+    a P2 candidate, so it is the audit line only."""
+    for code, lots in rows:
+        if (venue, code, lots) in _manual_noted:
+            continue
+        _manual_noted.add((venue, code, lots))
+        logging.warning(f"[reconciler] {venue} {code} {lots:+g}: a contract month the bot's book "
+                        f"does not hold — the user's, left out of the read and never traded")
+        guard.audit('manual_month_excluded', venue=venue, contract=code, lots=lots)
 
 
 def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False):
@@ -472,22 +507,35 @@ def _president_get_positions():
     Errors propagate (stale / worker down / one root in two months / an open
     interest the snapshot can't pin down) — never {}."""
     from lib import account_president, order_president
-    raw = account_president.get_positions({})
+    from lib.portfolio import book_months
+    owned = book_months(venue_traits.PRESIDENT)
+    raw = account_president.get_positions({}, book_months=owned)
     ok, started, last = order_president.snapshot_caught_up()
     if not ok:
         raise PresidentCacheLagError(f"統一快照(查詢開始 {started:.0f})未晚於最後一筆下單({last:.0f})"
                                      f"加寬限——本輪跳過,等下一輪快取更新")
-    return {sym: {'side': p['side'], 'size': p['size'], 'exchange': venue_traits.PRESIDENT}
+    if owned is not None:
+        _note_manual_months(venue_traits.PRESIDENT,
+                            [(r['productid'], r['net'])
+                             for r in account_president.split_position_rows(book_months=owned)[2]])
+    return {sym: {'side': p['side'], 'size': p['size'], 'exchange': venue_traits.PRESIDENT,
+                  'months': {account_president.contract_month(p['productid']):
+                             p['size'] if p['side'] == 'long' else -p['size']}}
             for sym, p in raw.items()}
 
 
 def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False):
-    """signed_diff in LOTS (> 0 buy), round-half-up like Capital. The part that
-    shrinks the held position goes out as a close; the rest (a flip, or a
-    plain entry) as an entry, skipped under reduce_only, under HALT, or when
-    the close was not confirmed filled."""
+    """signed_diff in LOTS (> 0 buy), round-half-up like Capital. reconcile()
+    already split the diff by the BOOK (references/manager.md § self_ledger):
+    a reduce_only leg is a close of the bot's own lots — capped at what the
+    account holds by lib.portfolio.hand_wired_reduce_cap — and goes to the
+    contract month the book holds; any other leg is an entry (the month the
+    book holds, else the computed near month). The broker's net position never
+    decides which is which: a user's lots in the same month would otherwise be
+    closed as if they were the bot's."""
     import math
-    from lib import account_president, order_president
+    from lib import order_president
+    from lib.portfolio import book_months
 
     sym = str(symbol).upper()
     if sym not in order_president.ROOTS:
@@ -497,61 +545,39 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
     if lots < 1:
         return False
     action = 'buy' if signed_diff > 0 else 'sell'
-    held = account_president.get_positions({}).get(sym)
-    net = 0 if not held else (held['size'] if held['side'] == 'long' else -held['size'])
-    closing = int(min(lots, abs(net))) if net and (net > 0) != (signed_diff > 0) else 0
-    opening = 0 if reduce_only else lots - closing
-    legs = []
-    if closing:
-        legs.append(order_president.place_futures_market_order({}, sym, action, closing, 'reduce'))
-        if legs[-1].get('status') != 'filled' or (legs[-1].get('fill_qty') or 0) < closing:
-            opening = 0  # never open behind a close that may not have happened
-    if opening and guard.halted():
-        opening = 0
-    deferred = 0
-    if opening:
+    owned = book_months(venue_traits.PRESIDENT)
+    months = None if owned is None else owned.get(sym, set())
+    if reduce_only:
+        leg = order_president.place_futures_market_order({}, sym, action, lots, 'reduce',
+                                                         book_months=months)
+    else:
+        if guard.halted():
+            return False
         try:
-            legs.append(order_president.place_futures_market_order({}, sym, action, opening, 'entry'))
+            leg = order_president.place_futures_market_order({}, sym, action, lots, 'entry',
+                                                             book_months=months)
         except order_president.EntryDeferred as e:
-            # snapshot not caught up with the close: the entry picks its month
-            # next round — scheduled, not an error, nothing sent
-            logging.info(f"[reconciler/president] {sym}: entry of {opening} deferred — {e}")
-            deferred = opening
-            if not legs:
-                return False
-        except Exception as e:
-            if not legs:
-                raise
-            # the close already filled: it must reach the book (returned below);
-            # the entry's failure is reported, not allowed to swallow it
-            logging.error(f"[reconciler/president] {sym}: close filled, entry failed: {e}")
-            from lib.portfolio import _record_order_error
-            _record_order_error(sym, venue_traits.PRESIDENT,
-                                f"平倉已成交 {closing} 口,反向開倉失敗:{type(e).__name__}: {e}")
-    if not legs:
-        return False
-    unknown = [l for l in legs if l.get('status') == 'unknown']
-    if unknown:
+            # the snapshot has not caught up with the last order (a flip's close
+            # leg, a moment ago): the entry picks its month next round —
+            # scheduled, not an error, nothing sent
+            logging.info(f"[reconciler/president] {sym}: entry of {lots} deferred — {e}")
+            return False
+    if leg.get('status') == 'unknown':
         # a code the SDK does not define: nothing is resent, the next round reads the
         # real position. P3 (log + the lib's order_unknown_status audit) on purpose —
         # every order_errors row is a P1 order_error on the platform today; making
         # this P2 needs api to route the kind and notifications.md to rank it first.
-        logging.warning(f"[reconciler/president] {sym}: broker status {unknown[-1].get('ack')!r} "
+        logging.warning(f"[reconciler/president] {sym}: broker status {leg.get('ack')!r} "
                         f"not defined by the SDK — not resent; next round reconciles on the "
                         f"real position")
-    qty = sum(float(l.get('fill_qty') or 0) for l in legs)
-    avg = (sum(float(l.get('fill_qty') or 0) * float(l.get('avg_fill_price') or 0) for l in legs) / qty
-           if qty else 0.0)
     return {
-        'avg_price':       avg,
-        'executed_qty':    qty,
+        'avg_price':       float(leg.get('avg_fill_price') or 0.0),
+        'executed_qty':    float(leg.get('fill_qty') or 0),
         'exchange':        venue_traits.PRESIDENT,
-        'resolved_symbol': legs[-1].get('symbol'),
-        'status':          ('unknown' if unknown else
-                            'filled' if all(l.get('status') == 'filled' for l in legs) else 'sent'),
-        'entry_deferred':  deferred,
-        'ack':             legs[-1].get('ack'),
-        'statuscode':      legs[-1].get('statuscode'),
+        'resolved_symbol': leg.get('symbol'),
+        'status':          leg.get('status'),
+        'ack':             leg.get('ack'),
+        'statuscode':      leg.get('statuscode'),
     }
 
 
@@ -1095,7 +1121,12 @@ def _get_positions_guarded(now=None):
         state = dict(_account_guard)
         state.pop('book_hold')
         _save_account_guard(state)
-    reset_reason, prev_actual = None, _last_actual()
+    # a TW futures row whose every contract month is past its settlement time
+    # may be gone because it cash-settled: that is not an empty account
+    # (lib.portfolio.settle_expired_months books it), so it is not compared
+    from lib.portfolio import past_settlement
+    reset_reason = None
+    prev_actual = {k: v for k, v in _last_actual().items() if not past_settlement(v)}
     # a bind that already reset this venue's book for another account
     # (runtime _mark_bind_account_change) is the same event, found earlier
     bound_reset = _bind_reset_marked(venue)

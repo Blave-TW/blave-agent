@@ -25,9 +25,28 @@ Scenarios (each in its own child process and scratch dir):
   A2  the user closes 1 of the bot's 2, signal 0: sell 1 only, book written off to 0.
   A3  manual close, then the signal flips to -1 (2 lots): the short entry waits for the
       confirmed read, never sells more than 2 in total.
+  F   a plain flip +2 -> -2 with nothing manual, the entry leg reading a snapshot from
+      before its own close: the entry waits a round, no order error (統一 used to re-split
+      the entry against that stale snapshot, try a second close and log a P1).
+  M   the user holds 1 lot in the bot's own month (same side): the bot's exits sell only
+      its own 2 lots, every time.
+  M2  same, but the user's lot is on the OTHER side: the bot's entry nets into it at the
+      broker, and today nothing records that (futures have no netted_qty), so the exit
+      does not hand it back (known gap).
+  R1  the user holds the next month on the other side while the bot holds this month:
+      the bot's read is its own month only (群益 used to net the months to 0 and write the
+      bot's lot off), and its exit sells its own month.
+  R2  the user holds the next month (same side); this month settles, the next month
+      becomes the front month: it stays the user's (the book did not record it) — the bot
+      re-enters beside it and later sells only its own lot.
+  H1  2026-02: settlement postponed from 02-18 to 02-23 (Lunar New Year). Past 02-18
+      13:30 the February contract still trades: kept, nothing re-entered; once it
+      settles on 02-23 the book drops it and re-enters in March.
+  H2  the same for 2023-01 (01-18 -> 01-30).
 
 President (統一) runs the same scenarios when lib/order_president.py exists
-(another branch); on main they are skipped.
+(another branch); on main they are skipped. Every contract-calendar "now" is
+frozen (freeze_clock); the 5 s sleeps are real (note_account_short's spacing).
 
 A scenario that fails because of a real bug asserts the intended behaviour and is
 listed in KNOWN_BUGS: reported "xfail", and fails the run the day it passes
@@ -50,13 +69,10 @@ SRC = os.path.dirname(HERE)
 STRAT = "txf_trend"
 
 KNOWN_BUGS = {
-    "capital:B1": "settlement is not a book event: the book keeps the settled lots and the strategy "
-                  "never re-enters (audit 10-07 #2)",
-    "capital:B2": "the settled read after a failed read trips the empty-account guard HALT (audit 10-07 #2)",
-    "capital:B2R": "the first read after a restart past settlement trips the empty-account guard HALT",
-    "president:B1": "settlement is not a book event: the book keeps the settled lots, no re-entry",
-    "president:B2": "ListUnknown past 13:30 re-arms the account guard; the next read HALTs",
-    "president:B2R": "the first read after a restart past settlement trips the empty-account guard HALT",
+    "capital:M2": "futures netting is not recorded (no netted_qty): an entry that nets into the user's "
+                  "opposite lot in the same month is not handed back on exit",
+    "president:M2": "futures netting is not recorded (no netted_qty): an entry that nets into the user's "
+                    "opposite lot in the same month is not handed back on exit",
 }
 
 
@@ -69,6 +85,7 @@ class World:
         self.venue, self.tmp = venue, tmp
         self.rows, self.near, self.listed, self.sent = {}, None, None, []
         self.stale = False
+        self.lag = False  # True: the snapshot's read started before this round's sends
 
     def setup(self, lots):
         os.makedirs("manager", exist_ok=True)
@@ -137,7 +154,7 @@ def capital_world(tmp):
     def write_snapshot():
         now = time.time()
         json.dump({"ok": True, "read_at": now - 1000 if w.stale else now + 1,
-                   "query_started_at": now + 30,
+                   "query_started_at": now - 1 if w.lag else now + 30,
                    "positions": [{"symbol": k, "side": "buy" if v > 0 else "sell", "lots": abs(v)}
                                  for k, v in w.rows.items()]},
                   open(ac._SNAPSHOT, "w"))
@@ -157,9 +174,6 @@ def president_world(tmp):
     ap._SNAPSHOT = os.path.join(tmp, "state", "president_account.json")
     for name in ("_REFRESH_FLAG", "_TAGS_PATH", "LAST_ORDER_PATH", "SEND_LOCK_PATH", "SDK_LOG_DIR"):
         setattr(op, name, os.path.join(tmp, "state", os.path.basename(getattr(op, name))))
-    w.clock = datetime(2026, 10, 8, 10, 0, tzinfo=pc.TAIPEI)
-    real_now = pc._now
-    pc._now = lambda now: real_now(now or w.clock)
 
     class R:
         def __init__(self, **kw):
@@ -197,7 +211,7 @@ def president_world(tmp):
     def write_snapshot():
         now = time.time()
         json.dump({"ok": True, "read_at": now - 1000 if w.stale else now + 1,
-                   "query_started_at": now + 30, "account_fp": "fp1", "equity": 1e6,
+                   "query_started_at": now - 1 if w.lag else now + 30, "account_fp": "fp1", "equity": 1e6,
                    "listed": w.listed,
                    "positions": [{"root": k[:3], "productid": k, "net": v} for k, v in w.rows.items()]},
                   open(ap._SNAPSHOT, "w"))
@@ -206,12 +220,23 @@ def president_world(tmp):
     return w
 
 
+def freeze_clock(w):
+    """Every contract-calendar "now" (settlement times, the entry roll, the
+    book's settlement check) goes through lib.president_contracts._now."""
+    from datetime import datetime
+    from lib import president_contracts as pc
+    w.clock = datetime(2026, 10, 8, 10, 0, tzinfo=pc.TAIPEI)
+    real_now = pc._now
+    pc._now = lambda now: real_now(now or w.clock)
+
+
 def child(venue, sid, tmp):
     os.chdir(tmp)
     sys.path.insert(0, SRC)
     os.environ["BLAVE_AGENT_HOME"] = os.environ["BLAVECLAW_HOME"] = tmp
     w = {"capital": capital_world, "president": president_world}[venue](tmp)
-    w.setup(1 if sid.startswith("B") else 2)
+    freeze_clock(w)
+    w.setup(1 if sid[0] in "BRH" else 2)
     from lib import guard, portfolio
     state = {"rec": None}
     tg = []
@@ -247,12 +272,48 @@ def child(venue, sid, tmp):
     def ledger_txf(r):
         return r["ledger"].get("TXF", 0.0)
 
+    def code(y, m):
+        if venue == "capital":
+            return f"TX{y % 100:02d}{m:02d}"
+        from lib.president_contracts import prod_id
+        return prod_id("TXF", y, m)
+
+    def at(y, mo, d, h=10, mi=0):
+        w.clock = w.clock.replace(year=y, month=mo, day=d, hour=h, minute=mi)
+
+    def months_listed(*ym):
+        """the broker's state for these months: 群益's alias goes to the first, 統一 lists them"""
+        if venue == "capital":
+            w.near = code(*ym[0])
+        else:
+            w.listed = {"TXF": [code(y, m) for y, m in ym]}
+
+    def audits(kind):
+        try:
+            lines = [json.loads(x) for x in open("state/audit.jsonl")]
+        except OSError:
+            return []
+        return [a for a in lines if a.get("event") == kind]
+
+    def errors():
+        try:
+            return json.load(open("manager/order_errors.json"))
+        except (OSError, ValueError):
+            return []
+
     log = []
     boot()
     w.signal(1)
-    if venue == "president" and sid.startswith("B"):
-        from datetime import datetime
-        w.clock = w.clock.replace(month=10, day=20, hour=10)
+    if sid[0] in "BR":
+        at(2026, 10, 20)
+    if sid == "H1":
+        at(2026, 2, 10)
+        months_listed((2026, 2), (2026, 3), (2026, 4))
+    if sid == "H2":
+        at(2023, 1, 10)
+        months_listed((2023, 1), (2023, 2), (2023, 3))
+    if sid in ("R1", "R2"):
+        w.rows[code(2026, 11)] = -1 if sid == "R1" else 1  # the user's own, opened in the app
     round_("entry")
     round_("converged")
     ok, why = True, ""
@@ -287,19 +348,112 @@ def child(venue, sid, tmp):
         ok = w.net() == -2 and ledger_txf(last) == -2 and min(nets) >= -2 and not r1["sent"]
         why = (f"flip after the manual close: first round sent={r1['sent']}, broker nets per round={nets}, "
                f"book TXF={ledger_txf(last)}")
+    elif sid == "F":
+        w.signal(-1)
+        if venue == "president":
+            # the worker caught up with the entry long ago; this round's snapshot is
+            # read before the flip's own close, as it always is live
+            from lib import order_president as op
+            json.dump({k: v - 100 for k, v in op._last_orders().items()}, open(op.LAST_ORDER_PATH, "w"))
+            w.lag = True
+        round_("signal flips to -1")
+        w.lag = False
+        time.sleep(5.5)
+        round_("next round")
+        last = round_("converged")
+        nets = [sum(r["broker"].values()) for r in log]
+        ok = (w.net() == -2 and ledger_txf(last) == -2 and min(nets) >= -2 and not errors()
+              and not last["halt"])
+        why = f"plain flip: broker nets per round={nets}, book TXF={ledger_txf(last)}, order_errors={errors()}"
+    elif sid == "M":
+        month = next(iter(w.rows))
+        w.rows[month] += 1  # the user adds a lot of their own in the bot's month
+        w.signal(0)
+        round_("user holds +1 in the bot's month, signal -> 0")
+        w.signal(1)
+        round_("signal -> 1")
+        round_("converged")
+        w.signal(0)
+        last = round_("signal -> 0 again")
+        sold = [o["lots"] for r in log[2:] for o in r["sent"] if o["side"] == "sell"]
+        ok = w.rows == {month: 1} and ledger_txf(last) == 0 and sold == [2, 2] and not errors()
+        why = f"user's lot beside the bot's: sells={sold}, broker={w.rows}, book TXF={ledger_txf(last)}"
+    elif sid == "M2":
+        month = next(iter(w.rows))
+        w.signal(0)
+        round_("signal -> 0")
+        w.rows[month] = w.rows.get(month, 0) - 1  # the user goes short 1 in the same month
+        w.signal(1)
+        round_("signal -> 1 beside the user's -1")
+        round_("converged")
+        w.signal(0)
+        round_("signal -> 0")
+        time.sleep(5.5)
+        last = round_("next round")
+        ok = w.rows.get(month) == -1 and ledger_txf(last) == 0
+        why = f"after the bot's round trip beside the user's -1: broker={w.rows}, book TXF={ledger_txf(last)}"
+    elif sid == "R1":
+        r1 = round_("signal unchanged")
+        time.sleep(5.5)
+        r2 = round_("next round, >=5 s later")
+        w.signal(0)
+        last = round_("signal -> 0")
+        ok = (w.rows == {code(2026, 11): -1} and ledger_txf(last) == 0
+              and not r1["sent"] and not r2["sent"] and ledger_txf(r2) == 1)
+        why = (f"user short the next month beside the bot's month: book held at {ledger_txf(r2)}, "
+               f"broker={w.rows}, book TXF={ledger_txf(last)}")
+    elif sid == "R2":
+        at(2026, 10, 21, 13, 31)
+        if venue == "capital":
+            w.rows.pop(code(2026, 10), None)
+        months_listed((2026, 11), (2026, 12), (2027, 1))
+        round_("October settled; the user's November is now the front month")
+        time.sleep(5.5)
+        round_("next round")
+        round_("converged")
+        w.signal(0)
+        last = round_("signal -> 0")
+        nov = w.rows.get(code(2026, 11))
+        ok = nov == 1 and ledger_txf(last) == 0 and not last["halt"]
+        why = (f"after settlement beside the user's November: November={nov}, broker={w.rows}, "
+               f"book TXF={ledger_txf(last)}")
+    elif sid in ("H1", "H2"):
+        y, m, d_late = (2026, 2, 23) if sid == "H1" else (2023, 1, 30)
+        d_third = 18
+        at(y, m, d_third, 13, 31)  # the calendar's settlement time: postponed, still trading
+        r1 = round_("past the third Wednesday 13:30, still listed / held")
+        time.sleep(5.5)
+        r2 = round_("next round")
+        held_ok = (not r1["sent"] and not r2["sent"] and ledger_txf(r2) == 1 and not r2["halt"])
+        at(y, m, d_late, 13, 31)  # the postponed settlement
+        if venue == "capital":
+            w.rows.pop(code(y, m), None)
+        months_listed((y, m + 1), (y, m + 2), (y, m + 3))
+        round_("postponed settlement passed")
+        time.sleep(5.5)
+        last = round_("next round")
+        nxt = w.rows.get(code(y, m + 1))
+        ok = held_ok and nxt == 1 and ledger_txf(last) == 1 and not last["halt"]
+        why = (f"postponed {y}-{m:02d}: held through the third Wednesday={held_ok}, "
+               f"then next month={nxt}, broker={w.rows}, book TXF={ledger_txf(last)}")
     else:
         # 2026-10-21 13:30 Taipei: the October contract cash-settles
+        w.clock = w.clock.replace(day=21, hour=13, minute=31)
         if venue == "capital":
             w.rows, w.near = {}, "TX2611"
         else:
-            w.clock = w.clock.replace(day=21, hour=13, minute=31)
             w.listed = {"TXF": ["TXFK6", "TXFL6", "TXFA7"]}
         if sid == "B1":
             round_("settled, signal unchanged")
             time.sleep(5.5)
             last = round_("next round")
-            ok = w.rows.get("TX2611" if venue == "capital" else "TXFK6") == 1 and not last["halt"]
-            why = f"broker={w.rows}, book TXF={ledger_txf(last)}, halt={last['halt']}"
+            ok = (w.rows.get("TX2611" if venue == "capital" else "TXFK6") == 1 and not last["halt"]
+                  and ledger_txf(last) == 1 and audits("ledger_settled")
+                  and not audits("ledger_writeoff")
+                  and not [m for m in tg if "Bought" not in m])  # an expected roll: no notice
+            why = (f"broker={w.rows}, book TXF={ledger_txf(last)}, halt={last['halt']}, "
+                   f"settled audits={len(audits('ledger_settled'))}, "
+                   f"writeoffs={len(audits('ledger_writeoff'))}, telegram={tg}")
         elif sid == "B2":
             if venue == "capital":
                 w.stale = True
@@ -309,14 +463,20 @@ def child(venue, sid, tmp):
                 w.rows, w.listed = {"TXFJ6": 1}, None  # residue still listed by the worker, list unread
                 round_("contract list unread past 13:30 (ListUnknown)")
                 w.rows, w.listed = {"TXFJ6": 1}, {"TXF": ["TXFK6", "TXFL6", "TXFA7"]}
-            last = round_("next good read: settled")
-            ok = not last["halt"]
-            why = f"halt={last['halt']} reason={last['halt_reason']!r} outcome={last['outcome']!r}"
+            first = round_("next good read: settled")
+            time.sleep(5.5)
+            last = round_("next round")
+            ok = not first["halt"] and not last["halt"] and ledger_txf(last) == 1 and last["sent"]
+            why = (f"halt={first['halt'] or last['halt']} reason={first['halt_reason']!r} "
+                   f"outcome={first['outcome']!r}, then sent={last['sent']}")
         elif sid == "B2R":
             boot()  # fresh reconciler module: what a restart / reboot loads
-            last = round_("first round after restart, settled")
-            ok = not last["halt"]
-            why = f"halt={last['halt']} reason={last['halt_reason']!r} outcome={last['outcome']!r}"
+            first = round_("first round after restart, settled")
+            time.sleep(5.5)
+            last = round_("next round")
+            ok = not first["halt"] and not last["halt"] and ledger_txf(last) == 1 and last["sent"]
+            why = (f"halt={first['halt'] or last['halt']} reason={first['halt_reason']!r} "
+                   f"outcome={first['outcome']!r}, then sent={last['sent']}")
         elif sid == "B3":
             round_("settled, signal unchanged")
             w.signal(0)
@@ -339,7 +499,7 @@ def main():
     verbose = "-v" in sys.argv
     failed, xfail = [], []
     for venue in venues:
-        for sid in ("A", "A2", "A3", "B1", "B2", "B2R", "B3"):
+        for sid in ("A", "A2", "A3", "F", "M", "M2", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
             cid = f"{venue}:{sid}"
             tmp = tempfile.mkdtemp(prefix=f"ledgerpaths-{venue}-{sid}-")
             try:

@@ -26,6 +26,13 @@ A held row of a root is one of:
   of every read (logged): Blave never closes, adds to or sums it, and it does
   not stop the bot's own rows — of its root or any other — from being read,
   traded or flattened.
+
+Which months are the bot's comes from its book when the caller passes one
+(`book_months`, lib.portfolio.book_months_of): a held month the book does not
+record is the user's whatever the calendar says — a far month the user opened
+becomes the front month after a settlement, and the calendar alone would adopt
+it. Without a book (no baseline yet, a platform reader, an agent script) the
+calendar rule above decides, as before.
 """
 import calendar
 import re
@@ -111,6 +118,27 @@ def month_of(productid, now=None):
     return year, MONTH_CODES.index(m.group(2)) + 1
 
 
+def ym(year, month):
+    """The venue-neutral month key the book records ('2026-10')."""
+    return f"{year:04d}-{month:02d}"
+
+
+def ym_parts(key):
+    y, m = str(key).split("-")
+    return int(y), int(m)
+
+
+def settled_by_time(key, now=None):
+    """True once 13:30 Taipei on the third Wednesday of month `key` has passed."""
+    return settlement_at(*ym_parts(key)) <= _now(now)
+
+
+def front_ym(now=None):
+    """The month key of the front contract at `now` (any root: they settle together)."""
+    pid = front_month("TXF", now)
+    return ym(*month_of(pid, now))
+
+
 def classify_row(row, listed=None, now=None):
     """'bot' / 'settled' / 'pending' / 'unknown' / 'manual' for one held row (see module doc).
     `listed`: the broker's contract codes for this row's root, or None if unknown."""
@@ -126,17 +154,28 @@ def classify_row(row, listed=None, now=None):
     return "manual"
 
 
-def bot_rows(rows, listed_by_root=None, now=None):
+def bot_rows(rows, listed_by_root=None, now=None, book_months=None):
     """(keep, residue, manual): the held rows the bot counts (bot + pending),
     the settled residue it ignores, and the months it does not trade (left
     out, never touched). Raises ListUnknown for a month past its settlement
-    whose root's broker list is unknown."""
+    whose root's broker list is unknown.
+
+    book_months: {root: {'YYYY-MM', …} | None} — the months the bot's book
+    holds; a root absent from it holds none (every row of it is manual), None
+    for a root = its months are not known (the calendar decides that root).
+    None altogether = no book: the calendar decides every row."""
     keep, residue, manual = [], [], []
     for r in rows:
         if not r.get("net"):
             continue
         listed = (listed_by_root or {}).get(r["root"])
+        owned = None if book_months is None else book_months.get(r["root"], set())
+        if owned is not None and ym(*month_of(r["productid"], now)) not in owned:
+            manual.append(r)
+            continue
         kind = classify_row(r, listed, now)
+        if owned is not None and kind == "manual":
+            kind = "bot"  # the book holds this month: the calendar does not get a say
         if kind == "unknown":
             raise ListUnknown(f"統一 {r['productid']} 已過結算時點、但讀不到券商的合約清單——"
                               f"無法分辨已結算或順延,本輪跳過")
