@@ -391,6 +391,46 @@ check("7b round over → respawned once, hold released", resp == ["test"] and no
 check("7b the daemon wires the bundle hand-over to respawn_when_idle",
       'respawn_when_idle("統一期貨 credentials handed over")' in open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read())
 
+# ── 7c. a reconciler started before the hand-over (empty line): 統一 legs skip the round, no order_error (B7) ──
+script2 = os.path.join(WS, "peek2.py")
+open(script2, "w").write(
+    "import json, sys\nsys.path.insert(0, '.')\nfrom lib import president_vault as v\n"
+    "from manager import reconciler as rec\nsent = []\n"
+    "rec._HAND_WIRED[rec.venue_traits.PRESIDENT] = (lambda: {}, lambda *a, **k: sent.append(a) or {'executed_qty': 1})\n"
+    "r = rec.place_order('TXF', 1, exchange='president')\n"
+    "open('peek2.json', 'w').write(json.dumps({'ready': v.credentials_ready(), 'r': r, 'sent': len(sent)}))\n")
+for d in ("manager",):
+    os.makedirs(os.path.join(WS, d), exist_ok=True)
+shutil.copy(os.path.join(ROOT, "manager", "reconciler.py"), os.path.join(WS, "manager", "reconciler.py"))
+open(os.path.join(WS, "manager", "__init__.py"), "a").close()
+for name in os.listdir(os.path.join(ROOT, "lib")):
+    if name.endswith(".py") and not os.path.exists(os.path.join(WS, "lib", name)):
+        shutil.copy(os.path.join(ROOT, "lib", name), os.path.join(WS, "lib", name))
+
+
+def run_peek2(line):
+    pr2 = subprocess.Popen([sys.executable, os.path.join(ROOT, "runtime", "local_daemon.py"), "--run-reconciler",
+                            "peek2.py", "--president-stdin"], cwd=WS, stdin=subprocess.PIPE,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           env={k: v for k, v in os.environ.items() if k != "BLAVE_AGENT_LOCAL"})
+    pr2.stdin.write((line + "\n").encode())
+    pr2.stdin.flush()
+    try:
+        pr2.wait(90)
+    finally:
+        pr2.stdin.close()
+    try:
+        return json.load(open(os.path.join(WS, "peek2.json")))
+    except (OSError, ValueError):
+        return None
+
+
+got = run_peek2("{}")
+check("7c empty line (not handed over yet): not ready, the 統一 leg is skipped (False), the order lib never called",
+      got == {"ready": False, "r": False, "sent": 0}, got)
+got = run_peek2(pc.secret_line())
+check("7c with the line: ready, the leg goes out", got is not None and got["ready"] is True and got["sent"] == 1, got)
+
 # ── 8. blocked login ──
 from lib import president_vault as pv  # noqa: E402
 

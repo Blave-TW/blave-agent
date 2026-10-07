@@ -136,6 +136,15 @@ def use_local_secrets(d):
         if isinstance(d, dict) else {}
 
 
+def credentials_ready():
+    """False only on the desktop when the daemon has not handed the passwords over
+    yet (it gives a reconciler started before that an empty line): a login now
+    would fail on a missing password, so callers skip instead of erroring."""
+    if not _local_mode():
+        return True
+    return isinstance(_local_secrets().get("president_password"), str)
+
+
 def read_stdin_line(fd=0, limit=8192):
     """One line off the raw fd, byte by byte: nothing may stay in a Python-side
     buffer for a later reader of the same fd (the reconciler's parent watch)."""

@@ -562,6 +562,14 @@ _HAND_WIRED = {venue_traits.CAPITAL: (_capital_get_positions, _capital_place_ord
                venue_traits.PRESIDENT: (_president_get_positions, _president_place_order)}
 
 
+def _president_credentials_ready():
+    try:
+        from lib import president_vault
+        return president_vault.credentials_ready()
+    except Exception:
+        return True  # an older lib: let the order lib report what it reports
+
+
 def _hand_wired_impl(venue):
     impl = _HAND_WIRED.get(venue)
     if impl is None:
@@ -645,6 +653,11 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         # that venue's login is blocked: its strategies hold (no order, nothing
         # counted as a failure); every other venue's legs go on
         logging.info(f"[reconciler] {symbol}: {exchange} login blocked — not sent until a login passes")
+        return False
+    if exchange == venue_traits.PRESIDENT and not _president_credentials_ready():
+        # desktop, right after the daemon (re)started: the app hands the passwords over
+        # within seconds and this reconciler is respawned with them — skip, not an error
+        logging.info(f"[reconciler] {symbol}: 統一 credentials not handed over yet — skipped this round")
         return False
     if venue_traits.has(exchange, 'hand_wired'):
         return _hand_wired_impl(exchange)[1](symbol, signed_diff, asset_spec=asset_spec,

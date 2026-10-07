@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版 secrets 補交前統一腿跳過這輪(稽核 B7)**:daemon 剛起來、reconciler 拿到空行時,`lib/president_vault.credentials_ready()`
+  為 False,`manager/reconciler.place_order` 對 president 回 False(不記 order_error);交到之後 reconciler 重起就照常。
 - **交 secrets 重起 reconciler 不再卡指令迴圈、不在送單中途砍(稽核 B5/#7)**:`ReconcilerSupervisor.respawn_when_idle` 在自己的執行緒
   寫 `state/execution/hold`(擋新一輪)、等 `state/execution/round` 清掉(最多 600 秒,同 update_workspace)才 respawn。
 - **測試主機過了、第一次切正式回 UNKNOWN 不封鎖(稽核 B6,Wei 拍板)**:`president_host`／本機 `host` 切 live 前若測試主機 probe 已過,
