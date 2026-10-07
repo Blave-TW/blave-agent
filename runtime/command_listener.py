@@ -46,8 +46,10 @@ if _RUNTIME_DIR not in sys.path:
 
 import atomic_file
 import capital_connect
+import president_connect
 import telegram_pairing
 import turn_slots
+import venue_traits
 
 try:
     import fcntl
@@ -359,7 +361,7 @@ def _env_flags():
     for line in lines:
         k, sep, v = line.partition("=")
         k = k.strip()
-        if sep and k and not k.startswith("#") and not _CRED_ENV_RE.match(k):
+        if sep and k and not k.startswith("#") and not _cred_match(k):
             out[k.upper()] = v.strip()
     return out
 
@@ -672,6 +674,18 @@ _CRED_KEEP_IDS = {"BLAVE", "ADMIN"}
 _DATA_CRED_PREFIX = "DATA_"
 
 
+def _cred_match(name):
+    """(ID, SUFFIX) of a credential env name, or None. A venue's own names
+    (venue_traits cred_env — 統一's president_account is its API_KEY-role key)
+    are read first: through the pair regex alone 統一 never looks bound, and
+    president_ca_password reads as a phantom PRESIDENT_CA venue."""
+    own = venue_traits.cred_env(name)
+    if own:
+        return own
+    m = _CRED_ENV_RE.match(name)
+    return (m.group(1).upper(), m.group(2).upper()) if m else None
+
+
 def _is_data_cred_id(cred_id):
     return cred_id.upper().startswith(_DATA_CRED_PREFIX)
 
@@ -743,10 +757,9 @@ def _venue_cred_ids(lines, skip_ids=frozenset()):
     bound, so every 下單設定 save wiped its `exchanges` routing)."""
     suffixes = {}
     for l in lines:
-        m = _CRED_ENV_RE.match(l.split("=", 1)[0].strip())
-        if (m and m.group(1).upper() not in _CRED_KEEP_IDS | skip_ids
-                and not _is_data_cred_id(m.group(1))):
-            suffixes.setdefault(m.group(1).upper(), set()).add(m.group(2).upper())
+        m = _cred_match(l.split("=", 1)[0].strip())
+        if m and m[0] not in _CRED_KEEP_IDS | skip_ids and not _is_data_cred_id(m[0]):
+            suffixes.setdefault(m[0], set()).add(m[1])
     return {
         i for i, s in suffixes.items()
         if "API_KEY" in s and s & {"SECRET_KEY", "PASSWORD", "PASSPHRASE"}
@@ -1149,7 +1162,7 @@ def _cmd_credentials(args):
         # here (e.g. a fresh BLAVE_API_KEY= line)
         if not isinstance(v, str) or "\n" in v or "\r" in v:
             raise ValueError("bad env value")
-    writing = {m.group(1).upper() for k in env if (m := _CRED_ENV_RE.match(k))}
+    writing = {m[0] for k in env if (m := _cred_match(k))}
     # the remove side refuses to drop BLAVE_*; the write side must refuse to
     # overwrite it too, or a custom exchange named "Blave" clobbers the
     # platform keys
@@ -1168,7 +1181,12 @@ def _cmd_credentials(args):
         raise ValueError("這一版電腦版只開放模擬交易(paper),真實交易所的綁定尚未開放")
     if _local_mode():
         for vid in sorted(writing - {"PAPER", "BINANCE"}):
-            _local_real_key_gate(vid, env)  # raises = nothing written
+            if vid == "PRESIDENT":
+                # no account read to gate on: for 統一 that read IS a login (three
+                # wrong ones lock the account) — the certificate opening locally is
+                president_connect.local_bind_gate(env)
+            else:
+                _local_real_key_gate(vid, env)  # raises = nothing written
     else:
         # cloud box (and so the web connect flow): no account read, but a key
         # that can withdraw is refused here too — one request to the venue
@@ -1183,6 +1201,9 @@ def _cmd_credentials(args):
     # 群益 on a cloud Windows box: real values → a separate Administrator-only
     # file for the 群益 order code, sentinels → .env (spec §6-B)
     env = capital_connect.divert_credentials(env, local=_local_mode())
+    # 統一期貨 on a cloud Windows box: the trading password and the production
+    # switch → the vault, sentinels + certificate path + production host → .env
+    env = president_connect.divert_credentials(env, local=_local_mode())
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -1212,8 +1233,8 @@ def _cmd_credentials(args):
             if evict:
 
                 def _stale_cred(line):
-                    m = _CRED_ENV_RE.match(line.split("=", 1)[0].strip())
-                    return bool(m) and m.group(1).upper() in evict
+                    m = _cred_match(line.split("=", 1)[0].strip())
+                    return bool(m) and m[0] in evict
 
                 kept = [l for l in kept if not _stale_cred(l)]
                 evicted_ids = {i.lower() for i in evict}
@@ -1244,11 +1265,16 @@ def _cmd_credentials(args):
         # the mirror update sources from the mirror itself, never the config
         # (P1-3 — see _clear_evicted_in_ui_mirror).
         _clear_evicted_in_ui_mirror(evicted_ids)
-        if "capital" in evicted_ids:  # its sentinels are gone from .env; the vault goes too
+        if venue_traits.CAPITAL in evicted_ids:  # its sentinels are gone from .env; the vault goes too
             try:
                 capital_connect.drop_vault(["capital_password"])
             except Exception as e:
                 _log(f"capital vault drop failed: {type(e).__name__}")
+        if venue_traits.PRESIDENT in evicted_ids:  # the vault holds its production switch
+            try:
+                president_connect.drop_vault()
+            except Exception as e:
+                _log(f"president vault drop failed: {type(e).__name__}")
         cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
         try:
             with open(cpath) as f:
@@ -3067,8 +3093,8 @@ def _cmd_amounts(args):
     inherited from existing members
     (one portfolio, one account — membership never silently splits across
     venues). Only a key's ABSENCE (unpicked in the picker) drops routing —
-    amount=0 must NOT drop it, or the reconciler (and Capital's
-    _is_capital_routed venue-detection, which reads `exchanges` alone) loses
+    amount=0 must NOT drop it, or the reconciler (and its hand-wired
+    _hand_wired_routed venue-detection, which reads `exchanges` alone) loses
     the venue to even query/flatten the position it's supposed to zero out
     (bug hit 2026-08-14: pausing a strategy at amount=0 wiped `exchanges` and
     stranded the reconciler with no venue to reconcile against).
@@ -3493,6 +3519,12 @@ def _cmd_credentials_remove(args):
     # casefold like the write side: a MixedCase line (agent-hand-written
     # Gateio_Api_Key) must still match its unbind name
     drop = {n.casefold() for n in names if not n.upper().startswith("BLAVE_")}
+    # a venue with its own name set (venue_traits cred_env — 統一's seven) goes whole:
+    # its extra lines would otherwise outlive the unbind
+    for _t in venue_traits.TRAITS.values():
+        _own = set(_t.get("cred_env") or {})
+        if _own & drop:
+            drop |= _own
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -3511,6 +3543,10 @@ def _cmd_credentials_remove(args):
         capital_connect.drop_vault(names)
     except Exception as e:
         _log(f"capital vault drop failed: {type(e).__name__}")
+    try:
+        president_connect.drop_vault(names)
+    except Exception as e:
+        _log(f"president vault drop failed: {type(e).__name__}")
     # P1-2: unbind must shrink the bind manifest too, or an agent hand-writing
     # the SAME venue's keys back into .env after the unbind would still be in
     # the allowed list and route again without any UI bind.
@@ -3524,9 +3560,8 @@ def _cmd_credentials_remove(args):
     # the same thing _venue_cred_ids judges: the env NAME of a venue called
     # "DATA" (DATA_API_KEY) starts with the prefix, its id does not.
     dropped_ids = {
-        n[: -len("_API_KEY")].lower() for n in drop
-        if n.upper().endswith("_API_KEY")
-        and not _is_data_cred_id(n[: -len("_API_KEY")])
+        m[0].lower() for n in drop
+        if (m := _cred_match(n)) and m[1] == "API_KEY" and not _is_data_cred_id(m[0])
     }
     if dropped_ids:
         apath = os.path.join(WORKSPACE, "manager", "account.json")
@@ -3977,7 +4012,8 @@ def _restart_reconciler(args):
         # (service set up for some other venue before Capital was routed
         # through this machine), which is plausibly the more common path and
         # was silently skipped by an earlier version of this function.
-        admin_pw = _capital_admin_password() if "capital" in routed else None
+        admin_pw = (_capital_admin_password()
+                    if any(venue_traits.has(v, "windows_identity") for v in routed) else None)
 
         # Self-bootstrap: a machine where the agent never set up auto-trading
         # has no service yet — install it here (references/manager.md
@@ -4239,7 +4275,7 @@ def _capital_open_book_keys():
         # no baseline = no trustworthy book (flatten.py closes nothing then) → list them all
         ready = _pf.book_ready(cfg) if hasattr(_pf, "book_ready") else bool(_pf._load_ledger_seed()["seeded_at"])
         if (own(cfg) if own else cfg.get("self_ledger")) and ready:
-            ledger = (_pf.ledger_positions("capital") if hasattr(_pf, "book_ready")
+            ledger = (_pf.ledger_positions(venue_traits.CAPITAL) if hasattr(_pf, "book_ready")
                       else _pf.ledger_positions())
     except Exception:
         ledger = None  # unreadable (or pre-ledger workspace) → list them all
@@ -4272,7 +4308,7 @@ def _record_manual_close_row(symbols):
     except (OSError, ValueError):
         rows = []
     rows.append({"kind": "manual_close_required", "symbols": symbols, "reason": "identity",
-                 "ts": datetime.utcnow().isoformat(), "symbol": "*", "exchange": "capital",
+                 "ts": datetime.utcnow().isoformat(), "symbol": "*", "exchange": venue_traits.CAPITAL,
                  "error": "close-all: 群益部位未平倉(此身分無法登入群益 API),請在群益下單軟體手動平倉"})
     with atomic_file.replacing(path) as f:  # rows came from a file the agent can write
         json.dump(rows[-5:], f, indent=2)
@@ -4389,10 +4425,18 @@ def _launch_flatten(prefix):
     child_env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
     if _local_mode():
         # own session: the flatten must outlive a daemon that is shutting down
+        line = president_connect.secret_line()  # 統一's close logs in: hand it the line
         with atomic_file.open_append(log_path) as logf:
             proc = subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
-                                    env=_local_child_env(), stdout=logf, stderr=logf,
-                                    start_new_session=True, **_child_kw())
+                                    env=_local_child_env(**president_connect.child_flags()),
+                                    stdout=logf, stderr=logf, start_new_session=True,
+                                    **_child_kw(**({"stdin": subprocess.PIPE} if line else {})))
+        if line:
+            try:
+                proc.stdin.write((line + "\n").encode("utf-8"))
+                proc.stdin.close()
+            except OSError:
+                pass
         _kick_when_flatten_exits(proc)
         return prefix + "started"
     if platform.system() == "Windows":
@@ -5633,6 +5677,16 @@ HANDLERS.update({
         _n, args, Deferred, lambda: _push(_ON_PROGRESS, "capital connect"), _local_mode()))
     for name in capital_connect.COMMANDS
 })
+# 統一期貨 cloud connect (runtime/president_connect.py): same shape
+HANDLERS.update({
+    name: (lambda args, _n=name: president_connect.dispatch(
+        _n, args, Deferred, lambda: _push(_ON_PROGRESS, "president connect"), _local_mode()))
+    for name in president_connect.COMMANDS
+})
+# 統一期貨 on the desktop app: one command only the app's main process sends
+# (local_daemon.LOCAL_ONLY — never in the api's list); refused off the desktop
+HANDLERS["president_local"] = lambda args: president_connect.local_dispatch(
+    args, Deferred, lambda: _push(_ON_PROGRESS, "president connect"))
 
 
 def dispatch(command):

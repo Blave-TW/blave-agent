@@ -622,9 +622,16 @@ if POSIX:
     for nm in ("..env.cccccccccccc.tmp", "..env.dddddddddddd", os.path.join("manager", ".account.json.eeeeeeeeeeee.tmp")):
         open(os.path.join(ws2, nm), "w").close()
         os.utime(os.path.join(ws2, nm), (time_now - 3600, time_now - 3600))
+    cred2 = os.path.join(BASE, "credentials")
+    os.makedirs(cred2, exist_ok=True)
+    for nm in (".president_vault.json.ffffffffffff.tmp", "president_vault.json"):
+        open(os.path.join(cred2, nm), "w").close()
+        os.utime(os.path.join(cred2, nm), (time_now - 3600, time_now - 3600))
     A.sweep_runtime_temps(ws2, os.path.join(BASE, "boot-state"))
     check(not [x for x in os.listdir(ws2) if x.startswith("..env.")] and os.listdir(os.path.join(ws2, "manager")) == [],
           "sweep_runtime_temps at start: .env temps (both namings) and manager/ temps from a crash are cleared")
+    check(os.listdir(cred2) == ["president_vault.json"],
+          "sweep_runtime_temps: a killed vault write's plaintext temp in <base>/credentials is cleared, the vault kept")
 src_ld = open(os.path.join(RUNTIME, "local_daemon.py"), encoding="utf-8").read()
 src_cl = open(os.path.join(RUNTIME, "command_listener.py"), encoding="utf-8").read()
 check("atomic_file.sweep_runtime_temps(ws," in src_ld and "atomic_file.sweep_runtime_temps(WORKSPACE," in src_cl.split("def run(", 1)[1],
@@ -636,6 +643,7 @@ REVIEWED = {
     ("capital_connect.py", "_write_vault"): "already a random temp name (secrets.token_hex), its own ACL steps",
     ("local_daemon.py", "_link_current"): "os.symlink(tmp) never follows an existing name (EEXIST)",
     ("local_daemon.py", "_spawn_locked"): "reconciler.log rotation: renames the log, writes nothing",
+    ("president_connect.py", "_spawn"): "president_worker.log rotation (desktop): renames the log, writes nothing",
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
     ("telegram_pairing.py", "replace_retry"): "the replace callable atomic_file.replacing is handed",
@@ -678,6 +686,8 @@ CREATE_REVIEWED = {
 }
 # plain writes: open / os.fdopen with "w" / "x" / "+" (not "a": the list above), write_text / write_bytes
 WRITE_REVIEWED = {
+    ("local_daemon.py", "_run"): "state/execution/hold: a pid marker the reconciler only checks for existence (same as manager/update_workspace.py)",
+    ("local_daemon.py", "respawn_when_idle"): "the same hold marker (the scan attributes the nested _run to both)",
     ("agent_turn.py", "_image_quota_line"): "BASE/state (strategy_reporter.STATE_DIR): outside the desktop Codex sandbox; cloud runtime = agent user",
     ("agent_turn.py", "_write_system_prompt_file"): "fd from tempfile.mkstemp (O_EXCL, random name) in BASE/state",
     ("capital_connect.py", "_write_vault"): "random temp name, its own ACL steps (cloud Windows, SYSTEM)",

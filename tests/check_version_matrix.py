@@ -560,8 +560,11 @@ def v1_08(w):
     import agent_turn as at
     missing = [r for r in at.PROTECTED_EDIT_RULES
                if r.startswith("Edit(/lib/") and not os.path.exists(r[len("Edit(/"):-1])]
-    w.eq(missing, ["Edit(/lib/exits.py)"],
-         "the only rule naming a file the old lib lacks is the exits.py edit deny (inert)")
+    # the broker-password code denies (agent_turn.SECRET_CODE_FILES) are inert too where
+    # the old lib has no such broker file
+    secret = {f"Edit(/{f})" for f in getattr(at, "SECRET_CODE_FILES", ())}
+    w.eq([r for r in missing if r not in secret], ["Edit(/lib/exits.py)"],
+         "the only rule naming a file the old lib lacks is the exits.py edit deny (inert), besides broker-code denies")
     texts = []
     for fn, args in ((getattr(at, "_viewing_env_segment", None), (True,)),
                      (getattr(at, "_viewing_env_segment", None), (False,)),

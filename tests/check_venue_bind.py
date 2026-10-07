@@ -3,7 +3,8 @@ with the monorepo runtime copied WHOLE (that is what `current/` is on a machine,
 command_listener imports siblings), binds okx over a bingx-bound .env (no
 credentials.ui.json yet, like a pre-manifest machine) and asserts: exact OKX lines
 written 0600, BLAVE keys kept, bingx evicted + halted + reported, manifest = ["okx"],
-summary carries names only; bad inputs are refused before the runtime is touched.
+summary carries names only; bad inputs are refused before the runtime is touched;
+every hand-wired Taiwan broker (capital, president) is refused with its reference.
 Run: cd blave-agent && .venv/bin/python tests/check_venue_bind.py
 """
 import os, shutil, stat, sys, tempfile
@@ -21,7 +22,7 @@ shutil.copytree(RUNTIME, os.path.join(BASE, "current"),
 os.environ["BLAVE_AGENT_WORKSPACE"] = WS
 sys.path.insert(0, ROOT)
 os.chdir(WS)
-from lib import venue
+from lib import venue, venue_traits
 import lib.account_okx as _okx  # noqa: E402
 
 _okx.withdraw_enabled = lambda env: False  # the cloud withdrawal gate has its own test (check_credentials_withdraw_gate)
@@ -49,6 +50,17 @@ K1, S1, P1 = "KV-api-7c1e9f3a2b4d", "KV-sec-0d8e6a5f1c2b", "KV-pass-3f9a1e7c5d2b
 K2, S2, P2 = "KV-api-2b4d7c1e9f3a", "KV-sec-1c2b0d8e6a5f", "KV-pass-5d2b3f9a1e7c"  # gitleaks:allow (fake test values)
 KEYS = {"OKX_API_KEY": K1, "OKX_SECRET_KEY": S1, "OKX_PASSPHRASE": P1}
 refused("capital", KEYS, "capital (own onboarding doc)")
+# every hand-wired Taiwan broker sits where capital does: not chat-bindable,
+# refused with a pointer to its own reference
+PRES = {"president_account": "KV-acct-4e1a9c7b", "president_password": "KV-pw-8b2d5f1e"}  # gitleaks:allow (fake test values)
+refused("president", PRES, "president (own onboarding doc)")
+for vid in sorted(venue_traits.venues("hand_wired")):
+    check(vid not in venue.VENUES, f"{vid}: not in the chat-bind VENUES")
+    try:
+        venue.bind(vid, PRES)
+        check(False, f"{vid}: bind refused")
+    except ValueError as e:
+        check(venue_traits.get(vid, "reference") in str(e), f"{vid}: refusal names {venue_traits.get(vid, 'reference')}")
 refused("paper", KEYS, "paper (no keys)")
 refused("kraken", KEYS, "unknown venue")
 refused("okx", {k: v for k, v in KEYS.items() if k != "OKX_PASSPHRASE"}, "okx without passphrase")

@@ -71,8 +71,11 @@ if __name__ == '__main__':
     if args.absorb:
         print("Reading current account position (absorb mode)...")
         # the book needs the QUANTITY adopted, not only its value today; a
-        # lot-based (capital) account's size already is its quantity
-        if _reconciler._is_capital_routed():
+        # lot-based (hand-wired TW broker) account's size already is its quantity
+        # a user-kept older reconciler.py only has the pre-extraction name
+        routed = (getattr(_reconciler, "_hand_wired_routed", None)
+                  or getattr(_reconciler, "_is_capital_routed"))
+        if routed():
             def _qty():
                 return {k: (v['size'] if v.get('side') == 'long' else -v['size'])
                         for k, v in (_reconciler.get_positions() or {}).items()}

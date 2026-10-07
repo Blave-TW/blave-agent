@@ -49,6 +49,7 @@ CHOKE = {
     "binance": "_request", "bingx": "_request", "bybit": "_request",
     "gateio": "_request", "okx": "_request",
     "paper": "_gate", "capital": "_send", "sinopac": "place_odd_lot_order",
+    "president": "_send",
 }
 HTTP = {"binance", "bingx", "bybit", "gateio", "okx"}
 # non-GET _send calls outside _request, each with the reason it is not an order
@@ -146,6 +147,12 @@ for v in libs:
                     p = getattr(p, "_parent", None)
                 if not ok:
                     stray.append(f"{n.attr} outside _send")
+    elif v == "president":
+        for n in ast.walk(t):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr in ("order", "replace_order")
+                    and getattr(_func_of(n), "name", None) != "_send"):
+                stray.append(f"dtrade.{n.func.attr} in {getattr(_func_of(n), 'name', '<module>')}")
     elif v == "sinopac":
         for n in ast.walk(t):
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "place_order":
@@ -199,6 +206,18 @@ for v in libs:
             if not gates or min(c.lineno for c in gates) > first:
                 late.append(name)
         check(not late, f"capital: every place_* refuses before _check_halt and the SKCOM login {late or ''}")
+    if v == "president":
+        late = []
+        for name, f in funcs.items():
+            logins = [c for c in ast.walk(f) if isinstance(c, ast.Call) and _call_name(c) == "_session"]
+            if not logins or name.startswith("_"):
+                continue
+            gates = [c for c in ast.walk(f) if _is_guard_call(c, "check_restart_stop")]
+            halts = [c for c in ast.walk(f) if isinstance(c, ast.Call) and _call_name(c) == "_check_halt"]
+            first = min(c.lineno for c in logins + halts)
+            if not gates or min(c.lineno for c in gates) > first:
+                late.append(name)
+        check(not late, f"president: every place_* refuses before _check_halt and the Unitrade login {late or ''}")
 
     # every public order function reaches the chokepoint (module call graph)
     graph = {name: {_call_name(c) for c in ast.walk(f) if isinstance(c, ast.Call)}
@@ -337,6 +356,29 @@ except guard.Halted:
     capital_refused = not sent
 record(False)
 check(capital_refused, "capital: record present → a close is refused before SendFutureOrderCLR")
+
+# President: a close is refused before the snapshot read and the Unitrade login
+import lib.order_president as president  # noqa: E402
+
+touched = []
+real_session, real_held = president._session, president._checked_close
+president._session = lambda env: touched.append("login")
+president._checked_close = lambda sym, action, lots: touched.append("snapshot") or "TMFJ6"
+record(True)
+try:
+    for label, fn in (("reduce place_futures_market_order",
+                       lambda: president.place_futures_market_order({}, "TMF", "sell", 1, "reduce")),
+                      ("close_position_partial",
+                       lambda: president.close_position_partial({}, "TMF", "long", 1))):
+        try:
+            fn()
+            ok = False
+        except guard.Halted:
+            ok = not touched
+        check(ok, f"president: record present → {label} refused before the Unitrade login")
+finally:
+    president._session, president._checked_close = real_session, real_held
+    record(False)
 
 # Sinopac (shioaji faked: only the module import needs it)
 sys.modules.setdefault("shioaji", types.ModuleType("shioaji"))

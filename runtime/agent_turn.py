@@ -115,7 +115,46 @@ PROTECTED_EDIT_RULES = [
     "Edit(/lib/analysis.py)",
     "Edit(/lib/exits.py)",
     "Edit(/control/**)",
+    # 統一 SDK logs (the login id is the national id) lived here before they moved under
+    # credentials/; a machine bound before that keeps a copy until the next unbind
+    "Read(/state/president_logs/**)",
 ]
+
+
+def _abs_rule_path(path):
+    """A filesystem path as a permission-rule anchor: `//` + POSIX form, a Windows drive
+    as `/c/…` (Claude Code normalizes Windows paths that way before matching). A single
+    leading slash would anchor at cwd, and <base>/credentials sits beside the workspace."""
+    p = os.path.abspath(path).replace("\\", "/")
+    m = re.match(r"([A-Za-z]):(/.*)?$", p)
+    if m:
+        p = "/" + m.group(1).lower() + (m.group(2) or "")
+    return "/" + p
+
+
+# <base>/credentials: 群益 / 統一 vaults (the trading passwords, 統一's production switch), the
+# certificates, the one-time upload keys, 群益's staged certificate and 統一's SDK logs. Named
+# patterns, not the whole folder: references/capital-broker.md has the agent read
+# rdp_password.txt there (schtasks / NSSM as Administrator), and a `!` carve-out cannot reach a
+# `//`-anchored rule. Edit is denied too — a written "live": true is how production gets
+# switched on. Bash goes through _cred_bash_guard_hooks.
+CREDENTIALS_DIR = os.path.join(os.path.dirname(os.path.abspath(WORKSPACE)), "credentials")
+CREDENTIAL_SECRET_GLOBS = ("*vault*", "*pfx*", "capital_stage/**", "president_logs/**")
+CREDENTIAL_RULES = [f"{tool}({_abs_rule_path(CREDENTIALS_DIR)}/{g})"
+                    for tool in ("Read", "Edit") for g in CREDENTIAL_SECRET_GLOBS]
+PROTECTED_EDIT_RULES.extend(CREDENTIAL_RULES)
+
+# The code that is handed the 群益 / 統一 trading and certificate passwords (the vault readers,
+# the login workers, the order and account libs, and the two manager scripts that get the
+# desktop daemon's stdin line): an agent that edits one gets the passwords out on the next
+# run (audit 2026-10-07 S1; Wei: freeze them). Every turn, chat and scheduled; the runtime's
+# own update writes them, never the agent. Bash writes go through _secret_code_bash_guard.
+SECRET_CODE_FILES = (
+    "lib/president_vault.py", "lib/president_worker.py", "lib/order_president.py", "lib/account_president.py",
+    "lib/capital_vault.py", "lib/capital_worker.py", "lib/order_capital.py", "lib/account_capital.py",
+    "manager/reconciler.py", "manager/flatten.py",
+)
+PROTECTED_EDIT_RULES.extend(f"Edit(/{f})" for f in SECRET_CODE_FILES)
 
 
 # 模型(尤其較弱的 instruction-following)看到 prompt 裡的逐字稿格式,會在寫完
@@ -1167,11 +1206,11 @@ def _sched_guard_hooks(options):
 # 而 publish 的指令字串裡會整段塞進新聞原文——所以網路工具只認指令位置(同 crontab 守門)、`.env` 前面不能是字或點
 # (www.env.go.jp)、order 模組逐一列(`order_\w+` 會誤擋 order_flow)。
 # 會下單 / 平倉 / 換 key 的模組整個擋(報告流程一個都不 import);清單由測試從 import 關係列舉對齊,新模組漏列會紅。
-SCHED_ORDER_LIB = "order_(?:binance|bingx|bybit|capital|gateio|okx|paper|sinopac|TEMPLATE)"
+SCHED_ORDER_LIB = "order_(?:binance|bingx|bybit|capital|gateio|okx|paper|president|sinopac|TEMPLATE)"
 # 這幾個名字不會出現在敘事裡,光出現就擋;execute / venue / portfolio 是一般英文字,只在 lib. 之後或 from lib import 裡擋
-SCHED_TRADE_BARE = SCHED_ORDER_LIB + "|venue_wiring|capital_vault|capital_worker"
+SCHED_TRADE_BARE = SCHED_ORDER_LIB + "|venue_wiring|capital_vault|capital_worker|president_vault|president_worker"
 SCHED_TRADE_LIB = SCHED_TRADE_BARE + "|execute|venue|portfolio"
-SCHED_TRADE_RUNTIME = "command_listener|local_daemon|web_bridge|capital_connect"
+SCHED_TRADE_RUNTIME = "command_listener|local_daemon|web_bridge|capital_connect|president_connect|president_test_order"
 SCHED_TRADE_MANAGER = ("close_symbol|flatten|stop_strategy|reconciler|run_strategy|start_reconciler\\w*|manager|seed_ledger"
                        "|update_workspace|wait_for_bar")
 # 換目錄(`cd manager && python3 close_symbol.py`,Bash 的 cwd 跨呼叫保留)就沒有 manager/ 前綴:夠獨特的名字光出現就擋,
@@ -1181,6 +1220,7 @@ SCHED_TRADE_MANAGER_BARE = ("close_symbol|stop_strategy|seed_ledger|start_reconc
 _NET_MODS = r"requests|urllib\d?|socket|http|httpx|aiohttp|ftplib|smtplib"
 SCHED_BASH_DENY_RE = re.compile(
     r"(?<![\w.])\.env\b|\b(?:read_env|load_dotenv)\b|/proc/[\w-]+/environ\b"
+    r"|\bpresident_logs\b"  # 統一 SDK logs carry the national id (moved under credentials/; old copies may remain)
     rf"|\blib[./\\](?:order_|(?:{SCHED_TRADE_LIB})\b)|\b(?:{SCHED_TRADE_BARE})\b"
     rf"|\bfrom\s+lib\s+import\s[\w\s,()]*?\b(?:{SCHED_TRADE_LIB})\b"
     rf"|\bimport\s+(?:{SCHED_TRADE_LIB}|flatten|reconciler)\b|\bfrom\s+(?:{SCHED_TRADE_LIB}|flatten|reconciler)\s+import\b"
@@ -1306,6 +1346,80 @@ def cli_supports_updated_input(version):
     return bool(m) and tuple(int(x) for x in m.groups()) >= _BG_REWRITE_MIN_CLI
 
 
+# Every turn's Bash, for the same files as CREDENTIAL_RULES — by name, so `cat`, `type`,
+# `Get-Content`, `copy`, `python -c open(...)` alike; the runtime writes them itself and never
+# through the agent's tools. A glob into credentials\ (`type credentials\*`) would take a vault
+# with it. Like the scheduled guard this is a speed bump: a name assembled at run time, or a
+# listing piped into a reader, is not caught (tests/check_cred_guard.py KNOWN_GAPS).
+CRED_BASH_DENY_RE = re.compile(
+    r"\b(?:capital|president)_vault\.json\b|\b(?:capital|president)_pfx_key\b|\bpresident\.pfx\b"
+    r"|\bcapital_stage\b|\bpresident_logs\b"
+    r"|credentials[\\/]+[^\s;&|'\"`<>]*(?:[*?]|\.pfx\b)",
+    re.IGNORECASE)
+CRED_BASH_DENY_REASON = (
+    "Refused by the Blave runtime — the broker vaults, certificates, upload keys and the 統一 SDK logs "
+    "under credentials/ are never read, copied or edited from the agent (they hold trading passwords, "
+    "the production switch and the user's national id). Use the status the libs report (probe file, "
+    "error classes, account snapshot) instead. Do not retry it another way."
+)
+
+
+def cred_bash_denied(cmd):
+    return bool(CRED_BASH_DENY_RE.search(cmd or ""))
+
+
+# Bash that names one of SECRET_CODE_FILES and writes, moves, deletes or replaces something.
+# Reading them (cat, grep, python -c "import ...") and running them stay allowed. A speed bump
+# like the credentials guard: a path assembled at run time is not caught.
+_SECRET_CODE_NAME_RE = re.compile(
+    r"(?:^|[\\/\s'\"`=(])(?:" + "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
+    + r")\.py\b", re.IGNORECASE)
+_NAMES_ALT = "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
+_REDIRECT_INTO_RE = re.compile(r">>?\s*['\"]?[^\s;&|'\"]*(?:" + _NAMES_ALT + r")\.py\b", re.IGNORECASE)
+_WRITE_MARK_RE = re.compile(
+    r"\btee\b|\bsed\b[^|;&]*\s-[a-zA-Z]*i|\bperl\b[^|;&]*\s-[a-zA-Z]*i|\b(?:cp|mv|rm|ln|install|truncate|patch|dd)\b"
+    r"|\b(?:copy|move|del|erase|ren|rename|xcopy|robocopy)\b|(?:Set|Add|Clear)-Content|Out-File|(?:Remove|Move|Copy|Rename|New)-Item"
+    r"|\bopen\([^)]*['\"][^'\"]*[wax+]|write_(?:text|bytes)|\bunlink\(|\bos\.(?:replace|rename|remove)\b|shutil\."
+    r"|\bgit\b[^|;&]*\b(?:checkout|restore|apply|am|reset|stash|mv|rm)\b",
+    re.IGNORECASE)
+SECRET_CODE_DENY_REASON = (
+    "Refused by the Blave runtime — the broker login code (lib/*president*, lib/*capital* vault/worker/order/account, "
+    "manager/reconciler.py, manager/flatten.py) is handed the user's trading passwords, so it is never written, moved "
+    "or replaced from the agent; only a Blave update changes it. Read it if you need to; put new helpers in a new "
+    "file. Do not retry it another way."
+)
+
+
+def secret_code_bash_denied(cmd):
+    cmd = cmd or ""
+    # a redirect counts only INTO one of them (`... > tmp/log 2>&1` while running one is fine)
+    return bool(_REDIRECT_INTO_RE.search(cmd) or (_SECRET_CODE_NAME_RE.search(cmd) and _WRITE_MARK_RE.search(cmd)))
+
+
+def _secret_code_bash_guard_hooks(options):
+    """PreToolUse:Bash,任何回合:改／搬／刪拿得到券商密碼的程式檔的指令拒絕。"""
+    async def guard(input_data, _tool_use_id, _context):
+        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
+        if not isinstance(cmd, str) or not secret_code_bash_denied(cmd):
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": SECRET_CODE_DENY_REASON}}
+
+    return _add_hook(options, "PreToolUse", "Bash", guard)
+
+
+def _cred_bash_guard_hooks(options):
+    """PreToolUse:Bash,任何回合:讀／抄／改 credentials 底下券商密鑰檔的指令拒絕。"""
+    async def guard(input_data, _tool_use_id, _context):
+        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
+        if not isinstance(cmd, str) or not cred_bash_denied(cmd):
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": CRED_BASH_DENY_REASON}}
+
+    return _add_hook(options, "PreToolUse", "Bash", guard)
+
+
 def _bg_guard_hooks(options):
     """PreToolUse:Bash,任何回合:run_in_background 拒絕;timeout 不足的回測啟動,引擎夠新且 need_ms 夠大就把 timeout
     改寫成 need_ms 放行(updatedInput 取代整個 input,所以帶著原欄位),否則拒絕——理由都回給模型。"""
@@ -1342,6 +1456,8 @@ def _mount_turn_hooks(options, sink, scheduled, lang_msg=None, reply_lang=None):
     # 承諾回報同樣沒人兌現。機隊的 hook 通道以排程回合那道為先例,發版前在 29026 跑一個真實回合確認(runtime/CHANGELOG)。
     # SDK 沒有 hooks 時 _add_hook 不掛(fail-open)。
     _bg_guard_hooks(options)
+    _cred_bash_guard_hooks(options)
+    _secret_code_bash_guard_hooks(options)
     if isinstance(sink, LocalSink):
         # 語言與排程器兩道只在電腦版(實測過本機 CLI);機隊另外驗過再開
         _lang_hooks(options, lang_reminder(lang_msg, reply_lang))
@@ -2731,7 +2847,8 @@ def _bash_kind(cmd, workspace, trading, remote=False):
             return "validate", obj
         if path in ("lib/quality_check.py", "lib/security_check.py", "lib/lint_export.py"):
             return "check", ""
-        if (path == "lib/capital_worker.py" and "--once" in sargs) or re.match(r"lib/account_\w+\.py$", path):
+        if ((path in ("lib/capital_worker.py", "lib/president_worker.py") and "--once" in sargs)
+                or re.match(r"lib/account_\w+\.py$", path)):
             return "account", ""
         # 本機的 workspace 腳本:內容一起掃(報告流程常是 python3 tmp/x.py)
         if not remote and not os.path.isabs(path):

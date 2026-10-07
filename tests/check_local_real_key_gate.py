@@ -240,8 +240,14 @@ try:
 finally:
     requests.get, requests.post, requests.request = real_wire
 daemon_src = open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()
-check('{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT"}' in daemon_src,
-      "local_daemon.py opens exactly Binance + the four checked venues on the desktop")
+check('{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT"}' in daemon_src,
+      "local_daemon.py opens exactly Binance + the four checked venues + 統一 on the desktop")
+# 統一 has no account read to gate on (that read is a login): its gate is the app's cert step
+cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"PRESIDENT"})
+msg = refused({"president_account": "70000011234", "president_password": "vault:x",
+               "president_ca_password": "vault:ca", "president_ca_path": "C:\\x.pfx",
+               "president_url": "https://viploginm.pfctrade.com"})
+check(bool(msg) and "NOT_CHECKED" in msg, "統一 opened on the desktop still refuses a write that skipped the cert step")
 
 # 5. paper needs no gate
 calls.clear()

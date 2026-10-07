@@ -16,6 +16,87 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 - **`local_daemon.strategy_kinds` 兩個小修(0.1.18 第一批稽核 L-6／S-0)**:①每支策略的判定各自 try/except——一支病態的 `strategy.py`(`ast` 的 RecursionError 之類)不再讓整輪變 None、整台的策略三步永遠不送;那支照列、type／market 為 null,並快取到檔案再變;②沒有 `# Type:` 檔頭的策略,讀過一份比 `strategy.py` 新的 stats.json 之後判定就定了,上線中每根 K 重寫 stats.json 不再每輪重解(最多約 1.7 MB);stats.json 比程式舊(上一版程式留下的)時照舊在它變動時重讀。測試 `tests/check_local_strategy_kinds.py`。
 
 - **外殼(desktop 0.1.18,不在 runtime/ 但同一批出貨;第一批稽核 L-0／L-1／L-3／L-4／S-1)**:①`shell/telemetry.js` 策略三步:`telemetry.json` 不存在(真新安裝)時 `strat` 從空的開始、不 seed,第一支策略照送 `strat_created`;只有舊版升級才「既有只記不送」。②只有 2xx 與 429 以外的 4xx 才記成送過;429／5xx 隔 1、2、4、8 分鐘重送、第 5 次仍失敗才記(計次只在記憶體),離線照舊每輪再試。③`shell/winsandbox.js`:完成判定要 `python.exe` 與 `Lib\os.py` 都有 CodexSandboxUsers 的 RX;PowerShell 查群組失敗會記 log(群組不存在 vs 跑不起來分開、不帶輸出內容);Codex `config.toml`(`CODEX_HOME` 優先)讀得到又沒設 elevated 就整個跳過、不起 icacls／PowerShell,讀不到照做。測試 `tests/check_shell_telemetry.js`、`tests/check_shell_win_sandbox_acl.js`。
+- **統一登入失敗就停、不自動重試(Wei 10-07 MVP;取代原本的指紋封鎖／一次放行／逾時計次／TRANSIENT)**:任何登入失敗
+  (密碼、憑證、不明、逾時/連不到)寫 `state/president_login_stop.json`(只有類別),之後這台機器上的登入(worker、下單、平倉)
+  一律本機拒 `STOPPED`、不碰券商;worker 以 exit 3 退出,NSSM `AppExit 3 Exit`／電腦版 daemon 都不重起;reconciler 統一腿跳過
+  (一輪一行 log,不記 order_error)。只有用戶按「確認登入」(probe = `president_worker.py --once`,`login(explicit=True)`)才真的
+  再登一次,過了就清掉。`--unblock`、`president_probe {"after_unlock"}`、本機 `after_unlock` 都拿掉;probe state 少了
+  `blocked`／`unblock_used`／`retry_later`／`host`(連不到併進 `timeout`)。回報的 `president_connect` 多 `login_stop: {kind, at}`。
+  測試單(`president_test_order`)也是用戶按的,走 explicit。
+- **電腦版 secrets 補交前統一腿跳過這輪(稽核 B7)**:daemon 剛起來、reconciler 拿到空行時,`lib/president_vault.credentials_ready()`
+  為 False,`manager/reconciler.place_order` 對 president 回 False(不記 order_error);交到之後 reconciler 重起就照常。
+- **交 secrets 重起 reconciler 不再卡指令迴圈、不在送單中途砍(稽核 B5/#7)**:`ReconcilerSupervisor.respawn_when_idle` 在自己的執行緒
+  寫 `state/execution/hold`(擋新一輪)、等 `state/execution/round` 清掉(最多 600 秒,同 update_workspace)才 respawn。
+- **拿得到券商密碼的程式 agent 改不得(稽核 S1,Wei 拍板)**:`lib/president_{vault,worker}.py`、`lib/{order,account}_president.py`、
+  群益對應四支、`manager/reconciler.py`、`manager/flatten.py` 進每個回合(聊天與排程)的 `Edit(...)` 禁止規則(涵蓋 Write／MultiEdit);
+  新 Bash hook `_secret_code_bash_guard_hooks`:重導向進去、sed -i、cp／mv／rm、open(...,'w')、Set-Content、git checkout 這幾支一律拒;
+  讀與照常執行放行。減速帶:執行時組出的路徑擋不到(`tests/check_secret_code_guard.py` KNOWN_GAPS)。
+- **統一期貨電腦版(Windows 本機)開通**:新的 daemon 指令 `president_local`(`LOCAL_ONLY`,不在 api 清單、只有 app 主行程送得出),
+  op = setup／cert／secrets／probe／start／stop。帳密與憑證密碼存在 app 的 safeStorage,經 daemon secret 衍生的 AES-GCM 封裝送進來,
+  只留在 daemon 記憶體;要登入的子行程(worker、probe、對帳器、平倉)從 stdin 第一行拿(`BLAVE_PRESIDENT_STDIN`),
+  不落檔、不進環境變數,agent 的回合拿不到。cert 步在本機開檔(密碼錯／不是憑證／過期不碰統一)後**複製**到
+  `credentials\president.pfx`,.env 經 `_cmd_credentials` 寫哨兵(新閘門 `local_bind_gate`:只收 cert 步剛驗過的那組)。
+  worker 改由 daemon 帶起(不裝 NSSM);它登入失敗就停(exit 3),不重起。
+  需要 lib 同版(`president_vault` 的記憶體路徑)。測試環境走雲端同一份 runtime 程式(op host／test_order 叫 `run_probe`、
+  `run_test_order`、`normalize_host`;新帳號先測試主機,`start` 只在正式且正式 probe 過,否則 `TEST_ENV`)。
+- **統一測試環境(新指令 `president_host`、`president_test_order`)**:統一要用戶先用營業員給的測試帳號在測試主機下一筆單、
+  回報後才開正式權限。綁定時 `.env` 同時寫 `president_url` 與 `president_test_url`,切環境只翻 vault 的 `live`;新帳號預設測試、
+  同帳號重綁沿用原環境、綁定帶 `president_url` 則照白名單轉。`president_host` 收 `{"env": "test"|"live"}` 或 `{"url": 信上網址}`,
+  只認 test167(`.pfctrade.com`／`.testpfctrade.com`)與 viploginm,其餘 `HOST_NOT_ALLOWED`;切到測試會移除 worker 服務並刪帳戶快照,
+  再 probe。`president_test_order` 只在測試環境(runtime 關卡、`runtime/president_test_order.py` 重查 vault 與主機、lib 登入擋非測試伺服器),
+  微台近月 1 口市價 IOC 買進,萬一成交立刻 IOC 平倉;回傳台北時間、委託書號、商品、狀態碼,不帶券商原文。probe 記 `env`;
+  `president_finish` 要 vault 在正式且最近一次 probe 是正式主機過的(`TEST_ENV`／`PROBE_NOT_OK`)。測試主機打錯密碼共用同一份封鎖檔;
+  統一是否共用三次計數待確認。電腦版 daemon 不收(`CLOUD_ONLY`),排程回合 Bash 守門擋 `president_test_order`。
+  **出貨順序:api president-api-018(3c614153)先上**。
+- **統一憑證 RDP 自己申請那條路(新指令 `president_pfx_local`)**:雲端沒有憑證的用戶自己 RDP 用憑證e總管申請,網頁只送憑證密碼
+  封包(`pfx` 必須空字串,帶檔拒 `ENVELOPE_INVALID`);機器從 `C:\Users\Administrator\PSCCA\` 由新到舊找 `.pfx`,本機驗密碼與效期,
+  第一個通過的**複製**成 `credentials\president.pfx`(原檔留給明年展延),vault 寫入／鎖／probe 同 `president_pfx`(抽成 `_import_cert`)。
+  一個都沒有回 `PFX_NONE_FOUND`,全部不過回最新那份的錯誤碼;讀不到的檔、指出資料夾的連結當不存在,檔名(身分證號)不進回傳、
+  status、例外、log。電腦版 daemon 不收(`CLOUD_ONLY`)。**出貨順序:api president-api-018(382d7396)先上**。
+- **`<base>/credentials` 的 agent 守門(群益＋統一)**:每個回合 disallowed 加 Read／Edit
+  `//<base>/credentials/{*vault*,*pfx*,capital_stage/**,president_logs/**}`(雙斜線＝絕對路徑,Windows 換成 `/c/…`;
+  單斜線會錨到 workspace);新的 `_cred_bash_guard_hooks` 每個回合掛在 Bash 上,指令提到這些檔名或 glob 進 credentials
+  就拒絕。`rdp_password.txt` 刻意不擋(`references/capital-broker.md` 要 agent 讀它設 NSSM／schtasks)。減速帶不是邊界,
+  擋不到的寫法列在 `tests/check_cred_guard.py` KNOWN_GAPS。
+- **啟動清暫存檔納入 `<base>/credentials`**:綁定被砍在半途時留下的 vault 明文暫存檔(`.<name>.<12 hex>.tmp`)開機清掉;
+  列不到的目錄(ACL)照舊略過。
+- **統一 SDK log 搬進 `credentials\`**:SDK 自己的 log(登入帳號=身分證號、每張單)從 `state/president_logs/` 改寫到
+  `<base>/credentials/president_logs/`(跟 vault 同 ACL);解綁／逐出時連同舊位置一起刪。agent 每個回合禁 `Read(/state/president_logs/**)`,
+  排程回合 Bash 守門擋 `president_logs`。
+- **統一憑證上傳與綁定不互蓋**:`president_pfx` 的 vault 寫入失敗時把剛落地的 `president.pfx` 刪掉(否則新憑證配舊／空密碼,
+  一次 probe 就燒掉券商三次之一);`president_probe`／`president_finish` 的關卡除了憑證檔也要 vault 裡有 `president_ca_password`
+  (看鍵在不在,空字串是合法密碼);`divert_credentials` 先拿 `_busy`,有步驟在跑回 `BUSY`;`run_pfx` 寫 vault 前重讀,
+  帳號在上傳途中被別的行程換掉回 `REBOUND` 並刪憑證。
+- **統一綁定成對檢查**:雲端 Windows 上 `credentials` 帶 `president_*` 卻缺帳號或真密碼(只帶密碼、只帶憑證密碼、只帶帳號、
+  帳號配哨兵)一律拒 `INCOMPLETE`——原本原樣放行,單獨一筆密碼會明文落進 `.env`、繞過 vault。api 端同規則(先上)。
+- **統一期貨雲端開通(新 `runtime/president_connect.py`,群益那套的同形)**:`credentials` 綁統一時(雲端 Windows),交易密碼與
+  正式開關(`"live": true`)寫進 `credentials\president_vault.json`,`.env` 換成哨兵並寫入固定的憑證路徑與正式主機;舊 workspace lib
+  (不從 vault 讀正式開關)拒綁 `LIB_OUTDATED`。五個新指令 `president_setup`(裝 unitrade 釘版)／`president_pfx_key`／`president_pfx`
+  (瀏覽器封裝的 pfx + 憑證密碼,本機先驗密碼再存成固定檔名 `president.pfx`,接著唯讀登入一次)／`president_probe`
+  (`{"after_unlock": true}` 先 `--unblock`)／`president_finish`(`president_worker.py --install`);進度寫
+  `state/president_connect.json`,報告帶 `president_connect`。vault 與 pfx 給 SYSTEM + Administrators 讀(worker 是 LocalSystem)。
+  非 Windows 雲端機拒綁 `NOT_WINDOWS`(否則交易密碼會明文留在 `.env`、又永遠到不了正式主機)。解綁會把統一七行全拿掉(`_cmd_credentials_remove` 依 `cred_env` 展開)並刪 vault、pfx、待用金鑰、status,叫 worker 服務自刪;
+  綁別家逐出統一時同樣刪。電腦版 daemon 不收這五個(`CLOUD_ONLY`)。`capital_connect.cmd_pfx_key`/`open_envelope` 多一個
+  `key_path` 參數(預設不變)讓統一用自己的金鑰檔。**出貨順序:api(president-api da25804f)先上**,否則網頁送的指令被 400 擋。
+  測試 `tests/check_president_connect.py`(加密那段要有 `cryptography` 的 python,例如 `/usr/bin/python3`)。
+
+- **台灣券商分支改查 venue 特性表(純抽取,群益行為不變)**:新 `runtime/venue_traits.py`(`lib/venue_traits.py` 的逐字副本,runtime 與
+  workspace 分通道出貨所以不 import),`command_listener` 的金庫清除／NSSM Administrator 密碼／手動平倉列、`portfolio_reporter.can_flatten`
+  改問特性表,不再比對字面 `"capital"`。測試 `tests/check_venue_traits.py`(兩份逐字相同、列舉零殘留)。
+- **統一期貨(president)lib 登記進 runtime 的列舉**:排程回合 Bash 守門擋 `order_president` / `president_vault` / `president_worker`、
+  Stop 不殺 `president_worker` 與 `order_president` 行程、Windows file_watcher 盯 `state/president_account.json`(同群益快照那條)、
+  `president_worker.py --once` 歸類為讀帳戶;`venue_traits` 的 president 補 `perp: False`(close_symbol 拒絕,同群益/永豐)。
+  尚未上架(選單不動),lib 本身在 workspace 通道。
+- **平台認得統一期貨的綁定**:它的 env 名是鎖死的 `president_account` / `president_password` 等五個(外加 `PRESIDENT_LIVE` /
+  `president_url`),沒有 `{ID}_API_KEY`,原本 `_venue_cred_ids`、綁定 manifest、換綁逐出、解綁、`portfolio_reporter.venues()`、
+  `account_reader` 全都看不到它,`president_ca_password` 還會被讀成幽靈 venue `PRESIDENT_CA`。`venue_traits` 新增 `cred_env`
+  (各 venue 自己的 env 名與角色),`command_listener._cred_match` 先查它再套 pair regex;換綁會把七個名字一起逐出。
+  兩通道不同步期間:新 runtime+舊 workspace 沒有 president lib,`account.present` 為 false,不影響其他 venue;
+  舊 runtime+新 workspace 看不到 president 綁定(維持現況)。測試 `tests/check_president_discovery.py`。
+  **會改變行為的機器**:依 08-03 舊版 reference 手寫過 `president_*` 到 `.env` 的機器(發版前要先盤點),runtime 一上去:
+  (a) web 報告的 venues 會多一個已綁定的 president;(b) 之後綁任何交易所都會逐出全部七行 `president_*`(含 `PRESIDENT_LIVE`);
+  (c) 沒有綁定 manifest 的這類機器 `bound` 變兩家,`_cmd_amounts` 失去「唯一已綁交易所」預設,新策略的 routing 會是空的。
+- `venue_traits` 加 `label`(群益/永豐金/統一期貨),flatten 的「平倉未確認成交」訊息改用它——群益的字句不變,統一不再看到「群益」。
 
 ## 1.1.116 — 2026-10-06(desktop 0.1.17)
 

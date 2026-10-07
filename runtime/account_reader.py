@@ -27,6 +27,7 @@ import sys
 import time
 
 import atomic_file
+import venue_traits  # same runtime dir
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 OUT_PATH = os.path.join(WORKSPACE, "manager", "account.json")
@@ -173,10 +174,14 @@ def _pull_flows(vid, mod, env, flow_state):
 def _venues(env):
     out = []
     for k in env:
+        own = venue_traits.cred_env(k)  # 統一 is bound by president_account, not *_API_KEY
         m = _ENV_KEY_RE.match(k + "=")
-        if not m:
+        if own and own[1] == "API_KEY":
+            prefix = own[0]
+        elif own or not m:
             continue
-        prefix = m.group(1)
+        else:
+            prefix = m.group(1)
         # DATA_<SOURCE>_* = data-source keys, never a venue
         # (command_listener._DATA_CRED_PREFIX) — even if an agent someday
         # writes a lib/account_data_<source>.py

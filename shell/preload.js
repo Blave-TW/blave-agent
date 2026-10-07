@@ -63,6 +63,15 @@ contextBridge.exposeInMainWorld("blave", {
   capitalUpload: (pw) => ipcRenderer.invoke("capital-upload", pw),
   capitalUnbind: () => ipcRenderer.invoke("capital-unbind"),
   capitalForget: () => ipcRenderer.invoke("capital-forget"),
+  // 統一本機開通(president_local.js):密碼送進主行程一次,這裡拿得回來的只有代號、張數、到期日、帳號
+  presidentInfo: () => ipcRenderer.invoke("president-info"),
+  presidentCreds: (account, password) => ipcRenderer.invoke("president-creds", { account, password }),
+  presidentScan: () => ipcRenderer.invoke("president-scan"),
+  presidentPick: () => ipcRenderer.invoke("president-pick"),
+  presidentTcem: () => ipcRenderer.invoke("president-tcem"),
+  presidentCert: (caPassword, source) => ipcRenderer.invoke("president-cert", { caPassword, source }),
+  presidentStep: (name, o) => ipcRenderer.invoke("president-step", name, o || {}),
+  presidentUnbind: () => ipcRenderer.invoke("president-unbind"),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),
   onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),

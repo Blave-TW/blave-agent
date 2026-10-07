@@ -124,11 +124,13 @@ def sweep_stale(directory, older_than_s=600, only=None):
 
 def sweep_runtime_temps(workspace, state_dir):
     """At runtime start: the directories the runtime replaces files in, plus the .env temps
-    (shell and runtime) at the workspace root."""
+    (shell and runtime) at the workspace root. <base>/credentials holds the vault temps — a
+    killed bind leaves a plaintext password there; a directory this identity cannot list
+    (an ACL) is skipped like a missing one."""
     n = sweep_stale(workspace, only=".env")
     for d in (workspace, os.path.join(workspace, "manager"), os.path.join(workspace, "state"),
               os.path.join(workspace, "state", "heartbeat"), os.path.join(workspace, "reports"),
-              state_dir):
+              state_dir, os.path.join(os.path.dirname(os.path.abspath(workspace)), "credentials")):
         n += sweep_stale(d)
     return n
 

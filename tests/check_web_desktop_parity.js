@@ -1,5 +1,5 @@
 // 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):倍數提醒門檻 LEV_T1 / T2 / T3,
-// 以及讀帳失敗時的帳戶幣別對照表(七個帳戶)。一邊改了、另一邊沒跟就紅。
+// 以及讀帳失敗時的帳戶幣別對照表(八個帳戶,統一期貨 president 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
 //   電腦版:shell/renderer/trade.js 的 LEV_T* 與 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
 //   網頁:web/app/main/templates/agent/workspace.html 的 LEV_T* 與 CX_VENUES[].ccy
 // 網頁那棵用 BLAVE_WEB_DIR 指定(預設 monorepo 的 ../web);找不到就 fail,不 SKIP——不比對等於沒有這支測試。
@@ -22,5 +22,5 @@ if (other) for (const m of other[1].matchAll(/(\w+): "(\w+)"/g)) dt[m[1]] = m[2]
 const wa = web.indexOf("const CX_VENUES = ["), wb = web.indexOf("\n        ];\n", wa), wt = {};
 if (wa >= 0 && wb > wa) for (const m of web.slice(wa, wb).matchAll(/\{\s*id: "(\w+)"[^{}]*?ccy: "(\w+)"/g)) wt[m[1]] = m[2];
 const sorted = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
-ok("幣別對照表兩邊同一份(七個帳戶)", Object.keys(dt).length === 7 && sorted(dt) === sorted(wt), sorted(dt) + " vs " + sorted(wt));
+ok("幣別對照表兩邊同一份(八個帳戶)", Object.keys(dt).length === 8 && sorted(dt) === sorted(wt), sorted(dt) + " vs " + sorted(wt));
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
