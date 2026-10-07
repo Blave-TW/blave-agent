@@ -708,6 +708,16 @@ worker writes an error snapshot, backs off 30 s, and exits so NSSM restarts it w
 session — a stale/error snapshot therefore means the service is down or the venue is failing,
 never a silently-wrong number.
 
+Each snapshot carries `query_started_at` (when that read began). Every 群益 futures order on the
+machine — reconciler, 全部平倉 (`manager/flatten.py`) or a script — is marked in
+`state/capital_last_order_at` by `lib/order_capital` (before the send and again after the fill
+wait), and the reconciler re-reads that mark every round: it skips its rounds until a read that
+started at least `ORDER_SETTLE_S` (`lib/capital_vault.py`, 20 s) after the order — a read begun
+before the order and written after it still shows the old open interest, and on `sNewClose=2` a
+second close on that read opens the reverse. The worker holds its early tick (`state/capital_refresh`) until the same 20 s have
+passed. A snapshot from a worker started before this field existed is judged by `read_at` until
+the service restarts.
+
 `lib/capital_worker.py` touches `state/heartbeat/capital_worker` at the top of each 60 s loop
 tick (`references/deployment.md`'s daemon heartbeat convention). Register it once in
 `state/deployments.json` so `manager/healthcheck.py` alerts on a dead worker instead of it going

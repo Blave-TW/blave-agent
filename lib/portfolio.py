@@ -1,7 +1,7 @@
 import glob, hashlib, inspect, json, logging, os, re, time
 from datetime import datetime, timedelta
 
-from lib import guard
+from lib import guard, venue_traits
 
 
 def _append_reconciler_log(order):
@@ -247,8 +247,10 @@ def book_venue():
     None when no venue can be told — the book is then read across venues, as
     before books were per venue."""
     try:
-        if any(v == 'capital' for v in (load_portfolio_config().get('exchanges') or {}).values()):
-            return 'capital'
+        hand_wired = venue_traits.hand_wired_routed(
+            (load_portfolio_config().get('exchanges') or {}).values())
+        if hand_wired:
+            return hand_wired
         from lib.venue_wiring import detect_venue, read_env
         return detect_venue(read_env())
     except Exception:
@@ -1956,7 +1958,8 @@ def native_units(asset_spec, *exchanges, actual=None):
     close-on-removal row has no asset_spec (the strategy left `target`), so
     the capital exchange label — or the account row's own unit ("contracts",
     which the paper venue reports) — stands in for it there."""
-    return (asset_type(asset_spec) in NATIVE_UNIT_TYPES or 'capital' in exchanges
+    return (asset_type(asset_spec) in NATIVE_UNIT_TYPES
+            or any(venue_traits.has(e, 'native_units') for e in exchanges)
             or (actual or {}).get('unit') == 'contracts')
 
 

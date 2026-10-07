@@ -1,277 +1,382 @@
 # President Futures (統一期貨) Broker — Agent Reference
 
-Use this document when a user asks to connect their President Futures (統一期貨) account to
-Blave Agent. The integration uses the official **Unitrade API** (`pip install unitrade`), a
-cross-platform Python package (Linux/Windows/macOS) published by President Futures.
+Use this document when a user asks to connect a President Futures (統一期貨) account. The
+integration uses the broker's official **Unitrade API** (`pip install unitrade`).
 
 Package docs: https://pfcec.github.io/unitrade/ · PyPI: https://pypi.org/project/unitrade/
+
+**Status: test host only, not on the connect menu.** The shipped libs (`lib/order_president.py`,
+`lib/account_president.py`, `lib/president_worker.py`, `lib/president_vault.py`) have run against
+the broker's test host; no live account has placed an order through them. The reconciler has a
+`president` block (`manager/reconciler.py`, hand-wired like 群益), but it only trades a venue the
+platform's bind wrote into `manager/credentials.ui.json` — and there is no platform bind for 統一
+yet. A `.env` written by hand (Step 4) is enough for the probe and test orders, not for the
+reconciler; do not work around that. Everything marked *unverified* needs a live account.
 
 ---
 
 ## Supported Products
 
-| Product | Symbol Example | Notes |
-|---------|---------------|-------|
-| 台灣期貨 TXF | dynamic, e.g. `TXFG6` | 台指期近月，1 口 = 200 × 指數點位 (TWD). No static "always-near-month" alias — the near-month contract id must be looked up each session (see Step 6). |
-| Other domestic futures/options | via `get_domestic_contracts` | Same account also trades other TAIFEX domestic products; not yet covered by an `asset_specs` template in this doc — extend by analogy to TXF if a user asks. |
+| Canonical symbol | Product | Point value (TWD) | Broker contract code |
+|---|---|---|---|
+| `TXF` | 台指期 大台 | 200 | `TXF` + month letter + year digit, e.g. `TXFJ6` = Oct 2026 |
+| `MXF` | 小台 | 50 | `MXFJ6` |
+| `TMF` | 微台 | 10 | `TMFJ6` |
 
-This doc only covers the **domestic futures (國內期貨) account** — Unitrade also exposes overseas
-futures (`api.ftrade`/`api.faccount`) and TWSE-listed stocks (`api.strade`, not yet explored here).
+Month letters are A–L for January–December; the digit is the last digit of the year. There is no
+rolling alias like SinoPac's `TXFR1` or Capital's `TM0000` — see *Near month* below.
 
----
-
-## Step 0 — Determine Scope
-
-**Ask the user first:**
-> 你要交易台指期（TXF）還是其他期貨/選擇權商品？
-
-Most users onboarding for the first time want TXF only — the rest of this doc assumes that.
+This covers the **domestic futures account** only. Unitrade also has overseas futures
+(`api.ftrade` / `api.faccount`) and a stock quote feed; none of it is used here.
 
 ---
 
-## Step 1 — Apply for API Access
+## Platform — v1 supports Windows only
 
-1. User contacts their President Futures broker rep (營業員) and requests **統一API 測試環境開通**.
-2. The rep emails a **VIP_API_測試 帳號啟用通知** containing:
-   - Test environment login URL (e.g. `https://testNNN.pfctrade.com`) — **use exactly the URL in the email, do not guess or reuse an old one**, PFCF rotates test hosts.
-   - Confirmation that the trading password doubles as the test-environment login password.
-3. **The test environment requires a real digital certificate — there is no certificate-free simulation mode** (unlike SinoPac). Proceed to Step 2 before attempting login.
-
----
-
-## Step 2 — Obtain the Certificate (.pfx)
-
-**This step requires a Windows machine — the certificate issuance tool is Windows-only.** The
-resulting `.pfx` file itself is platform-agnostic and works fine when uploaded to the Linux
-Blave Agent workspace; only *obtaining* it is the friction point.
-
-**Ask the user:**
-> 你之前有沒有用過統一期貨的下單軟體、或申請過電腦憑證？
-
-- **If yes:** the `.pfx` is likely already on their Windows PC at
-  `C:\Users\<username>\PSCCA\PSC_<ID>_<expiry>.pfx`. They just need to locate and send it.
-- **If no:** they must run **憑證e總管** (Windows tool, download via https://pki.pscnet.com.tw/)
-  to request a new certificate. There is no confirmed macOS/Linux path for *issuing* a new
-  certificate — a web-based portal exists at the same URL but its cross-platform completeness is
-  unconfirmed; tell the user to ask their broker rep if they have no Windows access at all.
-- **Certificate password is separate from the trading/login password** — it was set at
-  certificate-issuance time. If the user never set one, it may be blank.
-- **Certificates expire after 1 year** and must be renewed via the same Windows tool. Warn the
-  user this is a recurring (not one-time) step.
-
-**Ask the user (in one message) once they have the file:**
-> 請把你的憑證檔案（.pfx）透過 Telegram 傳給我，並告訴我憑證密碼（如果沒設定就跟我說沒有）。
-
-Agent saves the uploaded file to a fixed workspace path, e.g. `certs/president.pfx` — never print
-its contents or path aloud beyond confirming it was saved.
+- `unitrade` 1.0.0.7 ships wheels for Linux x86_64, macOS universal2 and Windows, **CPython 3.7 to
+  3.14**. No Linux ARM wheel. Dependencies:
+  `bitarray`, `requests`, `cryptography`, `numpy`.
+- **v1 is Windows-only anyway, because of the certificate.** The `.pfx` is issued by 憑證e總管
+  (https://pki.pscnet.com.tw/), which only runs on Windows 10 (Traditional Chinese) or later — no
+  web or Mac version was found. A **new** certificate also needs the account holder to phone their
+  broker rep or customer service ((02) 8172-4668) to have the application permission opened first.
+  The certificate is used on the machine it was issued on; there is no upload flow in v1.
+- Certificates expire after one year and are renewed with the same Windows tool.
+- There is **no certificate-free simulation mode** — the test host needs the real certificate too.
 
 ---
 
-## Step 3 — Install the Unitrade Package
+## Step 1 — Ask the broker rep (one call, three things)
 
-```bash
-pip install unitrade
+1. Open **API trading permission** on the futures account.
+2. Open the **certificate application permission** (only if there is no `.pfx` yet).
+3. Apply for an **API test account**. Also ask: the production URL, connection and order-rate
+   limits, and whether production needs the machine's IP registered.
+
+**Test host URL gotcha:** the activation mail writes the host as `test167.pfctrade.com`, but the
+test hosts' TLS certificate only covers `*.testpfctrade.com`. The working URL is
+**`https://test167.testpfctrade.com`** (substitute the number from the mail). The libs refuse any
+other host until production is switched on (Step 4).
+
+---
+
+## Step 2 — The certificate (.pfx)
+
+Ask the user:
+> 你之前有沒有在這台電腦用過統一期貨的下單軟體、或申請過電腦憑證？
+
+- **Yes:** it is usually at `C:\Users\<name>\PSCCA\PSC_<ID>_<expiry>.pfx`. The file name contains
+  the user's national ID — never print, log or echo it; refer to it as "the certificate file".
+- **No:** the user runs 憑證e總管 on this Windows machine (after the phone call in Step 1; it sends
+  an SMS, so the user must be present).
+- The **certificate password is separate from the trading password** (set at issuance; may be empty).
+
+---
+
+## Step 3 — Install
+
+```
+pip install unitrade python-dotenv
 ```
 
-**Platform notes (confirmed by testing):**
-- PyPI ships wheels for **Linux x86_64 and Windows**, Python **3.7–3.12**. No `aarch64`/ARM Linux
-  wheel, no `cp313`/`cp314` wheel as of this writing.
-- Blave Agent's default Linux workspace (Ubuntu, x86_64, system Python 3.10) installs cleanly.
-- Blave Agent Windows workspaces ship **Python 3.14** by default — `unitrade` will fail to install
-  there until a 3.12-or-earlier interpreter is set up alongside it. **Recommend Linux workspaces
-  for this integration** unless the user's machine is confirmed to have a compatible Python.
-- Before running Step 1 code below, confirm with `python3 -c "import platform; print(platform.machine(), platform.python_version())"` — if the machine is ARM or Python is 3.13+, stop and tell the user this broker isn't supported on their current machine.
+---
+
+## Step 4 — `.env`
+
+Ask the user (one message) for the 11-digit trading account (company code included), the trading
+password, and the certificate password. Write `.env` yourself; never ask the user to edit it, never
+echo values back. **These key names are locked** (bound machines resolve them) — do not rename:
+
+```
+president_account=<11-digit account incl. company code>
+president_password=<trading password>
+president_test_url=https://test167.testpfctrade.com
+president_ca_path=<absolute path to the .pfx on this machine>
+president_ca_password=<certificate password, may be empty>
+```
+
+**On a Windows cloud machine the user binds 統一期貨 on the web 自動下單 page, not through you.**
+The platform's connect steps (`runtime/president_connect.py`) take the account and trading password
+from the form, the `.pfx` and its password as an encrypted upload, install `unitrade`, log in once
+read-only and install the worker. Afterwards `.env` holds only sentinels (`president_password=vault:…`,
+`president_ca_password=vault:ca`), `president_ca_path` points at `<base>\credentials\president.pfx`
+and the secrets sit in the vault. Never rewrite those lines, never write the vault or the `.pfx`, never
+run the steps by hand; if the user asks you to bind it, send them to the page. Unbinding (or binding
+another venue) removes all seven lines, the vault, the `.pfx` and the worker service. The `.env` block
+above is for a machine set up by hand (development / test host).
+
+Production, only after the broker's production mail AND the user's explicit go-ahead, is switched
+on by the platform's 統一期貨 binding flow — it writes `"live": true` into
+`<base>/credentials/president_vault.json`. **You cannot switch it on:** never write that file, and a
+`PRESIDENT_LIVE` line in `.env` is refused (the libs raise rather than log in). `.env` carries only
+the production host:
+
+```
+president_url=https://viploginm.pfctrade.com
+```
+
+Once production is on, only the two production login hosts are accepted —
+`https://viploginm.pfctrade.com` and `https://viploginb.pfctrade.com` (both verified to log in with
+a matching TLS certificate, 2026-10-02). The broker's production mail for this account says
+**「本申請僅開放內外期 API 下單權限」** — futures order permission only (no stock trading through it).
+Until then the libs only accept a `*.testpfctrade.com` host, and a login whose server reports it
+is not a test server is refused. The libs read `.env` themselves (one parser: BOM tolerated, one
+pair of surrounding quotes removed, nothing else interpreted) — a mapping passed by a caller is
+ignored.
+
+**Wrong credentials are not retried.** 統一 locks an account after three wrong logins. A login the
+broker refuses for the password or the certificate (or two it refuses for a reason the libs can't
+classify) writes `state/president_login_block.json`; every later login on this machine — worker,
+probe, orders — is refused locally until the credentials in `.env` change. Never delete that file
+to retry. Two ways out, both the user's call:
+- the password / certificate password was wrong → the user gives the right one and `.env` is
+  updated (a changed value lifts the block);
+- the account was locked at the broker and the user says they have unlocked it there (統一's app,
+  online unlock or the broker rep) → run `python lib/president_worker.py --unblock`. That allows
+  exactly **one** login; if it fails on the password or certificate, the block is back at once.
+  **Each block can be released once** — a second `--unblock` answers "refused"; after that only
+  changed credentials in `.env` lift it (and if those fail too, that is a new block with its own
+  one release). **One** refusal the libs cannot classify blocks too: the broker's real
+  wrong-password text has not been observed, and the user's own typo in the app plus two of ours
+  would lock the account. A `.pfx` this identity cannot read is refused as `CERT` and blocked
+  without contacting the broker (the SDK sends the password before it opens the certificate). A
+  released try that could not connect (`HOST` — name resolution, connection refused, connect
+  timeout, TLS) never reached the password check,
+  so it is given back; a `TIMEOUT` — including a connection aborted or reset after the request
+  went out — is spent (the broker may have checked the password). The certificate is fingerprinted by the `.pfx` file's bytes, so rewriting
+  `president_ca_path` with an equivalent spelling (case, `.\`, relative) does not count as new
+  credentials; a renewed certificate does. Never run it on your own initiative — every
+  try counts toward 統一's three. Login errors come back as a
+class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `MAINTENANCE`, `BLOCKED`,
+`UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
+national id, so it is never passed on. No login is attempted in 05:30–05:50.
 
 ---
 
-## Step 4 — Collect Credentials & Write `.env`
+## Step 5 — Verify (read-only)
 
-**Ask the user (in one message):**
-> 請提供你的統一期貨交易帳號（含分公司碼，共 11 碼，例如 8000 開頭）和交易密碼。
+Do not hand-write a login script. Run the worker once:
 
-The test environment URL was already given in the activation email (Step 1) — reuse it here,
-do not ask the user to repeat it.
+```
+python lib/president_worker.py --once
+```
 
-Agent writes directly to `.env` — never asks the user to edit it themselves:
+It logs in, reads margin and positions once, writes `state/president_probe.json`, logs out and
+exits 0 (ok) / 2 (failed, with the error in the file). `equity` is 權益數; `margin_error` is set
+when the broker had no margin row.
+
+The long-running form (`python lib/president_worker.py`, no flag) is the machine's one standing
+login and writes `state/president_account.json` every 60 s for `lib/account_president.py`. On a
+Windows machine `python lib/president_worker.py --install` makes it the NSSM service
+`blave-agent-president` (LocalSystem, auto start, log `state/president_worker.log`, registered in
+`state/deployments.json` for the health check) and waits for its first snapshot; `--uninstall`
+removes it. Run it with the same `python` that `pip install unitrade` went into. It refuses on the
+desktop app (`BLAVE_AGENT_LOCAL=1`): there the agent runs as the user, and a LocalSystem service
+running agent-writable files would hand it SYSTEM. On a cloud machine the agent's shell already
+runs as LocalSystem, so the service adds no privilege.
+
+---
+
+## Step 6 — Orders
+
+Use `lib/order_president.py` (full contract in `references/lib.md`):
 
 ```python
-# Agent 執行：append keys to .env
-with open('.env', 'a') as f:
-    f.write(f"\npresident_account={account}\n")        # 11-digit account incl. company code
-    f.write(f"president_password={password}\n")        # trading password
-    f.write(f"president_test_url={test_url}\n")         # from the activation email, Step 1
-    f.write(f"president_ca_path=certs/president.pfx\n")
-    f.write(f"president_ca_password={ca_password}\n")   # may be empty string
+from lib import order_president
+
+# the first argument is kept for the interface; credentials come from .env
+r = order_president.place_futures_market_order({}, "TMF", "buy", 1, "entry", client_tag="t1")
+print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 ```
 
-Confirm the write succeeded and tell the user the credentials are stored — do not echo them back.
+- Market IOC, quantity in 口. Entries send `opencloseflag=""` (the broker decides); closes send
+  `"1"` (close only) and are checked against the worker snapshot first — the held row must be on the
+  other side and at least as large, and the worker's read must have **started** at least 20 s
+  (`president_vault.ORDER_SETTLE_S`; live 10-02 the broker's position showed the fill 12.0 s and
+  10.9 s after the send) after that contract's last send — or they are refused without reaching the
+  broker. The check and a send marker are taken under one machine-wide OS lock
+  (`state/president_send.lock`; released by the OS if its holder dies), so two processes
+  (reconciler, 全部平倉, a script) cannot both pass it; the marker is written again right before the
+  order goes out, so a slow login (up to 30 s) cannot eat the margin. Expect a close right after another order to be refused for ~20–22 s; retry, never force.
+- `status='filled'` only on a real match; `status='sent'` means no fill was seen in time;
+  `status='unknown'` means the broker answered a status code the SDK does not define — none of
+  them is resubmitted; check the position first. `unknown` is **P3 today** (the lib's
+  `order_unknown_status` audit line + a reconciler log warning; it is deliberately not written to
+  `manager/order_errors.json`, because the platform turns every row there into a P1 下單失敗 TG +
+  email). Raising it to P2 needs, in this order: api routing that `kind` to its own P2 event,
+  `notifications.md` ranking it, then the machine writing it. Entries and closes both return the broker's
+  `ack` (first status code) and `statuscode` (last).
+- Entries are blocked while `state/HALT` is set; reduces always pass.
+
+### Near month
+
+- Contracts settle at **13:30 Taipei on the third Wednesday** of their month — the instant the
+  backtest's `TXFR1` series changes contract (its first new-month bar is 13:31).
+- **Which held rows count** (`lib/president_contracts.py`; the worker records the broker's contract
+  list each tick for this):
+  - the bot's months are only the **front month** (next to settle) and the **computed entry
+    month** — they differ between the roll (15:00 the day before) and the 13:30 settlement;
+  - a month **past its settlement time that the broker's list, read, no longer carries** is
+    **settled residue**: treated as not held, never closed (it was cash-settled), only logged;
+  - a month past its settlement time while the broker's list **could not be read** fails the read
+    as a transient (`ListUnknown`): the reconciler skips the round and nothing is guessed — guessing
+    "settled" would open the next month beside a holiday-postponed one that still trades;
+  - a month past its settlement time that the broker **still lists** (a holiday-postponed
+    settlement, or a list that has not dropped it yet) still counts as held;
+  - **any other month** (a far month the user opened in the app) is **left out of every read**
+    and logged once: Blave never adds to, closes or sums a month it does not trade, and it does
+    not stop the bot's own months — of that root or any other — from being read, traded or closed
+    by 全部平倉. It is the user's position; the user closes it in the app.
+- **Entry** → if the bot holds a month of that root, the entry is added to **that month** (never two
+  months at once). With nothing held: from **15:00 the day before settlement** (the night session that opens the settlement
+  day's trading date) new positions go to the next month; before that, to the current one. A
+  position opened in the expiring contract inside that window would be cash-settled at 13:30 and
+  re-opened by the reconciler in the next month — two extra round trips. The backtest's `TXFR1`
+  stays on the expiring contract until 13:30 (first new-month bar 13:31); live, new entries differ
+  from it only by the calendar spread's move over those ≤22h30m. **Exception:** if the account still
+  holds the expiring month of that root inside the window, an entry (an addition) goes to the
+  expiring month too, so two months are never held at once; it settles with the rest at 13:30.
+  Every entry waits (`EntryDeferred`, not an error — the reconciler books the close of a flip and
+  opens next round) until the worker snapshot has caught up with the last order, since the held
+  month is read from it. The contract must appear in
+  `get_domestic_contracts(root, "F")`; if it does not, the order is refused — never a guess.
+- **Reduce / close** → the `productid` of the position row being closed (worker snapshot), never a
+  re-derived month: after a roll the near month is no longer the contract that is held. A root open
+  in two months is refused; close each by its month code.
+- **Unverified on a real settlement day** (the next is 2026-10-21): what `get_domestic_contracts`
+  lists between 13:30 and the night session, and holiday-shifted settlements (the rule assumes the
+  third Wednesday).
 
 ---
 
-## Step 5 — Test Connection
+## Field-Verified Lessons (test host, 2026-09-30)
 
-Use the **test environment URL from the user's activation email** — never hardcode a specific
-test host, PFCF rotates them per activation batch.
-
-```python
-from unitrade.unitrade import Unitrade
-from dotenv import dotenv_values
-
-env = dotenv_values('.env')
-api = Unitrade()
-resp = api.login(
-    env['president_test_url'],       # from the activation email, e.g. "https://testNNN.pfctrade.com"
-    env['president_account'],
-    env['president_password'],
-    env['president_ca_path'],
-    env['president_ca_password'],
-)
-print("Login:", resp.ok, resp.error)
-if resp.ok:
-    accounts = api.get_accounts()   # 7-digit account, no company-code prefix
-    print("Accounts:", accounts)
-api.logout()
-```
-
-**成功**：`resp.ok is True`，`get_accounts()` 回傳帳號列表。
-**失敗常見原因**：
-- 憑證路徑錯誤或憑證密碼錯誤 → error message mentions `憑證有誤` / `無法在 ... 找到指定憑證`
-- 用錯 URL（不是活動信裡指定的測試主機）
-- 帳號/密碼打錯
-
----
-
-## Step 6 — Check Account Equity & Positions
-
-```python
-import time
-time.sleep(2)   # let the session settle before querying
-
-actno = api.get_accounts()[0]
-
-margin = api.daccount.get_margin(actno, "")
-print("Margin ok:", margin.ok, margin.error)
-if margin.ok and margin.data:
-    d = margin.data[0]
-    print("Equity (optequity):", d.optequity, "TWD")
-
-positions = api.daccount.get_position(actno)
-print("Positions ok:", positions.ok)
-for p in (positions.data or []):
-    print(p.productid, p.month, "buy_open", p.current_buy_open_position, "sell_open", p.current_sell_open_position)
-```
-
-**Note:** on a test account with no funded balance, `get_margin` legitimately returns
-`ok=False, error='查無資料'` — this is not a connection failure. Re-verify equity once the
-production account is live and funded, since equity reporting depends on this call.
-
-**Near-month contract lookup** (no `TXFR1`-style auto-roll alias exists in Unitrade):
-
-```python
-contracts = api.get_domestic_contracts("TXF", "F")   # "F" = futures product category
-near_month_id = contracts.data[0].prod_id if contracts.ok else None
-```
-
-Call this once per session (or once per day) rather than hardcoding a contract id — TXF rolls to a
-new near-month code monthly and a stale hardcoded id will silently trade the wrong contract.
-
----
-
-## Step 7 — Wire into Portfolio
-
-在 `portfolio_config.json` 的 `exchanges` 加入 president 路由：
-
-```json
-{
-  "account_value": 500000,
-  "exchanges": {
-    "txf_strategy": "president"
-  },
-  "asset_specs": {
-    "txf_strategy": {
-      "type": "futures_contracts",
-      "contract_value": 200,
-      "currency": "TWD",
-      "lot_size": 1
-    }
-  }
-}
-```
-
-The order/account library implementing `place_order()` / `get_positions()` for `"president"` must
-resolve the near-month contract id at call time (Step 6), not read a static symbol from
-`asset_specs` — see `references/manager.md` for the reconciler wiring pattern.
-
----
-
-## Trading Hours
-
-| Market | Hours (台灣時間) |
-|--------|-----------------|
-| 台指期日盤 | 08:45 – 13:45 (Mon–Fri) |
-| 台指期夜盤 | 15:00 – 05:00 (Mon–Fri) |
-
----
-
-## Order Types
-
-```python
-from unitrade.unitrade import DOrderObject
-
-order = DOrderObject()
-order.actno = actno
-order.note = "blave"
-order.subactno = ""              # sub-account, blank if none
-order.productid = near_month_id  # e.g. "TXFG6", from Step 6 lookup
-order.bs = "B"                   # "B" = buy, "S" = sell
-order.ordertype = "M"            # "L" = limit, "M" = market, "P" = range market
-order.price = 0                  # 0 for market order
-order.orderqty = 1               # 口數
-order.ordercondition = "R"       # "I" = IOC, "R" = ROD, "F" = FOK
-order.opencloseflag = ""         # "0" = open, "1" = close, "" = auto
-order.dtrade = "N"               # "Y" = day trade, "N" = not
-
-result = api.dtrade.order(order)
-print(result.issend, result.errorcode, result.errormsg, result.seq)
-```
-
-**`issend=True` only means the request left the machine — it is NOT order acceptance.** Always
-confirm `orderstatus == '委託成功'` via a reply report (either channel below) before reporting an
-order as placed; a rejected order otherwise fails silently (this exact class of bug cost three
-rounds of lost orders on SinoPac — see `references/sinopac-broker.md` § Field-Verified Lessons).
-
-**Fill/order reports** arrive two ways:
-1. **Push callbacks** — set `api.dtrade.on_reply` / `api.dtrade.on_match` before placing orders;
-   they fire immediately with the full report object (`orderstatus`, e.g. `'委託成功'`).
-2. **Polling** — `api.dtrade.query_reply(actno, count, network_id_start, network_id_end, begin_order_time, end_order_time)`.
-   `count` must be a **positive integer, not an empty string** — passing `""` returns an HTTP 400
-   (`"The value '' is invalid"`). Pass a real limit (e.g. `20`) and, once verified in production,
-   a real time range for the other fields.
+1. **Test host URL** — `https://test167.testpfctrade.com`, not the `pfctrade.com` host in the mail.
+2. **`get_margin` needs the currency `"NTT"`.** With `""` it answers `查無資料!` — on the test host
+   and on the live account alike; `get_margin(actno, "NTT")` returns the data, and `.data` is a
+   **single `DMargin` object, not a list** (the libs take both). Fields: `optequity` / `twdoptequity`
+   權益數, `ordcexcess` 可動用, `iamt` 原始保證金, `mamt` 維持保證金, `dwamt` 當日出入金,
+   `night_session_*` (the night-session versions), `update_date` / `update_time`. **Live account,
+   2026-10-02: `optequity` matched the broker's app** (read layer ① passed). `dwamt` may be the way
+   to a `get_flows` someday — unverified until a day with a real deposit/withdrawal.
+   `get_accounts()` returns one 7-digit account; `get_position(actno, "", "")` returns one
+   row per product + month (`product`, `month` `202610`, `productid` `MXFJ6`, `ot_qty_b` /
+   `ot_qty_s`, `current_buy_open_position` / `current_sell_open_position`,
+   `open_buy_position_average_cost`, `floating_pnl`, `product_base_number`). The test account comes
+   preloaded with 1 long MXF.
+3. **The open interest is `current_buy_open_position` / `current_sell_open_position`, not `ot_qty`.**
+   Live account, 2026-10-02: an MXFJ6 row read `ot_qty_b=3`, `current_buy_open_position=2`, and the
+   broker's app showed **2**. The libs reconcile on `current_*`; `ot_qty` is kept in the snapshot
+   as `debug_ot_net` only.
+4. **`issend=True` is not acceptance.** `order()` returns `issend` + `seq`; acceptance is the
+   `on_reply` for that `seq` with `statuscode == '0000'` (委託成功). Observed: a TMF 1-lot market IOC
+   got its 0000 reply at once, `nomatchqty=1`, and never filled (the test host does not match).
+   Status codes — source: unitrade 1.0.0.7 `trade/dlogic` (`DLogic.*_CODE`); the official docs
+   have no table: 0000 委託成功, 0001 減量成功 (not terminal), 0002 刪單成功, 0003 部份成交,
+   **0004 完全成交**, 0006 改價成功; rejections 9999 (SDK error reply), ERR1/2/3/5 (委託傳送失敗 /
+   尚未開盤 / 驗章失敗 / 已收盤) and server 99xx (the official dtrade page's example: 9902
+   `TTO0002:尚未開始接收委託或者不接受此種委託`). **Live, 10-02: the first reply to a market IOC was
+   already 0004** — the order filled before an 0000 was seen — so success is any of
+   0000/0001/0003/0004/0006, not 0000 alone. Any other code: not a success, not a rejection —
+   `status='unknown'`, audited, never resent.
+5. **Fills come from `on_match`, which carries no `seq`.** Correlate through the `orderno` of the
+   `on_reply` for your `seq`. `on_reply` hands over the SAME object on every update — copy fields in
+   the callback.
+6. **An unfilled IOC's cancel report has never been observed.** The lib treats "no fill within the
+   timeout" as unfilled (`status='sent'`) and never resends.
+7. **Recovering orders after a restart does not work on the test host.** `query_reply` and
+   `query_match` returned 0 rows for all five parameter shapes tried (empty, network-id range,
+   9-digit and 6-digit time ranges, both), even right after an accepted order. Do not build on
+   them until a live account shows rows. `count` must be an int — `""` is an HTTP 400.
+8. **`get_unliquidation` fails on the test host** (connection error). The libs do not use it.
+9. **A process that skips `logout()` never exits** — the SDK starts non-daemon threads at login,
+   failed logins included (measured: no logout → hung until killed; logout → exits in 0.5 s). Every
+   login path is `try/finally: logout()`, and the login has a 30 s hard timeout.
+10. **Two concurrent logins on one account both stay up** (worker + order session measured side by
+    side for 50 s). Production limits are unknown — ask the rep.
+11. **The SDK writes its own logs to `<cwd>/logs/<date>/*.txt`** with the login URL, login id,
+    account, every order — and on a certificate/signing failure the national id and the
+    certificate's subject. The libs pin that to `state/president_logs/`. **Never read, `cat`, grep
+    or upload anything under `state/president_logs/`**; to diagnose, use the worker's probe file and
+    the lib's error classes.
+12. **Windows gotchas** — Python on Windows has no time-zone database (`ZoneInfo("Asia/Taipei")`
+    raises without the `tzdata` package; the libs use a fixed UTC+8); a `.env` written by
+    PowerShell 5 `Set-Content -Encoding UTF8` starts with a BOM, which hides the first key from a
+    plain parser (the libs strip it).
+13. The SDK's disconnect callback is spelled **`on_disonnected`** — setting `on_disconnected` does
+    nothing.
+14. **`opencloseflag "1"` (close only) guards nothing on the test host.** A 1-lot MXF sell against
+    the preloaded long and a 1-lot TMF buy with **no TMF position** were both answered 0000
+    (委託成功, `opencloseflag '1'` echoed back); neither filled, positions unchanged. Whether
+    production refuses a close with nothing to close is unverified — the snapshot check in the lib is
+    the guard that is known to work.
+15. `statuscode 0001` is 減量成功 (a quantity reduction), not a cancel — only 0002 ends an order early.
+16. A certificate that is not the account's comes back from the SDK as `":!! " + national id + the
+    certificate's subject` — the libs classify it `CERT_MISMATCH` and never pass the text on.
 
 ---
 
 ## Limits & Gotchas
 
-**注意事項：**
-- Certificate password ≠ trading password — collect both separately (Step 2/4).
-- Certificates expire annually and must be re-issued on Windows.
-- No unauthenticated/simulation login mode — every test-environment login needs a valid cert.
-- `get_domestic_contracts` must be called each session to resolve the current near-month TXF
-  contract id — there is no static rolling alias like SinoPac's `TXFR1`.
-- `query_reply`/`query_match` reject an empty string for the count parameter; always pass an int.
-- No confirmed IP allowlisting behavior for the **production** environment yet — ask the broker
-  rep whether the Blave Agent machine's static IP needs to be registered before going live.
-- Unitrade has no Linux ARM wheel and no Python 3.13+ wheel as of this writing (see Step 3).
+- **No broker attribution** — 統一 is the broker itself; `note` (≤10 chars) is only a label.
+- **No client order id** at the broker — duplicates are blocked locally (`client_tag`, once per day,
+  recorded once the broker took the send; a process killed between the send and the record leaves
+  the tag reusable).
+- **One root in two contract months fails the position read** (a long J6 and a short K6 would add up
+  to "flat"); the user closes one month in the 統一 app.
+- **No native stop / take-profit** — order types are L / M / P only; `place_stop_order` raises.
+- **No deposit / withdrawal query** — the platform flags equity jumps as 資金異動 (same as 群益).
+- **Per-minute query/order caps** come from the server at login (`dtrade_limit_counts`,
+  `daccount_limit_counts`); over the cap the SDK answers `超過每分鐘限制!` without a network call.
+  The worker skips that tick and keeps the last snapshot.
+- **Maintenance (Taipei):** login 05:30–05:50; account queries 06:00–07:30; domestic futures
+  trading 07:00–07:27. The worker does not query inside these windows and does not report them as
+  a disconnect.
+- **Trading hours:** day 08:45–13:45, night 15:00–05:00 (Mon–Fri).
 
 ---
 
 ## Verification Checklist for Agent
 
-1. 平台/版本檢查 → 確認 workspace 是 Linux x86_64、Python ≤3.12（Step 3）
-2. 連線測試（test environment, real certificate）→ `login.ok == True`
-3. 查詢帳戶淨值 → `get_margin` 呼叫成功（測試帳戶查無資料屬正常，正式環境需再驗一次 equity > 0）
-4. 查詢部位 → 確認無例外
-5. 下一筆市價測試單（1 口）→ `orderstatus == '委託成功'`（測試環境不會真的成交）
-6. 用戶通知營業員委託測試完成 → 等待正式環境開通信
-7. 正式環境開通後，重複步驟 2–5（更換 URL、憑證維持不變）
-8. 用戶確認後，方可設定 reconciler 上線（參考 `references/deployment.md`）
+1. Windows machine; `pip install unitrade python-dotenv` succeeded.
+2. `.env` has the five locked keys; `president_test_url` is `https://testNNN.testpfctrade.com`.
+3. `python lib/president_worker.py --once` exits 0; the probe lists the positions and equity.
+4. One test order through `order_president.place_futures_market_order({}, "TMF", "buy", 1,
+   "entry")` returns `ack == '0000'` (the test host will not fill it). The user reports the test to
+   the broker rep and waits for the production mail.
+5. Production (switched on by the binding flow + `president_url`) only with the user's explicit go-ahead;
+   repeat 3–4 there with the smallest order (TMF 1 lot) and confirm equity matches the broker's app.
+
+Status (2026-10-02, live account):
+- Read layer: login on both production hosts ✓; equity (`optequity`) matches the app ✓ (①);
+  positions match the app on `current_*` ✓.
+- **First live round trip, 12:42 Taipei, TMF 1 lot through the shipped lib** (the user's existing
+  MXF position untouched): buy TMFJ6 filled at 48716, ack 0004, 6.3 s from the call to the
+  confirmed fill; the broker's position showed it **12.0 s** after the send marker; close (sell, `"1"`)
+  filled at 48712, 5.2 s; position flat **10.9 s** after the marker; the worker snapshot caught up
+  6.0 s after each. (`ORDER_SETTLE_S` raised from 10 to 20 s on these numbers.)
+
+Trading-layer checklist (`venue-onboarding.md` §3):
+| item | state |
+|---|---|
+| confirmed fills reported (not intent), single market IOC buy + close | ✓ live 10-02 |
+| close-only (`"1"`) close of a held position, snapshot-checked | ✓ live 10-02 |
+| HALT blocks entries, closes pass; restart gate; audit trail | ✓ tests (no live HALT run) |
+| unit = 口, canonical TXF/MXF/TMF ↔ month code | ✓ live (TMFJ6) |
+| IOC not filled → cancel report | ✗ never observed |
+| partial fills | ✗ not seen |
+| order recovery after a restart (`query_reply` / `query_match`) | ✗ 0 rows on the test host, untried live |
+| settlement day (10-21) and holiday-shifted settlement | ✗ |
+| production `"1"` with nothing to close | ✗ untried (test host accepts it) |
+| the broker's text for a wrong password | ✗ |
+| `dwamt` as a deposit/withdrawal source | ✗ needs a day with a real flow |
+| limit layer / execution styles | not shipped (chase falls back to market) |
+
+## Still unverified
+
+Margin fields other than `optequity` against the app; `dwamt` as a flow source; whether production refuses a close-only (`"1"`) order with nothing to close; the broker's text for a
+wrong password (so `PASSWORD` is classified from it, not counted as `UNKNOWN`);
+partial fills and the IOC-cancel report; order recovery after a restart (`query_reply` /
+`query_match`); behaviour on a real settlement day and on holiday-shifted settlements; production
+connection/rate limits and IP registration; the worker's behaviour across the daily maintenance
+windows and weekends.

@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib import events, guard, venue_errors
+from lib import events, guard, venue_errors, venue_traits
 from lib.portfolio import (reconcile, load_portfolio_config, strategy_amounts,
                            aggregate_portfolio)
 
@@ -251,86 +251,55 @@ _CAPITAL_OPTION_RE = re.compile(r"^TX[O1245UVXYZ]\d{3,6}[A-X]\d$")
 # state/capital_account.json every 60s; force_next re-reconciles within 5s of
 # a fill. A round landing in that gap reads the PRE-order snapshot, sees the
 # position unchanged, and re-sends the same order (margin happened to reject
-# the duplicate that day — not a backstop to rely on). _capital_mark_order_sent
-# records when THIS process last sent a capital order; _capital_get_positions
-# refuses to trust a snapshot older than that mark.
-_CAPITAL_LAST_ORDER_PATH = 'state/capital_last_order_at'
-_capital_last_order_at = 0.0  # process-local fast path
-
-
-def _capital_load_last_order_at():
-    """Seed the process-local marker from disk at import time — covers a
-    watchdog restart (references/manager.md: restarts on crash) landing
-    inside the same <60s window as a just-sent order, which a bare in-memory
-    variable would silently forget."""
-    global _capital_last_order_at
-    try:
-        with open(_CAPITAL_LAST_ORDER_PATH) as f:
-            _capital_last_order_at = float(f.read().strip() or 0)
-    except (FileNotFoundError, ValueError):
-        pass
-
-
-def _capital_mark_order_sent():
-    """Call right before the order API call (after all validation gates) —
-    covers the call regardless of how it resolves (fill, reject, exception).
-    Written both in-process (fast path) and to disk (survives a restart),
-    atomic tmp+replace matching lib/capital_worker.py's own snapshot write."""
-    global _capital_last_order_at
-    _capital_last_order_at = time.time()
-    try:
-        os.makedirs(os.path.dirname(_CAPITAL_LAST_ORDER_PATH), exist_ok=True)
-        tmp = _CAPITAL_LAST_ORDER_PATH + '.tmp'
-        with open(tmp, 'w') as f:
-            f.write(repr(_capital_last_order_at))
-        os.replace(tmp, _CAPITAL_LAST_ORDER_PATH)
-    except OSError as e:
-        logging.warning(f"[reconciler/capital] failed to persist last-order marker: {e}")
-
-
-_capital_load_last_order_at()
+# the duplicate that day — not a backstop to rely on). lib/order_capital marks
+# every 群益 futures order on this machine (lib.capital_vault.mark_order_sent —
+# reconciler, flatten and scripts alike); _capital_get_positions re-reads that
+# mark every round and refuses a snapshot whose read did not start settled
+# after it. Read every round, not once at import: a flatten in another process
+# kicks this reconciler right after its closes.
 
 
 class CapitalCacheLagError(Exception):
     """state/capital_account.json has not yet been refreshed since this
-    process's own last capital order — a Read-Your-Writes guard, NOT a
+    machine's last capital order — a Read-Your-Writes guard, NOT a
     connectivity failure. Must not count toward DISCONNECT_HALT_AFTER (see
     _get_positions_guarded) or be treated as a "state consumed" round in the
     main loop (see __main__)."""
 
 
-def _capital_check_snapshot_caught_up(snapshot_read_at):
-    """Raise iff a capital order was sent by this process and the snapshot
-    predates it. No-op when no order is pending (_capital_last_order_at==0)
-    — the normal, overwhelming-majority-of-rounds path is untouched.
+def _capital_check_snapshot_caught_up(query_started_at):
+    """Raise iff a capital order was sent on this machine and the worker's
+    last read did not START at least capital_vault.ORDER_SETTLE_S after it.
+    The query start, not the write time (read_at): a read begun before the
+    order and written after it still shows the old open interest. No-op when
+    no order was ever marked — the normal, overwhelming-majority-of-rounds
+    path is untouched.
 
     Ordering contract (caller): call this AFTER the snapshot's own
     freshness/ok check (lib.account_capital._read_snapshot, raised inside
     get_positions()) has already passed — otherwise a genuinely dead worker
     would trip this guard forever instead of surfacing as the real stale-
-    snapshot error that counts toward auto-halt.
-
-    Known residual gap (flagged, not silently patched): capital_worker.py
-    stamps read_at at WRITE time, not at the start of its COM query cycle
-    (query_rights → query_open_interest → write_snapshot takes low seconds).
-    An order landing in that narrow sub-window could see a read_at newer
-    than the order mark while positions were still queried from the venue
-    before the order — this guard would then pass incorrectly. Distinct from
-    (and much narrower than) the reported 60s-cadence race; needs a
-    cycle-start timestamp in capital_worker.py to close fully — flagged to
-    Wei rather than papered over with a guessed grace margin."""
-    if snapshot_read_at < _capital_last_order_at:
+    snapshot error that counts toward auto-halt."""
+    from lib.capital_vault import ORDER_SETTLE_S, last_order_at
+    last = last_order_at()
+    if last and query_started_at < last + ORDER_SETTLE_S:
         raise CapitalCacheLagError(
-            f"群益部位快取尚未跟上最近一次下單(快取 read_at={snapshot_read_at:.0f}"
-            f",下單於 {_capital_last_order_at:.0f})—— 本輪跳過,等下一輪快取更新")
+            f"群益部位快取尚未跟上最近一次下單(快取查詢開始於 {query_started_at:.0f}"
+            f",下單於 {last:.0f},需晚 {ORDER_SETTLE_S} 秒)—— 本輪跳過,等下一輪快取更新")
 
 
-def _is_capital_routed():
-    """One-machine-one-venue (AGENTS.md § Broker Onboarding): true when any
-    strategy in portfolio_config["exchanges"] is bound to capital — the signal
-    get_positions() uses to pick the TW-futures snapshot over the crypto
-    auto-wire (get_positions takes no per-call venue argument)."""
-    return any(v == 'capital' for v in load_portfolio_config().get('exchanges', {}).values())
+def _hand_wired_routed():
+    """One-machine-one-venue (AGENTS.md § Broker Onboarding): the hand-wired
+    venue (lib.venue_traits) a strategy in portfolio_config["exchanges"] is
+    bound to, or None — the signal get_positions() uses to pick that venue's
+    own block over the crypto auto-wire (get_positions takes no per-call
+    venue argument)."""
+    return venue_traits.hand_wired_routed(load_portfolio_config().get('exchanges', {}).values())
+
+
+# the pre-extraction name: a user-kept older manager/seed_ledger.py still calls it
+_is_capital_routed = _hand_wired_routed
+
 
 
 def _capital_get_positions():
@@ -349,14 +318,14 @@ def _capital_get_positions():
     docstring).
 
     Read-Your-Writes guard (2026-08-14): after the snapshot's own freshness
-    check passes, also refuses a snapshot older than this process's last
-    capital order (_capital_check_snapshot_caught_up) — raises
-    CapitalCacheLagError in that narrow post-order window instead of
+    check passes, also refuses a snapshot whose read did not start settled
+    after this machine's last capital order (_capital_check_snapshot_caught_up)
+    — raises CapitalCacheLagError in that post-order window instead of
     returning stale positions."""
-    from lib.account_capital import get_positions as _acct_positions, get_snapshot_read_at
+    from lib.account_capital import get_positions as _acct_positions, get_query_started_at
     from lib.order_capital import CAPITAL_FUT_RE
     raw = _acct_positions({})  # env unused — reads state/capital_account.json
-    _capital_check_snapshot_caught_up(get_snapshot_read_at())
+    _capital_check_snapshot_caught_up(get_query_started_at())
     net, months = {}, {}
     for resolved_sym, pos in raw.items():
         # Anchored root+YYMM: a TX-prefixed option row (TXO22000J6) must never
@@ -406,7 +375,7 @@ def _capital_get_positions():
             logging.warning(f"[reconciler/capital] {canon} held in several contract months "
                             f"{sorted(syms)} — reading net {net[canon]:+g} lots")
     return {
-        canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': 'capital'}
+        canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': venue_traits.CAPITAL}
         for canon, n in net.items() if n != 0
     }
 
@@ -458,9 +427,7 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     action = 'buy' if signed_diff > 0 else 'sell'
     intent = 'reduce' if reduce_only else 'entry'
     env = dotenv_values()
-    # Read-Your-Writes marker — set before the call so it covers this attempt
-    # regardless of outcome (fill, reject, or exception below).
-    _capital_mark_order_sent()
+    # the Read-Your-Writes mark is written by the order lib, around the send
     result = place_futures_market_order(env, spec['capital_symbol'], action, lots, intent)
     got = float(result.get('fill_qty') or 0)
     if result.get('status') != 'filled' or got + 1e-9 < lots:
@@ -479,10 +446,128 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     return {
         'avg_price':       result.get('avg_fill_price') or 0.0,
         'executed_qty':    result.get('fill_qty') or 0.0,
-        'exchange':        'capital',
+        'exchange':        venue_traits.CAPITAL,
         'resolved_symbol': result.get('symbol'),
         'status':          result.get('status'),
     }
+
+
+# ── President (統一期貨) hand-wired path ─────────────────────────────────────
+# Same shape as the Capital block — lots end to end, positions from a worker
+# snapshot (lib/president_worker → lib/account_president), a Read-Your-Writes
+# guard — with two differences: the snapshot is already keyed by the strategy
+# SYMBOL (TXF/MXF/TMF), and a close must name the held contract with
+# opencloseflag "1" while an entry goes to the computed near month
+# (lib/order_president), so a flip is two orders: the close, then — only once
+# the close is confirmed filled — the entry.
+
+class PresidentCacheLagError(CapitalCacheLagError):
+    """state/president_account.json predates this machine's last 統一 order
+    (lib/order_president's per-contract send marker, shared by every process
+    that sends — flatten included). Same TRANSIENT handling as Capital's."""
+
+
+def _president_get_positions():
+    """{symbol: {'side', 'size': lots, 'exchange'}} from the worker snapshot.
+    Errors propagate (stale / worker down / one root in two months / an open
+    interest the snapshot can't pin down) — never {}."""
+    from lib import account_president, order_president
+    raw = account_president.get_positions({})
+    ok, started, last = order_president.snapshot_caught_up()
+    if not ok:
+        raise PresidentCacheLagError(f"統一快照(查詢開始 {started:.0f})未晚於最後一筆下單({last:.0f})"
+                                     f"加寬限——本輪跳過,等下一輪快取更新")
+    return {sym: {'side': p['side'], 'size': p['size'], 'exchange': venue_traits.PRESIDENT}
+            for sym, p in raw.items()}
+
+
+def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False):
+    """signed_diff in LOTS (> 0 buy), round-half-up like Capital. The part that
+    shrinks the held position goes out as a close; the rest (a flip, or a
+    plain entry) as an entry, skipped under reduce_only, under HALT, or when
+    the close was not confirmed filled."""
+    import math
+    from lib import account_president, order_president
+
+    sym = str(symbol).upper()
+    if sym not in order_president.ROOTS:
+        raise RuntimeError(f"president: {symbol!r} is not TXF/MXF/TMF — only TW index futures "
+                           f"are wired")
+    lots = math.floor(abs(signed_diff) + 0.5)  # round-half-up; NOT round() (banker's rounding)
+    if lots < 1:
+        return False
+    action = 'buy' if signed_diff > 0 else 'sell'
+    held = account_president.get_positions({}).get(sym)
+    net = 0 if not held else (held['size'] if held['side'] == 'long' else -held['size'])
+    closing = int(min(lots, abs(net))) if net and (net > 0) != (signed_diff > 0) else 0
+    opening = 0 if reduce_only else lots - closing
+    legs = []
+    if closing:
+        legs.append(order_president.place_futures_market_order({}, sym, action, closing, 'reduce'))
+        if legs[-1].get('status') != 'filled' or (legs[-1].get('fill_qty') or 0) < closing:
+            opening = 0  # never open behind a close that may not have happened
+    if opening and guard.halted():
+        opening = 0
+    deferred = 0
+    if opening:
+        try:
+            legs.append(order_president.place_futures_market_order({}, sym, action, opening, 'entry'))
+        except order_president.EntryDeferred as e:
+            # snapshot not caught up with the close: the entry picks its month
+            # next round — scheduled, not an error, nothing sent
+            logging.info(f"[reconciler/president] {sym}: entry of {opening} deferred — {e}")
+            deferred = opening
+            if not legs:
+                return False
+        except Exception as e:
+            if not legs:
+                raise
+            # the close already filled: it must reach the book (returned below);
+            # the entry's failure is reported, not allowed to swallow it
+            logging.error(f"[reconciler/president] {sym}: close filled, entry failed: {e}")
+            from lib.portfolio import _record_order_error
+            _record_order_error(sym, venue_traits.PRESIDENT,
+                                f"平倉已成交 {closing} 口,反向開倉失敗:{type(e).__name__}: {e}")
+    if not legs:
+        return False
+    unknown = [l for l in legs if l.get('status') == 'unknown']
+    if unknown:
+        # a code the SDK does not define: nothing is resent, the next round reads the
+        # real position. P3 (log + the lib's order_unknown_status audit) on purpose —
+        # every order_errors row is a P1 order_error on the platform today; making
+        # this P2 needs api to route the kind and notifications.md to rank it first.
+        logging.warning(f"[reconciler/president] {sym}: broker status {unknown[-1].get('ack')!r} "
+                        f"not defined by the SDK — not resent; next round reconciles on the "
+                        f"real position")
+    qty = sum(float(l.get('fill_qty') or 0) for l in legs)
+    avg = (sum(float(l.get('fill_qty') or 0) * float(l.get('avg_fill_price') or 0) for l in legs) / qty
+           if qty else 0.0)
+    return {
+        'avg_price':       avg,
+        'executed_qty':    qty,
+        'exchange':        venue_traits.PRESIDENT,
+        'resolved_symbol': legs[-1].get('symbol'),
+        'status':          ('unknown' if unknown else
+                            'filled' if all(l.get('status') == 'filled' for l in legs) else 'sent'),
+        'entry_deferred':  deferred,
+        'ack':             legs[-1].get('ack'),
+        'statuscode':      legs[-1].get('statuscode'),
+    }
+
+
+# venue id -> (get_positions, place_order) for every hand_wired venue in
+# lib.venue_traits; tests/check_venue_traits.py pins the two in step.
+_HAND_WIRED = {venue_traits.CAPITAL: (_capital_get_positions, _capital_place_order),
+               venue_traits.PRESIDENT: (_president_get_positions, _president_place_order)}
+
+
+def _hand_wired_impl(venue):
+    impl = _HAND_WIRED.get(venue)
+    if impl is None:
+        # never fall through to the crypto auto-wire with a TW broker's lots
+        raise RuntimeError(f"{venue}: marked hand_wired in lib/venue_traits.py but the "
+                           f"reconciler has no block for it — trading paused")
+    return impl
 
 
 def get_positions():
@@ -510,8 +595,9 @@ def get_positions():
     reconcile() re-buys the entire target the moment the link recovers, and
     the auto-halt wrapper can only count failures it actually sees.
     """
-    if _is_capital_routed():
-        return _capital_get_positions()
+    hand_wired = _hand_wired_routed()
+    if hand_wired:
+        return _hand_wired_impl(hand_wired)[0]()
     from lib.venue_wiring import auto_get_positions
     return auto_get_positions()
 
@@ -554,9 +640,9 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         # the record landed mid-round: the legs left in this round are not sent
         logging.info(f"[reconciler] {symbol}: machine restarted — not sent until 啟動下單")
         return False
-    if exchange == 'capital':
-        return _capital_place_order(symbol, signed_diff, asset_spec=asset_spec,
-                                    reduce_only=reduce_only)
+    if venue_traits.has(exchange, 'hand_wired'):
+        return _hand_wired_impl(exchange)[1](symbol, signed_diff, asset_spec=asset_spec,
+                                             reduce_only=reduce_only)
     from lib.execute import dispatch_order
     return dispatch_order(symbol, signed_diff, asset_spec=asset_spec,
                           reduce_only=reduce_only, exchange=exchange,
@@ -599,8 +685,9 @@ def _current_venue():
     """Venue id for classification, events and the account guard. Resolved
     only on failure / guard rounds: detect_venue logs a WARNING per call on a
     multi-venue machine, and this loop polls every 5s."""
-    if _is_capital_routed():
-        return 'capital'
+    hand_wired = _hand_wired_routed()
+    if hand_wired:
+        return hand_wired
     from lib.venue_wiring import detect_venue
     return detect_venue(_read_env())
 

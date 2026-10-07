@@ -522,7 +522,7 @@ def upd2_fails(upd):
         "one official script, from a fresh clone, never the workspace copy": "**One official script does the file work: `manager/update_workspace.py`, run from a fresh reference clone** — never the copy in this workspace.",
         "nothing merged, whole + backup": "**Nothing is merged — every official file is replaced whole, with a backup.**",
         "official dirs include allocators/": "under `lib/`, `manager/`, `references/`, `examples/` or `allocators/`",
-        "broker libs and references alike": "the official broker libs (`lib/order_*.py` / `lib/account_*.py` / `lib/capital_worker.py` whose exact name is in the clone) and `references/` alike",
+        "broker libs and references alike": "the official broker libs (`lib/order_*.py` / `lib/account_*.py` / `lib/capital_worker.py` / `lib/president_worker.py` / `lib/president_vault.py` / `lib/venue_traits.py` whose exact name is in the clone) and `references/` alike",
         "blobless full history": "as a blobless clone with full history: `git clone -c core.autocrlf=false --filter=blob:none https://github.com/Blave-TW/blave-agent /tmp/oc-config` (never `--depth`",
         "Windows CRLF checkout named as the cause": "with the default on, git checks the clone out with CRLF line endings, every file then differs from its own stored blob",
         "--restart-ok always, the script picks the moment": "**`--restart-ok` always** (the update ask is the consent; the script, not you, picks the moment — see *Safe moment*)",

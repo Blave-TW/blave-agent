@@ -43,9 +43,9 @@ CANCEL_AFTER_S = 1.0
 # Matched on the whole command line; what is kept around a match is split_tree's job.
 MONEY_ARGV = re.compile(
     r"close_symbol|stop_strategy|manager[./]flatten|close_all|update_workspace|seed_ledger|reconciler\.py"
-    r"|capital_worker|lib[./](?:order_|execute|venue|portfolio)"
+    r"|capital_worker|president_worker|lib[./](?:order_|execute|venue|portfolio)"
     r"|from\s+lib\s+import\s[^;\n]*\b(?:order_\w+|execute|venue|portfolio)\b"
-    r"|\border_(?:binance|bingx|bybit|okx|gateio|paper|capital|sinopac)\b")
+    r"|\border_(?:binance|bingx|bybit|okx|gateio|paper|capital|sinopac|president)\b")
 # Hand-written scripts (`python tmp/close.py`) don't show it in argv: every lib/order_*
 # marks its process here at import (lib/guard.mark_money_process), until it exits.
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")

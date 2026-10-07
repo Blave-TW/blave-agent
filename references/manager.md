@@ -648,12 +648,14 @@ Linux unit above: the reconciler must NOT auto-start on reboot; the user re-enab
 explicitly. Crash recovery while the service is running is NSSM's AppExit restart, which is
 independent of the start type.
 
+**President (統一期貨) is hand-wired like Capital below** (`_president_get_positions` / `_president_place_order`, keyed by the strategy SYMBOL, lots, worker snapshot + Read-Your-Writes via `lib/order_president`'s send marker); a flip goes out as a close (`opencloseflag "1"`, the held contract) and — only once that close is confirmed filled and HALT is clear — an entry into the near month. Details: `references/president-broker.md`.
+
 **Capital (群益) reconciler wiring is hand-wired in `manager/reconciler.py`, not auto-wired.**
-`lib.venue_wiring` deliberately excludes `"capital"` (`_NON_AUTO`) because its data shape differs
+`lib.venue_wiring` deliberately excludes `"capital"` (`auto_wire: False` in `lib/venue_traits.py`) because its data shape differs
 from every crypto venue — LOTS not account-currency notional, `buy`/`sell` not `long`/`short`, and
 the order alias (`TM0000`) differs from the resolved contract code every position/report actually
 carries (`TM2608`). `get_positions()`/`place_order()` in `reconciler.py` each contain a capital-only
-branch (`_is_capital_routed()` / `exchange == 'capital'`) that:
+branch (`_hand_wired_routed()` / `venue_traits.has(exchange, 'hand_wired')`, dispatched through `_HAND_WIRED`) that:
 - reads `lib.account_capital.get_positions()` — already lots, `buy`/`sell` — and translates
   `buy`→`long` / `sell`→`short`, size unchanged (**lots, not TWD notional** — see *`amounts`
   semantics* below)

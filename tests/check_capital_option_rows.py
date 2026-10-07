@@ -60,7 +60,7 @@ for sym in OPTIONS + UNKNOWN:
         check(True, f"alias {sym} raises")
 
 acct = types.ModuleType("lib.account_capital")
-acct.get_snapshot_read_at = lambda: 1e12
+acct.get_query_started_at = lambda: 1e12
 RAW = {s: {"side": "long", "size": 3.0} for s in OPTIONS}
 RAW.update({"TM2608": {"side": "short", "size": 1.0}, "MTX2610": {"side": "long", "size": 2.0}})
 acct.get_positions = lambda env: RAW

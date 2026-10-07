@@ -8,6 +8,35 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一期貨雲端開通(新 `runtime/president_connect.py`,群益那套的同形)**:`credentials` 綁統一時(雲端 Windows),交易密碼與
+  正式開關(`"live": true`)寫進 `credentials\president_vault.json`,`.env` 換成哨兵並寫入固定的憑證路徑與正式主機;舊 workspace lib
+  (不從 vault 讀正式開關)拒綁 `LIB_OUTDATED`。五個新指令 `president_setup`(裝 unitrade 釘版)／`president_pfx_key`／`president_pfx`
+  (瀏覽器封裝的 pfx + 憑證密碼,本機先驗密碼再存成固定檔名 `president.pfx`,接著唯讀登入一次)／`president_probe`
+  (`{"after_unlock": true}` 先 `--unblock`)／`president_finish`(`president_worker.py --install`);進度寫
+  `state/president_connect.json`,報告帶 `president_connect`。vault 與 pfx 給 SYSTEM + Administrators 讀(worker 是 LocalSystem)。
+  非 Windows 雲端機拒綁 `NOT_WINDOWS`(否則交易密碼會明文留在 `.env`、又永遠到不了正式主機)。解綁會把統一七行全拿掉(`_cmd_credentials_remove` 依 `cred_env` 展開)並刪 vault、pfx、待用金鑰、status,叫 worker 服務自刪;
+  綁別家逐出統一時同樣刪。電腦版 daemon 不收這五個(`CLOUD_ONLY`)。`capital_connect.cmd_pfx_key`/`open_envelope` 多一個
+  `key_path` 參數(預設不變)讓統一用自己的金鑰檔。**出貨順序:api(president-api da25804f)先上**,否則網頁送的指令被 400 擋。
+  測試 `tests/check_president_connect.py`(加密那段要有 `cryptography` 的 python,例如 `/usr/bin/python3`)。
+
+- **台灣券商分支改查 venue 特性表(純抽取,群益行為不變)**:新 `runtime/venue_traits.py`(`lib/venue_traits.py` 的逐字副本,runtime 與
+  workspace 分通道出貨所以不 import),`command_listener` 的金庫清除／NSSM Administrator 密碼／手動平倉列、`portfolio_reporter.can_flatten`
+  改問特性表,不再比對字面 `"capital"`。測試 `tests/check_venue_traits.py`(兩份逐字相同、列舉零殘留)。
+- **統一期貨(president)lib 登記進 runtime 的列舉**:排程回合 Bash 守門擋 `order_president` / `president_vault` / `president_worker`、
+  Stop 不殺 `president_worker` 與 `order_president` 行程、Windows file_watcher 盯 `state/president_account.json`(同群益快照那條)、
+  `president_worker.py --once` 歸類為讀帳戶;`venue_traits` 的 president 補 `perp: False`(close_symbol 拒絕,同群益/永豐)。
+  尚未上架(選單不動),lib 本身在 workspace 通道。
+- **平台認得統一期貨的綁定**:它的 env 名是鎖死的 `president_account` / `president_password` 等五個(外加 `PRESIDENT_LIVE` /
+  `president_url`),沒有 `{ID}_API_KEY`,原本 `_venue_cred_ids`、綁定 manifest、換綁逐出、解綁、`portfolio_reporter.venues()`、
+  `account_reader` 全都看不到它,`president_ca_password` 還會被讀成幽靈 venue `PRESIDENT_CA`。`venue_traits` 新增 `cred_env`
+  (各 venue 自己的 env 名與角色),`command_listener._cred_match` 先查它再套 pair regex;換綁會把七個名字一起逐出。
+  兩通道不同步期間:新 runtime+舊 workspace 沒有 president lib,`account.present` 為 false,不影響其他 venue;
+  舊 runtime+新 workspace 看不到 president 綁定(維持現況)。測試 `tests/check_president_discovery.py`。
+  **會改變行為的機器**:依 08-03 舊版 reference 手寫過 `president_*` 到 `.env` 的機器(發版前要先盤點),runtime 一上去:
+  (a) web 報告的 venues 會多一個已綁定的 president;(b) 之後綁任何交易所都會逐出全部七行 `president_*`(含 `PRESIDENT_LIVE`);
+  (c) 沒有綁定 manifest 的這類機器 `bound` 變兩家,`_cmd_amounts` 失去「唯一已綁交易所」預設,新策略的 routing 會是空的。
+- `venue_traits` 加 `label`(群益/永豐金/統一期貨),flatten 的「平倉未確認成交」訊息改用它——群益的字句不變,統一不再看到「群益」。
+
 ## 1.1.116 — 2026-10-06(desktop 0.1.17)
 
 - **外殼與設定層總覽(desktop 0.1.17;大半不在 runtime/ 但同一批出貨)。兩條出貨順序:① 遙測白名單新增五個值(`feature_used` 的 `welcome_data_row`／`welcome_data_all`／`attach_file`／`attach_image`／`attach_paste`),api `openclaw/desktop_telemetry.py` 先上;② 台指期 K 線快取 `twfutures3_*`:api 換月口徑部署並重建驗收完,這批才進 main——過去月份只抓一次、之後不重抓,機器先更新會把舊口徑的月份存進新前綴,事後改不回來。內外盤不換前綴(仍是 `twfutures_bav`)、改成讀取時過濾,不受這條順序限制**:

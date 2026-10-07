@@ -84,6 +84,17 @@ def get_snapshot_read_at() -> float:
     return _read_snapshot()["read_at"]
 
 
+def get_query_started_at() -> float:
+    """When the worker's last successful read of the broker STARTED — what
+    the reconciler compares with its last order. A snapshot from a worker
+    older than this field falls back to read_at: nothing restarts the
+    blave-agent-capital service on a workspace update, and refusing those
+    snapshots would pause every running 群益 machine until someone does."""
+    snap = _read_snapshot()
+    q = snap.get("query_started_at")
+    return float(q if q else snap["read_at"])
+
+
 def get_holdings(env: dict) -> list:
     """Securities inventory as display-only holdings (wallet='securities');
     usdt_value None — no on-machine price source, platform lists them unpriced

@@ -83,6 +83,9 @@ def _request_snapshot_refresh():
     try:
         with open(_REFRESH_FLAG, "w"):
             pass
+        # the worker times its early tick from the mtime; reopening an existing
+        # empty file is not guaranteed to move it on every platform
+        os.utime(_REFRESH_FLAG, None)
     except OSError:
         pass  # refresh is best-effort; the 60s poll still covers it
 
@@ -395,11 +398,21 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
     p.sDayTrade = 0
     p.sReserved = 0
 
-    seq_no = _send(sess, lambda: sess.order.SendFutureOrderCLR(sess.login_id, False, p), fields)
-    r = _finish(sess, seq_no, symbol, confirm_timeout, fields)
-    if r["status"] != "filled" or r["fill_qty"] < lots:
-        r = _late_rows(sess, r, lots, fields)
-    return r
+    # The reconciler skips its rounds until a snapshot read STARTED settled after
+    # this mark — whoever sent the order (flatten included). Stamped again once
+    # the whole fill wait (the late-row wait included) is over, then the refresh
+    # flag, so the worker's early tick (flag + settle) lands on a read the guard
+    # accepts and that read already carries the late fill.
+    capital_vault.mark_order_sent()
+    try:
+        seq_no = _send(sess, lambda: sess.order.SendFutureOrderCLR(sess.login_id, False, p), fields)
+        r = _finish(sess, seq_no, symbol, confirm_timeout, fields)
+        if r["status"] != "filled" or r["fill_qty"] < lots:
+            r = _late_rows(sess, r, lots, fields)
+        return r
+    finally:
+        capital_vault.mark_order_sent()
+        _request_snapshot_refresh()
 
 
 # ── securities ───────────────────────────────────────────────────────────────

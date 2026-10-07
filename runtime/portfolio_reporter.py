@@ -52,6 +52,7 @@ import atomic_file
 import events
 import kline_cache_heal
 import sdk_sync
+import venue_traits
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
@@ -326,6 +327,11 @@ def venues():
     lib_root = os.path.join(WORKSPACE, "lib")
     suffixes = {}
     for line in lines:
+        # a venue's own names first (venue_traits cred_env), same as command_listener
+        own = venue_traits.cred_env(line.split("=", 1)[0]) if "=" in line else None
+        if own:
+            suffixes.setdefault(own[0].lower(), set()).add(own[1])
+            continue
         m = _ENV_CRED_RE.match(line)
         # DATA_<SOURCE>_* = data-source keys (command_listener._DATA_CRED_PREFIX)
         if (m and m.group(1).upper() not in _RESERVED_PREFIXES
@@ -387,7 +393,9 @@ def can_flatten(vens):
     if not os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")):
         return False
     closable = {vid for vid, v in (vens or {}).items() if v.get("account") and v.get("order")}
-    return not (closable == {"capital"} and not _capital_order_identity_ok())
+    only_identity_gated = bool(closable) and all(venue_traits.has(v, "windows_identity")
+                                                 for v in closable)
+    return not (only_identity_gated and not _capital_order_identity_ok())
 
 
 def _fresh(ts, window=HEARTBEAT_STALE_S):
@@ -1365,6 +1373,9 @@ def build_report():
     cap = _read_json(os.path.join(WORKSPACE_STATE, "capital_connect.json"))
     if isinstance(cap, dict):
         report["capital_connect"] = cap
+    pres = _read_json(os.path.join(WORKSPACE_STATE, "president_connect.json"))
+    if isinstance(pres, dict):
+        report["president_connect"] = pres
     return report
 
 

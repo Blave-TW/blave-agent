@@ -26,6 +26,47 @@ PW_PREFIX = "vault:"
 BLOCK = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                      "state", "capital_login_block.json")
 BLOCK_CODES = (300, 307)
+# How long after an order the worker's next read must START before the
+# reconciler trusts it to show that order (manager/reconciler.py's
+# Read-Your-Writes guard), and how long the worker holds its early tick after
+# the refresh flag. A read that began before the order, or too soon after the
+# fill, still shows the old open interest — on 群益 sNewClose=2 a second close
+# on that read opens the reverse. 20 s is 統一期貨's measured figure (its
+# position query showed a live fill 12.0 s / 10.9 s after the send, 10-02);
+# 群益's GetOpenInterest lag has not been timed — measure it on the next live
+# round trip before trusting the margin.
+ORDER_SETTLE_S = 20
+# When this machine last sent a 群益 futures order — written by lib/order_capital
+# for EVERY caller (reconciler, flatten, scripts), read by the reconciler on
+# every round. Per process the last value is also kept in memory, so a failed
+# disk write still covers the process that sent.
+LAST_ORDER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "state", "capital_last_order_at")
+_last_order_mem = 0.0
+
+
+def mark_order_sent():
+    global _last_order_mem
+    _last_order_mem = time.time()
+    try:
+        os.makedirs(os.path.dirname(LAST_ORDER_PATH), exist_ok=True)
+        with open(LAST_ORDER_PATH + ".tmp", "w") as f:
+            f.write(repr(_last_order_mem))
+        os.replace(LAST_ORDER_PATH + ".tmp", LAST_ORDER_PATH)
+    except OSError as e:
+        import logging
+        logging.warning(f"capital: last-order marker not written ({type(e).__name__}) — "
+                        f"other processes will not see this order")
+
+
+def last_order_at():
+    """Unix time of the last 群益 futures order sent on this machine, 0.0 if none."""
+    try:
+        with open(LAST_ORDER_PATH) as f:
+            disk = float(f.read().strip() or 0)
+    except (OSError, ValueError):
+        disk = 0.0
+    return max(disk, _last_order_mem)
 
 
 def fingerprint(login_id, password):

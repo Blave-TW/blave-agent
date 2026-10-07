@@ -1167,11 +1167,11 @@ def _sched_guard_hooks(options):
 # 而 publish 的指令字串裡會整段塞進新聞原文——所以網路工具只認指令位置(同 crontab 守門)、`.env` 前面不能是字或點
 # (www.env.go.jp)、order 模組逐一列(`order_\w+` 會誤擋 order_flow)。
 # 會下單 / 平倉 / 換 key 的模組整個擋(報告流程一個都不 import);清單由測試從 import 關係列舉對齊,新模組漏列會紅。
-SCHED_ORDER_LIB = "order_(?:binance|bingx|bybit|capital|gateio|okx|paper|sinopac|TEMPLATE)"
+SCHED_ORDER_LIB = "order_(?:binance|bingx|bybit|capital|gateio|okx|paper|president|sinopac|TEMPLATE)"
 # 這幾個名字不會出現在敘事裡,光出現就擋;execute / venue / portfolio 是一般英文字,只在 lib. 之後或 from lib import 裡擋
-SCHED_TRADE_BARE = SCHED_ORDER_LIB + "|venue_wiring|capital_vault|capital_worker"
+SCHED_TRADE_BARE = SCHED_ORDER_LIB + "|venue_wiring|capital_vault|capital_worker|president_vault|president_worker"
 SCHED_TRADE_LIB = SCHED_TRADE_BARE + "|execute|venue|portfolio"
-SCHED_TRADE_RUNTIME = "command_listener|local_daemon|web_bridge|capital_connect"
+SCHED_TRADE_RUNTIME = "command_listener|local_daemon|web_bridge|capital_connect|president_connect"
 SCHED_TRADE_MANAGER = ("close_symbol|flatten|stop_strategy|reconciler|run_strategy|start_reconciler\\w*|manager|seed_ledger"
                        "|update_workspace|wait_for_bar")
 # 換目錄(`cd manager && python3 close_symbol.py`,Bash 的 cwd 跨呼叫保留)就沒有 manager/ 前綴:夠獨特的名字光出現就擋,
@@ -2692,7 +2692,8 @@ def _bash_kind(cmd, workspace, trading, remote=False):
             return "validate", obj
         if path in ("lib/quality_check.py", "lib/security_check.py", "lib/lint_export.py"):
             return "check", ""
-        if (path == "lib/capital_worker.py" and "--once" in sargs) or re.match(r"lib/account_\w+\.py$", path):
+        if ((path in ("lib/capital_worker.py", "lib/president_worker.py") and "--once" in sargs)
+                or re.match(r"lib/account_\w+\.py$", path)):
             return "account", ""
         # 本機的 workspace 腳本:內容一起掃(報告流程常是 python3 tmp/x.py)
         if not remote and not os.path.isabs(path):
