@@ -286,6 +286,26 @@ pc.local_dispatch({"op": "host", "env": "live"}, D).run()
 check("6b 營業員說開好了 = host live: bundle switched, probe on production",
       pc._LOCAL["secrets"]["live"] is True and probes[-1] == "live" and pc.read_status()["env"] == "live")
 check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order"}, D)) == "LIVE_ENV")
+CFG = os.path.join(WS, "manager", "portfolio_config.json")
+open(CFG, "w").write(json.dumps({"exchanges": {"txf": "president", "btc": "binance"}, "amounts": {"txf": 1, "btc": 100}}))
+check("6b a funded 統一 strategy → back to the test host refused LIVE_IN_USE (desktop), nothing switched",
+      code_of(lambda: pc.local_dispatch({"op": "host", "env": "test"}, D)) == "LIVE_IN_USE" and pc._LOCAL["secrets"]["live"] is True)
+check("6b …the address form too", code_of(lambda: pc.local_dispatch({"op": "host", "url": "test167.pfctrade.com"}, D)) == "LIVE_IN_USE")
+open(CFG, "w").write(json.dumps({"exchanges": {"txf": "president", "btc": "binance"}, "amounts": {"txf": 0, "btc": 100}}))
+os.makedirs(os.path.dirname(P["snapshot"]), exist_ok=True)
+open(P["snapshot"], "w").write(json.dumps({"ok": True, "positions": [{"root": "TMF", "net": -2}]}))
+check("6b 統一 lots open (no amounts) → still refused", code_of(lambda: pc.local_dispatch({"op": "host", "env": "test"}, D)) == "LIVE_IN_USE")
+check("6b another venue's amounts alone do not count", (os.remove(P["snapshot"]), pc.live_in_use())[1] is None)
+open(P["snapshot"], "w").write(json.dumps({"ok": True, "positions": [{"root": "TMF", "net": 1}]}))
+sec_keep = pc._LOCAL["secrets"]
+pc._LOCAL["secrets"] = None
+open(P["vault"], "w").write(json.dumps({"president_password": PW, "live": True}))
+check("6b the cloud's run_host refuses the same way (before touching the vault)",
+      code_of(lambda: pc.run_host({"env": "test"})) == "LIVE_IN_USE" and json.load(open(P["vault"]))["live"] is True)
+os.remove(P["vault"])
+pc._LOCAL["secrets"] = sec_keep
+os.remove(P["snapshot"])
+open(CFG, "w").write("{}")
 pc.local_dispatch({"op": "host", "env": "test"}, D).run()
 pc.run_probe, pc.run_test_order = real_probe, real_order
 

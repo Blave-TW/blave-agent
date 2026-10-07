@@ -649,6 +649,41 @@ def _import_cert(args, push, source, pick):
             "probe": run_probe(push)}
 
 
+def live_in_use():
+    """Why leaving production now would strand real trading, or None: 統一 positions
+    in the worker's last snapshot, or a strategy routed to 統一 with an amount. On
+    the test host the order lib resolves test hosts and the snapshot is deleted,
+    so every exit / stop would fail while the real position sits there (audit B3)."""
+    import venue_traits
+    why = []
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json"), encoding="utf-8") as f:
+            cfg = json.load(f)
+        ex, amt = cfg.get("exchanges") or {}, cfg.get("amounts") or {}
+        funded = sorted(n for n, v in ex.items() if v == venue_traits.PRESIDENT
+                        and isinstance(amt.get(n), (int, float)) and amt.get(n) > 0)
+        if funded:
+            why.append(f"{len(funded)} strategy(ies) routed to it have amounts")
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        with open(_paths()["snapshot"], encoding="utf-8") as f:
+            rows = (json.load(f) or {}).get("positions") or []
+        lots = sum(abs(int(r.get("net") or 0)) for r in rows if isinstance(r, dict))
+        if lots:
+            why.append(f"{lots} lot(s) open")
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    return "; ".join(why) or None
+
+
+def _refuse_leaving_live(target):
+    if target == "test" and current_env() == "live":
+        why = live_in_use()
+        if why:
+            _refuse("LIVE_IN_USE", f"not switching to the test host: {why} — close them and set the amounts to 0 first")
+
+
 def run_host(args, push=None):
     """Switch environments, then log in once there. Test-host logins share the
     production login block: lib/president_vault.fingerprint() hashes the
@@ -657,6 +692,7 @@ def run_host(args, push=None):
     test-host failure toward the account's three wrong logins is 待確認 —
     sharing the block is the conservative reading."""
     target = args["env"] if "env" in args else normalize_host(args["url"])
+    _refuse_leaving_live(target)
     if not _env_urls_ok():
         _refuse("REBIND", "bind the account again — this binding predates the test environment")
     vault = _read_vault()
@@ -799,6 +835,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
             _refuse("BAD_ARGS", "president_host takes {\"env\": \"test\"|\"live\"} or {\"url\": \"...\"}")
         if "url" in args:
             normalize_host(args["url"])  # refused here, before the lock and the status
+        _refuse_leaving_live(args["env"] if "env" in args else normalize_host(args["url"]))
     elif args:
         _refuse("BAD_ARGS", f"{cmd} takes no arguments")
     if cmd in ("president_host", "president_test_order") and not _read_vault().get(_SECRET):
@@ -1266,6 +1303,7 @@ def _local_host(target, push):
     """president_host on the desktop: the same switch, kept in the bundle (the
     app saves the env it asked for; a daemon restart gets it back with the
     secrets), the reconciler re-handed its line, then the probe there."""
+    _refuse_leaving_live(target)
     s = _LOCAL["secrets"]
     if (s["live"] is True) != (target == "live"):
         _set_secrets(dict(s, live=target == "live"))
@@ -1330,6 +1368,7 @@ def _local_jobs(op, args):
             _refuse("CERT_MISSING", "choose the certificate first")
         if op == "host":
             target = args["env"] if "env" in args else normalize_host(args["url"])
+            _refuse_leaving_live(target)
             return lambda push: _local_host(target, push)
         if current_env() != "test":
             _refuse("LIVE_ENV", "test orders run only on the test host")

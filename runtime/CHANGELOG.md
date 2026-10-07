@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **有統一部位或有配金額的統一策略時,不准切回測試主機(稽核 B3)**:雲端 `president_host` 與電腦版 `president_local host`
+  在派工前就拒,新錯誤碼 `LIVE_IN_USE`(`live_in_use()`:快照裡的口數、routing 到 president 且金額 > 0 的策略)。
 - **統一登入封鎖檔搬進 `<base>/credentials/`(稽核 S2)**:`lib/president_vault.BLOCK` 跟 vault 同目錄,舊的 `state/` 那份第一次讀時搬過去
   (連 claim);agent 守門的 Read／Edit 規則與 Bash 擋字加上 `*login_block*`。
 - **拿得到券商密碼的程式 agent 改不得(稽核 S1,Wei 拍板)**:`lib/president_{vault,worker}.py`、`lib/{order,account}_president.py`、
