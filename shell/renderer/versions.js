@@ -6,7 +6,7 @@
    - 每個視角各記一份「正在看哪一版」;換策略、切視角、新版到了一律回目前版。
    - items 與 blob 每一欄都是機器上的 agent 寫的:型別檢查後一律 textContent。
    用到 app.js 的 $ / t / RP / RPC / rpBag / rpShowTab / confirmBox / submitMessage / running / trackFeature / trapTab / paneSt / paneToggle、
-   trade.js 的 ENV / TR_BAGS / trMD / trStamp / trFmt / trUnit、handoff.js 的 hoPaint——都在呼叫時才取。 */
+   trade.js 的 ENV / TR_BAGS / trFmt / trUnit、report-sharelist.js 的 shlFmtTime、handoff.js 的 hoPaint——都在呼叫時才取。 */
 const VER = window.blaveVersions || null;
 const VS = { local: null, cloud: null };
 const verNewSide = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map(), err: null, pend: null });
@@ -15,8 +15,8 @@ VS.local = verNewSide(); VS.cloud = verNewSide();
 const verSideOf = (B) => (B === RPC ? "cloud" : "local");
 function verEl(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function verEntry(S, n) { return VER ? VER.entries(S.data).find((i) => i.n === n) || null : null; }
-function verDateShort(at) { return typeof at === "number" && isFinite(at) && at > 0 ? trMD(new Date(at * 1000)) : "—"; }
-function verDateLong(at) { return typeof at === "number" && isFinite(at) && at > 0 ? trStamp(at) : "—"; }
+// 清單、觸發器、橫幅、比較框同一口徑:MM/DD HH:mm、不是今年加年份(同公開連結清單 report-sharelist.js 的 shlFmtTime)
+function verDate(at) { return (typeof at === "number" && at > 0 && shlFmtTime(at, Date.now())) || "—"; }
 /* 這支策略的下單金額(守門依據,canon §6 的真閘門在機器端 restore())。讀不到那一邊的回報 = null:不猜,徽章只畫「目前」、
    還原走一般確認框。金額表的 key 是 STRATEGY_NAME,多半等於資料夾名;兩個都看 */
 function verAmount(side, B) {
@@ -97,7 +97,7 @@ function verPaintTrigger(S) {
   const old = !!S.data && (S.open !== null || !!(pd && pd.status === "running"));
   $("rp-desc").hidden = old;
   if (!S.data) { wrap.hidden = true; $("ver-sep").hidden = true; return; }
-  const n = S.open === null ? S.data.current : S.open, label = S.open === null ? t("ver.current") : verDateShort((verEntry(S, n) || {}).at);
+  const n = S.open === null ? S.data.current : S.open, label = S.open === null ? t("ver.current") : verDate((verEntry(S, n) || {}).at);
   $("ver-trig-n").textContent = "v" + n;
   const l = $("ver-trig-l"); l.textContent = label; l.classList.toggle("mono", S.open !== null);
   $("ver-trig").setAttribute("aria-label", t("ver.aria", { v: "v" + n, label }));
@@ -117,7 +117,7 @@ function verPaintBanner(S) {
   const w = verEl("span", "w"), parts = t("ver.viewing").split("{v}");
   w.append(parts[0] || "", verEl("b", "mono", "v" + S.open), parts[1] || "");
   const zh = LANG === "zh";
-  w.append(zh ? "（" : " (", verEl("span", "mono", verDateLong(e.at)), zh ? "）" : ")");
+  w.append(zh ? "（" : " (", verEl("span", "mono", verDate(e.at)), zh ? "）" : ")");
   txt.appendChild(w);
   const note = typeof e.note === "string" ? e.note.trim() : "";
   if (note) { const nt = verEl("span", "nt", "· " + note); nt.title = note; txt.appendChild(nt); }
@@ -211,11 +211,12 @@ function verMenuOpen(viaKey) {
   VER.entries(S.data).forEach((it) => {
     const b = verEl("button", "vmi"); b.type = "button"; b.setAttribute("role", "menuitem"); b.tabIndex = -1;
     if (it.n === shown) b.setAttribute("aria-current", "true");
+    // 第一行:版號 → 徽章 → 摘要 → 日期。「目前」是版號的屬性,貼著版號;摘要空不空都不影響它的位置(設計 strategy-versions-current 方案 A)
     const top = verEl("span", "vmi-top");
-    top.append(verEl("span", "vmi-num mono", "v" + it.n), verEl("span", "vmi-note", typeof it.note === "string" ? it.note : ""));
+    top.appendChild(verEl("span", "vmi-num mono", "v" + it.n));
     const kind = VER.badge(it.n, S.data, amt, S.data.drift);
     if (kind) top.appendChild(verEl("span", "vtag " + (kind === "live" ? "live" : kind === "drift" ? "drift" : "cur"), t(kind === "live" ? "ver.live" : kind === "drift" ? "ver.drift" : "ver.current")));
-    top.appendChild(verEl("span", "vmi-date mono", verDateShort(it.at)));
+    top.append(verEl("span", "vmi-note", typeof it.note === "string" ? it.note : ""), verEl("span", "vmi-date mono", verDate(it.at)));
     b.appendChild(top);
     // 檔案已改的原因寫在列裡(不藏 tooltip);這台電腦直接讀 drift.json,沒有延遲那半句
     if (kind === "drift") b.appendChild(verEl("span", "vmi-warn", t(cloud ? "ver.driftCloud" : "ver.driftLocal")));
@@ -572,7 +573,7 @@ function vcFill(sel, S, pick) {
   sel.textContent = "";
   VER.entries(S.data).forEach((it) => {
     const o = document.createElement("option"); o.value = String(it.n);
-    o.textContent = "v" + it.n + " · " + verDateLong(it.at) + (it.n === S.data.current ? " · " + t("ver.current") : "");
+    o.textContent = "v" + it.n + " · " + verDate(it.at) + (it.n === S.data.current ? " · " + t("ver.current") : "");
     sel.appendChild(o);
   });
   sel.value = String(pick);

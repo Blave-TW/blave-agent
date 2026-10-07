@@ -5546,7 +5546,7 @@ msgid "xp.ivl.w"
 msgstr "週線"
 
 msgid "ver.menuLbl"
-msgstr "版本（改過程式碼的回測各留一版）"
+msgstr "版本"
 
 msgid "ver.current"
 msgstr "目前"
