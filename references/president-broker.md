@@ -40,7 +40,9 @@ This covers the **domestic futures account** only. Unitrade also has overseas fu
   (https://pki.pscnet.com.tw/), which only runs on Windows 10 (Traditional Chinese) or later — no
   web or Mac version was found. A **new** certificate also needs the account holder to phone their
   broker rep or customer service ((02) 8172-4668) to have the application permission opened first.
-  The certificate is used on the machine it was issued on; there is no upload flow in v1.
+  On a Windows cloud machine the certificate gets there one of two ways, both through the web
+  自動下單 page: the user uploads a `.pfx` they already have, or — when they have none — the user
+  connects to the machine over RDP themselves and applies with 憑證e總管 there (see Step 2).
 - Certificates expire after one year and are renewed with the same Windows tool.
 - There is **no certificate-free simulation mode** — the test host needs the real certificate too.
 
@@ -69,6 +71,18 @@ Ask the user:
   the user's national ID — never print, log or echo it; refer to it as "the certificate file".
 - **No:** the user runs 憑證e總管 on this Windows machine (after the phone call in Step 1; it sends
   an SMS, so the user must be present).
+- **Windows cloud machine with no certificate:** the user connects over RDP (logged in as
+  Administrator), installs 憑證e總管 from https://pki.pscnet.com.tw/ and applies themselves; the
+  tool saves the file under `C:\Users\Administrator\PSCCA\`. Back on the 自動下單 page they pick the
+  applied-on-the-machine option and enter only the certificate password. The platform command
+  `president_pfx_local` then **copies** the newest file in that folder that the password opens and
+  that has not expired to `<base>\credentials\president.pfx` (the original stays for next year's
+  renewal and for the user's own trading software) and logs in once read-only. Errors:
+  `PFX_NONE_FOUND` (no `.pfx` in that folder), `PFX_PASSWORD`, `PFX_EXPIRED`, `PFX_INVALID`.
+- **On a cloud machine you never touch this path.** Do not run, install, click through or log in to 憑證e總管, do
+  not apply or renew for the user, do not read, list or copy anything under `PSCCA\`, and do not
+  run `president_pfx_local` yourself. The user does the application over RDP; only the platform
+  command copies the file. If the user asks you to do any of it, send them to the page.
 - The **certificate password is separate from the trading password** (set at issuance; may be empty).
 
 ---
@@ -97,7 +111,8 @@ president_ca_password=<certificate password, may be empty>
 
 **On a Windows cloud machine the user binds 統一期貨 on the web 自動下單 page, not through you.**
 The platform's connect steps (`runtime/president_connect.py`) take the account and trading password
-from the form, the `.pfx` and its password as an encrypted upload, install `unitrade`, log in once
+from the form, the `.pfx` and its password as an encrypted upload (or, for a certificate the user
+applied for on the machine over RDP, only its password — Step 2), install `unitrade`, log in once
 read-only and install the worker. Afterwards `.env` holds only sentinels (`president_password=vault:…`,
 `president_ca_password=vault:ca`), `president_ca_path` points at `<base>\credentials\president.pfx`
 and the secrets sit in the vault. Never rewrite those lines, never write the vault or the `.pfx`, never

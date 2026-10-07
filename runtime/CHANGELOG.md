@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一憑證 RDP 自己申請那條路(新指令 `president_pfx_local`)**:雲端沒有憑證的用戶自己 RDP 用憑證e總管申請,網頁只送憑證密碼
+  封包(`pfx` 必須空字串,帶檔拒 `ENVELOPE_INVALID`);機器從 `C:\Users\Administrator\PSCCA\` 由新到舊找 `.pfx`,本機驗密碼與效期,
+  第一個通過的**複製**成 `credentials\president.pfx`(原檔留給明年展延),vault 寫入／鎖／probe 同 `president_pfx`(抽成 `_import_cert`)。
+  一個都沒有回 `PFX_NONE_FOUND`,全部不過回最新那份的錯誤碼;讀不到的檔、指出資料夾的連結當不存在,檔名(身分證號)不進回傳、
+  status、例外、log。電腦版 daemon 不收(`CLOUD_ONLY`)。**出貨順序:api president-api-018(382d7396)先上**。
 - **`<base>/credentials` 的 agent 守門(群益＋統一)**:每個回合 disallowed 加 Read／Edit
   `//<base>/credentials/{*vault*,*pfx*,capital_stage/**,president_logs/**}`(雙斜線＝絕對路徑,Windows 換成 `/c/…`;
   單斜線會錨到 workspace);新的 `_cred_bash_guard_hooks` 每個回合掛在 Bash 上,指令提到這些檔名或 glob 進 credentials
