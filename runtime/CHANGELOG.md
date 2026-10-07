@@ -15,6 +15,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 - **`local_daemon.strategy_kinds` 兩個小修(0.1.18 第一批稽核 L-6／S-0)**:①每支策略的判定各自 try/except——一支病態的 `strategy.py`(`ast` 的 RecursionError 之類)不再讓整輪變 None、整台的策略三步永遠不送;那支照列、type／market 為 null,並快取到檔案再變;②沒有 `# Type:` 檔頭的策略,讀過一份比 `strategy.py` 新的 stats.json 之後判定就定了,上線中每根 K 重寫 stats.json 不再每輪重解(最多約 1.7 MB);stats.json 比程式舊(上一版程式留下的)時照舊在它變動時重讀。測試 `tests/check_local_strategy_kinds.py`。
 
+- **外殼(desktop 0.1.18,不在 runtime/ 但同一批出貨;第一批稽核 L-0／L-1／L-3／L-4／S-1)**:①`shell/telemetry.js` 策略三步:`telemetry.json` 不存在(真新安裝)時 `strat` 從空的開始、不 seed,第一支策略照送 `strat_created`;只有舊版升級才「既有只記不送」。②只有 2xx 與 429 以外的 4xx 才記成送過;429／5xx 隔 1、2、4、8 分鐘重送、第 5 次仍失敗才記(計次只在記憶體),離線照舊每輪再試。③`shell/winsandbox.js`:完成判定要 `python.exe` 與 `Lib\os.py` 都有 CodexSandboxUsers 的 RX;PowerShell 查群組失敗會記 log(群組不存在 vs 跑不起來分開、不帶輸出內容);Codex `config.toml`(`CODEX_HOME` 優先)讀得到又沒設 elevated 就整個跳過、不起 icacls／PowerShell,讀不到照做。測試 `tests/check_shell_telemetry.js`、`tests/check_shell_win_sandbox_acl.js`。
+
 ## 1.1.116 — 2026-10-06(desktop 0.1.17)
 
 - **外殼與設定層總覽(desktop 0.1.17;大半不在 runtime/ 但同一批出貨)。兩條出貨順序:① 遙測白名單新增五個值(`feature_used` 的 `welcome_data_row`／`welcome_data_all`／`attach_file`／`attach_image`／`attach_paste`),api `openclaw/desktop_telemetry.py` 先上;② 台指期 K 線快取 `twfutures3_*`:api 換月口徑部署並重建驗收完,這批才進 main——過去月份只抓一次、之後不重抓,機器先更新會把舊口徑的月份存進新前綴,事後改不回來。內外盤不換前綴(仍是 `twfutures_bav`)、改成讀取時過濾,不受這條順序限制**:
