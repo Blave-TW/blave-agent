@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **「沒成功:跑回測」治本(`agent_turn._bg_guard_hooks`)**:回測/掃參啟動的 Bash `timeout` 不到這一輪的上限(min(`BASH_MAX_TIMEOUT_MS`, 剩餘時間))時,hook 不再拒絕,改回 `updatedInput` 把 `timeout` 改寫成那個數放行(`permissionDecision: allow` + 整個 input 帶回;0.1.17 的文件改法只是讓模型多半給對,偶爾給錯仍會多一行「沒成功」)。兩個條件不成立照舊拒絕、訊息不變:①引擎版本——這一輪 stream-json init 訊息的 `claude_code_version` ≥ 2.0.10(CHANGELOG「PreToolUse hooks can now modify tool inputs」;實跑驗過 2.1.281,再舊的引擎會當沒看到、照原 timeout 跑,正是 09-28 轉背景被殺那條路,而且這次沒有拒絕提醒),沒收到 init 版本就是拒絕;②剩餘時間 ≥ 300 s(`_RESUME_MIN_TOOL_SEC` 同一個數:剩的不夠跑像樣的指令,靜默放行等於讓注定跑不完的回測開跑,拒絕訊息才會叫 agent 別這樣啟動)。`run_in_background` 一律拒絕不變;排程回合的 `_sched_bash_guard_hooks` 同時回 deny 時引擎以 deny 為準(claude 2.1.281 PreToolUse 消費端:記下 deny 之後的 allow 一律換成 deny)。機隊 Windows 原生 `claude.exe` 未實測:版本門檻由 init 訊息擋,但「版本夠卻不尊重 updatedInput」這種情況只能在測試機跑一個真回合驗(待辦)。測試 `tests/check_bg_backtest_guard.py` ⑥ 節。
+
 ## 1.1.116 — 2026-10-06(desktop 0.1.17)
 
 - **外殼與設定層總覽(desktop 0.1.17;大半不在 runtime/ 但同一批出貨)。兩條出貨順序:① 遙測白名單新增五個值(`feature_used` 的 `welcome_data_row`／`welcome_data_all`／`attach_file`／`attach_image`／`attach_paste`),api `openclaw/desktop_telemetry.py` 先上;② 台指期 K 線快取 `twfutures3_*`:api 換月口徑部署並重建驗收完,這批才進 main——過去月份只抓一次、之後不重抓,機器先更新會把舊口徑的月份存進新前綴,事後改不回來。內外盤不換前綴(仍是 `twfutures_bav`)、改成讀取時過濾,不受這條順序限制**:
