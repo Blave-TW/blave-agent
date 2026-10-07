@@ -40,7 +40,7 @@ PROBE_PATH = os.path.join(STATE, "president_probe.json")
 REFRESH_FLAG = os.path.join(STATE, "president_refresh")
 HEARTBEAT_PATH = os.path.join(STATE, "heartbeat", "president_worker")
 BACKOFF_PATH = os.path.join(STATE, "president_worker_backoff.json")
-SDK_LOG_DIR = os.path.join(STATE, "president_logs")
+SDK_LOG_DIR = president_vault.SDK_LOG_DIR
 
 POLL_S = 60
 REFRESH_CHECK_S = 2

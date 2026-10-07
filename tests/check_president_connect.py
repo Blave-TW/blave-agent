@@ -157,12 +157,19 @@ check("1 rebind, another account: that account's certificate is deleted, its pas
 # ── 2. unbind ──
 open(P["pfx"], "wb").write(b"PFX")
 open(P["key"], "w").write("{}")
+for d in ("logs", "legacy_logs"):
+    os.makedirs(os.path.join(P[d], "logs"), exist_ok=True)
+    open(os.path.join(P[d], "logs", "unitrade.log"), "w").write("login A123456789")
+check("2 the connect side and the lib agree on where the SDK logs go (credentials\\, next to the vault)",
+      P["logs"] == pv.SDK_LOG_DIR and os.path.dirname(pv.SDK_LOG_DIR) == os.path.dirname(pv.VAULT) == P["cred"])
 pc._update("setup", status="ok")
 pc.drop_vault(["OKX_API_KEY", "capital_password"])
 check("2 other venues' names leave 統一 alone", os.path.exists(P["vault"]) and os.path.exists(P["pfx"]) and not popen)
 pc.drop_vault(["PRESIDENT_ACCOUNT"])
 check("2 統一's names: vault, pfx, pending key and status gone",
       not any(os.path.exists(P[k]) for k in ("vault", "pfx", "key", "status")))
+check("2 …and the SDK logs (the login id is the national id), under credentials\\ and the old state/ spot",
+      not os.path.exists(P["logs"]) and not os.path.exists(P["legacy_logs"]))
 check("2 …and the worker service is asked to remove itself (not waited for)",
       popen == [["py", P["worker"], "--uninstall"]], popen)
 creds_gone = None

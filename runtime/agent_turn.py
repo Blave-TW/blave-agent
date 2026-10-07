@@ -115,6 +115,9 @@ PROTECTED_EDIT_RULES = [
     "Edit(/lib/analysis.py)",
     "Edit(/lib/exits.py)",
     "Edit(/control/**)",
+    # 統一 SDK logs (the login id is the national id) lived here before they moved under
+    # credentials/; a machine bound before that keeps a copy until the next unbind
+    "Read(/state/president_logs/**)",
 ]
 
 
@@ -1181,6 +1184,7 @@ SCHED_TRADE_MANAGER_BARE = ("close_symbol|stop_strategy|seed_ledger|start_reconc
 _NET_MODS = r"requests|urllib\d?|socket|http|httpx|aiohttp|ftplib|smtplib"
 SCHED_BASH_DENY_RE = re.compile(
     r"(?<![\w.])\.env\b|\b(?:read_env|load_dotenv)\b|/proc/[\w-]+/environ\b"
+    r"|\bpresident_logs\b"  # 統一 SDK logs carry the national id (moved under credentials/; old copies may remain)
     rf"|\blib[./\\](?:order_|(?:{SCHED_TRADE_LIB})\b)|\b(?:{SCHED_TRADE_BARE})\b"
     rf"|\bfrom\s+lib\s+import\s[\w\s,()]*?\b(?:{SCHED_TRADE_LIB})\b"
     rf"|\bimport\s+(?:{SCHED_TRADE_LIB}|flatten|reconciler)\b|\bfrom\s+(?:{SCHED_TRADE_LIB}|flatten|reconciler)\s+import\b"

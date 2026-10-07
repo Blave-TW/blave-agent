@@ -630,6 +630,10 @@ class FakeUnitrade:
 
 
 _utu.Unitrade = FakeUnitrade
+check(president_vault.SDK_LOG_DIR == os.path.join(os.path.dirname(president_vault._WS), "credentials", "president_logs")
+      and president_worker.SDK_LOG_DIR == op.SDK_LOG_DIR == president_vault.SDK_LOG_DIR,
+      "the SDK's logs (login id = national id) go under credentials\\ next to the vault — worker and order lib alike",
+      (president_vault.SDK_LOG_DIR, president_worker.SDK_LOG_DIR, op.SDK_LOG_DIR))
 president_worker.PROBE_PATH = os.path.join(TMP, "state", "president_probe.json")
 president_worker.SDK_LOG_DIR = os.path.join(TMP, "state", "president_logs")
 envfile(BASE)

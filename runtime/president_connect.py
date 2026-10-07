@@ -45,6 +45,7 @@ id) or a broker message into a return value, an exception, the status or a log.
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -88,6 +89,8 @@ def _paths():
         "vault": os.path.join(cred, "president_vault.json"),
         "pfx": os.path.join(cred, "president.pfx"),
         "key": os.path.join(cred, "president_pfx_key.json"),
+        "logs": os.path.join(cred, "president_logs"),  # = lib/president_vault.SDK_LOG_DIR
+        "legacy_logs": os.path.join(WORKSPACE, "state", "president_logs"),
         "status": os.path.join(WORKSPACE, "state", "president_connect.json"),
         "probe": os.path.join(WORKSPACE, "state", "president_probe.json"),
         "worker": os.path.join(WORKSPACE, "lib", "president_worker.py"),
@@ -268,6 +271,12 @@ def drop_vault(names=None):
         except OSError as e:
             print(f"[president_connect] {os.path.basename(path)} not removed ({type(e).__name__})",
                   file=sys.stderr)
+    # the SDK's logs carry the login id; the worker may still be writing while it stops
+    for path in (p["logs"], p["legacy_logs"]):
+        if os.path.lexists(path):
+            shutil.rmtree(path, ignore_errors=True)
+            if os.path.lexists(path):
+                print(f"[president_connect] {os.path.basename(path)} not fully removed", file=sys.stderr)
     if IS_WINDOWS:
         py = cc._python_for_worker()
         if py and os.path.isfile(p["worker"]):

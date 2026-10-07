@@ -82,7 +82,7 @@ _TAGS_PATH = os.path.join(_WS, "state", "president_order_tags.json")
 # manager/reconciler.py's Read-Your-Writes guard
 LAST_ORDER_PATH = os.path.join(_WS, "state", "president_last_order_at.json")
 SEND_LOCK_PATH = os.path.join(_WS, "state", "president_send.lock")
-SDK_LOG_DIR = os.path.join(_WS, "state", "president_logs")
+SDK_LOG_DIR = president_vault.SDK_LOG_DIR
 
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,10}$")
 # Reply status codes, from unitrade 1.0.0.7 trade/dlogic (DLogic.*_CODE):

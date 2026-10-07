@@ -54,6 +54,11 @@ _WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(_WS, ".env")
 VAULT = os.path.join(os.path.dirname(_WS), "credentials", "president_vault.json")
 BLOCK = os.path.join(_WS, "state", "president_login_block.json")
+# The SDK's own logs carry the login id (the national id) and every order: next
+# to the vault (credentials\ — SYSTEM + Administrators on a cloud box), not in
+# the agent's state/. Removed with the vault on unbind.
+SDK_LOG_DIR = os.path.join(os.path.dirname(VAULT), "president_logs")
+LEGACY_SDK_LOG_DIR = os.path.join(_WS, "state", "president_logs")
 PW_PREFIX = "vault:"
 TEST_HOST_SUFFIX = ".testpfctrade.com"
 # the production login hosts (both logged in with a matching TLS certificate, 10-02)

@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一 SDK log 搬進 `credentials\`**:SDK 自己的 log(登入帳號=身分證號、每張單)從 `state/president_logs/` 改寫到
+  `<base>/credentials/president_logs/`(跟 vault 同 ACL);解綁／逐出時連同舊位置一起刪。agent 每個回合禁 `Read(/state/president_logs/**)`,
+  排程回合 Bash 守門擋 `president_logs`。
 - **統一 probe 狀態多一個 `retry_later`**:lib 新的 `TRANSIENT` 登入類(每分鐘上限、券商後台連線、維護)對應到它。
 - **統一憑證上傳與綁定不互蓋**:`president_pfx` 的 vault 寫入失敗時把剛落地的 `president.pfx` 刪掉(否則新憑證配舊／空密碼,
   一次 probe 就燒掉券商三次之一);`president_probe`／`president_finish` 的關卡除了憑證檔也要 vault 裡有 `president_ca_password`
