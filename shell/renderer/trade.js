@@ -495,15 +495,16 @@ function trDirty(names, stored, edits) { return names.some((n) => edits[n] != nu
    留在清單裡唯一用途是讓人取消勾選——雲端的 names 已把讀不到的濾掉,所以只有這台電腦會出);
    locked = Type C、不在表裡、機器端不支援(判的是「能不能加進來」,跟表列的 `stored[n] > 0` 是「能不能從 0 撥錢」不同;
    已在表裡的存量不鎖,不然存不回去)。顯示名 localeCompare 排序(§13-3:列上畫的是顯示名,照內部名排會像亂的)。 */
-function trPickRows(list, names, canTrade, paper) {
+function trPickRows(list, names, canTrade, paper, txfOnly) {
   const by = {}; list.forEach((x) => { by[x.name] = x; });
   const seen = new Set(names); list.forEach((x) => { if (x.hasBacktest) seen.add(x.name); });
   return [...seen].map((n) => { const x = by[n], inCur = names.indexOf(n) >= 0;
     // 模擬交易是 USDT 帳戶:台幣計價的標的(台指期、台股)進不來(e2e 0.1.8 #91:台指期那一列的金額其實是口數、畫面寫 USDT)。
+    // 統一期貨只下台指期:標的不是 TXF / MXF / TMF 的(BTCUSDT、台股、組合)進不來——runtime _cmd_amounts 存的時候也擋(NOT_TXF)。
     // 已在表裡的存量不鎖(鎖住就取消不了),只帶原因;跟 Type C 同時成立時只講這一條——它是更根本的原因
-    const twd = paper === true && !!x && x.twd === true, typeC = !!x && !!x.portfolio && !inCur && !canTrade;
-    return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: typeC || (twd && !inCur),
-      note: twd ? (inCur ? "twdKeep" : "twd") : typeC ? "typeC" : null }; })
+    const twd = paper === true && !!x && x.twd === true, txf = txfOnly === true && !!x && !trTxfSpec(x.symbol), typeC = !!x && !!x.portfolio && !inCur && !canTrade;
+    return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: typeC || ((twd || txf) && !inCur),
+      note: twd ? (inCur ? "twdKeep" : "twd") : txf ? (inCur ? "txfKeep" : "txf") : typeC ? "typeC" : null }; })
     .sort((a, b) => a.display.localeCompare(b.display));
 }
 /* 這支策略的標的是不是台幣計價:台指期(TXF / MXF / TMF,runtime command_listener._TXF_ASSET_SPECS 那三個)或台股代號
@@ -1365,7 +1366,7 @@ function trAlertShow() { const S = TR_BAGS[ENV.cur], a = $("tr-alert"); a.hidden
 /* kind:"stop" = 暫停那兩個指令(沒送到 = 它還在交易,要講撤 API key 那句);其餘一般失敗不講那句(稽核 S2-B)。
    env 由呼叫端帶(跨 await 之後 TR 可能已經是另一邊了)。雲端**不可以**沿用本機那組句子:它們寫死了「這台電腦」。 */
 // Type B 的拒絕(TYPE_B: 「名」…)→ 一句完整的話,名字換成顯示名;其他代碼回 null,照原文那句
-function trRejectSentence(rc) { return rc.code === "TYPE_B" ? t("tr.typeB.rejected", { name: trDisplay(rc.name) }) : null; }
+function trRejectSentence(rc) { return rc.code === "TYPE_B" ? t("tr.typeB.rejected", { name: trDisplay(rc.name) }) : rc.code === "NOT_TXF" ? t("tr.notTxf.rejected", { name: trDisplay(rc.name) }) : null; }
 function trSendError(res, kind, env) {
   const e = res && res.error ? String(res.error) : "", k = trKindOf(res);
   const rc = k === "rejected" ? trRejectCode(e) : null, known = rc ? trRejectSentence(rc) : null;
@@ -3511,6 +3512,7 @@ function psRow(r, cloud, i) {
   if (r.gone) nm.appendChild(trEl("span", "ps-gone", t("tr.pick.gone")));
   let note = null;
   if (r.note === "twd" || r.note === "twdKeep") note = nm.appendChild(trEl("span", "ps-note", r.note === "twd" ? t("tr.pick.twd") : t("tr.pick.twdKeep")));
+  else if (r.note === "txf" || r.note === "txfKeep") note = nm.appendChild(trEl("span", "ps-note", r.note === "txf" ? t("tr.pick.txf") : t("tr.pick.txfKeep")));
   else if (r.locked) note = nm.appendChild(trEl("span", "ps-note", cloud ? t("tr.typeCHost") : t("tr.typeC")));
   if (note) { note.id = "ps-why-" + i; note.setAttribute("aria-hidden", "true"); cb.setAttribute("aria-describedby", note.id); }
   row.append(cb, nm); return row;
@@ -3520,7 +3522,7 @@ function psOpen(opener) {
   if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || trPickOff()) return;
   trackFeature("strategy_picker");
   const cloud = S.env === "cloud", names = trNames();
-  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER);
+  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER, trVenueId() === "president");
   psOpener = opener || null;
   $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";

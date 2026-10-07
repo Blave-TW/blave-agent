@@ -1447,8 +1447,16 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("台幣計價的判別:TXF / MXF / TMF、台股代號(2330、00878、00631L、2330.TW);加密與美股代號不算;組合看 UNIVERSE", ["TXF", "mxf", "TMF", "2330", "00878", "00631L", "2330.TW", "6488.TWO"].every((s) => trIsTwd(s)) && ["BTCUSDT", "1000PEPEUSDT", "AAPL", "ETH", "", null, 2330, "TXFF", "123", "1234567"].every((s) => !trIsTwd(s))
         && trIsTwd([null, "BTCUSDT", "2317"]) && !trIsTwd(["BTCUSDT", "ETHUSDT"]) && J(trUniverse("X = 1\nUNIVERSE = ['2330', \"2317\",\n  '2454']\n")) === J(["2330", "2317", "2454"]) && trUniverse("UNIVERSE = load()\n").length === 0 && trUniverse(null).length === 0);
       ok("接線:框看的是連接的對象(模擬交易)、不是視角;金額表的存量列講原因、加金額被擋(可以減、可以移出);機器端 order_paper 的口數支援沒有動",
-        /const cloud = S\.env === \"cloud\", names = trNames\(\);\n\s*const rows = trPickRows\(S\.list, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER\);/.test(src) && /const twdRow = x\.twd === true && trVenueId\(\) === PAPER;/.test(src)
+        /const cloud = S\.env === \"cloud\", names = trNames\(\);\n\s*const rows = trPickRows\(S\.list, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER, trVenueId\(\) === "president"\);/.test(src) && /const twdRow = x\.twd === true && trVenueId\(\) === PAPER;/.test(src)
         && /\(twdRow && parse\(inp\.value\) > \(stored\[n\] \|\| 0\) \? "twd" : null\)/.test(src) && /whole lots|WHOLE LOTS/.test(fs.readFileSync(path.join(__dirname, "..", "lib", "order_paper.py"), "utf8"))); }
+    // 0.1.18 Bug 2:統一期貨只下台指期——標的不是 TXF / MXF / TMF 的在 picker 就鎖(runtime _cmd_amounts 存的時候也擋 NOT_TXF)
+    { const T = [N({ name: "txf", displayName: "台指期", symbol: "TXF" }), N({ name: "mxf", displayName: "小台", symbol: "mxf" }), N({ name: "btc", displayName: "BTC", symbol: "BTCUSDT" }), N({ name: "tsmc", displayName: "台積電", symbol: "2330" }), N({ name: "pf", displayName: "組合", portfolio: true })];
+      const p = Object.fromEntries(trPickRows(T, ["btc"], true, false, true).map((r) => [r.name, r])), other = trPickRows(T, ["btc"], true, false, false);
+      ok("統一:TXF / MXF 不鎖;BTCUSDT、台股、組合(沒有標的)不在表裡 → 鎖住、原因 txf;已在表裡的 BTCUSDT 存量不鎖、原因 txfKeep;別的 venue 一律不鎖",
+        !p.txf.locked && p.txf.note === null && !p.mxf.locked && p.btc.locked === false && p.btc.note === "txfKeep" && p.btc.checked && p.tsmc.locked && p.tsmc.note === "txf" && p.pf.locked && p.pf.note === "txf"
+        && other.every((r) => !r.locked && r.note === null), J(p));
+      ok("接線:第五個參數 = 連接的是統一(trVenueId() === \"president\");psRow 畫 tr.pick.txf / txfKeep", /trVenueId\(\) === PAPER, trVenueId\(\) === "president"\);/.test(src)
+        && /else if \(r\.note === "txf" \|\| r\.note === "txfKeep"\) note = nm\.appendChild\(trEl\("span", "ps-note", r\.note === "txf" \? t\("tr\.pick\.txf"\) : t\("tr\.pick\.txfKeep"\)\)\);/.test(src)); }
     const stored = { a: 100, z: 0, gone: 50 };
     const ch = trPickApply(new Set(["a", "new1"]), stored);
     ok("確定:勾新的 → 以 0 加進去(立即送);取消 $0 的 → 拿掉 key(立即送);取消有錢的還在 payload 裡(留到儲存的確認框才平倉)",
@@ -1552,9 +1560,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const se = (err, kind, env) => vm.runInContext("trSendError(" + JSON.stringify({ ok: false, error: err }) + ", " + JSON.stringify(kind) + ", " + JSON.stringify(env) + ")", sctx);
       for (const env of ["local", "cloud"]) {
         const b = se("ValueError: TYPE_B: 「grid」沒有合法的 INTERVAL(Type B)", "save", env), u = se("ValueError: MARKET_US: 「spy」用到美股資料", "save", env);
+        const x = se("ValueError: NOT_TXF: 「grid」的標的是 BTCUSDT,統一期貨只能下台指期(TXF／MXF／TMF)", "save", env);
         const gen = env === "cloud" ? "tr.cloud.cmdRejected" : "tr.cmdRejected";
-        ok(`被拒(${env}):TYPE_B → tr.typeB.rejected 帶顯示名;其他代碼(含舊的 MARKET_*)走一般那句、去掉例外名與代碼`,
-          b === 'tr.typeB.rejected {"name":"grid"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, u])); } }
+        ok(`被拒(${env}):TYPE_B → tr.typeB.rejected、NOT_TXF → tr.notTxf.rejected 帶顯示名;其他代碼(含舊的 MARKET_*)走一般那句、去掉例外名與代碼`,
+          b === 'tr.typeB.rejected {"name":"grid"}' && x === 'tr.notTxf.rejected {"name":"grid"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, x, u])); } }
     // 列(psRow):原因句 = 勾選框的 aria-describedby
     { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });
       const pctx = vm.createContext({ LANG: "zh", document: { createElement: mk }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : "") });

@@ -86,7 +86,8 @@ def trading_on(env):
     open(os.path.join(WS, ".env"), "w").write("BLAVE_API_KEY=not-a-real-blave\n")
     cl.dispatch({"cmd": "credentials", "args": {"env": dict(env)}})
     venue = next(iter(env)).split("_")[0].lower()
-    json.dump({"amounts": {"a1": 1000}, "exchanges": {"a1": venue}},
+    json.dump({"amounts": {"a1": 1000}, "exchanges": {"a1": venue},
+               "asset_specs": {"a1": {"type": "futures_contracts", "contract_value": 200}}},
               open(os.path.join(WS, "manager", "portfolio_config.json"), "w"))
     json.dump({"actual": {"BTCUSDT": {"side": "long", "size": 1000}}, "target": {}}, open(SNAP, "w"))
     json.dump({"venue": venue, "account_id": "acct-1"}, open(GUARD, "w"))
@@ -116,6 +117,9 @@ try:
     check(not os.path.exists(SNAP) and not os.path.exists(GUARD)
           and set(parked.get("files") or {}) == {SNAP, GUARD},
           "full unbind (stop confirmed): snapshot and guard state parked, then cleared")
+    cfg = json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))
+    check(cfg["amounts"] == {} and cfg["exchanges"] == {} and cfg["asset_specs"] == {},
+          "…membership AND asset_specs cleared (0.1.18 P3: a rebind re-derives the TXF specs on the first allocation)")
     cl.dispatch({"cmd": "credentials", "args": {"env": dict(OKX2)}})
     check(not os.path.exists(SNAP) and not os.path.exists(GUARD)
           and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
@@ -145,8 +149,9 @@ try:
     unbind(OKX)
     stop_ok["v"] = True
     check(os.path.exists(SNAP) and os.path.exists(GUARD) and not os.path.exists(cl.PARKED_ACCOUNT_STATE)
-          and not os.path.exists(cl.RECONCILER_STOP_MARK),
-          "stop NOT confirmed (membership kept): nothing parked, no stop mark — today's behaviour")
+          and not os.path.exists(cl.RECONCILER_STOP_MARK)
+          and json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))["asset_specs"] == {"a1": {"type": "futures_contracts", "contract_value": 200}},
+          "stop NOT confirmed (membership kept): nothing parked, no stop mark, asset_specs kept — today's behaviour")
     trading_on(OKX)
     os.makedirs(cl.PARKED_ACCOUNT_STATE)  # the park write cannot land
     unbind(OKX)

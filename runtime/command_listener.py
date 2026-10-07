@@ -3238,6 +3238,18 @@ def _cmd_amounts(args):
     cfg["exchanges"] = {
         n: (old.get(n) or default_venue) for n in clean
     }
+    # 統一期貨 trades TW index futures only: a member routed there whose SYMBOL is
+    # anything else (BTCUSDT…) is refused at save time, by name, instead of
+    # blowing up in the reconciler's first round. Symbol unreadable = not
+    # judged (same fail-open as the Type C check); the picker locks these too.
+    for k in clean:
+        if cfg["exchanges"].get(k) != venue_traits.PRESIDENT:
+            continue
+        sym = _strategy_futures_symbol(k)
+        if sym and sym not in _TXF_ASSET_SPECS:
+            raise ValueError(
+                f"NOT_TXF: 「{k}」的標的是 {sym},統一期貨只能下台指期(TXF／MXF／TMF)"
+                "——請取消勾選後再儲存")
     if not isinstance(cfg.get("asset_specs"), dict):
         cfg["asset_specs"] = {}
     # First-allocation TXF/MXF/TMF spec write (mirrors the frontend's own
@@ -3647,10 +3659,12 @@ def _cmd_credentials_remove(args):
             # (_cmd_restart_reconciler), same as every resume. If the stop
             # cannot be confirmed, keep the membership — a stale-but-consistent
             # config is the safe direction — and still let the unbind succeed.
-            # What's cleared is membership only (amounts/exchanges emptied,
-            # legacy weights dropped — asset_specs and the rest survive).
-            # Partial unbind on a multi-venue machine keeps daemon and
-            # portfolio as-is.
+            # What's cleared is membership (amounts/exchanges emptied, legacy
+            # weights dropped) plus asset_specs — a rebind re-derives the TXF
+            # ones on the first allocation, and specs for members that no
+            # longer exist are only something to trip on later. The rest of
+            # the config survives. Partial unbind on a multi-venue machine
+            # keeps daemon and portfolio as-is.
             if _stop_reconciler():
                 _mark_reconciler_stopped()
                 _park_account_state(_account_identity(lines))
@@ -3665,6 +3679,7 @@ def _cmd_credentials_remove(args):
                     if isinstance(cfg, dict):
                         cfg["amounts"] = {}
                         cfg["exchanges"] = {}
+                        cfg["asset_specs"] = {}
                         cfg.pop("weights", None)
                         # atomic: the reconciler mtime-watches + json-loads this
                         with atomic_file.replacing(cpath) as f:
