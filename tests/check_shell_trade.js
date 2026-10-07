@@ -33,11 +33,32 @@ ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", t
   const appRestart = { reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false, wanted: false } } };
   ok("統一開通中 = setup(HALT 在、app 重開過那組欄位在,也一樣)", trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: { halted: true }, ...appRestart })) === "setup"
     && trExecState(st({ venues: VP, account: null, president_connect: { worker: { status: "running" } }, halt: {}, reconciler: { alive: false } })) === "setup");
+  // 稽核 integ-0118 B-1:開通過(runtime 寫 worker.ok_at、之後失敗不清)、worker 才登入失敗停掉(機器重開落在維護時段 / 改密碼)——不是開通中:
+  // 重開警示(B / C)與解除暫停鈕要在、讀帳失敗列為串接失敗、選單列不講「尚未啟動下單」(check_shell_tray_resident.js)
+  { const pcF = { worker: { status: "failed", error: "LOGIN_FAILED:MAINTENANCE", ok_at: 5, wanted: false, at: 9 } };
+    const mr = { reconciler: { alive: false, stopped: { reason: "machine_restart", at: 7 } }, daemon: { reconciler: { running: false, wanted: false } } };
+    const S1 = st({ venues: VP, account: accP, president_connect: pcF, halt: {}, ...mr });
+    ok("B-1 開通過→維護時段重開→登入失敗:重開停著 = halted(B,機器重開),不是 setup", trExecState(S1) === "halted" && trRestartKind(S1.report) === "machine" && !trSetupOnly(S1));
+    ok("B-1 …重開沒停住 = unconfirmed(可能仍在下單)", trExecState(st({ venues: VP, account: accP, president_connect: pcF, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })) === "unconfirmed");
+    ok("B-1 …HALT 中 = halted(解除暫停鈕照一般狀態機畫);讀帳失敗列為串接失敗", trExecState(st({ venues: VP, account: accP, president_connect: pcF, halt: { halted: true }, reconciler: { alive: false } })) === "halted"
+      && J(trFailedIds({ venues: VP, account: accP, president_connect: pcF })) === J(["president"]));
+    ok("B-1 開通過又停掉:設定 › 帳戶 那一列不是開通中、但「繼續」照給(「確認登入」只在開通框裡);從沒 ok 過的是開通中、ok 的兩者皆非",
+      trPresStopped({ president_connect: pcF }, "president") && !trPresWip({ president_connect: pcF }, "president")
+      && !trPresStopped({ president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD" } } }, "president") && trPresWip({ president_connect: { worker: { status: "failed" } } }, "president")
+      && !trPresStopped({ president_connect: pcOk }, "president") && !trPresStopped({ president_connect: pcF }, "paper")
+      && /const presIn = presW \|\| \(!ro && trPresStopped\(r, id\)\);/.test(src) && /if \(presIn\) \{ const go = trEl\("button", "pf-act main-act", t\("cap\.continue"\)\);[^\n]*"pres-continue"/.test(src)
+      && /!ro && id === "president" && \[presWip\(r\), trPresStopped\(r, id\)\]\]\)\) return;/.test(src));
+    ok("B-1 從沒 ok 過的 worker 碰到機器重開(停著 / 沒停住):也不是 setup——重開警示一律優先", trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, ...mr })) === "halted"
+      && trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })) === "unconfirmed"); }
   ok("統一開通中:不算串接失敗;worker ok 之後讀帳失敗才算", J(trFailedIds({ venues: VP, account: accP, president_connect: pcW })) === J([])
     && J(trFailedIds({ venues: VP, account: accP, president_connect: pcOk })) === J(["president"]));
   ok("worker ok 之後照一般狀態機(halted)", trExecState(st({ venues: VP, account: accP, president_connect: pcOk, halt: { halted: true }, reconciler: { alive: false } })) === "halted");
   ok("對帳器在跑(開通過、之後 worker 失敗)不算 setup:暫停鈕要在", trExecState(st({ venues: VP, account: accP, president_connect: { worker: { status: "failed" } }, halt: {}, reconciler: { alive: true }, daemon: { reconciler: { running: true } } })) === "running");
   ok("還綁著別家(模擬)就不是 setup", trExecState(st({ venues: { ...VP, ...V }, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false } })) === "dead");
+  // 稽核 integ-0118 B-2:雲端那份狀態(st.cloud)不進 setup——「繼續」開的框只接這台電腦的統一,雲端照一般狀態機、開通交給網頁
+  { const cloudSt = { alive: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: VP, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false } } };
+    ok("B-2 雲端視角:同一份開通中的回報不是 setup(dead,照一般狀態機);setup 分支畫「繼續」只在這台電腦", trExecState(cloudSt) === "dead" && !trSetupOnly(cloudSt)
+      && trExecState(st(cloudSt.report)) === "setup" && /if \(state === "setup" && !stopped && TR\.env === "local"\) \{/.test(src)); }
   ok("沒有 president_connect(不是統一、或舊狀態檔)照舊", trExecState(st({ venues: VP, account: accP, halt: {}, reconciler: { alive: false } })) === "dead");
   ok("接線:setup 的標頭句「統一期貨 · 開通中」、頂列短詞「開通中」、切換器詞 cap.pending、主鈕換「繼續」回開通清單、別的態把它拿掉",
     /if \(state === "setup"\) return trVenueLabel\("president", true\) \+ " · " \+ t\("cap\.pending"\);/.test(src)
@@ -1426,8 +1447,16 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("台幣計價的判別:TXF / MXF / TMF、台股代號(2330、00878、00631L、2330.TW);加密與美股代號不算;組合看 UNIVERSE", ["TXF", "mxf", "TMF", "2330", "00878", "00631L", "2330.TW", "6488.TWO"].every((s) => trIsTwd(s)) && ["BTCUSDT", "1000PEPEUSDT", "AAPL", "ETH", "", null, 2330, "TXFF", "123", "1234567"].every((s) => !trIsTwd(s))
         && trIsTwd([null, "BTCUSDT", "2317"]) && !trIsTwd(["BTCUSDT", "ETHUSDT"]) && J(trUniverse("X = 1\nUNIVERSE = ['2330', \"2317\",\n  '2454']\n")) === J(["2330", "2317", "2454"]) && trUniverse("UNIVERSE = load()\n").length === 0 && trUniverse(null).length === 0);
       ok("接線:框看的是連接的對象(模擬交易)、不是視角;金額表的存量列講原因、加金額被擋(可以減、可以移出);機器端 order_paper 的口數支援沒有動",
-        /const cloud = S\.env === \"cloud\", names = trNames\(\);\n\s*const rows = trPickRows\(S\.list, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER\);/.test(src) && /const twdRow = x\.twd === true && trVenueId\(\) === PAPER;/.test(src)
+        /const cloud = S\.env === \"cloud\", names = trNames\(\);\n\s*const rows = trPickRows\(S\.list, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER, trVenueId\(\) === "president"\);/.test(src) && /const twdRow = x\.twd === true && trVenueId\(\) === PAPER;/.test(src)
         && /\(twdRow && parse\(inp\.value\) > \(stored\[n\] \|\| 0\) \? "twd" : null\)/.test(src) && /whole lots|WHOLE LOTS/.test(fs.readFileSync(path.join(__dirname, "..", "lib", "order_paper.py"), "utf8"))); }
+    // 0.1.18 Bug 2:統一期貨只下台指期——標的不是 TXF / MXF / TMF 的在 picker 就鎖(runtime _cmd_amounts 存的時候也擋 NOT_TXF)
+    { const T = [N({ name: "txf", displayName: "台指期", symbol: "TXF" }), N({ name: "mxf", displayName: "小台", symbol: "mxf" }), N({ name: "btc", displayName: "BTC", symbol: "BTCUSDT" }), N({ name: "tsmc", displayName: "台積電", symbol: "2330" }), N({ name: "pf", displayName: "組合", portfolio: true })];
+      const p = Object.fromEntries(trPickRows(T, ["btc"], true, false, true).map((r) => [r.name, r])), other = trPickRows(T, ["btc"], true, false, false);
+      ok("統一:TXF / MXF 不鎖;BTCUSDT、台股、組合(沒有標的)不在表裡 → 鎖住、原因 txf;已在表裡的 BTCUSDT 存量不鎖、原因 txfKeep;別的 venue 一律不鎖",
+        !p.txf.locked && p.txf.note === null && !p.mxf.locked && p.btc.locked === false && p.btc.note === "txfKeep" && p.btc.checked && p.tsmc.locked && p.tsmc.note === "txf" && p.pf.locked && p.pf.note === "txf"
+        && other.every((r) => !r.locked && r.note === null), J(p));
+      ok("接線:第五個參數 = 連接的是統一(trVenueId() === \"president\");psRow 畫 tr.pick.txf / txfKeep", /trVenueId\(\) === PAPER, trVenueId\(\) === "president"\);/.test(src)
+        && /else if \(r\.note === "txf" \|\| r\.note === "txfKeep"\) note = nm\.appendChild\(trEl\("span", "ps-note", r\.note === "txf" \? t\("tr\.pick\.txf"\) : t\("tr\.pick\.txfKeep"\)\)\);/.test(src)); }
     const stored = { a: 100, z: 0, gone: 50 };
     const ch = trPickApply(new Set(["a", "new1"]), stored);
     ok("確定:勾新的 → 以 0 加進去(立即送);取消 $0 的 → 拿掉 key(立即送);取消有錢的還在 payload 裡(留到儲存的確認框才平倉)",
@@ -1531,9 +1560,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const se = (err, kind, env) => vm.runInContext("trSendError(" + JSON.stringify({ ok: false, error: err }) + ", " + JSON.stringify(kind) + ", " + JSON.stringify(env) + ")", sctx);
       for (const env of ["local", "cloud"]) {
         const b = se("ValueError: TYPE_B: 「grid」沒有合法的 INTERVAL(Type B)", "save", env), u = se("ValueError: MARKET_US: 「spy」用到美股資料", "save", env);
+        const x = se("ValueError: NOT_TXF: 「grid」的標的是 BTCUSDT,統一期貨只能下台指期(TXF／MXF／TMF)", "save", env);
         const gen = env === "cloud" ? "tr.cloud.cmdRejected" : "tr.cmdRejected";
-        ok(`被拒(${env}):TYPE_B → tr.typeB.rejected 帶顯示名;其他代碼(含舊的 MARKET_*)走一般那句、去掉例外名與代碼`,
-          b === 'tr.typeB.rejected {"name":"grid"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, u])); } }
+        ok(`被拒(${env}):TYPE_B → tr.typeB.rejected、NOT_TXF → tr.notTxf.rejected 帶顯示名;其他代碼(含舊的 MARKET_*)走一般那句、去掉例外名與代碼`,
+          b === 'tr.typeB.rejected {"name":"grid"}' && x === 'tr.notTxf.rejected {"name":"grid"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, x, u])); } }
     // 列(psRow):原因句 = 勾選框的 aria-describedby
     { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });
       const pctx = vm.createContext({ LANG: "zh", document: { createElement: mk }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : "") });

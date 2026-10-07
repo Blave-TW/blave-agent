@@ -22,7 +22,9 @@ in-memory path + local_daemon wiring) — no network, no broker, no Windows.
 Run: cd blave-agent && /usr/bin/python3 tests/check_president_local.py  (needs `cryptography` and node;
      the repo .venv has no cryptography and SKIPs, like check_president_connect section 5)
 """
+import contextlib
 import datetime
+import io
 import json
 import os
 import shutil
@@ -273,6 +275,61 @@ check("6c run_probe on that worker: status leaves `running` as failed / timeout,
 pc._paths, pc.PROBE_TIMEOUT_S = real_paths, real_probe_timeout
 os.remove(SLEEPER)
 
+# ── 6d. the child never outlives a blown-up communicate; the sections never stay `running` (audit integ-0118 B-3 / B-4) ──
+sl = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+killed = pc._kill_tree(sl.pid)
+sl.wait(5)
+check("6d _kill_tree reports whether the kill went out (a live tree → True, a gone pid → False)",
+      killed is True and pc._kill_tree(sl.pid) is False)
+
+
+class _NT:  # the Windows branch of _kill_tree on this box: os.name says nt, everything else is os
+    name = "nt"
+
+    def __getattr__(self, k):
+        return getattr(os, k)
+
+
+real_os, real_run = pc.os, pc.subprocess.run
+pc.os, pc.subprocess.run = _NT(), lambda argv, **kw: subprocess.CompletedProcess(argv, 128)
+err6d = io.StringIO()
+with contextlib.redirect_stderr(err6d):
+    nt_killed = pc._kill_tree(4242)
+pc.os, pc.subprocess.run = real_os, real_run
+check("6d Windows: taskkill came back non-zero → False and one stderr line with the rc (audit integ-0118 third B-3)",
+      nt_killed is False and "taskkill rc=128" in err6d.getvalue(), err6d.getvalue())
+calls = []
+real_popen_pc, real_kill_tree = pc.subprocess.Popen, pc._kill_tree
+
+
+class BrokenPipePopen(real_popen_pc):
+    def communicate(self, *a, **kw):
+        if not calls:
+            calls.append("communicate")
+            raise OSError("pipe")
+        return real_popen_pc.communicate(self, *a, **kw)
+
+    def kill(self):
+        calls.append("kill")
+        real_popen_pc.kill(self)
+
+
+pc.subprocess.Popen = BrokenPipePopen
+pc._kill_tree = lambda pid: calls.append("tree") or real_kill_tree(pid)
+code = code_of(lambda: pc._local_run("--once", 5, "probe", argv=["-c", "import time; time.sleep(60)"]))
+check("6d a non-timeout communicate failure kills the tree, then the launcher, and the error propagates",
+      code == "pipe" and calls == ["communicate", "tree", "kill"], (code, calls))
+pc.subprocess.Popen, pc._kill_tree = real_popen_pc, real_kill_tree
+real_local_run = pc._local_run
+pc._local_run = lambda *a, **kw: (_ for _ in ()).throw(ValueError("popen args"))
+st6d = pc.run_test_order()
+to6d = pc.read_status()["test_order"]
+check("6d run_test_order: whatever blows up, the section leaves `running` (failed / unknown) — same as run_probe",
+      st6d["state"] == "unknown" and to6d["status"] == "failed", json.dumps(to6d))
+st6d = pc.run_probe()
+check("6d …and run_probe through the same one catch-all", st6d["state"] == "unknown" and pc.read_status()["probe"]["status"] == "failed")
+pc._local_run = real_local_run
+
 # ── 6b. test environment (the cloud's president_host / president_test_order, same runtime code) ──
 probes = []
 real_probe = pc.run_probe
@@ -296,7 +353,33 @@ pc.local_dispatch({"op": "host", "env": "live"}, D).run()
 check("6b 營業員說開好了 = host live: bundle switched, probe on production",
       pc._LOCAL["secrets"]["live"] is True and probes[-1] == "live" and pc.read_status()["env"] == "live")
 check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order"}, D)) == "LIVE_ENV")
+# 6e. production access already open (a reinstall, a second computer): host live straight from the test section
+pc._update("test_order", status="ok")
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6e host live after a test order: not a skip", pc.read_status().get("test_skipped") is False)
+pc._update("test_order", reset=True, status="idle")
 pc.local_dispatch({"op": "host", "env": "test"}, D).run()
+n_probes = len(probes)
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6e host live with no test order = the test section skipped: env live, probe on production, test_skipped",
+      pc.read_status()["env"] == "live" and probes[-1] == "live" and pc.read_status().get("test_skipped") is True
+      and pc._LOCAL["secrets"]["live"] is True)
+n_probes = len(probes)
+pc.local_dispatch({"op": "host", "env": "test"}, D).run()
+check("6e …back to the test section from a skip: the switch only (no login against the default test host), rows doable again",
+      pc.read_status()["env"] == "test" and len(probes) == n_probes and pc.read_status().get("test_skipped") is False
+      and pc.read_status()["probe"]["status"] == "idle", json.dumps(pc.read_status()["probe"]))
+# 6e. a skip belongs to the account, not the machine (audit integ-0118 third B-2): skip, then bind another
+# account → its first test-host login (host {url}) is a real login, not "back from a skip" (switch only)
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6e setup: skipped again", pc.read_status().get("test_skipped") is True)
+cert(dict(GOOD, account="70000099999"))
+n_probes = len(probes)
+pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).run()
+check("6e skip, then another account bound → test_skipped off, its first host {url} probes the test host",
+      pc.read_status().get("test_skipped") is False and len(probes) == n_probes + 1 and probes[-1] == "test"
+      and pc.read_status()["env"] == "test", json.dumps(pc.read_status()))
+cert(GOOD)  # the account the rest of this file is bound to
 pc.run_probe, pc.run_test_order = real_probe, real_order
 
 # ── 7. reconciler ──
@@ -516,6 +599,37 @@ check("8 no HALT and no event for it", not halts and not evs, (halts, evs))
 w.wanted, w.proc, w.respawn_at = True, type("Dead", (), {"poll": lambda self: 1, "pid": 1})(), 0
 pc.local_tick()
 check("8 a worker that died of something else (not a login) is restarted as before", spawns == [1])
+
+# 8d. onboarded, then the login failed (audit integ-0118 B-1): the first ok writes worker.ok_at and no failure
+# path clears it — the pages tell "never finished onboarding" from "onboarded, then stopped" by it
+env_before = pc.read_status().get("env")
+pc._update(env="live")
+pc._update("worker", reset=True, status="idle")
+pc._update("probe", status="ok", state="ok", env="live")
+pc._LOCAL["secrets"]["live"] = True
+real_start, real_finish_timeout = w.start, pc.FINISH_TIMEOUT_S
+w.start = lambda: open(os.path.join(WS, "state", "president_account.json"), "w").write('{"ok": true}')
+pc.FINISH_TIMEOUT_S = 5
+pc._local_start(None)
+ok_at = pc.read_status()["worker"].get("ok_at")
+check("8d the first good snapshot writes worker.ok_at", isinstance(ok_at, int) and ok_at > 0, pc.read_status()["worker"])
+w.wanted, w.proc, w.respawn_at = True, type("Dead", (), {"poll": lambda self: pc.LOGIN_STOPPED_EXIT, "pid": 1})(), 0
+pc.local_tick()
+w8 = pc.read_status()["worker"]
+check("8d …a later login failure (local_tick) keeps it next to status=failed", w8["status"] == "failed" and w8.get("ok_at") == ok_at, w8)
+w.start = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+code_of(lambda: pc._local_start(None))
+w8 = pc.read_status()["worker"]
+check("8d …a failed restart (_local_start) keeps it too", w8["status"] == "failed" and w8.get("ok_at") == ok_at, w8)
+w.start, pc.FINISH_TIMEOUT_S = real_start, real_finish_timeout
+real_rq = pc.cc._run_quiet
+pc.cc._run_quiet = lambda argv, timeout, what: subprocess.CompletedProcess(argv, 0)
+pc._update("worker", reset=True, status="idle")
+pc.run_finish()
+check("8d the cloud's run_finish writes ok_at as well", isinstance(pc.read_status()["worker"].get("ok_at"), int))
+pc.cc._run_quiet = real_rq
+pc._update(env=env_before)
+pc._LOCAL["secrets"]["live"] = env_before == "live"
 
 # the reconciler while stopped: 統一 legs skipped (no order lib call, no order_error flood, one log line a round);
 # other venues' legs go on; the confirmed login lifts it

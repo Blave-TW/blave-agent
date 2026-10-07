@@ -11,7 +11,7 @@ if (a < 0 || b < 0) { console.log("FAIL  president.js 找不到純邏輯段的�
 const head = src.slice(0, src.indexOf("let PRES = presBlank();"));   // 常數 + presBlank
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.presView = presView; this.presRunning = presRunning; this.presBlank = presBlank; this.presDaysLeft = presDaysLeft;"
-  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW; this.presMsgPlace = presMsgPlace; this.PRES_ROW_STEPS = PRES_ROW_STEPS;", ctx);
+  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW; this.presMsgPlace = presMsgPlace; this.PRES_ROW_STEPS = PRES_ROW_STEPS; this.PRES_FRAME_ERR = PRES_FRAME_ERR;", ctx);
 const { presView, presRunning, presDaysLeft, presFirstRows, presMsgPlace } = ctx;
 
 const NOW = 1790000000 * 1000, S = NOW / 1000;
@@ -84,9 +84,55 @@ ok("步驟沒送出去 → 那一列(setup / cert / probe(含 host) / test_order
   && ctx.PRES_ROW_STEPS.slice().sort().join() === "cert,probe,setup,start,test_order");
 ok("整框層級(daemon 沒跑、加密儲存、重綁、忙碌)→ 浮動 slot,不管哪一步", ["DAEMON_DOWN", "TIMEOUT", "NO_SEAL", "REBOUND", "NO_CREDS", "BUSY"].every((c) => presMsgPlace({ code: c, step: "probe" }) === "frame"));
 ok("憑證檔的錯 → 欄位下;存帳密失敗 → slot;沒有錯 → null", presMsgPlace({ code: "PFX_PASSWORD", step: "cert" }) === "field" && presMsgPlace({ code: "FAILED", step: "creds" }) === "slot" && presMsgPlace(null) === null);
+// 稽核 integ-0118 C-1:主行程憑證密碼格式不對(BAD_PW / NO_CA_PW)畫在憑證密碼欄位下,不是列上的「這一步沒有開始」;存帳密那一步的 BAD_PW 沒有欄位可掛照 slot;
+// LIB_OUTDATED 要更新工作區,給自己的字(frame);列裡的新錯優先於狀態檔裡上一次的錯
+ok("C-1 BAD_PW / NO_CA_PW(cert)→ 欄位下;BAD_PW(creds)→ slot;LIB_OUTDATED → frame 自己的字", presMsgPlace({ code: "BAD_PW", step: "cert" }) === "field" && presMsgPlace({ code: "NO_CA_PW", step: "cert" }) === "field"
+  && presMsgPlace({ code: "BAD_PW", step: "creds" }) === "slot" && presMsgPlace({ code: "LIB_OUTDATED", step: "cert" }) === "frame" && ctx.PRES_FRAME_ERR.LIB_OUTDATED === "pres.err.libOutdated");
+{ const cb = src.slice(src.indexOf("function presCertBody("), src.indexOf("function presPwBody("));
+  ok("C-1 憑證列:剛沒送出去的錯(PRES.msg)先於狀態檔的 cert.error;密碼類三個碼都掛欄位下", /const code = fresh \|\| \(view === "d-cert-err" \? cert\.error : null\), pwErr = PRES_PFX_ERR\[code\] === "pres\.pfx\.errPw"/.test(cb)
+    && /const fileErr = presRowErr\("cert"\) \|\| \(code && !pwErr/.test(cb) && /err: pwErr \? t\("pres\.pfx\.errPw"\) : null/.test(cb));
+  ok("C-2 只有過期憑證那條死路:列裡多一顆「開啟憑證e總管」", /if \(expired\) acts\.push\(capBtn\("btn-quiet", t\("pres\.tcem\.open"\), presOpenTcem, "pres-tcem-renew"/.test(cb));
+  const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
+  ok("C-1 測試單列:剛沒送出去的錯先於上一次的被拒", /rowErr\("test_order"\) \? capErr\(rowErr\("test_order"\)\) : view === "d-t-order-fail" \? capErr\(t\("pres\.t\.orderFail"\)\) : null/.test(rows));
+  const tcem = src.slice(src.indexOf("async function presOpenTcem("), src.indexOf("// 主行程回的錯 + 發生在哪一步"));
+  ok("C-2 presOpenTcem:等待態與輪詢只在 prep(presScan 可能在等的時候已推到 form)", /if \(PRES\.phase === "prep"\) \{ PRES\.waitTcem = true; presWatch\(true\); \}/.test(tcem) && !/PRES\.waitTcem = true; presTrack/.test(tcem)); }
 { const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
   ok("列上的錯先問「在跑嗎」(在跑的優先,不會轉圈又掛錯)", /rowErr = \(step\) => \(run === step \? null : presRowErr\(step\)\)/.test(rows));
   ok("自動送的兩步(安裝、啟動)沒送出去 → 那一列掛錯 + 再試一次", /rowErr\("setup"\)\) add\(presBadRow/.test(rows) && /rowErr\("start"\)\) add\(presBadRow/.test(rows)); }
+// Wei 實測:已經開過正式權限的(本人、換電腦重裝)不必走測試段——測試段標題一顆「直接登入正式主機」(host live),三列「已略過」,正式登入失敗停在正式那列
+{ const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
+  const pb = src.slice(src.indexOf("function presProbeBody("), src.indexOf("function presTestHostBody("));
+  const SK = { env: "live", cert: CERT_OK, test_skipped: true };
+  ok("略過後正式登入失敗(UNKNOWN)→ 停在正式那列 d-UNKNOWN,不回測試段;過了 → d-finish", view(pc({ ...SK, probe: { status: "failed", state: "unknown", env: "live", at: S - 3 } })) === "d-UNKNOWN"
+    && view(pc({ ...SK, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } })) === "d-finish" && view(pc({ ...SK, probe: { status: "running", at: S - 2 } })) === "d-probe");
+  ok("測試段標題的鈕:只在測試環境、測試單還沒成功時畫,按了送 host live(既有指令:切正式＋登入)", /ph\("pres\.ph\.test", !live && to\.status !== "ok" \? capBtn\("btn-quiet", t\("pres\.t\.skip"\), \(\) => presHost\("live"\), "pres-skip-test", off\) : null\);/.test(rows)
+    && /, ph = \(k, btn\) => \{[^\n]*s\.setAttribute\("aria-hidden", "true"\); li\.appendChild\(s\); if \(btn\) li\.appendChild\(btn\);/.test(rows));
+  ok("略過(runtime test_skipped、env live):三列灰、不打勾、右邊「已略過」;第一列給「改做測試單」(host test:只切回、不登入)", /const skipped = live && !!pc && pc\.test_skipped === true;/.test(rows)
+    && /const tProbed = \(live && !skipped\) \|\|/.test(rows) && /else if \(skipped\) add\(capRow\("todo", t\("pres\.s\.tprobe"\), skipRight, capActs\(capBtn\("btn-quiet", t\("pres\.t\.back"\), \(\) => presStep\("host", \{ env: "test" \}\), "pres-test-back", off\)\)\)\);/.test(rows)
+    && /const d = \(live && !skipped\) \|\| to\.status === "ok"; add\(capRow\(d \? "done" : "todo", t\("pres\.s\.torder"\), d \? t\("pres\.s\.torderDone"\) : to\.status === "failed" \? "" : skipRight\)\);/.test(rows)
+    && /add\(capRow\(live && !skipped \? "done" : "todo", t\("pres\.s\.treport"\), live && !skipped \? t\("pres\.s\.treportDone"\) : skipRight\)\);/.test(rows));
+  ok("略過後 UNKNOWN 多一句「營業員還沒開正式權限 → 先做上面的測試單」,沒有自動重試", /view === "d-UNKNOWN" && pc && pc\.env === "live" && pc\.test_skipped === true \? presP\("cx-hint", t\("pres\.err\.unknownSkipped"\)\)/.test(pb));
+  // 稽核 integ-0118 第三版 B-1:略過之前測試單被拒過(test_order failed)→ 正式 UNKNOWN 那一格也要有「改做測試單」,被拒的那列不標「已略過」。
+  // presRows 真的跑一次(殼全部換成記錄用的替身),不只比對原文
+  const dom = { t: (k) => k, trEl: (tag, cls, text) => ({ tag, cls, text, kids: [], appendChild(x) { this.kids.push(x); return x; }, append(...xs) { this.kids.push(...xs); }, setAttribute() {} }),
+    capRow: (kind, name, right, body) => ({ kind, name, right, body: body || null }), capBtn: (cls, label, fn, id, off) => ({ btn: id, off: !!off }),
+    capActs: (...xs) => ({ acts: xs }), capFrag: (...xs) => ({ frag: xs }), capDo: (x) => ({ do: x }), capErr: (x) => ({ err: x }), capDate: () => "",
+    presDown: () => false, presRowErr: () => null, presBadRow: (name, text, retry, id) => ({ kind: "bad", name, btn: id }),
+    presProbeBody: () => ({ body: "probe" }), presPwBody: () => ({ body: "pw" }), presTestHostBody: () => ({ body: "thost" }), presCertBody: () => ({ body: "cert" }), presTestReportBody: () => ({ body: "treport" }),
+    presStep: () => {}, presHost: () => {}, Date };
+  const rctx = Object.assign({}, dom); vm.createContext(rctx);
+  vm.runInContext(head + "\nlet PRES = presBlank();\n" + src.slice(a, b) + "\n" + rows + "\nthis.presRows = presRows;", rctx);
+  const rowsOf = (c, v) => JSON.stringify(rctx.presRows(v || view(pc(c)), pc(c)));
+  const REJ = { ...SK, test_order: { status: "failed", state: "rejected", at: S - 20 }, probe: { status: "failed", state: "unknown", env: "live", at: S - 3 } };
+  const rj = rowsOf(REJ);
+  ok("B-1 略過前測試單被拒 → 正式 UNKNOWN:測試主機那列有「改做測試單」(pres-test-back),測試單那列不寫「已略過」",
+    view(pc(REJ)) === "d-UNKNOWN" && rj.indexOf('"btn":"pres-test-back"') >= 0 && !/"name":"pres\.s\.torder","right":"pres\.s\.skipped"/.test(rj), rj);
+  ok("B-1 對照:沒被拒的略過照舊有鈕;沒略過(正常走到正式)沒有鈕、測試主機列打勾",
+    rowsOf({ ...SK, probe: { status: "failed", state: "unknown", env: "live", at: S - 3 } }).indexOf('"btn":"pres-test-back"') >= 0
+    && rowsOf({ env: "live", cert: CERT_OK, test_order: { status: "failed", at: S - 20 }, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } }, "d-finish").indexOf('"btn":"pres-test-back"') < 0
+    && /"name":"pres\.s\.tprobe","right":"pres\.s\.tprobeDone"/.test(rowsOf({ env: "live", cert: CERT_OK, test_order: { status: "failed", at: S - 20 }, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } }, "d-finish"))); }
+// 稽核 integ-0118 B-1:設定 › 帳戶 的「開通中＋繼續」看 worker.ok_at(開通過又停掉的不算開通中),同 trade.js trPresWip
+ok("presWip:worker ok 過(ok_at)就不是開通中", /function presWip\(r\) \{[^\n]*c\.worker\.status === "ok" \|\| c\.worker\.ok_at/.test(src));
 // 字串:president.js / trade.js 用到的 pres.* 兩語都有
 const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
 const sctx = {}; vm.createContext(sctx); vm.runInContext(strings + "\nthis.S = STRINGS;", sctx);
@@ -104,5 +150,10 @@ const presKeys = Object.keys(sctx.S.zh).filter((k) => k.indexOf("pres.") === 0);
 const countZh = presKeys.filter((k) => /次數|三次|登入次/.test(sctx.S.zh[k])), countEn = presKeys.filter((k) => /attempt|three wrong|count as/i.test(sctx.S.en[k] || ""));
 ok("pres.* 兩語都沒有登入次數那類句子", countZh.length === 0 && countEn.length === 0, countZh.concat(countEn));
 ok("「這一步沒有開始。再試一次。」", sctx.S.zh["pres.err.generic"] === "這一步沒有開始。再試一次。");
+// 完成頁(設計師裁定,Wei 嫌字多):兩句說明逐字;夜盤 / 電腦不睡 / 同月份那幾句搬去啟動框(check_shell_start_box.js),完成頁不再有
+ok("完成頁兩句說明逐字;沒有夜盤、不睡、同月份;完成頁只有 n1 / n2 兩句", sctx.S.zh["pres.done.n1"] === "結束 Blave 或關機就不再下單；部位留在統一，不會自動平倉。" && sctx.S.zh["pres.done.n2"] === "Blave 只管自己下的單，不碰你手動下的。"
+  && sctx.S.en["pres.done.n1"] === "Quit Blave or shut down and orders stop; positions stay at President and aren’t closed." && sctx.S.en["pres.done.n2"] === "Blave manages only its own orders and never touches trades you place by hand."
+  && Object.keys(sctx.S.zh).filter((k) => k.indexOf("pres.done.") === 0).every((k) => !/夜盤|不睡|月份|night|awake|month/i.test(sctx.S.zh[k] + sctx.S.en[k]))
+  && /\["pres\.done\.n1", "pres\.done\.n2"\]\.forEach/.test(src) && !/pres\.done\.n3/.test(src));
 ok("stopNote 沒有數字", !/\d/.test(sctx.S.zh["pres.err.stopNote"]) && !/\d/.test(sctx.S.en["pres.err.stopNote"]));
 console.log(red ? `\n${red} 紅` : "\n全綠"); process.exit(red ? 1 : 0);

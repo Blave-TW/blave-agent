@@ -92,12 +92,19 @@ function trHoldingRows(r, ids) {
 // 群益在雲端開通中(主機回報有 capital_connect、下單程式還沒起來):帳密一存就算綁定,但讀帳要等下單程式寫出第一份快照——
 // 那段期間的讀帳失敗是預期的,不算串接失敗(設定 › 帳戶 那一列講「開通中」,標頭不能同時講「串接失敗」)
 function trCapWip(r, id) { const c = id === "capital" && r && r.capital_connect; return !!c && typeof c === "object" && !(c.worker && c.worker.status === "ok"); }
-// 統一在這台電腦開通中(狀態檔有 president_connect、worker 還沒 ok;同 president.js presWip):讀帳失敗同樣是預期的
-function trPresWip(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !(c.worker && c.worker.status === "ok"); }
+/* 統一在這台電腦開通中(狀態檔有 president_connect、worker 從來沒 ok 過;同 president.js presWip、traytext.localLine):讀帳失敗同樣是預期的。
+   worker.ok_at = 開通過(runtime 在 worker 第一次 ok 寫、之後登入失敗不清):開通過又停掉的(機器重開落在維護時段、改了密碼)
+   只看 status 會被當成開通中,暫停鈕與「部位沒人管」的紅字整個被吞(稽核 integ-0118 B-1) */
+function trPresWip(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !(c.worker && (c.worker.status === "ok" || c.worker.ok_at)); }
+// 開通過、之後 worker 失敗停掉(登入失敗 / 沒寫出快照):不是開通中,但「確認登入」只在開通框裡——設定 › 帳戶 那一列仍要給「繼續」進框,不然沒有出口
+function trPresStopped(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !!c.worker && c.worker.status === "failed" && !trPresWip(r, id); }
 function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id); }); }
 /* 綁著的只有開通中的統一、對帳器也沒在跑 = 開通還沒做完(0.1.18 Wei 實測:存了帳密、憑證 ok、probe 還在跑,頁面就講
-   「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在 */
-function trSetupOnly(st) { const r = st && st.report, ids = trVenueIds(r); return ids.length > 0 && ids.every((id) => trPresWip(r, id)) && !trRecRunning(st); }
+   「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在。
+   機器重開相關的兩態(停著 / 沒停住)一律優先於 setup:那是真錢警示,開通中也不能藏。
+   只有這台電腦視角(st.cloud = 雲端那份):雲端主機的回報也帶 president_connect,但「繼續」開的框只接這台電腦的統一
+   (cxModalOpen 在雲端退成模擬),雲端照一般狀態機、開通交給網頁(稽核 integ-0118 B-2) */
+function trSetupOnly(st) { const r = st && st.report, ids = trVenueIds(r); return ids.length > 0 && !(st && st.cloud) && ids.every((id) => trPresWip(r, id)) && !trRecRunning(st) && !trRestartStopped(r) && !trRestartUnconfirmed(r); }
 // 有沒有帳戶 = 有沒有綁定,不看這一輪讀帳成不成功(稽核 S5):交易所讀帳 API 暫時失敗時對帳器可能還在下單,
 // 這時把整頁換成 onboard、把「暫停下單」拿掉,等於在最需要出口的時候拿走出口。讀帳失敗另外標在狀態行上。
 function trHasAccount(r) { return trVenueIds(r).length > 0; }
@@ -488,15 +495,16 @@ function trDirty(names, stored, edits) { return names.some((n) => edits[n] != nu
    留在清單裡唯一用途是讓人取消勾選——雲端的 names 已把讀不到的濾掉,所以只有這台電腦會出);
    locked = Type C、不在表裡、機器端不支援(判的是「能不能加進來」,跟表列的 `stored[n] > 0` 是「能不能從 0 撥錢」不同;
    已在表裡的存量不鎖,不然存不回去)。顯示名 localeCompare 排序(§13-3:列上畫的是顯示名,照內部名排會像亂的)。 */
-function trPickRows(list, names, canTrade, paper) {
+function trPickRows(list, names, canTrade, paper, txfOnly) {
   const by = {}; list.forEach((x) => { by[x.name] = x; });
   const seen = new Set(names); list.forEach((x) => { if (x.hasBacktest) seen.add(x.name); });
   return [...seen].map((n) => { const x = by[n], inCur = names.indexOf(n) >= 0;
     // 模擬交易是 USDT 帳戶:台幣計價的標的(台指期、台股)進不來(e2e 0.1.8 #91:台指期那一列的金額其實是口數、畫面寫 USDT)。
+    // 統一期貨只下台指期:標的不是 TXF / MXF / TMF 的(BTCUSDT、台股、組合)進不來——runtime _cmd_amounts 存的時候也擋(NOT_TXF)。
     // 已在表裡的存量不鎖(鎖住就取消不了),只帶原因;跟 Type C 同時成立時只講這一條——它是更根本的原因
-    const twd = paper === true && !!x && x.twd === true, typeC = !!x && !!x.portfolio && !inCur && !canTrade;
-    return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: typeC || (twd && !inCur),
-      note: twd ? (inCur ? "twdKeep" : "twd") : typeC ? "typeC" : null }; })
+    const twd = paper === true && !!x && x.twd === true, txf = txfOnly === true && !!x && !trTxfSpec(x.symbol), typeC = !!x && !!x.portfolio && !inCur && !canTrade;
+    return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: typeC || ((twd || txf) && !inCur),
+      note: twd ? (inCur ? "twdKeep" : "twd") : txf ? (inCur ? "txfKeep" : "txf") : typeC ? "typeC" : null }; })
     .sort((a, b) => a.display.localeCompare(b.display));
 }
 /* 這支策略的標的是不是台幣計價:台指期(TXF / MXF / TMF,runtime command_listener._TXF_ASSET_SPECS 那三個)或台股代號
@@ -1358,7 +1366,7 @@ function trAlertShow() { const S = TR_BAGS[ENV.cur], a = $("tr-alert"); a.hidden
 /* kind:"stop" = 暫停那兩個指令(沒送到 = 它還在交易,要講撤 API key 那句);其餘一般失敗不講那句(稽核 S2-B)。
    env 由呼叫端帶(跨 await 之後 TR 可能已經是另一邊了)。雲端**不可以**沿用本機那組句子:它們寫死了「這台電腦」。 */
 // Type B 的拒絕(TYPE_B: 「名」…)→ 一句完整的話,名字換成顯示名;其他代碼回 null,照原文那句
-function trRejectSentence(rc) { return rc.code === "TYPE_B" ? t("tr.typeB.rejected", { name: trDisplay(rc.name) }) : null; }
+function trRejectSentence(rc) { return rc.code === "TYPE_B" ? t("tr.typeB.rejected", { name: trDisplay(rc.name) }) : rc.code === "NOT_TXF" ? t("tr.notTxf.rejected", { name: trDisplay(rc.name) }) : null; }
 function trSendError(res, kind, env) {
   const e = res && res.error ? String(res.error) : "", k = trKindOf(res);
   const rc = k === "rejected" ? trRejectCode(e) : null, known = rc ? trRejectSentence(rc) : null;
@@ -1562,9 +1570,9 @@ function trPaintHead() {
   const pend = trAmountsEdited() ? null : trPendKey(TR, Date.now(), zv.off && !zv.noStart);
   // 雲端而且不知道現況:不放主鈕——「暫停下單」「啟動下單」哪一個字都是在替它下結論(這一刀的鈕本來就不能按,說明行還在)
   // 沒有交易所、但主機重開停著(B0):一定是 Z,不出「啟動下單」,只出「解除暫停」(v2 §9-1;紀錄檔只有 resume 清得掉)
-  // 統一開通中(setup):主鈕換成「繼續」回到開通清單(同設定 › 帳戶那一列);啟動 / 暫停都不出
+  // 統一開通中(setup,只有這台電腦視角):主鈕換成「繼續」回到開通清單(同設定 › 帳戶那一列);啟動 / 暫停都不出
   const pcBtn = $("tr-pres-continue");
-  if (state === "setup" && !stopped) {
+  if (state === "setup" && !stopped && TR.env === "local") {
     if (b) { if (document.activeElement === b) $("tr-h").focus(); b.remove(); }
     trPaintGoStop(false); trPaintNoAmt(null); trPaintGoRel(false, false);
     const go = pcBtn || trEl("button", "btn-fill"); go.textContent = t("cap.continue");
@@ -1803,7 +1811,8 @@ function trBookBaseline(r) {
 function trStartNotes(o) {
   const keep = [], items = [], details = [];
   if (o.own && o.real) {
-    keep.push(t(o.book === "none" ? "tr.keep.ownFirst" : o.book === "built" ? "tr.keep.ownBuilt" : "tr.keep.own"));
+    // 統一(這台電腦):同月份手動交易分不清那一句取代加密口吻的三種說法(完成頁那段說明搬過來的,設計師裁定)
+    keep.push(t(o.pres ? "tr.keep.pres" : o.book === "none" ? "tr.keep.ownFirst" : o.book === "built" ? "tr.keep.ownBuilt" : "tr.keep.own"));
     if (o.book === "none") details.push({ label: t("tr.det.own"), text: t("tr.det.ownRule") });
   }
   if (o.cloud) {
@@ -1813,6 +1822,7 @@ function trStartNotes(o) {
     keep.push(t("tr.keep.sleep"));
     if (o.real) keep.push(t("tr.means.4"));
     items.push(t("tr.means.1"), o.paper ? t("tr.means.2p") : t("tr.means.2", { venue: o.venue }), t("tr.means.3"));
+    if (o.pres) items.push(t("tr.means.presNight"));   // 台指期夜盤也會下單、電腦要一直開著
   }
   return { keep, details: details.concat([{ label: t(o.cloud ? "tr.det.cloud" : "tr.det.local"), items }]) };
 }
@@ -1845,7 +1855,7 @@ function trAskStart(opener, presOk) {
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
   const recomputing = trRecomputing(r), rkS = trRestartKind(r);
-  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)) });
+  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), pres: !cloud && trVenueId() === "president" });
   const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
   const money = real ? "Real" : "";
   confirmBox(trCloudBox(Object.assign({
@@ -2636,7 +2646,7 @@ function trPaintSet() {
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;
-  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id)])) return;
+  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), !ro && id === "president" && [presWip(r), trPresStopped(r, id)]])) return;
   const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
@@ -2647,7 +2657,9 @@ function trPaintSet() {
   // 三態:讀得到帳戶 = 綠點;讀過而失敗 = 紅記號;還沒讀過(剛綁上那幾秒)= 圓環 + 「串接中…」(.cx-wait 那組,spec-desktop-006 §1.3 D)
   // 群益在雲端開通中(spec w-row-pending):讀帳失敗是預期的,不畫紅;靜態實心點 +「開通中」+「繼續」回到清單
   // 統一在這台電腦開通中(d-row-pending)同一個長相:讀帳失敗是預期的(worker 還沒寫第一份快照)
-  const presW = !ro && id === "president" && typeof presWip === "function" && presWip(r);
+  const presW = !ro && id === "president" && presWip(r);
+  // 開通過又停掉的(稽核 integ-0118 B-1):畫紅記號「串接失敗」,但「繼續」照給——「確認登入」只在開通框裡
+  const presIn = presW || (!ro && trPresStopped(r, id));
   const capWip = (ro && trCapWip(r, id)) || presW;
   const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict)), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
   if (capWip) st.appendChild(trEl("span", "cap-dot"));
@@ -2658,8 +2670,8 @@ function trPaintSet() {
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
   if (capWip && !presW) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
-  // 統一:「繼續」回到清單當下那一步
-  if (presW) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
+  // 統一:「繼續」回到清單當下那一步(開通中、或開通過又停掉 → 那一類登入失敗的列與「確認登入」)
+  if (presIn) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
   // 「重新測試」在讀帳失敗 / 金鑰重查出事(紅記號 + 串接失敗)時畫,Binance 重查的灰記號(沒設白名單、現貨 / 合約沒開)也畫——
   // 它是 24 小時自動重查之前唯一能叫 binanceRecheck 的入口(Wei 0.0.6)。乾淨的已連接與串接中都沒有東西要重試;鈕消失時焦點由最後一行交給設定分頁
@@ -3500,6 +3512,7 @@ function psRow(r, cloud, i) {
   if (r.gone) nm.appendChild(trEl("span", "ps-gone", t("tr.pick.gone")));
   let note = null;
   if (r.note === "twd" || r.note === "twdKeep") note = nm.appendChild(trEl("span", "ps-note", r.note === "twd" ? t("tr.pick.twd") : t("tr.pick.twdKeep")));
+  else if (r.note === "txf" || r.note === "txfKeep") note = nm.appendChild(trEl("span", "ps-note", r.note === "txf" ? t("tr.pick.txf") : t("tr.pick.txfKeep")));
   else if (r.locked) note = nm.appendChild(trEl("span", "ps-note", cloud ? t("tr.typeCHost") : t("tr.typeC")));
   if (note) { note.id = "ps-why-" + i; note.setAttribute("aria-hidden", "true"); cb.setAttribute("aria-describedby", note.id); }
   row.append(cb, nm); return row;
@@ -3509,7 +3522,7 @@ function psOpen(opener) {
   if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || trPickOff()) return;
   trackFeature("strategy_picker");
   const cloud = S.env === "cloud", names = trNames();
-  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER);
+  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER, trVenueId() === "president");
   psOpener = opener || null;
   $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";

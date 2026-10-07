@@ -73,6 +73,7 @@ id) or a broker message into a return value, an exception, the status or a log.
 import base64
 import hashlib
 import hmac
+import importlib
 import json
 import os
 import re
@@ -522,10 +523,19 @@ def probe_state(obj, exit_code):
     return {"state": "unknown"}
 
 
-def _worker_run(flag, timeout, what):
-    if _LOCAL["secrets"] is not None:
-        return _local_run(flag, timeout, what)
-    return cc._run_quiet([_python(), _paths()["worker"], flag], timeout, what)
+def _worker_run(flag, timeout, what, argv=None):
+    """→ returncode: None = timed out / could not start, -1 = anything else blew up
+    before or around the child. Never raises: the caller's section must leave
+    "running" whatever happened — the page waits on it."""
+    try:
+        if _LOCAL["secrets"] is not None:  # desktop: the child logs in with the stdin line
+            return _local_run(flag, timeout, what, argv=argv).returncode
+        return cc._run_quiet([_python()] + (argv or [_paths()["worker"], flag]), timeout, what).returncode
+    except RuntimeError:
+        return None
+    except Exception as e:
+        print(f"[president_connect] {what} failed to run ({type(e).__name__})", file=sys.stderr)
+        return -1
 
 
 def run_probe(push=None):
@@ -535,13 +545,7 @@ def run_probe(push=None):
         push()
     p = _paths()
     started = time.time() - 1
-    try:
-        rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe").returncode
-    except RuntimeError:
-        rc = None
-    except Exception as e:  # whatever else: the section must leave "running" — the page waits on it
-        print(f"[president_connect] probe failed to run ({type(e).__name__})", file=sys.stderr)
-        rc = -1
+    rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe")
     try:
         with open(p["probe"], encoding="utf-8") as f:
             obj = json.load(f)
@@ -693,15 +697,7 @@ def run_test_order(push=None):
         push()
     p = _paths()
     started = time.time() - 1
-    try:
-        if _LOCAL["secrets"] is not None:  # desktop: the script logs in with the stdin line
-            rc = _local_run(None, TEST_ORDER_TIMEOUT_S, "test order",
-                            argv=[p["test_order_script"], WORKSPACE]).returncode
-        else:
-            rc = cc._run_quiet([_python(), p["test_order_script"], WORKSPACE], TEST_ORDER_TIMEOUT_S,
-                               "test order").returncode
-    except RuntimeError:
-        rc = None
+    rc = _worker_run(None, TEST_ORDER_TIMEOUT_S, "test order", argv=[p["test_order_script"], WORKSPACE])
     try:
         with open(p["test_order"], encoding="utf-8") as f:
             obj = json.load(f)
@@ -732,7 +728,7 @@ def run_finish(push=None):
     except Exception as e:
         _update("worker", status="failed", error=cc._code(e, "WORKER_FAILED"))
         raise
-    _update("worker", status="ok", error=None)
+    _update("worker", status="ok", error=None, ok_at=int(time.time()))
     return {"worker": "ok"}
 
 
@@ -955,21 +951,24 @@ def _kill_tree(pid):
     """Windows: sys.executable inside a venv is venvlauncher.exe, the interpreter
     running the code is its child — kill()/terminate() reach only the launcher
     and the child lives on, holding our pipes (and the credentials line).
-    POSIX children of _local_run start in their own session for the same reason."""
-    if os.name == "nt":
-        try:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
-                           **_cl()._child_kw())
-        except (OSError, subprocess.SubprocessError):
-            pass
-        return
+    POSIX children of _local_run start in their own session for the same reason.
+    → whether the kill went out (a failure is logged by type / taskkill rc only: the
+    tree holds the credentials line, so the caller falls back to killing what it can)."""
     try:
-        os.killpg(pid, signal.SIGKILL)
-    except OSError:
+        if os.name == "nt":
+            rc = subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
+                                **_cl()._child_kw()).returncode
+            if rc != 0:
+                print(f"[president_connect] kill tree failed (taskkill rc={rc})", file=sys.stderr)
+            return rc == 0
         try:
-            os.kill(pid, signal.SIGKILL)
+            os.killpg(pid, signal.SIGKILL)
         except OSError:
-            pass
+            os.kill(pid, signal.SIGKILL)
+        return True
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[president_connect] kill tree failed ({type(e).__name__})", file=sys.stderr)
+        return False
 
 
 def _local_run(flag, timeout, what, argv=None):
@@ -987,22 +986,53 @@ def _local_run(flag, timeout, what, argv=None):
         raise RuntimeError(f"{what} could not start ({type(e).__name__})")
     try:
         out, err = p.communicate((secret_line() + "\n").encode("utf-8"), timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except BaseException as e:
+        # a timeout or anything else (a pipe OSError, an interrupt): the child has the
+        # credentials line — nothing leaves here with it still running
         _kill_tree(p.pid)
         try:
-            p.communicate(timeout=LOCAL_DRAIN_S)
-        except subprocess.TimeoutExpired:
+            p.kill()  # the launcher at least, when the tree kill did not go out
+        except OSError:
             pass
-        raise RuntimeError(f"{what} timed out")
+        try:
+            p.communicate(timeout=LOCAL_DRAIN_S)
+        except (subprocess.SubprocessError, OSError, ValueError):
+            pass
+        if isinstance(e, subprocess.TimeoutExpired):
+            raise RuntimeError(f"{what} timed out")
+        raise
     return subprocess.CompletedProcess(p.args, p.returncode, out, err)
+
+
+_vault_import_logged = False
+
+
+def _vault():
+    """lib/president_vault from the WORKSPACE — through command_listener._in_workspace
+    (its sys.path, its cwd), never a bare `from lib import`: outside that, `lib` is
+    whatever sys.path finds first (0.1.18 Windows: pywin32's win32/lib), and the
+    first such import binds the name for the whole daemon. None when the workspace
+    has no vault, with the cause logged once — a silent None here read as
+    「UNKNOWN」 on the page and as "not bound" in _env_bound_to."""
+    global _vault_import_logged
+    try:
+        return _cl()._in_workspace(importlib.import_module, "lib.president_vault")
+    except ImportError as e:
+        if not _vault_import_logged:
+            _vault_import_logged = True
+            print(f"[president_connect] lib.president_vault not importable: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+        return None
 
 
 def _env_bound_to(b):
     """.env holds this account, bound with this password (the sentinel's fingerprint)."""
+    pv = _vault()
+    if pv is None:
+        return False
     try:
-        from lib import president_vault as pv
         env = pv.read_env(os.path.join(WORKSPACE, ".env"))
-    except (ImportError, OSError):
+    except OSError:
         return False
     return (env.get(_ACCOUNT) == b["account"]
             and env.get(_SECRET) == VAULT_PW_PREFIX + vault_fingerprint(b["account"], b["password"]))
@@ -1142,11 +1172,8 @@ LOGIN_STOPPED_EXIT = 3  # = lib/president_worker.LOGIN_STOPPED_EXIT
 
 def _login_stop():
     """The class of the failed login that stopped logins (lib/president_vault STOP), or None."""
-    try:
-        from lib import president_vault as pv
-        return pv.stopped()
-    except Exception:
-        return None
+    pv = _vault()
+    return pv.stopped() if pv is not None else None
 
 
 def local_tick():
@@ -1202,7 +1229,13 @@ def _local_cert(b, push):
         raise
     for sec in ("probe", "worker") + (() if same else ("test_order",)):
         _update(sec, reset=True, status="idle")
-    _update(env="live" if b["live"] else "test")
+    if same:
+        _update(env="live" if b["live"] else "test")
+    else:
+        # a skip recorded for the old account is not this one's: left behind, the first
+        # test-host login after the rebind would be taken for "back from a skip" and only
+        # switch the env instead of probing
+        _update(env="test", test_skipped=False)
     _update("cert", status="ok", error=None, source="local", not_after=meta["not_after"],
             issuer_checked=meta["issuer_checked"])
     _LOCAL["worker"].stop("certificate replaced")
@@ -1212,10 +1245,12 @@ def _local_cert(b, push):
 
 
 def _env_account():
+    pv = _vault()
+    if pv is None:
+        return None
     try:
-        from lib import president_vault as pv
         return pv.read_env(os.path.join(WORKSPACE, ".env")).get(_ACCOUNT)
-    except (ImportError, OSError):
+    except OSError:
         return None
 
 
@@ -1226,9 +1261,20 @@ def _local_host(target, push):
     s = _LOCAL["secrets"]
     if (s["live"] is True) != (target == "live"):
         _set_secrets(dict(s, live=target == "live"))
-    _update(env=target)
+    st = read_status() or {}
     if target == "test":
+        _update(env=target)
         _leave_production()
+        if st.get("test_skipped"):
+            # back from a skip: the switch only — the test-host row takes the login (its URL comes
+            # from the broker's mail), so no probe against the default test host here
+            _update(env=target, test_skipped=False)
+            _update("probe", reset=True, status="idle")
+            return {"env": target, "url": ENV_URLS[target]}
+        return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
+    # production before a test order = the user skipped the test section (production access already
+    # open: a reinstall, a second computer); the pages grey those rows out, they stay doable
+    _update(env=target, test_skipped=(st.get("test_order") or {}).get("status") != "ok")
     return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
 
 
@@ -1252,7 +1298,10 @@ def _local_start(push):
                 if os.path.getmtime(out) >= t0:
                     with open(out, encoding="utf-8") as f:
                         if (json.load(f) or {}).get("ok") is True:
-                            _update("worker", status="ok", error=None, wanted=True)
+                            # ok_at outlives every later failure (_update merges; only a new
+                            # certificate resets the section): the pages tell "never finished
+                            # onboarding" from "onboarded, then the login failed" by it
+                            _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
                             return {"worker": "ok"}
             except (OSError, ValueError, AttributeError):
                 pass

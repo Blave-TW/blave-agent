@@ -1569,6 +1569,12 @@ msgstr "結束 Blave 再打開後，自動下單是暫停的，要按「啟動�
 msgid "tr.means.4"
 msgstr "交易所端的停損單不受這台電腦影響；建議替部位掛上。"
 
+msgid "tr.keep.pres"
+msgstr "只調整 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
+
+msgid "tr.means.presNight"
+msgstr "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。"
+
 msgid "tr.tab.over"
 msgstr "總覽"
 
@@ -1677,8 +1683,17 @@ msgstr "模擬交易暫不支援台幣計價的標的"
 msgid "tr.pick.twdKeep"
 msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
 
+msgid "tr.pick.txf"
+msgstr "統一期貨只能下台指期（TXF／MXF／TMF）"
+
+msgid "tr.pick.txfKeep"
+msgstr "統一期貨只能下台指期（TXF／MXF／TMF）；取消勾選後不能再加回來"
+
 msgid "tr.typeB.rejected"
 msgstr "「{name}」沒有固定的執行週期，目前只能在雲端自動執行。到「選擇策略」取消勾選後再儲存。"
+
+msgid "tr.notTxf.rejected"
+msgstr "「{name}」的標的不是台指期（TXF／MXF／TMF），統一期貨只能下台指期。到「選擇策略」取消勾選後再儲存。"
 
 msgid "tr.gateHint"
 msgstr "低於最小進場 {m} {c}，不會進場"
@@ -6520,6 +6535,18 @@ msgstr "確認登入（測試主機）"
 msgid "pres.s.tprobeDone"
 msgstr "測試主機"
 
+msgid "pres.s.skipped"
+msgstr "已略過"
+
+msgid "pres.t.skip"
+msgstr "已經開過正式權限？直接登入正式主機"
+
+msgid "pres.t.back"
+msgstr "改做測試單"
+
+msgid "pres.err.unknownSkipped"
+msgstr "如果營業員還沒開正式權限，請先做上面的測試單。"
+
 msgid "pres.s.torder"
 msgstr "下一筆測試單"
 
@@ -6697,6 +6724,9 @@ msgstr "這台電腦的加密儲存現在不能用，帳密沒有存。登入 Wi
 msgid "pres.err.rebound"
 msgstr "這台電腦綁的統一帳密跟存著的不一樣。重新開通一次。"
 
+msgid "pres.err.libOutdated"
+msgstr "這台電腦的策略工作區太舊，還不支援統一期貨。更新 Blave 後再試一次。"
+
 msgid "pres.err.generic"
 msgstr "這一步沒有開始。再試一次。"
 
@@ -6725,10 +6755,10 @@ msgid "pres.done.expV"
 msgstr "{date}（還有 {n} 天）"
 
 msgid "pres.done.n1"
-msgstr "Blave 開著才會下單。有部位時 Blave 會讓電腦不睡；但結束 Blave 或關機，部位會留在統一，不會自動平倉。夜盤 15:00 到隔天 05:00 也一樣。"
+msgstr "結束 Blave 或關機就不再下單；部位留在統一，不會自動平倉。"
 
 msgid "pres.done.n2"
-msgstr "Blave 只管自己下的部位。你在統一 app 手動下的單，Blave 不會平也不會加碼；同一個商品請不要跟策略用同一個月份手動交易，Blave 會分不清。"
+msgstr "Blave 只管自己下的單，不碰你手動下的。"
 
 msgid "pres.done.go"
 msgstr "設定策略下單"
