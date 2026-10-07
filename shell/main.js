@@ -283,6 +283,8 @@ function tm() {
     appVersion: app.getVersion(), osVersion: process.getSystemVersion(), lang: app.getLocale(),   // 契約:系統語系原值;不吃 BLAVE_LANG(任意字串會原樣離開電腦)
     getToken: () => loadToken(),
     heartbeat: () => ({ live: tradeMaybeLive() ? "on" : "off" }),   // 每日在線心跳;live 同 updater 的 isTrading 判準
+    // 策略三步(strat_*):daemon 寫在狀態檔的 strategy_kinds(runtime/local_daemon.strategy_kinds);daemon 還沒起 / 舊版狀態檔沒有 → 這輪跳過
+    strategies: () => (_tradeHost ? ((_tradeHost.status().report || {}).strategy_kinds || null) : null),
     // 開發版(npm start、測試用的 BLAVE_HOME)不送:不然每次開發重啟都在灌正式的漏斗。要實測送出設 BLAVE_TELEMETRY=1
     post: (u, b) => (telemetryLive() ? postJSON(u, b) : Promise.resolve()),
   });

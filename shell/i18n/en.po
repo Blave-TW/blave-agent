@@ -2522,8 +2522,9 @@ msgstr "Collected when on"
 msgid "priv.collect.5"
 msgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from"
 
+# 0.1.18 策略三步(strat_created / strat_backtested / strat_deployed)補在這一條:只記型別與市場類別
 msgid "priv.collect.1"
-msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud"
+msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud; when each strategy is created, first backtested and first given an amount, its type (A/B/C) and market category (such as crypto or Taiwan index futures), never its name or symbol"
 
 msgid "priv.collect.2"
 msgstr "When it happened"

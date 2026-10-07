@@ -73,6 +73,7 @@ check): nothing runs until main().
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import select
@@ -311,6 +312,97 @@ def _write_json_atomic(path, doc):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with atomic_file.replacing(path, encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False)
+
+
+def _funded_names(cfg):
+    """Strategy names the portfolio config actually puts money on — the cloud's `deployed`
+    signal, mirrored from api openclaw/agent_overview._funded: `amounts` (else the legacy
+    `weights`), finite and > 0; 0 is "paused, converge to flat", not deployed."""
+    if not isinstance(cfg, dict):
+        return set()
+    alloc = cfg.get("amounts")
+    if not isinstance(alloc, dict):
+        alloc = cfg.get("weights")
+    if not isinstance(alloc, dict):
+        return set()
+    out = set()
+    for name, v in alloc.items():
+        if not isinstance(name, str) or not name or isinstance(v, bool):
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(f) and f > 0:
+            out.add(name)
+    return out
+
+
+def strategy_kinds(strat_dir, cfg, cache):
+    """{folder: {type, market, bt, funded}} for the app's strategy telemetry (shell/telemetry.js
+    strat_*). type / market come from strategy_reporter — the rule the cloud report uses — and
+    are None when undecidable; bt = stats.json exists (same test as shell anyBacktest);
+    funded = the folder or its STRATEGY_NAME is in _funded_names.
+
+    None (not {}) whenever the answer is not known — strategies dir unreadable, config
+    unreadable (`cfg` None, portfolio_reporter's "file there but unreadable"): the app seeds
+    its "already seen" set from the first answer it gets, and a wrong {} would make every
+    existing strategy look new on the next one. `cache` (folder → entry) keeps this to a stat
+    per file per round; stats.json (up to ~1.7MB) is only parsed for a strategy with no
+    `# Type:` header, where a Type C backtest is what decides."""
+    if cfg is None:
+        return None
+    import strategy_reporter as sr
+    try:
+        names = sorted(os.listdir(strat_dir))
+    except FileNotFoundError:
+        cache.clear()
+        return {}
+    except OSError:
+        return None
+    funded = _funded_names(cfg)
+    out = {}
+    for name in names:
+        if name.startswith((".", "_")):   # shell main.js stratNames skips the same
+            continue
+        src_path = os.path.join(strat_dir, name, "strategy.py")
+        try:
+            st = os.stat(src_path)
+        except (OSError, ValueError):
+            continue
+        if not stat.S_ISREG(st.st_mode):
+            continue
+        try:
+            bst = os.stat(os.path.join(strat_dir, name, "stats.json"))
+            bsig = (bst.st_mtime_ns, bst.st_size)
+        except (OSError, ValueError):
+            bsig = None
+        sig = (st.st_mtime_ns, st.st_size)
+        hit = cache.get(name)
+        if hit is None or hit["sig"] != sig or (hit["needs_stats"] and hit["bsig"] != bsig):
+            try:
+                with open(src_path, encoding="utf-8", errors="replace") as f:
+                    src = f.read()
+            except OSError:
+                continue
+            needs_stats = sr.strategy_type(src) is None
+            portfolio = False
+            if needs_stats and bsig is not None:
+                try:
+                    with open(os.path.join(strat_dir, name, "stats.json"), encoding="utf-8") as f:
+                        portfolio = sr.is_portfolio_stats(json.load(f))
+                except (OSError, ValueError):
+                    portfolio = False
+            attrs = sr._type_market({"name": name, "code": src, "is_portfolio": portfolio})
+            hit = {"sig": sig, "bsig": bsig, "needs_stats": needs_stats,
+                   "sname": sr.strategy_consts(src).get("STRATEGY_NAME") or name,
+                   "type": attrs.get("type"), "market": attrs.get("market")}
+            cache[name] = hit
+        out[name] = {"type": hit["type"], "market": hit["market"], "bt": bsig is not None,
+                     "funded": name in funded or hit["sname"] in funded}
+    for gone in set(cache) - set(out):
+        del cache[gone]
+    return out
 
 
 class Rejected(Exception):
@@ -739,6 +831,7 @@ class Daemon:
         self.dirty = threading.Event()
         self.account_kick = threading.Event()
         self._status_lock = threading.Lock()
+        self._kinds_cache = {}   # strategy_kinds(): folder -> classified entry
         self._seen = {}     # id -> taken at; the replay memory (see parse_command)
         self._ignored = set()  # non-regular entries in in/ we could not remove
 
@@ -888,6 +981,12 @@ class Daemon:
             except Exception as e:
                 _log(f"status build failed: {type(e).__name__}: {e}")
                 doc = {"error": f"{type(e).__name__}"}
+            try:
+                doc["strategy_kinds"] = strategy_kinds(
+                    os.path.join(self.ws, "strategies"), doc.get("config"), self._kinds_cache)
+            except Exception as e:   # telemetry input only: never costs the status file
+                _log(f"strategy kinds failed: {type(e).__name__}: {e}")
+                doc["strategy_kinds"] = None
             doc["daemon"] = {
                 "pid": os.getpid(), "started_at": self.started_at,
                 "heartbeat_at": int(time.time()), "version": self.version,
