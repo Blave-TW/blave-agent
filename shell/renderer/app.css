@@ -501,6 +501,9 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .attach-clear:hover { background: var(--surface-muted); color: var(--ink); }
 /* 熱區 28×28(看得到的仍是 20px):桌面熱區下限 24 */
 .attach-clear::before { content: ""; position: absolute; inset: -4px; }
+/* 送出後泡泡末行的附件(app.js attachLine):迴紋針與檔名隔 4(設計稽核 0.1.17);inline-flex 讓 svg 跟字對齊中線 */
+.msg-attach { display: inline-flex; align-items: center; gap: var(--space-4); max-width: 100%; }
+.msg-attach .icon-attach { flex: none; }
 /* 檔案拖到輸入框上方:外框改虛線當落點提示(設計稽核:不加色不加底;排在 :focus-within 之後才蓋得過它) */
 .chat-input.is-drag { border-color: var(--ink); border-style: dashed; }
 /* 面板的定位基準是整個輸入框(.chat-input),不是這顆觸發鈕:聊天欄最窄 320,

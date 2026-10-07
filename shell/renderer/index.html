@@ -326,14 +326,6 @@
         <!-- 更新那一格:照網頁工作頁 #ws_update(輸入列右上方一行安靜小字)。只有兩種:app 新版已暫存好 → 「重新啟動以完成更新」(可點);
              雲端主機正在換檔 → 不可點的「更新中…」。其餘時候不出。字由 upPaint 決定:**不掛 data-i18n**,換語言時的通用迴圈會把它洗成另一個狀態的字 -->
         <button type="button" class="ws-update" id="ws-update" hidden><span></span></button>
-        <!-- 待送附件 chip(照雲端 #attach_chip):檔名 + ✕,隨下一句送出;單檔,再選就取代。
-             chip 是輸入框的狀態,送出後泡泡末行的「📎 檔名」另外畫(addMsg),重開 app 從逐字稿尾端那行還原 -->
-        <div class="attach-chip" id="attach-chip" hidden>
-          <span class="attach-name" id="attach-name"></span>
-          <!-- 選的模型不讀圖(DeepSeek):次要字,字由 attachHintPaint 組(帶模型名,不掛 data-i18n) -->
-          <span class="attach-hint" id="attach-hint" role="note" hidden></span>
-          <button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws.attachRemove">✕</button>
-        </div>
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
@@ -352,6 +344,15 @@
         </div>
         <!-- 回合進行中、草稿非空時按 Enter:不送,這一行講為什麼(e2e 0.1.8 #71);字由 taWaitShow 寫,回合結束即收 -->
         <p class="ta-wait" id="ta-wait" role="status"></p>
+        <!-- 待送附件 chip(照雲端 #attach_chip):檔名 + ✕,隨下一句送出;單檔,再選就取代。
+             貼著輸入框(建議列之下):建議列每輪都會長,chip 放它上面會離輸入框 200 多 px(設計稽核 0.1.17)。
+             chip 是輸入框的狀態,送出後泡泡末行的「迴紋針 + 檔名」另外畫(addMsg),重開 app 從逐字稿尾端那行還原 -->
+        <div class="attach-chip" id="attach-chip" hidden>
+          <span class="attach-name" id="attach-name"></span>
+          <!-- 選的模型不讀圖(DeepSeek):次要字,字由 attachHintPaint 組(帶模型名,不掛 data-i18n) -->
+          <span class="attach-hint" id="attach-hint" role="note" hidden></span>
+          <button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws.attachRemove">✕</button>
+        </div>
         <div class="chat-input">
           <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
           <div class="ci-bar">
