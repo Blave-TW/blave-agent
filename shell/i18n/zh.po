@@ -6404,9 +6404,6 @@ msgstr "統一期貨"
 msgid "pres.title"
 msgstr "連接統一期貨"
 
-msgid "pres.next"
-msgstr "下一步"
-
 msgid "pres.later"
 msgstr "稍後再來"
 
@@ -6433,41 +6430,14 @@ msgstr "電腦版 Mac 不支援統一。改用 Windows 雲端主機的話，可�
 msgid "pres.prep.looking"
 msgstr "正在找這台電腦的統一憑證…"
 
-msgid "pres.prep.found"
-msgstr "這台電腦找到一張統一憑證，到期日 {date}。"
-
-msgid "pres.prep.foundNoDate"
-msgstr "這台電腦找到一張統一憑證。"
-
-msgid "pres.prep.need"
-msgstr "開始前還要一件事：營業員幫你開 API 下單權限，並給你測試帳號。"
-
-msgid "pres.prep.mail"
-msgstr "我收到統一寄來的 API 測試帳號信"
-
-msgid "pres.prep.mailHint"
-msgstr "營業員開好會寄信，收到就能用。統一規定先在測試環境下一筆測試單，Blave 會幫你下。"
-
-msgid "pres.script.h"
-msgstr "打給營業員可以這樣說"
-
-msgid "pres.script.have"
-msgstr "您好，我是期貨帳號（你的 11 碼帳號）的本人，想幫這個帳戶開通「API 下單權限」，也請給我 API 測試帳號。正式環境需要登記 IP 嗎？"
-
-msgid "pres.script.none"
-msgstr "您好，我是期貨帳號（你的 11 碼帳號）的本人，想申請：一、API 下單權限；二、電腦憑證申請權限（我還沒有憑證）；三、API 測試帳號。正式環境需要登記 IP 嗎？"
-
-msgid "pres.script.report"
-msgstr "您好，我是期貨帳號 {acct} 的本人。我已經用 API 在測試環境下了一筆測試單：{when} 微台 1 口買進，委託成功。麻煩幫我開通正式環境的 API 下單權限，謝謝。"
-
 msgid "pres.none.lead"
 msgstr "這台電腦還沒有統一憑證。照順序做，回來時進度會留著。"
 
 msgid "pres.none.s1"
-msgstr "打給營業員，開權限並要測試帳號"
+msgstr "先請營業員幫你開 API 下單權限與憑證申請權限"
 
 msgid "pres.none.s1sub"
-msgstr "API 下單權限、電腦憑證申請權限、測試帳號。客服 {tel}"
+msgstr "客服 {tel}"
 
 msgid "pres.none.s2"
 msgstr "收到營業員的信後，按「開啟憑證e總管」"
@@ -6510,6 +6480,12 @@ msgstr "交易密碼"
 
 msgid "pres.form.pwHint"
 msgstr "跟你登入統一 app 下單的密碼一樣。測試環境也用這組。"
+
+msgid "pres.form.found"
+msgstr "這台電腦找到統一憑證，到期 {date}。接著填帳號和交易密碼。"
+
+msgid "pres.form.foundNoDate"
+msgstr "這台電腦找到統一憑證。接著填帳號和交易密碼。"
 
 msgid "pres.form.store"
 msgstr "帳號和交易密碼加密存在這台電腦，不會上傳，agent 讀不到。"
@@ -6614,7 +6590,7 @@ msgid "pres.cert.local"
 msgstr "在這台電腦上檢查，不上傳。"
 
 msgid "pres.pfx.errPw"
-msgstr "憑證密碼不對。這一步在這台電腦檢查，沒有連到統一，不算登入次數。"
+msgstr "憑證密碼不對。"
 
 msgid "pres.pfx.errExpired"
 msgstr "這張憑證已在 {date} 到期。用憑證e總管展延後再選一次。"
@@ -6658,10 +6634,16 @@ msgid "pres.t.orderAgain"
 msgstr "再下一次"
 
 msgid "pres.t.orderFail"
-msgstr "統一的測試環境沒有接受這筆單。這不算登入次數。"
+msgstr "統一的測試環境沒有接受這筆單。"
 
 msgid "pres.t.reportDo"
-msgstr "測試單：{when} 微台 1 口買進，委託成功。把這段告訴營業員（電話、LINE，或回覆測試帳號信都可以）："
+msgstr "把這筆測試單的時間與委託書號告訴營業員，請他開正式權限。"
+
+msgid "pres.t.reportWhen"
+msgstr "測試單時間"
+
+msgid "pres.t.reportNo"
+msgstr "委託書號"
 
 msgid "pres.t.reportHint"
 msgstr "營業員開好就能用。按下面的鈕，Blave 會切到正式主機再確認一次，不用重選憑證。"
@@ -6722,7 +6704,7 @@ msgid "pres.err.rebound"
 msgstr "這台電腦綁的統一帳密跟存著的不一樣。重新開通一次。"
 
 msgid "pres.err.generic"
-msgstr "這一步沒成功。再試一次。"
+msgstr "這一步沒有開始。再試一次。"
 
 msgid "pres.done.lead"
 msgstr "已連接統一期貨"
@@ -6800,7 +6782,7 @@ msgstr "統一還有 {lots} 口在倉。結束後策略不會再下單，這些�
 
 
 msgid "pres.err.stopNote"
-msgstr "Blave 已停止登入，不會自己重試。確認沒問題後按「確認登入」，每按一次就真的登入一次。統一密碼連錯三次會鎖帳號，鎖了請聯絡營業員解鎖。"
+msgstr "處理好後按「確認登入」；如果被統一鎖住，請聯絡營業員解鎖。"
 
 msgid "pres.err.confirm"
 msgstr "確認登入"

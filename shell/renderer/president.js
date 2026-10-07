@@ -1,6 +1,8 @@
-/* 統一期貨 本機開通(電腦版 Windows;設計 mockup-president-onboarding.html 電腦版分頁 d-*,Wei 10-07 拍板)。
-   連接交易所框(#cx-scrim,trade.js)在「這台電腦」視角選到統一時,整個框交給這個檔畫:事前準備 → 帳密 → 開通清單 → 完成。
+/* 統一期貨 本機開通(電腦版 Windows;設計 mockup-president-onboarding.html 電腦版分頁 d-* + mockup-desktop-prep-v2.html,Wei 10-07 拍板)。
+   連接交易所框(#cx-scrim,trade.js)在「這台電腦」視角選到統一時,整個框交給這個檔畫:找 PSCCA → 帳密(找到憑證直接進;沒有才先開憑證e總管)→ 開通清單 → 完成。
    - 狀態只有一個來源:這台電腦 daemon 回報的 `president_connect`(TR_BAGS.local.st.report);長步驟回條等不到是常態,畫面看狀態走。
+   - 一列只有一個狀態:步驟沒送出去(PRES.msg = {code, step})掛在那一列;在跑的優先。浮動 slot 只放整框層級(daemon 沒跑、加密儲存、重綁、忙碌)。
+   - 不給營業員話術:只告訴用戶要請營業員開什麼;回報那一列給測試單的時間與委託書號(可複製)。
    - 帳號、交易密碼、憑證密碼只在這個框的欄位裡,送進主行程(president_local.js)後就清掉;憑證檔路徑與檔名(含身分證)不進這裡。
    - 憑證e總管:app 只替用戶「打開」它;簡訊碼在統一自己的視窗輸入,這裡只看 PSCCA 有沒有新檔(每 3 秒)。
    - 測試環境那一段(統一規定:先在測試主機登入、下一筆測試單、回報營業員,才開正式):走跟雲端同一份 runtime 程式
@@ -23,9 +25,14 @@ const PRES_PFX_ERR = { PFX_PASSWORD: "pres.pfx.errPw", PFX_EXPIRED: "pres.pfx.er
   PFX_INVALID: "pres.pfx.errFile", PFX_TOO_LARGE: "pres.pfx.errFile", READ_FAILED: "pres.pfx.errRead", PFX_NONE_FOUND: "pres.pfx.errNone" };
 const PRES_FEATURE = { form: "pres_form_saved", tcem: "pres_tcem_open", cert: "pres_cert_ok", probe: "pres_probe_ok", ready: "pres_ready" };
 
-const presBlank = () => ({ phase: "prep", scan: null, waitTcem: false, baseAt: 0, tcemMsg: null, gotMail: false, acct: "", pw: "", caPw: "",
+const presBlank = () => ({ phase: "prep", scan: null, waitTcem: false, tcemMsg: null, acct: "", pw: "", caPw: "",
   source: "found", picked: false, busy: false, msg: null, sent: null, recheck: false, recert: false,
   test: { url: "" }, info: null, seen: {}, sig: null, started: false, setupSent: false, startSent: false, view: null });
+// 清單上有自己那一列的步驟:這些步驟沒送出去的錯掛在列上(host 記成 probe)
+const PRES_ROW_STEPS = ["setup", "cert", "probe", "test_order", "start"];
+// 整框層級的錯(不屬於哪一列),浮動 slot 只放這些
+const PRES_FRAME_ERR = { BUSY: "cap.err.busy", NO_SEAL: "pres.err.noSeal", DAEMON_DOWN: "side.stopped", TIMEOUT: "side.stopped",
+  REBOUND: "pres.err.rebound", NO_CREDS: "pres.err.rebound", BAD_ACCOUNT: "pres.form.acctErr" };
 let PRES = presBlank();
 let presTimer = null;
 
@@ -49,7 +56,8 @@ function presRunning(pc, sent, now) {
    再來是要用戶做事的,最後才是往下一步 */
 function presView(pc, ui, ctx) {
   if (!ctx.win) return "d-mac";
-  if (ui.phase === "prep") return ui.waitTcem ? "d-prep-wait" : !ui.scan ? "d-prep-load" : ui.scan.found > 0 ? "d-prep" : "d-prep-none";
+  // 找到憑證就是帳密頁(沒有「事前準備」那一頁,Wei 10-07);presScan 同時把 phase 推到 form
+  if (ui.phase === "prep") return ui.waitTcem ? "d-prep-wait" : !ui.scan ? "d-prep-load" : ui.scan.found > 0 ? "d-form" : "d-prep-none";
   if (ui.phase === "form") return "d-form";
   const setup = presSec(pc, "setup"), cert = presSec(pc, "cert"), probe = presSec(pc, "probe"), worker = presSec(pc, "worker");
   const run = presRunning(pc, ui.sent, ctx.now);
@@ -90,6 +98,14 @@ function presFirstRows(amounts) {
   const a = amounts && typeof amounts === "object" ? amounts : {};
   return Object.keys(a).filter((n) => typeof a[n] === "number" && a[n] > 0).sort().map((n) => ({ name: n, lots: Math.round(a[n]) }));
 }
+/* 主行程回的錯({code, step})畫在哪:frame = 浮動 slot(整框層級)、field = 欄位下(憑證檔)、row = 清單那一列(一列只有一個狀態)、
+   slot = 沒有自己那一列的步驟(存帳密)。 */
+function presMsgPlace(m) {
+  if (!m) return null;
+  if (PRES_FRAME_ERR[m.code]) return "frame";
+  if (PRES_PFX_ERR[m.code]) return "field";
+  return PRES_ROW_STEPS.indexOf(m.step) >= 0 ? "row" : "slot";
+}
 /* ── 純邏輯到此 ── */
 
 const presPC = () => { const r = TR_BAGS.local.st && TR_BAGS.local.st.report; const c = r && r.president_connect; return c && typeof c === "object" ? c : null; };
@@ -108,16 +124,15 @@ async function presResume() {
   let info = null; try { info = await window.blave.presidentInfo(); } catch (_) { }
   PRES.info = info;
   const pc = presPC();
-  if (info && info.saved && pc) { PRES.phase = "flow"; PRES.gotMail = true; }
+  if (info && info.saved && pc) PRES.phase = "flow";
   presScan();   // 清單裡「選憑證」那張卡也要到期日
   presPaint();
 }
 async function presScan() {
   let r = null; try { r = await window.blave.presidentScan(); } catch (_) { }
-  const prev = PRES.scan;
   PRES.scan = r && r.code === "OK" ? { found: r.found, expiry: r.expiry, newestAt: r.newestAt } : { found: 0, expiry: null, newestAt: 0 };
-  // 等憑證e總管:出現新檔(張數多了或最新那張換了)就直接到帳密,不用「我完成了」鈕(「收到測試帳號信」不擋,不必繞回那一頁)
-  if (PRES.waitTcem && PRES.scan.found > 0 && (!prev || PRES.scan.newestAt > PRES.baseAt)) { PRES.waitTcem = false; PRES.source = "found"; PRES.phase = "form"; presWatch(false); }
+  // PSCCA 有憑證就直接到帳密(開框第一次看到、或憑證e總管申請完出現新檔都一樣),不用「我完成了」鈕
+  if (PRES.phase === "prep" && PRES.scan.found > 0) { PRES.waitTcem = false; PRES.source = "found"; PRES.phase = "form"; presWatch(false); }
   presPaint();
 }
 function presWatch(on) {
@@ -129,16 +144,18 @@ async function presOpenTcem() {
   PRES.busy = true; PRES.tcemMsg = null; presPaint();
   let r = null; try { r = await window.blave.presidentTcem(); } catch (_) { }
   PRES.busy = false;
-  if (r && r.code === "OK") { PRES.baseAt = PRES.scan ? PRES.scan.newestAt : 0; PRES.waitTcem = true; presTrack("tcem"); presWatch(true); }
+  if (r && r.code === "OK") { PRES.waitTcem = true; presTrack("tcem"); presWatch(true); }
   else PRES.tcemMsg = r && r.code === "HASH" ? "pres.tcem.hash" : r && r.code === "DOWNLOAD" ? "pres.tcem.download" : "pres.tcem.fail";
   presPaint();
 }
+// 主行程回的錯 + 發生在哪一步(presMsgPlace 決定畫在哪)
+const presErr = (r, step) => Object.assign({}, r || { code: "FAILED" }, { step });
 async function presSaveCreds(then) {
   if (PRES.busy || presDown()) return;
   PRES.busy = true; PRES.msg = null; presPaint();
   let r = null; try { r = await window.blave.presidentCreds(PRES.acct.trim(), PRES.pw); } catch (_) { }
   PRES.busy = false;
-  if (!r || r.code !== "OK") { PRES.msg = r || { code: "FAILED" }; presPaint(); return; }
+  if (!r || r.code !== "OK") { PRES.msg = presErr(r, "creds"); presPaint(); return; }
   PRES.pw = ""; presTrack("form");
   try { PRES.info = await window.blave.presidentInfo(); } catch (_) { }
   if (then) await then();
@@ -154,16 +171,16 @@ async function presStep(name, opts) {
   PRES.busy = true; PRES.msg = null; presPaint();
   let r = null; try { r = await window.blave.presidentStep(name, opts || {}); } catch (_) { }
   PRES.busy = false;
-  const code = r && r.code;
-  if (code === "OK" || code === "SENT") PRES.sent = { step: name === "host" ? "probe" : name, at: Date.now(), upd: pc ? pc.updated_at : null };
-  else PRES.msg = r || { code: "FAILED" };
+  const code = r && r.code, step = name === "host" ? "probe" : name;
+  if (code === "OK" || code === "SENT") PRES.sent = { step, at: Date.now(), upd: pc ? pc.updated_at : null };
+  else PRES.msg = presErr(r, step);
   presBurst(); presPaint();
 }
 async function presPick() {
   if (PRES.busy) return;
   let r = null; try { r = await window.blave.presidentPick(); } catch (_) { }
   if (r && r.code === "OK") { PRES.source = "picked"; PRES.picked = true; PRES.msg = null; }
-  else if (r && r.code === "BAD_FILE") PRES.msg = { code: "PFX_INVALID" };
+  else if (r && r.code === "BAD_FILE") PRES.msg = { code: "PFX_INVALID", step: "cert" };
   presPaint();
 }
 async function presUseCert() {
@@ -174,7 +191,7 @@ async function presUseCert() {
   PRES.busy = false;
   const code = r && r.code;
   if (code === "OK" || code === "SENT") { PRES.caPw = ""; PRES.recert = false; PRES.sent = { step: "cert", at: Date.now(), upd: pc ? pc.updated_at : null }; if (code === "OK") presTrack("cert"); }
-  else PRES.msg = r || { code: "FAILED" };
+  else PRES.msg = presErr(r, "cert");
   presBurst(); presPaint();
 }
 // 改交易密碼(被統一擋下之後):存新密碼 → 用同一張憑證重綁(.env 的指紋跟著換)→ 正式主機再確認
@@ -187,7 +204,7 @@ async function presRecheck() {
     PRES.busy = false;
     if (r && r.code === "OK") { PRES.recheck = false; await presStep("probe"); }
     else if (r && r.code === "SENT") { PRES.recheck = false; PRES.sent = { step: "cert", at: Date.now(), upd: pc ? pc.updated_at : null }; }
-    else { PRES.recheck = false; PRES.recert = true; PRES.msg = r || { code: "FAILED" }; }
+    else { PRES.recheck = false; PRES.recert = true; PRES.msg = presErr(r, "cert"); }
   });
 }
 // 測試主機:照信上的網址(沒填就用測試主機);營業員說開好了 = 切正式。兩者都是 host,切完自動確認登入
@@ -208,18 +225,18 @@ function presAdvance(view, pc) {
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const presP = (cls, text) => trEl("p", cls, text);
-function presScript(text) {
-  const box = trEl("div", "pres-script"), h = trEl("div", "pres-script-h");
-  const cp = capBtn("btn-quiet", t("pres.copy"), async () => { try { await navigator.clipboard.writeText(text); srSay(t("pres.copied")); cp.textContent = t("pres.copied"); } catch (_) { } }, null);
-  h.append(trEl("span", "", t("pres.script.h")), cp);
-  box.append(h, trEl("p", "pres-script-b", text));
-  return box;
+// 回報營業員那一列:一個值(測試單時間 / 委託書號)+ 複製鈕;只複製值,不組話術(Wei 10-07)
+function presCopyRow(label, value) {
+  const d = trEl("div", ""), v = trEl("dd", ""); v.appendChild(trEl("span", "pres-mono", value || "—"));
+  if (value) {
+    const cp = capBtn("btn-quiet", t("pres.copy"), async () => { try { await navigator.clipboard.writeText(value); srSay(t("pres.copied")); cp.textContent = t("pres.copied"); } catch (_) { } }, null);
+    v.appendChild(cp);
+  }
+  d.append(trEl("dt", "", label), v); return d;
 }
-function presCheck() {
-  const l = trEl("label", "pres-check"), i = trEl("input"); i.type = "checkbox"; i.id = "pres-mail"; i.checked = !!PRES.gotMail;
-  i.addEventListener("change", () => { PRES.gotMail = i.checked; presSyncGo(); });
-  l.append(i, trEl("span", "", t("pres.prep.mail"))); return l;
-}
+// 這一列的步驟沒送出去 → 那一列要掛的字;在跑的列不會問到這裡
+const presRowErr = (step) => (PRES.msg && PRES.msg.step === step && presMsgPlace(PRES.msg) === "row" ? t("pres.err.generic") : null);
+const presBadRow = (name, text, retry, id) => capRow("bad", name, "", capFrag(capErr(text), capActs(capBtn("btn-out", t("pres.retry"), retry, id, PRES.busy || presDown()))));
 function presInput(id, label, key, o) {
   const opts = o || {}, l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", label));
   const i = trEl("input", "f-input txt" + (opts.mono ? " pres-mono" : "") + (opts.err ? " is-err" : "")); i.id = id; i.type = opts.plain ? "text" : "password";
@@ -238,15 +255,6 @@ function presInput(id, label, key, o) {
 function presPrepBody(view) {
   const f = document.createDocumentFragment();
   if (view === "d-prep-load") { f.appendChild(presP("cap-lead", t("pres.prep.looking"))); return f; }
-  if (view === "d-prep") {
-    const exp = PRES.scan.expiry;
-    f.appendChild(presP("cap-lead", exp ? t("pres.prep.found", { date: exp }) : t("pres.prep.foundNoDate")));
-    f.appendChild(presP("cx-hint", t("pres.prep.need")));
-    f.appendChild(presScript(t("pres.script.have")));
-    f.appendChild(presCheck());
-    f.appendChild(presP("cx-hint", t("pres.prep.mailHint")));
-    return f;
-  }
   if (view === "d-prep-wait") {
     const row = trEl("div", "pres-wait"), sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
     row.append(sp, presP("cap-lead", t("pres.wait.lead")));
@@ -254,20 +262,20 @@ function presPrepBody(view) {
     f.appendChild(capActs(capBtn("btn-quiet", t("pres.wait.again"), presOpenTcem, "pres-tcem-again", PRES.busy)));
     return f;
   }
-  // d-prep-none
+  // d-prep-none:兩步純指示,沒有話術
   f.appendChild(presP("cap-lead", t("pres.none.lead")));
   const ol = trEl("ol", "pres-todo");
   const li1 = trEl("li", ""); li1.append(trEl("span", "", t("pres.none.s1")), trEl("span", "sub", t("pres.none.s1sub", { tel: PRES_HOTLINE })));
-  ol.appendChild(li1); f.appendChild(ol);
-  f.appendChild(presScript(t("pres.script.none")));
-  const ol2 = trEl("ol", "pres-todo"); ol2.setAttribute("start", "2");
   const li2 = trEl("li", ""); li2.append(trEl("span", "", t("pres.none.s2")), trEl("span", "sub", t("pres.none.s2sub")));
-  ol2.appendChild(li2); f.appendChild(ol2);
+  ol.append(li1, li2); f.appendChild(ol);
   if (PRES.tcemMsg) f.appendChild(capErr(t(PRES.tcemMsg)));
   return f;
 }
 function presFormBody() {
   const f = document.createDocumentFragment();
+  f.appendChild(cxVenueField(TR_BAGS.local));
+  // 第一句就是找 PSCCA 的結果(事前準備頁拿掉了);選了別的檔或沒憑證(改帳號回來)就不講
+  if (PRES.source !== "picked" && PRES.scan && PRES.scan.found > 0) f.appendChild(presP("cap-lead", PRES.scan.expiry ? t("pres.form.found", { date: PRES.scan.expiry }) : t("pres.form.foundNoDate")));
   const acctBad = PRES.acct.trim() && !/^[0-9]{11}$/.test(PRES.acct.trim());
   f.appendChild(presInput("pres-acct", t("pres.form.acct"), "acct", { plain: true, mono: true, numeric: true, hint: t("pres.form.acctHint"), err: acctBad ? t("pres.form.acctErr") : null, enter: presPrimary }));
   f.appendChild(presInput("pres-pw", t("pres.form.pw"), "pw", { hint: t("pres.form.pwHint"), enter: presPrimary }));
@@ -287,7 +295,7 @@ function presCertBody(pc, view) {
   }
   card.append(mk, tx); f.appendChild(card);
   const exp = code === "PFX_EXPIRED" ? capDate(cert.not_after) : null;
-  const fileErr = code && code !== "PFX_PASSWORD" ? t(PRES_PFX_ERR[code] || "pres.pfx.errImport", { date: exp || "—" }) : null;
+  const fileErr = code && code !== "PFX_PASSWORD" ? t(PRES_PFX_ERR[code] || "pres.pfx.errImport", { date: exp || "—" }) : presRowErr("cert");
   if (fileErr) { const e = trEl("p", "cap-err", fileErr); e.setAttribute("role", "status"); f.appendChild(e); }
   f.appendChild(presInput("pres-capw", t("pres.cert.pw"), "caPw", { hint: t("pres.cert.pwHint"), err: code === "PFX_PASSWORD" ? t("pres.pfx.errPw") : null, enter: presUseCert }));
   const off = PRES.busy || presDown() || !!(pc && pc.busy);
@@ -300,8 +308,8 @@ function presPwBody(msg, extra) {
   const go = capBtn("btn-fill", t("pres.pw.go"), presRecheck, "pres-recheck", !ready); go.dataset.need = "pw";
   return capFrag(capErr(msg), presInput("pres-pw", t("pres.form.pw"), "pw", { err: null, hint: t("pres.pw.hint"), enter: presRecheck }), capActs(go, extra || null));
 }
-/* 登入失敗(任何一類):講哪一類、Blave 已停止不會自己重試、三次鎖帳,一顆「確認登入」(每按一次真的登入一次);
-   密碼／原因不明多一個改交易密碼,憑證兩類多換憑證／改帳號 */
+/* 登入失敗(任何一類):講哪一類、處理好按「確認登入」(每按一次真的登入一次)、被鎖找營業員——不講次數;
+   密碼／原因不明多一個改交易密碼,憑證兩類多換憑證／改帳號。按了沒送出去的錯也掛在這一列 */
 function presProbeBody(view, pc) {
   const off = PRES.busy || presDown() || !!(pc && pc.busy), acct = (PRES.info && PRES.info.account) || "—";
   const KEY = { "d-PASSWORD": "pres.err.password", "d-UNKNOWN": "pres.err.unknown", "d-CERT": "pres.err.cert", "d-CERT_MISMATCH": "pres.err.certMismatch",
@@ -310,11 +318,13 @@ function presProbeBody(view, pc) {
   const extra = view === "d-PASSWORD" || view === "d-UNKNOWN" ? [capBtn("btn-quiet", t("pres.err.changePw"), () => { PRES.recheck = true; presPaint(); }, "pres-change-pw")]
     : view === "d-CERT" || view === "d-CERT_MISMATCH" ? [capBtn("btn-quiet", t("pres.err.certSwap"), () => { PRES.recert = true; presPaint(); }, "pres-recert"),
       capBtn("btn-quiet", t("pres.err.acctSwap"), () => { PRES.phase = "form"; presPaint(); }, "pres-acct-swap")] : [];
-  return capFrag(capErr(t(KEY[view] || "pres.err.nocreds", { acct }), view === "d-MAINTENANCE"), presP("cx-hint", t("pres.err.stopNote")), capActs(confirm, ...extra));
+  const notSent = presRowErr("probe");
+  return capFrag(capErr(t(KEY[view] || "pres.err.nocreds", { acct }), view === "d-MAINTENANCE"), notSent ? capErr(notSent) : presP("cx-hint", t("pres.err.stopNote")), capActs(confirm, ...extra));
 }
 function presTestHostBody(view) {
   const f = document.createDocumentFragment();
   f.appendChild(capDo(t("pres.t.hostDo")));
+  const notSent = presRowErr("probe"); if (notSent) f.appendChild(capErr(notSent));
   const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", t("pres.t.url")));
   const i = trEl("input", "f-input txt pres-mono"); i.id = "pres-turl"; i.type = "text"; i.spellcheck = false; i.autocomplete = "off"; i.value = PRES.test.url;
   i.addEventListener("input", () => { PRES.test.url = i.value; });
@@ -327,10 +337,12 @@ function presTaipei(iso) {
   const m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2}:\d{2})/.exec(String(iso || ""));
   return m ? `${m[1]}/${m[2]} ${m[3]}` : "—";
 }
+// 回報營業員:一句指示 + 測試單的時間與委託書號(可複製的值),沒有話術;「營業員說開好了」沒送出去的錯也掛這一列
 function presTestReportBody(pc) {
-  const when = presTaipei(presSec(pc, "test_order").at);
-  const acct = (PRES.info && PRES.info.account) || "—";
-  return capFrag(capDo(t("pres.t.reportDo", { when })), presScript(t("pres.script.report", { acct, when })), presP("cx-hint", t("pres.t.reportHint")),
+  const to = presSec(pc, "test_order"), dl = trEl("dl", "cap-acct pres-report");
+  dl.append(presCopyRow(t("pres.t.reportWhen"), to.at ? presTaipei(to.at) : null), presCopyRow(t("pres.t.reportNo"), typeof to.orderno === "string" ? to.orderno : null));
+  const notSent = presRowErr("probe");
+  return capFrag(capDo(t("pres.t.reportDo")), dl, notSent ? capErr(notSent) : presP("cx-hint", t("pres.t.reportHint")),
     capActs(capBtn("btn-fill", t("pres.t.opened"), () => presHost("live"), "pres-probe", PRES.busy || presDown()), capBtn("btn-quiet", t("pres.t.later"), () => cxModalClose(false), "pres-later")));
 }
 /* 態 → 清單各列(mockup deskSteps):準備(安裝、選憑證)/ 測試環境(三列)/ 正式環境(確認登入、啟動下單程式) */
@@ -338,6 +350,8 @@ function presRows(view, pc) {
   const setup = presSec(pc, "setup"), cert = presSec(pc, "cert"), worker = presSec(pc, "worker");
   const nm = PRES.sent && Date.now() - PRES.sent.at >= PRES_NO_MOVE_MS ? capFrag(capDo(t("pres.noMove")), capActs(capBtn("btn-out", t("pres.retry"), () => { const s = PRES.sent.step; PRES.sent = null; if (s === "cert") { PRES.recert = true; presPaint(); } else presStep(s); }, "pres-nomove"))) : null;
   const runRow = (name, right) => (nm ? capRow("cur", name, "", nm) : capRow("run", name, right));
+  // 在跑的優先:這台電腦說那一步正在跑,就不講「沒有開始」
+  const run = presRunning(pc, PRES.sent, Date.now()), rowErr = (step) => (run === step ? null : presRowErr(step));
   const ol = trEl("ol", "cap-steps pres-steps"), ph = (k) => { const li = trEl("li", "pres-ph", t(k)); li.setAttribute("aria-hidden", "true"); ol.appendChild(li); };
   const add = (li) => ol.appendChild(li);
   const exp = capDate(cert.not_after), certDone = exp ? t("pres.s.certExp", { date: exp }) : "";
@@ -350,28 +364,31 @@ function presRows(view, pc) {
   ph("pres.ph.prep");
   if (setup.status === "ok") add(capRow("done", t("pres.s.setup")));
   else if (view === "d-setup-fail") add(capRow("bad", t("pres.s.setup"), "", capFrag(capErr(t("pres.s.setupFail")), capActs(capBtn("btn-out", t("pres.retry"), () => presStep("setup"), "pres-retry", PRES.busy)))));
+  else if (rowErr("setup")) add(presBadRow(t("pres.s.setup"), rowErr("setup"), () => presStep("setup"), "pres-retry"));
   else add(runRow(t("pres.s.setup"), t("pres.s.setupRun")));
   const certNow = view === "d-cert" || view === "d-cert-err";
   if (view === "d-cert-run") add(runRow(t("pres.s.cert"), t("pres.s.certRun")));
-  else if (certNow) add(capRow(view === "d-cert-err" ? "bad" : "cur", t("pres.s.cert"), "", presCertBody(pc, view)));
+  else if (certNow) add(capRow(view === "d-cert-err" || rowErr("cert") ? "bad" : "cur", t("pres.s.cert"), "", presCertBody(pc, view)));
   else add(capRow(cert.status === "ok" ? "done" : "todo", t("pres.s.cert"), cert.status === "ok" ? certDone : ""));
   ph("pres.ph.test");
   const tProbed = live || (probe.status === "ok" && probe.env === "test") || to.status === "ok" || to.status === "failed";
-  if (view === "d-t-host") add(capRow("cur", t("pres.s.tprobe"), "", presTestHostBody(view)));
+  if (view === "d-t-host") add(capRow(rowErr("probe") ? "bad" : "cur", t("pres.s.tprobe"), "", presTestHostBody(view)));
   else if (view === "d-t-probe") add(runRow(t("pres.s.tprobe"), t("pres.s.probeRun")));
   else if (!live && (probeErr || view === "d-pw")) add(errRow(t("pres.s.tprobe")));
   else add(capRow(tProbed ? "done" : "todo", t("pres.s.tprobe"), tProbed ? t("pres.s.tprobeDone") : ""));
-  if (view === "d-t-order" || view === "d-t-order-fail") add(capRow(view === "d-t-order-fail" ? "bad" : "cur", t("pres.s.torder"), "", capFrag(capDo(t("pres.t.orderDo")),
-    view === "d-t-order-fail" ? capErr(t("pres.t.orderFail")) : null, capActs(capBtn(view === "d-t-order-fail" ? "btn-out" : "btn-fill", t(view === "d-t-order-fail" ? "pres.t.orderAgain" : "pres.t.order"), () => presStep("test_order"), "pres-torder", PRES.busy || presDown())))));
+  if (view === "d-t-order" || view === "d-t-order-fail") add(capRow(view === "d-t-order-fail" || rowErr("test_order") ? "bad" : "cur", t("pres.s.torder"), "", capFrag(capDo(t("pres.t.orderDo")),
+    view === "d-t-order-fail" ? capErr(t("pres.t.orderFail")) : rowErr("test_order") ? capErr(rowErr("test_order")) : null,
+    capActs(capBtn(view === "d-t-order-fail" ? "btn-out" : "btn-fill", t(view === "d-t-order-fail" ? "pres.t.orderAgain" : "pres.t.order"), () => presStep("test_order"), "pres-torder", PRES.busy || presDown())))));
   else if (view === "d-t-order-run") add(runRow(t("pres.s.torder"), t("pres.s.orderRun")));
   else add(capRow(live || to.status === "ok" ? "done" : "todo", t("pres.s.torder"), live || to.status === "ok" ? t("pres.s.torderDone") : ""));
-  if (view === "d-t-report") add(capRow("cur", t("pres.s.treport"), "", presTestReportBody(pc)));
+  if (view === "d-t-report") add(capRow(rowErr("probe") ? "bad" : "cur", t("pres.s.treport"), "", presTestReportBody(pc)));
   else add(capRow(live ? "done" : "todo", t("pres.s.treport"), live ? t("pres.s.treportDone") : ""));
   ph("pres.ph.live");
   if (view === "d-probe") add(runRow(t("pres.s.probe"), t("pres.s.probeRun")));
   else if (live && (probeErr || view === "d-pw")) add(errRow(t("pres.s.probe")));
   else add(capRow(view === "d-finish" || view === "d-finish-fail" ? "done" : "todo", t("pres.s.probe"), view === "d-finish" || view === "d-finish-fail" ? t("pres.s.probeDone") : ""));
-  if (view === "d-finish") add(runRow(t("pres.s.worker"), t("pres.s.workerRun")));
+  if (view === "d-finish" && rowErr("start")) add(presBadRow(t("pres.s.worker"), rowErr("start"), () => { PRES.startSent = true; presStep("start"); }, "pres-retry"));
+  else if (view === "d-finish") add(runRow(t("pres.s.worker"), t("pres.s.workerRun")));
   else if (view === "d-finish-fail") add(capRow("bad", t("pres.s.worker"), "", capFrag(capErr(t("pres.s.workerFail")), capActs(capBtn("btn-out", t("pres.retry"), () => { PRES.startSent = true; presStep("start"); }, "pres-retry", PRES.busy)))));
   else add(capRow(worker.status === "ok" ? "done" : "todo", t("pres.s.worker")));
   return ol;
@@ -393,24 +410,18 @@ function presDoneBody(pc) {
   f.appendChild(note);
   return f;
 }
+// 浮動 slot 要放的字;清單列的錯與憑證檔的錯都畫在列裡
 function presMsgText(m) {
-  if (!m) return null;
-  const c = m.code;
-  if (c === "BUSY") return t("cap.err.busy");
-  if (c === "BAD_ACCOUNT") return t("pres.form.acctErr");
-  if (c === "NO_SEAL") return t("pres.err.noSeal");
-  if (c === "DAEMON_DOWN" || c === "TIMEOUT") return t("side.stopped");
-  if (c === "REBOUND" || c === "NO_CREDS") return t("pres.err.rebound");
-  if (PRES_PFX_ERR[c]) return null;   // 畫在欄位下
-  return t("pres.err.generic");
+  const where = presMsgPlace(m);
+  return where === "frame" ? t(PRES_FRAME_ERR[m.code]) : where === "slot" ? t("pres.err.generic") : null;
 }
 
-// 腳:事前準備 / 表單 = 取消 + 下一步;清單 = 關閉;完成 = 設定策略下單(關框)
+// 腳:找憑證 / 表單 = 取消 + 主鈕;清單 = 關閉;完成 = 設定策略下單(關框)
 function presFoot(view) {
   const go = $("cx-go"), cancel = $("cx-cancel"), where = $("cx-where");
   where.hidden = true; where.textContent = "";
-  const prep = view === "d-prep" || view === "d-prep-none" || view === "d-prep-load" || view === "d-prep-wait";
-  const label = view === "d-prep" ? t("pres.next") : view === "d-prep-none" ? t("pres.tcem.open") : view === "d-form" ? (PRES.busy ? t("cx.connecting") : t("pres.form.go"))
+  const prep = view === "d-prep-none" || view === "d-prep-load" || view === "d-prep-wait";
+  const label = view === "d-prep-none" ? t("pres.tcem.open") : view === "d-form" ? (PRES.busy ? t("cx.connecting") : t("pres.form.go"))
     : view === "d-done" ? t("pres.done.go") : null;
   go.hidden = !label;
   if (label && go.textContent.trim() !== label) go.textContent = label;
@@ -422,7 +433,6 @@ function presFoot(view) {
 function presSyncGo(view) {
   const v = view || PRES.view, go = $("cx-go");
   let off = presDown() || PRES.busy;
-  // 「收到測試帳號信」只是提醒,不擋下一步(Wei 10-07,同網頁版)
   if (v === "d-form") off = off || !/^[0-9]{11}$/.test(PRES.acct.trim()) || !PRES.pw;
   go.setAttribute("aria-disabled", off ? "true" : "false");
   document.querySelectorAll("#cx-body [data-need]").forEach((b) => { b.setAttribute("aria-disabled", !PRES[b.dataset.need] || PRES.busy || presDown() ? "true" : "false"); });
@@ -430,7 +440,6 @@ function presSyncGo(view) {
 function presPrimary() {
   if ($("cx-go").getAttribute("aria-disabled") === "true") return;
   const v = PRES.view;
-  if (v === "d-prep") { PRES.phase = "form"; presWatch(false); return presPaint(); }
   if (v === "d-prep-none") return presOpenTcem();
   if (v === "d-form") return presGo();
   if (v === "d-done") { presTrack("ready"); return cxModalClose(true); }
