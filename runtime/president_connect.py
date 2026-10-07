@@ -522,10 +522,19 @@ def probe_state(obj, exit_code):
     return {"state": "unknown"}
 
 
-def _worker_run(flag, timeout, what):
-    if _LOCAL["secrets"] is not None:
-        return _local_run(flag, timeout, what)
-    return cc._run_quiet([_python(), _paths()["worker"], flag], timeout, what)
+def _worker_run(flag, timeout, what, argv=None):
+    """→ returncode: None = timed out / could not start, -1 = anything else blew up
+    before or around the child. Never raises: the caller's section must leave
+    "running" whatever happened — the page waits on it."""
+    try:
+        if _LOCAL["secrets"] is not None:  # desktop: the child logs in with the stdin line
+            return _local_run(flag, timeout, what, argv=argv).returncode
+        return cc._run_quiet([_python()] + (argv or [_paths()["worker"], flag]), timeout, what).returncode
+    except RuntimeError:
+        return None
+    except Exception as e:
+        print(f"[president_connect] {what} failed to run ({type(e).__name__})", file=sys.stderr)
+        return -1
 
 
 def run_probe(push=None):
@@ -535,13 +544,7 @@ def run_probe(push=None):
         push()
     p = _paths()
     started = time.time() - 1
-    try:
-        rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe").returncode
-    except RuntimeError:
-        rc = None
-    except Exception as e:  # whatever else: the section must leave "running" — the page waits on it
-        print(f"[president_connect] probe failed to run ({type(e).__name__})", file=sys.stderr)
-        rc = -1
+    rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe")
     try:
         with open(p["probe"], encoding="utf-8") as f:
             obj = json.load(f)
@@ -693,15 +696,7 @@ def run_test_order(push=None):
         push()
     p = _paths()
     started = time.time() - 1
-    try:
-        if _LOCAL["secrets"] is not None:  # desktop: the script logs in with the stdin line
-            rc = _local_run(None, TEST_ORDER_TIMEOUT_S, "test order",
-                            argv=[p["test_order_script"], WORKSPACE]).returncode
-        else:
-            rc = cc._run_quiet([_python(), p["test_order_script"], WORKSPACE], TEST_ORDER_TIMEOUT_S,
-                               "test order").returncode
-    except RuntimeError:
-        rc = None
+    rc = _worker_run(None, TEST_ORDER_TIMEOUT_S, "test order", argv=[p["test_order_script"], WORKSPACE])
     try:
         with open(p["test_order"], encoding="utf-8") as f:
             obj = json.load(f)
@@ -955,21 +950,21 @@ def _kill_tree(pid):
     """Windows: sys.executable inside a venv is venvlauncher.exe, the interpreter
     running the code is its child — kill()/terminate() reach only the launcher
     and the child lives on, holding our pipes (and the credentials line).
-    POSIX children of _local_run start in their own session for the same reason."""
-    if os.name == "nt":
-        try:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
-                           **_cl()._child_kw())
-        except (OSError, subprocess.SubprocessError):
-            pass
-        return
+    POSIX children of _local_run start in their own session for the same reason.
+    → whether the kill went out (a failure is logged by type only: the tree holds
+    the credentials line, so the caller falls back to killing what it can)."""
     try:
-        os.killpg(pid, signal.SIGKILL)
-    except OSError:
+        if os.name == "nt":
+            return subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
+                                  **_cl()._child_kw()).returncode == 0
         try:
-            os.kill(pid, signal.SIGKILL)
+            os.killpg(pid, signal.SIGKILL)
         except OSError:
-            pass
+            os.kill(pid, signal.SIGKILL)
+        return True
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[president_connect] kill tree failed ({type(e).__name__})", file=sys.stderr)
+        return False
 
 
 def _local_run(flag, timeout, what, argv=None):
@@ -987,13 +982,21 @@ def _local_run(flag, timeout, what, argv=None):
         raise RuntimeError(f"{what} could not start ({type(e).__name__})")
     try:
         out, err = p.communicate((secret_line() + "\n").encode("utf-8"), timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except BaseException as e:
+        # a timeout or anything else (a pipe OSError, an interrupt): the child has the
+        # credentials line — nothing leaves here with it still running
         _kill_tree(p.pid)
         try:
-            p.communicate(timeout=LOCAL_DRAIN_S)
-        except subprocess.TimeoutExpired:
+            p.kill()  # the launcher at least, when the tree kill did not go out
+        except OSError:
             pass
-        raise RuntimeError(f"{what} timed out")
+        try:
+            p.communicate(timeout=LOCAL_DRAIN_S)
+        except (subprocess.SubprocessError, OSError, ValueError):
+            pass
+        if isinstance(e, subprocess.TimeoutExpired):
+            raise RuntimeError(f"{what} timed out")
+        raise
     return subprocess.CompletedProcess(p.args, p.returncode, out, err)
 
 

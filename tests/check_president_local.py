@@ -273,6 +273,44 @@ check("6c run_probe on that worker: status leaves `running` as failed / timeout,
 pc._paths, pc.PROBE_TIMEOUT_S = real_paths, real_probe_timeout
 os.remove(SLEEPER)
 
+# ── 6d. the child never outlives a blown-up communicate; the sections never stay `running` (audit integ-0118 B-3 / B-4) ──
+sl = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+killed = pc._kill_tree(sl.pid)
+sl.wait(5)
+check("6d _kill_tree reports whether the kill went out (a live tree → True, a gone pid → False)",
+      killed is True and pc._kill_tree(sl.pid) is False)
+calls = []
+real_popen_pc, real_kill_tree = pc.subprocess.Popen, pc._kill_tree
+
+
+class BrokenPipePopen(real_popen_pc):
+    def communicate(self, *a, **kw):
+        if not calls:
+            calls.append("communicate")
+            raise OSError("pipe")
+        return real_popen_pc.communicate(self, *a, **kw)
+
+    def kill(self):
+        calls.append("kill")
+        real_popen_pc.kill(self)
+
+
+pc.subprocess.Popen = BrokenPipePopen
+pc._kill_tree = lambda pid: calls.append("tree") or real_kill_tree(pid)
+code = code_of(lambda: pc._local_run("--once", 5, "probe", argv=["-c", "import time; time.sleep(60)"]))
+check("6d a non-timeout communicate failure kills the tree, then the launcher, and the error propagates",
+      code == "pipe" and calls == ["communicate", "tree", "kill"], (code, calls))
+pc.subprocess.Popen, pc._kill_tree = real_popen_pc, real_kill_tree
+real_local_run = pc._local_run
+pc._local_run = lambda *a, **kw: (_ for _ in ()).throw(ValueError("popen args"))
+st6d = pc.run_test_order()
+to6d = pc.read_status()["test_order"]
+check("6d run_test_order: whatever blows up, the section leaves `running` (failed / unknown) — same as run_probe",
+      st6d["state"] == "unknown" and to6d["status"] == "failed", json.dumps(to6d))
+st6d = pc.run_probe()
+check("6d …and run_probe through the same one catch-all", st6d["state"] == "unknown" and pc.read_status()["probe"]["status"] == "failed")
+pc._local_run = real_local_run
+
 # ── 6b. test environment (the cloud's president_host / president_test_order, same runtime code) ──
 probes = []
 real_probe = pc.run_probe
