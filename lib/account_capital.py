@@ -9,11 +9,24 @@
 # See references/capital-broker.md for the 602 background and field tables.
 import json
 import os
+import re
 import time
 
 _SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "state", "capital_account.json")
 _STALE_S = 300  # worker cadence is 60s; 5 misses = stale
+# lib/order_capital.CAPITAL_FUT_RE — not imported: importing an order lib marks
+# the process as a money process, and platform readers import this module
+_FUT_RE = re.compile(r"^(MTX|TX|TM)(\d{2})(0[1-9]|1[0-2])$")
+
+
+def contract_month(code):
+    """'YYYY-MM' of a 群益 month contract code (TX2610), None for anything else —
+    lib.portfolio's book records the month a fill landed in with it. 群益 has no
+    contract list here, so a held row past its settlement is read as still
+    trading (postponed) and an absent one as settled (lib.portfolio)."""
+    m = _FUT_RE.match(str(code or "").strip().upper())
+    return f"20{m.group(2)}-{m.group(3)}" if m else None
 
 
 def _read_snapshot():

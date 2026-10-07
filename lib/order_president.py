@@ -194,7 +194,12 @@ def entry_contract(root, rows, now=None):
     return computed_near(root, now)
 
 
-def _entry_contract_checked(root):
+def _book(root, book_months):
+    """bot_rows' book_months for one root: None (calendar) or {root: months}."""
+    return None if book_months is None else {str(root).upper(): set(book_months)}
+
+
+def _entry_contract_checked(root, book_months=None):
     """entry_contract() on the worker snapshot, which must have been read after
     the last send settled — else a just-opened or just-closed month would be
     misread (EntryDeferred: the entry waits a round, nothing is sent)."""
@@ -203,7 +208,7 @@ def _entry_contract_checked(root):
     if not ok:
         raise EntryDeferred("the 統一 snapshot has not caught up with the last order — the entry "
                             "waits for it to pick its contract month")
-    return entry_contract(root, bot_position_rows())
+    return entry_contract(root, bot_position_rows(book_months=_book(root, book_months)))
 
 
 def _listed(api, root):
@@ -250,13 +255,13 @@ def _send_lock():
     return _os_lock(SEND_LOCK_PATH, 30, "send lock")
 
 
-def _claim(symbol, action, lots, intent):
+def _claim(symbol, action, lots, intent, book_months=None):
     """Pick the contract and write its send marker under the machine-wide lock
     — every order path (reconciler, flatten, agent scripts) comes through here
     before logging in. Returns the productid."""
     with _send_lock():
-        pid = (_checked_close(symbol, action, lots) if intent == "reduce"
-               else _entry_contract_checked(symbol))
+        pid = (_checked_close(symbol, action, lots, book_months) if intent == "reduce"
+               else _entry_contract_checked(symbol, book_months))
         _mark_order_sent(pid)
     _request_snapshot_refresh()  # the worker re-reads once the send has settled
     return pid
@@ -274,7 +279,7 @@ def _mark_order_sent(productid):
                              f"not sending")
 
 
-def _checked_close(symbol, action, lots):
+def _checked_close(symbol, action, lots, book_months=None):
     """The productid a close of `lots` by `action` goes to — only when the
     snapshot shows a position on the other side, at least that large, read
     after this contract's last order settled. Anything else is refused (never
@@ -285,7 +290,7 @@ def _checked_close(symbol, action, lots):
         raise ValueError(f"{symbol!r} is not TXF/MXF/TMF or a month contract code")
     # the bot's rows only: a settled month (cash-settled) or the user's own month is
     # never closed, and its presence does not block closing the bot's
-    rows = bot_position_rows()
+    rows = bot_position_rows(book_months=_book(sym[:3], book_months))
     hits = [r for r in rows if (r["productid"] == sym if PROD_RE.match(sym) else r["root"] == sym)]
     if not hits:
         raise PresidentError(f"no open {sym} position in the 統一 snapshot — nothing to close")
@@ -476,7 +481,7 @@ def _await(reports, seq, lots, timeout, fields):
 
 
 def place_futures_market_order(env, symbol, action, lots, intent, client_tag=None,
-                               confirm_timeout=15):
+                               confirm_timeout=15, book_months=None):
     """One market IOC order.
 
     symbol: TXF / MXF / TMF — an entry goes to the computed near month with
@@ -485,7 +490,10 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
     month code like TXFJ6 is also accepted for a reduce). action:
     'buy'|'sell'. lots: int ≥ 1. intent: 'entry'|'reduce', REQUIRED ('entry'
     is HALT-blocked). client_tag: ≤10 alphanumeric chars, refused if already
-    sent today.
+    sent today. book_months: the contract months ('2026-10') the caller's book
+    holds for this root — only those rows are the bot's (a close goes to one of
+    them, an entry adds to one or goes to the computed near month); None = no
+    book, the calendar decides (lib/president_contracts).
 
     Returns {'status': 'filled'|'sent', 'symbol' (the month contract),
     'fill_qty', 'avg_fill_price', 'seq', 'orderno', 'ack'}; raises
@@ -514,7 +522,7 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
 
     reports = _Reports()
     with _tag_guard(client_tag) as record_tag:
-        fields["symbol"] = _claim(sym, action, lots, intent)
+        fields["symbol"] = _claim(sym, action, lots, intent, book_months)
         with _session(env) as api:
             if intent == "entry":
                 _require_listed(fields["symbol"], _listed(api, sym))
@@ -556,16 +564,18 @@ def format_qty(env: dict, symbol: str, qty: float, price: float = None) -> str:
 
 
 def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
-                           client_order_id: str = None):
+                           client_order_id: str = None, book_months=None):
     """Reduce-only close of `qty` lots of the position held in `symbol` (TXF /
-    MXF / TMF, or its month code). `direction` is the position being closed."""
+    MXF / TMF, or its month code). `direction` is the position being closed;
+    book_months as in place_futures_market_order."""
     lots = int(round(float(qty)))
     if lots < 1:
         raise ValueError(f"president: {qty} lots is below the 1-lot minimum")
     action = "sell" if direction == "long" else "buy"
     result = place_futures_market_order(
         env, symbol, action, lots, intent="reduce",
-        client_tag=_tag_for(client_order_id) if client_order_id else None)
+        client_tag=_tag_for(client_order_id) if client_order_id else None,
+        book_months=book_months)
     # the broker's own codes travel with the close as with an entry (the 10-02
     # live close came back without them: this mapping dropped them)
     return {

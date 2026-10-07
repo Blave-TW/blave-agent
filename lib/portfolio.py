@@ -1,5 +1,5 @@
 import glob, hashlib, inspect, json, logging, os, re, time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from lib import guard, venue_traits
 
@@ -215,6 +215,9 @@ def _load_ledger_seed():
                        'ts': str(v.get('ts') or ''),
                        'venue': venue,
                        'symbol': k.split('|', 1)[1] if venue and '|' in k else k}
+            if isinstance(v.get('months'), dict):
+                # contract month -> signed lots (TW futures, see _ledger_walk)
+                rows[k]['months'] = {str(m): float(q) for m, q in v['months'].items()}
         pending = raw.get('pending')
         resets = raw.get('venue_reset')
         accounts = raw.get('venue_account')
@@ -1091,10 +1094,16 @@ def _ledger_walk(venue=_CURRENT):
     """
     seed = _load_ledger_seed()
     book, notes = {}, {}
+    month_fns = {}
 
     def _row(symbol):
         return book.setdefault(symbol, {'qty': 0.0, 'cost': 0.0, 'legacy': False,
                                         'gross': 0.0, 'netted': 0.0})
+
+    def _month_fn(exchange):
+        if exchange not in month_fns:
+            month_fns[exchange] = _contract_month_fn(exchange)
+        return month_fns[exchange]
 
     def _note(symbol, **kw):
         notes.setdefault(symbol, {}).update(kw)
@@ -1122,6 +1131,8 @@ def _ledger_walk(venue=_CURRENT):
         elif abs(srow['size']) > 1e-9:
             r['legacy'] = True
             _note(symbol, old_format=True, legacy='seed row has no qty')
+        if _month_fn(srow['venue'] or venue):
+            _months_seed(r, srow)
 
     def _tol(r):
         return max(1e-12, 1e-9 * r['gross'])
@@ -1141,6 +1152,8 @@ def _ledger_walk(venue=_CURRENT):
             r['qty'] = r['cost'] = 0.0
         if flat_qty:
             r['netted'] = 0.0
+            if 'months' in r:
+                r['months'], r['guess'] = {}, False
         elif r['qty'] * r['cost'] < 0:
             r['legacy'] = True
             _note(symbol, legacy='qty and cost on opposite sides')
@@ -1194,6 +1207,7 @@ def _ledger_walk(venue=_CURRENT):
             if not d and not sq:
                 continue
             r = _row(symbol)
+            before = r['qty']
             if not new_fmt:
                 _note(symbol, old_format=True)
                 if sq is None and not r['legacy']:
@@ -1240,15 +1254,146 @@ def _ledger_walk(venue=_CURRENT):
                 r['cost'] = d * (over / sq)
                 r['qty'] = over
                 r['netted'] = 0.0
+            fn = _month_fn(entry.get('exchange') or venue)
+            if fn:
+                _months_step(r, before, sq, fn(leg.get('resolved_symbol')), entry.get('ts'))
 
     for symbol, r in book.items():
         _settle(symbol, r)
     # 12 significant digits: 0.003 + 0.007 is 0.009999999999999998 in floats,
     # and an order lib flooring THAT to a 0.001 step closes 0.009 of a 0.01
     # position. Far finer than any venue's step, far coarser than the noise.
-    return ({k: {'qty': float(f"{r['qty']:.12g}"), 'cost': r['cost'],
-                 'legacy': r['legacy'], 'netted': float(f"{r['netted']:.12g}")}
-             for k, r in book.items()}, notes)
+    out = {}
+    for k, r in book.items():
+        out[k] = {'qty': float(f"{r['qty']:.12g}"), 'cost': r['cost'],
+                  'legacy': r['legacy'], 'netted': float(f"{r['netted']:.12g}")}
+        if 'months' in r:
+            out[k]['months'] = {m: float(f"{q:.12g}") for m, q in r['months'].items()}
+            out[k]['guess'] = r['guess']
+    return out, notes
+
+
+# ── contract months (TW futures) ─────────────────────────────────────────────
+# A futures book row also says which contract month its lots are in, so the bot
+# closes and counts only its own month (the user's other months are theirs) and
+# a cash settlement can be booked (settle_expired_months). The month comes from
+# each fill's `resolved_symbol` (群益 TX2610, 統一 TXFJ6) through the venue
+# account lib's contract_month(); a venue without one (crypto) has no months
+# and its rows are exactly what they were. A lot with no recorded month (a fill
+# from before resolved_symbol, a seed row) is put in the front month at its
+# timestamp and the row marked `guess`: a guessed month is never used to call
+# another month the user's (book_months_of answers None for it), only to see a
+# settlement that left the account holding nothing of that root.
+
+def _contract_month_fn(venue):
+    if not venue_traits.has(venue, 'hand_wired'):
+        return None
+    import importlib
+    try:
+        return getattr(importlib.import_module(f"lib.account_{venue}"), 'contract_month', None)
+    except ImportError:
+        return None
+
+
+def _front_ym_at(ts):
+    from lib import president_contracts as tw
+    try:
+        at = datetime.fromisoformat(str(ts)).replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        at = None
+    return tw.front_ym(at)
+
+
+def _months_seed(r, srow):
+    r['months'], r['guess'] = {}, False
+    if abs(r['qty']) <= 1e-9 or r['legacy']:
+        r['guess'] = bool(r['legacy'])
+        return
+    months = srow.get('months') or {}
+    if months and abs(sum(months.values()) - r['qty']) <= 1e-9:
+        r['months'] = dict(months)
+    else:
+        r['months'], r['guess'] = {_front_ym_at(srow['ts']): r['qty']}, True
+
+
+def _months_step(r, before, q, month, ts):
+    """Move one fill of `q` lots (month = the contract it filled in, None if not
+    recorded) into r['months'], after r['qty'] went from `before` to its value."""
+    tol = 1e-9
+    after = r['qty']
+    months = r.setdefault('months', {})
+    r.setdefault('guess', False)
+    if r['legacy'] or q is None:
+        r['months'], r['guess'] = {}, True  # a quantity that cannot be known has no month
+        return
+    if abs(after) <= tol:
+        r['months'], r['guess'] = {}, False
+        return
+    guessed = month is None
+    if abs(before) <= tol or before * after < 0:  # opened, or sold through zero
+        r['months'], r['guess'] = {month or _front_ym_at(ts): after}, guessed
+        return
+    if before * q > 0:
+        month = month or _front_ym_at(ts)
+        months[month] = months.get(month, 0.0) + q
+        r['guess'] = r['guess'] or guessed
+    else:
+        # a close takes from the month it was sent to, then from the others
+        take = abs(q)
+        for m in ([month] if month in months else []) + sorted(k for k in months if k != month):
+            t = min(take, abs(months[m]))
+            months[m] -= t if months[m] > 0 else -t
+            take -= t
+            if take <= tol:
+                break
+    gap = after - sum(months.values())
+    if abs(gap) > tol:
+        m = max(months, key=lambda k: abs(months[k])) if months else _front_ym_at(ts)
+        months[m] = months.get(m, 0.0) + gap
+        r['guess'] = True
+    r['months'] = {m: v for m, v in months.items() if abs(v) > tol}
+
+
+def book_months_of(rows):
+    """{symbol: {'YYYY-MM', …} | None} from ledger_positions() rows that carry
+    months (TW futures) — what lib.president_contracts.bot_rows and the 群益
+    read take as `book_months`. None for a row whose month was guessed, and
+    for a row with no months at all (a book replayed with no venue to ask,
+    book_venue() None): the calendar keeps deciding that root, as before
+    months were recorded. Leaving such a row out would read as "the book
+    holds none of this root" and turn the bot's own lots into manual ones."""
+    out = {}
+    for symbol, row in (rows or {}).items():
+        if 'months' not in row or row.get('months_guess'):
+            out[symbol] = None
+            continue
+        out[symbol] = set(row['months'])
+    return out
+
+
+def book_months(venue=_CURRENT, config=None):
+    """book_months_of(ledger_positions(venue)), or None when there is no book to
+    ask (the account-read mode, no baseline yet, an unreadable book)."""
+    try:
+        config = load_portfolio_config() if config is None else config
+        if not (own_positions_only(config) and book_ready(config)):
+            return None
+        return book_months_of(ledger_positions(venue))
+    except Exception as e:
+        logging.warning(f"[ledger] book months unreadable ({type(e).__name__}: {e}) — "
+                        f"the calendar decides which contract months are the bot's")
+        return None
+
+
+def past_settlement(row, now=None):
+    """True when every contract month an account row carries (`months`, TW
+    futures) has passed its settlement time — such a row can vanish from the
+    account without anything being wrong (cash settlement)."""
+    months = (row or {}).get('months') if isinstance(row, dict) else None
+    if not months:
+        return False
+    from lib import president_contracts as tw
+    return all(tw.settled_by_time(m, now) for m in months)
 
 
 def ledger_book(venue=_CURRENT):
@@ -1284,6 +1429,12 @@ def ledger_positions(venue=_CURRENT):
                        'netted': r.get('netted', 0.0)}
         if r['legacy']:
             out[symbol]['legacy'] = True
+        if 'months' in r:
+            # signed lots per contract month ('2026-10'); months_guess = some of
+            # it has no recorded month (see _ledger_walk)
+            out[symbol]['months'] = dict(r['months'])
+            if r['guess']:
+                out[symbol]['months_guess'] = True
     return out
 
 
@@ -1384,6 +1535,198 @@ def apply_ledger_writeoff(symbol, reason, venue=_CURRENT, **detail):
     guard.audit('ledger_writeoff', symbol=symbol, reason=reason,
                 qty=row.get('qty', 0), cost=round(row.get('cost', 0) or 0, 2),
                 **detail)
+
+
+def settle_expired_months(actual, venue=_CURRENT, now=None):
+    """Book a TW futures cash settlement: a contract month the book holds whose
+    settlement time (third Wednesday 13:30 Taipei) has passed and that the
+    account no longer holds is dropped from the book — audit `ledger_settled`,
+    no notification (an expected roll, not a mismatch) — and the next diff
+    re-enters the target in the month trading now. Every round, not only on a
+    close: with the signal unchanged nothing else would ever notice.
+
+    Still held past its settlement time = a holiday-postponed settlement (or a
+    residue the venue lib already left out of `actual`): kept. 統一 lists its
+    contracts (account_president.listed_months): a month it still lists is
+    kept, an unread list decides nothing this round. 群益 has no list, so an
+    absent row is the evidence. Either way two reads ≥ _ACCOUNT_SHORT_MIN_S
+    apart (note_account_short) — one row dropped from one answer must not book
+    a live position away. A guessed month (no resolved_symbol on its fill)
+    counts only when the account holds nothing of that root at all.
+    Returns the symbols whose book changed."""
+    venue = _resolve_venue(venue)
+    if not _contract_month_fn(venue):
+        return set()
+    import importlib
+    from lib import president_contracts as tw
+    try:
+        listed_fn = getattr(importlib.import_module(f"lib.account_{venue}"), 'listed_months', None)
+    except ImportError:
+        listed_fn = None
+    changed = set()
+    for symbol, r in _ledger_walk(venue)[0].items():
+        months = r.get('months') or {}
+        held_row = (actual or {}).get(symbol) or {}
+        held = held_row.get('months') or {}
+        gone = []
+        for m in months:
+            if not tw.settled_by_time(m, now) or m in held:
+                continue
+            if r.get('guess') and float(held_row.get('size') or 0):
+                continue
+            if listed_fn:
+                try:
+                    listed = listed_fn(symbol)
+                except Exception:
+                    listed = None
+                if listed is None or m in listed:
+                    continue
+            gone.append(m)
+        key = f"{symbol}#settled"
+        if not note_account_short(key, bool(gone)):
+            continue
+        note_account_short(key, False)
+        keep = {m: q for m, q in months.items() if m not in gone}
+        _rebase_ledger_symbol(symbol, venue, keep)
+        pending = _load_account_short()
+        if pending.pop(symbol, None):
+            _save_account_short(pending)  # that short read was the settlement
+        lots = sum(q for m, q in months.items() if m in gone)
+        logging.warning(f"[ledger] {symbol}: {lots:+g} lots in {', '.join(sorted(gone))} "
+                        f"cash-settled — off the book; the target re-enters in the month trading now")
+        guard.audit('ledger_settled', symbol=symbol, venue=venue, months=sorted(gone), qty=lots,
+                    guessed=bool(r.get('guess')))
+        changed.add(symbol)
+    return changed
+
+
+def _rebase_ledger_symbol(symbol, venue, months, qty=None):
+    """One symbol's book restarts now at `months` ({} = flat) — a lots row,
+    so its cost is its quantity. With `qty` and months=None the lots have no
+    known month (the seed row is then read as a guessed front month)."""
+    guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
+    seed = _load_ledger_seed()
+    qty = float(sum(months.values())) if qty is None else float(qty)
+    row = {'size': qty, 'qty': qty, 'ts': datetime.utcnow().isoformat(), 'venue': venue,
+           'symbol': symbol}
+    if months is not None:
+        row['months'] = dict(months)
+    seed['symbols'][_seed_key(symbol, venue)] = row
+    _save_ledger_seed(seed)
+
+
+def hand_wired_reduce_cap(symbol, sub_diff, book_signed, account_row, venue=_CURRENT,
+                          book_row=None):
+    """(signed lots to send, writeoff reason | None) for a self_ledger reduce
+    leg on a hand-wired venue (lib.venue_traits: 群益, 統一). Neither refuses a
+    close larger than what is held the way a crypto reduce-only order is
+    refused: 群益 sends sNewClose=2 (auto new/close), so the rest OPENS the
+    other side; 統一 refuses it locally, every round, and the book is never
+    corrected. So, on the round's own account read (lots): never more than
+    the account holds, and an unconfirmed empty read sends nothing.
+
+    This rule has split from the crypto one on purpose — do not "align" them.
+    lib.venue_wiring._book_reduce_qty still sends min(book, account), does not
+    count a manual close as part of the reduce, and never rebases the book on
+    a partial reduce (the venue's reduce-only refusal is its safety net).
+    Here the lots the account is short of the book (the user closed them by
+    hand) already did that much of the reduce, so only the rest is sent: book
+    3, account 2, target 1 sends 1, not 2. On a confirmed short read
+    (note_account_short) a full close writes the rest of the book off after
+    its fill (the reason returned); a partial one brings the book down to what
+    the account holds right here, before the send — otherwise the gap is never
+    reconciled until the next flat and every later add stacks on a book that
+    is wrong.
+
+    What that rebase trusts: two short reads ≥ _ACCOUNT_SHORT_MIN_S apart AND
+    the contract months lining up — the account's months of this root (the
+    read row's, plus the months the venue read left out as the user's,
+    note_manual_read) must meet the book's. An account that holds this root
+    only in months the book does not hold is not a manual close, it is a read
+    the book cannot be corrected from (a month the venue lib misjudged, a
+    snapshot behind): nothing is sent, nothing rebased, one order_error asks
+    for a human (audit `ledger_month_mismatch`). A read that is simply wrong
+    in the SAME month (fewer lots than are really there) cannot be told from
+    a manual close and is rebased to — the reconciler's snapshot_caught_up
+    gate keeps a post-order snapshot out of here. Lives here, not in the
+    reconciler's blocks, so a hand-edited reconciler still gets it."""
+    owned, want = abs(book_signed), abs(sub_diff)
+    row = account_row or {}
+    side = 'long' if book_signed > 0 else 'short'
+    held = float(row.get('size') or 0) if row.get('side') == side else 0.0
+    short = held < owned - 1e-9
+    confirmed = note_account_short(symbol, short)
+    send = max(0.0, min(want - max(0.0, owned - held), held))
+    reason = None
+    if short and want < owned - 1e-9:
+        venue = _resolve_venue(venue)
+        mismatch = _months_mismatch(symbol, venue, book_row, row)
+        if mismatch:
+            if confirmed:
+                _note_months_mismatch(symbol, venue, book_signed, held, *mismatch)
+            return 0.0, None
+        if confirmed:
+            _rebase_to_account(symbol, venue, book_signed, held, row,
+                               'account short of the book on a partial reduce')
+    elif confirmed and short:
+        reason = 'account holds none of it' if held <= 0 else 'account held less than the book'
+    return (send if sub_diff > 0 else -send), reason
+
+
+# {venue: {root: {'YYYY-MM': signed lots}}} — the contract months the venue read
+# left out of `actual` as the user's (the reconciler's manual rows), per read
+_MANUAL_READ = {}
+_mismatch_noted = set()
+
+
+def note_manual_read(venue, by_root):
+    """The venue read's manual months this round (see hand_wired_reduce_cap):
+    replaces the venue's previous read, {} = none left out."""
+    _MANUAL_READ[venue] = {str(k): dict(v or {}) for k, v in (by_root or {}).items()}
+
+
+def _months_mismatch(symbol, venue, book_row, row):
+    """(book months, account months) when the two do not meet, else None.
+    No check without a book row that carries months, or on a guessed book."""
+    book = book_row or {}
+    if not book.get('months') or book.get('months_guess'):
+        return None
+    acct = set(row.get('months') or {}) | set(_MANUAL_READ.get(venue, {}).get(symbol, {}))
+    if not acct or acct & set(book['months']):
+        return None
+    return sorted(book['months']), sorted(acct)
+
+
+def _note_months_mismatch(symbol, venue, book_signed, held, book_months, acct_months):
+    key = (venue, symbol, tuple(book_months), tuple(acct_months))
+    if key in _mismatch_noted:
+        return
+    _mismatch_noted.add(key)
+    logging.error(f"[ledger] {symbol}: book {book_signed:+g} lots in {', '.join(book_months)}, "
+                  f"the account holds this root only in {', '.join(acct_months)} — not a manual "
+                  f"close: nothing sent, book not corrected, needs a human")
+    guard.audit('ledger_month_mismatch', symbol=symbol, venue=venue, book=book_signed, held=held,
+                book_months=book_months, account_months=acct_months)
+    _record_order_error(symbol, venue, f"帳本與帳戶月份對不上,待人工核對:帳本 {book_signed:+g} 口在 "
+                                       f"{'、'.join(book_months)},帳戶只有 {'、'.join(acct_months)}"
+                                       f"——本輪不減倉、帳本不動")
+
+
+def _rebase_to_account(symbol, venue, book_signed, held, row, reason):
+    signed = held if book_signed > 0 else -held
+    months = row.get('months') if row.get('side') == ('long' if book_signed > 0 else 'short') else {}
+    if not isinstance(months, dict) or abs(sum(months.values()) - signed) > 1e-9:
+        months = None  # a month split that does not add up is not trusted: guessed front month
+    _rebase_ledger_symbol(symbol, venue, months, qty=signed)
+    seen = _load_account_short()
+    short = seen.pop(symbol, None)
+    if short:
+        _save_account_short(seen)
+    logging.warning(f"[ledger] {symbol}: book {book_signed:+g} lots, the account holds {signed:+g} "
+                    f"— book brought down to the account ({reason})")
+    guard.audit('ledger_writeoff', symbol=symbol, reason=reason, partial=True, venue=venue,
+                qty=book_signed - signed, cost=book_signed - signed,
+                short_first=datetime.utcfromtimestamp(short['first']).isoformat() if short else None)
 
 
 def _report_ledger_adoption():
@@ -2340,6 +2683,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             pending_keys = _pending_symbols(None)
     if own_only and needs_baseline is None:
         _report_ledger_adoption()
+        settle_expired_months(actual)
         ledger = {_canon_key(k): v for k, v in (ledger_positions() or {}).items()}
         # A spot row without a quantity can never be sold (the wallet is one pool
         # of the bot's and the user's coins) and would read as "already bought"
@@ -2459,6 +2803,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             return place_order_fn(symbol, sub_diff, asset_spec, **kw)
         return place_order_fn(symbol, sub_diff, asset_spec)
 
+    ledger_venue = book_venue() if ledger is not None else None
     executed = []  # orders with ≥1 confirmed fill — the return value
     try:  # a lib.execute from before market markers: no marker, as before
         from lib.execute import (_remove_inflight_marker as unmark_inflight,
@@ -2560,6 +2905,25 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 failed = True
                 break
 
+            cap_writeoff = None
+            if (reduce_only and ledger is not None
+                    and venue_traits.has(order.get('exchange') or ledger_venue, 'hand_wired')):
+                capped, cap_writeoff = hand_wired_reduce_cap(
+                    symbol, sub_diff, a_signed, actual.get(symbol),
+                    venue=order.get('exchange') or ledger_venue, book_row=a)
+                if abs(capped) < 0.5:  # the hand-wired place_order's half-lot gate
+                    if cap_writeoff:
+                        apply_ledger_writeoff(symbol, cap_writeoff)
+                    elif account_short_pending(symbol):
+                        logging.warning(f"[reconcile] {symbol} close {sub_diff:+g} lots not sent — "
+                                        f"the account holds less than the book; waiting for "
+                                        f"a second read to confirm")
+                    continue
+                if abs(capped) < abs(sub_diff):
+                    logging.warning(f"[reconcile] {symbol} close {sub_diff:+g} lots capped to "
+                                    f"{capped:+g} — the account holds less than the book")
+                    sub_diff = capped
+
             # self_ledger flip: the close leg just read the account short of
             # the book and that is not confirmed yet (note_account_short), so
             # whether the old side is closed is not known. Opening the new side
@@ -2612,6 +2976,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                     # a legacy row has no quantity to check the close against;
                     # its close is where it ends (references/manager.md)
                     writeoff = 'legacy row closed'
+            if (cap_writeoff and not writeoff and isinstance(placed, dict)
+                    and float(placed.get('executed_qty') or 0) >= abs(sub_diff) - 1e-9):
+                writeoff = cap_writeoff
             if (isinstance(placed, dict) and placed.get('writeoff')
                     and not float(placed.get('executed_qty') or 0)):
                 # nothing was sent: no fill to log, no "Closed" to announce

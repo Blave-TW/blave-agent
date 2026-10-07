@@ -496,6 +496,68 @@ count, and the hand-wired capital path places exactly the orders it did before
 the quantity book (pinned in `tests/check_self_ledger_qty.py`). Not yet live-tested on a capital account — verify on the first
 real capital `self_ledger` deployment.
 
+**Hand-wired reduce legs (群益, 統一) are capped at the account**
+(`lib/portfolio.py::hand_wired_reduce_cap`, inside `reconcile()` so a hand-edited reconciler
+gets it too). 群益 orders go out with `sNewClose=2` (auto new/close), which never refuses a sell
+larger than the long held — the rest OPENS a short; 統一 refuses it locally and the book was
+never corrected. So a close never sends more than the account holds in that round's read
+(the months the book holds, see below), and lots the account is already short of the book
+(closed by hand) count as part of the reduce: book 3, account 2, target 1 sends 1, not 2. An
+account read short of the book goes through the same `note_account_short` two-read
+confirmation as the crypto wiring, with one difference: an unconfirmed empty read sends NOTHING
+(crypto sends the book's quantity and lets the venue's reduce-only refuse it). A confirmed short
+on a full close writes the rest off (`apply_ledger_writeoff`); on a partial reduce the book is
+brought down to what the account holds before the send (audit `ledger_writeoff` with
+`partial: true`). A flip's entry leg waits for that confirmation (`account_short_pending`).
+
+What that rebase trusts is two things, and only two: the two reads, and the contract months
+lining up. The account's months of that root (the read row's, plus the months the venue read
+left out as the user's — the reconciler hands them to `lib.portfolio.note_manual_read`) must
+meet the book's. An account that holds the root only in months the book does not hold is not a
+manual close but a read the book cannot be corrected from (a month the venue lib misjudged, a
+snapshot behind): nothing is sent, nothing rebased, one `order_error` asks for a human (audit
+`ledger_month_mismatch`; `tests/check_capital_ledger_paths.py` A6). A read that is wrong in the
+SAME month — fewer lots than are really there, twice ≥5 s apart — cannot be told from a manual
+close and IS rebased to; the reconciler's `snapshot_caught_up` gate keeps a post-order snapshot
+out, so that needs the broker's own position feed to lag. Known, accepted:
+- a manual close with the signal unchanged is not noticed (no reduce leg reads the account);
+- one wrong short read makes a partial reduce send that many lots fewer and converge a round
+  later (book 3, real 3, one read of 2, target 1: sends 1, then 1 next round — a full close is
+  not affected);
+- the user closing ALL by hand while the signal only reduces part way: the book is rebased to 0
+  on the confirmed read and the bot re-enters its target next round (the book follows the
+  account, the signal is still on). Pinned in `tests/check_capital_ledger_paths.py`, which drives
+`reconcile()` with the daemon's own `_get_positions_guarded` / `place_order`.
+
+**Contract months (hand-wired TW futures: 群益, 統一).** A book row also records which contract
+month its lots are in (`ledger_positions()` rows carry `months`: `{'2026-10': 2.0}`), taken from
+each fill leg's `resolved_symbol` through the venue account lib's `contract_month()`; crypto rows
+have no months and are unchanged. A lot with no recorded month (a fill from before
+`resolved_symbol`, a seed row) goes into the front month at its timestamp and the row carries
+`months_guess` — a guessed month is never used to call another month the user's. What the months
+decide:
+- **Ownership.** With a book, only the months it holds are the bot's: the reconciler's read of
+  either venue leaves every other month out (audit `manual_month_excluded`; P2 candidate, no
+  `notifications.md` event type yet) — a far month the user opened stays theirs after it becomes
+  the front month, and it no longer nets the bot's own month away. No book (no baseline, a guessed
+  month) → the old rule (群益: every month netted; 統一: the calendar).
+- **Close vs entry** is the book's split (reconcile), never re-done against the broker's net in
+  the venue block; 統一 closes go to the book's month (`book_months` into `lib/order_president`,
+  also from `manager/flatten.py`).
+- **Settlement is a book event, not a mismatch** (`settle_expired_months`, every round, signal
+  changed or not): a book month past its settlement time (third Wednesday 13:30 Taipei) that the
+  account no longer holds — and, on 統一, that the broker's contract list no longer carries (list
+  unread → nothing decided) — read so twice ≥5 s apart, leaves the book (audit `ledger_settled`,
+  no notification) and the target re-enters in the month trading now. Still held past that time =
+  a holiday-postponed settlement, kept. A guessed month counts only when the account holds nothing
+  of that root. The account guard skips a previous-round row whose every month is past its
+  settlement time, so a settlement — after a failed read or a restart too — never trips the
+  "positions read back empty" HALT.
+- **Known gap:** an entry that nets into the user's opposite lots in the same month is not
+  recorded (no `netted_qty` for futures), so the exit does not hand them back. Two machines on one
+  account trading the same root net into each other the same way (see
+  `references/president-broker.md`).
+
 **Fixed (2026-08-20, audit P0-2):** `reconcile()` used to log the leg's
 PRE-rounding `sub_diff`, not what actually filled — on capital this drifted
 the ledger by up to half a lot every round, permanently (crypto was thought to

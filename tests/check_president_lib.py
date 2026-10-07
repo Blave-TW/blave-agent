@@ -490,6 +490,32 @@ keep, residue, manual = pc.bot_rows([R("TXFJ6"), R("TXFL6", -1), R("MXFL6")], No
 check([r["productid"] for r in keep] == ["TXFJ6"] and not residue
       and [r["productid"] for r in manual] == ["TXFL6", "MXFL6"],
       "manual far months are set apart (never raised): the bot's J6 is still kept", (keep, manual))
+# a flip's entry leg never goes out behind an unconfirmed close only because the close
+# returns (confirm_timeout) before any snapshot can have started ORDER_SETTLE_S after it,
+# so the entry always meets EntryDeferred and waits for a read that shows the close
+import ast as _ast  # noqa: E402
+import inspect as _inspect  # noqa: E402
+_ct = _inspect.signature(op.place_futures_market_order).parameters["confirm_timeout"].default
+
+
+def _call_kwargs(tree):
+    return {k.arg for n in _ast.walk(tree) if isinstance(n, _ast.Call) for k in n.keywords}
+
+
+_rec_fn = next(n for n in _ast.walk(_ast.parse(open(os.path.join(ROOT, "manager", "reconciler.py")).read()))
+               if isinstance(n, _ast.FunctionDef) and n.name == "_president_place_order")
+check(_ct < president_vault.ORDER_SETTLE_S and "confirm_timeout" not in _call_kwargs(_rec_fn)
+      and "confirm_timeout" not in _call_kwargs(_ast.parse(_inspect.getsource(op.close_position_partial))),
+      f"confirm_timeout ({_ct}s, the default every caller uses) < ORDER_SETTLE_S "
+      f"({president_vault.ORDER_SETTLE_S}s): a flip's entry always defers behind its close")
+from lib.portfolio import book_months_of  # noqa: E402
+bm = book_months_of({"TXF": {"side": "long", "size": 2.0, "qty": 2.0},
+                     "MXF": {"side": "long", "size": 1.0, "qty": 1.0, "months": {"2026-10": 1.0}}})
+keep, residue, manual = pc.bot_rows([R("TXFJ6", 2), R("MXFJ6")], None, T(2026, 10, 1, 10, 0), book_months=bm)
+check(bm == {"TXF": None, "MXF": {"2026-10"}} and not manual
+      and [r["productid"] for r in keep] == ["TXFJ6", "MXFJ6"],
+      "a book row with no months (replayed with no venue) leaves its root to the calendar — "
+      "never 'the book holds none of it', which made the bot's own lots manual", (bm, manual))
 check(raises(op.PresidentError, lambda: op.entry_contract(
     "TXF", ROWS_J + [{"root": "TXF", "productid": "TXFK6", "net": 1}], T(2026, 10, 21, 9, 0))) is not None,
       "two months already held → no entry")
@@ -761,28 +787,34 @@ op.place_futures_market_order = fake_place
 try:
     open(op.LAST_ORDER_PATH, "w").write("{}")
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
-    check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 2.0, "exchange": "president"}},
-          "routed to president → the worker snapshot, in lots", reconciler.get_positions())
+    check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 2.0, "exchange": "president",
+                                                 "months": {"2026-10": 2.0}}},
+          "routed to president → the worker snapshot, in lots, with its contract month",
+          reconciler.get_positions())
+    # reconcile() splits a diff by the BOOK before it gets here: a reduce_only leg is a
+    # close (already capped at the account), anything else an entry — the broker's net
+    # never turns an entry into a close of lots the book does not own
     sent_legs.clear()
     r = reconciler.place_order("TMF", -3.4, exchange="president")
-    check(sent_legs == [("TMF", "sell", 2, "reduce"), ("TMF", "sell", 1, "entry")] and r["executed_qty"] == 3,
-          "a flip: close the held 2, then open 1 short", sent_legs)
+    check(sent_legs == [("TMF", "sell", 3, "entry")] and r["executed_qty"] == 3,
+          "a leg that is not reduce_only is an entry, whatever the broker holds", sent_legs)
     sent_legs.clear()
-    reconciler.place_order("TMF", -3, exchange="president", reduce_only=True)
-    check(sent_legs == [("TMF", "sell", 2, "reduce")], "reduce_only: the close leg only", sent_legs)
+    reconciler.place_order("TMF", -2, exchange="president", reduce_only=True)
+    check(sent_legs == [("TMF", "sell", 2, "reduce")], "reduce_only: a close of that size", sent_legs)
     sent_legs.clear()
     FILL["reduce"] = "sent"
-    r = reconciler.place_order("TMF", -3, exchange="president")
-    check(sent_legs == [("TMF", "sell", 2, "reduce")] and r["status"] == "sent",
-          "an unconfirmed close → no entry behind it", sent_legs)
+    r = reconciler.place_order("TMF", -2, exchange="president", reduce_only=True)
+    check(sent_legs == [("TMF", "sell", 2, "reduce")] and r["status"] == "sent" and r["executed_qty"] == 0,
+          "an unconfirmed close comes back 'sent' with nothing filled", r)
     FILL.clear()
     sent_legs.clear()
     reconciler.place_order("TMF", 0.4, exchange="president")
     check(sent_legs == [], "under half a lot → nothing")
     open("state/HALT", "w").write("{}")
     sent_legs.clear()
-    reconciler.place_order("TMF", -3, exchange="president")
-    check(sent_legs == [("TMF", "sell", 2, "reduce")], "HALT: the close goes, the flip's entry does not", sent_legs)
+    reconciler.place_order("TMF", -2, exchange="president", reduce_only=True)
+    reconciler.place_order("TMF", -1, exchange="president")
+    check(sent_legs == [("TMF", "sell", 2, "reduce")], "HALT: the close goes, the entry does not", sent_legs)
     os.remove("state/HALT")
 
     def entry_fails(env, sym, action, lots, intent, **kw):
@@ -790,20 +822,21 @@ try:
             raise op.PresidentError("contract TMFK6 is not in the broker's contract list")
         return fake_place(env, sym, action, lots, intent)
     op.place_futures_market_order = entry_fails
-    r = reconciler.place_order("TMF", -3, exchange="president")
-    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
-    check(isinstance(r, dict) and r["executed_qty"] == 2 and "反向開倉失敗" in errs[-1]["error"],
-          "close filled + entry failed: the close is returned for the book, the entry failure recorded", r)
+    check(raises(op.PresidentError, lambda: reconciler.place_order("TMF", -1, exchange="president"))
+          is not None, "a refused entry raises (reconcile records it as the order error)")
+
     def entry_deferred(env, sym, action, lots, intent, **kw):
         if intent == "entry":
             raise op.EntryDeferred("settlement window: snapshot not caught up")
         return fake_place(env, sym, action, lots, intent)
     op.place_futures_market_order = entry_deferred
-    n_err = len(json.load(open("manager/order_errors.json", encoding="utf-8")))
-    r = reconciler.place_order("TMF", -3, exchange="president")
-    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
-    check(isinstance(r, dict) and r["executed_qty"] == 2 and r["entry_deferred"] == 1 and len(errs) == n_err,
-          "settlement-window flip: the close is booked, the entry is 'deferred', no order_error", r)
+    n_err = len(json.load(open("manager/order_errors.json", encoding="utf-8"))
+                if os.path.exists("manager/order_errors.json") else [])
+    r = reconciler.place_order("TMF", -1, exchange="president")
+    errs = (json.load(open("manager/order_errors.json", encoding="utf-8"))
+            if os.path.exists("manager/order_errors.json") else [])
+    check(r is False and len(errs) == n_err,
+          "an entry behind a snapshot that has not caught up: skipped this round, no order_error", r)
 
     def unk(env, sym, action, lots, intent, **kw):
         r = fake_place(env, sym, action, lots, intent)
@@ -813,7 +846,8 @@ try:
     op.place_futures_market_order = unk
     snapshot([])
     r = reconciler.place_order("TMF", 1, exchange="president")
-    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
+    errs = (json.load(open("manager/order_errors.json", encoding="utf-8"))
+            if os.path.exists("manager/order_errors.json") else [])
     check(r["status"] == "unknown" and not any(e.get("kind") == "order_status_unknown" for e in errs)
           and len(errs) == n_err,
           "an unknown status stays 'unknown' in the result but never reaches order_errors "
@@ -833,18 +867,21 @@ pc._now = lambda now: _real_now(now or T(2026, 10, 21, 14, 0))  # 30 min after J
 open(op.LAST_ORDER_PATH, "w").write("{}")
 for listed in ({"TMF": ["TMFK6", "TMFL6"], "TXF": [], "MXF": []},):
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed=listed)
-    n_err = len(json.load(open("manager/order_errors.json", encoding="utf-8")))
+    n_err = len(json.load(open("manager/order_errors.json", encoding="utf-8"))
+                if os.path.exists("manager/order_errors.json") else [])
     check(reconciler.get_positions() == {}, "residue J6 (list read, without J6) reads as no position")
     NOW_LIST[:] = ["TMFK6"]
     api = use([ACK])
     reconciler.place_order("TMF", 1, exchange="president")
-    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
+    errs = (json.load(open("manager/order_errors.json", encoding="utf-8"))
+            if os.path.exists("manager/order_errors.json") else [])
     check([o.productid for o in api.sent] == ["TMFK6"] and len(errs) == n_err,
           "the entry goes to K6, nothing is sent to J6, no order_errors row",
           ([vars(o) for o in api.sent], errs[n_err:]))
     open(op.LAST_ORDER_PATH, "w").write("{}")
 snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed={"TMF": ["TMFJ6", "TMFK6"]})
-check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 1.0, "exchange": "president"}},
+check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 1.0, "exchange": "president",
+                                             "months": {"2026-10": 1.0}}},
       "past settlement but still listed (holiday-postponed) → still the bot's position")
 for listed in (None, {"TMF": [], "TXF": [], "MXF": []}):
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed=listed)
@@ -871,7 +908,8 @@ MIXED = [{"root": "TMF", "productid": "TMFK6", "net": 2, "net_current": 2},
          {"root": "TXF", "productid": "TXFL6", "net": 1, "net_current": 1}]
 MIXED_LISTED = {"TMF": ["TMFK6", "TMFL6"], "TXF": ["TXFK6", "TXFL6"], "MXF": ["MXFK6", "MXFL6"]}
 snapshot(MIXED, listed=MIXED_LISTED)
-check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 2.0, "exchange": "president"}},
+check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 2.0, "exchange": "president",
+                                             "months": {"2026-11": 2.0}}},
       "reconciler with manual TMFL6 + TXFL6 held: the bot's TMFK6 is read, TXF is not blocked")
 flat_pos = account_president.get_positions({})
 check(list(flat_pos) == ["TMF"] and flat_pos["TMF"]["productid"] == "TMFK6",

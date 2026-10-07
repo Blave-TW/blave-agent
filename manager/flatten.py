@@ -61,6 +61,7 @@ Semantics — panic button, not portfolio management:
     (zero_ledger_symbols) so the closes are never re-summed as bot trades.
 """
 import importlib
+import inspect
 import logging
 import os
 import re
@@ -85,6 +86,26 @@ LOCK_PATH = "state/flatten.lock"  # relative — this module chdir'd to the work
 ALREADY_RUNNING = "already_running"  # flatten()'s return when another one holds the lock
 EXIT_ALREADY_RUNNING = 3  # ...and the exit code for it, distinct from 1 = ran with errors
 _LOCK = None  # the open lock file, pinned for the life of the process (see _singleflight)
+
+
+def _takes(fn, name):
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
+def _book_months(vid, ledger):
+    """{key: contract months | None} the bot's book holds on a TW futures venue,
+    or None (no book, not such a venue, a lib.portfolio without months)."""
+    if ledger is None or not venue_traits.has(vid, "hand_wired"):
+        return None
+    try:
+        from lib.portfolio import book_months_of
+    except ImportError:
+        return None
+    return book_months_of(ledger)
 
 
 def _singleflight(path=None):
@@ -565,7 +586,13 @@ def flatten():
             continue
         try:
             acct = importlib.import_module(f"lib.account_{vid}")
-            positions = acct.get_positions(env)
+            months_by_key = _book_months(vid, ledger)
+            if months_by_key is not None and _takes(acct.get_positions, "book_months"):
+                # TW futures: only the contract months the book holds are the bot's
+                positions = acct.get_positions(env, book_months=months_by_key)
+            else:
+                months_by_key = None
+                positions = acct.get_positions(env)
         except Exception as e:
             logging.error(f"[{vid}] get_positions failed: {e}")
             _record_order_error("*", vid, f"close-all: get_positions failed: {e}")
@@ -709,7 +736,10 @@ def flatten():
                         logging.info(f"[{vid}] {sym} {side} {size} below minimum — dust left")
                         closed_symbols.add(key)  # dust is still "as flat as it gets"
                         continue
-                    result = order.close_position_partial(env, sym, side, size, client_order_id=cid)
+                    kw = {}
+                    if months_by_key is not None and _takes(order.close_position_partial, "book_months"):
+                        kw["book_months"] = months_by_key.get(key, set())
+                    result = order.close_position_partial(env, sym, side, size, client_order_id=cid, **kw)
             except Exception as e:
                 logging.error(f"[{vid}] close {p.get('symbol')} failed: {e}")
                 _record_order_error(_book_key(vid, sym) if sym else "?", vid, f"close-all: {e}")
@@ -737,6 +767,8 @@ def flatten():
                     # the quantity half of the book: a partial close reduces it by
                     # exactly what filled (the zeroing below then skips this key)
                     leg["signed_qty"] = -got if side == "long" else got
+                if result.get("resolved_symbol") and result.get("executed_qty"):
+                    leg["resolved_symbol"] = result["resolved_symbol"]  # the month that closed
             _append_reconciler_log({
                 "action": "SELL" if side == "long" else "BUY",
                 "symbol": key,

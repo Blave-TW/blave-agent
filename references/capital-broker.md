@@ -679,6 +679,26 @@ units in `references/lib.md`; do NOT hand-write SKCOM order calls anymore); reco
 the hand-wired signed-diff pattern per `references/manager.md`, and the reconciler service needs
 the `.\Administrator` ObjectName exception there (602).
 
+**Contract months and settlement in the book** (`references/manager.md` § Contract months): each
+fill's `resolved_symbol` (`TX2610`) puts its lots in a month (`lib/account_capital.contract_month`).
+With a book, the reconciler's 群益 read counts only the months the book holds — a month the user
+opened by hand is left out (audit `manual_month_excluded`) instead of netted into the bot's, which
+used to let a far-month manual short net the bot's near-month long to 0 and write it off. Orders
+still go out on the near-month alias (a far-month close during a roll can open the near month —
+known, accepted). 群益 gives no contract list here, so a book month past its settlement time
+(third Wednesday 13:30) counts as cash-settled once the account has no row of it on two reads ≥5 s
+apart; a row still held past that time is a postponed settlement and stays the bot's.
+**Unverified:** whether `GetOpenInterest` keeps a settled month's row after cash settlement (統一
+does; if 群益 does too, the book keeps that month as held and the strategy does not re-enter —
+check on the first real settlement day, 2026-10-21).
+**Known gap — same-month netting:** the account nets one contract month. If the user holds the
+opposite side in the month the bot enters, the bot's entry closes the user's lots at the broker and
+nothing records it (futures have no `netted_qty` yet), so the bot's exit does not hand them back
+(`tests/check_capital_ledger_paths.py` M2, known bug). Say it to the user in plain words before a
+群益 futures strategy goes live, and whenever they mention trading the same contract by hand: the bot
+cannot tell its lots from theirs inside one contract month; keep manual positions in another month or
+another root, never the opposite side in the month the bot trades.
+
 ### Account Snapshot Worker (`blave-agent-capital` service)
 
 The connect flow's `capital_finish` command installs and starts this service exactly as below
