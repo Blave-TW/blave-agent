@@ -51,13 +51,15 @@ flatten._wait_for_inflight = lambda *a, **k: []
 flatten._record_order_error = lambda *a, **k: ERRS.append(a)
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
                                       restart_stopped=lambda: False)
-FILL = {"swap": 0.004, "spot": 0.2}
+# the close fills above the entry's 70000: a book reduced by the fill's notional (the
+# format before signed_qty) and one reduced pro rata at its average cost then differ
+FILL = {"swap": 0.004, "spot": 0.2, "swap_px": 90000.0}
 acct = types.ModuleType("lib.account_okx")
 acct.get_positions = lambda env: [{"symbol": "BTCUSDT", "side": "long", "size": 0.01, "mark_price": 70000.0}]
 order = types.ModuleType("lib.order_okx")
 order.format_qty = lambda env, s, q: "1"
 order.close_position_partial = lambda env, sym, side, size, client_order_id=None: \
-    {"status": "canceled", "executed_qty": FILL["swap"], "avg_price": 70000.0}
+    {"status": "canceled", "executed_qty": FILL["swap"], "avg_price": FILL["swap_px"]}
 order.get_spot_balances = lambda env: {"ETH": 1.0}
 order.get_spot_price = lambda env, sym: 2000.0
 order.place_spot_market_order = lambda env, sym, side, base_qty=None, quote_qty=None, client_order_id=None: \
@@ -88,6 +90,14 @@ check(ok is False and any("未平完" in str(e) for e in ERRS),
       f"a 0.004 fill on a 0.01 close: close-all reports failure and says 未平完 ({ERRS[:1]})")
 check(abs(book.get("BTCUSDT", {}).get("qty", 0) - 0.006) < 1e-12,
       f"…the unfilled 0.006 stays the bot's in the book ({book.get('BTCUSDT')})")
+close_leg = [json.loads(x) for x in open("manager/orders.jsonl")
+             if json.loads(x).get("symbol") == "BTCUSDT"][-1]["legs"][0]
+check(close_leg.get("signed_qty") == -0.004,
+      f"…the close leg records signed_qty -0.004 ({close_leg})")
+check(abs(book.get("BTCUSDT", {}).get("size", 0) - 700.0 * 0.6) < 1e-6
+      and "old_format" not in pf._ledger_walk("okx")[1].get("BTCUSDT", {}),
+      f"…cost drops pro rata to 420 at the 70000 average, not by the 360 fill notional "
+      f"({book.get('BTCUSDT')})")
 check(abs(book.get("ETHUSDT@spot", {}).get("qty", 0) - 0.3) < 1e-12,
       f"spot: 0.2 sold of the bot's 0.5 — 0.3 stays in the book ({book.get('ETHUSDT@spot')})")
 FILL.update(swap=0.01, spot=0.5)

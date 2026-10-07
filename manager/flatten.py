@@ -764,11 +764,11 @@ def flatten():
                     leg["fill_price"] = result["avg_price"]
                 if result.get("executed_qty") is not None:
                     leg["executed_qty"] = result["executed_qty"]
-                if result.get("resolved_symbol") and result.get("executed_qty"):
-                    leg["resolved_symbol"] = result["resolved_symbol"]  # the month that closed
                     # the quantity half of the book: a partial close reduces it by
                     # exactly what filled (the zeroing below then skips this key)
                     leg["signed_qty"] = -got if side == "long" else got
+                if result.get("resolved_symbol") and result.get("executed_qty"):
+                    leg["resolved_symbol"] = result["resolved_symbol"]  # the month that closed
             _append_reconciler_log({
                 "action": "SELL" if side == "long" else "BUY",
                 "symbol": key,
