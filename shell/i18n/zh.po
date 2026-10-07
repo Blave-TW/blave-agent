@@ -6649,11 +6649,7 @@ msgstr "照信上抄就好，網址格式 Blave 會自己處理。帳號、密�
 msgid "pres.t.probe"
 msgstr "確認登入"
 
-msgid "pres.t.notReady"
-msgstr "測試環境這一段還沒接上，這一版先停在這裡。Blave 不會用正式主機登入，不會用掉統一的登入次數。"
 
-msgid "pres.t.fail"
-msgstr "測試主機沒有讓 Blave 登入。確認信上的網址與交易密碼後再試一次。"
 
 msgid "pres.t.orderDo"
 msgstr "Blave 會在測試環境下一筆微台 1 口買進。測試環境不會成交，也不動你的錢。"

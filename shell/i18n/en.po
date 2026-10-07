@@ -6645,11 +6645,7 @@ msgstr "Copy it as written; Blave handles the format. The account, password and 
 msgid "pres.t.probe"
 msgstr "Confirm login"
 
-msgid "pres.t.notReady"
-msgstr "The test environment step isn’t connected in this version yet, so the flow stops here. Blave won’t log in to the production host or use up a login attempt."
 
-msgid "pres.t.fail"
-msgstr "The test host didn’t let Blave log in. Check the address in the email and your trading password, then try again."
 
 msgid "pres.t.orderDo"
 msgstr "Blave places a buy of 1 Micro TAIEX in the test environment. It never fills and doesn’t touch your money."

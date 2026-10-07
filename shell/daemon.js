@@ -20,7 +20,7 @@ const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "creden
 // president_local(統一本機開通,shell/president_local.js)也只有主行程送:帳密在這裡封裝,renderer 碰不到密文以外的東西;
 // 它不在 api 的任何清單(runtime local_daemon.LOCAL_ONLY)
 const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local"]);
-const PRESIDENT_OPS = ["setup", "cert", "secrets", "probe", "start", "stop"];   // = runtime president_connect.LOCAL_OPS
+const PRESIDENT_OPS = ["setup", "cert", "secrets", "probe", "host", "test_order", "start", "stop"];   // = runtime president_connect.LOCAL_OPS
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
@@ -105,6 +105,8 @@ function argsOk(cmd, a, trusted) {
     if (PRESIDENT_OPS.indexOf(a.op) < 0) return false;
     if (a.op === "cert" || a.op === "secrets") return keys.length === 2 && typeof a.sealed === "string" && a.sealed.length > 0 && a.sealed.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(a.sealed);
     if (a.op === "probe") return keys.every((k) => k === "op" || k === "after_unlock") && (a.after_unlock === undefined || a.after_unlock === true);
+    // 主機只收兩種形狀;網址是不是統一那兩台由 runtime normalize_host 決定
+    if (a.op === "host") return keys.length === 2 && ((a.env === "test" || a.env === "live") || (typeof a.url === "string" && a.url.length > 0 && a.url.length <= 200 && !/[\r\n]/.test(a.url)));
     return keys.length === 1;
   }
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數

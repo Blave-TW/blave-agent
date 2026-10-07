@@ -17,7 +17,7 @@ const TCEM_MAX_BYTES = 8 * 1024 * 1024;
 const CERT_CENTER_URL = "https://pki.pscnet.com.tw/";
 const ACCOUNT_RE = /^[0-9]{11}$/;
 const PW_RE = /^[^\r\n\0]{1,128}$/, CA_PW_RE = /^[^\r\n\0]{0,128}$/;   // 交易密碼不 trim(同群益 PW_RE);憑證密碼可以是空的
-const OPS = ["setup", "cert", "secrets", "probe", "start", "stop"];   // = president_connect.LOCAL_OPS
+const OPS = ["setup", "cert", "secrets", "probe", "host", "test_order", "start", "stop"];   // = president_connect.LOCAL_OPS
 const DEFERRED_WAIT_MS = 4000;   // 長步驟在 daemon 收下後才開始跑:回條等不到是常態,畫面看 president_connect 狀態走
 const RESEND_EVERY_MS = 30000;
 
@@ -69,7 +69,8 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
   const certDir = path.join(home || "", "PSCCA");
   let picked = null, lastResend = 0, tcemBusy = false;
 
-  /* 存:{kind, account, password, ca_password?}。kind 標記擋掉「把別的 safeStorage 密文換進來」(密文本身沒有完整性保護) */
+  /* 存:{kind, account, password, ca_password?, live}。live = 這個帳號現在在哪個環境(新帳號 false = 測試主機;切正式由 host 那一步改),
+   daemon 重起時跟帳密一起交回去。kind 標記擋掉「把別的 safeStorage 密文換進來」(密文本身沒有完整性保護) */
   function load() {
     try {
       if (!seal.available()) return null;
@@ -98,7 +99,8 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
     if (!seal.available()) return { code: "NO_SEAL" };
     const old = load();
     // 同一個帳號改密碼(被統一擋下之後):憑證沒換,憑證密碼照留;換帳號就要重選憑證
-    const keep = old && old.account === account && old.ca_password !== undefined ? { ca_password: old.ca_password } : {};
+    const same = !!old && old.account === account;
+    const keep = Object.assign(same && old.ca_password !== undefined ? { ca_password: old.ca_password } : {}, { live: same && old.live === true });
     return write(Object.assign({ account, password }, keep)) ? { code: "OK" } : { code: "NO_SEAL" };
   }
   function forget() { picked = null; try { fs.unlinkSync(storePath); } catch (_) {} return true; }
@@ -163,7 +165,7 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
     return { code: codeOf(e) };
   }
   function bundle(d, extra) {
-    return Object.assign({ account: d.account, password: d.password, ca_password: d.ca_password === undefined ? "" : d.ca_password, live: true }, extra || {});
+    return Object.assign({ account: d.account, password: d.password, ca_password: d.ca_password === undefined ? "" : d.ca_password, live: d.live === true }, extra || {});
   }
   /* 選好憑證:找到的那張(PSCCA 最新)或「選別的檔案」那張 + 憑證密碼 → cert。成功才把憑證密碼存起來 */
   async function certUse(a) {
@@ -176,15 +178,26 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
     const h = host(); if (!h || typeof h.sealPresident !== "function") return { code: "DAEMON_DOWN" };
     const sealed = h.sealPresident(bundle(d, { ca_password: caPw, src }));
     if (!sealed) return { code: "DAEMON_DOWN" };
-    // TODO(president-testhost-018):測試段的契約定了之後,live 改由那一段決定(先測試主機、回報後才切正式)
+    // 新帳號 daemon 一律從測試主機開始(回條的 env 為準)
     const r = await send("cert", { sealed }, 30000);
-    if (r.code === "OK") write(Object.assign({}, d, { ca_password: caPw }));
+    if (r.code === "OK") write(Object.assign({}, d, { ca_password: caPw }, r.result && r.result.env ? { live: r.result.env === "live" } : {}));
     return r;
   }
+  /* host:{env:"test"|"live"} 或 {url:信上的網址}(一定是測試主機;正式只用 env)。daemon 收下就記住要去的環境——
+     切換在它確認登入之前就做了,daemon 重起時交回去的要是新的那個 */
   async function step(name, opts) {
     if (OPS.indexOf(name) < 0 || name === "cert" || name === "secrets") return { code: "BAD_ARGS" };
-    const extra = name === "probe" && opts && opts.afterUnlock === true ? { after_unlock: true } : {};
-    return send(name, extra, name === "stop" ? 10000 : DEFERRED_WAIT_MS);
+    const o = opts || {};
+    let extra = {};
+    if (name === "probe" && o.afterUnlock === true) extra = { after_unlock: true };
+    if (name === "host") {
+      if (o.env === "test" || o.env === "live") extra = { env: o.env };
+      else if (typeof o.url === "string" && o.url.trim() && o.url.length <= 200) extra = { url: o.url.trim() };
+      else return { code: "BAD_ARGS" };
+    }
+    const r = await send(name, extra, name === "stop" ? 10000 : DEFERRED_WAIT_MS);
+    if (name === "host" && (r.code === "OK" || r.code === "SENT")) { const d = load(); if (d) write(Object.assign({}, d, { live: extra.env === "live" })); }
+    return r;
   }
   /* daemon 每次起來都是空手:存著的那組要再交一次(.env 已經綁的是這一組才會收,不然回 REBOUND)。主行程的 5 秒輪詢叫 */
   async function resync(report) {
@@ -197,10 +210,6 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
     lastResend = now();
     return send("secrets", { sealed }, 10000);
   }
-  // TODO(president-testhost-018):測試環境那一段(切測試主機確認登入、代下測試單、回報、切正式)契約未定。
-  // 畫面與狀態機已接好這個出口;後端定了之後在這裡換成真的指令,回 { code, at? }。
-  async function testStep(name) { return ["probe", "order"].indexOf(name) >= 0 ? { code: "NOT_READY" } : { code: "BAD_ARGS" }; }
-
-  return { info, saveCreds, forget, scan, pickOther, openTcem, certUse, step, resync, testStep, heldLots, _load: load };
+  return { info, saveCreds, forget, scan, pickOther, openTcem, certUse, step, resync, heldLots, _load: load };
 }
 module.exports = { createPresident, sealFor, expiryFromName, heldLots, TCEM_SHA256, CERT_CENTER_URL };

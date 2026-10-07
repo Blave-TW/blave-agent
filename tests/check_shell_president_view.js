@@ -34,36 +34,38 @@ ok("表單", view(null, ui({ phase: "form" })) === "d-form");
 ok("剛送 setup、回報還沒動 → d-setup", view(null, ui({ sent: { step: "setup", at: NOW } })) === "d-setup");
 ok("busy=president_local:cert → d-cert-run", view(pc({ busy: "president_local:cert" })) === "d-cert-run");
 ok("cert importing → d-cert-run", view(pc({ cert: { status: "importing", at: S - 2 } })) === "d-cert-run");
-ok("probe running → d-probe", view(pc({ cert: CERT_OK, probe: { status: "running", at: S - 2 } })) === "d-probe");
-ok("worker running → d-finish", view(pc({ cert: CERT_OK, worker: { status: "running", at: S - 2 } })) === "d-finish");
+ok("probe running → d-probe", view(pc({ env: "live", cert: CERT_OK, probe: { status: "running", at: S - 2 } })) === "d-probe");
+ok("worker running → d-finish", view(pc({ env: "live", cert: CERT_OK, worker: { status: "running", at: S - 2 } })) === "d-finish");
 ok("卡在 running 超過 25 分鐘不算在跑", presRunning(pc({ updated_at: S - 3600, probe: { status: "running", at: S - 3600 } }), null, NOW) === null);
-ok("測試段出口在跑 → d-t-probe / d-t-order-run", view(pc({ cert: CERT_OK }), ui({ sent: { step: "test", at: NOW } })) === "d-t-probe"
-  && view(pc({ cert: CERT_OK }), ui({ sent: { step: "test", at: NOW }, test: { stage: "order", url: "", at: null, code: null } })) === "d-t-order-run");
+ok("測試主機確認登入中(env test)→ d-t-probe;測試單在跑 → d-t-order-run", view(pc({ env: "test", cert: CERT_OK, probe: { status: "running", at: S - 2 } })) === "d-t-probe"
+  && view(pc({ env: "test", cert: CERT_OK, test_order: { status: "running", at: S - 2 } })) === "d-t-order-run" && view(pc({ busy: "president_local:host", cert: CERT_OK })) === "d-t-probe");
 // 安裝與憑證
 ok("setup 失敗 → d-setup-fail", view(pc({ setup: { status: "failed", at: S - 5 } })) === "d-setup-fail");
 ok("setup 還沒好(idle)→ d-setup(自動送)", view(pc({ setup: { status: "idle", at: null } })) === "d-setup");
 ok("裝好、沒憑證 → d-cert", view(pc()) === "d-cert");
 ok("憑證失敗 → d-cert-err", view(pc({ cert: { status: "failed", error: "PFX_PASSWORD", at: S - 5 } })) === "d-cert-err");
-ok("換一張憑證(recert)→ d-cert,即使原本那張是好的", view(pc({ cert: CERT_OK, probe: { status: "failed", state: "cert", at: S - 3 } }), ui({ recert: true })) === "d-cert");
-// 測試段:憑證好了、正式主機還沒登入過
-ok("憑證好了 → 測試段 d-t-host(不會直接登入正式主機)", view(pc({ cert: CERT_OK })) === "d-t-host");
-ok("測試段後端未接(NOT_READY)→ d-t-fail,停在那裡", view(pc({ cert: CERT_OK }), ui({ test: { stage: "host", url: "", at: null, code: "NOT_READY" } })) === "d-t-fail");
-ok("測試登入過 → d-t-order;測試單被拒 → d-t-order-fail", view(pc({ cert: CERT_OK }), ui({ test: { stage: "order", url: "", at: null, code: null } })) === "d-t-order"
-  && view(pc({ cert: CERT_OK }), ui({ test: { stage: "order", url: "", at: null, code: "REJECTED" } })) === "d-t-order-fail");
-ok("測試單成功 → d-t-report", view(pc({ cert: CERT_OK }), ui({ test: { stage: "report", url: "", at: NOW, code: null } })) === "d-t-report");
+ok("換一張憑證(recert)→ d-cert,即使原本那張是好的", view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: "cert", at: S - 3 } }), ui({ recert: true })) === "d-cert");
+// 測試段(跟雲端同一份 runtime:env 看回報、測試單看 test_order)
+ok("憑證好了、新帳號(env test)→ d-t-host,不會直接登入正式主機", view(pc({ env: "test", cert: CERT_OK })) === "d-t-host" && view(pc({ cert: CERT_OK })) === "d-t-host");
+ok("測試主機登入過 → d-t-order", view(pc({ env: "test", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 3 } })) === "d-t-order");
+ok("測試單成功 → d-t-report;被拒 → d-t-order-fail", view(pc({ env: "test", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 9 }, test_order: { status: "ok", state: "accepted", at: S - 3 } })) === "d-t-report"
+  && view(pc({ env: "test", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 9 }, test_order: { status: "failed", state: "rejected", at: S - 3 } })) === "d-t-order-fail");
+ok("測試主機登入失敗 → 同一組畫面(掛在測試那一列)", view(pc({ env: "test", cert: CERT_OK, probe: { status: "failed", state: "unknown", env: "test", at: S - 3 } })) === "d-UNKNOWN");
+ok("切了正式、還沒確認 → 回報那一步(營業員說開好了可以再按);測試主機那次的 ok 不算正式", view(pc({ env: "live", cert: CERT_OK })) === "d-t-report"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 3 } })) === "d-t-report");
 // 正式登入的每一個結果(runtime LOGIN_STATES 的值 + unblock_used / no_credentials)
 const STATES = { password: "d-PASSWORD", unknown: "d-UNKNOWN", cert_mismatch: "d-CERT_MISMATCH", cert: "d-CERT", blocked: "d-BLOCKED",
   unblock_used: "d-BLOCKED2", maintenance: "d-MAINTENANCE", host: "d-HOST", timeout: "d-TIMEOUT", retry_later: "d-TRANSIENT", no_credentials: "d-NOCREDS" };
-for (const [st, v] of Object.entries(STATES)) ok(`probe ${st} → ${v}`, view(pc({ cert: CERT_OK, probe: { status: "failed", state: st, at: S - 3 } })) === v);
+for (const [st, v] of Object.entries(STATES)) ok(`probe ${st} → ${v}`, view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: st, env: "live", at: S - 3 } })) === v);
 ok("PRES_PROBE_VIEW 只有這幾個(多一個少一個都要補畫面)", Object.keys(ctx.PRES_PROBE_VIEW).sort().join() === Object.keys(STATES).sort().join());
-ok("沒見過的 state → d-UNKNOWN(最保守那一組,講 Blave 已先停止)", view(pc({ cert: CERT_OK, probe: { status: "failed", state: "weird", at: S - 3 } })) === "d-UNKNOWN");
-ok("改密碼中(recheck)→ d-pw", view(pc({ cert: CERT_OK, probe: { status: "failed", state: "password", at: S - 3 } }), ui({ recheck: true })) === "d-pw");
-ok("正式登入過 → d-finish(自動啟動)", view(pc({ cert: CERT_OK, probe: { status: "ok", state: "ok", at: S - 3 } })) === "d-finish");
-ok("下單程式好了 → d-done", view(pc({ cert: CERT_OK, probe: { status: "ok", state: "ok", at: S - 9 }, worker: { status: "ok", at: S - 3 } })) === "d-done");
-ok("下單程式失敗 → d-finish-fail;被擋(BLOCKED:*)→ 那個類別的畫面,不再自動啟動", view(pc({ cert: CERT_OK, probe: { status: "ok", state: "ok", at: S - 9 }, worker: { status: "failed", error: "WORKER_FAILED", at: S - 3 } })) === "d-finish-fail"
-  && view(pc({ cert: CERT_OK, probe: { status: "ok", state: "ok", at: S - 9 }, worker: { status: "failed", error: "BLOCKED:PASSWORD", at: S - 3 } })) === "d-PASSWORD"
-  && view(pc({ cert: CERT_OK, probe: { status: "ok", state: "ok", at: S - 9 }, worker: { status: "failed", error: "BLOCKED:UNKNOWN", at: S - 3 } })) === "d-BLOCKED"
-  && view(pc({ cert: CERT_OK, probe: { status: "ok", state: "ok", at: S - 1 }, worker: { status: "failed", error: "BLOCKED:UNKNOWN", at: S - 3 } })) === "d-finish");
+ok("沒見過的 state → d-UNKNOWN(最保守那一組,講 Blave 已先停止)", view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: "weird", at: S - 3 } })) === "d-UNKNOWN");
+ok("改密碼中(recheck)→ d-pw", view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: "password", at: S - 3 } }), ui({ recheck: true })) === "d-pw");
+ok("正式登入過 → d-finish(自動啟動)", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } })) === "d-finish");
+ok("下單程式好了 → d-done", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "ok", at: S - 3 } })) === "d-done");
+ok("下單程式失敗 → d-finish-fail;被擋(BLOCKED:*)→ 那個類別的畫面,不再自動啟動", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "WORKER_FAILED", at: S - 3 } })) === "d-finish-fail"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "BLOCKED:PASSWORD", at: S - 3 } })) === "d-PASSWORD"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "BLOCKED:UNKNOWN", at: S - 3 } })) === "d-BLOCKED"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 1 }, worker: { status: "failed", error: "BLOCKED:UNKNOWN", at: S - 3 } })) === "d-finish");
 // 橫幅與確認
 const day = 86400 * 1000, iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
 ok("到期剩 28 天 → 橫幅(28);剩 40 天 → 不出;過期 → 負數(過期那一句)", presRenewDue(pc({ cert: { status: "ok", not_after: iso(NOW + 28.5 * day) } }), NOW) === 28

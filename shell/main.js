@@ -2932,8 +2932,8 @@ app.whenReady().then(() => {
   handle("president-pick", () => president().pickOther(), presDenied);
   handle("president-tcem", () => president().openTcem(), presDenied);
   handle("president-cert", (_e, a) => president().certUse({ caPassword: a && typeof a.caPassword === "string" ? a.caPassword : null, source: a && a.source === "picked" ? "picked" : "found" }), presDenied);
-  handle("president-step", (_e, name, o) => president().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true) }), presDenied);
-  handle("president-test", (_e, name) => president().testStep(String(name || "")), presDenied);
+  handle("president-step", (_e, name, o) => president().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true),
+    env: o && (o.env === "test" || o.env === "live") ? o.env : undefined, url: o && typeof o.url === "string" ? o.url : undefined }), presDenied);
   // 解除綁定:機器上那五行 + 憑證檔(runtime drop_vault)先走,成功了才丟這裡存的帳密
   handle("president-unbind", async () => {
     const h = tradeHost(), PE = require("./daemon").PRESIDENT_ENV;

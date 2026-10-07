@@ -71,7 +71,6 @@ contextBridge.exposeInMainWorld("blave", {
   presidentTcem: () => ipcRenderer.invoke("president-tcem"),
   presidentCert: (caPassword, source) => ipcRenderer.invoke("president-cert", { caPassword, source }),
   presidentStep: (name, o) => ipcRenderer.invoke("president-step", name, o || {}),
-  presidentTest: (name) => ipcRenderer.invoke("president-test", name),
   presidentUnbind: () => ipcRenderer.invoke("president-unbind"),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),

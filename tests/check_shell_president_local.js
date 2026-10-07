@@ -6,7 +6,7 @@
 //   5. daemon 剛起來(secrets=false)才補交,30 秒內不重送;.env 沒綁統一不送
 //   6. 憑證e總管:雜湊對不上 / 下載不到 → 不執行、改開憑證中心;對上才以一般權限打開(detached);不是 Windows 不做
 //   7. daemon.js:president_local 只有主行程(trusted)送得出,形狀不對擋;renderer 解得了統一的五行
-//   8. 部位口數、測試段出口回 NOT_READY(TODO president-testhost-018)
+//   8. 部位口數;測試段 host(信上網址 / 切正式)與存下的環境、test_order
 // 跑法:node tests/check_shell_president_local.js
 const fs = require("fs"), os = require("os"), path = require("path"), crypto = require("crypto");
 const P = require("../shell/president_local");
@@ -43,6 +43,7 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   ok("2 有換行的密碼不存", pres.saveCreds({ account: "70000011234", password: "a\nb" }).code === "BAD_PW");
   ok("2 存:只經 safeStorage", pres.saveCreds({ account: "70000011234", password: "trade-pw-123" }).code === "OK"
     && !fs.readFileSync(path.join(ud, "president.bin"), "utf8").includes("trade-pw-123"));
+  ok("2 新帳號從測試環境開始(live=false)", pres._load().live === false);
   ok("2 畫面拿得到的只有帳號與狀態", JSON.stringify(pres.info()) === JSON.stringify({ saved: true, account: "70000011234", certSaved: false, windows: true, pickedOther: false }));
   const noSeal = P.createPresident({ userData: path.join(tmp, "ud2"), home, platform: "win32", seal: { available: () => false }, host: () => host, pickFile: async () => null });
   ok("2 加密儲存不能用 → NO_SEAL,不落地", noSeal.saveCreds({ account: "70000011234", password: "x" }).code === "NO_SEAL" && !fs.existsSync(path.join(tmp, "ud2", "president.bin")));
@@ -65,8 +66,8 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   const r4 = await pres.certUse({ caPassword: "ca-pw", source: "found" });
   const c4 = sent[sent.length - 1], b4 = open(c4.args.sealed, SECRET);
   ok("4 送 president_local cert(主行程那條)", r4.code === "OK" && c4.cmd === "president_local" && c4.args.op === "cert" && c4.o.trusted === true);
-  ok("4 封包:存著的帳密 + 這次的憑證密碼 + 最新那張的路徑 + live", b4.account === "70000011234" && b4.password === "trade-pw-123" && b4.ca_password === "ca-pw"
-    && b4.src === path.join(home, "PSCCA", name1) && b4.live === true, Object.assign({}, b4, { password: "•" }));
+  ok("4 封包:存著的帳密 + 這次的憑證密碼 + 最新那張的路徑 + 存著的環境(新帳號 = 測試)", b4.account === "70000011234" && b4.password === "trade-pw-123" && b4.ca_password === "ca-pw"
+    && b4.src === path.join(home, "PSCCA", name1) && b4.live === false, Object.assign({}, b4, { password: "•" }));
   ok("4 指令本身沒有明文", !JSON.stringify(c4.args).includes("trade-pw-123") && !JSON.stringify(c4.args).includes("A123456789"));
   ok("4 成功才存憑證密碼", pres.info().certSaved === true && pres._load().ca_password === "ca-pw");
   reply = { ok: false, error: "ValueError: PFX_PASSWORD: the certificate password does not open this file" };
@@ -139,7 +140,18 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   // 8.
   ok("8 部位口數:size > 0 才算", P.heldLots({ account: { venues: { president: { positions: { TMF: { size: 1 }, TXF: { size: 2 }, MXF: { size: 0 } } } } } }) === 3
     && P.heldLots({}) === 0 && P.heldLots(null) === 0);
-  ok("8 測試段出口:後端定案前回 NOT_READY", (await pres.testStep("probe")).code === "NOT_READY" && (await pres.testStep("x")).code === "BAD_ARGS");
+  reply = { ok: false, error: "UNKNOWN_RESULT" };
+  await pres.step("host", { url: "test167.pfctrade.com" });
+  ok("8 測試主機:信上的網址原樣交給 daemon(它判是不是那兩台),記住在測試環境", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "host", url: "test167.pfctrade.com" }) && pres._load().live === false);
+  await pres.step("host", { env: "live" });
+  ok("8 營業員說開好了 = host live,存下正式;之後補交的 bundle 帶 live", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "host", env: "live" }) && pres._load().live === true
+    && open(P.sealFor(SECRET, { live: pres._load().live }), SECRET).live === true);
+  reply = { ok: false, error: "ValueError: HOST_NOT_ALLOWED: not a 統一 login host" };
+  const before8 = pres._load().live;
+  ok("8 不是那兩台 → daemon 的代號,存的環境不動", (await pres.step("host", { url: "evil.example.com" })).code === "HOST_NOT_ALLOWED" && pres._load().live === before8);
+  ok("8 host 沒給 env / url → BAD_ARGS(不送)", (await pres.step("host", {})).code === "BAD_ARGS");
+  ok("8 daemon.js:host 只收 env 或一個網址;test_order 只有 op", D.argsOk("president_local", { op: "host", env: "live" }, true) && D.argsOk("president_local", { op: "host", url: "x" }, true)
+    && !D.argsOk("president_local", { op: "host", env: "prod" }, true) && !D.argsOk("president_local", { op: "host", env: "live", url: "x" }, true) && D.argsOk("president_local", { op: "test_order" }, true));
   ok("8 forget:存的帳密刪掉", pres.forget() && !fs.existsSync(path.join(ud, "president.bin")) && pres.info().saved === false);
 
   fs.rmSync(tmp, { recursive: true, force: true });
