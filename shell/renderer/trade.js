@@ -86,9 +86,11 @@ function trMarginModel(e, readAt) {
   const has = (k) => Object.prototype.hasOwnProperty.call(e, k), num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   if (!TR_MARGIN_KEYS.some(has)) return null;
   const rows = TR_MARGIN_KEYS.filter(has).map((k) => ({ key: k, value: num(e[k]) }));
-  const eq = trLiveTotal(e), im = num(e.initial_margin), mm = num(e.maintenance_margin);
+  // 分子是期貨帳的權益數 accounts.futures(保證金四個 key 都對應它;群益之後證券估值進 accounts 時總額會蓋掉保證金缺口),沒有才退 equity
+  const fut = e.accounts && typeof e.accounts === "object" ? num(e.accounts.futures) : null, eq = fut != null ? fut : num(e.equity);
+  const im = num(e.initial_margin), mm = num(e.maintenance_margin);
   const risk = has("initial_margin") ? { ratio: eq != null && im != null && im > 0 ? eq / im * 100 : null, below: eq != null && mm != null && mm > 0 && eq < mm } : null;
-  const at = num(e.margin_updated_at) != null ? e.margin_updated_at : num(readAt);
+  const at = num(e.margin_updated_at) > 0 ? e.margin_updated_at : num(readAt) > 0 ? readAt : null;
   return { rows, risk, at };
 }
 // TWD 金額:整數、千分位、負值 U+2212(同網頁 fmtAmount);不是數字回 null

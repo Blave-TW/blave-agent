@@ -423,8 +423,10 @@ class FakeDaccount:
         return Resp(ok=True, error="", data=[live_row])
 
 
+# the margin stamp is kept within margin_epoch's 12 h clock guard: "now" in Taipei, to the second
+NOW_TP = datetime.now(TAIPEI).replace(microsecond=0)
 DM = dict(optequity=11454097.0, ordcexcess=9000000.0, iamt=105150.0, mamt=80700.0, dwamt=0.0,
-          update_date="20261002", update_time="101500")
+          update_date=NOW_TP.strftime("%Y%m%d"), update_time=NOW_TP.strftime("%H%M%S"))
 for shape, data in (("single object", Resp(**DM)), ("list", [Resp(**DM)])):
     fake = types.SimpleNamespace(daccount=FakeDaccount(Resp(ok=True, error="", data=data)))
     snap = president_worker.read_account(fake, "7000001")
@@ -445,11 +447,27 @@ check(snap3["equity"] is None and snap3["margin_error"] == "optequity missing",
       "optequity missing is the one margin failure (equity unknown, read error)", snap3)
 # assets page (spec president-assets): update_date/time → epoch seconds in the snapshot, through
 # get_equity, through the runtime account reader into the entry; absent keys stay absent
-UPD = int(datetime(2026, 10, 2, 10, 15, 0, tzinfo=TAIPEI).timestamp())
+UPD = int(NOW_TP.timestamp())
+T0 = int(datetime(2026, 10, 2, 10, 15, 0, tzinfo=TAIPEI).timestamp())
+me = president_worker.margin_epoch
 check(snap["margin_updated_at"] == UPD and snap2["margin_updated_at"] is None
-      and president_worker.margin_epoch("20261002", "1015") == UPD
-      and president_worker.margin_epoch("2026-10-02", "10:15:00") is None,
+      and me("20261002", "1015", now=T0) == T0 and me("2026-10-02", "10:15:00", now=T0) is None,
       "margin_updated_at: update_date + update_time parsed as Taipei (HHMMSS or HHMM); unreadable → None", snap["margin_updated_at"])
+check(me("20261002", "101500", now=T0 + 12 * 3600) == T0 and me("20261002", "101500", now=T0 - 12 * 3600) == T0
+      and me("20261002", "101500", now=T0 + 12 * 3600 + 1) is None and me("20261002", "101500", now=T0 - 24 * 3600) is None,
+      "B1 a stamp more than 12 h from the clock is dropped (night-session date semantics unverified)")
+T9 = int(datetime(2026, 10, 2, 9, 30, 15, tzinfo=TAIPEI).timestamp())
+check(me("20261002", 93015, now=T9) == T9 and me("20261002", "93015", now=T9) == T9 and me(20261002, 930, now=T9) == T9 - 15
+      and me("20261002", "930", now=T9) == T9 - 15 and me("20261002", "0930", now=T9) == T9 - 15,
+      "B2 a numeric / unpadded update_time is zero-filled before the strict check (93015 → 09:30:15, 930 → 09:30:00)")
+import io, contextlib  # noqa: E402
+president_worker._unparsed_logged = False
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    r1, r2 = me("20261002", "9:30", now=T9), me("20261002", "9:31", now=T9)
+out = buf.getvalue()
+check(r1 is None and r2 is None and out.count("unparsed update_date/update_time") == 1 and "9:30" not in out and "20261002" not in out,
+      "B2 an unparsable stamp logs once (types / lengths only, never the value) and returns None", out)
 snapshot([], **{k: snap[k] for k in ("equity", "available", "initial_margin", "maintenance_margin", "margin_updated_at")})
 eq = account_president.get_equity({})
 check(eq["equity"] == 11454097.0 and eq["maintenance_margin"] == 80700.0 and eq["available"] == 9000000.0

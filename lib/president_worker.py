@@ -131,20 +131,36 @@ def _num(obj, name):
         return None
 
 
-def margin_epoch(update_date, update_time):
+MARGIN_EPOCH_MAX_SKEW_S = 12 * 3600
+_unparsed_logged = False
+
+
+def margin_epoch(update_date, update_time, now=None):
     """DMargin's update_date 'YYYYMMDD' + update_time 'HHMMSS' (broker clock,
     Taipei) → epoch seconds for the assets page; None when unreadable — the
-    page then falls back to the reader's read_at."""
+    page then falls back to the reader's read_at.
+
+    Whether update_date is the calendar day or the trading day during the
+    night session (00:00–05:00) is unverified (references/president-broker.md);
+    a value more than 12 h from the machine clock is dropped rather than
+    painted a day off."""
+    global _unparsed_logged
     d, t = str(update_date or "").strip(), str(update_time or "").strip()
-    if len(t) == 4 and t.isdigit():
-        t += "00"
+    if t.isdigit():
+        # the SDK may hand the time over as a number (no leading zero): 93015 → 093015, 930 → 0930 → 093000
+        t = t.zfill(4) + "00" if len(t) <= 4 else t.zfill(6)
     # strict digit counts: strptime accepts 1-digit %M / %S, so a bare HHMM would mis-parse as HHMSS
     if not (len(d) == 8 and d.isdigit() and len(t) == 6 and t.isdigit()):
+        if (d or t) and not _unparsed_logged:
+            _unparsed_logged = True
+            _log(f"unparsed update_date/update_time (types {type(update_date).__name__}/"
+                 f"{type(update_time).__name__}, lengths {len(d)}/{len(t)})")
         return None
     try:
-        return int(datetime.strptime(d + t, "%Y%m%d%H%M%S").replace(tzinfo=TAIPEI).timestamp())
+        epoch = int(datetime.strptime(d + t, "%Y%m%d%H%M%S").replace(tzinfo=TAIPEI).timestamp())
     except ValueError:
         return None
+    return epoch if abs(epoch - (time.time() if now is None else now)) <= MARGIN_EPOCH_MAX_SKEW_S else None
 
 
 _LISTED = {"at": 0.0, "value": None}

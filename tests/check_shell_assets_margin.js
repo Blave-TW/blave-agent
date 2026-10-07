@@ -15,6 +15,12 @@ const PRES = { ok: true, equity: 12147198, currency: "TWD", accounts: { futures:
 let m = trMarginModel(PRES, 1);
 ok("統一:三列照 key 順序、風險指標 = 權益數 ÷ 原始保證金 × 100、更新時間用 margin_updated_at", m && J(m.rows) === J([{ key: "available", value: 11921198 }, { key: "initial_margin", value: 226000 }, { key: "maintenance_margin", value: 173000 }])
   && Math.abs(m.risk.ratio - 5374.87) < 0.01 && m.risk.below === false && m.at === 1790907300);
+ok("B3 分子是期貨帳 accounts.futures,不是 accounts 加總(群益之後證券估值進 accounts 時總額會蓋掉保證金缺口);沒有 accounts 退 equity",
+  trMarginModel({ ...PRES, equity: 5158420, accounts: { futures: 158420, securities: 5000000 } }, 1).risk.below === true
+  && Math.abs(trMarginModel({ ...PRES, equity: 5158420, accounts: { futures: 158420, securities: 5000000 } }, 1).risk.ratio - 70.10) < 0.01
+  && Math.abs(trMarginModel({ ...PRES, accounts: null }, 1).risk.ratio - 5374.87) < 0.01 && trMarginModel({ ...PRES, equity: null, accounts: {} }, 1).risk.ratio === null);
+ok("B4 margin_updated_at / read_at 為 0 或負不算有效(不畫 01/01 08:00)", trMarginModel({ ...PRES, margin_updated_at: 0 }, 1759800000).at === 1759800000
+  && trMarginModel({ ...PRES, margin_updated_at: -5 }, 0).at === null && trMarginModel({ ...PRES, margin_updated_at: 0 }, null).at === null);
 ok("沒有 margin_updated_at 退回帳戶讀取器的 read_at;兩個都沒有 = null(不畫右側)", trMarginModel({ ...PRES, margin_updated_at: null }, 1759800000).at === 1759800000 && trMarginModel({ ...PRES, margin_updated_at: undefined }, null).at === null);
 ok("原始保證金 0(沒部位)或 null:風險指標算不出 = null、不是 Infinity;不掛 below", trMarginModel({ ...PRES, initial_margin: 0 }, 1).risk.ratio === null && trMarginModel({ ...PRES, initial_margin: null }, 1).risk.ratio === null && trMarginModel({ ...PRES, initial_margin: 0, maintenance_margin: 0 }, 1).risk.below === false);
 m = trMarginModel({ ...PRES, equity: 158420, accounts: { futures: 158420 } }, 1);
