@@ -315,7 +315,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
    and on the live account alike; `get_margin(actno, "NTT")` returns the data, and `.data` is a
    **single `DMargin` object, not a list** (the libs take both). Fields: `optequity` / `twdoptequity`
    權益數, `ordcexcess` 可動用, `iamt` 原始保證金, `mamt` 維持保證金, `dwamt` 當日出入金,
-   `night_session_*` (the night-session versions), `update_date` / `update_time`. **Live account,
+   `night_session_*` (the night-session versions), `update_date` / `update_time` (`YYYYMMDD` /
+   `HHMMSS` on the day session; **unverified whether `update_date` is the calendar day or the
+   trading day during the night session 00:00–05:00** — compare the snapshot's `margin_updated`
+   string with the machine clock once during a night session and record it here; until then
+   `president_worker.margin_epoch` drops a value more than 12 h from the clock). **Live account,
    2026-10-02: `optequity` matched the broker's app** (read layer ① passed). `dwamt` may be the way
    to a `get_flows` someday — unverified until a day with a real deposit/withdrawal.
    `get_accounts()` returns one 7-digit account; `get_position(actno, "", "")` returns one

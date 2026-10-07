@@ -296,6 +296,14 @@ html.ws-sc .side-gate { display: none; }
 .pf-wallets { margin-top: var(--space-8); }
 .pf-wallet-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); padding: var(--space-4) 0; font-size: 13px; color: var(--ink-2); }
 .pf-wallet-row .w-amt { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 保證金列(台灣期貨帳戶):同一組 caption + row,只加 caption 右側的更新時間、風險態的紅字與 mini tag(canon Mini tag recipe;外殼沒有全域 .mini_tag) */
+.pf-wallets-cap.margin { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); }
+.pf-wallets-cap.margin .ts { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pf-wallet-row.risk { position: relative; }   /* tip 氣泡(.tip)的定位祖先 */
+.pf-wallet-row .w-name .tr-tipb { font-size: inherit; color: inherit; }
+.pf-wallet-row .w-amt.danger { color: var(--color-redText); }
+.pf-wallet-row .mini_tag { display: inline-flex; align-items: center; height: 18px; padding: 0 var(--space-6); margin-left: var(--space-6); border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; white-space: nowrap; }
+.pf-wallet-row .mini_tag.danger { background-color: var(--color-redLight); color: var(--color-redBlack); }
 .pf-log { overflow-x: auto; }
 .pf-log-row { display: flex; gap: var(--space-16); padding: var(--space-4) 0; border-bottom: 1px solid var(--border-hairline); color: var(--ink-2); font-size: 12px; white-space: nowrap; }
 .pf-log-row:last-child { border-bottom: none; }

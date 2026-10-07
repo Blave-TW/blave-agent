@@ -296,6 +296,12 @@ def read_venue(vid, env, flow_state=None):
             # the lib's wallet breakdown failed this read and `accounts` is only
             # the trading wallet — the equity history must not log it as the total
             entry["accounts_partial"] = True
+        # TW futures margin rows (lib/account_president, account_capital): a key
+        # the lib did not return stays absent — the page draws a row only for
+        # keys that exist, "—" for a present-but-null one
+        for k in ("available", "initial_margin", "maintenance_margin", "margin_updated_at"):
+            if k in eq:
+                entry[k] = _finite(eq[k])
     except Exception as e:
         entry["error"] = _err("get_equity", e)
         return entry

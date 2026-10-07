@@ -58,6 +58,14 @@ def get_equity(env: dict) -> dict:
     out = {"equity": snap["equity"], "currency": snap.get("currency", "TWD")}
     if isinstance(snap.get("accounts"), dict):
         out["accounts"] = snap["accounts"]
+    # Margin rows on the assets page. Only `available` (GetFutureRights idx 31)
+    # ships — the worker never reads initial / maintenance margin: the rights
+    # row has idx 13/14 and 15/16 and 21 (references/capital-broker.md), and
+    # which pair matches the broker's app is unverified. TODO: verify against
+    # the app the way 統一 was (10-02), then read them in capital_worker and
+    # pass initial_margin / maintenance_margin here.
+    if snap.get("available") is not None:
+        out["available"] = snap["available"]
     return out
 
 
