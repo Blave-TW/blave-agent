@@ -110,13 +110,15 @@ for label, half in (("the account alone", {"president_account": "1"}),
           refused(lambda: pc.divert_credentials(dict(half)), "INCOMPLETE") is True and not os.path.exists(P["vault"]))
 out = pc.divert_credentials(dict(BIND, OTHER="1"))
 vault = json.load(open(P["vault"]))
-check("1 .env gets the account, sentinels, the fixed certificate path and the production host",
+check("1 .env gets the account, sentinels, the fixed certificate path and both hosts (a switch never rewrites .env)",
       out == {"OTHER": "1", "president_account": "70000011234",
               "president_password": "vault:" + pc.vault_fingerprint("70000011234", "trade-pw"),
               "president_ca_password": "vault:ca", "president_ca_path": P["pfx"],
-              "president_url": "https://viploginm.pfctrade.com"}, out)
-check("1 the vault: the password and the production switch", vault == {
-    "president_password": "trade-pw", "live": True, "account_fp": pc.account_fp("70000011234")}, vault)
+              "president_url": "https://viploginm.pfctrade.com",
+              "president_test_url": "https://test167.testpfctrade.com"}, out)
+check("1 the vault: the password; a new account starts on the TEST host (統一 opens production after a test order)",
+      vault == {"president_password": "trade-pw", "live": False, "account_fp": pc.account_fp("70000011234")}, vault)
+check("1 the status says which environment", pc.read_status()["env"] == "test")
 check("1 no secret in .env", "trade-pw" not in json.dumps(out))
 check("1 credentials\\ locked before any plaintext tmp exists",
       acl and acl[0][0] == "credentials" and acl[0][1][0] == "/inheritance:r" and acl[0][2] is False, acl[:1])
@@ -133,9 +135,30 @@ spec = importlib.util.spec_from_file_location("president_vault", os.path.join(WS
 pv = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pv)
 creds = pv.resolve()
-check("1 the shipped lib resolves the bind: production on, password from the vault, the fixed pfx path",
-      creds["live"] is True and creds["password"] == "trade-pw" and creds["url"] == "https://viploginm.pfctrade.com"
+check("1 the shipped lib resolves the bind: the test host, password from the vault, the fixed pfx path",
+      creds["live"] is False and creds["password"] == "trade-pw" and creds["url"] == "https://test167.testpfctrade.com"
       and creds["ca_path"] == P["pfx"] and creds["ca_password"] == "", {k: v for k, v in creds.items() if k != "password"})
+out_live = pc.divert_credentials(dict(BIND, president_url=" https://viploginm.pfctrade.com/ "))
+with open(os.path.join(WS, ".env"), "w") as f:
+    f.write("".join(f"{k}={v}\n" for k, v in out_live.items()))
+creds = pv.resolve()
+check("1 a bind that names the production host (as pasted) → production on; the lib resolves viploginm",
+      creds["live"] is True and creds["url"] == "https://viploginm.pfctrade.com"
+      and out_live == {k: v for k, v in out.items() if k != "OTHER"} and pc.read_status()["env"] == "live",
+      (creds["url"], out_live))
+pc.divert_credentials(dict(BIND, president_password="trade-pw2"))
+check("1 a rebind of the same account keeps its environment (the permission is the account's)",
+      json.load(open(P["vault"]))["live"] is True)
+before_bad = open(P["vault"]).read()
+check("1 a bind naming any other host → HOST_NOT_ALLOWED, the vault untouched",
+      refused(lambda: pc.divert_credentials(dict(BIND, president_url="https://evil.example")), "HOST_NOT_ALLOWED") is True
+      and open(P["vault"]).read() == before_bad)
+pc.divert_credentials(dict(BIND, president_url="test167.pfctrade.com"))
+with open(os.path.join(WS, ".env"), "w") as f:
+    f.write("".join(f"{k}={v}\n" for k, v in out.items()))
+check("1 …and the mail's test address → back to the test host, leaving production asks the worker to go",
+      json.load(open(P["vault"]))["live"] is False and popen == [["py", P["worker"], "--uninstall"]], popen)
+popen.clear()
 
 
 def failing_icacls(path, *a):
@@ -273,9 +296,13 @@ def fake_run(argv, timeout, what, answers={}):
 
 
 cc._run_quiet = lambda argv, timeout, what: fake_run(argv, timeout, what, ANS)
-ANS = {"probe": {"ok": True, "equity": 1.0, "read_at": time.time() + 5, "test_mode": False}}
-check("4 probe ok", pc.run_probe() == {"state": "ok", "equity_read": True, "test_mode": False}
-      and runs[-1] == [P["worker"], "--once"])
+ANS = {"probe": {"ok": True, "equity": 1.0, "read_at": time.time() + 5, "test_mode": True}}
+check("4 probe ok, and it says which environment it logged in to",
+      pc.run_probe() == {"state": "ok", "equity_read": True, "test_mode": True, "env": "test"}
+      and runs[-1] == [P["worker"], "--once"] and pc.read_status()["probe"]["env"] == "test")
+check("4 finish on the test host → TEST_ENV (the worker never runs there), even after a passed test probe",
+      refused(pc.run_finish, "TEST_ENV") is True)
+pc._write_vault(dict(json.load(open(P["vault"])), live=True))
 ANS = {"probe": None}
 json.dump({"ok": True, "read_at": time.time() - 3600}, open(P["probe"], "w"))
 check("4 a probe file older than this run is not trusted", pc.run_probe()["state"] == "unknown")
@@ -284,13 +311,15 @@ ANS = {"probe": {"ok": False, "error": pv.sanitize(f"LoginError: {pv.LoginError(
                  "read_at": time.time() + 5}}
 st = pc.run_probe(after_unlock=True)
 check("4 after_unlock: --unblock first, then the probe", runs == [[P["worker"], "--unblock"], [P["worker"], "--once"]]
-      and st == {"state": "password"}, runs)
+      and st == {"state": "password", "env": "live"}, runs)
 runs.clear()
 ANS = {"--unblock": 2}
 check("4 a spent release → UNBLOCK_USED, no login", refused(lambda: pc.run_probe(after_unlock=True), "UNBLOCK_USED") is True
       and runs == [[P["worker"], "--unblock"]])
 check("4 finish without a passed probe → PROBE_NOT_OK", refused(pc.run_finish, "PROBE_NOT_OK") is True)
-pc._update("probe", state="ok")
+pc._update("probe", state="ok", env="test")
+check("4 finish after a probe that passed on the test host → PROBE_NOT_OK", refused(pc.run_finish, "PROBE_NOT_OK") is True)
+pc._update("probe", state="ok", env="live")
 runs.clear()
 ANS = {"--install": 0}
 check("4 finish runs --install", pc.run_finish() == {"worker": "ok"} and runs == [[P["worker"], "--install"]])
@@ -300,10 +329,10 @@ check("4 an install that did not get a good snapshot → WORKER_FAILED",
 
 import command_listener as cl  # noqa: E402
 import local_daemon  # noqa: E402
-check("4 command_listener routes the six names; the desktop daemon refuses them",
+check("4 command_listener routes every name; the desktop daemon refuses them",
       all(n in cl.HANDLERS for n in pc.COMMANDS) and set(pc.COMMANDS) <= local_daemon.CLOUD_ONLY)
 fixture = json.load(open(os.path.join(ROOT, "tests", "fixtures", "api_agent_command_allowed.json")))["allowed"]
-check("4 the api allow-list copy carries the six", set(pc.COMMANDS) <= set(fixture))
+check("4 the api allow-list copy carries them all", set(pc.COMMANDS) <= set(fixture))
 
 # command_listener end to end: bind, unbind by two names, eviction by another venue
 cl.president_connect.IS_WINDOWS = True
@@ -319,6 +348,7 @@ env_text = open(os.path.join(WS, ".env")).read()
 check("4 _cmd_credentials writes the sentinels, never the password; it reads as a bound president",
       "president_password=vault:" in env_text and "trade-pw" not in env_text
       and "president_url=https://viploginm.pfctrade.com" in env_text
+      and "president_test_url=https://test167.testpfctrade.com" in env_text
       and cl._venue_cred_ids(env_text.splitlines()) == {"PRESIDENT"}, env_text)
 open(os.path.join(WS, ".env"), "a").write("PRESIDENT_LIVE=true\npresident_test_url=https://x.testpfctrade.com\n")
 popen.clear()
@@ -438,7 +468,7 @@ if HAVE_CRYPTO:
     r = pc.run_pfx(seal(k, PFX, "ca-pw"))
     v = json.load(open(P["vault"]))
     check("5 upload: the pfx lands under the fixed name with the uploaded bytes, its password in the vault, then the probe",
-          open(P["pfx"], "rb").read() == PFX and v["president_ca_password"] == "ca-pw" and v["live"] is True
+          open(P["pfx"], "rb").read() == PFX and v["president_ca_password"] == "ca-pw" and v["live"] is False
           and probes == [1] and r["probe"] == {"state": "ok"} and not os.path.exists(P["key"]))
     check("5 the certificate's subject (national id) is nowhere in the result or the status",
           "Z1234567891" not in json.dumps(r) and "Z1234567891" not in json.dumps(pc.read_status()))

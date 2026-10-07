@@ -9,9 +9,13 @@ agent. Windows cloud boxes only in v1.
 Steps, in the order the page walks them:
   credentials        the 自動下單 form (command_listener._cmd_credentials →
                      divert_credentials here): account + trading password.
-                     The password goes to the vault, production is switched on
-                     there ("live": true), .env gets sentinels and the fixed
-                     certificate path / production host.
+                     The password goes to the vault, .env gets sentinels, the
+                     fixed certificate path and BOTH hosts (president_url and
+                     president_test_url), so switching environments never
+                     rewrites .env. A new account starts in the TEST
+                     environment ("live": false); a rebind of the same account
+                     keeps the one it was in; a president_url in the bind picks
+                     one explicitly (normalize_host).
   president_setup    unitrade (pinned) into the worker's python; cryptography
                      into this one (the envelope and the pfx check run here).
   president_pfx_key  one-time RSA key; the ack carries the public half.
@@ -35,7 +39,21 @@ Steps, in the order the page walks them:
                      code here runs, drives or logs in to 憑證e總管.
   president_probe    `lib/president_worker.py --once`; {"after_unlock": true}
                      runs `--unblock` first (the lib allows that once per block).
-  president_finish   `lib/president_worker.py --install` (NSSM, LocalSystem).
+                     Logs in to whichever environment is current.
+  president_host     {"env": "test"|"live"} or {"url": <as the user pasted it>}:
+                     switch environments (the vault's "live"), then the probe.
+                     統一 opens production API access only after the user
+                     placed one order on the TEST host with the test account
+                     their broker mailed (same password, same certificate) and
+                     reported it; "營業員說開好了" is {"env": "live"}. Only the
+                     two hosts in HOSTS are accepted. Switching to test removes
+                     the worker service and the account snapshot.
+  president_test_order  test environment only: one TMF near-month market IOC buy
+                     through runtime/president_test_order.py (see there for why
+                     IOC); its time and order number are what the user reads to
+                     the broker.
+  president_finish   `lib/president_worker.py --install` (NSSM, LocalSystem);
+                     only after a probe passed on the PRODUCTION host.
 
 Any other way to get the certificate onto the machine is one more command that
 ends where president_pfx ends: the `cert` section with its own `source`, then
@@ -68,9 +86,15 @@ WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace"
 IS_WINDOWS = os.name == "nt"
 
 COMMANDS = ("president_setup", "president_pfx_key", "president_pfx", "president_pfx_local",
-            "president_probe", "president_finish")
+            "president_probe", "president_host", "president_test_order", "president_finish")
 UNITRADE_PIN = "unitrade==1.0.0.7"
 LIVE_URL = "https://viploginm.pfctrade.com"
+# the broker's mail writes test167.pfctrade.com; its TLS certificate covers only
+# *.testpfctrade.com (lib/president_vault TEST_HOST_SUFFIX), so that is the URL used
+TEST_URL = "https://test167.testpfctrade.com"
+ENV_URLS = {"test": TEST_URL, "live": LIVE_URL}
+HOSTS = {"test167.pfctrade.com": "test", "test167.testpfctrade.com": "test",
+         "viploginm.pfctrade.com": "live"}
 # where 憑證e總管 saves for the account it runs under; RDP logs in as Administrator
 LOCAL_CERT_DIR = r"C:\Users\Administrator\PSCCA"
 # 待補(Wei 提供):統一(PSC)憑證的 issuer 與 OU 字串。補上之前,上傳只檢查檔案用那組密碼
@@ -80,6 +104,7 @@ CERT_OU_MARK = None
 PROBE_TIMEOUT_S = 150
 SETUP_TIMEOUT_S = 900
 FINISH_TIMEOUT_S = 240
+TEST_ORDER_TIMEOUT_S = 150  # login 30 + reply wait 15 + a close-out login and wait if it ever fills
 VAULT_PW_PREFIX = "vault:"
 CA_SENTINEL = "vault:ca"
 _ACCOUNT, _SECRET, _CA_PW = "president_account", "president_password", "president_ca_password"
@@ -89,7 +114,7 @@ LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "p
                 "TIMEOUT": "timeout", "TRANSIENT": "retry_later", "NON_TEST_SERVER": "unknown",
                 "UNKNOWN": "unknown"}
 
-_SECTIONS = ("setup", "cert", "probe", "worker")
+_SECTIONS = ("setup", "cert", "probe", "test_order", "worker")
 _busy = threading.Lock()
 _status_lock = threading.Lock()
 
@@ -105,7 +130,11 @@ def _paths():
         "legacy_logs": os.path.join(WORKSPACE, "state", "president_logs"),
         "status": os.path.join(WORKSPACE, "state", "president_connect.json"),
         "probe": os.path.join(WORKSPACE, "state", "president_probe.json"),
+        "test_order": os.path.join(WORKSPACE, "state", "president_test_order.json"),
+        "snapshot": os.path.join(WORKSPACE, "state", "president_account.json"),
         "worker": os.path.join(WORKSPACE, "lib", "president_worker.py"),
+        "test_order_script": os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                          "president_test_order.py"),
     }
 
 
@@ -116,7 +145,7 @@ def _refuse(code, text=""):
 # ── status (state/president_connect.json) ────────────────────────────────────
 
 def _blank():
-    return {"v": 1, "updated_at": None, "busy": None,
+    return {"v": 1, "updated_at": None, "busy": None, "env": None,
             **{s: {"status": "idle", "at": None} for s in _SECTIONS}}
 
 
@@ -200,6 +229,48 @@ def _write_private(path, data):
         f.write(data)
 
 
+def normalize_host(url):
+    """The environment a pasted login address names: "test" or "live", else
+    HOST_NOT_ALLOWED. Takes what the user copies from the broker's mail —
+    bare host or with http(s)://, a trailing slash, surrounding spaces — and
+    nothing else: no path, port, query or user part."""
+    from urllib.parse import urlsplit
+    raw = str(url or "").strip()
+    if not raw or len(raw) > 200:
+        _refuse("HOST_NOT_ALLOWED", "not a 統一 login host")
+    parts = urlsplit(raw if "://" in raw else "https://" + raw)
+    try:
+        port = parts.port
+    except ValueError:
+        port = -1
+    host = (parts.hostname or "").lower().rstrip(".")
+    if (parts.scheme.lower() not in ("http", "https") or port is not None or parts.username
+            or parts.password or parts.query or parts.fragment or parts.path not in ("", "/")
+            or host not in HOSTS):
+        _refuse("HOST_NOT_ALLOWED", "not a 統一 login host")
+    return HOSTS[host]
+
+
+def current_env():
+    """"live" only when the vault says so (lib/president_vault.live()'s rule)."""
+    return "live" if _read_vault().get("live") is True else "test"
+
+
+def _env_urls_ok():
+    """.env carries both hosts (a bind before the test environment existed wrote
+    only president_url; the lib would then refuse the test host)."""
+    env = {}
+    try:
+        with open(os.path.join(WORKSPACE, ".env"), encoding="utf-8-sig") as f:
+            for line in f:
+                k, sep, v = line.strip().partition("=")
+                if sep:
+                    env[k.strip().casefold()] = v.strip().strip("'\"")
+    except OSError:
+        return False
+    return env.get("president_url") == LIVE_URL and env.get("president_test_url") == TEST_URL
+
+
 def _write_vault(d):
     try:
         _write_private(_paths()["vault"], json.dumps(d).encode("utf-8"))
@@ -245,8 +316,17 @@ def _divert(env, account, password):
     p = _paths()
     afp = account_fp(account)
     old = _read_vault()
-    carry = old.get(_CA_PW) if old.get("account_fp") == afp and os.path.isfile(p["pfx"]) else None
-    vault = {_SECRET: password, "live": True, "account_fp": afp}
+    same = old.get("account_fp") == afp
+    asked = next((v for k, v in env.items() if k.casefold() == "president_url"), None)
+    if asked is not None:
+        target = normalize_host(asked)
+    else:
+        # 統一 opens production only after a test-host order, so a new account
+        # starts on the test host; the permission is the account's, so a
+        # rebind of the same account stays where it was
+        target = "live" if same and old.get("live") is True else "test"
+    carry = old.get(_CA_PW) if same and os.path.isfile(p["pfx"]) else None
+    vault = {_SECRET: password, "live": target == "live", "account_fp": afp}
     if carry is not None:
         vault[_CA_PW] = carry
     _write_vault(vault)
@@ -257,14 +337,18 @@ def _divert(env, account, password):
         except OSError:
             pass
         _update("cert", create=False, reset=True, status="idle")
-    for sec in ("probe", "worker"):
+    for sec in ("probe", "worker") + (() if same else ("test_order",)):
         _update(sec, create=False, reset=True, status="idle")
-    drop = (_SECRET, _CA_PW, "president_ca_path", "president_url")
+    _update(env=target)
+    if target == "test" and old.get("live") is True:
+        _leave_production()
+    drop = (_SECRET, _CA_PW, "president_ca_path", "president_url", "president_test_url")
     out = {k: v for k, v in env.items() if k.casefold() not in drop}
     out[_SECRET] = VAULT_PW_PREFIX + vault_fingerprint(account, password)
     out[_CA_PW] = CA_SENTINEL
     out["president_ca_path"] = p["pfx"]
     out["president_url"] = LIVE_URL
+    out["president_test_url"] = TEST_URL
     return out
 
 
@@ -289,15 +373,36 @@ def drop_vault(names=None):
             shutil.rmtree(path, ignore_errors=True)
             if os.path.lexists(path):
                 print(f"[president_connect] {os.path.basename(path)} not fully removed", file=sys.stderr)
-    if IS_WINDOWS:
-        py = cc._python_for_worker()
-        if py and os.path.isfile(p["worker"]):
-            try:  # not waited for: a stopping service can take a minute
-                subprocess.Popen([py, p["worker"], "--uninstall"], **cc._kw(
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-            except OSError as e:
-                print(f"[president_connect] worker uninstall not started ({type(e).__name__})",
-                      file=sys.stderr)
+    _uninstall_worker()
+
+
+def _uninstall_worker():
+    if not IS_WINDOWS:
+        return
+    p = _paths()
+    py = cc._python_for_worker()
+    if py and os.path.isfile(p["worker"]):
+        try:  # not waited for: a stopping service can take a minute
+            subprocess.Popen([py, p["worker"], "--uninstall"], **cc._kw(
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        except OSError as e:
+            print(f"[president_connect] worker uninstall not started ({type(e).__name__})",
+                  file=sys.stderr)
+
+
+def _leave_production():
+    """Nothing trades in the test environment: the worker service goes, and so
+    does its account snapshot, so lib/account_president and the order lib's
+    snapshot checks fail at once instead of reading a production snapshot for
+    five more minutes."""
+    _uninstall_worker()
+    try:
+        os.remove(_paths()["snapshot"])
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        print(f"[president_connect] snapshot not removed ({type(e).__name__})", file=sys.stderr)
+    _update("worker", create=False, reset=True, status="idle")
 
 
 # ── certificate check ────────────────────────────────────────────────────────
@@ -399,7 +504,8 @@ def probe_state(obj, exit_code):
 
 
 def run_probe(push=None, after_unlock=False):
-    _update("probe", status="running", reset=True)
+    env = current_env()
+    _update("probe", status="running", reset=True, env=env)
     if push:
         push()
     p = _paths()
@@ -421,7 +527,7 @@ def run_probe(push=None, after_unlock=False):
             obj = None  # a file left by an earlier probe says nothing about this one
     except (OSError, ValueError):
         obj = None
-    st = probe_state(obj, rc)
+    st = dict(probe_state(obj, rc), env=env)
     _update("probe", status="ok" if st["state"] == "ok" else "failed", **st)
     return st
 
@@ -517,10 +623,84 @@ def _import_cert(args, push, source, pick):
             "probe": run_probe(push)}
 
 
+def run_host(args, push=None):
+    """Switch environments, then log in once there. Test-host logins share the
+    production login block: lib/president_vault.fingerprint() hashes the
+    account, passwords and certificate, not the host, so a wrong password on
+    the test host blocks production logins too. Whether 統一 itself counts a
+    test-host failure toward the account's three wrong logins is 待確認 —
+    sharing the block is the conservative reading."""
+    target = args["env"] if "env" in args else normalize_host(args["url"])
+    if not _env_urls_ok():
+        _refuse("REBIND", "bind the account again — this binding predates the test environment")
+    vault = _read_vault()
+    if not vault.get(_SECRET):
+        _refuse("NOT_BOUND", "save the account and trading password first")
+    if (vault.get("live") is True) != (target == "live"):
+        _write_vault(dict(vault, live=target == "live"))
+    _update(env=target)
+    if target == "test":
+        _leave_production()
+    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
+
+
+def _taipei_iso(ts):
+    return time.strftime("%Y-%m-%dT%H:%M:%S+08:00", time.gmtime(ts + 8 * 3600))
+
+
+def test_order_state(obj, exit_code):
+    """runtime/president_test_order.py's result file + exit → the fields that
+    leave: a class, the time, the contract, the order number and the broker's
+    status CODE — never its text."""
+    if not isinstance(obj, dict):
+        return {"state": "timeout" if exit_code is None else "unknown"}
+    out = {k: obj[k] for k in ("productid", "orderno", "statuscode") if isinstance(obj.get(k), str)}
+    if isinstance(obj.get("sent_at"), (int, float)):
+        out.update(at=_taipei_iso(obj["sent_at"]), at_ts=int(obj["sent_at"]))
+    if obj.get("result") in ("accepted", "rejected", "no_reply", "not_sent", "live_refused"):
+        out["state"] = obj["result"]
+        out["filled"] = obj.get("filled") is True
+        if out["filled"]:
+            out["closed"] = obj.get("closed") is True
+        return out
+    err = str(obj.get("error") or "")
+    for kind, state in LOGIN_STATES.items():
+        if f"login failed: {kind} " in err or err.endswith(f"login failed: {kind}"):
+            return dict(out, state=state)
+    return dict(out, state="unknown")
+
+
+def run_test_order(push=None):
+    _update("test_order", status="running", reset=True)
+    if push:
+        push()
+    p = _paths()
+    started = time.time() - 1
+    try:
+        rc = cc._run_quiet([_python(), p["test_order_script"], WORKSPACE], TEST_ORDER_TIMEOUT_S,
+                           "test order").returncode
+    except RuntimeError:
+        rc = None
+    try:
+        with open(p["test_order"], encoding="utf-8") as f:
+            obj = json.load(f)
+        if not isinstance(obj, dict) or (obj.get("read_at") or 0) < started:
+            obj = None
+    except (OSError, ValueError):
+        obj = None
+    st = test_order_state(obj, rc)
+    _update("test_order", status="ok" if st["state"] == "accepted" else "failed", **st)
+    return st
+
+
 def run_finish(push=None):
     st = read_status() or {}
-    if (st.get("probe") or {}).get("state") != "ok":
-        _refuse("PROBE_NOT_OK", "login has not passed yet")
+    if current_env() != "live":
+        _refuse("TEST_ENV", "switch to the production host first — the worker never runs on the test host")
+    probe = st.get("probe") or {}
+    if probe.get("state") != "ok" or probe.get("env") != "live":
+        # a probe that passed on the test host says nothing about production access
+        _refuse("PROBE_NOT_OK", "login has not passed on the production host yet")
     _update("worker", status="running", error=None)
     if push:
         push()
@@ -559,6 +739,8 @@ _JOBS = {
     "president_pfx": lambda args, push: run_pfx(args, push),
     "president_pfx_local": lambda args, push: run_pfx_local(args, push),
     "president_probe": lambda args, push: run_probe(push, after_unlock=bool(args)),
+    "president_host": lambda args, push: run_host(args, push),
+    "president_test_order": lambda args, push: run_test_order(push),
     "president_finish": lambda args, push: run_finish(push),
 }
 
@@ -581,9 +763,25 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
     elif cmd == "president_probe":
         if args and not (set(args) == {"after_unlock"} and args["after_unlock"] is True):
             _refuse("BAD_ARGS", "president_probe takes nothing or {\"after_unlock\": true}")
+    elif cmd == "president_host":
+        if not (isinstance(args, dict) and len(args) == 1 and (
+                args.get("env") in ("test", "live") or isinstance(args.get("url"), str))):
+            _refuse("BAD_ARGS", "president_host takes {\"env\": \"test\"|\"live\"} or {\"url\": \"...\"}")
+        if "url" in args:
+            normalize_host(args["url"])  # refused here, before the lock and the status
     elif args:
         _refuse("BAD_ARGS", f"{cmd} takes no arguments")
-    if cmd in ("president_probe", "president_finish") and (
+    if cmd in ("president_host", "president_test_order") and not _read_vault().get(_SECRET):
+        _refuse("NOT_BOUND", "save the account and trading password first")
+    if cmd == "president_test_order":
+        # the runtime's gate; the script re-checks the vault and the host, and
+        # the lib refuses a server that is not a test server
+        if current_env() != "test":
+            _refuse("LIVE_ENV", "test orders run only on the test host")
+        probe = (read_status() or {}).get("probe") or {}
+        if probe.get("state") != "ok" or probe.get("env") != "test":
+            _refuse("PROBE_NOT_OK", "log in on the test host first")
+    if cmd in ("president_probe", "president_host", "president_test_order", "president_finish") and (
             not os.path.isfile(_paths()["pfx"]) or _CA_PW not in _read_vault()):
         # an unreadable certificate is a CERT block in the lib, and one without its
         # password in the vault logs in with "" — never log in without both. Key
