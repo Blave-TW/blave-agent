@@ -1681,8 +1681,17 @@ msgstr "Paper trading does not support TWD-priced instruments yet"
 msgid "tr.pick.twdKeep"
 msgstr "Paper trading does not support TWD-priced instruments yet; once unchecked, it can’t be added back"
 
+msgid "tr.pick.txf"
+msgstr "統一期貨 only trades Taiwan index futures (TXF / MXF / TMF)"
+
+msgid "tr.pick.txfKeep"
+msgstr "統一期貨 only trades Taiwan index futures (TXF / MXF / TMF); once unchecked, it can’t be added back"
+
 msgid "tr.typeB.rejected"
 msgstr "{name}: No fixed run interval, so for now it runs automatically only in the cloud. Uncheck it in Pick strategies, then save."
+
+msgid "tr.notTxf.rejected"
+msgstr "{name}: not a Taiwan index futures strategy (TXF / MXF / TMF), and 統一期貨 trades nothing else. Uncheck it in Pick strategies, then save."
 
 msgid "tr.gateHint"
 msgstr "Below the {m} {c} minimum entry — no position will open"

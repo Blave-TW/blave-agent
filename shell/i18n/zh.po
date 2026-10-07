@@ -1683,8 +1683,17 @@ msgstr "模擬交易暫不支援台幣計價的標的"
 msgid "tr.pick.twdKeep"
 msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
 
+msgid "tr.pick.txf"
+msgstr "統一期貨只能下台指期（TXF／MXF／TMF）"
+
+msgid "tr.pick.txfKeep"
+msgstr "統一期貨只能下台指期（TXF／MXF／TMF）；取消勾選後不能再加回來"
+
 msgid "tr.typeB.rejected"
 msgstr "「{name}」沒有固定的執行週期，目前只能在雲端自動執行。到「選擇策略」取消勾選後再儲存。"
+
+msgid "tr.notTxf.rejected"
+msgstr "「{name}」的標的不是台指期（TXF／MXF／TMF），統一期貨只能下台指期。到「選擇策略」取消勾選後再儲存。"
 
 msgid "tr.gateHint"
 msgstr "低於最小進場 {m} {c}，不會進場"
