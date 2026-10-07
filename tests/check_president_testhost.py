@@ -299,7 +299,7 @@ sys.modules["unitrade"], sys.modules["unitrade.unitrade"] = ut, utu
 
 
 def script():
-    for path in (P["test_order"], os.path.join(WS, "state", "president_login_block.json")):
+    for path in (P["test_order"], os.path.join(P["cred"], "president_login_block.json")):
         if os.path.exists(path):
             os.remove(path)
     rc = pto.main(["president_test_order.py", WS])
@@ -345,7 +345,7 @@ rc, out = script()
 check("5 a wrong password → the login class only, no order, no broker text",
       not orders and out == {"error": "統一期貨 login failed: PASSWORD", "read_at": out["read_at"]}, out)
 check("5 …and it is the shared login block (the same one production logins check)",
-      json.load(open(os.path.join(WS, "state", "president_login_block.json"))).get("kind") == "PASSWORD")
+      json.load(open(os.path.join(P["cred"], "president_login_block.json"))).get("kind") == "PASSWORD")
 SDK["login_ok"], SDK["login_error"] = True, ""
 check("5 the script imports nothing but the stdlib at module level (the runtime health check imports it)",
       all(not l.startswith(("import president", "from president", "import unitrade", "from unitrade", "from lib",
