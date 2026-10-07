@@ -5,13 +5,14 @@ integration uses the broker's official **Unitrade API** (`pip install unitrade`)
 
 Package docs: https://pfcec.github.io/unitrade/ · PyPI: https://pypi.org/project/unitrade/
 
-**Status: test host only, not on the connect menu.** The shipped libs (`lib/order_president.py`,
-`lib/account_president.py`, `lib/president_worker.py`, `lib/president_vault.py`) have run against
-the broker's test host; no live account has placed an order through them. The reconciler has a
-`president` block (`manager/reconciler.py`, hand-wired like 群益), but it only trades a venue the
-platform's bind wrote into `manager/credentials.ui.json` — and there is no platform bind for 統一
-yet. A `.env` written by hand (Step 4) is enough for the probe and test orders, not for the
-reconciler; do not work around that. Everything marked *unverified* needs a live account.
+**Status: open on the Windows desktop app since 0.1.18; cloud machines are not open yet.** The
+shipped libs (`lib/order_president.py`, `lib/account_president.py`, `lib/president_worker.py`,
+`lib/president_vault.py`) have placed and closed a live order on a real account (2026-10-02) and
+run the broker's test host. The reconciler has a `president` block (`manager/reconciler.py`,
+hand-wired like 群益), but it only trades a venue the desktop onboarding wrote (the connect
+menu's 統一 entry); on a cloud machine the venue is not listed and `president_*` commands stay
+unexposed. A `.env` written by hand (Step 4) is enough for the probe and test orders, not for
+the reconciler; do not work around that. Everything marked *unverified* needs a live account.
 
 ---
 
