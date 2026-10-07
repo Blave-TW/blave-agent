@@ -21,7 +21,8 @@ const PRES_PROBE_VIEW = { password: "PASSWORD", unknown: "UNKNOWN", cert_mismatc
   maintenance: "MAINTENANCE", timeout: "TIMEOUT", no_credentials: "NOCREDS" };
 // 下單程式自己登入失敗(runtime 寫 worker.error = LOGIN_FAILED:<lib 類別>)→ 同一組畫面
 const PRES_STOP_VIEW = { PASSWORD: "PASSWORD", CERT: "CERT", CERT_MISMATCH: "CERT_MISMATCH", TIMEOUT: "TIMEOUT", MAINTENANCE: "MAINTENANCE" };
-const PRES_PFX_ERR = { PFX_PASSWORD: "pres.pfx.errPw", PFX_EXPIRED: "pres.pfx.errExpired", PFX_NOT_PRESIDENT: "pres.pfx.errIssuer",
+// 憑證那一列的錯(runtime 的 PFX_* + 主行程 president_local.js 憑證密碼格式不對的 BAD_PW / NO_CA_PW):密碼類畫在欄位下,其餘畫在檔案卡下
+const PRES_PFX_ERR = { PFX_PASSWORD: "pres.pfx.errPw", BAD_PW: "pres.pfx.errPw", NO_CA_PW: "pres.pfx.errPw", PFX_EXPIRED: "pres.pfx.errExpired", PFX_NOT_PRESIDENT: "pres.pfx.errIssuer",
   PFX_INVALID: "pres.pfx.errFile", PFX_TOO_LARGE: "pres.pfx.errFile", READ_FAILED: "pres.pfx.errRead", PFX_NONE_FOUND: "pres.pfx.errNone" };
 const PRES_FEATURE = { form: "pres_form_saved", tcem: "pres_tcem_open", cert: "pres_cert_ok", probe: "pres_probe_ok", ready: "pres_ready" };
 
@@ -32,7 +33,7 @@ const presBlank = () => ({ phase: "prep", scan: null, waitTcem: false, tcemMsg: 
 const PRES_ROW_STEPS = ["setup", "cert", "probe", "test_order", "start"];
 // 整框層級的錯(不屬於哪一列),浮動 slot 只放這些
 const PRES_FRAME_ERR = { BUSY: "cap.err.busy", NO_SEAL: "pres.err.noSeal", DAEMON_DOWN: "side.stopped", TIMEOUT: "side.stopped",
-  REBOUND: "pres.err.rebound", NO_CREDS: "pres.err.rebound", BAD_ACCOUNT: "pres.form.acctErr" };
+  REBOUND: "pres.err.rebound", NO_CREDS: "pres.err.rebound", BAD_ACCOUNT: "pres.form.acctErr", LIB_OUTDATED: "pres.err.libOutdated" };
 let PRES = presBlank();
 let presTimer = null;
 
@@ -103,7 +104,7 @@ function presFirstRows(amounts) {
 function presMsgPlace(m) {
   if (!m) return null;
   if (PRES_FRAME_ERR[m.code]) return "frame";
-  if (PRES_PFX_ERR[m.code]) return "field";
+  if (m.step === "cert" && PRES_PFX_ERR[m.code]) return "field";   // 存帳密那一步的 BAD_PW 沒有憑證欄位可掛,照 slot
   return PRES_ROW_STEPS.indexOf(m.step) >= 0 ? "row" : "slot";
 }
 /* ── 純邏輯到此 ── */
@@ -144,7 +145,8 @@ async function presOpenTcem() {
   PRES.busy = true; PRES.tcemMsg = null; presPaint();
   let r = null; try { r = await window.blave.presidentTcem(); } catch (_) { }
   PRES.busy = false;
-  if (r && r.code === "OK") { PRES.waitTcem = true; presTrack("tcem"); presWatch(true); }
+  // 等待態與輪詢只在還沒找到憑證的那一頁:presScan 可能在等的時候已把 phase 推到 form;清單裡「憑證過期」那顆也走這裡(只開程式)
+  if (r && r.code === "OK") { presTrack("tcem"); if (PRES.phase === "prep") { PRES.waitTcem = true; presWatch(true); } }
   else PRES.tcemMsg = r && r.code === "HASH" ? "pres.tcem.hash" : r && r.code === "DOWNLOAD" ? "pres.tcem.download" : "pres.tcem.fail";
   presPaint();
 }
@@ -284,7 +286,9 @@ function presFormBody() {
 }
 // 「選憑證」那一列的展開內容:找到的那張(只顯示到期日)或「選別的檔案」那張 + 憑證密碼
 function presCertBody(pc, view) {
-  const cert = presSec(pc, "cert"), code = view === "d-cert-err" ? cert.error : PRES.msg && PRES_PFX_ERR[PRES.msg.code] ? PRES.msg.code : null;
+  // 剛按下去沒送出去的錯(PRES.msg)比狀態檔裡上一次的 cert.error 新,先畫它
+  const cert = presSec(pc, "cert"), fresh = PRES.msg && PRES.msg.step === "cert" && PRES_PFX_ERR[PRES.msg.code] ? PRES.msg.code : null;
+  const code = fresh || (view === "d-cert-err" ? cert.error : null), pwErr = PRES_PFX_ERR[code] === "pres.pfx.errPw";
   const f = document.createDocumentFragment(), card = trEl("div", "pres-found");
   const mk = trEl("span", "cap-mk"); mk.appendChild(trEl("span", "cur")); mk.setAttribute("aria-hidden", "true");
   const tx = trEl("div", "");
@@ -294,12 +298,16 @@ function presCertBody(pc, view) {
     tx.append(trEl("div", "t", t("pres.cert.name")), trEl("div", "d", exp ? t("pres.cert.exp", { date: exp }) : t("pres.cert.here")));
   }
   card.append(mk, tx); f.appendChild(card);
-  const exp = code === "PFX_EXPIRED" ? capDate(cert.not_after) : null;
-  const fileErr = code && code !== "PFX_PASSWORD" ? t(PRES_PFX_ERR[code] || "pres.pfx.errImport", { date: exp || "—" }) : presRowErr("cert");
+  const expired = code === "PFX_EXPIRED", exp = expired ? capDate(cert.not_after) : null;
+  const fileErr = presRowErr("cert") || (code && !pwErr ? t(PRES_PFX_ERR[code] || "pres.pfx.errImport", { date: exp || "—" }) : null);
   if (fileErr) { const e = trEl("p", "cap-err", fileErr); e.setAttribute("role", "status"); f.appendChild(e); }
-  f.appendChild(presInput("pres-capw", t("pres.cert.pw"), "caPw", { hint: t("pres.cert.pwHint"), err: code === "PFX_PASSWORD" ? t("pres.pfx.errPw") : null, enter: presUseCert }));
+  f.appendChild(presInput("pres-capw", t("pres.cert.pw"), "caPw", { hint: t("pres.cert.pwHint"), err: pwErr ? t("pres.pfx.errPw") : null, enter: presUseCert }));
   const off = PRES.busy || presDown() || !!(pc && pc.busy);
-  f.appendChild(capActs(capBtn("btn-fill", t("pres.cert.use"), presUseCert, "pres-use", off), capBtn("btn-quiet", t("pres.cert.other"), presPick, "pres-pick", PRES.busy)));
+  const acts = [capBtn("btn-fill", t("pres.cert.use"), presUseCert, "pres-use", off), capBtn("btn-quiet", t("pres.cert.other"), presPick, "pres-pick", PRES.busy)];
+  // PSCCA 裡只有過期的那張:展延要開憑證e總管,這裡沒有別的入口(開框那次的掃描只看檔名、不看到期日)
+  if (expired) acts.push(capBtn("btn-quiet", t("pres.tcem.open"), presOpenTcem, "pres-tcem-renew", PRES.busy));
+  f.appendChild(capActs(...acts));
+  if (expired && PRES.tcemMsg) f.appendChild(capErr(t(PRES.tcemMsg)));
   f.appendChild(presP("cx-hint pres-gap", t("pres.cert.local")));
   return f;
 }
@@ -377,7 +385,7 @@ function presRows(view, pc) {
   else if (!live && (probeErr || view === "d-pw")) add(errRow(t("pres.s.tprobe")));
   else add(capRow(tProbed ? "done" : "todo", t("pres.s.tprobe"), tProbed ? t("pres.s.tprobeDone") : ""));
   if (view === "d-t-order" || view === "d-t-order-fail") add(capRow(view === "d-t-order-fail" || rowErr("test_order") ? "bad" : "cur", t("pres.s.torder"), "", capFrag(capDo(t("pres.t.orderDo")),
-    view === "d-t-order-fail" ? capErr(t("pres.t.orderFail")) : rowErr("test_order") ? capErr(rowErr("test_order")) : null,
+    rowErr("test_order") ? capErr(rowErr("test_order")) : view === "d-t-order-fail" ? capErr(t("pres.t.orderFail")) : null,   // 剛沒送出去的錯比上一次的被拒新
     capActs(capBtn(view === "d-t-order-fail" ? "btn-out" : "btn-fill", t(view === "d-t-order-fail" ? "pres.t.orderAgain" : "pres.t.order"), () => presStep("test_order"), "pres-torder", PRES.busy || presDown())))));
   else if (view === "d-t-order-run") add(runRow(t("pres.s.torder"), t("pres.s.orderRun")));
   else add(capRow(live || to.status === "ok" ? "done" : "todo", t("pres.s.torder"), live || to.status === "ok" ? t("pres.s.torderDone") : ""));

@@ -11,7 +11,7 @@ if (a < 0 || b < 0) { console.log("FAIL  president.js 找不到純邏輯段的�
 const head = src.slice(0, src.indexOf("let PRES = presBlank();"));   // 常數 + presBlank
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.presView = presView; this.presRunning = presRunning; this.presBlank = presBlank; this.presDaysLeft = presDaysLeft;"
-  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW; this.presMsgPlace = presMsgPlace; this.PRES_ROW_STEPS = PRES_ROW_STEPS;", ctx);
+  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW; this.presMsgPlace = presMsgPlace; this.PRES_ROW_STEPS = PRES_ROW_STEPS; this.PRES_FRAME_ERR = PRES_FRAME_ERR;", ctx);
 const { presView, presRunning, presDaysLeft, presFirstRows, presMsgPlace } = ctx;
 
 const NOW = 1790000000 * 1000, S = NOW / 1000;
@@ -84,6 +84,18 @@ ok("步驟沒送出去 → 那一列(setup / cert / probe(含 host) / test_order
   && ctx.PRES_ROW_STEPS.slice().sort().join() === "cert,probe,setup,start,test_order");
 ok("整框層級(daemon 沒跑、加密儲存、重綁、忙碌)→ 浮動 slot,不管哪一步", ["DAEMON_DOWN", "TIMEOUT", "NO_SEAL", "REBOUND", "NO_CREDS", "BUSY"].every((c) => presMsgPlace({ code: c, step: "probe" }) === "frame"));
 ok("憑證檔的錯 → 欄位下;存帳密失敗 → slot;沒有錯 → null", presMsgPlace({ code: "PFX_PASSWORD", step: "cert" }) === "field" && presMsgPlace({ code: "FAILED", step: "creds" }) === "slot" && presMsgPlace(null) === null);
+// 稽核 integ-0118 C-1:主行程憑證密碼格式不對(BAD_PW / NO_CA_PW)畫在憑證密碼欄位下,不是列上的「這一步沒有開始」;存帳密那一步的 BAD_PW 沒有欄位可掛照 slot;
+// LIB_OUTDATED 要更新工作區,給自己的字(frame);列裡的新錯優先於狀態檔裡上一次的錯
+ok("C-1 BAD_PW / NO_CA_PW(cert)→ 欄位下;BAD_PW(creds)→ slot;LIB_OUTDATED → frame 自己的字", presMsgPlace({ code: "BAD_PW", step: "cert" }) === "field" && presMsgPlace({ code: "NO_CA_PW", step: "cert" }) === "field"
+  && presMsgPlace({ code: "BAD_PW", step: "creds" }) === "slot" && presMsgPlace({ code: "LIB_OUTDATED", step: "cert" }) === "frame" && ctx.PRES_FRAME_ERR.LIB_OUTDATED === "pres.err.libOutdated");
+{ const cb = src.slice(src.indexOf("function presCertBody("), src.indexOf("function presPwBody("));
+  ok("C-1 憑證列:剛沒送出去的錯(PRES.msg)先於狀態檔的 cert.error;密碼類三個碼都掛欄位下", /const code = fresh \|\| \(view === "d-cert-err" \? cert\.error : null\), pwErr = PRES_PFX_ERR\[code\] === "pres\.pfx\.errPw"/.test(cb)
+    && /const fileErr = presRowErr\("cert"\) \|\| \(code && !pwErr/.test(cb) && /err: pwErr \? t\("pres\.pfx\.errPw"\) : null/.test(cb));
+  ok("C-2 只有過期憑證那條死路:列裡多一顆「開啟憑證e總管」", /if \(expired\) acts\.push\(capBtn\("btn-quiet", t\("pres\.tcem\.open"\), presOpenTcem, "pres-tcem-renew"/.test(cb));
+  const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
+  ok("C-1 測試單列:剛沒送出去的錯先於上一次的被拒", /rowErr\("test_order"\) \? capErr\(rowErr\("test_order"\)\) : view === "d-t-order-fail" \? capErr\(t\("pres\.t\.orderFail"\)\) : null/.test(rows));
+  const tcem = src.slice(src.indexOf("async function presOpenTcem("), src.indexOf("// 主行程回的錯 + 發生在哪一步"));
+  ok("C-2 presOpenTcem:等待態與輪詢只在 prep(presScan 可能在等的時候已推到 form)", /if \(PRES\.phase === "prep"\) \{ PRES\.waitTcem = true; presWatch\(true\); \}/.test(tcem) && !/PRES\.waitTcem = true; presTrack/.test(tcem)); }
 { const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
   ok("列上的錯先問「在跑嗎」(在跑的優先,不會轉圈又掛錯)", /rowErr = \(step\) => \(run === step \? null : presRowErr\(step\)\)/.test(rows));
   ok("自動送的兩步(安裝、啟動)沒送出去 → 那一列掛錯 + 再試一次", /rowErr\("setup"\)\) add\(presBadRow/.test(rows) && /rowErr\("start"\)\) add\(presBadRow/.test(rows)); }

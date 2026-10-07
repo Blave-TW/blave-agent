@@ -6697,6 +6697,9 @@ msgstr "這台電腦的加密儲存現在不能用，帳密沒有存。登入 Wi
 msgid "pres.err.rebound"
 msgstr "這台電腦綁的統一帳密跟存著的不一樣。重新開通一次。"
 
+msgid "pres.err.libOutdated"
+msgstr "這台電腦的策略工作區太舊，還不支援統一期貨。更新 Blave 後再試一次。"
+
 msgid "pres.err.generic"
 msgstr "這一步沒有開始。再試一次。"
 

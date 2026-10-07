@@ -6693,6 +6693,9 @@ msgstr "This computer’s encrypted storage isn’t available, so nothing was sa
 msgid "pres.err.rebound"
 msgstr "The President credentials bound on this computer differ from the saved ones. Connect again."
 
+msgid "pres.err.libOutdated"
+msgstr "This computer’s strategy workspace is too old for President Futures. Update Blave, then try again."
+
 msgid "pres.err.generic"
 msgstr "This step didn’t start. Try again."
 
