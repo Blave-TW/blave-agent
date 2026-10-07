@@ -132,7 +132,7 @@ import types  # noqa: E402
 order_capital._REFRESH_FLAG = os.path.join(TMP, "capital_refresh")
 seen = {}
 real = {n: getattr(order_capital, n) for n in ("_get_session", "_send", "_finish", "_request_snapshot_refresh",
-                                                "_check_halt", "sk")}
+                                                "_check_halt", "sk", "_late_rows")}
 real_restart = order_capital.guard.check_restart_stop
 order_capital.guard.check_restart_stop = lambda *a, **k: None
 order_capital._check_halt = lambda fields: None
@@ -152,7 +152,16 @@ def fake_finish(sess, seq_no, symbol, timeout, fields):
     seen["finish_end"] = time.time()
     if seen.get("raise"):
         raise RuntimeError("confirm failed")
-    return {"status": "filled", "fill_qty": 1.0, "avg_fill_price": 1.0, "symbol": "TM2610", "seq_no": seq_no}
+    qty = 0.0 if seen.get("short") else 1.0
+    return {"status": "filled" if qty else "sent", "fill_qty": qty, "avg_fill_price": 1.0, "symbol": "TM2610",
+            "seq_no": seq_no}
+
+
+def fake_late_rows(sess, r, want, fields):
+    seen["late_called"] = True
+    time.sleep(0.05)
+    seen["finish_end"] = time.time()  # the late-row wait is part of the fill wait the final mark must follow
+    return dict(r, status="filled", fill_qty=float(want))
 
 
 def recording_refresh():
@@ -163,13 +172,15 @@ def recording_refresh():
 order_capital._send = fake_send
 order_capital._finish = fake_finish
 order_capital._request_snapshot_refresh = recording_refresh
-for label, call, raising in (
-        ("flatten close (close_position_partial)", lambda: order_capital.close_position_partial({}, "TM2610", "long", 1), False),
-        ("reconciler order (_capital_place_order)", lambda: reconciler._capital_place_order("TMF", 1.0), False),
-        ("raising fill wait", lambda: order_capital.place_futures_market_order({}, "TM0000", "buy", 1, "entry"), True)):
+order_capital._late_rows = fake_late_rows
+for label, call, raising, short in (
+        ("flatten close (close_position_partial)", lambda: order_capital.close_position_partial({}, "TM2610", "long", 1), False, False),
+        ("reconciler order (_capital_place_order)", lambda: reconciler._capital_place_order("TMF", 1.0), False, False),
+        ("raising fill wait", lambda: order_capital.place_futures_market_order({}, "TM0000", "buy", 1, "entry"), True, False),
+        ("short fill → late-row wait", lambda: order_capital.place_futures_market_order({}, "TM0000", "buy", 1, "entry"), False, True)):
     set_marker(0.0)
     seen.clear()
-    seen["raise"] = raising
+    seen["raise"], seen["short"] = raising, short
     try:
         call()
     except RuntimeError:
@@ -180,6 +191,8 @@ for label, call, raising in (
     check(disk >= seen["finish_end"], f"{label}: marked again after the fill wait")
     check(seen.get("marker_at_flag") == disk, f"{label}: refresh flag touched after the final mark")
     check(os.path.getmtime(order_capital._REFRESH_FLAG) >= disk - 0.01, f"{label}: flag mtime >= mark")
+    if short:
+        check(seen.get("late_called") is True, f"{label}: _late_rows ran (the final mark is checked against its end)")
 for n, v in real.items():
     setattr(order_capital, n, v)
 order_capital.guard.check_restart_stop = real_restart
