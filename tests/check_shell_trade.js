@@ -26,6 +26,23 @@ ok("連上的規則(稽核 S-2:放寬已撤回):四個欄位都要——缺 pair
 ok("剛連上、帳戶還沒讀過:算有帳戶(不閃回 onboard)", trExecState(st({ venues: V, account: null, reconciler: { alive: false } })) === "dead");
 // 稽核 S5:讀帳失敗 / 狀態檔 build 失敗時,頁面不能變成 onboard、暫停鈕不能消失
 ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", trExecState(st({ venues: V, account: acct(false), halt: {}, reconciler: { alive: true } })) === "running" && J(trFailedIds({ venues: V, account: acct(false) })) === J(["paper"]));
+// 0.1.18 Wei 實測:統一在這台電腦開通中(存了帳密、憑證 ok、probe 還在跑)就被當成綁定完成,標頭講「串接失敗 · 已暫停 · Blave 重開過」。
+// 只綁了開通中的統一、對帳器沒在跑 = setup:不是 halted / dead、不列串接失敗、切換器不出事
+{ const VP = { president: { credentials: true, pair: true, order: true, account: true } }, accP = { venues: { president: { ok: false, error: "no snapshot yet" } } };
+  const pcW = { worker: { status: "idle", at: null } }, pcOk = { worker: { status: "ok", at: 1 } };
+  const appRestart = { reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false, wanted: false } } };
+  ok("統一開通中 = setup(HALT 在、app 重開過那組欄位在,也一樣)", trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: { halted: true }, ...appRestart })) === "setup"
+    && trExecState(st({ venues: VP, account: null, president_connect: { worker: { status: "running" } }, halt: {}, reconciler: { alive: false } })) === "setup");
+  ok("統一開通中:不算串接失敗;worker ok 之後讀帳失敗才算", J(trFailedIds({ venues: VP, account: accP, president_connect: pcW })) === J([])
+    && J(trFailedIds({ venues: VP, account: accP, president_connect: pcOk })) === J(["president"]));
+  ok("worker ok 之後照一般狀態機(halted)", trExecState(st({ venues: VP, account: accP, president_connect: pcOk, halt: { halted: true }, reconciler: { alive: false } })) === "halted");
+  ok("對帳器在跑(開通過、之後 worker 失敗)不算 setup:暫停鈕要在", trExecState(st({ venues: VP, account: accP, president_connect: { worker: { status: "failed" } }, halt: {}, reconciler: { alive: true }, daemon: { reconciler: { running: true } } })) === "running");
+  ok("還綁著別家(模擬)就不是 setup", trExecState(st({ venues: { ...VP, ...V }, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false } })) === "dead");
+  ok("沒有 president_connect(不是統一、或舊狀態檔)照舊", trExecState(st({ venues: VP, account: accP, halt: {}, reconciler: { alive: false } })) === "dead");
+  ok("接線:setup 的標頭句「統一期貨 · 開通中」、頂列短詞「開通中」、切換器詞 cap.pending、主鈕換「繼續」回開通清單、別的態把它拿掉",
+    /if \(state === "setup"\) return trVenueLabel\("president", true\) \+ " · " \+ t\("cap\.pending"\);/.test(src)
+    && /state === "setup" \? t\("cap\.pending"\) : state === "running"/.test(src) && /if \(state === "setup"\) \{ out\.word = "cap\.pending"; return out; \}/.test(src)
+    && /go\.id = "tr-pres-continue"; go\.addEventListener\("click", \(\) => cxModalOpen\(go, "president"\)\);/.test(src) && /if \(pcBtn\) pcBtn\.remove\(\);/.test(src)); }
 ok("S5 狀態檔 build 失敗(只有 error、沒有 venues)= unknown,不是 noaccount", trExecState(st({ error: "boom" })) === "unknown" && trExecState(st({ daemon: {} })) === "unknown" && trExecState(st({ error: "x", venues: V })) === "unknown");
 // 心跳檔新鮮期 300 秒:app 重開後 5 分鐘內上一次的心跳還算 alive,但監督者說對帳器沒在跑 → 不能畫「執行中」
 ok("重開後舊心跳還新鮮、監督者說沒在跑 = dead", trExecState(st({ venues: V, halt: {}, reconciler: { alive: true }, daemon: { reconciler: { running: false } } })) === "dead"
@@ -1598,11 +1615,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           ctx.document.createElement = mk0; }
         ctx.trEquity = () => null; }
     }
-    ok("接線:連接框兩個視角都列群益;這台電腦選到群益只出 Mac / Windows 那句、沒有主鈕;cx.acct.meta 換成不再說抓資料的那句",
-      /\{ const g2 = document\.createElement\("optgroup"\); g2\.label = t\("cap\.group\.tw"\);/.test(src) && /go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
-      && /t\(window\.blave\.platform === "win32" \? "cx\.cap\.localWin" : "cx\.cap\.localMac"\)/.test(src)
-      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| sel\.value === CAPITAL \|\| \(sel\.value === "president" && CXF\.env === "local"\) \? sel\.value : PAPER;/.test(src)
-      && /if \(CXF\.env === "local"\) \{ const op = trEl\("option", "", t\("pres\.venue"\)\); op\.value = "president";/.test(src)
+    ok("接線:連接框「台股」一組雲端只列群益、這台電腦只列統一(0.1.18 Wei 拿掉這台電腦的群益;那兩句說明與 cx.cap.local* 一起刪);cx.acct.meta 換成不再說抓資料的那句",
+      /\{ const g2 = document\.createElement\("optgroup"\); g2\.label = t\("cap\.group\.tw"\);/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
+      && !/cx\.cap\.local/.test(src) && !/cx\.cap\.local/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
+      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| \(sel\.value === CAPITAL && CXF\.env === "cloud"\) \|\| \(sel\.value === "president" && CXF\.env === "local"\) \? sel\.value : PAPER;/.test(src)
+      && /o2\.value = CXF\.env === "local" \? "president" : CAPITAL;/.test(src)
       && /"cx\.acct\.meta": "只用來下單和讀帳戶。一次只能連一個。"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8")));
     ok("接線:選擇策略框沒有 #ps-next、psOpen 不送 pick_gate_lock、外殼不讀 market_gate",
       !/ps-next/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8")) && !/pick_gate_lock/.test(src) && !/market_gate/.test(src)); }

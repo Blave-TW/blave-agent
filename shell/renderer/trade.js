@@ -92,7 +92,12 @@ function trHoldingRows(r, ids) {
 // 群益在雲端開通中(主機回報有 capital_connect、下單程式還沒起來):帳密一存就算綁定,但讀帳要等下單程式寫出第一份快照——
 // 那段期間的讀帳失敗是預期的,不算串接失敗(設定 › 帳戶 那一列講「開通中」,標頭不能同時講「串接失敗」)
 function trCapWip(r, id) { const c = id === "capital" && r && r.capital_connect; return !!c && typeof c === "object" && !(c.worker && c.worker.status === "ok"); }
-function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id); }); }
+// 統一在這台電腦開通中(狀態檔有 president_connect、worker 還沒 ok;同 president.js presWip):讀帳失敗同樣是預期的
+function trPresWip(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !(c.worker && c.worker.status === "ok"); }
+function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id); }); }
+/* 綁著的只有開通中的統一、對帳器也沒在跑 = 開通還沒做完(0.1.18 Wei 實測:存了帳密、憑證 ok、probe 還在跑,頁面就講
+   「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在 */
+function trSetupOnly(st) { const r = st && st.report, ids = trVenueIds(r); return ids.length > 0 && ids.every((id) => trPresWip(r, id)) && !trRecRunning(st); }
 // 有沒有帳戶 = 有沒有綁定,不看這一輪讀帳成不成功(稽核 S5):交易所讀帳 API 暫時失敗時對帳器可能還在下單,
 // 這時把整頁換成 onboard、把「暫停下單」拿掉,等於在最需要出口的時候拿走出口。讀帳失敗另外標在狀態行上。
 function trHasAccount(r) { return trVenueIds(r).length > 0; }
@@ -253,6 +258,7 @@ function trExecState(st) {
   if (!r) return "loading";
   if (r.error || !r.venues || typeof r.venues !== "object") return "unknown";
   if (!trHasAccount(r)) return "noaccount";
+  if (trSetupOnly(st)) return "setup";   // 統一開通中:不是已暫停、不是死了;鈕換「繼續」,切換器不出事
   if (r.halt && r.halt.halted) return "halted";   // 含「重開沒停住、已按暫停」:舊對帳器認 HALT,已暫停 + A 是真話
   // 重開沒停住、還沒按暫停:可能仍在下單(不是 dead、不是 halted、也不借 running——不能亮綠點)。stopped 期間 alive 一律 false,不看它
   if (trRestartUnconfirmed(r)) return "unconfirmed";
@@ -784,6 +790,7 @@ function envCell(env, st, pending) {
   out.money = envMoney(st); out.venue = trVenueIds(st && st.report)[0] || null;   // venue:視窗標題寫交易所名(Wei 0.0.6:不寫「真錢」)
   if (kind === "stopped") { out.dot = "bad"; out.word = "side.stopped"; out.sig = "stopped"; return out; }
   const state = trExecState(st);
+  if (state === "setup") { out.word = "cap.pending"; return out; }   // 統一開通中:不是出事、不是在跑
   // 重開沒停住:錢可能正在外面跑,人在另一邊也要看得到(紅短劃 + 詞;看過一次就消,同其他出事)
   if (state === "unconfirmed") { out.dot = "bad"; out.word = "tr.cloud.mayTrade"; out.sig = "unconfirmed:" + String(st.report.reconciler.stopped.at || ""); return out; }
   // 重開停著(B):不是人按的、部位沒人管——同「下單停了,不是你按的」那一級
@@ -1307,6 +1314,7 @@ function trStateText(state) {
   // 第一份報告還在路上:通用的「載入中…」只有在「不知道在等誰、多久、會不會自己好」時才該用,這裡三件事都知道(spec §1 規則 5)
   if (state === "loading") return TR.env === "cloud" ? t("tr.cloud.hdFetching") : t("tr.loading");
   if (state === "unknown") return t("tr.unknown");
+  if (state === "setup") return trVenueLabel("president", true) + " · " + t("cap.pending");   // 開通中:不接「串接失敗」前綴、不講已暫停
   // 雲端剛存了金鑰 / 模擬帳戶、主機還沒回報(S5):標頭不跟內文打架——「連接中…」,過了上限「沒有收到主機確認」(v2 §5)
   if (state === "noaccount" && TR.env === "cloud" && TR.cxSaved) return trCxSavedStale(TR.cxSaved, Date.now()) ? t("tr.cloud.hdNoConfirm")
     : trCxAssumed(TR.cxSaved, Date.now()) ? t("tr.cloud.hdFetching") : t("tr.cloud.hdConnecting");
@@ -1332,7 +1340,7 @@ function trShortState(state) {
   if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") return t("side.stopped");
   if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : TR.pending.want === "released" ? t("tr.releasing") : TR.pending.want === "acct" ? t("tr.acct.confirming") : t("tr.starting");
   if (trHostDown(TR.st, Date.now())) return t("tr.hostShort");
-  const s = state === "running" ? t("tr.s.on") : state === "unconfirmed" ? t("tr.cloud.mayTrade") : state === "halted" ? (envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted"))
+  const s = state === "setup" ? t("cap.pending") : state === "running" ? t("tr.s.on") : state === "unconfirmed" ? t("tr.cloud.mayTrade") : state === "halted" ? (envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted"))
     : state === "dead" ? (trDeadKind(r) === "died" ? t("tr.s.died") : t("tr.s.off")) : "";
   return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + (s ? " · " + s : "") : s;
 }
@@ -1554,6 +1562,16 @@ function trPaintHead() {
   const pend = trAmountsEdited() ? null : trPendKey(TR, Date.now(), zv.off && !zv.noStart);
   // 雲端而且不知道現況:不放主鈕——「暫停下單」「啟動下單」哪一個字都是在替它下結論(這一刀的鈕本來就不能按,說明行還在)
   // 沒有交易所、但主機重開停著(B0):一定是 Z,不出「啟動下單」,只出「解除暫停」(v2 §9-1;紀錄檔只有 resume 清得掉)
+  // 統一開通中(setup):主鈕換成「繼續」回到開通清單(同設定 › 帳戶那一列);啟動 / 暫停都不出
+  const pcBtn = $("tr-pres-continue");
+  if (state === "setup" && !stopped) {
+    if (b) { if (document.activeElement === b) $("tr-h").focus(); b.remove(); }
+    trPaintGoStop(false); trPaintNoAmt(null); trPaintGoRel(false, false);
+    const go = pcBtn || trEl("button", "btn-fill"); go.textContent = t("cap.continue");
+    if (!pcBtn) { go.type = "button"; go.id = "tr-pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); act.appendChild(go); }
+    return;
+  }
+  if (pcBtn) pcBtn.remove();
   const b0 = state === "noaccount" && trNoAccountStopped(trReport());
   if (!stopped && (b0 || state === "noaccount" || state === "loading" || (ro && state === "unknown"))) { if (b) { if (document.activeElement === b) $("tr-h").focus(); b.remove(); } trPaintGoStop(false); trPaintNoAmt(pend); trPaintGoRel(b0, b0); return; }
   if (!b) {
@@ -3213,7 +3231,7 @@ function cxChkTextCloud(r) {
 }
 // 灰記號(不是錯):限速兩種輕的
 const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACKOFF");
-/* 交易所選單(兩個視角共用;群益那條 capital.js 也用):雲端多一組「台股」只有群益(主機是 Windows 才連得上,不是的話選了會講) */
+/* 交易所選單(兩個視角共用;群益那條 capital.js 也用):「台股」一組兩個視角各一家——雲端群益(主機是 Windows 才連得上,不是的話選了會講)、這台電腦統一 */
 function cxVenueField(L) {
   const lab = trEl("label", "fld"); lab.appendChild(trEl("span", "fld-l", t("cx.venue")));
   const w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "cx-venue";
@@ -3221,14 +3239,14 @@ function cxVenueField(L) {
   const g = document.createElement("optgroup"); g.label = t("cx.group.crypto");
   cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
   sel.appendChild(g);
-  // 群益:兩個視角都列(Wei 0.1.12)。這台電腦選到它只出一句說明(電腦版不接群益),雲端照舊交給 capital.js
-  // 統一期貨:只在這台電腦視角(雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。Mac 也列,選了講一句(d-mac)
-  { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw"); const oc = trEl("option", "", t("cap.venue")); oc.value = CAPITAL; g2.appendChild(oc);
-    if (CXF.env === "local") { const op = trEl("option", "", t("pres.venue")); op.value = "president"; g2.appendChild(op); }
+  // 群益只在雲端(交給 capital.js;電腦版不接群益,這台電腦那條 Wei 0.1.18 拿掉)。統一期貨只在這台電腦視角
+  // (雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。Mac 也列統一,選了講一句(d-mac)
+  { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw");
+    const o2 = trEl("option", "", CXF.env === "local" ? t("pres.venue") : t("cap.venue")); o2.value = CXF.env === "local" ? "president" : CAPITAL; g2.appendChild(o2);
     sel.appendChild(g2); }
   sel.value = CXF.venue; sel.disabled = !!L.cx.busy || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
   sel.addEventListener("change", () => {
-    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || sel.value === CAPITAL || (sel.value === "president" && CXF.env === "local") ? sel.value : PAPER;
+    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") || (sel.value === "president" && CXF.env === "local") ? sel.value : PAPER;
     cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== PAPER && CXF.venue !== CAPITAL && CXF.venue !== "president" && CXF.ip === undefined) cxIpLookup();
   });
   w.appendChild(sel); lab.appendChild(w);
@@ -3243,8 +3261,6 @@ function cxModalPaint() {
   }
   if (typeof presFootRestore === "function") presFootRestore();
   const L = cxBag(), box = $("cx-body"), go = $("cx-go"), cloud = CXF.env === "cloud";
-  // 這台電腦選到群益:沒有金鑰欄、沒有主鈕(雲端開機頁做不到預選 Windows,先只放說明)
-  go.hidden = !cloud && CXF.venue === CAPITAL;
   // 雲端:框開著時主機停了 → 框不自己關(可能正在貼金鑰),主鈕鎖住、結果那一格講原因;限速不做 app 端計時鎖(主機自己在冷卻)
   const down = cloud && envCloudKind(TR_BAGS.cloud.st) !== "running";
   const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, off = L.cx.busy || (venue === BINANCE && locked) || down;
@@ -3269,11 +3285,6 @@ function cxModalPaint() {
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   const sel = box.appendChild(cxVenueField(L)).querySelector("select");
-  if (venue === CAPITAL) {   // 只在這台電腦視角走到這裡(雲端的群益整個框在 capPaint)
-    box.appendChild(trEl("p", "cap-lead", t(window.blave.platform === "win32" ? "cx.cap.localWin" : "cx.cap.localMac")));
-    const back = hadId && $(hadId); if (back && !back.disabled) back.focus(); else if (hadId) sel.focus();
-    return;
-  }
   box.appendChild(trEl("p", "cx-manual-note", t("cx.acct.meta")));
   if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));
   else {

@@ -66,6 +66,9 @@ function localLine(st, lastVenue) {
   const venue = money === "paper" ? "paper" : ids.filter((k) => k !== "paper")[0];
   const line = (state) => ({ money, venue, state });
   const rec = r.reconciler || {}, sup = r.daemon && r.daemon.reconciler;
+  // 統一在這台電腦開通中(只綁了它、對帳器沒在跑;同 trade.js trSetupOnly):不是已暫停,講「尚未啟動下單」
+  const pc = r.president_connect, recRun = sup && typeof sup.running === "boolean" ? sup.running : !!rec.alive;
+  if (ids.every((k) => k === "president") && pc && typeof pc === "object" && !(pc.worker && pc.worker.status === "ok") && !(st.alive && recRun)) return line("notStarted");
   if (r.halt && r.halt.halted) return line("paused");
   if (rec.stopped && rec.stopped.reason === "machine_restart") return line(rec.stopped.gated === false ? "mayTrade" : "paused");
   // app 重開後對帳器等人按「啟動下單」(trRestartKind "app"):已暫停

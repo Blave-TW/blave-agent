@@ -153,14 +153,13 @@ app.whenReady().then(async () => {
   // 這台電腦
   await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null); })()`);
   await wait(150);
-  // 群益兩個視角都列(1ac250b,Wei 0.1.12):這台電腦選到它只出一句說明,沒有金鑰欄、沒有主鈕
-  ok("③ 這台電腦:模擬 + 五家 + 「台股」組的群益與統一(0.1.18 起統一只在這台電腦視角列)", J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "capital", "president"])
+  // 群益只在雲端(Wei 0.1.18 拿掉這台電腦那條:電腦版不接群益);統一只在這台電腦視角。「台股」那一組兩邊都在,各一家
+  ok("③ 這台電腦:模擬 + 五家 + 「台股」組只有統一(沒有群益)", J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "president"])
     && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(`[t("cx.group.crypto"), t("cap.group.tw")]`)));
   await pick("capital");
-  const capLocal = await js(`(() => { const p = $("cx-body").querySelectorAll(".cap-lead"); return { lead: p.length === 1 ? p[0].textContent : null, want: t(window.blave.platform === "win32" ? "cx.cap.localWin" : "cx.cap.localMac"), goHidden: $("cx-go").hidden, inputs: $("cx-body").querySelectorAll("input").length, sel: $("cx-venue").value }; })()`);
-  ok("③ 這台電腦選到群益:只出一句說明(Mac / Windows 各自那句)、沒有金鑰欄、主鈕藏起來", capLocal.lead === capLocal.want && !!capLocal.want && capLocal.goHidden && capLocal.inputs === 0 && capLocal.sel === "capital");
+  ok("③ 這台電腦硬選 capital(選單裡沒有那一項):退回模擬、主鈕照在", (await js(`CXF.venue`)) === "paper" && (await js(`!$("cx-go").hidden`)));
   await pick("okx");
-  ok("③ 從群益換回 OKX:主鈕回來", await js(`!$("cx-go").hidden`));
+  ok("③ 換到 OKX:主鈕在", await js(`!$("cx-go").hidden`));
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__calls.length = 0; window.__over.venueConnect = async () => ({ ok: true, code: "READ_OK", detail: {} }); window.__over.tradeSend = async () => ({ ok: true })`);
   await js(`$("cx-go").click()`); await wait(400);

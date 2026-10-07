@@ -146,6 +146,12 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
   t("localLine 列舉 §2.2 各情境(" + rows.length + " 筆)", bad.length === 0, bad);
   t("…on 與 tradeLive 同一組條件:tradeLive 不認的(心跳舊 / 監督者說沒在跑 / 已暫停 / 報告失敗)localLine 也不說 on",
     [{ ...running(), alive: false }, running(null, { daemon: { reconciler: { running: false } } }), running(null, { halt: { halted: true } }), { running: true, alive: true, report: { error: "x" } }].every((s) => !/^on/.test(S0([s]) || "")));
+  // 0.1.18:統一在這台電腦開通中(只綁了它、對帳器沒在跑)→ 尚未啟動下單,不是已暫停(同 trade.js trExecState 的 setup)
+  { const VP = { president: { credentials: true, pair: true, order: true, account: true } }, wip = { worker: { status: "idle" } };
+    const rs = { halt: { halted: true }, reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false, wanted: false } } };
+    t("統一開通中:notStarted 而不是 paused;worker ok 之後照舊 paused;對帳器在跑就不算開通中", S0([{ running: true, alive: true, report: { venues: VP, president_connect: wip, ...rs } }]) === "notStarted"
+      && S0([{ running: true, alive: true, report: { venues: VP, president_connect: { worker: { status: "ok" } }, ...rs } }]) === "paused"
+      && S0([{ running: true, alive: true, report: { venues: VP, president_connect: wip, halt: { halted: true }, reconciler: { alive: true }, daemon: { reconciler: { running: true } } } }]) === "paused"); }
   t("…讀不到時沒有上次的場所 / 場所長得不像 id:不帶交易所名(用「這台電腦：{state}」那個樣板)", !TT.localLine({ running: true, alive: true, report: { error: "x" } }, "<b>").money && !TT.localLine({ running: true, alive: true, report: { error: "x" } }, null).money);
   t("statusLine:沒有 money 的那幾態走不帶 {money} 的樣板;字沒交就整行不出", TT.statusLine(L.stLocalOnly, { state: "none" }, L) === locOnly(zh("tr.noAccount")) && TT.statusLine(L.stLocalOnly, { state: "none" }, { ...L, noAccount: "" }) === null
     && TT.statusLine(L.stLocal, { money: "real", venue: "okx", state: "onZ" }, L) === loc("OKX · " + zh("tr.runningZ")));
