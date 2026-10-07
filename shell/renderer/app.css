@@ -501,6 +501,10 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .attach-clear:hover { background: var(--surface-muted); color: var(--ink); }
 /* 熱區 28×28(看得到的仍是 20px):桌面熱區下限 24 */
 .attach-clear::before { content: ""; position: absolute; inset: -4px; }
+/* 送出後泡泡末行的附件(app.js attachLine):迴紋針與檔名隔 4;圖示撐成一行高(1.6em = 泡泡 line-height)釘在第一行中線——
+   長檔名折成兩三行時 align-items:center 會把圖示浮到整塊中間(設計稽核 0.1.18,與 web .bubble-attach 同做法) */
+.msg-attach { display: inline-flex; align-items: flex-start; gap: var(--space-4); max-width: 100%; vertical-align: top; }
+.msg-attach .icon-attach { flex: none; height: 1.6em; }
 /* 檔案拖到輸入框上方:外框改虛線當落點提示(設計稽核:不加色不加底;排在 :focus-within 之後才蓋得過它) */
 .chat-input.is-drag { border-color: var(--ink); border-style: dashed; }
 /* 面板的定位基準是整個輸入框(.chat-input),不是這顆觸發鈕:聊天欄最窄 320,

@@ -911,7 +911,7 @@ function readAttachment(file) {
 const ATTACH_FEATURE = { file: "attach_file", image: "attach_image", paste: "attach_paste" };
 function attachKind(file, from) { return from === "paste" ? "paste" : /^image\//.test((file && file.type) || "") ? "image" : "file"; }
 /* 重開 app 畫回逐字稿:主行程在使用者那句尾端補給引擎的那一行(shell/attach.js NOTE_OK / NOTE_FAIL,同 runtime/web_bridge.py)
-   不是給人讀的——拆掉,改畫成跟送出當下一樣的「📎 檔名」(雲端 /history 也是把檔名另存、前端補畫)。純函式,tests/check_shell_attach.js 從原文切出來跑。
+   不是給人讀的——拆掉,改畫成跟送出當下一樣的「迴紋針 + 檔名」(雲端 /history 也是把檔名另存、前端補畫)。純函式,tests/check_shell_attach.js 從原文切出來跑。
    跳脫寫法:這行是資料格式不是畫面字 */
 const ATTACH_NOTE_RE = /\n?\[\u7528\u6236\u50b3\u4e86\u6a94\u6848\uff1atmp\/inbound\/([^\n\]]+)\uff0c\u8acb\u5148\u8b80\u53d6\u6a94\u6848\u5167\u5bb9\u518d\u56de\u61c9\]\s*$/;
 const ATTACH_FAIL_RE = /\n?\[\u7528\u6236\u9644\u4e86\u4e00\u500b\u6a94\u6848\u4f46\u63a5\u6536\u5931\u6557\uff0c\u8acb\u544a\u77e5\u7528\u6236\u91cd\u50b3\]\s*$/;
@@ -1768,7 +1768,7 @@ function receiptFold(steps) {
   head.addEventListener("click", () => { const open = el.classList.toggle("is-open"); head.setAttribute("aria-expanded", open ? "true" : "false"); });
   return el;
 }
-/* 舊回合的使用者那句:尾端給引擎的附件行拆掉、畫回「📎 檔名」(同送出當下) */
+/* 舊回合的使用者那句:尾端給引擎的附件行拆掉、畫回「迴紋針 + 檔名」(同送出當下) */
 function addHistoryYou(content) { const a = splitAttachNote(content); return addMsg("you", a.text, a.attachment); }
 function addHistoryAi(content) {
   const r = splitReceipt(content);
@@ -1788,7 +1788,7 @@ async function csOpen(id) {
   const turns = await window.blave.loadSession(id);
   if (!turns.length) { csStartNew(); return; }
   sessionId = id; csRemember(); csClearChat();
-  { const first = splitAttachNote((turns.find((x) => x.role === "user") || {}).content || ""); csTitle = first.text || (first.attachment ? "📎 " + first.attachment : ""); }   // 標題不帶給引擎看的附件那行
+  { const first = splitAttachNote((turns.find((x) => x.role === "user") || {}).content || ""); csTitle = first.text || first.attachment || ""; }   // 標題不帶給引擎看的附件那行;純附件開頭的只留檔名(標題是純文字,不放圖示)
   // 舊回合只有文字(工具收據與思考過程沒有存),照角色畫回去;圖另外存在
   // state/chat-images/,照時間插回去——它落在那一輪的提問與回覆之間,跟當時看到的順序一樣
   const imgs = await window.blave.loadSessionImages(id);
@@ -2029,7 +2029,13 @@ function paintAi(el, raw, live) {
   el.textContent = "";
   mdPaint(el, r.blocks);
 }
-function addMsg(cls, text, attachment) {   // attachment:這句帶的檔名(只有 cls === "you"),泡泡末行畫「📎 檔名」(同雲端;無縮圖)
+/* 送出後泡泡末行的附件:迴紋針(複製輸入框那顆 .icon-attach,不另畫一個)+ 檔名。建 element,檔名走文字節點(不拼 innerHTML) */
+function attachLine(name) {
+  const s = document.createElement("span"); s.className = "msg-attach";
+  s.append($("attach-btn").querySelector(".icon-attach").cloneNode(true), document.createTextNode(name));
+  return s;
+}
+function addMsg(cls, text, attachment) {   // attachment:這句帶的檔名(只有 cls === "you"),泡泡末行畫「迴紋針 + 檔名」(同雲端;無縮圖)
   const el = document.createElement("div");
   el.className = "msg " + cls;
   if (cls === "you") {
@@ -2038,7 +2044,7 @@ function addMsg(cls, text, attachment) {   // attachment:這句帶的檔名(只�
     const lab = fixedLabel(text);
     b.className = "bubble"; b.textContent = lab || text;   // 固定觸發句只顯示摘要(B5);重送 / 存檔用的仍是原文
     if (lab) b._fixed = text;   // 摘要是照當下語言組的:切語言時 youRelang 用原句重組
-    if (attachment) b.appendChild(document.createTextNode((text ? "\n" : "") + "📎 " + attachment));   // 泡泡是 pre-wrap:換行 + 同一個文字節點
+    if (attachment) { if (text) b.appendChild(document.createTextNode("\n")); b.appendChild(attachLine(attachment)); }   // 泡泡是 pre-wrap:換行後自成一行
     el.appendChild(b);
   } else if (cls === "ai") {
     paintAi(el, text, false);
@@ -2477,7 +2483,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof engAfter === "function") engAfter(bubble);   // 安裝中送出:進度卡移到這句底下
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
-  if (!csTitle) { csTitle = msg || "📎 " + attachment.name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題
+  if (!csTitle) { csTitle = msg || attachment.name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
   const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {

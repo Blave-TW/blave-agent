@@ -496,6 +496,20 @@ count, and the hand-wired capital path places exactly the orders it did before
 the quantity book (pinned in `tests/check_self_ledger_qty.py`). Not yet live-tested on a capital account — verify on the first
 real capital `self_ledger` deployment.
 
+**Hand-wired reduce legs (群益, 統一) are capped at the account**
+(`lib/portfolio.py::hand_wired_reduce_cap`, inside `reconcile()` so a hand-edited reconciler
+gets it too). 群益 orders go out with `sNewClose=2` (auto new/close), which never refuses a sell
+larger than the long held — the rest OPENS a short; 統一 refuses it locally and the book was
+never corrected. So a close sends at most min(book, account) lots from that round's
+read (net across months). An account read short of the book goes through the same
+`note_account_short` two-read confirmation as the crypto wiring, with one difference: an
+unconfirmed empty read sends NOTHING (crypto sends the book's quantity and lets the venue's
+reduce-only refuse it). A confirmed short on a full close writes the rest off
+(`apply_ledger_writeoff`), and a flip's entry leg waits for that confirmation
+(`account_short_pending`). Pinned in `tests/check_capital_ledger_paths.py`, which drives
+`reconcile()` with the daemon's own `_get_positions_guarded` / `place_order`. Monthly
+settlement is still not a book event there (known bug, same test).
+
 **Fixed (2026-08-20, audit P0-2):** `reconcile()` used to log the leg's
 PRE-rounding `sub_diff`, not what actually filled — on capital this drifted
 the ledger by up to half a lot every round, permanently (crypto was thought to

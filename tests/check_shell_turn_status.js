@@ -240,6 +240,6 @@ ok("擋廣告攔截的擋牆頁不算已讀(稽核 B1);正文長的文章提到 
   ok("接線:回合中且草稿非空才出、不送;沒在跑照舊送;回合結束(sendBtnSync)收掉", /e\.preventDefault\(\);\n\s*if \(running && \$\("ta"\)\.value\.trim\(\)\) \{ taWaitShow\(true\); return; \}[^\n]*\n\s*sendDraft\(\);/.test(src)
     && /if \(!running\) taWaitShow\(false\);/.test(cut(src, "function sendBtnSync(", "async function stopTurn(")));
   const html = fs.readFileSync(path.join(R, "index.html"), "utf8");
-  ok("那一行在輸入框正上方、role=status;12px --ink-2、空的時候不佔位", /<p class="ta-wait" id="ta-wait" role="status"><\/p>\s*<div class="chat-input">/.test(html)
+  ok("那一行在輸入框上方(中間只隔待送附件 chip,0.1.17 設計稽核把它貼到輸入框)、role=status;12px --ink-2、空的時候不佔位", /<p class="ta-wait" id="ta-wait" role="status"><\/p>\s*(<!--[\s\S]*?-->\s*)?<div class="attach-chip" id="attach-chip" hidden>[\s\S]*?<\/div>\s*<div class="chat-input">/.test(html)
     && /\.ta-wait \{ margin: 0 0 var\(--space-6\); font-size: 12px; line-height: 1\.5; color: var\(--ink-2\); \}\n\.ta-wait:empty \{ display: none; \}/.test(css)); }
 // (結果在上面的非同步檢查裡印)
