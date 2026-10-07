@@ -2606,7 +2606,7 @@ function trAcctLabel(k) {
 function trPaintMargin(box, m, ccy, twd) {
   if (!m) return;
   const cap = trEl("div", "pf-wallets-cap margin"); cap.appendChild(trEl("span", "", t("tr.margin")));
-  if (m.at != null) cap.appendChild(trEl("span", "ts", t("tr.marginUpdated") + " " + trStamp(m.at)));
+  if (m.at != null) { const u = trEl("span", "upd", t("tr.marginUpdated") + " "); u.appendChild(trEl("span", "ts", trStamp(m.at))); cap.appendChild(u); }   // 漢字不進 mono,只有時間
   box.appendChild(cap);
   const list = trEl("div", "pf-wallets"), L = { available: "tr.marginAvail", initial_margin: "tr.marginInitial", maintenance_margin: "tr.marginMaint" };
   const money = (v) => { const s = twd ? trTwd(v) : trFmt2(v), wa = trEl("span", "w-amt", s == null ? "—" : s); if (s != null && ccy) wa.appendChild(trEl("span", "ccy", ccy)); return wa; };
@@ -2614,7 +2614,7 @@ function trPaintMargin(box, m, ccy, twd) {
   if (m.risk) {
     const wr = trEl("div", "pf-wallet-row risk"), nm = trEl("span", "w-name"); nm.appendChild(trTipLabel("", t("tr.riskRatio"), t("tr.riskRatioTip")));
     if (m.risk.below) nm.appendChild(trEl("span", "mini_tag danger", t("tr.belowMaint")));
-    const pct = m.risk.ratio == null ? "—" : m.risk.ratio.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+    const pct = m.risk.ratio == null ? "—" : (m.risk.ratio < 0 ? "−" : "") + Math.abs(m.risk.ratio).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
     wr.append(nm, trEl("span", "w-amt" + (m.risk.below ? " danger" : ""), pct)); list.appendChild(wr);
   }
   box.appendChild(list);

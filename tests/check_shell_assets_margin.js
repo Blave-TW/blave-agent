@@ -64,7 +64,7 @@ let err = paint("president", PRES);
 ok("統一:畫得出來;淨值列是整數 + TWD(不是 12,147,198.00)", !err && BOX.all("pf-acct").length === 1 && BOX.all("pf-acct")[0].all("amt")[0].textContent === "tr.equity12,147,198TWD");
 let cap = BOX.all("pf-wallets-cap");
 ok("保證金 caption(.margin)在淨值列之後、右側更新時間 MM/DD HH:mm(mono .ts)用 margin_updated_at;錢包分佈不畫(只有一個錢包)", cap.length === 1 && cap[0].className === "pf-wallets-cap margin"
-  && cap[0].children[0].textContent === "tr.margin" && cap[0].all("ts")[0].textContent === "tr.marginUpdated " + local(1790907300));
+  && cap[0].children[0].textContent === "tr.margin" && cap[0].all("upd")[0].textContent === "tr.marginUpdated " + local(1790907300) && cap[0].all("ts")[0].textContent === local(1790907300));   // 漢字不進 mono:只有時間在 .ts
 ok("四列:可動用 / 原始 / 維持(整數 + TWD)+ 風險指標 5,374.87%(不帶 TWD)", J(rowsOf()) === J([["tr.marginAvail", "11,921,198TWD"], ["tr.marginInitial", "226,000TWD"], ["tr.marginMaint", "173,000TWD"], ["tr.riskRatiotr.riskRatioTip", "5,374.87%"]]));
 let risk = BOX.all("risk")[0];
 ok("風險指標 label 是 tip 鈕(解釋「權益數 ÷ 原始保證金」);正常態沒有紅字、沒有 tag", risk && risk.all("tr-tipb").length === 1 && risk.all("tip")[0].textContent === "tr.riskRatioTip"
@@ -75,12 +75,16 @@ risk = BOX.all("risk")[0];
 ok("權益數低於維持保證金:數值紅字(.w-amt.danger)+ mini tag danger「低於維持保證金」掛在 label 後;可動用負值用 U+2212", !err && risk && risk.all("w-amt")[0].className === "w-amt danger" && risk.all("w-amt")[0].textContent === "70.10%"
   && risk.all("mini_tag")[0].className === "mini_tag danger" && risk.all("mini_tag")[0].textContent === "tr.belowMaint" && rowsOf()[0][1] === "−67,580TWD");
 
+err = paint("president", { ...PRES, equity: -158420, accounts: { futures: -158420 } });
+risk = BOX.all("risk")[0];
+ok("權益數為負:風險指標負值用 U+2212(−70.10%)、同樣低於維持", !err && risk.all("w-amt")[0].textContent === "\u221270.10%" && risk.all("w-amt")[0].className === "w-amt danger");
+
 err = paint("president", { ...PRES, initial_margin: 0, maintenance_margin: 0 });
 ok("沒部位(原始 / 維持 0):列照畫 0 TWD、風險指標「—」不上色不掛 tag", !err && J(rowsOf().slice(1)) === J([["tr.marginInitial", "0TWD"], ["tr.marginMaint", "0TWD"], ["tr.riskRatiotr.riskRatioTip", "—"]]) && BOX.all("danger").length === 0);
 
 err = paint("president", { ...PRES, available: null, margin_updated_at: null }, 1759800000);
 ok("key 存在但 null:那列畫「—」(沒有 TWD 後綴);沒有 margin_updated_at 退回 read_at", !err && rowsOf()[0][1] === "—" && rowsOf().length === 4
-  && BOX.all("pf-wallets-cap")[0].all("ts")[0].textContent === "tr.marginUpdated " + local(1759800000));
+  && BOX.all("pf-wallets-cap")[0].all("ts")[0].textContent === local(1759800000));
 err = paint("president", { ...PRES, margin_updated_at: undefined }, null);
 ok("更新時間兩個來源都沒有:caption 不畫右側", !err && BOX.all("pf-wallets-cap")[0].all("ts").length === 0 && BOX.all("pf-wallets-cap")[0].children.length === 1);
 
@@ -98,6 +102,8 @@ ok("讀帳失敗:淨值「—」、不畫保證金", !err && BOX.all("pf-acct")[
 
 // 指紋:保證金欄位在 r.account 裡,trShould("assets") 的指紋整包帶 r.account,保證金變了會重畫
 ok("trShould(\"assets\") 的指紋含整個 r.account(保證金 / 更新時間變了就重畫)", /trShould\("assets", box, \[ids, r\.account, trUnit\(\)\]\)/.test(src));
+ok("CSS:風險列是 tip 氣泡的定位祖先;mini tag 有 letter-spacing、沒有 vertical-align 魔術數", /\.pf-wallet-row\.risk \{ position: relative; \}/.test(css)
+  && /\.pf-wallet-row \.mini_tag \{[^\n]*letter-spacing: 0\.04em;/.test(css) && !/\.pf-wallet-row \.mini_tag \{[^\n]*vertical-align/.test(css));
 ok("CSS:caption 左右排、紅字、mini tag danger 三條都在 trade.css", /\.pf-wallets-cap\.margin \{ display: flex;[^\n]*justify-content: space-between/.test(css)
   && /\.pf-wallet-row \.w-amt\.danger \{ color: var\(--color-redText\); \}/.test(css) && /\.pf-wallet-row \.mini_tag\.danger \{ background-color: var\(--color-redLight\); color: var\(--color-redBlack\); \}/.test(css));
 
