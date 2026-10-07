@@ -73,6 +73,7 @@ id) or a broker message into a return value, an exception, the status or a log.
 import base64
 import hashlib
 import hmac
+import importlib
 import json
 import os
 import re
@@ -1000,12 +1001,35 @@ def _local_run(flag, timeout, what, argv=None):
     return subprocess.CompletedProcess(p.args, p.returncode, out, err)
 
 
+_vault_import_logged = False
+
+
+def _vault():
+    """lib/president_vault from the WORKSPACE — through command_listener._in_workspace
+    (its sys.path, its cwd), never a bare `from lib import`: outside that, `lib` is
+    whatever sys.path finds first (0.1.18 Windows: pywin32's win32/lib), and the
+    first such import binds the name for the whole daemon. None when the workspace
+    has no vault, with the cause logged once — a silent None here read as
+    「UNKNOWN」 on the page and as "not bound" in _env_bound_to."""
+    global _vault_import_logged
+    try:
+        return _cl()._in_workspace(importlib.import_module, "lib.president_vault")
+    except ImportError as e:
+        if not _vault_import_logged:
+            _vault_import_logged = True
+            print(f"[president_connect] lib.president_vault not importable: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+        return None
+
+
 def _env_bound_to(b):
     """.env holds this account, bound with this password (the sentinel's fingerprint)."""
+    pv = _vault()
+    if pv is None:
+        return False
     try:
-        from lib import president_vault as pv
         env = pv.read_env(os.path.join(WORKSPACE, ".env"))
-    except (ImportError, OSError):
+    except OSError:
         return False
     return (env.get(_ACCOUNT) == b["account"]
             and env.get(_SECRET) == VAULT_PW_PREFIX + vault_fingerprint(b["account"], b["password"]))
@@ -1145,11 +1169,8 @@ LOGIN_STOPPED_EXIT = 3  # = lib/president_worker.LOGIN_STOPPED_EXIT
 
 def _login_stop():
     """The class of the failed login that stopped logins (lib/president_vault STOP), or None."""
-    try:
-        from lib import president_vault as pv
-        return pv.stopped()
-    except Exception:
-        return None
+    pv = _vault()
+    return pv.stopped() if pv is not None else None
 
 
 def local_tick():
@@ -1215,10 +1236,12 @@ def _local_cert(b, push):
 
 
 def _env_account():
+    pv = _vault()
+    if pv is None:
+        return None
     try:
-        from lib import president_vault as pv
         return pv.read_env(os.path.join(WORKSPACE, ".env")).get(_ACCOUNT)
-    except (ImportError, OSError):
+    except OSError:
         return None
 
 

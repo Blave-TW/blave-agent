@@ -269,6 +269,43 @@ def _stamp():
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _workspace_first(ws):
+    """`python local_daemon.py` puts runtime/ at sys.path[0] and nothing puts the
+    workspace there — so a `from lib import …` made outside
+    command_listener._in_workspace takes whatever `lib` sys.path finds first.
+    On Windows that is pywin32's site-packages/win32/lib (pywin32.pth adds it;
+    no __init__.py, so a namespace package), and the binding sticks: a namespace
+    package never re-points to a regular package found later, so after that
+    `lib.guard` is ModuleNotFoundError for the rest of the process — halt /
+    resume / close_all dead (0.1.18, the first such import being
+    president_connect's vault read). The workspace goes first, before any
+    sibling module is imported; a `lib` already bound somewhere else is dropped
+    so the next import resolves here. Returns where `lib` resolves."""
+    import importlib.util
+
+    if ws not in sys.path:
+        sys.path.insert(0, ws)
+    want = os.path.join(ws, "lib") + os.sep
+
+    def _where():
+        try:
+            spec = importlib.util.find_spec("lib")
+        except (ImportError, ValueError):
+            return ""
+        return os.path.abspath(spec.origin) if spec and spec.origin else ""
+
+    origin = _where()
+    if origin.startswith(want):
+        return origin
+    _log(f"lib resolved outside the workspace ({origin or 'namespace package'}) — re-resolving")
+    for name in [n for n in sys.modules if n == "lib" or n.startswith("lib.")]:
+        del sys.modules[name]
+    origin = _where()
+    if not origin.startswith(want):
+        _log(f"lib still does not resolve to the workspace ({origin or 'nothing'})")
+    return origin
+
+
 def _wait_parent_gone(ppid):
     """Blocks until whoever started us is gone; returns why. stdin EOF alone is
     not enough — any other process holding the pipe's write end keeps it open
@@ -508,8 +545,7 @@ def run_reconciler(script, president_stdin=False):
     import runpy
 
     ws = os.getcwd()
-    if ws not in sys.path:
-        sys.path.insert(0, ws)
+    _workspace_first(ws)
     if president_stdin:
         _take_president_line()
 
@@ -1311,6 +1347,7 @@ def main(argv=None):
         _log("another local daemon already owns this workspace — exiting")
         return 3
     os.chdir(ws)
+    _workspace_first(ws)  # before Daemon() imports command_listener / president_connect
     atomic_file.sweep_runtime_temps(ws, os.environ.get("BLAVE_AGENT_STATE") or os.path.join(base, "state"))
     _link_current(base)
     daemon = Daemon(ws, secret)

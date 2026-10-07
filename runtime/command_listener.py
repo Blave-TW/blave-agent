@@ -443,6 +443,24 @@ def _child_kw(**kw):
     return kw
 
 
+def _drop_namespace_lib():
+    """A `lib` imported before the workspace was on sys.path is whatever came
+    first there — on Windows pywin32's site-packages/win32/lib, a directory with
+    no __init__.py, so a namespace package. That binding never re-points to the
+    workspace's real package once it is on sys.path (importlib leaves a
+    namespace path alone when a regular package turns up), and every
+    `from lib…` below is ModuleNotFoundError for the rest of the process
+    (0.1.18 Windows: halt / resume / close_all dead). The workspace's lib always
+    has an __init__.py, so a namespace `lib` is never the right one: drop it and
+    the import below resolves again, with the workspace first."""
+    m = sys.modules.get("lib")
+    if m is None or getattr(m, "__file__", None):
+        return
+    _log("lib is bound to a namespace package (imported before the workspace was on sys.path) — dropped")
+    for name in [n for n in sys.modules if n == "lib" or n.startswith("lib.")]:
+        del sys.modules[name]
+
+
 def _in_workspace(fn, *a, **kw):
     """lib/guard.py resolves state/HALT relative to the cwd, and this thread has
     no business changing the process-wide cwd out from under the bridge — so the
@@ -453,6 +471,7 @@ def _in_workspace(fn, *a, **kw):
         os.chdir(WORKSPACE)
         if WORKSPACE not in sys.path:
             sys.path.insert(0, WORKSPACE)
+        _drop_namespace_lib()
         return fn(*a, **kw)
     finally:
         try:
@@ -488,12 +507,21 @@ def _strategy_names_arg(args):
     return names
 
 
+_downtime_import_logged = False
+
+
 def _downtime_lib(optional=False):
     """optional=True → None on a workspace that predates lib/downtime.py
-    (nothing there ever writes a pause, so there is nothing to honour)."""
+    (nothing there ever writes a pause, so there is nothing to honour). The
+    cause is logged once either way: a `lib` bound to the wrong directory reads
+    exactly like a missing module here (0.1.18 Windows), and that must show."""
+    global _downtime_import_logged
     try:
         from lib import downtime
-    except ImportError:
+    except ImportError as e:
+        if not _downtime_import_logged:
+            _downtime_import_logged = True
+            _log(f"lib.downtime not importable: {type(e).__name__}: {e}")
         if optional:
             return None
         raise RuntimeError("this workspace has no lib/downtime.py — "
