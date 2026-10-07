@@ -194,6 +194,15 @@ pc.divert_credentials(dict(BIND))
 check("3 a login before the certificate → CERT_MISSING (never a CERT block in the lib)",
       refused(lambda: pc.dispatch("president_probe", {}, D), "CERT_MISSING") is True
       and refused(lambda: pc.dispatch("president_finish", {}, D), "CERT_MISSING") is True)
+open(P["pfx"], "wb").write(b"PFX")
+check("3 a certificate file whose password never reached the vault → CERT_MISSING (it would log in with \"\")",
+      refused(lambda: pc.dispatch("president_probe", {}, D), "CERT_MISSING") is True
+      and refused(lambda: pc.dispatch("president_finish", {}, D), "CERT_MISSING") is True)
+pc._write_vault(dict(json.load(open(P["vault"])), president_ca_password=""))
+d0 = pc.dispatch("president_probe", {}, D)
+check("3 …with its password in the vault (an empty one is a password) the probe runs", isinstance(d0, D))
+d0.cleanup()
+os.remove(P["pfx"])
 check("3 args: no-arg steps refuse args; probe takes only {after_unlock: true}; pfx needs key_id + envelope",
       refused(lambda: pc.dispatch("president_setup", {"x": 1}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_finish", {"x": 1}, D), "BAD_ARGS") is True
@@ -205,6 +214,10 @@ d1 = pc.dispatch("president_setup", {}, D)
 check("3 a second long step while one runs → BUSY",
       refused(lambda: pc.dispatch("president_setup", {}, D), "BUSY") is True
       and pc.read_status()["busy"] == "president_setup")
+before = open(P["vault"]).read()
+check("3 a bind while a step runs → BUSY, the vault untouched (president_pfx would write it back over the bind)",
+      refused(lambda: pc.divert_credentials(dict(BIND, president_password="mid-step")), "BUSY") is True
+      and open(P["vault"]).read() == before)
 d1.cleanup()
 check("3 cleanup releases it", pc.read_status()["busy"] is None)
 pc._update("cert", status="importing")
@@ -308,6 +321,61 @@ cl._in_workspace(cl._cmd_credentials, {"env": {"FOO_API_KEY": "k", "FOO_SECRET_K
 check("4 binding another venue evicts 統一 and drops its vault (the production switch) and certificate",
       not os.path.exists(P["vault"]) and not os.path.exists(P["pfx"])
       and "president_" not in open(os.path.join(WS, ".env")).read())
+
+# ── 6. upload write order and a bind racing it (no cryptography needed: envelope and check stubbed) ──
+real = {"open_envelope": cc.open_envelope, "inspect_pfx": pc.inspect_pfx, "run_probe": pc.run_probe,
+        "_write_private": pc._write_private}
+cc.open_envelope = lambda key_id, envelope, key_path=None: (b"NEWPFX", "ca-new")
+pc.inspect_pfx = lambda pfx, password: {"not_after": "2027-01-01T00:00:00Z", "not_after_ts": 0, "issuer_checked": False}
+pc.run_probe = lambda push=None, after_unlock=False: {"state": "ok"}
+ARGS = {"key_id": "k", "envelope": {}}
+
+
+def write_private_hook(on_pfx=None, fail_vault=False):
+    def w(path, data):
+        if path == P["vault"] and fail_vault:
+            raise OSError("disk full")
+        real["_write_private"](path, data)
+        if path == P["pfx"] and on_pfx:
+            on_pfx()
+    return w
+
+
+pc.divert_credentials(dict(BIND))
+pc._write_private = write_private_hook(fail_vault=True)
+r = refused(lambda: pc.run_pfx(ARGS), "VAULT_FAILED")
+check("6 the vault write fails after the certificate landed → the certificate is removed (no login on the old/no password)",
+      r is True and not os.path.exists(P["pfx"]) and "president_ca_password" not in json.load(open(P["vault"])), r)
+check("6 …and the probe gate refuses", refused(lambda: pc.dispatch("president_probe", {}, D), "CERT_MISSING") is True)
+
+
+def other_process_rebinds_same_account():
+    real["_write_private"](P["vault"], json.dumps({"president_password": "changed-elsewhere", "live": True,
+                                                   "account_fp": pc.account_fp(BIND["president_account"])}).encode())
+
+
+pc._write_private = write_private_hook(on_pfx=other_process_rebinds_same_account)
+pc.run_pfx(ARGS)
+v = json.load(open(P["vault"]))
+check("6 a same-account rebind from another process mid-upload is kept; only the certificate password is added",
+      v["president_password"] == "changed-elsewhere" and v["president_ca_password"] == "ca-new"
+      and open(P["pfx"], "rb").read() == b"NEWPFX", v)
+
+
+def other_process_binds_another_account():
+    real["_write_private"](P["vault"], json.dumps({"president_password": "x", "live": True,
+                                                   "account_fp": pc.account_fp("70000099999")}).encode())
+
+
+pc.divert_credentials(dict(BIND))
+pc._write_private = write_private_hook(on_pfx=other_process_binds_another_account)
+r = refused(lambda: pc.run_pfx(ARGS), "REBOUND")
+v = json.load(open(P["vault"]))
+check("6 another account bound mid-upload → REBOUND: the certificate removed, the new account's vault left alone",
+      r is True and not os.path.exists(P["pfx"]) and "president_ca_password" not in v and v["president_password"] == "x", r)
+cc.open_envelope = real["open_envelope"]
+pc.inspect_pfx, pc.run_probe, pc._write_private = real["inspect_pfx"], real["run_probe"], real["_write_private"]
+pc.drop_vault()
 
 # ── 5. upload ──
 try:

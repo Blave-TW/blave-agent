@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一憑證上傳與綁定不互蓋**:`president_pfx` 的 vault 寫入失敗時把剛落地的 `president.pfx` 刪掉(否則新憑證配舊／空密碼,
+  一次 probe 就燒掉券商三次之一);`president_probe`／`president_finish` 的關卡除了憑證檔也要 vault 裡有 `president_ca_password`
+  (看鍵在不在,空字串是合法密碼);`divert_credentials` 先拿 `_busy`,有步驟在跑回 `BUSY`;`run_pfx` 寫 vault 前重讀,
+  帳號在上傳途中被別的行程換掉回 `REBOUND` 並刪憑證。
 - **統一綁定成對檢查**:雲端 Windows 上 `credentials` 帶 `president_*` 卻缺帳號或真密碼(只帶密碼、只帶憑證密碼、只帶帳號、
   帳號配哨兵)一律拒 `INCOMPLETE`——原本原樣放行,單獨一筆密碼會明文落進 `.env`、繞過 vault。api 端同規則(先上)。
 - **統一期貨雲端開通(新 `runtime/president_connect.py`,群益那套的同形)**:`credentials` 綁統一時(雲端 Windows),交易密碼與

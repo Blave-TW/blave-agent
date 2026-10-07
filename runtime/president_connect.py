@@ -199,7 +199,12 @@ def divert_credentials(env, local=False):
     trading password would sit in .env with no way to production — and for any
     統一 write without both the account and a real password: a lone password
     (or certificate password) would land in .env as plaintext, a lone account
-    or sentinel would point .env at a vault written for someone else."""
+    or sentinel would point .env at a vault written for someone else.
+    Refused BUSY while a 統一 step runs in this process: president_pfx writes
+    the vault too, and the two would overwrite each other. The lock is
+    in-process (the chat bind runs this from another process, where the
+    on-disk `busy` must not be swept either — it would mark a live step
+    INTERRUPTED); run_pfx covers that side by re-reading the vault."""
     if not any(k.casefold().startswith("president_") for k in env):
         return env
     if local:
@@ -212,6 +217,15 @@ def divert_credentials(env, local=False):
         _refuse("INCOMPLETE", "統一期貨 takes the account and the trading password together")
     if not lib_supports_vault():
         _refuse("LIB_OUTDATED", "update the workspace before binding 統一期貨")
+    if not _busy.acquire(blocking=False):
+        _refuse("BUSY", f"another 統一 step is running ({(read_status() or {}).get('busy')})")
+    try:
+        return _divert(env, account, password)
+    finally:
+        _busy.release()
+
+
+def _divert(env, account, password):
     p = _paths()
     afp = account_fp(account)
     old = _read_vault()
@@ -398,14 +412,30 @@ def run_pfx(args, push=None):
     try:
         pfx, password = cc.open_envelope(args["key_id"], args["envelope"], key_path=p["key"])
         meta = inspect_pfx(pfx, password)
-        vault = _read_vault()
-        if not vault.get(_SECRET):
+        bound = _read_vault()
+        if not bound.get(_SECRET):
             _refuse("NOT_BOUND", "save the account and trading password first")
         try:
             _write_private(p["pfx"], pfx)
         except Exception as e:
             _refuse("VAULT_FAILED", type(e).__name__)
-        _write_vault(dict(vault, **{_CA_PW: password}))
+        # re-read right before the write: a bind from another process (the chat
+        # bind) in between must not be rolled back by this step's older copy
+        vault = _read_vault()
+        try:
+            if not vault.get(_SECRET):
+                _refuse("NOT_BOUND", "save the account and trading password first")
+            if vault.get("account_fp") != bound.get("account_fp"):
+                _refuse("REBOUND", "the account changed during the upload — upload the certificate again")
+            _write_vault(dict(vault, **{_CA_PW: password}))
+        except Exception:
+            # the new certificate must not stay next to the old (or no) password:
+            # a login would try it with that one and spend a broker try
+            try:
+                os.remove(p["pfx"])
+            except OSError:
+                pass
+            raise
         pfx = password = None
     except Exception as e:
         _update("cert", status="failed", error=cc._code(e, "IMPORT_FAILED"))
@@ -481,8 +511,11 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
             _refuse("BAD_ARGS", "president_probe takes nothing or {\"after_unlock\": true}")
     elif args:
         _refuse("BAD_ARGS", f"{cmd} takes no arguments")
-    if cmd in ("president_probe", "president_finish") and not os.path.isfile(_paths()["pfx"]):
-        # an unreadable certificate is a CERT block in the lib: never log in without one
+    if cmd in ("president_probe", "president_finish") and (
+            not os.path.isfile(_paths()["pfx"]) or _CA_PW not in _read_vault()):
+        # an unreadable certificate is a CERT block in the lib, and one without its
+        # password in the vault logs in with "" — never log in without both. Key
+        # presence, not truthiness: a pfx with no password stores "".
         _refuse("CERT_MISSING", "upload the certificate first")
     if not _busy.acquire(blocking=False):
         _refuse("BUSY", f"another 統一 step is running ({(read_status() or {}).get('busy')})")
