@@ -206,9 +206,9 @@ GET /openclaw/marketplace/admin/pending
 Approve a pending strategy (makes it public):
 ```
 POST /openclaw/marketplace/admin/strategies/{id}/approve
-Body (optional): {"category": "Crypto" | "TW Stock"}
+Body (optional): {"category": "Crypto" | "TW Stock" | "US Stock" | "Forex" | "Other"}
 ```
-If the pending strategy's current category is not `Crypto` / `TW Stock`, approval is rejected with 400 unless the body sets a valid `category`.
+If the pending strategy's current category is not one of `Crypto` / `TW Stock` / `US Stock` / `Forex` / `Other`, approval is rejected with 400 unless the body sets one (submissions are free-form, so this is where the public category gets fixed).
 
 Reject a strategy (sets status to unlisted):
 ```
@@ -220,7 +220,7 @@ Create an official strategy (approved + public + is_official immediately):
 POST /openclaw/marketplace/admin/strategies/official
 Body: {title, description, category, code}
 ```
-`category` must be exactly `Crypto` or `TW Stock` (anything else is rejected with 400). Private uploads (`/strategies/private`) accept any category.
+`category` must be exactly `Crypto`, `TW Stock`, `US Stock`, `Forex` or `Other` (anything else is rejected with 400). Submissions (`/strategies/submit`) and private uploads (`/strategies/private`) accept any string category up to 100 characters (may be empty or omitted); a non-string or longer value is rejected with 400.
 
 ## Description format (required for all uploads)
 
@@ -254,7 +254,7 @@ Content-Type: application/json
   "code": "...full source code..."
 }
 ```
-`category` must be exactly `Crypto` or `TW Stock` (anything else is rejected with 400). Private uploads (`/strategies/private`) accept any category.
+`category` is free-form here (any string up to 100 characters, may be empty or omitted; a non-string or longer value is rejected with 400). At review Blave assigns the public category — exactly one of `Crypto`, `TW Stock`, `US Stock`, `Forex`, `Other`.
 
 Status starts as `pending`. Blave reviews and publishes it.
 
