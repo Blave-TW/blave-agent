@@ -1227,7 +1227,8 @@ def _sched_bash_guard_hooks(options):
 # 回合結束時引擎追蹤的程序(前景、逾時被轉背景、run_in_background)全部被殺,沒有東西會再叫醒 agent。
 # 2026-10-03 事故:run_in_background 拿到「You will be notified」、agent 回「跑完後我會立即回報」就結束回合;
 # 09-28:回測給了 10 分鐘 timeout,CLI 到點轉背景,回合結束連回測一起死。所以 run_in_background 一律拒絕,
-# 會跑回測/掃參的前景呼叫 timeout 不到「這一輪還剩的時間」也拒絕(上限 = 自動轉背景的門檻,見 turn_env;
+# 會跑回測/掃參的前景呼叫 timeout 不到「這一輪還剩的時間」就由 hook 把 timeout 改寫成那個數放行(引擎不夠新或
+# 剩的太少才拒絕,見 _bg_guard_hooks;上限 = 自動轉背景的門檻,見 turn_env;
 # 剩餘 = 續跑判斷同一條式子 _BRIDGE_KILL_SEC − _RESUME_TAIL_MARGIN_SEC − 已用)。
 # 等待寫法只給 python time.sleep 輪詢(references/deployment.md 3b 那一行):單一指令、不串 `;`(AGENTS.md 的規矩),
 # 實測 claude 2.1.281 可用;開頭的 `sleep N`(N≥25)CLI 會擋。
@@ -1251,35 +1252,56 @@ _POLL_HINT = (
 )
 
 
-def bg_guard_reason(tool_input, need_ms):
-    """Bash 呼叫該不該拒絕:回給模型的理由,或 None。need_ms = min(這一輪的 Bash 上限, 這一輪還剩的時間)。"""
+def bg_guard_check(tool_input, need_ms):
+    """Bash 呼叫該不該擋:(kind, 回給模型的理由) 或 (None, None)。need_ms = min(這一輪的 Bash 上限, 這一輪還剩的時間)。
+    kind "background" = run_in_background;"timeout" = 回測/掃參啟動的 timeout 不到 need_ms(hook 可改寫放行)。"""
     tool_input = tool_input or {}
     if tool_input.get("run_in_background") in (True, "true", "True", 1):
-        return ("Refused by the Blave runtime — run_in_background is not available here. When this turn ends the "
-                "engine closes and kills every process it is tracking, a backgrounded one included, and nothing "
-                "calls you again: its completion notice reaches no one and no later report from you is possible. "
-                "Run the command in the foreground with the Bash tool's `timeout` (up to " + str(need_ms) + "; the "
-                "call returns as soon as the command ends). " + _POLL_HINT)
+        return "background", (
+            "Refused by the Blave runtime — run_in_background is not available here. When this turn ends the "
+            "engine closes and kills every process it is tracking, a backgrounded one included, and nothing "
+            "calls you again: its completion notice reaches no one and no later report from you is possible. "
+            "Run the command in the foreground with the Bash tool's `timeout` (up to " + str(need_ms) + "; the "
+            "call returns as soon as the command ends). " + _POLL_HINT)
     cmd = tool_input.get("command")
     if not isinstance(cmd, str) or not _BACKTEST_LAUNCH_RE.search(cmd) or _DETACHED_RE.search(cmd):
-        return None
+        return None, None
     try:
         timeout = int(tool_input.get("timeout"))
     except (TypeError, ValueError):
         timeout = 0
     if timeout >= need_ms:
-        return None
-    return ("Refused by the Blave runtime — this starts a backtest / scan, and with `timeout` "
-            + (str(timeout) if timeout else "unset (default 120000)") + " the engine moves it to the background "
-            "when that runs out; the background run is killed when this turn ends and its result is lost. Issue the "
-            "same command again in the foreground with the Bash tool's `timeout` set to " + str(need_ms) + " (what "
-            "this turn has left — the call returns as soon as the run ends, so a short run costs nothing extra). If "
-            "the run is not going to finish within that, do not start it this way: follow references/deployment.md "
-            "› When the job does not finish in the turn. " + _POLL_HINT)
+        return None, None
+    return "timeout", (
+        "Refused by the Blave runtime — this starts a backtest / scan, and with `timeout` "
+        + (str(timeout) if timeout else "unset (default 120000)") + " the engine moves it to the background "
+        "when that runs out; the background run is killed when this turn ends and its result is lost. Issue the "
+        "same command again in the foreground with the Bash tool's `timeout` set to " + str(need_ms) + " (what "
+        "this turn has left — the call returns as soon as the run ends, so a short run costs nothing extra). If "
+        "the run is not going to finish within that, do not start it this way: follow references/deployment.md "
+        "› When the job does not finish in the turn. " + _POLL_HINT)
+
+
+# 這一輪真正在跑的引擎:stream-json 的 init 訊息帶 claude_code_version(run_turn 收到就記下來;hook 在第一個
+# 工具呼叫才會跑,init 早就過了)。沒收到(更舊的 CLI、SDK 沒 yield)= None = 走拒絕那條,不猜。
+_ENGINE = {"cli_version": None}
+# PreToolUse hook 的 updatedInput 從 claude 2.0.10 起(CHANGELOG「PreToolUse hooks can now modify tool inputs」);
+# 實跑驗過 2.1.281(SDK 0.2.159 內附)。再舊的引擎會把 updatedInput 當沒看到、照原 timeout 跑——那正是 09-28 轉背景
+# 被殺的那條路,而且這次連拒絕提醒都沒有,所以版本不夠就退回拒絕。
+_BG_REWRITE_MIN_CLI = (2, 0, 10)
+# 改寫的下限 = 續跑判斷的同一個數(_RESUME_MIN_TOOL_SEC:剩的不夠跑一支像樣的指令就不續跑);need_ms 比這還小時,
+# 靜默放行等於讓一個注定跑不完的回測開跑,拒絕訊息反而會叫 agent 別這樣啟動。
+_BG_REWRITE_MIN_MS = 300 * 1000
+
+
+def cli_supports_updated_input(version):
+    m = re.match(r"(\d+)\.(\d+)\.(\d+)", version or "")
+    return bool(m) and tuple(int(x) for x in m.groups()) >= _BG_REWRITE_MIN_CLI
 
 
 def _bg_guard_hooks(options):
-    """PreToolUse:Bash,任何回合:run_in_background 與 timeout 不足的回測啟動拒絕,理由回給模型。"""
+    """PreToolUse:Bash,任何回合:run_in_background 拒絕;timeout 不足的回測啟動,引擎夠新且 need_ms 夠大就把 timeout
+    改寫成 need_ms 放行(updatedInput 取代整個 input,所以帶著原欄位),否則拒絕——理由都回給模型。"""
     t0 = time.monotonic()   # 掛載在回合開頭(run_turn 的 t_start 前幾行)
 
     async def guard(input_data, _tool_use_id, _context):
@@ -1289,9 +1311,19 @@ def _bg_guard_hooks(options):
         except (TypeError, ValueError):
             cap_ms = 1800000
         left_ms = int((_BRIDGE_KILL_SEC - _RESUME_TAIL_MARGIN_SEC - (time.monotonic() - t0)) * 1000)
-        reason = bg_guard_reason((input_data or {}).get("tool_input"), max(0, min(cap_ms, left_ms)))
-        if not reason:
+        need_ms = max(0, min(cap_ms, left_ms))
+        tool_input = (input_data or {}).get("tool_input") or {}
+        kind, reason = bg_guard_check(tool_input, need_ms)
+        if not kind:
             return {}
+        if kind == "timeout" and need_ms >= _BG_REWRITE_MIN_MS \
+                and cli_supports_updated_input(_ENGINE["cli_version"]):
+            print(f"[agent_turn] bg guard: backtest launch timeout {tool_input.get('timeout')!r} → {need_ms} "
+                  f"(claude {_ENGINE['cli_version']})", file=sys.stderr)
+            # 排程回合的 _sched_bash_guard_hooks 同時回 deny 時 deny 贏(claude 2.1.281 PreToolUse 消費端:
+            # 記下 deny 之後的 allow 一律換成那個 deny,先 allow 後 deny 也是 deny 收尾)
+            return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
+                                           "updatedInput": {**tool_input, "timeout": need_ms}}}
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                        "permissionDecisionReason": reason}}
 
@@ -3110,6 +3142,7 @@ _SUPPORTS_PARTIAL = _STREAM_EVENT is not None and "include_partial_messages" in 
 # getattr:少了這兩個型別的 SDK build 只是收據沒有耗時,不能讓它 NameError 掉整個回合。
 _USER_MESSAGE = getattr(sdk, "UserMessage", None)
 _TOOL_RESULT_BLOCK = getattr(sdk, "ToolResultBlock", None)
+_SYSTEM_MESSAGE = getattr(sdk, "SystemMessage", None)
 # 探針:開著跑一回合就會在 journalctl 列出這個 query() 設定下 stream 吐出哪些訊息
 # 型別。只印類別名,不印任何 content。留著——換 SDK / 換 proxy 模型時要再驗一次。
 _DEBUG_MSGS = os.environ.get("BLAVE_AGENT_DEBUG_MSGS") == "1"
@@ -4259,6 +4292,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                             "terminal_reason": getattr(msg, "terminal_reason", None),
                             "result": getattr(msg, "result", None),
                         }
+                elif _SYSTEM_MESSAGE is not None and isinstance(msg, _SYSTEM_MESSAGE):
+                    if getattr(msg, "subtype", None) == "init":
+                        _ENGINE["cli_version"] = (getattr(msg, "data", None) or {}).get("claude_code_version")
                 elif _DEBUG_MSGS:
                     print(f"[agent_turn][probe] {type(msg).__name__}", file=sys.stderr)
                 if getattr(sink, "interrupted", False):
