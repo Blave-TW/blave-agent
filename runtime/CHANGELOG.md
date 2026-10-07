@@ -8,6 +8,15 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一測試環境(新指令 `president_host`、`president_test_order`)**:統一要用戶先用營業員給的測試帳號在測試主機下一筆單、
+  回報後才開正式權限。綁定時 `.env` 同時寫 `president_url` 與 `president_test_url`,切環境只翻 vault 的 `live`;新帳號預設測試、
+  同帳號重綁沿用原環境、綁定帶 `president_url` 則照白名單轉。`president_host` 收 `{"env": "test"|"live"}` 或 `{"url": 信上網址}`,
+  只認 test167(`.pfctrade.com`／`.testpfctrade.com`)與 viploginm,其餘 `HOST_NOT_ALLOWED`;切到測試會移除 worker 服務並刪帳戶快照,
+  再 probe。`president_test_order` 只在測試環境(runtime 關卡、`runtime/president_test_order.py` 重查 vault 與主機、lib 登入擋非測試伺服器),
+  微台近月 1 口市價 IOC 買進,萬一成交立刻 IOC 平倉;回傳台北時間、委託書號、商品、狀態碼,不帶券商原文。probe 記 `env`;
+  `president_finish` 要 vault 在正式且最近一次 probe 是正式主機過的(`TEST_ENV`／`PROBE_NOT_OK`)。測試主機打錯密碼共用同一份封鎖檔;
+  統一是否共用三次計數待確認。電腦版 daemon 不收(`CLOUD_ONLY`),排程回合 Bash 守門擋 `president_test_order`。
+  **出貨順序:api president-api-018(3c614153)先上**。
 - **統一憑證 RDP 自己申請那條路(新指令 `president_pfx_local`)**:雲端沒有憑證的用戶自己 RDP 用憑證e總管申請,網頁只送憑證密碼
   封包(`pfx` 必須空字串,帶檔拒 `ENVELOPE_INVALID`);機器從 `C:\Users\Administrator\PSCCA\` 由新到舊找 `.pfx`,本機驗密碼與效期,
   第一個通過的**複製**成 `credentials\president.pfx`(原檔留給明年展延),vault 寫入／鎖／probe 同 `president_pfx`(抽成 `_import_cert`)。
