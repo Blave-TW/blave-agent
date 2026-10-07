@@ -944,9 +944,15 @@ function engineSetup() {
 // Codex elevated 沙盒讀不到隨包 Python 時補授權(shell/winsandbox.js);一次啟動只做一次、永遠 resolve。
 // 不等它:最差要幾分鐘且沒有進度可顯示,第一句話與 tradeStartIfReady 不該被它拖住
 let _sandboxAcl = null;
+// Codex 讀的 config.toml(CODEX_HOME 優先);沒有檔 = ""(Codex 預設不是 elevated),其他錯誤丟出去讓 winsandbox 照做
+function codexConfigText() {
+  const f = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "config.toml");
+  try { return fs.readFileSync(f, "utf8"); } catch (e) { if (e && e.code === "ENOENT") return ""; throw e; }
+}
 function sandboxAcl() {
   if (!_sandboxAcl) _sandboxAcl = require("./winsandbox").createSandboxAcl({
     win: WIN, packaged: app.isPackaged, pyExe: BUNDLED_PY, exists: fs.existsSync, execFile, systemRoot: process.env.SystemRoot, log: (m) => console.error(m),
+    codexConfig: codexConfigText,
   });
   return _sandboxAcl.ensure();
 }
