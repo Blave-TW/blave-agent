@@ -145,6 +145,8 @@ const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看
 const STRAT_MS = 60 * 1000;
 const STRAT_STEPS = { created: "strat_created", backtested: "strat_backtested", deployed: "strat_deployed" };
 const STRAT_KEEP = 5000;
+// 429／5xx 的重送:每次失敗後等 1、2、4、8 分鐘,第 5 次還是失敗就記成送過(只在記憶體,重開 app 歸零)
+const STRAT_RETRY_MAX = 5, STRAT_RETRY_BASE_MS = 60 * 1000;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
 const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail"];
 const DAY_RE = /^[0-9]{8}$/;
@@ -243,7 +245,8 @@ function createTelemetry(opts) {
      資料夾名只在這裡變成雜湊(sha256 前 16 hex)、存在本機狀態檔,不出門;出門的只有 kind。
      - 升級後第一次拿到 kinds(狀態檔在、沒有 strat):每支策略已經到的步驟全記成送過、一則都不送——不然升級那一刻每台把存量灌一輪(同 api 第一份回報只 seed)。
      - 之後新到的步驟才送。關著時發生的直接記成送過(重新打開不補);今天同 kind 已經有一列的也直接記(api 反正只留一列)。
-     - 有回應就記(含 4xx:api 不收的值重送也不會收);送不出去(離線)下一輪再試。 */
+     - 2xx 與 429 以外的 4xx 才記(4xx = api 不收這個值,重送也不會收);429／5xx 退避重送、STRAT_RETRY_MAX 次為止;
+       送不出去(離線)每輪再試、不計次——沒打到 api 就沒有負擔。 */
   const stratHash = (name) => crypto.createHash("sha256").update(name).digest("hex").slice(0, 16);
   const stratKind = (k) => (["A", "B", "C"].indexOf(k.type) >= 0 ? k.type : "unk") + "."
     + (typeof k.market === "string" && Object.prototype.hasOwnProperty.call(STRAT_MARKETS, k.market) ? STRAT_MARKETS[k.market] : "unk");
@@ -251,6 +254,16 @@ function createTelemetry(opts) {
   function stratNote(step, h) {
     const a = st.strat[step];
     if (a.indexOf(h) < 0) { a.push(h); if (a.length > STRAT_KEEP) a.splice(0, a.length - STRAT_KEEP); }
+  }
+  const stratRetry = new Map();   // ik → { n: 已失敗次數, next: 下次可以再送的時間 }
+  function stratDone(step, h, ik, resp) {
+    const code = resp && resp.status;
+    if (!code) return;
+    if (code === 429 || code >= 500) {
+      const n = ((stratRetry.get(ik) || {}).n || 0) + 1;
+      if (n < STRAT_RETRY_MAX) { stratRetry.set(ik, { n, next: nowMs() + STRAT_RETRY_BASE_MS * 2 ** (n - 1) }); return; }
+    }
+    stratRetry.delete(ik); stratNote(step, h); save();
   }
   function strategySteps(kinds) {
     try {
@@ -268,10 +281,10 @@ function createTelemetry(opts) {
         for (const step of Object.keys(STRAT_STEPS)) {
           if (!stratDue(r.k, step) || s.strat[step].indexOf(r.h) >= 0) continue;
           const ev = STRAT_STEPS[step], kind = stratKind(r.k), ik = ev + "#" + r.h;
-          if (inflight.has(ik)) continue;
+          if (inflight.has(ik) || nowMs() < ((stratRetry.get(ik) || {}).next || 0)) continue;
           if (!s.enabled || dailyKeys().indexOf(ev + ":" + kind) >= 0) { stratNote(step, r.h); dirty = true; continue; }
           inflight.add(ik);
-          const out = track(ev, { kind }, (resp) => { inflight.delete(ik); if (resp && resp.status) { stratNote(step, r.h); save(); } });
+          const out = track(ev, { kind }, (resp) => { inflight.delete(ik); stratDone(step, r.h, ik, resp); });
           if (out) went++; else inflight.delete(ik);   // 同 kind 那一則還在路上:下一輪它記好了,這支就走上面「今天已經有一列」
         }
       }

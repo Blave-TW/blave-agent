@@ -524,16 +524,29 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       const dB = fs.mkdtempSync(path.join(TMP_ROOT, "d-")); fs.writeFileSync(path.join(dB, "telemetry.json"), "{broken");
       mk(dB).tm.installId();
       t("狀態檔在但壞了:照升級處理(strat 留 null 等 seed)", JSON.parse(fs.readFileSync(path.join(dB, "telemetry.json"), "utf8")).strat === null); }
-    // 送不出去(離線)下一輪再試;有回應(含 4xx)就記
-    let mode = "down"; const sentF = [];
-    const f = createTelemetry({ dir: fs.mkdtempSync(path.join(TMP_ROOT, "d-")), endpoint: "https://x/t", appVersion: "0.3.1", osVersion: "15.5", lang: "zh-TW",
-      post: (u, b) => { sentF.push(b); return mode === "down" ? Promise.reject(new Error("offline")) : Promise.resolve({ status: mode === "400" ? 400 : 200 }); } });
+    // 送不出去(離線)每輪再試;2xx 與 429 以外的 4xx 才記;429／5xx 退避重送、有上限
+    let mode = "down"; const sentF = []; let clockF = Date.UTC(2026, 9, 7, 3, 0, 0);
+    const f = createTelemetry({ dir: fs.mkdtempSync(path.join(TMP_ROOT, "d-")), endpoint: "https://x/t", appVersion: "0.3.1", osVersion: "15.5", lang: "zh-TW", now: () => clockF,
+      post: (u, b) => { sentF.push(b); return mode === "down" ? Promise.reject(new Error("offline")) : Promise.resolve({ status: Number(mode) || 200 }); } });
     f.strategySteps({});
     const sf = { n1_SECRET: K("A", "crypto", false, false) };
     f.strategySteps(sf); await tick(); f.strategySteps(sf); await tick();
     t("離線:每一輪都再試(沒記)", sentF.length === 2);
     mode = "400"; f.strategySteps(sf); await tick();
     t("api 回 400(例如 api 還沒上這個事件):記成送過,不再重送", sentF.length === 3 && f.strategySteps(sf) === 0 && (await tick(), sentF.length === 3));
+    for (const code of ["429", "500", "503"]) {
+      mode = code; const sk = { ["r" + code + "_SECRET"]: K("B", "crypto", false, false) }, n0 = sentF.length;
+      f.strategySteps(sk); await tick();
+      t(`api 回 ${code}:不記,退避期間不重送`, sentF.length === n0 + 1 && f.strategySteps(sk) === 0);
+      clockF += 61 * 1000; f.strategySteps(sk); await tick();
+      t(`…過了一分鐘再送一次`, sentF.length === n0 + 2);
+      mode = "200"; clockF += 121 * 1000; f.strategySteps(sk); await tick();
+      t(`…恢復後送成功就記,不再重送`, sentF.length === n0 + 3 && f.strategySteps(sk) === 0);
+      clockF += 24 * 3600 * 1000;   // 換日:下一個 code 的同 kind 不被「今天已有一列」擋掉
+    }
+    { mode = "502"; const sk = { cap_SECRET: K("C", "crypto", false, false) }, n0 = sentF.length;
+      for (let i = 0; i < 12; i++) { f.strategySteps(sk); await tick(); clockF += 16 * 60 * 1000; }
+      t("一直 5xx:送滿 STRAT_RETRY_MAX(5)次就記成送過,不無限重送", sentF.length === n0 + 5); }
     // 計時器:start() 排一次,讀 opts.strategies()
     let calls = 0;
     const tmr = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { strategies: () => { calls++; return null; }, strategiesMs: 10 });
