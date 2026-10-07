@@ -236,6 +236,43 @@ os.remove(P["vault"])
 check("6 the line holds the passwords and the environment, not the account", json.loads(pc.secret_line()) == {
     "president_password": PW, "president_ca_password": CAPW, "live": False})
 
+# ── 6c. the probe's hard timeout (0.1.18 Windows: 「確認登入」 spun for 5 minutes) ──
+# The Windows venv python.exe is venvlauncher.exe; the interpreter is its child. subprocess.run(timeout=)
+# kills the launcher and then waits for the pipes — held open by the orphan — forever. Same shape here:
+# a parent that only waits on a grandchild sharing its stdout.
+SLEEPER = os.path.join(WS, "sleeper.py")
+with open(SLEEPER, "w") as f:
+    f.write("import os, subprocess, sys\n"
+            "c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+            "open(os.path.join(os.environ['BLAVE_AGENT_WORKSPACE'], 'grandchild.pid'), 'w').write(str(c.pid))\n"
+            "c.wait()\n")
+t0 = time.time()
+code = code_of(lambda: pc._local_run("--once", 1, "probe", argv=[SLEEPER]))
+took = time.time() - t0
+check("6c _local_run: a child whose grandchild holds the pipes still times out (RuntimeError, within seconds)",
+      code == "probe timed out" and took < 8, f"{code} {took:.1f}s")
+gpid = int(open(os.path.join(WS, "grandchild.pid")).read())
+alive = True
+for _ in range(30):  # SIGKILL lands at once; the reparented zombie takes a moment to be reaped
+    try:
+        os.kill(gpid, 0)
+    except OSError:
+        alive = False
+        break
+    time.sleep(0.1)
+check("6c the grandchild is gone too (the whole tree is killed, not just the child)", not alive)
+real_paths, real_probe_timeout = pc._paths, pc.PROBE_TIMEOUT_S
+pc._paths = lambda: dict(real_paths(), worker=SLEEPER)
+pc.PROBE_TIMEOUT_S = 1
+t0 = time.time()
+st6c = pc.run_probe()
+pr6c = pc.read_status()["probe"]
+check("6c run_probe on that worker: status leaves `running` as failed / timeout, within seconds",
+      st6c["state"] == "timeout" and pr6c["status"] == "failed" and pr6c["state"] == "timeout" and time.time() - t0 < 8,
+      json.dumps(pr6c))
+pc._paths, pc.PROBE_TIMEOUT_S = real_paths, real_probe_timeout
+os.remove(SLEEPER)
+
 # ── 6b. test environment (the cloud's president_host / president_test_order, same runtime code) ──
 probes = []
 real_probe = pc.run_probe

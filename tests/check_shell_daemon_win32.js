@@ -47,6 +47,28 @@ function fakeHost(name, platform, exitOnEof) {
   const cn = c.log.map((x) => x[0]);
   t("darwin:EOF + SIGTERM 同一刻送出(daemon 應 SIGTERM 退出,沒走到 SIGKILL)", cn.join(",") === "end,kill:SIGTERM" && c.log[1][1] - c.log[0][1] < 20);
 
+  /* 0.1.18 實測看到兩支 local_daemon.py(venv python 與內建 python),是 Windows venv launcher + 它的直譯器子行程,一支 daemon。
+     宿主這一側釘住真正的保證:start() 重複叫只 spawn 一次;自己死掉只重起一支;任何時刻活著的子行程最多一個 */
+  { const ws = path.join(BASE, "single"); fs.mkdirSync(ws, { recursive: true });
+    const live = new Set(); let maxLive = 0; const spawned = [];
+    const spawnFn = () => {
+      const c = new EventEmitter(); c.stdin = new EventEmitter(); c.stdin.write = () => true; c.stdin.end = () => {}; c.stderr = new EventEmitter();
+      c.kill = () => { setTimeout(() => c.emit("exit", null, "SIGKILL"), 5); return true; };
+      spawned.push(c); live.add(c); maxLive = Math.max(maxLive, live.size); c.on("exit", () => live.delete(c));
+      return c;
+    };
+    const host = createDaemonHost({ python: "x", script: "x.py", base: BASE, workspace: ws, env: {}, spawnFn, platform: "win32", stopKillMs: 120, stopGiveUpMs: 300 });
+    host.start(); host.start(); host.start(); await sleep(10);
+    t("start() 連叫三次:只 spawn 一支", spawned.length === 1 && live.size === 1);
+    spawned[0].emit("exit", 1, null);   // 自己死掉(不是收工)→ 2 秒退避後重起
+    await sleep(2400);
+    t("自己死掉 → 重起剛好一支;前後任何時刻活著的最多一個", spawned.length === 2 && live.size === 1 && maxLive === 1 && host.isRunning());
+    spawned[1].emit("exit", 3, null);   // 鎖被別支握著 → 2 秒後再試一次,也只一支
+    await sleep(2400);
+    t("exit 3(鎖)→ 重試也只一支", spawned.length === 3 && live.size === 1 && maxLive === 1);
+    await host.stop();
+    t("stop() 之後不再重起", !host.isRunning() && live.size === 0 && (await sleep(2400), spawned.length === 3)); }
+
   // 預設值沒動:9 秒 kill、11 秒放行
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8");
   t("stop() 預算仍是 9000 / 11000 毫秒", /STOP_KILL_MS = 9000, STOP_GIVE_UP_MS = 11000/.test(src));

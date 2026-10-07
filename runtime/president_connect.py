@@ -539,6 +539,9 @@ def run_probe(push=None):
         rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe").returncode
     except RuntimeError:
         rc = None
+    except Exception as e:  # whatever else: the section must leave "running" — the page waits on it
+        print(f"[president_connect] probe failed to run ({type(e).__name__})", file=sys.stderr)
+        rc = -1
     try:
         with open(p["probe"], encoding="utf-8") as f:
             obj = json.load(f)
@@ -945,16 +948,53 @@ def child_flags():
     return dict(_CHILD_FLAGS) if _LOCAL["secrets"] else {}
 
 
+LOCAL_DRAIN_S = 5
+
+
+def _kill_tree(pid):
+    """Windows: sys.executable inside a venv is venvlauncher.exe, the interpreter
+    running the code is its child — kill()/terminate() reach only the launcher
+    and the child lives on, holding our pipes (and the credentials line).
+    POSIX children of _local_run start in their own session for the same reason."""
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
+                           **_cl()._child_kw())
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except OSError:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
 def _local_run(flag, timeout, what, argv=None):
+    """Popen, not run(): run(input=…) next to the stdin=DEVNULL _child_kw() adds
+    raised ValueError before any process started (0.1.18: the probe's status
+    never left "running"). And on a timeout run() kills the child and then waits
+    for the pipes to close — never, while a grandchild (the venv launcher's
+    interpreter) holds them. Kill the whole tree, then drain."""
     cl = _cl()
     try:
-        return subprocess.run([sys.executable] + (argv or [_paths()["worker"], flag]), cwd=WORKSPACE,
-                              input=(secret_line() + "\n").encode("utf-8"), capture_output=True,
-                              timeout=timeout, env=cl._local_child_env(**_CHILD_FLAGS), **cl._child_kw())
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"{what} timed out")
+        p = subprocess.Popen([sys.executable] + (argv or [_paths()["worker"], flag]), cwd=WORKSPACE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=os.name != "nt",
+                             env=cl._local_child_env(**_CHILD_FLAGS), **cl._child_kw(stdin=subprocess.PIPE))
     except OSError as e:
         raise RuntimeError(f"{what} could not start ({type(e).__name__})")
+    try:
+        out, err = p.communicate((secret_line() + "\n").encode("utf-8"), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_tree(p.pid)
+        try:
+            p.communicate(timeout=LOCAL_DRAIN_S)
+        except subprocess.TimeoutExpired:
+            pass
+        raise RuntimeError(f"{what} timed out")
+    return subprocess.CompletedProcess(p.args, p.returncode, out, err)
 
 
 def _env_bound_to(b):
@@ -1039,7 +1079,10 @@ class _LocalWorker:
                 p.stdin.close()
             except (OSError, AttributeError):
                 pass
-            p.terminate()
+            if os.name == "nt":
+                _kill_tree(p.pid)  # terminate() would stop the venv launcher and leave the worker logged in
+            else:
+                p.terminate()
             try:
                 p.wait(5)
             except subprocess.TimeoutExpired:
@@ -1078,10 +1121,13 @@ class _LocalWorker:
         except Exception:
             cmd = ""
         if "president_worker.py" in cmd and os.path.abspath(_paths()["worker"]) in cmd:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except OSError:
-                pass
+            if os.name == "nt":
+                _kill_tree(pid)  # the pid on file is the venv launcher's
+            else:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except OSError:
+                    pass
         try:
             os.remove(self._pid_path())
         except OSError:

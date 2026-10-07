@@ -127,6 +127,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     secret = crypto.randomBytes(32).toString("hex");
     fs.mkdirSync(inDir, { recursive: true }); fs.mkdirSync(ackDir, { recursive: true });
     startedAt = Date.now();
+    // Windows:venv 的 python.exe 是 venvlauncher,真的直譯器是它的子行程——工作管理員看到兩支 local_daemon.py 是一支 daemon,不是兩支
     const c = spawnFn(python, [script, "--secret-stdin"], {
       cwd: workspace, stdio: ["pipe", "ignore", "pipe"], windowsHide: true,
       // BLAVE_AGENT_LOCAL 是 daemon 的啟動閘門,必須由這裡帶;其餘是呼叫端給的最小環境(不含任何 Blave 憑證)
