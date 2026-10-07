@@ -679,6 +679,19 @@ units in `references/lib.md`; do NOT hand-write SKCOM order calls anymore); reco
 the hand-wired signed-diff pattern per `references/manager.md`, and the reconciler service needs
 the `.\Administrator` ObjectName exception there (602).
 
+**Contract months and settlement in the book** (`references/manager.md` § Contract months): each
+fill's `resolved_symbol` (`TX2610`) puts its lots in a month (`lib/account_capital.contract_month`).
+With a book, the reconciler's 群益 read counts only the months the book holds — a month the user
+opened by hand is left out (audit `manual_month_excluded`) instead of netted into the bot's, which
+used to let a far-month manual short net the bot's near-month long to 0 and write it off. Orders
+still go out on the near-month alias (a far-month close during a roll can open the near month —
+known, accepted). 群益 gives no contract list here, so a book month past its settlement time
+(third Wednesday 13:30) counts as cash-settled once the account has no row of it on two reads ≥5 s
+apart; a row still held past that time is a postponed settlement and stays the bot's.
+**Unverified:** whether `GetOpenInterest` keeps a settled month's row after cash settlement (統一
+does; if 群益 does too, the book keeps that month as held and the strategy does not re-enter —
+check on the first real settlement day, 2026-10-21).
+
 ### Account Snapshot Worker (`blave-agent-capital` service)
 
 The connect flow's `capital_finish` command installs and starts this service exactly as below

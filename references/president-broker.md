@@ -219,13 +219,21 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   backtest's `TXFR1` series changes contract (its first new-month bar is 13:31).
 - **Which held rows count** (`lib/president_contracts.py`; the worker records the broker's contract
   list each tick for this):
-  - the bot's months are only the **front month** (next to settle) and the **computed entry
-    month** — they differ between the roll (15:00 the day before) and the 13:30 settlement;
+  - **with a book** (the reconciler, its orders and 全部平倉 pass `book_months` — the contract
+    months the self_ledger book recorded from each fill's `resolved_symbol`, see
+    `references/manager.md` § Contract months): the bot's months are exactly the months its book
+    holds. A held month the book does not record is the user's, whatever the calendar says — a far
+    month the user opened becomes the front month after a settlement and is still theirs. With the
+    book flat on a root, no row of that root is the bot's;
+  - **without a book** (no baseline yet, a platform reader, an agent script calling the lib with
+    just a root): the bot's months are the **front month** (next to settle) and the **computed
+    entry month** — they differ between the roll (15:00 the day before) and the 13:30 settlement;
   - a month **past its settlement time that the broker's list, read, no longer carries** is
     **settled residue**: treated as not held, never closed (it was cash-settled), only logged;
-  - a month past its settlement time while the broker's list **could not be read** fails the read
-    as a transient (`ListUnknown`): the reconciler skips the round and nothing is guessed — guessing
-    "settled" would open the next month beside a holiday-postponed one that still trades;
+  - a month of the bot's past its settlement time while the broker's list **could not be read**
+    fails the read as a transient (`ListUnknown`): the reconciler skips the round and nothing is
+    guessed — guessing "settled" would open the next month beside a holiday-postponed one that
+    still trades (a month the book does not hold never fails the read);
   - a month past its settlement time that the broker **still lists** (a holiday-postponed
     settlement, or a list that has not dropped it yet) still counts as held;
   - **any other month** (a far month the user opened in the app) is **left out of every read**
@@ -248,9 +256,32 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 - **Reduce / close** → the `productid` of the position row being closed (worker snapshot), never a
   re-derived month: after a roll the near month is no longer the contract that is held. A root open
   in two months is refused; close each by its month code.
+- **Close vs entry is decided by the book, never by the broker's net.** `reconcile()` splits a
+  flip into a reduce_only close (capped at min(book, account) by `hand_wired_reduce_cap`, so a lot
+  the user holds in the same month is never closed as the bot's) and an entry; the reconciler's
+  統一 block sends a reduce_only leg as a close and anything else as an entry. The entry right
+  after a flip's close usually reads a snapshot from before that close → `EntryDeferred`, sent
+  next round, no 下單失敗.
+- **Settlement is a book event** (`lib/portfolio.settle_expired_months`, every round): a book
+  month past its settlement time that the account no longer holds and the list no longer carries,
+  read so twice ≥5 s apart, is dropped from the book (audit `ledger_settled`, no notification) and
+  the target re-enters in the month trading now. Still listed = postponed, kept; list unread =
+  nothing decided that round. The account guard does not count a row whose every month is past
+  its settlement time as an empty read, so a settlement never trips the "positions read back
+  empty" HALT.
+- **Known gap — same-month netting:** a futures account nets one contract. If the user holds the
+  opposite side in the month the bot enters, the bot's entry closes the user's lots at the broker
+  and nothing records it (futures have no `netted_qty` yet), so the bot's exit does not hand them
+  back (`tests/check_capital_ledger_paths.py` M2, known bug).
+- **One account, two machines** (cloud + desktop on the same 統一 account): safe only when they
+  trade **different roots** (TXF vs MXF vs TMF — separate contracts, separate books). On the same
+  root the two books net at the broker: no order ever exceeds what the account holds, but one
+  machine's entry silently closes the other's lots, or one book adopts the other's, and both
+  strategies sit on positions that do not exist.
 - **Unverified on a real settlement day** (the next is 2026-10-21): what `get_domestic_contracts`
-  lists between 13:30 and the night session, and holiday-shifted settlements (the rule assumes the
-  third Wednesday).
+  lists between 13:30 and the night session (the worker caches it 5 minutes), and holiday-shifted
+  settlements on the live broker (replayed in `tests/check_capital_ledger_paths.py` H1 2026-02 /
+  H2 2023-01 with a frozen clock only).
 
 ---
 
