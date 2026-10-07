@@ -50,6 +50,7 @@ import sys
 import threading
 import time
 
+import atomic_file
 import capital_connect as cc
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
@@ -130,9 +131,8 @@ def _update(section=None, create=True, reset=False, **fields):
         st["updated_at"] = now
         path = _paths()["status"]
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path + ".tmp", "w", encoding="utf-8") as f:
+        with atomic_file.replacing(path, encoding="utf-8") as f:
             json.dump(st, f)
-        os.replace(path + ".tmp", path)
         return st
 
 
@@ -175,19 +175,13 @@ def _write_private(path, data):
     ACL set before the rename; the plaintext tmp is removed on any failure."""
     cred = _paths()["cred"]
     cc._restrict_dir(cred)  # credentials\ first: provisioning leaves it inheriting C:\
-    tmp = f"{path}.{os.urandom(4).hex()}.tmp"
-    try:
-        with open(tmp, "wb") as f:
-            f.write(data)
+
+    def _system_admins_only(tmp):  # strict, not cc.restrict_admins: a failed ACL must refuse the write
         if IS_WINDOWS:
             cc._icacls(tmp, "/inheritance:r", "/grant:r", "*S-1-5-18:F", "*S-1-5-32-544:F")
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
+
+    with atomic_file.replacing(path, "wb", prepare=_system_admins_only) as f:
+        f.write(data)
 
 
 def _write_vault(d):

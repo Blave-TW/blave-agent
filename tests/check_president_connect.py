@@ -114,7 +114,7 @@ check("1 no secret in .env", "trade-pw" not in json.dumps(out))
 check("1 credentials\\ locked before any plaintext tmp exists",
       acl and acl[0][0] == "credentials" and acl[0][1][0] == "/inheritance:r" and acl[0][2] is False, acl[:1])
 check("1 vault ACL: SYSTEM + Administrators read it (worker = LocalSystem, reconciler = Administrator), before the rename",
-      [a for f, a, _ in acl if f.startswith("president_vault.json.") and f.endswith(".tmp")]
+      [a for f, a, _ in acl if "president_vault.json." in f and f.endswith(".tmp")]  # atomic_file's .name.hex.tmp
       == [("/inheritance:r", "/grant:r", "*S-1-5-18:F", "*S-1-5-32-544:F")], acl)
 check("1 a changed password is a different account identity",
       pc.vault_fingerprint("1", "a") != pc.vault_fingerprint("1", "b"))
