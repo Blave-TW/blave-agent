@@ -108,10 +108,29 @@ ok("C-1 BAD_PW / NO_CA_PW(cert)→ 欄位下;BAD_PW(creds)→ slot;LIB_OUTDATED 
   ok("測試段標題的鈕:只在測試環境、測試單還沒成功時畫,按了送 host live(既有指令:切正式＋登入)", /ph\("pres\.ph\.test", !live && to\.status !== "ok" \? capBtn\("btn-quiet", t\("pres\.t\.skip"\), \(\) => presHost\("live"\), "pres-skip-test", off\) : null\);/.test(rows)
     && /, ph = \(k, btn\) => \{[^\n]*s\.setAttribute\("aria-hidden", "true"\); li\.appendChild\(s\); if \(btn\) li\.appendChild\(btn\);/.test(rows));
   ok("略過(runtime test_skipped、env live):三列灰、不打勾、右邊「已略過」;第一列給「改做測試單」(host test:只切回、不登入)", /const skipped = live && !!pc && pc\.test_skipped === true;/.test(rows)
-    && /const tProbed = \(live && !skipped\) \|\|/.test(rows) && /else if \(skipped && !tProbed\) add\(capRow\("todo", t\("pres\.s\.tprobe"\), skipRight, capActs\(capBtn\("btn-quiet", t\("pres\.t\.back"\), \(\) => presStep\("host", \{ env: "test" \}\), "pres-test-back", off\)\)\)\);/.test(rows)
-    && /const d = \(live && !skipped\) \|\| to\.status === "ok"; add\(capRow\(d \? "done" : "todo", t\("pres\.s\.torder"\), d \? t\("pres\.s\.torderDone"\) : skipRight\)\);/.test(rows)
+    && /const tProbed = \(live && !skipped\) \|\|/.test(rows) && /else if \(skipped\) add\(capRow\("todo", t\("pres\.s\.tprobe"\), skipRight, capActs\(capBtn\("btn-quiet", t\("pres\.t\.back"\), \(\) => presStep\("host", \{ env: "test" \}\), "pres-test-back", off\)\)\)\);/.test(rows)
+    && /const d = \(live && !skipped\) \|\| to\.status === "ok"; add\(capRow\(d \? "done" : "todo", t\("pres\.s\.torder"\), d \? t\("pres\.s\.torderDone"\) : to\.status === "failed" \? "" : skipRight\)\);/.test(rows)
     && /add\(capRow\(live && !skipped \? "done" : "todo", t\("pres\.s\.treport"\), live && !skipped \? t\("pres\.s\.treportDone"\) : skipRight\)\);/.test(rows));
-  ok("略過後 UNKNOWN 多一句「營業員還沒開正式權限 → 先做上面的測試單」,沒有自動重試", /view === "d-UNKNOWN" && pc && pc\.env === "live" && pc\.test_skipped === true \? presP\("cx-hint", t\("pres\.err\.unknownSkipped"\)\)/.test(pb)); }
+  ok("略過後 UNKNOWN 多一句「營業員還沒開正式權限 → 先做上面的測試單」,沒有自動重試", /view === "d-UNKNOWN" && pc && pc\.env === "live" && pc\.test_skipped === true \? presP\("cx-hint", t\("pres\.err\.unknownSkipped"\)\)/.test(pb));
+  // 稽核 integ-0118 第三版 B-1:略過之前測試單被拒過(test_order failed)→ 正式 UNKNOWN 那一格也要有「改做測試單」,被拒的那列不標「已略過」。
+  // presRows 真的跑一次(殼全部換成記錄用的替身),不只比對原文
+  const dom = { t: (k) => k, trEl: (tag, cls, text) => ({ tag, cls, text, kids: [], appendChild(x) { this.kids.push(x); return x; }, append(...xs) { this.kids.push(...xs); }, setAttribute() {} }),
+    capRow: (kind, name, right, body) => ({ kind, name, right, body: body || null }), capBtn: (cls, label, fn, id, off) => ({ btn: id, off: !!off }),
+    capActs: (...xs) => ({ acts: xs }), capFrag: (...xs) => ({ frag: xs }), capDo: (x) => ({ do: x }), capErr: (x) => ({ err: x }), capDate: () => "",
+    presDown: () => false, presRowErr: () => null, presBadRow: (name, text, retry, id) => ({ kind: "bad", name, btn: id }),
+    presProbeBody: () => ({ body: "probe" }), presPwBody: () => ({ body: "pw" }), presTestHostBody: () => ({ body: "thost" }), presCertBody: () => ({ body: "cert" }), presTestReportBody: () => ({ body: "treport" }),
+    presStep: () => {}, presHost: () => {}, Date };
+  const rctx = Object.assign({}, dom); vm.createContext(rctx);
+  vm.runInContext(head + "\nlet PRES = presBlank();\n" + src.slice(a, b) + "\n" + rows + "\nthis.presRows = presRows;", rctx);
+  const rowsOf = (c, v) => JSON.stringify(rctx.presRows(v || view(pc(c)), pc(c)));
+  const REJ = { ...SK, test_order: { status: "failed", state: "rejected", at: S - 20 }, probe: { status: "failed", state: "unknown", env: "live", at: S - 3 } };
+  const rj = rowsOf(REJ);
+  ok("B-1 略過前測試單被拒 → 正式 UNKNOWN:測試主機那列有「改做測試單」(pres-test-back),測試單那列不寫「已略過」",
+    view(pc(REJ)) === "d-UNKNOWN" && rj.indexOf('"btn":"pres-test-back"') >= 0 && !/"name":"pres\.s\.torder","right":"pres\.s\.skipped"/.test(rj), rj);
+  ok("B-1 對照:沒被拒的略過照舊有鈕;沒略過(正常走到正式)沒有鈕、測試主機列打勾",
+    rowsOf({ ...SK, probe: { status: "failed", state: "unknown", env: "live", at: S - 3 } }).indexOf('"btn":"pres-test-back"') >= 0
+    && rowsOf({ env: "live", cert: CERT_OK, test_order: { status: "failed", at: S - 20 }, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } }, "d-finish").indexOf('"btn":"pres-test-back"') < 0
+    && /"name":"pres\.s\.tprobe","right":"pres\.s\.tprobeDone"/.test(rowsOf({ env: "live", cert: CERT_OK, test_order: { status: "failed", at: S - 20 }, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } }, "d-finish"))); }
 // 稽核 integ-0118 B-1:設定 › 帳戶 的「開通中＋繼續」看 worker.ok_at(開通過又停掉的不算開通中),同 trade.js trPresWip
 ok("presWip:worker ok 過(ok_at)就不是開通中", /function presWip\(r\) \{[^\n]*c\.worker\.status === "ok" \|\| c\.worker\.ok_at/.test(src));
 // 字串:president.js / trade.js 用到的 pres.* 兩語都有

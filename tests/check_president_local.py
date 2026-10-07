@@ -22,7 +22,9 @@ in-memory path + local_daemon wiring) — no network, no broker, no Windows.
 Run: cd blave-agent && /usr/bin/python3 tests/check_president_local.py  (needs `cryptography` and node;
      the repo .venv has no cryptography and SKIPs, like check_president_connect section 5)
 """
+import contextlib
 import datetime
+import io
 import json
 import os
 import shutil
@@ -279,6 +281,23 @@ killed = pc._kill_tree(sl.pid)
 sl.wait(5)
 check("6d _kill_tree reports whether the kill went out (a live tree → True, a gone pid → False)",
       killed is True and pc._kill_tree(sl.pid) is False)
+
+
+class _NT:  # the Windows branch of _kill_tree on this box: os.name says nt, everything else is os
+    name = "nt"
+
+    def __getattr__(self, k):
+        return getattr(os, k)
+
+
+real_os, real_run = pc.os, pc.subprocess.run
+pc.os, pc.subprocess.run = _NT(), lambda argv, **kw: subprocess.CompletedProcess(argv, 128)
+err6d = io.StringIO()
+with contextlib.redirect_stderr(err6d):
+    nt_killed = pc._kill_tree(4242)
+pc.os, pc.subprocess.run = real_os, real_run
+check("6d Windows: taskkill came back non-zero → False and one stderr line with the rc (audit integ-0118 third B-3)",
+      nt_killed is False and "taskkill rc=128" in err6d.getvalue(), err6d.getvalue())
 calls = []
 real_popen_pc, real_kill_tree = pc.subprocess.Popen, pc._kill_tree
 
@@ -350,6 +369,17 @@ pc.local_dispatch({"op": "host", "env": "test"}, D).run()
 check("6e …back to the test section from a skip: the switch only (no login against the default test host), rows doable again",
       pc.read_status()["env"] == "test" and len(probes) == n_probes and pc.read_status().get("test_skipped") is False
       and pc.read_status()["probe"]["status"] == "idle", json.dumps(pc.read_status()["probe"]))
+# 6e. a skip belongs to the account, not the machine (audit integ-0118 third B-2): skip, then bind another
+# account → its first test-host login (host {url}) is a real login, not "back from a skip" (switch only)
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6e setup: skipped again", pc.read_status().get("test_skipped") is True)
+cert(dict(GOOD, account="70000099999"))
+n_probes = len(probes)
+pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).run()
+check("6e skip, then another account bound → test_skipped off, its first host {url} probes the test host",
+      pc.read_status().get("test_skipped") is False and len(probes) == n_probes + 1 and probes[-1] == "test"
+      and pc.read_status()["env"] == "test", json.dumps(pc.read_status()))
+cert(GOOD)  # the account the rest of this file is bound to
 pc.run_probe, pc.run_test_order = real_probe, real_order
 
 # ── 7. reconciler ──

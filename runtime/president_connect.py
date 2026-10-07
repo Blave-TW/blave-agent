@@ -952,12 +952,15 @@ def _kill_tree(pid):
     running the code is its child — kill()/terminate() reach only the launcher
     and the child lives on, holding our pipes (and the credentials line).
     POSIX children of _local_run start in their own session for the same reason.
-    → whether the kill went out (a failure is logged by type only: the tree holds
-    the credentials line, so the caller falls back to killing what it can)."""
+    → whether the kill went out (a failure is logged by type / taskkill rc only: the
+    tree holds the credentials line, so the caller falls back to killing what it can)."""
     try:
         if os.name == "nt":
-            return subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
-                                  **_cl()._child_kw()).returncode == 0
+            rc = subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
+                                **_cl()._child_kw()).returncode
+            if rc != 0:
+                print(f"[president_connect] kill tree failed (taskkill rc={rc})", file=sys.stderr)
+            return rc == 0
         try:
             os.killpg(pid, signal.SIGKILL)
         except OSError:
@@ -1226,7 +1229,13 @@ def _local_cert(b, push):
         raise
     for sec in ("probe", "worker") + (() if same else ("test_order",)):
         _update(sec, reset=True, status="idle")
-    _update(env="live" if b["live"] else "test")
+    if same:
+        _update(env="live" if b["live"] else "test")
+    else:
+        # a skip recorded for the old account is not this one's: left behind, the first
+        # test-host login after the rebind would be taken for "back from a skip" and only
+        # switch the env instead of probing
+        _update(env="test", test_skipped=False)
     _update("cert", status="ok", error=None, source="local", not_after=meta["not_after"],
             issuer_checked=meta["issuer_checked"])
     _LOCAL["worker"].stop("certificate replaced")

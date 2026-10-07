@@ -384,18 +384,19 @@ function presRows(view, pc) {
   else if (certNow) add(capRow(view === "d-cert-err" || rowErr("cert") ? "bad" : "cur", t("pres.s.cert"), "", presCertBody(pc, view)));
   else add(capRow(cert.status === "ok" ? "done" : "todo", t("pres.s.cert"), cert.status === "ok" ? certDone : ""));
   ph("pres.ph.test", !live && to.status !== "ok" ? capBtn("btn-quiet", t("pres.t.skip"), () => presHost("live"), "pres-skip-test", off) : null);
-  const tProbed = (live && !skipped) || (probe.status === "ok" && probe.env === "test") || to.status === "ok" || to.status === "failed";
+  // 略過之前被拒過的測試單不算「測過」:略過後正式登入 UNKNOWN 時,回測試段的路只有這一列的鈕(稽核 integ-0118 第三版 B-1)
+  const tProbed = (live && !skipped) || (probe.status === "ok" && probe.env === "test") || to.status === "ok" || (!skipped && to.status === "failed");
   const skipRight = skipped ? t("pres.s.skipped") : "";
   if (view === "d-t-host") add(capRow(rowErr("probe") ? "bad" : "cur", t("pres.s.tprobe"), "", presTestHostBody(view)));
   else if (view === "d-t-probe") add(runRow(t("pres.s.tprobe"), t("pres.s.probeRun")));
   else if (!live && (probeErr || view === "d-pw")) add(errRow(t("pres.s.tprobe")));
-  else if (skipped && !tProbed) add(capRow("todo", t("pres.s.tprobe"), skipRight, capActs(capBtn("btn-quiet", t("pres.t.back"), () => presStep("host", { env: "test" }), "pres-test-back", off))));   // 回頭做:只切回測試環境,登入由這一列(信上的網址)來
+  else if (skipped) add(capRow("todo", t("pres.s.tprobe"), skipRight, capActs(capBtn("btn-quiet", t("pres.t.back"), () => presStep("host", { env: "test" }), "pres-test-back", off))));   // 回頭做:只切回測試環境,登入由這一列(信上的網址)來
   else add(capRow(tProbed ? "done" : "todo", t("pres.s.tprobe"), tProbed ? t("pres.s.tprobeDone") : skipRight));
   if (view === "d-t-order" || view === "d-t-order-fail") add(capRow(view === "d-t-order-fail" || rowErr("test_order") ? "bad" : "cur", t("pres.s.torder"), "", capFrag(capDo(t("pres.t.orderDo")),
     rowErr("test_order") ? capErr(rowErr("test_order")) : view === "d-t-order-fail" ? capErr(t("pres.t.orderFail")) : null,   // 剛沒送出去的錯比上一次的被拒新
     capActs(capBtn(view === "d-t-order-fail" ? "btn-out" : "btn-fill", t(view === "d-t-order-fail" ? "pres.t.orderAgain" : "pres.t.order"), () => presStep("test_order"), "pres-torder", PRES.busy || presDown())))));
   else if (view === "d-t-order-run") add(runRow(t("pres.s.torder"), t("pres.s.orderRun")));
-  else { const d = (live && !skipped) || to.status === "ok"; add(capRow(d ? "done" : "todo", t("pres.s.torder"), d ? t("pres.s.torderDone") : skipRight)); }
+  else { const d = (live && !skipped) || to.status === "ok"; add(capRow(d ? "done" : "todo", t("pres.s.torder"), d ? t("pres.s.torderDone") : to.status === "failed" ? "" : skipRight)); }   // 被拒過的不是「已略過」
   if (view === "d-t-report") add(capRow(rowErr("probe") ? "bad" : "cur", t("pres.s.treport"), "", presTestReportBody(pc)));
   else add(capRow(live && !skipped ? "done" : "todo", t("pres.s.treport"), live && !skipped ? t("pres.s.treportDone") : skipRight));
   ph("pres.ph.live");

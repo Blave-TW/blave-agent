@@ -2657,7 +2657,7 @@ function trPaintSet() {
   // 三態:讀得到帳戶 = 綠點;讀過而失敗 = 紅記號;還沒讀過(剛綁上那幾秒)= 圓環 + 「串接中…」(.cx-wait 那組,spec-desktop-006 §1.3 D)
   // 群益在雲端開通中(spec w-row-pending):讀帳失敗是預期的,不畫紅;靜態實心點 +「開通中」+「繼續」回到清單
   // 統一在這台電腦開通中(d-row-pending)同一個長相:讀帳失敗是預期的(worker 還沒寫第一份快照)
-  const presW = !ro && id === "president" && typeof presWip === "function" && presWip(r);
+  const presW = !ro && id === "president" && presWip(r);
   // 開通過又停掉的(稽核 integ-0118 B-1):畫紅記號「串接失敗」,但「繼續」照給——「確認登入」只在開通框裡
   const presIn = presW || (!ro && trPresStopped(r, id));
   const capWip = (ro && trCapWip(r, id)) || presW;
