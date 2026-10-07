@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一綁定成對檢查**:雲端 Windows 上 `credentials` 帶 `president_*` 卻缺帳號或真密碼(只帶密碼、只帶憑證密碼、只帶帳號、
+  帳號配哨兵)一律拒 `INCOMPLETE`——原本原樣放行,單獨一筆密碼會明文落進 `.env`、繞過 vault。api 端同規則(先上)。
 - **統一期貨雲端開通(新 `runtime/president_connect.py`,群益那套的同形)**:`credentials` 綁統一時(雲端 Windows),交易密碼與
   正式開關(`"live": true`)寫進 `credentials\president_vault.json`,`.env` 換成哨兵並寫入固定的憑證路徑與正式主機;舊 workspace lib
   (不從 vault 讀正式開關)拒綁 `LIB_OUTDATED`。五個新指令 `president_setup`(裝 unitrade 釘版)／`president_pfx_key`／`president_pfx`

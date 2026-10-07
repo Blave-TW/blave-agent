@@ -194,10 +194,12 @@ def _write_vault(d):
 def divert_credentials(env, local=False):
     """_cmd_credentials hook: the trading password → the vault, production
     switched on there, sentinels + the fixed certificate path and production
-    host → .env. Returns the env mapping to write. Unchanged on the desktop
-    and for a write that does not carry both the account and a real password;
+    host → .env. Returns the env mapping to write. Unchanged on the desktop;
     refused on a cloud box that is not Windows (v1) — written as is there, the
-    trading password would sit in .env with no way to production."""
+    trading password would sit in .env with no way to production — and for any
+    統一 write without both the account and a real password: a lone password
+    (or certificate password) would land in .env as plaintext, a lone account
+    or sentinel would point .env at a vault written for someone else."""
     if not any(k.casefold().startswith("president_") for k in env):
         return env
     if local:
@@ -207,7 +209,7 @@ def divert_credentials(env, local=False):
     vals = {k.casefold(): v for k, v in env.items()}
     account, password = vals.get(_ACCOUNT), vals.get(_SECRET)
     if not account or not password or password.startswith(VAULT_PW_PREFIX):
-        return env
+        _refuse("INCOMPLETE", "統一期貨 takes the account and the trading password together")
     if not lib_supports_vault():
         _refuse("LIB_OUTDATED", "update the workspace before binding 統一期貨")
     p = _paths()

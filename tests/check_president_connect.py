@@ -97,10 +97,13 @@ check("1 a workspace lib that reads production from .env → LIB_OUTDATED, nothi
 for name in ("president_vault.py", "president_worker.py"):
     shutil.copy(os.path.join(ROOT, "lib", name), os.path.join(WS, "lib"))
 check("1 the shipped lib reads the vault", pc.lib_supports_vault())
-check("1 a write without the password (or with a sentinel) is not diverted",
-      pc.divert_credentials({"president_account": "1"}) == {"president_account": "1"}
-      and pc.divert_credentials({"president_account": "1", "president_password": "vault:x"})
-      == {"president_account": "1", "president_password": "vault:x"})
+for label, half in (("the account alone", {"president_account": "1"}),
+                    ("the password alone (plaintext into .env)", {"president_password": "pw"}),
+                    ("the certificate password alone", {"president_ca_password": "pw"}),
+                    ("an upper-case password alone", {"PRESIDENT_PASSWORD": "pw"}),
+                    ("the account with a sentinel", {"president_account": "1", "president_password": "vault:x"})):
+    check(f"1 cloud Windows: {label} → INCOMPLETE, nothing written",
+          refused(lambda: pc.divert_credentials(dict(half)), "INCOMPLETE") is True and not os.path.exists(P["vault"]))
 out = pc.divert_credentials(dict(BIND, OTHER="1"))
 vault = json.load(open(P["vault"]))
 check("1 .env gets the account, sentinels, the fixed certificate path and the production host",
