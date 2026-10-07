@@ -1809,6 +1809,30 @@ msgstr "淨值"
 msgid "tr.acctBreakdown"
 msgstr "錢包分佈"
 
+msgid "tr.margin"
+msgstr "保證金"
+
+msgid "tr.marginAvail"
+msgstr "可動用保證金"
+
+msgid "tr.marginInitial"
+msgstr "原始保證金"
+
+msgid "tr.marginMaint"
+msgstr "維持保證金"
+
+msgid "tr.riskRatio"
+msgstr "風險指標"
+
+msgid "tr.riskRatioTip"
+msgstr "權益數 ÷ 原始保證金"
+
+msgid "tr.belowMaint"
+msgstr "低於維持保證金"
+
+msgid "tr.marginUpdated"
+msgstr "更新"
+
 msgid "tr.holdings"
 msgstr "持倉"
 

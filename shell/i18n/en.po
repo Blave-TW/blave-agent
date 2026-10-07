@@ -1807,6 +1807,30 @@ msgstr "Equity"
 msgid "tr.acctBreakdown"
 msgstr "Wallets"
 
+msgid "tr.margin"
+msgstr "Margin"
+
+msgid "tr.marginAvail"
+msgstr "Available Margin"
+
+msgid "tr.marginInitial"
+msgstr "Initial Margin"
+
+msgid "tr.marginMaint"
+msgstr "Maintenance Margin"
+
+msgid "tr.riskRatio"
+msgstr "Risk Indicator"
+
+msgid "tr.riskRatioTip"
+msgstr "Equity ÷ Initial Margin"
+
+msgid "tr.belowMaint"
+msgstr "Below Maintenance"
+
+msgid "tr.marginUpdated"
+msgstr "Updated"
+
 msgid "tr.holdings"
 msgstr "Holdings"
 

@@ -76,6 +76,23 @@ function trWalletRows(e) {
   if (ks.length < 2) return [];
   return ks.sort((x, y) => (a[y] - a[x]) || (x < y ? -1 : x > y ? 1 : 0)).map((k) => ({ key: k, amount: a[k] }));
 }
+/* 保證金列(台灣期貨帳戶;同雲端 buildAccountBlock):帳戶讀取器只在 lib 有給時才塞 key——
+   key 存在但 null = 那列畫「—」;key 不存在 = 整列不畫;三個都不存在 = 整塊不畫(加密所畫面不變)。
+   風險指標 = 權益數 ÷ 原始保證金(券商 app 的口徑,用戶拿來對);門檻只看維持保證金:權益數低於它才是事實句。
+   更新時間:margin_updated_at(統一 worker 解析 update_date/time)→ 退回帳戶讀取器那輪的 read_at */
+const TR_MARGIN_KEYS = ["available", "initial_margin", "maintenance_margin"];
+function trMarginModel(e, readAt) {
+  if (!e || typeof e !== "object" || e.ok !== true) return null;
+  const has = (k) => Object.prototype.hasOwnProperty.call(e, k), num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  if (!TR_MARGIN_KEYS.some(has)) return null;
+  const rows = TR_MARGIN_KEYS.filter(has).map((k) => ({ key: k, value: num(e[k]) }));
+  const eq = trLiveTotal(e), im = num(e.initial_margin), mm = num(e.maintenance_margin);
+  const risk = has("initial_margin") ? { ratio: eq != null && im != null && im > 0 ? eq / im * 100 : null, below: eq != null && mm != null && mm > 0 && eq < mm } : null;
+  const at = num(e.margin_updated_at) != null ? e.margin_updated_at : num(readAt);
+  return { rows, risk, at };
+}
+// TWD 金額:整數、千分位、負值 U+2212(同網頁 fmtAmount);不是數字回 null
+function trTwd(v) { if (typeof v !== "number" || !isFinite(v)) return null; return (v < 0 ? "−" : "") + Math.round(Math.abs(v)).toLocaleString("en-US"); }
 // 持幣(現貨 / 資金錢包裡的幣,帳戶讀取器 get_holdings):部位是「倉」、這是「幣」,分表。多家時列上掛交易所
 function trHoldingRows(r, ids) {
   const out = [];
@@ -2536,21 +2553,24 @@ function trPaintAssets() {
     const e = trLiveEntry(r, id), row = trEl("div", "pf-acct");
     row.appendChild(trEl("span", "who", trVenueLabel(id, true)));
     const amt = trEl("span", "amt"); amt.appendChild(trEl("span", "lbl", t("tr.equity")));
-    const v = e && e.ok ? trFmt2(trLiveTotal(e)) : null;
+    const ccy = (e && e.currency) || trUnit(), twd = ccy === "TWD";   // TWD 不給小數(canon Numbers:價格 = 整數 + 幣別後綴;同網頁 fmtAmount)
+    const v = e && e.ok ? (twd ? trTwd(trLiveTotal(e)) : trFmt2(trLiveTotal(e))) : null;
     amt.appendChild(document.createTextNode(v == null ? "—" : v));
-    if (v != null && trUnit()) amt.appendChild(trEl("span", "ccy", trUnit()));
+    if (v != null && ccy) amt.appendChild(trEl("span", "ccy", ccy));
     row.appendChild(amt); box.appendChild(row);
     // 錢包分佈(同雲端 buildAccountBlock):這份清單就是「錢在哪」的答案,常駐展開
     const wallets = e && e.ok ? trWalletRows(e) : [];
-    if (!wallets.length) return;
-    box.appendChild(trEl("div", "pf-wallets-cap", t("tr.acctBreakdown")));
-    const list = trEl("div", "pf-wallets");
-    wallets.forEach((w) => {
-      const wr = trEl("div", "pf-wallet-row"), wa = trEl("span", "w-amt", trFmt2(w.amount));
-      if (trUnit()) wa.appendChild(trEl("span", "ccy", trUnit()));
-      wr.append(trEl("span", "w-name", trAcctLabel(w.key)), wa); list.appendChild(wr);
-    });
-    box.appendChild(list);
+    if (wallets.length) {
+      box.appendChild(trEl("div", "pf-wallets-cap", t("tr.acctBreakdown")));
+      const list = trEl("div", "pf-wallets");
+      wallets.forEach((w) => {
+        const wr = trEl("div", "pf-wallet-row"), wa = trEl("span", "w-amt", trFmt2(w.amount));
+        if (trUnit()) wa.appendChild(trEl("span", "ccy", trUnit()));
+        wr.append(trEl("span", "w-name", trAcctLabel(w.key)), wa); list.appendChild(wr);
+      });
+      box.appendChild(list);
+    }
+    trPaintMargin(box, trMarginModel(e, r.account && r.account.read_at), ccy, twd);
   });
   // 持幣表(同雲端 appendHoldings):估不出價值的幣(下架幣之類)畫「—」但照列,藏起來 = 錢憑空消失
   const holds = trHoldingRows(r, ids);
@@ -2581,6 +2601,23 @@ function trAcctLabel(k) {
     earn: t("tr.acct.earn"), options: t("tr.acct.options"), trading_bots: t("tr.acct.bots"),
   };
   return Object.prototype.hasOwnProperty.call(L, k) ? L[k] : String(k);
+}
+// 保證金區塊(trMarginModel 的畫法):caption 右側掛更新時間;風險指標的 label 掛解釋 tip,低於維持保證金 = 紅字 + mini tag(顏色不是唯一載體)
+function trPaintMargin(box, m, ccy, twd) {
+  if (!m) return;
+  const cap = trEl("div", "pf-wallets-cap margin"); cap.appendChild(trEl("span", "", t("tr.margin")));
+  if (m.at != null) cap.appendChild(trEl("span", "ts", t("tr.marginUpdated") + " " + trStamp(m.at)));
+  box.appendChild(cap);
+  const list = trEl("div", "pf-wallets"), L = { available: "tr.marginAvail", initial_margin: "tr.marginInitial", maintenance_margin: "tr.marginMaint" };
+  const money = (v) => { const s = twd ? trTwd(v) : trFmt2(v), wa = trEl("span", "w-amt", s == null ? "—" : s); if (s != null && ccy) wa.appendChild(trEl("span", "ccy", ccy)); return wa; };
+  m.rows.forEach((x) => { const wr = trEl("div", "pf-wallet-row"); wr.append(trEl("span", "w-name", t(L[x.key])), money(x.value)); list.appendChild(wr); });
+  if (m.risk) {
+    const wr = trEl("div", "pf-wallet-row risk"), nm = trEl("span", "w-name"); nm.appendChild(trTipLabel("", t("tr.riskRatio"), t("tr.riskRatioTip")));
+    if (m.risk.below) nm.appendChild(trEl("span", "mini_tag danger", t("tr.belowMaint")));
+    const pct = m.risk.ratio == null ? "—" : m.risk.ratio.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+    wr.append(nm, trEl("span", "w-amt" + (m.risk.below ? " danger" : ""), pct)); list.appendChild(wr);
+  }
+  box.appendChild(list);
 }
 function trPaintHist() {
   const box = $("tr-hist"), r = trReport() || {};

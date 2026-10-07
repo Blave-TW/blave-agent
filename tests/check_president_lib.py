@@ -443,10 +443,30 @@ fake = types.SimpleNamespace(daccount=FakeDaccount(Resp(ok=True, error="", data=
 snap3 = president_worker.read_account(fake, "7000001")
 check(snap3["equity"] is None and snap3["margin_error"] == "optequity missing",
       "optequity missing is the one margin failure (equity unknown, read error)", snap3)
-snapshot([], **{k: snap[k] for k in ("equity", "available", "initial_margin", "maintenance_margin")})
+# assets page (spec president-assets): update_date/time → epoch seconds in the snapshot, through
+# get_equity, through the runtime account reader into the entry; absent keys stay absent
+UPD = int(datetime(2026, 10, 2, 10, 15, 0, tzinfo=TAIPEI).timestamp())
+check(snap["margin_updated_at"] == UPD and snap2["margin_updated_at"] is None
+      and president_worker.margin_epoch("20261002", "1015") == UPD
+      and president_worker.margin_epoch("2026-10-02", "10:15:00") is None,
+      "margin_updated_at: update_date + update_time parsed as Taipei (HHMMSS or HHMM); unreadable → None", snap["margin_updated_at"])
+snapshot([], **{k: snap[k] for k in ("equity", "available", "initial_margin", "maintenance_margin", "margin_updated_at")})
 eq = account_president.get_equity({})
-check(eq["equity"] == 11454097.0 and eq["maintenance_margin"] == 80700.0 and eq["available"] == 9000000.0,
-      "get_equity reports optequity, lists the margins", eq)
+check(eq["equity"] == 11454097.0 and eq["maintenance_margin"] == 80700.0 and eq["available"] == 9000000.0
+      and eq["margin_updated_at"] == UPD,
+      "get_equity reports optequity, lists the margins and margin_updated_at", eq)
+sys.path.insert(0, os.path.join(ROOT, "runtime"))
+import account_reader  # noqa: E402
+entry = account_reader.read_venue("president", {})
+check(entry["ok"] and entry["available"] == 9000000.0 and entry["initial_margin"] == 105150.0
+      and entry["maintenance_margin"] == 80700.0 and entry["margin_updated_at"] == UPD and entry["equity"] == 11454097.0,
+      "account_reader.read_venue passes the four margin keys through", {k: entry.get(k) for k in ("ok", "error", "available", "margin_updated_at")})
+snapshot([], equity=11454097.0, available=9000000.0)
+entry = account_reader.read_venue("president", {})
+check(entry["ok"] and entry["available"] == 9000000.0
+      and all(k not in entry for k in ("initial_margin", "maintenance_margin", "margin_updated_at")),
+      "…a key the lib did not return is absent from the entry (the page draws rows by key presence)", sorted(entry))
+snapshot([], **{k: snap[k] for k in ("equity", "available", "initial_margin", "maintenance_margin", "margin_updated_at")})
 check(president_worker.position_row(Resp(product="TXO", call_put="C", productid="TXO23000J6")) is None,
       "option rows are not futures positions")
 check(raises(RuntimeError, lambda: president_worker.position_row(

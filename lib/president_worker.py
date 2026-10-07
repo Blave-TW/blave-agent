@@ -131,6 +131,22 @@ def _num(obj, name):
         return None
 
 
+def margin_epoch(update_date, update_time):
+    """DMargin's update_date 'YYYYMMDD' + update_time 'HHMMSS' (broker clock,
+    Taipei) → epoch seconds for the assets page; None when unreadable — the
+    page then falls back to the reader's read_at."""
+    d, t = str(update_date or "").strip(), str(update_time or "").strip()
+    if len(t) == 4 and t.isdigit():
+        t += "00"
+    # strict digit counts: strptime accepts 1-digit %M / %S, so a bare HHMM would mis-parse as HHMSS
+    if not (len(d) == 8 and d.isdigit() and len(t) == 6 and t.isdigit()):
+        return None
+    try:
+        return int(datetime.strptime(d + t, "%Y%m%d%H%M%S").replace(tzinfo=TAIPEI).timestamp())
+    except ValueError:
+        return None
+
+
 _LISTED = {"at": 0.0, "value": None}
 LISTED_TTL_S = 300
 
@@ -158,7 +174,7 @@ def read_account(api, actno):
     """One margin + position read. RateLimited on the SDK's per-minute cap."""
     snap = {"ok": True, "error": None, "equity": None, "available": None,
             "initial_margin": None, "maintenance_margin": None, "day_flow": None,
-            "margin_updated": None, "margin_error": None, "currency": "TWD",
+            "margin_updated": None, "margin_updated_at": None, "margin_error": None, "currency": "TWD",
             "positions": [], "maintenance": None,
             # what the order lib and the reconciler compare with their last send
             "query_started_at": time.time()}
@@ -174,6 +190,7 @@ def read_account(api, actno):
         snap["maintenance_margin"] = _num(d, "mamt")         # 維持保證金
         snap["day_flow"] = _num(d, "dwamt")                  # 當日出入金 — unverified as a flow source
         snap["margin_updated"] = f"{getattr(d, 'update_date', '') or ''} {getattr(d, 'update_time', '') or ''}".strip() or None
+        snap["margin_updated_at"] = margin_epoch(getattr(d, "update_date", None), getattr(d, "update_time", None))
     elif m is not None and _RATE_LIMITED in str(m.error or ""):
         raise RateLimited(f"get_margin: {m.error}")
     else:
