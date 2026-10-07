@@ -349,7 +349,9 @@ def strategy_kinds(strat_dir, cfg, cache):
     its "already seen" set from the first answer it gets, and a wrong {} would make every
     existing strategy look new on the next one. `cache` (folder → entry) keeps this to a stat
     per file per round; stats.json (up to ~1.7MB) is only parsed for a strategy with no
-    `# Type:` header, where a Type C backtest is what decides."""
+    `# Type:` header, where a Type C backtest is what decides, and only until one written after
+    the current strategy.py has been read. A strategy that fails to classify is listed with
+    type / market None instead of failing the round."""
     if cfg is None:
         return None
     import strategy_reporter as sr
@@ -379,23 +381,29 @@ def strategy_kinds(strat_dir, cfg, cache):
             bsig = None
         sig = (st.st_mtime_ns, st.st_size)
         hit = cache.get(name)
-        if hit is None or hit["sig"] != sig or (hit["needs_stats"] and hit["bsig"] != bsig):
+        if hit is None or hit["sig"] != sig or (not hit["settled"] and hit["bsig"] != bsig):
             try:
                 with open(src_path, encoding="utf-8", errors="replace") as f:
                     src = f.read()
             except OSError:
                 continue
-            needs_stats = sr.strategy_type(src) is None
-            portfolio = False
-            if needs_stats and bsig is not None:
-                try:
-                    with open(os.path.join(strat_dir, name, "stats.json"), encoding="utf-8") as f:
-                        portfolio = sr.is_portfolio_stats(json.load(f))
-                except (OSError, ValueError):
-                    portfolio = False
-            attrs = sr._type_market({"name": name, "code": src, "is_portfolio": portfolio})
-            hit = {"sig": sig, "bsig": bsig, "needs_stats": needs_stats,
-                   "sname": sr.strategy_consts(src).get("STRATEGY_NAME") or name,
+            try:
+                needs_stats = sr.strategy_type(src) is None
+                portfolio = False
+                if needs_stats and bsig is not None:
+                    try:
+                        with open(os.path.join(strat_dir, name, "stats.json"), encoding="utf-8") as f:
+                            portfolio = sr.is_portfolio_stats(json.load(f))
+                    except (OSError, ValueError):
+                        portfolio = False
+                attrs = sr._type_market({"name": name, "code": src, "is_portfolio": portfolio})
+                sname = sr.strategy_consts(src).get("STRATEGY_NAME") or name
+            except Exception:   # one pathological file (RecursionError in ast…) must not blank every strategy
+                needs_stats, attrs, sname = False, {}, name
+            # A live tick rewrites stats.json every bar, but the Type C verdict only follows the code:
+            # once a stats.json written after this strategy.py has been read, later bars change nothing.
+            settled = not needs_stats or (bsig is not None and bsig[0] >= sig[0])
+            hit = {"sig": sig, "bsig": bsig, "settled": settled, "sname": sname,
                    "type": attrs.get("type"), "market": attrs.get("market")}
             cache[name] = hit
         out[name] = {"type": hit["type"], "market": hit["market"], "bt": bsig is not None,

@@ -6,7 +6,9 @@ No network, no daemon process.
   bt              stats.json exists
   funded          folder or STRATEGY_NAME has a finite amount > 0 (legacy weights fallback)
   None            config unreadable or strategies dir unreadable — never a wrong {}
-  cache           unchanged files are not re-read
+  cache           unchanged files are not re-read; a live tick rewriting stats.json does not
+                  re-parse it once one newer than strategy.py has been read
+  one bad file    listed with type / market None, the round still returns the rest
 
 Run: cd blave-agent && .venv/bin/python tests/check_local_strategy_kinds.py
 """
@@ -108,6 +110,63 @@ try:
     shutil.rmtree(os.path.join(SD, "own_data"))
     ld.strategy_kinds(SD, cfg, cache)
     check("own_data" not in cache, "a deleted strategy leaves the cache")
+
+    # live tick: stats.json rewritten every bar; the no-header strategy's verdict follows the code
+    def touch(path, t):
+        os.utime(path, ns=(t, t))
+
+    fx = os.path.join(SD, "folder_x")
+    t0 = os.stat(os.path.join(fx, "strategy.py")).st_mtime_ns
+    touch(os.path.join(fx, "stats.json"), t0 + 10**9)
+    lc = {}
+    ld.strategy_kinds(SD, cfg, lc)
+    ld.open = counting_open
+    try:
+        reads.clear()
+        for i in range(3):
+            put("folder_x", real_open(os.path.join(fx, "strategy.py")).read(), {"benchmark_sharpe": 0.1, "bar": "x" * (i + 1)})
+            touch(os.path.join(fx, "strategy.py"), t0)
+            touch(os.path.join(fx, "stats.json"), t0 + (i + 2) * 10**9)
+            got = ld.strategy_kinds(SD, cfg, lc)
+        check(reads == [] and got["folder_x"]["type"] == "C",
+              "live ticks rewriting a stats.json newer than strategy.py: nothing re-read", reads)
+        # stats.json older than the code (written by the previous version): re-read when it changes
+        put("folder_x", 'STRATEGY_NAME = "renamed_pf"\nfrom lib.data import fetch_kline\n', {"symbol": "BTCUSDT"})
+        t1 = t0 + 100 * 10**9
+        touch(os.path.join(fx, "strategy.py"), t1)
+        touch(os.path.join(fx, "stats.json"), t1 - 10**9)
+        reads.clear()
+        got = ld.strategy_kinds(SD, cfg, lc)
+        check(got["folder_x"]["type"] is None and reads == ["folder_x/strategy.py", "folder_x/stats.json"],
+              "edited code + stale stats.json: re-read, not C", reads)
+        put("folder_x", 'STRATEGY_NAME = "renamed_pf"\nfrom lib.data import fetch_kline\n', {"benchmark_sharpe": 0.2})
+        touch(os.path.join(fx, "strategy.py"), t1)
+        touch(os.path.join(fx, "stats.json"), t1 + 10**9)
+        reads.clear()
+        got = ld.strategy_kinds(SD, cfg, lc)
+        check(got["folder_x"]["type"] == "C" and "folder_x/stats.json" in reads,
+              "…the new backtest's stats.json (newer than the code) is read and decides C", reads)
+    finally:
+        del ld.open
+
+    # one pathological strategy.py must not take the whole answer down
+    import strategy_reporter as srm
+    real_consts = srm.strategy_consts
+
+    def boom(src):
+        if "POISON" in src:
+            raise RecursionError("maximum recursion depth exceeded")
+        return real_consts(src)
+
+    put("poison", '# Type: A\nPOISON = 1\nfrom lib.data import fetch_kline\n')
+    srm.strategy_consts = boom
+    try:
+        got = ld.strategy_kinds(SD, cfg, {})
+    finally:
+        srm.strategy_consts = real_consts
+    check(isinstance(got, dict) and got.get("poison") == {"type": None, "market": None, "bt": False, "funded": False}
+          and got.get("btc_trend", {}).get("type") == "B",
+          "a strategy whose classification raises is listed as unknown; the others are still there", got)
 
     # wired into the status file, failures contained
     src = real_open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()

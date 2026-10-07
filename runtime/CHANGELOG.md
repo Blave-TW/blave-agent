@@ -13,6 +13,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 - **回測守門剩不到 5 分鐘時的拒絕文字(`agent_turn.bg_guard_check`;0.1.18 第一批稽核 L-2)**:這一輪剩不到 300 s、回測／掃參啟動的 `timeout` 又不夠時,拒絕訊息不再給「用 `timeout` = N 再送一次」——agent 照那個數重送,下一次檢查就放行,回測照跑、回合結束被殺。改成叫它這一輪別啟動、照 deployment › *When the job does not finish in the turn* 交代,文字裡沒有可重送的毫秒數,跟 AGENTS／deployment「剩不到 5 分鐘會拒絕」一致。已帶 `timeout` ≥ 剩餘時間(例如照文件給 1800000)的啟動仍放行,行為同前。測試 `tests/check_bg_backtest_guard.py` ⑥。
 
+- **`local_daemon.strategy_kinds` 兩個小修(0.1.18 第一批稽核 L-6／S-0)**:①每支策略的判定各自 try/except——一支病態的 `strategy.py`(`ast` 的 RecursionError 之類)不再讓整輪變 None、整台的策略三步永遠不送;那支照列、type／market 為 null,並快取到檔案再變;②沒有 `# Type:` 檔頭的策略,讀過一份比 `strategy.py` 新的 stats.json 之後判定就定了,上線中每根 K 重寫 stats.json 不再每輪重解(最多約 1.7 MB);stats.json 比程式舊(上一版程式留下的)時照舊在它變動時重讀。測試 `tests/check_local_strategy_kinds.py`。
+
 ## 1.1.116 — 2026-10-06(desktop 0.1.17)
 
 - **外殼與設定層總覽(desktop 0.1.17;大半不在 runtime/ 但同一批出貨)。兩條出貨順序:① 遙測白名單新增五個值(`feature_used` 的 `welcome_data_row`／`welcome_data_all`／`attach_file`／`attach_image`／`attach_paste`),api `openclaw/desktop_telemetry.py` 先上;② 台指期 K 線快取 `twfutures3_*`:api 換月口徑部署並重建驗收完,這批才進 main——過去月份只抓一次、之後不重抓,機器先更新會把舊口徑的月份存進新前綴,事後改不回來。內外盤不換前綴(仍是 `twfutures_bav`)、改成讀取時過濾,不受這條順序限制**:
