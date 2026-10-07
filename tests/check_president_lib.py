@@ -493,13 +493,19 @@ check([r["productid"] for r in keep] == ["TXFJ6"] and not residue
 # a flip's entry leg never goes out behind an unconfirmed close only because the close
 # returns (confirm_timeout) before any snapshot can have started ORDER_SETTLE_S after it,
 # so the entry always meets EntryDeferred and waits for a read that shows the close
+import ast as _ast  # noqa: E402
 import inspect as _inspect  # noqa: E402
-import re as _re  # noqa: E402
 _ct = _inspect.signature(op.place_futures_market_order).parameters["confirm_timeout"].default
-_block = _re.search(r"def _president_place_order\(.*?(?=\ndef )",
-                    open(os.path.join(ROOT, "manager", "reconciler.py")).read(), _re.S).group(0)
-check(_ct < president_vault.ORDER_SETTLE_S and "confirm_timeout=" not in _block
-      and "confirm_timeout=" not in _inspect.getsource(op.close_position_partial),
+
+
+def _call_kwargs(tree):
+    return {k.arg for n in _ast.walk(tree) if isinstance(n, _ast.Call) for k in n.keywords}
+
+
+_rec_fn = next(n for n in _ast.walk(_ast.parse(open(os.path.join(ROOT, "manager", "reconciler.py")).read()))
+               if isinstance(n, _ast.FunctionDef) and n.name == "_president_place_order")
+check(_ct < president_vault.ORDER_SETTLE_S and "confirm_timeout" not in _call_kwargs(_rec_fn)
+      and "confirm_timeout" not in _call_kwargs(_ast.parse(_inspect.getsource(op.close_position_partial))),
       f"confirm_timeout ({_ct}s, the default every caller uses) < ORDER_SETTLE_S "
       f"({president_vault.ORDER_SETTLE_S}s): a flip's entry always defers behind its close")
 from lib.portfolio import book_months_of  # noqa: E402

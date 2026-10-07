@@ -508,8 +508,25 @@ confirmation as the crypto wiring, with one difference: an unconfirmed empty rea
 (crypto sends the book's quantity and lets the venue's reduce-only refuse it). A confirmed short
 on a full close writes the rest off (`apply_ledger_writeoff`); on a partial reduce the book is
 brought down to what the account holds before the send (audit `ledger_writeoff` with
-`partial: true`). A flip's entry leg waits for that confirmation (`account_short_pending`). A
-manual close with the signal unchanged is still not noticed (no reduce leg reads the account). Pinned in `tests/check_capital_ledger_paths.py`, which drives
+`partial: true`). A flip's entry leg waits for that confirmation (`account_short_pending`).
+
+What that rebase trusts is two things, and only two: the two reads, and the contract months
+lining up. The account's months of that root (the read row's, plus the months the venue read
+left out as the user's — the reconciler hands them to `lib.portfolio.note_manual_read`) must
+meet the book's. An account that holds the root only in months the book does not hold is not a
+manual close but a read the book cannot be corrected from (a month the venue lib misjudged, a
+snapshot behind): nothing is sent, nothing rebased, one `order_error` asks for a human (audit
+`ledger_month_mismatch`; `tests/check_capital_ledger_paths.py` A6). A read that is wrong in the
+SAME month — fewer lots than are really there, twice ≥5 s apart — cannot be told from a manual
+close and IS rebased to; the reconciler's `snapshot_caught_up` gate keeps a post-order snapshot
+out, so that needs the broker's own position feed to lag. Known, accepted:
+- a manual close with the signal unchanged is not noticed (no reduce leg reads the account);
+- one wrong short read makes a partial reduce send that many lots fewer and converge a round
+  later (book 3, real 3, one read of 2, target 1: sends 1, then 1 next round — a full close is
+  not affected);
+- the user closing ALL by hand while the signal only reduces part way: the book is rebased to 0
+  on the confirmed read and the bot re-enters its target next round (the book follows the
+  account, the signal is still on). Pinned in `tests/check_capital_ledger_paths.py`, which drives
 `reconcile()` with the daemon's own `_get_positions_guarded` / `place_order`.
 
 **Contract months (hand-wired TW futures: 群益, 統一).** A book row also records which contract

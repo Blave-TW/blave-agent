@@ -334,7 +334,7 @@ def _capital_get_positions():
     contract_month = getattr(account_capital, 'contract_month', None)
     owned_by_root = book_months(venue_traits.CAPITAL) if contract_month else None
     contract_month = contract_month or (lambda _code: None)
-    net, months, by_month, manual = {}, {}, {}, []
+    net, months, by_month, manual, manual_by_root = {}, {}, {}, [], {}
     for resolved_sym, pos in raw.items():
         # Anchored root+YYMM: a TX-prefixed option row (TXO22000J6) must never
         # count as an actual TXF position — the diff would send a real 大台 order.
@@ -374,6 +374,8 @@ def _capital_get_positions():
                          else owned_by_root.get(canon, set()))
                 if owned is not None and ym not in owned:
                     manual.append((sym, signed))
+                    manual_by_root.setdefault(canon, {})[ym] = (
+                        manual_by_root.get(canon, {}).get(ym, 0.0) + signed)
                     break
                 net[canon] = net.get(canon, 0.0) + signed
                 months.setdefault(canon, []).append(sym)
@@ -390,7 +392,7 @@ def _capital_get_positions():
             # it becomes the near month.
             logging.warning(f"[reconciler/capital] {canon} held in several contract months "
                             f"{sorted(syms)} — reading net {net[canon]:+g} lots")
-    _note_manual_months(venue_traits.CAPITAL, manual)
+    _note_manual_months(venue_traits.CAPITAL, manual, manual_by_root)
     return {
         canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': venue_traits.CAPITAL,
                 'months': {m: q for m, q in by_month[canon].items() if m and q}}
@@ -401,11 +403,17 @@ def _capital_get_positions():
 _manual_noted = set()
 
 
-def _note_manual_months(venue, rows):
+def _note_manual_months(venue, rows, by_root=None):
     """A held contract month the bot's book does not hold is the user's: left
     out of the read. Audited once per (contract, lots) per process
     (`manual_month_excluded`). notifications.md has no event type for it yet —
-    a P2 candidate, so it is the audit line only."""
+    a P2 candidate, so it is the audit line only. `by_root` ({root: {month:
+    lots}}) also goes to lib.portfolio so a reduce leg can tell "the account
+    holds this root only in months the book does not" from a manual close."""
+    from lib import portfolio
+    note = getattr(portfolio, 'note_manual_read', None)
+    if note:
+        note(venue, by_root or {})
     for code, lots in rows:
         if (venue, code, lots) in _manual_noted:
             continue
@@ -514,10 +522,13 @@ def _president_get_positions():
     if not ok:
         raise PresidentCacheLagError(f"統一快照(查詢開始 {started:.0f})未晚於最後一筆下單({last:.0f})"
                                      f"加寬限——本輪跳過,等下一輪快取更新")
-    if owned is not None:
-        _note_manual_months(venue_traits.PRESIDENT,
-                            [(r['productid'], r['net'])
-                             for r in account_president.split_position_rows(book_months=owned)[2]])
+    manual = ([] if owned is None
+              else account_president.split_position_rows(book_months=owned)[2])
+    by_root = {}
+    for r in manual:
+        ym = account_president.contract_month(r['productid'])
+        by_root.setdefault(r['root'], {})[ym] = by_root.get(r['root'], {}).get(ym, 0.0) + r['net']
+    _note_manual_months(venue_traits.PRESIDENT, [(r['productid'], r['net']) for r in manual], by_root)
     return {sym: {'side': p['side'], 'size': p['size'], 'exchange': venue_traits.PRESIDENT,
                   'months': {account_president.contract_month(p['productid']):
                              p['size'] if p['side'] == 'long' else -p['size']}}
@@ -560,9 +571,12 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
             # the snapshot has not caught up with the last order (a flip's close
             # leg, a moment ago): the entry picks its month next round —
             # scheduled, not an error, nothing sent. This is also what keeps an
-            # entry from opening behind an unconfirmed close: it holds only while
-            # the close's confirm_timeout (15 s) < president_vault.ORDER_SETTLE_S
-            # (20 s) — tests/check_president_lib.py pins it
+            # entry from opening behind an unconfirmed close: _claim writes the
+            # send marker before the close even logs in, and snapshot_caught_up
+            # wants a read STARTED ≥ ORDER_SETTLE_S after that marker — a close
+            # that returned within its confirm_timeout (15 s < 20 s) can never
+            # have such a read yet; tests/check_president_lib.py pins the proxy
+            # (a close that took longer is already in the read it then waits for)
             logging.info(f"[reconciler/president] {sym}: entry of {lots} deferred — {e}")
             return False
     if leg.get('status') == 'unknown':

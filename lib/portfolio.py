@@ -1615,25 +1615,41 @@ def _rebase_ledger_symbol(symbol, venue, months, qty=None):
     _save_ledger_seed(seed)
 
 
-def hand_wired_reduce_cap(symbol, sub_diff, book_signed, account_row, venue=_CURRENT):
+def hand_wired_reduce_cap(symbol, sub_diff, book_signed, account_row, venue=_CURRENT,
+                          book_row=None):
     """(signed lots to send, writeoff reason | None) for a self_ledger reduce
     leg on a hand-wired venue (lib.venue_traits: 群益, 統一). Neither refuses a
     close larger than what is held the way a crypto reduce-only order is
     refused: 群益 sends sNewClose=2 (auto new/close), so the rest OPENS the
     other side; 統一 refuses it locally, every round, and the book is never
-    corrected. lib.venue_wiring._book_reduce_qty's rule, on the round's own
-    account read (lots): never more than the account holds. Unlike crypto, an
-    unconfirmed empty read sends nothing instead of the book's quantity.
+    corrected. So, on the round's own account read (lots): never more than
+    the account holds, and an unconfirmed empty read sends nothing.
 
-    The lots the account is short of the book (the user closed them by hand)
-    already did that much of the reduce, so only the rest is sent: book 3,
-    account 2, target 1 sends 1, not 2. On a confirmed short read
-    (note_account_short) a full close writes the rest of the book off after its
-    fill (the reason returned); a partial one brings the book down to what the
-    account holds right here, before the send — otherwise the gap is never
+    This rule has split from the crypto one on purpose — do not "align" them.
+    lib.venue_wiring._book_reduce_qty still sends min(book, account), does not
+    count a manual close as part of the reduce, and never rebases the book on
+    a partial reduce (the venue's reduce-only refusal is its safety net).
+    Here the lots the account is short of the book (the user closed them by
+    hand) already did that much of the reduce, so only the rest is sent: book
+    3, account 2, target 1 sends 1, not 2. On a confirmed short read
+    (note_account_short) a full close writes the rest of the book off after
+    its fill (the reason returned); a partial one brings the book down to what
+    the account holds right here, before the send — otherwise the gap is never
     reconciled until the next flat and every later add stacks on a book that
-    is wrong. Lives here, not in the reconciler's blocks, so a hand-edited
-    reconciler still gets it."""
+    is wrong.
+
+    What that rebase trusts: two short reads ≥ _ACCOUNT_SHORT_MIN_S apart AND
+    the contract months lining up — the account's months of this root (the
+    read row's, plus the months the venue read left out as the user's,
+    note_manual_read) must meet the book's. An account that holds this root
+    only in months the book does not hold is not a manual close, it is a read
+    the book cannot be corrected from (a month the venue lib misjudged, a
+    snapshot behind): nothing is sent, nothing rebased, one order_error asks
+    for a human (audit `ledger_month_mismatch`). A read that is simply wrong
+    in the SAME month (fewer lots than are really there) cannot be told from
+    a manual close and is rebased to — the reconciler's snapshot_caught_up
+    gate keeps a post-order snapshot out of here. Lives here, not in the
+    reconciler's blocks, so a hand-edited reconciler still gets it."""
     owned, want = abs(book_signed), abs(sub_diff)
     row = account_row or {}
     side = 'long' if book_signed > 0 else 'short'
@@ -1642,12 +1658,58 @@ def hand_wired_reduce_cap(symbol, sub_diff, book_signed, account_row, venue=_CUR
     confirmed = note_account_short(symbol, short)
     send = max(0.0, min(want - max(0.0, owned - held), held))
     reason = None
-    if confirmed and short:
+    if short and want < owned - 1e-9:
+        venue = _resolve_venue(venue)
+        mismatch = _months_mismatch(symbol, venue, book_row, row)
+        if mismatch:
+            if confirmed:
+                _note_months_mismatch(symbol, venue, book_signed, held, *mismatch)
+            return 0.0, None
+        if confirmed:
+            _rebase_to_account(symbol, venue, book_signed, held, row,
+                               'account short of the book on a partial reduce')
+    elif confirmed and short:
         reason = 'account holds none of it' if held <= 0 else 'account held less than the book'
-        if want < owned - 1e-9:
-            _rebase_to_account(symbol, _resolve_venue(venue), book_signed, held, row, reason)
-            reason = None
     return (send if sub_diff > 0 else -send), reason
+
+
+# {venue: {root: {'YYYY-MM': signed lots}}} — the contract months the venue read
+# left out of `actual` as the user's (the reconciler's manual rows), per read
+_MANUAL_READ = {}
+_mismatch_noted = set()
+
+
+def note_manual_read(venue, by_root):
+    """The venue read's manual months this round (see hand_wired_reduce_cap):
+    replaces the venue's previous read, {} = none left out."""
+    _MANUAL_READ[venue] = {str(k): dict(v or {}) for k, v in (by_root or {}).items()}
+
+
+def _months_mismatch(symbol, venue, book_row, row):
+    """(book months, account months) when the two do not meet, else None.
+    No check without a book row that carries months, or on a guessed book."""
+    book = book_row or {}
+    if not book.get('months') or book.get('months_guess'):
+        return None
+    acct = set(row.get('months') or {}) | set(_MANUAL_READ.get(venue, {}).get(symbol, {}))
+    if not acct or acct & set(book['months']):
+        return None
+    return sorted(book['months']), sorted(acct)
+
+
+def _note_months_mismatch(symbol, venue, book_signed, held, book_months, acct_months):
+    key = (venue, symbol, tuple(book_months), tuple(acct_months))
+    if key in _mismatch_noted:
+        return
+    _mismatch_noted.add(key)
+    logging.error(f"[ledger] {symbol}: book {book_signed:+g} lots in {', '.join(book_months)}, "
+                  f"the account holds this root only in {', '.join(acct_months)} — not a manual "
+                  f"close: nothing sent, book not corrected, needs a human")
+    guard.audit('ledger_month_mismatch', symbol=symbol, venue=venue, book=book_signed, held=held,
+                book_months=book_months, account_months=acct_months)
+    _record_order_error(symbol, venue, f"帳本與帳戶月份對不上,待人工核對:帳本 {book_signed:+g} 口在 "
+                                       f"{'、'.join(book_months)},帳戶只有 {'、'.join(acct_months)}"
+                                       f"——本輪不減倉、帳本不動")
 
 
 def _rebase_to_account(symbol, venue, book_signed, held, row, reason):
@@ -2848,7 +2910,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                     and venue_traits.has(order.get('exchange') or ledger_venue, 'hand_wired')):
                 capped, cap_writeoff = hand_wired_reduce_cap(
                     symbol, sub_diff, a_signed, actual.get(symbol),
-                    venue=order.get('exchange') or ledger_venue)
+                    venue=order.get('exchange') or ledger_venue, book_row=a)
                 if abs(capped) < 0.5:  # the hand-wired place_order's half-lot gate
                     if cap_writeoff:
                         apply_ledger_writeoff(symbol, cap_writeoff)

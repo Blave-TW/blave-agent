@@ -31,6 +31,12 @@ Scenarios (each in its own child process and scratch dir):
       the exit then sells exactly that 1 lot.
   A5  the user closes 1 of the bot's 3, the signal goes to 1/3 (target 1): sells 1, not 2,
       and the book ends at what the account holds.
+  A6  the bot holds 3 in this month; two reads in a row show this root only in the NEXT month
+      (1 lot — a month the venue lib misjudged, a snapshot behind), signal 1/3. Right: that is
+      not a manual close — nothing sent, the book stays 3, one order_error asks for a human;
+      once the read shows the real 3 again the reduce of 2 goes out. Before the cross-check
+      the book was rebased to 0 on the second read and the bot re-entered on top of its own
+      3 lots.
   F   a plain flip +2 -> -2 with nothing manual, the entry leg reading a snapshot from
       before its own close: the entry waits a round, no order error (統一 used to re-split
       the entry against that stale snapshot, try a second close and log a P1).
@@ -92,6 +98,7 @@ class World:
         self.rows, self.near, self.listed, self.sent = {}, None, None, []
         self.stale = False
         self.lag = False  # True: the snapshot's read started before this round's sends
+        self.fake = None  # rows the snapshot reports instead of the real ones (a wrong read)
 
     def setup(self, lots):
         os.makedirs("manager", exist_ok=True)
@@ -162,7 +169,7 @@ def capital_world(tmp):
         json.dump({"ok": True, "read_at": now - 1000 if w.stale else now + 1,
                    "query_started_at": now - 1 if w.lag else now + 30,
                    "positions": [{"symbol": k, "side": "buy" if v > 0 else "sell", "lots": abs(v)}
-                                 for k, v in w.rows.items()]},
+                                 for k, v in (w.rows if w.fake is None else w.fake).items()]},
                   open(ac._SNAPSHOT, "w"))
     w.write_snapshot = write_snapshot
     w.near = "TX2610"
@@ -219,7 +226,8 @@ def president_world(tmp):
         json.dump({"ok": True, "read_at": now - 1000 if w.stale else now + 1,
                    "query_started_at": now - 1 if w.lag else now + 30, "account_fp": "fp1", "equity": 1e6,
                    "listed": w.listed,
-                   "positions": [{"root": k[:3], "productid": k, "net": v} for k, v in w.rows.items()]},
+                   "positions": [{"root": k[:3], "productid": k, "net": v}
+                                 for k, v in (w.rows if w.fake is None else w.fake).items()]},
                   open(ap._SNAPSHOT, "w"))
     w.write_snapshot = write_snapshot
     w.listed = {"TXF": ["TXFJ6", "TXFK6", "TXFL6"]}
@@ -242,7 +250,7 @@ def child(venue, sid, tmp):
     os.environ["BLAVE_AGENT_HOME"] = os.environ["BLAVECLAW_HOME"] = tmp
     w = {"capital": capital_world, "president": president_world}[venue](tmp)
     freeze_clock(w)
-    w.setup(1 if sid[0] in "BRH" else 3 if sid == "A5" else 2)
+    w.setup(1 if sid[0] in "BRH" else 3 if sid in ("A5", "A6") else 2)
     from lib import guard, portfolio
     state = {"rec": None}
     tg = []
@@ -360,6 +368,27 @@ def child(venue, sid, tmp):
         why = (f"after closing 1 by hand and a partial reduce: sent={sent_mid}, broker net={held_mid}, "
                f"book TXF={book_mid}; then signal 0 sent={last['sent']}, broker={w.rows}, "
                f"book TXF={ledger_txf(last)}")
+    elif sid == "A6":
+        w.fake = {code(2026, 11): 1}
+        w.signal(1 / 3)
+        round_("read shows the root only in November, signal cut to 1 lot")
+        time.sleep(5.5)
+        r2 = round_("next round, >=5 s later: still only November")
+        r3 = round_("one more round")
+        held_mid, book_mid = w.net(), ledger_txf(r3)
+        errs_mid = [e for e in errors() if "月份對不上" in e.get("error", "")]
+        w.fake = None
+        r4 = round_("read shows the real 3 again")
+        last = round_("converged")
+        sent_wrong = [o for r in log[2:5] for o in r["sent"]]
+        ok = (not sent_wrong and held_mid == 3 and book_mid == 3 and len(errs_mid) == 1
+              and not audits("ledger_writeoff") and len(audits("ledger_month_mismatch")) == 1
+              and [o["lots"] for o in r4["sent"] + last["sent"]] == [2]
+              and w.net() == 1 and ledger_txf(last) == 1 and not last["halt"])
+        why = (f"two reads in the wrong month: sent={sent_wrong}, broker net={held_mid}, "
+               f"book TXF={book_mid}, mismatch errors={len(errs_mid)}, "
+               f"writeoffs={len(audits('ledger_writeoff'))}; then real read: sent={r4['sent'] + last['sent']}, "
+               f"broker={w.rows}, book TXF={ledger_txf(last)}")
     elif sid == "A3":
         w.rows = {}
         w.signal(-1)
@@ -522,7 +551,7 @@ def main():
     verbose = "-v" in sys.argv
     failed, xfail = [], []
     for venue in venues:
-        for sid in ("A", "A2", "A3", "A4", "A5", "F", "M", "M2", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
+        for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
             cid = f"{venue}:{sid}"
             tmp = tempfile.mkdtemp(prefix=f"ledgerpaths-{venue}-{sid}-")
             try:
