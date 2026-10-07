@@ -559,7 +559,10 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
         except order_president.EntryDeferred as e:
             # the snapshot has not caught up with the last order (a flip's close
             # leg, a moment ago): the entry picks its month next round —
-            # scheduled, not an error, nothing sent
+            # scheduled, not an error, nothing sent. This is also what keeps an
+            # entry from opening behind an unconfirmed close: it holds only while
+            # the close's confirm_timeout (15 s) < president_vault.ORDER_SETTLE_S
+            # (20 s) — tests/check_president_lib.py pins it
             logging.info(f"[reconciler/president] {sym}: entry of {lots} deferred — {e}")
             return False
     if leg.get('status') == 'unknown':

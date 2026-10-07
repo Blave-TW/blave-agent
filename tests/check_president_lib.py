@@ -490,6 +490,18 @@ keep, residue, manual = pc.bot_rows([R("TXFJ6"), R("TXFL6", -1), R("MXFL6")], No
 check([r["productid"] for r in keep] == ["TXFJ6"] and not residue
       and [r["productid"] for r in manual] == ["TXFL6", "MXFL6"],
       "manual far months are set apart (never raised): the bot's J6 is still kept", (keep, manual))
+# a flip's entry leg never goes out behind an unconfirmed close only because the close
+# returns (confirm_timeout) before any snapshot can have started ORDER_SETTLE_S after it,
+# so the entry always meets EntryDeferred and waits for a read that shows the close
+import inspect as _inspect  # noqa: E402
+import re as _re  # noqa: E402
+_ct = _inspect.signature(op.place_futures_market_order).parameters["confirm_timeout"].default
+_block = _re.search(r"def _president_place_order\(.*?(?=\ndef )",
+                    open(os.path.join(ROOT, "manager", "reconciler.py")).read(), _re.S).group(0)
+check(_ct < president_vault.ORDER_SETTLE_S and "confirm_timeout=" not in _block
+      and "confirm_timeout=" not in _inspect.getsource(op.close_position_partial),
+      f"confirm_timeout ({_ct}s, the default every caller uses) < ORDER_SETTLE_S "
+      f"({president_vault.ORDER_SETTLE_S}s): a flip's entry always defers behind its close")
 from lib.portfolio import book_months_of  # noqa: E402
 bm = book_months_of({"TXF": {"side": "long", "size": 2.0, "qty": 2.0},
                      "MXF": {"side": "long", "size": 1.0, "qty": 1.0, "months": {"2026-10": 1.0}}})
