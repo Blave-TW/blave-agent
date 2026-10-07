@@ -1,7 +1,7 @@
 // 統一本機開通的狀態機(shell/renderer/president.js 的純邏輯段,從原文切出來跑)+ 畫面用到的字串兩語都有。
 //   president_connect(runtime/president_connect.py 的 desktop 段寫的那一份)+ 畫面自己的狀態 → mockup 電腦版 d-* 的哪一態。
-//   逐一列舉 LOGIN_STATES 的每個值、每種「在跑」、Mac、雲端已綁(Q6 擋)、事前準備三態、測試段(後端未接 → 停在那裡、不碰正式主機)、
-//   憑證到期橫幅(31 天)、第一次真錢的口數列、維護時段。
+//   逐一列舉 LOGIN_STATES 的每個值、每種「在跑」、Mac、找 PSCCA 的三態(找到直接帳密,沒有「事前準備」頁)、測試段(停在那裡、不碰正式主機)、
+//   第一次真錢的口數列、維護時段、主行程回錯畫在哪(列／欄位／浮動 slot)、文案沒有「登入次數」。
 // 跑法:node tests/check_shell_president_view.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "president.js"), "utf8");
@@ -11,8 +11,8 @@ if (a < 0 || b < 0) { console.log("FAIL  president.js 找不到純邏輯段的�
 const head = src.slice(0, src.indexOf("let PRES = presBlank();"));   // 常數 + presBlank
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.presView = presView; this.presRunning = presRunning; this.presBlank = presBlank; this.presDaysLeft = presDaysLeft;"
-  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW;", ctx);
-const { presView, presRunning, presDaysLeft, presFirstRows } = ctx;
+  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW; this.presMsgPlace = presMsgPlace; this.PRES_ROW_STEPS = PRES_ROW_STEPS;", ctx);
+const { presView, presRunning, presDaysLeft, presFirstRows, presMsgPlace } = ctx;
 
 const NOW = 1790000000 * 1000, S = NOW / 1000;
 const W = { win: true, now: NOW };
@@ -24,10 +24,10 @@ const CERT_OK = { status: "ok", at: S - 50, not_after: "2027-09-30T00:00:00Z" };
 
 // 入口
 ok("Mac → d-mac(不管狀態)", view(pc(), ui(), { win: false, now: NOW }) === "d-mac");
-ok("事前準備:還沒看完 PSCCA → d-prep-load", view(null, ui({ phase: "prep" })) === "d-prep-load");
-ok("事前準備:找到憑證 → d-prep", view(null, ui({ phase: "prep", scan: { found: 1, expiry: "2027/09/30", newestAt: 1 } })) === "d-prep");
-ok("事前準備:沒有 → d-prep-none", view(null, ui({ phase: "prep", scan: { found: 0, expiry: null, newestAt: 0 } })) === "d-prep-none");
-ok("憑證e總管開著 → d-prep-wait(不管有沒有舊檔)", view(null, ui({ phase: "prep", waitTcem: true, scan: { found: 1 } })) === "d-prep-wait");
+ok("還沒看完 PSCCA → d-prep-load", view(null, ui({ phase: "prep" })) === "d-prep-load");
+ok("找到憑證 → 直接 d-form,沒有「事前準備」那一頁", view(null, ui({ phase: "prep", scan: { found: 1, expiry: "2027/09/30", newestAt: 1 } })) === "d-form" && !/=== "d-prep"|"d-prep" \?/.test(src));
+ok("沒有 → d-prep-none", view(null, ui({ phase: "prep", scan: { found: 0, expiry: null, newestAt: 0 } })) === "d-prep-none");
+ok("憑證e總管開著 → d-prep-wait", view(null, ui({ phase: "prep", waitTcem: true, scan: { found: 0 } })) === "d-prep-wait");
 ok("表單", view(null, ui({ phase: "form" })) === "d-form");
 // 在跑
 ok("剛送 setup、回報還沒動 → d-setup", view(null, ui({ sent: { step: "setup", at: NOW } })) === "d-setup");
@@ -69,17 +69,24 @@ ok("下單程式失敗 → d-finish-fail;它自己登入失敗停了(LOGIN_FAILE
 ok("用戶按了「確認登入」而且過了(probe 比那次失敗新)→ 往下啟動", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 1 }, worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD", at: S - 3 } })) === "d-finish");
 ok("第一次真錢的口數列:有金額的策略、排序、四捨五入", JSON.stringify(presFirstRows({ b: 2, a: 1.4, z: 0, x: "3" })) === JSON.stringify([{ name: "a", lots: 1 }, { name: "b", lots: 2 }]));
 
-// Wei 10-07:「收到測試帳號信」只是提醒,不擋「下一步」;憑證e總管做完、偵測到新檔就直接到帳密
-{ const sync = src.slice(src.indexOf("function presSyncGo("), src.indexOf("function presPrimary("));
-  const scan = src.slice(src.indexOf("async function presScan("), src.indexOf("function presWatch("));
-  ok("勾選不擋下一步(presSyncGo 不看 gotMail)", sync.length > 0 && !/gotMail/.test(sync));
-  ok("偵測到新憑證 → 直接到帳密表單、停止輪詢", /PRES\.waitTcem = false;[^\n]*PRES\.phase = "form"; presWatch\(false\);/.test(scan)); }
+// Wei 10-07:PSCCA 有憑證(開框第一次看到、或憑證e總管做完出現新檔)就直接到帳密;沒有勾選、沒有營業員話術
+{ const scan = src.slice(src.indexOf("async function presScan("), src.indexOf("function presWatch("));
+  ok("找到憑證 → 直接到帳密表單、停止輪詢", /PRES\.phase === "prep" && PRES\.scan\.found > 0\) \{ PRES\.waitTcem = false;[^\n]*PRES\.phase = "form"; presWatch\(false\);/.test(scan));
+  ok("沒有勾選列、沒有話術框、沒有一鍵複製話術", !/gotMail|presCheck|presScript|pres\.script\.|pres\.prep\.(need|mail|found)|pres\.next/.test(src)); }
 { const body = src.slice(src.indexOf("function presProbeBody("), src.indexOf("function presTestHostBody("));
   const adv = src.slice(src.indexOf("function presAdvance("), src.indexOf("// ── DOM"));
-  ok("失敗畫面:一顆「確認登入」(每按一次送一次 probe)+ 停止與三次鎖帳那一句;沒有解鎖鈕", /capBtn\("btn-fill", t\("pres\.err\.confirm"\), \(\) => presStep\("probe"\)/.test(body)
+  ok("失敗畫面:一顆「確認登入」(每按一次送一次 probe)+ 處理好再按／被鎖找營業員那一句;沒有解鎖鈕", /capBtn\("btn-fill", t\("pres\.err\.confirm"\), \(\) => presStep\("probe"\)/.test(body)
     && /pres\.err\.stopNote/.test(body) && !/unlock|afterUnlock/i.test(src));
   ok("沒有任何自動再登入(presAdvance 不送 probe / host)", !/presStep\("probe"/.test(adv) && !/presHost\(/.test(adv));
   ok("沒有到期橫幅、沒有雙邊檢查", !/presRenewDue|presDual|venue_pause/.test(src)); }
+// 主行程回錯畫在哪:一列只有一個狀態——步驟沒送出去掛在那一列;浮動 slot 只放整框層級;憑證檔的錯在欄位下;存帳密(沒有列)才放 slot
+ok("步驟沒送出去 → 那一列(setup / cert / probe(含 host) / test_order / start)", ctx.PRES_ROW_STEPS.every((s) => presMsgPlace({ code: "FAILED", step: s }) === "row")
+  && ctx.PRES_ROW_STEPS.slice().sort().join() === "cert,probe,setup,start,test_order");
+ok("整框層級(daemon 沒跑、加密儲存、重綁、忙碌)→ 浮動 slot,不管哪一步", ["DAEMON_DOWN", "TIMEOUT", "NO_SEAL", "REBOUND", "NO_CREDS", "BUSY"].every((c) => presMsgPlace({ code: c, step: "probe" }) === "frame"));
+ok("憑證檔的錯 → 欄位下;存帳密失敗 → slot;沒有錯 → null", presMsgPlace({ code: "PFX_PASSWORD", step: "cert" }) === "field" && presMsgPlace({ code: "FAILED", step: "creds" }) === "slot" && presMsgPlace(null) === null);
+{ const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
+  ok("列上的錯先問「在跑嗎」(在跑的優先,不會轉圈又掛錯)", /rowErr = \(step\) => \(run === step \? null : presRowErr\(step\)\)/.test(rows));
+  ok("自動送的兩步(安裝、啟動)沒送出去 → 那一列掛錯 + 再試一次", /rowErr\("setup"\)\) add\(presBadRow/.test(rows) && /rowErr\("start"\)\) add\(presBadRow/.test(rows)); }
 // 字串:president.js / trade.js 用到的 pres.* 兩語都有
 const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
 const sctx = {}; vm.createContext(sctx); vm.runInContext(strings + "\nthis.S = STRINGS;", sctx);
@@ -92,4 +99,10 @@ const miss = [...used].filter((k) => !(k in sctx.S.zh) || !(k in sctx.S.en));
 ok(`用到的 pres.* ${used.size} 個,中英都有`, used.size > 100 && miss.length === 0, miss);
 const zhHalf = [...used].filter((k) => k in sctx.S.zh && /[,;?!]|(?<!\d):(?!\d)/.test(sctx.S.zh[k]));
 ok("中文字串用全形標點", zhHalf.length === 0, zhHalf);
+// Wei 10-07:不講「算／不算登入次數」「連錯三次」——用戶不需要數
+const presKeys = Object.keys(sctx.S.zh).filter((k) => k.indexOf("pres.") === 0);
+const countZh = presKeys.filter((k) => /次數|三次|登入次/.test(sctx.S.zh[k])), countEn = presKeys.filter((k) => /attempt|three wrong|count as/i.test(sctx.S.en[k] || ""));
+ok("pres.* 兩語都沒有登入次數那類句子", countZh.length === 0 && countEn.length === 0, countZh.concat(countEn));
+ok("「這一步沒有開始。再試一次。」", sctx.S.zh["pres.err.generic"] === "這一步沒有開始。再試一次。");
+ok("stopNote 沒有數字", !/\d/.test(sctx.S.zh["pres.err.stopNote"]) && !/\d/.test(sctx.S.en["pres.err.stopNote"]));
 console.log(red ? `\n${red} 紅` : "\n全綠"); process.exit(red ? 1 : 0);
