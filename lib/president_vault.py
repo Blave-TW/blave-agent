@@ -173,6 +173,8 @@ class LoginError(RuntimeError):
         "BLOCKED": "a previous login with these credentials was refused — not attempted until "
                    "the credentials in .env change (統一 locks the account after three wrong logins)",
         "NON_TEST_SERVER": "the server is not a test server and production is not switched on",
+        "LIVE_NOT_OPEN": "the first production login after the test host was refused without a reason — "
+                         "production API access is probably not open yet; not blocked this once",
         "UNKNOWN": "the broker refused the login",
     }
 
@@ -438,6 +440,33 @@ def blocked(creds):
     return _gate(creds)[0]
 
 
+# The first production login after the test host passed (president_worker --once
+# --first-live): an unclassified refusal there is most likely "the broker has not
+# opened production API access yet", not a wrong password (the same password just
+# logged in on the test host). That one is recorded but not blocked — once per
+# credentials; any later UNKNOWN blocks as before (Wei 2026-10-07, audit B6).
+FIRST_LIVE_GRACE = False
+
+
+def _take_live_grace(creds):
+    fp = fingerprint(creds)
+    b = _read_block()
+    if b.get("fp") != fp:
+        b = {"fp": fp, "unknown": 0, "timeout": 0}
+    if b.get("live_grace_used") or _blocking(b):
+        return False
+    _write_block(dict(b, live_grace_used=True, at=int(time.time()), last="LIVE_NOT_OPEN"))
+    return True
+
+
+def _refused(creds, kind):
+    """Record a refused login; the class the caller raises."""
+    if kind == "UNKNOWN" and FIRST_LIVE_GRACE and creds.get("live") and _take_live_grace(creds):
+        return "LIVE_NOT_OPEN"
+    _record(creds, kind)
+    return kind
+
+
 def login_paused():
     """The class blocking logins with the credentials in use, or None. Read-only
     (never takes the released try). A released block still counts: the venue's
@@ -588,14 +617,13 @@ def login(creds, log_dir):
             kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
             # an SDK that raised on an answer it could not parse may still have
             # been refused a wrong password: same rule as a refusal it returned
-            _record(creds, kind)
+            kind = _refused(creds, kind)
             if released_try and kind == "HOST":
                 _give_back_try()
             raise LoginError(kind)
         resp = box["resp"]
         if not resp.ok:
-            kind = classify(resp.error)
-            _record(creds, kind)
+            kind = _refused(creds, classify(resp.error))
             if released_try and kind == "HOST":
                 _give_back_try()
             raise LoginError(kind)

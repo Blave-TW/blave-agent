@@ -405,6 +405,8 @@ def uninstall():
 
 if __name__ == "__main__":
     if "--once" in sys.argv[1:]:
+        # the first production login after the test host: president_vault.FIRST_LIVE_GRACE
+        president_vault.FIRST_LIVE_GRACE = "--first-live" in sys.argv[1:]
         sys.exit(run_once())
     if "--install" in sys.argv[1:]:
         sys.exit(install())

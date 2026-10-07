@@ -6880,3 +6880,9 @@ msgstr "{venue} certificate has expired"
 
 msgid "tr.ov.evCertNote"
 msgstr "Renew it in 憑證e總管 and choose the new one under Connect; strategies stop once it expires."
+
+msgid "pres.err.liveNotOpen"
+msgstr "President's production host didn't let Blave log in yet — most often your rep hasn't opened production access. Blave didn't block logins this time. Press again once your rep confirms; if it's refused again, Blave stops logging in so President doesn't lock the account."
+
+msgid "pres.err.liveNotOpenGo"
+msgstr "My rep opened it — confirm again"

@@ -116,7 +116,7 @@ _ACCOUNT, _SECRET, _CA_PW = "president_account", "president_password", "presiden
 LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "password",
                 "BLOCKED": "blocked", "MAINTENANCE": "maintenance", "HOST": "host",
                 "TIMEOUT": "timeout", "TRANSIENT": "retry_later", "NON_TEST_SERVER": "unknown",
-                "UNKNOWN": "unknown"}
+                "LIVE_NOT_OPEN": "live_not_open", "UNKNOWN": "unknown"}
 
 _SECTIONS = ("setup", "cert", "probe", "test_order", "worker")
 # desktop state, this process only (see "desktop app" below)
@@ -524,13 +524,20 @@ def probe_state(obj, exit_code):
     return {"state": "unknown"}
 
 
-def _worker_run(flag, timeout, what):
+def _worker_run(flag, timeout, what, extra=()):
     if _LOCAL["secrets"] is not None:
-        return _local_run(flag, timeout, what)
-    return cc._run_quiet([_python(), _paths()["worker"], flag], timeout, what)
+        return _local_run(None, timeout, what, argv=[_paths()["worker"], flag, *extra])
+    return cc._run_quiet([_python(), _paths()["worker"], flag, *extra], timeout, what)
 
 
-def run_probe(push=None, after_unlock=False):
+def _first_live(target):
+    """Switching test → production right after a test-host login passed: that
+    production probe gets the one-time grace (lib/president_vault.FIRST_LIVE_GRACE)."""
+    probe = (read_status() or {}).get("probe") or {}
+    return target == "live" and current_env() == "test" and probe.get("state") == "ok" and probe.get("env") == "test"
+
+
+def run_probe(push=None, after_unlock=False, first_live=False):
     env = current_env()
     _update("probe", status="running", reset=True, env=env)
     if push:
@@ -543,7 +550,8 @@ def run_probe(push=None, after_unlock=False):
             _refuse("UNBLOCK_USED", "this block was already released once — re-enter the password")
     started = time.time() - 1
     try:
-        rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe").returncode
+        rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe",
+                         extra=("--first-live",) if first_live else ()).returncode
     except RuntimeError:
         rc = None
     try:
@@ -693,6 +701,7 @@ def run_host(args, push=None):
     sharing the block is the conservative reading."""
     target = args["env"] if "env" in args else normalize_host(args["url"])
     _refuse_leaving_live(target)
+    first = _first_live(target)
     if not _env_urls_ok():
         _refuse("REBIND", "bind the account again — this binding predates the test environment")
     vault = _read_vault()
@@ -703,7 +712,7 @@ def run_host(args, push=None):
     _update(env=target)
     if target == "test":
         _leave_production()
-    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
+    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push, first_live=first)}
 
 
 def _taipei_iso(ts):
@@ -1304,13 +1313,14 @@ def _local_host(target, push):
     app saves the env it asked for; a daemon restart gets it back with the
     secrets), the reconciler re-handed its line, then the probe there."""
     _refuse_leaving_live(target)
+    first = _first_live(target)
     s = _LOCAL["secrets"]
     if (s["live"] is True) != (target == "live"):
         _set_secrets(dict(s, live=target == "live"))
     _update(env=target)
     if target == "test":
         _leave_production()
-    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
+    return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push, first_live=first)}
 
 
 def _local_start(push):

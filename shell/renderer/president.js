@@ -15,7 +15,8 @@ const PRES_NO_MOVE_MS = 90000;
 const PRES_STUCK_MS = 25 * 60 * 1000;
 // runtime president_connect.LOGIN_STATES 的值 → 畫面態(文案與雲端同一組 key;只有「主機」換成「這台電腦」)
 const PRES_PROBE_VIEW = { password: "PASSWORD", unknown: "UNKNOWN", cert_mismatch: "CERT_MISMATCH", cert: "CERT", blocked: "BLOCKED",
-  unblock_used: "BLOCKED2", maintenance: "MAINTENANCE", host: "HOST", timeout: "TIMEOUT", retry_later: "TRANSIENT", no_credentials: "NOCREDS" };
+  unblock_used: "BLOCKED2", maintenance: "MAINTENANCE", host: "HOST", timeout: "TIMEOUT", retry_later: "TRANSIENT", no_credentials: "NOCREDS",
+  live_not_open: "LIVE_NOT_OPEN" };
 const PRES_PFX_ERR = { PFX_PASSWORD: "pres.pfx.errPw", PFX_EXPIRED: "pres.pfx.errExpired", PFX_NOT_PRESIDENT: "pres.pfx.errIssuer",
   PFX_INVALID: "pres.pfx.errFile", PFX_TOO_LARGE: "pres.pfx.errFile", READ_FAILED: "pres.pfx.errRead", PFX_NONE_FOUND: "pres.pfx.errNone" };
 const PRES_FEATURE = { form: "pres_form_saved", tcem: "pres_tcem_open", cert: "pres_cert_ok", probe: "pres_probe_ok", ready: "pres_ready" };
@@ -329,6 +330,8 @@ function presProbeBody(view, pc) {
       capActs(capBtn("btn-fill", t("pres.err.unlocked"), () => presStep("probe", { afterUnlock: true }), "pres-unlock", off)), presP("cx-hint", t("pres.err.onceHint")));
     case "d-BLOCKED2": return presPwBody(t("pres.err.blocked2"));
     case "d-MAINTENANCE": return capErr(t("pres.err.maint"), true);
+    // 測試主機過了、第一次切正式被拒(沒說原因):多半是營業員還沒開正式權限;這次沒封鎖,下一次就會(B6)
+    case "d-LIVE_NOT_OPEN": return capFrag(capErr(t("pres.err.liveNotOpen"), true), capActs(capBtn("btn-out", t("pres.err.liveNotOpenGo"), () => presStep("probe"), "pres-retry", off)));
     case "d-TRANSIENT": return capFrag(capErr(t("pres.err.transient"), true), capActs(again()));
     case "d-HOST": return capFrag(capErr(t("pres.err.host")), capActs(again()));
     case "d-TIMEOUT": return capFrag(capErr(t("pres.err.timeout")), capActs(again()));
@@ -369,7 +372,7 @@ function presRows(view, pc) {
   // 登入失敗與改密碼:掛在登入那個環境的那一列
   const probeErr = Object.values(PRES_PROBE_VIEW).concat(["NOCREDS"]).indexOf(view.slice(2)) >= 0;
   const errRow = (name) => view === "d-pw" ? capRow("bad", name, "", presPwBody(t("pres.pw.lead")))
-    : capRow(view === "d-MAINTENANCE" || view === "d-TRANSIENT" ? "cur" : "bad", name, "", presProbeBody(view, pc));
+    : capRow(view === "d-MAINTENANCE" || view === "d-TRANSIENT" || view === "d-LIVE_NOT_OPEN" ? "cur" : "bad", name, "", presProbeBody(view, pc));
   ph("pres.ph.prep");
   if (setup.status === "ok") add(capRow("done", t("pres.s.setup")));
   else if (view === "d-setup-fail") add(capRow("bad", t("pres.s.setup"), "", capFrag(capErr(t("pres.s.setupFail")), capActs(capBtn("btn-out", t("pres.retry"), () => presStep("setup"), "pres-retry", PRES.busy)))));

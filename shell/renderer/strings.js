@@ -2264,6 +2264,8 @@ const STRINGS = {
     "tr.ov.evCertLive": "{venue} certificate has {days} days left",
     "tr.ov.evCertExpired": "{venue} certificate has expired",
     "tr.ov.evCertNote": "Renew it in 憑證e總管 and choose the new one under Connect; strategies stop once it expires.",
+    "pres.err.liveNotOpen": "President's production host didn't let Blave log in yet — most often your rep hasn't opened production access. Blave didn't block logins this time. Press again once your rep confirms; if it's refused again, Blave stops logging in so President doesn't lock the account.",
+    "pres.err.liveNotOpenGo": "My rep opened it — confirm again",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -4524,5 +4526,7 @@ const STRINGS = {
     "tr.ov.evCertLive": "{venue}的憑證只剩 {days} 天",
     "tr.ov.evCertExpired": "{venue}的憑證已經過期",
     "tr.ov.evCertNote": "用憑證e總管展延，再到連接選新的那張；過期後策略會停。",
+    "pres.err.liveNotOpen": "統一的正式主機還沒讓 Blave 登入，最常見是營業員還沒開正式權限。這次 Blave 沒有封鎖登入。確定營業員開好再按；下一次再被拒，Blave 就會先停止登入，免得統一鎖住帳號。",
+    "pres.err.liveNotOpenGo": "營業員開好了，再確認一次",
   },
 };

@@ -360,10 +360,11 @@ runs.clear()
 ANS = {"probe": {"ok": True, "equity": 1.0, "test_mode": False}}
 r = run_cmd("president_host", {"env": "live"})
 st = pc.read_status()
-check("6 營業員說開好了 → production: vault on, probe on viploginm recorded env live, no re-upload, worker untouched",
+check("6 營業員說開好了 → production: vault on, probe on viploginm recorded env live, no re-upload, worker untouched;"
+      " right after a passed test-host login that probe carries --first-live (audit B6)",
       json.load(open(P["vault"]))["live"] is True and r["env"] == "live" and r["url"] == "https://viploginm.pfctrade.com"
       and r["probe"]["env"] == "live" and st["env"] == "live" and open(P["pfx"], "rb").read() == pfx_before
-      and not popen and runs == [["president_worker.py", "--once"]], (r, popen))
+      and not popen and runs == [["president_worker.py", "--once", "--first-live"]], (r, popen, runs))
 check("6 the test order record stays (the report screen reads its time and number)",
       st["test_order"]["orderno"] == "A0001")
 check("6 a test order now → LIVE_ENV", refused(lambda: pc.dispatch("president_test_order", {}, D), "LIVE_ENV") is True)

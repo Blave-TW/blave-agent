@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **測試主機過了、第一次切正式回 UNKNOWN 不封鎖(稽核 B6,Wei 拍板)**:`president_host`／本機 `host` 切 live 前若測試主機 probe 已過,
+  那次 probe 帶 `--first-live`;lib `FIRST_LIVE_GRACE` 把那一次 UNKNOWN 記一筆(`live_grace_used`)、不封鎖,回 `LIVE_NOT_OPEN`
+  → probe state **`live_not_open`**(新值,網頁要接);之後的 UNKNOWN 照舊一次就封。PASSWORD／CERT 永不寬限。
 - **有統一部位或有配金額的統一策略時,不准切回測試主機(稽核 B3)**:雲端 `president_host` 與電腦版 `president_local host`
   在派工前就拒,新錯誤碼 `LIVE_IN_USE`(`live_in_use()`:快照裡的口數、routing 到 president 且金額 > 0 的策略)。
 - **統一登入封鎖檔搬進 `<base>/credentials/`(稽核 S2)**:`lib/president_vault.BLOCK` 跟 vault 同目錄,舊的 `state/` 那份第一次讀時搬過去

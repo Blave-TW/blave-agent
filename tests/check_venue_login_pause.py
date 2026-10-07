@@ -126,6 +126,28 @@ check(got.get("fp") == "abc" and os.path.exists(pv2.BLOCK) and os.path.exists(pv
 open(pv2.LEGACY_BLOCK, "w").write(json.dumps({"fp": "stale"}))
 check(pv2._read_block().get("fp") == "abc", "6 a new block already in place wins over a stale copy dropped in state/")
 
+# 7 B6: the first production login after the test host — an unclassified refusal is "not opened yet", once
+pv3 = importlib.reload(president_vault)
+pv3.BLOCK = os.path.join(tempfile.mkdtemp(prefix="vpause-grace-"), "president_login_block.json")
+live = dict(creds, live=True)
+pv3.FIRST_LIVE_GRACE = True
+k1 = pv3._refused(live, "UNKNOWN")
+b1 = pv3._read_block()
+check(k1 == "LIVE_NOT_OPEN" and not pv3._blocking(b1) and b1.get("live_grace_used") is True and b1.get("at"),
+      "7 first production UNKNOWN after the test host → live_not_open, recorded, NOT blocked")
+k2 = pv3._refused(live, "UNKNOWN")
+check(k2 == "UNKNOWN" and pv3._blocking(pv3._read_block()), "7 the next UNKNOWN blocks as before")
+os.remove(pv3.BLOCK)
+check(pv3._refused(live, "PASSWORD") == "PASSWORD" and pv3._blocking(pv3._read_block()), "7 a PASSWORD is never graced")
+os.remove(pv3.BLOCK)
+pv3.FIRST_LIVE_GRACE = False
+check(pv3._refused(live, "UNKNOWN") == "UNKNOWN" and pv3._blocking(pv3._read_block()), "7 without --first-live: UNKNOWN blocks at once")
+os.remove(pv3.BLOCK)
+pv3.FIRST_LIVE_GRACE = True
+check(pv3._refused(dict(creds, live=False), "UNKNOWN") == "UNKNOWN", "7 a test-host UNKNOWN is never graced")
+src_w = open(os.path.join(ROOT, "lib", "president_worker.py"), encoding="utf-8").read()
+check('president_vault.FIRST_LIVE_GRACE = "--first-live" in sys.argv[1:]' in src_w, "7 the worker's --once takes --first-live")
+
 guard.trip_halt = real_trip
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all ok'}")
 sys.exit(1 if fails else 0)

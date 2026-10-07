@@ -55,7 +55,8 @@ ok("切了正式、還沒確認 → 回報那一步(營業員說開好了可以�
   && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 3 } })) === "d-t-report");
 // 正式登入的每一個結果(runtime LOGIN_STATES 的值 + unblock_used / no_credentials)
 const STATES = { password: "d-PASSWORD", unknown: "d-UNKNOWN", cert_mismatch: "d-CERT_MISMATCH", cert: "d-CERT", blocked: "d-BLOCKED",
-  unblock_used: "d-BLOCKED2", maintenance: "d-MAINTENANCE", host: "d-HOST", timeout: "d-TIMEOUT", retry_later: "d-TRANSIENT", no_credentials: "d-NOCREDS" };
+  unblock_used: "d-BLOCKED2", maintenance: "d-MAINTENANCE", host: "d-HOST", timeout: "d-TIMEOUT", retry_later: "d-TRANSIENT", no_credentials: "d-NOCREDS",
+  live_not_open: "d-LIVE_NOT_OPEN" };
 for (const [st, v] of Object.entries(STATES)) ok(`probe ${st} → ${v}`, view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: st, env: "live", at: S - 3 } })) === v);
 ok("PRES_PROBE_VIEW 只有這幾個(多一個少一個都要補畫面)", Object.keys(ctx.PRES_PROBE_VIEW).sort().join() === Object.keys(STATES).sort().join());
 ok("沒見過的 state → d-UNKNOWN(最保守那一組,講 Blave 已先停止)", view(pc({ env: "live", cert: CERT_OK, probe: { status: "failed", state: "weird", at: S - 3 } })) === "d-UNKNOWN");

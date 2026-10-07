@@ -274,6 +274,9 @@ check("6b a host outside the two allowed → HOST_NOT_ALLOWED, before anything r
       code_of(lambda: pc.local_dispatch({"op": "host", "url": "evil.example.com"}, D)) == "HOST_NOT_ALLOWED")
 check("6b host takes exactly one of env / url", code_of(lambda: pc.local_dispatch({"op": "host"}, D)) == "BAD_ARGS"
       and code_of(lambda: pc.local_dispatch({"op": "host", "env": "prod"}, D)) == "BAD_ARGS")
+firsts = []
+pc.run_probe = lambda push=None, after_unlock=False, first_live=False: firsts.append(first_live) or probes.append(pc.current_env()) or (
+    pc._update("probe", status="ok", state="ok", env=pc.current_env()) and {"state": "ok", "env": pc.current_env()})
 r6 = pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).run()
 check("6b the address as mailed → the test host, then the probe there", r6["env"] == "test" and probes[-1] == "test"
       and pc.read_status()["probe"]["env"] == "test")
@@ -283,6 +286,7 @@ pc.run_test_order = lambda push=None: ran.append(pc.current_env()) or {"state": 
 pc.local_dispatch({"op": "test_order"}, D).run()
 check("6b test order after a test-host probe", ran == ["test"])
 pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+check("6b B6: only the first switch to production after a passed test-host login gets the grace", firsts == [False, True], firsts)
 check("6b 營業員說開好了 = host live: bundle switched, probe on production",
       pc._LOCAL["secrets"]["live"] is True and probes[-1] == "live" and pc.read_status()["env"] == "live")
 check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order"}, D)) == "LIVE_ENV")
