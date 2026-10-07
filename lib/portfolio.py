@@ -1384,6 +1384,30 @@ def apply_ledger_writeoff(symbol, reason, venue=_CURRENT, **detail):
                 **detail)
 
 
+def capital_reduce_cap(symbol, sub_diff, book_signed, account_row):
+    """(signed lots to send, writeoff reason | None) for a self_ledger reduce
+    leg on 群益. Its orders go out with sNewClose=2 (auto new/close), so a sell
+    larger than the long the account holds OPENS a short for the rest — the
+    venue never refuses it the way a crypto reduce-only order is refused.
+    lib.venue_wiring._book_reduce_qty's rule, on the round's own account read
+    (lots, netted across months by the reconciler): never more than
+    min(book, account). Unlike crypto, an unconfirmed empty read sends nothing
+    instead of the book's quantity. A full close on a confirmed short read
+    (note_account_short) writes the rest of the book off. Lives here, not in
+    the reconciler's capital block, so a hand-edited reconciler still gets it."""
+    owned, want = abs(book_signed), abs(sub_diff)
+    row = account_row or {}
+    side = 'long' if book_signed > 0 else 'short'
+    held = float(row.get('size') or 0) if row.get('side') == side else 0.0
+    short = held < owned - 1e-9
+    confirmed = note_account_short(symbol, short)
+    reason = None
+    if confirmed and short and want >= owned - 1e-9:
+        reason = 'account holds none of it' if held <= 0 else 'account held less than the book'
+    send = min(want, held)
+    return (send if sub_diff > 0 else -send), reason
+
+
 def _report_ledger_adoption():
     """Once per machine: what the quantity book made of a book that predates
     it (manager/ledger_migration.json + one audit line). Nothing is rewritten —
@@ -2456,6 +2480,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             return place_order_fn(symbol, sub_diff, asset_spec, **kw)
         return place_order_fn(symbol, sub_diff, asset_spec)
 
+    ledger_venue = book_venue() if ledger is not None else None
     executed = []  # orders with ≥1 confirmed fill — the return value
     try:  # a lib.execute from before market markers: no marker, as before
         from lib.execute import (_remove_inflight_marker as unmark_inflight,
@@ -2557,6 +2582,24 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 failed = True
                 break
 
+            cap_writeoff = None
+            if (reduce_only and ledger is not None
+                    and (order.get('exchange') or ledger_venue) == 'capital'):
+                capped, cap_writeoff = capital_reduce_cap(symbol, sub_diff, a_signed,
+                                                          actual.get(symbol))
+                if abs(capped) < 0.5:  # _capital_place_order's half-lot gate
+                    if cap_writeoff:
+                        apply_ledger_writeoff(symbol, cap_writeoff)
+                    else:
+                        logging.warning(f"[reconcile] {symbol} close {sub_diff:+g} lots not sent — "
+                                        f"the account holds less than the book; waiting for "
+                                        f"a second read to confirm")
+                    continue
+                if abs(capped) < abs(sub_diff):
+                    logging.warning(f"[reconcile] {symbol} close {sub_diff:+g} lots capped to "
+                                    f"{capped:+g} — what the account holds")
+                    sub_diff = capped
+
             # self_ledger flip: the close leg just read the account short of
             # the book and that is not confirmed yet (note_account_short), so
             # whether the old side is closed is not known. Opening the new side
@@ -2609,6 +2652,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                     # a legacy row has no quantity to check the close against;
                     # its close is where it ends (references/manager.md)
                     writeoff = 'legacy row closed'
+            if (cap_writeoff and not writeoff and isinstance(placed, dict)
+                    and float(placed.get('executed_qty') or 0) >= abs(sub_diff) - 1e-9):
+                writeoff = cap_writeoff
             if (isinstance(placed, dict) and placed.get('writeoff')
                     and not float(placed.get('executed_qty') or 0)):
                 # nothing was sent: no fill to log, no "Closed" to announce
