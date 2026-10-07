@@ -1677,12 +1677,6 @@ msgstr "模擬交易暫不支援台幣計價的標的"
 msgid "tr.pick.twdKeep"
 msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
 
-msgid "cx.cap.localWin"
-msgstr "電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。"
-
-msgid "cx.cap.localMac"
-msgstr "群益的下單元件只能在 Windows 上執行，這台 Mac 連不了。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。"
-
 msgid "tr.typeB.rejected"
 msgstr "「{name}」沒有固定的執行週期，目前只能在雲端自動執行。到「選擇策略」取消勾選後再儲存。"
 
