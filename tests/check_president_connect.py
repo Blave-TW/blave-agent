@@ -22,6 +22,10 @@
      contact); the pfx lands under the fixed name with the uploaded bytes, its password in the
      vault; expired / not a certificate refused; the issuer marks are placeholders until Wei
      supplies them (issuer_checked false), and once set they refuse a foreign certificate
+  6. upload write order: a failed vault write removes the landed certificate; a bind racing the upload
+  7. president_pfx_local (the user applied over RDP; stand-in folder): none found / a wrong password /
+     expired / several → the newest that opens and has not expired, COPIED (the original stays); a file
+     in the envelope refused; the file name (national id) in no result, status, exception or output
 
 Run: cd blave-agent && /usr/bin/python3 tests/check_president_connect.py
 """
@@ -215,6 +219,7 @@ check("3 args: no-arg steps refuse args; probe takes only {after_unlock: true}; 
       and refused(lambda: pc.dispatch("president_finish", {"x": 1}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_probe", {"after_unlock": 1}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_pfx", {"key_id": "x"}, D), "BAD_ARGS") is True
+      and refused(lambda: pc.dispatch("president_pfx_local", {}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_pfx_key", {"x": 1}, D), "BAD_ARGS") is True
       and refused(lambda: pc.dispatch("president_nope", {}, D), "BAD_ARGS") is True)
 d1 = pc.dispatch("president_setup", {}, D)
@@ -295,10 +300,10 @@ check("4 an install that did not get a good snapshot → WORKER_FAILED",
 
 import command_listener as cl  # noqa: E402
 import local_daemon  # noqa: E402
-check("4 command_listener routes the five names; the desktop daemon refuses them",
+check("4 command_listener routes the six names; the desktop daemon refuses them",
       all(n in cl.HANDLERS for n in pc.COMMANDS) and set(pc.COMMANDS) <= local_daemon.CLOUD_ONLY)
 fixture = json.load(open(os.path.join(ROOT, "tests", "fixtures", "api_agent_command_allowed.json")))["allowed"]
-check("4 the api allow-list copy carries the five", set(pc.COMMANDS) <= set(fixture))
+check("4 the api allow-list copy carries the six", set(pc.COMMANDS) <= set(fixture))
 
 # command_listener end to end: bind, unbind by two names, eviction by another venue
 cl.president_connect.IS_WINDOWS = True
@@ -466,6 +471,150 @@ if HAVE_CRYPTO:
     k = cc.cmd_pfx_key({}, key_path=P["key"])
     check("5 an upload after unbind → NOT_BOUND, no file", refused(lambda: pc.run_pfx(seal(k, PFX, "ca-pw")), "NOT_BOUND") is True
           and not os.path.exists(P["pfx"]))
+
+# ── 7. president_pfx_local (no cryptography needed: envelope stubbed, inspect_pfx keyed on the bytes) ──
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+LOCAL = os.path.join(TMP, "PSCCA")
+pc.LOCAL_CERT_DIR = LOCAL
+NID = "A123456789"
+real = {"open_envelope": cc.open_envelope, "inspect_pfx": pc.inspect_pfx, "run_probe": pc.run_probe}
+SENT = {"pfx": b""}
+cc.open_envelope = lambda key_id, envelope, key_path=None: (SENT["pfx"], "ca-pw")
+
+
+def fake_inspect(pfx, password):  # the real one is §5's; here the bytes say what it would conclude
+    kind = pfx.split(b":", 1)[0]
+    if kind == b"EXPIRED":
+        pc._refuse("PFX_EXPIRED", "this certificate has expired — renew it first")
+    if kind != b"OK" or password != "ca-pw":
+        pc._refuse("PFX_PASSWORD", "the certificate password does not open this file")
+    return {"not_after": "2027-10-01T00:00:00Z", "not_after_ts": 0, "issuer_checked": False}
+
+
+pc.inspect_pfx = fake_inspect
+probes = []
+pc.run_probe = lambda push=None, after_unlock=False: probes.append(1) or {"state": "ok"}
+
+
+def put(name, data, age_days):
+    os.makedirs(LOCAL, exist_ok=True)
+    path = os.path.join(LOCAL, name)
+    open(path, "wb").write(data)
+    t = time.time() - age_days * 86400
+    os.utime(path, (t, t))
+    return path
+
+
+def run_local():
+    """→ (result or the refusal code, everything that left: result, status, error text, stdout/stderr)."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        try:
+            got = pc.run_pfx_local(ARGS)
+            err = ""
+        except Exception as e:
+            got, err = str(e).split(":", 1)[0], f"{type(e).__name__}: {e}"
+    return got, json.dumps(got, default=str) + json.dumps(pc.read_status()) + err + out.getvalue()
+
+
+def reset_local():
+    shutil.rmtree(LOCAL, ignore_errors=True)
+    for path in (P["pfx"],):
+        if os.path.exists(path):
+            os.remove(path)
+    probes.clear()
+
+
+pc.divert_credentials(dict(BIND))
+reset_local()
+got, leak = run_local()
+check("7 no folder → PFX_NONE_FOUND, nothing written, no login",
+      got == "PFX_NONE_FOUND" and not os.path.exists(P["pfx"]) and not probes
+      and pc.read_status()["cert"] == dict(pc.read_status()["cert"], status="failed", error="PFX_NONE_FOUND", source="local"), got)
+put("readme.txt", b"OK:x", 0)
+put(f"PSC_{NID}_20271001.PFX.bak", b"OK:x", 0)
+got, _ = run_local()
+check("7 a folder with no .pfx in it → PFX_NONE_FOUND", got == "PFX_NONE_FOUND", got)
+reset_local()
+put(f"PSC_{NID}_20271001.pfx", b"OTHER:" + NID.encode(), 0)
+got, leak = run_local()
+check("7 the password opens none → PFX_PASSWORD, nothing written, no login",
+      got == "PFX_PASSWORD" and not os.path.exists(P["pfx"]) and not probes, got)
+check("7 …the file name is in no result, status, error or output", NID not in leak and "PSC_" not in leak, leak)
+reset_local()
+put(f"PSC_{NID}_20251001.pfx", b"EXPIRED:", 0)
+got, leak = run_local()
+check("7 only an expired one → PFX_EXPIRED", got == "PFX_EXPIRED" and not os.path.exists(P["pfx"]) and NID not in leak, got)
+put(f"PSC_{NID}_20271001.pfx", b"OTHER:", 0)
+got, _ = run_local()
+check("7 none passes → the newest one's reason (a renewed file the password does not open: PFX_PASSWORD, not the old one's expiry)",
+      got == "PFX_PASSWORD", got)
+reset_local()
+put(f"PSC_{NID}_20251001.pfx", b"EXPIRED:last-year", 1)
+older = put(f"PSC_{NID}_20241001.pfx", b"OK:older", 400)
+newest_ok = put(f"PSC_{NID}_20271001.pfx", b"OK:renewed", 3)
+put(f"PSC_{NID}_other.pfx", b"OTHER:", 0)
+outside = os.path.join(TMP, "elsewhere.pfx")
+open(outside, "wb").write(b"OK:outside")
+os.symlink(outside, os.path.join(LOCAL, "zz_link.pfx"))
+got, leak = run_local()
+v = json.load(open(P["vault"]))
+check("7 several: the newest one that opens and has not expired is copied under the fixed name, then the probe"
+      " (a newer link pointing out of the folder is not followed)",
+      isinstance(got, dict) and open(P["pfx"], "rb").read() == b"OK:renewed" and v["president_ca_password"] == "ca-pw"
+      and probes == [1] and got["probe"] == {"state": "ok"} and pc.read_status()["cert"]["source"] == "local", got)
+check("7 …copied, not moved: every original is still where 憑證e總管 left it (next year's renewal)",
+      open(newest_ok, "rb").read() == b"OK:renewed" and len([n for n in os.listdir(LOCAL) if n.endswith(".pfx")]) == 5
+      and open(outside, "rb").read() == b"OK:outside")
+check("7 …the file name is in no result, status or output", NID not in leak and "PSC_" not in leak, leak)
+os.chmod(newest_ok, 0)
+unreadable = not os.access(newest_ok, os.R_OK)
+os.remove(P["pfx"])
+probes.clear()
+got, leak = run_local()
+if unreadable:  # root reads anything; then the case says nothing
+    check("7 a file it cannot read is skipped, never an OSError with the path: the next one that opens is taken",
+          isinstance(got, dict) and open(P["pfx"], "rb").read() == b"OK:older" and NID not in leak, leak)
+os.chmod(newest_ok, 0o600)
+reset_local()
+put(f"PSC_{NID}_20271001.pfx", b"OK:renewed", 0)
+SENT["pfx"] = b"PFX-IN-THE-ENVELOPE"
+got, _ = run_local()
+check("7 a file inside the envelope → ENVELOPE_INVALID (this step takes the password only), nothing written",
+      got == "ENVELOPE_INVALID" and not os.path.exists(P["pfx"]) and not probes, got)
+SENT["pfx"] = b""
+pc.drop_vault()
+got, _ = run_local()
+check("7 before the bind → NOT_BOUND, nothing copied", got == "NOT_BOUND" and not os.path.exists(P["pfx"]), got)
+pc.divert_credentials(dict(BIND))
+d7 = pc.dispatch("president_pfx_local", {"key_id": "ab" * 16, "envelope": {
+    "v": 1, "alg": cc.ALG, "ek": "QUJD", "iv": "AAAA", "ct": "Y3Q="}}, D)
+check("7 dispatch: same args check and the same one-step lock as president_pfx",
+      isinstance(d7, D) and refused(lambda: pc.dispatch("president_pfx", {}, D), "BAD_ARGS") is True
+      and refused(lambda: pc.dispatch("president_setup", {}, D), "BUSY") is True)
+d7.cleanup()
+cc.open_envelope = real["open_envelope"]
+pc.inspect_pfx, pc.run_probe = real["inspect_pfx"], real["run_probe"]
+pc.drop_vault()
+reset_local()
+
+if HAVE_CRYPTO:
+    pc.run_probe = lambda push=None, after_unlock=False: {"state": "ok"}
+    pc.divert_credentials(dict(BIND))
+    put(f"PSC_{NID}_20251001.pfx", make_pfx("ca-pw", days=-1), 1)
+    good = make_pfx("ca-pw")
+    put(f"PSC_{NID}_20271001.pfx", good, 2)
+    put(f"PSC_{NID}_new-other-pw.pfx", make_pfx("not-this-one"), 0)
+    k = pc.dispatch("president_pfx_key", {}, D)
+    body = seal(k, b"", "ca-pw")
+    r = pc.run_pfx_local(body)
+    check("7 real certificates: newest opens with another password, next is good, oldest expired → the good one copied",
+          open(P["pfx"], "rb").read() == good and json.load(open(P["vault"]))["president_ca_password"] == "ca-pw"
+          and not os.path.exists(P["key"]) and "Z1234567891" not in json.dumps(r) + json.dumps(pc.read_status()))
+    pc.run_probe = real["run_probe"]
+    pc.drop_vault()
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("PASS" if not fails else f"FAIL {len(fails)}")

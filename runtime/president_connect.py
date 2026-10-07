@@ -23,14 +23,24 @@ Steps, in the order the page walks them:
                      credentials/president.pfx (fixed name: the user's file
                      name carries the national id), its password into the
                      vault; then one read-only login (the probe).
+  president_pfx_local {key_id, envelope}: the certificate the user applied for
+                     themselves over RDP (logged in as Administrator, in
+                     憑證e總管). The envelope carries only the password ("pfx"
+                     must be ""; a file in it is refused, not ignored). The
+                     newest file in LOCAL_CERT_DIR (Administrator's PSCCA) the
+                     password opens and that has not expired is COPIED to
+                     credentials/president.pfx — the original stays for next
+                     year's renewal — then the same vault write and probe as
+                     president_pfx. Only the platform copies from PSCCA; no
+                     code here runs, drives or logs in to 憑證e總管.
   president_probe    `lib/president_worker.py --once`; {"after_unlock": true}
                      runs `--unblock` first (the lib allows that once per block).
   president_finish   `lib/president_worker.py --install` (NSSM, LocalSystem).
 
-Another way to get the certificate onto the machine (an issuance the agent runs
-for the user) is one more command that ends where president_pfx ends: the
-`cert` section with its own `source`, then the same probe and finish. Add its
-name to COMMANDS and _JOBS, and to the api allow-list.
+Any other way to get the certificate onto the machine is one more command that
+ends where president_pfx ends: the `cert` section with its own `source`, then
+the same probe and finish. Add its name to COMMANDS and _JOBS, and to the api
+allow-list.
 
 Vault (<base>/credentials/president_vault.json, = lib/president_vault.VAULT)
 and president.pfx: SYSTEM + Administrators only. Unlike 群益's, both must be
@@ -57,10 +67,12 @@ import capital_connect as cc
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 IS_WINDOWS = os.name == "nt"
 
-COMMANDS = ("president_setup", "president_pfx_key", "president_pfx", "president_probe",
-            "president_finish")
+COMMANDS = ("president_setup", "president_pfx_key", "president_pfx", "president_pfx_local",
+            "president_probe", "president_finish")
 UNITRADE_PIN = "unitrade==1.0.0.7"
 LIVE_URL = "https://viploginm.pfctrade.com"
+# where 憑證e總管 saves for the account it runs under; RDP logs in as Administrator
+LOCAL_CERT_DIR = r"C:\Users\Administrator\PSCCA"
 # 待補(Wei 提供):統一(PSC)憑證的 issuer 與 OU 字串。補上之前,上傳只檢查檔案用那組密碼
 # 打得開、裡面有私鑰、還沒過期;status 的 cert.issuer_checked 照實寫 false。
 CERT_ISSUER_MARK = None
@@ -415,13 +427,62 @@ def run_probe(push=None, after_unlock=False):
 
 
 def run_pfx(args, push=None):
-    _update("cert", status="importing", error=None, source="upload")
+    return _import_cert(args, push, "upload", lambda pfx, password: (pfx, inspect_pfx(pfx, password)))
+
+
+def run_pfx_local(args, push=None):
+    return _import_cert(args, push, "local", _pick_local)
+
+
+def _local_candidates():
+    """PSCCA's .pfx files, newest first. An unreadable folder or file counts as
+    absent: an OSError's text carries the path, the file name the national id."""
+    try:
+        names = os.listdir(LOCAL_CERT_DIR)
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        path = os.path.join(LOCAL_CERT_DIR, name)
+        if not name.lower().endswith(".pfx") or os.path.islink(path):
+            continue
+        try:
+            if os.path.isfile(path):
+                found.append((os.path.getmtime(path), path))
+        except OSError:
+            continue
+    return [path for _, path in sorted(found, reverse=True)]
+
+
+def _pick_local(sent, password):
+    """→ (bytes, meta) of the newest PSCCA file the password opens and that has
+    not expired; all failing → the newest one's code."""
+    if sent:
+        _refuse("ENVELOPE_INVALID", "this step takes the certificate password only")
+    first = None
+    for path in _local_candidates():
+        try:
+            with open(path, "rb") as f:
+                data = f.read(cc.PFX_MAX_BYTES + 1)
+        except OSError:
+            continue
+        try:
+            return data, inspect_pfx(data, password)
+        except ValueError as e:
+            first = first or e
+    if first is None:
+        _refuse("PFX_NONE_FOUND", "no certificate file in the 憑證e總管 folder")
+    raise first
+
+
+def _import_cert(args, push, source, pick):
+    _update("cert", status="importing", error=None, source=source)
     if push:
         push()
     p = _paths()
     try:
         pfx, password = cc.open_envelope(args["key_id"], args["envelope"], key_path=p["key"])
-        meta = inspect_pfx(pfx, password)
+        pfx, meta = pick(pfx, password)
         bound = _read_vault()
         if not bound.get(_SECRET):
             _refuse("NOT_BOUND", "save the account and trading password first")
@@ -450,7 +511,7 @@ def run_pfx(args, push=None):
     except Exception as e:
         _update("cert", status="failed", error=cc._code(e, "IMPORT_FAILED"))
         raise
-    _update("cert", status="ok", error=None, source="upload", not_after=meta["not_after"],
+    _update("cert", status="ok", error=None, source=source, not_after=meta["not_after"],
             issuer_checked=meta["issuer_checked"])
     return {"cert": {"not_after": meta["not_after"], "issuer_checked": meta["issuer_checked"]},
             "probe": run_probe(push)}
@@ -496,6 +557,7 @@ def _sweep_interrupted():
 _JOBS = {
     "president_setup": lambda args, push: run_setup(push),
     "president_pfx": lambda args, push: run_pfx(args, push),
+    "president_pfx_local": lambda args, push: run_pfx_local(args, push),
     "president_probe": lambda args, push: run_probe(push, after_unlock=bool(args)),
     "president_finish": lambda args, push: run_finish(push),
 }
@@ -514,7 +576,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
         return cc.cmd_pfx_key(args, key_path=_paths()["key"])
     if cmd not in _JOBS:
         _refuse("BAD_ARGS", "unknown 統一 command")
-    if cmd == "president_pfx":
+    if cmd in ("president_pfx", "president_pfx_local"):
         cc.check_pfx_args(args)
     elif cmd == "president_probe":
         if args and not (set(args) == {"after_unlock"} and args["after_unlock"] is True):
