@@ -67,7 +67,7 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
     }
     return text.slice(i);
   };
-  const files = { "main.js": src, "enginesetup.js": fs.readFileSync(path.join(__dirname, "..", "shell", "enginesetup.js"), "utf8"), "daemon.js": fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8"), "datasrc.js": fs.readFileSync(path.join(__dirname, "..", "shell", "datasrc.js"), "utf8") };
+  const files = { "main.js": src, "enginesetup.js": fs.readFileSync(path.join(__dirname, "..", "shell", "enginesetup.js"), "utf8"), "daemon.js": fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8"), "datasrc.js": fs.readFileSync(path.join(__dirname, "..", "shell", "datasrc.js"), "utf8"), "winsandbox.js": fs.readFileSync(path.join(__dirname, "..", "shell", "winsandbox.js"), "utf8") };
   const sites = [], bare = [];
   for (const [f, text] of Object.entries(files)) {
     for (const m of text.matchAll(/\b(?:spawn|execFile|spawnFn)\(/g)) {
@@ -77,7 +77,7 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
       if (!/windowsHide: true/.test(call)) bare.push(sites[sites.length - 1]);
     }
   }
-  t("windowsHide:七個呼叫點都帶(main.js run / agentLogin / compareVersions / 回合 spawn、enginesetup.js 的 venv 與 pip、daemon.js、datasrc.js)→ 找到 " + sites.length + " 處,沒帶的:" + (bare.join(",") || "無"), sites.length === 7 && bare.length === 0);
+  t("windowsHide:八個呼叫點都帶(main.js run / agentLogin / compareVersions / 回合 spawn、enginesetup.js 的 venv 與 pip、daemon.js、datasrc.js、winsandbox.js 的 icacls / powershell)→ 找到 " + sites.length + " 處,沒帶的:" + (bare.join(",") || "無"), sites.length === 8 && bare.length === 0);
   // 突變:掃描器真的看得到「沒帶」——拿回合 spawn 那段把 windowsHide 拔掉再掃一次
   const turnSrc = src.replace("cwd: WS, windowsHide: true }", "cwd: WS }");
   const turnCall = callText(turnSrc, turnSrc.indexOf("spawn(VENV_PY") + "spawn".length);

@@ -939,7 +939,16 @@ function engineSetup() {
   });
   return _engineSetup;
 }
-function ensureEngine() { return engineSetup().ensure(); }
+// Codex elevated 沙盒讀不到隨包 Python 時補授權(shell/winsandbox.js);一次啟動只做一次、永遠 resolve。
+// 不等它:最差要幾分鐘且沒有進度可顯示,第一句話與 tradeStartIfReady 不該被它拖住
+let _sandboxAcl = null;
+function sandboxAcl() {
+  if (!_sandboxAcl) _sandboxAcl = require("./winsandbox").createSandboxAcl({
+    win: WIN, packaged: app.isPackaged, pyExe: BUNDLED_PY, exists: fs.existsSync, execFile, systemRoot: process.env.SystemRoot, log: (m) => console.error(m),
+  });
+  return _sandboxAcl.ensure();
+}
+function ensureEngine() { return engineSetup().ensure().then((r) => { try { sandboxAcl(); } catch (e) { console.error("[engine] codex sandbox acl not started: " + ((e && e.message) || e)); } return r; }); }
 // 結束 app / 為了更新重開之前收掉正在跑的 pip(最多等 5 秒);沒在裝就立刻回來,永遠不拋
 function engineAbort() { return _engineSetup ? _engineSetup.abort().catch(() => false) : Promise.resolve(false); }
 
