@@ -121,6 +121,30 @@ PROTECTED_EDIT_RULES = [
 ]
 
 
+def _abs_rule_path(path):
+    """A filesystem path as a permission-rule anchor: `//` + POSIX form, a Windows drive
+    as `/c/…` (Claude Code normalizes Windows paths that way before matching). A single
+    leading slash would anchor at cwd, and <base>/credentials sits beside the workspace."""
+    p = os.path.abspath(path).replace("\\", "/")
+    m = re.match(r"([A-Za-z]):(/.*)?$", p)
+    if m:
+        p = "/" + m.group(1).lower() + (m.group(2) or "")
+    return "/" + p
+
+
+# <base>/credentials: 群益 / 統一 vaults (the trading passwords, 統一's production switch), the
+# certificates, the one-time upload keys, 群益's staged certificate and 統一's SDK logs. Named
+# patterns, not the whole folder: references/capital-broker.md has the agent read
+# rdp_password.txt there (schtasks / NSSM as Administrator), and a `!` carve-out cannot reach a
+# `//`-anchored rule. Edit is denied too — a written "live": true is how production gets
+# switched on. Bash goes through _cred_bash_guard_hooks.
+CREDENTIALS_DIR = os.path.join(os.path.dirname(os.path.abspath(WORKSPACE)), "credentials")
+CREDENTIAL_SECRET_GLOBS = ("*vault*", "*pfx*", "capital_stage/**", "president_logs/**")
+CREDENTIAL_RULES = [f"{tool}({_abs_rule_path(CREDENTIALS_DIR)}/{g})"
+                    for tool in ("Read", "Edit") for g in CREDENTIAL_SECRET_GLOBS]
+PROTECTED_EDIT_RULES.extend(CREDENTIAL_RULES)
+
+
 # 模型(尤其較弱的 instruction-following)看到 prompt 裡的逐字稿格式,會在寫完
 # 回覆後「順著格式續寫下一個 user 回合」——實測 deepseek-v4-pro 捏造了一整則
 # 使用者訊息(「幫我把參數更新到 scan 找到的最佳解」)。那段若存進歷史,下一輪
@@ -1282,6 +1306,40 @@ def bg_guard_reason(tool_input, need_ms):
             "› When the job does not finish in the turn. " + _POLL_HINT)
 
 
+# Every turn's Bash, for the same files as CREDENTIAL_RULES — by name, so `cat`, `type`,
+# `Get-Content`, `copy`, `python -c open(...)` alike; the runtime writes them itself and never
+# through the agent's tools. A glob into credentials\ (`type credentials\*`) would take a vault
+# with it. Like the scheduled guard this is a speed bump: a name assembled at run time, or a
+# listing piped into a reader, is not caught (tests/check_cred_guard.py KNOWN_GAPS).
+CRED_BASH_DENY_RE = re.compile(
+    r"\b(?:capital|president)_vault\.json\b|\b(?:capital|president)_pfx_key\b|\bpresident\.pfx\b"
+    r"|\bcapital_stage\b|\bpresident_logs\b"
+    r"|credentials[\\/]+[^\s;&|'\"`<>]*(?:[*?]|\.pfx\b)",
+    re.IGNORECASE)
+CRED_BASH_DENY_REASON = (
+    "Refused by the Blave runtime — the broker vaults, certificates, upload keys and the 統一 SDK logs "
+    "under credentials/ are never read, copied or edited from the agent (they hold trading passwords, "
+    "the production switch and the user's national id). Use the status the libs report (probe file, "
+    "error classes, account snapshot) instead. Do not retry it another way."
+)
+
+
+def cred_bash_denied(cmd):
+    return bool(CRED_BASH_DENY_RE.search(cmd or ""))
+
+
+def _cred_bash_guard_hooks(options):
+    """PreToolUse:Bash,任何回合:讀／抄／改 credentials 底下券商密鑰檔的指令拒絕。"""
+    async def guard(input_data, _tool_use_id, _context):
+        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
+        if not isinstance(cmd, str) or not cred_bash_denied(cmd):
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": CRED_BASH_DENY_REASON}}
+
+    return _add_hook(options, "PreToolUse", "Bash", guard)
+
+
 def _bg_guard_hooks(options):
     """PreToolUse:Bash,任何回合:run_in_background 與 timeout 不足的回測啟動拒絕,理由回給模型。"""
     t0 = time.monotonic()   # 掛載在回合開頭(run_turn 的 t_start 前幾行)
@@ -1307,6 +1365,7 @@ def _mount_turn_hooks(options, sink, scheduled, lang_msg=None, reply_lang=None):
     # 承諾回報同樣沒人兌現。機隊的 hook 通道以排程回合那道為先例,發版前在 29026 跑一個真實回合確認(runtime/CHANGELOG)。
     # SDK 沒有 hooks 時 _add_hook 不掛(fail-open)。
     _bg_guard_hooks(options)
+    _cred_bash_guard_hooks(options)
     if isinstance(sink, LocalSink):
         # 語言與排程器兩道只在電腦版(實測過本機 CLI);機隊另外驗過再開
         _lang_hooks(options, lang_reminder(lang_msg, reply_lang))

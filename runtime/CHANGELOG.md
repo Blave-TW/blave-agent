@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **`<base>/credentials` 的 agent 守門(群益＋統一)**:每個回合 disallowed 加 Read／Edit
+  `//<base>/credentials/{*vault*,*pfx*,capital_stage/**,president_logs/**}`(雙斜線＝絕對路徑,Windows 換成 `/c/…`;
+  單斜線會錨到 workspace);新的 `_cred_bash_guard_hooks` 每個回合掛在 Bash 上,指令提到這些檔名或 glob 進 credentials
+  就拒絕。`rdp_password.txt` 刻意不擋(`references/capital-broker.md` 要 agent 讀它設 NSSM／schtasks)。減速帶不是邊界,
+  擋不到的寫法列在 `tests/check_cred_guard.py` KNOWN_GAPS。
 - **啟動清暫存檔納入 `<base>/credentials`**:綁定被砍在半途時留下的 vault 明文暫存檔(`.<name>.<12 hex>.tmp`)開機清掉;
   列不到的目錄(ACL)照舊略過。
 - **統一 SDK log 搬進 `credentials\`**:SDK 自己的 log(登入帳號=身分證號、每張單)從 `state/president_logs/` 改寫到
