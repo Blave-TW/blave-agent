@@ -20,7 +20,7 @@ let tracked = []; const trackFeature = (n) => { tracked.push(n); };
 const envCloudKind = (st) => (st && st.kind) || "loading";
 // 下單狀態用 trade.js 的真 trExecState(稽核 P1:mock 成 st.exec 時看不到「過期回報」那條路)
 const cutLine = (s, name) => { const i = s.indexOf("function " + name + "("), e = s.indexOf("\n", i), l = s.slice(i, e); return /\}\s*(\/\/.*)?$/.test(l) && !/\{\s*$/.test(l) ? l : cut(s, name); };   // 一行寫完的函式不能切到下一個 "\n}"
-eval(["trHasAccount", "trRestartStopped", "trRestartUnconfirmed", "trRestartKind", "trExecState"].map((n) => cutLine(trsrc, n)).join("\n"));
+eval(["trHasAccount", "trPresWip", "trSetupOnly", "trRecRunning", "trRestartStopped", "trRestartUnconfirmed", "trRestartKind", "trExecState"].map((n) => cutLine(trsrc, n)).join("\n"));
 const trVenueIds = (r) => (r && r.venue ? [r.venue] : []), trVenueLabel = (id) => id || "", envMoney = (st) => (st && st.report && st.report.venue === "paper" ? "paper" : "real");
 const envMoneyText = (m) => (m === "paper" ? "模擬" : "真錢"), trWhereTidy = (s) => s;
 const paneSt = { chat: { off: false } }, paneToggle = () => {}, upPaint = () => {}, upRefresh = () => Promise.resolve(), $ = (id) => ({ id });
