@@ -73,7 +73,8 @@ _ACCOUNT, _SECRET, _CA_PW = "president_account", "president_password", "presiden
 # lib/president_worker.py's LoginError classes → the page's states
 LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "password",
                 "BLOCKED": "blocked", "MAINTENANCE": "maintenance", "HOST": "host",
-                "TIMEOUT": "timeout", "NON_TEST_SERVER": "unknown", "UNKNOWN": "unknown"}
+                "TIMEOUT": "timeout", "TRANSIENT": "retry_later", "NON_TEST_SERVER": "unknown",
+                "UNKNOWN": "unknown"}
 
 _SECTIONS = ("setup", "cert", "probe", "worker")
 _busy = threading.Lock()

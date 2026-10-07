@@ -618,6 +618,8 @@ class FakeUnitrade:
         nxt = LOGIN_SCRIPT.pop(0)
         if isinstance(nxt, BaseException):
             raise nxt
+        if callable(nxt):
+            return nxt()
         return nxt
 
     def logout(self):
@@ -684,9 +686,60 @@ for text, kind in (("Timeout", "TIMEOUT"),
                    ("('Connection aborted.', RemoteDisconnected('Remote end closed connection'))", "TIMEOUT"),
                    ("HTTPSConnectionPool(host='x'): Read timed out. (read timeout=30)", "TIMEOUT"),
                    ("HTTPSConnectionPool(host='x'): Max retries exceeded", "TIMEOUT")):
-    LOGIN_SCRIPT[:] = [Resp(ok=False, error=text)]
+    os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
+    LOGIN_SCRIPT[:] = [Resp(ok=False, error=text), Resp(ok=True, error="")]
     got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-    check(got.kind == kind and not os.path.exists(president_vault.BLOCK), f"{kind} does not count toward a block")
+    n = FakeUnitrade.logins
+    president_vault.login(creds2, president_worker.SDK_LOG_DIR).logout()
+    check(got.kind == kind and FakeUnitrade.logins == n + 1 and not os.path.exists(president_vault.BLOCK),
+          f"{kind}: one does not block — the next login reaches the broker (and a good one clears the count)")
+
+# TIMEOUT counts: TIMEOUT_BLOCK_AT in a row block (the broker may have checked the password each time);
+# the login thread outliving LOGIN_TIMEOUT_S counts the same as a timeout text
+check(president_vault.TIMEOUT_BLOCK_AT == 2, "two timeouts in a row block", president_vault.TIMEOUT_BLOCK_AT)
+real_lt = president_vault.LOGIN_TIMEOUT_S
+president_vault.LOGIN_TIMEOUT_S = 0.2
+for label, script in (("timeout texts", [Resp(ok=False, error="Timeout"), Resp(ok=False, error="Read timed out")]),
+                      ("a login thread that never answers",
+                       [lambda: _t.sleep(0.6) or Resp(ok=True, error=""), lambda: _t.sleep(0.6) or Resp(ok=True, error="")])):
+    os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
+    LOGIN_SCRIPT[:] = list(script)
+    g1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    check(g1.kind == "TIMEOUT" and president_vault.unblock() == "none",
+          f"{label}: one TIMEOUT on record blocks nothing, so --unblock has nothing to release (and keeps its one use)")
+    g2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    n = FakeUnitrade.logins
+    g3 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    check(g2.kind == "TIMEOUT" and g3.kind == "BLOCKED" and FakeUnitrade.logins == n,
+          f"{label}: the second TIMEOUT in a row blocks; the third login never reaches the broker")
+    check(president_vault.unblock() == "released", f"{label}: that block has its one release")
+president_vault.LOGIN_TIMEOUT_S = real_lt
+os.remove(president_vault.BLOCK)
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="Timeout"), Resp(ok=False, error="[APGW]something unexpected")]
+raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind
+      == "BLOCKED", "a TIMEOUT then an UNKNOWN: blocked (UNKNOWN still blocks at one)")
+os.remove(president_vault.BLOCK)
+
+# TRANSIENT: the SDK's own non-credential refusals never count (the worker backs off); a text that
+# also names the password stays PASSWORD
+for text in ("超過每分鐘限制!", "DB連線錯誤", "後臺連線失敗", "系統維護中,請稍後再試"):
+    LOGIN_SCRIPT[:] = [Resp(ok=False, error=text), Resp(ok=False, error=text), Resp(ok=True, error="")]
+    g1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    g2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    n = FakeUnitrade.logins
+    president_vault.login(creds2, president_worker.SDK_LOG_DIR).logout()
+    check(g1.kind == g2.kind == "TRANSIENT" and FakeUnitrade.logins == n + 1 and not os.path.exists(president_vault.BLOCK),
+          f"{text!r} → TRANSIENT twice, nothing recorded, the next login reaches the broker")
+check(president_vault.classify("密碼錯誤 系統維護") == "PASSWORD" and president_vault.classify("登入失敗!") == "UNKNOWN",
+      "a credential word wins over a transient one; the SDK's bare 登入失敗 stays UNKNOWN")
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="超過每分鐘限制!")]
+with contextlib.redirect_stdout(io.StringIO()):
+    president_worker.run_once()
+check("TRANSIENT" in open(president_worker.PROBE_PATH, encoding="utf-8").read(), "the probe file names TRANSIENT")
+
+os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
 # an unreadable .pfx: refused and blocked before any broker contact (the SDK sends the password first)
 n = FakeUnitrade.logins
 gone = dict(creds2, ca_path=os.path.join(TMP, "missing.pfx"))

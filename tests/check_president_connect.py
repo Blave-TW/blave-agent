@@ -231,7 +231,7 @@ d2.cleanup()
 # ── 4. probe / finish ──
 for kind, state in (("CERT_MISMATCH", "cert_mismatch"), ("CERT", "cert"), ("PASSWORD", "password"),
                     ("BLOCKED", "blocked"), ("MAINTENANCE", "maintenance"), ("HOST", "host"),
-                    ("TIMEOUT", "timeout"), ("UNKNOWN", "unknown")):
+                    ("TIMEOUT", "timeout"), ("TRANSIENT", "retry_later"), ("UNKNOWN", "unknown")):
     err = pv.sanitize(f"LoginError: {pv.LoginError(kind)}")
     got = pc.probe_state({"ok": False, "error": err, "read_at": 1}, 2)
     check(f"4 lib {kind} → {state}, no text", got == {"state": state}, got)

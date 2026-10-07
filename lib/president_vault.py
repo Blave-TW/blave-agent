@@ -20,7 +20,7 @@ box the agent runs as SYSTEM like the worker, so — as lib/capital_vault says
 of its own file — it stops accidents, not a SYSTEM process set on bypassing it.
 
 Login failures leave this module as a CLASS only (CERT_MISMATCH, CERT,
-PASSWORD, HOST, TIMEOUT, MAINTENANCE, BLOCKED, UNKNOWN), never the broker's
+PASSWORD, HOST, TIMEOUT, TRANSIENT, MAINTENANCE, BLOCKED, UNKNOWN), never the broker's
 text: when the certificate does not match the account, the SDK's message is
 f"{national id} {certificate json}". Every broker string that is passed on
 goes through sanitize() first.
@@ -32,8 +32,11 @@ written) until `.env` changes or the user releases it (`python
 lib/president_worker.py --unblock`, only after they unlocked the account at the
 broker) — a release allows one login, and its failure blocks again; one
 unclassifiable rejection blocks too — whether the broker answered it or the SDK
-raised on it — because an unknown text may be a wrong password. No login is attempted in the
-broker's 05:30–05:50 login maintenance.
+raised on it — because an unknown text may be a wrong password. A TIMEOUT
+counts too, and TIMEOUT_BLOCK_AT of them in a row block (see there). A
+TRANSIENT answer (a known non-credential refusal: the per-minute cap, the
+broker's back end down, maintenance) never counts — the worker backs off. No
+login is attempted in the broker's 05:30–05:50 login maintenance.
 
 Imported two ways like capital_vault: `import president_vault` from the
 worker script (lib/ is sys.path[0]), `lib.president_vault` elsewhere. Keep it
@@ -64,6 +67,25 @@ AUTH_CLASSES = ("CERT_MISMATCH", "CERT", "PASSWORD")
 # and the user's own typo in the app plus two of ours locks the account — so one
 # unclassifiable refusal blocks.
 UNKNOWN_BLOCK_AT = 1
+# A login that timed out may have had its password checked before the broker went
+# quiet, so it counts — but not at 1: a bare "Max retries exceeded" /
+# ConnectionError also lands in TIMEOUT, and the worker re-logs in after every
+# backoff, so a short network outage is a run of TIMEOUTs on a password that is
+# right (the broker counts only wrong ones), and one release per block would be
+# spent on the network. A wrong password normally gets a fast refusal (PASSWORD /
+# UNKNOWN → blocked at once); two timeouts in a row with no good login between
+# them is where "the broker may be counting these" outweighs "the network is
+# flaky". Worst case left: two silent wrong-password checks + the user's own
+# typo in the app = the broker's three.
+TIMEOUT_BLOCK_AT = 2
+# Refusals the SDK names that are not about the credentials (lib core/error and
+# core/httpclient 1.0.0.7: MSG012 per-minute cap, the back end's DB / host link).
+# Matched only after every credential class, so a text that also names the
+# password stays PASSWORD.
+TRANSIENT_TEXTS = ("超過每分鐘限制", "DB連線錯誤", "後臺連線失敗",
+                   # 待補:統一 maintenance text seen outside 05:30–05:50 has not been captured;
+                   # "維護" is the guess until a real one is
+                   "維護")
 # How long after a send the worker's next read must START before it counts as
 # showing that send (order lib close check, reconciler Read-Your-Writes). An IOC
 # market order is filled or killed at the exchange within the second; what is
@@ -86,6 +108,7 @@ class LoginError(RuntimeError):
         "PASSWORD": "the account or trading password was refused",
         "HOST": "the login host could not be reached",
         "TIMEOUT": "the login did not answer in time",
+        "TRANSIENT": "the broker turned the login away for a reason that is not the credentials — retried later",
         "MAINTENANCE": "broker login maintenance (05:30–05:50 Taipei) — not attempted",
         "BLOCKED": "a previous login with these credentials was refused — not attempted until "
                    "the credentials in .env change (統一 locks the account after three wrong logins)",
@@ -134,6 +157,8 @@ def classify(text):
         return "TIMEOUT"
     if any(t in s for t in ("密碼", "查無此使用者", "使用者密碼未設定")):
         return "PASSWORD"
+    if any(t in s for t in TRANSIENT_TEXTS):
+        return "TRANSIENT"
     return "UNKNOWN"
 
 
@@ -271,6 +296,11 @@ def _write_block(block):
         pass
 
 
+def _blocking(b):
+    return (b.get("kind") in AUTH_CLASSES or int(b.get("unknown") or 0) >= UNKNOWN_BLOCK_AT
+            or int(b.get("timeout") or 0) >= TIMEOUT_BLOCK_AT)
+
+
 def _gate(creds):
     """(blocking class or None, whether this call took the released try).
     A block the user released (unblock()) lets exactly ONE login through: the
@@ -280,7 +310,7 @@ def _gate(creds):
     b = _read_block()
     if b.get("fp") != fingerprint(creds):
         return None, False
-    if not (b.get("kind") in AUTH_CLASSES or int(b.get("unknown") or 0) >= UNKNOWN_BLOCK_AT):
+    if not _blocking(b):
         return None, False
     if b.get("allow_once"):
         try:
@@ -317,8 +347,8 @@ def unblock():
     second release needs changed credentials in .env (which is a new block if
     they fail too). Returns "released", "none" (nothing blocked) or "used"."""
     b = _read_block()
-    if not b.get("fp"):
-        return "none"
+    if not b.get("fp") or not _blocking(b):
+        return "none"  # a single TIMEOUT on record blocks nothing: no release to spend on it
     if b.get("unblock_used"):
         return "used"
     try:
@@ -333,12 +363,15 @@ def _record(creds, kind):
     fp = fingerprint(creds)
     b = _read_block()
     if b.get("fp") != fp:
-        b = {"fp": fp, "unknown": 0}
+        b = {"fp": fp, "unknown": 0, "timeout": 0}
     if kind in AUTH_CLASSES:
         b.update(kind=kind, at=int(time.time()))
         _write_block(b)
-    elif kind == "UNKNOWN":
-        b.update(kind=kind, at=int(time.time()), unknown=int(b.get("unknown") or 0) + 1)
+    elif kind in ("UNKNOWN", "TIMEOUT"):
+        field = kind.lower()
+        b.update(at=int(time.time()), **{field: int(b.get(field) or 0) + 1})
+        if b.get("kind") not in AUTH_CLASSES:
+            b["kind"] = kind
         _write_block(b)
 
 
@@ -423,6 +456,7 @@ def login(creds, log_dir):
     t.join(LOGIN_TIMEOUT_S)
     try:
         if t.is_alive():
+            _record(creds, "TIMEOUT")
             raise LoginError("TIMEOUT")
         if "exc" in box:
             kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
