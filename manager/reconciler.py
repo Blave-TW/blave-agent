@@ -23,6 +23,7 @@ UNREACHABLE_EVENT_AFTER_S = 1800  # 暫時性錯誤連續這麼久 → exchange_
 ACCOUNT_GUARD_PATH = 'state/venue_account.json'  # 帳戶守門:交易所帳號 id + 待確認
 ACCOUNT_ID_READ_PATH = 'state/account_id_read.json'  # 最近一次帳號 id 讀取的結果,給平台看
 OUTAGE_PATH = 'state/reconciler_outage.json'  # 進行中的暫時性斷線(重啟後接續計時)
+VENUE_PAUSE_PATH = 'state/venue_pause.json'   # 登入被封鎖而暫停的 venue(只停那一家的策略;見 _sync_venue_pauses)
 OUTAGE_STALE_S = 3600  # 存檔的最後一次失敗比這還舊 → 載入時丟掉(daemon 停過一陣子)
 ERROR_NOTIFY_COOLDOWN_S = 3600  # 對帳失敗通知最多每小時一則。計時是 per-process、
                                # 不分錯誤種類(一小時內換一種失敗也一樣被壓下,
@@ -640,6 +641,11 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         # the record landed mid-round: the legs left in this round are not sent
         logging.info(f"[reconciler] {symbol}: machine restarted — not sent until 啟動下單")
         return False
+    if exchange and _venue_pause.get(exchange):
+        # that venue's login is blocked: its strategies hold (no order, nothing
+        # counted as a failure); every other venue's legs go on
+        logging.info(f"[reconciler] {symbol}: {exchange} login blocked — not sent until a login passes")
+        return False
     if venue_traits.has(exchange, 'hand_wired'):
         return _hand_wired_impl(exchange)[1](symbol, signed_diff, asset_spec=asset_spec,
                                              reduce_only=reduce_only)
@@ -1045,6 +1051,71 @@ def _book_hold(venue, verdict, detail, now=None):
     raise ReadSkipped(f"account id unverified: {detail}")
 
 
+# ── 登入被封鎖的 venue:只停那一家(Wei 2026-10-07) ─────────────────────────
+# 統一期貨錯三次會鎖帳號,所以它的 lib 在一次認證失敗就封鎖登入(lib/president_vault)。
+# 封鎖期間只暫停 routing 到那家的策略:place_order 對它回 False、讀持倉失敗當本輪跳過
+# (不計數、不 HALT);其他交易所的策略照跑。用戶在統一解鎖或改密碼、重新確認登入成功
+# (lib 清掉封鎖)之後自動恢復,照差額繼續跑。轉態各發一次事件:venue_login_blocked(P1,
+# cause venue)、venue_login_restored(P2)。狀態落檔給回報(paused_blocked)與重啟後不重發。
+_venue_pause = {}
+
+
+def _venue_login_paused(venue):
+    if venue == venue_traits.PRESIDENT:
+        try:
+            from lib import president_vault
+            return president_vault.login_paused()
+        except Exception as e:
+            logging.warning(f"[reconciler] {venue} login block unreadable ({type(e).__name__})")
+    return None
+
+
+def _load_venue_pause():
+    try:
+        with open(VENUE_PAUSE_PATH) as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in doc.items() if isinstance(v, dict)} if isinstance(doc, dict) else {}
+
+
+def _sync_venue_pauses(now=None):
+    """Once per loop tick: the routed venues whose login is blocked. True when
+    one just came back (its round is due now, not at the next heartbeat)."""
+    global _venue_pause
+    now = time.time() if now is None else now
+    if not _venue_pause:
+        _venue_pause = _load_venue_pause()
+    try:
+        routed = {v for v in (load_portfolio_config().get('exchanges') or {}).values() if v}
+    except Exception:
+        return False
+    new, restored = {}, False
+    for venue in sorted(routed | set(_venue_pause)):
+        kind = _venue_login_paused(venue) if venue in routed else None
+        if kind:
+            new[venue] = _venue_pause.get(venue) or {'state': 'paused_blocked', 'kind': kind, 'since': int(now)}
+            new[venue]['kind'] = kind
+            if venue not in _venue_pause:
+                logging.warning(f"[reconciler] {venue} login blocked ({kind}) — its strategies paused")
+                events.emit('venue_login_blocked', venue=venue, kind=kind)
+        elif venue in _venue_pause:
+            logging.info(f"[reconciler] {venue} login passed — its strategies resume")
+            events.emit('venue_login_restored', venue=venue,
+                        minutes=int((now - _venue_pause[venue].get('since', now)) // 60))
+            restored = True
+    if new != _venue_pause:
+        _venue_pause = new
+        try:
+            tmp = VENUE_PAUSE_PATH + '.tmp'
+            with open(tmp, 'w') as f:
+                json.dump(new, f)
+            os.replace(tmp, VENUE_PAUSE_PATH)
+        except OSError as e:
+            logging.warning(f"[reconciler] venue pause state not persisted: {e}")
+    return restored
+
+
 def _get_positions_guarded(now=None):
     """reconcile()'s get_positions_fn: the read plus failure classification,
     the outage events and the account guard. Raises ReadSkipped for a round
@@ -1066,6 +1137,9 @@ def _get_positions_guarded(now=None):
             venue = _current_venue()
         except Exception as ve:
             logging.warning(f"[reconciler] venue lookup failed ({ve})")
+        if venue and _venue_pause.get(venue):
+            # a blocked login reads nothing; that is the pause, not an outage
+            raise ReadSkipped(f"{venue} login blocked — round skipped", original=e) from e
         kind = _classify(venue, e)
         _on_read_failure(venue, e, kind, now)
         if kind == venue_errors.TRANSIENT:
@@ -1340,6 +1414,8 @@ if __name__ == '__main__':
         if _idle_logged:
             logging.info("[reconciler] venue bound again — resuming reconciliation")
             _idle_logged = False
+        if _sync_venue_pauses():
+            force_next = True
 
         try:
             # Inside the try: this json-loads portfolio_config.json, which the

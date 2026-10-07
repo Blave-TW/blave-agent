@@ -75,6 +75,13 @@ ok("第一次真錢的口數列:有金額的策略、排序、四捨五入", JSO
 const tp = (h, m) => Date.UTC(2026, 9, 8, h - 8, m);   // 台北時間 → UTC ms
 ok("維護 05:30–05:50 台北:05:40 不重試、05:50 起重試", !presMaintOver(tp(5, 40)) && presMaintOver(tp(5, 50)) && presMaintOver(tp(9, 0)));
 
+// Wei 10-07:「收到測試帳號信」只是提醒,不擋「下一步」;憑證e總管做完、偵測到新檔就直接到帳密
+{ const sync = src.slice(src.indexOf("function presSyncGo("), src.indexOf("function presPrimary("));
+  const scan = src.slice(src.indexOf("async function presScan("), src.indexOf("function presWatch("));
+  ok("勾選不擋下一步(presSyncGo 不看 gotMail)", sync.length > 0 && !/gotMail/.test(sync));
+  ok("偵測到新憑證 → 直接到帳密表單、停止輪詢", /PRES\.waitTcem = false;[^\n]*PRES\.phase = "form"; presWatch\(false\);/.test(scan)); }
+{ const ban = src.slice(src.indexOf("function presBannerPaint("), src.indexOf("function presHeldLots("));
+  ok("自動下單頁:統一登入被封鎖時有一條橫幅(讀回報的 venue_pause paused_blocked),帶去處理登入", /venue_pause\[PRESIDENT\]\.state === "paused_blocked"/.test(ban) && /cxModalOpen\(null, PRESIDENT\)/.test(ban)); }
 // 字串:president.js / trade.js 用到的 pres.* 兩語都有
 const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
 const sctx = {}; vm.createContext(sctx); vm.runInContext(strings + "\nthis.S = STRINGS;", sctx);

@@ -414,6 +414,22 @@ def blocked(creds):
     return _gate(creds)[0]
 
 
+def login_paused():
+    """The class blocking logins with the credentials in use, or None. Read-only
+    (never takes the released try). A released block still counts: the venue's
+    strategies stay paused until a login has actually passed (_clear), which
+    is what lifts the pause in manager/reconciler. Credentials that cannot be
+    resolved → None (that failure is reported where the login happens)."""
+    try:
+        creds = resolve()
+    except Exception:
+        return None
+    b = _read_block()
+    if b.get("fp") != fingerprint(creds) or not _blocking(b):
+        return None
+    return str(b.get("kind") or "UNKNOWN")
+
+
 def _give_back_try():
     """The released try never reached the broker (HOST: no connection), so it
     did not count there and is not spent here. A TIMEOUT is not given back —

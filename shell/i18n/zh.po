@@ -6820,7 +6820,22 @@ msgid "pres.quit.body"
 msgstr "統一還有 {lots} 口在倉。結束後策略不會再下單，這些部位也不會自動平倉，要自己在統一 app 處理。"
 
 msgid "pres.ev.blocked"
-msgstr "統一登入被擋"
+msgstr "統一期貨登入被封鎖，統一的策略已暫停"
 
 msgid "pres.ev.blockedN"
-msgstr "Blave 已先暫停下單，免得統一鎖住帳號。打開 Blave 處理登入。"
+msgstr "其他交易所的策略照常。到統一解鎖或改密碼後，在 Blave 自動下單 › 連接統一按「我已在統一解鎖」或用新密碼確認；登入成功後統一的策略會自動恢復。"
+
+msgid "pres.ev.restored"
+msgstr "統一期貨登入恢復了"
+
+msgid "pres.ev.restoredN"
+msgstr "統一的策略已自動恢復，照目前的差額繼續跑。"
+
+msgid "pres.paused.lead"
+msgstr "統一期貨登入被封鎖，統一的策略暫停中。"
+
+msgid "pres.paused.sub"
+msgstr "其他交易所照常。到統一解鎖或改密碼，再到連接統一重新確認登入；成功後自動恢復。"
+
+msgid "pres.paused.go"
+msgstr "處理登入"

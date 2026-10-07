@@ -3134,7 +3134,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
   // 統一有部位時結束 Blave(Wei 10-07:擋一下、講白不會平倉)
   presQuitTitle: "Quit Blave?", presQuitBody: "{lots} lot(s) are still open at 統一期貨 (President Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 統一 app.",
-  ev_president_login_blocked: "統一期貨 login blocked", ev_president_login_blocked_n: "Blave paused trading so 統一 doesn't lock the account. Open Blave to fix the login.",
+  ev_venue_login_blocked: "President Futures login blocked — its strategies paused", ev_venue_login_blocked_n: "Other exchanges keep trading. Unlock or change the password at President, then confirm the login in Blave; President strategies resume by themselves once it passes.",
+  ev_venue_login_restored: "President Futures login is back", ev_venue_login_restored_n: "President strategies resumed and continue from the current gap.",
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
@@ -3388,9 +3389,11 @@ function traySync() {
    - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
-// president_login_blocked:統一登入被擋、Blave 已先暫停(Wei 10-07 定 P1;notifications.md 歸級待補)
-const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped", "president_login_blocked"];   // 全部七型(標籤用)
+// venue_login_blocked:某家登入被封鎖、只停那一家的策略(manager/reconciler,Wei 10-07;notifications.md 待登記)
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped", "venue_login_blocked"];   // 全部七型(標籤用)
 const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的五型
+// 本機也發、但是 P2(不亮紅點):登入恢復、那一家的策略已自動接著跑
+const P2_EVENT_TYPES = ["venue_login_restored"];
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
@@ -3430,7 +3433,7 @@ function p1Pick(events, mark, nowS) {   // 純函式(tests/check_shell_p1_notify
   for (const ev of Array.isArray(events) ? events : []) {
     if (!ev || typeof ev.id !== "number" || typeof ev.type !== "string" || ev.id <= (mark == null ? -1 : mark)) continue;
     if (ev.id > top) top = ev.id;
-    if (mark == null || P1_EVENT_TYPES.indexOf(ev.type) < 0 || !(nowS - Number(ev.ts) <= 900)) continue;
+    if (mark == null || (P1_EVENT_TYPES.indexOf(ev.type) < 0 && P2_EVENT_TYPES.indexOf(ev.type) < 0) || !(nowS - Number(ev.ts) <= 900)) continue;
     show.push(ev);
   }
   return { mark: top < 0 ? (mark == null ? 0 : mark) : top, show };
@@ -3447,8 +3450,9 @@ function p1Sync() {
   const stt = r.error ? { halt: p1Marks.halt, err: p1Marks.err, show: [] } : p1FromState(r, p1Marks, now);
   if (ev.mark !== p1Marks.id || stt.halt !== p1Marks.halt || stt.err !== p1Marks.err) { p1Marks = { id: ev.mark, halt: stt.halt, err: stt.err }; p1Save(p1Marks); }
   const show = stt.show.concat(ev.show);
+  const p1n = show.filter((e) => P2_EVENT_TYPES.indexOf(e.type) < 0).length;   // P2 不亮紅點
   for (const e of show) {
-    p1Badge++;
+    if (P2_EVENT_TYPES.indexOf(e.type) < 0) p1Badge++;
     if (Date.now() - (p1LastShown[e.type] || 0) < 60000) continue;
     p1LastShown[e.type] = Date.now();
     const sym = e.payload && typeof e.payload.symbol === "string" ? e.payload.symbol.replace(/@spot$/, "").slice(0, 24) : "";
@@ -3460,7 +3464,7 @@ function p1Sync() {
     if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
     n.show();
   }
-  if (show.length && app.dock) { if (!BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(p1Badge)); else p1Badge = 0; }
+  if (p1n && app.dock) { if (!BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(p1Badge)); else p1Badge = 0; }
 }
 /* Binance 金鑰重查出事(binance_link 兩次確認之後才叫):P1 / P2 都走這條本機通知,跟 p1Sync 同一套呈現。只通知、不自動停單、不移除金鑰。
    {where} 由 renderer 交字時就填好(這裡的事件只會來自這台電腦);{ip} 只會是 binance_link 驗過的 IPv4。 */

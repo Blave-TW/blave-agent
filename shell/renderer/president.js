@@ -131,8 +131,8 @@ async function presScan() {
   let r = null; try { r = await window.blave.presidentScan(); } catch (_) { }
   const prev = PRES.scan;
   PRES.scan = r && r.code === "OK" ? { found: r.found, expiry: r.expiry, newestAt: r.newestAt } : { found: 0, expiry: null, newestAt: 0 };
-  // 等憑證e總管:出現新檔(張數多了或最新那張換了)就自己往下,不用「我完成了」鈕
-  if (PRES.waitTcem && PRES.scan.found > 0 && (!prev || PRES.scan.newestAt > PRES.baseAt)) { PRES.waitTcem = false; PRES.source = "found"; }
+  // 等憑證e總管:出現新檔(張數多了或最新那張換了)就直接到帳密,不用「我完成了」鈕(「收到測試帳號信」不擋,不必繞回那一頁)
+  if (PRES.waitTcem && PRES.scan.found > 0 && (!prev || PRES.scan.newestAt > PRES.baseAt)) { PRES.waitTcem = false; PRES.source = "found"; PRES.phase = "form"; presWatch(false); }
   presPaint();
 }
 function presWatch(on) {
@@ -445,7 +445,7 @@ function presFoot(view) {
 function presSyncGo(view) {
   const v = view || PRES.view, go = $("cx-go");
   let off = presDown() || PRES.busy;
-  if (v === "d-prep") off = off || !PRES.gotMail;
+  // 「收到測試帳號信」只是提醒,不擋下一步(Wei 10-07,同網頁版)
   if (v === "d-form") off = off || !/^[0-9]{11}$/.test(PRES.acct.trim()) || !PRES.pw;
   go.setAttribute("aria-disabled", off ? "true" : "false");
   document.querySelectorAll("#cx-body [data-need]").forEach((b) => { b.setAttribute("aria-disabled", !PRES[b.dataset.need] || PRES.busy || presDown() ? "true" : "false"); });
@@ -500,10 +500,19 @@ function presBannerPaint() {
   const show = TR.env === "local" && window.blave.platform === "win32";
   const pc = show ? presPC() : null, r = show ? presReport() : null;
   const due = pc ? presRenewDue(pc, Date.now()) : null, lots = r ? presHeldLots(r) : 0;
-  const sig = LANG + "|" + JSON.stringify([due, lots, capDate(presSec(pc, "cert").not_after)]);
+  // 登入被封鎖:只有統一的策略停著(manager/reconciler venue_pause),其他交易所照跑
+  const paused = !!(r && r.venue_pause && r.venue_pause[PRESIDENT] && r.venue_pause[PRESIDENT].state === "paused_blocked");
+  const sig = LANG + "|" + JSON.stringify([due, lots, paused, capDate(presSec(pc, "cert").not_after)]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig; el.textContent = "";
-  el.hidden = due === null && !lots;
+  el.hidden = due === null && !lots && !paused;
+  if (paused) {
+    const b = trEl("div", "pres-banner"), tx = trEl("div", "");
+    tx.append(presP("", t("pres.paused.lead")), presP("small", t("pres.paused.sub")));
+    const acts = trEl("div", "cap-acts");
+    acts.appendChild(capBtn("btn-fill", t("pres.paused.go"), () => cxModalOpen(null, PRESIDENT), "pres-paused-go"));
+    tx.appendChild(acts); b.appendChild(tx); el.appendChild(b);
+  }
   if (lots) {
     const b = trEl("div", "pres-banner"), tx = trEl("div", "");
     tx.append(presP("", t("pres.held.lead", { n: lots })), presP("small", t("pres.held.sub")));

@@ -59,4 +59,11 @@ t("時間解析:垃圾不炸、回 NaN", [null, undefined, "", "yesterday", {}, 
   t("畫面交給主行程的字:重開那一型用定稿標題與 P1 內文(不講時間);舊的 downtime_paused 標籤退場",
     /ev_machine_restart_stopped: t\("tr\.ov\.evRestartStopped"\), ev_machine_restart_stopped_n: t\("tm\.evRestartStoppedNote"\)/.test(tr) && !/ev_downtime_paused/.test(tr + src)); }
 t("每個 P1 型別在 tmLabels 都有標題與註解", P1_TYPES.every((ty) => src.includes("ev_" + ty + ":") && src.includes("ev_" + ty + "_n:")));
+// 統一登入被封鎖(Wei 10-07):只停統一的策略、不 HALT;P1 venue_login_blocked 一則,恢復是 P2 venue_login_restored(不亮紅點)
+{ const o2 = p1Pick([ev(70, "venue_login_blocked", { venue: "president", kind: "PASSWORD" }), ev(71, "venue_login_restored", { venue: "president" })], 60, NOW);
+  t("封鎖(P1)與恢復(P2)本機都發", types(o2) === "venue_login_blocked:70,venue_login_restored:71");
+  t("封鎖是 P1、恢復不是(P2 不亮紅點)", P1_TYPES.indexOf("venue_login_blocked") >= 0 && P1_TYPES.indexOf("venue_login_restored") < 0 && P2_EVENT_TYPES.indexOf("venue_login_restored") >= 0
+    && /if \(P2_EVENT_TYPES\.indexOf\(e\.type\) < 0\) p1Badge\+\+;/.test(src));
+  t("恢復那則也有標題與註解", src.includes("ev_venue_login_restored:") && src.includes("ev_venue_login_restored_n:"));
+  t("舊的 president_login_blocked 不發", p1Pick([ev(72, "president_login_blocked", {})], 60, NOW).show.length === 0); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

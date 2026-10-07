@@ -6816,7 +6816,22 @@ msgid "pres.quit.body"
 msgstr "{lots} lot(s) are still open at President. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the President app."
 
 msgid "pres.ev.blocked"
-msgstr "President login blocked"
+msgstr "President Futures login blocked — its strategies paused"
 
 msgid "pres.ev.blockedN"
-msgstr "Blave paused trading so President doesn’t lock the account. Open Blave to fix the login."
+msgstr "Other exchanges keep trading. Unlock or change the password at President, then in Blave Auto trading › Connect press I’ve unlocked it, or confirm with the new password. President strategies resume by themselves once the login passes."
+
+msgid "pres.ev.restored"
+msgstr "President Futures login is back"
+
+msgid "pres.ev.restoredN"
+msgstr "President strategies resumed and continue from the current gap."
+
+msgid "pres.paused.lead"
+msgstr "President Futures login is blocked; its strategies are paused."
+
+msgid "pres.paused.sub"
+msgstr "Other exchanges keep trading. Unlock or change the password at President, then confirm the login under Connect; strategies resume once it passes."
+
+msgid "pres.paused.go"
+msgstr "Fix the login"

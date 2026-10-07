@@ -1122,23 +1122,6 @@ def _block_on_file():
     return kind, f"{fp}:{b.get('at')}"
 
 
-def _halt_and_tell(kind):
-    """Login blocked: every 統一 strategy stops (a desktop binds one venue at a
-    time, so that is the machine's HALT — 啟動下單 lifts it once the login is
-    fixed) and the user hears about it (P1, runtime/events)."""
-    try:
-        from lib.guard import trip_halt
-        trip_halt(f"統一期貨登入被擋({kind}),Blave 已先停止下單 / 統一 login blocked ({kind})",
-                  "president_connect")
-    except Exception as e:
-        print(f"[president_connect] halt failed ({type(e).__name__})", file=sys.stderr)
-    try:
-        import events
-        events.append("president_login_blocked", {"kind": kind})
-    except Exception:
-        pass
-
-
 def _cert_notice(now=None):
     """One event per threshold per certificate: 31 days (P2), 7 days, expired (P1)."""
     st = read_status() or {}
@@ -1174,9 +1157,10 @@ def local_tick():
         st = read_status() or {}
         if st.get("block_seen") != blocked[1]:
             _update(block_seen=blocked[1])
+            # the page shows why; pausing 統一's strategies and telling the user is
+            # manager/reconciler's job (venue_login_blocked) — the same on a cloud box
             _update("worker", status="failed", error=f"BLOCKED:{blocked[0]}",
                     wanted=_LOCAL["worker"].wanted)
-            _halt_and_tell(blocked[0])
     _LOCAL["worker"].tick(bool(blocked))
     if time.time() - _LOCAL["cert_check_at"] > 600:
         _LOCAL["cert_check_at"] = time.time()

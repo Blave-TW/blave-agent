@@ -1376,6 +1376,11 @@ def build_report():
     pres = _read_json(os.path.join(WORKSPACE_STATE, "president_connect.json"))
     if isinstance(pres, dict):
         report["president_connect"] = pres
+    # venues whose login is blocked: only their strategies are paused
+    # (manager/reconciler _sync_venue_pauses) — {venue: {state: paused_blocked, kind, since}}
+    vp = _read_json(os.path.join(WORKSPACE_STATE, "venue_pause.json"))
+    if isinstance(vp, dict) and vp:
+        report["venue_pause"] = vp
     return report
 
 

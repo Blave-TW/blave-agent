@@ -8,12 +8,16 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **登入被封鎖只停那一家(雲端與電腦版共用,manager/reconciler + lib/president_vault.login_paused)**:統一登入被封鎖時,
+  routing 到 president 的策略不下單(`place_order` 回 False)、讀持倉失敗當本輪跳過(不計數、不 HALT),其他交易所照跑;
+  事件 `venue_login_blocked`(P1,cause venue)一次,狀態落 `state/venue_pause.json`,回報帶 `venue_pause`(`paused_blocked`)。
+  解鎖或改密碼後重新確認登入成功(lib 清掉封鎖)→ 自動恢復、照差額繼續,事件 `venue_login_restored`(P2)。不再 HALT。
 - **統一期貨電腦版(Windows 本機)開通**:新的 daemon 指令 `president_local`(`LOCAL_ONLY`,不在 api 清單、只有 app 主行程送得出),
   op = setup／cert／secrets／probe／start／stop。帳密與憑證密碼存在 app 的 safeStorage,經 daemon secret 衍生的 AES-GCM 封裝送進來,
   只留在 daemon 記憶體;要登入的子行程(worker、probe、對帳器、平倉)從 stdin 第一行拿(`BLAVE_PRESIDENT_STDIN`),
   不落檔、不進環境變數,agent 的回合拿不到。cert 步在本機開檔(密碼錯／不是憑證／過期不碰統一)後**複製**到
   `credentials\president.pfx`,.env 經 `_cmd_credentials` 寫哨兵(新閘門 `local_bind_gate`:只收 cert 步剛驗過的那組)。
-  worker 改由 daemon 帶起(不裝 NSSM)、退出自動重起;登入被擋時 HALT 一次＋事件 `president_login_blocked`,被擋期間不重起;
+  worker 改由 daemon 帶起(不裝 NSSM)、退出自動重起,被擋期間不重起;
   憑證到期 31／7／0 天各一則事件(`president_cert_expiring`／`_expiry_near`／`_expired`,**通知等級待在 notifications.md 歸級**)。
   需要 lib 同版(`president_vault` 的記憶體路徑)。測試環境走雲端同一份 runtime 程式(op host／test_order 叫 `run_probe`、
   `run_test_order`、`normalize_host`;新帳號先測試主機,`start` 只在正式且正式 probe 過,否則 `TEST_ENV`)。

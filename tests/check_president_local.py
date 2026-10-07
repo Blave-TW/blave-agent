@@ -14,7 +14,7 @@ in-memory path + local_daemon wiring) — no network, no broker, no Windows.
      process (BLAVE_AGENT_LOCAL=1, no line) cannot log in; nothing is read from a vault file
   7. the reconciler: the supervisor writes the line first and flags it; run_reconciler hands it
      to lib.president_vault before the strategy code runs
-  8. blocked login: one HALT + one P1 event per block, the worker is not restarted while blocked
+  8. blocked login: no HALT here (the reconciler pauses 統一's strategies), the worker is not restarted while blocked
   9. unbind: worker stopped, passwords dropped, certificate gone; a flatten gets the line on stdin
  10. dispatch: refused off the desktop; president_local is a local-only daemon command
 
@@ -337,20 +337,17 @@ spawns = []
 w._spawn = lambda: spawns.append(1)
 for _ in range(3):
     pc.local_tick()
-check("8 a block: one HALT and one P1 event, however many ticks",
-      len(halts) == 1 and evs.count(("president_login_blocked", {"kind": "PASSWORD"})) == 1, (halts, evs))
+check("8 a block on the desktop: NO HALT and no event from here — pausing 統一's strategies and telling the user "
+      "is manager/reconciler's (venue_login_blocked, tests/check_venue_login_pause.py), the same on a cloud box",
+      not halts and not evs, (halts, evs))
 w.respawn_at = 0
 pc.local_tick()
 check("8 the worker is not restarted while blocked", spawns == [])
-check("8 the status says why", pc.read_status()["worker"]["error"] == "BLOCKED:PASSWORD")
-pv._write_block({"fp": fp, "kind": "PASSWORD", "at": 2})
-pc.local_tick()
-check("8 a new block (after a release) is told again", len(halts) == 2)
+check("8 the status says why (the page shows the blocked-login screen)", pc.read_status()["worker"]["error"] == "BLOCKED:PASSWORD")
 pv._write_block({"fp": "other", "kind": "PASSWORD", "at": 3})
 w.respawn_at = 0
 pc.local_tick()
-check("8 a block for other credentials is not ours: no HALT, and the worker comes back",
-      len(halts) == 2 and spawns == [1], (halts, spawns))
+check("8 a block for other credentials is not ours: the worker comes back", spawns == [1], spawns)
 os.remove(pv.BLOCK)
 
 # ── 9. unbind / flatten ──
