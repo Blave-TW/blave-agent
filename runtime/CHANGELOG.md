@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一期貨電腦版(Windows 本機)開通**:新的 daemon 指令 `president_local`(`LOCAL_ONLY`,不在 api 清單、只有 app 主行程送得出),
+  op = setup／cert／secrets／probe／start／stop。帳密與憑證密碼存在 app 的 safeStorage,經 daemon secret 衍生的 AES-GCM 封裝送進來,
+  只留在 daemon 記憶體;要登入的子行程(worker、probe、對帳器、平倉)從 stdin 第一行拿(`BLAVE_PRESIDENT_STDIN`),
+  不落檔、不進環境變數,agent 的回合拿不到。cert 步在本機開檔(密碼錯／不是憑證／過期不碰統一)後**複製**到
+  `credentials\president.pfx`,.env 經 `_cmd_credentials` 寫哨兵(新閘門 `local_bind_gate`:只收 cert 步剛驗過的那組)。
+  worker 改由 daemon 帶起(不裝 NSSM)、退出自動重起;登入被擋時 HALT 一次＋事件 `president_login_blocked`,被擋期間不重起;
+  憑證到期 31／7／0 天各一則事件(`president_cert_expiring`／`_expiry_near`／`_expired`,**通知等級待在 notifications.md 歸級**)。
+  需要 lib 同版(`president_vault` 的記憶體路徑);測試環境那段待 president-testhost-018 的契約。
 - **統一憑證 RDP 自己申請那條路(新指令 `president_pfx_local`)**:雲端沒有憑證的用戶自己 RDP 用憑證e總管申請,網頁只送憑證密碼
   封包(`pfx` 必須空字串,帶檔拒 `ENVELOPE_INVALID`);機器從 `C:\Users\Administrator\PSCCA\` 由新到舊找 `.pfx`,本機驗密碼與效期,
   第一個通過的**複製**成 `credentials\president.pfx`(原檔留給明年展延),vault 寫入／鎖／probe 同 `president_pfx`(抽成 `_import_cert`)。

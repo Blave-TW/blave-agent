@@ -52,10 +52,14 @@ paths — it is not a wall against SYSTEM set on bypassing it.
 Never put a secret, a pfx byte, a certificate subject (it carries the national
 id) or a broker message into a return value, an exception, the status or a log.
 """
+import base64
 import hashlib
+import hmac
 import json
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -90,6 +94,9 @@ LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "p
                 "UNKNOWN": "unknown"}
 
 _SECTIONS = ("setup", "cert", "probe", "worker")
+# desktop state, this process only (see "desktop app" below)
+_LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None,
+          "cert_check_at": 0.0}
 _busy = threading.Lock()
 _status_lock = threading.Lock()
 
@@ -274,6 +281,10 @@ def drop_vault(names=None):
     to remove itself. `names` (credentials_remove) — only when they are 統一's."""
     if names is not None and not any(str(n).casefold().startswith("president_") for n in names):
         return
+    local = _LOCAL["secrets"] is not None or os.environ.get("BLAVE_AGENT_LOCAL") == "1"
+    if local:
+        _LOCAL["worker"].stop("unbound")
+        _LOCAL["secrets"] = None
     p = _paths()
     for path in (p["vault"], p["pfx"], p["key"], p["status"]):
         try:
@@ -289,7 +300,7 @@ def drop_vault(names=None):
             shutil.rmtree(path, ignore_errors=True)
             if os.path.lexists(path):
                 print(f"[president_connect] {os.path.basename(path)} not fully removed", file=sys.stderr)
-    if IS_WINDOWS:
+    if IS_WINDOWS and not local:
         py = cc._python_for_worker()
         if py and os.path.isfile(p["worker"]):
             try:  # not waited for: a stopping service can take a minute
@@ -337,7 +348,9 @@ def inspect_pfx(pfx, password):
     else:
         exp = int(not_after.timestamp())
     if exp <= time.time():
-        _refuse("PFX_EXPIRED", "this certificate has expired — renew it first")
+        e = ValueError("PFX_EXPIRED: this certificate has expired — renew it first")
+        e.not_after = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(exp))  # a date, nothing personal
+        raise e
     return {"not_after": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(exp)), "not_after_ts": exp,
             "issuer_checked": checked}
 
@@ -345,6 +358,8 @@ def inspect_pfx(pfx, password):
 # ── the steps ────────────────────────────────────────────────────────────────
 
 def _python():
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        return sys.executable  # the desktop's venv: unitrade goes where the worker runs
     py = cc._python_for_worker()
     if not py:
         _refuse("PYTHON_MISSING", "python.exe not found")
@@ -398,20 +413,25 @@ def probe_state(obj, exit_code):
     return {"state": "unknown"}
 
 
+def _worker_run(flag, timeout, what):
+    if _LOCAL["secrets"] is not None:
+        return _local_run(flag, timeout, what)
+    return cc._run_quiet([_python(), _paths()["worker"], flag], timeout, what)
+
+
 def run_probe(push=None, after_unlock=False):
     _update("probe", status="running", reset=True)
     if push:
         push()
     p = _paths()
-    py = _python()
     if after_unlock:
-        r = cc._run_quiet([py, p["worker"], "--unblock"], 60, "unblock")
+        r = _worker_run("--unblock", 60, "unblock")
         if r.returncode != 0:
             _update("probe", status="failed", state="unblock_used")
             _refuse("UNBLOCK_USED", "this block was already released once — re-enter the password")
     started = time.time() - 1
     try:
-        rc = cc._run_quiet([py, p["worker"], "--once"], PROBE_TIMEOUT_S, "probe").returncode
+        rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe").returncode
     except RuntimeError:
         rc = None
     try:
@@ -604,3 +624,490 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
             _busy.release()
 
     return deferred_cls(lambda: _JOBS[cmd](args, push), cleanup=cleanup)
+
+
+# ── desktop app (BLAVE_AGENT_LOCAL=1, Windows) ───────────────────────────────
+# The commands above refuse in local mode. The app drives its own flow through
+# ONE daemon command only its main process can send, `president_local`
+# {op, sealed?, after_unlock?} (runtime/local_daemon.LOCAL_ONLY):
+#   setup    unitrade into the desktop's venv (the worker's interpreter)
+#   cert     {sealed: account, password, ca_password, live, src}: the file the
+#            user chose (their PSCCA folder, or one they picked) is opened and
+#            checked HERE (wrong password / not a certificate / expired never
+#            reach the broker), COPIED to credentials/president.pfx (the
+#            original stays for next year's renewal), .env written through the
+#            normal bind (_cmd_credentials: eviction, manifest) with sentinels
+#   secrets  {sealed: account, password, ca_password, live}: the app re-sends
+#            the bundle after every daemon start; refused unless it is the
+#            account and password .env was bound with
+#   probe    `president_worker.py --once` ({after_unlock: true}: --unblock first)
+#   start    the worker as this daemon's child, until its first good snapshot
+#   stop     the worker stops (and is not restarted)
+# Secrets live in this process's memory and travel to a child as one stdin line
+# (lib/president_vault.STDIN_FLAG) — never a file, never the environment. The
+# sealed payload is AES-GCM under a key derived from the daemon's HMAC secret,
+# which exists only in the app's and this process's memory, so the command file
+# on disk holds no plaintext. There is no ACL to set: the agent runs as the same
+# user, and lib/president_vault.resolve gives it nothing to log in with.
+
+LOCAL_OPS = ("setup", "cert", "secrets", "probe", "start", "stop")
+_SEAL_INFO = b"president-local-seal-v1"
+_SEAL_AAD = b"president-local-v1"
+SEALED_MAX_CHARS = 8192
+LOCAL_RESPAWN_S = 10
+CERT_NOTICE_DAYS = ((0, "president_cert_expired"), (7, "president_cert_expiry_near"),
+                    (31, "president_cert_expiring"))
+_CHILD_FLAGS = {"BLAVE_PRESIDENT_LOCAL": "1", "BLAVE_PRESIDENT_STDIN": "1"}
+_ACCOUNT_RE = re.compile(r"^[0-9]{11}$")
+
+
+def _cl():
+    import command_listener
+    return command_listener
+
+
+def set_seal_key(daemon_secret):
+    """local_daemon at start: the key the app seals president_local payloads with."""
+    _LOCAL["key"] = (hmac.new(daemon_secret.encode(), _SEAL_INFO, hashlib.sha256).digest()
+                     if daemon_secret else None)
+
+
+def open_sealed(blob):
+    """base64(nonce 12 ‖ ciphertext ‖ tag 16) → dict. Any failure is one code:
+    which part failed tells nobody anything useful."""
+    if not _LOCAL["key"]:
+        _refuse("NO_SEAL", "this daemon was started without a secret")
+    if not isinstance(blob, str) or not 0 < len(blob) <= SEALED_MAX_CHARS:
+        _refuse("SEAL_INVALID")
+    try:
+        raw = base64.b64decode(blob, validate=True)
+        d = json.loads(cc._crypto()["AESGCM"](_LOCAL["key"]).decrypt(raw[:12], raw[12:], _SEAL_AAD))
+    except ValueError as e:
+        if str(e).startswith("CRYPTO_MISSING"):
+            raise
+        _refuse("SEAL_INVALID")
+    except Exception:
+        _refuse("SEAL_INVALID")
+    if not isinstance(d, dict):
+        _refuse("SEAL_INVALID")
+    return d
+
+
+def _bundle(d, need_src=False):
+    """The sealed payload's shape, checked; → {account, password, ca_password, live[, src]}."""
+    acct, pw, ca, live = d.get("account"), d.get("password"), d.get("ca_password"), d.get("live")
+    if not (isinstance(acct, str) and _ACCOUNT_RE.fullmatch(acct)):
+        _refuse("BAD_ARGS", "the account is 11 digits")
+    if not (isinstance(pw, str) and 0 < len(pw) <= 128 and not re.search(r"[\r\n\0]", pw)):
+        _refuse("BAD_ARGS", "trading password")
+    if not (isinstance(ca, str) and len(ca) <= 128 and not re.search(r"[\r\n\0]", ca)):
+        _refuse("BAD_ARGS", "certificate password")
+    if not isinstance(live, bool):
+        _refuse("BAD_ARGS", "live must be true or false")
+    out = {"account": acct, "password": pw, "ca_password": ca, "live": live}
+    if need_src:
+        src = d.get("src")
+        if not (isinstance(src, str) and os.path.isabs(src) and src.lower().endswith(".pfx")
+                and "\0" not in src and len(src) <= 1024):
+            _refuse("BAD_ARGS", "certificate file")
+        out["src"] = src
+    return out
+
+
+def _bound_env(b):
+    p = _paths()
+    return {_ACCOUNT: b["account"], _SECRET: VAULT_PW_PREFIX + vault_fingerprint(b["account"], b["password"]),
+            _CA_PW: CA_SENTINEL, "president_ca_path": p["pfx"], "president_url": LIVE_URL}
+
+
+def local_bind_gate(env):
+    """command_listener._cmd_credentials, desktop, venue PRESIDENT: written only
+    by the cert step below, for exactly the bundle it just checked — the
+    certificate copied in place and opened with that password. A chat bind
+    never gets here (its process keeps LOCAL_OPEN_VENUES paper-only)."""
+    b = _LOCAL["pending"]
+    want = _bound_env(b) if b else None
+    got = {k.casefold(): v for k, v in env.items()}
+    if not want or any(got.get(k) != v for k, v in want.items()) or set(got) != set(want) \
+            or not os.path.isfile(_paths()["pfx"]):
+        _refuse("NOT_CHECKED", "統一期貨 is bound from the app's connect flow on this computer")
+
+
+def secret_line():
+    """The one line a child that logs in reads off its stdin; "" = nothing to hand over."""
+    s = _LOCAL["secrets"]
+    if not s:
+        return ""
+    return json.dumps({_SECRET: s["password"], _CA_PW: s["ca_password"], "live": s["live"]})
+
+
+def child_flags():
+    return dict(_CHILD_FLAGS) if _LOCAL["secrets"] else {}
+
+
+def _local_run(flag, timeout, what):
+    cl = _cl()
+    try:
+        return subprocess.run([sys.executable, _paths()["worker"], flag], cwd=WORKSPACE,
+                              input=(secret_line() + "\n").encode("utf-8"), capture_output=True,
+                              timeout=timeout, env=cl._local_child_env(**_CHILD_FLAGS), **cl._child_kw())
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{what} timed out")
+    except OSError as e:
+        raise RuntimeError(f"{what} could not start ({type(e).__name__})")
+
+
+def _env_bound_to(b):
+    """.env holds this account, bound with this password (the sentinel's fingerprint)."""
+    try:
+        from lib import president_vault as pv
+        env = pv.read_env(os.path.join(WORKSPACE, ".env"))
+    except (ImportError, OSError):
+        return False
+    return (env.get(_ACCOUNT) == b["account"]
+            and env.get(_SECRET) == VAULT_PW_PREFIX + vault_fingerprint(b["account"], b["password"]))
+
+
+def _set_secrets(b):
+    _LOCAL["secrets"] = {k: b[k] for k in ("account", "password", "ca_password", "live")}
+    cb = _LOCAL["on_secrets"]
+    if cb:
+        try:  # the reconciler got its line at spawn: a new bundle needs a new reconciler
+            cb()
+        except Exception as e:
+            print(f"[president_connect] reconciler respawn failed ({type(e).__name__})", file=sys.stderr)
+
+
+class _LocalWorker:
+    """lib/president_worker.py as this daemon's child (an NSSM LocalSystem
+    service on a user's own computer would hand SYSTEM to whatever writes the
+    workspace — the agent). Restarted after it exits, except while its login
+    is blocked; stopped with the daemon. Read-only: it never sends an order."""
+
+    def __init__(self):
+        self.proc = None
+        self.wanted = False
+        self.respawn_at = None
+        self.lock = threading.Lock()
+
+    def _pid_path(self):
+        return os.path.join(WORKSPACE, "state", "president_worker.pid")
+
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self):
+        with self.lock:
+            self.wanted, self.respawn_at = True, None
+            if not self.running():
+                self._spawn()
+
+    def _spawn(self):
+        line = secret_line()
+        if not line:
+            _refuse("NO_SECRETS", "the app has not handed over the 統一 credentials")
+        cl = _cl()
+        log = os.path.join(WORKSPACE, "state", "president_worker.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        try:
+            if os.path.getsize(log) > 5 * 1024 * 1024:
+                os.replace(log, log + ".1")
+        except OSError:
+            pass
+        with atomic_file.open_append(log) as logf:
+            self.proc = subprocess.Popen([sys.executable, _paths()["worker"]], cwd=WORKSPACE,
+                                         env=cl._local_child_env(**_CHILD_FLAGS), stdout=logf, stderr=logf,
+                                         **cl._child_kw(stdin=subprocess.PIPE))
+        try:  # the pipe stays open: closing it is how stop() asks first
+            self.proc.stdin.write((line + "\n").encode("utf-8"))
+            self.proc.stdin.flush()
+        except OSError:
+            pass
+        try:
+            with atomic_file.replacing(self._pid_path()) as f:
+                f.write(str(self.proc.pid))
+        except OSError:
+            pass
+
+    def stop(self, why=""):
+        with self.lock:
+            self.wanted, self.respawn_at = False, None
+            p, self.proc = self.proc, None
+        if p is not None and p.poll() is None:
+            try:
+                p.stdin.close()
+            except (OSError, AttributeError):
+                pass
+            p.terminate()
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        try:
+            os.remove(self._pid_path())
+        except OSError:
+            pass
+
+    def tick(self, blocked):
+        with self.lock:
+            if not self.wanted or self.proc is None or self.proc.poll() is None or blocked:
+                return
+            if self.respawn_at is None:
+                self.respawn_at = time.time() + LOCAL_RESPAWN_S
+                return
+            if time.time() < self.respawn_at:
+                return
+            self.respawn_at = None
+            try:
+                self._spawn()
+            except Exception as e:
+                print(f"[president_connect] worker restart failed ({type(e).__name__})", file=sys.stderr)
+                self.respawn_at = time.time() + LOCAL_RESPAWN_S
+
+    def reap_orphan(self, pid_cmdline):
+        """A worker left by a daemon that died: it holds credentials nobody manages any more."""
+        try:
+            with open(self._pid_path()) as f:
+                pid = int(f.read().strip())
+        except (OSError, ValueError):
+            return
+        try:
+            cmd = pid_cmdline(pid) if pid > 0 else ""
+        except Exception:
+            cmd = ""
+        if "president_worker.py" in cmd and os.path.abspath(_paths()["worker"]) in cmd:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+        try:
+            os.remove(self._pid_path())
+        except OSError:
+            pass
+
+
+_LOCAL["worker"] = _LocalWorker()
+
+
+def _block_on_file():
+    """(kind, mark) of the lib's login block for the credentials handed over,
+    or None. mark tells one block from the next (a release and a new failure)."""
+    s = _LOCAL["secrets"]
+    if not s:
+        return None
+    try:
+        from lib import president_vault as pv
+        b = pv._read_block()
+        fp = pv.fingerprint({"account": s["account"], "password": s["password"],
+                             "ca_path": _paths()["pfx"], "ca_password": s["ca_password"]})
+        if b.get("fp") != fp or not pv._blocking(b) or b.get("allow_once"):
+            return None
+    except Exception:
+        return None
+    kind = str(b.get("kind") or "UNKNOWN")
+    return kind, f"{fp}:{b.get('at')}"
+
+
+def _halt_and_tell(kind):
+    """Login blocked: every 統一 strategy stops (a desktop binds one venue at a
+    time, so that is the machine's HALT — 啟動下單 lifts it once the login is
+    fixed) and the user hears about it (P1, runtime/events)."""
+    try:
+        from lib.guard import trip_halt
+        trip_halt(f"統一期貨登入被擋({kind}),Blave 已先停止下單 / 統一 login blocked ({kind})",
+                  "president")
+    except Exception as e:
+        print(f"[president_connect] halt failed ({type(e).__name__})", file=sys.stderr)
+    try:
+        import events
+        events.append("president_login_blocked", {"kind": kind})
+    except Exception:
+        pass
+
+
+def _cert_notice(now=None):
+    """One event per threshold per certificate: 31 days (P2), 7 days, expired (P1)."""
+    st = read_status() or {}
+    cert = st.get("cert") or {}
+    exp = cert.get("not_after")
+    if cert.get("status") != "ok" or not isinstance(exp, str):
+        return
+    try:
+        ts = time.mktime(time.strptime(exp, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+    except ValueError:
+        return
+    days = (ts - (now or time.time())) / 86400
+    sent = st.get("cert_notified") if isinstance(st.get("cert_notified"), dict) else {}
+    if sent.get("not_after") != exp:
+        sent = {"not_after": exp, "sent": []}
+    for limit, ev in CERT_NOTICE_DAYS:
+        if days <= limit:
+            if ev not in sent["sent"]:
+                try:
+                    import events
+                    events.append(ev, {"days": max(0, int(days)), "not_after": exp})
+                except Exception:
+                    pass
+                sent["sent"] = sent["sent"] + [ev]
+                _update(cert_notified=sent)
+            return
+
+
+def local_tick():
+    """local_daemon's supervise loop, once a second."""
+    blocked = _block_on_file()
+    if blocked:
+        st = read_status() or {}
+        if st.get("block_seen") != blocked[1]:
+            _update(block_seen=blocked[1])
+            _update("worker", status="failed", error=f"BLOCKED:{blocked[0]}",
+                    wanted=_LOCAL["worker"].wanted)
+            _halt_and_tell(blocked[0])
+    _LOCAL["worker"].tick(bool(blocked))
+    if time.time() - _LOCAL["cert_check_at"] > 600:
+        _LOCAL["cert_check_at"] = time.time()
+        _cert_notice()
+
+
+def local_info():
+    """The status file's `president_local` (the app reads whether it must re-send)."""
+    return {"secrets": _LOCAL["secrets"] is not None, "worker_running": _LOCAL["worker"].running()}
+
+
+def local_shutdown():
+    _LOCAL["worker"].stop("daemon stopping")
+    _LOCAL["secrets"] = None
+
+
+def _local_cert(b, push):
+    _update("cert", status="importing", error=None, source="local", reset=True)
+    if push:
+        push()
+    p = _paths()
+    try:
+        try:
+            with open(b["src"], "rb") as f:
+                data = f.read(cc.PFX_MAX_BYTES + 1)
+        except OSError:
+            _refuse("READ_FAILED", "the certificate file could not be read")
+        meta = inspect_pfx(data, b["ca_password"])
+        os.makedirs(p["cred"], exist_ok=True)
+        with atomic_file.replacing(p["pfx"], "wb", perm=0o600) as f:
+            f.write(data)
+        data = None
+        _LOCAL["pending"] = b
+        try:
+            _cl()._cmd_credentials({"env": _bound_env(b)})
+        finally:
+            _LOCAL["pending"] = None
+    except Exception as e:
+        _update("cert", status="failed", error=cc._code(e, "IMPORT_FAILED"),
+                not_after=getattr(e, "not_after", None))
+        raise
+    for sec in ("probe", "worker"):
+        _update(sec, reset=True, status="idle")
+    _update("cert", status="ok", error=None, source="local", not_after=meta["not_after"],
+            issuer_checked=meta["issuer_checked"])
+    _LOCAL["worker"].stop("certificate replaced")
+    _set_secrets(b)
+    return {"cert": {"not_after": meta["not_after"], "issuer_checked": meta["issuer_checked"]}}
+
+
+def _local_start(push):
+    st = read_status() or {}
+    if (st.get("probe") or {}).get("state") != "ok":
+        _refuse("PROBE_NOT_OK", "login has not passed yet")
+    _update("worker", status="running", error=None, wanted=True)
+    if push:
+        push()
+    out = os.path.join(WORKSPACE, "state", "president_account.json")
+    t0 = time.time()
+    try:
+        _LOCAL["worker"].start()
+        deadline = t0 + FINISH_TIMEOUT_S
+        while time.time() < deadline:
+            try:
+                if os.path.getmtime(out) >= t0:
+                    with open(out, encoding="utf-8") as f:
+                        if (json.load(f) or {}).get("ok") is True:
+                            _update("worker", status="ok", error=None, wanted=True)
+                            return {"worker": "ok"}
+            except (OSError, ValueError, AttributeError):
+                pass
+            if _block_on_file():
+                _refuse("BLOCKED", "the 統一 login is blocked")
+            time.sleep(2)
+        _refuse("WORKER_FAILED", "the 統一 worker wrote no good snapshot in time")
+    except Exception as e:
+        _LOCAL["worker"].stop("start failed")
+        _update("worker", status="failed", error=cc._code(e, "WORKER_FAILED"), wanted=False)
+        raise
+
+
+def _local_jobs(op, args):
+    if op == "setup":
+        return lambda push: run_setup(push)
+    if op == "cert":
+        b = _bundle(open_sealed(args.get("sealed")), need_src=True)
+        if not lib_supports_vault():
+            _refuse("LIB_OUTDATED", "update the workspace before binding 統一期貨")
+        return lambda push: _local_cert(b, push)
+    if op == "probe":
+        if _LOCAL["secrets"] is None:
+            _refuse("NO_SECRETS", "the app has not handed over the 統一 credentials")
+        if not os.path.isfile(_paths()["pfx"]):
+            _refuse("CERT_MISSING", "choose the certificate first")
+        return lambda push: run_probe(push, after_unlock=args.get("after_unlock") is True)
+    if op == "start":
+        if _LOCAL["secrets"] is None:
+            _refuse("NO_SECRETS", "the app has not handed over the 統一 credentials")
+        return lambda push: _local_start(push)
+    return None
+
+
+def local_dispatch(args, deferred_cls, push=None):
+    """command_listener's handler for `president_local` (desktop only)."""
+    if os.environ.get("BLAVE_AGENT_LOCAL") != "1":
+        _refuse("NOT_LOCAL", "president_local runs on the desktop app only")
+    op = args.get("op") if isinstance(args, dict) else None
+    allowed = {"op", "sealed"} if op in ("cert", "secrets") else \
+        {"op", "after_unlock"} if op == "probe" else {"op"}
+    if op not in LOCAL_OPS or set(args) - allowed:
+        _refuse("BAD_ARGS", "unknown president_local shape")
+    if op == "probe" and "after_unlock" in args and args["after_unlock"] is not True:
+        _refuse("BAD_ARGS", "after_unlock must be true")
+    if not IS_WINDOWS:
+        _refuse("NOT_WINDOWS", "統一期貨 needs Windows")
+    if op == "stop":
+        _LOCAL["worker"].stop("asked")
+        _update("worker", create=False, wanted=False)
+        return {"worker": "stopped"}
+    if op == "secrets":
+        b = _bundle(open_sealed(args.get("sealed")))
+        if not _env_bound_to(b):
+            _refuse("REBOUND", "this computer's .env is bound to other 統一 credentials")
+        _set_secrets(b)
+        w = (read_status() or {}).get("worker") or {}
+        if w.get("wanted") and w.get("status") == "ok":
+            try:
+                _LOCAL["worker"].start()
+            except Exception as e:
+                _update("worker", status="failed", error=cc._code(e, "WORKER_FAILED"))
+        return {"secrets": "ok"}
+    _sweep_interrupted()
+    job = _local_jobs(op, args)
+    if not _busy.acquire(blocking=False):
+        _refuse("BUSY", f"another 統一 step is running ({(read_status() or {}).get('busy')})")
+    try:
+        _update(busy="president_local:" + op)
+    except Exception:
+        _busy.release()
+        raise
+
+    def cleanup():
+        try:
+            _update(busy=None)
+        finally:
+            _busy.release()
+
+    return deferred_cls(lambda: job(push), cleanup=cleanup)

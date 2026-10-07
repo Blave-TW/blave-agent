@@ -1181,7 +1181,12 @@ def _cmd_credentials(args):
         raise ValueError("這一版電腦版只開放模擬交易(paper),真實交易所的綁定尚未開放")
     if _local_mode():
         for vid in sorted(writing - {"PAPER", "BINANCE"}):
-            _local_real_key_gate(vid, env)  # raises = nothing written
+            if vid == "PRESIDENT":
+                # no account read to gate on: for 統一 that read IS a login (three
+                # wrong ones lock the account) — the certificate opening locally is
+                president_connect.local_bind_gate(env)
+            else:
+                _local_real_key_gate(vid, env)  # raises = nothing written
     else:
         # cloud box (and so the web connect flow): no account read, but a key
         # that can withdraw is refused here too — one request to the venue
@@ -4420,10 +4425,18 @@ def _launch_flatten(prefix):
     child_env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
     if _local_mode():
         # own session: the flatten must outlive a daemon that is shutting down
+        line = president_connect.secret_line()  # 統一's close logs in: hand it the line
         with atomic_file.open_append(log_path) as logf:
             proc = subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
-                                    env=_local_child_env(), stdout=logf, stderr=logf,
-                                    start_new_session=True, **_child_kw())
+                                    env=_local_child_env(**president_connect.child_flags()),
+                                    stdout=logf, stderr=logf, start_new_session=True,
+                                    **_child_kw(**({"stdin": subprocess.PIPE} if line else {})))
+        if line:
+            try:
+                proc.stdin.write((line + "\n").encode("utf-8"))
+                proc.stdin.close()
+            except OSError:
+                pass
         _kick_when_flatten_exits(proc)
         return prefix + "started"
     if platform.system() == "Windows":
@@ -5670,6 +5683,10 @@ HANDLERS.update({
         _n, args, Deferred, lambda: _push(_ON_PROGRESS, "president connect"), _local_mode()))
     for name in president_connect.COMMANDS
 })
+# 統一期貨 on the desktop app: one command only the app's main process sends
+# (local_daemon.LOCAL_ONLY — never in the api's list); refused off the desktop
+HANDLERS["president_local"] = lambda args: president_connect.local_dispatch(
+    args, Deferred, lambda: _push(_ON_PROGRESS, "president connect"))
 
 
 def dispatch(command):

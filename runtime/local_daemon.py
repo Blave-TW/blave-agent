@@ -114,6 +114,10 @@ CLOUD_ONLY = frozenset({
     "president_setup", "president_pfx_key", "president_pfx", "president_pfx_local", "president_probe",
     "president_finish",
 })
+# Not in the api's list at all: the desktop's own 統一期貨 connect flow
+# (runtime/president_connect.local_dispatch). Only the app's main process sends
+# it (shell/daemon.js MAIN_ONLY_COMMANDS); its secrets arrive sealed.
+LOCAL_ONLY = frozenset({"president_local"})
 UNSIGNED_OK = frozenset({"halt"})
 
 MAX_BYTES = 16 * 1024      # = the api's MAX_BYTES on the way in
@@ -338,7 +342,7 @@ def parse_command(raw, stem, secret, now, seen, not_before=0):
     cid, cmd = entry.get("id"), entry.get("cmd")
     if not isinstance(cid, str) or not _ID_RE.fullmatch(cid) or cid != stem:
         raise Rejected("bad id")
-    if cmd not in ALLOWED:
+    if cmd not in ALLOWED and cmd not in LOCAL_ONLY:
         raise Rejected("unknown command")  # never echoes the value, like the api
     if cmd not in UNSIGNED_OK:
         mac = doc.get("mac")
@@ -376,7 +380,19 @@ def _pid_cwd(pid):
     return ""
 
 
-def run_reconciler(script):
+def _take_president_line():
+    """`--president-stdin`: the daemon's first line on our stdin → lib.president_vault,
+    before the parent watch starts draining that pipe."""
+    line = _read_line_fd0()
+    try:
+        d = json.loads(line) if line else {}
+        from lib import president_vault
+        president_vault.use_local_secrets(d if isinstance(d, dict) else {})
+    except Exception as e:  # an older lib, a garbled line: 統一 orders fail closed, others go on
+        _log(f"president credentials not taken ({type(e).__name__})")
+
+
+def run_reconciler(script, president_stdin=False):
     """`--run-reconciler`: manager/reconciler.py, unmodified, in this process —
     plus the two things it lacks for a machine whose supervisor can vanish.
 
@@ -394,6 +410,8 @@ def run_reconciler(script):
     ws = os.getcwd()
     if ws not in sys.path:
         sys.path.insert(0, ws)
+    if president_stdin:
+        _take_president_line()
 
     def _sweep():
         try:
@@ -500,9 +518,12 @@ class ReconcilerSupervisor:
     an orphan left by a SIGKILLed daemon. A new reconciler is never started
     while the lock is held."""
 
-    def __init__(self, workspace, child_env, pid_cmdline, child_kw):
+    def __init__(self, workspace, child_env, pid_cmdline, child_kw, secret_line=None):
         self.ws = os.path.realpath(workspace)
         self._child_env, self._pid_cmdline, self._child_kw = child_env, pid_cmdline, child_kw
+        # 統一期貨: the order lib logs in from the reconciler, and its passwords
+        # exist only in this process — they go down the stdin pipe as the first line
+        self._secret_line = secret_line
         self._lock = threading.RLock()
         self._proc = None
         self._wanted = False
@@ -539,6 +560,14 @@ class ReconcilerSupervisor:
             self._wanted = False
             self._respawn_at = None
             return self._stop_locked(why or f"stop (last command: {self.asked_by})")
+
+    def respawn_if_running(self, why):
+        """A running reconciler got its stdin line at spawn: new credentials need a new one."""
+        with self._lock:
+            if self._proc is None or self._proc.poll() is not None:
+                return
+            if self._stop_locked(why):
+                self._spawn_locked()
 
     def reap_orphan(self):
         """Daemon start: a reconciler nobody supervises must not keep trading.
@@ -693,12 +722,21 @@ class ReconcilerSupervisor:
                 # Through run_reconciler below, holding a pipe we never write
                 # to: its EOF is how the reconciler learns this daemon is gone,
                 # SIGKILL included.
+                line = self._secret_line() if self._secret_line else None
                 self._proc = subprocess.Popen(
                     [sys.executable, os.path.abspath(__file__), "--run-reconciler",
-                     os.path.join("manager", "reconciler.py")],
-                    cwd=self.ws, env=self._child_env(), stdout=logf, stderr=logf,
+                     os.path.join("manager", "reconciler.py")]
+                    + (["--president-stdin"] if line is not None else []),
+                    cwd=self.ws, env=self._child_env(**({"BLAVE_PRESIDENT_LOCAL": "1"} if line is not None else {})),
+                    stdout=logf, stderr=logf,
                     **self._child_kw(stdin=subprocess.PIPE,
                                      **({} if _nt() else {"pass_fds": (fd,)})))
+            if line is not None:
+                try:  # one line, then the pipe stays open — its EOF still means "daemon gone"
+                    self._proc.stdin.write(((line or "{}") + "\n").encode("utf-8"))
+                    self._proc.stdin.flush()
+                except OSError:
+                    pass
         finally:
             _release_fd(fd)  # POSIX: the child's copy keeps the lock; Windows: the child takes it now
         if _nt():
@@ -748,8 +786,10 @@ class Daemon:
         import events
         import portfolio_reporter
         self.cl, self.events, self.reporter = cl, events, portfolio_reporter
+        import president_connect
+        self.pc = president_connect
         self.sup = ReconcilerSupervisor(workspace, cl._local_child_env, cl._pid_cmdline,
-                                        cl._child_kw)
+                                        cl._child_kw, secret_line=president_connect.secret_line)
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
                 self.version = f.read().strip()
@@ -895,6 +935,7 @@ class Daemon:
                 "heartbeat_at": int(time.time()), "version": self.version,
                 "signed": bool(self.secret), "reconciler": self.sup.info(),
             }
+            doc["president_local"] = self.pc.local_info()
             try:
                 _write_json_atomic(self.status_path, doc)
             except (OSError, TypeError, ValueError) as e:
@@ -946,6 +987,10 @@ class Daemon:
     def _supervise_loop(self):
         while not self.stop.is_set():
             self.sup.tick()
+            try:
+                self.pc.local_tick()
+            except Exception as e:
+                _log(f"president tick failed: {type(e).__name__}")
             self.stop.wait(1)
 
     def _watch_parent(self):
@@ -990,8 +1035,13 @@ class Daemon:
         # OKX / BingX / Gate.io / Bybit: command_listener._local_real_key_gate
         # (the venue's own signed account read, plus the key's withdrawal
         # permission where the venue exposes it) decides, before any write.
+        # 統一期貨: only through president_local's cert step
+        # (president_connect.local_bind_gate) — the chat bind still cannot.
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
-                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT"})
+                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT"})
+        self.pc.set_seal_key(self.secret)
+        self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_if_running("統一期貨 credentials handed over")
+        self.pc._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
         cl._resume_mgmt_watch()
@@ -1017,6 +1067,10 @@ class Daemon:
                 self.handle_file(path)
             self.stop.wait(POLL_S)
         _log("stopping")
+        try:
+            self.pc.local_shutdown()
+        except Exception as e:
+            _log(f"president worker not stopped ({type(e).__name__})")
         if not self.sup.stop_reconciler(
                 f"the daemon is shutting down ({self.stop_why or 'SIGTERM / SIGINT'})"):
             _log("reconciler not confirmed stopped")
@@ -1081,8 +1135,9 @@ def main(argv=None):
     if fcntl is None and msvcrt is None:
         _log("needs fcntl (POSIX) or msvcrt (Windows) for the workspace lock")
         return 2
-    if argv[:1] == ["--run-reconciler"] and len(argv) == 2:
-        run_reconciler(argv[1])
+    if argv[:1] == ["--run-reconciler"] and len(argv) in (2, 3) \
+            and (len(argv) == 2 or argv[2] == "--president-stdin"):
+        run_reconciler(argv[1], president_stdin=len(argv) == 3)
         return 0
     # The app sets the switch; this file never does. Started by hand or by a
     # cloud unit without it, the daemon must not re-point <base>/current or

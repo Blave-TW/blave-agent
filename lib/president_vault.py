@@ -38,6 +38,15 @@ TRANSIENT answer (a known non-credential refusal: the per-minute cap, the
 broker's back end down, maintenance) never counts — the worker backs off. No
 login is attempted in the broker's 05:30–05:50 login maintenance.
 
+Desktop app (Windows): there is no vault file. The app keeps the trading and
+certificate passwords in the OS's encrypted store and hands them to the local
+daemon in memory; the daemon gives them to exactly the processes that log in
+(the worker, the probe, the reconciler, a flatten) as ONE line on their stdin,
+flagged by BLAVE_PRESIDENT_STDIN=1 — never a file, never the environment. Any
+process started with BLAVE_PRESIDENT_LOCAL=1 or BLAVE_AGENT_LOCAL=1 reads only
+that (the agent's own turns get nothing, so they cannot log in), and production
+is whatever that line says (`"live": true`).
+
 Imported two ways like capital_vault: `import president_vault` from the
 worker script (lib/ is sys.path[0]), `lib.president_vault` elsewhere. Keep it
 free of other lib imports.
@@ -103,6 +112,47 @@ TRANSIENT_TEXTS = ("超過每分鐘限制", "DB連線錯誤", "後臺連線失�
 # delays its refresh-flag read to match, so a close waits ~20–22 s after the
 # previous order.
 ORDER_SETTLE_S = 20
+
+
+LOCAL_FLAG = "BLAVE_PRESIDENT_LOCAL"
+STDIN_FLAG = "BLAVE_PRESIDENT_STDIN"
+_LOCAL = None  # desktop: what the daemon handed over (use_local_secrets / the stdin line)
+
+
+def _local_mode():
+    return (_LOCAL is not None or os.environ.get(LOCAL_FLAG) == "1"
+            or os.environ.get("BLAVE_AGENT_LOCAL") == "1")
+
+
+def use_local_secrets(d):
+    """Desktop: the daemon's bundle {president_password, president_ca_password,
+    live}, set by whoever read it (runtime/local_daemon.run_reconciler)."""
+    global _LOCAL
+    _LOCAL = {k: d[k] for k in ("president_password", "president_ca_password", "live") if k in d} \
+        if isinstance(d, dict) else {}
+
+
+def read_stdin_line(fd=0, limit=8192):
+    """One line off the raw fd, byte by byte: nothing may stay in a Python-side
+    buffer for a later reader of the same fd (the reconciler's parent watch)."""
+    out = bytearray()
+    while len(out) < limit:
+        b = os.read(fd, 1)
+        if not b or b == b"\n":
+            break
+        out += b
+    return out.decode("utf-8", "replace").strip()
+
+
+def _local_secrets():
+    if _LOCAL is None and os.environ.get(STDIN_FLAG) == "1":
+        os.environ.pop(STDIN_FLAG, None)  # read once; a child of ours must not wait on it
+        try:
+            d = json.loads(read_stdin_line() or "{}")
+        except (OSError, ValueError):
+            d = {}
+        use_local_secrets(d)
+    return _LOCAL or {}
 
 
 class LoginError(RuntimeError):
@@ -190,7 +240,10 @@ def read_env(path=None):
 
 def live():
     """True only when the platform's binding flow wrote `"live": true` into the
-    vault. Absent, unreadable or anything but the JSON true → test hosts only."""
+    vault. Absent, unreadable or anything but the JSON true → test hosts only.
+    Desktop: the daemon's line, never a file."""
+    if _local_mode():
+        return _local_secrets().get("live") is True
     try:
         with open(VAULT, encoding="utf-8") as f:
             v = json.load(f)
@@ -233,7 +286,15 @@ def resolve(_ignored=None):
     except OSError as e:
         raise ValueError(f".env unreadable ({type(e).__name__})")
     creds = {k: env.get(k) or "" for k in ("president_account", "president_ca_path") + _SECRETS}
-    if any(creds[k].startswith(PW_PREFIX) for k in _SECRETS):
+    if any(creds[k].startswith(PW_PREFIX) for k in _SECRETS) and _local_mode():
+        got = _local_secrets()
+        for k in _SECRETS:
+            if creds[k].startswith(PW_PREFIX):
+                if not isinstance(got.get(k), str):
+                    raise RuntimeError("president credentials were not handed over by the Blave app "
+                                       "— open the app (自動下單) and try again")
+                creds[k] = got[k]
+    elif any(creds[k].startswith(PW_PREFIX) for k in _SECRETS):
         try:
             with open(VAULT, encoding="utf-8") as f:
                 v = json.load(f)
