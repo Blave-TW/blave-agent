@@ -125,8 +125,8 @@ pair of surrounding quotes removed, nothing else interpreted) — a mapping pass
 ignored.
 
 **Wrong credentials are not retried.** 統一 locks an account after three wrong logins. A login the
-broker refuses for the password or the certificate (or two it refuses for a reason the libs can't
-classify) writes `state/president_login_block.json`; every later login on this machine — worker,
+broker refuses for the password or the certificate (or one it refuses for a reason the libs can't
+classify, or two timeouts in a row) writes `state/president_login_block.json`; every later login on this machine — worker,
 probe, orders — is refused locally until the credentials in `.env` change. Never delete that file
 to retry. Two ways out, both the user's call:
 - the password / certificate password was wrong → the user gives the right one and `.env` is
@@ -143,12 +143,17 @@ to retry. Two ways out, both the user's call:
   released try that could not connect (`HOST` — name resolution, connection refused, connect
   timeout, TLS) never reached the password check,
   so it is given back; a `TIMEOUT` — including a connection aborted or reset after the request
-  went out — is spent (the broker may have checked the password). The certificate is fingerprinted by the `.pfx` file's bytes, so rewriting
+  went out — is spent (the broker may have checked the password), and so is a `TRANSIENT` one.
+  Timeouts count: **two in a row** with no good login between them block (one does not — a short
+  network outage is a run of timeouts on a right password, and `--unblock` answers "none" while
+  only one is on record). `TRANSIENT` — the SDK's own non-credential refusals (per-minute cap
+  `超過每分鐘限制`, the broker's back end down, maintenance) — never counts; the worker backs off
+  and retries. The certificate is fingerprinted by the `.pfx` file's bytes, so rewriting
   `president_ca_path` with an equivalent spelling (case, `.\`, relative) does not count as new
   credentials; a renewed certificate does. Never run it on your own initiative — every
   try counts toward 統一's three. Login errors come back as a
-class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `MAINTENANCE`, `BLOCKED`,
-`UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
+class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `TRANSIENT`, `MAINTENANCE`,
+`BLOCKED`, `UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
 national id, so it is never passed on. No login is attempted in 05:30–05:50.
 
 ---
@@ -296,9 +301,10 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
     side for 50 s). Production limits are unknown — ask the rep.
 11. **The SDK writes its own logs to `<cwd>/logs/<date>/*.txt`** with the login URL, login id,
     account, every order — and on a certificate/signing failure the national id and the
-    certificate's subject. The libs pin that to `state/president_logs/`. **Never read, `cat`, grep
-    or upload anything under `state/president_logs/`**; to diagnose, use the worker's probe file and
-    the lib's error classes.
+    certificate's subject. The libs pin that to `<base>/credentials/president_logs/` (next to the
+    vault; removed on unbind — an older lib wrote `state/president_logs/`). **Never read, `cat`,
+    grep or upload anything under either**; to diagnose, use the worker's probe file and the lib's
+    error classes.
 12. **Windows gotchas** — Python on Windows has no time-zone database (`ZoneInfo("Asia/Taipei")`
     raises without the `tzdata` package; the libs use a fixed UTC+8); a `.env` written by
     PowerShell 5 `Set-Content -Encoding UTF8` starts with a BOM, which hides the first key from a
