@@ -239,7 +239,10 @@ app.whenReady().then(async () => {
   const sv = () => js(`(() => { const b = document.getElementById("rpt-saved"), rv = document.getElementById("rpt-reveal");
     return { on: !b.hidden, d: b.querySelector(".d").textContent, rv: rv.hidden ? null : rv.textContent, sr: document.getElementById("sr-live").textContent, box: !document.getElementById("del-scrim").hidden,
       left: b.getBoundingClientRect().right <= document.querySelector(".rpt-acts").getBoundingClientRect().left + 1 }; })()`);
-  await js(`window.__s.pdf = { code: "OK", dir: "報告", token: "tk1" }; window.__s.pdfHold()`); await wait(100); h = await hd();
+  await js(`window.__s.pdf = { code: "OK", dir: "報告", token: "tk1" }; window.__s.pdfHold()`); await wait(100);
+  // srSay 先清空、下一幀才寫字:離屏視窗的那一幀在 CI 的 Windows runner 上不保證 100ms 內來(同一個 sha 一綠一紅),等它來再量
+  for (let i = 0; i < 30 && !(await js(`document.getElementById("sr-live").textContent`)); i++) await wait(50);
+  h = await hd();
   let s1 = await sv();
   ok("④ 成功:鈕直接回「存成 PDF」(不閃「已存檔」)、可按;頁首同一列、動作群左邊出「已存到「報告」」＋「在 Finder 中顯示」;讀屏念那一句;不跳框",
     h.text === "存成 PDF" && !h.dis && !h.shareDis && s1.on && s1.d === "已存到「報告」" && s1.rv === "在 Finder 中顯示" && s1.sr === "已存到「報告」" && !s1.box && s1.left, JSON.stringify([h, s1]));
