@@ -132,7 +132,7 @@
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: var(--space-4);
-  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .wf-grid th {
@@ -232,7 +232,7 @@
 .wf-run-tbl td:last-child { padding-right: 0; }
 /* 日期欄 11px(同雲端:七欄在窄的中欄才塞得進,例外只為不橫捲) */
 .wf-run-tbl td.win {
-  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 11px;
 }
@@ -281,7 +281,7 @@
   border-radius: var(--radius-xs);
   background: transparent;
   color: var(--ink);
-  font: 500 13px "Roboto Mono", ui-monospace, monospace;
+  font: 500 13px var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -377,7 +377,7 @@
   flex: none;
   width: 3ch;
   text-align: right;
-  font: 500 11px/12px "Roboto Mono", ui-monospace, monospace;
+  font: 500 11px/12px var(--font-mono);
   color: var(--ink-3);
 }
 .wf-tl-track {

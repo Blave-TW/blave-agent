@@ -13,7 +13,7 @@
 .is-cur .cap-n { color: var(--ink); font-weight: 600; }
 .is-todo .cap-n { color: var(--ink-3); }
 .cap-r { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.cap-r .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }   /* 右側的日期(憑證到期):漢字 sans、數字 mono */
+.cap-r .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }   /* 右側的日期(憑證到期):漢字 sans、數字 mono */
 .cap-x { grid-column: 2 / -1; margin-top: var(--space-4); }
 .cap-x > .fld:first-child, .cap-x > .plan-err:first-child { margin-top: 0; }
 .cap-do { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
@@ -40,11 +40,11 @@
 .cap-acct div { display: flex; align-items: baseline; gap: var(--space-16); padding: var(--space-4) 0; }
 .cap-acct dt { flex: 1; font-size: 13px; color: var(--ink-2); }
 .cap-acct dd { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
-.cap-acct dd.mono { font-family: "Roboto Mono", ui-monospace, monospace; }
+.cap-acct dd.mono { font-family: var(--font-mono); }
 .cap-acct dd.none { color: var(--ink-3); }
 .cx-manual-note .btn-quiet { font-size: inherit; }
 /* 設定 › 帳戶 群益開通中:「繼續」是這一列的主動作 */
 .pf-act.main-act { color: var(--ink-2); border-color: var(--border-frame); }
 .cn-st .cap-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink); }
 .cap-e2e { color: var(--ink-2); }   /* 誠實句(spec §2.4):比說明字重一級 */
-.cap-idf { font-family: "Roboto Mono", ui-monospace, monospace; }   /* 身分證字號明碼(設計稽核 C-3) */
+.cap-idf { font-family: var(--font-mono); }   /* 身分證字號明碼(設計稽核 C-3) */

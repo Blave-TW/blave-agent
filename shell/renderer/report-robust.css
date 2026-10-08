@@ -144,7 +144,7 @@
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: var(--space-4);
-  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .rob-tbl th {

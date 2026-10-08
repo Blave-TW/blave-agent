@@ -7,10 +7,10 @@
    ========================================================================= */
 
 /* ---------- 宿主頁 ---------- */
-/* 字同 app 的系統字(外殼不為 PDF 打包字型);--pdf-foot 由 report-print.js 設在 :root */
+/* 字同 app:引 tokens.css 的字體 token(隨包的 Roboto Mono 透過同一份 @font-face 進 PDF);--pdf-foot 由 report-print.js 設在 :root */
 :root {
-  --pdf-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --pdf-mono: "Roboto Mono", ui-monospace, monospace;
+  --pdf-sans: var(--font-sans);
+  --pdf-mono: var(--font-mono);
 }
 html { background: var(--color-pureWhite); }
 .pdf-sheet { margin: 0; }

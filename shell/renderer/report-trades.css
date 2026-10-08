@@ -76,7 +76,7 @@
 .tr-row[aria-current="true"] { background: var(--surface-muted); color: var(--ink); }
 .tr-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
-.tr-ts { flex: none; font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); }
+.tr-ts { flex: none; font-family: var(--font-mono); color: var(--ink-3); }
 /* 寬框:兩組攤平,各段照舊是列的 flex 子項 */
 .tr-l1, .tr-l2 { display: contents; }
 /* 每一段內部不斷行:「買進」跟數量、「→ 部位」跟數字不會被拆到兩行 */
@@ -88,7 +88,7 @@
 .tr-side.is-sell { color: var(--color-red); }
 /* 種類小標:最亮一階,整片調倉列裡一眼可挑(調倉列沒有這一格) */
 .tr-kind { flex: none; font-size: 11px; color: var(--ink); }
-.tr-px { flex: none; font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); }
+.tr-px { flex: none; font-family: var(--font-mono); color: var(--ink-3); }
 .tr-pos { flex: none; margin-left: auto; text-align: right; }
 
 /* 窄框:時間欄佔兩行(分線的日期、時分在空格處自己折成兩行;日線一個字串、一行);
