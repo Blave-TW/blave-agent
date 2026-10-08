@@ -290,11 +290,13 @@ def _capital_check_snapshot_caught_up(query_started_at):
 
 def _hand_wired_routed():
     """One-machine-one-venue (AGENTS.md § Broker Onboarding): the hand-wired
-    venue (lib.venue_traits) a strategy in portfolio_config["exchanges"] is
-    bound to, or None — the signal get_positions() uses to pick that venue's
-    own block over the crypto auto-wire (get_positions takes no per-call
-    venue argument)."""
-    return venue_traits.hand_wired_routed(load_portfolio_config().get('exchanges', {}).values())
+    venue (lib.venue_traits) this machine is bound to — the bind manifest's,
+    else the one a strategy in portfolio_config["exchanges"] routes to
+    (lib.venue_wiring.hand_wired_venue) — or None: the signal get_positions()
+    uses to pick that venue's own block over the crypto auto-wire
+    (get_positions takes no per-call venue argument)."""
+    from lib.venue_wiring import hand_wired_venue
+    return hand_wired_venue()
 
 
 # the pre-extraction name: a user-kept older manager/seed_ledger.py still calls it

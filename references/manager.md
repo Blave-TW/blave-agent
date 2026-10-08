@@ -717,7 +717,9 @@ independent of the start type.
 from every crypto venue — LOTS not account-currency notional, `buy`/`sell` not `long`/`short`, and
 the order alias (`TM0000`) differs from the resolved contract code every position/report actually
 carries (`TM2608`). `get_positions()`/`place_order()` in `reconciler.py` each contain a capital-only
-branch (`_hand_wired_routed()` / `venue_traits.has(exchange, 'hand_wired')`, dispatched through `_HAND_WIRED`) that:
+branch (`_hand_wired_routed()` — the TW broker the bind manifest `manager/credentials.ui.json` lists, else the one a
+strategy routes to, so a 下單設定 emptied to close everything still reads that broker — / `venue_traits.has(exchange,
+'hand_wired')`, dispatched through `_HAND_WIRED`) that:
 - reads `lib.account_capital.get_positions()` — already lots, `buy`/`sell` — and translates
   `buy`→`long` / `sell`→`short`, size unchanged (**lots, not TWD notional** — see *`amounts`
   semantics* below)

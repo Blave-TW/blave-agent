@@ -246,15 +246,14 @@ _CURRENT = object()  # "the venue this machine trades on" — see book_venue()
 
 def book_venue():
     """The venue the bot's book is read and written for: the one the reconciler
-    trades on (capital when strategies route there, else the auto-wired venue).
-    None when no venue can be told — the book is then read across venues, as
-    before books were per venue."""
+    trades on (the bound TW broker, else the auto-wired venue). None when no
+    venue can be told — the book is then read across venues, as before books
+    were per venue."""
     try:
-        hand_wired = venue_traits.hand_wired_routed(
-            (load_portfolio_config().get('exchanges') or {}).values())
+        from lib.venue_wiring import detect_venue, hand_wired_venue, read_env
+        hand_wired = hand_wired_venue()
         if hand_wired:
             return hand_wired
-        from lib.venue_wiring import detect_venue, read_env
         return detect_venue(read_env())
     except Exception:
         return None

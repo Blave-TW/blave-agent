@@ -159,6 +159,30 @@ def detect_venue(env):
     return pick
 
 
+_hand_wired_multi_warned = set()
+
+
+def hand_wired_venue():
+    """The hand-wired (TW broker) venue this machine reads and trades on, or
+    None: the one the bind manifest lists, else the one a strategy routes to.
+
+    Routing by portfolio_config["exchanges"] alone stranded a bound 統一 / 群益
+    machine the moment every strategy was unpicked (amounts {} wipes
+    `exchanges`): get_positions fell through to the crypto auto-wire, which
+    skips _NON_AUTO, and every round raised "no venue bound" — and the empty
+    amounts are exactly what closes the broker's positions, so the read must
+    keep going to that broker's snapshot while the manifest still binds it."""
+    routed = venue_traits.hand_wired_routed(
+        (load_portfolio_config().get("exchanges") or {}).values())
+    bound = sorted(v for v in (_ui_bound_ids() or ()) if venue_traits.has(v, "hand_wired"))
+    if not bound or routed in bound:
+        return routed
+    if len(bound) > 1 and tuple(bound) not in _hand_wired_multi_warned:
+        _hand_wired_multi_warned.add(tuple(bound))
+        logging.warning(f"[venue_wiring] several TW brokers bound {bound} — using {bound[0]}")
+    return bound[0]
+
+
 _SPOT_QUOTES = ("USDT", "USDC")
 
 
