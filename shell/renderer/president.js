@@ -383,7 +383,8 @@ function presRows(view, pc) {
   if (view === "d-cert-run") add(runRow(t("pres.s.cert"), t("pres.s.certRun")));
   else if (certNow) add(capRow(view === "d-cert-err" || rowErr("cert") ? "bad" : "cur", t("pres.s.cert"), "", presCertBody(pc, view)));
   else add(capRow(cert.status === "ok" ? "done" : "todo", t("pres.s.cert"), cert.status === "ok" ? certDone : ""));
-  ph("pres.ph.test", !live && to.status !== "ok" ? capBtn("btn-quiet", t("pres.t.skip"), () => presHost("live"), "pres-skip-test", off) : null);
+  // 憑證還沒好就不畫(Wei 10-08 實測:跟「用這張憑證」同時出現,不知道先按哪個);憑證前測試段整段灰、沒有可按的
+  ph("pres.ph.test", !live && setup.status === "ok" && cert.status === "ok" && to.status !== "ok" ? capBtn("btn-quiet", t("pres.t.skip"), () => presHost("live"), "pres-skip-test", off) : null);
   // 略過之前被拒過的測試單不算「測過」:略過後正式登入 UNKNOWN 時,回測試段的路只有這一列的鈕(稽核 integ-0118 第三版 B-1)
   const tProbed = (live && !skipped) || (probe.status === "ok" && probe.env === "test") || to.status === "ok" || (!skipped && to.status === "failed");
   const skipRight = skipped ? t("pres.s.skipped") : "";

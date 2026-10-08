@@ -105,7 +105,7 @@ ok("C-1 BAD_PW / NO_CA_PW(cert)→ 欄位下;BAD_PW(creds)→ slot;LIB_OUTDATED 
   const SK = { env: "live", cert: CERT_OK, test_skipped: true };
   ok("略過後正式登入失敗(UNKNOWN)→ 停在正式那列 d-UNKNOWN,不回測試段;過了 → d-finish", view(pc({ ...SK, probe: { status: "failed", state: "unknown", env: "live", at: S - 3 } })) === "d-UNKNOWN"
     && view(pc({ ...SK, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } })) === "d-finish" && view(pc({ ...SK, probe: { status: "running", at: S - 2 } })) === "d-probe");
-  ok("測試段標題的鈕:只在測試環境、測試單還沒成功時畫,按了送 host live(既有指令:切正式＋登入)", /ph\("pres\.ph\.test", !live && to\.status !== "ok" \? capBtn\("btn-quiet", t\("pres\.t\.skip"\), \(\) => presHost\("live"\), "pres-skip-test", off\) : null\);/.test(rows)
+  ok("測試段標題的鈕:只在測試環境、安裝與憑證都好了、測試單還沒成功時畫,按了送 host live(既有指令:切正式＋登入)", /ph\("pres\.ph\.test", !live && setup\.status === "ok" && cert\.status === "ok" && to\.status !== "ok" \? capBtn\("btn-quiet", t\("pres\.t\.skip"\), \(\) => presHost\("live"\), "pres-skip-test", off\) : null\);/.test(rows)
     && /, ph = \(k, btn\) => \{[^\n]*s\.setAttribute\("aria-hidden", "true"\); li\.appendChild\(s\); if \(btn\) li\.appendChild\(btn\);/.test(rows));
   ok("略過(runtime test_skipped、env live):三列灰、不打勾、右邊「已略過」;第一列給「改做測試單」(host test:只切回、不登入)", /const skipped = live && !!pc && pc\.test_skipped === true;/.test(rows)
     && /const tProbed = \(live && !skipped\) \|\|/.test(rows) && /else if \(skipped\) add\(capRow\("todo", t\("pres\.s\.tprobe"\), skipRight, capActs\(capBtn\("btn-quiet", t\("pres\.t\.back"\), \(\) => presStep\("host", \{ env: "test" \}\), "pres-test-back", off\)\)\)\);/.test(rows)
@@ -130,7 +130,14 @@ ok("C-1 BAD_PW / NO_CA_PW(cert)→ 欄位下;BAD_PW(creds)→ slot;LIB_OUTDATED 
   ok("B-1 對照:沒被拒的略過照舊有鈕;沒略過(正常走到正式)沒有鈕、測試主機列打勾",
     rowsOf({ ...SK, probe: { status: "failed", state: "unknown", env: "live", at: S - 3 } }).indexOf('"btn":"pres-test-back"') >= 0
     && rowsOf({ env: "live", cert: CERT_OK, test_order: { status: "failed", at: S - 20 }, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } }, "d-finish").indexOf('"btn":"pres-test-back"') < 0
-    && /"name":"pres\.s\.tprobe","right":"pres\.s\.tprobeDone"/.test(rowsOf({ env: "live", cert: CERT_OK, test_order: { status: "failed", at: S - 20 }, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } }, "d-finish"))); }
+    && /"name":"pres\.s\.tprobe","right":"pres\.s\.tprobeDone"/.test(rowsOf({ env: "live", cert: CERT_OK, test_order: { status: "failed", at: S - 20 }, probe: { status: "ok", state: "ok", env: "live", at: S - 3 } }, "d-finish")));
+  // Wei 10-08 實測:「直接登入正式主機」在憑證還沒完成時就出現,跟「用這張憑證」撞在一起。憑證(與安裝)好了才畫;之前測試段三列全灰、沒有任何鈕
+  const noCert = [rowsOf({ env: "test" }), rowsOf({ env: "test", cert: { status: "failed", error: "PFX_PASSWORD", at: S - 5 } }), rowsOf({ env: "test", cert: { status: "importing", at: S - 2 } }), rowsOf({ env: "test", setup: { status: "idle", at: null } })];
+  ok("憑證未 ok(idle / failed / importing)或 setup 未 ok → 沒有 pres-skip-test,測試段三列 todo、沒有鈕", noCert.every((r) => r.indexOf("pres-skip-test") < 0
+    && /"name":"pres\.s\.tprobe","right":""/.test(r) && /"kind":"todo","name":"pres\.s\.torder"/.test(r) && /"kind":"todo","name":"pres\.s\.treport"/.test(r) && !/"btn":"pres-(skip-test|test-back|torder)"/.test(r)), noCert);
+  ok("憑證 ok、測試單未 ok → 有 pres-skip-test;測試單 ok 後沒有", rowsOf({ env: "test", cert: CERT_OK }).indexOf('"btn":"pres-skip-test"') >= 0
+    && rowsOf({ env: "test", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 3 } }).indexOf('"btn":"pres-skip-test"') >= 0
+    && rowsOf({ env: "test", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 9 }, test_order: { status: "ok", state: "accepted", at: S - 3 } }).indexOf("pres-skip-test") < 0); }
 // 稽核 integ-0118 B-1:設定 › 帳戶 的「開通中＋繼續」看 worker.ok_at(開通過又停掉的不算開通中),同 trade.js trPresWip
 ok("presWip:worker ok 過(ok_at)就不是開通中", /function presWip\(r\) \{[^\n]*c\.worker\.status === "ok" \|\| c\.worker\.ok_at/.test(src));
 // 字串:president.js / trade.js 用到的 pres.* 兩語都有
