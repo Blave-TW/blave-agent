@@ -30,7 +30,8 @@ function resStratSub(prev, x) {
 const resNum = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 function resStratItem(x, prev, sub) {
   const f = { has_bt: !!x.hasBacktest };
-  if ((sub === "new" || sub === "backtest") && x.hasBacktest) { f.total_return = resNum(x.totalReturn); f.max_dd = resNum(x.maxDrawdown); }
+  // 數字固定三個(canon › 聊天結果卡):年化、Sharpe、最大回撤——年化能跨期間比,總報酬不能。舊存檔只有 total_return 的由 resFacts 照舊畫總報酬
+  if ((sub === "new" || sub === "backtest") && x.hasBacktest) { f.ann_return = resNum(x.annReturn); f.sharpe = resNum(x.sharpe); f.max_dd = resNum(x.maxDrawdown); }
   // 版號只在這一輪真的定了新版才帶(lib/runner.py 只在明確回測時 mint);沒定版的回測寫「回測更新」
   if (sub === "backtest" && Number.isInteger(x.version) && (!prev || x.version !== prev.version)) f.version = x.version;
   const at = sub === "code" ? x.codeMtime : sub === "scan" ? x.scanMtime : Math.max(x.statsMtime || 0, x.codeMtime || 0);
@@ -96,12 +97,12 @@ function resBtnKey(item) {
 }
 /* 卡的第二行:一組一組([段, 段…]),組與組之間才換行(不用「·」分項:窄寬時會掛在行尾)。段 = { text, cls }:
    cls "v" = 數字(mono、ink-2)/ "mono" / "tag" = 雲端記號;缺值的那一組整組不放。
-   f = { t, pct, stamp, typeKey }:i18n 與格式由呼叫端交進來(回測頁同一支 fmtSignedPct、報告清單同一支時間 / 類型) */
+   f = { t, pct, fixed, stamp, typeKey }:i18n 與格式由呼叫端交進來(回測頁同一支 fmtSignedPct / fmtFixed、報告清單同一支時間 / 類型) */
 function resFacts(item, state, f) {
   const x = item.facts || {}, W = (text, cls) => ({ text, cls: cls || "" });
   if (state === "gone") return [[W(f.t(item.kind === "report" ? "res.gone.report" : "res.gone.strat"))]];
   const g = [];
-  const kv = (label, v) => { const s = typeof v === "number" ? f.pct(v) : null; if (s) g.push([W(f.t(label) + " "), W(s, "v")]); };
+  const kv = (label, v, fmt) => { const s = typeof v === "number" ? (fmt || f.pct)(v) : null; if (s) g.push([W(f.t(label) + " "), W(s, "v")]); };
   if (item.kind === "report") {
     const one = item.env === "cloud" ? [W(f.t("env.cloud"), "tag")] : [], stamp = f.stamp(x.created_at), kind = resTypeText(item, f);
     if (stamp) one.push(W(stamp, "mono"));
@@ -122,8 +123,9 @@ function resFacts(item, state, f) {
     if (item.sub === "new") g.push([W(f.t("res.kind.new"))]);
     else if (Number.isInteger(x.version)) { const [a, b] = f.t("res.kind.bt").split("{v}"); g.push([W(a), W("v" + x.version, "mono"), W(b || "")].filter((s) => s.text)); }
     else g.push([W(f.t("res.kind.btUpd"))]);
-    if (x.has_bt) { kv("bt.totalReturn", x.total_return); kv("bt.maxDrawdown", x.max_dd); }
-    else g.push([W(f.t("res.noBt"))]);
+    if (!x.has_bt) g.push([W(f.t("res.noBt"))]);
+    else if (typeof x.ann_return === "number" || typeof x.sharpe === "number") { kv("bt.annReturn", x.ann_return); kv("bt.sharpe", x.sharpe, f.fixed); kv("bt.maxDrawdown", x.max_dd); }
+    else { kv("bt.totalReturn", x.total_return); kv("bt.maxDrawdown", x.max_dd); }   // 0.1.18 以前存的卡只有總報酬
   }
   if (state === "later") g.push([W(f.t("res.later"))]);
   return g;
@@ -144,7 +146,7 @@ function resIcon(kind) {
 }
 function resFmt() {
   const R = window.BlaveReport || {};
-  return { t, pct: (v) => (R.fmtSignedPct ? R.fmtSignedPct(v) : null), stamp: rptFmtStamp, typeKey: rptTypeKey };
+  return { t, pct: (v) => (R.fmtSignedPct ? R.fmtSignedPct(v) : null), fixed: (v) => (R.fmtFixed ? R.fmtFixed(v) : null), stamp: rptFmtStamp, typeKey: rptTypeKey };
 }
 
 /* ── 一輪的生命週期 ── */

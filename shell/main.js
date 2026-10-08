@@ -1064,6 +1064,22 @@ function stratSelfOrderingAny() {
    重開 app、切語言重畫時順序就跟著變。舊 stats 沒有 Generated At 才退回檔案時間;同時間照資料夾名,順序才固定 */
 const stratTouchedAt = (x) => Math.max(x.codeMtime || 0, x.scanMtime || 0, x.wfMtime || 0, x.generatedAt ? x.generatedAt * 1000 : x.statsMtime || 0);
 const stratOrder = (a, b) => stratTouchedAt(b) - stratTouchedAt(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+/* 年化報酬同回測頁 renderer/report-backtest.js annualReturn(tests/check_shell_results.js 釘兩邊同值):Type C 的 stats 自帶
+   `Ann. Return [%]`;Type A 由總報酬與回測天數推,天數先取 start/end 的差、算不出來退回 daily_dates 筆數;底數 ≤ 0 回 null */
+function stratAnnReturn(st) {
+  const given = num(st["Ann. Return [%]"]);
+  if (given !== null) return given;
+  const tr = num(st["Total Return [%]"]);
+  if (tr === null) return null;
+  const day = (s) => { const m = typeof s === "string" && /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
+  const s = day(st.start), e = day(st.end);
+  let days = s !== null && e !== null ? Math.round((e - s) / 86400000) : null;
+  if (!(days > 0)) days = Array.isArray(st.daily_dates) ? st.daily_dates.length : 0;
+  const base = 1 + tr / 100;
+  if (!(days > 0) || !(base > 0)) return null;
+  const ann = (Math.pow(base, 365 / days) - 1) * 100;
+  return isFinite(ann) ? ann : null;
+}
 function listStrategies() {
   return stratNames().map((name) => {
     const dir = path.join(STRAT_DIR(), name);
@@ -1085,12 +1101,12 @@ function listStrategies() {
     if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, ...parts, mtime: touched };
     let displayName = null;
     try { displayName = stratMeta(fs.readFileSync(path.join(dir, "strategy.py"), "utf8")).displayName; } catch (_) {}
-    let summary = { name, displayName, hasBacktest: false, sharpe: null, totalReturn: null, maxDrawdown: null, generatedAt: null };
+    let summary = { name, displayName, hasBacktest: false, sharpe: null, annReturn: null, totalReturn: null, maxDrawdown: null, generatedAt: null };
     if (sMtime) {
       try {
         const st = JSON.parse(fs.readFileSync(statsPath, "utf8"));
         // generatedAt:只有明確回測會重蓋(lib/runner.py _carry_over),live tick 每根 K 重寫 stats.json 但不動它——結果卡靠它認「這一輪跑了回測」
-        summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), totalReturn: num(st["Total Return [%]"]),
+        summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), annReturn: stratAnnReturn(st), totalReturn: num(st["Total Return [%]"]),
           maxDrawdown: num(st["Max Drawdown [%]"]), generatedAt: num(st["Generated At"]) };
         tm().track("first_backtest_done");   // 每個安裝只會送出一次(telemetry.js 自己記)
       } catch (_) { /* 寫到一半或壞掉:當成還沒有回測 */ }
