@@ -1661,6 +1661,20 @@ _scheduler_wake = threading.Event()  # lets a fresh 下單設定 save skip the w
 _ac_migration_done = False  # see _run_scheduler_cycle's transition handling
 
 
+def _tw_broker_flag():
+    """BLAVE_TW_BROKER=<venue id> for a desktop live tick on a machine bound to a TW
+    broker (lib/venue_wiring.hand_wired_venue): lib/data's 統一 quote-feed branch reads
+    the flag instead of asking venue_wiring itself — importing that module from lib/data
+    would pull every strategy's data import into the scheduled-run bash guard's closure
+    of money modules (tests/check_sched_bash_guard.py ③). Nothing bound → no flag."""
+    import importlib
+    try:
+        v = _in_workspace(importlib.import_module, "lib.venue_wiring").hand_wired_venue()
+    except Exception:
+        return {}
+    return {"BLAVE_TW_BROKER": v} if isinstance(v, str) and v else {}
+
+
 def _strategy_subprocess_env(mode="live", **extra):
     """Minimal env for a strategy/wait_for_bar.py subprocess — the bridge's
     BLAVE_PROXY_TOKEN etc. have no business inside agent/user strategy code.
@@ -1678,6 +1692,8 @@ def _strategy_subprocess_env(mode="live", **extra):
     BLAVE_QUIET=1) under the same allowlist — passed explicitly, since the Windows local
     denylist strips every inherited BLAVE_*."""
     if _local_mode():
+        if mode == "live":
+            extra = {**_tw_broker_flag(), **extra}
         return _local_child_env(BLAVE_MODE=mode, **extra)
     if platform.system() == "Windows":
         env = {k: v for k, v in os.environ.items()

@@ -4090,6 +4090,100 @@ def _fetch_twfutures_raw_smart(symbol, schema, start, end, headers):
     return _fetch_twfutures_raw(symbol, schema, start, end, headers)
 
 
+# ── 統一期貨 live quote feed (desktop, 統一-bound) ────────────────────────────
+# lib/president_quote (the worker's quote thread) writes state/president_bars_TXF_1m.json
+# in the cache's own convention (END labels, naive UTC epoch, closing-match bars dropped);
+# a live tick extends the Blave series past its last bar from it. Blave stays first:
+# the delta fetch runs as always, the broker only adds the minutes Blave does not have
+# yet (an overlap is Blave's; a snapshot that starts after Blave's last bar cannot be
+# joined → the tick is Blave alone). The broker's bars never enter the parquet cache,
+# so a backtest reads the same series as a cloud machine.
+_STATE_DIR = Path(__file__).parent.parent / 'state'
+_PRESIDENT_BARS_MAX_AGE_S = 90
+_PRESIDENT_NOT_ENABLED = 'QUOTE_NOT_ENABLED'
+
+
+def _president_feed_live():
+    """A live tick (BLAVE_MODE=live, not a scheduled report) on the desktop
+    (BLAVE_AGENT_LOCAL=1) of a machine whose TW broker is 統一 — the daemon passes the
+    bound broker as BLAVE_TW_BROKER (runtime/command_listener._tw_broker_flag); this
+    module never asks lib/venue_wiring itself (it would drag every strategy's data
+    import into the money-module closure the scheduled-run guard blocks)."""
+    if os.environ.get('BLAVE_MODE') != 'live' or os.environ.get('BLAVE_AGENT_LOCAL') != '1' \
+            or os.environ.get('BLAVE_SCHEDULED_RUN') == '1':
+        return False
+    from lib import venue_traits
+    return os.environ.get('BLAVE_TW_BROKER') == venue_traits.PRESIDENT
+
+
+def _read_president_bars(root, now):
+    """(1m DataFrame in the cache convention, None) or (None, reason)."""
+    try:
+        snap = json.loads((_STATE_DIR / f'president_bars_{root}_1m.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None, 'no_file'
+    if not isinstance(snap, dict):
+        return None, 'no_file'
+    if not snap.get('ok'):
+        err = str(snap.get('error') or '')
+        return None, 'not_enabled' if err == _PRESIDENT_NOT_ENABLED else f'not_ok:{err}'[:120]
+    if now - float(snap.get('written_at') or 0) > _PRESIDENT_BARS_MAX_AGE_S:
+        return None, 'stale'
+    rows = [r for r in (snap.get('rows') or []) if isinstance(r, list) and len(r) == 6]
+    if not rows:
+        return None, 'empty'
+    df = pd.DataFrame(rows, columns=['ts', 'Open', 'High', 'Low', 'Close', 'Volume'])
+    df.index = pd.to_datetime(df.pop('ts'), unit='s')
+    df.index.name = 'time'
+    return df[~df.index.duplicated(keep='last')].sort_index().astype(float), None
+
+
+def _resample_president(df, rule, now):
+    """The broker's 1m rows → the server's intraday schema (same resample as
+    _fetch_twfutures_via_export), complete bins only: a bin is whole once its
+    last minute's END label is in the rows, or that minute has passed (a session
+    end leaves the bin short)."""
+    out = df.resample(rule).agg(Open=('Open', 'first'), High=('High', 'max'), Low=('Low', 'min'),
+                                Close=('Close', 'last'), Volume=('Volume', 'sum')).dropna(subset=['Open'])
+    step = pd.Timedelta(rule)
+    last_minute = out.index + step - pd.Timedelta(minutes=1)
+    whole = last_minute.isin(df.index) | ((out.index + step) <= pd.Timestamp(now, unit='s'))
+    return out[whole]
+
+
+def _with_president_tail(hist, traded, schema):
+    from lib import venue_traits
+    now = time.time()
+    broker, reason = _read_president_bars('TXF', now)
+    source, added = 'blave', 0
+    if broker is not None:
+        if hist.empty or broker.index[0] > hist.index[-1]:
+            reason = 'no_overlap'
+        else:
+            rule = _TW_FUTURES_RESAMPLE_RULES.get(schema)
+            if rule:
+                broker = _resample_president(broker, rule, now)
+            new = broker[~broker.index.isin(hist.index) & (broker.index > hist.index[0])]
+            if not new.empty:
+                hist = pd.concat([hist, new[hist.columns.intersection(new.columns)]]).sort_index()
+                added = len(new)
+            source, reason = venue_traits.PRESIDENT, None
+    status = {'source': source, 'reason': reason, 'at': int(now), 'root': 'TXF', 'traded': traded,
+              'schema': schema, 'added': added,
+              'last_bar': hist.index[-1].strftime('%Y-%m-%dT%H:%M:%SZ') if not hist.empty else None}
+    try:
+        path = _STATE_DIR / 'twfutures_live_source.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _tmp_path(path)
+        tmp.write_text(json.dumps(status, ensure_ascii=False))
+        os.replace(tmp, path)
+    except OSError:
+        pass
+    if source == 'blave':
+        logging.warning(f'[twfutures] live bars from the Blave cache, not 統一 ({reason})')
+    return hist
+
+
 def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
     """台灣期貨 OHLCV. Returns DataFrame with Open/High/Low/Close/Volume/Amount columns.
 
@@ -4116,6 +4210,11 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
     = 'TAIFEX'); with access the Blave series is unchanged and a `start` before its first bar
     (2011-01-03) gets the TAIFEX bars in front of it (attrs['source'] = 'TAIFEX/Blave'). A
     cloud machine, and every intraday schema, is the Blave series alone as before.
+
+    Intraday on a live tick of a 統一-bound desktop: the Blave series (cache + delta, as
+    always) is extended past its last bar from the broker's own 1m feed
+    (state/president_bars_TXF_1m.json, lib/president_quote) — see _with_president_tail;
+    the outcome goes to state/twfutures_live_source.json. Backtests never read it.
     """
     symbol = symbol.upper()
     if symbol.endswith('R1') and len(symbol) > 2:
@@ -4138,6 +4237,8 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
         blave_start, end,
         empty_marker_ttl_hours=24,   # history is backfilled progressively server-side
     )
+    if symbol == 'TXF' and schema != '1d' and _president_feed_live():
+        df = _with_president_tail(df, traded, schema)
     df = _sanity_check_ohlc(df, f'{symbol} {schema} twfutures')
     if schema == '1d' and not df.empty:
         # Cache stores naive UTC (midnight TWN = prev-day 16:00 UTC). Convert to Asia/Taipei
