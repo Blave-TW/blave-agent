@@ -29,6 +29,17 @@ with open(os.path.join(WS, "tmp", "brief.py"), "w") as f:
     f.write("from lib.report_templates import publish\npublish(pack)\n")
 with open(os.path.join(WS, "tmp", "close.py"), "w") as f:
     f.write("from lib import order_binance as o\no.close_position_partial(env, 'XRPUSDT', 1)\n")
+# 包一層的回測:tmp 腳本裡 subprocess 跑 strategies/<x>/strategy.py(設計提升 B3 的兩個缺口之一)
+with open(os.path.join(WS, "tmp", "bt.py"), "w") as f:
+    f.write("import subprocess, sys\nr = subprocess.run([sys.executable, 'strategies/btc_rsi/strategy.py'], capture_output=True)\nprint(r.returncode)\n")
+with open(os.path.join(WS, "tmp", "bt_live.py"), "w") as f:
+    f.write("import subprocess\nsubprocess.run(['python3', 'strategies/eth_live/strategy.py'])\n")
+with open(os.path.join(WS, "tmp", "bt_live_mode.py"), "w") as f:
+    f.write("import os, subprocess\nos.environ['BLAVE_MODE'] = 'backtest'\nsubprocess.run(['python3', 'strategies/eth_live/strategy.py'])\n")
+with open(os.path.join(WS, "tmp", "run_bt.sh"), "w") as f:
+    f.write("#!/bin/sh\npython3 strategies/btc_rsi/strategy.py > tmp/bt.log 2>&1\n")
+with open(os.path.join(WS, "tmp", "analyze.py"), "w") as f:
+    f.write("import json\ns = json.load(open('strategies/btc_rsi/stats.json'))\nprint(s['Sharpe Ratio'])\n")
 # the runtime never runs from the workspace root
 os.chdir(tempfile.mkdtemp(prefix="check-tool-kind-cwd-"))
 
@@ -87,6 +98,26 @@ case("Bash", {"command": "BLAVE_MODE=backtest python3 strategies/eth_live/strate
 case("Bash", {"command": "python3 lib/runner.py strategies/eth_live/strategy.py"}, "live_tick", "eth_live",
      note="lib/runner.py <strategy> follows the strategy rule")
 case("Bash", {"command": "python3 lib/param_scan.py strategies/btc_rsi/strategy.py --grid x"}, "scan", "btc_rsi")
+case("Bash", {"command": "python3 lib/param_scan.py strategies/btc_rsi"}, "scan", "btc_rsi",
+     note="strategies/<x> without the trailing slash still names the strategy")
+# 設計提升 B3(0.1.19):三種跑法各歸各的——實盤 tick 是「跑策略」(live_tick),組合回測與包一層的回測是「跑回測」
+case("Bash", {"command": "python3 manager/management_backtest.py --members a,b --progress manager/mgmt_progress.json"},
+     "backtest", note="portfolio backtest (Type C management) → backtest, no single-strategy object")
+case("Bash", {"command": "python3 tmp/bt.py"}, "backtest", "btc_rsi", note="tmp wrapper that subprocess-runs strategies/x/strategy.py → backtest")
+case("Bash", {"command": "cd ~/Blave/workspace && python3 tmp/bt_live.py"}, "live_tick", "eth_live",
+     note="wrapper around a strategy in the 下單設定 → live_tick (its own kind, never folded into backtest)")
+case("Bash", {"command": "python3 tmp/bt_live_mode.py"}, "backtest", "eth_live",
+     note="wrapper that sets BLAVE_MODE=backtest inside the script → backtest")
+case("Bash", {"command": "BLAVE_MODE=backtest python3 tmp/bt_live.py"}, "backtest", "eth_live",
+     note="BLAVE_MODE=backtest on the command line overrides membership for a wrapper too")
+case("Bash", {"command": "sh tmp/run_bt.sh"}, "backtest", "btc_rsi", note="shell wrapper → backtest")
+case("Bash", {"command": "python3 -c \"import subprocess; subprocess.run(['python3', 'strategies/btc_rsi/strategy.py'])\""},
+     "backtest", "btc_rsi", note="python -c wrapper → backtest")
+case("Bash", {"command": "python3 tmp/analyze.py"}, "unknown", note="NEGATIVE: reading stats.json is analysis, not a backtest")
+case("Bash", {"command": "cp strategies/btc_rsi/strategy.py strategies/btc_rsi_v2/strategy.py"}, "unknown",
+     note="NEGATIVE: copying a strategy file is not running it")
+case("Bash", {"command": "grep -n FEE strategies/btc_rsi/strategy.py"}, "files",
+     note="NEGATIVE: grepping a strategy file is not running it")
 case("Bash", {"command": "python3 lib/walk_forward.py strategies/btc_rsi/strategy.py"}, "validate", "btc_rsi")
 case("Bash", {"command": "python3 lib/validation.py"}, "validate")
 case("Bash", {"command": "python3 lib/quality_check.py strategies/btc_rsi/strategy.py"}, "check")

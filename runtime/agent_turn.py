@@ -2658,7 +2658,8 @@ _BROWSER_SILENT = {"browser_wait", "browser_tabs", "browser_back", "browser_clos
 _BROWSER_READ = {"browser_read", "browser_get", "browser_snapshot", "browser_screenshot", "browser_capture",
                  "browser_scroll"}
 _BROWSER_ACT = {"browser_click", "browser_fill", "browser_type", "browser_press"}
-_STRATEGY_DIR_RE = re.compile(r"(?:^|[\s/'\"=])strategies/([^/\s'\"]+)/")
+# 結尾的斜線可省(`lib/param_scan.py strategies/x` 這樣寫的受詞也要抓得到)
+_STRATEGY_DIR_RE = re.compile(r"(?:^|[\s/'\"=])strategies/([^/\s'\"]+)(?:/|(?=[\s'\"]|$))")
 _TICKER_RE = re.compile(r"^[A-Z0-9._-]{2,20}$")
 # 內容掃描(依優先序)。下單只認**呼叫**:lib/order_*.py 裡也有 get_order／confirm_order／
 # get_contract_rules 這些查詢,光看路徑會謊報「正在下單」。
@@ -2669,6 +2670,9 @@ _KIND_SCAN = (
     ("report", re.compile(r"report_templates|\bpublish\(|research_pack\(|report_bricks|lib\.report\b.*write_report")),
     ("scan", re.compile(r"scan_grid\(|find_plateau\(")),
     ("validate", re.compile(r"run_walk_forward\(|\bmcpt\(")),
+    # 包一層的回測(`python3 tmp/bt.py` 裡 subprocess 跑 strategies/x/strategy.py、python -c／heredoc 同理):
+    # 只在 python 在執行東西時才算(_bash_kind 的 pyrun),`cp a/strategy.py b/` 這類檔案操作不是回測
+    ("backtest", re.compile(r"strategies/([^/\s'\"]+)/strategy\.py")),
     ("schedule", re.compile(r"register_schedule\(|remove_schedule\(|\bcrontab\b|\bschtasks\b")),
     ("data", re.compile(r"\bfetch_\w+\(|from lib\.data import")),
     ("account", re.compile(r"lib\.order_|lib/order_|lib\.account_")),
@@ -2824,6 +2828,23 @@ def _executed_script(head_full, args, workspace):
     return "", []
 
 
+_MODE_IN_TEXT_RE = re.compile(r"BLAVE_MODE\W{1,8}(backtest|live)\b")
+
+
+def _mode_in_text(text):
+    """包一層的腳本自己設的 BLAVE_MODE(`os.environ["BLAVE_MODE"] = "backtest"`、`env={"BLAVE_MODE": "live"}`)。"""
+    m = _MODE_IN_TEXT_RE.search(text)
+    return m.group(1) if m else ""
+
+
+def _strategy_run_kind(strat, mode, trading, remote):
+    """跑 strategies/<strat>/strategy.py 是回測還是實盤 tick:BLAVE_MODE 說了算,沒說就看下單設定
+    (遠端機器的下單設定本機不知道 → 回測)。live_tick 是自己一種(「跑策略」),從不併進 backtest。"""
+    mode = mode or ""
+    live = mode == "live" or (mode != "backtest" and not remote and strat in trading)
+    return ("live_tick" if live else "backtest"), _kind_obj(strat)
+
+
 def _bash_kind(cmd, workspace, trading, remote=False):
     if not isinstance(cmd, str) or not cmd.strip():
         return "unknown", ""
@@ -2854,10 +2875,10 @@ def _bash_kind(cmd, workspace, trading, remote=False):
         m = re.match(r"strategies/([^/]+)/strategy\.py$", path)
         if m or (path == "lib/runner.py" and named):
             strat = (m or named).group(1)
-            mode = env.get("BLAVE_MODE") or env_all.get("BLAVE_MODE") or ""
-            live = mode == "live" or (mode != "backtest" and not remote and strat in trading)
-            return ("live_tick" if live else "backtest"), _kind_obj(strat)
+            return _strategy_run_kind(strat, env.get("BLAVE_MODE") or env_all.get("BLAVE_MODE"), trading, remote)
         obj = _kind_obj(named.group(1)) if named else ""
+        if path == "manager/management_backtest.py":
+            return "backtest", ""   # 組合回測(Type C 管理):沒有單一策略受詞
         if re.match(r"manager/(?:close_symbol|flatten|close_all)\.py$", path) or (
                 path == "manager/stop_strategy.py" and "--flatten" in sargs):
             return "order", ""   # 平倉(stop_strategy 只有帶 --flatten 才平倉):路徑先判,不讓腳本裡的 crontab 字樣改判
@@ -2884,8 +2905,15 @@ def _bash_kind(cmd, workspace, trading, remote=False):
              if os.path.basename(h) not in ("", "cd", "export", "source", ".", "set", "echo", "sleep", "true")]
     reader_only = heads and heads[0] in _READ_HEADS and not any(
         h.startswith("python") or h in ("node", "bash", "sh", "zsh", "uv") for h in heads)
+    pyrun = any(h.startswith("python") or h in ("uv", "bash", "sh", "zsh") for h in heads)
     # C. 內容掃描
     for kind, rx in () if reader_only else _KIND_SCAN:
+        if kind == "backtest":
+            hit = rx.search(text) if pyrun else None
+            if hit:
+                mode = env_all.get("BLAVE_MODE") or _mode_in_text(text)
+                return _strategy_run_kind(hit.group(1), mode, trading, remote)
+            continue
         if rx.search(text):
             obj = ""
             arg = _FIRST_STR_ARG.get(kind)
