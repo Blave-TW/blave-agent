@@ -222,7 +222,7 @@ ok("lib 的錯誤 token:[okx_account_mode] / [gateio_price_deviated] 認得出�
 { const f = src.slice(src.indexOf("function trOrderErrText("), src.indexOf("\n}\n", src.indexOf("function trOrderErrText(")));
   ok("拒單那一句:兩個 token 各有在地化的句子(表底紅字、灰字「上次」、總覽事件列都走 trOrderErrText)",
     /p\.kind === "okx_account_mode"\) return t\("tr\.err\.okxMode", \{ sym \}\)/.test(f) && /p\.kind === "gateio_price_deviated"\) return t\("tr\.err\.gateDeviated", \{ sym \}\)/.test(f));
-  ok("帳戶讀取失敗(設定分頁)帶 [okx_account_mode]:講怎麼改,不出 cx.fail 的原文", /if \(trErrToken\(e\.error\) === "okx_account_mode"\) box\.appendChild\(errLine\(t\("cx\.err\.okxMode"\)\)\);\n\s*else box\.appendChild\(errLine\(t\("cx\.fail"/.test(src)); }
+  ok("帳戶讀取失敗(設定分頁)帶 [okx_account_mode]:講怎麼改,不出 cx.fail 的原文", /else if \(trErrToken\(ae\.msg\) === "okx_account_mode"\) box\.appendChild\(errLine\(t\("cx\.err\.okxMode"\)\)\);\n\s*else box\.appendChild\(errLine\(t\("cx\.fail"/.test(src)); }
 ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / 舊狀態檔 / 雲端沒有 daemon 區塊 = 你還沒按啟動", trDeadKind({ daemon: { reconciler: { wanted: true, running: false } } }) === "died" && trDeadKind({ daemon: { reconciler: { wanted: false } } }) === "off"
   && trDeadKind({ daemon: { reconciler: {} } }) === "off" && trDeadKind({ daemon: {} }) === "off" && trDeadKind({}) === "off" && trDeadKind(null) === "off" && trDeadKind({ daemon: { reconciler: { wanted: "true" } } }) === "off");
 { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8"), appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
@@ -290,7 +290,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var "), ctx);
   vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + ["trEl", "trReport", "trVenueId", "trEnvNames", "trPaintSet", "trUnbind"].map(cutF).join("\n"), ctx);
   // acctOk:true = 已連接、false = 讀帳失敗、null = 還沒讀過(串接中…);bn = Binance 金鑰重查的 state(主行程 binance_link)
-  const paint = (venue, env, lang, focusRetest, acctOk = true, bn = null) => {
+  // err = 讀帳失敗時的 error 欄位(字串或統一那種物件);pc = 狀態檔的 president_connect
+  const paint = (venue, env, lang, focusRetest, acctOk = true, bn = null, err = "get_equity: paper ledger unreadable", pc = undefined) => {
     const box = node("div"), tab = node("button"), els = { "tr-set": box, "tr-tab-set": tab };
     ctx.document = { createElement: node, activeElement: null };
     if (focusRetest) { const was = node("button"); was.id = "cx-retest"; box.kids.push(was); ctx.document.activeElement = was; }
@@ -298,11 +299,26 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ctx.trShould = () => true; ctx.trSec = (x) => x; ctx.trVenueLabel = (id) => id; ctx.cxRetest = () => {}; ctx.cxIpChip = () => node("span");
     ctx.planWebUrl = () => ""; ctx.window = { blave: { openExternal() {} } }; ctx.CXF = { bn };
     ctx.TR = { env, cx: { retest: false, err: null }, unbinding: false, cxPend: null,
-      st: { alive: true, report: { venues: { [venue]: { credentials: true, pair: true, order: true, account: true } }, account: { venues: acctOk == null ? {} : { [venue]: acctOk ? { ok: true, equity: 1000 } : { ok: false, error: "get_equity: paper ledger unreadable" } } } } } };
+      st: { alive: true, report: { venues: { [venue]: { credentials: true, pair: true, order: true, account: true } }, account: { venues: acctOk == null ? {} : { [venue]: acctOk ? { ok: true, equity: 1000 } : { ok: false, error: err } } }, president_connect: pc } } };
     vm.runInContext("LANG = " + JSON.stringify(lang) + "; trPaintSet();", ctx);
     const all = flat(box), T = ((tbl) => (k) => tbl[k])(vm.runInContext("STRINGS[LANG]", ctx));   // 當下那一語的表:斷言時 LANG 可能已經換了
-    return { retest: all.some((n) => n.id === "cx-retest"), unbind: all.some((n) => n.id === "tr-unbind"), foots: all.filter((n) => n.className === "pf-foot").map((n) => n.textContent), T, tab, active: ctx.document.activeElement };
+    return { retest: all.some((n) => n.id === "cx-retest"), unbind: all.some((n) => n.id === "tr-unbind"), foots: all.filter((n) => n.className === "pf-foot").map((n) => n.textContent),
+      errs: all.filter((n) => n.className === "plan-err").map((n) => n.textContent), T, tab, active: ctx.document.activeElement };
   };
+  // 10-08 Wei e2e:統一的讀帳 error 是物件 {stage, type, msg}(其他 lib 是「stage: msg」字串),畫成「串接失敗（—）：[object Object]」
+  { const objErr = { stage: "get_equity", type: "RuntimeError", msg: "president worker error: 統一期貨 login failed: TIMEOUT — x" };
+    ctx.presWip = () => false;   // 開通過(worker.ok_at 在)
+    const okW = { worker: { status: "ok", ok_at: 5, at: 9 } }, stopW = { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", ok_at: 5, at: 9 } }, deadW = { worker: { status: "failed", error: "SNAPSHOT_WRITE", ok_at: 5, at: 9 } };
+    const errs = (...a) => paint(...a).errs.join("\n");
+    const e1 = errs("president", "local", "zh", false, false, null, objErr, okW);
+    ok("讀帳 error 是物件:stage 取 .stage、訊息取 .msg,不出 [object Object];字串照舊「stage: msg」", e1 === "president 串接失敗（get_equity）：president worker error: 統一期貨 login failed: TIMEOUT — x"
+      && !/object Object/.test(e1) && errs("binance", "local", "zh", false, false) === "binance 串接失敗（get_equity）：paper ledger unreadable"
+      && J(trAcctErr(objErr)) === J({ stage: "get_equity", msg: objErr.msg }) && J(trAcctErr({ msg: "x" })) === J({ stage: "—", msg: "x" }) && J(trAcctErr("boom")) === J({ stage: "—", msg: "boom" }) && J(trAcctErr(null)) === J({ stage: "—", msg: "" }));
+    ok("開通過又登入失敗停掉(trPresStopped + LOGIN_FAILED):這一列先講「登入已停止,按「繼續」確認登入」,不出讀帳原文;停掉但不是登入失敗 → 照原文", errs("president", "local", "zh", false, false, null, objErr, stopW) === "登入已停止，按「繼續」確認登入。"
+      && errs("president", "local", "en", false, false, null, objErr, stopW) === "Login stopped. Press Continue to confirm login."
+      && /TIMEOUT/.test(errs("president", "local", "zh", false, false, null, objErr, deadW)) && trPresLoginStopped({ president_connect: stopW }, "president") && !trPresLoginStopped({ president_connect: deadW }, "president")
+      && !trPresLoginStopped({ president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT" } } }, "president"));
+    delete ctx.presWip; }
   const cases = [];
   ["zh", "en"].forEach((lang) => ["local", "cloud"].forEach((env) => ["paper", "binance"].forEach((venue) => cases.push({ lang, env, venue, r: paint(venue, env, lang) }))));
   const bad = (f) => cases.filter(f).map((c) => c.lang + "/" + c.env + "/" + c.venue);

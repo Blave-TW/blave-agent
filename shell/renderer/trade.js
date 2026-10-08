@@ -117,6 +117,14 @@ function trCapWip(r, id) { const c = id === "capital" && r && r.capital_connect;
 function trPresWip(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !(c.worker && (c.worker.status === "ok" || c.worker.ok_at)); }
 // 開通過、之後 worker 失敗停掉(登入失敗 / 沒寫出快照):不是開通中,但「確認登入」只在開通框裡——設定 › 帳戶 那一列仍要給「繼續」進框,不然沒有出口
 function trPresStopped(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !!c.worker && c.worker.status === "failed" && !trPresWip(r, id); }
+// 停掉的那一種是登入失敗(runtime 寫 worker.error = LOGIN_FAILED:<類別>;其他失敗是沒寫出快照那類):設定 › 帳戶 那一列講「登入已停止」而不是讀帳原文
+function trPresLoginStopped(r, id) { return trPresStopped(r, id) && String(r.president_connect.worker.error || "").indexOf("LOGIN_FAILED") === 0; }
+// 讀帳失敗的原因:多數 lib 回「stage: msg」字串;統一的是物件 {stage, type, msg}(10-08 e2e 畫成 [object Object])
+function trAcctErr(err) {
+  if (err && typeof err === "object") return { stage: String(err.stage || "—"), msg: String(err.msg || err.message || "") };
+  const m = /^([a-z_]+):\s*(.*)$/i.exec(String(err || ""));
+  return m ? { stage: m[1], msg: m[2] } : { stage: "—", msg: String(err || "") };
+}
 function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id); }); }
 /* 綁著的只有開通中的統一、對帳器也沒在跑 = 開通還沒做完(0.1.18 Wei 實測:存了帳密、憑證 ok、probe 還在跑,頁面就講
    「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在。
@@ -2741,10 +2749,12 @@ function trPaintSet() {
     if (d.futures === false) calm(t("cx.note.noFutures")); else if (d.spot === false) calm(t("cx.note.noSpot"));
   }
   if (e && !e.ok && !capWip) {
-    const m = /^([a-z_]+):\s*(.*)$/i.exec(String(e.error || ""));
+    const ae = trAcctErr(e.error);
+    // 統一登入失敗停掉:出口是「繼續」→ 開通框的「確認登入」,講這個就好,讀帳原文(worker error 的轉述)不出
+    if (!ro && trPresLoginStopped(r, id)) box.appendChild(errLine(t("cx.presStopped")));
     // 帳戶模式不支援合約(OKX):讀帳戶就會擋,講怎麼改,不出原文
-    if (trErrToken(e.error) === "okx_account_mode") box.appendChild(errLine(t("cx.err.okxMode")));
-    else box.appendChild(errLine(t("cx.fail", { id: trVenueLabel(id, true), stage: m ? m[1] : "—", msg: (m ? m[2] : String(e.error || "")).slice(0, 200) })));
+    else if (trErrToken(ae.msg) === "okx_account_mode") box.appendChild(errLine(t("cx.err.okxMode")));
+    else box.appendChild(errLine(t("cx.fail", { id: trVenueLabel(id, true), stage: ae.stage, msg: ae.msg.slice(0, 200) })));
   }
   if (TR.cx.err) box.appendChild(errLine(TR.cx.err));
   box.appendChild(trEl("div", "pf-foot", id === PAPER ? t("tr.unbindDescPaper") : ro ? t("tr.cloud.unbindDesc") : t("tr.unbindDesc")));   // 模擬帳戶沒有金鑰可移除
