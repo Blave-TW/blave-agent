@@ -151,7 +151,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
   // 時光機頁首(Wei 09-28):看舊版時名稱留著、說明收起來;回目前版 / 沒有版本介面時放回來
   {
     const E = {}, el = (id) => (E[id] = E[id] || { id, hidden: false, textContent: id === "rp-desc" ? "SMA50 上穿 SMA200" : "", classList: { toggle() {} }, setAttribute() {} });
-    const paint = new Function("$", "t", "verEntry", "verDate", "VER", fnSrc(verSrc, "verPaintTrigger") + "\nreturn verPaintTrigger;")(el, (k) => k, () => ({ at: 1 }), () => "09/27 10:00", { pending: () => null });
+    const paint = new Function("$", "t", "verEntry", "verDateDay", "VER", fnSrc(verSrc, "verPaintTrigger") + "\nreturn verPaintTrigger;")(el, (k) => k, () => ({ at: 1 }), () => "09/27", { pending: () => null });
     const data = { current: 2, counter: 2, items: [] }, seen = [];
     for (const S1 of [{ data, open: 1 }, { data, open: null }, { data, open: 1 }, { data: null, open: null }]) { paint(S1); seen.push([E["rp-desc"].hidden, E["ver-sep"].hidden, E["ver-wrap"].hidden].join()); }
     ok("時光機頁首:看 v1 → 說明與分隔點收起來、觸發器留著;回目前版 → 放回來;沒有版本介面 → 說明照出", seen.join(" | ") === "true,true,false | false,false,false | true,true,false | false,true,true" && E["rp-desc"].textContent === "SMA50 上穿 SMA200", seen.join(" | "));
@@ -190,7 +190,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       querySelectorAll() { return []; }
     }
     const doc = { activeElement: null, createElement: (tag) => new El(tag), createDocumentFragment: () => new El("#fragment") };
-    const names = ["verEl", "verEntry", "verDate", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen",
+    const names = ["verEl", "verEntry", "verDate", "verDateDay", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen",
       "verEffective", "verPendingOf", "verHolds", "verHidesAct", "verPaintRerun", "verPaintErr", "verBusy", "verShowTab", "verStatePaint", "verSend", "verBoxCtx", "verIsLots", "verGuard", "verNeedUpdate",
       "verRestoreAsk", "verRetry", "verAckKind", "verDoRestore", "verRollback", "verPollNeed", "verPollStop", "verPollEnsure", "verPollTick", "verOverlayExpire", "verBusyNote"];
     const consts = ["verSideOf", "VO", "VP", "voKey", "RERUN_WHY"].map((n) => constSrc(verSrc, n)).join("");
@@ -218,7 +218,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const api = { tradeSend: (cmd, args) => { sent.push([cmd, args]); return new Promise((res) => acks.push(res)); }, loadStrategy: async () => null };
       const side = cloud ? "cloud" : "local", st = amounts ? { report: { config: { amounts } } } : null;
       const env = { document: doc, $, t, LANG: lang, VER: g.blaveVersions, VS: { local: vs(), cloud: vs() }, RP, RPC, rpBag: () => bag, trackFeature: (n) => tracked.push(n),
-        TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } }, shlFmtTime, requestAnimationFrame: (f) => f(),
+        TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } }, shlFmtTime, trMD: (d) => String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0"), requestAnimationFrame: (f) => f(),
         verLoad: (...a) => loads.push(["ver"].concat(a)), vcLoad: () => loads.push(["vc"]), hoPaint: () => { hoPaints.push(1); $("rp-act").hidden = false; }, rpShowTab: (tab) => shows.push(tab), rpPaintHead() {}, rpTab: (B) => B.tab,
         running: false, confirmBox: (o) => boxes.push(o), setOpen: async () => {}, setCat() {}, srSay: (x) => said.push(x), submitMessage: async () => true, paneSt: { chat: { off: false } }, paneToggle() {},
         trFmt: (x) => String(x), trUnit: () => "USDT", trTxfSpec: TXF.trTxfSpec, trWith: (b, fn) => fn(), trRowTxf: () => (opt.rowTxf ? {} : null), xpSetTimeMachine() {}, RP_WAIT_DELAY_MS: 200, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {},
@@ -274,7 +274,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       ok(tag + "比較:關選單、開比較框,A = 上一版、B = 目前版,記 version_compare", m.hidden === true && r.E["vc-scrim"].hidden === false && r.E["view-ws"].inert === true && r.E["vc-a"].value === String(top - 1) && r.E["vc-b"].value === String(top)
         && r.E["vc-a"].kids.length === ns.length && r.loads.join("|") === "vc" && r.tracked.join() === "version_menu,version_compare");
       r.F.verMenuOpen(false); menuItems(m)[1].click();
-      ok(tag + "時光機:點舊版 → 進時光機、載那一版、記 version_view;觸發器換成那一版的日期時間", r.S.open === top - 1 && r.loads[1].join() === "ver,local," + (top - 1) && r.tracked.slice(-1)[0] === "version_view" && r.E["ver-banner"].hidden === false && r.E["ver-trig-n"].textContent === "v" + (top - 1) && r.E["ver-trig-l"].textContent === "09/28 10:0" + (top - 1));
+      ok(tag + "時光機:點舊版 → 進時光機、載那一版、記 version_view;觸發器換成那一版的日期(只有 MM/DD,設計稽核 ⑤)", r.S.open === top - 1 && r.loads[1].join() === "ver,local," + (top - 1) && r.tracked.slice(-1)[0] === "version_view" && r.E["ver-banner"].hidden === false && r.E["ver-trig-n"].textContent === "v" + (top - 1) && r.E["ver-trig-l"].textContent === "09/28");
       ok(tag + "時光機橫幅的日期時間跟清單同一口徑;比較框的選項也是", r.E["ver-banner-t"].all((k) => k.className === "mono" && k.tagName === "span")[0].textContent === "09/28 10:0" + (top - 1)
         && r.E["vc-a"].kids.map((o) => o.textContent).join("|") === ns.slice().reverse().map((n) => "v" + n + " · 09/28 10:0" + n + (n === top ? " · 目前" : "")).join("|"));
       r.F.vcOpen();
@@ -294,14 +294,15 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const old = rig("zh", "momo", { counter: 2, current: 2, items: [Object.assign(it(1), { at: atOf(Y - 1, 12, 18, 9, 40) }), it(2)] }); old.F.verMenuOpen(false);
       ok("不是今年的加年份(同公開連結清單規則)", dates(old).join() === "09/28 10:02," + (Y - 1) + "/12/18 09:40");
       menuItems(old.E["ver-menu"])[1].click();
-      ok("時光機:觸發器與橫幅同樣帶年份", old.E["ver-trig-l"].textContent === (Y - 1) + "/12/18 09:40" && old.E["ver-banner-t"].all((k) => k.className === "mono" && k.tagName === "span")[0].textContent === (Y - 1) + "/12/18 09:40");
+      ok("時光機:橫幅帶年份與時間;觸發器只有 MM/DD(設計稽核 ⑤)", old.E["ver-trig-l"].textContent === "12/18" && old.E["ver-banner-t"].all((k) => k.className === "mono" && k.tagName === "span")[0].textContent === (Y - 1) + "/12/18 09:40");
       const pOf = (row) => row.all((k) => k.className === "v mono")[2].textContent;
       ok("p 值:< 0.0005 寫 <0.001(含 0);其餘照舊三位", pOf(rows[0]) === "<0.001" && pOf(rows[1]) === "<0.001" && pOf(rows[2]) === "0.030"
         && g.blaveVersions.fmt("mcpt_p", 0.0005) === "0.001" && g.blaveVersions.fmt("mcpt_p", 0.106) === "0.106" && g.blaveVersions.fmt("mcpt_p", null) === "—" && g.blaveVersions.fmt("ret", 0.0001) === "+0.00%");
       ok("摘要「初版」照畫(UI 不過濾;規則在 references/strategy-code.md 叫 agent 別寫)", rows[1].all((k) => k.className === "vmi-note")[0].textContent === "初版"
         && ref.includes('never write "初版" / "initial version" — v1 is the initial version'));
       ok("小標逐字「版本」/「Versions」", r.E["ver-menu"].kids[0].textContent === "版本" && en1.E["ver-menu"].kids[0].textContent === "Versions");
-      ok("日期只有一份格式(versions.js 不再自己拼、不用 trMD / trStamp)", /shlFmtTime\(at, Date\.now\(\)\)/.test(fnSrc(verSrc, "verDate")) && !/trMD|trStamp|verDateShort|verDateLong/.test(verSrc));
+      ok("日期時間只有一份格式(verDate 走 shlFmtTime;trMD 只在觸發鈕的 verDateDay、不再有 trStamp)", /shlFmtTime\(at, Date\.now\(\)\)/.test(fnSrc(verSrc, "verDate")) && /trMD\(/.test(fnSrc(verSrc, "verDateDay"))
+        && /verDateDay\(/.test(fnSrc(verSrc, "verPaintTrigger")) && !/trStamp|verDateShort|verDateLong/.test(verSrc) && (verSrc.match(/trMD\(/g) || []).length === 1);
     }
     // 一版 → 兩版:key 變了,回目前版、下次打開是比較列
     {

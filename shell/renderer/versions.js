@@ -6,7 +6,7 @@
    - 每個視角各記一份「正在看哪一版」;換策略、切視角、新版到了一律回目前版。
    - items 與 blob 每一欄都是機器上的 agent 寫的:型別檢查後一律 textContent。
    用到 app.js 的 $ / t / RP / RPC / rpBag / rpShowTab / confirmBox / submitMessage / running / trackFeature / trapTab / paneSt / paneToggle、
-   trade.js 的 ENV / TR_BAGS / trFmt / trUnit、report-sharelist.js 的 shlFmtTime、handoff.js 的 hoPaint——都在呼叫時才取。 */
+   trade.js 的 ENV / TR_BAGS / trMD / trFmt / trUnit、report-sharelist.js 的 shlFmtTime、handoff.js 的 hoPaint——都在呼叫時才取。 */
 const VER = window.blaveVersions || null;
 const VS = { local: null, cloud: null };
 const verNewSide = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map(), err: null, pend: null });
@@ -15,8 +15,10 @@ VS.local = verNewSide(); VS.cloud = verNewSide();
 const verSideOf = (B) => (B === RPC ? "cloud" : "local");
 function verEl(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function verEntry(S, n) { return VER ? VER.entries(S.data).find((i) => i.n === n) || null : null; }
-// 清單、觸發器、橫幅、比較框同一口徑:MM/DD HH:mm、不是今年加年份(同公開連結清單 report-sharelist.js 的 shlFmtTime)
+// 清單、橫幅、比較框同一口徑:MM/DD HH:mm、不是今年加年份(同公開連結清單 report-sharelist.js 的 shlFmtTime)
 function verDate(at) { return (typeof at === "number" && at > 0 && shlFmtTime(at, Date.now())) || "—"; }
+// 觸發鈕只放得下日期:看舊版時 MM/DD(設計稽核 0.1.19 ⑤;時間與年份在橫幅與清單)
+function verDateDay(at) { return typeof at === "number" && isFinite(at) && at > 0 ? trMD(new Date(at * 1000)) : "—"; }
 /* 這支策略的下單金額(守門依據,canon §6 的真閘門在機器端 restore())。讀不到那一邊的回報 = null:不猜,徽章只畫「目前」、
    還原走一般確認框。金額表的 key 是 STRATEGY_NAME,多半等於資料夾名;兩個都看 */
 function verAmount(side, B) {
@@ -97,7 +99,7 @@ function verPaintTrigger(S) {
   const old = !!S.data && (S.open !== null || !!(pd && pd.status === "running"));
   $("rp-desc").hidden = old;
   if (!S.data) { wrap.hidden = true; $("ver-sep").hidden = true; return; }
-  const n = S.open === null ? S.data.current : S.open, label = S.open === null ? t("ver.current") : verDate((verEntry(S, n) || {}).at);
+  const n = S.open === null ? S.data.current : S.open, label = S.open === null ? t("ver.current") : verDateDay((verEntry(S, n) || {}).at);
   $("ver-trig-n").textContent = "v" + n;
   const l = $("ver-trig-l"); l.textContent = label; l.classList.toggle("mono", S.open !== null);
   $("ver-trig").setAttribute("aria-label", t("ver.aria", { v: "v" + n, label }));

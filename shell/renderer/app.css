@@ -1274,7 +1274,7 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .flag-pop .item:hover { background: var(--surface-muted); color: var(--ink); }
-.flag-pop .item.danger { color: var(--color-red); }
+.flag-pop .item.danger { color: var(--ink-2); }
 .flag-pop .item[hidden], .flag-pop .divider[hidden] { display: none; }
 .flag-pop .divider { border-top: 1px solid var(--border-hairline); margin: 6px 0; }
 @media (prefers-reduced-motion: reduce) {
