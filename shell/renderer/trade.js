@@ -1385,6 +1385,8 @@ function trStateText(state) {
   // 「尚未啟動下單」講的是狀態、不是叫人按鈕(§12:不需要 Z 變體);「停了、不是你按的」在 Z 時去掉尾巴
   else if (state === "dead") s = trDeadKind(r) === "died" ? t(zS ? "tr.diedZ" : "tr.died", { t: rec.heartbeat_at ? trStamp(rec.heartbeat_at) : "—" })
     : rec.heartbeat_at ? t("tr.notStarted") + " · " + t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
+  // 在跑、統一有口在倉(只在這台電腦、Windows):同一句尾接「電腦保持清醒」——設計師裁定 A,不另立橫幅、不講「不會平倉」
+  else if (!trNoAmounts(r) && TR.env === "local" && window.blave.platform === "win32") { const lots = presHeldLots(r); if (lots > 0) s += " · " + t("tr.presAwake", { n: lots }); }
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
   // 失敗而且下單程式沒在跑:整句換成帶出口的那一句(到「設定」),不把三個狀態串成一串(設計稽核 desktop-10-08 #7)
   if (trFailStopped(state, r)) return t("cx.failStopped");
@@ -1953,7 +1955,6 @@ function trSetTab(tab, focus) {
 function trPaint() {
   if (!envPaint()) return;                         // 雲端沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):中欄是空態,這一頁不畫
   trPaintHead();
-  if (typeof presBannerPaint === "function") presBannerPaint();
   if (!TR.open) return;
   // unknown(狀態檔這一輪沒寫出來)也走這個版面,但畫的是一段說明、不是 onboard——標題列的暫停鈕還在
   const state = trExecState(TR.st), assumed = TR.env === "cloud" && state === "noaccount" && trCxAssumed(TR.cxSaved, Date.now());

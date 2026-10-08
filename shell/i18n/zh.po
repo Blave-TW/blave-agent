@@ -1333,6 +1333,9 @@ msgstr "自動下單"
 msgid "tr.autoOn"
 msgstr "自動下單執行中"
 
+msgid "tr.presAwake"
+msgstr "統一有 {n} 口在倉，電腦保持清醒"
+
 msgid "tr.halted"
 msgstr "已暫停"
 
@@ -6801,12 +6804,6 @@ msgstr "Blave 只管自己下的單，不碰你手動下的。"
 
 msgid "pres.done.go"
 msgstr "設定策略下單"
-
-msgid "pres.held.lead"
-msgstr "統一有 {n} 口在倉，電腦會保持清醒。"
-
-msgid "pres.held.sub"
-msgstr "結束 Blave 或關機，這些部位不會自動平倉。"
 
 
 

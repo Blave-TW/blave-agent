@@ -1330,6 +1330,9 @@ msgstr "Auto trading"
 msgid "tr.autoOn"
 msgstr "Auto-trading running"
 
+msgid "tr.presAwake"
+msgstr "{n} lot(s) open at President, this computer stays awake"
+
 msgid "tr.halted"
 msgstr "Paused"
 
@@ -6794,12 +6797,6 @@ msgstr "Blave manages only its own orders and never touches trades you place by 
 
 msgid "pres.done.go"
 msgstr "Set up strategy orders"
-
-msgid "pres.held.lead"
-msgstr "{n} lot(s) open at President; this computer stays awake."
-
-msgid "pres.held.sub"
-msgstr "If you quit Blave or shut down, these positions aren’t closed."
 
 
 

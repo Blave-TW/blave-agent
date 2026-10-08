@@ -508,22 +508,7 @@ function presPaint() {
 }
 function presFootRestore() { const go = $("cx-go"); go.classList.remove("is-busy"); }
 
-/* ── 自動下單頁:有統一部位時一條橫幅(d-first:電腦不睡、關掉不平倉),只在這台電腦視角 ── */
-function presBannerPaint() {
-  const el = $("pres-banner"); if (!el) return;
-  const show = TR.env === "local" && window.blave.platform === "win32";
-  const r = show ? presReport() : null, lots = r ? presHeldLots(r) : 0;
-  const sig = LANG + "|" + lots;
-  if (el.dataset.sig === sig) return;
-  el.dataset.sig = sig; el.textContent = "";
-  el.hidden = !lots;
-  if (lots) {
-    const b = trEl("div", "pres-banner"), tx = trEl("div", "");
-    tx.append(presP("", t("pres.held.lead", { n: lots })), presP("small", t("pres.held.sub")));
-    b.appendChild(tx); el.appendChild(b);
-  }
-}
-// 帳戶讀取器的 positions(同主行程 president_local.heldLots)
+// 帳戶讀取器的 positions(同主行程 president_local.heldLots);trade.js trStateText 用它在狀態句尾接「電腦保持清醒」
 function presHeldLots(report) {
   const a = report && report.account && report.account.venues && report.account.venues[PRESIDENT];
   const p = a && a.positions && typeof a.positions === "object" ? a.positions : {};

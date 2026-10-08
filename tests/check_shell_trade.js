@@ -1926,6 +1926,35 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("下單紀錄／事件只列目前連著的交易所:綁統一時模擬交易那幾筆不列、沒寫交易所的舊列照列;沒綁任何交易所全列;壞列丟掉", J(trOrdersShown(bound("president")).map((o) => o.symbol)) === J(["TMF", "TXF"])
       && J(trOrdersShown(bound("paper")).map((o) => o.symbol)) === J(["BTCUSDT", "TXF"]) && trOrdersShown(bound()).length === 3 && trOrdersShown(null).length === 0
       && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /trOrdersShown\(r\)\.forEach\(\(o\) => \{\n    push\(trMs\(o\.ts\)/.test(src)); }
+  // 0.1.18 設計師裁定 A:統一在倉橫幅整塊拿掉,改在狀態句「自動下單執行中」尾接「統一有 {n} 口在倉,電腦保持清醒」(只在這台電腦 + Windows;不講「不會平倉」)
+  { const vm = require("vm"), R = path.join(__dirname, "..", "shell", "renderer");
+    const cutB = (x, y) => src.slice(src.indexOf(x), src.indexOf(y));
+    const fnC = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
+    const pres = fs.readFileSync(path.join(R, "president.js"), "utf8"), presHeld = pres.slice(pres.indexOf("function presHeldLots("), pres.indexOf("\n}\n", pres.indexOf("function presHeldLots(")) + 3);
+    const ctx = { LANG: "zh", Date, Math, Object, Array, String, Number, JSON, isFinite, isNaN, Set, Map, window: { blave: { platform: "win32" } }, PRESIDENT: "president", trStamp: () => "—", trKeyBad: () => false };
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const /gm, "var ") + "\n" + fs.readFileSync(path.join(R, "i18n.js"), "utf8").replace(/^(const|let) /gm, "var "), ctx);
+    vm.runInContext((cutB("/* ── 純邏輯(", "/* ── 純邏輯到此") + cutB("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此")).replace(/^const /gm, "var "), ctx);
+    vm.runInContext(fnC("trStateText") + fnC("trFailStopped") + fnC("trShortState") + fnC("trReport") + fnC("cxFailWord") + presHeld + '\nLANG = "zh";', ctx);
+    const VP = { president: { credentials: true, pair: true, order: true, account: true } };
+    const rep = (positions, acctOk = true, amounts = { a: 1 }) => ({ venues: VP, config: { amounts }, halt: { halted: false }, reconciler: { alive: true, heartbeat_at: 9 },
+      account: { venues: { president: { ok: acctOk, equity: 1, error: acctOk ? null : "x", positions } } } });
+    const run = (env, report) => { ctx.TR = { env, st: { alive: true, running: true, report }, pending: null }; vm.runInContext("var TR = this.TR", ctx);
+      return [vm.runInContext("trExecState(TR.st)", ctx), vm.runInContext('trStateText("running")', ctx)]; };
+    const two = run("local", rep({ TXFJ6: { size: 2 } })), none = run("local", rep({})), noPos = run("local", rep(undefined));
+    ok("A 統一 2 口在倉(這台電腦、Windows):狀態句 = 自動下單執行中 · 統一有 2 口在倉，電腦保持清醒;沒部位就只有前半句", two[0] === "running" && two[1] === "自動下單執行中 · 統一有 2 口在倉，電腦保持清醒"
+      && none[1] === "自動下單執行中" && noPos[1] === "自動下單執行中", J([two, none, noPos]));
+    const fail = run("local", rep({ TXFJ6: { size: 1 } }, false));
+    ok("A 讀帳失敗前綴照接、清醒那段在最尾;Z(沒策略設金額)不接", /^串接失敗 · 自動下單執行中 · 統一有 1 口在倉，電腦保持清醒$/.test(fail[1]) && run("local", rep({ TXFJ6: { size: 1 } }, true, {}))[1] === t_zh("tr.runningZ"), fail[1]);
+    ok("A 雲端視角不接;Mac 不接", run("cloud", rep({ TXFJ6: { size: 2 } }))[1].indexOf("清醒") < 0
+      && ((ctx.window.blave.platform = "darwin"), run("local", rep({ TXFJ6: { size: 2 } }))[1] === "自動下單執行中"));
+    ctx.window.blave.platform = "win32"; vm.runInContext('LANG = "en"', ctx);
+    ok("A en:lot(s) open at President, this computer stays awake;兩語都不講平倉", run("local", rep({ TXFJ6: { size: 3 } }))[1] === "Auto-trading running · 3 lot(s) open at President, this computer stays awake"
+      && !/平倉|close/i.test(vm.runInContext('STRINGS.zh["tr.presAwake"] + STRINGS.en["tr.presAwake"]', ctx)));
+    ok("A 橫幅退場:index.html 沒有 #pres-banner、president.js / trade.js 沒有 presBannerPaint、CSS 沒有 .pres-banner、pres.held.* 兩個 key 退役",
+      !/pres-banner/.test(fs.readFileSync(path.join(R, "index.html"), "utf8")) && !/presBannerPaint|pres\.held\./.test(pres + src) && !/pres-banner/.test(fs.readFileSync(path.join(R, "president.css"), "utf8"))
+      && !vm.runInContext('"pres.held.lead" in STRINGS.zh || "pres.held.sub" in STRINGS.zh || "pres.held.lead" in STRINGS.en', ctx));
+    function t_zh(k) { return vm.runInContext("STRINGS.zh[" + JSON.stringify(k) + "]", ctx); } }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 
