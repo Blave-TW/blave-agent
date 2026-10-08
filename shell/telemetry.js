@@ -132,7 +132,10 @@ const EVENTS = {
     // attach_paste = 在輸入框貼上剪貼簿的(不分圖或檔)、attach_image = 選檔 / 拖放的圖(mime image/*)、attach_file = 選檔 / 拖放的其他檔
     "attach_file", "attach_image", "attach_paste",
     // 0.1.18 統一本機開通(renderer/president.js):每開一次框每個名字最多一次、失敗不埋;pres_first_start = 第一次真錢啟動的確認框按了繼續
-    "pres_form_saved", "pres_tcem_open", "pres_cert_ok", "pres_probe_ok", "pres_ready", "pres_first_start"] },
+    "pres_form_saved", "pres_tcem_open", "pres_cert_ok", "pres_probe_ok", "pres_ready", "pres_first_start",
+    // 側欄整理(0.1.19;renderer/stratflags.js):面板裡按了色塊或「移除旗標」且值真的變了、拖拉落點≠起點或 Alt+↑/↓ 真的移了一格。
+    // 本機與雲端 tab 共用同兩個名字(雲端 tab 0.1.19 只讀,還沒有送出點)
+    "strat_flag_set", "strat_reorder"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

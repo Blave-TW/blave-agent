@@ -1175,15 +1175,90 @@ body.resizing * { cursor: col-resize !important; }
   .cs-btn, .cs-newrow, .cs-item, .cs-del { transition: none; }
 }
 
-/* 策略列尾的刪除鈕:外包一層給絕對定位的鈕當基準;hover 時名字讓出位置——只在真的有 ✕ 時讓(回合中 ✕ 收起,不留空白截名字)。
-   條件包在 :where 裡不加權重,下面武裝那條才蓋得過它 */
+/* ── 策略列的列尾雙鈕 + 旗標 + 拖拉(spec desktop-strat-flags;視覺照雲端工作頁 workspace.css 同一套)──
+   .strat-wrap 外包一層給絕對定位的鈕當基準;左 12px 是旗標的軌(色條住這裡,hover / 選中的填色在 .strat-row 上、從軌右側開始,
+   色條與填色永不相碰;策略列因此比上方導覽項內縮 12,web 已接受的巢狀縮排)。整列即拖拉把手:touch-action none 才不會變成捲動 */
+.strat-wrap { padding-left: var(--space-12); }
+#strat-list .strat-wrap { touch-action: none; }   /* 只有這台電腦的清單綁拖拉;雲端清單(只讀)照樣能用觸控捲 */
 .strat-wrap:is(:hover, :has(:focus-visible)) .strat-row { background: var(--surface-muted); color: var(--ink); }
+/* 沒有旗標鈕的列(雲端 tab,只讀):hover 時名字讓出 ✕ 的位置——只在真的有 ✕ 時讓(回合中 ✕ 收起,不留空白截名字)。
+   條件包在 :where 裡不加權重,下面武裝那條才蓋得過它 */
 .strat-wrap:is(:hover, :has(:focus-visible)):where(:has(.cs-del:not(:disabled))) .strat-row { padding-right: 72px; }
-/* 武裝後鈕變寬(「移到垃圾桶？」):右內距 = 鈕的實寬(JS 量了寫在 --armed-w)+ 16,名字才不會被蓋住 */
+/* .flag-open = 該列的旗標面板開著(焦點已進面板,:has(:focus-visible) 不再成立),靠它撐住填色與雙鈕 */
+.strat-wrap.flag-open .strat-row { background: var(--surface-muted); color: var(--ink); }
+/* 有旗標鈕的列(這台電腦):resting 列尾零保留(名字吃滿);hover 時依列尾有幾顆鈕回流——只有旗標鈕 40、雙鈕 64(= 6+24+4+24+6)。
+   不加 transition(名字 ellipsis 逐字重排的動畫比瞬跳更糟)。權重同上面 72 那條,靠 source order 蓋過 */
+.strat-wrap:is(:hover, :has(:focus-visible), .flag-open):where(:has(.strat-flagbtn)) .strat-row { padding-right: 40px; }
+.strat-wrap:is(:hover, :has(:focus-visible), .flag-open):where(:has(.strat-flagbtn):has(.cs-del:not(:disabled))) .strat-row { padding-right: 64px; }
+/* 武裝後鈕變寬(「移到垃圾桶？」):右內距 = 鈕的實寬(JS 量了寫在 --armed-w)+ 16,名字才不會被蓋住;旗標鈕收起。
+   ✕ 在武裝中一律看得見:右鍵面板那條「移到垃圾桶」武裝它時,滑鼠多半不在列上、焦點又是程式給的(:focus-visible 不一定成立) */
 .strat-wrap:has(.cs-del.is-armed) .strat-row { padding-right: calc(var(--armed-w, 84px) + 16px); }
+.strat-wrap:has(.cs-del.is-armed) .strat-flagbtn { opacity: 0; pointer-events: none; }
+.strat-wrap:has(.cs-del.is-armed) .cs-del { opacity: 1; pointer-events: auto; }
 .cs-del:disabled { display: none; }
 /* 雲端策略列送出刪除後、等清單更新:名字退一階、狀態字換成「刪除中…」、不畫 ✕(列本身還能點開報告) */
 .strat-wrap.is-deleting .strat-name { color: var(--ink-3); }
+/* 旗標鈕:與 ✕ 同一組樣式,放在 ✕ 左邊(right 34 = ✕ 的 6 + 24 + 鈕距 4);熱區 34×34(列高),視覺 24 不動 */
+.strat-flagbtn {
+  position: absolute; right: 34px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-micro); color: var(--ink-2);
+  opacity: 0; pointer-events: none;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.strat-flagbtn::before { content: ""; position: absolute; top: calc(50% - 17px); left: calc(50% - 17px); width: 34px; height: 34px; }
+.strat-wrap:is(:hover, :has(:focus-visible), .flag-open) .strat-flagbtn { opacity: 1; pointer-events: auto; }
+.strat-flagbtn:hover { background: var(--bg-body); color: var(--ink); }
+.strat-wrap .cs-del .ic, .strat-flagbtn .ic { stroke-width: 1.5; }   /* 列內動作 icon 跟著列的文字走(16px、1.5);✕ 跟旗標同一個重量 */
+/* 沒有 ✕ 的列(回合中、雲端機器停著)旗標鈕移到 ✕ 的位置 */
+.strat-wrap:not(:has(.cs-del:not(:disabled))) .strat-flagbtn { right: var(--space-6); }
+/* 旗標色 → 區域變數(canon › Color › Flag colors;面板色塊同吃);色條 = 2×16 pill 置中在軌內:列緣 5 / 條 2 / 淨空 5 */
+[data-flag="1"] { --flag: var(--color-flag-1); }
+[data-flag="2"] { --flag: var(--color-flag-2); }
+[data-flag="3"] { --flag: var(--color-flag-3); }
+.strat-wrap[data-flag]::before {
+  content: ""; position: absolute; left: 5px; top: 50%; width: 2px; height: 16px; transform: translateY(-50%);
+  border-radius: var(--radius-pill); background: var(--flag); pointer-events: none;
+}
+/* 拖拉中:浮起列 = card 填 + 暫時浮層陰影(引 token,不抄 web 的字面值);兩顆鈕收起、名字吃滿;鄰列用 transform 讓位。
+   放在 hover 規則之後:同權重靠 source order 蓋過 hover 的填色與 64 */
+.strat-wrap.dragging { z-index: 3; cursor: grabbing; }
+.strat-wrap.dragging .strat-row { background: var(--surface-card); color: var(--ink); box-shadow: var(--shadow-overlay); cursor: grabbing; padding-right: var(--space-12); }
+.strat-wrap.dragging .cs-del, .strat-wrap.dragging .strat-flagbtn { opacity: 0; pointer-events: none; }
+.strat-wrap.shifting { transition: transform var(--motion-fast) var(--ease-standard); }
+body.is-dragging { user-select: none; -webkit-user-select: none; }
+/* 旗標面板:單例掛 body、fixed(.strat-list 是捲動容器,absolute 錨在列內會被裁),座標由 stratflags.js 依旗標鈕算。
+   開閉 = fade + 2px 位移朝 trigger;.up = 下方不夠翻上 */
+.flag-pop {
+  position: fixed; z-index: 60; width: max-content; padding: 6px;
+  background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+  opacity: 0; transform: translateY(-2px); transform-origin: top center;
+  transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+.flag-pop[hidden] { display: none; }
+.flag-pop.up { transform: translateY(2px); transform-origin: bottom center; }
+.flag-pop.open, .flag-pop.up.open { opacity: 1; transform: translateY(0); }
+.flag-pop .swgrid { display: flex; gap: var(--space-8); padding: 6px 10px 8px; }
+.flag-pop .swcell { position: relative; flex: none; width: 24px; height: 24px; border-radius: var(--radius-micro); background: var(--flag); }
+.flag-pop .swcell.selected { outline: 2px solid var(--ink); outline-offset: 2px; }   /* focus ring 是同一個 outline 屬性,聚焦時自然蓋過 */
+/* 色塊 hover / focus 浮固定色名:既有 .tip 材質,這裡只補置中與自己的顯示條件 */
+.flag-pop .swcell .tip { left: 50%; transform: translateX(-50%); color: var(--ink); white-space: nowrap; }
+.flag-pop .swcell:hover .tip, .flag-pop .swcell:focus-visible .tip { display: block; }
+.flag-pop .item {
+  display: flex; justify-content: flex-start; align-items: center; gap: var(--space-8);
+  width: 100%; padding: 6px 10px; border-radius: var(--radius-xs);
+  font-size: 13px; color: var(--ink-2); text-align: left;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.flag-pop .item:hover { background: var(--surface-muted); color: var(--ink); }
+.flag-pop .item.danger { color: var(--color-red); }
+.flag-pop .item[hidden], .flag-pop .divider[hidden] { display: none; }
+.flag-pop .divider { border-top: 1px solid var(--border-hairline); margin: 6px 0; }
+@media (prefers-reduced-motion: reduce) {
+  .strat-wrap.shifting, .strat-flagbtn, .flag-pop .item { transition: none; }
+  .flag-pop, .flag-pop.up { transition: opacity var(--motion-fast) var(--ease-standard); transform: none; }   /* 留 fade、去位移 */
+}
 
 /* 刪對話確認框。不用紅鈕:canon 沒有 Danger 按鈕 recipe(紅只當文字色),破壞性由標題動詞
    與內文的「無法復原」承擔;確認鈕是中性反白(同雲端 .modal-send)。 */

@@ -3133,6 +3133,28 @@ msgstr "過一會兒再試。還是不行的話，在檔案總管打開 Blave �
 msgid "side.rowTip"
 msgstr "{name}（{id}）"
 
+# 側欄旗標(renderer/stratflags.js):鈕的 aria、面板的「移除」、有旗標時列的 title / accessible name、三個色名(字照 web 的 workspace_flag_*)
+msgid "side.flagSet"
+msgstr "設定旗標"
+
+msgid "side.flagRemove"
+msgstr "移除旗標"
+
+msgid "side.flagTitle"
+msgstr "{name} — 旗標：{color}"
+
+msgid "side.flagAria"
+msgstr "{name}，旗標：{color}"
+
+msgid "side.flagC1"
+msgstr "赭金"
+
+msgid "side.flagC2"
+msgstr "冰青"
+
+msgid "side.flagC3"
+msgstr "紫"
+
 msgid "rp.noBt"
 msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數字，可以請右邊的 agent 跑一次回測。"
 

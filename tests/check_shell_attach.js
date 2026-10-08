@@ -106,7 +106,7 @@ try {
   const F = EVENTS.feature_used.name;
   // 0.1.18 統一本機開通的 pres_* 接在它們後面
   const ai = F.indexOf("attach_file");
-  t("三個名字在 0.1.17 那批最後(後面只接 0.1.18 的 pres_*)、≤16 字", F.slice(ai, ai + 3).join() === "attach_file,attach_image,attach_paste" && F.slice(ai + 3).every((n) => /^pres_/.test(n)) && F.slice(ai, ai + 3).every((n) => n.length <= 16));
+  t("三個名字在 0.1.17 那批最後(後面只接 0.1.18 的 pres_* 與 0.1.19 的 strat_*)、≤16 字", F.slice(ai, ai + 3).join() === "attach_file,attach_image,attach_paste" && F.slice(ai + 3).every((n) => /^(pres|strat)_/.test(n)) && F.slice(ai, ai + 3).every((n) => n.length <= 16));
   t("選檔 / 拖放 / 貼上三個入口都走 takeAttachment:太大講一行(同雲端 addNotice)、不掛 chip", /if \(file\.size > ATTACH_MAX_BYTES\) \{ addMsg\("sys", t\("ws\.attachTooLarge"\)\)\.dataset\.i18n = "ws\.attachTooLarge"; return false; \}/.test(cut("takeAttachment"))
     && /const ATTACH_MAX_BYTES = 5 \* 1024 \* 1024;/.test(appSrc) && /\$\("attach-input"\)\.value = "";[^\n]*\n\s*takeAttachment\(f, "file"\);/.test(appSrc) && /addEventListener\("drop", [^\n]*takeAttachment\(f, "file"\)/.test(appSrc) && /addEventListener\("paste", [\s\S]{0,300}?takeAttachment\(f, "paste"\)/.test(appSrc));
   t("迴紋針 → 開檔案框;✕ → 清 chip", /\$\("attach-btn"\)\.addEventListener\("click", \(\) => \$\("attach-input"\)\.click\(\)\);/.test(appSrc) && /\$\("attach-clear"\)\.addEventListener\("click", \(\) => \{ setAttachment\(null\);/.test(appSrc));

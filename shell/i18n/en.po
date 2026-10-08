@@ -3128,6 +3128,27 @@ msgstr "Try again in a moment. If it still fails, open Blave › workspace › s
 msgid "side.rowTip"
 msgstr "{name} ({id})"
 
+msgid "side.flagSet"
+msgstr "Set flag"
+
+msgid "side.flagRemove"
+msgstr "Remove flag"
+
+msgid "side.flagTitle"
+msgstr "{name} — flag: {color}"
+
+msgid "side.flagAria"
+msgstr "{name}, flag: {color}"
+
+msgid "side.flagC1"
+msgstr "Ochre gold"
+
+msgid "side.flagC2"
+msgstr "Ice cyan"
+
+msgid "side.flagC3"
+msgstr "Purple"
+
 msgid "rp.noBt"
 msgstr "This strategy has no backtest results yet, so only the code is shown. To see the numbers, ask the agent on the right to run a backtest."
 
