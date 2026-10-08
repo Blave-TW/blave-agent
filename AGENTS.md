@@ -126,7 +126,7 @@ A report is a document the user reads in the Reports list (web: 「報告」 in 
 
 ## Shell Commands
 
-- One-off scripts → `tmp/` (workspace-relative), never workspace root or `strategies/`; delete yours before you reply, and never copy from a script already in `tmp/` (stale leftovers — `lib/` and `references/` are the reference)
+- One-off scripts → `tmp/` (workspace-relative), never workspace root or `strategies/`; delete yours before you reply, and never copy from a script already in `tmp/` (stale leftovers — `lib/` and `references/` are the reference). **Except research:** write the analysis script behind a research answer to `tmp/research/<what_it_computes>.py` and keep it (first line: question | data and window | date); turning an earlier answer into a report reruns it — never redo the research (`references/reports.md` §1b › *Research scripts*)
 - **NEVER write `except Exception: pass`** — always `except Exception as e: print(f"Error: {e}")`
 - NEVER chain commands with `&&`, `||`, or `;` — run ONE command at a time, on Windows too
 - On Windows, read and write strategy files, `.env` and `references/` with python (`encoding='utf-8'`), never `Get-Content` / `Set-Content` — PowerShell 5.1 garbles UTF-8 Chinese
