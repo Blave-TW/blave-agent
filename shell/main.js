@@ -2273,6 +2273,34 @@ function libraryInstalled(patch) {
   try { fs.writeFileSync(libInstalledPath(), JSON.stringify(m), { mode: 0o600 }); } catch (_) { /* 寫不進去:這一次的記憶只在畫面上 */ }
   return m;
 }
+/* 側欄偏好(spec desktop-strat-flags §4):這台電腦的策略順序與旗標,跟 PDF 資料夾同一個 ui-prefs.json(活過清快取、不進 workspace)。
+   讀取清洗同 libInstalledClean 的精神:形狀不對當沒設、絕不 throw;stratOrder 去重保序、旗標值收 1–6(api 同一條寬容規則,畫面只畫 1–3)。
+   listStrategies 不排、不帶偏好——套用在 renderer(同 web「api 不排序」的分工) */
+const STRAT_PREFS_MAX = 200;
+function stratPrefsClean(o) {
+  const out = { stratOrder: [], stratFlags: {} };
+  if (!o || typeof o !== "object" || Array.isArray(o)) return out;
+  if (Array.isArray(o.stratOrder) && o.stratOrder.length <= STRAT_PREFS_MAX) {
+    const seen = new Set();
+    for (const n of o.stratOrder) if (typeof n === "string" && LIB_NAME_RE.test(n) && !seen.has(n)) { seen.add(n); out.stratOrder.push(n); }
+  }
+  const f = o.stratFlags;
+  if (f && typeof f === "object" && !Array.isArray(f) && Object.keys(f).length <= STRAT_PREFS_MAX)
+    for (const k of Object.keys(f)) if (LIB_NAME_RE.test(k) && Number.isInteger(f[k]) && f[k] >= 1 && f[k] <= 6) out.stratFlags[k] = f[k];
+  return out;
+}
+function stratPrefsGet() {
+  try { return stratPrefsClean(JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8"))); } catch (_) { return stratPrefsClean(null); }
+}
+// patch = { stratOrder?, stratFlags? }:只動有帶(且形狀對)的鍵;寫不進去不回報——順序 / 旗標是偏好不是資料,畫面靠記憶體值維持
+function stratPrefsSet(patch) {
+  const p = patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {};
+  const c = stratPrefsClean(p), w = {};
+  if (Array.isArray(p.stratOrder)) w.stratOrder = c.stratOrder;
+  if (p.stratFlags && typeof p.stratFlags === "object" && !Array.isArray(p.stratFlags)) w.stratFlags = c.stratFlags;
+  if (Object.keys(w).length) try { uiPrefsPatch(w); } catch (_) { /* 寫不進去:這一次的記憶只在畫面上 */ }
+  return stratPrefsGet();
+}
 
 async function blaveModels() {
   const acct = loadToken();
@@ -3056,6 +3084,9 @@ app.whenReady().then(() => {
   handle("library-note", (_e, id) => libraryNote(id), null);
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
+  // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
+  handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
+  handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
   handle("library-download", (_e, id) => libraryDownload(id), { ok: false, kind: "fail" });
   // 本機報告(renderer/reports.js):讀 <WS>/reports 的信封 / 本體 + sidecar 圖(data URI);renderer 不碰 fs
   handle("reports-list", () => reportsList(), { reports: [] });

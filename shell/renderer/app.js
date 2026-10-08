@@ -1255,8 +1255,10 @@ async function stratRefreshAt(name) {
 // 回合中主行程不給刪;列多半是回合開始前畫的,鈕的停用要跟著 running 走,不能只在重建列時看一次
 function stratDelSync() { $("strat-list").querySelectorAll(".cs-del").forEach((d) => { d.disabled = running; }); }
 async function stratRefresh(turnEnd) {
+  if (typeof sfBeforeRebuild === "function") await sfBeforeRebuild();   // 偏好讀好、拖拉中等拖完、旗標面板開著先收(renderer/stratflags.js)
   const before = new Map(RP.list.map((x) => [x.name, x]));
   RP.list = await window.blave.listStrategies();
+  if (typeof sfApplyOrder === "function") RP.list = sfApplyOrder(RP.list, SF.order);   // 用戶拖過的順序先、其餘照主行程的「最近動過在上」
   const box = $("strat-list");
   box.querySelectorAll(".strat-wrap").forEach((n) => n.remove());
   $("strat-empty").hidden = RP.list.length > 0;
@@ -1269,13 +1271,16 @@ async function stratRefresh(turnEnd) {
     stratNameFill(nm, x.displayName || x.name); nm.title = stratTip(x.displayName, x.name);
     b.append(nm);
     // 再點一次選中的那支 = 取消選取、回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)。Enter / Space 在按鈕上就是 click;列不重建,焦點留在這一列
-    b.addEventListener("click", () => { if (x.name === RP.name) sideReclick(() => stratSelect(null)); else stratSelect(x.name); });
+    b.addEventListener("click", () => {
+      if (typeof SF !== "undefined" && SF.justDragged) return;   // 拖完放開那一下的 click 不是點選
+      if (x.name === RP.name) sideReclick(() => stratSelect(null)); else stratSelect(x.name);
+    });
     // 列尾是刪除鈕,不是 Sharpe(Wei):數字在報告裡就有,清單上要的是能整理。
     // 按鈕不能包按鈕,所以外面多一層 wrap,刪除鈕絕對定位在列尾(同對話清單)。
     const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row";
     const del = armedDelete(wrap, t(window.blave.platform === "win32" ? "strat.del.win" : "strat.del"), async () => {
       const r = await window.blave.deleteStrategy(x.name);
-      if (r === true) { (await stratRefreshAt(x.name)).focus(); return; }
+      if (r === true) { if (typeof sfForget === "function") sfForget(x.name); (await stratRefreshAt(x.name)).focus(); return; }
       // 沒刪成一律開框講原因,包括裸 false / null(IPC 被擋)與沒見過的 code。資料夾不在 = 先重讀,關框後焦點回到同位置那一列
       const code = r && r.code;
       const opener = code === "NOT_FOUND" ? await stratRefreshAt(x.name) : b;
@@ -1284,7 +1289,9 @@ async function stratRefresh(turnEnd) {
         alt: code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => trOpen("pos") } : null });
     }, false, window.blave.platform === "win32" ? "strat.delConfirm.win" : "strat.delConfirm");
     del.disabled = running;
-    wrap.append(b, del);
+    wrap.append(b);
+    if (typeof sfRowActions === "function") sfRowActions(wrap, b, x);   // 旗標鈕在名字與 ✕ 之間
+    wrap.append(del);
     box.appendChild(wrap);
   });
   if (typeof envPaintLocalDots === "function") envPaintLocalDots();   // 列是重建的:呼吸點不等下一輪輪詢

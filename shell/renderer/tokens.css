@@ -43,6 +43,11 @@
   --color-code-string: #3d6188;
   --color-code-number: #8a6414;
   --color-code-comment: #5d6979;
+  /* 旗標三色(canon › Color › Flag colors;= web main.css 的 --color-flag-*)——側欄策略列的左軌色條與旗標面板色塊。
+     canon 只定了 dark 值、light 未定:放 :root 不另寫 dark 重映射(app 寫死 dark) */
+  --color-flag-1: #c79a3e;
+  --color-flag-2: #8ad2e2;
+  --color-flag-3: #8d68d4;
   /* dark(黑潮墨) */
   --color-darkBody: #0f161a;
   --color-darkCard: #1a2328;
