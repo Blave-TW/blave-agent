@@ -1263,7 +1263,7 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .flag-pop.open, .flag-pop.up.open { opacity: 1; transform: translateY(0); }
 .flag-pop .swgrid { display: flex; gap: var(--space-8); padding: 6px 10px 8px; }
 .flag-pop .swcell { position: relative; flex: none; width: 24px; height: 24px; border-radius: var(--radius-micro); background: var(--flag); }
-.flag-pop .swcell.selected { outline: 2px solid var(--ink); outline-offset: 2px; }   /* focus ring 是同一個 outline 屬性,聚焦時自然蓋過 */
+.flag-pop .swcell.selected { box-shadow: inset 0 0 0 2px var(--bg-body); }   /* 選中 = 內圈;外環留給 focus ring,方向鍵移開後畫面上只有一個環 */
 /* 色塊 hover / focus 浮固定色名:既有 .tip 材質,這裡只補置中與自己的顯示條件 */
 .flag-pop .swcell .tip { left: 50%; transform: translateX(-50%); color: var(--ink); white-space: nowrap; }
 .flag-pop .swcell:hover .tip, .flag-pop .swcell:focus-visible .tip { display: block; }
@@ -1277,6 +1277,7 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .flag-pop .item.danger { color: var(--ink-2); }
 .flag-pop .item[hidden], .flag-pop .divider[hidden] { display: none; }
 .flag-pop .divider { border-top: 1px solid var(--border-hairline); margin: 6px 0; }
+.flag-pop .hint { margin: 0; padding: var(--space-6) 10px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) {
   .strat-wrap.shifting, .strat-flagbtn, .flag-pop .item { transition: none; }
   .flag-pop, .flag-pop.up { transition: opacity var(--motion-fast) var(--ease-standard); transform: none; }   /* 留 fade、去位移 */
@@ -1353,7 +1354,7 @@ html[data-platform="win32"] ::-webkit-scrollbar-thumb:hover { background: var(--
 /* Windows 的 11px Mini tag:微軟正黑體沒有 600,會渲染成 Bold 700,在 11px + 0.04em 字距下筆畫糊成一團(設計評估 P3),
    這一階改 400;Mac 的 PingFang 有 Semibold,照 canon 的 600 不動。選擇器 = 外殼所有 11px/600 的 tag 形元件 */
 html[data-platform="win32"] .lib .tag, html[data-platform="win32"] .rb-report .rb-news-tag, html[data-platform="win32"] .pf-wallet-row .mini_tag,
-html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-platform="win32"] .shr-tag, html[data-platform="win32"] .tag-you { font-weight: 400; }
+html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-platform="win32"] .shr-tag, html[data-platform="win32"] .tag-you, html[data-platform="win32"] .vtag { font-weight: 400; }
 
 /* ── 兩個表單 modal(新增策略 #ns-modal、新增報告 #rpn-modal;spec-desktop-0.1.6 §1.5 / §4.2)共用的殼:
    .del-modal 的 440 框 + 可捲的 .modal-body + 腳最前面一行常駐的 .foot-msg(role=status;空時高 0、不 display:none)。

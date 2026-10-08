@@ -988,7 +988,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("0.1.19 tr.startOnBook 兩語都有(po2js 產物)、帶 {n}、講啟動後先平掉", /"tr\.startOnBook": "帳本上還有 \{n\} 的部位；啟動後下單程式會先照目前金額（0）平掉。"/.test(strings)
         && /"tr\.startOnBook": "The ledger still holds \{n\} in positions\. Once started, the order program closes them first, following the current amounts \(0\)\."/.test(strings));
       ok("0.1.19 trBookQty:口數列 Σ|口| + 口;加密 Σ|成本| + 帳戶幣", /const lots = rows\.filter\(\(x\) => x\.lots\), sum = \(a\) => a\.reduce\(\(s, x\) => s \+ Math\.abs\(x\.v\), 0\);\n\s*if \(lots\.length\) \{ const n = sum\(lots\); return trLotsFmt\(n\) \+ " " \+ t\(trLotsKey\(Math\.round\(n\), "tr\.lotsUnit", "tr\.lotUnit"\)\); \}\n\s*return trWithUnit\(trFmt\(sum\(rows\)\)\);/.test(src)
-        && /const text = t\(key, vars\), word = t\("tr\.tab\.pos"\)/.test(src) && /p\.dataset\.key = key \+ "\|" \+ LANG \+ \(vars \? "\|" \+ JSON\.stringify\(vars\) : ""\);/.test(src)); }
+        && /const text = t\(key, vars\), word = t\("tr\.tab\.pos"\)/.test(src) && /p\.dataset\.key = key \+ "\|" \+ LANG \+ \(vars \? "\|" \+ JSON\.stringify\(vars\) : ""\);/.test(src));
+      { // 稽核該修 3:「部位」連結兩語都要命中——en 句中是 "in positions"、分頁名 "Positions",比對不分大小寫、連結字照句中原樣
+        const sb = {}; require("vm").runInNewContext(strings + "\nthis.S = STRINGS;", sb);
+        const hit = (l) => sb.S[l]["tr.startOnBook"].toLowerCase().indexOf(sb.S[l]["tr.tab.pos"].toLowerCase()) >= 0;
+        ok("0.1.19 原因行的「部位」連結:不分大小寫比對、連結字取句中原樣;zh / en 兩語都命中",
+          /at = text\.toLowerCase\(\)\.indexOf\(word\.toLowerCase\(\)\)/.test(fnS("trPaintNoAmt")) && /trEl\("button", "btn-quiet tr-noamt-link", text\.slice\(at, at \+ word\.length\)\)/.test(fnS("trPaintNoAmt")) && hit("zh") && hit("en")); } }
     // 解除暫停的確認框
     const RK = (o) => trReleaseKind(Zr({ reconciler: Rst, ...o }));
     const act = (m) => ({ BTCUSDT: { side: "long", size: m, exchange: "binance" }, "ETHUSDT@spot": { side: "long", size: 5, exchange: "binance" } });

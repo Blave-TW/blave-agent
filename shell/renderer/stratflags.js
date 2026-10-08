@@ -80,7 +80,7 @@ function sfRowActions(wrap, btn, x) {
   wrap.dataset.name = x.name;
   sfFlagMeta(wrap, btn, stratTip(x.displayName, x.name), SF.flags[x.name]);
   const fb = document.createElement("button");
-  fb.type = "button"; fb.className = "strat-flagbtn"; fb.setAttribute("aria-label", t("side.flagSet")); fb.setAttribute("aria-haspopup", "menu");
+  fb.type = "button"; fb.className = "strat-flagbtn"; fb.setAttribute("aria-label", t("side.flagSet")); fb.setAttribute("aria-haspopup", "menu"); fb.setAttribute("aria-expanded", "false");
   fb.appendChild(sfIcon());
   fb.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -134,7 +134,8 @@ function sfPopBuild() {
     if (!x.classList.contains("is-armed")) x.click();   // app.js armedDelete:第一下 = 武裝成「移到垃圾桶？」
     x.focus();
   });
-  sfPop.append(sep(), rm, d2, del);
+  const hint = document.createElement("p"); hint.className = "hint"; hint.setAttribute("role", "none");   // 鍵盤排序的可發現性:面板是鍵盤使用者唯一會停留的地方
+  sfPop.append(sep(), rm, d2, del, hint);
   sfPop.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
     if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return;
@@ -155,6 +156,7 @@ function sfPopText() {
   const [rm, del] = sfPop.querySelectorAll(".item");
   rm.textContent = t("side.flagRemove");
   del.textContent = t(window.blave.platform === "win32" ? "strat.del.win" : "strat.del");
+  sfPop.querySelector(".hint").textContent = t("side.sortHint", { k: window.blave.platform === "win32" ? "Alt+↑／↓" : "⌥↑／⌥↓" });
 }
 function sfPopOpen(wrap, anchor, x, ctx) {
   if (!sfPop) sfPopBuild();
@@ -163,6 +165,7 @@ function sfPopOpen(wrap, anchor, x, ctx) {
   const del = wrap.querySelector(".cs-del"), showDel = !!ctx && !!del && !del.disabled;   // 回合中 ✕ 收起,刪除那條也不給
   sfPop.querySelectorAll("[data-ctx]").forEach((n) => { n.hidden = !showDel; });
   SF.popWrap = wrap; SF.popReturn = anchor; SF.popX = x;
+  anchor.setAttribute("aria-expanded", "true");
   const cur = sfFlagId(SF.flags[x.name]);
   sfPop.querySelectorAll(".swcell").forEach((c) => { const on = Number(c.dataset.flag) === cur; c.classList.toggle("selected", on); c.setAttribute("aria-checked", on ? "true" : "false"); });
   wrap.classList.add("flag-open");
@@ -184,6 +187,7 @@ function sfPopClose(restoreFocus) {
   sfPop.classList.remove("open"); sfPop.hidden = true;
   if (SF.popWrap) SF.popWrap.classList.remove("flag-open");
   const ret = SF.popReturn;
+  if (ret) ret.setAttribute("aria-expanded", "false");
   SF.popWrap = null; SF.popReturn = null; SF.popX = null;
   if (restoreFocus !== false && ret && document.contains(ret)) ret.focus();
 }
@@ -266,6 +270,7 @@ function sfBindDrag(box) {
     if (e.key === "ArrowUp") sib.before(row); else sib.after(row);
     const b = row.querySelector(".strat-row"); if (b) b.focus();
     sfMoved();
+    srSay(t("side.moved", { n: [...box.querySelectorAll(":scope > .strat-wrap")].indexOf(row) + 1 }));
   });
 }
 sfBindDrag($("strat-list"));

@@ -49,6 +49,8 @@ ok("app.css 有 win32 專屬的 Mini tag 字重 400 規則", !!winTag);
 ok("規則涵蓋外殼所有 11px/600 的 tag 元件", !!winTag && tagSels.every((sel) => winTag[0].includes('html[data-platform="win32"] ' + sel)));
 const base = { ".lib .tag": read("library.css"), ".rb-report .rb-news-tag": read("report-blocks.css"), ".pf-wallet-row .mini_tag": read("trade.css"), ".mode": read("trade.css"), ".envm": app, ".shr-tag": read("report-share.css"), ".tag-you": read("browser.css") };
 ok("那些 tag 的基礎規則仍是 11px/600(mac 不變、win32 只蓋字重)", tagSels.every((sel) => new RegExp(sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-size: 11px;[^}]*font-weight: 600;|" + sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-weight: 600;[^}]*font-size: 11px;").test(base[sel])));
+ok("規則也涵蓋 versions.css 的 .vtag(11px;live / drift 600)", !!winTag && winTag[0].includes('html[data-platform="win32"] .vtag')
+  && /\.vtag \{[^}]*font-size: 11px;/.test(read("versions.css")) && /\.vtag\.live \{[^}]*font-weight: 600;/.test(read("versions.css")) && /\.vtag\.drift \{[^}]*font-weight: 600;/.test(read("versions.css")));
 ok("win32 記號由 app.js 掛在 <html data-platform>(規則才會生效)", /document\.documentElement\.dataset\.platform = window\.blave\.platform/.test(read("app.js")));
 
 // ── 4. 報告小字下限 11px(canon 最小字階 = Mini tag 11;正黑體在 10.5px 以下 DirectWrite 會糊橫筆,兩平台一起抬) ──

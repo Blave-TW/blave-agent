@@ -3198,6 +3198,12 @@ msgstr "冰青"
 msgid "side.flagC3"
 msgstr "紫"
 
+msgid "side.sortHint"
+msgstr "{k} 上下移動順序"
+
+msgid "side.moved"
+msgstr "已移到第 {n} 位"
+
 msgid "rp.noBt"
 msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數字，可以請右邊的 agent 跑一次回測。"
 

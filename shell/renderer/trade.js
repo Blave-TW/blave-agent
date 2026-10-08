@@ -1749,10 +1749,10 @@ function trPaintNoAmt(key, vars) {
   p.classList.toggle("cx-wait", wait);
   if (wait) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); p.appendChild(sp); }
   const line = wait ? trEl("span", "") : p;
-  const text = t(key, vars), word = t("tr.tab.pos"), at = text.indexOf(word);
+  const text = t(key, vars), word = t("tr.tab.pos"), at = text.toLowerCase().indexOf(word.toLowerCase());   // en 句中是小寫 in positions、分頁名是 Positions:不分大小寫才兩語都接
   if (at < 0) line.append(text);
   else {
-    const a = trEl("button", "btn-quiet tr-noamt-link", word); a.type = "button"; a.addEventListener("click", () => trSetTab("pos", true));
+    const a = trEl("button", "btn-quiet tr-noamt-link", text.slice(at, at + word.length)); a.type = "button"; a.addEventListener("click", () => trSetTab("pos", true));
     line.append(text.slice(0, at), a, text.slice(at + word.length));
   }
   if (wait) p.appendChild(line);

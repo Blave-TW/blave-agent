@@ -94,6 +94,17 @@ try {
     const KEYS = ["side.flagSet", "side.flagRemove", "side.flagTitle", "side.flagAria", "side.flagC1", "side.flagC2", "side.flagC3"];
     ok("④ 字串表:七個 key 兩語都齊、字照 web 現值", KEYS.every((k) => sb.S.zh[k] && sb.S.en[k]) && sb.S.zh["side.flagTitle"] === "{name} — 旗標：{color}" && sb.S.zh["side.flagAria"] === "{name}，旗標：{color}"
       && sb.S.zh["side.flagC1"] === "赭金" && sb.S.en["side.flagC2"] === "Ice cyan" && sb.S.en["side.flagRemove"] === "Remove flag"); }
+  // 稽核該修 ①④⑤:鍵盤排序的可發現性與讀屏回饋、旗標鈕 aria-expanded、選中格改內圈(外環只剩 focus ring)
+  ok("④ 旗標鈕 aria-expanded:建時 false、面板開 true、收 false", /fb\.setAttribute\("aria-expanded", "false"\)/.test(cutFn(sfSrc, "sfRowActions"))
+    && /anchor\.setAttribute\("aria-expanded", "true"\)/.test(cutFn(sfSrc, "sfPopOpen")) && /if \(ret\) ret\.setAttribute\("aria-expanded", "false"\);/.test(cutFn(sfSrc, "sfPopClose")));
+  ok("④ 面板底一行按鍵提示(非互動、role=none、每次開啟照語言與平台填);Alt+↑/↓ 移動後 srSay「已移到第 N 位」",
+    /hint\.className = "hint"; hint\.setAttribute\("role", "none"\)/.test(sfSrc) && /sfPop\.append\(sep\(\), rm, d2, del, hint\);/.test(sfSrc)
+    && /sfPop\.querySelector\("\.hint"\)\.textContent = t\("side\.sortHint", \{ k: window\.blave\.platform === "win32" \? "Alt\+↑／↓" : "⌥↑／⌥↓" \}\);/.test(cutFn(sfSrc, "sfPopText"))
+    && /if \(e\.key === "ArrowUp"\) sib\.before\(row\); else sib\.after\(row\);\n\s*const b = row\.querySelector\("\.strat-row"\); if \(b\) b\.focus\(\);\n\s*sfMoved\(\);\n\s*srSay\(t\("side\.moved", \{ n: \[\.\.\.box\.querySelectorAll\(":scope > \.strat-wrap"\)\]\.indexOf\(row\) \+ 1 \}\)\);/.test(sfSrc)
+    && /\.flag-pop \.hint \{ margin: 0; padding: var\(--space-6\) 10px; font-size: 12px; line-height: 1\.5; color: var\(--ink-2\); \}/.test(css));
+  ok("④ 選中格 = 內圈 box-shadow inset --bg-body,不再用 outline(focus ring 才是外環)", /\.flag-pop \.swcell\.selected \{ box-shadow: inset 0 0 0 2px var\(--bg-body\); \}/.test(css) && !/\.swcell\.selected \{[^}]*outline/.test(css));
+  { const strings = read(path.join(R, "strings.js")), sb = {}; vm.runInNewContext(strings + "\nthis.S = STRINGS;", sb);
+    ok("④ 字串表:side.sortHint 帶 {k}、side.moved 帶 {n},兩語都齊", ["zh", "en"].every((l) => /\{k\}/.test(sb.S[l]["side.sortHint"]) && /\{n\}/.test(sb.S[l]["side.moved"])) && sb.S.zh["side.moved"] === "已移到第 {n} 位"); }
   ok("④ index.html:stratflags.js 在 app.js 之後(用它的 $ / t / RP / stratTip / trackFeature)", html.indexOf('src="stratflags.js"') > html.indexOf('src="app.js"') && html.indexOf('src="stratflags.js"') > 0);
 } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
 console.log(red ? `\n${red} 紅` : "\n全綠");

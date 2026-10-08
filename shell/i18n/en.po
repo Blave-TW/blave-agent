@@ -3192,6 +3192,12 @@ msgstr "Ice cyan"
 msgid "side.flagC3"
 msgstr "Purple"
 
+msgid "side.sortHint"
+msgstr "{k} moves the row up or down"
+
+msgid "side.moved"
+msgstr "Moved to position {n}"
+
 msgid "rp.noBt"
 msgstr "This strategy has no backtest results yet, so only the code is shown. To see the numbers, ask the agent on the right to run a backtest."
 
