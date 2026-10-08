@@ -10,7 +10,7 @@
 const { whoOf } = require("./tokenrotate");
 const DISCLAIMER_VERSION = "rs-ack-2026.09.28";
 // = web/app/legal.py TOS_VERSION(api 沒有端點給這個值;tests/check_shell_report_share.js 在 monorepo 版面比對兩邊)
-const TOS_VERSION = "2026-10-06";
+const TOS_VERSION = "2026-10-09";
 const EP = { state: "/oauth/desktop/share/state", publish: "/oauth/desktop/share/publish", update: "/oauth/desktop/share/update", revoke: "/oauth/desktop/share/revoke", list: "/oauth/desktop/share/list" };
 const VIEWS = ["local", "cloud"];
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/, CODE_RE = /^[A-Za-z0-9_-]{4,64}$/;
