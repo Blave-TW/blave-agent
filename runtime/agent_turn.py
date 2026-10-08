@@ -3812,8 +3812,9 @@ def local_mcp_servers(sink, mcp_config, mcp_servers):
 # 寫進訊息本文的話,泡泡上就是用戶「說了」他沒說過的話(e2e 0.1.8 #131),對話存檔與重開畫回來的也是。只認這張表上的代號。
 TURN_NOTES = {
     "report_once": (
-        "This request came from the desktop app's New report dialog. Produce the report once, now; do not "
-        "register or offer a schedule."),
+        "This request came from the desktop app's New report dialog. Produce the report once, now — unless the "
+        "data check fails (references/reports.md › Research questions: then answer in chat and offer the report "
+        "on the changed question); do not register or offer a schedule."),
     "report_recur": (
         "This request came from the desktop app's New report dialog, and it asks for the report on a schedule "
         "(every day, every week, a time of day). This computer produces it this once only and cannot schedule "

@@ -8,7 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.118 — 2026-10-09(desktop 0.1.19)
+
 - **方案制(api `MONTHLY_BILLING_FROM`;出貨順序:外殼與這一版 runtime 先、`Desktop.min_version`、最後才設 api 的切換時點)**:`agent_turn.data_access_rule` 的資料計費事實改成兩種計費都對(試用／雲端方案或主機／API 方案含資料;沒有的話切換前按小時收、切換後沒有方案就沒有資料),`ERR007` 的教法改成「沒有資料權限」並照 body 的 `next_steps` 講出口,不再只講按小時;`DATA_ACCESS_WHY` 多 `no_plan`(沒有含資料的方案)、`plan_failed`(方案扣款失敗),外殼 `main.js dataAccessWhy` 在 `data_access` 為 `plan_required`／`payment_failed` 時帶。舊外殼不帶這兩個值,原文不變。測試 `tests/check_data_access_lang.py`。
+
+- 電腦版「新增報告」框的一次性指示(`agent_turn.TURN_NOTES.report_once`)補「除非資料檢查沒過」:研究題照 `references/reports.md` › *Research questions* 先做資料檢查,沒過就留在對話、提議改題版,不硬出報告;「不登記排程」那半句不變。
 
 ## 1.1.117 — 2026-10-09(desktop 0.1.18)
 
