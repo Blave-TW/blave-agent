@@ -2077,6 +2077,15 @@ msgstr "Events"
 msgid "tr.ov.evEmpty"
 msgstr "No events in this range."
 
+msgid "tr.ov.evFills"
+msgstr "{n} fills ·"
+
+msgid "tr.ov.evFillsOne"
+msgstr "{n} fill ·"
+
+msgid "tr.ov.evFillsLink"
+msgstr "View order history"
+
 msgid "tr.ov.today"
 msgstr "Today"
 

@@ -1400,7 +1400,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const box = node("div");
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), createTextNode: (s) => s }, requestAnimationFrame: () => 0, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
-      $: (id) => (id === "tr-over" ? box : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "en", CX_VENUES: {}, PAPER: "paper", BINANCE: "binance", trShould: () => true, trOvEvents: () => node("div"), trDrawCurve: () => {} });
+      $: (id) => (id === "tr-over" ? box : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "en", CX_VENUES: {}, PAPER: "paper", BINANCE: "binance", trShould: () => true, trOvEvents: () => node("div"), trEvListFocus: () => {}, trDrawCurve: () => {} });
     vm.runInContext((pure + envb).replace(/^const /gm, "var ") + "\n" + consts + "\n" + fns + "\nvar trTipSeq = 0;", ctx);
     const REPORT = { venues: { binance: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { binance: { ok: true, equity: 1234.5, currency: "USDT" } } } };
     // at = 現在:畫的時候不再去讀(讀是另外測);還沒讀過那一態給一個永遠不回的 api
@@ -1809,13 +1809,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
     const consts = ["tr2", "trMD"].map((c) => src.match(new RegExp("^const " + c + " = [^\\n]*", "m"))[0].replace(/^const /, "var ")).join("\n");
     const node = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, title: "", dataset: {}, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
-      setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
+      setAttribute(k, v) { this.attrs[k] = v; }, on: {}, addEventListener(e, f) { this.on = Object.assign({}, this.on, { [e]: f }); }, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const hist = node("div");
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
-      $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD" });
+      $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD", trSetTab: (tab, focus) => { ctx.tabbed = [tab, focus]; } });
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_DT_ACTION"), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
-      + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trWithUnit", "trPaintHist", "trOvEvents"].map(cutF).join("\n"), ctx);
+      + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trWithUnit", "trPaintHist", "trOvFills", "trOvEvents"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const CAP = { ts: now - 60, action: "BUY", symbol: "TX2610", exchange: "capital", signed_diff: 2, legs: [{ executed_qty: 2, fill_price: 23000 }] };
     const CAP_SPEC = { ts: now - 50, action: "SELL", symbol: "TMF", exchange: "paper", asset_spec: { type: "futures_contracts", contract_value: 10 }, signed_diff: -3, legs: [] };
@@ -1833,11 +1833,37 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && spec.textContent === "3tr.lotsUnit" && spec.title === "" && b.textContent === "500TWD" && b.kids[0].className === "ccy", J(amts.map((a) => [a.textContent, a.title])));
       ok("下單紀錄:有錢的單 → 表下單位那一行照出", all.some((n) => n.className === "pf-foot unit-note")); }
     ok("下單紀錄:全是口數單 → 表下「金額單位」那一行不出(沒有對象)", !paintHist([CAP, CAP_SPEC]).some((n) => n.className === "pf-foot unit-note"));
-    { ctx.TR = { st: { report: { orders: [CAP, BTC] } }, list: [], ov: { days: 7, ui: [], uiErr: false } };
-      const all = flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)), rows = all.filter((n) => n.className === "ev-row").map((r) => r.textContent);
-      ok("總覽事件:群益單寫「N 口」、加密單照舊帳戶幣", rows.some((x) => /TX2610.*2tr\.lotsUnit/.test(x)) && rows.some((x) => /BTCUSDT.*500TWD/.test(x)) && !rows.some((x) => /TX2610.*TWD/.test(x)), J(rows));
-      ok("spec-0.1.13 #14 總覽事件:群益單寫商品名+括號合約代碼「大台（TX2610）」,代碼等寬", rows.some((x) => x.includes("tr.txfProd.txf（TX2610）")) && all.some((n) => n.className === "mono" && n.textContent === "TX2610")
-        && all.some((n) => n.className === "sname" && n.textContent === "tr.txfProd.txf"), J(rows)); }
+    /* ── spec-0.1.19 §1:成交列移出事件、標題列右側「成交 N 筆 · 看交易歷史」、一天一組 .ev-group ── */
+    { const paintEv = (report, days = 7) => { ctx.TR = { st: { report }, list: [], ov: { days, ui: [], uiErr: false } }; ctx.tabbed = null; return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)); };
+      const err = { ts: now - 30, symbol: "BTCUSDT", error: "boom" };
+      const all = paintEv({ orders: [CAP, BTC], order_errors: [err] }), rows = all.filter((n) => n.className === "ev-row").map((r) => r.textContent);
+      ok("§1.1 事件不含成交列:買進／賣出不出現在 .ev-row;下單失敗(order_error)照列", !rows.some((x) => /tr\.buy|tr\.sell|TX2610|500TWD/.test(x)) && rows.length === 1 && /tr\.ov\.evErr/.test(rows[0])
+        && !/trOrdersShown\(r\)\.forEach/.test(cutF("trOvEvents")), J(rows));
+      const fills = all.find((n) => n.className === "pf-acts ev-fills"), link = fills && fills.kids.find((k) => k.tag === "button");
+      ok("§1.4 標題列右側「成交 N 筆 ·」+ 看交易歷史:在 .pf-sec 的 .pf-acts 槽、數字 .mono、用複數 key(2 筆)", !!fills && all.find((n) => n.className === "pf-sec").kids.includes(fills)
+        && fills.kids[0].kids.some((k) => k && k.className === "mono" && k.textContent === "2") && fills.kids[0].textContent.includes("tr.ov.evFills")
+        && link && link.className === "btn-quiet" && link.textContent === "tr.ov.evFillsLink" && link.attrs.type !== "submit", J(fills && fills.textContent));
+      link.on.click(); ok("§1.4 點了切到交易歷史分頁(trSetTab hist,焦點跟到分頁)", J(ctx.tabbed) === J(["hist", true]));
+      ok("§1.4 1 筆用單數 key", (() => { const f = paintEv({ orders: [CAP] }).find((n) => n.className === "pf-acts ev-fills"); return !!f && f.kids[0].textContent.includes("tr.ov.evFillsOne") && !f.kids[0].textContent.includes("tr.ov.evFills|"); })());
+      ok("§1.4 N 照事件區間與連著的交易所算:7 天前的單不算;0 筆整行不出(事件也空時只剩 label + 空態句)",
+        !paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
+        && !paintEv({ orders: [{ ...CAP, exchange: "paper" }], venues: { president: { credentials: true, pair: true, order: true, account: true } } }).some((n) => n.className === "pf-acts ev-fills")
+        && (() => { const e = paintEv({ orders: [] }); return e.some((n) => n.className === "pf-state" && n.textContent === "tr.ov.evEmpty") && !e.some((n) => n.className === "ev-list"); })());
+      { const d0 = Math.floor(Date.now() / 1000), e2 = [{ ts: d0 - 60, symbol: "A", error: "x" }, { ts: d0 - 120, symbol: "B", error: "y" }, { ts: d0 - 86400 - 60, symbol: "C", error: "z" }];
+        const ev = paintEv({ order_errors: e2 }), list = ev.find((n) => n.className === "ev-list"), groups = list ? list.kids.filter((k) => k.className === "ev-group") : [];
+        ok("§1.2 DOM:.ev-list(role=region、aria-labelledby 指向 label 的 id)> 一天一組 .ev-group > .ev-day + .ev-row…;列只 append 到當天那組", !!list && list.attrs.role === "region" && list.attrs["aria-labelledby"] === "tr-ev-label"
+          && ev.some((n) => n.className === "label" && n.id === "tr-ev-label") && groups.length === 2 && groups[0].kids[0].className === "ev-day" && groups[0].kids.filter((k) => k.className === "ev-row").length === 2
+          && groups[1].kids.filter((k) => k.className === "ev-row").length === 1 && !list.kids.some((k) => k.className === "ev-row" || k.className === "ev-day"), J(groups.map((g) => g.kids.map((k) => k.className)))); }
+      ok("§1.3 tabindex 只在溢出時加:trPaintOver 畫完事件後叫 trEvListFocus;scrollHeight > clientHeight 才 tabIndex 0,否則拿掉", /box\.appendChild\(trOvEvents\(r\)\);\n\s*trEvListFocus\(box\);/.test(src)
+        && /if \(list\.scrollHeight > list\.clientHeight\) list\.tabIndex = 0; else list\.removeAttribute\("tabindex"\);/.test(cutF("trEvListFocus")));
+      { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+        ok("§1.2 CSS:.ev-list max-height 240 直向捲動、不 contain;.ev-group relative;.ev-day sticky top 0、底色 --bg-body、margin 改 padding;.ev-fills 12px ink-3", /\.ev-list \{ max-height: 240px; overflow-y: auto; \}/.test(css)
+          && !/\.ev-list \{[^}]*overscroll-behavior/.test(css) && /\.ev-group \{ position: relative; \}/.test(css)
+          && /\.ev-day \{ position: sticky; top: 0; z-index: 1; background: var\(--bg-body\); margin: 0; padding: var\(--space-12\) 0 var\(--space-4\);/.test(css)
+          && /\.ev-fills \{ gap: var\(--space-6\); font-size: 12px; color: var\(--ink-3\); \}/.test(css)); }
+      { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+        ok("§1.4 文案兩語:成交 {n} 筆 · / {n} fills · / {n} fill ·;連結字的名詞 = 分頁標籤(交易歷史 / Order History)", S.includes('"tr.ov.evFills": "成交 {n} 筆 ·"') && S.includes('"tr.ov.evFillsOne": "成交 {n} 筆 ·"')
+          && S.includes('"tr.ov.evFills": "{n} fills ·"') && S.includes('"tr.ov.evFillsOne": "{n} fill ·"') && S.includes('"tr.ov.evFillsLink": "看交易歷史"') && S.includes('"tr.ov.evFillsLink": "View order history"')); } }
     { const one = { ...CAP, ts: now - 30, signed_diff: -1 }, all = paintHist([CAP, CAP_SPEC, BTC, one]), syms = all.filter((n) => n.tag === "span" && (n.className === "mono" || n.className === "") && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
       ok("spec-0.1.13 #14 下單紀錄:群益單「大台（TX2610）」;只有別名的口數單(TMF)只寫商品名;加密單照舊代號",
         syms.includes("tr.txfProd.txf（TX2610）tr.mkt.swap") && syms.includes("tr.txfProd.tmftr.mkt.swap") && syms.includes("BTCUSDTtr.mkt.swap"), J(syms));
@@ -1847,10 +1873,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         legs: [{ signed_diff: 2, reduce_only: false, fill_price: 23000, executed_qty: 2, exchange: "capital", resolved_symbol: "TX2610" }] };
       const OLD = { ...REAL, ts: now - 10, legs: [{ signed_diff: 2, executed_qty: 2, fill_price: 23000, exchange: "capital" }] };
       const syms = paintHist([REAL, OLD]).filter((n) => n.tag === "span" && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
-      ctx.TR = { st: { report: { orders: [REAL] } }, list: [], ov: { days: 7, ui: [], uiErr: false } };
-      const ev = flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((n) => n.className === "ev-row").map((r) => r.textContent);
-      ok("#14 真資料:symbol TXF + legs[].resolved_symbol TX2610 → 下單紀錄與總覽事件都寫「大台（TX2610）」;舊列沒有 resolved_symbol 只寫商品名",
-        syms.includes("tr.txfProd.txf（TX2610）tr.mkt.swap") && syms.includes("tr.txfProd.txftr.mkt.swap") && ev.some((x) => x.includes("tr.txfProd.txf（TX2610）")), J([syms, ev])); }
+      ok("#14 真資料:symbol TXF + legs[].resolved_symbol TX2610 → 下單紀錄寫「大台（TX2610）」;舊列沒有 resolved_symbol 只寫商品名(總覽事件自 0.1.19 不列成交)",
+        syms.includes("tr.txfProd.txf（TX2610）tr.mkt.swap") && syms.includes("tr.txfProd.txftr.mkt.swap"), J(syms)); }
     { ctx.trUnit = () => null; const all = paintHist([CAP, BTC]); ctx.trUnit = () => "TWD";
       const b = all.filter((n) => n.className === "amt mono")[0];
       ok("spec-0.1.13 #3 下單紀錄:帳戶幣未知 → 加密單不帶幣別、表下改講 tr.ccyUnknown(不出「金額單位：null」)", b.textContent === "500" && all.some((n) => n.className === "pf-foot" && n.textContent === "tr.ccyUnknown")
@@ -1925,7 +1949,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const bound = (...ids) => ({ orders: rows, venues: Object.fromEntries(ids.map((i) => [i, { credentials: true, pair: true, order: true, account: true }])) });
     ok("下單紀錄／事件只列目前連著的交易所:綁統一時模擬交易那幾筆不列、沒寫交易所的舊列照列;沒綁任何交易所全列;壞列丟掉", J(trOrdersShown(bound("president")).map((o) => o.symbol)) === J(["TMF", "TXF"])
       && J(trOrdersShown(bound("paper")).map((o) => o.symbol)) === J(["BTCUSDT", "TXF"]) && trOrdersShown(bound()).length === 3 && trOrdersShown(null).length === 0
-      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /trOrdersShown\(r\)\.forEach\(\(o\) => \{\n    push\(trMs\(o\.ts\)/.test(src)); }
+      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /const n = trOrdersShown\(r\)\.filter\(/.test(src)); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

@@ -369,7 +369,15 @@ html.ws-sc .side-gate { display: none; }
 .cv-tip .v { color: var(--ink); }
 .cv-tip .d:last-child { white-space: normal; word-break: keep-all; }   /* 288 寬:卡寬釘在繪圖區(trade.js 設 maxWidth),第三行「相對區間起點」可以換行、數字不斷 */
 @media (prefers-reduced-motion: reduce) { .cv-tip { animation: none; } }
-.ev-day { margin: var(--space-12) 0 var(--space-4); font-size: 11px; color: var(--ink-3); }
+/* 事件清單(spec-0.1.19 §1.2):240 = 1 個日期標(≈29)＋7.5 列(12/1.6＋4·4＋1 ≈ 28)——第 8 列露出上半截就是「下面還有」,同 app.css .think-steps 的 204;
+   component-metric,不是 spacing scale 值。不設 overscroll-behavior: contain:區塊在頁面中段,捲到底後滾輪要能繼續捲外層 .pf */
+.ev-list { max-height: 240px; overflow-y: auto; }
+/* 標題列右側「成交 N 筆 · 看交易歷史」:12px ink-3,連結是既有 .btn-quiet;0 筆整行不出(trade.js trOvFills) */
+.ev-fills { gap: var(--space-6); font-size: 12px; color: var(--ink-3); }
+/* 一天一組:sticky 日期標只釘在自己那組的範圍內,下一天的標到頂就把它推走;共用一個容器會讓「今天」一直釘著、跟「昨天」疊成兩行 */
+.ev-group { position: relative; }
+/* 底色 = 清單所在面板的實際地色(.pf 沒有填色,所以是 --bg-body),蓋住捲過去的列;上下 margin 改 padding,sticky 時底色才蓋得住 */
+.ev-day { position: sticky; top: 0; z-index: 1; background: var(--bg-body); margin: 0; padding: var(--space-12) 0 var(--space-4); font-size: 11px; color: var(--ink-3); }
 .ev-row { display: flex; gap: var(--space-16); padding: var(--space-4) 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); border-bottom: 1px solid var(--border-hairline); }
 .ev-row:last-child { border-bottom: none; }
 .ev-row .ts { flex: none; width: 44px; color: var(--ink-3); }

@@ -2082,6 +2082,15 @@ msgstr "事件"
 msgid "tr.ov.evEmpty"
 msgstr "這段期間沒有事件。"
 
+msgid "tr.ov.evFills"
+msgstr "成交 {n} 筆 ·"
+
+msgid "tr.ov.evFillsOne"
+msgstr "成交 {n} 筆 ·"
+
+msgid "tr.ov.evFillsLink"
+msgstr "看交易歷史"
+
 msgid "tr.ov.today"
 msgstr "今天"
 
