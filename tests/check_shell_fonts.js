@@ -40,4 +40,15 @@ ok("各 css 有引到 token(sans / mono 各至少一處)", others.some(([, s]) =
 ok("report-print.css 的 --pdf-sans / --pdf-mono 引同一組 token(PDF 跟 app 同字)", /--pdf-sans: var\(--font-sans\);/.test(read("report-print.css")) && /--pdf-mono: var\(--font-mono\);/.test(read("report-print.css")));
 ok("report-wf.js 的 canvas 字族從 --font-mono 讀,不寫死", /ctx\.font = "\d+px " \+ token\("--font-mono"\)/.test(read("report-wf.js")) && !/ui-monospace/.test(read("report-wf.js")));
 
+
+// ── 3. Windows 的 11px Mini tag 字重 400(正黑體沒有 600;只掛 win32,mac 照 canon 600) ──
+const app = read("app.css");
+const winTag = app.match(/html\[data-platform="win32"\] \.lib \.tag,[^{]*\{ font-weight: 400; \}/);
+const tagSels = [".lib .tag", ".rb-report .rb-news-tag", ".pf-wallet-row .mini_tag", ".mode", ".envm", ".shr-tag", ".tag-you"];
+ok("app.css 有 win32 專屬的 Mini tag 字重 400 規則", !!winTag);
+ok("規則涵蓋外殼所有 11px/600 的 tag 元件", !!winTag && tagSels.every((sel) => winTag[0].includes('html[data-platform="win32"] ' + sel)));
+const base = { ".lib .tag": read("library.css"), ".rb-report .rb-news-tag": read("report-blocks.css"), ".pf-wallet-row .mini_tag": read("trade.css"), ".mode": read("trade.css"), ".envm": app, ".shr-tag": read("report-share.css"), ".tag-you": read("browser.css") };
+ok("那些 tag 的基礎規則仍是 11px/600(mac 不變、win32 只蓋字重)", tagSels.every((sel) => new RegExp(sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-size: 11px;[^}]*font-weight: 600;|" + sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-weight: 600;[^}]*font-size: 11px;").test(base[sel])));
+ok("win32 記號由 app.js 掛在 <html data-platform>(規則才會生效)", /document\.documentElement\.dataset\.platform = window\.blave\.platform/.test(read("app.js")));
+
 process.exit(red ? 1 : 0);

@@ -1253,6 +1253,10 @@ html[data-platform="win32"] ::-webkit-scrollbar, html[data-platform="win32"]::-w
 html[data-platform="win32"] ::-webkit-scrollbar-track, html[data-platform="win32"] ::-webkit-scrollbar-corner { background: transparent; }
 html[data-platform="win32"] ::-webkit-scrollbar-thumb { background: var(--border-frame); border-radius: var(--radius-pill); }
 html[data-platform="win32"] ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+/* Windows 的 11px Mini tag:微軟正黑體沒有 600,會渲染成 Bold 700,在 11px + 0.04em 字距下筆畫糊成一團(設計評估 P3),
+   這一階改 400;Mac 的 PingFang 有 Semibold,照 canon 的 600 不動。選擇器 = 外殼所有 11px/600 的 tag 形元件 */
+html[data-platform="win32"] .lib .tag, html[data-platform="win32"] .rb-report .rb-news-tag, html[data-platform="win32"] .pf-wallet-row .mini_tag,
+html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-platform="win32"] .shr-tag, html[data-platform="win32"] .tag-you { font-weight: 400; }
 
 /* ── 兩個表單 modal(新增策略 #ns-modal、新增報告 #rpn-modal;spec-desktop-0.1.6 §1.5 / §4.2)共用的殼:
    .del-modal 的 440 框 + 可捲的 .modal-body + 腳最前面一行常駐的 .foot-msg(role=status;空時高 0、不 display:none)。
