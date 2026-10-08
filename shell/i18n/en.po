@@ -5651,7 +5651,7 @@ msgid "xp.ivl.w"
 msgstr "weekly"
 
 msgid "ver.menuLbl"
-msgstr "Versions (one per backtested code change)"
+msgstr "Versions"
 
 msgid "ver.current"
 msgstr "Current"

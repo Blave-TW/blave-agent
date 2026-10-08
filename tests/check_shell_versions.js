@@ -151,7 +151,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
   // 時光機頁首(Wei 09-28):看舊版時名稱留著、說明收起來;回目前版 / 沒有版本介面時放回來
   {
     const E = {}, el = (id) => (E[id] = E[id] || { id, hidden: false, textContent: id === "rp-desc" ? "SMA50 上穿 SMA200" : "", classList: { toggle() {} }, setAttribute() {} });
-    const paint = new Function("$", "t", "verEntry", "verDateShort", "VER", fnSrc(verSrc, "verPaintTrigger") + "\nreturn verPaintTrigger;")(el, (k) => k, () => ({ at: 1 }), () => "09/27", { pending: () => null });
+    const paint = new Function("$", "t", "verEntry", "verDate", "VER", fnSrc(verSrc, "verPaintTrigger") + "\nreturn verPaintTrigger;")(el, (k) => k, () => ({ at: 1 }), () => "09/27 10:00", { pending: () => null });
     const data = { current: 2, counter: 2, items: [] }, seen = [];
     for (const S1 of [{ data, open: 1 }, { data, open: null }, { data, open: 1 }, { data: null, open: null }]) { paint(S1); seen.push([E["rp-desc"].hidden, E["ver-sep"].hidden, E["ver-wrap"].hidden].join()); }
     ok("時光機頁首:看 v1 → 說明與分隔點收起來、觸發器留著;回目前版 → 放回來;沒有版本介面 → 說明照出", seen.join(" | ") === "true,true,false | false,false,false | true,true,false | false,true,true" && E["rp-desc"].textContent === "SMA50 上穿 SMA200", seen.join(" | "));
@@ -190,13 +190,16 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       querySelectorAll() { return []; }
     }
     const doc = { activeElement: null, createElement: (tag) => new El(tag), createDocumentFragment: () => new El("#fragment") };
-    const names = ["verEl", "verEntry", "verDateShort", "verDateLong", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen",
+    const names = ["verEl", "verEntry", "verDate", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen",
       "verEffective", "verPendingOf", "verHolds", "verHidesAct", "verPaintRerun", "verPaintErr", "verBusy", "verShowTab", "verStatePaint", "verSend", "verBoxCtx", "verIsLots", "verGuard", "verNeedUpdate",
       "verRestoreAsk", "verRetry", "verAckKind", "verDoRestore", "verRollback", "verPollNeed", "verPollStop", "verPollEnsure", "verPollTick", "verOverlayExpire", "verBusyNote"];
     const consts = ["verSideOf", "VO", "VP", "voKey", "RERUN_WHY"].map((n) => constSrc(verSrc, n)).join("");
     const body = consts + "let vcSeq = 0, vcSide = null;\n" + names.map((n) => fnSrc(verSrc, n)).join("\n") + "\nreturn { " + names.join(", ") + ", VO, VP };";
     const g = {}; new Function("window", fs.readFileSync(path.join(R, "strategy_versions.js"), "utf8")).call(g, g);
-    const it = (n) => ({ n, at: 1757000000 + n * 86400, note: "note " + n, ret: 10 + n, sharpe: 1, mcpt_p: 0.03 });
+    // 日期用本地時間元件建在今年 9/28 10:0n:格式斷言不隨時區、不隨年份翻掉(同 check_shell_datefmt.js)
+    const Y = new Date().getFullYear(), atOf = (y, mo, d, h, mi) => Math.floor(new Date(y, mo - 1, d, h, mi).getTime() / 1000);
+    const it = (n) => ({ n, at: atOf(Y, 9, 28, 10, n), note: "note " + n, ret: 10 + n, sharpe: 1, mcpt_p: 0.03 });
+    const shlFmtTime = new Function(fnSrc(fs.readFileSync(path.join(R, "report-sharelist.js"), "utf8"), "shlFmtTime") + "\nreturn shlFmtTime;")();   // 日期格式只有一份(公開連結清單那支)
     const menuItems = (m) => m.all((k) => k.attrs.role === "menuitem");
 
     const clock = { skew: 0 };   // 快轉時鐘(設計稽核 S2 的測試)
@@ -215,7 +218,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const api = { tradeSend: (cmd, args) => { sent.push([cmd, args]); return new Promise((res) => acks.push(res)); }, loadStrategy: async () => null };
       const side = cloud ? "cloud" : "local", st = amounts ? { report: { config: { amounts } } } : null;
       const env = { document: doc, $, t, LANG: lang, VER: g.blaveVersions, VS: { local: vs(), cloud: vs() }, RP, RPC, rpBag: () => bag, trackFeature: (n) => tracked.push(n),
-        TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } }, trMD: () => "09/28", trStamp: () => "2026-09-28 10:00", requestAnimationFrame: (f) => f(),
+        TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } }, shlFmtTime, requestAnimationFrame: (f) => f(),
         verLoad: (...a) => loads.push(["ver"].concat(a)), vcLoad: () => loads.push(["vc"]), hoPaint: () => { hoPaints.push(1); $("rp-act").hidden = false; }, rpShowTab: (tab) => shows.push(tab), rpPaintHead() {}, rpTab: (B) => B.tab,
         running: false, confirmBox: (o) => boxes.push(o), setOpen: async () => {}, setCat() {}, srSay: (x) => said.push(x), submitMessage: async () => true, paneSt: { chat: { off: false } }, paneToggle() {},
         trFmt: (x) => String(x), trUnit: () => "USDT", trTxfSpec: TXF.trTxfSpec, trWith: (b, fn) => fn(), trRowTxf: () => (opt.rowTxf ? {} : null), xpSetTimeMachine() {}, RP_WAIT_DELAY_MS: 200, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {},
@@ -271,9 +274,34 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       ok(tag + "比較:關選單、開比較框,A = 上一版、B = 目前版,記 version_compare", m.hidden === true && r.E["vc-scrim"].hidden === false && r.E["view-ws"].inert === true && r.E["vc-a"].value === String(top - 1) && r.E["vc-b"].value === String(top)
         && r.E["vc-a"].kids.length === ns.length && r.loads.join("|") === "vc" && r.tracked.join() === "version_menu,version_compare");
       r.F.verMenuOpen(false); menuItems(m)[1].click();
-      ok(tag + "時光機:點舊版 → 進時光機、載那一版、記 version_view;觸發器換成那一版的日期", r.S.open === top - 1 && r.loads[1].join() === "ver,local," + (top - 1) && r.tracked.slice(-1)[0] === "version_view" && r.E["ver-banner"].hidden === false && r.E["ver-trig-n"].textContent === "v" + (top - 1) && r.E["ver-trig-l"].textContent === "09/28");
+      ok(tag + "時光機:點舊版 → 進時光機、載那一版、記 version_view;觸發器換成那一版的日期時間", r.S.open === top - 1 && r.loads[1].join() === "ver,local," + (top - 1) && r.tracked.slice(-1)[0] === "version_view" && r.E["ver-banner"].hidden === false && r.E["ver-trig-n"].textContent === "v" + (top - 1) && r.E["ver-trig-l"].textContent === "09/28 10:0" + (top - 1));
+      ok(tag + "時光機橫幅的日期時間跟清單同一口徑;比較框的選項也是", r.E["ver-banner-t"].all((k) => k.className === "mono" && k.tagName === "span")[0].textContent === "09/28 10:0" + (top - 1)
+        && r.E["vc-a"].kids.map((o) => o.textContent).join("|") === ns.slice().reverse().map((n) => "v" + n + " · 09/28 10:0" + n + (n === top ? " · 目前" : "")).join("|"));
       r.F.vcOpen();
       ok(tag + "比較:在時光機裡開 → A = 正在看的那一版", r.E["vc-a"].value === String(top - 1) && r.E["vc-b"].value === String(top));
+    }
+    // 清單第一行(設計 strategy-versions-current 方案 A + 順手修正):版號 → 徽章 → 摘要 → 日期時間;p 值不寫 0.000;「初版」不過濾
+    {
+      const cls = (row) => row.kids[0].kids.map((k) => k.className).join();
+      const r = rig("zh", "momo", { counter: 3, current: 3, items: [it(1), Object.assign(it(2), { note: "初版", mcpt_p: 0.0004 }), Object.assign(it(3), { note: "", at: "nope", mcpt_p: 0 })] });
+      r.F.verMenuOpen(false);
+      const rows = menuItems(r.E["ver-menu"]).filter((k) => k.className === "vmi");
+      ok("第一行順序:目前那一列 版號 → 徽章 → 摘要 → 日期;其他列 版號 → 摘要 → 日期(徽章緊貼版號,不隔著空的摘要格)",
+        cls(rows[0]) === "vmi-num mono,vtag cur,vmi-note,vmi-date mono" && cls(rows[1]) === "vmi-num mono,vmi-note,vmi-date mono" && cls(rows[2]) === "vmi-num mono,vmi-note,vmi-date mono");
+      ok("「上線中」/「上線中 · 檔案已改」同一個位置", cls(menuItems(live1.E["ver-menu"])[0]) === "vmi-num mono,vtag live,vmi-note,vmi-date mono" && cls(menuItems(drift1.E["ver-menu"])[0]) === "vmi-num mono,vtag drift,vmi-note,vmi-date mono");
+      const dates = (q) => menuItems(q.E["ver-menu"]).filter((k) => k.className === "vmi").map((k) => k.all((x) => x.className === "vmi-date mono")[0].textContent);
+      ok("日期 = MM/DD HH:mm(同一天的四版分得出先後);at 壞掉 → —", dates(r).join() === "—,09/28 10:02,09/28 10:01");
+      const old = rig("zh", "momo", { counter: 2, current: 2, items: [Object.assign(it(1), { at: atOf(Y - 1, 12, 18, 9, 40) }), it(2)] }); old.F.verMenuOpen(false);
+      ok("不是今年的加年份(同公開連結清單規則)", dates(old).join() === "09/28 10:02," + (Y - 1) + "/12/18 09:40");
+      menuItems(old.E["ver-menu"])[1].click();
+      ok("時光機:觸發器與橫幅同樣帶年份", old.E["ver-trig-l"].textContent === (Y - 1) + "/12/18 09:40" && old.E["ver-banner-t"].all((k) => k.className === "mono" && k.tagName === "span")[0].textContent === (Y - 1) + "/12/18 09:40");
+      const pOf = (row) => row.all((k) => k.className === "v mono")[2].textContent;
+      ok("p 值:< 0.0005 寫 <0.001(含 0);其餘照舊三位", pOf(rows[0]) === "<0.001" && pOf(rows[1]) === "<0.001" && pOf(rows[2]) === "0.030"
+        && g.blaveVersions.fmt("mcpt_p", 0.0005) === "0.001" && g.blaveVersions.fmt("mcpt_p", 0.106) === "0.106" && g.blaveVersions.fmt("mcpt_p", null) === "—" && g.blaveVersions.fmt("ret", 0.0001) === "+0.00%");
+      ok("摘要「初版」照畫(UI 不過濾;規則在 references/strategy-code.md 叫 agent 別寫)", rows[1].all((k) => k.className === "vmi-note")[0].textContent === "初版"
+        && ref.includes('never write "初版" / "initial version" — v1 is the initial version'));
+      ok("小標逐字「版本」/「Versions」", r.E["ver-menu"].kids[0].textContent === "版本" && en1.E["ver-menu"].kids[0].textContent === "Versions");
+      ok("日期只有一份格式(versions.js 不再自己拼、不用 trMD / trStamp)", /shlFmtTime\(at, Date\.now\(\)\)/.test(fnSrc(verSrc, "verDate")) && !/trMD|trStamp|verDateShort|verDateLong/.test(verSrc));
     }
     // 一版 → 兩版:key 變了,回目前版、下次打開是比較列
     {
@@ -536,7 +564,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         /\.vr-t \.fault-mark, \.vb-err \.fault-mark \{ flex: none; margin-top: 8px; \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")) && /\.vr-t \.spin16 \{ flex: none; margin-top: 1px; \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")));
       ok("S6:守門框第 2 步改成用戶看得懂的字;給 agent 的分岔訊息照舊保留 state.json", zh["ver.guardS2"] === "新策略先跑一次回測和一次訊號，讓它算出現在該持有的部位"
         && en["ver.guardS2"] === "Backtest the new strategy and run one signal so it works out the position it should hold now" && zh["ver.msgFork"].includes("state.json"));
-      ok("選單小標新字", zh["ver.menuLbl"] === "版本（改過程式碼的回測各留一版）" && en["ver.menuLbl"] === "Versions (one per backtested code change)");
+      ok("選單小標只留「版本」(設計 strategy-versions-current:括號那句只有一版時已有引導句在講)", zh["ver.menuLbl"] === "版本" && en["ver.menuLbl"] === "Versions");
       ok("時光機凍結分頁那句新字(指向還原鈕)", zh["ver.frozenTab"] === "這一版沒留逐筆紀錄。還原成這一版會用最新資料重跑，跑完就有。");
       const appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8"), hoSrc = fs.readFileSync(path.join(R, "handoff.js"), "utf8"), html = fs.readFileSync(path.join(R, "index.html"), "utf8");
       ok("接線:重畫報告的分頁由 rpTab 決定(重跑中不被拉到程式碼);hoPaint 問 verHidesAct;狀態列 role=status、跟橫幅同一槽",

@@ -116,7 +116,9 @@ can ask to go back to one. Nothing to run by hand — `run()` does it.
   what changed in THIS run — a parameter, a rule, a data source. Update it whenever you
   change the code, before the backtest. Leave it `""` when nothing changed rather than
   leaving a stale line: a note identical to the last version's is stored as empty on
-  purpose, so a forgotten note shows no summary instead of a wrong one.
+  purpose, so a forgotten note shows no summary instead of a wrong one. First version: leave
+  it empty or state the strategy's own gist; never write "初版" / "initial version" — v1 is
+  the initial version.
 - **Numbers are never reused.** Restoring v5 makes v5 current again — no new number. A
   backtest whose code equals a stored version mints nothing and points current back at it:
   a re-run without an edit adds no version.
