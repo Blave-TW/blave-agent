@@ -88,7 +88,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     vm.runInContext("function trUnit() { return UNIT; } function trEquity() { return EQ; }", ctx);
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
       + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
-        "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trAmountTable", "trSaveAmounts"].map((n) => cutF(src, n)).join("\n"), ctx);
+        "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trLotsOnly", "trRowMoney", "trAmountTable", "trSaveAmounts"].map((n) => cutF(src, n)).join("\n"), ctx);
     const V = { credentials: true, pair: true, order: true, account: true };
     const paint = (price, unit = "TWD", eq = 2000000, mixed = false) => {
       vm.runInContext("TR_TXF.price = " + J(price) + "; UNIT = " + J(unit) + "; EQ = " + J(eq), ctx);
@@ -98,21 +98,22 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
       const row = all.find((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key"), tot = all.find((n) => n.className === "pf-total");
       const note = all.find((n) => n.className === "pf-foot unit-note");
-      return { tgt: row.kids[4].textContent, tot: tot.textContent, note: note ? note.textContent : null };
+      return { tgt: row.kids[4].textContent, tot: tot.textContent, totHidden: tot.hidden, note: note ? note.textContent : null };
     };
     const q = paint(20000);
-    // 2 口 × 200 點值 × 20,000 點 = 8,000,000 TWD;× 部位 0.5 = 4,000,000;淨值 2,000,000 → 4.00x
-    ok("有報價:目標部位 = 口 × 點值 × 指數 × 部位(帳戶幣);合計 = 參考金額、出「你淨值的 N x」", q.tgt === "+4,000,000TWD" && q.tot === "tr.total8,000,000TWD·tr.ofEquity4.00x", J(q));
+    // 2 口 × 200 點值 × 20,000 點 = 8,000,000 TWD;× 部位 0.5 = 4,000,000
+    // 設計稽核 desktop-10-08 #4:全是口數列(期貨帳戶)不畫合計與倍數——合計是金額帳戶的公式,口數算不出來;有報價也一樣(參考金額收在目標部位那一格)
+    ok("有報價:目標部位 = 口 × 點值 × 指數 × 部位(帳戶幣);全是口數列 → 合計列不畫", q.tgt === "+4,000,000TWD" && q.totHidden === true && q.tot === "", J(q));
     const n = paint(null);
-    ok("沒有報價(離線 / api 錯):退回「—」、不出倍數,不壞畫面", n.tgt === "—" && n.tot === "tr.total—", J(n));
+    ok("沒有報價(離線 / api 錯):退回「—」、合計列照樣不畫,不壞畫面", n.tgt === "—" && n.totHidden === true, J(n));
     ok("R2-S1:有報價 → 口數列的目標部位是錢,表下「金額單位」那一行要出(窄寬時列內幣別收到這一行);沒報價、全是口數列 → 不出",
       q.note === 'tr.unitNote {"c":"TWD"}' && n.note === null, J([q.note, n.note]));
     const f = paint(20000, "USDT", null);
-    ok("R2-S2:讀帳失敗(帳戶幣退成 USDT、沒有淨值)+ 有報價 → 目標部位、合計、表下那一行都標 TWD,不出倍數",
-      f.tgt === "+4,000,000TWD" && f.tot === "tr.total8,000,000TWD" && f.note === 'tr.unitNote {"c":"TWD"}', J(f));
+    ok("R2-S2:讀帳失敗(帳戶幣退成 USDT、沒有淨值)+ 有報價 → 目標部位、表下那一行都標 TWD;合計列不畫",
+      f.tgt === "+4,000,000TWD" && f.totHidden === true && f.note === 'tr.unitNote {"c":"TWD"}', J(f));
     const m1 = paint(20000, "USDT", null, true), m2 = paint(20000, "TWD", 2000000, true), m3 = paint(20000, "USDT", 2000000);
-    ok("混列(同網頁 pfRefTotal):台指期列 + 一般列、帳戶幣 USDT → 合計「—」;帳戶幣 TWD → 加總標 TWD 出倍數;只有口數列、帳戶幣 USDT → 標 TWD 不出倍數",
-      m1.tot === "tr.total—" && m2.tot === "tr.total8,000,500TWD·tr.ofEquity4.00x" && m3.tot === "tr.total8,000,000TWD", J([m1.tot, m2.tot, m3.tot]));
+    ok("混列(同網頁 pfRefTotal):台指期列 + 一般列、帳戶幣 USDT → 合計「—」;帳戶幣 TWD → 加總標 TWD 出倍數;只有口數列 → 合計列不畫",
+      m1.tot === "tr.total—" && !m1.totHidden && m2.tot === "tr.total8,000,500TWD·tr.ofEquity4.00x" && !m2.totHidden && m3.totHidden === true, J([m1.tot, m2.tot, m3.tot, m3.totHidden]));
     /* spec-0.1.13 #1:確認框口數列太大時那一列下面多一句(不擋)。沒改過的舊列(edits 空,照 stored 送)也要檢查 */
     const confirm = (price, lots, eq, unit = "TWD") => { paint(price, unit, eq); ctx.TR.st.report.config.amounts.txf = lots; ctx.BOX = null;
       vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
@@ -127,7 +128,12 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       ok("#1 不擋:確認鈕照常可按(okDisabled 不受影響)",!!big.box && big.box.okDisabled === false && !!fb.box && fb.box.okDisabled === false);
       ok("#1 沒有報價 → 退回口數:大台 50 口出 tr.txfBigLots、49 口不出", J(fb.warn) === J(['tr.txfBigLots {"lots":"50","prod":"tr.txfProd.txf"}']) && J(fb2.warn) === "[]", J([fb.warn, fb2.warn]));
       ok("#1 + #4:1 口也可能超過(淨值很小),en 用單數那一句 tr.txfBigNotional1;確認框那一列用 tr.txfConfirm1", one.warn.length === 1 && /^tr\.txfBigNotional1 /.test(one.warn[0])
-        && flat(one.box.extra).some((n) => n.tag === "dd" && /^tr\.txfConfirm1 /.test(n.textContent)), J(one.warn)); }
+        && flat(one.box.extra).some((n) => n.tag === "dd" && /^tr\.txfConfirm1 /.test(n.textContent)), J(one.warn));
+      // 設計稽核 desktop-10-08 #4:期貨帳戶的確認框不畫合計／槓桿列(口數算不出合計);改成 0 的句子不講「現貨會賣出」
+      ok("#4 確認框:全是口數列 → 只有那一列,沒有合計列、沒有槓桿列", ok2.rowCls.filter((c) => /\bcf-row\b/.test(c)).length === 1 && !ok2.rowCls.some((c) => /\b(total|lev)\b/.test(c)), J(ok2.rowCls));
+      { paint(20000, "TWD", 2000000); ctx.TR.edits = { txf: 0 }; ctx.BOX = null; vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+        const all = flat(ctx.BOX.extra), z = all.find((n) => n.className === "cf-zeroed"), dls = ctx.BOX.extra.kids.filter((n) => n.tag === "dl");
+        ok("#4 口數列改成 0:句子是 tr.saveZeroedLots(只講合約部位會平倉);沒有合計列、空的第二張 dl 不掛", !!z && z.textContent === 'tr.saveZeroedLots {"names":"TXF"}' && dls.length === 1 && !all.some((n) => /\b(total|lev)\b/.test(n.className)), J([z && z.textContent, dls.length])); } }
     { vm.runInContext("TR_TXF.price = null; UNIT = null; EQ = 5000", ctx);
       ctx.TR = { env: "local", list: [{ name: "btc", displayName: "BTC", hasBacktest: true }], listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, sig: {},
         st: { alive: true, report: { venues: { myex: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: { btc: 500 } }, states: { btc: { symbol: "BTCUSDT", position: 1 } } } } };

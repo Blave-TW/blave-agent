@@ -329,7 +329,9 @@ function presProbeBody(view, pc) {
   const notSent = presRowErr("probe");
   // 略過測試段直接登正式、被拒沒說原因:多半是營業員還沒開正式權限——指回上面的測試單(不自動重試)
   const skipNote = view === "d-UNKNOWN" && pc && pc.env === "live" && pc.test_skipped === true ? presP("cx-hint", t("pres.err.unknownSkipped")) : null;
-  return capFrag(capErr(t(KEY[view] || "pres.err.nocreds", { acct }), view === "d-MAINTENANCE"), skipNote, notSent ? capErr(notSent) : presP("cx-hint", t("pres.err.stopNote")), capActs(confirm, ...extra));
+  // 輔助句照失敗類別:被鎖住只在密碼錯 / 原因不明才有;逾時是「恢復後再試」;憑證 / 維護 / 沒帳密的出路在原因句與鈕本身。「按「確認登入」」那顆鈕就在正下方,不重述(設計稽核 desktop-10-08 #8)
+  const hintKey = view === "d-PASSWORD" || view === "d-UNKNOWN" ? "pres.err.stopNote" : view === "d-TIMEOUT" ? "pres.err.retryNote" : null;
+  return capFrag(capErr(t(KEY[view] || "pres.err.nocreds", { acct }), view === "d-MAINTENANCE"), skipNote, notSent ? capErr(notSent) : hintKey ? presP("cx-hint", t(hintKey)) : null, capActs(confirm, ...extra));
 }
 function presTestHostBody(view) {
   const f = document.createDocumentFragment();
@@ -365,7 +367,9 @@ function presRows(view, pc) {
   // 段標題:字對讀屏藏(列名自己會講),右邊可掛一顆鈕(測試段的「直接登入正式主機」)
   const ol = trEl("ol", "cap-steps pres-steps"), ph = (k, btn) => { const li = trEl("li", "pres-ph"), s = trEl("span", "", t(k)); s.setAttribute("aria-hidden", "true"); li.appendChild(s); if (btn) li.appendChild(btn); ol.appendChild(li); };
   const add = (li) => ol.appendChild(li);
-  const exp = capDate(cert.not_after), certDone = exp ? t("pres.s.certExp", { date: exp }) : "";
+  // 「到期」漢字 sans、日期走 mono(同資產分頁「更新 + 時間」的做法;canon Type › mono 邊界)
+  const exp = capDate(cert.not_after), certDone = exp ? trEl("span", "", t("pres.s.certExp") + " ") : "";
+  if (exp) certDone.appendChild(trEl("span", "mono", exp));
   const env = pc && pc.env === "live" ? "live" : "test", live = env === "live", off = PRES.busy || presDown() || !!(pc && pc.busy);
   const probe = presSec(pc, "probe"), to = presSec(pc, "test_order");
   // 已經開過正式權限的(Wei 本人、換電腦重裝):不必走測試段——host live 切正式＋登入,runtime 記 test_skipped、三列標「已略過」(仍可回頭做)
@@ -414,7 +418,7 @@ function presDoneBody(pc) {
   const r = presReport() || {}, a = (r.account && r.account.venues && r.account.venues[PRESIDENT]) || {}, cert = presSec(pc, "cert");
   const f = document.createDocumentFragment();
   const lede = trEl("p", "cap-lead pres-ok"); lede.append(trEl("i", "dot"), trEl("span", "", t("pres.done.lead"))); f.appendChild(lede);
-  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), trEl("div", "v mono", typeof a.equity === "number" ? "NT$ " + Math.round(a.equity).toLocaleString("en-US") : "—"));
+  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), trEl("div", "v mono", typeof a.equity === "number" ? trTwd(a.equity) + " " + TR_TXF_CCY : "—"));   // 同第一次真錢框:TWD 整數 + 幣別後綴,不用 NT$
   f.appendChild(big);
   const dl = trEl("dl", "cap-acct"), kv = (k, v, cls) => { const d = trEl("div", ""); d.append(trEl("dt", "", k), trEl("dd", cls || "", v)); dl.appendChild(d); };
   kv(t("pres.done.acct"), t("pres.done.acctV", { acct: (PRES.info && PRES.info.account) || "—" }), "mono");
@@ -527,7 +531,7 @@ function presFirstGate(next, opener) {
   const rows = presFirstRows(trStored());
   const a = (r.account && r.account.venues && r.account.venues[PRESIDENT]) || {};
   const lines = rows.map((x) => t("pres.first.row", { name: trDisplay(x.name), n: x.lots, unit: t(trLotsKey(x.lots, "tr.lotsUnit", "tr.lotUnit")) }));
-  lines.push(typeof a.equity === "number" ? t("pres.first.equity", { v: "NT$ " + Math.round(a.equity).toLocaleString("en-US") }) : t("pres.first.equityNone"));
+  lines.push(typeof a.equity === "number" ? t("pres.first.equity", { v: trTwd(a.equity) + " " + TR_TXF_CCY }) : t("pres.first.equityNone"));   // TWD 整數 + 幣別後綴,不用 NT$(canon Numbers)
   lines.push(t("pres.first.margin"));
   confirmBox({ title: t("pres.first.title"), mark: t("tr.mode.real"), markKind: "real", opener, lines, ok: t("pres.first.ok"),
     onOk: () => { lsSet(PRES_FIRST_KEY, "1"); trackFeature("pres_first_start"); setTimeout(next, 0); } });

@@ -1296,7 +1296,7 @@ msgid "cx.retesting"
 msgstr "測試中…"
 
 msgid "cx.fail"
-msgstr "{id} 串接失敗（{stage}）：{msg}"
+msgstr "{msg}（{stage}）"
 
 msgid "cx.presStopped"
 msgstr "登入已停止，按「繼續」確認登入。"
@@ -1306,6 +1306,10 @@ msgstr "OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改�
 
 msgid "cx.failShort"
 msgstr "串接失敗"
+
+# 總覽標題下:讀帳失敗而且下單程式沒在跑(登入失敗停掉那一類);出口在設定分頁,不叫人去配金額
+msgid "cx.failStopped"
+msgstr "串接失敗，下單程式沒在跑。到「設定」處理。"
 
 # Binance 重查判定 IP_CHANGED 時標題下狀態行用的那句(頂列仍是短詞 cx.failShort)(其他 reason 仍是 cx.failShort);{ip} = binance_link 驗過的 IPv4
 msgid "cx.failIp"
@@ -1527,9 +1531,6 @@ msgstr "現在不下單。每條策略等下一次進場、出場或翻向才開
 
 msgid "tr.opt.waitDescReal"
 msgstr "現在不下單。每條策略等下一次進場、出場或翻向才送出真實委託。"
-
-msgid "tr.keep.sleep"
-msgstr "電腦睡眠、關機或結束 Blave 時不會下單，平倉與停損也不會執行。"
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
 # 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定
@@ -1773,6 +1774,10 @@ msgstr "確認下單金額"
 msgid "tr.saveZeroed"
 msgstr "改成 0：{names}——這幾支那一份的合約部位會平倉、現貨會賣出。"
 
+# 改成 0 的全是口數列(期貨帳戶沒有現貨)
+msgid "tr.saveZeroedLots"
+msgstr "改成 0：{names}——這幾支那一份的合約部位會平倉。"
+
 msgid "tr.saveWarn"
 msgstr "儲存後，下單機會照新的金額對帳，可能立即產生下單。"
 
@@ -1914,14 +1919,11 @@ msgstr "解除綁定"
 msgid "tr.unbinding"
 msgstr "解除中…"
 
-msgid "tr.unbindDesc"
-msgstr "移除這台電腦上的交易所金鑰，下單機不再能用這個帳戶交易。"
-
 msgid "tr.unbindDescPaper"
 msgstr "解除後可以改綁真實交易所。"
 
 msgid "tr.unbindWarn"
-msgstr "會把這個交易所的金鑰從這台電腦移除，下單機將無法再用這個帳戶交易。下單設定也會一併清空，重新串接後需重新設定。"
+msgstr "會把這個帳戶的登入資料從這台電腦移除，下單機不再能用它交易。下單設定也會一併清空。"
 
 msgid "tr.unbindWarnPaper"
 msgstr "下單設定會一併清空。之後再綁模擬交易時，模擬帳戶會從 100,000 USDT 重新開始，現在的部位與紀錄不會帶過去。"
@@ -6554,7 +6556,7 @@ msgid "pres.s.certRun"
 msgstr "檢查憑證…"
 
 msgid "pres.s.certExp"
-msgstr "到期 {date}"
+msgstr "到期"
 
 msgid "pres.s.tprobe"
 msgstr "確認登入（測試主機）"
@@ -6814,7 +6816,7 @@ msgid "pres.first.equityNone"
 msgstr "還沒讀到統一帳戶的權益數。"
 
 msgid "pres.first.margin"
-msgstr "每口保證金以統一公告為準；保證金不足時統一會拒單。統一沒有給用戶的模擬環境，這幾口就是真錢。"
+msgstr "每口保證金以統一公告為準；保證金不足時統一會拒單。這幾口是真錢。"
 
 msgid "pres.first.ok"
 msgstr "繼續"
@@ -6833,7 +6835,11 @@ msgstr "統一還有 {lots} 口在倉。結束後策略不會再下單，這些�
 
 
 msgid "pres.err.stopNote"
-msgstr "處理好後按「確認登入」；如果被統一鎖住，請聯絡營業員解鎖。"
+msgstr "如果被統一鎖住，請聯絡營業員解鎖。"
+
+# 逾時那一類的輔助句:不提鎖帳號(那是密碼錯才有的結果)
+msgid "pres.err.retryNote"
+msgstr "網路或統一恢復後再試一次。"
 
 msgid "pres.err.confirm"
 msgstr "確認登入"

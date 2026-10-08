@@ -78,7 +78,7 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
 
 /* ── V5-03 雲端舊 runtime(1.1.89)不在「啟動下單」時起對帳器 ── */
 {
-  const m = /const trRunStart = \(cmd\) => trRun\("running", cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\.then\(sent\)\] : \[/.exec(trade);
+  const m = /const trRunStart = \(cmd\) => trRun\("running", cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\] : \[/.exec(trade);
   ok("V5-03", "電腦版的雲端啟動只送 resume / resume_wait 一個指令(trade.js:" + lineOf(trade, /const trRunStart = /) + ")", !!m);
   const shipped = /const CLOUD_SHIPPED = \[([^\]]+)\]/.exec(main);
   ok("V5-03", "主行程也不放行 restart_reconciler 上雲端(CLOUD_SHIPPED)", !!shipped && !/restart_reconciler/.test(shipped[1]));

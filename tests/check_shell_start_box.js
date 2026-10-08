@@ -44,8 +44,8 @@ function world(o) {
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
   };
   const names = Object.keys(env);
-  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trStartNotes")}\n${(trade.match(/const trStartSeenKey = .*;/) || [""])[0]}\n${fn(trade, "trAskStart")}\n
-    const click = ${okClick};\n return { trAskStart, trStartNotes, trStartSeenKey, click, ctx: () => delCtx };`;
+  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAskStart")}\n
+    const click = ${okClick};\n return { trAskStart, trStartNotes, click, ctx: () => delCtx };`;
   const M = new Function(...names, body)(...names.map((k) => env[k]));
   Object.keys(ids).forEach((k) => delete ids[k]);
   $("del-scrim").hidden = true;
@@ -93,12 +93,14 @@ function world(o) {
     await w.press(); ok("…按下去送 resume(＋restart_reconciler)", w.sent.join() === "resume,restart_reconciler", w.sent); }
   // ---- 4
   { const N = world({ money: "paper" }).M.trStartNotes, flat = (o) => { const n = N(o); return n.keep.join("|") + " / " + n.details.map((g) => g.label + ":" + (g.items ? g.items.join("|") : g.text)).join(";"); };
-    ok("這台電腦 · 模擬:常駐只有睡眠那一句;不出「只調整 Blave 那一份」與交易所停損單", flat({ paper: true, own: true, venue: "" }) === "tr.keep.sleep / tr.det.local:tr.means.1|tr.means.2p|tr.means.3");
-    ok("這台電腦 · 真錢:常駐三句(只調整 Blave 那一份、睡眠、交易所停損單)", flat({ real: true, own: true, venue: "Binance" }) === "tr.keep.own|tr.keep.sleep|tr.means.4 / tr.det.local:tr.means.1|tr.means.2|tr.means.3");
+    // 設計稽核 desktop-10-08 #3:睡眠那一句(tr.keep.sleep)退役——它跟細節的第 1、2 點是同一件事;本機四點全在「細節」,常駐只留 venue 通用的「只調整 Blave 那一份」
+    ok("這台電腦 · 模擬:沒有常駐句;細節三點(醒著才跑、睡眠不平倉、重開要再按),不出「只調整 Blave 那一份」與交易所停損單", flat({ paper: true, own: true, venue: "" }) === " / tr.det.local:tr.means.1|tr.means.2p|tr.means.3");
+    ok("這台電腦 · 真錢:常駐只有「只調整 Blave 那一份」;細節四點(交易所停損單排第 4)", flat({ real: true, own: true, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.4");
+    ok("tr.keep.sleep 退役:程式不再引用、兩語都拿掉", !/tr\.keep\.sleep/.test(trade) && strings.indexOf('"tr.keep.sleep"') < 0);
     ok("機器沒證明自己只碰帳本(self_ledger 不是 true):那一句不出", !/tr\.keep\.own/.test(flat({ real: true, own: false, book: "none", venue: "Binance" })));
     // 統一(這台電腦、設計師裁定):完成頁那兩句說明搬過來——常駐「同月份分不清」取代三種加密口吻,細節多一條夜盤;三種帳本狀態都一樣
-    ok("統一 · 真錢:常駐 tr.keep.pres(不是 tr.keep.own*)、細節多夜盤那一條;pres 只有這台電腦且 venue 是統一才傳(雲端不接統一)", ["none", "built", undefined].every((b) => flat({ real: true, own: true, pres: true, book: b, venue: "統一期貨" }).indexOf("tr.keep.pres|tr.keep.sleep|tr.means.4 / ") === 0)
-      && flat({ real: true, own: true, pres: true, venue: "統一期貨" }) === "tr.keep.pres|tr.keep.sleep|tr.means.4 / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.presNight"
+    ok("統一 · 真錢:常駐 tr.keep.pres(不是 tr.keep.own*)、細節多夜盤那一條;pres 只有這台電腦且 venue 是統一才傳(雲端不接統一)", ["none", "built", undefined].every((b) => flat({ real: true, own: true, pres: true, book: b, venue: "統一期貨" }).indexOf("tr.keep.pres / ") === 0)
+      && flat({ real: true, own: true, pres: true, venue: "統一期貨" }) === "tr.keep.pres / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.4|tr.means.presNight"
       && /pres: !cloud && trVenueId\(\) === "president" \}\);/.test(trade));
     ok("統一那一句的條件跟 tr.keep.own* 同一個(self_ledger === true 且真錢;電腦版第一份 config 就是 self_ledger: true):沒有它那句才不出", !/tr\.keep\.pres/.test(flat({ real: true, own: false, pres: true, venue: "統一期貨" })) && /tr\.means\.presNight/.test(flat({ real: true, own: false, pres: true, venue: "統一期貨" })));
     // 5. 三種帳本狀態
@@ -119,19 +121,16 @@ function world(o) {
       && flat({ cloud: true, paper: true, own: true, v: { h: "1", m: "50" } }) === "tr.cloud.means.3 / tr.det.cloud:tr.cloud.means.1|tr.cloud.means.4");
     ok("雲端拿不到金額:主機費那一句整句不出(不生沒有數字的半套說法)", flat({ cloud: true, paper: true, v: {} }).indexOf("tr.cloud.means.3") < 0); }
   { const det = (w) => w.body.all().find((n) => n.tag === "details");
-    const a = world({ money: "real" }), b = world({ money: "real", store: { tr_start_seen_local_real: "1" } }), c = world({ money: "paper" }), d = world({ money: "real", env: "cloud", store: { tr_start_seen_local_real: "1" } });
-    ok("「細節」:真錢第一次展開、啟動過就收著、模擬一律收著;這台電腦與雲端分開記", det(a).open === true && det(b).open === false && det(c).open === false && det(d).open === true);
+    const a = world({ money: "real" }), c = world({ money: "paper" }), d = world({ money: "real", env: "cloud" });
+    // 設計稽核 desktop-10-08 #3:細節一律收合(展開時整框在 1366 寬出捲軸);「看過」的 localStorage 旗標跟著退役
+    ok("「細節」一律收著:真錢第一次、模擬、雲端都收", det(a).open === false && det(c).open === false && det(d).open === false);
     ok("真錢的標題記號是「真錢」、模擬是「模擬」", a.mark.textContent === "tr.mode.real" && a.mark.cls.has("real") && c.mark.textContent === "tr.mode.paper" && c.mark.cls.has("paper"));
     await a.pick("wait"); await a.press();
-    ok("機器收下啟動指令才記成啟動過", a.store.tr_start_seen_local_real === "1", a.store);
-    const e = world({ money: "real", reply: () => ({ ok: false }) }); await e.pick("catch"); await e.press();
-    const h = world({ money: "real", reply: () => ({ ok: true, held: "binance" }) }); await h.pick("catch"); await h.press();
-    await c.pick("catch"); await c.press();
-    ok("沒送成、被帳戶確認擋住(held)、模擬:都不記", !("tr_start_seen_local_real" in e.store) && !("tr_start_seen_local_real" in h.store) && !Object.keys(c.store).length, [e.store, h.store, c.store]); }
+    ok("啟動後不再寫「看過細節」的旗標(trStartSeenKey 退役)", !Object.keys(a.store).length && !/trStartSeenKey|tr_start_seen_/.test(trade), a.store); }
   // ---- 字串
   { const has = (k) => (strings.match(new RegExp('"' + k.replace(/\./g, "\\.") + '":', "g")) || []).length === 2;
-    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.keep.sleep", "tr.det.local", "tr.det.cloud", "cf.more"];
-    const GONE = ["tr.startOwnOnly", "tr.startChoice", "tr.startWarn2", "tr.startWarn2Local", "tr.means.l", "tr.cloud.means.l", "tr.cloud.means.2"];
+    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.det.local", "tr.det.cloud", "cf.more"];
+    const GONE = ["tr.startOwnOnly", "tr.startChoice", "tr.startWarn2", "tr.startWarn2Local", "tr.means.l", "tr.cloud.means.l", "tr.cloud.means.2", "tr.keep.sleep"];
     ok("新字串兩語都在;退役的兩語都拿掉、程式也不再引用", NEW.every(has) && GONE.every((k) => strings.indexOf('"' + k + '"') < 0 && trade.indexOf('"' + k + '"') < 0), NEW.filter((k) => !has(k)).concat(GONE.filter((k) => strings.indexOf('"' + k + '"') >= 0)));
     const zh = strings.slice(strings.indexOf("\n  zh: {")), get = (k) => (zh.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
     ok("兩顆主鈕的字沒變(實測腳本認這兩句)", get("tr.startCatchUp") === "啟動並補齊部位" && get("tr.startWait") === "啟動，等新訊號才進場" && get("tr.start") === "啟動下單");
@@ -145,7 +144,7 @@ function world(o) {
       ok("統一的兩句(設計師裁定,逐字)", get("tr.keep.pres") === "只調整 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
         && getEn("tr.keep.pres") === "Only Blave’s own share is traded; don’t trade the same product and month by hand as a strategy — Blave can’t tell them apart."
         && get("tr.means.presNight") === "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。" && getEn("tr.means.presNight") === "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on."); }
-    ok("真錢的選項說明講「真實委託」;「連平倉與停損都不會做」只留在常駐句(tr.means.3 不重述)", /真實委託/.test(get("tr.opt.catchDescReal")) && /真實委託/.test(get("tr.opt.waitDescReal")) && !/真實委託/.test(get("tr.opt.catchDesc") + get("tr.opt.waitDesc"))
-      && /平倉與停損也不會執行/.test(get("tr.keep.sleep")) && !/平倉與停損/.test(get("tr.means.3"))); }
+    ok("真錢的選項說明講「真實委託」;「不會自動平倉」只在細節第 2 點(tr.means.3 不重述)", /真實委託/.test(get("tr.opt.catchDescReal")) && /真實委託/.test(get("tr.opt.waitDescReal")) && !/真實委託/.test(get("tr.opt.catchDesc") + get("tr.opt.waitDesc"))
+      && /不會自動平倉/.test(get("tr.means.2")) && !/平倉與停損/.test(get("tr.means.3"))); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack)); process.exit(1); });

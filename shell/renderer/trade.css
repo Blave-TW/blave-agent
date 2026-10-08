@@ -156,6 +156,9 @@ html.ws-sc .side-gate { display: none; }
 .main-head-desc .up { color: var(--ink); font-weight: 600; }
 .main-head-desc .ink { color: var(--ink); }   /* 已暫停的「重開過」原因行:正文墨色,不用紅、不加粗 */
 .main-head-desc .danger { color: var(--color-redText); }   /* 「可能仍在下單」的原因行:紅字只給錢還在外面暴露的時刻;不加粗、不鋪底 */
+.main-head-desc.fail { display: flex; align-items: flex-start; gap: var(--space-8); }   /* 串接失敗停著:設定分頁同一個紅記號 + 句子 */
+.main-head-desc.fail .fault-mark { margin-top: 8px; }   /* 12×1.5 首行視覺中線 */
+.main-head-desc.fail .txt { min-width: 0; }
 .run-dot { display: inline-block; vertical-align: .09em; width: 7px; height: 7px; border-radius: var(--radius-pill); margin-right: var(--space-8); }
 .run-dot[hidden] { display: none; }
 .run-dot.live { background: var(--color-green); animation: trRunPulse calc(var(--motion-blink) * 3) ease-in-out infinite; }

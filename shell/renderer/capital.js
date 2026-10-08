@@ -226,10 +226,11 @@ function capMark(st) {
   else mk.appendChild(trEl("span", st === "run" ? "spin16" : st === "cur" ? "cur" : st === "bad" ? "fault-mark" : "todo"));
   return mk;
 }
-// 清單一列:st = done | run | cur | todo | bad;right = 右側短結果;x = 展開內容(只有目前那一列)
+// 清單一列:st = done | run | cur | todo | bad;right = 右側短結果(字串,或已經排好字體的節點);x = 展開內容(只有目前那一列)
 function capRow(st, name, right, x) {
   const li = trEl("li", "cap-step" + (st === "cur" || (st === "bad" && x) ? " is-cur" : st === "todo" ? " is-todo" : ""));
-  li.append(capMark(st), trEl("span", "cap-n", name), trEl("span", "cap-r", right || ""));
+  const r = trEl("span", "cap-r"); if (right && typeof right === "object") r.appendChild(right); else r.textContent = right || "";
+  li.append(capMark(st), trEl("span", "cap-n", name), r);
   if (x) { const w = trEl("div", "cap-x"); w.appendChild(x); li.appendChild(w); }
   return li;
 }

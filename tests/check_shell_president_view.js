@@ -163,4 +163,18 @@ ok("完成頁兩句說明逐字;沒有夜盤、不睡、同月份;完成頁只�
   && Object.keys(sctx.S.zh).filter((k) => k.indexOf("pres.done.") === 0).every((k) => !/夜盤|不睡|月份|night|awake|month/i.test(sctx.S.zh[k] + sctx.S.en[k]))
   && /\["pres\.done\.n1", "pres\.done\.n2"\]\.forEach/.test(src) && !/pres\.done\.n3/.test(src));
 ok("stopNote 沒有數字", !/\d/.test(sctx.S.zh["pres.err.stopNote"]) && !/\d/.test(sctx.S.en["pres.err.stopNote"]));
+// 設計稽核 desktop-10-08(電腦版統一畫面)#2 / #8 / #10
+ok("#2 第一次真錢框:權益數「12,147,198 TWD」(trTwd 整數 + 幣別後綴),不用 NT$;保證金那句不再講「統一沒有給用戶的模擬環境」",
+  !/"NT\$/.test(src) && /t\("pres\.first\.equity", \{ v: trTwd\(a\.equity\) \+ " " \+ TR_TXF_CCY \}\)/.test(src) && /trEl\("div", "v mono", typeof a\.equity === "number" \? trTwd\(a\.equity\) \+ " " \+ TR_TXF_CCY : "—"\)/.test(src)
+  && sctx.S.zh["pres.first.margin"] === "每口保證金以統一公告為準；保證金不足時統一會拒單。這幾口是真錢。" && !/模擬環境|simulated/i.test(sctx.S.zh["pres.first.margin"] + sctx.S.en["pres.first.margin"]));
+{ const body = src.slice(src.indexOf("function presProbeBody("), src.indexOf("function presTestHostBody("));
+  ok("#8 失敗畫面的輔助句照類別:PASSWORD / UNKNOWN → 被鎖找營業員;TIMEOUT → 恢復後再試;憑證 / 維護 / 沒帳密 → 沒有輔助句",
+    /const hintKey = view === "d-PASSWORD" \|\| view === "d-UNKNOWN" \? "pres\.err\.stopNote" : view === "d-TIMEOUT" \? "pres\.err\.retryNote" : null;/.test(body)
+    && /hintKey \? presP\("cx-hint", t\(hintKey\)\) : null/.test(body));
+  ok("#8 字串:stopNote 只剩鎖住那半句(不重述「按「確認登入」」);retryNote 逐字", sctx.S.zh["pres.err.stopNote"] === "如果被統一鎖住，請聯絡營業員解鎖。" && !/確認登入|Confirm login/.test(sctx.S.zh["pres.err.stopNote"] + sctx.S.en["pres.err.stopNote"])
+    && sctx.S.zh["pres.err.retryNote"] === "網路或統一恢復後再試一次。" && /President/.test(sctx.S.en["pres.err.retryNote"]) && !/lock/i.test(sctx.S.en["pres.err.retryNote"])); }
+{ const cap = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "capital.js"), "utf8"), css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "capital.css"), "utf8");
+  ok("#10 憑證列右側「到期 2027/04/29」:漢字 sans、日期 .mono(同資產分頁「更新 + 時間」);capRow 收節點;CSS 有 .cap-r .mono", /certDone = exp \? trEl\("span", "", t\("pres\.s\.certExp"\) \+ " "\) : "";\n\s*if \(exp\) certDone\.appendChild\(trEl\("span", "mono", exp\)\);/.test(src)
+    && sctx.S.zh["pres.s.certExp"] === "到期" && sctx.S.en["pres.s.certExp"] === "Expires" && !/\{date\}/.test(sctx.S.zh["pres.s.certExp"])
+    && /if \(right && typeof right === "object"\) r\.appendChild\(right\); else r\.textContent = right \|\| "";/.test(cap) && /\.cap-r \.mono \{ font-family: "Roboto Mono"/.test(css)); }
 console.log(red ? `\n${red} 紅` : "\n全綠"); process.exit(red ? 1 : 0);

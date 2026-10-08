@@ -1294,7 +1294,7 @@ msgid "cx.retesting"
 msgstr "Testing…"
 
 msgid "cx.fail"
-msgstr "Connecting {id} failed ({stage}): {msg}"
+msgstr "{msg} ({stage})"
 
 msgid "cx.presStopped"
 msgstr "Login stopped. Press Continue to confirm login."
@@ -1304,6 +1304,9 @@ msgstr "This OKX account mode can't trade futures. In OKX, go to Settings → Ac
 
 msgid "cx.failShort"
 msgstr "Connection failed"
+
+msgid "cx.failStopped"
+msgstr "Connection failed and the order engine isn’t running. Fix it under Settings."
 
 # Shown in the status line under the title (the top bar keeps the short cx.failShort) when the Binance recheck verdict is IP_CHANGED (other reasons keep cx.failShort); {ip} = the IPv4 binance_link verified
 msgid "cx.failIp"
@@ -1525,9 +1528,6 @@ msgstr "No orders now. Each strategy starts trading only at its next entry, exit
 
 msgid "tr.opt.waitDescReal"
 msgstr "No orders now. Each strategy sends real orders only at its next entry, exit, or flip."
-
-msgid "tr.keep.sleep"
-msgstr "While this computer sleeps, is shut down, or Blave is closed, no orders go out — exits and stops included."
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
 # 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定
@@ -1771,6 +1771,9 @@ msgstr "Confirm trade amounts"
 msgid "tr.saveZeroed"
 msgstr "Set to 0: {names} — their share of futures positions will be closed and spot holdings sold."
 
+msgid "tr.saveZeroedLots"
+msgstr "Set to 0: {names} — their share of futures positions will be closed."
+
 msgid "tr.saveWarn"
 msgstr "Once saved, the order engine reconciles to these amounts — orders may fire immediately."
 
@@ -1912,14 +1915,11 @@ msgstr "Disconnect"
 msgid "tr.unbinding"
 msgstr "Disconnecting…"
 
-msgid "tr.unbindDesc"
-msgstr "Removes the exchange keys from this computer — the order engine can no longer trade this account."
-
 msgid "tr.unbindDescPaper"
 msgstr "Unbind to connect a real exchange instead."
 
 msgid "tr.unbindWarn"
-msgstr "This removes the exchange keys from this computer — the order engine can no longer trade this account. Your order settings are also cleared; you'll need to set them up again after reconnecting."
+msgstr "This removes this account’s login details from this computer — the order engine can no longer trade with it. Your order settings are also cleared."
 
 msgid "tr.unbindWarnPaper"
 msgstr "Your order settings are cleared. If you connect paper trading again, the paper account starts fresh at 100,000 USDT — current positions and history don’t carry over."
@@ -6550,7 +6550,7 @@ msgid "pres.s.certRun"
 msgstr "Checking certificate…"
 
 msgid "pres.s.certExp"
-msgstr "Expires {date}"
+msgstr "Expires"
 
 msgid "pres.s.tprobe"
 msgstr "Confirm login (test host)"
@@ -6810,7 +6810,7 @@ msgid "pres.first.equityNone"
 msgstr "President account equity not read yet."
 
 msgid "pres.first.margin"
-msgstr "Margin per lot follows President’s announcement; orders are refused when margin is short. President has no simulated environment for users — these lots are real money."
+msgstr "Margin per lot follows President’s announcement; orders are refused when margin is short. These lots are real money."
 
 msgid "pres.first.ok"
 msgstr "Continue"
@@ -6829,7 +6829,10 @@ msgstr "{lots} lot(s) are still open at President. After you quit, strategies pl
 
 
 msgid "pres.err.stopNote"
-msgstr "Once it’s fixed, press Confirm login; if President has locked the account, ask your broker rep to unlock it."
+msgstr "If President has locked the account, ask your broker rep to unlock it."
+
+msgid "pres.err.retryNote"
+msgstr "Try again once the network or President is back."
 
 msgid "pres.err.confirm"
 msgstr "Confirm login"

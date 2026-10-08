@@ -273,7 +273,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   /* 雲端啟動**不順帶送 restart_reconciler**(規格 §4.2-2):那份報告可能是一分鐘前的,照它判等於瞎猜——
      多吃一格速率桶、多一筆稽核。本機那條不動。 */
   ok("trAskStart:雲端只送 resume / resume_wait;這台電腦照舊視 trRecRunning 補 restart_reconciler",
-    /cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\.then\(sent\)\] : \[/.test(fn("trAskStart")) && /trRecRunning\(S\.st\) \? \{ ok: true \} : trSend\(S, "restart_reconciler", \{\}\)/.test(fn("trAskStart")));
+    /cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\] : \[/.test(fn("trAskStart")) && /trRecRunning\(S\.st\) \? \{ ok: true \} : trSend\(S, "restart_reconciler", \{\}\)/.test(fn("trAskStart")));
   /* 緊急停止不可以被自己的過場態鎖住(規格 §1.3,Wei 拍板):前一個指令還在路上不是「不能停」的理由。
      重複送 halt 是安全的(api 有自己的速率桶、本機 daemon 沒跑時照樣排隊 daemon.js:149,而且重試沿用同一顆 request_id)。
      啟動方向照舊鎖住——那個重複送就是真的多開一次倉。 */

@@ -1056,9 +1056,11 @@ function trMoneyInto(node, v, signed, ccy) {
   const c = ccy || trUnit();
   if (s != null && c) node.appendChild(trEl("span", "ccy", c));
 }
+// 口數字串:整數、負號 U+2212(同 trTwd;輸入框那邊仍走 trFmt 的 hyphen,parse 認的是它);不是數字 null
+function trLotsFmt(v, signed) { const s = typeof v === "number" && isFinite(v) ? trFmt(Math.round(v), signed) : null; return s == null ? null : s.replace(/^-/, "−"); }
 // 口數格(同網頁 paintVenueLots):整數、可帶正負號、後綴「口」不跟帳戶幣;不是數字 = 「—」
 function trLotsInto(node, v, signed) {
-  const s = typeof v === "number" && isFinite(v) ? trFmt(Math.round(v), signed) : null;
+  const s = trLotsFmt(v, signed);
   node.textContent = s == null ? "—" : s;
   if (s != null) node.appendChild(trEl("span", "ccy lots", t(trLotsKey(Math.round(v), "tr.lotsUnit", "tr.lotUnit"))));
 }
@@ -1367,8 +1369,12 @@ function trStateText(state) {
   else if (state === "dead") s = trDeadKind(r) === "died" ? t(zS ? "tr.diedZ" : "tr.died", { t: rec.heartbeat_at ? trStamp(rec.heartbeat_at) : "—" })
     : rec.heartbeat_at ? t("tr.notStarted") + " · " + t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
+  // 失敗而且下單程式沒在跑:整句換成帶出口的那一句(到「設定」),不把三個狀態串成一串(設計稽核 desktop-10-08 #7)
+  if (trFailStopped(state, r)) return t("cx.failStopped");
   return trFailedIds(r).length || trKeyBad(TR.env) ? cxFailWord(TR.env) + " · " + s : s;
 }
+/* 讀帳失敗 + 下單程式沒在跑(停著、或 HALT 但對帳器不在):統一登入失敗停掉就是這一型。HALT 中對帳器還活著的不算(它在跑) */
+function trFailStopped(state, r) { return (trFailedIds(r).length > 0 || trKeyBad(TR.env)) && (state === "dead" || (state === "halted" && !trRecRunning(TR.st))); }
 /* 頂列用的短狀態詞(§6):不帶時間、不帶出口;完整句留給標題下那一行。字面 key 一個一個寫(check_shell_strings 靠字面掃) */
 function trShortState(state) {
   const r = trReport() || {};
@@ -1543,12 +1549,16 @@ function trPaintHead() {
   else if (ucAt > 0) tx.append(full.slice(0, ucAt), trEl("span", "danger", ucReason), full.slice(ucAt + ucReason.length));
   else if (inkAt > 0) tx.append(full.slice(0, inkAt), trEl("span", "ink", inkReason), full.slice(inkAt + inkReason.length));
   else tx.textContent = full;
+  // 串接失敗停著:帶設定分頁同一個紅記號(眼睛才不會先落在標題與灰鈕上,把失敗漏掉)
+  const failStop = trFailStopped(state, hr);
+  if (failStop) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); desc.appendChild(m); }
+  desc.classList.toggle("fail", failStop);
   desc.appendChild(tx); desc.title = full;   // 單行截斷,全文放 title
   // 帶著出口的句子(「請重開 Blave」「按『啟動下單』重新開始」)不能被截斷:這時候狀態行可以換行
   /* 狀態句換行。**Z 一律換行**:標頭改成三列之後這一行跨滿寬,沒有 .wrap 的狀態會被截成一行、而且看起來很正常——
      被藏掉的正是「部位現在沒有人在管」那半句(設計師在 V2b 點名的陷阱)。running + Z 與「尚未啟動下單 · 最後執行」
      這兩種以前沒有 .wrap,現在靠 trNoAmounts 一起接住 */
-  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown") || died || state === "halted" || state === "unconfirmed" || trNoAmounts(trReport()) || (state === "noaccount" && trNoAccountStopped(trReport())));   // 帶出口 / 原因行的句子不截(已暫停的原因行常駐,不可以被省略號吃掉)
+  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown") || died || failStop || state === "halted" || state === "unconfirmed" || trNoAmounts(trReport()) || (state === "noaccount" && trNoAccountStopped(trReport())));   // 帶出口 / 原因行的句子不截(已暫停的原因行常駐,不可以被省略號吃掉)
   // 狀態變了講一次(輪詢每幾秒重畫,不能每次都講)
   if (TR.lastSaid !== null && TR.lastSaid !== text && TR.open && state !== "loading") srSay(text);
   TR.lastSaid = text;
@@ -1594,6 +1604,7 @@ function trPaintHead() {
   // 要回答帳戶確認時(已暫停 + book_hold 在問):主鈕換成「確認帳戶」,Z 的停用與「解除暫停」都不出(spec §1:Z 時也一樣)
   const ask = state === "halted" && trAcctAsk(trReport()), pendingAcct = !!TR.pending && TR.pending.want === "acct";
   const zv = ask ? { off: false, release: false, reason: null } : trZView(state, trReport() || {});
+  if (failStop) zv.reason = null;   // 狀態句已帶出口(到「設定」):此刻該處理的是登入,不叫人去配金額(鈕照樣停用)
   const pend = trAmountsEdited() ? null : trPendKey(TR, Date.now(), zv.off && !zv.noStart);
   // 雲端而且不知道現況:不放主鈕——「暫停下單」「啟動下單」哪一個字都是在替它下結論(這一刀的鈕本來就不能按,說明行還在)
   // 沒有交易所、但主機重開停著(B0):一定是 Z,不出「啟動下單」,只出「解除暫停」(v2 §9-1;紀錄檔只有 resume 清得掉)
@@ -1830,7 +1841,8 @@ function trBookBaseline(r) {
 }
 /* 啟動框的句子分兩層(Wei 0928 第 3 點 A 案的逐句分類):keep = 每次都要看的常駐句,details = 看懂一次就好的、收在「細節」裡。
    回 { keep: [句], details: [{ label, items | text }] },純函式(tests/check_shell_start_box.js 切出來跑)。
-   這台電腦:常駐「睡眠、關機、結束 Blave 時不下單也不停損」;真錢再加交易所停損單那一句(模擬帳戶沒有交易所端的停損單,那句在那裡是假的)。
+   這台電腦:常駐只有 venue 通用的「只調整 Blave 自己那一份」;電腦醒著才跑 / 睡眠關機不平倉 / 重開要再按啟動 / 交易所端停損單(真錢;
+   模擬帳戶沒有交易所端的停損單,那句在那裡是假的)四點全在「細節」——同一件事不在常駐與細節各講一次(設計稽核 desktop-10-08 #3)。
    雲端:常駐換成主機費與停機門檻(金額來自方案頁同一個來源;拿不到數字就整句不出——不寫死、也不生一句沒有數字的半套說法)。
    own = 回報證明機器只碰帳本裡的部位(self_ledger);那一句只給真錢(模擬帳戶沒有用戶手動開的部位),而且跟著帳本基準分三種說法(book):
    還沒建 → 「同方向的部位第一次對帳會算進來」＋細節裡 1.5 倍那一段;已建 → 只講「你自己開的不算 Blave 的」(那時沒有東西會被算進來,
@@ -1846,15 +1858,12 @@ function trStartNotes(o) {
     if (o.v && o.v.h && o.v.m) keep.push(t("tr.cloud.means.3", o.v));
     items.push(t("tr.cloud.means.1"), t("tr.cloud.means.4"));
   } else {
-    keep.push(t("tr.keep.sleep"));
-    if (o.real) keep.push(t("tr.means.4"));
     items.push(t("tr.means.1"), o.paper ? t("tr.means.2p") : t("tr.means.2", { venue: o.venue }), t("tr.means.3"));
+    if (o.real) items.push(t("tr.means.4"));
     if (o.pres) items.push(t("tr.means.presNight"));   // 台指期夜盤也會下單、電腦要一直開著
   }
   return { keep, details: details.concat([{ label: t(o.cloud ? "tr.det.cloud" : "tr.det.local"), items }]) };
 }
-/* 「細節」真錢第一次預設展開、第二次起收起;模擬一律收起。依視角分開記,啟動指令被機器收下才寫入(這台電腦的偏好,localStorage) */
-const trStartSeenKey = (env) => "tr_start_seen_" + (env === "cloud" ? "cloud" : "local") + "_real";
 // 兩邊都在用真錢:只知道「都是真錢」,不知道是不是同一個帳戶 → 灰記號的提醒(規格 §3),不是封鎖
 function trBothReal() {
   if (TR.env !== "cloud" || envMoney(TR.st) !== "real" || envMoney(TR_BAGS.local.st) !== "real") return null;
@@ -1874,11 +1883,9 @@ function trAskStart(opener, presOk) {
      其他原因死掉的雲端對帳器,電腦版沒有重啟鈕:「對帳器停了」那一態照實講,重啟在網頁工作頁做 */
   const go = (cmd) => { TR.startAt = Date.now(); return trRunStart(cmd); };   // 表底失敗:按下之前的那些不再講成現在式(trErrLoud)
   // real = 連的是真的交易所;沒連交易所(主機重開後停著、只有啟動鈕清得掉)兩個都不是:不掛記號、句子用不講「真實委託」的那一組
-  const paper = trIsPaper(), real = envMoney(TR.st) === "real", seenKey = trStartSeenKey(TR.env);
-  // 機器收下啟動指令(不是被帳戶確認擋住的 held)才算啟動過一次:真錢的「細節」下次就收著
-  const sent = (res) => { if (real && res && res.ok && !trHeldVenue(res)) lsSet(seenKey, "1"); return res; };
-  const trRunStart = (cmd) => trRun("running", cloud ? [(S) => trSend(S, cmd, {}).then(sent)] : [
-    (S) => trSend(S, cmd, {}).then(sent),
+  const paper = trIsPaper(), real = envMoney(TR.st) === "real";
+  const trRunStart = (cmd) => trRun("running", cloud ? [(S) => trSend(S, cmd, {})] : [
+    (S) => trSend(S, cmd, {}),
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
   const recomputing = trRecomputing(r), rkS = trRestartKind(r);
@@ -1888,7 +1895,7 @@ function trAskStart(opener, presOk) {
   confirmBox(trCloudBox(Object.assign({
     title: t("tr.start"), mark: paper ? t("tr.mode.paper") : real ? t("tr.mode.real") : null, markKind: real ? "real" : "paper", opener,
     lead: trBothReal(),
-    keep: notes.keep, details: notes.details, detailsOpen: real && lsGet(seenKey) !== "1",
+    keep: notes.keep, details: notes.details,   // 細節一律收合:展開時整框在 1366 寬就出捲軸(設計稽核 desktop-10-08 #3)
   }, canWait ? {
     // 重開過(主機 / Blave):到現在都沒有下單,部位可能跟訊號對不上——最上面的狀態句,在選「補齊 / 等新訊號」之前講
     lines: rkS === "machine" ? [t("tr.cloud.restartStartLine")] : rkS === "app" ? [t("tr.restartStartLineLocal")] : [],
@@ -2043,6 +2050,8 @@ function trPickBtn() {
 /* 這一列是不是台指期口數列:標的看主機回報的 states,沒有就看清單(同金額表那一格的 sym) */
 function trRowTxf(n) { const st = ((trReport() || {}).states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}; return trTxfSpec(st.symbol || x.symbol); }
 function trRowIsLot(n) { return !!trRowTxf(n); }
+// 表上(或這次送出的)全是口數列 = 期貨帳戶:沒有現貨、合計與槓桿算不出來
+function trLotsOnly(names) { return names.length > 0 && names.every((n) => trRowIsLot(n)); }
 // 這一列的錢:口數列換成參考金額(沒有報價 = null),其他照原值
 function trRowMoney(n, v) { const sp = trRowTxf(n); return sp ? trTxfRefMoney(sp, v, trTxfPrice()) : v; }
 /* 金額表畫到口數列時叫(同網頁 renderPosTab 裡的 loadTxfQuote):報價過期才在背景問主行程。
@@ -2125,6 +2134,9 @@ function trAmountTable(names, stored, states) {
     const am = cloud ? trSendAmounts("cloud", names, stored, TR.edits, trListNames()) : trCurrentAmounts(names, stored, TR.edits);
     const tt = trTotals(am, eq, trRowMoney, trRowIsLot, trUnit());
     total.textContent = "";
+    // 全是口數列(期貨帳戶):合計與倍數是金額帳戶的公式,口數算不出來(0 口算得出只因 0 × 任何數 = 0;設計稽核 desktop-10-08 #4)
+    total.hidden = trLotsOnly(names);
+    if (total.hidden) { paintLev(tt.mult, am); return; }
     total.appendChild(trEl("span", "", t("tr.total")));
     if (tt.total == null) total.appendChild(trEl("span", "n", "—"));
     else { const tn = trEl("span", "n", trFmt(tt.total)), tc = tt.ccy || trUnit(); if (tc) tn.appendChild(trEl("span", "ccy", tc)); total.appendChild(tn); }
@@ -2336,11 +2348,15 @@ function trSaveAmounts(names, stored, opener) {
   Object.keys(sending).forEach((n) => { if (sending[n] > 0) { const sp = trRowTxf(n), r = cfRow("", trDisplay(n), sp ? lots(sp, sending[n]) : money(sending[n])); dl.appendChild(sp ? bigWarn(r, sp, sending[n]) : r); } });
   /* 原本 > 0、這次改成 0 的那幾支(設計稽核 M5):存下去它那一份會平倉,在金額列與合計之間講一次。移出組合那句照舊另外講 */
   const zeroed = Object.keys(sending).filter((n) => !(sending[n] > 0) && Number(stored[n]) > 0);
+  // 口數列(期貨帳戶)沒有現貨可賣,句子分支;合計與槓桿列同金額表:全是口數列不畫(設計稽核 desktop-10-08 #4)
+  const lotsOnly = trLotsOnly(Object.keys(sending));
   let dlT = dl;
-  if (zeroed.length) { extra.appendChild(dl); extra.appendChild(trEl("p", "cf-zeroed", t("tr.saveZeroed", { names: zeroed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }))); dlT = trEl("dl", "cf-rows"); }
-  dlT.appendChild(cfRow("total", t("tr.total"), tt.total == null ? unknown() : money(tt.total, tt.ccy)));
-  if (tt.mult != null) { const dd = document.createElement("dd"); dd.textContent = tt.mult.toFixed(2) + "x"; dlT.appendChild(cfRow("lev", t("tr.lev"), dd)); }
-  extra.appendChild(dlT);
+  if (zeroed.length) { extra.appendChild(dl); extra.appendChild(trEl("p", "cf-zeroed", t(trLotsOnly(zeroed) ? "tr.saveZeroedLots" : "tr.saveZeroed", { names: zeroed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }))); dlT = trEl("dl", "cf-rows"); }
+  if (!lotsOnly) {
+    dlT.appendChild(cfRow("total", t("tr.total"), tt.total == null ? unknown() : money(tt.total, tt.ccy)));
+    if (tt.mult != null) { const dd = document.createElement("dd"); dd.textContent = tt.mult.toFixed(2) + "x"; dlT.appendChild(cfRow("lev", t("tr.lev"), dd)); }
+  }
+  if (!lotsOnly || !zeroed.length) extra.appendChild(dlT);   // 口數 + 有改成 0 的:第二張 dl 是空的,不掛
   if (!trUnit() && Object.keys(sending).some((n) => sending[n] > 0 && !trRowTxf(n))) extra.appendChild(trEl("p", "cf-note", t("tr.ccyUnknown")));
   if (removed.length) extra.appendChild(trEl("p", "cf-removed", t("tr.saveRemoved", { names: removed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
   const hid = cloud ? trHidden(names, stored, trListNames()) : [], badStored = cloud ? trBadStored(sending) : [];
@@ -2413,7 +2429,7 @@ function trNetRows(sym, cs, cell, tb, lot) {
   b.setAttribute("aria-expanded", String(open)); b.setAttribute("aria-controls", id);
   cell.appendChild(b);
   const into = lot ? trLotsInto : trMoneyInto, x2 = (x) => (x < 0 ? "\u2212" : "") + Math.abs(x).toFixed(2);
-  const amt = (v) => (lot ? trFmt(v) + " " + t(trLotsKey(Math.round(v), "tr.lotsUnit", "tr.lotUnit")) : trWithUnit(trFmt(v)));
+  const amt = (v) => (lot ? trLotsFmt(v) + " " + t(trLotsKey(Math.round(v), "tr.lotsUnit", "tr.lotUnit")) : trWithUnit(trFmt(v)));
   const row = document.createElement("tr"), td = trEl("td", "note"), box = trEl("div", "net-box");
   row.id = id; row.className = "net-row"; row.hidden = !open; td.colSpan = 4;
   cs.forEach((c) => {
@@ -2424,7 +2440,7 @@ function trNetRows(sym, cs, cell, tb, lot) {
   });
   const ns = trNetSum(cs), base = sym.replace(/@spot$/i, "").replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || sym;
   box.appendChild(trEl("div", "net-sum", ns.kind === "sumOffZero" ? t("tr.net.sumOffZero", { l: amt(ns.l), s: amt(ns.s), base })
-    : t(ns.kind === "sumOff" ? "tr.net.sumOff" : "tr.net.sum", { t: lot ? trFmt(ns.t, true) + " " + t(trLotsKey(Math.round(ns.t), "tr.lotsUnit", "tr.lotUnit")) : trWithUnit(trFmt(ns.t, true)), l: amt(ns.l), s: amt(ns.s), m: amt(ns.m) })));
+    : t(ns.kind === "sumOff" ? "tr.net.sumOff" : "tr.net.sum", { t: lot ? trLotsFmt(ns.t, true) + " " + t(trLotsKey(Math.round(ns.t), "tr.lotsUnit", "tr.lotUnit")) : trWithUnit(trFmt(ns.t, true)), l: amt(ns.l), s: amt(ns.s), m: amt(ns.m) })));
   td.appendChild(box); row.appendChild(td); tb.appendChild(row);
   b.addEventListener("click", () => {
     const on = b.getAttribute("aria-expanded") !== "true";
@@ -2754,10 +2770,12 @@ function trPaintSet() {
     if (!ro && trPresLoginStopped(r, id)) box.appendChild(errLine(t("cx.presStopped")));
     // 帳戶模式不支援合約(OKX):讀帳戶就會擋,講怎麼改,不出原文
     else if (trErrToken(ae.msg) === "okx_account_mode") box.appendChild(errLine(t("cx.err.okxMode")));
-    else box.appendChild(errLine(t("cx.fail", { id: trVenueLabel(id, true), stage: ae.stage, msg: ae.msg.slice(0, 200) })));
+    // 列上已有「串接失敗」記號與交易所名:這一行只留原因,有階段代碼才帶括號(設計稽核 desktop-10-08 #5)
+    else box.appendChild(errLine(ae.stage === "—" ? ae.msg.slice(0, 200) : t("cx.fail", { stage: ae.stage, msg: ae.msg.slice(0, 200) })));
   }
   if (TR.cx.err) box.appendChild(errLine(TR.cx.err));
-  box.appendChild(trEl("div", "pf-foot", id === PAPER ? t("tr.unbindDescPaper") : ro ? t("tr.cloud.unbindDesc") : t("tr.unbindDesc")));   // 模擬帳戶沒有金鑰可移除
+  // 解除綁定的後果只在確認框講(同畫面不講兩次);模擬帳戶那句是「之後可以改綁真實交易所」、雲端那句是唯讀視角的說明,照留
+  if (id === PAPER || ro) box.appendChild(trEl("div", "pf-foot", id === PAPER ? t("tr.unbindDescPaper") : t("tr.cloud.unbindDesc")));
   // 規格 §6:網頁限定的事各自在自己的位置講一行(一句事實 + 一顆「前往工作頁」),不集中成整頁級的免責聲明。
   // 寫法紅線:講「這件事在網頁的雲端工作頁做」,不講「app 做不到」
   if (ro) {
@@ -2846,8 +2864,10 @@ function trStatCell(label, value, cls, sub, tip) {
   if (tip) sl.appendChild(trTipLabel("", label, tip)); else sl.textContent = label;
   c.appendChild(sl);
   // 四捨五入後是 0 就寫「0.00」、不帶號不上色(模擬帳戶的手續費很容易出現紅色的「-0.00」)
-  const zero = typeof value === "number" && Math.round(value * 100) === 0;
-  const s = cls.signed ? trFmt2(zero ? 0 : value, !zero) : trFmt2(value);
+  // TWD 帳戶整數(同資產分頁 trTwd;設計稽核 desktop-10-08 #1),其他幣兩位
+  const twd = trUnit() === TR_TXF_CCY, zero = typeof value === "number" && (twd ? Math.round(value) === 0 : Math.round(value * 100) === 0);
+  const s = twd ? (typeof value === "number" && isFinite(value) ? (cls.signed && !zero && value > 0 ? "+" : "") + trTwd(zero ? 0 : value) : null)
+    : cls.signed ? trFmt2(zero ? 0 : value, !zero) : trFmt2(value);
   const sv = trEl("div", "sv" + (s == null ? " na" : cls.signed && !zero ? (value > 0 ? " pos" : value < 0 ? " neg" : "") : ""), s == null ? "—" : s);
   if (s != null && trUnit()) sv.appendChild(trEl("span", "unit", trUnit()));
   c.appendChild(sv);
