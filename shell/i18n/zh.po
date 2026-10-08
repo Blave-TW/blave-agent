@@ -1573,6 +1573,9 @@ msgstr "結束 Blave 再打開後，自動下單是暫停的，要按「啟動�
 msgid "tr.means.4"
 msgstr "交易所端的停損單不受這台電腦影響；建議替部位掛上。"
 
+msgid "tr.means.twStop"
+msgstr "{venue}沒有券商端停損單；Blave 的停損是這台電腦每根 K 棒算出來才下市價單，電腦睡著或關機時部位沒有保護。"
+
 msgid "tr.keep.pres"
 msgstr "只調整 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
 

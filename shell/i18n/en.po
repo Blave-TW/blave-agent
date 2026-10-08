@@ -1570,6 +1570,9 @@ msgstr "After you quit and reopen Blave, trading stays paused until you press St
 msgid "tr.means.4"
 msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
 
+msgid "tr.means.twStop"
+msgstr "{venue} has no broker-side stop orders; Blave’s stop-loss is computed on this computer each bar and sent as a market order, so a sleeping or shut-down computer leaves the position unprotected."
+
 msgid "tr.keep.pres"
 msgstr "Only Blave’s own share is traded; don’t trade the same product and month by hand as a strategy — Blave can’t tell them apart."
 

@@ -1029,6 +1029,7 @@ function trVenueCcy(id) {
 function trEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 function trReport() { return (TR.st && TR.st.report) || null; }
 function trVenueId() { return trVenueIds(trReport())[0] || null; }
+function trTwBroker(id) { return id === "capital" || id === "president"; }   // 台灣期貨券商(同 trOrderLots 認的那兩家)
 // 給人看的交易所名:這一版只有模擬交易;其餘 id 首字大寫(同雲端 venueLabel 的退路)
 function trVenueLabel(id, short) {
   if (!id) return "";
@@ -1875,7 +1876,8 @@ function trStartNotes(o) {
     items.push(t("tr.cloud.means.1"), t("tr.cloud.means.4"));
   } else {
     items.push(t("tr.means.1"), o.paper ? t("tr.means.2p") : t("tr.means.2", { venue: o.venue }), t("tr.means.3"));
-    if (o.real) items.push(t("tr.means.4"));
+    // 台灣期貨券商(群益／統一)沒有券商端停損單型(lib/order_president place_stop_order 是 NotImplementedError):「建議掛上」那句在那裡是假的
+    if (o.real) items.push(o.tw ? t("tr.means.twStop", { venue: o.venue }) : t("tr.means.4"));
     if (o.pres) items.push(t("tr.means.presNight"));   // 台指期夜盤也會下單、電腦要一直開著
   }
   return { keep, details: details.concat([{ label: t(o.cloud ? "tr.det.cloud" : "tr.det.local"), items }]) };
@@ -1905,7 +1907,7 @@ function trAskStart(opener, presOk) {
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
   const recomputing = trRecomputing(r), rkS = trRestartKind(r);
-  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), pres: !cloud && trVenueId() === "president" });
+  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), tw: trTwBroker(trVenueId()), pres: !cloud && trVenueId() === "president" });
   const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
   const money = real ? "Real" : "";
   confirmBox(trCloudBox(Object.assign({

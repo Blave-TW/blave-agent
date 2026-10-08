@@ -44,7 +44,7 @@ function world(o) {
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
   };
   const names = Object.keys(env);
-  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAskStart")}\n
+  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAskStart")}\n
     const click = ${okClick};\n return { trAskStart, trStartNotes, click, ctx: () => delCtx };`;
   const M = new Function(...names, body)(...names.map((k) => env[k]));
   Object.keys(ids).forEach((k) => delete ids[k]);
@@ -100,8 +100,16 @@ function world(o) {
     ok("機器沒證明自己只碰帳本(self_ledger 不是 true):那一句不出", !/tr\.keep\.own/.test(flat({ real: true, own: false, book: "none", venue: "Binance" })));
     // 統一(這台電腦、設計師裁定):完成頁那兩句說明搬過來——常駐「同月份分不清」取代三種加密口吻,細節多一條夜盤;三種帳本狀態都一樣
     ok("統一 · 真錢:常駐 tr.keep.pres(不是 tr.keep.own*)、細節多夜盤那一條;pres 只有這台電腦且 venue 是統一才傳(雲端不接統一)", ["none", "built", undefined].every((b) => flat({ real: true, own: true, pres: true, book: b, venue: "統一期貨" }).indexOf("tr.keep.pres / ") === 0)
-      && flat({ real: true, own: true, pres: true, venue: "統一期貨" }) === "tr.keep.pres / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.4|tr.means.presNight"
+      && flat({ real: true, own: true, pres: true, tw: true, venue: "統一期貨" }) === "tr.keep.pres / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.twStop|tr.means.presNight"
       && /pres: !cloud && trVenueId\(\) === "president" \}\);/.test(trade));
+    // 台灣期貨券商沒有券商端停損單型(統一 place_stop_order 是 NotImplementedError、群益同樣沒做):「交易所端停損單建議掛上」在那裡是假的,換成「停損是這台電腦算的、睡著沒保護」
+    const TW = new Function(fn(trade, "trTwBroker") + "; return trTwBroker;")();
+    ok("統一 · 真錢:第 4 點是 tr.means.twStop(帶券商名)、不出 tr.means.4", flat({ real: true, own: true, pres: true, tw: true, venue: "統一期貨" }).indexOf("tr.means.4") < 0
+      && /o\.tw \? t\("tr\.means\.twStop", \{ venue: o\.venue \}\) : t\("tr\.means\.4"\)/.test(trade));
+    ok("群益 · 真錢:同樣 twStop、不出 tr.means.4(靠 venue 判斷,不是只看 pres)", flat({ real: true, own: true, tw: true, venue: "群益" }) === "tr.keep.own / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.twStop");
+    ok("加密交易所 · 真錢:照舊 tr.means.4、不出 twStop", flat({ real: true, own: true, tw: false, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.4");
+    ok("tw 旗標從既有 venue id 判:capital / president 都算,其餘不算;call site 用 trTwBroker(trVenueId())", TW("capital") && TW("president") && !TW("binance") && !TW("paper") && !TW(null)
+      && /tw: trTwBroker\(trVenueId\(\)\), pres: !cloud/.test(trade));
     ok("統一那一句的條件跟 tr.keep.own* 同一個(self_ledger === true 且真錢;電腦版第一份 config 就是 self_ledger: true):沒有它那句才不出", !/tr\.keep\.pres/.test(flat({ real: true, own: false, pres: true, venue: "統一期貨" })) && /tr\.means\.presNight/.test(flat({ real: true, own: false, pres: true, venue: "統一期貨" })));
     // 5. 三種帳本狀態
     const det = (o) => N(o).details.map((g) => g.label + (g.text ? "=" + g.text : "")).join();
@@ -129,7 +137,7 @@ function world(o) {
     ok("啟動後不再寫「看過細節」的旗標(trStartSeenKey 退役)", !Object.keys(a.store).length && !/trStartSeenKey|tr_start_seen_/.test(trade), a.store); }
   // ---- 字串
   { const has = (k) => (strings.match(new RegExp('"' + k.replace(/\./g, "\\.") + '":', "g")) || []).length === 2;
-    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.det.local", "tr.det.cloud", "cf.more"];
+    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.means.twStop", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.det.local", "tr.det.cloud", "cf.more"];
     const GONE = ["tr.startOwnOnly", "tr.startChoice", "tr.startWarn2", "tr.startWarn2Local", "tr.means.l", "tr.cloud.means.l", "tr.cloud.means.2", "tr.keep.sleep"];
     ok("新字串兩語都在;退役的兩語都拿掉、程式也不再引用", NEW.every(has) && GONE.every((k) => strings.indexOf('"' + k + '"') < 0 && trade.indexOf('"' + k + '"') < 0), NEW.filter((k) => !has(k)).concat(GONE.filter((k) => strings.indexOf('"' + k + '"') >= 0)));
     const zh = strings.slice(strings.indexOf("\n  zh: {")), get = (k) => (zh.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
@@ -143,7 +151,9 @@ function world(o) {
         && ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt"].every((k) => get(k).indexOf("只調整 Blave 自己那一份。") === 0 && getEn(k).indexOf("Only Blave’s own share is traded.") === 0));
       ok("統一的兩句(設計師裁定,逐字)", get("tr.keep.pres") === "只調整 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
         && getEn("tr.keep.pres") === "Only Blave’s own share is traded; don’t trade the same product and month by hand as a strategy — Blave can’t tell them apart."
-        && get("tr.means.presNight") === "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。" && getEn("tr.means.presNight") === "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on."); }
+        && get("tr.means.presNight") === "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。" && getEn("tr.means.presNight") === "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on.");
+      ok("台灣券商停損那一句(逐字,{venue} 帶券商名)", get("tr.means.twStop") === "{venue}沒有券商端停損單；Blave 的停損是這台電腦每根 K 棒算出來才下市價單，電腦睡著或關機時部位沒有保護。"
+        && getEn("tr.means.twStop") === "{venue} has no broker-side stop orders; Blave’s stop-loss is computed on this computer each bar and sent as a market order, so a sleeping or shut-down computer leaves the position unprotected."); }
     ok("真錢的選項說明講「真實委託」;「不會自動平倉」只在細節第 2 點(tr.means.3 不重述)", /真實委託/.test(get("tr.opt.catchDescReal")) && /真實委託/.test(get("tr.opt.waitDescReal")) && !/真實委託/.test(get("tr.opt.catchDesc") + get("tr.opt.waitDesc"))
       && /不會自動平倉/.test(get("tr.means.2")) && !/平倉與停損/.test(get("tr.means.3"))); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
