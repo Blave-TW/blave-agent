@@ -84,6 +84,23 @@ err = save({"txf_sma": 2, "nosym": 1})
 check(err is None and json.load(open(CONFIG))["exchanges"].get("nosym") == "president",
       f"統一: a strategy whose symbol cannot be read is not judged (fail-open, like the Type C check) ({err})")
 
+# asset_specs follow the strategy's CURRENT symbol: a spec of another contract is
+# rewritten on a funded save; a manual edit on the right contract is kept
+with open(os.path.join(WS, "strategies", "mxf_sma", "stats.json"), "w") as f:
+    json.dump({"symbol": "TMF", "trades": 3}, f)
+cfg = json.load(open(CONFIG))
+cfg["asset_specs"]["txf_sma"]["margin"] = 650000
+json.dump(cfg, open(CONFIG, "w"))
+err = save({"txf_sma": 2, "mxf_sma": 0})
+check(err is None and json.load(open(CONFIG))["asset_specs"]["mxf_sma"]["contract_value"] == 50,
+      f"統一: a save at amount 0 does not touch a stale spec ({err})")
+err = save({"txf_sma": 2, "mxf_sma": 1})
+specs = json.load(open(CONFIG))["asset_specs"]
+check(err is None and specs["mxf_sma"] == cl._TXF_ASSET_SPECS["TMF"],
+      f"…a strategy whose SYMBOL moved MXF -> TMF gets the TMF spec on the next funded save ({specs.get('mxf_sma')})")
+check(specs["txf_sma"]["contract_value"] == 200 and specs["txf_sma"]["margin"] == 650000,
+      "…a hand-edited margin on the unchanged TXF spec is kept")
+
 bind("BINANCE_API_KEY=a\nBINANCE_SECRET_KEY=b\n")
 err = save({"btc_sma": 100, "txf_sma": 1})
 check(err is None and json.load(open(CONFIG))["exchanges"] == {"btc_sma": "binance", "txf_sma": "binance"},

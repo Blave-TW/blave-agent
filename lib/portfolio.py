@@ -2698,11 +2698,17 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         # A book row has no unit of its own; the venue read's does (paper
         # reports lots as unit "contracts"). Without it a removed contract
         # strategy's close-on-removal — no target, no asset_spec — is judged
-        # by the currency gate and 2 lots < 10 never closes.
+        # by the currency gate and 2 lots < 10 never closes. A hand-wired
+        # venue (群益, 統一) reports no unit either: its rows are lots by
+        # trait, so the book's venue stands in (native_units reads `exchange`).
+        book = book_venue()
+        lots_venue = book if venue_traits.has(book, 'native_units') else None
         for k, row in ledger.items():
             unit = (actual.get(k) or {}).get('unit')
             if unit:
                 row['unit'] = unit
+            if lots_venue:
+                row['exchange'] = lots_venue
     # no baseline = no book to diff against; the round is read-only anyway,
     # and the account read must not stand in for the book
     diff_actual = ledger if ledger is not None else ({} if own_only else actual)

@@ -444,6 +444,22 @@ def child(venue, sid, tmp):
         last = round_("next round")
         ok = w.rows.get(month) == -1 and ledger_txf(last) == 0
         why = f"after the bot's round trip beside the user's -1: broker={w.rows}, book TXF={ledger_txf(last)}"
+    elif sid == "Z":
+        # the strategy is unpicked (amount 0): no target row, no asset_spec —
+        # the book alone says 2 lots are the bot's, and they must be closed
+        cfg = json.load(open("manager/portfolio_config.json"))
+        cfg["amounts"][STRAT] = 0
+        json.dump(cfg, open("manager/portfolio_config.json", "w"))
+        r1 = round_("amount -> 0 (unpicked)")
+        time.sleep(5.5)
+        last = round_("next round, >=5 s later")
+        sent_after = [o for r in log[2:] for o in r["sent"]]
+        closes = [o for o in sent_after if o["side"] == "sell" and o["lots"] == 2
+                  and (o.get("intent") == "reduce" if venue == "capital" else o.get("opencloseflag") == "1")]
+        ok = (len(sent_after) == 1 and len(closes) == 1 and w.net() == 0 and ledger_txf(last) == 0
+              and not errors() and not last["halt"])
+        why = (f"close-on-removal: sent={sent_after}, broker={w.rows}, book TXF={ledger_txf(last)}, "
+               f"order_errors={errors()}")
     elif sid == "R1":
         r1 = round_("signal unchanged")
         time.sleep(5.5)
@@ -551,7 +567,7 @@ def main():
     verbose = "-v" in sys.argv
     failed, xfail = [], []
     for venue in venues:
-        for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
+        for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "Z", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
             cid = f"{venue}:{sid}"
             tmp = tempfile.mkdtemp(prefix=f"ledgerpaths-{venue}-{sid}-")
             try:

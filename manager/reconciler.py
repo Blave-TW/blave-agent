@@ -877,7 +877,7 @@ def _on_read_failure(venue, exc, kind, now):
     if isinstance(exc, CapitalCacheLagError):
         # our own snapshot lagging our own order (≤60s) — not a link failure,
         # so it neither opens an outage nor re-arms the account guard
-        logging.info(f"[reconciler/capital] {exc}")
+        logging.info(f"[reconciler/{venue or '?'}] {exc}")
         return
     _guard_due = True  # the next good read is checked before anything trades on it
     code = getattr(exc, 'code', None)

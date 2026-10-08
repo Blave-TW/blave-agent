@@ -3258,18 +3258,29 @@ def _cmd_amounts(args):
     # recorded (never clobber one already written — by this code, the agent,
     # or a manual edit). contract_value/lot_size are a static, deterministic
     # lookup keyed off the strategy's SYMBOL — no AI turn needed.
+    # One exception to "never clobber": a futures spec of ANOTHER contract.
+    # The strategy's SYMBOL changed after the spec was written (MXF -> TMF)
+    # and every order and margin check would be sized for the old one — any
+    # funded save rewrites it (a manual margin edit on the right contract is
+    # kept: only contract_value is compared).
     for k, amt in clean.items():
         if amt <= 0:
+            continue
+        sym = _strategy_futures_symbol(k)
+        spec = _TXF_ASSET_SPECS.get(sym) if sym else None
+        if not spec:
+            continue
+        have = cfg["asset_specs"].get(k)
+        if have:
+            if (isinstance(have, dict) and have.get("type") == "futures_contracts"
+                    and have.get("contract_value") != spec["contract_value"]):
+                cfg["asset_specs"][k] = dict(spec)
             continue
         try:
             prev_amt = float(old_amounts.get(k, 0))
         except (TypeError, ValueError):
             prev_amt = 0.0
-        if prev_amt > 0 or cfg["asset_specs"].get(k):
-            continue
-        sym = _strategy_futures_symbol(k)
-        spec = _TXF_ASSET_SPECS.get(sym) if sym else None
-        if spec:
+        if prev_amt <= 0:
             cfg["asset_specs"][k] = dict(spec)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # 紅線 L2:UI 儲存=權威副本。鏡像先寫、config 後寫(P2-2)——reconciler
