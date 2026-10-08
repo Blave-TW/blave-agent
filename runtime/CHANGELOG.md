@@ -14,6 +14,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 - 電腦版「新增報告」框的一次性指示(`agent_turn.TURN_NOTES.report_once`)補「除非資料檢查沒過」:研究題照 `references/reports.md` › *Research questions* 先做資料檢查,沒過就留在對話、提議改題版,不硬出報告;「不登記排程」那半句不變。
 
+- 常駐程式給子行程的資料權限旗標(`command_listener._DATA_ACCESS_VALUES`)多收 `no_plan`／`plan_failed`:1.1.117 的 `state/data_access.json` 讀取端只認四種原因,方案制外殼寫進檔的這兩種會被丟掉,子行程(排程報告、live tick)就看不到真正的原因(`check_local_env_windows.py` 的列舉比對抓到的;`lib/report_templates._MISSING_FOOT` 還沒有這兩種的句子,另案補)。
+
 ## 1.1.117 — 2026-10-09(desktop 0.1.18)
 
 - 統一期貨入口 0.1.18 先藏(外殼 `trade.js` 旗標 `PRES_LOCAL_ON = false`,隨 0.1.19 券商行情一起開):這台電腦連接框的下拉不列「台股 › 統一期貨」、硬選退回模擬;統一的程式全部留著,已綁定／開通中的機器(帳戶列與「繼續」、部位頁、狀態句)照舊。`check_shell_connect_venues.js` 期望清單照旗標(開、關兩邊都跑過),`check_shell_trade.js` 接線 regex 跟著。
