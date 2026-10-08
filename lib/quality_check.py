@@ -552,7 +552,7 @@ _DESKTOP_PUBLIC_DATA = frozenset({
     "settlement_signals_from_db", "twstock_industry_name", "txf_settlement_mask",
 })
 _BLAVE_DATA = frozenset({
-    "fetch_capital_shortage", "fetch_cvd_coin", "fetch_cvd_table", "fetch_db_kline",
+    "fetch_capital_shortage", "fetch_cme_cot", "fetch_cvd_coin", "fetch_cvd_table", "fetch_db_kline",
     "fetch_economic_calendar", "fetch_funding_rate", "fetch_holder_concentration",
     "fetch_liquidation", "fetch_liquidation_coin", "fetch_liquidation_exchanges",
     "fetch_liquidation_map", "fetch_long_short_ratio_coin", "fetch_long_short_ratio_table",
@@ -562,7 +562,8 @@ _BLAVE_DATA = frozenset({
     "fetch_stock_futures_batch_daily", "fetch_stock_futures_ohlcv_symbols",
     "fetch_taker_intensity", "fetch_top_trader_exposure", "fetch_unusual_movement",
     "fetch_whale_hunter",
-    "fetch_twfutures_bid_ask_vol", "fetch_twfutures_institutional", "fetch_twfutures_ohlcv",
+    "fetch_twfutures_bid_ask_vol", "fetch_twfutures_carrying_cost", "fetch_twfutures_institutional",
+    "fetch_twfutures_ohlcv",
     "fetch_twfutures_ohlcv_batch", "fetch_twfutures_pcr",
     "fetch_twmarket_dividend_points", "fetch_twmarket_index", "fetch_twmarket_institutional",
     "fetch_twmarket_margin", "fetch_twmarket_turnover",

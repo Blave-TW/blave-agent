@@ -140,6 +140,46 @@ Raw endpoint layout (only if you need the amounts): `GET /studio/market/twfuture
 
 ---
 
+## 法人持倉成本 (Institutional Carrying Cost)
+
+Blave's estimate of the average cost of one institution's TAIEX-futures position, with its
+unrealized / realized PnL — 「外資台指期成本在哪」「外資空單賠多少」 is one call. Never rebuild it
+from `fetch_twfutures_institutional`.
+
+```python
+from lib.data import fetch_twfutures_carrying_cost
+
+cc = fetch_twfutures_carrying_cost("foreign", None, None, hdrs)   # None = full history / up to today
+# index: trading date. columns (float unless noted):
+#   net_open_interest, net_open_interest_change   net OI (long − short) in TX-equivalent contracts
+#   cost        weighted-average cost, index points (NaN when flat)
+#   mark_price  TAIFEX's valuation of the position (settlement-price based)
+#   txf_close   TX near-month day-session close
+#   unrealized_pnl / realized_pnl / total_pnl     TWD (元)
+#   cycle_start (Timestamp) — the settlement day that opened the current cycle
+gap = cc["txf_close"].iloc[-1] - cc["cost"].iloc[-1]     # points above (+) / below (−) their cost
+```
+
+- `identity`: `'foreign'` / `'investment_trust'` / `'dealer'` (`外資` / `投信` / `自營商` accepted).
+  `scope='all'` (default) = TX + MTX ÷ 4 + TMF ÷ 20 in 大台 contracts; `scope='tx'` = 大台 only
+  (the basis most Taiwanese sites quote — say which one you used when you compare).
+- **Method:** a weighted-average cost ledger. Adding uses that institution's own average trade
+  price of the day (TAIFEX 交易契約金額 ÷ 口數 on the side it added); reducing books realized PnL at
+  the opposite side's average and leaves the cost unchanged; a flip realizes the whole old position.
+  **Every monthly settlement day (third Wednesday, next trading day if closed) starts a new cycle:
+  cost resets to the mark, realized PnL to 0** — so `realized_pnl` is "this cycle", not lifetime,
+  and the first rows of a cycle say little about where the position was really built.
+- **Limits — say them when it matters:** an estimate from daily aggregates, not the institution's
+  real fills; futures only (options hedges, especially dealers', are not in it); history from
+  **2023-10-18** (TAIFEX keeps about three years). Source TAIFEX (三大法人-區分各期貨契約, 期貨每日交易行情).
+- **Timing:** day D's row lands after TAIFEX publishes (Blave jobs 15:40 / 17:40 Taipei). In a
+  strategy use `join_tw_flow(df, 'carrying_cost', INTERVAL, START, END, hdrs, id='foreign')`
+  (columns `cc_*`); `FEED_TIMING['twfutures_carrying_cost']` = D 17:50. `df.attrs['stale']` True =
+  the server is behind the last published day, so the newest row may be missing.
+- No local cache — one request returns the whole history.
+
+---
+
 ## 期貨日行情（TaiwanFuturesDaily）
 
 每天多筆：所有合約月份 × trading_session（`position` 盤中 / `after_market` 盤後）。
