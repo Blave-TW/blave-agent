@@ -384,16 +384,23 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 ## Quote feed (live 1-minute bars)
 
 The worker's login also feeds the live tick (`lib/president_quote.py`, a daemon thread in
-`lib/president_worker.py`; `--once` never starts it). Every 12 s it asks
-`api.dquote.get_history_bardata("1K", start, end, "1", <contract>, 100)` for the series contract
-of TXF, MXF and TMF (`president_contracts.series_contract`: the expiring month all settlement day,
-the next month from 15:00 — the Blave cache's roll, neither `front_month` nor `computed_near`) and
-writes `state/president_bars_<ROOT>_1m.json`: `root`, `productid`, `written_at`, `ok`, `error`,
-`earliest`, `latest`, `paged_back_to`, `rows` = `[ts, open, high, low, close, volume]` (ts = UTC
-epoch of the minute's END, the cache's convention), a rolling window of the last 2 calendar days.
-`get_history_bardata` is one `requests.get` on its own HTTP client, so the thread shares the
-account thread's login without touching its clients; a failed poll only lands in `ok` / `error`
-next to the last good rows and never stops the worker.
+`lib/president_worker.py`; `--once` never starts it). Every 12 s inside a trading session
+(08:40–13:50 and 14:55–05:05 Taipei, weekdays plus the early hours that end a weekday's night)
+it asks `api.dquote.get_history_bardata("1K", start, end, "1", <contract>, 100)` for the **TXF**
+series contract (`president_contracts.series_contract`: the expiring month all settlement day, the
+next month from 15:00 — the Blave cache's roll, neither `front_month` nor `computed_near`; TXF only —
+MXF / TMF strategies read the TXF series like their backtests, and every extra root is one more
+call per round against an unmeasured server cap) and writes `state/president_bars_TXF_1m.json`:
+`root`, `productid`, `written_at`, `ok`, `error`, `earliest`, `latest`, `paged_back_to`, `rows` =
+`[ts, open, high, low, close, volume]` (ts = UTC epoch of the minute's END, the cache's convention),
+a rolling window of the last 2 calendar days. A contract contributes only the bars from the moment
+it became the series month (the previous month's settlement-day 15:00): after a roll the new
+month's own settlement-day 08:45–13:44 is never fetched into the series, and a bar whose END label
+is still ahead of the clock is dropped. Outside a session, and inside the worker's maintenance
+windows, the snapshot is re-stamped every round with `paused: closed|login|account` (rows kept) so
+a tick reads "no session", not "feed stale". `get_history_bardata` is one `requests.get` on its own
+HTTP client, so the thread shares the account thread's login without touching its clients; a
+failed poll only lands in `ok` / `error` next to the last good rows and never stops the worker.
 
 **What the broker gives (measured 2026-10-08, night session, live account):**
 - quotes need `auth_dquote` on the login (`api._usersettings.auth_dquote`); with it off the
@@ -423,20 +430,25 @@ drift at most marginally; a volume indicator sees a ~+0.6 % step where the broke
 the desktop daemon passes the hand-wired venue to every live tick, `command_listener._tw_broker_flag`):** the Blave series is fetched as always (cache + delta); then, if the snapshot is `ok`,
 written within 90 s and its earliest bar is not later than Blave's last bar, the broker's bars fill
 the minutes Blave does not have (its last minutes, and any hole inside the window) — Blave's values
-win wherever both have the minute. Otherwise the tick is Blave alone. Either way
-`state/twfutures_live_source.json` records `source` (`president` / `blave`), `reason` (`no_file`,
-`stale`, `not_enabled`, `not_ok:<error>`, `empty`, `no_overlap`), `at`, `root`, `traded`,
-`schema`, `added`, `last_bar`; the desktop's trade page shows it as one line. Schemas above 1m are
-resampled from the broker's minutes the way the server does, whole bins only. The broker's bars
+win wherever both have the minute. Otherwise the tick is Blave alone; a snapshot that cannot be read
+at all (a bad field) is the same, never a failed tick. Either way `state/twfutures_live_source.json`
+records `source` (`president` / `blave`), `reason` (`no_file`, `stale`, `not_enabled`,
+`not_ok:<error>`, `empty`, `no_overlap`, `paused`, `error:<Type>`), `at`, `root`, `traded`,
+`schema`, `added`, `last_bar`; the desktop's trade page shows it as one line (`paused` reads as
+the normal line — no session is not a fallback). Schemas above 1m are resampled from the broker's
+minutes the way the server does, whole bins only — a bin counts as whole when its last minute is
+in the rows or had passed at the snapshot's `written_at` (not the wall clock), and the first bin is
+dropped unless the rows start on its first label or on a session's opening bar. The broker's bars
 never enter the parquet cache — a backtest reads exactly what a cloud machine reads. MXF / TMF
 strategies read the TXF series and the TXF snapshot, as their backtests did.
 
 **Unverified:** how deep 1K history goes (`paged_back_to` in a snapshot records how far a backfill
-got — read it off a machine after a session); the `date` of 00:00–05:00 bars; the quote server's
-per-minute cap under a 12 s poll over a whole session; behaviour across the 07:00–07:20 quote
-maintenance window (the thread pauses only inside the worker's 05:30–05:50 and 06:00–07:30
-windows); a real settlement day (2026-10-21: the snapshot must stop at the 13:30 label and start
-`TXFK6` with the 15:01 label).
+got — read it off a machine after a session); the `date` of 00:00–05:00 bars; whether a page's
+`start` / `end` are inclusive (the walk asks from a minute before the span and overlaps a bar in
+steady state, so either way loses nothing — confirm once on a machine); the quote server's
+per-minute cap under a 12 s poll over a whole session (grep the worker log for 超過每分鐘限制);
+a real settlement day (2026-10-21: the snapshot must stop at the 13:30 label and start `TXFK6`
+with the 15:01 label).
 
 ---
 

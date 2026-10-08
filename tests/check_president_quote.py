@@ -84,29 +84,37 @@ check(pc.front_month("TXF", T(2026, 10, 21, 13, 31)) == "TXFK6" and pc.computed_
       "1 front_month (13:30) and computed_near (15:00 the day before) are untouched and differ from it")
 
 # ── 2. conversion ──
-rows = pq.to_cache_rows([Bar("20261008", "084500")], "TXFJ6")
+N2 = T(2026, 12, 1)   # a clock after every bar below (a bar not closed by `now` is dropped — tested at the end)
+rows = pq.to_cache_rows([Bar("20261008", "084500")], "TXFJ6", N2)
 check(rows == [[utc_epoch(2026, 10, 8, 0, 46), 100.0, 101.0, 99.0, 100.5, 10]],
       "2 day-session first bar 08:45 START → 08:46 END label, 00:46 UTC", rows)
-rows = pq.to_cache_rows([Bar("20261009", "004500")], "TXFJ6")
+rows = pq.to_cache_rows([Bar("20261009", "004500")], "TXFJ6", N2)
 check(rows == [[utc_epoch(2026, 10, 8, 16, 46), 100.0, 101.0, 99.0, 100.5, 10]],
       "2 night bar after midnight: calendar-day date → absolute time (10-08 16:46 UTC)", rows)
 labels = [r[0] for r in pq.to_cache_rows(
     [Bar("20261008", "134400"), Bar("20261008", "134500"), Bar("20261008", "134600"),
      Bar("20261008", "045900"), Bar("20261008", "050000"), Bar("20261008", "050100"),
-     Bar("20261008", "133000"), Bar("20261008", "150000")], "TXFJ6")]
+     Bar("20261008", "133000"), Bar("20261008", "150000")], "TXFJ6", N2)]
 check(labels == sorted([utc_epoch(2026, 10, 8, 5, 45), utc_epoch(2026, 10, 7, 21, 0),
                         utc_epoch(2026, 10, 8, 5, 31), utc_epoch(2026, 10, 8, 7, 1)]),
       "2 closing-match bars dropped (start 13:45 / 05:00 and later); 13:44 → 13:45 and 04:59 → 05:00 kept, "
       "13:30 on an ordinary day kept, 15:00 → 15:01 kept", labels)
 labels = [r[0] for r in pq.to_cache_rows(
-    [Bar("20261021", "132900"), Bar("20261021", "133000"), Bar("20261021", "134400")], "TXFJ6")]
+    [Bar("20261021", "132900"), Bar("20261021", "133000"), Bar("20261021", "134400"), Bar("20261021", "150000")], "TXFJ6", N2)]
 check(labels == [utc_epoch(2026, 10, 21, 5, 30)],
-      "2 settlement day of the contract's own month: the series ends with the 13:30 label (13:30+ dropped)", labels)
-labels = [r[0] for r in pq.to_cache_rows([Bar("20261021", "133000"), Bar("20261021", "134400")], "TXFK6")]
-check(labels == [utc_epoch(2026, 10, 21, 5, 31), utc_epoch(2026, 10, 21, 5, 45)],
-      "2 …but not for the next month's contract (its own settlement day is in November)", labels)
+      "2 settlement day of the contract's own month: the series ends with the 13:30 label (13:30+ and the 15:00 night dropped)", labels)
+labels = [r[0] for r in pq.to_cache_rows([Bar("20261021", "090000"), Bar("20261021", "133000"), Bar("20261021", "134400"),
+                                          Bar("20261021", "150000"), Bar("20261020", "150000")], "TXFK6", N2)]
+check(labels == [utc_epoch(2026, 10, 21, 7, 1)],
+      "2 the next month's contract contributes nothing before it became the series month (10-21 15:00): its own "
+      "settlement-day 09:00 / 13:30 / 13:44 and the day before are out, 15:00 → 15:01 is its first bar", labels)
+check(pq.series_span("TXFK6") == (T(2026, 10, 21, 15, 0), T(2026, 11, 18, 15, 0)) and pq.series_span("TXFA7") == (T(2026, 12, 16, 15, 0), T(2027, 1, 20, 15, 0)),
+      "2 series_span: from the previous month's settlement-day 15:00 to its own (December → January crosses the year)")
+rows = pq.to_cache_rows([Bar("20261008", "084500"), Bar("20261008", "084600"), Bar("20261008", "084700")], "TXFJ6", T(2026, 10, 8, 8, 47, 20))
+check([r[0] for r in rows] == [utc_epoch(2026, 10, 8, 0, 46), utc_epoch(2026, 10, 8, 0, 47)],
+      "2 a bar whose END label is still ahead of the clock (08:47 start at 08:47:20) is the forming minute: dropped; END == now kept", rows)
 rows = pq.to_cache_rows([Bar("2026108", "084500"), Bar("20261008", "8460"), Bar("20261008", "084700", o="x"),
-                         Bar("20261008", "084700"), Bar("20261008", "084700", c=200.0)], "TXFJ6")
+                         Bar("20261008", "084700"), Bar("20261008", "084700", c=200.0)], "TXFJ6", N2)
 check([r[0] for r in rows] == [utc_epoch(2026, 10, 8, 0, 48)] and rows[0][4] == 200.0,
       "2 unreadable date / time / price rows skipped; duplicates: the later one wins", rows)
 check(pq.bar_start(Bar("20261008", "93015")) == T(2026, 10, 8, 9, 30, 15), "2 a time without its leading zero is read")
@@ -134,13 +142,13 @@ class FakeApi:
         self._usersettings = type("US", (), {"auth_dquote": enabled})()
 
 
-def bars_between(start, end, pid="TXFJ6"):
+def bars_between(start, end, pid="TXFJ6", base=100):
     """One bar per minute with its START label from `start` to `end` (Taipei), day/night sessions only."""
     out, t = [], start
     while t <= end:
         hm = (t.hour, t.minute)
         if (8, 45) <= hm < (13, 45) or hm >= (15, 0) or hm < (5, 0):
-            out.append(Bar(t.strftime("%Y%m%d"), t.strftime("%H%M%S"), c=100 + t.minute))
+            out.append(Bar(t.strftime("%Y%m%d"), t.strftime("%H%M%S"), c=base + t.minute))
         t += timedelta(minutes=1)
     return out
 
@@ -197,10 +205,45 @@ dq_boom.script = [RuntimeError("socket closed A123456789")]
 snap5 = pq.poll_root(FakeApi(dq_boom), "TXF", late)
 check(snap5["ok"] is False and "RuntimeError" in snap5["error"] and "A123456789" not in snap5["error"]
       and snap5["rows"] == snap3["rows"], "4 an exception: ok False + sanitized error, the last good rows kept, nothing raised", snap5["error"])
-for root in ("MXF", "TMF"):
-    s = pq.poll_root(FakeApi(FakeQuote({f"{root}J6": bars_between(T(2026, 10, 8, 21, 0), T(2026, 10, 8, 21, 29), f"{root}J6")})), root, now)
-    check(s["ok"] and s["productid"] == f"{root}J6" and os.path.exists(pq.snapshot_path(root)) and len(s["rows"]) == 30,
-          f"4 {root} has its own snapshot on its own contract", s.get("error"))
+check(pq.ROOTS == ("TXF",) and not os.path.exists(pq.snapshot_path("MXF")) and not os.path.exists(pq.snapshot_path("TMF")),
+      "4 TXF only: one HTTP call per round, no MXF / TMF snapshots (lib/data reads the TXF one for every root)")
+pq._MSG_NOT_ENABLED = "MSG011-text"
+dq_m = FakeQuote()
+dq_m.script = [Resp(False, "MSG011-text", None)]
+api_m = FakeApi(dq_m)
+del api_m._usersettings   # an SDK object without the field: quote_enabled() is None, the HTTP answer decides
+snap6 = pq.poll_root(api_m, "TXF", late)
+check(snap6["ok"] is False and snap6["error"] == pq.NOT_ENABLED and len(dq_m.calls) == 1 and pq.quote_enabled(api_m) is None,
+      "4 auth unknown + the SDK's not-enabled answer (MSG011) → QUOTE_NOT_ENABLED, not not_ok", snap6["error"])
+pq._MSG_NOT_ENABLED = None
+# settlement day 2026-10-21: 14:00 poll on the expiring month, 15:05 poll on the next — no 13:31–14:59 labels,
+# the morning's closes stay the expiring month's, 15:01 is the next month's first bar
+os.remove(pq.snapshot_path("TXF"))
+dq_s = FakeQuote({"TXFJ6": bars_between(T(2026, 10, 20, 15, 0), T(2026, 10, 21, 13, 44), "TXFJ6", 100),
+                  "TXFK6": bars_between(T(2026, 10, 20, 15, 0), T(2026, 10, 21, 15, 4), "TXFK6", 500)})
+s1 = pq.poll_root(FakeApi(dq_s), "TXF", T(2026, 10, 21, 14, 0))
+s2 = pq.poll_root(FakeApi(dq_s), "TXF", T(2026, 10, 21, 15, 5))
+lab = lambda sn: [datetime.fromtimestamp(r[0], TAIPEI).strftime("%d %H:%M") for r in sn["rows"]]
+close_at = lambda sn, ts: next(r[4] for r in sn["rows"] if r[0] == ts)
+check(s1["productid"] == "TXFJ6" and lab(s1)[-1] == "21 13:30" and close_at(s1, utc_epoch(2026, 10, 21, 1, 0)) == 159.0,
+      "4 settlement day 14:00: expiring month, last label 13:30, 09:00 close is its own", (s1["productid"], lab(s1)[-3:]))
+mid = [x for x in lab(s2) if "21 13:30" < x < "21 15:01"]
+check(s2["productid"] == "TXFK6" and not mid and lab(s2)[-1] == "21 15:05" and "21 15:01" in lab(s2)
+      and close_at(s2, utc_epoch(2026, 10, 21, 1, 0)) == 159.0 and close_at(s2, utc_epoch(2026, 10, 21, 7, 1)) == 500.0
+      and close_at(s2, utc_epoch(2026, 10, 21, 5, 30)) == 129.0,
+      "4 settlement day 15:05: next month, no label between 13:30 and 15:01, the morning and the 13:30 bar keep the expiring "
+      "month's closes, 15:01 is TXFK6's first", (s2["productid"], mid, lab(s2)[-6:]))
+check(pq.in_session(T(2026, 10, 7, 9, 0)) and not pq.in_session(T(2026, 10, 7, 13, 55)) and pq.in_session(T(2026, 10, 7, 14, 56))
+      and pq.in_session(T(2026, 10, 7, 23, 59)) and pq.in_session(T(2026, 10, 10, 3, 0)) and not pq.in_session(T(2026, 10, 10, 15, 0))
+      and not pq.in_session(T(2026, 10, 11, 10, 0)) and not pq.in_session(T(2026, 10, 12, 3, 0)) and pq.in_session(T(2026, 10, 12, 8, 40)),
+      "4 in_session: weekday 08:40–13:50 / 14:55–24:00, 00:00–05:05 after a weekday night (Saturday yes, Monday no), weekend no")
+ps = pq.pause_root("TXF", "closed")
+check(ps["paused"] == "closed" and ps["rows"] == s2["rows"] and ps["productid"] == "TXFK6" and ps["written_at"] >= int(time.time()) - 2
+      and json.load(open(pq.snapshot_path("TXF"), encoding="utf-8"))["paused"] == "closed",
+      "4 pause_root re-stamps the last snapshot with `paused`, rows and productid kept")
+os.remove(pq.snapshot_path("TXF"))
+ps = pq.pause_root("TXF", "maintenance")
+check(ps["paused"] == "maintenance" and ps["rows"] == [] and ps["ok"] is False, "4 pause_root with no snapshot yet writes a bare paused one")
 
 # ── 5. data.py seam ──
 NOW = int(time.time())
@@ -229,13 +272,16 @@ def seed_cache(labels, close=None, schema="1m"):
     return cdir
 
 
-def write_snap(labels, ok=True, error=None, age=0, close=None):
+def write_snap(labels, ok=True, error=None, age=0, close=None, paused=None, written_at=None):
     rows = [[m - k * 60, 100.0, 101.0, 99.0, float((close or {}).get(k, 100.0)), 10] for k in sorted(labels, reverse=True)]
     os.makedirs(pq.STATE, exist_ok=True)
+    snap = {"root": "TXF", "productid": "TXFJ6", "label": "end", "ok": ok, "error": error,
+            "written_at": NOW - age if written_at is None else written_at, "earliest": rows[0][0] if rows else None,
+            "latest": rows[-1][0] if rows else None, "rows": rows}
+    if paused:
+        snap["paused"] = paused
     with open(pq.snapshot_path("TXF"), "w", encoding="utf-8") as f:
-        json.dump({"root": "TXF", "productid": "TXFJ6", "label": "end", "ok": ok, "error": error,
-                   "written_at": NOW - age, "earliest": rows[0][0] if rows else None,
-                   "latest": rows[-1][0] if rows else None, "rows": rows}, f)
+        json.dump(snap, f)
 
 
 def source():
@@ -315,6 +361,15 @@ df = run([10, 9, 8, 7, 6, 5, 4, 3], [], ok=False, error=pq.NOT_ENABLED)
 check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source()["reason"] == "not_enabled", "5 auth_dquote False (worker wrote QUOTE_NOT_ENABLED) → Blave, reason not_enabled", source())
 df = run([10, 9, 8, 7, 6, 5, 4, 3], None)
 check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source()["reason"] == "no_file", "5 no snapshot (worker never logged in) → Blave, reason no_file", source())
+import logging  # noqa: E402
+warned = []
+logging.getLogger().addHandler(type("H", (logging.Handler,), {"emit": lambda self, rec: warned.append(rec.getMessage())})())
+df = run([10, 9, 8, 7, 6, 5, 4, 3], [6, 5, 4, 3, 2, 1], paused="closed", age=3000)
+check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source()["source"] == "blave" and source()["reason"] == "paused" and not warned,
+      "5 paused snapshot (no session / maintenance, however old) → Blave, reason paused, no stale warning", (source(), warned))
+df = run([10, 9, 8, 7, 6, 5, 4, 3], [6, 5, 4, 3, 2, 1], written_at="x")
+check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source()["reason"] == "error:ValueError" and len(raw_calls) == 1,
+      "5 a broken snapshot (written_at \"x\") never fails the tick: Blave alone, reason error:<Type>", source())
 df = run([10, 9, 8, 7, 6, 5, 4, 3], [2, 1])
 check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source()["reason"] == "no_overlap",
       "5 snapshot starts after Blave's last bar (a minute missing in between) → Blave, reason no_overlap", source())
@@ -363,11 +418,19 @@ check(source()["traded"] == "MXF" and source()["root"] == "TXF" and labels_of(df
 one = pd.DataFrame({"Open": 1.0, "High": 2.0, "Low": 0.5, "Close": 1.5, "Volume": 1.0},
                    index=pd.DatetimeIndex([pd.Timestamp("2026-10-08 01:06") + pd.Timedelta(minutes=i) for i in range(11)], name="time"))
 r5 = d._resample_president(one, "5min", pd.Timestamp("2026-10-08 01:16:30").timestamp())
-check(list(r5.index) == [pd.Timestamp("2026-10-08 01:05"), pd.Timestamp("2026-10-08 01:10")] and r5.iloc[0]["Volume"] == 4 and r5.iloc[1]["Volume"] == 5,
-      "5 5m: bins 01:05 (4 rows, 01:09 present) and 01:10 (5 rows) are whole; 01:15 (01:19 missing, not past) is not", list(r5.index))
+check(list(r5.index) == [pd.Timestamp("2026-10-08 01:10")] and r5.iloc[0]["Volume"] == 5,
+      "5 5m: bin 01:10 (5 rows) is whole; 01:05 is dropped (rows start at 01:06, neither its first label nor a session opener); "
+      "01:15 (01:19 missing, not past) is not", list(r5.index))
 r5 = d._resample_president(one, "5min", pd.Timestamp("2026-10-08 01:20:00").timestamp())
 check(list(r5.index)[-1] == pd.Timestamp("2026-10-08 01:15") and r5.iloc[-1]["Volume"] == 2,
-      "5 5m: once the bin's time has passed a short bin (a session end) is whole", list(r5.index))
+      "5 5m: once the snapshot's written_at is past the bin's end a short bin (a session end) is whole", list(r5.index))
+r5 = d._resample_president(one, "5min", pd.Timestamp("2026-10-08 01:19:30").timestamp())
+check(list(r5.index)[-1] == pd.Timestamp("2026-10-08 01:10"),
+      "5 5m: the clock is the snapshot's written_at, not the wall clock — a feed a minute behind (01:19 missing, written 01:19:30) keeps 01:15 short")
+opener = one.copy(); opener.index = opener.index + (pd.Timestamp("2026-10-08 00:46") - pd.Timestamp("2026-10-08 01:06"))
+r5 = d._resample_president(opener, "5min", pd.Timestamp("2026-10-08 01:00:00").timestamp())
+check(list(r5.index)[0] == pd.Timestamp("2026-10-08 00:45") and r5.iloc[0]["Volume"] == 4,
+      "5 5m: rows starting on the 08:46 Taipei opener keep their first (naturally short) bin", list(r5.index))
 m5 = (m % 300) // 60   # minutes back to the last 5-minute boundary → the labels below are aligned
 seed_cache([m5 + 20, m5 + 15, m5 + 10], schema="5m")
 write_snap(list(range(m5 + 1, m5 + 15)))
@@ -381,18 +444,47 @@ check(src["source"] == "president" and src["schema"] == "5m" and src["added"] ==
 # ── 6. thread loop, --once, mutation ──
 holder = {"api": FakeApi(FakeQuote({"TXFJ6": bars_between(T(2026, 10, 8, 21, 0), T(2026, 10, 8, 21, 29))})), "stop": False}
 pq.POLL_S = 1
-polls = []
+pq.in_session = lambda now=None: True
+polls, gate = [], {"pause": None, "raise": False}
 real_poll = pq.poll_once
-pq.poll_once = lambda api, now=None, roots=pq.ROOTS: (polls.append(api), real_poll(api, now, roots))[1]
-th = threading.Thread(target=pq.loop, args=(holder,), kwargs={"pause": lambda: False, "stop": lambda: holder["stop"]}, daemon=True)
+
+
+def fake_poll(api, now=None, roots=pq.ROOTS):
+    polls.append(api)
+    if gate["raise"]:
+        raise RuntimeError("boom")
+    return real_poll(api, now, roots)
+
+
+pq.poll_once = fake_poll
+th = threading.Thread(target=pq.loop, args=(holder,), kwargs={"pause": lambda: gate["pause"], "stop": lambda: holder["stop"]}, daemon=True)
 th.start()
 time.sleep(0.5)
+n1 = len(polls)
+gate["pause"] = "maintenance"
+time.sleep(1.5)
+n2, paused_snap = len(polls), json.load(open(pq.snapshot_path("TXF"), encoding="utf-8"))
+gate["pause"], gate["raise"] = None, True
+time.sleep(1.5)
+n3, alive_after_raise = len(polls), th.is_alive()
 holder["api"] = None
 time.sleep(1.5)
-n = len(polls)
+n4 = len(polls)
 holder["stop"] = True
 th.join(3)
-check(n >= 1 and not th.is_alive() and len(polls) == n, "6 the loop polls while an api is held, idles at None, ends on stop()", (n, th.is_alive()))
+check(n1 >= 1 and n2 == n1 and paused_snap.get("paused") == "maintenance" and n3 > n2 and alive_after_raise and n4 == n3 and not th.is_alive(),
+      "6 the loop polls while an api is held, re-stamps `paused` instead inside pause(), survives a raising poll, idles at None, ends on stop()",
+      (n1, n2, n3, n4, paused_snap.get("paused"), alive_after_raise, th.is_alive()))
+pq.in_session = lambda now=None: False
+gate["raise"] = False
+holder = {"api": FakeApi(FakeQuote()), "stop": False}
+th = threading.Thread(target=pq.loop, args=(holder,), kwargs={"pause": lambda: None, "stop": lambda: holder["stop"]}, daemon=True)
+th.start()
+time.sleep(0.5)
+holder["stop"] = True
+th.join(3)
+check(json.load(open(pq.snapshot_path("TXF"), encoding="utf-8")).get("paused") == "closed" and len(polls) == n4,
+      "6 outside a session the loop only re-stamps `paused: closed`, no HTTP")
 pq.poll_once = real_poll
 src_w = open(os.path.join(ROOT, "lib", "president_worker.py"), encoding="utf-8").read()
 once = src_w[src_w.index("def run_once("):src_w.index("def main(")]
@@ -409,22 +501,38 @@ os.environ.setdefault("BLAVE_AGENT_WORKSPACE", os.path.join(TMP, "workspace"))
 os.makedirs(os.environ["BLAVE_AGENT_WORKSPACE"], exist_ok=True)
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 import command_listener as cl  # noqa: E402
+import importlib  # noqa: E402
 bound = {"v": "president"}
-cl._in_workspace = lambda fn, *a, **k: type("VW", (), {"hand_wired_venue": staticmethod(lambda: bound["v"])})()
-with mock.patch.dict(os.environ, {"BLAVE_AGENT_LOCAL": "1", "HOME": "/h"}, clear=True), mock.patch.object(os, "name", "posix"):
+WSREAL = os.path.realpath(cl.WORKSPACE)
+
+
+class FakeVW:
+    # hand_wired_venue reads two files by relative path: it must run with cwd = WORKSPACE, not only be imported there
+    @staticmethod
+    def hand_wired_venue():
+        return bound["v"] if os.path.realpath(os.getcwd()) == WSREAL else "WRONG_CWD"
+
+
+real_import = importlib.import_module
+cwd0 = os.getcwd()
+os.chdir(TMP)   # ≠ WORKSPACE
+with mock.patch.dict(os.environ, {"BLAVE_AGENT_LOCAL": "1", "HOME": "/h"}, clear=True), mock.patch.object(os, "name", "posix"), \
+        mock.patch.object(importlib, "import_module", lambda name, *a, **k: FakeVW if name == "lib.venue_wiring" else real_import(name, *a, **k)):
     tick, bt = cl._strategy_subprocess_env(), cl._strategy_subprocess_env("backtest")
     bound["v"] = None
     unbound = cl._strategy_subprocess_env()
-    cl._in_workspace = lambda fn, *a, **k: (_ for _ in ()).throw(RuntimeError("no venue_wiring"))
-    broken = cl._strategy_subprocess_env()
+    with mock.patch.object(importlib, "import_module", lambda name, *a, **k: (_ for _ in ()).throw(RuntimeError("no venue_wiring"))):
+        broken = cl._strategy_subprocess_env()
+os.chdir(cwd0)
 check(tick.get("BLAVE_TW_BROKER") == "president" and tick.get("BLAVE_MODE") == "live" and "BLAVE_TW_BROKER" not in bt
-      and "BLAVE_TW_BROKER" not in unbound and "BLAVE_TW_BROKER" not in broken and broken.get("BLAVE_MODE") == "live",
-      "6 the desktop daemon's live tick env carries BLAVE_TW_BROKER=<hand-wired venue>; a backtest, an unbound machine or a failed read carry none", (tick, bt))
+      and "BLAVE_TW_BROKER" not in unbound and "BLAVE_TW_BROKER" not in broken and broken.get("BLAVE_MODE") == "live" and os.getcwd() == cwd0,
+      "6 the desktop daemon's live tick env carries BLAVE_TW_BROKER=<hand-wired venue> read with cwd = WORKSPACE (daemon cwd elsewhere); "
+      "a backtest, an unbound machine or a failed read carry none", (tick, bt))
 check("venue_wiring" not in open(os.path.join(ROOT, "lib", "data.py"), encoding="utf-8").read().split("def _president_feed_live")[0]
       and "from lib import venue_wiring" not in open(os.path.join(ROOT, "lib", "data.py"), encoding="utf-8").read(),
       "6 lib/data never imports lib/venue_wiring (the scheduled-run guard's money-module closure)")
 pq.BAR_LABEL_OFFSET_MIN = 0
-mutated = pq.to_cache_rows([Bar("20261008", "084500")], "TXFJ6")[0][0]
+mutated = pq.to_cache_rows([Bar("20261008", "084500")], "TXFJ6", N2)[0][0]
 pq.BAR_LABEL_OFFSET_MIN = 1
 check(mutated == utc_epoch(2026, 10, 8, 0, 45) != utc_epoch(2026, 10, 8, 0, 46), "6 mutation: with the label offset gone, section 2 would fail")
 
