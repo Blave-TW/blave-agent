@@ -3956,13 +3956,16 @@ function envPaintSide(kind, st) {
   // 側欄頂不寫「雲端 / 這台電腦」(Wei:最上面的切換器已經有了);這裡只畫雲端那幾份策略
   const all = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
   cdelPrune(all.map((x) => x.name), Date.now());
-  const list = all.filter((x) => !CDEL.gone.has(x.name));   // 已刪、清單還沒跟上的先不畫
+  const shown = all.filter((x) => !CDEL.gone.has(x.name));   // 已刪、清單還沒跟上的先不畫
+  // 側欄偏好:web 工作頁設的順序與旗標(api /cloud/state 的 strat_order / strat_flags;cloud.js 清過)。這裡只讀:不給拖、不給掛(renderer/stratflags.js)
+  const prefs = { order: st && st.cloud && Array.isArray(st.cloud.strat_order) ? st.cloud.strat_order : [], flags: st && st.cloud && st.cloud.strat_flags && typeof st.cloud.strat_flags === "object" ? st.cloud.strat_flags : {} };
+  const list = typeof sfApplyOrder === "function" ? sfApplyOrder(shown, prefs.order) : shown;
   const ho = typeof HO !== "undefined" && HO.on && typeof hoCloudLive === "function" && hoCloudLive();
   // 列尾的刪除:機器停著 / agent 回合中 / 名字不合規 / 刪除中 → 不畫(跟 HO 旗標無關)
   const canDel = kind === "running" && !(typeof running !== "undefined" && running === true);
   // 側欄**不放任何 handoff 提示**(Wei 看實機後拍板):等著送上來的那條回頭路住在中欄的「準備好了」卡(規格 §2)
   const sel = typeof RPC !== "undefined" ? RPC.name : null, dotsUp = envDotsUp("cloud", st);
-  const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], list.map((x) => [x.name, x.displayName, envStratWord(x.name, st), dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)])]);
+  const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], prefs.flags, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st), dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)])]);
   if (ENV.sig.side === sig) return;
   ENV.sig.side = sig;
   // 點一支 → 中欄畫雲端那一份的報告(app.js 的 rpCloudSelect;資料走主行程的 cloudStrategy)。鈕不能包鈕,刪除鈕放在同一個 wrap 裡(同本機清單)
@@ -3972,6 +3975,7 @@ function envPaintSide(kind, st) {
     const wrap = trEl("div", "strat-wrap cs-row"), row = trEl("button", "strat-row"); row.type = "button"; row.dataset.name = x.name; wrap.dataset.name = x.name;
     if (x.name === sel) row.setAttribute("aria-current", "true");
     const nm = trEl("span", "strat-name"); stratNameFill(nm, x.displayName); nm.title = typeof stratTip === "function" ? stratTip(x.displayName, x.name) : x.name; row.appendChild(nm);
+    if (typeof sfFlagMeta === "function") sfFlagMeta(wrap, row, nm.title, prefs.flags[x.name]);
     if (dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)) envDotInto(nm, true);
     const deleting = CDEL.busy.has(x.name);
     if (deleting) { wrap.classList.add("is-deleting"); row.setAttribute("aria-busy", "true"); row.appendChild(trEl("span", "stx", t("cdel.pending"))); }
