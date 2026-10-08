@@ -529,7 +529,7 @@ function llmKeyRemove() {
 }
 function clearDataKey() {
   try { fs.unlinkSync(dataKeyPath()); } catch (_) {}
-  syncDataEnv(false);
+  syncDataAccess(false);
 }
 /* 讓 workspace/.env 跟「現在該不該有 Blave 資料」一致。**只動外殼自己那一塊**(前後兩行
    標記包起來的兩行):用戶自己手放的 `blave_api_key`(API 方案戶用自己的 Claude Code 時靠的
@@ -568,6 +568,28 @@ function syncDataEnv(want) {
     // 先寫暫存檔再 rename:背景策略可能正在讀這個檔,寫到一半 crash 也不能留半個檔;rename 沒成功時暫存檔(明文 key)由 replace 刪掉
     else wsfile.replace(envFile, next);
   } catch (_) { return own ? "own" : "none"; }   // workspace 還沒建好 / 寫不進去:只剩用戶自己那組算數
+  return state;
+}
+
+/* 這一刻的 Blave 資料存取進子行程環境的那一塊(純函式;聊天回合與常駐程式的子行程同一支):ours → 1、
+   none → 0 + 原因(runtime 才講得出「登入著但餘額不夠」而不是一律「要先登入」)、own(用戶自己放的完整 key)→ 不設,
+   runtime 不加那段——「桌面 key 只能讀策略庫」對它不成立 */
+function dataAccessEnv(state, signedIn) {
+  return { ...(state === "own" ? {} : { BLAVE_DATA_ACCESS: state === "ours" ? "1" : "0" }),
+           ...(state === "none" ? { BLAVE_DATA_ACCESS_WHY: dataAccessWhy(signedIn) } : {}) };
+}
+/* 「這台現在有沒有 Blave 資料」只在這裡落地:.env 的 key 對齊帳號(syncDataEnv),同一個答案再寫成 state/data_access.json
+   給常駐程式——它常駐整個 app 期間、環境只在啟動那一刻給、自己掛了還會用同一份環境重起,帳號在中間登入 / 登出 / 買了資料
+   它都看不到;改成它起每一支子行程(live tick、回測、對帳器)時讀這個檔(runtime command_listener._local_child_env),
+   開機、換帳號、daemon 重起三件事一個機制就夠,也不必多一條簽章指令(這是狀態不是動作,沒有重放的問題;
+   值只會把資料路關小,不會多給任何憑證)。聊天回合開跑前、account_status 每次回來、登出都會經過這裡;
+   寫不進去就留上一份(daemon 的子行程頂多晚一輪看到) */
+function syncDataAccess(want, signedIn = !!loadToken()) {
+  const state = syncDataEnv(want);
+  if (!fs.existsSync(WS)) return state;   // 還沒有 workspace(首次連結前):不替它建目錄——「有沒有 workspace」別處拿 existsSync(WS) 判
+  const file = path.join(WS, "state", "data_access.json"), next = JSON.stringify(dataAccessEnv(state, signedIn));
+  let cur = null; try { cur = fs.readFileSync(file, "utf8"); } catch (_) { /* 還沒寫過 */ }
+  if (cur !== next) { try { fs.mkdirSync(path.dirname(file), { recursive: true }); wsfile.replace(file, next); } catch (_) { /* 下一次再寫 */ } }
   return state;
 }
 
@@ -1914,7 +1936,7 @@ const BLAVE_STRENGTH = [/fable/, /opus/, /sonnet/, /haiku/, /deepseek.*pro/, /de
 let btSeen = false;
 async function accountStatus(retried) {
   const acct = loadToken();
-  if (!acct) return null;
+  if (!acct) { syncDataAccess(false, false); return null; }   // 沒登入不打伺服器,但常駐程式那份要知道「沒資料」(開機那一次就會過這裡)
   const who = currentWho();
   try {
     // 順帶帶上 app 的現況(使用事件開關、連的是哪個 AI;見 telemetry.js statusHeaders)——提醒信靠它尊重「關掉」
@@ -1929,6 +1951,8 @@ async function accountStatus(retried) {
     if (!(b && typeof b.can_run === "boolean")) return null;
     if (currentWho() !== who) return null;          // 在途時登出 / 換了帳號:舊帳號的答案不寫回、不回給畫面
     lastAcct = { at: Date.now(), body: b };
+    // 帳號狀態一回來就對一次(買了資料、餘額用完、登入後第一次問):聊天回合開跑前另外還會對,兩邊同一支
+    const a = dataAccessOf(b); syncDataAccess(a === "included" || a === "billed", true);
     return b;
   } catch (_) { return null; }
 }
@@ -2575,7 +2599,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const plan = turnCreds(conn.kind, signedIn, signedIn && await hasBlaveData(), cloudHandoffOn());
   const useBlave = conn.kind === "blave";
   const acct = plan.proxyToken ? loadToken() : null;
-  const dataAccess = syncDataEnv(plan.dataKey);
+  const dataAccess = syncDataAccess(plan.dataKey, signedIn);
   // `blave` MCP:拿得到碼才掛;拿不到(沒主機、端點還沒上線、被限速、連不上)= 這一輪不掛,回合照常。
   // 兩條引擎都寫同一份單次設定檔(0600、workspace 以外、回合結束就刪),runtime 用 --mcp-config 判「這一輪有沒有掛」。
   // Claude 經那份檔吃 MCP;Codex 不吃檔——吃 `-c mcp_servers.blave.*`(runtime/codex_engine.py 組)+ 只給 codex 子行程的
@@ -2635,11 +2659,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 變數,不用「有沒有 BLAVE_PROXY_TOKEN」推論——機隊上的 cron/manager 不一定
     // 帶著那顆 token,推論錯就是整支機隊無聲換資料源。
     BLAVE_KLINE_SOURCE: "binance",
-    // runtime 依這個在 prompt 裡明講「這台有/沒有 Blave 資料」(變數不存在 = 雲端機,行為不變)
-    // 用戶自己放的完整 key:不設這個變數,runtime 不加那段——「桌面 key 只能讀策略庫」對它不成立
-    ...(dataAccess === "own" ? {} : { BLAVE_DATA_ACCESS: dataAccess === "ours" ? "1" : "0" }),
-    // =0 時多帶原因,runtime 才講得出「登入著但餘額不夠」而不是一律「要先登入」
-    ...(dataAccess === "none" ? { BLAVE_DATA_ACCESS_WHY: dataAccessWhy(signedIn) } : {}),
+    // runtime 依這個在 prompt 裡明講「這台有/沒有 Blave 資料」(變數不存在 = 雲端機,行為不變);
+    // 跟常駐程式給 tick / 回測的是同一支 dataAccessEnv(它經 state/data_access.json 拿)
+    ...dataAccessEnv(dataAccess, signedIn),
     // 聊天裡的圖:見上面「聊天裡的圖」。接收端還沒起來(port 0)就不帶,notify 那邊會 no-op
     ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
                     BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
@@ -3192,11 +3214,12 @@ function envSwitchFromMenu(env) {
    改成自己的 click + ⌃⌘F,實測選單裡只剩一格;系統那份 🌐F 快捷鍵跟著不見,⌃⌘F 與視窗綠燈照常。
    ⌘1 / ⌘2 在 renderer 也有 keydown:macOS 上選單的快捷鍵先吃,頁面多半收不到;就算兩邊都觸發,切到「已經在的那一邊」
    是 no-op(renderer 的 envSwitch 開頭就擋),不會切兩次。確認框開著時該不該切由 renderer 收到 env-switch 後自己判(同 keydown 的規則)。 */
-function appMenuTemplate(L, dev, full, onEnv, onSite, onFull) {
+function appMenuTemplate(L, dev, full, onEnv, onSite, onFull, ask = false) {
   const l = (k) => L[k] || MENU_EN[k], sep = { type: "separator" }, r = (role, k, extra) => ({ role, label: l(k), ...extra });
   return [
+    // 結束:可能在下單 / 回合在跑時 before-quit 會先問,字尾「…」(同選單列 trayQuitLabel 的規則;HIG)
     { label: app.name, submenu: [r("about", "menuAbout"), sep, r("services", "menuServices"), sep,
-      r("hide", "menuHide"), r("hideOthers", "menuHideOthers"), r("unhide", "menuShowAll"), sep, r("quit", "menuQuit")] },
+      r("hide", "menuHide"), r("hideOthers", "menuHideOthers"), r("unhide", "menuShowAll"), sep, r("quit", "menuQuit", ask ? { label: L.quit || l("menuQuit") + "…" } : {})] },
     { label: l("menuFile"), submenu: [r("close", "menuClose")] },
     { label: l("menuEdit"), submenu: [r("undo", "menuUndo"), r("redo", "menuRedo"), sep, r("cut", "menuCut"), r("copy", "menuCopy"), r("paste", "menuPaste"),
       r("pasteAndMatchStyle", "menuPasteStyle"), r("delete", "menuDelete"), r("selectAll", "menuSelectAll")] },
@@ -3214,12 +3237,13 @@ function appMenuTemplate(L, dev, full, onEnv, onSite, onFull) {
 }
 function appMenuSync() {
   const w = BrowserWindow.getAllWindows()[0], full = !!(w && !w.isDestroyed() && w.isFullScreen());
-  const key = JSON.stringify([uiLang, full, Object.keys(MENU_EN).map((k) => tmLabels[k])]);   // 換語言、進出全螢幕都重建
+  const ask = !!(tradeMaybeLive() || activeTurn || turnStarting);   // 結束那一格要不要「…」;traySync 每 5 秒叫一次補上變化
+  const key = JSON.stringify([uiLang, full, ask, tmLabels.quit, Object.keys(MENU_EN).map((k) => tmLabels[k])]);   // 換語言、進出全螢幕、會不會先問都重建
   if (key === appMenuKey && Menu.getApplicationMenu()) return;
   appMenuKey = key;
   const dev = !(app.isPackaged && require("./package.json").blaveRelease);   // 發佈版的選單不放重新載入與開發者工具
   const onFull = () => { const f = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]; if (f && !f.isDestroyed()) f.setFullScreen(!f.isFullScreen()); };
-  Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(tmLabels, dev, full, envSwitchFromMenu, () => shell.openExternal(SITE_URL[siteLang()]), onFull)));
+  Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(tmLabels, dev, full, envSwitchFromMenu, () => shell.openExternal(SITE_URL[siteLang()]), onFull, ask)));
 }
 const SITE_URL = { zh: "https://blave.org/zh", en: "https://blave.org/en" };   // 固定常數(結尾不加斜線:/zh/ 是 404);語言段只有這兩個值
 const venueReady = (v) => !!(v && v.credentials && v.pair && v.order && v.account);   // 同 renderer trVenueIds:四個都在才算連上的帳戶
@@ -3493,7 +3517,7 @@ function binanceNotify(v) {
   return true;
 }
 // updater().poll():ready ↔ blocked 只跟著下單狀態變、沒有事件,靠這 5 秒那一輪補推(聊天那一格的「…」跟著暫停 / 開始下單換)
-function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { startStep("tray", traySync); startStep("p1", p1Sync); startStep("update poll", () => updater().poll()); }, 5000); if (trayTimer.unref) trayTimer.unref(); traySync(); } }   // 可能在下單的話一開就出,不等第一個 5 秒(常駐的那顆等畫面交字)
+function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { startStep("tray", traySync); startStep("app menu", appMenuSync); startStep("p1", p1Sync); startStep("update poll", () => updater().poll()); }, 5000); if (trayTimer.unref) trayTimer.unref(); traySync(); } }   // 可能在下單的話一開就出,不等第一個 5 秒(常駐的那顆等畫面交字)
 app.on("browser-window-created", (_e, win) => {
   win.on("close", (e) => {
     // 關視窗不等於結束:自動下單在跑、或本機 agent 回合在跑(可能正在更新雲端)時只把視窗藏起來,回合 / 下單照走

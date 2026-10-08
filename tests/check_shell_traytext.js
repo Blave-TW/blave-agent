@@ -212,7 +212,7 @@ t("preload:renderer 待接的三個入口都在", /minVersionState:/.test(pre) &
   t("發佈版的選單不放重新載入與開發者工具", dev(tz).length === 0 && dev(appMenuTemplate(zh, true, false, () => {}, () => {})).length === 3
     && /const dev = !\(app\.isPackaged && require\("\.\/package\.json"\)\.blaveRelease\);/.test(mainSrc));
   const body = cutM("function appMenuSync()", "\n}\n");
-  t("換語言、進出全螢幕會重建選單(key 含語言、全螢幕、每一個 menu 字);視窗的 enter/leave-full-screen 叫它", /JSON\.stringify\(\[uiLang, full, Object\.keys\(MENU_EN\)\.map\(\(k\) => tmLabels\[k\]\)\]\)/.test(body)
+  t("換語言、進出全螢幕、結束要不要先問(…)會重建選單(key 含語言、全螢幕、ask、tm.quit、每一個 menu 字);視窗的 enter/leave-full-screen 叫它", /JSON\.stringify\(\[uiLang, full, ask, tmLabels\.quit, Object\.keys\(MENU_EN\)\.map\(\(k\) => tmLabels\[k\]\)\]\)/.test(body)
     && /win\.on\("enter-full-screen", appMenuSync\); win\.on\("leave-full-screen", appMenuSync\);/.test(mainSrc));
   t("renderer 交每一個 menu 字;主行程每一個 menu 鍵預設空的(= 用英文退路)", /\.\.\.Object\.fromEntries\(TR_MENU_KEYS\.map/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"))
     && /\.\.\.Object\.fromEntries\(Object\.keys\(MENU_EN\)\.map\(\(k\) => \[k, ""\]\)\)/.test(mainSrc));

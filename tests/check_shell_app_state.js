@@ -37,7 +37,7 @@ t("accountStatus 帶上 statusHeaders(開關來源是 telemetry 的 isEnabled、
   /const conn = loadConnection\(\), on = tm\(\)\.isEnabled\(\)/.test(fn) && /T\.statusHeaders\(on, conn && conn\.kind, btSeen\)/.test(fn)
   && /if \(on && !btSeen\) btSeen = T\.anyBacktest\(STRAT_DIR\(\)\)/.test(fn)
   && /getJSON\([^)]*account_status`, \{ "x-api-key": `proxy-\$\{acct\}`, \.\.\.state \}\)/.test(fn));
-t("…沒登入(沒 token)就不打", fn.indexOf("if (!acct) return null;") >= 0 && fn.indexOf("if (!acct) return null;") < fn.indexOf("getJSON("));
+t("…沒登入(沒 token)就不打(只把「沒資料」寫給常駐程式那份)", fn.indexOf("if (!acct) { syncDataAccess(false, false); return null; }") >= 0 && fn.indexOf("if (!acct) {") < fn.indexOf("getJSON("));
 t("…取值包在 try 裡(讀連結紀錄出錯不會讓帳號狀態整支炸掉)", fn.indexOf("try {") >= 0 && fn.indexOf("try {") < fn.indexOf("loadConnection()"));
 const setH = main.slice(main.indexOf('ipcMain.handle("telemetry-set"'), main.indexOf('ipcMain.handle("telemetry-set"') + 400);
 t("切換開關的當下打一次 account_status(先改開關、再打)",

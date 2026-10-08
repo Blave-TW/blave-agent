@@ -293,7 +293,8 @@ finally:
     os.remove(os.path.join(VDIR, "rerun.json"))
 check(seen_env and "BLAVE_AGENT_LOCAL" not in seen_env[0] and seen_env[0].get("BLAVE_MODE") == "backtest",
       "cloud re-run: no BLAVE_AGENT_LOCAL (the cloud has no key-free path); live ticks untouched")
-check(cl._strategy_subprocess_env().get("BLAVE_AGENT_LOCAL") is None, "the live tick env still carries no BLAVE_AGENT_LOCAL")
+check(cl._strategy_subprocess_env().get("BLAVE_AGENT_LOCAL") == "1",
+      "the desktop live tick env carries BLAVE_AGENT_LOCAL=1 as well (same key-free data path as the backtest that approved it)")
 check(os.path.exists(os.path.join(SDIR, "stats.json")) and index()["counter"] == 2 and index()["current"] == 1,
       "…stats.json back, nothing minted, current still 1")
 check(wait(lambda: len(PUSHES) >= 2, 10), "…and the watcher pushes once more at the end")

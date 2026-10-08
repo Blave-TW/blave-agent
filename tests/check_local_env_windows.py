@@ -58,10 +58,72 @@ check(env.get("PYTHONUTF8") == "1" and not any(p.startswith("PYTHON") for p in c
 # mutation: an allowlist would lose SystemRoot — make sure that is what the test detects
 check(not all(k in {k2: v for k2, v in FAKE.items() if k2 in cl._LOCAL_ENV_PASS} for k in MUST), "nt: (mutation) the POSIX allowlist alone would drop SystemRoot")
 
+check(env.get("BLAVE_AGENT_LOCAL") == "1", "nt: BLAVE_AGENT_LOCAL=1 is set even though the denylist strips BLAVE_*")
+
 with mock.patch.dict(os.environ, FAKE, clear=True), mock.patch.object(os, "name", "posix"):
     env = cl._local_child_env()
-check(sorted(env) == sorted(["HOME", "BLAVE_AGENT_STATE", "BLAVE_KLINE_SOURCE", "BLAVE_AGENT_WORKSPACE"]),
-      "posix: allowlist unchanged (only the _LOCAL_ENV_PASS names, no SystemRoot)")
+check(sorted(env) == sorted(["HOME", "BLAVE_AGENT_STATE", "BLAVE_KLINE_SOURCE", "BLAVE_AGENT_WORKSPACE", "BLAVE_AGENT_LOCAL"]),
+      "posix: allowlist unchanged (only the _LOCAL_ENV_PASS names, no SystemRoot) + BLAVE_AGENT_LOCAL=1")
+
+# ── data-access flags: state/data_access.json (written by shell/main.js syncDataAccess) → every child, read per spawn ──
+import json  # noqa: E402
+import re  # noqa: E402
+DA = os.path.join(WS, "state", "data_access.json")
+os.makedirs(os.path.dirname(DA), exist_ok=True)
+
+
+def child(name="posix"):
+    with mock.patch.dict(os.environ, FAKE, clear=True), mock.patch.object(os, "name", name):
+        return cl._local_child_env()
+
+
+check(not any(k.startswith("BLAVE_DATA_ACCESS") for k in child()), "no data_access.json → no BLAVE_DATA_ACCESS* (what a child got before)")
+with open(DA, "w") as f:
+    json.dump({"BLAVE_DATA_ACCESS": "0", "BLAVE_DATA_ACCESS_WHY": "signed_out"}, f)
+e = child()
+check(e.get("BLAVE_DATA_ACCESS") == "0" and e.get("BLAVE_DATA_ACCESS_WHY") == "signed_out" and e.get("BLAVE_AGENT_LOCAL") == "1",
+      "signed out: the file's 0 + why reach the child next to BLAVE_AGENT_LOCAL=1 (lib.data's TAIFEX fallback needs both)")
+check(child("nt").get("BLAVE_DATA_ACCESS") == "0", "nt: the same (the denylist does not eat it — it is set after filtering)")
+with open(DA, "w") as f:
+    json.dump({"BLAVE_DATA_ACCESS": "1"}, f)
+e = child()
+check(e.get("BLAVE_DATA_ACCESS") == "1" and "BLAVE_DATA_ACCESS_WHY" not in e,
+      "signed in with data: a later spawn reads the new file (the daemon never caches it — login / logout / buying data reach the next tick)")
+with open(DA, "w") as f:
+    json.dump({}, f)
+check(not any(k.startswith("BLAVE_DATA_ACCESS") for k in child()), "own key ({}): nothing set, like the chat turn")
+with open(DA, "w") as f:
+    json.dump({"BLAVE_DATA_ACCESS": "2", "BLAVE_DATA_ACCESS_WHY": "x", "PATH": "/evil", "BLAVE_PROXY_TOKEN": "t"}, f)
+check(not any(k in ("BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY", "BLAVE_PROXY_TOKEN") for k in child()) and child().get("PATH") != "/evil",
+      "off-shape values and foreign keys are dropped (the file can only name the two flags, with known values)")
+with open(DA, "w") as f:
+    f.write("{not json")
+check(not any(k.startswith("BLAVE_DATA_ACCESS") for k in child()), "unparsable file → no flag, no exception")
+with open(DA, "w") as f:
+    json.dump(["BLAVE_DATA_ACCESS"], f)
+check(not any(k.startswith("BLAVE_DATA_ACCESS") for k in child()), "non-object JSON → no flag")
+# the bug itself (0.1.18 B): a signed-out desktop's live tick must take lib.data's TAIFEX path for TXF 1d —
+# fetch_twfutures_ohlcv's gate is `tw_market_public_allowed() and _no_data_access(headers)`, both read from the env
+sys.path.insert(0, ROOT)
+import lib.data as D  # noqa: E402
+with open(DA, "w") as f:
+    json.dump({"BLAVE_DATA_ACCESS": "0", "BLAVE_DATA_ACCESS_WHY": "signed_out"}, f)
+with mock.patch.dict(os.environ, dict(FAKE, BLAVE_AGENT_LOCAL="1"), clear=True), mock.patch.object(os, "name", "posix"):
+    tick_env = cl._strategy_subprocess_env()
+with mock.patch.dict(os.environ, tick_env, clear=True):
+    check(D.tw_market_public_allowed() and D._no_data_access({}), "signed-out live tick env → TXF 1d takes the key-free TAIFEX path (no Blave request)")
+with mock.patch.dict(os.environ, {k: v for k, v in tick_env.items() if k not in ("BLAVE_AGENT_LOCAL", "BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY")}, clear=True):
+    check(not (D.tw_market_public_allowed() and D._no_data_access({})), "(mutation) the pre-fix tick env — neither flag — would send that tick to Blave and 422")
+os.remove(DA)
+# contract with the writer: every value shell/main.js can put in the file is one the reader accepts
+MAIN = open(os.path.join(ROOT, "shell", "main.js"), encoding="utf-8").read()
+why_src = MAIN[MAIN.index("function dataAccessWhy("):MAIN.index("\n}\n", MAIN.index("function dataAccessWhy("))]
+whys = set(re.findall(r'(?:return|\?|:) "([a-z_]+)"', why_src))   # only what it returns, not what it compares against
+check(whys and whys <= set(cl._DATA_ACCESS_VALUES["BLAVE_DATA_ACCESS_WHY"]), f"shell dataAccessWhy's values {sorted(whys)} are all accepted by the reader")
+check(re.search(r'BLAVE_DATA_ACCESS: state === "ours" \? "1" : "0"', MAIN) is not None and set(cl._DATA_ACCESS_VALUES["BLAVE_DATA_ACCESS"]) == {"0", "1"},
+      "shell dataAccessEnv writes 1 / 0, the reader accepts exactly those")
+check(re.search(r'path\.join\(WS, "state", "data_access\.json"\)', MAIN) is not None and cl._DATA_ACCESS_FILE == os.path.join("state", "data_access.json"),
+      "both sides name the same file: <workspace>/state/data_access.json")
 
 
 # ── _env_lock on Windows: fcntl gone, msvcrt faked ──

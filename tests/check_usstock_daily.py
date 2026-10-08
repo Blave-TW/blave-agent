@@ -203,6 +203,19 @@ def t_cloud_fail_closed():
         check("美股策略目前還不能上線" in str(e), "a live tick (no desktop flag, BLAVE_MODE=live): says US strategies cannot go live yet")
     finally:
         os.environ.pop("BLAVE_MODE", None)
+    # the desktop daemon's ticks carry BLAVE_AGENT_LOCAL=1 (command_listener._local_child_env, for the key-free
+    # TAIFEX / TWSE paths) — the refusal must hold there too, or a US signal would reach the order layer
+    os.environ["BLAVE_AGENT_LOCAL"] = "1"
+    os.environ["BLAVE_MODE"] = "live"
+    try:
+        D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
+        check(False, "a desktop live tick is refused")
+    except D.UsStockUnavailable as e:
+        check("美股策略目前還不能上線" in str(e) and len(s.calls) == n and yf.calls == [],
+              "a desktop live tick (BLAVE_AGENT_LOCAL=1 + BLAVE_MODE=live): refused by mode, no request")
+    finally:
+        os.environ.pop("BLAVE_MODE", None)
+        os.environ.pop("BLAVE_AGENT_LOCAL", None)
     os.environ["BLAVE_MODE"] = "live"
     os.environ["BLAVE_SCHEDULED_RUN"] = "1"
     try:

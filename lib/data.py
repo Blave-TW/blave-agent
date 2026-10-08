@@ -5336,12 +5336,15 @@ def _usstock_allowed():
 
 def _us_require_desktop():
     """Every function that sends a request to Yahoo calls this first, so no path — public or
-    private — reaches Yahoo off the desktop. A live trading tick gets the "cannot go live yet"
-    sentence; a cloud machine (scheduled report included, which also runs with BLAVE_MODE=live)
-    gets the desktop-only one."""
-    if _usstock_allowed():
-        return
+    private — reaches Yahoo off the desktop, and no live trading tick reaches it anywhere: the
+    desktop daemon's ticks carry BLAVE_AGENT_LOCAL=1 too (the key-free TAIFEX / TWSE paths need
+    it), and there is no venue a US signal could be sent to, so the refusal is by BLAVE_MODE, not
+    by the flag happening to be absent. A live tick gets the "cannot go live yet" sentence; a
+    cloud machine (scheduled report included, which also runs with BLAVE_MODE=live) gets the
+    desktop-only one."""
     live_tick = os.environ.get('BLAVE_MODE') == 'live' and os.environ.get('BLAVE_SCHEDULED_RUN') != '1'
+    if _usstock_allowed() and not live_tick:
+        return
     raise UsStockNotHere(_US_NOT_LIVE if live_tick else _US_DESKTOP_ONLY)
 
 

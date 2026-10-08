@@ -207,7 +207,7 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
 { const START = cut("function trayStart("), STEP = cut("function startStep(");
   let tick = null, p1 = 0; const errs = [];
   let polls = 0;
-  const ctx = { trayTimer: null, setInterval: (f) => { tick = f; return {}; }, traySync: () => {}, p1Sync: () => { p1++; }, console: { error: (e) => errs.push(e) },
+  const ctx = { trayTimer: null, setInterval: (f) => { tick = f; return {}; }, traySync: () => {}, appMenuSync: () => {}, p1Sync: () => { p1++; }, console: { error: (e) => errs.push(e) },
     updater: () => ({ poll: () => { polls++; throw new Error("poll boom"); } }) };
   new Function("ctx", "with (ctx) { " + STEP + "\n" + START + "\n trayStart(); }")(ctx);
   ctx.traySync = () => { throw new Error("tray boom"); };
@@ -219,5 +219,18 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
   t("設計 T2:關視窗那則通知在 Windows 講系統匣(字與主行程的英文退路都分平台)",
     /hidden: t\(window\.blave\.platform === "win32" \? "tm\.hiddenWin" : "tm\.hidden"\)/.test(trSrc) && zh("tm.hiddenWin").includes("系統匣") && !zh("tm.hiddenWin").includes("選單列")
     && /hidden: WIN \? "Blave is still running in the system tray\." : "Blave is still running in the menu bar\.",/.test(src));
+}
+/* app 選單的「結束 Blave」:before-quit 會先問(可能在下單 / 回合在跑)時字尾「…」,同選單列 trayQuitLabel 的規則(HIG)。
+   appMenuSync 每 5 秒跟 traySync 一起對一次,key 含 ask 才會在狀態變時重建 */
+{ const tpl = new Function("app", "MENU_EN", cut("function appMenuTemplate(") + "\n return appMenuTemplate;")({ name: "Blave" }, MENU_EN);
+  const quitOf = (L, ask) => tpl(L, false, false, () => {}, () => {}, () => {}, ask)[0].submenu.find((x) => x.role === "quit").label;
+  t("不會先問:「結束 Blave」不帶「…」", quitOf(L, false) === zh("menu.quit") && !/…$/.test(quitOf(L, false)));
+  t("會先問(可能在下單 / 回合在跑):字尾「…」= tm.quit", quitOf(L, true) === zh("tm.quit") && /…$/.test(quitOf(L, true)));
+  t("renderer 還沒交字:英文退路也帶「…」", quitOf({}, true) === "Quit Blave…" && quitOf({}, false) === "Quit Blave");
+  t("不帶 ask 的舊呼叫 = 不問", quitOf(L, undefined) === zh("menu.quit"));
+  const sync = cut("function appMenuSync(");
+  t("appMenuSync:ask = tradeMaybeLive() || activeTurn || turnStarting,進 key、傳給樣板", /const ask = !!\(tradeMaybeLive\(\) \|\| activeTurn \|\| turnStarting\);/.test(sync)
+    && /JSON\.stringify\(\[uiLang, full, ask, tmLabels\.quit,/.test(sync) && /onFull, ask\)\)\);/.test(sync));
+  t("5 秒那一輪也叫 appMenuSync(下單狀態沒有事件,靠這裡補)", /startStep\("tray", traySync\); startStep\("app menu", appMenuSync\);/.test(cut("function trayStart(")));
 }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

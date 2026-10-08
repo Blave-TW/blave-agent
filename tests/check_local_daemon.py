@@ -295,8 +295,26 @@ check(calls[0][0][0] == sys.executable, "[local] tick interpreter is sys.executa
 env = calls[0][1]["env"]
 check(env.get("BLAVE_AGENT_BASE") == BASE and env.get("BLAVE_KLINE_SOURCE") == "binance"
       and env.get("BLAVE_MODE") == "live" and "BLAVE_PROXY_TOKEN_PROBE" not in env
-      and "BLAVE_AGENT_LOCAL" not in env,
-      "[local] child env: paths + kline source pass, other BLAVE_* do not")
+      and env.get("BLAVE_AGENT_LOCAL") == "1" and "BLAVE_DATA_ACCESS" not in env,
+      "[local] child env: paths + kline source + BLAVE_AGENT_LOCAL=1 pass (the tick is on the user's computer: "
+      "lib.data's key-free TAIFEX / TWSE paths open on it), other BLAVE_* do not; no data_access.json → no flag")
+# the shell's state/data_access.json is read at every tick, so a sign-out between two ticks reaches the next one
+da_file = os.path.join(WS, "state", "data_access.json")
+os.makedirs(os.path.dirname(da_file), exist_ok=True)
+with open(da_file, "w") as f:
+    json.dump({"BLAVE_DATA_ACCESS": "0", "BLAVE_DATA_ACCESS_WHY": "signed_out"}, f)
+calls.clear()
+cl._tick_one("typea")
+env = calls[0][1]["env"]
+check(env.get("BLAVE_DATA_ACCESS") == "0" and env.get("BLAVE_DATA_ACCESS_WHY") == "signed_out" and env.get("BLAVE_AGENT_LOCAL") == "1",
+      "[local] next tick after the shell wrote data_access.json (signed out): BLAVE_DATA_ACCESS=0 + why, next to BLAVE_AGENT_LOCAL=1")
+with open(da_file, "w") as f:
+    json.dump({"BLAVE_DATA_ACCESS": "1"}, f)
+calls.clear()
+cl._tick_one("typea")
+check(calls[0][1]["env"].get("BLAVE_DATA_ACCESS") == "1" and "BLAVE_DATA_ACCESS_WHY" not in calls[0][1]["env"],
+      "[local] signed in with data between ticks: the next tick carries 1 (no restart, no command)")
+os.remove(da_file)
 calls.clear()
 cl._sync_strategy_crons({"typea", "typeb"})
 cl._migrate_legacy_ac_crons()

@@ -404,10 +404,38 @@ def _local_real_key_gate(venue_id, env):
         _withdraw_gate(venue_id, got, full)
 
 
+# Desktop data-access flags for every child (BLAVE_DATA_ACCESS / BLAVE_DATA_ACCESS_WHY —
+# the same two the shell gives a chat turn, so lib.data's key-free fallbacks take the same
+# branch under a live tick as under the backtest that approved the strategy). Read from
+# state/data_access.json at every spawn, not from our own environment: this process lives
+# for the whole app session while the account signs in / out / buys data, and a crash
+# restart reuses the environment we were first started with. The shell writes the file
+# before it starts us and on every account_status (shell/main.js syncDataAccess). Absent,
+# unreadable or off-shape → no flag, which is what a child got before.
+_DATA_ACCESS_FILE = os.path.join("state", "data_access.json")
+_DATA_ACCESS_VALUES = {"BLAVE_DATA_ACCESS": ("0", "1"),
+                       "BLAVE_DATA_ACCESS_WHY": ("signed_out", "no_card", "no_balance", "unknown")}
+
+
+def _data_access_flags():
+    try:
+        with open(os.path.join(WORKSPACE, _DATA_ACCESS_FILE), encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    return {k: v for k, v in doc.items() if k in _DATA_ACCESS_VALUES and v in _DATA_ACCESS_VALUES[k]}
+
+
 def _local_child_env(**extra):
     """Env for every workspace subprocess in local mode. Allowlist like the
     Linux one, plus the path variables that have no /opt/blave-agent default to
-    fall back on here. Any other BLAVE_* stays out of strategy code.
+    fall back on here, BLAVE_AGENT_LOCAL=1 (a child of the desktop daemon IS on
+    the user's own computer — lib.data's key-free TAIFEX / TWSE / Yahoo paths
+    open on that flag, and a live tick must see the same data its backtest did)
+    and the data-access flags (_data_access_flags). Any other BLAVE_* stays out
+    of strategy code.
 
     Windows: the allowlist starves python (no SystemRoot → it will not even
     start; USERPROFILE / APPDATA / TEMP / PATHEXT / COMSPEC likewise), so there
@@ -420,6 +448,8 @@ def _local_child_env(**extra):
     else:
         env = {k: v for k, v in os.environ.items() if k in _LOCAL_ENV_PASS}
     env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
+    env["BLAVE_AGENT_LOCAL"] = "1"
+    env.update(_data_access_flags())
     env.update(extra)
     return env
 
@@ -5466,13 +5496,10 @@ def _start_rerun(name, n, path, expect_hash=None):
     os.makedirs(_versions_path(name), exist_ok=True)
     popen_kw = {"start_new_session": True} if platform.system() != "Windows" else {
         "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    # on the desktop BLAVE_AGENT_LOCAL=1 comes from _local_child_env (every daemon child: the same key-free
+    # data path as the agent's own backtest). Not BLAVE_SCHEDULED_RUN — this is not a scheduled run
+    # (lib.data treats those differently on market holidays).
     extra = {"BLAVE_QUIET": "1", "PYTHONUNBUFFERED": "1", "PYTHONPATH": WORKSPACE}
-    if _local_mode():
-        # the same data path as the agent's own backtest on the desktop (agent_turn sets it for
-        # every turn): 台股 daily bars and the key-free market series come from TWSE / TPEx /
-        # TAIFEX, not the Blave endpoints. Not BLAVE_SCHEDULED_RUN — this is not a scheduled
-        # run (lib.data treats those differently on market holidays). Live ticks stay without it.
-        extra["BLAVE_AGENT_LOCAL"] = "1"
     env = _strategy_subprocess_env("backtest", **extra)
     if expect_hash:  # an edit landing while the child is still importing is caught too (runner._superseded)
         env["BLAVE_EXPECT_CODE_HASH"] = expect_hash
