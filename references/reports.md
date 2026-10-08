@@ -177,7 +177,8 @@ A report is not a fixed form: it is built around what actually happened today. F
 report — the market briefs, 台股收盤報告, 單標的晨報, a custom recipe, a research report, and the
 unattended turn of a scheduled report — work in this order. The one exception is a backtest report
 (its content is the backtest; no news search, no market extras — say an obvious anomaly in the
-narrative instead).
+narrative instead). A research question runs its data check before step 1 (§1b › *Research
+questions*): that probe decides whether there is a report at all.
 
 1. **Search first** (fast, ~15 s): the news and events in the report's window (§1b › News).
 2. **Pick 1–3 things that are special today** from what you found — a hacked exchange, a listing
@@ -422,9 +423,56 @@ publish(pack, narrative={
   A research report or a report the user describes in their own words (their own 週報) has
   no template by design — build it from bricks (§1b › Custom recipes), do not ask.
 
+### Research questions — straight to a report, after a data check
+
+**What goes straight to a report** — decide before you start, from the question alone:
+- The answer needs an analysis script over multi-period history: an event study, 「X 發生後 Y 怎樣」
+  (「外資淨空單創新高後台指期一個月漲跌」), conditional returns (「資金費率轉負時 BTC 之後 7 天」),
+  a comparison of two or more periods or groups (「2022 空頭和 2024 多頭時誰的回撤大」).
+- Or the user asks for a new research report outright (「做一份…的研究報告」, 「…做成報告」, the
+  desktop app's 新增報告 box). 研究 or 分析 on its own is not a trigger — judge the question by
+  what its answer needs. A template brief (台股收盤報告 …), a backtest report or a change to an
+  existing report is not this rule (AGENTS.md › Reports).
+
+**What stays in chat:** one number (「台積電今天收盤多少」), a current reading (「BTC 資金費率現在多少」, 「幫我分析現在 BTC 的資金費率」 — 分析, but a reading),
+a follow-up on an answer or report you already gave (「那 ETH 呢」, 「第二段是哪幾天」).
+
+**Order:**
+1. **Data check** — a probe, before the web search and before the analysis script: fetch the
+   series with `lib/data.py` and print three things — the first and last date it holds against
+   the period asked, how many times the condition occurs in it, and how many independent segments
+   those occurrences form (B9). Nothing is said to the user yet.
+2. **It passes** (the question as asked, enough segments to compare) → one line, then build:
+   「這題會直接做成報告，約 N 分鐘」 / "This one goes straight into a report — about N minutes." —
+   about 8–12 minutes in practice. No confirmation round: the user asked the question, the report is
+   the answer. Then the report flow above (search first), the analysis script in `tmp/research/`
+   (below, kept), and a `research` report (§7b B).
+3. **It fails** → answer in chat, no report — also when the user asked for a report outright
+   (the 新增報告 box included): never publish the original question as asked when the data cannot
+   answer it, and never publish the changed one before the user accepts it.
+   - The question has to change to be answerable — another threshold, another period, a proxy
+     series. Say in the first sentence what was asked and what you answered instead
+     (「三天都高於 0.05% 在資料裡沒有發生過，改用前 10% 的費率當門檻」), then the answer.
+   - Or the condition holds in only a few segments — say how many, give the figures, and say what
+     that many cannot show.
+   - Offer the report **on the changed question**, naming the change: 「用前 10% 門檻做成報告」
+     (a few segments, nothing changed: 「做成報告」). Web / desktop: a `<suggest>` line, never a
+     question at the end of the reply. Telegram has no `<suggest>`: one plain sentence —
+     「要的話回覆『用前 10% 門檻做成報告』」. The script stays in `tmp/research/`, so taking the
+     offer reruns it (*Research scripts*, below).
+   - **Taking the offer is the user's consent to the change:** the changed question is now theirs,
+     and the report's title, lead and every block answer it — not the original.
+   - **Never publish a report on a substitution the user did not accept.** A report is read later,
+     out of this conversation; its title would answer a question nobody asked.
+
+*Example that stays in chat:* an event study of BTC after funding above 0.05% for three days in a
+row — the condition never occurs in the data, so the agent swapped in a top-10% threshold and
+answered in chat. That is the right call: the question changed.
+
 ### Research scripts — kept in `tmp/research/`, rerun for the report
 
-When the user turns an earlier chat answer into a report (「做成報告」, 「把剛才的分析整理成報告」),
+A research question that passed the data check is already a report (above); this flow is for an
+answer that stayed in chat. When the user turns an earlier chat answer into a report (「做成報告」, 「把剛才的分析整理成報告」),
 the new turn sees only the text of your earlier replies — not the scripts, tool calls or their
 output. The research is already done; the script that did it is the way back to its figures.
 This is the one exception to AGENTS.md's "delete your `tmp/` scripts before you reply".
@@ -1259,8 +1307,10 @@ section headings in the report's language.
 
 ### B. Research rules — `type: "research"` only
 
-**How to build one — about four minutes, never a hand-written fetch script:**
-1. **Search first**, before any code (§1b › Report flow, § News): 3+ sites, read lean (below).
+**How to build one — about four minutes (with an analysis script behind it, 8–12; §1b › *Research questions*), never a hand-written fetch script:**
+1. **Search first**, before any code but the data check (§1b › Report flow, § News): 3+ sites,
+   read lean (below). A research question runs its data check first (§1b › *Research questions*) —
+   that probe decides whether there is a report at all.
 2. **`pack = research_pack("SOL", extra=[…], days=30, window="7d")`** (`lib.report_templates`; `days` = the
    span the comparison against BTC covers (not the candle count: 120 bars), `window` = the OI window — `"7d"` unless the question is about today) — price candles and levels,
    volume against its 20-day mean, the coin against BTC, funding / open interest / long-short, Blave
