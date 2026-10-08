@@ -9,8 +9,9 @@ TXF / MXF / TMF, the lib maps them to a month contract (TXFJ6 = TXF, J=Oct, 6=20
 
 Design rules:
 1. ENTRY → COMPUTED NEAR MONTH, CLOSE → THE ROW'S OWN CONTRACT. Contracts
-   settle at 13:30 Taipei on the third Wednesday of their month (the instant
-   the backtest's TXFR1 series changes contract). New positions roll at the
+   settle at 13:30 Taipei on the third Wednesday of their month (the backtest's
+   TXFR1 series keeps the expiring month through that 13:30 close; its first
+   new-month bar is the 15:00 evening session). New positions roll at the
    night session before it: from 15:00 the day before settlement entries go to
    the next month (entry_roll_at — why: see there). The computed contract must
    appear in the broker's get_domestic_contracts list, else the order is

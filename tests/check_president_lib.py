@@ -1,8 +1,9 @@
 """統一期貨 lib without a broker — near-month roll, confirmation, guards, snapshot.
 
-1. near_month: third-Wednesday 13:30 Taipei is the roll instant (13:29:59
-   stays, 13:30:00 rolls — the backtest's TXFR1 changes contract on the 13:31
-   bar), December rolls into next year's A contract, a computed contract
+1. near_month: entries roll at 15:00 Taipei the day before the third-Wednesday
+   13:30 settlement (14:59:59 stays, 15:00:00 rolls; the backtest's TXFR1 keeps
+   the expiring month through its 13:30 close and starts the next month with
+   the 15:00 evening bar), December rolls into next year's A contract, a computed contract
    missing from the broker's list is refused, naive times are refused.
 2. Orders (Unitrade faked): an entry goes to the computed near month, a
    reduce to the held row's own productid (even when the near month has

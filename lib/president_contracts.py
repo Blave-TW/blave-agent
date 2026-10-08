@@ -70,8 +70,9 @@ def entry_roll_at(year, month):
     settlement day's trading date. From then on new positions go to the next
     month: one opened in the expiring contract would be cash-settled at 13:30
     next day and re-opened by the reconciler in the next month, two extra round
-    trips. The backtest's TXFR1 stays on the expiring contract until 13:30; the
-    live difference is the calendar spread's move over those ≤22h30m, on new
+    trips. The backtest's TXFR1 stays on the expiring contract through its 13:30
+    close (first new-month bar 15:00 that evening); the live difference is the
+    calendar spread's move over those ≤22h30m, on new
     entries only (a held expiring position is added to in its own month, and
     closes go to whatever month is held)."""
     return (settlement_at(year, month) - timedelta(days=1)).replace(
