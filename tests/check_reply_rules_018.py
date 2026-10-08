@@ -102,6 +102,13 @@ t("#102 browser_wait:still_waiting 之後先讀已經好的分頁,最多再等�
 t("#102 發佈檢查表:同一個連結只能出現在一則", "同一個連結只能出現在一則" in read("lib", "report_templates.py"))
 t("#90 tmp/ 的一次性腳本:回覆前刪掉、不抄 tmp/ 裡的舊腳本",
   "delete yours before you reply" in section(agents, "## Shell Commands") and "never copy from a script already in `tmp/`" in section(agents, "## Shell Commands"))
+t("研究腳本留在 tmp/research/、做成報告時沿用不重做",
+  "write the analysis script behind a research answer to `tmp/research/<what_it_computes>.py` and keep it" in section(agents, "## Shell Commands")
+  and "turning an earlier answer into a report reruns it — never redo the research" in section(agents, "## Shell Commands")
+  and "ls -t tmp/research/" in read("references", "reports.md") and "keep the newest 20 files in `tmp/research/`" in read("references", "reports.md")
+  and "headers_from_env" in section(read("references", "reports.md"), "### Research scripts")
+  and "No API key, secret, token or password is ever written into the file" in section(read("references", "reports.md"), "### Research scripts")
+  and """`python3 -c "import glob,os; fs=sorted(glob.glob('tmp/research/*.py'), key=os.path.getmtime, reverse=True); [os.remove(f) for f in fs[20:]]"`""" in section(read("references", "reports.md"), "### Research scripts"))
 
 # 第五批
 t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(先估、先講、超過 25 分鐘先提短期間),範例策略的檔頭也寫了(agent 抄的就是範例)",

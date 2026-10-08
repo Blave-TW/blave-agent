@@ -831,6 +831,8 @@ def quickstart():
         "[report] QUICK START for a report in the user's own words, or a research report.",
         "  Read this and start. Not first: references/reports.md, lib source, a grep for a signature (they are below).",
         "  Open a section of references/reports.md only when publish() refuses something its message does not explain.",
+        "  An earlier chat answer made into a report: rerun its script from `ls -t tmp/research/` and build on that",
+        "  output - never redo the research. An x-axis of 'day N after the event' is a bar_chart / table, never fake dates.",
         "ORDER (fixed)",
         "  1. Search the web (browser_search, then browser_open_many and browser_read part=meta / section; read every page",
         "     you opened). Blave data may be fetched in the same step while pages load.",
