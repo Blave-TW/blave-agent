@@ -1585,6 +1585,30 @@ msgstr "只調整 Blave 自己那一份；同一個商品別跟策略用同一�
 msgid "tr.means.presNight"
 msgstr "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。"
 
+msgid "tr.quote.pres"
+msgstr "實盤行情：統一期貨"
+
+msgid "tr.quote.blave"
+msgstr "實盤行情：Blave 快取，訊號慢 1–2 分鐘（{why}）"
+
+msgid "tr.quote.why.noFile"
+msgstr "還沒收到統一的行情"
+
+msgid "tr.quote.why.stale"
+msgstr "統一的行情超過 90 秒沒更新"
+
+msgid "tr.quote.why.notEnabled"
+msgstr "統一帳號沒有行情權限，找營業員開通"
+
+msgid "tr.quote.why.noLogin"
+msgstr "統一還沒登入"
+
+msgid "tr.quote.why.notOk"
+msgstr "統一的行情讀不到"
+
+msgid "tr.quote.why.noOverlap"
+msgstr "統一的 K 線還接不上"
+
 msgid "tr.tab.over"
 msgstr "總覽"
 

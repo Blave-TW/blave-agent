@@ -116,6 +116,9 @@
           <div class="txt">
             <h5 class="main-head-name" id="tr-h" tabindex="-1" data-i18n="tr.nav"></h5>
             <div class="main-head-desc" id="tr-desc"></div>
+            <!-- 台指期實盤行情來源(統一綁定的這台電腦,狀態句正下方自己一行;設計 spec desktop-live-source-line):
+                 「實盤行情:統一期貨」/「實盤行情:Blave 快取,訊號慢 1–2 分鐘(原因)」,讀回報的 twfutures_live_source;Z 佔位行 #tr-noamt 插在它後面 -->
+            <p class="tr-ro-note" id="tr-quote" hidden></p>
             <!-- 雲端第一刀唯讀:全頁唯一的說明(不能按的鈕用 aria-describedby 指到這裡) -->
             <p class="tr-ro-note" id="tr-ro-note" hidden></p>
             <!-- 主機停機:講的是整頁的事,放在標題描述下、分頁列上(停機時上面那行說明本來就不出) -->

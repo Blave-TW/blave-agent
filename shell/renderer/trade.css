@@ -121,6 +121,7 @@ html.ws-sc .side-gate { display: none; }
 .tr-ro-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .tr-ro-note[hidden] { display: none; }
 .tr-ro-note .btn-quiet { font-size: inherit; }
+.tr-ro-note.is-fallback { color: var(--ink-2); }   /* 行情退回 Blave 快取那一句升到狀態句的墨階(不紅、不粗:策略照跑,沒有錢的風險) */
 .btn-fill.is-ro, .btn-fill.is-ro:hover { background: var(--surface-muted); color: var(--ink-3); cursor: default; }
 .pf-act.is-ro, .pf-act.is-ro:hover { color: var(--ink-3); background: transparent; cursor: default; }
 #tr-verdict[hidden] { display: none; }

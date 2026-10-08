@@ -1582,6 +1582,30 @@ msgstr "Only Blave’s own share is traded; don’t trade the same product and m
 msgid "tr.means.presNight"
 msgstr "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on."
 
+msgid "tr.quote.pres"
+msgstr "Live quotes: President Futures"
+
+msgid "tr.quote.blave"
+msgstr "Live quotes: Blave cache, signals 1–2 minutes behind ({why})"
+
+msgid "tr.quote.why.noFile"
+msgstr "no quotes from President yet"
+
+msgid "tr.quote.why.stale"
+msgstr "President's quotes haven't updated for 90 seconds"
+
+msgid "tr.quote.why.notEnabled"
+msgstr "this President account has no quote permission — have your broker rep enable it"
+
+msgid "tr.quote.why.noLogin"
+msgstr "not logged in to President"
+
+msgid "tr.quote.why.notOk"
+msgstr "President's quotes could not be read"
+
+msgid "tr.quote.why.noOverlap"
+msgstr "President's bars don't join up yet"
+
 msgid "tr.tab.over"
 msgstr "Overview"
 
