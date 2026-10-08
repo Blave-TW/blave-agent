@@ -1018,6 +1018,11 @@ const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, 
   bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", noWdCheck: true, ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" } };
 const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit"];
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
+/* 統一期貨 0.1.19 隨券商行情一起開;0.1.18 只藏入口不拆程式:關著時連接框的下拉不列統一,其餘(帳戶列、部位頁、狀態句、
+   開通中／開通過的「繼續」鈕)對已綁定的機器照舊。tests/check_shell_connect_venues 讀這個值決定期望清單 */
+const PRES_LOCAL_ON = false;
+// 這台電腦的下拉列不列統一:旗標開、或這個框是「繼續」帶著 president 進來的(少了那一項 select 會變空白)
+const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
 // 不在連接框那五家裡的三個帳戶(lib/account_paper.py、account_capital.py、account_president.py)
 const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD" };
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)
@@ -3344,13 +3349,13 @@ function cxVenueField(L) {
   cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
   sel.appendChild(g);
   // 群益只在雲端(交給 capital.js;電腦版不接群益,這台電腦那條 Wei 0.1.18 拿掉)。統一期貨只在這台電腦視角
-  // (雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。Mac 也列統一,選了講一句(d-mac)
-  { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw");
+  // (雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。Mac 也列統一,選了講一句(d-mac)。統一那一項受 PRES_LOCAL_ON 管
+  if (CXF.env !== "local" || cxPresListed()) { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw");
     const o2 = trEl("option", "", CXF.env === "local" ? t("pres.venue") : t("cap.venue")); o2.value = CXF.env === "local" ? "president" : CAPITAL; g2.appendChild(o2);
     sel.appendChild(g2); }
   sel.value = CXF.venue; sel.disabled = !!L.cx.busy || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
   sel.addEventListener("change", () => {
-    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") || (sel.value === "president" && CXF.env === "local") ? sel.value : PAPER;
+    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") || (sel.value === "president" && CXF.env === "local" && cxPresListed()) ? sel.value : PAPER;
     cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== PAPER && CXF.venue !== CAPITAL && CXF.venue !== "president" && CXF.ip === undefined) cxIpLookup();
   });
   w.appendChild(sel); lab.appendChild(w);

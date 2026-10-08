@@ -1720,10 +1720,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           ctx.document.createElement = mk0; }
         ctx.trEquity = () => null; }
     }
-    ok("接線:連接框「台股」一組雲端只列群益、這台電腦只列統一(0.1.18 Wei 拿掉這台電腦的群益;那兩句說明與 cx.cap.local* 一起刪);cx.acct.meta 換成不再說抓資料的那句",
-      /\{ const g2 = document\.createElement\("optgroup"\); g2\.label = t\("cap\.group\.tw"\);/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
+    ok("接線:連接框「台股」一組雲端只列群益、這台電腦只列統一且受 PRES_LOCAL_ON 管(0.1.18 Wei 拿掉這台電腦的群益、統一先藏;那兩句說明與 cx.cap.local* 一起刪);cx.acct.meta 換成不再說抓資料的那句",
+      /if \(CXF\.env !== "local" \|\| cxPresListed\(\)\) \{ const g2 = document\.createElement\("optgroup"\); g2\.label = t\("cap\.group\.tw"\);/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
       && !/cx\.cap\.local/.test(src) && !/cx\.cap\.local/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
-      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| \(sel\.value === CAPITAL && CXF\.env === "cloud"\) \|\| \(sel\.value === "president" && CXF\.env === "local"\) \? sel\.value : PAPER;/.test(src)
+      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| \(sel\.value === CAPITAL && CXF\.env === "cloud"\) \|\| \(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\) \? sel\.value : PAPER;/.test(src)
       && /o2\.value = CXF\.env === "local" \? "president" : CAPITAL;/.test(src)
       && /"cx\.acct\.meta": "只用來下單和讀帳戶。一次只能連一個。"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8")));
     ok("接線:選擇策略框沒有 #ps-next、psOpen 不送 pick_gate_lock、外殼不讀 market_gate",
