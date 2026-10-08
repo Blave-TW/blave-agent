@@ -48,32 +48,44 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
   reset(st("running")); await upCloudUpdate();
   const b = boxes[0] || {};
   ok("更新雲端主機:自動下單在跑(running)→ 先跳確認框,按下之前什麼都不送", boxes.length === 1 && sent.length === 0);
-  ok("確認框(設計師定稿):雲端樣式 + footWhere「雲端 · 真錢 · Binance」+ 在跑那一句 + 共用第二句 + 收合的細節 + 主鈕「更新」",
+  const D5 = '["up.cf.d1","up.cf.d2","up.cf.d3","up.cf.d4","up.cf.d5"]';
+  ok("確認框(設計師 D 版):雲端樣式 + footWhere「雲端 · 真錢 · Binance」+ 只有 lede(帶 cv→lv)與在跑那一句 + 主鈕「開始更新」",
     b.env === "cloud" && /env\.cloud/.test(b.footWhere || "") && /真錢/.test(b.footWhere || "") && /binance/.test(b.footWhere || "") && b.title === "up.cf.title"
-    && JSON.stringify(b.lines) === '["up.cf.body1","up.cf.body2"]' && Array.isArray(b.details) && b.details.length === 1 && b.details[0].text === "up.cf.detail" && b.ok === "up.cf.ok" && !b.single);
+    && JSON.stringify(b.lines) === '["up.cf.lede{\\"cv\\":\\"2026-10-04-c\\",\\"lv\\":\\"2026-10-04-d\\"}","up.cf.body1"]' && b.ok === "up.cf.ok" && !b.single);
+  ok("…細節一組五條(items,預設收合)、沒有 keep、沒有舊的 text / detailsOpen", Array.isArray(b.details) && b.details.length === 1 && JSON.stringify(b.details[0].items) === D5
+    && !b.details[0].text && !b.details[0].label && b.keep === undefined && !b.detailsOpen);
+  ok("原文裡沒有退役的 body2 / detail / keep", !/up\.cf\.body2|up\.cf\.detail|keep:/.test(cut(src, "upCloudUpdate") || ""));
   ok("…按下就記 cloud_upd_open(還沒送)", JSON.stringify(tracked) === '["cloud_upd_open"]');
   ok("…取消(不叫 onOk):什麼都不送、不進更新期間;onCancel 記 cloud_upd_cancel", sent.length === 0 && UPD.session === null && typeof b.onCancel === "function" && (b.onCancel(), tracked[tracked.length - 1] === "cloud_upd_cancel"));
   tracked = [];
   if (typeof b.onOk === "function") { b.onOk(); await new Promise((r) => setImmediate(r)); }
-  ok("…按「更新」:照既有路徑在本機聊天送 up.c.msg(viewing env:cloud)、開一段更新期間", sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && !!UPD.session && UPD.session.fromCv === "2026-10-04-c" && JSON.stringify(tracked) === '["cloud_upd_ok"]');
+  ok("…按「開始更新」:照既有路徑在本機聊天送 up.c.msg(viewing env:cloud)、開一段更新期間", sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && !!UPD.session && UPD.session.fromCv === "2026-10-04-c" && JSON.stringify(tracked) === '["cloud_upd_ok"]');
 
   reset(st("unconfirmed", { report: { venue: "paper", reconciler: { stopped: { reason: "machine_restart", gated: false } } } })); await upCloudUpdate();
-  ok("重開沒能確認停住(unconfirmed,模擬也算)→ 跳確認;第一句換成「換成新版就會先停住」那句(不寫用新版重新啟動);footWhere 寫模擬", boxes.length === 1 && sent.length === 0 && /模擬/.test(boxes[0].footWhere || "")
-    && JSON.stringify(boxes[0].lines) === '["up.cf.body1Unconfirmed","up.cf.body2"]');
+  ok("重開沒能確認停住(unconfirmed,模擬也算)→ 跳確認;狀態句換成「換成新版後會先停住」那句(不寫用新版重新啟動);lede 照帶版號;footWhere 寫模擬", boxes.length === 1 && sent.length === 0 && /模擬/.test(boxes[0].footWhere || "")
+    && boxes[0].lines.length === 2 && /^up\.cf\.lede\{/.test(boxes[0].lines[0]) && boxes[0].lines[1] === "up.cf.body1Unconfirmed");
+  reset(st("running", { cloud: { latest_config_version: null, config_supports_wf: false } })); await upCloudUpdate();
+  ok("讀不到最新版號(lv null、lib 沒有 walk_forward 才算落後)→ 照開框,lede 用不帶號那句(同關於列「有新版」不帶號的退化)", boxes.length === 1 && sent.length === 0
+    && JSON.stringify(boxes[0].lines) === '["up.cf.ledeBare","up.cf.body1"]');
+  reset(st("running", { cloud: { config_version: null, latest_config_version: null, config_supports_wf: false } })); await upCloudUpdate();
+  ok("cv 也讀不到 → 一樣不帶號", boxes.length === 1 && boxes[0].lines[0] === "up.cf.ledeBare");
   for (const ex of ["halted", "dead", "noaccount"]) {
     reset(st(ex)); await upCloudUpdate();
     ok("更新雲端主機:" + ex + " → 不問、直接送 up.c.msg;記 open + ok", boxes.length === 0 && sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(tracked) === '["cloud_upd_open","cloud_upd_ok"]');
   }
   for (const ex of ["loading", "unknown"]) {
     reset(st(ex)); await upCloudUpdate();
-    ok("更新雲端主機:" + ex + "(讀不到下單狀態)→ 當成可能在跑,先問;第一句用沒能確認停下那句", boxes.length === 1 && sent.length === 0 && boxes[0].lines[0] === "up.cf.body1Unconfirmed");
+    ok("更新雲端主機:" + ex + "(讀不到下單狀態)→ 當成可能在跑,先問;狀態句用「讀不到,照正在跑處理」那句(不再借 unconfirmed 的「主機重開後」)", boxes.length === 1 && sent.length === 0 && boxes[0].lines.length === 2 && boxes[0].lines[1] === "up.cf.body1Unknown");
   }
   ok("st() 造出的回報經真 trExecState 得到預期的狀態", ["running", "halted", "dead", "noaccount", "unknown", "loading"].every((ex) => trExecState(st(ex)) === ex)
     && trExecState(st("unconfirmed", { report: { reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } } })) === "unconfirmed");
   for (const [ex, why] of [["running", "回報寫對帳器在跑"], ["halted", "回報寫已暫停(用戶可能已在 web / TG 恢復)"], ["dead", "回報寫對帳器沒在跑"]]) {
     reset(st(ex, { alive: false })); await upCloudUpdate();
-    ok("主機在跑但回報過期(alive:false;連不上 / 429 / 睡醒)+ " + why + " → 一律先問,第一句用沒能確認停下那句", boxes.length === 1 && sent.length === 0 && boxes[0].lines[0] === "up.cf.body1Unconfirmed");
+    ok("主機在跑但回報過期(alive:false;連不上 / 429 / 睡醒)+ " + why + " → 一律先問,狀態句用「讀不到」那句", boxes.length === 1 && sent.length === 0 && boxes[0].lines[1] === "up.cf.body1Unknown");
   }
+  reset(st("unconfirmed", { alive: false, report: { reconciler: { stopped: { reason: "machine_restart", gated: false } } } })); await upCloudUpdate();
+  ok("回報過期 + 裡面寫重開沒確認停住:過期的回報不能信(同 upNow),狀態句仍用「讀不到」那句、不講「主機重開後」", boxes.length === 1 && boxes[0].lines[1] === "up.cf.body1Unknown");
+  ok("三分支各出各的句:running / unconfirmed / 其餘 unknown(原文沒有別的 up.cf.body1* 分支)", (cut(src, "upCloudUpdate") || "").split("up.cf.body1").length === 4);
   reset(st("running", { cloud: { latest_config_version: "2026-10-04-c" } })); await upCloudUpdate();
   ok("雲端已是最新(沒有落後也沒有重開未確認):更新雲端主機什麼都不做", boxes.length === 0 && sent.length === 0);
   reset({ ...st("halted"), kind: "stopped" }); await upCloudUpdate();
@@ -85,14 +97,25 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
     ok("確認框的 onCancel:只在沒按主鈕 / 第二動作鈕就收掉時叫(取消、✕、Esc、框外、被程式收掉);主鈕與第二動作鈕先記 acted", /if \(c && c\.onCancel && !c\.acted\) c\.onCancel\(\);/.test(dc)
       && /delCtx\.acted = true; delClose\(false\); go\(\); return; \}/.test(src) && /if \(delCtx\) delCtx\.acted = true; delClose\(false\); if \(go\) go\(\);/.test(src) && /opener, onCancel \};/.test(cut(src, "confirmBox") || "")); }
   { const V = require("vm").runInNewContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
-    const want = { zh: ["更新雲端主機？", "自動下單正在雲端主機上跑。更新動到下單程式時，會用新版重新啟動自動下單。", "主機重開後，沒能確認自動下單已經停下。下單程式換成新版就會先停住，按「啟動下單」才會繼續。",
-        "部位不會平倉。正在送出的單會等它完成才重啟；一直等不到空檔，就只換檔，自動下單先留在舊版。", "你改過的官方檔會換成官方版，舊檔另存備份；你自建的下單整合不動。", "更新", "更新雲端主機"],
-      en: ["Update the cloud machine?", "Auto-trading is running on the cloud machine. If the update changes the trading code, auto-trading restarts on the new version.",
-        "After the machine restarted, we couldn’t confirm auto-trading had stopped. Once the trading code is on the new version, it stays stopped until you press Start trading.",
-        "Positions stay open. If an order is being sent, the restart waits for it to finish; if no gap comes up, only the files are updated and auto-trading stays on the old code.",
-        "Official files you changed are replaced with the official versions; the old copies are backed up. Your own order integrations are left alone.", "Update", "Update cloud machine"] };
-    const keys = ["up.cf.title", "up.cf.body1", "up.cf.body1Unconfirmed", "up.cf.body2", "up.cf.detail", "up.cf.ok", "up.cloud.go"];
-    ok("確認框與連結的字 = 設計師定稿(zh / en 逐字;沒有「最多等 10 分鐘」)", ["zh", "en"].every((l) => keys.every((k, i) => V[l][k] === want[l][i])) && !/10 分鐘|10 minutes/.test(keys.map((k) => V.zh[k] + V.en[k]).join())); }
+    // 設計師 D 版 spec §3(.claude/output/designer/desktop-cloud-update-modal-2026-10-08/spec.md)逐字;d4 的反引號不進 textContent
+    const want = { zh: ["把雲端主機更新到最新版", "雲端主機會從 {cv} 換到 {lv}。過程要幾分鐘，在聊天裡跑，做完會說一聲。", "雲端主機會換成最新版。過程要幾分鐘，在聊天裡跑，做完會說一聲。",
+        "自動下單正在跑：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。", "主機重開後沒能確認自動下單已停下：換成新版後會先停住，按「啟動下單」才會繼續。",
+        "讀不到自動下單的狀態，照正在跑處理：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。",
+        "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰；部位不會平倉。", "一直等不到空檔，就只換檔，自動下單先留在舊版。", "沒更新完成會在聊天說明原因，再按一次就會接著做。",
+        "你改過的官方檔會換成官方版，舊檔備份在主機的 .official-backup/。", "你自己加的下單整合不動。", "開始更新", "更新雲端主機"],
+      en: ["Update the cloud machine", "The cloud machine goes from {cv} to {lv}. It takes a few minutes, runs in the chat, and says there when it’s done.",
+        "The cloud machine updates to the latest version. It takes a few minutes, runs in the chat, and says there when it’s done.",
+        "Auto-trading is running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version.",
+        "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start trading.",
+        "Couldn’t read the auto-trading status, so it’s treated as running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version.",
+        "Only Blave’s official code and reference files change; your strategy files and keys are left alone. Positions stay open.", "If no gap comes up, only the files change and auto-trading stays on the old code.",
+        "If the update doesn’t finish, the chat says why; press Start update again and it picks up where it stopped.",
+        "Official files you changed are replaced with the official versions; the old copies are backed up in .official-backup/ on the machine.", "Order integrations you added yourself are left alone.", "Start update", "Update cloud machine"] };
+    const keys = ["up.cf.title", "up.cf.lede", "up.cf.ledeBare", "up.cf.body1", "up.cf.body1Unconfirmed", "up.cf.body1Unknown", "up.cf.d1", "up.cf.d2", "up.cf.d3", "up.cf.d4", "up.cf.d5", "up.cf.ok", "up.cloud.go"];
+    const all = keys.map((k) => V.zh[k] + V.en[k]).join();
+    ok("確認框與連結的字 = 設計師 D 版定稿(zh / en 逐字;不寫分鐘數上限、不寫「策略不受影響」、不寫「不撤單」)", ["zh", "en"].every((l) => keys.every((k, i) => V[l][k] === want[l][i]))
+      && !/10 分鐘|10 minutes|策略不受影響|不撤單|strategies (are )?unaffected/.test(all));
+    ok("退役的 up.cf.body2 / up.cf.detail 兩語都不在表裡", ["zh", "en"].every((l) => !("up.cf.body2" in V[l]) && !("up.cf.detail" in V[l]))); }
   const ps = cut(trsrc, "psOpen") || "";
   ok("trade.js 投資組合被鎖那一行的雲端入口:走 upCloudUpdate(含確認),不再直接叫 upCheck", /if \(cloud\) upCloudUpdate\(/.test(ps) && !/upCheck\(/.test(ps) && !/upCheck\(|upCloudRecheck\(/.test(trsrc));
   ok("app.js 再也沒有不經確認就送 up.c.msg 的地方:up.c.msg 只出現在 upCloudSend", (src.match(/t\("up\.c\.msg"\)/g) || []).length === 1 && /t\("up\.c\.msg"\)/.test(cut(src, "upCloudSend") || ""));

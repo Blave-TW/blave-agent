@@ -185,9 +185,10 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   await $("set-upc-btn").onclick();
   const bx = boxes[0] || {};
   ok("更新雲端主機(自動下單在跑):先刷新一次、跳確認框(雲端樣式、footWhere、焦點回這顆鈕),按下之前什麼都不送", refreshes === 1 && boxes.length === 1 && sent.length === 0 && bx.env === "cloud" && bx.footWhere === 'tr.cloud.footWhere{"where":"env.cloud","money":"real","venue":"binance"}'
-    && bx.opener === $("set-upc-btn") && bx.title === "up.cf.title" && bx.ok === "up.cf.ok" && JSON.stringify(bx.lines) === '["up.cf.body1","up.cf.body2"]' && bx.details[0].text === "up.cf.detail" && !bx.details[0].label);
+    && bx.opener === $("set-upc-btn") && bx.title === "up.cf.title" && bx.ok === "up.cf.ok" && JSON.stringify(bx.lines) === '["up.cf.lede{\\"cv\\":\\"2026-09-22-p\\",\\"lv\\":\\"2026-09-24-b\\"}","up.cf.body1"]'
+    && bx.details.length === 1 && bx.details[0].items.length === 5 && !bx.details[0].label && bx.keep === undefined);
   bx.onOk(); await new Promise((r) => setImmediate(r));
-  ok("…按「更新」:在本機聊天送那一句固定的話、帶 viewing env:cloud(沒有雲端指令、沒有新指令)、開一段更新期間",
+  ok("…按「開始更新」:在本機聊天送那一句固定的話、帶 viewing env:cloud(沒有雲端指令、沒有新指令)、開一段更新期間",
     sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && UPD.cloudTurn === true && UPD.session && UPD.session.fromCv === "2026-09-22-p" && UPD.session.nv === "2026-09-24-b"
     && !/cloudSend|update_workspace/.test(fnSrc("upCloudUpdate") + fnSrc("upCloudSend")));
   ok("接線:那一句仍是 up.c.msg(zh / en 都在);沒有別的 up.c.* 字串", /"up\.c\.msg": "把雲端主機更新到最新版本"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")) && (fs.readFileSync(path.join(R, "strings.js"), "utf8").match(/"up\.c\.[a-zA-Z]+":/g) || []).length === 2);

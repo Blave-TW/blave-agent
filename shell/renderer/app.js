@@ -802,10 +802,14 @@ async function upCloudUpdate(opener) {
   const p = upNow(), cl = p.cloud && p.cloud.link;
   if (!cl || cl.disabled) return;
   if (!cl.ask) { await upCloudSend(); return; }
-  // 在跑:改到下單程式才用新版重啟;重開沒確認停住 / 讀不到:新版下單程式起來會先停住(有重開紀錄時,雲端的更新腳本只重啟會先停住的那一版)
-  const lead = trExecState(TR_BAGS.cloud.st) === "running" ? "up.cf.body1" : "up.cf.body1Unconfirmed";
-  confirmBox({ title: t("up.cf.title"), lines: [t(lead), t("up.cf.body2")], details: [{ text: t("up.cf.detail") }], ok: t("up.cf.ok"),
-    opener: opener || $("set-upc-btn"), env: "cloud", footWhere: upCloudWhere(TR_BAGS.cloud.st), onOk: () => { upCloudSend(); }, onCancel: () => { trackFeature("cloud_upd_cancel"); } });
+  /* 狀態句三選一(設計師 D 版,同 web 的分支):在跑 → 改到下單程式才在空檔用新版重啟;重開沒確認停住 → 新版下單程式起來會先停住
+     (有重開紀錄時,雲端的更新腳本只重啟會先停住的那一版);其餘(回報過期、loading、halted 但不新鮮…)都是讀不到 → 照在跑處理。
+     回報不新鮮(alive=false)時裡面的狀態不能信(同 upNow),不走 unconfirmed 那句。lede 帶版號「從 cv 到 lv」,缺一就用不帶號那句 */
+  const cst = TR_BAGS.cloud.st, ex = cst.alive ? trExecState(cst) : "unknown", c = cst.cloud || {}, cv = c.config_version, lv = c.latest_config_version;
+  const state = ex === "running" ? "up.cf.body1" : ex === "unconfirmed" ? "up.cf.body1Unconfirmed" : "up.cf.body1Unknown";
+  confirmBox({ title: t("up.cf.title"), lines: [cv && lv ? t("up.cf.lede", { cv, lv }) : t("up.cf.ledeBare"), t(state)],
+    details: [{ items: ["up.cf.d1", "up.cf.d2", "up.cf.d3", "up.cf.d4", "up.cf.d5"].map((k) => t(k)) }], ok: t("up.cf.ok"),
+    opener: opener || $("set-upc-btn"), env: "cloud", footWhere: upCloudWhere(cst), onOk: () => { upCloudSend(); }, onCancel: () => { trackFeature("cloud_upd_cancel"); } });
 }
 async function upCloudSend() {
   const p = upNow();   // 確認框開著的期間可能已經換檔 / 有回合開跑:再看一次

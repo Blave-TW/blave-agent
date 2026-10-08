@@ -3575,23 +3575,43 @@ msgstr "Update available {lv}"
 msgid "up.row.cloudNewBare"
 msgstr "Update available"
 
+# 「更新雲端主機」確認框(設計師 D 版,0.1.19;鏡像 web workspace_upd_cf_*):lede 一句 + 依自動下單狀態三選一的影響句,其餘規則收進「細節」五條。
+# 不寫分鐘數上限、不寫「策略不受影響」、不寫「不撤單」(references/cloud-handoff.md U5)
 msgid "up.cf.title"
-msgstr "Update the cloud machine?"
+msgstr "Update the cloud machine"
+
+msgid "up.cf.lede"
+msgstr "The cloud machine goes from {cv} to {lv}. It takes a few minutes, runs in the chat, and says there when it’s done."
+
+msgid "up.cf.ledeBare"
+msgstr "The cloud machine updates to the latest version. It takes a few minutes, runs in the chat, and says there when it’s done."
 
 msgid "up.cf.body1"
-msgstr "Auto-trading is running on the cloud machine. If the update changes the trading code, auto-trading restarts on the new version."
+msgstr "Auto-trading is running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version."
 
 msgid "up.cf.body1Unconfirmed"
-msgstr "After the machine restarted, we couldn’t confirm auto-trading had stopped. Once the trading code is on the new version, it stays stopped until you press Start trading."
+msgstr "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start trading."
 
-msgid "up.cf.body2"
-msgstr "Positions stay open. If an order is being sent, the restart waits for it to finish; if no gap comes up, only the files are updated and auto-trading stays on the old code."
+msgid "up.cf.body1Unknown"
+msgstr "Couldn’t read the auto-trading status, so it’s treated as running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version."
 
-msgid "up.cf.detail"
-msgstr "Official files you changed are replaced with the official versions; the old copies are backed up. Your own order integrations are left alone."
+msgid "up.cf.d1"
+msgstr "Only Blave’s official code and reference files change; your strategy files and keys are left alone. Positions stay open."
+
+msgid "up.cf.d2"
+msgstr "If no gap comes up, only the files change and auto-trading stays on the old code."
+
+msgid "up.cf.d3"
+msgstr "If the update doesn’t finish, the chat says why; press Start update again and it picks up where it stopped."
+
+msgid "up.cf.d4"
+msgstr "Official files you changed are replaced with the official versions; the old copies are backed up in .official-backup/ on the machine."
+
+msgid "up.cf.d5"
+msgstr "Order integrations you added yourself are left alone."
 
 msgid "up.cf.ok"
-msgstr "Update"
+msgstr "Start update"
 
 msgid "up.restart"
 msgstr "Restart to finish updating"

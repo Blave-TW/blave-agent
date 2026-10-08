@@ -3581,23 +3581,43 @@ msgstr "有新版 {lv}"
 msgid "up.row.cloudNewBare"
 msgstr "有新版"
 
+# 「更新雲端主機」確認框(設計師 D 版,0.1.19;鏡像 web workspace_upd_cf_*):lede 一句 + 依自動下單狀態三選一的影響句,其餘規則收進「細節」五條。
+# 不寫分鐘數上限、不寫「策略不受影響」、不寫「不撤單」(references/cloud-handoff.md U5)
 msgid "up.cf.title"
-msgstr "更新雲端主機？"
+msgstr "把雲端主機更新到最新版"
+
+msgid "up.cf.lede"
+msgstr "雲端主機會從 {cv} 換到 {lv}。過程要幾分鐘，在聊天裡跑，做完會說一聲。"
+
+msgid "up.cf.ledeBare"
+msgstr "雲端主機會換成最新版。過程要幾分鐘，在聊天裡跑，做完會說一聲。"
 
 msgid "up.cf.body1"
-msgstr "自動下單正在雲端主機上跑。更新動到下單程式時，會用新版重新啟動自動下單。"
+msgstr "自動下單正在跑：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。"
 
 msgid "up.cf.body1Unconfirmed"
-msgstr "主機重開後，沒能確認自動下單已經停下。下單程式換成新版就會先停住，按「啟動下單」才會繼續。"
+msgstr "主機重開後沒能確認自動下單已停下：換成新版後會先停住，按「啟動下單」才會繼續。"
 
-msgid "up.cf.body2"
-msgstr "部位不會平倉。正在送出的單會等它完成才重啟；一直等不到空檔，就只換檔，自動下單先留在舊版。"
+msgid "up.cf.body1Unknown"
+msgstr "讀不到自動下單的狀態，照正在跑處理：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。"
 
-msgid "up.cf.detail"
-msgstr "你改過的官方檔會換成官方版，舊檔另存備份；你自建的下單整合不動。"
+msgid "up.cf.d1"
+msgstr "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰；部位不會平倉。"
+
+msgid "up.cf.d2"
+msgstr "一直等不到空檔，就只換檔，自動下單先留在舊版。"
+
+msgid "up.cf.d3"
+msgstr "沒更新完成會在聊天說明原因，再按一次就會接著做。"
+
+msgid "up.cf.d4"
+msgstr "你改過的官方檔會換成官方版，舊檔備份在主機的 .official-backup/。"
+
+msgid "up.cf.d5"
+msgstr "你自己加的下單整合不動。"
 
 msgid "up.cf.ok"
-msgstr "更新"
+msgstr "開始更新"
 
 msgid "up.restart"
 msgstr "重新啟動以完成更新"
