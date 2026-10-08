@@ -100,6 +100,7 @@ _SLOT_FORM = {
 }
 SUMMARY_LEAD_OVERLAP = 0.5
 TITLE_MAX = 40
+RESEARCH_TITLE_MAX = 24   # references/reports.md 7b A1: a shared link's preview card shows two lines
 
 
 class Pack:
@@ -204,6 +205,7 @@ def _publish_checklist(pack):
     rid = pack.report_id
     n = (pack.news or {}).get("n", NEWS_MAX_ITEMS)
     research = pack.type == "research"
+    title_max = RESEARCH_TITLE_MAX if research else TITLE_MAX
     lines = ["publish 檢查表(一次寫對;publish 一次列出全部不合格處):",
              f"  1. read ≤{pack.slots['read'][1]} 字,3–5 條 '- ' 條列(可直接給 list of str),或 3–5 個 ### 子標,不混用"]
     if research:
@@ -216,7 +218,8 @@ def _publish_checklist(pack):
     day_note = (f"資料日 {day_cell['value']} 不是今天:publish 會在標題前加「{_dated_title(pack, '')[0].rstrip('｜')}｜」、頁首標資料日,"
                 "標題裡不用再寫日期" if day_cell else "")
     lines += [
-        f"  3. lead 第一句(到第一個「。」)≤{LEAD_FIRST_MAX} 字、≤{LEAD_FIRST_NUMBERS} 個數字、是結論;其餘數字放第二句",
+        f"  3. lead 第一句(到第一個「。」)≤{LEAD_FIRST_MAX} 字、≤{LEAD_FIRST_NUMBERS} 個數字、是結論;其餘數字放第二句"
+        + (";研究:第一句寫出結論本身＋1 個數字＋它的基準,不寫懸念句;整段 ≤3 句、≤3 個數字" if research else ""),
         "  4. 數字照上面 describe() 原樣抄(小數位數一樣);新算的比較請寫成明顯不同的數;"
         "資料算得出來的數字一律自己算(例如 ETH 同期漲幅:extra 加 relative_to 的 ETH,或 relative_perf),不引用媒體報的數字;"
         "不寫積木名、函式名、「資料包」這類工程字;"
@@ -236,7 +239,7 @@ def _publish_checklist(pack):
         "(融資大減、期貨空單大增、外資連續大賣),不是「外資轉買、空單縮小」(那是反彈);"
         "結論「外資轉賣」→ 推翻它的是外資轉回買超,不是「賣更多」(那是確認);"
         "結論裡有「未見恐慌」「尚未轉弱」這類否定判斷時,推翻條件就是那件事真的發生(恐慌、轉弱),不是反方向變好;不給買賣價位,價位只當統計值寫(均線、前 20 日高低不寫成地板或天花板,publish 會擋)",
-        f"  8. title=\"<結論 ≤{TITLE_MAX} 字>\" 必填:寫今天的結論,不是範本名「{pack.title}」" + (f";{day_note}" if day_note else ""),
+        f"  8. title=\"<結論 ≤{title_max} 字>\" 必填:寫今天的結論,不是範本名「{pack.title}」" + (f";{day_note}" if day_note else ""),
         "  9. 比較多個標的:一張多序列圖(relative_perf,或正規化到同一基準)加一張比較表,不是每個標的各一張圖",
         "  10. 圖型由積木決定,不自選:每期發生量(爆倉金額、買賣超、成交量)→ bar_chart、"
         "水位與指標(OI、融資、資金費率、z-score)→ line_chart、價格 → K 線;自組序列(自訂報告)也照這張表",
@@ -259,7 +262,7 @@ def _publish_checklist(pack):
         " \"risk\": \"若出現否定結論那個判斷的訊號(寫出門檻),這個判斷就不成立。\",",
         "   \"news\": [{\"title\": \"標題\", \"summary\": \"一句\", \"tag\": \"neg\", \"symbols\": [\"ETH\"],"
         " \"sources\": [(\"來源名\", \"https://…\")], \"published_at\": \"YYYY-MM-DD HH:MM\"}]}",
-        f"  publish({rid!r}, narrative, title=\"<結論 ≤{TITLE_MAX} 字>\"" + (", shareable=True)" if research else ")"),
+        f"  publish({rid!r}, narrative, title=\"<結論 ≤{title_max} 字>\"" + (", shareable=True)" if research else ")"),
         f"  被拒:只改 narrative,publish({rid!r}, narrative, title=…) 重送同一個 pack;不要再呼叫範本重建"
         f"(資料會變、又多花 {int(sum(t for _, t in pack.timings)) or '數十'} 秒)",
         "  已經發出去才發現要改:同一輪內再 publish 一次並加 replace=True(只會換掉這一輪自己發的那份);"
@@ -1442,7 +1445,7 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     if narrative.get("read", "").strip():
         attempt(_check_read_form, narrative["read"].strip())
     if narrative.get("lead", "").strip():
-        problems.extend(_lead_problems(narrative["lead"].strip()))
+        problems.extend(_lead_problems(narrative["lead"].strip(), research=pack.type == "research"))
     problems.extend(_number_problems(pack, narrative, watch_block))
     image_blocks = attempt(_image_blocks, report_id or pack.report_id, images_in, replace) or []
     narrated = bool(watch_block) or any(v.strip() for v in narrative.values()) or bool(news_in) or bool(image_blocks)
@@ -1746,12 +1749,11 @@ MAX_BLOCKS = 16
 # 「回落到 70,000 口」對 −70,312 口),差距遠大於 2% 的是新算出來的比較——三種都放行。
 NUMBER_NEAR = 0.02
 _NUM_RE = re.compile(r"(?<![\w.])([+\-−]?)(\d[\d,]*(?:\.\d+)?)\s*(%|億|兆|萬張|口)?")
-_MD_RE = re.compile(r"[*_`#>\[\]]|\^[\w-]+")
-
-
-def _first_sentence(lead):
-    plain = _MD_RE.sub("", lead).strip()
-    return re.split(r"(?<=[。！？!?])", plain, maxsplit=1)[0].strip()
+_MD_RE = _report.MD_RE
+_first_sentence = _report.first_sentence
+# 研究 lead 的數字算法(references/reports.md 7b A2):窗口長度、段號、年份不算數字
+_NOT_A_NUMBER_AFTER_RE = re.compile(r"\s*(?:個)?(?:交易)?(?:日|天|週|周|月|年|段)")
+_YEAR_RE = re.compile(r"(?:19|20)\d\d")
 
 
 def _source_of(src):
@@ -1940,7 +1942,9 @@ def _title_problems(pack, title):
         return [f"publish(..., title=\"<conclusion ≤{TITLE_MAX} chars>\") is missing: the title states today's "
                 f"conclusion (e.g. 「外資轉賣 338 億，指數仍站 60 日均之上」), not the template name 「{pack.title}」"]
     if len(t) > TITLE_MAX:
-        return [f"title is {len(t)} chars, cap {TITLE_MAX} (over by {len(t) - TITLE_MAX}): state the conclusion shorter"]
+        return [f"title is {len(t)} chars, cap {TITLE_MAX} (over by {len(t) - TITLE_MAX}): state the conclusion shorter"
+                + (f";研究建議 ≤{RESEARCH_TITLE_MAX} 字(分享卡只放得下兩行,references/reports.md 7b A1)"
+                   if pack.type == "research" else "")]
     return []
 
 
@@ -2002,9 +2006,9 @@ def _refusal(pack, problems):
             f"slower and its live figures move under your narrative).\n{lines}")
 
 
-def _lead_problems(lead):
+def _lead_problems(lead, research=False):
     out = []
-    for check in (_lead_len, _lead_nums, _lead_words):
+    for check in (_lead_len, (lambda x: _lead_nums(x, research)), _lead_words):
         try:
             check(lead)
         except ValueError as e:
@@ -2020,12 +2024,19 @@ def _lead_len(lead):
                          "the figures go in the second sentence (references/reports.md §1b R9 S1)")
 
 
-def _lead_nums(lead):
+def _lead_nums(lead, research=False):
     first = _first_sentence(lead)
-    nums = [m.group(0) for m in _NUM_RE.finditer(first)]
+    nums = [m.group(0) for m in _NUM_RE.finditer(first) if not (research and _not_a_number(first, m))]
     if len(nums) > LEAD_FIRST_NUMBERS:
         raise ValueError(f"narrative['lead'] first sentence carries {len(nums)} numbers ({', '.join(nums)}), "
                          f"at most {LEAD_FIRST_NUMBERS} (one comparison): move the rest after the first 「。」")
+
+
+def _not_a_number(text_, m):
+    """A bare integer that is a window length, a segment number or a year (「60 日」「第 2 段」「2024 年」)."""
+    if m.group(1) or m.group(3) or not m.group(2).isdigit():
+        return False
+    return bool(_YEAR_RE.fullmatch(m.group(2)) or _NOT_A_NUMBER_AFTER_RE.match(text_, m.end(2)))
 
 
 def _lead_words(lead):
