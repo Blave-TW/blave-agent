@@ -380,7 +380,7 @@
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.font = "10px " + token("--font-mono");   // canvas 不吃 CSS 變數,字族從 tokens.css 讀
+    ctx.font = "11px " + token("--font-mono");   // canvas 不吃 CSS 變數,字族從 tokens.css 讀;11px = canon 最小字階
     const cLine = token("--color-data-1"), cGrid = token("--border-hairline"), cText = token("--ink-3"), cMark = token("--color-greyDark");
 
     const cum = w.oos.cum, n = cum.length;

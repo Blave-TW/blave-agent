@@ -80,7 +80,7 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 .rb-report .rb-strip-label {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-3);
   margin-bottom: var(--space-2);
 }
@@ -118,7 +118,7 @@
   min-width: 96px;
 }
 .rb-report .rb-kpi-label {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-3);
   margin-bottom: var(--space-2);
 }
@@ -197,7 +197,7 @@
    tspan.mono),所以這裡刻意不宣告 font-family——宣告了就會把 buy-hold /
    Sharpe 這種該留 sans 的詞一起拖進 mono */
 .rb-report .rb-chart text {
-  font-size: 10px;
+  font-size: 11px;
   fill: var(--ink-3);
 }
 .rb-report .rb-chart .rb-wm {
@@ -343,12 +343,12 @@
    渲染器產的數字,整格必然命中形狀集,容器級 mono 與逐片段同結果,留著 */
 .rb-report .rb-heat th {
   font-weight: 500;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--ink-3);
   padding: var(--space-4) var(--space-2);
 }
 .rb-report .rb-heat th.rb-heat-row {
-  font-size: 10.5px;
+  font-size: 11px;
   text-align: left;
   padding-right: var(--space-8);
   white-space: nowrap;
@@ -356,7 +356,7 @@
 .rb-report .rb-heat td {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 10.5px;
+  font-size: 11px;
   white-space: nowrap;
   color: var(--ink);
   text-align: center;
@@ -491,7 +491,7 @@
 .rb-report .rb-table th {
   text-align: left;
   font-weight: 500;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-3);
   padding: var(--space-4) var(--space-12) var(--space-4) 0;
   border-bottom: 1px solid var(--border-frame);
@@ -812,13 +812,13 @@
 }
 .rb-report .rb-fn-no {
   flex: none;
-  font-size: 10.5px;
+  font-size: 11px;
   padding-top: var(--space-2);
 }
 /* 上標序號：結構性符號慣例，不加底線（密集底線在內文是噪音） */
 .rb-report .rb-fnref {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--ink-3);
   text-decoration: none;
   vertical-align: super;

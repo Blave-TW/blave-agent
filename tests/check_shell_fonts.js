@@ -51,4 +51,10 @@ const base = { ".lib .tag": read("library.css"), ".rb-report .rb-news-tag": read
 ok("那些 tag 的基礎規則仍是 11px/600(mac 不變、win32 只蓋字重)", tagSels.every((sel) => new RegExp(sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-size: 11px;[^}]*font-weight: 600;|" + sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-weight: 600;[^}]*font-size: 11px;").test(base[sel])));
 ok("win32 記號由 app.js 掛在 <html data-platform>(規則才會生效)", /document\.documentElement\.dataset\.platform = window\.blave\.platform/.test(read("app.js")));
 
+// ── 4. 報告小字下限 11px(canon 最小字階 = Mini tag 11;正黑體在 10.5px 以下 DirectWrite 會糊橫筆,兩平台一起抬) ──
+const small = others.filter(([f]) => /^report-.*\.css$|^library\.css$/.test(f)).filter(([, s]) => /font-size: 10(\.5)?px/.test(strip(s))).map(([f]) => f);
+ok("report-*.css / library.css 沒有 font-size: 10px / 10.5px" + (small.length ? " → " + small.join(", ") : ""), small.length === 0);
+ok("report-wf.js 的 canvas 刻度字 11px", /ctx\.font = "11px " \+ token\("--font-mono"\)/.test(read("report-wf.js")));
+ok("report-blocks.js 的圖內文字寬估算跟著 11px(全形 11、半形 6.6 = 0.6em)", /\? 11 : 6\.6;/.test(read("report-blocks.js")) && /\.rb-report \.rb-chart text \{\s*font-size: 11px;/.test(read("report-blocks.css")));
+
 process.exit(red ? 1 : 0);
