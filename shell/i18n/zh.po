@@ -1298,6 +1298,9 @@ msgstr "測試中…"
 msgid "cx.fail"
 msgstr "{id} 串接失敗（{stage}）：{msg}"
 
+msgid "cx.presStopped"
+msgstr "登入已停止，按「繼續」確認登入。"
+
 msgid "cx.err.okxMode"
 msgstr "OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金。"
 
@@ -1993,7 +1996,7 @@ msgid "tr.ov.perf.annTipOk"
 msgstr "把目前報酬換算成一年的速度，是推估不是保證。"
 
 msgid "tr.ov.perf.annTipGating"
-msgstr "把目前報酬換算成一年的速度，是推估不是保證。需約 30 天才顯示，目前累積中。"
+msgstr "把目前報酬換算成一年的速度，是推估不是保證。需約 7 天才顯示，目前累積中。"
 
 msgid "tr.ov.perf.vol"
 msgstr "波動率(年化)"
@@ -2017,7 +2020,7 @@ msgid "tr.ov.perf.sharpeTipOk"
 msgstr "每承受一單位波動換到的報酬，越高越好。"
 
 msgid "tr.ov.perf.sharpeTipGating"
-msgstr "每承受一單位波動換到的報酬，越高越好。需約 30 天才顯示，目前累積中。"
+msgstr "每承受一單位波動換到的報酬，越高越好。需約 7 天才顯示，目前累積中。"
 
 msgid "tr.ov.perf.trades"
 msgstr "交易次數"

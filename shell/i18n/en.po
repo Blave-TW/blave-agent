@@ -1296,6 +1296,9 @@ msgstr "Testing…"
 msgid "cx.fail"
 msgstr "Connecting {id} failed ({stage}): {msg}"
 
+msgid "cx.presStopped"
+msgstr "Login stopped. Press Continue to confirm login."
+
 msgid "cx.err.okxMode"
 msgstr "This OKX account mode can't trade futures. In OKX, go to Settings → Account mode and switch to Futures mode or Multi-currency margin."
 
@@ -1991,7 +1994,7 @@ msgid "tr.ov.perf.annTipOk"
 msgstr "Your current return projected to a yearly pace — an estimate, not a guarantee."
 
 msgid "tr.ov.perf.annTipGating"
-msgstr "Your current return projected to a yearly pace — an estimate, not a guarantee. Needs ~30 days; still accumulating."
+msgstr "Your current return projected to a yearly pace — an estimate, not a guarantee. Needs ~7 days; still accumulating."
 
 msgid "tr.ov.perf.vol"
 msgstr "Volatility (annualized)"
@@ -2015,7 +2018,7 @@ msgid "tr.ov.perf.sharpeTipOk"
 msgstr "Return earned per unit of volatility — higher is better."
 
 msgid "tr.ov.perf.sharpeTipGating"
-msgstr "Return earned per unit of volatility — higher is better. Needs ~30 days; still accumulating."
+msgstr "Return earned per unit of volatility — higher is better. Needs ~7 days; still accumulating."
 
 msgid "tr.ov.perf.trades"
 msgstr "Trades"
