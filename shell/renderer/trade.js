@@ -223,6 +223,12 @@ function trZView(state, r) {
   if (state === "noaccount" && trNoAccountStopped(r)) return { off: true, release: true, reason: null, noStart: true };   // B0 沒有停用的啟動鈕,出口寫在狀態句裡(§12)
   if (!trNoAmounts(r) || trRestartUnconfirmed(r)) return none;
   const H = !!(r.halt && r.halt.halted), R = trRestartStopped(r);
+  /* 帳本上還有機器人的部位(0.1.19,Wei 10-08):Z 不再等於「沒有東西可以啟動」——HALT 只擋新倉腿,對帳器活著第一輪就會
+     照金額 0 把帳本上的倉平掉;死角是對帳器沒在跑(dead / 重開停著 / 沒有自己下單的策略所以連「解除暫停」都不出)。
+     這時主鈕照常是可按的「啟動下單」(走既有 resume ＋ restart_reconciler),原因行換成講帳本上有多少、按下去會先平掉;
+     「解除暫停」不另出(同非 Z 的 halted:啟動下單已經是那顆鈕的超集)。book 給畫面算口數／數量 */
+  const book = trBookRows(r);
+  if (book.length && (state === "dead" || state === "halted")) return { off: false, release: false, reason: "tr.startOnBook", book };
   /* 剛存完金額的那一段:鈕**照舊停用**(它作用在機器實際持有的設定上,沒確認就啟動是拿真錢賭);
      畫面上的理由由等回報那一句蓋掉——「還沒有策略設定金額,先到部位設定」在剛設定完的那一刻是假的,
      而且它叫人再去做一次他剛做完的事(spec-desktop-waiting-states §2)。蓋的動作在 trPaintHead。 */
@@ -248,6 +254,14 @@ function trZView(state, r) {
 function trReleaseRows(m) {
   return Object.keys(m).filter((k) => !/@spot$/i.test(k) && m[k] && typeof m[k] === "object" && Number(m[k].size || m[k].qty || 0) !== 0)
     .map((k) => ({ sym: trCanonSym(k), v: trSigned(m[k]) || Number(m[k].size || m[k].qty), lots: m[k].unit === "contracts" || !!trTxfSpec(trCapitalCanon(k)) }));
+}
+/* 帳本(last_reconcile.ledger,lib/portfolio.ledger_positions)上機器人還持有的部位:size ≠ 0 的每一列(現貨也算——
+   對帳器平的是整本帳,不只合約)。沒有快照 / 沒有帳本 = 空。列的形狀同 trReleaseRows */
+function trBookRows(r) {
+  const last = r && typeof r.last_reconcile === "object" ? r.last_reconcile : null, led = last && last.ledger;
+  if (!led || typeof led !== "object") return [];
+  return Object.keys(led).filter((k) => led[k] && typeof led[k] === "object" && Number(led[k].size || led[k].qty || 0) !== 0)
+    .map((k) => ({ sym: trCanonKey(k), v: trSigned(led[k]) || Number(led[k].size || led[k].qty), lots: led[k].unit === "contracts" || !!trTxfSpec(trCapitalCanon(k)) }));
 }
 function trReleaseLive(r, nowMs) {
   const a = r.account, at = a ? trMs(a.read_at) : null, ids = trVenueIds(r);
@@ -1672,8 +1686,8 @@ function trPaintHead() {
   b.setAttribute("aria-disabled", locked ? "true" : "false"); b.classList.toggle("is-busy", busy);
   trPaintGoStop(trStartPending(TR.pending));
   // 沒有策略設金額(§8):啟動下單停用、原因行常駐(aria-describedby 指過去);暫停中另給「解除暫停」
-  trPaintNoAmt(pend || zv.reason); trPaintGoRel(zv.release, zv.noStart, zv.close);
-  if (zv.off) b.setAttribute("aria-describedby", "tr-noamt");
+  trPaintNoAmt(pend || zv.reason, zv.book ? { n: trBookQty(zv.book) } : null); trPaintGoRel(zv.release, zv.noStart, zv.close);
+  if (zv.off || zv.book) b.setAttribute("aria-describedby", "tr-noamt");   // 帳本非空那句講的是按下去會發生什麼,讀屏也要聽到
   if (trStartPending(TR.pending)) b.setAttribute("aria-describedby", "tr-go-hint");
   // 狀態不明時鈕照給、而且不看狀態檔裡的 listener 旗標(那份檔就是不能信的那個):暫停是安全方向
   const usable = state === "unknown" ? !!(TR.st && TR.st.alive) : up;
@@ -1706,15 +1720,22 @@ function trPaintGoRel(on, solid, close) {
 /* 鈕旁的原因行(Z 時常駐,--ink-3 12px,在狀態行下面自己一行)。句子裡的「部位」做成連結,點了切到部位分頁。
    **節點常駐、只換內容**(e2e 0.1.8 #108):原本沒有原因就把節點拿掉,連續操作時頁首高度一下多 22px 一下少 22px,
    分頁列跟著跳、容易點錯。沒有原因時清空內容,高度由 CSS 的 min-height 佔著 */
-function trPaintNoAmt(key) {
+/* 帳本上機器人部位的總量,給原因行那一句:口數 venue 寫「3 口」(Σ|口數|),加密寫「300 USDT」(帳本的 size 是成本,同 trReleaseRows 的列)。
+   一台機器一個 venue,整本同一種單位;混到的話以口數為準(口數那幾列才是會被平掉的合約) */
+function trBookQty(rows) {
+  const lots = rows.filter((x) => x.lots), sum = (a) => a.reduce((s, x) => s + Math.abs(x.v), 0);
+  if (lots.length) { const n = sum(lots); return trLotsFmt(n) + " " + t(trLotsKey(Math.round(n), "tr.lotsUnit", "tr.lotUnit")); }
+  return trWithUnit(trFmt(sum(rows)));
+}
+function trPaintNoAmt(key, vars) {
   let p = $("tr-noamt");
   if (!p) { p = trEl("p", "tr-noamt", ""); p.id = "tr-noamt"; $("tr-desc").after(p); }
   // 這一行裡有可 Tab 的「部位」連結:清空 / 重建之前焦點在它身上的話先交給標題,不然會掉到 BODY
   const hadFocus = p.contains(document.activeElement);
   if (!key) { if (hadFocus) $("tr-h").focus(); p.textContent = ""; p.classList.remove("cx-wait"); delete p.dataset.key; return; }
-  if (p.dataset.key === key + "|" + LANG) return;
+  if (p.dataset.key === key + "|" + LANG + (vars ? "|" + JSON.stringify(vars) : "")) return;   // vars(帳本口數)變了也要重畫
   if (hadFocus) $("tr-h").focus();
-  p.dataset.key = key + "|" + LANG; p.textContent = "";
+  p.dataset.key = key + "|" + LANG + (vars ? "|" + JSON.stringify(vars) : ""); p.textContent = "";
   /* 等回報那一句前面加 16/2 圓環 spinner(§2-3c):讓「正在發生某件事」出現在停用的鈕正下方、
      離接觸點幾個 px,而不是讓一顆靜止的灰鈕自己解釋。**spinner 只放在句子上,不放進鈕裡**——
      放進鈕裡就是規則 6 要避免的那個誤讀(用戶按的是儲存,不是啟動下單)。沿用 §5 的 .cx-wait,不新做元件。
@@ -1723,7 +1744,7 @@ function trPaintNoAmt(key) {
   p.classList.toggle("cx-wait", wait);
   if (wait) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); p.appendChild(sp); }
   const line = wait ? trEl("span", "") : p;
-  const text = t(key), word = t("tr.tab.pos"), at = text.indexOf(word);
+  const text = t(key, vars), word = t("tr.tab.pos"), at = text.indexOf(word);
   if (at < 0) line.append(text);
   else {
     const a = trEl("button", "btn-quiet tr-noamt-link", word); a.type = "button"; a.addEventListener("click", () => trSetTab("pos", true));
