@@ -1,8 +1,11 @@
 """統一期貨 1-minute bars for the live tick: the worker's quote thread polls
-`get_history_bardata("1K")` on the series contract of TXF / MXF / TMF and writes
-state/president_bars_<ROOT>_1m.json — a one-way snapshot (same shape of contract
+`get_history_bardata("1K")` on the TXF series contract and writes
+state/president_bars_TXF_1m.json — a one-way snapshot (same shape of contract
 as president_account.json) that lib/data.fetch_twfutures_ohlcv only reads to
-extend the Blave cache past its last bar on a 統一-bound desktop.
+extend the Blave cache past its last bar on a 統一-bound desktop. TXF only:
+MXF / TMF strategies read the TXF series like their backtests (lib/data
+aliases them), and every root polled is one more HTTP call per round against
+an unmeasured server cap shared with the account reads.
 
 Pure functions plus one loop; no login, no credentials (the worker hands over
 its logged-in Unitrade). Cache convention it converts to (references/twfutures.md,
@@ -16,28 +19,43 @@ measured 10-08 on the live account):
   13:44), the night session with 05:00 — anything starting in [13:45, 15:00) or
   [05:00, 08:45) is dropped; on the contract's own settlement day the series
   ends with the 13:30 bar (no 13:31–14:59), so there [13:30, 15:00) goes too;
-- the forming minute is never returned by the broker (verified), so nothing
-  else is cut;
+- a contract contributes only the bars from the moment it became the series
+  month (president_contracts.series_roll_at of the month before: 15:00 on that
+  settlement day) — after the roll the new month's own 08:45–13:44 of
+  settlement day is never fetched into the series;
+- the broker does not return the forming minute (verified); a bar whose END
+  label is still ahead of the clock is dropped anyway;
 - volume stays as the broker gives it: ~0.6 % above the cache (spread legs,
   presumably) — accepted (口徑 A), documented in references/president-broker.md.
 
 1K answers at most 100 bars and a span of at most 100 minutes per call; a
 closed-market span answers ok=False 查無資料, which is an empty page here.
+Polls run in the trading sessions only (08:40–13:50, 14:55–05:05 Taipei,
+Mon–Fri plus the Friday night's early hours); outside them, and inside the
+worker's maintenance windows, the snapshot is re-stamped with `paused` so a
+tick reads "market closed", not "feed stale".
 """
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, time as dtime, timedelta
 
 try:
     import president_contracts as pc  # run as a script: lib/ is sys.path[0]
+    import president_vault
 except ImportError:
-    from lib import president_contracts as pc
+    from lib import president_contracts as pc, president_vault
+
+try:
+    from unitrade.core.error import Error as _SdkError
+    _MSG_NOT_ENABLED = _SdkError.MSG011  # what every dquote call answers when auth_dquote is off
+except Exception:  # noqa: BLE001 — tests / machines without the SDK
+    _MSG_NOT_ENABLED = None
 
 WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = os.path.join(WORKSPACE, "state")
 TAIPEI = pc.TAIPEI
-ROOTS = pc.ROOTS
+ROOTS = ("TXF",)
 
 BAR_LABEL_OFFSET_MIN = 1      # broker START label → cache END label
 PAGE_MIN = 100                # unitrade 1.0.0.7: a non-"D" span over 100 minutes is refused
@@ -55,6 +73,11 @@ _SETTLE_CUT = (13, 30)        # settlement day: the expiring month's last series
 _NIGHT_OPEN = (15, 0)
 _NIGHT_CUT = (5, 0)
 _DAY_OPEN = (8, 45)
+SESSIONS = (                  # polling windows (Taipei); a few minutes around each session
+    (dtime(8, 40), dtime(13, 50)),
+    (dtime(14, 55), dtime(23, 59, 59, 999999)),
+    (dtime(0, 0), dtime(5, 5)),
+)
 
 
 def _log(msg):
@@ -62,13 +85,6 @@ def _log(msg):
 
 
 def _sanitize(text):
-    try:
-        import president_vault
-    except ImportError:
-        try:
-            from lib import president_vault
-        except ImportError:
-            return str(text)[:200]
     return president_vault.sanitize(str(text))
 
 
@@ -90,6 +106,18 @@ def read_snapshot(root):
     except (OSError, ValueError):
         return None
     return snap if isinstance(snap, dict) else None
+
+
+def in_session(now=None):
+    """True inside a polling window: weekday day / night sessions and the early
+    hours that end a weekday's night session (Saturday 00:00–05:05 included,
+    Monday's not). Holidays are not known here — a closed day only costs empty pages."""
+    now = (now or datetime.now(TAIPEI)).astimezone(TAIPEI)
+    t, wd = now.time(), now.weekday()
+    for i, (start, end) in enumerate(SESSIONS):
+        if start <= t <= end:
+            return wd < 5 if i < 2 else 1 <= wd <= 5
+    return False
 
 
 def bar_start(bar):
@@ -115,16 +143,29 @@ def _in_gap(start, settle_day):
     return cut <= hm < _NIGHT_OPEN
 
 
-def to_cache_rows(bars, productid):
+def series_span(productid):
+    """[from, to): the aware Taipei span in which `productid` is the series contract."""
+    y, m = pc.month_of(productid)
+    py, pm = (y - 1, 12) if m == 1 else (y, m - 1)
+    return pc.series_roll_at(py, pm), pc.series_roll_at(y, m)
+
+
+def to_cache_rows(bars, productid, now=None):
     """BarData list → sorted [ts_epoch_utc, o, h, l, c, v] rows in the cache
-    convention (END label, +1 min), the closing-match bars dropped."""
+    convention (END label, +1 min): the closing-match bars, anything outside the
+    contract's series span and a bar not closed by `now` dropped."""
+    now = now or datetime.now(TAIPEI)
     settle_day = pc.settlement_at(*pc.month_of(productid)).date()
+    span_from, span_to = series_span(productid)
     rows = {}
     for b in bars or []:
         start = bar_start(b)
-        if start is None or _in_gap(start, settle_day):
+        if start is None or not (span_from <= start < span_to) or _in_gap(start, settle_day):
             continue
-        ts = int((start + timedelta(minutes=BAR_LABEL_OFFSET_MIN)).timestamp())
+        end = start + timedelta(minutes=BAR_LABEL_OFFSET_MIN)
+        if end > now:
+            continue
+        ts = int(end.timestamp())
         try:
             rows[ts] = [ts, float(b.open), float(b.high), float(b.low), float(b.close), int(b.volume or 0)]
         except (TypeError, ValueError, AttributeError):
@@ -149,11 +190,16 @@ def quote_enabled(api):
     return None if v is None else bool(v)
 
 
+class QuoteNotEnabled(RuntimeError):
+    """The SDK's answer to every dquote call while auth_dquote is off (MSG011)."""
+
+
 def fetch_pages(api, productid, start, end, log=_log):
     """1K bars for [start, end] (aware datetimes), newest page first, walking
     back 100 minutes at a time; stops early after EMPTY_PAGES_STOP empty pages in
     a row. Returns (bars, paged_back_to, error): error is the first non-empty
-    failure (the walk stops there), paged_back_to the earliest page start reached."""
+    failure (the walk stops there), paged_back_to the earliest page start reached.
+    Raises QuoteNotEnabled on the SDK's not-enabled answer."""
     bars, empty_run, pages = [], 0, 0
     page_end, reached, error = end, end, None
     while page_end > start and pages < MAX_PAGES:
@@ -163,6 +209,8 @@ def fetch_pages(api, productid, start, end, log=_log):
         reached = page_start
         if r is None or not getattr(r, "ok", False):
             err = str(getattr(r, "error", "") or "no answer")
+            if _MSG_NOT_ENABLED is not None and err == str(_MSG_NOT_ENABLED):
+                raise QuoteNotEnabled(err)
             if _NO_DATA not in err:
                 error = _sanitize(err)
                 break
@@ -196,21 +244,24 @@ def poll_root(api, root, now=None):
     try:
         pid = pc.series_contract(root, now)
         snap["productid"] = pid
-        enabled = quote_enabled(api)
-        if enabled is False:
+        if quote_enabled(api) is False:
             snap["error"] = NOT_ENABLED
         else:
-            since = now - timedelta(days=KEEP_DAYS)
+            # a minute before the span's start: whether the broker's page start is inclusive is
+            # unverified (E1), and to_cache_rows drops anything before the span anyway
+            since = max(now - timedelta(days=KEEP_DAYS), series_span(pid)[0] - timedelta(minutes=1))
             if snap["rows"] and prev.get("productid") == pid:
                 # steady state: re-ask from the last row's START minute (overlap of one bar)
                 since = max(since, datetime.fromtimestamp(snap["rows"][-1][0], TAIPEI)
                             - timedelta(minutes=BAR_LABEL_OFFSET_MIN + 1))
             bars, reached, error = fetch_pages(api, pid, since, now)
-            snap["rows"] = merge_rows(snap["rows"], to_cache_rows(bars, pid), now_epoch)
+            snap["rows"] = merge_rows(snap["rows"], to_cache_rows(bars, pid, now), now_epoch)
             if not snap["rows"] or snap.get("paged_back_to") is None or reached.timestamp() < snap["paged_back_to"]:
                 snap["paged_back_to"] = int(reached.timestamp())
             snap["ok"] = error is None
             snap["error"] = error
+    except QuoteNotEnabled:
+        snap["error"] = NOT_ENABLED
     except Exception as e:  # noqa: BLE001 — the quote thread never takes the worker down
         snap["ok"], snap["error"] = False, _sanitize(f"{type(e).__name__}: {e}")
     if snap["rows"]:
@@ -223,24 +274,46 @@ def poll_root(api, root, now=None):
     return snap
 
 
+def pause_root(root, reason):
+    """Market closed / broker maintenance: re-stamp the last snapshot (rows, ok and
+    error kept) with `paused` so the reader tells "no session" from "feed stale"."""
+    snap = read_snapshot(root) or {"root": root, "productid": None, "ok": False, "error": None,
+                                   "earliest": None, "latest": None, "paged_back_to": None, "rows": []}
+    snap["paused"] = reason
+    snap["written_at"] = int(time.time())
+    try:
+        _atomic_write(snapshot_path(root), snap)
+    except OSError as e:
+        _log(f"{root}: snapshot write failed: {type(e).__name__}")
+    return snap
+
+
 def poll_once(api, now=None, roots=ROOTS):
     return {root: poll_root(api, root, now) for root in roots}
 
 
-def loop(holder, pause=None, stop=None):
-    """Thread body: poll every POLL_S while holder["api"] is a logged-in Unitrade.
-    `pause()` truthy (the worker's maintenance window) skips the poll; `stop()`
-    truthy ends the loop. holder["api"] = None (logged out) just waits."""
-    last_err = None
+def loop(holder, pause=None, stop=None, roots=ROOTS):
+    """Thread body: poll every POLL_S while holder["api"] is a logged-in Unitrade
+    and a session is on. `pause()` truthy (the worker's maintenance window) or
+    no session → pause_root instead; `stop()` truthy ends the loop.
+    holder["api"] = None (logged out) just waits."""
+    last_said = None
     while not (stop and stop()):
         api = holder.get("api")
-        if api is not None and not (pause and pause()):
+        if api is not None:
             try:
-                snaps = poll_once(api)
-                errs = {r: s.get("error") for r, s in snaps.items() if not s.get("ok")}
-                if errs != last_err:
-                    _log(f"poll {'ok' if not errs else 'errors ' + str(errs)}")
-                    last_err = errs
+                paused = (pause() if pause else None) or (None if in_session() else "closed")
+                if paused:
+                    for root in roots:
+                        pause_root(root, str(paused))
+                    said = f"paused ({paused})"
+                else:
+                    snaps = poll_once(api, roots=roots)
+                    errs = {r: s.get("error") for r, s in snaps.items() if not s.get("ok")}
+                    said = "poll ok" if not errs else f"poll errors {errs}"
+                if said != last_said:
+                    _log(said)
+                    last_said = said
             except Exception as e:  # noqa: BLE001
                 _log(f"poll failed: {_sanitize(f'{type(e).__name__}: {e}')}")
         for _ in range(POLL_S):

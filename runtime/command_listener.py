@@ -1669,7 +1669,8 @@ def _tw_broker_flag():
     of money modules (tests/check_sched_bash_guard.py ③). Nothing bound → no flag."""
     import importlib
     try:
-        v = _in_workspace(importlib.import_module, "lib.venue_wiring").hand_wired_venue()
+        # the call too, not only the import: hand_wired_venue reads two files by relative path
+        v = _in_workspace(lambda: importlib.import_module("lib.venue_wiring").hand_wired_venue())
     except Exception:
         return {}
     return {"BLAVE_TW_BROKER": v} if isinstance(v, str) and v else {}

@@ -4117,60 +4117,77 @@ def _president_feed_live():
 
 
 def _read_president_bars(root, now):
-    """(1m DataFrame in the cache convention, None) or (None, reason)."""
+    """(1m DataFrame in the cache convention, None, written_at) or (None, reason, written_at)."""
     try:
         snap = json.loads((_STATE_DIR / f'president_bars_{root}_1m.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
-        return None, 'no_file'
+        return None, 'no_file', None
     if not isinstance(snap, dict):
-        return None, 'no_file'
+        return None, 'no_file', None
+    written_at = float(snap.get('written_at') or 0)
+    if snap.get('paused'):
+        return None, 'paused', written_at   # no session / broker maintenance: nothing to be stale about
     if not snap.get('ok'):
         err = str(snap.get('error') or '')
-        return None, 'not_enabled' if err == _PRESIDENT_NOT_ENABLED else f'not_ok:{err}'[:120]
-    if now - float(snap.get('written_at') or 0) > _PRESIDENT_BARS_MAX_AGE_S:
-        return None, 'stale'
+        return None, 'not_enabled' if err == _PRESIDENT_NOT_ENABLED else f'not_ok:{err}'[:120], written_at
+    if now - written_at > _PRESIDENT_BARS_MAX_AGE_S:
+        return None, 'stale', written_at
     rows = [r for r in (snap.get('rows') or []) if isinstance(r, list) and len(r) == 6]
     if not rows:
-        return None, 'empty'
+        return None, 'empty', written_at
     df = pd.DataFrame(rows, columns=['ts', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df.index = pd.to_datetime(df.pop('ts'), unit='s')
     df.index.name = 'time'
-    return df[~df.index.duplicated(keep='last')].sort_index().astype(float), None
+    return df[~df.index.duplicated(keep='last')].sort_index().astype(float), None, written_at
 
 
-def _resample_president(df, rule, now):
+_TW_SESSION_FIRST_LABELS = ((0, 46), (7, 1))   # UTC: the 08:46 / 15:01 Taipei END labels that open a session
+
+
+def _resample_president(df, rule, clock):
     """The broker's 1m rows → the server's intraday schema (same resample as
-    _fetch_twfutures_via_export), complete bins only: a bin is whole once its
-    last minute's END label is in the rows, or that minute has passed (a session
-    end leaves the bin short)."""
+    _fetch_twfutures_via_export), whole bins only: a bin is whole once its last
+    minute's END label is in the rows, or that minute had passed when the
+    snapshot was written (`clock` = its written_at, not the wall clock — a feed
+    that fell a minute behind must not pass a short bin off as closed). The first
+    bin is dropped unless the rows start on its first label or on a session's
+    opening bar (the rolling window's edge lands on any minute)."""
     out = df.resample(rule).agg(Open=('Open', 'first'), High=('High', 'max'), Low=('Low', 'min'),
                                 Close=('Close', 'last'), Volume=('Volume', 'sum')).dropna(subset=['Open'])
+    if out.empty:
+        return out
     step = pd.Timedelta(rule)
     last_minute = out.index + step - pd.Timedelta(minutes=1)
-    whole = last_minute.isin(df.index) | ((out.index + step) <= pd.Timestamp(now, unit='s'))
+    whole = last_minute.isin(df.index) | ((out.index + step) <= pd.Timestamp(clock, unit='s'))
+    first = df.index[0]
+    if first != out.index[0] and (first.hour, first.minute) not in _TW_SESSION_FIRST_LABELS:
+        whole = whole & (out.index != out.index[0])
     return out[whole]
 
 
 def _with_president_tail(hist, traded, schema):
     from lib import venue_traits
     now = time.time()
-    broker, reason = _read_president_bars('TXF', now)
-    source, added = 'blave', 0
-    if broker is not None:
-        if hist.empty or broker.index[0] > hist.index[-1]:
-            reason = 'no_overlap'
-        else:
-            rule = _TW_FUTURES_RESAMPLE_RULES.get(schema)
-            if rule:
-                broker = _resample_president(broker, rule, now)
-            new = broker[~broker.index.isin(hist.index) & (broker.index > hist.index[0])]
-            if not new.empty:
-                hist = pd.concat([hist, new[hist.columns.intersection(new.columns)]]).sort_index()
-                added = len(new)
-            source, reason = venue_traits.PRESIDENT, None
+    source, reason, added, out = 'blave', None, 0, hist
+    try:
+        broker, reason, written_at = _read_president_bars('TXF', now)
+        if broker is not None:
+            if hist.empty or broker.index[0] > hist.index[-1]:
+                reason = 'no_overlap'
+            else:
+                rule = _TW_FUTURES_RESAMPLE_RULES.get(schema)
+                if rule:
+                    broker = _resample_president(broker, rule, written_at)
+                new = broker[~broker.index.isin(hist.index) & (broker.index > hist.index[0])]
+                if not new.empty:
+                    out = pd.concat([hist, new[hist.columns.intersection(new.columns)]]).sort_index()
+                    added = len(new)
+                source, reason = venue_traits.PRESIDENT, None
+    except Exception as e:  # noqa: BLE001 — an optional source never fails the tick
+        source, reason, added, out = 'blave', f'error:{type(e).__name__}', 0, hist
     status = {'source': source, 'reason': reason, 'at': int(now), 'root': 'TXF', 'traded': traded,
               'schema': schema, 'added': added,
-              'last_bar': hist.index[-1].strftime('%Y-%m-%dT%H:%M:%SZ') if not hist.empty else None}
+              'last_bar': out.index[-1].strftime('%Y-%m-%dT%H:%M:%SZ') if not out.empty else None}
     try:
         path = _STATE_DIR / 'twfutures_live_source.json'
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -4179,9 +4196,9 @@ def _with_president_tail(hist, traded, schema):
         os.replace(tmp, path)
     except OSError:
         pass
-    if source == 'blave':
+    if source == 'blave' and reason != 'paused':
         logging.warning(f'[twfutures] live bars from the Blave cache, not 統一 ({reason})')
-    return hist
+    return out
 
 
 def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
