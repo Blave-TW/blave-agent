@@ -47,6 +47,7 @@ ok("trade.js 的分頁接線不用改:點 / 鍵盤仍掛在 #tr-tabs(事件冒�
 { const rail = rule(css, ".mp-rail"), seg = rule(css, ".mp-seg:focus-visible");
   ok(".mp-rail 不再裁切(格子內距只有 4,往內畫會碰字;軌最窄 236 放不下 8)", !!rail && !/overflow: hidden/.test(rail), rail);
   ok(".mp-seg:focus-visible 不往內畫,聚焦時 position relative + z-index 1(不被鄰格分隔線蓋住)", !!seg && !/outline-offset/.test(seg) && /position: relative; z-index: 1/.test(seg), seg);
+  ok("中間格聚焦時 border-radius 0(不吃全域 radius-xs,選中格填色才不露軌道底)", /\.mp-seg:focus-visible:not\(:first-child\):not\(:last-child\) \{ border-radius: 0; \}/.test(css));
   ok("圓角改由首末格自己畫(同 .cn-lang)", /\.mp-seg:first-child \{ border-radius: calc\(var\(--radius-xs\) - 1px\) 0 0 calc\(var\(--radius-xs\) - 1px\); \}/.test(css)
     && /\.mp-seg:last-child \{ border-radius: 0 calc\(var\(--radius-xs\) - 1px\) calc\(var\(--radius-xs\) - 1px\) 0; \}/.test(css)); }
 

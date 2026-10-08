@@ -576,6 +576,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-seg:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
 .mp-seg:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .mp-seg:focus-visible { position: relative; z-index: 1; }
+/* 中間格聚焦不吃全域的 radius-xs:ring 收角會讓選中格的填色露出軌道底(設計稽核 0.1.19);首末格的圓角照上面自己畫的 */
+.mp-seg:focus-visible:not(:first-child):not(:last-child) { border-radius: 0; }
 .mp-note { margin: 0; padding: var(--space-8) 10px 6px; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 
 /* ── Tooltip(canon › Components › Tooltip)──────────────
