@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld("blave", {
   loadSession: (id) => ipcRenderer.invoke("load-session", id),
   deleteSession: (id) => ipcRenderer.invoke("delete-session", id),
   listStrategies: () => ipcRenderer.invoke("list-strategies"),
+  // 側欄偏好(renderer/stratflags.js):這台電腦的策略順序與旗標,存 userData 的 ui-prefs.json(主行程清洗);set 只動有帶的鍵,回清洗後的整份
+  stratPrefs: () => ipcRenderer.invoke("strat-prefs"),
+  stratPrefsSet: (p) => ipcRenderer.invoke("strat-prefs-set", { stratOrder: p && p.stratOrder, stratFlags: p && p.stratFlags }),
   loadStrategy: (name) => ipcRenderer.invoke("load-strategy", name),
   // 轉出檔「下載…」:主行程讀檔 + 開存檔框。ref = { session, id }(對話裡那張卡的快照)或 { strategy, target }(程式碼分頁);不過內容、不過路徑
   saveExport: (ref) => ipcRenderer.invoke("save-export", ref ? { session: ref.session, id: ref.id, strategy: ref.strategy, target: ref.target } : null),
