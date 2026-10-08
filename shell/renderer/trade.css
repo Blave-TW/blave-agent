@@ -223,7 +223,7 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl th:first-child, .pf-tbl td:first-child { padding-left: 0; }
 .pf-tbl th:last-child, .pf-tbl td:last-child { padding-right: 0; }
 .pf-tbl .n { text-align: right; }
-.pf-tbl td.n, .pf-tbl td.sym, .trv .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.pf-tbl td.n, .pf-tbl td.sym, .trv .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .pf-tbl td.key { color: var(--ink); white-space: normal; min-width: 120px; position: relative; }
 /* 可點的策略名:canon「表格代號連結」(同 button.shl-name)。熱區撐滿整格(::before 定位到 td):
    名字下面有 pf-note 時名字貼在格頂,只往上下外擴會跨進上一列 */
@@ -236,20 +236,20 @@ html.ws-sc .side-gate { display: none; }
 .trv .sell { color: var(--color-redText); }
 .pf-tbl td.na { color: var(--color-greyDark); }
 .pf-tbl td.hold { color: var(--ink-3); }
-.pf-tbl td.unmanaged { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 12px; }   /* 「不歸 Blave 管」是字不是數:Han 不進 mono */
-.trv .ccy, .del-body .ccy { margin-left: var(--space-4); font-size: 11px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-.mkt-tag { margin-left: var(--space-8); white-space: nowrap; font-size: 11px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.pf-tbl td.unmanaged { font-family: var(--font-sans); font-size: 12px; }   /* 「不歸 Blave 管」是字不是數:Han 不進 mono */
+.trv .ccy, .del-body .ccy { margin-left: var(--space-4); font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
+.mkt-tag { margin-left: var(--space-8); white-space: nowrap; font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
 .pf-note { display: block; font-size: 12px; color: var(--ink-3); }
 .amt-inw { display: inline-flex; align-items: center; gap: var(--space-6); }
 .amt-in {
   width: 96px; height: 30px; padding: 0 var(--space-8); border: 1px solid var(--color-greyDark); border-radius: var(--radius-xs);
-  background: transparent; color: var(--ink); font: 13px "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right;
+  background: transparent; color: var(--ink); font: 13px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right;
 }
 .amt-in:focus { border-color: var(--ink); outline: none; }
 .amt-in[aria-invalid="true"] { border-color: var(--color-redText); }
 .pf-note.err { color: var(--color-redText); }
 .amt-in:disabled { color: var(--ink-3); border-color: var(--border-hairline); }
-.amt-unit, .lots-unit { font-size: 11px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.amt-unit, .lots-unit { font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
 /* 雲端存完、報告還沒對上(.pend,spec-desktop-cloud-writable §1.2):數字灰一階 + 右邊 6×1 短線,不閃不轉;
    記號一定配儲存列那句字。短線那格在改過的列上留位不畫,欄不跳。目標部位欄整欄降灰 */
 .amt-in.pend { color: var(--ink-2); }
@@ -257,10 +257,10 @@ html.ws-sc .side-gate { display: none; }
 .amt-dash.off { visibility: hidden; }
 .pf-tbl .pend-col, .pf-tbl .pend-col .ccy, .trv .pf-tbl .pend-col.buy, .trv .pf-tbl .pend-col.sell { color: var(--ink-3); }
 .pf-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
-.pf-total .n { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
+.pf-total .n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
 /* 部位表「N 支策略」(§2.2;canon › Mini tag):18 高、中性底;熱區用 ::before 外擴到約 32 */
 .net-tag { position: relative; display: inline-flex; align-items: center; gap: var(--space-4); height: 18px; margin-left: var(--space-8); padding: 0 var(--space-6);
-  border: 0; border-radius: var(--radius-micro); background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font: 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; white-space: nowrap; cursor: pointer; vertical-align: middle; }
+  border: 0; border-radius: var(--radius-micro); background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font: 11px/1 var(--font-sans); white-space: nowrap; cursor: pointer; vertical-align: middle; }
 .net-tag::before { content: ""; position: absolute; inset: -7px -4px; }
 .net-tag:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .net-tag .cv7 { width: 5px; height: 5px; border-width: 1.4px; }
@@ -296,16 +296,16 @@ html.ws-sc .side-gate { display: none; }
 .pf-acct { display: flex; align-items: baseline; gap: var(--space-12); padding-bottom: var(--space-8); border-bottom: 1px solid var(--border-hairline); }
 .pf-acct .who { font-size: 14px; font-weight: 600; color: var(--ink); }
 .pf-acct .mode { align-self: center; }
-.pf-acct .amt { margin-left: auto; font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 14px; color: var(--ink); white-space: nowrap; }
-.pf-acct .amt .lbl { margin-right: var(--space-8); font-size: 12px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.pf-acct .amt { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; color: var(--ink); white-space: nowrap; }
+.pf-acct .amt .lbl { margin-right: var(--space-8); font-size: 12px; color: var(--ink-3); font-family: var(--font-sans); }
 /* 錢包分佈(同雲端 workspace.css 的 .pf-wallets-cap / .pf-wallet-row):列跟表格同一級字,不是腳注 */
 .pf-wallets-cap { margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
 .pf-wallets { margin-top: var(--space-8); }
 .pf-wallet-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); padding: var(--space-4) 0; font-size: 13px; color: var(--ink-2); }
-.pf-wallet-row .w-amt { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pf-wallet-row .w-amt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* 保證金列(台灣期貨帳戶):同一組 caption + row,只加 caption 右側的更新時間、風險態的紅字與 mini tag(canon Mini tag recipe;外殼沒有全域 .mini_tag) */
 .pf-wallets-cap.margin { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); }
-.pf-wallets-cap.margin .ts { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pf-wallets-cap.margin .ts { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pf-wallet-row.risk { position: relative; }   /* tip 氣泡(.tip)的定位祖先 */
 .pf-wallet-row .w-name .tr-tipb { font-size: inherit; color: inherit; }
 .pf-wallet-row .w-amt.danger { color: var(--color-redText); }
@@ -334,12 +334,12 @@ html.ws-sc .side-gate { display: none; }
    3 欄的第 3 欄往左長,免得撞到條的右緣 */
 .ov-stats .sl-tip .tip { width: max-content; max-width: 260px; }
 .perf-stats .stat:nth-child(3n) .tip { left: auto; right: 0; }
-.ov-stats .sv { margin-top: var(--space-6); font: 600 18px "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1.1; white-space: nowrap; }
+.ov-stats .sv { margin-top: var(--space-6); font: 600 18px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1.1; white-space: nowrap; }
 .ov-stats .stat.hero .sv { font-size: 28px; }
 .ov-stats .sv.pos { color: var(--color-greenText); }
 .ov-stats .sv.neg { color: var(--color-redText); }
 .ov-stats .sv.na { color: var(--color-greyDark); }
-.ov-stats .sv .unit { margin-left: var(--space-6); font-size: 11px; font-weight: 400; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.ov-stats .sv .unit { margin-left: var(--space-6); font-size: 11px; font-weight: 400; color: var(--ink-3); font-family: var(--font-sans); }
 .ov-stats .sub { margin-top: var(--space-4); font-size: 11px; color: var(--ink-3); }
 /* 組合績效六格(照網頁 .perf-stats):3 欄兩列,角落由 cell 自己收;gating = 小一號 muted sans「資料累積中」(不是壞值),
    est = 真數字、只降到 muted(排在 .pos/.neg 之後,同特異度靠順序蓋掉漲跌色;不用 .na 的 greyDark,深色底上不到 AA) */
@@ -349,12 +349,12 @@ html.ws-sc .side-gate { display: none; }
 .perf-stats .stat:nth-child(3) { border-top-right-radius: var(--radius-lg); }
 .perf-stats .stat:nth-child(4) { border-bottom-left-radius: var(--radius-lg); }
 .perf-stats .stat:nth-child(6) { border-bottom-right-radius: var(--radius-lg); }
-.ov-stats .sv.gating { font-size: 13px; font-weight: 500; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--color-greyMedium); }
+.ov-stats .sv.gating { font-size: 13px; font-weight: 500; font-family: var(--font-sans); color: var(--color-greyMedium); }
 .ov-stats .sv.est { color: var(--color-greyMedium); }
 .ov-modes, .ov-ranges { display: inline-flex; align-items: baseline; gap: var(--space-4); }
 .rng {
   padding: 3px var(--space-8); border: 1px solid transparent; border-radius: var(--radius-xs);
-  font: 12px "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); white-space: nowrap;
+  font: 12px var(--font-mono); color: var(--ink-3); white-space: nowrap;
   transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .ov-modes .rng { font-family: inherit; }
@@ -365,7 +365,7 @@ html.ws-sc .side-gate { display: none; }
 /* 曲線 hover 小卡(設計師 spec-desktop-ov-curve-hover-2026-09-25,同網頁 .cv-tip):材質同 app .tip(canon › Tooltip;dark 靠比卡片亮一階的底分層),
    垂直釘在圖框頂、水平由 trade.js 依繪圖區定位;日期次要色、數值主色、不加粗 */
 .cv-tip { position: absolute; top: 0; z-index: 5; pointer-events: none; padding: 6px 10px; max-width: 260px; border-radius: var(--radius-sm);
-  background: var(--surface-muted); box-shadow: var(--shadow-overlay); font: 12px/1.45 "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums;
+  background: var(--surface-muted); box-shadow: var(--shadow-overlay); font: 12px/1.45 var(--font-mono); font-variant-numeric: tabular-nums;
   text-align: left; white-space: nowrap; animation: mp-in var(--motion-fast) var(--ease-standard); }
 .cv-tip[hidden], .cv-tip span[hidden] { display: none; }
 .cv-tip span { display: block; }
@@ -521,7 +521,7 @@ html.ws-sc .side-gate { display: none; }
 /* IP chip + icon 複製鈕、「金鑰存在哪?」展開列(設計師規格 v2 方案 C) */
 .cx-chipw { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-8); }
 .cx-chip { display: inline-flex; align-items: center; gap: var(--space-4); height: 28px; padding: 0 var(--space-2) 0 var(--space-8); border-radius: var(--radius-xs); background: var(--surface-muted); }
-.cx-chip .v { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 13px; color: var(--ink); user-select: all; -webkit-user-select: all; }
+.cx-chip .v { font-family: var(--font-mono); font-size: 13px; color: var(--ink); user-select: all; -webkit-user-select: all; }
 .cx-chip.is-empty { padding-right: var(--space-8); }
 .cx-chip.is-empty .v { font-family: inherit; font-size: 12px; color: var(--ink-3); user-select: none; -webkit-user-select: none; }
 .cx-icb { position: relative; flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-micro); color: var(--ink-2); transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }

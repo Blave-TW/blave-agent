@@ -6,8 +6,23 @@
    canon 對得起來、以及之後真的要做 light mode 時不必重查。
    ========================================================================= */
 
+/* ---- 字體:堆疊只存在這一份(canon › Type › 字體家族),其餘 css 一律 var(--font-sans / --font-mono) ----
+   Roboto Mono 隨包(fonts/、OFL 1.1):Chromium 不認 ui-monospace,系統沒裝時 Electron 會落到 Courier。
+   latin 子集的可變字型,一檔涵蓋 100–700(.plan-price 的 600 也是真字重)。 */
+@font-face {
+  font-family: "Roboto Mono";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url("fonts/RobotoMono-latin.woff2") format("woff2");
+}
+
 /* ---- tokens:light 值放 :root,dark 只重映射值(canon › Dark mode › 止血條款) ---- */
 :root {
+  /* 字體堆疊:Mac 段(-apple-system + PingFang TC)在前、Windows 段(Segoe UI Variable Text 是 Win11、Segoe UI 是 Win10,
+     漢字寫明正黑體 UI,英文 UI 下的漢字才不會看系統地區落到雅黑／SimSun)在後;不存在的名字各平台自動跳過 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang TC", "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI", system-ui, sans-serif;
+  --font-mono: "Roboto Mono", "SF Mono", Menlo, Consolas, monospace;
   /* brand */
   --color-primary: #ff9960;
   /* neutrals(冷藍染) */

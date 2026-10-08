@@ -13,7 +13,7 @@
 .pres-found .t { font-size: 13px; color: var(--ink); }
 .pres-found .d { font-size: 12px; color: var(--ink-3); }
 .pres-gap { margin-top: var(--space-12); }
-.pres-mono, .pres-big .mono { font-family: "Roboto Mono", ui-monospace, monospace; }
+.pres-mono, .pres-big .mono { font-family: var(--font-mono); }
 .pres-ok { display: flex; align-items: center; gap: var(--space-8); }
 .pres-ok .dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--color-green); }
 .pres-big { margin-top: var(--space-12); }

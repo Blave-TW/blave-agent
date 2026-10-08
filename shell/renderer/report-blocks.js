@@ -559,7 +559,7 @@
     s.appendChild(svgEl("line", { class: "rb-grid", x1: x1, y1: y, x2: x2, y2: y }));
   }
 
-  // 圖內文字寬(viewBox 單位,字級 10px)。數字片段落在 tspan.mono(Roboto Mono
+  // 圖內文字寬(viewBox 單位,字級 11px = canon 最小字階,同 .rb-chart text)。數字片段落在 tspan.mono(Roboto Mono
   // 字距 0.6em),漢字與全形標點(（）：／ 在 FF00–FFEF)1em;拉丁 sans 也按 0.6em 算,
   // 多數字母略寬於實際,但 W / M 這類大寫約 0.9em 會少估。
   // 不用 canvas 量:SVG 佈局只算一次,字型還沒載入時量到的是退場字型
@@ -567,7 +567,7 @@
   function textWidth(text) {
     var w = 0;
     for (var i = 0; i < text.length; i++) {
-      w += FULL_WIDTH.test(text.charAt(i)) ? 10 : 6;
+      w += FULL_WIDTH.test(text.charAt(i)) ? 11 : 6.6;
     }
     return w;
   }

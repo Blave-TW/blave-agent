@@ -197,7 +197,7 @@
 .url .u { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .url .u b { font-weight: 600; color: var(--ink); }
 .url.warn .ic { color: var(--ink); }
-.url input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-family: "Roboto Mono", ui-monospace, monospace; }
+.url input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-family: var(--font-mono); }
 .url:focus-within { border-color: var(--focus-ring); }
 .bv-live { flex: none; margin-left: var(--space-8); }
 .bv-slot:empty { display: none; }

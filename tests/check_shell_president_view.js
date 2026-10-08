@@ -186,7 +186,7 @@ ok("#2 第一次真錢框:權益數「12,147,198 TWD」(trTwd 整數 + 幣別後
 { const cap = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "capital.js"), "utf8"), css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "capital.css"), "utf8");
   ok("#10 憑證列右側「到期 2027/04/29」:漢字 sans、日期 .mono(同資產分頁「更新 + 時間」);capRow 收節點;CSS 有 .cap-r .mono", /certDone = exp \? trEl\("span", "", t\("pres\.s\.certExp"\) \+ " "\) : "";\n\s*if \(exp\) certDone\.appendChild\(trEl\("span", "mono", exp\)\);/.test(src)
     && sctx.S.zh["pres.s.certExp"] === "到期" && sctx.S.en["pres.s.certExp"] === "Expires" && !/\{date\}/.test(sctx.S.zh["pres.s.certExp"])
-    && /if \(right && typeof right === "object"\) r\.appendChild\(right\); else r\.textContent = right \|\| "";/.test(cap) && /\.cap-r \.mono \{ font-family: "Roboto Mono"/.test(css)); }
+    && /if \(right && typeof right === "object"\) r\.appendChild\(right\); else r\.textContent = right \|\| "";/.test(cap) && /\.cap-r \.mono \{ font-family: var\(--font-mono\)/.test(css)); }
 // 0.1.18 設計師裁定 A:自動下單頁的統一在倉橫幅整塊拿掉(元素 / 畫法 / CSS / 兩個 key),口數改接在 trade.js 狀態句尾(tr.presAwake,check_shell_trade.js 驗句子)
 { const html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8"), css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "president.css"), "utf8");
   const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");

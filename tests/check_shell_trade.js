@@ -757,7 +757,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && run.indexOf("=absent") < run.indexOf("CDEL.gone.set(") && /t\("cdel\.absent"\)/.test(run)); }
   { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8"), acss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8");
     ok("設計稽核必修:灰記號真的是灰的;設定窗與確認框有字型(掛在 html, body,不只 .app);關於的小點已拿掉(spec-desktop-settings-cleanup §1-1)",
-      /\.verdict\.is-calm \.fault-mark \{ background: var\(--ink-3\); \}/.test(css) && /html, body \{[^}]*font-family: -apple-system/.test(acss)
+      /\.verdict\.is-calm \.fault-mark \{ background: var\(--ink-3\); \}/.test(css) && /html, body \{[^}]*font-family: var\(--font-sans\)/.test(acss)
       && !/\.up-dot/.test(acss));
     ok("設計稽核(版面):框標題一律貼左、確認框與連接框的腳都換行(目的地那一行獨占一列)、文字鈕停用灰階退場、關於那顆本機鈕對齊、.app 不重複宣告字型",
       /\.modal-head > h6 \{ margin-right: auto; \}/.test(acss) && /\.del-modal \.modal-foot, \.cx-modal \.modal-foot \{ flex-wrap: wrap; \}/.test(acss)
