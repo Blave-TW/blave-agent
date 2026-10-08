@@ -192,6 +192,25 @@ st = json.dumps(pc.read_status())
 check("3 the status: cert ok with its expiry, nothing personal",
       pc.read_status()["cert"]["status"] == "ok" and "Z123456789" not in st and "PSC_" not in st and PW not in st)
 check("3 the result carries no secret", PW not in json.dumps(r) and CAPW not in json.dumps(r))
+# 3b. replacing a working certificate with a wrong password / an expired file (A-段 錯誤輸入): the one in
+# use is not wiped — status ok, its expiry and the copied file stay, the passwords stay; only the
+# error (and the expired file's date, for the page) goes on record. A good one still replaces it.
+ok_before = dict(pc.read_status()["cert"])
+check("3b wrong password while a certificate is in use → PFX_PASSWORD, the section keeps status ok + not_after, last_error on record",
+      code_of(lambda: cert(dict(GOOD, ca_password="nope"))) == "PFX_PASSWORD"
+      and pc.read_status()["cert"]["status"] == "ok" and pc.read_status()["cert"]["not_after"] == ok_before["not_after"]
+      and pc.read_status()["cert"]["last_error"] == "PFX_PASSWORD" and pc.read_status()["cert"].get("last_error_not_after") is None
+      and open(P["pfx"], "rb").read() == before and pc._LOCAL["secrets"]["ca_password"] == CAPW, json.dumps(pc.read_status()["cert"]))
+check("3b an expired file while a certificate is in use → PFX_EXPIRED, not_after still the working one's, the expired date in last_error_not_after",
+      code_of(lambda: cert(dict(GOOD, src=OLD))) == "PFX_EXPIRED"
+      and pc.read_status()["cert"]["status"] == "ok" and pc.read_status()["cert"]["not_after"] == ok_before["not_after"]
+      and pc.read_status()["cert"]["last_error"] == "PFX_EXPIRED"
+      and isinstance(pc.read_status()["cert"]["last_error_not_after"], str)
+      and pc.read_status()["cert"]["last_error_not_after"] != ok_before["not_after"], json.dumps(pc.read_status()["cert"]))
+check("3b the right password again → replaced normally, the error gone (same account: the env the app sent, kept on test here)",
+      cert(dict(GOOD, live=False))["cert"]["not_after"] == ok_before["not_after"] and pc.read_status()["cert"]["status"] == "ok"
+      and "last_error" not in pc.read_status()["cert"] and pc.read_status()["env"] == "test"
+      and pc._LOCAL["secrets"]["live"] is False, json.dumps(pc.read_status()["cert"]))
 
 # ── 4. bind gate ──
 check("4 a 統一 write that did not come from the cert step → NOT_CHECKED",

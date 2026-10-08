@@ -1199,10 +1199,11 @@ def local_shutdown():
 
 
 def _local_cert(b, push):
-    _update("cert", status="importing", error=None, source="local", reset=True)
-    if push:
-        push()
     p = _paths()
+    # the file is checked before the section is touched: a wrong file / password while a
+    # certificate is in use must not wipe its status and expiry (the worker keeps logging in
+    # with it, the page keeps the date) — only the error goes on record, like the cloud import
+    in_use = ((read_status() or {}).get("cert") or {}).get("status") == "ok"
     try:
         try:
             with open(b["src"], "rb") as f:
@@ -1210,6 +1211,18 @@ def _local_cert(b, push):
         except OSError:
             _refuse("READ_FAILED", "the certificate file could not be read")
         meta = inspect_pfx(data, b["ca_password"])
+    except Exception as e:
+        code = cc._code(e, "IMPORT_FAILED")
+        if in_use:
+            _update("cert", last_error=code, last_error_not_after=getattr(e, "not_after", None))
+        else:
+            _update("cert", status="failed", error=code, source="local", reset=True,
+                    not_after=getattr(e, "not_after", None))
+        raise
+    _update("cert", status="importing", error=None, source="local", reset=True)
+    if push:
+        push()
+    try:
         # 統一 opens production only after a test-host order: a new account starts on
         # the test host; a rebind of the same account keeps what the app says it was in
         same = _env_account() == b["account"]
