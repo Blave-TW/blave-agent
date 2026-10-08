@@ -1090,6 +1090,7 @@ let trTipSeq = 0;
 // 區段標籤上的解釋:觸發點是一顆鈕(鍵盤到得了),氣泡是 app.css 的 .tip
 function trTipLabel(cls, text, tip) {
   const frag = document.createDocumentFragment();
+  if (!text) { frag.appendChild(document.createTextNode("")); return frag; }   // 沒有字就不畫鈕:空鈕畫不出字,只剩一條孤立的點線底線
   const b = trEl("button", cls + " tr-tipb", text); b.type = "button"; b.dataset.fk = "tip:" + text;   // 重畫後找回同一顆(trPosFocusBack)
   const box = trEl("span", "tip", tip); box.setAttribute("role", "tooltip"); box.id = "tr-tip-" + (++trTipSeq);
   b.setAttribute("aria-describedby", box.id);

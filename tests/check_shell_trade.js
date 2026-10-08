@@ -288,12 +288,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const /gm, "var ") + "\n" + fs.readFileSync(path.join(R, "i18n.js"), "utf8").replace(/^(const|let) /gm, "var "), ctx);
   vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var "), ctx);
-  vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + ["trEl", "trReport", "trVenueId", "trEnvNames", "trPaintSet", "trUnbind"].map(cutF).join("\n"), ctx);
+  vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + ["trEl", "trReport", "trVenueId", "trEnvNames", "trPaintSet", "trUnbind", "trTipLabel"].map(cutF).join("\n"), ctx);
+  const frag = () => { const f = node("#frag"); f.frag = true; return f; }, textNode = (s) => { const n = node("#text"); n.text = String(s); return n; };
+  const tipbs = (root) => flat(root).filter((n) => / tr-tipb\b/.test(" " + n.className));
   // acctOk:true = 已連接、false = 讀帳失敗、null = 還沒讀過(串接中…);bn = Binance 金鑰重查的 state(主行程 binance_link)
   // err = 讀帳失敗時的 error 欄位(字串或統一那種物件);pc = 狀態檔的 president_connect
   const paint = (venue, env, lang, focusRetest, acctOk = true, bn = null, err = "get_equity: paper ledger unreadable", pc = undefined) => {
     const box = node("div"), tab = node("button"), els = { "tr-set": box, "tr-tab-set": tab };
-    ctx.document = { createElement: node, activeElement: null };
+    ctx.document = { createElement: node, createDocumentFragment: frag, createTextNode: textNode, activeElement: null };
     if (focusRetest) { const was = node("button"); was.id = "cx-retest"; box.kids.push(was); ctx.document.activeElement = was; }
     ctx.$ = (id) => els[id] || flat(box).find((n) => n.id === id) || null;
     ctx.trShould = () => true; ctx.trSec = (x) => x; ctx.trVenueLabel = (id) => id; ctx.cxRetest = () => {}; ctx.cxIpChip = () => node("span");
@@ -303,8 +305,22 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     vm.runInContext("LANG = " + JSON.stringify(lang) + "; trPaintSet();", ctx);
     const all = flat(box), T = ((tbl) => (k) => tbl[k])(vm.runInContext("STRINGS[LANG]", ctx));   // 當下那一語的表:斷言時 LANG 可能已經換了
     return { retest: all.some((n) => n.id === "cx-retest"), unbind: all.some((n) => n.id === "tr-unbind"), foots: all.filter((n) => n.className === "pf-foot").map((n) => n.textContent),
-      errs: all.filter((n) => n.className === "plan-err").map((n) => n.textContent), T, tab, active: ctx.document.activeElement };
+      errs: all.filter((n) => n.className === "plan-err").map((n) => n.textContent), tipbs: tipbs(box), T, tab, active: ctx.document.activeElement };
   };
+  // 10-08 Wei 截圖:設定分頁底部一條孤立的點線——.tr-tipb 的字不見了就只剩點線底線。設定分頁本來就不掛解釋鈕;
+  // trTipLabel 收到空字一律不畫鈕(只回文字節點);缺 key 不會變空(t() 回 key 本身),鈕照畫、字是 key
+  { ctx.document = { createElement: node, createDocumentFragment: frag, createTextNode: textNode, activeElement: null }; ctx.trTipSeq = 0;
+    const tl = (text, keyed) => { ctx.__t = text; return vm.runInContext(keyed ? 'trTipLabel("label", t(__t), "tip")' : 'trTipLabel("label", __t, "tip")', ctx); };
+    const hasBtn = (f) => flat(f).some((n) => n.tag === "button"), hasTip = (f) => flat(f).some((n) => n.className === "tip");
+    const e1 = tl(""), e2 = tl(null), okF = tl("x"), miss = tl("no.such.key.zzz", true);
+    ok("trTipLabel:空字 / null 只回文字節點,不畫鈕、不掛泡泡;有字才是鈕 + .tip", !hasBtn(e1) && !hasTip(e1) && e1.textContent === "" && !hasBtn(e2) && !hasTip(e2)
+      && hasBtn(okF) && hasTip(okF) && tipbs(okF).length === 1 && tipbs(okF)[0].textContent === "x" && tipbs(okF)[0].dataset.fk === "tip:x");
+    ok("缺 key:t() 回 key 本身(不是空字),鈕照畫、字是 key——漏翻在畫面上長得醒目,不會變成孤立點線", vm.runInContext('t("no.such.key.zzz")', ctx) === "no.such.key.zzz" && tipbs(miss).length === 1 && tipbs(miss)[0].textContent === "no.such.key.zzz");
+    ctx.presWip = () => false;
+    const dumb = ["zh", "en"].flatMap((lang) => ["local", "cloud"].flatMap((env) => ["paper", "binance", "president"].map((venue) => ({ lang, env, venue, r: paint(venue, env, lang) }))))
+      .filter((c) => c.r.tipbs.length).map((c) => c.lang + "/" + c.env + "/" + c.venue);
+    delete ctx.presWip;
+    ok("設定分頁畫完沒有任何 .tr-tipb(本機 / 雲端 × 模擬 / Binance / 統一 × zh / en)" + (dumb.length ? " ✗ " + dumb : ""), dumb.length === 0); }
   // 10-08 Wei e2e:統一的讀帳 error 是物件 {stage, type, msg}(其他 lib 是「stage: msg」字串),畫成「串接失敗（—）：[object Object]」
   { const objErr = { stage: "get_equity", type: "RuntimeError", msg: "president worker error: 統一期貨 login failed: TIMEOUT — x" };
     ctx.presWip = () => false;   // 開通過(worker.ok_at 在)
