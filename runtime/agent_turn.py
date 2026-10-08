@@ -228,6 +228,21 @@ def extract_suggestions(text):
     return cleaned.rstrip(), items
 
 
+# ── 等你回覆(awaiting)────────────────────────────────────────────────────────
+# 模型依 _SUGGEST_RULE 在回覆尾端自成一行寫 <await/>,宣告「要用戶回答才能繼續」(澄清問題、
+# 編號選項)。這是模型自己宣告的訊號,可能漏標或亂標;runtime 只負責剝乾淨並在 done chunk 帶
+# `awaiting`,不判讀文字。每個會輸出模型最終文字的 sink 都要剝(tests/check_await_marker.py 列舉)。
+_AWAIT_RE = re.compile(r"[ \t]*</?await\b[^<>]*>[ \t]*\n?")
+
+
+def extract_await(text):
+    """回傳 (清理後文字, 是否等用戶回覆)。所有 <await/> 形式的標記(含 <await>、</await>)都剝掉。"""
+    if not text or "<await" not in text:
+        return text, False
+    cleaned = _AWAIT_RE.sub("", text)
+    return cleaned.rstrip(), cleaned != text
+
+
 # ── 轉出策略程式碼(export)──────────────────────────────────────────────────
 # 工作頁的「轉出 XQ / MultiCharts / TradingView」走一般聊天回合:agent 依
 # references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 把轉好的檔存到
@@ -2037,6 +2052,12 @@ _SUGGEST_RULE = (
     "「這次只是修改」這類交代，不說明為什麼沒有 <suggest>，不提這一節的規則。"
     "上面的檢查是你心裡做的，檢查的結果不寫進回覆。"
     "也不評論、不更正自己前面寫的句子：寫錯了就只留對的那一句，不另起一行道歉或解釋。\n"
+    # 等你回覆(web／電腦版的對話清單用):跟 <suggest> 同一節、同在 prompt 最尾端——弱模型只守尾端的規則。
+    "**等用戶回覆的標記**：這一輪收尾時，要用戶回答你才能繼續——你問了澄清問題、列出編號選項或方案"
+    "要用戶選一個、需要只有用戶知道的資訊——就在正文最後自成一行寫 `<await/>`"
+    "（有 `<export … />` 時放在它後面；有 <suggest> 區塊時放在區塊的前一行，<suggest> 仍是最後）。"
+    "只是回報結果、交代做了什麼、附 <suggest> 建議（建議列不算等回覆）、純聊天 → 不寫。"
+    "標記本身不解釋、不提。\n"
 )
 
 # Web renders standard Markdown in the browser — tables, headings, and
@@ -2279,6 +2300,7 @@ class TelegramSink:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         # TG 面沒有建議列規則,但防禦性剝除(模型偶發混淆時 raw 標記不能露出)。
         cleaned, _ = extract_suggestions(cleaned)
+        cleaned, _ = extract_await(cleaned)
         cleaned = _EXPORT_STRIP_RE.sub("", cleaned)
         cleaned = _NAV_STRIP_RE.sub("", cleaned)
         self.chunk_text = cleaned
@@ -3021,6 +3043,7 @@ class WebSink:
         self._tool_t0 = {}
         self._trading = None  # 下單設定裡的策略名(_trading_names),第一個工具呼叫時讀
         self._last_bash = None  # 這一輪上一個 Bash 指令的 (kind, kind_obj):等它的輸出(TaskOutput)時狀態列照它講
+        self._kinds = {}  # 這一輪每種 kind 的步數,done chunk 帶出去(只有分類計數,沒有內容):量 unknown 的比例用
         self._nav_fired = False  # ui_nav 一回合最多一次(旁白段誤觸發會退還,見 on_tool)
         self._nav_fired_seg = -1  # 送出 ui_nav 時的 _seg_start
         # 逐 token 的文字要先攢起來再送。實測 deepseek 一段回覆吐 ~68 delta/秒,
@@ -3150,6 +3173,7 @@ class WebSink:
         elif name == "TaskOutput":
             kind, kind_obj = self._last_bash or ("unknown", "")
         chunk["kind"] = kind
+        self._kinds[kind] = self._kinds.get(kind, 0) + 1
         if kind_obj:
             chunk["kind_obj"] = kind_obj
         if kind_tab:
@@ -3237,6 +3261,7 @@ class WebSink:
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         cleaned, suggestions = extract_suggestions(cleaned)
+        cleaned, awaiting = extract_await(cleaned)
         marked = "<export" in cleaned
         cleaned, exports = extract_exports(cleaned, note=getattr(self, "export_fail_note", None))
         if not marked:
@@ -3251,7 +3276,9 @@ class WebSink:
                 self._send(chunk)
         if suggestions and not self.interrupted:
             self._send({"type": "suggestions", "items": suggestions})
-        self._send({"type": "done"})
+        # awaiting:被 Stop 截斷的回合不算(半途的標記不可信)。欄位契約:references/turn-events.md。
+        self._send({"type": "done", "awaiting": bool(awaiting and not self.interrupted),
+                    "kinds": dict(self._kinds)})
         return self.full_text
 
 
