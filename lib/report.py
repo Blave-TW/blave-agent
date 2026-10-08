@@ -78,6 +78,9 @@ FILES_SUFFIX = ".files"
 RESEARCH_TITLE_WIDTH = 48
 # The lead's first sentence is the share card's description and the notification (7b A2): 40 CJK / 80 Latin.
 RESEARCH_LEAD_FIRST_WIDTH = 80
+# A delta that opens with one of these is a baseline, not a move; the renderers colour the
+# delta by the cell's tone, so a pos/neg tone paints the baseline as a gain/loss (§7b A4).
+BASELINE_DELTA_RE = re.compile(r"^\s*(?:平常|一般|同期|基準|baseline)", re.I)
 # Cited web images (an `image` block with `source`, references/reports.md › Citing an image
 # from the web). The api sets no cap on purpose: a 400 files the whole report as failed, and a
 # third citation is not a broken document — so the cap lives here, where the agent can fix it.
@@ -271,7 +274,7 @@ def _width(text):
 
 
 def _research_warnings(title, blocks):
-    """Three points of the research skeleton (references/reports.md §7b) that decide how a
+    """Points of the research skeleton (references/reports.md §7b) that decide how a
     report reads when only its head is seen.
     Advisory only: a refused report is lost, a weak one can be rewritten. `blocks[0]`
     is the meta block by the time this runs, and its `title` is the one the web renders —
@@ -296,6 +299,15 @@ def _research_warnings(title, blocks):
     if not (i < len(blocks) and isinstance(blocks[i], dict) and blocks[i].get("type") == "kpi_row"):
         out.append("research report has no kpi_row right after the lead; its first item is the "
                    "key number readers see first (references/reports.md 7b)")
+    for b, block in enumerate(blocks):
+        if not (isinstance(block, dict) and block.get("type") == "kpi_row"):
+            continue
+        for n, item in enumerate(block.get("items") or []):
+            if (isinstance(item, dict) and item.get("tone") in ("pos", "neg")
+                    and BASELINE_DELTA_RE.match(str(item.get("delta") or ""))):
+                out.append(f"kpi_row [{b}] item {n} has a baseline in its delta but tone "
+                           f"{item.get('tone')!r}; the delta renders in that colour, so a baseline "
+                           "cell is neutral (references/reports.md 7b A4)")
     return out
 
 
@@ -453,7 +465,8 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     the platform accepts. A rejected report lands in `reports/failed/` with the
     api's message (it names the offending field path) in `upload_errors.log`.
     For `type="research"` three points of the §7b skeleton (title width, the lead's first
-    sentence, a `kpi_row` right after the lead) and a missing `meta.shareable` are printed as `WARNING:`
+    sentence, a `kpi_row` right after the lead), a baseline `delta` on a non-neutral KPI cell
+    and a missing `meta.shareable` are printed as `WARNING:`
     lines, as is a `shareable` that is not a bool or sits on another type — advice,
     never a refusal.
     """

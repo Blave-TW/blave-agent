@@ -1,7 +1,7 @@
 """Minimal check for the research-skeleton warnings in lib/report.write_report
 (references/reports.md §7b): they fire on a long title / a lead whose first sentence is long or
-has no number / missing kpi_row / missing
-meta.shareable, stay quiet on a compliant research report and on non-research types, and
+has no number / missing kpi_row / a
+baseline delta on a pos/neg KPI cell / missing meta.shareable, stay quiet on a compliant research report and on non-research types, and
 never stop the write. Also the schema_version choice: 1.3 iff meta carries `shareable`,
 else 1.2 iff a candlestick, else 1.1; 1.6 iff an image block carries `source`, and more than
 two such blocks is refused before anything is written.
@@ -67,6 +67,19 @@ try:
            "Across 31 launches 19 were down, the worst -11.2%, and the median 10-day return was -1.9% against +0.6%."}
     check("WARNING" not in run("en2", "t", [en2, KPI], type="research", meta=S),
           "two-sentence Latin lead: only the first (the card's sentence, cut at a period before a space) is measured")
+    def kpi(delta, tone):
+        return {"type": "kpi_row", "items": [{"label": "x", "value": "1", "tone": tone, "delta": delta}]}
+    out = run("basepos", "t", [LEAD, kpi("平常 +4.3%", "pos")], type="research", meta=S)
+    check("baseline in its delta" in out and out.count("WARNING") == 1 and out.isascii(),
+          "baseline delta with tone pos: warns")
+    check("baseline in its delta" in run("baseneg", "t", [LEAD, KPI, kpi("Baseline -0.4%", "neg")],
+                                          type="research", meta=S), "any kpi_row, Latin baseline, neg: warns")
+    check("WARNING" not in run("baseneu", "t", [LEAD, kpi("一般交易日 +4.3%", "neutral")], type="research", meta=S),
+          "baseline delta with tone neutral: quiet")
+    check("WARNING" not in run("movepos", "t", [LEAD, kpi("+4.3%", "pos")], type="research", meta=S),
+          "a move in the delta with tone pos: quiet")
+    check("WARNING" not in run("mornbase", "t", [LEAD, kpi("平常 +4.3%", "pos")], type="morning"),
+          "baseline tone on a morning report: quiet (research only)")
     check("WARNING" not in run("mornnonum", "t", [nonum], type="morning"), "morning lead without a number: quiet")
     check("WARNING" not in run("morning", "字" * 60, [LEAD], type="morning"), "morning report: never warns")
 

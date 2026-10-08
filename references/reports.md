@@ -714,7 +714,7 @@ caption.
 | Block | Required props | Limits / notes |
 |---|---|---|
 | `meta` | `title`, `report_type`, `generated_at` | **Exactly one, always first.** Optional: `period` `{from, to}` display strings ≤32 (`"08/25"`), `account` `{aum: number, currency}`, `benchmark`, `origin` (`scheduled`/`chat`), `machine`, `extra` (≤3 `{label, value}`), `shareable` (boolean, `research` only — §7b B7); `involves_futures` is still accepted but read by nothing, so leave it out. `period` + `account` + `benchmark` + `extra` ≤4 header cells in total. |
-| `kpi_row` | `items[{label, value, tone}]` | 1–6 items; **the first is the focus** and renders largest. `label` ≤40, `value` a formatted string, `tone` = `pos`/`neg`/`neutral` (unsigned numbers such as Sharpe or win-rate are `neutral` — a wall of green means nothing). Optional `unit` ≤16, `delta`. |
+| `kpi_row` | `items[{label, value, tone}]` | 1–6 items; **the first is the focus** and renders largest. `label` ≤40, `value` a formatted string, `tone` = `pos`/`neg`/`neutral` (unsigned numbers such as Sharpe or win-rate are `neutral` — a wall of green means nothing). Optional `unit` ≤16, `delta`. When there is a `delta` the tone colours the delta, not the value, so a cell whose `delta` is a baseline (「平常 +4.3%」) is `neutral` (§7b A4). |
 | `line_chart` | `series[{name, role, points}]` | 1–4 series; `role` = `primary` (solid, **at most one**) or `benchmark` (dashed); `points` = 1–5000 `[t, v]`, `t` unix seconds int, `v` finite number. Optional `y_unit` (≤8, see *Axis units* below), `bands` (≤2 `{from, to, label}`, unix seconds, label ≤32) and `reflines` (≤4 `{y, label, emphasis}`, `emphasis: true` = red loss level). |
 | `candlestick` | `candles` | 2–120 bars `[t, open, high, low, close]`; `t` unix seconds int, **strictly increasing**; the four prices finite numbers with `low ≤ min(open, close)` and `max(open, close) ≤ high` on every bar. Optional `y_unit` and `reflines` (≤4 horizontal price levels such as the prior 20-day high/low), both exactly as on `line_chart`. No `bands`, no volume pane, no moving-average overlay. The x-axis is one slot per bar, not real time (no weekend or overnight gaps), so it does **not** line up date-for-date with a neighbouring `line_chart` / `drawdown` — expected, not a bug. Needs `schema_version` `"1.2"` or later. `lib/report_templates.candlestick(title, df, y_unit=…, reflines=…)` builds one from an OHLC DataFrame. |
 | `drawdown` | `points` | 1–5000 `[t, v]`, `v` a **negative percent** (−9.84 = −9.84%). Optional `maxdd` `{value, from, to}` (unix seconds). No unit field — the contract pins this chart to negative percent. |
@@ -1155,7 +1155,9 @@ section headings in the report's language.
   template brief opens on 加權指數 because the template fixes its KPI row, and yours chooses
   its own. In research: the first item's `label` reads off the page — it names the event
   and the window (「淨空破紀錄後 60 日中位數」, not 「後 60 日中位數」); the baseline goes in its
-  `delta`, never in a cell of its own with a `pos` / `neg` tone; a sample-size cell gives
+  `delta` (「平常 +4.3%」「一般交易日 +4.3%」), never in a cell of its own with a `pos` / `neg`
+  tone, and that cell's `tone` is `neutral` — the tone colours the delta, so `pos` paints the
+  baseline green as if it were a gain; a sample-size cell gives
   segments first, then days (「5 段／47 日」, B9); and when a robustness check did not support
   one half (B4), that half gets a cell. *Why:* it is the first figure a
   reader sees, and a public page and the share card show it as the key number. A context
