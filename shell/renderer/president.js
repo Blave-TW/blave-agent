@@ -24,6 +24,8 @@ const PRES_STOP_VIEW = { PASSWORD: "PASSWORD", CERT: "CERT", CERT_MISMATCH: "CER
 // 憑證那一列的錯(runtime 的 PFX_* + 主行程 president_local.js 憑證密碼格式不對的 BAD_PW / NO_CA_PW):密碼類畫在欄位下,其餘畫在檔案卡下
 const PRES_PFX_ERR = { PFX_PASSWORD: "pres.pfx.errPw", BAD_PW: "pres.pfx.errPw", NO_CA_PW: "pres.pfx.errPw", PFX_EXPIRED: "pres.pfx.errExpired", PFX_NOT_PRESIDENT: "pres.pfx.errIssuer",
   PFX_INVALID: "pres.pfx.errFile", PFX_TOO_LARGE: "pres.pfx.errFile", READ_FAILED: "pres.pfx.errRead", PFX_NONE_FOUND: "pres.pfx.errNone" };
+// 測試主機網址那一格的錯(runtime 的 normalize_host 只認統一的兩台):畫在欄位下,不是列上的「這一步沒有開始」
+const PRES_HOST_ERR = { HOST_NOT_ALLOWED: "pres.err.hostNotAllowed" };
 const PRES_FEATURE = { form: "pres_form_saved", tcem: "pres_tcem_open", cert: "pres_cert_ok", probe: "pres_probe_ok", ready: "pres_ready" };
 
 const presBlank = () => ({ phase: "prep", scan: null, waitTcem: false, tcemMsg: null, acct: "", pw: "", caPw: "",
@@ -105,6 +107,7 @@ function presMsgPlace(m) {
   if (!m) return null;
   if (PRES_FRAME_ERR[m.code]) return "frame";
   if (m.step === "cert" && PRES_PFX_ERR[m.code]) return "field";   // 存帳密那一步的 BAD_PW 沒有憑證欄位可掛,照 slot
+  if (m.step === "probe" && PRES_HOST_ERR[m.code]) return "field";
   return PRES_ROW_STEPS.indexOf(m.step) >= 0 ? "row" : "slot";
 }
 /* ── 純邏輯到此 ── */
@@ -298,7 +301,8 @@ function presCertBody(pc, view) {
     tx.append(trEl("div", "t", t("pres.cert.name")), trEl("div", "d", exp ? t("pres.cert.exp", { date: exp }) : t("pres.cert.here")));
   }
   card.append(mk, tx); f.appendChild(card);
-  const expired = code === "PFX_EXPIRED", exp = expired ? capDate(cert.not_after) : null;
+  // 換憑證時選到過期的那張:在用的那張沒被動(status 還是 ok、not_after 是它的),過期日在 last_error_not_after
+  const expired = code === "PFX_EXPIRED", exp = expired ? capDate(cert.status === "ok" ? cert.last_error_not_after : cert.not_after) : null;
   const fileErr = presRowErr("cert") || (code && !pwErr ? t(PRES_PFX_ERR[code] || "pres.pfx.errImport", { date: exp || "—" }) : null);
   if (fileErr) { const e = trEl("p", "cap-err", fileErr); e.setAttribute("role", "status"); f.appendChild(e); }
   f.appendChild(presInput("pres-capw", t("pres.cert.pw"), "caPw", { hint: t("pres.cert.pwHint"), err: pwErr ? t("pres.pfx.errPw") : null, enter: presUseCert }));
@@ -337,10 +341,14 @@ function presTestHostBody(view) {
   const f = document.createDocumentFragment();
   f.appendChild(capDo(t("pres.t.hostDo")));
   const notSent = presRowErr("probe"); if (notSent) f.appendChild(capErr(notSent));
+  // 網址不是統一那兩台(HOST_NOT_ALLOWED):掛在這一格下面,蓋掉提示句(同憑證密碼欄:下一次按鈕才清)
+  const hostErr = PRES.msg && PRES.msg.step === "probe" && PRES_HOST_ERR[PRES.msg.code] ? t(PRES_HOST_ERR[PRES.msg.code]) : null;
   const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", t("pres.t.url")));
-  const i = trEl("input", "f-input txt pres-mono"); i.id = "pres-turl"; i.type = "text"; i.spellcheck = false; i.autocomplete = "off"; i.value = PRES.test.url;
+  const i = trEl("input", "f-input txt pres-mono" + (hostErr ? " is-err" : "")); i.id = "pres-turl"; i.type = "text"; i.spellcheck = false; i.autocomplete = "off"; i.value = PRES.test.url;
   i.addEventListener("input", () => { PRES.test.url = i.value; });
-  l.append(i, presP("cx-hint", t("pres.t.urlHint"))); f.appendChild(l);
+  const under = hostErr ? trEl("p", "cap-err", hostErr) : presP("cx-hint", t("pres.t.urlHint"));
+  under.id = "pres-turl-" + (hostErr ? "err" : "hint"); if (hostErr) under.setAttribute("role", "status"); i.setAttribute("aria-describedby", under.id);
+  l.append(i, under); f.appendChild(l);
   f.appendChild(capActs(capBtn("btn-fill", t("pres.t.probe"), () => presHost("test"), "pres-tprobe", PRES.busy || presDown())));
   return f;
 }

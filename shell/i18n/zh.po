@@ -1778,6 +1778,10 @@ msgstr "改成 0：{names}——這幾支那一份的合約部位會平倉、現
 msgid "tr.saveZeroedLots"
 msgstr "改成 0：{names}——這幾支那一份的合約部位會平倉。"
 
+# 口數格留空(改成 0 的另有上一句)
+msgid "tr.saveBlankLots"
+msgstr "{names}：口數留空會存成 0，這支策略不會下單。"
+
 msgid "tr.saveWarn"
 msgstr "儲存後，下單機會照新的金額對帳，可能立即產生下單。"
 
@@ -6668,6 +6672,9 @@ msgstr "測試主機網址（信上寫的）"
 
 msgid "pres.t.urlHint"
 msgstr "照信上抄就好，網址格式 Blave 會自己處理。帳號、密碼、憑證都沿用剛剛那套。"
+
+msgid "pres.err.hostNotAllowed"
+msgstr "這個網址不是統一的測試或正式主機。照測試帳號信上寫的填。"
 
 msgid "pres.t.probe"
 msgstr "確認登入"

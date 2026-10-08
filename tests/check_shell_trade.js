@@ -522,10 +522,19 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && /if \(pc\) tgt\.title = t\("tr\.grossTip"\);/.test(tp) && /trMoneyInto\(tgt, v, !pc, txf \? TR_TXF_CCY : null\)/.test(tp)); }
     const tp = fnOf("trAmountTable");
     ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」、合計換不了寫「—」",
-      /const parse = \(s\) => \(txf \? trParseLots\(s\) : trParseAmount\(s\)\);/.test(tp) && /const v = parse\(inp\.value\);/.test(tp) && /inp\.value = trFmt\(parse\(inp\.value\)\)/.test(tp)
+      /const parse = \(s\) => \(txf \? trParseLots\(s\) : trParseAmount\(s\)\);/.test(tp) && /const v = parse\(inp\.value\);/.test(tp) && /inp\.value = blank \? "" : trFmt\(parse\(inp\.value\)\)/.test(tp)
       && /if \(gate != null && !txf\)/.test(tp)
       && /sp \? lots\(sp, sending\[n\]\) : money\(sending\[n\]\)/.test(fnOf("trSaveAmounts")) && /tt\.total == null \? unknown\(\) : money\(tt\.total, tt\.ccy\)/.test(fnOf("trSaveAmounts"))
       && /m == null \? t\(trLotsKey\(v, "tr\.txfConfirmNoQuote", "tr\.txfConfirmNoQuote1"\), q\) : t\(trLotsKey\(v, "tr\.txfConfirm", "tr\.txfConfirm1"\)/.test(fnOf("trSaveAmounts")));
+    // A 段錯誤輸入 7-2:口數格留空靜默存成 0。留空的格不換成「0」、記進 raw;確認框點名「留空會存成 0、不會下單」(不擋);改成 0 的那幾支已有自己那句,不重講;錢的格照舊正規化
+    ok("7-2 留空口數:trBlankLots 只挑口數列、raw 是空字串、不在改成 0 名單裡的", J(trBlankLots(["a", "b", "c", "d"], { a: "", b: "0", c: "", d: "" }, (n) => n !== "c", ["d"])) === J(["a"])
+      && J(trBlankLots(["a"], null, () => true)) === "[]" && J(trBlankLots(["a"], { a: "" }, () => true)) === J(["a"]));
+    ok("7-2 接線:離開欄位時口數格留空不變 0(raw 記成 \"\");確認框出 tr.saveBlankLots(cf-zeroed 那一句的位置)、改成 0 的排除;兩語都有",
+      /const blank = txf && !String\(inp\.value\)\.trim\(\);/.test(tp) && /if \(TR\.raw\) \{ if \(blank\) TR\.raw\[n\] = ""; else delete TR\.raw\[n\]; \}/.test(tp)
+      && /const blank = trBlankLots\(Object\.keys\(sending\), TR\.raw, trRowTxf, zeroed\);/.test(fnOf("trSaveAmounts")) && /trEl\("p", "cf-zeroed", t\("tr\.saveBlankLots", \{ names: blank\.map\(trDisplay\)/.test(fnOf("trSaveAmounts"))
+      && /if \(!lotsOnly \|\| dlT === dl\) extra\.appendChild\(dlT\);/.test(fnOf("trSaveAmounts"))
+      && (() => { const ST = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
+        return ST.zh["tr.saveBlankLots"] === "{names}：口數留空會存成 0，這支策略不會下單。" && /blank lot count is saved as 0/.test(ST.en["tr.saveBlankLots"] || ""); })());
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
       const has = (k, v) => S.includes(J(k) + ": " + J(v));
       ok("查證 #1 字串沿用網頁譯法(workspace_pf_lots_unit / lots_aria / txf_confirm / txf_confirm_noquote / txf_prod_*)",

@@ -1774,6 +1774,9 @@ msgstr "Set to 0: {names} — their share of futures positions will be closed an
 msgid "tr.saveZeroedLots"
 msgstr "Set to 0: {names} — their share of futures positions will be closed."
 
+msgid "tr.saveBlankLots"
+msgstr "{names}: a blank lot count is saved as 0 — this strategy won’t place orders."
+
 msgid "tr.saveWarn"
 msgstr "Once saved, the order engine reconciles to these amounts — orders may fire immediately."
 
@@ -6662,6 +6665,9 @@ msgstr "Test host address (from the email)"
 
 msgid "pres.t.urlHint"
 msgstr "Copy it as written; Blave handles the format. The account, password and certificate are the same ones."
+
+msgid "pres.err.hostNotAllowed"
+msgstr "That address isn’t President’s test or production host. Enter the one from the test account email."
 
 msgid "pres.t.probe"
 msgstr "Confirm login"

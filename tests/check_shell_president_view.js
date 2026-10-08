@@ -95,7 +95,17 @@ ok("C-1 BAD_PW / NO_CA_PW(cert)→ 欄位下;BAD_PW(creds)→ slot;LIB_OUTDATED 
   const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
   ok("C-1 測試單列:剛沒送出去的錯先於上一次的被拒", /rowErr\("test_order"\) \? capErr\(rowErr\("test_order"\)\) : view === "d-t-order-fail" \? capErr\(t\("pres\.t\.orderFail"\)\) : null/.test(rows));
   const tcem = src.slice(src.indexOf("async function presOpenTcem("), src.indexOf("// 主行程回的錯 + 發生在哪一步"));
-  ok("C-2 presOpenTcem:等待態與輪詢只在 prep(presScan 可能在等的時候已推到 form)", /if \(PRES\.phase === "prep"\) \{ PRES\.waitTcem = true; presWatch\(true\); \}/.test(tcem) && !/PRES\.waitTcem = true; presTrack/.test(tcem)); }
+  ok("C-2 presOpenTcem:等待態與輪詢只在 prep(presScan 可能在等的時候已推到 form)", /if \(PRES\.phase === "prep"\) \{ PRES\.waitTcem = true; presWatch\(true\); \}/.test(tcem) && !/PRES\.waitTcem = true; presTrack/.test(tcem));
+  // A 段錯誤輸入:換憑證選錯檔 / 密碼錯時 runtime 不再清掉在用的那張(status ok、not_after 留著,只記 last_error);過期那張的日期在 last_error_not_after
+  ok("換憑證選到過期的:在用的那張還是 ok 時,過期日讀 last_error_not_after,不是在用那張的 not_after", /exp = expired \? capDate\(cert\.status === "ok" \? cert\.last_error_not_after : cert\.not_after\) : null;/.test(cb)); }
+// A 段錯誤輸入:測試主機網址不是統一那兩台(runtime HOST_NOT_ALLOWED)→ 欄位下自己那句,不是列上的「這一步沒有開始」
+{ const th = src.slice(src.indexOf("function presTestHostBody("), src.indexOf("// 測試單的時間"));
+  ok("HOST_NOT_ALLOWED(host 記成 probe)→ 欄位下;別的 probe 錯照舊掛列上", presMsgPlace({ code: "HOST_NOT_ALLOWED", step: "probe" }) === "field" && presMsgPlace({ code: "FAILED", step: "probe" }) === "row");
+  ok("測試主機那一格:HOST_NOT_ALLOWED 畫 pres.err.hostNotAllowed 在欄位下(紅框、role=status、aria-describedby),蓋掉提示句",
+    /const hostErr = PRES\.msg && PRES\.msg\.step === "probe" && PRES_HOST_ERR\[PRES\.msg\.code\] \? t\(PRES_HOST_ERR\[PRES\.msg\.code\]\) : null;/.test(th)
+    && /"f-input txt pres-mono" \+ \(hostErr \? " is-err" : ""\)/.test(th) && /const under = hostErr \? trEl\("p", "cap-err", hostErr\) : presP\("cx-hint", t\("pres\.t\.urlHint"\)\);/.test(th)
+    && /if \(hostErr\) under\.setAttribute\("role", "status"\); i\.setAttribute\("aria-describedby", under\.id\);/.test(th)
+    && /^這個網址不是統一的測試或正式主機。照測試帳號信上寫的填。$/.test(require("vm").runInNewContext(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nSTRINGS.zh['pres.err.hostNotAllowed']"))); }
 { const rows = src.slice(src.indexOf("function presRows("), src.indexOf("function presDoneBody("));
   ok("列上的錯先問「在跑嗎」(在跑的優先,不會轉圈又掛錯)", /rowErr = \(step\) => \(run === step \? null : presRowErr\(step\)\)/.test(rows));
   ok("自動送的兩步(安裝、啟動)沒送出去 → 那一列掛錯 + 再試一次", /rowErr\("setup"\)\) add\(presBadRow/.test(rows) && /rowErr\("start"\)\) add\(presBadRow/.test(rows)); }

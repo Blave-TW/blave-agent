@@ -473,6 +473,12 @@ function trLotsError(s) {
   if (trParseLots(s) != null) return null;
   return TR_LOTS_RE.test(String(s == null ? "" : s).trim()) ? "big" : "bad";
 }
+/* 留空的口數格(7-2):空字串存成 0、這支不會下單,確認框點名提醒(不擋)。raw = 表上留著的原字(settle 把留空記成 "");
+   skip = 不用再講的那幾支(原本 > 0 改成 0 的已有「改成 0」那句) */
+function trBlankLots(names, raw, isLot, skip) {
+  const s = skip || [];
+  return (names || []).filter((n) => isLot(n) && !!raw && raw[n] === "" && s.indexOf(n) < 0);
+}
 /* en 的單複數(spec-0.1.13 #4):畫面上那個數字的絕對值是 1 用單數,其餘(含 0、0.5)用複數——呼叫端傳的是取整後要顯示的數。
    zh 兩個 key 同一個字。兩個 key 都寫成字面值傳進來(字串漂移閘門只認字面值) */
 function trLotsKey(n, many, one) { return typeof n === "number" && Math.abs(n) === 1 ? one : many; }
@@ -2300,7 +2306,9 @@ function trAmountTable(names, stored, states) {
     const settle = () => { let why = (txf ? trLotsError(inp.value) : trAmountError(inp.value)) || (twdRow && parse(inp.value) > (stored[n] || 0) ? "twd" : null);
       // 沒動過的舊設定是小數口數(0.1.12 以前存的 2.5):點名是舊設定,不讓人以為是自己剛打錯(稽核建議 2)
       if (txf && why === "bad" && TR.edits[n] == null && !Number.isInteger(Number(stored[n] || 0)) && inp.value === trFmt(stored[n] || 0)) why = "oldLots";
-      markBad(why); if (!why) { inp.value = trFmt(parse(inp.value)); if (TR.raw) delete TR.raw[n]; } if (svBtn && svBtn.isConnected) svBtn.disabled = anyBad() || stale || cfgBad; else paintBar(); };
+      // 口數格留空不換成「0」:留著空、記在 raw,確認框那一句才知道這一格是留空的(7-2);錢的格照舊正規化
+      const blank = txf && !String(inp.value).trim();
+      markBad(why); if (!why) { inp.value = blank ? "" : trFmt(parse(inp.value)); if (TR.raw) { if (blank) TR.raw[n] = ""; else delete TR.raw[n]; } } if (svBtn && svBtn.isConnected) svBtn.disabled = anyBad() || stale || cfgBad; else paintBar(); };
     inp.addEventListener("blur", settle); settles.push(settle);
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); settle(); } });
     row.appendChild(tgt); tb.appendChild(row); repaint();
@@ -2352,11 +2360,14 @@ function trSaveAmounts(names, stored, opener) {
   const lotsOnly = trLotsOnly(Object.keys(sending));
   let dlT = dl;
   if (zeroed.length) { extra.appendChild(dl); extra.appendChild(trEl("p", "cf-zeroed", t(trLotsOnly(zeroed) ? "tr.saveZeroedLots" : "tr.saveZeroed", { names: zeroed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }))); dlT = trEl("dl", "cf-rows"); }
+  // 口數格留空(7-2):會存成 0、這支不會下單——點名講一次,不擋;改成 0 的那幾支上面那句已經講了
+  const blank = trBlankLots(Object.keys(sending), TR.raw, trRowTxf, zeroed);
+  if (blank.length) { if (dlT === dl) { extra.appendChild(dl); dlT = trEl("dl", "cf-rows"); } extra.appendChild(trEl("p", "cf-zeroed", t("tr.saveBlankLots", { names: blank.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }))); }
   if (!lotsOnly) {
     dlT.appendChild(cfRow("total", t("tr.total"), tt.total == null ? unknown() : money(tt.total, tt.ccy)));
     if (tt.mult != null) { const dd = document.createElement("dd"); dd.textContent = tt.mult.toFixed(2) + "x"; dlT.appendChild(cfRow("lev", t("tr.lev"), dd)); }
   }
-  if (!lotsOnly || !zeroed.length) extra.appendChild(dlT);   // 口數 + 有改成 0 的:第二張 dl 是空的,不掛
+  if (!lotsOnly || dlT === dl) extra.appendChild(dlT);   // 口數 + 有改成 0 / 留空的:第二張 dl 是空的,不掛
   if (!trUnit() && Object.keys(sending).some((n) => sending[n] > 0 && !trRowTxf(n))) extra.appendChild(trEl("p", "cf-note", t("tr.ccyUnknown")));
   if (removed.length) extra.appendChild(trEl("p", "cf-removed", t("tr.saveRemoved", { names: removed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
   const hid = cloud ? trHidden(names, stored, trListNames()) : [], badStored = cloud ? trBadStored(sending) : [];
