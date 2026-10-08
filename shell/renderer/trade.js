@@ -901,6 +901,8 @@ function envOpenView(kind, hasTok, pv) {
   if (!hasTok) return "out";
   if (kind === "signedOut") return "relogin";
   if (pv === "offer" || pv === "noTrial") return "card";
+  if (pv === "payFail") return "repay";
+  if (pv === "planOn") return "web";
   return pv === "trial" || pv === "plan" || pv === "included" ? "start" : "unknown";
 }
 /* 側欄策略列名字前的綠呼吸點——逐條照網頁 workspace.html stratRunState(Wei 09-22:照網頁現在的規則):
@@ -1648,7 +1650,8 @@ function trPaintHead() {
     b = trEl("button", "btn-fill"); b.type = "button"; b.id = "tr-go";
     b.addEventListener("click", () => {
       // 雲端停機時這顆是「加值」(外開瀏覽器):主機不在,送什麼都是 409
-      if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") { bindGo("topup_cloud"); return; }
+      // 停機原因(planStopKind):扣款失敗 → 重新付款;切換前低餘額 → 加值;取消到期 → 網站恢復;自己停的 → 網站方案頁
+      if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") { const k = planStopKind(); if (k === "fail") planRepay(); else if (k === "hourly") bindGo("topup_cloud"); else planWebGo(); return; }
       if (trStartPending(TR.pending) || trHaltInFlight(TR.pending, Date.now())) return;   // 啟動在途:主鈕講實話、不能按,暫停走旁邊那顆(#tr-go-stop);暫停在途:停用
       // 換金鑰後要回答「還是同一個帳戶嗎」:這顆就是「確認帳戶」(不給啟動下單——機器會回 held、HALT 照舊)
       if (envHeadState(TR.st, Date.now()) === "halted" && trAcctAsk(trReport())) { if (!TR.pending) trAskAccount(b); return; }
@@ -1659,7 +1662,7 @@ function trPaintHead() {
     act.appendChild(b);
   }
   if (ro && stopped) {
-    b.textContent = t("plan.addCredit");
+    b.textContent = t({ fail: "plan.repay", ended: "plan.resumeWeb", self: "plan.manageStopped" }[planStopKind()] || "plan.addCredit");
     b.disabled = false; b.title = ""; b.classList.remove("is-busy", "is-ro");
     b.setAttribute("aria-disabled", "false"); b.removeAttribute("aria-describedby");
     trPaintGoStop(false); trPaintGoRel(false); trPaintNoAmt(pend);
@@ -1812,13 +1815,15 @@ function trPaintRoNote(key) {
 }
 // 停機:紅記號 + 一段話(數字來自方案頁同一個來源;拿不到數字就用不帶數字的那句,不寫死)
 function trPaintVerdict(on) {
-  const box = $("tr-verdict"), v = on ? planVars() : null, sig = LANG + "|" + (on ? v.m + "|" + v.h : "");
+  const box = $("tr-verdict"), v = on ? planVars() : null, k = on ? planStopKind() : "", sig = LANG + "|" + (on ? v.m + "|" + v.h + "|" + k + "|" + v.gu : "");
   box.hidden = !on;
   if (ENV.sig.verdict === sig) return;
   ENV.sig.verdict = sig; box.textContent = "";
   if (!on) return;
   const row = trEl("div", "verdict"), mark = trEl("span", "fault-mark"); mark.setAttribute("aria-hidden", "true");
-  row.append(mark, trEl("span", "", v.m && v.h ? t("tr.cloud.stoppedBody", v) : t("tr.cloud.stoppedBody0")));
+  // 方案制:扣款失敗與取消到期都講刪機日(grace_until);用戶自己停的講方案照常;都不講餘額
+  const gu = (key) => t(v.gu ? key : key + "NoNum", v);
+  row.append(mark, trEl("span", "", k === "fail" ? gu("tr.cloud.stoppedPlan") : k === "ended" ? gu("tr.cloud.stoppedEnded") : k === "self" ? t("tr.cloud.stoppedPlanOk") : v.m && v.h ? t("tr.cloud.stoppedBody", v) : t("tr.cloud.stoppedBody0")));
   box.appendChild(row);
 }
 
@@ -1879,7 +1884,9 @@ function trStartNotes(o) {
     if (o.book === "none") details.push({ label: t("tr.det.own"), text: t("tr.det.ownRule") });
   }
   if (o.cloud) {
-    if (o.v && o.v.h && o.v.m) keep.push(t("tr.cloud.means.3", o.v));
+    // 方案制(o.mo)沒有時價與「餘額低於 N 停機」:停機的原因是方案沒付款
+    if (o.mo) keep.push(t("tr.cloud.means.3m"));
+    else if (o.v && o.v.h && o.v.m) keep.push(t("tr.cloud.means.3", o.v));
     items.push(t("tr.cloud.means.1"), t("tr.cloud.means.4"));
   } else {
     items.push(t("tr.means.1"), o.paper ? t("tr.means.2p") : t("tr.means.2", { venue: o.venue }), t("tr.means.3"));
@@ -1914,7 +1921,7 @@ function trAskStart(opener, presOk) {
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
   const recomputing = trRecomputing(r), rkS = trRestartKind(r);
-  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), tw: trTwBroker(trVenueId()), pres: !cloud && trVenueId() === "president" });
+  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, mo: cloud && planMo(), venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), tw: trTwBroker(trVenueId()), pres: !cloud && trVenueId() === "president" });
   const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
   const money = real ? "Real" : "";
   confirmBox(trCloudBox(Object.assign({
@@ -4009,7 +4016,7 @@ function envPaintEmpty(kind, pid) {
   }
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
   const err = view === "starting" || view === "loading" || view === "unreach" || view === "ready" ? null : planErr;
-  const sig = LANG + "|" + JSON.stringify([view, pid || null, v.p, v.h, v.d, v.t, v.q, v.v, slow, err && err.key, planLoginBusy, cur]);
+  const sig = LANG + "|" + JSON.stringify([view, pid || null, v.p, v.h, v.y, planMo(), v.d, v.t, v.q, v.v, slow, err && err.key, planLoginBusy, cur]);
   if (ENV.sig.empty === sig) return;
   ENV.sig.empty = sig;
   const desc = $("cv-desc"); desc.textContent = "";
@@ -4028,29 +4035,33 @@ function envPaintEmpty(kind, pid) {
   else {
     page.append(trEl("h4", "", t("env.open.h")), trEl("p", "cv-lead", t("env.open.lead")));
     // 扣款規則(存在就扣、停機照扣、刪除才停)不在這一頁:啟動確認框一定會經過、三句直接顯示,設定 › 方案內容與計費也講全(spec-0.1.10 §2.3)
-    if (v.p) {
-      const pr = trEl("div", "plan-price"); pr.appendChild(trEl("span", "m", t("plan.month", v))); if (v.h) pr.appendChild(trEl("span", "h", t("plan.hour", v)));
-      page.appendChild(pr);
-    }
+    // 方案制:電腦版只開方案、主機到網站開——這一頁不印開通價(印了會被讀成按下去要付這筆);切換前照舊
+    if (v.p && !planMo()) page.appendChild(planPriceEl(trEl, v, false));
   }
   // 鈕上方那一行:錯誤(方案頁同一組 plan.err.*)優先;否則這顆鈕會帶來的錢 / 好消息
   if (err) { const e = trEl("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t(err.key))); page.appendChild(e); }
   else if (slow) { const e = trEl("p", "plan-err is-calm"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t("plan.err.slow"))); page.appendChild(e); }
   else if (view === "relogin") page.appendChild(trEl("p", "cv-above up", t("env.empty.relogin")));
-  else if (view === "card") page.appendChild(trEl("p", "cv-above", planView() === "noTrial" ? t("pv.f.noTrial", v) : t(pvK("pv.f.offer"), v)));
+  else if (view === "card") page.appendChild(trEl("p", "cv-above", planView() === "noTrial" ? t("pv.f.noTrial", v) : t("pv.f.offer", v)));
   else if (view === "start" && v.d) page.appendChild(trEl("p", "cv-above up", t("plan.trialFree", v)));
   const act = trEl("div", "cv-act"), more = () => btn("btn-quiet", t("env.open.more"), () => planOpen(), "more");
   const after = () => { ENV.sig.empty = null; ENV.cloudDirty = true; trPollSoon(0); };
   let main = null, side = null;
   if (err && err.key === "plan.err.relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
-  else if (err && err.key === "plan.err.nocard") main = btn("btn-fill", t("plan.addCard"), () => bindGo("bind_cloud"), "main");
+  else if (err && (err.key === "plan.err.nocard" || err.key === "plan.err.nocard.m")) main = btn("btn-fill", t("plan.addCard"), () => bindGo("bind_cloud"), "main");
   else if (err && err.key === "plan.err.credit") main = btn("btn-fill", t("plan.addCredit"), () => bindGo("topup_cloud"), "main");
+  else if (err && err.key === "plan.err.charge") { main = btn("btn-fill", t("plan.changeCard"), planWebGo, "main"); side = btn("btn-quiet", t("plan.addCredit"), () => bindGo("topup_cloud"), "more"); }
+  else if (err && err.key === "plan.err.web") main = btn("btn-fill", t("plan.onWeb"), planWebGo, "main");
   // 主鈕的 data-k 照樣是 "main":登入前按的那顆也是 main,所以人回來時焦點正好落在它身上(下面那段依 data-k 還原焦點),按 Enter 就走
   else if (view === "ready") { main = btn("btn-fill", t("ho.back.btn"), () => hoBack(pid), "main"); side = btn("btn-quiet", t("ho.ready.stay"), () => { hoStay(); after(); }, "stay"); }
   else if (view === "out") { main = planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin, "main") : btn("btn-fill", t("cn.blave.btn"), () => Promise.resolve(planLogin()).then(after), "main"); side = trEl("span", "wait", planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli")); }
   else if (view === "relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
   else if (view === "card") { main = btn("btn-fill", t("plan.addCard"), () => bindGo("bind_cloud"), "main"); side = more(); }
-  else if (view === "start") { main = btn("btn-fill", t("plan.start"), planAsk, "main"); main.disabled = !(v.p && v.h); side = more(); }
+  // 方案制要雲端主機:到網站開(電腦版的開通只開方案、不建主機);切換前照舊在 app 內啟動
+  else if (view === "start" && planMo()) { main = btn("btn-fill", t("plan.cloudWeb"), cloudWebGo, "main"); side = more(); }
+  else if (view === "start") { main = btn("btn-fill", t("plan.start"), planAsk, "main"); main.disabled = !planPriceOk(v); side = more(); }
+  else if (view === "repay") { main = btn("btn-fill", t("plan.repay"), planRepay, "main"); side = more(); }
+  else if (view === "web") { main = btn("btn-fill", t("plan.cloudWeb"), cloudWebGo, "main"); side = more(); }
   else if (view === "starting") { main = slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); after(); }, "main") : btn("btn-fill", t("plan.starting"), null, "main"); main.disabled = !slow; }
   else { main = btn("btn-out", t("plan.recheck"), () => { acctCheck(); if (typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh(); after(); }, "main"); side = more(); }
   act.appendChild(main); if (side) act.appendChild(side); page.appendChild(act);

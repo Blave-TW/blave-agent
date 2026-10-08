@@ -152,7 +152,7 @@ RAM is shared with the agent runtime: an unbounded process freezes the whole mac
 
 ## Billing — when the user asks what costs what
 
-Read `references/billing.md` first (desktop: its *Desktop app* section) — never quote a price from memory, never say there is no figure while it has one. Gist: chat on Blave's models costs tokens; a cloud server is a flat monthly-quoted rate that includes Blave data; letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`. Not covered → say you are not sure.
+Read `references/billing.md` first (desktop: its *Desktop app* section) — never quote a price from memory, never say there is no figure while it has one. Gist: chat on Blave's models costs tokens; a cloud server includes Blave data and is billed hourly until the account switches to a plan (monthly or annual, data also in the desktop app) — check which one the account is on (billing.md, first section); letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`. Not covered → say you are not sure.
 
 ## Iteration Brakes — hard limits on autonomous runs
 

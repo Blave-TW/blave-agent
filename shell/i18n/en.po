@@ -6845,3 +6845,262 @@ msgstr "Confirm login"
 
 msgid "pres.err.changePw"
 msgstr "Change the trading password"
+
+# ── 方案制(.m = api 切換之後的版本;app.js pvK 依 planMo() 挑)──
+msgid "pv.d.noTrial.m"
+msgstr "This account has no first-card trial. Blave data comes with a Blave Agent cloud plan (from {p} TWD a month) or an API plan."
+
+msgid "pv.d.trial.m"
+msgstr "Until {d}, data is free. After that, Blave data comes with a Blave Agent cloud plan ({p} TWD a month) or an API plan."
+
+msgid "pv.d.noPrice.m"
+msgstr "Your AI setup stays as it is. After the trial, Blave data comes with a cloud plan or an API plan."
+
+msgid "pv.f.out.m"
+msgstr "After {t} days, Blave data comes with a cloud plan ({p} TWD a month) or an API plan."
+
+msgid "pv.f.offer.m"
+msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. After {t} days, data comes with a cloud plan ({p} TWD a month) or an API plan."
+
+msgid "pv.e.sub.m"
+msgstr "After that, data comes with a cloud plan ({p} TWD a month) or an API plan."
+
+msgid "pv.e.noTrial.m"
+msgstr "This computer can’t reach Blave data yet. It comes with a Blave Agent cloud plan or an API plan."
+
+msgid "pv.w.noTrial.m"
+msgstr "Once the card is added, come back and start a cloud plan, or get an API plan."
+
+# ── 方案制(api 的 MONTHLY_BILLING_FROM 之後;renderer/app.js planMo)──
+# 月價 {p}、年價 {y}、年繳付幾個月 {k}、年繳一期幾天 {yd}、寬限天數 {g}、到期日 {u}、刪機日 {gu} 都來自 account_status / 公開價目,不寫死;拿不到用 NoNum 那句。
+# 沒有本機階:只用電腦版的人要 Blave 資料,出口只有雲端方案或 API 方案。
+msgid "plan.cyc.monthly"
+msgstr "Monthly"
+
+msgid "plan.cyc.annual"
+msgstr "Yearly"
+
+msgid "plan.year"
+msgstr "or {y} TWD a year ({yd} days, you pay for {k} months)"
+
+msgid "plan.yearNoNum"
+msgstr "or {y} TWD a year"
+
+msgid "plan.rule.m"
+msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, the machine stops and it’s retried daily; after {g} days unpaid, the machine is deleted. Cancelling keeps it until the end of the period, with no refund."
+
+msgid "plan.rule.mNoNum"
+msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, the machine stops and it’s retried daily; left unpaid, the machine is deleted. Cancelling keeps it until the end of the period, with no refund."
+
+msgid "pv.st.noPlan"
+msgstr "No plan"
+
+msgid "pv.d.plan.m"
+msgstr "Blave data comes with a Blave Agent plan (from {p} TWD a month; no cloud machine needed) or an API plan. Without one, this app runs on public data only."
+
+msgid "pv.f.plan.m"
+msgstr "Starting pays the first period now: from your wallet first, then your card."
+
+msgid "pv.apiPlan"
+msgstr "API Plan"
+
+msgid "pv.st.payFail"
+msgstr "Payment failed"
+
+msgid "pv.h.payFail"
+msgstr "The plan payment didn’t go through, so Blave data is paused"
+
+msgid "pv.d.payFail"
+msgstr "It’s retried once a day. Update your card or pay again on the website, and data is back once it goes through."
+
+msgid "plan.repay"
+msgstr "Pay Again"
+
+msgid "pv.f.running.m"
+msgstr "{c} {x} TWD · next payment {u}"
+
+msgid "pv.f.running.cancel"
+msgstr "Cancelled · runs until {u}, then the machine is deleted"
+
+msgid "pv.f.running.fail"
+msgstr "Payment failed · the machine stops soon and is deleted on {gu}"
+
+msgid "plan.st.stoppedPlan"
+msgstr "Stopped · plan unpaid"
+
+msgid "pv.h.stopped.m"
+msgstr "The plan is unpaid and the machine is stopped"
+
+msgid "pv.d.stopped.m"
+msgstr "It’s retried once a day. If it’s still unpaid by {gu}, the machine is deleted, along with the strategies and data on it."
+
+msgid "pv.d.stopped.mNoNum"
+msgstr "It’s retried once a day. Left unpaid, the machine is deleted, along with the strategies and data on it."
+
+msgid "tr.cloud.stoppedPlan"
+msgstr "The plan is unpaid and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. If it’s still unpaid by {gu}, the machine is deleted, along with the strategies, data and keys on it."
+
+msgid "tr.cloud.stoppedPlanNoNum"
+msgstr "The plan is unpaid and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. Left unpaid, the machine is deleted, along with the strategies, data and keys on it."
+
+msgid "cf.m.body1"
+msgstr "The plan (Linux Starter) includes Blave data, in this app right away. It doesn’t start a cloud machine; starting a Linux Starter machine on the website later costs nothing extra."
+
+msgid "cf.m.body2"
+msgstr "The first period is paid now: from your wallet first, then the card on file if the wallet can’t cover it."
+
+msgid "cf.m.body2Trial"
+msgstr "Nothing is charged until {d}. Then the first period of the cycle you pick is paid: wallet first, then your card. Cancel on the website before then and nothing is charged."
+
+msgid "cf.m.body3"
+msgstr "It renews each period. If a payment fails, Blave data pauses and it’s retried daily; after {g} days unpaid the plan ends. Cancelling keeps it to the end of the period, with no refund."
+
+msgid "cf.m.body3NoNum"
+msgstr "It renews each period. If a payment fails, Blave data pauses and it’s retried daily; left unpaid, the plan ends. Cancelling keeps it to the end of the period, with no refund."
+
+msgid "cf.m.pick"
+msgstr "Billing cycle"
+
+msgid "cf.m.mo.d"
+msgstr "{p} TWD every 30 days"
+
+msgid "cf.m.yr.d"
+msgstr "{y} TWD every {yd} days, you pay for {k} months"
+
+msgid "cf.m.yr.dNoNum"
+msgstr "{y} TWD a year"
+
+msgid "cf.m.ok"
+msgstr "Pay {x} TWD to Start Plan"
+
+msgid "cf.m.repriced"
+msgstr "The price changed since this was shown. Check the amounts below and confirm again."
+
+msgid "plan.err.charge"
+msgstr "Not started: the card payment didn’t go through."
+
+msgid "plan.err.nocard.m"
+msgstr "Not started: the wallet can’t cover this period and there’s no card on file."
+
+msgid "plan.err.busy"
+msgstr "A payment is still being confirmed. Try again later; you won’t be charged twice."
+
+msgid "data.noPlan"
+msgstr "This account has no plan that includes Blave data. Start a Blave Agent plan (no cloud machine needed) or get an API plan."
+
+msgid "data.payFail"
+msgstr "The plan payment didn’t go through, so Blave data is paused. Pay again and it’s back."
+
+msgid "data.seePlan"
+msgstr "See Plans"
+
+msgid "wd.note.noplan"
+msgstr "Comes with a cloud plan or an API plan"
+
+msgid "wd.note.payfail"
+msgstr "Paused: the plan payment didn’t go through"
+
+msgid "lib.grp.plan"
+msgstr "After Starting a Plan"
+
+msgid "lib.grp.gate.noPlan"
+msgstr "These use Blave data, which comes with a cloud plan or an API plan."
+
+msgid "lib.grp.repay"
+msgstr "After Paying"
+
+msgid "lib.grp.gate.planFailed"
+msgstr "The plan payment didn’t go through, so these can’t backtest for now."
+
+msgid "lib.why.noPlan"
+msgstr "Blave data comes with a cloud plan or an API plan."
+
+msgid "lib.why.planFailed"
+msgstr "The plan payment didn’t go through."
+
+msgid "tr.cloud.means.3m"
+msgstr "If a plan payment fails, the machine stops: trading halts and positions stay at the exchange."
+
+msgid "pv.f.trial.m"
+msgstr "When a strategy has to run around the clock, you can start now: nothing is charged until {d}, then the first period of the cycle you pick."
+
+msgid "pv.f.running.noPay"
+msgstr "Next payment {u}: the wallet can’t cover it and there’s no card on file, so the machine would stop"
+
+msgid "pv.h.stopped.mOk"
+msgstr "The machine is stopped; the plan continues"
+
+msgid "pv.d.stopped.mOk"
+msgstr "Stopping doesn’t change the plan: this period is paid and it renews as usual. Starting it again or cancelling is on the web."
+
+msgid "tr.cloud.stoppedPlanOk"
+msgstr "The machine is stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. The plan continues and renews as usual; start the machine again on the web."
+
+msgid "plan.onWeb"
+msgstr "Open on the Website"
+
+msgid "plan.changeCard"
+msgstr "Change Card on the Website"
+
+msgid "plan.resumeWeb"
+msgstr "Resume on the Website"
+
+msgid "plan.st.ended"
+msgstr "Stopped · plan ended"
+
+msgid "pv.h.ended"
+msgstr "The plan has ended and the machine is stopped"
+
+msgid "pv.d.ended"
+msgstr "It was cancelled and won’t renew. On {gu} the machine is deleted, along with the strategies, data and keys on it. Resuming on the website pays a new period at once."
+
+msgid "pv.d.endedNoNum"
+msgstr "It was cancelled and won’t renew. Soon the machine is deleted, along with the strategies, data and keys on it. Resuming on the website pays a new period at once."
+
+msgid "tr.cloud.stoppedEnded"
+msgstr "The plan has ended and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. On {gu} the machine is deleted, along with the strategies, data and keys on it."
+
+msgid "tr.cloud.stoppedEndedNoNum"
+msgstr "The plan has ended and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. Soon the machine is deleted, along with the strategies, data and keys on it."
+
+msgid "plan.err.web"
+msgstr "This one is done on the website: your plan is a different tier, or the machine has to be started again there."
+
+msgid "cf.m.okTrial"
+msgstr "Start Now, Pay {x} TWD on {d}"
+
+msgid "pv.st.trialCancelled"
+msgstr "Trial cancelled · ends {d}"
+
+msgid "pv.f.trialCancelled.m"
+msgstr "No first period will be charged."
+
+msgid "pv.f.trialCancelled"
+msgstr "After that it won’t turn into a plan; anything you use is billed as it is today."
+
+msgid "plan.trialCancel"
+msgstr "Cancel Trial on the Web"
+
+msgid "plan.trialResume"
+msgstr "Resume Trial on the Web"
+
+msgid "pv.st.planOn"
+msgstr "Plan active"
+
+msgid "pv.h.planOn"
+msgstr "Your plan includes Blave data"
+
+msgid "pv.d.planOn"
+msgstr "Your Blave Agent plan ({tier}) includes Blave data in this app. There’s no cloud machine; start one on the website when a strategy has to run around the clock."
+
+msgid "pv.d.included.m"
+msgstr "Blave data is included for this account. When a strategy has to run around the clock, start a cloud machine on the website."
+
+msgid "plan.cloudWeb"
+msgstr "Start a Cloud Machine on the Web"
+
+msgid "plan.startM"
+msgstr "Start Plan"
+
+msgid "cf.m.title"
+msgstr "Start the Blave Agent Plan?"

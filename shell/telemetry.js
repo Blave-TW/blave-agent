@@ -38,9 +38,11 @@ const EVENTS = {
     // 0.1.16 自帶 API 金鑰:「連結 / 儲存」驗不過(金鑰不認、餘額不足、連不到、其他);取消不算
     "apikey_key", "apikey_credit", "apikey_net", "apikey_other"] },
   first_reply_done: { kind: ["blave", "claude", "codex", "apikey"] },
-  plan_start_res: { result: ["ok", "no_card", "no_credit", "error"] },
+  // confirm = 方案制開通時 api 回 409 PLAN_CONFIRM_REQUIRED(畫面上的價跟現價對不上,重新問用戶);no_credit 也含方案扣款被拒
+  plan_start_res: { result: ["ok", "no_card", "no_credit", "error", "confirm"] },
   update_failed: { stage: ["check", "download", "staging", "install", "other"] },
-  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit"] },
+  // no_plan / plan_failed:方案制(api 切換之後)沒有含資料的方案、方案扣款失敗
+  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed"] },
   // 每日在線心跳:app 一直開著不重開的人沒有 app_open,靠它量到。事件本身就是「這台在線」;live = 本機對帳器在跑(含模擬)
   heartbeat: { live: ["on", "off"] },
   // 引擎安裝(0.1.12;shell/enginesetup.js,主行程送):一輪真的有東西要裝的安裝跑完的結果(first / upd × done / net / other / timeout;
@@ -132,7 +134,16 @@ const EVENTS = {
     // attach_paste = 在輸入框貼上剪貼簿的(不分圖或檔)、attach_image = 選檔 / 拖放的圖(mime image/*)、attach_file = 選檔 / 拖放的其他檔
     "attach_file", "attach_image", "attach_paste",
     // 0.1.18 統一本機開通(renderer/president.js):每開一次框每個名字最多一次、失敗不埋;pres_first_start = 第一次真錢啟動的確認框按了繼續
-    "pres_form_saved", "pres_tcem_open", "pres_cert_ok", "pres_probe_ok", "pres_ready", "pres_first_start"] },
+    "pres_form_saved", "pres_tcem_open", "pres_cert_ok", "pres_probe_ok", "pres_ready", "pres_first_start",
+    // 方案制(api 切換之後;renderer/app.js、library.js):開通成功時選的週期(月繳／年繳)、沒有資料權限卡與策略庫閘門的「看方案」、
+    // 方案扣款失敗時的「重新付款」(外開網站方案頁)、「API 方案」(外開定價頁)
+    "plan_monthly", "plan_annual", "plan_data", "plan_lib", "plan_repay", "api_plan_open",
+    // 試用格的〔到網站取消試用〕/〔到網站恢復試用〕(renderer/app.js;外開網站用量頁,按下就記)
+    "trial_cancel_web", "trial_resume_web",
+    // 方案制要雲端主機時的〔到網站開雲端主機〕(renderer/app.js cloudWebGo;方案頁與雲端開通頁共用,按下就記)
+    "cloud_open_web",
+    // 方案有效、沒有主機那一格的〔前往網頁管理〕(renderer/app.js;外開網站方案頁,取消／換卡在那邊;按下就記)
+    "plan_manage_web"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

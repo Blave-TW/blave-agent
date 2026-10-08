@@ -28,21 +28,21 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
   const OLD_IN = { can_run: true, data_included: true }, OLD_OUT = { can_run: true, data_included: false };
   const NEW = (a, x) => Object.assign({ can_run: true, data_access: a, data_included: a === "included", data_hourly: 2 }, x || {});
   const cases = [[OLD_IN, "included"], [OLD_OUT, null], [NEW("included"), "included"], [NEW("billed"), "billed"],
-    [NEW("none"), "none"], [{ data_access: "later", data_included: true }, "included"], [{ data_access: 1, data_included: "true" }, null], [null, null]];
+    [NEW("none"), "none"], [NEW("plan_required"), "plan_required"], [NEW("payment_failed"), "payment_failed"], [NEW("plan_required", { data_included: true }), "plan_required"], [{ data_access: "later", data_included: true }, "included"], [{ data_access: 1, data_included: "true" }, null], [null, null]];
   ok("V5-01", "main.js 與 renderer 的 dataAccessOf 對每個樣本(舊/新/怪)給同一個答案", cases.every(([s, want]) => mainDA(s) === want && appDA(s) === want));
   ok("V5-01", "舊 api 不含資料(data_included:false)→ 當作沒有:不把資料 key 寫進 .env(main.js hasBlaveData 的條件)", !hasData(OLD_OUT) && hasData(OLD_IN));
   ok("V5-01", "新 api billed 算拿得到、none 不算", hasData(NEW("billed")) && !hasData(NEW("none")));
   ok("V5-01", "費用那一則已拿掉:新舊 api 的 data_hour_paid 外殼都不再讀(回合結束不出那一行)", !/data_hour_paid|dataFeeNote/.test(app));
   // pvK:舊 api 用 .old 那一版句子(那時沒有主機的人真的拿不到資料);每一個 pvK key 兩語都要有兩版
-  var acct = null;
+  var acct = null, planMo = () => false;   // 切換前(方案制的 .m 版另由 check_shell_settings 測)
   const pvK = eval("(" + /const pvK = (\(k\) => [^;]+);/.exec(app)[1] + ")");
   acct = OLD_IN; const a1 = pvK("pv.e.sub"); acct = NEW("billed"); const a2 = pvK("pv.e.sub"); acct = null; const a3 = pvK("pv.e.sub");
   ok("V5-01", "pvK:舊 api / 查不到 → .old 句;新 api → 新句", a1 === "pv.e.sub.old" && a2 === "pv.e.sub" && a3 === "pv.e.sub.old");
   // 只算真的拿去 t() 翻的那些(pvK("pv.h.billed") === "pv.h.billed" 只是拿來判新舊,不查字串)
   const keys = [...new Set((app.match(/t\(pvK\("([^"]+)"\)/g) || []).map((m) => /"([^"]+)"/.exec(m)[1]))];
   const langs = (strings.match(/^  ([a-z]{2}): \{$/gm) || []).length;
-  const miss = keys.filter((k) => [k, k + ".old"].some((kk) => (strings.split(`"${kk}":`).length - 1) < langs));
-  ok("V5-01", `pvK 的 ${keys.length} 個 key 在 ${langs} 個語言都有新舊兩版(缺:${miss.join(", ") || "無"})`, keys.length > 0 && miss.length === 0);
+  const miss = keys.filter((k) => [k, k + ".old", k + ".m"].some((kk) => (strings.split(`"${kk}":`).length - 1) < langs));
+  ok("V5-01", `pvK 的 ${keys.length} 個 key 在 ${langs} 個語言都有三版(本名 / .old / 方案制 .m)(缺:${miss.join(", ") || "無"})`, keys.length > 0 && miss.length === 0);
 }
 
 /* ── V5-02 雲端回報:舊 runtime/舊 lib(沒有 self_ledger / can_trade_portfolio / weights)與新 ── */

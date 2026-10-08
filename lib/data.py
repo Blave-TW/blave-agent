@@ -72,7 +72,7 @@ class DataAccessError(RuntimeError):
 
 def _check_data_access(headers=None):
     """Desktop shell sets BLAVE_DATA_ACCESS=0 when it withheld the Blave key this turn
-    (no balance for the hourly fee / not signed in). Failing here, before any request,
+    (not signed in / no plan that includes data / hourly fee not covered). Failing here, before any request,
     is what stops the agent from hunting for credentials after a low-level error —
     a KeyError or 403 reads as a bug to fix, this reads as a fact. Unset or 1: no-op, except
     that a scheduled desktop run with no key in `headers` fails the same way (_check_desktop_key)."""
@@ -82,8 +82,8 @@ def _check_data_access(headers=None):
         _check_desktop_key(headers)
 
 
-_NO_ACCESS_MSG = ('Blave data is not reachable on this desktop this turn (no balance for the '
-                  'hourly fee / not signed in); stop here, do not look for credentials in .env, '
+_NO_ACCESS_MSG = ('Blave data is not reachable on this desktop this turn (not signed in, no plan '
+                  'that includes data, or the hourly fee not covered); stop here, do not look for credentials in .env, '
                   'the environment or elsewhere, and answer the user with what public klines allow.')
 
 
@@ -105,7 +105,7 @@ def _check_desktop_key(headers):
 
 def _desktop_denied(r):
     """Scheduled run on the desktop: the key in `.env` stopped working since the shell last
-    synced it (hour fee not chargeable ERR007, key revoked ERR005, 401). Same meaning as an
+    synced it (no data access ERR007, key revoked ERR005, 401). Same meaning as an
     empty key. A chat turn keeps the raw 403 — its body carries what the user must be told."""
     if not _daemon_on_desktop():
         return
@@ -1627,7 +1627,7 @@ def fetch_liquidation_map(symbol, headers):
       estimated  oi_value[] / cumsum[] — a MODEL ESTIMATE of where Binance open interest would
                  be liquidated (leaderboard positions + OI + volume), USD. Not real orders and
                  not actual events; any block built from it must say so.
-    `symbol` accepts BTC / BTCUSDT / btc. Needs data access (API plan or data fee); no cache —
+    `symbol` accepts BTC / BTCUSDT / btc. Needs data access (cloud plan, API plan or, before plan billing, the data fee); no cache —
     the server snapshot is the state. 400 with "symbol is required" never happens from here."""
     sym = normalize_symbol(symbol if str(symbol).upper().endswith('USDT') else str(symbol).upper() + 'USDT')
     return _raw_snapshot('liquidation/get_map', headers, {'symbol': sym})

@@ -115,6 +115,10 @@ if (!process.versions.electron) {
     G({ env: "cloud", signedIn: false, dataAccess: "none" }) === null && G({ signedIn: false, dataAccess: "included" }) === "signedOut" && G({}) === null && G({ dataAccess: "billed" }) === null
     && G({ dataAccess: "none", why: "no_card" }) === "no_card" && G({ dataAccess: "none", why: "no_balance" }) === "no_balance" && G({ dataAccess: "none", why: "signed_out" }) === "unknown" && G({ dataAccess: "none" }) === "unknown"
     && G({ dataAccess: null }) === "unknown" && G({ dataAccess: undefined }) === "unknown");
+  ok("① libGrouping 方案制:plan_required / payment_failed 照 why(no_plan / plan_failed);why 壞值 unknown;四組都有組名與閘門句",
+    G({ dataAccess: "plan_required", why: "no_plan" }) === "no_plan" && G({ dataAccess: "payment_failed", why: "plan_failed" }) === "plan_failed" && G({ dataAccess: "plan_required", why: "x" }) === "unknown"
+    && G({ dataAccess: "plan_required", why: "no_card" }) === "no_card" && G({ env: "cloud", dataAccess: "plan_required", why: "no_plan" }) === null
+    && ["lib.grp.plan", "lib.grp.gate.noPlan", "lib.grp.repay", "lib.grp.gate.planFailed", "lib.why.noPlan", "lib.why.planFailed"].every((k) => STR.zh[k] && STR.en[k]));
   const SPL = [reqOff, pubOff, nullOff, pubComm, pubPaid];
   ok("① libSplit(§2.2):已登入第一組 = none(含社群 / 付費),沒登入第一組 = 免登入策略;兩組保持原順序", P.libSplit(SPL, "no_card").now.map((s) => s.id).join() === "102,130,131" && P.libSplit(SPL, "no_card").later.map((s) => s.id).join() === "88,124"
     && P.libSplit(SPL, "signedOut").now.map((s) => s.id).join() === "102" && P.libSplit(SPL, "signedOut").later.map((s) => s.id).join() === "88,124,130,131" && P.libSplit(null, "unknown").now.length === 0);
