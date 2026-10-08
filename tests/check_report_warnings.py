@@ -1,5 +1,6 @@
 """Minimal check for the research-skeleton warnings in lib/report.write_report
-(references/reports.md §7b): they fire on a long title / missing kpi_row / missing
+(references/reports.md §7b): they fire on a long title / a lead whose first sentence is long or
+has no number / missing kpi_row / missing
 meta.shareable, stay quiet on a compliant research report and on non-research types, and
 never stop the write. Also the schema_version choice: 1.3 iff meta carries `shareable`,
 else 1.2 iff a candlestick, else 1.1; 1.6 iff an image block carries `source`, and more than
@@ -12,7 +13,7 @@ os.environ["BLAVE_AGENT_WORKSPACE"] = WS
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.report import write_report, REPORTS_DIR
 
-LEAD = {"type": "text", "variant": "lead", "markdown": "claim"}
+LEAD = {"type": "text", "variant": "lead", "markdown": "干預後 10 日內回吐八成，平常只有兩成。第二句。"}
 KPI = {"type": "kpi_row", "items": [{"label": "x", "value": "1", "tone": "neutral"}]}
 CANDLE = {"type": "candlestick", "candles": [[1, 1, 2, 0.5, 1.5], [2, 1.5, 2, 1, 1.8]]}
 S = {"shareable": True}
@@ -38,16 +39,35 @@ def check(cond, msg):
 try:
     out = run("ok", "日圓干預只延後了貶值，沒有扭轉它", [LEAD, KPI], type="research", meta=S)
     check("WARNING" not in out, "compliant research report: no warning")
-    out = run("long", "字" * 41, [LEAD, KPI], type="research", meta=S)
-    check("title is 82 wide" in out and out.count("WARNING") == 1, "41 CJK chars: title warning only")
+    check("WARNING" not in run("cap", "字" * 24, [LEAD, KPI], type="research", meta=S), "24 CJK chars: no warning")
+    out = run("long", "字" * 25, [LEAD, KPI], type="research", meta=S)
+    check("title is 50 wide" in out and out.count("WARNING") == 1, "25 CJK chars: title warning only")
     check(out.isascii(), "warning text is ASCII (Windows run.log is cp950)")
-    check("WARNING" not in run("latin", "a" * 80, [LEAD, KPI], type="research", meta=S), "80 Latin chars: no warning")
-    meta = {"type": "meta", "title": "字" * 41, "report_type": "一次性", "generated_at": 1756684800}
-    check("title is 82 wide" in run("metattl", "short", [meta, LEAD, KPI], type="research"),
+    check("WARNING" not in run("latin", "a" * 48, [LEAD, KPI], type="research", meta=S), "48 Latin chars: no warning")
+    check("title is 49 wide" in run("latin49", "a" * 49, [LEAD, KPI], type="research", meta=S), "49 Latin chars: warns")
+    meta = {"type": "meta", "title": "字" * 25, "report_type": "一次性", "generated_at": 1756684800}
+    check("title is 50 wide" in run("metattl", "short", [meta, LEAD, KPI], type="research"),
           "caller's meta.title (the rendered one) is what gets measured")
     check("no kpi_row" in run("nokpi", "t", [LEAD, {"type": "text", "markdown": "x"}, KPI], type="research"),
           "kpi_row not right after lead: warns")
     check("no kpi_row" not in run("nolead", "t", [KPI], type="research"), "no lead, kpi_row right after meta: quiet")
+    nonum = {"type": "text", "variant": "lead", "markdown": "淨空破紀錄只對了一半。後面才有 9.1%。"}
+    out = run("nonum", "t", [nonum, KPI], type="research", meta=S)
+    check("has no number" in out and out.count("WARNING") == 1 and out.isascii(),
+          "lead's first sentence without a number: warns (a number in sentence two does not count)")
+    longlead = {"type": "text", "variant": "lead", "markdown": "字" * 40 + "1。"}
+    check("first sentence is 83 wide" in run("longlead", "t", [longlead, KPI], type="research", meta=S),
+          "lead's first sentence over 40 CJK: warns")
+    en = {"type": "text", "variant": "lead", "markdown": "Launches cost 2 points against an ordinary week. More."}
+    check("WARNING" not in run("enlead", "t", [en, KPI], type="research", meta=S), "Latin lead under 80 wide: quiet")
+    q = {"type": "text", "variant": "lead", "markdown": "日圓干預真的有用嗎？10 日內回吐八成。"}
+    check("has no number" in run("question", "t", [q, KPI], type="research", meta=S),
+          "a question ending in 「？」 is the first sentence (same cut as publish): warns")
+    en2 = {"type": "text", "variant": "lead", "markdown": "Launch weeks lost **2%** against an ordinary 0.4%. "
+           "Across 31 launches 19 were down, the worst -11.2%, and the median 10-day return was -1.9% against +0.6%."}
+    check("WARNING" not in run("en2", "t", [en2, KPI], type="research", meta=S),
+          "two-sentence Latin lead: only the first (the card's sentence, cut at a period before a space) is measured")
+    check("WARNING" not in run("mornnonum", "t", [nonum], type="morning"), "morning lead without a number: quiet")
     check("WARNING" not in run("morning", "字" * 60, [LEAD], type="morning"), "morning report: never warns")
 
     check(doc("ok")["schema_version"] == "1.3" and doc("ok")["blocks"][0]["shareable"] is True,

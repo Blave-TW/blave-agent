@@ -74,8 +74,10 @@ _ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 # the uploader's call, and it reports through reports/upload_errors.log.
 _FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 FILES_SUFFIX = ".files"
-# ≈ 40 CJK / 80 Latin: the public share page cuts a title at ~50 CJK, so this leaves a margin.
-RESEARCH_TITLE_WIDTH = 80
+# ≈ 24 CJK / 48 Latin: a shared link's preview card shows two lines of title (references/reports.md 7b A1).
+RESEARCH_TITLE_WIDTH = 48
+# The lead's first sentence is the share card's description and the notification (7b A2): 40 CJK / 80 Latin.
+RESEARCH_LEAD_FIRST_WIDTH = 80
 # Cited web images (an `image` block with `source`, references/reports.md › Citing an image
 # from the web). The api sets no cap on purpose: a 400 files the whole report as failed, and a
 # third citation is not a broken document — so the cap lives here, where the agent can fix it.
@@ -248,21 +250,48 @@ def _sweep_captures(asked, final, blocks):
     return gone
 
 
+# Markdown marks and footnote refs, stripped before a sentence is measured.
+MD_RE = re.compile(r"[*_`#>\[\]]|\^[\w-]+")
+
+
+def first_sentence(text):
+    """The sentence the share card shows: the same cut as the web's `lead_sentence()`
+    (app/main/research_share.py) — up to 。！？!? or a Latin period before a space or the end
+    (「U.S.」 is cut there too: that is what the card's reader sees). One rule for publish()'s
+    refusal and write_report's research warning."""
+    plain = MD_RE.sub("", text)
+    plain = re.sub(r"^\s*(?:[-+]|\d+\.)\s+", "", plain, flags=re.M)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    m = re.search(r"[。！？!?]|\.(?=\s|$)", plain)
+    return plain[: m.end()] if m else plain
+
+
+def _width(text):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(text))
+
+
 def _research_warnings(title, blocks):
-    """Two points of the research skeleton (references/reports.md §7b) that decide how a
+    """Three points of the research skeleton (references/reports.md §7b) that decide how a
     report reads when only its head is seen.
     Advisory only: a refused report is lost, a weak one can be rewritten. `blocks[0]`
     is the meta block by the time this runs, and its `title` is the one the web renders —
     a caller-supplied meta may differ from the envelope title."""
     out = []
     shown = blocks[0].get("title", title) if blocks and isinstance(blocks[0], dict) else title
-    width = sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(shown))
+    width = _width(shown)
     if width > RESEARCH_TITLE_WIDTH:
         out.append(f"research title is {width} wide (CJK counts 2), over {RESEARCH_TITLE_WIDTH}; "
-                   "the report list truncates it, state the claim shorter "
-                   "(references/reports.md 7b)")
+                   "a shared link's preview card shows two lines, state the claim shorter "
+                   "(references/reports.md 7b A1)")
     i = 1
     if i < len(blocks) and isinstance(blocks[i], dict) and blocks[i].get("variant") == "lead":
+        first = first_sentence(str(blocks[i].get("markdown") or ""))
+        if _width(first) > RESEARCH_LEAD_FIRST_WIDTH:
+            out.append(f"research lead's first sentence is {_width(first)} wide (CJK counts 2), over "
+                       f"{RESEARCH_LEAD_FIRST_WIDTH}; it is the share card's description (references/reports.md 7b A2)")
+        if not re.search(r"\d", first):
+            out.append("research lead's first sentence has no number; state the conclusion with one number "
+                       "and its baseline (references/reports.md 7b A2)")
         i += 1
     if not (i < len(blocks) and isinstance(blocks[i], dict) and blocks[i].get("type") == "kpi_row"):
         out.append("research report has no kpi_row right after the lead; its first item is the "
@@ -423,8 +452,8 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     and a second copy of the rules on this side would drift and start refusing reports
     the platform accepts. A rejected report lands in `reports/failed/` with the
     api's message (it names the offending field path) in `upload_errors.log`.
-    For `type="research"` two points of the §7b skeleton (title width, a `kpi_row`
-    right after the lead) and a missing `meta.shareable` are printed as `WARNING:`
+    For `type="research"` three points of the §7b skeleton (title width, the lead's first
+    sentence, a `kpi_row` right after the lead) and a missing `meta.shareable` are printed as `WARNING:`
     lines, as is a `shareable` that is not a bool or sits on another type — advice,
     never a refusal.
     """

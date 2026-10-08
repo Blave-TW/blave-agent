@@ -85,6 +85,7 @@ check(any(t.startswith("BGB 1 日") and "昨日成交量為前 20 日均" in t f
 desc = pack.describe()
 check("publish 檢查表" in desc and "tag 只能 pos / neg / neutral" in desc and f"publish({pack.report_id!r}, narrative, title=" in desc
       and "今天加做的積木" in desc, "describe() 印出檢查表、加做清單、重送方式")
+check("結論 ≤40 字" in desc and "1 個數字＋它的基準" not in desc, "範本的 describe:標題仍 ≤40 字、lead 不加研究的數字規則")
 
 # ── the same call again re-uses the kept pack (no refetch) ──
 fetches.clear()
@@ -234,6 +235,24 @@ check(rp.type == "research" and rp.report_id == "research-sol-20260902"
       and {"price_chart", "coin_snapshot", "relative_to", "funding", "derivs_table", "blave_indicators", "levels_table"} <= set(rp.owners)
       and ("price_chart", "candlestick") in kinds and "SOL 價格" in rp.context and "publish 檢查表" in rp.describe(),
       "research_pack(SOL):價格 K 線、成交量、相對 BTC、資金費率、衍生品、Blave 指標、高低均線,describe 帶檢查表")
+rd = rp.describe()
+check("結論 ≤24 字" in rd and "結論 ≤40 字" not in rd and "1 個數字＋它的基準" in rd,
+      "研究的 describe:標題 ≤24 字、lead 第一句要有數字與基準(reports.md 7b A1/A2)")
+A2_LEAD = "淨空破紀錄後 60 日中位數 +9.1%，高於一般交易日的 4.3%。第二句。"
+check(T._lead_problems(A2_LEAD, research=True) == []
+      and any("carries 3 numbers" in p for p in T._lead_problems(A2_LEAD))
+      and any("carries 3 numbers" in p for p in T._lead_problems("2024 年後 +1.5%，同期 +10.9%，差 9.4 點。", research=True)),
+      "研究 lead 的數字不算窗口長度與年份(A2 範例句通過);範本照舊算 3 個;真的 3 個數字照擋")
+EN_LEAD = "Launches lost 2% vs a normal 0.4%. Across 31 launches 19 were down, the worst -11.2%."
+check(T._lead_problems(EN_LEAD, research=True) == [] and T._lead_problems(EN_LEAD) == []
+      and T._first_sentence(EN_LEAD) == "Launches lost 2% vs a normal 0.4%.",
+      "英文兩句 lead:數字只算第一句(句點後接空白就斷,與分享卡同一套)")
+from types import SimpleNamespace as _NS
+_long = "字" * 41
+check(any("研究建議 ≤24 字" in p for p in T._title_problems(_NS(type="research", title="x"), _long))
+      and not any("研究建議" in p for p in T._title_problems(_NS(type="morning", title="x"), _long))
+      and T._title_problems(_NS(type="research", title="x"), "字" * 30) == [],
+      "研究標題超過 40 的拒絕訊息補「研究建議 ≤24 字」;25–40 字照收;範本訊息不變")
 only = T.research_pack("SOL", topics=["price", "relative"], date="2026-09-02", headers=H, fresh=True)
 check(set(only.owners) - {"kpi_row", "footnote"} == {"price_chart", "relative_to"}, "topics 只挑需要的段落")
 try:
