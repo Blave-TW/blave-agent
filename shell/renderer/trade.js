@@ -2901,6 +2901,7 @@ function trPaintOver() {
   box.appendChild(trOvPerf());   // 績效條:PnL 條與曲線之間(同網頁 mockup 序);沒有這一份就是空的
   box.appendChild(trOvCurve());
   box.appendChild(trOvEvents(r));
+  trEvListFocus(box);
   if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
 function trStatCell(label, value, cls, sub, tip) {
@@ -3156,29 +3157,23 @@ function trEventText(type, d) {
   if (type === "downtime_paused") return [t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote")];   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
   return null;
 }
+/* 事件 = 狀態改變或要人看的事;成交不是事件(spec-0.1.19 §1.1)——買進／賣出列只在交易歷史分頁,
+   這裡標題列右側數同一區間的成交筆數帶路過去。0 筆整行不出 */
+function trOvFills(r, from) {
+  const n = trOrdersShown(r).filter((o) => { const ms = trMs(o.ts); return ms != null && ms >= from; }).length;
+  if (!n) return null;
+  const acts = trEl("div", "pf-acts ev-fills"), cnt = trEl("span", "");
+  const parts = t(n === 1 ? "tr.ov.evFillsOne" : "tr.ov.evFills").split("{n}");   // 數字單獨一個 .mono,字串自己決定數字落在哪
+  cnt.append(parts[0], trEl("span", "mono", String(n)), parts.slice(1).join("{n}"));
+  const go = trEl("button", "btn-quiet", t("tr.ov.evFillsLink")); go.type = "button";
+  go.addEventListener("click", () => trSetTab("hist", true));
+  acts.append(cnt, go); return acts;
+}
 function trOvEvents(r) {
-  const frag = document.createDocumentFragment();
-  frag.appendChild(trSec(trEl("span", "label", t("tr.ov.events"))));
+  const frag = document.createDocumentFragment(), label = trEl("span", "label", t("tr.ov.events")); label.id = "tr-ev-label";
   const from = Date.now() - TR.ov.days * 86400000, rows = [];
+  frag.appendChild(trSec(label, trOvFills(r, from)));
   const push = (ms, build) => { if (ms != null && ms >= from) rows.push({ ms, build }); };
-  trOrdersShown(r).forEach((o) => {
-    push(trMs(o.ts), (body) => {
-      const sell = o.action === "SELL", sym = String(o.symbol || "");
-      body.appendChild(trEl("span", sell ? "sell" : "buy", sell ? t("tr.sell") : t("tr.buy")));
-      const sn = trEl("span", "");
-      if (!(trOrderLots(o) && trTxfSymInto(sn, trOrderContract(o)))) { sn.className = "mono"; sn.textContent = sym.replace(/@spot$/, ""); }
-      body.append(" ", sn, " ", trEl("span", "dim", /@spot$/.test(sym) ? t("tr.mkt.spot") : t("tr.mkt.swap")));
-      const legs = Array.isArray(o.legs) ? o.legs : [], px = legs.map((l) => trFmtPrice(l && l.fill_price)).filter(Boolean);
-      const amt = trFmt(Math.abs(typeof o.signed_diff === "number" ? o.signed_diff : NaN));
-      if (amt != null) {
-        // 口數單寫「N 口」(同網頁總覽事件、下單紀錄)
-        const m = trEl("span", "mono", amt), lotsN = Math.abs(typeof o.signed_diff === "number" ? o.signed_diff : NaN);
-        if (trOrderLots(o)) m.appendChild(trEl("span", "ccy lots", t(trLotsKey(lotsN, "tr.lotsUnit", "tr.lotUnit")))); else if (trUnit()) m.appendChild(trEl("span", "ccy", trUnit()));
-        body.append(" ", m);
-        if (px.length) body.append(" ", trEl("span", "mono", "@ " + px.join(" → ")));
-      }
-    });
-  });
   /* 這台電腦:從這個 app 的畫面做的動作(宿主在指令 ack 成功時記的;聊天裡做的不會有)。
      雲端:平台的事件流(/cloud/events),欄位包在 data 裡、型別也多得多——認不得的型別不畫(沒有文案就是一行代號)。
      有了它,「已暫停下單」那一列在恢復之後不會消失,也才有「已恢復下單 / 已連接 / 已解除」。 */
@@ -3224,23 +3219,29 @@ function trOvEvents(r) {
   if (TR.ov.uiErr) frag.appendChild(trEl("div", "pf-state", t("tr.ov.evUnreach")));
   if (!rows.length) { if (!TR.ov.uiErr) frag.appendChild(trEl("div", "pf-state", t("tr.ov.evEmpty"))); return frag; }
   rows.sort((a, b) => b.ms - a.ms);
-  const list = trEl("div", "ev-list"); frag.appendChild(list);   // 自成一個容器:最後一列靠 :last-child 收底線
+  // 240px 的捲動容器;一天一組 .ev-group,日期標 sticky 只釘在自己那組的範圍內(trade.css)。tabindex 由 trEvListFocus 在畫完後決定
+  const list = trEl("div", "ev-list"); list.setAttribute("role", "region"); list.setAttribute("aria-labelledby", "tr-ev-label"); frag.appendChild(list);
   const today = new Date().toDateString(), yest = new Date(Date.now() - 86400000).toDateString();
-  let curKey = null;
+  let curKey = null, group = null;
   rows.slice(0, 200).forEach((x) => {
     const d = new Date(x.ms), key = d.toDateString();
     if (key !== curKey) {
-      curKey = key;
+      curKey = key; group = trEl("div", "ev-group"); list.appendChild(group);
       const head = trEl("div", "ev-day"), human = key === today ? t("tr.ov.today") : key === yest ? t("tr.ov.yesterday") : null;
       if (human) head.append(human + " · ");
       head.appendChild(trEl("span", "mono", trMD(d)));
-      list.appendChild(head);
+      group.appendChild(head);
     }
     const row = trEl("div", "ev-row"), body = trEl("span", "body");
     row.append(trEl("span", "ts mono", trHM(x.ms)), body); x.build(body);
-    list.appendChild(row);
+    group.appendChild(row);
   });
   return frag;
+}
+// 清單真的溢出才是一個 tab 停留點;不溢出的清單不該被 Tab 停到(spec-0.1.19 §1.3)
+function trEvListFocus(box) {
+  const list = box.querySelector(".ev-list"); if (!list) return;
+  if (list.scrollHeight > list.clientHeight) list.tabIndex = 0; else list.removeAttribute("tabindex");
 }
 
 /* ── 連接交易所(模擬交易 / Binance 真錢)────────────────────────────────────

@@ -124,12 +124,16 @@
           </div>
           <div class="act" id="tr-act"></div>
         </div>
+        <!-- 同 #rp-tabs 的兩層:外層畫 hairline,內層 .main-tabs-scroll 橫捲、四邊留 4 給 focus 框(spec-0.1.19 §2.3;純文字分頁的 ring 永遠外擴) -->
         <div class="main-tabs" role="tablist" id="tr-tabs" data-i18n-aria="tr.nav" hidden>
-          <button class="main-tab" type="button" role="tab" id="tr-tab-over" data-tab="over" aria-controls="tr-over" data-i18n="tr.tab.over"></button>
-          <button class="main-tab" type="button" role="tab" id="tr-tab-pos" data-tab="pos" aria-controls="tr-pos" data-i18n="tr.tab.pos"></button>
-          <button class="main-tab" type="button" role="tab" id="tr-tab-assets" data-tab="assets" aria-controls="tr-assets" data-i18n="tr.tab.assets"></button>
-          <button class="main-tab" type="button" role="tab" id="tr-tab-hist" data-tab="hist" aria-controls="tr-hist" data-i18n="tr.tab.hist"></button>
-          <button class="main-tab" type="button" role="tab" id="tr-tab-set" data-tab="set" aria-controls="tr-set" data-i18n="tr.tab.set"></button>
+          <div class="main-tabs-scroll" id="tr-tabs-scroll">
+            <button class="main-tab" type="button" role="tab" id="tr-tab-over" data-tab="over" aria-controls="tr-over" data-i18n="tr.tab.over"></button>
+            <button class="main-tab" type="button" role="tab" id="tr-tab-pos" data-tab="pos" aria-controls="tr-pos" data-i18n="tr.tab.pos"></button>
+            <button class="main-tab" type="button" role="tab" id="tr-tab-assets" data-tab="assets" aria-controls="tr-assets" data-i18n="tr.tab.assets"></button>
+            <button class="main-tab" type="button" role="tab" id="tr-tab-hist" data-tab="hist" aria-controls="tr-hist" data-i18n="tr.tab.hist"></button>
+            <button class="main-tab" type="button" role="tab" id="tr-tab-set" data-tab="set" aria-controls="tr-set" data-i18n="tr.tab.set"></button>
+          </div>
+          <button class="tabs-more" type="button" id="tr-tabs-more" aria-hidden="true" tabindex="-1" hidden><span class="tabs-more-cv"></span></button>
         </div>
         <div class="pf" id="tr-onboard" hidden></div>
         <div class="pf" id="tr-over" role="tabpanel" aria-labelledby="tr-tab-over" tabindex="0" hidden></div>

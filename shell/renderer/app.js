@@ -1639,11 +1639,10 @@ function rpTabReveal(b) {
   else if (r.right > c.right - pad) box.scrollLeft += r.right - (c.right - pad);
 }
 function rpTabRevealSelected() { rpTabReveal($("rp-tabs-scroll").querySelector('.rp-tab[aria-selected="true"]')); }
-$("rp-tabs-scroll").querySelectorAll(".rp-tab").forEach((b) => b.addEventListener("focus", () => rpTabReveal(b)));
 /* 捲動捷徑:有溢出才出現;還能往右捲就朝右(捲一個可視寬、留 48 當接續),到底就朝左(捲回 0)。溢出會隨視窗、語系、分頁寬度而變,
-   所以觀察捲動段與每顆分頁的尺寸,不靠各處呼叫(同 web tabsMoreSync) */
-{
-  const box = $("rp-tabs-scroll"), more = $("rp-tabs-more");
+   所以觀察捲動段與每顆分頁的尺寸,不靠各處呼叫(同 web tabsMoreSync)。報告分頁與自動下單分頁(#tr-tabs)同一套 */
+function tabsMoreWire(box, more, tabSel) {
+  box.querySelectorAll(tabSel).forEach((b) => b.addEventListener("focus", () => rpTabReveal(b)));
   const sync = () => {
     const over = box.scrollWidth > box.clientWidth + 1;
     more.hidden = !over;
@@ -1654,9 +1653,11 @@ $("rp-tabs-scroll").querySelectorAll(".rp-tab").forEach((b) => b.addEventListene
     box.scrollTo({ left: back ? 0 : box.scrollLeft + box.clientWidth - 48, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   });
   box.addEventListener("scroll", sync);
-  if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(sync); ro.observe(box); box.querySelectorAll(".rp-tab").forEach((b) => ro.observe(b)); }
+  if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(sync); ro.observe(box); box.querySelectorAll(tabSel).forEach((b) => ro.observe(b)); }
   else window.addEventListener("resize", sync);
 }
+tabsMoreWire($("rp-tabs-scroll"), $("rp-tabs-more"), ".rp-tab");
+tabsMoreWire($("tr-tabs-scroll"), $("tr-tabs-more"), ".main-tab");
 
 /* ── 第 4 步:真的接線 ───────────────────────────── */
 /* ── 對話(session)───────────────────────────────
