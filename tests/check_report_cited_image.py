@@ -70,7 +70,7 @@ def publish(pk, nar, **kw):
         return None, str(e), buf.getvalue()
 
 
-NAR = {"lead": "SOL 相對強度領先大盤。", "summary": "強勢來自現貨買盤,接下來看未平倉量能否延續。",
+NAR = {"lead": "SOL 7 日漲幅領先 BTC 約 3 個百分點。", "summary": "強勢來自現貨買盤,接下來看未平倉量能否延續。",
        "against": "- 今年以來報酬仍落後同業。", "robustness": "- 換成 60 日窗口結論不變。",
        "risk": "若未平倉量轉為下滑,這個判斷就不成立。", "few_sources": "測試", "no_extra": "測試", "news": []}
 SRC = {"name": "CryptoSlate", "url": "https://cryptoslate.com/predictions/market/what-price-will-solana-hit-in-september-2026/"}

@@ -235,8 +235,9 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 ### Near month
 
-- Contracts settle at **13:30 Taipei on the third Wednesday** of their month — the instant the
-  backtest's `TXFR1` series changes contract (its first new-month bar is 13:31).
+- Contracts settle at **13:30 Taipei on the third Wednesday** of their month. The backtest's
+  `TXFR1` series (`fetch_twfutures_ohlcv`) keeps the expiring month through its 13:30 close that
+  day — no 13:31–14:59 bars — and its first new-month bar is the 15:00 evening session.
 - **Which held rows count** (`lib/president_contracts.py`; the worker records the broker's contract
   list each tick for this):
   - **with a book** (the reconciler, its orders and 全部平倉 pass `book_months` — the contract
@@ -265,7 +266,7 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   day's trading date) new positions go to the next month; before that, to the current one. A
   position opened in the expiring contract inside that window would be cash-settled at 13:30 and
   re-opened by the reconciler in the next month — two extra round trips. The backtest's `TXFR1`
-  stays on the expiring contract until 13:30 (first new-month bar 13:31); live, new entries differ
+  stays on the expiring contract through its 13:30 close (first new-month bar 15:00); live, new entries differ
   from it only by the calendar spread's move over those ≤22h30m. **Exception:** if the account still
   holds the expiring month of that root inside the window, an entry (an addition) goes to the
   expiring month too, so two months are never held at once; it settles with the rest at 13:30.

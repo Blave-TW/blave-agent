@@ -7,10 +7,15 @@
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
+// 統一期貨在這台電腦的下拉要不要列:照 trade.js 的旗標(0.1.18 關、0.1.19 開),測試不自己假設
+const tradeSrc = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"), presFlag = tradeSrc.match(/^const PRES_LOCAL_ON = (true|false);$/m), presOn = !!presFlag && presFlag[1] === "true";
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 const J = JSON.stringify;
 
 if (!process.versions.electron) (async () => {
+  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,下拉的「台股」組與 change 都看它(cxPresListed)", !!presFlag
+    && /if \(CXF\.env !== "local" \|\| cxPresListed\(\)\) \{ const g2 = document\.createElement\("optgroup"\)/.test(tradeSrc)
+    && /\(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\) \? sel\.value : PAPER;/.test(tradeSrc));
   // ── ① daemon 白名單 ──
   const { argsOk } = require(path.join(SHELL, "daemon.js"));
   const CC = require(path.join(SHELL, "cloudcmd.js"));
@@ -153,9 +158,12 @@ app.whenReady().then(async () => {
   // 這台電腦
   await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null); })()`);
   await wait(150);
-  // 群益只在雲端(Wei 0.1.18 拿掉這台電腦那條:電腦版不接群益);統一只在這台電腦視角。「台股」那一組兩邊都在,各一家
-  ok("③ 這台電腦:模擬 + 五家 + 「台股」組只有統一(沒有群益)", J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "president"])
-    && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(`[t("cx.group.crypto"), t("cap.group.tw")]`)));
+  // 群益只在雲端(Wei 0.1.18 拿掉這台電腦那條:電腦版不接群益);統一只在這台電腦視角,而且受 trade.js PRES_LOCAL_ON 管
+  // (0.1.18 關著只藏入口、0.1.19 開):關著時「台股」那一組整個不出;開著時那一組只有統一
+  ok("③ 這台電腦:模擬 + 五家" + (presOn ? " + 「台股」組只有統一(沒有群益)" : ";PRES_LOCAL_ON 關著 → 沒有「台股」組、沒有統一"),
+    J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit"].concat(presOn ? ["president"] : []))
+    && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(presOn ? `[t("cx.group.crypto"), t("cap.group.tw")]` : `[t("cx.group.crypto")]`)));
+  if (!presOn) { await pick("president"); ok("③ 旗標關著硬選 president(選單裡沒有那一項):退回模擬", (await js(`CXF.venue`)) === "paper"); }
   await pick("capital");
   ok("③ 這台電腦硬選 capital(選單裡沒有那一項):退回模擬、主鈕照在", (await js(`CXF.venue`)) === "paper" && (await js(`!$("cx-go").hidden`)));
   await pick("okx");
