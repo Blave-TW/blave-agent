@@ -69,6 +69,7 @@ Run: cd blave-agent && .venv/bin/python tests/check_capital_ledger_paths.py
 import importlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -456,10 +457,19 @@ def child(venue, sid, tmp):
         sent_after = [o for r in log[2:] for o in r["sent"]]
         closes = [o for o in sent_after if o["side"] == "sell" and o["lots"] == 2
                   and (o.get("intent") == "reduce" if venue == "capital" else o.get("opencloseflag") == "1")]
+        # the logged row reads like the entry's: the strategy's spec (lots, not money)
+        # and the month contract the leg resolved to — the app formats it from these
+        logged = json.loads(open("manager/orders.jsonl").read().splitlines()[-1])
+        leg = (logged.get("legs") or [{}])[0]
+        contract = str(leg.get("resolved_symbol") or "")
+        row_ok = (logged["action"] == "SELL" and logged["signed_diff"] == -2
+                  and (logged.get("asset_spec") or {}).get("type") == "futures_contracts"
+                  and re.fullmatch(r"(TXF|MXF|TMF)[A-L]\d|(TX|MTX|TM)\d{4}", contract) is not None)
         ok = (len(sent_after) == 1 and len(closes) == 1 and w.net() == 0 and ledger_txf(last) == 0
-              and not errors() and not last["halt"])
+              and not errors() and not last["halt"] and row_ok)
         why = (f"close-on-removal: sent={sent_after}, broker={w.rows}, book TXF={ledger_txf(last)}, "
-               f"order_errors={errors()}")
+               f"order_errors={errors()}, logged row asset_spec={logged.get('asset_spec')} "
+               f"resolved_symbol={contract!r}")
     elif sid == "R1":
         r1 = round_("signal unchanged")
         time.sleep(5.5)

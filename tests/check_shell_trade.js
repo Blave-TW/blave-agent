@@ -1856,6 +1856,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const again = paintP(NET, ctx.TR.netOpen); ok("ux §2.2 重畫保留展開", again.find((n) => n.className === "net-row").hidden === false && again.find((n) => n.className === "net-tag").attrs["aria-expanded"] === "true");
       ok("ux §2.2 只有一支有金額的標的:沒有 tag、沒有表底那句", !paintP(BTCREP).some((n) => n.className === "net-tag" || n.text === "tr.net.foot")); }
     ok("設計稽核 B1:口數格函式——不是數字畫「—」", (() => { const n = node("td"); ctx.N = n; vm.runInContext("trLotsInto(this.N, NaN, true)", ctx); return n.textContent === "—"; })()); }
+  // 10-08 統一實測:平倉列(close-on-removal)沒有 asset_spec,交易歷史與事件把 1 口印成「49,567 TWD」——統一的單、台指期標的的舊列都算口數單
+  { const close = { action: "SELL", symbol: "TMF", signed_diff: -1, exchange: "president", asset_spec: null, legs: [{ resolved_symbol: "TMFJ6", fill_price: 49567, executed_qty: 1 }] };
+    ok("口數單判定:統一的單沒有 asset_spec 也是口數;標的是 TMF 的舊列(沒交易所、沒 spec)也是;BTCUSDT 模擬單不是", trOrderLots(close) && trOrderLots({ symbol: "TMF", asset_spec: null }) && trOrderLots({ symbol: "TX2610", exchange: "capital" })
+      && !trOrderLots({ symbol: "BTCUSDT", exchange: "paper", asset_spec: null }) && !trOrderLots(null));
+    const rows = [{ symbol: "BTCUSDT", exchange: "paper" }, close, { symbol: "TXF" }, null, "x"];
+    const bound = (...ids) => ({ orders: rows, venues: Object.fromEntries(ids.map((i) => [i, { credentials: true, pair: true, order: true, account: true }])) });
+    ok("下單紀錄／事件只列目前連著的交易所:綁統一時模擬交易那幾筆不列、沒寫交易所的舊列照列;沒綁任何交易所全列;壞列丟掉", J(trOrdersShown(bound("president")).map((o) => o.symbol)) === J(["TMF", "TXF"])
+      && J(trOrdersShown(bound("paper")).map((o) => o.symbol)) === J(["BTCUSDT", "TXF"]) && trOrdersShown(bound()).length === 3 && trOrdersShown(null).length === 0
+      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /trOrdersShown\(r\)\.forEach\(\(o\) => \{\n    push\(trMs\(o\.ts\)/.test(src)); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

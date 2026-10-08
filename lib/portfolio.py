@@ -2082,6 +2082,25 @@ def load_all_states():
     return states
 
 
+def removed_asset_specs(config, target):
+    """{key: asset_spec} for the strategies aggregate_portfolio left out (amount
+    0, unpicked) whose spec is still in the config — keyed like their target
+    row would be, so a close-on-removal row finds the spec its entry used."""
+    out = {}
+    specs = config.get('asset_specs')
+    if not isinstance(specs, dict) or not specs:
+        return out
+    states = load_all_states()
+    for name, spec in specs.items():
+        sym = (states.get(name) or {}).get('symbol')
+        if not isinstance(spec, dict) or not sym:
+            continue
+        key = market_key(str(sym).replace('-', '').upper(), strategy_market(name))
+        if key not in target:
+            out.setdefault(key, spec)
+    return out
+
+
 def strategy_amounts(config=None):
     """{strategy: dollars} — the per-strategy sizing base.
 
@@ -2490,7 +2509,7 @@ def compute_diff(target, actual, threshold=10, gates=None, drift_band=None):
         diff = t_signed - a_signed
         if diff == 0:
             continue
-        asset_spec = t.get('asset_spec')
+        asset_spec = t.get('asset_spec') or a.get('asset_spec')
         is_lot_based = native_units(asset_spec, t.get('exchange'), a.get('exchange'), actual=a)
         # A row whose |target| is SMALLER than what is held carries a reduce
         # leg (shrink, or a close when the target is gone) — gated on its own
@@ -2563,7 +2582,7 @@ def compute_diff(target, actual, threshold=10, gates=None, drift_band=None):
             # order log's legs carry the venue the wiring actually routed to,
             # which is the truthful record anyway.
             'exchange':         t.get('exchange') or a.get('exchange'),
-            'asset_spec':       t.get('asset_spec'),
+            'asset_spec':       t.get('asset_spec') or a.get('asset_spec'),
             'contributors':     t.get('contributors', []),
         })
 
@@ -2712,6 +2731,15 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     # no baseline = no book to diff against; the round is read-only anyway,
     # and the account read must not stand in for the book
     diff_actual = ledger if ledger is not None else ({} if own_only else actual)
+    # A close-on-removal row (held, no target) carries the spec its entry was
+    # sized with — the strategy's, still in the config — so the order log and
+    # the app read the leg in lots, not as money.
+    removed = [k for k, a in diff_actual.items() if k not in target and not a.get('asset_spec')]
+    if removed:
+        specs = removed_asset_specs(config, target)
+        for k in removed:
+            if k in specs:
+                diff_actual[k]['asset_spec'] = specs[k]
 
     # signal gate (resume_wait): a gated symbol is excluded from BOTH sides of
     # the diff — no catch-up entry (absent target would be wrong: it exists,
