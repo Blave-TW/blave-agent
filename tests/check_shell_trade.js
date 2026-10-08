@@ -1962,7 +1962,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && J(L(q("blave", "stale"))) === J({ key: "tr.quote.blave", why: "tr.quote.why.stale", fallback: true })
       && L(q("blave", "not_ok:RuntimeError: boom")).why === "tr.quote.why.notOk" && L(q("blave", "no_overlap")).why === "tr.quote.why.noOverlap"
       && L(q("blave", "not_enabled")).why === "tr.quote.why.notEnabled" && L(q("blave", "no_file")).why === "tr.quote.why.noFile"
-      && L(q("blave", "empty")).why === "tr.quote.why.noFile" && L(q("blave", "weird")).why === "tr.quote.why.noFile");
+      && L(q("blave", "empty")).why === "tr.quote.why.noFile" && L(q("blave", "weird")).why === "tr.quote.why.noFile"
+      && J(L(q("blave", "paused", "failed"))) === J({ key: "tr.quote.pres", why: null, fallback: false }));   // 市場沒開不是退路(worker 狀態也不看)
     ok("行情句:退路時 worker 沒登入(president_connect.worker.status ≠ ok)先講「統一還沒登入」;統一正常句不看它",
       L(q("blave", "stale", "failed")).why === "tr.quote.why.noLogin" && L(q("blave", "no_file", "idle")).why === "tr.quote.why.noLogin"
       && L(q("president", null, "failed")).key === "tr.quote.pres" && L({ twfutures_live_source: { source: "blave", reason: "stale" } }).why === "tr.quote.why.stale");

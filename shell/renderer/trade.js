@@ -122,14 +122,16 @@ function trPresLoginStopped(r, id) { return trPresStopped(r, id) && String(r.pre
 /* 台指期實盤行情來源那一句(設計 spec desktop-live-source-line;lib/data 在每次 live tick 寫 state/twfutures_live_source.json,reporter 原樣帶出)。
    四個條件同時成立才出:這台電腦且綁統一、回報有那一欄(還沒 tick 過就沒有,不出佔位句)、至少一個台指期口數列 > 0(`lots`;
    全 0 時沒有 live tick,檔案是舊的)、狀態在跑 / 已暫停 / 沒停住(過場中、死掉、開通中都不出)。
-   退路時先用 president_connect 判「統一還沒登入」(後端沒有獨立代碼:worker 沒登入只是不寫檔,落 stale / no_file),再看 reason;
+   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先用 president_connect 判「統一還沒登入」
+   (後端沒有獨立代碼:worker 沒登入只是不寫檔,落 stale / no_file),再看 reason;
    `empty` 併進 noFile。fallback = 退路句(顏色升一階,trPaintQuote) */
 const TR_QUOTE_WHY = { stale: "tr.quote.why.stale", not_enabled: "tr.quote.why.notEnabled", no_overlap: "tr.quote.why.noOverlap" };
 const TR_QUOTE_STATES = ["running", "halted", "unconfirmed"];
 function trQuoteLine(r, env, id, state, lots) {
   const q = env === "local" && id === "president" && lots && TR_QUOTE_STATES.indexOf(state) >= 0 && r && r.twfutures_live_source;
   if (!q || typeof q !== "object") return null;
-  if (q.source === "president") return { key: "tr.quote.pres", why: null, fallback: false };
+  // paused = 市場沒開(worker 在時段外重蓋快照):不是退路,照正常句
+  if (q.source === "president" || q.reason === "paused") return { key: "tr.quote.pres", why: null, fallback: false };
   const w = r.president_connect && r.president_connect.worker, why = String(q.reason || "");
   const k = w && w.status && w.status !== "ok" ? "tr.quote.why.noLogin"
     : TR_QUOTE_WHY[why] || (why.indexOf("not_ok") === 0 ? "tr.quote.why.notOk" : "tr.quote.why.noFile");
