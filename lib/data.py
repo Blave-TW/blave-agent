@@ -1831,6 +1831,79 @@ def fetch_db_kline(dataset, symbol, schema, start, end, headers):
     return _sanity_check_ohlc(df, f'{symbol} {schema} db_kline')
 
 
+# ── CME crypto futures positioning (CFTC Commitments of Traders) ─────────────
+
+_CME_COT_CONTRACTS = ('btc', 'micro_btc', 'eth', 'micro_eth', 'btc_combined', 'eth_combined')
+
+
+def _cot_frame(rows):
+    """API rows (nested tff / legacy groups) → one row per report date, flat columns
+    `{tff|legacy}_{group}_{field}`. A row with `legacy: null` leaves its legacy columns NaN."""
+    flat = []
+    for r in rows:
+        out = {'date': r['date'], 'open_interest': r.get('open_interest'),
+               'open_interest_change': r.get('open_interest_change'), 'price': r.get('price')}
+        for report in ('tff', 'legacy'):
+            for group, fields in (r.get(report) or {}).items():
+                for field, value in fields.items():
+                    out[f'{report}_{group}_{field}'] = value
+        if 'included' in r:
+            out['included'] = ','.join(r['included'])
+        flat.append(out)
+    if not flat:
+        return pd.DataFrame(columns=['open_interest', 'open_interest_change', 'price'])
+    df = pd.DataFrame(flat)
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.set_index('date').sort_index()
+    num = [c for c in df.columns if c != 'included']
+    df[num] = df[num].apply(pd.to_numeric, errors='coerce').astype(float)
+    return df
+
+
+def fetch_cme_cot(contract, start, end, headers):
+    """CME Bitcoin / Ether futures positioning from the weekly CFTC Commitments of Traders
+    report (GET /cme_cot/get_history), futures only. → DataFrame, one row per report date
+    (usually a Tuesday, a Monday when Tuesday is a US holiday — the positions are as of that day;
+    CFTC publishes them that week's Friday 15:30 New York, later after a Wed–Fri holiday or a
+    shutdown — FEED_TIMING['cme_cot'] knows those dates, so attach with
+    `align_feed(bars, cot, 'cme_cot', interval, bar_tz='UTC')`, never `join`).
+
+    contract: 'btc' (5 BTC/contract) / 'micro_btc' (0.1) / 'eth' (50 ETH) / 'micro_eth' (0.1) —
+      positions in CONTRACTS; 'btc_combined' / 'eth_combined' — standard + micro summed in
+      COINS (the usual choice). Micro contracts start 2021-05-04 (BTC) / 2021-12-14 (ETH): a
+      combined row before that is the standard contract alone, and that week's changes include
+      micro's whole first position — the `included` column says which contracts a row holds.
+    start: 'YYYY-MM-DD' (None = the API default, the last 365 days — pass an early date for
+      full history: BTC from 2018-04-10, ETH from 2021-04-06). end: None = latest.
+    columns: open_interest(_change); price = Binance spot BTCUSDT / ETHUSDT UTC close on the
+      report date (NaN when unavailable); tff_{dealer|asset_manager|leveraged_funds|
+      other_reportables|nonreportable}_{long|short|spread|net|long_change|short_change|
+      spread_change|net_change}; legacy_{non_commercial|commercial|nonreportable}_… (same
+      fields). `*_change` is CFTC's own week-over-week figure (CFTC skips weeks, so never
+      diff rows), `net` = long − short. nonreportable / commercial have no spread.
+    attrs: contract (name, coin, coin_per_contract or components / micro_since), units,
+      source (CFTC attribution — keep it next to any figure shown), price_source, stale
+      (True = CFTC unreachable, last stored copy served), source_updated.
+    No local cache: the whole history is one request."""
+    contract = str(contract).strip().lower()
+    if contract not in _CME_COT_CONTRACTS:
+        raise ValueError(f"fetch_cme_cot: contract must be one of {_CME_COT_CONTRACTS}")
+    params = {'contract': contract}
+    if start:
+        params['start_date'] = start
+    if end:
+        params['end_date'] = end
+    r = _retry_get(f'{BASE}/cme_cot/get_history', headers=headers, params=params, timeout=60)
+    data = r.json().get('data', {})
+    df = _cot_frame(data.get('rows', []))
+    df.attrs.update({k: data.get(k) for k in ('contract', 'units', 'source', 'price_source',
+                                              'stale', 'source_updated')})
+    if data.get('stale'):
+        print(f"  ⚠️  cme_cot: CFTC was unreachable — this is the last stored copy "
+              f"(source_updated {data.get('source_updated')}); the latest week may be missing")
+    return df
+
+
 # ── Taiwan stock data ─────────────────────────────────────────────────────────
 
 # ── Daily bars straight from the exchanges (free, no key) ─────────────────────
@@ -4212,6 +4285,64 @@ def fetch_twfutures_institutional(futures_id, start, end, headers):
     )
 
 
+_TWFUT_CARRY_IDENTITY = {'foreign': 'foreign', 'investment_trust': 'investment_trust',
+                         'dealer': 'dealer', '外資': 'foreign', '投信': 'investment_trust',
+                         '自營商': 'dealer'}
+_TWFUT_CARRY_NUMERIC = ['net_open_interest', 'net_open_interest_change', 'cost', 'mark_price',
+                        'txf_close', 'unrealized_pnl', 'realized_pnl', 'total_pnl']
+
+
+def fetch_twfutures_carrying_cost(identity, start, end, headers, scope='all'):
+    """三大法人台指期持倉成本 (GET /studio/market/twfutures/carrying_cost/<identity>) — Blave's
+    estimate of one institution's average cost on its TAIEX-futures position. → DataFrame
+    indexed by trading date (naive Taipei date):
+      net_open_interest         net OI (long − short) in TX-equivalent contracts
+                                (scope 'all': TX + MTX/4 + TMF/20; 'tx': 大台 only)
+      net_open_interest_change  vs the previous trading day
+      cost                      weighted-average cost (index points); NaN when flat
+      mark_price                TAIFEX's own valuation of the position (settlement-price based)
+      txf_close                 TX near-month day-session close
+      unrealized_pnl / realized_pnl / total_pnl   TWD (元). realized_pnl is cumulative since
+                                cycle_start and resets to 0 every settlement day
+      cycle_start               the settlement day that opened the current cycle (Timestamp)
+    identity: 'foreign' / 'investment_trust' / 'dealer' (外資 / 投信 / 自營商 accepted).
+    start None = full history (from 2023-10-18 — TAIFEX keeps ~3 years); end None = latest.
+    Daily after TAIFEX publishes (Blave jobs 15:40 / 17:40 Taipei) — attach to intraday bars
+    with join_tw_flow(..., 'carrying_cost', id=identity) or align_feed(...,
+    'twfutures_carrying_cost', ...). attrs['stale'] = True: the server's copy is behind the
+    last published day (the newest row may be missing). Method and limits:
+    references/twfutures.md › 法人持倉成本. No local cache: the whole history is one request."""
+    ident = _TWFUT_CARRY_IDENTITY.get(str(identity).strip().lower(),
+                                      _TWFUT_CARRY_IDENTITY.get(str(identity).strip()))
+    if ident is None:
+        raise ValueError("fetch_twfutures_carrying_cost: identity must be 'foreign', "
+                         "'investment_trust' or 'dealer'")
+    if scope not in ('all', 'tx'):
+        raise ValueError("fetch_twfutures_carrying_cost: scope must be 'all' or 'tx'")
+    params = {'scope': scope}
+    if start:
+        params['start'] = start
+    if end:
+        params['end'] = end
+    r = _retry_get(f'{BASE}/studio/market/twfutures/carrying_cost/{ident}',
+                   headers=headers, params=params, timeout=60)
+    body = r.json()
+    df = pd.DataFrame(body.get('data', []))
+    if df.empty:
+        df = pd.DataFrame(columns=_TWFUT_CARRY_NUMERIC + ['cycle_start'])
+    else:
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date').sort_index()
+        df[_TWFUT_CARRY_NUMERIC] = df[_TWFUT_CARRY_NUMERIC].apply(pd.to_numeric, errors='coerce').astype(float)
+        df['cycle_start'] = pd.to_datetime(df['cycle_start'])
+        df = df[_TWFUT_CARRY_NUMERIC + ['cycle_start']]
+    df.attrs.update({'identity': ident, 'scope': scope, 'stale': bool(body.get('stale'))})
+    if body.get('stale'):
+        print(f"  ⚠️  twfutures_carrying_cost: the server's copy is behind TAIFEX's last "
+              f"published day — the newest row may be missing")
+    return df
+
+
 # ── Market-wide series straight from TWSE / TAIFEX (free, no key) ────────────
 # The key-free twin of fetch_twmarket_* and fetch_twfutures_institutional, for the two TAIEX
 # report templates when this turn has no Blave data access. Same columns and units as the
@@ -5545,6 +5676,64 @@ def _quarterly_report_available_finance(stamps):
     return _quarterly_report_available(stamps, q2_deadline=(8, 31))
 
 
+# CFTC COT releases moved by a government shutdown: report date → publication date (15:30 ET).
+# 2018-19: CFTC Release 7864-19 — the 2018-12-24 report on 2019-02-01, then one report every
+# Tuesday and Friday until current (the 2019-03-05 report came out on its normal Friday, 03-08).
+# 2025: CFTC Release 9138-25, revised schedule. Some 2025 reports actually came out earlier than
+# this schedule; the later date is kept.
+_COT_SHUTDOWN_RELEASES = {
+    '2018-12-24': '2019-02-01', '2018-12-31': '2019-02-05', '2019-01-08': '2019-02-08',
+    '2019-01-15': '2019-02-12', '2019-01-22': '2019-02-15', '2019-01-29': '2019-02-19',
+    '2019-02-05': '2019-02-22', '2019-02-12': '2019-02-26', '2019-02-19': '2019-03-01',
+    '2019-02-26': '2019-03-05',
+    '2025-09-30': '2025-11-19', '2025-10-07': '2025-11-21', '2025-10-14': '2025-11-25',
+    '2025-10-21': '2025-12-02', '2025-10-28': '2025-12-05', '2025-11-04': '2025-12-09',
+    '2025-11-10': '2025-12-12', '2025-11-18': '2025-12-16', '2025-11-25': '2025-12-19',
+    '2025-12-02': '2025-12-23', '2025-12-09': '2025-12-30', '2025-12-16': '2026-01-06',
+    '2025-12-23': '2026-01-09', '2025-12-30': '2026-01-13', '2026-01-06': '2026-01-16',
+    '2026-01-13': '2026-01-20', '2026-01-20': '2026-01-23',
+}
+# Federal offices closed by executive order / national day of mourning (not in the holiday calendar).
+_US_FED_CLOSURES = ('2018-12-05', '2018-12-24', '2019-12-24', '2020-12-24', '2024-12-24',
+                    '2025-01-09', '2025-12-24', '2025-12-26')
+
+
+def _us_fed_closed_days(start, end):
+    from pandas.tseries.holiday import USFederalHolidayCalendar
+    days = set(USFederalHolidayCalendar().holidays(start, end).normalize())
+    for y in range(start.year, end.year + 1):   # Juneteenth, missing from older pandas calendars
+        if y >= 2021:
+            j = pd.Timestamp(y, 6, 19)
+            days.add(j - pd.Timedelta(days=1) if j.dayofweek == 5 else
+                     j + pd.Timedelta(days=1) if j.dayofweek == 6 else j)
+    days.update(pd.Timestamp(d) for d in _US_FED_CLOSURES)
+    return days
+
+
+def _cot_available(stamps):
+    """COT row (stamped with its report date, normally a Tuesday) → its publication time, New York."""
+    tz = stamps.tz
+    days = pd.DatetimeIndex(stamps.tz_localize(None) if tz is not None else stamps).normalize()
+    if len(days) == 0:
+        return stamps
+    closed = _us_fed_closed_days(days.min() - pd.Timedelta(days=7), days.max() + pd.Timedelta(days=21))
+    out = []
+    for d in days:
+        moved = _COT_SHUTDOWN_RELEASES.get(d.strftime('%Y-%m-%d'))
+        if moved:
+            out.append(pd.Timestamp(moved))
+            continue
+        friday = d + pd.Timedelta(days=(4 - d.dayofweek) % 7)
+        release = friday
+        if any(friday - pd.Timedelta(days=k) in closed for k in range(3)):   # Wed–Fri
+            release = friday + pd.Timedelta(days=3)
+            while release in closed or release.dayofweek >= 5:
+                release += pd.Timedelta(days=1)
+        out.append(release)
+    avail = pd.DatetimeIndex(out) + pd.Timedelta(hours=16, minutes=30)
+    return avail.tz_localize(tz) if tz is not None else avail
+
+
 def _weekly_shareholding_available(stamps):
     return stamps.normalize() + pd.Timedelta(days=3, hours=8)
 
@@ -5621,6 +5810,19 @@ FEED_TIMING = {
     'twfutures_pcr': _tw_daily(
         _next_day_start, "TAIFEX pcRatio page, fetched on request (+ api cache 5 min); TAIFEX publishes "
         "no time for it — unconfirmed, next day 00:00 kept"),
+    'twfutures_carrying_cost': _tw_daily(
+        _same_day_at(17, 50), "Blave's carrying_cost_backfill job writes the day at 15:40 Taipei with a "
+        "17:40 retry (api scripts/deploy/apijob@tw.twfutures.carrying_cost_backfill.timer; TAIFEX "
+        "publishes ~15:00); + api cache 5 min + the job's own run time → the retry's 17:50 kept"),
+    'cme_cot': {'tz': _US_TZ, 'period': pd.Timedelta(days=7), 'available': _cot_available,
+                'calendar': None, 'fresh': 'warn',
+                'basis': "CFTC: 'generally published each Friday at 3:30 pm Eastern Time (US), using the "
+                         "data from the immediately preceding Tuesday' (cftc.gov/MarketReports/"
+                         "CommitmentsofTraders) → the Friday of the report date's week (a Monday report "
+                         "date when Tuesday is a holiday); a federal holiday / closure Wed–Fri of that "
+                         "week → the next business day (2026 schedule: every such week moves to Monday); "
+                         "shutdown catch-ups from _COT_SHUTDOWN_RELEASES; + api cache 1 h (crypto/cme_cot "
+                         "_CACHE_TTL). Live only warns, the previous report is what was known"},
     'twstock_shareholding': {'tz': 'Asia/Taipei', 'period': pd.Timedelta(days=7),
                              'available': _weekly_shareholding_available, 'calendar': None,
                              'fresh': 'warn', 'basis': "TDCC weekly 集保戶股權分散表 (data = the week's "
@@ -5907,6 +6109,7 @@ TW_FLOWS = {
     'market_institutional':  ('fetch_twmarket_institutional',  'twmarket_institutional',  False, 'mkt_'),
     'margin':                ('fetch_twmarket_margin',         'twmarket_margin',         False, ''),
     'pcr':                   ('fetch_twfutures_pcr',           'twfutures_pcr',           False, ''),
+    'carrying_cost':         ('fetch_twfutures_carrying_cost', 'twfutures_carrying_cost', True, 'cc_'),
     'per':                   ('fetch_twstock_per',             'twstock_per',             True, ''),
     'broker_total':          ('fetch_twstock_all_broker_net',  'twstock_all_broker_net',  True, 'broker_'),
     'broker_branch':         ('fetch_twstock_branch_daily_net', 'twstock_branch_daily_net', True, 'br_'),
@@ -5924,6 +6127,7 @@ def join_tw_flow(df, kind, interval, start, end, headers, id=None, prefix=None):
     market_institutional   —               foreign, investment_trust, dealer, total (元)
     margin                 —               margin_balance(_prev), margin_balance_value, short_balance(_prev)
     pcr                    —               pcr
+    carrying_cost          'foreign' / 'investment_trust' / 'dealer'   net_open_interest(_change), cost, mark_price, txf_close, {unrealized|realized|total}_pnl, cycle_start
     per                    stock id        dividend_yield, PER, PBR
     broker_total           stock id        net (all branches summed)
     broker_branch          stock id        one column per branch id

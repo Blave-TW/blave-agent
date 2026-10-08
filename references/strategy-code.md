@@ -512,6 +512,7 @@ row reaches intraday bars from the first bar closing after 18:05; on `'1d'` bars
 | `market_institutional` 大盤三大法人金額 | — | `mkt_foreign`, `mkt_investment_trust`, `mkt_dealer`, `mkt_total` |
 | `margin` 大盤融資融券 | — | `margin_balance`, `margin_balance_prev`, `margin_balance_value`, `short_balance`, `short_balance_prev` |
 | `pcr` 選擇權 PCR | — | `pcr` |
+| `carrying_cost` 法人台指期持倉成本 | `'foreign'` / `'investment_trust'` / `'dealer'` | `cc_net_open_interest`, `cc_net_open_interest_change`, `cc_cost`, `cc_mark_price`, `cc_txf_close`, `cc_unrealized_pnl`, `cc_realized_pnl`, `cc_total_pnl`, `cc_cycle_start` |
 | `per` 本益比 | stock id | `dividend_yield`, `PER`, `PBR` |
 | `broker_total` 全部分點合計 | stock id | `broker_net` |
 | `broker_branch` 各分點 | stock id | `br_<branch id>` (one column per branch) |
@@ -570,6 +571,8 @@ is kept on purpose — never tighten one from memory:
 | `twmarket_turnover` | D+1 00:00 (unconfirmed) | TWSE publishes no time for FMTQIK |
 | `twfutures_institutional` | D 18:05 | FinMind 18:00 (TAIFEX ~15:00); + 5 min |
 | `twfutures_pcr` | D+1 00:00 (unconfirmed) | TAIFEX publishes no time for pcRatio |
+| `twfutures_carrying_cost` | D 17:50 | Blave's job writes the day at 15:40 with a 17:40 retry (TAIFEX ~15:00); + 5 min cache + run time |
+| `cme_cot` | the Friday of the report date's week, 16:30 **New York**; a federal holiday / closure Wed–Fri → the next business day; shutdown catch-ups (2018-12-24 … 2019-02-26, 2025-09-30 … 2026-01-20) → CFTC's published catch-up dates | CFTC "generally published each Friday at 3:30 pm Eastern" (report date normally Tuesday, Monday when Tuesday is a holiday); 2026 schedule moves every Wed–Fri holiday week to Monday; catch-ups: CFTC Releases 7864-19 and 9138-25; + 1 h api cache. Weekly → live only warns |
 | `twstock_all_broker_net` / `branch_daily_net` / `trader_flows` / `broker_net` | D+1 00:00 | TWSE 買賣日報表 16:00; FinMind 21:00; Blave's store is written only by its job at 21:30 with a 23:30 retry (one run observed: 2026-09-23, day written 21:31) → 00:00 covers the retry; `broker_net` is sparse → no freshness check |
 | `twstock_monthly_revenue` (+`_batch`) | the day after the 10th, 08:00 (a weekend 10th → the day after Monday) | 證券交易法 §36; FinMind weekdays 18:00; api UTC-day cache; stamp 04-01 = March. FSC may extend a holiday month (特殊適用範圍辦法 §4-1) |
 | `twstock_monthly_revenue_insurance` | as above with the 15th, from 2026 revenue | 特殊適用範圍辦法 §3(5) |
@@ -585,7 +588,7 @@ Sources: TWSE Data E-Shop product specs (產製時間) https://eshop.twse.com.tw
 FinMind update times https://finmind.github.io/tutor/TaiwanMarket/Chip/ (and /Technical/,
 /Derivative/, /Fundamental/) · 證券交易法 §36 https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=G0400001&flno=36 ·
 公開發行公司財務報告及營運情形公告申報特殊適用範圍辦法 https://law.fsc.gov.tw/LawContent.aspx?id=GL000593 ·
-TDCC 集保戶股權分散表 https://www.tdcc.com.tw/portal/zh/smWeb/qryStock · pages checked that publish no time: TWSE FMTQIK https://www.twse.com.tw/zh/trading/historical/fmtqik.html, TAIFEX PCR https://www.taifex.com.tw/cht/3/pcRatio.
+TDCC 集保戶股權分散表 https://www.tdcc.com.tw/portal/zh/smWeb/qryStock · CFTC COT release time https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm · pages checked that publish no time: TWSE FMTQIK https://www.twse.com.tw/zh/trading/historical/fmtqik.html, TAIFEX PCR https://www.taifex.com.tw/cht/3/pcRatio.
 
 Filings (月營收, 財報) carry no per-company filing date in the data, so the legal deadline stands in: an early filer's value is used later than it was public (conservative), a filer later than the deadline is anticipated in the backtest by its lateness — live only warns about that one.
 
