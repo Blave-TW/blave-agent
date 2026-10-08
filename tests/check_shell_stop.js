@@ -50,7 +50,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   kills = 0; M.newTurnStop(); M.stopTurn(); M.finalized = true; await wait(200);
   ok("收到 done 之後(寫歷史、壓縮摘要)不殺", kills === 0);
   ok("接線:stdout 每一段都記時間;done 那則記下已收尾", /child\.stdout\.on\("data", \(d\) => \{\n\s*turnLastOut = Date\.now\(\);/.test(mainSrc)
-    && /if \(c && c\.type === "done"\) turnFinalized = true;/.test(mainSrc) && /turnFinalized = false;\n\}/.test(mainSrc));
+    && /if \(c && c\.type === "done"\) \{ turnFinalized = true;/.test(mainSrc) && /turnFinalized = false;\n\}/.test(mainSrc));
   ok("旗標路徑經環境變數交給 runtime(不上 argv)", /\.\.\.\(turnStopFile \? \{ BLAVE_TURN_INTERRUPT_FILE: turnStopFile \} : \{\}\),/.test(mainSrc));
   ok("送出時先換新旗標(turnStarting 立起之後、任何 await 之前)", /turnStarting = true;\n\s*newTurnStop\(\);\n/.test(mainSrc));
   ok("stop-turn IPC 只收自家頁面(走 handle)", /handle\("stop-turn", \(\) => stopTurn\(\), false\);/.test(mainSrc));

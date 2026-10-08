@@ -2012,6 +2012,10 @@ const CARD_TAG = /<blave-card:([a-z-]+)\/>/g;
    runtime 沒走到 finalize 的回合(出錯、被殺)草稿會原樣升格——這裡再剝一次,同 runtime _SUGGEST_BLOCK_RE / _SUGGEST_OPEN_TAIL_RE */
 const SUG_BLOCK = /[ \t]*<suggest>[\s\S]*?<\/suggest>[ \t]*/g;
 const SUG_OPEN_TAIL = /[ \t]*<suggest>(?:(?!<\/suggest>)[\s\S])*$/;
+/* 「等你回覆」標記 <await/>(references/turn-events.md,三種寫法):runtime finalize 剝掉、done 帶 awaiting(主行程存);
+   串流中的 delta 與沒走到 finalize 的回合在這裡再剝一次,半截的(`<awa`)比照 `<sug` 先藏 */
+const AWAIT_TAG = /[ \t]*<await\s*\/?>(?:<\/await>)?[ \t]*/g;
+const LIVE_TAIL_TAGS = ["<suggest>", "<await/>", "<await />", "</await>"];
 /* 純函式(tests/check_shell_paint.js 直接測它):原文 → { cards, blocks }。``` 圍欄裡的東西一個字都不動——
    `f(**a, **b)`、`2**3` 被當成粗體吃掉星號的話,用戶照畫面抄策略碼會抄錯。`live` = 還在串流:尾端半截的標記
    先藏起來;回合結束後用 live=false 重畫一次,真的以 `<` 結尾的回覆才不會被永久吃掉。 */
@@ -2019,10 +2023,11 @@ function aiParts(raw, live) {
   const cards = [];
   let text = String(raw).replace(CARD_TAG, (_m, name) => { cards.push(name); return ""; });
   if (text.indexOf("<suggest>") >= 0) text = text.replace(SUG_BLOCK, "").replace(SUG_OPEN_TAIL, "").replace(/\s+$/, "");
+  if (text.indexOf("<await") >= 0) text = text.replace(AWAIT_TAG, "").replace(/\s+$/, "");
   if (live) {
     const lt = text.lastIndexOf("<"), tail = lt >= 0 ? text.slice(lt) : "";
-    // <suggest> 還沒湊齊(`<sug`)也先藏:湊齊後 SUG_OPEN_TAIL 才剝得到,中間那一兩拍會閃出字面
-    if (lt >= 0 && tail.length <= 40 && !tail.includes(">") && ("<blave-card:".startsWith(tail.slice(0, 12)) || "<suggest>".startsWith(tail))) text = text.slice(0, lt);
+    // <suggest> / <await/> 還沒湊齊(`<sug`、`<awa`)也先藏:湊齊後才剝得到,中間那一兩拍會閃出字面
+    if (lt >= 0 && tail.length <= 40 && !tail.includes(">") && ("<blave-card:".startsWith(tail.slice(0, 12)) || LIVE_TAIL_TAGS.some((x) => x.startsWith(tail)))) text = text.slice(0, lt);
   }
   if (cards.length) text = text.replace(/\s+$/, "");
   return { cards, blocks: mdBlocks(text, 0) };
