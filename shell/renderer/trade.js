@@ -450,9 +450,18 @@ const TR_TXF = { price: null, at: 0, busy: false }, TR_TXF_MS = 300000, TR_TXF_R
 function trTxfPrice() { return TR_TXF.price; }
 // 口數 → 參考金額(TWD;同網頁 txfRefMoney):0 口 = 0;沒有報價 = null,呼叫端畫「—」,不拿口數硬乘出一個像金額的數
 function trTxfRefMoney(spec, lots, price) { if (!(lots > 0)) return 0; return typeof price === "number" && price > 0 ? lots * spec.cv * price : null; }
-/* 下單紀錄這一筆是不是口數單(同網頁下單紀錄 / reconciler is_lot_based):asset_spec 是 futures_contracts 或交易所是群益——
-   這時 signed_diff 是口數,不是錢 */
-function trOrderLots(o) { return !!o && ((!!o.asset_spec && o.asset_spec.type === "futures_contracts") || o.exchange === "capital"); }
+/* 下單紀錄這一筆是不是口數單(同網頁下單紀錄 / reconciler is_lot_based):asset_spec 是 futures_contracts、交易所是群益／統一,
+   或標的本身是台指期(TXF／MXF／TMF:舊的平倉列沒有 asset_spec,看標的不看綁哪家)——這時 signed_diff 是口數,不是錢 */
+function trOrderLots(o) {
+  return !!o && ((!!o.asset_spec && o.asset_spec.type === "futures_contracts") || o.exchange === "capital" || o.exchange === "president"
+    || !!trTxfSpec(trCapitalCanon(o.symbol)));
+}
+/* 下單紀錄與總覽事件列的下單:只列目前連著的交易所那些——這台電腦綁了統一之後,之前模擬交易的單不混進同一張表。
+   沒寫交易所的舊列照列;沒綁任何交易所時沒有「目前」可言,全列 */
+function trOrdersShown(r) {
+  const orders = (Array.isArray(r && r.orders) ? r.orders : []).filter((o) => o && typeof o === "object"), ids = trVenueIds(r || {});
+  return ids.length ? orders.filter((o) => !o.exchange || ids.includes(String(o.exchange))) : orders;
+}
 // 群益解析後的代碼(MTX2608 / TX2608 / TM2608)→ 台指期代號,查點值用(同網頁 capitalCanon;MTX 要排在 TX 前面)
 const TR_CAPITAL_PREFIX = [["MTX", "MXF"], ["TX", "TXF"], ["TM", "TMF"]];
 function trCapitalCanon(sym) { const s = trCanonSym(String(sym || "").replace(/@spot$/i, "")), p = TR_CAPITAL_PREFIX.find((x) => s.indexOf(x[0]) === 0); return p ? p[1] : s; }
@@ -2660,7 +2669,7 @@ function trPaintMargin(box, m, ccy, twd) {
 }
 function trPaintHist() {
   const box = $("tr-hist"), r = trReport() || {};
-  const orders = (Array.isArray(r.orders) ? r.orders : []).slice().reverse();
+  const orders = trOrdersShown(r).slice().reverse();
   if (!trShould("hist", box, [orders, trUnit(), TR.list.map((x) => x.displayName)])) return;
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.recentOrders"))));
@@ -3128,8 +3137,7 @@ function trOvEvents(r) {
   frag.appendChild(trSec(trEl("span", "label", t("tr.ov.events"))));
   const from = Date.now() - TR.ov.days * 86400000, rows = [];
   const push = (ms, build) => { if (ms != null && ms >= from) rows.push({ ms, build }); };
-  (Array.isArray(r.orders) ? r.orders : []).forEach((o) => {
-    if (!o || typeof o !== "object") return;
+  trOrdersShown(r).forEach((o) => {
     push(trMs(o.ts), (body) => {
       const sell = o.action === "SELL", sym = String(o.symbol || "");
       body.appendChild(trEl("span", sell ? "sell" : "buy", sell ? t("tr.sell") : t("tr.buy")));

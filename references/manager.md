@@ -761,7 +761,10 @@ via `lib/venue_wiring._paper_contract_order`): round-half-up to a whole lot, und
 places nothing, reduce legs cap at the held lots, PnL = lots × `contract_value` × Δprice, and the
 account row comes back with `unit: "contracts"` and `size` in lots — so a paper TXF position
 never drifts with the index, and a removed strategy's close-on-removal is judged in lots in both
-account-read and `self_ledger` mode (the book row inherits the venue read's unit). Leverage on
+account-read and `self_ledger` mode (the book row inherits the venue read's unit). A hand-wired
+venue (群益, 統一) reports no unit: there the book row takes the book's venue instead, so
+`native_units` judges the same close-on-removal in lots by trait and it goes out as the venue's
+close leg (verified on 統一 2026-10-08, 1 lot TMF; gate: `check_capital_ledger_paths` Z). Leverage on
 paper counts lots × `margin` (TAIFEX initial margin) separately from notional positions, and at
 1× — the margin must be covered by equity, as at a broker (notional keeps its 10×).
 `contract_value` and `margin` must be in the spec (the platform writes TXF/MXF/TMF specs with
