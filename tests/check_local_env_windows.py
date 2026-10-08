@@ -105,15 +105,22 @@ check(not any(k.startswith("BLAVE_DATA_ACCESS") for k in child()), "non-object J
 # the bug itself (0.1.18 B): a signed-out desktop's live tick must take lib.data's TAIFEX path for TXF 1d —
 # fetch_twfutures_ohlcv's gate is `tw_market_public_allowed() and _no_data_access(headers)`, both read from the env
 sys.path.insert(0, ROOT)
-import lib.data as D  # noqa: E402
+try:
+    import lib.data as D  # noqa: E402
+except ImportError as e:   # the CI gate runner has no requests / pandas / pyarrow; the full local suite covers this block
+    D = None
+    print(f"skip lib.data assertions (lib.data needs third-party packages not on this runner: {e})")
 with open(DA, "w") as f:
     json.dump({"BLAVE_DATA_ACCESS": "0", "BLAVE_DATA_ACCESS_WHY": "signed_out"}, f)
 with mock.patch.dict(os.environ, dict(FAKE, BLAVE_AGENT_LOCAL="1"), clear=True), mock.patch.object(os, "name", "posix"):
     tick_env = cl._strategy_subprocess_env()
-with mock.patch.dict(os.environ, tick_env, clear=True):
-    check(D.tw_market_public_allowed() and D._no_data_access({}), "signed-out live tick env → TXF 1d takes the key-free TAIFEX path (no Blave request)")
-with mock.patch.dict(os.environ, {k: v for k, v in tick_env.items() if k not in ("BLAVE_AGENT_LOCAL", "BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY")}, clear=True):
-    check(not (D.tw_market_public_allowed() and D._no_data_access({})), "(mutation) the pre-fix tick env — neither flag — would send that tick to Blave and 422")
+check(tick_env.get("BLAVE_AGENT_LOCAL") == "1" and tick_env.get("BLAVE_DATA_ACCESS") == "0" and tick_env.get("BLAVE_DATA_ACCESS_WHY") == "signed_out",
+      "signed-out live tick env carries BLAVE_AGENT_LOCAL=1 + BLAVE_DATA_ACCESS=0 + why (what lib.data's TAIFEX gate reads)")
+if D is not None:
+    with mock.patch.dict(os.environ, tick_env, clear=True):
+        check(D.tw_market_public_allowed() and D._no_data_access({}), "signed-out live tick env → TXF 1d takes the key-free TAIFEX path (no Blave request)")
+    with mock.patch.dict(os.environ, {k: v for k, v in tick_env.items() if k not in ("BLAVE_AGENT_LOCAL", "BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY")}, clear=True):
+        check(not (D.tw_market_public_allowed() and D._no_data_access({})), "(mutation) the pre-fix tick env — neither flag — would send that tick to Blave and 422")
 os.remove(DA)
 # contract with the writer: every value shell/main.js can put in the file is one the reader accepts
 MAIN = open(os.path.join(ROOT, "shell", "main.js"), encoding="utf-8").read()
