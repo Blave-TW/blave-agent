@@ -965,6 +965,30 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("§8 表:running / 可能仍在下單(C)/ 一般 noaccount / 有金額 → 照現行(全 false);B0 = 解除暫停",
       !zv({ reconciler: { alive: true } }).off && !zv({ reconciler: { alive: true, stopped: { reason: "machine_restart", at: 1, gated: false } } }).off
       && !trZView("noaccount", Zr({ venues: {} })).off && !trZView("dead", Zr({ config: { amounts: { a: 5 } } })).off && trZView("noaccount", Zr({ venues: {}, reconciler: Rst })).release);
+    { // 0.1.19(Wei 10-08):金額全 0 但帳本上還有機器人的部位 → 主鈕改成可按的「啟動下單」(走既有 resume),不出「解除暫停」,原因行換成帳本那句。
+      // 死角是對帳器沒在跑(dead / 重開停著 / 沒有自己下單的策略):HALT 只擋新倉,對帳器活著第一輪就會照金額 0 平掉
+      const led = { TXF: { side: "long", size: 2, unit: "contracts" } }, ledC = { BTCUSDT: { side: "short", size: 300, qty: 0.004 } };
+      const B = (o, l) => zv({ last_reconcile: { ts: 1, ledger: l === undefined ? led : l, actual: {} }, ...o });
+      const on = (v) => J(v) === J({ off: false, release: false, reason: "tr.startOnBook", book: v.book }) && Array.isArray(v.book) && v.book.length > 0;
+      ok("0.1.19 帳本非空:dead / HALT / 重開停止 / Blave 重開 / 沒有自己下單的策略 → 啟動下單可按、沒有解除暫停、原因行 tr.startOnBook",
+        on(B({})) && on(B({ halt: { halted: true, source: "web" } })) && on(B({ reconciler: Rst })) && on(B({ reconciler: Rst, selfOrdering: false }))
+        && on(B({ reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } })) && on(B({ halt: { halted: true, source: "reconciler" }, reconciler: { alive: true } }))
+        && on(B({}, ledC)) && on(B({ halt: { halted: true, source: "web" } }, { "ETHUSDT@spot": { side: "long", size: 50 } })));
+      ok("0.1.19 帳本空 / 只有 size 0 / 沒有快照 / 沒有 ledger 欄位:照舊停用(拿掉這一刀會紅)",
+        J(B({}, {})) === J({ off: true, release: false, reason: "tr.startOffNoAmt" }) && J(B({}, { TXF: { side: "long", size: 0 } })) === J({ off: true, release: false, reason: "tr.startOffNoAmt" })
+        && J(B({}, null)) === J({ off: true, release: false, reason: "tr.startOffNoAmt" }) && J(zv({ last_reconcile: { ts: 1, actual: { TXF: { side: "long", size: 2 } } } })) === J({ off: true, release: false, reason: "tr.startOffNoAmt" })
+        && J(B({ halt: { halted: true, source: "web" } }, {})) === J({ off: true, release: true, reason: "tr.startOffNoAmtRelease" }));
+      ok("0.1.19 帳本非空不碰其他態:running / C / B0 / 有金額照現行", !B({ reconciler: { alive: true } }).book && !B({ reconciler: { alive: true, stopped: { reason: "machine_restart", at: 1, gated: false } } }).book
+        && J(trZView("noaccount", Zr({ venues: {}, reconciler: Rst, last_reconcile: { ledger: led } }))) === J({ off: true, release: true, reason: null, noStart: true })
+        && !trZView("dead", Zr({ config: { amounts: { a: 5 } }, last_reconcile: { ledger: led } })).book);
+      ok("0.1.19 trBookRows:size ≠ 0 的每一列(含現貨)、口數列標 lots、方向帶正負號", J(trBookRows({ last_reconcile: { ledger: { ...led, ...ledC, "ETHUSDT@spot": { side: "long", size: 50 }, X: { side: "long", size: 0 } } } }))
+        === J([{ sym: "TXF", v: 2, lots: true }, { sym: "BTCUSDT", v: -300, lots: false }, { sym: "ETHUSDT@spot", v: 50, lots: false }]) && J(trBookRows({})) === "[]" && J(trBookRows({ last_reconcile: null })) === "[]");
+      // 原因行那一句:兩語都有、帶 {n}、講「先平掉」;口數 venue 用口、加密用數量(trBookQty 在 DOM 側,鎖原文)
+      const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+      ok("0.1.19 tr.startOnBook 兩語都有(po2js 產物)、帶 {n}、講啟動後先平掉", /"tr\.startOnBook": "帳本上還有 \{n\} 的部位；啟動後下單程式會先照目前金額（0）平掉。"/.test(strings)
+        && /"tr\.startOnBook": "The ledger still holds \{n\} in positions\. Once started, the order program closes them first, following the current amounts \(0\)\."/.test(strings));
+      ok("0.1.19 trBookQty:口數列 Σ|口| + 口;加密 Σ|成本| + 帳戶幣", /const lots = rows\.filter\(\(x\) => x\.lots\), sum = \(a\) => a\.reduce\(\(s, x\) => s \+ Math\.abs\(x\.v\), 0\);\n\s*if \(lots\.length\) \{ const n = sum\(lots\); return trLotsFmt\(n\) \+ " " \+ t\(trLotsKey\(Math\.round\(n\), "tr\.lotsUnit", "tr\.lotUnit"\)\); \}\n\s*return trWithUnit\(trFmt\(sum\(rows\)\)\);/.test(src)
+        && /const text = t\(key, vars\), word = t\("tr\.tab\.pos"\)/.test(src) && /p\.dataset\.key = key \+ "\|" \+ LANG \+ \(vars \? "\|" \+ JSON\.stringify\(vars\) : ""\);/.test(src)); }
     // 解除暫停的確認框
     const RK = (o) => trReleaseKind(Zr({ reconciler: Rst, ...o }));
     const act = (m) => ({ BTCUSDT: { side: "long", size: m, exchange: "binance" }, "ETHUSDT@spot": { side: "long", size: 5, exchange: "binance" } });
@@ -1013,7 +1037,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /: k\.rows \? t\("tr\.relX2Title"\) : t\("tr\.relX2TitleN"\)/.test(rel)
       && /extra\.appendChild\(trEl\("p", "cf-note", t\("tr\.relSelfCode"\)\)\);/.test(rel) && /k\.rows\.length > 6 \? k\.rows\.slice\(0, 5\) : k\.rows/.test(rel));
     ok("§8 接線:主鈕 disabled 帶 zv.off、aria-describedby 指原因行、title 不讓「連不上」蓋掉原因;原因行與解除暫停鈕每次畫", /b\.disabled = flying \|\| zv\.off \|\| \(!busy && !usable\);/.test(head)
-      && /if \(zv\.off\) b\.setAttribute\("aria-describedby", "tr-noamt"\);/.test(head) && /b\.title = zv\.off \? "" :/.test(head) && /trPaintNoAmt\(pend \|\| zv\.reason\); trPaintGoRel\(zv\.release, zv\.noStart, zv\.close\);/.test(head)
+      && /if \(zv\.off \|\| zv\.book\) b\.setAttribute\("aria-describedby", "tr-noamt"\);/.test(head) && /b\.title = zv\.off \? "" :/.test(head) && /trPaintNoAmt\(pend \|\| zv\.reason, zv\.book \? \{ n: trBookQty\(zv\.book\) \} : null\); trPaintGoRel\(zv\.release, zv\.noStart, zv\.close\);/.test(head)
       && /if \(trZView\(envHeadState\(TR\.st, Date\.now\(\)\), r\)\.off\) return;/.test(fnS("trAskStart")));
     ok("§8 / §13-1 解除暫停鈕:B0 實心、其餘描邊;插在主鈕左邊(主鈕守住最右);在途「解除中…」停用、通道不通也停用;停用時焦點先交給標題、放開再還回來;原因行的「部位」是切分頁的連結",
       /u\.classList\.toggle\("btn-fill", !!solid\); u\.classList\.toggle\("btn-out", !solid\);/.test(gorel) && /\$\("tr-act"\)\.insertBefore\(u, \$\("tr-go"\)\)/.test(gorel)
@@ -1158,7 +1182,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("§2 判定:雲端 + 有 sent + 沒失敗;本機不算、失敗不算(失敗時原因行要講失敗)",
       AP({ env: "cloud", sent: { a: 1 }, save: "sent" }) === true && AP({ env: "cloud", sent: { a: 1 }, save: "failed" }) === false
       && AP({ env: "local", sent: { a: 1 } }) === false && AP({ env: "cloud", sent: null }) === false);
-    ok("§2 aria-describedby 照舊指到原因行(換句之後自動就對)", /if \(zv\.off\) b\.setAttribute\("aria-describedby", "tr-noamt"\);/.test(fnS("trPaintHead")));
+    ok("§2 aria-describedby 照舊指到原因行(換句之後自動就對)", /if \(zv\.off \|\| zv\.book\) b\.setAttribute\("aria-describedby", "tr-noamt"\);/.test(fnS("trPaintHead")));
     const po2 = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     const zhOf = (k) => (po2("zh").match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^\n]*)"')) || [])[1] || "";
     ok("§2 常態那一句:講在等誰、會自己好,**不講秒數**,也不叫人再去設定金額",

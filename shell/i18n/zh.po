@@ -3325,6 +3325,9 @@ msgstr "平倉並解除暫停"
 msgid "tr.startOffNoAmtReleaseClose"
 msgstr "還沒有策略設定金額，沒有東西可以啟動。只想讓你自己的策略程式恢復下單，按「平倉並解除暫停」。"
 
+msgid "tr.startOnBook"
+msgstr "帳本上還有 {n} 的部位；啟動後下單程式會先照目前金額（0）平掉。"
+
 msgid "tr.release"
 msgstr "解除暫停"
 

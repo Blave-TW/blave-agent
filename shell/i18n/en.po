@@ -3320,6 +3320,9 @@ msgstr "Close positions and release"
 msgid "tr.startOffNoAmtReleaseClose"
 msgstr "No strategy has an amount, so there's nothing to start. To let your own strategy code place orders again, press Close positions and release."
 
+msgid "tr.startOnBook"
+msgstr "The ledger still holds {n} in positions. Once started, the order program closes them first, following the current amounts (0)."
+
 msgid "tr.release"
 msgstr "Release pause"
 
