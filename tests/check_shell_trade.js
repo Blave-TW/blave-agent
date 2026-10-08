@@ -1020,7 +1020,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /u\.textContent = rel \? t\("tr\.releasing"\) : close \? t\("tr\.releaseClose"\) : t\("tr\.release"\);/.test(gorel) && /const off = !!TR\.pending \|\| !up;/.test(gorel)
       && /if \(off && document\.activeElement === u\) \{ \$\("tr-h"\)\.focus\(\); TR\.relParked = true; \}/.test(gorel)
       && /if \(!off && TR\.relParked\) \{ TR\.relParked = false;[^\n]*u\.focus\(\); \}/.test(gorel)
-      && /word = t\("tr\.tab\.pos"\)/.test(noamt) && /trSetTab\("pos", true\)/.test(noamt) && /\$\("tr-desc"\)\.after\(p\)/.test(noamt));
+      && /word = t\("tr\.tab\.pos"\)/.test(noamt) && /trSetTab\("pos", true\)/.test(noamt) && /\$\("tr-quote"\)\.after\(p\)/.test(noamt));   // 行情句之後(設計 spec desktop-live-source-line §2)
     ok("§8 解除在途的收斂:HALT 與重開停止都清掉就算(Z 時落到 running 或 dead 都行);狀態字「解除中…」", /relDone = p\.want === "released" && !!TR\.st && !!TR\.st\.report && !\(pr\.halt && pr\.halt\.halted\) && !trRestartStopped\(pr\);/.test(pend)
       && /TR\.pending\.want === "released" \? t\("tr\.releasing"\)/.test(fnS("trStateText")) && /TR\.pending\.want === "released" \? t\("tr\.releasing"\)/.test(fnS("trShortState")));
     ok("§8 running + Z 的狀態行不寫「自動下單執行中」", /let s = trNoAmounts\(r\) \? t\("tr\.runningZ"\) : t\("tr\.autoOn"\);/.test(fnS("trStateText")));
@@ -1955,6 +1955,27 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       !/pres-banner/.test(fs.readFileSync(path.join(R, "index.html"), "utf8")) && !/presBannerPaint|pres\.held\./.test(pres + src) && !/pres-banner/.test(fs.readFileSync(path.join(R, "president.css"), "utf8"))
       && !vm.runInContext('"pres.held.lead" in STRINGS.zh || "pres.held.sub" in STRINGS.zh || "pres.held.lead" in STRINGS.en', ctx));
     function t_zh(k) { return vm.runInContext("STRINGS.zh[" + JSON.stringify(k) + "]", ctx); } }
+  // 統一綁定的這台電腦:台指期實盤行情來源那一句(trQuoteLine;lib/data 每次 live tick 寫 state/twfutures_live_source.json、reporter 原樣帶出)
+  { const q = (s, reason, w) => ({ twfutures_live_source: { source: s, reason }, president_connect: { worker: { status: w || "ok" } } });
+    const L = (r, env, id, state, lots) => trQuoteLine(r, env === undefined ? "local" : env, id || "president", state === undefined ? "running" : state, lots === undefined ? true : lots);
+    ok("行情句:統一 → tr.quote.pres;Blave 快取帶原因 key、fallback;empty / 不認得的原因退 noFile", J(L(q("president", null))) === J({ key: "tr.quote.pres", why: null, fallback: false })
+      && J(L(q("blave", "stale"))) === J({ key: "tr.quote.blave", why: "tr.quote.why.stale", fallback: true })
+      && L(q("blave", "not_ok:RuntimeError: boom")).why === "tr.quote.why.notOk" && L(q("blave", "no_overlap")).why === "tr.quote.why.noOverlap"
+      && L(q("blave", "not_enabled")).why === "tr.quote.why.notEnabled" && L(q("blave", "no_file")).why === "tr.quote.why.noFile"
+      && L(q("blave", "empty")).why === "tr.quote.why.noFile" && L(q("blave", "weird")).why === "tr.quote.why.noFile");
+    ok("行情句:退路時 worker 沒登入(president_connect.worker.status ≠ ok)先講「統一還沒登入」;統一正常句不看它",
+      L(q("blave", "stale", "failed")).why === "tr.quote.why.noLogin" && L(q("blave", "no_file", "idle")).why === "tr.quote.why.noLogin"
+      && L(q("president", null, "failed")).key === "tr.quote.pres" && L({ twfutures_live_source: { source: "blave", reason: "stale" } }).why === "tr.quote.why.stale");
+    ok("行情句:雲端視角、別家、沒有那一欄、沒有台指期口數、狀態不在跑 / 過場中都不出;已暫停、沒停住照出",
+      L(q("president", null), "cloud") === null && L(q("president", null), "local", "capital") === null && L({ venues: {} }) === null && L(null) === null
+      && L(q("president", null), "local", "president", "running", false) === null
+      && ["dead", "setup", "noaccount", "loading", "unknown", null].every((s) => L(q("president", null), "local", "president", s) === null)
+      && ["halted", "unconfirmed"].every((s) => L(q("blave", "stale"), "local", "president", s).fallback === true));
+    const html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8"), css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+    ok("行情句:#tr-quote 緊接 #tr-desc、Z 佔位行插在它之後;退路句 .is-fallback 升 --ink-2;過場中不出;不埋點",
+      /id="tr-desc"><\/div>\s*(<!--[\s\S]*?-->\s*)?<p class="tr-ro-note" id="tr-quote" hidden>/.test(html) && /\$\("tr-quote"\)\.after\(p\)/.test(src)
+      && /\.tr-ro-note\.is-fallback \{ color: var\(--ink-2\); \}/.test(css) && /trPaintQuote\(TR\.pending \? null : state\);/.test(src)
+      && !/feature_used[^\n]*quote/.test(src)); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 
