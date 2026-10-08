@@ -321,6 +321,37 @@ msgstr "連雲端主機"
 msgid "step.delegate"
 msgstr "委派研究"
 
+# 階段清單的動詞(完成式;canon › 回合狀態列 9),key = app.js PHASE_OF 的值
+msgid "phase.data"
+msgstr "抓資料"
+
+msgid "phase.write"
+msgstr "寫策略"
+
+msgid "phase.backtest"
+msgstr "跑回測"
+
+msgid "phase.run"
+msgstr "跑策略"
+
+msgid "phase.scan"
+msgstr "掃參數"
+
+msgid "phase.validate"
+msgstr "驗證策略"
+
+msgid "phase.research"
+msgstr "查資料"
+
+msgid "phase.report"
+msgstr "組報告"
+
+msgid "phase.order"
+msgstr "下單"
+
+msgid "phase.schedule"
+msgstr "設定排程"
+
 msgid "turn.busy"
 msgstr "上一輪還在跑。"
 
