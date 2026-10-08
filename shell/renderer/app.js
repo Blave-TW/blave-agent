@@ -1755,6 +1755,11 @@ function receiptFold(steps) {
   const verb = document.createElement("span"); verb.className = "think-verb"; verb.dataset.i18n = "turn.process"; verb.textContent = t("turn.process");
   const chev = document.createElement("span"); chev.className = "think-chev cv7"; chev.setAttribute("aria-hidden", "true");
   head.append(verb, chev);
+  // 階段:同一支 phasesFrom。收據只有工具名(Bash 全 unknown)、沒有開始時間——多半長不出清單,長出來也不畫時長(canon 9:不推算)
+  const phases = document.createElement("ol"); phases.className = "think-phases"; phases.setAttribute("aria-hidden", "true");
+  const rows = phasesFrom(steps.filter((st) => !st.more).map((st) => ({ kind: actKindOf({ tool: st.tool }).kind, obj: "", start: null })), null);
+  phases.hidden = rows.length < 2;
+  if (!phases.hidden) phasesPaint(phases, rows, 0, false);
   const wrap = document.createElement("div"); wrap.className = "think-reason-wrap";
   const fold = document.createElement("div"); fold.className = "think-fold";
   const list = document.createElement("ul"); list.className = "think-steps";
@@ -1772,7 +1777,7 @@ function receiptFold(steps) {
     list.appendChild(li);
   });
   el.classList.toggle("has-both", sides.size > 1);
-  fold.appendChild(list); wrap.appendChild(fold); el.append(head, wrap);
+  fold.appendChild(list); wrap.appendChild(fold); el.append(head, phases, wrap);
   head.addEventListener("click", () => { const open = el.classList.toggle("is-open"); head.setAttribute("aria-expanded", open ? "true" : "false"); });
   return el;
 }
@@ -2015,6 +2020,10 @@ const CARD_TAG = /<blave-card:([a-z-]+)\/>/g;
    runtime 沒走到 finalize 的回合(出錯、被殺)草稿會原樣升格——這裡再剝一次,同 runtime _SUGGEST_BLOCK_RE / _SUGGEST_OPEN_TAIL_RE */
 const SUG_BLOCK = /[ \t]*<suggest>[\s\S]*?<\/suggest>[ \t]*/g;
 const SUG_OPEN_TAIL = /[ \t]*<suggest>(?:(?!<\/suggest>)[\s\S])*$/;
+/* 「等你回覆」標記 <await/>(references/turn-events.md,三種寫法):runtime finalize 剝掉、done 帶 awaiting(主行程存);
+   串流中的 delta 與沒走到 finalize 的回合在這裡再剝一次,半截的(`<awa`)比照 `<sug` 先藏 */
+const AWAIT_TAG = /[ \t]*<await\s*\/?>(?:<\/await>)?[ \t]*/g;
+const LIVE_TAIL_TAGS = ["<suggest>", "<await/>", "<await />", "</await>"];
 /* 純函式(tests/check_shell_paint.js 直接測它):原文 → { cards, blocks }。``` 圍欄裡的東西一個字都不動——
    `f(**a, **b)`、`2**3` 被當成粗體吃掉星號的話,用戶照畫面抄策略碼會抄錯。`live` = 還在串流:尾端半截的標記
    先藏起來;回合結束後用 live=false 重畫一次,真的以 `<` 結尾的回覆才不會被永久吃掉。 */
@@ -2022,10 +2031,11 @@ function aiParts(raw, live) {
   const cards = [];
   let text = String(raw).replace(CARD_TAG, (_m, name) => { cards.push(name); return ""; });
   if (text.indexOf("<suggest>") >= 0) text = text.replace(SUG_BLOCK, "").replace(SUG_OPEN_TAIL, "").replace(/\s+$/, "");
+  if (text.indexOf("<await") >= 0) text = text.replace(AWAIT_TAG, "").replace(/\s+$/, "");
   if (live) {
     const lt = text.lastIndexOf("<"), tail = lt >= 0 ? text.slice(lt) : "";
-    // <suggest> 還沒湊齊(`<sug`)也先藏:湊齊後 SUG_OPEN_TAIL 才剝得到,中間那一兩拍會閃出字面
-    if (lt >= 0 && tail.length <= 40 && !tail.includes(">") && ("<blave-card:".startsWith(tail.slice(0, 12)) || "<suggest>".startsWith(tail))) text = text.slice(0, lt);
+    // <suggest> / <await/> 還沒湊齊(`<sug`、`<awa`)也先藏:湊齊後才剝得到,中間那一兩拍會閃出字面
+    if (lt >= 0 && tail.length <= 40 && !tail.includes(">") && ("<blave-card:".startsWith(tail.slice(0, 12)) || LIVE_TAIL_TAGS.some((x) => x.startsWith(tail)))) text = text.slice(0, lt);
   }
   if (cards.length) text = text.replace(/\s+$/, "");
   return { cards, blocks: mdBlocks(text, 0) };
@@ -2250,6 +2260,59 @@ function actApply(force) {
   busySet(actLabel(w), STEP_NO_OBJ.includes(w.kind) ? "" : w.obj, w.kind);   // 幾個網頁已經在 label 裡;查文件 / 找檔案不帶受詞
 }
 
+/* ── 階段清單(canon › 回合狀態列 9;spec-design-uplift-2026-10-08 F5)──
+   連續同一階段的工具併成一列;讀取類(PHASE_NONE)不開新階段,時間算進當下那一階段。
+   兩張表跟網頁 workspace.html 同一份(tests/check_web_desktop_parity.js 釘);runtime 會送的每個 kind 都要在其中一張、只在一張
+   (tests/check_shell_turn_status.js 列舉)。live_tick 是自己的階段「跑策略」:下單設定裡的策略跑起來是實盤,不是回測 */
+const PHASE_OF = {
+  data: "data",
+  strategy_write: "write",
+  file_write: "write",
+  code_prep: "write",
+  check: "write",
+  backtest: "backtest",
+  live_tick: "run",
+  scan: "scan",
+  validate: "validate",
+  search: "research",
+  web_read: "research",
+  web_read_many: "research",
+  web_act: "research",
+  delegate: "research",
+  report: "report",
+  order: "order",
+  schedule: "schedule",
+  cloud: "schedule",
+  install: "schedule",
+};
+const PHASE_NONE = new Set([
+  "docs", "files", "file_read", "strategy_read", "account", "status", "reply", "thinking",
+  "unknown", "silent",
+]);
+// steps = [{kind, obj, start}](start 毫秒;重開畫回的收據沒有時間 → null)。
+// 回 [{phase, kind, obj, start, end}];end 是下一階段第一步的開始,最後一列是 `end`
+// (回合還在跑 = null)。回合開頭的讀取步不開列,等第一個會開階段的 kind
+function phasesFrom(steps, end) {
+  const rows = [];
+  (steps || []).forEach(function (st) {
+    const phase = st && PHASE_OF[st.kind];
+    if (!phase) return;
+    const obj = st.kind === "web_read_many" ? "" : st.obj || "";
+    const last = rows[rows.length - 1];
+    if (last && last.phase === phase) {
+      if (obj) {
+        last.obj = obj;
+        last.kind = st.kind;
+      }
+      return;
+    }
+    if (last) last.end = typeof st.start === "number" ? st.start : null;
+    rows.push({ phase: phase, kind: st.kind, obj: obj, start: typeof st.start === "number" ? st.start : null, end: null });
+  });
+  if (rows.length) rows[rows.length - 1].end = typeof end === "number" ? end : null;
+  return rows;
+}
+
 /* 時長(canon › Copy › Numbers):<60 秒 47s;<60 分 4m 57s(秒補兩位);≥60 分 1h 02m。各語言同一寫法 */
 function fmtDur(sec) {
   sec = Math.max(0, Math.floor(Number(sec) || 0));
@@ -2311,7 +2374,10 @@ function busyStart() {
   reason.className = "think-reason";
   fold.append(stepsEl, reason);
   wrap.appendChild(fold);
-  el.append(head, wrap);
+  // 階段清單:跑著時在狀態列下直接長出來(不用點開);回合結束收起,展開時排在逐步收據上面(CSS)。不在 role=status 裡
+  const phases = document.createElement("ol");
+  phases.className = "think-phases"; phases.setAttribute("aria-hidden", "true"); phases.hidden = true;
+  el.append(head, phases, wrap);
   head.addEventListener("click", () => {
     if (head.classList.contains("no-toggle")) return;
     const open = el.classList.toggle("is-open");
@@ -2319,7 +2385,7 @@ function busyStart() {
   });
   $("chat-scroll").appendChild(el);
   busy = { el, head, ticksIn, verb, obj, elapsed, stepsEl, reason, stepRows: {}, sides: new Set(),
-           start: Date.now(), steps: 0, timer: null };
+           start: Date.now(), steps: 0, timer: null, phasesEl: phases, phaseSteps: [], phaseEnd: 0 };
   actReset(); actApply(true);
   busyElapsed(); busyTick();          // 第 0 秒:條子不會是空的
   busy.timer = setInterval(() => { busyElapsed(); busyTick(); busyStepTick(); actApply(); }, 1000);
@@ -2329,6 +2395,33 @@ function busyStepTick() {
   const ul = busy.stepsEl, now = Date.now();
   ul.querySelectorAll(".think-step.is-run").forEach((li) => { li.querySelector(".think-step-time").textContent = fmtDur((now - li.__t0) / 1000); });
   if (!ul.matches(":hover")) ul.scrollTop = ul.scrollHeight;
+  phasesSync(busy);   // 進行中那一階段的累計時長同一個 timer 走
+}
+/* 階段清單:兩列以上才出(只有一種階段的短回合維持一行);列數少,每秒整份重建 */
+function phasesSync(b) {
+  if (!b || !b.phasesEl) return;
+  const rows = phasesFrom(b.phaseSteps, b.phaseEnd || null);
+  if (rows.length < 2) { b.phasesEl.hidden = true; return; }
+  phasesPaint(b.phasesEl, rows, Date.now(), !b.phaseEnd);
+  b.phasesEl.hidden = false;
+}
+/* 即時與重開畫回共用;動詞掛 data-i18n 讓切語言的那一輪掃得到,受詞是 runtime 給的 kind_obj(textContent) */
+function phasesPaint(ol, rows, now, running) {
+  ol.textContent = "";
+  rows.forEach((r, i) => {
+    const li = document.createElement("li");
+    li.className = "think-phase" + (running && i === rows.length - 1 ? " is-run" : "");
+    const mark = document.createElement("span"); mark.className = "think-step-mark";
+    const verb = document.createElement("span"); verb.className = "think-phase-verb";
+    const key = "phase." + r.phase; verb.dataset.i18n = key; verb.textContent = t(key);
+    li.append(mark, verb);
+    if (r.obj) { const obj = document.createElement("span"); obj.className = "think-phase-obj" + (r.kind === "search" ? "" : " mono"); obj.textContent = r.obj; li.appendChild(obj); }   // 搜尋字是句子,其餘受詞 mono(同 busySet)
+    if (r.start !== null) {
+      const stop = r.end !== null ? r.end : running && i === rows.length - 1 ? now : null;
+      if (stop !== null) { const tm = document.createElement("span"); tm.className = "think-phase-time"; tm.textContent = fmtDur((stop - r.start) / 1000); li.appendChild(tm); }
+    }
+    ol.appendChild(li);
+  });
 }
 function busyHasFold() {
   if (busy) busy.head.classList.remove("no-toggle"), busy.head.classList.add("has-reason");
@@ -2340,6 +2433,7 @@ function busyStep(c) {
   const lab = stepLabel(c);
   if (!lab) return;
   busy.steps += 1;
+  { const k = actKindOf(c); busy.phaseSteps.push({ kind: k.kind, obj: k.obj || actTabHost(k.tab), start: Date.now() }); }   // 階段清單的原料:受詞只拿 kind_obj,不拿 summary(指令全文)
   const li = document.createElement("li");
   li.className = "think-step is-run";
   const mark = document.createElement("span"); mark.className = "think-step-mark";
@@ -2383,6 +2477,7 @@ function busyEnd(faulted) {
   if (!busy) return;
   const b = busy; busy = null;
   clearInterval(b.timer); clearTimeout(ACT.timer);
+  b.phaseEnd = Date.now(); phasesSync(b);   // 最後一階段的時長凍結在收尾那一刻;收起後只在展開時出現(CSS)
   const hasFold = b.stepsEl.children.length > 0 || b.reason.textContent.trim() !== "";
   if (hasFold) {
     // 留下來:移到這一輪回覆的**上面**(思考在前、結論在後),動詞改成「思考過程」,

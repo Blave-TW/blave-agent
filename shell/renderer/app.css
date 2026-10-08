@@ -405,6 +405,23 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   font-variant-numeric: tabular-nums;
 }
 
+/* 階段清單(canon › 回合狀態列 9):回合裡出現第二種階段時在狀態列下直接長出來、不用點開;列同收據列(12px、上下 3、左縮 15)。
+   回合結束收起,展開時先列階段、下面才是逐步收據。記號沿用收據的 8×2 短劃,進行中半截、主墨 */
+.think-phases { align-self: stretch; list-style: none; margin: 0 0 0 15px; padding: 0; width: calc(100% - 15px); }
+.think-phases[hidden], .think-indicator.is-done:not(.is-open) .think-phases { display: none; }
+.think-phase { display: flex; align-items: center; gap: var(--space-8); padding: 3px 0; font-size: 12px; line-height: 1.5; }
+.think-phase-verb { flex: none; color: var(--ink-2); }
+.think-phase-obj { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
+.think-phase-obj.mono { font-size: 11px; }
+.think-phase-time {
+  flex: none; margin-left: auto; padding-left: var(--space-8);
+  font-size: 11px; color: var(--ink-3); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.think-phase.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }
+.think-phase.is-run .think-phase-verb, .think-phase.is-run .think-phase-time { color: var(--ink); }
+.think-phase.is-run .think-phase-obj { color: var(--ink-2); }
+
 /* 思考文字:展開來就是要讀的,所以走無襯線、會換行、有高度上限可捲 */
 .think-reason {
   max-width: 100%; max-height: 9em; overflow-y: auto;

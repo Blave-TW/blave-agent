@@ -319,6 +319,37 @@ msgstr "Connected to the cloud machine"
 msgid "step.delegate"
 msgstr "Delegated research"
 
+# 階段清單的動詞(完成式;canon › 回合狀態列 9),key = app.js PHASE_OF 的值
+msgid "phase.data"
+msgstr "Fetched data"
+
+msgid "phase.write"
+msgstr "Wrote strategy"
+
+msgid "phase.backtest"
+msgstr "Ran backtest"
+
+msgid "phase.run"
+msgstr "Ran strategy"
+
+msgid "phase.scan"
+msgstr "Scanned parameters"
+
+msgid "phase.validate"
+msgstr "Validated strategy"
+
+msgid "phase.research"
+msgstr "Researched"
+
+msgid "phase.report"
+msgstr "Built report"
+
+msgid "phase.order"
+msgstr "Placed orders"
+
+msgid "phase.schedule"
+msgstr "Set schedule"
+
 msgid "turn.busy"
 msgstr "The previous turn is still running."
 

@@ -1086,6 +1086,22 @@ function stratSelfOrderingAny() {
    重開 app、切語言重畫時順序就跟著變。舊 stats 沒有 Generated At 才退回檔案時間;同時間照資料夾名,順序才固定 */
 const stratTouchedAt = (x) => Math.max(x.codeMtime || 0, x.scanMtime || 0, x.wfMtime || 0, x.generatedAt ? x.generatedAt * 1000 : x.statsMtime || 0);
 const stratOrder = (a, b) => stratTouchedAt(b) - stratTouchedAt(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+/* 年化報酬同回測頁 renderer/report-backtest.js annualReturn(tests/check_shell_results.js 釘兩邊同值):Type C 的 stats 自帶
+   `Ann. Return [%]`;Type A 由總報酬與回測天數推,天數先取 start/end 的差、算不出來退回 daily_dates 筆數;底數 ≤ 0 回 null */
+function stratAnnReturn(st) {
+  const given = num(st["Ann. Return [%]"]);
+  if (given !== null) return given;
+  const tr = num(st["Total Return [%]"]);
+  if (tr === null) return null;
+  const day = (s) => { const m = typeof s === "string" && /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
+  const s = day(st.start), e = day(st.end);
+  let days = s !== null && e !== null ? Math.round((e - s) / 86400000) : null;
+  if (!(days > 0)) days = Array.isArray(st.daily_dates) ? st.daily_dates.length : 0;
+  const base = 1 + tr / 100;
+  if (!(days > 0) || !(base > 0)) return null;
+  const ann = (Math.pow(base, 365 / days) - 1) * 100;
+  return isFinite(ann) ? ann : null;
+}
 function listStrategies() {
   return stratNames().map((name) => {
     const dir = path.join(STRAT_DIR(), name);
@@ -1107,12 +1123,12 @@ function listStrategies() {
     if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, ...parts, mtime: touched };
     let displayName = null;
     try { displayName = stratMeta(fs.readFileSync(path.join(dir, "strategy.py"), "utf8")).displayName; } catch (_) {}
-    let summary = { name, displayName, hasBacktest: false, sharpe: null, totalReturn: null, maxDrawdown: null, generatedAt: null };
+    let summary = { name, displayName, hasBacktest: false, sharpe: null, annReturn: null, totalReturn: null, maxDrawdown: null, generatedAt: null };
     if (sMtime) {
       try {
         const st = JSON.parse(fs.readFileSync(statsPath, "utf8"));
         // generatedAt:只有明確回測會重蓋(lib/runner.py _carry_over),live tick 每根 K 重寫 stats.json 但不動它——結果卡靠它認「這一輪跑了回測」
-        summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), totalReturn: num(st["Total Return [%]"]),
+        summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), annReturn: stratAnnReturn(st), totalReturn: num(st["Total Return [%]"]),
           maxDrawdown: num(st["Max Drawdown [%]"]), generatedAt: num(st["Generated At"]) };
         tm().track("first_backtest_done");   // 每個安裝只會送出一次(telemetry.js 自己記)
       } catch (_) { /* 寫到一半或壞掉:當成還沒有回測 */ }
@@ -1430,7 +1446,7 @@ function listSessions() {
             WHERE session_id LIKE 'desktop-%' GROUP BY session_id) s
       ORDER BY s.last DESC LIMIT 200`).all()
       // 不截 120:固定觸發句(樣本外驗證 en 約 490 字)要整句才比對得到摘要,截斷改到 renderer 摘要之後(csRow);仍留上限
-      .map((r) => ({ id: r.id, last: r.last, title: String(r.title || "").slice(0, 4000) }));
+      .map((r) => ({ id: r.id, last: r.last, title: String(r.title || "").slice(0, 4000), waiting: sessWaitingLoad(r.id) }));   // waiting 只給將來用,renderer 現在不畫
   } catch (_) { return []; } finally { db.close(); }
 }
 function loadSession(id) {
@@ -1449,6 +1465,7 @@ function deleteSession(id) {
     db.prepare("DELETE FROM session_meta WHERE session_id = ?").run(id);
     try { fs.rmSync(path.join(IMG_DIR, id), { recursive: true, force: true }); } catch (_) { /* 圖刪不掉不擋 */ }
     try { fs.rmSync(path.join(RES_DIR, id), { recursive: true, force: true }); } catch (_) { /* 結果卡同上 */ }
+    try { fs.rmSync(path.join(META_DIR, id + ".json"), { force: true }); } catch (_) { /* 對話 meta 同上 */ }
     try { fs.rmSync(path.join(BASE, "state", "browser-snapshots", id), { recursive: true, force: true }); } catch (_) { /* 瀏覽器快照同上 */ }
     try { fs.rmSync(path.join(XP_DIR, id), { recursive: true, force: true }); } catch (_) { /* 轉出卡的快照同上 */ }
     return true;
@@ -1505,6 +1522,26 @@ function loadTurnResults(id) {
     } catch (_) { /* 壞掉的一列跳過 */ }
   }
   return [...by].map(([ts, items]) => ({ ts, items }));
+}
+
+/* ── 對話 meta(外殼自己記的、session.db 以外的狀態):state/chat-meta/<session>.json ──
+   waiting = runtime done chunk 的 awaiting(references/turn-events.md):模型宣告這一輪結束時在等用戶回答。0.1.19 只存不畫
+   (電腦版對話清單不做「等你回覆」/「做完還沒看」),新一輪一送出就清掉(同 api /send → hdel waiting);done 的 kinds 不存。
+   不是 waiting 就刪檔:有檔 = 在等 */
+const META_DIR = path.join(BASE, "state", "chat-meta");
+function sessWaitingSave(id, waiting) {
+  if (!okSessionId(id)) return false;
+  const file = path.join(META_DIR, id + ".json");
+  try {
+    if (waiting !== true) { fs.rmSync(file, { force: true }); return true; }
+    fs.mkdirSync(META_DIR, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ waiting: true, at: Date.now() }), { mode: 0o600 });
+    return true;
+  } catch (_) { return false; }
+}
+function sessWaitingLoad(id) {
+  if (!okSessionId(id)) return false;
+  try { const m = JSON.parse(fs.readFileSync(path.join(META_DIR, id + ".json"), "utf8")); return !!(m && m.waiting === true); } catch (_) { return false; }
 }
 
 // ── 聊天裡的圖 ─────────────────────────────────────────
@@ -2589,6 +2626,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
+  sessWaitingSave(sessionId, false);   // 這一句就是回答:等你回覆清掉(同 api /send → hdel waiting)
   // 訊息走 stdin:不是字串的話 stdin.end() 會拋、留下一支等不到 EOF 的子行程(稽核 R4)。上限同 runtime 的 --message-stdin
   if (typeof message !== "string" || Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
   // 聊天附件(shell/attach.js):同雲端那條契約——落地 workspace/tmp/inbound/、訊息尾端補一行給引擎;
@@ -2737,7 +2775,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (line.startsWith("@@BLAVE@@")) {
         try {
-          const c = JSON.parse(line.slice(9)); if (c && c.type === "done") turnFinalized = true;
+          const c = JSON.parse(line.slice(9)); if (c && c.type === "done") { turnFinalized = true; sessWaitingSave(sessionId, c.awaiting === true); }   // awaiting 只存;kinds 不存不畫
           if (c && c.type === "export") { const rec = noteExport(c, sessionId); if (rec) { c.id = rec.id; turnXp.push(rec); } }   // 卡重開要畫回來:快照先落地,id 給卡的「下載…」
           win.webContents.send("turn-event", c);
         } catch (_) {}

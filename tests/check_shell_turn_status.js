@@ -6,6 +6,7 @@
 //   5. 時長 47s / 4m 57s / 1h 02m;步數字串拿掉;act.* 兩語齊、每個 runtime kind 都有字
 //   7. 展開的步驟清單(Wei 0928 第 2b 點):做完的步驟用完成式 step.*(缺 key 退回 act.*、出錯的不換)、正在跑的那一步有自己的秒數、
 //      位置記號只在一輪跨兩邊時才畫、思考文字每一輪都先收著、chevron 7px、熱區整列 × 32、記號欄固定 8 寬
+//   8. 階段清單:runtime 每個 kind 都在 PHASE_OF / PHASE_NONE 之一(列舉)、phasesFrom 併列 / 讀取步 / 回放無時長、接線與 CSS
 //   6. 瀏覽卡:進行中一行(圖示疊只放讀到內容的頁＋已讀 d/n＋「看網頁」,不給展開);搜尋結果頁不進清單;中繼頁不算已讀;沒讀到的排最下面
 // 跑法:node tests/check_shell_turn_status.js
 const fs = require("fs"), path = require("path"), cp = require("child_process");
@@ -35,7 +36,7 @@ const M = new Function("t", "STRINGS", "env", `
   function busySet(label, obj, kind) { env.shown.push([label, obj || "", kind]); }
   ${block.replace(/^const ACT = /m, "var ACT = ")}
   ${dur}
-  return { ACT, actKindOf, actWant, actToolStart, actToolDone, actApply, actReset, actToolPrep, fmtDur, stepLabel };`)(t, STRINGS, env);
+  return { ACT, actKindOf, actWant, actToolStart, actToolDone, actApply, actReset, actToolPrep, fmtDur, stepLabel, PHASE_OF, PHASE_NONE, phasesFrom };`)(t, STRINGS, env);
 const tick = (ms) => { env.now += ms; const due = env.timers.filter((x) => x.at <= env.now); env.timers = env.timers.filter((x) => x.at > env.now); due.forEach((x) => x.f()); };
 const last = () => env.shown[env.shown.length - 1];
 M.actReset(); M.actApply(true);
@@ -218,7 +219,43 @@ ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;�
     // 操作中的視口版(!full,防閃爍那批):從頭到尾不碰 viewport——沒有 beyond-viewport、也沒東西要清
     const m2 = mk(() => Promise.resolve({ data: "AA==" })); await run(m2.v);
     ok("視口版擷取不動 viewport(無 getLayoutMetrics、無 clearDeviceMetricsOverride)", m2.sent.join() === "Page.captureScreenshot", m2.sent);
-    console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
+    // ── 8. 階段清單(canon › 回合狀態列 9;spec-design-uplift-2026-10-08 F5)──
+{
+  const PO = M.PHASE_OF, PN = M.PHASE_NONE, pf = M.phasesFrom, ALL = new Function(strings + "; return STRINGS;")();
+  // 列舉:runtime 會送的每個 kind(分類器的 return + backtest / live_tick 由 mode 決定)+ 外殼自己會生的 thinking / reply / code_prep,
+  // 每個都在兩表之一、只在一邊;表裡沒有 runtime 送不出來的 kind。need_user 不是工具步驟(瀏覽器等人,actWant 才生),不進表
+  const allKinds = [...new Set(kinds.concat(["backtest", "live_tick", "thinking", "reply", "code_prep"]))];
+  const both = allKinds.filter((k) => PO[k] && PN.has(k)), neither = allKinds.filter((k) => !PO[k] && !PN.has(k));
+  const extra = Object.keys(PO).concat([...PN]).filter((k) => !allKinds.includes(k));
+  ok("階段表列舉:每個 kind 都在 PHASE_OF 或 PHASE_NONE、只在一邊;表裡沒有 runtime 送不出來的 kind(拿掉任一個就紅)", allKinds.length > 25 && !both.length && !neither.length && !extra.length, { both, neither, extra });
+  ok("live_tick 是自己的階段「跑策略」(run),不併進 backtest", PO.live_tick === "run" && PO.backtest === "backtest" && !PN.has("live_tick"));
+  const phases = [...new Set(Object.values(PO))];
+  ok("每個階段兩語都有 phase.* 字(含 run);中文是完成式、不帶「正在」", phases.length >= 9 && phases.every((p) => ALL.en["phase." + p] && ALL.zh["phase." + p] && ALL.zh["phase." + p].indexOf("正在") < 0) && ALL.zh["phase.run"] === "跑策略", phases.filter((p) => !ALL.en["phase." + p] || !ALL.zh["phase." + p]));
+  const S = (kind, start, obj) => ({ kind, obj: obj || "", start });
+  const r1 = pf([S("docs", 0), S("file_read", 500), S("data", 1000, "BTCUSDT"), S("file_read", 1500), S("data", 2000, "ETHUSDT"), S("strategy_write", 3000, "btc_ma"), S("backtest", 4000, "btc_ma"), S("live_tick", 5000, "btc_ma")], 9000);
+  ok("併列:開頭的讀取步不開列;同階段併成一列、受詞取最後非空;讀取步的時間算進當下階段(end = 下一階段第一步的 start);最後一列 end = 收起時間",
+    r1.map((r) => r.phase).join() === "data,write,backtest,run" && r1[0].obj === "ETHUSDT" && r1[0].start === 1000 && r1[0].end === 3000 && r1[2].end === 5000 && r1[3].end === 9000, r1);
+  ok("web_read_many 的數字不當受詞、也不蓋掉前一個受詞", (() => { const r = pf([S("web_read", 0, "coindesk.com"), S("web_read_many", 10, "3")], null); return r.length === 1 && r[0].obj === "coindesk.com" && r[0].kind === "web_read"; })());
+  ok("短回合(只讀檔)零列;只有一種階段一列(phasesSync 兩列以上才出);回合還在跑最後一列 end = null", pf([S("docs", 0), S("file_read", 1)], 5).length === 0 && pf([S("data", 0), S("data", 1)], null).length === 1 && pf([S("data", 0), S("backtest", 1)], null)[1].end === null);
+  ok("重開畫回(start 全 null):列照出、start / end 都 null → 不畫時長、不推算", (() => { const r = pf([S("data", null), S("backtest", null)], null); return r.length === 2 && r.every((x) => x.start === null && x.end === null); })());
+  const startSrc = cut(src, "function busyStart(", "/* 正在跑的那一步"), stepSrc = cut(src, "function busyStep(", "/* `done` 只是回頭補"), tickSrc = cut(src, "function busyStepTick(", "/* 階段清單:兩列以上"),
+    endSrc = cut(src, "function busyEnd(", "/* 思考文字每一輪"), foldSrc = cut(src, "function receiptFold(", "function addHistoryAi("), paintSrc = cut(src, "function phasesPaint(", "function busyHasFold(");
+  const pushAt = stepSrc.indexOf("phaseSteps.push");
+  ok("接線:busyStart 在 head 與 wrap 之間放 <ol class=think-phases aria-hidden hidden>;busyStep push {kind, obj = kind_obj, start}(不拿 summary);busyStepTick(同一個 timer)叫 phasesSync;busyEnd 記 phaseEnd 再 phasesSync;receiptFold 走同一支 phasesFrom、start 全 null",
+    /el\.append\(head, phases, wrap\);/.test(startSrc) && /phases\.setAttribute\("aria-hidden", "true"\); phases\.hidden = true;/.test(startSrc) && /phaseSteps: \[\], phaseEnd: 0/.test(startSrc)
+    && /busy\.phaseSteps\.push\(\{ kind: k\.kind, obj: k\.obj \|\| actTabHost\(k\.tab\), start: Date\.now\(\) \}\)/.test(stepSrc) && pushAt > 0 && !/summary/.test(stepSrc.slice(pushAt, pushAt + 100))
+    && /phasesSync\(busy\);/.test(tickSrc) && /busyStepTick\(\); actApply\(\); \}, 1000\);/.test(src) && /b\.phaseEnd = Date\.now\(\); phasesSync\(b\);/.test(endSrc)
+    && /phasesFrom\(steps\.filter\(\(st\) => !st\.more\)\.map\(\(st\) => \(\{ kind: actKindOf\(\{ tool: st\.tool \}\)\.kind, obj: "", start: null \}\)\), null\)/.test(foldSrc) && /el\.append\(head, phases, wrap\);/.test(foldSrc));
+  ok("畫列:記號沿用 .think-step-mark、動詞 phase.*(data-i18n 給切語言掃)、受詞 mono(搜尋字除外)、時長 fmtDur、進行中那列 is-run;不埋點",
+    /mark\.className = "think-step-mark"/.test(paintSrc) && /const key = "phase\." \+ r\.phase; verb\.dataset\.i18n = key; verb\.textContent = t\(key\);/.test(paintSrc) && /r\.kind === "search" \? "" : " mono"/.test(paintSrc)
+    && /fmtDur\(\(stop - r\.start\) \/ 1000\)/.test(paintSrc) && /running && i === rows\.length - 1 \? " is-run" : ""/.test(paintSrc) && !/trackFeature|feature_used/.test(paintSrc + tickSrc));
+  ok("CSS:清單撐滿(align-self stretch、左縮 15)、列同收據列(12px、上下 3)、收起後只在展開時出現、進行中記號半截主墨",
+    /\.think-phases \{ align-self: stretch;[^}]*margin: 0 0 0 15px;/.test(css) && /\.think-phases\[hidden\], \.think-indicator\.is-done:not\(\.is-open\) \.think-phases \{ display: none; \}/.test(css)
+    && /\.think-phase \{ display: flex;[^}]*padding: 3px 0; font-size: 12px;/.test(css) && /\.think-phase\.is-run \.think-step-mark \{ width: 4px; margin-right: var\(--space-4\); background: var\(--ink\); \}/.test(css)
+    && /\.think-phase-time \{[^}]*tabular-nums/.test(css));
+}
+
+console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
   });
 }
 ok("中欄狀態句講這一頁(不再重複已讀 d/n)", /if \(x\) \{ const n = brStatusNode\(x\);[^\n]*brFoot\(x\)/.test(brSrc));
