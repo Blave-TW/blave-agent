@@ -167,17 +167,21 @@ html.ws-sc .side-gate { display: none; }
 .pf-alert { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--color-redText); white-space: normal; overflow-wrap: anywhere; }
 .pf-alert[hidden] { display: none; }
 
-.main-tabs { display: flex; align-items: center; gap: var(--space-24); flex: 0 0 auto; padding: 0 var(--space-24); border-bottom: 1px solid var(--border-hairline); overflow-x: auto; scrollbar-width: none; }
+/* 兩層(同 app.css .rp-tabs / .rp-tabs-scroll):外層只畫 hairline(inset shadow 當 1px 線,畫在 padding box 內),內層橫捲。
+   .main-tab 是 padding 0 的純文字分頁,ring 往內畫會壓在字上——改由捲動段四邊各留 4、等量負 margin 抵銷,ring 外擴也不被裁(spec-0.1.19 §2.3) */
+.main-tabs { display: flex; align-items: center; gap: var(--space-24); flex: 0 0 auto; padding: 0 var(--space-24) 1px; box-shadow: inset 0 -1px 0 var(--border-hairline); }
 .main-tabs[hidden] { display: none; }
-.main-tabs::-webkit-scrollbar { display: none; }
+.main-tabs-scroll {
+  display: flex; align-items: center; gap: inherit; flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  padding: var(--space-4); margin: calc(-1 * var(--space-4)); margin-bottom: calc(-1 * var(--space-4) - 1px);   /* 多 1 讓分頁底線蓋在 hairline 上 */
+}
 .main-tab {
   height: 44px; padding: 0; white-space: nowrap; flex: 0 0 auto; color: var(--ink-3); font-size: 13px; font-weight: 500;
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
   transition: color var(--motion-fast) var(--ease-standard);
 }
 .main-tab:hover { color: var(--ink); }
 .main-tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
-.main-tab:focus-visible { outline-offset: -2px; }
 
 .pf { padding: var(--space-24); flex: 1; min-height: 0; overflow-y: auto; }
 /* 自動下單五個分頁的內容上限 760、靠左(spec-desktop-005 §3;canon › 流體欄裡的固定寬子項):寬視窗多出來的寬度不再變成欄距。
@@ -406,7 +410,7 @@ html.ws-sc .side-gate { display: none; }
      那顆鈕還會浮在標題與狀態句之間的空白裡(spec §12-4 第 3、4 條) */
   .main-head:has(.act button + button) .act { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; margin-top: var(--space-12); margin-bottom: 0; }   /* 鈕底到狀態句由狀態句的 12 負責,換列時也是同一個 12 */
   .main-head:has(.act button + button) .act > button { flex: 1; }
-  .main-tabs { padding: 0 var(--space-16); gap: var(--space-16); }
+  .main-tabs { padding: 0 var(--space-16) 1px; gap: var(--space-16); }   /* 底下的 1 是 hairline 的位子,不能跟著收 */
   .pf { padding: var(--space-16); }
   .pf-tbl .c-sym { display: none; }
   /* mockup 是 <400 才收單位。單位現在只寫「USDT」(設計 v4),但這一階收單位的行為刻意不動(保守:

@@ -559,7 +559,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    未解的債,不填軌道就踩不到。 */
 .mp-rail {
   display: flex; margin: 0 10px;
-  border: 1px solid var(--border-frame); border-radius: var(--radius-xs); overflow: hidden;
+  border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
 }
 /* 內距 4 不是 8:聊天欄最窄時軌只有約 236px,五格(含 Extra High)用 8 會超出去,
    最右邊的 Max 被軌的 overflow 切掉。寬的時候多的空間由 flex-grow 平分回去 */
@@ -571,8 +571,11 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-seg + .mp-seg { border-left: 1px solid var(--border-frame); }
 .mp-seg:hover { color: var(--ink); }
 .mp-seg[aria-checked="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
-/* 軌在裁切容器裡,focus ring 往內畫才不會被切掉 */
-.mp-seg:focus-visible { outline-offset: -2px; border-radius: 0; }
+/* 軌不裁切(同 .cn-lang):格子內距只有 4,ring 往內畫會碰到字(spec-0.1.19 §2.4 必修)。圓角改由首末格自己畫;
+   ring 走全域的外擴,聚焦時浮上一層才不被鄰格的分隔線蓋住。外擴的 4px 落在軌兩側的 10px margin 裡 */
+.mp-seg:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
+.mp-seg:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
+.mp-seg:focus-visible { position: relative; z-index: 1; }
 .mp-note { margin: 0; padding: var(--space-8) 10px 6px; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 
 /* ── Tooltip(canon › Components › Tooltip)──────────────
