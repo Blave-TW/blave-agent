@@ -79,6 +79,15 @@ def entry_roll_at(year, month):
         hour=NIGHT_OPEN_HOUR, minute=NIGHT_OPEN_MINUTE)
 
 
+def series_roll_at(year, month):
+    """15:00 Taipei on settlement day — when the continuous near-month SERIES
+    (the Blave cache a backtest ran on) leaves this month: settlement day is the
+    expiring month all day, its day session ends with the 13:30 bar, and the
+    next month starts with the 15:00 evening session. Sits between the entry
+    roll (15:00 the day before) and the 13:30 settlement."""
+    return settlement_at(year, month).replace(hour=NIGHT_OPEN_HOUR, minute=NIGHT_OPEN_MINUTE)
+
+
 def prod_id(root, year, month):
     return f"{root}{MONTH_CODES[month - 1]}{year % 10}"
 
@@ -102,6 +111,14 @@ def computed_near(root, now=None):
 def front_month(root, now=None):
     """The first contract whose settlement is still ahead at `now`."""
     return _first_after(root, now, settlement_at)
+
+
+def series_contract(root, now=None):
+    """The contract the continuous series is on at `now` (series_roll_at): the
+    quote feed polls this one so its bars line up with the Blave cache. Not
+    front_month (switches at 13:30, would pull the next month's 13:31–14:59 bars
+    the series has no room for) and not computed_near (switches a day early)."""
+    return _first_after(root, now, series_roll_at)
 
 
 def month_of(productid, now=None):
