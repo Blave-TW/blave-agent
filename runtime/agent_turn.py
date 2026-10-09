@@ -2477,13 +2477,20 @@ def _bash_summary(cmd, workspace=None):
 
     不是「前兩個 token」——實測(29026 2026-09-04)`head -n 10 AGENTS.md` 會摘成
     `head -n`,而 agent 的指令大量帶旗標,收據會變成一排沒有受詞的 `grep -rn`。
-    也不送完整指令:那會把模型自己組的字串原樣送進瀏覽器,長度換不到資訊。"""
+    也不送完整指令:那會把模型自己組的字串原樣送進瀏覽器,長度換不到資訊。
+    heredoc 寫檔給目標路徑;`python3 -c`／heredoc 的程式只給從 lib 匯入的識別字
+    (`fetch_funding_rate`),不送程式本文。"""
     if not isinstance(cmd, str):
         return ""
     cmd = _BASH_ENV_PREFIX_RE.sub("", cmd.strip())
     tokens = cmd.split()
-    if not tokens or "<<" in cmd or _has_inline_code(tokens):
+    if not tokens:
         return ""
+    target = _heredoc_write_target(re.sub(r"\\(?=[\w.-])", "/", cmd) if _WIN_PATH_RE.search(cmd) else cmd)
+    if target:
+        return _cut(_ws_rel(target, workspace), TOOL_SUMMARY_BASH_MAX)
+    if "<<" in cmd or _has_inline_code(tokens):
+        return _cut(" ".join(_lib_names(cmd)), TOOL_SUMMARY_BASH_MAX)
     paths = []
     for tok in tokens:
         path = _script_path(tok, workspace)
@@ -2499,12 +2506,67 @@ def _bash_summary(cmd, workspace=None):
     # `git --no-pager log` 變成沒有意義的 `git 5`(實測)。
     out, rest, i = tokens[0], tokens[1:], 0
     while i < len(rest):
+        if rest[i] == "-m" and i + 1 < len(rest) and os.path.basename(out).startswith("python"):
+            # workspace 的模組才換成路徑;`-m pip`、`-m http.server` 是套件,照原樣
+            mod = rest[i + 1].replace(".", "/") + ".py"
+            if mod.startswith(_WS_MODULE_PREFIXES) or os.path.isfile(os.path.join(workspace or WORKSPACE, mod)):
+                return _cut(mod, TOOL_SUMMARY_BASH_MAX)
+            return _cut("%s -m %s" % (out, rest[i + 1]), TOOL_SUMMARY_BASH_MAX)
         if rest[i].startswith("-"):
             i += 2 if re.fullmatch(r"-\w+", rest[i]) else 1
             continue
         out += " " + rest[i]
         break
     return _cut(out, TOOL_SUMMARY_BASH_MAX)
+
+
+_WS_MODULE_PREFIXES = ("tmp/", "lib/", "strategies/", "manager/")
+_LIB_FROM_RE = re.compile(r"\bfrom\s+lib(?:\.\w+)?\s+import\s+(\w+(?:\s*,\s*\w+)*)")
+_LIB_IMPORT_RE = re.compile(r"\bimport\b[^\n;]*?\blib\.(\w+)")
+
+
+def _lib_names(code):
+    """程式裡從 lib 匯入的識別字(依出現順序、不重複):`from lib.data import fetch_x` → fetch_x、
+    `import lib.report_templates as r` → lib/report_templates.py。只有 \\w+,沒有模型寫的自由字串。"""
+    hits = [(m.start(), j, n.strip()) for m in _LIB_FROM_RE.finditer(code) for j, n in enumerate(m.group(1).split(","))]
+    hits += [(m.start(), 0, "lib/%s.py" % m.group(1)) for m in _LIB_IMPORT_RE.finditer(code)]
+    out = []
+    for _pos, _j, name in sorted(hits):
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _heredoc_write_target(cmd):
+    """`cat > tmp/x.py <<'EOF'`／`cat <<EOF > x`／`tee x <<EOF`:heredoc 寫進的檔(沒有就 "")。
+    看第一個開 heredoc 的 shell 行(前面常有一行 `mkdir -p tmp/research`)。"""
+    if not isinstance(cmd, str):
+        return ""
+    first = next((ln for ln in _strip_heredoc_bodies(cmd).split("\n") if "<<" in ln), "")
+    if not first:
+        return ""
+    for seg in re.split(r"&&|\|\||[|;]", first):
+        if "<<" not in seg:
+            continue
+        head, args, _env = _seg_parse(seg)
+        head = os.path.basename(head)
+        if head not in ("cat", "tee"):
+            return ""
+        i = 0
+        while i < len(args):
+            a = args[i]
+            if a in (">", ">>") and i + 1 < len(args):
+                return args[i + 1]
+            if a.startswith(">") and not a.startswith(">&"):
+                return a.lstrip(">")
+            if a == "<<" or a == "<<-":
+                i += 2
+                continue
+            if head == "tee" and not a.startswith(("-", "<")):
+                return a
+            i += 1
+        return ""
+    return ""
 
 
 def _has_inline_code(tokens):
@@ -2644,11 +2706,14 @@ _KIND_SCAN = (
     # 寧可多報「正在下單」,不能漏報:開倉、改槓桿、派單、對帳(會下單並寫帳)都算
     ("order", re.compile(r"\bplace_\w*order\w*\(|\bcancel_\w*order\w*\(|\brun_twap\(|\bclose_position\w*\("
                          r"|\bopen_position\w*\(|\bset_leverage\(|\bdispatch_order\(|\breconcile\(")),
-    ("report", re.compile(r"report_templates|\bpublish\(|research_pack\(|report_bricks|lib\.report\b.*write_report")),
+    # 只認產出報告的**呼叫**與寫進 reports/:`from lib.report_templates import quickstart`、看簽名都只是在讀
+    ("report", re.compile(r"\bpublish\(|\bresearch_pack\(|\b\w+_brief\(|\bwrite_report\(|\bsave_recipe\("
+                          r"|(?:>>?|\btee\s+(?:-a\s+)?|\b(?:cp|mv)\s[^\n;|&]*\s)\s*['\"]?(?:[^\s'\"]*/)?reports/"
+                          r"|\bopen\([^)\n]*reports/[^)\n]*,\s*['\"][wax]")),
     ("scan", re.compile(r"scan_grid\(|find_plateau\(")),
     ("validate", re.compile(r"run_walk_forward\(|\bmcpt\(")),
     ("schedule", re.compile(r"register_schedule\(|remove_schedule\(|\bcrontab\b|\bschtasks\b")),
-    ("data", re.compile(r"\bfetch_\w+\(|from lib\.data import")),
+    ("data", re.compile(r"\bfetch_\w+\(|from lib\.data import|\bfrom\s+lib\s+import\b[^\n;]*\bdata\b[\s\S]*?\bdata\.\w+\(")),
     ("account", re.compile(r"lib\.order_|lib/order_|lib\.account_")),
 )
 _FIRST_STR_ARG = {
@@ -2659,7 +2724,13 @@ _FIRST_STR_ARG = {
 _SSH_OPT_VALUE = set("bcDEeFIiJLlmOopQRSWw")
 _SCRIPT_READ_MAX = 64 * 1024
 _WIN_PATH_RE = re.compile(r"(?:^|[\s'\"])(?:[A-Za-z]:)?[\w.-]+\\[\w.-]")
-_READ_HEADS = ("ls", "find", "grep", "rg", "wc", "cat", "head", "tail", "less")
+_READ_HEADS = ("ls", "find", "grep", "rg", "wc", "cat", "head", "tail", "less", "sed", "awk", "nl", "bat")
+# 讀文件那組:跟 Read 工具同一份(references/、examples/、AGENTS.md、lib/*.py)
+_DOC_READ_HEADS = ("cat", "head", "tail", "less", "sed", "awk", "nl", "bat")
+_DOC_PATH_RE = re.compile(r"(?:^|\s|/)(?:references/|examples/|AGENTS\.md|lib/[\w.-]+\.py\b)")
+# 只看說明的 inline 程式(`python3 -c "…inspect.signature(…)"`、`quickstart()`):讀文件,不是做那件事
+_INSPECT_RE = re.compile(r"\binspect\b|\bhelp\(|__doc__|\bquickstart\(|\bdir\(")
+_INTERP_HEADS = ("node", "bash", "sh", "zsh", "uv")
 
 
 def _kind_obj(text):
@@ -2802,13 +2873,57 @@ def _executed_script(head_full, args, workspace):
     return "", []
 
 
+def _redirects_to_file(args):
+    """參數裡有 `> 檔`／`>> 檔`(`2>/dev/null`、`>&2` 不算;引號裡的 `>` shlex 已併進別的字,不會單獨出現)。"""
+    for i, a in enumerate(args):
+        m = re.match(r"^\d?(>>?)(.*)$", a)
+        if not m or m.group(2).startswith("&"):
+            continue
+        dest = m.group(2) or (args[i + 1] if i + 1 < len(args) else "")
+        if dest and dest != "/dev/null":
+            return True
+    return False
+
+
+def _non_redirect_args(args):
+    """拿掉重導(`2>/dev/null`、`> x`、`<in`)後的參數。"""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+            continue
+        m = re.match(r"^\d?(?:>>?|<)(&?)(.*)$", a)
+        if m:
+            skip = not m.group(2)
+            continue
+        out.append(a)
+    return out
+
+
+def _strip_heredoc_bodies(cmd):
+    """拿掉 heredoc 本文,只留 shell 那幾行:本文的每一行不是指令(`from lib.data import …` 的指令頭不是 from)。
+    本文還沒結束(串流到一半)就丟到底。"""
+    out, end = [], None
+    for line in cmd.split("\n"):
+        if end is not None:
+            if line.strip() == end:
+                end = None
+            continue
+        out.append(line)
+        m = re.search(r"<<-?\s*['\"]?(\w+)['\"]?", line)
+        if m:
+            end = m.group(1)
+    return "\n".join(out)
+
+
 def _bash_kind(cmd, workspace, trading, remote=False):
     if not isinstance(cmd, str) or not cmd.strip():
         return "unknown", ""
     # Windows 電腦版的路徑是反斜線(`python strategies\\x\\strategy.py`):shlex 會把它當跳脫吃掉,
     # 拆段前先換成 `/`(只影響判路徑用的這份;內容掃描照原文)
     pcmd = re.sub(r"\\(?=[\w.-])", "/", cmd) if _WIN_PATH_RE.search(cmd) else cmd
-    segs = [_seg_parse(s) for s in re.split(r"&&|\|\||[|;\n]", pcmd) if s.strip()]
+    shell = _strip_heredoc_bodies(pcmd)
+    segs = [_seg_parse(s) for s in re.split(r"&&|\|\||[|;\n]", shell) if s.strip()]
     env_all = {}
     for _h, _a, env in segs:
         env_all.update(env)
@@ -2857,20 +2972,45 @@ def _bash_kind(cmd, workspace, trading, remote=False):
                     text += "\n" + f.read(_SCRIPT_READ_MAX)
             except OSError:
                 pass
-    # 純讀檔的指令(`grep -n publish lib/report_templates.py`):字串裡出現關鍵字不代表在做那件事,指令頭先判
     heads = [os.path.basename(h) for h, _a, _e in segs
              if os.path.basename(h) not in ("", "cd", "export", "source", ".", "set", "echo", "sleep", "true")]
-    reader_only = heads and heads[0] in _READ_HEADS and not any(
-        h.startswith("python") or h in ("node", "bash", "sh", "zsh", "uv") for h in heads)
-    # C. 內容掃描
+    runs_code = any(h.startswith("python") or h in _INTERP_HEADS for h in heads)
+    # heredoc 寫檔(`cat > tmp/research/x.py <<'EOF'`):本文裡的 fetch_( 是寫進去的字,不是在抓;同一個指令接著跑它才算跑
+    target = "" if runs_code else _heredoc_write_target(pcmd)
+    if target:
+        rel = _ws_rel(target, workspace)
+        if rel.startswith("reports/"):
+            return "report", ""
+        m = re.match(r"strategies/([^/]+)/", rel)
+        if m:
+            return "strategy_write", _kind_obj(m.group(1))
+        return "file_write", _kind_obj(os.path.basename(rel))
+    # 純讀檔的指令(`sed -n … lib/report_templates.py`):字串裡出現關鍵字不代表在做那件事,指令頭先判。
+    # `sed -i` 與往檔案導出(`cat a > reports/x`)是寫,不算
+    for h, args, _e in () if runs_code else segs:
+        if os.path.basename(h) == "sed" and any(a.startswith("--in-place") or re.match(r"-[a-zA-Z]*i", a) for a in args):
+            files = _non_redirect_args(args)
+            path = _ws_rel(files[-1], workspace) if files else ""
+            m = re.match(r"strategies/([^/]+)/", path)
+            return ("strategy_write", _kind_obj(m.group(1))) if m else ("file_write", _kind_obj(os.path.basename(path)))
+    writes = any(_redirects_to_file(args) for _h, args, _e in segs)
+    reader_only = heads and heads[0] in _READ_HEADS and not runs_code and not writes
+    inline = any((os.path.basename(h).startswith("python") or os.path.basename(h) in _INTERP_HEADS)
+                 and (any(a in _INLINE_CODE_FLAGS for a in args) or "<<" in shell) for h, args, _e in segs)
+    inspect_only = inline and bool(_INSPECT_RE.search(text))
+    # C. 內容掃描(看 fetch_kline 的簽名不是在抓:inline 程式帶 inspect 字樣時 data 改判 docs;order／report 照樣優先)
     for kind, rx in () if reader_only else _KIND_SCAN:
         if rx.search(text):
+            if kind == "data" and inspect_only:
+                return "docs", ""
             obj = ""
             arg = _FIRST_STR_ARG.get(kind)
             hit = arg.search(text) if arg else None
             if hit and _TICKER_RE.match(hit.group(1)):
                 obj = hit.group(1)
             return kind, _kind_obj(obj)
+    if inspect_only:
+        return "docs", ""
     # 指令頭:第一個不是 cd／export 這類前置的段落
     for head_full, args, _env in segs:
         head = os.path.basename(head_full)
@@ -2884,9 +3024,9 @@ def _bash_kind(cmd, workspace, trading, remote=False):
             return "status", ""
         if head in ("curl", "wget"):
             return "data", ""
-        if head in ("cat", "head", "less") and re.search(r"(?:^|\s|/)(?:references/|AGENTS\.md)", joined):
+        if head in _DOC_READ_HEADS and _DOC_PATH_RE.search(joined):
             return "docs", ""
-        if head in ("ls", "find", "grep", "rg", "wc", "cat", "head", "tail"):
+        if head in _READ_HEADS:
             return "files", ""
         if head in ("scp", "sftp"):
             return "cloud", ""
@@ -3744,9 +3884,6 @@ DATA_ACCESS_WHY = {
     "signed_out": "the user is not signed in to Blave in this app",
     "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
     "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
-    # 方案制(api MONTHLY_BILLING_FROM 之後):沒有按小時買資料,資料只在雲端方案／API 方案裡
-    "no_plan": "the user is signed in; the account has no plan that includes Blave data (a Blave Agent cloud plan or an API plan)",
-    "plan_failed": "the user is signed in; the account's plan payment failed, so data is paused until it is paid",
     "unknown": "the user is signed in; the account status could not be read this turn",
 }
 
@@ -3813,13 +3950,15 @@ def local_mcp_servers(sink, mcp_config, mcp_servers):
 TURN_NOTES = {
     "report_once": (
         "This request came from the desktop app's New report dialog. Produce the report once, now — unless the "
-        "data check fails (references/reports.md › Research questions: then answer in chat and offer the report "
-        "on the changed question); do not register or offer a schedule."),
+        "data check fails (references/reports.md §1b › Research questions): then answer in chat and offer the "
+        "report on the changed question. Either way, do not register or offer a schedule."),
     "report_recur": (
         "This request came from the desktop app's New report dialog, and it asks for the report on a schedule "
         "(every day, every week, a time of day). This computer produces it this once only and cannot schedule "
-        "it: produce the report now, do not register a schedule, and say so plainly in the first sentence of "
-        "your reply — this computer makes it this once, and recurring reports are set up on the cloud machine."),
+        "it: produce the report now (unless the data check fails — references/reports.md §1b › Research questions: "
+        "then answer in chat and offer the report on the changed question), do not register a schedule, and say so "
+        "plainly in the first sentence of your reply — this computer makes it this once, and recurring reports are "
+        "set up on the cloud machine."),
 }
 
 
@@ -3900,14 +4039,13 @@ def browser_rule(mounted, web=None):
 def data_access_rule():
     """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
     是哪一種。三態:
-      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權。
-             不含在試用／雲端方案或主機／API 方案裡時:api 切換到方案制之前按小時收(`deduct_blave_api_credit`),
-             扣不到才 403 `ERR007`;切換之後沒有按小時買,直接 403 `ERR007`(body 指雲端方案與 API 方案)。
-             這段兩種都要講對:機隊與電腦版不會在同一刻換版。
+      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權,
+             但**會計費**:不含在試用／主機／API 方案裡就按小時收(api `decorators.py` 的
+             `blave_data_included` → `deduct_blave_api_credit`),扣不到才 403 `ERR007`。
              所以這段講的是 `ERR007` / `ERR005`(key 被撤)/ `KEY_SCOPE`(越權)。
-      `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(data_access = none),或方案制下沒有方案／方案扣款失敗
-             (plan_required / payment_failed),或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY
-             說是哪一種(`signed_out` / `no_card` / `no_balance` / `no_plan` / `plan_failed` / `unknown`):少了它,模型對登入著、只是餘額
+      `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(account_status 的 data_access = none),
+             或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY 說是哪一種
+             (`signed_out` / `no_card` / `no_balance` / `unknown`):少了它,模型對登入著、只是餘額
              不夠的人也回「要先登入」(2026-09-24 真機)。舊外殼不帶 → 原文不變。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
              的預設敘述走,system prompt 一個字都不變。
@@ -3924,19 +4062,18 @@ def data_access_rule():
             "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
             "reads you write yourself, in the language the per-turn language directive names; "
             "do not copy, translate or adapt phrasing from this block or from an error body.\n"
-            "Billing: data on this key is included while the card trial is running, or when the "
-            "account has a Blave Agent cloud plan or machine (including one still being set up) or "
-            "an API plan. Otherwise it depends on the account's billing: either it is charged per "
-            "clock hour in which any data call is made — not per call — so a successful call can "
-            "therefore cost the user money, or (plan billing) there is no data until a cloud plan or "
-            "an API plan is started. Fetch only what this turn needs and never poll.\n"
+            "Billing: data on this key is free while the card trial is running, or when the "
+            "account has a Blave Agent cloud machine (including one still being set up) or an "
+            "API plan. Otherwise it is charged per clock hour in which any data call is made — "
+            "not per call. A successful call can therefore cost the user money: fetch only what "
+            "this turn needs and never poll.\n"
             "Three different 403s:\n"
-            "- `ERR007` — the account has no data access right now: either the hourly data fee "
-            "could not be charged, or (plan billing) the account has no plan that includes data. "
-            "The body's message and `next_steps` say which and name the ways out (topping up, a "
-            "cloud plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
-            "wait. Convey why the data stopped and the ways out the body names; never state a "
-            "rate, currency or deadline the body did not give you. Do not work around the block.\n"
+            "- `ERR007` — that hourly fee could not be charged. The body carries the current "
+            "rate, a `retry_after` that is a ceiling rather than a wait (a top-up lifts the "
+            "block at once), and links for topping up, an API plan and starting a machine. "
+            "Convey why the data stopped, that the fee is hourly rather than per call, and the "
+            "ways out the body names; never state a rate, currency or deadline the body did not "
+            "give you. Do not work around the block.\n"
             "- `ERR005` (`Invalid API key`) — this key was deleted or revoked. The way back is "
             "signing in to Blave again in the app; do not go looking for another key.\n"
             "- `KEY_SCOPE` — the action is outside this key's scope. This desktop key is "
@@ -3960,10 +4097,9 @@ def data_access_rule():
             + (f" — {why}" if why else "")
             + ". Access comes with signing in "
             "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex): free "
-            "while the card trial is active or when the account has a Blave Agent cloud plan or cloud "
-            "machine or an API plan; otherwise, depending on the account's billing, either charged per clock "
-            "hour of use, which needs a balance that covers that hour, or (plan billing) not available "
-            "until a cloud plan or an API plan is started. The Blave-only datasets, which stop that way: holder concentration, "
+            "while the card trial is active or when the account owns a Blave Agent cloud machine or "
+            "an API plan, and otherwise charged per clock hour of use, which needs a balance that "
+            "covers that hour. The Blave-only datasets, which stop that way: holder concentration, "
             "whale hunter, taker intensity, liquidation, Taiwan chip / institutional / futures data "
             "and the rest of the Blave indicators. Public data still works: crypto klines "
             "(`fetch_kline`, Binance public endpoints) and the key-free public fetchers; single-ticker "
@@ -3975,9 +4111,8 @@ def data_access_rule():
             "for a dataset, make the call — it stops at once if it needs Blave data.\n"
             "Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, "
             "your reply must: name which data is "
-            "missing; give the conditions under which it becomes available (signed in, plus the card "
-            "trial, a cloud plan or an API plan — or, where the account is still billed by the hour, a "
-            "balance that covers the hourly data fee); carry "
+            "missing; give the conditions under which it becomes available (signed in, with a "
+            "balance that covers the hourly data fee, or the card trial, or a cloud machine); carry "
             "no directions, next steps or prices; not push; and then answer "
             "whatever part public data does allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"

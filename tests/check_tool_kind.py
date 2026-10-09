@@ -27,6 +27,9 @@ with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
     json.dump({"amounts": {"eth_live": 500}}, f)
 with open(os.path.join(WS, "tmp", "brief.py"), "w") as f:
     f.write("from lib.report_templates import publish\npublish(pack)\n")
+os.makedirs(os.path.join(WS, "tmp", "research"))
+with open(os.path.join(WS, "tmp", "research", "btc_funding_event_study.py"), "w") as f:
+    f.write("from lib.data import fetch_funding_rate\ndf = fetch_funding_rate('BTC', '8h')\n")
 with open(os.path.join(WS, "tmp", "close.py"), "w") as f:
     f.write("from lib import order_binance as o\no.close_position_partial(env, 'XRPUSDT', 1)\n")
 # the runtime never runs from the workspace root
@@ -106,7 +109,11 @@ case("Bash", {"command": "python3 -c \"from lib.order_okx import get_contract_ru
      "account", note="NEGATIVE: get_contract_rules is a query → account")
 case("Bash", {"command": "python3 - <<'EOF'\nfrom lib.execute import run_twap\nrun_twap('ETHUSDT', 2)\nEOF"}, "order", "ETHUSDT")
 case("Bash", {"command": "python3 tmp/brief.py"}, "report", note="publish() inside the executed script (report flow)")
-case("Bash", {"command": "python3 -c 'from lib import report_bricks'"}, "report")
+case("Bash", {"command": "python3 -c 'from lib import report_bricks'"}, "unknown",
+     note="NEGATIVE: importing report_bricks without a publish/brief call is not building a report")
+case("Bash", {"command": "python3 -c 'from lib.report import write_report; write_report(x)'"}, "report")
+case("Bash", {"command": "cp tmp/research/out.md reports/btc.md"}, "report", note="writing into reports/ is a report")
+case("Bash", {"command": "cat tmp/out.md > reports/btc.md"}, "report", note="redirect into reports/: not a pure read")
 case("Bash", {"command": "python3 -c 'from lib.param_scan import scan_grid; scan_grid(x)'"}, "scan")
 case("Bash", {"command": "python3 -c 'from lib.validation import mcpt; mcpt(x)'"}, "validate")
 case("Bash", {"command": "crontab -l"}, "schedule")
@@ -152,6 +159,63 @@ case("Read", {"file_path": "strategies\\btc_rsi\\strategy.py"}, "strategy_read",
 # 可註冊網域(稽核 S2,同瀏覽卡 brReg)
 case("WebFetch", {"url": "https://markets.businessinsider.com/news/x"}, "web_read", "businessinsider.com")
 case("WebFetch", {"url": "https://news.example.co.uk/a"}, "web_read", "example.co.uk")
+
+# 29026 2026-10-09 實際回合的指令:讀說明/grep 不是「組報告」,抓資料的 -c／-m 有受詞(designer turn-phases spec 舊帳節)
+def bash_case(cmd, want_kind, want_obj, want_summary, note):
+    kind, obj, _tab = at._tool_kind("Bash", {"command": cmd}, WS)
+    seen.add(kind)
+    summary = at._tool_summary("Bash", {"command": cmd}, WS)
+    ok = (kind, obj, summary) == (want_kind, want_obj, want_summary)
+    print(("PASS " if ok else "FAIL ") + f"{want_kind:<15} {note}" + ("" if ok else f"  → {(kind, obj, summary)}"))
+    if not ok:
+        fails.append(note)
+
+
+bash_case("sed -n '4230,4345p' lib/data.py", "docs", "", "lib/data.py", "sed -n on lib source → docs (sed was unclassified)")
+bash_case("sed -n '1,120p' lib/report_templates.py", "docs", "", "lib/report_templates.py",
+          "NEGATIVE: sed on report_templates.py is reading, not report")
+bash_case("sed -n '40,80p' references/twfutures.md", "docs", "", "sed references/twfutures.md", "sed on references/ → docs")
+bash_case("sed -n '1,20p' tmp/research/out.csv", "files", "", "sed tmp/research/out.csv", "sed on a non-doc file → files")
+bash_case('grep -n "def write_report" lib/report.py', "files", "", "lib/report.py",
+          "NEGATIVE: grep for write_report is not report")
+bash_case('python3 -c "from lib.report_templates import quickstart; quickstart()"', "docs", "", "quickstart",
+          "NEGATIVE: quickstart() prints help → docs, not report")
+bash_case('python3 -c "import inspect, lib.report_templates as r; print(inspect.signature(r.research_pack))"', "docs", "",
+          "lib/report_templates.py", "NEGATIVE: inspect.signature of research_pack → docs, not report")
+bash_case("cat > tmp/research/x.py << 'EOF'\nfrom lib.data import fetch_funding_rate\nfrom lib.report_templates import publish\n"
+          "df = fetch_funding_rate('BTC', '8h')\npublish(pack)\nEOF", "file_write", "x.py", "tmp/research/x.py",
+          "heredoc writing a script → file_write (its body's fetch_/publish( are not run)")
+bash_case("cat > strategies/btc_rsi/strategy.py <<'EOF'\nx = 1\nEOF", "strategy_write", "btc_rsi",
+          "strategies/btc_rsi/strategy.py", "heredoc into a strategy folder → strategy_write")
+bash_case("cat > tmp/research/y.py <<'EOF'\nfrom lib.data import fetch_kline\ndf = fetch_kline('ETHUSDT', '1h')\nEOF\n"
+          "python3 tmp/research/y.py", "data", "ETHUSDT", "tmp/research/y.py",
+          "heredoc write then run in the same command → classified as the run")
+bash_case("python3 -m tmp.research.btc_funding_event_study", "data", "BTC", "tmp/research/btc_funding_event_study.py",
+          "python3 -m research script that fetches → data, module path as summary")
+bash_case('python3 -c "import pandas as pd; from lib.data import fetch_funding_rate; df = fetch_funding_rate(\'BTC\', \'8h\'); '
+          'print(df.tail())"', "data", "BTC", "fetch_funding_rate", "python3 -c fetching → data, summary = the lib function")
+bash_case('python3 -c "from lib import data; print(data.join_tw_flow(df, \'inst\', \'1d\', s, e, h))"', "data", "", "data",
+          "from lib import data + a non-fetch_ call → data (was unknown)")
+bash_case('python3 -c "import inspect; from lib.data import fetch_kline; print(inspect.signature(fetch_kline))"', "docs", "",
+          "fetch_kline", "NEGATIVE: signature of a fetch function is not fetching")
+bash_case("mkdir -p tmp/research\ncat > tmp/research/x.py <<'EOF'\nfrom lib.data import fetch_kline\ndf = fetch_kline('BTCUSDT', '1h')\nEOF",
+          "file_write", "x.py", "tmp/research/x.py", "heredoc write after a prep line → still file_write, not data")
+bash_case("sed -i 's/publish(/x(/' strategies/btc_rsi/strategy.py", "strategy_write", "btc_rsi",
+          "strategies/btc_rsi/strategy.py", "NEGATIVE: sed -i whose expression says publish( is an edit, not report")
+bash_case('python3 -c "from lib.data import join_tw_flow; df = join_tw_flow(d, \'inst\', \'1d\', s, e, h)"', "data", "",
+          "join_tw_flow", "from lib.data import of a non-fetch_ function → data (audit B1)")
+bash_case('python3 -c "from lib.data import fetch_kline as fk; df = fk(\'ETHUSDT\', \'1h\')"', "data", "", "fetch_kline",
+          "aliased fetch import → data (audit B1)")
+bash_case("python3 tmp/close.py && sed -i 's/a/b/' strategies/btc_rsi/strategy.py", "order", "XRPUSDT", "strategies/btc_rsi/strategy.py",
+          "script that places an order + sed -i → order, never hidden as an edit (audit B2)")
+bash_case("sed -i 's/a/b/' strategies/btc_rsi/strategy.py 2>/dev/null", "strategy_write", "btc_rsi",
+          "strategies/btc_rsi/strategy.py", "sed -i with a trailing redirect: the edited file, not 'null' (audit B3)")
+bash_case("sed --in-place=.bak 's/a/b/' tmp/x.py", "file_write", "x.py", "sed 's/a/b/'", "sed --in-place=SUFFIX is an edit (audit B3)")
+bash_case("cat > strategies\\btc_rsi\\strategy.py <<'EOF'\nx = 1\nEOF", "strategy_write", "btc_rsi",
+          "strategies/btc_rsi/strategy.py", "Windows backslash heredoc target: summary keeps the separators (audit B4)")
+bash_case("python3 -m pip install pandas-ta", "unknown", "", "python3 -m pip", "-m of a package is not a workspace path (audit S1)")
+bash_case("sed -i 's/a/b/' strategies/btc_rsi/strategy.py", "strategy_write", "btc_rsi", "strategies/btc_rsi/strategy.py",
+          "NEGATIVE: sed -i is an edit, not a read")
 
 # every kind of the table has a positive example
 TABLE = {"search", "web_read", "web_read_many", "web_act", "silent", "docs", "strategy_read", "file_read",
