@@ -119,6 +119,24 @@ function trPresWip(r, id) { const c = id === "president" && r && r.president_con
 function trPresStopped(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !!c.worker && c.worker.status === "failed" && !trPresWip(r, id); }
 // 停掉的那一種是登入失敗(runtime 寫 worker.error = LOGIN_FAILED:<類別>;其他失敗是沒寫出快照那類):設定 › 帳戶 那一列講「登入已停止」而不是讀帳原文
 function trPresLoginStopped(r, id) { return trPresStopped(r, id) && String(r.president_connect.worker.error || "").indexOf("LOGIN_FAILED") === 0; }
+/* 台指期實盤行情來源那一句(設計 spec desktop-live-source-line;lib/data 在每次 live tick 寫 state/twfutures_live_source.json,reporter 原樣帶出)。
+   四個條件同時成立才出:這台電腦且綁統一、回報有那一欄(還沒 tick 過就沒有,不出佔位句)、至少一個台指期口數列 > 0(`lots`;
+   全 0 時沒有 live tick,檔案是舊的)、狀態在跑 / 已暫停 / 沒停住(過場中、死掉、開通中都不出)。
+   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先用 president_connect 判「統一還沒登入」
+   (後端沒有獨立代碼:worker 沒登入只是不寫檔,落 stale / no_file),再看 reason;
+   `empty` 併進 noFile。fallback = 退路句(顏色升一階,trPaintQuote) */
+const TR_QUOTE_WHY = { stale: "tr.quote.why.stale", not_enabled: "tr.quote.why.notEnabled", no_overlap: "tr.quote.why.noOverlap" };
+const TR_QUOTE_STATES = ["running", "halted", "unconfirmed"];
+function trQuoteLine(r, env, id, state, lots) {
+  const q = env === "local" && id === "president" && lots && TR_QUOTE_STATES.indexOf(state) >= 0 && r && r.twfutures_live_source;
+  if (!q || typeof q !== "object") return null;
+  // paused = 市場沒開(worker 在時段外重蓋快照):不是退路,照正常句
+  if (q.source === "president" || q.reason === "paused") return { key: "tr.quote.pres", why: null, fallback: false };
+  const w = r.president_connect && r.president_connect.worker, why = String(q.reason || "");
+  const k = w && w.status && w.status !== "ok" ? "tr.quote.why.noLogin"
+    : TR_QUOTE_WHY[why] || (why.indexOf("not_ok") === 0 ? "tr.quote.why.notOk" : "tr.quote.why.noFile");
+  return { key: "tr.quote.blave", why: k, fallback: true };
+}
 // 讀帳失敗的原因:多數 lib 回「stage: msg」字串;統一的是物件 {stage, type, msg}(10-08 e2e 畫成 [object Object])
 function trAcctErr(err) {
   if (err && typeof err === "object") return { stage: String(err.stage || "—"), msg: String(err.msg || err.message || "") };
@@ -1613,6 +1631,7 @@ function trPaintHead() {
   // 全頁級的「只能看」退場(規格 §6):啟動 / 暫停在雲端按得動之後,那一句就是假話。
   // 金額與連接交易所這一批還沒開,各自在自己的位置講(S4 / S5),不在這裡出一句整頁級的
   trPaintRoNote(null);
+  trPaintQuote(TR.pending ? null : state);
   trPaintVerdict(stopped);
   // 執行鈕:沒帳戶時不放(那顆「連接交易所」在 onboard 裡,同畫面不出現兩顆主要鈕)。
   // 同一顆鈕就地更新、不重建:確認框關掉之後焦點要回得到它,輪詢重畫也不能把焦點洗掉。
@@ -1713,7 +1732,7 @@ function trPaintGoRel(on, solid, close) {
    分頁列跟著跳、容易點錯。沒有原因時清空內容,高度由 CSS 的 min-height 佔著 */
 function trPaintNoAmt(key) {
   let p = $("tr-noamt");
-  if (!p) { p = trEl("p", "tr-noamt", ""); p.id = "tr-noamt"; $("tr-desc").after(p); }
+  if (!p) { p = trEl("p", "tr-noamt", ""); p.id = "tr-noamt"; $("tr-quote").after(p); }   // 行情句之後:狀態句 → 行情句 → Z 佔位行
   // 這一行裡有可 Tab 的「部位」連結:清空 / 重建之前焦點在它身上的話先交給標題,不然會掉到 BODY
   const hadFocus = p.contains(document.activeElement);
   if (!key) { if (hadFocus) $("tr-h").focus(); p.textContent = ""; p.classList.remove("cx-wait"); delete p.dataset.key; return; }
@@ -1809,6 +1828,14 @@ function trPaintRoNote(key) {
   const go = trEl("button", "btn-quiet", t("plan.openWs")); go.type = "button";
   go.addEventListener("click", () => window.blave.openExternal(planWebUrl()));
   n.append(t(key) + " ", go);
+}
+// 台指期實盤行情來源那一句(trQuoteLine):狀態句正下方自己一行、.tr-ro-note 的字級;退路句 .is-fallback 升一階;不播讀屏(是事實不是事件)
+function trPaintQuote(state) {
+  const stored = trStored() || {}, lots = Object.keys(stored).some((n) => stored[n] > 0 && trRowIsLot(n));
+  const n = $("tr-quote"), q = trQuoteLine(trReport(), TR.env, trVenueId(), state, lots), sig = LANG + "|" + (q ? q.key + "|" + q.why : "");
+  if (ENV.sig.quote === sig) return;
+  ENV.sig.quote = sig; n.hidden = !q; n.classList.toggle("is-fallback", !!(q && q.fallback));
+  n.textContent = q ? t(q.key, { why: q.why ? t(q.why) : "" }) : "";
 }
 // 停機:紅記號 + 一段話(數字來自方案頁同一個來源;拿不到數字就用不帶數字的那句,不寫死)
 function trPaintVerdict(on) {

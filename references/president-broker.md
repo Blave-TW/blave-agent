@@ -381,6 +381,77 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 ---
 
+## Quote feed (live 1-minute bars)
+
+The worker's login also feeds the live tick (`lib/president_quote.py`, a daemon thread in
+`lib/president_worker.py`; `--once` never starts it). Every 12 s inside a trading session
+(08:40–13:50 and 14:55–05:05 Taipei, weekdays plus the early hours that end a weekday's night)
+it asks `api.dquote.get_history_bardata("1K", start, end, "1", <contract>, 100)` for the **TXF**
+series contract (`president_contracts.series_contract`: the expiring month all settlement day, the
+next month from 15:00 — the Blave cache's roll, neither `front_month` nor `computed_near`; TXF only —
+MXF / TMF strategies read the TXF series like their backtests, and every extra root is one more
+call per round against an unmeasured server cap) and writes `state/president_bars_TXF_1m.json`:
+`root`, `productid`, `written_at`, `ok`, `error`, `earliest`, `latest`, `paged_back_to`, `rows` =
+`[ts, open, high, low, close, volume]` (ts = UTC epoch of the minute's END, the cache's convention),
+a rolling window of the last 2 calendar days. A contract contributes only the bars from the moment
+it became the series month (the previous month's settlement-day 15:00): after a roll the new
+month's own settlement-day 08:45–13:44 is never fetched into the series, and a bar whose END label
+is still ahead of the clock is dropped. Outside a session, and inside the worker's maintenance
+windows, the snapshot is re-stamped every round with `paused: closed|login|account` (rows kept) so
+a tick reads "no session", not "feed stale". `get_history_bardata` is one `requests.get` on its own
+HTTP client, so the thread shares the account thread's login without touching its clients; a
+failed poll only lands in `ok` / `error` next to the last good rows and never stops the worker.
+
+**What the broker gives (measured 2026-10-08, night session, live account):**
+- quotes need `auth_dquote` on the login (`api._usersettings.auth_dquote`); with it off the
+  snapshot says `ok: false, error: QUOTE_NOT_ENABLED` and the tick reads the Blave cache as before;
+- `get_history_bardata` is an HTTP GET (not the quote TCP), ≤100 bars and a span ≤100 minutes per
+  call, ~0.3 s, no per-minute cap hit in 20+ calls in a row; `count` takes the first N from `start`;
+  a closed-market span answers `ok=False` 查無資料 — an empty page here, the walk goes on and stops
+  after 4 empty pages in a row (a weekend); `"5K"` is not an interval (answers 1-minute bars), only
+  `"1K"` is used;
+- a bar's `date` `YYYYMMDD` + `time` `HHMMSS` is the minute's START in Taipei wall clock; the night
+  session's `date` is the calendar day (verified 15:00–24:00; 00:00–05:00 assumed the same — the
+  conversion is by absolute time, so either reading gives the same UTC label); the forming minute
+  is not returned; the server is <1 s behind;
+- one extra closing-match bar per session (start 13:45:00 day, 05:00:00 night; 13:30:00 on the
+  expiring month's settlement day) the Blave series does not have — dropped. The cache's day
+  session is the 08:46…13:45 END labels, the night session 15:01…05:00.
+
+**Alignment with the Blave cache (口徑 A, accepted):** OHLC match except the open, which differs
+by 1–6 points now and then; volume is systematically ~0.6 % higher (calendar-spread legs,
+presumably; the cache counts outright contracts only). Acceptance when the feed is compared bar by
+bar against `/studio/market/twfutures/ohlcv/TXF/1m` over a full day and night session: OHLC within
+6 points on ≥95 % of bars, volume ratio 1.000–1.010. What a strategy sees: 1-minute price signals
+drift at most marginally; a volume indicator sees a ~+0.6 % step where the broker's bars begin.
+
+**How the tick uses it (`lib/data.fetch_twfutures_ohlcv`, intraday schemas, only when
+`BLAVE_MODE=live`, `BLAVE_AGENT_LOCAL=1`, not a scheduled run, and `BLAVE_TW_BROKER=president` —
+the desktop daemon passes the hand-wired venue to every live tick, `command_listener._tw_broker_flag`):** the Blave series is fetched as always (cache + delta); then, if the snapshot is `ok`,
+written within 90 s and its earliest bar is not later than Blave's last bar, the broker's bars fill
+the minutes Blave does not have (its last minutes, and any hole inside the window) — Blave's values
+win wherever both have the minute. Otherwise the tick is Blave alone; a snapshot that cannot be read
+at all (a bad field) is the same, never a failed tick. Either way `state/twfutures_live_source.json`
+records `source` (`president` / `blave`), `reason` (`no_file`, `stale`, `not_enabled`,
+`not_ok:<error>`, `empty`, `no_overlap`, `paused`, `error:<Type>`), `at`, `root`, `traded`,
+`schema`, `added`, `last_bar`; the desktop's trade page shows it as one line (`paused` reads as
+the normal line — no session is not a fallback). Schemas above 1m are resampled from the broker's
+minutes the way the server does, whole bins only — a bin counts as whole when its last minute is
+in the rows or had passed at the snapshot's `written_at` (not the wall clock), and the first bin is
+dropped unless the rows start on its first label or on a session's opening bar. The broker's bars
+never enter the parquet cache — a backtest reads exactly what a cloud machine reads. MXF / TMF
+strategies read the TXF series and the TXF snapshot, as their backtests did.
+
+**Unverified:** how deep 1K history goes (`paged_back_to` in a snapshot records how far a backfill
+got — read it off a machine after a session); the `date` of 00:00–05:00 bars; whether a page's
+`start` / `end` are inclusive (the walk asks from a minute before the span and overlaps a bar in
+steady state, so either way loses nothing — confirm once on a machine); the quote server's
+per-minute cap under a 12 s poll over a whole session (grep the worker log for 超過每分鐘限制);
+a real settlement day (2026-10-21: the snapshot must stop at the 13:30 label and start `TXFK6`
+with the 15:01 label).
+
+---
+
 ## Limits & Gotchas
 
 - **No broker attribution** — 統一 is the broker itself; `note` (≤10 chars) is only a label.

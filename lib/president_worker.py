@@ -9,6 +9,12 @@ through here — lib/order_president.py opens its own short session per order
 lib/order_president.py touches state/president_refresh after every send; the
 sleep loop early-ticks on it so a fill reaches the snapshot in seconds.
 
+The same login also feeds the live tick: a daemon thread (lib/president_quote)
+polls 1-minute bars every few seconds into state/president_bars_<ROOT>_1m.json.
+It shares the Unitrade object — get_history_bardata is one requests.get per call
+on its own HttpClient, nothing of the account client's — and never takes the
+worker down: quote failures only land in that snapshot. Not started by --once.
+
 Broker maintenance (Taipei): login 05:30–05:50, account queries 06:00–07:30
 (domestic futures trading 07:00–07:27 sits inside it). Inside a window no
 query is made and the last good snapshot is re-stamped with `maintenance`
@@ -28,13 +34,15 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 from datetime import datetime, time as dtime, timedelta, timezone
 
 try:
     import president_vault  # run as a script: lib/ is sys.path[0]
+    import president_quote
 except ImportError:
-    from lib import president_vault
+    from lib import president_vault, president_quote
 
 WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = os.path.join(WORKSPACE, "state")
@@ -250,6 +258,21 @@ def _login_stopped(err):
     sys.exit(LOGIN_STOPPED_EXIT)
 
 
+_QUOTE = {"api": None, "thread": None, "stop": False}
+
+
+def _quote_api(api):
+    """Hand the quote thread the current login (None while logged out); the
+    thread starts on the first login and lives with the process."""
+    _QUOTE["api"] = api
+    if api is not None and _QUOTE["thread"] is None:
+        t = threading.Thread(target=president_quote.loop, args=(_QUOTE,),
+                             kwargs={"pause": maintenance, "stop": lambda: _QUOTE["stop"]},
+                             daemon=True, name="president-quote")
+        _QUOTE["thread"] = t
+        t.start()
+
+
 def _login(explicit=False):
     creds = president_vault.resolve()
     api = president_vault.login(creds, SDK_LOG_DIR, explicit=explicit)
@@ -320,6 +343,7 @@ def main():
             try:
                 if api is None:
                     api, actno = _login()
+                    _quote_api(api)
                     try:
                         os.remove(BACKOFF_PATH)
                     except OSError:
@@ -340,10 +364,12 @@ def main():
                     _log(f"login failed: {err}")
                     _backoff_and_exit(err)
                 # a session that went stale across a maintenance window gets one fresh login
+                _quote_api(None)
                 api.logout()
                 api = None
                 try:
                     api, actno = _login()
+                    _quote_api(api)
                     snap = read_account(api, actno)
                 except president_vault.LoginError as e2:
                     _login_stopped(president_vault.sanitize(str(e2)))
@@ -351,6 +377,7 @@ def main():
                     err = president_vault.sanitize(f"{type(e2).__name__}: {e2}")
                     _log(f"tick failed: {president_vault.sanitize(f'{type(e).__name__}: {e}')} / retry: {err}")
                     if api is not None:
+                        _quote_api(None)
                         api.logout()
                         api = None
                     _backoff_and_exit(err)
@@ -359,6 +386,8 @@ def main():
             _log(f"snapshot ok equity={snap['equity']} positions={len(snap['positions'])}")
             _sleep_until_refresh()
     finally:
+        _QUOTE["stop"] = True
+        _quote_api(None)
         if api is not None:
             api.logout()
 
