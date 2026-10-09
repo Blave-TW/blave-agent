@@ -2477,13 +2477,20 @@ def _bash_summary(cmd, workspace=None):
 
     不是「前兩個 token」——實測(29026 2026-09-04)`head -n 10 AGENTS.md` 會摘成
     `head -n`,而 agent 的指令大量帶旗標,收據會變成一排沒有受詞的 `grep -rn`。
-    也不送完整指令:那會把模型自己組的字串原樣送進瀏覽器,長度換不到資訊。"""
+    也不送完整指令:那會把模型自己組的字串原樣送進瀏覽器,長度換不到資訊。
+    heredoc 寫檔給目標路徑;`python3 -c`／heredoc 的程式只給從 lib 匯入的識別字
+    (`fetch_funding_rate`),不送程式本文。"""
     if not isinstance(cmd, str):
         return ""
     cmd = _BASH_ENV_PREFIX_RE.sub("", cmd.strip())
     tokens = cmd.split()
-    if not tokens or "<<" in cmd or _has_inline_code(tokens):
+    if not tokens:
         return ""
+    target = _heredoc_write_target(re.sub(r"\\(?=[\w.-])", "/", cmd) if _WIN_PATH_RE.search(cmd) else cmd)
+    if target:
+        return _cut(_ws_rel(target, workspace), TOOL_SUMMARY_BASH_MAX)
+    if "<<" in cmd or _has_inline_code(tokens):
+        return _cut(" ".join(_lib_names(cmd)), TOOL_SUMMARY_BASH_MAX)
     paths = []
     for tok in tokens:
         path = _script_path(tok, workspace)
@@ -2499,12 +2506,67 @@ def _bash_summary(cmd, workspace=None):
     # `git --no-pager log` 變成沒有意義的 `git 5`(實測)。
     out, rest, i = tokens[0], tokens[1:], 0
     while i < len(rest):
+        if rest[i] == "-m" and i + 1 < len(rest) and os.path.basename(out).startswith("python"):
+            # workspace 的模組才換成路徑;`-m pip`、`-m http.server` 是套件,照原樣
+            mod = rest[i + 1].replace(".", "/") + ".py"
+            if mod.startswith(_WS_MODULE_PREFIXES) or os.path.isfile(os.path.join(workspace or WORKSPACE, mod)):
+                return _cut(mod, TOOL_SUMMARY_BASH_MAX)
+            return _cut("%s -m %s" % (out, rest[i + 1]), TOOL_SUMMARY_BASH_MAX)
         if rest[i].startswith("-"):
             i += 2 if re.fullmatch(r"-\w+", rest[i]) else 1
             continue
         out += " " + rest[i]
         break
     return _cut(out, TOOL_SUMMARY_BASH_MAX)
+
+
+_WS_MODULE_PREFIXES = ("tmp/", "lib/", "strategies/", "manager/")
+_LIB_FROM_RE = re.compile(r"\bfrom\s+lib(?:\.\w+)?\s+import\s+(\w+(?:\s*,\s*\w+)*)")
+_LIB_IMPORT_RE = re.compile(r"\bimport\b[^\n;]*?\blib\.(\w+)")
+
+
+def _lib_names(code):
+    """程式裡從 lib 匯入的識別字(依出現順序、不重複):`from lib.data import fetch_x` → fetch_x、
+    `import lib.report_templates as r` → lib/report_templates.py。只有 \\w+,沒有模型寫的自由字串。"""
+    hits = [(m.start(), j, n.strip()) for m in _LIB_FROM_RE.finditer(code) for j, n in enumerate(m.group(1).split(","))]
+    hits += [(m.start(), 0, "lib/%s.py" % m.group(1)) for m in _LIB_IMPORT_RE.finditer(code)]
+    out = []
+    for _pos, _j, name in sorted(hits):
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _heredoc_write_target(cmd):
+    """`cat > tmp/x.py <<'EOF'`／`cat <<EOF > x`／`tee x <<EOF`:heredoc 寫進的檔(沒有就 "")。
+    看第一個開 heredoc 的 shell 行(前面常有一行 `mkdir -p tmp/research`)。"""
+    if not isinstance(cmd, str):
+        return ""
+    first = next((ln for ln in _strip_heredoc_bodies(cmd).split("\n") if "<<" in ln), "")
+    if not first:
+        return ""
+    for seg in re.split(r"&&|\|\||[|;]", first):
+        if "<<" not in seg:
+            continue
+        head, args, _env = _seg_parse(seg)
+        head = os.path.basename(head)
+        if head not in ("cat", "tee"):
+            return ""
+        i = 0
+        while i < len(args):
+            a = args[i]
+            if a in (">", ">>") and i + 1 < len(args):
+                return args[i + 1]
+            if a.startswith(">") and not a.startswith(">&"):
+                return a.lstrip(">")
+            if a == "<<" or a == "<<-":
+                i += 2
+                continue
+            if head == "tee" and not a.startswith(("-", "<")):
+                return a
+            i += 1
+        return ""
+    return ""
 
 
 def _has_inline_code(tokens):
@@ -2644,11 +2706,14 @@ _KIND_SCAN = (
     # 寧可多報「正在下單」,不能漏報:開倉、改槓桿、派單、對帳(會下單並寫帳)都算
     ("order", re.compile(r"\bplace_\w*order\w*\(|\bcancel_\w*order\w*\(|\brun_twap\(|\bclose_position\w*\("
                          r"|\bopen_position\w*\(|\bset_leverage\(|\bdispatch_order\(|\breconcile\(")),
-    ("report", re.compile(r"report_templates|\bpublish\(|research_pack\(|report_bricks|lib\.report\b.*write_report")),
+    # 只認產出報告的**呼叫**與寫進 reports/:`from lib.report_templates import quickstart`、看簽名都只是在讀
+    ("report", re.compile(r"\bpublish\(|\bresearch_pack\(|\b\w+_brief\(|\bwrite_report\(|\bsave_recipe\("
+                          r"|(?:>>?|\btee\s+(?:-a\s+)?|\b(?:cp|mv)\s[^\n;|&]*\s)\s*['\"]?(?:[^\s'\"]*/)?reports/"
+                          r"|\bopen\([^)\n]*reports/[^)\n]*,\s*['\"][wax]")),
     ("scan", re.compile(r"scan_grid\(|find_plateau\(")),
     ("validate", re.compile(r"run_walk_forward\(|\bmcpt\(")),
     ("schedule", re.compile(r"register_schedule\(|remove_schedule\(|\bcrontab\b|\bschtasks\b")),
-    ("data", re.compile(r"\bfetch_\w+\(|from lib\.data import")),
+    ("data", re.compile(r"\bfetch_\w+\(|from lib\.data import|\bfrom\s+lib\s+import\b[^\n;]*\bdata\b[\s\S]*?\bdata\.\w+\(")),
     ("account", re.compile(r"lib\.order_|lib/order_|lib\.account_")),
 )
 _FIRST_STR_ARG = {
@@ -2659,7 +2724,13 @@ _FIRST_STR_ARG = {
 _SSH_OPT_VALUE = set("bcDEeFIiJLlmOopQRSWw")
 _SCRIPT_READ_MAX = 64 * 1024
 _WIN_PATH_RE = re.compile(r"(?:^|[\s'\"])(?:[A-Za-z]:)?[\w.-]+\\[\w.-]")
-_READ_HEADS = ("ls", "find", "grep", "rg", "wc", "cat", "head", "tail", "less")
+_READ_HEADS = ("ls", "find", "grep", "rg", "wc", "cat", "head", "tail", "less", "sed", "awk", "nl", "bat")
+# 讀文件那組:跟 Read 工具同一份(references/、examples/、AGENTS.md、lib/*.py)
+_DOC_READ_HEADS = ("cat", "head", "tail", "less", "sed", "awk", "nl", "bat")
+_DOC_PATH_RE = re.compile(r"(?:^|\s|/)(?:references/|examples/|AGENTS\.md|lib/[\w.-]+\.py\b)")
+# 只看說明的 inline 程式(`python3 -c "…inspect.signature(…)"`、`quickstart()`):讀文件,不是做那件事
+_INSPECT_RE = re.compile(r"\binspect\b|\bhelp\(|__doc__|\bquickstart\(|\bdir\(")
+_INTERP_HEADS = ("node", "bash", "sh", "zsh", "uv")
 
 
 def _kind_obj(text):
@@ -2802,13 +2873,57 @@ def _executed_script(head_full, args, workspace):
     return "", []
 
 
+def _redirects_to_file(args):
+    """參數裡有 `> 檔`／`>> 檔`(`2>/dev/null`、`>&2` 不算;引號裡的 `>` shlex 已併進別的字,不會單獨出現)。"""
+    for i, a in enumerate(args):
+        m = re.match(r"^\d?(>>?)(.*)$", a)
+        if not m or m.group(2).startswith("&"):
+            continue
+        dest = m.group(2) or (args[i + 1] if i + 1 < len(args) else "")
+        if dest and dest != "/dev/null":
+            return True
+    return False
+
+
+def _non_redirect_args(args):
+    """拿掉重導(`2>/dev/null`、`> x`、`<in`)後的參數。"""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+            continue
+        m = re.match(r"^\d?(?:>>?|<)(&?)(.*)$", a)
+        if m:
+            skip = not m.group(2)
+            continue
+        out.append(a)
+    return out
+
+
+def _strip_heredoc_bodies(cmd):
+    """拿掉 heredoc 本文,只留 shell 那幾行:本文的每一行不是指令(`from lib.data import …` 的指令頭不是 from)。
+    本文還沒結束(串流到一半)就丟到底。"""
+    out, end = [], None
+    for line in cmd.split("\n"):
+        if end is not None:
+            if line.strip() == end:
+                end = None
+            continue
+        out.append(line)
+        m = re.search(r"<<-?\s*['\"]?(\w+)['\"]?", line)
+        if m:
+            end = m.group(1)
+    return "\n".join(out)
+
+
 def _bash_kind(cmd, workspace, trading, remote=False):
     if not isinstance(cmd, str) or not cmd.strip():
         return "unknown", ""
     # Windows 電腦版的路徑是反斜線(`python strategies\\x\\strategy.py`):shlex 會把它當跳脫吃掉,
     # 拆段前先換成 `/`(只影響判路徑用的這份;內容掃描照原文)
     pcmd = re.sub(r"\\(?=[\w.-])", "/", cmd) if _WIN_PATH_RE.search(cmd) else cmd
-    segs = [_seg_parse(s) for s in re.split(r"&&|\|\||[|;\n]", pcmd) if s.strip()]
+    shell = _strip_heredoc_bodies(pcmd)
+    segs = [_seg_parse(s) for s in re.split(r"&&|\|\||[|;\n]", shell) if s.strip()]
     env_all = {}
     for _h, _a, env in segs:
         env_all.update(env)
@@ -2857,20 +2972,45 @@ def _bash_kind(cmd, workspace, trading, remote=False):
                     text += "\n" + f.read(_SCRIPT_READ_MAX)
             except OSError:
                 pass
-    # 純讀檔的指令(`grep -n publish lib/report_templates.py`):字串裡出現關鍵字不代表在做那件事,指令頭先判
     heads = [os.path.basename(h) for h, _a, _e in segs
              if os.path.basename(h) not in ("", "cd", "export", "source", ".", "set", "echo", "sleep", "true")]
-    reader_only = heads and heads[0] in _READ_HEADS and not any(
-        h.startswith("python") or h in ("node", "bash", "sh", "zsh", "uv") for h in heads)
-    # C. 內容掃描
+    runs_code = any(h.startswith("python") or h in _INTERP_HEADS for h in heads)
+    # heredoc 寫檔(`cat > tmp/research/x.py <<'EOF'`):本文裡的 fetch_( 是寫進去的字,不是在抓;同一個指令接著跑它才算跑
+    target = "" if runs_code else _heredoc_write_target(pcmd)
+    if target:
+        rel = _ws_rel(target, workspace)
+        if rel.startswith("reports/"):
+            return "report", ""
+        m = re.match(r"strategies/([^/]+)/", rel)
+        if m:
+            return "strategy_write", _kind_obj(m.group(1))
+        return "file_write", _kind_obj(os.path.basename(rel))
+    # 純讀檔的指令(`sed -n … lib/report_templates.py`):字串裡出現關鍵字不代表在做那件事,指令頭先判。
+    # `sed -i` 與往檔案導出(`cat a > reports/x`)是寫,不算
+    for h, args, _e in () if runs_code else segs:
+        if os.path.basename(h) == "sed" and any(a.startswith("--in-place") or re.match(r"-[a-zA-Z]*i", a) for a in args):
+            files = _non_redirect_args(args)
+            path = _ws_rel(files[-1], workspace) if files else ""
+            m = re.match(r"strategies/([^/]+)/", path)
+            return ("strategy_write", _kind_obj(m.group(1))) if m else ("file_write", _kind_obj(os.path.basename(path)))
+    writes = any(_redirects_to_file(args) for _h, args, _e in segs)
+    reader_only = heads and heads[0] in _READ_HEADS and not runs_code and not writes
+    inline = any((os.path.basename(h).startswith("python") or os.path.basename(h) in _INTERP_HEADS)
+                 and (any(a in _INLINE_CODE_FLAGS for a in args) or "<<" in shell) for h, args, _e in segs)
+    inspect_only = inline and bool(_INSPECT_RE.search(text))
+    # C. 內容掃描(看 fetch_kline 的簽名不是在抓:inline 程式帶 inspect 字樣時 data 改判 docs;order／report 照樣優先)
     for kind, rx in () if reader_only else _KIND_SCAN:
         if rx.search(text):
+            if kind == "data" and inspect_only:
+                return "docs", ""
             obj = ""
             arg = _FIRST_STR_ARG.get(kind)
             hit = arg.search(text) if arg else None
             if hit and _TICKER_RE.match(hit.group(1)):
                 obj = hit.group(1)
             return kind, _kind_obj(obj)
+    if inspect_only:
+        return "docs", ""
     # 指令頭:第一個不是 cd／export 這類前置的段落
     for head_full, args, _env in segs:
         head = os.path.basename(head_full)
@@ -2884,9 +3024,9 @@ def _bash_kind(cmd, workspace, trading, remote=False):
             return "status", ""
         if head in ("curl", "wget"):
             return "data", ""
-        if head in ("cat", "head", "less") and re.search(r"(?:^|\s|/)(?:references/|AGENTS\.md)", joined):
+        if head in _DOC_READ_HEADS and _DOC_PATH_RE.search(joined):
             return "docs", ""
-        if head in ("ls", "find", "grep", "rg", "wc", "cat", "head", "tail"):
+        if head in _READ_HEADS:
             return "files", ""
         if head in ("scp", "sftp"):
             return "cloud", ""
@@ -3809,13 +3949,16 @@ def local_mcp_servers(sink, mcp_config, mcp_servers):
 # 寫進訊息本文的話,泡泡上就是用戶「說了」他沒說過的話(e2e 0.1.8 #131),對話存檔與重開畫回來的也是。只認這張表上的代號。
 TURN_NOTES = {
     "report_once": (
-        "This request came from the desktop app's New report dialog. Produce the report once, now; do not "
-        "register or offer a schedule."),
+        "This request came from the desktop app's New report dialog. Produce the report once, now — unless the "
+        "data check fails (references/reports.md §1b › Research questions): then answer in chat and offer the "
+        "report on the changed question. Either way, do not register or offer a schedule."),
     "report_recur": (
         "This request came from the desktop app's New report dialog, and it asks for the report on a schedule "
         "(every day, every week, a time of day). This computer produces it this once only and cannot schedule "
-        "it: produce the report now, do not register a schedule, and say so plainly in the first sentence of "
-        "your reply — this computer makes it this once, and recurring reports are set up on the cloud machine."),
+        "it: produce the report now (unless the data check fails — references/reports.md §1b › Research questions: "
+        "then answer in chat and offer the report on the changed question), do not register a schedule, and say so "
+        "plainly in the first sentence of your reply — this computer makes it this once, and recurring reports are "
+        "set up on the cloud machine."),
 }
 
 
