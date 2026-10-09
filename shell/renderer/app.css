@@ -955,7 +955,7 @@ body.resizing * { cursor: col-resize !important; }
 .plan-err{display:flex;gap:var(--space-8);margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}
 .plan-err .fault-mark{margin-top:9px}
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
-.plan-act{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-12)}
+.plan-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
 /* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 收起的細節;底列=一行跟錢有關的話 + 鈕 */
 .plan-pane .plan-scroll{padding:var(--space-16)}   /* 第一個東西是一列小字(帳號列),上距跟其他分類對齊 */

@@ -99,7 +99,7 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 .cv-p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-2); }
 .cv-above, .cv-open .plan-err { margin: var(--space-24) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cv-above.up { color: var(--ink-2); }
-.cv-act { display: flex; align-items: center; gap: var(--space-16); margin-top: var(--space-12); }
+.cv-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-16); margin-top: var(--space-12); }
 .cv-act .btn-fill, .cv-act .btn-out { height: 32px; }
 .cv-act .wait { font-size: 12px; color: var(--ink-3); }
 .cv-act .btn-quiet { font-size: 12px; }
