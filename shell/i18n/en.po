@@ -905,7 +905,7 @@ msgid "plan.manage"
 msgstr "Turn off on the web"
 
 msgid "plan.manageStopped"
-msgstr "Manage on the web"
+msgstr "Manage on the Web"
 
 msgid "cf.title"
 msgstr "Start the Blave Agent Cloud Plan?"
@@ -6848,32 +6848,32 @@ msgstr "Change the trading password"
 
 # ── 方案制(.m = api 切換之後的版本;app.js pvK 依 planMo() 挑)──
 msgid "pv.d.noTrial.m"
-msgstr "This account has no first-card trial. Blave data comes with a Blave Agent cloud plan (from {p} TWD a month) or an API plan."
+msgstr "This account has no first-card trial. Blave data comes with a Blave Agent plan (from {p} TWD a month) or an API plan."
 
 msgid "pv.d.trial.m"
-msgstr "Until {d}, data is free. After that, Blave data comes with a Blave Agent cloud plan ({p} TWD a month) or an API plan."
+msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews every {pd} days. Paid from your balance first, the card if it doesn’t cover a period."
 
 msgid "pv.d.noPrice.m"
-msgstr "Your AI setup stays as it is. After the trial, Blave data comes with a cloud plan or an API plan."
+msgstr "Your AI setup stays as it is. When the trial ends, the first plan period is charged automatically; cancel during the trial and nothing is charged."
 
 msgid "pv.f.out.m"
-msgstr "After {t} days, Blave data comes with a cloud plan ({p} TWD a month) or an API plan."
+msgstr "Free for {t} days, then {p} TWD a month is charged automatically; cancel during the trial and nothing is charged."
 
 msgid "pv.f.offer.m"
-msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. After {t} days, data comes with a cloud plan ({p} TWD a month) or an API plan."
+msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. The trial runs {t} days, then {p} TWD a month is charged automatically: from your balance first, this card if that’s short. Cancel during the trial and nothing is charged."
 
 msgid "pv.e.sub.m"
-msgstr "After that, data comes with a cloud plan ({p} TWD a month) or an API plan."
+msgstr "When the trial ends, {p} TWD a month is charged automatically; cancel during the trial and nothing is charged."
 
 msgid "pv.e.noTrial.m"
-msgstr "This computer can’t reach Blave data yet. It comes with a Blave Agent cloud plan or an API plan."
+msgstr "This computer can’t reach Blave data yet. It comes with a Blave Agent plan or an API plan."
 
 msgid "pv.w.noTrial.m"
-msgstr "Once the card is added, come back and start a cloud plan, or get an API plan."
+msgstr "Once the card is added, come back and start the plan, or get an API plan."
 
 # ── 方案制(api 的 MONTHLY_BILLING_FROM 之後;renderer/app.js planMo)──
 # 月價 {p}、年價 {y}、年繳付幾個月 {k}、年繳一期幾天 {yd}、寬限天數 {g}、到期日 {u}、刪機日 {gu} 都來自 account_status / 公開價目,不寫死;拿不到用 NoNum 那句。
-# 沒有本機階:只用電腦版的人要 Blave 資料,出口只有雲端方案或 API 方案。
+# 沒有本機階:只用電腦版的人要 Blave 資料,出口只有 Blave Agent 方案或 API 方案。方案 = 資料權限,主機可有可無:沒主機的格子與細則不講停機／刪機(*NoServer)。
 msgid "plan.cyc.monthly"
 msgstr "Monthly"
 
@@ -6929,7 +6929,7 @@ msgid "plan.st.stoppedPlan"
 msgstr "Stopped · plan unpaid"
 
 msgid "pv.h.stopped.m"
-msgstr "The plan is unpaid and the machine is stopped"
+msgstr "Pay again and the machine comes back"
 
 msgid "pv.d.stopped.m"
 msgstr "It’s retried once a day. If it’s still unpaid by {gu}, the machine is deleted, along with the strategies and data on it."
@@ -6962,7 +6962,7 @@ msgid "cf.m.pick"
 msgstr "Billing cycle"
 
 msgid "cf.m.mo.d"
-msgstr "{p} TWD every 30 days"
+msgstr "{p} TWD every {pd} days"
 
 msgid "cf.m.yr.d"
 msgstr "{y} TWD every {yd} days, you pay for {k} months"
@@ -6974,7 +6974,7 @@ msgid "cf.m.ok"
 msgstr "Pay {x} TWD to Start Plan"
 
 msgid "cf.m.repriced"
-msgstr "The price changed since this was shown. Check the amounts below and confirm again."
+msgstr "The amount was updated. Please confirm again."
 
 msgid "plan.err.charge"
 msgstr "Not started: the card payment didn’t go through."
@@ -6995,7 +6995,7 @@ msgid "data.seePlan"
 msgstr "See Plans"
 
 msgid "wd.note.noplan"
-msgstr "Comes with a cloud plan or an API plan"
+msgstr "Comes with a Blave Agent plan or an API plan"
 
 msgid "wd.note.payfail"
 msgstr "Paused: the plan payment didn’t go through"
@@ -7004,7 +7004,7 @@ msgid "lib.grp.plan"
 msgstr "After Starting a Plan"
 
 msgid "lib.grp.gate.noPlan"
-msgstr "These use Blave data, which comes with a cloud plan or an API plan."
+msgstr "These use Blave data, which comes with a Blave Agent plan or an API plan."
 
 msgid "lib.grp.repay"
 msgstr "After Paying"
@@ -7013,7 +7013,7 @@ msgid "lib.grp.gate.planFailed"
 msgstr "The plan payment didn’t go through, so these can’t backtest for now."
 
 msgid "lib.why.noPlan"
-msgstr "Blave data comes with a cloud plan or an API plan."
+msgstr "Blave data comes with a Blave Agent plan or an API plan."
 
 msgid "lib.why.planFailed"
 msgstr "The plan payment didn’t go through."
@@ -7022,7 +7022,7 @@ msgid "tr.cloud.means.3m"
 msgstr "If a plan payment fails, the machine stops: trading halts and positions stay at the exchange."
 
 msgid "pv.f.trial.m"
-msgstr "When a strategy has to run around the clock, you can start now: nothing is charged until {d}, then the first period of the cycle you pick."
+msgstr "Cancel on the website during the trial and nothing is charged. When a strategy has to run around the clock, start a cloud machine on the website; the same tier costs nothing extra."
 
 msgid "pv.f.running.noPay"
 msgstr "Next payment {u}: the wallet can’t cover it and there’s no card on file, so the machine would stop"
@@ -7037,25 +7037,25 @@ msgid "tr.cloud.stoppedPlanOk"
 msgstr "The machine is stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. The plan continues and renews as usual; start the machine again on the web."
 
 msgid "plan.onWeb"
-msgstr "Open on the Website"
+msgstr "Open on the Web"
 
 msgid "plan.changeCard"
-msgstr "Change Card on the Website"
+msgstr "Change Card on the Web"
 
 msgid "plan.resumeWeb"
-msgstr "Resume on the Website"
+msgstr "Resume on the Web"
 
 msgid "plan.st.ended"
 msgstr "Stopped · plan ended"
 
 msgid "pv.h.ended"
-msgstr "The plan has ended and the machine is stopped"
+msgstr "Resuming on the website pays a new period at once"
 
 msgid "pv.d.ended"
-msgstr "It was cancelled and won’t renew. On {gu} the machine is deleted, along with the strategies, data and keys on it. Resuming on the website pays a new period at once."
+msgstr "It was cancelled and won’t renew. On {gu} the machine is deleted, along with the strategies, data and keys on it."
 
 msgid "pv.d.endedNoNum"
-msgstr "It was cancelled and won’t renew. Soon the machine is deleted, along with the strategies, data and keys on it. Resuming on the website pays a new period at once."
+msgstr "It was cancelled and won’t renew. Soon the machine is deleted, along with the strategies, data and keys on it."
 
 msgid "tr.cloud.stoppedEnded"
 msgstr "The plan has ended and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. On {gu} the machine is deleted, along with the strategies, data and keys on it."
@@ -7087,9 +7087,6 @@ msgstr "Resume Trial on the Web"
 msgid "pv.st.planOn"
 msgstr "Plan active"
 
-msgid "pv.h.planOn"
-msgstr "Your plan includes Blave data"
-
 msgid "pv.d.planOn"
 msgstr "Your Blave Agent plan ({tier}) includes Blave data in this app. There’s no cloud machine; start one on the website when a strategy has to run around the clock."
 
@@ -7104,3 +7101,32 @@ msgstr "Start Plan"
 
 msgid "cf.m.title"
 msgstr "Start the Blave Agent Plan?"
+msgid "pv.d.trial.mNoNum"
+msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews each period. Paid from your balance first, the card if it doesn’t cover a period."
+
+msgid "pv.h.plan.m"
+msgstr "Blave data, as soon as the plan starts"
+
+msgid "pv.f.running.cancelNoServer"
+msgstr "Cancelled · runs until {u}, then Blave data stops"
+
+msgid "pv.f.running.noPayNoServer"
+msgstr "Next payment {u}: the wallet can’t cover it and there’s no card on file, so Blave data would pause"
+
+msgid "pv.f.running.failNoServer"
+msgstr "Payment failed · retried daily; the plan ends on {gu}"
+
+msgid "plan.rule.mNoServer"
+msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, Blave data pauses and it’s retried daily; after {g} days unpaid, the plan ends. Cancelling keeps it until the end of the period, with no refund."
+
+msgid "plan.rule.mNoServerNoNum"
+msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, Blave data pauses and it’s retried daily; left unpaid, the plan ends. Cancelling keeps it until the end of the period, with no refund."
+
+msgid "pv.inc.m2"
+msgstr "A cloud machine if you want one, at no extra charge for the same tier: strategies run on schedule and place orders"
+
+msgid "cf.m.mo.dNoNum"
+msgstr "{p} TWD each period"
+
+msgid "plan.startingM"
+msgstr "Starting Plan…"
