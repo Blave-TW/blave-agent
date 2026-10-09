@@ -1036,9 +1036,9 @@ const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, 
   bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", noWdCheck: true, ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" } };
 const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit"];
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
-/* 統一期貨 0.1.19 隨券商行情一起開;0.1.18 只藏入口不拆程式:關著時連接框的下拉不列統一,其餘(帳戶列、部位頁、狀態句、
-   開通中／開通過的「繼續」鈕)對已綁定的機器照舊。tests/check_shell_connect_venues 讀這個值決定期望清單 */
-const PRES_LOCAL_ON = false;
+/* 統一期貨入口:0.1.18 藏、統一行情(lib/president_quote 實盤 tick)驗過後開。關著時只藏連接框的下拉那一項,其餘(帳戶列、
+   部位頁、狀態句、開通中／開通過的「繼續」鈕)對已綁定的機器照舊。tests/check_shell_connect_venues 讀這個值決定期望清單 */
+const PRES_LOCAL_ON = true;
 // 這台電腦的下拉列不列統一:旗標開、或這個框是「繼續」帶著 president 進來的(少了那一項 select 會變空白)
 const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
 // 不在連接框那五家裡的三個帳戶(lib/account_paper.py、account_capital.py、account_president.py)
