@@ -3884,6 +3884,9 @@ DATA_ACCESS_WHY = {
     "signed_out": "the user is not signed in to Blave in this app",
     "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
     "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
+    # 方案制(api MONTHLY_BILLING_FROM 之後):沒有按小時買資料,資料只在雲端方案／API 方案裡
+    "no_plan": "the user is signed in; the account has no plan that includes Blave data (a Blave Agent cloud plan or an API plan)",
+    "plan_failed": "the user is signed in; the account's plan payment failed, so data is paused until it is paid",
     "unknown": "the user is signed in; the account status could not be read this turn",
 }
 
@@ -4039,13 +4042,14 @@ def browser_rule(mounted, web=None):
 def data_access_rule():
     """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
     是哪一種。三態:
-      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權,
-             但**會計費**:不含在試用／主機／API 方案裡就按小時收(api `decorators.py` 的
-             `blave_data_included` → `deduct_blave_api_credit`),扣不到才 403 `ERR007`。
+      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權。
+             不含在試用／雲端方案或主機／API 方案裡時:api 切換到方案制之前按小時收(`deduct_blave_api_credit`),
+             扣不到才 403 `ERR007`;切換之後沒有按小時買,直接 403 `ERR007`(body 指雲端方案與 API 方案)。
+             這段兩種都要講對:機隊與電腦版不會在同一刻換版。
              所以這段講的是 `ERR007` / `ERR005`(key 被撤)/ `KEY_SCOPE`(越權)。
-      `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(account_status 的 data_access = none),
-             或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY 說是哪一種
-             (`signed_out` / `no_card` / `no_balance` / `unknown`):少了它,模型對登入著、只是餘額
+      `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(data_access = none),或方案制下沒有方案／方案扣款失敗
+             (plan_required / payment_failed),或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY
+             說是哪一種(`signed_out` / `no_card` / `no_balance` / `no_plan` / `plan_failed` / `unknown`):少了它,模型對登入著、只是餘額
              不夠的人也回「要先登入」(2026-09-24 真機)。舊外殼不帶 → 原文不變。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
              的預設敘述走,system prompt 一個字都不變。
@@ -4062,18 +4066,19 @@ def data_access_rule():
             "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
             "reads you write yourself, in the language the per-turn language directive names; "
             "do not copy, translate or adapt phrasing from this block or from an error body.\n"
-            "Billing: data on this key is free while the card trial is running, or when the "
-            "account has a Blave Agent cloud machine (including one still being set up) or an "
-            "API plan. Otherwise it is charged per clock hour in which any data call is made — "
-            "not per call. A successful call can therefore cost the user money: fetch only what "
-            "this turn needs and never poll.\n"
+            "Billing: data on this key is included while the card trial is running, or when the "
+            "account has a Blave Agent cloud plan or machine (including one still being set up) or "
+            "an API plan. Otherwise it depends on the account's billing: either it is charged per "
+            "clock hour in which any data call is made — not per call — so a successful call can "
+            "therefore cost the user money, or (plan billing) there is no data until a cloud plan or "
+            "an API plan is started. Fetch only what this turn needs and never poll.\n"
             "Three different 403s:\n"
-            "- `ERR007` — that hourly fee could not be charged. The body carries the current "
-            "rate, a `retry_after` that is a ceiling rather than a wait (a top-up lifts the "
-            "block at once), and links for topping up, an API plan and starting a machine. "
-            "Convey why the data stopped, that the fee is hourly rather than per call, and the "
-            "ways out the body names; never state a rate, currency or deadline the body did not "
-            "give you. Do not work around the block.\n"
+            "- `ERR007` — the account has no data access right now: either the hourly data fee "
+            "could not be charged, or (plan billing) the account has no plan that includes data. "
+            "The body's message and `next_steps` say which and name the ways out (topping up, a "
+            "cloud plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
+            "wait. Convey why the data stopped and the ways out the body names; never state a "
+            "rate, currency or deadline the body did not give you. Do not work around the block.\n"
             "- `ERR005` (`Invalid API key`) — this key was deleted or revoked. The way back is "
             "signing in to Blave again in the app; do not go looking for another key.\n"
             "- `KEY_SCOPE` — the action is outside this key's scope. This desktop key is "
@@ -4097,9 +4102,10 @@ def data_access_rule():
             + (f" — {why}" if why else "")
             + ". Access comes with signing in "
             "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex): free "
-            "while the card trial is active or when the account owns a Blave Agent cloud machine or "
-            "an API plan, and otherwise charged per clock hour of use, which needs a balance that "
-            "covers that hour. The Blave-only datasets, which stop that way: holder concentration, "
+            "while the card trial is active or when the account has a Blave Agent cloud plan or cloud "
+            "machine or an API plan; otherwise, depending on the account's billing, either charged per clock "
+            "hour of use, which needs a balance that covers that hour, or (plan billing) not available "
+            "until a cloud plan or an API plan is started. The Blave-only datasets, which stop that way: holder concentration, "
             "whale hunter, taker intensity, liquidation, Taiwan chip / institutional / futures data "
             "and the rest of the Blave indicators. Public data still works: crypto klines "
             "(`fetch_kline`, Binance public endpoints) and the key-free public fetchers; single-ticker "
@@ -4111,8 +4117,9 @@ def data_access_rule():
             "for a dataset, make the call — it stops at once if it needs Blave data.\n"
             "Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, "
             "your reply must: name which data is "
-            "missing; give the conditions under which it becomes available (signed in, with a "
-            "balance that covers the hourly data fee, or the card trial, or a cloud machine); carry "
+            "missing; give the conditions under which it becomes available (signed in, plus the card "
+            "trial, a cloud plan or an API plan — or, where the account is still billed by the hour, a "
+            "balance that covers the hourly data fee); carry "
             "no directions, next steps or prices; not push; and then answer "
             "whatever part public data does allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"
