@@ -804,10 +804,14 @@ async function upCloudUpdate(opener) {
   if (!cl.ask) { await upCloudSend(); return; }
   /* 狀態句三選一(設計師 D 版,同 web 的分支):在跑 → 改到下單程式才在空檔用新版重啟;重開沒確認停住 → 新版下單程式起來會先停住
      (有重開紀錄時,雲端的更新腳本只重啟會先停住的那一版);其餘(回報過期、loading、halted 但不新鮮…)都是讀不到 → 照在跑處理。
-     回報不新鮮(alive=false)時裡面的狀態不能信(同 upNow),不走 unconfirmed 那句。lede 帶版號「從 cv 到 lv」,缺一就用不帶號那句 */
+     回報不新鮮(alive=false)時裡面的狀態不能信(同 upNow),不走 unconfirmed 那句。lede 帶版號「從 cv 到 lv」,缺一就用不帶號那句。
+     帶版號那句自己畫成 p 走 lead 槽:版號要 mono(D 版 §2),lines 只吃 textContent */
   const cst = TR_BAGS.cloud.st, ex = cst.alive ? trExecState(cst) : "unknown", c = cst.cloud || {}, cv = c.config_version, lv = c.latest_config_version;
   const state = ex === "running" ? "up.cf.body1" : ex === "unconfirmed" ? "up.cf.body1Unconfirmed" : "up.cf.body1Unknown";
-  confirmBox({ title: t("up.cf.title"), lines: [cv && lv ? t("up.cf.lede", { cv, lv }) : t("up.cf.ledeBare"), t(state)],
+  let lead = null; const lines = [t(state)];
+  if (cv && lv) { lead = document.createElement("p"); lead.className = "cf-lede"; upRich(lead, "up.cf.lede", { cv, lv }, { mono: ["cv", "lv"] }); }
+  else lines.unshift(t("up.cf.ledeBare"));
+  confirmBox({ title: t("up.cf.title"), lead, lines,
     details: [{ items: ["up.cf.d1", "up.cf.d2", "up.cf.d3", "up.cf.d4", "up.cf.d5"].map((k) => t(k)) }], ok: t("up.cf.ok"),
     opener: opener || $("set-upc-btn"), env: "cloud", footWhere: upCloudWhere(cst), onOk: () => { upCloudSend(); }, onCancel: () => { trackFeature("cloud_upd_cancel"); } });
 }

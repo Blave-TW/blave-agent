@@ -1018,6 +1018,8 @@ body.resizing * { cursor: col-resize !important; }
 /* 確認框:三句各自一段 */
 .del-body.lines p{margin:0}
 .del-body.lines p+p{margin-top:var(--space-8)}
+/* 更新雲端主機確認框的 lede(lead 槽):版號 mono、主墨;確認框在 .app 外面吃不到 .app .mono(同 .cf-rows.kv) */
+.del-body.lines p.cf-lede .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
 /* 確認框內的通用排版(confirmBox 的 extra 用;金額確認框、之後的「送上雲端」共用):一組「說明 — 數字」列,分三個字級 */
 .cf-rows { margin: 0; }
 .cf-row { display: flex; align-items: baseline; gap: var(--space-16); padding: var(--space-6) 0; }

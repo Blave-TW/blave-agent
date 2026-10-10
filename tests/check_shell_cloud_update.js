@@ -24,11 +24,17 @@ eval(["trHasAccount", "trPresWip", "trSetupOnly", "trRecRunning", "trRestartStop
 const trVenueIds = (r) => (r && r.venue ? [r.venue] : []), trVenueLabel = (id) => id || "", envMoney = (st) => (st && st.report && st.report.venue === "paper" ? "paper" : "real");
 const envMoneyText = (m) => (m === "paper" ? "模擬" : "真錢"), trWhereTidy = (s) => s;
 const paneSt = { chat: { off: false } }, paneToggle = () => {}, upPaint = () => {}, upRefresh = () => Promise.resolve(), $ = (id) => ({ id });
+// 最小假 DOM:lede 那一句經 upRich 畫成 p(版號包 .mono)走 lead 槽
+class El { constructor(tag) { this.tag = tag; this.className = ""; this.children = []; this._t = ""; } append(...x) { x.forEach((y) => this.children.push(y)); }
+  get textContent() { return this.children.length ? this.children.map((c) => (typeof c === "string" ? c : c.textContent)).join("") : this._t; } set textContent(v) { this._t = String(v); this.children.length = 0; } }
+const document = { createElement: (tag) => new El(tag) };
+const mono = (n, s) => !!n && (n.children || []).some((c) => c && c.className === "mono" && c.textContent === s);
+const ledeOk = (b, cv, lv) => !!b.lead && b.lead.tag === "p" && b.lead.className === "cf-lede" && /^up\.cf\.lede\{/.test(b.lead.textContent) && mono(b.lead, cv) && mono(b.lead, lv);
 let UP = { phase: "idle", current: "0.1.14", checkedAt: 1 };
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var UP_CHECKING = false, UP_CLOUD_BUSY = false;
-eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upLocalTurn", "upNow", "upTurnEnded", "upCloudWhere"].map((n) => fnOr(n)).join("\n"));
+eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upLocalTurn", "upNow", "upTurnEnded", "upCloudWhere", "upRich"].map((n) => fnOr(n)).join("\n"));
 eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend"].map((n) => fnOr(n, true)).join("\n"));
 
 // 每個下單狀態對到一份會讓真 trExecState 回出那個值的回報(alive = cloud.js 的「主機在跑而且回報夠新」)
@@ -49,9 +55,9 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
   const b = boxes[0] || {};
   ok("更新雲端主機:自動下單在跑(running)→ 先跳確認框,按下之前什麼都不送", boxes.length === 1 && sent.length === 0);
   const D5 = '["up.cf.d1","up.cf.d2","up.cf.d3","up.cf.d4","up.cf.d5"]';
-  ok("確認框(設計師 D 版):雲端樣式 + footWhere「雲端 · 真錢 · Binance」+ 只有 lede(帶 cv→lv)與在跑那一句 + 主鈕「開始更新」",
+  ok("確認框(設計師 D 版):雲端樣式 + footWhere「雲端 · 真錢 · Binance」+ 只有 lede(帶 cv→lv,走 lead 槽、版號 mono)與在跑那一句 + 主鈕「開始更新」",
     b.env === "cloud" && /env\.cloud/.test(b.footWhere || "") && /真錢/.test(b.footWhere || "") && /binance/.test(b.footWhere || "") && b.title === "up.cf.title"
-    && JSON.stringify(b.lines) === '["up.cf.lede{\\"cv\\":\\"2026-10-04-c\\",\\"lv\\":\\"2026-10-04-d\\"}","up.cf.body1"]' && b.ok === "up.cf.ok" && !b.single);
+    && ledeOk(b, "2026-10-04-c", "2026-10-04-d") && JSON.stringify(b.lines) === '["up.cf.body1"]' && b.ok === "up.cf.ok" && !b.single);
   ok("…細節一組五條(items,預設收合)、沒有 keep、沒有舊的 text / detailsOpen", Array.isArray(b.details) && b.details.length === 1 && JSON.stringify(b.details[0].items) === D5
     && !b.details[0].text && !b.details[0].label && b.keep === undefined && !b.detailsOpen);
   ok("原文裡沒有退役的 body2 / detail / keep", !/up\.cf\.body2|up\.cf\.detail|keep:/.test(cut(src, "upCloudUpdate") || ""));
@@ -63,28 +69,28 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
 
   reset(st("unconfirmed", { report: { venue: "paper", reconciler: { stopped: { reason: "machine_restart", gated: false } } } })); await upCloudUpdate();
   ok("重開沒能確認停住(unconfirmed,模擬也算)→ 跳確認;狀態句換成「換成新版後會先停住」那句(不寫用新版重新啟動);lede 照帶版號;footWhere 寫模擬", boxes.length === 1 && sent.length === 0 && /模擬/.test(boxes[0].footWhere || "")
-    && boxes[0].lines.length === 2 && /^up\.cf\.lede\{/.test(boxes[0].lines[0]) && boxes[0].lines[1] === "up.cf.body1Unconfirmed");
+    && ledeOk(boxes[0], "2026-10-04-c", "2026-10-04-d") && JSON.stringify(boxes[0].lines) === '["up.cf.body1Unconfirmed"]');
   reset(st("running", { cloud: { latest_config_version: null, config_supports_wf: false } })); await upCloudUpdate();
   ok("讀不到最新版號(lv null、lib 沒有 walk_forward 才算落後)→ 照開框,lede 用不帶號那句(同關於列「有新版」不帶號的退化)", boxes.length === 1 && sent.length === 0
-    && JSON.stringify(boxes[0].lines) === '["up.cf.ledeBare","up.cf.body1"]');
+    && JSON.stringify(boxes[0].lines) === '["up.cf.ledeBare","up.cf.body1"]' && !boxes[0].lead);
   reset(st("running", { cloud: { config_version: null, latest_config_version: null, config_supports_wf: false } })); await upCloudUpdate();
-  ok("cv 也讀不到 → 一樣不帶號", boxes.length === 1 && boxes[0].lines[0] === "up.cf.ledeBare");
+  ok("cv 也讀不到 → 一樣不帶號(照舊走 lines,沒有 lead)", boxes.length === 1 && boxes[0].lines[0] === "up.cf.ledeBare" && !boxes[0].lead);
   for (const ex of ["halted", "dead", "noaccount"]) {
     reset(st(ex)); await upCloudUpdate();
     ok("更新雲端主機:" + ex + " → 不問、直接送 up.c.msg;記 open + ok", boxes.length === 0 && sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(tracked) === '["cloud_upd_open","cloud_upd_ok"]');
   }
   for (const ex of ["loading", "unknown"]) {
     reset(st(ex)); await upCloudUpdate();
-    ok("更新雲端主機:" + ex + "(讀不到下單狀態)→ 當成可能在跑,先問;狀態句用「讀不到,照正在跑處理」那句(不再借 unconfirmed 的「主機重開後」)", boxes.length === 1 && sent.length === 0 && boxes[0].lines.length === 2 && boxes[0].lines[1] === "up.cf.body1Unknown");
+    ok("更新雲端主機:" + ex + "(讀不到下單狀態)→ 當成可能在跑,先問;狀態句用「讀不到,照正在跑處理」那句(不再借 unconfirmed 的「主機重開後」)", boxes.length === 1 && sent.length === 0 && !!boxes[0].lead && JSON.stringify(boxes[0].lines) === '["up.cf.body1Unknown"]');
   }
   ok("st() 造出的回報經真 trExecState 得到預期的狀態", ["running", "halted", "dead", "noaccount", "unknown", "loading"].every((ex) => trExecState(st(ex)) === ex)
     && trExecState(st("unconfirmed", { report: { reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } } })) === "unconfirmed");
   for (const [ex, why] of [["running", "回報寫對帳器在跑"], ["halted", "回報寫已暫停(用戶可能已在 web / TG 恢復)"], ["dead", "回報寫對帳器沒在跑"]]) {
     reset(st(ex, { alive: false })); await upCloudUpdate();
-    ok("主機在跑但回報過期(alive:false;連不上 / 429 / 睡醒)+ " + why + " → 一律先問,狀態句用「讀不到」那句", boxes.length === 1 && sent.length === 0 && boxes[0].lines[1] === "up.cf.body1Unknown");
+    ok("主機在跑但回報過期(alive:false;連不上 / 429 / 睡醒)+ " + why + " → 一律先問,狀態句用「讀不到」那句", boxes.length === 1 && sent.length === 0 && JSON.stringify(boxes[0].lines) === '["up.cf.body1Unknown"]');
   }
   reset(st("unconfirmed", { alive: false, report: { reconciler: { stopped: { reason: "machine_restart", gated: false } } } })); await upCloudUpdate();
-  ok("回報過期 + 裡面寫重開沒確認停住:過期的回報不能信(同 upNow),狀態句仍用「讀不到」那句、不講「主機重開後」", boxes.length === 1 && boxes[0].lines[1] === "up.cf.body1Unknown");
+  ok("回報過期 + 裡面寫重開沒確認停住:過期的回報不能信(同 upNow),狀態句仍用「讀不到」那句、不講「主機重開後」", boxes.length === 1 && boxes[0].lines[0] === "up.cf.body1Unknown");
   ok("三分支各出各的句:running / unconfirmed / 其餘 unknown(原文沒有別的 up.cf.body1* 分支)", (cut(src, "upCloudUpdate") || "").split("up.cf.body1").length === 4);
   reset(st("running", { cloud: { latest_config_version: "2026-10-04-c" } })); await upCloudUpdate();
   ok("雲端已是最新(沒有落後也沒有重開未確認):更新雲端主機什麼都不做", boxes.length === 0 && sent.length === 0);
