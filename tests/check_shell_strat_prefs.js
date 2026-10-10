@@ -83,9 +83,9 @@ try {
   const before2 = cutFn(sfSrc, "sfBeforeRebuild");
   ok("④ sfBeforeRebuild:收面板、等偏好讀好、拖拉中等 waiters;拖完(含 pointercancel)都 resolve", /sfPopClose\(false\)/.test(before2) && /sfReady\(\)/.test(before2) && /SF\.dragActive \? new Promise\(\(r\) => SF\.waiters\.push\(r\)\)/.test(before2)
     && /const finish = \(\) => \{ SF\.dragActive = false;[^\n]*SF\.waiters = \[\]; ws\.forEach\(\(r\) => r\(\)\); \};/.test(sfSrc) && /if \(ev\.pointerId === SF\.dragPointer && cleanup\(\)\) finish\(\);/.test(sfSrc));
-  ok("④ 旗標值沒變不寫不埋;拖回原位不寫;兩個埋點是字面、都在白名單", /if \(next === sfFlagId\(SF\.flags\[name\]\)\) return;/.test(cutFn(sfSrc, "sfSetFlag")) && /if \(to !== from\) \{[^\n]*sfMoved\(\); \}/.test(sfSrc)
+  ok("④ 旗標值沒變不寫不埋;拖回原位不寫;兩個埋點是字面、都在白名單(0.1.20 A 案的 browser_hb_card 接在它們後面)", /if \(next === sfFlagId\(SF\.flags\[name\]\)\) return;/.test(cutFn(sfSrc, "sfSetFlag")) && /if \(to !== from\) \{[^\n]*sfMoved\(\); \}/.test(sfSrc)
     && /trackFeature\("strat_flag_set"\);/.test(cutFn(sfSrc, "sfSetFlag")) && /trackFeature\("strat_reorder"\);/.test(cutFn(sfSrc, "sfMoved"))
-    && (() => { const { EVENTS } = require(path.join(SHELL, "telemetry.js")); const n = EVENTS.feature_used.name; return n.slice(-2).join() === "strat_flag_set,strat_reorder" && n.every((x) => x.length <= 16); })());
+    && (() => { const { EVENTS } = require(path.join(SHELL, "telemetry.js")); const n = EVENTS.feature_used.name; return n.slice(-3).join() === "strat_flag_set,strat_reorder,browser_hb_card" && n.every((x) => x.length <= 16); })());
   ok("④ 面板:role=menu、色塊 menuitemradio、Esc 不冒泡到 escTop、外點 / resize / 捲動即收、右鍵的刪除那條走 ✕ 的武裝(回合中不給)",
     /sfPop\.setAttribute\("role", "menu"\)/.test(sfSrc) && /c\.setAttribute\("role", "menuitemradio"\)/.test(sfSrc) && /if \(e\.key === "Escape"\) \{ e\.stopPropagation\(\); sfPopClose\(true\); return; \}/.test(sfSrc)
     && /window\.addEventListener\("resize", \(\) => sfPopClose\(false\)\);/.test(sfSrc) && /\$\("strat-list"\)\.addEventListener\("scroll", \(\) => sfPopClose\(false\)\);/.test(sfSrc)

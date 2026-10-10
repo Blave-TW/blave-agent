@@ -119,7 +119,7 @@ if (!process.versions.electron) (async () => {
     evs = await turn();
     await kept("焦點在" + name, s, evs, "user_in_control");
   }
-  t("  user_in_control 的訊息:請用戶按瀏覽器標題旁的「好了，交還 agent」或回一句話", /hand it back\. Tell the user exactly this/.test(last.message) && /瀏覽器標題旁的『好了，交還 agent』，或聊天裡那一頁的『交還 agent』，也可以直接回我一句話/.test(last.message) && /'Hand back' on that page in the chat/.test(last.message) && /Done, hand back to agent/.test(last.message) && /next to the Browser title/.test(last.message) && !/頁面上方|top of that page/.test(last.message), last.message);
+  t("  user_in_control 的訊息:請用戶按聊天列的「交還 agent」或請求卡上的「好了，交還 agent」或回一句話", /hand it back\. Tell the user exactly this/.test(last.message) && /聊天裡那一頁的『交還 agent』，或請求卡上的『好了，交還 agent』，也可以直接回我一句話/.test(last.message) && /'Hand back' on that page in the chat/.test(last.message) && /'Done, hand back to agent' on the request card/.test(last.message) && !/Browser title/.test(last.message) && !/頁面上方|top of that page/.test(last.message), last.message);
   s.wc._focus = "throw";
   evs = await turn();
   await kept("問不到焦點(頁面沒回應)", s, evs, "user_in_control");

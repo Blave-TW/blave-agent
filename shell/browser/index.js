@@ -448,7 +448,7 @@ function createBrowser(o) {
   const ERR = (error, message, extra) => R(Object.assign({ ok: false, error, message }, extra || {}), error !== "needs_user" && error !== "still_waiting");
   const MSG = {
     not_found: "no such tab; call browser_tabs to see the tabs you can use",
-    user_in_control: "the user is operating this tab: you cannot read or act on it until they hand it back. Tell the user exactly this in your reply and give no other reason: 「這一頁你正在操作。弄好之後按瀏覽器標題旁的『好了，交還 agent』，或聊天裡那一頁的『交還 agent』，也可以直接回我一句話，我就接著讀。」 (English UI: \"You're in control of this page. When you're done, press 'Done, hand back to agent' next to the Browser title, or 'Hand back' on that page in the chat, or just reply here, and I'll pick it up.\") The tab is still open and nothing was lost. Work on another tab meanwhile; use this one after they hand it back",
+    user_in_control: "the user is operating this tab: you cannot read or act on it until they hand it back. Tell the user exactly this in your reply and give no other reason: 「這一頁你正在操作。弄好之後按聊天裡那一頁的『交還 agent』，或請求卡上的『好了，交還 agent』，也可以直接回我一句話，我就接著讀。」 (English UI: \"You're in control of this page. When you're done, press 'Hand back' on that page in the chat, or 'Done, hand back to agent' on the request card, or just reply here, and I'll pick it up.\") The tab is still open and nothing was lost. Work on another tab meanwhile; use this one after they hand it back",
     stale_ref: "the ref is out of date; call browser_snapshot again",
     obscured: "the element is covered by another element (often a cookie banner or popup); close that first",
     browser_off: "the user turned the built-in browser off",
