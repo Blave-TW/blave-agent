@@ -104,8 +104,9 @@ const EVENTS = {
     "pick_gate_lock",
     // 策略庫成功筆記(0.1.12;renderer/library.js):閱讀頁內文第一次畫成功
     "library_note",
-    // 內建瀏覽器的交還鈕(0.1.12;renderer/browser.js):標題列那顆、聊天那一列那顆,按了就記(不管有沒有 need;browser_handoff 照舊)
-    "browser_hb_head", "browser_hb_chat",
+    // 內建瀏覽器聊天那一列的交還鈕(0.1.12;renderer/browser.js):按了就記(不管有沒有 need;browser_handoff 照舊)。
+    // 標題列那顆 browser_hb_head 在 0.1.20 A 案拿掉(鈕搬進請求卡 → browser_hb_card,在表尾)
+    "browser_hb_chat",
     // 部位表點策略名開那支的進出場紀錄(0.1.12;renderer/trade.js trStratOpen):真的換頁才送,點下去才發現不在的不送
     "trade_strat_open",
     // 策略庫轉換(0.1.13;renderer/library.js libTurnEnd / libCloudChanged):「用這支」那一輪結束、清單真的多了一支(或覆蓋同名那支);
@@ -146,7 +147,9 @@ const EVENTS = {
     "plan_manage_web",
     // 側欄整理(0.1.20;renderer/stratflags.js):面板裡按了色塊或「移除旗標」且值真的變了、拖拉落點≠起點或 Alt+↑/↓ 真的移了一格。
     // 本機與雲端 tab 共用同兩個名字(雲端 tab 0.1.20 只讀,還沒有送出點)
-    "strat_flag_set", "strat_reorder"] },
+    "strat_flag_set", "strat_reorder",
+    // 內建瀏覽器請求卡上的「好了，交還 agent」(0.1.20 A 案;renderer/browser.js brAsk):接手中按了就記(驗證、登入、送出、上傳都同一顆)
+    "browser_hb_card"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
