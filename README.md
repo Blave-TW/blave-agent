@@ -1,10 +1,8 @@
 # Blave Agent
 
-**Agentic Quant Workspace**
+## Quant Workspace for AI Agents
 
-## Turn Your Agent into a Quant
-
-Free and open source. Connect your Claude Code or Codex. You describe the idea; it writes the strategy, runs the backtest, and trades it live.
+Build, backtest and trade strategies live with Claude Code or Codex. Free and open source.
 
 **English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
@@ -31,10 +29,6 @@ Overfitting: parameters that just happen to fit past data.
 ### See Whether Live Runs the Code You Backtested
 
 A backtest pins a version of the strategy. If the code running live no longer matches that version, the strategy is flagged — the web workspace shows "Live · file changed" instead of a clean "Live". The flag does not stop the strategy from running. It applies only to strategy types that are backtested (Type A and C), and only to strategies that have been versioned.
-
-### No LLM in the Order Loop
-
-The agent does the research and writes the code. Scheduled runs are deterministic code on a scheduler; `manager/reconciler.py` moves the account toward the target positions. A kill switch (`state/HALT`) blocks new exposure at the order-library level, while closes and stops still go through.
 
 ### Reports That Read the News First
 
@@ -135,7 +129,7 @@ For any other exchange or broker with an API, the agent can write a helper from 
 ## Safety and Limits
 
 - **Where exchange keys live depends on the surface.** Desktop app: in the workspace `.env` on your computer (`~/Blave/workspace/.env` on macOS, `%USERPROFILE%\Blave\workspace\.env` on Windows). Cloud machine: in the workspace `.env` on your own dedicated machine. A venue bound on the web page: stored encrypted by Blave. The agent can read the workspace `.env`; its rules forbid printing key values (`references/exchange-connect.md`). Give a key read and trade permission only, never withdrawal. A key with withdrawal permission is refused when you connect it (Binance, OKX, BingX, Bybit — desktop app, cloud machine and web page alike). Gate.io does not report the flag at all, so check that one yourself.
-- Funding amounts and resuming trading are done by you — in the desktop app's Auto trading page, or on the web workspace for a cloud machine. The agent refuses to do them for you, even when asked. The one thing it may always do by itself is trip the kill switch.
+- Funding amounts and resuming trading are done by you — in the desktop app's Auto trading page, or on the web workspace for a cloud machine. The agent refuses to do them for you, even when asked. The one thing it may always do by itself is trip the kill switch. The kill switch (`state/HALT`) blocks new exposure; closes and stops still go through.
 - On the desktop app, orders only go out while Blave is running; after you quit and reopen it, trading stays paused until you press Start trading.
 - The agent verifies before it reports: it re-reads a file after editing it, and queries an order back from the exchange before saying it was placed. Every order attempt is logged to `state/audit.jsonl`.
 - A backtest describes the past. It does not predict or guarantee future results. MCPT checks whether a result is statistically significant, and parameter scans check for overfitting; both only lower the odds that a backtest is fooling you, and neither removes them.

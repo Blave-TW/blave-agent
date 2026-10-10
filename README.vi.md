@@ -1,10 +1,8 @@
 # Blave Agent
 
-**Không gian làm việc quant**
+## Không gian làm việc quant cho AI agent
 
-## Biến agent của bạn thành một quant
-
-Miễn phí, mã nguồn mở. Kết nối Claude Code hoặc Codex của bạn. Bạn nói ý tưởng; nó viết chiến lược, chạy backtest và giao dịch tự động.
+Xây dựng chiến lược, backtest và giao dịch thật với Claude Code hoặc Codex. Miễn phí, mã nguồn mở.
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | **Tiếng Việt**
 
@@ -33,10 +31,6 @@ Overfitting: tham số chỉ tình cờ khớp với dữ liệu quá khứ.
 ### Biết được khi chạy thật có đúng là code đã backtest
 
 Mỗi lần backtest sẽ chốt một phiên bản của chiến lược. Nếu code đang chạy thật không còn khớp với phiên bản đó, chiến lược sẽ bị gắn cờ — workspace trên web hiện "Đang chạy · tệp đã đổi" thay vì chỉ "Đang chạy". Cờ này không dừng chiến lược. Nó chỉ áp dụng cho các loại chiến lược có backtest (Type A và C), và chỉ với những chiến lược đã có phiên bản.
-
-### Không có LLM trong vòng lặp đặt lệnh
-
-Agent lo nghiên cứu và viết code. Các lần chạy theo lịch là code tất định trên một bộ lập lịch; `manager/reconciler.py` đưa tài khoản về các vị thế mục tiêu. Kill switch (`state/HALT`) chặn việc mở thêm rủi ro ngay ở tầng thư viện đặt lệnh, trong khi lệnh đóng vị thế và lệnh dừng lỗ vẫn đi qua.
 
 ### Báo cáo đọc tin tức trước
 
@@ -103,7 +97,7 @@ Tin mới xem ở bản tiếng Anh: [README.md › News](README.md#news)
 ## An toàn và giới hạn
 
 - **Key sàn được lưu ở đâu tùy vào nơi bạn dùng.** Bản máy tính: trong `.env` của workspace trên máy tính của bạn (`~/Blave/workspace/.env` trên macOS, `%USERPROFILE%\Blave\workspace\.env` trên Windows). Máy chủ đám mây: trong `.env` của workspace trên máy chủ riêng của bạn. Sàn liên kết trên trang web: key được Blave lưu dạng mã hóa. Agent đọc được `.env` của workspace; quy tắc của nó cấm in ra giá trị của key (`references/exchange-connect.md`). Chỉ cấp quyền đọc + giao dịch cho key, không bao giờ cấp quyền rút tiền. Key có quyền rút tiền sẽ bị từ chối khi kết nối (Binance, OKX, BingX, Bybit; bản máy tính, máy chủ đám mây và trang web đều như nhau). Gate.io hoàn toàn không trả về thông tin quyền này, nên với sàn này hãy tự kiểm tra.
-- Số tiền đầu tư và việc tiếp tục giao dịch do chính bạn làm — trên trang Giao dịch tự động của bản máy tính, hoặc trên workspace web với máy chủ đám mây. Agent sẽ từ chối làm thay bạn, kể cả khi được yêu cầu. Việc duy nhất nó luôn được tự làm là kích hoạt kill switch.
+- Số tiền đầu tư và việc tiếp tục giao dịch do chính bạn làm — trên trang Giao dịch tự động của bản máy tính, hoặc trên workspace web với máy chủ đám mây. Agent sẽ từ chối làm thay bạn, kể cả khi được yêu cầu. Việc duy nhất nó luôn được tự làm là kích hoạt kill switch. Kill switch (`state/HALT`) chặn mở vị thế mới; lệnh đóng và cắt lỗ vẫn được thực hiện.
 - Trên bản máy tính, lệnh chỉ được gửi khi Blave đang mở; sau khi thoát rồi mở lại, giao dịch vẫn tạm dừng cho đến khi bạn nhấn Bắt đầu giao dịch.
 - Agent kiểm tra rồi mới báo: sửa tệp xong sẽ đọc lại, đặt lệnh xong sẽ truy vấn lại sàn rồi mới nói lệnh đã được đặt. Mọi lần thử đặt lệnh đều được ghi vào `state/audit.jsonl`.
 - Backtest mô tả quá khứ. Nó không dự đoán hay bảo đảm kết quả tương lai. MCPT kiểm tra kết quả có ý nghĩa thống kê hay không, còn quét tham số kiểm tra có overfitting hay không; cả hai chỉ giảm khả năng bạn bị backtest đánh lừa, và không cái nào loại bỏ được khả năng đó.

@@ -1,11 +1,9 @@
 # Blave Agent
 
-**量化工作台**
+## 給 AI Agent 的量化工作台
 
-## 讓你的 AI 學會做量化
-
-免費開源，接上你的 Claude Code 或 Codex<br>
-你講想法，它寫策略、跑回測、上線自動交易
+用 Claude Code 或 Codex 寫策略、跑回測、上線自動交易<br>
+免費開源
 
 [English](README.md) | **繁體中文** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
@@ -32,10 +30,6 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 ### 看得到實盤跑的是不是回測那份
 
 回測會把策略定版。實盤跑的程式跟定版時不同，這支策略就會被標記——網頁工作頁顯示「上線中 · 檔案已改」，而不是乾淨的「上線中」。標記不會擋下執行。只適用有回測的策略類型（Type A 與 C），而且只限定過版的策略。
-
-### 下單迴圈裡沒有 LLM
-
-AI 負責研究與寫程式。排程跑的是確定性的程式，`manager/reconciler.py` 把帳戶對到目標部位。緊急停止開關（`state/HALT`）在下單函式庫那一層擋掉新曝險，平倉與停損照常放行。
 
 ### 報告先看新聞再動筆
 
@@ -136,7 +130,7 @@ npm.cmd start
 ## 安全與邊界
 
 - **交易所金鑰放在哪，看你用哪個表面。** 電腦版：寫在你電腦上工作區的 `.env`（macOS 是 `~/Blave/workspace/.env`，Windows 是 `%USERPROFILE%\Blave\workspace\.env`）。雲端主機：在你自己那台主機工作區的 `.env`。在網頁綁定：由 Blave 加密保存。agent 讀得到工作區的 `.env`，它的規則禁止印出金鑰的值（`references/exchange-connect.md`）。金鑰只給讀取＋交易，不給提領。有提領權限的金鑰在連結時會被拒絕（Binance、OKX、BingX、Bybit；電腦版、雲端主機、網頁綁定都一樣）。Gate.io 查不到這個旗標，請自己確認。
-- 投入金額與恢復交易由你自己做——電腦版在 app 的「自動下單」，雲端主機在網頁工作頁。就算你開口要求，agent 也會拒絕代勞。它唯一可以隨時自己做的，是觸發緊急停止。
+- 投入金額與恢復交易由你自己做——電腦版在 app 的「自動下單」，雲端主機在網頁工作頁。就算你開口要求，agent 也會拒絕代勞。它唯一可以隨時自己做的，是觸發緊急停止。緊急停止（`state/HALT`）會擋掉新開倉，平倉與停損照常放行。
 - 電腦版只有在 Blave 開著時才會下單；結束 app 再打開後，交易維持暫停，直到你按「啟動下單」。
 - agent 先驗證再回報：改完檔案會重讀確認，下完單會向交易所查回結果才說「已下單」。每一次下單嘗試都記在 `state/audit.jsonl`。
 - 回測講的是過去，不預測、也不保證未來績效。MCPT 檢查成績在統計上顯不顯著，參數掃描檢查是不是過度擬合；兩者都只能降低回測騙到你的機率，不能把它消掉。
