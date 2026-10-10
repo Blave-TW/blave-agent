@@ -532,6 +532,15 @@ check("綁卡" not in txt and "登入" not in txt and "讀不到資料狀態" in
 os.environ["BLAVE_DATA_ACCESS_WHY"] = "no_card"
 doc = json.load(open(tpub(T.crypto_market_brief("2026-09-02", H), NAR)))
 check("綁卡送 14 天" in [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"], "no_card:才講綁卡")
+for why in ("no_plan", "plan_failed"):
+    os.environ["BLAVE_DATA_ACCESS_WHY"] = why
+    doc = json.load(open(tpub(T.crypto_market_brief("2026-09-02", H), NAR)))
+    txt = [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"]
+    check("帳號與方案" in txt and "讀不到資料狀態" not in txt and "綁卡" not in txt and "儲值" not in txt,
+          f"{why}:方案制兩態有自己那句(指到設定 › 帳號與方案),不落到預設句、不叫人綁卡儲值")
+check("重新付款" in txt, "plan_failed:講重新付款")
+for why in ("no_plan", "plan_failed"):
+    check("Account & plan" in T._MISSING_FOOT["en"][1][why], f"{why}:en 句存在")
 bare = free_tw.copy(); bare.attrs = {}
 d.fetch_twstock_price = lambda sid, s, e, h: bare
 try:

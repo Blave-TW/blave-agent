@@ -8,7 +8,73 @@ Sources (api repo): `account/credit.py` (`PRICING`, `LLM_PRICING`, `WEB_SEARCH_P
 `deduct_credit`, `deduct_blave_api_credit`, `deduct_server_credit`), `openclaw/lightsail.py`
 (`SERVER_TIERS`, `WINDOWS_SERVER_TIERS`), `openclaw/proxy.py` (`_deepseek_peak_multiplier`,
 `deduct_llm_credit` call sites), `snapshot/cron_deduct_server_credit.py`, `account/agent_trial.py`,
-`decorators.py` (`api_plan_required`).
+`decorators.py` (`api_plan_required`); plan billing: `account/agent_plan_config.py`, `account/agent_plan.py`.
+
+## Two billing schemes — find out which one this account is on first
+
+Blave Agent is moving from **hourly billing** (the server, and Blave data for accounts without a
+machine, charged from the wallet every clock hour) to **plan billing** (a cloud plan paid per
+period). Each account moves on a switch date the platform emails to that user; until then
+everything under *Hourly billing* below is what really happens, and nothing under *Plan billing*
+applies yet.
+
+- **How to tell:** Settings › 帳號與方案 (en: Account & plan) in the desktop app, or the plan
+  page on the web (`/agent/<lang>/usage#plan`). A plan with a billing cycle and a next payment
+  date = plan billing. A per-hour price, or usage-page rows like `Server hourly (<tier>, …): 1h`
+  = hourly billing.
+- **Cannot tell** (no access to those pages from where you are): say both briefly — "billed by
+  the hour until your account switches to a plan; after that, a monthly or annual plan" — and
+  point to Settings › 帳號與方案. Never present plan-billing facts as current for an account you
+  have not seen switched.
+
+## Plan billing (accounts already switched)
+
+- **A plan is the access, a machine is optional.** Tiers are Linux or Windows, Starter / Premium
+  / Max, at the monthly prices in the table under *Meter 1* (same figure per tier; there is no
+  hourly price on a plan). Every plan includes Blave data — in the desktop app, and on the cloud
+  machine if the account runs one. The desktop app starts a plan without a machine (Linux
+  Starter price); a cloud machine is started on the website, under the same plan.
+- **Only keys Blave Agent issues are covered** — the cloud machine's own key and the desktop
+  app's sign-in key. A key the user created themselves (API page; their own scripts, an external
+  agent) needs an **API plan**, even with a Blave Agent plan or during the trial; without one it
+  gets `403 ERR007` pointing to the API plan. Never tell someone their Agent plan covers a key
+  they made themselves.
+- **There is no desktop-only data plan and no hourly data purchase.** Someone who only uses the
+  desktop app and wants Blave data needs a cloud plan or an API plan. During the card trial the
+  desktop gets the data anyway. Without any of these, exchange klines and the key-free public
+  fetchers still work.
+- **Two cycles:** monthly (a 30-day period) or annual (a one-year period priced below twelve
+  months). Quote the annual figure the plan page or Settings › 帳號與方案 shows; never work it
+  out yourself.
+- **Paid up front, wallet first.** Each period — the first and every renewal — comes from the
+  wallet if the balance covers the whole period; otherwise the bound card is charged for the
+  whole period and the wallet is left alone. No card and not enough balance = the payment fails.
+- **Payment fails → the machine stops and Blave data pauses.** It is retried daily, and a top-up
+  or a new card triggers a retry at once ("pay again" on the plan page does too). If it stays
+  unpaid, the machine is deleted after a grace period, with the strategies, data and keys on it
+  — the plan page shows the date. A successful payment restarts the machine and starts a new
+  period from then.
+- **Cancel = runs to the end of the period, no refund**; after that the machine is deleted on
+  the same grace rule. Deleting the machine on the web also cancels the plan. A cancelled plan
+  can be resumed on the plan page — after the period has ended, resuming charges a new period
+  at once (and starts a deleted machine again).
+- **Upgrade (same OS, to a bigger tier) applies at once** and charges only the difference for
+  the time left in the period; the period end does not move. The plan page shows the exact
+  amount before confirming. Not during the free trial, and not on a cancelled plan.
+- **Switching monthly ↔ annual applies from the next period.** A smaller tier or the other OS is
+  not supported on a cloud plan; say so and point to the plan page rather than promising a date.
+- **Stopped or running makes no difference** to the plan: the period is already paid and it
+  still renews. Only cancelling ends it.
+- **Card trial (Linux Starter):** no plan charge during the trial; the first period of the
+  chosen cycle is charged when it ends. Cancelling before then charges nothing.
+- **The wallet** still holds the AI credit (Blave AI turns, *Meter 3*) and pays plan periods.
+  Auto top-up adds a fixed amount when the balance drops below a threshold — the usage page
+  shows both; do not quote the hourly-billing figures below for a plan account.
+
+## Hourly billing (accounts not yet switched)
+
+Everything from here to *Meter 3* describes hourly billing. On a plan account, *Meter 1*'s table
+still gives the monthly price per tier, and the rest of those two sections does not apply.
 
 ## Desktop app — read this first when the question comes from the desktop
 
@@ -74,7 +140,8 @@ Japanese, Vietnamese, Spanish and Portuguese site faces display USD at 30 TWD/US
   **Exceptions that make a month short of full** — check before quoting a month to someone who
   just signed up: the 14-day card-bound free trial waives the server fee entirely (last bullet of
   this section, Linux Starter only, so a new user's first 30 days is 768 TWD not 1,440); a machine
-  still `installing` is not yet metered; and a balance under 50 TWD stops the machine.
+  still `installing` is not yet metered; and a balance under 50 TWD stops the machine (a balance
+  of 0 deletes it, with the strategies, data and keys on it).
 
 - **Billed while the machine exists — running OR stopped.** The cron selects
   `status IN ('running', 'stopped')`. Stopping the machine does not stop the meter; only deleting
@@ -156,8 +223,19 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
   billed as LLM tokens at the current model's rate. Nothing else on the machine is. (Desktop
   app: only when the engine is Blave AI — see *Desktop app*.)
 - 「電腦版要錢嗎？雲端主機一個月多少？」— The app is free; a cloud machine is the monthly figure
-  in Meter 1 (Linux Starter 1,440 TWD per 30 days, data included), billed hourly while it
-  exists. Give the number — it is in this file.
+  in Meter 1 (Linux Starter 1,440 TWD per 30 days, data included) — billed hourly while it
+  exists under hourly billing, or paid per period on a plan (annual also available; quote the
+  plan page). Give the number — it is in this file.
+- 「自己寫程式／用別的 agent，拿自己建的 key 打 Blave API 要什麼方案？」— Plan billing: an API plan,
+  always — a Blave Agent plan covers only the cloud machine's key and the desktop app's key.
+  Hourly billing (not yet switched): an API plan, owning a Blave Agent machine, or the hourly data
+  fee (Meter 2).
+- 「只用電腦版，要 Blave 資料怎麼辦？」— Hourly billing: free during the card trial, then per
+  active clock hour (Meter 2). Plan billing: a cloud plan (any tier, data in the desktop app
+  too) or an API plan; there is no desktop-only data plan.
+- 「扣款失敗／餘額不夠會怎樣？」— Hourly billing: a balance under 50 TWD stops the machine and a
+  balance of 0 deletes it. Plan billing: the machine stops and data pauses, it is retried daily,
+  and it is deleted after the grace period the plan page shows.
 - 「每小時都被收 API 使用費，把 cron 排在同一小時省錢？」— A machine owner is not charged the data
   fee at all; data is inside the server hour. Spacing or bunching crons changes nothing on the
   bill. (Even under the old per-hour data fee, bunching only mattered because the fee was
@@ -165,8 +243,9 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
 - 「聊天用 Flash、寫 code 才換 Pro 省錢嗎？」— Yes, that is a real saving: flash costs about a quarter
   of pro on input and under a third on output (5.5 vs 24.75 and 22 vs 74.25 TWD per million tokens), and the switch is per session with no restart. Mention the DeepSeek weekday peak-hour
   ×2 and that Claude models cost more but have no surcharge.
-- 「停機會不會扣錢？」— Yes, a stopped machine is still billed the server hour; only deleting it
-  stops the meter.
-- 「回測／掃參數／定期報告會扣錢嗎？」— Nothing beyond the server hour; the only extra is
-  the LLM tokens of the chat turn you are in.
+- 「停機會不會扣錢？」— Hourly billing: yes, a stopped machine is still billed the server hour; only
+  deleting it stops the meter. Plan billing: stopping does not change the plan — it still
+  renews; only cancelling ends it, at the end of the period, with no refund.
+- 「回測／掃參數／定期報告會扣錢嗎？」— Nothing beyond the server hour (or the plan); the only
+  extra is the LLM tokens of the chat turn you are in.
 - 「Web search 會扣錢嗎？」— 0.4 TWD per search on Claude models; not billed on DeepSeek.

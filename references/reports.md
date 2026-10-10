@@ -177,7 +177,8 @@ A report is not a fixed form: it is built around what actually happened today. F
 report — the market briefs, 台股收盤報告, 單標的晨報, a custom recipe, a research report, and the
 unattended turn of a scheduled report — work in this order. The one exception is a backtest report
 (its content is the backtest; no news search, no market extras — say an obvious anomaly in the
-narrative instead).
+narrative instead). A research question runs its data check before step 1 (§1b › *Research
+questions*): that probe decides whether there is a report at all.
 
 1. **Search first** (fast, ~15 s): the news and events in the report's window (§1b › News).
 2. **Pick 1–3 things that are special today** from what you found — a hacked exchange, a listing
@@ -421,6 +422,87 @@ publish(pack, narrative={
 
   A research report or a report the user describes in their own words (their own 週報) has
   no template by design — build it from bricks (§1b › Custom recipes), do not ask.
+
+### Research questions — straight to a report, after a data check
+
+**What goes straight to a report** — decide before you start, from the question alone:
+- The answer needs an analysis script over multi-period history: an event study, 「X 發生後 Y 怎樣」
+  (「外資淨空單創新高後台指期一個月漲跌」), conditional returns (「資金費率轉負時 BTC 之後 7 天」),
+  a comparison of two or more periods or groups (「2022 空頭和 2024 多頭時誰的回撤大」).
+- Or the user asks for a new research report outright (「做一份…的研究報告」, 「…做成報告」, the
+  desktop app's 新增報告 box). 研究 or 分析 on its own is not a trigger — judge the question by
+  what its answer needs. A template brief (台股收盤報告 …), a backtest report or a change to an
+  existing report is not this rule (AGENTS.md › Reports).
+
+**What stays in chat:** one number (「台積電今天收盤多少」), a current reading (「BTC 資金費率現在多少」, 「幫我分析現在 BTC 的資金費率」 — 分析, but a reading),
+a follow-up on an answer or report you already gave (「那 ETH 呢」, 「第二段是哪幾天」).
+
+**Order:**
+1. **Data check** — a probe, before the web search and before the analysis script: fetch the
+   series with `lib/data.py` and print three things — the first and last date it holds against
+   the period asked, how many times the condition occurs in it, and how many independent segments
+   those occurrences form (B9). Nothing is said to the user yet.
+2. **It passes** (the question as asked, enough segments to compare) → one line, then build:
+   「這題會直接做成報告，約 N 分鐘」 / "This one goes straight into a report — about N minutes." —
+   about 8–12 minutes in practice. No confirmation round: the user asked the question, the report is
+   the answer. Then the report flow above (search first), the analysis script in `tmp/research/`
+   (below, kept), and a `research` report (§7b B).
+3. **It fails** → answer in chat, no report — also when the user asked for a report outright
+   (the 新增報告 box included): never publish the original question as asked when the data cannot
+   answer it, and never publish the changed one before the user accepts it.
+   - The question has to change to be answerable — another threshold, another period, a proxy
+     series. Say in the first sentence what was asked and what you answered instead
+     (「三天都高於 0.05% 在資料裡沒有發生過，改用前 10% 的費率當門檻」), then the answer.
+   - Or the condition holds in only a few segments — say how many, give the figures, and say what
+     that many cannot show.
+   - Offer the report **on the changed question**, naming the change: 「用前 10% 門檻做成報告」
+     (a few segments, nothing changed: 「做成報告」). Web / desktop: a `<suggest>` line, never a
+     question at the end of the reply. Telegram has no `<suggest>`: one plain sentence —
+     「要的話回覆『用前 10% 門檻做成報告』」. The script stays in `tmp/research/`, so taking the
+     offer reruns it (*Research scripts*, below).
+   - **Taking the offer is the user's consent to the change:** the changed question is now theirs,
+     and the report's title, lead and every block answer it — not the original.
+   - **Never publish a report on a substitution the user did not accept.** A report is read later,
+     out of this conversation; its title would answer a question nobody asked.
+
+*Example that stays in chat:* an event study of BTC after funding above 0.05% for three days in a
+row — the condition never occurs in the data, so the agent swapped in a top-10% threshold and
+answered in chat. That is the right call: the question changed.
+
+### Research scripts — kept in `tmp/research/`, rerun for the report
+
+A research question that passed the data check is already a report (above); this flow is for an
+answer that stayed in chat. When the user turns an earlier chat answer into a report (「做成報告」, 「把剛才的分析整理成報告」),
+the new turn sees only the text of your earlier replies — not the scripts, tool calls or their
+output. The research is already done; the script that did it is the way back to its figures.
+This is the one exception to AGENTS.md's "delete your `tmp/` scripts before you reply".
+
+**Keep the script behind every research answer.**
+- One question, one script: `tmp/research/<what_it_computes>.py` (`foreign_net_short_event_study.py`,
+  never `test2.py`). A revised analysis is saved over the same file — no `_v2` / `_verify` / `_final` trail.
+- First line: `# <the question it answers> | <data and window, e.g. TXF 外資淨空單 2015-01-05..2026-10-07> | <written YYYY-MM-DD>`.
+  It prints every figure the answer quotes.
+- No API key, secret, token or password is ever written into the file — it stays on the
+  machine. Blave data: `from lib.report_templates import headers_from_env`; an exchange key: read
+  from the workspace `.env` the way `lib/` already does (`dotenv_values()` handed to the lib
+  function, `references/lib.md`), never pasted in.
+- Run it from the workspace root as `python3 -m tmp.research.<name>` (no `.py`; the folder needs
+  no `__init__.py`) — it imports `lib` whether or not the machine sets `PYTHONPATH`.
+- Probes and one-off prints around it are still deleted before you reply.
+- **Cap:** at the start of a research or report turn, keep the newest 20 files in `tmp/research/` and delete
+  the rest — nothing else ages them, on the desktop app or in the cloud. Run exactly this, from the
+  workspace root (only `tmp/research/*.py`, never `__pycache__` or anything outside):
+  `python3 -c "import glob,os; fs=sorted(glob.glob('tmp/research/*.py'), key=os.path.getmtime, reverse=True); [os.remove(f) for f in fs[20:]]"`
+
+**Making an earlier answer into a report:**
+1. `ls -t tmp/research/` (ignore the `__pycache__` folder it lists) and read the first lines; pick
+   the script whose question is the one the user means.
+2. **Rerun it, do not copy it.** Add what the report needs on top — the baseline series a chart
+   draws, the KPI figures — in that same file. If it no longer runs because `lib/` changed, write
+   it again from `references/lib.md` (same name, same first line) instead of patching the old code.
+3. Build the blocks from that output and publish once. Nothing in `tmp/research/` matches (an older
+   machine, or the answer came from `python3 -c` calls) → do the research once, in one script saved
+   there, and say nothing about it.
 
 ### News — every report you write in chat looks for it first
 
@@ -715,9 +797,9 @@ caption.
 |---|---|---|
 | `meta` | `title`, `report_type`, `generated_at` | **Exactly one, always first.** Optional: `period` `{from, to}` display strings ≤32 (`"08/25"`), `account` `{aum: number, currency}`, `benchmark`, `origin` (`scheduled`/`chat`), `machine`, `extra` (≤3 `{label, value}`), `shareable` (boolean, `research` only — §7b B7); `involves_futures` is still accepted but read by nothing, so leave it out. `period` + `account` + `benchmark` + `extra` ≤4 header cells in total. |
 | `kpi_row` | `items[{label, value, tone}]` | 1–6 items; **the first is the focus** and renders largest. `label` ≤40, `value` a formatted string, `tone` = `pos`/`neg`/`neutral` (unsigned numbers such as Sharpe or win-rate are `neutral` — a wall of green means nothing). Optional `unit` ≤16, `delta`. When there is a `delta` the tone colours the delta, not the value, so a cell whose `delta` is a baseline (「平常 +4.3%」) is `neutral` (§7b A4). |
-| `line_chart` | `series[{name, role, points}]` | 1–4 series; `role` = `primary` (solid, **at most one**) or `benchmark` (dashed); `points` = 1–5000 `[t, v]`, `t` unix seconds int, `v` finite number. Optional `y_unit` (≤8, see *Axis units* below), `bands` (≤2 `{from, to, label}`, unix seconds, label ≤32) and `reflines` (≤4 `{y, label, emphasis}`, `emphasis: true` = red loss level). |
+| `line_chart` | `series[{name, role, points}]` | 1–4 series; `role` = `primary` (solid, **at most one**) or `benchmark` (dashed); `points` = 1–5000 `[t, v]`, `t` unix seconds int — the **real date** of that observation, never a stand-in (below) — `v` finite number. Optional `y_unit` (≤8, see *Axis units* below), `bands` (≤2 `{from, to, label}`, unix seconds, label ≤32) and `reflines` (≤4 `{y, label, emphasis}`, `emphasis: true` = red loss level). |
 | `candlestick` | `candles` | 2–120 bars `[t, open, high, low, close]`; `t` unix seconds int, **strictly increasing**; the four prices finite numbers with `low ≤ min(open, close)` and `max(open, close) ≤ high` on every bar. Optional `y_unit` and `reflines` (≤4 horizontal price levels such as the prior 20-day high/low), both exactly as on `line_chart`. No `bands`, no volume pane, no moving-average overlay. The x-axis is one slot per bar, not real time (no weekend or overnight gaps), so it does **not** line up date-for-date with a neighbouring `line_chart` / `drawdown` — expected, not a bug. Needs `schema_version` `"1.2"` or later. `lib/report_templates.candlestick(title, df, y_unit=…, reflines=…)` builds one from an OHLC DataFrame. |
-| `drawdown` | `points` | 1–5000 `[t, v]`, `v` a **negative percent** (−9.84 = −9.84%). Optional `maxdd` `{value, from, to}` (unix seconds). No unit field — the contract pins this chart to negative percent. |
+| `drawdown` | `points` | 1–5000 `[t, v]`, `t` the real date as on `line_chart`, `v` a **negative percent** (−9.84 = −9.84%). Optional `maxdd` `{value, from, to}` (unix seconds). No unit field — the contract pins this chart to negative percent. |
 | `heatmap` | `variant`, `values` (+ `rows`,`cols` or `labels`) | `variant` = `calendar` (needs `rows` ≤40 years, `cols` ≤20 months — an annual / total column goes in `cols` too) or `matrix` (needs `labels` ≤40, values −1…1). `values` is 2-D, shaped rows×cols / labels×labels; `null` renders as an em-dash (future months, the diagonal). Optional **`emphasis_cols`** (**calendar only**): unique integer indices into `cols` marking the columns to render with added weight — that annual / total column. The web cannot tell which column is the total (`cols` is plain strings and not every calendar has one), so say it here. On a `matrix` heatmap `emphasis_cols` is an unknown prop → refused. |
 | `bar_chart` | `variant` + `items` or `segments` | `variant` = `bars` (`items` ≤60 `{label, value}`, signed, zero axis) or `stacked` (`segments` **2–4** `{label, value}`, value ≥0, normalised into widths). Only four category colours exist, so a 5th segment would repeat one. **Merging the tail into an "Other" segment is your decision, not the web's** — it cannot know which segments to fold or how to say so; fold them here and explain the fold in `caption`. No unit field on either variant. |
 | `histogram` | `bins[{x0, x1, count}]` | 1–200 bins, `x0 < x1`, `count` a non-negative int. Optional `x_unit` / `y_unit` (≤8, see *Axis units*) and `reflines` ≤4 `{x, label, emphasis}` (vertical). |
@@ -744,6 +826,15 @@ same table): a per-period flow (liquidation USD, net buying, volume — one bar 
 that period) is a `bar_chart`; a level or an indicator (open interest, margin balance, net
 positions, funding, long/short ratio, any z-score, equity) stays `line_chart`. The web dashboard
 draws the same data the same way (`chart_type` history vs line) — a report must not disagree with it.
+
+**An x-axis that is not calendar time is never a `line_chart` / `drawdown`.** "Day N after the
+event", "trading days held", a rank or a bucket has no date, and encoding it as one (day 0 =
+2020-01-01, day 5 = 2020-01-06, …) prints invented dates such as 01/05 and 02/09 on the page
+and the share card, with overlapping ticks. Draw it in a block whose axis is labels:
+a `bar_chart` (`bars`) with one bar per window (`第 5 日`, `第 20 日`, …) of the **excess** return —
+event minus baseline, so the zero axis is the baseline and the caption says so — plus a `table`
+with event / baseline / difference columns per window; or the `table` alone. `bars` holds one
+series, so event and baseline side by side are two `bar_chart`s, never one.
 
 **Numbers vs display strings — the mistake to check for first.** Chart data
 (`line_chart` / `candlestick` / `drawdown` / `heatmap` / `bar_chart` / `histogram` / `box` / `scatter`
@@ -1167,7 +1258,9 @@ section headings in the report's language.
   `caption` gives once the sample (segments / days), the period, the baseline and the
   source, and the baseline is drawn on the chart (a `benchmark` series or a `reflines`
   line), not only written in the caption. A context chart never comes before it. A
-  price chart is a `candlestick` (§3); anything else uses its native block. *Why:* it is
+  price chart is a `candlestick` (§3); anything else uses its native block, and an
+  event-window path ("day N after") is a `bar_chart` / `table`, never a `line_chart` on fake
+  dates (§3). *Why:* it is
   the first thing a reader looks at, and for research it is the main image of a public
   page; a screenshot passed on carries this chart and its title, nothing else.
 - **A6. Key points: one `text` block with 3–5 bullets, each one sentence carrying one
@@ -1214,8 +1307,10 @@ section headings in the report's language.
 
 ### B. Research rules — `type: "research"` only
 
-**How to build one — about four minutes, never a hand-written fetch script:**
-1. **Search first**, before any code (§1b › Report flow, § News): 3+ sites, read lean (below).
+**How to build one — about four minutes (with an analysis script behind it, 8–12; §1b › *Research questions*), never a hand-written fetch script:**
+1. **Search first**, before any code but the data check (§1b › Report flow, § News): 3+ sites,
+   read lean (below). A research question runs its data check first (§1b › *Research questions*) —
+   that probe decides whether there is a report at all.
 2. **`pack = research_pack("SOL", extra=[…], days=30, window="7d")`** (`lib.report_templates`; `days` = the
    span the comparison against BTC covers (not the candle count: 120 bars), `window` = the OI window — `"7d"` unless the question is about today) — price candles and levels,
    volume against its 20-day mean, the coin against BTC, funding / open interest / long-short, Blave

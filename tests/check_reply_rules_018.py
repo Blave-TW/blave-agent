@@ -16,6 +16,7 @@
   第九批:#2 前後比較用同一個基準;自己換算的數字寫公式與輸入日期、拿不到就寫「—」不硬算;百分位不當排名。
   第九批:#3 沒有要提議時回覆就此結束,不交代「沒有建議」、不更正自己的上一句。
   0.1.17 e2e:「跟我討論要怎麼用…做策略」的回覆以編號提案收尾、標一個預設、缺的細節自己填不逐項問;台指期日線策略的 START 用最早可得日、不用 2011。
+  研究題直接出報告:觸發條件、先查資料(期間/條件有沒有發生/幾段)、改題或段數少就留在對話並提議改後題目的報告(接受=同意改題)、沒接受的改題永不發佈、不加確認回合。
   第七批:開了就讀(實測開 6 頁只讀 3 頁,中時與鉅亨三頁開了沒讀);新聞與數字先讀媒體或官方原文,論壇貼文 / 轉述 / 聚合頁要標明。
 
 跑法:cd blave-agent && python3 tests/check_reply_rules_018.py
@@ -102,6 +103,13 @@ t("#102 browser_wait:still_waiting 之後先讀已經好的分頁,最多再等�
 t("#102 發佈檢查表:同一個連結只能出現在一則", "同一個連結只能出現在一則" in read("lib", "report_templates.py"))
 t("#90 tmp/ 的一次性腳本:回覆前刪掉、不抄 tmp/ 裡的舊腳本",
   "delete yours before you reply" in section(agents, "## Shell Commands") and "never copy from a script already in `tmp/`" in section(agents, "## Shell Commands"))
+t("研究腳本留在 tmp/research/、做成報告時沿用不重做",
+  "write the analysis script behind a research answer to `tmp/research/<what_it_computes>.py` and keep it" in section(agents, "## Shell Commands")
+  and "turning an earlier answer into a report reruns it — never redo the research" in section(agents, "## Shell Commands")
+  and "ls -t tmp/research/" in read("references", "reports.md") and "keep the newest 20 files in `tmp/research/`" in read("references", "reports.md")
+  and "headers_from_env" in section(read("references", "reports.md"), "### Research scripts")
+  and "No API key, secret, token or password is ever written into the file" in section(read("references", "reports.md"), "### Research scripts")
+  and """`python3 -c "import glob,os; fs=sorted(glob.glob('tmp/research/*.py'), key=os.path.getmtime, reverse=True); [os.remove(f) for f in fs[20:]]"`""" in section(read("references", "reports.md"), "### Research scripts"))
 
 # 第五批
 t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(先估、先講、超過 25 分鐘先提短期間),範例策略的檔頭也寫了(agent 抄的就是範例)",
@@ -224,6 +232,45 @@ t("第九批 #3 建議規則的最後一段:沒有要提議 → 正文寫完就�
 t("第九批 #3 這一段在每輪都會帶的規則最尾端(web 與電腦版共用的 WEB_FORMATTING_RULE)",
   re.search(r"^WEB_FORMATTING_RULE = \(.*?\+ _SUGGEST_RULE\n\)", turn_src, re.M | re.S) is not None and rule.rstrip().endswith(last))
 t("第九批 #3 規則裡沒有叫模型「說明沒有建議」的句子", not re.search(r"(說明|註明|寫出|回報)[^。\n]{0,12}沒有(建議|提議)", rule))
+
+# 研究題直接出報告(Wei 核准):29026 實測對話回合只讀 AGENTS.md,觸發與資料檢查必須在 AGENTS › Reports
+reports_sec = section(agents, "## Reports")
+direct = [l for l in reports_sec.splitlines() if "A research question goes straight to a report" in l]
+check_ = [l for l in reports_sec.splitlines() if "For a research question, check the data first" in l]
+t("研究題 AGENTS › Reports:觸發(多期歷史分析腳本/事件研究/條件報酬/比較期間或群組/用戶要一份新的研究報告;研究、分析單獨不觸發)、開跑一句、不加確認回合、其餘留對話",
+  len(direct) == 1 and all(m in direct[0] for m in (
+      "an analysis script over multi-period history", "event study", "conditional returns",
+      "comparing periods or groups", "the user asks for a new research report", "研究 or 分析 alone does not trigger it",
+      "「這題會直接做成報告，約 N 分鐘」", "no confirmation round", "one number, a current reading or a follow-up stays in chat")))
+t("研究題 AGENTS › Reports:限研究題、先查資料(期間/條件/段數 B9);改題或段數少 → 對話(要了報告也一樣)、說改了什麼、提議改後題目的報告、接受=同意;沒接受的改題永不發佈",
+  len(check_) == 1 and all(m in check_[0] for m in (
+      "period covered", "condition present", "independent segments (B9)",
+      "Question must change or few segments → answer in chat, report asked for or not",
+      "say what changed, offer a report on the new question (「用前 10% 門檻做成報告」)", "taking it is consent",
+      "**Never publish a report on a substitution the user did not accept**")))
+t("研究題:觸發字不是「研究／分析」也不是裸的「報告」(會誤中現在讀數、範本報告與 edit_report)",
+  "研究／分析／報告" not in agents and "(報告, 研究報告, 做成報告)" not in agents)
+t("研究題這兩條是 Reports 節的頭兩條(先決定要不要出報告)",
+  bool(direct and check_) and reports_sec.index(direct[0]) < reports_sec.index(check_[0])
+  < reports_sec.index("Every report but a backtest report searches the web first"))
+rq = " ".join(rep[rep.index("### Research questions — straight to a report"):rep.index("### Research scripts")].split())
+t("研究題 reports.md §1b:資料檢查在搜尋與腳本之前、8–12 分鐘、不加確認回合、改題第一句講、明說要報告也走同一條、提議帶改後條件、Telegram 一句文字、接受=同意且照改後題目寫、沒接受永不發佈、反例",
+  all(m in rq for m in ("before the web search and before the analysis script", "about 8–12 minutes", "No confirmation round",
+                        "Say in the first sentence what was asked and what you answered instead",
+                        "also when the user asked for a report outright (the 新增報告 box included)",
+                        "never publish the changed one before the user accepts it",
+                        "Offer the report **on the changed question**", "「用前 10% 門檻做成報告」",
+                        "Web / desktop: a `<suggest>` line", "Telegram has no `<suggest>`: one plain sentence",
+                        "**Taking the offer is the user's consent to the change:**", "answer it — not the original",
+                        "**Never publish a report on a substitution the user did not accept.**",
+                        "A template brief (台股收盤報告 …), a backtest report or a change to an existing report is not this rule",
+                        "funding above 0.05% for three days", "研究 or 分析 on its own is not", "「幫我分析現在 BTC 的資金費率」",
+                        "top-10% threshold")))
+flat = " ".join(rep.split())
+t("研究題 reports.md:Research scripts 的「做成報告」是留在對話那條路的後續;Report flow 與 B1 都讓資料檢查排在搜尋之前",
+  "this flow is for an answer that stayed in chat" in flat
+  and "A research question runs its data check before step 1 (§1b › *Research questions*)" in flat
+  and "**Search first**, before any code but the data check" in flat)
 
 if fails:
     sys.exit(f"{len(fails)} failed")

@@ -117,6 +117,8 @@ Import from `lib/` — never write these functions inline (`references/lib.md`).
 
 A report is a document the user reads in the Reports list (web: 「報告」 in the sidebar; desktop: Reports in the left sidebar) — for anything read again later. A change to a report the user named goes through `edit_report` on that same report — never a hand edit of the JSON, never a report nobody named (`references/reports.md` §1).
 
+- **A research question goes straight to a report:** its answer needs an analysis script over multi-period history (event study, conditional returns, comparing periods or groups) or the user asks for a new research report → say 「這題會直接做成報告，約 N 分鐘」 and start, no confirmation round; 研究 or 分析 alone does not trigger it; one number, a current reading or a follow-up stays in chat.
+- **For a research question, check the data first:** period covered, condition present, independent segments (B9). Question must change or few segments → answer in chat, report asked for or not; say what changed, offer a report on the new question (「用前 10% 門檻做成報告」) — taking it is consent. **Never publish a report on a substitution the user did not accept** (`references/reports.md` §1b).
 - **Every report but a backtest report searches the web first, then builds** — research: `pack = research_pack(symbol, extra=[…])` → `print(pack.describe())` → `publish(pack, narrative, title=…, shareable=…)`; refused → fix what it lists, `publish("<report id>", narrative)`, never rebuild. Desktop: the built-in browser only (browser switched off = no web, `news: []`); cloud: a Claude model's web search; DeepSeek: WebFetch from the list pages `describe()` prints. Nothing found → publish anyway. No advice.
 - **A request that names a template — 台股大盤晨報 / 台股收盤報告 / 加密市場晨報 / 單標的晨報 — is built with `lib/report_templates.py`, never by hand:** `tw_market_brief()` / `tw_close_brief()` / `crypto_market_brief()` / `symbol_brief("2330")`; `pack.describe()` prints every figure, slot and the checklist, so do not open `references/reports.md` or lib source first, recompute none of them or add chart blocks of your own; `publish(pack, narrative, title="<today's conclusion>")`. Weekend or holiday → build it (last trading day) and say so. A report in the user's own words — a research report on a topic rather than one instrument included — is a custom recipe: **start from `python3 -c "from lib.report_templates import quickstart; quickstart()"`** and never grep source for a signature.
 - **A pack missing part of its data is still published** (`publish()` footnotes it); only `pack.skip` stops it.
@@ -126,7 +128,7 @@ A report is a document the user reads in the Reports list (web: 「報告」 in 
 
 ## Shell Commands
 
-- One-off scripts → `tmp/` (workspace-relative), never workspace root or `strategies/`; delete yours before you reply, and never copy from a script already in `tmp/` (stale leftovers — `lib/` and `references/` are the reference)
+- One-off scripts → `tmp/` (workspace-relative), never workspace root or `strategies/`; delete yours before you reply, and never copy from a script already in `tmp/` (stale leftovers — `lib/` and `references/` are the reference). **Except research:** write the analysis script behind a research answer to `tmp/research/<what_it_computes>.py` and keep it (first line: question | data and window | date); turning an earlier answer into a report reruns it — never redo the research (`references/reports.md` §1b › *Research scripts*)
 - **NEVER write `except Exception: pass`** — always `except Exception as e: print(f"Error: {e}")`
 - NEVER chain commands with `&&`, `||`, or `;` — run ONE command at a time, on Windows too
 - On Windows, read and write strategy files, `.env` and `references/` with python (`encoding='utf-8'`), never `Get-Content` / `Set-Content` — PowerShell 5.1 garbles UTF-8 Chinese
@@ -150,7 +152,7 @@ RAM is shared with the agent runtime: an unbounded process freezes the whole mac
 
 ## Billing — when the user asks what costs what
 
-Read `references/billing.md` first (desktop: its *Desktop app* section) — never quote a price from memory, never say there is no figure while it has one. Gist: chat on Blave's models costs tokens; a cloud server is a flat monthly-quoted rate that includes Blave data; letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`. Not covered → say you are not sure.
+Read `references/billing.md` first (desktop: its *Desktop app* section) — never quote a price from memory, never say there is no figure while it has one. Gist: chat on Blave's models costs tokens; a cloud server includes Blave data and is billed hourly until the account switches to a plan (monthly or annual, data also in the desktop app) — check which one the account is on (billing.md, first section); letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`. Not covered → say you are not sure.
 
 ## Iteration Brakes — hard limits on autonomous runs
 

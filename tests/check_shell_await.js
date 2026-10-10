@@ -1,4 +1,4 @@
-// 「等你回覆」標記與 done.awaiting(references/turn-events.md;0.1.19 電腦版只存不畫——Wei 拍板電腦版不做「做完還沒看」)
+// 「等你回覆」標記與 done.awaiting(references/turn-events.md;0.1.20 電腦版只存不畫——Wei 拍板電腦版不做「做完還沒看」)
 //   1. aiParts(app.js):<await/> 三種寫法在串流與定稿都剝掉;串流中半截的(<awa)比照 <sug 先藏;定稿時真的以 <awa 結尾的留著
 //   2. 主行程(main.js):done 的 awaiting 存進 state/chat-meta/<session>.json、新一輪送出就清掉、刪對話一起刪;listSessions 帶 waiting;kinds 不存
 //   3. renderer 現在不畫 waiting(對話列沒有狀態字)

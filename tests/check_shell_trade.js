@@ -266,7 +266,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
     && /ENV\.sig\.tb = tsig; txt\.textContent = ""; txt\.title = tbState;/.test(src) && /if \(tbUp\) txt\.append\(trEl\("span", "up", tbState\)\);/.test(src)
     && /const money = envVenueText\(cur\.money, cur\.venue\);/.test(src) && !/"tr\.tb"/.test(src) && /out\.money = envMoney\(st\); out\.venue = trVenueIds\(st && st\.report\)\[0\] \|\| null;/.test(src));
   ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時 okDisabled 而且不出「儲存後…」那句", /const blocked = badStored\.length > 0;/.test(src) && /lines: \[\], extra, lead, okDisabled: blocked \|\| !!ack/.test(src) && /if \(!blocked\) extra\.appendChild\(trEl\("p", "cf-note", !cloud \? t\("tr\.saveWarn"\) : /.test(src)
-    && /\$\("del-ok"\)\.disabled = !!okDisabled \|\| !!choices;/.test(appSrc) && /classList\.remove\("has-alt", "has-choices"\); \$\("del-ok"\)\.disabled = false;/.test(appSrc));
+    && /\$\("del-ok"\)\.disabled = !!okDisabled \|\| !!\(choices && !pre\);/.test(appSrc) && /classList\.remove\("has-alt", "has-choices"\); \$\("del-ok"\)\.disabled = false;/.test(appSrc));   // choices 有預選(pre)那列才一開就能按(方案制月繳)
   ok(".cf-* 是通用樣式(在 app.css、不綁金額確認框):下一批「送上雲端」要重用", /\.cf-row\.total dd \{ font-size: 15px/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")) && !/\.cf-row/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));
   ok("畫面上不再出現「對帳沒有在跑」「心跳」;刪掉的四個 key 兩語都刪了", !/"tr\.(paperCcy|saveLine|recDead|lastBeat)"/.test(S) && !/最後心跳|對帳沒有在跑|last heartbeat|Reconciler not running/.test(S)); }
 ok("舊快照只有 usd:減倉腿回 null", trGateSide({ usd: 84 }, 0, 100) === null && trGateSide({ usd: 84 }, 100, 0).usd === 84 && trGateSide(null, 1, 0) === null);
@@ -965,34 +965,34 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("§8 表:running / 可能仍在下單(C)/ 一般 noaccount / 有金額 → 照現行(全 false);B0 = 解除暫停",
       !zv({ reconciler: { alive: true } }).off && !zv({ reconciler: { alive: true, stopped: { reason: "machine_restart", at: 1, gated: false } } }).off
       && !trZView("noaccount", Zr({ venues: {} })).off && !trZView("dead", Zr({ config: { amounts: { a: 5 } } })).off && trZView("noaccount", Zr({ venues: {}, reconciler: Rst })).release);
-    { // 0.1.19(Wei 10-08):金額全 0 但帳本上還有機器人的部位 → 主鈕改成可按的「啟動下單」(走既有 resume),不出「解除暫停」,原因行換成帳本那句。
+    { // 0.1.20(Wei 10-08):金額全 0 但帳本上還有機器人的部位 → 主鈕改成可按的「啟動下單」(走既有 resume),不出「解除暫停」,原因行換成帳本那句。
       // 死角是對帳器沒在跑(dead / 重開停著 / 沒有自己下單的策略):HALT 只擋新倉,對帳器活著第一輪就會照金額 0 平掉
       const led = { TXF: { side: "long", size: 2, unit: "contracts" } }, ledC = { BTCUSDT: { side: "short", size: 300, qty: 0.004 } };
       const B = (o, l) => zv({ last_reconcile: { ts: 1, ledger: l === undefined ? led : l, actual: {} }, ...o });
       const on = (v) => J(v) === J({ off: false, release: false, reason: "tr.startOnBook", book: v.book }) && Array.isArray(v.book) && v.book.length > 0;
-      ok("0.1.19 帳本非空:dead / HALT / 重開停止 / Blave 重開 / 沒有自己下單的策略 → 啟動下單可按、沒有解除暫停、原因行 tr.startOnBook",
+      ok("0.1.20 帳本非空:dead / HALT / 重開停止 / Blave 重開 / 沒有自己下單的策略 → 啟動下單可按、沒有解除暫停、原因行 tr.startOnBook",
         on(B({})) && on(B({ halt: { halted: true, source: "web" } })) && on(B({ reconciler: Rst })) && on(B({ reconciler: Rst, selfOrdering: false }))
         && on(B({ reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } })) && on(B({ halt: { halted: true, source: "reconciler" }, reconciler: { alive: true } }))
         && on(B({}, ledC)) && on(B({ halt: { halted: true, source: "web" } }, { "ETHUSDT@spot": { side: "long", size: 50 } })));
-      ok("0.1.19 帳本空 / 只有 size 0 / 沒有快照 / 沒有 ledger 欄位:照舊停用(拿掉這一刀會紅)",
+      ok("0.1.20 帳本空 / 只有 size 0 / 沒有快照 / 沒有 ledger 欄位:照舊停用(拿掉這一刀會紅)",
         J(B({}, {})) === J({ off: true, release: false, reason: "tr.startOffNoAmt" }) && J(B({}, { TXF: { side: "long", size: 0 } })) === J({ off: true, release: false, reason: "tr.startOffNoAmt" })
         && J(B({}, null)) === J({ off: true, release: false, reason: "tr.startOffNoAmt" }) && J(zv({ last_reconcile: { ts: 1, actual: { TXF: { side: "long", size: 2 } } } })) === J({ off: true, release: false, reason: "tr.startOffNoAmt" })
         && J(B({ halt: { halted: true, source: "web" } }, {})) === J({ off: true, release: true, reason: "tr.startOffNoAmtRelease" }));
-      ok("0.1.19 帳本非空不碰其他態:running / C / B0 / 有金額照現行", !B({ reconciler: { alive: true } }).book && !B({ reconciler: { alive: true, stopped: { reason: "machine_restart", at: 1, gated: false } } }).book
+      ok("0.1.20 帳本非空不碰其他態:running / C / B0 / 有金額照現行", !B({ reconciler: { alive: true } }).book && !B({ reconciler: { alive: true, stopped: { reason: "machine_restart", at: 1, gated: false } } }).book
         && J(trZView("noaccount", Zr({ venues: {}, reconciler: Rst, last_reconcile: { ledger: led } }))) === J({ off: true, release: true, reason: null, noStart: true })
         && !trZView("dead", Zr({ config: { amounts: { a: 5 } }, last_reconcile: { ledger: led } })).book);
-      ok("0.1.19 trBookRows:size ≠ 0 的每一列(含現貨)、口數列標 lots、方向帶正負號", J(trBookRows({ last_reconcile: { ledger: { ...led, ...ledC, "ETHUSDT@spot": { side: "long", size: 50 }, X: { side: "long", size: 0 } } } }))
+      ok("0.1.20 trBookRows:size ≠ 0 的每一列(含現貨)、口數列標 lots、方向帶正負號", J(trBookRows({ last_reconcile: { ledger: { ...led, ...ledC, "ETHUSDT@spot": { side: "long", size: 50 }, X: { side: "long", size: 0 } } } }))
         === J([{ sym: "TXF", v: 2, lots: true }, { sym: "BTCUSDT", v: -300, lots: false }, { sym: "ETHUSDT@spot", v: 50, lots: false }]) && J(trBookRows({})) === "[]" && J(trBookRows({ last_reconcile: null })) === "[]");
       // 原因行那一句:兩語都有、帶 {n}、講「先平掉」;口數 venue 用口、加密用數量(trBookQty 在 DOM 側,鎖原文)
       const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
-      ok("0.1.19 tr.startOnBook 兩語都有(po2js 產物)、帶 {n}、講啟動後先平掉", /"tr\.startOnBook": "帳本上還有 \{n\} 的部位；啟動後下單程式會先照目前金額（0）平掉。"/.test(strings)
+      ok("0.1.20 tr.startOnBook 兩語都有(po2js 產物)、帶 {n}、講啟動後先平掉", /"tr\.startOnBook": "帳本上還有 \{n\} 的部位；啟動後下單程式會先照目前金額（0）平掉。"/.test(strings)
         && /"tr\.startOnBook": "The ledger still holds \{n\} in positions\. Once started, the order program closes them first, following the current amounts \(0\)\."/.test(strings));
-      ok("0.1.19 trBookQty:口數列 Σ|口| + 口;加密 Σ|成本| + 帳戶幣", /const lots = rows\.filter\(\(x\) => x\.lots\), sum = \(a\) => a\.reduce\(\(s, x\) => s \+ Math\.abs\(x\.v\), 0\);\n\s*if \(lots\.length\) \{ const n = sum\(lots\); return trLotsFmt\(n\) \+ " " \+ t\(trLotsKey\(Math\.round\(n\), "tr\.lotsUnit", "tr\.lotUnit"\)\); \}\n\s*return trWithUnit\(trFmt\(sum\(rows\)\)\);/.test(src)
+      ok("0.1.20 trBookQty:口數列 Σ|口| + 口;加密 Σ|成本| + 帳戶幣", /const lots = rows\.filter\(\(x\) => x\.lots\), sum = \(a\) => a\.reduce\(\(s, x\) => s \+ Math\.abs\(x\.v\), 0\);\n\s*if \(lots\.length\) \{ const n = sum\(lots\); return trLotsFmt\(n\) \+ " " \+ t\(trLotsKey\(Math\.round\(n\), "tr\.lotsUnit", "tr\.lotUnit"\)\); \}\n\s*return trWithUnit\(trFmt\(sum\(rows\)\)\);/.test(src)
         && /const text = t\(key, vars\), word = t\("tr\.tab\.pos"\)/.test(src) && /p\.dataset\.key = key \+ "\|" \+ LANG \+ \(vars \? "\|" \+ JSON\.stringify\(vars\) : ""\);/.test(src));
       { // 稽核該修 3:「部位」連結兩語都要命中——en 句中是 "in positions"、分頁名 "Positions",比對不分大小寫、連結字照句中原樣
         const sb = {}; require("vm").runInNewContext(strings + "\nthis.S = STRINGS;", sb);
         const hit = (l) => sb.S[l]["tr.startOnBook"].toLowerCase().indexOf(sb.S[l]["tr.tab.pos"].toLowerCase()) >= 0;
-        ok("0.1.19 原因行的「部位」連結:不分大小寫比對、連結字取句中原樣;zh / en 兩語都命中",
+        ok("0.1.20 原因行的「部位」連結:不分大小寫比對、連結字取句中原樣;zh / en 兩語都命中",
           /at = text\.toLowerCase\(\)\.indexOf\(word\.toLowerCase\(\)\)/.test(fnS("trPaintNoAmt")) && /trEl\("button", "btn-quiet tr-noamt-link", text\.slice\(at, at \+ word\.length\)\)/.test(fnS("trPaintNoAmt")) && hit("zh") && hit("en")); } }
     // 解除暫停的確認框
     const RK = (o) => trReleaseKind(Zr({ reconciler: Rst, ...o }));
@@ -1234,7 +1234,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /* 最後一項 t("cx.connected") = 設定頁帳號列那個 failed ? … : connected ? … : 串接中…
          的三元,「既沒失敗也還沒連上」就是它的在途條件。 */
       const WIN = 260;  // 夠到 app.js 方案卡那張 per-state 表的 st: ["busy"](離標籤 240 字)
-      const FLAG = /pending|busy|save === "saving"|cx\.retest|unbinding|deleting|flying|updating|restarting|want === "|view === "starting"|t\("cx\.connected"\)/;   // restarting:主行程更新重開收工中(0.1.10)
+      const FLAG = /pending|busy|planBusy|save === "saving"|cx\.retest|unbinding|deleting|flying|updating|restarting|want === "|view === "starting"|t\("cx\.connected"\)/;   // restarting:主行程更新重開收工中(0.1.10);planBusy:方案卡的在途旗標(planGo 設了才念「開通中…」)
       const bad = []; let seen = 0;
       files.forEach((f) => {
         const bare = fs.readFileSync(path.join(RD, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -1902,7 +1902,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         legs: [{ signed_diff: 2, reduce_only: false, fill_price: 23000, executed_qty: 2, exchange: "capital", resolved_symbol: "TX2610" }] };
       const OLD = { ...REAL, ts: now - 10, legs: [{ signed_diff: 2, executed_qty: 2, fill_price: 23000, exchange: "capital" }] };
       const syms = paintHist([REAL, OLD]).filter((n) => n.tag === "span" && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
-      ok("#14 真資料:symbol TXF + legs[].resolved_symbol TX2610 → 下單紀錄寫「大台（TX2610）」;舊列沒有 resolved_symbol 只寫商品名(總覽事件自 0.1.19 不列成交)",
+      ok("#14 真資料:symbol TXF + legs[].resolved_symbol TX2610 → 下單紀錄寫「大台（TX2610）」;舊列沒有 resolved_symbol 只寫商品名(總覽事件自 0.1.20 不列成交)",
         syms.includes("tr.txfProd.txf（TX2610）tr.mkt.swap") && syms.includes("tr.txfProd.txftr.mkt.swap"), J(syms)); }
     { ctx.trUnit = () => null; const all = paintHist([CAP, BTC]); ctx.trUnit = () => "TWD";
       const b = all.filter((n) => n.className === "amt mono")[0];

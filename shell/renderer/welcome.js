@@ -10,7 +10,7 @@
 
 /* ── 純邏輯(tests/check_shell_welcome_data.js 從原文切出來跑;不碰 DOM / i18n)── */
 /* 帳號狀態 → 清單模式 { cmp, k }:cmp = 兩欄對比;k = 右欄那句:out 沒登入 / unknown 查不到或舊 api / none 沒綁卡 /
-   nobal 餘額不夠 / billed 有卡沒主機按小時 / trial 綁卡試用中 / incl 名下有主機或 API 方案。
+   nobal 餘額不夠 / billed 有卡沒主機按小時(切換前)/ noplan 方案制沒有方案 / payfail 方案扣款失敗 / trial 綁卡試用中 / incl 名下有主機或 API 方案。
    da = app.js dataAccessOf(s)(included / billed / none / null);trialLeft = 試用剩幾天(planVars().n)。
    試用那句只在名下沒有主機時講:有主機的人試用到期後資料照樣含在主機費裡,「免費到 X」會是假話 */
 function wdMode(signedIn, s, da, trialLeft) {
@@ -18,6 +18,9 @@ function wdMode(signedIn, s, da, trialLeft) {
   if (da === "included") return { cmp: false, k: s && s.plan && s.plan.state === "none" && trialLeft > 0 ? "trial" : "incl" };
   if (da === "billed") return { cmp: true, k: "billed" };
   if (da === "none") return { cmp: true, k: s && s.reason === "NO_CARD" ? "none" : "nobal" };
+  // 方案制:沒有方案 → noplan(有試用資格又沒卡 → none,綁卡拿試用);方案扣款失敗 → payfail
+  if (da === "plan_required") return { cmp: true, k: s && s.reason === "NO_CARD" && s.trial_eligible ? "none" : "noplan" };
+  if (da === "payment_failed") return { cmp: true, k: "payfail" };
   return { cmp: true, k: "unknown" };
 }
 /* 資料名代進句子模板的 {name}。中文模板的 {name} 兩側貼著中文字,資料名頭尾是英數就補一個半形空白
@@ -50,6 +53,8 @@ function wdNote(k, v, into) {
   if (k === "out") into.appendChild(link(t(v.t ? "wd.note.out" : "wd.note.outNoNum", v)));
   else if (k === "none") into.appendChild(link(t(v.t ? "wd.note.none" : "wd.note.noneNoNum", v)));
   else if (k === "billed") into.append(t(v.r ? "wd.note.billed" : "wd.note.billedNoNum", v));
+  else if (k === "noplan") into.appendChild(link(t("wd.note.noplan")));
+  else if (k === "payfail") { into.append(t("wd.note.payfail"), "　"); into.appendChild(link(t("pv.e.btn"))); }
   else if (k === "nobal") { into.append(t("wd.note.nobal"), "　"); into.appendChild(link(t("wd.note.topup"))); }
 }
 function wdRow(id) {

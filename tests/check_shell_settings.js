@@ -478,7 +478,7 @@ ok("不該跟著動的 44 還在:側欄細軌的寬、收合後的寬、選項�
 
 // 頂列底線
 ok("中欄頂列與聊天頭沒有底線;雲端那兩條 transparent 跟著退場(沒有線可以透明)", !/\.pane-main > \.tb \{[^}]*border-bottom/.test(trcss) && !/\.chat-head \{[^}]*border-bottom/.test(css) && !/border-bottom-color: transparent/.test(trcss.split("html\[data-env")[1] || ""));
-ok("分頁列與欄界那幾條線留著(分頁列的 hairline 自 0.1.19 畫在 inset shadow,見 spec-0.1.19 §2.3)", /\.main-tabs \{[^}]*box-shadow: inset 0 -1px 0 var\(--border-hairline\)/.test(trcss) && /\.modal-head \{[^}]*border-bottom/.test(css));
+ok("分頁列與欄界那幾條線留著(分頁列的 hairline 自 0.1.20 畫在 inset shadow,見 spec-0.1.19 §2.3)", /\.main-tabs \{[^}]*box-shadow: inset 0 -1px 0 var\(--border-hairline\)/.test(trcss) && /\.modal-head \{[^}]*border-bottom/.test(css));
 ok("CSS:舊的三條規則與 .set-up 樣式清掉", !/\.set-acct \.(lbl|mail|btn-quiet)|\.set-up-txt|\.set-up \.btn-quiet/.test(css));
 ok("字標拿掉:DOM / CSS / 程式都沒有 .ws-brand 與 #ws-home;收合鈕上距 12", !/ws-brand|ws-home/.test(html + css + src) && /html\.ws-sc \.side-rail \{[^}]*padding-top: var\(--space-12\);/.test(css));
 ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條拿掉;標題列下緣、左右欄直線、方案頁的腳留著", !/\.set-acct[^{]*\{[^}]*border-top/.test(css) && !/\.set-about \{[^}]*border-top/.test(css) && !/\.cn-row \+ \.cn-row/.test(css)
@@ -566,11 +566,14 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const seen = [];
   window.blave.openExternal = (u) => { seen.push("ext:" + u); };
   const setClose = () => { seen.push("close"); }, envSwitchGuarded = (e) => { seen.push("env:" + e); return true; };
-  let acct = { plan: { state: "running" } }, acctPending = 0, planBusy = false, planSince = 0, planSlowSaid = false, planErr = null, planLastView = null, planMoreOpen = false;
+  let acct = { plan: { state: "running" } }, acctPending = 0, planBusy = false, planBusyPlan = false, planSince = 0, planSlowSaid = false, planErr = null, planLastView = null, planMoreOpen = false;
   const PLAN_SLOW_MS = 1e9, srSay = () => {}, planAsk = () => {}, planLogin = () => {}, acctCheck = () => {}, acctUrl = () => "acct", planWebUrl = () => "https://blave.org/agent/zh", planState = () => acct.plan.state;
-  let PV_P = "", PV_R = "", PV_N = 0, PV_H = "";
-  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: "", b: "", v: "", t: "", q: "", top: "", d: "", n: PV_N, name: "Claude Code", r: PV_R });
-  eval(fnSrc("dataAccessOf")); const usageUrl = () => "usage"; eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
+  let PV_P = "", PV_R = "", PV_N = 0, PV_H = "", PV_PR = null, PV_U = "", PV_GU = "", PV_X = "", PV_PD = "", pub = null;
+  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: "", b: "", v: "", t: "", q: "", top: "", d: "", n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: "", g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD });
+  eval(fnSrc("dataAccessOf")); eval(fnSrc("planMo")); eval(src.match(/^const planPriceOk = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planFailing = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planPaidAhead = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planEnded = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTierLabel = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("planStopKind"));
+  eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var ")); const usageUrl = () => "usage", planWebGo = () => { seen.push("ext:" + planPayUrl()); };
+  eval(src.match(/^function cloudWebGo\(\) \{[^\n]*\}$/m)[0]); eval(fnSrc("planRunRule")); eval(fnSrc("planPriceEl"));
+  const planPayUrl = () => "https://blave.org/agent/zh/usage?from=desktop#plan", planRepay = () => { seen.push("repay"); }, apiPlanGo = () => { seen.push("api"); };
   const envPlanChanged = undefined;
   hasToken = true; cur = "claude";
   let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));   // 餘額由 balLoad 讀進 balLast(主行程的端點);這裡直接給值
@@ -703,6 +706,100 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       /^plan-st on:pv\.st\.ok/.test(inc.st) && /^pv\.d\.included/.test(inc.lead) && /pv\.h\.ready/.test(inc.texts) && /pv\.f\.plan/.test(inc.texts)
       && JSON.stringify(inc.acts) === JSON.stringify([["btn-out", "plan.start"]]) && !/pv\.(st\.billed|st\.noData|d\.billed|d\.none|usage)|主機與資料費/.test(inc.texts));
     PV_P = ""; PV_R = ""; }
+  { /* 方案制(api 切換之後,planMo() = true):真的跑 planView + planPaint。切換前那幾格由上一段(origin/main 原封不動的斷言)守 */
+    const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
+    const view = (a) => { acct = { plan: { state: "none" }, ...a }; return planView(); };
+    const MO = { data_paths: { cloud_plan_monthly_from: 1440, cloud_plan_annual_from: 14400, api_plan: true } };
+    const AHEAD = new Date(Date.now() + 10 * 86400000).toISOString(), PAST = new Date(Date.now() - 86400000).toISOString();
+    ok("方案制:沒有方案 → plan、扣款失敗 → payFail、API 方案 → included;有試用資格又沒卡 → offer(綁卡拿試用);試用中 → trial;有主機看 state",
+      (acct = null, pub = null, planMo()) === false && (acct = { ...MO }, planMo()) === true && (acct = { plan: { state: "none", tier: "linux_starter" } }, planMo()) === true
+      && view({ ...MO, data_access: "plan_required" }) === "plan" && view({ ...MO, data_access: "payment_failed" }) === "payFail" && view({ ...MO, data_access: "included" }) === "included"
+      && view({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }) === "offer" && view({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: false }) === "plan"
+      && (PV_N = 5, view({ ...MO, data_access: "included" }) === "trial") && ((PV_N = 0), true)
+      && (acct = { ...MO, plan: { state: "stopped", tier: "linux_starter" } }, planView()) === "stopped");
+    ok("方案制、方案有效但沒有主機(只開了方案,或期內刪了主機):不分階都是 planOn;已取消且到期 → 照一般 plan(要付新一期)",
+      view({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", paid_until: AHEAD } }) === "planOn"
+      && view({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_premium", label: "Premium", paid_until: AHEAD } }) === "planOn"
+      && view({ ...MO, data_access: "plan_required", plan: { state: "none", tier: "linux_starter", paid_until: PAST, cancel_at_period_end: true } }) === "plan");
+    ok("沒登入:planMo 看公開價目的 plan.monthly_billing_active", ((acct = null), (pub = { plan: { monthly_billing_active: true } }), planMo()) === true && ((pub = { plan: { monthly_billing_active: false } }), planMo()) === false && ((pub = null), true));
+    const paintOf = (a) => { acct = { plan: { state: "none" }, ...a }; const acts = paintPlan(); const all = walk(dom["set-plan"]);
+      return { acts: acts.map((b) => [b.className, b.textContent, b.disabled === true]), lead: all.filter((n) => n.className === "plan-lead").map((n) => n.textContent).join(),
+        rule: all.filter((n) => n.className === "plan-rule").map((n) => n.textContent).join(),
+        st: all.filter((n) => /^plan-st/.test(n.className || "")).map((n) => n.className + ":" + n.textContent).join(), texts: all.map((n) => n.textContent).join("|"), btns: acts }; };
+    PV_P = "1,440"; PV_PR = 1440;
+    const np = paintOf({ ...MO, data_access: "plan_required" });
+    ok("方案制沒有方案:狀態「沒有方案」、說明講兩個出口(雲端方案 / API 方案)、底列講先扣錢包再刷卡;鈕 = 安靜的〔API 方案〕+ 實心〔啟動方案〕(只要有月價就能按,時價是 null)",
+      /pv\.st\.noPlan/.test(np.st) && np.lead === "pv.d.plan.m" + JSON.stringify(planVars()) && /^pv\.f\.plan\.m/.test(np.rule)
+      && JSON.stringify(np.acts) === JSON.stringify([["btn-quiet", "pv.apiPlan", false], ["btn-fill", "plan.startM", false]]));
+    ok("方案制沒有方案:標題不講主機(pv.h.plan.m);展開細則 = 資料 → 可選的主機(同階不另收)→ 工作頁,計費講資料暫停／方案結束(plan.rule.mNoServer*);運行中那格照舊(主機那條第一、plan.rule.m*)",
+      /pv\.h\.plan\.m/.test(np.texts) && !/pv\.h\.plan\|/.test(np.texts) && np.texts.indexOf("pv.inc.2") < np.texts.indexOf("pv.inc.m2") && np.texts.indexOf("pv.inc.m2") < np.texts.indexOf("pv.inc.3") && !/pv\.inc\.1/.test(np.texts)
+      && /plan\.rule\.mNoServerNoNum/.test(np.texts) && !/plan\.rule\.m\{|plan\.rule\.mNoNum/.test(np.texts)
+      && (() => { const r = paintOf({ ...MO, plan: { state: "running", tier: "linux_starter" } }); return /pv\.inc\.1\|pv\.inc\.2\|pv\.inc\.3/.test(r.texts) && !/pv\.inc\.m2/.test(r.texts) && /plan\.rule\.mNoNum/.test(r.texts) && !/NoServer/.test(r.texts); })());
+    planBusy = true; planBusyPlan = true;
+    const bz = paintOf({ ...MO, data_access: "plan_required" });
+    ok("開通在途(只開方案,不進「啟動中」):還是沒有方案那一格,主鈕停用、字是「開通中…」;回應回來就恢復可按", /pv\.st\.noPlan/.test(bz.st) && JSON.stringify(bz.acts[1]) === JSON.stringify(["btn-fill", "plan.startingM", true])
+      && (planBusy = false, planBusyPlan = false, JSON.stringify(paintOf({ ...MO, data_access: "plan_required" }).acts[1]) === JSON.stringify(["btn-fill", "plan.startM", false])));
+    seen.length = 0; np.btns[0]._click();
+    ok("…〔API 方案〕走 apiPlanGo(記 api_plan_open、外開網站定價頁)", seen.join() === "api");
+    PV_PR = null;
+    ok("方案制拿不到月價:〔啟動方案〕按不下去", paintOf({ ...MO, data_access: "plan_required" }).acts[1][2] === true);
+    PV_PR = 1440;
+    const pf = paintOf({ ...MO, data_access: "payment_failed" });
+    ok("方案扣款失敗(沒有主機):紅點「扣款失敗」、唯一的鈕是〔重新付款〕(外開網站方案頁),不出儲值", /^plan-st bad:pv\.st\.payFail/.test(pf.st) && JSON.stringify(pf.acts) === JSON.stringify([["btn-fill", "plan.repay", false]]) && (seen.length = 0, pf.btns[0]._click(), seen.join() === "repay"));
+    PV_U = "10 月 17 日";
+    const pw = paintOf({ ...MO, data_access: "included", plan: { state: "none", tier: "windows_max", label: "Max", paid_until: AHEAD } });
+    ok("方案有效、沒有主機(planOn):狀態「方案有效」、標題沿用「資料可以用了」(不跟 chip 重講)、講哪一階含資料(api 的 label);鈕 = 〔前往網頁管理〕(取消、換卡在方案頁)+ 描邊的〔到網站開雲端主機〕(外開,記 cloud_open_web;沒有非做不可的事,不實心),不出開通價與啟動鈕",
+      /pv\.st\.planOn/.test(pw.st) && /pv\.h\.ready/.test(pw.texts) && !/pv\.h\.planOn/.test(pw.texts) && /^pv\.d\.planOn\{"tier":"Max"/.test(pw.lead) && JSON.stringify(pw.acts.map((x) => x.slice(0, 2))) === JSON.stringify([["btn-quiet", "plan.manageStopped"], ["btn-out", "plan.cloudWeb"]]) && !/1,440/.test(pw.lead + pw.rule)
+      && (seen.length = 0, featured.length = 0, pw.btns[0]._click(), pw.btns[1]._click(), seen.join() === "ext:https://blave.org/agent/zh/usage?from=desktop#plan,ext:https://blave.org/agent/zh?from=desktop" && featured.join() === "plan_manage_web,cloud_open_web"));
+    ok("…api 沒給 label(舊 api):階名從 tier 拼出來(windows_max → Windows Max),不印空括號", /^pv\.d\.planOn\{"tier":"Windows Max"/.test(paintOf({ ...MO, data_access: "included", plan: { state: "none", tier: "windows_max", paid_until: AHEAD } }).lead));
+    PV_U = "11 月 6 日"; PV_X = "1,440";
+    ok("…planOn 底列看得到下次扣款日與金額;已取消／下次扣不到講 Blave 資料停,不講刪機停機(名下沒主機;*NoServer)", /^pv\.f\.running\.m\{/.test(paintOf({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", label: "Starter", paid_until: AHEAD } }).rule)
+      && /^pv\.f\.running\.cancelNoServer\{/.test(paintOf({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", label: "Starter", paid_until: AHEAD, cancel_at_period_end: true } }).rule)
+      && /^pv\.f\.running\.noPayNoServer\{/.test(paintOf({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", label: "Starter", paid_until: AHEAD, next_charge_source: "none" } }).rule));
+    PV_U = ""; PV_X = "";
+    const icm = paintOf({ ...MO, data_access: "included" });
+    ok("方案制 included(API 方案 / legacy 機器戶):資料已含,鈕〔到網站開雲端主機〕,不在 app 內開機", JSON.stringify(icm.acts.map((x) => x[1])) === JSON.stringify(["plan.cloudWeb"]) && icm.lead === "pv.d.included.m");
+    PV_U = ""; PV_GU = "10 月 14 日";
+    const so = paintOf({ ...MO, plan: { state: "stopped", tier: "linux_starter", failing: true, paid_until: PAST } });
+    ok("方案制扣款失敗停機:「已停機 · 方案未付款」、講刪機日期;鈕 = 前往網頁管理(方案頁)+〔重新付款〕,不出「前往儲值」",
+      /plan\.st\.stoppedPlan/.test(so.st) && /^pv\.d\.stopped\.m\{/.test(so.lead) && JSON.stringify(so.acts.map((x) => x[1])) === JSON.stringify(["plan.manageStopped", "plan.repay"]) && !/plan\.addCredit/.test(so.texts));
+    const en = paintOf({ ...MO, plan: { state: "stopped", tier: "linux_starter", failing: false, cancel_at_period_end: true, paid_until: PAST } });
+    ok("已取消、到期停機:「方案已結束」、講哪天刪機;鈕〔到網站恢復方案〕;不講照常續約", /plan\.st\.ended/.test(en.st) && /^pv\.d\.ended\{/.test(en.lead)
+      && JSON.stringify(en.acts.map((x) => x[1])) === JSON.stringify(["plan.resumeWeb"]) && !/stopped\.mOk|續約/.test(en.texts));
+    const sk = paintOf({ ...MO, plan: { state: "stopped", tier: "linux_starter", failing: false, paid_until: AHEAD } });
+    ok("方案制、方案有效、用戶自己停的:不講未付款、不給付款鈕,只有外開方案頁", /side\.stopped/.test(sk.st) && sk.lead === "pv.d.stopped.mOk"
+      && JSON.stringify(sk.acts.map((x) => x[1])) === JSON.stringify(["plan.manageStopped"]) && !/plan\.(repay|addCredit|st\.stoppedPlan)/.test(sk.texts));
+    const lg = paintOf({ ...MO, plan: { state: "stopped", tier: "linux_starter", stop_below: 50 } });
+    ok("切換後還沒建方案列的 legacy 停機(沒有 paid_until):照舊制那一格(加值),不講方案", /plan\.st\.stopped/.test(lg.st) && !/plan\.st\.stoppedPlan|plan\.st\.ended/.test(lg.st) && JSON.stringify(lg.acts.map((x) => x[1])) === JSON.stringify(["plan.manageStopped", "plan.addCredit"]));
+    PV_U = "11 月 6 日";
+    const ru = (pl) => paintOf({ ...MO, plan: { state: "running", tier: "linux_starter", ...pl } });
+    ok("方案制運行中:鈕 = 前往網頁管理(方案頁)+ 切到雲端;底列:已取消 → 用到哪天、扣款失敗 → 刪機日(不是已過的到期日)、下次扣不到、其他不講",
+      JSON.stringify(ru({}).acts.map((x) => x[1])) === JSON.stringify(["plan.manageStopped", "plan.switchCloud"])
+      && /^pv\.f\.running\.cancel\{/.test(ru({ cancel_at_period_end: true }).rule) && /^pv\.f\.running\.fail\{/.test(ru({ failing: true }).rule) && /^pv\.f\.running\.noPay\{/.test(ru({ next_charge_source: "none" }).rule) && ru({}).rule === "");
+    PV_GU = "";
+    ok("…扣款失敗但刪機日拿不到:只講「扣款失敗」", ru({ failing: true }).rule === "pv.st.payFail");
+    PV_U = "";
+    PV_N = 5;
+    { const tr = (o) => paintOf({ data_access: "included", data_included: true, ...o });
+      const pre = tr({}), preCx = tr({ trial_cancel_at_end: true }), moCx = tr({ ...MO, trial_cancel_at_end: true });
+      ok("試用中:多一顆安靜的〔到網站取消試用〕(外開用量頁,不打寫入端點);已取消 → 狀態「已取消試用・哪天結束」、鈕〔到網站恢復試用〕;切換前講不轉成方案、方案制講不收第一期",
+        JSON.stringify(pre.acts.map((x) => x[1])) === JSON.stringify(["plan.trialCancel", "plan.start"]) && /pv\.st\.trial\{/.test(pre.st)
+        && /pv\.st\.trialCancelled/.test(preCx.st) && /^pv\.f\.trialCancelled\{/.test(preCx.rule) && JSON.stringify(preCx.acts.map((x) => x[1])) === JSON.stringify(["plan.trialResume", "plan.start"])
+        && /^pv\.f\.trialCancelled\.m\{/.test(moCx.rule) && (seen.length = 0, featured.length = 0, preCx.btns[0]._click(), pre.btns[0]._click(), seen.join() === "ext:usage,ext:usage" && featured.join() === "trial_resume_web,trial_cancel_web")); }
+    PV_PD = "30";
+    ok("方案制試用中那一格:pv.d.trial.m(試用結束扣第一期、之後每 {pd} 天續扣)、底列 pv.f.trial.m(試用期間取消就不扣);一期幾天拿不到 → NoNum 那句", /^pv\.d\.trial\.m\{/.test(paintOf({ ...MO, data_access: "included", data_included: true }).lead)
+      && /^pv\.f\.trial\.m\{/.test(paintOf({ ...MO, data_access: "included", data_included: true }).rule) && (PV_PD = "", /^pv\.d\.trial\.mNoNum\{/.test(paintOf({ ...MO, data_access: "included", data_included: true }).lead)));
+    PV_N = 0;
+    { const zh = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8"), enp = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8");
+      const str = (po, k) => (new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^"]*)"').exec(po) || [])[1];
+      const MK = Object.keys(STR.zh).filter((k) => /\.m(NoNum|NoServer|NoServerNoNum)?$|NoServer(NoNum)?$/.test(k)).concat(["data.noPlan", "wd.note.noplan", "lib.grp.plan", "lib.grp.gate.noPlan", "lib.why.noPlan", "cf.m.title", "cf.m.body1"]);
+      ok("方案制的字(稽核 N1–N3):試用／綁卡／沒登入那幾句揭露「試用結束扣第一期、試用期間取消就不扣」;沒方案那幾句講「開通 Blave Agent 方案或 API 方案」;方案制那一組不再有「雲端方案」/ cloud plan、不講按小時;切換前的本名與 .old 版逐字留著",
+        ["pv.d.trial.m", "pv.d.trial.mNoNum", "pv.f.out.m", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /第一期/.test(str(zh, k)) && /first (plan )?period|charged automatically/.test(str(enp, k)))
+        && ["pv.f.trial.m", "pv.f.out.m", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /取消/.test(str(zh, k)) && /[Cc]ancel/.test(str(enp, k)))
+        && ["pv.d.noTrial.m", "pv.e.noTrial.m", "data.noPlan", "pv.d.plan.m", "wd.note.noplan", "lib.grp.gate.noPlan", "lib.why.noPlan"].every((k) => /Blave Agent 方案/.test(str(zh, k)) && /API 方案/.test(str(zh, k)) && /Blave Agent plan/.test(str(enp, k)) && /API plan/.test(str(enp, k)))
+        && MK.length > 30 && MK.every((k) => STR.zh[k] && STR.en[k] && !/雲端方案|整點小時/.test(STR.zh[k]) && !/cloud plan/i.test(STR.en[k]))
+        && ["pv.d.trial", "pv.d.trial.old", "pv.f.offer", "pv.f.offer.old", "pv.d.billed", "data.readyBilled", "lib.note.billed", "wd.note.billed"].every((k) => !!str(zh, k) && !!str(enp, k))); }
+    PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
   // 內文講切換器、標題不動。哪些事歸給網頁工作頁、哪些不可以再歸給它——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。
   // spec-desktop-settings-cleanup §4:運行中那段收成一句「那一邊有什麼」;網頁限定那一句搬進「方案內容與計費」(pv.inc.web)
   ok("內文一句講雲端那一邊有什麼、標題不動;網頁限定那一句在方案內容裡(zh / en)", /msgid "pv\.d\.running"\nmsgstr "在雲端那一邊，可以看主機上的策略、部位與下單，也可以請 agent 在主機上做策略。"/.test(PO[0])
@@ -719,7 +816,8 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   let V = { t: 14, p: "1,440", r: "2" };
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};
   const acctUrl = () => "topup", faultCard = () => mkCard(), submitMessage = async () => true, $ = () => ({ focus() {} });
-  const acctSub = () => null, acctAction = () => ({}), resendSecond = () => null;
+  const acctSub = () => null, acctAction = () => ({}), resendSecond = () => null, planRepay = () => {}, apiPlanGo = () => {}, trackFeature = () => {};
+  let pub = null; eval(fnSrc("planMo"));
   eval(fnSrc("dataAccessOf")); eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
   eval(fnSrc("dataReadyText")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
   const A = (o) => ({ can_run: true, plan: { state: "none" }, ...o });
@@ -735,6 +833,14 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   V = { t: 14, p: "1,440", r: "" }; acct = A({ data_access: "none", reason: "NO_CREDIT" });
   ok("none 拿不到時價:用不帶數字的句子", dataCardState().text === "data.noBalanceNoNum");
   V = { t: 14, p: "1,440", r: "2" };
+  acct = A({ data_access: "plan_required", data_paths: { api_plan: true } });
+  c = dataCardState();
+  ok("方案制沒有方案:講清楚「開雲端方案或 API 方案」;主鈕〔看方案〕開設定 › 帳號與方案、第二顆〔API 方案〕",
+    c.text === "data.noPlan" && c.label === "data.seePlan" && !c.out && c.second && c.second.label === "pv.apiPlan" && !/noCreditBtn|addCard/.test(JSON.stringify(c)));
+  acct = A({ data_access: "plan_required", reason: "NO_CARD", trial_eligible: true });
+  ok("方案制、有試用資格又沒卡:先講綁卡(綁卡就有試用資料)", dataCardState().text === (cur === "blave" ? "pv.e.card" : "pv.e.card.cli") + JSON.stringify(V));
+  acct = A({ data_access: "payment_failed" });
+  ok("方案扣款失敗:〔重新付款〕,不出儲值", dataCardState().text === "data.payFail" && dataCardState().label === "plan.repay");
   acct = A({ data_included: false });
   ok("舊 api(沒有 data_access)照舊:描邊的「資料與雲端方案」+「它在雲端方案裡」;月價副句拿掉了", dataCardState().label === "pv.e.btn" && dataCardState().out === true && dataCardState().text === "pv.e.noTrial" && dataCardState().sub == null);
   acct = A({ data_included: false, reason: "NO_CARD", trial_eligible: true });
@@ -758,11 +864,24 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   // 卡出來的那一刻帳號已經付得起(狀態比 agent 那一輪新):直接給〔再送一次〕
   dataCard = null; turnCards = ["data-access"]; sessionId = "s2"; acct = A({ data_access: "billed", data_hourly: 2 }); maybeDataCard();
   ok("卡出來時已經 billed:直接是「餘額夠了…會收」+〔再送一次〕", dataCard && /^data\.readyBilled/.test(dataCard.last.text) && dataCardSessions.has("s2")); }
-// 主機與資料費的時價只從 account_status 的 data_hourly 來,外殼一個數字都不寫死(提案 §3 C3)
-{ let acct = null; const pub = null, cur = "claude", planDate = () => "";
-  eval(fnSrc("planVars"));
+// 主機與資料費的時價只從 account_status 的 data_hourly 來,外殼一個數字都不寫死(提案 §3 C3;切換前那段照舊)
+// 方案的月價 / 年價 / 年繳付幾個月 / 寬限天數也都從 api 來(account_status 的 plan、data_paths,公開價目的 plan)
+{ let acct = null, pub = null; const cur = "claude", planDate = (iso) => "D:" + iso;
+  eval(fnSrc("planMo")); eval(fnSrc("planVars"));
   ok("planVars().r = data_hourly(3 就是 3);沒給就是空字串(畫面改用不帶數字的句子)", ((acct = { data_hourly: 3 }), planVars().r === "3") && ((acct = { data_hourly: 2 }), planVars().r === "2")
-    && ((acct = {}), planVars().r === "") && ((acct = { data_hourly: 0 }), planVars().r === "")); }
+    && ((acct = {}), planVars().r === "") && ((acct = { data_hourly: 0 }), planVars().r === ""));
+  acct = { plan: { state: "running", tier: "linux_premium", monthly: 4320, annual: 43200, cycle: "monthly", next_cycle: "annual", next_charge_twd: 43200, paid_until: "2027-10-07T00:00:00Z", grace_until: "2027-10-14T00:00:00Z" },
+    data_paths: { cloud_plan_monthly_from: 1440, cloud_plan_annual_from: 14400 }, grace_days: 7, annual_pay_months: 10 };
+  pub = { plan: { annual_period_days: 365 } };
+  let v = planVars();
+  ok("planVars 方案制:開通價是 Starter(data_paths),不是目前階的 plan.monthly;寬限天數 / 年繳月數先讀 account_status;運行列的週期跟著 next_cycle、金額是 next_charge_twd",
+    v.pr === 1440 && v.yr === 14400 && v.y === "14,400" && v.k === "10" && v.yd === "365" && v.g === "7" && v.x === "43,200" && v.c === "plan.cyc.annual" && v.u === "D:2027-10-07T00:00:00Z" && v.gu === "D:2027-10-14T00:00:00Z");
+  acct = { plan: { state: "running", tier: "linux_starter", monthly: 1440, cycle: "monthly", next_charge_twd: 0, next_charge_source: "free" }, data_paths: {} };
+  ok("planVars:內部帳號(next_charge_source free)不講金額", planVars().x === "");
+  acct = { plan: { state: "none", monthly: 4320, hourly: 2 } }; v = planVars();
+  ok("planVars 切換前:開通價照舊 plan.monthly 為先", v.pr === 4320 && v.p === "4,320");
+  acct = { data_paths: { cloud_plan_monthly_from: "abc" }, plan: { state: "none" } }; v = planVars();
+  ok("planVars:壞值不當數字(pr null → 啟動鈕按不下去)", v.pr === null && v.p === ""); }
 // 聊天裡「這小時用到了 Blave 的資料,主機與資料費 N TWD」那一則已拿掉(Wei 2026-09-24:惱人;計費不變,只是不在對話裡講)
 ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee 字串都不在外殼裡", !/dataFeeNote|dataFeeShow|DATA_RULE_KEY|DATA_NOTE_HOUR_KEY|"data\.fee(First)?"/.test(src));
 { /* 回合結束(dataTurnEnd)真的跑:有登入就重讀一次(稽核 Delta 3 #1:試用剛到期、餘額剛用完只有這裡看得到);卡用這一份 */
@@ -783,6 +902,106 @@ ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee �
   hasToken = false; fetched = 0; await dataTurnEnd();
   ok("沒登入:不讀、卡照舊檢查", fetched === 0 && cardCalls === 4);
   ok("接線:回合正常結束走 dataTurnEnd(卡在裡面)", /if \(!loggedOut && r\.code === 0\) dataTurnEnd\(\);/.test(src)); }
+// 方案制的開通(api 切換之後):送出去的欄位、409 重新確認、確認框的兩個週期。真的跑 main.js 的 planStartBody / planStartResult / publicPricing
+// 與 app.js 的 planAsk / planGo;api 那一端的契約見 api account/agent_plan.py require_confirm / confirm_field
+{ const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const mFn = (name) => { const i = mainSrc.search(new RegExp("(async )?function " + name + "\\(")); if (i < 0) throw new Error("找不到 main " + name); return mainSrc.slice(i, mainSrc.indexOf("\n}", i) + 2); };
+  eval(mainSrc.match(/^const PLAN_CYCLES = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(mainSrc.match(/^const planInt = [^\n]*$/m)[0].replace(/^const /, "var ")); { const i = mainSrc.indexOf("const PLAN_ERR = {"); eval(mainSrc.slice(i, mainSrc.indexOf("};", i) + 2).replace(/^const /, "var ")); }
+  eval(mFn("planStartBody")); eval(mFn("planStartResult"));
+  ok("planStartBody:月繳帶 cycle + confirm_monthly_twd、年繳帶 confirm_annual_twd;週期或金額不對(非正整數)就只送憑證(切換前的 api 本來就不看)",
+    JSON.stringify(planStartBody("T", "S", { cycle: "monthly", confirm: 1440 })) === '{"token":"T","app_secret":"S","cycle":"monthly","confirm_monthly_twd":1440}'
+    && JSON.stringify(planStartBody("T", "S", { cycle: "monthly", confirm: 1440, server: false })) === '{"token":"T","app_secret":"S","cycle":"monthly","confirm_monthly_twd":1440,"server":false}'
+    && JSON.stringify(planStartBody("T", "S", { cycle: "monthly", confirm: 1440, server: 0 })) === '{"token":"T","app_secret":"S","cycle":"monthly","confirm_monthly_twd":1440}'
+    && JSON.stringify(planStartBody("T", "S", { server: false })) === '{"token":"T","app_secret":"S"}'
+    && JSON.stringify(planStartBody("T", "S", { cycle: "annual", confirm: 14400 })) === '{"token":"T","app_secret":"S","cycle":"annual","confirm_annual_twd":14400}'
+    && [undefined, {}, { cycle: "weekly", confirm: 1 }, { cycle: "monthly", confirm: 14.5 }, { cycle: "monthly", confirm: "1440" }, { cycle: "monthly", confirm: 0 }].every((o) => JSON.stringify(planStartBody("T", "S", o)) === '{"token":"T","app_secret":"S"}'));
+  const R = (status, body) => planStartResult({ status, body });
+  const q = R(409, { error_code: "PLAN_CONFIRM_REQUIRED", cycle: "annual", price_twd: 14400, monthly_twd: 1440, annual_twd: 14400, confirm_field: "confirm_annual_twd" });
+  ok("planStartResult:200 → state;409 PLAN_CONFIRM_REQUIRED → 帶 api 現價的 quote;PLAN_CHARGE_UNCONFIRMED 當 PLAN_BUSY;刷卡被拒照名;認不得 → SERVER;429 → RATE_LIMITED",
+    R(200, { state: "starting" }).state === "starting" && q.error === "PLAN_CONFIRM_REQUIRED" && JSON.stringify(q.quote) === '{"cycle":"annual","monthly":1440,"annual":14400}'
+    && R(409, { error_code: "PLAN_CHARGE_UNCONFIRMED" }).error === "PLAN_BUSY" && R(409, { error_code: "PLAN_BUSY" }).error === "PLAN_BUSY" && R(402, { error_code: "PLAN_CHARGE_FAILED" }).error === "PLAN_CHARGE_FAILED"
+    && R(403, { error_code: "NO_CARD" }).error === "NO_CARD" && R(409, { error_code: "HAS_SERVER" }).error === "SERVER" && R(429, {}).error === "RATE_LIMITED"
+    && ["CHEAPER_PLAN_NEXT_PERIOD", "OS_CHANGE_NEEDS_NEW_SERVER", "RELAUNCH_REQUIRED", "PLAN_CANCELLED"].every((c) => R(409, { error_code: c }).error === "PLAN_ON_WEB") && R(400, { error_code: "DOWNGRADE_UNSUPPORTED" }).error === "SERVER" && R(400, { error_code: "toString" }).error === "SERVER"
+    && JSON.stringify(R(409, { error_code: "PLAN_CONFIRM_REQUIRED", monthly_twd: "x" }).quote) === '{"cycle":null,"monthly":null,"annual":null}');
+  { let tiers = null; const publicTiers = async () => tiers; eval("var publicPricing = async " + mFn("publicPricing").replace(/^async /, ""));
+    tiers = { trial: { days: 14 }, linux: [{ label: "Starter", twd_per_hour: null, monthly_twd: 1440, annual_twd: 14400 }], plan: { monthly_billing_active: true, annual_pay_months: 10, annual_period_days: 365, period_days: 30, grace_days: 7 } };
+    const a = await publicPricing();
+    tiers = { trial: { days: 14 }, linux: [{ label: "Starter", twd_per_hour: 2 }] };
+    const b = await publicPricing();
+    ok("publicPricing:方案制讀 api 的 monthly_twd / annual_twd 與 plan 條款(年繳付幾個月、寬限天數);舊 api 退回時價 × 720、年價 null、monthly_billing_active false",
+      a.starter_monthly === 1440 && a.starter_annual === 14400 && a.starter_hourly === null && a.plan.monthly_billing_active === true && a.plan.annual_pay_months === 10 && a.plan.grace_days === 7
+      && b.starter_monthly === 1440 && b.starter_annual === null && b.plan.monthly_billing_active === false); }
+  // app.js 的確認框與送出
+  { const boxes2 = [], starts = [], said2 = []; let acct = { plan: { state: "none", tier: "linux_starter" } }, pub = { plan: {} }, RES = null, planErr = null, planBusy = false, planBusyPlan = false, planSince = 0, asked = [];
+    const confirmBox = (o) => boxes2.push(o), planPaint = () => {}, sidePaint = () => {}, srSay = (x) => said2.push(x), pubLoad = async () => pub;
+    let acctChecks = 0; const acctCheck = async () => { acctChecks++; };
+    let V = { pr: 1440, yr: 14400, p: "1,440", y: "14,400", k: "10", yd: "365", g: "7", d: "", pd: "30" };
+    const planVars = () => V; eval(fnSrc("planMo"));
+    const window = { blave: { planStart: async (o) => { starts.push(o); return RES; } } };
+    eval(fnSrc("planAsk")); eval("var planGo = async " + fnSrc("planGo").replace(/^async /, ""));
+    const featured2 = []; const trackFeature = (n) => featured2.push(n);
+    planAsk(null); let bx = boxes2.pop();
+    ok("確認框(方案制、有年價):月繳 / 年繳兩個單選(月繳預選,對齊網站;鈕一開就能按),說明各帶 api 的價(月繳那列一期幾天讀公開價目);鈕字是要付的那一筆",
+      bx && bx.choices && bx.choices.map((c) => c.id).join() === "monthly,annual" && bx.choices[0].checked === true && !bx.choices[1].checked && bx.choices[0].desc === "cf.m.mo.d" + JSON.stringify({ ...V })
+      && bx.choices[1].desc === "cf.m.yr.d" + JSON.stringify({ ...V }) && bx.choices[0].ok === 'cf.m.ok{"x":"1,440"}' && bx.choices[1].ok === 'cf.m.ok{"x":"14,400"}'
+      && bx.lines.join("|") === ["cf.m.body1", "cf.m.body2", "cf.m.body3" + JSON.stringify({ ...V })].join("|"));
+    RES = { state: "starting" }; await bx.choices[1].onOk();
+    ok("送出時讀屏念一次「開通中…」(只開方案不換格,鈕字之外的唯一回饋)", said2.join() === "plan.startingM");
+    ok("…選年繳按下:planStart 帶 { cycle: annual, confirm: 14400, server: false }(框上印的那個整數;只開方案、不建主機);成功記 plan_annual", JSON.stringify(starts.pop()) === '{"cycle":"annual","confirm":14400,"server":false}' && featured2.join() === "plan_annual");
+    V = { ...V, yr: null, y: "" }; planAsk(null); bx = boxes2.pop();
+    ok("api 沒給年價:不出單選,只有月繳那一行、鈕字是月繳金額", bx && !bx.choices && bx.ok === 'cf.m.ok{"x":"1,440"}' && bx.lines[bx.lines.length - 1] === "cf.m.mo.d" + JSON.stringify({ ...V }));
+    V = { ...V, pd: "" }; planAsk(null); bx = boxes2.pop();
+    ok("一期幾天拿不到(公開價目沒給 period_days):月繳那列用不帶天數的句子", !!bx && bx.lines[bx.lines.length - 1] === "cf.m.mo.dNoNum" + JSON.stringify({ ...V }));
+    V = { ...V, pd: "30", yr: 14400, y: "14,400", d: "10 月 21 日" }; planAsk(null); bx = boxes2.pop();
+    ok("試用中:講到期才付第一期、鈕字帶哪天起扣多少(年繳就是一整年那筆)", bx.lines[1] === "cf.m.body2Trial" + JSON.stringify({ ...V, p: "1,440", y: "14,400" })
+      && bx.choices[0].ok === 'cf.m.okTrial{"d":"10 月 21 日","x":"1,440"}' && bx.choices[1].ok === 'cf.m.okTrial{"d":"10 月 21 日","x":"14,400"}');
+    V = { ...V, d: "" };
+    // 開框那顆鈕(data-k)記下來:409 重開時格子已經重畫過,要在現在的格子裡找同一顆當 opener,關框焦點才回得去
+    const BTN = { dataset: { k: "plan:1" } }, BTN2 = { dataset: { k: "plan:1" } }; dom["set-plan"].querySelector = (q) => (q === 'button[data-k="plan:1"]' ? BTN2 : null);
+    planAsk({ currentTarget: BTN }); bx = boxes2.pop();
+    RES = { error: "PLAN_CONFIRM_REQUIRED", quote: { cycle: "monthly", monthly: 1500, annual: 15000 } }; const n0 = starts.length; await planGo("monthly", 1440); bx = boxes2.pop();
+    ok("409 PLAN_CONFIRM_REQUIRED:重讀帳號、用 api 回的現價再開一次框(第一行講金額更新了),不自動重送;opener 是重畫後同 data-k 的那顆鈕", starts.length === n0 + 1 && acctChecks >= 1 && bx && bx.lines[0] === "cf.m.repriced"
+      && bx.choices[0].ok === 'cf.m.ok{"x":"1,500"}' && bx.choices[1].ok === 'cf.m.ok{"x":"15,000"}' && planErr === null && bx.opener === BTN2);
+    dom["set-plan"].querySelector = () => null;
+    { const keep = acct; acct = { plan: { state: "none", hourly: 2 } };   // 409 之後重讀帳號失敗、手上還是切換前那份
+      RES = { error: "PLAN_CONFIRM_REQUIRED", quote: { cycle: "monthly", monthly: 1500, annual: 15000 } }; await planGo("monthly", 1440); bx = boxes2.pop();
+      ok("409 後重讀帳號失敗(planMo 還是 false):照樣開方案制的框(api 剛回 409 就是方案制),不退回時價框", !!bx && !!bx.choices && bx.lines[0] === "cf.m.repriced");
+      acct = keep; }
+    RES = { error: "PLAN_ON_WEB" }; await planGo("monthly", 1440);
+    ok("PLAN_ON_WEB(方案是別的階 / 主機要重開)→ plan.err.web(那一列的鈕外開方案頁)", planErr.key === "plan.err.web");
+    RES = { error: "PLAN_CHARGE_FAILED" }; await planGo("monthly", 1440);
+    ok("刷卡被拒 → plan.err.charge;錢包不夠又沒卡(方案制的 NO_CARD)→ plan.err.nocard.m;上一筆還在確認 → plan.err.busy(平靜)", planErr.key === "plan.err.charge"
+      && ((RES = { error: "NO_CARD" }), await planGo("monthly", 1440), planErr.key === "plan.err.nocard.m") && ((RES = { error: "PLAN_BUSY" }), await planGo("monthly", 1440), planErr.key === "plan.err.busy" && planErr.calm === true));
+    acct = { plan: { state: "none", hourly: 2, monthly: 1440 } }; V = { p: "1,440", h: "2", d: "" }; planAsk(null); bx = boxes2.pop();
+    ok("切換前(沒有 plan.tier / data_paths):確認框照舊三句(時價),按下去不帶週期與金額", bx && !bx.choices && bx.lines.join("|") === ["cf.body1", "cf.body2" + JSON.stringify(V), "cf.body3"].join("|")
+      && (RES = { state: "starting" }, await bx.onOk(), starts.pop() === undefined)); }
+}
+// 方案的寫入端點外殼只打一支:/oauth/desktop/plan/start。重新付款(/plan/retry 要帶 due 確認金額)、恢復(/openclaw/resume)、
+// 取消／恢復取消、改週期、升級、換卡都外開網站方案頁——列舉全部外殼原始碼,有人在 app 內直接打這些就紅
+{ const SHELL = path.join(__dirname, "..", "shell"), hits = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => { if (["node_modules", "dist", "vendor"].includes(e.name)) return; const f = path.join(d, e.name);
+    if (e.isDirectory()) walk(f); else if (/\.js$/.test(e.name) && e.name !== "strings.js") { const src = fs.readFileSync(f, "utf8");
+      for (const m of src.matchAll(/plan\/(retry|uncancel|cancel|cycle|change|subscribe)|openclaw\/(resume|upgrade|terminate)|account\/bind_card/g)) hits.push(path.relative(SHELL, f) + ":" + m[0]); } });
+  walk(SHELL);
+  ok("外殼沒有直接打方案的寫入端點(重新付款 / 恢復 / 改週期 / 升級 / 換卡都外開方案頁);只有 /oauth/desktop/plan/start", hits.length === 0
+    && (fs.readFileSync(path.join(SHELL, "main.js"), "utf8").match(/oauth\/desktop\/plan\//g) || []).length === 1);
+  if (hits.length) console.log("      " + hits.join(", ")); }
+// 視窗回到前景:設定 › 帳號與方案開著就重查 account_status(10 秒內查過不再查)——到網站取消／恢復試用、重新付款後回來,那一格才會換
+{ const i = src.indexOf('window.addEventListener("focus", () => {'), body = i < 0 ? "" : src.slice(i, src.indexOf("\n});", i));
+  ok("回前景:帳號與方案那一頁開著也會 acctCheck(有 10 秒節流)", /const planOpenNow = !\$\("set-scrim"\)\.hidden && !\$\("set-plan"\)\.hidden;/.test(body) && /\|\| planOpenNow\)\) return;/.test(body)
+    && /if \(Date\.now\(\) - acctAt < 10000\) return;\n  acctCheck\(\);/.test(body));
+  ok("已取消試用的底列不再重講日期(狀態列已經講了)", ["zh", "en"].every((l) => !/\{d\}/.test(STR[l]["pv.f.trialCancelled"]) && !/\{d\}/.test(STR[l]["pv.f.trialCancelled.m"]))); }
+// 設計稽核(desktop-mplan-static-audit)的有條件項:分隔符、chip 與 h5 不重講、en 的「到網站」、鈕列折行保險、409 那句跟網站同字
+ok("分隔符同一面一種:zh 的 pv / plan / cf 那組字用「 · 」不用「・」;en 的「到網站」鈕字一律 on the Web", Object.keys(STR.zh).filter((k) => /^(pv|plan|cf)\./.test(k)).every((k) => !/・/.test(STR.zh[k]))
+  && ["plan.manageStopped", "plan.onWeb", "plan.changeCard", "plan.resumeWeb", "plan.trialCancel", "plan.trialResume", "plan.cloudWeb"].every((k) => /on the Web$/.test(STR.en[k])));
+ok("chip 與 h5 不重講同一事實:方案已結束 → h5 講出口(恢復會當場付一期)、說明不再重講;扣款失敗停機 → h5 講出口(重新付款);chip 與說明都是「沒付款」",
+  ["zh", "en"].every((l) => /恢復|Resum/.test(STR[l]["pv.h.ended"]) && !/恢復|Resum/.test(STR[l]["pv.d.ended"] + STR[l]["pv.d.endedNoNum"]) && /重新付款|Pay again/.test(STR[l]["pv.h.stopped.m"])) && /沒付款/.test(STR.zh["plan.st.stoppedPlan"]) && !/未付款/.test(STR.zh["plan.st.stoppedPlan"]));
+ok("版面保險:鈕列放不下就折行(.plan-act / .cv-act flex-wrap)", /\.plan-act\{[^}]*flex-wrap:wrap/.test(css) && /\.cv-act \{[^}]*flex-wrap: wrap/.test(trcss));
+ok("409 重開那一句跟網站 bc_cycle_requote 同字", STR.zh["cf.m.repriced"] === "金額已更新，請再確認一次。" && STR.en["cf.m.repriced"] === "The amount was updated. Please confirm again.");
+// 設計 r8:開通確認框講出階名(固定 Linux Starter、之後開同階主機不另收);鈕字與用詞跟網站同一個字
+ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x} TWD to Start Plan;試用 en Start Now, Pay {x} TWD on {d};計費週期;Yearly",
+  STR.zh["cf.m.body1"].includes("Linux Starter") && STR.en["cf.m.body1"].includes("Linux Starter") && STR.zh["cf.m.ok"] === "付 {x} TWD 開通" && STR.en["cf.m.ok"] === "Pay {x} TWD to Start Plan"
+  && STR.en["cf.m.okTrial"] === "Start Now, Pay {x} TWD on {d}" && STR.zh["cf.m.pick"] === "計費週期" && STR.en["plan.cyc.annual"] === "Yearly");
 })().then(() => {
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 });

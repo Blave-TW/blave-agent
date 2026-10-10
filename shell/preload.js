@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld("blave", {
   cloudVersion: (q) => ipcRenderer.invoke("cloud-version", { name: q && q.name, op: q && q.op, n: q && q.n, a: q && q.a, b: q && q.b }),
   accountStatus: () => ipcRenderer.invoke("account-status"),
   balance: () => ipcRenderer.invoke("balance"),   // Blave 餘額:{ balance, trial } 或 null(讀不到);憑證在主行程
-  planStart: () => ipcRenderer.invoke("plan-start"),
+  planStart: (opts) => ipcRenderer.invoke("plan-start", opts),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
   txfQuote: () => ipcRenderer.invoke("txf-quote"),   // 台指期指數(雲端視角口數列的參考金額);問不到 = null
   tradeLabels: (labels) => ipcRenderer.send("trade-labels", labels),

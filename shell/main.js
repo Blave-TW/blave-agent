@@ -433,20 +433,49 @@ function balanceHost() {
     getCreds: blaveCreds });
   return _balance;
 }
-/* 啟動雲端方案。回 { state } 或 { error }(穩定代號,畫面自己換成句子):
-   APP_SECRET_REQUIRED(舊登入,沒有這顆)/ NO_CARD / NO_CREDIT / RATE_LIMITED / SERVER。
+/* 啟動雲端方案。opts = { cycle: "monthly" | "annual", confirm: 畫面給用戶看過的那一期金額(整數 TWD), server: false }。
+   server: false(方案制才送)= 只開方案、不建主機(api 固定 Linux Starter,回 { state: "none" });要雲端主機的人到網站開。
+   回 { state } 或 { error }(穩定代號,畫面自己換成句子):APP_SECRET_REQUIRED(舊登入,沒有這顆)/ NO_CARD / NO_CREDIT /
+   PLAN_CONFIRM_REQUIRED / PLAN_CHARGE_FAILED / PLAN_BUSY / PLAN_ON_WEB / RATE_LIMITED / SERVER。
+   PLAN_ON_WEB = 這件事電腦版做不了、要到網站方案頁(方案是較高階或 Windows 而電腦版只開 Starter、主機已刪要重開)。
+   方案制(api 切換之後)要帶 cycle 與 confirm_monthly_twd／confirm_annual_twd:跟現價不符或沒帶就 409
+   PLAN_CONFIRM_REQUIRED,那時多回 quote = 伺服器現價(409 body 的 cycle / monthly_twd / annual_twd),畫面拿它重新問一次,不替用戶自動重送。切換前 api 不看這三個欄位。
    後端是冪等的:已有主機就回現況,連點或重試不會開第二台。 */
-async function planStart() {
+const PLAN_CYCLES = ["monthly", "annual"];
+const planInt = (v) => (Number.isInteger(v) && v > 0 ? v : null);
+// api 錯誤碼 → 外殼的穩定代號;不在表上的一律 SERVER
+const PLAN_ERR = { APP_SECRET_REQUIRED: "APP_SECRET_REQUIRED", NO_CARD: "NO_CARD", NO_CREDIT: "NO_CREDIT", INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
+  PLAN_CHARGE_FAILED: "PLAN_CHARGE_FAILED", PLAN_BUSY: "PLAN_BUSY", PLAN_CHARGE_UNCONFIRMED: "PLAN_BUSY",
+  PLAN_ALREADY_ACTIVE: "PLAN_ALREADY_ACTIVE", CHEAPER_PLAN_NEXT_PERIOD: "PLAN_ON_WEB", OS_CHANGE_NEEDS_NEW_SERVER: "PLAN_ON_WEB", RELAUNCH_REQUIRED: "PLAN_ON_WEB", PLAN_CANCELLED: "PLAN_ON_WEB" };
+function planStartBody(token, secret, opts) {
+  const o = opts && typeof opts === "object" ? opts : {};
+  const body = { token, app_secret: secret };
+  const cycle = PLAN_CYCLES.includes(o.cycle) ? o.cycle : null, confirm = planInt(o.confirm);
+  if (cycle && confirm) {
+    body.cycle = cycle; body[cycle === "annual" ? "confirm_annual_twd" : "confirm_monthly_twd"] = confirm;
+    if (o.server === false) body.server = false;   // 只認 JSON false(api 同);沒帶 = 舊行為,開一台 Starter
+  }
+  return body;
+}
+function planStartResult(r) {
+  const b = (r && r.body) || {};
+  if (r.status === 200 && typeof b.state === "string") return { state: b.state };
+  if (r.status === 429) return { error: "RATE_LIMITED" };
+  const code = b.error_code || b.error;
+  if (code === "PLAN_CONFIRM_REQUIRED") {
+    return { error: code, quote: { cycle: PLAN_CYCLES.includes(b.cycle) ? b.cycle : null,
+      monthly: planInt(b.monthly_twd), annual: planInt(b.annual_twd) } };
+  }
+  return { error: Object.prototype.hasOwnProperty.call(PLAN_ERR, code) ? PLAN_ERR[code] : "SERVER" };
+}
+async function planStart(opts) {
   const token = loadToken(), secret = loadAppSecret();
   if (!token) return { error: "INVALID_CREDENTIALS" };
   if (!secret) return { error: "APP_SECRET_REQUIRED" };
   try {
-    const r = await postJSON(`${API_BASE}/oauth/desktop/plan/start`, { token, app_secret: secret });
-    const b = r.body || {};
-    if (r.status === 200 && typeof b.state === "string") { lastAcct = null; return { state: b.state }; }
-    if (r.status === 429) return { error: "RATE_LIMITED" };
-    const code = b.error_code || b.error;
-    return { error: ["APP_SECRET_REQUIRED", "NO_CARD", "NO_CREDIT", "INVALID_CREDENTIALS"].includes(code) ? code : "SERVER" };
+    const out = planStartResult(await postJSON(`${API_BASE}/oauth/desktop/plan/start`, planStartBody(token, secret, opts)));
+    if (out.state) lastAcct = null;
+    return out;
   } catch (_) { return { error: "SERVER" }; }
 }
 
@@ -1525,7 +1554,7 @@ function loadTurnResults(id) {
 }
 
 /* ── 對話 meta(外殼自己記的、session.db 以外的狀態):state/chat-meta/<session>.json ──
-   waiting = runtime done chunk 的 awaiting(references/turn-events.md):模型宣告這一輪結束時在等用戶回答。0.1.19 只存不畫
+   waiting = runtime done chunk 的 awaiting(references/turn-events.md):模型宣告這一輪結束時在等用戶回答。0.1.20 只存不畫
    (電腦版對話清單不做「等你回覆」/「做完還沒看」),新一輪一送出就清掉(同 api /send → hdel waiting);done 的 kinds 不存。
    不是 waiting 就刪檔:有檔 = 在等 */
 const META_DIR = path.join(BASE, "state", "chat-meta");
@@ -2031,8 +2060,13 @@ async function publicPricing() {
   const b = await publicTiers(false);
   if (!(b && b.trial && Number(b.trial.days) > 0)) return null;
   const st = (Array.isArray(b.linux) ? b.linux : []).find((x) => x && x.label === "Starter");
-  const hr = st && Number(st.twd_per_hour) > 0 ? Number(st.twd_per_hour) : null;
-  return { trial: b.trial, starter_hourly: hr, starter_monthly: hr ? Math.round(hr * 720) : null };
+  const n = (v) => (Number(v) > 0 ? Number(v) : null);
+  const hr = st ? n(st.twd_per_hour) : null, pl = b.plan && typeof b.plan === "object" ? b.plan : {};
+  // 方案制的月價／年價一律讀 api(monthly_twd / annual_twd);舊 api 沒有 monthly_twd 才退回時價 × 720
+  return { trial: b.trial, starter_hourly: hr, starter_monthly: (st && n(st.monthly_twd)) || (hr ? Math.round(hr * 720) : null),
+    starter_annual: st ? n(st.annual_twd) : null,
+    plan: { monthly_billing_active: pl.monthly_billing_active === true, annual_pay_months: n(pl.annual_pay_months),
+      annual_period_days: n(pl.annual_period_days), period_days: n(pl.period_days), grace_days: n(pl.grace_days) } };
 }
 // ── 最低版本閘(minversion.js;spec §13 第 4 點)──────────────────
 // 安全事故用:api 說這個版本已停用 → 擋新的下單啟動與 Blave AI,只留更新。失敗方向一律放行(檔頭有完整規則)。
@@ -2047,12 +2081,13 @@ function minGate() {
   });
   return _gate;
 }
-/* account_status 的資料狀態:"included"(試用 / 名下有主機 / API 方案,免費)、"billed"(按有用到的整點小時收)、
-   "none"(這一小時付不出來),或 null。舊 api 沒有 data_access(外殼比 api 先出)、或值認不得:退回布林 data_included,
-   跟以前一模一樣——讀不到新欄位就照舊,不自己發明狀態(同 desktop.min_version 契約的失敗方向)。renderer 有同一支 */
+/* account_status 的資料狀態:"included"(試用 / 名下有主機或方案 / API 方案)、"billed"(切換前:付得起這一小時)、
+   "none"(切換前:這一小時付不出來)、"plan_required"(方案制:沒有含資料的方案)、"payment_failed"(方案制:方案扣款失敗),
+   或 null。舊 api 沒有 data_access、或值認不得:退回布林 data_included,不自己發明狀態(同 desktop.min_version 契約的
+   失敗方向)。billed / none 在 api 切換之前還會出現:外殼先出,那段時間付小時費的人照樣要拿得到 key。renderer 有同一支 */
 function dataAccessOf(b) {
   if (!b) return null;
-  return ["included", "billed", "none"].includes(b.data_access) ? b.data_access : b.data_included === true ? "included" : null;
+  return ["included", "billed", "none", "plan_required", "payment_failed"].includes(b.data_access) ? b.data_access : b.data_included === true ? "included" : null;
 }
 /* 這個帳號現在拿不拿得到 Blave 資料:免費含在裡面、或按小時付得起,都算。畫面的預檢與回前景重查
    都會打 account_status,這裡吃它最後一次的結果;太舊(或還沒打過)才自己補打一次——這支跟
@@ -2066,17 +2101,21 @@ async function hasBlaveData() {
   const a = fresh() ? dataAccessOf(lastAcct.body) : null;   // 補打失敗就是查不到:舊答案不沿用
   return a === "included" || a === "billed";
 }
-/* BLAVE_DATA_ACCESS=0 的**原因**(BLAVE_DATA_ACCESS_WHY;hasBlaveData 之後叫):signed_out / no_card / no_balance / unknown。
-   runtime 那段規則只知道「沒資料」時,agent 會對登入著、只是餘額不夠的人說「要先登入」(09-24 真機)——外殼明明知道原因。
-   account_status 的 reason 只在 can_run=false 時有值(NO_CARD / NO_CREDIT);data_access=none 而 reason 空的組合
-   (api 沒禁)當餘額不夠。查不到(沒打到 / 太舊)就 unknown,不沿用舊答案,同 hasBlaveData。
-   舊 api 只有 data_included:false、沒有 data_access:那個布林是「不含資料」不是「餘額不夠」,也 unknown。 */
+/* BLAVE_DATA_ACCESS=0 的**原因**(BLAVE_DATA_ACCESS_WHY;hasBlaveData 之後叫):signed_out / no_card / no_balance /
+   no_plan / plan_failed / unknown。runtime 那段規則只知道「沒資料」時,agent 會對登入著、只是沒錢或沒方案的人說「要先登入」
+   (09-24 真機)——外殼明明知道原因。no_card / no_balance 是切換前(按小時)的兩種;no_plan / plan_failed 是方案制的兩種。
+   account_status 的 reason 只在 can_run=false 時有值(NO_CARD / NO_CREDIT);data_access=none 而 reason 空的組合(api 沒禁)當餘額不夠。
+   查不到(沒打到 / 太舊)就 unknown,不沿用舊答案,同 hasBlaveData。舊 api 只有 data_included:false、沒有 data_access:也 unknown。 */
 function dataAccessWhy(signedIn) {
   if (!signedIn) return "signed_out";
   const b = lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS ? lastAcct.body : null;
   if (!b) return "unknown";
+  const a = dataAccessOf(b);
+  // 有試用資格又沒綁卡:綁卡就有 14 天試用資料——講沒綁卡,不講沒方案(畫面的資料卡、歡迎頁同一個判法)
+  if (a === "plan_required") return b.reason === "NO_CARD" && b.trial_eligible ? "no_card" : "no_plan";
+  if (a === "payment_failed") return "plan_failed";
   // 帳號有資料、本機卻沒有 key 檔(syncDataEnv 回 none):不是錢的問題,也講不出是什麼,只能說讀不到
-  if (dataAccessOf(b) !== "none") return "unknown";
+  if (a !== "none") return "unknown";
   return b.reason === "NO_CARD" ? "no_card" : "no_balance";
 }
 
@@ -2139,8 +2178,8 @@ async function libraryList(langRaw, force) {
   let dataAccess = null;
   // 閘門要的「含不含資料」跟每一輪開跑前問的是同一份(hasBlaveData 太舊才補打);查不到就 null,畫面不猜
   if (signedIn) { await hasBlaveData(); dataAccess = lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS ? dataAccessOf(lastAcct.body) : null; }
-  // why:付不出資料費的原因(no_card / no_balance / unknown)——renderer 的 CTA 照它分流,不自己從 acct 再算一套
-  const why = dataAccess === "none" ? dataAccessWhy(signedIn) : null;
+  // why:拿不到資料的原因(no_card / no_balance / no_plan / plan_failed / unknown)——renderer 的 CTA 照它分流,不自己從 acct 再算一套
+  const why = dataAccess && dataAccess !== "included" && dataAccess !== "billed" ? dataAccessWhy(signedIn) : null;
   if (!force && libCache && libCache.lang === lang && libCache.signedIn === signedIn && Date.now() - libCache.at < ACCT_FRESH_MS) return { strategies: libCache.strategies, signedIn, dataAccess, why };
   const url = `${API_BASE}/openclaw/marketplace/strategies?lang=${lang}`;
   const key = signedIn ? loadDataKey() : null;
@@ -2912,8 +2951,8 @@ app.whenReady().then(() => {
   handle("public-pricing", () => publicPricing());
   handle("txf-quote", () => txfQuote());
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
-  ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart().then((r) => {
-    tm().track("plan_start_res", { result: r.state ? "ok" : r.error === "NO_CARD" ? "no_card" : r.error === "NO_CREDIT" ? "no_credit" : "error" });
+  ipcMain.handle("plan-start", (e, opts) => (fromOurPage(e) ? planStart(opts).then((r) => {
+    tm().track("plan_start_res", { result: r.state ? "ok" : r.error === "NO_CARD" ? "no_card" : r.error === "NO_CREDIT" || r.error === "PLAN_CHARGE_FAILED" ? "no_credit" : r.error === "PLAN_CONFIRM_REQUIRED" ? "confirm" : "error" });
     return r;
   }) : { error: "SERVER" }));
   /* 本機交易:狀態是唯讀的檔案內容;指令由 daemon.js 簽章後寫進佇列(secret 不出主行程)。

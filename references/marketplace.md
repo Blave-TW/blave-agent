@@ -69,7 +69,7 @@ Purchases and shared-with-me are separate lists — checking only purchases will
 
 On the desktop app a library pick arrives as 「策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果」 / "The library strategy "{title}" (#{id}) is downloaded. Install it and run a backtest to see the results." The app has already fetched that strategy's code — with the user's own access (official, purchased or shared), or with no sign-in at all for an official, free strategy that needs no Blave data — and saved it as `tmp/library_<id>.py`. It is a plain install:
 
-1. **Do not call the Strategy Library API for it** — no `/code`, no lists. This workspace may hold no Blave key this turn (no card, or this hour's data fee not covered), and the code is already here.
+1. **Do not call the Strategy Library API for it** — no `/code`, no lists. This workspace may hold no Blave key this turn (no card, no plan that includes data, or the data fee not covered), and the code is already here.
 2. `tmp/library_<id>.py` missing → say the download did not arrive and ask the user to press the button again; never fetch it some other way.
 3. `tmp/library_<id>.security.json` present → the platform's server-side scan of someone else's code. If its `findings` list is not empty, show them to the user and ask before going on, exactly like a `lib/security_check.py` `RESULT: ask-user`.
 4. Continue the install flow above from step 5 (bundle check → security scan → quality scan → move → run) with `tmp/library_<id>.py` as the downloaded file. *Listing name vs code* above applies.

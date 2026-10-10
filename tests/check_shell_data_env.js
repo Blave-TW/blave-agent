@@ -100,6 +100,9 @@ t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份
     ["認不得的 data_access 值 → 退回布林(true)", S({ data_access: "later", data_included: true }), true],
     ["認不得的 data_access 值 → 退回布林(false)", S({ data_access: "later", data_included: false }), false],
     ["data_access 說 none、布林說 true:認新欄位", S({ data_access: "none", data_included: true }), false],
+    // 方案制(api 切換之後):沒有方案 / 扣款失敗都沒有資料,即使舊布林說 true 也認新欄位
+    ["plan_required(方案制:沒有含資料的方案)", S({ data_access: "plan_required", data_included: true, data_hourly: null }), false],
+    ["payment_failed(方案制:方案扣款失敗)", S({ data_access: "payment_failed", data_included: false, data_hourly: null }), false],
   ];
   (async () => {
     fs.rmSync(f, { recursive: true, force: true });
@@ -137,6 +140,9 @@ t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份
     t("WHY:登入、舊 api 只有 data_included:false(沒有 data_access)→ unknown(那個布林是「不含資料」不是「餘額不夠」,N4)", whyOf(true, S({ data_included: false, reason: null })) === "unknown");
     t("WHY:登入、account_status 查不到 → unknown", whyOf(true, null) === "unknown");
     t("WHY:登入、答案太舊不沿用 → unknown", (() => { lastAcct = { at: Date.now() - ACCT_FRESH_MS - 1, body: S({ data_access: "none", reason: "NO_CARD" }) }; return dataAccessWhy(true) === "unknown"; })());
+    t("WHY:方案制 plan_required → no_plan;有試用資格又沒卡 → no_card(綁卡就有試用資料)", whyOf(true, S({ data_access: "plan_required", reason: "NO_CARD" })) === "no_plan"
+      && whyOf(true, S({ data_access: "plan_required", reason: "NO_CARD", trial_eligible: true })) === "no_card" && whyOf(true, S({ data_access: "plan_required", reason: null })) === "no_plan");
+    t("WHY:方案制 payment_failed → plan_failed", whyOf(true, S({ data_access: "payment_failed", reason: null })) === "plan_failed");
     t("WHY:帳號有資料、本機卻沒 key 檔 → unknown(不是錢的問題)", whyOf(true, S({ data_access: "billed", reason: null })) === "unknown");
     fs.rmSync(WS, { recursive: true, force: true });
     console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
