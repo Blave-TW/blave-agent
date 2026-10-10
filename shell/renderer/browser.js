@@ -397,14 +397,8 @@ function brStatLine(host) {
   const exp = BR.exp;
   const x = exp && exp.mode === "one" ? BR.tabs.get(exp.id) : null;
   if (x && typeof tvStat === "function" && tvStat(host, x)) return;   // 「送進 TradingView」那一頁:狀態句由 pine-install.js 畫
-  if (brUserOp(x)) {
-    host.append(brIcon("hand"), brEl("span", "t", t("br.userOp")));
-    const hb = brEl("button", "btn-fill"); hb.type = "button"; hb.append(brEl("span", "", t("br.handback.done")));
-    hb.setAttribute("aria-label", t("br.handback.aria", { domain: brReg(brHost(x.url)) || x.url }));
-    // 鈕按下去就跟著狀態句一起消失,讀屏用戶聽不到結果:補念一句
-    hb.addEventListener("click", () => { if (x.need) trackFeature("browser_handoff"); trackFeature("browser_hb_head"); window.blave.browserHandback(x.id); srSay(t("br.handedBack")); });
-    host.append(hb); return;
-  }
+  // 接手中只講狀態:交還鈕在請求卡上(brAsk)與聊天那一列(brSyncHold),標題列不再放(0.1.20 A 案,同一欄不擺兩顆)
+  if (brUserOp(x)) { host.append(brIcon("hand"), brEl("span", "t", t("br.userOp"))); return; }
   // 單頁:講「這一頁」的狀態,跟分頁格訊息槽同一組字(讀取中 2/5、已讀完、打不開、要登入);已讀 d/n 只在聊天卡頭講一次。
   // 太長只截文字那一段(.t);icon、進度格、文字鈕不縮
   // 回合結束後點進一格未讀的頁:多半就是想知道「它怎麼了」——講完整的一句,前面不放狀態節點(不然「未讀」講兩次)
@@ -545,8 +539,18 @@ function brAsk(x) {
   // 外送檢查(確認網址):不是接手操作,是這個網址放行一次;網址本身在上面的網址列看得到
   if (k === "confirm") me.addEventListener("click", () => window.blave.browserUserDone(x.id, "open"));
   else me.addEventListener("click", () => { trackFeature("browser_takeover"); window.blave.browserTakeover(x.id); });
-  // 接手中:「我來…」已經做了,只留出口;卡不拆,頁面框才不會在用戶按下去的那一刻上跳。確認網址的「仍要開啟」不是接手,照留
-  act.append(skip); if (!x.user || k === "confirm") act.append(me); box.append(txt, act);
+  // 接手中:「我來…」換成「好了，交還 agent」(同一列、同尺寸,卡高不變,頁面框才不會在用戶按下去的那一刻上跳);描邊出口照舊在左。
+  // 確認網址的「仍要開啟」不是接手,照留。驗證頁按早了主行程會照等(verify.js),這顆鈕不會把這次搜尋變成「不搜尋」
+  act.append(skip);
+  if (!x.user || k === "confirm") act.append(me);
+  else if (brUserOp(x)) {
+    const hb = brEl("button", "btn-fill", t("br.handback.done")); hb.type = "button";
+    hb.setAttribute("aria-label", t("br.handback.aria", { domain: brReg(brHost(x.url)) || x.url }));
+    // 鈕按下去跟著卡一起消失,讀屏用戶聽不到結果:補念一句。browser_handoff 照舊(接手後交還;卡一定帶 need),接得上舊版的報表
+    hb.addEventListener("click", () => { trackFeature("browser_handoff"); trackFeature("browser_hb_card"); window.blave.browserHandback(x.id); srSay(t("br.handedBack")); });
+    act.append(hb);
+  }
+  box.append(txt, act);
   return box;
 }
 /* 純文字快照:把 markdown 標記剝掉只留字(圖片佔位整行拿掉、連結只留文字、表格分隔列拿掉) */

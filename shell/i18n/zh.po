@@ -5080,7 +5080,7 @@ msgid "br.ask.p"
 msgstr "帳密由你輸入；你操作時 agent 暫停、不讀這一頁。"
 
 msgid "br.ask.captcha.p"
-msgstr "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了之後會自動接著搜尋。"
+msgstr "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了會自動接著搜尋，沒接上再按「好了，交還 agent」。"
 
 msgid "br.ask.skip"
 msgstr "跳過"

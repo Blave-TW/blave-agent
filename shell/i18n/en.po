@@ -5072,7 +5072,7 @@ msgid "br.ask.p"
 msgstr "You type any passwords. While you're in control, the agent pauses and doesn't read this page."
 
 msgid "br.ask.captcha.p"
-msgstr "After several searches in a row, {engine} asks to confirm a person is there. You do the check yourself; the agent never does it for you. Once it passes, the search picks up on its own."
+msgstr "After several searches in a row, {engine} asks to confirm a person is there. You do the check yourself; the agent never does it for you. Once it passes, the search picks up on its own; if it doesn't, press \"Done, hand back to agent\"."
 
 msgid "br.ask.skip"
 msgstr "Skip"
