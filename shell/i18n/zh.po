@@ -996,6 +996,16 @@ msgstr "首次綁卡，送 {t} 天 Blave 的資料"
 msgid "pv.h.offerNoNum"
 msgstr "首次綁卡，送一段試用期的 Blave 資料"
 
+# 方案制未登入／綁卡那格第一屏的三條(設計師 D 版):取代說明句 pv.d.offer.*;{q} 是 LLM 額度(api TRIAL_AI_CREDIT),不是儲值,拿不到就不出那條
+msgid "pv.offer.li.data"
+msgstr "Blave 資料，在這台電腦直接用"
+
+msgid "pv.offer.li.server"
+msgstr "雲端主機：策略全天候照排程執行、自動下單，關掉電腦也照跑"
+
+msgid "pv.offer.li.ai"
+msgstr "加送 {q} TWD 的 Blave AI 額度"
+
 msgid "pv.h.plan"
 msgstr "策略上線的雲端主機，含 Blave 的資料"
 
@@ -1110,7 +1120,7 @@ msgstr "每個整點從餘額扣 {h} TWD（{p} TWD／月）。停用＝到網頁
 msgid "pv.w.out.cli"
 msgstr "登入不花錢，也不會換掉你用的 AI。"
 
-# 設定 › 帳號與方案(未登入)的鈕旁:lead 已講「AI 照用」,這裡只留登入不花錢(設計稽核 0.1.10 fix-c S1);雲端開通頁照用 pv.w.out.cli
+# 設定 › 帳號與方案(未登入)的鈕旁:切換前 lead 已講「AI 照用」,只留登入不花錢(設計稽核 0.1.10 fix-c S1);方案制 D 版沒有說明句,用自己 AI 的人改讀 pv.w.out.cli,只有 Blave AI 讀這句;雲端開通頁照用 pv.w.out.cli
 msgid "pv.w.out"
 msgstr "登入不花錢。"
 
@@ -1169,16 +1179,16 @@ msgid "pv.signin"
 msgstr "登入 Blave"
 
 msgid "pv.e.out"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，送 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.outNoNum"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，送一段試用期；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用一段時間；AI 照用你的 {name}。"
 
 msgid "pv.e.card"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，送 {t} 天。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天。"
 
 msgid "pv.e.card.cli"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，送 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.noTrial"
 msgstr "這台還拿不到 Blave 的資料：它在 Blave Agent 雲端方案裡。"
@@ -6864,8 +6874,16 @@ msgstr "到 {d}為止資料免費；試用結束扣第一期 {p} TWD，之後每
 msgid "pv.d.noPrice.m"
 msgstr "AI 照用你現在的設定。試用結束自動扣第一期方案費，試用期間取消就不扣。"
 
+# 標題只講試用(會自動轉付費,所以不用「送」;「送」只給真的是禮物的 AI 額度那條)
+msgid "pv.h.offer.m"
+msgstr "首次綁卡，免費試用 {t} 天"
+
+msgid "pv.h.offerNoNum.m"
+msgstr "首次綁卡，免費試用一段時間"
+
+# 「自動」不能拿掉,否則會被讀成可選訂閱;扣第一期／取消就不扣留給綁卡那一步的 pv.f.offer.m
 msgid "pv.f.out.m"
-msgstr "免費試用 {t} 天，到期自動扣第一期 {p} TWD／月，試用期間取消就不扣。"
+msgstr "試用結束後自動開始計費，{p} TWD／月。"
 
 msgid "pv.f.offer.m"
 msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。試用 {t} 天，到期自動扣第一期 {p} TWD／月：先扣錢包，不夠再刷這張卡。試用期間取消就不扣。"
