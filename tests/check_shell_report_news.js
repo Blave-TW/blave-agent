@@ -1,5 +1,5 @@
 // 報告區的 news block 與 footnote 出處連結(契約 report-blocks 1.4;spec-report-blocks-recipes §4.3 / §4.4;web report_blocks.js 已上線那份)。
-//   ① 靜態:news / 外部連結那段與 web 逐字同一份;字串 zh / en 同 web 的 workspace_report_news_*;tokens.css 有 --tag-neutral-*;
+//   ① 靜態:news / 外部連結那段、footnote 出處、BLOCKS.kpi_row 與 proseShapes 與 web 逐字同一份;字串 zh / en 同 web 的 workspace_report_news_*;tokens.css 有 --tag-neutral-*;
 //      報告區攔 a.rb-xlink 交 openExternal;埋點只在讀本機報告時送。
 //   ② 用隨包的 Electron 開真的 index.html:api/tests/fixtures/report_news.json 畫出來(三則、標籤、原文行、來源行、「、」分隔、網域不斷行、
 //      尾註只網域是連結)→ 點連結走 openExternal、不導覽 → 惡意 url 全部退成純文字 → 1.3 報告跟改動前的渲染器 outerHTML 逐字相同 → 埋點。
@@ -24,9 +24,12 @@ if (!process.versions.electron) {
   if (!fs.existsSync(WEB_RB)) console.log("SKIP  ① 與 web 逐字比對(需要 monorepo 版面)");
   else {
     const web = read(WEB_RB), A = "  // 外部連結(契約 §2,1.4 起)", B = "  BLOCKS.code = function (b) {";
-    const F1 = '      var cell = monoShapes(el("span"), str(it.text));', F2 = "      row.setAttribute(\"aria-label\", ctx.i18n.footnoteRef";
+    const F1 = '      var cell = proseShapes(el("span"), str(it.text), ctx);', F2 = "      row.setAttribute(\"aria-label\", ctx.i18n.footnoteRef";
     ok("① safeUrl / linkTo / hostOf / extLink / BLOCKS.news(含 published_at_precision)與 web 逐字同一份", !!cut(rb, A, B) && cut(rb, A, B) === cut(web, A, B) && /published_at_precision === "day" \? fmtDay\(/.test(cut(rb, A, B)));
     ok("① footnote 的出處連結與 web 逐字同一份", !!cut(rb, F1, F2) && cut(rb, F1, F2) === cut(web, F1, F2));
+    // 研究報告公開分享 B 案(web 926058e3):kpi_row 的 delta 走 proseShapes、公開頁值含漢字整格 sans;電腦版永遠不是公開頁,行為不變、碼要同一份
+    const KA = "  BLOCKS.kpi_row = function", KB = "  BLOCKS.line_chart = function", PA = "  var NUMERIC_RUN = ", PB = "  // ------------------------------------------------------- markdown 子集";
+    ok("① BLOCKS.kpi_row 與 proseShapes(含 NUMERIC_RUN)與 web 逐字同一份", !!cut(rb, KA, KB) && cut(rb, KA, KB) === cut(web, KA, KB) && !!cut(rb, PA, PB) && cut(rb, PA, PB) === cut(web, PA, PB) && /HAS_CJK\.test\(str\(it\.value\)\)/.test(cut(rb, KA, KB)));
     ok("① makeCtx 的 ugc / listSep、DEFAULT_I18N 三個 news key、VISUAL.news 與 web 同", ['      ugc: opts.ugc === true,', '      listSep: /^(zh|ja|cn)\\b/i.test(document.documentElement.lang) ? "、" : ", ",', '    newsPos: "Positive News",', '    newsNeg: "Negative News",', '    newsNeutral: "Neutral",', "    news: 1,"].every((l) => rb.includes(l) && web.includes(l)));
   }
   const WEB_STR = { zh: { newsPos: "正面消息", newsNeg: "負面消息", newsNeutral: "中性" }, en: { newsPos: "Positive News", newsNeg: "Negative News", newsNeutral: "Neutral" } };   // web messages.po 的 workspace_report_news_*

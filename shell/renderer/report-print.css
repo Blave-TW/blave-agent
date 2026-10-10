@@ -142,10 +142,92 @@ html { background: var(--color-pureWhite); }
   color: var(--color-black);
 }
 
+/* 散文裡的數字走 sans(report_blocks 在公開頁不包 .mono),等寬數字靠 tabular-nums */
+#rs_content .rb-report .rb-text,
+#rs_content .rb-report .rb-cap,
+#rs_content .rb-report .rb-fn,
+#rs_content .rb-report .rb-callout-body,
+#rs_content .rb-report .rb-quote,
+#rs_content .rb-report .rb-kpi-delta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 圖表標題列:右側「分享這張圖」(§3.5) */
+#rs_content .rb-report .rs-ch-h > .rb-h {
+  margin: 0;
+  padding-top: var(--space-6);
+}
+/* 同步雙格:1:1 像素繪製,軸標用實際字級(§3.4) */
+#rs_content .rb-report .rb-sync {
+  height: auto;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+#rs_content .rb-report .rb-sync text {
+  font-size: 11px;
+}
+#rs_content .rb-report .rb-sync .rb-sync-lab {
+  fill: var(--color-greyDark);
+}
+#rs_content .rb-report .rb-chart .rb-sync-s2 {
+  fill: none;
+  stroke: var(--color-data-2);
+  stroke-width: 2;
+}
+#rs_content .rb-report .rb-chart .rb-sync-x {
+  stroke: var(--color-greyMedium);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+#rs_content .rb-report .rb-chart .rb-sync-d1 {
+  fill: var(--color-data-1);
+}
+#rs_content .rb-report .rb-chart .rb-sync-d2 {
+  fill: var(--color-data-2);
+}
+#rs_content .rb-report .rb-sync-ro {
+  min-height: 18px;
+  margin-top: var(--space-4);
+  font-size: 12px;
+  color: var(--color-greyDark);
+  font-variant-numeric: tabular-nums;
+}
+#rs_content .rb-report .rb-legend-sw.is-2 {
+  background: var(--color-data-2);
+}
 /* kpi / 指標網格 / 表格 */
 #rs_content .rb-report .rb-kpi-label,
 #rs_content .rb-report .rb-metric-label {
   font-size: 12px;
+}
+#rs_content .rb-report .rb-kpi-value.is-text {
+  font-weight: 600;
+}
+#rs_content .rb-report .rb-kpi-delta {
+  font-size: 12px;
+  color: var(--color-greyDark);
+}
+/* 第一格已上提成結論列:其餘格等寬三欄,不再有焦點格 */
+#rs_content .rb-report .rb-kpi.is-rest {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-16) var(--space-24);
+}
+#rs_content .rb-report .rb-kpi.is-rest .rb-kpi-cell {
+  min-width: 0;
+  grid-column: auto;
+}
+#rs_content .rb-report .rb-kpi.is-rest .rb-kpi-cell.is-focus .rb-kpi-value {
+  font-size: 20px;
+}
+/* 沒有 delta 的格子不留空的第三行:列距才會一致(同列的值仍各自接在標籤下面) */
+#rs_content .rb-report .rb-kpi.is-rest .rb-kpi-delta:empty {
+  display: none;
+}
+@container rb (max-width: 599px) {
+  #rs_content .rb-report .rb-kpi.is-rest {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 #rs_content .rb-report .rb-kpi-value,
 #rs_content .rb-report .rb-metric-value,

@@ -72,11 +72,11 @@ else ok("網頁版與電腦版同一份 dataDp / fmtLegend(一字不差)", (() =
 })());
 // KPI(設計稽核 B3/B4)與負號(B5)
 const kp = js.slice(js.indexOf("  BLOCKS.kpi_row = function"), js.indexOf("  BLOCKS.line_chart = function"));
-ok("KPI:有 delta 時色上在 delta、值不上色;沒有 delta 才讓值上色", /el\("div", "rb-kpi-value" \+ \(it\.delta \? "" : tone\)\)/.test(kp) && /el\("div", "rb-kpi-delta" \+ \(it\.delta \? tone : ""\)\)/.test(kp)
+ok("KPI:有 delta 時色上在 delta、值不上色;沒有 delta 才讓值上色", /var valTone = it\.delta \? "" : tone;/.test(kp) && /el\("div", "rb-kpi-value" \+ valTone \+ \(textVal \? " is-text" : ""\)\)/.test(kp) && /el\("div", "rb-kpi-delta" \+ \(it\.delta \? tone : ""\)\)/.test(kp)
   && /\.rb-kpi-delta\.rb-up \{ color: var\(--color-greenText\); \}/.test(css) && /\.rb-kpi-delta\.rb-dn \{ color: var\(--color-redText\); \}/.test(css));
 ok("KPI:三個標籤同一條水平線(align-items: flex-start)", /\.rb-report \.rb-kpi \{[^}]*align-items: flex-start;/.test(css));
 const dm = new Function("MINUS", (() => { const a = js.indexOf("  function dispMinus("); return js.slice(a, js.indexOf("\n  }\n", a) + 4); })() + "; return dispMinus;")("\u2212");
 ok("負號顯示一律 U+2212(只換開頭的數字負號,連字號詞不動)", dm("-0.04%") === "\u22120.04%" && dm("-.5") === "\u2212.5" && dm("t-1") === "t-1" && dm("--x") === "--x"
-  && /monoShapes\(val, dispMinus\(str\(it\.value\)\)\)/.test(kp) && /monoShapes\(d, dispMinus\(str\(it\.delta\)\)\)/.test(kp));
+  && /monoShapes\(val, dispMinus\(str\(it\.value\)\)\)/.test(kp) && /proseShapes\(d, dispMinus\(str\(it\.delta\)\), ctx\)/.test(kp));
 console.log(red ? "\nFAIL " + red + " 項" : "\nALL PASS");
 process.exit(red ? 1 : 0);
