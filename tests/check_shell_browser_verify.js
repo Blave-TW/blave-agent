@@ -61,34 +61,43 @@ async function pure() {
   r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "ddg" : null) }) });
   const r2 = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "skip" : null) }) });
   t("按了出口(改用 DuckDuckGo / 這次不搜尋)→ exit", r.got === "exit" && r2.got === "exit" && r.ms < 6000, [r, r2]);
-  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null) }) });
-  t("按了「交還 agent」但還在驗證頁 → gave_up(不再問第二次);沒在換頁的只多等 1 秒", r.got === "gave_up" && r.ms >= 5000 && r.ms <= 6500, r);
+  // 「交還 agent」(0.1.20 起是請求卡上的主鈕):過了就 passed;還在驗證頁 = 按早了,把這一下收掉(consume)、照等——不是出口、不記成放棄。
+  // 按鈕用 tick 模擬:第 at 毫秒按下去,choice 一直回 "done" 直到 waitVerify 收掉它;再給一個時間點就是再按一次
+  const pressed = async (o, ...ats) => { let on = false, n = 0; const q = ats.slice();
+    const r = await run({ tick: (ms) => { if (q.length && ms >= q[0]) { q.shift(); on = true; } }, d: (el, abs) => Object.assign({ choice: () => (on ? "done" : null), consume: () => { on = false; n++; } }, o(el, abs)) });
+    return Object.assign(r, { consumed: n }); };
+  r = await pressed(() => ({}), 5000);
+  t("按了「交還 agent」但還在驗證頁 → 不是出口:收掉這一下、繼續等;之後沒人理照樣 120 秒逾時(不是 user_skipped)", r.got === "timeout" && r.consumed === 1 && r.ms >= 120000 && r.ms < 121000, r);
+  r = await pressed((el) => ({ left: async () => el() >= 30000 }), 5000);
+  t("按早了之後他真的過了 → passed(過的那一刻,不用再按)", r.got === "passed" && r.consumed === 1 && r.ms >= 30000 && r.ms < 31000, r);
   // 稽核 P2-6:按下去的當下頁面正在導回搜尋結果
-  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => el() >= 4800 && el() < 7000, left: async () => el() >= 7000 }) });
+  r = await pressed((el) => ({ loading: () => el() >= 4800 && el() < 7000, left: async () => el() >= 7000 }), 5000);
   t("按「交還 agent」時頁面還在換頁(2 秒後載完,已經在搜尋結果上)→ 等它落定 → passed", r.got === "passed" && r.ms >= 7000 && r.ms < 7600, r);
-  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => el() >= 5500 && el() < 6500, left: async () => el() >= 6500 }) });
+  r = await pressed((el) => ({ loading: () => el() >= 5500 && el() < 6500, left: async () => el() >= 6500 }), 5000);
   t("按下去之後半秒才開始換頁 → 照樣等到落定 → passed", r.got === "passed" && r.ms >= 6500 && r.ms < 7100, r);
-  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => el() >= 4800 && el() < 7000 }) });
-  t("換頁落定之後還在驗證頁 → gave_up", r.got === "gave_up" && r.ms >= 7000 && r.ms < 7600, r);
-  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => true }) });
-  t("一直載不完:等有上限(" + VF.HANDBACK_SETTLE_MS / 1000 + " 秒)→ gave_up", r.got === "gave_up" && VF.HANDBACK_SETTLE_MS === 8000 && r.ms >= 13000 && r.ms <= 13500, r);
-  r = await run({ d: (el, abs) => ({ deadline: abs() + 7000, choice: () => (el() >= 5000 ? "done" : null), loading: () => true }) });
-  t("等換頁也不超過這次呼叫的期限", r.got === "gave_up" && r.ms >= 7000 && r.ms <= 7500, r);
-  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => true, alive: () => el() < 6000 }) });
+  r = await pressed((el) => ({ loading: () => el() >= 4800 && el() < 7000, left: async () => el() >= 20000 }), 5000);
+  t("換頁落定之後還在驗證頁 → 收掉這一下、繼續等 → 第 20 秒離開才 passed", r.got === "passed" && r.consumed === 1 && r.ms >= 20000 && r.ms < 21000, r);
+  { const forced = []; r = await pressed((el) => ({ loading: () => true, left: async (f) => { if (f) forced.push(el()); return false; } }), 5000);
+    t("一直載不完:強制重判有上限(" + VF.HANDBACK_SETTLE_MS / 1000 + " 秒),到了就收掉這一下、回到平常的等(不放棄)→ 逾時", r.got === "timeout" && VF.HANDBACK_SETTLE_MS === 8000 && r.consumed === 1 && forced.length > 20 && Math.max(...forced) <= 13500 && r.ms >= 120000, [r, forced.slice(-2)]); }
+  r = await pressed((el, abs) => ({ deadline: abs() + 7000, loading: () => true }), 5000);
+  t("等換頁也不超過這次呼叫的期限:期限到 → timeout", r.got === "timeout" && r.ms >= 7000 && r.ms <= 7500, r);
+  r = await pressed((el) => ({ loading: () => true, alive: () => el() < 6000 }), 5000);
   t("等換頁的時候分頁被關 → closed", r.got === "closed", r);
-  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), left: async () => el() >= 5000 }) });
+  r = await pressed((el) => ({ left: async () => el() >= 5000 }), 5000);
   t("按了「交還 agent」而且已經離開驗證頁 → passed", r.got === "passed", r);
-  // 同一次導覽稍早判過「還沒過」(頁面還沒長好),之後不再換頁:按交還要重判,不能當成放棄(改去 DuckDuckGo 重搜)
-  { const forced = []; r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), left: async (f) => { forced.push([el(), !!f]); return !!f && el() >= 5000; } }) });
-    t("按了「交還 agent」→ 重判(left 帶 force)→ 已經過了就 passed,不是 gave_up", r.got === "passed" && r.ms < 5500, r);
+  // 同一次導覽稍早判過「還沒過」(頁面還沒長好),之後不再換頁:按交還要重判,不能漏掉已經過了的驗證
+  { const forced = []; r = await pressed((el) => ({ left: async (f) => { forced.push([el(), !!f]); return !!f && el() >= 5000; } }), 5000);
+    t("按了「交還 agent」→ 重判(left 帶 force)→ 已經過了就 passed", r.got === "passed" && r.ms < 5500, r);
     t("還沒按之前的輪詢不帶 force(一次導覽只判一次,不每 250ms 跑一次判別)", forced.filter(([ms]) => ms < 5000).length > 10 && forced.filter(([ms]) => ms < 5000).every(([, f]) => !f), forced.slice(0, 3)); }
+  { const forced = []; r = await pressed((el) => ({ left: async (f) => { if (f) forced.push(el()); return false; } }), 5000, 9000);
+    t("再按一次 → 再強制重判一次(每一下都算;兩下之間回到平常的輪詢、不帶 force)", r.got === "timeout" && r.consumed === 2 && forced.some((ms) => ms >= 5000 && ms <= 6000) && forced.some((ms) => ms >= 9000 && ms <= 10000) && !forced.some((ms) => ms > 6000 && ms < 9000) && !forced.some((ms) => ms > 10000), forced); }
   r = await run({ d: (el) => ({ present: () => el() < 10000 }) });
   t("等到一半視窗縮到 Dock → absent", r.got === "absent" && r.ms >= 10000 && r.ms < 11000, r);
   r = await run({ d: (el) => ({ alive: () => el() < 3000 }) });
   t("分頁被關 / 回合結束 → closed", r.got === "closed", r);
   r = await run({ d: (el, abs) => ({ deadline: abs() + 40000, touchedAt: () => abs() }) });
   t("這次呼叫的期限先到 → timeout(不等到呼叫本身被引擎切斷)", r.got === "timeout" && r.ms >= 40000 && r.ms < 41000, r);
-  t("等待結果 → search_unavailable 的原因", VF.reasonOf("exit") === "user_skipped" && VF.reasonOf("gave_up") === "user_skipped" && VF.reasonOf("timeout") === "timeout" && VF.reasonOf("absent") === "no_user" && VF.reasonOf("declined") === "captcha");
+  t("等待結果 → search_unavailable 的原因(按交還不是一種結果,沒有 gave_up)", VF.reasonOf("exit") === "user_skipped" && VF.reasonOf("gave_up") === "captcha" && VF.reasonOf("timeout") === "timeout" && VF.reasonOf("absent") === "no_user" && VF.reasonOf("declined") === "captcha");
   const u = VF.unavailable("timeout"), f = VF.unavailable("failed"), x = VF.unavailable("nonsense");
   t("search_unavailable 的訊息:講原因、驗證類的叫它不要再搜、改開已知網址、回覆第一句要講沒搜到", u.reason === "timeout" && /robot check/.test(u.message) && /Do not search again to get around the check/.test(u.message)
     && /Open known addresses/.test(u.message) && /first sentence of your reply/.test(u.message) && !/Do not search again/.test(f.message) && x.reason === "failed");
