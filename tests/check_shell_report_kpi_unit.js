@@ -21,7 +21,9 @@ if (!process.versions.electron) {
   ok("① 6 格:焦點格任何寬度都獨佔一列", /flex: 0 0 100%;/.test(rule(".rb-report .rb-kpi.is-n6 .rb-kpi-cell.is-focus")));
   ok("① 過長的單位自己一行(.is-long)", /display: block;/.test(rule(".rb-report .rb-kpi-unit.is-long")) && /white-space: normal;/.test(rule(".rb-report .rb-kpi-unit.is-long")));
   ok("① renderer:非焦點格的值 ≥ 11 字元加 is-wide、單位 > 8 字元加 is-long", /i > 0 && str\(it\.value\)\.length >= 11/.test(js) && /unit\.length > 8 \? " is-long" : ""/.test(js));
-  ok("① 列印樣式沒有動 KPI 的換行與排法(共用 report-blocks.css)", !/rb-kpi[\w-]*[^{]*\{[^}]*(white-space|overflow-wrap|word-break|grid-template|flex:|container)/.test(print));
+  // .is-rest 是 web 公開頁(結論列上提)才加在列上的 class,電腦版的 kpi_row 不會給;那幾條是逐字搬來的 light remap 契約段,不算動排法
+  const kp = js.slice(js.indexOf("  BLOCKS.kpi_row = function"), js.indexOf("  BLOCKS.line_chart = function"));
+  ok("① 列印樣式沒有動 KPI 的換行與排法(共用 report-blocks.css;公開頁專用的 .is-rest 除外,渲染器不會給它)", !/is-rest/.test(kp) && !/rb-kpi[\w-]*[^{]*\{[^}]*(white-space|overflow-wrap|word-break|grid-template|flex:|container)/.test(print.replace(/[^{}]*\.is-rest[^{]*\{[^}]*\}/g, "")));
   ok("① 中欄最窄寬度仍是 480(② 量的最窄內容欄 432 就是它)", /const MAIN_MIN = 480;/.test(read(path.join(R, "app.js"))));
   const bin = GATE.bin(SHELL, "②");
   if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
