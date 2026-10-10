@@ -106,7 +106,7 @@ try {
   const F = EVENTS.feature_used.name;
   // 0.1.18 統一本機開通的 pres_* 六個接在它們後面,再接方案制那幾個
   const ai = F.indexOf("attach_file");
-  t("三個名字在 0.1.17 那批最後(後面接 0.1.18 的 pres_* 六個、再接方案制 plan_monthly…、0.1.20 的 strat_* 收尾)、≤16 字", F.slice(ai, ai + 3).join() === "attach_file,attach_image,attach_paste" && F.slice(ai + 3, ai + 9).every((n) => /^pres_/.test(n)) && F[ai + 9] === "plan_monthly" && F.slice(-2).join() === "strat_flag_set,strat_reorder" && F.slice(ai, ai + 3).every((n) => n.length <= 16));
+  t("三個名字在 0.1.17 那批最後(後面接 0.1.18 的 pres_* 六個、再接方案制 plan_monthly…、0.1.20 的 strat_* 與請求卡交還鈕 browser_hb_card 收尾)、≤16 字", F.slice(ai, ai + 3).join() === "attach_file,attach_image,attach_paste" && F.slice(ai + 3, ai + 9).every((n) => /^pres_/.test(n)) && F[ai + 9] === "plan_monthly" && F.slice(-3).join() === "strat_flag_set,strat_reorder,browser_hb_card" && F.slice(ai, ai + 3).every((n) => n.length <= 16));
   t("選檔 / 拖放 / 貼上三個入口都走 takeAttachment:太大講一行(同雲端 addNotice)、不掛 chip", /if \(file\.size > ATTACH_MAX_BYTES\) \{ addMsg\("sys", t\("ws\.attachTooLarge"\)\)\.dataset\.i18n = "ws\.attachTooLarge"; return false; \}/.test(cut("takeAttachment"))
     && /const ATTACH_MAX_BYTES = 5 \* 1024 \* 1024;/.test(appSrc) && /\$\("attach-input"\)\.value = "";[^\n]*\n\s*takeAttachment\(f, "file"\);/.test(appSrc) && /addEventListener\("drop", [^\n]*takeAttachment\(f, "file"\)/.test(appSrc) && /addEventListener\("paste", [\s\S]{0,300}?takeAttachment\(f, "paste"\)/.test(appSrc));
   t("迴紋針 → 開檔案框;✕ → 清 chip", /\$\("attach-btn"\)\.addEventListener\("click", \(\) => \$\("attach-input"\)\.click\(\)\);/.test(appSrc) && /\$\("attach-clear"\)\.addEventListener\("click", \(\) => \{ setAttachment\(null\);/.test(appSrc));

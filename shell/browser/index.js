@@ -335,6 +335,9 @@ function createBrowser(o) {
   }
   function handback(id, auto) {
     const t = tabs.get(id); if (!t) return;
+    // 搜尋驗證接手中按「交還」:不在這裡收手——交給 handVerify 那一段強制重判;過了它自己自動交還,還在驗證頁就當按早了、
+    // 卡與「你在操作」都留著繼續等(verify.js waitVerify)。這顆鈕在 0.1.20 是卡上主鈕,誤按不能把這次搜尋變成「不搜尋」
+    if (auto !== true && t.need && t.need.kind === "captcha") { t.userDone = "done"; return; }
     t.userControl = false;
     if (t.need) { t.userDone = "done"; t.need = null; }
     emit("handback", auto === true ? { id, auto: true } : { id });
@@ -445,7 +448,7 @@ function createBrowser(o) {
   const ERR = (error, message, extra) => R(Object.assign({ ok: false, error, message }, extra || {}), error !== "needs_user" && error !== "still_waiting");
   const MSG = {
     not_found: "no such tab; call browser_tabs to see the tabs you can use",
-    user_in_control: "the user is operating this tab: you cannot read or act on it until they hand it back. Tell the user exactly this in your reply and give no other reason: 「這一頁你正在操作。弄好之後按瀏覽器標題旁的『好了，交還 agent』，或聊天裡那一頁的『交還 agent』，也可以直接回我一句話，我就接著讀。」 (English UI: \"You're in control of this page. When you're done, press 'Done, hand back to agent' next to the Browser title, or 'Hand back' on that page in the chat, or just reply here, and I'll pick it up.\") The tab is still open and nothing was lost. Work on another tab meanwhile; use this one after they hand it back",
+    user_in_control: "the user is operating this tab: you cannot read or act on it until they hand it back. Tell the user exactly this in your reply and give no other reason: 「這一頁你正在操作。弄好之後按聊天裡那一頁的『交還 agent』，或請求卡上的『好了，交還 agent』，也可以直接回我一句話，我就接著讀。」 (English UI: \"You're in control of this page. When you're done, press 'Hand back' on that page in the chat, or 'Done, hand back to agent' on the request card, or just reply here, and I'll pick it up.\") The tab is still open and nothing was lost. Work on another tab meanwhile; use this one after they hand it back",
     stale_ref: "the ref is out of date; call browser_snapshot again",
     obscured: "the element is covered by another element (often a cookie banner or popup); close that first",
     browser_off: "the user turned the built-in browser off",
@@ -563,8 +566,8 @@ function createBrowser(o) {
     try { return !!w && !w.isDestroyed() && w.isVisible() && !w.isMinimized(); } catch (_) { return false; }
   }
   /* 搜尋分頁落在驗證頁:標成「要你操作」交給用戶,等它離開。這裡不對那一頁做任何事(verify.js 檔頭的紅線)。
-     回 verify.waitVerify 的結果。這一輪怎麼收場記在 c.verifyEnd(稽核 P2-4,分開記):"declined" 用戶跳過(按出口 / 交還後還在驗證頁 /
-     關掉那一格)、"timeout" 逾時、"absent" 人不在——記了就不再問,回的值讓 searchOnce 對模型講對的原因;
+     回 verify.waitVerify 的結果。這一輪怎麼收場記在 c.verifyEnd(稽核 P2-4,分開記):"declined" 用戶跳過(按出口 / 關掉那一格;
+     按「交還」不算——還在驗證頁就照等)、"timeout" 逾時、"absent" 人不在——記了就不再問,回的值讓 searchOnce 對模型講對的原因;
      "closed"(引擎斷線、回合結束、分頁壞掉)不是用戶的決定,不記,下一次搜尋照樣問 */
   async function handVerify(t, engine, c, asked, deadline, here) {
     t.verify = engine;
@@ -580,7 +583,7 @@ function createBrowser(o) {
     let got = await VF.waitVerify({
       now: () => Date.now(), sleep, deadline,
       alive: () => cur === c && here() && views.get(t.id) === v && t.status !== "closed" && t.status !== "failed",
-      present, choice: () => t.userDone || null, touchedAt: () => (t.userControl ? t.touchedAt || 0 : 0),
+      present, choice: () => t.userDone || null, consume: () => { t.userDone = null; }, touchedAt: () => (t.userControl ? t.touchedAt || 0 : 0),
       loading: () => t.status === "loading",
       // 只在「導覽走了、載完了、網址是這個引擎的搜尋頁」之後才看一次頁面(跟每一張搜尋結果頁同一支只讀的判別);網址還是驗證頁時什麼都不跑。
       // force(用戶按了交還):同一次導覽判過「還沒過」也再判一次——那一次可能是頁面還沒長好
@@ -599,7 +602,7 @@ function createBrowser(o) {
       if (t.status === "closed") { got = "exit"; c.verifyEnd = "declined"; }   // 他把驗證頁那一格關掉了 = 這次不做
     } else {
       c.verifyEnd = got === "timeout" ? "timeout" : got === "absent" ? "absent" : "declined";
-      if (got === "exit" || got === "gave_up") t.userControl = false;   // 按了出口 / 交還:那一格還給 agent(逾時的話用戶可能還在操作,留給他——稽核 B3)
+      if (got === "exit") t.userControl = false;   // 按了出口:那一格還給 agent(逾時的話用戶可能還在操作,留給他——稽核 B3)
     }
     return got;
   }

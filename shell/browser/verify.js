@@ -65,10 +65,11 @@ function nextEngine(engine) { const i = ORDER.indexOf(engine); return i >= 0 && 
  * 等用戶過驗證。不碰頁面:d 的每一支都只讀主行程自己的狀態。
  * d: { now(), sleep(ms), alive() → 分頁與回合都還在, present() → 視窗在畫面上, choice() → 用戶按的鈕(null | "done" | "ddg" | "skip"),
  *      touchedAt() → 用戶第一次動手的時間戳(沒動過 = 0), left(force?) → Promise<bool> 分頁已經導覽回搜尋結果
- *      (force = 用戶按了交還:同一次導覽已經判過也要重判),
+ *      (force = 用戶按了交還:同一次導覽已經判過也要重判), consume() → 把這一次按的「交還」收掉(choice 回到 null;再按才算下一次),
  *      loading()? → 分頁正在換頁(主行程自己的載入狀態),
  *      deadline?(這次呼叫最晚要回的時間戳), waitMs?, touchedMs? }
- * 回 "passed"(過了)| "exit"(按了出口)| "gave_up"(按了交還、換頁落定之後還在驗證頁)| "timeout" | "absent"(人不在)| "closed"
+ * 回 "passed"(過了)| "exit"(按了出口)| "timeout" | "absent"(人不在)| "closed"
+ * 按「交還 agent」不是出口:過了就 passed,還在驗證頁就當他按早了、繼續等(0.1.20 A 案把這顆鈕放大成卡上主鈕,誤按不能變成「這次不搜尋」)
  */
 async function waitVerify(d) {
   const waitMs = d.waitMs || VERIFY_WAIT_MS, touchedMs = d.touchedMs || VERIFY_TOUCHED_MS, start = d.now();
@@ -78,16 +79,17 @@ async function waitVerify(d) {
     const c = d.choice();
     if (c === "done") {
       // 「交還 agent」=「我弄好了」。過完驗證、頁面正在導回搜尋結果時按下去的,上面那一次查到的是「還在載」(稽核 P2-6):
-      // 等換頁落定再判;落定之後還沒離開才當沒過,不再問第二次。
-      // 這一段的 left 一律帶 force:平常的輪詢一次導覽只判一次,判成「還沒過」之後同一次導覽就不再看——
-      // 那一次判早了(頁面還沒長好)的話,不重判就會把已經過了的驗證當成放棄、改去 DuckDuckGo 重搜
+      // 等換頁落定再判。這一段的 left 一律帶 force:平常的輪詢一次導覽只判一次,判成「還沒過」之後同一次導覽就不再看——
+      // 那一次判早了(頁面還沒長好)的話,不重判就會把已經過了的驗證漏掉
       const t0 = d.now(), until = Math.min(t0 + HANDBACK_SETTLE_MS, d.deadline || Infinity);
       while (d.alive() && d.now() < until && ((d.loading && d.loading()) || d.now() - t0 < HANDBACK_GRACE_MS)) {
         await d.sleep(250);
         if (await d.left(true)) return "passed";
       }
       if (!d.alive()) return "closed";
-      return (await d.left(true)) ? "passed" : "gave_up";
+      if (await d.left(true)) return "passed";
+      d.consume();   // 落定了還在驗證頁:這一下按早了,收掉、照等(逾時與呼叫期限照算;再按一次就再重判一次)
+      continue;
     }
     if (c) return "exit";
     if (!d.present()) return "absent";
@@ -129,7 +131,7 @@ function unavailable(reason) {
   return { reason: r, message: "web search is not available right now: " + REASONS[r] + "." + (r === "failed" ? "" : NO_RETRY) + UNAVAILABLE_HINT };
 }
 /** waitVerify 的結果 → search_unavailable 的 reason */
-const reasonOf = (got) => ({ exit: "user_skipped", gave_up: "user_skipped", timeout: "timeout", absent: "no_user", closed: "no_user" }[got] || "captcha");
+const reasonOf = (got) => ({ exit: "user_skipped", timeout: "timeout", absent: "no_user", closed: "no_user" }[got] || "captcha");
 
 const REFUSED = "this tab is a search engine's robot check. It is the user's to do: you do not click, fill, press keys, read, snapshot or capture on it, and you do not try another tool or another address to get past it. browser_search is already waiting for the user; when it returns, go on from its result";
 

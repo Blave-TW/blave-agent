@@ -149,16 +149,11 @@
 .bw-head { flex: none; display: flex; align-items: center; gap: var(--space-12); padding: var(--space-16) var(--space-24) var(--space-12); }
 .bw-head .txt { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-12); height: 21px; }
 .bw-head h5 { flex: none; margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--ink); }
-.bw-stat { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-8); height: 18px; min-height: 0; margin-top: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow-x: clip; }   /* 只裁左右:上下要留給交還鈕(24 高)與它的熱區(hidden 會連上下一起裁成 18) */
+.bw-stat { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-8); height: 18px; min-height: 0; margin-top: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow-x: clip; }
 .bw-stat > * { flex: none; }
 .bw-stat .t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 狀態句太長只截文字那一段;icon、進度格、鈕不縮 */
 .bw-stat b { font-weight: 600; color: var(--ink); }
 .bw-stat .ic { width: 14px; height: 14px; }
-/* 「好了,交還 agent」實心小鈕:視覺 24 高,上下各溢出狀態句那一格 3px(只裁左右,不裁);熱區沿用 .btn-fill 的外擴 7(36 高),
-   標題列高 49、整塊留在標題列內,不伸進網址列 */
-.bw-stat .btn-fill { height: 24px; padding: 0 var(--space-8); margin-left: var(--space-4); font-size: 12px; }
-/* 中欄窄到連鈕都放不下才截字(只在 ≤440 狀態句收掉之後才縮;截在裡面那一層:鈕本身 overflow 會連外擴的熱區一起裁掉) */
-.bw-stat .btn-fill > span { display: block; overflow: hidden; text-overflow: ellipsis; }
 /* 32 的鈕對齊 20.8 高的 h5 那一行;✕ 的筆畫(不是盒子)對齊內容右緣。熱區 44,下緣仍在標題列內、不伸進頁面框 */
 .bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) calc(var(--space-6) * -1) 0; }
 .bw-close::before { content: ""; position: absolute; inset: -6px; }
@@ -222,11 +217,6 @@
 .br-set { margin: var(--space-24) 0; padding-top: var(--space-16); border-top: 1px solid var(--border-hairline); }
 .br-set .btn-quiet { margin-top: var(--space-8); }
 
-/* 中欄很窄(拖寬聊天欄 / 側欄)時「你在操作」與手形放不下:收掉,只留交還鈕(鈕上的字已經講了是誰在操作) */
-@container main (max-width: 440px) {
-  .bw-stat:has(> .btn-fill) > :not(.btn-fill) { display: none; }
-  .bw-stat .btn-fill { margin-left: 0; flex: 0 1 auto; min-width: 0; }
-}
 @container main (max-width: 600px) {
   .bw-stat .segs { display: none; }
   .bv .ask { flex-direction: column; gap: var(--space-12); }
