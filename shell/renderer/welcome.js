@@ -50,8 +50,10 @@ const wdK = (id, f) => { const k = "wd.r." + id + "." + f; return t(k); };
    餘額不夠是一句 + 「儲值」鈕;按小時付只有一句(整個歡迎頁唯一出現價格的地方);查不到不講 */
 function wdNote(k, v, into) {
   const link = (txt) => { const b = wdEl("button", "btn-quiet", txt); b.type = "button"; b.addEventListener("click", () => planOpen()); return b; };
-  if (k === "out") into.appendChild(link(t(v.t ? "wd.note.out" : "wd.note.outNoNum", v)));
-  else if (k === "none") into.appendChild(link(t(v.t ? "wd.note.none" : "wd.note.noneNoNum", v)));
+  // 方案制(planMo):試用結束自動開始扣方案費,帶天數那句講「免費試用」不講「送」(同 app.js pv.h.offer.m);切換前照舊
+  const mo = planMo();
+  if (k === "out") into.appendChild(link(t(v.t ? (mo ? "wd.note.out.m" : "wd.note.out") : "wd.note.outNoNum", v)));
+  else if (k === "none") into.appendChild(link(t(v.t ? (mo ? "wd.note.none.m" : "wd.note.none") : "wd.note.noneNoNum", v)));
   else if (k === "billed") into.append(t(v.r ? "wd.note.billed" : "wd.note.billedNoNum", v));
   else if (k === "noplan") into.appendChild(link(t("wd.note.noplan")));
   else if (k === "payfail") { into.append(t("wd.note.payfail"), "　"); into.appendChild(link(t("pv.e.btn"))); }
@@ -87,7 +89,7 @@ function wdPaint() {
   const box = $("wl"); if (!box) return;
   const s = hasToken ? acct : null, v = planVars(), m = wdMode(hasToken, s, dataAccessOf(s), v.n);
   if (!hasToken && !pub && !WD.pubAsked) { WD.pubAsked = true; pubLoad().then(() => wdPaint()); }
-  const key = JSON.stringify([LANG, m.k, m.cmp, WD.mk, v.t, v.r, v.d]);
+  const key = JSON.stringify([LANG, m.k, m.cmp, WD.mk, v.t, v.r, v.d, planMo()]);
   if (key === WD.key) return;
   WD.key = key;
   $("wl-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === WD.mk)));

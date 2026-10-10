@@ -550,7 +550,7 @@ function libPaintList() {
 const LIB_GRP_KEYS = { no_card: ["lib.grp.card", "lib.grp.gate.noCard"], no_balance: ["lib.grp.topup", "lib.grp.gate.noBalance"],
   no_plan: ["lib.grp.plan", "lib.grp.gate.noPlan"], plan_failed: ["lib.grp.repay", "lib.grp.gate.planFailed"],
   unknown: ["lib.grp.check", "lib.grp.gate.unknown"], signedOut: ["lib.grp.signedOut", "lib.grp.gate.signedOut"] };
-/* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「帳號與方案」
+/* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」(方案制講「免費試用」,.m)/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「帳號與方案」
    (查不到狀態時不擺一顆要錢的主鈕;鈕字用 pv.e.btn——「開這一頁的鈕」的字,跟資料卡那顆共用)。鈕都開 設定 › 帳號與方案。試用天數來自 planVars().t(api 的 trial.days),不寫死 */
 function libGateBtn(why) {
   // 方案制:沒有方案 →「看方案」開設定 › 帳號與方案(那一頁有開通鈕與 API 方案);扣款失敗 →「重新付款」外開網站方案頁
@@ -558,7 +558,7 @@ function libGateBtn(why) {
   if (why === "plan_failed") { const b = libEl("button", "btn-fill", t("plan.repay")); b.type = "button"; b.addEventListener("click", () => planRepay()); return b; }
   const trial = typeof acct !== "undefined" && acct && acct.trial_eligible === false ? false : true;
   const tDays = typeof planVars === "function" ? planVars().t : "";
-  const b = libEl("button", why === "unknown" ? "btn-out" : "btn-fill", why === "no_balance" ? t("lib.gate.topup") : why === "unknown" ? t("pv.e.btn") : trial && tDays ? t("lib.gate.bindCard", { t: tDays }) : t("plan.addCard"));
+  const b = libEl("button", why === "unknown" ? "btn-out" : "btn-fill", why === "no_balance" ? t("lib.gate.topup") : why === "unknown" ? t("pv.e.btn") : trial && tDays ? t(typeof planMo === "function" && planMo() ? "lib.gate.bindCard.m" : "lib.gate.bindCard", { t: tDays }) : t("plan.addCard"));
   b.type = "button"; b.addEventListener("click", () => { if (why !== "unknown") libTrack(why === "no_balance" ? "topup_lib" : "bind_lib"); planOpen(); });
   return b;
 }

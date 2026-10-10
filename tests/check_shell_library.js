@@ -371,6 +371,9 @@ if (!process.versions.electron) {
   ok("③ 社群段拆了(0.1.6 §2):index.html / library.js / library.css 沒有 lib-comm、字串表沒有 lib.comm.*;清單頂端的 #lib-gate 拿掉(spec-0.1.13 §2.2:閘門卡搬進第二組),兩組的殼 #lib-grps 在 #lib-rows 之前;退役的 lib.gate.noCard / noBalance / unknown 兩語都刪了", !/lib-comm/.test(html) && !/lib-comm|\.comm\b|library_comm/.test(src) && !/lib-comm/.test(read(path.join(R, "library.css")))
     && ["lib.comm.title", "lib.comm.sub", "lib.gate.noData", "lib.gate.noCard", "lib.gate.noBalance", "lib.gate.unknown"].every((k) => !(k in STR.zh) && !(k in STR.en)) && !/lib\.gate\.(noCard|noBalance|unknown)"/.test(src)
     && !/id="lib-gate"/.test(html) && !/\$\("lib-gate"\)/.test(src) && html.indexOf('id="lib-grps"') > html.indexOf('id="lib-body"') && html.indexOf('id="lib-grps"') < html.indexOf('id="lib-rows"'));
+  ok("③ 閘門鈕的綁卡那句兩版:切換前 lib.gate.bindCard「送 {t} 天」、方案制 lib.gate.bindCard.m「免費試用 {t} 天」(試用結束自動扣方案費,不是「送」;planMo 選、en 連字號 U+2011),兩語都帶 {t}",
+    /t\(typeof planMo === "function" && planMo\(\) \? "lib\.gate\.bindCard\.m" : "lib\.gate\.bindCard", \{ t: tDays \}\)/.test(src) && STR.zh["lib.gate.bindCard.m"] === "綁卡，免費試用 {t} 天資料" && STR.en["lib.gate.bindCard.m"] === "Add a Card, Start a {t}\u2011Day Free Trial"
+    && ["lib.gate.bindCard", "lib.gate.bindCard.m"].every((k) => /\{t\}/.test(STR.zh[k]) && /\{t\}/.test(STR.en[k])));
   { const brSrc = read(path.join(R, "browser.js"));
     ok("③ 找點子入口(spec-0.1.13 §1.4 / §5.1):歡迎頁 #chat-idea 是第二顆籤(看現成策略之後、新增策略之前)、預設 hidden;頁首說明句 #lib-desc 沒有 data-i18n(由 libPaintDesc 畫,換語言才不會洗掉文字鈕)",
       html.indexOf('id="chat-idea"') > html.indexOf('id="chat-lib"') && html.indexOf('id="chat-idea"') < html.indexOf('id="chat-ns"') && /<button class="wc-chip" id="chat-idea" type="button" data-i18n="idea\.chip" hidden><\/button>/.test(html)

@@ -88,7 +88,7 @@ if (!process.versions.electron) {
   ok("② 字串表的 wd.r.* 恰好是 WD_ROWS × 四個欄位:沒有多出來的列(BingX、CME／ICE、公開大盤、公開期貨法人、異常漲跌,與只進目錄的 14 列)、沒有多出來的欄位(.nt / .sn / .us / .wnm)", extra.length === 0, extra.join(", "));
   ok("② 列的順序就是畫面順序(WD_ROWS 沒有順序欄):加密 bnk fng ti conc liq fr、台股 twd inst rev twm br、台指期 txd txk txio fi pcr",
     ["crypto", "tw", "txf"].map((mk) => ROWS.filter((r) => r[1] === mk).map((r) => r[0]).join(" ")).join("|") === "bnk fng ti conc liq fr|twd inst rev twm br|txd txk txio fi pcr" && /const wdWel = \(mk\) => WD_ROWS\.filter\(\(r\) => r\[1\] === mk\);/.test(src));
-  const fixed = ["wd.start", "wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.outNoNum", "wd.note.none", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask"];
+  const fixed = ["wd.start", "wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.out.m", "wd.note.outNoNum", "wd.note.none", "wd.note.none.m", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask"];
   ok("② 固定字 " + fixed.length + " 個 zh / en 都有、wd.* 除了列的字就只有這些;三個市場的歡迎頁兩欄都有列(免費欄空著那句 wd.empty.* 與 .wl-empty 隨台指期免費日線退役)", fixed.every((k) => STR.zh[k] && STR.en[k])
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && !k.startsWith("wd.r.")).sort().join() === fixed.slice().sort().join())
     && ["crypto", "tw", "txf"].every((mk) => [TAB.WD_P, TAB.WD_B].every((sr) => ROWS.some((r) => r[1] === mk && r[2] === sr)))
@@ -96,7 +96,21 @@ if (!process.versions.electron) {
   const wd = (L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.")).map((k) => STR[L][k]);
   ok("② 字裡不出現「付費」/ paid;價格只在 wd.note.billed 一句({r} 由 account_status 下發,不寫死 2 TWD);試用天數也是 {t}", !wd("zh").some((s) => /付費/.test(s)) && !wd("en").some((s) => /\bpaid\b/i.test(s))
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && /\{r\}/.test(STR[L][k])).join() === "wd.note.billed") && !wd("zh").concat(wd("en")).some((s) => /\d\s*TWD/.test(s))
-    && ["zh", "en"].every((L) => /\{t\}/.test(STR[L]["wd.note.out"]) && /\{t\}/.test(STR[L]["wd.note.none"]) && /\{d\}/.test(STR[L]["wd.state.trial"])));
+    && ["zh", "en"].every((L) => ["wd.note.out", "wd.note.out.m", "wd.note.none", "wd.note.none.m"].every((k) => /\{t\}/.test(STR[L][k])) && /\{d\}/.test(STR[L]["wd.state.trial"])));
+  // 右欄那句的兩態(wdNote 原文接假 DOM 在純 node 跑):方案制(planMo 真)試用結束會自動扣方案費,講「免費試用」不講「送」;切換前照舊「送」;沒天數兩態都是不帶數字那句
+  { const note = (L, mo, k, v) => {
+      const C = { planMo: () => mo, planOpen() {}, document: { createElement: (tag) => ({ tag, kids: [], append(...a) { this.kids.push(...a); }, appendChild(a) { this.kids.push(a); return a; }, addEventListener() {} }) } };
+      vm.createContext(C);
+      vm.runInContext(read(path.join(R, "strings.js")) + "\n" + read(path.join(R, "i18n.js")).replace(/^let LANG = "en";$/m, 'var LANG = "' + L + '";') + "\n" + src.slice(src.indexOf("const wdEl ="), src.indexOf("const wdK =")) + "\n" + cutFn(src, "wdNote"), C);
+      const into = C.document.createElement("span"); C.wdNote(k, v, into);
+      return into.kids.map((x) => (typeof x === "string" ? x : x.textContent)).join("|"); };
+    ok("② 右欄那句(zh)兩態:方案制 →「登入並綁卡，免費試用 14 天 Blave 資料」/「綁卡，免費試用 14 天 Blave 資料」;切換前 →「送 14 天」照舊;沒天數兩態都不帶數字、是一顆鈕",
+      note("zh", true, "out", { t: "14" }) === "登入並綁卡，免費試用 14 天 Blave 資料" && note("zh", false, "out", { t: "14" }) === "登入並綁卡，送 14 天 Blave 資料"
+      && note("zh", true, "none", { t: "14" }) === "綁卡，免費試用 14 天 Blave 資料" && note("zh", false, "none", { t: "14" }) === "綁卡，送 14 天 Blave 資料"
+      && note("zh", true, "out", { t: "" }) === "登入並綁卡後就能用" && note("zh", false, "none", { t: "" }) === "綁卡後就能用", [note("zh", true, "out", { t: "14" }), note("zh", true, "none", { t: "14" })].join(" / "));
+    ok("② 右欄那句(en)兩態:方案制 free trial(連字號 U+2011,同 pv.h.offer.m);切換前 days free", note("en", true, "out", { t: "14" }) === "Sign in and add a card for a 14\u2011day free trial of Blave data"
+      && note("en", true, "none", { t: "14" }) === "Add a card for a 14\u2011day free trial of Blave data" && note("en", false, "out", { t: "14" }) === "Sign in and add a card: 14 days of Blave data free", note("en", true, "out", { t: "14" }));
+    ok("② 指紋帶 planMo():公開價目晚到、或登入後 acct 帶方案欄位時那句才會跟著重畫", /JSON\.stringify\(\[LANG, m\.k, m\.cmp, WD\.mk, v\.t, v\.r, v\.d, planMo\(\)\]\)/.test(src)); }
   { const txf = ROWS.filter((r) => r[1] === "txf");
     const listed = /_TAIFEX_INDEX_FUT_LISTED = \{'TXF': '(\d{4}-\d\d-\d\d)', 'MXF': '(\d{4}-\d\d-\d\d)', 'TMF': '(\d{4}-\d\d-\d\d)'\}/.exec(read(path.join(SHELL, "..", "lib", "data.py"))) || [];
     ok("② 台指期 K 線拆兩列:txd 日線在免費欄第一列、txk 分線在 Blave 欄第一列(頻率不再含日線);起始年同 lib/data.py _TAIFEX_INDEX_FUT_LISTED 的 TXF 上市年;WD_TXF_KLINE_SRC 常數退役",

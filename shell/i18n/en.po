@@ -4856,6 +4856,10 @@ msgstr "Logic"
 msgid "lib.gate.bindCard"
 msgstr "Add a Card, Get {t} Days of Data"
 
+# plan era (planMo): same button, trial rolls into the paid plan so not "get"
+msgid "lib.gate.bindCard.m"
+msgstr "Add a Card, Start a {t}‑Day Free Trial"
+
 msgid "lib.gate.topup"
 msgstr "Top Up"
 
@@ -6320,6 +6324,13 @@ msgstr "Add a card: {t} days of Blave data free"
 
 msgid "wd.note.noneNoNum"
 msgstr "Add a card to use it"
+
+# plan era (planMo): the trial rolls into the paid plan, so "free trial" rather than "N days free" — the two {t} lines switch to .m, same as pv.h.offer.m
+msgid "wd.note.out.m"
+msgstr "Sign in and add a card for a {t}‑day free trial of Blave data"
+
+msgid "wd.note.none.m"
+msgstr "Add a card for a {t}‑day free trial of Blave data"
 
 msgid "wd.note.billed"
 msgstr "{r} TWD for each hour you use it, charged once per hour"

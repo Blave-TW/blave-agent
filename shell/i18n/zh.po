@@ -4864,6 +4864,10 @@ msgstr "邏輯"
 msgid "lib.gate.bindCard"
 msgstr "綁卡，送 {t} 天資料"
 
+# 方案制(planMo)的同一顆鈕:試用結束自動轉方案費,不是「送」
+msgid "lib.gate.bindCard.m"
+msgstr "綁卡，免費試用 {t} 天資料"
+
 msgid "lib.gate.topup"
 msgstr "儲值"
 
@@ -6328,6 +6332,13 @@ msgstr "綁卡，送 {t} 天 Blave 資料"
 
 msgid "wd.note.noneNoNum"
 msgstr "綁卡後就能用"
+
+# 方案制(planMo):試用結束會自動開始扣方案費,不是「送」——帶天數那兩句換 .m,同 pv.h.offer.m
+msgid "wd.note.out.m"
+msgstr "登入並綁卡，免費試用 {t} 天 Blave 資料"
+
+msgid "wd.note.none.m"
+msgstr "綁卡，免費試用 {t} 天 Blave 資料"
 
 msgid "wd.note.billed"
 msgstr "有用到的那個小時收 {r} TWD，同一小時只收一次"
