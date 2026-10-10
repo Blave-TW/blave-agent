@@ -6,7 +6,7 @@ Crie, faça backtest e opere estratégias ao vivo com Claude Code ou Codex. Grá
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | **Português** | [Tiếng Việt](README.vi.md)
 
-> Esta tradução foi feita a partir do README em inglês no commit [`6944ddd`](https://github.com/Blave-TW/blave-agent/blob/6944ddd/README.md) e cobre só as seções que mudam pouco. Novidades, exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
+> Esta tradução foi feita a partir do README em inglês no commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) e cobre só as seções que mudam pouco. Novidades, exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 

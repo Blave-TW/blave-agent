@@ -6,7 +6,7 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> この文書は英語版 README の commit [`6944ddd`](https://github.com/Blave-TW/blave-agent/blob/6944ddd/README.md) から翻訳したもので、変更の少ない節だけを訳しています。最新情報、対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
+> この文書は英語版 README の commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) から翻訳したもので、変更の少ない節だけを訳しています。最新情報、対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
