@@ -18,15 +18,15 @@ _REPO_ROOT = Path(__file__).parent.parent
 
 # Per-event trade log cap for a single backtest — mirrors api/openclaw/agent_strategies.py's
 # TRADES_MAX_COUNT. Bounding it here too (source) rather than only on the api side means a
-# live-mode strategy that rewrites its full trades history every scheduler tick can't grow
+# live strategy's performance refresh (which rewrites its full trades history) can't grow
 # past what the api will accept anyway, and it stops one dense strategy's (pre-truncation)
 # trades array from blowing the api's overall report body-size check for everyone else.
 TRADES_MAX_COUNT = 10000
 
 # Caps for the PLOT_SERIES → stats.json `panes` output — mirrored server-side in
 # api/openclaw/agent_strategies.py. Bounded at the source for the same reason as
-# TRADES_MAX_COUNT above: live mode rewrites stats.json every tick, so an unbounded
-# declaration would inflate every report, not just one backtest.
+# TRADES_MAX_COUNT above: a performance refresh rewrites a live strategy's stats.json, so
+# an unbounded declaration would inflate every report, not just one backtest.
 PANES_MAX_SERIES = 4
 PANES_MAX_POINTS = 20000
 PANES_NAME_MAX   = 64
@@ -44,7 +44,17 @@ CANDLES_MAX_COUNT = 20000
 # workspace pulls chunk-by-chunk (api/openclaw/agent_chart_data.py). Caps mirrored there.
 CHART_CHUNK_BARS = 20000
 CHART_MAX_CHUNKS = 50
-CHART_LIVE_REFRESH_MIN_AGE = 86400  # live-tick rebuild throttle: at most once a day per strategy
+CHART_LIVE_REFRESH_MIN_AGE = 86400  # performance-refresh rebuild throttle: at most once a day per strategy
+
+# BLAVE_STATS_REFRESH=1 on a live run (BLAVE_MODE=live, or live inferred from the 下單設定):
+# recompute the performance and rewrite stats.json — the workspace's 更新績效 button and the
+# runtime's pre-report sweep (runtime/command_listener `stats_refresh`). A live tick itself
+# writes state.json only: the performance block (PnL, stats, trades, panes, candles, a ~6 MB
+# stats.json) was 65–90% of every tick's CPU and the reconciler needs none of it. The refresh
+# is a live run in every other respect (same data path, quiet, no version, MCPT + Generated
+# At carried over) and never writes state.json: it is not aligned to a bar close and has no
+# freshness gate (manager/wait_for_bar.py has) — the scheduled tick alone owns the target.
+STATS_REFRESH_ENV = 'BLAVE_STATS_REFRESH'
 
 
 
@@ -141,14 +151,14 @@ def _hold_backtest_lock(name, out_dir, wait_s=0.0):
 def _carry_over(out_dir, mode):
     """Keys to carry from the existing stats.json into the one about to be rewritten.
 
-    A live / cron tick (mode != 'backtest') rewrites stats.json every bar with the SAME
-    code and parameters, so the MCPT fields computed on them are still valid, and the
-    last explicit backtest's 'Generated At' still marks when the parameters last changed
-    — both are read off the existing file and kept. An explicit backtest returns {} so
-    the old MCPT keys are DROPPED (parameters may have changed) — the backtest then runs
-    MCPT afresh itself (_auto_mcpt) and 'Generated At' is stamped fresh by the caller. A
-    missing / unreadable / keyless old file is simply "nothing to carry" — never fatal, a
-    tick must not die on it.
+    A performance refresh (mode != 'backtest' with STATS_REFRESH_ENV; a live tick itself
+    no longer writes stats.json) rewrites the file with the SAME code and parameters, so
+    the MCPT fields computed on them are still valid, and the last explicit backtest's
+    'Generated At' still marks when the parameters last changed — both are read off the
+    existing file and kept. An explicit backtest returns {} so the old MCPT keys are
+    DROPPED (parameters may have changed) — the backtest then runs MCPT afresh itself
+    (_auto_mcpt) and 'Generated At' is stamped fresh by the caller. A missing / unreadable
+    / keyless old file is simply "nothing to carry" — never fatal.
     """
     if mode == 'backtest':
         return {}
@@ -163,7 +173,7 @@ def _carry_over(out_dir, mode):
 
 def _write_json_atomic(path, obj, indent=2):
     """JSON via tmp + os.replace (same pattern as lib.param_scan.write_scan): these files
-    are rewritten while the reporter reads them — stats.json every bar in live mode, the
+    are rewritten while the reporter reads them — stats.json on a performance refresh, the
     versions index while a backtest mints into it — and a reader landing mid-write would
     otherwise see a truncated file and drop keys for good (MCPT / Generated At carry-over,
     or the whole version list)."""
@@ -543,11 +553,12 @@ def _sweep_chart_leftovers(out_dir):
 
 
 def _chart_refresh_due(out_dir, tail_first_ts, tail_last_ts):
-    """Live tick: should chart/ be rebuilt? stats.json's candle tail keeps advancing while
-    chart/ stays frozen at backtest time; once the tail's first bar has moved past the last
-    chunk's t1 minus half the tail window, the two would soon stop overlapping and the
-    workspace would show a gap scrolling left. Rebuild then (or when no usable manifest),
-    throttled by the manifest's mtime so a short-window strategy can't rebuild every tick.
+    """Performance refresh of a live strategy: should chart/ be rebuilt? stats.json's candle
+    tail advances on every refresh while chart/ stays frozen at backtest time; once the
+    tail's first bar has moved past the last chunk's t1 minus half the tail window, the two
+    would soon stop overlapping and the workspace would show a gap scrolling left. Rebuild
+    then (or when no usable manifest), throttled by the manifest's mtime so a short-window
+    strategy can't rebuild on every refresh.
     """
     path = out_dir / 'chart' / 'manifest.json'
     try:
@@ -595,8 +606,8 @@ def _mint_version(config, stats, mode, src=None):
     """Freeze this backtest as strategies/<name>/versions/v<N>.json and refresh index.json
     (.claude/docs/strategy-versions.md). Returns the version number this run belongs to, or None.
 
-    BACKTEST ONLY. run() is also the live/cron tick, which rewrites stats.json every bar
-    with the same code — minting there would give a deployed 1h strategy 24 versions a day
+    BACKTEST ONLY. run() is also the live/cron tick and the performance refresh, both on
+    the same code — minting there would give a deployed 1h strategy 24 versions a day
     and push every real one out of the 20-version window within a day.
 
     `src` is the file's bytes as run() read them when it started — not re-read here: the
@@ -718,10 +729,19 @@ def _results_lock(name):
         cm.__exit__(None, None, None)
 
 
-def _discard_superseded(strategy_name):
-    logging.warning("backtest discarded: strategy file changed while it ran (superseded)")
-    print(f"  ⚠️ Backtest discarded — {strategy_name}'s strategy file changed while it ran; "
+def _discard_superseded(strategy_name, what='Backtest'):
+    logging.warning("%s discarded: strategy file changed while it ran (superseded)", what.lower())
+    print(f"  ⚠️ {what} discarded — {strategy_name}'s strategy file changed while it ran; "
           f"nothing was written. Re-run it.")
+
+
+def _results_lock_for(mode, refresh, strategy_name, out_dir):
+    """The write-tail lock (_results_lock) for a backtest always; for a performance refresh
+    only when versions/ already exists — the lock file would create the folder, and restore()
+    (the writer the lock guards against) can only touch a strategy that has versions."""
+    if mode == 'backtest' or (refresh and (Path(out_dir) / 'versions').is_dir()):
+        return _results_lock(strategy_name)
+    return contextlib.nullcontext()
 
 
 def _clear_rerun(strategy_name):
@@ -1516,10 +1536,12 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     # that backtest anyway. A live run is also QUIET: no chart re-render, no
     # chart/report pushed into the chat or Telegram — an hourly pnl.png would
     # spam the conversation and re-upload images every report; the tick's job
-    # is the signal, nothing else.
+    # is the signal, nothing else — not even stats.json, which only a backtest
+    # or a performance refresh (STATS_REFRESH_ENV) writes.
     _env_mode      = os.environ.get('BLAVE_MODE') or None   # '' counts as unset
     _inferred_live = not _env_mode and _picked_for_trading(config['STRATEGY_NAME'])
     mode           = _env_mode or ('live' if _inferred_live else 'backtest')
+    refresh        = mode != 'backtest' and os.environ.get(STATS_REFRESH_ENV) == '1'
     quiet          = (_env_mode not in (None, 'backtest')) or _inferred_live
     # BLAVE_QUIET=1: a restore's background re-run (runtime command_listener). Still a full
     # backtest — mints under the same-code rule, MCPT, chart export, pnl.png redrawn — but
@@ -1595,6 +1617,14 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         filename=str(out_dir / 'strategy.log'),
         level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s'
     )
+    if refresh and not (out_dir / 'stats.json').is_file():
+        # Nothing to refresh: never backtested, or restore() stashed the results and its re-run
+        # has not succeeded yet — a state canon §5 reserves for the next successful BACKTEST.
+        # Writing one here would also stamp a Generated At no backtest produced.
+        logging.warning("performance refresh skipped: no stats.json — run a backtest first")
+        print(f"  ⚠️ No stats.json to refresh for {strategy_name} — run a backtest first "
+              f"(BLAVE_MODE=backtest).")
+        return
 
     try:  # visibility only — never blocks the tick (see _drift_flag)
         _drift_flag(config, mode)
@@ -1635,7 +1665,6 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             from lib.exits import clamp_spot
             signals = clamp_spot(signals, config.get('MARKET'))
 
-        # ── Full PnL computation (always) ──────────────────────────────────────
         warmup = config.get('WARMUP', 0)
         if warmup > 0:
             df      = df.iloc[warmup:]
@@ -1650,6 +1679,28 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             df      = df[valid]
             signals = signals.reindex(df.index).ffill()
 
+        # ── Live tick: the last bar's signal → state.json, nothing else ────────
+        if mode != 'backtest' and not refresh:
+            t, r = df.index[-1], df.iloc[-1]
+            candle = {'time': int(t.timestamp()), 'close': float(r['Close']),
+                      'open': float(r['Open']), 'high': float(r['High']), 'low': float(r['Low'])}
+
+            state  = load_state(strategy_name) or {
+                'position': float(signals.ffill().fillna(0).iloc[-1]),
+            }
+            # Same ffill as the backtest's pos: a tick that skipped bars (slow tick, fetch backoff)
+            # would otherwise lose any entry/exit on them for good; this way the next tick converges.
+            signal = float(signals.ffill().fillna(0).iloc[-1])
+            logging.info(f"signal={signal:.4f} close={candle['close']}")
+
+            update_state(candle, signal, state, mode,
+                         symbol=config.get('SYMBOL', ''),
+                         send_telegram_fn=(lambda m: _send_best_effort(send_telegram_fn, m))
+                         if send_telegram_fn else None)
+            save_state(strategy_name, state)
+            return
+
+        # ── Performance: backtest, or a refresh of a live strategy ─────────────
         n   = len(df)
         pos = signals.ffill().fillna(0).values  # shape (n,)
 
@@ -1831,14 +1882,17 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                           f"listing minimum of {MCPT_N_MIN} — raise MCPT_N to {MCPT_N_MIN} or "
                           f"more and re-run to make it listable, or leave it as is if this "
                           f"strategy is not for the library.")
-        stats.update(_carry_over(out_dir, mode))  # live tick keeps MCPT + Generated At; backtest drops/restamps
-        stats.setdefault(GENERATED_AT_KEY, int(time.time()))
-        if mode == 'backtest' and _superseded(config, src0):   # before the lock creates versions/
-            _discard_superseded(strategy_name)
+        stats.update(_carry_over(out_dir, mode))  # refresh keeps MCPT + Generated At; backtest drops/restamps
+        if mode == 'backtest':  # the record that a backtest ran — a refresh never stamps one
+            stats[GENERATED_AT_KEY] = int(time.time())
+        # A refresh checks the file too: a restore() landing mid-run would otherwise leave
+        # v<N>'s code beside these numbers (canon §5); versions/ is only created by a backtest
+        if _superseded(config, src0):   # before the lock creates versions/
+            _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
             return
-        with (_results_lock(strategy_name) if mode == 'backtest' else contextlib.nullcontext()):
-            if mode == 'backtest' and _superseded(config, src0):
-                _discard_superseded(strategy_name)
+        with _results_lock_for(mode, refresh, strategy_name, out_dir):
+            if _superseded(config, src0):
+                _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
                 return
             _write_stats(out_dir, stats)
             if mode == 'backtest':
@@ -1848,10 +1902,10 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                     logging.warning("version mint failed: %s", e)
                 _clear_rerun(strategy_name)
 
-        # Full chart export on every user-run backtest; a live/cron tick rewrites stats.json
-        # every few minutes and re-serializing years of bars each time would burn the VM for
-        # nothing (the uploader is content-hashed, but the build isn't free) — so live only
-        # rebuilds when the stats tail is about to outrun chart/ (see _chart_refresh_due).
+        # Full chart export on every user-run backtest; a refresh re-serializing years of bars
+        # each time would burn the VM for nothing (the uploader is content-hashed, but the
+        # build isn't free) — so it only rebuilds when the stats tail is about to outrun
+        # chart/ (see _chart_refresh_due).
         if mode == 'backtest' or (candles and _chart_refresh_due(
                 out_dir, candles[0][0], int(df.index[-1].timestamp()))):
             try:
@@ -1882,27 +1936,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                     f"Trades {n_trades}"
                     + ("\n⚠️ 0 筆交易——進場條件從未觸發，數字無意義" if n_trades == 0 else "")
                 )
-            return
-
-        # ── Live mode ──────────────────────────────────────────────────────────
-        t, r = df.index[-1], df.iloc[-1]
-        candle = {'time': int(t.timestamp()), 'close': float(r['Close']),
-                  'open': float(r['Open']), 'high': float(r['High']), 'low': float(r['Low'])}
-
-        state  = load_state(strategy_name) or {
-            'position': float(signals.ffill().fillna(0).iloc[-1]),
-        }
-        # Same ffill as the backtest's pos: a tick that skipped bars (slow tick, fetch backoff)
-        # would otherwise lose any entry/exit on them for good; this way the next tick converges.
-        signal = float(signals.ffill().fillna(0).iloc[-1])
-        logging.info(f"signal={signal:.4f} close={candle['close']}")
-
-        update_state(candle, signal, state, mode,
-                     symbol=config.get('SYMBOL', ''),
-                     send_telegram_fn=(lambda m: _send_best_effort(send_telegram_fn, m))
-                     if send_telegram_fn else None)
-        save_state(strategy_name, state)
-
+        # a refresh ends here: stats.json rewritten, state.json left to the scheduled tick
 
     # ── Type C: portfolio strategy ────────────────────────────────────────────
     elif isinstance(result, tuple) and isinstance(result[0], np.ndarray):
@@ -1916,6 +1950,18 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             if exec_at_close_orig_c is not None:
                 exec_at_close_orig_c = exec_at_close_orig_c[warmup:]
 
+        # ── Live tick: the live target → state.json, nothing else ──────────────
+        if mode != 'backtest' and not refresh:
+            # the live target (lib.portfolio.aggregate_portfolio): per-asset
+            # weights of the last computed row, and the rebalance bar they began on
+            live = typec_live_state(weights_orig, price_df, market=config.get('MARKET', 'swap'))
+            prev = load_state(strategy_name) or {}
+            if prev.get('rebalance_at') != live['rebalance_at']:
+                logging.info(f"Type C rebalance at {live['rebalance_at']}: {live['weights']}")
+            save_state(strategy_name, live)
+            return
+
+        # ── Performance: backtest, or a refresh of a live strategy ─────────────
         if mode == 'backtest':
             for msg in _weight_row_warnings(weights_orig, price_df.index):
                 logging.warning(msg)
@@ -1976,8 +2022,9 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         d_dates, d_rets = daily_returns_typeC(pf_series)
 
         # No automatic MCPT for Type C — see _auto_mcpt's docstring (mcpt() is single-series).
-        carried = _carry_over(out_dir, mode)  # live tick keeps MCPT + Generated At; backtest drops/restamps
-        carried.setdefault(GENERATED_AT_KEY, int(time.time()))
+        carried = _carry_over(out_dir, mode)  # refresh keeps MCPT + Generated At; backtest drops/restamps
+        if mode == 'backtest':  # the record that a backtest ran — a refresh never stamps one
+            carried[GENERATED_AT_KEY] = int(time.time())
         stats = {'strategy': strategy_name, 'interval': interval,
                  'start': close_df.index[0].strftime('%Y-%m-%d'),
                  'end':   close_df.index[-1].strftime('%Y-%m-%d'),
@@ -1995,12 +2042,12 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                  'daily_dates': d_dates, 'daily_returns': d_rets,
                  **carried,
                  }
-        if mode == 'backtest' and _superseded(config, src0):   # before the lock creates versions/
-            _discard_superseded(strategy_name)
+        if _superseded(config, src0):   # before the lock creates versions/ (same as Type A)
+            _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
             return
-        with (_results_lock(strategy_name) if mode == 'backtest' else contextlib.nullcontext()):
-            if mode == 'backtest' and _superseded(config, src0):
-                _discard_superseded(strategy_name)
+        with _results_lock_for(mode, refresh, strategy_name, out_dir):
+            if _superseded(config, src0):
+                _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
                 return
             _write_stats(out_dir, stats)
             if mode == 'backtest':
@@ -2020,16 +2067,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 from lib.notify import report_photo_web
                 report_photo_web(str(out_dir / 'pnl.png'))
 
-        if mode != 'backtest':
-            # the live target (lib.portfolio.aggregate_portfolio): per-asset
-            # weights of the last computed row, and the rebalance bar they began on
-            live = typec_live_state(weights_orig, price_df, market=config.get('MARKET', 'swap'))
-            prev = load_state(strategy_name) or {}
-            if prev.get('rebalance_at') != live['rebalance_at']:
-                logging.info(f"Type C rebalance at {live['rebalance_at']}: {live['weights']}")
-            save_state(strategy_name, live)
-
-        if send_telegram_fn and not muted:
+        if send_telegram_fn and not muted:  # a refresh is quiet (muted): backtest only in practice
             from lib.notify import send_photo
             _send_best_effort(send_photo, str(out_dir / 'pnl.png'))
             _send_best_effort(send_telegram_fn,

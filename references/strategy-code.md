@@ -110,8 +110,9 @@ Every **backtest** freezes the strategy as a version: `strategies/<name>/version
 curve) plus a summary line in `versions/index.json`. The workspace shows them, and the user
 can ask to go back to one. Nothing to run by hand — `run()` does it.
 
-- **Backtests only.** A live / cron tick rewrites `stats.json` every bar but mints no
-  version; a deployed 1h strategy would otherwise produce 24 a day.
+- **Backtests only.** A live / cron tick writes `state.json` only — no `stats.json`, no
+  version; a performance refresh (`references/deployment.md` › *Performance refresh*) rewrites
+  `stats.json` and still mints nothing. A deployed 1h strategy would otherwise produce 24 a day.
 - **`VERSION_NOTE`** (a string constant next to `DISPLAY_NAME` / `DESCRIPTION`): one line on
   what changed in THIS run — a parameter, a rule, a data source. Update it whenever you
   change the code, before the backtest. Leave it `""` when nothing changed rather than

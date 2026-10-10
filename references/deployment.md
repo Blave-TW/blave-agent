@@ -178,5 +178,14 @@ schtasks /create /tn "blaveclaw-strategy-<name>" /tr "cmd /c cd /d %BLAVE_AGENT_
 ## Live vs Backtest
 Live trading uses the SAME script as backtest — only the schedule and the 下單設定 change. The runner never reads a `MODE` constant (new strategies have none; a leftover line in an old file is ignored): a run is live when `BLAVE_MODE=live` is set (every schedule entry sets it) or, without it, when the strategy is a key of `amounts` in `portfolio_config.json` — an amount of 0 still counts. So `python3 strategies/<name>/strategy.py` on a deployed strategy is a quiet live tick, not a backtest; to get the backtest chart anyway, run `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py`. Keep `START` the same long date range as backtest so the website report shows full history. `END` is always `None` (backtest and live alike) — a pinned date caps the data fetch and freezes a deployed strategy's signals at that date, and quality_check flags it as CRITICAL.
 
+## Performance refresh
+A live tick computes the signal and writes `state.json` — nothing else. It does **not** recompute the performance or rewrite `stats.json` (that block was most of every tick's CPU), so a deployed strategy's `stats.json` stays at its last backtest until a **performance refresh**: the same strategy file run as a live tick plus `BLAVE_STATS_REFRESH=1`:
+
+```
+BLAVE_MODE=live BLAVE_STATS_REFRESH=1 python3 strategies/<name>/strategy.py
+```
+
+Same data path as the tick (`closed_bars_only`, feed alignment), quiet, carries MCPT and `Generated At` over, mints no version, never writes `state.json` (it is not aligned to a bar close and has no freshness gate — the scheduled tick alone owns the target). Without a `stats.json` it writes nothing and says so: run a backtest first. The platform runs it for the user — the workspace's 更新績效 button (runtime command `stats_refresh`), and automatically for every live Type A/C strategy right before a scheduled report fires. Run it by hand only when the user asks for fresh performance figures; a backtest (`BLAVE_MODE=backtest`) is still the way to re-run MCPT or record a version.
+
 ## Live Position (Every Tick)
 Every live tick sets the position to `signals.ffill().fillna(0).iloc[-1]` — the same position the backtest holds on the last bar — including the first tick, when there is no `state.json` yet. A tick that skipped bars (slow tick, fetch backoff) therefore converges on the next tick instead of losing an entry/exit that landed on a skipped bar. Consequence: if a live strategy's parameters are edited in place, its position follows the new parameters on the very next tick — which is why live edits still go through fork-and-switch (`references/strategy-code.md` › *Editing a live strategy*).

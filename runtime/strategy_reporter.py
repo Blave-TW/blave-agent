@@ -434,6 +434,41 @@ def _read_rerun(vdir):
     return out
 
 
+PERF_REFRESH_FILE = "perf_refresh.json"   # = command_listener.PERF_REFRESH_FILE
+
+
+def _read_perf(name):
+    """The strategy's performance-freshness block for the report: {at, refresh?}, or None
+    when there is no stats.json. `at` = stats.json's mtime — the last performance update
+    (a backtest, a restore's re-run or a `stats_refresh`; a live tick does not write the
+    file). `refresh` = strategies/<name>/perf_refresh.json, written by command_listener
+    around a refresh: {status: running|failed, at, err?} with err in RERUN_ERRS (the page
+    reuses the re-run's reason strings); absent when idle, and a separate key from
+    versions.rerun on purpose — the two are drawn differently. Malformed → no refresh
+    block, same stance as _read_rerun."""
+    sdir = os.path.join(STRATEGIES_DIR, name)
+    try:
+        at = int(os.stat(os.path.join(sdir, "stats.json")).st_mtime)
+    except (OSError, ValueError):
+        return None
+    out = {"at": at}
+    try:
+        with open(os.path.join(sdir, PERF_REFRESH_FILE), encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return out
+    if not isinstance(doc, dict):
+        return out
+    status, rat = doc.get("status"), doc.get("at")
+    if status not in ("running", "failed") or isinstance(rat, bool) or not isinstance(rat, int):
+        return out
+    refresh = {"status": status, "at": rat}
+    if status == "failed":
+        refresh["err"] = doc.get("err") if doc.get("err") in RERUN_ERRS else "EXIT"
+    out["refresh"] = refresh
+    return out
+
+
 def _read_versions(name):
     """The strategy's version summary for the report: {counter, current, items, drift,
     inplace?, rerun?}, or None when this strategy has never been versioned (an older config on
@@ -529,13 +564,15 @@ def _stats_marker(name, status, deployed=frozenset()):
     draft → mtime+size: this file belongs to the agent, and a re-run that
     overwrites it in place should reach the open workspace mid-turn.
     live (file MODE) or deployed (registry, `deployed` from _deployed_names) →
-    existence only: a deployed strategy's stats.json belongs to the per-bar tick
-    thread (command_listener._tick_one → blave-agent lib/runner.py rewrites
-    it on every close, unconditionally — the `mode == 'backtest'` gate below that
-    write only guards the chart export). Tracking its mtime would fire a full
-    scan + a ≤1.5MB chunk + a workspace redraw once a bar, mid-conversation, for
-    something the user never asked about — worst on exactly the users with real
-    money running. Deployment truth is the REGISTRY, not the file: a web deploy
+    existence only: a deployed strategy's stats.json is rewritten by the
+    performance refresh (command_listener `stats_refresh` — the 更新績效 button
+    and the pre-report sweep; a live tick itself writes state.json only, since
+    blave-agent lib/runner.py stopped recomputing performance per bar). Older
+    libs still rewrite it on every close, and tracking its mtime there would fire
+    a full scan + a ≤1.5MB chunk + a workspace redraw once a bar, mid-conversation,
+    for something the user never asked about — worst on exactly the users with
+    real money running; the refresh pushes explicitly instead (_ON_APPLIED).
+    Deployment truth is the REGISTRY, not the file: a web deploy
     sets BLAVE_MODE=live in the env and leaves MODE="backtest" in the file, which
     is exactly the strategy the status=="live" check missed (uid=32321: every 5min
     close pushed a ~0.5MB strategies chunk). Existence is the sensitivity the
@@ -552,6 +589,16 @@ def _stats_marker(name, status, deployed=frozenset()):
         return "none"
     if status == "live" or name in deployed:
         return "exists"
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
+def _perf_marker(name):
+    """strategy_marker() column for the performance-refresh record: mtime+size or "none"
+    (see point 4 of strategy_marker's docstring)."""
+    try:
+        st = os.stat(os.path.join(STRATEGIES_DIR, name, PERF_REFRESH_FILE))
+    except (OSError, ValueError):
+        return "none"
     return f"{st.st_mtime_ns}:{st.st_size}"
 
 
@@ -590,13 +637,19 @@ def strategy_marker(s, image_sig=None):
        platform's copy from the first report onwards — the workspace would show code
        nobody has run since.
 
+    4. The performance-refresh record (perf_refresh.json) is in it. A refresh that FAILS
+       leaves stats.json untouched, so every other column is unchanged — and the
+       strategy would never be re-sent: the api would hold `running` forever and the
+       page's 更新績效 would never settle. The file is written a few times a day at
+       most, so one more stat per strategy costs nothing.
+
     Still nothing here parses a file: signature()'s cheapness is what lets agent_turn
     call it after every tool step, and _scan_sources has already read the sources this
     marker hashes."""
     name = s["name"]
     columns = json.dumps(
         [s["status"], _stats_marker(name, None), _scan_marker(name), _wf_marker(name),
-         image_sig, _content_marker(s)],
+         image_sig, _content_marker(s), _perf_marker(name)],
         sort_keys=True,
     )
     # Hashed, not the columns verbatim: `image_sig` carries the image FILENAMES, which the
@@ -717,6 +770,9 @@ def scan(include_newborn=False):
             vs = _read_versions(s["name"])
             if vs is not None:
                 s["versions"] = vs
+        pf = _read_perf(s["name"])
+        if pf is not None:
+            s["perf"] = pf
         # Web-side hint so the 下單設定 picker can grey the checkbox out; the
         # authoritative block is _cmd_amounts' save-time guard (a stale cache
         # here must not be the only defense). False when unknown — fail open,

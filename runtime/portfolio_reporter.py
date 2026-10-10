@@ -808,9 +808,10 @@ def _manager_strategies():
             _STRATEGY_FIGURES_CACHE[path] = (st.st_mtime, st.st_size, entry)
         if entry:
             row = dict(entry)
-            # 回測上次執行時刻 = stats.json 的 mtime(runner 寫檔即完成)。頁面
-            # 拿它判斷「重跑有沒有用」:24h 內跑過就不標落後(連假免疫);從
-            # st 取、不進 cache entry,cache hit 時也永遠是當前值。
+            # 績效上次更新時刻 = stats.json 的 mtime(回測、還原的重跑、更新績效
+            # 都寫它;live tick 不寫)。頁面拿它判斷「要不要先更新績效」:24h 內
+            # 更新過就不標落後(連假免疫);從 st 取、不進 cache entry,cache hit
+            # 時也永遠是當前值。
             row["ran_at"] = int(st.st_mtime)
             out.append(row)
     for path in list(_STRATEGY_FIGURES_CACHE):

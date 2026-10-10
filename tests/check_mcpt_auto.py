@@ -200,16 +200,27 @@ try:
 finally:
     V.mcpt = orig
 
-# ── 4. live tick carries all three over ───────────────────────────────────────
+# ── 4. a live tick leaves stats.json alone; a performance refresh carries all three over ──
+stats_path = os.path.join(tmp, "strategies", "auto", "stats.json")
 before = stats_of("auto")
+before_mtime = os.stat(stats_path).st_mtime_ns
 os.environ["BLAVE_MODE"] = "live"
 try:
     R.run(cfg("auto"), fetch, compute)
 finally:
     os.environ.pop("BLAVE_MODE", None)
+check(os.stat(stats_path).st_mtime_ns == before_mtime, "live tick → stats.json 完全不動(訊號與 state 而已)")
+os.environ["BLAVE_MODE"] = "live"
+os.environ[R.STATS_REFRESH_ENV] = "1"
+try:
+    R.run(cfg("auto"), fetch, compute)
+finally:
+    os.environ.pop("BLAVE_MODE", None)
+    os.environ.pop(R.STATS_REFRESH_ENV, None)
 after = stats_of("auto")
-check({k: after.get(k) for k in R.MCPT_KEYS} == {k: before[k] for k in R.MCPT_KEYS}, "live tick → 三個 MCPT key(含 Distribution)原樣帶過")
-check(after["Generated At"] == before["Generated At"], "live tick → Generated At 帶過不重蓋")
+check(os.stat(stats_path).st_mtime_ns > before_mtime, "更新績效 → stats.json 重寫(同資料內容相同,看 mtime)")
+check({k: after.get(k) for k in R.MCPT_KEYS} == {k: before[k] for k in R.MCPT_KEYS}, "更新績效 → 三個 MCPT key(含 Distribution)原樣帶過")
+check(after["Generated At"] == before["Generated At"], "更新績效 → Generated At 帶過不重蓋")
 sdir = os.path.join(tmp, "strategies", "auto")
 check(R._carry_over(sdir, "live") == {k: before[k] for k in R.MCPT_KEYS + (R.GENERATED_AT_KEY,)}, "_carry_over(live) 回三 key + Generated At")
 check(R._carry_over(sdir, "backtest") == {}, "_carry_over(backtest) 空 → 由 _auto_mcpt 重算")
@@ -225,7 +236,9 @@ check(R._carry_over(bad, "live") == {}, "舊檔沒有可帶 key → 空 dict")
 check(R.GENERATED_AT_KEY == "Generated At", "Generated At key 名固定")
 rsrc = open(R.__file__).read()
 check(rsrc.count("stats.update(_carry_over(out_dir, mode))") == 1 and rsrc.count("carried = _carry_over(out_dir, mode)") == 1
-      and rsrc.count("setdefault(GENERATED_AT_KEY, int(time.time()))") == 2, "Type A 與 Type C 兩處寫出都接了 _carry_over + Generated At 補戳")
+      and rsrc.count("stats[GENERATED_AT_KEY] = int(time.time())") == 1 and rsrc.count("carried[GENERATED_AT_KEY] = int(time.time())") == 1
+      and "setdefault(GENERATED_AT_KEY" not in rsrc,
+      "Type A 與 Type C 兩處寫出都接了 _carry_over;Generated At 只在 backtest 蓋(不再 setdefault——更新績效舊檔沒這欄也不補)")
 check(len(__import__("re").findall(r"\n +_write_stats\(out_dir", rsrc)) == 2 and "open(out_dir / 'stats.json', 'w')" not in rsrc, "Type A / Type C 兩處 stats.json 都走 _write_stats(tmp + os.replace)")
 
 # ── 5. scan_grid never calls mcpt ─────────────────────────────────────────────
