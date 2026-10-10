@@ -2847,8 +2847,9 @@ function planMo() {
   return !!(pub && pub.plan && pub.plan.monthly_billing_active === true);
 }
 /* 同一個 key 三版字:方案制 → `.m`(雲端方案或 API 方案);切換前、api 帶著 data_access → 本名(按有用到的整點小時收,
-   那段時間是真話);舊 api 或還沒登入、查不到 → `.old`(那時沒有主機的人真的拿不到資料)。切換前兩版逐字同 origin/main */
-const pvK = (k) => (planMo() ? k + ".m" : acct && typeof acct.data_access === "string" ? k : k + ".old");
+   那段時間是真話);舊 api(沒有 data_access)→ `.old`(那時沒有主機的人真的拿不到資料)。還沒登入(acct 為 null)講本名:
+   .old 的「資料要啟動雲端方案才有」在 data_access 上線後已是假話,未登入的人沒有舊 api 可退。切換前兩版逐字同 origin/main */
+const pvK = (k) => (planMo() ? k + ".m" : !acct || typeof acct.data_access === "string" ? k : k + ".old");
 // 拿到資料之後那張卡的話:切換前按小時付的那條要講「會收錢」(剛因為沒錢被擋過,不能只說「可以用了」);免費那條照舊
 function dataReadyText(s) {
   if (dataAccessOf(s) !== "billed") return t("data.ready");
@@ -3118,12 +3119,17 @@ function planPaint() {
 
   // 每一格:狀態點(有才出)/ 標題句 / 說明 / 鈕上方那行 / 鈕左小字 / 鈕
   const offerLead = () => (cur === "blave" ? t("pv.d.offer.blave", v) : t("pv.d.offer.cli", v));
+  /* 方案制的未登入／綁卡那格(設計師 D 版):標題只講試用,說明句換成三條(資料、雲端主機、AI 額度;額度拿不到那條不出),
+     「AI 照用你的」那個保證搬到未登入的鈕左小字(pv.w.out.cli)。切換前照舊:標題「送 {t} 天資料」+ 說明句 + 按小時那句 */
+  const offerH = mo ? (v.t ? "pv.h.offer.m" : "pv.h.offerNoNum.m") : hasNum ? "pv.h.offer" : "pv.h.offerNoNum";
+  const offerList = () => [t("pv.offer.li.data"), t("pv.offer.li.server")].concat(v.q ? [t("pv.offer.li.ai", v)] : []);
   const trialLead = () => (mo ? t(v.pd ? "pv.d.trial.m" : "pv.d.trial.mNoNum", v) : t(pvK("pv.d.trial"), v));
   const V = {
-    out:      { h: hasNum ? "pv.h.offer" : "pv.h.offerNoNum", lead: hasNum ? offerLead() : t(pvK("pv.d.noPrice")), rule: hasNum ? t(pvK("pv.f.out"), v) : "", wait: planLoginBusy ? t("pv.w.waiting") : t("pv.w.out"),
+    out:      { h: offerH, lead: mo ? "" : hasNum ? offerLead() : t(pvK("pv.d.noPrice")), list: mo ? offerList() : null, rule: hasNum ? t(pvK("pv.f.out"), v) : "",
+                wait: planLoginBusy ? t("pv.w.waiting") : t(mo && cur !== "blave" ? "pv.w.out.cli" : "pv.w.out"),
                 acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     unknown:  { h: "pv.h.unknown", lead: t("pv.d.unknown"), acts: [btn("btn-out", t("plan.recheck"), () => acctCheck())] },
-    offer:    { h: "pv.h.offer", lead: offerLead(), rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: t("pv.f.noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
        方案制講到期不收第一期,切換前講到期不轉成方案、之後照目前的計費——兩種時期各自是真話 */
@@ -3166,7 +3172,9 @@ function planPaint() {
 
   if (view !== planLastView) { if (planLastView && !box.hidden) srSay(t(V.h, v)); planLastView = view; }
   if (V.st) { const stEl = el("span", "plan-st " + V.st[0]); stEl.append(el("span", "dot"), el("span", null, V.st[1])); sc.append(stEl); }
-  sc.append(el("h5", null, t(V.h, v)), el("p", "plan-lead", V.lead));
+  sc.append(el("h5", null, t(V.h, v)));
+  if (V.lead) sc.append(el("p", "plan-lead", V.lead));
+  if (V.list) { const ul = el("ul", "plan-list"); V.list.forEach((x) => ul.append(el("li", null, x))); sc.append(ul); }
   // 收起的細節:內含三條 + 計費(月價為主、時價並列、試用免費、自動儲值)+ 每人一次。價格查不到就整段不出
   if (v.p) {
     const more = btn("btn-quiet plan-more", t("pv.more"), () => { planMoreOpen = !planMoreOpen; planPaint(); });
