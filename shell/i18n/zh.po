@@ -4324,9 +4324,6 @@ msgstr "登入 Blave 之後才能購買，並下載到這台電腦。"
 msgid "lib.note.billed"
 msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費。"
 
-msgid "lib.note.paid"
-msgstr "從 Blave Agent 餘額扣款。"
-
 msgid "lib.note.pending"
 msgstr "進度在右邊的對話。"
 

@@ -398,7 +398,8 @@ if (!process.versions.electron) {
   ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3
     && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
-  ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略照舊 lib.note.paid", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); if \(c\.pub\) note\.textContent = t\("lib\.pub"\); break;/.test(src) && STR.zh["lib.note.paid"] === "從 Blave Agent 餘額扣款。");
+  ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略也不寫(lib.note.paid 連字串一起拿掉,扣款去向只在購買框 lib.buy.lead)", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); if \(c\.pub\) note\.textContent = t\("lib\.pub"\); break;/.test(src)
+    && !/lib\.note\.paid|paidNote/.test(src) && !("lib.note.paid" in STR.zh) && !("lib.note.paid" in STR.en) && /case "paid": [^\n]*libBuyBox\(s, "confirm", b, \{\}\)\)\); break;/.test(src) && /case "buying": row\.appendChild\(dis\(t\("lib\.buy\.busy"\)\)\); break;/.test(src));
   ok("③ 已安裝:頁首只有「打開這支策略」+「再下載一份」、鈕下不寫說明句(lib.note.installed 連字串一起拿掉,覆蓋說明搬進確認框)", !/lib\.note\.installed/.test(src) && !("lib.note.installed" in STR.zh) && !("lib.note.installed" in STR.en)
     && /case "installed":\n\s*row\.append\(btn\("btn-fill", t\("lib\.open"\)[^\n]*btn\("btn-quiet", t\("lib\.again"\), \(b\) => libAsk\(s, b\)\)\);\n\s*break;/.test(src));
   { const css = read(path.join(R, "library.css")), at = css.indexOf("@container (min-width: 640px)"), wide = css.slice(at, css.indexOf("\n}", at));
@@ -643,8 +644,8 @@ app.whenReady().then(async () => {
       down: q("#lib-det .gates .gv.down").map((x) => x.textContent).join("|"), downColor: getComputedStyle(q("#lib-det .gates .gv.down")[0]).color, redText: getComputedStyle(document.documentElement).getPropertyValue("--color-redText").trim(), gxColor: getComputedStyle(q("#lib-det .gates .gx")[0]).color, cta: q("#lib-cta .btn-fill")[0].textContent, note: q("#lib-cta .note")[0].textContent };
     document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="101"]')[0].click(); return { a, focus8, b }; })()`);   // 後面的閘門態測試接著看 #101 的詳情
   ok("④ #8(沒 gate_checks):沒有「未驗證」badge、只有價格、關卡卡只有一句 lib.gates.community、不列三道、CTA 仍「購買並使用 1,200 TWD」;返回焦點回那一列", r.a.tags === "1,200TWD" && r.a.card === (await T("lib.gates.title")) && r.a.p === (await T("lib.gates.community")) && r.a.lis === 0 && r.a.cta === (await T("lib.buy", { price: "1,200 TWD" })) && r.focus8 === "8", JSON.stringify(r));
-  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.1200、鄰域 82%);CTA「購買並使用 800 TWD」、說明句沒有恐嚇語", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
-    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.1200]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === (await T("lib.note.paid")), JSON.stringify(r));
+  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.1200、鄰域 82%);CTA「購買並使用 800 TWD」、鈕下沒有說明句", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
+    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.1200]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === "", JSON.stringify(r));
   // 閘門態
   const cta = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0], qb = q("#lib-cta .btn-quiet"); return { btn: b ? b.textContent : null, dis: b ? b.disabled : null, quiet: qb.map((x) => x.textContent).join("|"), note: q("#lib-cta .note")[0].textContent, up: q("#lib-cta .note")[0].classList.contains("up"), err: q("#lib-cta .err").map((x) => x.textContent).join() }; })()`);
   await js(`hasToken = false; libSync();`); r = await cta();
@@ -740,7 +741,7 @@ app.whenReady().then(async () => {
   await js(`(() => { document.getElementById("del-cancel").click(); LIB.data.dataAccess = "included"; document.querySelector("#lib-cta .btn-fill").click(); })()`);
   ok("④ 購買框:本機按時計資料費 → 導語後接 lib.note.billed;included 不出", bxBilled.open && bxBilled.lines.length === 3 && bxBilled.lines[1] === (await T("lib.buy.lead")) && bxBilled.lines[2] === (await T("lib.note.billed")) && bx.lines.length === 2 && !bx.lines.includes(await T("lib.note.billed")), JSON.stringify([bx.lines, bxBilled.lines]));
   bx = await box();
-  ok("④ 付費未購:主鈕「購買並使用 1,500 TWD」、說明 lib.note.paid(zh 沒有 fx 註);按下 → 第一段框:標題 / 價格 / .cf-note 導語 / 「確認購買」", r.btn === (await T("lib.buy", { price: "1,500 TWD" })) && r.note === (await T("lib.note.paid"))
+  ok("④ 付費未購:主鈕「購買並使用 1,500 TWD」、鈕下沒有說明句(扣款去向只在框內導語);按下 → 第一段框:標題 / 價格 / .cf-note 導語 / 「確認購買」", r.btn === (await T("lib.buy", { price: "1,500 TWD" })) && r.note === ""
     && bx.open && !bx.lock && bx.title === (await T("lib.buy.title", { title: "Cash-and-Carry <img onerror=x> Arbitrage" })) && bx.lines[0] === (await T("lib.buy.price", { price: "1,500 TWD" })) && bx.lines[1] === (await T("lib.buy.lead")) && bx.ok === (await T("lib.buy.ok")) && bx.env, JSON.stringify([r, bx]));
   await js(`document.getElementById("del-ok").click();`); await wait(30); bx = await box();
   r = await js(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); document.getElementById("del-scrim").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); const q = (x) => [...document.querySelectorAll(x)]; return { still: !document.getElementById("del-scrim").hidden, cta: q("#lib-cta .btn-fill")[0].textContent, dis: q("#lib-cta .btn-fill")[0].disabled, buys: window.__lib.buys, buying: LIB.buying }; })()`);
@@ -775,11 +776,12 @@ app.whenReady().then(async () => {
   // en
   r = await js(`(async () => { running = false; LIB.pending = null; libFind(5).purchased = false; setLang("en"); applyStatic(); await new Promise((r) => setTimeout(r, 30)); const q = (x) => [...document.querySelectorAll(x)];
     const h = document.getElementById("lib-h").textContent; document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="5"]')[0].click(); const tag5 = q('#lib-cta').length;
-    const note = q("#lib-cta .note")[0].textContent; document.getElementById("lib-back").click(); const priceTag = q('#lib-rows .lib-row[data-id="8"] .tag').length; const l2 = q('#lib-rows .lib-row[data-id="101"] .l2')[0].textContent;
+    const note = q("#lib-cta .note")[0].textContent; q("#lib-cta .btn-fill")[0].click(); const cfNotes = q("#del-body .cf-note").map((p) => p.textContent); document.getElementById("del-cancel").click();
+    document.getElementById("lib-back").click(); const priceTag = q('#lib-rows .lib-row[data-id="8"] .tag').length; const l2 = q('#lib-rows .lib-row[data-id="101"] .l2')[0].textContent;
     q('#lib-rows .lib-row[data-id="72"]')[0].click(); q("#lib-cta .btn-fill")[0].click(); document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
-    const out = { h, note, l2, last: window.__lib.sent[window.__lib.sent.length - 1].message, priceTag, owned5: q("#lib-cta .btn-fill")[0].textContent };
+    const out = { h, note, cfNotes, l2, last: window.__lib.sent[window.__lib.sent.length - 1].message, priceTag, owned5: q("#lib-cta .btn-fill")[0].textContent };
     setLang("zh"); applyStatic(); return out; })()`);
-  ok("④ en:頁首換字、付費說明多 fx 註(en 兩句之間一個空格)、列第二行 en、本機送出的是 en 的 lib.msgLocal", r.h === "Strategy Library" && r.note.endsWith(" " + STR.en["lib.fxNote"]) && r.l2 === "Blave Official · BTC/USDT Perp · 5m · 6.5-yr sample"
+  ok("④ en:頁首換字、付費鈕下仍無字、fx 註只在購買框的 .cf-note、列第二行 en、本機送出的是 en 的 lib.msgLocal", r.h === "Strategy Library" && r.note === "" && r.cfNotes.includes(STR.en["lib.fxNote"]) && r.l2 === "Blave Official · BTC/USDT Perp · 5m · 6.5-yr sample"
     && r.last === "The library strategy \"DOGE 籌碼集中度\" (#72) is downloaded. Install it and run a backtest to see the results." && r.priceTag === 1, JSON.stringify(r));   // #8 平鋪在清單裡:只有價格一個 tag(未驗證不標)
   // 快取:每次進視圖重問主行程(綁卡 / 換帳號後閘門與 purchased 才會跟上);登出 / 登入 / 換語言 / 設定關掉 / 回前景都重問
   r = await js(`(async () => { running = false; LIB.pending = null; const n0 = window.__lib.calls.length; document.getElementById("lib-back").click();

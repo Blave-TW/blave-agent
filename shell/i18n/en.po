@@ -4317,9 +4317,6 @@ msgstr "Sign in to Blave to buy it and download to this computer."
 msgid "lib.note.billed"
 msgstr "If the backtest uses Blave data, the data fee is charged per clock hour of use."
 
-msgid "lib.note.paid"
-msgstr "Charged to your Blave Agent balance."
-
 msgid "lib.note.pending"
 msgstr "Progress is in the chat on the right."
 
