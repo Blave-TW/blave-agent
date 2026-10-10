@@ -7249,3 +7249,24 @@ msgstr "{p} TWD each period"
 
 msgid "plan.startingM"
 msgstr "Starting Plan…"
+
+msgid "perf.btn"
+msgstr "Update Performance"
+
+msgid "perf.ago"
+msgstr "{n} days ago"
+
+msgid "perf.agoOne"
+msgstr "1 day ago"
+
+msgid "perf.tip"
+msgstr "Updated {t} · auto-updated once a day before the daily report"
+
+msgid "perf.busy"
+msgstr "Updating"
+
+msgid "perf.doneSr"
+msgstr "Performance updated"
+
+msgid "perf.fail"
+msgstr "Update failed; figures unchanged."

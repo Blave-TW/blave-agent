@@ -13,7 +13,7 @@ const wsfile = require("./wsfile");
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
 const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "credentials", "credentials_remove",
-  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore"]);
+  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore", "stats_refresh"]);
 // 只有主行程送得出的(send(…, { trusted: true })):設定 › Agent 規則的兩個寫入(shell/agentrules.js)。不放進 UI_COMMANDS:
 // renderer 的寫入必須經過 rules-save / reply-lang-save 那兩支 IPC——「規則檔讀不到就不寫」那道閘在那裡,通用的 trade-send 繞得過它;
 // api 的雲端白名單(CLOUD_COMMANDS = UI_COMMANDS + …,api/tests/check_desktop_cloud_command.py 釘住)也就不跟著變。
@@ -101,6 +101,9 @@ function argsOk(cmd, a, trusted) {
      版號同 main.js versionN。有金額的策略由機器端的 restore() 在動檔前拒絕,這一層只擋形狀 */
   if (cmd === "version_restore") return keys.length === 2 && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.name)
     && Number.isInteger(a.n) && a.n > 0 && a.n <= 1000000;
+  // 更新績效(renderer/perf.js):剛好 names,1–50 支、不重複,名字規則同 version_restore(= runtime _stats_refresh_args)
+  if (cmd === "stats_refresh") return keys.length === 1 && Array.isArray(a.names) && a.names.length >= 1 && a.names.length <= 50
+    && a.names.every((n) => typeof n === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(n)) && new Set(a.names).size === a.names.length;
   // 密文只驗形狀(base64、長度);內容由 daemon 解開後再驗
   if (cmd === "president_local") {
     if (PRESIDENT_OPS.indexOf(a.op) < 0) return false;

@@ -13,8 +13,8 @@
 /* ── 純邏輯(tests/check_shell_results.js 從原文切出來跑;這一段不准碰 DOM / 全域)── */
 const RES_CAP = 3;
 const RES_CLOUD_POLL_MS = 30 * 1000, RES_CLOUD_WAIT_MS = 10 * 60 * 1000, RES_CLOUD_SLACK_S = 120;
-/* 一支策略的三個簽章。回測 = stats.json 的 Generated At:只有明確回測會重蓋,live tick 每根 K 重寫 stats.json 但不動它
-   (lib/runner.py _carry_over)——拿 stats 的 mtime 會把跑著的策略每輪都認成「回測」。舊檔沒有這欄才退回 mtime */
+/* 一支策略的三個簽章。回測 = stats.json 的 Generated At:只有明確回測會重蓋,更新績效(手動或每天報告前自動一次)重寫 stats.json 但不動它
+   (lib/runner.py _carry_over)——拿 stats 的 mtime 會把上線中的策略每次更新績效都認成「回測」。舊檔沒有這欄才退回 mtime */
 function resSig(x) { return { bt: typeof x.generatedAt === "number" ? x.generatedAt : x.statsMtime || 0, scan: x.scanMtime || 0, code: x.codeMtime || 0 }; }
 function resStratVer(x) { const s = resSig(x); return s.bt + "|" + s.scan + "|" + s.code; }
 function resSnapOf(list) { return new Map((Array.isArray(list) ? list : []).filter((x) => x && typeof x.name === "string").map((x) => [x.name, x])); }

@@ -7258,3 +7258,24 @@ msgstr "每期 {p} TWD"
 
 msgid "plan.startingM"
 msgstr "開通中…"
+
+msgid "perf.btn"
+msgstr "更新績效"
+
+msgid "perf.ago"
+msgstr "{n} 天前"
+
+msgid "perf.agoOne"
+msgstr "1 天前"
+
+msgid "perf.tip"
+msgstr "{t} 更新 · 每天報告前自動更新一次"
+
+msgid "perf.busy"
+msgstr "更新中"
+
+msgid "perf.doneSr"
+msgstr "績效已更新"
+
+msgid "perf.fail"
+msgstr "沒更新成功，數字是舊的"

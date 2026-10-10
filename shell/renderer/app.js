@@ -1497,6 +1497,7 @@ function rpShowTab(tab) {
   B.drawn[tab] = true;
   const R = window.BlaveReport || {};
   if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), B.data.stats);
+  if (tab === "bt" && typeof perfPaint === "function") perfPaint(B);   // 上線中策略的「更新績效」掛在 meta 列尾(renderer/perf.js)
   if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats);
   // 參數掃描(report-robust.js 不碰桌面版全域:i18n、掃描鈕的送出、回合狀態、meta 那一行都從這裡交進去)
   if (tab === "rob" && R.renderRobust) R.renderRobust($("rp-rob"), { stats: B.data.stats, scan: B.data.scan || null, code: B.data.code, name: B.name }, rpRobOpts());
@@ -2578,7 +2579,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if ((!msg && !attachment) || running) return false;
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; sendBtnSync(); stratDelSync(); rpMissSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
+  running = true; sendBtnSync(); stratDelSync(); rpMissSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
@@ -2598,7 +2599,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg || attachment.name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
-  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
+  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 引擎還沒裝好時由安裝進度卡交代(engine.js),指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     engineWait = true;
@@ -3655,7 +3656,7 @@ window.blave.onTurnEnd(async (r) => {
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
   if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeq, faulted || stopped, { refetch: rpWfRefetch });
   upTurnEnded(faulted);
-  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
+  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
   if (stopped && lastUserTyped) {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複
