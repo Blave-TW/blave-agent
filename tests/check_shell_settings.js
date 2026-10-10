@@ -567,9 +567,9 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   window.blave.openExternal = (u) => { seen.push("ext:" + u); };
   const setClose = () => { seen.push("close"); }, envSwitchGuarded = (e) => { seen.push("env:" + e); return true; };
   let acct = { plan: { state: "running" } }, acctPending = 0, planBusy = false, planBusyPlan = false, planSince = 0, planSlowSaid = false, planErr = null, planLastView = null, planMoreOpen = false;
-  const PLAN_SLOW_MS = 1e9, srSay = () => {}, planAsk = () => {}, planLogin = () => {}, acctCheck = () => {}, acctUrl = () => "acct", planWebUrl = () => "https://blave.org/agent/zh", planState = () => acct.plan.state;
-  let PV_P = "", PV_R = "", PV_N = 0, PV_H = "", PV_PR = null, PV_U = "", PV_GU = "", PV_X = "", PV_PD = "", pub = null;
-  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: "", b: "", v: "", t: "", q: "", top: "", d: "", n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: "", g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD });
+  const PLAN_SLOW_MS = 1e9, srSay = () => {}, planAsk = () => {}, planLogin = () => {}, acctCheck = () => {}, acctUrl = () => "acct", planWebUrl = () => "https://blave.org/agent/zh", planState = () => (acct && acct.plan && acct.plan.state) || "none";   // 同 app.js(未登入 acct 為 null 也會走到展開區)
+  let PV_P = "", PV_R = "", PV_N = 0, PV_H = "", PV_PR = null, PV_U = "", PV_GU = "", PV_X = "", PV_PD = "", PV_T = "", PV_Q = "", pub = null;
+  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: "", b: "", v: "", t: PV_T, q: PV_Q, top: "", d: "", n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: "", g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD });
   eval(fnSrc("dataAccessOf")); eval(fnSrc("planMo")); eval(src.match(/^const planPriceOk = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planFailing = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planPaidAhead = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planEnded = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTierLabel = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("planStopKind"));
   eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var ")); const usageUrl = () => "usage", planWebGo = () => { seen.push("ext:" + planPayUrl()); };
   eval(src.match(/^function cloudWebGo\(\) \{[^\n]*\}$/m)[0]); eval(fnSrc("planRunRule")); eval(fnSrc("planPriceEl"));
@@ -600,6 +600,30 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     planLoginBusy = true; planPaint();
     ok("登入等待中:頁尾那顆變「取消」;「瀏覽器已開啟…」只在鈕左邊,不在帳號列下面再放一次", page().foot.join() === "btn-out:oauth.cancel" && page().hint.hidden === true && walkP(dom["set-plan"]).some((n) => n.className === "wait" && n.textContent === "pv.w.waiting"));
     planLoginBusy = false;
+    { /* 未登入格 D 版(設計師 desktop-signedout-plan-2026-10-10,Wei 核准):方案制 → 標題只講試用(pv.h.offer.m)、說明句不出、三條借既有 .plan-list
+         緊接 h5、底列只留價格事實(pv.f.out.m)、鈕左小字依 AI 來源(自帶 → pv.w.out.cli,Blave AI → pv.w.out)、鈕不動;切換前照舊那組(本名),未登入不再落 .old */
+      const D = () => { planPaint(); const all = walkP(dom["set-plan"]), sc = all.find((n) => n.className === "plan-scroll"), ul = sc.children.find((n) => n.className === "plan-list");
+        return { h: sc.children[1].textContent, next: sc.children[2] ? sc.children[2].className : "", li: ul ? ul.children.map((n) => n.textContent) : null, lead: all.filter((n) => n.className === "plan-lead").map((n) => n.textContent).join(),
+          rule: all.filter((n) => n.className === "plan-rule").map((n) => n.textContent).join(), wait: all.filter((n) => n.className === "wait").map((n) => n.textContent).join(), foot: page().foot.join(), texts: all.map((n) => n.textContent).join("|") }; };
+      pub = { plan: { monthly_billing_active: true } }; PV_T = "14"; PV_P = "1,440"; PV_Q = "100"; cur = "claude";
+      let d = D();
+      ok("D 版・方案制・自帶 AI:標題 pv.h.offer.m、沒有說明句、三條(資料 / 雲端主機 / 加送 {q} AI 額度)緊接標題、底列 pv.f.out.m、小字 pv.w.out.cli、鈕〔登入 Blave〕;沒有 .old、沒有 pv.d.offer",
+        /^pv\.h\.offer\.m\{/.test(d.h) && d.lead === "" && d.next === "plan-list" && !!d.li && d.li.length === 3 && d.li[0] === "pv.offer.li.data" && d.li[1] === "pv.offer.li.server" && /^pv\.offer\.li\.ai\{/.test(d.li[2])
+        && /^pv\.f\.out\.m\{/.test(d.rule) && d.wait === "pv.w.out.cli" && d.foot === "btn-fill:pv.signin" && !/\.old|pv\.d\.offer/.test(d.texts), JSON.stringify(d));
+      cur = "blave"; d = D();
+      ok("D 版・Blave AI:小字換成 pv.w.out(不講「不會換掉你用的 AI」);其餘同", d.wait === "pv.w.out" && d.li.length === 3 && /^pv\.h\.offer\.m\{/.test(d.h));
+      cur = "claude"; PV_Q = ""; d = D();
+      ok("D 版・舊 api 沒帶 trial.ai_credit({q} 空):AI 額度那條不出,只剩兩條", !!d.li && d.li.length === 2 && !/pv\.offer\.li\.ai/.test(d.texts));
+      PV_T = ""; d = D();
+      ok("D 版・{t} 拿不到:標題 NoNum.m、底列不出;兩條照出", /^pv\.h\.offerNoNum\.m\{/.test(d.h) && d.rule === "" && d.li.length === 2);
+      PV_T = "14"; PV_Q = "100"; pub = { plan: { monthly_billing_active: false } }; d = D();
+      ok("切換前(公開價目 monthly_billing_active=false):照舊那組 — 標題 pv.h.offer、說明 pv.d.offer.cli、底列按小時那句 pv.f.out(本名,不是 .old)、小字 pv.w.out;沒有列式",
+        /^pv\.h\.offer\{/.test(d.h) && /^pv\.d\.offer\.cli\{/.test(d.lead) && d.li === null && /^pv\.f\.out\{/.test(d.rule) && d.wait === "pv.w.out" && !/\.old/.test(d.texts), JSON.stringify(d));
+      pub = null; PV_T = ""; PV_P = ""; PV_Q = ""; d = D();
+      ok("公開價目拿不到(離線):退化句照現行 — NoNum 標題、說明 pv.d.noPrice(本名,不是 .old)、底列不出", /^pv\.h\.offerNoNum\{/.test(d.h) && d.lead === "pv.d.noPrice" && d.rule === "" && d.li === null && !/\.old/.test(d.texts), JSON.stringify(d));
+      ok("pvK:未登入(acct 為 null)→ 本名;方案制 → .m;舊 api(沒有 data_access)→ .old;新 api → 本名", (acct = null, pub = null, pvK("pv.f.out")) === "pv.f.out" && ((pub = { plan: { monthly_billing_active: true } }), pvK("pv.f.out")) === "pv.f.out.m"
+        && ((pub = null), (acct = { data_included: false }), pvK("pv.f.out")) === "pv.f.out.old" && ((acct = { data_access: "none" }), pvK("pv.f.out")) === "pv.f.out");
+      acct = null; pub = null; planLastView = null; }
     hasToken = true; acct = { plan: { state: "none" }, data_access: "included", can_run: true }; balLast = balNum(1234.4); planPaint(); A = page();
     ok("已登入:帳號列「已登入」＋文字鈕「登出」(不是描邊鈕、沒有綠點),下面一列 Blave 餘額;順序 帳號列 → 訊息格 → 餘額列", A.first && A.rows === 2 && A.who.v === "acct.signedIn" && A.who.vCls === "v"
       && !!A.who.btn && A.who.btn.className === "btn-quiet" && A.who.btn.textContent === "acct.out" && A.who.btn.id === "set-acct-btn" && A.who.btn.dataset.k === "acct-out"
@@ -735,6 +759,14 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       /pv\.h\.plan\.m/.test(np.texts) && !/pv\.h\.plan\|/.test(np.texts) && np.texts.indexOf("pv.inc.2") < np.texts.indexOf("pv.inc.m2") && np.texts.indexOf("pv.inc.m2") < np.texts.indexOf("pv.inc.3") && !/pv\.inc\.1/.test(np.texts)
       && /plan\.rule\.mNoServerNoNum/.test(np.texts) && !/plan\.rule\.m\{|plan\.rule\.mNoNum/.test(np.texts)
       && (() => { const r = paintOf({ ...MO, plan: { state: "running", tier: "linux_starter" } }); return /pv\.inc\.1\|pv\.inc\.2\|pv\.inc\.3/.test(r.texts) && !/pv\.inc\.m2/.test(r.texts) && /plan\.rule\.mNoNum/.test(r.texts) && !/NoServer/.test(r.texts); })());
+    PV_T = "14"; PV_Q = "100";
+    { const of = paintOf({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }), ul = walk(dom["set-plan"]).find((n) => n.className === "plan-scroll").children.find((n) => n.className === "plan-list");
+      ok("方案制綁卡那格(offer)跟未登入同組(D 版):標題 pv.h.offer.m、三條列式、沒有說明句(不會未登入講「免費試用」、登入後講「送」);底列照現行 pv.f.offer.m(驗證金、扣款與取消在這裡講);鈕〔前往綁卡〕",
+        /pv\.h\.offer\.m\{/.test(of.texts) && of.lead === "" && !!ul && ul.children.map((n) => n.textContent).join("|").replace(/\{.*$/, "") === "pv.offer.li.data|pv.offer.li.server|pv.offer.li.ai"
+        && /^pv\.f\.offer\.m\{/.test(of.rule) && !/pv\.d\.offer/.test(of.texts) && JSON.stringify(of.acts.map((x) => x[1])) === JSON.stringify(["plan.addCard"]), of.texts);
+      const pre = paintOf({ data_access: "none", reason: "NO_CARD", trial_eligible: true });
+      ok("切換前的 offer 照舊:標題 pv.h.offer、說明 pv.d.offer.cli、沒有列式", /pv\.h\.offer\{/.test(pre.texts) && /^pv\.d\.offer\.cli\{/.test(pre.lead) && !/pv\.offer\.li/.test(pre.texts)); }
+    PV_T = ""; PV_Q = "";
     planBusy = true; planBusyPlan = true;
     const bz = paintOf({ ...MO, data_access: "plan_required" });
     ok("開通在途(只開方案,不進「啟動中」):還是沒有方案那一格,主鈕停用、字是「開通中…」;回應回來就恢復可按", /pv\.st\.noPlan/.test(bz.st) && JSON.stringify(bz.acts[1]) === JSON.stringify(["btn-fill", "plan.startingM", true])
@@ -794,11 +826,18 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       const str = (po, k) => (new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^"]*)"').exec(po) || [])[1];
       const MK = Object.keys(STR.zh).filter((k) => /\.m(NoNum|NoServer|NoServerNoNum)?$|NoServer(NoNum)?$/.test(k)).concat(["data.noPlan", "wd.note.noplan", "lib.grp.plan", "lib.grp.gate.noPlan", "lib.why.noPlan", "cf.m.title", "cf.m.body1"]);
       ok("方案制的字(稽核 N1–N3):試用／綁卡／沒登入那幾句揭露「試用結束扣第一期、試用期間取消就不扣」;沒方案那幾句講「開通 Blave Agent 方案或 API 方案」;方案制那一組不再有「雲端方案」/ cloud plan、不講按小時;切換前的本名與 .old 版逐字留著",
-        ["pv.d.trial.m", "pv.d.trial.mNoNum", "pv.f.out.m", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /第一期/.test(str(zh, k)) && /first (plan )?period|charged automatically/.test(str(enp, k)))
-        && ["pv.f.trial.m", "pv.f.out.m", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /取消/.test(str(zh, k)) && /[Cc]ancel/.test(str(enp, k)))
+        ["pv.d.trial.m", "pv.d.trial.mNoNum", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /第一期/.test(str(zh, k)) && /first (plan )?period|charged automatically/.test(str(enp, k)))
+        && ["pv.f.trial.m", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /取消/.test(str(zh, k)) && /[Cc]ancel/.test(str(enp, k)))
         && ["pv.d.noTrial.m", "pv.e.noTrial.m", "data.noPlan", "pv.d.plan.m", "wd.note.noplan", "lib.grp.gate.noPlan", "lib.why.noPlan"].every((k) => /Blave Agent 方案/.test(str(zh, k)) && /API 方案/.test(str(zh, k)) && /Blave Agent plan/.test(str(enp, k)) && /API plan/.test(str(enp, k)))
         && MK.length > 30 && MK.every((k) => STR.zh[k] && STR.en[k] && !/雲端方案|整點小時/.test(STR.zh[k]) && !/cloud plan/i.test(STR.en[k]))
-        && ["pv.d.trial", "pv.d.trial.old", "pv.f.offer", "pv.f.offer.old", "pv.d.billed", "data.readyBilled", "lib.note.billed", "wd.note.billed"].every((k) => !!str(zh, k) && !!str(enp, k))); }
+        && ["pv.d.trial", "pv.d.trial.old", "pv.f.offer", "pv.f.offer.old", "pv.d.billed", "data.readyBilled", "lib.note.billed", "wd.note.billed"].every((k) => !!str(zh, k) && !!str(enp, k)));
+      // D 版(設計師 desktop-signedout-plan 2026-10-10):未登入底列只留價格事實 +「自動」(扣第一期／取消留給綁卡那步的 pv.f.offer.m);標題「免費試用」不用「送」,
+      // en 的 {t}‑day 用 U+2011(h5 的 text-wrap: balance 會把一般連字號折在「14-」後);三條各講結果、不碰績效、不講 AI 判斷;聊天卡 pv.e.out / pv.e.card* 同口徑
+      ok("D 版的字:pv.f.out.m 只講「試用結束後自動開始計費,{p} TWD／月」;pv.h.offer.m「首次綁卡,免費試用 {t} 天」(en 連字號 U+2011);三條列式兩語都在、AI 那條帶 {q};聊天卡不再「送 {t} 天」",
+        str(zh, "pv.f.out.m") === "試用結束後自動開始計費，{p} TWD／月。" && str(enp, "pv.f.out.m") === "After the trial, billing starts automatically at {p} TWD a month."
+        && str(zh, "pv.h.offer.m") === "首次綁卡，免費試用 {t} 天" && str(enp, "pv.h.offer.m") === "Your first card starts a {t}\u2011day free trial" && str(zh, "pv.h.offerNoNum.m") === "首次綁卡，免費試用一段時間" && !!str(enp, "pv.h.offerNoNum.m")
+        && ["pv.offer.li.data", "pv.offer.li.server", "pv.offer.li.ai"].every((k) => !!str(zh, k) && !!str(enp, k)) && /\{q\} TWD/.test(str(zh, "pv.offer.li.ai")) && /\{q\} TWD/.test(str(enp, "pv.offer.li.ai")) && /排程/.test(str(zh, "pv.offer.li.server")) && /on schedule/.test(str(enp, "pv.offer.li.server"))
+        && ["pv.e.out", "pv.e.card", "pv.e.card.cli"].every((k) => /免費試用 \{t\} 天/.test(str(zh, k)) && !/送 \{t\}/.test(str(zh, k)) && /\{t\}\u2011day free trial/.test(str(enp, k))) && /免費試用一段時間/.test(str(zh, "pv.e.outNoNum")) && /free trial/.test(str(enp, "pv.e.outNoNum"))); }
     PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
   // 內文講切換器、標題不動。哪些事歸給網頁工作頁、哪些不可以再歸給它——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。
   // spec-desktop-settings-cleanup §4:運行中那段收成一句「那一邊有什麼」;網頁限定那一句搬進「方案內容與計費」(pv.inc.web)

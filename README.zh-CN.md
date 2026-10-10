@@ -1,15 +1,13 @@
 # Blave Agent
 
-**量化工作台**
+## 给 AI Agent 的量化工作台
 
-## 让你的 AI 学会做量化
-
-免费开源，接上你的 Claude Code 或 Codex<br>
-你讲想法，它写策略、跑回测、上线自动交易
+用 Claude Code 或 Codex 写策略、跑回测、上线自动交易<br>
+免费开源
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> 本文译自英文版 README 的 commit [`6944ddd`](https://github.com/Blave-TW/blave-agent/blob/6944ddd/README.md)，只涵盖变动较少的段落；最新消息、交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md)，只涵盖变动较少的段落；最新消息、交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -34,10 +32,6 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 ### 看得到实盘跑的是不是回测那份
 
 回测会把策略定版。实盘跑的程序跟定版时不同，这支策略就会被标记——网页工作页显示「上线中 · 文件已改」，而不是干净的「上线中」。标记不会拦下运行。只适用有回测的策略类型（Type A 与 C），而且只限定过版的策略。
-
-### 下单循环里没有 LLM
-
-AI 负责研究与写程序。排程跑的是确定性的程序，`manager/reconciler.py` 把帐户对到目标部位。紧急停止开关（`state/HALT`）在下单函数库那一层拦掉新曝险，平仓与止损照常放行。
 
 ### 报告先看新闻再动笔
 
@@ -104,7 +98,7 @@ npm.cmd start
 ## 安全与边界
 
 - **交易所密钥放在哪，看你用哪个表面。** 电脑版：写在你电脑上工作区的 `.env`（macOS 是 `~/Blave/workspace/.env`，Windows 是 `%USERPROFILE%\Blave\workspace\.env`）。云端主机：在你自己那台主机工作区的 `.env`。在网页绑定：由 Blave 加密保存。agent 读得到工作区的 `.env`，它的规则禁止打印密钥的值（`references/exchange-connect.md`）。密钥只给读取＋交易，不给提现。有提现权限的密钥在连接时会被拒绝（Binance、OKX、BingX、Bybit；电脑版、云端主机、网页绑定都一样）。Gate.io 查不到这个旗标，请自己确认。
-- 投入金额与恢复交易由你自己做——电脑版在 app 的「自动下单」，云端主机在网页工作页。就算你开口要求，agent 也会拒绝代劳。它唯一可以随时自己做的，是触发紧急停止。
+- 投入金额与恢复交易由你自己做——电脑版在 app 的「自动下单」，云端主机在网页工作页。就算你开口要求，agent 也会拒绝代劳。它唯一可以随时自己做的，是触发紧急停止。紧急停止（`state/HALT`）会挡掉新开仓，平仓与止损照常放行。
 - 电脑版只有在 Blave 开着时才会下单；结束 app 再打开后，交易维持暂停，直到你点「启动下单」。
 - agent 先验证再回报：改完文件会重读确认，下完单会向交易所查回结果才说「已下单」。每一次下单尝试都记在 `state/audit.jsonl`。
 - 回测讲的是过去，不预测、也不保证未来绩效。MCPT 检查成绩在统计上显不显著，参数扫描检查是不是过拟合；两者都只能降低回测骗到你的概率，不能把它消掉。

@@ -87,8 +87,8 @@ for (const lang of ["zh", "en"]) {
   const trial = []; new Function("t", "planVars", "confirmBox", "planGo", "planMo", cut(app, "planAsk") + "\nreturn planAsk;")(t, () => ({ p: "1,440", h: "2", d: "10/10" }), (o) => trial.push(o), () => {}, () => false)();
   ok(lang + " 啟動確認框(試用):第二句同樣刪掉句尾那段重複", trial[0].lines[1] === (lang === "zh" ? "10/10前免主機費；之後每個整點從餘額扣 2 TWD。" : "No machine fee until 10/10. After that, 2 TWD comes out of your balance every hour."), trial[0].lines[1]);
 }
-ok("鈕旁:設定 › 帳號與方案(未登入)讀 pv.w.out(lead 已講 AI 照用,只留登入不花錢)、開通頁讀 pv.w.out.cli(那頁唯一講 AI 不會被換掉的地方)",
-  /wait: planLoginBusy \? t\("pv\.w\.waiting"\) : t\("pv\.w\.out"\),/.test(app) && !/pv\.w\.out\.cli/.test(app) && /side = trEl\("span", "wait", planLoginBusy \? t\("pv\.w\.waiting"\) : t\("pv\.w\.out\.cli"\)\)/.test(trade)
+ok("鈕旁:設定 › 帳號與方案(未登入)切換前讀 pv.w.out(lead 已講 AI 照用,只留登入不花錢)、方案制 D 版沒有 lead → 自帶 AI 讀 pv.w.out.cli、Blave AI 讀 pv.w.out;開通頁讀 pv.w.out.cli",
+  /wait: planLoginBusy \? t\("pv\.w\.waiting"\) : t\(mo && cur !== "blave" \? "pv\.w\.out\.cli" : "pv\.w\.out"\),/.test(app) && /side = trEl\("span", "wait", planLoginBusy \? t\("pv\.w\.waiting"\) : t\("pv\.w\.out\.cli"\)\)/.test(trade)
   && STR.zh["pv.w.out"] === "登入不花錢。" && STR.en["pv.w.out"] === "Signing in costs nothing.");
 
 console.log(red ? "\n" + red + " 紅" : "\nALL PASS");

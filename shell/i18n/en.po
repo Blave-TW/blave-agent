@@ -1025,6 +1025,16 @@ msgstr "Your first card comes with {t} days of Blave data"
 msgid "pv.h.offerNoNum"
 msgstr "Your first card comes with a trial period of Blave data"
 
+# 方案制未登入／綁卡那格第一屏的三條(設計師 D 版):取代說明句 pv.d.offer.*;{q} 是 LLM 額度(api TRIAL_AI_CREDIT),不是儲值,拿不到就不出那條
+msgid "pv.offer.li.data"
+msgstr "Blave data, right here in the desktop app"
+
+msgid "pv.offer.li.server"
+msgstr "A cloud machine: strategies run on schedule around the clock and place orders, even with your computer off"
+
+msgid "pv.offer.li.ai"
+msgstr "Plus {q} TWD of Blave AI credit"
+
 msgid "pv.h.plan"
 msgstr "A cloud machine where strategies go live, Blave data included"
 
@@ -1139,7 +1149,7 @@ msgstr "{h} TWD an hour from your balance ({p} TWD a month). Turning it off mean
 msgid "pv.w.out.cli"
 msgstr "Signing in costs nothing and keeps your AI."
 
-# 設定 › 帳號與方案(未登入)的鈕旁:lead 已講「AI 照用」,這裡只留登入不花錢(設計稽核 0.1.10 fix-c S1);雲端開通頁照用 pv.w.out.cli
+# 設定 › 帳號與方案(未登入)的鈕旁:切換前 lead 已講「AI 照用」,只留登入不花錢(設計稽核 0.1.10 fix-c S1);方案制 D 版沒有說明句,用自己 AI 的人改讀 pv.w.out.cli,只有 Blave AI 讀這句;雲端開通頁照用 pv.w.out.cli
 msgid "pv.w.out"
 msgstr "Signing in costs nothing."
 
@@ -1198,16 +1208,16 @@ msgid "pv.signin"
 msgstr "Sign in to Blave"
 
 msgid "pv.e.out"
-msgstr "This computer can’t reach Blave data yet. Sign in to Blave, and your first card comes with {t} days of it. AI stays on your {name}."
+msgstr "This computer can’t reach Blave data yet. Sign in to Blave, and your first card starts a {t}‑day free trial. AI stays on your {name}."
 
 msgid "pv.e.outNoNum"
-msgstr "This computer can’t reach Blave data yet. Sign in to Blave, and your first card comes with a trial period of it. AI stays on your {name}."
+msgstr "This computer can’t reach Blave data yet. Sign in to Blave, and your first card starts a free trial. AI stays on your {name}."
 
 msgid "pv.e.card"
-msgstr "This computer can’t reach Blave data yet. Your first card comes with {t} days of it."
+msgstr "This computer can’t reach Blave data yet. Your first card starts a {t}‑day free trial."
 
 msgid "pv.e.card.cli"
-msgstr "This computer can’t reach Blave data yet. Your first card comes with {t} days of it. AI stays on your {name}."
+msgstr "This computer can’t reach Blave data yet. Your first card starts a {t}‑day free trial. AI stays on your {name}."
 
 msgid "pv.e.noTrial"
 msgstr "This computer can’t reach Blave data yet. It comes with the Blave Agent Cloud Plan."
@@ -6946,8 +6956,16 @@ msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is
 msgid "pv.d.noPrice.m"
 msgstr "Your AI setup stays as it is. When the trial ends, the first plan period is charged automatically; cancel during the trial and nothing is charged."
 
+# 標題只講試用(會自動轉付費,所以不用「送」;「送」只給真的是禮物的 AI 額度那條)。{t}‑day 的連字號是 U+2011:h5 有 text-wrap: balance,一般連字號會折在「14-」後面
+msgid "pv.h.offer.m"
+msgstr "Your first card starts a {t}‑day free trial"
+
+msgid "pv.h.offerNoNum.m"
+msgstr "Your first card starts a free trial"
+
+# 「自動」不能拿掉,否則會被讀成可選訂閱;扣第一期／取消就不扣留給綁卡那一步的 pv.f.offer.m
 msgid "pv.f.out.m"
-msgstr "Free for {t} days, then {p} TWD a month is charged automatically; cancel during the trial and nothing is charged."
+msgstr "After the trial, billing starts automatically at {p} TWD a month."
 
 msgid "pv.f.offer.m"
 msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. The trial runs {t} days, then {p} TWD a month is charged automatically: from your balance first, this card if that’s short. Cancel during the trial and nothing is charged."

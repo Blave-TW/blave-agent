@@ -33,11 +33,11 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
   ok("V5-01", "舊 api 不含資料(data_included:false)→ 當作沒有:不把資料 key 寫進 .env(main.js hasBlaveData 的條件)", !hasData(OLD_OUT) && hasData(OLD_IN));
   ok("V5-01", "新 api billed 算拿得到、none 不算", hasData(NEW("billed")) && !hasData(NEW("none")));
   ok("V5-01", "費用那一則已拿掉:新舊 api 的 data_hour_paid 外殼都不再讀(回合結束不出那一行)", !/data_hour_paid|dataFeeNote/.test(app));
-  // pvK:舊 api 用 .old 那一版句子(那時沒有主機的人真的拿不到資料);每一個 pvK key 兩語都要有兩版
+  // pvK:舊 api 用 .old 那一版句子(那時沒有主機的人真的拿不到資料);未登入(acct 為 null)講本名——.old 的「要啟動雲端方案才有資料」在 data_access 上線後是假話;每一個 pvK key 兩語都要有三版
   var acct = null, planMo = () => false;   // 切換前(方案制的 .m 版另由 check_shell_settings 測)
   const pvK = eval("(" + /const pvK = (\(k\) => [^;]+);/.exec(app)[1] + ")");
   acct = OLD_IN; const a1 = pvK("pv.e.sub"); acct = NEW("billed"); const a2 = pvK("pv.e.sub"); acct = null; const a3 = pvK("pv.e.sub");
-  ok("V5-01", "pvK:舊 api / 查不到 → .old 句;新 api → 新句", a1 === "pv.e.sub.old" && a2 === "pv.e.sub" && a3 === "pv.e.sub.old");
+  ok("V5-01", "pvK:舊 api → .old 句;新 api、未登入 → 本名", a1 === "pv.e.sub.old" && a2 === "pv.e.sub" && a3 === "pv.e.sub");
   // 只算真的拿去 t() 翻的那些(pvK("pv.h.billed") === "pv.h.billed" 只是拿來判新舊,不查字串)
   const keys = [...new Set((app.match(/t\(pvK\("([^"]+)"\)/g) || []).map((m) => /"([^"]+)"/.exec(m)[1]))];
   const langs = (strings.match(/^  ([a-z]{2}): \{$/gm) || []).length;
