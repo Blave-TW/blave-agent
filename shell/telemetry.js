@@ -104,9 +104,10 @@ const EVENTS = {
     "pick_gate_lock",
     // 策略庫成功筆記(0.1.12;renderer/library.js):閱讀頁內文第一次畫成功
     "library_note",
-    // 內建瀏覽器聊天那一列的交還鈕(0.1.12;renderer/browser.js):按了就記(不管有沒有 need;browser_handoff 照舊)。
-    // 標題列那顆 browser_hb_head 在 0.1.20 A 案拿掉(鈕搬進請求卡 → browser_hb_card,在表尾)
-    "browser_hb_chat",
+    // 內建瀏覽器的交還鈕(0.1.12;renderer/browser.js):聊天那一列那顆按了就記(不管有沒有 need;browser_handoff 照舊)。
+    // browser_hb_head(標題列那顆)0.1.20 起無送出點——A 案把鈕搬進請求卡(browser_hb_card,表尾);名字留著,
+    // 0.1.19 以前的外殼還在送、api 要繼續收、兩端順序要一致,等那些外殼退場再三處(外殼、api、canon)一起拿
+    "browser_hb_head", "browser_hb_chat",
     // 部位表點策略名開那支的進出場紀錄(0.1.12;renderer/trade.js trStratOpen):真的換頁才送,點下去才發現不在的不送
     "trade_strat_open",
     // 策略庫轉換(0.1.13;renderer/library.js libTurnEnd / libCloudChanged):「用這支」那一輪結束、清單真的多了一支(或覆蓋同名那支);
