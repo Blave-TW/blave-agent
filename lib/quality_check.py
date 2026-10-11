@@ -546,7 +546,7 @@ _SPOT_FIX = ("The backtest clamps it to flat, same as live, but scans and walk-f
 _DESKTOP_PUBLIC_DATA = frozenset({
     "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_usstock_price",
     "fetch_fear_greed", "fetch_binance_ticker_24h",
-    "fetch_tw_announcements_public", "fetch_twfutures_institutional_public",
+    "fetch_tw_announcements_public", "fetch_tw_breadth_public", "fetch_twfutures_institutional_public",
     "fetch_txf_daily_public", "fetch_twmarket_index_public", "fetch_twmarket_institutional_public",
     "fetch_twmarket_margin_public", "fetch_twmarket_turnover_public",
     "fetch_twse_day_all_public", "tw_market_public_allowed",
@@ -562,7 +562,8 @@ _BLAVE_DATA = frozenset({
     "fetch_open_interest_coin", "fetch_open_interest_history", "fetch_open_interest_table",
     "fetch_squeeze_momentum",
     "fetch_stock_futures_batch_daily", "fetch_stock_futures_ohlcv_symbols",
-    "fetch_taker_intensity", "fetch_top_trader_exposure", "fetch_unusual_movement",
+    "fetch_taker_intensity", "fetch_top_trader_exposure", "fetch_tw_sector_breadth",
+    "fetch_unusual_movement",
     "fetch_whale_hunter",
     "fetch_twfutures_bid_ask_vol", "fetch_twfutures_carrying_cost", "fetch_twfutures_institutional",
     "fetch_twfutures_ohlcv",

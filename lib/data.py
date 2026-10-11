@@ -5094,6 +5094,61 @@ def fetch_twse_day_all_public():
     return df
 
 
+def _twse_common_day_all():
+    """fetch_twse_day_all_public cut down to 4-digit codes not starting with 0 — the feed has no
+    type column, and that rule drops ETFs (00xx), 特別股 (2881A) and every longer code.
+    → (traded rows with change_pct added, count of kept codes with no close / change that day)."""
+    df = fetch_twse_day_all_public()
+    kept = df[[len(c) == 4 and c.isascii() and c.isdigit() and c[0] != '0' for c in df.index]]
+    traded = kept[kept['close'].notna() & kept['change'].notna()].copy()
+    prev = traded['close'] - traded['change']
+    traded['change_pct'] = (traded['change'] / prev.where(prev > 0)) * 100
+    traded.attrs = dict(df.attrs)
+    return traded, len(kept) - len(traded)
+
+
+def fetch_tw_breadth_public():
+    """上市漲跌家數 of the last published session, counted from TWSE open data STOCK_DAY_ALL.
+    Desktop only (TwPublicUnavailable on a cloud machine, before any request). dict: date
+    ('YYYY-MM-DD'), up, down, flat, total (= up + down + flat), untraded, source (attribution).
+
+    What it is not: 上櫃 is not in it (TWSE-listed only); it is the finished session, never
+    intraday — compare `date` with the day you are describing, the feed keeps the previous
+    session until TWSE publishes the new one; and it is our own count over 4-digit codes not
+    starting with 0 (ETFs, 特別股 and longer codes dropped, 4-digit 存託憑證 kept), so it can differ from
+    TWSE's official 漲跌家數. `change` is against TWSE's reference price. A kept code with no
+    close or no change that day is `untraded`, never flat."""
+    df, untraded = _twse_common_day_all()
+    up, down = int((df['change'] > 0).sum()), int((df['change'] < 0).sum())
+    return {'date': df.attrs.get('date'), 'up': up, 'down': down, 'flat': len(df) - up - down,
+            'total': len(df), 'untraded': untraded, 'source': df.attrs.get('source')}
+
+
+def fetch_tw_sector_breadth(headers):
+    """上市各產業的漲跌家數與平均漲跌幅 — fetch_tw_breadth_public's rows grouped by the
+    `industry_code` of fetch_twstock_list. Needs both: the desktop (TwPublicUnavailable on a
+    cloud machine) and Blave data access for the stock list. DataFrame indexed by industry_code
+    ('24'), best avg_change_pct first: name (twstock_industry_name), up, down, flat,
+    avg_change_pct (percent; equal-weighted mean of each stock's change, NOT cap-weighted and
+    not TWSE's 類股指數). attrs: date, source, unclassified (traded stocks the list gives no
+    industry for — left out of every row). Same limits as fetch_tw_breadth_public: 上市 only,
+    finished session, same code filter. An empty stock list → an empty frame."""
+    df, _ = _twse_common_day_all()
+    lst = fetch_twstock_list(headers)
+    codes = lst['industry_code'].reindex(df.index) if 'industry_code' in lst else pd.Series(index=df.index, dtype=object)
+    codes = codes.map(lambda c: None if c is None or c != c or not str(c).strip()
+                      else (str(c).strip().zfill(2) if str(c).strip().isdigit() else str(c).strip()))
+    g = df.assign(industry_code=codes, up=df['change'] > 0, down=df['change'] < 0,
+                  flat=df['change'] == 0).dropna(subset=['industry_code']).groupby('industry_code')
+    out = g[['up', 'down', 'flat']].sum().astype(int)
+    out['avg_change_pct'] = g['change_pct'].mean()
+    out.insert(0, 'name', [twstock_industry_name(c) for c in out.index])
+    out = out.sort_values('avg_change_pct', ascending=False)
+    out.attrs = {'date': df.attrs.get('date'), 'source': df.attrs.get('source'),
+                 'unclassified': int(codes.isna().sum())}
+    return out
+
+
 def _roc_ymd(s):
     """民國 'YYYMMDD' ('1150925') → Timestamp 2026-09-25."""
     s = str(s).strip()
