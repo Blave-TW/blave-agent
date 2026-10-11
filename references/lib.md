@@ -20,6 +20,10 @@ hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_se
   - All intervals (`1min`–`4min` included) reach back to the symbol's Binance um-futures listing date — the API backfills old months from Binance's official archive; a window before listing returns empty rows, not an error.
   - First deep sub-5min fetch pulls history month-by-month (30-day chunks server-side), so expect the cold run to take a while; it lands in the local monthly cache and is fast afterwards.
   - On the desktop build the environment sets `BLAVE_KLINE_SOURCE=binance` and the same bars are paged straight from Binance's public endpoint instead — same USDT-M market, same columns, same local cache, no key; nothing a strategy sees changes
+- `fetch_kline_batch(symbols, interval, start, end, headers)` → `{symbol: OHLCV DataFrame}` for many Binance USDT-M perps in one call (20 symbols per request) — the Type C price fetcher for a crypto universe; never loop `fetch_kline` per symbol in parallel.
+  - Keys are the normalized symbols (`'BTCUSDT'` even when `'BTC/USDT'` was passed); each frame is what `fetch_kline` returns and shares its monthly cache.
+  - Some symbols still failing after the retry pass raises `lib.data.BatchIncomplete` (`.partial` / `.failed`) — a backtest or live tick must not continue on `.partial`.
+  - On the desktop build (`BLAVE_KLINE_SOURCE=binance`) it pages each symbol from Binance, up to 4 side by side (sub-5-minute intervals one at a time).
 - `fetch_bingx_kline(symbol, interval, start, end)` → OHLCV DataFrame for a BingX perpetual, straight from BingX's public API (no `headers` — no key needed). Use for contracts `fetch_kline` does not carry. `symbol` is the BingX **API** symbol, not the chart's display name: GOLD(XAU)-USDT is `NCCOGOLD2USD-USDT` — resolve it via `GET https://open-api.bingx.com/openApi/swap/v3/quote/contracts` (match `displayName`, use `symbol`). Intervals: `1min`/`3min`/`5min`/`15min`/`30min`/`1h`/`2h`/`4h`/`6h`/`8h`/`12h`/`1d`/`3d`/`1w`
 - OHLC fetchers (`fetch_kline`, `fetch_db_kline`, `fetch_twfutures_ohlcv`, `fetch_twstock_price`) drop bars with impossible values (high<low, non-positive or NaN price) at read time and print the dropped timestamps — a printed `⚠️ dropped N bar(s)` warning means upstream data was corrupt, not a fetch failure; the cache keeps the raw bars
 - **Alpha fetchers — quick reference** (there is no generic `fetch_alpha` / `get_alpha`; one function per alpha, every one → DataFrame with an `alpha` column; details per function follow):
@@ -46,6 +50,9 @@ hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_se
   - Same rolling 5-min-aligned frame as that coin endpoint, so a coin's 24 h total matches on both.
   - `hours` 1–168, `top_n` 1–50 — outside that the API answers 400 (it does not clamp).
   - No local cache (server 5-min cache)
+- `fetch_liquidation_map(symbol, headers)` → dict snapshot: one coin's 爆倉地圖 over 200 price buckets (`labels`, USDT) around the current `price`, two layers — `liquidation['24h']` `buy_liq[]` / `sell_liq[]` = Binance liquidations that HAPPENED in the last 24 h (USD, scaled to the whole market by a fixed 0.3 Binance share; `buy_liq` = shorts liquidated, `sell_liq` = longs), and `oi_value[]` / `cumsum[]` = a MODEL ESTIMATE of where open interest would be liquidated.
+  - The estimate layer is not orders and not events — say so wherever it is shown. In a report use the `liq_map` brick (`references/reports.md`), which labels it.
+  - `symbol` accepts `BTC` / `BTCUSDT`. Needs Blave data access; a snapshot of now — no history to backtest on, no local cache.
 
 **Raw cross-exchange base data (dict snapshots, not DataFrames).**
 Three datasets, each with a whole-market table and a per-coin endpoint.
@@ -233,7 +240,7 @@ Taiwan stock data (universe, batch functions, fundamental factors, lookahead-bia
 - Other filters: `start`/`end` are `'YYYY-MM-DD'` Taipei dates (inclusive); `countries` is a list of ISO-2 codes, e.g. `['US', 'CN', 'TW']`; `limit` truncates after sorting; `lang` (`'zh'` default / `'en'`) picks the display language for indicator and country names — the server only swaps names it has in its lookup table, so `'en'` returns a zh/en mix. Unfiltered the feed is ~1,400 rows — always filter.
 - **Coverage is a rolling ~5-week window (roughly the past month plus the next few weeks), not a history archive.** A range outside it returns an empty DataFrame rather than an error — do not read that as "no events scheduled". For anything older, there is no endpoint; say so instead of substituting a remembered figure.
 - **Never answer a macro-event question from a web search or from memory.** Search results land on calendar-aggregator content farms whose own tables are wrong (measured: one listed a published actual as the consensus), and any field the page misses gets filled in from training data — that is how a digest ended up with China's manufacturing PMI prior at 49.5 when the published figure was 50.3, and a Q2 GDP consensus 0.7pp off. If this call cannot answer it, say so rather than substituting a number.
-- **Data history ranges** (earliest available date per endpoint) are NOT listed here — they live in the `blave-quant` skill / Notion API doc, which auto-update on each box. This config is baked in at provision time (no live-update path), so a start date copied here would silently go stale. Check the skill before assuming an endpoint's earliest date.
+- **Data history ranges:** the start dates measured for the crypto alphas are listed above (the `Measured …` list) and are a snapshot — this file only changes when the workspace is updated, so a date here can be stale. Before telling the user a dataset does not reach back far enough, probe it once (*Data-depth discipline* above); an endpoint with no date listed → fetch from its dataset start and read `df.index[0]`.
 
 `lib/execute.py` — all order execution logic (state management + algo orders):
 - `from lib.execute import update_state, load_state, save_state` — state management
@@ -435,19 +442,25 @@ Companion to `lib/security_check.py` (malicious-code scan for downloaded strateg
 - **All risk-parity strategies must use these two functions — do NOT compute vol inline in the strategy file**
 - `from lib.strategy import hysteresis` — `hysteresis(x, enter, exit, side=+1)` → position Series, vectorized one-sided threshold hysteresis: long once `x > enter`, flat once `x < exit`, held in between (`side=-1`: short once `x < enter`, flat once `x > exit`); NaN holds, leading bars flat. The building block for a one-sided threshold strategy
 - `from lib.strategy import threshold_position` — `threshold_position(x, buy_th, sell_th, cover_th, short_th)` → 1 / 0 / -1 Series, the two-sided four-threshold state machine (exit before entry, NaN holds). A Python loop (~0.5 s per 390k bars) — but when one side's entry is unreachable (a scan's ±1e9) it returns the vectorized `hysteresis` of the other side, so per-side scans stay fast
-- `from lib.exits import apply_exits` — `apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars=None, trigger="close")` → position Series (no NaN) = `signal` with stop-loss / take-profit / trailing stop (giveback from the trade's best price) / time stop (bars held) applied; at least one, fractions (`0.03` = 3%).
+- `from lib.exits import apply_exits` — `apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars=None, trigger="close", *, stop_dist=None, tp_dist=None, trail_dist=None, breakeven_at=None, breakeven_dist=None, cooldown_bars=None)` → position Series (no NaN) = `signal` with stop-loss / take-profit / trailing stop (giveback from the trade's best price) / time stop (bars held) applied; at least one exit, fractions (`0.03` = 3%).
+  - **Price distances instead of fractions** — `stop_dist` / `tp_dist` / `trail_dist`: a Series on `df`'s index (`2 * df['ATR']`, `Close − prior low`) or one number (`50` = 50 points). The lib computes no indicator; `*_pct` and `*_dist` for the same exit raise.
+    `stop_dist` / `tp_dist` / `breakeven_dist` are read once per trade on the signal bar (last valid bar before the fill) and fixed as that trade's fraction of its fill; `trail_dist` is re-read every bar from the bar before the one tested (NaN keeps the previous reading).
+    A distance NaN / ≤ 0 on the signal bar leaves that exit off for that trade: a row in `result.attrs["exits_unarmed"]` + a `RuntimeWarning` (once per process) (`time`, `exit`, `dist`) — set `WARMUP` to cover the indicator window.
+  - `breakeven_at` (fraction) / `breakeven_dist`: once a bar reaches that gain the stop sits at the fill price from the next bar on (`reason` `breakeven`); on the arming bar the original stop still applies.
+  - `cooldown_bars=N` (≥ 1; 0 raises): after any exit, re-enter the same side after N flat valid bars if the base signal is still there. Not given → flat until the base signal changes side.
+  - Long / short may differ: every exit argument also takes `(long, short)`, `None` = off for that side.
   - **The only way to add an exit — never hand-write the loop** (`references/strategy-code.md` › *Exits on top of an existing signal*).
   - Levels are measured from the fill (next valid bar's Open, last valid Close when that Open is NaN/≤0).
   - `trigger="close"`: a level counts when a bar closes beyond it.
   - `trigger="intrabar"` (needs `High`/`Low`): it counts when the bar's Low/High touches it; a bar that opened beyond a level fired it at the Open; a bar touching both stop and take-profit is assumed to have hit the stop first.
   - **Either way the exit fills at the next bar's Open** — the runner has no fill at a stop price — which is also what live does (a tick reads the finished bar and exits on the next).
-  - `result.attrs["exits"]` is a DataFrame, one row per exit: `time`, `reason` (`stop`/`trail`/`time`/`tp`), and in intrabar mode `order_price` (the level, or the Open on a gap) — where a real resting order would have filled; report it next to the backtest, never as the backtest's fill.
-  - After any exit: flat until the base signal changes side — never a same-bar re-entry.
+  - `result.attrs["exits"]` is a DataFrame, one row per exit: `time`, `reason` (`stop`/`breakeven`/`trail`/`time`/`tp`), and in intrabar mode `order_price` (the level, or the Open on a gap) — where a real resting order would have filled; report it next to the backtest, never as the backtest's fill.
+  - After any exit: flat until the base signal changes side (or `cooldown_bars` have passed) — never a same-bar re-entry.
   - Bars with Close NaN/≤0 (the ones `run()` drops) change nothing and are not counted by `max_bars`.
   - With an `instrument_id` column a roll mid-trade keeps the old contract's move and re-bases on the new contract's first Open (the gap counts as roll spread); a continuous series without `instrument_id` — `fetch_twfutures_*` — sees a roll as a normal price move.
   - Same-side size changes (vol scaling) are the same trade.
   - Shorts measured with the sign flipped.
-  - Python loop, ~0.6 s per 390k bars (laptop)
+  - Python loop, ~0.8 s per 390k bars, ~1.1 s with price-distance exits (laptop)
 - `from lib.exits import clamp_spot` — `clamp_spot(signal, market)`: negatives → 0 when `market == "spot"` (warns with the count), anything else untouched. `run()` applies it to every Type A **backtest** (live already clamps the net spot target in `lib/portfolio.py`); write `compute_signals` long-only for spot anyway — `signal.clip(lower=0.0)` — because `param_scan` / `walk_forward` call `compute_signals` directly and would otherwise score short profits
 - `from lib.strategy import list_versions, restore` — strategy **versions** (one per backtest, `strategies/<name>/versions/`): `list_versions(name)` → the summary entries newest last (`n`/`at`/`note`/`ret`/`sharpe`/`sortino`/`mdd`/`trades`/`mcpt_p`/`start`/`end`/`code_hash`, `[]` when never versioned) — answer 「哪一版 Sharpe 最好」 from it rather than opening the per-version blobs;
   - the entry `current` points at carries `current: true`;
@@ -506,13 +519,13 @@ Companion to `lib/security_check.py` (malicious-code scan for downloaded strateg
   - Two items still owe a real-account check (doc verification alone could not close them): OKX — send one internal transfer and confirm `type=4` really keeps it out of both history endpoints; BingX — after a deposit completes, confirm which status value it actually lands on (official reference says 1=Not credited while ccxt's executed mapping treats 1 as completed; the ccxt reading {1, 6} is what ships).
 - For any other exchange, copy `lib/account_TEMPLATE.py` — see `references/manager.md` § Account library
 
-`lib/venue_wiring.py` — **reconciler auto-wiring for official venues. The template `manager/reconciler.py` already routes through it — when the bound venue ships both official libs (Binance/BingX/OKX/Gate.io), there is NOTHING to wire, and rebinding to another official venue needs no reconciler change.**
+`lib/venue_wiring.py` — **reconciler auto-wiring for official venues. The template `manager/reconciler.py` already routes through it — when the bound venue ships both official libs (Binance/BingX/OKX/Gate.io/Bybit), there is NOTHING to wire, and rebinding to another official venue needs no reconciler change.**
 Detects the venue from `.env` keys + lib files, maps the reconciler's USD-diff contract onto the venue's order lib (swap via `get_mark_price`, spot via quote-sized buys / inventory-capped sells, `spot_scope` incl. exit-on-removal), and bakes in the harvested fixes (reduce legs ceiled to a whole lot and capped at the position, entry legs rounded half-up to a whole lot — paired with `manager/reconciler._symbol_threshold`'s per-symbol gates, entry at the venue minimum and reduce at half a lot, so neither rounding is churned back by the other; the older bingx below-min ValueError mapped to the False-skip contract).
 Hand-wire the two reconciler functions ONLY for venues without official libs — the template docstrings carry the contract.
 
 `lib/venue.py` — **chat-side venue bind.**
 `bind(venue_id, env)` hands a key the user pasted in chat to the platform runtime's own `.env` writer (the one the web bind uses: flock, atomic 0600 write, other-venue eviction + halt, `manager/credentials.ui.json`), so the machine ends up exactly as after a web bind.
-`env` = exactly that venue's `{ID}_API_KEY` / `{ID}_SECRET_KEY` (+ `{ID}_PASSPHRASE` for okx); ids `binance` / `bingx` / `okx` / `gateio` only — Taiwan brokers and paper are refused with a pointer to their own path.
+`env` = exactly that venue's `{ID}_API_KEY` / `{ID}_SECRET_KEY` (+ `{ID}_PASSPHRASE` for okx); ids `binance` / `bingx` / `okx` / `gateio` / `bybit` only — Taiwan brokers and paper are refused with a pointer to their own path.
 Returns `{venue, written (env names), bound, evicted}` — never a value.
 Never write `.env` by hand instead: a hand-written pair is invisible to `lib/venue_wiring` and skips eviction.
 **A `binance` bind is verified with the exchange before anything is written** (the same gate the web connect flow passes through, run on this machine because the key's IP whitelist is this machine's IP): a key with withdrawals enabled, or with neither spot nor futures trading enabled, raises `ValueError` and nothing is written or evicted — as does an unreachable/unreadable answer, on purpose.
@@ -763,7 +776,7 @@ One line per trap, collected from the sections above (the section named in *Wher
 | *MCPT* | A hand-rolled permutation test; MCPT on a Type C; `MCPT_N` edited for the user | Automatic in every Type A `run()`; Type C has none; relay the listing-gate line and let the user decide |
 | *Any other Monte Carlo* | The worst path quoted; numbers from different calibrations mixed | p5 + median, extreme as a footnote; the calibration fields printed with every number |
 | `lib/quality_check.py` | Deciding on the exit code | Decide on the `RESULT:` line (none = `do-not-run`), follow `NEXT:`; `--context edit` on your own strategies |
-| `apply_exits` | A hand-written stop / TP loop; `order_price` reported as the fill | The only way to add an exit; exits fill at the next bar's Open |
+| `apply_exits` | A hand-written stop / TP loop; "it can't do ATR stops"; `order_price` reported as the fill | The only way to add an exit — fractions or price distances (`stop_dist=2 * atr`), breakeven, cooldown; exits fill at the next bar's Open |
 | `clamp_spot` | `compute_signals` left able to go short on a spot strategy | `signal.clip(lower=0.0)` — scan and walk-forward call `compute_signals` directly |
 | `list_versions` / `restore` | A funded strategy restored in place; 「哪一版最好」 answered from the blobs | `restore` raises at `amounts > 0` (fork and switch); `list_versions` has the summary |
 | `lib/notify.py` | A send reported as sent after it raised; the raw sender inside a long-running job | `safe(sender)` for scheduled code; keep the raw sender when the send is the task |
@@ -772,7 +785,7 @@ One line per trap, collected from the sections above (the section named in *Wher
 | `get_holdings` | Holdings fed to the reconciler | Display-only — never positions |
 | `get_flows` (BingX) | `transferType != 0` used as a filter | On BingX it is a direction flag; status alone selects completed external flows |
 | `lib/account_bybit.py` | A classic account bound; FUND wallet left out of the breakdown | UTA only (readable "upgrade and rebind" error); FUND is breakdown-only, never in equity |
-| `lib/venue.py` | `.env` written by hand; a Binance bind retried in a loop | `bind(venue_id, env)` for binance / bingx / okx / gateio; `RATE_LIMITED` → back off |
+| `lib/venue.py` | `.env` written by hand; a Binance bind retried in a loop | `bind(venue_id, env)` for binance / bingx / okx / gateio / bybit; `RATE_LIMITED` → back off |
 | `lib/guard.py` | A halt cleared on your own; the reconciler expected to read `HALT_<strategy>` | Clear only on explicit user instruction; call `halted_for` yourself before opening exposure |
 | `lib/order_*.py` | Exchange order calls hand-written in a strategy; the intent reported instead of the fill | Import the venue lib; report `avg_price` / `executed_qty` / `commission` |
 | `OrderNotConfirmed` | A blind resubmit | Re-query first: Gate.io `text` never dedups, Binance / OKX only while unfilled, Bybit `orderLinkId` forever |

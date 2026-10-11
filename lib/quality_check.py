@@ -473,7 +473,9 @@ def _check_exit_loop(tree: ast.AST) -> list[dict]:
                            "hand-written exit loop — tracks an entry price ("
                            + ", ".join(sorted(entry)) + ") and compares it to a stop / target "
                            "level. Use lib.exits.apply_exits(signal, df, stop_pct=..., tp_pct=..., "
-                           "trail_pct=..., max_bars=..., trigger=\"intrabar\" or \"close\"); it handles "
+                           "trail_pct=..., max_bars=..., trigger=\"intrabar\" or \"close\") — or the price-distance "
+                           "forms stop_dist= / tp_dist= / trail_dist= (e.g. 2 * ATR), breakeven_at=, "
+                           "cooldown_bars=; it handles "
                            "High/Low touches, gaps, invalid bars, rolls and no same-bar re-entry. If the "
                            "rule is one it cannot model, tell the user that instead of hand-rolling a "
                            "loop (references/strategy-code.md › Exits on top of an existing signal).")]
