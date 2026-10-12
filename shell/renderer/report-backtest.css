@@ -46,7 +46,7 @@
 .bt-meta > .upd .ts[title] { cursor: help; }
 .bt-meta > .upd .busy { display: inline-flex; align-items: center; gap: var(--space-6); }
 .bt-meta > .upd .btn-quiet[aria-disabled="true"] { color: var(--color-greyDark); text-decoration: none; cursor: not-allowed; }
-.bt-meta > .upd .btn-quiet::before { inset: -14px -6px; }   /* 熱區補到 44 高(設計稽核;只動這一顆,全域 .btn-quiet 仍是 24 最小) */
+.bt-meta > .upd .btn-quiet::before { inset: -15px -6px; }   /* 熱區補到 44 高(視覺 14 + 15×2;設計稽核量到 42.25,只動這一顆,全域 .btn-quiet 仍是 24 最小) */
 .bt > .bt-meta + .upd-fail { margin-top: var(--space-8); }
 .bt > .upd-fail + * { margin-top: var(--space-16); }
 .upd-fail { display: flex; align-items: flex-start; gap: var(--space-6); margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }

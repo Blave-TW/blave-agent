@@ -1899,7 +1899,7 @@ function delConfirm(m, opener) {
 /* cancel = 取消鈕的字(不給 = 「取消」):主鈕本身就叫「取消分享」時,「取消」並排讀不出哪顆是留著(report-share.js) */
 /* 下單確認框(Wei 0928 第 3 點 A 案;啟動下單用):先選再按。都不給就跟以前一模一樣。
    choices = [{ id, title, desc, warn, disabled, why, ok, onOk, checked }]:一組 radio,預設**沒有選項**、沒選之前主鈕停用(字是 ok);某列 checked = 預選它
-     (主鈕一開就是它的字、能按;方案制確認框的月繳,對齊網站);選了之後主鈕的字換成
+     (主鈕一開就是它的字、能按;方案制確認框預選年繳,對齊網站);選了之後主鈕的字換成
      那個選項的 ok、按下去做它的 onOk。warn = 掛在那個選項裡的情境句;disabled + why = 這個選項現在不能選,說明換成原因句(aria-describedby 指它)。
      choicesLabel = 這一組的名字(只給讀屏)。這時 lines 是最上面的狀態句(主墨)。
    keep = 常駐的安全句(每次都要看的);details = [{ label, text | items }] 收在「細節」裡(看懂一次就好的),detailsOpen = 預設展開 */
@@ -3141,7 +3141,8 @@ function planVars() {
   const pr = raw(mo ? dp.cloud_plan_monthly_from || (pub && pub.starter_monthly) || s.starter_monthly : pl.monthly || s.starter_monthly || (pub && pub.starter_monthly));
   const yr = raw(dp.cloud_plan_annual_from || (pub && pub.starter_annual));
   // 運行列講的是下一期:已排月↔年切換時標籤跟著 next_cycle,金額是 next_charge_twd;內部帳號(free)不講金額
-  const cyc = (pl.next_cycle || pl.cycle) === "annual" ? "annual" : "monthly";
+  const cy = ["monthly", "annual"].includes(pl.next_cycle || pl.cycle) ? pl.next_cycle || pl.cycle : "";   // 帳號已有的週期(試用中選過的);沒有就空
+  const cyc = cy === "annual" ? "annual" : "monthly";
   const x = pl.next_charge_source === "free" ? "" : num(pl.next_charge_twd) || num(cyc === "annual" ? pl.annual : pl.monthly);
   return { p: num(pr), h: num(pl.hourly || (pub && pub.starter_hourly)), m: num(pl.stop_below),
     a: num(s.auto_topup_min || tr.auto_topup_min), b: num(s.bind_min_topup || s.min_topup),
@@ -3149,7 +3150,7 @@ function planVars() {
     top: num(s.auto_topup_amount || tr.auto_topup_amount), r: num(s.data_hourly),
     d: left > 0 ? planDate(pl.trial_free_until) : "", n: left > 0 ? left : 0,
     pr, yr, y: num(yr), k: num(s.annual_pay_months || pp.annual_pay_months), yd: num(pp.annual_period_days), pd: num(pp.period_days), g: num(s.grace_days || pp.grace_days),
-    c: t(cyc === "annual" ? "plan.cyc.annual" : "plan.cyc.monthly"), x,
+    c: t(cyc === "annual" ? "plan.cyc.annual" : "plan.cyc.monthly"), x, cy,
     u: pl.paid_until ? planDate(pl.paid_until) : "", gu: pl.grace_until ? planDate(pl.grace_until) : "",
     tp: num(pl.monthly), ty: num(pl.annual), tier: planTierLabel(),
     name: cur === "codex" ? "Codex" : cur === "apikey" ? (MP.provider || t("ak.row")) : "Claude Code" };
@@ -3421,11 +3422,14 @@ function planAsk(e, repriced) {
     const lines = [...(q ? [t("cf.m.repriced")] : []), t("cf.m.body1"), v.d ? t("cf.m.body2Trial", vv) : t("cf.m.body2"), t(v.g ? "cf.m.body3" : "cf.m.body3NoNum", vv)];
     // 鈕上就是要付的那一筆;試用中寫哪天起扣(年繳一次就是一整年)
     const okOf = (x) => (v.d ? t("cf.m.okTrial", { d: v.d, x: x.toLocaleString("en-US") }) : t("cf.m.ok", { x: x.toLocaleString("en-US") }));
-    // 月繳預選(對齊網站的開通框:鈕一開就能按);一期幾天讀公開價目,拿不到就不講天數
-    const mo = { id: "monthly", title: t("plan.cyc.monthly"), desc: t(vv.pd ? "cf.m.mo.d" : "cf.m.mo.dNoNum", vv), ok: okOf(pr), onOk: () => planGo("monthly", pr), checked: true };
+    /* 預選年繳(對齊網站的開通框:鈕一開就能按),兩個例外照既有週期:409 重開用的是用戶剛選的那個(planGo 帶進 repriced.cycle),
+       帳號已有週期(試用中選過、待開通重開)照帳號的;沒有年價就只有月繳。鈕上的金額與 onOk 送的是同一個整數 */
+    const want = q ? q.cycle : v.cy, pick = yr && want !== "monthly" ? "annual" : "monthly";
+    // 一期幾天讀公開價目,拿不到就不講天數
+    const mo = { id: "monthly", title: t("plan.cyc.monthly"), desc: t(vv.pd ? "cf.m.mo.d" : "cf.m.mo.dNoNum", vv), ok: okOf(pr), onOk: () => planGo("monthly", pr), checked: pick === "monthly" };
     if (!yr) { confirmBox({ title: t("cf.m.title"), ok: mo.ok, opener, onOk: mo.onOk, lines: [...lines, mo.desc] }); return; }
-    const yrc = { id: "annual", title: t("plan.cyc.annual"), desc: t(v.k && v.yd ? "cf.m.yr.d" : "cf.m.yr.dNoNum", vv), ok: okOf(yr), onOk: () => planGo("annual", yr) };
-    confirmBox({ title: t("cf.m.title"), ok: mo.ok, opener, lines, choices: [mo, yrc], choicesLabel: t("cf.m.pick") });
+    const yrc = { id: "annual", title: t("plan.cyc.annual"), desc: t(v.k && v.yd ? "cf.m.yr.d" : "cf.m.yr.dNoNum", vv), ok: okOf(yr), onOk: () => planGo("annual", yr), checked: pick === "annual" };
+    confirmBox({ title: t("cf.m.title"), ok: (pick === "annual" ? yrc : mo).ok, opener, lines, choices: [mo, yrc], choicesLabel: t("cf.m.pick") });
     return;
   }
   const v = planVars();
@@ -3451,7 +3455,7 @@ async function planGo(cycle, confirm) {
   if (r && r.error === "PLAN_CONFIRM_REQUIRED") {
     // 價格在框開著的時候變了(或 api 剛切換):重讀帳號、用 api 回的現價再問一次;沒有現價就退回一般錯誤
     await acctCheck(); planPaint();
-    if (r.quote && r.quote.monthly) { planAsk(null, r.quote); return; }
+    if (r.quote && r.quote.monthly) { planAsk(null, { ...r.quote, cycle }); return; }   // 重開的框停在用戶剛選的週期,不跳回預設
   }
   acctCheck();                               // 我們這邊逾時不代表沒開成:以伺服器的現況為準
   const mo = planMo();

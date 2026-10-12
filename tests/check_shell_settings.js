@@ -998,11 +998,12 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   pub = { plan: { annual_period_days: 365 } };
   let v = planVars();
   ok("planVars 方案制:開通價是 Starter(data_paths),不是目前階的 plan.monthly;寬限天數 / 年繳月數先讀 account_status;運行列的週期跟著 next_cycle、金額是 next_charge_twd",
-    v.pr === 1440 && v.yr === 14400 && v.y === "14,400" && v.k === "10" && v.yd === "365" && v.g === "7" && v.x === "43,200" && v.c === "plan.cyc.annual" && v.u === "D:2027-10-07T00:00:00Z" && v.gu === "D:2027-10-14T00:00:00Z");
+    v.pr === 1440 && v.yr === 14400 && v.y === "14,400" && v.k === "10" && v.yd === "365" && v.g === "7" && v.x === "43,200" && v.c === "plan.cyc.annual" && v.cy === "annual" && v.u === "D:2027-10-07T00:00:00Z" && v.gu === "D:2027-10-14T00:00:00Z");
   acct = { plan: { state: "running", tier: "linux_starter", monthly: 1440, cycle: "monthly", next_charge_twd: 0, next_charge_source: "free" }, data_paths: {} };
   ok("planVars:內部帳號(next_charge_source free)不講金額", planVars().x === "");
   acct = { plan: { state: "none", monthly: 4320, hourly: 2 } }; v = planVars();
-  ok("planVars 切換前:開通價照舊 plan.monthly 為先", v.pr === 4320 && v.p === "4,320");
+  ok("planVars 切換前:開通價照舊 plan.monthly 為先;帳號沒有週期 → cy 空(確認框才會用預設年繳)、怪值也算沒有", v.pr === 4320 && v.p === "4,320" && v.cy === ""
+    && ((acct = { plan: { state: "none", cycle: "weekly" } }), planVars().cy === "") && ((acct = { plan: { state: "none", cycle: "monthly" } }), planVars().cy === "monthly"));
   acct = { data_paths: { cloud_plan_monthly_from: "abc" }, plan: { state: "none" } }; v = planVars();
   ok("planVars:壞值不當數字(pr null → 啟動鈕按不下去)", v.pr === null && v.p === ""); }
 // 聊天裡「這小時用到了 Blave 的資料,主機與資料費 N TWD」那一則已拿掉(Wei 2026-09-24:惱人;計費不變,只是不在對話裡講)
@@ -1064,20 +1065,30 @@ ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee �
     eval(fnSrc("planAsk")); eval("var planGo = async " + fnSrc("planGo").replace(/^async /, ""));
     const featured2 = []; const trackFeature = (n) => featured2.push(n);
     planAsk(null); let bx = boxes2.pop();
-    ok("確認框(方案制、有年價):月繳 / 年繳兩個單選(月繳預選,對齊網站;鈕一開就能按),說明各帶 api 的價(月繳那列一期幾天讀公開價目);鈕字是要付的那一筆",
-      bx && bx.choices && bx.choices.map((c) => c.id).join() === "monthly,annual" && bx.choices[0].checked === true && !bx.choices[1].checked && bx.choices[0].desc === "cf.m.mo.d" + JSON.stringify({ ...V })
+    ok("確認框(方案制、有年價):月繳 / 年繳兩個單選(年繳預選,對齊網站定價頁與開通卡;鈕一開就能按、字是年價),說明各帶 api 的價(月繳那列一期幾天讀公開價目);鈕字是要付的那一筆",
+      bx && bx.choices && bx.choices.map((c) => c.id).join() === "monthly,annual" && !bx.choices[0].checked && bx.choices[1].checked === true && bx.ok === 'cf.m.ok{"x":"14,400"}' && bx.choices[0].desc === "cf.m.mo.d" + JSON.stringify({ ...V })
       && bx.choices[1].desc === "cf.m.yr.d" + JSON.stringify({ ...V }) && bx.choices[0].ok === 'cf.m.ok{"x":"1,440"}' && bx.choices[1].ok === 'cf.m.ok{"x":"14,400"}'
       && bx.lines.join("|") === ["cf.m.body1", "cf.m.body2", "cf.m.body3" + JSON.stringify({ ...V })].join("|"));
     RES = { state: "starting" }; await bx.choices[1].onOk();
     ok("送出時讀屏念一次「開通中…」(只開方案不換格,鈕字之外的唯一回饋)", said2.join() === "plan.startingM");
     ok("…選年繳按下:planStart 帶 { cycle: annual, confirm: 14400, server: false }(框上印的那個整數;只開方案、不建主機);成功記 plan_annual", JSON.stringify(starts.pop()) === '{"cycle":"annual","confirm":14400,"server":false}' && featured2.join() === "plan_annual");
+    // 送出的金額 = 鈕上印的那個數(兩列各自比:鈕字裡的 x 去掉千分位 = planStart 的 confirm、週期 = 那列的 id)
+    const shown = (c) => Number(JSON.parse(c.ok.replace(/^cf\.m\.ok(Trial)?/, "")).x.replace(/,/g, ""));
+    for (const c of bx.choices) { await c.onOk(); const sent = starts.pop(); if (!(sent.cycle === c.id && sent.confirm === shown(c))) { ok("送出金額＝顯示(" + c.id + ")", false, JSON.stringify([c.ok, sent])); break; } if (c.id === "annual") ok("送出金額＝顯示:月繳 1,440→1440、年繳 14,400→14400,週期跟那列", true); }
     V = { ...V, yr: null, y: "" }; planAsk(null); bx = boxes2.pop();
     ok("api 沒給年價:不出單選,只有月繳那一行、鈕字是月繳金額", bx && !bx.choices && bx.ok === 'cf.m.ok{"x":"1,440"}' && bx.lines[bx.lines.length - 1] === "cf.m.mo.d" + JSON.stringify({ ...V }));
+    V = { ...V, cy: "annual" }; planAsk(null); bx = boxes2.pop();
+    ok("沒年價就算帳號週期是年繳也退月繳:不出單選、按下去送 monthly 1440(年價空不能送年繳)", bx && !bx.choices && bx.ok === 'cf.m.ok{"x":"1,440"}' && (RES = { state: "starting" }, await bx.onOk(), JSON.stringify(starts.pop()) === '{"cycle":"monthly","confirm":1440,"server":false}'));
     V = { ...V, pd: "" }; planAsk(null); bx = boxes2.pop();
     ok("一期幾天拿不到(公開價目沒給 period_days):月繳那列用不帶天數的句子", !!bx && bx.lines[bx.lines.length - 1] === "cf.m.mo.dNoNum" + JSON.stringify({ ...V }));
+    V = { ...V, pd: "30", yr: 14400, y: "14,400", cy: "monthly" }; planAsk(null); bx = boxes2.pop();
+    ok("帳號已有週期(試用中選過 / 待開通重開:planVars().cy):照既有週期預選,不被年繳預設蓋掉 — monthly 預選月繳、鈕字月價;annual 預選年繳;空字串才用預設年繳",
+      bx.choices[0].checked === true && !bx.choices[1].checked && bx.ok === 'cf.m.ok{"x":"1,440"}'
+      && ((V = { ...V, cy: "annual" }), planAsk(null), (bx = boxes2.pop()), bx.choices[1].checked === true && !bx.choices[0].checked && bx.ok === 'cf.m.ok{"x":"14,400"}')
+      && ((V = { ...V, cy: "" }), planAsk(null), (bx = boxes2.pop()), bx.choices[1].checked === true && !bx.choices[0].checked));
     V = { ...V, pd: "30", yr: 14400, y: "14,400", d: "10 月 21 日" }; planAsk(null); bx = boxes2.pop();
-    ok("試用中:講到期才付第一期、鈕字帶哪天起扣多少(年繳就是一整年那筆)", bx.lines[1] === "cf.m.body2Trial" + JSON.stringify({ ...V, p: "1,440", y: "14,400" })
-      && bx.choices[0].ok === 'cf.m.okTrial{"d":"10 月 21 日","x":"1,440"}' && bx.choices[1].ok === 'cf.m.okTrial{"d":"10 月 21 日","x":"14,400"}');
+    ok("試用中:講到期才付第一期、鈕字帶哪天起扣多少(年繳就是一整年那筆);預選年繳所以主鈕一開就是年繳那句", bx.lines[1] === "cf.m.body2Trial" + JSON.stringify({ ...V, p: "1,440", y: "14,400" })
+      && bx.choices[0].ok === 'cf.m.okTrial{"d":"10 月 21 日","x":"1,440"}' && bx.choices[1].ok === 'cf.m.okTrial{"d":"10 月 21 日","x":"14,400"}' && bx.choices[1].checked === true && bx.ok === bx.choices[1].ok);
     V = { ...V, d: "" };
     // 開框那顆鈕(data-k)記下來:409 重開時格子已經重畫過,要在現在的格子裡找同一顆當 opener,關框焦點才回得去
     const BTN = { dataset: { k: "plan:1" } }, BTN2 = { dataset: { k: "plan:1" } }; dom["set-plan"].querySelector = (q) => (q === 'button[data-k="plan:1"]' ? BTN2 : null);
@@ -1085,6 +1096,10 @@ ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee �
     RES = { error: "PLAN_CONFIRM_REQUIRED", quote: { cycle: "monthly", monthly: 1500, annual: 15000 } }; const n0 = starts.length; await planGo("monthly", 1440); bx = boxes2.pop();
     ok("409 PLAN_CONFIRM_REQUIRED:重讀帳號、用 api 回的現價再開一次框(第一行講金額更新了),不自動重送;opener 是重畫後同 data-k 的那顆鈕", starts.length === n0 + 1 && acctChecks >= 1 && bx && bx.lines[0] === "cf.m.repriced"
       && bx.choices[0].ok === 'cf.m.ok{"x":"1,500"}' && bx.choices[1].ok === 'cf.m.ok{"x":"15,000"}' && planErr === null && bx.opener === BTN2);
+    ok("…重開的框停在用戶剛選的週期(送月繳被 409 → 月繳預選、鈕字新月價),不跳回預設年繳;再按送的是新價", bx.choices[0].checked === true && !bx.choices[1].checked && bx.ok === 'cf.m.ok{"x":"1,500"}'
+      && (RES = { state: "starting" }, await bx.choices[0].onOk(), JSON.stringify(starts.pop()) === '{"cycle":"monthly","confirm":1500,"server":false}'));
+    RES = { error: "PLAN_CONFIRM_REQUIRED", quote: { cycle: null, monthly: 1500, annual: 15000 } }; await planGo("annual", 14400); bx = boxes2.pop();
+    ok("…送年繳被 409:年繳預選、鈕字新年價;週期認 planGo 自己送的那個,不靠 api 回的 quote.cycle(舊 api 回 null 也一樣)", !!bx && bx.choices[1].checked === true && !bx.choices[0].checked && bx.ok === 'cf.m.ok{"x":"15,000"}');
     dom["set-plan"].querySelector = () => null;
     { const keep = acct; acct = { plan: { state: "none", hourly: 2 } };   // 409 之後重讀帳號失敗、手上還是切換前那份
       RES = { error: "PLAN_CONFIRM_REQUIRED", quote: { cycle: "monthly", monthly: 1500, annual: 15000 } }; await planGo("monthly", 1440); bx = boxes2.pop();

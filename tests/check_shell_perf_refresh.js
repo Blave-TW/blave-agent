@@ -248,7 +248,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   ok("CSS:.upd 靠右(margin-left: auto)、更新中 .busy、aria-disabled 的鈕走灰階退場、失敗行緊跟 meta(8)而三組條列仍離 16",
     /\.bt-meta > \.upd \{ display: inline-flex; align-items: center; gap: var\(--space-8\); margin-left: auto; white-space: nowrap; \}/.test(css) && /\.bt-meta > \.upd \.busy \{/.test(css)
     && /\.bt-meta > \.upd \.btn-quiet\[aria-disabled="true"\] \{ color: var\(--color-greyDark\); text-decoration: none; cursor: not-allowed; \}/.test(css)
-    && /\.bt-meta > \.upd \.btn-quiet::before \{ inset: -14px -6px; \}/.test(css)
+    && /\.bt-meta > \.upd \.btn-quiet::before \{ inset: -15px -6px; \}/.test(css)
     && /\.bt > \.bt-meta \+ \.upd-fail \{ margin-top: var\(--space-8\); \}/.test(css) && /\.bt > \.upd-fail \+ \* \{ margin-top: var\(--space-16\); \}/.test(css) && !/#[0-9a-fA-F]{3,6}\b/.test(css.split("1b. 更新績效")[1].split("---- 2.")[0]));
   const keys = ["perf.btn", "perf.ago", "perf.agoOne", "perf.tip", "perf.busy", "perf.doneSr", "perf.fail"];
   ok("字串:七個 key zh / en 都有,逐字 = spec §10", keys.every((k) => STR.zh[k] && STR.en[k]) && STR.zh["perf.btn"] === "更新績效" && STR.zh["perf.busy"] === "更新中" && STR.zh["perf.fail"] === "沒更新成功，數字是舊的" && STR.zh["perf.doneSr"] === "績效已更新"
