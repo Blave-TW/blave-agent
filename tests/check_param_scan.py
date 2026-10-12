@@ -4,7 +4,8 @@ constant on a nice-step lattice (the web marks "you are here" only for an on-gri
 default axes are ~15 cells; on_edge / extend_axis grow a border-plateau axis once, ≤ 40.
 A fake 5×9 Sharpe grid (NaN cells, a sharp isolated peak that is NOT
 the plateau) goes through find_plateau → write_scan; asserts the scan.json contract the
-web 穩健參數 tab reads (keys, shapes, NaN → null, peak ≠ plateau, current on/off grid).
+web 穩健參數 tab reads (keys, shapes, NaN → null, peak ≠ plateau, current on/off grid);
+the single-constant shape (N×1, col_param '_', col_vals [0]) goes through the same path.
 Then a stub stats.json takes the MCPT merge and must keep every other field (the runner's
 carry-over of those keys across live ticks is covered by tests/check_mcpt_auto.py).
 Run: cd blave-agent && .venv/bin/python tests/check_param_scan.py
@@ -212,6 +213,37 @@ check(on_edge((0, 2), (1, 5)) == [] and on_edge((0, 0), (1, 5)) == [(1, 'lo')] a
 check(on_edge((0, 0), (1, 1)) == [], "1×1 網格 → 空")
 g_1n = np.array([[0.4, 0.5, 1.2, 1.3, 1.1]]); b_1n, n_1n, *_ = find_plateau(g_1n, [7], col_vals[:5])
 check(on_edge(b_1n, g_1n.shape) in ([], [(1, 'hi')]) and all(ax == 1 for ax, _ in on_edge(b_1n, g_1n.shape)), f"1×5 grid find_plateau → on_edge 不炸、只報欄軸 → {on_edge(b_1n, g_1n.shape)}")
+
+# ── 單一參數:N×1 + col_param='_'(一格的第二軸,與 walk-forward 同一約定)────────────
+d1 = tempfile.mkdtemp(prefix="scan-1d-", dir=os.environ.get("SCRATCHPAD") or None)
+rows1 = nice_grid(5, 60, current=20, integer=True)                      # 5, 10, …, 60
+# 1-D 鄰域只有三格,邊緣/NaN 旁只剩兩格會把尖峰的均值抬高——尖峰放內部、NaN 放尾端
+g1 = np.full((len(rows1), 1), 0.4); g1[5:9, 0] = 1.6; g1[3, 0] = 2.5; g1[-1, 0] = np.nan
+b1, n1, br1, bc1, bs1 = find_plateau(g1, rows1, [0])
+check(tuple(b1) != (3, 0) and 6 <= b1[0] <= 7 and b1[1] == 0 and bc1 == 0, f"N×1 find_plateau 不選孤立尖峰、j 為 0 → {tuple(int(x) for x in b1)}")
+check(math.isclose(n1[6, 0], 1.6) and math.isclose(n1[3, 0], (0.4 + 2.5 + 0.4) / 3), "N×1 鄰域 = 列軸上三格(沒有第二軸可鄰)")
+check(on_edge(b1, g1.shape) == [] and on_edge((0, 0), g1.shape) == [(0, 'lo')] and on_edge((len(rows1) - 1, 0), g1.shape) == [(0, 'hi')],
+      "N×1 on_edge:長度 1 的欄軸略過、列軸上下邊照判")
+p1 = write_scan(g1, rows1, [0], n1, b1, d1, row_param="WINDOW", col_param="_", fee=0.0005,
+                start="2024-01-01", end="2026-08-31", current=(20, 0))
+doc1 = json.load(open(p1))
+check(doc1["row_param"] == "WINDOW" and doc1["col_param"] == "_" and doc1["col_vals"] == [0] and doc1["row_vals"] == rows1, "N×1 寫得出來:col_param='_'、col_vals=[0]")
+check(len(doc1["grid"]) == len(rows1) and all(len(r) == 1 for r in doc1["grid"] + doc1["nbr_mean"]) and doc1["grid"][-1][0] is None, "grid / nbr_mean N×1、NaN → null")
+check(doc1["peak"] == {"i": 3, "j": 0, "sharpe": 2.5} and doc1["plateau"]["j"] == 0 and doc1["plateau"]["i"] == int(b1[0]), f"peak / plateau 的 j 恆為 0 → {doc1['peak']} / {doc1['plateau']}")
+check(doc1["current"] == {"i": rows1.index(20), "j": 0, "vals": [20, 0]}, f"current 標在列軸上、vals 剛好兩個數 → {doc1['current']}")
+write_scan(g1, rows1, [0], n1, b1, d1, "WINDOW", "_", 0.0005, None, None, current=(21, 0))
+check(json.load(open(p1))["current"] == {"i": None, "j": None, "vals": [21, 0]}, "N×1 current 不在列軸上 → i/j null、vals 仍兩個數")
+g1e = g1.copy(); g1e[-1, 0] = 3.0; g1e[-2, 0] = 3.0                      # 平台推到列軸 hi 邊
+b1e, n1e, *_ = find_plateau(g1e, rows1, [0])
+check(on_edge(b1e, g1e.shape) == [(0, 'hi')], f"N×1 平台在列軸邊緣 → 只報 (0,'hi') → {on_edge(b1e, g1e.shape)}")
+rows1e = extend_axis(rows1, 'hi'); g1x = np.vstack([g1e, np.full((5, 1), 0.4)]); b1x, n1x, *_ = find_plateau(g1x, rows1e, [0])
+write_scan(g1x, rows1e, [0], n1x, b1x, d1, "WINDOW", "_", 0.0005, None, None, current=(20, 0))
+doc1x = json.load(open(p1))
+check(len(doc1x["row_vals"]) == len(rows1) + 5 and doc1x["col_vals"] == [0] and doc1x["current"]["i"] == rows1.index(20), "N×1 延伸列軸後重寫:欄軸仍一格、current 仍標得到")
+b11, n11, *_ = find_plateau(np.array([[0.7]]), [20], [0])
+write_scan(np.array([[0.7]]), [20], [0], n11, b11, d1, "WINDOW", "_", 0.0005, None, None, current=(20, 0))
+doc11 = json.load(open(p1))
+check(doc11["grid"] == [[0.7]] and doc11["peak"] == doc11["plateau"] == {"i": 0, "j": 0, "sharpe": 0.7} and doc11["current"]["vals"] == [20, 0], "1×1 也寫得出來(軸下限是 1)")
 
 # ── MCPT merge into stats.json ────────────────────────────────────────────────
 V._REPO_ROOT = tmp
