@@ -20,7 +20,7 @@
   margin-top: calc(-1 * var(--space-8));
 }
 .wc-h { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }   /* = trade.css .cv-open h4 */
-.wc-inner:has(.wl) .wc-chips { margin-top: var(--space-12); justify-content: flex-start; }
+.wc-inner:has(.wl) .wc-chips { margin-top: var(--space-16); justify-content: flex-start; }   /* Wei 10-12:標題與起手鈕拉開一階 */
 .wl { width: 100%; margin-top: var(--space-32); }
 .wl-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8) var(--space-16); flex-wrap: wrap; padding: 0; }
 .wl-cap { font-size: 13px; font-weight: 600; color: var(--ink-3); }

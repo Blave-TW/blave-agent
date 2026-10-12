@@ -131,11 +131,11 @@ if (!process.versions.electron) {
     ok("② welcome.css:列高下限 44、只剩一行時垂直置中(.wd-row 是 grid,align-content: center)、內距 8/16(卡內距);小字靠右成欄(.wd-l1 space-between、間距 12、baseline、放不下整段折行)",
       /\.wd-row \{\s*display: grid; align-content: center; width: 100%; min-height: 44px; padding: var\(--space-8\) var\(--space-16\);/.test(css)
       && /\.wd-l1 \{ display: flex; align-items: baseline; justify-content: space-between; gap: var\(--space-2\) var\(--space-12\); flex-wrap: wrap; \}/.test(css));
-    ok("② welcome.css(A2):清單在時 .wc-inner 子項靠左撐滿;記號與標題並排一行(.wc-head:flex、置中、隔 12);記號的寬與色各自一行(只改值),上面空的那段用負 margin 切掉;標題 20/600、不留上距;籤靠左、離那一行 12;小標列與頁尾不內縮(同一條左軸)",
+    ok("② welcome.css(A2):清單在時 .wc-inner 子項靠左撐滿;記號與標題並排一行(.wc-head:flex、置中、隔 12);記號的寬與色各自一行(只改值),上面空的那段用負 margin 切掉;標題 20/600、不留上距;籤靠左、離那一行 16(Wei 10-12 拉開一階);小標列與頁尾不內縮(同一條左軸)",
       /\.wc-inner:has\(\.wl\) \{ align-items: stretch; \}/.test(css) && /\.wc-inner:has\(\.wl\) \.wc-head \{ display: flex; align-items: center; gap: var\(--space-12\); \}/.test(css)
       && /\.wc-inner:has\(\.wl\) \.wc-mark \{\n  width: var\(--[a-z0-9-]+\);\n  color: var\(--[a-zA-Z0-9-]+\);\n  margin-top: calc\(-1 \* var\(--[a-z0-9-]+\)\);\n\}/.test(css)
       && /\.wc-h \{ margin: 0; font-size: 20px; font-weight: 600; line-height: 1\.4; color: var\(--ink\); \}/.test(css)
-      && /\.wc-inner:has\(\.wl\) \.wc-chips \{ margin-top: var\(--space-12\); justify-content: flex-start; \}/.test(css)
+      && /\.wc-inner:has\(\.wl\) \.wc-chips \{ margin-top: var\(--space-16\); justify-content: flex-start; \}/.test(css)
       && /\.wl-top \{[^}]*padding: 0; \}/.test(css) && /\.wl-colh \{[^}]*padding: 0 0 var\(--space-8\); border-bottom: 0; margin-bottom: 0; \}/.test(css)
       && /\.wl-foot \{ display: flex; align-items: center; justify-content: space-between; gap: var\(--space-4\) var\(--space-16\); flex-wrap: wrap; margin-top: var\(--space-4\); padding: 0; \}/.test(css)
       && /\.wl-state \{ margin: 0; padding: 0; /.test(css) && /\.wl-foot > \.btn-quiet \{ display: inline-flex; align-items: center; min-height: 44px; color: var\(--ink-2\); \}/.test(css));
