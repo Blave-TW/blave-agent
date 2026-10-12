@@ -1310,7 +1310,7 @@ function stratVersions(dir) {
 /* 就地還原的兩個欄位(canon §9),規則同 runtime strategy_reporter 的 lib_restore_in_place / _read_rerun:
    inplace = workspace 的 lib/strategy.py 有 `RESTORE_IN_PLACE = 1` 那一行(文字比對、照 mtime 快取);
    rerun = versions/rerun.json 的 {n, status, at, err?},每個欄位驗型別,壞掉就當沒有 */
-const RERUN_ERRS = ["REFUSED", "DATA", "TIMEOUT", "EXIT"];
+const RERUN_ERRS = ["REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY"];
 const libRestoreCache = new Map();
 function libRestoreInPlace(ws) {
   const p = path.join(ws, "lib", "strategy.py");

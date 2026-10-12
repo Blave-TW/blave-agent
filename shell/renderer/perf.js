@@ -1,21 +1,26 @@
-/* 更新績效(canon strategy-versions §2:live 不定版;設計 spec stats-manual-refresh-2026-10-10 §10 精簡版 A)。
-   上線中(amounts > 0,同版本選單「上線中」徽章的 verAmount)的策略,stats.json 不再每根 K 線重寫;回測數據分頁 meta 列尾一顆
-   12px 文字鈕「更新績效」送直接指令 stats_refresh {names:[name]}(本機走 daemon、雲端走 api 指令佇列;不經 agent、不定版、不改程式碼)。
-   三態互斥:閒置(鈕;滿一天多「N 天前」,絕對時間與每日自動那句在 title)/ 更新中(圓環 + 「更新中」,role=status;數字留著不變灰)/
+/* 更新績效(canon strategy-versions §2:live 不定版;設計 spec stats-manual-refresh-2026-10-10 §10 精簡版 A;Wei 10-12:所有有 stats 的
+   Type A／C 都有,不只上線中)。回測數據分頁 meta 列尾一顆 12px 文字鈕「更新績效」送直接指令 stats_refresh {names:[name]}
+   (本機走 daemon、雲端走 api 指令佇列;不經 agent、不定版、不改程式碼)。Type B 不出(判法同程式碼分頁 xpIsTypeB:檔頭 `# Type: B`)。
+   上線中(在下單設定裡,amounts 有這個 key、金額 0 也算:versions.js verPicked,同 runtime _deployed_names)機器端跑 live 刷新、報告前也會自動更新;
+   非上線的機器端是重跑回測到最新資料(同碼不鑄版;碼改過還沒回測 → ack skip CODE_CHANGED,不跑),title 只寫上次回測時間、不說每天自動。
+   ack 專用的 skip 碼(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)與報告帶回的 SUPERSEDED / BUSY 各有自己一句(PF_WHY),其餘沿用版本重跑的四句。
+   三態互斥:閒置(鈕;滿一天多「N 天前」,絕對時間那句在 title)/ 更新中(圓環 + 「更新中」,role=status;數字留著不變灰)/
    失敗(meta 列下一行「沒更新成功,數字是舊的」,原因進 title,鈕就是重試)。
    資料:B.data.perf = { at, refresh? }(主行程 stratPerf / 雲端 strategies report 的 perf):at = stats.json mtime(秒),不是 Generated At;
    refresh = { status: running|failed, at, err? },err 是版本重跑那四個分類碼、字串沿用 ver.rerunWhy.*。
    按下當下就畫更新中(疊層 PF,不等 ack);ack 說排進佇列才記埋點 perf_update。之後輪詢報告(本機 2 秒、雲端 5 秒):refresh 消失且 at 前進 = 完成,
    數字原地換(回測分頁重畫)、讀屏另唸一句;refresh failed = 失敗。ack 後 2 分鐘報告都沒跟上就拿掉疊層回閒置(不知道有沒有跑,不假稱失敗)。
    用到 app.js 的 $ / t / RP / RPC / RPC_CACHE / rpBag / rpPaintHead / rpShowTab / rpTab / running / trackFeature / srSay、
-   trade.js 的 TR_BAGS、versions.js 的 verAmount / verPendingOf / VS / RERUN_WHY、report-sharelist.js 的 shlFmtTime——都在呼叫時才取。 */
+   trade.js 的 TR_BAGS、versions.js 的 verPicked / verPendingOf / VS / RERUN_WHY、export.js 的 xpIsTypeB、report-sharelist.js 的 shlFmtTime——都在呼叫時才取。 */
 const PF = { local: new Map(), cloud: new Map() };     // side → name → { at0, ackAt, failed }:按下之後、報告跟上之前的疊層
 const PFL = { local: null, cloud: null };              // 上一次畫的 { name, kind, at }:更新中 → 閒置且時間前進 = 完成,唸一句
 const PFP = { local: null, cloud: null };              // 每邊一支輪詢
 const PF_POLL_MS = { local: 2000, cloud: 5000 }, PF_GRACE_MS = 120000;
-// 機器端一次只跑一支:鈕排的佇列會等前一支(每支上限 600 秒、報告前那一批整批最多 600 秒),再加餘裕
-const PF_POLL_MAX_MS = (600 + 600 + 120) * 1000;
-const PF_ERRS = ["REFUSED", "DATA", "TIMEOUT", "EXIT"];
+// 機器端一次只跑一支:鈕排的佇列會等前一支(live 刷新每支上限 600 秒、非上線的回測 15 分、報告前那一批整批最多 600 秒),再加餘裕
+const PF_POLL_MAX_MS = (900 + 900 + 120) * 1000;
+const PF_ERRS = ["REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY"];   // = runtime _RERUN_ERRS(報告帶回的 perf.refresh.err)
+// 失敗行 title 的專屬句:報告帶回的兩個 + ack 的 skip 碼(機器端沒跑);不在這裡的走 ver.rerunWhy.*
+const PF_WHY = { SUPERSEDED: "perf.superseded", BUSY: "perf.lockBusy", CODE_CHANGED: "perf.codeChanged", INDEX_BROKEN: "perf.indexBroken", NOT_RUNNABLE: "perf.notRunnable", CONFIG_UNREADABLE: "perf.configUnreadable" };
 const pfSide = (B) => (B === RPC ? "cloud" : "local");
 function pfEl(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 // 報告帶的 perf,逐欄驗型別(雲端那份是機器上的 reporter 寫的):壞形狀 = null(不出這一組)
@@ -29,15 +34,16 @@ function perfOf(B) {
   }
   return out;
 }
-// 這組要不要出:上線中、有 perf、不在時光機也不在還原的重跑中(那時回測分頁畫的是 vN 存的 blob,沒有 stats.json 可更新)
+// 這組要不要出:Type A／C、有 perf、不在時光機也不在還原的重跑中(那時回測分頁畫的是 vN 存的 blob,沒有 stats.json 可更新)
 function perfShown(side, B) {
   if (!B || !B.name || !perfOf(B)) return false;
-  const amt = typeof verAmount === "function" ? verAmount(side, B) : null;
-  if (!(typeof amt === "number" && amt > 0)) return false;
+  if (typeof xpIsTypeB === "function" && xpIsTypeB(B.data)) return false;
   if (typeof VS !== "undefined" && VS[side] && VS[side].name === B.name && VS[side].open !== null) return false;
   if (typeof verPendingOf === "function" && verPendingOf(side, B)) return false;
   return true;
 }
+// 上線中 = 在下單設定裡(verPicked:amounts 有這個 key,金額 0 也算,同 runtime _deployed_names):機器端走 live 刷新、每天報告前自動更新;其餘只在按下時重跑回測
+function perfLive(side, B) { return typeof verPicked === "function" && verPicked(side, B) === true; }
 /* 三態:{ kind: idle|running|failed, at, err? }。疊層只撐到報告跟上(refresh 出現、或 at 前進)或 ack 後 2 分鐘;之後以報告為準 */
 function perfState(side, B, now) {
   const p = perfOf(B); if (!p) return null;
@@ -65,7 +71,7 @@ function perfPaint(B) {
     const busy = pfEl("span", "busy"), sp = pfEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
     busy.append(sp, pfEl("span", "", t("perf.busy"))); upd.appendChild(busy);
   } else {
-    const tip = t("perf.tip", { t: shlFmtTime(st.at, now) }), days = Math.floor((now / 1000 - st.at) / 86400);
+    const tip = t(perfLive(side, B) ? "perf.tip" : "perf.tipBt", { t: shlFmtTime(st.at, now) }), days = Math.floor((now / 1000 - st.at) / 86400);
     const btn = pfEl("button", "btn-quiet", t("perf.btn")); btn.type = "button"; btn.id = "perf-btn";
     // 滿一天才出「N 天前」,title 跟著它;未滿一天只有鈕,title 在鈕上(回合進行中 perfBusy 會暫時換成原因,所以另存一份)
     if (days >= 1) { const ts = pfEl("span", "ts", days === 1 ? t("perf.agoOne") : t("perf.ago", { n: String(days) })); ts.title = tip; upd.appendChild(ts); }
@@ -76,7 +82,7 @@ function perfPaint(B) {
   meta.appendChild(upd);
   if (st.kind === "failed") {
     const line = pfEl("p", "upd-fail"); line.setAttribute("role", "status");
-    const why = "ver.rerunWhy." + (RERUN_WHY[st.err] || "exit");   // 四個分類碼沿用版本重跑的字串,不另造一組
+    const why = PF_WHY[st.err] || "ver.rerunWhy." + (RERUN_WHY[st.err] || "exit");   // 四個分類碼沿用版本重跑的字串,不另造一組
     line.title = t(why);
     const m = pfEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
     line.append(m, pfEl("span", "", t("perf.fail")));
@@ -93,7 +99,7 @@ function perfBusy() {
   if (b.dataset.tip) b.title = b.dataset.tip; else b.removeAttribute("title");
 }
 /* 按下:當下畫更新中、送 stats_refresh {names:[name]}。ack 排進佇列(started)才記埋點;BUSY(已經在跑)與結果不明都等報告;
-   其餘(拒收、NO_STATS、NOT_RUNNABLE、daemon 不在)= 沒更新成功,鈕就是重試 */
+   PF_WHY 有的 skip 碼(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)= 失敗行寫專屬原因;其餘(拒收、NO_STATS、daemon 不在)= 沒更新成功,鈕就是重試 */
 async function perfClick(B) {
   const b = $("perf-btn");
   if (b && b.getAttribute("aria-disabled") === "true") return;   // 回合進行中:原因在 title
@@ -109,6 +115,7 @@ async function perfClick(B) {
   const res = r && r.ok && r.result && typeof r.result === "object" ? r.result : null;
   if (res && Array.isArray(res.started) && res.started.indexOf(name) >= 0) { trackFeature("perf_update"); o.ackAt = Date.now(); }
   else if (res && res.skipped && res.skipped[name] === "BUSY") o.ackAt = Date.now();
+  else if (res && res.skipped && PF_WHY[res.skipped[name]]) o.failed = res.skipped[name];
   else if (!r || r.kind === "unknown" || r.error === "TIMEOUT" || r.error === "UNKNOWN_RESULT") o.ackAt = Date.now();
   else o.failed = "EXIT";
   if (rpBag() === B && !$("rp").hidden && B.name === name) perfPaint(B);

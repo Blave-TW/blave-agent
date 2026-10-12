@@ -5274,8 +5274,10 @@ _VERSION_RESTORE_MAX_N = 1000000                                # = api agent_st
 RESTORE_RERUN_TIMEOUT_S = 15 * 60
 _RESTORE_TIMEOUT_S = 120          # the synchronous step 1 (interpreter start + pandas import)
 _RESTORE_ADOPT_POLL_S = 5
-# = strategy_reporter.RERUN_ERRS: the reasons the web can put into words
-_RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT")
+# = strategy_reporter.RERUN_ERRS: the reasons the web can put into words. SUPERSEDED (the run
+# exited 0 but wrote nothing: the strategy file changed under it) and BUSY (a backtest of the
+# same strategy held the runner's lock for the whole quiet wait) came with 更新績效 (1.1.121)
+_RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY")
 _RERUN_DATA_MARKS = ("DataAccessError", "TwPublicUnavailable", "FeedNotPublished", "ERR007",
                      "ERR005", "HTTPError", "ConnectionError", "ConnectTimeout", "ReadTimeout",
                      "the feed has no rows", "BatchIncomplete", "the weight vector was zero on every bar")
@@ -5365,6 +5367,8 @@ def _rerun_log_tail(name):
 
 
 def _classify_rerun(tail):
+    if "is already running" in tail:   # runner._hold_backtest_lock after QUIET_LOCK_WAIT_S
+        return "BUSY"
     if "Backtest refused" in tail:
         return "REFUSED"
     if any(m in tail for m in _RERUN_DATA_MARKS):
@@ -5591,17 +5595,23 @@ def _cmd_version_restore(args):
 
 # ── 更新績效(performance refresh)────────────────────────────────────────────────
 # `stats_refresh {names: [...]}`: the workspace's 更新績效 button (one name) and the manager
-# table's chip (every stale member), no agent turn. A live tick writes state.json only
-# (blave-agent lib/runner.py: the performance block was most of every tick's CPU), so a
-# deployed strategy's stats.json is refreshed here instead — the same strategy file run as a
-# live tick plus BLAVE_STATS_REFRESH=1: same data path as the tick, MCPT and Generated At
-# carried over, no version minted, state.json untouched. The ack says what was queued; each
-# strategy's progress rides the strategies report as `perf.refresh` (strategies/<name>/
-# perf_refresh.json, read by strategy_reporter): running → gone on success, failed + a code
-# otherwise — the same four codes as a restore's re-run, so the page reuses those strings.
-# The pre-report sweep (_start_report_job) runs the same path for every live Type A/C
-# strategy. One refresh subprocess at a time per machine. An old lib (live tick still
-# rewriting stats.json) runs the command as an ordinary live tick: it writes stats.json too.
+# table's chip (every stale member), no agent turn; every Type A/C strategy with a stats.json,
+# deployed or not. Deployed (a key of the 下單設定 `amounts`, same membership as the scheduler):
+# a live tick writes state.json only (blave-agent lib/runner.py: the performance block was most
+# of every tick's CPU), so stats.json is refreshed here instead — the same strategy file run as
+# a live tick plus BLAVE_STATS_REFRESH=1: same data path as the tick, MCPT and Generated At
+# carried over, no version minted, state.json untouched. Not deployed: the backtest re-run on
+# today's data, the same quiet backtest a restore starts (BLAVE_MODE=backtest BLAVE_QUIET=1;
+# canon §2 mints nothing for code that equals a stored version; a never-versioned strategy
+# mints its v1 — a first version, not an edit). A file whose code equals none of an existing
+# history would mint — that is a new backtest, not a refresh: CODE_CHANGED, not run.
+# The ack says what was queued; each strategy's progress rides the strategies report as
+# `perf.refresh` (strategies/<name>/perf_refresh.json, read by strategy_reporter): running →
+# gone on success, failed + a code otherwise — the same four codes as a restore's re-run, so
+# the page reuses those strings. The pre-report sweep (_start_report_job) runs the live path for
+# every deployed Type A/C strategy and nothing else. One refresh subprocess at a time per
+# machine. An old lib (live tick still rewriting stats.json) runs the live command as an
+# ordinary live tick: it writes stats.json too.
 STATS_REFRESH_ENV = "BLAVE_STATS_REFRESH"            # = lib/runner.STATS_REFRESH_ENV
 STATS_REFRESH_TIMEOUT_S = 600                        # = manager/wait_for_bar.RUN_TIMEOUT_SECONDS
 # The sweep as a whole: a cold 1-min cache on a 1 GB box took 11 minutes per strategy
@@ -5640,6 +5650,9 @@ def _perf_path(name):
 
 
 def _mark_perf(name, status, err=None):
+    # the strategy was deleted while its refresh ran: a record now would recreate the folder as a ghost
+    if not os.path.isdir(os.path.join(WORKSPACE, "strategies", name)):
+        return
     doc = {"status": status, "at": int(time.time())}
     if status == "running":
         doc["pid"] = os.getpid()   # whose run: a record from a process that is gone is settled at start
@@ -5648,12 +5661,69 @@ def _mark_perf(name, status, err=None):
     _write_json_atomic(_perf_path(name), doc)
 
 
-def _refresh_stats(name, timeout):
+def _deployed_names():
+    """The 下單設定's strategy names (portfolio_config.json `amounts` keys, amount 0 included —
+    the picker schedules on pick), validated like every other read of that file. Empty when
+    there is no portfolio yet (nothing deployed); None when the file is there but unreadable —
+    the callers must not guess who is live from that (a deployed strategy taken for undeployed
+    would get a backtest: Generated At restamped, MCPT re-run)."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
+            amounts = json.load(f).get("amounts") or {}
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(amounts, dict):
+        return None
+    return {k for k in amounts if isinstance(k, str) and _STATS_REFRESH_NAME_RE.fullmatch(k)}
+
+
+def _refresh_plan(name):
+    """(code_hash, None) when re-running an undeployed strategy's backtest is a refresh — the
+    file equals a stored version (canon §2 mints nothing), or the strategy has no versions yet
+    (that backtest mints v1: a first version, not an edit); the hash (lib.strategy code_hash:
+    sha256 of the bytes, 16 hex) pins the run. (None, skip code) otherwise: CODE_CHANGED = the
+    file equals none of an existing history (edited since the last backtest, the run would mint);
+    INDEX_BROKEN = the index is there but unreadable, or an entry has no code_hash, so nothing
+    can be told; NOT_RUNNABLE = the file itself cannot be read."""
+    import hashlib
+    try:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"), "rb") as f:
+            have = hashlib.sha256(f.read()).hexdigest()[:16]
+    except OSError:
+        return None, "NOT_RUNNABLE"
+    try:
+        with open(_versions_path(name, "index.json"), encoding="utf-8") as f:
+            items = json.load(f).get("items") or []
+        if not isinstance(items, list):
+            raise ValueError("items")
+    except OSError:
+        return have, None   # never versioned
+    except (ValueError, AttributeError):
+        return None, "INDEX_BROKEN"
+    stored = [i.get("code_hash") if isinstance(i, dict) else None for i in items]
+    if not stored or have in stored:
+        return have, None
+    return None, "INDEX_BROKEN" if any(not isinstance(h, str) or not h for h in stored) else "CODE_CHANGED"
+
+
+def _refresh_stats(name, timeout, backtest_hash=None):
     """One strategy's performance refresh, synchronously (callers hold _STATS_REFRESH_LOCK).
-    Returns stats.json's new mtime (epoch seconds); RuntimeError "<CODE>: …" with CODE in
-    _RERUN_ERRS otherwise (the log tail classified like a restore's re-run)."""
+    `backtest_hash` (the file's code_hash, _refresh_plan) = a quiet backtest of an undeployed
+    strategy; None = the live refresh. Returns stats.json's new mtime (epoch seconds);
+    RuntimeError "<CODE>: …" with CODE in _RERUN_ERRS otherwise (the log tail classified like
+    a restore's re-run; SUPERSEDED when the run exited 0 without touching stats.json — the
+    runner discards a run whose strategy file changed under it, both paths)."""
     script = os.path.join("strategies", name, "strategy.py")
-    env = _strategy_subprocess_env("live", **{STATS_REFRESH_ENV: "1", "PYTHONPATH": WORKSPACE})
+    before = _stats_sig(name)
+    if backtest_hash:
+        # BLAVE_EXPECT_CODE_HASH: an edit landing between the ack and the child's import would
+        # otherwise mint (runner._superseded closes exactly that gap, as for a restore's re-run)
+        env = _strategy_subprocess_env("backtest", BLAVE_QUIET="1", BLAVE_EXPECT_CODE_HASH=backtest_hash,
+                                       PYTHONPATH=WORKSPACE)
+    else:
+        env = _strategy_subprocess_env("live", **{STATS_REFRESH_ENV: "1", "PYTHONPATH": WORKSPACE})
     try:
         r = subprocess.run([_workspace_python(), script], cwd=WORKSPACE, env=env,
                            capture_output=True, encoding="utf-8", errors="replace",
@@ -5663,27 +5733,41 @@ def _refresh_stats(name, timeout):
     if r.returncode != 0:
         tail = _tail(r.stderr) or _tail(r.stdout)
         raise RuntimeError(f"{_classify_rerun(tail)}: {tail or f'exited {r.returncode}'}")
-    try:
-        return int(os.stat(_stats_path(name)).st_mtime)
-    except OSError:
+    after = _stats_sig(name)
+    if after is None:
         raise RuntimeError("EXIT: the run wrote no stats.json")
+    if after == before:
+        raise RuntimeError(f"SUPERSEDED: the run of {name} wrote nothing — its strategy file changed under it")
+    return int(after[0] // 1_000_000_000)
 
 
-def _refresh_one(name, deadline, what):
+def _stats_sig(name):
+    """(mtime_ns, size) of stats.json, or None — did the run write it? (an os.replace always
+    moves both; comparing existence alone takes a discarded run for a success)"""
+    try:
+        st = os.stat(_stats_path(name))
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+def _refresh_one(name, deadline, what, backtest_hash=None):
     """Refresh `name` with the record the page reads: running while it runs, gone on success,
     failed + code otherwise. `deadline` (monotonic) bounds the lock wait and the run; None =
     no budget (the button). Returns True on success."""
     _mark_perf(name, "running")
     wait = None if deadline is None else max(0.0, deadline - time.monotonic())
     if not _STATS_REFRESH_LOCK.acquire(timeout=-1 if wait is None else wait):
-        _mark_perf(name, "failed", "TIMEOUT")
+        # not this strategy's failure: the sweep's budget went to whoever held the machine
+        _remove_retry(_perf_path(name), "performance refresh record")
         _log(f"{what}: {name} not refreshed: another refresh held the machine for the whole budget")
         return False
     try:
-        timeout = STATS_REFRESH_TIMEOUT_S
+        # a backtest re-runs MCPT and the lookahead check: the restore re-run's budget, not the tick's
+        timeout = RESTORE_RERUN_TIMEOUT_S if backtest_hash else STATS_REFRESH_TIMEOUT_S
         if deadline is not None:
             timeout = max(1.0, min(timeout, deadline - time.monotonic()))
-        _refresh_stats(name, timeout)
+        _refresh_stats(name, timeout, backtest_hash)
     except Exception as e:
         code = str(e).split(":", 1)[0]
         _mark_perf(name, "failed", code if code in _RERUN_ERRS else "EXIT")
@@ -5695,10 +5779,10 @@ def _refresh_one(name, deadline, what):
     return True
 
 
-def _run_refresh_queue(names):
-    for name in names:
+def _run_refresh_queue(queued):
+    for name, backtest_hash in queued:
         try:
-            _refresh_one(name, None, "stats refresh")
+            _refresh_one(name, None, "stats refresh", backtest_hash)
         finally:
             with _PERF_PENDING_LOCK:
                 _PERF_PENDING.discard(name)
@@ -5712,11 +5796,20 @@ def _cmd_stats_refresh(args):
     {started: [names], skipped: {name: CODE}} with CODE in NOT_RUNNABLE (not a Type A/C
     strategy — a Type B script places its own orders, running it IS trading) / NO_STATS (never
     backtested, or restore() stashed the results: canon §5 leaves that to the next backtest) /
-    BUSY (already queued or running). Shape errors raise "ValueError: BAD_ARGS: …". The runs'
-    own outcome is perf.refresh in the strategies report, not the ack."""
+    CODE_CHANGED (not deployed, and the file equals none of its stored versions: the re-run would
+    be a new backtest and mint — the user backtests first; a never-versioned strategy is let
+    through, its v1 is a first version) / INDEX_BROKEN (not deployed, versions/index.json there
+    but unreadable or an entry without code_hash: can't tell) / BUSY (already queued or
+    running); CONFIG_UNREADABLE for the whole batch when portfolio_config.json is there but
+    unreadable (who is live cannot be told, and a deployed strategy must not get a backtest).
+    Shape errors raise "ValueError: BAD_ARGS: …". The runs' own outcome is perf.refresh in the
+    strategies report, not the ack."""
     names = _stats_refresh_args(args)
+    deployed = _deployed_names()
+    if deployed is None:
+        return {"started": [], "skipped": {n: "CONFIG_UNREADABLE" for n in names}}
     ac, _b = _split_by_type(set(names))
-    started, skipped = [], {}
+    started, queued, skipped = [], [], {}
     for name in names:
         if name not in ac:
             skipped[name] = "NOT_RUNNABLE"
@@ -5724,6 +5817,12 @@ def _cmd_stats_refresh(args):
         if not os.path.isfile(_stats_path(name)):
             skipped[name] = "NO_STATS"
             continue
+        backtest_hash = None
+        if name not in deployed:
+            backtest_hash, skip = _refresh_plan(name)
+            if skip:
+                skipped[name] = skip
+                continue
         with _PERF_PENDING_LOCK:
             if name in _PERF_PENDING:
                 skipped[name] = "BUSY"
@@ -5731,8 +5830,9 @@ def _cmd_stats_refresh(args):
             _PERF_PENDING.add(name)
         _mark_perf(name, "running")   # every queued one reads 更新中 from the ack-time push on
         started.append(name)
+        queued.append((name, backtest_hash))
     if started:
-        threading.Thread(target=_run_refresh_queue, args=(started,), daemon=True,
+        threading.Thread(target=_run_refresh_queue, args=(queued,), daemon=True,
                          name="stats-refresh").start()
         _push(_ON_APPLIED, "stats refresh queued")
     return {"started": started, "skipped": skipped}
@@ -5746,15 +5846,16 @@ def _refresh_live_stats(reason):
     already has in flight. Failures are recorded per strategy and the sweep moves on."""
     if not _bound_venue():
         return
-    try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
-            amounts = json.load(f).get("amounts") or {}
-    except (OSError, ValueError):
+    deployed = _deployed_names()
+    if not deployed:   # no portfolio, or unreadable: nothing to sweep / nobody to guess about
         return
-    if not isinstance(amounts, dict):
+    if _STATS_REFRESH_LOCK.locked():
+        # a button refresh (up to 15 min for an undeployed backtest) holds the machine: the
+        # budget would go to waiting, and that is not any member's failure — the report runs
+        # on the numbers it has
+        _log(f"performance sweep ({reason}): skipped, a refresh is running")
         return
-    names = {k for k in amounts if isinstance(k, str) and _STATS_REFRESH_NAME_RE.fullmatch(k)}
-    ac_names, _b = _split_by_type(names)
+    ac_names, _b = _split_by_type(deployed)
     deadline = time.monotonic() + STATS_REFRESH_BUDGET_S
     now = time.time()
     touched = 0

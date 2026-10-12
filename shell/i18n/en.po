@@ -7313,6 +7313,27 @@ msgstr "Performance updated"
 msgid "perf.fail"
 msgstr "Update failed; figures unchanged."
 
+msgid "perf.tipBt"
+msgstr "Last backtest {t}"
+
+msgid "perf.codeChanged"
+msgstr "The code changed since the last backtest; run a backtest first."
+
+msgid "perf.superseded"
+msgstr "The strategy was edited while updating; figures unchanged. Press again."
+
+msgid "perf.lockBusy"
+msgstr "This strategy is being backtested right now; press again when it finishes."
+
+msgid "perf.indexBroken"
+msgstr "The version index can't be read; run a backtest first."
+
+msgid "perf.notRunnable"
+msgstr "This kind of strategy can't update its performance."
+
+msgid "perf.configUnreadable"
+msgstr "The trading settings can't be read; nothing was updated."
+
 msgid "plan.st.runningTrial"
 msgstr "Trial · {n} days left · machine running"
 

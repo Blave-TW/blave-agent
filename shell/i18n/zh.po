@@ -7326,6 +7326,27 @@ msgstr "績效已更新"
 msgid "perf.fail"
 msgstr "沒更新成功，數字是舊的"
 
+msgid "perf.tipBt"
+msgstr "上次回測 {t}"
+
+msgid "perf.codeChanged"
+msgstr "程式碼改過還沒回測，請先回測"
+
+msgid "perf.superseded"
+msgstr "策略在更新途中被改過，數字沒換；再按一次"
+
+msgid "perf.lockBusy"
+msgstr "這支策略正在回測中，等它跑完再按一次"
+
+msgid "perf.indexBroken"
+msgstr "版本索引讀不到，請先回測一次"
+
+msgid "perf.notRunnable"
+msgstr "這類策略不能更新績效"
+
+msgid "perf.configUnreadable"
+msgstr "下單設定讀不到，沒有更新"
+
 msgid "plan.st.runningTrial"
 msgstr "試用中 · 剩 {n} 天 · 主機運行中"
 
