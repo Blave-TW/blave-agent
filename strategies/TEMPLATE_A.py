@@ -60,7 +60,8 @@ def compute_signals(df):
     # signal[df['SMA_F'] > df['SMA_S']] = 1.0
     # signal[df['SMA_F'] < df['SMA_S']] = 0.0
 
-    # Exits (stop / take-profit / trailing / time) → lib.exits.apply_exits(..., trigger="intrabar" | "close"), never a hand-written loop
+    # Exits (stop / take-profit / trailing / time — % or a price distance such as 2 * ATR — breakeven, cooldown)
+    # → lib.exits.apply_exits(..., trigger="intrabar" | "close"), never a hand-written loop
     if MARKET == "spot":
         signal = signal.clip(lower=0.0)   # spot cannot short — live clamps to flat, so must the backtest
     return signal

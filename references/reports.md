@@ -293,7 +293,14 @@ publish(pack, narrative={
   your reply says 「今天休市,用 9/24 的資料」 (a 台股大盤晨報 on a closed day works the same way).
   A scheduled run on such a day, and any request before today's close has landed, gets
   `pack.skip`: `describe()` gives the reason and the last trading day, and `publish()` writes
-  nothing and returns None. Tell the user that; do not hand-write a substitute. There is no sector breakdown. A report that cites the holiday table (「9/25
+  nothing and returns None. Tell the user that; do not hand-write a substitute.
+  漲跌家數 and a sector breakdown are not blocks of the template, and you do not add them to the
+  report by hand. Asked for them, answer in chat with `lib.data.fetch_tw_breadth_public()` (上市
+  up / down / flat) and `fetch_tw_sector_breadth(headers)` (per-industry counts and equal-weighted
+  average change): desktop only — on a cloud machine both raise `TwPublicUnavailable`, so say the
+  figure is not available there; 上市 only, never 上櫃; the finished session, never intraday — check
+  the returned `date` is the day you are describing; our own count over 4-digit codes, so it can
+  differ from TWSE's official 漲跌家數 (`references/lib.md`). A report that cites the holiday table (「9/25
   中秋節休市」) copies its attribution into the footnote verbatim (`references/lib.md` ›
   *Taiwan market calendar*). A skip on a holiday-table day ends with that attribution
   (also `pack.context['休市表出處']`); a reply telling the user the market is closed carries

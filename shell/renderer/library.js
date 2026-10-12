@@ -683,7 +683,6 @@ function libPaintCta(s) {
   const btn = (cls, label, on) => { const b = libEl("button", cls, label); b.type = "button"; if (on) b.addEventListener("click", () => on(b)); return b; };
   const dis = (label) => { const b = btn("btn-fill", label); b.disabled = true; return b; };
   const buyLabel = () => t("lib.buy", { price: libPriceText(s) || "—" });
-  const paidNote = () => { note.textContent = libJoin(t("lib.note.paid"), libFx() ? t("lib.fxNote") : ""); };
   switch (c.state) {
     case "signedOut": row.appendChild(libSignInBtn()); note.classList.add("up"); note.textContent = t(c.paid ? "lib.gate.signedOutBuy" : "lib.gate.signedOut"); break;   // 只講登入、不提卡與資料:登入後真的撞到資料牆再講(Wei 10-02)
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libNoDataText(s, c.why); break;
@@ -696,11 +695,11 @@ function libPaintCta(s) {
     }
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
     case "pending": row.appendChild(dis(t("lib.pending"))); note.textContent = LIB.pending && LIB.pending.stage === "dl" ? "" : t("lib.note.pending"); break;   // 下載中對話裡還沒有東西可看
-    case "buying": row.appendChild(dis(t("lib.buy.busy"))); paidNote(); break;
+    case "buying": row.appendChild(dis(t("lib.buy.busy"))); break;
     case "installed":
       row.append(btn("btn-fill", t("lib.open"), () => (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name))), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
       break;
-    case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); paidNote(); break;
+    case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); break;
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); if (c.pub) note.textContent = t("lib.pub"); break;
     default:   // free:分組中而這支只用公開資料,鈕下講一句(沒有任何登入或卡的字;§0.1)
       row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b)));

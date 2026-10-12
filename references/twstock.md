@@ -475,6 +475,13 @@ from lib.data import (
 分點資料（非 batch，按 trader 維度）：
 - `fetch_twstock_trader_flows(trader_id, start, end, headers)` → MultiIndex (date, stock_id)，`net` 欄（買 - 賣股數）；trader_id 例如 `'9217'`（凱基-松山）
 
+Per-stock branch flows (one stock, every branch; shares, net = buy − sell; daily, naive date index):
+- `fetch_twstock_branch_daily_net(stock_id, start, end, headers)` → DataFrame, rows = dates, columns = `broker_id`; a branch that did not trade that day is 0.
+- `fetch_twstock_all_broker_net(stock_id, start, end, headers)` → Series `net`: the day's net summed over every branch.
+- `fetch_twstock_broker_net(stock_id, broker_id, start, end, headers)` → DataFrame `net` for one branch (`broker_id` e.g. `'9217'`); only the days that branch traded the stock.
+- All three share one per-day cache and need Blave data access; a cold fetch goes in 90-day requests under a 270-per-5-minutes limit. A day is published around 21:30 Taipei — an empty answer for the last 3 days is not cached and is asked again.
+- In a strategy attach them by publication time — `join_tw_flow(df, 'broker_total' | 'broker_branch', …)` or `align_feed` (`references/strategy-code.md` › *Taiwan daily flows*) — never a plain `join` on the date.
+
 ---
 
 ## Whole-market Screening (全市場選股)

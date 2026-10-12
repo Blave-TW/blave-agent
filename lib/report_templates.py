@@ -1129,8 +1129,9 @@ def tw_close_brief(date=None, headers=None, lookback_days=45, extra=None, fresh=
     `pack.skip` is set (and `publish` writes nothing) when `date` is not a trading day per
     `lib.data.is_tw_trading_day`, or when the index has no close for `date` yet (not landed,
     or an ad-hoc closure the holiday table does not list); the reason names the last
-    trading day. No sector breakdown: lib has no per-industry daily series, and building
-    one means a close fetch for every listed stock."""
+    trading day. 漲跌家數 and a per-industry breakdown are not blocks of this template; on the
+    desktop `lib.data.fetch_tw_breadth_public` / `fetch_tw_sector_breadth` answer them in chat
+    (上市 only, finished session)."""
     return build(_recipe("tw_close_brief", lookback_days=lookback_days), date, headers, extra, fresh)
 
 
