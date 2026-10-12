@@ -587,6 +587,9 @@ def fetch_data(hdrs):
   waiting and alerts 15 minutes after the row was due, naming the feed. Monthly / quarterly /
   weekly filings only print a warning (a late filer must not halt the strategy; the previous
   filing is what was known).
+- **Never put `align_feed` inside a per-symbol `try/except`.** Catching `FeedNotPublished` drops
+  that symbol and re-ranks the rest on a partial universe, so the weights flip from tick to tick;
+  the live tick refuses anyway — a swallowed `FeedNotPublished` is re-raised when `fetch_data` returns.
 - Take the trimmed index for price too (`df.loc[aligned.index]`), and do not `ffill` the aligned
   columns across a NaN — that re-creates the stale value `align_feed` just removed.
 
