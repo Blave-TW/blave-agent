@@ -322,8 +322,8 @@ app.whenReady().then(async () => {
   let k = await card();
   ok("③ A2 兩欄:兩欄各自是一張完整的卡(列 = --surface-card;各欄第一列上兩角、最後一列下兩角 = --radius-lg,中間的列直角;列間 1px 線、最後一列沒有;列緊貼;行尾 › 是 ::after、列裡沒有多的節點),兩張卡之間有欄距 16、等寬",
     k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
-  ok("③ A2 同一條左軸:記號、第一顆籤、小標、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號與標題那一行 → 三顆籤(隔 12)→ 清單",
-    axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toChips - 12) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
+  ok("③ A2 同一條左軸:記號、第一顆籤、小標、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號與標題那一行 → 三顆籤(隔 16)→ 清單",
+    axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toChips - 16) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
   ok("③ A2 記號與標題並排:同一行、記號在左(圖形右緣到標題的字隔 12)、圖形的垂直中線對到標題那行字的中線(差 ≤ 1)、圖形不比那行字高;標題是 h4「開始一支策略」",
     Math.abs(k.head.gap - 12) < 0.6 && Math.abs(k.head.mid) <= 1 && k.head.shH <= k.head.lineH && k.head.shH >= 16 && k.h === Z["wd.start"] && k.hTag === "H4", JSON.stringify([k.head, k.h, k.hTag]));
   { // hover:底換 --surface-muted、小字從 --ink-3 換 --ink-2(ink-3 壓在 hover 底上不到 4.5:1)、› 換色
