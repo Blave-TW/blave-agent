@@ -1549,12 +1549,13 @@ function rpRobAsk(name, opener, begin, info) {
   const row = (k, v) => { const r = mk("div", "cf-row"), dd = mk("dd"); dd.appendChild(v); r.append(mk("dt", "", k), dd); dl.appendChild(r); };
   if (now.start && now.end) row(t("rob.cfPeriod"), mk("span", "mono", now.start + " → " + now.end));
   if (now.fee) row(t("rob.cfFee"), mk("span", "mono", now.fee + "%"));
-  if (grid) row(t("rob.cfGrid"), monoTpl(t("rob.cfGridVal"), grid));
+  // 單參數(grid.single):「網格」列換成「範圍」、lead 與訊息換 *1 版;二維那句一個 byte 不動(agent 端拿原句當觸發句)
+  if (grid) row(t(grid.single ? "rob.cfRange" : "rob.cfGrid"), monoTpl(t(grid.single ? "rob.cfRangeVal" : "rob.cfGridVal"), grid));
   if (dl.firstChild) extra.appendChild(dl);
   if (grid) extra.appendChild(mk("p", "cf-note", t("rob.cfNote")));
   // 訊息裡的兩軸用原值(grid.raw:ASCII 負號、不補位數),框裡的顯示才用 pv 格式
-  const msg = grid ? t("rob.msgRescan", { name, start: now.start || D, end: now.end || D, fee: now.fee || D, ...grid.raw }) : t("rob.msgScan", { name });
-  return new Promise((resolve) => confirmBox({ title: t(grid ? "rob.btnRescan" : "rob.btnScan"), lines: [t(grid ? "rob.cfLead" : "rob.emptyCap")], extra, ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
+  const msg = grid ? t(grid.single ? "rob.msgRescan1" : "rob.msgRescan", { name, start: now.start || D, end: now.end || D, fee: now.fee || D, ...grid.raw }) : t("rob.msgScan", { name });
+  return new Promise((resolve) => confirmBox({ title: t(grid ? "rob.btnRescan" : "rob.btnScan"), lines: [t(grid ? (grid.single ? "rob.cfLead1" : "rob.cfLead") : "rob.emptyCap")], extra, ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
     // begin():同樣本外驗證,送出前先記「這一支正在送」(暖機那段不顯示「agent 正在回覆上一則訊息」,稽核 P2-1)
     onOk: () => { if (typeof begin === "function") begin(); submitMessage(msg).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }); } }));
 }
@@ -1714,7 +1715,7 @@ function csStartNew() {
    比對:用模板字串本身組出前後錨定的 regex(不另抄一份模板),{name} = 最短的任意字串、{lookback}/{step} = 數字,整則吻合才算;
    zh / en 兩種模板都試(舊對話、送出後換了介面語言都認得),摘要照現在的語言。用戶自己逐字打出同一整句也會顯示摘要——
    那句要 agent 做的就是這件事,可以接受。fixedMatch 是純函式(tests/check_shell_wf.js 從原文切出來跑) */
-const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"]];
+const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"]];
 function fixedMatch(text, strings) {
   if (typeof text !== "string" || !text) return null;
   for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) {

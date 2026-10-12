@@ -3855,6 +3855,54 @@ msgstr "Please rescan the parameters of strategy {name} (lib.param_scan: scan_gr
 msgid "rob.msgRescanLabel"
 msgstr "Rescan the parameters of {name}"
 
+msgid "rob.cells"
+msgstr "{n} cells"
+
+msgid "rob.heatAria1"
+msgstr "{rp} parameter scan Sharpe heatmap"
+
+msgid "rob.heatNbr1"
+msgstr "Parameter scan · neighbourhood mean Sharpe ({k} cells)"
+
+msgid "rob.cmp.nbrTip1"
+msgstr "Mean Sharpe of the {k} neighbouring cells; the closer to Sharpe, the better it holds when the parameter drifts"
+
+msgid "rob.legend.curOff1"
+msgstr "Current parameter {prm} is outside the scanned range — no marker"
+
+msgid "rob.cfLead1"
+msgstr "Rescans with the current backtest settings, keeping the same parameter and range."
+
+msgid "rob.cfRange"
+msgstr "Range"
+
+msgid "rob.cfRangeVal"
+msgstr "{rp} {r0}–{r1} ({R} cells)"
+
+msgid "rob.msgRescan1"
+msgstr "Please rescan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+
+msgid "rob.tag.atPlateau1"
+msgstr "Current: the robust value"
+
+msgid "rob.verdict.peak1"
+msgstr "A small drift costs a lot — switch to the robust value."
+
+msgid "rob.verdict.inside1"
+msgstr "One cell from the robust value — switching changes little."
+
+msgid "rob.verdict.outside1"
+msgstr "Nearby values are unstable — switch to the robust value."
+
+msgid "rob.legend.cur1"
+msgstr "Current parameter"
+
+msgid "rob.legend.curPeak1"
+msgstr "Current parameter (same cell as peak)"
+
+msgid "rob.legend.curPlateau1"
+msgstr "Current parameter = robust value"
+
 msgid "rp.tab.wf"
 msgstr "Out-of-Sample"
 

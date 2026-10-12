@@ -1,0 +1,610 @@
+[
+ {
+  "lang": "zh",
+  "state": "peak",
+  "code": "A = 10\nB = 0.5\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>手續費</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>掃描</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">重新掃描</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-risk\">目前參數：尖峰上</span></div><p class=\"rob-verdict\">稍微偏掉表現就掉很多，建議換成穩健參數。</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">鄰域平均</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>尖峰</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>穩健</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">參數掃描 · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"顯示模式\"><button type=\"button\" aria-pressed=\"true\">原始 Sharpe</button><button type=\"button\" aria-pressed=\"false\">鄰域平均</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B 參數掃描 Sharpe 熱圖\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td class=\"is-current\" data-i=\"0\" data-j=\"0\" data-roles=\"尖峰 · 目前參數\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · 鄰域平均 1.23(尖峰 · 目前參數)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · 鄰域平均 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · 鄰域平均 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · 鄰域平均 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · 鄰域平均 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · 鄰域平均 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: 沒有交易\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · 鄰域平均 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"穩健\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · 鄰域平均 1.50(穩健)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>尖峰 <span class=\"mono\">10 / 0.5</span>（全格最高）</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>穩健 <span class=\"mono\">30 / 0.9</span>（鄰域平均最高）</span></span><span class=\"it\"><span class=\"rob-sw dash\"></span>目前參數（與尖峰同格）</span><span class=\"it\">— 沒有交易</span></div></div></div>"
+ },
+ {
+  "lang": "zh",
+  "state": "outside",
+  "code": "A = 10\nB = 0.9\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>手續費</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>掃描</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">重新掃描</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-neutral\">目前參數：穩健區外</span></div><p class=\"rob-verdict\">鄰近參數表現不穩，建議換成穩健參數。</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">鄰域平均</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>尖峰</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>穩健</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr><tr><td><span class=\"who\">目前</span></td><td class=\"num prm mono\">10 / 0.9</td><td class=\"num mono\">0.10</td><td class=\"num mono\">0.80</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">參數掃描 · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"顯示模式\"><button type=\"button\" aria-pressed=\"true\">原始 Sharpe</button><button type=\"button\" aria-pressed=\"false\">鄰域平均</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B 參數掃描 Sharpe 熱圖\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"尖峰\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · 鄰域平均 1.23(尖峰)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · 鄰域平均 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td class=\"is-current\" data-i=\"0\" data-j=\"2\" data-roles=\"目前參數\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · 鄰域平均 0.80(目前參數)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · 鄰域平均 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · 鄰域平均 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · 鄰域平均 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: 沒有交易\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · 鄰域平均 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"穩健\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · 鄰域平均 1.50(穩健)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>尖峰 <span class=\"mono\">10 / 0.5</span>（全格最高）</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>穩健 <span class=\"mono\">30 / 0.9</span>（鄰域平均最高）</span></span><span class=\"it\"><span class=\"rob-sw dash\"></span>目前參數</span><span class=\"it\">— 沒有交易</span></div></div></div>"
+ },
+ {
+  "lang": "zh",
+  "state": "atPlateau",
+  "code": "A = 30\nB = 0.9\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>手續費</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>掃描</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">重新掃描</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-neutral\">目前參數：就是穩健參數</span></div><p class=\"rob-verdict\">已是最穩的一格，不用換。</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">鄰域平均</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>尖峰</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>穩健</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">參數掃描 · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"顯示模式\"><button type=\"button\" aria-pressed=\"true\">原始 Sharpe</button><button type=\"button\" aria-pressed=\"false\">鄰域平均</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B 參數掃描 Sharpe 熱圖\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"尖峰\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · 鄰域平均 1.23(尖峰)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · 鄰域平均 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · 鄰域平均 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · 鄰域平均 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · 鄰域平均 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · 鄰域平均 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: 沒有交易\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · 鄰域平均 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td class=\"is-current\" data-i=\"2\" data-j=\"2\" data-roles=\"穩健 · 目前參數\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · 鄰域平均 1.50(穩健 · 目前參數)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>尖峰 <span class=\"mono\">10 / 0.5</span>（全格最高）</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>穩健 <span class=\"mono\">30 / 0.9</span>（鄰域平均最高）</span></span><span class=\"it\"><span class=\"rob-sw dash\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span>目前參數 = 穩健參數</span><span class=\"it\">— 沒有交易</span></div></div></div>"
+ },
+ {
+  "lang": "zh",
+  "state": "outscan",
+  "code": "A = 99\nB = 0.5\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>手續費</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>掃描</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">重新掃描</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-neutral\">目前參數：不在掃描範圍</span></div><p class=\"rob-verdict\">無法判斷穩不穩，先看掃描內最穩的一格。</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">鄰域平均</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>尖峰</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>穩健</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr><tr><td><span class=\"who\">目前</span></td><td class=\"num prm mono\">99 / 0.5</td><td class=\"num mono na\">—</td><td class=\"num mono na\">—</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">參數掃描 · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"顯示模式\"><button type=\"button\" aria-pressed=\"true\">原始 Sharpe</button><button type=\"button\" aria-pressed=\"false\">鄰域平均</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B 參數掃描 Sharpe 熱圖\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"尖峰\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · 鄰域平均 1.23(尖峰)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · 鄰域平均 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · 鄰域平均 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · 鄰域平均 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · 鄰域平均 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · 鄰域平均 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: 沒有交易\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · 鄰域平均 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"穩健\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · 鄰域平均 1.50(穩健)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>尖峰 <span class=\"mono\">10 / 0.5</span>（全格最高）</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>穩健 <span class=\"mono\">30 / 0.9</span>（鄰域平均最高）</span></span><span class=\"it\"><span>目前參數 <span class=\"mono\">99 / 0.5</span> 不在網格上，無標記</span></span><span class=\"it\">— 沒有交易</span></div></div></div>"
+ },
+ {
+  "lang": "zh",
+  "state": "stale",
+  "code": "A = 10\nB = 0.9\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2015-01-01",
+   "end": "2026-10-01",
+   "fee [%]": 0.01,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>手續費</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>掃描</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-fill rob-go\" type=\"button\">重新掃描</button></div><div class=\"rob-card\"><div class=\"rob-status\"></div><p class=\"rob-verdict\">回測期間已改成 <span class=\"mono\">2015-01-01</span> → <span class=\"mono\">2026-10-01</span>、手續費已改成 <span class=\"mono\">0.01</span>%，下面是改之前的掃描結果。</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">鄰域平均</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>尖峰</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>穩健</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">參數掃描 · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"顯示模式\"><button type=\"button\" aria-pressed=\"true\">原始 Sharpe</button><button type=\"button\" aria-pressed=\"false\">鄰域平均</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B 參數掃描 Sharpe 熱圖\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"尖峰\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · 鄰域平均 1.23(尖峰)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · 鄰域平均 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · 鄰域平均 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · 鄰域平均 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · 鄰域平均 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · 鄰域平均 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: 沒有交易\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · 鄰域平均 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"穩健\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · 鄰域平均 1.50(穩健)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>尖峰 <span class=\"mono\">10 / 0.5</span>（全格最高）</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>穩健 <span class=\"mono\">30 / 0.9</span>（鄰域平均最高）</span></span><span class=\"it\">— 沒有交易</span></div></div></div>"
+ },
+ {
+  "lang": "zh",
+  "state": "noconst",
+  "code": "",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100,
+   "current": {
+    "i": 0,
+    "j": 0
+   }
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>手續費</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>掃描</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">重新掃描</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-risk\">目前參數：尖峰上</span></div><p class=\"rob-verdict\">稍微偏掉表現就掉很多，建議換成穩健參數。</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">鄰域平均</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>尖峰</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>穩健</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">參數掃描 · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"顯示模式\"><button type=\"button\" aria-pressed=\"true\">原始 Sharpe</button><button type=\"button\" aria-pressed=\"false\">鄰域平均</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B 參數掃描 Sharpe 熱圖\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td class=\"is-current\" data-i=\"0\" data-j=\"0\" data-roles=\"尖峰 · 目前參數\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · 鄰域平均 1.23(尖峰 · 目前參數)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · 鄰域平均 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · 鄰域平均 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · 鄰域平均 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · 鄰域平均 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · 鄰域平均 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: 沒有交易\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · 鄰域平均 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"穩健\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · 鄰域平均 1.50(穩健)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>尖峰 <span class=\"mono\">10 / 0.5</span>（全格最高）</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>穩健 <span class=\"mono\">30 / 0.9</span>（鄰域平均最高）</span></span><span class=\"it\"><span class=\"rob-sw dash\"></span>目前參數（與尖峰同格）</span><span class=\"it\">— 沒有交易</span></div></div></div>"
+ },
+ {
+  "lang": "en",
+  "state": "peak",
+  "code": "A = 10\nB = 0.5\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>fee</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>scan</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">Rescan</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-risk\">Current: on a peak</span></div><p class=\"rob-verdict\">A small drift costs a lot — switch to the robust pair.</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">Nbhd. mean</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>Peak</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>Robust</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">Parameter scan · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"Display mode\"><button type=\"button\" aria-pressed=\"true\">Raw Sharpe</button><button type=\"button\" aria-pressed=\"false\">Neighbourhood mean</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B parameter scan Sharpe heatmap\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td class=\"is-current\" data-i=\"0\" data-j=\"0\" data-roles=\"Peak · Current\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · neighbourhood 1.23(Peak · Current)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · neighbourhood 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · neighbourhood 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · neighbourhood 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · neighbourhood 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · neighbourhood 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: No trades\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · neighbourhood 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"Robust\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · neighbourhood 1.50(Robust)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>Peak <span class=\"mono\">10 / 0.5</span> (highest cell)</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>Robust <span class=\"mono\">30 / 0.9</span> (highest neighbourhood mean)</span></span><span class=\"it\"><span class=\"rob-sw dash\"></span>Current parameters (same cell as peak)</span><span class=\"it\">— no trades</span></div></div></div>"
+ },
+ {
+  "lang": "en",
+  "state": "outside",
+  "code": "A = 10\nB = 0.9\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>fee</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>scan</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">Rescan</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-neutral\">Current: outside the plateau</span></div><p class=\"rob-verdict\">Nearby parameters are unstable — switch to the robust pair.</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">Nbhd. mean</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>Peak</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>Robust</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr><tr><td><span class=\"who\">Current</span></td><td class=\"num prm mono\">10 / 0.9</td><td class=\"num mono\">0.10</td><td class=\"num mono\">0.80</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">Parameter scan · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"Display mode\"><button type=\"button\" aria-pressed=\"true\">Raw Sharpe</button><button type=\"button\" aria-pressed=\"false\">Neighbourhood mean</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B parameter scan Sharpe heatmap\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"Peak\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · neighbourhood 1.23(Peak)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · neighbourhood 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td class=\"is-current\" data-i=\"0\" data-j=\"2\" data-roles=\"Current\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · neighbourhood 0.80(Current)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · neighbourhood 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · neighbourhood 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · neighbourhood 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: No trades\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · neighbourhood 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"Robust\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · neighbourhood 1.50(Robust)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>Peak <span class=\"mono\">10 / 0.5</span> (highest cell)</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>Robust <span class=\"mono\">30 / 0.9</span> (highest neighbourhood mean)</span></span><span class=\"it\"><span class=\"rob-sw dash\"></span>Current parameters</span><span class=\"it\">— no trades</span></div></div></div>"
+ },
+ {
+  "lang": "en",
+  "state": "atPlateau",
+  "code": "A = 30\nB = 0.9\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>fee</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>scan</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">Rescan</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-neutral\">Current: the robust pair</span></div><p class=\"rob-verdict\">Already the steadiest cell — nothing to change.</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">Nbhd. mean</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>Peak</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>Robust</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">Parameter scan · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"Display mode\"><button type=\"button\" aria-pressed=\"true\">Raw Sharpe</button><button type=\"button\" aria-pressed=\"false\">Neighbourhood mean</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B parameter scan Sharpe heatmap\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"Peak\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · neighbourhood 1.23(Peak)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · neighbourhood 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · neighbourhood 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · neighbourhood 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · neighbourhood 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · neighbourhood 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: No trades\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · neighbourhood 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td class=\"is-current\" data-i=\"2\" data-j=\"2\" data-roles=\"Robust · Current\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · neighbourhood 1.50(Robust · Current)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>Peak <span class=\"mono\">10 / 0.5</span> (highest cell)</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>Robust <span class=\"mono\">30 / 0.9</span> (highest neighbourhood mean)</span></span><span class=\"it\"><span class=\"rob-sw dash\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span>Current parameters = robust parameters</span><span class=\"it\">— no trades</span></div></div></div>"
+ },
+ {
+  "lang": "en",
+  "state": "outscan",
+  "code": "A = 99\nB = 0.5\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>fee</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>scan</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">Rescan</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-neutral\">Current: outside the scan</span></div><p class=\"rob-verdict\">Robustness can't be judged — see the steadiest scanned cell.</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">Nbhd. mean</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>Peak</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>Robust</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr><tr><td><span class=\"who\">Current</span></td><td class=\"num prm mono\">99 / 0.5</td><td class=\"num mono na\">—</td><td class=\"num mono na\">—</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">Parameter scan · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"Display mode\"><button type=\"button\" aria-pressed=\"true\">Raw Sharpe</button><button type=\"button\" aria-pressed=\"false\">Neighbourhood mean</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B parameter scan Sharpe heatmap\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"Peak\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · neighbourhood 1.23(Peak)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · neighbourhood 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · neighbourhood 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · neighbourhood 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · neighbourhood 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · neighbourhood 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: No trades\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · neighbourhood 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"Robust\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · neighbourhood 1.50(Robust)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>Peak <span class=\"mono\">10 / 0.5</span> (highest cell)</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>Robust <span class=\"mono\">30 / 0.9</span> (highest neighbourhood mean)</span></span><span class=\"it\"><span>Current parameters <span class=\"mono\">99 / 0.5</span> are off the grid — no marker</span></span><span class=\"it\">— no trades</span></div></div></div>"
+ },
+ {
+  "lang": "en",
+  "state": "stale",
+  "code": "A = 10\nB = 0.9\n",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2015-01-01",
+   "end": "2026-10-01",
+   "fee [%]": 0.01,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>fee</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>scan</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-fill rob-go\" type=\"button\">Rescan</button></div><div class=\"rob-card\"><div class=\"rob-status\"></div><p class=\"rob-verdict\">The backtest period is now <span class=\"mono\">2015-01-01</span> → <span class=\"mono\">2026-10-01</span>, the fee is now <span class=\"mono\">0.01</span>% — below is the scan from before the change.</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">Nbhd. mean</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>Peak</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>Robust</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">Parameter scan · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"Display mode\"><button type=\"button\" aria-pressed=\"true\">Raw Sharpe</button><button type=\"button\" aria-pressed=\"false\">Neighbourhood mean</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B parameter scan Sharpe heatmap\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td data-i=\"0\" data-j=\"0\" data-roles=\"Peak\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · neighbourhood 1.23(Peak)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · neighbourhood 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · neighbourhood 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · neighbourhood 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · neighbourhood 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · neighbourhood 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: No trades\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · neighbourhood 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"Robust\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · neighbourhood 1.50(Robust)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>Peak <span class=\"mono\">10 / 0.5</span> (highest cell)</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>Robust <span class=\"mono\">30 / 0.9</span> (highest neighbourhood mean)</span></span><span class=\"it\">— no trades</span></div></div></div>"
+ },
+ {
+  "lang": "en",
+  "state": "noconst",
+  "code": "",
+  "stats": {
+   "symbol": "BTCUSDT",
+   "interval": "1h",
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "fee [%]": 0.05,
+   "Generated At": 50
+  },
+  "scan": {
+   "row_param": "A",
+   "col_param": "B",
+   "row_vals": [
+    10,
+    20,
+    30
+   ],
+   "col_vals": [
+    0.5,
+    0.7,
+    0.9
+   ],
+   "grid": [
+    [
+     3,
+     0.2,
+     0.1
+    ],
+    [
+     0.3,
+     1.4,
+     1.5
+    ],
+    [
+     null,
+     1.5,
+     1.6
+    ]
+   ],
+   "window": 1,
+   "fee": 0.0005,
+   "start": "2025-01-01",
+   "end": "2025-06-01",
+   "generated_at": 100,
+   "current": {
+    "i": 0,
+    "j": 0
+   }
+  },
+  "html": "<div class=\"bt rob\"><div class=\"rob-top\"><div class=\"bt-meta\"><span class=\"mgrp\"><span class=\"mono bt-sym\">BTCUSDT</span></span><span class=\"mgrp\"><span class=\"mono\">1h</span></span><span class=\"mgrp\"><span class=\"mono\">2025-01-01 → 2025-06-01</span></span><span class=\"mgrp\"><span>fee</span><span class=\"mono\">0.05%</span></span><span class=\"mgrp\"><span>scan</span><span class=\"mono\">3×3</span></span></div><button class=\"btn-out rob-go\" type=\"button\">Rescan</button></div><div class=\"rob-card\"><div class=\"rob-status\"><span class=\"rob-tag is-risk\">Current: on a peak</span></div><p class=\"rob-verdict\">A small drift costs a lot — switch to the robust pair.</p><div class=\"rob-cmp\"><table class=\"rob-cmp-tbl\"><thead><tr><th></th><th class=\"prm mono\">A / B</th><th>Sharpe</th><th><button class=\"mp-tip\" type=\"button\" aria-describedby=\"rob-tip\">Nbhd. mean</button></th></tr></thead><tbody><tr><td><span class=\"who\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>Peak</span></td><td class=\"num prm mono\">10 / 0.5</td><td class=\"num mono\">3.00</td><td class=\"num mono\">1.23</td></tr><tr><td><span class=\"who\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>Robust</span></td><td class=\"num prm mono\">30 / 0.9</td><td class=\"num mono\">1.60</td><td class=\"num mono\">1.50</td></tr></tbody></table></div></div><div class=\"rob-heat\"><div class=\"rob-heat-head\"><div class=\"bt-label rob-heat-label\">Parameter scan · Sharpe</div><div class=\"rob-seg\" role=\"group\" aria-label=\"Display mode\"><button type=\"button\" aria-pressed=\"true\">Raw Sharpe</button><button type=\"button\" aria-pressed=\"false\">Neighbourhood mean</button></div></div><div class=\"rob-frame\"><table class=\"rob-tbl\" aria-label=\"A × B parameter scan Sharpe heatmap\" style=\"min-width: 340px;\"><thead><tr><th class=\"corner\"><span class=\"r mono\">A ↓</span><span class=\"mono\">B →</span></th><th scope=\"col\">0.5</th><th scope=\"col\">0.7</th><th scope=\"col\">0.9</th></tr></thead><tbody><tr><th scope=\"row\">10</th><td class=\"is-current\" data-i=\"0\" data-j=\"0\" data-roles=\"Peak · Current\" data-glyph=\"peak\" aria-label=\"A 10 · B 0.5: Sharpe 3.00 · neighbourhood 1.23(Peak · Current)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.45);\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span>3.00</td><td data-i=\"0\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.7: Sharpe 0.20 · neighbourhood 1.08\" style=\"background: rgba(49, 168, 106, 0.12);\">0.20</td><td data-i=\"0\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 10 · B 0.9: Sharpe 0.10 · neighbourhood 0.80\" style=\"background: rgba(49, 168, 106, 0.12);\">0.10</td></tr><tr><th scope=\"row\">20</th><td data-i=\"1\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.5: Sharpe 0.30 · neighbourhood 1.28\" style=\"background: rgba(49, 168, 106, 0.12);\">0.30</td><td data-i=\"1\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.7: Sharpe 1.40 · neighbourhood 1.20\" style=\"background: rgba(49, 168, 106, 0.34);\">1.40</td><td data-i=\"1\" data-j=\"2\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 20 · B 0.9: Sharpe 1.50 · neighbourhood 1.05\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td></tr><tr><th scope=\"row\">30</th><td data-i=\"2\" data-j=\"0\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.5: No trades\" class=\"is-na\">—</td><td data-i=\"2\" data-j=\"1\" data-roles=\"\" data-glyph=\"\" aria-label=\"A 30 · B 0.7: Sharpe 1.50 · neighbourhood 1.26\" style=\"background: rgba(49, 168, 106, 0.34);\">1.50</td><td data-i=\"2\" data-j=\"2\" data-roles=\"Robust\" data-glyph=\"plateau\" aria-label=\"A 30 · B 0.9: Sharpe 1.60 · neighbourhood 1.50(Robust)\" tabindex=\"0\" style=\"background: rgba(49, 168, 106, 0.34);\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span>1.60</td></tr></tbody></table></div><div class=\"rob-legend\"><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph peak\" aria-hidden=\"true\"></span></span><span>Peak <span class=\"mono\">10 / 0.5</span> (highest cell)</span></span><span class=\"it\"><span class=\"rob-sw\"><span class=\"rob-glyph plateau\" aria-hidden=\"true\"></span></span><span>Robust <span class=\"mono\">30 / 0.9</span> (highest neighbourhood mean)</span></span><span class=\"it\"><span class=\"rob-sw dash\"></span>Current parameters (same cell as peak)</span><span class=\"it\">— no trades</span></div></div></div>"
+ }
+]

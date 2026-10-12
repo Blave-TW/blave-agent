@@ -114,8 +114,9 @@ function resFacts(item, state, f) {
     if (x.no_bt === true) g.push([W(f.t("res.noBt"))]);
   } else if (item.sub === "scan") {
     g.push([W(f.t("res.kind.scan"))]);
-    if (Number.isInteger(x.grid_rows) && Number.isInteger(x.grid_cols)) g.push([W(x.grid_rows + "×" + x.grid_cols, "mono")]);
-    if (typeof x.tag === "string" && /^rob\.tag\.[A-Za-z]+$/.test(x.tag)) g.push([W(f.t(x.tag))]);
+    if (x.single === true && Number.isInteger(x.grid_rows)) { const [a, b] = f.t("rob.cells").split("{n}"); g.push([W(a), W(String(x.grid_rows), "mono"), W(b || "")].filter((s) => s.text)); }   // 單參數:「20 格」,不寫 N×1
+    else if (Number.isInteger(x.grid_rows) && Number.isInteger(x.grid_cols)) g.push([W(x.grid_rows + "×" + x.grid_cols, "mono")]);
+    if (typeof x.tag === "string" && /^rob\.tag\.[A-Za-z0-9]+$/.test(x.tag)) g.push([W(f.t(x.tag))]);   // atPlateau1 = 單參數版
   } else if (item.sub === "code") {
     g.push([W(f.t("res.kind.code"))]);
     if (x.has_bt) g.push([W(f.t("res.notRerun"))]);
@@ -182,6 +183,7 @@ async function resScanFacts(it) {
   const R = window.BlaveReport || {}, s = d && R.scanTag ? R.scanTag(d) : null;
   if (!s) return;
   it.facts.grid_rows = s.rows; it.facts.grid_cols = s.cols;
+  if (s.single) it.facts.single = true;
   if (s.tag) it.facts.tag = s.tag;
 }
 // 這一輪的回覆泡泡:往回找到上一句用戶的話為止的最後一則回覆(同 export.js xpHost);沒有就回 null,真的要出卡才起一則

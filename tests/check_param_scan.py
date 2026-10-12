@@ -283,4 +283,27 @@ g_inf = grid.copy(); g_inf[0, 1] = np.inf
 write_scan(g_inf, row_vals, col_vals, nbr_mean, best_idx, tmp, "ENTRY_TH", "EXIT_TH", 0.0005, None, None)
 check(json.load(open(path))["grid"][0][1] is None and "Infinity" not in open(path).read(), "inf 格 → null,檔內無 Infinity")
 
+
+# ── plot_heatmap: the one-cell second axis ('_') must not leak into the PNG ──────────────
+from lib.param_scan import plot_heatmap, plt
+plt.switch_backend("Agg")
+_cap, _orig_savefig = {}, plt.savefig
+def _spy_savefig(*a, **k):                      # read the axes right before they are saved and closed
+    ax = plt.gcf().axes[0]
+    _cap.update(size=tuple(plt.gcf().get_size_inches()), xticks=list(ax.get_xticks()), xlabel=ax.get_xlabel(), title=ax.get_title())
+    return _orig_savefig(*a, **k)
+plt.savefig = _spy_savefig
+try:
+    png1 = plot_heatmap(g1, rows1, [0], b1, row_label="WINDOW", col_label="_", output_path=os.path.join(tmp, "heatmap1.png"), send_telegram=False)
+    check(os.path.getsize(png1) > 0, "N×1 plot_heatmap 寫得出 PNG")
+    check(_cap["xticks"] == [] and _cap["xlabel"] == "", f"N×1 + '_':不畫 x 刻度與 xlabel → {_cap['xticks']} / {_cap['xlabel']!r}")
+    check("_" not in _cap["title"] and f"WINDOW={rows1[int(b1[0])]}" in _cap["title"], f"標題只寫真參數、沒有 _=0 → {_cap['title']}")
+    check(abs(_cap["size"][0] - 4) < 1e-6, f"一欄圖寬 4 吋 → {_cap['size']}")
+    plot_heatmap(grid, row_vals, col_vals, best_idx, output_path=os.path.join(tmp, "heatmap2.png"), send_telegram=False)
+    check(len(_cap["xticks"]) == 9 and _cap["xlabel"] == "EXIT_TH" and "EXIT_TH=" in _cap["title"] and _cap["size"][0] >= 8, f"二維熱圖照舊:9 個 x 刻度、xlabel、標題帶第二軸、寬 ≥ 8 → {_cap['size']}")
+    plot_heatmap(g1, rows1, [0.5], b1, row_label="WINDOW", col_label="EXIT_TH", output_path=os.path.join(tmp, "heatmap3.png"), send_telegram=False)
+    check(_cap["xticks"] == [0] and _cap["xlabel"] == "EXIT_TH", "第二軸是真常數只有一格:照二維畫(x 刻度與 xlabel 都在)")
+finally:
+    plt.savefig = _orig_savefig
+
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

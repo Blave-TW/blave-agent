@@ -3861,6 +3861,54 @@ msgstr "請重新掃描策略 {name} 的參數（lib.param_scan：scan_grid → 
 msgid "rob.msgRescanLabel"
 msgstr "重新掃描 {name} 的參數"
 
+msgid "rob.cells"
+msgstr "{n} 格"
+
+msgid "rob.heatAria1"
+msgstr "{rp} 參數掃描 Sharpe 熱圖"
+
+msgid "rob.heatNbr1"
+msgstr "參數掃描 · 鄰域平均 Sharpe（相鄰 {k} 格）"
+
+msgid "rob.cmp.nbrTip1"
+msgstr "參數偏一格（相鄰 {k} 格）的平均 Sharpe；越接近 Sharpe，參數偏掉時越撐得住"
+
+msgid "rob.legend.curOff1"
+msgstr "目前參數 {prm} 不在掃描範圍內，無標記"
+
+msgid "rob.cfLead1"
+msgstr "用目前回測的設定重掃，沿用上次的參數與範圍。"
+
+msgid "rob.cfRange"
+msgstr "範圍"
+
+msgid "rob.cfRangeVal"
+msgstr "{rp} {r0}–{r1}（{R} 格）"
+
+msgid "rob.msgRescan1"
+msgstr "請重新掃描策略 {name} 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap，單參數照 lib 文件的一格第二軸寫法）。期間與手續費照目前回測：{start} → {end}、手續費 {fee}%；只有一個參數 {rp}，範圍沿用上次的 {r0}–{r1}，穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。"
+
+msgid "rob.tag.atPlateau1"
+msgstr "目前參數：就是穩健參數"
+
+msgid "rob.verdict.peak1"
+msgstr "稍微偏掉表現就掉很多，建議換成穩健參數。"
+
+msgid "rob.verdict.inside1"
+msgstr "離穩健格只差一點，換不換差別不大。"
+
+msgid "rob.verdict.outside1"
+msgstr "鄰近參數表現不穩，建議換成穩健參數。"
+
+msgid "rob.legend.cur1"
+msgstr "目前參數"
+
+msgid "rob.legend.curPeak1"
+msgstr "目前參數（與尖峰同格）"
+
+msgid "rob.legend.curPlateau1"
+msgstr "目前參數 = 穩健參數"
+
 msgid "rp.tab.wf"
 msgstr "樣本外驗證"
 

@@ -603,8 +603,12 @@ def plot_heatmap(
         )
     n_rows, n_cols = len(row_vals), len(col_vals)
     bi, bj         = best_idx
+    # One-cell second axis ('_' + [0], references/lib.md › Parameter scan workflow): the column
+    # is a placeholder, so no x ticks / xlabel, the title names only the real parameter and the
+    # figure stays one-column narrow (the 參數掃描 tab draws the same single column).
+    single = n_cols == 1 and col_label == "_"
 
-    fig, ax = plt.subplots(figsize=(max(8, n_cols * 1.2), max(6, n_rows * 1.0)))
+    fig, ax = plt.subplots(figsize=(4 if single else max(8, n_cols * 1.2), max(6, n_rows * 1.0)))
 
     from matplotlib.colors import TwoSlopeNorm
     masked = np.ma.masked_invalid(grid)
@@ -616,9 +620,12 @@ def plot_heatmap(
                        origin="upper", norm=norm)
     plt.colorbar(im, ax=ax, label="Sharpe")
 
-    ax.set_xticks(range(n_cols)); ax.set_xticklabels([str(v) for v in col_vals], fontsize=8)
+    if single:
+        ax.set_xticks([])
+    else:
+        ax.set_xticks(range(n_cols)); ax.set_xticklabels([str(v) for v in col_vals], fontsize=8)
+        ax.set_xlabel(col_label, fontsize=9)
     ax.set_yticks(range(n_rows)); ax.set_yticklabels([str(v) for v in row_vals], fontsize=8)
-    ax.set_xlabel(col_label, fontsize=9)
     ax.set_ylabel(row_label, fontsize=9)
 
     for i in range(n_rows):
@@ -630,8 +637,9 @@ def plot_heatmap(
     ax.add_patch(Rectangle((bj - 0.5, bi - 0.5), 1, 1,
                             linewidth=2.5, edgecolor="white", facecolor="none"))
     ax.set_title(
-        f"{title} — plateau: {row_label}={row_vals[bi]}, {col_label}={col_vals[bj]} "
-        f"(Sharpe={grid[bi, bj]:.2f})",
+        f"{title} — plateau: {row_label}={row_vals[bi]}"
+        + ("" if single else f", {col_label}={col_vals[bj]}")
+        + f" (Sharpe={grid[bi, bj]:.2f})",
         fontsize=10,
     )
 

@@ -196,6 +196,8 @@
   color: var(--color-greyDark);
   background: transparent;
 }
+/* 單參數(一欄):不拉滿,格寬 ≈ 二維三格(列標 84 + 格 232 + 3×4 spacing);拉滿會變成等長橫帶、長度與顏色兩個訊號打架 */
+.rob-tbl.is-single { max-width: 328px; }
 /* 標記分兩層(色不是唯一載體;legend、tooltip、aria-label 都有文字):glyph = 候選角色(▲ 尖峰 / ● 穩健);
    框 = 目前參數(虛線)。glyph 是 CSS 幾何不是 Unicode(Roboto Mono 沒有 ▲/●),絕對定位貼格左上角,不進文字流 */
 .rob-glyph {
