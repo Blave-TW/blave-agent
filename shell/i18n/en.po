@@ -7043,7 +7043,7 @@ msgstr "Change the trading password"
 
 # ── 方案制(.m = api 切換之後的版本;app.js pvK 依 planMo() 挑)──
 msgid "pv.d.noTrial.m"
-msgstr "This account has no first-card trial. Blave data comes with a Blave Agent plan (from {p} TWD a month) or an API plan."
+msgstr "This account has no first-card trial. Blave data comes with a Blave Agent plan (from {p} TWD a month)."
 
 msgid "pv.d.trial.m"
 msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews every {pd} days. Paid from your balance first, the card if it doesn’t cover a period."
@@ -7069,10 +7069,10 @@ msgid "pv.e.sub.m"
 msgstr "When the trial ends, {p} TWD a month is charged automatically; cancel during the trial and nothing is charged."
 
 msgid "pv.e.noTrial.m"
-msgstr "This computer can’t reach Blave data yet. It comes with a Blave Agent plan or an API plan."
+msgstr "This computer can’t reach Blave data yet. It comes with a Blave Agent plan."
 
 msgid "pv.w.noTrial.m"
-msgstr "Once the card is added, come back and start the plan, or get an API plan."
+msgstr "Once the card is added, come back and start the plan."
 
 # ── 方案制(api 的 MONTHLY_BILLING_FROM 之後;renderer/app.js planMo)──
 # 月價 {p}、年價 {y}、年繳付幾個月 {k}、年繳一期幾天 {yd}、寬限天數 {g}、到期日 {u}、刪機日 {gu} 都來自 account_status / 公開價目,不寫死;拿不到用 NoNum 那句。
@@ -7090,7 +7090,7 @@ msgid "pv.st.noPlan"
 msgstr "No plan"
 
 msgid "pv.d.plan.m"
-msgstr "Blave data comes with a Blave Agent plan (from {p} TWD a month; no cloud machine needed) or an API plan. Without one, this app runs on public data only."
+msgstr "Blave data comes with a Blave Agent plan (from {p} TWD a month; no cloud machine needed). Without one, this app runs on public data only."
 
 msgid "pv.f.plan.m"
 msgstr "Starting pays the first period now: from your wallet first, then your card."
@@ -7180,7 +7180,7 @@ msgid "plan.err.busy"
 msgstr "A payment is still being confirmed. Try again later; you won’t be charged twice."
 
 msgid "data.noPlan"
-msgstr "This account has no plan that includes Blave data. Start a Blave Agent plan (no cloud machine needed) or get an API plan."
+msgstr "This account has no plan that includes Blave data. Start a Blave Agent plan (no cloud machine needed)."
 
 msgid "data.payFail"
 msgstr "The plan payment didn’t go through, so Blave data is paused. Pay again and it’s back."
@@ -7189,7 +7189,7 @@ msgid "data.seePlan"
 msgstr "See Plans"
 
 msgid "wd.note.noplan"
-msgstr "Comes with a Blave Agent plan or an API plan"
+msgstr "Comes with a Blave Agent plan"
 
 msgid "wd.note.payfail"
 msgstr "Paused: the plan payment didn’t go through"
@@ -7198,7 +7198,7 @@ msgid "lib.grp.plan"
 msgstr "After Starting a Plan"
 
 msgid "lib.grp.gate.noPlan"
-msgstr "These use Blave data, which comes with a Blave Agent plan or an API plan."
+msgstr "These use Blave data, which comes with a Blave Agent plan."
 
 msgid "lib.grp.repay"
 msgstr "After Paying"
@@ -7207,7 +7207,7 @@ msgid "lib.grp.gate.planFailed"
 msgstr "The plan payment didn’t go through, so these can’t backtest for now."
 
 msgid "lib.why.noPlan"
-msgstr "Blave data comes with a Blave Agent plan or an API plan."
+msgstr "Blave data comes with a Blave Agent plan."
 
 msgid "lib.why.planFailed"
 msgstr "The plan payment didn’t go through."

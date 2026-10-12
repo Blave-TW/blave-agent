@@ -7056,7 +7056,7 @@ msgstr "改交易密碼"
 
 # ── 方案制(.m = api 切換之後的版本;app.js pvK 依 planMo() 挑)──
 msgid "pv.d.noTrial.m"
-msgstr "這個帳號沒有首次綁卡的試用。Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起）或買 API 方案。"
+msgstr "這個帳號沒有首次綁卡的試用。Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起）。"
 
 msgid "pv.d.trial.m"
 msgstr "到 {d}為止資料免費；試用結束扣第一期 {p} TWD，之後每 {pd} 天自動續扣。先從錢包扣，不夠一期就刷卡。"
@@ -7082,10 +7082,10 @@ msgid "pv.e.sub.m"
 msgstr "試用結束自動扣第一期 {p} TWD／月，試用期間取消就不扣。"
 
 msgid "pv.e.noTrial.m"
-msgstr "這台還拿不到 Blave 的資料：要開通 Blave Agent 方案或買 API 方案。"
+msgstr "這台還拿不到 Blave 的資料：要開通 Blave Agent 方案。"
 
 msgid "pv.w.noTrial.m"
-msgstr "綁卡後回來開通方案，或買 API 方案。"
+msgstr "綁卡後回來開通方案。"
 
 # ── 方案制(api 的 MONTHLY_BILLING_FROM 之後;renderer/app.js planMo)──
 # 月價 {p}、年價 {y}、年繳付幾個月 {k}、年繳一期幾天 {yd}、寬限天數 {g}、到期日 {u}、刪機日 {gu} 都來自 account_status / 公開價目,不寫死;拿不到用 NoNum 那句。
@@ -7103,7 +7103,7 @@ msgid "pv.st.noPlan"
 msgstr "沒有方案"
 
 msgid "pv.d.plan.m"
-msgstr "Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起，不必開雲端主機）或買 API 方案；都沒有的話，電腦版只用公開資料。"
+msgstr "Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起，不必開雲端主機）；沒有的話，電腦版只用公開資料。"
 
 msgid "pv.f.plan.m"
 msgstr "開通當下付第一期：先從錢包扣，不夠再刷綁定的卡。"
@@ -7193,7 +7193,7 @@ msgid "plan.err.busy"
 msgstr "付款還在確認，稍後再試；不會重複扣款。"
 
 msgid "data.noPlan"
-msgstr "這個帳號沒有含資料的方案，拿不到 Blave 資料。開通 Blave Agent 方案（不必開雲端主機）或買 API 方案就能用。"
+msgstr "這個帳號沒有含資料的方案，拿不到 Blave 資料。開通 Blave Agent 方案（不必開雲端主機）就能用。"
 
 msgid "data.payFail"
 msgstr "方案扣款沒成功，Blave 資料先暫停；重新付款後就恢復。"
@@ -7202,7 +7202,7 @@ msgid "data.seePlan"
 msgstr "看方案"
 
 msgid "wd.note.noplan"
-msgstr "開通 Blave Agent 方案或 API 方案就能用"
+msgstr "開通 Blave Agent 方案就能用"
 
 msgid "wd.note.payfail"
 msgstr "方案扣款沒成功，先暫停"
@@ -7211,7 +7211,7 @@ msgid "lib.grp.plan"
 msgstr "開通方案之後"
 
 msgid "lib.grp.gate.noPlan"
-msgstr "這些要用 Blave 資料，開通 Blave Agent 方案或買 API 方案就能回測。"
+msgstr "這些要用 Blave 資料，開通 Blave Agent 方案就能回測。"
 
 msgid "lib.grp.repay"
 msgstr "付款之後"
@@ -7220,7 +7220,7 @@ msgid "lib.grp.gate.planFailed"
 msgstr "方案扣款沒成功，這些先跑不了回測。"
 
 msgid "lib.why.noPlan"
-msgstr "Blave 資料要開通 Blave Agent 方案或買 API 方案。"
+msgstr "Blave 資料要開通 Blave Agent 方案。"
 
 msgid "lib.why.planFailed"
 msgstr "方案扣款沒成功。"

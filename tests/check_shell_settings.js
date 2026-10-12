@@ -909,10 +909,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     { const zh = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8"), enp = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8");
       const str = (po, k) => (new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^"]*)"').exec(po) || [])[1];
       const MK = Object.keys(STR.zh).filter((k) => /\.m(NoNum|NoServer|NoServerNoNum)?$|NoServer(NoNum)?$/.test(k)).concat(["data.noPlan", "wd.note.noplan", "lib.grp.plan", "lib.grp.gate.noPlan", "lib.why.noPlan", "cf.m.title", "cf.m.body1"]);
-      ok("方案制的字(稽核 N1–N3):試用／綁卡／沒登入那幾句揭露「試用結束扣第一期、試用期間取消就不扣」;沒方案那幾句講「開通 Blave Agent 方案或 API 方案」;方案制那一組不再有「雲端方案」/ cloud plan、不講按小時;切換前的本名與 .old 版逐字留著",
+      ok("方案制的字(稽核 N1–N3):試用／綁卡／沒登入那幾句揭露「試用結束扣第一期、試用期間取消就不扣」;沒方案那幾句只講「開通 Blave Agent 方案」(Wei 10-12:API 方案不寫);方案制那一組不再有「雲端方案」/ cloud plan、不講按小時;切換前的本名與 .old 版逐字留著",
         ["pv.d.trial.m", "pv.d.trial.mNoNum", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /第一期/.test(str(zh, k)) && /first (plan )?period|charged automatically/.test(str(enp, k)))
         && ["pv.f.trial.m", "pv.f.offer.m", "pv.e.sub.m", "pv.d.noPrice.m"].every((k) => /取消/.test(str(zh, k)) && /[Cc]ancel/.test(str(enp, k)))
-        && ["pv.d.noTrial.m", "pv.e.noTrial.m", "data.noPlan", "pv.d.plan.m", "wd.note.noplan", "lib.grp.gate.noPlan", "lib.why.noPlan"].every((k) => /Blave Agent 方案/.test(str(zh, k)) && /API 方案/.test(str(zh, k)) && /Blave Agent plan/.test(str(enp, k)) && /API plan/.test(str(enp, k)))
+        && ["pv.d.noTrial.m", "pv.e.noTrial.m", "data.noPlan", "pv.d.plan.m", "wd.note.noplan", "lib.grp.gate.noPlan", "lib.why.noPlan"].every((k) => /Blave Agent 方案/.test(str(zh, k)) && !/API 方案/.test(str(zh, k)) && /Blave Agent plan/.test(str(enp, k)) && !/API plan/.test(str(enp, k)))
         && MK.length > 25 && MK.every((k) => STR.zh[k] && STR.en[k] && !/雲端方案|整點小時/.test(STR.zh[k]) && !/cloud plan/i.test(STR.en[k]))
         && ["pv.d.trial", "pv.d.trial.old", "pv.f.offer", "pv.f.offer.old", "pv.d.billed", "data.readyBilled", "lib.note.billed", "wd.note.billed"].every((k) => !!str(zh, k) && !!str(enp, k)));
       // D 版(設計師 desktop-signedout-plan 2026-10-10):未登入底列只留價格事實 +「自動」(扣第一期／取消留給綁卡那步的 pv.f.offer.m);標題「免費試用」不用「送」,
