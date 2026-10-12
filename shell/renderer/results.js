@@ -13,8 +13,8 @@
 /* ── 純邏輯(tests/check_shell_results.js 從原文切出來跑;這一段不准碰 DOM / 全域)── */
 const RES_CAP = 3;
 const RES_CLOUD_POLL_MS = 30 * 1000, RES_CLOUD_WAIT_MS = 10 * 60 * 1000, RES_CLOUD_SLACK_S = 120;
-/* 一支策略的三個簽章。回測 = stats.json 的 Generated At:只有明確回測會重蓋,live tick 每根 K 重寫 stats.json 但不動它
-   (lib/runner.py _carry_over)——拿 stats 的 mtime 會把跑著的策略每輪都認成「回測」。舊檔沒有這欄才退回 mtime */
+/* 一支策略的三個簽章。回測 = stats.json 的 Generated At:只有明確回測會重蓋,更新績效(手動或每天報告前自動一次)重寫 stats.json 但不動它
+   (lib/runner.py _carry_over)——拿 stats 的 mtime 會把上線中的策略每次更新績效都認成「回測」。舊檔沒有這欄才退回 mtime */
 function resSig(x) { return { bt: typeof x.generatedAt === "number" ? x.generatedAt : x.statsMtime || 0, scan: x.scanMtime || 0, code: x.codeMtime || 0 }; }
 function resStratVer(x) { const s = resSig(x); return s.bt + "|" + s.scan + "|" + s.code; }
 function resSnapOf(list) { return new Map((Array.isArray(list) ? list : []).filter((x) => x && typeof x.name === "string").map((x) => [x.name, x])); }
@@ -114,8 +114,9 @@ function resFacts(item, state, f) {
     if (x.no_bt === true) g.push([W(f.t("res.noBt"))]);
   } else if (item.sub === "scan") {
     g.push([W(f.t("res.kind.scan"))]);
-    if (Number.isInteger(x.grid_rows) && Number.isInteger(x.grid_cols)) g.push([W(x.grid_rows + "×" + x.grid_cols, "mono")]);
-    if (typeof x.tag === "string" && /^rob\.tag\.[A-Za-z]+$/.test(x.tag)) g.push([W(f.t(x.tag))]);
+    if (x.single === true && Number.isInteger(x.grid_rows)) { const [a, b] = f.t("rob.cells").split("{n}"); g.push([W(a), W(String(x.grid_rows), "mono"), W(b || "")].filter((s) => s.text)); }   // 單參數:「20 格」,不寫 N×1
+    else if (Number.isInteger(x.grid_rows) && Number.isInteger(x.grid_cols)) g.push([W(x.grid_rows + "×" + x.grid_cols, "mono")]);
+    if (typeof x.tag === "string" && /^rob\.tag\.[A-Za-z0-9]+$/.test(x.tag)) g.push([W(f.t(x.tag))]);   // atPlateau1 = 單參數版
   } else if (item.sub === "code") {
     g.push([W(f.t("res.kind.code"))]);
     if (x.has_bt) g.push([W(f.t("res.notRerun"))]);
@@ -182,6 +183,7 @@ async function resScanFacts(it) {
   const R = window.BlaveReport || {}, s = d && R.scanTag ? R.scanTag(d) : null;
   if (!s) return;
   it.facts.grid_rows = s.rows; it.facts.grid_cols = s.cols;
+  if (s.single) it.facts.single = true;
   if (s.tag) it.facts.tag = s.tag;
 }
 // 這一輪的回覆泡泡:往回找到上一句用戶的話為止的最後一則回覆(同 export.js xpHost);沒有就回 null,真的要出卡才起一則

@@ -2932,13 +2932,28 @@ def _fire_due_reports():
             _report_next[job_id] = (cron, tz, nxt)
             if not due:
                 continue
-            try:
-                subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 **_child_kw())
-                _log(f"report trigger: started {job_id}")
-            except Exception as e:
-                _log(f"report trigger: {job_id} failed to start: {type(e).__name__}: {e}")
+            # off this thread: the performance sweep in front of the job can take minutes
+            threading.Thread(target=_start_report_job, args=(job_id,), daemon=True,
+                             name=f"report-start-{job_id}").start()
+
+
+def _start_report_job(job_id):
+    """A scheduled report's fire: refresh every live strategy's performance first (a live
+    tick no longer writes stats.json — the figures the report and the manager read would
+    otherwise stop at deploy time), then start the job. Best-effort: a failed sweep never
+    costs the report its run. Not for report_run_now — the user pressed that; a fresh
+    performance is the 更新績效 button."""
+    try:
+        _refresh_live_stats(f"report {job_id}")
+    except Exception as e:
+        _log(f"report trigger: {job_id}: performance sweep skipped: {type(e).__name__}: {e}")
+    try:
+        subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         **_child_kw())
+        _log(f"report trigger: started {job_id}")
+    except Exception as e:
+        _log(f"report trigger: {job_id} failed to start: {type(e).__name__}: {e}")
 
 
 def _sweep_legacy_report_schedules():
@@ -5591,6 +5606,222 @@ def _cmd_version_restore(args):
     return Deferred(_run)
 
 
+# ── 更新績效(performance refresh)────────────────────────────────────────────────
+# `stats_refresh {names: [...]}`: the workspace's 更新績效 button (one name) and the manager
+# table's chip (every stale member), no agent turn. A live tick writes state.json only
+# (blave-agent lib/runner.py: the performance block was most of every tick's CPU), so a
+# deployed strategy's stats.json is refreshed here instead — the same strategy file run as a
+# live tick plus BLAVE_STATS_REFRESH=1: same data path as the tick, MCPT and Generated At
+# carried over, no version minted, state.json untouched. The ack says what was queued; each
+# strategy's progress rides the strategies report as `perf.refresh` (strategies/<name>/
+# perf_refresh.json, read by strategy_reporter): running → gone on success, failed + a code
+# otherwise — the same four codes as a restore's re-run, so the page reuses those strings.
+# The pre-report sweep (_start_report_job) runs the same path for every live Type A/C
+# strategy. One refresh subprocess at a time per machine. An old lib (live tick still
+# rewriting stats.json) runs the command as an ordinary live tick: it writes stats.json too.
+STATS_REFRESH_ENV = "BLAVE_STATS_REFRESH"            # = lib/runner.STATS_REFRESH_ENV
+STATS_REFRESH_TIMEOUT_S = 600                        # = manager/wait_for_bar.RUN_TIMEOUT_SECONDS
+# The sweep as a whole: a cold 1-min cache on a 1 GB box took 11 minutes per strategy
+# (10-06); five of those in front of a morning report would make it an hour late.
+STATS_REFRESH_BUDGET_S = 600
+# The sweep skips a stats.json younger than this: the button was just pressed, or two jobs
+# fired on the same minute. Not a tick throttle — the tick never writes the file.
+STATS_REFRESH_MIN_AGE_S = 3600
+STATS_REFRESH_MAX_NAMES = 50
+PERF_REFRESH_FILE = "perf_refresh.json"              # = strategy_reporter.PERF_REFRESH_FILE
+_STATS_REFRESH_NAME_RE = _VERSION_RESTORE_NAME_RE
+_STATS_REFRESH_LOCK = threading.Lock()   # the one refresh subprocess (button queue and sweep)
+_PERF_PENDING = set()                    # names queued or running in this process
+_PERF_PENDING_LOCK = threading.Lock()
+
+
+def _stats_refresh_args(args):
+    if not isinstance(args, dict) or set(args) != {"names"}:
+        raise ValueError("BAD_ARGS: stats_refresh takes exactly names")
+    names = args["names"]
+    if not isinstance(names, list) or not 1 <= len(names) <= STATS_REFRESH_MAX_NAMES:
+        raise ValueError(f"BAD_ARGS: names must list 1–{STATS_REFRESH_MAX_NAMES} strategies")
+    if any(not isinstance(n, str) or not _STATS_REFRESH_NAME_RE.fullmatch(n) for n in names):
+        raise ValueError("BAD_ARGS: bad strategy name")
+    if len(set(names)) != len(names):
+        raise ValueError("BAD_ARGS: duplicate strategy name")
+    return names
+
+
+def _stats_path(name):
+    return os.path.join(WORKSPACE, "strategies", name, "stats.json")
+
+
+def _perf_path(name):
+    return os.path.join(WORKSPACE, "strategies", name, PERF_REFRESH_FILE)
+
+
+def _mark_perf(name, status, err=None):
+    doc = {"status": status, "at": int(time.time())}
+    if status == "running":
+        doc["pid"] = os.getpid()   # whose run: a record from a process that is gone is settled at start
+    if err:
+        doc["err"] = err
+    _write_json_atomic(_perf_path(name), doc)
+
+
+def _refresh_stats(name, timeout):
+    """One strategy's performance refresh, synchronously (callers hold _STATS_REFRESH_LOCK).
+    Returns stats.json's new mtime (epoch seconds); RuntimeError "<CODE>: …" with CODE in
+    _RERUN_ERRS otherwise (the log tail classified like a restore's re-run)."""
+    script = os.path.join("strategies", name, "strategy.py")
+    env = _strategy_subprocess_env("live", **{STATS_REFRESH_ENV: "1", "PYTHONPATH": WORKSPACE})
+    try:
+        r = subprocess.run([_workspace_python(), script], cwd=WORKSPACE, env=env,
+                           capture_output=True, encoding="utf-8", errors="replace",
+                           timeout=timeout, **_child_kw())
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"TIMEOUT: performance refresh of {name} did not finish within {timeout:.0f}s")
+    if r.returncode != 0:
+        tail = _tail(r.stderr) or _tail(r.stdout)
+        raise RuntimeError(f"{_classify_rerun(tail)}: {tail or f'exited {r.returncode}'}")
+    try:
+        return int(os.stat(_stats_path(name)).st_mtime)
+    except OSError:
+        raise RuntimeError("EXIT: the run wrote no stats.json")
+
+
+def _refresh_one(name, deadline, what):
+    """Refresh `name` with the record the page reads: running while it runs, gone on success,
+    failed + code otherwise. `deadline` (monotonic) bounds the lock wait and the run; None =
+    no budget (the button). Returns True on success."""
+    _mark_perf(name, "running")
+    wait = None if deadline is None else max(0.0, deadline - time.monotonic())
+    if not _STATS_REFRESH_LOCK.acquire(timeout=-1 if wait is None else wait):
+        _mark_perf(name, "failed", "TIMEOUT")
+        _log(f"{what}: {name} not refreshed: another refresh held the machine for the whole budget")
+        return False
+    try:
+        timeout = STATS_REFRESH_TIMEOUT_S
+        if deadline is not None:
+            timeout = max(1.0, min(timeout, deadline - time.monotonic()))
+        _refresh_stats(name, timeout)
+    except Exception as e:
+        code = str(e).split(":", 1)[0]
+        _mark_perf(name, "failed", code if code in _RERUN_ERRS else "EXIT")
+        _log(f"{what}: {name} not refreshed: {str(e)[:300]}")
+        return False
+    finally:
+        _STATS_REFRESH_LOCK.release()
+    _remove_retry(_perf_path(name), "performance refresh record")
+    return True
+
+
+def _run_refresh_queue(names):
+    for name in names:
+        try:
+            _refresh_one(name, None, "stats refresh")
+        finally:
+            with _PERF_PENDING_LOCK:
+                _PERF_PENDING.discard(name)
+        # per strategy: a deployed strategy's stats.json is tracked by existence only
+        # (strategy_reporter._stats_marker), nothing else would carry the new numbers
+        _push(_ON_APPLIED, "stats refresh")
+
+
+def _cmd_stats_refresh(args):
+    """{"names": [STRATEGY_NAME, …]} → queue a performance refresh of each; ack result
+    {started: [names], skipped: {name: CODE}} with CODE in NOT_RUNNABLE (not a Type A/C
+    strategy — a Type B script places its own orders, running it IS trading) / NO_STATS (never
+    backtested, or restore() stashed the results: canon §5 leaves that to the next backtest) /
+    BUSY (already queued or running). Shape errors raise "ValueError: BAD_ARGS: …". The runs'
+    own outcome is perf.refresh in the strategies report, not the ack."""
+    names = _stats_refresh_args(args)
+    ac, _b = _split_by_type(set(names))
+    started, skipped = [], {}
+    for name in names:
+        if name not in ac:
+            skipped[name] = "NOT_RUNNABLE"
+            continue
+        if not os.path.isfile(_stats_path(name)):
+            skipped[name] = "NO_STATS"
+            continue
+        with _PERF_PENDING_LOCK:
+            if name in _PERF_PENDING:
+                skipped[name] = "BUSY"
+                continue
+            _PERF_PENDING.add(name)
+        _mark_perf(name, "running")   # every queued one reads 更新中 from the ack-time push on
+        started.append(name)
+    if started:
+        threading.Thread(target=_run_refresh_queue, args=(started,), daemon=True,
+                         name="stats-refresh").start()
+        _push(_ON_APPLIED, "stats refresh queued")
+    return {"started": started, "skipped": skipped}
+
+
+def _refresh_live_stats(reason):
+    """Refresh every live Type A/C strategy's performance, one at a time, inside
+    STATS_REFRESH_BUDGET_S. Same membership as the scheduler (_run_scheduler_cycle: the
+    `amounts` keys, Type A/C only, nothing while no venue is bound); skips a strategy with no
+    stats.json (canon §5), one refreshed within STATS_REFRESH_MIN_AGE_S, or one the button
+    already has in flight. Failures are recorded per strategy and the sweep moves on."""
+    if not _bound_venue():
+        return
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
+            amounts = json.load(f).get("amounts") or {}
+    except (OSError, ValueError):
+        return
+    if not isinstance(amounts, dict):
+        return
+    names = {k for k in amounts if isinstance(k, str) and _STATS_REFRESH_NAME_RE.fullmatch(k)}
+    ac_names, _b = _split_by_type(names)
+    deadline = time.monotonic() + STATS_REFRESH_BUDGET_S
+    now = time.time()
+    touched = 0
+    for name in sorted(ac_names):
+        try:
+            age = now - os.stat(_stats_path(name)).st_mtime
+        except OSError:
+            continue   # never backtested / results stashed by a restore: not ours to recreate
+        if age < STATS_REFRESH_MIN_AGE_S:
+            continue
+        if time.monotonic() >= deadline:
+            _log(f"performance sweep ({reason}): budget spent, {name} and later skipped")
+            break
+        with _PERF_PENDING_LOCK:
+            if name in _PERF_PENDING:
+                continue
+            _PERF_PENDING.add(name)
+        try:
+            _refresh_one(name, deadline, f"performance sweep ({reason})")
+        finally:
+            with _PERF_PENDING_LOCK:
+                _PERF_PENDING.discard(name)
+        touched += 1
+    if touched:
+        _push(_ON_APPLIED, "stats refresh (sweep)")
+
+
+def _resume_perf_refresh():
+    """At listener start: a perf_refresh.json still `running` was written by a process that is
+    gone (its subprocess died with it) — settle it as failed, or the page reads 更新中 forever."""
+    sdir = os.path.join(WORKSPACE, "strategies")
+    try:
+        names = sorted(os.listdir(sdir))
+    except OSError:
+        return
+    for name in names:
+        if not _STATS_REFRESH_NAME_RE.fullmatch(name):
+            continue
+        try:
+            with open(_perf_path(name), encoding="utf-8") as f:
+                doc = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if isinstance(doc, dict) and doc.get("status") == "running":
+            try:
+                _mark_perf(name, "failed", "EXIT")
+            except OSError as e:
+                _log(f"performance refresh record of {name} not settled: {type(e).__name__}")
+
+
 # ── 用戶常駐規則(web 的「Agent 常駐規則」面板)────────────────────────────────
 # 同一個檔 agent_turn.preferences_rule() 每輪整份注進 system prompt,agent 自己在
 # 對話裡也會改它。web 送的是結構(規則陣列)而不是整份 markdown:組行、剝鷹架、
@@ -5768,6 +5999,7 @@ HANDLERS = {
     "telegram_reset": _cmd_telegram_reset,
     "book_account_confirm": _cmd_book_account_confirm,
     "version_restore": _cmd_version_restore,
+    "stats_refresh": _cmd_stats_refresh,
 }
 # 群益 cloud connect (runtime/capital_connect.py): long steps come back as Deferred
 HANDLERS.update({
@@ -5898,6 +6130,7 @@ def run(on_applied=None, on_progress=None):
     _ON_PROGRESS = on_progress
     _resume_mgmt_watch()
     _resume_restore_watch()
+    _resume_perf_refresh()
 
     # Type A/C strategy scheduling — its own daemon thread, independent of the
     # poll loop below (see the "Type A/C in-process scheduler" section).

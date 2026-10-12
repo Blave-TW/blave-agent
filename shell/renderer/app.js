@@ -1497,6 +1497,7 @@ function rpShowTab(tab) {
   B.drawn[tab] = true;
   const R = window.BlaveReport || {};
   if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), B.data.stats);
+  if (tab === "bt" && typeof perfPaint === "function") perfPaint(B);   // 上線中策略的「更新績效」掛在 meta 列尾(renderer/perf.js)
   if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats);
   // 參數掃描(report-robust.js 不碰桌面版全域:i18n、掃描鈕的送出、回合狀態、meta 那一行都從這裡交進去)
   if (tab === "rob" && R.renderRobust) R.renderRobust($("rp-rob"), { stats: B.data.stats, scan: B.data.scan || null, code: B.data.code, name: B.name }, rpRobOpts());
@@ -1548,12 +1549,13 @@ function rpRobAsk(name, opener, begin, info) {
   const row = (k, v) => { const r = mk("div", "cf-row"), dd = mk("dd"); dd.appendChild(v); r.append(mk("dt", "", k), dd); dl.appendChild(r); };
   if (now.start && now.end) row(t("rob.cfPeriod"), mk("span", "mono", now.start + " → " + now.end));
   if (now.fee) row(t("rob.cfFee"), mk("span", "mono", now.fee + "%"));
-  if (grid) row(t("rob.cfGrid"), monoTpl(t("rob.cfGridVal"), grid));
+  // 單參數(grid.single):「網格」列換成「範圍」、lead 與訊息換 *1 版;二維那句一個 byte 不動(agent 端拿原句當觸發句)
+  if (grid) row(t(grid.single ? "rob.cfRange" : "rob.cfGrid"), monoTpl(t(grid.single ? "rob.cfRangeVal" : "rob.cfGridVal"), grid));
   if (dl.firstChild) extra.appendChild(dl);
   if (grid) extra.appendChild(mk("p", "cf-note", t("rob.cfNote")));
   // 訊息裡的兩軸用原值(grid.raw:ASCII 負號、不補位數),框裡的顯示才用 pv 格式
-  const msg = grid ? t("rob.msgRescan", { name, start: now.start || D, end: now.end || D, fee: now.fee || D, ...grid.raw }) : t("rob.msgScan", { name });
-  return new Promise((resolve) => confirmBox({ title: t(grid ? "rob.btnRescan" : "rob.btnScan"), lines: [t(grid ? "rob.cfLead" : "rob.emptyCap")], extra, ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
+  const msg = grid ? t(grid.single ? "rob.msgRescan1" : "rob.msgRescan", { name, start: now.start || D, end: now.end || D, fee: now.fee || D, ...grid.raw }) : t("rob.msgScan", { name });
+  return new Promise((resolve) => confirmBox({ title: t(grid ? "rob.btnRescan" : "rob.btnScan"), lines: [t(grid ? (grid.single ? "rob.cfLead1" : "rob.cfLead") : "rob.emptyCap")], extra, ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
     // begin():同樣本外驗證,送出前先記「這一支正在送」(暖機那段不顯示「agent 正在回覆上一則訊息」,稽核 P2-1)
     onOk: () => { if (typeof begin === "function") begin(); submitMessage(msg).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }); } }));
 }
@@ -1713,7 +1715,7 @@ function csStartNew() {
    比對:用模板字串本身組出前後錨定的 regex(不另抄一份模板),{name} = 最短的任意字串、{lookback}/{step} = 數字,整則吻合才算;
    zh / en 兩種模板都試(舊對話、送出後換了介面語言都認得),摘要照現在的語言。用戶自己逐字打出同一整句也會顯示摘要——
    那句要 agent 做的就是這件事,可以接受。fixedMatch 是純函式(tests/check_shell_wf.js 從原文切出來跑) */
-const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"]];
+const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"]];
 function fixedMatch(text, strings) {
   if (typeof text !== "string" || !text) return null;
   for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) {
@@ -1897,7 +1899,7 @@ function delConfirm(m, opener) {
 /* cancel = 取消鈕的字(不給 = 「取消」):主鈕本身就叫「取消分享」時,「取消」並排讀不出哪顆是留著(report-share.js) */
 /* 下單確認框(Wei 0928 第 3 點 A 案;啟動下單用):先選再按。都不給就跟以前一模一樣。
    choices = [{ id, title, desc, warn, disabled, why, ok, onOk, checked }]:一組 radio,預設**沒有選項**、沒選之前主鈕停用(字是 ok);某列 checked = 預選它
-     (主鈕一開就是它的字、能按;方案制確認框的月繳,對齊網站);選了之後主鈕的字換成
+     (主鈕一開就是它的字、能按;方案制確認框預選年繳,對齊網站);選了之後主鈕的字換成
      那個選項的 ok、按下去做它的 onOk。warn = 掛在那個選項裡的情境句;disabled + why = 這個選項現在不能選,說明換成原因句(aria-describedby 指它)。
      choicesLabel = 這一組的名字(只給讀屏)。這時 lines 是最上面的狀態句(主墨)。
    keep = 常駐的安全句(每次都要看的);details = [{ label, text | items }] 收在「細節」裡(看懂一次就好的),detailsOpen = 預設展開 */
@@ -2578,7 +2580,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if ((!msg && !attachment) || running) return false;
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; sendBtnSync(); stratDelSync(); rpMissSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
+  running = true; sendBtnSync(); stratDelSync(); rpMissSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
@@ -2598,7 +2600,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg || attachment.name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
-  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
+  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 引擎還沒裝好時由安裝進度卡交代(engine.js),指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     engineWait = true;
@@ -3139,7 +3141,8 @@ function planVars() {
   const pr = raw(mo ? dp.cloud_plan_monthly_from || (pub && pub.starter_monthly) || s.starter_monthly : pl.monthly || s.starter_monthly || (pub && pub.starter_monthly));
   const yr = raw(dp.cloud_plan_annual_from || (pub && pub.starter_annual));
   // 運行列講的是下一期:已排月↔年切換時標籤跟著 next_cycle,金額是 next_charge_twd;內部帳號(free)不講金額
-  const cyc = (pl.next_cycle || pl.cycle) === "annual" ? "annual" : "monthly";
+  const cy = ["monthly", "annual"].includes(pl.next_cycle || pl.cycle) ? pl.next_cycle || pl.cycle : "";   // 帳號已有的週期(試用中選過的);沒有就空
+  const cyc = cy === "annual" ? "annual" : "monthly";
   const x = pl.next_charge_source === "free" ? "" : num(pl.next_charge_twd) || num(cyc === "annual" ? pl.annual : pl.monthly);
   return { p: num(pr), h: num(pl.hourly || (pub && pub.starter_hourly)), m: num(pl.stop_below),
     a: num(s.auto_topup_min || tr.auto_topup_min), b: num(s.bind_min_topup || s.min_topup),
@@ -3147,8 +3150,9 @@ function planVars() {
     top: num(s.auto_topup_amount || tr.auto_topup_amount), r: num(s.data_hourly),
     d: left > 0 ? planDate(pl.trial_free_until) : "", n: left > 0 ? left : 0,
     pr, yr, y: num(yr), k: num(s.annual_pay_months || pp.annual_pay_months), yd: num(pp.annual_period_days), pd: num(pp.period_days), g: num(s.grace_days || pp.grace_days),
-    c: t(cyc === "annual" ? "plan.cyc.annual" : "plan.cyc.monthly"), x,
+    c: t(cyc === "annual" ? "plan.cyc.annual" : "plan.cyc.monthly"), x, cy,
     u: pl.paid_until ? planDate(pl.paid_until) : "", gu: pl.grace_until ? planDate(pl.grace_until) : "",
+    tp: num(pl.monthly), ty: num(pl.annual), tier: planTierLabel(),
     name: cur === "codex" ? "Codex" : cur === "apikey" ? (MP.provider || t("ak.row")) : "Claude Code" };
 }
 // 啟動鈕按不按得下去:方案制只要有月價(時價是 null);切換前照舊要月價與時價都有(確認框兩個都講)
@@ -3159,6 +3163,9 @@ const planFailing = () => !!(acct && acct.plan && acct.plan.failing === true);
 const planPaidAhead = () => { const u = acct && acct.plan && Date.parse(acct.plan.paid_until); return !!u && u > Date.now(); };
 // 方案已取消、而且到期了:不會續約,寬限期滿刪機
 const planEnded = () => !!(acct && acct.plan && acct.plan.cancel_at_period_end && acct.plan.paid_until && !planPaidAhead());
+// 試用中(方案制、試用結束日在未來)/ 試用已取消:api 把 trial_cancel_at_end 與 plan.cancel_at_period_end 一起寫、一起清,兩個都看是為了舊 api
+const planTrialOn = (v) => planMo() && v.n > 0;
+const planTrialCx = (v) => planTrialOn(v) && !!(acct && (acct.trial_cancel_at_end === true || (acct.plan && acct.plan.cancel_at_period_end)));
 // 方案階名:api 給 label(Linux Starter);舊 api 沒給就從 tier 拼(linux_starter → Linux Starter),不印空括號
 const planTierLabel = () => { const pl = (acct && acct.plan) || {}; return pl.label || String(pl.tier || "").split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "); };
 /* 停機的原因(方案頁與雲端下單頁同一套):fail 扣款失敗 / ended 取消後到期 / self 方案有效、用戶自己停的 /
@@ -3221,6 +3228,8 @@ function planPaint() {
       if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
       row.append(el("span", "l", t("plan.bal")), val); id.append(row);
     }
+    // 餘額列正下方:自動儲值短句(錢包的事,餘額列是它最近的家;account_status 沒有自動儲值開關旗標,金額有就出)。沒卡的人不出:沒有卡可刷,綁卡那格的底列會講
+    if (hasToken && v.a && v.top && !(acct && acct.reason === "NO_CARD")) id.append(el("p", "plan-fine", t("plan.topupShort", { a: v.a, b: v.top })));
     sc.append(id); }
   const ext = (u) => () => window.blave.openExternal(u);
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
@@ -3234,7 +3243,15 @@ function planPaint() {
      「AI 照用你的」那個保證搬到未登入的鈕左小字(pv.w.out.cli)。切換前照舊:標題「送 {t} 天資料」+ 說明句 + 按小時那句 */
   const offerH = mo ? (v.t ? "pv.h.offer.m" : "pv.h.offerNoNum.m") : hasNum ? "pv.h.offer" : "pv.h.offerNoNum";
   const offerList = () => [t("pv.offer.li.data"), t("pv.offer.li.server")].concat(v.q ? [t("pv.offer.li.ai", v)] : []);
-  const trialLead = () => (mo ? t(v.pd ? "pv.d.trial.m" : "pv.d.trial.mNoNum", v) : t(pvK("pv.d.trial"), v));
+  const tOn = planTrialOn(v), tCx = planTrialCx(v), pl = (acct && acct.plan) || {};
+  // 試用結束扣的是下一期的金額與週期(next_cycle / next_charge_twd):試用中改成年繳的人不能印 Starter 月價＋每 30 天
+  const tv = { ...v, p: v.x || v.p, pd: (pl.next_cycle || pl.cycle) === "annual" ? v.yd : v.pd };
+  const trialLead = () => (mo ? t(tv.pd ? "pv.d.trial.m" : "pv.d.trial.mNoNum", tv) : t(pvK("pv.d.trial"), v));
+  /* 有主機的試用戶(spec desktop-trial-with-machine §3–4):主機格照舊是主機格,試用加在狀態列與鈕上方那行;鈕不增加,第一顆(安靜)換成
+     取消／恢復試用(與〔前往網頁管理〕去同一頁)。到期不會扣的人(no_auto_payment、內部帳號)與沒卡又付不出的人(none)沒有「取消」可做 → null,維持原鈕 */
+  const trialBtn = () => (tCx ? btn("btn-quiet", t("plan.trialResume"), () => { trackFeature("trial_resume_web"); window.blave.openExternal(planPayUrl()); })
+    : pl.no_auto_payment || pl.next_charge_source === "free" || pl.next_charge_source === "none" ? null
+    : btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(planPayUrl()); }));
   const V = {
     out:      { h: offerH, lead: mo ? "" : hasNum ? offerLead() : t(pvK("pv.d.noPrice")), list: mo ? offerList() : null, rule: hasNum ? t(pvK("pv.f.out"), v) : "",
                 wait: planLoginBusy ? t("pv.w.waiting") : t(mo && cur !== "blave" ? "pv.w.out.cli" : "pv.w.out"),
@@ -3245,9 +3262,9 @@ function planPaint() {
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
        方案制講到期不收第一期,切換前講到期不轉成方案、之後照目前的計費——兩種時期各自是真話 */
     trial:    trialCx ? { st: ["on", t("pv.st.trialCancelled", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trialCancelled.m" : "pv.f.trialCancelled", v),
-                          acts: [btn("btn-quiet", t("plan.trialResume"), () => { trackFeature("trial_resume_web"); window.blave.openExternal(usageUrl()); }), mo ? btn("btn-out", t("plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] }
+                          acts: [btn("btn-quiet", t("plan.trialResume"), () => { trackFeature("trial_resume_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t("plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] }
                       : { st: ["on", t("pv.st.trial", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trial.m" : "pv.f.trial", v),
-                          acts: [btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(usageUrl()); }), mo ? btn("btn-out", t("plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
+                          acts: [btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t("plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
     // 只開方案不進「啟動中」那格(planBusyPlan):在途時主鈕停用、字換進行式,連點不會再開一次確認框
     plan:     mo ? { st: ["", t("pv.st.noPlan")], h: "pv.h.plan.m", lead: t("pv.d.plan.m", v), rule: t("pv.f.plan.m", v),
                      acts: [btn("btn-quiet", t("pv.apiPlan"), apiPlanGo), btn("btn-fill", t(planBusy ? "plan.startingM" : "plan.startM"), planAsk, !planPriceOk(v) || planBusy)] }
@@ -3267,16 +3284,20 @@ function planPaint() {
     planOn:   { st: ["on", t("pv.st.planOn")], h: "pv.h.ready", lead: t("pv.d.planOn", { tier: planTierLabel(), u: v.u }),
                 // 這一格是電腦版唯一看得到方案狀態的地方:底列講下次扣款(或已取消／扣款失敗;名下沒主機,講資料停不講刪機),取消與換卡在〔前往網頁管理〕;沒有非做不可的事,兩顆都不實心
                 rule: mo ? planRunRule(v, true) : "", acts: [btn("btn-quiet", t("plan.manageStopped"), () => { trackFeature("plan_manage_web"); window.blave.openExternal(planPayUrl()); }), btn("btn-out", t("plan.cloudWeb"), cloudWebGo)] },
-    starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"),
+    // 啟動中通常一分鐘內就變 running:試用的揭露只加那一行,鈕等進了 running 才有
+    starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"), rule: tOn ? planRunRule(v) : "",
                 acts: [slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); }) : btn("btn-fill", t("plan.starting"), null, true)] },
-    running:  { st: ["on", t("plan.st.running")], h: "pv.h.running", lead: t("pv.d.running"), rule: mo ? planRunRule(v) : t("pv.f.running", v),
-                acts: [mo ? btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())) : btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.switchCloud"), planToCloud)] },
+    running:  { st: ["on", tCx ? t("pv.st.trialCancelled", v) : tOn ? t("plan.st.runningTrial", v) : t("plan.st.running")], h: "pv.h.running", lead: t("pv.d.running"), rule: mo ? planRunRule(v) : t("pv.f.running", v),
+                acts: [mo ? (tOn && trialBtn()) || btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())) : btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.switchCloud"), planToCloud)] },
     stopped:  planStopKind() === "fail" ? { st: ["bad", t("plan.st.stoppedPlan")], h: "pv.h.stopped.m", lead: v.gu ? t("pv.d.stopped.m", v) : t("pv.d.stopped.mNoNum"),
                      acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())), btn("btn-fill", t("plan.repay"), planRepay)] }
                  // 取消後到期被停:不會續約,寬限期滿刪機——講結束與刪機日,出口是網站恢復(api resume 會當場付一期)
                  : planStopKind() === "ended" ? { st: ["bad", t("plan.st.ended")], h: "pv.h.ended", lead: v.gu ? t("pv.d.ended", v) : t("pv.d.endedNoNum"),
                      acts: [btn("btn-fill", t("plan.resumeWeb"), planWebGo)] }
-                 : planStopKind() === "self" ? { st: ["bad", t("side.stopped")], h: "pv.h.stopped.mOk", lead: t("pv.d.stopped.mOk"), acts: [btn("btn-out", t("plan.manageStopped"), ext(planPayUrl()))] }
+                 // 試用中自己停機:「這一期已付、到期照常續約」對一毛都沒付的人是錯話,換成試用版的標題與說明;鈕上方那行照 planRunRule
+                 : planStopKind() === "self" ? (tOn ? { st: ["bad", tCx ? t("side.stopped") : t("plan.st.stoppedTrial", v)], h: "pv.h.stopped.mOkTrial", lead: t("pv.d.stopped.mOkTrial"), rule: planRunRule(v),
+                                                        acts: [trialBtn(), btn("btn-out", t("plan.manageStopped"), ext(planPayUrl()))].filter(Boolean) }
+                                                    : { st: ["bad", t("side.stopped")], h: "pv.h.stopped.mOk", lead: t("pv.d.stopped.mOk"), acts: [btn("btn-out", t("plan.manageStopped"), ext(planPayUrl()))] })
                  : { st: ["bad", v.m ? t("plan.st.stopped", v) : t("plan.st.stoppedNoAmt")], h: "pv.h.stopped", lead: t("pv.d.stopped", v),
                      acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planWebUrl())), btn("btn-fill", t("plan.addCredit"), () => bindGo("topup_set"))] },
   }[view];
@@ -3286,24 +3307,29 @@ function planPaint() {
   sc.append(el("h5", null, t(V.h, v)));
   if (V.lead) sc.append(el("p", "plan-lead", V.lead));
   if (V.list) { const ul = el("ul", "plan-list"); V.list.forEach((x) => ul.append(el("li", null, x))); sc.append(ul); }
-  // 收起的細節:內含三條 + 計費(月價為主、時價並列、試用免費、自動儲值)+ 每人一次。價格查不到就整段不出
+  // 收起的細節。價格查不到就整段不出
   if (v.p) {
     const more = btn("btn-quiet plan-more", t("pv.more"), () => { planMoreOpen = !planMoreOpen; planPaint(); });
     more.setAttribute("aria-expanded", String(planMoreOpen)); more.setAttribute("aria-controls", "plan-detail"); more.dataset.k = "more";
     const det = el("div", "plan-detail"); det.id = "plan-detail"; det.hidden = !planMoreOpen;
-    const inc = el("div", "plan-sec"); inc.append(el("p", "plan-lbl", t("plan.inc"))); const ul = el("ul", "plan-list");
-    // 方案制、名下沒主機:方案 = 資料權限,主機是可選的第二條;計費細則講資料暫停／方案結束,不講停機刪機
-    const noSrv = mo && planState() === "none";
-    (noSrv ? [t("pv.inc.2"), t("pv.inc.m2"), t("pv.inc.3")] : [t("pv.inc.1"), t("pv.inc.2"), t("pv.inc.3")]).forEach((x) => ul.append(el("li", null, x)));
-    inc.append(ul, el("p", "plan-fine", t("pv.inc.note")), el("p", "plan-fine", t("pv.inc.web")));   // 網頁限定的事:從運行中那一段搬來,講一次就好
-    const bill = el("div", "plan-sec"); bill.append(el("p", "plan-lbl", t("plan.bill")));
-    bill.append(planPriceEl(el, v, mo));
-    if (v.d) bill.append(el("p", "plan-fine", t("plan.trialFree", v)));
-    if (v.a && v.top) bill.append(el("p", "plan-fine", t("plan.topup", { a: v.a, b: v.top })));
-    // 展開是確認框之前唯一講完整規則的地方(沒登入 / 綁卡那幾格的第一屏刻意不講)
-    bill.append(el("p", "plan-fine", mo ? t((noSrv ? "plan.rule.mNoServer" : "plan.rule.m") + (v.g ? "" : "NoNum"), v) : t(view === "running" ? "plan.rule.running" : "plan.rule")));
-    if (view === "out" || view === "offer") bill.append(el("p", "plan-fine", t("pv.more.once")));
-    det.append(inc, bill); sc.append(more, det);
+    if (mo) {
+      /* 方案制 A′(spec desktop-trial-with-machine §7-5):三行、沒有小標——階名＋價 → 含什麼 → 一句規則。完整規則只留確認框(cf.m.body*),
+         扣款失敗／刪機在事發時由底列講;自動儲值句在餘額列下;「週期金額 · 下次扣款」只在底列(planRunRule),這裡不重印 */
+      det.append(planPriceEl(el, v, mo), el("p", "plan-inc", t("pv.inc.one")), el("p", "plan-fine", t("plan.rule.one")));
+    } else {
+      // 切換前(舊制):內含三條 + 兩段說明 → 計費(月價、時價、試用免主機費、完整規則)
+      const inc = el("div", "plan-sec"); inc.append(el("p", "plan-lbl", t("plan.inc"))); const ul = el("ul", "plan-list");
+      [t("pv.inc.1"), t("pv.inc.2"), t("pv.inc.3")].forEach((x) => ul.append(el("li", null, x)));
+      inc.append(ul, el("p", "plan-fine", t("pv.inc.note")), el("p", "plan-fine", t("pv.inc.web")));
+      const bill = el("div", "plan-sec"); bill.append(el("p", "plan-lbl", t("plan.bill")));
+      bill.append(planPriceEl(el, v, mo));
+      if (v.d) bill.append(el("p", "plan-fine", t("plan.trialFree", v)));
+      // 展開是確認框之前唯一講完整規則的地方(沒登入 / 綁卡那幾格的第一屏刻意不講)
+      bill.append(el("p", "plan-fine", t(view === "running" ? "plan.rule.running" : "plan.rule")));
+      det.append(inc, bill);
+    }
+    if (view === "out" || view === "offer") det.append(el("p", "plan-fine", t("pv.more.once")));
+    sc.append(more, det);
   }
   // 底列:錯誤(有才出)→ 鈕上方那行(這顆鈕會帶來的錢)→ 鈕左小字 + 鈕
   if (err) { const e = el("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); e.append(el("span", "fault-mark"), el("span", null, t(err.key))); foot.append(e); }
@@ -3341,20 +3367,41 @@ async function planLogin() {
 /* 價格那一行(方案頁的計費段、雲端開通頁共用):方案制 = 月價 + 年價(年價、付幾個月、一期幾天都讀 api;缺就用短句);
    切換前 = 月價 + 時價(那時真的是每小時從餘額扣) */
 function planPriceEl(el, v, mo) {
-  const pr = el("div", "plan-price"); pr.append(el("span", "m", t("plan.month", v)));
-  if (mo) { if (v.y) pr.append(el("span", "h", t(v.k && v.yd ? "plan.year" : "plan.yearNoNum", v))); }
-  else if (v.h) pr.append(el("span", "h", t("plan.hour", v)));
+  const pr = el("div", "plan-price");
+  if (mo) {
+    // 階名用介面字(.tier)、數字 mono(.m):有方案列的人(paid_until 有值)印自己那一階的價,Premium 不該看到 Starter 的數字;沒方案列印開通價。
+    // 年繳只講金額:「用 {yd} 天、付 {k} 個月」在確認框 cf.m.yr.d,這裡講會折成兩行
+    const own = v.u && v.tp, y = own ? v.ty : v.y;
+    if (v.tier) pr.append(el("span", "tier", v.tier));
+    pr.append(el("span", "m", t("plan.month", { ...v, p: own ? v.tp : v.p })));
+    if (y) pr.append(el("span", "h", t("plan.yearNoNum", { ...v, y })));
+  } else { pr.append(el("span", "m", t("plan.month", v))); if (v.h) pr.append(el("span", "h", t("plan.hour", v))); }
   return pr;
 }
-// 運行中／方案有效那格鈕上方那行(方案制):已取消 / 扣款失敗 / 下次扣不到 / 下次扣款,四選一;日期拿不到就不講日期。
-// noServer = 名下沒主機(planOn):後果是資料停、方案結束,不是停機刪機
+/* 運行中／方案有效那格鈕上方那行(方案制),由上往下命中就停(spec desktop-trial-with-machine §5–6):扣款失敗 → 待開通 → 已取消 →
+   到期日已過、第一期還沒扣到的空窗 → 試用但不會自動扣 → 下次扣不到 → 內部帳號 → 試用中 → 下次扣款。日期拿不到就整行不印,不猜日期。
+   noServer = 名下沒主機(planOn):後果是資料停、方案結束,不是停機刪機。no_auto_payment / cancel_reason 是 api 同版才補的欄位,舊 api 沒有就跳過 */
 function planRunRule(v, noServer) {
-  const pl = (acct && acct.plan) || {}, ns = noServer ? "NoServer" : "";
-  if (pl.cancel_at_period_end) return v.u ? t("pv.f.running.cancel" + ns, v) : "";
+  const pl = (acct && acct.plan) || {}, ns = noServer ? "NoServer" : "", tOn = planTrialOn(v), tv = { ...v, u: v.u || v.d };
   // 扣款失敗時 paid_until 一定已經過了(到點才扣):講刪機日 grace_until,不講那個過去的日期
   if (pl.failing) return v.gu ? t("pv.f.running.fail" + ns, v) : t("pv.st.payFail");
-  // 下一期錢包不夠、也沒有綁卡(api next_charge_source = none):到期會扣不到,先講
+  // 待開通(api 設的 cancel_at_period_end,不是用戶按的):不能講「已取消」。沒主機的版本這次沒做,落到下一條
+  if (pl.cancel_reason === "awaiting_activation" && !noServer) return v.gu ? t("pv.f.running.await", v) : "";
+  if (pl.cancel_at_period_end) {
+    if (tOn) return tv.u ? t(v.gu ? "pv.f.running.trialCancel" : "pv.f.running.trialCancelNoNum", tv) : "";
+    return v.u ? t("pv.f.running.cancel" + ns, v) : "";
+  }
+  // 到期日已過、cron 還沒扣(最長幾小時):「下次扣款 {過去的日期}」是錯話。扣不到(none)或不會扣(no_auto_payment)的人不講「處理中」,整行不印
+  if (pl.paid_until && !planPaidAhead()) {
+    if (pl.next_charge_source === "none" || pl.no_auto_payment) return "";
+    if (pl.next_charge_source === "free") return t("pv.f.running.free");
+    return v.x ? t(pl.trial_free_until ? "pv.f.running.trialDue" : "pv.f.running.due", v) : "";
+  }
+  if (tOn && pl.no_auto_payment) return tv.u ? t("pv.f.running.trialNoAuto", tv) : "";
+  // 下一期錢包不夠、也沒有綁卡(api next_charge_source = none):到期會扣不到,比「到期自動扣」重要,排在試用句前面
   if (pl.next_charge_source === "none") return v.u ? t("pv.f.running.noPay" + ns, v) : "";
+  if (pl.next_charge_source === "free") return tOn ? (tv.u ? t("pv.f.running.trialFree", tv) : "") : t("pv.f.running.free");
+  if (tOn) return tv.u && v.x ? t("pv.f.running.trial", tv) : "";
   return v.x && v.u ? t("pv.f.running.m", v) : "";
 }
 /* 花錢動作的唯一確認點。每一次送出前都過這個框(失敗後重按也一樣):規則只有一條。
@@ -3375,11 +3422,14 @@ function planAsk(e, repriced) {
     const lines = [...(q ? [t("cf.m.repriced")] : []), t("cf.m.body1"), v.d ? t("cf.m.body2Trial", vv) : t("cf.m.body2"), t(v.g ? "cf.m.body3" : "cf.m.body3NoNum", vv)];
     // 鈕上就是要付的那一筆;試用中寫哪天起扣(年繳一次就是一整年)
     const okOf = (x) => (v.d ? t("cf.m.okTrial", { d: v.d, x: x.toLocaleString("en-US") }) : t("cf.m.ok", { x: x.toLocaleString("en-US") }));
-    // 月繳預選(對齊網站的開通框:鈕一開就能按);一期幾天讀公開價目,拿不到就不講天數
-    const mo = { id: "monthly", title: t("plan.cyc.monthly"), desc: t(vv.pd ? "cf.m.mo.d" : "cf.m.mo.dNoNum", vv), ok: okOf(pr), onOk: () => planGo("monthly", pr), checked: true };
+    /* 預選年繳(對齊網站的開通框:鈕一開就能按),兩個例外照既有週期:409 重開用的是用戶剛選的那個(planGo 帶進 repriced.cycle),
+       帳號已有週期(試用中選過、待開通重開)照帳號的;沒有年價就只有月繳。鈕上的金額與 onOk 送的是同一個整數 */
+    const want = q ? q.cycle : v.cy, pick = yr && want !== "monthly" ? "annual" : "monthly";
+    // 一期幾天讀公開價目,拿不到就不講天數
+    const mo = { id: "monthly", title: t("plan.cyc.monthly"), desc: t(vv.pd ? "cf.m.mo.d" : "cf.m.mo.dNoNum", vv), ok: okOf(pr), onOk: () => planGo("monthly", pr), checked: pick === "monthly" };
     if (!yr) { confirmBox({ title: t("cf.m.title"), ok: mo.ok, opener, onOk: mo.onOk, lines: [...lines, mo.desc] }); return; }
-    const yrc = { id: "annual", title: t("plan.cyc.annual"), desc: t(v.k && v.yd ? "cf.m.yr.d" : "cf.m.yr.dNoNum", vv), ok: okOf(yr), onOk: () => planGo("annual", yr) };
-    confirmBox({ title: t("cf.m.title"), ok: mo.ok, opener, lines, choices: [mo, yrc], choicesLabel: t("cf.m.pick") });
+    const yrc = { id: "annual", title: t("plan.cyc.annual"), desc: t(v.k && v.yd ? "cf.m.yr.d" : "cf.m.yr.dNoNum", vv), ok: okOf(yr), onOk: () => planGo("annual", yr), checked: pick === "annual" };
+    confirmBox({ title: t("cf.m.title"), ok: (pick === "annual" ? yrc : mo).ok, opener, lines, choices: [mo, yrc], choicesLabel: t("cf.m.pick") });
     return;
   }
   const v = planVars();
@@ -3405,7 +3455,7 @@ async function planGo(cycle, confirm) {
   if (r && r.error === "PLAN_CONFIRM_REQUIRED") {
     // 價格在框開著的時候變了(或 api 剛切換):重讀帳號、用 api 回的現價再問一次;沒有現價就退回一般錯誤
     await acctCheck(); planPaint();
-    if (r.quote && r.quote.monthly) { planAsk(null, r.quote); return; }
+    if (r.quote && r.quote.monthly) { planAsk(null, { ...r.quote, cycle }); return; }   // 重開的框停在用戶剛選的週期,不跳回預設
   }
   acctCheck();                               // 我們這邊逾時不代表沒開成:以伺服器的現況為準
   const mo = planMo();
@@ -3655,7 +3705,7 @@ window.blave.onTurnEnd(async (r) => {
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
   if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeq, faulted || stopped, { refetch: rpWfRefetch });
   upTurnEnded(faulted);
-  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
+  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
   if (stopped && lastUserTyped) {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複

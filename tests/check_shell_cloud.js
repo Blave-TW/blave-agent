@@ -191,7 +191,7 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
      物件是雲端那台機器上的策略碼寫得進去的東西:逐欄驗型別、只留報告要畫的那幾欄(形狀對齊主行程 loadStrategy)。 */
   const stBody = (o = {}) => ({ machine_state: "running", server_time: 130, strategy: { name: "momo", display_name: "Momentum", description: "MARKER-DESC", status: "draft", code: "MODE = 'backtest'", backtest: { "Sharpe Ratio": 1.2, candles: [[1, 2, 3, 4, 5, 6]] }, images: [{ hash: "x" }] }, ...o });
   { const r = interpretStrategy({ status: 200, body: stBody() }, "momo");
-    t("策略:OK,只留 name / displayName / description / stats(= 整份 backtest)/ scan / wf / code / versions;images 與 status 不往上交", r.code === "OK" && JSON.stringify(Object.keys(r.strategy)) === '["name","displayName","description","stats","scan","wf","code","versions"]'
+    t("策略:OK,只留 name / displayName / description / stats(= 整份 backtest)/ scan / wf / code / versions / perf;images 與 status 不往上交", r.code === "OK" && JSON.stringify(Object.keys(r.strategy)) === '["name","displayName","description","stats","scan","wf","code","versions","perf"]'
       && r.strategy.displayName === "Momentum" && r.strategy.stats["Sharpe Ratio"] === 1.2 && r.strategy.stats.candles.length === 1 && r.strategy.code === "MODE = 'backtest'");
     t("策略:scan(參數掃描)是物件才原樣往上交,缺 / 陣列 / 字串 → null(逐欄檢查在 report-robust.js 的 sanitizeScan)", r.strategy.scan === null
       && interpretStrategy({ status: 200, body: stBody({ strategy: { name: "momo", scan: { row_param: "A", grid: [[1]] } } }) }, "momo").strategy.scan.row_param === "A"

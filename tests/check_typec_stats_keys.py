@@ -90,22 +90,25 @@ check(math.isclose(st["Sortino Ratio"], round(sortino, 4), abs_tol=1e-4)
       f"Sortino / Omega from the portfolio's own returns ({st['Sortino Ratio']} / {st['Omega Ratio']} "
       f"vs {sortino:.4f} / {omega:.4f})")
 
-# no market fields (the 0.1.12 venue check was dropped before release): a live tick neither carries a
-# stale `market` / `market_symbols` left in stats.json nor records a new one
+# no market fields (the 0.1.12 venue check was dropped before release): a performance refresh of a
+# live strategy (a live tick itself does not touch stats.json) neither carries a stale `market` /
+# `market_symbols` left in stats.json nor records a new one
 st["market"] = "crypto_perp:binance"
 st["market_symbols"] = ["A", "B", "C", "D", "E"]
 (WS / "strategies" / "pf" / "stats.json").write_text(json.dumps(st))
 LIVE = CLOSE.rename(columns={"E": "XAUUSDT"})
 os.environ["BLAVE_MODE"] = "live"
+os.environ[runner.STATS_REFRESH_ENV] = "1"
 try:
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         runner.run({"STRATEGY_NAME": "pf", "INTERVAL": "1d", "START": "2023-01-02", "FEE": FEE, "WARMUP": 20},
                    lambda h: (LIVE.copy(), OPEN.rename(columns={"E": "XAUUSDT"}).copy()), compute)
 finally:
     os.environ["BLAVE_MODE"] = "backtest"
+    os.environ.pop(runner.STATS_REFRESH_ENV, None)
 lv = json.loads((WS / "strategies" / "pf" / "stats.json").read_text())
 check("market" not in lv and "market_symbols" not in lv,
-      f"live tick: no market / market_symbols carried or recorded ({lv.get('market')}, {lv.get('market_symbols')})")
+      f"performance refresh: no market / market_symbols carried or recorded ({lv.get('market')}, {lv.get('market_symbols')})")
 
 # Type A writes the same report keys (Ann. Return is derived by the report when absent)
 with contextlib.redirect_stdout(io.StringIO()):

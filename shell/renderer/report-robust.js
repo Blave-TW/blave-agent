@@ -142,9 +142,11 @@
     const peak = cellIdx(raw.peak, R, C) || argmax(grid);
     const plateau = cellIdx(raw.plateau, R, C) || argmax(nbr);
     if (!peak || !plateau) return null;   // 全格沒交易,沒東西可講
+    // 單參數策略:第二軸只有一格、名字 "_"(references/lib.md › Single-constant;同 report-wf.js)。第二個常數固定 0,定位與過時判定只看第一個
+    const single = C === 1 && raw.col_param === "_";
     // cur:null=未知;{i,j}=在網格上;{i:null,j:null,vals}=在掃描範圍外
     let cur = null, stale = false;
-    const rvNow = constFromCode(code, raw.row_param), cvNow = constFromCode(code, raw.col_param);
+    const rvNow = constFromCode(code, raw.row_param), cvNow = single ? 0 : constFromCode(code, raw.col_param);
     if (rvNow !== null && cvNow !== null) {
       const i = locate(rows, rvNow), j = locate(cols, cvNow);
       cur = i >= 0 && j >= 0 ? { i: i, j: j } : { i: null, j: null, vals: [rvNow, cvNow] };
@@ -164,7 +166,7 @@
     const changed = scanChanges(ctx, now);
     if (changed.period || changed.fee) stale = true;
     if (stale) cur = null;
-    return { stale, changed, ctx, now, rowParam: raw.row_param, colParam: raw.col_param, rows, cols, grid, nbr, w, peak, plateau, cur, rd: decimals(rows), cd: decimals(cols) };
+    return { stale, changed, ctx, now, rowParam: raw.row_param, colParam: raw.col_param, single, rows, cols, grid, nbr, w, peak, plateau, cur, rd: decimals(rows), cd: decimals(cols) };
   }
   // 費率顯示:至少兩位、最多四位(0.05 → 0.05、0.045 → 0.045);兩位以內跟回測 meta 的 fmtFixed 一樣
   function feeTxt(v) {
@@ -185,7 +187,8 @@
    * ——pv 的 U+2212 會被原樣抄進 Python(同 web robAskRescan);確認框顯示照用 pv */
   function gridInfo(sc) {
     const lo = (a) => Math.min.apply(null, a), hi = (a) => Math.max.apply(null, a), R = sc.rows, C = sc.cols;
-    return { rp: sc.rowParam, r0: pv(lo(R), sc.rd), r1: pv(hi(R), sc.rd), cp: sc.colParam, c0: pv(lo(C), sc.cd), c1: pv(hi(C), sc.cd), R: String(R.length), C: String(C.length),
+    if (sc.single) return { single: true, rp: sc.rowParam, r0: pv(lo(R), sc.rd), r1: pv(hi(R), sc.rd), R: String(R.length), raw: { rp: sc.rowParam, r0: String(lo(R)), r1: String(hi(R)) } };
+    return { single: false, rp: sc.rowParam, r0: pv(lo(R), sc.rd), r1: pv(hi(R), sc.rd), cp: sc.colParam, c0: pv(lo(C), sc.cd), c1: pv(hi(C), sc.cd), R: String(R.length), C: String(C.length),
       raw: { rp: sc.rowParam, r0: String(lo(R)), r1: String(hi(R)), cp: sc.colParam, c0: String(lo(C)), c1: String(hi(C)) } };
   }
   // 目前參數的落點:穩健格本身優先於尖峰(兩者同格時不是風險),再看是否在 plateau 的鄰域內
@@ -212,7 +215,15 @@
     if (s.indexOf("e") >= 0) return s.replace("-", MINUS);   // 科學記號:toFixed 會印成一串 0
     return (v < 0 ? MINUS : "") + Math.abs(v).toFixed(d);
   }
-  function pair(sc, i, j) { return pv(sc.rows[i], sc.rd) + " / " + pv(sc.cols[j], sc.cd); }
+  function pair(sc, i, j) {
+    if (sc.single) return pv(sc.rows[i], sc.rd);
+    return pv(sc.rows[i], sc.rd) + " / " + pv(sc.cols[j], sc.cd);
+  }
+  // 掃描範圍外的目前值(cur.vals):寫法同 pair
+  function pairVals(sc, vals) {
+    if (sc.single) return pv(vals[0], sc.rd);
+    return pv(vals[0], sc.rd) + " / " + pv(vals[1], sc.cd);
+  }
   function f2(v) {
     if (!isNum(v)) return DASH;
     const s = Math.abs(v).toFixed(2);
@@ -318,7 +329,11 @@
       meta.appendChild(g);
     };
     if (sc.ctx.fee !== null) group(opts.t("bt.fee"), feeTxt(sc.ctx.fee) + "%");
-    group(opts.t("rob.metaScan"), sc.rows.length + "×" + sc.cols.length);
+    if (sc.single) {   // 「掃描 20 格」:沒有第二軸就不寫 N×1
+      const g = el("span", "mgrp");
+      g.appendChild(el("span", "", opts.t("rob.metaScan")));
+      meta.appendChild(fillMono(g, opts.t("rob.cells"), { n: String(sc.rows.length) }));
+    } else group(opts.t("rob.metaScan"), sc.rows.length + "×" + sc.cols.length);
     return meta;
   }
 
@@ -341,7 +356,9 @@
     const card = el("div", "rob-card");
     const where = robWhere(sc), pk = sc.peak, pl = sc.plateau;
     const atPlateau = !sc.stale && !!sc.cur && sc.cur.i === pl.i && sc.cur.j === pl.j;
-    const TAG = atPlateau ? ["is-neutral", t("rob.tag.atPlateau")] : {
+    // 單參數:en 不能再寫 pair / parameters,換 *1 那組 key(zh 同字);其餘落點句沿用
+    const k1 = sc.single ? "1" : "";
+    const TAG = atPlateau ? ["is-neutral", t("rob.tag.atPlateau" + k1)] : {
       peak: ["is-risk", t("rob.tag.peak")],
       inside: ["is-neutral", t("rob.tag.inside")],
       outside: ["is-neutral", t("rob.tag.outside")],
@@ -353,9 +370,9 @@
     const parts = where === "stale" ? staleParts(sc) : [];
     if (parts.length) card.appendChild(staleSentence(parts, t));
     else card.appendChild(el("p", "rob-verdict", atPlateau ? t("rob.verdict.atPlateau") : {
-      peak: t("rob.verdict.peak"),
-      inside: t("rob.verdict.inside"),
-      outside: t("rob.verdict.outside"),
+      peak: t("rob.verdict.peak" + k1),
+      inside: t("rob.verdict.inside" + k1),
+      outside: t("rob.verdict.outside" + k1),
       outscan: t("rob.verdict.outscan"),
       stale: t("rob.verdict.stale"),
     }[where]));
@@ -364,10 +381,10 @@
     const tbl = el("table", "rob-cmp-tbl");
     const thead = el("thead"), hr = el("tr");
     hr.appendChild(el("th"));
-    hr.appendChild(el("th", "prm mono", sc.rowParam + " / " + sc.colParam));
+    hr.appendChild(el("th", "prm mono", sc.single ? sc.rowParam : sc.rowParam + " / " + sc.colParam));
     hr.appendChild(el("th", null, t("rob.cmp.sharpe")));
     const thN = el("th");
-    thN.appendChild(tipLabel(t("rob.cmp.nbr"), t("rob.cmp.nbrTip", { k: String(2 * sc.w + 1) })));
+    thN.appendChild(tipLabel(t("rob.cmp.nbr"), t("rob.cmp.nbrTip" + k1, { k: String(2 * sc.w + 1) })));
     hr.appendChild(thN);
     thead.appendChild(hr);
     tbl.appendChild(thead);
@@ -388,7 +405,7 @@
     tbody.appendChild(row("plateau", t("rob.cmp.plateau"), pair(sc, pl.i, pl.j), sc.grid[pl.i][pl.j], sc.nbr[pl.i][pl.j]));
     if (sc.cur && !atPlateau && where !== "peak") {
       const c = sc.cur;
-      if (c.i === null) tbody.appendChild(row(null, t("rob.cmp.cur"), pv(c.vals[0], sc.rd) + " / " + pv(c.vals[1], sc.cd), null, null));
+      if (c.i === null) tbody.appendChild(row(null, t("rob.cmp.cur"), pairVals(sc, c.vals), null, null));
       else tbody.appendChild(row(null, t("rob.cmp.cur"), pair(sc, c.i, c.j), sc.grid[c.i][c.j], sc.nbr[c.i][c.j]));
     }
     tbl.appendChild(tbody);
@@ -402,6 +419,7 @@
 
   // 真 <table>(th scope):原始 Sharpe / 鄰域平均切換、▲ 尖峰 ● 穩健、目前參數(虛線框)、tooltip、legend
   function buildHeat(sc, t) {
+    const k1 = sc.single ? "1" : "";   // 單參數:aria / 鄰域 label / 「目前參數」圖例換 *1 key(en 單數、不寫第二軸)
     const wrap = el("div", "rob-heat");
     const head = el("div", "rob-heat-head");
     const label = el("div", "bt-label rob-heat-label", t("rob.heatRaw"));
@@ -418,16 +436,18 @@
     wrap.appendChild(head);
 
     const frame = el("div", "rob-frame");
-    const tbl = el("table", "rob-tbl");
-    tbl.setAttribute("aria-label", t("rob.heatAria", { rp: sc.rowParam, cp: sc.colParam }));
+    const tbl = el("table", "rob-tbl" + (sc.single ? " is-single" : ""));   // is-single = 一欄不拉滿的唯一 CSS 鉤子
+    tbl.setAttribute("aria-label", sc.single ? t("rob.heatAria1", { rp: sc.rowParam }) : t("rob.heatAria", { rp: sc.rowParam, cp: sc.colParam }));
     // 每欄 52px 的可讀下限放在 table 的 min-width(同 .bt-heat):欄數多才撐過 frame 橫捲,不縮字。
-    // fixed layout 先扣掉 border-spacing 再分欄:角落欄 + cols 共 cols+1 欄,spacing 是 cols+2 個
-    tbl.style.minWidth = Math.max(340, 84 + sc.cols.length * 52 + (sc.cols.length + 2) * 4) + "px";
+    // fixed layout 先扣掉 border-spacing 再分欄:角落欄 + cols 共 cols+1 欄,spacing 是 cols+2 個。
+    // 單參數不設:340 的地板會頂掉 .is-single 的 max-width,390 寬還會逼出橫捲
+    if (!sc.single) tbl.style.minWidth = Math.max(340, 84 + sc.cols.length * 52 + (sc.cols.length + 2) * 4) + "px";
     const thead = el("thead"), hr = el("tr");
     const corner = el("th", "corner");
-    corner.append(el("span", "r mono", sc.rowParam + " ↓"), el("span", "mono", sc.colParam + " →"));
+    corner.appendChild(el("span", "r mono", sc.rowParam + " ↓"));
+    if (!sc.single) corner.appendChild(el("span", "mono", sc.colParam + " →"));
     hr.appendChild(corner);
-    sc.cols.forEach((c) => { const th = el("th", null, pv(c, sc.cd)); th.scope = "col"; hr.appendChild(th); });
+    sc.cols.forEach((c) => { const th = el("th", null, sc.single ? "" : pv(c, sc.cd)); th.scope = "col"; hr.appendChild(th); });
     thead.appendChild(hr);
     tbl.appendChild(thead);
 
@@ -453,7 +473,7 @@
         td.dataset.glyph = isPl ? "plateau" : isPk ? "peak" : "";
         const raw = sc.grid[i][j];
         const val = raw === null ? t("rob.tipNa") : t("rob.tipSharpe", { s: f2(raw), n: f2(sc.nbr[i][j]) });
-        td.setAttribute("aria-label", sc.rowParam + " " + pv(r, sc.rd) + " · " + sc.colParam + " " + pv(c, sc.cd) + ": " + val + (roles.length ? "(" + roles.join(" · ") + ")" : ""));
+        td.setAttribute("aria-label", sc.rowParam + " " + pv(r, sc.rd) + (sc.single ? "" : " · " + sc.colParam + " " + pv(c, sc.cd)) + ": " + val + (roles.length ? "(" + roles.join(" · ") + ")" : ""));
         if (roles.length) td.tabIndex = 0;
         tr.appendChild(td);
         cells.push(td);
@@ -480,10 +500,10 @@
     legend.appendChild(item(sw("plateau"), fillMono(el("span"), t("rob.legend.plateau"), { prm: pair(sc, sc.plateau.i, sc.plateau.j) })));
     if (sc.cur && sc.cur.i !== null) {
       const c = sc.cur;
-      if (c.i === sc.plateau.i && c.j === sc.plateau.j) legend.appendChild(item(sw("plateau", true), document.createTextNode(t("rob.legend.curPlateau"))));
-      else legend.appendChild(item(sw(null, true), document.createTextNode(c.i === sc.peak.i && c.j === sc.peak.j ? t("rob.legend.curPeak") : t("rob.legend.cur"))));
+      if (c.i === sc.plateau.i && c.j === sc.plateau.j) legend.appendChild(item(sw("plateau", true), document.createTextNode(t("rob.legend.curPlateau" + k1))));
+      else legend.appendChild(item(sw(null, true), document.createTextNode(c.i === sc.peak.i && c.j === sc.peak.j ? t("rob.legend.curPeak" + k1) : t("rob.legend.cur" + k1))));
     } else if (sc.cur) {
-      legend.appendChild(item(null, fillMono(el("span"), t("rob.legend.curOff"), { prm: pv(sc.cur.vals[0], sc.rd) + " / " + pv(sc.cur.vals[1], sc.cd) })));
+      legend.appendChild(item(null, fillMono(el("span"), t("rob.legend.curOff" + k1), { prm: pairVals(sc, sc.cur.vals) })));
     }
     legend.appendChild(item(null, document.createTextNode(t("rob.legend.na"))));
     wrap.appendChild(legend);
@@ -507,7 +527,7 @@
       bNbr.setAttribute("aria-pressed", mode === "nbr" ? "true" : "false");
       label.textContent = "";
       if (mode === "raw") label.textContent = t("rob.heatRaw");
-      else fillMono(label, t("rob.heatNbr"), { k: String(2 * sc.w + 1) });
+      else fillMono(label, t("rob.heatNbr" + k1), { k: String(2 * sc.w + 1) });
       paint(mode);
     }
     bRaw.addEventListener("click", () => setMode("raw"));
@@ -518,7 +538,8 @@
       const i = +td.dataset.i, j = +td.dataset.j, raw = sc.grid[i][j];
       showTip(td, (tip) => {
         const l1 = el("div");
-        l1.append(el("span", "mono", sc.rowParam + " " + pv(sc.rows[i], sc.rd)), el("span", "tl", " · "), el("span", "mono", sc.colParam + " " + pv(sc.cols[j], sc.cd)));
+        l1.appendChild(el("span", "mono", sc.rowParam + " " + pv(sc.rows[i], sc.rd)));
+        if (!sc.single) l1.append(el("span", "tl", " · "), el("span", "mono", sc.colParam + " " + pv(sc.cols[j], sc.cd)));
         tip.appendChild(l1);
         const l2 = el("div");
         if (raw === null) l2.textContent = t("rob.tipNa");
@@ -691,7 +712,7 @@
     const sc = sanitizeScan(d && d.scan, d && d.stats, d && d.code);
     if (!sc) return null;
     const pl = sc.plateau, at = !sc.stale && !!sc.cur && sc.cur.i === pl.i && sc.cur.j === pl.j, where = robWhere(sc);
-    return { rows: sc.rows.length, cols: sc.cols.length, tag: at ? "rob.tag.atPlateau" : where === "stale" ? null : "rob.tag." + where };
+    return { rows: sc.rows.length, cols: sc.cols.length, single: sc.single, tag: at ? "rob.tag.atPlateau" + (sc.single ? "1" : "") : where === "stale" ? null : "rob.tag." + where };
   };
   // 純計算函式掛出來給核對腳本用(tests/check_shell_robust.js);畫面不靠這個
   // report-wf.js(樣本外驗證)的軸、常數讀法、數字格式也從這裡拿(同一套,不另抄)

@@ -911,9 +911,6 @@ msgstr "{h} TWD an hour from your balance (30-day month)"
 msgid "plan.trialFree"
 msgstr "No machine fee until {d}. After that, the price above applies."
 
-msgid "plan.topup"
-msgstr "Under a balance of {a} TWD, your card is charged {b} TWD automatically. You can turn this off on the web."
-
 msgid "plan.start"
 msgstr "Start Plan"
 
@@ -3878,6 +3875,54 @@ msgstr "Please rescan the parameters of strategy {name} (lib.param_scan: scan_gr
 
 msgid "rob.msgRescanLabel"
 msgstr "Rescan the parameters of {name}"
+
+msgid "rob.cells"
+msgstr "{n} cells"
+
+msgid "rob.heatAria1"
+msgstr "{rp} parameter scan Sharpe heatmap"
+
+msgid "rob.heatNbr1"
+msgstr "Parameter scan · neighbourhood mean Sharpe ({k} cells)"
+
+msgid "rob.cmp.nbrTip1"
+msgstr "Mean Sharpe of the {k} neighbouring cells; the closer to Sharpe, the better it holds when the parameter drifts"
+
+msgid "rob.legend.curOff1"
+msgstr "Current parameter {prm} is outside the scanned range — no marker"
+
+msgid "rob.cfLead1"
+msgstr "Rescans with the current backtest settings, keeping the same parameter and range."
+
+msgid "rob.cfRange"
+msgstr "Range"
+
+msgid "rob.cfRangeVal"
+msgstr "{rp} {r0}–{r1} ({R} cells)"
+
+msgid "rob.msgRescan1"
+msgstr "Please rescan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+
+msgid "rob.tag.atPlateau1"
+msgstr "Current: the robust value"
+
+msgid "rob.verdict.peak1"
+msgstr "A small drift costs a lot — switch to the robust value."
+
+msgid "rob.verdict.inside1"
+msgstr "One cell from the robust value — switching changes little."
+
+msgid "rob.verdict.outside1"
+msgstr "Nearby values are unstable — switch to the robust value."
+
+msgid "rob.legend.cur1"
+msgstr "Current parameter"
+
+msgid "rob.legend.curPeak1"
+msgstr "Current parameter (same cell as peak)"
+
+msgid "rob.legend.curPlateau1"
+msgstr "Current parameter = robust value"
 
 msgid "rp.tab.wf"
 msgstr "Out-of-Sample"
@@ -7020,17 +7065,8 @@ msgstr "Monthly"
 msgid "plan.cyc.annual"
 msgstr "Yearly"
 
-msgid "plan.year"
-msgstr "or {y} TWD a year ({yd} days, you pay for {k} months)"
-
 msgid "plan.yearNoNum"
 msgstr "or {y} TWD a year"
-
-msgid "plan.rule.m"
-msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, the machine stops and it’s retried daily; after {g} days unpaid, the machine is deleted. Cancelling keeps it until the end of the period, with no refund."
-
-msgid "plan.rule.mNoNum"
-msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, the machine stops and it’s retried daily; left unpaid, the machine is deleted. Cancelling keeps it until the end of the period, with no refund."
 
 msgid "pv.st.noPlan"
 msgstr "No plan"
@@ -7256,17 +7292,77 @@ msgstr "Next payment {u}: the wallet can’t cover it and there’s no card on f
 msgid "pv.f.running.failNoServer"
 msgstr "Payment failed · retried daily; the plan ends on {gu}"
 
-msgid "plan.rule.mNoServer"
-msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, Blave data pauses and it’s retried daily; after {g} days unpaid, the plan ends. Cancelling keeps it until the end of the period, with no refund."
-
-msgid "plan.rule.mNoServerNoNum"
-msgstr "Each period is paid up front: from your wallet first, then the card on file if the wallet can’t cover it. If a payment fails, Blave data pauses and it’s retried daily; left unpaid, the plan ends. Cancelling keeps it until the end of the period, with no refund."
-
-msgid "pv.inc.m2"
-msgstr "A cloud machine if you want one, at no extra charge for the same tier: strategies run on schedule and place orders"
-
 msgid "cf.m.mo.dNoNum"
 msgstr "{p} TWD each period"
 
 msgid "plan.startingM"
 msgstr "Starting Plan…"
+
+msgid "perf.btn"
+msgstr "Update Performance"
+
+msgid "perf.ago"
+msgstr "{n} days ago"
+
+msgid "perf.agoOne"
+msgstr "1 day ago"
+
+msgid "perf.tip"
+msgstr "Updated {t} · auto-updated once a day before the daily report"
+
+msgid "perf.busy"
+msgstr "Updating"
+
+msgid "perf.doneSr"
+msgstr "Performance updated"
+
+msgid "perf.fail"
+msgstr "Update failed; figures unchanged."
+
+msgid "plan.st.runningTrial"
+msgstr "Trial · {n} days left · machine running"
+
+msgid "plan.st.stoppedTrial"
+msgstr "Stopped · trial, {n} days left"
+
+msgid "pv.f.running.trial"
+msgstr "Trial runs until {u}. The first period is charged that day: {c} {x} TWD. Cancel before then and nothing is charged."
+
+msgid "pv.f.running.trialCancel"
+msgstr "Trial cancelled · runs until {u} with no charge; the machine is deleted on {gu}"
+
+msgid "pv.f.running.trialCancelNoNum"
+msgstr "Trial cancelled · runs until {u} with no charge; the machine is deleted after that"
+
+msgid "pv.f.running.trialFree"
+msgstr "Trial runs until {u} · no plan fee on this account"
+
+msgid "pv.f.running.free"
+msgstr "No plan fee on this account"
+
+msgid "pv.f.running.trialDue"
+msgstr "The trial has ended. The first period ({c} {x} TWD) is being charged"
+
+msgid "pv.f.running.due"
+msgstr "{c} {x} TWD · payment in progress"
+
+msgid "pv.h.stopped.mOkTrial"
+msgstr "The machine is stopped; your trial continues"
+
+msgid "pv.d.stopped.mOkTrial"
+msgstr "Stopping the machine doesn’t affect the trial. Start it again on the web."
+
+msgid "pv.f.running.trialNoAuto"
+msgstr "Trial runs until {u}. Automatic payment is off, so the first period won’t be charged and the machine stops that day. To continue, start the plan on the website after that"
+
+msgid "pv.f.running.await"
+msgstr "The first period wasn’t charged automatically. Start the plan on the website to continue; otherwise the machine is deleted on {gu}"
+
+msgid "pv.inc.one"
+msgstr "Includes a cloud machine, Blave data and the web workspace"
+
+msgid "plan.rule.one"
+msgstr "Each period: wallet first, then card. No refund on cancel."
+
+msgid "plan.topupShort"
+msgstr "Under {a} TWD, your card tops up {b} TWD; turn off on the web"

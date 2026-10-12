@@ -105,7 +105,7 @@ ALLOWED = frozenset({
     "delete_strategy", "manage_optimize", "manage_backtest", "manage_cancel",
     "report_pause", "report_resume", "report_run_now", "report_delete",
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
-    "book_account_confirm", "version_restore",
+    "book_account_confirm", "version_restore", "stats_refresh",
 })
 # In the api's list, refused here: the Capital (群益) and 統一期貨 connect steps
 # install broker components and an NSSM worker on a cloud Windows host —
@@ -443,8 +443,9 @@ def strategy_kinds(strat_dir, cfg, cache):
                 sname = sr.strategy_consts(src).get("STRATEGY_NAME") or name
             except Exception:   # one pathological file (RecursionError in ast…) must not blank every strategy
                 needs_stats, attrs, sname = False, {}, name
-            # A live tick rewrites stats.json every bar, but the Type C verdict only follows the code:
-            # once a stats.json written after this strategy.py has been read, later bars change nothing.
+            # A performance refresh (or an old lib's live tick) rewrites stats.json, but the Type C verdict
+            # only follows the code: once a stats.json written after this strategy.py has been read,
+            # later rewrites change nothing.
             settled = not needs_stats or (bsig is not None and bsig[0] >= sig[0])
             hit = {"sig": sig, "bsig": bsig, "settled": settled, "sname": sname,
                    "type": attrs.get("type"), "market": attrs.get("market")}
@@ -1227,6 +1228,7 @@ class Daemon:
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
         cl._resume_mgmt_watch()
         cl._resume_restore_watch()
+        cl._resume_perf_refresh()
         loops = [cl._scheduler_loop, self._status_loop, self._account_loop,
                  self._supervise_loop]
         if watch_parent:

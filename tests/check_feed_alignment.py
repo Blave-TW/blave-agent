@@ -6,7 +6,8 @@ cuts recorded feeds by publication time too. No network: fetchers are stubbed.
     publication time — backtest and live alike (monthly revenue stamped at the filing month,
     三大法人 stamped at the trading date, a Blave alpha stamped at its bucket open)
   - a missing due row: NaN mid-history, trailing bars trimmed in a backtest,
-    FeedNotPublished on the last bar inside live_feeds(); not-yet-due rows raise nothing
+    FeedNotPublished on the last bar inside live_feeds(); not-yet-due rows raise nothing;
+    a FeedNotPublished the strategy swallowed still surfaces when the live scope exits
   - economic calendar: `real` visible 5 minutes after its release; no-time events from next day
   - runner: a daily feed ffilled onto intraday bars before publication is refused as
     偷看未來; the same strategy through align_feed passes; a live tick on an unpublished row
@@ -142,6 +143,42 @@ try:
     check(False, "live alpha: missing last bucket must raise")
 except D.FeedNotPublished:
     check(True, "live alpha: the last bar's bucket missing → FeedNotPublished")
+
+# ── a strategy that swallows the refusal (per-symbol try/except → skip) ───────────────
+swallowed = None
+try:
+    with D.live_feeds():
+        for src in ("twstock_institutional", "twmarket_margin"):
+            try:
+                D.align_feed(DAILY, late, src, "1d", bar_tz=TPE)
+            except Exception:
+                pass
+    check(False, "live: a swallowed FeedNotPublished must surface when the scope exits")
+except D.FeedNotPublished as e:
+    swallowed = e
+    check(e.source == "twstock_institutional", f"live: swallowed refusal re-raised at scope exit, the first one ({e.source})")
+try:
+    with D.live_feeds():
+        D.align_feed(DAILY, INST, "twstock_institutional", "1d", bar_tz=TPE)
+    check(D._feed_refused is None, "live: a clean scope after a swallowed refusal raises nothing (slot cleared)")
+except D.FeedNotPublished:
+    check(False, "live: the swallowed refusal leaked into the next scope")
+try:
+    with D.live_feeds():
+        try:
+            D.align_feed(DAILY, late, "twstock_institutional", "1d", bar_tz=TPE)
+        except Exception:
+            pass
+        raise KeyError("strategy bug")
+    check(False, "live: the scope's own exception must propagate")
+except KeyError:
+    check(D._feed_refused is None, "live: an exception already leaving the scope is not masked, slot cleared")
+try:
+    with contextlib.redirect_stdout(io.StringIO()):
+        bt = D.align_feed(DAILY, late, "twstock_institutional", "1d", bar_tz=TPE)
+    check(len(bt) == len(DAILY) - 1 and D._feed_refused is None, "backtest after live scopes: still trims, records nothing")
+except D.FeedNotPublished:
+    check(False, "backtest: align_feed outside live_feeds() must not raise")
 
 # ── economic calendar ────────────────────────────────────────────────────────────────
 CAL = pd.DataFrame({"datetime": pd.to_datetime(["2026-09-22 00:00", "2026-09-23 20:30"]),

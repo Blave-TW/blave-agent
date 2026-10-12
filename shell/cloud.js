@@ -100,7 +100,8 @@ function interpretEvents(res) {
    其餘一律 UNREACH。物件是雲端那台機器上的策略碼寫得進去的東西:欄位逐個驗型別,只留報告要畫的那幾欄
    (形狀對齊主行程 loadStrategy:{ name, displayName, description, stats, scan, wf, code }),renderer 一律 textContent。
    scan = 參數掃描(機器端 scan.json 經 api 併進來):只驗到「是物件」,逐欄的型別檢查在 report-robust.js 的 sanitizeScan(本機那份同一套)。
-   wf = 樣本外驗證(wf.json,api 已經過 _clean_wf):同 scan,逐欄檢查在 report-wf.js 的 sanitizeWf。 */
+   wf = 樣本外驗證(wf.json,api 已經過 _clean_wf):同 scan,逐欄檢查在 report-wf.js 的 sanitizeWf。
+   perf = 績效新鮮度(strategy_reporter._read_perf 的 { at, refresh? }):同 scan 只驗到「是物件」,逐欄在 renderer/perf.js 的 perfOf。 */
 function interpretStrategy(res, name) {
   const b = res && res.status === 200 ? res.body : null;
   if (!b || typeof b !== "object" || !("strategy" in b)) return STRATEGY_UNREACHABLE();
@@ -109,7 +110,7 @@ function interpretStrategy(res, name) {
   if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
   const str = (v) => (typeof v === "string" ? v : "");
   const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
-  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions) } };
+  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions), perf: obj(s.perf) } };
 }
 
 /* 策略版本(/cloud/version = 網頁 /openclaw/agent/version/… 原樣,canon strategy-versions §9)。

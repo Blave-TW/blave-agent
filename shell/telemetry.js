@@ -150,7 +150,9 @@ const EVENTS = {
     // 本機與雲端 tab 共用同兩個名字(雲端 tab 0.1.20 只讀,還沒有送出點)
     "strat_flag_set", "strat_reorder",
     // 內建瀏覽器請求卡上的「好了，交還 agent」(0.1.20 A 案;renderer/browser.js brAsk):接手中按了就記(驗證、登入、送出、上傳都同一顆)
-    "browser_hb_card"] },
+    "browser_hb_card",
+    // 更新績效(0.1.21;renderer/perf.js perfClick):上線中策略回測數據分頁 meta 列尾那顆,指令真的送出且機器排進佇列(ack started)才送;不帶策略名
+    "perf_update"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

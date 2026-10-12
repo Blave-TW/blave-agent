@@ -1111,8 +1111,8 @@ function stratSelfOrderingAny() {
 }
 
 /* 側欄順序 = 最近被人或 agent 動過的在上面:程式碼、明確回測(stats 的 Generated At,秒)、參數掃描。
-   不看 stats.json 的 mtime——上線中的策略每根 K 的 live tick 都重寫它(Generated At 不動),那一支每小時跳回第一,
-   重開 app、切語言重畫時順序就跟著變。舊 stats 沒有 Generated At 才退回檔案時間;同時間照資料夾名,順序才固定 */
+   不看 stats.json 的 mtime——上線中的策略每次「更新績效」(手動或每天報告前自動一次)都重寫它(Generated At 不動),
+   那一支會跳回第一,重開 app、切語言重畫時順序就跟著變。舊 stats 沒有 Generated At 才退回檔案時間;同時間照資料夾名,順序才固定 */
 const stratTouchedAt = (x) => Math.max(x.codeMtime || 0, x.scanMtime || 0, x.wfMtime || 0, x.generatedAt ? x.generatedAt * 1000 : x.statsMtime || 0);
 const stratOrder = (a, b) => stratTouchedAt(b) - stratTouchedAt(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 /* 年化報酬同回測頁 renderer/report-backtest.js annualReturn(tests/check_shell_results.js 釘兩邊同值):Type C 的 stats 自帶
@@ -1156,7 +1156,7 @@ function listStrategies() {
     if (sMtime) {
       try {
         const st = JSON.parse(fs.readFileSync(statsPath, "utf8"));
-        // generatedAt:只有明確回測會重蓋(lib/runner.py _carry_over),live tick 每根 K 重寫 stats.json 但不動它——結果卡靠它認「這一輪跑了回測」
+        // generatedAt:只有明確回測會重蓋(lib/runner.py _carry_over),更新績效重寫 stats.json 但不動它——結果卡靠它認「這一輪跑了回測」
         summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), annReturn: stratAnnReturn(st), totalReturn: num(st["Total Return [%]"]),
           maxDrawdown: num(st["Max Drawdown [%]"]), generatedAt: num(st["Generated At"]) };
         tm().track("first_backtest_done");   // 每個安裝只會送出一次(telemetry.js 自己記)
@@ -1212,7 +1212,19 @@ function loadStrategy(name) {
   // 逐欄檢查在 renderer/report-robust.js 的 sanitizeScan / report-wf.js 的 sanitizeWf
   const scan = readResultJson(path.join(dir, "scan.json")), wf = readResultJson(path.join(dir, "wf.json"));
   try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
-  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
+  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
+}
+/* 績效的新鮮度(renderer/perf.js 的「更新績效」),形狀同 runtime strategy_reporter._read_perf:{ at, refresh? },沒有 stats.json = null。
+   at = stats.json 的 mtime(秒)——最後一次寫績效的時間(回測、還原的重跑、更新績效;live tick 不寫這個檔),不是 Generated At(只有明確回測會動)。
+   refresh = strategies/<name>/perf_refresh.json(command_listener 寫):{ status: running|failed, at, err? },err 認得的是 RERUN_ERRS、其餘當 EXIT;壞形狀就當沒有 */
+function stratPerf(dir) {
+  let at = 0; try { at = Math.floor(fs.statSync(path.join(dir, "stats.json")).mtimeMs / 1000); } catch (_) { return null; }
+  const out = { at };
+  let d = null; try { d = JSON.parse(fs.readFileSync(path.join(dir, "perf_refresh.json"), "utf8")); } catch (_) { return out; }
+  if (!d || typeof d !== "object" || Array.isArray(d) || (d.status !== "running" && d.status !== "failed") || !Number.isInteger(d.at)) return out;
+  out.refresh = { status: d.status, at: d.at };
+  if (d.status === "failed") out.refresh.err = RERUN_ERRS.indexOf(d.err) >= 0 ? d.err : "EXIT";
+  return out;
 }
 /* 轉出檔(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 存的三個固定檔名)。
    讀檔規則同 runtime `_read_export`:regular file、≤256KB;讀不到那一份就當沒有(不猜、不報錯)。
@@ -3017,7 +3029,7 @@ app.whenReady().then(() => {
   const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
   // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
   // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;

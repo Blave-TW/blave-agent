@@ -110,8 +110,9 @@ Every **backtest** freezes the strategy as a version: `strategies/<name>/version
 curve) plus a summary line in `versions/index.json`. The workspace shows them, and the user
 can ask to go back to one. Nothing to run by hand — `run()` does it.
 
-- **Backtests only.** A live / cron tick rewrites `stats.json` every bar but mints no
-  version; a deployed 1h strategy would otherwise produce 24 a day.
+- **Backtests only.** A live / cron tick writes `state.json` only — no `stats.json`, no
+  version; a performance refresh (`references/deployment.md` › *Performance refresh*) rewrites
+  `stats.json` and still mints nothing. A deployed 1h strategy would otherwise produce 24 a day.
 - **`VERSION_NOTE`** (a string constant next to `DISPLAY_NAME` / `DESCRIPTION`): one line on
   what changed in THIS run — a parameter, a rule, a data source. Update it whenever you
   change the code, before the backtest. Leave it `""` when nothing changed rather than
@@ -480,7 +481,7 @@ After combining, the only hard checks are the per-side ones — `BUY_TH > SELL_T
 
 Every round gets its own `plot_heatmap` PNG (`heatmap.png`, `heatmap_round2.png` — they reach the user through the workspace chat / Telegram). **`write_scan` is called once, for the round-1 pair only.** Reason: the web's adopt prompt only changes the two constants in `scan.json`, and round 1 is the only grid computed with every *other* constant at the file's current value — so its `current` mark is honest and 「把 ENTRY_Z 改成 …」 lands on a cell that was actually scanned. Round 2 was computed with the thresholds pinned at the plateau, not the file's values; writing it would mark a current cell whose Sharpe was never measured under the file's constants. The round-2 recommendation goes in the conversation. Long/short threshold pairs that decouple by turning the other side off (previous section) are a separate case — two independent 2D scans, write the side you recommend.
 
-**One real parameter only** (`FEE`, `SYMBOL`, `INTERVAL` do not count): pair it with another constant that actually exists in the strategy. If there truly is only one, scan it 1D — loop `compute_signals` over a `nice_grid` axis, plot a line chart, send the PNG — and **write no `scan.json`**: the web's first version draws 2D grids only, and a padded fake axis would show the user a heatmap of a parameter that does not exist.
+**One real parameter only** (`FEE`, `SYMBOL`, `INTERVAL` do not count): pair it with another constant that actually exists in the strategy. If there truly is only one, run the **same workflow through a one-cell second axis** and still **`write_scan`** — `scan_grid` takes `col_param='_none'`, a lambda that swallows that kwarg, and `valid_fn=lambda r, c: True`; `write_scan` takes `col_param='_'`, `col_vals=[0]` and `current=(s.X, 0)`; the exact recipe is `references/lib.md` › *Parameter scan workflow* step 1, the same shape as *Single-constant walk-forward*. The 參數掃描 tab (web and desktop) reads `'_'` as "no second axis" and draws one column; `plot_heatmap` gives the PNG as usual. `'_'` + `[0]` is the only sanctioned second axis — a padded fake range would show the user a heatmap of a parameter that does not exist.
 
 ## What You Do NOT Need to Write
 
@@ -586,6 +587,9 @@ def fetch_data(hdrs):
   waiting and alerts 15 minutes after the row was due, naming the feed. Monthly / quarterly /
   weekly filings only print a warning (a late filer must not halt the strategy; the previous
   filing is what was known).
+- **Never put `align_feed` inside a per-symbol `try/except`.** Catching `FeedNotPublished` drops
+  that symbol and re-ranks the rest on a partial universe, so the weights flip from tick to tick;
+  the live tick refuses anyway — a swallowed `FeedNotPublished` is re-raised when `fetch_data` returns.
 - Take the trimmed index for price too (`df.loc[aligned.index]`), and do not `ffill` the aligned
   columns across a NaN — that re-creates the stale value `align_feed` just removed.
 

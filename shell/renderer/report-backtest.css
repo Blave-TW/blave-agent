@@ -39,6 +39,19 @@
   color: var(--color-greyDark);
 }
 
+/* ---- 1b. 更新績效(renderer/perf.js 掛進 .bt-meta 列尾;spec stats-manual-refresh §10)----
+   .upd 不是 .mgrp:靠右、前面不畫點;更新中是圓環(Loader inline 階 16/2,currentColor = ink-3)+ 三個字。
+   失敗那一行緊跟在 meta 下面(8),三組條列照舊離它 16 */
+.bt-meta > .upd { display: inline-flex; align-items: center; gap: var(--space-8); margin-left: auto; white-space: nowrap; }
+.bt-meta > .upd .ts[title] { cursor: help; }
+.bt-meta > .upd .busy { display: inline-flex; align-items: center; gap: var(--space-6); }
+.bt-meta > .upd .btn-quiet[aria-disabled="true"] { color: var(--color-greyDark); text-decoration: none; cursor: not-allowed; }
+.bt-meta > .upd .btn-quiet::before { inset: -15px -6px; }   /* 熱區補到 44 高(視覺 14 + 15×2;設計稽核量到 42.25,只動這一顆,全域 .btn-quiet 仍是 24 最小) */
+.bt > .bt-meta + .upd-fail { margin-top: var(--space-8); }
+.bt > .upd-fail + * { margin-top: var(--space-16); }
+.upd-fail { display: flex; align-items: flex-start; gap: var(--space-6); margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.upd-fail .fault-mark { margin-top: 8px; }   /* 12px × 1.5 首行的中線(同 versions.css .vr-t) */
+
 /* ---- 2. 三組條列(tearsheet 慣例,雲端 .bt-cols / .bt-mrow 同構) ----
    平面、無卡片:組與組之間是 24px 溝 + 一條直 hairline,列與列之間是 8+8 的節奏
    + 橫 hairline——組距大於列距,分組才讀得出來(Proximity)。 */

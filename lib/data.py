@@ -6096,18 +6096,29 @@ class FeedNotPublished(RuntimeError):
 
 _live_feeds = 0   # >0 while a LIVE tick's fetch_data runs (runner / wait_for_bar)
 _feed_trims = None   # a list while lib.runner's look-ahead replay listens: the bars align_feed cut
+_feed_refused = None   # the first FeedNotPublished raised in the current live scope
 
 
 class live_feeds:
-    """Scope marking a live tick: align_feed raises FeedNotPublished instead of trimming."""
+    """Scope marking a live tick: align_feed raises FeedNotPublished instead of trimming.
+
+    A strategy that swallows it (a per-symbol try/except → skip) would trade a partial
+    universe, so the outermost exit re-raises the first one a clean scope left behind."""
     def __enter__(self):
-        global _live_feeds
+        global _live_feeds, _feed_refused
+        if not _live_feeds:
+            _feed_refused = None
         _live_feeds += 1
         return self
 
-    def __exit__(self, *exc):
-        global _live_feeds
+    def __exit__(self, exc_type, *exc):
+        global _live_feeds, _feed_refused
         _live_feeds -= 1
+        if _live_feeds:
+            return False
+        refused, _feed_refused = _feed_refused, None
+        if refused is not None and exc_type is None:
+            raise refused
         return False
 
 
@@ -6268,7 +6279,11 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
             k = int(np.flatnonzero(c_s == need_ns[-1])[0])
             need, due = cand[k], c_avail[k]
             if _live_feeds:
-                raise FeedNotPublished(source, need, due, index[-1])
+                global _feed_refused
+                err = FeedNotPublished(source, need, due, index[-1])
+                if _feed_refused is None:
+                    _feed_refused = err
+                raise err
             tail = len(stale) - (np.flatnonzero(~stale)[-1] + 1 if (~stale).any() else 0)
             print(f"  ⚠️  {source}: the last {tail} bar(s) are cut — the row for {need} was due by "
                   f"{due} and is not in the data yet (live refuses these bars until it lands)")
