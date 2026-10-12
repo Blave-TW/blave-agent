@@ -14,7 +14,7 @@ if (!process.versions.electron) {
   ok("① 介面元件不可選;內容區裡的按鈕字可選", /\n\.pane-strategies, \.pane-div, \.tb, \.chat-head, \[role="tablist"\], nav, button \{ user-select: none; -webkit-user-select: none; \}\n\.chat-scroll button, \.rpt-read button, \.rp-panel button \{ user-select: text; -webkit-user-select: text; \}\n/.test(css));
   const all = fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => /\.css$/.test(f)).map((f) => [f, fs.readFileSync(path.join(SHELL, "renderer", f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "")]);
   const none = all.flatMap(([f, s]) => [...s.matchAll(/([^{}]+)\{[^}]*user-select: none/g)].map((m) => f + ": " + m[1].trim()));
-  ok("① 整個外殼寫 user-select: none 的只有這幾條(新增一條要想過那裡的字要不要能複製)", JSON.stringify(none) === JSON.stringify(["app.css: .pane-strategies, .pane-div, .tb, .chat-head, [role=\"tablist\"], nav, button", "app.css: body.resizing", "trade.css: .cx-chip.is-empty .v"]), JSON.stringify(none));
+  ok("① 整個外殼寫 user-select: none 的只有這幾條(新增一條要想過那裡的字要不要能複製)", JSON.stringify(none) === JSON.stringify(["app.css: .pane-strategies, .pane-div, .tb, .chat-head, [role=\"tablist\"], nav, button", "app.css: body.resizing", "app.css: body.is-dragging", "trade.css: .cx-chip.is-empty .v"]), JSON.stringify(none));
   // 稽核 P2-9:選取錨在 document 上(nodeType 9,selectAllChildren(document) 之後再按一次)時沒有 parentElement,不能丟例外、照系統
   const appjs = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
   const blk = (appjs.match(/\nconst SELECT_REGIONS = [^\n]*\ndocument\.addEventListener\("keydown", \(e\) => \{[\s\S]*?\n\}\);\n/) || [""])[0];

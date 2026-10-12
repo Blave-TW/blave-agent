@@ -1,4 +1,4 @@
-// 搜尋驗證交接怎麼收場,分開記(稽核 P2-4):用戶跳過(按出口 / 交還後還在驗證頁 / 關掉那一格)、逾時、人不在、引擎斷線各是一回事。
+// 搜尋驗證交接怎麼收場,分開記(稽核 P2-4):用戶跳過(按出口 / 關掉那一格)、逾時、人不在、引擎斷線各是一回事;按「交還」不是收場——還在驗證頁就照等(4b)。
 //   - 引擎斷線 / 回合結束 / 分頁壞掉不是用戶的決定:不記,同一輪的下一次搜尋照樣問他
 //   - 用戶跳過與逾時各記各的,之後這一輪不再問,而回給模型的 reason 照那一種講(user_skipped / timeout / no_user),不是一律 captcha
 //   - 用戶過了驗證、按「交還 agent」:同一次導覽稍早判成「還沒過」(頁面還沒長好)也要重判,過了就用那一頁的結果,不當成放棄
@@ -98,6 +98,29 @@ let serp = async () => ({ captcha: true, items: [] });
   t("4 按了交還 → 重判、已經過了:用這一頁的結果回 Google(不是 DuckDuckGo、不是 search_unavailable)", r.ok === true && r.source === "google" && !r.fallback_reason && r.untrusted_content.results.length === 2, r);
   t("4 沒有另開 DuckDuckGo 的分頁;這一輪不記成用戶跳過、Google 驗證次數不加", Br._tabs.reachable().length === opened && !Br._cur().verifyEnd && !Br._cur().captchas && !Br._cur().skipGoogle, [Br._tabs.reachable().map((x) => x.url), Br._cur().verifyEnd, Br._cur().captchas]);
   t("4 那一格交還給 agent、不再是驗證中", !vt.userControl && !vt.verify && !vt.need);
+  serp = async () => ({ captcha: true, items: [] });
+
+  // ---- 4b. 還在驗證頁就按「好了，交還 agent」(0.1.20 起是卡上主鈕,誤按會變多):不當放棄——卡與「你在操作」留著、繼續偵測;他之後過了照樣接著搜
+  Br.endTurn(); await Br.beginTurn(win, "desktop-vo1", { userSent: true });
+  serp = async (url) => (url === PASSED ? { captcha: false, items: [{ href: "https://news-a.test/one", title: "First result", snippet: "one" }] } : { captcha: true, items: [] });
+  at = sent.length;
+  p = search();
+  const a5 = await onAsk(at, p, () => {});
+  t("4b(前提)問了他", !!a5);
+  const vt5 = Br._tabs.get(a5.id);
+  Br.takeover(vt5.id);
+  const before = sent.length;
+  Br.handback(vt5.id);   // 還在驗證頁就按了
+  await new Promise((res) => setTimeout(res, 1800));   // HANDBACK_GRACE_MS 1 秒 + 強制重判
+  let settled = false; p.then(() => { settled = true; }, () => { settled = true; });
+  await new Promise((res) => setImmediate(res));
+  t("4b 按早了:搜尋還在等、那一格還是「你在操作」+ 請求卡,沒發 handback、沒 need_clear,這一輪沒記成跳過", !settled && vt5.userControl === true && !!vt5.need && vt5.need.kind === "captcha" && !!vt5.verify
+    && !sent.slice(before).some((e) => e.id === vt5.id && (e.type === "handback" || e.type === "need_clear")) && !Br._cur().verifyEnd, [settled, vt5.userControl, vt5.need, sent.slice(before).map((e) => e.type), Br._cur().verifyEnd]);
+  t("4b 那一下已經收掉(userDone 回到 null):再按才算下一次", vt5.userDone === null, vt5.userDone);
+  await wcs[wcs.length - 1].loadURL(PASSED);   // 他接著過了驗證
+  r = J(await p);
+  t("4b 之後過了 → 同一次呼叫用這一頁的結果回 Google;那一格自動交還(handback auto)", r.ok === true && r.source === "google" && r.untrusted_content.results.length === 1 && !vt5.userControl && !vt5.need && !vt5.verify
+    && sent.slice(before).some((e) => e.type === "handback" && e.id === vt5.id && e.auto === true), [r, sent.slice(before).map((e) => e.type)]);
   serp = async () => ({ captcha: true, items: [] });
 
   // ---- 5. 原文鎖

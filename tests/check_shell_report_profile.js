@@ -31,7 +31,7 @@ Node.prototype.appendChild = function (k) { this.kids.push(k); return k; };
 Node.prototype.setAttribute = function (k, v) { this.attrs[k] = String(v); };
 Node.prototype.replaceChild = function (n, o) { this.kids[this.kids.indexOf(o)] = n; };
 const env = {
-  MINUS: "−", DASH: "—", FULL_WIDTH: /[⺀-鿿豈-﫿＀-￯]/,
+  MINUS: "−", DASH: "—", WM_ROW: 14, FULL_WIDTH: /[⺀-鿿豈-﫿＀-￯]/,
   global: {}, // 沒有 ResizeObserver → draw(680, 200) 同步走完
   el: (tag, cls) => { const n = new Node(tag); n.cls = cls || ""; return n; },
   svgEl: (tag, attrs) => {

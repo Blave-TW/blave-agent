@@ -104,8 +104,8 @@ function box(extra) {
   const prev = new Map([["eth_fr", { name: "eth_fr", codeMtime: 1, statsMtime: 1, scanMtime: 0, generatedAt: 100, version: 7, hasBacktest: true }], ["sol_bo", { name: "sol_bo", codeMtime: 1, statsMtime: 1, scanMtime: 0, generatedAt: 100, hasBacktest: true }],
     ["btc_ma", { name: "btc_ma", codeMtime: 1, statsMtime: 1, scanMtime: 1, generatedAt: 100, hasBacktest: true }]]);
   const list = [
-    { name: "btc4h", displayName: "BTC 4 小時均線交叉", codeMtime: 5, statsMtime: 6, scanMtime: 0, generatedAt: 200, hasBacktest: true, totalReturn: 38.2, maxDrawdown: -12.4, version: 1 },
-    { name: "eth_fr", displayName: "ETH 資金費率反轉", codeMtime: 1, statsMtime: 8, scanMtime: 0, generatedAt: 300, hasBacktest: true, totalReturn: 112.654, maxDrawdown: -27.806, version: 8 },
+    { name: "btc4h", displayName: "BTC 4 小時均線交叉", codeMtime: 5, statsMtime: 6, scanMtime: 0, generatedAt: 200, hasBacktest: true, annReturn: 15.123, sharpe: 1.42, totalReturn: 38.2, maxDrawdown: -12.4, version: 1 },
+    { name: "eth_fr", displayName: "ETH 資金費率反轉", codeMtime: 1, statsMtime: 8, scanMtime: 0, generatedAt: 300, hasBacktest: true, annReturn: 40.5, sharpe: -0.337, totalReturn: 112.654, maxDrawdown: -27.806, version: 8 },
     { name: "sol_bo", displayName: null, codeMtime: 9, statsMtime: 1, scanMtime: 0, generatedAt: 100, hasBacktest: true },
     { name: "dca", displayName: "每日定投 BTC 100 USDT", codeMtime: 4, statsMtime: 0, scanMtime: 0, generatedAt: null, hasBacktest: false },
     { name: "btc_ma", displayName: "BTC MA", codeMtime: 1, statsMtime: 1, scanMtime: 7, generatedAt: 100, hasBacktest: true },
@@ -117,8 +117,20 @@ function box(extra) {
   it.facts.grid_rows = tag.rows; it.facts.grid_cols = tag.cols; it.facts.tag = tag.tag;
   const f = S.resFmt(), line = (x, st) => S.resFacts(x, st || "ok", f).map((g) => g.map((s) => s.text).join("")).join(" | ");
   const by = (r) => items.find((x) => x.ref === r);
-  ok("② 新策略:「新策略 | 總報酬 +38.20% | 最大回撤 −12.40%」——數字 = 回測頁 fmtSignedPct(2 位、U+2212);新策略不帶版號", line(by("btc4h")) === "新策略 | 總報酬 +38.20% | 最大回撤 \u221212.40%", line(by("btc4h")));
-  ok("② 回測:這一輪定了新版才帶 v8(mono);數字四捨五入同回測頁", line(by("eth_fr")) === "回測 v8 | 總報酬 +112.65% | 最大回撤 \u221227.81%" && S.resFacts(by("eth_fr"), "ok", f)[0].some((s) => s.cls === "mono" && s.text === "v8"), line(by("eth_fr")));
+  ok("② 新策略:「新策略 | 年化報酬 +15.12% | Sharpe 1.42 | 最大回撤 −12.40%」——固定三個數字、固定順序(canon 聊天結果卡);年化 / 回撤 = 回測頁 fmtSignedPct,Sharpe = fmtFixed(不帶 %、不帶正號);新策略不帶版號、不再寫總報酬",
+    line(by("btc4h")) === "新策略 | 年化報酬 +15.12% | Sharpe 1.42 | 最大回撤 −12.40%" && !("total_return" in by("btc4h").facts), line(by("btc4h")));
+  ok("② 回測:這一輪定了新版才帶 v8(mono);Sharpe 負值 U+2212、兩位小數", line(by("eth_fr")) === "回測 v8 | 年化報酬 +40.50% | Sharpe −0.34 | 最大回撤 −27.81%" && S.resFacts(by("eth_fr"), "ok", f)[0].some((s) => s.cls === "mono" && s.text === "v8"), line(by("eth_fr")));
+  const legacy = { ...by("eth_fr"), facts: { has_bt: true, total_return: 38.2, max_dd: -12.4 } }, half = { ...by("btc4h"), facts: { has_bt: true, ann_return: null, sharpe: 1.42, max_dd: -12.4 } };
+  ok("② 舊存檔(0.1.18 以前只有 total_return)照畫總報酬;年化算不出來(null)但有 Sharpe → 只畫 Sharpe + 最大回撤;數字全是 v(ink-2),不上紅綠",
+    line(legacy) === "回測更新 | 總報酬 +38.20% | 最大回撤 −12.40%" && line(half) === "新策略 | Sharpe 1.42 | 最大回撤 −12.40%"
+    && S.resFacts(by("eth_fr"), "ok", f).flat().filter((s) => /^[+−]?\d/.test(s.text)).every((s) => s.cls === "v"), line(legacy) + " / " + line(half));
+  // 主行程的年化跟回測頁同一條公式(兩份 code、一條 parity):Type C 自帶、Type A 由 start/end 推、沒日期退回 daily_dates、底數 ≤ 0 回 null
+  { const sb = { isFinite, Math, Date, Array }; vm.runInNewContext("const num = (v) => (typeof v === \"number\" && isFinite(v) ? v : null);\n" + cutFn(mainSrc, "stratAnnReturn") + "\nthis.A = stratAnnReturn;", sb);
+    const cases = [{ "Ann. Return [%]": 23.4, "Total Return [%]": 99, start: "2024-01-01", end: "2024-07-01" }, { "Total Return [%]": 38.2, start: "2024-01-01", end: "2025-01-01" },
+      { "Total Return [%]": 20, daily_dates: new Array(180).fill("d") }, { "Total Return [%]": -100, start: "2024-01-01", end: "2025-01-01" }, { "Sharpe Ratio": 1 }];
+    const mine = cases.map(sb.A), ref = cases.map(S.window.BlaveReport._bt.annualReturn);
+    ok("② 主行程 stratAnnReturn = 回測頁 annualReturn(五組 stats 同值;自帶 23.4、一年 38.2% → 38.1 左右、180 天 20% → 40+、−100% → null、沒總報酬 → null)",
+      JSON.stringify(mine) === JSON.stringify(ref) && mine[0] === 23.4 && Math.abs(mine[1] - 38.1) < 0.2 && mine[2] > 40 && mine[3] === null && mine[4] === null && /annReturn: stratAnnReturn\(st\)/.test(mainSrc), JSON.stringify([mine, ref])); }
   ok("② 只改程式碼 / Type B 新策略 / 參數掃描:「程式碼修改 | 還沒重跑回測」「新策略 | 沒有回測」「參數掃描 | 3×4 | 目前參數：…」(落點跟掃描分頁同一支判斷)",
     line(by("sol_bo")) === "程式碼修改 | 還沒重跑回測" && line(by("dca")) === "新策略 | 沒有回測" && line(it) === "參數掃描 | 3\u00d74 | " + STR.zh[tag.tag] && /^rob\.tag\./.test(tag.tag), [line(by("sol_bo")), line(by("dca")), line(it)].join(" / "));
   ok("② 鈕:回測 / 新策略 → 看回測、掃描 → 看掃描(rob 分頁)、程式碼 / 沒回測 → 看程式碼", ["btc4h", "eth_fr", "btc_ma", "sol_bo", "dca"].map((r) => S.resBtnKey(by(r)) + ">" + S.resTab(by(r))).join() === "res.open.bt>bt,res.open.bt>bt,res.open.scan>rob,res.open.code>code,res.open.code>code");
@@ -189,14 +201,14 @@ function box(extra) {
   const a = mainSrc.indexOf("/* ── 聊天結果卡(renderer/results.js"), z = mainSrc.indexOf("// ── 聊天裡的圖");
   const M = { fs, path, BASE: tmp, okSessionId: (id) => typeof id === "string" && /^desktop-[a-z0-9]{4,16}$/.test(id), JSON, Number, Array, Object, isFinite };
   vm.createContext(M); vm.runInContext(mainSrc.slice(a, z).replace(/^const /gm, "var "), M);
-  const it = (o) => ({ kind: "strategy", env: "local", ref: "btc4h", ver: "200|0|5", sub: "new", title: "BTC 4 小時", facts: { has_bt: true, total_return: 38.2, max_dd: -12.4 }, at: 1, ...o });
+  const it = (o) => ({ kind: "strategy", env: "local", ref: "btc4h", ver: "200|0|5", sub: "new", title: "BTC 4 小時", facts: { has_bt: true, ann_return: 15.12, sharpe: 1.42, max_dd: -12.4 }, at: 1, ...o });
   const sid = "desktop-zzzz0001";
   ok("③ 存檔擋形狀:不認得的 kind / sub、非本 app 的 session id、facts 裡的物件值都不落地", M.saveTurnResults(sid, { ts: 100, items: [it(), it({ kind: "evil" }), it({ ref: "x", facts: { a: { b: 1 }, total_return: 1 } })] }) === true
     && M.saveTurnResults("../etc", { ts: 1, items: [it()] }) === false && M.saveTurnResults(sid, { ts: 200, items: [it({ sub: "hack" })] }) === false);
   M.saveTurnResults(sid, { ts: 100, items: [it({ kind: "report", ref: "etf", sub: "report", ver: "etf@1", title: "ETF", facts: { created_at: 1790000000, type: "research" } })] });
   M.saveTurnResults(sid, { ts: 300, items: [it({ ref: "gone_one", title: "被刪的那支" })] });
   const rows = M.loadTurnResults(sid);
-  ok("③ 讀檔:同一個 ts(雲端晚到 append 的那列)併回同一輪、照寫入順序;facts 裡的物件值被丟掉", rows.length === 2 && rows[0].ts === 100 && rows[0].items.map((x) => x.ref).join() === "btc4h,x,etf" && !("a" in rows[0].items[1].facts) && rows[0].items[1].facts.total_return === 1, JSON.stringify(rows));
+  ok("③ 讀檔:同一個 ts(雲端晚到 append 的那列)併回同一輪、照寫入順序;facts 裡的物件值被丟掉、ann_return / sharpe 落地讀回", rows.length === 2 && rows[0].ts === 100 && rows[0].items.map((x) => x.ref).join() === "btc4h,x,etf" && !("a" in rows[0].items[1].facts) && rows[0].items[1].facts.total_return === 1 && rows[0].items[0].facts.ann_return === 15.12 && rows[0].items[0].facts.sharpe === 1.42, JSON.stringify(rows));
   fs.rmSync(tmp, { recursive: true, force: true });
 
   // renderer:對現況 → 已刪除 / 之後有更新;照時間插回那一輪的回覆
@@ -216,7 +228,7 @@ function box(extra) {
     S.resRestore(hist[0].res);
     const cards = ai.querySelector(".res-group").children;
     ok("③ 重畫:掛在那一輪最後一則回覆裡(跳過後面的系統行)、舊卡不再播進場動畫;之後有更新的照畫當時的數字 + 「之後有更新」、鈕照常",
-      cards.length === 3 && cards.every((c) => c.classList.contains("is-still")) && texts(cards[0]).includes("總報酬 +38.20%") && texts(cards[0]).endsWith("之後有更新看回測") && !!cards[0].querySelector("button"), cards.map(texts).join(" / "));
+      cards.length === 3 && cards.every((c) => c.classList.contains("is-still")) && texts(cards[0]).includes("年化報酬 +15.12%Sharpe 1.42最大回撤 −12.40%") && texts(cards[0]).endsWith("之後有更新看回測") && !!cards[0].querySelector("button"), cards.map(texts).join(" / "));
     const you2 = El("div"); you2.className = "msg you"; CHAT.appendChild(you2);
     S.resRestore(hist[1].res);
     const host2 = CHAT.lastElementChild, gone = host2.querySelector(".res");

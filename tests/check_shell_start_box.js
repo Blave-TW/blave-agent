@@ -37,7 +37,7 @@ function world(o) {
     TR: { env: o.env || "local", st: { report }, startAt: 0 }, Date,
     trReport: () => report, trZView: () => ({ off: false }), envHeadState: () => "halted", trIsPaper: () => o.money === "paper", envMoney: () => o.money || null,
     trBookBaseline: () => o.book || "unknown", envMoneyText: (m) => (m ? "tr.mode." + m : ""), trWhereTidy: (x) => x, trVenueId: () => (o.money === "paper" ? "paper" : o.money ? "binance" : null), trVenueLabel: (id) => id || "", trPadLatin: (x) => x,
-    trRestartKind: () => o.restart || null, trRecomputing: () => !!o.recomputing, trBothReal: () => null, planVars: () => ({ h: "0.9", m: "50" }),
+    trRestartKind: () => o.restart || null, trRecomputing: () => !!o.recomputing, trBothReal: () => null, planVars: () => ({ h: "0.9", m: "50" }), planMo: () => false,
     trHeldVenue: (res) => (res && res.held) || null, trRecRunning: () => !!o.recRunning, lsGet: (k) => (k in store ? store[k] : null), lsSet: (k, v) => { store[k] = v; },
     trSend: (S, cmd) => { sent.push(cmd); return Promise.resolve(o.reply ? o.reply(cmd) : { ok: true }); },
     // 真的 trRun 依序跑每一步、前一步沒成功就停;這裡只留這一條(過場態、紅字不在這支測試的範圍)
@@ -127,7 +127,8 @@ function world(o) {
     ok("兩個都帶(不該發生):以已建為準——寧可少講「會算進來」", B({ last_reconcile: { ledger: {}, needs_baseline: { reason: "confirming" } } }) === "built");
     ok("雲端:常駐換成主機費與停機門檻;細節是雲端那兩句(「回到這一頁按暫停」那句退役)", flat({ cloud: true, real: true, own: true, v: { h: "1", m: "50" } }) === "tr.keep.own|tr.cloud.means.3 / tr.det.cloud:tr.cloud.means.1|tr.cloud.means.4"
       && flat({ cloud: true, paper: true, own: true, v: { h: "1", m: "50" } }) === "tr.cloud.means.3 / tr.det.cloud:tr.cloud.means.1|tr.cloud.means.4");
-    ok("雲端拿不到金額:主機費那一句整句不出(不生沒有數字的半套說法)", flat({ cloud: true, paper: true, v: {} }).indexOf("tr.cloud.means.3") < 0); }
+    ok("雲端拿不到金額:主機費那一句整句不出(不生沒有數字的半套說法)", flat({ cloud: true, paper: true, v: {} }).indexOf("tr.cloud.means.3") < 0);
+    ok("雲端方案制:講方案沒付款會停機(tr.cloud.means.3m),不講時價與餘額門檻", flat({ cloud: true, paper: true, mo: true, v: { h: "", m: "" } }) === "tr.cloud.means.3m / tr.det.cloud:tr.cloud.means.1|tr.cloud.means.4"); }
   { const det = (w) => w.body.all().find((n) => n.tag === "details");
     const a = world({ money: "real" }), c = world({ money: "paper" }), d = world({ money: "real", env: "cloud" });
     // 設計稽核 desktop-10-08 #3:細節一律收合(展開時整框在 1366 寬出捲軸);「看過」的 localStorage 旗標跟著退役

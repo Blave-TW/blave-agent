@@ -123,7 +123,7 @@ if (!process.versions.electron) {
       && /note\.className = "rb-cap pdf-table-note"; note\.textContent = t\("pdf\.tableNote"\);/.test(printJs) && /pdfFitTables\(host\);\s*await pdfAssets\(\);\s*pdfFitTables\(host\);/.test(printJs) && !/style\.zoom/.test(printJs)
       && STR.zh["pdf.tableNote"] === "這張表已縮小以放進頁面，原始大小請在 Blave 裡看。" && STR.en["pdf.tableNote"] === "This table is scaled down to fit the page. Open the report in Blave to see it at full size.");
     ok("③ 圖表:回報 ready 之前當場畫完量寬的圖(不等下一幀);渲染器把 drawReportCharts 交出來", /pdfFitTables\(host\);\s*(?:\/\/[^\n]*\n\s*)*window\.drawReportCharts\(\);\s*ok = true;/.test(printJs) && /global\.drawReportCharts = drawChartsNow;/.test(read(path.join(R, "report-blocks.js"))));
-    const WEB_RB = path.join(__dirname, "..", "..", "web", "app", "static", "js", "agent", "report_blocks.js");
+    const WEB_RB = path.join(process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web"), "app", "static", "js", "agent", "report_blocks.js");
     if (!fs.existsSync(WEB_RB)) console.log("SKIP  ③ drawChartsNow 與 web 逐字比對(需要 monorepo 版面)");
     else {
       const cutIn = (src2, name) => { try { return cutFn(src2, name); } catch (_) { return null; } };
@@ -165,16 +165,16 @@ if (!process.versions.electron) {
         && /\.rpt-saved \.d \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(rcss) && /\.rpt-saved \.btn-quiet \{ flex: none;/.test(rcss) && /@container main \(max-width: 560px\) \{ \.rpt-saved \.d \{ display: none; \} \.rpt-saved \.s \{ display: inline; \} \}/.test(rcss));
       ok("③ D1 主行程:reportPdf 把 savedRef 交給 reportpdf.js;轉出卡與 PDF 共用同一張 token 表,reveal-export 只認那張表", /savedRef,\s*\}\);/.test(cutFn(mainSrc, "reportPdf")) && /return \{ ok: true, \.\.\.savedRef\(r\.filePath\) \};/.test(mainSrc) && /savedExports\.set\(token, filePath\);/.test(cutFn(mainSrc, "savedRef"))
         && /handle\("reveal-export", \(_e, token\) => \{ const p = savedExports\.get\(String\(token \|\| ""\)\);/.test(mainSrc)); }
-    const WEB_PRINT = path.join(__dirname, "..", "..", "web", "app", "static", "css", "agent", "report_print.css");
+    const WEB_PRINT = path.join(process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web"), "app", "static", "css", "agent", "report_print.css");
     if (!fs.existsSync(WEB_PRINT)) console.log("SKIP  ③ 共用列印規則與 web 逐字比對(需要 monorepo 版面)");
     else {
       const mark = "/* ========== 共用:以下到檔尾逐字同 web 的 report_print.css ========== */\n", at = css.indexOf(mark), host = at < 0 ? "" : css.slice(0, at), shared = at < 0 ? "" : css.slice(at + mark.length), w = read(WEB_PRINT);
       let d = 0; while (d < shared.length && shared[d] === w[d]) d++;
       ok("③ 共用列印規則 = web 的 report_print.css(逐字;那邊改了整段搬過來)", at > 0 && shared === w, at < 0 ? "找不到共用段的標記" : "第 " + d + " 字起不同:" + JSON.stringify(shared.slice(d, d + 80)) + " vs " + JSON.stringify(w.slice(d, d + 80)));
       ok("③ 共用段要宿主頁給的三樣:--pdf-sans / --pdf-mono 在宿主段、--pdf-foot 由 report-print.js 設;@page 與不印按鈕的規則只在共用段", /--pdf-sans: [^;]+;/.test(host) && /--pdf-mono: [^;]+;/.test(host) && /setProperty\("--pdf-foot"/.test(read(path.join(R, "report-print.js")))
-        && !/@page|display: none !important/.test(host) && /font: 400 7\.5pt\/1\.4 var\(--pdf-sans,/.test(shared) && /font: 400 7\.5pt\/1\.4 var\(--pdf-mono,/.test(shared) && /#rs_content button,/.test(shared) && !/\.pdf-doc button/.test(css) && /\.pdf-brand img,\s*\.pdf-brand svg \{/.test(shared));
+        && !/@page|display: none !important/.test(host) && /font: 400 8\.25pt\/1\.4 var\(--pdf-sans,/.test(shared) && /font: 400 8\.25pt\/1\.4 var\(--pdf-mono,/.test(shared) && /#rs_content button,/.test(shared) && !/\.pdf-doc button/.test(css) && /\.pdf-brand img,\s*\.pdf-brand svg \{/.test(shared));
     }
-    const WEB_CSS = path.join(__dirname, "..", "..", "web", "app", "static", "css", "landing", "agent", "research_share.css");
+    const WEB_CSS = path.join(process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web"), "app", "static", "css", "landing", "agent", "research_share.css");
     if (!fs.existsSync(WEB_CSS)) console.log("SKIP  ③ light remap 與 web 公開頁逐字比對(需要 monorepo 版面)");
     else {
       const w = read(WEB_CSS), seg = w.slice(w.indexOf("#rs_content .rb-report {"), w.indexOf("/* ---------- 文尾 CTA"));

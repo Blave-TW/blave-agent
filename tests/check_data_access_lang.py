@@ -57,7 +57,9 @@ t("access=0:明講「用戶讀的每一句自己寫、用該輪語言」,而且�
 for need, label in [
     (r"holder concentration", "哪些是 Blave 專屬資料"),
     (r"card trial", "什麼條件才有(試用)"),
-    (r"cloud machine", "什麼條件才有(雲端主機)"),
+    (r"cloud plan or cloud\s+machine", "什麼條件才有(雲端方案或主機)"),
+    (r"an API plan", "什麼條件才有(API 方案)"),
+    (r"\(plan billing\) not available\s+until a cloud plan or an API plan is started", "方案制:沒有方案就沒有資料(沒有按小時買)"),
     (r"charged per clock hour of use", "沒有主機也拿得到:按有用到的整點小時收(沒有主機也能買資料)"),
     (r"balance that covers the hourly data fee", "條件裡有「餘額付得起這一小時」,不只試用與主機"),
     (r"name which data is missing", "要講缺哪一項"),
@@ -91,6 +93,8 @@ def facts(why):
 for why, need in [("signed_out", "the user is not signed in to Blave in this app"),
                   ("no_card", "no card on file"),
                   ("no_balance", "the balance does not cover this hour's data fee"),
+                  ("no_plan", "the account has no plan that includes Blave data"),
+                  ("plan_failed", "the account's plan payment failed"),
                   ("unknown", "the account status could not be read this turn")]:
     b, f = facts(why)
     t(f"WHY={why}:Facts 那句講的是這個原因,而且有「講真正的原因」那條", need in f and RULE in b)
@@ -111,7 +115,9 @@ t("access=1 照舊有內容、access 未設時整段不出", bool(one)
 # 教模型認一個永遠不會到的 403,等於那條路上沒有規則。
 t("access=1:不再教模型認已經不存在的 DATA_NOT_INCLUDED", "DATA_NOT_INCLUDED" not in one)
 for need, label in [
-    (r"`ERR007`", "扣不到這一小時的資料費"),
+    (r"`ERR007`", "扣不到這一小時的資料費,或方案制下沒有含資料的方案"),
+    (r"no plan that includes data", "ERR007 的方案制那一半"),
+    (r"no data until a cloud plan or\s+an API plan is started", "Billing:方案制沒有方案就沒有資料"),
     (r"`ERR005`", "key 被刪／撤銷"),
     (r"`KEY_SCOPE`", "越權"),
     (r"per clock hour", "按小時、不是按次"),

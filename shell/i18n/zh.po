@@ -321,6 +321,37 @@ msgstr "連雲端主機"
 msgid "step.delegate"
 msgstr "委派研究"
 
+# 階段清單的動詞(完成式;canon › 回合狀態列 9),key = app.js PHASE_OF 的值
+msgid "phase.data"
+msgstr "抓資料"
+
+msgid "phase.write"
+msgstr "寫策略"
+
+msgid "phase.backtest"
+msgstr "跑回測"
+
+msgid "phase.run"
+msgstr "跑策略"
+
+msgid "phase.scan"
+msgstr "掃參數"
+
+msgid "phase.validate"
+msgstr "驗證策略"
+
+msgid "phase.research"
+msgstr "查資料"
+
+msgid "phase.report"
+msgstr "組報告"
+
+msgid "phase.order"
+msgstr "下單"
+
+msgid "phase.schedule"
+msgstr "設定排程"
+
 msgid "turn.busy"
 msgstr "上一輪還在跑。"
 
@@ -996,6 +1027,16 @@ msgstr "首次綁卡，送 {t} 天 Blave 的資料"
 msgid "pv.h.offerNoNum"
 msgstr "首次綁卡，送一段試用期的 Blave 資料"
 
+# 方案制未登入／綁卡那格第一屏的三條(設計師 D 版):取代說明句 pv.d.offer.*;{q} 是 LLM 額度(api TRIAL_AI_CREDIT),不是儲值,拿不到就不出那條
+msgid "pv.offer.li.data"
+msgstr "Blave 資料，在這台電腦直接用"
+
+msgid "pv.offer.li.server"
+msgstr "雲端主機：策略全天候照排程執行、自動下單，關掉電腦也照跑"
+
+msgid "pv.offer.li.ai"
+msgstr "加送 {q} TWD 的 Blave AI 額度"
+
 msgid "pv.h.plan"
 msgstr "策略上線的雲端主機，含 Blave 的資料"
 
@@ -1110,7 +1151,7 @@ msgstr "每個整點從餘額扣 {h} TWD（{p} TWD／月）。停用＝到網頁
 msgid "pv.w.out.cli"
 msgstr "登入不花錢，也不會換掉你用的 AI。"
 
-# 設定 › 帳號與方案(未登入)的鈕旁:lead 已講「AI 照用」,這裡只留登入不花錢(設計稽核 0.1.10 fix-c S1);雲端開通頁照用 pv.w.out.cli
+# 設定 › 帳號與方案(未登入)的鈕旁:切換前 lead 已講「AI 照用」,只留登入不花錢(設計稽核 0.1.10 fix-c S1);方案制 D 版沒有說明句,用自己 AI 的人改讀 pv.w.out.cli,只有 Blave AI 讀這句;雲端開通頁照用 pv.w.out.cli
 msgid "pv.w.out"
 msgstr "登入不花錢。"
 
@@ -1169,16 +1210,16 @@ msgid "pv.signin"
 msgstr "登入 Blave"
 
 msgid "pv.e.out"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，送 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.outNoNum"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，送一段試用期；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用一段時間；AI 照用你的 {name}。"
 
 msgid "pv.e.card"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，送 {t} 天。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天。"
 
 msgid "pv.e.card.cli"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，送 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.noTrial"
 msgstr "這台還拿不到 Blave 的資料：它在 Blave Agent 雲端方案裡。"
@@ -2108,6 +2149,15 @@ msgstr "事件"
 
 msgid "tr.ov.evEmpty"
 msgstr "這段期間沒有事件。"
+
+msgid "tr.ov.evFills"
+msgstr "成交 {n} 筆 ·"
+
+msgid "tr.ov.evFillsOne"
+msgstr "成交 {n} 筆 ·"
+
+msgid "tr.ov.evFillsLink"
+msgstr "看交易歷史"
 
 msgid "tr.ov.today"
 msgstr "今天"
@@ -3160,6 +3210,34 @@ msgstr "過一會兒再試。還是不行的話，在檔案總管打開 Blave �
 msgid "side.rowTip"
 msgstr "{name}（{id}）"
 
+# 側欄旗標(renderer/stratflags.js):鈕的 aria、面板的「移除」、有旗標時列的 title / accessible name、三個色名(字照 web 的 workspace_flag_*)
+msgid "side.flagSet"
+msgstr "設定旗標"
+
+msgid "side.flagRemove"
+msgstr "移除旗標"
+
+msgid "side.flagTitle"
+msgstr "{name} — 旗標：{color}"
+
+msgid "side.flagAria"
+msgstr "{name}，旗標：{color}"
+
+msgid "side.flagC1"
+msgstr "赭金"
+
+msgid "side.flagC2"
+msgstr "冰青"
+
+msgid "side.flagC3"
+msgstr "紫"
+
+msgid "side.sortHint"
+msgstr "{k} 上下移動順序"
+
+msgid "side.moved"
+msgstr "已移到第 {n} 位"
+
 msgid "rp.noBt"
 msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數字，可以請右邊的 agent 跑一次回測。"
 
@@ -3352,6 +3430,9 @@ msgstr "平倉並解除暫停"
 msgid "tr.startOffNoAmtReleaseClose"
 msgstr "還沒有策略設定金額，沒有東西可以啟動。只想讓你自己的策略程式恢復下單，按「平倉並解除暫停」。"
 
+msgid "tr.startOnBook"
+msgstr "帳本上還有 {n} 的部位；啟動後下單程式會先照目前金額（0）平掉。"
+
 msgid "tr.release"
 msgstr "解除暫停"
 
@@ -3534,23 +3615,43 @@ msgstr "有新版 {lv}"
 msgid "up.row.cloudNewBare"
 msgstr "有新版"
 
+# 「更新雲端主機」確認框(設計師 D 版,0.1.20;鏡像 web workspace_upd_cf_*):lede 一句 + 依自動下單狀態三選一的影響句,其餘規則收進「細節」五條。
+# 不寫分鐘數上限、不寫「策略不受影響」、不寫「不撤單」(references/cloud-handoff.md U5)
 msgid "up.cf.title"
-msgstr "更新雲端主機？"
+msgstr "把雲端主機更新到最新版"
+
+msgid "up.cf.lede"
+msgstr "雲端主機會從 {cv} 換到 {lv}。過程要幾分鐘，在聊天裡跑，做完會說一聲。"
+
+msgid "up.cf.ledeBare"
+msgstr "雲端主機會換成最新版。過程要幾分鐘，在聊天裡跑，做完會說一聲。"
 
 msgid "up.cf.body1"
-msgstr "自動下單正在雲端主機上跑。更新動到下單程式時，會用新版重新啟動自動下單。"
+msgstr "自動下單正在跑：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。"
 
 msgid "up.cf.body1Unconfirmed"
-msgstr "主機重開後，沒能確認自動下單已經停下。下單程式換成新版就會先停住，按「啟動下單」才會繼續。"
+msgstr "主機重開後沒能確認自動下單已停下：換成新版後會先停住，按「啟動下單」才會繼續。"
 
-msgid "up.cf.body2"
-msgstr "部位不會平倉。正在送出的單會等它完成才重啟；一直等不到空檔，就只換檔，自動下單先留在舊版。"
+msgid "up.cf.body1Unknown"
+msgstr "讀不到自動下單的狀態，照正在跑處理：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。"
 
-msgid "up.cf.detail"
-msgstr "你改過的官方檔會換成官方版，舊檔另存備份；你自建的下單整合不動。"
+msgid "up.cf.d1"
+msgstr "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰；部位不會平倉。"
+
+msgid "up.cf.d2"
+msgstr "一直等不到空檔，就只換檔，自動下單先留在舊版。"
+
+msgid "up.cf.d3"
+msgstr "沒更新完成會在聊天說明原因，再按一次就會接著做。"
+
+msgid "up.cf.d4"
+msgstr "你改過的官方檔會換成官方版，舊檔備份在主機的 .official-backup/。"
+
+msgid "up.cf.d5"
+msgstr "你自己加的下單整合不動。"
 
 msgid "up.cf.ok"
-msgstr "更新"
+msgstr "開始更新"
 
 msgid "up.restart"
 msgstr "重新啟動以完成更新"
@@ -4247,9 +4348,6 @@ msgstr "登入 Blave 之後才能購買，並下載到這台電腦。"
 msgid "lib.note.billed"
 msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費。"
 
-msgid "lib.note.paid"
-msgstr "從 Blave Agent 餘額扣款。"
-
 msgid "lib.note.pending"
 msgstr "進度在右邊的對話。"
 
@@ -4787,6 +4885,10 @@ msgstr "邏輯"
 msgid "lib.gate.bindCard"
 msgstr "綁卡，送 {t} 天資料"
 
+# 方案制(planMo)的同一顆鈕:試用結束自動轉方案費,不是「送」
+msgid "lib.gate.bindCard.m"
+msgstr "綁卡，免費試用 {t} 天資料"
+
 msgid "lib.gate.topup"
 msgstr "儲值"
 
@@ -5013,7 +5115,7 @@ msgid "br.ask.p"
 msgstr "帳密由你輸入；你操作時 agent 暫停、不讀這一頁。"
 
 msgid "br.ask.captcha.p"
-msgstr "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了之後會自動接著搜尋。"
+msgstr "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了會自動接著搜尋，沒接上再按「好了，交還 agent」。"
 
 msgid "br.ask.skip"
 msgstr "跳過"
@@ -5618,7 +5720,7 @@ msgid "xp.ivl.w"
 msgstr "週線"
 
 msgid "ver.menuLbl"
-msgstr "版本（改過程式碼的回測各留一版）"
+msgstr "版本"
 
 msgid "ver.current"
 msgstr "目前"
@@ -6252,6 +6354,13 @@ msgstr "綁卡，送 {t} 天 Blave 資料"
 msgid "wd.note.noneNoNum"
 msgstr "綁卡後就能用"
 
+# 方案制(planMo):試用結束會自動開始扣方案費,不是「送」——帶天數那兩句換 .m,同 pv.h.offer.m
+msgid "wd.note.out.m"
+msgstr "登入並綁卡，免費試用 {t} 天 Blave 資料"
+
+msgid "wd.note.none.m"
+msgstr "綁卡，免費試用 {t} 天 Blave 資料"
+
 msgid "wd.note.billed"
 msgstr "有用到的那個小時收 {r} TWD，同一小時只收一次"
 
@@ -6877,3 +6986,296 @@ msgstr "確認登入"
 
 msgid "pres.err.changePw"
 msgstr "改交易密碼"
+
+# ── 方案制(.m = api 切換之後的版本;app.js pvK 依 planMo() 挑)──
+msgid "pv.d.noTrial.m"
+msgstr "這個帳號沒有首次綁卡的試用。Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起）或買 API 方案。"
+
+msgid "pv.d.trial.m"
+msgstr "到 {d}為止資料免費；試用結束扣第一期 {p} TWD，之後每 {pd} 天自動續扣。先從錢包扣，不夠一期就刷卡。"
+
+msgid "pv.d.noPrice.m"
+msgstr "AI 照用你現在的設定。試用結束自動扣第一期方案費，試用期間取消就不扣。"
+
+# 標題只講試用(會自動轉付費,所以不用「送」;「送」只給真的是禮物的 AI 額度那條)
+msgid "pv.h.offer.m"
+msgstr "首次綁卡，免費試用 {t} 天"
+
+msgid "pv.h.offerNoNum.m"
+msgstr "首次綁卡，免費試用一段時間"
+
+# 「自動」不能拿掉,否則會被讀成可選訂閱;扣第一期／取消就不扣留給綁卡那一步的 pv.f.offer.m
+msgid "pv.f.out.m"
+msgstr "試用結束後自動開始計費，{p} TWD／月。"
+
+msgid "pv.f.offer.m"
+msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。試用 {t} 天，到期自動扣第一期 {p} TWD／月：先扣錢包，不夠再刷這張卡。試用期間取消就不扣。"
+
+msgid "pv.e.sub.m"
+msgstr "試用結束自動扣第一期 {p} TWD／月，試用期間取消就不扣。"
+
+msgid "pv.e.noTrial.m"
+msgstr "這台還拿不到 Blave 的資料：要開通 Blave Agent 方案或買 API 方案。"
+
+msgid "pv.w.noTrial.m"
+msgstr "綁卡後回來開通方案，或買 API 方案。"
+
+# ── 方案制(api 的 MONTHLY_BILLING_FROM 之後;renderer/app.js planMo)──
+# 月價 {p}、年價 {y}、年繳付幾個月 {k}、年繳一期幾天 {yd}、寬限天數 {g}、到期日 {u}、刪機日 {gu} 都來自 account_status / 公開價目,不寫死;拿不到用 NoNum 那句。
+# 沒有本機階:只用電腦版的人要 Blave 資料,出口只有 Blave Agent 方案或 API 方案。方案 = 資料權限,主機可有可無:沒主機的格子與細則不講停機／刪機(*NoServer)。
+msgid "plan.cyc.monthly"
+msgstr "月繳"
+
+msgid "plan.cyc.annual"
+msgstr "年繳"
+
+msgid "plan.year"
+msgstr "或年繳 {y} TWD（用 {yd} 天，付 {k} 個月）"
+
+msgid "plan.yearNoNum"
+msgstr "或年繳 {y} TWD"
+
+msgid "plan.rule.m"
+msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗會停機、每天重試一次，{g} 天沒付款就刪除主機。取消後用到這一期結束，不退款。"
+
+msgid "plan.rule.mNoNum"
+msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗會停機、每天重試一次，一直沒付款就刪除主機。取消後用到這一期結束，不退款。"
+
+msgid "pv.st.noPlan"
+msgstr "沒有方案"
+
+msgid "pv.d.plan.m"
+msgstr "Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起，不必開雲端主機）或買 API 方案；都沒有的話，電腦版只用公開資料。"
+
+msgid "pv.f.plan.m"
+msgstr "開通當下付第一期：先從錢包扣，不夠再刷綁定的卡。"
+
+msgid "pv.apiPlan"
+msgstr "API 方案"
+
+msgid "pv.st.payFail"
+msgstr "扣款失敗"
+
+msgid "pv.h.payFail"
+msgstr "方案扣款沒成功，Blave 資料先暫停"
+
+msgid "pv.d.payFail"
+msgstr "每天會自動重試一次；到網站換卡或重新付款，扣款成功資料就恢復。"
+
+msgid "plan.repay"
+msgstr "重新付款"
+
+msgid "pv.f.running.m"
+msgstr "{c} {x} TWD · 下次扣款 {u}"
+
+msgid "pv.f.running.cancel"
+msgstr "已取消 · 用到 {u}，之後主機會刪除"
+
+msgid "pv.f.running.fail"
+msgstr "扣款失敗 · 主機即將停機，{gu}刪除"
+
+msgid "plan.st.stoppedPlan"
+msgstr "已停機 · 方案沒付款"
+
+msgid "pv.h.stopped.m"
+msgstr "重新付款，主機就開回來"
+
+msgid "pv.d.stopped.m"
+msgstr "每天會重試一次；到 {gu} 還沒付款，主機會刪除，上面的策略與資料一併清除。"
+
+msgid "pv.d.stopped.mNoNum"
+msgstr "每天會重試一次；一直沒付款，主機會刪除，上面的策略與資料一併清除。"
+
+msgid "tr.cloud.stoppedPlan"
+msgstr "方案沒付款，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。到 {gu} 還沒付款，主機會刪除，主機上的策略、資料與金鑰一併清除。"
+
+msgid "tr.cloud.stoppedPlanNoNum"
+msgstr "方案沒付款，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。一直沒付款，主機會刪除，主機上的策略、資料與金鑰一併清除。"
+
+msgid "cf.m.body1"
+msgstr "方案（Linux Starter）含 Blave 資料，電腦版馬上就能用。不會開雲端主機；之後到網站開一台 Linux Starter 不另收費。"
+
+msgid "cf.m.body2"
+msgstr "第一期現在付：先從錢包扣，不夠再刷綁定的卡。"
+
+msgid "cf.m.body2Trial"
+msgstr "{d}前不收費。之後照你選的週期付第一期：先從錢包扣，不夠再刷卡。在那之前到網站取消就不會扣。"
+
+msgid "cf.m.body3"
+msgstr "每期自動續約。扣款失敗時 Blave 資料暫停、每天重試，{g} 天沒付款方案就結束。取消後用到這一期結束，不退款。"
+
+msgid "cf.m.body3NoNum"
+msgstr "每期自動續約。扣款失敗時 Blave 資料暫停、每天重試，一直沒付款方案就結束。取消後用到這一期結束，不退款。"
+
+msgid "cf.m.pick"
+msgstr "計費週期"
+
+msgid "cf.m.mo.d"
+msgstr "每 {pd} 天 {p} TWD"
+
+msgid "cf.m.yr.d"
+msgstr "每 {yd} 天 {y} TWD，付 {k} 個月"
+
+msgid "cf.m.yr.dNoNum"
+msgstr "每年 {y} TWD"
+
+msgid "cf.m.ok"
+msgstr "付 {x} TWD 開通"
+
+msgid "cf.m.repriced"
+msgstr "金額已更新，請再確認一次。"
+
+msgid "plan.err.charge"
+msgstr "沒開成：刷卡沒成功。"
+
+msgid "plan.err.nocard.m"
+msgstr "沒開成：錢包不夠付這一期，帳號也沒有綁卡。"
+
+msgid "plan.err.busy"
+msgstr "付款還在確認，稍後再試；不會重複扣款。"
+
+msgid "data.noPlan"
+msgstr "這個帳號沒有含資料的方案，拿不到 Blave 資料。開通 Blave Agent 方案（不必開雲端主機）或買 API 方案就能用。"
+
+msgid "data.payFail"
+msgstr "方案扣款沒成功，Blave 資料先暫停；重新付款後就恢復。"
+
+msgid "data.seePlan"
+msgstr "看方案"
+
+msgid "wd.note.noplan"
+msgstr "開通 Blave Agent 方案或 API 方案就能用"
+
+msgid "wd.note.payfail"
+msgstr "方案扣款沒成功，先暫停"
+
+msgid "lib.grp.plan"
+msgstr "開通方案之後"
+
+msgid "lib.grp.gate.noPlan"
+msgstr "這些要用 Blave 資料，開通 Blave Agent 方案或買 API 方案就能回測。"
+
+msgid "lib.grp.repay"
+msgstr "付款之後"
+
+msgid "lib.grp.gate.planFailed"
+msgstr "方案扣款沒成功，這些先跑不了回測。"
+
+msgid "lib.why.noPlan"
+msgstr "Blave 資料要開通 Blave Agent 方案或買 API 方案。"
+
+msgid "lib.why.planFailed"
+msgstr "方案扣款沒成功。"
+
+msgid "tr.cloud.means.3m"
+msgstr "方案扣款失敗時主機會停機：下單跟著停，部位留在交易所。"
+
+msgid "pv.f.trial.m"
+msgstr "試用期間到網站取消就不扣。要讓策略全天候自動執行，到網站開雲端主機，同階不另收。"
+
+msgid "pv.f.running.noPay"
+msgstr "下次扣款 {u}：錢包不夠、也沒有綁卡，到時扣不到會停機"
+
+msgid "pv.h.stopped.mOk"
+msgstr "主機已停機，方案照常"
+
+msgid "pv.d.stopped.mOk"
+msgstr "停機不影響方案：這一期已付，到期照常續約。要開回來或取消，在網頁操作。"
+
+msgid "tr.cloud.stoppedPlanOk"
+msgstr "主機已停機。下單已停止，部位留在交易所、現在沒有人在管。方案照常、到期照常續約；要開回來在網頁操作。"
+
+msgid "plan.onWeb"
+msgstr "到網站操作"
+
+msgid "plan.changeCard"
+msgstr "到網站換卡"
+
+msgid "plan.resumeWeb"
+msgstr "到網站恢復方案"
+
+msgid "plan.st.ended"
+msgstr "已停機 · 方案已結束"
+
+msgid "pv.h.ended"
+msgstr "到網站恢復會當場付一期"
+
+msgid "pv.d.ended"
+msgstr "方案已取消、不會續約。{gu}主機會刪除，上面的策略、資料與金鑰一併清除。"
+
+msgid "pv.d.endedNoNum"
+msgstr "方案已取消、不會續約。主機即將刪除，上面的策略、資料與金鑰一併清除。"
+
+msgid "tr.cloud.stoppedEnded"
+msgstr "方案已結束，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。{gu}主機會刪除，主機上的策略、資料與金鑰一併清除。"
+
+msgid "tr.cloud.stoppedEndedNoNum"
+msgstr "方案已結束，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。主機即將刪除，主機上的策略、資料與金鑰一併清除。"
+
+msgid "plan.err.web"
+msgstr "這一步要到網站做：你的方案是別的階，或主機要在網站重開。"
+
+msgid "cf.m.okTrial"
+msgstr "開通，{d}起扣 {x} TWD"
+
+msgid "pv.st.trialCancelled"
+msgstr "已取消試用 · {d}結束"
+
+msgid "pv.f.trialCancelled.m"
+msgstr "到期不會收第一期。"
+
+msgid "pv.f.trialCancelled"
+msgstr "之後不會轉成方案，用到的部分照目前的計費。"
+
+msgid "plan.trialCancel"
+msgstr "到網站取消試用"
+
+msgid "plan.trialResume"
+msgstr "到網站恢復試用"
+
+msgid "pv.st.planOn"
+msgstr "方案有效"
+
+msgid "pv.d.planOn"
+msgstr "你的 Blave Agent 方案（{tier}）含 Blave 資料，電腦版就能用。目前沒有雲端主機；要讓策略全天候自動執行，再到網站開。"
+
+msgid "pv.d.included.m"
+msgstr "這個帳號已含 Blave 資料。要讓策略全天候自動執行，到網站開雲端主機。"
+
+msgid "plan.cloudWeb"
+msgstr "到網站開雲端主機"
+
+msgid "plan.startM"
+msgstr "開通方案"
+
+msgid "cf.m.title"
+msgstr "開通 Blave Agent 方案？"
+msgid "pv.d.trial.mNoNum"
+msgstr "到 {d}為止資料免費；試用結束扣第一期 {p} TWD，之後每期自動續扣。先從錢包扣，不夠一期就刷卡。"
+
+msgid "pv.h.plan.m"
+msgstr "Blave 資料，開通方案就能用"
+
+msgid "pv.f.running.cancelNoServer"
+msgstr "已取消 · 用到 {u}，之後 Blave 資料停止"
+
+msgid "pv.f.running.noPayNoServer"
+msgstr "下次扣款 {u}：錢包不夠、也沒有綁卡，到時扣不到 Blave 資料會暫停"
+
+msgid "pv.f.running.failNoServer"
+msgstr "扣款失敗 · 每天重試，{gu}方案結束"
+
+msgid "plan.rule.mNoServer"
+msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗時 Blave 資料暫停、每天重試一次，{g} 天沒付款方案就結束。取消後用到這一期結束，不退款。"
+
+msgid "plan.rule.mNoServerNoNum"
+msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗時 Blave 資料暫停、每天重試一次，一直沒付款方案就結束。取消後用到這一期結束，不退款。"
+
+msgid "pv.inc.m2"
+msgstr "可以再開一台雲端主機，同階不另收：策略照排程執行、自動下單"
+
+msgid "cf.m.mo.dNoNum"
+msgstr "每期 {p} TWD"
+
+msgid "plan.startingM"
+msgstr "開通中…"

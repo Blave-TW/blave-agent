@@ -1,14 +1,12 @@
 # Blave Agent
 
-**Espacio de trabajo quant**
+## Espacio de trabajo quant para agentes de IA
 
-## Convierte a tu agente en un quant
-
-Gratis y de código abierto. Conecta tu Claude Code o Codex. Tú describes la idea; él escribe la estrategia, ejecuta el backtest y opera en vivo.
+Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y de código abierto.
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> Esta traducción parte del README en inglés en el commit [`6944ddd`](https://github.com/Blave-TW/blave-agent/blob/6944ddd/README.md) y cubre solo las secciones que cambian poco. Las novedades, los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
+> Esta traducción parte del README en inglés en el commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) y cubre solo las secciones que cambian poco. Las novedades, los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -33,10 +31,6 @@ Sobreajuste: parámetros que solo por casualidad encajan con los datos pasados.
 ### Comprueba si en vivo corre el código que pasó el backtest
 
 Un backtest fija una versión de la estrategia. Si el código que corre en vivo ya no coincide con esa versión, la estrategia queda marcada: el espacio de trabajo web muestra «En vivo · archivo modificado» en lugar de un simple «En vivo». La marca no detiene la estrategia. Solo se aplica a los tipos de estrategia que llevan backtest (Tipo A y C), y solo a estrategias que tienen versiones.
-
-### Ningún LLM en el ciclo de órdenes
-
-El agente investiga y escribe el código. Las ejecuciones programadas son código determinista en un planificador; `manager/reconciler.py` lleva la cuenta hacia las posiciones objetivo. Un kill switch (`state/HALT`) bloquea nueva exposición en la capa de la librería de órdenes, mientras que los cierres y los stops siguen pasando.
 
 ### Informes que primero leen las noticias
 
@@ -103,7 +97,7 @@ Las novedades están en la versión en inglés: [README.md › News](README.md#n
 ## Seguridad y límites
 
 - **Dónde viven las claves del exchange depende de dónde uses el agente.** App de escritorio: en el `.env` del espacio de trabajo en tu ordenador (`~/Blave/workspace/.env` en macOS, `%USERPROFILE%\Blave\workspace\.env` en Windows). Servidor en la nube: en el `.env` del espacio de trabajo de tu propio servidor dedicado. Un exchange vinculado desde la página web: Blave guarda la clave cifrada. El agente puede leer el `.env` del espacio de trabajo; sus reglas le prohíben mostrar los valores de las claves (`references/exchange-connect.md`). Otorga a la clave solo permisos de lectura + trading, nunca de retiro. Una clave con permiso de retiro se rechaza al conectarla (Binance, OKX, BingX, Bybit; igual en la app de escritorio, el servidor en la nube y la página web). Gate.io no informa de ese permiso en absoluto, así que compruébalo tú mismo.
-- Los montos a invertir y la reanudación del trading los haces tú: en la página Trading automático de la app de escritorio, o en el espacio de trabajo web si usas un servidor en la nube. El agente se niega a hacerlo por ti, aunque se lo pidas. Lo único que siempre puede hacer por su cuenta es activar el kill switch.
+- Los montos a invertir y la reanudación del trading los haces tú: en la página Trading automático de la app de escritorio, o en el espacio de trabajo web si usas un servidor en la nube. El agente se niega a hacerlo por ti, aunque se lo pidas. Lo único que siempre puede hacer por su cuenta es activar el kill switch. El kill switch (`state/HALT`) bloquea nueva exposición; los cierres y stops siguen pasando.
 - En la app de escritorio, las órdenes solo salen mientras Blave está abierto; después de cerrarlo y volver a abrirlo, el trading queda en pausa hasta que pulses Iniciar trading.
 - El agente verifica antes de informar: vuelve a leer un archivo después de editarlo y consulta una orden en el exchange antes de decir que se colocó. Cada intento de orden queda registrado en `state/audit.jsonl`.
 - Un backtest describe el pasado. No predice ni garantiza resultados futuros. MCPT comprueba si un resultado es estadísticamente significativo, y los barridos de parámetros comprueban si hay sobreajuste; ambos solo reducen la probabilidad de que el backtest te engañe, y ninguno la elimina.

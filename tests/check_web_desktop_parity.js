@@ -1,4 +1,4 @@
-// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):倍數提醒門檻 LEV_T1 / T2 / T3,
+// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):倍數提醒門檻 LEV_T1 / T2 / T3、階段表 PHASE_OF / PHASE_NONE,
 // 以及讀帳失敗時的帳戶幣別對照表(八個帳戶,統一期貨 president 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
 //   電腦版:shell/renderer/trade.js 的 LEV_T* 與 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
 //   網頁:web/app/main/templates/agent/workspace.html 的 LEV_T* 與 CX_VENUES[].ccy
@@ -23,4 +23,11 @@ const wa = web.indexOf("const CX_VENUES = ["), wb = web.indexOf("\n        ];\n"
 if (wa >= 0 && wb > wa) for (const m of web.slice(wa, wb).matchAll(/\{\s*id: "(\w+)"[^{}]*?ccy: "(\w+)"/g)) wt[m[1]] = m[2];
 const sorted = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
 ok("幣別對照表兩邊同一份(八個帳戶)", Object.keys(dt).length === 8 && sorted(dt) === sorted(wt), sorted(dt) + " vs " + sorted(wt));
+// 階段表(canon › 回合狀態列 9):電腦版 app.js 與網頁 workspace.html 的 PHASE_OF / PHASE_NONE 同一份——網頁稽核改了表,這裡就紅
+const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
+const phaseOf = (src) => { const m = /const PHASE_OF = \{([\s\S]*?)\};/.exec(src); const o = {}; if (m) for (const x of m[1].matchAll(/(\w+): "(\w+)"/g)) o[x[1]] = x[2]; return o; };
+const phaseNone = (src) => { const m = /const PHASE_NONE = new Set\(\[([\s\S]*?)\]\);/.exec(src); return m ? [...m[1].matchAll(/"(\w+)"/g)].map((x) => x[1]).sort() : null; };
+const dpo = phaseOf(appSrc), wpo = phaseOf(web), dpn = phaseNone(appSrc), wpn = phaseNone(web);
+ok("階段表 PHASE_OF 兩邊同一份", Object.keys(dpo).length > 10 && sorted(dpo) === sorted(wpo), sorted(dpo) + " vs " + sorted(wpo));
+ok("PHASE_NONE 兩邊同一份", !!dpn && !!wpn && JSON.stringify(dpn) === JSON.stringify(wpn), JSON.stringify(dpn) + " vs " + JSON.stringify(wpn));
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

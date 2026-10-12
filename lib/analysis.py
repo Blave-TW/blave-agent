@@ -89,9 +89,12 @@ def compute_stats(pf_ret, index):
     std_r    = r.std(ddof=1) if n > 1 else 0.0
     sharpe   = mean_r / std_r * math.sqrt(ppy) if std_r > 0 else 0.0
 
-    neg      = r[r < 0]
-    std_down = neg.std(ddof=1) if len(neg) > 1 else 0.0
-    sortino  = mean_r / std_down * math.sqrt(ppy) if std_down > 0 else 0.0
+    # Downside deviation (Sortino & van der Meer; empyrical.downside_risk): RMS of the
+    # shortfall below MAR=0 over ALL bars. Not the std of the losing bars — that is
+    # centred on the losers' own mean, shrinks with every flat bar, and is 0 when
+    # every loss has the same size.
+    dd_down  = math.sqrt(np.mean(np.minimum(r, 0.0) ** 2)) if n > 0 else 0.0
+    sortino  = mean_r / dd_down * math.sqrt(ppy) if dd_down > 0 else 0.0
 
     gains  = r[r > 0].sum()
     losses = (-r[r < 0]).sum()

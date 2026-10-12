@@ -414,7 +414,7 @@ def _local_real_key_gate(venue_id, env):
 # unreadable or off-shape → no flag, which is what a child got before.
 _DATA_ACCESS_FILE = os.path.join("state", "data_access.json")
 _DATA_ACCESS_VALUES = {"BLAVE_DATA_ACCESS": ("0", "1"),
-                       "BLAVE_DATA_ACCESS_WHY": ("signed_out", "no_card", "no_balance", "unknown")}
+                       "BLAVE_DATA_ACCESS_WHY": ("signed_out", "no_card", "no_balance", "no_plan", "plan_failed", "unknown")}
 
 
 def _data_access_flags():

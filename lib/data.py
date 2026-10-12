@@ -72,7 +72,7 @@ class DataAccessError(RuntimeError):
 
 def _check_data_access(headers=None):
     """Desktop shell sets BLAVE_DATA_ACCESS=0 when it withheld the Blave key this turn
-    (no balance for the hourly fee / not signed in). Failing here, before any request,
+    (not signed in / no plan that includes data / hourly fee not covered). Failing here, before any request,
     is what stops the agent from hunting for credentials after a low-level error —
     a KeyError or 403 reads as a bug to fix, this reads as a fact. Unset or 1: no-op, except
     that a scheduled desktop run with no key in `headers` fails the same way (_check_desktop_key)."""
@@ -82,8 +82,8 @@ def _check_data_access(headers=None):
         _check_desktop_key(headers)
 
 
-_NO_ACCESS_MSG = ('Blave data is not reachable on this desktop this turn (no balance for the '
-                  'hourly fee / not signed in); stop here, do not look for credentials in .env, '
+_NO_ACCESS_MSG = ('Blave data is not reachable on this desktop this turn (not signed in, no plan '
+                  'that includes data, or the hourly fee not covered); stop here, do not look for credentials in .env, '
                   'the environment or elsewhere, and answer the user with what public klines allow.')
 
 
@@ -105,7 +105,7 @@ def _check_desktop_key(headers):
 
 def _desktop_denied(r):
     """Scheduled run on the desktop: the key in `.env` stopped working since the shell last
-    synced it (hour fee not chargeable ERR007, key revoked ERR005, 401). Same meaning as an
+    synced it (no data access ERR007, key revoked ERR005, 401). Same meaning as an
     empty key. A chat turn keeps the raw 403 — its body carries what the user must be told."""
     if not _daemon_on_desktop():
         return
@@ -1627,7 +1627,7 @@ def fetch_liquidation_map(symbol, headers):
       estimated  oi_value[] / cumsum[] — a MODEL ESTIMATE of where Binance open interest would
                  be liquidated (leaderboard positions + OI + volume), USD. Not real orders and
                  not actual events; any block built from it must say so.
-    `symbol` accepts BTC / BTCUSDT / btc. Needs data access (API plan or data fee); no cache —
+    `symbol` accepts BTC / BTCUSDT / btc. Needs data access (cloud plan, API plan or, before plan billing, the data fee); no cache —
     the server snapshot is the state. 400 with "symbol is required" never happens from here."""
     sym = normalize_symbol(symbol if str(symbol).upper().endswith('USDT') else str(symbol).upper() + 'USDT')
     return _raw_snapshot('liquidation/get_map', headers, {'symbol': sym})
@@ -5210,6 +5210,61 @@ def fetch_twse_day_all_public():
     df.attrs['date'] = _roc_ymd(day).strftime('%Y-%m-%d') if day else None
     df.attrs['source'] = _TWSE_OPENDATA_SOURCE_ZH
     return df
+
+
+def _twse_common_day_all():
+    """fetch_twse_day_all_public cut down to 4-digit codes not starting with 0 — the feed has no
+    type column, and that rule drops ETFs (00xx), 特別股 (2881A) and every longer code.
+    → (traded rows with change_pct added, count of kept codes with no close / change that day)."""
+    df = fetch_twse_day_all_public()
+    kept = df[[len(c) == 4 and c.isascii() and c.isdigit() and c[0] != '0' for c in df.index]]
+    traded = kept[kept['close'].notna() & kept['change'].notna()].copy()
+    prev = traded['close'] - traded['change']
+    traded['change_pct'] = (traded['change'] / prev.where(prev > 0)) * 100
+    traded.attrs = dict(df.attrs)
+    return traded, len(kept) - len(traded)
+
+
+def fetch_tw_breadth_public():
+    """上市漲跌家數 of the last published session, counted from TWSE open data STOCK_DAY_ALL.
+    Desktop only (TwPublicUnavailable on a cloud machine, before any request). dict: date
+    ('YYYY-MM-DD'), up, down, flat, total (= up + down + flat), untraded, source (attribution).
+
+    What it is not: 上櫃 is not in it (TWSE-listed only); it is the finished session, never
+    intraday — compare `date` with the day you are describing, the feed keeps the previous
+    session until TWSE publishes the new one; and it is our own count over 4-digit codes not
+    starting with 0 (ETFs, 特別股 and longer codes dropped, 4-digit 存託憑證 kept), so it can differ from
+    TWSE's official 漲跌家數. `change` is against TWSE's reference price. A kept code with no
+    close or no change that day is `untraded`, never flat."""
+    df, untraded = _twse_common_day_all()
+    up, down = int((df['change'] > 0).sum()), int((df['change'] < 0).sum())
+    return {'date': df.attrs.get('date'), 'up': up, 'down': down, 'flat': len(df) - up - down,
+            'total': len(df), 'untraded': untraded, 'source': df.attrs.get('source')}
+
+
+def fetch_tw_sector_breadth(headers):
+    """上市各產業的漲跌家數與平均漲跌幅 — fetch_tw_breadth_public's rows grouped by the
+    `industry_code` of fetch_twstock_list. Needs both: the desktop (TwPublicUnavailable on a
+    cloud machine) and Blave data access for the stock list. DataFrame indexed by industry_code
+    ('24'), best avg_change_pct first: name (twstock_industry_name), up, down, flat,
+    avg_change_pct (percent; equal-weighted mean of each stock's change, NOT cap-weighted and
+    not TWSE's 類股指數). attrs: date, source, unclassified (traded stocks the list gives no
+    industry for — left out of every row). Same limits as fetch_tw_breadth_public: 上市 only,
+    finished session, same code filter. An empty stock list → an empty frame."""
+    df, _ = _twse_common_day_all()
+    lst = fetch_twstock_list(headers)
+    codes = lst['industry_code'].reindex(df.index) if 'industry_code' in lst else pd.Series(index=df.index, dtype=object)
+    codes = codes.map(lambda c: None if c is None or c != c or not str(c).strip()
+                      else (str(c).strip().zfill(2) if str(c).strip().isdigit() else str(c).strip()))
+    g = df.assign(industry_code=codes, up=df['change'] > 0, down=df['change'] < 0,
+                  flat=df['change'] == 0).dropna(subset=['industry_code']).groupby('industry_code')
+    out = g[['up', 'down', 'flat']].sum().astype(int)
+    out['avg_change_pct'] = g['change_pct'].mean()
+    out.insert(0, 'name', [twstock_industry_name(c) for c in out.index])
+    out = out.sort_values('avg_change_pct', ascending=False)
+    out.attrs = {'date': df.attrs.get('date'), 'source': df.attrs.get('source'),
+                 'unclassified': int(codes.isna().sum())}
+    return out
 
 
 def _roc_ymd(s):

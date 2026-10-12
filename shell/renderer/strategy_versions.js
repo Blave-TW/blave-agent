@@ -74,6 +74,8 @@
     var spec = SPEC[key];
     var n = num(v);
     if (!spec || n === null) return DASH;
+    // MCPT 的排列次數有限,p 不會真的是 0:四捨五入成 0.000 是假象,不到半個最小刻度就寫 <0.001
+    if (key === "mcpt_p" && n < 0.0005) return "<0.001";
     var body = Math.abs(n).toFixed(spec.dp);
     return (spec.signed ? signStr(n) : n < 0 ? MINUS : "") + body + spec.unit;
   }

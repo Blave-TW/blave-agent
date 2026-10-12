@@ -156,7 +156,7 @@
 .nt-body strong { color: var(--ink); font-weight: 600; }
 .nt-tw { overflow-x: auto; margin: 0 0 var(--space-12); }
 .nt-body table { width: 100%; font-size: 12px; border-collapse: collapse; overflow-wrap: normal; }
-.nt-body th { text-align: left; font-weight: 500; font-size: 10.5px; color: var(--ink-3); padding: var(--space-4) var(--space-12) var(--space-4) 0; border-bottom: 1px solid var(--border-frame); white-space: nowrap; }
+.nt-body th { text-align: left; font-weight: 500; font-size: 11px; color: var(--ink-3); padding: var(--space-4) var(--space-12) var(--space-4) 0; border-bottom: 1px solid var(--border-frame); white-space: nowrap; }
 .nt-body td { padding: 7px var(--space-12) 7px 0; border-bottom: 1px solid var(--border-hairline); color: var(--ink-2); vertical-align: top; }
 .nt-body tr:last-child td { border-bottom: none; }
 .nt-body td:first-child { white-space: nowrap; }

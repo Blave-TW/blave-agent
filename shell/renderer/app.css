@@ -17,7 +17,7 @@
   -webkit-font-smoothing: antialiased;
   display: flex; flex-direction: column;
 }
-.app .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.app .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 /* 零特異度 reset(:where):放全域而非 .app 下——並排展示的卡片不在 .app 裡,
    收在 .app 下會讓那幾顆鈕露出瀏覽器預設填色。 */
 :where(button) { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
@@ -227,7 +227,7 @@
 /* 粗體只加重不變色;行內程式碼走 mono、亮度退一階,不加底色框
    (Terminal 平面、聊天欄窄,一行裡好幾個小框會很吵) */
 .msg.ai strong { font-weight: 600; }
-.msg.ai code { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); }
+.msg.ai code { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
 .msg.ai pre { margin: var(--space-8) 0; padding: var(--space-12); background: var(--surface-muted); border-radius: var(--radius-md); overflow-x: auto; }
 .msg.ai pre code { color: var(--ink); line-height: 1.6; white-space: pre; overflow-wrap: normal; }
 /* 表格:欄位多到比聊天欄寬時,在 .md-tblwrap 裡自己橫捲,不把聊天欄拉寬;儲存格不從中間斷數字 */
@@ -278,7 +278,7 @@
 }
 
 /* 字型也要掛在這裡:設定窗與確認框在 .app 外面,不然英文系統的 Mac 會拿到 Chromium 預設的襯線字 */
-html, body { margin: 0; height: 100%; background: var(--bg-body); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+html, body { margin: 0; height: 100%; background: var(--bg-body); font-family: var(--font-sans); }
 .app { height: 100vh; width: 100vw; border: none; border-radius: 0; }
 [hidden] { display: none !important; }
 /* 52 = 對話列的高度:整個視窗頂是同一條標題帶,側欄與中欄的內容起點 = 對話列底線(設計師 M1)。
@@ -404,6 +404,23 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   font-size: 11px; color: var(--ink-3); white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/* 階段清單(canon › 回合狀態列 9):回合裡出現第二種階段時在狀態列下直接長出來、不用點開;列同收據列(12px、上下 3、左縮 15)。
+   回合結束收起,展開時先列階段、下面才是逐步收據。記號沿用收據的 8×2 短劃,進行中半截、主墨 */
+.think-phases { align-self: stretch; list-style: none; margin: 0 0 0 15px; padding: 0; width: calc(100% - 15px); }
+.think-phases[hidden], .think-indicator.is-done:not(.is-open) .think-phases { display: none; }
+.think-phase { display: flex; align-items: center; gap: var(--space-8); padding: 3px 0; font-size: 12px; line-height: 1.5; }
+.think-phase-verb { flex: none; color: var(--ink-2); }
+.think-phase-obj { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
+.think-phase-obj.mono { font-size: 11px; }
+.think-phase-time {
+  flex: none; margin-left: auto; padding-left: var(--space-8);
+  font-size: 11px; color: var(--ink-3); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.think-phase.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }
+.think-phase.is-run .think-phase-verb, .think-phase.is-run .think-phase-time { color: var(--ink); }
+.think-phase.is-run .think-phase-obj { color: var(--ink-2); }
 
 /* 思考文字:展開來就是要讀的,所以走無襯線、會換行、有高度上限可捲 */
 .think-reason {
@@ -559,7 +576,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    未解的債,不填軌道就踩不到。 */
 .mp-rail {
   display: flex; margin: 0 10px;
-  border: 1px solid var(--border-frame); border-radius: var(--radius-xs); overflow: hidden;
+  border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
 }
 /* 內距 4 不是 8:聊天欄最窄時軌只有約 236px,五格(含 Extra High)用 8 會超出去,
    最右邊的 Max 被軌的 overflow 切掉。寬的時候多的空間由 flex-grow 平分回去 */
@@ -571,8 +588,13 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-seg + .mp-seg { border-left: 1px solid var(--border-frame); }
 .mp-seg:hover { color: var(--ink); }
 .mp-seg[aria-checked="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
-/* 軌在裁切容器裡,focus ring 往內畫才不會被切掉 */
-.mp-seg:focus-visible { outline-offset: -2px; border-radius: 0; }
+/* 軌不裁切(同 .cn-lang):格子內距只有 4,ring 往內畫會碰到字(spec-0.1.19 §2.4 必修)。圓角改由首末格自己畫;
+   ring 走全域的外擴,聚焦時浮上一層才不被鄰格的分隔線蓋住。外擴的 4px 落在軌兩側的 10px margin 裡 */
+.mp-seg:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
+.mp-seg:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
+.mp-seg:focus-visible { position: relative; z-index: 1; }
+/* 中間格聚焦不吃全域的 radius-xs:ring 收角會讓選中格的填色露出軌道底(設計稽核 0.1.19);首末格的圓角照上面自己畫的 */
+.mp-seg:focus-visible:not(:first-child):not(:last-child) { border-radius: 0; }
 .mp-note { margin: 0; padding: var(--space-8) 10px 6px; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 
 /* ── Tooltip(canon › Components › Tooltip)──────────────
@@ -643,7 +665,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 :lang(en) .cf-rows.kv dt { flex-basis: 84px; }
 .cf-rows.kv dd { flex: 1; min-width: 0; text-align: left; white-space: normal; font: inherit; color: var(--ink); }
 /* 確認框在 .app 外面,吃不到 .app .mono:kv 裡的數值(參數掃描的期間 / 費率 / 網格)自己帶字體;一個值不拆行 */
-.cf-rows.kv dd .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cf-rows.kv dd .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* 雲端停機 / 讀不到時的那一句(hoNote)。不共用 .rp-desc:那一行是單行截斷,裡面的文字鈕會被切掉 */
 .rp-ho-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .rp-ho-note .btn-quiet { font-size: inherit; }   /* 句尾的文字鈕跟著那句話的字級(同 .tr-ro-note) */
@@ -910,7 +932,7 @@ body.resizing * { cursor: col-resize !important; }
 .set-up-line .mono { white-space: nowrap; }
 /* 安裝識別碼:標籤 --ink-3、值 mono --ink-2 整串 36 字不截;放不下就整串換到標籤下一行(不在連字號處斷) */
 .set-id-line { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-8); }
-.set-idv { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); white-space: nowrap; user-select: all; -webkit-user-select: all; }
+.set-idv { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; user-select: all; -webkit-user-select: all; }
 #set-up-btn .spin16 { vertical-align: -3px; }   /* 檢查中:連結本身變成圓環(被按的控件自己的回饋) */
 .set-about button { flex: none; }
 /* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
@@ -946,7 +968,7 @@ body.resizing * { cursor: col-resize !important; }
 .plan-list li{position:relative;padding-left:var(--space-16);line-height:1.7;color:var(--ink)}
 .plan-list li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:1px;background:var(--ink-3)}
 .plan-price{display:flex;align-items:baseline;gap:var(--space-12);flex-wrap:wrap}
-.plan-price .m{font-family:"Roboto Mono",ui-monospace,monospace;font-size:15px;font-weight:600;color:var(--ink)}
+.plan-price .m{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink)}
 .plan-price .h{font-size:12px;color:var(--ink-3)}
 .plan-fine{margin:var(--space-6) 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
 .plan-foot{flex:none;padding:var(--space-12) var(--space-16);border-top:1px solid var(--border-hairline)}
@@ -955,7 +977,7 @@ body.resizing * { cursor: col-resize !important; }
 .plan-err{display:flex;gap:var(--space-8);margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}
 .plan-err .fault-mark{margin-top:9px}
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
-.plan-act{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-12)}
+.plan-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
 /* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 收起的細節;底列=一行跟錢有關的話 + 鈕 */
 .plan-pane .plan-scroll{padding:var(--space-16)}   /* 第一個東西是一列小字(帳號列),上距跟其他分類對齊 */
@@ -996,11 +1018,13 @@ body.resizing * { cursor: col-resize !important; }
 /* 確認框:三句各自一段 */
 .del-body.lines p{margin:0}
 .del-body.lines p+p{margin-top:var(--space-8)}
+/* 更新雲端主機確認框的 lede(lead 槽):版號 mono、主墨;確認框在 .app 外面吃不到 .app .mono(同 .cf-rows.kv) */
+.del-body.lines p.cf-lede .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
 /* 確認框內的通用排版(confirmBox 的 extra 用;金額確認框、之後的「送上雲端」共用):一組「說明 — 數字」列,分三個字級 */
 .cf-rows { margin: 0; }
 .cf-row { display: flex; align-items: baseline; gap: var(--space-16); padding: var(--space-6) 0; }
 .cf-row dt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); overflow-wrap: anywhere; }
-.cf-row dd { flex: none; margin: 0; text-align: right; white-space: nowrap; color: var(--ink); font: 13px/1.5 "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.cf-row dd { flex: none; margin: 0; text-align: right; white-space: nowrap; color: var(--ink); font: 13px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
 .cf-row.total { margin-top: var(--space-6); padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); }
 .cf-row.total dt { color: var(--ink); font-weight: 600; }
 .cf-row.total dd { font-size: 15px; font-weight: 600; }
@@ -1015,8 +1039,8 @@ body.resizing * { cursor: col-resize !important; }
 .del-body.lines p.cf-zeroed { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }   /* 改成 0 的那幾支:使用者自己選的,不用紅 */
 /* 解除暫停框的部位清單(ux-order-1-4-5 §3.3):小標「HH:mm 讀到的部位」、標的等寬 + 多空上色 */
 .del-body.lines p.cf-sub { margin: var(--space-12) 0 var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.cf-row dt.mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
-.cf-row dt .side { margin-left: var(--space-8); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 12px; }
+.cf-row dt.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.cf-row dt .side { margin-left: var(--space-8); font-family: var(--font-sans); font-size: 12px; }
 .cf-row dt .side.buy { color: var(--color-greenText); }
 .cf-row dt .side.sell { color: var(--color-redText); }
 /* 第 3 級槓桿的勾選列(§1.2):真 checkbox 包在 label 裡、整列都是熱區;勾號照 .ps-cb(墨色) */
@@ -1175,15 +1199,91 @@ body.resizing * { cursor: col-resize !important; }
   .cs-btn, .cs-newrow, .cs-item, .cs-del { transition: none; }
 }
 
-/* 策略列尾的刪除鈕:外包一層給絕對定位的鈕當基準;hover 時名字讓出位置——只在真的有 ✕ 時讓(回合中 ✕ 收起,不留空白截名字)。
-   條件包在 :where 裡不加權重,下面武裝那條才蓋得過它 */
+/* ── 策略列的列尾雙鈕 + 旗標 + 拖拉(spec desktop-strat-flags;視覺照雲端工作頁 workspace.css 同一套)──
+   .strat-wrap 外包一層給絕對定位的鈕當基準;左 12px 是旗標的軌(色條住這裡,hover / 選中的填色在 .strat-row 上、從軌右側開始,
+   色條與填色永不相碰;策略列因此比上方導覽項內縮 12,web 已接受的巢狀縮排)。整列即拖拉把手:touch-action none 才不會變成捲動 */
+.strat-wrap { padding-left: var(--space-12); }
+#strat-list .strat-wrap { touch-action: none; }   /* 只有這台電腦的清單綁拖拉;雲端清單(只讀)照樣能用觸控捲 */
 .strat-wrap:is(:hover, :has(:focus-visible)) .strat-row { background: var(--surface-muted); color: var(--ink); }
+/* 沒有旗標鈕的列(雲端 tab,只讀):hover 時名字讓出 ✕ 的位置——只在真的有 ✕ 時讓(回合中 ✕ 收起,不留空白截名字)。
+   條件包在 :where 裡不加權重,下面武裝那條才蓋得過它 */
 .strat-wrap:is(:hover, :has(:focus-visible)):where(:has(.cs-del:not(:disabled))) .strat-row { padding-right: 72px; }
-/* 武裝後鈕變寬(「移到垃圾桶？」):右內距 = 鈕的實寬(JS 量了寫在 --armed-w)+ 16,名字才不會被蓋住 */
+/* .flag-open = 該列的旗標面板開著(焦點已進面板,:has(:focus-visible) 不再成立),靠它撐住填色與雙鈕 */
+.strat-wrap.flag-open .strat-row { background: var(--surface-muted); color: var(--ink); }
+/* 有旗標鈕的列(這台電腦):resting 列尾零保留(名字吃滿);hover 時依列尾有幾顆鈕回流——只有旗標鈕 40、雙鈕 64(= 6+24+4+24+6)。
+   不加 transition(名字 ellipsis 逐字重排的動畫比瞬跳更糟)。權重同上面 72 那條,靠 source order 蓋過 */
+.strat-wrap:is(:hover, :has(:focus-visible), .flag-open):where(:has(.strat-flagbtn)) .strat-row { padding-right: 40px; }
+.strat-wrap:is(:hover, :has(:focus-visible), .flag-open):where(:has(.strat-flagbtn):has(.cs-del:not(:disabled))) .strat-row { padding-right: 64px; }
+/* 武裝後鈕變寬(「移到垃圾桶？」):右內距 = 鈕的實寬(JS 量了寫在 --armed-w)+ 16,名字才不會被蓋住;旗標鈕收起。
+   ✕ 在武裝中一律看得見:右鍵面板那條「移到垃圾桶」武裝它時,滑鼠多半不在列上、焦點又是程式給的(:focus-visible 不一定成立) */
 .strat-wrap:has(.cs-del.is-armed) .strat-row { padding-right: calc(var(--armed-w, 84px) + 16px); }
+.strat-wrap:has(.cs-del.is-armed) .strat-flagbtn { opacity: 0; pointer-events: none; }
+.strat-wrap:has(.cs-del.is-armed) .cs-del { opacity: 1; pointer-events: auto; }
 .cs-del:disabled { display: none; }
 /* 雲端策略列送出刪除後、等清單更新:名字退一階、狀態字換成「刪除中…」、不畫 ✕(列本身還能點開報告) */
 .strat-wrap.is-deleting .strat-name { color: var(--ink-3); }
+/* 旗標鈕:與 ✕ 同一組樣式,放在 ✕ 左邊(right 34 = ✕ 的 6 + 24 + 鈕距 4);熱區 34×34(列高),視覺 24 不動 */
+.strat-flagbtn {
+  position: absolute; right: 34px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-micro); color: var(--ink-2);
+  opacity: 0; pointer-events: none;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.strat-flagbtn::before { content: ""; position: absolute; top: calc(50% - 17px); left: calc(50% - 17px); width: 34px; height: 34px; }
+.strat-wrap:is(:hover, :has(:focus-visible), .flag-open) .strat-flagbtn { opacity: 1; pointer-events: auto; }
+.strat-flagbtn:hover { background: var(--bg-body); color: var(--ink); }
+.strat-wrap .cs-del .ic, .strat-flagbtn .ic { stroke-width: 1.5; }   /* 列內動作 icon 跟著列的文字走(16px、1.5);✕ 跟旗標同一個重量 */
+/* 沒有 ✕ 的列(回合中、雲端機器停著)旗標鈕移到 ✕ 的位置 */
+.strat-wrap:not(:has(.cs-del:not(:disabled))) .strat-flagbtn { right: var(--space-6); }
+/* 旗標色 → 區域變數(canon › Color › Flag colors;面板色塊同吃);色條 = 2×16 pill 置中在軌內:列緣 5 / 條 2 / 淨空 5 */
+[data-flag="1"] { --flag: var(--color-flag-1); }
+[data-flag="2"] { --flag: var(--color-flag-2); }
+[data-flag="3"] { --flag: var(--color-flag-3); }
+.strat-wrap[data-flag]::before {
+  content: ""; position: absolute; left: 5px; top: 50%; width: 2px; height: 16px; transform: translateY(-50%);
+  border-radius: var(--radius-pill); background: var(--flag); pointer-events: none;
+}
+/* 拖拉中:浮起列 = card 填 + 暫時浮層陰影(引 token,不抄 web 的字面值);兩顆鈕收起、名字吃滿;鄰列用 transform 讓位。
+   放在 hover 規則之後:同權重靠 source order 蓋過 hover 的填色與 64 */
+.strat-wrap.dragging { z-index: 3; cursor: grabbing; }
+.strat-wrap.dragging .strat-row { background: var(--surface-card); color: var(--ink); box-shadow: var(--shadow-overlay); cursor: grabbing; padding-right: var(--space-12); }
+.strat-wrap.dragging .cs-del, .strat-wrap.dragging .strat-flagbtn { opacity: 0; pointer-events: none; }
+.strat-wrap.shifting { transition: transform var(--motion-fast) var(--ease-standard); }
+body.is-dragging { user-select: none; -webkit-user-select: none; }
+/* 旗標面板:單例掛 body、fixed(.strat-list 是捲動容器,absolute 錨在列內會被裁),座標由 stratflags.js 依旗標鈕算。
+   開閉 = fade + 2px 位移朝 trigger;.up = 下方不夠翻上 */
+.flag-pop {
+  position: fixed; z-index: 60; width: max-content; padding: 6px;
+  background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+  opacity: 0; transform: translateY(-2px); transform-origin: top center;
+  transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+.flag-pop[hidden] { display: none; }
+.flag-pop.up { transform: translateY(2px); transform-origin: bottom center; }
+.flag-pop.open, .flag-pop.up.open { opacity: 1; transform: translateY(0); }
+.flag-pop .swgrid { display: flex; gap: var(--space-8); padding: 6px 10px 8px; }
+.flag-pop .swcell { position: relative; flex: none; width: 24px; height: 24px; border-radius: var(--radius-micro); background: var(--flag); }
+.flag-pop .swcell.selected { box-shadow: inset 0 0 0 2px var(--bg-body); }   /* 選中 = 內圈;外環留給 focus ring,方向鍵移開後畫面上只有一個環 */
+/* 色塊 hover / focus 浮固定色名:既有 .tip 材質,這裡只補置中與自己的顯示條件 */
+.flag-pop .swcell .tip { left: 50%; transform: translateX(-50%); color: var(--ink); white-space: nowrap; }
+.flag-pop .swcell:hover .tip, .flag-pop .swcell:focus-visible .tip { display: block; }
+.flag-pop .item {
+  display: flex; justify-content: flex-start; align-items: center; gap: var(--space-8);
+  width: 100%; padding: 6px 10px; border-radius: var(--radius-xs);
+  font-size: 13px; color: var(--ink-2); text-align: left;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.flag-pop .item:hover { background: var(--surface-muted); color: var(--ink); }
+.flag-pop .item.danger { color: var(--ink-2); }
+.flag-pop .item[hidden], .flag-pop .divider[hidden] { display: none; }
+.flag-pop .divider { border-top: 1px solid var(--border-hairline); margin: 6px 0; }
+.flag-pop .hint { margin: 0; padding: var(--space-6) 10px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) {
+  .strat-wrap.shifting, .strat-flagbtn, .flag-pop .item { transition: none; }
+  .flag-pop, .flag-pop.up { transition: opacity var(--motion-fast) var(--ease-standard); transform: none; }   /* 留 fade、去位移 */
+}
 
 /* 刪對話確認框。不用紅鈕:canon 沒有 Danger 按鈕 recipe(紅只當文字色),破壞性由標題動詞
    與內文的「無法復原」承擔;確認鈕是中性反白(同雲端 .modal-send)。 */
@@ -1237,7 +1337,7 @@ body.resizing * { cursor: col-resize !important; }
 .fault-body { min-width: 0; overflow-wrap: anywhere; }
 .fault-act { margin-top: var(--space-8); display: flex; flex-wrap: wrap; gap: var(--space-8); }
 .fault-sub { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
-.fault-sub code, .cn-hint code { font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-2); }
+.fault-sub code, .cn-hint code { font-family: var(--font-mono); color: var(--ink-2); }
 /* disabled 原本完全沒有樣式:鈕鎖住之後外觀不變,看不出按下去有沒有生效(設計師 M7) */
 /* 失效的實心鈕:框取比填色亮一階的灰——只靠填色的話對 darkBody 只有 1.5:1,看不出那裡有一顆鈕(canon Disabled) */
 /* 回合進行中「點了才講」的鈕(策略庫主鈕、報告「新增報告」;aria-disabled:鍵盤停得上去、點了才把原因寫在鈕下)長相同 :disabled、hover 不給回饋。
@@ -1253,6 +1353,10 @@ html[data-platform="win32"] ::-webkit-scrollbar, html[data-platform="win32"]::-w
 html[data-platform="win32"] ::-webkit-scrollbar-track, html[data-platform="win32"] ::-webkit-scrollbar-corner { background: transparent; }
 html[data-platform="win32"] ::-webkit-scrollbar-thumb { background: var(--border-frame); border-radius: var(--radius-pill); }
 html[data-platform="win32"] ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+/* Windows 的 11px Mini tag:微軟正黑體沒有 600,會渲染成 Bold 700,在 11px + 0.04em 字距下筆畫糊成一團(設計評估 P3),
+   這一階改 400;Mac 的 PingFang 有 Semibold,照 canon 的 600 不動。選擇器 = 外殼所有 11px/600 的 tag 形元件 */
+html[data-platform="win32"] .lib .tag, html[data-platform="win32"] .rb-report .rb-news-tag, html[data-platform="win32"] .pf-wallet-row .mini_tag,
+html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-platform="win32"] .shr-tag, html[data-platform="win32"] .tag-you, html[data-platform="win32"] .vtag { font-weight: 400; }
 
 /* ── 兩個表單 modal(新增策略 #ns-modal、新增報告 #rpn-modal;spec-desktop-0.1.6 §1.5 / §4.2)共用的殼:
    .del-modal 的 440 框 + 可捲的 .modal-body + 腳最前面一行常駐的 .foot-msg(role=status;空時高 0、不 display:none)。

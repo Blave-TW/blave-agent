@@ -14,7 +14,7 @@ eval((pure + env).replace(/^const /gm, "var "));
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 // 稽核 Q1:從開通頁按「綁卡」外開瀏覽器,回來要重查帳號狀態(不然畫面一直停在「綁卡」,人會以為沒綁成)
 { const appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
-  ok("Q1 回到 app 時,開通頁看得見就重查帳號狀態", /planState\(\) === "starting" \|\| envOpenVisible\(\)\)\) return;/.test(appSrc)
+  ok("Q1 回到 app 時,開通頁看得見就重查帳號狀態", /planState\(\) === "starting" \|\| envOpenVisible\(\) \|\| planOpenNow\)\) return;/.test(appSrc)
     && /function envOpenVisible\(\) \{ return ENV\.cur === "cloud" && !\$\("cv-empty"\)\.hidden; \}/.test(src)); }
 process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到結尾"); process.exit(1); });
 
@@ -456,7 +456,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("開通頁:讀不到 / 還沒問到不畫開通內容;帳號狀態還沒到或兩邊對不上 = unknown(給重查,不給啟動)", OV("unreach", true, "plan") === "unreach" && OV("loading", false, "out") === "loading" && ["unknown", "out", "running", "stopped"].every((pv) => OV("none", true, pv) === "unknown"));
   const ep = fn("envPaintEmpty");
   ok("開通頁重用已上線的流程:登入 planLogin、重登 planRelogin、啟動 planAsk(花錢的確認框);這裡不直接碰 planStart / startOAuth / confirmBox", /planLogin/.test(ep) && /planRelogin/.test(ep) && /t\("plan\.start"\), planAsk,/.test(ep) && !/planStart|startOAuth|confirmBox\(|planGo/.test(ep + fn("envPlanChanged")));
-  ok("價格不寫死:數字只來自 planVars;拿不到月價就不畫價格段、啟動鈕 disabled", /if \(v\.p\) \{\s*const pr = trEl\("div", "plan-price"\)/.test(ep) && /main\.disabled = !\(v\.p && v\.h\)/.test(ep) && !/[0-9]{2,}\s*(TWD|USD)/.test(ep));
+  ok("價格不寫死:數字只來自 planVars;拿不到月價就不畫價格段、啟動鈕 disabled", /if \(v\.p && !planMo\(\)\) page\.appendChild\(planPriceEl\(trEl, v, false\)\);/.test(ep) && /main\.disabled = !planPriceOk\(v\);/.test(ep) && !/[0-9]{2,}\s*(TWD|USD)/.test(ep));
   ok("查帳號 / 公開價目有間隔(查不到時不空轉)", /Date\.now\(\) - \(ENV\.askedAt \|\| 0\) > 30000/.test(ep));
   ok("側欄那一格只剩「準備好了」那一態:沒有主機 / 啟動中 / 讀不到都不寫字(Wei 09-23 刪 emptyGate);舊空態兩個 key 照舊不在",
     /<p class="pf-state side-gate" id="side-gate" hidden><\/p>/.test(html) && /const sg = \$\("side-gate"\); sg\.hidden = !ready;/.test(code)

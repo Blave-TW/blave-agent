@@ -75,6 +75,10 @@ function interpret(res) {
     // 主機的 lib 有沒有 walk_forward(api 同 web 的三態):false = 確定太舊,樣本外驗證擋下送出;null = 不知道(舊 api / 沒回報),不擋
     config_supports_wf: typeof b.config_supports_wf === "boolean" ? b.config_supports_wf : null,
     data_sources: Array.isArray(b.data_sources) ? b.data_sources.filter((n) => typeof n === "string") : [],
+    // 側欄偏好(web 工作頁設的順序與旗標,agent_user_prefs 同一份):api 還沒回這兩個 key 時 = 空,行為零變化。電腦版雲端 tab 只讀不寫
+    strat_order: Array.isArray(b.strat_order) ? b.strat_order.filter((n) => typeof n === "string" && n).slice(0, 200) : [],
+    strat_flags: b.strat_flags && typeof b.strat_flags === "object" && !Array.isArray(b.strat_flags)
+      ? Object.fromEntries(Object.entries(b.strat_flags).filter(([, v]) => Number.isInteger(v) && v >= 1 && v <= 6).slice(0, 200)) : {},
   };
 }
 
@@ -283,7 +287,9 @@ function createCloudHost(opts) {
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length,
     // 版本也要推:看這台電腦時畫面 60 秒才問一次,「關於」那一行要跟上主機回報的版本
-    s.config_version, s.latest_config_version, s.config_supports_wf].join("|");
+    s.config_version, s.latest_config_version, s.config_supports_wf,
+    // 側欄偏好改了(在網頁拖過 / 掛了旗標)也要推,不然要等別的欄位變
+    JSON.stringify(s.strat_order || null), JSON.stringify(s.strat_flags || null)].join("|");
   const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt, epoch });
   function emit() { const key = summaryKey(snap); if (key === lastKey) return; lastKey = key; if (opts.onChange) try { opts.onChange(publicSnapshot()); } catch (_) { /* 畫面壞掉不影響輪詢 */ } }
   function drop(next) { gen++; epoch++; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }

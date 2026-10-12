@@ -66,8 +66,8 @@ CRITICAL: Read `references/deployment.md` before deploying any strategy live or 
 Classify BEFORE writing any code, then read `references/strategy-code.md`.
 
 - ONE fixed symbol on a fixed interval → **Type A** (`lib/runner.py` + `TEMPLATE_A.py`) — backtest REQUIRED
-- Weights across MULTIPLE symbols, rebalanced on a schedule → **Type C** (`TEMPLATE_C.py`; `compute_signals` returns `(weights_mat, price_df)`, rows sum ≤ 1) — backtest REQUIRED
-- Everything else (screener, grid, arbitrage, one-off execution, alert bot) → **Type B** (no backtest)
+- Weights across MULTIPLE symbols, rebalanced on a schedule → **Type C** (`TEMPLATE_C.py`; `compute_signals` returns `(weights_mat, price_df)`; rows sum ≤ 1 unless the user asked for leverage — then say the gross exposure first) — backtest REQUIRED
+- Everything else (screener, grid, arbitrage, a rule-driven execution script, alert bot) → **Type B** (no backtest) — never a wrapper around one hand-placed order (Strategy Deployment)
 
 **Code the user points you to** is used as asked — `references/strategy-code.md` › *Building from code the user points to*.
 
@@ -75,7 +75,7 @@ Classify BEFORE writing any code, then read `references/strategy-code.md`.
 
 Always set `DISPLAY_NAME` and `DESCRIPTION` with `STRATEGY_NAME` (*Naming & description*). Changing a parameter also changes every place the file states that number: `DESCRIPTION` and the header comment.
 
-**Type A:** long+short needs FOUR independent thresholds + `lib.strategy.threshold_position`; stops / take-profit / trailing / time stop → `lib.exits.apply_exits` with an explicit `trigger`, never your own exit loop (it can't model it → tell the user and stop); `MARKET = "spot"` is long-only; non-price feeds attach by publication time (`lib.data.join_tw_flow` / `align_feed`, *Taiwan daily flows*).
+**Type A:** long+short needs FOUR independent thresholds + `lib.strategy.threshold_position`; stops / take-profit / trailing / time stop — as a % or a price distance (ATR multiple, prior low, points) — plus breakeven and cooldown → `lib.exits.apply_exits` with an explicit `trigger`, never your own exit loop (it can't model it, e.g. partial exits → tell the user and stop); `MARKET = "spot"` is long-only; non-price feeds attach by publication time (`lib.data.join_tw_flow` / `align_feed`, *Taiwan daily flows*).
 
 **FEE must reflect the real market — never 0, never the template placeholder, never copied unchecked — and it is PER SIDE:** the engine charges it on every change, so a round trip pays it twice. TAIFEX index futures: the TXF/MXF/TMF table in `references/lib.md`.
 
@@ -93,7 +93,7 @@ Asked for an XQ, MultiCharts or Pine version (incl. the web prompt 「把策略�
 
 ## Exchange API Keys
 
-A key pasted in chat is bound with `lib.venue.bind` (`references/lib.md`; binance/bingx/okx/gateio only — TW brokers → their own doc, others → the 自動下單 page), then continue per `references/exchange-connect.md` rule 2. Never echo the key; tell them to bind on the 自動下單 page next time, with a trade-only key (no withdrawal).
+A key pasted in chat is bound with `lib.venue.bind` (`references/lib.md`; binance/bingx/okx/gateio/bybit only — TW brokers → their own doc, others → the 自動下單 page), then continue per `references/exchange-connect.md` rule 2. Never echo the key; tell them to bind on the 自動下單 page next time, with a trade-only key (no withdrawal).
 
 **Never change the Administrator/RDP password** — the dashboard serves the platform-stored copy; read it from the local credentials file (`references/capital-broker.md`).
 
@@ -152,7 +152,7 @@ RAM is shared with the agent runtime: an unbounded process freezes the whole mac
 
 ## Billing — when the user asks what costs what
 
-Read `references/billing.md` first (desktop: its *Desktop app* section) — never quote a price from memory, never say there is no figure while it has one. Gist: chat on Blave's models costs tokens; a cloud server is a flat monthly-quoted rate that includes Blave data; letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`. Not covered → say you are not sure.
+Read `references/billing.md` first (desktop: its *Desktop app* section) — never quote a price from memory, never say there is no figure while it has one. Gist: chat on Blave's models costs tokens; a cloud server includes Blave data and is billed hourly until the account switches to a plan (monthly or annual, data also in the desktop app) — check which one the account is on (billing.md, first section); letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`. Not covered → say you are not sure.
 
 ## Iteration Brakes — hard limits on autonomous runs
 

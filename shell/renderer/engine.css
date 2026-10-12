@@ -34,6 +34,6 @@
 .eng-fault .fault-act { margin-top: var(--space-12); }
 .eng-err { margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
 .eng-err summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-.eng-err pre { margin: var(--space-8) 0 0; padding: var(--space-8) var(--space-12); border-radius: var(--radius-sm); background: var(--surface-card); box-shadow: var(--shadow-sm); font-family: "SF Mono", "Fira Code", "Consolas", monospace; font-size: 11px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.eng-err pre { margin: var(--space-8) 0 0; padding: var(--space-8) var(--space-12); border-radius: var(--radius-sm); background: var(--surface-card); box-shadow: var(--shadow-sm); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* app.css 的 reduced-motion 是 `* { animation: none !important }`;canon › Loader:轉動即語意,這張卡的轉圈照轉 */
 @media (prefers-reduced-motion: reduce) { .eng-card .spin16 { animation: trSpin 1s linear infinite !important; } }

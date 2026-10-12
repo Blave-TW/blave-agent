@@ -116,7 +116,9 @@ can ask to go back to one. Nothing to run by hand — `run()` does it.
   what changed in THIS run — a parameter, a rule, a data source. Update it whenever you
   change the code, before the backtest. Leave it `""` when nothing changed rather than
   leaving a stale line: a note identical to the last version's is stored as empty on
-  purpose, so a forgotten note shows no summary instead of a wrong one.
+  purpose, so a forgotten note shows no summary instead of a wrong one. First version: leave
+  it empty or state the strategy's own gist; never write "初版" / "initial version" — v1 is
+  the initial version.
 - **Numbers are never reused.** Restoring v5 makes v5 current again — no new number. A
   backtest whose code equals a stored version mints nothing and points current back at it:
   a re-run without an edit adds no version.
@@ -297,9 +299,9 @@ def compute_signals(df):
 
 `compute_signals` must be a **pure function** (no API calls, no I/O, no side effects).
 
-## Exits on top of an existing signal — stop-loss, take-profit, trailing, time stop
+## Exits on top of an existing signal — stop-loss, take-profit, trailing, time stop, ATR distances, breakeven, cooldown
 
-"Add a 3% stop-loss / take profit at 8% / a 5% trailing stop / hold at most 48 bars" = keep the strategy's own `compute_signals` logic as it is and wrap its result with **`lib.exits.apply_exits`**. Call it — never write your own exit loop, and never paste an older recipe from a strategy file:
+"Add a 3% stop-loss / take profit at 8% / a 5% trailing stop / hold at most 48 bars / a stop 2 ATR away / move the stop to breakeven" = keep the strategy's own `compute_signals` logic as it is and wrap its result with **`lib.exits.apply_exits`**. Call it — never write your own exit loop, and never paste an older recipe from a strategy file:
 
 ```python
 STOP_PCT = 0.03
@@ -310,7 +312,41 @@ def compute_signals(df, fast=MA_FAST, slow=MA_SLOW, stop_pct=STOP_PCT):
     return apply_exits(signal, df, stop_pct=stop_pct, trigger="intrabar")
 ```
 
-Any combination in one call: `apply_exits(signal, df, stop_pct=0.03, tp_pct=0.08, trail_pct=0.05, max_bars=48, trigger="intrabar")` (fractions, `max_bars` in bars). Make each one a `compute_signals` kwarg so a scan can sweep it. With `settlement_signals_from_db`, exits first and settlement last: `return settlement_signals_from_db(df, apply_exits(signal, df, stop_pct=stop_pct, trigger="intrabar"))`. What it guarantees (fill point, rolls, bars the runner drops) is in `references/lib.md` › `lib.exits`.
+Any combination in one call: `apply_exits(signal, df, stop_pct=0.03, tp_pct=0.08, trail_pct=0.05, max_bars=48, trigger="intrabar")` (fractions, `max_bars` in bars). Make each one a `compute_signals` kwarg so a scan can sweep it.
+
+**A distance in price instead of a fraction — ATR multiples, a stop under the prior low, a stop N points away:** `stop_dist` / `tp_dist` / `trail_dist` take a Series on `df`'s index (or one number, `stop_dist=50` = 50 points) in price units. The lib computes no indicator — the strategy builds the distance and passes it:
+
+```python
+ATR_N, STOP_ATR, TP_ATR = 14, 2.0, 3.0
+WARMUP = MA_SLOW + ATR_N                  # every rolling window, the ATR one included
+
+def _add_indicators(df, fast, slow, atr_n=ATR_N):
+    import pandas as pd
+    df = df.copy()
+    ...                                   # the strategy's own indicators
+    prev = df['Close'].shift(1)
+    tr = pd.concat([df['High'] - df['Low'], (df['High'] - prev).abs(), (df['Low'] - prev).abs()], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(atr_n).mean()  # bar t's value uses bars <= t only — no shift(-1), no centering
+    return df
+
+def compute_signals(df, fast=MA_FAST, slow=MA_SLOW, stop_atr=STOP_ATR, tp_atr=TP_ATR):
+    from lib.exits import apply_exits
+    ...                                   # the strategy's own signal, unchanged
+    signal = signal.where(df['ATR'].notna(), 0.0)      # no trade before its stop can be placed
+    return apply_exits(signal, df, stop_dist=stop_atr * df['ATR'], tp_dist=tp_atr * df['ATR'], trigger="intrabar")
+```
+
+- **Which bar's value:** `stop_dist` / `tp_dist` are read once per trade on the signal bar (the last finished bar before the fill) and fixed for that trade; `trail_dist` is re-read every bar (chandelier), always from the bar before the one being tested. Do not shift the Series yourself.
+- **`WARMUP` must cover the ATR window** (and the multipliers are `compute_signals` kwargs, the window an `_add_indicators` one, so a scan can sweep them). An entry on a bar whose distance is still NaN runs **without** that exit — the lib says so (rows in `result.attrs["exits_unarmed"]`, a `RuntimeWarning` the first time) and the backtest and the first live tick would then disagree about the stop. Keep the `signal.where(...notna(), 0.0)` line; if the warning still shows, report it, do not silence it.
+- Prior-low stop: `stop_dist=df['Close'] - df['Low'].rolling(20).min()`. The level is the fill minus that distance, so it shifts by the gap between the signal bar's Close and the fill Open.
+- `*_pct` and `*_dist` for the same exit together raise; mixing across exits is fine (`stop_dist=2 * atr, tp_pct=0.08`).
+
+**Breakeven, cooldown, different long / short values:**
+- `breakeven_at=0.02` (or `breakeven_dist=1 * atr`): once the trade has been up that much, the stop sits at the fill price. It takes effect on the bar after the one that reached the threshold.
+- `cooldown_bars=N` (N >= 1): after an exit, if the base signal is still on that side, enter again after N flat bars. Without it the position waits for the base signal to change side.
+- Every exit takes `(long, short)`: `stop_pct=(0.03, 0.05)`, `tp_dist=(3 * atr, None)` (`None` = off for that side).
+
+With `settlement_signals_from_db`, exits first and settlement last: `return settlement_signals_from_db(df, apply_exits(signal, df, stop_pct=stop_pct, trigger="intrabar"))`. What it guarantees (fill point, rolls, bars the runner drops) is in `references/lib.md` › `lib.exits`.
 
 **Pass `trigger` every time — which one:**
 - `"intrabar"` — a stop / take-profit as a trader means it: price *touching* the level (the bar's Low for a long stop, High for a long TP). Use it for "3% 停損", "停利 6%", "trailing 5%". Needs `High`/`Low` in `df` (every `fetch_*` OHLC has them).
@@ -318,7 +354,7 @@ Any combination in one call: `apply_exits(signal, df, stop_pct=0.03, tp_pct=0.08
 
 In both modes the exit fills at the **next bar's Open** — the runner cannot fill at a stop price, and live works the same way (the tick after the bar exits). `result.attrs["exits"]` records, per exit, the reason and (intrabar) the price a resting order would have filled at — the level, or the Open when the bar gapped through it. When you report a stop's effect, say the backtest exits at the next Open, and quote `order_price` only as "a resting order would have filled at". A bar touching both the stop and the take-profit counts as the stop (unless it opened beyond the TP).
 
-**"`apply_exits` can't do X" is never a reason to write your own exit loop.** If the rule the user asked for is not one of its four exits (a stop at an ATR multiple, a breakeven move, partial exits, a cooldown…), say so in one sentence — what it can't model and what the closest supported exit is — and let the user choose. Do not hand-roll a loop "because the helper is close-only / can't see High/Low / can't reach the entry price": it can (`trigger="intrabar"` measures from the fill), and a hand-rolled one is how the same-bar re-entry bug shipped.
+**"`apply_exits` can't do X" is never a reason to write your own exit loop.** If the rule the user asked for is not one it models (partial exits / scaling out, a take-profit that changes after entry, an exit on another instrument's price…), say so in one sentence — what it can't model and what the closest supported exit is — and let the user choose. Do not hand-roll a loop "because the helper is close-only / can't see High/Low / can't reach the entry price": it can (`trigger="intrabar"` measures from the fill), and a hand-rolled one is how the same-bar re-entry bug shipped.
 
 **The pitfall `apply_exits` avoids:** a hand-written loop that exits on the stop and then, on the same bar, re-checks the entry *state* (`MA_F > MA_S`, `x > BUY_TH`) re-enters at once — the position series comes out bar-for-bar identical and the stop does nothing. A trend filter stays true for hundreds of bars; after an exit the strategy must wait for a fresh entry (the base signal leaving and re-taking that side), which `apply_exits` does.
 
@@ -733,11 +769,13 @@ compute_signals(data)    → (weights_mat, price_df)
 
 | Return element | Type | Shape | Notes |
 |---|---|---|---|
-| `weights_mat` | `np.ndarray` | `(n_days, n_stocks)` | target weight at each close; rows sum to ≤ 1 |
+| `weights_mat` | `np.ndarray` | `(n_days, n_stocks)` | target weight at each close; rows sum to ≤ 1 by default |
 | `price_df` | `pd.DataFrame` (MultiIndex) | `(n_days, 2×n_stocks)` | `pd.concat({'close': close_df, 'open': open_df}, axis=1)` |
 | `exec_at_close` *(optional)* | `np.ndarray[bool]` | `(n_days,)` | bars that execute at this-bar close (rare) |
 
 **DO NOT pre-shift weights.** Runner shifts by 1 bar automatically: `w_curr[t] = weights[t-1]`.
+
+**Row sum above 1 is leverage — only on the user's explicit ask.** Default every row to gross (sum of absolute weights) ≤ 1. When the user asked for leverage, say the gross exposure in plain words before building (「總曝險 1.5 倍：每 100 元本金持有 150 元部位」) and build it; the runner's `sum above 1 … that is leverage` warning is then expected — repeat the number when you report the backtest. Gross above 1 nobody asked for (tied ranks) is a bug: fix the weights.
 
 ### Weight Matrix Pattern
 

@@ -1129,8 +1129,9 @@ def tw_close_brief(date=None, headers=None, lookback_days=45, extra=None, fresh=
     `pack.skip` is set (and `publish` writes nothing) when `date` is not a trading day per
     `lib.data.is_tw_trading_day`, or when the index has no close for `date` yet (not landed,
     or an ad-hoc closure the holiday table does not list); the reason names the last
-    trading day. No sector breakdown: lib has no per-industry daily series, and building
-    one means a close fetch for every listed stock."""
+    trading day. 漲跌家數 and a per-industry breakdown are not blocks of this template; on the
+    desktop `lib.data.fetch_tw_breadth_public` / `fetch_tw_sector_breadth` answer them in chat
+    (上市 only, finished session)."""
     return build(_recipe("tw_close_brief", lookback_days=lookback_days), date, headers, extra, fresh)
 
 
@@ -1331,18 +1332,24 @@ def _check_read_form(body):
                      "整段散文不算:讀者是靠標題與條列找東西的 — references/reports.md §1b")
 
 
-# One sentence per BLAVE_DATA_ACCESS_WHY (shell/main.js dataAccessWhy): `unknown` covers a signed-in
-# account whose status could not be read this turn — likely already carded, so it is not told to
-# add one; the default (no reason given) is that neutral sentence too.
+# One sentence per BLAVE_DATA_ACCESS_WHY (shell/main.js dataAccessWhy); no_plan / plan_failed are
+# the plan-billing pair. `unknown` covers a signed-in account whose status could not be read this
+# turn — likely already carded, so it is not told to add one; the default (no reason given) is that
+# neutral sentence too.
 _MISSING_FOOT = {
     "zh": ("這份沒有 Blave 資料({names})。", {
         "signed_out": "登入 Blave、綁卡送 14 天資料後可以補上。",
         "no_card": "綁卡送 14 天資料後可以補上。",
-        "no_balance": "儲值後可以補上。"}, "這一輪讀不到資料狀態,下次有 Blave 資料時可以補上。"),
+        "no_balance": "儲值後可以補上。",
+        "no_plan": "目前的方案不含 Blave 資料，到設定 › 帳號與方案開通方案後可以補上。",
+        "plan_failed": "方案扣款沒成功，到設定 › 帳號與方案重新付款後可以補上。"},
+        "這一輪讀不到資料狀態,下次有 Blave 資料時可以補上。"),
     "en": ("No Blave data in this report ({names}). ", {
         "signed_out": "Sign in to Blave and add a card for 14 days of data to fill it in.",
         "no_card": "Adding a card starts 14 days of data that fills it in.",
-        "no_balance": "Topping up the balance fills it in."},
+        "no_balance": "Topping up the balance fills it in.",
+        "no_plan": "The current plan does not include Blave data; starting one under Settings › Account & plan fills it in.",
+        "plan_failed": "The plan payment did not go through; paying again under Settings › Account & plan fills it in."},
         "The data status could not be read this turn; the next run with Blave data fills it in."),
 }
 

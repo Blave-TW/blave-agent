@@ -157,8 +157,8 @@ app.whenReady().then(async () => {
     const back = stat(), backFoot = tile();
     return { held, heldFoot, afterTurn, back, backFoot, userOp: t("br.userOp"), hb: t("br.handback.done"), user: BR.tabs.get("h1").user, hbHeld, hbCollapsed, hbBack: hbIn() };
   })()`);
-  ok("自動交還(handback auto: true):接手時頁首寫「你在操作」+實心鈕「好了，交還 agent」,回合結束後還在;事件一到兩個都消失、格子的訊息槽也不再寫「你在操作」",
-    r6.held.text.includes(r6.userOp) && r6.held.btn === r6.hb && r6.held.fill && r6.heldFoot === r6.userOp && r6.afterTurn.btn === r6.hb
+  ok("自動交還(handback auto: true):接手時頁首只寫「你在操作」、不放鈕(0.1.20 A 案:交還鈕在請求卡與聊天列),回合結束後還在;事件一到狀態句消失、格子的訊息槽也不再寫「你在操作」",
+    r6.held.text.includes(r6.userOp) && r6.held.btn === "" && !r6.held.fill && r6.heldFoot === r6.userOp && r6.afterTurn.text.includes(r6.userOp) && r6.afterTurn.btn === ""
     && !r6.back.text.includes(r6.userOp) && r6.back.btn === "" && r6.backFoot !== r6.userOp && r6.user === false);
   ok("聊天那一列的交還鈕(.pt-hb):接手時有一顆、中欄收起也還在,每一顆都在它那一列的框內、點得到(中心打到鈕,不是被藏或被列蓋住);交還之後拿掉",
     r6.hbHeld.length === 1 && r6.hbCollapsed.length === 1 && r6.hbHeld.concat(r6.hbCollapsed).every((h) => h.id === "h1" && h.inside && h.hit) && r6.hbBack.length === 0, JSON.stringify([r6.hbHeld, r6.hbCollapsed, r6.hbBack]));

@@ -162,7 +162,7 @@ schtasks /create /tn "blaveclaw-strategy-<name>" /tr "cmd /c cd /d %BLAVE_AGENT_
 
 ## Type B (Everything else) — mandatory flow:
 Cloud machines only — on the desktop app a Type B strategy is never scheduled (*Desktop app* above).
-Type B strategies (screener, grid, arbitrage, one-off execution, alert bot) have no `INTERVAL`/`fetch_data` contract to poll a bar against, so they do NOT go through `wait_for_bar.py` — they keep a plain fixed-cadence schedule, same as before this mechanism existed.
+Type B strategies (screener, grid, arbitrage, a rule-driven execution script, alert bot) have no `INTERVAL`/`fetch_data` contract to poll a bar against, so they do NOT go through `wait_for_bar.py` — they keep a plain fixed-cadence schedule, same as before this mechanism existed.
 1. Skip backtest entirely
 2. Ask the user to confirm before deploying: "Do you want to deploy this live? Reply YES to confirm."
 3. After YES, ask **Spot or futures/perpetual?** and **Align positions?** (same as Type A step 3) before writing any code.

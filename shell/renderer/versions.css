@@ -93,7 +93,7 @@
 }
 
 /* ---- §5 比較框(640;scrim 在 .app 外,mono 自己帶) ---- */
-.vc-modal .mono, .vc-tbl td, .vc-diff { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.vc-modal .mono, .vc-tbl td, .vc-diff { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .vc-body { gap: 0; }
 .vc-pick { display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; }
 .vc-pick .set-selw { flex: 0 1 220px; margin-left: 0; }

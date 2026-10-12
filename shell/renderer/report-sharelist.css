@@ -5,7 +5,7 @@
    ========================================================================= */
 .shl-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); margin-bottom: var(--space-4); }
 .shl-count { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.shl-count .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.shl-count .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .shl-count .n, .shl-count b { font-weight: 500; color: var(--ink-2); }
 .shl-rows { margin: 0; padding: 0; list-style: none; }
 .shl-row { display: flex; align-items: center; gap: var(--space-12); padding: var(--space-12) 0; border-top: 1px solid var(--border-hairline); }
@@ -16,7 +16,7 @@
 button.shl-name { transition: color var(--motion-fast) var(--ease-standard); }
 button.shl-name:hover { text-decoration: underline; text-underline-offset: 3px; color: var(--ink-2); }
 .shl-sub { margin-top: var(--space-2); font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shl-sub .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.shl-sub .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 /* 必須被讀到的次要字升一階(canon › Neutrals 註) */
 .shl-gone { margin-top: var(--space-2); font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .shl-acts { flex: none; display: flex; align-items: center; gap: var(--space-12); }

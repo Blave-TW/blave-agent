@@ -1,5 +1,5 @@
 // 報告區的 news block 與 footnote 出處連結(契約 report-blocks 1.4;spec-report-blocks-recipes §4.3 / §4.4;web report_blocks.js 已上線那份)。
-//   ① 靜態:news / 外部連結那段與 web 逐字同一份;字串 zh / en 同 web 的 workspace_report_news_*;tokens.css 有 --tag-neutral-*;
+//   ① 靜態:news / 外部連結那段、footnote 出處、BLOCKS.kpi_row 與 proseShapes 與 web 逐字同一份;字串 zh / en 同 web 的 workspace_report_news_*;tokens.css 有 --tag-neutral-*;
 //      報告區攔 a.rb-xlink 交 openExternal;埋點只在讀本機報告時送。
 //   ② 用隨包的 Electron 開真的 index.html:api/tests/fixtures/report_news.json 畫出來(三則、標籤、原文行、來源行、「、」分隔、網域不斷行、
 //      尾註只網域是連結)→ 點連結走 openExternal、不導覽 → 惡意 url 全部退成純文字 → 1.3 報告跟改動前的渲染器 outerHTML 逐字相同 → 埋點。
@@ -24,9 +24,12 @@ if (!process.versions.electron) {
   if (!fs.existsSync(WEB_RB)) console.log("SKIP  ① 與 web 逐字比對(需要 monorepo 版面)");
   else {
     const web = read(WEB_RB), A = "  // 外部連結(契約 §2,1.4 起)", B = "  BLOCKS.code = function (b) {";
-    const F1 = '      var cell = monoShapes(el("span"), str(it.text));', F2 = "      row.setAttribute(\"aria-label\", ctx.i18n.footnoteRef";
+    const F1 = '      var cell = proseShapes(el("span"), str(it.text), ctx);', F2 = "      row.setAttribute(\"aria-label\", ctx.i18n.footnoteRef";
     ok("① safeUrl / linkTo / hostOf / extLink / BLOCKS.news(含 published_at_precision)與 web 逐字同一份", !!cut(rb, A, B) && cut(rb, A, B) === cut(web, A, B) && /published_at_precision === "day" \? fmtDay\(/.test(cut(rb, A, B)));
     ok("① footnote 的出處連結與 web 逐字同一份", !!cut(rb, F1, F2) && cut(rb, F1, F2) === cut(web, F1, F2));
+    // 研究報告公開分享 B 案(web 926058e3):kpi_row 的 delta 走 proseShapes、公開頁值含漢字整格 sans;電腦版永遠不是公開頁,行為不變、碼要同一份
+    const KA = "  BLOCKS.kpi_row = function", KB = "  BLOCKS.line_chart = function", PA = "  var NUMERIC_RUN = ", PB = "  // ------------------------------------------------------- markdown 子集";
+    ok("① BLOCKS.kpi_row 與 proseShapes(含 NUMERIC_RUN)與 web 逐字同一份", !!cut(rb, KA, KB) && cut(rb, KA, KB) === cut(web, KA, KB) && !!cut(rb, PA, PB) && cut(rb, PA, PB) === cut(web, PA, PB) && /HAS_CJK\.test\(str\(it\.value\)\)/.test(cut(rb, KA, KB)));
     ok("① makeCtx 的 ugc / listSep、DEFAULT_I18N 三個 news key、VISUAL.news 與 web 同", ['      ugc: opts.ugc === true,', '      listSep: /^(zh|ja|cn)\\b/i.test(document.documentElement.lang) ? "、" : ", ",', '    newsPos: "Positive News",', '    newsNeg: "Negative News",', '    newsNeutral: "Neutral",', "    news: 1,"].every((l) => rb.includes(l) && web.includes(l)));
   }
   const WEB_STR = { zh: { newsPos: "正面消息", newsNeg: "負面消息", newsNeutral: "中性" }, en: { newsPos: "Positive News", newsNeg: "Negative News", newsNeutral: "Neutral" } };   // web messages.po 的 workspace_report_news_*
@@ -150,8 +153,10 @@ app.whenReady().then(async () => {
   if (process.env.RB_BASE) {
     const docs = [WEEKLY, MCPT].concat(MORNING ? [MORNING] : []);
     // 量容器寬的圖(candlestick / bar)在 ResizeObserver 的下一幀才畫:兩邊都掛上、等畫完再比
+    // 預期的差異(ce300ee,小字抬到 11px):圖內字寬估算 10 / 6 → 11 / 6.6,量寬的 K 線圖 y 軸欄位跟著變寬、每根 K 棒 x 都位移——舊渲染器套新字寬再畫,其餘不動
+    const baseSrc = read(process.env.RB_BASE).replace("FULL_WIDTH.test(text.charAt(i)) ? 10 : 6;", "FULL_WIDTH.test(text.charAt(i)) ? 11 : 6.6;");
     const same = await js(`(async () => { const fake = { NodeFilter: window.NodeFilter, console: window.console, ResizeObserver: window.ResizeObserver, requestAnimationFrame: window.requestAnimationFrame.bind(window), matchMedia: window.matchMedia.bind(window) };   // 渲染器讀的 global.* 全列(沒有 marked / DOMPurify:外殼走 opts.markdown)
-      (function (window) { ${read(process.env.RB_BASE)} })(fake);
+      (function (window) { ${baseSrc} })(fake);
       const docs = ${JSON.stringify(docs)}, opts = { apiBase: "", i18n: rptI18n("local"), imageUrl: () => "", markdown: rptMarkdown }, read = document.getElementById("rpt-read"), out = [];
       for (const rep of docs) {
         const ha = document.createElement("div"), hb = document.createElement("div"); read.append(ha, hb);
@@ -159,13 +164,17 @@ app.whenReady().then(async () => {
         for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
         // 唯一預期的差異:圖例末值改成新規則(去尾零、只有座標含零或跨零才標 +;spec-turn-status-summary ④ 同批)
         // 預期的差異(同批設計稽核 B4/B5):KPI 有 delta 時色從值移到 delta、顯示負號統一 U+2212——兩邊都抹平再比
-        const norm = (h) => h.replace(/ rb-(?:up|dn)(?=")/g, "").split("\u2212").join("-");
-        const a = norm(ha.innerHTML.split("+914.20 萬張").join("914.2 萬張")), b = norm(hb.innerHTML); ha.remove(); hb.remove();
+        // 預期的差異(B 案報告搬運,WM_ROW 14;位置由 tests/check_shell_report_wm_row.js 釘住):有署名列的 svg 實高 +14(散布圖同批 240 → 220 再 +14,淨 −6)、
+        // .rb-wm 從圖角搬到署名列(x / y 都變)——舊側的 viewBox 高補上去才比(差一定剛好這個數),.rb-wm 的 x / y 兩邊都抹;繪圖區座標不得有差
+        // (chartSize 扣 14 只在看盤板,opts 不帶 chartSize 走不到;量寬的圖 H 固定 210,只有實高變)
+        const norm = (h) => h.replace(/ rb-(?:up|dn)(?=")/g, "").split("\u2212").join("-").replace(/(<text class="rb-wm" text-anchor="end") x="[0-9]+" y="[0-9]+"/g, "$1");
+        const wmRow = (h) => h.replace(/<svg class="rb-chart" viewBox="0 0 ([0-9]+) ([0-9]+)"([^]*?)<\\/svg>/g, (m, w, hh, rest) => (rest.includes('class="rb-wm"') ? '<svg class="rb-chart" viewBox="0 0 ' + w + ' ' + (+hh + 14 - (rest.includes('class="rb-pt1"') ? 20 : 0)) + '"' + rest + '</svg>' : m));
+        const a = norm(wmRow(ha.innerHTML.split("+914.20 萬張").join("914.2 萬張"))), b = norm(hb.innerHTML); ha.remove(); hb.remove();
         let i = 0; while (i < a.length && a[i] === b[i]) i++;
         out.push({ id: rep.id, len: a.length, svg: (a.match(/<svg/g) || []).length, same: a === b, diff: a === b ? "" : a.slice(i - 60, i + 100) + " ≠ " + b.slice(i - 60, i + 100) });
       }
       return out; })()`);
-    ok("② 舊版報告零變化:weekly / mcpt(1.3)、morning(1.2)用改動前(" + BASE_REV + ")與現在的渲染器畫,outerHTML 逐字相同(圖例末值新格式、KPI 色移到 delta、負號 U+2212 除外)", same.length === docs.length && same.every((x) => x.same && x.len > 1000 && x.svg > 0), JSON.stringify(same));
+    ok("② 舊版報告零變化:weekly / mcpt(1.3)、morning(1.2)用改動前(" + BASE_REV + ")與現在的渲染器畫,outerHTML 逐字相同(圖例末值新格式、KPI 色移到 delta、負號 U+2212、WM 列實高與 .rb-wm 位置、11px 字寬除外)", same.length === docs.length && same.every((x) => x.same && x.len > 1000 && x.svg > 0), JSON.stringify(same));
   }
 
   console.log(red ? `\n② ${red} 紅` : "\n② ALL PASS");

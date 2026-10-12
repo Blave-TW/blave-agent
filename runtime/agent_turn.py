@@ -228,6 +228,21 @@ def extract_suggestions(text):
     return cleaned.rstrip(), items
 
 
+# ── 等你回覆(awaiting)────────────────────────────────────────────────────────
+# 模型依 _SUGGEST_RULE 在回覆尾端自成一行寫 <await/>,宣告「要用戶回答才能繼續」(澄清問題、
+# 編號選項)。這是模型自己宣告的訊號,可能漏標或亂標;runtime 只負責剝乾淨並在 done chunk 帶
+# `awaiting`,不判讀文字。每個會輸出模型最終文字的 sink 都要剝(tests/check_await_marker.py 列舉)。
+_AWAIT_RE = re.compile(r"[ \t]*</?await\b[^<>]*>[ \t]*\n?")
+
+
+def extract_await(text):
+    """回傳 (清理後文字, 是否等用戶回覆)。所有 <await/> 形式的標記(含 <await>、</await>)都剝掉。"""
+    if not text or "<await" not in text:
+        return text, False
+    cleaned = _AWAIT_RE.sub("", text)
+    return cleaned.rstrip(), cleaned != text
+
+
 # ── 轉出策略程式碼(export)──────────────────────────────────────────────────
 # 工作頁的「轉出 XQ / MultiCharts / TradingView」走一般聊天回合:agent 依
 # references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 把轉好的檔存到
@@ -2032,6 +2047,12 @@ _SUGGEST_RULE = (
     "用戶**明確拒絕**過的建議（「不要」「先不上」），同一階段不要重提；只是沒點、沒回應"
     "不算拒絕——到下一個里程碑（回測重跑、換一支策略、回頭再問）可以再提，"
     "但連續兩輪不要貼一模一樣的句子（換角度或換動詞，例如「上模擬盤」→「先綁模擬盤帳戶」）。\n"
+    # 等你回覆(web／電腦版的對話清單用):跟 <suggest> 同一節、同在 prompt 最尾端——弱模型只守尾端的規則。
+    "**等用戶回覆的標記**：這一輪收尾時，要用戶回答你才能繼續——你問了澄清問題、列出編號選項或方案"
+    "要用戶選一個、需要只有用戶知道的資訊——就在正文最後自成一行寫 `<await/>`"
+    "（有 `<export … />` 時放在它後面；有 <suggest> 區塊時放在區塊的前一行，<suggest> 仍是最後）。"
+    "只是回報結果、交代做了什麼、附 <suggest> 建議（建議列不算等回覆）、純聊天 → 不寫。"
+    "標記本身不解釋、不提。\n"
     # 0.1.8 e2e:改完報告標題的回覆後面多了「これ以上の提案は不要 — 純修改，不附建議。」與一行為那句日文道歉
     "**沒有要提議時，正文最後一句寫完就結束，後面什麼都不加**：不寫「沒有建議」「不附建議」"
     "「這次只是修改」這類交代，不說明為什麼沒有 <suggest>，不提這一節的規則。"
@@ -2279,6 +2300,7 @@ class TelegramSink:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         # TG 面沒有建議列規則,但防禦性剝除(模型偶發混淆時 raw 標記不能露出)。
         cleaned, _ = extract_suggestions(cleaned)
+        cleaned, _ = extract_await(cleaned)
         cleaned = _EXPORT_STRIP_RE.sub("", cleaned)
         cleaned = _NAV_STRIP_RE.sub("", cleaned)
         self.chunk_text = cleaned
@@ -2698,7 +2720,8 @@ _BROWSER_SILENT = {"browser_wait", "browser_tabs", "browser_back", "browser_clos
 _BROWSER_READ = {"browser_read", "browser_get", "browser_snapshot", "browser_screenshot", "browser_capture",
                  "browser_scroll"}
 _BROWSER_ACT = {"browser_click", "browser_fill", "browser_type", "browser_press"}
-_STRATEGY_DIR_RE = re.compile(r"(?:^|[\s/'\"=])strategies/([^/\s'\"]+)/")
+# 結尾的斜線可省(`lib/param_scan.py strategies/x` 這樣寫的受詞也要抓得到)
+_STRATEGY_DIR_RE = re.compile(r"(?:^|[\s/'\"=])strategies/([^/\s'\"]+)(?:/|(?=[\s'\"]|$))")
 _TICKER_RE = re.compile(r"^[A-Z0-9._-]{2,20}$")
 # 內容掃描(依優先序)。下單只認**呼叫**:lib/order_*.py 裡也有 get_order／confirm_order／
 # get_contract_rules 這些查詢,光看路徑會謊報「正在下單」。
@@ -2712,6 +2735,9 @@ _KIND_SCAN = (
                           r"|\bopen\([^)\n]*reports/[^)\n]*,\s*['\"][wax]")),
     ("scan", re.compile(r"scan_grid\(|find_plateau\(")),
     ("validate", re.compile(r"run_walk_forward\(|\bmcpt\(")),
+    # 包一層的回測(`python3 tmp/bt.py` 裡 subprocess 跑 strategies/x/strategy.py、python -c／heredoc 同理):
+    # 只在 python 在執行東西時才算(_bash_kind 的 pyrun),`cp a/strategy.py b/` 這類檔案操作不是回測
+    ("backtest", re.compile(r"strategies/([^/\s'\"]+)/strategy\.py")),
     ("schedule", re.compile(r"register_schedule\(|remove_schedule\(|\bcrontab\b|\bschtasks\b")),
     ("data", re.compile(r"\bfetch_\w+\(|from lib\.data import|\bfrom\s+lib\s+import\b[^\n;]*\bdata\b[\s\S]*?\bdata\.\w+\(")),
     ("account", re.compile(r"lib\.order_|lib/order_|lib\.account_")),
@@ -2873,6 +2899,22 @@ def _executed_script(head_full, args, workspace):
     return "", []
 
 
+_MODE_IN_TEXT_RE = re.compile(r"BLAVE_MODE\W{1,8}(backtest|live)\b")
+
+
+def _mode_in_text(text):
+    """包一層的腳本自己設的 BLAVE_MODE(`os.environ["BLAVE_MODE"] = "backtest"`、`env={"BLAVE_MODE": "live"}`)。"""
+    m = _MODE_IN_TEXT_RE.search(text)
+    return m.group(1) if m else ""
+
+
+def _strategy_run_kind(strat, mode, trading, remote):
+    """跑 strategies/<strat>/strategy.py 是回測還是實盤 tick:BLAVE_MODE 說了算,沒說就看下單設定
+    (遠端機器的下單設定本機不知道 → 回測)。live_tick 是自己一種(「跑策略」),從不併進 backtest。"""
+    mode = mode or ""
+    live = mode == "live" or (mode != "backtest" and not remote and strat in trading)
+    return ("live_tick" if live else "backtest"), _kind_obj(strat)
+
 def _redirects_to_file(args):
     """參數裡有 `> 檔`／`>> 檔`(`2>/dev/null`、`>&2` 不算;引號裡的 `>` shlex 已併進別的字,不會單獨出現)。"""
     for i, a in enumerate(args):
@@ -2947,10 +2989,10 @@ def _bash_kind(cmd, workspace, trading, remote=False):
         m = re.match(r"strategies/([^/]+)/strategy\.py$", path)
         if m or (path == "lib/runner.py" and named):
             strat = (m or named).group(1)
-            mode = env.get("BLAVE_MODE") or env_all.get("BLAVE_MODE") or ""
-            live = mode == "live" or (mode != "backtest" and not remote and strat in trading)
-            return ("live_tick" if live else "backtest"), _kind_obj(strat)
+            return _strategy_run_kind(strat, env.get("BLAVE_MODE") or env_all.get("BLAVE_MODE"), trading, remote)
         obj = _kind_obj(named.group(1)) if named else ""
+        if path == "manager/management_backtest.py":
+            return "backtest", ""   # 組合回測(Type C 管理):沒有單一策略受詞
         if re.match(r"manager/(?:close_symbol|flatten|close_all)\.py$", path) or (
                 path == "manager/stop_strategy.py" and "--flatten" in sargs):
             return "order", ""   # 平倉(stop_strategy 只有帶 --flatten 才平倉):路徑先判,不讓腳本裡的 crontab 字樣改判
@@ -2998,8 +3040,15 @@ def _bash_kind(cmd, workspace, trading, remote=False):
     inline = any((os.path.basename(h).startswith("python") or os.path.basename(h) in _INTERP_HEADS)
                  and (any(a in _INLINE_CODE_FLAGS for a in args) or "<<" in shell) for h, args, _e in segs)
     inspect_only = inline and bool(_INSPECT_RE.search(text))
+    pyrun = any(h.startswith("python") or h in ("uv", "bash", "sh", "zsh") for h in heads)
     # C. 內容掃描(看 fetch_kline 的簽名不是在抓:inline 程式帶 inspect 字樣時 data 改判 docs;order／report 照樣優先)
     for kind, rx in () if reader_only else _KIND_SCAN:
+        if kind == "backtest":
+            hit = rx.search(text) if pyrun else None
+            if hit:
+                mode = env_all.get("BLAVE_MODE") or _mode_in_text(text)
+                return _strategy_run_kind(hit.group(1), mode, trading, remote)
+            continue
         if rx.search(text):
             if kind == "data" and inspect_only:
                 return "docs", ""
@@ -3161,6 +3210,7 @@ class WebSink:
         self._tool_t0 = {}
         self._trading = None  # 下單設定裡的策略名(_trading_names),第一個工具呼叫時讀
         self._last_bash = None  # 這一輪上一個 Bash 指令的 (kind, kind_obj):等它的輸出(TaskOutput)時狀態列照它講
+        self._kinds = {}  # 這一輪每種 kind 的步數,done chunk 帶出去(只有分類計數,沒有內容):量 unknown 的比例用
         self._nav_fired = False  # ui_nav 一回合最多一次(旁白段誤觸發會退還,見 on_tool)
         self._nav_fired_seg = -1  # 送出 ui_nav 時的 _seg_start
         # 逐 token 的文字要先攢起來再送。實測 deepseek 一段回覆吐 ~68 delta/秒,
@@ -3290,6 +3340,7 @@ class WebSink:
         elif name == "TaskOutput":
             kind, kind_obj = self._last_bash or ("unknown", "")
         chunk["kind"] = kind
+        self._kinds[kind] = self._kinds.get(kind, 0) + 1
         if kind_obj:
             chunk["kind_obj"] = kind_obj
         if kind_tab:
@@ -3377,6 +3428,7 @@ class WebSink:
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         cleaned, suggestions = extract_suggestions(cleaned)
+        cleaned, awaiting = extract_await(cleaned)
         marked = "<export" in cleaned
         cleaned, exports = extract_exports(cleaned, note=getattr(self, "export_fail_note", None))
         if not marked:
@@ -3391,7 +3443,9 @@ class WebSink:
                 self._send(chunk)
         if suggestions and not self.interrupted:
             self._send({"type": "suggestions", "items": suggestions})
-        self._send({"type": "done"})
+        # awaiting:被 Stop 截斷的回合不算(半途的標記不可信)。欄位契約:references/turn-events.md。
+        self._send({"type": "done", "awaiting": bool(awaiting and not self.interrupted),
+                    "kinds": dict(self._kinds)})
         return self.full_text
 
 
@@ -3884,6 +3938,9 @@ DATA_ACCESS_WHY = {
     "signed_out": "the user is not signed in to Blave in this app",
     "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
     "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
+    # 方案制(api MONTHLY_BILLING_FROM 之後):沒有按小時買資料,資料只在雲端方案／API 方案裡
+    "no_plan": "the user is signed in; the account has no plan that includes Blave data (a Blave Agent cloud plan or an API plan)",
+    "plan_failed": "the user is signed in; the account's plan payment failed, so data is paused until it is paid",
     "unknown": "the user is signed in; the account status could not be read this turn",
 }
 
@@ -4039,13 +4096,14 @@ def browser_rule(mounted, web=None):
 def data_access_rule():
     """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
     是哪一種。三態:
-      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權,
-             但**會計費**:不含在試用／主機／API 方案裡就按小時收(api `decorators.py` 的
-             `blave_data_included` → `deduct_blave_api_credit`),扣不到才 403 `ERR007`。
+      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權。
+             不含在試用／雲端方案或主機／API 方案裡時:api 切換到方案制之前按小時收(`deduct_blave_api_credit`),
+             扣不到才 403 `ERR007`;切換之後沒有按小時買,直接 403 `ERR007`(body 指雲端方案與 API 方案)。
+             這段兩種都要講對:機隊與電腦版不會在同一刻換版。
              所以這段講的是 `ERR007` / `ERR005`(key 被撤)/ `KEY_SCOPE`(越權)。
-      `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(account_status 的 data_access = none),
-             或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY 說是哪一種
-             (`signed_out` / `no_card` / `no_balance` / `unknown`):少了它,模型對登入著、只是餘額
+      `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(data_access = none),或方案制下沒有方案／方案扣款失敗
+             (plan_required / payment_failed),或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY
+             說是哪一種(`signed_out` / `no_card` / `no_balance` / `no_plan` / `plan_failed` / `unknown`):少了它,模型對登入著、只是餘額
              不夠的人也回「要先登入」(2026-09-24 真機)。舊外殼不帶 → 原文不變。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
              的預設敘述走,system prompt 一個字都不變。
@@ -4062,18 +4120,19 @@ def data_access_rule():
             "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
             "reads you write yourself, in the language the per-turn language directive names; "
             "do not copy, translate or adapt phrasing from this block or from an error body.\n"
-            "Billing: data on this key is free while the card trial is running, or when the "
-            "account has a Blave Agent cloud machine (including one still being set up) or an "
-            "API plan. Otherwise it is charged per clock hour in which any data call is made — "
-            "not per call. A successful call can therefore cost the user money: fetch only what "
-            "this turn needs and never poll.\n"
+            "Billing: data on this key is included while the card trial is running, or when the "
+            "account has a Blave Agent cloud plan or machine (including one still being set up) or "
+            "an API plan. Otherwise it depends on the account's billing: either it is charged per "
+            "clock hour in which any data call is made — not per call — so a successful call can "
+            "therefore cost the user money, or (plan billing) there is no data until a cloud plan or "
+            "an API plan is started. Fetch only what this turn needs and never poll.\n"
             "Three different 403s:\n"
-            "- `ERR007` — that hourly fee could not be charged. The body carries the current "
-            "rate, a `retry_after` that is a ceiling rather than a wait (a top-up lifts the "
-            "block at once), and links for topping up, an API plan and starting a machine. "
-            "Convey why the data stopped, that the fee is hourly rather than per call, and the "
-            "ways out the body names; never state a rate, currency or deadline the body did not "
-            "give you. Do not work around the block.\n"
+            "- `ERR007` — the account has no data access right now: either the hourly data fee "
+            "could not be charged, or (plan billing) the account has no plan that includes data. "
+            "The body's message and `next_steps` say which and name the ways out (topping up, a "
+            "cloud plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
+            "wait. Convey why the data stopped and the ways out the body names; never state a "
+            "rate, currency or deadline the body did not give you. Do not work around the block.\n"
             "- `ERR005` (`Invalid API key`) — this key was deleted or revoked. The way back is "
             "signing in to Blave again in the app; do not go looking for another key.\n"
             "- `KEY_SCOPE` — the action is outside this key's scope. This desktop key is "
@@ -4097,9 +4156,10 @@ def data_access_rule():
             + (f" — {why}" if why else "")
             + ". Access comes with signing in "
             "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex): free "
-            "while the card trial is active or when the account owns a Blave Agent cloud machine or "
-            "an API plan, and otherwise charged per clock hour of use, which needs a balance that "
-            "covers that hour. The Blave-only datasets, which stop that way: holder concentration, "
+            "while the card trial is active or when the account has a Blave Agent cloud plan or cloud "
+            "machine or an API plan; otherwise, depending on the account's billing, either charged per clock "
+            "hour of use, which needs a balance that covers that hour, or (plan billing) not available "
+            "until a cloud plan or an API plan is started. The Blave-only datasets, which stop that way: holder concentration, "
             "whale hunter, taker intensity, liquidation, Taiwan chip / institutional / futures data "
             "and the rest of the Blave indicators. Public data still works: crypto klines "
             "(`fetch_kline`, Binance public endpoints) and the key-free public fetchers; single-ticker "
@@ -4111,8 +4171,9 @@ def data_access_rule():
             "for a dataset, make the call — it stops at once if it needs Blave data.\n"
             "Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, "
             "your reply must: name which data is "
-            "missing; give the conditions under which it becomes available (signed in, with a "
-            "balance that covers the hourly data fee, or the card trial, or a cloud machine); carry "
+            "missing; give the conditions under which it becomes available (signed in, plus the card "
+            "trial, a cloud plan or an API plan — or, where the account is still billed by the hour, a "
+            "balance that covers the hourly data fee); carry "
             "no directions, next steps or prices; not push; and then answer "
             "whatever part public data does allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"
