@@ -12,6 +12,12 @@ msgstr "Use Blave AI"
 msgid "cn.blave.desc"
 msgstr "First card adds 100 TWD of AI credit, then pay per use"
 
+msgid "cn.h.free"
+msgstr "Start with Blave AI"
+
+msgid "cn.blave.descFree"
+msgstr "Sign in for {q} TWD of AI credit; you only need a card once it runs out"
+
 # 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到贈額數字時用這句
 msgid "cn.blave.descSet"
 msgstr "First card adds {q} TWD of AI credit"
@@ -878,6 +884,18 @@ msgstr "Credit is in. You can send again."
 msgid "fault.needCard"
 msgstr "Blave AI needs a card on file, so this turn didn’t run."
 
+msgid "acct.freeUp"
+msgstr "Your {q} TWD of AI credit is used up."
+
+msgid "acct.freeUpNoNum"
+msgstr "Your AI credit is used up."
+
+msgid "fault.freeUp"
+msgstr "Your {q} TWD of AI credit is used up, so this turn didn’t finish."
+
+msgid "fault.freeUpNoNum"
+msgstr "Your AI credit is used up, so this turn didn’t finish."
+
 msgid "fault.checking"
 msgstr "This turn didn’t run — checking your account."
 
@@ -901,6 +919,9 @@ msgstr "Blave balance"
 
 msgid "plan.balNa"
 msgstr "Balance unavailable right now"
+
+msgid "plan.free"
+msgstr "AI credit"
 
 msgid "plan.month"
 msgstr "{p} TWD / month"

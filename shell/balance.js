@@ -1,7 +1,7 @@
 /* 這個帳號自己的 Blave 餘額(TWD):POST /oauth/desktop/balance,body 帶帳號 token + app_secret(同 /plan/start)。
    只在主行程打:兩顆憑證不進 renderer、不進 agent 的環境。帳號狀態(account_status)刻意不回餘額——那支只憑帳號 token
    就打得到,而策略碼讀得到那顆 token。
-   回 { balance: 數字(可能是負的), trial: 數字 | null } 或 null(讀不到)。**非 200 一律 null**(401 舊登入 / 429 / 503 /
+   回 { balance: 數字(可能是負的), trial: 數字 | null, free: 數字 | null } 或 null(讀不到);free = 綁卡前的 AI 額度剩多少,沒領過是 null。**非 200 一律 null**(401 舊登入 / 429 / 503 /
    api 還沒部署的 404 / 連不上 / 欄位不是數字):畫面畫「—」,不把讀不到畫成 0(那會被讀成「這個人沒錢」)。
    節流:HOLD_MS 內重複讀用上一次的答案(讀不到也算一次答案——429 之後馬上再打只會再吃一次 429);api 是每帳號每分鐘 20 次。
    不寫檔、不 log。登出 / 換帳號由 main.js 呼叫 reset()。 */
@@ -13,7 +13,7 @@ const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 function interpret(r) {
   const b = r && r.status === 200 && r.body && typeof r.body === "object" ? r.body : null;
   if (!b || num(b.balance) === null) return null;
-  return { balance: b.balance, trial: num(b.trial_ai_credit_left) };
+  return { balance: b.balance, trial: num(b.trial_ai_credit_left), free: num(b.free_ai_credit_left) };
 }
 
 function createBalance({ apiBase, post, getCreds, now }) {

@@ -30,8 +30,9 @@ const EVENTS = {
   trade_started: { venue_kind: ["paper", "real"] },
   cloud_started: null,
   // 0.1.9 補「卡在哪一步」(研究 desktop-usage-2026-09-29 §5):屬性一律列舉,語意見 canon 登記表
-  acct_card_shown: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
-  acct_card_click: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
+  // *_free(0.1.22):綁卡前 30 TWD 額度用完、還沒綁卡時那組字(spec desktop-precard-credit §5.4);api 端同一份、同順序
+  acct_card_shown: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit", "pre_free", "turn_free"] },
+  acct_card_click: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit", "pre_free", "turn_free"] },
   acct_card_back: { state: ["ready", "no_card", "no_credit"] },
   turn_failed: { reason: ["402", "403", "429", "engine_missing", "other", "cap"] },   // cap = 自帶 API 金鑰撞到這一輪的用量上限(0.1.16)
   connect_failed: { kind: ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local",
