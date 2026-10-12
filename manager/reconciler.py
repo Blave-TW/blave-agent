@@ -535,6 +535,10 @@ class PresidentCacheLagError(CapitalCacheLagError):
 # other roots are untouched.
 PENDING_SENT_PATH = 'state/president_pending_sent.json'
 PENDING_SENT_MAX_READS = 3
+# roots whose close leg this round was skipped (snapshot not caught up): a flip's
+# entry leg must not open the other side on top of the still-open position. Cleared
+# by _next_round().
+_closes_deferred = set()
 
 
 class PendingUnreadable(RuntimeError):
@@ -607,16 +611,20 @@ def _president_park_unfilled(sym, leg, requested, net_before):
         return
     row = pending.get(pid) or {'root': sym, 'productid': pid, 'lots': 0.0,
                               'net_expected': float(net_before), 'legs': [], 'reads': []}
+    rebased = bool(row.pop('halted', None))
+    if rebased:
+        # the old baseline is the one three snapshots already failed to explain: the
+        # new leg is matched from this snapshot's net, the old lots stay in `legs` only
+        row.update(lots=0.0, net_expected=float(net_before))
     row['net_expected'] += filled
     row['lots'] += unfilled
     row['reads'] = []
-    row.pop('halted', None)
     row['legs'].append({'at': time.time(), 'lots': unfilled, 'status': leg.get('status'),
                         'ack': leg.get('ack'), 'seq': leg.get('seq'), 'orderno': leg.get('orderno')})
     pending[pid] = row
     _save_pending_sent(pending)
     guard.audit('order_unfilled_parked', venue=venue_traits.PRESIDENT, symbol=sym, contract=pid,
-                lots=unfilled, status=leg.get('status'), orderno=leg.get('orderno'))
+                lots=unfilled, status=leg.get('status'), orderno=leg.get('orderno'), rebased=rebased)
     logging.warning(f"[reconciler/president] {pid}: {unfilled:+g} lots reported no fill in time — "
                     f"parked; no {sym} entry until a snapshot claims it")
 
@@ -743,6 +751,10 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
     if not reduce_only:
         if guard.halted():
             return False
+        if sym in _closes_deferred:
+            logging.warning(f"[reconciler/president] {sym}: entry of {lots} waits — this round's close "
+                            f"of {sym} was deferred, the position is still open")
+            return False
         if parked:
             logging.info(f"[reconciler/president] {sym}: entry of {lots} waits — {', '.join(parked)} "
                          f"reported no fill and is not claimed yet (see _president_claim_pending)")
@@ -754,8 +766,13 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
     # booked). Not caught up → nothing sent this round (the lib would refuse too).
     ok, _started, _last = order_president.snapshot_caught_up()
     if not ok:
-        logging.info(f"[reconciler/president] {sym}: {'close' if reduce_only else 'entry'} of {lots} "
-                     f"waits — the snapshot has not caught up with the last order")
+        if reduce_only:
+            _closes_deferred.add(sym)
+            logging.warning(f"[reconciler/president] {sym}: close of {lots} deferred — the snapshot has "
+                            f"not caught up with the last order; no {sym} entry this round")
+        else:
+            logging.info(f"[reconciler/president] {sym}: entry of {lots} waits — the snapshot has not "
+                         f"caught up with the last order")
         return False
     net_before = _president_nets()
     if reduce_only:
@@ -1319,6 +1336,7 @@ _round_no = 0
 def _next_round():
     global _round_no
     _round_no += 1
+    _closes_deferred.clear()
 
 
 def _president_login_stopped():

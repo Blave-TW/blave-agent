@@ -977,10 +977,11 @@ try:
     sent_legs.clear()
     r1 = reconciler.place_order("TMF", 1, exchange="president")
     r2 = reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
-    check(r1 is False and r2 is False and sent_legs == [] and pending() == {},
+    check(r1 is False and r2 is False and sent_legs == [] and pending() == {} and "TMF" in reconciler._closes_deferred,
           "snapshot not caught up with the last send: neither leg is sent nor parked this round (the lib's own check "
-          "would read a newer snapshot than net_before did)")
+          "would read a newer snapshot than net_before did); the deferred close is noted for the round")
     open(op.LAST_ORDER_PATH, "w").write("{}")
+    reconciler._next_round()   # the daemon's next round: the deferral is gone
     # a pending file that does not parse: unknown whether lots are parked → entries wait, closes go, one P1 row
     open(reconciler.PENDING_SENT_PATH, "w").write("{not json")
     n_err = len(errors())
@@ -1053,6 +1054,37 @@ try:
     sent_legs.clear()
     reconciler.place_order("TMF", 1, exchange="president")
     check(sent_legs == [("TMF", "buy", 1, "entry")], "…entries resume")
+    # R1: a flip whose close was deferred (snapshot not caught up) sends no entry for that root this round
+    reconciler._next_round()
+    json.dump({"TMFJ6": __import__("time").time()}, open(op.LAST_ORDER_PATH, "w"))
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 3, "net_current": 3}],
+             query_started_at=__import__("time").time() + 1)
+    sent_legs.clear()
+    rc = reconciler.place_order("TMF", -3, exchange="president", reduce_only=True)
+    open(op.LAST_ORDER_PATH, "w").write("{}")   # the snapshot catches up between the two legs
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 3, "net_current": 3}])
+    re_ = reconciler.place_order("TMF", -1, exchange="president")
+    check(rc is False and re_ is False and sent_legs == [] and "TMF" in reconciler._closes_deferred,
+          "close deferred → the same round's entry for that root waits too, even on a caught-up snapshot")
+    reconciler._next_round()
+    reconciler.place_order("TMF", -1, exchange="president")
+    check(sent_legs == [("TMF", "sell", 1, "entry")] and not reconciler._closes_deferred,
+          "…next round the deferral is gone and the entry goes")
+    # R2: a close that comes back unfilled on a halted row restarts the baseline from this snapshot
+    n_err, halts = park_then_escalate()                     # parked +1 vs expected 3, account 7 → halted
+    FILL["reduce"] = "sent"
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 7, "net_current": 7}])
+    reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    FILL.clear()
+    p = pending()["TMFJ6"]
+    check(p["lots"] == -1 and p["net_expected"] == 7 and "halted" not in p and p["reads"] == [] and len(p["legs"]) == 2
+          and audits("order_unfilled_parked")[-1]["rebased"] is True,
+          "the unfilled close on a halted row: baseline reset to this snapshot's net (7), only the new lot tracked", p)
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 6, "net_current": 6}])
+    gp()
+    check(pending() == {} and audits("late_fill_adopted")[-1]["lots"] == -1 and ledger_positions("president")["TMF"]["qty"] == 2.0,
+          "…and the close's late fill is claimed against the new baseline (book 3 → 2)")
+    guard.clear_halt("test")
     for f in ("manager/ledger_seed.json", "manager/orders.jsonl"):
         if os.path.exists(f):
             os.remove(f)
