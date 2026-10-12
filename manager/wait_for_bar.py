@@ -118,6 +118,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -140,7 +141,9 @@ RUN_TIMEOUT_SECONDS = 600          # kill a strategy subprocess that hangs (e.g.
 # it runs fetch_data() in-process and can legitimately take several minutes across multiple
 # retried HTTP sources (e.g. txf_composite_60m pulls 60m/1d/TAIEX/dividend series). Generous
 # on purpose: the lock's job is cleaning up a genuinely-dead process, not a tight SLA — being
-# too short risks two ticks racing on the same bucket, which too-long doesn't.
+# too short risks two ticks racing on the same bucket, which too-long doesn't. This age is
+# only the fallback: a lock whose recorded pid is gone is taken over at once (_acquire_lock),
+# so a listener restart that kills a mid-flight tick doesn't silence the next 30 ticks.
 LOCK_STALE_SECONDS = 1800
 RETRY_BACKOFF_SECONDS = 300        # after a failed run OR a fetch_data() error, don't re-attempt every single minute
 WRAPPER_ERROR_COOLDOWN_SECONDS = 6 * 3600         # this script's own crashes, not the strategy's
@@ -235,10 +238,66 @@ def _save_state(name, state):
     os.replace(tmp, path)
 
 
+def _pid_alive(pid):
+    """False only when the pid is known to be gone; any doubt (no permission to probe,
+    pid recycled by something else) counts as alive and leaves the age fallback in charge.
+    Windows: os.kill(pid, 0) is TerminateProcess there (runtime/turn_slots.py), so probe with
+    OpenProcess + a zero wait like runtime/local_daemon._wait_pid_nt."""
+    if os.name == "nt":
+        import ctypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenProcess.restype = ctypes.c_void_p
+        k.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        k.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        k.CloseHandle.argtypes = [ctypes.c_void_p]
+        h = k.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not h:
+            return ctypes.get_last_error() != 87  # ERROR_INVALID_PARAMETER: no such pid
+        try:
+            return k.WaitForSingleObject(h, 0) != 0  # only WAIT_OBJECT_0 = exited; FAILED/ABANDONED = doubt
+        finally:
+            k.CloseHandle(h)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _lock_pids(lock_path):
+    """Line 1 = the wait_for_bar.py holder, line 2 (if any) = its strategy.py child."""
+    try:
+        with open(lock_path) as f:
+            return [int(x) for x in f.read().split()]
+    except (OSError, ValueError):
+        return []
+
+
+def _lock_holder_dead(lock_path):
+    """Dead only when EVERY recorded pid is gone. A SIGKILLed/OOM-killed holder leaves its
+    strategy.py child running as an orphan (up to RUN_TIMEOUT_SECONDS); taking over while it
+    still runs would start a second strategy.py for the same bar."""
+    pids = _lock_pids(lock_path)
+    if not pids:
+        return False  # no pid recorded — only the age fallback can decide
+    return all(pid > 0 and pid != os.getpid() and not _pid_alive(pid) for pid in pids)
+
+
+def _lock_note_child(name, pid):
+    try:
+        with open(f"{STATE_DIR}/{name}.lock", "a") as f:
+            f.write(f"\n{pid}")
+    except OSError:
+        pass
+
+
 def _acquire_lock(name, _retried=False):
     """Atomic-create lock file, cross-platform (no fcntl/msvcrt — those differ
-    by OS). A lock older than LOCK_STALE_SECONDS is assumed abandoned by a
-    crashed/killed process and is cleared once, then retried."""
+    by OS). A lock whose recorded holder pid is gone, or that is older than
+    LOCK_STALE_SECONDS, is assumed abandoned by a crashed/killed process and
+    is cleared once, then retried."""
     os.makedirs(STATE_DIR, exist_ok=True)
     lock_path = f"{STATE_DIR}/{name}.lock"
     try:
@@ -253,9 +312,14 @@ def _acquire_lock(name, _retried=False):
             age = time.time() - os.path.getmtime(lock_path)
         except OSError:
             age = 0
-        if age > LOCK_STALE_SECONDS:
+        if age > LOCK_STALE_SECONDS or _lock_holder_dead(lock_path):
+            # Move, don't remove: two ticks judging the same lock dead would otherwise let the
+            # slower one delete the lock the faster one just created. os.replace is atomic, so
+            # exactly one mover succeeds; the other's O_EXCL retry then fails as it should.
+            stale = lock_path + ".stale"
             try:
-                os.remove(lock_path)
+                os.replace(lock_path, stale)
+                os.remove(stale)
             except OSError:
                 pass
             return _acquire_lock(name, _retried=True)
@@ -263,6 +327,9 @@ def _acquire_lock(name, _retried=False):
 
 
 def _release_lock(lock_path):
+    pids = _lock_pids(lock_path)
+    if pids and pids[0] != os.getpid():
+        return  # taken over while we were (wrongly) judged dead — the lock is theirs now
     try:
         os.remove(lock_path)
     except OSError:
@@ -367,16 +434,24 @@ def _run_strategy_protected(name):
     os.makedirs(strategy_dir, exist_ok=True)
     script_path = f"{strategy_dir}/strategy.py"
 
-    try:
-        result = subprocess.run(
-            [sys.executable, script_path],
-            capture_output=True, text=True, timeout=RUN_TIMEOUT_SECONDS,
-        )
-        output, returncode = (result.stdout or "") + (result.stderr or ""), result.returncode
-    except subprocess.TimeoutExpired as e:
-        output = (str(e.output) if e.output else "") + \
-            f"\n[wait_for_bar] killed after exceeding {RUN_TIMEOUT_SECONDS}s timeout"
-        returncode = -1
+    # Popen rather than subprocess.run: the child pid goes into the lock (_lock_holder_dead)
+    # before the run, and the except/kill mirrors run()'s own so a SIGTERM→SystemExit still
+    # takes the child down with us.
+    with subprocess.Popen([sys.executable, script_path], stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True) as proc:
+        _lock_note_child(name, proc.pid)
+        try:
+            out, err = proc.communicate(timeout=RUN_TIMEOUT_SECONDS)
+            output, returncode = (out or "") + (err or ""), proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, _ = proc.communicate()
+            output = (out or "") + \
+                f"\n[wait_for_bar] killed after exceeding {RUN_TIMEOUT_SECONDS}s timeout"
+            returncode = -1
+        except BaseException:
+            proc.kill()
+            raise
 
     if returncode != 0:
         try:
@@ -564,6 +639,10 @@ def main():
         print("usage: wait_for_bar.py <strategy_name>")
         return
     name = sys.argv[1]
+    # systemctl stop / a listener restart SIGTERMs the whole cgroup: turn it into SystemExit
+    # so _tick's finally releases the lock and subprocess.run() kills the strategy child with
+    # us. Never delivered on Windows (TerminateProcess) — there the pid probe is the cleanup.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
         _tick(name)
     except Exception as e:
