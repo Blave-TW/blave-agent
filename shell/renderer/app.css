@@ -970,6 +970,10 @@ body.resizing * { cursor: col-resize !important; }
 .plan-price{display:flex;align-items:baseline;gap:var(--space-12);flex-wrap:wrap}
 .plan-price .m{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink)}
 .plan-price .h{font-size:12px;color:var(--ink-3)}
+.plan-price .tier{font-size:13px;font-weight:500;color:var(--ink)}   /* 階名用介面字:進 mono 會像程式碼 token */
+.plan-detail > .plan-price{margin-top:var(--space-12)}
+.plan-inc{margin:var(--space-4) 0 0;line-height:1.7;color:var(--ink)}
+.plan-id .plan-fine{margin-top:calc(-1 * var(--space-4))}   /* 餘額列下的自動儲值短句:抵掉一半的欄距,貼著餘額列 */
 .plan-fine{margin:var(--space-6) 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
 .plan-foot{flex:none;padding:var(--space-12) var(--space-16);border-top:1px solid var(--border-hairline)}
 .plan-rule{margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}   /* 暗底必讀的次要字升一階 */

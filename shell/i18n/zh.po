@@ -913,9 +913,6 @@ msgstr "以 30 天計 ＝ 每個整點從餘額扣 {h} TWD"
 msgid "plan.trialFree"
 msgstr "{d}前免主機費，之後照上面的價格。"
 
-msgid "plan.topup"
-msgstr "餘額低於 {a} TWD 時，會從綁定的卡自動儲值 {b} TWD；可以在網頁關閉。"
-
 msgid "plan.start"
 msgstr "啟動方案"
 
@@ -7053,17 +7050,8 @@ msgstr "月繳"
 msgid "plan.cyc.annual"
 msgstr "年繳"
 
-msgid "plan.year"
-msgstr "或年繳 {y} TWD（用 {yd} 天，付 {k} 個月）"
-
 msgid "plan.yearNoNum"
 msgstr "或年繳 {y} TWD"
-
-msgid "plan.rule.m"
-msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗會停機、每天重試一次，{g} 天沒付款就刪除主機。取消後用到這一期結束，不退款。"
-
-msgid "plan.rule.mNoNum"
-msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗會停機、每天重試一次，一直沒付款就刪除主機。取消後用到這一期結束，不退款。"
 
 msgid "pv.st.noPlan"
 msgstr "沒有方案"
@@ -7289,15 +7277,6 @@ msgstr "下次扣款 {u}：錢包不夠、也沒有綁卡，到時扣不到 Blav
 msgid "pv.f.running.failNoServer"
 msgstr "扣款失敗 · 每天重試，{gu}方案結束"
 
-msgid "plan.rule.mNoServer"
-msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗時 Blave 資料暫停、每天重試一次，{g} 天沒付款方案就結束。取消後用到這一期結束，不退款。"
-
-msgid "plan.rule.mNoServerNoNum"
-msgstr "每一期開始時先付：先從錢包扣，不夠再刷綁定的卡。扣款失敗時 Blave 資料暫停、每天重試一次，一直沒付款方案就結束。取消後用到這一期結束，不退款。"
-
-msgid "pv.inc.m2"
-msgstr "可以再開一台雲端主機，同階不另收：策略照排程執行、自動下單"
-
 msgid "cf.m.mo.dNoNum"
 msgstr "每期 {p} TWD"
 
@@ -7324,3 +7303,51 @@ msgstr "績效已更新"
 
 msgid "perf.fail"
 msgstr "沒更新成功，數字是舊的"
+
+msgid "plan.st.runningTrial"
+msgstr "試用中 · 剩 {n} 天 · 主機運行中"
+
+msgid "plan.st.stoppedTrial"
+msgstr "已停機 · 試用剩 {n} 天"
+
+msgid "pv.f.running.trial"
+msgstr "試用到 {u}，當天自動扣第一期：{c} {x} TWD。到期前取消就不扣。"
+
+msgid "pv.f.running.trialCancel"
+msgstr "已取消試用 · 用到 {u}，到期不扣款；主機 {gu}刪除"
+
+msgid "pv.f.running.trialCancelNoNum"
+msgstr "已取消試用 · 用到 {u}，到期不扣款；之後主機會刪除"
+
+msgid "pv.f.running.trialFree"
+msgstr "試用到 {u} · 這個帳號不收方案費"
+
+msgid "pv.f.running.free"
+msgstr "這個帳號不收方案費"
+
+msgid "pv.f.running.trialDue"
+msgstr "試用已結束，第一期 {c} {x} TWD 扣款處理中"
+
+msgid "pv.f.running.due"
+msgstr "{c} {x} TWD · 扣款處理中"
+
+msgid "pv.h.stopped.mOkTrial"
+msgstr "主機已停機，試用照常"
+
+msgid "pv.d.stopped.mOkTrial"
+msgstr "停機不影響試用。要開回來，在網頁操作。"
+
+msgid "pv.f.running.trialNoAuto"
+msgstr "試用到 {u}。自動扣款沒有開，到期不會扣第一期，主機當天停機；要繼續，到期後到網站開通"
+
+msgid "pv.f.running.await"
+msgstr "第一期沒有自動扣。到網站開通才會繼續；沒開通的話主機 {gu}刪除"
+
+msgid "pv.inc.one"
+msgstr "含雲端主機、Blave 資料、網頁操作"
+
+msgid "plan.rule.one"
+msgstr "每期先扣錢包，不夠刷卡；取消不退款"
+
+msgid "plan.topupShort"
+msgstr "低於 {a} TWD 時從卡自動儲值 {b} TWD；網頁可關"
