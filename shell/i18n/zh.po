@@ -3205,9 +3205,6 @@ msgstr "冰青"
 msgid "side.flagC3"
 msgstr "紫"
 
-msgid "side.sortHint"
-msgstr "{k} 上下移動順序"
-
 msgid "side.moved"
 msgstr "已移到第 {n} 位"
 
