@@ -1283,7 +1283,6 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .flag-pop .item.danger { color: var(--ink-2); }
 .flag-pop .item[hidden], .flag-pop .divider[hidden] { display: none; }
 .flag-pop .divider { border-top: 1px solid var(--border-hairline); margin: 6px 0; }
-.flag-pop .hint { margin: 0; padding: var(--space-6) 10px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) {
   .strat-wrap.shifting, .strat-flagbtn, .flag-pop .item { transition: none; }
   .flag-pop, .flag-pop.up { transition: opacity var(--motion-fast) var(--ease-standard); transform: none; }   /* 留 fade、去位移 */

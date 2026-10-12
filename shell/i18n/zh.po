@@ -12,6 +12,14 @@ msgstr "用 Blave AI"
 msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
+# 連結畫面偵測完本機兩個 CLI 都不能用、沒登入、公開價目有綁卡前額度時的大標與 Blave 那一列的副標(0.1.22;spec desktop-precard-credit §5.2)。
+# 「綁卡」整個畫面只講一次,放副標、句子對齊網站授權頁的「額度用完才需要綁卡」;不寫「夠跑幾輪」(不限模型,Opus 一輪可能就超過)
+msgid "cn.h.free"
+msgstr "先用 Blave AI 開始"
+
+msgid "cn.blave.descFree"
+msgstr "登入就有 {q} TWD 的 AI 額度，用完才需要綁卡"
+
 # 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到贈額數字時用這句
 msgid "cn.blave.descSet"
 msgstr "首次綁卡送 {q} TWD 的 AI 額度，之後按用量計費"
@@ -880,6 +888,19 @@ msgstr "額度到了，可以再送了。"
 msgid "fault.needCard"
 msgstr "用 Blave AI 要先綁卡，這一輪沒有跑。"
 
+# 綁卡前的 AI 額度用完、還沒綁卡(account_status free_ai_credit_used_up):預檢卡與 402 卡換這組字,鈕照舊「前往綁卡」;數字拿不到用 NoNum 那句
+msgid "acct.freeUp"
+msgstr "{q} TWD 的 AI 額度用完了。"
+
+msgid "acct.freeUpNoNum"
+msgstr "AI 額度用完了。"
+
+msgid "fault.freeUp"
+msgstr "{q} TWD 的 AI 額度用完了，這一輪沒有跑完。"
+
+msgid "fault.freeUpNoNum"
+msgstr "AI 額度用完了，這一輪沒有跑完。"
+
 msgid "fault.checking"
 msgstr "這一輪沒有跑，正在確認帳號狀態。"
 
@@ -903,6 +924,10 @@ msgstr "Blave 餘額"
 
 msgid "plan.balNa"
 msgstr "現在讀不到餘額"
+
+# 設定 › 帳號與方案:綁卡前的 AI 額度那一列(餘額列上面;領過才出)。叫「AI 額度」不叫「餘額」——這筆付不了資料費
+msgid "plan.free"
+msgstr "AI 額度"
 
 msgid "plan.month"
 msgstr "{p} TWD／月"
@@ -3228,9 +3253,6 @@ msgstr "冰青"
 
 msgid "side.flagC3"
 msgstr "紫"
-
-msgid "side.sortHint"
-msgstr "{k} 上下移動順序"
 
 msgid "side.moved"
 msgstr "已移到第 {n} 位"
@@ -7327,6 +7349,27 @@ msgstr "績效已更新"
 
 msgid "perf.fail"
 msgstr "沒更新成功，數字是舊的"
+
+msgid "perf.tipBt"
+msgstr "上次回測 {t}"
+
+msgid "perf.codeChanged"
+msgstr "程式碼改過還沒回測，請先回測"
+
+msgid "perf.superseded"
+msgstr "策略在更新途中被改過，數字沒換；再按一次"
+
+msgid "perf.lockBusy"
+msgstr "這支策略正在回測中，等它跑完再按一次"
+
+msgid "perf.indexBroken"
+msgstr "版本索引讀不到，請先回測一次"
+
+msgid "perf.notRunnable"
+msgstr "這類策略不能更新績效"
+
+msgid "perf.configUnreadable"
+msgstr "下單設定讀不到，沒有更新"
 
 msgid "plan.st.runningTrial"
 msgstr "試用中 · 剩 {n} 天 · 主機運行中"

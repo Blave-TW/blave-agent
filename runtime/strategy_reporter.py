@@ -390,8 +390,8 @@ def _read_wf(name):
 # definition — command_listener's version_restore handler asks the same function.
 _RESTORE_IN_PLACE_RE = re.compile(rb"^RESTORE_IN_PLACE\s*=\s*1\b", re.M)
 _lib_restore_cache = {}
-# = command_listener._RERUN_ERRS; anything else in rerun.json is not reported
-RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT")
+# = command_listener._RERUN_ERRS; anything else in rerun.json / perf_refresh.json is not reported
+RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY")
 
 
 def lib_restore_in_place():

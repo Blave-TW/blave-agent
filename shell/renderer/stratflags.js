@@ -134,8 +134,7 @@ function sfPopBuild() {
     if (!x.classList.contains("is-armed")) x.click();   // app.js armedDelete:第一下 = 武裝成「移到垃圾桶？」
     x.focus();
   });
-  const hint = document.createElement("p"); hint.className = "hint"; hint.setAttribute("role", "none");   // 鍵盤排序的可發現性:面板是鍵盤使用者唯一會停留的地方
-  sfPop.append(sep(), rm, d2, del, hint);
+  sfPop.append(sep(), rm, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
   sfPop.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
     if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return;
@@ -156,7 +155,6 @@ function sfPopText() {
   const [rm, del] = sfPop.querySelectorAll(".item");
   rm.textContent = t("side.flagRemove");
   del.textContent = t(window.blave.platform === "win32" ? "strat.del.win" : "strat.del");
-  sfPop.querySelector(".hint").textContent = t("side.sortHint", { k: window.blave.platform === "win32" ? "Alt+↑／↓" : "⌥↑／⌥↓" });
 }
 function sfPopOpen(wrap, anchor, x, ctx) {
   if (!sfPop) sfPopBuild();

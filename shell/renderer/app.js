@@ -168,6 +168,21 @@ function paintBlaveBtn() {
   b.textContent = hasToken && cur !== "blave" ? t("cn.blave.switch") : t("cn.blave.btn");
   b.className = localReady ? "btn-out" : "btn-fill";
   mdlPaint();                                // 設定 › 模型接入 是另一份 DOM(那張卡不再搬家),同一份狀態各畫各的
+  cnFreePaint();
+}
+/* 連結畫面的大標與 Blave 那一列的標題／副標(0.1.22;spec desktop-precard-credit §5.2、mockup 01 步 B 版):偵測完本機兩個 CLI 都不能用、
+   還沒登入、而且公開價目有綁卡前額度 → 大標從「Blave 不內建 AI。」(對這群人整頁讀起來是死路)換成出路,副標講登入就有的額度。
+   數字來自 api(public_tiers.free_ai_credit),拿不到或 0(停發)維持原字;有本機 AI 的人那條路已經走得通、已登入的人「登入就有」不是事實,
+   都維持原字。applyStatic 的 data-i18n 會把字寫回原句,所以換語言之後要再畫一次 */
+const cnFreeQ = () => (pub && Number(pub.free_ai_credit) > 0 ? Number(pub.free_ai_credit).toLocaleString("en-US") : "");
+function cnFreeMode() { return !!cnFreeQ() && !hasToken && lastDetect !== null && !localReady; }
+function cnFreePaint() {
+  const h = document.querySelector("#view-connect h4"), ttl = document.querySelector(".cn-blave .cn-ttl"), meta = document.querySelector(".cn-blave .cn-meta");
+  if (!h || !ttl || !meta) return;
+  const free = cnFreeMode();
+  h.textContent = t(free ? "cn.h.free" : "cn.h");
+  ttl.textContent = t(free ? "cn.blave.name" : "cn.blave.title");
+  meta.textContent = free ? t("cn.blave.descFree", { q: cnFreeQ() }) : t("cn.blave.desc");
 }
 
 /* ── 設定 › 模型接入 ───────────────────────────────────────
@@ -303,7 +318,7 @@ function acctOutAsk(opener) {
 async function acctSignOut() {
   if (!hasToken || running || oauthPending || planLoginBusy) return;
   const r = await window.blave.signOutBlave();
-  hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
+  balFree = null; hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
   if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單退回沒登入那一版
   RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
   if (typeof libInvalidate === "function") libInvalidate();   // 策略庫的 purchased / 閘門是這個帳號的
@@ -2914,10 +2929,11 @@ let acct = null, acctCard = null, acctAt = 0, acctRetry = 0;
    整數、千分位、四捨五入——跟網頁同一個算法(Intl.NumberFormat 的預設),同一個人在兩邊要看到同一個數字。一律 TWD。
    回 "1,234" 或 null(讀不到:非 200、舊登入、api 還沒部署……一律畫「—」/ 只出規則那半句,不把讀不到畫成 0)。
    什麼時候讀:打開「帳號與方案」、打開模型選單(引擎是 Blave AI)、Blave AI 的回合結束、登入回來。不輪詢 */
-let balLast = null, balSeq = 0;
+let balLast = null, balFree = null, balSeq = 0;   // balFree:綁卡前的 AI 額度剩多少(領過才有;沒領過 null → 設定頁不出那一列)
 function balNum(v) { return typeof v === "number" && isFinite(v) ? (Math.round(v) || 0).toLocaleString("en-US") : null; }
 // 還在讀沿用上一個數字,讀到才換;登入 / 登出 / 換帳號由呼叫端把 balLast 清掉
 function balNow() { return hasToken ? balLast : null; }
+function balFreeNow() { return hasToken ? balFree : null; }
 async function balLoad() {
   if (!hasToken) { balLast = null; return; }
   const seq = ++balSeq;
@@ -2925,6 +2941,7 @@ async function balLoad() {
   try { r = await window.blave.balance(); } catch (_) { r = null; }
   if (!hasToken || seq !== balSeq) return;   // 在途時登出了,或後面又讀了一次:這一筆不算
   balLast = r ? balNum(r.balance) : null;
+  balFree = r ? balNum(r.free) : null;
   if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
   if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
 }
@@ -2984,7 +3001,12 @@ function acctAction(s, where) {
    卡的種類跟著句子走(同 acctPaint):預檢卡 NO_CREDIT 講儲值、其餘講綁卡;402 卡 NO_CARD 講綁卡、其餘講儲值。
    back:按過鈕、視窗回前景之後那次重查的結果;還會再重查(藍新回呼延遲)就先不下結論。記過「還不能跑」之後欠一則 ready:
    之後任何一次查到能跑(回合結束、方案頁、重查鈕)就補,不等視窗再回前景。三支是純函式,tests/check_shell_telemetry.js 切出來跑 */
-function acctCardKind(where, s) { return where === "pre" ? (s && s.reason === "NO_CREDIT" ? "pre_credit" : "pre_card") : (s && s.reason === "NO_CARD" ? "turn_card" : "turn_credit"); }
+function acctCardKind(where, s) {
+  const free = !!s && s.reason === "NO_CARD" && s.free_ai_credit_used_up === true;   // 綁卡前的 30 TWD 用完、還沒綁卡:講「額度用完了」那組字(*_free)
+  return where === "pre" ? (s && s.reason === "NO_CREDIT" ? "pre_credit" : free ? "pre_free" : "pre_card") : (s && s.reason === "NO_CARD" ? (free ? "turn_free" : "turn_card") : "turn_credit");
+}
+// 額度用完那組字:他剛用了好幾輪都沒綁卡,這時說「要先綁卡」跟他的經驗矛盾;數字來自公開價目,拿不到就不帶數字
+function acctFreeUpText(where) { const q = cnFreeQ(); return t((where === "pre" ? "acct.freeUp" : "fault.freeUp") + (q ? "" : "NoNum"), { q }); }
 function acctBackState(s, again) { return !s ? null : s.can_run ? "ready" : again ? null : s.reason === "NO_CREDIT" ? "no_credit" : "no_card"; }
 function acctBackNote(gone, s, again) { return !gone ? null : gone.back ? acctBackState(s, again) : gone.owe && s && s.can_run ? "ready" : null; }
 let acctGone = null;   // 按了卡上的鈕去瀏覽器:{ back } = 回前景了沒;owe = 記過「還不能跑」,能跑時要補 ready
@@ -3003,11 +3025,11 @@ function acctPaint() {
   if (acctGone && !acctGone.back) acctBackTrack(false);
   if (acctCard) {
     if (s.can_run) acctCard.set({ calm: true, text: t("acct.ready") });
-    else acctCard.set({ calm: true, text: t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s, "pre") });
+    else acctCard.set({ calm: true, text: acctCardKind("pre", s) === "pre_free" ? acctFreeUpText("pre") : t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s, "pre") });
   }
   creditCards.forEach((card) => {
     if (s.can_run) card.set(resendState(card, t("acct.creditIn")));
-    else if (s.reason === "NO_CARD") card.set({ text: t("fault.needCard"), sub: acctSub(s), ...acctAction(s, "turn"), second: resendSecond() });
+    else if (s.reason === "NO_CARD") card.set({ text: acctCardKind("turn", s) === "turn_free" ? acctFreeUpText("turn") : t("fault.needCard"), sub: acctSub(s), ...acctAction(s, "turn"), second: resendSecond() });
     else card.set({ text: t("fault.noCredit"), ...acctAction(s, "turn"), second: resendSecond() });
     if (!s.can_run) acctShown(card, "turn", s);
   });
@@ -3223,6 +3245,8 @@ function planPaint() {
     const hint = el("p", "cn-hint"); hint.id = "acct-hint"; hint.hidden = !HINT;
     if (HINT) { hint.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) hint.append(cmdLine(HINT.cmd)); }
     id.append(who, hint);
+    // 綁卡前的 AI 額度(0.1.22;spec desktop-precard-credit §5.2):領過才有這一列(沒領過 api 回 null);用完也畫 0,要綁卡的事由卡片講
+    if (hasToken && balFreeNow() !== null) { const row = el("div", "plan-bal"); row.append(el("span", "l", t("plan.free")), el("span", "v", balFreeNow() + " TWD")); id.append(row); }
     if (hasToken) {
       const n = balNow(), row = el("div", "plan-bal"), val = el("span", "v" + (n ? "" : " na"), n ? n + " TWD" : "—");
       if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
@@ -3359,7 +3383,7 @@ async function planLogin() {
   if (oauthPending || running) return;
   setHint(null);                             // 上一則(例如離線登出「還要去補撤」)講的是上一次的事,不該活過這次登入
   planLoginBusy = oauthPending = true; planErr = null; planPaint(); waitChanged();
-  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
+  try { await window.blave.startOAuth(LANG); hasToken = true; balFree = null; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
   // 取消或失敗:留在原地,不報錯
   catch (_) { planErr = null; }
   planLoginBusy = oauthPending = false; planPaint(); waitChanged();
@@ -3470,7 +3494,7 @@ async function planRelogin() {
   if (oauthPending || planLoginBusy) return;
   oauthPending = true; waitChanged();
   // 可能換了帳號:上一個帳號的數字不能留到花錢確認框
-  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
+  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; balFree = null; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
   // 取消或失敗:那句話留著,鈕還在
   catch (_) { /* noop */ }
   oauthPending = false; waitChanged();
@@ -3862,7 +3886,7 @@ function applyStatic() {
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
-  if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單(renderer/welcome.js 用 t() 現組的列);放最後:列的字不掛 data-i18n
+  if (typeof wdPaint === "function") wdPaint(); cnFreePaint();   // 歡迎頁的資料清單(renderer/welcome.js 用 t() 現組的列)與連結畫面的大標／副標;放最後:都在 data-i18n 寫回原句之後才畫
 }
 
 (async () => {
@@ -3876,7 +3900,7 @@ function applyStatic() {
   applyStatic();
   hasToken = await window.blave.hasBlaveToken();
   hoInit();                        // 「送上雲端 / 拉回」的功能開關(renderer/handoff.js;預設關 = 兩顆鈕都不畫)
-  pubLoad().then(acctPaintAcct);   // 連結畫面尾註那句要的天數;拿不到就不出
+  pubLoad().then(() => { acctPaintAcct(); cnFreePaint(); });   // 連結畫面尾註那句要的天數、綁卡前額度的數字;拿不到就不出
   const prev = await window.blave.loadConnection();
   // kind 說「用 Blave AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
   // 電腦),進工作頁會在左下角寫「已連結:Blave AI」,實際上引擎沒有 token 就走

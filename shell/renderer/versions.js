@@ -29,6 +29,13 @@ function verAmount(side, B) {
   [B.name, B.data && B.data.strategyName].forEach((n) => { const x = n && Object.prototype.hasOwnProperty.call(a, n) ? Number(a[n]) : 0; if (isFinite(x) && x > v) v = x; });
   return v;
 }
+// 在下單設定裡(amounts 有這個 key,金額 0 也算:「選到就跑」,排程與每天報告前的績效 sweep 都以 key 為成員,同 runtime _deployed_names);讀不到回報 → null
+function verPicked(side, B) {
+  const st = typeof TR_BAGS !== "undefined" && TR_BAGS[side] ? TR_BAGS[side].st : null;
+  const a = st && st.report && st.report.config && st.report.config.amounts;
+  if (!a || typeof a !== "object") return null;
+  return [B.name, B.data && B.data.strategyName].some((n) => !!n && Object.prototype.hasOwnProperty.call(a, n));
+}
 
 /* ── 就地還原的疊層(canon §5;spec-strategy-versions-restore-in-place-0.1.9 §3):按下確認的當下就把 vN 當「目前」、狀態「重跑中」,
    不等機器。疊層以 side|名字為 key、存在 VS 之外:verPaint 每次畫頁首都重設 open / data,報告先到也不能把它洗掉。

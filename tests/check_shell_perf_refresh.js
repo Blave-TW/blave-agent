@@ -1,10 +1,13 @@
-// 上線中策略「更新績效」(0.1.21;設計 spec stats-manual-refresh-2026-10-10 §10 精簡版 A;機器端 runtime command_listener stats_refresh)。
+// 「更新績效」(0.1.21;設計 spec stats-manual-refresh-2026-10-10 §10 精簡版 A;機器端 runtime command_listener stats_refresh;
+// 0.1.22 Wei 10-12:所有有 stats 的 Type A／C 都有,不只上線中——非上線的機器端重跑回測,title 只寫上次回測時間;碼改過還沒回測 → ack CODE_CHANGED)。
 // 跑法:node tests/check_shell_perf_refresh.js(不開 Electron)
 //   ① 指令通道:daemon.js UI_COMMANDS / argsOk 形狀 = runtime _stats_refresh_args(names 1–50、不重複、名字規則同 version_restore);
 //      主行程 CLOUD_SHIPPED、renderer ENV_CLOUD_CMDS、runtime local_daemon.ALLOWED、fixture 四處都有
 //   ② 埋點 perf_update 在白名單尾端(browser_hb_card 之後)、送出點只在 perfClick 的 ack started 之後
 //   ③ 主行程 stratPerf:{ at = stats.json mtime(秒), refresh? } 同 runtime strategy_reporter._read_perf
-//   ④ renderer 三態(假 DOM 跑真的 perf.js):只對上線中出、閒置(滿一天才出 N 天前)/ 更新中 / 失敗、按下的指令形狀、ack 之後才記埋點、完成唸一句
+//   ④ renderer 三態(假 DOM 跑真的 perf.js):Type A／C 都出、Type B 不出(xpIsTypeB)、閒置(滿一天才出 N 天前;上線中 / 非上線兩句 title)/ 更新中 / 失敗、
+//      按下的指令形狀、ack 之後才記埋點、ack skip 碼各自的失敗行(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)、
+//      報告帶回的 SUPERSEDED / BUSY、上線中 = 下單設定有 key(金額 0 也算,versions.js verPicked)、完成唸一句
 //   ⑤ 接線:rpShowTab 畫完回測分頁叫 perfPaint、三處上鎖 / 解鎖叫 perfBusy、index.html 載入順序、CSS、zh / en 字串
 const fs = require("fs"), path = require("path"), os = require("os");
 const S = path.join(__dirname, "..", "shell"), R = path.join(S, "renderer"), ROOT = path.join(__dirname, "..");
@@ -58,6 +61,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     const rr = (doc) => { fs.writeFileSync(path.join(dir, "perf_refresh.json"), typeof doc === "string" ? doc : JSON.stringify(doc)); return M(dir).refresh; };
     ok("perf_refresh.json running → { status, at },pid 不往上交", JSON.stringify(rr({ status: "running", at: 1760000000, pid: 42 })) === '{"status":"running","at":1760000000}');
     ok("failed 帶認得的 err;不認得的 → EXIT", rr({ status: "failed", at: 5, err: "DATA" }).err === "DATA" && rr({ status: "failed", at: 5, err: "WHAT" }).err === "EXIT" && rr({ status: "failed", at: 5 }).err === "EXIT");
+    ok("main.js RERUN_ERRS 也認 SUPERSEDED / BUSY(= runtime _RERUN_ERRS,本機讀檔這一層不能先降成 EXIT)", rr({ status: "failed", at: 5, err: "SUPERSEDED" }).err === "SUPERSEDED" && rr({ status: "failed", at: 5, err: "BUSY" }).err === "BUSY");
     ok("壞形狀(status 不認得、at 不是整數、陣列、檔壞)→ 不帶 refresh", [{ status: "done", at: 5 }, { status: "running", at: "5" }, [1], "{half"].every((d) => rr(d) === undefined));
     ok("loadStrategy 交出 perf: stratPerf(dir)", /versions: stratVersions\(dir\), perf: stratPerf\(dir\),/.test(fnSrc(mainSrc, "loadStrategy")));
     fs.rmSync(ws, { recursive: true, force: true });
@@ -66,6 +70,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   // ── ④ renderer 三態(假 DOM) ──
   const STR = new Function(read(path.join(R, "strings.js")) + "\nreturn STRINGS;")();
   const shlFmtTime = new Function(fnSrc(read(path.join(R, "report-sharelist.js")), "shlFmtTime") + "\nreturn shlFmtTime;")();
+  const xpIsTypeB = new Function(fnSrc(read(path.join(R, "export.js")), "xpIsTypeB") + "\nreturn xpIsTypeB;")();   // Type B 的判法只有一份(程式碼分頁同一支)
+  const verPickedSrc = fnSrc(read(path.join(R, "versions.js")), "verPicked");   // 上線中的判法只有一份(versions.js;真的那支餵進 rig)
   class El {
     constructor(tag) { this.tagName = tag; this.kids = []; this.attrs = {}; this.on = {}; this.className = ""; this.hidden = false; this.id = ""; this.dataset = {}; this.parentNode = null; this.title = undefined; }
     set textContent(v) { this.kids = v === "" || v == null ? [] : [String(v)]; }
@@ -84,8 +90,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     querySelectorAll(sel) { const cls = sel.split(",").map((x) => x.trim().replace(/^\./, "")); return this.all((k) => cls.some((c) => k.has(c))); }
   }
   const doc = { createElement: (tag) => new El(tag) };
-  const names = ["pfEl", "perfOf", "perfShown", "perfState", "perfPaint", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
-  const body = ["PF", "PFL", "PFP", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "pfSide"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
+  const names = ["pfEl", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  const body = ["PF", "PFL", "PFP", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_WHY", "pfSide"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
   class FakeDate extends Date { static now() { return clock.now; } }
@@ -96,7 +102,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     const $ = (id) => E[id] || byId(id) || (E[id] = Object.assign(new El("div"), { id }));
     const tbl = STR[lang], t = (k, vars) => { let s = tbl[k] || k; if (vars) for (const v in vars) s = s.split("{" + v + "}").join(vars[v]); return s; };
     const cloud = opt.cloud === true, side = cloud ? "cloud" : "local";
-    const bag = { name: "momo", data: { stats: { symbol: "BTCUSDT" }, perf: opt.perf === undefined ? { at: nowS() - 3600 } : opt.perf }, drawn: {}, tab: "bt" };
+    const bag = { name: "momo", data: { stats: { symbol: "BTCUSDT" }, code: opt.code || "", perf: opt.perf === undefined ? { at: nowS() - 3600 } : opt.perf }, drawn: {}, tab: "bt" };
     const RP = cloud ? { name: null, data: null, drawn: {} } : bag, RPC = cloud ? bag : { name: null, data: null, drawn: {} };
     // #rp-bt 裡是 renderBacktest 畫好的 .bt:meta 列(四組 .mgrp)+ 三組條列
     const host = $("rp-bt"), root = new El("div"); root.className = "bt"; const meta = new El("div"); meta.className = "bt-meta";
@@ -110,21 +116,34 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     const VS = { local: { name: null, open: null }, cloud: { name: null, open: null } };
     const env = { document: doc, $, t, RP, RPC, RPC_CACHE: new Map(), rpBag: () => bag, rpPaintHead: () => paints.push("head"), rpShowTab: (tab) => paints.push(tab), rpTab: (B) => B.tab,
       running: opt.running === true, trackFeature: (n) => tracked.push(n), srSay: (x) => said.push(x), TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } },
-      // 上線中的判準只有一份(versions.js verAmount,讀自動下單回報的 amounts);這裡照它的回傳形狀餵
-      verAmount: (sd, B) => { const s = env.TR_BAGS[sd].st, a = s && s.report && s.report.config && s.report.config.amounts; if (!a) return null; const v = Number(a[B.name]); return isFinite(v) && v > 0 ? v : 0; },
-      verPendingOf: () => opt.pending || null, VS, RERUN_WHY: { DATA: "data", REFUSED: "refused", TIMEOUT: "timeout" }, shlFmtTime,
+      // 上線中的判準只有一份(versions.js verPicked:下單設定有這個 key,金額 0 也算);真的那支,讀 env.TR_BAGS
+      verPicked: null,
+      xpIsTypeB, verPendingOf: () => opt.pending || null, VS, RERUN_WHY: { DATA: "data", REFUSED: "refused", TIMEOUT: "timeout" }, shlFmtTime,
       window: { blave: { loadStrategy: async () => (opt.reload ? opt.reload() : null) } }, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {}, Date: FakeDate };
+    env.verPicked = new Function("TR_BAGS", verPickedSrc + "\nreturn verPicked;")(env.TR_BAGS);
     const F = new Function(...Object.keys(env), body)(...Object.values(env));
     const upd = () => host.querySelector(".upd"), fail = () => host.querySelector(".upd-fail"), btn = () => host.querySelector("btn-quiet");
     return { F, E, $, B: bag, side, meta, root, host, upd, fail, btn, tracked, sent, said, timers, acks, paints, env, VS };
   }
   const flush = () => new Promise((r) => setImmediate(r));
   const tipZh = (at) => shlFmtTime(at, clock.now) + " 更新 · 每天報告前自動更新一次";
-  // 只對上線中出
-  for (const [tag, amounts] of [["沒有金額(0)", { momo: 0 }], ["不在金額表", { other: 100 }], ["讀不到回報", null]]) {
+  // Type A／C 都出(Wei 10-12):非上線的也有鈕,title 只寫上次回測時間(機器端是重跑回測,沒有每天自動);Type B 不出
+  const tipBtZh = (at) => "上次回測 " + shlFmtTime(at, clock.now);
+  for (const [tag, amounts] of [["不在金額表", { other: 100 }], ["讀不到回報", null]]) {
     const r = rig("zh", { amounts }); r.F.perfPaint(r.B);
-    ok("不出:" + tag + " → meta 列尾沒有 .upd、沒有失敗行、不輪詢", !r.upd() && !r.fail() && r.meta.kids.length === 4 && r.timers.length === 0);
+    ok("非上線(" + tag + "):有鈕,title = 「上次回測 MM/DD HH:mm」、不說每天自動;沒有失敗行、不輪詢", r.btn() && r.btn().title === tipBtZh(nowS() - 3600) && !/每天|自動/.test(r.btn().title) && !r.fail() && r.timers.length === 0);
   }
+  { const z = rig("zh", { amounts: { momo: 0 } }); z.F.perfPaint(z.B); ok("金額 0 但在下單設定裡 = 上線中(機器端 live 刷新、每天 sweep 都算它;同 runtime _deployed_names):title 是每天自動那句", z.btn().title === tipZh(nowS() - 3600)); }
+  { const vp = new Function("TR_BAGS", verPickedSrc + "\nreturn verPicked;"), mk = (amounts) => vp({ local: { st: amounts === null ? null : { report: { config: { amounts } } } } });
+    ok("versions.js verPicked:hasOwnProperty 判法——key 在(含 0)true、不在 false、讀不到回報 null、strategyName 也認", mk({ momo: 0 })("local", { name: "momo" }) === true && mk({ other: 1 })("local", { name: "momo" }) === false && mk(null)("local", { name: "momo" }) === null && mk({ real: 0 })("local", { name: "momo", data: { strategyName: "real" } }) === true); }
+  { const e = rig("en", { amounts: null }); e.F.perfPaint(e.B); ok("en 非上線:Last backtest …,沒有 auto-updated", e.btn().title === "Last backtest " + shlFmtTime(nowS() - 3600, clock.now) && !/auto/.test(e.btn().title)); }
+  { const c = rig("zh", { cloud: true, amounts: { other: 1 } }); c.F.perfPaint(c.B); ok("雲端視角的非上線也出,同一句 title", c.btn() && c.btn().title === tipBtZh(nowS() - 3600)); }
+  { const r = rig("zh", { amounts: null, perf: { at: nowS() - 3 * 86400 } }); r.F.perfPaint(r.B); ok("非上線 ≥ 1 天:「3 天前」照出,title 是上次回測那句", r.upd().kids[0].textContent === "3 天前" && r.upd().kids[0].title === tipBtZh(nowS() - 3 * 86400) && r.btn().title === undefined); }
+  for (const code of ["# Type: B\nimport x", "#Type:B", "# -*- coding -*-\n# Type: B\n"]) {
+    const r = rig("zh", { code }); r.F.perfPaint(r.B);
+    ok("不出:Type B(檔頭 `# Type: B`,同 xpIsTypeB)→ meta 列尾沒有 .upd、沒有失敗行、不輪詢", !r.upd() && !r.fail() && r.meta.kids.length === 4 && r.timers.length === 0);
+  }
+  { const r = rig("zh", { code: "# Type: A\n" }); r.F.perfPaint(r.B); ok("Type A 檔頭照出", !!r.btn()); }
   { const r = rig("zh", { perf: null }); r.F.perfPaint(r.B); ok("不出:報告沒有 perf(舊 runtime / 沒有 stats.json)", !r.upd() && !r.fail()); }
   { const r = rig("zh"); r.VS.local.name = "momo"; r.VS.local.open = 2; r.F.perfPaint(r.B); ok("不出:時光機裡(回測分頁畫的是 vN 存的 blob)", !r.upd()); }
   { const r = rig("zh", { pending: { n: 2, status: "running" } }); r.F.perfPaint(r.B); ok("不出:還原的重跑中 / 沒完成(stats.json 已移開)", !r.upd()); }
@@ -172,6 +191,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     ok("原因沿用版本重跑的四個字串(ver.rerunWhy.*);不認得的 → 中途出錯", why("REFUSED") === "被回測檢查擋下" && why("TIMEOUT") === "跑太久，已停下" && why("EXIT") === "中途出錯" && why("NOPE") === "中途出錯" && why("DATA", "en") === "no data came back");
     const e = rig("en", { perf: { at: nowS() - 100, refresh: { status: "failed", at: nowS() - 60, err: "EXIT" } } }); e.F.perfPaint(e.B);
     ok("en:Update failed; figures unchanged. / it hit an error;失敗不輪詢", e.fail().kids[1].textContent === "Update failed; figures unchanged." && e.fail().title === "it hit an error" && e.timers.length === 0);
+    ok("報告帶回 SUPERSEDED(跑完但 runner 丟棄:檔案在途中被改)/ BUSY(等 runner 的回測鎖等到逾時)各有自己一句", why("SUPERSEDED") === "策略在更新途中被改過，數字沒換；再按一次" && why("BUSY") === "這支策略正在回測中，等它跑完再按一次"
+      && why("SUPERSEDED", "en") === "The strategy was edited while updating; figures unchanged. Press again." && why("BUSY", "en") === "This strategy is being backtested right now; press again when it finishes.");
   }
   // 按下:當下換成更新中、送 stats_refresh {names:[name]};ack started 才記埋點;報告跟上(at 前進、refresh 消失)= 完成,唸一句
   {
@@ -209,6 +230,15 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     ok("再按一次 = 同一條指令;當下失敗行收掉、回更新中", f.sent.length === 2 && JSON.stringify(f.sent[1]) === JSON.stringify(f.sent[0]) && !f.fail() && f.upd().attrs.role === "status");
     const n = rig("zh"); n.F.perfPaint(n.B); n.btn().click(); await flush(); n.acks[0]({ ok: true, result: { started: [], skipped: { momo: "NO_STATS" } } }); await flush();
     ok("NO_STATS / NOT_RUNNABLE:沒排進去 = 失敗行、不記", n.fail() && n.tracked.length === 0);
+    const cc = rig("zh", { amounts: null }); cc.F.perfPaint(cc.B); cc.btn().click(); await flush(); cc.acks[0]({ ok: true, result: { started: [], skipped: { momo: "CODE_CHANGED" } } }); await flush();
+    ok("CODE_CHANGED(非上線、碼改過還沒回測):回閒置 + 失敗行(同一句「沒更新成功」),title = 「程式碼改過還沒回測，請先回測」、不記埋點、不輪詢",
+      cc.btn() && cc.fail() && cc.fail().title === "程式碼改過還沒回測，請先回測" && cc.fail().textContent === "沒更新成功，數字是舊的" && cc.tracked.length === 0 && cc.F.PFP.local === null);
+    const ce = rig("en", { amounts: null }); ce.F.perfPaint(ce.B); ce.btn().click(); await flush(); ce.acks[0]({ ok: true, result: { started: [], skipped: { momo: "CODE_CHANGED" } } }); await flush();
+    ok("en CODE_CHANGED:The code changed since the last backtest; run a backtest first.", ce.fail().title === "The code changed since the last backtest; run a backtest first.");
+    const ackWhy = async (code, lang) => { const q = rig(lang || "zh"); q.F.perfPaint(q.B); q.btn().click(); await flush(); q.acks[0]({ ok: true, result: { started: [], skipped: { momo: code } } }); await flush(); return q.fail() ? q.fail().title : null; };
+    ok("ack 的其他 skip 碼各自一句:NOT_RUNNABLE「這類策略不能更新績效」、INDEX_BROKEN「版本索引讀不到，請先回測一次」、CONFIG_UNREADABLE「下單設定讀不到，沒有更新」;NO_STATS 仍是中途出錯",
+      await ackWhy("NOT_RUNNABLE") === "這類策略不能更新績效" && await ackWhy("INDEX_BROKEN") === "版本索引讀不到，請先回測一次" && await ackWhy("CONFIG_UNREADABLE") === "下單設定讀不到，沒有更新" && await ackWhy("NO_STATS") === "中途出錯"
+      && await ackWhy("NOT_RUNNABLE", "en") === "This kind of strategy can't update its performance." && await ackWhy("INDEX_BROKEN", "en") === "The version index can't be read; run a backtest first." && await ackWhy("CONFIG_UNREADABLE", "en") === "The trading settings can't be read; nothing was updated.");
   }
   // 回合進行中:鈕 aria-disabled + title 原因,按了不送;解鎖後 title 回到時間那句
   {
@@ -234,8 +264,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     s.B.name = "other"; await s.timers[0][0]();
     ok("輪詢:換了策略就停", s.F.PFP.local === null);
     const cap = rig("zh", { perf: { at: nowS() - 100, refresh: { status: "running", at: nowS() - 10 } } }); cap.F.perfPaint(cap.B);
-    clock.now += (600 + 600 + 120) * 1000 + 1; await cap.timers[0][0](); clock.now -= (600 + 600 + 120) * 1000 + 1;
-    ok("輪詢封頂(機器端兩個 600 秒 + 餘裕):停、留佔位(重畫不再開回來)、以報告為準(還是更新中)", cap.F.PFP.local && cap.F.PFP.local.capped === true && cap.timers.length === 1 && cap.upd().attrs.role === "status");
+    clock.now += (900 + 900 + 120) * 1000 + 1; await cap.timers[0][0](); clock.now -= (900 + 900 + 120) * 1000 + 1;
+    ok("輪詢封頂(機器端兩個 15 分 + 餘裕;非上線的回測是 15 分):停、留佔位(重畫不再開回來)、以報告為準(還是更新中)", cap.F.PFP.local && cap.F.PFP.local.capped === true && cap.timers.length === 1 && cap.upd().attrs.role === "status");
     cap.btn && cap.F.perfPaint(cap.B);
     ok("封頂後重畫不開輪詢;再按一次才會(佔位清掉)", cap.timers.length === 1 && (() => { cap.B.data.perf = { at: nowS() - 100 }; cap.F.perfPaint(cap.B); cap.btn().click(); return cap.timers.length === 2 && cap.F.PFP.local.capped === undefined; })());
   }
@@ -244,7 +274,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   const html = read(path.join(R, "index.html")), css = read(path.join(R, "report-backtest.css"));
   ok("app.js:rpShowTab 畫完回測分頁就叫 perfPaint(B)", /R\.renderBacktest\(\$\("rp-bt"\), B\.data\.stats\);\n\s*if \(tab === "bt" && typeof perfPaint === "function"\) perfPaint\(B\);/.test(fnSrc(appSrc, "rpShowTab")));
   ok("app.js:三處上鎖 / 解鎖都在 verBusy 旁邊叫 perfBusy", (appSrc.match(/if \(typeof verBusy === "function"\) verBusy\(\); if \(typeof perfBusy === "function"\) perfBusy\(\);/g) || []).length === 3);
-  ok("index.html:perf.js 在 versions.js 之後(用它的 verAmount / verPendingOf / VS / RERUN_WHY)、app.js 之後", html.indexOf('src="perf.js"') > html.indexOf('src="versions.js"') && html.indexOf('src="versions.js"') > html.indexOf('src="app.js"'));
+  ok("index.html:perf.js 在 versions.js 之後(用它的 verAmount / verPendingOf / VS / RERUN_WHY)、app.js 之後、export.js 之後(xpIsTypeB)", html.indexOf('src="perf.js"') > html.indexOf('src="versions.js"') && html.indexOf('src="versions.js"') > html.indexOf('src="app.js"') && html.indexOf('src="perf.js"') > html.indexOf('src="export.js"'));
   ok("CSS:.upd 靠右(margin-left: auto)、更新中 .busy、aria-disabled 的鈕走灰階退場、失敗行緊跟 meta(8)而三組條列仍離 16",
     /\.bt-meta > \.upd \{ display: inline-flex; align-items: center; gap: var\(--space-8\); margin-left: auto; white-space: nowrap; \}/.test(css) && /\.bt-meta > \.upd \.busy \{/.test(css)
     && /\.bt-meta > \.upd \.btn-quiet\[aria-disabled="true"\] \{ color: var\(--color-greyDark\); text-decoration: none; cursor: not-allowed; \}/.test(css)
@@ -253,7 +283,11 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   const keys = ["perf.btn", "perf.ago", "perf.agoOne", "perf.tip", "perf.busy", "perf.doneSr", "perf.fail"];
   ok("字串:七個 key zh / en 都有,逐字 = spec §10", keys.every((k) => STR.zh[k] && STR.en[k]) && STR.zh["perf.btn"] === "更新績效" && STR.zh["perf.busy"] === "更新中" && STR.zh["perf.fail"] === "沒更新成功，數字是舊的" && STR.zh["perf.doneSr"] === "績效已更新"
     && STR.en["perf.btn"] === "Update Performance" && STR.en["perf.busy"] === "Updating" && STR.en["perf.fail"] === "Update failed; figures unchanged." && STR.en["perf.doneSr"] === "Performance updated");
-  ok("文案避開「回測」「重跑」「版本」三個詞(spec 開頭那條)", keys.every((k) => !/回測|重跑|版本/.test(STR.zh[k]) && !/backtest|rerun|version/i.test(STR.en[k])));
+  ok("文案避開「回測」「重跑」「版本」三個詞(spec 開頭那條;非上線那兩句例外——Wei 10-12 非上線＝重跑回測,句子就該說回測)", keys.every((k) => !/回測|重跑|版本/.test(STR.zh[k]) && !/backtest|rerun|version/i.test(STR.en[k])));
+  ok("非上線兩句(0.1.22):perf.tipBt 「上次回測 {t}」/ Last backtest {t};perf.codeChanged 「程式碼改過還沒回測，請先回測」", STR.zh["perf.tipBt"] === "上次回測 {t}" && STR.en["perf.tipBt"] === "Last backtest {t}"
+    && STR.zh["perf.codeChanged"] === "程式碼改過還沒回測，請先回測" && STR.en["perf.codeChanged"] === "The code changed since the last backtest; run a backtest first.");
+  ok("稽核後五句(perf.superseded / lockBusy / indexBroken / notRunnable / configUnreadable)zh / en 都有、PF_ERRS = 六碼", ["perf.superseded", "perf.lockBusy", "perf.indexBroken", "perf.notRunnable", "perf.configUnreadable"].every((k) => STR.zh[k] && STR.en[k])
+    && /const PF_ERRS = \["REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY"\]/.test(perfSrc));
   ok("註解不再說 live tick 每根 K 重寫 stats.json(main.js / results.js)", !/live tick 每根 K 重寫 stats\.json|每根 K 的 live tick 都重寫/.test(mainSrc + read(path.join(R, "results.js"))));
 
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");

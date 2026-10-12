@@ -5,15 +5,28 @@ a temp workspace carrying a copy of this repo's lib/.
 
   1. args: exactly {names: [1..50 names]}, each [A-Za-z0-9_-]{1,128}, no duplicates.
   2. per name: a Type B strategy → NOT_RUNNABLE; no stats.json → NO_STATS; queued twice → BUSY.
-  3. the happy path: ack {started, skipped} at once, perf_refresh.json `running` + a push; the
-     run is BLAVE_MODE=live + BLAVE_STATS_REFRESH=1; stats.json rewritten with Generated At and
-     the version index untouched, no state.json, record gone, another push; the strategies
-     report carries perf.at (= stats.json mtime) and perf.refresh only while running / failed.
+  3. the happy path, deployed (a key of portfolio_config.json's amounts): ack {started, skipped}
+     at once, perf_refresh.json `running` + a push; the run is BLAVE_MODE=live +
+     BLAVE_STATS_REFRESH=1; stats.json rewritten with Generated At and the version index
+     untouched, no state.json, record gone, another push; the strategies report carries perf.at
+     (= stats.json mtime) and perf.refresh only while running / failed.
+  3b. not deployed (0.1.22, Wei 10-12: every Type A/C with a stats.json has the button): the run
+     is a quiet backtest (BLAVE_MODE=backtest BLAVE_QUIET=1, BLAVE_EXPECT_CODE_HASH = the stored
+     version the file equals; the restore re-run's 15-min budget), Generated At restamped, same
+     code → nothing minted; a file that equals none of its stored versions (edited since) →
+     CODE_CHANGED and nothing runs; never versioned → let through, mints v1; a deployed strategy
+     is not gated (canon §6: drift is a flag, not a refusal) and keeps the 600-s live refresh.
+  3c. audit-stats-refresh-all: a run that exited 0 without touching stats.json (the runner
+     discarded it: the file changed under it) → failed SUPERSEDED on both paths; the sweep skips
+     while a button refresh holds the lock and writes no failed record; _mark_perf writes nothing
+     for a deleted strategy; INDEX_BROKEN (unreadable index / entry without code_hash) is not
+     CODE_CHANGED; an unreadable portfolio_config.json → the whole batch CONFIG_UNREADABLE, a
+     missing one = nobody deployed; the runner's "already running" tail classifies as BUSY.
   4. a failed run → perf.refresh {status: failed, err: DATA}; a listener restart settles a stale
      `running` record as failed EXIT.
-  5. the pre-report sweep (_start_report_job): refreshes stale live Type A/C members in front of
-     the report, skips Type B, skips a stats.json younger than an hour, does nothing unbound;
-     _fire_due_reports goes through it.
+  5. the pre-report sweep (_start_report_job): refreshes stale deployed Type A/C members in front
+     of the report, skips Type B and undeployed strategies, skips a stats.json younger than an
+     hour, does nothing unbound; _fire_due_reports goes through it.
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_stats_refresh_command.py
 """
@@ -189,7 +202,9 @@ check(r == {"started": [], "skipped": {"tb": "NOT_RUNNABLE", NAME: "NO_STATS"}},
       f"Type B → NOT_RUNNABLE, never backtested → NO_STATS, nothing started ({r})")
 check(not os.path.exists(os.path.join(TB, "ran")), "the Type B script was not executed")
 
-# ── 3. happy path ───────────────────────────────────────────────────────────
+# ── 3. happy path (deployed) ────────────────────────────────────────────────
+with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
+    json.dump({"amounts": {NAME: 10}, "exchanges": {}}, f)
 flags(n=300)
 r = subprocess.run([sys.executable, os.path.join("strategies", NAME, "strategy.py")], cwd=WS,
                    env=dict(os.environ, BLAVE_MODE="backtest", PYTHONPATH=WS), capture_output=True, text=True, timeout=180)
@@ -271,6 +286,143 @@ check(d is not None and d.get("status") == "failed" and d.get("err") == "EXIT",
       f"listener start settles a stale running record as failed EXIT ({d})")
 os.remove(os.path.join(SDIR, cl.PERF_REFRESH_FILE))
 
+# ── 3b. not deployed: a quiet backtest; off every stored version → CODE_CHANGED ──────────
+COLD = "cold"
+CDIR = os.path.join(WS, "strategies", COLD)
+os.makedirs(CDIR)
+with open(os.path.join(CDIR, "strategy.py"), "w", encoding="utf-8") as f:
+    f.write(TEMPLATE.format(name=COLD))
+
+
+def cold(fn):
+    return os.path.join(CDIR, fn)
+
+
+with open(cold("flags.json"), "w") as f:
+    json.dump({"n": 300}, f)
+r = subprocess.run([sys.executable, os.path.join("strategies", COLD, "strategy.py")], cwd=WS,
+                   env=dict(os.environ, BLAVE_MODE="backtest", PYTHONPATH=WS), capture_output=True, text=True, timeout=180)
+c0 = read(cold("stats.json"))
+check(r.returncode == 0 and c0 is not None and os.path.exists(cold(os.path.join("versions", "v1.json"))),
+      f"cold: backtest wrote stats.json + v1 (rc {r.returncode}: {(r.stderr or '')[-200:]})")
+v1_hash = (read(cold(os.path.join("versions", "v1.json"))) or {}).get("code_hash")
+time.sleep(1.1)
+with open(cold("flags.json"), "w") as f:
+    json.dump({"n": 360}, f)
+os.remove(cold("env.json"))
+r = send([COLD])
+check(r == {"started": [COLD], "skipped": {}}, f"cold (not deployed, file = v1): ack started ({r})")
+check(wait_idle(), "the cold refresh finished")
+c1, env = read(cold("stats.json")), read(cold("env.json")) or {}
+check(env.get("BLAVE_MODE") == "backtest" and env.get("BLAVE_QUIET") == "1" and env.get("BLAVE_EXPECT_CODE_HASH") == v1_hash
+      and cl.STATS_REFRESH_ENV not in env,
+      f"cold ran as a quiet backtest pinned to v1's code_hash, not the live refresh ({env})")
+check(c1 is not None and c1["end"] > c0["end"] and c1["Generated At"] > c0["Generated At"],
+      f"cold: the backtest re-ran on the longer data, Generated At restamped ({c0['end']} → {c1['end']})")
+cidx = read(cold(os.path.join("versions", "index.json"))) or {}
+check(cidx.get("current") == 1 and not os.path.exists(cold(os.path.join("versions", "v2.json"))) and read(cold(cl.PERF_REFRESH_FILE)) is None,
+      f"cold: same code → nothing minted, current stays 1, record cleared ({cidx.get('current')})")
+with open(cold("strategy.py"), "a", encoding="utf-8") as f:
+    f.write("\n# edited after the last backtest\n")
+os.remove(cold("env.json"))
+r = send([COLD])
+check(r == {"started": [], "skipped": {COLD: "CODE_CHANGED"}}, f"cold edited, not backtested → CODE_CHANGED ({r})")
+check(not os.path.exists(cold("env.json")) and not os.path.exists(cold(os.path.join("versions", "v2.json"))) and read(cold(cl.PERF_REFRESH_FILE)) is None,
+      "CODE_CHANGED: no subprocess, nothing minted, no record")
+# never versioned: let through — its first backtest mints v1, a first version is not an edit
+shutil.rmtree(cold("versions"))
+TIMEOUTS = {}
+_orig_refresh_stats = cl._refresh_stats
+cl._refresh_stats = lambda name, timeout, backtest_hash=None: TIMEOUTS.__setitem__(name, timeout) or _orig_refresh_stats(name, timeout, backtest_hash)
+import hashlib
+with open(cold("strategy.py"), "rb") as f:
+    edited_hash = hashlib.sha256(f.read()).hexdigest()[:16]
+r = send([COLD])
+check(r == {"started": [COLD], "skipped": {}} and wait_idle(), f"never versioned (no versions/) → started ({r})")
+cidx, env = read(cold(os.path.join("versions", "index.json"))) or {}, read(cold("env.json")) or {}
+check(cidx.get("current") == 1 and [i.get("code_hash") for i in cidx.get("items") or []] == [edited_hash]
+      and env.get("BLAVE_MODE") == "backtest" and env.get("BLAVE_EXPECT_CODE_HASH") == edited_hash,
+      f"never versioned: a quiet backtest pinned to the file's own hash, mints v1 of it ({cidx.get('items')})")
+check(TIMEOUTS.get(COLD) == cl.RESTORE_RERUN_TIMEOUT_S == 15 * 60, f"the backtest path gets the restore re-run's 15-min budget ({TIMEOUTS})")
+with open(cold(os.path.join("versions", "index.json")), "rb") as f:
+    cidx_bytes = f.read()
+with open(cold(os.path.join("versions", "index.json")), "w") as f:
+    f.write("{half")
+r = send([COLD])
+check(r == {"started": [], "skipped": {COLD: "INDEX_BROKEN"}}, f"index there but unreadable → INDEX_BROKEN, not CODE_CHANGED ({r})")
+with open(cold(os.path.join("versions", "index.json")), "wb") as f:
+    f.write(cidx_bytes)
+# deployed: not gated — the live refresh runs whatever the file holds (its drift is a flag, canon §6)
+with open(os.path.join(SDIR, "strategy.py"), "a", encoding="utf-8") as f:
+    f.write("\n# edited after the last backtest\n")
+os.remove(os.path.join(SDIR, "env.json"))
+r = send([NAME])
+check(r == {"started": [NAME], "skipped": {}} and wait_idle() and child_env().get("BLAVE_MODE") == "live",
+      f"deployed + edited: still the live refresh, no CODE_CHANGED ({r})")
+check(TIMEOUTS.get(NAME) == cl.STATS_REFRESH_TIMEOUT_S == 600, f"the live path keeps the 600-s budget ({TIMEOUTS})")
+cl._refresh_stats = _orig_refresh_stats
+
+# ── 3c. audit follow-ups ────────────────────────────────────────────────────
+check(cl._RERUN_ERRS == rep.RERUN_ERRS and {"SUPERSEDED", "BUSY"} <= set(cl._RERUN_ERRS),
+      "listener and reporter agree on the error codes, SUPERSEDED / BUSY included")
+# live path: the file edited mid-run → the runner discards the run (rc 0, stats.json untouched) → SUPERSEDED
+flags(n=360, sleep=4)
+mt = os.stat(os.path.join(SDIR, "stats.json")).st_mtime_ns
+send([NAME])
+time.sleep(1.5)
+with open(os.path.join(SDIR, "strategy.py"), "a", encoding="utf-8") as f:
+    f.write("# edited mid-run\n")
+check(wait_idle(), "the superseded live refresh finished")
+d = perf_doc()
+check(d is not None and d.get("status") == "failed" and d.get("err") == "SUPERSEDED" and os.stat(os.path.join(SDIR, "stats.json")).st_mtime_ns == mt,
+      f"live refresh discarded by the runner → failed SUPERSEDED, stats.json untouched ({d})")
+# backtest path: queued behind the lock, edited before it starts → BLAVE_EXPECT_CODE_HASH mismatch → SUPERSEDED, nothing minted
+cl._STATS_REFRESH_LOCK.acquire()
+r = send([COLD])
+check(r == {"started": [COLD], "skipped": {}}, f"cold queued behind a held lock ({r})")
+with open(cold("strategy.py"), "a", encoding="utf-8") as f:
+    f.write("# late edit\n")
+cl._STATS_REFRESH_LOCK.release()
+check(wait_idle(), "the superseded cold backtest finished")
+d = read(cold(cl.PERF_REFRESH_FILE))
+check(d is not None and d.get("err") == "SUPERSEDED" and not os.path.exists(cold(os.path.join("versions", "v2.json"))),
+      f"backtest pinned to the ack-time hash, file edited meanwhile → SUPERSEDED, no version minted ({d})")
+os.remove(cold(cl.PERF_REFRESH_FILE))
+# the sweep while a button refresh holds the machine: skipped, no failed record on any member
+old = time.time() - 2 * cl.STATS_REFRESH_MIN_AGE_S
+os.utime(os.path.join(SDIR, "stats.json"), (old, old))
+os.remove(os.path.join(SDIR, cl.PERF_REFRESH_FILE))
+cl._bound_venue = lambda: True
+cl._STATS_REFRESH_LOCK.acquire()
+cl._refresh_live_stats("locked")
+cl._STATS_REFRESH_LOCK.release()
+check(os.stat(os.path.join(SDIR, "stats.json")).st_mtime == old and perf_doc() is None,
+      "sweep under a held lock: skipped, stats.json untouched, no failed record")
+# a deleted strategy's record is not recreated
+cl._mark_perf("ghost", "failed", "EXIT")
+check(not os.path.exists(os.path.join(WS, "strategies", "ghost")), "_mark_perf writes nothing for a strategy folder that is gone")
+# an index entry without code_hash: can't tell → INDEX_BROKEN (not CODE_CHANGED); a full index with no match → CODE_CHANGED
+with open(cold(os.path.join("versions", "index.json")), "w") as f:
+    json.dump({"v": 1, "counter": 1, "current": 1, "items": [{"n": 1, "at": 1}]}, f)
+r = send([COLD])
+check(r == {"started": [], "skipped": {COLD: "INDEX_BROKEN"}}, f"entry without code_hash → INDEX_BROKEN ({r})")
+with open(cold(os.path.join("versions", "index.json")), "wb") as f:
+    f.write(cidx_bytes)
+r = send([COLD])
+check(r == {"started": [], "skipped": {COLD: "CODE_CHANGED"}}, f"full index, edited file → CODE_CHANGED ({r})")
+# portfolio_config.json there but unreadable → the whole batch CONFIG_UNREADABLE; missing → nobody deployed
+with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
+    f.write("{half")
+r = send([NAME, COLD, "tb"])
+check(r == {"started": [], "skipped": {NAME: "CONFIG_UNREADABLE", COLD: "CONFIG_UNREADABLE", "tb": "CONFIG_UNREADABLE"}} and cl._deployed_names() is None,
+      f"unreadable portfolio_config.json → whole batch CONFIG_UNREADABLE, no one downgraded to a backtest ({r})")
+os.remove(os.path.join(WS, "manager", "portfolio_config.json"))
+check(cl._deployed_names() == set(), "no portfolio_config.json = nobody deployed (the button still works)")
+with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
+    json.dump({"amounts": {NAME: 10}, "exchanges": {}}, f)
+check(cl._classify_rerun("❌ A backtest of cold is already running (PID 7, started 09:00) — wait for it") == "BUSY",
+      "the runner's lock-wait exit classifies as BUSY, not EXIT")
+
 # ── 5. the pre-report sweep ─────────────────────────────────────────────────
 with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
     json.dump({"amounts": {NAME: 10, "tb": 5}, "exchanges": {}}, f)
@@ -281,6 +433,7 @@ cl._bound_venue = lambda: True
 old = time.time() - 2 * cl.STATS_REFRESH_MIN_AGE_S
 os.utime(os.path.join(SDIR, "stats.json"), (old, old))
 os.utime(os.path.join(TB, "stats.json"), (old, old))
+os.utime(cold("stats.json"), (old, old))
 os.remove(os.path.join(SDIR, "env.json"))
 flags(n=420)
 del PUSHES[:]
@@ -288,6 +441,7 @@ cl._start_report_job("daily")
 check(os.stat(os.path.join(SDIR, "stats.json")).st_mtime > old + 60 and stats()["end"] > st1["end"],
       "sweep refreshed the stale live Type A member before the report")
 check(not os.path.exists(os.path.join(TB, "ran")), "sweep never ran the Type B member")
+check(os.stat(cold("stats.json")).st_mtime == old, "sweep left the stale undeployed strategy alone (button only)")
 for _ in range(50):
     if os.path.exists(MARK):
         break

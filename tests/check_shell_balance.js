@@ -14,7 +14,7 @@ const fn = (name) => { const i = app.indexOf("function " + name + "("); if (i < 
 // 畫面那一半:真的 balLoad / balNow / balNum,window.blave.balance 接到假的主行程
 function screen(host) {
   const painted = [], els = { "mp-bill": {}, "set-scrim": { hidden: false }, "set-plan": { hidden: false } };
-  const M = new Function("window", "$", "mpBillPaint", "planPaint", `let hasToken = true, balLast = null, balSeq = 0;
+  const M = new Function("window", "$", "mpBillPaint", "planPaint", `let hasToken = true, balLast = null, balFree = null, balSeq = 0;
     ${fn("balNum")}\n${fn("balNow")}\nasync ${fn("balLoad").replace(/^async /, "")}
     return { balNum, balNow, balLoad, token: (v) => { hasToken = v; }, clear: () => { balLast = null; } };`)(
     { blave: { balance: () => host.read() } }, (id) => els[id], () => painted.push("menu"), () => painted.push("plan"));
@@ -46,11 +46,11 @@ const mk = (reply, o) => { const sent = []; let creds = (o && o.creds) || { toke
   }
   { const m = mk(() => { throw new Error("ECONNRESET"); }), s = screen(m.h); await s.M.balLoad(); ok("連不上(post 丟例外)→「—」,不炸", s.row() === "—"); }
   ok("錯誤不會被畫成 0:讀不到一律 null", [{ status: 503, body: { balance: 0 } }, { status: 401, body: { balance: 0 } }, null, undefined, { status: 200 }].every((r) => interpret(r) === null)
-    && JSON.stringify(interpret({ status: 200, body: { balance: 0, trial_ai_credit_left: null } })) === '{"balance":0,"trial":null}');
+    && JSON.stringify(interpret({ status: 200, body: { balance: 0, trial_ai_credit_left: null } })) === '{"balance":0,"trial":null,"free":null}');
   // ---- 2
   { const m = mk(() => ({ status: 200, body: { balance: 10, trial_ai_credit_left: 3 } })); const r = await m.h.read();
     ok("打的是 /oauth/desktop/balance,body 只有 token 與 app_secret", m.sent.length === 1 && m.sent[0][0] === "https://api.test" + ENDPOINT && ENDPOINT === "/oauth/desktop/balance"
-      && JSON.stringify(m.sent[0][1]) === '{"token":"acct-A","app_secret":"appsec-A"}' && JSON.stringify(r) === '{"balance":10,"trial":3}');
+      && JSON.stringify(m.sent[0][1]) === '{"token":"acct-A","app_secret":"appsec-A"}' && JSON.stringify(r) === '{"balance":10,"trial":3,"free":null}');
     await m.h.read(); m.tick(HOLD_MS - 1); await m.h.read();
     ok("10 秒內重複讀:用上一次的答案,不再發請求", m.sent.length === 1 && HOLD_MS === 10000);
     m.tick(2); await m.h.read();
