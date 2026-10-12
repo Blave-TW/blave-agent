@@ -74,7 +74,7 @@ ALLOWED = {
     "runtime/strategy_reporter.py:_read_perf",             # perf.at → 更新績效 caption (web + desktop)
     "shell/main.js:stratPerf",                             # desktop-local perf.at, same shape as _read_perf
     "shell/main.js:loadStrategy",                          # stratPerf's leading comment (previous-function attribution)
-    "runtime/command_listener.py:_refresh_stats",          # the refresh's own result (new mtime)
+    "runtime/command_listener.py:_stats_sig",             # the refresh.s before/after signature (mtime_ns, size): did the run write it?
     "runtime/command_listener.py:_refresh_live_stats",     # pre-report sweep: skip if refreshed < 1 h ago
     # change-detection caches, draft-only or existence-only for deployed strategies
     "runtime/strategy_reporter.py:_stats_marker",          # draft → mtime; live/deployed → "exists"
