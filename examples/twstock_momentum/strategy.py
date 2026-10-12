@@ -132,6 +132,8 @@ def fetch_data(hdrs):
             closes[sid] = price['Close']
             opens[sid]  = price['Open']
         except Exception as e:
+            # For a price fetch that fails for one stock. align_feed belongs outside this
+            # loop: skipping its FeedNotPublished would re-rank on a partial universe.
             print(f"  skip {sid}: {e}")
 
     close_df = pd.DataFrame(closes).sort_index().dropna(how='all')
