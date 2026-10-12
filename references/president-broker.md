@@ -225,7 +225,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   order goes out, so a slow login (up to 30 s) cannot eat the margin. Expect a close right after another order to be refused for ~20–22 s; retry, never force.
 - `status='filled'` only on a real match; `status='sent'` means no fill was seen in time;
   `status='unknown'` means the broker answered a status code the SDK does not define — none of
-  them is resubmitted; check the position first. `unknown` is **P3 today** (the lib's
+  them is resubmitted; check the position first. The reconciler parks the unfilled lots
+  (`state/president_pending_sent.json`) and claims them from the next caught-up snapshot: account
+  net moved by exactly those lots → booked (`late_fill_adopted`); unchanged → dropped; three
+  distinct snapshots fitting neither → one `order_errors` row (P1) + HALT. No entry for that root
+  goes out while lots are parked; closes still do. `unknown` is **P3 today** (the lib's
   `order_unknown_status` audit line + a reconciler log warning; it is deliberately not written to
   `manager/order_errors.json`, because the platform turns every row there into a P1 下單失敗 TG +
   email). Raising it to P2 needs, in this order: api routing that `kind` to its own P2 event,
@@ -297,6 +301,10 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   before a 統一 futures strategy goes live, and whenever they mention trading the same contract by
   hand: the bot cannot tell its lots from theirs inside one contract month; keep manual positions in
   another month or another root (MXF / TMF), never the opposite side in the month the bot trades.
+  The same gap reaches the parked-order claim (above): it compares the raw net of that one
+  contract, so a manual order in the same contract while lots are parked is misread — a hand
+  +1 is adopted as the bot's fill (and later closed by it), a hand −1 next to a real bot fill
+  reads as "not filled" and the entry is sent again. Other months and roots are unaffected.
 - **One account, two machines** (cloud + desktop on the same 統一 account): safe only when they
   trade **different roots** (TXF vs MXF vs TMF — separate contracts, separate books). On the same
   root the two books net at the broker: no order ever exceeds what the account holds, but one

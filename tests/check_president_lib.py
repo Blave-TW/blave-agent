@@ -817,8 +817,8 @@ FILL = {}
 def fake_place(env, sym, action, lots, intent, **kw):
     sent_legs.append((sym, action, lots, intent))
     st = FILL.get(intent, "filled")
-    return {"status": st, "fill_qty": float(lots if st == "filled" else 0), "avg_fill_price": 100.0,
-            "symbol": sym + "J6"}
+    fq = FILL.get("fill_qty", lots) if st == "filled" else 0   # fill_qty < lots = a partial fill
+    return {"status": st, "fill_qty": float(fq), "avg_fill_price": 100.0, "symbol": sym + "J6"}
 
 
 real_place = op.place_futures_market_order
@@ -845,6 +845,219 @@ try:
     r = reconciler.place_order("TMF", -2, exchange="president", reduce_only=True)
     check(sent_legs == [("TMF", "sell", 2, "reduce")] and r["status"] == "sent" and r["executed_qty"] == 0,
           "an unconfirmed close comes back 'sent' with nothing filled", r)
+
+    # ── unfilled lots are parked: no entry for that root until a reconcile round's snapshot claims them ──
+    def pending():
+        return json.load(open(reconciler.PENDING_SENT_PATH, encoding="utf-8"))
+
+    def audits(event):
+        return [json.loads(l) for l in open(guard.AUDIT_PATH, encoding="utf-8") if f'"{event}"' in l]
+
+    def errors():
+        return (json.load(open("manager/order_errors.json", encoding="utf-8"))
+                if os.path.exists("manager/order_errors.json") else [])
+
+    def gp():  # a reconcile round's read (what _get_positions_guarded does around get_positions)
+        reconciler._claim_parked = True
+        try:
+            return reconciler.get_positions()
+        finally:
+            reconciler._claim_parked = False
+
+    def last_order():
+        return json.loads(open("manager/orders.jsonl", encoding="utf-8").read().strip().splitlines()[-1])
+
+    from lib.portfolio import ledger_positions, _rebase_ledger_symbol
+    p = pending()["TMFJ6"]
+    check(p["lots"] == -2 and p["net_expected"] == 2 and p["root"] == "TMF" and p["legs"][0]["status"] == "sent"
+          and audits("order_unfilled_parked")[-1]["lots"] == -2,
+          "…and is parked: the unfilled lots with the account net the book now expects", p)
+    FILL.clear()
+    sent_legs.clear()
+    n_err = len(errors())
+    r = reconciler.place_order("TMF", 1, exchange="president")
+    check(r is False and sent_legs == [] and len(errors()) == n_err,
+          "an entry for that root waits while lots are parked — nothing sent, no order_error")
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])  # the close did not fill
+    reconciler.get_positions()
+    check("TMFJ6" in pending(), "a read without claim (seed_ledger's) leaves parked orders alone")
+    gp()
+    check(pending() == {} and audits("unfilled_order_cleared")[-1]["contract"] == "TMFJ6",
+          "a reconcile round's caught-up snapshot at the expected net: the IOC was not taken, cleared")
+    sent_legs.clear()
+    reconciler.place_order("TMF", 1, exchange="president")
+    check(sent_legs == [("TMF", "buy", 1, "entry")], "…and the entry goes out again")
+    # late fill: the entry reports no fill, the next snapshot shows the lot → booked, never re-sent
+    FILL["entry"] = "sent"
+    snapshot([])
+    sent_legs.clear()
+    r = reconciler.place_order("TMF", 1, exchange="president")
+    p = pending()["TMFJ6"]
+    check(r["status"] == "sent" and p["lots"] == 1 and p["net_expected"] == 0, "entry 'sent' on a flat account: +1 parked", p)
+    r = reconciler.place_order("TMF", 1, exchange="president")
+    check(r is False and sent_legs == [("TMF", "buy", 1, "entry")], "the same entry is NOT re-sent next round")
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
+    pos = gp()
+    book = ledger_positions("president").get("TMF") or {}
+    lo = last_order()
+    check(pending() == {} and (book.get("side"), book.get("qty"), book.get("months")) == ("long", 1.0, {"2026-10": 1.0})
+          and audits("late_fill_adopted")[-1]["lots"] == 1 and pos["TMF"]["size"] == 1.0,
+          "the fill arrived late: booked from the snapshot (late_fill_adopted), the book holds 1 lot in 2026-10",
+          (book, pos))
+    check(lo.get("late_fill") is True and lo["exchange"] == "president" and lo["action"] == "BUY"
+          and lo["legs"] == [{"signed_diff": 1.0, "reduce_only": False, "signed_qty": 1.0, "executed_qty": 1.0,
+                              "resolved_symbol": "TMFJ6"}],
+          "…as one orders.jsonl line (late_fill, no fill price) — the replay is what books it", lo)
+    FILL.clear()
+    sent_legs.clear()
+    reconciler.place_order("TMF", 1, exchange="president")
+    check(sent_legs == [("TMF", "buy", 1, "entry")], "…entries for the root are open again")
+    # the self_ledger known gap, pinned: a manual +1 in the SAME contract while a bot +1 is parked is
+    # read as the bot's fill (the raw net cannot tell them apart) — change the basis and this test must change
+    FILL["entry"] = "sent"
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
+    reconciler.place_order("TMF", 1, exchange="president")
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])  # the user's hand buy, not the bot's
+    gp()
+    check(pending() == {} and ledger_positions("president")["TMF"]["qty"] == 2.0,
+          "KNOWN GAP (expected): a hand +1 in the same contract while +1 is parked is adopted as the bot's")
+    # partial fills: what did not fill is parked against net_before + the part that did
+    FILL.clear()
+    FILL["fill_qty"] = 1
+    sent_legs.clear()
+    r = reconciler.place_order("TMF", 2, exchange="president")
+    p = pending()["TMFJ6"]
+    check(r["executed_qty"] == 1 and p["lots"] == 1 and p["net_expected"] == 3,
+          "entry 2 filled 1: the missing lot is parked, expected net = before (2) + filled (1)", p)
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 3, "net_current": 3}])
+    gp()
+    check(pending() == {}, "…account at expected (3): the missing lot did not fill, cleared")
+    r = reconciler.place_order("TMF", -2, exchange="president", reduce_only=True)
+    p = pending()["TMFJ6"]
+    check(r["executed_qty"] == 1 and p["lots"] == -1 and p["net_expected"] == 2,
+          "close 2 filled 1: the missing lot is parked, expected net = before (3) − filled (1)", p)
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+    gp()
+    check(pending() == {}, "…cleared at the expected net")
+    FILL.clear()
+    # a guess row (lots with no recorded month) stays a guess after a late fill
+    _rebase_ledger_symbol("TMF", "president", None, qty=1.0)
+    check(ledger_positions("president")["TMF"].get("months_guess") is True, "setup: a guessed-month book row")
+    FILL["entry"] = "sent"
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
+    reconciler.place_order("TMF", 1, exchange="president")
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+    gp()
+    book = ledger_positions("president")["TMF"]
+    check(book["qty"] == 2.0 and book.get("months_guess") is True and sum(book["months"].values()) == 2.0,
+          "late fill onto a guess row: qty 2, the months still a guess (nothing asserted for the old lot)", book)
+    FILL.clear()
+    # closes while lots are parked: sent (and snapshot-checked by the lib); with nothing held, refused before the broker
+    FILL["entry"] = "sent"
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+    reconciler.place_order("TMF", 1, exchange="president")
+    FILL.clear()
+    sent_legs.clear()
+    reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    check(sent_legs == [("TMF", "sell", 1, "reduce")] and pending()["TMFJ6"]["lots"] == 1,
+          "a close goes out while lots are parked; the parking is untouched")
+    op.place_futures_market_order = real_place
+    snapshot([])
+    api = use([ACK])
+    e = raises(op.PresidentError, lambda: reconciler.place_order("TMF", -1, exchange="president", reduce_only=True))
+    check(e is not None and not api.sent, "…and with nothing held the lib refuses the close before the broker (no reverse entry)", e)
+    op.place_futures_market_order = fake_place
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+    gp()
+    check(pending() == {}, "cleanup: cleared at the expected net")
+    # M1: net_before only from a snapshot that has caught up with the last send — else nothing is sent
+    json.dump({"TMFJ6": __import__("time").time()}, open(op.LAST_ORDER_PATH, "w"))
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}],
+             query_started_at=__import__("time").time() + 1)
+    sent_legs.clear()
+    r1 = reconciler.place_order("TMF", 1, exchange="president")
+    r2 = reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    check(r1 is False and r2 is False and sent_legs == [] and pending() == {},
+          "snapshot not caught up with the last send: neither leg is sent nor parked this round (the lib's own check "
+          "would read a newer snapshot than net_before did)")
+    open(op.LAST_ORDER_PATH, "w").write("{}")
+    # a pending file that does not parse: unknown whether lots are parked → entries wait, closes go, one P1 row
+    open(reconciler.PENDING_SENT_PATH, "w").write("{not json")
+    n_err = len(errors())
+    sent_legs.clear()
+    r1 = reconciler.place_order("TMF", 1, exchange="president")
+    r2 = reconciler.place_order("TMF", 1, exchange="president")
+    check(r1 is False and r2 is False and sent_legs == [] and len(errors()) == n_err + 1
+          and reconciler.PENDING_SENT_PATH in errors()[-1]["error"],
+          "corrupt pending file: entries wait, one order_errors row per process", errors()[-1:])
+    reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    check(sent_legs == [("TMF", "sell", 1, "reduce")], "…closes still go")
+    gp()
+    check(open(reconciler.PENDING_SENT_PATH, encoding="utf-8").read() == "{not json" and len(errors()) == n_err + 1,
+          "…a reconcile round's read neither raises nor writes over the file")
+    os.remove(reconciler.PENDING_SENT_PATH)
+    sent_legs.clear()
+    reconciler.place_order("TMF", 1, exchange="president")
+    check(sent_legs == [("TMF", "buy", 1, "entry")], "…file removed: entries resume")
+    # the parking survives a process restart (it is only ever read from disk)
+    FILL["entry"] = "sent"
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+    reconciler.place_order("TMF", 1, exchange="president")
+    FILL.clear()
+    import importlib as _il
+    _il.reload(reconciler)
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 3, "net_current": 3}])
+    gp()
+    check(pending() == {} and ledger_positions("president")["TMF"]["qty"] == 3.0 and audits("late_fill_adopted")[-1]["lots"] == 1,
+          "after a restart (module reloaded) the first round's read claims the parked lot")
+    # neither explanation fits three snapshots running → P1 (order_errors row) + HALT; the row stays, marked halted
+
+    def park_then_escalate():
+        FILL["entry"] = "sent"
+        snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 3, "net_current": 3}])
+        reconciler.place_order("TMF", 1, exchange="president")   # parked +1, expected 3
+        FILL.clear()
+        n_err, halts = len(errors()), len(audits("halt_tripped"))
+        for i in range(1, 4):
+            snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 7, "net_current": 7}],
+                     query_started_at=__import__("time").time() + president_vault.ORDER_SETTLE_S + i)
+            gp()
+            if i < 3:
+                check(not guard.halted() and len(errors()) == n_err and len(pending()["TMFJ6"]["reads"]) == i,
+                      f"unexplained read {i}/3: still waiting, no HALT, no order_error")
+        gp()  # the same snapshot again does not count as another read
+        return n_err, halts
+
+    n_err, halts = park_then_escalate()
+    e = errors()[-1] if len(errors()) > n_err else {}
+    check(guard.halted() and len(errors()) == n_err + 1 and e.get("exchange") == "president" and "TMFJ6" in e.get("error", "")
+          and "平掉" in e.get("error", "") and len(audits("halt_tripped")) == halts + 1
+          and audits("halt_tripped")[-1]["source"] == "reconciler" and pending()["TMFJ6"].get("halted") is True,
+          "the third distinct snapshot that fits neither: one order_errors row (P1, says to flatten in the app first), "
+          "HALT by the reconciler, the row kept as halted", e)
+    sent_legs.clear()
+    reconciler.place_order("TMF", 1, exchange="president")
+    check(sent_legs == [], "…and HALT holds the entry")
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 3, "net_current": 3}])   # the user flattened the lot in the app
+    gp()
+    check(pending() == {} and audits("unfilled_order_cleared")[-1]["contract"] == "TMFJ6",
+          "while halted, the account back at the expected net clears the row (the user flattened it in the app)")
+    guard.clear_halt("test")
+    n_err, halts = park_then_escalate()
+    check(guard.halted() and pending()["TMFJ6"].get("halted") is True and len(errors()) == n_err + 1, "escalated again (setup)")
+    guard.clear_halt("test")
+    gp()
+    check(pending() == {} and audits("parked_order_dropped")[-1]["contract"] == "TMFJ6"
+          and ledger_positions("president")["TMF"]["qty"] == 3.0,
+          "HALT cleared with the row still unexplained: dropped as the user's, the book unchanged")
+    sent_legs.clear()
+    reconciler.place_order("TMF", 1, exchange="president")
+    check(sent_legs == [("TMF", "buy", 1, "entry")], "…entries resume")
+    for f in ("manager/ledger_seed.json", "manager/orders.jsonl"):
+        if os.path.exists(f):
+            os.remove(f)
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+
     FILL.clear()
     sent_legs.clear()
     reconciler.place_order("TMF", 0.4, exchange="president")
@@ -891,6 +1104,10 @@ try:
           and len(errs) == n_err,
           "an unknown status stays 'unknown' in the result but never reaches order_errors "
           "(every row there is a P1 order_error on the platform)", r)
+    check(pending()["TMFJ6"]["lots"] == 1 and pending()["TMFJ6"]["legs"][-1]["status"] == "unknown",
+          "…its unfilled lot is parked like a 'sent' one")
+    gp()  # the flat snapshot: not filled → cleared
+    check(pending() == {}, "…and cleared by the next reconcile round's snapshot the same way")
     op.place_futures_market_order = fake_place
     json.dump({"TMFJ6": __import__("time").time()}, open(op.LAST_ORDER_PATH, "w"))
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}],

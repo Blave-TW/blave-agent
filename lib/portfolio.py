@@ -1599,6 +1599,25 @@ def settle_expired_months(actual, venue=_CURRENT, now=None):
     return changed
 
 
+def book_late_fill(symbol, venue, contract, lots):
+    """One orders.jsonl line for `lots` (signed) of `symbol` in `contract` that
+    the venue confirmed only after the order call had returned without the fill
+    (統一 'sent' / 'unknown' — manager/reconciler._president_claim_pending). The
+    usual replay (_ledger_walk) books it and takes its month from `contract`, so
+    the trade history and the book stay one source; a guess row stays a guess.
+    No fill price: none was reported. _append_reconciler_log's write failure
+    trips HALT — a late fill left out is exactly the fill the next diff re-sends."""
+    venue = _resolve_venue(venue)
+    lots = float(lots)
+    held = (ledger_book(venue).get(symbol) or {}).get('qty') or 0.0
+    _append_reconciler_log({'action': 'BUY' if lots > 0 else 'SELL', 'symbol': symbol,
+                            'signed_diff': lots, 'exchange': venue, 'late_fill': True,
+                            'contributors': [],
+                            'legs': [{'signed_diff': lots, 'reduce_only': held * lots < 0,
+                                      'signed_qty': lots, 'executed_qty': abs(lots),
+                                      'resolved_symbol': contract}]})
+
+
 def _rebase_ledger_symbol(symbol, venue, months, qty=None):
     """One symbol's book restarts now at `months` ({} = flat) — a lots row,
     so its cost is its quantity. With `qty` and months=None the lots have no

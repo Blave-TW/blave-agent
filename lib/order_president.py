@@ -34,7 +34,10 @@ Design rules:
    the orderno that reply carried (on_match has no seq). No fill seen within
    confirm_timeout returns status 'sent' with fill_qty 0 — an IOC the market
    did not take, or a fill not yet reported; the IOC-cancel report has never
-   been observed (the test host never fills). Never resubmit on 'sent'.
+   been observed (the test host never fills). Never resubmit on 'sent' — the
+   reconciler parks the unfilled lots and claims them from the next caught-up
+   snapshot (manager/reconciler._president_claim_pending) before any entry
+   for that root goes out again.
 3. NO CLIENT ORDER ID AT THE BROKER. `note` (≤10 chars) is only a label. A
    client_tag is refused locally if it was already sent today
    (state/president_order_tags.json, recorded once the broker took the send,
@@ -594,8 +597,9 @@ def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
 
 # ── not verified — deliberately unimplemented ────────────────────────────────
 
-_NOT_VERIFIED = ("not verified on 統一期貨 — no live account yet (the test host never fills); "
-                 "implement from a user-approved live test, not from the docs alone.")
+_NOT_VERIFIED = ("not verified on 統一期貨 — the live account has only ever placed market IOC entries "
+                 "and close-only exits (close_position_partial); implement from a user-approved live "
+                 "test, not from the docs alone.")
 
 
 def cancel_order(*_args, **_kwargs):

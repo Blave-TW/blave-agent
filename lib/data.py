@@ -4100,6 +4100,10 @@ def _fetch_twfutures_raw_smart(symbol, schema, start, end, headers):
 # so a backtest reads the same series as a cloud machine.
 _STATE_DIR = Path(__file__).parent.parent / 'state'
 _PRESIDENT_BARS_MAX_AGE_S = 90
+# a paused snapshot whose rows end within this is the session that just closed: its closing
+# bin (label 13:45 / 05:00) is complete, and the tick that asks for it comes when the bin is
+# due — up to an hour after the last label (the 60m 05:00 bin is due at 06:00)
+_PRESIDENT_CLOSE_TAIL_S = 65 * 60
 _PRESIDENT_NOT_ENABLED = 'QUOTE_NOT_ENABLED'
 
 
@@ -4125,14 +4129,21 @@ def _read_president_bars(root, now):
     if not isinstance(snap, dict):
         return None, 'no_file', None
     written_at = float(snap.get('written_at') or 0)
+    rows = [r for r in (snap.get('rows') or []) if isinstance(r, list) and len(r) == 6]
     if snap.get('paused'):
-        return None, 'paused', written_at   # no session / broker maintenance: nothing to be stale about
+        # no session / broker maintenance: nothing to be stale about — except right after the
+        # close, when the worker is still re-stamping `paused` (fresh written_at), its last poll
+        # was good and the rows end minutes ago: the market cannot add to that session, so the
+        # rows are read as live and the pause stamp is the clock that closes the final bin
+        # (_resample_president). Maintenance windows never fall inside a session.
+        if not (snap.get('ok') and rows and now - written_at <= _PRESIDENT_BARS_MAX_AGE_S
+                and now - float(rows[-1][0]) <= _PRESIDENT_CLOSE_TAIL_S):
+            return None, 'paused', written_at
     if not snap.get('ok'):
         err = str(snap.get('error') or '')
         return None, 'not_enabled' if err == _PRESIDENT_NOT_ENABLED else f'not_ok:{err}'[:120], written_at
     if now - written_at > _PRESIDENT_BARS_MAX_AGE_S:
         return None, 'stale', written_at
-    rows = [r for r in (snap.get('rows') or []) if isinstance(r, list) and len(r) == 6]
     if not rows:
         return None, 'empty', written_at
     df = pd.DataFrame(rows, columns=['ts', 'Open', 'High', 'Low', 'Close', 'Volume'])

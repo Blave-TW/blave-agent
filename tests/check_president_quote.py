@@ -441,6 +441,68 @@ check(src["source"] == "president" and src["schema"] == "5m" and src["added"] ==
       and df.loc[ts(m5 + 5), "Volume"] == 50 and df.loc[ts(m5 + 10), "Volume"] == 10,
       "5 5m live tick: the feed's minutes become the whole 5m bin after Blave's last; Blave's own bin stays Blave's", (src, labels_of(df)))
 
+
+# the closing bin: from 13:50 / 05:05 the snapshot is `paused`, yet the 13:45 / 05:00 bin is complete — a fresh
+# pause stamp + a good last poll + rows ending minutes ago are read as live, and the stamp is the clock that closes it
+def close_snap(labels_tpe, written_tpe, ok=True):
+    rows = [[int(t.timestamp()), 100.0, 101.0, 99.0, 100.5, 10] for t in labels_tpe]
+    snap = {"root": "TXF", "productid": "TXFJ6", "label": "end", "ok": ok, "error": None if ok else "Timeout",
+            "written_at": int(written_tpe.timestamp()), "earliest": rows[0][0], "latest": rows[-1][0], "rows": rows,
+            "paused": "closed"}
+    with open(pq.snapshot_path("TXF"), "w", encoding="utf-8") as f:
+        json.dump(snap, f)
+    return snap["written_at"]
+
+
+day = [T(2026, 10, 12, 13, mi) for mi in range(36, 46)]   # END labels 13:36–13:45 (START 13:35–13:44, the day's last)
+wa = close_snap(day, T(2026, 10, 12, 13, 50, 5))
+df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 12, 13, 50, 7).timestamp())
+r5 = d._resample_president(df_c, "5min", clock) if df_c is not None else None
+check(df_c is not None and why is None and clock == wa
+      and list(r5.index) == [pd.Timestamp("2026-10-12 05:40"), pd.Timestamp("2026-10-12 05:45")] and r5.iloc[-1]["Volume"] == 10,
+      "5 13:50 tick: the paused (closed) snapshot is read; the 13:45 5m bin (its one label) is whole and comes from 統一",
+      (why, list(r5.index) if r5 is not None else None))
+r15 = d._resample_president(df_c, "15min", clock)
+check(r15.empty, "5 …at 13:50 the 15m 13:45 bin is not due yet (ends 14:00): not whole", list(r15.index))
+close_snap(day, T(2026, 10, 12, 14, 0, 3))
+df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 12, 14, 0, 5).timestamp())
+r15 = d._resample_president(df_c, "15min", clock) if df_c is not None else None
+check(df_c is not None and list(r15.index) == [pd.Timestamp("2026-10-12 05:45")] and r15.iloc[-1]["Volume"] == 10,
+      "5 14:00 tick (15m): the paused snapshot is still read, the 13:45 bin is whole by the pause stamp",
+      (why, list(r15.index) if r15 is not None else None))
+night = [T(2026, 10, 13, 4, mi) for mi in range(51, 60)] + [T(2026, 10, 13, 5, 0)]   # END labels 04:51–05:00
+wa = close_snap(night, T(2026, 10, 13, 5, 5, 3))
+df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 13, 5, 5, 6).timestamp())
+r5 = d._resample_president(df_c, "5min", clock) if df_c is not None else None
+check(df_c is not None and list(r5.index)[-1] == pd.Timestamp("2026-10-12 21:00") and r5.iloc[-1]["Volume"] == 10,
+      "5 05:05 tick: the 05:00 bin (label 05:00 Taipei = 21:00 UTC) comes from 統一", (why, list(r5.index) if r5 is not None else None))
+close_snap(night, T(2026, 10, 13, 6, 0, 2))   # inside the broker's 06:00–07:30 account window: paused "account", stamp fresh
+df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 13, 6, 0, 4).timestamp())
+r60 = d._resample_president(df_c, "60min", clock) if df_c is not None else None
+check(df_c is not None and list(r60.index) == [pd.Timestamp("2026-10-12 21:00")] and r60.iloc[-1]["Volume"] == 10,
+      "5 06:00 tick (60m): the 05:00 bin, due an hour after the night's last label, still comes from 統一",
+      (why, list(r60.index) if r60 is not None else None))
+close_snap(night, T(2026, 10, 13, 5, 30, 2))
+df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 13, 5, 30, 4).timestamp())
+r30 = d._resample_president(df_c, "30min", clock) if df_c is not None else None
+check(df_c is not None and list(r30.index) == [pd.Timestamp("2026-10-12 21:00")] and r30.iloc[-1]["Volume"] == 10,
+      "5 05:30 tick (30m): the 05:00 bin comes from 統一", (why, list(r30.index) if r30 is not None else None))
+close_snap(night, T(2026, 10, 13, 5, 5, 3), ok=False)
+check(d._read_president_bars("TXF", T(2026, 10, 13, 5, 5, 6).timestamp())[1] == "paused",
+      "5 paused but the last poll failed → paused (a feed that may be short closes no bin)")
+close_snap(night, T(2026, 10, 13, 6, 6, 0))
+check(d._read_president_bars("TXF", T(2026, 10, 13, 6, 6, 1).timestamp())[1] == "paused",
+      "5 paused, rows older than the longest closing bin (65 min) → paused (Blave has them by then)")
+close_snap(night, T(2026, 10, 13, 5, 5, 3))
+check(d._read_president_bars("TXF", T(2026, 10, 13, 5, 7, 0).timestamp())[1] == "paused",
+      "5 paused with a stale stamp (the worker is gone) → paused")
+seed_cache([m5 + 20, m5 + 15, m5 + 10], schema="5m")
+write_snap(list(range(m5 + 1, m5 + 15)), paused="closed")
+raw_calls.clear()
+df = d.fetch_twfutures_ohlcv("TXF", "5m", start, None, {})
+check(source()["source"] == "president" and source()["added"] == 1 and labels_of(df) == [m5 + 5, m5 + 10, m5 + 15, m5 + 20],
+      "5 the seam end to end: a 5m tick on a just-paused snapshot still gets its closing bin from 統一", source())
+
 # ── 6. thread loop, --once, mutation ──
 holder = {"api": FakeApi(FakeQuote({"TXFJ6": bars_between(T(2026, 10, 8, 21, 0), T(2026, 10, 8, 21, 29))})), "stop": False}
 pq.POLL_S = 1
