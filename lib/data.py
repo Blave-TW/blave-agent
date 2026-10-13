@@ -2667,6 +2667,137 @@ def fetch_twstock_dividend_batch(stock_ids, start, end, headers):
     return results
 
 
+_ALERT_KINDS = ('disposal', 'notice')
+_ALERT_MARKETS = ('twse', 'tpex')
+_ALERT_COLUMNS = ['stock_id', 'stock_name', 'market', 'kind', 'count', 'start', 'end', 'condition',
+                  'measure', 'match_minutes', 'reason', 'close', 'pe']
+_ALERT_FIRST_YEAR = 2001
+_ALERT_RECENT_TTL_DAYS = 1 / 24   # the api store is rewritten 17:45 / 21:30 / 07:00 Taipei
+
+
+def _alerts_frame(records):
+    df = pd.DataFrame(records, columns=['date'] + _ALERT_COLUMNS)
+    for c in ('date', 'start', 'end'):
+        df[c] = pd.to_datetime(df[c])
+    df = df.astype({'count': 'Int64', 'match_minutes': 'Int64', 'close': float, 'pe': float})
+    return df.set_index('date')
+
+
+def _alerts_get(params, headers):
+    r = _retry_get(f'{BASE}/studio/market/twstock/alerts', headers=headers, params=params, timeout=120)
+    return _alerts_frame(r.json().get('data', []))
+
+
+def _alerts_year(kind, year, headers):
+    """One kind's whole-market rows touching calendar year `year` — a calendar year is ≤ 366 days,
+    the api's cap without stock_id. The api keeps refetching a year until 30 days after it ends
+    (late corrections), so only a copy written after that is kept for good; the rest lives 1 h."""
+    path = _CACHE_DIR / f'twstock_alerts_y_{kind}_{year}.parquet'
+    settle_at = pd.Timestamp(year + 1, 2, 1, tz='Asia/Taipei').timestamp()
+    final = path.exists() and path.stat().st_mtime >= settle_at
+    df = _load_fundamental_cache(path, max_age_days=float('inf') if final else _ALERT_RECENT_TTL_DAYS)
+    if df is None:
+        df = _alerts_get({'start': f'{year}-01-01', 'end': f'{year}-12-31', 'kind': kind}, headers)
+        _save_fundamental_cache(path, df)
+    return df
+
+
+def _alerts_slice(df, lo, hi, kind=None, market=None, stock_ids=None):
+    """The api's query semantics, applied locally: a disposal whose period overlaps [lo, hi], a
+    notice dated inside it. A disposal crossing a year boundary is in both years' answers."""
+    when = df.index
+    keep = (((df['kind'] == 'disposal') & (df['start'] <= hi) & (df['end'] >= lo))
+            | ((df['kind'] == 'notice') & (when >= lo) & (when <= hi)))
+    if kind:
+        keep &= df['kind'] == kind
+    if market:
+        keep &= df['market'] == market
+    if stock_ids is not None:
+        keep &= df['stock_id'].isin(stock_ids)
+    out = df[keep.to_numpy()].reset_index()
+    out = out[~out.duplicated(['date', 'market', 'kind', 'stock_id', 'start', 'end'])]
+    out = out.sort_values(['date', 'market', 'kind', 'stock_id', 'start'], kind='stable')
+    return out.set_index('date')
+
+
+def fetch_twstock_alerts(headers, start=None, end=None, kind=None, market=None, stock_id=None):
+    """台股注意股／處置股 — TWSE / TPEx attention (kind='notice') and disposition
+    (kind='disposal') announcements, one row per announcement.
+
+    index = `date`, the ANNOUNCEMENT day (naive Taipei; repeats — pivot before align_feed).
+    Columns: stock_id, stock_name, market ('twse' / 'tpex'), kind, count, start, end (disposal
+    period, both days included; NaT on notices), condition, measure, match_minutes (Int64, <NA>
+    when the text names none), reason (full text), close, pe (NaN on TWSE disposals).
+
+    Range as the api: a disposal whose period overlaps [start, end], a notice dated inside it.
+    No start / end → today (Taipei). No end → today; no start → the whole history (2001) with
+    stock_id, else end − 365 days. Longer whole-market ranges are fetched per calendar year
+    (kind filtered on the request, market locally); finished years are cached for good, the
+    current one 1 h. With stock_id: one request for the stock's whole history, cached 1 h.
+    History: TWSE from 2001, TPEx notices from 2002-02, TPEx disposals from 2003-09.
+    A disposal takes effect the trading day after its announcement — see
+    twstock_disposal_mask for "is this stock under disposition on day D". references/twstock.md
+    › 注意股／處置股."""
+    if kind not in (None,) + _ALERT_KINDS:
+        raise ValueError(f"kind must be one of {_ALERT_KINDS} or None, got {kind!r}")
+    if market not in (None,) + _ALERT_MARKETS:
+        raise ValueError(f"market must be one of {_ALERT_MARKETS} or None, got {market!r}")
+    today = pd.Timestamp.now(tz='Asia/Taipei').normalize().tz_localize(None)
+    lo = pd.Timestamp(start) if start else None
+    hi = pd.Timestamp(end) if end else None
+    if lo is None and hi is None:
+        lo = hi = today
+    hi = hi if hi is not None else max(lo, today)
+    if lo is None:
+        lo = pd.Timestamp(f'{_ALERT_FIRST_YEAR}-01-01') if stock_id else hi - pd.Timedelta(days=365)
+    if lo > hi:
+        raise ValueError(f"start {lo.date()} is after end {hi.date()}")
+    if stock_id:
+        path = _fundamental_cache_path('twstock_alerts', stock_id)
+        df = _load_fundamental_cache(path, max_age_days=_ALERT_RECENT_TTL_DAYS)
+        if df is None:
+            df = _alerts_get({'stock_id': stock_id, 'start': f'{_ALERT_FIRST_YEAR}-01-01',
+                              'end': f'{today.year + 1}-12-31'}, headers)
+            _save_fundamental_cache(path, df)
+        return _alerts_slice(df, lo, hi, kind, market)
+    years = range(max(lo.year, _ALERT_FIRST_YEAR), min(hi.year, today.year + 1) + 1)
+    frames = [_alerts_year(k, y, headers) for k in ((kind,) if kind else _ALERT_KINDS) for y in years]
+    frames = [f for f in frames if not f.empty]
+    if not frames:
+        return _alerts_frame([])
+    return _alerts_slice(pd.concat(frames), lo, hi, kind, market)
+
+
+def twstock_disposal_mask(stock_ids, dates, headers):
+    """Bool DataFrame (index = `dates`, columns = `stock_ids`): True where the stock is under
+    disposition (處置) on that Taipei day — the period's first and last day included. Use it to
+    drop disposed stocks from a backtest universe.
+
+    Point in time: a disposal is announced after the close of the day before its period starts
+    (one 2007 TPEx row is the only same-day exception), so the value for day D was public before
+    D's open. `weights[mask] = 0` takes the stock out from the bar of D on (the order fills at the
+    next open, so D itself is still held). Staying out of D as well would need D−1's evening
+    announcement at bar D−1's close — `mask.shift(-1)` is look-ahead.
+
+    `dates`: anything DatetimeIndex accepts; tz-aware stamps are read in Taipei, the time of day
+    is ignored. Whole-market disposals are fetched once (cached per year) from January of the
+    first date's year — never per stock. An id that never appears (an unknown code) is all False.
+    `start` / `end` are the announced period: a 休市 / suspension inside it extends the real end,
+    which the announcement does not record."""
+    index = pd.DatetimeIndex(dates)
+    days = (index.tz_convert('Asia/Taipei').tz_localize(None) if index.tz is not None else index).normalize()
+    ids = list(dict.fromkeys(str(s) for s in stock_ids))
+    out = pd.DataFrame(False, index=index, columns=ids)
+    if len(days) == 0 or not ids:
+        return out
+    events = fetch_twstock_alerts(headers, start=f'{days.min().year}-01-01', kind='disposal')
+    events = events[events['stock_id'].isin(ids)]
+    day_ns = days.to_numpy()
+    for sid, s, e in zip(events['stock_id'], events['start'], events['end']):
+        out[sid] = out[sid].to_numpy() | ((day_ns >= s.to_datetime64()) & (day_ns <= e.to_datetime64()))
+    return out
+
+
 def _broker_day_cache_path(stock_id, date_str):
     """cache/twstock_broker_stock_<stock_id>/<date>.parquet"""
     d = _CACHE_DIR / f'twstock_broker_stock_{stock_id}'
@@ -6012,6 +6143,12 @@ FEED_TIMING = {
     'twstock_broker_sparse': _tw_daily(_next_day_start, "as twstock_broker; one broker has no row "
                                        "on a day it did not trade, so freshness cannot be checked",
                                        fresh=None),
+    'twstock_alerts': _tw_daily(
+        _next_day_at(7, 30), "row = announcement day (a disposal takes effect the next trading day). "
+        "TWSE / TPEx announce after the close and publish no time; Blave's store is rewritten only "
+        "by apijob@tw.twstock.daily_bulk_update (17:45 / 21:30 / 07:00 Taipei, alerts last), and a "
+        "TPEx evening announcement may first land in the 07:00 run → next day 07:30 kept "
+        "(unconfirmed). Sparse per stock, so freshness cannot be checked", fresh=None),
     'twmarket_institutional': _tw_daily(
         _same_day_at(19, 45), f"TWSE 三大法人買賣金額統計表 14:50 without, 約19:40 with 綜合帳戶/鉅額 "
         f"({_TWSE_ESHOP}d31c1b9570ae47058ec83a0bb1ffa419); FinMind 15:00 ({_FINMIND_CHIP}); + api "

@@ -570,7 +570,7 @@ _BLAVE_DATA = frozenset({
     "fetch_twfutures_ohlcv_batch", "fetch_twfutures_pcr",
     "fetch_twmarket_dividend_points", "fetch_twmarket_index", "fetch_twmarket_institutional",
     "fetch_twmarket_margin", "fetch_twmarket_turnover",
-    "fetch_twstock_all_broker_net", "fetch_twstock_balance_sheet",
+    "fetch_twstock_alerts", "fetch_twstock_all_broker_net", "fetch_twstock_balance_sheet",
     "fetch_twstock_balance_sheet_batch", "fetch_twstock_branch_daily_net",
     "fetch_twstock_broker_net", "fetch_twstock_dividend", "fetch_twstock_dividend_batch",
     "fetch_twstock_financials", "fetch_twstock_financials_batch",
@@ -583,7 +583,7 @@ _BLAVE_DATA = frozenset({
     "fetch_twstock_price_batch", "fetch_twstock_quote", "fetch_twstock_quote_batch",
     "fetch_twstock_ratios", "fetch_twstock_ratios_batch",
     "fetch_twstock_shareholding", "fetch_twstock_shareholding_batch",
-    "fetch_twstock_trader_flows", "is_tw_trading_day",
+    "fetch_twstock_trader_flows", "is_tw_trading_day", "twstock_disposal_mask",
 })
 # Classes and constants that carry no fetch. BASE is deliberately absent: a
 # strategy that takes it builds its own Blave URL.

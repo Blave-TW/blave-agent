@@ -618,6 +618,7 @@ is kept on purpose — never tighten one from memory:
 | `twstock_monthly_revenue_insurance` | as above with the 15th, from 2026 revenue | 特殊適用範圍辦法 §3(5) |
 | `twstock_financials` / `balance_sheet` / `twstock_ratios` (+`_batch`) | 5/16, 8/15, 11/15, next 4/1 — 08:00 | 證券交易法 §36; api UTC-day cache; FinMind's own ingest time undocumented (a late one → live warning) |
 | `twstock_financials_finance` | 5/16, **9/1**, 11/15, next 4/1 — 08:00 | 金控·銀行·證券·期貨·保險: Q2 within two months (特殊適用範圍辦法 §3(3)) |
+| `twstock_alerts` (注意股／處置股, row = announcement day) | D+1 07:30 (unconfirmed) | TWSE / TPEx announce after the close and publish no time; Blave's store is rewritten at 17:45 / 21:30 / 07:00 and a TPEx evening announcement may first land in the 07:00 run. A disposal is in force from the next trading day — `twstock_disposal_mask` is the in-force view. Sparse → no freshness check |
 | `twstock_shareholding` (+`_batch`) | data date + 3 days 08:00 (unconfirmed) | TDCC / FinMind publish no time |
 | `twfutures_bid_ask_vol` | the minute's close + 30 s (UTC) | row = minute open (api tick floor); today's minutes cached 30 s |
 | `economic_calendar` | release time + 5 min; no time → next day 00:00; upstream fill delay **unconfirmed** | api cache 5 min; 鉅亨 publishes no fill time — live waits for `real` |

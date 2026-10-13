@@ -62,6 +62,7 @@ _normalise_index(df)                 # convert tz-aware → tz-naive UTC
 |---|---|---|
 | Broker/trader per-day flows | One file per trading day | `cache/twstock_broker_stock_{id}/{date}.parquet` |
 | Fundamental data (financials, balance sheet, revenue, ratios) | Single file, 30-day mtime TTL | `cache/twstock_fin_{id}.parquet` (ratios: `twstock_ratios_{id}.parquet`, whole history — `start` / `end` cut on read); a `types=` subset in `twstock_fin_types-{hash}_{id}.parquet` |
+| 注意股／處置股 (`fetch_twstock_alerts`) | Whole market: one file per kind × calendar year, kept for good once written after Feb 1 of the next year, else 1 h; per stock: whole history, 1 h | `cache/twstock_alerts_y_{kind}_{year}.parquet`, `cache/twstock_alerts_{id}.parquet` |
 
 These types have their own caching logic and are not affected by the monthly system.
 

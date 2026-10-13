@@ -510,6 +510,90 @@ Work as a funnel — narrow the pool first, then pull time series (measured on t
 
 ---
 
+## 注意股／處置股 — attention and disposition stocks
+
+Exchange announcements: 注意股 (attention, `kind='notice'` — unusual price / volume / turnover
+flagged that day) and 處置股 (disposition, `kind='disposal'` — for a period the stock trades by
+periodic call auction, e.g. one match every 2–20 minutes, and buyers must prepay in full).
+Source: TWSE and TPEx announcements, served by Blave
+(`GET /studio/market/twstock/alerts`). Cite it as 「資料來源：臺灣證券交易所、證券櫃檯買賣中心」.
+
+```python
+from lib.data import fetch_twstock_alerts, twstock_disposal_mask
+
+today = fetch_twstock_alerts(hdrs)                                           # disposals in force today + notices announced today (a disposal announced today that starts tomorrow is NOT here)
+disp  = fetch_twstock_alerts(hdrs, start='2026-10-13', end='2026-10-13', kind='disposal')  # in force that day
+hist  = fetch_twstock_alerts(hdrs, start='2001-01-01', stock_id='2492', kind='disposal')    # one stock, whole history
+mask  = twstock_disposal_mask(universe, close_df.index, hdrs)                # dates × stocks, True = under disposition
+```
+
+| Table | From |
+|---|---|
+| TWSE disposals, TWSE notices | 2001-01 |
+| TPEx notices | 2002-02 |
+| TPEx disposals | 2003-09 (2002-02 – 2003-08 exist only as a static page and are not included) |
+
+**Rows.** One row per announcement; index = `date`, the **announcement day** (repeats — several
+stocks a day). `start` / `end` = the disposal period, both days included (NaT on notices).
+`count` = the exchange's cumulative count. `condition` = the trigger as published (disposal:
+「連續三次」, 「連續3個營業日」…; notice: the clauses cited, 「第一款、第五款」). `measure` =
+disposal type (第一次處置 / 第二次處置 / 再次處置 / 人工管制撮合 / 收足五成款券 …; empty on early
+TPEx rows → None). `reason` = full announcement text. `close` / `pe` = closing price and P/E on
+the announcement (NaN on every TWSE disposal). `stock_id` covers warrants, ETFs and convertible
+bonds too (`037060` is a warrant).
+
+**`match_minutes`** (Int64) = the N of 「約每N分鐘撮合一次」 read from the text; `<NA>` when the
+text names none — every TWSE disposal before ~2011 (the text is blank), and measures that are not
+periodic matching. The minutes follow the rules of the day (TPEx 5 / 20 → 2 from 2026-08-10);
+never assume a value.
+
+**Range semantics** (same as the api): a disposal is returned when its PERIOD overlaps
+`start`–`end`, a notice when its announcement day is inside it — so
+`start=end=D, kind='disposal'` is "under disposition on D". No `start` / `end` → today; no `end`
+→ today; no `start` → 2001 with `stock_id`, else `end` − 365 days. Whole-market ranges over 366
+days are split per calendar year for you; finished years are cached for good, the current year
+for 1 hour. With `stock_id` it is one request for the stock's whole history (cached 1 hour).
+A disposal can overlap the next one for the same stock (a 第二次處置 announced inside the first).
+
+**Updates.** Blave's store refreshes at 17:45, 21:30 and 07:00 Taipei. The exchanges announce
+after the close; a TPEx evening announcement may only arrive in the 07:00 run. `FEED_TIMING`
+(`'twstock_alerts'`) takes an announcement as known from 07:30 the next day.
+
+### Backtest: drop disposed stocks from the universe
+
+A disposal is announced after the close of the day before its period starts and is in force
+from the next trading day. `twstock_disposal_mask` turns the announcements into "under
+disposition on day D" — knowable before D's open, so it carries no look-ahead:
+
+```python
+def fetch_data(hdrs):
+    from lib.data import fetch_twstock_price_adj_batch, twstock_disposal_mask
+    px = fetch_twstock_price_adj_batch(UNIVERSE, START, END, hdrs)
+    close_df = pd.DataFrame({s: df['Close'] for s, df in px.items()}).sort_index()
+    open_df  = pd.DataFrame({s: df['Open'] for s, df in px.items()}).reindex(close_df.index)
+    disposed = twstock_disposal_mask(close_df.columns, close_df.index, hdrs)
+    return close_df, open_df, disposed
+
+def compute_signals(data):
+    close_df, open_df, disposed = data
+    score = close_df.pct_change(20).where(~disposed)          # a disposed stock is not ranked
+    ...
+    w[disposed.to_numpy()] = 0.0                              # held into a disposal → exit next open
+```
+
+- `weights[disposed] = 0` exits at the next open, so the first disposal day is still held. Avoiding
+  that day too would need the announcement at the previous bar's close, which it is not —
+  **never `disposed.shift(-1)`**.
+- The mask fetches whole-market disposals once (per calendar year, from the first date's year),
+  never per stock; an id with no disposal is all False.
+- `start` / `end` are the announced period. A market holiday or a trading suspension inside it
+  extends the real end; the data does not record that extension.
+- Need notices as a signal (e.g. 「注意股次數」)? Pivot `fetch_twstock_alerts(..., kind='notice')`
+  to one row per announcement day and attach it with `align_feed(..., 'twstock_alerts', ...)` —
+  never join on `date`.
+
+---
+
 ## Financial ratios (財務比率)
 
 Ready-made quarterly ratios, computed by Blave from the three statements — use these before
