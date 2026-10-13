@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **Codex 引擎:用戶 `~/.codex/config.toml` 已有照 BYO 接入頁寫的 `[mcp_servers.blave]` 時照樣掛電腦版那條(`codex_engine.mcp_attach`;uid 30191 10-13 實機:撞名就不掛 → Codex 載入用戶那份沒標 approve 的 → exec approval never 把每次 `mcp__blave` 拒掉)**:只在 user 層(Codex 自己的解析:`CODEX_HOME`,Windows 走 `FOLDERID_Profile`、其他 `$HOME`)、http 型、url 逐字等於 `BLAVE_MCP_URL`、key 全在白名單(url／http_headers／timeouts／approval／`enabled=true`)時視為可遮蔽,完整掛載——bearer 覆寫用戶 http_headers 的 Authorization,連線用電腦版的碼(live 0.146.0／0.155.0-alpha.9.2／0.162.1／0.163.0-alpha.9 驗過);workspace／managed 層同名、stdio、白名單外 key 一律照舊不掛,`blave_browser` 不比照。真的不掛時 prompt 多一段規則讓 agent 告訴用戶原因與修法(只帶路徑,不帶 entry)。讀 config 的 except 補 `ValueError`(非 UTF-8 檔不再讓整輪失敗);`mcp_server()` 刪除。`desktop-win.yml` 用隨包 python 在真 Windows 驗 `_windows_profile_dir()`。測試 `tests/check_codex_engine.py`、`check_codex_mcp_live.py` case 4。
+
 ## 1.1.122 — 2026-10-13(desktop 0.1.23)
 
 - **Windows 的 Codex 引擎一律帶 `-c windows.sandbox="unelevated"`,不再讓步給用戶 config.toml(`codex_engine._windows_sandbox_flags`;Wei 10-12 拍板)**:Codex 桌面 app 會替用戶在 `~/.codex/config.toml` 寫 `[windows] sandbox = "elevated"`,而 elevated 在 2026-10 上游壞掉(openai/codex #52179、#52415:沙盒 helper 重整 ACL 碰到 app 自己鎖住的檔,`setup refresh had errors`,之後每條指令都被拒;uid 30191 10-12 實機就是這樣);unelevated 本來就是給沒設定的人用的模式,現在有設定也蓋。`-c` 蓋過 config,所以只改旗標、不動用戶的檔。讀 config 那段(`_sandbox_set`、profile 解析)拿掉;`shell/winsandbox.js`(elevated 的 ACL 補授權)留著不動。macOS／Linux 的 argv 不變。測試 `tests/check_codex_engine.py` 4c 改成釘「有 elevated 設定也照回 unelevated」。

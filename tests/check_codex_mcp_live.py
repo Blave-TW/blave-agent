@@ -9,6 +9,10 @@ api/mcp_byoa/server.py (no tool annotations). No OpenAI login, no network beyond
   1. build_args argv as shipped → the call reaches the MCP server (`tools/call`) and completes.
   2. same argv minus the approval flag → denied before sending (the 2026-09-23 bug).
   3. another MCP server in the same turn → still denied: the approval is scoped to `blave`.
+  4. the user's own `[mcp_servers.blave]` (same url + `http_headers` Authorization, as the web BYO
+     page tells them to write) in $CODEX_HOME/config.toml → our `-c` merges into it, the call
+     completes, and every request carries exactly one Authorization: the desktop's code. Control:
+     without our bearer_token_env_var the user's code is what arrives, so the override is real.
 
 Skips (exit 0, prints SKIP) when no codex binary is found: every `codex` on PATH, then the one inside
 ChatGPT.app, the first whose `--version` says codex-cli. CODEX_BIN names one outright.
@@ -54,6 +58,7 @@ else:
         sys.exit(0)
 
 calls = []            # MCP methods the fake server received
+auths = []            # every Authorization header list the fake server saw, any HTTP method
 target = {"ns": ""}   # namespace the fake model calls the tool in
 
 
@@ -86,11 +91,21 @@ class Mcp(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def _auth(self):
+        auths.append(self.headers.get_all("Authorization") or [])
+
     def do_GET(self):
+        self._auth()
         self.send_response(405)
         self.end_headers()
 
+    def do_DELETE(self):
+        self._auth()
+        self.send_response(200)
+        self.end_headers()
+
     def do_POST(self):
+        self._auth()
         msg = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)))
         calls.append(msg.get("method"))
         if "id" not in msg:
@@ -128,15 +143,20 @@ PROVIDER = ["-c", 'model_provider="fake"', "-c", 'model_providers.fake.name="fak
             "-c", 'model_providers.fake.wire_api="responses"']
 
 
-def turn(ns, drop_approval=False, extra=()):
+BEARER = 'mcp_servers.blave.bearer_token_env_var="%s"' % codex_engine.MCP_TOKEN_ENV
+
+
+def turn(ns, drop_approval=False, extra=(), drop_bearer=False):
     """One real codex turn → (status of the mcp_tool_call item, MCP methods received)."""
     del calls[:]
+    del auths[:]
     target["ns"] = ns
     argv = codex_engine.build_args(codex, os.path.join(tmp, "ws"), model="fake-model",
                                    mcp_url=mcp_url)
-    if drop_approval:
-        i = argv.index(APPROVE)
-        argv = argv[:i - 1] + argv[i + 1:]
+    for flag, drop in ((APPROVE, drop_approval), (BEARER, drop_bearer)):
+        if drop:
+            i = argv.index(flag)
+            argv = argv[:i - 1] + argv[i + 1:]
     argv = argv[:5] + PROVIDER + list(extra) + argv[5:]
     env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
            "CODEX_HOME": os.path.join(tmp, "home"), codex_engine.MCP_TOKEN_ENV: "blv_fake"}
@@ -171,9 +191,14 @@ def t(name, ok, detail):
 
 assert APPROVE in codex_engine.build_args(codex, "/ws", mcp_url=mcp_url)
 print("codex:", subprocess.run([codex, "--version"], capture_output=True, text=True).stdout.strip())
+def one_auth(code):
+    """Every request the fake server saw carried exactly one Authorization, and it was `code`."""
+    return bool(auths) and all(a == ["Bearer " + code] for a in auths)
+
+
 s, c = turn("mcp__blave")
 t("as shipped: the blave tool call reaches the server and completes",
-  s and s[0] == "completed" and "tools/call" in c, (s, c))
+  s and s[0] == "completed" and "tools/call" in c and one_auth("blv_fake"), (s, c, auths))
 s, c = turn("mcp__blave", drop_approval=True)
 t("without the approval flag: denied before sending (the bug this fixes)",
   denied(s) and "tools/call" not in c, (s, c))
@@ -181,7 +206,21 @@ s, c = turn("mcp__other", extra=["-c", 'mcp_servers.other.url="%s"' % mcp_url])
 t("another MCP server in the same turn is still denied (approval scoped to blave)",
   denied(s) and "tools/call" not in c, (s, c))
 
-# 4. `blave_browser`(外殼的本機 MCP,shell/browser/mcp.js 真的起一支):build_args(browser_url=…) 的 argv、Bearer 走
+# 4. 用戶照網頁 BYO 接入頁自己寫的 `blave`(同 url、http_headers 帶他的碼)放在 CODEX_HOME:codex_engine 照掛,
+#    靠的是 bearer_token_env_var 的 Authorization 蓋掉 http_headers 那一個(rmcp-client http_client_adapter.rs
+#    insert_header = HeaderMap::insert)。對照組拿掉我們的 bearer,證明用戶那份真的有被讀、蓋掉是真的發生
+user_cfg = os.path.join(tmp, "home", "config.toml")
+with open(user_cfg, "w") as f:
+    f.write('[mcp_servers.blave]\nurl = "%s"\nhttp_headers = { "Authorization" = "Bearer blv_user" }\n' % mcp_url)
+s, c = turn("mcp__blave")
+t("user's own [mcp_servers.blave] with http_headers: call completes, only the desktop's code arrives, once",
+  s and s[0] == "completed" and "tools/call" in c and one_auth("blv_fake"), (s, c, auths))
+s, c = turn("mcp__blave", drop_bearer=True)
+t("control: without our bearer_token_env_var the user's header is what arrives (the merge is real)",
+  "initialize" in c and one_auth("blv_user"), (s, c, auths))
+os.remove(user_cfg)
+
+# 5. `blave_browser`(外殼的本機 MCP,shell/browser/mcp.js 真的起一支):build_args(browser_url=…) 的 argv、Bearer 走
 #    BLAVE_BROWSER_TOKEN、Host 檢查、session id —— 真 codex 的 MCP client 連得上而且呼叫得到
 NODE_SRV = ("const {createMcpServer}=require(%r);const {TOOLS}=require(%r);(async()=>{const s=createMcpServer({tools:TOOLS,"
             "call:async(n)=>{console.error('CALL '+n);return{content:[{type:'text',text:'{}'}],isError:false};}});await s.start();"

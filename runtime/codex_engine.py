@@ -146,60 +146,171 @@ def _mdm_config_toml():
         raise ValueError(str(e)) from None
 
 
+def _profile_dir(env):
+    """dirs::home_dir() (dirs-sys 0.5, what Codex 0.146–0.162 links): on Windows the shell's
+    FOLDERID_Profile — HOME and USERPROFILE are not read at all; elsewhere a non-empty $HOME,
+    else the passwd entry. None when it cannot be found (Codex then refuses to start)."""
+    if _WINDOWS:
+        return _windows_profile_dir()
+    if env.get("HOME"):
+        return env["HOME"]
+    try:
+        import pwd
+        return pwd.getpwuid(os.getuid()).pw_dir or None
+    except (ImportError, KeyError, OSError):
+        return None
+
+
+def _windows_profile_dir():
+    import ctypes, uuid
+    try:
+        shell32, ole32 = ctypes.windll.shell32, ctypes.windll.ole32
+    except AttributeError:
+        return None
+    # Any failure means "no home" → not attached (fail-closed), never a failed turn.
+    try:
+        shell32.SHGetKnownFolderPath.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p,
+                                                 ctypes.POINTER(ctypes.c_wchar_p)]
+        shell32.SHGetKnownFolderPath.restype = ctypes.c_long
+        ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+        folder_id = ctypes.create_string_buffer(
+            uuid.UUID("5E6C858F-0E22-4760-9AFE-EA3317B67173").bytes_le, 16)  # FOLDERID_Profile
+        out = ctypes.c_wchar_p()
+        hr = shell32.SHGetKnownFolderPath(folder_id, 0, None, ctypes.byref(out))
+        try:
+            return out.value if hr == 0 and out.value else None
+        finally:
+            ole32.CoTaskMemFree(ctypes.cast(out, ctypes.c_void_p))
+    except Exception:
+        return None
+
+
+def _codex_home(env):
+    """Codex's own find_codex_home (utils/home-dir): a non-empty CODEX_HOME, else
+    <home_dir>/.codex. None when there is no home directory."""
+    if env.get("CODEX_HOME"):
+        return env["CODEX_HOME"]
+    profile = _profile_dir(env)
+    return os.path.join(profile, ".codex") if profile else None
+
+
 def _mcp_name_taken(cwd, env, name="blave"):
-    """Why our `-c` flags would clash with a config Codex will load, or None:
-      - `mcp_servers.blave` exists: `-c` deep-merges into it, and a stdio entry plus our `url`
-        makes Codex refuse to start the whole turn.
-      - a layer BELOW `-c` (precedence 30) uses the legacy `exclude` / `include_only` arrays:
-        our `filters` key displaces them (config/src/merge.rs displaced_fields), silently
-        dropping the user's own env filtering for the turn.
-      - a legacy managed layer ABOVE `-c` (/etc/codex/managed_config.toml at 40, macOS MDM
-        config_toml_base64 at 50) sets `shell_environment_policy` at all: a legacy array there
-        displaces OUR `filters` and the code reaches the agent's shell.
-    cwd is the workspace, which the agent can write to. A config that exists but cannot be read
-    or parsed counts as a clash — we cannot prove it is free.
-    Layers read: user ($CODEX_HOME or ~/.codex), <cwd>/.codex, and the two legacy managed ones.
+    """What in the configs Codex will load clashes with our `-c` flags for `name`:
+    {"name": [{"layer", "path", "entry"}...], "other": [reason...]} — every finding, not the first.
+      - name: `mcp_servers.<name>` exists in a layer. `-c` deep-merges into it; a stdio entry plus
+        our `url` makes Codex refuse to start the whole turn. Whether a hit can be shadowed is
+        mcp_attach's call (_shadowable), not this function's. `entry` is the user's table as
+        written — it can hold their access code, so it never goes to a log or a prompt.
+      - other: a layer BELOW `-c` (precedence 30) uses the legacy `exclude` / `include_only`
+        arrays: our `filters` key displaces them (config/src/merge.rs displaced_fields), silently
+        dropping the user's own env filtering for the turn. A legacy managed layer ABOVE `-c`
+        (/etc/codex/managed_config.toml at 40, macOS MDM config_toml_base64 at 50) sets
+        `shell_environment_policy` at all: a legacy array there displaces OUR `filters` and the
+        code reaches the agent's shell. A config that exists but cannot be read or parsed: we
+        cannot prove it is free.
+    Layers: "user" ($CODEX_HOME or ~/.codex), "workspace" (<cwd>/.codex — the agent can write
+    there; a $CODEX_HOME inside the workspace counts as this layer too), "managed" (the two legacy
+    managed ones).
     Not read: system /etc/codex/config.toml, new-style MDM, the cloud bundle, the profile file,
     and ancestor `.codex/` dirs up to the project root — all BELOW `-c`, so a clash there only
     makes every mounted turn fail to start (dies at config load, no code leaks) or drops a
     legacy array as above. The desktop workspace has no `.git` above it, so the ancestor layers
     collapse to cwd, which is read. A managed requirement pinning shell_snapshot=true is caught
     by _snapshot_disabled, not here."""
+    found = {"name": [], "other": []}
     # Imported here, not at module top: cloud machines run Python 3.10, and the updater's
     # health check imports every runtime module — a top-level tomllib rolled back 1.1.84/85.
     try:
         import tomllib
     except ModuleNotFoundError:
-        return "Python < 3.11 has no tomllib to read config.toml"
-    home =env.get("CODEX_HOME") or os.path.join(env.get("HOME") or os.path.expanduser("~"),
-                                                 ".codex")
-    docs = []  # (managed, parsed)
-    for managed, path in ((False, os.path.join(home, "config.toml")),
-                          (False, os.path.join(cwd, ".codex", "config.toml")),
-                          (True, _MANAGED_CONFIG_PATH or os.path.join(home, "managed_config.toml"))):
+        found["other"].append("Python < 3.11 has no tomllib to read config.toml")
+        return found
+    home = _codex_home(env)
+    if not home:
+        found["other"].append("no home directory to find the user config.toml in")
+        return found
+    user_path = os.path.join(home, "config.toml")
+    ws = os.path.normcase(os.path.realpath(cwd))
+    user_layer = ("workspace" if os.path.normcase(os.path.realpath(user_path)).startswith(ws + os.sep)
+                  else "user")
+    docs = []  # (layer, path, parsed)
+    seen = set()  # $CODEX_HOME == <cwd>/.codex is one file, not two layers
+    for layer, path in ((user_layer, user_path),
+                        ("workspace", os.path.join(cwd, ".codex", "config.toml")),
+                        ("managed", _MANAGED_CONFIG_PATH or os.path.join(home, "managed_config.toml"))):
+        real = os.path.normcase(os.path.realpath(path))
+        if real in seen:
+            continue
+        seen.add(real)
         try:
             with open(path, "rb") as f:
-                docs.append((managed, tomllib.load(f)))
+                docs.append((layer, path, tomllib.load(f)))
         except FileNotFoundError:
             continue
-        except (OSError, tomllib.TOMLDecodeError):
-            return "a config.toml is unreadable"
+        except (OSError, ValueError):  # TOMLDecodeError and a non-UTF-8 file are both ValueError
+            found["other"].append(path + " is unreadable")
     try:
         mdm = _mdm_config_toml()
         if mdm is not None:
-            docs.append((True, tomllib.loads(mdm)))
+            docs.append(("managed", "MDM config_toml_base64", tomllib.loads(mdm)))
     except (ValueError, tomllib.TOMLDecodeError):
-        return "the MDM managed config is unreadable"
-    for managed, doc in docs:
+        found["other"].append("the MDM managed config is unreadable")
+    for layer, path, doc in docs:
         servers = doc.get("mcp_servers")
         if isinstance(servers, dict) and name in servers:
-            return "mcp_servers." + name + " already exists in a config.toml"
+            found["name"].append({"layer": layer, "path": path, "entry": servers[name]})
         policy = doc.get("shell_environment_policy")
-        if managed and policy is not None:
-            return "a managed config sets shell_environment_policy"
-        if isinstance(policy, dict) and ("exclude" in policy or "include_only" in policy):
-            return "a config.toml uses legacy shell_environment_policy arrays"
-    return None
+        if layer == "managed" and policy is not None:
+            found["other"].append(path + " (managed) sets shell_environment_policy")
+        elif isinstance(policy, dict) and ("exclude" in policy or "include_only" in policy):
+            found["other"].append(path + " uses legacy shell_environment_policy arrays")
+    return found
+
+
+# Keys a user's own `[mcp_servers.blave]` may carry and still be shadowed by our `-c` (B 案):
+# value-type checks mirror RawMcpServerConfig (config/src/mcp_types.rs), since a wrong type makes
+# Codex refuse the whole config. Only what the web BYO snippet writes plus harmless knobs: the live
+# test proves the override for http_headers alone. Left out, so they read as a clash: `tools` (a
+# per-tool approval_mode beats our default_tools_approval_mode — the "never approved" bug would
+# survive), `bearer_token*` (ours must be the only one), env_http_headers / auth / oauth* /
+# http_headers_helper (other ways to set Authorization), and anything unknown (fail-closed).
+def _str_map(v):
+    return isinstance(v, dict) and all(isinstance(k, str) and isinstance(x, str) for k, x in v.items())
+
+
+def _number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0
+
+
+_SHADOWABLE_KEYS = {
+    "url": lambda v: isinstance(v, str),
+    "http_headers": _str_map,
+    "startup_timeout_sec": _number,
+    "tool_timeout_sec": _number,
+    "default_tools_approval_mode": lambda v: isinstance(v, str),
+    "enabled": lambda v: v is True,
+}
+
+
+def _shadowable(entry, url):
+    """True when our `-c` flags fully take over this user-layer `blave` entry: an http entry
+    (no `command`, then `url` — the order of TryFrom<RawMcpServerConfig>) pointing at exactly our
+    URL, byte for byte, with only _SHADOWABLE_KEYS. Then the turn connects with the desktop's code:
+    bearer_token_env_var's Authorization replaces the one from http_headers
+    (rmcp-client http_client_adapter.rs insert_header = HeaderMap::insert, after the default
+    headers on POST, GET and DELETE), proven on a real binary by tests/check_codex_mcp_live.py
+    case 4 (0.146.0 floor, 0.155.0-alpha.9.2, 0.162.1, 0.163.0-alpha.9)."""
+    if not isinstance(entry, dict) or "command" in entry or entry.get("url") != url:
+        return False
+    return all(k in _SHADOWABLE_KEYS and _SHADOWABLE_KEYS[k](v) for k, v in entry.items())
+
+
+def _display_path(path, env):
+    """`~` only off Windows: a Windows user would not recognise `~\\.codex\\config.toml`."""
+    if _WINDOWS:
+        return path
+    home = _profile_dir(env)
+    return "~" + path[len(home):] if home and path.startswith(home + os.sep) else path
 
 
 def _snapshot_disabled(codex_bin, cwd, env):
@@ -222,31 +333,45 @@ def _snapshot_disabled(codex_bin, cwd, env):
         and state.get("shell_snapshot_v2", "false") == "false"
 
 
-def mcp_server(codex_bin, cwd, env):
-    """The `blave` MCP URL to attach this turn, or None (= not attached, turn runs as usual —
-    same posture as the Claude path when no code is available)."""
+def mcp_attach(codex_bin, cwd, env):
+    """(the `blave` MCP URL to attach this turn or None, blocked_by). None = not attached, turn
+    runs as usual — same posture as the Claude path when no code is available. blocked_by is set
+    only when a clashing `mcp_servers.blave` is a reason: {"paths": [{"layer", "path"}...],
+    "other": bool} — `other` says something else also blocks (logged on stderr), so fixing the
+    clash alone is not promised to be enough. For agent_turn to tell the user; never the entry."""
     url = env.get("BLAVE_MCP_URL")
     if not url or not env.get(MCP_TOKEN_ENV) or '"' in url or "\\" in url:
-        return None
+        return None, None
     version = codex_version(codex_bin)
     if not version or version < _MCP_MIN_VERSION:
         print("[codex] blave MCP not attached: codex "
               + (".".join(map(str, version)) if version else "version unknown")
               + " < " + ".".join(map(str, _MCP_MIN_VERSION)), file=sys.stderr)
-        return None
-    clash = _mcp_name_taken(cwd, env)
-    if clash:
-        print("[codex] blave MCP not attached: " + clash, file=sys.stderr)
-        return None
+        return None, None
+    found = _mcp_name_taken(cwd, env)
+    blocking = [hit for hit in found["name"]
+                if hit["layer"] != "user" or not _shadowable(hit["entry"], url)]
+    for hit in found["name"]:
+        print("[codex] mcp_servers.blave in %s (%s layer): %s" % (
+            hit["path"], hit["layer"], "clash" if hit in blocking else "shadowed by ours"),
+            file=sys.stderr)
+    for reason in found["other"]:
+        print("[codex] blave MCP not attached: " + reason, file=sys.stderr)
+    if blocking:
+        return None, {"paths": [{"layer": hit["layer"], "path": _display_path(hit["path"], env)}
+                                for hit in blocking],
+                      "other": bool(found["other"])}
+    if found["other"]:
+        return None, None
     if not _snapshot_disabled(codex_bin, cwd, env):
         print("[codex] blave MCP not attached: shell_snapshot could not be turned off",
               file=sys.stderr)
-        return None
-    return url
+        return None, None
+    return url, None
 
 
 def browser_server(codex_bin, cwd, env):
-    """The `blave_browser` MCP URL to attach this turn, or None. Same gates as mcp_server();
+    """The `blave_browser` MCP URL to attach this turn, or None. Same gates as mcp_attach();
     the URL must be the shell's own loopback server."""
     url = env.get("BLAVE_BROWSER_URL")
     if not url or not env.get(BROWSER_TOKEN_ENV) or not _BROWSER_URL_RE.match(url):
@@ -255,9 +380,10 @@ def browser_server(codex_bin, cwd, env):
     if not version or version < _MCP_MIN_VERSION:
         print("[codex] browser MCP not attached: codex version below floor", file=sys.stderr)
         return None
-    clash = _mcp_name_taken(cwd, env, "blave_browser")
+    found = _mcp_name_taken(cwd, env, "blave_browser")
+    clash = ["mcp_servers.blave_browser in " + hit["path"] for hit in found["name"]] + found["other"]
     if clash:
-        print("[codex] browser MCP not attached: " + clash, file=sys.stderr)
+        print("[codex] browser MCP not attached: " + "; ".join(clash), file=sys.stderr)
         return None
     if not _snapshot_disabled(codex_bin, cwd, env):
         print("[codex] browser MCP not attached: shell_snapshot could not be turned off",
@@ -300,7 +426,7 @@ def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_ur
     """model / effort are forwarded only when the user picked them in the shell (which
     guarantees a slug from Codex's own catalog and an effort that model supports); absent,
     Codex uses the user's own defaults and the argv is unchanged. mcp_url comes from
-    mcp_server(); the token itself is never an argument. web_search_off is the caller's
+    mcp_attach(); the token itself is never an argument. web_search_off is the caller's
     agent_turn.web_tools_off() answer: the same turns that lose WebSearch / WebFetch on the
     Claude path."""
     picked = []
@@ -500,7 +626,7 @@ async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_don
               model=None, effort=None, mcp_url=None, browser_url=None, web_search_off=False):
     """One Codex turn. Returns the translator (usage, thread_id); raises CodexTurnFailed
     when the turn did not complete, so the caller's existing fault path classifies it.
-    mcp_url is the caller's mcp_server() result — the caller decides once so the prompt's
+    mcp_url is the caller's mcp_attach() result — the caller decides once so the prompt's
     MCP rule matches what is attached."""
     if not codex_bin:
         raise CodexTurnFailed("--engine codex needs --codex-bin")

@@ -187,6 +187,9 @@ jobs:
           printf '%s' "$file $sha" > "$out/.blave-pbs"
           [ -x "$out/python.exe" ] || { echo "::error::$out/python.exe 不在(tar 的 layout 變了?)"; exit 1; }
           "$out/python.exe" -I -c "import sys; print(sys.version)"
+          # Codex 的 user 層 config 在 Windows 由 FOLDERID_Profile 決定(codex_engine._windows_profile_dir 照 Codex 用 ctypes 查):
+          # 只有真 Windows 跑得到這條,在這裡用隨包 python 實際驗一次
+          "$out/python.exe" -I -c "import os, sys; sys.path.insert(0, 'runtime'); import codex_engine as c; p = c._windows_profile_dir(); u = os.environ['USERPROFILE']; assert p and os.path.normcase(p) == os.path.normcase(u), (p, u); print('FOLDERID_Profile', p)"
 
       # 未簽章的正式形狀:BLAVE_RELEASE=1 翻 fuses、蓋 blaveRelease,BLAVE_UPDATE_URL 蓋進包裡的更新網址並讓 electron-builder 產 latest.yml;
       # --publish never 保證它不自己上傳。SignPath 接上後:拿掉 BLAVE_WIN_UNSIGNED、改設 BLAVE_WIN_PUBLISHER="SignPath Foundation"。

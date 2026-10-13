@@ -428,7 +428,7 @@ ws_codex_cfg = os.path.join(at.WORKSPACE, ".codex", "config.toml")
 home_codex_cfg = os.path.join(codex_home, "config.toml")
 os.makedirs(os.path.dirname(ws_codex_cfg))
 base_env = {"CODEX_HOME": codex_home, "BLAVE_MCP_URL": MCP_URL, "BLAVE_MCP_TOKEN": CODE}
-ms = codex_engine.mcp_server
+ms = lambda *a: codex_engine.mcp_attach(*a)[0]
 codex_engine._MANAGED_CONFIG_PATH = os.path.join(_tmp, "managed_config.toml")  # 不讀本機 /etc
 _real_mdm = codex_engine._mdm_config_toml
 codex_engine._mdm_config_toml = lambda: None
@@ -460,6 +460,139 @@ with open(home_codex_cfg, "w") as f:
     f.write('[mcp_servers.other]\ncommand = "npx"\n')
 assert ms(new_codex, at.WORKSPACE, base_env) == MCP_URL
 os.remove(home_codex_cfg)
+
+# B 案:user 層自己寫的 `blave`(網頁 BYO 接入頁那份:同 url、http_headers 帶他自己的碼)不算撞名,照完整掛載——
+# 我們的 bearer_token_env_var 會蓋掉他那個 Authorization(真 codex 的證明在 check_codex_mcp_live.py case 4)。
+# 只認 user 層、url 逐字相等、key 全在白名单內;其餘一律當撞名(fail-closed)
+WEB_SNIPPET = '[mcp_servers.blave]\nurl = "%s"\nhttp_headers = { "Authorization" = "Bearer blv_user_secret" }\n'
+ma = codex_engine.mcp_attach
+
+
+def cfg_case(path, body):
+    with open(path, "w") as f:
+        f.write(body)
+    try:
+        return ma(new_codex, at.WORKSPACE, base_env)
+    finally:
+        os.remove(path)
+
+
+assert cfg_case(home_codex_cfg, WEB_SNIPPET % MCP_URL) == (MCP_URL, None), "user 層同 url 的 http entry → 完整掛載"
+assert cfg_case(home_codex_cfg, '[mcp_servers]\nblave = { url = "%s", http_headers = { Authorization = "Bearer x" }, '
+                'startup_timeout_sec = 20, tool_timeout_sec = 60.5, enabled = true, '
+                'default_tools_approval_mode = "prompt" }\n' % MCP_URL)[0] == MCP_URL, "白名單內的 key 都可以"
+for bad_url in (MCP_URL + "/", MCP_URL.replace("https:", "http:"), MCP_URL.replace("mcp.blave.org", "MCP.blave.org"),
+                "https://mcp.blave.org@evil.example/mcp", "https://x.mcp.blave.org/mcp", " " + MCP_URL):
+    url, blocked = cfg_case(home_codex_cfg, WEB_SNIPPET % bad_url)
+    assert url is None and blocked == {"paths": [{"layer": "user", "path": home_codex_cfg}], "other": False}, \
+        (bad_url, blocked)
+for extra in ('enabled = false', 'env_http_headers = { Authorization = "V" }', 'startup_timeout_ms = 9000', 'command = "npx"', 'bearer_token_env_var = "X"', 'bearer_token = "x"',
+              'auth = "oauth"', 'oauth = { client_id = "x" }', 'oauth_resource = "x"', 'scopes = ["a"]',
+              'http_headers_helper = "x"', 'required = true', 'enabled_tools = ["a"]', 'name = "x"',
+              'tools = { get_ssh_access = { approval_mode = "prompt" } }', 'some_future_key = 1',
+              'tool_timeout_sec = "60"', 'enabled = "true"'):
+    body = '[mcp_servers.blave]\nurl = "%s"\n%s\n' % (MCP_URL, extra)
+    assert cfg_case(home_codex_cfg, body)[0] is None, extra
+assert cfg_case(home_codex_cfg, '[mcp_servers.blave]\nhttp_headers = "x"\nurl = "%s"\n' % MCP_URL)[0] is None, "型別錯"
+assert cfg_case(home_codex_cfg, '[mcp_servers.blave]\nhttp_headers = { A = "b" }\n')[0] is None, "沒 url 沒 command"
+assert cfg_case(home_codex_cfg, '[mcp_servers.blave]\ncommand = "npx"\nurl = "%s"\n' % MCP_URL)[0] is None, \
+    "stdio 同名:有 command 就是 stdio(TryFrom 先看 command),就算 url 也對"
+# 同一份放在 workspace 層(agent 寫得到)或受管層 → 一律撞
+url, blocked = cfg_case(ws_codex_cfg, WEB_SNIPPET % MCP_URL)
+assert url is None and blocked["paths"] == [{"layer": "workspace", "path": ws_codex_cfg}], blocked
+url, blocked = cfg_case(codex_engine._MANAGED_CONFIG_PATH, WEB_SNIPPET % MCP_URL)
+assert url is None and blocked["paths"][0]["layer"] == "managed", blocked
+# user 層可遮蔽、但同時 workspace 也有 → 不掛,只回 workspace 那一份
+with open(home_codex_cfg, "w") as f:
+    f.write(WEB_SNIPPET % MCP_URL)
+url, blocked = cfg_case(ws_codex_cfg, WEB_SNIPPET % MCP_URL)
+assert url is None and blocked == {"paths": [{"layer": "workspace", "path": ws_codex_cfg}], "other": False}, blocked
+# user 層可遮蔽但有別的理由(舊寫法陣列)→ 不掛、也不怪到 blave 那段頭上
+with open(home_codex_cfg, "a") as f:
+    f.write('[shell_environment_policy]\nexclude = ["AWS_*"]\n')
+assert ma(new_codex, at.WORKSPACE, base_env) == (None, None)
+# 撞名+別的理由同時在:回撞名,但標 other,規則不承諾「改完就好」
+url, blocked = cfg_case(ws_codex_cfg, '[mcp_servers.blave]\ncommand = "npx"\n')
+assert url is None and blocked["other"] is True, blocked
+rule = at.mcp_blocked_rule(blocked)
+assert "不保證" in rule and "就會生效" not in rule.replace("不要說改完就會生效", ""), rule
+os.remove(home_codex_cfg)
+# 非 UTF-8 的設定檔:不掛,不讓整個回合死掉(UnicodeDecodeError 是 ValueError)
+with open(home_codex_cfg, "wb") as f:
+    f.write(b'model = "\xff\xfe"\n')
+assert ma(new_codex, at.WORKSPACE, base_env) == (None, None)
+assert any("unreadable" in r for r in codex_engine._mcp_name_taken(at.WORKSPACE, base_env)["other"])
+os.remove(home_codex_cfg)
+# $CODEX_HOME == <cwd>/.codex:同一個檔只算一次(workspace 層)
+with open(ws_codex_cfg, "w") as f:
+    f.write(WEB_SNIPPET % MCP_URL)
+found = codex_engine._mcp_name_taken(at.WORKSPACE, {**base_env, "CODEX_HOME": os.path.dirname(ws_codex_cfg)})
+assert [h["layer"] for h in found["name"]] == ["workspace"], found["name"]
+os.remove(ws_codex_cfg)
+# 版本下限、snapshot 閘門照舊在 B 案之後也擋
+with open(home_codex_cfg, "w") as f:
+    f.write(WEB_SNIPPET % MCP_URL)
+assert ms(old_codex, at.WORKSPACE, base_env) is None and ms(pinned_codex, at.WORKSPACE, base_env) is None
+# 結構化回傳:每一層都列,不是第一個命中就走;entry 原樣給閘門用
+found = codex_engine._mcp_name_taken(at.WORKSPACE, base_env)
+assert [h["layer"] for h in found["name"]] == ["user"] and found["other"] == []
+assert found["name"][0]["entry"]["http_headers"] == {"Authorization": "Bearer blv_user_secret"}
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    ma(new_codex, at.WORKSPACE, base_env)
+    cfg_case(ws_codex_cfg, WEB_SNIPPET % MCP_URL)
+assert "blv_user_secret" not in err.getvalue() and "shadowed by ours" in err.getvalue(), "log 只有路徑與層,絕不印 entry"
+os.remove(home_codex_cfg)
+# $CODEX_HOME 指進 workspace = agent 寫得到 → 當 workspace 層
+ws_home = os.path.join(at.WORKSPACE, "codexhome")
+os.makedirs(ws_home)
+with open(os.path.join(ws_home, "config.toml"), "w") as f:
+    f.write(WEB_SNIPPET % MCP_URL)
+assert ma(new_codex, at.WORKSPACE, {**base_env, "CODEX_HOME": ws_home})[1]["paths"][0]["layer"] == "workspace"
+shutil.rmtree(ws_home)
+# blave_browser 不比照:同名一律不掛(就算是 url 形式)
+with open(home_codex_cfg, "w") as f:
+    f.write('[mcp_servers.blave_browser]\nurl = "http://127.0.0.1:51234/mcp"\n')
+assert codex_engine.browser_server(new_codex, at.WORKSPACE, {"CODEX_HOME": codex_home, "BLAVE_BROWSER_URL":
+       "http://127.0.0.1:51234/mcp", "BLAVE_BROWSER_TOKEN": "b" * 48}) is None
+assert ms(new_codex, at.WORKSPACE, base_env) == MCP_URL, "只有 blave_browser 同名不影響 blave"
+os.remove(home_codex_cfg)
+
+# user 層的路徑要跟 Codex 自己解析的一致(utils/home-dir find_codex_home + dirs-sys 0.5 home_dir):
+# 非空 CODEX_HOME 優先;否則 Windows 用 SHGetKnownFolderPath(FOLDERID_Profile),HOME / USERPROFILE 都不看;
+# 其他平台非空 $HOME,沒有再查 passwd。找不到家目錄 → 不掛(Codex 自己也起不來)
+_prof, _decoy = tempfile.mkdtemp(prefix="check-codex-prof-"), tempfile.mkdtemp(prefix="check-codex-decoy-")
+for d in (_prof, _decoy):
+    os.makedirs(os.path.join(d, ".codex"))
+_real_wpd, _was_windows = codex_engine._windows_profile_dir, codex_engine._WINDOWS
+win_env = {"HOME": _decoy, "USERPROFILE": _decoy, "BLAVE_MCP_URL": MCP_URL, "BLAVE_MCP_TOKEN": CODE}
+try:
+    codex_engine._WINDOWS = True
+    codex_engine._windows_profile_dir = lambda: _prof
+    assert codex_engine._codex_home(win_env) == os.path.join(_prof, ".codex")
+    assert codex_engine._codex_home({**win_env, "CODEX_HOME": ""}) == os.path.join(_prof, ".codex"), "空 CODEX_HOME 不算"
+    assert codex_engine._codex_home({**win_env, "CODEX_HOME": codex_home}) == codex_home
+    with open(os.path.join(_decoy, ".codex", "config.toml"), "w") as f:
+        f.write('[mcp_servers.blave]\ncommand = "npx"\n')
+    assert ms(new_codex, at.WORKSPACE, win_env) == MCP_URL, "Windows:HOME / USERPROFILE 指的那份 Codex 不讀,我們也不讀"
+    with open(os.path.join(_prof, ".codex", "config.toml"), "w") as f:
+        f.write('[mcp_servers.blave]\ncommand = "npx"\n')
+    url, blocked = ma(new_codex, at.WORKSPACE, win_env)
+    assert url is None and blocked["paths"] == [{"layer": "user", "path": os.path.join(_prof, ".codex", "config.toml")}], \
+        "Windows 給完整路徑,不縮成 ~"
+    codex_engine._windows_profile_dir = lambda: None
+    assert ms(new_codex, at.WORKSPACE, win_env) is None, "Windows 找不到 Profile → 不掛"
+    codex_engine._WINDOWS = False
+    assert codex_engine._codex_home({"HOME": _decoy}) == os.path.join(_decoy, ".codex")
+    import pwd  # noqa: E402
+    assert codex_engine._codex_home({"HOME": ""}) == os.path.join(pwd.getpwuid(os.getuid()).pw_dir, ".codex"), \
+        "POSIX:HOME 空 → passwd"
+    assert codex_engine._display_path(os.path.join(_decoy, ".codex", "config.toml"), {"HOME": _decoy}) \
+        == os.path.join("~", ".codex", "config.toml")
+finally:
+    codex_engine._windows_profile_dir, codex_engine._WINDOWS = _real_wpd, _was_windows
+    shutil.rmtree(_prof)
+    shutil.rmtree(_decoy)
 # 受管層在 -c 之上(managed_config.toml 40、MDM 50):那裡的舊寫法陣列會反過來頂掉我們的 filters → 碼進 shell。
 # 所以受管層只要碰 shell_environment_policy 就不掛;讀到但解析不了也不掛。
 for body in ('[shell_environment_policy]\ninherit = "all"\n', "not = toml [\n"):
@@ -544,8 +677,35 @@ assert not any("mcp_servers" in a for a in argv), argv
 assert "BLAVE_MCP_TOKEN" not in env and "BLAVE_MCP_URL" not in env, "不掛就不給子行程碼"
 assert "Blave MCP (this turn)" not in open(os.path.join(fake_out, "stdin")).read(), "沒掛不帶規則"
 run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, viewing_env="cloud")
-assert at._viewing_env_segment(False) in open(os.path.join(fake_out, "stdin")).read(), "沒掛就講連不上"
+stdin = open(os.path.join(fake_out, "stdin")).read()
+assert at._viewing_env_segment(False) in stdin, "沒掛就講連不上"
+# C 案:撞名不掛時,原因與修法(哪個檔、刪掉或改名)進這一輪的規則,agent 動雲端時在回覆第一句講
+assert at.mcp_blocked_rule({"paths": [{"layer": "workspace", "path": ws_codex_cfg}], "other": False}) in stdin, \
+    "撞名的原因要交給 agent"
+assert "就會生效" in stdin and "不保證" not in stdin, "只有撞名時才承諾改完就好"
+assert "## 雲端主機連線（本輪沒掛上）" in stdin and ws_codex_cfg in stdin
 os.remove(ws_codex_cfg)
+# user 層撞名(url 不同):規則裡只有路徑,絕不帶那段設定(裡面是用戶的碼)
+with open(home_codex_cfg, "w") as f:
+    f.write(WEB_SNIPPET % "https://elsewhere.example/mcp")
+run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG)
+stdin = open(os.path.join(fake_out, "stdin")).read()
+assert home_codex_cfg in stdin and "blv_user_secret" not in stdin and "elsewhere" not in stdin
+assert "BLAVE_MCP_TOKEN" not in spawned()[1]
+# user 層照網頁接入頁寫的那份 → 完整掛載:argv 有全部旗標、子行程拿到碼、圍籬規則與雲端視角「已連上」那段,沒有撞名那段
+with open(home_codex_cfg, "w") as f:
+    f.write(WEB_SNIPPET % MCP_URL)
+run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, viewing_env="cloud")
+argv, env = spawned()
+stdin = open(os.path.join(fake_out, "stdin")).read()
+assert all(flag in argv for flag in MCP_FLAGS) and env.get("BLAVE_MCP_TOKEN") == CODE, argv
+assert at.mcp_rule(True).strip() in stdin and at._viewing_env_segment(True) in stdin, "cloud_mcp 為 True"
+assert "本輪沒掛上" not in stdin
+os.remove(home_codex_cfg)
+assert at.mcp_blocked_rule(None) == "" and at._codex_prompt("p", at.LocalSink("s1"), True, mcp_blocked={
+    "paths": [{"layer": "user", "path": "x"}], "other": False}).count("本輪沒掛上") == 0, "掛上了就不帶撞名那段"
+assert "管理員" in at.mcp_blocked_rule({"paths": [{"layer": "managed", "path": "/etc/codex/managed_config.toml"}],
+                                     "other": False})
 
 chunks = run_local_turn(engine="codex", codex_bin=old_codex, mcp_config=MCP_CFG)
 assert chunks[-1]["type"] == "done"
