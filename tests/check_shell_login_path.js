@@ -79,6 +79,65 @@ t("binKind:exe / cmd / bat / ps1 / 無副檔名 shim / ChatGPT 內附 / 一般 P
   binKind("C:\\u\\.local\\bin\\claude.exe") === "exe" && binKind("C:\\r\\npm\\codex.cmd") === "cmd" && binKind("C:\\r\\x.BAT") === "cmd" && binKind("C:\\r\\npm\\codex.ps1") === "ps1"
   && binKind("C:\\Users\\u\\AppData\\Roaming\\npm\\codex") === "shim" && binKind("/Applications/ChatGPT.app/Contents/Resources/codex") === "chatgpt"
   && binKind("/opt/homebrew/bin/codex") === "posix" && binKind(null) === "none" && binKind("") === "none");
+// ── Windows 的 Store 版 Codex 桌面版:不在 PATH 上,問系統套件的安裝資料夾(釘發行者),接 app\resources\codex.exe ──
+const STORE_DIR = "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1007.2314.0_x64__2p2nqsd0c76g0", STORE_EXE = STORE_DIR + "\\app\\resources\\codex.exe";
+const FAM = "OpenAI.Codex_2p2nqsd0c76g0";
+t("binKind:Store 版的 codex.exe 是 store(排在 exe 前面);同資料夾別的 exe、別家套件仍是 exe", binKind(STORE_EXE) === "store" && binKind(STORE_EXE.toLowerCase()) === "store"
+  && binKind(STORE_DIR + "\\app\\Codex.exe") === "exe" && binKind("C:\\Program Files\\WindowsApps\\Evil.Codex_1.0.0.0_x64__abc\\app\\resources\\codex.exe") === "exe");
+const sf = src.match(/^const CODEX_STORE_FAMILY = .*$/m), sq = src.match(/^const CODEX_STORE_PS = .*$/m), ps = src.match(/^function pickStoreCodex\(stdout\) \{[\s\S]*?\n\}/m),
+  sp = src.match(/^async function storeCodexPath\(envPath, fresh\) \{[\s\S]*?\n\}/m), cp = src.match(/^async function codexPath\(envPath, seen, fresh\) \{[\s\S]*?\n\}/m), dwS = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
+if (!sf || !sq || !ps || !sp || !cp || !dwS) { console.log("FAIL  找不到 CODEX_STORE_FAMILY / CODEX_STORE_PS / pickStoreCodex / storeCodexPath / codexPath / detectWhy"); process.exit(1); }
+eval(sf[0].replace(/^const /, "var ")); eval(ps[0]);
+t("pickStoreCodex:實測那一行 → 安裝資料夾底下的 app\\resources\\codex.exe;CRLF、前後空行不影響", pickStoreCodex("\r\n" + FAM + "|26.1007.2314.0|" + STORE_DIR + "\r\n\r\n") === STORE_EXE && CODEX_STORE_FAMILY === FAM);
+t("pickStoreCodex:空輸出 / 不是這個格式 → null", pickStoreCodex("") === null && pickStoreCodex(null) === null && pickStoreCodex("Get-AppxPackage : Access is denied\r\n") === null && pickStoreCodex(STORE_DIR) === null);
+t("pickStoreCodex:發行者不對(側載的同名套件)不收", pickStoreCodex("OpenAI.Codex_aaaaaaaaaaaaa|99.0.0.0|C:\\Program Files\\WindowsApps\\OpenAI.Codex_99.0.0.0_x64__aaaaaaaaaaaaa") === null);
+t("pickStoreCodex:相對路徑、不在 \\WindowsApps\\OpenAI.Codex_ 底下、多一層子資料夾、多一欄都不收",
+  [".\\WindowsApps\\OpenAI.Codex_1_x64__2p2nqsd0c76g0", "C:\\Users\\u\\Downloads\\OpenAI.Codex_1_x64__2p2nqsd0c76g0", "C:\\Program Files\\WindowsApps\\Other.App_1_x64__2p2nqsd0c76g0",
+    STORE_DIR + "\\app", STORE_DIR + "|x", ""].every((d) => pickStoreCodex(FAM + "|1.0.0.0|" + d) === null) && pickStoreCodex(FAM + "|abc|" + STORE_DIR) === null);
+{ const d = (v) => "D:\\WindowsApps\\OpenAI.Codex_" + v + "_x64__2p2nqsd0c76g0", line = (v) => FAM + "|" + v + "|" + d(v);
+  t("pickStoreCodex:同時裝了多版取版號最高的(逐段比數字:26.1007 > 26.999;順序無關;別的磁碟也行)",
+    pickStoreCodex(line("26.999.1.0") + "\r\n" + line("26.1007.2314.0") + "\r\n" + line("26.1007.99.0")) === d("26.1007.2314.0") + "\\app\\resources\\codex.exe"
+    && pickStoreCodex(line("26.1007.2314.0") + "\n" + line("26.999.1.0")) === d("26.1007.2314.0") + "\\app\\resources\\codex.exe"); }
+{ eval(dwS[0]);
+  t("detectWhy:PATH 只有 shim、Store 也沒有 → 仍是 codex_shim;有 Store 就是能用(null);Store 版沒登入 → codex_nonzero;都沒有 → codex_none",
+    detectWhy("codex", { bin: "none", where: ["shim", "cmd"], loggedIn: false }) === "codex_shim" && detectWhy("codex", { bin: binKind(STORE_EXE), where: ["shim", "cmd"], code: 0, loggedIn: true }) === null
+    && detectWhy("codex", { bin: "store", where: [], code: 1, timedOut: false, loggedIn: false }) === "codex_nonzero" && detectWhy("codex", { bin: "none", where: [], loggedIn: false }) === "codex_none"); }
+t("storeCodexPath:PowerShell 走 System32 的絕對路徑、-NoProfile -NonInteractive、cwd 釘 System32、有逾時;查的是 OpenAI.Codex 這一個名字、不帶 -AllUsers",
+  /run\(path\.win32\.join\(sys32, "WindowsPowerShell", "v1\.0", "powershell\.exe"\), \["-NoProfile", "-NonInteractive", "-Command", CODEX_STORE_PS\], envPath, 15000, sys32\)/.test(sp[0])
+  && /const sys32 = path\.win32\.join\(process\.env\.SystemRoot \|\| "C:\\\\Windows", "System32"\)/.test(sp[0]) && /"Get-AppxPackage -Name OpenAI\.Codex \| /.test(sq[0]) && !/AllUsers/i.test(sq[0]));
+t("detectAgents(用戶按重新偵測)叫 codexPath 帶 fresh=true;codexBinNow(每一則訊息)不帶、走快取", /const codexBin = await codexPath\(envPath, rec\.codex, true\);/.test(src)
+  && /async function codexBinNow\(\) \{ return codexPath\(await loginShellPath\(\)\); \}/.test(src));
+var storeFlow = (async () => {
+  // storeCodexPath + codexPath 原文配假的 which / run / fs:PATH 有就不問 Store;沒有才問;問到的記住,檔不在了才重問
+  const calls = [], disk = new Set([STORE_EXE]), st = { which: null, out: FAM + "|26.1007.2314.0|" + STORE_DIR + "\r\n", code: 0 };
+  const mk = new Function("which", "run", "fs", "path", "process", "binKind", "winRealExe", "pickStoreCodex", "CODEX_STORE_PS", "CODEX_IN_CHATGPT",
+    "let storeCodex = null;\n" + sp[0] + "\n" + cp[0] + "\nreturn codexPath;");
+  // 假的 which 照真的那樣往 seen.where 寫檔種:PATH 上有 .cmd 時 where.exe 會列出 sh 包裝檔 + .cmd
+  const codexPath = mk(async (n, ep, seen) => { if (seen) seen.where = st.which ? ["shim", "cmd"] : []; return st.which; }, async (bin, args, envPath, ms, cwd) => { calls.push([bin, args, ms, cwd]); return { code: st.code, stdout: st.out, timedOut: false, ms: 1 }; },
+    { existsSync: (p) => disk.has(p) }, path, { platform: "win32", arch: "x64", env: { SystemRoot: "C:\\Windows" } }, binKind, winRealExe, pickStoreCodex, "PS", "/x");
+  st.which = "C:\\Users\\u\\.local\\bin\\codex.exe";
+  t("codexPath(win32):PATH 上有 codex.exe → 用它,不起 PowerShell", await codexPath("C:\\p") === st.which && calls.length === 0);
+  st.which = null; const seen = {};
+  t("codexPath(win32):PATH 沒有 → 問 Store,回 app\\resources\\codex.exe;seen.found 仍是 none(PATH 上沒有)",
+    await codexPath("C:\\p", seen) === STORE_EXE && calls.length === 1 && calls[0][0] === "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" && calls[0][2] === 15000 && calls[0][3] === "C:\\Windows\\System32" && seen.found === "none");
+  t("…第二次(每一則訊息)用記住的路徑,不再起 PowerShell", await codexPath("C:\\p") === STORE_EXE && await codexPath("C:\\p") === STORE_EXE && calls.length === 1);
+  t("…fresh(重新偵測)一律重問", await codexPath("C:\\p", {}, true) === STORE_EXE && calls.length === 2);
+  const NEW_DIR = STORE_DIR.replace("26.1007.2314.0", "26.1101.5.0"), NEW_EXE = NEW_DIR + "\\app\\resources\\codex.exe";
+  disk.delete(STORE_EXE); disk.add(NEW_EXE); st.out = FAM + "|26.1101.5.0|" + NEW_DIR + "\r\n";
+  t("…app 更新換了資料夾(記住的檔不在了)→ 重問、拿到新路徑", await codexPath("C:\\p") === NEW_EXE && calls.length === 3);
+  disk.delete(NEW_EXE);
+  t("…系統說有、檔其實不在 → null(不把不存在的路徑交給 runtime)", await codexPath("C:\\p") === null && calls.length === 4);
+  disk.add(NEW_EXE); st.code = 1;
+  t("…PowerShell 非 0(逾時、被 AppLocker 擋)→ null", await codexPath("C:\\p") === null);
+  st.code = 0; st.which = "C:\\r\\npm\\codex.cmd";
+  t("codexPath(win32):PATH 上只有解不到 exe 的 .cmd → 也退到 Store", await codexPath("C:\\p") === NEW_EXE);
+  disk.delete(NEW_EXE); const rec = {};
+  rec.bin = binKind(await codexPath("C:\\p", rec, true));
+  t("…PATH 只有 shim、Store 也沒有 → 一路走下來 bin=none、where 有 cmd → detectWhy 仍是 codex_shim(語意沒被 Store 退路改掉)",
+    rec.bin === "none" && detectWhy("codex", { ...rec, loggedIn: false }) === "codex_shim");
+  const mac = mk(async () => null, async () => { calls.push("mac"); return { code: 0, stdout: st.out }; }, { existsSync: () => false }, path, { platform: "darwin", arch: "arm64", env: {} }, binKind, winRealExe, pickStoreCodex, "PS", "/x");
+  t("codexPath(darwin):不走 Store 這條", await mac("/usr/bin") === null && !calls.includes("mac"));
+})();
 t("runRec 只取 code / timedOut / ms(stdout 有 email,不進紀錄)", JSON.stringify(runRec({ code: 1, timedOut: false, ms: 9, stdout: "{\"email\":\"a@b\"}", stderr: "x" })) === '{"code":1,"timedOut":false,"ms":9}');
 const LOGF = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "blave-detect-")), "state", "detect.log");
 detectLogWrite(LOGF, { n: 0 });
@@ -102,6 +161,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   t("which / codexPath 往 seen 寫的只有 where(檔種清單)/ whereTimedOut / found(檔種)", [...w.matchAll(/seen\.(\w+) = /g)].map((m) => m[1]).every((k) => ["where", "whereTimedOut", "found"].includes(k))
     && /seen\.where = r\.code === 0 \? winOnPath\(r\.stdout, envPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.map\(binKind\)/.test(w) && /seen\.found = binKind\(found\)/.test(w)); }
 (async () => {
+  await storeFlow;
   const slow = await run(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], process.env.PATH, 150);
   t("run:逾時 → timedOut=true、ms ≥ 上限(以前只看得到 code,分不出逾時)", slow.timedOut === true && slow.ms >= 150 && slow.ms < 4000, slow);
   const bad = await run(process.execPath, ["-e", "process.exit(3)"], process.env.PATH, 5000);

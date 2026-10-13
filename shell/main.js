@@ -120,6 +120,7 @@ const LOGIN_CHECK_MS = 20000;
 function binKind(p) {
   if (!p) return "none";
   if (/\/ChatGPT\.app\/Contents\/Resources\/codex$/.test(p)) return "chatgpt";
+  if (/\\WindowsApps\\OpenAI\.Codex_[^\\]+\\app\\resources\\codex\.exe$/i.test(p)) return "store";
   if (/\.exe$/i.test(p)) return "exe";
   if (/\.(cmd|bat)$/i.test(p)) return "cmd";
   if (/\.ps1$/i.test(p)) return "ps1";
@@ -162,13 +163,43 @@ function winRealExe(bin, arch, exists = fs.existsSync) {
   const dir = path.win32.dirname(bin);
   return CODEX_WIN_EXE(arch).map((rel) => path.win32.join(dir, rel)).find((p) => exists(p)) || null;
 }
-async function codexPath(envPath, seen) {
+/* Windows 的 Codex 桌面版(Microsoft Store)自己帶一顆 codex.exe,不在 PATH 上:%LOCALAPPDATA%\Microsoft\WindowsApps 的別名資料夾裡
+   沒有 codex.exe(用戶機實測 OpenAI.Codex 26.1007:`--version`、`login status` 從 app 外面直接跑都回 0)。安裝資料夾名帶版號,
+   app 一更新就換,只能問系統;上一層 WindowsApps 一般使用者列不了目錄,不 readdir。
+   釘發行者:PackageFamilyName 尾巴是發行者憑證的雜湊,側載一個同名套件拿不到同一個值。 */
+const CODEX_STORE_FAMILY = "OpenAI.Codex_2p2nqsd0c76g0";
+const CODEX_STORE_PS = "Get-AppxPackage -Name OpenAI.Codex | ForEach-Object { $_.PackageFamilyName + '|' + $_.Version + '|' + $_.InstallLocation }";
+// 上面那行的輸出(一個套件一行「family|版號|安裝資料夾」)→ 版號最高那個的 codex.exe;沒有可信的一行就 null。純函式
+function pickStoreCodex(stdout) {
+  const ver = (v) => v.split(".").map(Number);
+  const newer = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); return false; };
+  let best = null;
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    const [family, version, dir, ...rest] = line.trim().split("|");
+    if (family !== CODEX_STORE_FAMILY || rest.length || !/^\d+(\.\d+)*$/.test(version || "")) continue;
+    if (!dir || !path.win32.isAbsolute(dir) || !/\\WindowsApps\\OpenAI\.Codex_[^\\]+$/i.test(dir)) continue;
+    if (!best || newer(ver(version), best.v)) best = { v: ver(version), dir };
+  }
+  return best ? path.win32.join(best.dir, "app", "resources", "codex.exe") : null;
+}
+// codexBinNow() 每一則訊息都會走到這裡:記住上次解到的路徑,檔還在就不再起 PowerShell;app 更新換了資料夾(檔不在了)才重查。
+// fresh = 用戶按重新偵測,一律重查
+let storeCodex = null;
+async function storeCodexPath(envPath, fresh) {
+  if (!fresh && storeCodex && fs.existsSync(storeCodex)) return storeCodex;
+  const sys32 = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32");
+  const r = await run(path.win32.join(sys32, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", CODEX_STORE_PS], envPath, 15000, sys32);
+  const exe = r.code === 0 ? pickStoreCodex(r.stdout) : null;
+  storeCodex = exe && fs.existsSync(exe) ? exe : null;
+  return storeCodex;
+}
+async function codexPath(envPath, seen, fresh) {
   const found = await which("codex", envPath, seen);
   if (seen) seen.found = binKind(found);
   if (process.platform === "win32") {
     const exe = winRealExe(found, process.arch);
     if (found && !exe) console.error("[detect] codex is a .cmd shim with no codex.exe next to it: " + found);
-    return exe;
+    return exe || storeCodexPath(envPath, fresh);
   }
   return found || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
 }
@@ -202,8 +233,8 @@ async function detectAgents() {
     // Codex 有兩種裝法:獨立 CLI(在 PATH 上),或跟著 ChatGPT 桌面版來的——後者的
     // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
     // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
-    // 「有 Codex」的人會看到「未偵測到」。
-    const codexBin = await codexPath(envPath, rec.codex);
+    // 「有 Codex」的人會看到「未偵測到」。Windows 的對應是 Store 版 Codex 桌面版(storeCodexPath)。
+    const codexBin = await codexPath(envPath, rec.codex, true);
     rec.codex.bin = binKind(codexBin);
     if (!codexBin) return;
     out.codex.installed = true;

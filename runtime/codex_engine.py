@@ -287,34 +287,12 @@ def _windows_sandbox_flags(env):
     never forbids every shell command ("rejected: blocked by policy", codex 0.160
     core/src/exec_policy.rs), and only the TUI ever runs the setup that picks a mode.
     unelevated (restricted token + ACLs) needs no admin rights and changes no system setting.
-    `-c` outranks the user's config, so a user who already chose a mode — or set one of the
-    legacy keys it is derived from — keeps theirs; a config we cannot read gets the flag."""
-    if not _WINDOWS:
-        return ()
-    try:
-        import tomllib  # same reason as _mcp_name_taken: not at module top
-        home = env.get("CODEX_HOME") or os.path.join(env.get("HOME") or os.path.expanduser("~"),
-                                                     ".codex")
-        with open(os.path.join(home, "config.toml"), "rb") as f:
-            doc = tomllib.load(f)
-    except (ImportError, OSError, ValueError):
-        return _WINDOWS_SANDBOX
-    # The active profile's table counts too: `profile = "x"` + `[profiles.x.windows]` is a
-    # choice as real as the top-level one. A name that is missing or not a table = not set.
-    profiles, name = doc.get("profiles"), doc.get("profile")
-    active = profiles.get(name) if isinstance(profiles, dict) and isinstance(name, str) else None
-    if _sandbox_set(doc) or (isinstance(active, dict) and _sandbox_set(active)):
-        return ()
-    return _WINDOWS_SANDBOX
-
-
-def _sandbox_set(table):
-    windows = table.get("windows")
-    features = table.get("features")
-    return (isinstance(windows, dict) and "sandbox" in windows) \
-        or (isinstance(features, dict)
-            and ("windows_sandbox" in features or "windows_sandbox_elevated" in features)) \
-        or "enable_experimental_windows_sandbox" in table
+    Always unelevated, even when the user's config.toml picks a mode (Wei, 2026-10-12): the
+    Codex desktop app writes `[windows] sandbox = "elevated"` for its users, and elevated is
+    broken upstream as of 2026-10 (openai/codex #52179, #52415: the sandbox helper's "setup
+    refresh had errors" on a file the app itself holds open, after which every command is
+    refused). `-c` outranks the config, so the flag wins. `env` is unused; kept for callers."""
+    return _WINDOWS_SANDBOX if _WINDOWS else ()
 
 
 def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_url=None,
