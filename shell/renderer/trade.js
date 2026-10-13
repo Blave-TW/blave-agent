@@ -119,6 +119,18 @@ function trPresWip(r, id) { const c = id === "president" && r && r.president_con
 function trPresStopped(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !!c.worker && c.worker.status === "failed" && !trPresWip(r, id); }
 // 停掉的那一種是登入失敗(runtime 寫 worker.error = LOGIN_FAILED:<類別>;其他失敗是沒寫出快照那類):設定 › 帳戶 那一列講「登入已停止」而不是讀帳原文
 function trPresLoginStopped(r, id) { return trPresStopped(r, id) && String(r.president_connect.worker.error || "").indexOf("LOGIN_FAILED") === 0; }
+/* 統一下單程式剛起來(worker ok、或 wanted 著還在 running)、帳戶讀取器還沒讀到它之後的那一輪(account.read_at 早於那一刻、或還沒有 account):
+   這時掛著的是上一輪的舊失敗,不是串接失敗(10-13 乾淨機模擬 發現 2:開通成功回到頁面頭幾秒紅字「串接失敗」)。
+   超過 TR_PRES_BOOT_MS 還沒讀到就照舊講失敗;worker 明確失敗(status failed)不走這裡 */
+const TR_PRES_BOOT_MS = 60000;
+function trPresBooting(r, nowMs) {
+  const c = r && r.president_connect, w = c && typeof c === "object" ? c.worker : null;
+  if (!w || typeof w !== "object") return false;
+  const since = w.status === "ok" ? w.ok_at : w.status === "running" && w.wanted === true ? w.at : null;
+  if (typeof since !== "number" || nowMs - since * 1000 > TR_PRES_BOOT_MS) return false;
+  const readAt = r.account && typeof r.account.read_at === "number" ? r.account.read_at : 0;
+  return readAt < since;
+}
 /* 台指期實盤行情來源那一句(設計 spec desktop-live-source-line;lib/data 在每次 live tick 寫 state/twfutures_live_source.json,reporter 原樣帶出)。
    四個條件同時成立才出:這台電腦且綁統一、回報有那一欄(還沒 tick 過就沒有,不出佔位句)、至少一個台指期口數列 > 0(`lots`;
    全 0 時沒有 live tick,檔案是舊的)、狀態在跑 / 已暫停 / 沒停住(過場中、死掉、開通中都不出)。
@@ -143,7 +155,7 @@ function trAcctErr(err) {
   const m = /^([a-z_]+):\s*(.*)$/i.exec(String(err || ""));
   return m ? { stage: m[1], msg: m[2] } : { stage: "—", msg: String(err || "") };
 }
-function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id); }); }
+function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id) && !(id === "president" && trPresBooting(r, Date.now())); }); }
 /* 綁著的只有開通中的統一、對帳器也沒在跑 = 開通還沒做完(0.1.18 Wei 實測:存了帳密、憑證 ok、probe 還在跑,頁面就講
    「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在。
    機器重開相關的兩態(停著 / 沒停住)一律優先於 setup:那是真錢警示,開通中也不能藏。
@@ -1426,6 +1438,8 @@ function trStateText(state) {
     : rec.heartbeat_at ? t("tr.notStarted") + " · " + t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 在跑、統一有口在倉(只在這台電腦、Windows):同一句尾接「電腦保持清醒」——設計師裁定 A,不另立橫幅、不講「不會平倉」
   else if (!trNoAmounts(r) && TR.env === "local" && window.blave.platform === "win32") { const lots = presHeldLots(r); if (lots > 0) s += " · " + t("tr.presAwake", { n: lots }); }
+  // 統一下單程式剛起來、第一筆帳戶回報還沒回來:中性句,不講失敗也不講「尚未啟動」(讀到帳戶或 60 秒後照舊;對帳器自己掛了的照講)
+  if (state === "dead" && trDeadKind(r) !== "died" && trPresBooting(r, Date.now())) return t("tr.presBooting");
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
   // 失敗而且下單程式沒在跑:整句換成帶出口的那一句(到「設定」),不把三個狀態串成一串(設計稽核 desktop-10-08 #7)
   if (trFailStopped(state, r)) return t("cx.failStopped");
@@ -2788,8 +2802,9 @@ function trPaintHist() {
   if (orders.some((o) => o && typeof o === "object" && !trOrderLots(o))) box.appendChild(trUnit() ? trEl("div", "pf-foot unit-note", t("tr.unitNote", { c: trUnit() })) : trEl("div", "pf-foot", t("tr.ccyUnknown")));
 }
 function trPaintSet() {
-  const box = $("tr-set"), r = trReport(), id = trVenueId(), e = id ? trLiveEntry(r, id) : null;
-  const ro = TR.env === "cloud";
+  const box = $("tr-set"), r = trReport(), id = trVenueId(), ro = TR.env === "cloud";
+  // 統一下單程式剛起來那幾秒:上一輪的舊失敗當「還沒讀過」畫(圓環 + 串接中…),同標題下那一行不講失敗
+  const e = id && !(!ro && id === "president" && trPresBooting(r, Date.now())) ? trLiveEntry(r, id) : null;
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;

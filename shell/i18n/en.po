@@ -1398,6 +1398,9 @@ msgstr "Paused"
 msgid "tr.notStarted"
 msgstr "Trading not started yet"
 
+msgid "tr.presBooting"
+msgstr "Order engine starting…"
+
 msgid "tr.lastRun"
 msgstr "last ran until {t}"
 
@@ -6667,7 +6670,40 @@ msgid "pres.prep.looking"
 msgstr "Looking for a President certificate on this computer…"
 
 msgid "pres.none.lead"
-msgstr "This computer doesn’t have a President certificate yet. Follow these steps; your progress is kept."
+msgstr "This computer doesn’t have a President certificate yet."
+
+msgid "pres.none.new"
+msgstr "Apply for a new certificate"
+
+msgid "pres.none.have"
+msgstr "I already have one"
+
+msgid "pres.none.newLead"
+msgstr "Follow these steps; your progress is kept."
+
+msgid "pres.none.h1"
+msgstr "On the computer you applied from, open 憑證e總管 and press 憑證匯出（備份）"
+
+msgid "pres.none.h2"
+msgstr "Copy the exported file to this computer, then press Choose certificate file"
+
+msgid "pres.none.h2sub"
+msgstr "The file is at {path}"
+
+msgid "pres.none.pName"
+msgstr "name"
+
+msgid "pres.none.pId"
+msgstr "ID number"
+
+msgid "pres.none.pExp"
+msgstr "expiry"
+
+msgid "pres.none.pick"
+msgstr "Choose certificate file"
+
+msgid "pres.none.badFile"
+msgstr "That file isn’t a certificate. Choose the one ending in .pfx."
 
 msgid "pres.none.s1"
 msgstr "First, ask your broker rep to enable API trading and certificate application for your account"
@@ -6722,6 +6758,9 @@ msgstr "Found a President certificate on this computer, expiring {date}. Next, e
 
 msgid "pres.form.foundNoDate"
 msgstr "Found a President certificate on this computer. Next, enter your account and trading password."
+
+msgid "pres.form.picked"
+msgstr "Certificate file chosen. Next, enter your account and trading password."
 
 msgid "pres.form.store"
 msgstr "Your account and trading password are stored encrypted on this computer, never uploaded, and the agent can’t read them."

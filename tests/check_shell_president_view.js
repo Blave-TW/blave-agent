@@ -162,6 +162,26 @@ const miss = [...used].filter((k) => !(k in sctx.S.zh) || !(k in sctx.S.en));
 ok(`用到的 pres.* ${used.size} 個,中英都有`, used.size > 100 && miss.length === 0, miss);
 const zhHalf = [...used].filter((k) => k in sctx.S.zh && /[,;?!]|(?<!\d):(?!\d)/.test(sctx.S.zh[k]));
 ok("中文字串用全形標點", zhHalf.length === 0, zhHalf);
+// 0.1.23(Wei 10-13 乾淨機模擬裁定):找不到憑證先問「申請新憑證／已經有憑證」,兩顆並列同一頁、選了才展開;已經有 = 在申請的那台匯出 .pfx → 這台選檔 → 直接帳密頁,
+// 不叫他在這台登入憑證e總管(換電腦登入回 54101)
+{ const prep = src.slice(src.indexOf("function presPrepBody("), src.indexOf("function presFormBody(")), have = prep.slice(prep.indexOf("} else {"));
+  ok("d-prep-none:兩顆並列(aria-pressed)、沒選不展開;申請新憑證 = 原本兩步(key 不動);已經有憑證 = 匯出兩步 + 路徑,那一條沒有憑證e總管",
+    /\[\["new", "pres\.none\.new"\], \["have", "pres\.none\.have"\]\]\.forEach/.test(prep) && /b\.setAttribute\("aria-pressed", PRES\.choice === c \? "true" : "false"\)/.test(prep) && /if \(!PRES\.choice\) return f;/.test(prep)
+    && /li\("pres\.none\.s1", t\("pres\.none\.s1sub", \{ tel: PRES_HOTLINE \}\)\); li\("pres\.none\.s2", t\("pres\.none\.s2sub"\)\);/.test(prep)
+    && /li\("pres\.none\.h1", null\); li\("pres\.none\.h2", t\("pres\.none\.h2sub", \{ path: presPfxPath\(\) \}\), true\);/.test(have) && !/tcem|Tcem/i.test(have.replace(/\/\/.*$/gm, "")));
+  ok("主鈕跟著選的路(new → 開啟憑證e總管、have → 選擇憑證檔案、沒選沒有主鈕);presPick 在 prep 選到檔直接進 form、停輪詢;選到不是 .pfx 畫在清單下",
+    /view === "d-prep-none" \? \(PRES\.choice === "new" \? t\("pres\.tcem\.open"\) : PRES\.choice === "have" \? t\("pres\.none\.pick"\) : null\)/.test(src)
+    && /if \(v === "d-prep-none"\) return PRES\.choice === "have" \? presPick\(\) : PRES\.choice === "new" \? presOpenTcem\(\) : undefined;/.test(src)
+    && /if \(PRES\.phase === "prep"\) \{ PRES\.waitTcem = false; PRES\.phase = "form"; presWatch\(false\); \}/.test(src)
+    && /PRES\.msg\.code === "PFX_INVALID"\) f\.appendChild\(capErr\(t\("pres\.none\.badFile"\)\)\)/.test(have) && /PRES\.tcemMsg, PRES\.choice,/.test(src));
+  ok("埋點:按「已經有憑證」記 pres_have_cert(每開一次框一次);帳密頁:選檔過來的講「已選好憑證檔」、存過帳密(改帳號回來)不講",
+    /have: "pres_have_cert"/.test(src) && /if \(c === "have"\) presTrack\("have"\);/.test(src)
+    && /PRES\.source === "picked" \? \(PRES\.info && PRES\.info\.saved \? null : t\("pres\.form\.picked"\)\)/.test(src));
+  ok("字串:兩顆鈕與主鈕逐字;匯出那兩步不叫人登入;路徑不進 .po(zh 表不准半形冒號)、三個角括號字照語言;選錯檔那句不叫人按「選別的檔案」",
+    sctx.S.zh["pres.none.new"] === "申請新憑證" && sctx.S.zh["pres.none.have"] === "已經有憑證" && sctx.S.zh["pres.none.pick"] === "選擇憑證檔案" && sctx.S.zh["pres.none.lead"] === "這台電腦還沒有統一憑證。"
+    && /憑證匯出（備份）/.test(sctx.S.zh["pres.none.h1"]) && !/登入|log in/i.test(sctx.S.zh["pres.none.h1"] + sctx.S.zh["pres.none.h2"] + sctx.S.en["pres.none.h1"] + sctx.S.en["pres.none.h2"])
+    && !/C:/.test(sctx.S.zh["pres.none.h2sub"] + sctx.S.en["pres.none.h2sub"]) && /\{path\}/.test(sctx.S.zh["pres.none.h2sub"]) && src.indexOf('"C:\\\\Users\\\\<" + t("pres.none.pName") + ">\\\\PSCCA\\\\PSC_<" + t("pres.none.pId") + ">_<" + t("pres.none.pExp") + ">.pfx"') >= 0
+    && !/選別的檔案/.test(sctx.S.zh["pres.none.badFile"]) && sctx.S.zh["tr.presBooting"] === "下單程式啟動中…" && /starting/i.test(sctx.S.en["tr.presBooting"])); }
 // Wei 10-07:不講「算／不算登入次數」「連錯三次」——用戶不需要數
 const presKeys = Object.keys(sctx.S.zh).filter((k) => k.indexOf("pres.") === 0);
 const countZh = presKeys.filter((k) => /次數|三次|登入次/.test(sctx.S.zh[k])), countEn = presKeys.filter((k) => /attempt|three wrong|count as/i.test(sctx.S.en[k] || ""));

@@ -720,6 +720,29 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("#7 字串:兩語都有、帶「設定」這個出口、不提「部位」", S7.zh["cx.failStopped"] === "串接失敗，下單程式沒在跑。到「設定」處理。"
         && /Settings/.test(S7.en["cx.failStopped"]) && !/部位|Positions/.test(S7.zh["cx.failStopped"] + S7.en["cx.failStopped"]));
       TR.st = C0({ gated: false }); }
+    { // 10-13 乾淨機模擬 發現 2:統一開通成功回到頁面、worker 剛起、帳戶讀取器還沒讀到它之後那一輪 → 中性句 tr.presBooting;60 秒沒回報或 worker 失敗照舊 cx.failStopped
+      const Vf = { president: { credentials: true, pair: true, order: true, account: true } }, now = Math.floor(Date.now() / 1000);
+      const stale = { read_at: now - 40, venues: { president: { ok: false, error: { stage: "get_equity", msg: "no snapshot" } } } };
+      const dead = (w, acct) => ({ alive: true, report: { venues: Vf, account: acct === undefined ? stale : acct, config: { amounts: {} }, halt: {}, president_connect: { worker: w },
+        reconciler: { alive: false }, daemon: { reconciler: { running: false, wanted: false } } } });
+      const fresh = { status: "ok", ok_at: now - 5, wanted: true, at: now - 5 }, late = { status: "ok", ok_at: now - 90, wanted: true, at: now - 90 }, bad = { status: "failed", error: "WORKER_FAILED", ok_at: now - 5, at: now - 5 };
+      TR.env = "local";
+      TR.st = dead(fresh); const booting = trStateText("dead"), bootShort = trShortState("dead");
+      TR.st = dead(late); const tooLate = trStateText("dead");
+      TR.st = dead(bad); const failed = trStateText("dead");
+      ok("統一 worker 剛起(<60s、帳戶回報還是上一輪的)= tr.presBooting、不列串接失敗、頂列短詞不帶失敗;>60s 沒回報 = cx.failStopped;worker 失敗 = cx.failStopped",
+        trExecState(dead(fresh)) === "dead" && booting === "tr.presBooting" && bootShort === "tr.s.off" && trFailedIds(dead(fresh).report).length === 0
+        && tooLate === "cx.failStopped" && failed === "cx.failStopped" && J(trFailedIds(dead(late).report)) === J(["president"]) && J(trFailedIds(dead(bad).report)) === J(["president"])
+        && trPresBooting(dead(fresh).report, Date.now()) && !trPresBooting(dead(late).report, Date.now()) && !trPresBooting(dead(bad).report, Date.now()), J([booting, bootShort, tooLate, failed]));
+      TR.st = dead(fresh, { read_at: now - 5, venues: stale.venues }); const readThisRound = trStateText("dead");
+      ok("…read_at 不早於 ok_at = 這一輪讀到了,照講失敗;account 還沒有 = 啟動中;running + wanted(確認登入後重起、有 ok_at)也算啟動中、沒 wanted 不算",
+        readThisRound === "cx.failStopped" && trPresBooting(dead(fresh, null).report, Date.now())
+        && trPresBooting(dead({ status: "running", wanted: true, ok_at: now - 500, at: now - 5 }).report, Date.now()) && !trPresBooting(dead({ status: "running", ok_at: now - 500, at: now - 5 }).report, Date.now())
+        && !trPresBooting({ venues: Vf, account: stale }, Date.now()), readThisRound);
+      const died = dead(fresh); died.report.daemon.reconciler.wanted = true; TR.st = died;
+      ok("…對帳器自己掛了(died)那句照講,不被啟動中蓋掉", trStateText("dead").indexOf("tr.died") === 0, trStateText("dead"));
+      ok("設定 › 帳戶那一列:啟動中那幾秒把舊失敗當還沒讀過(e = null → 圓環 + 串接中…)", /const e = id && !\(!ro && id === "president" && trPresBooting\(r, Date\.now\(\)\)\) \? trLiveEntry\(r, id\) : null;/.test(src));
+      TR.env = "cloud"; TR.st = C0({ gated: false }); }
     ok("狀態行:可能仍在下單 + 紅字原因行;頂列短詞同一個詞;已按暫停後是「已暫停 · A」",
       trStateText("unconfirmed") === "tr.cloud.mayTrade · tr.cloud.restartUnconfirmed" && trShortState("unconfirmed") === "tr.cloud.mayTrade"
       && ((TR.st = Ch), trStateText("halted") === "tr.halted · tr.haltReason"));
@@ -1227,7 +1250,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         return (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); })();
       // 群益開通清單右側的短結果(renderer/capital.js capRow 的 .cap-r):列的狀態,不掛在任何控件上
       const STATUS_ONLY = ["tr.loading", "cn.detecting", "cx.ip.loading", "tr.cloud.hdConnecting", "cap.s.setupRun", "cap.pfx.importing", "cap.s.readRun", "cap.s.querying",
-        "pres.s.setupRun", "pres.s.orderRun", "pres.s.probeRun", "pres.s.workerRun"];   // 統一清單列右側(renderer/president.js 同 capRow)
+        "pres.s.setupRun", "pres.s.orderRun", "pres.s.probeRun", "pres.s.workerRun",   // 統一清單列右側(renderer/president.js 同 capRow)
+        "tr.presBooting"];   // 標題下狀態行:統一下單程式剛起、第一筆帳戶回報還沒回來(trPresBooting),不掛在任何控件上
       const prog = Object.keys(S2.zh).filter((k) => /中…$/.test(S2.zh[k]) && STATUS_ONLY.indexOf(k) < 0);
       const RD = path.join(__dirname, "..", "shell", "renderer");
       const files = fs.readdirSync(RD).filter((f) => f.endsWith(".js") && f !== "strings.js" && f !== "i18n.js");
