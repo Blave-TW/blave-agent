@@ -478,7 +478,7 @@ async function verDoRestore(side, name, n, prev, retry, failedAt) {
   if (a.kind === "ok") {
     if (!retry) trackFeature("version_restore");   // ack 成功才算(含 inplace:false:還原確實做了);再跑一次不計
     if (a.result.inplace === false) { verRollback(side, name, n, "ver.rsAsNew"); return; }
-    armed(); return;
+    armed(); verSideRefresh(side, name); return;
   }
   if (a.kind === "wait") { armed(); return; }
   if (a.code === "LIVE") {
@@ -511,6 +511,18 @@ function verRollback(side, name, n, reason) {
   const a = document.activeElement;
   if (!a || a === document.body || a === $("ver-trig")) { const b = $("ver-restore"); if (b) b.focus(); }
 }
+/* 側欄那一列的名字(顯示名稱)跟著版本走,但還原不經回合、回合結束那一次 stratRefresh 不會跑:ack 成功與重跑完成各重讀一次側欄。
+   這台電腦:重建列後 stratSelect(force) 接回選取(頁還開著才做,人已經切去別頁不拉回來);雲端:清單在主行程那份狀態裡,叫它重抓、立刻輪詢一輪 */
+function verSideRefresh(side, name) {
+  const B = side === "cloud" ? RPC : RP;
+  if (side === "cloud") {
+    if (!window.blave || typeof window.blave.cloudRefresh !== "function") return;
+    window.blave.cloudRefresh().catch(() => {}).then(() => { if (typeof ENV !== "undefined") ENV.cloudDirty = true; if (typeof trPoll === "function") trPoll(); });
+    return;
+  }
+  if (typeof stratRefresh !== "function") return;
+  stratRefresh(false).catch(() => {}).then(() => { if (B.name === name && rpBag() === B && !$("rp").hidden && typeof stratSelect === "function") stratSelect(name, true); });
+}
 /* 重跑期間的輪詢(spec §13):這台電腦每 2 秒讀本機檔、雲端每 5 秒打 /cloud/strategy(detail 桶);內容沒變就不重畫(圖不閃)。
    疊層還在、或重跑中才跑;沒完成是穩定狀態不輪;最多 16 分鐘(機器端逾時 15 分鐘 + 餘裕)。看不到那一邊時照讀、不畫 */
 function verPollNeed(side, B) {
@@ -521,7 +533,7 @@ function verPollNeed(side, B) {
 }
 function verPollStop(side) { const P = VP[side]; if (P) clearTimeout(P.timer); VP[side] = null; }
 function verPollEnsure(side, B) {
-  if (!verPollNeed(side, B)) { if (VP[side] && VP[side].name === B.name) verPollStop(side); return; }
+  if (!verPollNeed(side, B)) { if (VP[side] && VP[side].name === B.name && !VP[side].capped) { verPollStop(side); verSideRefresh(side, B.name); } return; }
   if (VP[side] && VP[side].name === B.name) return;
   verPollStop(side);
   const P = { name: B.name, until: Date.now() + VER_POLL_MAX_MS, timer: null };
@@ -567,7 +579,7 @@ async function verPollTick(side, P) {
   }
   verOverlayExpire(side, P.name, B);
   if (VP[side] !== P) return;
-  if (!verPollNeed(side, B)) { verPollStop(side); if (shown) { rpPaintHead(B); rpShowTab(rpTab(B)); } return; }
+  if (!verPollNeed(side, B)) { verPollStop(side); verSideRefresh(side, P.name); if (shown) { rpPaintHead(B); rpShowTab(rpTab(B)); } return; }
   P.timer = setTimeout(() => verPollTick(side, P), VER_POLL_MS[side]);
 }
 $("ver-back").addEventListener("click", verBack);
