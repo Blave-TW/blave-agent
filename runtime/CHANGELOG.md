@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.122 — 2026-10-13(desktop 0.1.23)
+
 - **Windows 的 Codex 引擎一律帶 `-c windows.sandbox="unelevated"`,不再讓步給用戶 config.toml(`codex_engine._windows_sandbox_flags`;Wei 10-12 拍板)**:Codex 桌面 app 會替用戶在 `~/.codex/config.toml` 寫 `[windows] sandbox = "elevated"`,而 elevated 在 2026-10 上游壞掉(openai/codex #52179、#52415:沙盒 helper 重整 ACL 碰到 app 自己鎖住的檔,`setup refresh had errors`,之後每條指令都被拒;uid 30191 10-12 實機就是這樣);unelevated 本來就是給沒設定的人用的模式,現在有設定也蓋。`-c` 蓋過 config,所以只改旗標、不動用戶的檔。讀 config 那段(`_sandbox_set`、profile 解析)拿掉;`shell/winsandbox.js`(elevated 的 ACL 補授權)留著不動。macOS／Linux 的 argv 不變。測試 `tests/check_codex_engine.py` 4c 改成釘「有 elevated 設定也照回 unelevated」。
 - **電腦版狀態檔跟著機器走、不等定時重算(Wei 10-12 觀察:選策略／存金額的 ack 只代表寫進設定檔,畫面要等定時重算才對得上;`local_daemon`)**:①`_status_loop` 拿掉 dirty 之後的 8 秒冷卻與「再看一眼」——每次 `dirty` 立刻重做 `build_report` 寫 `state/local_status.json`,`dirty` 在重算**前**清掉,重算中再來的觸發合併成重算後的一次(Event 語意:不排隊、不冷卻;失敗照舊只 log);指令 ack 之後的那一次重算本來就走 `handle_file` 的 `dirty`,這下不再被前一次重算的冷卻卡住。②新 `_reconcile_watch`(掛在 `_supervise_loop` 每秒一次):對帳器是另一個行程,所以從磁碟認「一輪結束」——`manager/last_reconcile.json` 的 mtime 變了、或 `state/execution/round` 從在變成不在(拋例外的那一輪不寫快照但可能已經 trip HALT)就 `dirty`;第一眼只記不觸發。雲端 listener 不同路(`run()` 每條指令後 `on_applied` 推送、報告另有定時),這次只做本機。測試 `tests/check_local_daemon.py` 加 §5。
 
