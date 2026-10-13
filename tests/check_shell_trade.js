@@ -543,6 +543,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /sp \? lots\(sp, sending\[n\]\) : money\(sending\[n\]\)/.test(fnOf("trSaveAmounts")) && /tt\.total == null \? unknown\(\) : money\(tt\.total, tt\.ccy\)/.test(fnOf("trSaveAmounts"))
       && /m == null \? t\(trLotsKey\(v, "tr\.txfConfirmNoQuote", "tr\.txfConfirmNoQuote1"\), q\) : t\(trLotsKey\(v, "tr\.txfConfirm", "tr\.txfConfirm1"\)/.test(fnOf("trSaveAmounts")));
     // A 段錯誤輸入 7-2:口數格留空靜默存成 0。留空的格不換成「0」、記進 raw;確認框點名「留空會存成 0、不會下單」(不擋);改成 0 的那幾支已有自己那句,不重講;錢的格照舊正規化
+    // 進欄位時拿掉千分位(同網頁 d0a249ef):「1,999」再打一個 0 不會變成看不懂的「1,9990」。把 focus handler 抓出來對假 input 跑:
+    // 有逗號 → 純數字;沒逗號 / 看不懂的原字不動;raw 不碰(沒改的值不會被當成改過、重畫照舊畫千分位)
+    ok("進欄位時拿掉千分位:有逗號換成 String(parse(value)),沒逗號或看不懂不動,不寫 raw", (() => {
+      const m = tp.match(/inp\.addEventListener\("focus", \(\) => \{ (.*?) \}\);\n/); if (!m) return false;
+      const run = (value, txf) => { const inp = { value }, parse = (x) => (txf ? trParseLots(x) : trParseAmount(x)); new Function("inp", "parse", m[1])(inp, parse); return inp.value; };
+      return run("1,999") === "1999" && run("1,500.50") === "1500.5" && run("1999") === "1999" && run("2.") === "2." && run("1,9990") === "1,9990" && run("1,000", true) === "1000" && run("2.50", true) === "2.50"
+        && !/raw/.test(m[1]) && tp.indexOf('inp.addEventListener("focus"') < tp.indexOf('inp.addEventListener("input"'); })());
     ok("7-2 留空口數:trBlankLots 只挑口數列、raw 是空字串、不在改成 0 名單裡的", J(trBlankLots(["a", "b", "c", "d"], { a: "", b: "0", c: "", d: "" }, (n) => n !== "c", ["d"])) === J(["a"])
       && J(trBlankLots(["a"], null, () => true)) === "[]" && J(trBlankLots(["a"], { a: "" }, () => true)) === J(["a"]));
     ok("7-2 接線:離開欄位時口數格留空不變 0(raw 記成 \"\");確認框出 tr.saveBlankLots(cf-zeroed 那一句的位置)、改成 0 的排除;兩語都有",
