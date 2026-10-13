@@ -233,6 +233,26 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
     && trTypeC({ symbol: "BTCUSDT", position: 1 }) === null && trTypeC(null) === null && trTypeC({ weights: [0.5] }) === null);
   ok("§8.3 上下兩表同一個篩選:0 權重的成分不進部位表(trContribs / trClientTargets)", !("SOLUSDT" in trContribs({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))
     && !("SOLUSDT" in trClientTargets({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))); }
+// 台指期換執行合約(txf-contract-switch §2):生效合約 = config.contracts[name](合法家族代號、策略 SYMBOL 也是台指期家族),否則照 SYMBOL;
+// 目標與拆解的 key 要是生效合約(= last_reconcile.target 的 key),每點價值跟著生效合約
+{ const ST = { a: { symbol: "TXF", position: 1 }, b: { symbol: "TXF", position: -1 }, c: { symbol: "BTCUSDT", position: 1 }, r: { symbol: "TXFR1", position: 1 } };
+  const AM = { a: 20, b: 1, c: 100, r: 4 }, CT = { a: "TMF", c: "TMF", r: "MXF", b: "txf" };
+  ok("生效合約:override 合法才換、非台指期策略與壞值照 SYMBOL、R1 寫法也算家族", trEffSym("a", "TXF", CT) === "TMF" && trEffSym("c", "BTCUSDT", CT) === "BTCUSDT"
+    && trEffSym("b", "TXF", CT) === "TXF" && trEffSym("r", "TXFR1", CT) === "MXF" && trEffSym("a", "TXF", null) === "TXF" && trEffSym("a", "TXF", undefined) === "TXF"
+    && trEffSym("toString", "TXF", {}) === "TXF" && trEffSym("a", "TXF", { a: "XXX" }) === "TXF");
+  ok("目標部位:override 的策略落在生效合約、同 SYMBOL 沒換的留在原合約;不帶 contracts 跟以前一樣",
+    J(trClientTargets(AM, ST, CT)) === J({ TMF: 20, TXF: -1, BTCUSDT: 100, MXF: 4 }) && J(trClientTargets(AM, ST)) === J({ TXF: 19, BTCUSDT: 100, TXFR1: 4 }));
+  const CB = trContribs(AM, ST, CT);
+  ok("拆解:同一套 key(TMF 只有 a、TXF 只有 b)", J(Object.keys(CB).sort()) === J(["BTCUSDT", "MXF", "TMF", "TXF"]) && CB.TMF.length === 1 && CB.TMF[0].name === "a" && CB.TXF[0].name === "b");
+  ok("每點價值跟著生效合約:20 微台 = 1 大台的名目", trTxfRefMoney(trTxfSpec(trEffSym("a", "TXF", CT)), 20, 20000) === trTxfRefMoney(trTxfSpec("TXF"), 1, 20000));
+  ok("畫面接線:金額列、口數判定、部位表目標與拆解都讀主機的 config.contracts,簽章含它",
+    /function trContracts\(\) \{ const c = \(\(trReport\(\) \|\| \{\}\)\.config \|\| \{\}\)\.contracts;/.test(src)
+    && /return trTxfSpec\(trEffSym\(n, st\.symbol \|\| x\.symbol, trContracts\(\)\)\); \}/.test(src)
+    && /const sym = trEffSym\(n, st\.symbol \|\| x\.symbol, trContracts\(\)\), market/.test(src)
+    && /trClientTargets\(stored, states, trContracts\(\)\)/.test(src) && /trContribs\(stored, states, trContracts\(\)\)/.test(src)
+    && /trFxView\(\),[^\n]*\n\s*trContracts\(\)\];/.test(src)
+    // 電腦版這版不送 contracts(沒有下拉):兩個 amounts 送出點都只帶 amounts——機器保留已存的合約
+    && (src.match(/"amounts", \{ amounts: [^}]*\}/g) || []).length === 4 && !/contracts:/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))); }
 ok("部位正負號", trSigned({ side: "long", size: 5 }) === 5 && trSigned({ side: "sell", size: 5 }) === -5 && trSigned({}) === 0 && trSigned(null) === 0);
 ok("門檻側:|實際|>|目標| 走減倉側", J(trGateSide({ entry_usd: 84, reduce_usd: 42 }, 100, 300)) === J({ usd: 42, reduce: true, close: false, band: false }) && J(trGateSide({ entry_usd: 84, reduce_usd: 42 }, 300, 100)) === J({ usd: 84, reduce: false, close: false, band: false }));
 // 全平 / 翻向只過平坦地板 close_usd(跟 web 的 pfGateSide 同一條規則;web tests/check_pf_gate_side.js 的格)
@@ -1682,7 +1702,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh" });
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
     const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
     const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
     ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
@@ -1799,7 +1819,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: { okx: { label: "OKX" }, binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trUnit: () => "USDT", trEquity: () => null, trMoneyInto() {} });
       const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
       vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-        + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
+        + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
       const venuesOf = (id) => ({ [id]: { credentials: true, pair: true, order: true, account: true } });
       const bag = (venue, amounts, o) => ({ env: "local", list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: Object.assign({ venues: venuesOf(venue), config: { amounts } }, STALE) }, ...o });
       const paint = (b, states) => { ctx.TR = b; const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
@@ -2035,7 +2055,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
       t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: { binance: { label: "Binance" } }, PAPER: "paper", trUnit: () => "TWD", TR_STALE_MS: 600000 });
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trReport", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trPositions", "trNetRows", "trWithUnit"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trReport", "trContracts", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trPositions", "trNetRows", "trWithUnit"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const V = { credentials: true, pair: true, order: true, account: true };
     // 對帳快照照真的形狀(check_shell_stale_err.js 那一份):口數列 exchange = capital、asset_spec.type = futures_contracts;MXF 只在帳戶上(快照沒有)

@@ -155,7 +155,9 @@ const EVENTS = {
     // 更新績效(0.1.21;renderer/perf.js perfClick):上線中策略回測數據分頁 meta 列尾那顆,指令真的送出且機器排進佇列(ack started)才送;不帶策略名
     "perf_update",
     // 統一本機開通「找不到憑證」分兩條路(0.1.23;renderer/president.js):按「已經有憑證」就記(每開一次框一次;申請新憑證那條沿用 pres_tcem_open)
-    "pres_have_cert"] },
+    "pres_have_cert",
+    // 台指期換執行合約(0.1.24 先佔名字,同網頁 gaEvent contract_switch):電腦版還沒有換合約的下拉、沒有送出點;不帶口數
+    "contract_switch"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

@@ -56,6 +56,7 @@ const PRESIDENT_ENV = ["PRESIDENT_ACCOUNT", "PRESIDENT_PASSWORD", "PRESIDENT_CA_
 const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS), ...PRESIDENT_ENV]);
 const sameKeys = (o, set) => { const a = Object.keys(o), b = Object.keys(set); return a.length === b.length && a.every((k) => Object.prototype.hasOwnProperty.call(set, k)); };
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;
+const CONTRACT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/, CONTRACT_ROOTS = ["TXF", "MXF", "TMF"];
 const PREFS_RULES_CEILING = 100, PREFS_RULE_CHARS_CEILING = 1000;
 const PREFS_FILE_CHARS_MAX = 16000;   // = agentrules.READ_PY 的讀取上限;超過就讀不回來,設定頁變 readFail、連刪都刪不了
 const PREFS_LINE_BREAK = /[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]/;
@@ -74,9 +75,14 @@ function argsOk(cmd, a, trusted) {
   if (cmd === "credentials_remove") return keys.length === 1 && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
     && a.env.every((n) => typeof n === "string" && REMOVABLE.has(n.toUpperCase()));
   if (cmd === "amounts") {
-    const m = a.amounts;
-    return m && typeof m === "object" && !Array.isArray(m) && Object.keys(m).length <= 200
-      && Object.keys(m).every((k) => NAME_RE.test(k) && typeof m[k] === "number" && isFinite(m[k]) && m[k] >= 0 && m[k] <= 1e9);
+    const m = a.amounts, c = a.contracts;
+    if (!keys.every((k) => k === "amounts" || k === "contracts")) return false;
+    if (!(m && typeof m === "object" && !Array.isArray(m) && Object.keys(m).length <= 200
+      && Object.keys(m).every((k) => NAME_RE.test(k) && typeof m[k] === "number" && isFinite(m[k]) && m[k] >= 0 && m[k] <= 1e9))) return false;
+    // 台指期換執行合約(契約 txf-contract-switch §1):選填、整份送;沒帶 = 機器保留已存的。名字規則 = api agent_command,
+    // 值只收三個家族代號原字(不收 TXFR1、小寫)。策略的 SYMBOL 是不是台指期家族這裡不知道,由機器端判
+    return c === undefined || (!!c && typeof c === "object" && !Array.isArray(c) && Object.keys(c).length <= 200
+      && Object.keys(c).every((k) => CONTRACT_NAME_RE.test(k) && Object.prototype.hasOwnProperty.call(m, k) && CONTRACT_ROOTS.indexOf(c[k]) >= 0));
   }
   if (cmd === "resume" || cmd === "resume_wait") return keys.every((k) => k === "strategies") && (a.strategies === undefined
     || (Array.isArray(a.strategies) && a.strategies.length > 0 && a.strategies.length <= 200 && a.strategies.every((n) => typeof n === "string" && NAME_RE.test(n))));

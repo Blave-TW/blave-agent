@@ -41,6 +41,20 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
     && !argsOk("credentials_remove", { env: ["blave_api_key"] }) && !argsOk("credentials_remove", { env: [] }));
   t("amounts:名字、有限非負數、上限", argsOk("amounts", { amounts: { a_b: 1000, c: 0 } }) && !argsOk("amounts", { amounts: { a: -1 } })
     && !argsOk("amounts", { amounts: { a: 1e12 } }) && !argsOk("amounts", { amounts: { "../x": 1 } }) && !argsOk("amounts", { amounts: { a: "1" } }));
+  // 台指期換執行合約(txf-contract-switch §1):contracts 選填、整份;值只收三個家族代號原字、名字要在這次的 amounts 裡
+  { const A = { txf_st: 20, mxf_x: 3, btc: 100 };
+    t("amounts + contracts:整份、空的、不帶都收", argsOk("amounts", { amounts: A, contracts: { txf_st: "TMF", mxf_x: "TXF" } })
+      && argsOk("amounts", { amounts: A, contracts: {} }) && argsOk("amounts", { amounts: A }) && argsOk("amounts", { amounts: A, contracts: { txf_st: "TXF" } })
+      && argsOk("amounts", { amounts: Object.fromEntries(Array.from({ length: 200 }, (_, i) => ["s" + i, 1])), contracts: Object.fromEntries(Array.from({ length: 200 }, (_, i) => ["s" + i, "MXF"])) }));
+    t("amounts + contracts:型別或形狀錯就拒", [
+      { amounts: A, contracts: null }, { amounts: A, contracts: [] }, { amounts: A, contracts: "TMF" }, { amounts: A, contracts: 1 },
+      { amounts: A, contracts: { txf_st: "tmf" } }, { amounts: A, contracts: { txf_st: "TXFR1" } }, { amounts: A, contracts: { txf_st: "BTCUSDT" } },
+      { amounts: A, contracts: { txf_st: 10 } }, { amounts: A, contracts: { txf_st: null } }, { amounts: A, contracts: { txf_st: ["TMF"] } },
+      { amounts: A, contracts: { other: "TMF" } }, { amounts: A, contracts: { constructor: "TMF" } }, { amounts: A, contracts: { __proto__: null, "a.b": "TMF" } },
+      { amounts: { ["x".repeat(65)]: 1 }, contracts: { ["x".repeat(65)]: "TMF" } },
+      { amounts: Object.fromEntries(Array.from({ length: 200 }, (_, i) => ["s" + i, 1])), contracts: Object.fromEntries(Array.from({ length: 201 }, (_, i) => ["s" + i, "MXF"])) },
+      { amounts: A, contracts: { txf_st: "TMF" }, extra: 1 }, { amounts: A, venue: "paper" }, { contracts: { txf_st: "TMF" } },
+    ].every((a) => !argsOk("amounts", a))); }
   t("不收參數的指令帶了參數就拒", argsOk("close_all", {}) && !argsOk("close_all", { venue: "x" }) && (await host.send("close_all", { x: 1 })).error === "BAD_ARGS");
   // 策略版本就地還原:剛好 name + n;名字規則 = runtime / api 那一條(128、不收「.」),版號 1..1e6 的整數
   t("version_restore:在白名單裡,剛好 name + n", UI_COMMANDS.has("version_restore") && argsOk("version_restore", { name: "momo_" + "x".repeat(123), n: 1000000 })

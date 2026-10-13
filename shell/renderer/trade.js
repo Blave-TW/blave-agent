@@ -458,7 +458,7 @@ function trSignalText(pos, tc) {
 }
 /* 部位表「N 支策略」拆解(§2.2):跟 trClientTargets 同一套算法,但逐支留著,不只留加總。只算金額 > 0 的策略。
    回 { 標的 key: [{ name, amount, x, v, w }] }(x = 訊號或權重、v = 貢獻、w = 是不是投資組合的權重) */
-function trContribs(amounts, states) {
+function trContribs(amounts, states, contracts) {
   const out = {}, add = (k, row) => { (out[k] = out[k] || []).push(row); };
   Object.keys(amounts || {}).forEach((n) => {
     const a = Number(amounts[n]) || 0, s = (states || {})[n];
@@ -474,7 +474,7 @@ function trContribs(amounts, states) {
     }
     if (!s.symbol) return;
     const pos = typeof s.position === "number" ? s.position : 0;
-    add(trCanonSym(s.symbol) + (s.market === "spot" ? "@spot" : ""), { name: n, amount: a, x: pos, v: a * pos, w: false });
+    add(trCanonSym(trEffSym(n, s.symbol, contracts)) + (s.market === "spot" ? "@spot" : ""), { name: n, amount: a, x: pos, v: a * pos, w: false });
   });
   return out;
 }
@@ -485,6 +485,12 @@ function trNetSum(rows) {
   return { kind, t, l, s, m: Math.min(l, s) };
 }
 function trTxfSpec(sym) { const k = typeof sym === "string" ? sym.trim().toUpperCase() : ""; return Object.prototype.hasOwnProperty.call(TR_TXF_SPECS, k) ? TR_TXF_SPECS[k] : null; }
+/* 生效合約(契約 txf-contract-switch §2):主機回報 config.contracts[name] 是台指期家族代號、策略的 SYMBOL(去掉 R1)也是台指期家族才換,
+   其餘照 SYMBOL。訊號仍跑 TXF K 線,換的是下哪個合約——每點價值、商品名、對帳快照的 key(target／gates)都跟著它 */
+function trEffSym(n, sym, contracts) {
+  const c = contracts && typeof contracts === "object" && Object.prototype.hasOwnProperty.call(contracts, n) ? contracts[n] : null;
+  return typeof c === "string" && Object.prototype.hasOwnProperty.call(TR_TXF_SPECS, c) && trTxfSpec(String(sym || "").replace(/R1$/i, "")) ? c : sym;
+}
 /* 台指期報價(主行程 txfQuote,5 分鐘快取):沒問到 = null。trTxfWant 在背景補問,回來的值靠金額表簽章含報價、下一輪輪詢重畫 */
 const TR_TXF = { price: null, at: 0, busy: false }, TR_TXF_MS = 300000, TR_TXF_RETRY_MS = 60000;
 function trTxfPrice() { return TR_TXF.price; }
@@ -741,7 +747,7 @@ function trSigned(p) {
   return 0;
 }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
-function trClientTargets(amounts, states) {
+function trClientTargets(amounts, states, contracts) {
   const out = {};
   Object.keys(amounts || {}).forEach((n) => {
     const s = (states || {})[n];
@@ -758,7 +764,7 @@ function trClientTargets(amounts, states) {
     }
     if (!s || !s.symbol) return;
     const pos = typeof s.position === "number" ? s.position : 0;
-    const k = trCanonSym(s.symbol) + (s.market === "spot" ? "@spot" : "");
+    const k = trCanonSym(trEffSym(n, s.symbol, contracts)) + (s.market === "spot" ? "@spot" : "");
     out[k] = (out[k] || 0) + amounts[n] * pos;
   });
   Object.keys(out).forEach((k) => { if (/@spot$/.test(k) && out[k] < 0) out[k] = 0; });
@@ -1182,6 +1188,8 @@ function trVenueCcy(id) {
 
 function trEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 function trReport() { return (TR.st && TR.st.report) || null; }
+/* 主機存的換合約設定(只列跟 SYMBOL 不同的);舊 runtime 沒這欄 = 照 SYMBOL */
+function trContracts() { const c = ((trReport() || {}).config || {}).contracts; return c && typeof c === "object" && !Array.isArray(c) ? c : null; }
 function trVenueId() { return trVenueIds(trReport())[0] || null; }
 function trTwBroker(id) { return id === "capital" || id === "president"; }   // 台灣期貨券商(同 trOrderLots 認的那兩家)
 // 給人看的交易所名:這一版只有模擬交易;其餘 id 首字大寫(同雲端 venueLabel 的退路)
@@ -2226,7 +2234,8 @@ function trPaintPos() {
   const now = Date.now(), stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
   const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.self_ledger, r.order_errors, stamps, trExecState(TR.st), envHeadState(TR.st, now), !!TR.sent, !!(TR.st && TR.st.alive),
     TR.picked ? [...TR.picked].sort() : null, trCfgUnread(r), trTxfPrice(),   // 報價回來了:口數列的名目、合計、倍數要換上
-    r.quote_ccy, r.signals_frozen, trFxView()];   // 分區與「還沒有訊號」;匯率／顯示幣別換了,多區合計要換上
+    r.quote_ccy, r.signals_frozen, trFxView(),   // 分區與「還沒有訊號」;匯率／顯示幣別換了,多區合計要換上
+    trContracts()];   // 網頁換了合約:商品名、每點價值、目標的 key 要換上
   if (!trShould("pos", box, data)) return;
   const refocus = trPosFocusOf(box);
   box.textContent = "";
@@ -2256,7 +2265,7 @@ function trPickBtn() {
   acts.appendChild(b); return acts;
 }
 /* 這一列是不是台指期口數列:標的看主機回報的 states,沒有就看清單(同金額表那一格的 sym) */
-function trRowTxf(n) { const st = ((trReport() || {}).states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}; return trTxfSpec(st.symbol || x.symbol); }
+function trRowTxf(n) { const st = ((trReport() || {}).states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}; return trTxfSpec(trEffSym(n, st.symbol || x.symbol, trContracts())); }
 function trRowIsLot(n) { return !!trRowTxf(n); }
 /* 依計價分區(units spec §9)的資料:回報頂層 quote_ccy 與 signals_frozen(舊 runtime 沒有這兩欄 = 照尾碼推、沒有 pending) */
 function trQuoteMap() { const q = (trReport() || {}).quote_ccy; return q && typeof q === "object" && !Array.isArray(q) ? q : null; }
@@ -2426,7 +2435,7 @@ function trAmountTable(names, stored, states) {
     }
     names.filter((n) => zoneOf[n] === z).sort((a, b) => sortVal(b) - sortVal(a)).forEach((n) => {
       const x = TR.list.find((y) => y.name === n) || {}, st = states[n] || {};
-      const sym = st.symbol || x.symbol, market = st.market || x.market, tc = trTypeC(st), isC = !!tc || x.portfolio === true, noSig = trNoSignalYet(n);
+      const sym = trEffSym(n, st.symbol || x.symbol, trContracts()), market = st.market || x.market, tc = trTypeC(st), isC = !!tc || x.portfolio === true, noSig = trNoSignalYet(n);
       // 台指期列:這一格是口數;標的欄寫商品名(微台／小台／大台,同網頁)
       const txf = isC ? null : trTxfSpec(sym);
       if (txf && cloud) trTxfWant();   // 群益只在雲端視角:本機不去問報價
@@ -2718,7 +2727,7 @@ function trPositions(r, stored, states) {
   frag.appendChild(trSec(trTipLabel("label", t("tr.exchPositions"), t("tr.threshold"))));
   const last = r.last_reconcile || null, gates = (last || {}).gates || {};
   const live = trLivePositions(r), acct = r.account && r.account.venues ? r.account : null;
-  const target = trClientTargets(stored, states), actual = {};
+  const target = trClientTargets(stored, states, trContracts()), actual = {};
   // 實際 = 兩個真值來源取較新的:下單那一輪對帳器會立刻重讀持倉寫進快照,帳戶讀取器要等自己的下一輪
   const lastMs = last ? trMs(last.ts) : null, acctMs = acct ? trMs(acct.read_at) : null;
   const reconNewer = last && (!acct || (lastMs || 0) > (acctMs || 0));
@@ -2740,7 +2749,7 @@ function trPositions(r, stored, states) {
     frag.appendChild(trEl("div", "pf-state", dead && !last ? t("tr.posEmpty") : last ? t("tr.noPositions") : t("tr.noReconcile")));
     return frag;
   }
-  const gated = [], pending = new Set(), contribs = trContribs(stored, states);
+  const gated = [], pending = new Set(), contribs = trContribs(stored, states, trContracts());
   let anyUnmanaged = false, anyNet = false;
   /* 依計價分區(units spec §9.2、§9.3):一個標的一個區(貢獻策略的 quote_ccy → 尾碼);綁定的交易所不交易的標的
      (加密所的台股、台灣期貨券商的非台指期)實際與差額寫「—」、不催單——帳戶上本來就不會有它。區內可對帳的在前,再照代號 */
