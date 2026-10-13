@@ -37,7 +37,7 @@ function paint(report, st = {}) {
   ctx.trSec = (x) => x; ctx.trTipLabel = (a2, b2) => node("span"); ctx.trHead = () => node("thead");
   ctx.trMoneyInto = (n, v) => { n.text = String(v); }; ctx.trLotsInto = (n, v) => { n.text = String(v) + "口"; }; ctx.trFmt = (v) => String(v); ctx.trFmt2 = (v) => String(v);
   ctx.trUnit = () => "USDT"; ctx.trCcy = () => "USDT"; ctx.TR_STALE_MS = 10 * 60 * 1000;
-  ctx.trLotsFmt = (v) => String(v); ctx.trVenueId = () => ctx.trVenueIds(ctx.TR.st.report)[0] || null; ctx.trQuoteMap = () => null; ctx.trZoneLabel = (z) => z; ctx.trZoneUnit = (z) => z;
+  ctx.trLotsFmt = (v) => String(v); ctx.trLotsTgtFmt = (v) => String(v); ctx.trVenueId = () => ctx.trVenueIds(ctx.TR.st.report)[0] || null; ctx.trQuoteMap = () => null; ctx.trZoneLabel = (z) => z; ctx.trZoneUnit = (z) => z;
   ctx.trVenueKind = (id) => (id === "capital" ? "tw" : id === "paper" ? "crypto" : null);
   ctx.trVenueIds = (r) => Object.keys((r && r.venues) || {}); ctx.trLiveEntry = (r, id) => ((r && r.account && r.account.venues) || {})[id] || null;
   ctx.trOrderErrText = (sym, err) => "ERR:" + sym + ":" + err;

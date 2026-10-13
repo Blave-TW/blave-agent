@@ -103,17 +103,16 @@ ok("表上沒列的存量 = 移出組合(picker 取消勾選是唯一的路;「�
 // keep = 表上沒列、但要原樣帶著的(雲端讀不到的那幾支);不在 stored 的 keep 不憑空長出來
 ok("keep 的那幾支原樣帶著、不算移出;沒 keep / 壞 keep 就是只送表上的", J(trAmountsToSend([], stored, {}, ["b", "gone", "nope"])) === J({ b: 300, gone: 50 }) && J(trRemoved(stored, trAmountsToSend([], stored, {}, ["b", "gone"]))) === J([])
   && J(trAmountsToSend([], stored, {}, true)) === J({}) && J(trAmountsToSend([], stored, {})) === J({}));
-{ const zt = trZoneTotals({ a: 500, b: 300 }, () => "USDT", null, "USDT", 4000);
-  ok("合計與倍數:只有一區 = 直接加、帶那一區的幣、不加 ≈;倍數 = 那一區 ÷ 淨值", J(zt.total) === J({ v: 800, ccy: "USDT", approx: false, parts: [], skipped: [] }) && zt.mult === 0.2 && zt.zones.USDT.rows === 2 && zt.zones.USDT.sum === 800);
-  ok("spec-0.1.13 #3:帳戶幣未知(倍數區 null)= 合計照加、帶列自己的幣、不出倍數", trZoneTotals({ a: 500, b: 300 }, () => "USDT", null, null, 4000).mult === null
-    && trZoneTotals({ a: 500 }, () => TR_ZONE_UNKNOWN, null, null, 4000).total.ccy === null); }
+{ const zt = trZoneTotals({ a: 500, b: 300 }, () => "USDT", null);
+  ok("合計:只有一區 = 直接加、帶那一區的幣、不加 ≈(倍數另由 trEquityMult 算)", J(zt.total) === J({ v: 800, ccy: "USDT", approx: false, parts: [], skipped: [] }) && !("mult" in zt) && zt.zones.USDT.rows === 2 && zt.zones.USDT.sum === 800);
+  ok("spec-0.1.13 #3:幣別未定區合計照加、沒有幣別", trZoneTotals({ a: 500 }, () => TR_ZONE_UNKNOWN, null).total.ccy === null); }
 { const vm = require("vm"), c = vm.createContext({ t: (k) => k });
   vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("\nfunction trEl(")).replace(/^const /gm, "var "), c);
   ok("spec-0.1.13 #3 讀帳失敗的幣別退路:群益 TWD、OKX USD、模擬與其他四家 USDT;自訂交易所 / 沒有交易所 = null(不再寫死 USDT)",
     vm.runInContext("[trVenueCcy('capital'), trVenueCcy('okx'), trVenueCcy('paper'), trVenueCcy('binance'), trVenueCcy('bingx'), trVenueCcy('gateio'), trVenueCcy('bybit'), trVenueCcy('myex'), trVenueCcy(null), trVenueCcy('toString')].join()", c)
       === "TWD,USD,USDT,USDT,USDT,USDT,USDT,,,");
   ok("#3 接線:trCcy = 讀到的幣別 → 那家的固定幣別;不再有 || \"USDT\"", /function trCcy\(\) \{ const id = trVenueId\(\), e = trLiveEntry\(trReport\(\), id\); return \(e && e\.currency\) \|\| trVenueCcy\(id\); \}/.test(src)); }
-ok("沒有淨值(null / 0)就沒有倍數,不拿 0 去除", trZoneTotals({ a: 1 }, () => "USDT", null, "USDT", null).mult === null && trZoneTotals({ a: 1 }, () => "USDT", null, "USDT", 0).mult === null);
+ok("沒有淨值(null / 0)就沒有倍數,不拿 0 去除", trEquityMult({ a: 1 }, () => "USDT", null, "binance", "USDT", null, null) === null && trEquityMult({ a: 1 }, () => "USDT", null, "binance", "USDT", 0, null) === null);
 // 查證報告 #1:台指期口數列(同網頁 TXF_SPECS / txfRefMoney / paintTotal)
 ok("台指期口數列:TXF / MXF / TMF(大小寫、空白不拘)= 200 / 50 / 10 點值;其他標的不是", trTxfSpec("TXF").cv === 200 && trTxfSpec("mxf").cv === 50 && trTxfSpec(" TMF ").cv === 10
   && trTxfSpec("TXF").prod === "tr.txfProd.txf" && trTxfSpec("BTCUSDT") === null && trTxfSpec("2330") === null && trTxfSpec(null) === null && trTxfSpec("toString") === null);
@@ -126,12 +125,6 @@ ok("口數錯誤分兩種:不是整數 = bad、整數但超過 1e9 = big;看得�
 ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、-2、NaN、非數字用複數", trLotsKey(1, "m", "o") === "o" && trLotsKey(-1, "m", "o") === "o"
   && [0, 0.5, 1.2, 2, -2, NaN, null, "1"].every((n) => trLotsKey(n, "m", "o") === "m"));
 { const TXF = TR_TXF_SPECS.TXF, MXF = TR_TXF_SPECS.MXF, TMF = TR_TXF_SPECS.TMF;
-  ok("spec-0.1.13 #1 有報價、有 TWD 淨值:名目 > 5 倍淨值才提醒(3 口大台 × 20,000 = 1,200 萬 / 200 萬淨值 = 6 倍)", J(trTxfBigWarn(TXF, 3, 20000, 2e6, "TWD")) === J({ kind: "notional", amt: 12e6, x: 6 })
-    && trTxfBigWarn(TXF, 2, 20000, 2e6, "TWD") === null && trTxfBigWarn(TXF, 2.5, 20000, 2e6, "TWD") === null);
-  ok("#1 名目沒超過時不看口數:淨值夠大,1,000 口微台也不提醒", trTxfBigWarn(TMF, 1000, 20000, 1e9, "TWD") === null);
-  ok("#1 沒報價 / 沒淨值 / 帳戶幣不是 TWD → 退回看口數:大台 ≥ 50、小台 ≥ 200、微台 ≥ 1,000",
-    [[TXF, 50], [MXF, 200], [TMF, 1000]].every(([sp, k]) => J(trTxfBigWarn(sp, k, null, 2e6, "TWD")) === J({ kind: "lots" }) && trTxfBigWarn(sp, k - 1, null, 2e6, "TWD") === null)
-    && J(trTxfBigWarn(TXF, 50, 20000, null, "TWD")) === J({ kind: "lots" }) && J(trTxfBigWarn(TXF, 50, 20000, 2e6, "USDT")) === J({ kind: "lots" }) && J(trTxfBigWarn(TXF, 200000, 20000, 0, "TWD")) === J({ kind: "lots" }));
   { const cxp = src.slice(src.indexOf('const note = trEl("div", "cx-note");'), src.indexOf("// 查不到提領權限的那家"));
   ok("ux §3.4 子帳戶建議:連接框說明區第一段、只給 CX_VENUES 那五家(模擬、群益不出);self_ledger 開換 subAcctOwn;Binance 接 tr.lev.binance5",
     /if \(CX_VENUES\[venue\]\) note\.appendChild\(trEl\("p", "cx-sub", t\(\(trReport\(\) \|\| \{\}\)\.self_ledger === true \? "cx\.note\.subAcctOwn" : "cx\.note\.subAcct"\)/.test(cxp)
@@ -155,11 +148,6 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
   ok("order-copy #14 請 agent 查原因:填進本機聊天框({err} 是原文)、展開聊天欄、焦點放進去、不送出;原本有字就接在後面另起一行;雲端視角用 askPromptCloud(一樣填本機框)",
     first === "tr.err.askPrompt|BTCUSDT|[order_reject:key_permission] Binance error -2015: x" && ta.value === "我想問\ntr.err.askPromptCloud|ETHUSDT|raw" && ta.focused
     && J(ctx.opened[0]) === J(["chat", false]) && J(ctx.tracked) === J(["trade_err_ask", "trade_err_ask"]) && !/submitMessage|sendDraft/.test(src.slice(src.indexOf("function trErrAsk("), src.indexOf("function trLivePositions("))), J(ta.value)); }
-ok("ux §1.1 常數:LEV_T1 / LEV_T2 / LEV_T3 = 1 / 5 / 10(網頁同名同值);群益口數「名目太大」用 LEV_T2", LEV_T1 === 1 && LEV_T2 === 5 && LEV_T3 === 10 && /return m > LEV_T2 \* equity \?/.test(src));
-ok("ux §1.2 級數:0.85 / 2.4 / 6.2 / 12 倍 = 0 / 1 / 2 / 3;L = ⌈N⌉、p = ⌊100 ÷ N⌋;剛好 5 倍是第 2 級、10 倍第 3 級", [0.85, 2.4, 6.2, 12].map((n) => trLevLevel(n, false).level).join() === "0,1,2,3"
-  && J(trLevLevel(2.4, false)) === J({ level: 1, L: 3, p: 41 }) && J(trLevLevel(6.2, false)) === J({ level: 2, L: 7, p: 16 }) && trLevLevel(5, false).level === 2 && trLevLevel(10, false).level === 3 && trLevLevel(4.999, false).level === 2
-  && trLevLevel(1, false).level === 0 && trLevLevel(null, false).level === 0 && trLevLevel(NaN, false).level === 0);
-ok("ux §1.4 模擬帳戶:沒有第 1 級、沒有第 3 級(12 倍也只是第 2 級的後果句)", trLevLevel(2.4, true).level === 0 && trLevLevel(6.2, true).level === 2 && trLevLevel(12, true).level === 2 && trLevLevel(12, true).p === 8);
 ok("ux §2.1 訊號欄:×1.00 / ×−1.00(U+2212)/ ×1.80 / ×0;拿不到也是 ×0(units spec §3.3,同網頁)", trSignalText(1) === "×1.00" && trSignalText(-1) === "×\u22121.00" && trSignalText(1.8) === "×1.80" && trSignalText(0) === "×0"
   && [undefined, null, NaN, "1"].every((x) => trSignalText(x) === "×0"));
 { const tc = (w, market) => trTypeC({ weights: w, market: market || "swap" });
@@ -173,27 +161,24 @@ ok("ux §2.1 訊號欄:×1.00 / ×−1.00(U+2212)/ ×1.80 / ×0;拿不到也是 
   ok("ux §2.3 合計句:同方向 sum、一多一空同額 sumOffZero、部分抵銷 sumOff(m = 抵銷掉的那一份)", trNetSum([{ v: 1000 }, { v: 800 }]).kind === "sum"
     && J(trNetSum([{ v: 1000 }, { v: -1000 }])) === J({ kind: "sumOffZero", t: 0, l: 1000, s: 1000, m: 1000 }) && J(trNetSum([{ v: 1000 }, { v: -400 }])) === J({ kind: "sumOff", t: 600, l: 1000, s: 400, m: 400 })
     && trNetSum([{ v: -300 }, { v: -100 }]).kind === "sum"); }
-ok("#1 0 口、不是口數列 → 不提醒", trTxfBigWarn(TXF, 0, null, null, null) === null && trTxfBigWarn(null, 999999, null, null, null) === null); }
+}
 /* ── 依計價分區(designer 0124-review units spec §9)── 每一條都做過 mutation(把實作改壞看它紅) */
 { // a = 口數列(×100 換成名目台幣),b = USDT 列,c = 台股 TWD 列,u = 幣別未定
   const Z = { a: TR_ZONE_LOTS, b: "USDT", c: "TWD", u: TR_ZONE_UNKNOWN }, zone = (n) => Z[n], ref = (n, v) => (n === "a" ? v * 100 : v);
   const FX = { USDT: 1, USD: 1, TWD: 32 };
   ok("§9.7 兩區以上:合計換成顯示幣別、≈、取整(2 口 → 200 TWD ÷ 32 + 500 USDT = 506 USD);缺匯率 → null(畫「—」),不把兩種幣相加",
-    J(trZoneTotals({ a: 2, b: 500 }, zone, ref, "USDT", 1000, FX, "USD").total) === J({ v: 506, ccy: "USD", approx: true, parts: [{ zone: "lots", ccy: "TWD", v: 200 }, { zone: "USDT", ccy: "USDT", v: 500 }], skipped: [] })
-    && trZoneTotals({ a: 2, b: 500 }, zone, ref, "USDT", 1000, null, "USD").total.v === null && trZoneTotals({ b: 500, c: 3200 }, zone, null, null, null, { USDT: 1 }, "USD").total.v === null);
-  ok("§9.7 顯示幣別是 TWD:換成 TWD(500 USDT × 32 + 3,200 = 19,200);顯示幣別沒有匯率退回 USD", trZoneTotals({ b: 500, c: 3200 }, zone, null, null, null, FX, "TWD").total.v === 19200
-    && trZoneTotals({ b: 500, c: 3200 }, zone, null, null, null, FX, "JPY").total.ccy === "USD");
-  ok("§9.7 未定區不算進多區合計(列進 skipped);只有一區時未定區照加、沒有幣別", J(trZoneTotals({ b: 500, u: 70 }, zone, null, null, null, FX, "USD").total) === J({ v: 500, ccy: "USD", approx: true, parts: [{ zone: "USDT", ccy: "USDT", v: 500 }], skipped: ["u"] })
-    && J(trZoneTotals({ u: 70 }, zone, null, null, null, FX, "USD").total) === J({ v: 70, ccy: null, approx: false, parts: [], skipped: [] }));
-  ok("§9.5 淨值倍數分母:只用倍數那一區(USDT 500 ÷ 1,000),台股與台指期不算進加密帳戶的倍數;綁台灣券商 → 口數區名目 ÷ TWD 淨值",
-    trZoneTotals({ a: 2, b: 500, c: 3200 }, zone, ref, "USDT", 1000, FX, "USD").mult === 0.5 && trZoneTotals({ a: 2, b: 500 }, zone, ref, TR_ZONE_LOTS, 1000, FX, "USD").mult === 0.2
-    && trZoneTotals({ c: 3200 }, zone, null, "USDT", 1000, FX, "USD").mult === null && trZoneTotals({ a: 2 }, zone, () => null, TR_ZONE_LOTS, 1000, FX, "USD").mult === null);
-  ok("§9.4 小計的原料:每區列數(含 0 元的列)與原單位加總", J(trZoneTotals({ b: 500, b2: 0, c: 1 }, (n) => (n === "c" ? "TWD" : "USDT"), null, null, null).zones) === J({ USDT: { rows: 2, sum: 500, money: 500 }, TWD: { rows: 1, sum: 1, money: 1 } }));
-  ok("只有口數區:合計 = 名目 TWD、≈(全是口數列也出合計,推翻 desktop-10-08 #4);缺報價 → null", J(trZoneTotals({ a: 2 }, zone, ref, TR_ZONE_LOTS, 1000).total) === J({ v: 200, ccy: "TWD", approx: true, parts: [], skipped: [] })
-    && trZoneTotals({ a: 2 }, zone, () => null, null, null).total.v === null); }
-ok("§9.2 分區鍵:台指期 → 口數區(Type C 不算);quote_ccy 有 key 就照用(null = 單一標的未定);台股 TWD;白名單精確尾碼(FDUSD 不讀成 USD、BTCUSD 不推)",
+    J(trZoneTotals({ a: 2, b: 500 }, zone, ref, FX, "USD").total) === J({ v: 506, ccy: "USD", approx: true, parts: [{ zone: "lots", ccy: "TWD", v: 200 }, { zone: "USDT", ccy: "USDT", v: 500 }], skipped: [] })
+    && trZoneTotals({ a: 2, b: 500 }, zone, ref, null, "USD").total.v === null && trZoneTotals({ b: 500, c: 3200 }, zone, null, { USDT: 1 }, "USD").total.v === null);
+  ok("§9.7 顯示幣別是 TWD:換成 TWD(500 USDT × 32 + 3,200 = 19,200);顯示幣別沒有匯率退回 USD", trZoneTotals({ b: 500, c: 3200 }, zone, null, FX, "TWD").total.v === 19200
+    && trZoneTotals({ b: 500, c: 3200 }, zone, null, FX, "JPY").total.ccy === "USD");
+  ok("§9.7 未定區不算進多區合計(列進 skipped);只有一區時未定區照加、沒有幣別", J(trZoneTotals({ b: 500, u: 70 }, zone, null, FX, "USD").total) === J({ v: 500, ccy: "USD", approx: true, parts: [{ zone: "USDT", ccy: "USDT", v: 500 }], skipped: ["u"] })
+    && J(trZoneTotals({ u: 70 }, zone, null, FX, "USD").total) === J({ v: 70, ccy: null, approx: false, parts: [], skipped: [] }));
+  ok("§9.4 小計的原料:每區列數(含 0 元的列)與原單位加總", J(trZoneTotals({ b: 500, b2: 0, c: 1 }, (n) => (n === "c" ? "TWD" : "USDT"), null).zones) === J({ USDT: { rows: 2, sum: 500, money: 500 }, TWD: { rows: 1, sum: 1, money: 1 } }));
+  ok("只有口數區:合計 = 名目 TWD、≈(全是口數列也出合計,推翻 desktop-10-08 #4);缺報價 → null", J(trZoneTotals({ a: 2 }, zone, ref).total) === J({ v: 200, ccy: "TWD", approx: true, parts: [], skipped: [] })
+    && trZoneTotals({ a: 2 }, zone, () => null).total.v === null); }
+ok("§9.2 分區鍵:台指期 → 口數區(Type C 不算);quote_ccy 有值就照用(null = runtime 判不出,退尾碼——稽核 integ-0124 P1-1 C);台股 TWD;白名單精確尾碼(FDUSD 不讀成 USD、BTCUSD 不推)",
   trRowZone("t", "TXF", null, false, null) === TR_ZONE_LOTS && trRowZone("t", "TXF", null, false, { t: "TWD" }) === TR_ZONE_LOTS
-  && trRowZone("s", "BTCUSDT", null, false, { s: "USDC" }) === "USDC" && trRowZone("s", "BTCUSDT", null, false, { s: null }) === TR_ZONE_UNKNOWN && trRowZone("s", "BTCUSDT", null, false, { other: "X" }) === "USDT"
+  && trRowZone("s", "BTCUSDT", null, false, { s: "USDC" }) === "USDC" && trRowZone("s", "BTCUSDT", null, false, { s: null }) === "USDT" && trRowZone("s", "BTCUSD", null, false, { s: null }) === TR_ZONE_UNKNOWN && trRowZone("s", "BTCUSDT", null, false, { other: "X" }) === "USDT"
   && trRowZone("s", "2330", null, false, null) === "TWD" && trRowZone("s", "00631L.TW", null, false, null) === "TWD" && trRowZone("s", "ETHFDUSD", null, false, null) === "FDUSD"
   && trRowZone("s", "BTC-USDC", null, false, null) === "USDC" && trRowZone("s", "BTCUSD", null, false, null) === TR_ZONE_UNKNOWN && trRowZone("s", "BTCUSD_PERP", null, false, null) === TR_ZONE_UNKNOWN
   && trRowZone("s", "USDT", null, false, null) === TR_ZONE_UNKNOWN && trRowZone("s", null, null, false, null) === TR_ZONE_UNKNOWN);
@@ -208,10 +193,28 @@ ok("§9.3 區順序:固定 USDT → USDC → 其他(字母序)→ TWD → 台指
 ok("§9.3 綁加密所:帳戶幣那一區第一、其他加密區跟著,台股與台指期照固定序在後;綁台灣券商:口數區第一",
   J(trZoneOrder(["TWD", "USDT", "USDC", TR_ZONE_LOTS], "binance", "USDC")) === J(["USDC", "USDT", "TWD", TR_ZONE_LOTS])
   && J(trZoneOrder(["USDT", "TWD", TR_ZONE_LOTS, TR_ZONE_UNKNOWN], "capital", TR_ZONE_LOTS)) === J([TR_ZONE_LOTS, "USDT", "TWD", TR_ZONE_UNKNOWN]));
-ok("§9.5 倍數那一區:加密所 = 帳戶幣;OKX 回 USD、表上只有 USDT → USDT 區(平台匯率兩者同為 1);台灣券商 = 口數區(帳戶幣要是 TWD);沒綁 / 帳戶幣未知 = null",
+ok("§9.3 帳戶幣那一區(排序用):加密所 = 帳戶幣;OKX 回 USD、表上只有 USDT → USDT 區(平台匯率兩者同為 1);台灣券商 = 口數區(帳戶幣要是 TWD);沒綁 / 帳戶幣未知 = null",
   trMultZone("binance", "USDT", ["USDT"]) === "USDT" && trMultZone("okx", "USD", ["USDT", "TWD"]) === "USDT" && trMultZone("okx", "USD", ["USD"]) === "USD"
   && trMultZone("capital", "TWD", []) === TR_ZONE_LOTS && trMultZone("president", "USDT", []) === null && trMultZone(null, "USDT", ["USDT"]) === null && trMultZone("myex", null, ["USDT"]) === null
   && trMultZone("binance", "TWD", ["TWD", "USDT"]) === null && trZoneOrder(["TWD", "USDT"], "binance", "TWD")[0] === "USDT");
+/* 淨值倍數(稽核 integ-0124 P1-1;Wei 10-13 安全檢查拿掉、只留表底一個倍數):綁定交易所會下單的列全部換成帳戶幣 ÷ 淨值。
+   FX 故意沒有 USDC(平台匯率表常見情況):缺匯率當 1:1,不能把那一列丟掉 */
+{ const FX = { USD: 1, USDT: 1, TWD: 32, BUSD: 2 }, ref = (n, v) => (n === "lot" ? v * 100 : v);
+  const zm = { u1: "USDT", c1: "USDC", c2: "USDC", tw: "TWD", lot: TR_ZONE_LOTS, unk: TR_ZONE_UNKNOWN, bu: "BUSD" }, zone = (n) => zm[n];
+  const near = (x, y) => typeof x === "number" && Math.abs(x - y) < 1e-9;
+  ok("A:OKX 帳戶幣 USD、只跑 BTCUSDC 永續 20,000、淨值 1,000 → 20 倍(舊碼分區後是 null)", near(trEquityMult({ c1: 20000 }, zone, ref, "okx", "USD", 1000, FX), 20));
+  ok("B:OKX USDT 5,000 + USDC 15,000、淨值 1,000 → 20 倍(不是只算 USDT 區的 5 倍);Binance USDT 帳戶同樣", near(trEquityMult({ u1: 5000, c2: 15000 }, zone, ref, "okx", "USD", 1000, FX), 20)
+    && near(trEquityMult({ u1: 5000, c2: 15000 }, zone, ref, "binance", "USDT", 1000, FX), 20));
+  ok("C:quote_ccy 回 null 的 BTCUSDT 退尾碼進 USDT 區、算進倍數;仍判不出的未定列也照 1:1 算進去(多算比漏算安全)",
+    near(trEquityMult({ s: 20000 }, (n) => trRowZone(n, "BTCUSDT", null, false, { s: null }), ref, "binance", "USDT", 1000, FX), 20)
+    && near(trEquityMult({ unk: 3000, u1: 1000 }, zone, ref, "binance", "USDT", 1000, FX), 4));
+  ok("加密所:台股(TWD)與台指期口數列不算;兩邊都有匯率才換算(1,000 BUSD ÷ 2 = 500 USD)", near(trEquityMult({ u1: 500, tw: 3200, lot: 2 }, zone, ref, "binance", "USDT", 1000, FX), 0.5)
+    && near(trEquityMult({ bu: 1000 }, zone, ref, "okx", "USD", 1000, FX), 0.5) && near(trEquityMult({ c1: 700 }, zone, ref, "paper", "USDT", 1000, null), 0.7));
+  ok("台灣券商:只算口數列名目 TWD ÷ TWD 淨值(USDT 列不算);缺報價 = null;帳戶幣不是 TWD = null",
+    near(trEquityMult({ lot: 2, u1: 500 }, zone, ref, "capital", "TWD", 1000, FX), 0.2) && near(trEquityMult({ lot: 3 }, zone, ref, "president", "TWD", 100, FX), 3)
+    && trEquityMult({ lot: 2 }, zone, () => null, "capital", "TWD", 1000, FX) === null && trEquityMult({ lot: 2 }, zone, ref, "capital", "USDT", 1000, FX) === null);
+  ok("沒綁 / 帳戶幣未知 / 加密帳戶讀成 TWD = null", trEquityMult({ u1: 500 }, zone, ref, null, "USDT", 1000, FX) === null && trEquityMult({ u1: 500 }, zone, ref, "binance", null, 1000, FX) === null
+    && trEquityMult({ u1: 500 }, zone, ref, "binance", "TWD", 1000, FX) === null); }
 ok("§3.3 台指期目標口數取整 = 機器對帳器 sign(x)·floor(|x|+0.5):0.5 → 1、−0.5 → −1(Math.round 會給 −0)、1.49 → 1、−2.5 → −3",
   trRoundLots(0.5) === 1 && trRoundLots(-0.5) === -1 && trRoundLots(1.49) === 1 && trRoundLots(-2.5) === -3 && trRoundLots(2.5) === 3 && Object.is(trRoundLots(0) + 0, 0) && trRoundLots(-0.4) === 0);
 ok("§9.1 交不交易:加密所不交易台股與台指期;台灣券商只交易台指期;認不得的交易所(null)一律當有交易",
@@ -286,7 +289,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
     && trLiveOrderErr([E(undefined, "b")], P("BTCUSDT")) === null && trLiveOrderErr([E("BTCUSDT", "b")], null) === null);
   ok("接線:表底那行吃 trLiveOrderErr;pending = 會觸發下單的列,外加**口數列**差額非 0 的(用 lot,不是 !gs)", /const le = trLiveOrderErr\(r\.order_errors, pending\);/.test(src)
     && /if \(acts\) pending\.add\(sym\);/.test(src) && !/\(!gs && Math\.round/.test(src) && !/errs\[errs\.length - 1\]/.test(src));
-  ok("口數列的差額不被畫成灰色(同一個 ≥10 的誤用)", /acts = lot \? Math\.round\(Math\.abs\(d\)\) > 0 : Math\.abs\(d\) >= \(gs \? gs\.usd : 10\);/.test(src) && /const lot = lotRow\(sym\), tc = trEl\("td", "n", numText\(lot, ts\)\);/.test(src) && /const lotRow = \(sym\) => trIsLot\(last, sym\) \|\|/.test(src)); }
+  ok("口數列的差額不被畫成灰色(同一個 ≥10 的誤用)", /acts = lot \? Math\.round\(Math\.abs\(d\)\) > 0 : Math\.abs\(d\) >= \(gs \? gs\.usd : 10\);/.test(src) && /const lot = lotRow\(sym\), tc = trEl\("td", "n", lot \? trLotsTgtFmt\(ts, true\) : trFmt\(ts, true\)\);/.test(src) && /const lotRow = \(sym\) => trIsLot\(last, sym\) \|\|/.test(src)); }
 
 // 稽核 B0:按口數的標的(群益 / futures_contracts)——機器端不寫 gates、下單也沒門檻(差 1 口就送單),
 // 但畫面的 acts 是拿「≥ 10」在比口數。**不可以用「沒有 gate」當口數訊號**:lib/portfolio.py:1119 是「兩側門檻都等於 flat 就不寫 gates」,
@@ -309,7 +312,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
   ok("頂列記號 = 交易所名 / 模擬;狀態句只有短狀態詞(不接「 · Binance」);視窗標題走同一支;tr.tb 不再用", /tm\.textContent = envVenueText\(mny, id\);/.test(src)
     && /ENV\.sig\.tb = tsig; txt\.textContent = ""; txt\.title = tbState;/.test(src) && /if \(tbUp\) txt\.append\(trEl\("span", "up", tbState\)\);/.test(src)
     && /const money = envVenueText\(cur\.money, cur\.venue\);/.test(src) && !/"tr\.tb"/.test(src) && /out\.money = envMoney\(st\); out\.venue = trVenueIds\(st && st\.report\)\[0\] \|\| null;/.test(src));
-  ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時 okDisabled 而且不出「儲存後…」那句(那句另外只在 trMayFire 時出)", /const blocked = badStored\.length > 0;/.test(src) && /lines: \[\], extra, lead, okDisabled: blocked \|\| !!ack/.test(src) && /const note = blocked \? "" : !cloud \? \(mayFire \? t\("tr\.saveWarn"\) : ""\) : /.test(src)
+  ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時 okDisabled 而且不出「儲存後…」那句(那句另外只在 trMayFire 時出)", /const blocked = badStored\.length > 0;/.test(src) && /lines: \[\], extra, lead, okDisabled: blocked,/.test(src) && /const note = blocked \? "" : !cloud \? \(mayFire \? t\("tr\.saveWarn"\) : ""\) : /.test(src)
     && /\$\("del-ok"\)\.disabled = !!okDisabled \|\| !!\(choices && !pre\);/.test(appSrc) && /classList\.remove\("has-alt", "has-choices"\); \$\("del-ok"\)\.disabled = false;/.test(appSrc));   // choices 有預選(pre)那列才一開就能按(方案制預選的週期)
   ok(".cf-* 是通用樣式(在 app.css、不綁金額確認框):下一批「送上雲端」要重用", /\.cf-row\.total dd \{ font-size: 15px/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")) && !/\.cf-row(?!\.grp|s \.cf-row\.grp| dd \.(mult|cf-ref)|\.total \{ border-top-color|\.same)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));   // 例外:分區標題列、口數小字與沒變的列退灰只有金額確認框用
   ok("畫面上不再出現「對帳沒有在跑」「心跳」;刪掉的四個 key 兩語都刪了", !/"tr\.(paperCcy|saveLine|recDead|lastBeat)"/.test(S) && !/最後心跳|對帳沒有在跑|last heartbeat|Reconciler not running/.test(S)); }
@@ -1679,7 +1682,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh" });
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
     const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
     const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
     ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
@@ -1796,7 +1799,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: { okx: { label: "OKX" }, binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trUnit: () => "USDT", trEquity: () => null, trMoneyInto() {} });
       const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
       vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-        + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
+        + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
       const venuesOf = (id) => ({ [id]: { credentials: true, pair: true, order: true, account: true } });
       const bag = (venue, amounts, o) => ({ env: "local", list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: Object.assign({ venues: venuesOf(venue), config: { amounts } }, STALE) }, ...o });
       const paint = (b, states) => { ctx.TR = b; const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
@@ -2032,7 +2035,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
       t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: { binance: { label: "Binance" } }, PAPER: "paper", trUnit: () => "TWD", TR_STALE_MS: 600000 });
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsInto", "trReport", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trPositions", "trNetRows", "trWithUnit"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trReport", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trPositions", "trNetRows", "trWithUnit"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const V = { credentials: true, pair: true, order: true, account: true };
     // 對帳快照照真的形狀(check_shell_stale_err.js 那一份):口數列 exchange = capital、asset_spec.type = futures_contracts;MXF 只在帳戶上(快照沒有)
@@ -2061,7 +2064,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && !rows.some((r) => /^(TXF|MXF)/.test(r[0])), J(rows)); }
     { const r = JSON.parse(JSON.stringify(CAPREP)); r.last_reconcile.target.TXF.size = 1.6; r.config.amounts.txf = 1.6;
       const txf = rowsOf(paintP(r)).find((x) => x[0].startsWith("tr.txfProd.txf"));
-      ok("設計稽核 B1:口數取整數(取整同機器對帳器)", !!txf && txf[1] === "+2", J(txf)); }
+      ok("稽核 integ-0124 P2-3:口數目標不取整(1.6),差額才照對帳器取整(1.6 − 1 = 0.6 → +1)", !!txf && txf[1] === "+1.6" && txf[3] === "+1", J(txf)); }
+    { const r = JSON.parse(JSON.stringify(CAPREP)); r.last_reconcile.target.TXF.size = 0.5; r.config.amounts.txf = 0.5;
+      const txf = rowsOf(paintP(r)).find((x) => x[0].startsWith("tr.txfProd.txf"));
+      ok("P2-3:目標 0.5、實際 1 → 目標 +0.5、差額 −1(對帳器 floor(0.5 + 0.5) 會賣 1 口),不畫成「目標 1、差額 −1」", !!txf && txf[1] === "+0.5" && txf[2] === "+1" && txf[3] === "−1", J(txf));
+      ok("trLotsTgtFmt:最多兩位、U+2212、帶號 / 不帶號、0 不帶號、不是數字 null", vm.runInContext("[trLotsTgtFmt(0.5, true), trLotsTgtFmt(-0.5, true), trLotsTgtFmt(2, true), trLotsTgtFmt(1.234), trLotsTgtFmt(0, true), trLotsTgtFmt(NaN)]", ctx).join("|") === "+0.5|−0.5|+2|1.23|0|"); }
     { const all = paintP(BTCREP), rows = rowsOf(all), btc = rows.find((x) => x[0].startsWith("BTCUSDT"));
       ok("units §9.2 加密列:單位看標的自己的計價(USDT 在欄頭),不看帳戶幣(這組的 trUnit 是 TWD)", !!btc && btc[1] === "+300" && btc[3] === "+200" && thsOf(all)[1] === "tr.col.targetUSDT", J([rows, thsOf(all)])); }
     { const r = JSON.parse(JSON.stringify(BTCREP)); r.config.amounts = { b: 300, tw: 300000, sol: 100 };

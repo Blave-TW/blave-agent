@@ -172,7 +172,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   const RESERVED = ["report_pdf"];
   // 0.1.12 起無送出點:市場檢查出貨前整個拿掉,名字已在 api 白名單、兩端逐字比對,留著不動;不准再有送出點
   // browser_hb_head:0.1.20 A 案把標題列的交還鈕搬進請求卡(browser_hb_card),0.1.19 以前的外殼還在送;等它們退場再三處一起拿
-  const DROPPED = ["pick_gate_lock", "browser_hb_head"];
+  const DROPPED = ["pick_gate_lock", "browser_hb_head", "trade_lev_ack"];   // trade_lev_ack:0.1.24 拿掉 ≥10 倍勾選(Wei 10-13),舊外殼還在送
   // 主行程送的:browser_agent(agent 第一次呼叫瀏覽器工具,shell/browser/index.js firstUse 的 o.track;main.js 接到 telemetry)
   const brSrc = fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8");
   const MAIN_SENT = /if \(o\.track\) o\.track\("browser_agent"\)/.test(brSrc) && /track: \(name\) => tm\(\)\.track\("feature_used", \{ name \}\)/.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")) ? ["browser_agent"] : [];
@@ -180,7 +180,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   { const mainS = fs.readFileSync(path.join(R, "..", "main.js"), "utf8");
     for (const n of ["update_restart", "app_move"]) if (mainS.includes('tm().track("feature_used", { name: "' + n + '" })')) MAIN_SENT.push(n); }
   const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0 && RESERVED.indexOf(n) < 0 && DROPPED.indexOf(n) < 0 && MAIN_SENT.indexOf(n) < 0);
-  t("白名單上每個名字都有送出點(library_comm / browser_source / tv_read / tv_fix / tv_fail_compile 例外:留給舊外殼;pick_gate_lock 0.1.12 起、browser_hb_head 0.1.20 起無送出點)", noSender.length === 0 && LEGACY.concat(RESERVED, DROPPED).every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
+  t("白名單上每個名字都有送出點(library_comm / browser_source / tv_read / tv_fix / tv_fail_compile 例外:留給舊外殼;pick_gate_lock 0.1.12 起、browser_hb_head 0.1.20 起、trade_lev_ack 0.1.24 起無送出點)", noSender.length === 0 && LEGACY.concat(RESERVED, DROPPED).every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
   /* 綁卡／儲值入口一個都不能漏(0.1.16):外開綁卡／儲值頁(acctUrl)的地方只准兩個——預檢卡 / 402 卡的 acctAction(記 acct_card_click)
      與 bindGo(記 bind_* / topup_*);以後誰再寫一顆 openExternal(acctUrl()) 卻沒記,這條就紅。
      策略庫兩個入口開的是設定 › 帳號與方案(planOpen)、不經 acctUrl,逐一釘住;每個 bind_* / topup_* 都要真的有入口在送 */

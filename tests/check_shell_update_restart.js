@@ -28,7 +28,7 @@ function rig(o) {
   const log = [], boxes = [], tracked = [];
   let quitConfirmed = false, child = !!o.trading, phase = o.phase || "blocked", nDialog = 0;
   const ctx = {
-    quitAsking: !!o.asking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
+    quitAsking: !!o.asking, moveAsking: !!o.moveAsking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
     planRestart, cloudSt: () => (o.cloud ? { trading: true } : null), BrowserWindow: { getAllWindows: () => [] },
     tradeMaybeLive: () => (child ? { venue: "binance" } : null), venueName: (id) => (id === "binance" ? "Binance" : ""),
     showMain: () => { log.push("showMain"); if (o.showMainThrows) throw new Error("window gone"); },
@@ -112,6 +112,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("對話框自己出錯:當成取消,旗標還原", res.error === "CANCELED" && r.ctx.quitAsking === false && r.confirmed() === false && !r.log.some((x) => /^install/.test(x))); }
   { const r = rig({ trading: true, asking: true }), res = await r.run();
     t("已經有確認框開著(quitAsking,跟結束攔截共用):不疊第二個,回 ASKING", res.error === "ASKING" && r.boxes.length === 0 && r.log.length === 0); }
+  { const r = rig({ trading: true, moveAsking: true }), res = await r.run();
+    t("搬移框開著(moveAsking):更新重開也不疊框,回 ASKING(稽核 integ-0124 P2-2)", res.error === "ASKING" && r.boxes.length === 0 && r.log.length === 0); }
   { const r = rig({ trading: true }); r.ctx.quitting = true; const res = await r.run();
     t("app 已經在結束(quitting):不問、不收工,回 ASKING", res.error === "ASKING" && r.log.length === 0); }
   { const r = rig({ trading: false, turn: true, phase: "ready" }), res = await r.run();
@@ -145,7 +147,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     if (o.declined) fs.writeFileSync(path.join(dir, "move-declined.json"), "{}");
     const win = { destroyed: false, isDestroyed() { return this.destroyed; } };
     const ctx = { tmLabels: o.noLabels ? { moveTitle: "", moveBody: "", moveGo: "", moveNo: "" } : o.noAuthLabels ? { ...L, moveAuthExists: "", moveAuthApps: "", gotIt: "" } : { ...L }, shouldAskMove, fs, path, moveAsked: !!o.askedBefore,
-      quitting: false, quitConfirmed: false, quitAsking: false, activeTurn: null, turnStarting: false, win,
+      quitting: false, quitConfirmed: false, quitAsking: false, moveAsking: false, activeTurn: null, turnStarting: false, win,
       process: { platform: o.platform || "darwin" }, BrowserWindow: { getAllWindows: () => [win] }, tradeMaybeLive: () => (o.trading ? { venue: "x" } : null),
       tm: () => ({ track: (ev, p) => tracked.push(ev + ":" + p.name) }), console: { error: (e) => errs.push(String(e)) },
       engineSetup: () => ({ busy: () => !!(o.engineBusy || ctx.engineBusyNow), snapshot: () => ({ phase: ctx.enginePhase || "idle" }) }),
@@ -158,6 +160,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const marked = () => fs.existsSync(path.join(dir, "move-declined.json"));
     return { fn, log, errs, tracked, ctx, marked, dir };
   };
+  { const seen = [], m = moveRig({ response: 1, onDialog: (c) => seen.push(c.moveAsking) }), r = await m.fn();
+    const a = [], n = moveRig({ response: 0, needsAuth: "apps", onDialog: (c) => a.push(c.moveAsking) }); await n.fn();
+    t("P2-2 搬移框與授權提示框開著時 moveAsking = true,關了還原(before-quit / 更新重開看它不疊框)", r === true && seen.join() === "true" && m.ctx.moveAsking === false && a.join() === "true" && n.ctx.moveAsking === false, [seen, a]); }
   { const m = moveRig({ response: 0 }), r = await m.fn();
     t("按「不要移」:寫下記號、沒呼叫 move;不送埋點", r === false && m.marked() && !m.log.includes("move") && m.tracked.length === 0, m.log);
     const b = m.ctx.box;
@@ -262,7 +267,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── 0.1.12 結束 app:背景安裝的 pip 在跑就先收掉(稽核 0.1.12 P1-1);沒在裝、常駐程式也沒在跑就直接放行 ──
   { const BQ = cut(src, 'app.on("before-quit", (e) => {');
     const quitRig = (o) => {
-      const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, activeTurn: null, turnStarting: false, tradeMaybeLive: () => null,
+      const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, moveAsking: !!o.moveAsking, activeTurn: o.turn ? {} : null, turnStarting: false,
+        tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), showMain: () => log.push("showMain"), BrowserWindow: { getAllWindows: () => [] }, tmLabels: { ...L, quitBody: "q {venue}", quitTitle: "t", quitTurnTitle: "tt", quitTurnBody: "tb" }, venueName: () => "Binance", cloudSt: () => null,
+        TT: { quitDetail: TT.quitDetail, cloudTrading: () => false, stayGo: TT.stayGo }, process: { platform: "darwin" }, dialog: { showMessageBox: () => { log.push("dialog"); return new Promise(() => {}); } },
         _tradeHost: o.daemon ? { isRunning: () => true, stop: () => new Promise((ok) => setTimeout(() => { log.push("daemon:stopped"); ok(); }, 10)) } : null,
         _engineSetup: { busy: () => !!o.installing }, engineAbort: () => new Promise((ok) => setTimeout(() => { log.push("engineAbort"); ok(true); }, 5)),
         app: { on: (ev, fn) => { ctx.handler = fn; }, quit: () => log.push("app.quit") } };
@@ -274,7 +281,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     { const q = quitRig({ installing: true, daemon: true }); await q.fire();
       t("…常駐程式也在跑:兩個都收完才 app.quit()", q.log.includes("engineAbort") && q.log.includes("daemon:stopped") && q.log[q.log.length - 1] === "app.quit", q.log); }
     { const q = quitRig({}); const prevented = await q.fire();
-      t("…都沒在跑:不攔、不收", !prevented && q.log.length === 0, q.log); } }
+      t("…都沒在跑:不攔、不收", !prevented && q.log.length === 0, q.log); }
+    { const a = quitRig({ live: true, moveAsking: true }), b = quitRig({ turn: true, moveAsking: true }), c = quitRig({ live: true });
+      const pa = await a.fire(), pb = await b.fire(), pc = await c.fire();
+      t("P2-2 搬移框開著時按 Cmd+Q:下單中 / 回合在跑兩道都先擋、不疊結束確認框;沒開搬移框照常問", pa && pb && !a.log.includes("dialog") && !b.log.includes("dialog") && pc && c.log.includes("dialog"), [a.log, b.log, c.log]); } }
   // ── 接線:三個入口都走 restartToUpdate ──
   t("IPC update-install 改叫 restartToUpdate", /ipcMain\.handle\("update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : restartToUpdate\(\)\)\);/.test(src));
   t("選單列那一行 click = restartToUpdate()", /click: \(\) => \{ restartToUpdate\(\)\.catch\(/.test(cut(src, "function trayMenu(")));

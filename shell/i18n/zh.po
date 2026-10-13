@@ -1492,27 +1492,8 @@ msgstr "請輸入整數口數，例如 3"
 msgid "tr.badLotsOld"
 msgstr "這一格是舊設定的小數口數，請改成整數，例如 3"
 
-msgid "tr.lev.margin"
-msgstr "超過 1 倍要用合約保證金。Blave 不會替你調槓桿：交易所上這些合約至少要設 {L} 倍，不夠的單會被拒。"
-
-msgid "tr.lev.marginShort"
-msgstr "Blave 不會替你調槓桿：交易所上這些合約至少要設 {L} 倍，不夠的單會被拒。"
-
-# {p} 的值:「8%」或超過 100 倍時這一句
-msgid "tr.lev.pctLt1"
-msgstr "不到 1%"
-
-msgid "tr.lev.loss"
-msgstr "照這些金額滿倉，全部部位一起反向 {p}，虧損就等於你全部的淨值；交易所會更早強平。"
-
-msgid "tr.lev.lossPaper"
-msgstr "照這些金額滿倉，全部部位一起反向 {p}，模擬帳戶的淨值就會歸零。"
-
 msgid "tr.lev.binance5"
 msgstr "Binance 子帳戶的合約槓桿最多 5 倍。"
-
-msgid "tr.lev.ack"
-msgstr "我知道照這些金額滿倉，全部反向 {p} 就虧掉全部淨值"
 
 msgid "tr.err.paperLev"
 msgstr "{sym} 沒有下單：部位要到 {gross} {c}，超過模擬帳戶上限 {cap} {c}（淨值的 {x} 倍）。請調低金額。"
@@ -1843,15 +1824,6 @@ msgstr "口"
 
 msgid "tr.lotsAria"
 msgstr "口數"
-
-msgid "tr.txfBigNotional"
-msgstr "{lots} 口{prod}的名目約 {amt} TWD，是你淨值的 {x} 倍。確認這是你要的口數。"
-
-msgid "tr.txfBigNotional1"
-msgstr "{lots} 口{prod}的名目約 {amt} TWD，是你淨值的 {x} 倍。確認這是你要的口數。"
-
-msgid "tr.txfBigLots"
-msgstr "{lots} 口{prod}是很大的口數。確認沒有多打一個 0。"
 
 msgid "tr.txfProd.tmf"
 msgstr "微台"

@@ -266,7 +266,6 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl tbody:first-of-type tr.grp td { padding-top: var(--space-12); }
 .pf-tbl tr.grp td.cjk { font-family: var(--font-sans); }
 .pf-tbl tr.grp td.n { font-weight: 500; }
-.pf-tbl tr.grp .mult { font-family: var(--font-sans); color: var(--ink-2); }
 /* 線(units spec §9.12):金額表與部位表只留表頭下一條最淡的線,金額表另有表底合計那條較重的;區內列線拿掉,列與區靠間距分開 */
 .pf-tbl.zoned th { border-bottom-color: var(--border-hairline); }
 .pf-tbl.zoned td { border-bottom: none; }
@@ -277,7 +276,6 @@ html.ws-sc .side-gate { display: none; }
 .cf-row.grp.cjk dt { font-family: var(--font-sans); }
 .cf-row.grp dd { font-size: 11px; font-weight: 500; color: var(--ink-3); }
 .cf-row dd .mult { font-family: var(--font-sans); color: var(--ink-2); }
-.cf-row.grp dd .mult { margin-left: var(--space-8); }
 .cf-row dd .cf-ref { display: block; font: 11px/1.4 var(--font-sans); color: var(--ink-3); }
 /* 確認框 A 版(confirm-amounts-mockup):沒變的列整列退灰,變動的列靠對比跳出來;原值與箭頭灰、新值墨色。
    列上的小標(平倉／移出)同 .mkt-tag 階,灰不紅——紅只給會被退的單 */
@@ -301,10 +299,6 @@ html.ws-sc .side-gate { display: none; }
 .net-sum { margin-top: var(--space-4); padding-top: var(--space-6); border-top: 1px solid var(--border-hairline); color: var(--ink-2); white-space: normal; }
 /* 訊號欄(ux-order-1-4-5 §2.1):不上紅綠,方向由目標部位那欄講 */
 .pf-tbl td.sig { color: var(--ink-2); }
-/* 合計列下的倍數提醒(§1.2):後果句走 .verdict.is-calm(灰記號 + ink-2);槓桿那一句 ink-3 12px */
-.pf-lev .verdict { margin-top: var(--space-8); }
-.pf-lev p.pf-lev-sub { margin: var(--space-4) 0 0; max-width: 64ch; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.pf-lev .verdict + p.pf-lev-sub { padding-left: var(--space-16); }   /* 接在後果句下面時跟它的字對齊(記號 8 + 間距 8) */
 .pf-foot { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
 .pf-foot.err { color: var(--color-redText); }
 .pf-foot.past .ts { margin-right: var(--space-8); }   /* 對帳器沒在跑時的「上次下單失敗」:色階留 .pf-foot 的 greyMedium,只多一個時間 */

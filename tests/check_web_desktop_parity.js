@@ -1,7 +1,8 @@
-// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):倍數提醒門檻 LEV_T1 / T2 / T3、階段表 PHASE_OF / PHASE_NONE,
+// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):階段表 PHASE_OF / PHASE_NONE,
 // 以及讀帳失敗時的帳戶幣別對照表(八個帳戶,統一期貨 president 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
-//   電腦版:shell/renderer/trade.js 的 LEV_T* 與 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
-//   網頁:web/app/main/templates/agent/workspace.html 的 LEV_T* 與 CX_VENUES[].ccy
+// (倍數提醒門檻 LEV_T* 已隨電腦版安全檢查拿掉,Wei 10-13;不再比對)
+//   電腦版:shell/renderer/trade.js 的 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
+//   網頁:web/app/main/templates/agent/workspace.html 的 CX_VENUES[].ccy
 // 網頁那棵用 BLAVE_WEB_DIR 指定(預設 monorepo 的 ../web);找不到就 fail,不 SKIP——不比對等於沒有這支測試。
 // 跑法:BLAVE_WEB_DIR=/path/to/web node tests/check_web_desktop_parity.js
 const fs = require("fs"), path = require("path");
@@ -10,9 +11,6 @@ const webDir = process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "we
 const wsPath = path.join(webDir, "app", "main", "templates", "agent", "workspace.html");
 if (!fs.existsSync(wsPath)) { console.log("FAIL  找不到 " + wsPath + "(設 BLAVE_WEB_DIR 指到 web)"); process.exit(1); }
 const web = fs.readFileSync(wsPath, "utf8"), desk = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
-const lev = (src) => ["LEV_T1", "LEV_T2", "LEV_T3"].map((k) => { const m = new RegExp("\\b" + k + " = (\\d+(?:\\.\\d+)?)\\b").exec(src); return m ? Number(m[1]) : null; });
-const dl = lev(desk), wl = lev(web);
-ok("LEV_T1 / T2 / T3 兩邊都有、而且相等(" + JSON.stringify(dl) + " vs " + JSON.stringify(wl) + ")", dl.every((x) => x != null) && JSON.stringify(dl) === JSON.stringify(wl));
 // 電腦版:CX_VENUES 的 ccy + 另外兩個帳戶
 const cx = /const CX_VENUES = \{([\s\S]*?)\};/.exec(desk), other = /const TR_VENUE_CCY_OTHER = \{([^}]*)\};/.exec(desk);
 const dt = {};

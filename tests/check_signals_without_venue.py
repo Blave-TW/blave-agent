@@ -27,12 +27,19 @@ Runtime + workspace, no network, no supervisor, never a real crontab.
 Run: cd blave-agent && .venv/bin/python tests/check_signals_without_venue.py
 """
 import glob
+import importlib.util
 import json
 import os
 import shutil
 import sys
 import tempfile
 import time
+
+# The real tick runs strategies under this interpreter: without pandas they never write
+# state.json and part 3 fails as if it were a logic bug.
+if importlib.util.find_spec("pandas") is None:
+    sys.exit(f"ENVIRONMENT: pandas is not importable from {sys.executable} — this is not a test "
+             f"failure. Run with blave-agent/.venv/bin/python.")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = tempfile.mkdtemp(prefix="signals-no-venue-")

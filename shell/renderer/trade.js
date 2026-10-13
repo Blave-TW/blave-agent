@@ -446,26 +446,9 @@ function trSentSettled(sent, report, reportedAt, baseAt) {
 /* 口數換出來的參考金額的幣別:點值 × 加權指數本來就是台幣,固定標 TWD、不跟帳戶幣——讀帳失敗時帳戶幣會退成 USDT,
    台幣數字標成 USDT 等於把曝險放大約 30 倍(設計稽核第二輪 R2-S2)。群益主機只接這一家,表上不會混別的幣別 */
 const TR_TXF_CCY = "TWD";
-/* big = 沒有報價或淨值時,確認框提醒「口數很大」的退路門檻(三個名目大致相同,只為抓 TWD 年代留下的大數字與多打一個 0) */
-const TR_TXF_SPECS = { TMF: { cv: 10, prod: "tr.txfProd.tmf", big: 1000 }, MXF: { cv: 50, prod: "tr.txfProd.mxf", big: 200 }, TXF: { cv: 200, prod: "tr.txfProd.txf", big: 50 } };
-/* 倍數提醒的三級門檻(合計 ÷ 淨值;ux-order-1-4-5 §1.1,網頁同名同值)。群益口數列「名目太大」的提醒用 LEV_T2,不另開常數 */
-const LEV_T1 = 1, LEV_T2 = 5, LEV_T3 = 10;
-/* 「全部反向 {p}」那一格的字(槓桿警語與 ≥10 倍勾選句共用;同網頁 pfLevPct):超過 100 倍時 ⌊100 ÷ n⌋ 是 0,寫「不到 1%」,不寫「反向 0%」 */
-function trLevPct(p) { return p < 1 ? t("tr.lev.pctLt1") : p + "%"; }
+const TR_TXF_SPECS = { TMF: { cv: 10, prod: "tr.txfProd.tmf" }, MXF: { cv: 50, prod: "tr.txfProd.mxf" }, TXF: { cv: 200, prod: "tr.txfProd.txf" } };
 // 淨值倍數:千分位、兩位小數(4,494.68×;同網頁)
 function trMultFmt(x) { return x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-/* 倍數提醒的級數(§1.2),n = 合計 ÷ 淨值(用畫面上那個兩位小數,字和級數才對得上):0 = ≤ 1 倍、1 = 1–5、2 = 5–10、3 = ≥ 10。
-   L = 交易所至少要設幾倍(⌈n⌉);p = 全部反向幾 % 就虧掉全部淨值(⌊100 ÷ n⌋,往下取,不把緩衝講大)。
-   模擬帳戶(§1.4)沒有第 1 級(沒有槓桿可設)、也沒有第 3 級的勾選(不是真錢) */
-function trLevLevel(n, paper) {
-  const none = { level: 0, L: null, p: null };
-  if (typeof n !== "number" || !isFinite(n)) return none;
-  const x = Math.round(n * 100) / 100;
-  if (x <= LEV_T1) return none;
-  const level = x >= LEV_T3 ? 3 : x >= LEV_T2 ? 2 : 1;
-  if (paper && level === 1) return none;
-  return { level: paper ? 2 : level, L: Math.ceil(x), p: Math.floor(100 / x) };
-}
 /* 金額表「訊號」欄(units spec §3.3、§8.2,同網頁 pfSignalText):×1.00 / ×−1.00(U+2212);拿不到、沒部位都是 ×0。
    tc = trTypeC(state):投資組合的訊號是持有權重合計——只做空帶負號,多空混合寫 Σ|w'| 不帶號 */
 function trSignalText(pos, tc) {
@@ -548,19 +531,9 @@ function trBlankLots(names, raw, isLot, skip) {
 /* en 的單複數(spec-0.1.13 #4):畫面上那個數字的絕對值是 1 用單數,其餘(含 0、0.5)用複數——呼叫端傳的是取整後要顯示的數。
    zh 兩個 key 同一個字。兩個 key 都寫成字面值傳進來(字串漂移閘門只認字面值) */
 function trLotsKey(n, many, one) { return typeof n === "number" && Math.abs(n) === 1 ? one : many; }
-/* 確認框口數列的提醒(#1):有報價、讀得到 TWD 淨值 → 名目 > K 倍淨值才提醒;缺任何一個 → 退回看口數 ≥ spec.big。
-   回 null | { kind: "notional", amt, x } | { kind: "lots" } */
-function trTxfBigWarn(spec, lots, price, equity, acctCcy) {
-  if (!spec || !(lots > 0)) return null;
-  const m = trTxfRefMoney(spec, lots, price);
-  if (m != null && acctCcy === TR_TXF_CCY && typeof equity === "number" && isFinite(equity) && equity > 0) {
-    return m > LEV_T2 * equity ? { kind: "notional", amt: m, x: m / equity } : null;
-  }
-  return lots >= spec.big ? { kind: "lots" } : null;
-}
 /* ── 依計價分區(designer 0124-review units spec §9;同網頁 pfRowUnit / pfSuffixUnit / pfRoundLots)──
    金額表、部位表、確認框一區一種計價,單位只寫在區標題;整表只有一區時不畫區標題、單位回欄頭。
-   分區只看列自己的計價,帳戶幣不參與——它只決定淨值倍數掛哪一區、哪幾區排前面 */
+   分區只看列自己的計價,帳戶幣不參與——它只決定哪幾區排前面 */
 const TR_ZONE_LOTS = "lots", TR_ZONE_UNKNOWN = "?";
 // 白名單精確尾碼,長的先比(FDUSD 不會被讀成 USD);單寫 USD 不推(BTCUSD 可能是幣本位,以 BTC 計)
 const TR_QUOTE_SUFFIX = ["FDUSD", "BUSD", "TUSD", "USDT", "USDC"];
@@ -584,15 +557,14 @@ function trTypeC(st) {
 // 台指期目標口數取整 = 機器對帳器的規則 sign(x)·floor(|x|+0.5)(−0.5 → −1;Math.round(−0.5) 是 −0,會差一口)
 function trRoundLots(x) { return (x < 0 ? -1 : 1) * Math.floor(Math.abs(x) + 0.5); }
 /* 金額表一列的區(§9.2)。sym = 單一標的(states 的 symbol,沒有就清單的);tc = trTypeC(state);portfolio = 清單說它是投資組合;
-   qmap = 回報頂層 quote_ccy({策略: 幣別 | null},舊 runtime 沒這欄)。順序:台指期 → quote_ccy(有 key 就照用;null 時單一標的 = 未定,
-   投資組合往下推)→ 台股代號 TWD／白名單尾碼 → 投資組合成分全同一種已知幣別 → 未定 */
+   qmap = 回報頂層 quote_ccy({策略: 幣別 | null},舊 runtime 沒這欄)。順序:台指期 → quote_ccy(有值就照用;null = runtime 判不出市場,
+   往下推)→ 台股代號 TWD／白名單尾碼 → 投資組合成分全同一種已知幣別 → 未定 */
 function trRowZone(n, sym, tc, portfolio, qmap) {
   const isC = !!tc || portfolio === true;
   if (!isC && trTxfSpec(sym)) return TR_ZONE_LOTS;
   if (qmap && typeof qmap === "object" && Object.prototype.hasOwnProperty.call(qmap, n)) {
     const q = qmap[n];
     if (typeof q === "string" && q.trim()) return q.trim().toUpperCase();
-    if (!isC) return TR_ZONE_UNKNOWN;
   }
   if (!isC) return trSuffixZone(sym) || TR_ZONE_UNKNOWN;
   // 還沒算出權重的投資組合退回清單的標的(可能是「2330,2454」一串),逐檔推
@@ -610,9 +582,9 @@ function trSymZone(sym, quotes) {
   if (q.size === 1) return [...q][0];
   return trSuffixZone(s) || TR_ZONE_UNKNOWN;
 }
-/* 淨值倍數掛哪一區(§9.5):台灣期貨券商 → 口數區(名目 TWD ÷ TWD 淨值);加密所 → 帳戶幣那一區。
-   OKX 回的帳戶幣是 USD(totalEq 以美元計)而交易對是 USDT:平台匯率表 USDT 與 USD 同為 1,USD 帳戶的倍數掛 USDT 區,
-   不然綁 OKX 時倍數與 ≥10 倍的勾選整個消失。沒綁、帳戶幣未知 = null;加密帳戶的幣是 TWD(讀帳退路錯了)也 null——TWD 區是台股,不在這個帳戶上 */
+/* 帳戶幣那一區(§9.3 排序用):台灣期貨券商 → 口數區;加密所 → 帳戶幣那一區。
+   OKX 回的帳戶幣是 USD(totalEq 以美元計)而交易對是 USDT:平台匯率表 USDT 與 USD 同為 1,USD 帳戶當 USDT 區。
+   沒綁、帳戶幣未知 = null;加密帳戶的幣是 TWD(讀帳退路錯了)也 null——TWD 區是台股,不在這個帳戶上 */
 function trMultZone(venueId, acct, keys) {
   if (!venueId) return null;
   if (venueId === "capital" || venueId === "president") return acct === TR_TXF_CCY ? TR_ZONE_LOTS : null;
@@ -620,12 +592,12 @@ function trMultZone(venueId, acct, keys) {
   return acct === "USD" && keys.indexOf("USD") < 0 && keys.indexOf("USDT") >= 0 ? "USDT" : acct;
 }
 /* 區的順序(§9.3):固定 USDT → USDC → 其他(字母序)→ TWD → 台指期(口)→ 幣別未定;綁定的交易所交易的區移到最前面,
-   倍數那一區(帳戶幣)第一。台灣期貨券商只交易口數區;加密所交易台幣以外的已知區 */
-function trZoneOrder(keys, venueId, multZone) {
+   帳戶幣那一區第一。台灣期貨券商只交易口數區;加密所交易台幣以外的已知區 */
+function trZoneOrder(keys, venueId, acctZone) {
   const tw = venueId === "capital" || venueId === "president";
   const bound = (k) => !!venueId && (tw ? k === TR_ZONE_LOTS : k !== TR_TXF_CCY && k !== TR_ZONE_LOTS && k !== TR_ZONE_UNKNOWN);
   const rank = (k) => (k === "USDT" ? 0 : k === "USDC" ? 1 : k === TR_TXF_CCY ? 3 : k === TR_ZONE_LOTS ? 4 : k === TR_ZONE_UNKNOWN ? 5 : 2);
-  const head = (k) => (!bound(k) ? 2 : k === multZone ? 0 : 1);
+  const head = (k) => (!bound(k) ? 2 : k === acctZone ? 0 : 1);
   return [...new Set(keys)].sort((a, b) => head(a) - head(b) || rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
 }
 /* 綁定的交易所交不交易這個標的(§9.1、§9.6;同網頁 pfRowCovered):只認「確定不交易」的兩種——台灣期貨券商(kind "tw")的非台指期、
@@ -640,14 +612,12 @@ function trFxRate(fx, ccy) {
   const r = fx && typeof fx === "object" && Object.prototype.hasOwnProperty.call(fx, ccy) ? fx[ccy] : null;
   return typeof r === "number" && isFinite(r) && r > 0 ? r : null;
 }
-/* 每區小計、表底合計、淨值倍數(§9.4、§9.5、§9.7)。amounts {策略: 金額或口數};zoneOf(name) → 區;
-   money(name, v) → 錢(口數列換名目 TWD,沒報價 = null);multZone = 倍數那一區;equity = 帳戶淨值(同那一區的幣);
-   fx / base = 匯率表與顯示幣別。回:
+/* 每區小計與表底合計(§9.4、§9.7)。amounts {策略: 金額或口數};zoneOf(name) → 區;
+   money(name, v) → 錢(口數列換名目 TWD,沒報價 = null);fx / base = 匯率表與顯示幣別。回:
    - zones {區: { rows, sum, money }}:sum = 原單位加總(錢區的小計),money = 換成錢(口數區是名目 TWD;換不了 null)
    - total { v, ccy, approx, parts, skipped }:只有一區 = 那一區的錢(口數區是 ≈ 名目 TWD,未定區沒有幣別);兩區以上 = 換成顯示幣別的 ≈,
-     未定區不算(skipped 列名),缺匯率或缺報價 v = null
-   - mult:倍數那一區的錢 ÷ 淨值;那一區不在表上、換不了錢、沒有淨值都 null。從不把別區(台股、台指期)算進加密帳戶的倍數 */
-function trZoneTotals(amounts, zoneOf, money, multZone, equity, fx, base) {
+     未定區不算(skipped 列名),缺匯率或缺報價 v = null */
+function trZoneTotals(amounts, zoneOf, money, fx, base) {
   const zones = {}, order = [];
   Object.keys(amounts || {}).forEach((n) => {
     const a = Number(amounts[n]) || 0, z = zoneOf(n);
@@ -671,9 +641,32 @@ function trZoneTotals(amounts, zoneOf, money, multZone, equity, fx, base) {
     });
     total.v = v == null ? null : Math.round(v); total.ccy = b; total.approx = true;
   }
-  const mz = multZone != null && Object.prototype.hasOwnProperty.call(zones, multZone) ? zones[multZone] : null;
-  const mult = mz && mz.money != null && typeof equity === "number" && isFinite(equity) && equity > 0 ? mz.money / equity : null;
-  return { zones, order, total, mult };
+  return { zones, order, total };
+}
+/* 淨值倍數(表底合計後面那一個):綁定的交易所會下單的列全部換成帳戶幣加總 ÷ 淨值。
+   台灣期貨券商 = 口數列的名目 TWD ÷ TWD 淨值(缺報價 = null)。其他(加密所、模擬、認不得的交易所)= 台股與口數列以外的每一列,
+   含幣別未定的(多算比漏算安全);換帳戶幣用平台匯率,缺任一邊匯率或幣別未定就當 1:1——穩定幣之間這就是實際值,丟掉那一列才會把倍數講小。
+   沒綁、帳戶幣未知、加密帳戶讀成 TWD、沒有淨值 = null */
+function trEquityMult(amounts, zoneOf, money, venueId, acct, equity, fx) {
+  if (!venueId || !acct || !(typeof equity === "number" && isFinite(equity) && equity > 0)) return null;
+  const tw = venueId === "capital" || venueId === "president";
+  if (tw !== (acct === TR_TXF_CCY)) return null;
+  const rA = trFxRate(fx, acct);
+  let v = 0;
+  for (const n of Object.keys(amounts || {})) {
+    const a = Number(amounts[n]) || 0, z = zoneOf(n);
+    if (tw) {
+      if (z !== TR_ZONE_LOTS) continue;
+      const m = money ? money(n, a) : a;
+      if (m == null) return null;
+      v += m;
+    } else {
+      if (z === TR_ZONE_LOTS || z === TR_TXF_CCY) continue;
+      const rZ = z === TR_ZONE_UNKNOWN ? null : trFxRate(fx, z);
+      v += rA && rZ ? (a * rA) / rZ : a;
+    }
+  }
+  return v / equity;
 }
 /* 累積損益的線段(照雲端 drawOvPnl):相鄰兩點都在 0 的同一側 → 一段,顏色跟著那一側(>= 0 算綠);
    跨過 0 → 在交越點(線性內插的時間)切成兩段,各取各的顏色。回 [{ t0, v0, t1, v1, pos, cut0?, cut1? }] */
@@ -1237,6 +1230,13 @@ function trMoneyInto(node, v, signed, ccy) {
 }
 // 口數字串:整數(取整同機器對帳器 trRoundLots)、負號 U+2212(同 trTwd;輸入框那邊仍走 trFmt 的 hyphen,parse 認的是它);不是數字 null
 function trLotsFmt(v, signed) { const s = typeof v === "number" && isFinite(v) ? trFmt(trRoundLots(v), signed) : null; return s == null ? null : s.replace(/^-/, "−"); }
+/* 口數「目標」(部位表目標格與「N 支策略」拆解):不取整、最多兩位小數。對帳器取整的是差額(manager/reconciler.py round-half-up),
+   不是目標——目標 0.5、實際 1 時差額 −0.5 會賣 1 口,目標格若也取整成 1 就跟差額對不起來(稽核 integ-0124 P2-3) */
+function trLotsTgtFmt(v, signed) {
+  if (typeof v !== "number" || !isFinite(v)) return null;
+  const a = Math.round(Math.abs(v) * 100) / 100;
+  return (a === 0 ? "" : v < 0 ? "\u2212" : signed ? "+" : "") + a.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
 // 口數格(同網頁 paintVenueLots):整數、可帶正負號、後綴「口」不跟帳戶幣;不是數字 = 「—」
 function trLotsInto(node, v, signed) {
   const s = trLotsFmt(v, signed);
@@ -2271,10 +2271,11 @@ function trFxView() {
   const c = typeof TR_BAGS !== "undefined" && TR_BAGS.cloud.st ? TR_BAGS.cloud.st.cloud : null;
   return { fx: c && c.fx_rates && typeof c.fx_rates === "object" ? c.fx_rates : null, base: c && typeof c.currency === "string" && c.currency ? c.currency.toUpperCase() : "USD" };
 }
-// 金額表與確認框共用的分區合計:倍數那一區看綁定的交易所與帳戶幣,分母是畫面上那一份淨值
+// 金額表與確認框共用的分區合計與淨值倍數(分母是畫面上那一份淨值);acctZone 只給區的排序用
 function trZoneSum(amounts, eq) {
-  const fv = trFxView(), mz = trMultZone(trVenueId(), trUnit(), Object.keys(amounts).map(trZoneOf));
-  return { ...trZoneTotals(amounts, trZoneOf, trRowMoney, mz, eq, fv.fx, fv.base), multZone: mz };
+  const fv = trFxView(), vid = trVenueId(), acct = trUnit();
+  return { ...trZoneTotals(amounts, trZoneOf, trRowMoney, fv.fx, fv.base), mult: trEquityMult(amounts, trZoneOf, trRowMoney, vid, acct, eq, fv.fx),
+    acctZone: trMultZone(vid, acct, Object.keys(amounts).map(trZoneOf)) };
 }
 // 合計那個數:換算出來的(≈)取整、不帶小數;null = 「—」。tip = 混幣時各區原數一行一個(口數區寫名目 TWD;同網頁 pfTotalTip,未定區不提)
 function trTotalText(tt) { return tt.v == null ? "—" : tt.approx ? "≈ " + trFmt(Math.round(tt.v)) : trFmt(tt.v); }
@@ -2347,7 +2348,7 @@ async function trStratOpen(n, el) {
 function trAmountTable(names, stored, states) {
   const frag = document.createDocumentFragment();
   frag.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff")), trPickBtn()));
-  const total = trEl("div", "pf-total"), lev = trEl("div", "pf-lev"), bar = trEl("div", "pf-savebar"), cloud = TR.env === "cloud";
+  const total = trEl("div", "pf-total"), bar = trEl("div", "pf-savebar"), cloud = TR.env === "cloud";
   /* 雲端(spec-desktop-cloud-s4):跟本機同一張表、同一套驗證,只差三件——讀不到新狀態不給存(amounts 是整份覆蓋,
      拿舊報告當底會蓋掉別處剛改的)、存完要等主機回報才對得上(.pend 記號)、送出走 trSend(單飛 + request_id 沿用)。 */
   // 讀不到金額設定:兩個視角都擋(本機的回報也是 build_report(),amounts 一樣是整份覆蓋)
@@ -2355,19 +2356,17 @@ function trAmountTable(names, stored, states) {
   const stale = cloud && (!(TR.st && TR.st.alive) || cfgBad), sentOn = cloud && !!TR.sent;
   const hidden = cloud ? trHidden(names, stored, trListNames()) : [];
   const gates = ((trReport() || {}).last_reconcile || {}).gates || {};
-  const grpCells = {};   // 區標題列的小計與倍數格(打字時跟著合計重畫)
+  const grpCells = {};   // 區標題列的小計格(打字時跟著合計重畫)
   const paintTotal = () => {
     // 雲端:合計跟確認框同一個口徑——表上沒列出、但照原樣帶著送的那幾支也算進去(稽核 L3)
     // 淨值快照:確認框用這裡顯示的那一個(不再自己讀一次),同一組金額兩處的倍數才會一樣(0.0.3 實機 989.95x / 988.37x)
     const eq = trEquity(); TR.eqShown = { env: TR.env, v: eq };
     const am = cloud ? trSendAmounts("cloud", names, stored, TR.edits, trListNames()) : trCurrentAmounts(names, stored, TR.edits);
     const zt = trZoneSum(am, eq), multText = zt.mult != null ? t("tr.equityMult", { x: trMultFmt(zt.mult) }) : "";
-    /* 區標題(§9.4):小計只在錢的區有兩列以上時出(一列就等於那一列);口數區不加口數、未定區沒有幣別,都不出。
-       倍數掛在綁定交易所那一區(§9.5) */
+    // 區標題(§9.4):小計只在錢的區有兩列以上時出(一列就等於那一列);口數區不加口數、未定區沒有幣別,都不出
     Object.keys(grpCells).forEach((z) => { const g = grpCells[z], Z = zt.zones[z];
-      g.sub.textContent = Z && Z.rows >= 2 && z !== TR_ZONE_LOTS && z !== TR_ZONE_UNKNOWN ? trFmt(Z.sum) : "";
-      g.mult.textContent = z === zt.multZone ? multText : ""; });
-    /* 表底合計:只有一區 = 那一區的數(口數區是 ≈ 名目 TWD)+ 單位 + 倍數;兩區以上 = 換算成顯示幣別的 ≈ 整數,不帶倍數(倍數在區標題)。
+      g.sub.textContent = Z && Z.rows >= 2 && z !== TR_ZONE_LOTS && z !== TR_ZONE_UNKNOWN ? trFmt(Z.sum) : ""; });
+    /* 表底合計:只有一區 = 那一區的數(口數區是 ≈ 名目 TWD)+ 單位;兩區以上 = 換算成顯示幣別的 ≈ 整數。淨值倍數只有一個,接在合計後面。
        全是口數列也出(推翻 desktop-10-08 #4:名目 ≈ TWD 是期貨帳戶唯一看得到淨值倍數的地方,units spec §5 電腦版 #4) */
     total.textContent = "";
     total.appendChild(trEl("span", "", t("tr.total")));
@@ -2375,28 +2374,7 @@ function trAmountTable(names, stored, states) {
     if (zt.total.v != null && zt.total.ccy) tn.appendChild(trEl("span", "ccy", zt.total.ccy));
     if (tip) tn.title = tip;
     total.appendChild(tn);
-    // 倍數一律墨色(spec-0.1.13 #5):提醒靠下面那塊句子
-    // 表上只有一區(沒有區標題可掛)時倍數接在合計後面;看表的區數,雲端照送但沒列出的那幾支不另開區
-    if (zones.length <= 1 && multText) total.append(trEl("span", "", "·"), trEl("span", "n mult", multText));
-    paintLev(zt.mult, am);
-  };
-  /* 合計列下的倍數提醒(ux-order-1-4-5 §1.2):只在有未存的改動時出現(同儲存列的 dirty;存好就收,倍數本身是唯一常駐的提示)。
-     槓桿那一句只對合約列講:全是現貨、或只有台指期口數列時不出(券商依口數收保證金,沒有「設幾倍」可做) */
-  const swapOn = (am) => Object.keys(am).some((n) => am[n] > 0 && !trRowTxf(n) && ((states[n] || {}).market || (TR.list.find((y) => y.name === n) || {}).market) !== "spot");
-  const paintLev = (mult, am) => {
-    lev.textContent = "";
-    const dirty = (trDirty(names, stored, TR.edits) || anyBad() || trPickStaged(TR.picked, stored, hidden).length > 0) && TR.save !== "saved";
-    const paper = trIsPaper(), v = trLevLevel(mult, paper), margin = !paper && swapOn(am);
-    lev.hidden = !dirty || !(v.level >= 2 || (v.level === 1 && margin));   // 第 1 級只有槓桿那一句:全現貨時整塊不出
-    if (lev.hidden) return;
-    if (v.level >= 2) {
-      const row = trEl("div", "verdict is-calm"), mk = trEl("span", "fault-mark"); mk.setAttribute("aria-hidden", "true");
-      row.append(mk, trEl("span", "", t(paper ? "tr.lev.lossPaper" : "tr.lev.loss", { p: trLevPct(v.p) }))); lev.appendChild(row);
-    }
-    if (margin) {
-      const bn = trVenueId() === BINANCE && v.L > 5 ? (LANG === "zh" ? "" : " ") + t("tr.lev.binance5") : "";
-      lev.appendChild(trEl("p", "pf-lev-sub", t(v.level === 1 ? "tr.lev.margin" : "tr.lev.marginShort", { L: v.L }) + bn));
-    }
+    if (multText) total.append(trEl("span", "", "·"), trEl("span", "n mult", multText));   // 倍數一律墨色(spec-0.1.13 #5)
   };
   const anyBad = () => Object.keys(TR.bad).length > 0;
   const settles = [];   // 每一格的離開欄位驗證:按「儲存」時全部重跑一次,不靠 blur 有沒有先發生(稽核 audit-0.1.13-web S1)
@@ -2440,11 +2418,11 @@ function trAmountTable(names, stored, states) {
     const tb = document.createElement("tbody");
     if (zones.length > 1) {
       // 區標題列(§9.4):不加框線、不加底色,區與區之間靠間距;每一格照欄位排(窄欄收掉標的欄時對齊不跑)
-      const g = trEl("tr", "grp"), sub = trEl("span", ""), mult = trEl("span", "mult");
+      const g = trEl("tr", "grp"), sub = trEl("span", "");
       const c0 = trEl("td", "grp-l" + (z === TR_ZONE_LOTS || z === TR_ZONE_UNKNOWN ? " cjk" : ""), trZoneLabel(z)), c3 = trEl("td", "n"), c4 = trEl("td", "n");
-      c3.appendChild(sub); c4.appendChild(mult);
+      c3.appendChild(sub);
       g.append(c0, trEl("td", "c-sym"), c3, trEl("td", "c-sig"), c4); tb.appendChild(g);
-      grpCells[z] = { sub, mult };
+      grpCells[z] = { sub };
     }
     names.filter((n) => zoneOf[n] === z).sort((a, b) => sortVal(b) - sortVal(a)).forEach((n) => {
       const x = TR.list.find((y) => y.name === n) || {}, st = states[n] || {};
@@ -2566,7 +2544,7 @@ function trAmountTable(names, stored, states) {
   // 等回報時把表頭那句 hover 才看得到的說明放成表下常駐的一行(spec §2-3b):待回報的記號才有人解釋
   if (sentOn) frag.appendChild(trEl("div", "pf-foot", t("tr.cloud.pendTarget")));
   if (hidden.length) frag.appendChild(trEl("div", "pf-foot", t("tr.cloud.hidden", { n: hidden.length })));
-  paintTotal(); frag.appendChild(total); frag.appendChild(lev);
+  paintTotal(); frag.appendChild(total);
   paintBar(); frag.appendChild(bar);
   return frag;
 }
@@ -2578,27 +2556,17 @@ function trSaveAmounts(names, stored, opener) {
   const sending = trSendAmounts(S.env, names, stored, TR.edits, trListNames()), removed = trRemoved(stored, sending);
   /* 依計價分區(units spec §9.8;A 版 confirm-amounts-mockup):整份會寫進主機的金額全列(amounts 是整份覆蓋)加上移出的,
      區標題就是單位(只有一區時不畫,單位寫在合計)。沒變的列整列退灰、有變的寫「原 → 新」,區小計與合計同一規則;
-     「平倉」只在存完可能真的下單時標(trMayFire)。倍數掛在綁定交易所那一區的標題(只有一區時接在合計後面) */
+     「平倉」只在存完可能真的下單時標(trMayFire)。淨值倍數只有一個,接在合計後面 */
   const eq = trShownEquity(TR.eqShown, TR.env, trEquity()), zt = trZoneSum(sending, eq), zt0 = trZoneSum(stored, eq);
   const mayFire = trMayFire(S.st, S.pending), old = (n) => Number(stored[n]) || 0;
   const multText = zt.mult != null ? t("tr.equityMult", { x: trMultFmt(zt.mult) }) : "";
-  const keys = Object.keys(sending).concat(removed), zones = trZoneOrder(keys.map(trZoneOf), trVenueId(), zt.multZone);
+  const keys = Object.keys(sending).concat(removed), zones = trZoneOrder(keys.map(trZoneOf), trVenueId(), zt.acctZone);
   const arrow = (dd, was) => { dd.append(trEl("span", "was", was), trEl("span", "arr", "→")); };
   const cfRow = (cls, label, dd) => { const r = trEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(trEl("dt", "", label), dd); return r; };
   const extra = document.createDocumentFragment(), dl = trEl("dl", "cf-rows cf-amt");
   // 口數列:格子只放口數,下方小字寫商品名與名目(框裡沒有標的欄,商品名只能放這裡;§9.8)。0 口只寫商品名
   const lotsRef = (sp, v) => { const m = v > 0 ? trTxfRefMoney(sp, v, trTxfPrice()) : null;
     return trEl("span", "cf-ref", m == null ? t(sp.prod) : t("tr.txfConfirmRef", { prod: t(sp.prod), amt: trFmt(Math.round(m)) })); };
-  /* #1:口數列太大時那一列下面多一句(不擋、確認鈕照常;沒改的舊列也檢查)。名目跟淨值比要同幣:帳戶幣不是 TWD 就退回看口數 */
-  const bigWarn = (r, sp, v) => {
-    const w = trTxfBigWarn(sp, v, trTxfPrice(), eq, trUnit());
-    if (!w) return r;
-    const q = { lots: trFmt(v), prod: t(sp.prod) }, dd = trEl("dd", "cf-warn"), mk = trEl("span", "fault-mark");
-    mk.setAttribute("aria-hidden", "true");
-    dd.append(mk, trEl("span", "", w.kind === "notional"
-      ? t(trLotsKey(v, "tr.txfBigNotional", "tr.txfBigNotional1"), { ...q, amt: trFmt(Math.round(w.amt)), x: w.x.toFixed(2) })
-      : t("tr.txfBigLots", q)));
-    r.classList.add("has-warn"); r.appendChild(dd); return r; };
   const row = (n) => {
     const sp = trRowTxf(n), was = old(n), dd = document.createElement("dd");
     if (removed.indexOf(n) >= 0) {
@@ -2611,8 +2579,7 @@ function trSaveAmounts(names, stored, opener) {
     dd.append(trEl("span", "n", trFmt(now)));
     if (mayFire && was > 0 && !(now > 0)) dd.appendChild(trEl("span", "tag", t("tr.cfTagClose")));
     if (sp) dd.appendChild(lotsRef(sp, now));
-    const r = cfRow(now === was ? "same" : "", trDisplay(n), dd);
-    return sp && now > 0 ? bigWarn(r, sp, now) : r;
+    return cfRow(now === was ? "same" : "", trDisplay(n), dd);
   };
   zones.forEach((z) => {
     const ns = keys.filter((n) => trZoneOf(n) === z);
@@ -2624,7 +2591,6 @@ function trSaveAmounts(names, stored, opener) {
         if (was !== sub) arrow(dd, trFmt(was));
         dd.append(trFmt(sub));
       }
-      if (z === zt.multZone && multText) dd.appendChild(trEl("span", "mult", multText));   // 同區標題的寫法:跟小計靠間距分開、不加「·」(§9.8)
       dl.appendChild(cfRow("grp" + (z === TR_ZONE_LOTS || z === TR_ZONE_UNKNOWN ? " cjk" : ""), trZoneLabel(z), dd));
     }
     ns.forEach((n) => dl.appendChild(row(n)));
@@ -2639,7 +2605,7 @@ function trSaveAmounts(names, stored, opener) {
     if (tt.v != null && t0.v != null && tt.ccy === t0.ccy && trTotalText(tt) !== trTotalText(t0)) arrow(dd, trTotalText(t0));
     dd.append(trTotalText(tt));
     if (tt.v != null && tt.ccy) dd.appendChild(trEl("span", "ccy", tt.ccy));
-    if (zones.length <= 1 && multText) dd.appendChild(trEl("span", "mult", " · " + multText));
+    if (multText) dd.appendChild(trEl("span", "mult", " · " + multText));
     if (tip) dd.title = tip;
     dlT.appendChild(cfRow("total", t("tr.total"), dd)); }
   extra.appendChild(dlT);
@@ -2655,14 +2621,6 @@ function trSaveAmounts(names, stored, opener) {
   const idle = cloud && trRestartUnconfirmed(S.st && S.st.report) ? t("tr.cloud.saveIdleUnconfirmed") : t("tr.cloud.saveIdle");
   const note = blocked ? "" : !cloud ? (mayFire ? t("tr.saveWarn") : "") : live ? t("tr.cloud.saveLag") : idle + (LANG === "zh" ? "" : " ") + t("tr.cloud.saveLag");
   if (note) extra.appendChild(trEl("p", "cf-note", note));
-  /* 第 3 級(真錢 ≥ 10 倍,§1.2):多一列勾選,沒勾「儲存」停用。每次開框都是新的、沒勾的那一顆 */
-  const ack = trLevLevel(zt.mult, trIsPaper()).level === 3 ? trEl("label", "cf-ack") : null;
-  if (ack) {
-    const cb = trEl("input", "ps-cb"), tx = trEl("span", "", t("tr.lev.ack", { p: trLevPct(trLevLevel(zt.mult, false).p) }));
-    cb.type = "checkbox"; tx.id = "cf-ack-t";
-    cb.addEventListener("change", () => { $("del-ok").disabled = !cb.checked || blocked; });
-    ack.append(cb, tx); extra.appendChild(ack);
-  }
   let lead = null;
   if (live) {
     lead = trEl("div", "verdict is-calm"); const mk = trEl("span", "fault-mark"); mk.setAttribute("aria-hidden", "true");
@@ -2670,7 +2628,7 @@ function trSaveAmounts(names, stored, opener) {
     lead.append(mk, tx);
   }
   const box = trCloudBox({
-    title: t("tr.saveTitle"), mark: trIsPaper() ? t("tr.mode.paper") : null, lines: [], extra, lead, okDisabled: blocked || !!ack, ok: t("tr.save"), opener,
+    title: t("tr.saveTitle"), mark: trIsPaper() ? t("tr.mode.paper") : null, lines: [], extra, lead, okDisabled: blocked, ok: t("tr.save"), opener,
     onOk: async () => {
       const mine = () => TR === S && S.open && S.tab === "pos";   // 等回應的時候可能已經切到另一邊:那時不碰畫面
       // 框開著的時候報告可能變成 config: null(主機讀不到設定):底稿已經不可信,不送(開框前那一道擋不到這段)
@@ -2682,7 +2640,6 @@ function trSaveAmounts(names, stored, opener) {
       const res = cloud ? await trSend(S, "amounts", { amounts: sending }) : await S.api.tradeSend("amounts", { amounts: sending });
       clearTimeout(S.saveTimer);
       if (res && res.ok) { if (!S.just) S.just = { picked: {}, removed: {} }; envJustMark(S.just, stored, sending, Date.now()); if (!cloud) envPaintLocalDots(); else ENV.sig.side = null; }
-      if (res && res.ok && ack) trackFeature("trade_lev_ack");
       if (res && res.ok && cloud) {
         // ack ok = 主機已經寫進設定檔,不是「已套用」:格子畫送出的值 + .pend,等報告對上(trPoll 裡的 trSentSettled)
         const rc = S.st && S.st.cloud;
@@ -2707,7 +2664,6 @@ function trSaveAmounts(names, stored, opener) {
   // 沒連交易所:存金額不會動到自動下單,不跳確認框直接存(同網頁 d0d0eb63;Wei 10-13「這有什麼好確認的」)。存不進去的照樣開框講原因
   if (!trHasAccount(trReport()) && !blocked) { box.onOk(); return; }
   confirmBox(box);
-  if (ack) $("del-ok").setAttribute("aria-describedby", "cf-ack-t");   // 停用的「儲存」唸得到要先勾哪一句
 }
 /* 部位表同一個標的有兩支以上有金額的策略(ux-order-1-4-5 §2.2 方案 A):標的格放一顆「N 支策略」mini tag,
    點開下面一列拆解(每支策略的 金額 × 訊號 = 貢獻,最後一句是合計)。展開狀態只在記憶體(TR.netOpen),重畫保留、切走分頁清掉 */
@@ -2719,17 +2675,18 @@ function trNetRows(sym, cs, cell, tb, lot, unit) {
   cell.appendChild(b);
   // 拆解句裡的數帶這一區的單位(句子會被單獨讀到);每一行的貢獻只放數字,單位在區標題
   const x2 = (x) => (x < 0 ? "\u2212" : "") + Math.abs(x).toFixed(2), withU = (s) => (unit ? s + " " + unit : s);
-  const amt = (v) => (lot ? trLotsFmt(v) + " " + t(trLotsKey(Math.round(v), "tr.lotsUnit", "tr.lotUnit")) : withU(trFmt(v)));
+  const lotsU = (v, signed) => trLotsTgtFmt(v, signed) + " " + t(trLotsKey(Math.round(Math.abs(v) * 100) / 100, "tr.lotsUnit", "tr.lotUnit"));
+  const amt = (v) => (lot ? lotsU(v) : withU(trFmt(v)));
   const row = document.createElement("tr"), td = trEl("td", "note"), box = trEl("div", "net-box");
   row.id = id; row.className = "net-row"; row.hidden = !open; td.colSpan = 4;
   cs.forEach((c) => {
-    const line = trEl("div", "net-line"), v = trEl("span", "v mono " + (c.v > 0 ? "buy" : c.v < 0 ? "sell" : ""), lot ? trLotsFmt(c.v, true) : trFmt(c.v, true));
+    const line = trEl("div", "net-line"), v = trEl("span", "v mono " + (c.v > 0 ? "buy" : c.v < 0 ? "sell" : ""), lot ? trLotsTgtFmt(c.v, true) : trFmt(c.v, true));
     line.append(trEl("span", "nm", trDisplay(c.name)), trEl("span", "f mono", trFmt(c.amount) + " × " + x2(c.x)), v);
     box.appendChild(line);
   });
   const ns = trNetSum(cs), base = sym.replace(/@spot$/i, "").replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || sym;
   box.appendChild(trEl("div", "net-sum", ns.kind === "sumOffZero" ? t("tr.net.sumOffZero", { l: amt(ns.l), s: amt(ns.s), base })
-    : t(ns.kind === "sumOff" ? "tr.net.sumOff" : "tr.net.sum", { t: lot ? trLotsFmt(ns.t, true) + " " + t(trLotsKey(Math.round(ns.t), "tr.lotsUnit", "tr.lotUnit")) : withU(trFmt(ns.t, true)), l: amt(ns.l), s: amt(ns.s), m: amt(ns.m) })));
+    : t(ns.kind === "sumOff" ? "tr.net.sumOff" : "tr.net.sum", { t: lot ? lotsU(ns.t, true) : withU(trFmt(ns.t, true)), l: amt(ns.l), s: amt(ns.s), m: amt(ns.m) })));
   td.appendChild(box); row.appendChild(td); tb.appendChild(row);
   b.addEventListener("click", () => {
     const on = b.getAttribute("aria-expanded") !== "true";
@@ -2828,7 +2785,7 @@ function trPositions(r, stored, states) {
     const row = document.createElement("tr");
     const sc = symCell("", sym);
     sc.appendChild(trEl("span", "mkt-tag", /@spot$/.test(sym) ? t("tr.mkt.spot") : t("tr.mkt.swap")));
-    const lot = lotRow(sym), tc = trEl("td", "n", numText(lot, ts));
+    const lot = lotRow(sym), tc = trEl("td", "n", lot ? trLotsTgtFmt(ts, true) : trFmt(ts, true));
     if (!covered(sym)) {
       row.append(sc, tc, trEl("td", "n na", "—"), trEl("td", "n na", "—")); tb.appendChild(row);
       if (contribs[sym] && contribs[sym].length >= 2) { anyNet = true; trNetRows(sym, contribs[sym], sc, tb, lot, trZoneUnit(z)); }

@@ -3474,7 +3474,7 @@ async function restartToUpdate() {
   const phase = () => updater().state().phase, turnBusy = () => !!(activeTurn || turnStarting);
   const live = tradeMaybeLive();
   // 已經在收工 / 結束(restarting、quitConfirmed、quitting)跟「框開著」同一種:不再問、不再收一次工
-  const step = planRestart({ phase: phase(), turn: turnBusy(), asking: quitAsking || !!restarting || quitConfirmed || quitting, trading: !!live });
+  const step = planRestart({ phase: phase(), turn: turnBusy(), asking: quitAsking || moveAsking || !!restarting || quitConfirmed || quitting, trading: !!live });
   if (step === "not_ready") return { ok: false, error: "NOT_READY" };
   if (step === "busy") return { ok: false, error: "TURN_BUSY" };
   if (step === "asking") return { ok: false, error: "ASKING" };
@@ -3514,7 +3514,8 @@ async function restartToUpdate() {
    改在原本會問的時機跳一個只有「知道了」的提示,依原因講要用戶自己做什麼;不記「不要」,下次啟動仍判、仍提示——不然拖進去之前永遠收不到更新。
    搬移成功 app 會自己結束再重開。app.isInApplicationsFolder / moveToApplicationsFolder 只有 macOS 有,shouldAskMove 先擋平台 */
 const moveDeclinedPath = () => path.join(app.getPath("userData"), "move-declined.json");
-let moveChecked = false, moveAsked = false;
+// moveAsking = 搬移那兩個框開著:before-quit 與更新重開看到就不再疊自己的框(macOS 會排成第二個 sheet)
+let moveChecked = false, moveAsked = false, moveAsking = false;
 async function askMoveToApps() {
   const L = tmLabels;
   if (!(L.moveTitle && L.moveBody && L.moveGo && L.moveNo)) return false;
@@ -3532,14 +3533,15 @@ async function askMoveToApps() {
     if (!reason || !shouldAskMove({ ...gate, needsAuth: false })) return false;
     const text = reason === "exists" ? L.moveAuthExists : L.moveAuthApps;
     if (!(text && L.gotIt)) { console.error("[move] needs authorization (" + reason + "); not asking"); return false; }
-    moveAsked = true;
-    await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "info", noLink: true, message: text, buttons: [L.gotIt], defaultId: 0, cancelId: 0 });
+    moveAsked = true; moveAsking = true;
+    try { await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "info", noLink: true, message: text, buttons: [L.gotIt], defaultId: 0, cancelId: 0 }); } finally { moveAsking = false; }
     return false;
   }
-  moveAsked = true;
+  moveAsked = true; moveAsking = true;
   const parent = BrowserWindow.getAllWindows()[0] || undefined;
-  const r = await dialog.showMessageBox(parent, { type: "question", noLink: true, message: L.moveTitle, detail: L.moveBody,
-    buttons: [L.moveNo, L.moveGo], defaultId: 1, cancelId: 0 });
+  let r;
+  try { r = await dialog.showMessageBox(parent, { type: "question", noLink: true, message: L.moveTitle, detail: L.moveBody,
+    buttons: [L.moveNo, L.moveGo], defaultId: 1, cancelId: 0 }); } finally { moveAsking = false; }
   if (r.response !== 1) {
     // 框是因為 app 在結束、視窗被關掉才回來的:用戶沒選,不記成「不要」(稽核 P2-5)
     if (quitting || quitConfirmed || (parent && parent.isDestroyed())) return false;
@@ -3745,7 +3747,7 @@ app.on("before-quit", (e) => {
   const presLots = !quitting && !quitConfirmed && _tradeHost && _tradeHost.presidentLots ? _tradeHost.presidentLots() : 0;
   if (live || presLots > 0) {
     e.preventDefault();
-    if (quitAsking) return;   // 框還開著又按一次 Cmd+Q:不疊第二個(稽核 M2)
+    if (quitAsking || moveAsking) return;   // 框還開著(結束確認或搬移框)又按 Cmd+Q:不疊第二個(稽核 M2、integ-0124 P2-2)
     try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
     quitAsking = true;
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
@@ -3759,7 +3761,7 @@ app.on("before-quit", (e) => {
   // 本機 agent 回合還在跑(可能正在更新雲端主機):結束會把它斷掉,先問一次(同自動下單那一道;已經確認過就不再問)
   if (!quitting && !quitConfirmed && (activeTurn || turnStarting)) {
     e.preventDefault();
-    if (quitAsking) return;
+    if (quitAsking || moveAsking) return;
     try { showMain(); } catch (_) { /* 同上 */ }
     quitAsking = true;
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);

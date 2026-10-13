@@ -1487,27 +1487,8 @@ msgstr "Enter a whole number of lots, e.g. 3"
 msgid "tr.badLotsOld"
 msgstr "This is an older setting with a fractional lot count. Enter a whole number, e.g. 3"
 
-msgid "tr.lev.margin"
-msgstr "Above 1× this runs on margin. Blave doesn't set leverage for you: set these contracts to at least {L}× on the exchange, or orders that don't fit are rejected."
-
-msgid "tr.lev.marginShort"
-msgstr "Blave doesn't set leverage for you: set these contracts to at least {L}× on the exchange, or orders that don't fit are rejected."
-
-# {p} 的值:「8%」或超過 100 倍時這一句
-msgid "tr.lev.pctLt1"
-msgstr "less than 1%"
-
-msgid "tr.lev.loss"
-msgstr "At full size, if every position moves {p} against you at once, the loss equals your entire equity; the exchange liquidates before that."
-
-msgid "tr.lev.lossPaper"
-msgstr "At full size, if every position moves {p} against you at once, the paper account's equity goes to zero."
-
 msgid "tr.lev.binance5"
 msgstr "Binance sub-accounts are capped at 5× futures leverage."
-
-msgid "tr.lev.ack"
-msgstr "I understand that at full size, a move of {p} against everything wipes out my equity"
 
 msgid "tr.err.paperLev"
 msgstr "{sym} order not placed: the position would reach {gross} {c}, over the paper account limit of {cap} {c} ({x}× equity). Lower the amount."
@@ -1838,15 +1819,6 @@ msgstr "lot"
 
 msgid "tr.lotsAria"
 msgstr "Lots"
-
-msgid "tr.txfBigNotional"
-msgstr "{lots} lots of {prod} is about {amt} TWD notional, {x}× your equity. Make sure this is the size you want."
-
-msgid "tr.txfBigNotional1"
-msgstr "{lots} lot of {prod} is about {amt} TWD notional, {x}× your equity. Make sure this is the size you want."
-
-msgid "tr.txfBigLots"
-msgstr "{lots} lots of {prod} is a very large size. Make sure no extra zero slipped in."
 
 msgid "tr.txfProd.tmf"
 msgstr "Micro"
