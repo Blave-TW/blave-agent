@@ -3495,7 +3495,7 @@ async function askMoveToApps() {
   if (!(L.moveTitle && L.moveBody && L.moveGo && L.moveNo)) return false;
   const mac = process.platform === "darwin" && app.isPackaged;
   if (!shouldAskMove({ platform: process.platform, packaged: app.isPackaged, inApps: !mac || app.isInApplicationsFolder(), declined: fs.existsSync(moveDeclinedPath()),
-    trading: !!tradeMaybeLive(), askedThisRun: moveAsked })) return false;
+    trading: !!tradeMaybeLive(), askedThisRun: moveAsked, installing: engineSetup().busy() })) return false;
   moveAsked = true;
   const parent = BrowserWindow.getAllWindows()[0] || undefined;
   const r = await dialog.showMessageBox(parent, { type: "question", noLink: true, message: L.moveTitle, detail: L.moveBody,
@@ -3507,7 +3507,8 @@ async function askMoveToApps() {
     return false;
   }
   // 框開著的時候開始下單 / 開始回合:搬移成功會走 before-quit,被結束攔截擋下的話 app 會從垃圾桶裡的 bundle 繼續跑。這次不搬,也不記(稽核 P2-2)
-  if (tradeMaybeLive() || activeTurn || turnStarting) return false;
+  // 框開著的時候引擎開始裝(送第一句話的 ensure-engine):同上,這次不搬、不記
+  if (tradeMaybeLive() || activeTurn || turnStarting || engineSetup().busy()) return false;
   // 埋點 feature_used 的 app_move = 按了「移」(不是搬成功:成功 app 會立刻結束重開,事後送不出去;授權框取消也算按過)
   try { tm().track("feature_used", { name: "app_move" }); } catch (_) { /* 追蹤不擋 */ }
   try { return app.moveToApplicationsFolder(); } catch (e) { console.error("[move] " + ((e && e.message) || e)); return false; }

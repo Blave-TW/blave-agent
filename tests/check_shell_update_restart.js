@@ -147,6 +147,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       quitting: false, quitConfirmed: false, activeTurn: null, turnStarting: false, win,
       process: { platform: o.platform || "darwin" }, BrowserWindow: { getAllWindows: () => [win] }, tradeMaybeLive: () => (o.trading ? { venue: "x" } : null),
       tm: () => ({ track: (ev, p) => tracked.push(ev + ":" + p.name) }), console: { error: (e) => errs.push(String(e)) },
+      engineSetup: () => ({ busy: () => !!(o.engineBusy || ctx.engineBusyNow) }),
       app: { isPackaged: o.packaged !== false, getPath: () => dir, isInApplicationsFolder: () => { log.push("inApps?"); return !!o.inApps; },
         moveToApplicationsFolder: () => { log.push("move"); if (o.moveThrows) throw new Error("perm"); return o.moveRes !== false; } },
       dialog: { showMessageBox: (_w, opts) => { log.push("dialog"); ctx.box = opts; if (o.onDialog) o.onDialog(ctx); return Promise.resolve({ response: o.response }); } } };
@@ -161,6 +162,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       && JSON.stringify(b.buttons) === JSON.stringify([L.moveNo, L.moveGo]) && b.defaultId === 1 && b.cancelId === 0, b);
     t("…同一次啟動再叫:不問第二次", (await m.fn()) === false && m.log.filter((x) => x === "dialog").length === 1);
     t("…之後的啟動:有記號就永遠不問", await (async () => { const n = moveRig({ response: 1, declined: true }); return (await n.fn()) === false && !n.log.includes("dialog"); })()); }
+  { const m = moveRig({ response: 1, engineBusy: true }), r = await m.fn();
+    t("引擎安裝中(pip 在跑):不問、不搬、不記、不送埋點;下次啟動再問", r === false && !m.log.includes("dialog") && !m.log.includes("move") && !m.marked() && m.tracked.length === 0 && m.ctx.moveAsked === false, m.log); }
+  { const m = moveRig({ response: 1, onDialog: (c) => { c.engineBusyNow = true; } }), r = await m.fn();
+    t("框開著時引擎開始裝、用戶按「移」:這次不搬、不記", r === false && m.log.includes("dialog") && !m.log.includes("move") && !m.marked(), m.log); }
   { const m = moveRig({ response: 1 }), r = await m.fn();
     t("按「移」、搬成功(true):沒寫記號、回 true(app 自己重開);按下就送 feature_used app_move(成功會立刻重開,事後送不出去)", r === true && !m.marked() && m.log.join() === "inApps?,dialog,move" && m.tracked.join() === "feature_used:app_move", m.log); }
   { const m = moveRig({ response: 1, moveRes: false }), r = await m.fn();

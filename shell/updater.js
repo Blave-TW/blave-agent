@@ -135,9 +135,11 @@ function planRestart({ phase, turn, asking, trading }) {
 }
 
 /* 啟動時不在「應用程式」資料夾就問一次(§4;只有 macOS 打包版會遇到:Squirrel 在唯讀 / translocation 的位置裝不上)。
-   下單中不問:搬移會重開 = 停單;這次不問也不記成「不要」 */
-function shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun }) {
-  return platform === "darwin" && !!packaged && !inApps && !declined && !trading && !askedThisRun;
+   下單中不問:搬移會重開 = 停單;這次不問也不記成「不要」。
+   引擎安裝中(pip 在跑)也不問:搬移失敗那條路(目標已有 Blave.app、cp 被拒後走授權)會把正在跑的 pip 一起收掉,
+   安裝就永遠停在「安裝引擎 已下載 0.0 MB」(10-13 兩次重現、關掉搬移就裝得完);下次啟動再問 */
+function shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun, installing }) {
+  return platform === "darwin" && !!packaged && !inApps && !declined && !trading && !askedThisRun && !installing;
 }
 
 module.exports = { createUpdater, planRestart, shouldAskMove, CHECK_EVERY_MS };

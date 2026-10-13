@@ -73,12 +73,13 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
       const want = phase !== "ready" && phase !== "blocked" ? "not_ready" : turn ? "busy" : asking ? "asking" : trading ? "confirm" : "install";
       const got = planRestart({ phase, turn, asking, trading }); if (got !== want) bad.push([phase, turn, asking, trading, got, want].join()); }
     t("planRestart 全矩陣 8×2×2×2:沒下載好 → not_ready;回合在跑 → busy;已有框 → asking;下單中 → confirm;其餘 → install", bad.length === 0); if (bad.length) console.log(bad.slice(0, 5)); }
-  // 0.1.10 §4:shouldAskMove 全矩陣,六個條件同時成立才問
+  // 0.1.10 §4:shouldAskMove 全矩陣,七個條件同時成立才問(0.1.24 加「引擎沒在裝」)
   { let hits = 0, bad = 0;
-    for (const platform of ["darwin", "win32"]) for (const packaged of [true, false]) for (const inApps of [true, false]) for (const declined of [true, false]) for (const trading of [true, false]) for (const askedThisRun of [true, false]) {
-      const got = shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun }), want = platform === "darwin" && packaged && !inApps && !declined && !trading && !askedThisRun;
+    for (const platform of ["darwin", "win32"]) for (const packaged of [true, false]) for (const inApps of [true, false]) for (const declined of [true, false]) for (const trading of [true, false]) for (const askedThisRun of [true, false]) for (const installing of [true, false]) {
+      const got = shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun, installing }), want = platform === "darwin" && packaged && !inApps && !declined && !trading && !askedThisRun && !installing;
       if (got) hits++; if (got !== want) bad++; }
-    t("shouldAskMove 全矩陣 64 組:只有 darwin、打包版、不在 Applications、沒拒絕過、沒在下單、這次還沒問過,那一組回 true", bad === 0 && hits === 1); }
+    t("shouldAskMove 全矩陣 128 組:只有 darwin、打包版、不在 Applications、沒拒絕過、沒在下單、這次還沒問過、引擎沒在裝,那一組回 true", bad === 0 && hits === 1);
+    t("shouldAskMove 沒給 installing(舊呼叫)仍照六條件", shouldAskMove({ platform: "darwin", packaged: true, inApps: false, declined: false, trading: false, askedThisRun: false }) === true); }
 
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "updater.js"), "utf8");
   t("整個檔只有 install() 一處會叫 quitAndInstall(永遠不自己重啟)", (src.match(/quitAndInstall\(/g) || []).length === 1);
