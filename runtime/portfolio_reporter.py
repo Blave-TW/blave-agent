@@ -262,9 +262,9 @@ def signals_frozen(cfg):
     """{since, pending} while the scheduler holds every Type A/C signal still
     (command_listener._signals_frozen: no venue bound, an unbind's reconciler
     may still be running), else None. `since` is when it froze; `pending` the
-    picked names with no state.json at all — picked after the freeze, so they
-    have no row in `states`, and a page must draw them as "no signal yet",
-    never as a 0 position. Rows already in `states` keep the value and
+    picked Type A/C names with no state.json at all — picked after the freeze,
+    so they have no row in `states`, and a page must draw them as "no signal
+    yet", never as a 0 position. Type B has no signal to draw and is never listed. Rows already in `states` keep the value and
     updated_at of the moment it froze."""
     doc = _read_json(os.path.join(WORKSPACE_STATE, "signals_frozen.json"))
     if not isinstance(doc, dict):
@@ -277,7 +277,8 @@ def signals_frozen(cfg):
     pending = sorted(
         n for n in (amounts if isinstance(amounts, dict) else {})
         if isinstance(n, str)
-        and not os.path.isfile(os.path.join(WORKSPACE, "strategies", n, "state.json")))
+        and not os.path.isfile(os.path.join(WORKSPACE, "strategies", n, "state.json"))
+        and _ac_interval(n) is not None)
     return {"since": since, "pending": pending}
 
 

@@ -273,11 +273,11 @@ try:
     rep = pr.build_report()
     since = (rep.get("signals_frozen") or {}).get("since")
     check(isinstance(since, int) and abs(since - time.time()) < 60
-          and rep["signals_frozen"]["pending"] == ["sb"],
-          f"…report: signals_frozen {{since, pending: [sb]}} (sa / sc have state.json, Type B sb never wrote one) → {rep.get('signals_frozen')}")
+          and rep["signals_frozen"]["pending"] == [],
+          f"…report: signals_frozen {{since, pending: []}} (sa / sc have state.json; Type B sb has none but no signal to draw either) → {rep.get('signals_frozen')}")
     os.remove(os.path.join(WS, "strategies", "sc", "state.json"))
-    check(pr.build_report()["signals_frozen"]["pending"] == ["sb", "sc"],
-          "…a picked name with no state.json is listed in pending, not left to read as 0")
+    check(pr.build_report()["signals_frozen"]["pending"] == ["sc"],
+          "…a picked Type A/C name with no state.json is listed in pending, not left to read as 0; Type B never is")
     age_heartbeat(cl.RECONCILER_ALIVE_S - 30)
     check(cycle() == [] and pr.build_report()["signals_frozen"]["since"] == since,
           "…still inside the alive window: not ticked, `since` not rewritten")
@@ -329,6 +329,24 @@ try:
     check(all("no venue bound" in str(r) for r in (r1, r2, r3)) and not spawned,
           f"no venue: restart_reconciler and a start after a restart stop start nothing → {r1!r} {r3!r}")
     check(not os.path.exists(cl.RESTART_STOP_PATH), "…the user's start still lifts the restart record")
+    os.chmod(ENV, 0)
+    cl.subprocess.run = cl.subprocess.Popen = _no_spawn
+    try:
+        try:
+            r4 = cl._restart_reconciler({})
+        except RuntimeError as e:
+            r4 = e
+    finally:
+        os.chmod(ENV, 0o600)
+        cl.subprocess.run, cl.subprocess.Popen = _real_run, _real_popen
+    check(isinstance(r4, RuntimeError) and ".env" in str(r4) and not spawned,
+          f".env unreadable: restart_reconciler raises (an error ack), not a silent 'not started' → {r4!r}")
+    os.rename(ENV, ENV + ".gone")
+    try:
+        r5 = cl._restart_reconciler({})
+    finally:
+        os.rename(ENV + ".gone", ENV)
+    check("no venue bound" in str(r5), f"….env absent is plainly unbound, not an error → {r5!r}")
 
     # ── 6. desktop mode: the real tick again ───────────────────────────────────
     os.environ["BLAVE_AGENT_LOCAL"] = "1"

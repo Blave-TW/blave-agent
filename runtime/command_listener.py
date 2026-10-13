@@ -2572,9 +2572,10 @@ def _signals_frozen():
     (_cmd_credentials_remove, "membership kept"): the survivor still holds the
     routing, HALT lets its reduce legs through, and a TW broker's cached login
     outlives the wiped keys — a target that moved would be traded. Its own idle
-    gate (manager/reconciler._venue_bound) fails OPEN on an unreadable bind
-    manifest, so the signals stay where the unbind left them until the daemon
-    is gone. It beats while idling and systemd keeps it up, so in practice the
+    gate (manager/reconciler._venue_bound) fails closed, but a daemon still
+    running code from before that workspace update fails OPEN on an unreadable
+    bind manifest, so the signals stay where the unbind left them until the
+    daemon is gone. It beats while idling and systemd keeps it up, so in practice the
     way out is what it always was — rebind and 啟動下單; the heartbeat only
     goes stale when the process really died. A machine that never started a
     reconciler has no heartbeat and is never frozen.
@@ -4162,8 +4163,17 @@ def _restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md).
     Not with no venue bound: there is nothing to reconcile against, and an idle
-    daemon's fresh heartbeat would freeze the signals (_signals_frozen)."""
+    daemon's fresh heartbeat would freeze the signals (_signals_frozen).
+    An unreadable .env raises: on resume HALT is already lifted, and a success
+    ack with nothing running would leave the page claiming trading is on."""
     if not _bound_venue():
+        try:
+            open(os.path.join(WORKSPACE, ".env")).close()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            raise RuntimeError(f"could not read .env ({type(e).__name__}) — reconciler "
+                               f"not started; try again") from None
         _log("reconciler start skipped — no venue bound")
         return "no venue bound — reconciler not started"
     if _local_mode():
