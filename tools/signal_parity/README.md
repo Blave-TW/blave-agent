@@ -29,7 +29,7 @@ so changing it needs no `VERSION` bump. Minimal check: `tests/check_signal_parit
   inclusive. Default: only labels present in **every** `--cache` dataset (the ticks wait_for_bar
   would run — its probe waits for all of them); `--all-slots` replays every interval slot instead
   (how the not-ready path gets exercised once the runner has the gate) and is refused when the
-  cached labels sit off the interval grid (TXF 1d 16:00 / 60m :45 labels — the gate side would
+  cached labels sit off the interval grid (TXF 1d 16:00 labels — the gate side would
   never be ready). `--every N` / `--max N` thin the list; without `--bars` the last 20 cached bars.
 - old side = `git archive <--old-ref>` of `lib/` + `manager/` (or `--old-lib DIR`); new side =
   this checkout (or `--new-lib DIR`). Both are labelled in the output header.
@@ -73,10 +73,16 @@ difference; Type C: `weights` and `bar_at` (exact dict equality). Floats are com
 (NaN equals NaN) — a 1e-16 drift in a vol-scaled position is an order-size difference and should
 show up. A side that exits 0 without a `state.json` is never "identical".
 
-Not-ready (exit 75, the runner's gate once it exists): both sides → the bar is skipped; one side →
-noted as "<side> not ready (not a signal difference)" and counted in the summary, **unless** that
-side's state moved while it claimed not-ready — then it is a difference. The old lib has no gate, so
-a one-sided 75 is the tool seeing the gate, not the signal.
+Not-ready (exit 75, `lib/runner.py`'s `BLAVE_EXPECTED_BAR` gate): both sides → the bar is skipped;
+one side → noted as "<side> not ready (not a signal difference)" and counted in the summary,
+**unless** that side's state moved while it claimed not-ready — then it is a difference. A lib
+without the gate never exits 75, so a one-sided 75 is the tool seeing the gate, not the signal.
+
+Live vs replay: `--live-ticks state/bar_wait/<name>.ticks.jsonl` (what `wait_for_bar` appends after
+every successful gate run: `expected`, `data_bar`, `state`) replays each line's `data_bar` — the bar
+the machine actually computed on, so a tick that overran the minute is compared on the right bar —
+and checks the position / weights the machine wrote against the new replay as well; a mismatch is
+a difference (exit 1). Bars the cache does not hold are skipped with a warning.
 
 Limits (fidelity, not comparison): data lateness is not replayed (an alpha feed that published late
 live has all its rows in the cache — both sides see the same frame); the wall clock is not pinned

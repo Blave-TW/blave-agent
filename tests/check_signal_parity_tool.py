@@ -15,6 +15,9 @@ no network:
      writes no state.json the tool refuses to call it identical (exit 1, "no state written")
   5. a strategy that crashes → exit 2; --all-slots on a dataset whose labels are off the
      interval grid (TXF-style 16:00 daily labels) → refused, exit 3
+  6. --live-ticks: a ticks.jsonl whose recorded states match the replay → exit 0 and every bar
+     compared against the live value; one recorded state tampered → exit 1 naming that bar; a
+     recorded bar the cache lacks is skipped with a warning
 
 Run: cd blave-agent && .venv/bin/python tests/check_signal_parity_tool.py
 """
@@ -223,6 +226,32 @@ rc, log = replay("--sample", "a_sma", "--sample-arg", "symbol=OFFUSDT", "--sampl
 check(rc == 3 and "off the 1d grid" in log, f"--all-slots on 16:00-labelled daily data is refused with exit 3 (got {rc})")
 rc, log = replay("--strategy", CRASH)   # usage error: no --cache
 check(rc == 3, f"usage error exits 3, never 2 (got {rc})")
+
+# ── 6. --live-ticks: the machine's own record against the replay ─────────────
+import json
+a_same_rows = rows(os.path.join(T, "a_same"))
+ticks = os.path.join(T, "live.ticks.jsonl")
+with open(ticks, "w", encoding="utf-8") as f:
+    for r in a_same_rows:
+        f.write(json.dumps({"at": 0, "expected": r[0], "data_bar": r[0], "secs": 0.1, "state": float(bare(r[5]))}) + "\n")
+    f.write(json.dumps({"at": 0, "expected": "2030-01-01T00:00:00", "data_bar": "2030-01-01T00:00:00",
+                        "secs": 0.1, "state": 1.0}) + "\n")   # a bar the cache does not hold
+live_args = [a for a in A_ARGS if not a.startswith("20")]
+live_args = live_args[:live_args.index("--bars")] + live_args[live_args.index("--bars") + 2:]
+out = os.path.join(T, "a_live")
+rc, log = replay(*live_args, *CACHE_A, "--live-ticks", ticks, "--old-lib", ROOT, "--new-lib", ROOT, "--out", out)
+check(rc == 0 and f"live vs new replay: {len(a_same_rows)} compared" in log and "1 live bars are not in the cache" in log,
+      f"--live-ticks: recorded states equal the replay → exit 0, every bar compared, the unknown bar skipped (got {rc})\n{log if rc else ''}")
+check([r[0] for r in rows(out)] == [r[0] for r in a_same_rows], "--live-ticks: bars = the recorded data_bars")
+with open(ticks, "w", encoding="utf-8") as f:
+    for i, r in enumerate(a_same_rows):
+        v = float(bare(r[5]))
+        f.write(json.dumps({"at": 0, "expected": r[0], "data_bar": r[0], "secs": 0.1,
+                            "state": (1.0 - v) if i == 3 else v}) + "\n")
+rc, log = replay(*live_args, *CACHE_A, "--live-ticks", ticks, "--old-lib", ROOT, "--new-lib", ROOT, "--out", out)
+bad = [r for r in rows(out, "diffs.tsv")]
+check(rc == 1 and len(bad) == 1 and bad[0][0] == a_same_rows[3][0] and "live wrote" in bad[0][9],
+      f"--live-ticks: one tampered live state → exit 1, exactly that bar in diffs.tsv ({[(r[0], r[9]) for r in bad]})")
 
 shutil.rmtree(T, ignore_errors=True)
 print("all checks passed" if not fails else f"FAILED: {fails}")

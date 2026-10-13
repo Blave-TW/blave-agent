@@ -19,10 +19,13 @@ state.json, or no bar at all could be compared; 2 a tick failed on either side (
 
 Bars: by default only labels present in EVERY --cache dataset are replayed (the ticks wait_for_bar
 would actually run — its freshness probe waits for all of them); --all-slots replays every interval
-slot, which exercises the not-ready path once the runner has the BLAVE_EXPECTED_BAR gate (exit 75:
-both sides = skipped; one side = "one side not ready", reported and counted but NOT a signal
-difference — the old lib has no gate, so this is the tool seeing the gate, unless that side's state
-moved while it claimed not-ready).
+slot, which exercises the runner's BLAVE_EXPECTED_BAR gate (exit 75: both sides = skipped; one
+side = "one side not ready", reported and counted but NOT a signal difference — a lib without the
+gate never exits 75, so this is the tool seeing the gate, unless that side's state moved while it
+claimed not-ready). --live-ticks state/bar_wait/<name>.ticks.jsonl replays the bars a machine
+actually ran (each line's `data_bar`) and ALSO compares what it wrote live (`state`) against both
+replays — the live-vs-replay check of design §10b; a live value that differs from the new replay is
+a difference.
 """
 import argparse
 import glob
@@ -43,7 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 TICK = os.path.join(HERE, "_tick.py")
 LIB_DIRS = ("lib", "manager")
-NOT_READY_RC = 75   # the runner's "data has not landed" exit (design §4); no such path exists yet
+NOT_READY_RC = 75   # lib/runner.py NOT_READY_EXIT: fetched, the expected bar is not in
 # runtime artefacts of a strategy dir that must not leak into the replay
 STRATEGY_SKIP = {"state.json", "stats.json", "scan.json", "wf.json", "pnl.png", "heatmap.png",
                  "strategy.log", "versions", "chart", "__pycache__", ".backtest.lock", ".backtest.json"}
@@ -152,13 +155,26 @@ def _dataset_labels(path):
     return labels
 
 
-def _bar_list(args, interval, caches):
+def _bar_list(args, interval, caches, live=None):
     td = _interval_td(interval)
     lo, hi = (datetime.fromisoformat(x) for x in args.bars.split("..")) if args.bars else (None, None)
     labels = set.intersection(*(_dataset_labels(src) for src, _ in caches))
     if not labels:
         _die("the --cache datasets share no bar label")
     in_window = sorted(t for t in labels if (lo is None or t >= lo) and (hi is None or t <= hi))
+    if live is not None:
+        wanted = sorted(t for t in live if (lo is None or t >= lo) and (hi is None or t <= hi))
+        missing = [t for t in wanted if t not in labels]
+        if missing:
+            print(f"signal_parity: WARNING {len(missing)} live bars are not in the cache and are skipped "
+                  f"(e.g. {missing[0].isoformat()})", file=sys.stderr)
+        bars = [t for t in wanted if t in labels]
+        bars = bars[::max(1, args.every)]
+        if args.max:
+            bars = bars[:args.max]
+        if not bars:
+            _die("no live bar is in the cache")
+        return bars
     if args.all_slots:
         if lo is None:
             _die("--all-slots needs --bars FROM..TO")
@@ -180,6 +196,25 @@ def _bar_list(args, interval, caches):
     if not bars:
         _die("no bars in the window")
     return bars
+
+
+def _live_ticks(path):
+    """{data_bar: live state} from wait_for_bar's <name>.ticks.jsonl (the last line per bar wins)."""
+    live = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                bar = datetime.fromisoformat(row["data_bar"])
+            except (ValueError, KeyError, TypeError):
+                continue
+            live[bar] = row.get("state")
+    if not live:
+        _die(f"no usable line in {path}")
+    return live
 
 
 def _child_env(ws, bar_iso):
@@ -250,6 +285,10 @@ def _same(a, b):
     return a == b
 
 
+def _persisted(v):
+    return None if v is None else {k: x for k, x in v.items() if k != "close"}
+
+
 def _fmt(v):
     if v is None:
         return ""
@@ -281,6 +320,8 @@ def main(argv=None):
                          "present in every one of them")
     ap.add_argument("--bars", help="FROM..TO, naive UTC ISO bar labels, inclusive")
     ap.add_argument("--all-slots", action="store_true", help="every interval slot, not only cached bars")
+    ap.add_argument("--live-ticks", help="state/bar_wait/<name>.ticks.jsonl from a machine: replay its data_bars "
+                                         "and compare the state it wrote live against both replays")
     ap.add_argument("--every", type=int, default=1, help="replay every Nth bar")
     ap.add_argument("--max", type=int, help="at most N bars (default 20 when --bars is omitted)")
     ap.add_argument("--old-ref", default="origin/main", help="git ref for the old lib/ + manager/")
@@ -342,14 +383,16 @@ def main(argv=None):
         sides[side] = (ws, _build_workspace(ws, lib_src, strategy_dir, name, caches, args.seed_state))
         os.makedirs(os.path.join(out, "logs", side), exist_ok=True)
 
-    bars = _bar_list(args, interval, caches)
-    print(f"strategy {name} ({interval})  bars {len(bars)}: {bars[0].isoformat()} .. {bars[-1].isoformat()}")
+    live = _live_ticks(os.path.abspath(args.live_ticks)) if args.live_ticks else None
+    bars = _bar_list(args, interval, caches, live)
+    print(f"strategy {name} ({interval})  bars {len(bars)}: {bars[0].isoformat()} .. {bars[-1].isoformat()}"
+          + (f"  (live ticks: {len(live)} recorded)" if live else ""))
     for side in ("old", "new"):
         print(f"  {side}: {sides[side][1]}")
     print(f"  out: {out}")
 
     rows, diffs, errors = [], [], []
-    compared = not_ready_both = not_ready_one = 0
+    compared = not_ready_both = not_ready_one = live_compared = 0
     prev = {"old": None, "new": None}
     header = ["bar", "old_rc", "new_rc", "kind", "old", "new", "equal", "old_s", "new_s", "note"]
     with open(os.path.join(out, "parity.tsv"), "w", encoding="utf-8") as tsv:
@@ -379,7 +422,9 @@ def main(argv=None):
                 not_ready_both += 1
             elif rc_o != rc_n:
                 waiting = "old" if rc_o == NOT_READY_RC else "new"
-                moved = not _same(prev[waiting], v_o if waiting == "old" else v_n)
+                # the persisted surface only: a not-ready tick logs no `close=` line, so that
+                # field is None here by construction, not because the state moved
+                moved = not _same(_persisted(prev[waiting]), _persisted(v_o if waiting == "old" else v_n))
                 if moved:
                     equal, note = "NO", f"{waiting} not ready but its state changed"
                 else:
@@ -391,6 +436,13 @@ def main(argv=None):
             else:
                 compared += 1
                 equal = "yes" if _same(v_o, v_n) else "NO"
+            if live is not None and bar in live and v_n is not None and rc_n == 0:
+                # the machine's own value for this bar vs the new replay (position / weights only)
+                mine = v_n["weights"] if "weights" in v_n else v_n.get("position")
+                live_compared += 1
+                if not _same(live[bar], mine):
+                    equal = "NO"
+                    note = (note + "; " if note else "") + f"live wrote {live[bar]!r}, new replay {mine!r}"
             prev["old"], prev["new"] = v_o, v_n
             row = [iso, str(rc_o), str(rc_n), kind, _fmt(v_o), _fmt(v_n), equal, str(s_o), str(s_n), note]
             rows.append(row)
@@ -414,7 +466,8 @@ def main(argv=None):
     changes = sum(1 for a, b in zip(rows, rows[1:]) if a[4].split('@')[0] != b[4].split('@')[0])   # position / weights only
     print(f"\n{len(rows)} bars: {compared} compared ({compared - sum(1 for r in diffs if r[9] == '')} identical), "
           f"{len(diffs)} differ, {len(errors)} failed, {not_ready_one} one-side-not-ready, "
-          f"{not_ready_both} both-not-ready; old-side signal changed {changes}× across the window")
+          f"{not_ready_both} both-not-ready; old-side signal changed {changes}× across the window"
+          + (f"; live vs new replay: {live_compared} compared" if live is not None else ""))
     if errors:
         return 2
     if diffs:

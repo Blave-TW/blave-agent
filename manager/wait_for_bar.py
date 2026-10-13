@@ -61,9 +61,48 @@ State: state/bar_wait/<name>.json
                             re-crashing) every single minute
   wrapper_error_alerted_at : epoch seconds of the last time THIS script (not
                               the strategy) alerted on its own uncaught error
+  last_processed_data_bar : ISO timestamp of the bar the last successful run actually
+                             computed on (the runner's probe `observed_ts`). Usually equal
+                             to last_processed_bar; one bar later when a tick ran past the
+                             minute and found the next bar already closed — then that next
+                             slot is also done (fast path), nothing is recomputed.
+  last_path           : "gate" | "probe" — which of the two paths below the last real
+                         tick took (observability for fail-open; never read for control)
+  gate_verified_key   : [strategy.py mtime_ns, size, lib/runner.py mtime_ns, size] of the
+                         code that proved it walks run() with BLAVE_EXPECTED_BAR (left a
+                         .started file); the gate path is only taken while this matches
+  gate_unsupported_key / gate_unsupported_at : same key, for a strategy that exited 0
+                         WITHOUT .started (never reached run(), or an old runner) — it
+                         stays on the probe path until its code or lib/runner.py changes
 
-Market-closed handling: a fixed-interval instrument like TXF doesn't trade
-nights/weekends, but `_expected_closed_bar_open` doesn't know a trading
+Two paths (chosen per tick by _choose_path, see there):
+  gate  : the strategy subprocess is started at once with BLAVE_EXPECTED_BAR=<expected>;
+          lib/runner.run() fetches once, judges the bar itself (lib/freshness.judge) and
+          exits 75 having written only state/bar_wait/<name>.probe.json when the bar is not
+          in, or runs the normal live path when it is. One interpreter, one fetch per tick.
+  probe : the original flow — fetch_data() in THIS process to check freshness, then
+          strategy.py as a second interpreter — kept for strategies that do not go through
+          run(), for a lib/runner.py without EXPECTED_BAR_GATE, and for the first tick after
+          strategy.py or lib/runner.py changed (the gate is only trusted once the strategy
+          has left a .started file, so an unsupported strategy never runs unprobed).
+Handshake files live in state/bar_wait/ and are cleared before each gate run:
+  <name>.started     written by run() on entry — proof it saw BLAVE_EXPECTED_BAR
+  <name>.probe.json  written by run() after fetch_data(), before compute:
+                     {expected, observed_ts, ready, straggler, feed_wait, pid, at}
+  <name>.out         the subprocess's stdout+stderr (fed to alert_failure on a crash)
+  <name>.ticks.jsonl one line per successful gate run {at, expected, data_bar, secs, state}
+                     — the live record a replay (tools/signal_parity) is compared against;
+                     past 2 MB the newest 1 MB is kept
+
+Market-closed handling: TAIFEX index futures (a strategy whose SYMBOL is TXF/MXF/TMF
+and fetches fetch_twfutures_ohlcv) have a session table here (_tw_fut_slot, judged on the
+bar's [open, close) interval — 60m / 30m labels are whole / half hours): a slot the market
+is closed for is neither polled nor waited on and ends the stall episode, an intraday bar
+counts as late from its close, the daily bar from TAIFEX's ~15:00 publication, the
+settlement day (third Wednesday) closes at 13:30 — so the 13:45→15:00 and 05:00→08:45 gaps
+never read as a stall, and the first bars of the next session are polled at full speed.
+Holidays are not in the table: one stale alert, a throttle that ends at the next closed slot.
+For everything else `_expected_closed_bar_open` doesn't know a trading
 calendar — it just floors wall-clock time, so `expected` keeps advancing
 hourly straight through a ~55h weekend close with no new bar ever landing.
 Without special-casing this, that reads as an ordinary "still waiting" and
@@ -147,6 +186,25 @@ RUN_TIMEOUT_SECONDS = 600          # kill a strategy subprocess that hangs (e.g.
 LOCK_STALE_SECONDS = 1800
 RETRY_BACKOFF_SECONDS = 300        # after a failed run OR a fetch_data() error, don't re-attempt every single minute
 WRAPPER_ERROR_COOLDOWN_SECONDS = 6 * 3600         # this script's own crashes, not the strategy's
+EXPECTED_BAR_ENV = "BLAVE_EXPECTED_BAR"           # lib/runner.py reads it (EXPECTED_BAR_ENV there)
+NOT_READY_EXIT = 75                               # lib/runner.py NOT_READY_EXIT
+CHILD_POLL_SECONDS = 0.5
+TICKS_MAX_BYTES, TICKS_KEEP_BYTES = 2 << 20, 1 << 20   # <name>.ticks.jsonl rotation (tail kept)
+OUTPUT_TAIL_CHARS = 20000                         # of <name>.out handed to alert_failure / strategy.log
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# lib/runner.py's capability flag, read as bytes — this process never imports lib on the
+# gate path (that is the point: the fast path and the gate tick load no pandas here)
+_GATE_FLAG_RE = re.compile(rb"^EXPECTED_BAR_GATE\s*=\s*1\b", re.M)
+_INTERVAL_SRC_RE = re.compile(r'^INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
+# TAIFEX index futures (TXF and the MXF/TMF execution aliases, all on TXF bars): the only
+# instrument with a session table here. Day 08:45–13:45, night 15:00–05:00 next day, Mon–Fri
+# (Friday's night session runs into Saturday 05:00); the daily bar is TAIFEX's ~15:00 report.
+# No holiday calendar — a holiday behaves as today (one stale alert, then the stall throttle).
+_TW_FUT_SYMBOL_RE = re.compile(r'^SYMBOL\s*=\s*["\'](?:TXF|MXF|TMF)(?:R1)?["\']', re.M)
+_TW_FUT_FETCH = "fetch_twfutures_ohlcv"
+_TPE = timedelta(hours=8)
+_TW_FUT_DAILY_POLL_FROM = timedelta(hours=13, minutes=45)  # TWN clock: the day session has closed
+_TW_FUT_DAILY_DUE = timedelta(hours=15)                    # TWN clock: TAIFEX publishes the day
 
 
 def _load_strategy_module(name):
@@ -216,6 +274,11 @@ def _default_state():
         "stall_alert_at": None,
         "last_attempt_failed_at": None,
         "wrapper_error_alerted_at": None,
+        "last_processed_data_bar": None,
+        "last_path": None,
+        "gate_verified_key": None,
+        "gate_unsupported_key": None,
+        "gate_unsupported_at": None,
     }
 
 
@@ -337,10 +400,8 @@ def _release_lock(lock_path):
 
 
 def _naive_utc(ts):
-    """Bar timestamp → naive UTC datetime, the frame `expected` lives in. A tz-aware label
-    (Taiwan data is Asia/Taipei) is converted first; dropping its tz as-is would read
-    Taipei wall-clock as UTC and call a bar 8h early "landed". Naive labels are taken as
-    UTC, as before."""
+    """Bar timestamp → naive UTC datetime (lib.freshness.naive_utc; kept here for the probe
+    path's older callers and tests)."""
     import pandas as pd
     ts = pd.Timestamp(ts)
     if ts.tzinfo is not None:
@@ -349,10 +410,11 @@ def _naive_utc(ts):
 
 
 class _FeedWait(str):
-    """Straggler marker for "bars landed, an align_feed row has not been published"."""
-    def __new__(cls, exc):
-        obj = super().__new__(cls, str(getattr(exc, "source", "feed")))
-        obj.due_at = exc.due_at
+    """Straggler marker for "bars landed, an align_feed row has not been published".
+    `due_at` is a naive UTC datetime (the probe file already carries it that way)."""
+    def __new__(cls, source, due_at):
+        obj = super().__new__(cls, str(source))
+        obj.due_at = due_at
         return obj
 
 
@@ -364,22 +426,30 @@ def _is_feed_wait(exc):
     return isinstance(exc, FeedNotPublished)
 
 
+def _judge_fallback(data, expected):
+    """lib.freshness.judge, verbatim, for a workspace whose lib/ predates that module — such a
+    lib has no gate either, so this is the only judgement the probe path can run there."""
+    if isinstance(data, tuple):
+        close_df = data[0]
+        if close_df.empty:
+            return None, False, None
+        last_valid = close_df.apply(lambda col: col.last_valid_index())
+        if last_valid.isna().any():
+            # at least one symbol has literally never had a data point
+            return None, False, last_valid[last_valid.isna()].index[0]
+        straggler_symbol = last_valid.idxmin()
+        straggler_ts = _naive_utc(last_valid[straggler_symbol])
+        ready = all(_naive_utc(ts) >= expected for ts in last_valid)
+        return straggler_ts, ready, straggler_symbol
+    if data.empty:
+        return None, False, None
+    last_ts = _naive_utc(data.index[-1])
+    return last_ts, last_ts >= expected, None
+
+
 def _check_freshness(mod, expected):
-    """Calls the strategy's own fetch_data() and returns (observed_ts, ready, straggler):
-      observed_ts : the latest bar timestamp actually seen (None if there's
-                    no data at all yet) — Type C uses the STRAGGLER symbol's
-                    last_valid_index, i.e. whichever symbol is furthest
-                    behind, since that's what determines whether the universe
-                    made any forward progress at all.
-      ready       : True if that's enough to run — Type A: observed_ts is
-                    at/after `expected`. Type C: EVERY universe column has a
-                    valid observation at/after `expected` (wait for ALL
-                    symbols — see module docstring caveat about symbols with
-                    no data going forward at all).
-      straggler   : Type A: always None (no per-symbol concept). Type C: the
-                    column name furthest behind — named explicitly so an alert
-                    can point at the actual symbol to investigate, not just a
-                    bucket timestamp.
+    """Probe path: calls the strategy's own fetch_data() and returns (observed_ts, ready,
+    straggler) — see lib/freshness.py for the three fields.
 
     Raises whatever fetch_data() raises (network errors, or a strategy's own
     deliberate fail-loud guard like txf_composite_60m's degraded-dividend
@@ -402,31 +472,19 @@ def _check_freshness(mod, expected):
         from contextlib import nullcontext as live_feeds
     with closed_bars_only(), live_feeds():
         data = mod.fetch_data(hdrs)
-    if isinstance(data, tuple):
-        close_df = data[0]
-        if close_df.empty:
-            return None, False, None
-        last_valid = close_df.apply(lambda col: col.last_valid_index())
-        if last_valid.isna().any():
-            # at least one symbol has literally never had a data point
-            return None, False, last_valid[last_valid.isna()].index[0]
-        straggler_symbol = last_valid.idxmin()
-        straggler_ts = _naive_utc(last_valid[straggler_symbol])
-        ready = all(_naive_utc(ts) >= expected for ts in last_valid)
-        return straggler_ts, ready, straggler_symbol
-    else:
-        if data.empty:
-            return None, False, None
-        last_ts = _naive_utc(data.index[-1])
-        return last_ts, last_ts >= expected, None
+    try:
+        from lib.freshness import judge
+    except ImportError:
+        judge = _judge_fallback
+    return tuple(judge(data, expected))
 
 
 def _run_strategy_protected(name):
-    """Cross-platform equivalent of manager/run_strategy.sh's crash-safety
-    contract — launches strategy.py with the SAME interpreter running this
-    script (sys.executable, so it's whatever venv/python cron is already
-    using, no hardcoded 'python3'/'bash'), catches a hang with a timeout,
-    logs + Telegram-alerts on failure, touches the heartbeat on success.
+    """Probe path's launcher — cross-platform equivalent of manager/run_strategy.sh's
+    crash-safety contract: strategy.py with the SAME interpreter running this script
+    (sys.executable, so it's whatever venv/python cron is already using, no hardcoded
+    'python3'/'bash'), catches a hang with a timeout, logs + Telegram-alerts on failure,
+    touches the heartbeat on success.
 
     Returns True on success, False otherwise.
     """
@@ -438,7 +496,7 @@ def _run_strategy_protected(name):
     # before the run, and the except/kill mirrors run()'s own so a SIGTERM→SystemExit still
     # takes the child down with us.
     with subprocess.Popen([sys.executable, script_path], stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, text=True) as proc:
+                          stderr=subprocess.PIPE, text=True, **_child_kw()) as proc:
         _lock_note_child(name, proc.pid)
         try:
             out, err = proc.communicate(timeout=RUN_TIMEOUT_SECONDS)
@@ -454,17 +512,495 @@ def _run_strategy_protected(name):
             raise
 
     if returncode != 0:
-        try:
-            with open(f"{strategy_dir}/strategy.log", "a") as f:
-                f.write(output)
-        except OSError:
-            pass
-        _alert_failure().alert(name, returncode, output)
+        _record_crash(name, returncode, output)
         return False
 
+    _touch_heartbeat(name)
+    return True
+
+
+def _child_kw():
+    """stdin=DEVNULL (a child inheriting the desktop app's secret pipe hangs at interpreter
+    start on Windows — runtime/command_listener._child_kw has the history) and no console
+    window per tick on Windows."""
+    kw = {"stdin": subprocess.DEVNULL}
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return kw
+
+
+def _record_crash(name, returncode, output):
+    try:
+        with open(f"strategies/{name}/strategy.log", "a", encoding="utf-8", errors="replace") as f:
+            f.write(output)
+    except OSError:
+        pass
+    _alert_failure().alert(name, returncode, output)
+
+
+def _touch_heartbeat(name):
     os.makedirs("state/heartbeat", exist_ok=True)
     Path(f"state/heartbeat/{name}").touch()
-    return True
+
+
+# ── gate path ─────────────────────────────────────────────────────────────────
+
+def _handshake_paths(name):
+    return (f"{STATE_DIR}/{name}.started", f"{STATE_DIR}/{name}.probe.json", f"{STATE_DIR}/{name}.out")
+
+
+def _clear_handshake(name):
+    for p in _handshake_paths(name):
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+
+def _lib_has_gate():
+    try:
+        with open(os.path.join(ROOT, "lib", "runner.py"), "rb") as f:
+            return bool(_GATE_FLAG_RE.search(f.read()))
+    except OSError:
+        return False
+
+
+def _gate_key(name):
+    """What the gate verdict (verified / unsupported) is pinned to: the strategy file and the
+    runner it would run under. Either changing re-opens the question."""
+    key = []
+    for p in (f"strategies/{name}/strategy.py", os.path.join(ROOT, "lib", "runner.py")):
+        try:
+            st = os.stat(p)
+            key += [st.st_mtime_ns, st.st_size]
+        except OSError:
+            key += [None, None]
+    return key
+
+
+def _choose_path(name, state):
+    """'gate' (start the strategy at once), 'verify' (probe first; if ready, start it with the
+    env and see whether it leaves .started) or 'probe' (the original two-interpreter flow)."""
+    if not _lib_has_gate():
+        return "probe"
+    try:
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return "probe"
+    if "lib.runner" not in text or "run(" not in text:
+        return "probe"  # never calls run(): the gate would be invisible to it — do not even try
+    key = _gate_key(name)
+    if state.get("gate_unsupported_key") == key:
+        return "probe"
+    if state.get("gate_verified_key") == key:
+        return "gate"
+    return "verify"
+
+
+def _spawn_gate_child(name, expected_iso):
+    strategy_dir = f"strategies/{name}"
+    os.makedirs(strategy_dir, exist_ok=True)
+    out_path = _handshake_paths(name)[2]
+    # a file, not a PIPE: this process polls handshake files instead of reading the pipe,
+    # and a full pipe would stall the child
+    with open(out_path, "w", encoding="utf-8", errors="replace") as out:
+        proc = subprocess.Popen([sys.executable, f"{strategy_dir}/strategy.py"],
+                                stdout=out, stderr=subprocess.STDOUT,
+                                env={**os.environ, EXPECTED_BAR_ENV: expected_iso}, **_child_kw())
+    _lock_note_child(name, proc.pid)
+    return proc
+
+
+def _wait_child(proc, name):
+    """Returns (rc, started, probe, output). RUN_TIMEOUT_SECONDS counts from the moment
+    .probe.json appears: a cold fetch of years of bars may take longer than that, exactly as
+    the probe path's in-process fetch always could — only compute + state is bounded."""
+    started_p, probe_p, out_p = _handshake_paths(name)
+    probe_seen_at = None
+    killed = False
+    try:
+        while True:
+            try:
+                rc = proc.wait(timeout=CHILD_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            if probe_seen_at is None and os.path.exists(probe_p):
+                probe_seen_at = time.monotonic()
+            if probe_seen_at is not None and time.monotonic() - probe_seen_at > RUN_TIMEOUT_SECONDS:
+                proc.kill()
+                proc.wait()
+                rc, killed = -1, True
+                break
+    except BaseException:
+        proc.kill()
+        raise
+    probe = None
+    try:
+        with open(probe_p, encoding="utf-8") as f:
+            probe = json.load(f)
+        if not isinstance(probe, dict):
+            probe = None
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(out_p, encoding="utf-8", errors="replace") as f:
+            output = f.read()[-OUTPUT_TAIL_CHARS:]
+    except OSError:
+        output = ""
+    if killed:
+        output += f"\n[wait_for_bar] killed after exceeding {RUN_TIMEOUT_SECONDS}s timeout"
+    return rc, os.path.exists(started_p), probe, output
+
+
+def _state_signal(name):
+    """The signal surface of strategies/<name>/state.json for the ticks record."""
+    try:
+        with open(f"strategies/{name}/state.json", encoding="utf-8") as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(st, dict):
+        return None
+    return st.get("weights") if st.get("type") == "portfolio" else st.get("position")
+
+
+def _record_tick(name, expected_iso, data_bar, secs):
+    path = f"{STATE_DIR}/{name}.ticks.jsonl"
+    line = json.dumps({"at": time.time(), "expected": expected_iso, "data_bar": data_bar,
+                       "secs": round(secs, 2), "state": _state_signal(name)})
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        if os.path.getsize(path) > TICKS_MAX_BYTES:
+            with open(path, "rb") as f:
+                f.seek(-TICKS_KEEP_BYTES, os.SEEK_END)
+                tail = f.read()
+            tail = tail[tail.index(b"\n") + 1:] if b"\n" in tail else tail   # whole lines only
+            with open(tmp, "wb") as f:
+                f.write(tail)
+            os.replace(tmp, path)
+    except OSError as e:
+        logging.warning(f"[wait_for_bar] ticks record dropped ({e})")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def _mark_processed(state, expected_iso, observed_iso, data_bar_iso=None):
+    state["last_processed_bar"] = expected_iso
+    state["last_processed_data_bar"] = data_bar_iso
+    state["pending_since"] = None
+    state["last_seen_bar"] = observed_iso
+    state["stall_alert_at"] = None
+    state["last_attempt_failed_at"] = None
+
+
+def _is_processed(state, expected, expected_iso, now):
+    if state.get("last_processed_bar") == expected_iso:
+        return True
+    # A slow tick computed on the next bar already (data_bar > expected) — that slot is done
+    # too. Bounded by `now`: a frame whose last label sits in the future (a joined calendar)
+    # must not switch the strategy off for good.
+    data_bar = state.get("last_processed_data_bar")
+    if not data_bar:
+        return False
+    try:
+        data_bar = datetime.fromisoformat(data_bar)
+    except (TypeError, ValueError):
+        return False
+    return expected <= data_bar < now
+
+
+def _note_not_ready(name, state, now, expected, observed_iso, straggler_symbol, due=None):
+    """The expected bar is not in (either path): stall bookkeeping + the one stale alert.
+    `due`: the earliest the bar can exist (_tw_fut_slot) — lateness counts from there."""
+    # Data moved forward (even if still not enough) since the last check → this is fresh
+    # lag, not a stall; clear stall_alert_at so a NEW stall (if this stalls again at the new
+    # position) alerts fresh. observed_iso is None whenever the strategy has NEVER returned
+    # any data at all (empty fetch, or a Type C column with zero valid rows) — that must NOT
+    # be read as "no progress, still None" and skipped here; it's handled correctly below
+    # purely because stall_alert_at (not this block) is what decides "already alerted", so a
+    # permanently-None observed_iso still gets exactly one alert then a 24h repeat, never zero.
+    if observed_iso is not None and observed_iso != state.get("last_seen_bar"):
+        state["last_seen_bar"] = observed_iso
+        state["stall_alert_at"] = None
+
+    if isinstance(straggler_symbol, _FeedWait):
+        # count lateness from when the row was DUE, not from the first poll: a daily
+        # feed due at 20:00 polled from 15:00 on must not alert at 15:15
+        feed_due = straggler_symbol.due_at
+        if state.get("pending_since") is None or datetime.fromisoformat(state["pending_since"]) < feed_due:
+            state["pending_since"] = feed_due.isoformat()
+
+    if state.get("pending_since") is None:
+        # a bar that cannot exist before `due` (TAIFEX daily: 15:00 TWN) is not late before it;
+        # once set, pending_since stays until data lands — a slot that advances with the wall
+        # clock must not restart the count (that is the stall the alert exists for)
+        state["pending_since"] = (due if due and due > now else now).isoformat()
+        return
+
+    pending_since = datetime.fromisoformat(state["pending_since"])
+    waited = now - pending_since
+    if waited >= timedelta(minutes=STALE_TIMEOUT_MINUTES):
+        stall_alert_at = state.get("stall_alert_at")
+        # stall_alert_at is None ⇒ never alerted for this episode yet (covers
+        # both a brand-new stall AND a strategy that has NEVER had a single
+        # data point — see comment above, that must not silently never-alert).
+        due = stall_alert_at is None or (time.time() - stall_alert_at >= STALL_REALERT_SECONDS)
+        if due:
+            _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol)
+            state["stall_alert_at"] = time.time()
+
+
+def _probe_straggler(probe):
+    fw = probe.get("feed_wait")
+    if isinstance(fw, dict) and fw.get("due_at"):
+        try:
+            return _FeedWait(fw.get("source", "feed"), datetime.fromisoformat(fw["due_at"]))
+        except ValueError:
+            pass
+    return probe.get("straggler")
+
+
+def _apply(name, state, rc, started, probe, output, secs, now, expected, expected_iso,
+           probed_observed_iso=None, probed=False, due=None, child_pid=None):
+    """What the gate child left behind → bar_wait state. `probed`: the verify path ran the
+    in-process probe first (and it said ready) — a strategy that then exits 0 without
+    .started did exactly what the probe path would have run, so that bar counts as done."""
+    if probe is not None and (probe.get("expected") != expected_iso
+                              or (child_pid is not None and probe.get("pid") != child_pid)):
+        # a leftover _clear_handshake could not remove (Windows sharing violation) is not
+        # this tick's verdict
+        raise RuntimeError(f"{name}: .probe.json is not this tick's (expected {probe.get('expected')!r} "
+                           f"pid {probe.get('pid')!r} vs {expected_iso} {child_pid})")
+    if started:
+        state["gate_verified_key"] = _gate_key(name)
+    elif probe is not None:
+        raise RuntimeError(f"{name}: .probe.json without .started — handshake out of order")
+    elif rc == 0:
+        state["gate_unsupported_key"] = _gate_key(name)
+        state["gate_unsupported_at"] = time.time()
+        # P3: the state file + this line are the record; no event type is registered for it
+        # on the platform (tests/check_events_dualwrite pins the registry) and no TG
+        print(f"[wait_for_bar] {name}: exited 0 without walking lib.runner.run() under "
+              f"{EXPECTED_BAR_ENV} — back on the probe path until strategy.py or lib/runner.py changes")
+        if probed:  # data_bar unknown: whatever it computed on, the probe did not see it
+            _mark_processed(state, expected_iso, probed_observed_iso)
+            _touch_heartbeat(name)
+        return
+    else:  # crashed before run() — a strategy failure, same as a crash after it
+        _record_crash(name, rc, output)
+        state["last_attempt_failed_at"] = time.time()
+        return
+
+    if rc == 0 and probe is not None and not probe.get("ready"):
+        # a __main__ that swallows SystemExit (bare except) turned the 75 into a 0; the data
+        # still was not in — bookkeeping only, the probe is the verdict
+        print(f"[wait_for_bar] {name}: exited 0 although .probe.json says the bar is not in — "
+              f"strategy.py swallows SystemExit; treated as not ready")
+        _note_not_ready(name, state, now, expected, probe.get("observed_ts"), _probe_straggler(probe), due)
+        return
+    if rc == 0:
+        if not probe:
+            raise RuntimeError(f"{name}: exited 0 with .started but no .probe.json")
+        observed_iso = probe.get("observed_ts")
+        _mark_processed(state, expected_iso, observed_iso, observed_iso)
+        _touch_heartbeat(name)
+        _record_tick(name, expected_iso, observed_iso, secs)
+    elif rc == NOT_READY_EXIT and probe is not None and not probe.get("ready"):
+        _note_not_ready(name, state, now, expected, probe.get("observed_ts"), _probe_straggler(probe), due)
+    elif probe is None:
+        # fetch_data() itself raised — network error, or a strategy's own deliberate fail-loud
+        # guard. Not a wait_for_bar bug: the normal failed-run alert (its own 24h cooldown),
+        # and back off like any other failed attempt instead of retrying every minute.
+        _alert_failure().alert(name, "fetch_error", output)
+        state["last_attempt_failed_at"] = time.time()
+    else:
+        _record_crash(name, rc, output)
+        state["last_attempt_failed_at"] = time.time()
+
+
+def _run_gate(name, state, now, expected, expected_iso, probed_observed_iso=None, probed=False, due=None):
+    state["last_path"] = "gate"
+    _clear_handshake(name)
+    t0 = time.monotonic()
+    proc = _spawn_gate_child(name, expected_iso)
+    rc, started, probe, output = _wait_child(proc, name)
+    _apply(name, state, rc, started, probe, output, time.monotonic() - t0, now, expected,
+           expected_iso, probed_observed_iso, probed, due, proc.pid)
+
+
+def _run_probe(name, mod, state, now, expected, expected_iso, then_gate, due=None):
+    """The original flow: fetch_data() here, then the strategy as a second interpreter — or,
+    on the verify tick, as the gate child once the probe says ready."""
+    state["last_path"] = "probe"
+    try:
+        observed_ts, ready, straggler_symbol = _check_freshness(mod, expected)
+    except Exception as e:
+        if not _is_feed_wait(e):
+            output = f"fetch_data() raised while checking freshness: {e}\n" + traceback.format_exc()
+            _alert_failure().alert(name, "fetch_error", output)
+            state["last_attempt_failed_at"] = time.time()
+            return
+        # Bars are in, an align_feed row they need is not published yet: "not ready",
+        # not a failed run — no fetch_error alert, no backoff.
+        observed_ts, ready = _naive_utc(e.last_bar), False
+        straggler_symbol = _FeedWait(getattr(e, "source", "feed"), _naive_utc(e.due_at))
+
+    observed_iso = observed_ts.isoformat() if observed_ts is not None else None
+    if not ready:
+        _note_not_ready(name, state, now, expected, observed_iso, straggler_symbol, due)
+        return
+    if then_gate:
+        _run_gate(name, state, now, expected, expected_iso, observed_iso, probed=True, due=due)
+        return
+    if _run_strategy_protected(name):
+        _mark_processed(state, expected_iso, observed_iso)
+    else:
+        state["last_attempt_failed_at"] = time.time()
+
+
+def _tw_index_futures_strategy(name):
+    try:
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return False
+    return _TW_FUT_FETCH in text and _TW_FUT_SYMBOL_RE.search(text) is not None
+
+
+def _tw_fut_last_day_open(t):
+    """Latest minute a day-session bar may OPEN on the Taipei day of `t`: 13:45 (the closing
+    auction bin opens at the close), or 13:29 on the monthly settlement day (third Wednesday —
+    the expiring month stops at 13:30, no bin opens at 13:30, and the continuous series has no
+    bars until the 15:00 night open). Postponed settlements are not known here."""
+    if t.weekday() == 2 and 15 <= t.day <= 21:
+        return 13 * 60 + 29
+    return 13 * 60 + 45
+
+
+def _tw_fut_session_open(label_utc, td):
+    """Does the TAIFEX index-futures bar [label, label + td) (naive UTC) lie in a session?
+    Judged on the bar's interval, not its label: TXF 60m / 30m labels are whole hours /
+    half hours (the 08:45–09:00 bar is labelled 08:00), 1m / 5m / 15m labels start at 08:45.
+    Day: the bar opens no later than the close and ends after 08:45 — the closing bin that
+    opens AT 13:45 (the auction) counts. Night: ends after 15:00, or opens before 05:00 (no
+    bin opens at the night close). 1m gets one extra minute at each close for the days the
+    store labels bars by their END (13:46 / 05:00)."""
+    o = label_utc + _TPE
+    c = o + td
+    tol = 1 if td == timedelta(minutes=1) else 0
+    hm_o, hm_c, wd = o.hour * 60 + o.minute, c.hour * 60 + c.minute, o.weekday()
+    same_day = c.date() == o.date()
+    if wd <= 4 and same_day and 8 * 60 + 45 < hm_c and hm_o <= _tw_fut_last_day_open(o) + tol:
+        return True
+    if wd <= 4 and hm_o >= 15 * 60:
+        return True   # night, evening part (a bar closing at midnight included)
+    if 1 <= wd <= 5 and hm_o < 5 * 60 + tol:
+        return True   # night, after midnight (Saturday morning = Friday's session)
+    return False
+
+
+def _tw_fut_slot(expected, td):
+    """(poll_from, due) in naive UTC for the slot `expected` of a TAIFEX index-futures
+    strategy, or None when that slot has no bar at all (market closed): intraday — the bar
+    exists once it closes; daily — the trading day is the Taipei date the slot ends on, its
+    bar is complete at 13:45 and published ~15:00."""
+    if td >= timedelta(days=1):
+        day = (expected + td + _TPE).replace(hour=0, minute=0, second=0, microsecond=0)
+        if day.weekday() > 4:
+            return None
+        day -= _TPE   # Taipei midnight as naive UTC
+        return day + _TW_FUT_DAILY_POLL_FROM, day + _TW_FUT_DAILY_DUE
+    if not _tw_fut_session_open(expected, td):
+        return None
+    return expected + td, expected + td
+
+
+def _load_interval(name):
+    """(INTERVAL, module-or-None). Read as text first so the fast path and the gate path load
+    nothing of the strategy's (no pandas); a strategy that spells INTERVAL any other way is
+    imported, as before."""
+    path = f"strategies/{name}/strategy.py"
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            m = _INTERVAL_SRC_RE.search(f.read())
+    except OSError:
+        m = None
+    if m:
+        return m.group(1), None
+    mod = _load_strategy_module(name)
+    return getattr(mod, "INTERVAL", None), mod
+
+
+def _tick(name):
+    interval, mod = _load_interval(name)
+    if not interval:
+        print(f"[wait_for_bar] {name}: no INTERVAL in strategy.py — Type B strategies "
+              f"don't use wait_for_bar.py, check references/deployment.md")
+        return
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    expected = _expected_closed_bar_open(interval, now)
+    expected_iso = expected.isoformat()
+
+    state = _load_state(name)
+
+    # Fast path: this bar's already been run — stay quiet, no fetch, no log, no lock.
+    if _is_processed(state, expected, expected_iso, now):
+        return
+
+    # Session table (TAIFEX index futures only): a slot the market is closed for, or whose
+    # bar cannot exist yet, is not polled and not waited on — the 13:45→15:00 and 05:00→08:45
+    # gaps used to read as a stall (one bar_stale a day, then the 15-minute throttle swallowing
+    # the first two bars of the next session). The file is still touched now and then so a
+    # post-boot report sees a recent check (portfolio_reporter._recomputed_since).
+    due = None
+    if _tw_index_futures_strategy(name):
+        slot = _tw_fut_slot(expected, _interval_to_timedelta(interval))
+        if slot is None or now < slot[0]:
+            # a closed slot ends the episode: whatever stalled before (a holiday, a late last
+            # bar) must not throttle the first bars of the next session
+            if state.get("pending_since") is not None or state.get("stall_alert_at") is not None \
+                    or now.minute % STALL_POLL_MINUTES == 0:
+                state["pending_since"] = None
+                state["stall_alert_at"] = None
+                _save_state(name, state)
+            return
+        due = slot[1]
+
+    # Backoff: don't hammer a run (or a fetch_data() that itself keeps raising)
+    # every single minute right after it just failed.
+    last_failed = state.get("last_attempt_failed_at")
+    if last_failed and time.time() - last_failed < RETRY_BACKOFF_SECONDS:
+        return
+
+    # Stall throttle: once we've confirmed a stall (alerted at least once this
+    # episode — see stall_alert_at), stop polling every minute — this is what a
+    # TXF weekend close looks like. Resumes full speed the moment data moves.
+    if state.get("stall_alert_at") is not None:
+        if now.minute % STALL_POLL_MINUTES != 0:
+            return
+
+    lock_path = _acquire_lock(name)
+    if lock_path is None:
+        return  # a previous tick's run is still in flight — skip, don't overlap
+    try:
+        path = _choose_path(name, state)
+        if path == "gate":
+            _run_gate(name, state, now, expected, expected_iso, due=due)
+        else:
+            # an import error here is this script's own failure (main → _alert_wrapper_error),
+            # as it always was
+            _run_probe(name, mod or _load_strategy_module(name), state, now, expected,
+                       expected_iso, then_gate=(path == "verify"), due=due)
+        _save_state(name, state)
+    finally:
+        _release_lock(lock_path)
 
 
 def _alert_stale(name, expected, minutes_waited, straggler_symbol):
@@ -523,115 +1059,6 @@ def _alert_wrapper_error(name, exc):
         _save_state(name, {**_default_state(), **state})
     except Exception:
         pass
-
-
-def _tick(name):
-    mod = _load_strategy_module(name)
-    interval = getattr(mod, "INTERVAL", None)
-    if not interval:
-        print(f"[wait_for_bar] {name}: no INTERVAL in strategy.py — Type B strategies "
-              f"don't use wait_for_bar.py, check references/deployment.md")
-        return
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    expected = _expected_closed_bar_open(interval, now)
-    expected_iso = expected.isoformat()
-
-    state = _load_state(name)
-
-    # Fast path: this bar's already been run — stay quiet, no fetch, no log, no lock.
-    if state.get("last_processed_bar") == expected_iso:
-        return
-
-    # Backoff: don't hammer a run (or a fetch_data() that itself keeps raising)
-    # every single minute right after it just failed.
-    last_failed = state.get("last_attempt_failed_at")
-    if last_failed and time.time() - last_failed < RETRY_BACKOFF_SECONDS:
-        return
-
-    # Stall throttle: once we've confirmed a stall (alerted at least once this
-    # episode — see stall_alert_at), stop polling every minute — this is what a
-    # TXF weekend close looks like. Resumes full speed the moment data moves.
-    if state.get("stall_alert_at") is not None:
-        if now.minute % STALL_POLL_MINUTES != 0:
-            return
-
-    lock_path = _acquire_lock(name)
-    if lock_path is None:
-        return  # a previous tick's run is still in flight — skip, don't overlap
-    try:
-        try:
-            observed_ts, ready, straggler_symbol = _check_freshness(mod, expected)
-        except Exception as e:
-            if not _is_feed_wait(e):
-                # fetch_data() itself raised — network error, or a strategy's own
-                # deliberate fail-loud guard (e.g. txf_composite_60m's degraded-
-                # dividend check). This is NOT a wait_for_bar.py bug, so route it
-                # through the normal failed-run alert (its own 24h cooldown) —
-                # not main()'s "wrapper itself is broken" alert — and back off
-                # like any other failed attempt instead of retrying every minute.
-                output = f"fetch_data() raised while checking freshness: {e}\n" + traceback.format_exc()
-                _alert_failure().alert(name, "fetch_error", output)
-                state["last_attempt_failed_at"] = time.time()
-                _save_state(name, state)
-                return
-            # Bars are in, an align_feed row they need is not published yet: "not ready",
-            # not a failed run — no fetch_error alert, no backoff.
-            observed_ts, ready, straggler_symbol = _naive_utc(e.last_bar), False, _FeedWait(e)
-
-        observed_iso = observed_ts.isoformat() if observed_ts is not None else None
-
-        if ready:
-            if _run_strategy_protected(name):
-                state["last_processed_bar"] = expected_iso
-                state["pending_since"] = None
-                state["last_seen_bar"] = observed_iso
-                state["stall_alert_at"] = None
-                state["last_attempt_failed_at"] = None
-            else:
-                state["last_attempt_failed_at"] = time.time()
-            _save_state(name, state)
-            return
-
-        # Not ready yet. Data moved forward (even if still not enough) since the
-        # last check → this is fresh lag, not a stall; clear stall_alert_at so a
-        # NEW stall (if this stalls again at the new position) alerts fresh.
-        # observed_iso is None whenever the strategy has NEVER returned any data
-        # at all (empty fetch, or a Type C column with zero valid rows) — that
-        # must NOT be read as "no progress, still None" and skipped here; it's
-        # handled correctly below purely because stall_alert_at (not this block)
-        # is what decides "already alerted", so a permanently-None observed_iso
-        # still gets exactly one alert then a 24h repeat, never zero.
-        if observed_iso is not None and observed_iso != state.get("last_seen_bar"):
-            state["last_seen_bar"] = observed_iso
-            state["stall_alert_at"] = None
-
-        if isinstance(straggler_symbol, _FeedWait):
-            # count lateness from when the row was DUE, not from the first poll: a daily
-            # feed due at 20:00 polled from 15:00 on must not alert at 15:15
-            due = _naive_utc(straggler_symbol.due_at)
-            if state.get("pending_since") is None or datetime.fromisoformat(state["pending_since"]) < due:
-                state["pending_since"] = due.isoformat()
-
-        if state.get("pending_since") is None:
-            state["pending_since"] = now.isoformat()
-            _save_state(name, state)
-            return
-
-        pending_since = datetime.fromisoformat(state["pending_since"])
-        waited = now - pending_since
-        if waited >= timedelta(minutes=STALE_TIMEOUT_MINUTES):
-            stall_alert_at = state.get("stall_alert_at")
-            # stall_alert_at is None ⇒ never alerted for this episode yet (covers
-            # both a brand-new stall AND a strategy that has NEVER had a single
-            # data point — see comment above, that must not silently never-alert).
-            due = stall_alert_at is None or (time.time() - stall_alert_at >= STALL_REALERT_SECONDS)
-            if due:
-                _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol)
-                state["stall_alert_at"] = time.time()
-        _save_state(name, state)
-    finally:
-        _release_lock(lock_path)
 
 
 def main():

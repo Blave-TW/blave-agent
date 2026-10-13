@@ -56,6 +56,16 @@ CHART_LIVE_REFRESH_MIN_AGE = 86400  # performance-refresh rebuild throttle: at m
 # freshness gate (manager/wait_for_bar.py has) — the scheduled tick alone owns the target.
 STATS_REFRESH_ENV = 'BLAVE_STATS_REFRESH'
 
+# Capability flag, read as TEXT by manager/wait_for_bar.py (never imported — same pattern as
+# lib/strategy.py RESTORE_IN_PLACE). It stands for the BLAVE_EXPECTED_BAR gate below: with it,
+# wait_for_bar skips its own in-process fetch_data() probe and starts the strategy subprocess
+# straight away, trusting run() to judge the bar itself and exit NOT_READY_EXIT without
+# writing anything when the data is not in. A workspace whose lib/ lacks this line is handed
+# the old probe-then-run path. Remove the gate, remove this line.
+EXPECTED_BAR_GATE = 1
+EXPECTED_BAR_ENV = 'BLAVE_EXPECTED_BAR'   # naive UTC ISO open label of the bar this live tick is for
+NOT_READY_EXIT = 75                       # EX_TEMPFAIL: fetched, the expected bar is not in yet
+
 
 
 # MCPT (Monte Carlo Permutation Test) fields in stats.json — written automatically by every
@@ -193,6 +203,29 @@ def _write_json_atomic(path, obj, indent=2):
 
 def _write_stats(out_dir, stats):
     return _write_json_atomic(Path(out_dir) / 'stats.json', stats)
+
+
+def _write_handshake(name, kind, obj, attempts=5):
+    """state/bar_wait/<name>.<kind> — a wait_for_bar handshake file (started / probe.json).
+    Windows: os.replace loses to Defender holding the target open — retried like
+    lib/strategy._replace_bytes."""
+    path = _REPO_ROOT / 'state' / 'bar_wait' / f'{name}.{kind}'
+    os.makedirs(path.parent, exist_ok=True)
+    for i in range(attempts):
+        try:
+            return _write_json_atomic(path, obj)
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.2)
+
+
+def _is_feed_not_published(exc):
+    try:
+        from lib.data import FeedNotPublished
+    except ImportError:
+        return False
+    return isinstance(exc, FeedNotPublished)
 
 
 def _mcpt_n_effective(n_perm, bars):
@@ -1549,6 +1582,18 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     # asked the agent for a backtest.
     muted          = quiet or os.environ.get('BLAVE_QUIET') == '1'
     strategy_name  = config['STRATEGY_NAME']
+    # wait_for_bar's gate (EXPECTED_BAR_GATE above): a live tick told which bar it is for judges
+    # the fetched data itself. Only the scheduler sets the env; a hand-run, a backtest and a
+    # performance refresh leave `gate` None and write no handshake file. .started is the proof
+    # this strategy went through run() and saw the env — wait_for_bar keeps a strategy that
+    # exits 0 without it on its probe-then-run path.
+    gate = None
+    if mode != 'backtest' and not refresh:
+        from lib.freshness import parse_expected
+        gate = parse_expected(os.environ.get(EXPECTED_BAR_ENV))
+    if gate is not None:
+        _write_handshake(strategy_name, 'started',
+                         {'pid': os.getpid(), 'at': time.time(), 'expected': gate.isoformat()})
     # The code this run executes, read once up front: the version it mints is THIS code, and
     # a backtest whose file changed underneath it writes nothing (_superseded).
     try:
@@ -1626,11 +1671,6 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
               f"(BLAVE_MODE=backtest).")
         return
 
-    try:  # visibility only — never blocks the tick (see _drift_flag)
-        _drift_flag(config, mode)
-    except Exception as e:
-        logging.warning("version drift check skipped: %s", e)
-
     import contextlib
     try:  # a still-forming crypto bar must not become the live tick's iloc[-1]
         from lib.data import closed_bars_only
@@ -1641,9 +1681,41 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     except ImportError:
         live_feeds = contextlib.nullcontext
     recorder = _FetchRecorder(config) if mode == 'backtest' else None
-    with closed_bars_only(), (live_feeds() if mode != 'backtest' else contextlib.nullcontext()), \
-            (recorder.recording() if recorder else contextlib.nullcontext()):
-        data = fetch_data_fn(hdrs)
+    try:
+        with closed_bars_only(), (live_feeds() if mode != 'backtest' else contextlib.nullcontext()), \
+                (recorder.recording() if recorder else contextlib.nullcontext()):
+            data = fetch_data_fn(hdrs)
+    except Exception as e:
+        if gate is None or not _is_feed_not_published(e):
+            raise
+        # bars are in, an align_feed row they need is not published yet: not ready, not a failure
+        from lib.freshness import feed_wait, naive_utc
+        _write_handshake(strategy_name, 'probe.json',
+                         {'expected': gate.isoformat(), 'observed_ts': naive_utc(e.last_bar).isoformat(),
+                          'ready': False, 'straggler': str(e.source), 'feed_wait': feed_wait(e),
+                          'pid': os.getpid(), 'at': time.time()})
+        raise SystemExit(NOT_READY_EXIT)
+    if gate is not None:
+        # Judge, then either leave without a trace (no state / stats / versions written, so the
+        # minute's probe and the real run are the same fetch) or carry on down the unchanged
+        # live path. The data is NOT cut to the expected bar: a slow tick that finds the next bar
+        # already closed computes it now, as it always did — the probe says which bar that was.
+        from lib.freshness import judge
+        verdict = judge(data, gate)
+        _write_handshake(strategy_name, 'probe.json',
+                         {'expected': gate.isoformat(),
+                          'observed_ts': verdict.observed_ts.isoformat() if verdict.observed_ts else None,
+                          'ready': bool(verdict.ready),
+                          'straggler': None if verdict.straggler is None else str(verdict.straggler),
+                          'feed_wait': None, 'pid': os.getpid(), 'at': time.time()})
+        if not verdict.ready:
+            raise SystemExit(NOT_READY_EXIT)
+
+    try:  # visibility only — never blocks the tick (see _drift_flag)
+        _drift_flag(config, mode)
+    except Exception as e:
+        logging.warning("version drift check skipped: %s", e)
+
     compute_t0 = time.monotonic()
     result = compute_fn(data)
     if mode == 'backtest':
