@@ -11,21 +11,25 @@
      the production switch), the pfx, a pending key and the status, and ask the worker service to
      remove itself — through credentials_remove (all seven lines go, not only the two sent) and
      through another venue's bind
-  3. dispatch: desktop / non-Windows refused; a key or an upload before the bind → NOT_BOUND; a
-     login before the certificate → CERT_MISSING (an unreadable pfx is a CERT block in the lib);
-     args shapes; one long step at a time; an interrupted step is swept
+  3. dispatch: desktop / non-Windows refused; a key before the bind is allowed (the certificate row
+     comes first); a login before the bind → NOT_BOUND; a login before the certificate → CERT_MISSING
+     (an unreadable pfx is a CERT block in the lib); args shapes; one long step at a time; an
+     interrupted step is swept
   4. probe: every login class the lib writes maps to a state, no text passes; a stale probe file
      is not trusted; the probe is one explicit login (--once); finish needs a
      passed probe
   5. upload (needs `cryptography`): the envelope opens once with 統一's own key file (群益's is not
      touched); a wrong certificate password is refused before anything is written (no broker
      contact); the pfx lands under the fixed name with the uploaded bytes, its password in the
-     vault; expired / not a certificate refused; the issuer marks are placeholders until Wei
-     supplies them (issuer_checked false), and once set they refuse a foreign certificate
+     vault, NO login (every login is the user's press); expired / not a certificate refused; the
+     issuer marks are placeholders until Wei supplies them (issuer_checked false), and once set they
+     refuse a foreign certificate; an upload BEFORE the bind lands too (the vault holds only the
+     certificate password) and the bind that follows keeps it and says creds_saved
   6. upload write order: a failed vault write removes the landed certificate; a bind racing the upload
-  7. president_pfx_local (the user applied over RDP; stand-in folder): none found / a wrong password /
-     expired / several → the newest that opens and has not expired, COPIED (the original stays); a file
-     in the envelope refused; the file name (national id) in no result, status, exception or output
+  7. president_pfx_local (retired — kept for an older web build; stand-in folder): none found / a wrong
+     password / expired / several → the newest that opens and has not expired, COPIED (the original
+     stays), no login; a file in the envelope refused; the file name (national id) in no result,
+     status, exception or output
 
 Run: cd blave-agent && /usr/bin/python3 tests/check_president_connect.py
 """
@@ -223,7 +227,11 @@ check("3 desktop refused", refused(lambda: pc.dispatch("president_setup", {}, D,
 pc.IS_WINDOWS = False
 check("3 not Windows refused", refused(lambda: pc.dispatch("president_setup", {}, D), "NOT_WINDOWS") is True)
 pc.IS_WINDOWS = True
-check("3 a key before the bind → NOT_BOUND", refused(lambda: pc.dispatch("president_pfx_key", {}, D), "NOT_BOUND") is True)
+check("3 a key before the bind is allowed (the certificate row comes first)",
+      refused(lambda: pc.dispatch("president_pfx_key", {}, D), "NOT_BOUND") is not True)
+check("3 a login before the bind → NOT_BOUND (probe, host, finish alike)",
+      all(refused(lambda: pc.dispatch(c, a, D), "NOT_BOUND") is True for c, a in (
+          ("president_probe", {}), ("president_host", {"env": "test"}), ("president_finish", {}))))
 pc.divert_credentials(dict(BIND))
 check("3 a login before the certificate → CERT_MISSING (never a CERT block in the lib)",
       refused(lambda: pc.dispatch("president_probe", {}, D), "CERT_MISSING") is True
@@ -455,6 +463,7 @@ if HAVE_CRYPTO:
     probes = []
     pc.run_probe = lambda push=None, after_unlock=False: probes.append(1) or {"state": "ok"}
     pc.divert_credentials(dict(BIND))
+    pc._update("probe", state="ok", env="test", status="ok")
     open(cc._paths()["key"], "w").write("capital-key")
     PFX = make_pfx("ca-pw")
     k = pc.dispatch("president_pfx_key", {}, D)
@@ -462,9 +471,13 @@ if HAVE_CRYPTO:
           os.path.isfile(P["key"]) and open(cc._paths()["key"]).read() == "capital-key")
     r = pc.run_pfx(seal(k, PFX, "ca-pw"))
     v = json.load(open(P["vault"]))
-    check("5 upload: the pfx lands under the fixed name with the uploaded bytes, its password in the vault, then the probe",
+    check("5 upload: the pfx lands under the fixed name with the uploaded bytes, its password in the vault; NO login",
           open(P["pfx"], "rb").read() == PFX and v["president_ca_password"] == "ca-pw" and v["live"] is False
-          and probes == [1] and r["probe"] == {"state": "ok"} and not os.path.exists(P["key"]))
+          and probes == [] and r == {"cert": {"not_after": r["cert"]["not_after"], "issuer_checked": False}}
+          and not os.path.exists(P["key"]), r)
+    check("5 …an earlier passed probe is forgotten (finish must see a login with THIS certificate)",
+          pc.read_status()["probe"] == {"status": "idle", "at": pc.read_status()["probe"]["at"]}
+          and refused(pc.run_finish, "TEST_ENV") is True)
     check("5 the certificate's subject (national id) is nowhere in the result or the status",
           "Z1234567891" not in json.dumps(r) and "Z1234567891" not in json.dumps(pc.read_status()))
     check("5 issuer marks are placeholders until Wei supplies them (issuer_checked false, said so)",
@@ -493,9 +506,27 @@ if HAVE_CRYPTO:
           refused(lambda: pc.run_pfx(seal(k, PFX, "ca-pw")), "PFX_NOT_PRESIDENT") is True)
     pc.CERT_OU_MARK = None
     pc.drop_vault()
-    k = cc.cmd_pfx_key({}, key_path=P["key"])
-    check("5 an upload after unbind → NOT_BOUND, no file", refused(lambda: pc.run_pfx(seal(k, PFX, "ca-pw")), "NOT_BOUND") is True
-          and not os.path.exists(P["pfx"]))
+    k = pc.dispatch("president_pfx_key", {}, D)
+    r = pc.run_pfx(seal(k, PFX, "ca-pw"))
+    st = pc.read_status()
+    check("5 the certificate row comes first: an upload with no account bound lands, the vault holds only its password",
+          open(P["pfx"], "rb").read() == PFX and json.load(open(P["vault"])) == {"president_ca_password": "ca-pw"}
+          and st["cert"]["status"] == "ok" and st["creds_saved"] is False and st["env"] is None and not probes, st)
+    check("5 …and the account cannot log in yet (NOT_BOUND, not CERT_MISSING: the page's next row is the account)",
+          refused(lambda: pc.dispatch("president_probe", {}, D), "NOT_BOUND") is True)
+    out = pc.divert_credentials(dict(BIND))
+    v = json.load(open(P["vault"]))
+    st = pc.read_status()
+    check("5 …the bind that follows keeps that certificate and its password, starts on the test host, says creds_saved",
+          open(P["pfx"], "rb").read() == PFX and v == {"president_password": "trade-pw", "live": False,
+                                                        "account_fp": pc.account_fp(BIND["president_account"]),
+                                                        "president_ca_password": "ca-pw"}
+          and st["cert"]["status"] == "ok" and st["creds_saved"] is True and st["env"] == "test"
+          and st["test_skipped"] is False and out["president_ca_path"] == P["pfx"], (v, st))
+    d5 = pc.dispatch("president_probe", {}, D)
+    check("5 …and now the probe is allowed", isinstance(d5, D))
+    d5.cleanup()
+    pc.drop_vault()
 
 # ── 7. president_pfx_local (no cryptography needed: envelope stubbed, inspect_pfx keyed on the bytes) ──
 import contextlib  # noqa: E402
@@ -586,10 +617,10 @@ open(outside, "wb").write(b"OK:outside")
 os.symlink(outside, os.path.join(LOCAL, "zz_link.pfx"))
 got, leak = run_local()
 v = json.load(open(P["vault"]))
-check("7 several: the newest one that opens and has not expired is copied under the fixed name, then the probe"
+check("7 several: the newest one that opens and has not expired is copied under the fixed name, no login"
       " (a newer link pointing out of the folder is not followed)",
       isinstance(got, dict) and open(P["pfx"], "rb").read() == b"OK:renewed" and v["president_ca_password"] == "ca-pw"
-      and probes == [1] and got["probe"] == {"state": "ok"} and pc.read_status()["cert"]["source"] == "local", got)
+      and not probes and "probe" not in got and pc.read_status()["cert"]["source"] == "local", got)
 check("7 …copied, not moved: every original is still where 憑證e總管 left it (next year's renewal)",
       open(newest_ok, "rb").read() == b"OK:renewed" and len([n for n in os.listdir(LOCAL) if n.endswith(".pfx")]) == 5
       and open(outside, "rb").read() == b"OK:outside")
@@ -612,7 +643,8 @@ check("7 a file inside the envelope → ENVELOPE_INVALID (this step takes the pa
 SENT["pfx"] = b""
 pc.drop_vault()
 got, _ = run_local()
-check("7 before the bind → NOT_BOUND, nothing copied", got == "NOT_BOUND" and not os.path.exists(P["pfx"]), got)
+check("7 before the bind: copied like president_pfx, the vault holds only the certificate password",
+      isinstance(got, dict) and os.path.exists(P["pfx"]) and json.load(open(P["vault"])) == {"president_ca_password": "ca-pw"}, got)
 pc.divert_credentials(dict(BIND))
 d7 = pc.dispatch("president_pfx_local", {"key_id": "ab" * 16, "envelope": {
     "v": 1, "alg": cc.ALG, "ek": "QUJD", "iv": "AAAA", "ct": "Y3Q="}}, D)

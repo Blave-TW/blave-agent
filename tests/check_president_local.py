@@ -398,6 +398,13 @@ pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).r
 check("6e skip, then another account bound → test_skipped off, its first host {url} probes the test host",
       pc.read_status().get("test_skipped") is False and len(probes) == n_probes + 1 and probes[-1] == "test"
       and pc.read_status()["env"] == "test", json.dumps(pc.read_status()))
+# 6e. skipped, then the test-host row's own press (host {url}) — a real login, the switch-only rule is {env: test}'s alone
+pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+n_probes = len(probes)
+pc.local_dispatch({"op": "host", "url": "test167.pfctrade.com"}, D).run()
+check("6e skipped, then host {url}: logs in on the test host, skip cleared",
+      len(probes) == n_probes + 1 and probes[-1] == "test" and pc.read_status().get("test_skipped") is False
+      and pc.read_status()["env"] == "test")
 cert(GOOD)  # the account the rest of this file is bound to
 pc.run_probe, pc.run_test_order = real_probe, real_order
 
