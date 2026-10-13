@@ -957,6 +957,7 @@ class Daemon:
         self._kinds_cache = {}   # strategy_kinds(): folder -> classified entry
         self._seen = {}     # id -> taken at; the replay memory (see parse_command)
         self._ignored = set()  # non-regular entries in in/ we could not remove
+        self._reconcile_seen = None  # (snapshot mtime, round marker up) at the last _reconcile_watch
 
         import command_listener as cl
         import events
@@ -1126,15 +1127,16 @@ class Daemon:
                 _slide_events(self.events, doc.get("events"))
 
     def _status_loop(self):
+        """Rebuild every STATUS_EVERY_S and at once on `dirty` — a command's ack
+        (handle_file), the account read, a reconcile round's end
+        (_reconcile_watch), a listener push. `dirty` is cleared BEFORE the
+        build: triggers landing mid-build coalesce into one more rebuild right
+        after it — never a queue, never a cooldown the page has to sit out."""
         last_rotate = time.time()
         while not self.stop.is_set():
+            self.dirty.clear()
             self.write_status()
-            if self.dirty.wait(timeout=STATUS_EVERY_S):
-                self.dirty.clear()
-                # a command's downstream effect (reconcile snapshot) lands a few
-                # seconds later — same second look the cloud's report thread takes
-                self.write_status()
-                self.stop.wait(8)
+            self.dirty.wait(timeout=STATUS_EVERY_S)
             if time.time() - last_rotate > 3600:
                 last_rotate = time.time()
                 self.events.rotate()  # nothing acks locally; this is the 2MB cap only
@@ -1166,6 +1168,21 @@ class Daemon:
                 self.dirty.set()
             self.stop.wait(2)
 
+    def _reconcile_watch(self):
+        """A reconcile round ended — read off disk, the reconciler being its own
+        process: the snapshot it writes (lib/portfolio) has a new mtime, or the
+        round marker went away (a round that raised writes no snapshot but may
+        have tripped HALT, which the page must show as soon). The first look
+        only records; a round shorter than one poll still shows in the snapshot."""
+        try:
+            snap = os.path.getmtime(os.path.join(self.ws, "manager", "last_reconcile.json"))
+        except OSError:
+            snap = None
+        marker = os.path.exists(os.path.join(self.ws, self.sup.ROUND_MARKER))
+        seen, self._reconcile_seen = self._reconcile_seen, (snap, marker)
+        if seen is not None and (snap != seen[0] or (seen[1] and not marker)):
+            self.dirty.set()
+
     def _supervise_loop(self):
         while not self.stop.is_set():
             self.sup.tick()
@@ -1173,6 +1190,7 @@ class Daemon:
                 self.pc.local_tick()
             except Exception as e:
                 _log(f"president tick failed: {type(e).__name__}")
+            self._reconcile_watch()
             self.stop.wait(1)
 
     def _watch_parent(self):
