@@ -3,7 +3,7 @@
 // 跑法:node tests/check_shell_perf_refresh.js(不開 Electron)
 //   ① 指令通道:daemon.js UI_COMMANDS / argsOk 形狀 = runtime _stats_refresh_args(names 1–50、不重複、名字規則同 version_restore);
 //      主行程 CLOUD_SHIPPED、renderer ENV_CLOUD_CMDS、runtime local_daemon.ALLOWED、fixture 四處都有
-//   ② 埋點 perf_update 在 browser_hb_card 之後(0.1.23 的 pres_have_cert 收尾)、送出點只在 perfClick 的 ack started 之後
+//   ② 埋點 perf_update 在 browser_hb_card 之後(0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在後面)、送出點只在 perfClick 的 ack started 之後
 //   ③ 主行程 stratPerf:{ at = stats.json mtime(秒), refresh? } 同 runtime strategy_reporter._read_perf
 //   ④ renderer 三態(假 DOM 跑真的 perf.js):Type A／C 都出、Type B 不出(xpIsTypeB)、閒置(滿一天才出 N 天前;上線中 / 非上線兩句 title)/ 更新中 / 失敗、
 //      按下的指令形狀、ack 之後才記埋點、ack skip 碼各自的失敗行(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)、
@@ -44,7 +44,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
 
   // ── ② 埋點 ──
   const { EVENTS } = require(path.join(S, "telemetry.js")), F = EVENTS.feature_used.name;
-  ok("perf_update 在 browser_hb_card 之後(0.1.23 的 pres_have_cert 收尾)、≤16 字", F.slice(-3).join() === "browser_hb_card,perf_update,pres_have_cert" && "perf_update".length <= 16);
+  ok("perf_update 在 browser_hb_card 之後(0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在後面)、≤16 字", F.slice(-4).join() === "browser_hb_card,perf_update,pres_have_cert,contract_switch" && "perf_update".length <= 16);
   const click = fnSrc(perfSrc, "perfClick");
   ok("送出點只有 perfClick 一處,而且在 ack started 之後(按下、BUSY、結果不明、拒收都不記)", (perfSrc.match(/trackFeature\("perf_update"\)/g) || []).length === 1
     && /res\.started\.indexOf\(name\) >= 0\) \{ trackFeature\("perf_update"\);/.test(click) && click.indexOf('tradeSend("stats_refresh"') < click.indexOf('trackFeature("perf_update")'));

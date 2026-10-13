@@ -26,7 +26,7 @@ class N {
 var document = { createElement: (t) => new N(t), createDocumentFragment: () => { const n = new N("#frag"); n.frag = true; return n; }, createTextNode: (s) => { const n = new N("#text"); n._t = String(s); return n; } };
 var t = (k) => k, LANG = "en", TR = { st: { alive: true, report: null } };
 eval(cut("/* ── 純邏輯(", "/* ── 純邏輯到此").replace(/^const /gm, "var ") + "\n"
-  + ["trEl", "trSec", "trHead", "trTipLabel", "trMoneyInto", "trFmt", "trLotsFmt", "trLotsTgtFmt", "trUnit", "trCcy", "trReport", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trLivePositions", "trPositions"].map(fnSrc).join("\n"));
+  + ["trEl", "trSec", "trHead", "trTipLabel", "trMoneyInto", "trFmt", "trLotsFmt", "trLotsTgtFmt", "trUnit", "trCcy", "trReport", "trContracts", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trLivePositions", "trPositions"].map(fnSrc).join("\n"));
 var trTipSeq = 0;
 var trVenueKind = (id) => (id === "binance" ? "crypto" : null);
 
