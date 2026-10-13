@@ -37,13 +37,15 @@ if (HEADLESS && app.dock) app.dock.hide();
 let resolvedPath = null;
 const mergePath = (got, known, sep = path.delimiter) => got.concat(known.filter((d) => got.indexOf(d) < 0)).filter(Boolean).join(sep);
 /* Windows(純函式;tests/check_shell_login_path.js):GUI app 直接繼承登錄檔的使用者 PATH,不必開登入 shell。
-   補的是已知安裝位置:Claude Code 原生安裝器(~\.local\bin)、npm 全域(%APPDATA%\npm,codex.cmd 在這)、Git for Windows
-   的兩種裝法(Claude Code 的 Bash 工具靠它)。環境變數缺的那項會是相對路徑,不補。 */
+   補的是已知安裝位置:Claude Code 原生安裝器(~\.local\bin)、npm 全域(%APPDATA%\npm,codex.cmd 在這)、WinGet 的捷徑資料夾
+   (winget install Anthropic.ClaudeCode 把 claude.exe 連到這、再寫進使用者 PATH——Blave 開著時裝的,行程的 PATH 快照裡沒有)、
+   Git for Windows 的兩種裝法(Claude Code 的 Bash 工具靠它)。環境變數缺的那項會是相對路徑,不補。 */
 function winPath(env) {
   const got = String(env.PATH || env.Path || "").split(";").map((s) => s.trim());
   const known = [
     path.win32.join(env.USERPROFILE || "", ".local", "bin"),
     path.win32.join(env.APPDATA || "", "npm"),
+    path.win32.join(env.LOCALAPPDATA || "", "Microsoft", "WinGet", "Links"),
     path.win32.join(env.LOCALAPPDATA || "", "Programs", "Git", "cmd"),
     path.win32.join(env.ProgramFiles || "", "Git", "cmd"),
   ].filter((d) => path.win32.isAbsolute(d));
@@ -75,7 +77,8 @@ const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(b
 function run(cmd, args, envPath, timeout = 10000, cwd = undefined) {
   const w = cmdWrap(cmd), t0 = Date.now();
   return new Promise((resolve) => {
-    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath } },
+    // DISABLE_AUTOUPDATER:偵測跑的 claude 可能是 SDK 隨包那顆,同 runtime/agent_turn 的做法,別讓它背景抓 330MB 新版
+    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" } },
       (err, stdout, stderr) => resolve({
         code: err ? (err.code === undefined ? -1 : err.code) : 0,
         stdout: String(stdout || ""), stderr: String(stderr || ""),
@@ -121,6 +124,7 @@ function binKind(p) {
   if (!p) return "none";
   if (/\/ChatGPT\.app\/Contents\/Resources\/codex$/.test(p)) return "chatgpt";
   if (/\\WindowsApps\\OpenAI\.Codex_[^\\]+\\app\\resources\\codex\.exe$/i.test(p)) return "store";
+  if (/[\\/]claude_agent_sdk[\\/]_bundled[\\/]claude(?:\.exe)?$/i.test(p)) return "bundled";
   if (/\.exe$/i.test(p)) return "exe";
   if (/\.(cmd|bat)$/i.test(p)) return "cmd";
   if (/\.ps1$/i.test(p)) return "ps1";
@@ -128,7 +132,7 @@ function binKind(p) {
 }
 const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms });
 /* 這個 CLI 為什麼不能用(detect_fail 埋點的值;能用回 null)。純函式。
-   none = 沒找到檔;shim = Windows 上 PATH 裡只有 npm 的包裝檔、解不到 codex.exe;timeout = 登入檢查逾時;
+   none = 沒找到檔(claude 是 PATH 與隨包那顆都沒有);shim = Windows 上 PATH 裡只有 npm 的包裝檔、解不到 codex.exe;timeout = 登入檢查逾時;
    badjson = `claude auth status` 回的不是 JSON(舊版);nonzero = CLI 有回答、答案是沒登入(codex 非 0;claude 的 loggedIn=false) */
 function detectWhy(kind, r) {
   if (r.loggedIn) return null;
@@ -203,6 +207,24 @@ async function codexPath(envPath, seen, fresh) {
   }
   return found || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
 }
+/* Claude 的對話不是用戶機上的 claude 跑的:claude-agent-sdk 的 wheel 隨包一顆 Claude CLI,SDK 的 _find_cli() 第一個就拿它
+   (_internal/transport/subprocess_cli.py 的 _find_bundled_cli);用戶自己裝的 claude 只拿來跑 `auth status` / `auth login`。
+   PATH 上找不到(nvm / fnm 的 npm 全域寫在 .zshrc、~/.npm-global/bin、舊版 ~/.claude/local、Blave 開著才裝的)就退到隨包那顆:
+   登入狀態讀的是同一份 Keychain / ~/.claude,答案跟用戶的 claude 一致。venv 還沒裝好(引擎安裝中)時沒有這顆 → 仍算沒找到。
+   site-packages 在 POSIX 是 venv/lib/python3.x/、Windows 是 venv\Lib\;Python 版本不寫死,列目錄找。純函式(fsx 可換)。 */
+function bundledClaude(base, win, fsx = fs) {
+  const venv = path.join(base, "venv");
+  let libs;
+  try { libs = win ? [path.join(venv, "Lib")] : fsx.readdirSync(path.join(venv, "lib")).filter((d) => /^python3\.\d+$/.test(d)).map((d) => path.join(venv, "lib", d)); }
+  catch (_) { return null; }
+  return libs.map((l) => path.join(l, "site-packages", "claude_agent_sdk", "_bundled", win ? "claude.exe" : "claude")).find((p) => fsx.existsSync(p)) || null;
+}
+// PATH 優先、隨包是退路(同 codexPath 的 ChatGPT / Store 退路);seen.found 記的是 PATH 上找到的檔種
+async function claudePath(envPath, seen) {
+  const found = await which("claude", envPath, seen);
+  if (seen) seen.found = binKind(found);
+  return found || bundledClaude(BASE, WIN);
+}
 /* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
    連 Claude 的人一次都不必開(SDK 自己找 claude)。來源仍然是當下的偵測,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
 async function codexBinNow() { return codexPath(await loginShellPath()); }
@@ -215,7 +237,7 @@ async function detectAgents() {
   const rec = { claude: {}, codex: {} };
   // 兩條同時跑:各自最多 LOGIN_CHECK_MS,整次偵測最多也就這麼久(依序跑最壞要兩倍,畫面那邊沒有自己的逾時)
   await Promise.all([(async () => {
-    const claudeBin = await which("claude", envPath, rec.claude);
+    const claudeBin = await claudePath(envPath, rec.claude);
     rec.claude.bin = binKind(claudeBin);
     if (!claudeBin) return;
     out.claude.installed = true;
@@ -228,7 +250,7 @@ async function detectAgents() {
       out.claude.loggedIn = !!j.loggedIn;
       out.claude.authMethod = j.authMethod || null;
       out.claude.email = j.email || null;
-    } catch (_) { rec.claude.json = false; /* 舊版沒有這個子指令:當成未知,顯示成未登入 */ }
+    } catch (_) { if (r.code === 0) rec.claude.json = false; /* 舊版沒有這個子指令:當成未知,顯示成未登入;跑不起來(退出碼非 0、stdout 空)不算壞 JSON */ }
   })(), (async () => {
     // Codex 有兩種裝法:獨立 CLI(在 PATH 上),或跟著 ChatGPT 桌面版來的——後者的
     // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
@@ -264,7 +286,7 @@ async function agentLogin(kind) {
   return new Promise((resolve) => {
     const w = cmdWrap(bin);
     const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
-      { env: { ...process.env, PATH: envPath }, stdio: "ignore", shell: w.shell, windowsHide: true });
+      { env: { ...process.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" }, stdio: "ignore", shell: w.shell, windowsHide: true });
     loginChild = child;
     const timer = setTimeout(() => child.kill(), 5 * 60 * 1000);
     // cancelled:用戶自己按了「取消等待」——不是失敗,renderer 不顯示失敗句
