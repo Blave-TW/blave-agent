@@ -1498,17 +1498,21 @@ msgstr "超過 1 倍要用合約保證金。Blave 不會替你調槓桿：交易
 msgid "tr.lev.marginShort"
 msgstr "Blave 不會替你調槓桿：交易所上這些合約至少要設 {L} 倍，不夠的單會被拒。"
 
+# {p} 的值:「8%」或超過 100 倍時這一句
+msgid "tr.lev.pctLt1"
+msgstr "不到 1%"
+
 msgid "tr.lev.loss"
-msgstr "照這些金額滿倉，全部部位一起反向 {p}%，虧損就等於你全部的淨值；交易所會更早強平。"
+msgstr "照這些金額滿倉，全部部位一起反向 {p}，虧損就等於你全部的淨值；交易所會更早強平。"
 
 msgid "tr.lev.lossPaper"
-msgstr "照這些金額滿倉，全部部位一起反向 {p}%，模擬帳戶的淨值就會歸零。"
+msgstr "照這些金額滿倉，全部部位一起反向 {p}，模擬帳戶的淨值就會歸零。"
 
 msgid "tr.lev.binance5"
 msgstr "Binance 子帳戶的合約槓桿最多 5 倍。"
 
 msgid "tr.lev.ack"
-msgstr "我知道照這些金額滿倉，全部反向 {p}% 就虧掉全部淨值"
+msgstr "我知道照這些金額滿倉，全部反向 {p} 就虧掉全部淨值"
 
 msgid "tr.err.paperLev"
 msgstr "{sym} 沒有下單：部位要到 {gross} {c}，超過模擬帳戶上限 {cap} {c}（淨值的 {x} 倍）。請調低金額。"
@@ -1876,22 +1880,19 @@ msgstr "已儲存，這台電腦已套用新金額。"
 msgid "tr.saveTitle"
 msgstr "確認下單金額"
 
-msgid "tr.saveZeroed"
-msgstr "改成 0：{names}——這幾支那一份的合約部位會平倉、現貨會賣出。"
-
-# 改成 0 的全是口數列(期貨帳戶沒有現貨)
-msgid "tr.saveZeroedLots"
-msgstr "改成 0：{names}——這幾支那一份的合約部位會平倉。"
-
-# 口數格留空(改成 0 的另有上一句)
+# 口數格留空(原本有口數、改成 0 的那幾支列上已寫「原 → 0」)
 msgid "tr.saveBlankLots"
 msgstr "{names}：口數留空會存成 0，這支策略不會下單。"
 
+# 確認金額框列上的小標(同網頁 workspace_cf_tag_close / remove)
+msgid "tr.cfTagClose"
+msgstr "平倉"
+
+msgid "tr.cfTagRemove"
+msgstr "移出"
+
 msgid "tr.saveWarn"
 msgstr "儲存後，下單機會照新的金額對帳，可能立即產生下單。"
-
-msgid "tr.saveRemoved"
-msgstr "移出組合：{names}——其合約部位將自動平倉、現貨庫存將自動賣出。"
 
 msgid "tr.exchPositions"
 msgstr "交易所部位"

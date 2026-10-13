@@ -349,6 +349,12 @@ function trExecState(st) {
   if (r.daemon && r.daemon.reconciler && r.daemon.reconciler.running === false) return "dead";
   return "running";
 }
+/* 存金額後機器可能真的下單嗎(確認框標「平倉」「移出 · 平倉」的依據;同網頁 pfMayFire):在跑、重開沒停住、剛按啟動;
+   已暫停只有單純 HALT(平倉停損照走)算;trExecState 的 halted 也包含重開停止(對帳器整個停著,HALT 疊在上面也一樣),那一種不算 */
+function trMayFire(st, pending) {
+  const s = trExecState(st), r = st && st.report, h = r && r.halt;
+  return s === "running" || s === "unconfirmed" || (s === "halted" && !trRestartKind(r) && !trHaltStopsAll(h)) || trStartPending(pending);
+}
 /* 對帳器現在真的在跑嗎(啟動下單要不要補一個 restart 靠它)。不能單獨信心跳:心跳檔新鮮期 300 秒,app 重開後那 5 分鐘
    舊心跳還算 alive,略過 restart 的話對帳器永遠起不來(稽核 M2)。監督者有講就聽監督者的,沒講(舊狀態檔)才退回心跳。 */
 function trRecRunning(st) {
@@ -444,6 +450,10 @@ const TR_TXF_CCY = "TWD";
 const TR_TXF_SPECS = { TMF: { cv: 10, prod: "tr.txfProd.tmf", big: 1000 }, MXF: { cv: 50, prod: "tr.txfProd.mxf", big: 200 }, TXF: { cv: 200, prod: "tr.txfProd.txf", big: 50 } };
 /* 倍數提醒的三級門檻(合計 ÷ 淨值;ux-order-1-4-5 §1.1,網頁同名同值)。群益口數列「名目太大」的提醒用 LEV_T2,不另開常數 */
 const LEV_T1 = 1, LEV_T2 = 5, LEV_T3 = 10;
+/* 「全部反向 {p}」那一格的字(槓桿警語與 ≥10 倍勾選句共用;同網頁 pfLevPct):超過 100 倍時 ⌊100 ÷ n⌋ 是 0,寫「不到 1%」,不寫「反向 0%」 */
+function trLevPct(p) { return p < 1 ? t("tr.lev.pctLt1") : p + "%"; }
+// 淨值倍數:千分位、兩位小數(4,494.68×;同網頁)
+function trMultFmt(x) { return x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 /* 倍數提醒的級數(§1.2),n = 合計 ÷ 淨值(用畫面上那個兩位小數,字和級數才對得上):0 = ≤ 1 倍、1 = 1–5、2 = 5–10、3 = ≥ 10。
    L = 交易所至少要設幾倍(⌈n⌉);p = 全部反向幾 % 就虧掉全部淨值(⌊100 ÷ n⌋,往下取,不把緩衝講大)。
    模擬帳戶(§1.4)沒有第 1 級(沒有槓桿可設)、也沒有第 3 級的勾選(不是真錢) */
@@ -2248,8 +2258,6 @@ function trPickBtn() {
 /* 這一列是不是台指期口數列:標的看主機回報的 states,沒有就看清單(同金額表那一格的 sym) */
 function trRowTxf(n) { const st = ((trReport() || {}).states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}; return trTxfSpec(st.symbol || x.symbol); }
 function trRowIsLot(n) { return !!trRowTxf(n); }
-// 這幾支全是口數列(確認框「改成 0」那句分支:期貨帳戶沒有現貨可賣)
-function trLotsOnly(names) { return names.length > 0 && names.every((n) => trRowIsLot(n)); }
 /* 依計價分區(units spec §9)的資料:回報頂層 quote_ccy 與 signals_frozen(舊 runtime 沒有這兩欄 = 照尾碼推、沒有 pending) */
 function trQuoteMap() { const q = (trReport() || {}).quote_ccy; return q && typeof q === "object" && !Array.isArray(q) ? q : null; }
 // 沒連交易所而舊的下單程式還活著時訊號凍住:之後才勾的策略完全沒有 state.json,畫「還沒有訊號」,不畫成 0
@@ -2353,7 +2361,7 @@ function trAmountTable(names, stored, states) {
     // 淨值快照:確認框用這裡顯示的那一個(不再自己讀一次),同一組金額兩處的倍數才會一樣(0.0.3 實機 989.95x / 988.37x)
     const eq = trEquity(); TR.eqShown = { env: TR.env, v: eq };
     const am = cloud ? trSendAmounts("cloud", names, stored, TR.edits, trListNames()) : trCurrentAmounts(names, stored, TR.edits);
-    const zt = trZoneSum(am, eq), multText = zt.mult != null ? t("tr.equityMult", { x: zt.mult.toFixed(2) }) : "";
+    const zt = trZoneSum(am, eq), multText = zt.mult != null ? t("tr.equityMult", { x: trMultFmt(zt.mult) }) : "";
     /* 區標題(§9.4):小計只在錢的區有兩列以上時出(一列就等於那一列);口數區不加口數、未定區沒有幣別,都不出。
        倍數掛在綁定交易所那一區(§9.5) */
     Object.keys(grpCells).forEach((z) => { const g = grpCells[z], Z = zt.zones[z];
@@ -2383,7 +2391,7 @@ function trAmountTable(names, stored, states) {
     if (lev.hidden) return;
     if (v.level >= 2) {
       const row = trEl("div", "verdict is-calm"), mk = trEl("span", "fault-mark"); mk.setAttribute("aria-hidden", "true");
-      row.append(mk, trEl("span", "", t(paper ? "tr.lev.lossPaper" : "tr.lev.loss", { p: v.p }))); lev.appendChild(row);
+      row.append(mk, trEl("span", "", t(paper ? "tr.lev.lossPaper" : "tr.lev.loss", { p: trLevPct(v.p) }))); lev.appendChild(row);
     }
     if (margin) {
       const bn = trVenueId() === BINANCE && v.L > 5 ? (LANG === "zh" ? "" : " ") + t("tr.lev.binance5") : "";
@@ -2568,18 +2576,19 @@ function trSaveAmounts(names, stored, opener) {
   if (!stored || trStored() === null || trCfgUnread(trReport())) return;   // 讀不到金額設定:兩邊都不給存
   if (cloud && (!(S.st && S.st.alive) || trCfgUnread(trReport()))) return;   // 讀不到新狀態 / 設定不給存(儲存鈕已經 disabled;這裡是第二道)
   const sending = trSendAmounts(S.env, names, stored, TR.edits, trListNames()), removed = trRemoved(stored, sending);
-  /* 依計價分區(units spec §9.8):只列 > 0 的那幾支,同一套區、區標題就是單位(只有一區時不畫,單位寫在合計);
-     倍數掛在綁定交易所那一區的標題(只有一區時接在合計後面),「槓桿」那一列退場 */
-  const posAm = {}; Object.keys(sending).forEach((n) => { if (sending[n] > 0) posAm[n] = sending[n]; });
-  const eq = trShownEquity(TR.eqShown, TR.env, trEquity()), zt = trZoneSum(posAm, eq);
-  const multText = zt.mult != null ? t("tr.equityMult", { x: zt.mult.toFixed(2) }) : "";
-  const zones = trZoneOrder(Object.keys(posAm).map(trZoneOf), trVenueId(), zt.multZone);
-  const money = (v) => { const dd = document.createElement("dd"); dd.textContent = trFmt(v); return dd; };
+  /* 依計價分區(units spec §9.8;A 版 confirm-amounts-mockup):整份會寫進主機的金額全列(amounts 是整份覆蓋)加上移出的,
+     區標題就是單位(只有一區時不畫,單位寫在合計)。沒變的列整列退灰、有變的寫「原 → 新」,區小計與合計同一規則;
+     「平倉」只在存完可能真的下單時標(trMayFire)。倍數掛在綁定交易所那一區的標題(只有一區時接在合計後面) */
+  const eq = trShownEquity(TR.eqShown, TR.env, trEquity()), zt = trZoneSum(sending, eq), zt0 = trZoneSum(stored, eq);
+  const mayFire = trMayFire(S.st, S.pending), old = (n) => Number(stored[n]) || 0;
+  const multText = zt.mult != null ? t("tr.equityMult", { x: trMultFmt(zt.mult) }) : "";
+  const keys = Object.keys(sending).concat(removed), zones = trZoneOrder(keys.map(trZoneOf), trVenueId(), zt.multZone);
+  const arrow = (dd, was) => { dd.append(trEl("span", "was", was), trEl("span", "arr", "→")); };
   const cfRow = (cls, label, dd) => { const r = trEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(trEl("dt", "", label), dd); return r; };
   const extra = document.createDocumentFragment(), dl = trEl("dl", "cf-rows cf-amt");
-  // 口數列:格子只放口數,下方小字寫商品名與名目(框裡沒有標的欄,商品名只能放這裡;§9.8)
-  const lots = (sp, v) => { const dd = document.createElement("dd"), m = trTxfRefMoney(sp, v, trTxfPrice());
-    dd.textContent = trFmt(v); dd.appendChild(trEl("span", "cf-ref", m == null ? t(sp.prod) : t("tr.txfConfirmRef", { prod: t(sp.prod), amt: trFmt(Math.round(m)) }))); return dd; };
+  // 口數列:格子只放口數,下方小字寫商品名與名目(框裡沒有標的欄,商品名只能放這裡;§9.8)。0 口只寫商品名
+  const lotsRef = (sp, v) => { const m = v > 0 ? trTxfRefMoney(sp, v, trTxfPrice()) : null;
+    return trEl("span", "cf-ref", m == null ? t(sp.prod) : t("tr.txfConfirmRef", { prod: t(sp.prod), amt: trFmt(Math.round(m)) })); };
   /* #1:口數列太大時那一列下面多一句(不擋、確認鈕照常;沒改的舊列也檢查)。名目跟淨值比要同幣:帳戶幣不是 TWD 就退回看口數 */
   const bigWarn = (r, sp, v) => {
     const w = trTxfBigWarn(sp, v, trTxfPrice(), eq, trUnit());
@@ -2590,43 +2599,66 @@ function trSaveAmounts(names, stored, opener) {
       ? t(trLotsKey(v, "tr.txfBigNotional", "tr.txfBigNotional1"), { ...q, amt: trFmt(Math.round(w.amt)), x: w.x.toFixed(2) })
       : t("tr.txfBigLots", q)));
     r.classList.add("has-warn"); r.appendChild(dd); return r; };
+  const row = (n) => {
+    const sp = trRowTxf(n), was = old(n), dd = document.createElement("dd");
+    if (removed.indexOf(n) >= 0) {
+      if (was > 0) arrow(dd, trFmt(was));
+      dd.appendChild(trEl("span", "tag", mayFire && was > 0 ? t("tr.cfTagRemove") + " · " + t("tr.cfTagClose") : t("tr.cfTagRemove")));
+      return cfRow("", trDisplay(n), dd);
+    }
+    const now = Number(sending[n]) || 0;
+    if (was > 0 && now !== was) arrow(dd, trFmt(was));
+    dd.append(trEl("span", "n", trFmt(now)));
+    if (mayFire && was > 0 && !(now > 0)) dd.appendChild(trEl("span", "tag", t("tr.cfTagClose")));
+    if (sp) dd.appendChild(lotsRef(sp, now));
+    const r = cfRow(now === was ? "same" : "", trDisplay(n), dd);
+    return sp && now > 0 ? bigWarn(r, sp, now) : r;
+  };
   zones.forEach((z) => {
+    const ns = keys.filter((n) => trZoneOf(n) === z);
     if (zones.length > 1) {
-      const Z = zt.zones[z], dd = trEl("dd", "", Z.rows >= 2 && z !== TR_ZONE_LOTS && z !== TR_ZONE_UNKNOWN ? trFmt(Z.sum) : "");
+      // 錢的區兩列以上才有小計(一列 = 那一列,重複);口數不相加、未定區不出
+      const dd = trEl("dd", "");
+      if (ns.length >= 2 && z !== TR_ZONE_LOTS && z !== TR_ZONE_UNKNOWN) {
+        const sub = ns.reduce((a, n) => a + (Number(sending[n]) || 0), 0), was = ns.reduce((a, n) => a + old(n), 0);
+        if (was !== sub) arrow(dd, trFmt(was));
+        dd.append(trFmt(sub));
+      }
       if (z === zt.multZone && multText) dd.appendChild(trEl("span", "mult", multText));   // 同區標題的寫法:跟小計靠間距分開、不加「·」(§9.8)
       dl.appendChild(cfRow("grp" + (z === TR_ZONE_LOTS || z === TR_ZONE_UNKNOWN ? " cjk" : ""), trZoneLabel(z), dd));
     }
-    Object.keys(posAm).filter((n) => trZoneOf(n) === z).forEach((n) => { const sp = trRowTxf(n), r = cfRow("", trDisplay(n), sp ? lots(sp, posAm[n]) : money(posAm[n])); dl.appendChild(sp ? bigWarn(r, sp, posAm[n]) : r); });
+    ns.forEach((n) => dl.appendChild(row(n)));
   });
-  /* 原本 > 0、這次改成 0 的那幾支(設計稽核 M5):存下去它那一份會平倉,在金額列與合計之間講一次。移出組合那句照舊另外講 */
+  // 口數格留空(7-2):會存成 0、這支不會下單——點名講一次,不擋;原本有口數、改成 0 的那幾支列上已經寫了「原 → 0」
   const zeroed = Object.keys(sending).filter((n) => !(sending[n] > 0) && Number(stored[n]) > 0);
-  // 口數列(期貨帳戶)沒有現貨可賣,句子分支
-  let dlT = dl;
-  if (zeroed.length) { extra.appendChild(dl); extra.appendChild(trEl("p", "cf-zeroed", t(trLotsOnly(zeroed) ? "tr.saveZeroedLots" : "tr.saveZeroed", { names: zeroed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }))); dlT = trEl("dl", "cf-rows cf-amt"); }
-  // 口數格留空(7-2):會存成 0、這支不會下單——點名講一次,不擋;改成 0 的那幾支上面那句已經講了
   const blank = trBlankLots(Object.keys(sending), TR.raw, trRowTxf, zeroed);
-  if (blank.length) { if (dlT === dl) { extra.appendChild(dl); dlT = trEl("dl", "cf-rows cf-amt"); } extra.appendChild(trEl("p", "cf-zeroed", t("tr.saveBlankLots", { names: blank.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }))); }
-  { const dd = trEl("dd", "", trTotalText(zt.total)), tip = trTotalTip(zt.total);
-    if (zt.total.v != null && zt.total.ccy) dd.appendChild(trEl("span", "ccy", zt.total.ccy));
+  let dlT = dl;
+  if (blank.length) { extra.appendChild(dl); extra.appendChild(trEl("p", "cf-zeroed", t("tr.saveBlankLots", { names: blank.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }))); dlT = trEl("dl", "cf-rows cf-amt"); }
+  { const dd = trEl("dd", ""), tt = zt.total, t0 = zt0.total, tip = trTotalTip(tt);
+    // 原 → 新:同幣別、畫出來的字不同才寫(換算出來的 ≈ 已取整,差幾毛不算變;精確值差 0.1 也算)
+    if (tt.v != null && t0.v != null && tt.ccy === t0.ccy && trTotalText(tt) !== trTotalText(t0)) arrow(dd, trTotalText(t0));
+    dd.append(trTotalText(tt));
+    if (tt.v != null && tt.ccy) dd.appendChild(trEl("span", "ccy", tt.ccy));
     if (zones.length <= 1 && multText) dd.appendChild(trEl("span", "mult", " · " + multText));
     if (tip) dd.title = tip;
     dlT.appendChild(cfRow("total", t("tr.total"), dd)); }
   extra.appendChild(dlT);
-  if (removed.length) extra.appendChild(trEl("p", "cf-removed", t("tr.saveRemoved", { names: removed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
   const hid = cloud ? trHidden(names, stored, trListNames()) : [], badStored = cloud ? trBadStored(sending) : [];
   if (hid.length) extra.appendChild(trEl("p", "cf-note", t("tr.cloud.hidden", { n: hid.length })));
   if (badStored.length) extra.appendChild(trEl("p", "cf-block", t("tr.cloud.badStored", { names: badStored.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
-  // 被擋下的時候不會存:那句「儲存後…」是假話,不出。雲端不出 saveWarn(暫停中它是假話;正在下單時由最上面那句講得更準)
+  // 被擋下的時候不會存:那句「儲存後…」是假話,不出。這台電腦的 saveWarn 只在存完可能下單時出(trMayFire,同網頁 pfMayFire);
+  // 雲端不出 saveWarn(暫停中它是假話;正在下單時由最上面那句講得更準)
   // 重開沒停住(unconfirmed)也算在下單:舊對帳器不認重開閘門,下一輪就照新金額調倉(spec §1「在 C 裡對帳器一律當成活著」)
   const live = cloud && (trExecState(S.st) === "running" || trExecState(S.st) === "unconfirmed");
   const blocked = badStored.length > 0;   // 存不進去的時候不講「存了之後怎樣」(模擬帳戶超過 10 倍不再擋,#13)
   // 重開沒停住又已暫停:沒有啟動鈕,「按啟動下單之後」要先更新(audit S1)
   const idle = cloud && trRestartUnconfirmed(S.st && S.st.report) ? t("tr.cloud.saveIdleUnconfirmed") : t("tr.cloud.saveIdle");
-  if (!blocked) extra.appendChild(trEl("p", "cf-note", !cloud ? t("tr.saveWarn") : live ? t("tr.cloud.saveLag") : idle + (LANG === "zh" ? "" : " ") + t("tr.cloud.saveLag")));
+  const note = blocked ? "" : !cloud ? (mayFire ? t("tr.saveWarn") : "") : live ? t("tr.cloud.saveLag") : idle + (LANG === "zh" ? "" : " ") + t("tr.cloud.saveLag");
+  if (note) extra.appendChild(trEl("p", "cf-note", note));
   /* 第 3 級(真錢 ≥ 10 倍,§1.2):多一列勾選,沒勾「儲存」停用。每次開框都是新的、沒勾的那一顆 */
   const ack = trLevLevel(zt.mult, trIsPaper()).level === 3 ? trEl("label", "cf-ack") : null;
   if (ack) {
-    const cb = trEl("input", "ps-cb"), tx = trEl("span", "", t("tr.lev.ack", { p: trLevLevel(zt.mult, false).p }));
+    const cb = trEl("input", "ps-cb"), tx = trEl("span", "", t("tr.lev.ack", { p: trLevPct(trLevLevel(zt.mult, false).p) }));
     cb.type = "checkbox"; tx.id = "cf-ack-t";
     cb.addEventListener("change", () => { $("del-ok").disabled = !cb.checked || blocked; });
     ack.append(cb, tx); extra.appendChild(ack);
@@ -2637,7 +2669,7 @@ function trSaveAmounts(names, stored, opener) {
     const tx = trEl("span", ""); tx.append(trEl("strong", "", t("tr.cloud.saveLive.h")), " " + t("tr.cloud.saveLive.b"));
     lead.append(mk, tx);
   }
-  confirmBox(trCloudBox({
+  const box = trCloudBox({
     title: t("tr.saveTitle"), mark: trIsPaper() ? t("tr.mode.paper") : null, lines: [], extra, lead, okDisabled: blocked || !!ack, ok: t("tr.save"), opener,
     onOk: async () => {
       const mine = () => TR === S && S.open && S.tab === "pos";   // 等回應的時候可能已經切到另一邊:那時不碰畫面
@@ -2671,7 +2703,10 @@ function trSaveAmounts(names, stored, opener) {
       if (mine()) { trPaintPos(); $("tr-tab-pos").focus(); }   // 儲存列可能收掉了:焦點不能掉到 BODY
       trPollSoon(1500);
     },
-  }));
+  });
+  // 沒連交易所:存金額不會動到自動下單,不跳確認框直接存(同網頁 d0d0eb63;Wei 10-13「這有什麼好確認的」)。存不進去的照樣開框講原因
+  if (!trHasAccount(trReport()) && !blocked) { box.onOk(); return; }
+  confirmBox(box);
   if (ack) $("del-ok").setAttribute("aria-describedby", "cf-ack-t");   // 停用的「儲存」唸得到要先勾哪一句
 }
 /* 部位表同一個標的有兩支以上有金額的策略(ux-order-1-4-5 §2.2 方案 A):標的格放一顆「N 支策略」mini tag,

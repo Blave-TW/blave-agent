@@ -309,9 +309,9 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
   ok("頂列記號 = 交易所名 / 模擬;狀態句只有短狀態詞(不接「 · Binance」);視窗標題走同一支;tr.tb 不再用", /tm\.textContent = envVenueText\(mny, id\);/.test(src)
     && /ENV\.sig\.tb = tsig; txt\.textContent = ""; txt\.title = tbState;/.test(src) && /if \(tbUp\) txt\.append\(trEl\("span", "up", tbState\)\);/.test(src)
     && /const money = envVenueText\(cur\.money, cur\.venue\);/.test(src) && !/"tr\.tb"/.test(src) && /out\.money = envMoney\(st\); out\.venue = trVenueIds\(st && st\.report\)\[0\] \|\| null;/.test(src));
-  ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時 okDisabled 而且不出「儲存後…」那句", /const blocked = badStored\.length > 0;/.test(src) && /lines: \[\], extra, lead, okDisabled: blocked \|\| !!ack/.test(src) && /if \(!blocked\) extra\.appendChild\(trEl\("p", "cf-note", !cloud \? t\("tr\.saveWarn"\) : /.test(src)
+  ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時 okDisabled 而且不出「儲存後…」那句(那句另外只在 trMayFire 時出)", /const blocked = badStored\.length > 0;/.test(src) && /lines: \[\], extra, lead, okDisabled: blocked \|\| !!ack/.test(src) && /const note = blocked \? "" : !cloud \? \(mayFire \? t\("tr\.saveWarn"\) : ""\) : /.test(src)
     && /\$\("del-ok"\)\.disabled = !!okDisabled \|\| !!\(choices && !pre\);/.test(appSrc) && /classList\.remove\("has-alt", "has-choices"\); \$\("del-ok"\)\.disabled = false;/.test(appSrc));   // choices 有預選(pre)那列才一開就能按(方案制預選的週期)
-  ok(".cf-* 是通用樣式(在 app.css、不綁金額確認框):下一批「送上雲端」要重用", /\.cf-row\.total dd \{ font-size: 15px/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")) && !/\.cf-row(?!\.grp|s \.cf-row\.grp| dd \.(mult|cf-ref)|\.total \{ border-top-color)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));   // 例外:分區標題列與口數小字只有金額確認框用
+  ok(".cf-* 是通用樣式(在 app.css、不綁金額確認框):下一批「送上雲端」要重用", /\.cf-row\.total dd \{ font-size: 15px/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")) && !/\.cf-row(?!\.grp|s \.cf-row\.grp| dd \.(mult|cf-ref)|\.total \{ border-top-color|\.same)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));   // 例外:分區標題列、口數小字與沒變的列退灰只有金額確認框用
   ok("畫面上不再出現「對帳沒有在跑」「心跳」;刪掉的四個 key 兩語都刪了", !/"tr\.(paperCcy|saveLine|recDead|lastBeat)"/.test(S) && !/最後心跳|對帳沒有在跑|last heartbeat|Reconciler not running/.test(S)); }
 ok("舊快照只有 usd:減倉腿回 null", trGateSide({ usd: 84 }, 0, 100) === null && trGateSide({ usd: 84 }, 100, 0).usd === 84 && trGateSide(null, 1, 0) === null);
 ok("時間:epoch 秒與沒帶時區的 ISO(當 UTC)都吃", trMs(1000) === 1000000 && trMs("2026-09-20T16:52:05.377713") === Date.UTC(2026, 8, 20, 16, 52, 5, 377) && trMs("x") === null && trMs(null) === null);
@@ -584,7 +584,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」、合計換不了寫「—」",
       /const parse = \(s\) => \(txf \? trParseLots\(s\) : trParseAmount\(s\)\);/.test(tp) && /const v = parse\(inp\.value\);/.test(tp) && /inp\.value = blank \? "" : trFmt\(parse\(inp\.value\)\)/.test(tp)
       && /if \(gate != null && !txf\)/.test(tp)
-      && /sp \? lots\(sp, posAm\[n\]\) : money\(posAm\[n\]\)/.test(fnOf("trSaveAmounts")) && /const dd = trEl\("dd", "", trTotalText\(zt\.total\)\)/.test(fnOf("trSaveAmounts"))
+      && /if \(sp\) dd\.appendChild\(lotsRef\(sp, now\)\);/.test(fnOf("trSaveAmounts")) && /dd\.append\(trTotalText\(tt\)\);/.test(fnOf("trSaveAmounts"))
       && /m == null \? t\(sp\.prod\) : t\("tr\.txfConfirmRef", \{ prod: t\(sp\.prod\), amt: trFmt\(Math\.round\(m\)\) \}\)/.test(fnOf("trSaveAmounts")));
     // A 段錯誤輸入 7-2:口數格留空靜默存成 0。留空的格不換成「0」、記進 raw;確認框點名「留空會存成 0、不會下單」(不擋);改成 0 的那幾支已有自己那句,不重講;錢的格照舊正規化
     // 進欄位時拿掉千分位(同網頁 d0a249ef):「1,999」再打一個 0 不會變成看不懂的「1,9990」。把 focus handler 抓出來對假 input 跑:
@@ -994,7 +994,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("淨值快照:確認框用表上畫的那一個(同視角);沒畫過 / 另一個視角 / 壞值才用現在的", trShownEquity({ env: "local", v: 9945 }, "local", 9961) === 9945
       && trShownEquity({ env: "cloud", v: 9945 }, "local", 9961) === 9961 && trShownEquity(null, "local", 9961) === 9961 && trShownEquity({ env: "local", v: null }, "local", 9961) === 9961 && trShownEquity({ env: "local", v: NaN }, "local", 5) === 5);
     ok("淨值快照接線:表上那行記下它用的淨值,確認框讀它", /const eq = trEquity\(\); TR\.eqShown = \{ env: TR\.env, v: eq \};/.test(src)
-      && /const zt = trZoneSum\(am, eq\)/.test(src) && /const eq = trShownEquity\(TR\.eqShown, TR\.env, trEquity\(\)\), zt = trZoneSum\(posAm, eq\);/.test(src)); }
+      && /const zt = trZoneSum\(am, eq\)/.test(src) && /const eq = trShownEquity\(TR\.eqShown, TR\.env, trEquity\(\)\), zt = trZoneSum\(sending, eq\), zt0 = trZoneSum\(stored, eq\);/.test(src)); }
   { // 0.0.3 實機:按下啟動之後,啟動前的失敗不再講成現在式
     ok("按下啟動記時間(表底紅字只給這之後的失敗)", /const go = \(cmd\) => \{ TR\.startAt = Date\.now\(\); return trRunStart\(cmd\); \};/.test(fnS("trAskStart")));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
@@ -1679,7 +1679,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh" });
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trLotsOnly", "trRowMoney", "trLotsFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
     const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
     const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
     ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
@@ -1712,8 +1712,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /TR\.edits = \{\}; TR\.bad = \{\}; TR\.raw = \{\}; TR\.picked = null;/.test(tbl) && /S\.save = "saved"; S\.edits = \{\}; S\.raw = \{\}; S\.picked = null;/.test(save)
       && /C\.sig\.pos = null; if \(!trPickStaged\(C\.picked, amts, trPickKeep\("cloud", C\.picked, amts, .*?\)\)\.length\) C\.picked = null; \}/.test(cutF("trSentCheck")) && !/C\.sig\.pos = null; C\.picked = null; \}/.test(cutF("trSentCheck"))
       && /C\.reqFor = \{\}; C\.sig\.pos = null; C\.picked = null;/.test(cutF("trCloudOwnerCheck")));
-    ok("儲存走 trSendAmounts(env, …, trListNames()):雲端只把清單找不到的帶著;確認框的「移出組合」段沿用 trRemoved / tr.saveRemoved", /const sending = trSendAmounts\(S\.env, names, stored, TR\.edits, trListNames\(\)\), removed = trRemoved\(stored, sending\);/.test(save)
-      && /if \(removed\.length\) extra\.appendChild\(trEl\("p", "cf-removed", t\("tr\.saveRemoved"/.test(save) && !/loaded/.test(cutF("trSendAmounts")));
+    ok("儲存走 trSendAmounts(env, …, trListNames()):雲端只把清單找不到的帶著;確認框移出的列沿用 trRemoved(列上標 tr.cfTagRemove)", /const sending = trSendAmounts\(S\.env, names, stored, TR\.edits, trListNames\(\)\), removed = trRemoved\(stored, sending\);/.test(save)
+      && /const keys = Object\.keys\(sending\)\.concat\(removed\)/.test(save) && /t\("tr\.cfTagRemove"\)/.test(save) && !/tr\.saveRemoved/.test(save) && !/loaded/.test(cutF("trSendAmounts")));
     ok("picker 的殼:框在 index.html(cx 之後、del 之前)、切視角守門含 ps-scrim、開框 inert、Esc / Tab 在 trade.js 自己接(app.js 不動)、關框焦點回開框那顆鈕",
       (() => { const html = fs.readFileSync(path.join(R, "index.html"), "utf8"), i = html.indexOf('id="cx-scrim"'), j = html.indexOf('id="ps-scrim"'), k = html.indexOf('id="del-scrim"');
         return i > 0 && j > i && k > j && /role="dialog" aria-modal="true" aria-labelledby="ps-title" hidden/.test(html) && /data-i18n="tr\.pick\.title"/.test(html) && /data-i18n="tr\.pick\.hint"/.test(html) && /id="ps-ok" data-i18n="tr\.pick\.ok"/.test(html); })()
@@ -1796,7 +1796,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: { okx: { label: "OKX" }, binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trUnit: () => "USDT", trEquity: () => null, trMoneyInto() {} });
       const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
       vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-        + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trLotsOnly", "trRowMoney", "trLotsFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
+        + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trTotalTip", "trAmountTable"].map(cutF).join("\n"), ctx);
       const venuesOf = (id) => ({ [id]: { credentials: true, pair: true, order: true, account: true } });
       const bag = (venue, amounts, o) => ({ env: "local", list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: Object.assign({ venues: venuesOf(venue), config: { amounts } }, STALE) }, ...o });
       const paint = (b, states) => { ctx.TR = b; const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));

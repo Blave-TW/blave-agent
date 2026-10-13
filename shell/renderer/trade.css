@@ -279,6 +279,13 @@ html.ws-sc .side-gate { display: none; }
 .cf-row dd .mult { font-family: var(--font-sans); color: var(--ink-2); }
 .cf-row.grp dd .mult { margin-left: var(--space-8); }
 .cf-row dd .cf-ref { display: block; font: 11px/1.4 var(--font-sans); color: var(--ink-3); }
+/* 確認框 A 版(confirm-amounts-mockup):沒變的列整列退灰,變動的列靠對比跳出來;原值與箭頭灰、新值墨色。
+   列上的小標(平倉／移出)同 .mkt-tag 階,灰不紅——紅只給會被退的單 */
+.cf-amt .cf-row.same dt, .cf-amt .cf-row.same dd { color: var(--ink-3); }
+.cf-amt .was, .cf-amt .arr { color: var(--ink-3); }
+.cf-amt .arr { margin: 0 var(--space-4); }
+.cf-amt .tag { font: 400 11px/1.4 var(--font-sans); color: var(--ink-3); }
+.cf-amt .n + .tag { margin-left: var(--space-8); }
 /* 部位表「N 支策略」(§2.2;canon › Mini tag):18 高、中性底;熱區用 ::before 外擴到約 32 */
 .net-tag { position: relative; display: inline-flex; align-items: center; gap: var(--space-4); height: 18px; margin-left: var(--space-8); padding: 0 var(--space-6);
   border: 0; border-radius: var(--radius-micro); background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font: 11px/1 var(--font-sans); white-space: nowrap; cursor: pointer; vertical-align: middle; }

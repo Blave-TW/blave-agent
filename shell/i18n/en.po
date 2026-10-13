@@ -1493,17 +1493,21 @@ msgstr "Above 1× this runs on margin. Blave doesn't set leverage for you: set t
 msgid "tr.lev.marginShort"
 msgstr "Blave doesn't set leverage for you: set these contracts to at least {L}× on the exchange, or orders that don't fit are rejected."
 
+# {p} 的值:「8%」或超過 100 倍時這一句
+msgid "tr.lev.pctLt1"
+msgstr "less than 1%"
+
 msgid "tr.lev.loss"
-msgstr "At full size, if every position moves {p}% against you at once, the loss equals your entire equity; the exchange liquidates before that."
+msgstr "At full size, if every position moves {p} against you at once, the loss equals your entire equity; the exchange liquidates before that."
 
 msgid "tr.lev.lossPaper"
-msgstr "At full size, if every position moves {p}% against you at once, the paper account's equity goes to zero."
+msgstr "At full size, if every position moves {p} against you at once, the paper account's equity goes to zero."
 
 msgid "tr.lev.binance5"
 msgstr "Binance sub-accounts are capped at 5× futures leverage."
 
 msgid "tr.lev.ack"
-msgstr "I understand that at full size, a move of {p}% against everything wipes out my equity"
+msgstr "I understand that at full size, a move of {p} against everything wipes out my equity"
 
 msgid "tr.err.paperLev"
 msgstr "{sym} order not placed: the position would reach {gross} {c}, over the paper account limit of {cap} {c} ({x}× equity). Lower the amount."
@@ -1871,20 +1875,18 @@ msgstr "Saved — this computer now uses the new amounts."
 msgid "tr.saveTitle"
 msgstr "Confirm trade amounts"
 
-msgid "tr.saveZeroed"
-msgstr "Set to 0: {names} — their share of futures positions will be closed and spot holdings sold."
-
-msgid "tr.saveZeroedLots"
-msgstr "Set to 0: {names} — their share of futures positions will be closed."
-
 msgid "tr.saveBlankLots"
 msgstr "{names}: a blank lot count is saved as 0 — this strategy won’t place orders."
 
+# 確認金額框列上的小標(同網頁 workspace_cf_tag_close / remove)
+msgid "tr.cfTagClose"
+msgstr "close"
+
+msgid "tr.cfTagRemove"
+msgstr "remove"
+
 msgid "tr.saveWarn"
 msgstr "Once saved, the order engine reconciles to these amounts — orders may fire immediately."
-
-msgid "tr.saveRemoved"
-msgstr "Removing: {names} — their futures positions will be closed and spot holdings sold."
 
 msgid "tr.exchPositions"
 msgstr "Exchange positions"
