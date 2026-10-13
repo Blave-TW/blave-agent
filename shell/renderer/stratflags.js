@@ -272,3 +272,6 @@ function sfBindDrag(box) {
   });
 }
 sfBindDrag($("strat-list"));
+// 重載時 app.js 的開機 IIFE 往往在這支載入前就畫過側欄(IPC 回得比中間那八支 script 讀檔快,stratRefresh 的 typeof 守衛會靜默跳過):
+// 偏好一到,畫過的列就重畫一次,不然要等下一輪 stratRefresh(回合結束、切語言)才對。還沒畫過的不碰:之後那次會自己 await sfBeforeRebuild
+sfReady().then(() => { if ($("strat-list").querySelector(".strat-wrap")) stratRefresh(false); });

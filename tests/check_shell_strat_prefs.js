@@ -15,6 +15,7 @@ const pre = read(path.join(SHELL, "preload.js")), css = read(path.join(R, "app.c
 const cutFn = (s, name) => { const i = s.indexOf("function " + name + "("); if (i < 0) throw new Error("no " + name); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return s.slice(i, k + 1); } throw new Error("unbalanced " + name); };
 const line = (s, re) => { const m = re.exec(s); if (!m) throw new Error("no line " + re); return m[0]; };
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "blave-sp-"));
+(async () => {
 try {
   // ── ① 主行程 ──
   const ctx = { fs, path, app: { getPath: () => TMP }, console };
@@ -106,6 +107,19 @@ try {
   { const strings = read(path.join(R, "strings.js")), sb = {}; vm.runInNewContext(strings + "\nthis.S = STRINGS;", sb);
     ok("④ 字串表:side.sortHint 已移除、side.moved 帶 {n},兩語都齊", ["zh", "en"].every((l) => !("side.sortHint" in sb.S[l]) && /\{n\}/.test(sb.S[l]["side.moved"])) && sb.S.zh["side.moved"] === "已移到第 {n} 位"); }
   ok("④ index.html:stratflags.js 在 app.js 之後(用它的 $ / t / RP / stratTip / trackFeature)", html.indexOf('src="stratflags.js"') > html.indexOf('src="app.js"') && html.indexOf('src="stratflags.js"') > 0);
+  // 0.1.23(Wei 10-13 開發版重載看到):app.js 的開機 IIFE 常在這支載入前就畫過側欄(實測 reload 後 30ms 畫、35ms 這支才到,stratRefresh 的 typeof 守衛靜默跳過 → 照 mtime 排、沒色條)。
+  // 載入收尾從原文切出來跑:偏好一到,側欄已經畫過 → stratRefresh(false) 一次;還沒畫過 → 不叫(之後那次自己 await sfBeforeRebuild)
+  { const tail = sfSrc.slice(sfSrc.lastIndexOf('sfBindDrag($("strat-list"));'));
+    const run = async (painted) => {
+      const calls = [], c = { window: { blave: { stratPrefs: () => Promise.resolve({ stratOrder: ["b", "a"], stratFlags: { a: 1 } }) } }, $: () => ({ querySelector: () => (painted ? {} : null) }), stratRefresh: (x) => { calls.push(x); return Promise.resolve(); }, sfBindDrag: () => {} };
+      vm.runInNewContext(line(sfSrc, /^const SF = \{[\s\S]*?\};$/m) + "\n" + cutFn(sfSrc, "sfReady") + "\n" + tail + "\nthis.SF = SF;", c);
+      await new Promise((r) => setTimeout(r, 0));
+      return { calls, order: c.SF.order.join(), flag: c.SF.flags.a };
+    };
+    const a = await run(true), b = await run(false);
+    ok("④ 載入收尾:偏好讀好後,側欄畫過 → stratRefresh(false) 一次;沒畫過 → 不叫;兩邊偏好都進 SF", a.calls.length === 1 && a.calls[0] === false && a.order === "b,a" && a.flag === 1 && b.calls.length === 0 && b.order === "b,a");
+    ok("④ 載入收尾是整支的最後一行、在 sfBindDrag 之後", /sfBindDrag\(\$\("strat-list"\)\);\n(\/\/[^\n]*\n)*sfReady\(\)\.then\(\(\) => \{ if \(\$\("strat-list"\)\.querySelector\("\.strat-wrap"\)\) stratRefresh\(false\); \}\);\n$/.test(tail)); }
 } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
 console.log(red ? `\n${red} 紅` : "\n全綠");
 process.exit(red ? 1 : 0);
+})();
