@@ -3365,9 +3365,10 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   stLocalOnly: "", noAccount: "", runningZ: "",   // 選單列這台電腦那一行沒在下單也講(0.1.9):「這台電腦：還沒連接交易所」、沒設金額的那一態
   br_captchaTitle: "", br_captcha: "",   // 內建瀏覽器:搜尋要用戶過驗證(browserNotify);空的 = 還沒交字 = 不發
   moveTitle: "", moveBody: "", moveGo: "", moveNo: "",   // 搬到「應用程式」那一問(askMoveToApps):空的 = 還沒交字 = 不問
+  moveAuthExists: "", moveAuthApps: "", gotIt: "",   // 搬移要授權時那個只有「知道了」的提示框;空的 = 不跳,只留 log
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
 const TT = require("./traytext");
-const { planRestart, shouldAskMove, moveNeedsAuth } = require("./updater");
+const { planRestart, shouldAskMove, moveNeedsAuth, moveAuthReason } = require("./updater");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
 const siteLang = () => uiLang || (/^zh/i.test(app.getLocale() || "") ? "zh" : "en");
 const pauseLabel = () => tmLabels.pauseLocal || tmLabels.pause;   // 有雲端之後「暫停下單」不夠明確:講清楚是這台電腦
@@ -3509,7 +3510,8 @@ async function restartToUpdate() {
   return { ok: true, quit: true };
 }
 /* 啟動時不在「應用程式」資料夾就問一次(§4)。「不要移」寫一個記號、之後永遠不問;搬移出錯不記,下次啟動再問。
-   要系統授權才搬得過去的(moveNeedsAuth)不問也不叫 moveToApplicationsFolder:授權分支會讓別的子行程永遠收不到結束(updater.js shouldAskMove)。
+   要系統授權才搬得過去的(moveAuthReason)不問也不叫 moveToApplicationsFolder:授權分支會讓別的子行程永遠收不到結束(updater.js shouldAskMove)。
+   改在原本會問的時機跳一個只有「知道了」的提示,依原因講要用戶自己做什麼;不記「不要」,下次啟動仍判、仍提示——不然拖進去之前永遠收不到更新。
    搬移成功 app 會自己結束再重開。app.isInApplicationsFolder / moveToApplicationsFolder 只有 macOS 有,shouldAskMove 先擋平台 */
 const moveDeclinedPath = () => path.join(app.getPath("userData"), "move-declined.json");
 let moveChecked = false, moveAsked = false;
@@ -3523,10 +3525,15 @@ async function askMoveToApps() {
   if (!installing && _engineRun) { await _engineRun.catch(() => {}); installing = !!_engineRun || engineSetup().busy() || engineSetup().snapshot().phase !== "idle"; }
   // 等的期間 app 開始結束(結束確認框開著、或已確定要結束):不再疊一個搬移框(稽核 integ-0124 複核 P2)
   if (quitting || quitConfirmed || quitAsking) return false;
-  const needsAuth = mac && moveNeedsAuth(app.getPath("exe"));
-  if (!shouldAskMove({ platform: process.platform, packaged: app.isPackaged, inApps: !mac || app.isInApplicationsFolder(), declined: fs.existsSync(moveDeclinedPath()),
-    trading: !!tradeMaybeLive(), askedThisRun: moveAsked, installing, needsAuth })) {
-    if (needsAuth) console.error("[move] needs authorization; not asking");
+  const reason = mac ? moveAuthReason(app.getPath("exe")) : null;
+  const gate = { platform: process.platform, packaged: app.isPackaged, inApps: !mac || app.isInApplicationsFolder(), declined: fs.existsSync(moveDeclinedPath()),
+    trading: !!tradeMaybeLive(), askedThisRun: moveAsked, installing };
+  if (!shouldAskMove({ ...gate, needsAuth: !!reason })) {
+    if (!reason || !shouldAskMove({ ...gate, needsAuth: false })) return false;
+    const text = reason === "exists" ? L.moveAuthExists : L.moveAuthApps;
+    if (!(text && L.gotIt)) { console.error("[move] needs authorization (" + reason + "); not asking"); return false; }
+    moveAsked = true;
+    await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "info", noLink: true, message: text, buttons: [L.gotIt], defaultId: 0, cancelId: 0 });
     return false;
   }
   moveAsked = true;

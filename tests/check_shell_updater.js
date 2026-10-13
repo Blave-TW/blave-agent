@@ -1,7 +1,7 @@
 // shell/updater.js:永遠不自己重啟、下單執行中不安裝、沒有更新來源就整個關掉。
 // 跑法:node tests/check_shell_updater.js
 const fs = require("fs"), os = require("os"), path = require("path"), { EventEmitter } = require("events");
-const { createUpdater, planRestart, shouldAskMove, moveNeedsAuth } = require("../shell/updater.js");
+const { createUpdater, planRestart, shouldAskMove, moveNeedsAuth, moveAuthReason } = require("../shell/updater.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const tick = () => new Promise((r) => setTimeout(r, 5));
 function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL = (o) => au.calls.push(["feed", o]); au.checkForUpdates = () => { au.calls.push(["check"]); return Promise.resolve(); }; au.quitAndInstall = (...a) => au.calls.push(["install", ...a]); return au; }
@@ -90,11 +90,17 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
     t("moveNeedsAuth:已有同名 app、可寫 → 不必授權", moveNeedsAuth(exe, apps) === false);
     fs.chmodSync(dst, 0o555);
     t("moveNeedsAuth:已有同名 app、不可寫 → 要授權", root || moveNeedsAuth(exe, apps) === true);
+    t("moveAuthReason:已有同名 app、不可寫 → \"exists\"(提示改開那一份)", root || moveAuthReason(exe, apps) === "exists");
+    fs.chmodSync(apps, 0o555);
+    t("moveAuthReason:資料夾也不可寫時仍回 \"exists\"(已裝過的人該去開那份,不是再拖一次)", root || moveAuthReason(exe, apps) === "exists");
+    fs.chmodSync(apps, 0o755);
     t("moveNeedsAuth:bundle 改過名就看改過的那個名字(Electron 用 bundlePath 的最後一段)", moveNeedsAuth("/x/Blave 2.app/Contents/MacOS/Blave", apps) === false);
     fs.chmodSync(dst, 0o755); fs.chmodSync(apps, 0o555);
     t("moveNeedsAuth:目的資料夾不可寫 → 要授權", root || moveNeedsAuth(exe, apps) === true);
+    t("moveAuthReason:目的資料夾不可寫、同名 app 可寫 → \"apps\"(提示拖進去)", root || moveAuthReason(exe, apps) === "apps");
     fs.chmodSync(apps, 0o755);
     t("moveNeedsAuth:目的資料夾不存在、路徑不是字串 → 當成要授權(判不出來不冒險)", moveNeedsAuth(exe, path.join(apps, "nope")) === true && moveNeedsAuth(undefined, apps) === true);
+    t("moveAuthReason:不必授權回 null、判不出來回 \"apps\"", moveAuthReason(exe, apps) === null && moveAuthReason(undefined, apps) === "apps");
     fs.chmodSync(path.join(apps, "Other.app"), 0o755); fs.rmSync(apps, { recursive: true, force: true }); }
 
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "updater.js"), "utf8");
