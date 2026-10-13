@@ -2011,7 +2011,9 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                   "all stats are meaningless. Check thresholds against the data's actual range.")
 
         from lib.analysis import random_bh_benchmark
-        bench_stats, bench_pct = random_bh_benchmark(close_df, total_ret * 100, sharpe)
+        # bands only feed pnl.png, which a quiet run (live refresh) never draws
+        bench_stats, bench_pct = random_bh_benchmark(close_df, total_ret * 100, sharpe,
+                                                     bands=not quiet)
 
         def _v(x):
             if x is None: return None
