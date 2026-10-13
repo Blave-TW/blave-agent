@@ -731,6 +731,12 @@ strategy routes to, so a 下單設定 emptied to close everything still reads th
   entirely for `futures_contracts` rows; this round-half-up is the only gate on capital) and calls
   `lib.order_capital.place_futures_market_order()` with the near-month alias
   (`TX00`/`MTX00`/`TM0000`)
+- receives a diff that is already whole lots: `lib.portfolio.aggregate_portfolio` rounds every
+  native-unit row's NETTED target half-up (all strategies on the key summed first, then
+  rounded once — two strategies at 0.3 lot are 1 lot, not 0 + 0), so a whole-lot position
+  diffs to a whole number. Rounding only the diff bought 1 lot on a 0.5 target, read -0.5
+  the next round and sold it back — a round trip every round. The diff rounding above is
+  then an identity, kept for hand-written `place_order_fn` callers
 - is scoped to `asset_specs[strategy]["type"] == "futures_contracts"` only — a capital strategy
   configured as `"tw_stock"` (securities) raises loudly; that path is not wired yet
 

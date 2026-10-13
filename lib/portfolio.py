@@ -1,4 +1,4 @@
-import glob, hashlib, inspect, json, logging, os, re, time
+import glob, hashlib, inspect, json, logging, math, os, re, time
 from datetime import datetime, timedelta, timezone
 
 from lib import guard, venue_traits
@@ -2241,7 +2241,15 @@ def aggregate_portfolio():
         # the value differs the gate lifts PERMANENTLY. Checked only for
         # funded strategies (the ones that could trade at all).
         gated = False
-        if name in gate:
+        if not math.isfinite(position):
+            # A Type B state.json can carry NaN / Infinity (json round-trips
+            # them). Held like a gated symbol: no order either way on this key,
+            # the rest of the round trades — read as 0 it would silently close
+            # the position, left in it would raise for the whole machine.
+            logging.warning(f"[portfolio] {name}: position {position} is not a number — "
+                            f"{symbol} held as is, no orders until the strategy writes a valid one")
+            position, gated = 0.0, True
+        elif name in gate:
             # "new signal" = the DIRECTION changed (enter, exit, or flip —
             # sign including zero), not any value change: a vol-scaled
             # strategy re-computing 0.5→0.52 same-direction is a sizing
@@ -2292,6 +2300,13 @@ def aggregate_portfolio():
                 f"[portfolio] {key}: net target {s:.2f} is SHORT on a spot "
                 f"market — clamped to 0 (spot cannot short)")
             s = 0.0
+        if native_units(data['asset_spec'], data['exchange']):
+            # Whole lots, summed first (Wei 2026-10-13): lot rows have no diff
+            # gate and the order fns round the DIFF half-up, so a 0.5 target
+            # bought 1, read -0.5 and sold it back every round. Half-up away
+            # from zero like those fns (never round(): a .5 tie goes to even);
+            # 1e-9 keeps a float-summed 0.49999… tie on the same side.
+            s = math.copysign(math.floor(abs(s) + 0.5 + 1e-9), s) if s else 0.0
         result[key] = {
             'side':         'long' if s > 0 else ('short' if s < 0 else None),
             'size':    abs(s),
