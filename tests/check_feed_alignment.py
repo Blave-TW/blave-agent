@@ -280,7 +280,7 @@ spec.loader.exec_module(wfb)
 wfb.STATE_DIR = str(WS / "state" / "bar_wait")
 calls = {"fetch_error": 0, "stale": [], "run": 0}
 wfb._alert_failure = lambda: types.SimpleNamespace(alert=lambda *a, **k: calls.__setitem__("fetch_error", calls["fetch_error"] + 1))
-wfb._alert_stale = lambda name, expected, minutes, straggler: calls["stale"].append((minutes, straggler))
+wfb._alert_stale = lambda name, expected, minutes, straggler, computed=False: calls["stale"].append((minutes, straggler))
 wfb._run_strategy_protected = lambda name: calls.__setitem__("run", calls["run"] + 1) or True
 due = pd.Timestamp("2026-09-23 20:00", tz=TPE)
 

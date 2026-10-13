@@ -42,17 +42,17 @@ def frame(last_taipei, n=5):
 
 
 behind = types.SimpleNamespace(fetch_data=lambda h: frame("2026-09-23 11:00"))
-seen, ready, _ = wfb._check_freshness(behind, expected)
+seen, ready, _, _ = wfb._check_freshness(behind, expected)
 check(not ready and seen == datetime(2026, 9, 23, 3, 0),
       f"Type A, last bar 11:00 Taipei (03:00 UTC): not ready, seen in UTC (got {seen}, ready={ready})")
 
 landed = types.SimpleNamespace(fetch_data=lambda h: frame("2026-09-23 12:00"))
-seen, ready, _ = wfb._check_freshness(landed, expected)
+seen, ready, _, _ = wfb._check_freshness(landed, expected)
 check(ready and seen == datetime(2026, 9, 23, 4, 0), f"Type A, the 12:00 Taipei bar landed: ready (got {seen})")
 
 naive = types.SimpleNamespace(fetch_data=lambda h: pd.DataFrame(
     {"Close": 1.0}, index=pd.date_range(end="2026-09-23 04:00", periods=5, freq="1h")))
-seen, ready, _ = wfb._check_freshness(naive, expected)
+seen, ready, _, _ = wfb._check_freshness(naive, expected)
 check(ready and seen == datetime(2026, 9, 23, 4, 0), "naive (UTC) index: unchanged")
 
 
@@ -62,7 +62,7 @@ def type_c(h):
     return close, close.copy()
 
 
-seen, ready, who = wfb._check_freshness(types.SimpleNamespace(fetch_data=type_c), expected)
+seen, ready, who, _ = wfb._check_freshness(types.SimpleNamespace(fetch_data=type_c), expected)
 check(not ready and who == "2317" and seen == datetime(2026, 9, 23, 3, 0),
       f"Type C, one Taipei symbol an hour behind: not ready, straggler named (got {who}, {seen}, {ready})")
 

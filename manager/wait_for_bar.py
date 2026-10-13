@@ -61,6 +61,27 @@ State: state/bar_wait/<name>.json
                             re-crashing) every single minute
   wrapper_error_alerted_at : epoch seconds of the last time THIS script (not
                               the strategy) alerted on its own uncaught error
+  computed_fp / computed_bar : fingerprint of the data a run last computed on (every
+                         member's own newest bar) and the newest of those bars
+  prime_tried_fp      : fingerprint of the last prime attempt, success or failure — the
+                         same data is primed at most once
+
+Priming (Wei: a signal is always computed on the newest data there is): while the expected bar
+is not in, a strategy whose data moved since it last computed — any member's newest closed bar
+(Type A: the series'; Type C: each column's own) differs from the last run's — runs at once on
+that data: new pick or long-running, state.json or not, stalled or not. Lagging Type C columns
+go in with their own last bar. Same lock and launcher as a normal run (strategy.py, no
+expected-bar gate). last_processed_bar is not touched and the expected bar always runs when it
+lands, so a member that was primed around is computed again with its own new bar. Grace: no
+prime until the furthest-behind member's next bar is PRIME_GRACE_SECONDS overdue (one bar
+behind: the expected bar's close + grace) and no member is still inside its own grace — a
+member a minute late is waited for and the bar is computed once, on complete data; a member
+stuck for days does not let the others in batch by batch. A column that never had any data blocks priming. Not primed: no data, an unpublished
+align_feed row (the live run would refuse it), a TAIFEX contract strategy outside its session
+(_tw_futures_closed — weekends, the gap between sessions and TWSE holidays; typhoon closures
+and a night session before a holiday are not known, and a prime there is computed once, its
+orders then refused every reconcile round until the open). A failed prime backs off like any
+failed run and is not retried on the same data.
 
 Market-closed handling: a fixed-interval instrument like TXF doesn't trade
 nights/weekends, but `_expected_closed_bar_open` doesn't know a trading
@@ -147,6 +168,7 @@ RUN_TIMEOUT_SECONDS = 600          # kill a strategy subprocess that hangs (e.g.
 LOCK_STALE_SECONDS = 1800
 RETRY_BACKOFF_SECONDS = 300        # after a failed run OR a fetch_data() error, don't re-attempt every single minute
 WRAPPER_ERROR_COOLDOWN_SECONDS = 6 * 3600         # this script's own crashes, not the strategy's
+PRIME_GRACE_SECONDS = 300          # see Priming in the module docstring
 
 
 def _load_strategy_module(name):
@@ -216,6 +238,9 @@ def _default_state():
         "stall_alert_at": None,
         "last_attempt_failed_at": None,
         "wrapper_error_alerted_at": None,
+        "computed_fp": None,
+        "computed_bar": None,
+        "prime_tried_fp": None,
     }
 
 
@@ -365,7 +390,7 @@ def _is_feed_wait(exc):
 
 
 def _check_freshness(mod, expected):
-    """Calls the strategy's own fetch_data() and returns (observed_ts, ready, straggler):
+    """Calls the strategy's own fetch_data() and returns (observed_ts, ready, straggler, latest):
       observed_ts : the latest bar timestamp actually seen (None if there's
                     no data at all yet) — Type C uses the STRAGGLER symbol's
                     last_valid_index, i.e. whichever symbol is furthest
@@ -380,6 +405,9 @@ def _check_freshness(mod, expected):
                     column name furthest behind — named explicitly so an alert
                     can point at the actual symbol to investigate, not just a
                     bucket timestamp.
+
+      latest      : {member: its newest bar} — Type C every column, Type A {"": observed_ts};
+                    None without data. Priming's fingerprint (_fingerprint).
 
     Raises whatever fetch_data() raises (network errors, or a strategy's own
     deliberate fail-loud guard like txf_composite_60m's degraded-dividend
@@ -402,23 +430,36 @@ def _check_freshness(mod, expected):
         from contextlib import nullcontext as live_feeds
     with closed_bars_only(), live_feeds():
         data = mod.fetch_data(hdrs)
+    return _judge(data, expected)
+
+
+def _judge(data, expected):
     if isinstance(data, tuple):
         close_df = data[0]
         if close_df.empty:
-            return None, False, None
+            return None, False, None, None
         last_valid = close_df.apply(lambda col: col.last_valid_index())
         if last_valid.isna().any():
             # at least one symbol has literally never had a data point
-            return None, False, last_valid[last_valid.isna()].index[0]
+            return None, False, last_valid[last_valid.isna()].index[0], None
         straggler_symbol = last_valid.idxmin()
         straggler_ts = _naive_utc(last_valid[straggler_symbol])
         ready = all(_naive_utc(ts) >= expected for ts in last_valid)
-        return straggler_ts, ready, straggler_symbol
+        return straggler_ts, ready, straggler_symbol, {str(k): _naive_utc(v) for k, v in last_valid.items()}
     else:
         if data.empty:
-            return None, False, None
+            return None, False, None, None
         last_ts = _naive_utc(data.index[-1])
-        return last_ts, last_ts >= expected, None
+        return last_ts, last_ts >= expected, None, {"": last_ts}
+
+
+def _fingerprint(latest):
+    """(fingerprint, newest ISO) of _check_freshness's `latest`, or (None, None)."""
+    if not latest:
+        return None, None
+    import hashlib
+    body = json.dumps(sorted((k, v.isoformat()) for k, v in latest.items()))
+    return hashlib.sha1(body.encode()).hexdigest(), max(latest.values()).isoformat()
 
 
 def _run_strategy_protected(name):
@@ -467,7 +508,7 @@ def _run_strategy_protected(name):
     return True
 
 
-def _alert_stale(name, expected, minutes_waited, straggler_symbol):
+def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=False):
     # 事件落檔與 Telegram 並行(dual-write)——見 lib/events。冷卻交給平台。
     try:
         from lib.events import emit
@@ -483,7 +524,8 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol):
         from lib.notify import send_text
         send_text(
             f"⚠️ {name}：{expected.strftime('%Y-%m-%d %H:%M')} 那根 K 棒等了 "
-            f"{minutes_waited} 分鐘還沒到位{who}，仍在重試，訊號會晚發。"
+            f"{minutes_waited} 分鐘還沒到位{who}，仍在重試，"
+            + ("訊號已先用現有最新資料算出，那檔沿用最後一筆。" if computed else "訊號會晚發。")
         )
     except Exception as e:  # best-effort — the alerter itself must never crash the cron job
         logging.warning(f"[wait_for_bar] stale-bar notification dropped ({e})")
@@ -552,8 +594,10 @@ def _tick(name):
     # Stall throttle: once we've confirmed a stall (alerted at least once this
     # episode — see stall_alert_at), stop polling every minute — this is what a
     # TXF weekend close looks like. Resumes full speed the moment data moves.
+    # Also polled right after the priming grace (:05 of each quarter): with a member stuck the
+    # bar is primed then, on everything that landed by the grace, not 15 minutes later.
     if state.get("stall_alert_at") is not None:
-        if now.minute % STALL_POLL_MINUTES != 0:
+        if now.minute % STALL_POLL_MINUTES not in (0, PRIME_GRACE_SECONDS // 60):
             return
 
     lock_path = _acquire_lock(name)
@@ -561,7 +605,7 @@ def _tick(name):
         return  # a previous tick's run is still in flight — skip, don't overlap
     try:
         try:
-            observed_ts, ready, straggler_symbol = _check_freshness(mod, expected)
+            observed_ts, ready, straggler_symbol, latest = _check_freshness(mod, expected)
         except Exception as e:
             if not _is_feed_wait(e):
                 # fetch_data() itself raised — network error, or a strategy's own
@@ -577,9 +621,10 @@ def _tick(name):
                 return
             # Bars are in, an align_feed row they need is not published yet: "not ready",
             # not a failed run — no fetch_error alert, no backoff.
-            observed_ts, ready, straggler_symbol = _naive_utc(e.last_bar), False, _FeedWait(e)
+            observed_ts, ready, straggler_symbol, latest = _naive_utc(e.last_bar), False, _FeedWait(e), None
 
         observed_iso = observed_ts.isoformat() if observed_ts is not None else None
+        fp, newest_iso = _fingerprint(latest)
 
         if ready:
             if _run_strategy_protected(name):
@@ -588,10 +633,14 @@ def _tick(name):
                 state["last_seen_bar"] = observed_iso
                 state["stall_alert_at"] = None
                 state["last_attempt_failed_at"] = None
+                state["computed_fp"], state["computed_bar"] = fp, newest_iso
             else:
                 state["last_attempt_failed_at"] = time.time()
             _save_state(name, state)
             return
+
+        _maybe_prime(name, state, now, expected, _interval_to_timedelta(interval), latest,
+                     straggler_symbol)
 
         # Not ready yet. Data moved forward (even if still not enough) since the
         # last check → this is fresh lag, not a stall; clear stall_alert_at so a
@@ -627,11 +676,109 @@ def _tick(name):
             # data point — see comment above, that must not silently never-alert).
             due = stall_alert_at is None or (time.time() - stall_alert_at >= STALL_REALERT_SECONDS)
             if due:
-                _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol)
+                computed = bool(state.get("computed_bar") and observed_iso
+                                and state["computed_bar"] > observed_iso)
+                _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol,
+                             computed=computed)
                 state["stall_alert_at"] = time.time()
         _save_state(name, state)
     finally:
         _release_lock(lock_path)
+
+
+# Same detection as tick-winpid's _tw_index_futures_strategy (keep one copy when it merges).
+_TW_FUT_SYMBOL_RE = re.compile(r'^SYMBOL\s*=\s*["\'](?:TXF|MXF|TMF)(?:R1)?["\']', re.M)
+_TW_FUT_FETCH = "fetch_twfutures_ohlcv"
+_TPE = timedelta(hours=8)
+
+
+def _tw_futures_kind(name):
+    """'index' (TXF/MXF/TMF read off TAIFEX data), 'lots' (any other strategy the 下單設定 sizes
+    in contracts — stock futures: day session only), or None. Text and config only: this
+    process must not import a venue module (tests/check_signals_without_venue)."""
+    try:
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        text = ""
+    if _TW_FUT_FETCH in text and _TW_FUT_SYMBOL_RE.search(text):
+        return "index"
+    try:
+        with open("manager/portfolio_config.json", encoding="utf-8") as f:
+            spec = (json.load(f).get("asset_specs") or {}).get(name)
+    except (OSError, ValueError, AttributeError):
+        spec = None
+    if isinstance(spec, dict) and spec.get("type") == "futures_contracts":
+        return "lots"
+    return None
+
+
+def _tw_holiday(day):
+    """True when `day` (a date) is on the TWSE annual holiday table (TAIFEX closes with it).
+    Table unreachable or unpublished → False: the weekday rules still hold."""
+    try:
+        from dotenv import dotenv_values
+        from lib.data import fetch_twstock_holidays
+        env = dotenv_values()
+        table = fetch_twstock_holidays({"api-key": env.get("blave_api_key", ""),
+                                        "secret-key": env.get("blave_secret_key", "")}, day.year)
+    except Exception:
+        return False
+    if table is None or table.empty:
+        return False
+    return any(d.date() == day for d in table["date"])
+
+
+def _tw_futures_closed(name, now):
+    """A TAIFEX contract strategy and `now` (naive UTC) outside its session: day 08:45–13:45
+    Mon–Fri; night (index futures only) 15:00–05:00, opening Mon–Fri; and a day on the TWSE
+    holiday table (the night part after midnight belongs to the day before). Not known:
+    typhoon closures, and a night session skipped before a holiday. The full slot table is
+    tick-winpid's _tw_fut_slot."""
+    kind = _tw_futures_kind(name)
+    if kind is None:
+        return False
+    t = now + _TPE
+    hm, wd = t.hour * 60 + t.minute, t.weekday()
+    if wd <= 4 and 8 * 60 + 45 <= hm < 13 * 60 + 45:
+        session_day = t.date()
+    elif kind == "index" and wd <= 4 and hm >= 15 * 60:
+        session_day = t.date()
+    elif kind == "index" and 1 <= wd <= 5 and hm < 5 * 60:
+        session_day = t.date() - timedelta(days=1)
+    else:
+        return True
+    return _tw_holiday(session_day)
+
+
+def _maybe_prime(name, state, now, expected, td, latest, straggler_symbol):
+    """Priming (module docstring). Caller holds the lock and has found `expected` not in."""
+    fp, newest_iso = _fingerprint(latest)
+    if fp is None or isinstance(straggler_symbol, _FeedWait):
+        return
+    if state.get("computed_fp") is not None:
+        if fp == state["computed_fp"]:
+            return  # already computed on exactly this data
+    elif state.get("last_processed_bar") and \
+            datetime.fromisoformat(newest_iso) <= datetime.fromisoformat(state["last_processed_bar"]):
+        return  # state from before priming: its last run covered this data
+    if state.get("prime_tried_fp") == fp:
+        return
+    # A member's next bar is due at its bar + 2·td. Any member still behind but inside the grace
+    # is waited for, so the bar is computed once on complete data; one stuck for days is long
+    # past its grace and holds nothing up — but it must not let the others in batch by batch.
+    grace = timedelta(seconds=PRIME_GRACE_SECONDS)
+    if any(m < expected and now < m + 2 * td + grace for m in latest.values()):
+        return
+    if _tw_futures_closed(name, now):
+        return  # re-checked on later ticks; the first inside the session computes
+    state["prime_tried_fp"] = fp
+    if _run_strategy_protected(name):
+        state["computed_fp"], state["computed_bar"] = fp, newest_iso
+        print(f"[wait_for_bar] {name}: computed on data up to {newest_iso} "
+              f"(expected {expected.isoformat()} not in yet)")
+    else:
+        state["last_attempt_failed_at"] = time.time()
 
 
 def main():
