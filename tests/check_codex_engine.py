@@ -277,7 +277,8 @@ for state, want in (("off", True), ("unavailable", True), ("on", True), (None, F
     assert bool(at.web_tools_off(at.desktop_web(at.LocalSink("s1"), False), False)) is want, state
 
 # ── 4c. Windows 沙盒:沒設定時 exec 的 shell 指令全被 policy 擋(codex 0.160 core/src/exec_policy.rs)──
-#      只在 Windows 補 unelevated;用戶 config.toml 已設定(新鍵或三個舊鍵,頂層或 `profile` 指到的那段)就不蓋;讀不了照補
+#      Windows 一律補 unelevated,用戶 config.toml 設了 elevated(Codex 桌面 app 會替用戶寫)也照蓋:elevated 2026-10 上游壞掉
+#      (openai/codex #52179、#52415,setup refresh had errors → 每條指令都被拒;Wei 10-12 拍板)。非 Windows 一行不動
 import shutil  # noqa: E402
 WIN_SB = ["-c", 'windows.sandbox="unelevated"']
 _win_home = tempfile.mkdtemp(prefix="check-codex-win-")
@@ -288,32 +289,13 @@ codex_engine._WINDOWS = True
 try:
     assert codex_engine.build_args("/x/codex", "/ws", env=_win_env) == BASE_ARGV[:9] + WIN_SB + BASE_ARGV[9:]
     for body in ('[windows]\nsandbox = "elevated"\n', '[features]\nwindows_sandbox = true\n',
-                 '[features]\nwindows_sandbox_elevated = true\n',
-                 'enable_experimental_windows_sandbox = true\n'):
+                 '[features]\nwindows_sandbox_elevated = true\n', 'enable_experimental_windows_sandbox = true\n',
+                 'profile = "x"\n[profiles.x.windows]\nsandbox = "elevated"\n', "not = toml [\n"):
         with open(_win_cfg, "w") as f:
             f.write(body)
-        assert not any("windows.sandbox" in a for a in codex_engine.build_args("/x/codex", "/ws", env=_win_env)), body
-    with open(_win_cfg, "w") as f:
-        f.write("not = toml [\n")
-    assert codex_engine.build_args("/x/codex", "/ws", env=_win_env).count('windows.sandbox="unelevated"') == 1, "讀不了照補"
-    with open(_win_cfg, "w") as f:
-        f.write('model = "gpt-5.5"\n[windows]\n')
-    assert 'windows.sandbox="unelevated"' in codex_engine.build_args("/x/codex", "/ws", env=_win_env), "別的設定不算"
-    for body in ('profile = "x"\n[profiles.x.windows]\nsandbox = "elevated"\n',
-                 'profile = "x"\n[profiles.x.features]\nwindows_sandbox_elevated = true\n'):
-        with open(_win_cfg, "w") as f:
-            f.write(body)
-        assert not any("windows.sandbox" in a for a in codex_engine.build_args("/x/codex", "/ws", env=_win_env)), body
-    for body in ('profile = "y"\n[profiles.x.windows]\nsandbox = "elevated"\n',
-                 'profile = 1\n[profiles.x.windows]\nsandbox = "elevated"\n',
-                 'profile = "x"\n[profiles]\nx = "elevated"\n',
-                 '[profiles.x.windows]\nsandbox = "elevated"\n'):
-        with open(_win_cfg, "w") as f:
-            f.write(body)
-        assert codex_engine.build_args("/x/codex", "/ws", env=_win_env).count('windows.sandbox="unelevated"') == 1, \
-            "profile 指向不存在/型別不對/沒選 profile → 照補: " + body
-    with open(_win_cfg, "w") as f:
-        f.write('profile = "x"\n[profiles.x.windows]\nsandbox = "elevated"\n')
+        assert codex_engine.build_args("/x/codex", "/ws", env=_win_env) == BASE_ARGV[:9] + WIN_SB + BASE_ARGV[9:], \
+            "有設定(含 elevated)也照回 unelevated、位置不變: " + body
+    assert not hasattr(codex_engine, "_sandbox_set"), "config.toml 的沙盒鍵不再讀,讀它的 _sandbox_set 要一起拿掉"
     codex_engine._WINDOWS = False
     assert codex_engine.build_args("/x/codex", "/ws", env=_win_env) == BASE_ARGV, "非 Windows:argv 逐字不變"
 finally:
