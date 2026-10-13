@@ -2382,6 +2382,9 @@ function trAmountTable(names, stored, states) {
       row.classList.toggle("has-note", bad || !!(gateRow && gateRow.parentNode));
     };
     const parse = (s) => (txf ? trParseLots(s) : trParseAmount(s));
+    // 進欄位時把千分位拿掉(同網頁 d0a249ef):blur 回寫成「1,999」後再補一個 0 會變「1,9990」,解析器只認逗號後三位而整格變紅。
+    // 不記進 raw:這不是用戶打的字,沒改的值重畫時照舊畫成帶千分位、也不會被當成改過;重畫後焦點交回來會再走一次這裡
+    inp.addEventListener("focus", () => { if (inp.value.indexOf(",") < 0) return; const v = parse(inp.value); if (v != null) inp.value = String(v); });
     inp.addEventListener("input", () => {
       const v = parse(inp.value);
       // 看不懂的字不進 edits(上一個看得懂的值留著);整格標成無效、儲存鈕鎖住(稽核 S11)
