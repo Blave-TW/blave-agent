@@ -22,8 +22,11 @@ if (!w) { console.log("FAIL  找不到 winPath"); process.exit(1); }
 eval(w[0]);
 t("win32:用 ; 接", mergePath(["C:\\a"], ["C:\\b"], ";") === "C:\\a;C:\\b");
 const E = { PATH: "C:\\WINDOWS\\system32;C:\\Users\\u\\.local\\bin", USERPROFILE: "C:\\Users\\u", APPDATA: "C:\\Users\\u\\AppData\\Roaming", LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local", ProgramFiles: "C:\\Program Files" };
-t("win32:process.env 的 PATH 在前、已知位置補在後(Claude 原生安裝器、npm 全域、Git for Windows 兩種裝法)",
-  winPath(E) === "C:\\WINDOWS\\system32;C:\\Users\\u\\.local\\bin;C:\\Users\\u\\AppData\\Roaming\\npm;C:\\Users\\u\\AppData\\Local\\Programs\\Git\\cmd;C:\\Program Files\\Git\\cmd");
+t("win32:process.env 的 PATH 在前、已知位置補在後(Claude 原生安裝器、npm 全域、WinGet Links、Git for Windows 兩種裝法)",
+  winPath(E) === "C:\\WINDOWS\\system32;C:\\Users\\u\\.local\\bin;C:\\Users\\u\\AppData\\Roaming\\npm;C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links;C:\\Users\\u\\AppData\\Local\\Programs\\Git\\cmd;C:\\Program Files\\Git\\cmd");
+t("win32:WinGet 的捷徑資料夾在 known 裡(winget install Anthropic.ClaudeCode 裝完、Blave 沒重開也找得到);缺 LOCALAPPDATA 就不補",
+  winPath({ PATH: "C:\\x", LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }).split(";").includes("C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links")
+  && !winPath({ PATH: "C:\\x", USERPROFILE: "C:\\Users\\u" }).includes("WinGet"));
 t("win32:環境變數叫 Path(Windows 常見的大小寫)也吃", winPath({ Path: "C:\\x", USERPROFILE: "C:\\Users\\u" }).startsWith("C:\\x;C:\\Users\\u\\.local\\bin"));
 t("win32:缺的環境變數那一項不補(不留相對路徑)", winPath({ PATH: "C:\\x" }) === "C:\\x" && winPath({ PATH: "C:\\x", APPDATA: "C:\\r" }) === "C:\\x;C:\\r\\npm");
 t("win32:PATH 空的也只剩已知位置、沒有空段", winPath({ USERPROFILE: "C:\\Users\\u" }) === "C:\\Users\\u\\.local\\bin");
@@ -138,6 +141,40 @@ var storeFlow = (async () => {
   const mac = mk(async () => null, async () => { calls.push("mac"); return { code: 0, stdout: st.out }; }, { existsSync: () => false }, path, { platform: "darwin", arch: "arm64", env: {} }, binKind, winRealExe, pickStoreCodex, "PS", "/x");
   t("codexPath(darwin):不走 Store 這條", await mac("/usr/bin") === null && !calls.includes("mac"));
 })();
+// ── Claude 的退路:PATH 上沒有 claude 就用 SDK 隨包那顆(venv/.../claude_agent_sdk/_bundled/claude),對話本來就是它在跑 ──
+const bc = src.match(/^function bundledClaude\(base, win, fsx = fs\) \{[\s\S]*?\n\}/m), cpc = src.match(/^async function claudePath\(envPath, seen\) \{[\s\S]*?\n\}/m);
+if (!bc || !cpc) { console.log("FAIL  找不到 bundledClaude / claudePath"); process.exit(1); }
+const MAC_B = "/Users/u/Blave/venv/lib/python3.14/site-packages/claude_agent_sdk/_bundled/claude", WIN_B = "C:\\Users\\u\\Blave\\venv\\Lib\\site-packages\\claude_agent_sdk\\_bundled\\claude.exe";
+t("binKind:隨包那顆是 bundled(Mac / Windows、大小寫不拘);PATH 上的 claude / claude.exe、別的資料夾裡同名的仍是 posix / exe",
+  binKind(MAC_B) === "bundled" && binKind(WIN_B) === "bundled" && binKind(WIN_B.toUpperCase()) === "bundled"
+  && binKind("/opt/homebrew/bin/claude") === "posix" && binKind("C:\\Users\\u\\.local\\bin\\claude.exe") === "exe" && binKind("/Users/u/Blave/venv/bin/claude") === "posix");
+{ const mkB = (p) => new Function("path", "fs", bc[0] + "\nreturn bundledClaude;")(p, {});
+  const fsx = (dirs, files) => ({ readdirSync: (d) => { if (!(d in dirs)) throw new Error("ENOENT"); return dirs[d]; }, existsSync: (p) => files.includes(p) });
+  const macB = mkB(path.posix), winB = mkB(path.win32);
+  t("bundledClaude(darwin):列 venv/lib 找 python3.x(版本不寫死)、接 site-packages/claude_agent_sdk/_bundled/claude;檔在才回",
+    macB("/Users/u/Blave", false, fsx({ "/Users/u/Blave/venv/lib": ["python3.14", "python3.14-config"] }, [MAC_B])) === MAC_B
+    && macB("/Users/u/Blave", false, fsx({ "/Users/u/Blave/venv/lib": ["python3.12"] }, ["/Users/u/Blave/venv/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude"])) === "/Users/u/Blave/venv/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude");
+  t("bundledClaude(darwin):venv 還沒建(lib 不在)/ 建了但 SDK 還沒裝 / lib 裡沒有 python3.x → null,不拋",
+    macB("/Users/u/Blave", false, fsx({}, [MAC_B])) === null && macB("/Users/u/Blave", false, fsx({ "/Users/u/Blave/venv/lib": ["python3.14"] }, [])) === null
+    && macB("/Users/u/Blave", false, fsx({ "/Users/u/Blave/venv/lib": ["site-packages"] }, [MAC_B])) === null);
+  t("bundledClaude(win32):venv\\Lib\\site-packages\\…\\claude.exe,不列目錄;檔不在 → null",
+    winB("C:\\Users\\u\\Blave", true, fsx({}, [WIN_B])) === WIN_B && winB("C:\\Users\\u\\Blave", true, fsx({}, [])) === null);
+  // claudePath 原文配假的 which / bundledClaude:PATH 優先、隨包是退路、兩個都沒有 → null
+  const mkC = (whichRet, bundled) => new Function("which", "binKind", "bundledClaude", "BASE", "WIN", cpc[0] + "\nreturn claudePath;")(async () => whichRet, binKind, () => bundled, "/b", false);
+  var claudeFlow = (async () => {
+    const seen = {};
+    t("claudePath:PATH 上有 → 用它,不用隨包;seen.found 是 PATH 那顆的檔種", await mkC("/opt/homebrew/bin/claude", MAC_B)("/p", seen) === "/opt/homebrew/bin/claude" && seen.found === "posix");
+    const seen2 = {};
+    t("claudePath:PATH 沒有、隨包在 → 隨包那顆;seen.found 仍是 none(PATH 上沒有)", await mkC(null, MAC_B)("/p", seen2) === MAC_B && seen2.found === "none");
+    t("claudePath:兩個都沒有 → null", await mkC(null, null)("/p", {}) === null);
+    const b = binKind(await mkC(null, MAC_B)("/p")), n = binKind(await mkC(null, null)("/p")), dW = new Function(dwS[0] + "; return detectWhy;")();
+    t("…接 detectWhy:隨包那顆登入了 → null;隨包那顆沒登入 → claude_nonzero;兩個都沒有 → claude_none(埋點值不變,只有 detect.log 的 bin 分得出 bundled)",
+      b === "bundled" && dW("claude", { bin: b, code: 0, loggedIn: true }) === null && dW("claude", { bin: b, code: 0, timedOut: false, loggedIn: false }) === "claude_nonzero"
+      && n === "none" && dW("claude", { bin: n, loggedIn: false }) === "claude_none");
+  })(); }
+t("detectAgents 走 claudePath(不直接 which);claudePath 退路用 BASE / WIN 的 venv;agentLogin 拿的是 detectAgents 回的同一個 path(隨包那顆也能按登入)",
+  /const claudeBin = await claudePath\(envPath, rec\.claude\);/.test(src) && !/which\("claude"/.test(src.slice(src.indexOf("async function detectAgents() {")))
+  && /return found \|\| bundledClaude\(BASE, WIN\);/.test(cpc[0]) && /const bin = kind === "claude" \? d\.claude\.path : kind === "codex" \? d\.codex\.path : null;/.test(src));
 t("runRec 只取 code / timedOut / ms(stdout 有 email,不進紀錄)", JSON.stringify(runRec({ code: 1, timedOut: false, ms: 9, stdout: "{\"email\":\"a@b\"}", stderr: "x" })) === '{"code":1,"timedOut":false,"ms":9}');
 const LOGF = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "blave-detect-")), "state", "detect.log");
 detectLogWrite(LOGF, { n: 0 });
@@ -161,7 +198,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   t("which / codexPath 往 seen 寫的只有 where(檔種清單)/ whereTimedOut / found(檔種)", [...w.matchAll(/seen\.(\w+) = /g)].map((m) => m[1]).every((k) => ["where", "whereTimedOut", "found"].includes(k))
     && /seen\.where = r\.code === 0 \? winOnPath\(r\.stdout, envPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.map\(binKind\)/.test(w) && /seen\.found = binKind\(found\)/.test(w)); }
 (async () => {
-  await storeFlow;
+  await storeFlow; await claudeFlow;
   const slow = await run(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], process.env.PATH, 150);
   t("run:逾時 → timedOut=true、ms ≥ 上限(以前只看得到 code,分不出逾時)", slow.timedOut === true && slow.ms >= 150 && slow.ms < 4000, slow);
   const bad = await run(process.execPath, ["-e", "process.exit(3)"], process.env.PATH, 5000);
@@ -174,10 +211,10 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   { const da = src.match(/^async function detectAgents\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
     if (!da || !dw) t("找得到 detectAgents / detectWhy", false);
     else { const runs = [], logged = [];
-      const mkDetect = new Function("loginShellPath", "which", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process",
+      const mkDetect = new Function("loginShellPath", "claudePath", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process",
         dw[0] + "\n" + da[0] + "\nreturn detectAgents;");
       const slow = (v) => new Promise((r) => setTimeout(() => r(v), 300));
-      const detect = mkDetect(async () => "/usr/bin", async (n) => "/opt/" + n, async () => "/opt/codex",
+      const detect = mkDetect(async () => "/usr/bin", async () => "/opt/claude", async () => "/opt/codex",
         (bin, args, envPath, ms) => { runs.push([bin, ms, Date.now()]); return slow(bin.endsWith("claude") ? { code: 0, stdout: '{"loggedIn":true}', timedOut: false, ms: 300 } : { code: null, stdout: "", timedOut: true, ms: 300 }); },
         binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" });
       const t0 = Date.now(), d = await detect(), took = Date.now() - t0;
