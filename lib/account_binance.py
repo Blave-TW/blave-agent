@@ -16,6 +16,7 @@ looks lost.
 import calendar
 import hashlib
 import hmac
+import math
 import os
 import time
 from urllib.parse import urlencode
@@ -319,11 +320,33 @@ def get_account_id(env: dict) -> str:
     return str(uid)
 
 
+def _opt(v, positive=False):
+    """A position detail (entry price, PnL, margin, leverage) as float, or None
+    when the venue left it blank/out — None, never 0: the page shows "—" for a
+    missing value and 0 would read as a real one. Never raises: these fields
+    are display-only and the reconciler reads the same rows."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or (positive and f <= 0):
+        return None
+    return f
+
+
 def get_positions(env: dict) -> list:
     """Open USDⓈ-M futures positions.
 
-    Returns [{'symbol', 'side', 'size', 'mark_price'}, ...], [] if flat.
-    Binance already reports canonical dashless uppercase symbols (BTCUSDT).
+    Returns [{'symbol', 'side', 'size', 'mark_price', 'entry_price',
+    'unrealized_pnl', 'margin', 'leverage'}, ...], [] if flat (the last four
+    float or None — account_TEMPLATE.get_positions). Binance already reports
+    canonical dashless uppercase symbols (BTCUSDT).
+
+    margin: v2 has no per-position initial margin for cross — |notional| ÷
+    leverage is the same number v3's positionInitialMargin reports; isolated
+    uses isolatedWallet (the margin put into the position, without its PnL —
+    OKX/Gate `margin` semantics). Switching to v3 would need a second call for
+    leverage.
     """
     rows = _signed("GET", _fapi(env), "/fapi/v2/positionRisk", env) or []
     out = []
@@ -332,6 +355,12 @@ def get_positions(env: dict) -> list:
         if amt == 0:
             continue
         side = (p.get("positionSide") or "").upper()
+        lev = _opt(p.get("leverage"), positive=True)
+        if (p.get("marginType") or "").lower() == "isolated":
+            margin = _opt(p.get("isolatedWallet"), positive=True)
+        else:
+            notional = _opt(p.get("notional"))
+            margin = abs(notional) / lev if notional and lev else None
         out.append({
             "symbol": (p.get("symbol") or "").upper(),
             # one-way accounts report positionSide BOTH — direction is the sign
@@ -341,6 +370,10 @@ def get_positions(env: dict) -> list:
                     else ("short" if amt < 0 else "long"),
             "size": abs(amt),
             "mark_price": float(p.get("markPrice") or 0),
+            "entry_price": _opt(p.get("entryPrice"), positive=True),
+            "unrealized_pnl": _opt(p.get("unRealizedProfit")),
+            "margin": margin,
+            "leverage": lev,
         })
     return out
 

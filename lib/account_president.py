@@ -129,8 +129,13 @@ def classify(exc):
 
 
 def get_positions(env: dict, book_months=None) -> dict:
-    """{canonical: {'side', 'size', 'productid'}} with size in LOTS, canonical
-    = TXF/MXF/TMF, from bot_position_rows(book_months=…). One root open in two
+    """{canonical: {'side', 'size', 'productid', 'entry_price', 'unrealized_pnl',
+    'margin', 'leverage'}} with size in LOTS, canonical = TXF/MXF/TMF, from
+    bot_position_rows(book_months=…). entry_price is the held side's average
+    cost (avg_cost_buy on a long, avg_cost_sell on a short; the worker writes 0
+    for none → None), None when the other side also carries a cost. unrealized_pnl stays None until floating_pnl is matched
+    against the broker's app; margin is account-level only (get_equity) and TW
+    futures have no leverage setting — both None. One root open in two
     contract months fails the read: summed, a long J6 and a short K6 would read
     as flat and the reconciler would trade on top of both; lib/order_president
     adds to a held month, so the bot's own orders do not get here."""
@@ -145,8 +150,14 @@ def get_positions(env: dict, book_months=None) -> dict:
                                f"trading paused rather than add months together. It clears when the "
                                f"expiring month settles; if it does not, contact support")
         n = rows[0]["net"]
+        avg = rows[0].get("avg_cost_buy" if n > 0 else "avg_cost_sell")
+        other = rows[0].get("avg_cost_sell" if n > 0 else "avg_cost_buy")
+        if isinstance(other, (int, float)) and other > 0:
+            avg = None  # both sides open (day trade): neither cost is the net's — unverified live
         out[root] = {"side": "long" if n > 0 else "short", "size": float(abs(n)),
-                     "productid": rows[0]["productid"]}
+                     "productid": rows[0]["productid"],
+                     "entry_price": avg if isinstance(avg, (int, float)) and avg > 0 else None,
+                     "unrealized_pnl": None, "margin": None, "leverage": None}
     return out
 
 

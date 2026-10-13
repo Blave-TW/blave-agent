@@ -39,16 +39,39 @@ def get_account_id(env: dict) -> str:
 
 
 def get_positions(env: dict) -> list:
-    """[{'symbol', 'side', 'size', 'mark_price'[, 'unit', 'contract_value']}, ...]
-    — canonical symbols, one net row per symbol; [] if flat. `size` is base
-    units, or LOTS on a row carrying unit "contracts" (a futures_contracts /
-    shares strategy — order_paper.place_contract_market_order)."""
+    """[{'symbol', 'side', 'size', 'mark_price', 'entry_price', 'unrealized_pnl',
+    'margin', 'leverage'[, 'unit', 'contract_value']}, ...] — canonical symbols,
+    one net row per symbol; [] if flat. `size` is base units, or LOTS on a row
+    carrying unit "contracts" (a futures_contracts / shares strategy —
+    order_paper.place_contract_market_order).
+
+    unrealized_pnl is order_paper._equity's own formula; None when the symbol
+    lost its price (the mark fell back to entry). margin exists only on
+    contract rows (lots × the spec's per-lot margin) — a notional paper
+    position locks no margin. leverage is always None: paper has no setting."""
     rows = []
     for p in _paper.snapshot(env)["positions"]:
-        row = {"symbol": p["symbol"], "side": p["side"], "size": float(p["size"]),
-               "mark_price": float(p["mark_price"])}
-        if p.get("unit") == "contracts":
-            row.update(unit="contracts", contract_value=float(p["contract_value"]))
+        size, mark = float(p["size"]), float(p["mark_price"])
+        contracts = p.get("unit") == "contracts"
+        cv = float(p["contract_value"]) if contracts else 1.0
+        priced = p.get("priced", True)
+        row = {"symbol": p["symbol"], "side": p["side"], "size": size, "mark_price": mark,
+               "mark_estimated": not priced, "entry_price": None, "unrealized_pnl": None,
+               "margin": None, "leverage": None}
+        if contracts:
+            row.update(unit="contracts", contract_value=cv)
+        try:
+            entry = float(p.get("entry_price") or 0)
+            if entry > 0:
+                sign = 1.0 if p["side"] == "long" else -1.0
+                row["entry_price"] = entry
+                if priced:
+                    row["unrealized_pnl"] = (mark - entry) * size * sign * cv
+            per_lot = float(p.get("margin") or 0) if contracts else 0.0
+            if per_lot > 0:
+                row["margin"] = size * per_lot
+        except (TypeError, ValueError):
+            pass  # display-only details — a bad value leaves them None, never fails the row
         rows.append(row)
     return rows
 

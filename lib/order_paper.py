@@ -980,9 +980,10 @@ def snapshot(env):
             # _pos_mark falls back to entry for an unpriceable symbol, so
             # mark_price is ALWAYS a real number (never None) — account_paper /
             # venue_wiring float() it and size×mark_price it (audit P1-2 follow-up).
-            mk, _ = _pos_mark(env, led, sym, marks)
+            mk, priced = _pos_mark(env, led, sym, marks)
             row = {"symbol": sym, "side": "long" if p["qty"] > 0 else "short",
-                   "size": abs(p["qty"]), "entry_price": p["entry"], "mark_price": mk}
+                   "size": abs(p["qty"]), "entry_price": p["entry"], "mark_price": mk,
+                   "priced": priced}
             if p.get("unit") == "contracts":  # size is LOTS — the wiring must not × mark
                 row.update(unit="contracts", contract_value=_cv(p),
                            margin=float(p.get("margin") or 0))

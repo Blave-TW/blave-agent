@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -315,11 +316,29 @@ def _ct_val(env, inst_id):
     return _ctval_cache[inst_id]
 
 
+def _opt(v, positive=False):
+    """A position detail (entry price, PnL, margin, leverage) as float, or None
+    when the venue left it blank/out — None, never 0: the page shows "—" for a
+    missing value and 0 would read as a real one. Never raises: these fields
+    are display-only and the reconciler reads the same rows."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or (positive and f <= 0):
+        return None
+    return f
+
+
 def get_positions(env: dict) -> list:
     """Open swap positions.
 
-    Returns [{'symbol': str, 'side': str, 'size': float, 'mark_price': float}, ...]
-    Returns [] if flat.
+    Returns [{'symbol': str, 'side': str, 'size': float, 'mark_price': float,
+    'entry_price', 'unrealized_pnl', 'margin', 'leverage'}, ...] — the last
+    four float or None (account_TEMPLATE.get_positions). margin is `imr` on a
+    cross position, `margin` on an isolated one (each venue field is blank in
+    the other mode); PnL and margin only on a USDT-settled swap. Returns [] if
+    flat.
 
     'size' is base-currency units, ctVal-exact (pos × ctVal via the public
     instruments lookup; notionalUsd / markPx only as fallback — see the inline
@@ -367,6 +386,9 @@ def get_positions(env: dict) -> list:
         # live: field present but null) — it comes from the public instruments
         # endpoint, cached per instId; lookup failure falls back to the
         # notional derivation.
+        # upl / imr / margin are in the settlement currency: BTC on a coin-margined
+        # BTC-USD-SWAP, USDC on -USDC-SWAP — the contract promises USDT
+        usdt = inst_id.endswith("-USDT-SWAP")
         ct_val = _ct_val(env, inst_id)
         size = abs(pos) * ct_val if ct_val else notional / mark_px
         positions.append({
@@ -374,6 +396,11 @@ def get_positions(env: dict) -> list:
             "side": side,
             "size": size,
             "mark_price": mark_px,
+            "entry_price": _opt(p.get("avgPx"), positive=True),
+            "unrealized_pnl": _opt(p.get("upl")) if usdt else None,
+            "margin": (_opt(p.get("margin") if p.get("mgnMode") == "isolated" else p.get("imr"),
+                            positive=True) if usdt else None),
+            "leverage": _opt(p.get("lever"), positive=True),
         })
 
     return positions

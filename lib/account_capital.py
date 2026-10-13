@@ -70,7 +70,8 @@ def get_equity(env: dict) -> dict:
 
 
 def get_positions(env: dict) -> dict:
-    """{symbol: {'side', 'size'}} — size in LOTS, not account currency:
+    """{symbol: {'side', 'size', 'entry_price', 'unrealized_pnl', 'margin',
+    'leverage'}} — size in LOTS, not account currency:
     TWD notional needs a mark price the worker doesn't fetch. TW futures
     never enter the auto-wired reconciler (hand-wired per venue-onboarding),
     so lots-for-display is the honest value.
@@ -83,17 +84,40 @@ def get_positions(env: dict) -> dict:
     once, at the contract boundary.
 
     GetOpenInterest reports buy and sell as separate rows — net them per
-    symbol or a hedged/day-trade book shows only whichever row came last."""
+    symbol or a hedged/day-trade book shows only whichever row came last.
+
+    entry_price is the lot-weighted avg_cost (GetOpenInterest field 6) of the
+    symbol's rows, only when they are all on one side and all carry a cost: a
+    buy row and a sell row each have their own cost and neither is the cost
+    of the net. unrealized_pnl, margin, leverage are None — GetOpenInterest
+    has no PnL (the worker has no quote feed), margin is account-level only
+    (get_equity), and TW futures have no leverage setting."""
     snap = _read_snapshot()
-    net = {}
+    net, sides, cost = {}, {}, {}
     for p in snap.get("positions", []):
         lots = p.get("lots", 0.0) or 0.0
-        net[p["symbol"]] = net.get(p["symbol"], 0.0) + (
-            lots if p.get("side") == "buy" else -lots)
-    return {
-        sym: {"side": "long" if n > 0 else "short", "size": abs(n)}
-        for sym, n in net.items() if n != 0
-    }
+        if lots <= 0:
+            continue
+        sym = p["symbol"]
+        net[sym] = net.get(sym, 0.0) + (lots if p.get("side") == "buy" else -lots)
+        sides.setdefault(sym, set()).add(p.get("side"))
+        avg = p.get("avg_cost")
+        if sym in cost and cost[sym] is None:
+            continue
+        if isinstance(avg, (int, float)) and avg > 0 and lots > 0:
+            paid, held = cost.get(sym, (0.0, 0.0))
+            cost[sym] = (paid + avg * lots, held + lots)
+        else:
+            cost[sym] = None
+    out = {}
+    for sym, n in net.items():
+        if n == 0:
+            continue
+        c = cost.get(sym)
+        out[sym] = {"side": "long" if n > 0 else "short", "size": abs(n),
+                    "entry_price": c[0] / c[1] if c and len(sides[sym]) == 1 else None,
+                    "unrealized_pnl": None, "margin": None, "leverage": None}
+    return out
 
 
 def get_snapshot_read_at() -> float:

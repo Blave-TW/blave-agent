@@ -33,6 +33,19 @@ def get_positions(env: dict) -> list:
     Returns [{'symbol': str, 'side': str, 'size': float, 'mark_price': float}, ...]
     Return [] if flat.
 
+    Optional display-only details per row — read from the SAME positions
+    response, never an extra call; float, or None when the venue does not
+    give it (never 0 for "unknown": the page shows "—" for None and a 0
+    would read as a real value). Reading one must never raise — the
+    reconciler reads these rows too; only size / mark_price may fail a row.
+      'entry_price'     average entry price, quote currency per base unit
+      'unrealized_pnl'  account currency (USDT on a crypto venue)
+      'margin'          margin held by this position, account currency
+                        (cross: initial margin; isolated: the position's margin)
+      'leverage'        the venue's leverage setting, × (None where none exists)
+      'mark_estimated'  True when mark_price is a stand-in (e.g. the entry
+                        price) — sizing still uses it, the page does not show it
+
     'symbol' MUST be canonical dashless uppercase ('BTCUSDT', never 'BTC-USDT' /
     'BTC_USDT') — every shipped account_*.py normalizes to this and the
     reconciler keys target/actual on it. Callers comparing against a venue-format

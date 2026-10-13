@@ -14,6 +14,7 @@ show up here.
 import calendar
 import hashlib
 import hmac
+import math
 import time
 
 import requests
@@ -408,8 +409,25 @@ def get_flows(env: dict, since: int) -> list:
     return flows
 
 
+def _opt(v, positive=False):
+    """A position detail (entry price, PnL, margin, leverage) as float, or None
+    when the venue left it blank/out — None, never 0: the page shows "—" for a
+    missing value and 0 would read as a real one. Never raises: these fields
+    are display-only and the reconciler reads the same rows."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or (positive and f <= 0):
+        return None
+    return f
+
+
 def get_positions(env: dict) -> list:
-    """Open swap positions. Returns [{'symbol', 'side', 'size', 'mark_price'}, ...], [] if flat.
+    """Open swap positions. Returns [{'symbol', 'side', 'size', 'mark_price',
+    'entry_price', 'unrealized_pnl', 'margin', 'leverage'}, ...], [] if flat
+    (the last four float or None — account_TEMPLATE.get_positions; margin is
+    `initialMargin`, the documented per-position initial margin).
 
     /openApi/swap/v2/user/positions usually includes markPrice directly (seen
     in production responses, though BingX's own field docs omit it). If it's
@@ -450,6 +468,11 @@ def get_positions(env: dict) -> list:
         "side": _side(p),
         "size": abs(float(p.get("positionAmt", 0))),
         "mark_price": _mark_price(p),
+        "mark_estimated": p.get("markPrice") is None and p.get("symbol") not in mark_prices,
+        "entry_price": _opt(p.get("avgPrice"), positive=True),
+        "unrealized_pnl": _opt(p.get("unrealizedProfit")),
+        "margin": _opt(p.get("initialMargin"), positive=True),
+        "leverage": _opt(p.get("leverage"), positive=True),
     } for p in rows]
 
 

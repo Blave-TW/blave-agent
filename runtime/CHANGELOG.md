@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **部位的開倉均價、未實現損益、保證金、槓桿帶進 account.json(Wei 10-13 排進 0.1.24;`account_reader._norm_positions`)**:list、合約(`unit: contracts`)、dict 三種形狀都把 `mark_price`、`entry_price`、`unrealized_pnl`、`margin`、`leverage` 照原值帶出(不乘 mark,`size` 語意不變);`None`／NaN／inf 那一欄**不輸出**,頁面把缺欄當「—」;`mark_price` 是 0 或列上帶 `mark_estimated`(lib 拿開倉價頂替)時也不輸出——那個值只拿來算 `size`。值來自 workspace 的 `lib/account_*.get_positions`(同批 workspace 2026-10-13-i,同一支持倉 call、不多打 API);舊 lib 配新 runtime 只多一個 `mark_price`,新 lib 配舊 runtime 照舊只有 `side`／`size`,誰先到都安全。契約在 `.claude/output/backend/split-positions-data-gap-2026-10-13.md` §6。測試 `tests/check_position_detail.py`;`check_drift_band.py` B3 的期望值多 `mark_price`。
+
 ## 1.1.122 — 2026-10-13(desktop 0.1.23)
 
 - **Windows 的 Codex 引擎一律帶 `-c windows.sandbox="unelevated"`,不再讓步給用戶 config.toml(`codex_engine._windows_sandbox_flags`;Wei 10-12 拍板)**:Codex 桌面 app 會替用戶在 `~/.codex/config.toml` 寫 `[windows] sandbox = "elevated"`,而 elevated 在 2026-10 上游壞掉(openai/codex #52179、#52415:沙盒 helper 重整 ACL 碰到 app 自己鎖住的檔,`setup refresh had errors`,之後每條指令都被拒;uid 30191 10-12 實機就是這樣);unelevated 本來就是給沒設定的人用的模式,現在有設定也蓋。`-c` 蓋過 config,所以只改旗標、不動用戶的檔。讀 config 那段(`_sandbox_set`、profile 解析)拿掉;`shell/winsandbox.js`(elevated 的 ACL 補授權)留著不動。macOS／Linux 的 argv 不變。測試 `tests/check_codex_engine.py` 4c 改成釘「有 elevated 設定也照回 unelevated」。
