@@ -773,6 +773,23 @@ class ReconcilerSupervisor:
                     "restarts": self.restarts, "last_exit_code": self.last_exit_code,
                     "last_exit_at": self.last_exit_at}
 
+    def idle_for_sure(self):
+        """No reconciler process for this workspace, and none about to be
+        spawned by us: not wanted (no crash respawn pending), no live child, our
+        lock and reconciler.py's singleton both free (an orphan or a hand-run
+        one holds one of them). Under our lock, so no spawn races it — the
+        reconciler.pid probe never meets a child of ours mid-start (which would
+        exit 75 and count as a restart here)."""
+        import command_listener as cl
+        with self._lock:
+            if self._wanted or (self._proc is not None and self._proc.poll() is None):
+                return False
+            fd = self._try_lock()
+            if fd is None:
+                return False
+            _release_fd(fd)
+            return cl.lock_file_free(os.path.join(self.ws, cl.RECONCILER_SINGLETON))
+
     def tick(self):
         """Crash recovery; called about once a second."""
         with self._lock:
@@ -883,6 +900,14 @@ class ReconcilerSupervisor:
         return True
 
     def _spawn_locked(self):
+        import command_listener as cl
+        block = cl._contracts_start_block()  # a rolled-back lib/ must not trade a switch it ignores
+        if block:
+            if getattr(self, "_start_block_noted", None) != block:  # once per reason, not every respawn try
+                self._start_block_noted = block
+                self._note(f"reconciler not started: {block}")
+            raise RuntimeError(block)
+        self._start_block_noted = None
         fd = self._free_lock()
         if fd is None:
             raise RuntimeError("another reconciler holds the lock — not starting a second one")
