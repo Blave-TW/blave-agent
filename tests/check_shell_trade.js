@@ -1559,8 +1559,28 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const N = (o) => Object.assign({ hasBacktest: true }, o);
     const L = [N({ name: "b_new", displayName: "Zeta" }), N({ name: "a_old", displayName: "alpha" }), N({ name: "nobt", displayName: "NoBT", hasBacktest: false }), N({ name: "pf", displayName: "Port", portfolio: true }), N({ name: "pf2", displayName: "Port2", portfolio: true })];
     const rows = trPickRows(L, ["a_old", "gone", "pf2"], false), by = Object.fromEntries(rows.map((r) => [r.name, r]));
-    ok("候選 = 有回測的 ∪ 表上的:沒回測的不列;已存但清單找不到的列出來(gone,用內部名);排序照顯示名 localeCompare 不是內部名",
-      J(rows.map((r) => r.name)) === J(["a_old", "gone", "pf", "pf2", "b_new"]) && by.gone.gone === true && by.gone.display === "gone" && by.a_old.gone === false && !("nobt" in by));
+    ok("候選 = 有回測的 ∪ 表上的:沒回測的不列;已存但清單找不到的列出來(gone,用內部名);順序照 list 序(= 側欄序,0.1.23 不再照顯示名排)、gone 在最底",
+      J(rows.map((r) => r.name)) === J(["b_new", "a_old", "pf", "pf2", "gone"]) && by.gone.gone === true && by.gone.display === "gone" && by.a_old.gone === false && !("nobt" in by));
+    // 0.1.23(Wei 10-12,用戶提議):列的順序照側欄、名字前帶側欄同款旗標。順序由呼叫端先 sfApplyOrder(stratflags.js 的純函式)再進來;旗標從第六個參數進來
+    { const sfSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "stratflags.js"), "utf8"), sctx = {};
+      require("vm").runInNewContext(sfSrc.slice(sfSrc.indexOf("function sfApplyOrder("), sfSrc.indexOf("// 存檔與 api 都寬容收")) + "\nthis.apply = sfApplyOrder;", sctx);
+      const ordered = sctx.apply(L, ["pf2", "a_old"]), flags = { a_old: 1, pf: 3, b_new: 4, gone: 2, nobt: 2 };
+      const rs = trPickRows(ordered, ["a_old", "gone"], false, false, false, flags), byF = Object.fromEntries(rs.map((r) => [r.name, r]));
+      ok("順序照 order:order 內的先(pf2、a_old)、其餘照 list 原序(b_new、pf)、gone 最底;trPickRows 自己不排序", J(rs.map((r) => r.name)) === J(["pf2", "a_old", "b_new", "pf", "gone"]) && J(sctx.apply(L, []).map((x) => x.name)) === J(L.map((x) => x.name)), J(rs.map((r) => r.name)));
+      ok("旗標對應 flags[內部名]:1–3 帶上、4(六色期殘值)與沒設的 null;gone 的就算表裡有殘鍵也 null;flags 不給 / 形狀錯一律 null",
+        byF.a_old.flag === 1 && byF.pf.flag === 3 && byF.b_new.flag === null && byF.pf2.flag === null && byF.gone.flag === null
+        && trPickRows(L, [], false).every((r) => r.flag === null) && trPickRows(L, [], false, false, false, [1]).every((r) => r.flag === null), J(byF));
+      const cl = { env: "cloud", st: { cloud: { strat_order: ["x"], strat_flags: { x: 2 } } } }, SFm = { order: ["y"], flags: { y: 3 } };
+      ok("trPickPrefs:雲端讀 st.cloud 的 strat_order / strat_flags(不看 SF);這台電腦讀 SF;缺的(雲端沒 st、stratflags 還沒載入)→ 空序 / 無旗標",
+        J(trPickPrefs(cl, SFm)) === J({ order: ["x"], flags: { x: 2 } }) && J(trPickPrefs({ env: "local" }, SFm)) === J({ order: ["y"], flags: { y: 3 } })
+        && J(trPickPrefs({ env: "cloud", st: null }, SFm)) === J({ order: [], flags: {} }) && J(trPickPrefs({ env: "local" }, null)) === J({ order: [], flags: {} })
+        && J(trPickPrefs({ env: "cloud", st: { cloud: { strat_order: "a", strat_flags: [1] } } }, null)) === J({ order: [], flags: {} }));
+      ok("接線:psOpen 先 trPickPrefs(S, SF)、list 過 sfApplyOrder(沒載入就原序)再進 trPickRows,旗標當第六個參數",
+        /prefs = trPickPrefs\(S, typeof SF !== "undefined" \? SF : null\);\n\s*const rows = trPickRows\(typeof sfApplyOrder === "function" \? sfApplyOrder\(S\.list, prefs\.order\) : S\.list, names, [^\n]*trVenueId\(\) === "president", prefs\.flags\);/.test(src));
+      const tcss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+      ok("CSS:.ps-flag 同側欄色條 2×16 pill、每列都佔位;只有 .ps-row[data-flag] 的上色,色走 app.css 的 [data-flag] → --flag(不另寫色)",
+        /\.ps-flag \{ flex: none; width: 2px; height: 16px; border-radius: var\(--radius-pill\); \}/.test(tcss) && /\.ps-row\[data-flag\] \.ps-flag \{ background: var\(--flag\); \}/.test(tcss)
+        && !/ps-flag[^\n]*#[0-9a-f]{3,6}\b/i.test(tcss) && !/\.ps-(row|flag)[^\n]*--color-flag/.test(tcss)); }
     ok("checked = 在表裡(不看金額);Type C 不在表裡且機器不支援 = locked、已在表裡的 Type C 不鎖;機器支援(can_trade_portfolio)就都不鎖",
       by.a_old.checked && by.gone.checked && by.pf2.checked && !by.b_new.checked && by.pf.locked && !by.pf2.locked && !by.a_old.locked
       && trPickRows(L, ["a_old"], true).every((r) => !r.locked) && trPickRows([], [], false).length === 0);
@@ -1573,7 +1593,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("台幣計價的判別:TXF / MXF / TMF、台股代號(2330、00878、00631L、2330.TW);加密與美股代號不算;組合看 UNIVERSE", ["TXF", "mxf", "TMF", "2330", "00878", "00631L", "2330.TW", "6488.TWO"].every((s) => trIsTwd(s)) && ["BTCUSDT", "1000PEPEUSDT", "AAPL", "ETH", "", null, 2330, "TXFF", "123", "1234567"].every((s) => !trIsTwd(s))
         && trIsTwd([null, "BTCUSDT", "2317"]) && !trIsTwd(["BTCUSDT", "ETHUSDT"]) && J(trUniverse("X = 1\nUNIVERSE = ['2330', \"2317\",\n  '2454']\n")) === J(["2330", "2317", "2454"]) && trUniverse("UNIVERSE = load()\n").length === 0 && trUniverse(null).length === 0);
       ok("接線:框看的是連接的對象(模擬交易)、不是視角;金額表的存量列講原因、加金額被擋(可以減、可以移出);機器端 order_paper 的口數支援沒有動",
-        /const cloud = S\.env === \"cloud\", names = trNames\(\);\n\s*const rows = trPickRows\(S\.list, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER, trVenueId\(\) === "president"\);/.test(src) && /const twdRow = x\.twd === true && trVenueId\(\) === PAPER;/.test(src)
+        /const cloud = S\.env === \"cloud\", names = trNames\(\), prefs = [^\n]*\n\s*const rows = trPickRows\([^\n]*, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER, trVenueId\(\) === "president", prefs\.flags\);/.test(src) && /const twdRow = x\.twd === true && trVenueId\(\) === PAPER;/.test(src)
         && /\(twdRow && parse\(inp\.value\) > \(stored\[n\] \|\| 0\) \? "twd" : null\)/.test(src) && /whole lots|WHOLE LOTS/.test(fs.readFileSync(path.join(__dirname, "..", "lib", "order_paper.py"), "utf8"))); }
     // 0.1.18 Bug 2:統一期貨只下台指期——標的不是 TXF / MXF / TMF 的在 picker 就鎖(runtime _cmd_amounts 存的時候也擋 NOT_TXF)
     { const T = [N({ name: "txf", displayName: "台指期", symbol: "TXF" }), N({ name: "mxf", displayName: "小台", symbol: "mxf" }), N({ name: "btc", displayName: "BTC", symbol: "BTCUSDT" }), N({ name: "tsmc", displayName: "台積電", symbol: "2330" }), N({ name: "pf", displayName: "組合", portfolio: true })];
@@ -1581,7 +1601,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("統一:TXF / MXF 不鎖;BTCUSDT、台股、組合(沒有標的)不在表裡 → 鎖住、原因 txf;已在表裡的 BTCUSDT 存量不鎖、原因 txfKeep;別的 venue 一律不鎖",
         !p.txf.locked && p.txf.note === null && !p.mxf.locked && p.btc.locked === false && p.btc.note === "txfKeep" && p.btc.checked && p.tsmc.locked && p.tsmc.note === "txf" && p.pf.locked && p.pf.note === "txf"
         && other.every((r) => !r.locked && r.note === null), J(p));
-      ok("接線:第五個參數 = 連接的是統一(trVenueId() === \"president\");psRow 畫 tr.pick.txf / txfKeep", /trVenueId\(\) === PAPER, trVenueId\(\) === "president"\);/.test(src)
+      ok("接線:第五個參數 = 連接的是統一(trVenueId() === \"president\");psRow 畫 tr.pick.txf / txfKeep", /trVenueId\(\) === PAPER, trVenueId\(\) === "president", prefs\.flags\);/.test(src)
         && /else if \(r\.note === "txf" \|\| r\.note === "txfKeep"\) note = nm\.appendChild\(trEl\("span", "ps-note", r\.note === "txf" \? t\("tr\.pick\.txf"\) : t\("tr\.pick\.txfKeep"\)\)\);/.test(src)); }
     const stored = { a: 100, z: 0, gone: 50 };
     const ch = trPickApply(new Set(["a", "new1"]), stored);
@@ -1691,11 +1711,19 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok(`被拒(${env}):TYPE_B → tr.typeB.rejected、NOT_TXF → tr.notTxf.rejected 帶顯示名;其他代碼(含舊的 MARKET_*)走一般那句、去掉例外名與代碼`,
           b === 'tr.typeB.rejected {"name":"grid"}' && x === 'tr.notTxf.rejected {"name":"grid"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, x, u])); } }
     // 列(psRow):原因句 = 勾選框的 aria-describedby
-    { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });
+    { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, dataset: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });
       const pctx = vm.createContext({ LANG: "zh", document: { createElement: mk }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : "") });
       vm.runInContext(["trEl", "psRow"].map(cutF).join("\n"), pctx);
-      const rowOf = (r, cloud, i) => { pctx.R = r; const n = vm.runInContext(`psRow(R, ${cloud}, ${i})`, pctx), cb = n.kids[0], note = n.kids[1].kids.find((x) => x.className === "ps-note");
-        return { name: r.name, locked: cb.disabled, desc: cb.attrs["aria-describedby"], noteId: note ? note.id : null, note: note ? note.text : null, hidden: note ? note.attrs["aria-hidden"] : null }; };
+      const rowOf = (r, cloud, i) => { pctx.R = r; const n = vm.runInContext(`psRow(R, ${cloud}, ${i})`, pctx), cb = n.kids[0], fg = n.kids[1], note = n.kids[2].kids.find((x) => x.className === "ps-note");
+        return { name: r.name, locked: cb.disabled, desc: cb.attrs["aria-describedby"], noteId: note ? note.id : null, note: note ? note.text : null, hidden: note ? note.attrs["aria-hidden"] : null,
+          slot: fg.className === "ps-flag" && fg.attrs["aria-hidden"] === "true" && n.kids[2].className === "ps-name", flag: n.dataset.flag, label: cb.attrs["aria-label"] }; };
+      // 0.1.23 旗標:每列第二個子節點都是 .ps-flag 空位(沒旗標的列也有,名字才對得齊);有旗標的列 data-flag 掛在列上(app.css [data-flag] → --flag 同側欄)、
+      // 勾選框的 accessible name 走 side.flagAria(色不是唯一管道);stratflags.js 沒載入(SF_COLORS 沒有)就只有色塊
+      { const fr = rowOf({ name: "f1", display: "F1", locked: false, checked: true, note: null, flag: 2 }, false, 80), nf = rowOf({ name: "f0", display: "F0", locked: false, checked: false, note: null, flag: null }, false, 81);
+        pctx.SF_COLORS = { 1: "side.flagC1", 2: "side.flagC2", 3: "side.flagC3" };
+        const fr2 = rowOf({ name: "f1", display: "F1", locked: false, checked: true, note: null, flag: 2 }, false, 82); delete pctx.SF_COLORS;
+        ok("psRow:有旗標 → 列 data-flag=2、.ps-flag 空位在勾選框與名字之間;沒旗標 → 空位照在、不掛 data-flag、不改名稱;SF_COLORS 在時勾選框 aria-label = side.flagAria 帶全名與色名",
+          fr.slot && fr.flag === "2" && fr.label === undefined && nf.slot && nf.flag === undefined && nf.label === undefined && fr2.flag === "2" && fr2.label === 'side.flagAria {"name":"F1","color":"side.flagC2"}', J([fr, nf, fr2])); }
       // 0.1.12 實測 08a:鎖住的勾選框要念得到原因——aria-describedby 指向同一列的 .ps-note(唯一 id);原因句 aria-hidden,不在 label 名稱裡重念;沒原因句的列不掛
       const rs = trPickRows(L, ["tw_old"], false, true).map((r, i) => rowOf(r, false, i));
       [true, false].forEach((cloud, k) => rs.push(rowOf({ name: "pf", display: "PF", locked: true, checked: false, note: null }, cloud, 90 + k)));   // Type C 鎖住列(本機 / 雲端各一句)

@@ -580,18 +580,25 @@ function trDirty(names, stored, edits) { return names.some((n) => edits[n] != nu
    候選 = 有回測的 ∪ 目前在表裡的(names)。checked = 在表裡(不看金額,$0 也算);gone = 清單找不到(已存殘留,
    留在清單裡唯一用途是讓人取消勾選——雲端的 names 已把讀不到的濾掉,所以只有這台電腦會出);
    locked = Type C、不在表裡、機器端不支援(判的是「能不能加進來」,跟表列的 `stored[n] > 0` 是「能不能從 0 撥錢」不同;
-   已在表裡的存量不鎖,不然存不回去)。顯示名 localeCompare 排序(§13-3:列上畫的是顯示名,照內部名排會像亂的)。 */
-function trPickRows(list, names, canTrade, paper, txfOnly) {
+   已在表裡的存量不鎖,不然存不回去)。順序 = 側欄的順序(0.1.23 Wei:呼叫端先把 list 過 sfApplyOrder,這裡照 list 序、不再照顯示名排;
+   gone 的在最底)。flags = 側欄的旗標表 {內部名: 1–3}(這台電腦 SF.flags、雲端 strat_flags),列帶 flag(1–3,其餘 null,同 sfFlagId)。 */
+function trPickRows(list, names, canTrade, paper, txfOnly, flags) {
   const by = {}; list.forEach((x) => { by[x.name] = x; });
-  const seen = new Set(names); list.forEach((x) => { if (x.hasBacktest) seen.add(x.name); });
-  return [...seen].map((n) => { const x = by[n], inCur = names.indexOf(n) >= 0;
+  const fl = flags && typeof flags === "object" && !Array.isArray(flags) ? flags : {};
+  const seen = new Set(); list.forEach((x) => { if (x.hasBacktest || names.indexOf(x.name) >= 0) seen.add(x.name); }); names.forEach((n) => seen.add(n));
+  return [...seen].map((n) => { const x = by[n], inCur = names.indexOf(n) >= 0, f = x ? fl[n] : null;
     // 模擬交易是 USDT 帳戶:台幣計價的標的(台指期、台股)進不來(e2e 0.1.8 #91:台指期那一列的金額其實是口數、畫面寫 USDT)。
     // 統一期貨只下台指期:標的不是 TXF / MXF / TMF 的(BTCUSDT、台股、組合)進不來——runtime _cmd_amounts 存的時候也擋(NOT_TXF)。
     // 已在表裡的存量不鎖(鎖住就取消不了),只帶原因;跟 Type C 同時成立時只講這一條——它是更根本的原因
     const twd = paper === true && !!x && x.twd === true, txf = txfOnly === true && !!x && !trTxfSpec(x.symbol), typeC = !!x && !!x.portfolio && !inCur && !canTrade;
     return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: typeC || ((twd || txf) && !inCur),
-      note: twd ? (inCur ? "twdKeep" : "twd") : txf ? (inCur ? "txfKeep" : "txf") : typeC ? "typeC" : null }; })
-    .sort((a, b) => a.display.localeCompare(b.display));
+      note: twd ? (inCur ? "twdKeep" : "twd") : txf ? (inCur ? "txfKeep" : "txf") : typeC ? "typeC" : null, flag: Number.isInteger(f) && f >= 1 && f <= 3 ? f : null }; });
+}
+// picker 的側欄偏好:雲端 = api 回的 strat_order / strat_flags(同 envPaintSide);這台電腦 = stratflags.js 的 SF(還沒載入就沒有:原序、無旗標)
+function trPickPrefs(S, sf) {
+  const c = S && S.env === "cloud" ? (S.st && S.st.cloud) || {} : null;
+  const o = c ? c.strat_order : sf && sf.order, f = c ? c.strat_flags : sf && sf.flags;
+  return { order: Array.isArray(o) ? o : [], flags: f && typeof f === "object" && !Array.isArray(f) ? f : {} };
 }
 /* 這支策略的標的是不是台幣計價:台指期(TXF / MXF / TMF,runtime command_listener._TXF_ASSET_SPECS 那三個)或台股代號
    (4–6 位數字,可帶一個英文字尾:2330、00878、00631L;帶 .TW / .TWO 也算)。syms = 單一標的與組合的標的清單;看不出來 = 不是(不擋) */
@@ -3673,9 +3680,11 @@ function psTrap(e) {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 // 原因句(.ps-note)是勾選框的 aria-describedby;它本身 aria-hidden,不然包在 label 裡會先被併進名稱、再當描述念第二次。i = 列序,只拿來拼唯一 id
+// 名字前的旗標色塊(.ps-flag)每列都有、沒旗標就空著(名字才對得齊);色跟側欄同一條 [data-flag] → --flag。色不是唯一管道:有旗標的勾選框 accessible name 同側欄(side.flagAria)
 function psRow(r, cloud, i) {
-  const row = trEl("label", "ps-row" + (r.locked ? " is-locked" : "")), cb = trEl("input", "ps-cb");
-  cb.type = "checkbox"; cb.value = r.name; cb.checked = r.checked; cb.disabled = r.locked;
+  const row = trEl("label", "ps-row" + (r.locked ? " is-locked" : "")), cb = trEl("input", "ps-cb"), fg = trEl("span", "ps-flag");
+  cb.type = "checkbox"; cb.value = r.name; cb.checked = r.checked; cb.disabled = r.locked; fg.setAttribute("aria-hidden", "true");
+  if (r.flag) { row.dataset.flag = String(r.flag); if (typeof SF_COLORS !== "undefined") cb.setAttribute("aria-label", t("side.flagAria", { name: r.display, color: t(SF_COLORS[r.flag]) })); }
   const nm = trEl("span", "ps-name", r.display);
   if (r.gone) nm.appendChild(trEl("span", "ps-gone", t("tr.pick.gone")));
   let note = null;
@@ -3683,14 +3692,14 @@ function psRow(r, cloud, i) {
   else if (r.note === "txf" || r.note === "txfKeep") note = nm.appendChild(trEl("span", "ps-note", r.note === "txf" ? t("tr.pick.txf") : t("tr.pick.txfKeep")));
   else if (r.locked) note = nm.appendChild(trEl("span", "ps-note", cloud ? t("tr.typeCHost") : t("tr.typeC")));
   if (note) { note.id = "ps-why-" + i; note.setAttribute("aria-hidden", "true"); cb.setAttribute("aria-describedby", note.id); }
-  row.append(cb, nm); return row;
+  row.append(cb, fg, nm); return row;
 }
 function psOpen(opener) {
   const S = TR;
   if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || trPickOff()) return;
   trackFeature("strategy_picker");
-  const cloud = S.env === "cloud", names = trNames();
-  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER, trVenueId() === "president");
+  const cloud = S.env === "cloud", names = trNames(), prefs = trPickPrefs(S, typeof SF !== "undefined" ? SF : null);
+  const rows = trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER, trVenueId() === "president", prefs.flags);
   psOpener = opener || null;
   $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";
