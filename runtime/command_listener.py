@@ -31,6 +31,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from zoneinfo import ZoneInfo
 
 # Two load paths: web_bridge imports us from `current/` (script dir, siblings
@@ -824,7 +825,7 @@ def _venue_cred_ids(lines, skip_ids=frozenset()):
     }
 
 
-def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
+def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False, contracts=None):
     """manager/amounts.ui.json — the LAST UI-confirmed amounts/exchanges
     (deployment redline L2, spec §3.1). lib/portfolio's load_portfolio_config
     prefers this file over portfolio_config.json when it exists, so an agent
@@ -841,7 +842,9 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
     mirror — they must never be the FIRST writer, or a legacy weights-only
     machine would get its amounts frozen to {} before the user ever saved
     下單設定 (the guard is fail-open until that first save). Best-effort but
-    loud: a failed mirror leaves the guard reading stale values."""
+    loud: a failed mirror leaves the guard reading stale values.
+    contracts: {strategy: TXF|MXF|TMF} (_cmd_amounts); None leaves the key out,
+    which lib/portfolio reads as "keep the config's" — never as {}."""
     path = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
     if only_if_present and not os.path.isfile(path):
         return
@@ -850,6 +853,8 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
         doc = {"amounts": amounts if isinstance(amounts, dict) else {},
                "exchanges": exchanges if isinstance(exchanges, dict) else {},
                "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())}
+        if isinstance(contracts, dict):
+            doc["contracts"] = contracts
         with atomic_file.replacing(path) as f:  # atomic, same convention as portfolio_config
             json.dump(doc, f, indent=2)
     except OSError as e:
@@ -1155,7 +1160,8 @@ def _clear_evicted_in_ui_mirror(evicted_ids):
     cleared = {k: ("" if v in evicted_ids else v)
                for k, v in mirror["exchanges"].items()}
     if cleared != mirror["exchanges"]:
-        _write_ui_amounts_mirror(mirror.get("amounts"), cleared)
+        _write_ui_amounts_mirror(mirror.get("amounts"), cleared,
+                                 contracts=mirror.get("contracts"))
 
 
 def _cmd_credentials(args):
@@ -3218,6 +3224,238 @@ def _strategy_is_portfolio(name):
     return strategy_reporter.is_portfolio_stats(data)
 
 
+def _txf_root(sym):
+    s = sym or ""
+    if s.endswith("R1") and len(s) > 2:
+        s = s[:-2]
+    return s if s in _TXF_ASSET_SPECS else None
+
+
+def _saved_contracts(cfg):
+    """The contracts in force: the UI mirror's when it carries the key (what
+    lib/portfolio.load_portfolio_config applies), else the config's."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
+            mirror = json.load(f)
+    except (OSError, ValueError):
+        mirror = None
+    src = mirror if isinstance(mirror, dict) and "contracts" in mirror else cfg
+    got = src.get("contracts") if isinstance(src, dict) else None
+    return {k: v for k, v in got.items() if v in _TXF_ASSET_SPECS} if isinstance(got, dict) else {}
+
+
+def _pending_sent_roots():
+    """Roots with 統一 lots parked unclaimed (manager/reconciler PENDING_SENT_PATH);
+    None = the file is there but unreadable."""
+    try:
+        with open(os.path.join(WORKSPACE_STATE, "president_pending_sent.json"), encoding="utf-8") as f:
+            rows = json.load(f)
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rows, dict):
+        return None
+    return {r.get("root") for r in rows.values() if isinstance(r, dict)}
+
+
+_CONTRACT_CV = {"TXF": 200, "MXF": 50, "TMF": 10}
+
+
+def _lots_basis(lots, cv):
+    """[lo, hi) of the exposure (index points × TWD) a lot count can stand for
+    under the page's conversion: half-up to the nearest lot, at least 1."""
+    lo = 0.0 if lots == 1 else (lots - 0.5) * cv
+    return lo, (lots + 0.5) * cv
+
+
+def _check_contract_exposure(name, old_lots, old_root, new_lots, new_root, symbol_root):
+    """A switch keeps the exposure (design §契約 1): the new lots must be what
+    some exposure behind the old lots converts to — the page converts from the
+    last TYPED lots, so any basis that rounds to the stored count is valid.
+    Unconverted lots (20 TMF sent back as 20 TXF) are refused. Skipped when
+    either side is 0: nothing held or nothing to buy."""
+    try:
+        old_lots, new_lots = float(old_lots or 0), float(new_lots or 0)
+    except (TypeError, ValueError):
+        return
+    if old_lots <= 0 or new_lots <= 0:
+        return
+    old_root, new_root = old_root or symbol_root, new_root or symbol_root
+    if old_root not in _CONTRACT_CV or new_root not in _CONTRACT_CV:
+        return
+    a_lo, a_hi = _lots_basis(old_lots, _CONTRACT_CV[old_root])
+    b_lo, b_hi = _lots_basis(new_lots, _CONTRACT_CV[new_root])
+    if max(a_lo, b_lo) < min(a_hi, b_hi) and new_lots == int(new_lots):
+        return
+    raise ValueError(
+        f"CONTRACT_EXPOSURE_MISMATCH: 「{name}」從 {old_lots:g} 口 {old_root} 換成 {new_lots:g} 口 "
+        f"{new_root},曝險對不上(換合約不換曝險)——換合約和改口數請分兩次儲存")
+
+
+ROLLOVER_PATH_NAME = "contract_rollover.json"  # = lib/portfolio._ROLLOVER_PATH
+
+
+ROLLOVER_DONE_NAME = "contract_rollover_done.json"  # = lib/portfolio._ROLLOVER_DONE_PATH (lib writes it)
+
+
+def _read_state_json(name):
+    path = os.path.join(WORKSPACE_STATE, name)
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _record_rollovers(prev, new, clean, prev_amounts):
+    """state/contract_rollover.json = {strategy: {from, to, at}}: the switches
+    whose old contract may still hold the strategy's lots. This runtime is its
+    only writer; lib/portfolio marks a record finished in its own file
+    (contract_rollover_done.json, {strategy: record id}) once the round's config trades
+    the strategy where `to` says and the old contract has nothing left to close —
+    a finished record is treated as absent here and dropped. Rules:
+      - a switch with no open record: {from: old contract, to: new, at: now}
+      - a switch with one open: `from` stays (the middle contract's entry was
+        held, nothing reached it), `to` and `at` follow; back to `from` drops it
+      - unpicked: an open record keeps its `from` with `to` null (nothing to
+        open, the old contract still closing); a member that traded an override
+        gets {from: that contract, to: null} — so re-picking and switching
+        starts from where its lots are, not from its SYMBOL
+      - a save that changes nothing leaves it (`at` too)
+    Unreadable record or done file: refused, the files left as they are (the lib
+    holds every family entry meanwhile)."""
+    recs, done = _read_state_json(ROLLOVER_PATH_NAME), _read_state_json(ROLLOVER_DONE_NAME)
+    if recs is None or done is None:
+        touches = any((prev.get(n) or "") != (new.get(n) or "") for n in clean) or any(
+            n not in clean and prev.get(n) for n in prev_amounts)
+        if not touches:
+            return  # nothing for the record to say (an amount 0 to flatten always saves)
+        raise RuntimeError("CONTRACT_RECORD_UNREADABLE: 換倉紀錄讀不出來,這次換合約不儲存——請稍後再試")
+    open_recs = {n: r for n, r in recs.items() if isinstance(r, dict)
+                 and not (done.get(n) is not None and done.get(n) == r.get("id", r.get("at")))}
+    out = {n: dict(r) for n, r in open_recs.items()}
+    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+
+    def stamp(rec):  # `id` is what a done-mark matches; `at` is for people
+        return dict(rec, at=now, id=uuid.uuid4().hex)
+    for name in set(clean) | set(prev_amounts) | set(out):
+        root = _txf_root(_strategy_futures_symbol(name))
+        rec = out.get(name)
+        if name not in clean:
+            if rec is not None:
+                if rec.get("to") is not None:
+                    out[name] = stamp(dict(rec, to=None))
+            elif name in prev_amounts and root and prev.get(name) not in (None, root):
+                out[name] = stamp({"from": prev[name], "to": None})
+            continue
+        if root is None:
+            continue
+        cur = new.get(name) or root
+        if rec is not None:
+            if rec["from"] == cur:
+                out.pop(name)
+            elif rec.get("to") != cur:
+                out[name] = stamp(dict(rec, to=cur))
+            continue
+        old = prev.get(name) or root
+        if old != cur:
+            out[name] = stamp({"from": old, "to": cur})
+    if out == recs:
+        return
+    try:
+        os.makedirs(WORKSPACE_STATE, exist_ok=True)
+        with atomic_file.replacing(os.path.join(WORKSPACE_STATE, ROLLOVER_PATH_NAME)) as f:
+            json.dump(out, f, indent=2)
+    except OSError as e:
+        raise RuntimeError(f"contract rollover record not written ({type(e).__name__}) — try again")
+
+
+def _contracts_for_save(args, clean, prev_amounts, cfg):
+    """{strategy: TXF|MXF|TMF} to store with this amounts save — only entries
+    that differ from the strategy's SYMBOL. Raises ValueError("CODE: …") before
+    anything is written (amounts and contracts are one atomic save: a lot count
+    means nothing without its contract).
+
+    `contracts` absent (a client that predates it) keeps what is saved, pruned to
+    this save's members. Present = the whole map, validated per name. A change
+    reaches the account through the reconciler's rollover (lib/portfolio:
+    the old root's close first, the new root's entry the round after it
+    filled); the refusals below are the cases where that would not happen
+    cleanly."""
+    prev = _saved_contracts(cfg)
+    if "contracts" not in args:
+        out = {k: v for k, v in prev.items() if k in clean
+               and _txf_root(_strategy_futures_symbol(k)) not in (None, v)}
+    else:
+        raw = args.get("contracts")
+        if not isinstance(raw, dict) or len(raw) > 200:
+            raise ValueError("BAD_CONTRACT: contracts needs a {strategy: TXF|MXF|TMF} mapping")
+        out = {}
+        for k, v in raw.items():
+            if v not in _TXF_ASSET_SPECS:
+                raise ValueError(f"BAD_CONTRACT: 「{k}」的合約只能是 TXF／MXF／TMF")
+            if k not in clean:
+                raise ValueError(f"BAD_CONTRACT: 「{k}」不在這次儲存的策略裡")
+            root = _txf_root(_strategy_futures_symbol(k))
+            if root is None:
+                raise ValueError(f"NOT_TXF_FAMILY: 「{k}」不是台指期策略,不能換合約")
+            if root == v:
+                continue
+            if not _strategy_has_interval(k) or _strategy_is_portfolio(k):
+                raise ValueError(f"CONTRACT_TYPE: 「{k}」不是單一標的的訊號策略(Type A),不能換合約")
+            out[k] = v
+    changed = {k for k in set(out) | set(prev)
+               if k in clean and out.get(k) != prev.get(k)}
+    funded = {k for k in out if clean.get(k, 0) > 0}
+    if not changed and not funded:
+        return out
+    import portfolio_reporter  # same runtime dir
+    if changed and not portfolio_reporter.can_switch_contract():
+        raise ValueError("CONTRACT_NEEDS_UPDATE: 下單沒在跑,或這台機器的下單程式還不支援換合約——"
+                         "請先更新 blave agent 並啟動下單,再換合約")
+    if funded and portfolio_reporter.contract_override_broken():
+        raise ValueError("CONTRACT_NEEDS_UPDATE: 這台機器的下單程式不支援已設定的合約——"
+                         "請先更新 blave agent;更新完成、下單重新啟動後再儲存")
+    for k in sorted(changed):
+        _check_contract_exposure(k, prev_amounts.get(k), prev.get(k), clean.get(k),
+                                 out.get(k), _txf_root(_strategy_futures_symbol(k)))
+    # an entry on the new contract is due: it may still hold the old one (a
+    # previous amount 0 whose close has not filled counts too)
+    rolling = {k for k in changed if clean.get(k, 0) > 0}
+    if not rolling:
+        return out
+    if os.path.exists(os.path.join(WORKSPACE_STATE, "HALT")):
+        raise ValueError("CONTRACT_HALTED: 下單已停止,這時換合約只會平掉舊合約、不會買進新合約——"
+                         "請先啟動下單再換")
+    try:
+        with open(os.path.join(WORKSPACE_STATE, "signal_gate.json")) as f:
+            gate = json.load(f)
+    except (OSError, ValueError):
+        gate = {}
+    def keys_of(name):
+        root = _txf_root(_strategy_futures_symbol(name))
+        return {prev.get(name) or root, out.get(name) or root} - {None}
+
+    # a waiting strategy holds its whole key as is (lib/portfolio signal gate):
+    # the rollover would open the new contract without closing the old one
+    waiting = sorted(n for n in (gate if isinstance(gate, dict) else {}) if n in clean)
+    for k in sorted(rolling):
+        hit = next((n for n in waiting if keys_of(n) & keys_of(k)), None)
+        if hit:
+            raise ValueError(f"CONTRACT_GATED: 「{hit}」在等新訊號才進場,同一個合約這時換不了——"
+                             "請等它進場後再換")
+    parked = _pending_sent_roots()
+    for k in sorted(rolling):
+        if parked is None or keys_of(k) & parked:
+            raise ValueError(f"CONTRACT_PARKED: 「{k}」的合約還有統一未回報成交的委託,"
+                             "請等對帳確認後再換")
+    return out
+
+
 def _cmd_amounts(args):
     """策略下單金額 — the 下單設定 page's save button.
 
@@ -3365,6 +3603,8 @@ def _cmd_amounts(args):
             raise ValueError(
                 f"NOT_TXF: 「{k}」的標的是 {sym},統一期貨只能下台指期(TXF／MXF／TMF)"
                 "——請取消勾選後再儲存")
+    prev_contracts = _saved_contracts(cfg)
+    contracts = _contracts_for_save(args, clean, prev_amounts, cfg)
     if not isinstance(cfg.get("asset_specs"), dict):
         cfg["asset_specs"] = {}
     # First-allocation TXF/MXF/TMF spec write (mirrors the frontend's own
@@ -3381,7 +3621,7 @@ def _cmd_amounts(args):
     for k, amt in clean.items():
         if amt <= 0:
             continue
-        sym = _strategy_futures_symbol(k)
+        sym = contracts.get(k) or _strategy_futures_symbol(k)  # the contract it trades
         spec = _TXF_ASSET_SPECS.get(sym) if sym else None
         if not spec:
             continue
@@ -3400,7 +3640,11 @@ def _cmd_amounts(args):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # 紅線 L2:UI 儲存=權威副本。鏡像先寫、config 後寫(P2-2)——reconciler
     # mtime-watch 的是 config,這個順序讓它觸發的那一輪就讀到新權威值。
-    _write_ui_amounts_mirror(clean, cfg["exchanges"])
+    cfg["contracts"] = contracts
+    # the rollover record lands before the config the reconciler watches: the
+    # round this save triggers already holds the new contract's entry back
+    _record_rollovers(prev_contracts, contracts, clean, prev_amounts)
+    _write_ui_amounts_mirror(clean, cfg["exchanges"], contracts=contracts)
     with atomic_file.replacing(path) as f:  # atomic: the reconciler mtime-watches + json-loads this
         json.dump(cfg, f, indent=2)
     # signal_gate 殘留清理:resume_wait 寫下的 baseline 只有在「訊號變動」時由
@@ -3796,7 +4040,7 @@ def _cmd_credentials_remove(args):
                 # mirror first, config second (P2-2 write order) — and if the
                 # config write below then fails, a {}/{} mirror over a stale
                 # config fails in the SAFE direction (nothing funded).
-                _write_ui_amounts_mirror({}, {}, only_if_present=True)
+                _write_ui_amounts_mirror({}, {}, only_if_present=True, contracts={})
                 cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
                 try:
                     with open(cpath) as f:
@@ -3805,6 +4049,7 @@ def _cmd_credentials_remove(args):
                         cfg["amounts"] = {}
                         cfg["exchanges"] = {}
                         cfg["asset_specs"] = {}
+                        cfg["contracts"] = {}
                         cfg.pop("weights", None)
                         # atomic: the reconciler mtime-watches + json-loads this
                         with atomic_file.replacing(cpath) as f:

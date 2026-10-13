@@ -622,6 +622,50 @@ def portfolio_configured(cfg_path, hb, last):
     return False if _ws_lib_read_only_guard() else None
 
 
+def _ws_lib_contract_override():
+    """The workspace lib on disk keys a TXF-family strategy by its contracts
+    override (lib/portfolio.execution_symbol) and prices the switched contract on
+    paper (lib/paper_data). Bytes: see _workspace_has_signal_gate."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), "rb") as f:
+            agg = b"def execution_symbol(" in f.read()
+        with open(os.path.join(WORKSPACE, "lib", "paper_data.py"), "rb") as f:
+            paper = b"def _txf_root(" in f.read()
+        return agg and paper
+    except OSError:
+        return False
+
+
+def _reconciler_view(hb, last):
+    if hb is None:
+        hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
+    if last is None:
+        last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
+    caps = last.get("caps") if isinstance(last, dict) else None
+    return _fresh(hb), isinstance(caps, list) and "contract_override" in caps
+
+
+def can_switch_contract(hb=None, last=None):
+    """Whether a contract switch may be saved now. An old reconciler ignores
+    portfolio_config["contracts"] and trades the saved lots on the strategy's
+    SYMBOL — 20 TMF read as 20 TXF — so only a running reconciler's own word
+    counts (`caps` in its snapshot, lib/portfolio.RECONCILE_CAPS). A stale
+    heartbeat is fail-closed, never the lib on disk: a reconciler stuck in a
+    long broker call or just back from sleep is still alive and may be the old
+    code under an updated disk (restart deferred)."""
+    fresh, caps = _reconciler_view(hb, last)
+    return fresh and caps
+
+
+def contract_override_broken(hb=None, last=None):
+    """A switch already in force that the next order would ignore: a running
+    reconciler without the caps, or — stopped — a lib on disk without them (what
+    its next start loads). Refusing on the disk is the safe direction; it gates
+    plain amounts saves of a strategy whose switch is in force."""
+    fresh, caps = _reconciler_view(hb, last)
+    return not caps if fresh else not _ws_lib_contract_override()
+
+
 def can_trade_portfolio():
     """The workspace lib trades Type C portfolios live: its runner writes the
     per-asset weights (lib/runner.typec_live_state) and its aggregation reads
@@ -1428,6 +1472,10 @@ def build_report():
         "self_ledger": own_positions_only(cfg, hb, last),
         # can_trade_portfolio: a Type C strategy may be funded (the pages unlock it)
         "can_trade_portfolio": can_trade_portfolio(),
+        # can_switch_contract: the 標的 cell may switch a 台指期 strategy between
+        # TXF / MXF / TMF (config["contracts"]). Absent = old runtime: the page
+        # must not offer it, and the api refuses `contracts` without it.
+        "can_switch_contract": can_switch_contract(hb, last),
         # can_wait_start: whether the workspace's reconcile path understands
         # state/signal_gate.json (the 「啟動,等新訊號才進場」 option) — keyed
         # on the actual artifact like can_flatten, so the web never offers a
@@ -1515,6 +1563,23 @@ def workspace_update():
     return doc
 
 
+TXF_FAMILY = ("TXF", "MXF", "TMF")
+
+
+def execution_contract(name, symbol, cfg, mirror=None):
+    """lib/portfolio.execution_symbol, read off the files (this runtime never
+    imports the workspace lib): the contracts override of a TXF-family strategy,
+    the UI mirror's copy first when it carries the key."""
+    s = symbol or ""
+    root = s[:-2] if s.endswith("R1") and len(s) > 2 else s
+    if root not in TXF_FAMILY:
+        return symbol
+    src = mirror if isinstance(mirror, dict) and "contracts" in mirror else cfg
+    contracts = (src or {}).get("contracts") if isinstance(src, dict) else None
+    want = contracts.get(name) if isinstance(contracts, dict) else None
+    return want if want in TXF_FAMILY else symbol
+
+
 def downtime_pause_view(cfg, last):
     """state/downtime_pause.json joined per strategy with:
     what the strategy wants now, what the account holds, and where the current
@@ -1541,6 +1606,7 @@ def downtime_pause_view(cfg, last):
         state = state if isinstance(state, dict) else {}
         symbol = state.get("symbol")
         key = symbol.replace("-", "").upper() if isinstance(symbol, str) and symbol else None
+        key = execution_contract(name, key, cfg, mirror)
         if key and _strategy_market(name) == "spot":
             key += "@spot"
         try:

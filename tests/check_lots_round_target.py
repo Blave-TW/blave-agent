@@ -10,7 +10,7 @@ Asserts: the churn is gone through the real aggregate_portfolio → reconcile
 path; 0.49/0.5/-0.5/1.5/-1.5/2.5 round half-up away from zero; two strategies
 of 0.3 on one key net to 1 lot (summed, then rounded — not 0 + 0) and
 2.3 − 0.8 (a float 1.4999…) to 2; a NaN / inf position holds its key without
-an order while the other keys trade; a crypto
+an order while the other keys trade (only a contract rollover's new key waits on it); a crypto
 (notional) row and a contributor's own contribution keep their raw values.
 
 Run: cd blave-agent && python3 tests/check_lots_round_target.py
@@ -128,6 +128,18 @@ for bad in (float("nan"), float("inf")):
         raised = e
     check(raised is None and sent == [("MXF", 1.0)],
           f"position {bad}: TXF held (no close), MXF still buys 1 (sent {sent}, raised {raised!r})")
+
+# …unless that key is the OLD contract of a rollover in progress: the new one waits
+setup({"txf": ("TXF", float("nan"), 1, "capital", LOTS), "mxf": ("MXF", 1.0, 1, "capital", LOTS)})
+os.makedirs("state", exist_ok=True)
+with open("state/contract_rollover.json", "w") as f:
+    json.dump({"mxf": {"from": "TXF", "to": "MXF", "at": "t0"}}, f)
+sent = []
+portfolio.reconcile(lambda: {"TXF": {"side": "long", "size": 1}},
+                    lambda symbol, signed_diff, spec, reduce_only=False: sent.append((symbol, signed_diff))
+                    or {"executed_qty": abs(signed_diff), "avg_price": 20000.0})
+check(sent == [], f"position nan on a rollover's old contract: MXF (the new one) waits (sent {sent})")
+os.remove("state/contract_rollover.json")
 
 # ── crypto untouched ────────────────────────────────────────────────────────
 setup({"btc": ("BTCUSDT", 0.505, 100, "binance", None),

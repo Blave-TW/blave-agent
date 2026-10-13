@@ -61,6 +61,13 @@ def _hdrs(env):
             "secret-key": (env or {}).get("blave_secret_key", "")}
 
 
+def _txf_root(sym):
+    s = sym or ""
+    if s.endswith("R1") and len(s) > 2:
+        s = s[:-2]
+    return s if s in ("TXF", "MXF", "TMF") else None
+
+
 def _strategy_symbol(name):
     """The symbol a strategy trades — state.json first (what it actually set at
     runtime), else the SYMBOL constant parsed from strategy.py."""
@@ -117,12 +124,18 @@ def _resolve_strategy(symbol):
     Same-symbol strategies almost always share a data source, so it rarely bites;
     documented so a future need can thread the strategy through the fill."""
     want = _norm(symbol)
-    candidates = []
+    candidates, family = [], []
     for path in sorted(glob.glob("strategies/*/strategy.py")):
         name = os.path.basename(os.path.dirname(path))
-        if _strategy_symbol(name) == want:
+        sym = _strategy_symbol(name)
+        if sym == want:
             candidates.append(name)
-    for name in candidates:
+        elif _txf_root(want) and _txf_root(sym):
+            # TXF / MXF / TMF are one index series (lib.data maps all three to TXF
+            # bars), and a strategy switched to another contract (portfolio_config
+            # `contracts`) still says its own SYMBOL — any family strategy prices it
+            family.append(name)
+    for name in candidates + family:
         mod = _load_strategy(name)
         if mod and hasattr(mod, "fetch_data"):
             return name
