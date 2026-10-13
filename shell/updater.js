@@ -151,13 +151,16 @@ function shouldAskMove({ platform, packaged, inApps, declined, trading, askedThi
 /* app.moveToApplicationsFolder() 會不會走授權分支。條件照抄 Electron 44.4.3 shell/browser/ui/cocoa/electron_bundle_mover.mm 的
    needAuthorization(升 Electron 時重對一次):/Applications 不可寫,或那裡已有同名 bundle 而它不可寫。判不出來一律當成要授權。
    用 access() 問、不看擁有者與權限位元:10-13 那顆 /Applications/Blave.app 是自己擁有的 755,授權分支照樣走了;
-   同一台機器上 access(W_OK) 對它回 EPERM(macOS 的 App 管理保護) */
-function moveNeedsAuth(exePath, appsDir = "/Applications") {
+   同一台機器上 access(W_OK) 對它回 EPERM(macOS 的 App 管理保護)。
+   回傳原因給提示框挑字:"exists" = 那裡已有一份(先判:標準帳號 + 已裝過的人該去開那份,不是再拖一次)、"apps" = 資料夾不可寫或判不出來、null = 不必授權 */
+function moveAuthReason(exePath, appsDir = "/Applications") {
   const writable = (p) => { try { fs.accessSync(p, fs.constants.W_OK); return true; } catch (_) { return false; } };
   try {
     const dst = path.join(appsDir, path.basename(path.resolve(exePath, "../../..")));   // exe = X.app/Contents/MacOS/X
-    return !writable(appsDir) || (fs.existsSync(dst) && !writable(dst));
-  } catch (_) { return true; }
+    if (fs.existsSync(dst) && !writable(dst)) return "exists";
+    return writable(appsDir) ? null : "apps";
+  } catch (_) { return "apps"; }
 }
+const moveNeedsAuth = (exePath, appsDir) => moveAuthReason(exePath, appsDir) !== null;
 
-module.exports = { createUpdater, planRestart, shouldAskMove, moveNeedsAuth, CHECK_EVERY_MS };
+module.exports = { createUpdater, planRestart, shouldAskMove, moveNeedsAuth, moveAuthReason, CHECK_EVERY_MS };

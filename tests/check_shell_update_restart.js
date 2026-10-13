@@ -16,7 +16,8 @@ const tick = () => new Promise((r) => setImmediate(r));
 const S = fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8");
 const zh = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(S.indexOf("zh:"))); if (!m) throw new Error("字串表沒有 " + k); return m[1]; };
 const L = { quitTitle: zh("tm.quitTitle"), updateBody: zh("tm.updateBody"), quitCloudNote: zh("tm.quitCloudNote"), quitStay: zh("tm.quitStay"), updateReady: zh("tm.updateReady"), paperVenue: "模擬交易",
-  moveTitle: zh("tm.move.title"), moveBody: zh("tm.move.body"), moveGo: zh("tm.move.go"), moveNo: zh("tm.move.no") };
+  moveTitle: zh("tm.move.title"), moveBody: zh("tm.move.body"), moveGo: zh("tm.move.go"), moveNo: zh("tm.move.no"),
+  moveAuthExists: zh("tm.move.authExists"), moveAuthApps: zh("tm.move.authApps"), gotIt: zh("src.gotIt") };
 
 const RESTART = cut(src, "async function restartToUpdate("), MOVE = cut(src, "async function askMoveToApps(");
 const MOVE_PATH = /^const moveDeclinedPath = [^\n]*;$/m.exec(src)[0];
@@ -143,12 +144,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "blave-move-")), log = [], errs = [], tracked = [];
     if (o.declined) fs.writeFileSync(path.join(dir, "move-declined.json"), "{}");
     const win = { destroyed: false, isDestroyed() { return this.destroyed; } };
-    const ctx = { tmLabels: o.noLabels ? { moveTitle: "", moveBody: "", moveGo: "", moveNo: "" } : { ...L }, shouldAskMove, fs, path, moveAsked: !!o.askedBefore,
+    const ctx = { tmLabels: o.noLabels ? { moveTitle: "", moveBody: "", moveGo: "", moveNo: "" } : o.noAuthLabels ? { ...L, moveAuthExists: "", moveAuthApps: "", gotIt: "" } : { ...L }, shouldAskMove, fs, path, moveAsked: !!o.askedBefore,
       quitting: false, quitConfirmed: false, quitAsking: false, activeTurn: null, turnStarting: false, win,
       process: { platform: o.platform || "darwin" }, BrowserWindow: { getAllWindows: () => [win] }, tradeMaybeLive: () => (o.trading ? { venue: "x" } : null),
       tm: () => ({ track: (ev, p) => tracked.push(ev + ":" + p.name) }), console: { error: (e) => errs.push(String(e)) },
       engineSetup: () => ({ busy: () => !!(o.engineBusy || ctx.engineBusyNow), snapshot: () => ({ phase: ctx.enginePhase || "idle" }) }),
       _engineRun: null, moveNeedsAuth: (exe) => { log.push("auth?" + (exe === dir ? "" : ":" + exe)); return !!(o.needsAuth || ctx.needsAuthNow); },
+      moveAuthReason: (exe) => { log.push("auth?" + (exe === dir ? "" : ":" + exe)); return o.needsAuth ? o.needsAuth === true ? "apps" : o.needsAuth : null; },
       app: { isPackaged: o.packaged !== false, getPath: () => dir, isInApplicationsFolder: () => { log.push("inApps?"); return !!o.inApps; },
         moveToApplicationsFolder: () => { log.push("move"); if (o.moveThrows) throw new Error("perm"); return o.moveRes !== false; } },
       dialog: { showMessageBox: (_w, opts) => { log.push("dialog"); ctx.box = opts; if (o.onDialog) o.onDialog(ctx); return Promise.resolve({ response: o.response }); } } };
@@ -167,9 +169,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("引擎安裝中(pip 在跑):不問、不搬、不記、不送埋點;下次啟動再問", r === false && !m.log.includes("dialog") && !m.log.includes("move") && !m.marked() && m.tracked.length === 0 && m.ctx.moveAsked === false, m.log); }
   { const m = moveRig({ response: 1, onDialog: (c) => { c.engineBusyNow = true; } }), r = await m.fn();
     t("框開著時引擎開始裝、用戶按「移」:這次不搬、不記", r === false && m.log.includes("dialog") && !m.log.includes("move") && !m.marked(), m.log); }
-  { const m = moveRig({ response: 1, needsAuth: true }), r = await m.fn();
-    t("搬移要系統授權(/Applications 或既有的 Blave.app 不可寫):不問、不叫 moveToApplicationsFolder、不記、不送埋點,留一行 log;下次啟動再判",
-      r === false && !m.log.includes("dialog") && !m.log.includes("move") && !m.marked() && m.tracked.length === 0 && m.ctx.moveAsked === false && m.errs.some((e) => /\[move\] needs authorization/.test(e)), m.log); }
+  { const m = moveRig({ response: 1, needsAuth: true, noAuthLabels: true }), r = await m.fn();
+    t("搬移要系統授權、提示的字還沒交:不問、不提示、不叫 moveToApplicationsFolder、不記、不送埋點,留一行 log;下次啟動再判",
+      r === false && !m.log.includes("dialog") && !m.log.includes("move") && !m.marked() && m.tracked.length === 0 && m.ctx.moveAsked === false && m.errs.some((e) => /\[move\] needs authorization \(apps\)/.test(e)), m.log); }
+  for (const [reason, text] of [["exists", L.moveAuthExists], ["apps", L.moveAuthApps]]) {
+    const m = moveRig({ response: 0, needsAuth: reason }), r = await m.fn(), b = m.ctx.box || {};
+    t("搬移要系統授權(" + reason + "):跳只有「知道了」的 info 框、字照原因;不搬、不記「不要」、不送埋點",
+      r === false && m.log.join() === "auth?,inApps?,dialog" && b.type === "info" && b.message === text && !b.detail && JSON.stringify(b.buttons) === JSON.stringify([L.gotIt])
+      && b.defaultId === 0 && b.cancelId === 0 && !m.marked() && m.tracked.length === 0 && m.ctx.moveAsked === true, { log: m.log, b }); }
+  { const m = moveRig({ response: 0, needsAuth: "exists" }); await m.fn(); await m.fn();
+    t("搬移要系統授權:同一次啟動只跳一次(第二次判斷不再跳)", m.log.filter((x) => x === "dialog").length === 1, m.log); }
+  { const m = moveRig({ response: 0, needsAuth: "apps", trading: true }), n = moveRig({ response: 0, needsAuth: "apps", declined: true }), k = moveRig({ response: 0, needsAuth: "apps", engineBusy: true });
+    t("搬移要系統授權:下單中、拒絕過、引擎安裝中跟詢問框同一組條件,不提示", (await m.fn()) === false && (await n.fn()) === false && (await k.fn()) === false
+      && ![m, n, k].some((x) => x.log.includes("dialog"))); }
   { const m = moveRig({ response: 1, onDialog: (c) => { c.needsAuthNow = true; } }), r = await m.fn();
     t("框開著時變成要授權、用戶按「移」:不叫 moveToApplicationsFolder、不記", r === false && m.log.includes("dialog") && !m.log.includes("move") && !m.marked(), m.log); }
   // ensure() 還在等登入 shell / 鎖檔(_engineRun 在、沒有子行程):等這一輪跑完才判
@@ -294,6 +306,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const trSrc = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8");
   t("trPushLabels 交這五個;tmLabels 的 updateBody 英文退路 = en、move 四個預設空的(沒交字就不問)", /updateBody: t\("tm\.updateBody"\), moveTitle: t\("tm\.move\.title"\), moveBody: t\("tm\.move\.body"\), moveGo: t\("tm\.move\.go"\), moveNo: t\("tm\.move\.no"\)/.test(trSrc)
     && src.includes('updateBody: "' + W.en["tm.updateBody"] + '",') && /moveTitle: "", moveBody: "", moveGo: "", moveNo: "",/.test(src));
+  t("提示框的字:兩語逐字在 .po、trPushLabels 交這三個、tmLabels 預設空的",
+    po.zh.includes('msgid "tm.move.authExists"\nmsgstr "應用程式資料夾已經有 Blave，請改開那一份。"\n') && po.zh.includes('msgid "tm.move.authApps"\nmsgstr "請把 Blave 拖進應用程式資料夾，才收得到更新。"\n')
+    && po.en.includes('msgid "tm.move.authExists"\nmsgstr "Blave is already in your Applications folder. Please open that copy instead."\n') && po.en.includes('msgid "tm.move.authApps"\nmsgstr "Drag Blave into your Applications folder to receive updates."\n')
+    && /moveAuthExists: t\("tm\.move\.authExists"\), moveAuthApps: t\("tm\.move\.authApps"\), gotIt: t\("src\.gotIt"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"))
+    && /moveAuthExists: "", moveAuthApps: "", gotIt: "",/.test(src));
   t("up.row.readyQuit 刪乾淨(.po、strings.js、程式都沒有)", !/readyQuit/.test(po.zh + po.en + S + shellJs.map((x) => x[1]).join("")));
 
   await tick();

@@ -2351,6 +2351,13 @@ msgstr "Move to Applications"
 msgid "tm.move.no"
 msgstr "Don’t Move"
 
+# 搬移要系統授權、不問也不搬時改跳的提示(main.js askMoveToApps;鈕重用 src.gotIt)。authExists = 應用程式資料夾已有同名 Blave,authApps = 資料夾本身不可寫(標準帳號)
+msgid "tm.move.authExists"
+msgstr "Blave is already in your Applications folder. Please open that copy instead."
+
+msgid "tm.move.authApps"
+msgstr "Drag Blave into your Applications folder to receive updates."
+
 msgid "tm.evOrderErrNote"
 msgstr "The exchange rejected an order. Open Blave to see why."
 
