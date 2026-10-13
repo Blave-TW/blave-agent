@@ -275,19 +275,21 @@ function presPrepBody(view) {
   /* d-prep-none:先問「申請新憑證／已經有憑證」(Wei 10-13 乾淨機模擬裁定),兩顆並列、選了才在同一頁展開那條路;主鈕在腳(presFoot)。
      已經有憑證 = 在別台電腦申請過:叫他在那台匯出 .pfx、複製過來選檔——不叫他在這台登入憑證e總管(10-13 實測換電腦登入回 54101,官方換機程序就是匯出→匯入) */
   f.appendChild(presP("cap-lead", t("pres.none.lead")));
-  const seg = trEl("div", "pres-seg"); seg.setAttribute("role", "group");
+  const seg = trEl("div", "pres-seg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", t("pres.none.lead"));
   const choose = (c) => { if (PRES.choice === c) return; PRES.choice = c; PRES.msg = null; if (c === "have") presTrack("have"); presPaint(); };
   [["new", "pres.none.new"], ["have", "pres.none.have"]].forEach(([c, k]) => { const b = capBtn("", t(k), () => choose(c), "pres-none-" + c); b.setAttribute("aria-pressed", PRES.choice === c ? "true" : "false"); seg.appendChild(b); });
   f.appendChild(seg);
   if (!PRES.choice) return f;
-  const ol = trEl("ol", "pres-todo"), li = (k, sub, mono) => { const l = trEl("li", ""); l.appendChild(trEl("span", "", t(k))); if (sub) l.appendChild(trEl("span", "sub" + (mono ? " pres-mono" : ""), sub)); ol.appendChild(l); };
+  const ol = trEl("ol", "pres-todo"), li = (k, sub) => { const l = trEl("li", ""); l.appendChild(trEl("span", "", t(k))); if (sub) l.appendChild(sub); ol.appendChild(l); };
+  // .sub 維持 sans;路徑／電話那段英數片段才包 .pres-mono(整句進 mono 違反 canon,漢字也沒有 mono 字形)
+  const sub = (k, name, val) => { const s = trEl("span", "sub"); if (!name) { s.textContent = t(k); return s; } t(k, { [name]: "\u0000" }).split("\u0000").forEach((part, i) => { if (i) s.appendChild(trEl("span", "pres-mono", val)); if (part) s.appendChild(document.createTextNode(part)); }); return s; };
   if (PRES.choice === "new") {
     f.appendChild(presP("cx-hint", t("pres.none.newLead")));
-    li("pres.none.s1", t("pres.none.s1sub", { tel: PRES_HOTLINE })); li("pres.none.s2", t("pres.none.s2sub"));
+    li("pres.none.s1", sub("pres.none.s1sub", "tel", PRES_HOTLINE)); li("pres.none.s2", sub("pres.none.s2sub"));
     f.appendChild(ol);
     if (PRES.tcemMsg) f.appendChild(capErr(t(PRES.tcemMsg)));
   } else {
-    li("pres.none.h1", null); li("pres.none.h2", t("pres.none.h2sub", { path: presPfxPath() }), true);
+    li("pres.none.h1", null); li("pres.none.h2", sub("pres.none.h2sub", "path", presPfxPath()));
     f.appendChild(ol);
     // 選到的不是 .pfx(主行程 BAD_FILE):這一頁沒有憑證欄位可掛,直接畫在清單下
     if (PRES.msg && PRES.msg.step === "cert" && PRES.msg.code === "PFX_INVALID") f.appendChild(capErr(t("pres.none.badFile")));

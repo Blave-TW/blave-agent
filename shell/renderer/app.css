@@ -846,6 +846,8 @@ body.resizing * { cursor: col-resize !important; }
   -webkit-app-region: no-drag;     /* 蓋在 52px 拖曳條上的那一段也要能點 */
 }
 .scrim.open { opacity: 1; }
+/* 連接交易所的框:內容隨選路長高,上緣固定、只往下長(置中會讓剛按的分段鈕滑走) */
+.scrim:has(.cx-modal) { align-items: flex-start; padding-top: max(var(--space-48), 12vh); }
 .set-modal {
   width: min(640px, 92vw);
   max-height: calc(100vh - var(--space-48));
