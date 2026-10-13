@@ -61,7 +61,7 @@
 /* ---- §4 時光機橫幅 ---- */
 .vbanner { flex: none; display: flex; align-items: center; gap: var(--space-12); padding: var(--space-8) var(--space-24); background: var(--surface-card); border-top: 1px solid var(--border-hairline); border-bottom: 1px solid var(--border-hairline); }
 .vbanner[hidden] { display: none; }
-.vb-t { flex: 1; min-width: 0; margin: 0; display: flex; gap: var(--space-4); font-size: 12px; line-height: 1.5; color: var(--ink-2); white-space: nowrap; }
+.vb-t { flex: 1; min-width: 0; margin: 0; display: flex; align-items: baseline; gap: var(--space-4); font-size: 12px; line-height: 1.5; color: var(--ink-2); white-space: nowrap; }
 .vb-t .w, .vb-t .ro { flex: none; }
 .vb-t .nt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .vb-t b { color: var(--ink); font-weight: 600; }
