@@ -49,7 +49,7 @@ agent 上網查資料用的是 app 內建的瀏覽器：它正在讀哪一頁，
 - 或 Windows 10、11，x64（Electron 44 支援的版本；ARM 版尚未測試）。Windows 安裝檔還沒有程式碼簽章，第一次安裝時 SmartScreen 會跳出警告：按「其他資訊」再按「仍要執行」。
 - Node.js 22.12 以上與 npm（`shell/package.json` › `engines`）
 - `PATH` 上有 `python3`（Windows 是 `python`）。打包版自帶 Python 3.12；從原始碼跑時，venv 用的是你系統的 Python。
-- 已安裝並登入的 Claude Code 或 Codex、一把隨用隨付的 DeepSeek API 金鑰，或一個 Blave 帳號
+- 已安裝並登入的 Claude Code 或 Codex、一把隨用隨付的 DeepSeek API 金鑰，或一個 Blave 帳號。Codex 在 ChatGPT app 裡：Windows 裝 Microsoft Store 的「ChatGPT」（`winget install --id 9PLM9XGG6VKS -s msstore`），Mac 裝 ChatGPT.app。Windows 暫時不要用 npm 的 `@openai/codex` 0.161–0.162.1（沙盒壞掉）。
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git

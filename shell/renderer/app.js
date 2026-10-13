@@ -1,7 +1,7 @@
 /* v1 骨架:偵測 → 三態渲染 → 連結 → 進工作頁。引擎接線是第 4 步。 */
 const $ = (id) => document.getElementById(id);
 
-function row({ name, st, stClass, action, cur, kind }) {
+function row({ name, st, stClass, action, cur, kind, sub }) {
   const div = document.createElement("div");
   if (kind) div.dataset.kind = kind;
   div.className = "cn-row" + (stClass === "" ? " off" : "") + (cur ? " is-cur" : "");
@@ -9,7 +9,8 @@ function row({ name, st, stClass, action, cur, kind }) {
   const stSpan = !st ? "" : stClass === "on"
     ? `<span class="cn-st on"><span class="dot"></span>${st}</span>`
     : `<span class="cn-st ${stClass}">${st}</span>`;
-  div.innerHTML = `<span class="n">${name}</span>${stSpan}`;
+  // sub = 名字底下那行小字(同 apikey.js 那一列的 <small>);目前只有 Codex「未偵測到」講去哪裝
+  div.innerHTML = `<span class="n">${name}${sub ? `<small>${sub}</small>` : ""}</span>${stSpan}`;
   // 目前用的那一列:純加粗 + aria-current(canon › Interaction states › Active,
   // 沿用 Dropdown menu Selected 的先例)。原本掛一顆有框的灰徽章,既不是 canon
   // 的 status badge 也不是 mini tag,而且佔在兄弟列按鈕的同一個槽,讀起來像一顆
@@ -92,7 +93,7 @@ function paintRows(d) {
     rows.appendChild(row({ name: "Codex", kind: "codex",
       action: btn("btn-out", t("cn.signIn"), (e) => localLogin("codex", e.currentTarget)) }));
   } else {
-    rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.notFound"), stClass: "" }));
+    rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.notFound"), stClass: "", sub: t("cn.codex.install") }));
   }
   const ak = typeof akConnRow === "function" ? akConnRow() : null; if (ak) rows.appendChild(ak);
   MDL.busy = false; mdlPaint();
@@ -112,8 +113,9 @@ function setHint(h) {
 }
 
 /* 連結畫面上「已安裝、未登入」那一列的登入鈕:替用戶跑 CLI 的登入指令(開瀏覽器),
-   跑完重新偵測。失敗就把終端機指令寫出來——那條路永遠走得通。 */
-const LOGIN_CMD = { claude: "claude auth login", codex: "codex login" };
+   跑完重新偵測。失敗的退路(cmdLine):Claude Code 寫出終端機指令;Codex 叫他去 ChatGPT app 裡登入——
+   Store / ChatGPT.app 裝的 Codex 不在 PATH 上,`codex login` 對他們是死路。 */
+const LOGIN_CMD = { claude: "claude auth login" };
 async function localLogin(kind, b) {
   if (loginPending || oauthPending) return;
   const name = kind === "codex" ? "Codex" : "Claude Code";
@@ -205,7 +207,8 @@ function mdlOptions(d, curKind, tok, pend, ak) {
     isCur: curKind === "blave" }];
   [["claude", "Claude Code"], ["codex", "Codex"]].forEach(([kind, name]) => {
     const x = (d && d[kind]) || {}, ready = !!(x.installed && x.loggedIn);
-    out.push({ kind, name, desc: null,
+    // Codex 沒偵測到:底下講去哪裝(Store 的 ChatGPT / ChatGPT.app);Claude Code 那列不講
+    out.push({ kind, name, desc: d !== null && !x.installed && kind === "codex" ? "cn.codex.install" : null,
       // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
       st: d === null ? { key: "cn.detecting" } : x.installed ? null : { key: "st.notFound" },
       act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
@@ -2860,9 +2863,11 @@ function resendState(card, okText) {
   } };
 }
 function cmdLine(kind) {
+  const f = document.createDocumentFragment();
+  if (kind === "codex") { f.append(t("login.failedCodex")); return f; }
   // {cmd} 包成 <code>,用 DOM 組(不用 innerHTML)
   const parts = t("login.failedCmd", { cmd: "\u0000" }).split("\u0000");
-  const f = document.createDocumentFragment(); const c = document.createElement("code"); c.textContent = LOGIN_CMD[kind];
+  const c = document.createElement("code"); c.textContent = LOGIN_CMD[kind];
   f.append(parts[0] || "", c, parts[1] || ""); return f;
 }
 

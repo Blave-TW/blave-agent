@@ -48,7 +48,7 @@ You need:
 - Or Windows 10 or 11, x64 (the versions Electron 44 supports; ARM not tested). The Windows installer is not code-signed yet, so SmartScreen warns on first install: choose More info › Run anyway.
 - Node.js 22.12 or later, with npm (`shell/package.json` › `engines`)
 - `python3` on your `PATH` (`python` on Windows). The packaged app bundles its own Python 3.12; running from source uses your system Python to create the venv.
-- Claude Code or Codex installed and signed in, a pay-as-you-go DeepSeek API key, or a Blave account
+- Claude Code or Codex installed and signed in, a pay-as-you-go DeepSeek API key, or a Blave account. Codex comes inside the ChatGPT app — Microsoft Store “ChatGPT” on Windows (`winget install --id 9PLM9XGG6VKS -s msstore`), ChatGPT.app on Mac. On Windows, avoid the npm `@openai/codex` 0.161–0.162.1 builds for now (their sandbox is broken).
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
