@@ -266,10 +266,13 @@ calls.clear()
 check(cl._stop_reconciler() is True and [c[0][:2] for c in calls] ==
       [["tmux", "has-session"], ["tmux", "kill-session"]], "[cloud] stop_reconciler asks tmux/systemd")
 calls.clear()
+_real_bound = cl._bound_venue
+cl._bound_venue = lambda: True  # a start with no venue bound is refused (check_signals_without_venue)
 check(cl._cmd_restart_reconciler({}) == "reconciler restarted (tmux fallback)"
       and calls[-1][0][:2] == ["tmux", "new-session"]
       and "bash manager/start_reconciler.sh" in calls[-1][0][-1],
       "[cloud] restart_reconciler starts start_reconciler.sh under tmux")
+cl._bound_venue = _real_bound
 calls.clear()
 cl._purge_strategy_schedules(["typeb"])
 check([c[0] for c in calls] == [["crontab", "-l"]], "[cloud] purge still reads crontab")
@@ -334,11 +337,14 @@ try:
 except ValueError as e:
     check("typeb" in str(e) and not os.path.exists(os.path.join(WS, "manager", "portfolio_config.json")),
           "[local] type B refused by amounts, nothing written")
+cl._bound_venue = lambda: True
 try:
     cl._cmd_restart_reconciler({})
     check(False, "[local] restart without a daemon host raises")
 except RuntimeError:
     check(True, "[local] restart without a daemon host raises")
+finally:
+    cl._bound_venue = _real_bound
 check(cl._stop_reconciler() is False, "[local] stop without a daemon host = not confirmed")
 cl.subprocess.run, cl.platform.system = real_run, real_system
 pr.subprocess.run = real_run

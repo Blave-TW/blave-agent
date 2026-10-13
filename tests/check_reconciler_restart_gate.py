@@ -34,6 +34,9 @@ os.makedirs(os.path.join(TMP, "state", "heartbeat"))
 os.makedirs(os.path.join(TMP, "manager"))
 json.dump({"amounts": {"btc_1h": 1000}, "exchanges": {"btc_1h": "binance"}},
           open(os.path.join(TMP, "manager", "portfolio_config.json"), "w"))
+# a bound venue: the reconciler's own no-venue gate reads .env (fail-closed since 2026-10-13)
+BOUND_ENV = "BINANCE_API_KEY=not-a-real-key\nBINANCE_SECRET_KEY=not-a-real-secret\n"
+open(os.path.join(TMP, ".env"), "w").write(BOUND_ENV)
 os.environ["BLAVE_AGENT_BASE"] = TMP
 os.environ["BLAVE_AGENT_WORKSPACE"] = TMP
 os.environ.pop("BLAVE_AGENT_LOCAL", None)
@@ -131,7 +134,7 @@ check(rounds == [] and all(hb),
       "nothing bound on the web (Type B keys in .env only), record gone: the reconciler starts, "
       "idles on the no-venue gate (no reconcile, no orders), heartbeat fresh")
 os.remove(os.path.join(TMP, "manager", "credentials.ui.json"))
-os.remove(os.path.join(TMP, ".env"))
+open(os.path.join(TMP, ".env"), "w").write(BOUND_ENV)
 
 # 3: place_order with the record present
 ns = runpy.run_path(RECONCILER)
