@@ -651,7 +651,19 @@ def _wait_child(proc, name):
         output = ""
     if killed:
         output += f"\n[wait_for_bar] killed after exceeding {RUN_TIMEOUT_SECONDS}s timeout"
-    return rc, os.path.exists(started_p), probe, output
+    # .started as the dict run() wrote (pid, at, expected) so _apply can match the probe's pid
+    # against the strategy's own pid; an unreadable file still counts as "started"
+    started = False
+    try:
+        with open(started_p, encoding="utf-8") as f:
+            started = json.load(f)
+        if not isinstance(started, dict):
+            started = True
+    except ValueError:
+        started = True
+    except OSError:
+        pass
+    return rc, started, probe, output
 
 
 def _state_signal(name):
@@ -771,12 +783,18 @@ def _apply(name, state, rc, started, probe, output, secs, now, expected, expecte
     """What the gate child left behind → bar_wait state. `probed`: the verify path ran the
     in-process probe first (and it said ready) — a strategy that then exits 0 without
     .started did exactly what the probe path would have run, so that bar counts as done."""
+    # Which pid the strategy sees as its own: the one it wrote into .started. On Windows a
+    # venv's python.exe is a launcher that runs the real interpreter as a child, so proc.pid
+    # (the launcher) is never the pid run() writes — comparing against it failed every gate
+    # tick on the 10-13 test box. Fall back to proc.pid only when .started carries no pid.
+    own_pid = started.get("pid") if isinstance(started, dict) else None
+    this_pid = own_pid if own_pid is not None else child_pid
     if probe is not None and (probe.get("expected") != expected_iso
-                              or (child_pid is not None and probe.get("pid") != child_pid)):
+                              or (this_pid is not None and probe.get("pid") != this_pid)):
         # a leftover _clear_handshake could not remove (Windows sharing violation) is not
         # this tick's verdict
         raise RuntimeError(f"{name}: .probe.json is not this tick's (expected {probe.get('expected')!r} "
-                           f"pid {probe.get('pid')!r} vs {expected_iso} {child_pid})")
+                           f"pid {probe.get('pid')!r} vs {expected_iso} {this_pid})")
     if started:
         state["gate_verified_key"] = _gate_key(name)
     elif probe is not None:

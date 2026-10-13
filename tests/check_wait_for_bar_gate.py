@@ -264,6 +264,21 @@ for label, raw in (("stale pid", {**probe_doc(True, EXP_ISO), "pid": 1}),
     check(raised is not None and "not this tick" in str(raised) and wfb._load_state("leftover").get("last_processed_bar") is None,
           f"B: a probe that is not this tick's ({label}) → wrapper error, bar not processed")
 
+# Windows venv launcher: proc.pid is the launcher, run() writes its own (different) pid into
+# both .started and .probe.json — the probe is this tick's when it matches .started
+setup("launcher")
+st = wfb._default_state()
+wfb._apply("launcher", st, 0, {"pid": 777, "at": time.time(), "expected": EXP_ISO},
+           {**probe_doc(True, EXP_ISO), "pid": 777}, "", 1.0, NOW, EXPECTED, EXP_ISO, child_pid=999)
+check(st["last_processed_bar"] == EXP_ISO, "B: probe pid == .started pid, ≠ proc.pid (venv launcher) → processed")
+raised = None
+try:
+    wfb._apply("launcher", wfb._default_state(), 0, {"pid": 777, "at": time.time(), "expected": EXP_ISO},
+               {**probe_doc(True, EXP_ISO), "pid": 1}, "", 1.0, NOW, EXPECTED, EXP_ISO, child_pid=777)
+except RuntimeError as e:
+    raised = e
+check(raised is not None and "not this tick" in str(raised), "B: probe pid ≠ .started pid → wrapper error even when it equals proc.pid")
+
 # ── C. _choose_path ───────────────────────────────────────────────────────────
 setup("cp")
 st = wfb._default_state()
