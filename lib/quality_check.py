@@ -581,6 +581,7 @@ _BLAVE_DATA = frozenset({
     "fetch_twstock_per", "fetch_twstock_per_batch", "fetch_twstock_price", "fetch_twstock_price_adj",
     "fetch_twstock_price_adj_batch",
     "fetch_twstock_price_batch", "fetch_twstock_quote", "fetch_twstock_quote_batch",
+    "fetch_twstock_ratios", "fetch_twstock_ratios_batch",
     "fetch_twstock_shareholding", "fetch_twstock_shareholding_batch",
     "fetch_twstock_trader_flows", "is_tw_trading_day",
 })

@@ -616,7 +616,7 @@ is kept on purpose — never tighten one from memory:
 | `twstock_all_broker_net` / `branch_daily_net` / `trader_flows` / `broker_net` | D+1 00:00 | TWSE 買賣日報表 16:00; FinMind 21:00; Blave's store is written only by its job at 21:30 with a 23:30 retry (one run observed: 2026-09-23, day written 21:31) → 00:00 covers the retry; `broker_net` is sparse → no freshness check |
 | `twstock_monthly_revenue` (+`_batch`) | the day after the 10th, 08:00 (a weekend 10th → the day after Monday) | 證券交易法 §36; FinMind weekdays 18:00; api UTC-day cache; stamp 04-01 = March. FSC may extend a holiday month (特殊適用範圍辦法 §4-1) |
 | `twstock_monthly_revenue_insurance` | as above with the 15th, from 2026 revenue | 特殊適用範圍辦法 §3(5) |
-| `twstock_financials` / `balance_sheet` (+`_batch`) | 5/16, 8/15, 11/15, next 4/1 — 08:00 | 證券交易法 §36; api UTC-day cache; FinMind's own ingest time undocumented (a late one → live warning) |
+| `twstock_financials` / `balance_sheet` / `twstock_ratios` (+`_batch`) | 5/16, 8/15, 11/15, next 4/1 — 08:00 | 證券交易法 §36; api UTC-day cache; FinMind's own ingest time undocumented (a late one → live warning) |
 | `twstock_financials_finance` | 5/16, **9/1**, 11/15, next 4/1 — 08:00 | 金控·銀行·證券·期貨·保險: Q2 within two months (特殊適用範圍辦法 §3(3)) |
 | `twstock_shareholding` (+`_batch`) | data date + 3 days 08:00 (unconfirmed) | TDCC / FinMind publish no time |
 | `twfutures_bid_ask_vol` | the minute's close + 30 s (UTC) | row = minute open (api tick floor); today's minutes cached 30 s |

@@ -2981,7 +2981,8 @@ def _filing_due_since(prefix, written_epoch):
     previous quarter / month for weeks."""
     rules = {'twstock_rev':  ('MS', (_revenue_available, _revenue_available_insurance)),
              'twstock_fin':  ('QS', (_quarterly_report_available, _quarterly_report_available_finance)),
-             'twstock_bs':   ('QS', (_quarterly_report_available, _quarterly_report_available_finance))}
+             'twstock_bs':   ('QS', (_quarterly_report_available, _quarterly_report_available_finance)),
+             'twstock_ratios': ('QS', (_quarterly_report_available, _quarterly_report_available_finance))}
     if prefix not in rules:
         return False
     freq, fns = rules[prefix]
@@ -3036,6 +3037,29 @@ def fetch_twstock_monthly_revenue(stock_id, headers):
     """台股月營收. index=date, columns: revenue (NTD 元, full amount not thousands), revenue_month, revenue_year.
     YoY = (rev - rev_same_month_last_year) / abs(rev_same_month_last_year)."""
     return _fetch_fundamental('twstock_rev', 'monthly_revenue', stock_id, headers)
+
+
+def _ratios_range(df, start, end):
+    """The cache holds a stock's whole ratio history; start / end only cut what is returned.
+    A ratio that is null in every quarter (a bank's gross margin) arrives as an object column
+    of None — cast, so it is NaN like every other gap."""
+    if df.empty:
+        return df
+    cols = [c for c in df.columns if c != 'stock_id']
+    df = df.astype({c: float for c in cols})
+    return df if start is None and end is None else df.loc[start:end]
+
+
+def fetch_twstock_ratios(stock_id, headers, start=None, end=None):
+    """台股季頻財務比率 (wide format), computed by Blave from the three statements.
+    index=date (quarter END, not the publication day — attach with align_feed
+    'twstock_ratios', or 'twstock_financials_finance' timing for 金融業), one column per
+    ratio: <ratio>_q (the quarter alone) / <ratio>_ttm (trailing four quarters), plus
+    debt_ratio, current_ratio, quick_ratio, equity_multiplier (period end). Percentages are
+    already ×100; fcf_* is raw TWD. A ratio the filing cannot support is NaN, never 0.
+    History from 2013-03-31. A stock with no statements (ETFs) raises requests.HTTPError 404.
+    Formulas and null rules: references/twstock.md › Financial ratios."""
+    return _ratios_range(_fetch_fundamental('twstock_ratios', 'ratios', stock_id, headers), start, end)
 
 
 def _twstock_list_cache_path():
@@ -3313,6 +3337,15 @@ def fetch_twstock_balance_sheet_batch(stock_ids, headers, types=None):
 def fetch_twstock_monthly_revenue_batch(stock_ids, headers):
     """Batch fetch 台股月營收. Returns dict {stock_id: DataFrame}."""
     return _fetch_fundamental_batch('twstock_rev', 'monthly_revenue', stock_ids, headers)
+
+
+def fetch_twstock_ratios_batch(stock_ids, headers, start=None, end=None):
+    """Batch fetch 台股季頻財務比率. Returns dict {stock_id: DataFrame} (frames as
+    fetch_twstock_ratios). A stock with no statements (ETFs), or no quarter inside
+    start / end, is absent from the result."""
+    frames = _fetch_fundamental_batch('twstock_ratios', 'ratios', stock_ids, headers)
+    out = {sid: _ratios_range(df, start, end) for sid, df in frames.items()}
+    return {sid: df for sid, df in out.items() if not df.empty}
 
 
 def _mark_empty_months(prefix, sid, start, end):
@@ -6079,7 +6112,9 @@ for _alias, _key in (('twstock_price_adj', 'twstock_price'),
                      ('twstock_monthly_revenue_batch', 'twstock_monthly_revenue'),
                      ('twstock_balance_sheet', 'twstock_financials'),
                      ('twstock_financials_batch', 'twstock_financials'),
-                     ('twstock_balance_sheet_batch', 'twstock_financials')):
+                     ('twstock_balance_sheet_batch', 'twstock_financials'),
+                     ('twstock_ratios', 'twstock_financials'),
+                     ('twstock_ratios_batch', 'twstock_financials')):
     FEED_TIMING[_alias] = FEED_TIMING[_key]
 
 

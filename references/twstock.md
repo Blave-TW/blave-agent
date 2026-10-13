@@ -459,6 +459,7 @@ from lib.data import (
     fetch_twstock_financials_batch,             # (stock_ids, headers, types=None) → 損益表 long format
     fetch_twstock_balance_sheet_batch,          # (stock_ids, headers, types=None) → 資產負債表 long format
     fetch_twstock_monthly_revenue_batch,        # (stock_ids, headers) → revenue, revenue_month, revenue_year
+    fetch_twstock_ratios_batch,                 # (stock_ids, headers, start=None, end=None) → 財務比率寬表（roe_q / roe_ttm …，見 Financial ratios）
 )
 ```
 
@@ -509,6 +510,83 @@ Work as a funnel — narrow the pool first, then pull time series (measured on t
 
 ---
 
+## Financial ratios (財務比率)
+
+Ready-made quarterly ratios, computed by Blave from the three statements — use these before
+deriving a ratio by hand (the hand-made ROE below uses period-end equity; this one uses the
+average, so do not mix the two).
+
+```python
+from lib.data import fetch_twstock_ratios, fetch_twstock_ratios_batch
+
+r   = fetch_twstock_ratios('2330', hdrs)                              # one stock, whole history
+rat = fetch_twstock_ratios_batch(universe, hdrs, start='2020-01-01')  # {sid: df}, 50 ids per request, chunked for you
+roe = pd.DataFrame({sid: df['roe_ttm'] for sid, df in rat.items()})   # dates × stocks
+```
+
+API: `GET /studio/market/twstock/ratios/<stock_id>` and `GET /studio/market/twstock/batch/ratios`.
+Wide frame, index = **quarter end**, history from 2013-03-31. `start` / `end` only cut the
+returned rows (the cache holds the whole history, 30-day TTL, refreshed when a filing falls due).
+
+| Columns | Unit |
+|---|---|
+| `gross_margin`, `operating_margin`, `pretax_margin`, `net_margin`, `opex_ratio`, `roe`, `roa` — each `_q` and `_ttm` | % (already ×100) |
+| `revenue_yoy`, `revenue_qoq`, `operating_income_yoy`, `net_income_yoy`, `eps_yoy` — each `_q` and `_ttm` | % (already ×100) |
+| `eps`, `revenue_per_share`, `fcf_per_share` — each `_q` and `_ttm` | TWD per share |
+| `fcf_q`, `fcf_ttm` | TWD, raw amount (not thousands) |
+| `interest_coverage`, `receivable_turnover`, `inventory_turnover`, `asset_turnover`, `cfo_to_net_income` — each `_q` and `_ttm` | times |
+| `debt_ratio`, `current_ratio`, `quick_ratio` (period end, no suffix) | % (already ×100 — 245.76 means 2.46×) |
+| `equity_multiplier` (period end, no suffix) | times |
+
+`_q` = the quarter alone; `_ttm` = the trailing four quarters summed, NaN when any of the four
+is missing.
+
+Definitions that differ between data vendors — state them when you report a number:
+
+- **Single-quarter ROE / ROA are not annualised**; the denominator is the average of the
+  previous and the current quarter-end balance. `roe_ttm` / `roa_ttm` (TTM net income ÷ the
+  average of the balance four quarters back and now) are the annual figures. Net income is
+  total net income (`IncomeAfterTaxes`), equity is total equity.
+- **Turnover**: `_q` = the quarter's flow ÷ average of previous and current quarter-end balance
+  (not annualised); `_ttm` = four-quarter flow ÷ average of the balance four quarters back and
+  now. Receivables include related-party receivables.
+- **Growth** = (now − base) ÷ |base| × 100; a base of 0 → NaN. `_ttm` growth compares TTM with
+  the TTM a year (`*_yoy_ttm`) or a quarter (`revenue_qoq_ttm`) earlier.
+- **Per-share columns** use shares = parent-company net income ÷ EPS (the filing's own weighted
+  share count, right for any par value), taken from the quarter with the largest |EPS| of the
+  last four; all four under 0.1 → NaN.
+- **Interest coverage** = (pre-tax income + interest) ÷ interest, interest from the cash flow
+  statement's `InterestExpense`; NaN unless interest > 0.
+- **Quick ratio** = (current assets − inventories − prepayments) ÷ current liabilities.
+- **Free cash flow** = operating cash flow − |capex| (`PropertyAndPlantAndEquipment`),
+  single-quarter values (the cash flow statement itself is year-to-date).
+- **ROE** is NaN when average equity ≤ 0, `equity_multiplier` when period-end equity ≤ 0,
+  `cfo_to_net_income` when net income ≤ 0.
+
+**NaN, never 0.** A missing line item or a zero denominator is NaN — rank with `dropna()`, do
+not `fillna(0)`. Financial-sector issuers lack many lines, so whole columns are NaN for them:
+`gross_margin`, `operating_margin`, `receivable_turnover`, `inventory_turnover` for every
+financial issuer checked; financial holdings also `current_ratio` / `quick_ratio` /
+`operating_income_yoy`; banks, securities firms and insurers file no `Revenue`, so every
+revenue-based column (margins, `opex_ratio`, `revenue_*`, `asset_turnover`) is NaN too. There is
+no sector switch — it follows each filing, so test for NaN instead of assuming a list. `roe`,
+`roa`, `eps`, `debt_ratio`, `equity_multiplier` are the columns that work across sectors.
+
+**No statements:** an ETF or any code without financial statements raises
+`requests.HTTPError` (404) from `fetch_twstock_ratios` and is simply absent from the
+`fetch_twstock_ratios_batch` result — tell the user the code has no financial statements.
+
+**Not here:** PER / PBR / dividend yield → `fetch_twstock_per_batch`; monthly-revenue YoY / MoM
+→ `fetch_twstock_monthly_revenue_batch`.
+
+**Lookahead:** a row is stamped with the quarter end but is public only from the dates in
+*Lookahead Bias — 財報可用日期* below. Attach it with `align_feed(df, ratios_wide,
+'twstock_ratios', INTERVAL, bar_tz='Asia/Taipei')` (`'twstock_financials_finance'` for
+financial-sector issuers) — never join on the date. The store keeps the latest version of each
+quarter: a restated filing replaces the earlier numbers.
+
+---
+
 ## 財報因子計算
 
 財報資料為 long format，先 pivot 再計算：
@@ -549,4 +627,4 @@ call; an empty list raises `ValueError` (pass `None` for every item).
 | Q3（7–9月） | 11/14 | 11/15 起 |
 | Q4（10–12月） | 翌年 3/31 | 翌年 4/1 起 |
 
-金融控股·銀行·證券·期貨·保險 listed issuers file Q2 by **8/31** (usable 9/1; 公開發行公司財務報告及營運情形公告申報特殊適用範圍辦法 §3(3)); 保險業 monthly revenue is due the **15th** from 2026 revenue (§3(5)). Blave serves a filing from 08:00 the usable day. Attach statements / revenue with `lib.data.align_feed` (`'twstock_financials'`, `'twstock_financials_finance'`, `'twstock_monthly_revenue'`, `'twstock_monthly_revenue_insurance'`) instead of shifting dates by hand — `references/strategy-code.md` › *External data*.
+金融控股·銀行·證券·期貨·保險 listed issuers file Q2 by **8/31** (usable 9/1; 公開發行公司財務報告及營運情形公告申報特殊適用範圍辦法 §3(3)); 保險業 monthly revenue is due the **15th** from 2026 revenue (§3(5)). Blave serves a filing from 08:00 the usable day. Attach statements / revenue with `lib.data.align_feed` (`'twstock_financials'`, `'twstock_ratios'`, `'twstock_financials_finance'`, `'twstock_monthly_revenue'`, `'twstock_monthly_revenue_insurance'`) instead of shifting dates by hand — `references/strategy-code.md` › *External data*.
