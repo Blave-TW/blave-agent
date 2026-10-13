@@ -824,6 +824,16 @@ three is ignored. Rules:
   round). An unreadable record or done file: the lib holds every family entry while any family
   contract has something to close, and the runtime refuses a save that would change a record
   (`CONTRACT_RECORD_UNREADABLE`; an amount-0 save still goes through).
+- HALT and a rollover: while HALT is on, each open rollover's strategy is counted on its OLD
+  contract, not the new one (its amount × position valued over cv_to / cv_from, at least 1 lot
+  per strategy when non-zero; each key summed, then whole lots, the old contract's target kept
+  between its normal target and its book) — so the old contract keeps exactly that strategy's lots and nothing is closed
+  only to be left unbought. Every other strategy's exit on either contract, and the rolling
+  strategy's own exit to flat, still go (HALT never traps a reduce a signal asked for); an order
+  sized before a mid-round HALT is re-sized to that target. `rollovers[].state` reads `halted`;
+  啟動下單 lifts HALT and the rollover runs close-first. A start that keeps HALT (restart_reconciler,
+  boot) behaves the same. An unreadable record holds every family leg under HALT and shows
+  `state: record_unreadable`. An unpicked rollover (`to` null) is a plain close.
 - A switch on settlement day closes nothing at market for the expiring month: that row settles
   at the final settlement price (`settle_expired_months`), and the new contract's entry waits
   until the old book row is gone.
@@ -840,8 +850,8 @@ three is ignored. Rules:
   supervisor idle — with the lib on disk carrying the marker; a stale heartbeat whose process may
   still be there is refused, and every start the runtime makes refuses while a funded switch is in
   force and the lib on disk lacks the marker; a funded switch already in force is refused only on positive
-  evidence of old code), `CONTRACT_EXPOSURE_MISMATCH`, `CONTRACT_HALTED` (HALT set: the close
-  would go, the entry would not), `CONTRACT_GATED` (a strategy on either contract waits for a new
+  evidence of old code), `CONTRACT_EXPOSURE_MISMATCH`, `CONTRACT_HALTED` (HALT set and the code
+  that trades cannot freeze a rollover — an older lib), `CONTRACT_GATED` (a strategy on either contract waits for a new
   signal), `CONTRACT_PARKED` (統一 lots parked on either contract, or the park file unreadable) —
   the last three whenever the new amount is above 0 —, `NOT_TXF_FAMILY`, `CONTRACT_TYPE`
   (Type B/C), `BAD_CONTRACT`.

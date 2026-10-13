@@ -50,7 +50,7 @@ def _notify_best_effort(msg):
         logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
-RECONCILE_CAPS = ('contract_override',)
+RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze')
 
 
 def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False,
@@ -2829,6 +2829,65 @@ def _rollovers_this_round(target, book, trusted, config, waiting_keys=()):
     return rows, {k: sorted(set(v)) for k, v in hold.items()}
 
 
+def _halt_rollover_targets(rolls, target, book):
+    """{key: signed lots} for HALT: every open rollover's strategy is counted on
+    its OLD contract, not the new one — amount × position in the new contract's
+    lots, valued over to the old one (cv_to / cv_from). Per strategy, a non-zero
+    share is at least 1 lot on the old contract (same sign): 1 TXF switched to
+    9 TMF is 0.45 TXF, which would round away and close the lot with nothing
+    bought. Then each touched key is its contributions summed, whole lots
+    half-up. An old contract's target is kept between its normal target and its
+    book: the hold only stops a close, it never reaches past what is held.
+    Held there, the old contract keeps the rolling strategy's lots while halted
+    (the new contract cannot be bought under HALT) and the new contract reads
+    what the others on it want; every other strategy's exit on either, and the
+    rolling one's own exit to flat (share 0), still go — HALT never traps a
+    reduce a signal asked for."""
+    sums, olds, news = {}, set(), set()
+    for row in rolls:
+        frm, to, name = row.get('from'), row.get('to'), row.get('strategy')
+        if not to:
+            continue
+        for k in target:
+            if split_key(k)[1] == 'spot' or txf_root(split_key(k)[0]) != to:
+                continue
+            for c in target[k].get('contributors') or []:
+                if c.get('strategy') != name:
+                    continue
+                share = float(c.get('contribution') or 0)
+                if not share:
+                    continue
+                on_old = share * TXF_FAMILY_CONTRACT_VALUE[to] / TXF_FAMILY_CONTRACT_VALUE[frm]
+                if abs(on_old) < 1:
+                    on_old = math.copysign(1.0, on_old)
+                from_key = next((x for x in list(target) + list(book) if split_key(x)[1] != 'spot'
+                                 and txf_root(split_key(x)[0]) == frm), frm)
+                sums[k] = sums.get(k, 0.0) - share
+                sums[from_key] = sums.get(from_key, 0.0) + on_old
+                news.add(k)
+                olds.add(from_key)
+
+    def whole(t):
+        return math.copysign(math.floor(abs(t) + 0.5 + 1e-9), t) if abs(t) > 1e-9 else 0.0
+
+    out = {}
+    for k in olds | news:
+        base = sum(float(c.get('contribution') or 0)
+                   for c in ((target.get(k) or {}).get('contributors') or []))
+        t = whole(base + sums.get(k, 0.0))
+        if k in olds:
+            normal, held = whole(base), _signed_row(book.get(k))
+            t = min(max(t, min(normal, held)), max(normal, held))
+        out[k] = t
+    return out
+
+
+def _signed_target_row(row, signed):
+    row = dict(row)
+    row.update(side='long' if signed > 0 else ('short' if signed < 0 else None), size=abs(signed))
+    return row
+
+
 def _order_phase(order, book):
     """0 = shrinks a held position only, 1 = a flip (close leg first), 2 = adds."""
     a = _signed_row(book.get(order['symbol']))
@@ -2998,6 +3057,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     rolls, hold_roots = _rollovers_this_round(
         target, diff_actual, trusted=needs_baseline is None and portfolio_configured(),
         config=config, waiting_keys=pending_keys)
+    halt_targets = _halt_rollover_targets(rolls, target, diff_actual)
 
     # signal gate (resume_wait): a gated symbol is excluded from BOTH sides of
     # the diff — no catch-up entry (absent target would be wrong: it exists,
@@ -3021,6 +3081,16 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     # per-symbol venue gates, for the snapshot (unrelated to gated_symbols
     # above — that is the SIGNAL gate). The drift band only when the diff is
     # against the account read: a book's cost does not move with the mark.
+    if halted_at_start:
+        # HALT holds a rollover's lots on its old contract (_halt_rollover_targets)
+        for k, signed in halt_targets.items():
+            if k in gated_symbols or k in pending_keys:
+                continue  # held as is anyway
+            base = target.get(k) or {'exchange': (diff_actual.get(k) or {}).get('exchange'),
+                                     'asset_spec': (diff_actual.get(k) or {}).get('asset_spec'),
+                                     'market': 'swap', 'contributors': [], 'gated': False}
+            target = dict(target)
+            target[k] = _signed_target_row(base, signed)
     entry_gates = {}
     orders = compute_diff(target, diff_actual, threshold, gates=entry_gates,
                           drift_band=None if own_only else drift_band)
@@ -3056,12 +3126,22 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     # full_target, not the filtered dict (audit #8): a gated strategy's target
     # must stay visible to the workspace view — carrying 'gated': True — not
     # vanish while it waits for its signal.
+    # unreadable record under HALT: which contracts roll is unknown, so the whole
+    # family holds (no close-only half); said on the page, no new send point
+    roll_roots = set(TXF_FAMILY) if _load_rollovers() is None else set()
+    halted_now = halted_at_start or guard.halted()
+    if roll_roots:
+        rolls = [{'strategy': None, 'from': None, 'to': None, 'since': None,
+                  'state': 'record_unreadable'}]
     for row in rolls:
+        if row.get('state') == 'record_unreadable':
+            continue
         # what the page shows: closing the old contract, or waiting because the
         # old contract is held as is (a waiting / unreadable strategy on it)
         olds = [k for k in set(full_target) | set(diff_actual_full)
                 if txf_root(split_key(k)[0]) == row['from'] and split_key(k)[1] != 'spot']
-        row['state'] = ('waiting_gate' if any(k in gated_symbols for k in olds) else
+        row['state'] = ('halted' if halted_now and row.get('to') else
+                        'waiting_gate' if any(k in gated_symbols for k in olds) else
                         'waiting_pending' if any(k in pending_keys for k in olds) else 'closing')
     _write_reconcile_snapshot(full_target, actual, orders, ledger=ledger,
                               gates=entry_gates, read_only=read_only,
@@ -3126,6 +3206,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         # live 2026-08-14 — "Converged, nothing filled" with zero attempts).
         a        = diff_actual.get(symbol, {})
         is_lot_based = native_units(asset_spec, order.get('exchange'), actual=a)
+        symbol_root = txf_root(split_key(symbol)[0]) if split_key(symbol)[1] != 'spot' else None
 
         # Detect position flip: split into reduce-only close + directional open
         # to avoid simultaneous long+short on hedge-mode exchanges. Must use
@@ -3135,6 +3216,12 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         # exactly the touch self_ledger exists to prevent.
         a_signed = (a.get('size', 0)  if a.get('side') == 'long'  else
                     -a.get('size', 0) if a.get('side') == 'short' else 0)
+        if symbol in halt_targets and not halted_at_start and guard.halted():
+            # halted mid-round: this order was sized off the un-held target
+            diff = halt_targets[symbol] - a_signed
+            if abs(diff) < 1e-9:
+                guard.audit('rollover_halted', symbol=symbol)
+                continue
         t_signed = a_signed + diff
 
         # Third element is is_entry — whether the leg ADDS exposure, which is the
@@ -3192,6 +3279,20 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                              _resolve_threshold(threshold, symbol, reduce_only))
             if abs(sub_diff) < leg_threshold:
                 continue
+
+            # HALT and a rollover (Wei 10-14): a halted round would send the old
+            # contract's close (reduces pass HALT) and deny the new one's entry —
+            # the user flat on a switch they saved to keep trading. The old
+            # contract's target keeps the rolling strategy's share while halted
+            # (_halt_rollover_targets, above); 啟動下單 lifts HALT, then close
+            # first, open next. Here only the unreadable-record case: no way to
+            # tell which contracts roll, so no family leg at all.
+            if symbol_root in roll_roots and (halted_at_start or guard.halted()):
+                guard.audit('rollover_halted', symbol=symbol, signed_diff=sub_diff)
+                logging.info(f"[reconcile] {symbol} {sub_diff:+g} held — contract rollover "
+                             f"waits for 啟動下單 (HALT)")
+                failed = True
+                break
 
             # Contract rollover: the NEW contract of a rollover in progress gets no
             # entry while the old one still has something to close. Read off the

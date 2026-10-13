@@ -669,6 +669,35 @@ def can_switch_contract(hb=None, last=None):
     return absent and _ws_lib_contract_override()
 
 
+def _ws_lib_rollover_halt_freeze():
+    """The workspace lib on disk freezes a rollover whole under HALT."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), "rb") as f:
+            return b"'rollover_halted'" in f.read()
+    except OSError:
+        return False
+
+
+def can_hold_rollover_in_halt(hb=None, last=None):
+    """A switch saved under HALT is safe only with code that freezes the whole
+    rollover while halted — older code would send the old contract's close
+    (reduces pass HALT) and deny the new one's entry. Same evidence rule as
+    can_switch_contract: a running reconciler's caps, else (provably no
+    process) the lib on disk."""
+    fresh, _ = _reconciler_view(hb, last)
+    if last is None:
+        last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
+    if fresh:
+        caps = last.get("caps") if isinstance(last, dict) else None
+        return isinstance(caps, list) and "rollover_halt_freeze" in caps
+    try:
+        import command_listener  # same runtime dir
+        absent = command_listener.reconciler_absent()
+    except Exception:
+        return False
+    return absent and _ws_lib_rollover_halt_freeze()
+
+
 def contract_override_broken(hb=None, last=None):
     """A switch already in force that the next order would ignore: a running
     reconciler without the caps, or — stopped — a lib on disk without them (what

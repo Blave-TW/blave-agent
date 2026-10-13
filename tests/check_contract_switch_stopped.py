@@ -183,7 +183,17 @@ check(err is None, f"S HALT set but no process: the switch saves (start lifts HA
 save({"txf_a": 1}, {})
 heartbeat(1, caps=True)
 err = save({"txf_a": 20}, {"txf_a": "TMF"})
-check((err or "").startswith("CONTRACT_HALTED:"), f"S HALT with a reconciler running: CONTRACT_HALTED ({err})")
+check((err or "").startswith("CONTRACT_HALTED:"),
+      f"S HALT, running code without the freeze cap: CONTRACT_HALTED ({err})")
+doc = json.load(open(os.path.join(WS, "manager", "last_reconcile.json")))
+doc["caps"] = ["contract_override", "rollover_halt_freeze"]
+json.dump(doc, open(os.path.join(WS, "manager", "last_reconcile.json"), "w"))
+err = save({"txf_a": 20}, {"txf_a": "TMF"})
+check(err is None and json.load(open(CONFIG))["contracts"] == {"txf_a": "TMF"}
+      and json.load(open(os.path.join(WS, "state", "contract_rollover.json")))["txf_a"]["to"] == "TMF",
+      f"S HALT, running code that freezes: switch and rollover record saved ({err})")
+save({"txf_a": 1}, {})
+heartbeat(1, caps=True)
 os.remove(HALT)
 heartbeat(pr.HEARTBEAT_STALE_S + 60, caps=True)
 h = Holder(SINGLETON)
@@ -216,6 +226,23 @@ except Exception as e:
 cl.subprocess.run, cl.subprocess.Popen = real_run, real_popen_cl
 check((raised or "").startswith("CONTRACT_NEEDS_UPDATE:") and not started,
       f"G _restart_reconciler refuses before starting anything ({raised}, started {started})")
+# HALT kept across a start (restart_reconciler / boot) with a rollover open
+lib_disk(True)
+open(HALT, "w").close()
+ROLLF = os.path.join(WS, "state", "contract_rollover.json")
+json.dump({"txf_a": {"from": "TXF", "to": "TMF", "at": "t", "id": "i"}}, open(ROLLF, "w"))
+check(cl._contracts_start_block() is None, "G HALT + open rollover + lib that freezes: starts")
+p = os.path.join(WS, "lib", "portfolio.py")
+src = open(p).read()
+open(p, "w").write(src.replace("'rollover_halted'", "'rollover_x'"))
+block = cl._contracts_start_block()
+check((block or "").startswith("CONTRACT_NEEDS_UPDATE:"),
+      f"G HALT + open rollover + lib without the freeze: start blocked (it would close only) ({block})")
+open(p, "w").write(src)
+os.remove(HALT)
+check(cl._contracts_start_block() is None, "G …no HALT: resume lifts it first, nothing to block")
+os.remove(ROLLF)
+lib_disk(False)
 mir = json.load(open(MIRROR))
 mir["amounts"]["txf_a"] = 0
 json.dump(mir, open(MIRROR, "w"))

@@ -2498,6 +2498,18 @@ def _contracts_start_block():
         cfg = {}
     if not isinstance(cfg, dict):
         cfg = {}
+    if os.path.exists(os.path.join(WORKSPACE_STATE, "HALT")):
+        # a start that keeps HALT (restart_reconciler, boot) with a rollover open:
+        # code without the freeze would close the old contract and open nothing
+        recs = _read_state_json(ROLLOVER_PATH_NAME)
+        done = _read_state_json(ROLLOVER_DONE_NAME) or {}
+        rolling = recs is None or any(
+            isinstance(r, dict) and r.get("to") and done.get(n) != r.get("id", r.get("at"))
+            for n, r in recs.items())
+        import portfolio_reporter  # same runtime dir
+        if rolling and not portfolio_reporter._ws_lib_rollover_halt_freeze():
+            return ("CONTRACT_NEEDS_UPDATE: 停止中有換倉在等,這台機器的下單程式不支援停止中暫緩換倉——"
+                    "請先更新 blave agent 再啟動下單")
     contracts = _saved_contracts(cfg)
     if not contracts:
         return None
@@ -3540,11 +3552,14 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
     rolling = {k for k in changed if clean.get(k, 0) > 0}
     if not rolling:
         return out
-    if os.path.exists(os.path.join(WORKSPACE_STATE, "HALT")) and not reconciler_absent():
-        # with no reconciler process nothing trades until 啟動下單, which lifts
-        # HALT before it starts one — the rollover then runs whole
-        raise ValueError("CONTRACT_HALTED: 下單已停止,這時換合約只會平掉舊合約、不會買進新合約——"
-                         "請先啟動下單再換")
+    # HALT (Wei 10-14): accepted when the code that trades freezes a rollover
+    # whole while halted — neither contract trades until 啟動下單 lifts HALT,
+    # then close first, open next. Older code would close the old one and deny
+    # the new one: refused there.
+    if (os.path.exists(os.path.join(WORKSPACE_STATE, "HALT"))
+            and not portfolio_reporter.can_hold_rollover_in_halt()):
+        raise ValueError("CONTRACT_HALTED: 下單已停止,這台機器的下單程式還不能在停止中暫緩換倉——"
+                         "請先更新 blave agent,或先啟動下單再換")
     try:
         with open(os.path.join(WORKSPACE_STATE, "signal_gate.json")) as f:
             gate = json.load(f)
