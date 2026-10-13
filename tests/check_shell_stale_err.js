@@ -37,6 +37,8 @@ function paint(report, st = {}) {
   ctx.trSec = (x) => x; ctx.trTipLabel = (a2, b2) => node("span"); ctx.trHead = () => node("thead");
   ctx.trMoneyInto = (n, v) => { n.text = String(v); }; ctx.trLotsInto = (n, v) => { n.text = String(v) + "口"; }; ctx.trFmt = (v) => String(v); ctx.trFmt2 = (v) => String(v);
   ctx.trUnit = () => "USDT"; ctx.trCcy = () => "USDT"; ctx.TR_STALE_MS = 10 * 60 * 1000;
+  ctx.trLotsFmt = (v) => String(v); ctx.trVenueId = () => ctx.trVenueIds(ctx.TR.st.report)[0] || null; ctx.trQuoteMap = () => null; ctx.trZoneLabel = (z) => z; ctx.trZoneUnit = (z) => z;
+  ctx.trVenueKind = (id) => (id === "capital" ? "tw" : id === "paper" ? "crypto" : null);
   ctx.trVenueIds = (r) => Object.keys((r && r.venues) || {}); ctx.trLiveEntry = (r, id) => ((r && r.account && r.account.venues) || {})[id] || null;
   ctx.trOrderErrText = (sym, err) => "ERR:" + sym + ":" + err;
   if (st.startAt) ctx.TR.startAt = st.startAt;   // 這個視角這次按下啟動的時間(trAskStart 記的)
@@ -79,7 +81,9 @@ t("加密列差額真的過了門檻(單還沒送出去)→ 紅字照掛", /ERR:
 
 // ③ 口數列:機器端不寫 gates、下單沒門檻,差 1 口就送單
 // 口數列:真快照是 exchange="capital" **而且** asset_spec.type="futures_contracts" 兩個都有;分開測是為了確認兩條路各自都認得出來
-const lots = (target, actual, how) => base({ order_errors: [{ ts: "2026-09-21T14:26:00", symbol: "TXF", exchange: "capital", error: "capital rejected" }],
+// 口數列綁的是台灣期貨券商(模擬交易不收台幣標的;綁加密所時部位表把台指期列寫成「—」、不催單)
+const CAPV = { venues: { capital: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { capital: { ok: true, equity: 5e6, positions: {} } } } };
+const lots = (target, actual, how) => base({ ...CAPV, order_errors: [{ ts: "2026-09-21T14:26:00", symbol: "TXF", exchange: "capital", error: "capital rejected" }],
   config: { amounts: { s: target } }, states: { s: { symbol: "TXF", market: "swap", position: 1 } },
   last_reconcile: { ts: "2026-09-21T14:25:59", orders: [], gates: {},
     target: { TXF: how === "spec" ? tRow(target, "sinopac", { type: "futures_contracts", contract_value: 200, currency: "TWD", lot_size: 1 }) : tRow(target, "capital", null) },
