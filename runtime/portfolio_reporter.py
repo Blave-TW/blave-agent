@@ -258,6 +258,96 @@ def strategy_states():
     return states
 
 
+def signals_frozen(cfg):
+    """{since, pending} while the scheduler holds every Type A/C signal still
+    (command_listener._signals_frozen: no venue bound, an unbind's reconciler
+    may still be running), else None. `since` is when it froze; `pending` the
+    picked names with no state.json at all — picked after the freeze, so they
+    have no row in `states`, and a page must draw them as "no signal yet",
+    never as a 0 position. Rows already in `states` keep the value and
+    updated_at of the moment it froze."""
+    doc = _read_json(os.path.join(WORKSPACE_STATE, "signals_frozen.json"))
+    if not isinstance(doc, dict):
+        return None
+    try:
+        since = int(doc.get("since"))
+    except (TypeError, ValueError):
+        since = None
+    amounts = (cfg or {}).get("amounts") if isinstance(cfg, dict) else None
+    pending = sorted(
+        n for n in (amounts if isinstance(amounts, dict) else {})
+        if isinstance(n, str)
+        and not os.path.isfile(os.path.join(WORKSPACE, "strategies", n, "state.json")))
+    return {"since": since, "pending": pending}
+
+
+# Settlement currency of a strategy's amount, for the amounts table's unit (designer spec
+# 0124-review/units-research-and-spec.md §3.1 layer 2). Only what is known for sure: a
+# crypto pair's quote suffix from this list, TWD for every Taiwan market, USD for US
+# stocks. A bare "USD" suffix (BTCUSD) is NOT read as coin-margined BTC: no lib in this
+# workspace trades a coin-margined contract, so that would be a guess — null instead.
+QUOTE_SUFFIXES = ("FDUSD", "USDT", "USDC", "BUSD")
+_MARKET_QUOTE = {"tw_stock": "TWD", "tw_index_futures": "TWD", "tw_stock_futures": "TWD",
+                 "us_stock": "USD"}
+_quote_cache = {}  # strategy.py path -> ((mtime, size), market) — ast.parse once per edit
+
+
+def _pair_quote(sym):
+    s = re.sub(r"[^A-Z0-9]", "", str(sym or "").upper())
+    for q in QUOTE_SUFFIXES:
+        if s.endswith(q) and len(s) > len(q):
+            return q
+    return None
+
+
+def strategy_quote_ccy(name, state):
+    """The currency `name`'s amount is in, or None when it cannot be told for sure.
+    Market from the strategy file (strategy_reporter.strategy_market: its lib.data price
+    fetchers); crypto symbols from state.json (Type A `symbol`, Type C every `weights`
+    key — all must agree), else the file's literal SYMBOL. Mixed markets, mixed quotes,
+    global futures, user data → None."""
+    path = os.path.join(WORKSPACE, "strategies", name, "strategy.py")
+    try:
+        st = os.stat(path)
+        sig = (st.st_mtime, st.st_size)
+        hit = _quote_cache.get(path)
+        if hit and hit[0] == sig:
+            market, file_symbol = hit[1]
+        else:
+            import strategy_reporter
+            with open(path, encoding="utf-8", errors="replace") as f:
+                src = f.read()
+            market = strategy_reporter.strategy_market(src)
+            file_symbol = strategy_reporter._referenced_fetchers(src)[1]
+            _quote_cache[path] = (sig, (market, file_symbol))
+    except Exception:
+        return None
+    if market in _MARKET_QUOTE:
+        return _MARKET_QUOTE[market]
+    if market != "crypto":
+        return None
+    state = state if isinstance(state, dict) else {}
+    weights = state.get("weights")
+    if isinstance(weights, dict) and weights:
+        quotes = {_pair_quote(k) for k in weights}
+        return quotes.pop() if len(quotes) == 1 else None
+    return _pair_quote(state.get("symbol") or file_symbol)
+
+
+def quote_ccys(cfg):
+    """{name: currency | None} for every picked strategy and every one with a state.json
+    — strategies picked but never ticked included (they have no `states` row)."""
+    amounts = (cfg or {}).get("amounts") if isinstance(cfg, dict) else None
+    names = set(n for n in (amounts if isinstance(amounts, dict) else {}) if isinstance(n, str))
+    root = os.path.join(WORKSPACE, "strategies")
+    try:
+        names |= {n for n in os.listdir(root) if os.path.isfile(os.path.join(root, n, "state.json"))}
+    except OSError:
+        pass
+    return {n: strategy_quote_ccy(n, _read_json(os.path.join(root, n, "state.json")))
+            for n in sorted(names) if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", n)}
+
+
 def recent_orders():
     path = os.path.join(WORKSPACE, "manager", "orders.jsonl")
     try:
@@ -457,8 +547,8 @@ def _recomputed_since(down_to, cfg, vens):
     — unless that check FAILED after the boot (fetch/run failure or wrapper
     error: wait_for_bar saves the file without touching last_seen_bar, so a
     failure would otherwise read as "nothing newer").
-    No bound venue → True: the scheduler does not run then (the flag would stay
-    false for ever) and nothing can trade either; the reconciler idles."""
+    No bound venue → True: nothing can trade then (the reconciler idles), so
+    there is no catch-up to hold back."""
     if not any(isinstance(v, dict) and v.get("pair") for v in (vens or {}).values()):
         return True
     if not os.path.isfile(os.path.join(WORKSPACE, "manager", "wait_for_bar.py")):
@@ -1279,6 +1369,10 @@ def build_report():
     report = {
         "config": cfg,
         "states": strategy_states(),
+        # None = signals recomputing normally (see signals_frozen)
+        "signals_frozen": signals_frozen(cfg),
+        # each strategy's amount currency, None = cannot be told (strategy_quote_ccy)
+        "quote_ccy": quote_ccys(cfg),
         # None = couldn't tell (no crontab access), [] = genuinely nothing scheduled
         "scheduled": None if sched is None else sorted(sched),
         "last_reconcile": last,

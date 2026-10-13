@@ -155,30 +155,51 @@ _symbol_threshold.close = _close_gate
 _idle_logged = False
 
 
+_CRED_ENV_RE = re.compile(r"^([A-Za-z0-9_]+)_(API_KEY|SECRET_KEY|PASSWORD|PASSPHRASE)$", re.I)
+
+
+def _env_venue_ids():
+    """Venue ids holding a credential pair in .env — the runtime's pair rule
+    (runtime/command_listener._venue_cred_ids, which the workspace cannot
+    import): a venue's own cred_env names first, then {ID}_API_KEY plus one of
+    SECRET_KEY / PASSWORD / PASSPHRASE; BLAVE / ADMIN / DATA_* are never a venue."""
+    from lib.venue_wiring import read_env
+    sfx = {}
+    for name in read_env():
+        m = venue_traits.cred_env(name)
+        if not m:
+            r = _CRED_ENV_RE.match(name)
+            m = (r.group(1), r.group(2)) if r else None
+        if not m:
+            continue
+        vid, role = m[0].upper(), m[1].upper()
+        if vid in ("BLAVE", "ADMIN") or vid.startswith("DATA_"):
+            continue
+        sfx.setdefault(vid.lower(), set()).add(role)
+    return {v for v, s in sfx.items() if "API_KEY" in s and s & {"SECRET_KEY", "PASSWORD", "PASSPHRASE"}}
+
+
 def _venue_bound():
-    """這台機器現在有沒有綁著任何交易所/券商。
+    """這台機器現在有沒有綁著任何交易所/券商:.env 裡有那家的金鑰對,而且綁定
+    manifest(manager/credentials.ui.json)讀得到時也列著那家。
 
-    讀的是綁定 manifest(manager/credentials.ui.json),不是 detect_venue()。
-    detect_venue 走 official_venues(),而那支會跳過 venue_wiring._NON_AUTO
-    ({sinopac, president, capital} —— 台灣券商走 signed-diff 契約、由本檔自己的
-    capital 區塊接手,刻意不進自動接線),所以一台只綁群益期貨的機器 detect_venue
-    會回 None —— 拿它當閘門會把整批台灣券商機器永遠鎖成閒置。manifest 沒有這個
-    問題:它是平台在每次綁定/解綁時寫的 credential pair 清單,台灣券商與 paper
-    都在裡面(_venue_cred_ids「TW brokers same pool」)。
+    不用 detect_venue():它走 official_venues(),會跳過 venue_wiring._NON_AUTO
+    ({sinopac, president, capital}),拿它當閘門會把只綁台灣券商的機器永遠鎖成
+    閒置;而且多 venue 時每次呼叫都 log 一則 WARNING,這裡每 5 秒一輪。
 
-    順帶:detect_venue 在綁了多個 venue 時每次呼叫都會 log 一則 WARNING,而這裡
-    是每 5 秒一輪 —— 拿它當閘門等於一天多印一萬七千行。
-
-    manifest 不存在或壞掉 → _ui_bound_ids() 回 None → 當成有綁(fail-open,與
-    venue_wiring 自己的 routing 同一個方向):寧可多跑一輪對帳,也不要因為讀不到
-    一個檔案就悄悄停掉一台真的在下單的機器。"""
+    fail-closed(2026-10-13):沒連交易所的機器現在也每根 K 線重算訊號,所以「解綁
+    時停不住、成員與路由留著」的對帳器不能靠訊號不動當保險——它手上可能還有
+    台灣券商的登入快取,HALT 又不擋減倉。manifest 不在或壞掉就只看 .env;判斷
+    途中出錯當沒綁、這輪空轉。已綁的機器不受影響:manifest 不在的舊機器 .env
+    照樣有金鑰對。"""
     try:
         from lib.venue_wiring import _ui_bound_ids
         ids = _ui_bound_ids()
-        return ids is None or bool(ids)
+        env = _env_venue_ids()
+        return bool(env if ids is None else env & ids)
     except Exception as e:
-        logging.warning(f"[reconciler] venue check failed ({e}) — assuming bound")
-        return True
+        logging.warning(f"[reconciler] venue check failed ({e}) — idling this round")
+        return False
 
 
 def _active_state_mtimes():

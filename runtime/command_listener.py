@@ -1736,6 +1736,7 @@ DOWNTIME_REPORT_TRIES = 15
 _downtime_lock = threading.Lock()
 _downtime_last = None  # wall clock at the previous check, this process
 _downtime_failures = 0
+_downtime_gap_seen = None  # time.monotonic() of the last gap noticed, bound or not (_signals_frozen)
 
 
 def _downtime_read_stamp():
@@ -1782,13 +1783,14 @@ def _downtime_check(now=None):
     """Called by the watch thread AND at the top of every scheduler cycle, so
     whichever wakes first after a sleep settles it before a strategy is ticked.
     Returns the gap it reported, or None."""
-    global _downtime_last, _downtime_failures
+    global _downtime_last, _downtime_failures, _downtime_gap_seen
     with _downtime_lock:
         now = time.time() if now is None else now
         prev = _downtime_last if _downtime_last is not None else _downtime_read_stamp()
         gap = None
         if prev is not None and now - prev >= DOWNTIME_MIN_GAP_S:
             gap = (prev, now)
+            _downtime_gap_seen = time.monotonic()
             if _bound_venue() and not _downtime_report(prev, now):
                 _downtime_failures += 1
                 if _downtime_failures < DOWNTIME_REPORT_TRIES:
@@ -2542,20 +2544,70 @@ def _unpark_account_state(identity):
 
 
 def _bound_venue():
-    """True if ANY exchange is bound on this machine right now. Gates the
-    whole scheduler cycle: after a full unbind, _cmd_credentials_remove may
-    deliberately KEEP `amounts` non-empty while stopping every schedule (Wei
-    2026-08-05 — see that function's own comment, "membership kept") because
-    the reconciler couldn't be confirmed stopped. A scheduler keyed on
-    `amounts` alone would re-animate those signals on an unbound machine —
-    exactly the "still looks like it's trading" failure that rule exists to
-    prevent. A rebind (_cmd_credentials) or unpick-then-repick naturally
-    resumes it — no separate resume path needed."""
+    """True if ANY exchange is bound on this machine right now (.env pair rule,
+    _venue_cred_ids). Gates what needs a venue — the downtime pause, the
+    pre-report performance sweep, the desktop account read. It does NOT gate
+    the Type A/C scheduler (Wei 2026-10-13): the 策略組合 page shows the latest
+    target positions with no venue bound, so signals are computed either way
+    and an unbound machine simply has nothing that turns them into orders —
+    see _signals_frozen for the one unbound case that still must not tick."""
     try:
         with open(os.path.join(WORKSPACE, ".env")) as f:
             return bool(_venue_cred_ids(f.read().splitlines()))
     except OSError:
         return False
+
+
+SIGNALS_FROZEN_PATH = os.path.join(WORKSPACE_STATE, "signals_frozen.json")  # portfolio_reporter reads it
+# After a sleep or a forward clock jump every heartbeat looks stale at once, the
+# survivor's included — it was asleep too and beats again within seconds. For
+# this long after a gap a heartbeat of any age still counts as alive.
+SIGNALS_GAP_GRACE_S = 2 * SCHEDULER_INTERVAL_SECONDS
+
+
+def _signals_frozen():
+    """No venue bound AND a reconciler may still be alive: its heartbeat is
+    newer than the last confirmed stop and younger than RECONCILER_ALIVE_S.
+    That is the full unbind whose stop could not be confirmed
+    (_cmd_credentials_remove, "membership kept"): the survivor still holds the
+    routing, HALT lets its reduce legs through, and a TW broker's cached login
+    outlives the wiped keys — a target that moved would be traded. Its own idle
+    gate (manager/reconciler._venue_bound) fails OPEN on an unreadable bind
+    manifest, so the signals stay where the unbind left them until the daemon
+    is gone. It beats while idling and systemd keeps it up, so in practice the
+    way out is what it always was — rebind and 啟動下單; the heartbeat only
+    goes stale when the process really died. A machine that never started a
+    reconciler has no heartbeat and is never frozen.
+
+    The verdict is mirrored to SIGNALS_FROZEN_PATH ({"since": epoch} while
+    frozen, absent otherwise) so the report can tell "frozen" from "the
+    signal really is 0". Synced against the file, not process memory: a
+    restart neither leaves a stale marker nor rewrites `since`."""
+    frozen = False
+    if not _bound_venue():
+        hb = _mtime_or_none(RECONCILER_HEARTBEAT)
+        stopped = _mtime_or_none(RECONCILER_STOP_MARK)
+        gap = _downtime_gap_seen
+        just_woke = gap is not None and time.monotonic() - gap < SIGNALS_GAP_GRACE_S
+        frozen = (hb is not None and not (stopped is not None and hb <= stopped)
+                  and (_clock() - hb < RECONCILER_ALIVE_S or just_woke))
+    marked = os.path.exists(SIGNALS_FROZEN_PATH)
+    if frozen and not marked:
+        try:
+            _write_atomic(SIGNALS_FROZEN_PATH, json.dumps({"since": int(_clock())}))
+        except OSError as e:
+            _log(f"signals_frozen marker not written: {type(e).__name__}")
+        _log("scheduler: no venue bound but a reconciler may still be running — "
+             "signals not recomputed until it is gone")
+    elif marked and not frozen:
+        try:
+            os.remove(SIGNALS_FROZEN_PATH)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            _log(f"signals_frozen marker not removed: {type(e).__name__}")
+        _log("scheduler: signals recomputing again")
+    return frozen
 
 
 _AC_DEPLOY_TYPE = "wait_for_bar"
@@ -2703,8 +2755,8 @@ def _run_scheduler_cycle():
     per name per minute is cheap, and per-strategy overlap is already
     prevented by wait_for_bar.py's own file lock (state/bar_wait/<name>.lock),
     not by anything in this loop."""
-    if not _bound_venue():
-        return  # see _bound_venue — unbound is a deliberate "stay quiet" state
+    if _signals_frozen():
+        return
     global _ac_migration_done
     if _wait_for_bar_available() and not _ac_migration_done:
         # Runs once per process, but not necessarily on the FIRST cycle: a
@@ -3702,18 +3754,17 @@ def _cmd_credentials_remove(args):
             # guard genuinely unavailable (pre-guard workspace) — auto-halt
             # still covers it, but say so instead of hiding it (audit H2)
             print(f"[credentials_remove] unbind-halt failed: {e}", file=sys.stderr)
-        # NO venue left → stop the signal-refresh schedules too (Wei
-        # 2026-08-05: halt keeps signals breathing, unbind kills them — an
-        # unbound machine updating targets reads as "still trading"). A rebind
-        # (_cmd_credentials) or the next amounts save re-syncs the crons, so
-        # resume costs nothing; partial unbind on a multi-venue machine keeps
+        # NO venue left → drop the Type B crontab lines too: a Type B script
+        # places its own orders, and one firing on a machine that can no longer
+        # trade only fails. A rebind (_cmd_credentials) or the next amounts
+        # save re-syncs them; partial unbind on a multi-venue machine keeps
         # them. "Venue left" is the pair rule — a lingering service key
-        # (OPENAI_API_KEY) must not read as still-bound and keep schedules
-        # firing on a machine that can no longer trade.
+        # (OPENAI_API_KEY) must not read as still-bound. Type A/C are not
+        # stopped here (Wei 2026-10-13, see _bound_venue): they only write
+        # state.json, and whatever stays picked keeps computing — unless the
+        # stop below cannot be confirmed (_signals_frozen).
         if not _venue_cred_ids(kept):
-            _sync_strategy_crons(set())  # Type B crontab; Type A/C stops via
-            # _bound_venue() in _run_scheduler_cycle reading this same .env —
-            # no separate action needed there, see that function's docstring.
+            _sync_strategy_crons(set())
             # …and zero the 下單設定 itself (Wei 2026-08-06): users don't
             # bounce between venues, and members lingering with no venue bound
             # block 刪除策略 and friends — a rebind starts from a clean sheet.
@@ -4109,7 +4160,12 @@ def _cmd_restart_reconciler(args):
 
 def _restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
-    the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
+    the wrapper restarts on crash and alerts on each exit (references/manager.md).
+    Not with no venue bound: there is nothing to reconcile against, and an idle
+    daemon's fresh heartbeat would freeze the signals (_signals_frozen)."""
+    if not _bound_venue():
+        _log("reconciler start skipped — no venue bound")
+        return "no venue bound — reconciler not started"
     if _local_mode():
         if _LOCAL_HOST is None:
             raise RuntimeError("the local daemon is not running")
@@ -5858,7 +5914,7 @@ def _cmd_stats_refresh(args):
 def _refresh_live_stats(reason):
     """Refresh every live Type A/C strategy's performance, one at a time, inside
     STATS_REFRESH_BUDGET_S. Same membership as the scheduler (_run_scheduler_cycle: the
-    `amounts` keys, Type A/C only, nothing while no venue is bound); skips a strategy with no
+    `amounts` keys, Type A/C only) but nothing while no venue is bound; skips a strategy with no
     stats.json (canon §5), one refreshed within STATS_REFRESH_MIN_AGE_S, or one the button
     already has in flight. Failures are recorded per strategy and the sweep moves on."""
     if not _bound_venue():
