@@ -221,5 +221,19 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
       t("detectAgents:claude 與 codex 的登入檢查同時開跑(兩條各 300ms,整次 < 500ms;依序會 ≥ 600)、各帶 20 秒上限", took < 500 && runs.length === 2 && Math.abs(runs[0][2] - runs[1][2]) < 100 && runs.every((r) => r[1] === 20000), { took, runs });
       t("…結果照舊組回去:claude 登入、codex 逾時 → why=codex_timeout;紀錄一行", d.claude.loggedIn === true && d.claude.why === null && d.codex.installed && d.codex.loggedIn === false && d.codex.why === "codex_timeout"
         && logged.length === 1 && logged[0].codex.timedOut === true && logged[0].claude.loggedIn === true); } }
+  // 偵測跑的可能是 SDK 隨包那顆 claude:不帶 DISABLE_AUTOUPDATER 它會在背景抓 330MB 新版
+  const envOut = await run(process.execPath, ["-e", "process.stdout.write(String(process.env.DISABLE_AUTOUPDATER))"], process.env.PATH, 5000);
+  t("run:子行程的 env 帶 DISABLE_AUTOUPDATER=1", envOut.code === 0 && envOut.stdout === "1", envOut);
+  { const al = src.match(/^async function agentLogin\(kind\) \{[\s\S]*?\n\}/m);
+    t("agentLogin:spawn 的 env 也帶 DISABLE_AUTOUPDATER=1(登入用的也可能是隨包那顆)", !!al && /spawn\([\s\S]*?env: \{ \.\.\.process\.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" \}/.test(al[0])); }
+  // claude auth status 跑不起來(退出碼非 0、沒有輸出)不是「回的不是 JSON」:只有退出碼 0 才記 json=false
+  { const da = src.match(/^async function detectAgents\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
+    const mk = new Function("loginShellPath", "claudePath", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", dw[0] + "\n" + da[0] + "\nreturn detectAgents;");
+    const once = async (claudeRes) => { const logged = [];
+      const d = await mk(async () => "/usr/bin", async () => "/opt/claude", async () => null, async () => ({ timedOut: false, ms: 1, ...claudeRes }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" })();
+      return { why: d.claude.why, json: logged[0].claude.json }; };
+    const dead = await once({ code: 1, stdout: "" }), old = await once({ code: 0, stdout: "usage: claude" }), sig = await once({ code: "ENOENT", stdout: "" });
+    t("detectAgents:claude 退出碼非 0、stdout 空 → claude_nonzero,不記 json=false", dead.why === "claude_nonzero" && dead.json === undefined && sig.why === "claude_nonzero" && sig.json === undefined, { dead, sig });
+    t("detectAgents:claude 退出碼 0 但回的不是 JSON(舊版)→ 仍是 claude_badjson", old.why === "claude_badjson" && old.json === false, old); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

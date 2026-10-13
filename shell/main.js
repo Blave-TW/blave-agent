@@ -3367,7 +3367,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   moveTitle: "", moveBody: "", moveGo: "", moveNo: "",   // 搬到「應用程式」那一問(askMoveToApps):空的 = 還沒交字 = 不問
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
 const TT = require("./traytext");
-const { planRestart, shouldAskMove } = require("./updater");
+const { planRestart, shouldAskMove, moveNeedsAuth } = require("./updater");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
 const siteLang = () => uiLang || (/^zh/i.test(app.getLocale() || "") ? "zh" : "en");
 const pauseLabel = () => tmLabels.pauseLocal || tmLabels.pause;   // 有雲端之後「暫停下單」不夠明確:講清楚是這台電腦
@@ -3508,7 +3508,8 @@ async function restartToUpdate() {
   app.quit();
   return { ok: true, quit: true };
 }
-/* 啟動時不在「應用程式」資料夾就問一次(§4)。「不要移」寫一個記號、之後永遠不問;授權框取消(false)或搬移出錯不記,下次啟動再問。
+/* 啟動時不在「應用程式」資料夾就問一次(§4)。「不要移」寫一個記號、之後永遠不問;搬移出錯不記,下次啟動再問。
+   要系統授權才搬得過去的(moveNeedsAuth)不問也不叫 moveToApplicationsFolder:授權分支會讓別的子行程永遠收不到結束(updater.js shouldAskMove)。
    搬移成功 app 會自己結束再重開。app.isInApplicationsFolder / moveToApplicationsFolder 只有 macOS 有,shouldAskMove 先擋平台 */
 const moveDeclinedPath = () => path.join(app.getPath("userData"), "move-declined.json");
 let moveChecked = false, moveAsked = false;
@@ -3516,8 +3517,18 @@ async function askMoveToApps() {
   const L = tmLabels;
   if (!(L.moveTitle && L.moveBody && L.moveGo && L.moveNo)) return false;
   const mac = process.platform === "darwin" && app.isPackaged;
+  // ensure() 要先等登入 shell(上限 8 秒)與鎖檔才知道要不要裝,那段沒有子行程、busy() 是 false:等這一輪跑完再判。
+  // 裝好的人這一輪什麼都沒做(phase 還是 idle),照常問;真的裝了東西就這次不問,同「安裝中」
+  let installing = engineSetup().busy();
+  if (!installing && _engineRun) { await _engineRun.catch(() => {}); installing = !!_engineRun || engineSetup().busy() || engineSetup().snapshot().phase !== "idle"; }
+  // 等的期間 app 開始結束(結束確認框開著、或已確定要結束):不再疊一個搬移框(稽核 integ-0124 複核 P2)
+  if (quitting || quitConfirmed || quitAsking) return false;
+  const needsAuth = mac && moveNeedsAuth(app.getPath("exe"));
   if (!shouldAskMove({ platform: process.platform, packaged: app.isPackaged, inApps: !mac || app.isInApplicationsFolder(), declined: fs.existsSync(moveDeclinedPath()),
-    trading: !!tradeMaybeLive(), askedThisRun: moveAsked, installing: engineSetup().busy() })) return false;
+    trading: !!tradeMaybeLive(), askedThisRun: moveAsked, installing, needsAuth })) {
+    if (needsAuth) console.error("[move] needs authorization; not asking");
+    return false;
+  }
   moveAsked = true;
   const parent = BrowserWindow.getAllWindows()[0] || undefined;
   const r = await dialog.showMessageBox(parent, { type: "question", noLink: true, message: L.moveTitle, detail: L.moveBody,
@@ -3530,7 +3541,7 @@ async function askMoveToApps() {
   }
   // 框開著的時候開始下單 / 開始回合:搬移成功會走 before-quit,被結束攔截擋下的話 app 會從垃圾桶裡的 bundle 繼續跑。這次不搬,也不記(稽核 P2-2)
   // 框開著的時候引擎開始裝(送第一句話的 ensure-engine):同上,這次不搬、不記
-  if (tradeMaybeLive() || activeTurn || turnStarting || engineSetup().busy()) return false;
+  if (tradeMaybeLive() || activeTurn || turnStarting || _engineRun || engineSetup().busy() || moveNeedsAuth(app.getPath("exe"))) return false;
   // 埋點 feature_used 的 app_move = 按了「移」(不是搬成功:成功 app 會立刻結束重開,事後送不出去;授權框取消也算按過)
   try { tm().track("feature_used", { name: "app_move" }); } catch (_) { /* 追蹤不擋 */ }
   try { return app.moveToApplicationsFolder(); } catch (e) { console.error("[move] " + ((e && e.message) || e)); return false; }

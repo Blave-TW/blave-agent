@@ -1,7 +1,7 @@
 // shell/updater.js:永遠不自己重啟、下單執行中不安裝、沒有更新來源就整個關掉。
 // 跑法:node tests/check_shell_updater.js
-const fs = require("fs"), path = require("path"), { EventEmitter } = require("events");
-const { createUpdater, planRestart, shouldAskMove } = require("../shell/updater.js");
+const fs = require("fs"), os = require("os"), path = require("path"), { EventEmitter } = require("events");
+const { createUpdater, planRestart, shouldAskMove, moveNeedsAuth } = require("../shell/updater.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const tick = () => new Promise((r) => setTimeout(r, 5));
 function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL = (o) => au.calls.push(["feed", o]); au.checkForUpdates = () => { au.calls.push(["check"]); return Promise.resolve(); }; au.quitAndInstall = (...a) => au.calls.push(["install", ...a]); return au; }
@@ -73,13 +73,29 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
       const want = phase !== "ready" && phase !== "blocked" ? "not_ready" : turn ? "busy" : asking ? "asking" : trading ? "confirm" : "install";
       const got = planRestart({ phase, turn, asking, trading }); if (got !== want) bad.push([phase, turn, asking, trading, got, want].join()); }
     t("planRestart 全矩陣 8×2×2×2:沒下載好 → not_ready;回合在跑 → busy;已有框 → asking;下單中 → confirm;其餘 → install", bad.length === 0); if (bad.length) console.log(bad.slice(0, 5)); }
-  // 0.1.10 §4:shouldAskMove 全矩陣,七個條件同時成立才問(0.1.24 加「引擎沒在裝」)
+  // 0.1.10 §4:shouldAskMove 全矩陣,八個條件同時成立才問(0.1.24 加「引擎沒在裝」「搬移不必授權」)
   { let hits = 0, bad = 0;
-    for (const platform of ["darwin", "win32"]) for (const packaged of [true, false]) for (const inApps of [true, false]) for (const declined of [true, false]) for (const trading of [true, false]) for (const askedThisRun of [true, false]) for (const installing of [true, false]) {
-      const got = shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun, installing }), want = platform === "darwin" && packaged && !inApps && !declined && !trading && !askedThisRun && !installing;
+    for (const platform of ["darwin", "win32"]) for (const packaged of [true, false]) for (const inApps of [true, false]) for (const declined of [true, false]) for (const trading of [true, false]) for (const askedThisRun of [true, false]) for (const installing of [true, false]) for (const needsAuth of [true, false]) {
+      const got = shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun, installing, needsAuth }), want = platform === "darwin" && packaged && !inApps && !declined && !trading && !askedThisRun && !installing && !needsAuth;
       if (got) hits++; if (got !== want) bad++; }
-    t("shouldAskMove 全矩陣 128 組:只有 darwin、打包版、不在 Applications、沒拒絕過、沒在下單、這次還沒問過、引擎沒在裝,那一組回 true", bad === 0 && hits === 1);
-    t("shouldAskMove 沒給 installing(舊呼叫)仍照六條件", shouldAskMove({ platform: "darwin", packaged: true, inApps: false, declined: false, trading: false, askedThisRun: false }) === true); }
+    t("shouldAskMove 全矩陣 256 組:只有 darwin、打包版、不在 Applications、沒拒絕過、沒在下單、這次還沒問過、引擎沒在裝、搬移不必授權,那一組回 true", bad === 0 && hits === 1);
+    t("shouldAskMove 沒給 installing / needsAuth(舊呼叫)仍照六條件", shouldAskMove({ platform: "darwin", packaged: true, inApps: false, declined: false, trading: false, askedThisRun: false }) === true); }
+  // moveNeedsAuth:照 Electron 的 needAuthorization,用真的目錄權限驗(root 什麼都寫得進去,那時跳過權限那幾案)
+  { const apps = fs.mkdtempSync(path.join(os.tmpdir(), "blave-apps-")), exe = "/Volumes/Blave/Blave.app/Contents/MacOS/Blave", dst = path.join(apps, "Blave.app");
+    const root = typeof process.getuid === "function" && process.getuid() === 0;
+    t("moveNeedsAuth:目的資料夾可寫、裡面沒有同名 app → 不必授權", moveNeedsAuth(exe, apps) === false);
+    fs.mkdirSync(path.join(apps, "Other.app")); fs.chmodSync(path.join(apps, "Other.app"), 0o555);
+    t("moveNeedsAuth:別的名字的 app 不可寫不算(只看同名 bundle)", moveNeedsAuth(exe, apps) === false);
+    fs.mkdirSync(dst);
+    t("moveNeedsAuth:已有同名 app、可寫 → 不必授權", moveNeedsAuth(exe, apps) === false);
+    fs.chmodSync(dst, 0o555);
+    t("moveNeedsAuth:已有同名 app、不可寫 → 要授權", root || moveNeedsAuth(exe, apps) === true);
+    t("moveNeedsAuth:bundle 改過名就看改過的那個名字(Electron 用 bundlePath 的最後一段)", moveNeedsAuth("/x/Blave 2.app/Contents/MacOS/Blave", apps) === false);
+    fs.chmodSync(dst, 0o755); fs.chmodSync(apps, 0o555);
+    t("moveNeedsAuth:目的資料夾不可寫 → 要授權", root || moveNeedsAuth(exe, apps) === true);
+    fs.chmodSync(apps, 0o755);
+    t("moveNeedsAuth:目的資料夾不存在、路徑不是字串 → 當成要授權(判不出來不冒險)", moveNeedsAuth(exe, path.join(apps, "nope")) === true && moveNeedsAuth(undefined, apps) === true);
+    fs.chmodSync(path.join(apps, "Other.app"), 0o755); fs.rmSync(apps, { recursive: true, force: true }); }
 
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "updater.js"), "utf8");
   t("整個檔只有 install() 一處會叫 quitAndInstall(永遠不自己重啟)", (src.match(/quitAndInstall\(/g) || []).length === 1);

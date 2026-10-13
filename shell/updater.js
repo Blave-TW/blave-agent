@@ -9,6 +9,7 @@
 //   - 沒有更新來源(開發版、沒設 BLAVE_UPDATE_URL 打出來的包)= 整個關掉,畫面只顯示版號。
 //
 // 這個檔不 require electron / electron-updater:由 main.js 注入,node 測試才跑得動。
+const fs = require("fs"), path = require("path");
 const sig = require("./updatesig");
 const CHECK_EVERY_MS = 4 * 3600 * 1000;
 const FIRST_CHECK_MS = 30 * 1000;   // 啟動後先讓 app 把該做的做完
@@ -136,10 +137,27 @@ function planRestart({ phase, turn, asking, trading }) {
 
 /* 啟動時不在「應用程式」資料夾就問一次(§4;只有 macOS 打包版會遇到:Squirrel 在唯讀 / translocation 的位置裝不上)。
    下單中不問:搬移會重開 = 停單;這次不問也不記成「不要」。
-   引擎安裝中(pip 在跑)也不問:搬移失敗那條路(目標已有 Blave.app、cp 被拒後走授權)會把正在跑的 pip 一起收掉,
-   安裝就永遠停在「安裝引擎 已下載 0.0 MB」(10-13 兩次重現、關掉搬移就裝得完);下次啟動再問 */
-function shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun, installing }) {
-  return platform === "darwin" && !!packaged && !inApps && !declined && !trading && !askedThisRun && !installing;
+   引擎安裝中、搬移要授權(needsAuth)也不問,這次不問也不記,下次啟動再判。
+   觀察到的事實(10-13 兩次重現):第一次安裝時按「移」,安裝永遠停在「安裝引擎 已下載 0.0 MB」、鎖檔留著、兩個殭屍子行程;
+   app.log 有 `cp: /Applications/Blave.app/Blave.app: Operation not permitted` 與
+   `Failed to copy to applications directory even with authorization`(= 走了授權分支);預先關掉搬移就裝得完。
+   機制未定案(稽核 2026-10-13 integ-0124 P1):最可能是 Electron 授權分支對 /bin/rm、/bin/cp
+   各叫一次不指定 pid 的 wait(),搶走別的子行程(pip、`claude auth status`、登入 shell)的結束狀態,libuv 之後拿到 ECHILD、
+   那個子行程的 close 永遠不發。所以擋兩層:needsAuth 讓授權分支根本不會被執行(不只保 pip);installing 留著,
+   因為不必授權的成功路徑會把正在跑 pip 的那顆隨包 Python 丟進垃圾桶 */
+function shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun, installing, needsAuth }) {
+  return platform === "darwin" && !!packaged && !inApps && !declined && !trading && !askedThisRun && !installing && !needsAuth;
+}
+/* app.moveToApplicationsFolder() 會不會走授權分支。條件照抄 Electron 44.4.3 shell/browser/ui/cocoa/electron_bundle_mover.mm 的
+   needAuthorization(升 Electron 時重對一次):/Applications 不可寫,或那裡已有同名 bundle 而它不可寫。判不出來一律當成要授權。
+   用 access() 問、不看擁有者與權限位元:10-13 那顆 /Applications/Blave.app 是自己擁有的 755,授權分支照樣走了;
+   同一台機器上 access(W_OK) 對它回 EPERM(macOS 的 App 管理保護) */
+function moveNeedsAuth(exePath, appsDir = "/Applications") {
+  const writable = (p) => { try { fs.accessSync(p, fs.constants.W_OK); return true; } catch (_) { return false; } };
+  try {
+    const dst = path.join(appsDir, path.basename(path.resolve(exePath, "../../..")));   // exe = X.app/Contents/MacOS/X
+    return !writable(appsDir) || (fs.existsSync(dst) && !writable(dst));
+  } catch (_) { return true; }
 }
 
-module.exports = { createUpdater, planRestart, shouldAskMove, CHECK_EVERY_MS };
+module.exports = { createUpdater, planRestart, shouldAskMove, moveNeedsAuth, CHECK_EVERY_MS };

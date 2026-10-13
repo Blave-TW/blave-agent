@@ -144,10 +144,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     if (o.declined) fs.writeFileSync(path.join(dir, "move-declined.json"), "{}");
     const win = { destroyed: false, isDestroyed() { return this.destroyed; } };
     const ctx = { tmLabels: o.noLabels ? { moveTitle: "", moveBody: "", moveGo: "", moveNo: "" } : { ...L }, shouldAskMove, fs, path, moveAsked: !!o.askedBefore,
-      quitting: false, quitConfirmed: false, activeTurn: null, turnStarting: false, win,
+      quitting: false, quitConfirmed: false, quitAsking: false, activeTurn: null, turnStarting: false, win,
       process: { platform: o.platform || "darwin" }, BrowserWindow: { getAllWindows: () => [win] }, tradeMaybeLive: () => (o.trading ? { venue: "x" } : null),
       tm: () => ({ track: (ev, p) => tracked.push(ev + ":" + p.name) }), console: { error: (e) => errs.push(String(e)) },
-      engineSetup: () => ({ busy: () => !!(o.engineBusy || ctx.engineBusyNow) }),
+      engineSetup: () => ({ busy: () => !!(o.engineBusy || ctx.engineBusyNow), snapshot: () => ({ phase: ctx.enginePhase || "idle" }) }),
+      _engineRun: null, moveNeedsAuth: (exe) => { log.push("auth?" + (exe === dir ? "" : ":" + exe)); return !!(o.needsAuth || ctx.needsAuthNow); },
       app: { isPackaged: o.packaged !== false, getPath: () => dir, isInApplicationsFolder: () => { log.push("inApps?"); return !!o.inApps; },
         moveToApplicationsFolder: () => { log.push("move"); if (o.moveThrows) throw new Error("perm"); return o.moveRes !== false; } },
       dialog: { showMessageBox: (_w, opts) => { log.push("dialog"); ctx.box = opts; if (o.onDialog) o.onDialog(ctx); return Promise.resolve({ response: o.response }); } } };
@@ -166,8 +167,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("引擎安裝中(pip 在跑):不問、不搬、不記、不送埋點;下次啟動再問", r === false && !m.log.includes("dialog") && !m.log.includes("move") && !m.marked() && m.tracked.length === 0 && m.ctx.moveAsked === false, m.log); }
   { const m = moveRig({ response: 1, onDialog: (c) => { c.engineBusyNow = true; } }), r = await m.fn();
     t("框開著時引擎開始裝、用戶按「移」:這次不搬、不記", r === false && m.log.includes("dialog") && !m.log.includes("move") && !m.marked(), m.log); }
+  { const m = moveRig({ response: 1, needsAuth: true }), r = await m.fn();
+    t("搬移要系統授權(/Applications 或既有的 Blave.app 不可寫):不問、不叫 moveToApplicationsFolder、不記、不送埋點,留一行 log;下次啟動再判",
+      r === false && !m.log.includes("dialog") && !m.log.includes("move") && !m.marked() && m.tracked.length === 0 && m.ctx.moveAsked === false && m.errs.some((e) => /\[move\] needs authorization/.test(e)), m.log); }
+  { const m = moveRig({ response: 1, onDialog: (c) => { c.needsAuthNow = true; } }), r = await m.fn();
+    t("框開著時變成要授權、用戶按「移」:不叫 moveToApplicationsFolder、不記", r === false && m.log.includes("dialog") && !m.log.includes("move") && !m.marked(), m.log); }
+  // ensure() 還在等登入 shell / 鎖檔(_engineRun 在、沒有子行程):等這一輪跑完才判
+  { const m = moveRig({ response: 1 }); let done; m.ctx._engineRun = new Promise((ok) => { done = ok; });
+    const p = m.fn(); await new Promise((ok) => setImmediate(ok)); const early = m.log.includes("dialog");
+    m.ctx._engineRun = null; done(); const r = await p;
+    t("引擎那一輪還沒判完(沒有子行程):先不問;判完什麼都不用裝 → 照常問、照常搬", !early && r === true && m.log.includes("dialog") && m.log.includes("move"), m.log); }
+  { const m = moveRig({ response: 1 }); let done; m.ctx._engineRun = new Promise((ok) => { done = ok; });
+    const p = m.fn(); m.ctx.quitAsking = true; m.ctx._engineRun = null; done(); const r = await p;
+    t("等引擎那一輪的期間結束確認框開了:不再疊搬移框、不記", r === false && !m.log.includes("dialog") && !m.marked(), m.log); }
+  { const m = moveRig({ response: 1 }); let done; m.ctx._engineRun = new Promise((ok) => { done = ok; });
+    const p = m.fn(); m.ctx.enginePhase = "done"; m.ctx._engineRun = null; done(); const r = await p;
+    t("…判完之後真的裝了東西(phase 不是 idle):這次不問、不記;下次啟動再問", r === false && !m.log.includes("dialog") && !m.marked() && m.ctx.moveAsked === false, m.log); }
+  { const m = moveRig({ response: 1 }); let fail; m.ctx._engineRun = new Promise((_ok, no) => { fail = no; }); m.ctx._engineRun.catch(() => {});
+    const p = m.fn(); m.ctx.enginePhase = "fail"; m.ctx._engineRun = null; fail(new Error("pip")); let threw = false, r = null; try { r = await p; } catch (_) { threw = true; }
+    t("…那一輪安裝失敗:不往外拋、不問", !threw && r === false && !m.log.includes("dialog"), m.log); }
+  { const m = moveRig({ response: 1, onDialog: (c) => { c._engineRun = Promise.resolve(); } }), r = await m.fn();
+    t("框開著時引擎那一輪剛開始(還沒有子行程)、用戶按「移」:這次不搬、不記", r === false && m.log.includes("dialog") && !m.log.includes("move") && !m.marked(), m.log); }
   { const m = moveRig({ response: 1 }), r = await m.fn();
-    t("按「移」、搬成功(true):沒寫記號、回 true(app 自己重開);按下就送 feature_used app_move(成功會立刻重開,事後送不出去)", r === true && !m.marked() && m.log.join() === "inApps?,dialog,move" && m.tracked.join() === "feature_used:app_move", m.log); }
+    t("按「移」、搬成功(true):沒寫記號、回 true(app 自己重開);按下就送 feature_used app_move(成功會立刻重開,事後送不出去)", r === true && !m.marked() && m.log.join() === "auth?,inApps?,dialog,auth?,move" && m.tracked.join() === "feature_used:app_move", m.log); }
   { const m = moveRig({ response: 1, moveRes: false }), r = await m.fn();
     t("授權框按取消(false):沒寫記號,下次啟動再問", r === false && !m.marked()); }
   { const m = moveRig({ response: 1, moveThrows: true }); let threw = false, r = null;
@@ -189,7 +211,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("下單中:這次不問,也不記成「不要」", (await m.fn()) === false && !m.log.includes("dialog") && !m.marked()); }
   { const m = moveRig({ response: 1, inApps: true });
     t("已經在「應用程式」裡:不問", (await m.fn()) === false && !m.log.includes("dialog")); }
-  { const m = moveRig({ response: 1, platform: "win32" }), n = moveRig({ response: 1, packaged: false });
+  { const m = moveRig({ response: 1, platform: "win32", needsAuth: true }), n = moveRig({ response: 1, packaged: false, needsAuth: true });
     t("Windows、開發版:不問,也不叫 macOS 限定的 isInApplicationsFolder", (await m.fn()) === false && m.log.length === 0 && (await n.fn()) === false && n.log.length === 0); }
   t("接線:trade-labels 第一次收到字才判一次(moveChecked),包在 startStep 裡、Promise 的錯誤只留 log",
     /if \(!moveChecked\) \{ moveChecked = true; startStep\("move to apps", \(\) => \{ askMoveToApps\(\)\.catch\(/.test(cut(src, 'ipcMain.on("trade-labels", (e, labels) =>')));
