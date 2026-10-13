@@ -267,32 +267,52 @@ def plot_pnl(df, result, title='Strategy PnL', output_path=os.path.join(tempfile
     return output_path
 
 
-def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42):
+# Portfolios per block on the bands-free path: T × 50 floats instead of T × n.
+_BENCH_BLOCK = 50
+
+
+def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42, bands=True):
     """
     Compare strategy against n random B&H portfolios (Dirichlet weights).
+
+    bands=False skips the p5/p50/p95 equity bands (returned as None) — they only feed
+    plot_pnl_portfolio — and works through the portfolios a block at a time. The full
+    T × n matrix (plus its cumprod and percentiles) measured 2.8 GB RSS for 5 symbols of
+    5min bars over a year: past a 4 GB machine's headroom for a performance refresh
+    that draws no chart. The stats are the same either way (tests/check_bench_blockwise.py).
     """
     daily_ret = close_df.pct_change().fillna(0).values
     rng       = np.random.default_rng(seed)
     W         = rng.dirichlet(np.ones(daily_ret.shape[1]), size=n)  # (n, S)
-    all_daily = pd.DataFrame(daily_ret @ W.T, index=close_df.index) # (T, n)
 
     # compute total return and Sharpe for each portfolio using compute_stats
     all_ret_list    = []
     all_sharpe_list = []
-    for col in all_daily.columns:
-        s, _, _, _, _ = compute_stats(all_daily[col].values, close_df.index)
-        equity = np.cumprod(1 + np.nan_to_num(all_daily[col].values))
+
+    def _one(col):
+        s, _, _, _, _ = compute_stats(col, close_df.index)
+        equity = np.cumprod(1 + np.nan_to_num(col))
         all_ret_list.append((equity[-1] - 1) * 100)
         all_sharpe_list.append(s)
+
+    if bands:
+        all_daily = pd.DataFrame(daily_ret @ W.T, index=close_df.index) # (T, n)
+        for col in all_daily.columns:
+            _one(all_daily[col].values)
+        all_equity = np.cumprod(1 + all_daily.values, axis=0)  # (T, n)
+        bench_pct  = pd.DataFrame({
+            'p5':  np.percentile(all_equity, 5,  axis=1),
+            'p50': np.percentile(all_equity, 50, axis=1),
+            'p95': np.percentile(all_equity, 95, axis=1),
+        }, index=close_df.index)
+    else:
+        bench_pct = None
+        for lo in range(0, n, _BENCH_BLOCK):
+            block = daily_ret @ W[lo:lo + _BENCH_BLOCK].T  # (T, ≤ _BENCH_BLOCK)
+            for k in range(block.shape[1]):
+                _one(block[:, k])
     all_ret    = pd.Series(all_ret_list)
     all_sharpe = pd.Series(all_sharpe_list)
-
-    all_equity = np.cumprod(1 + all_daily.values, axis=0)  # (T, n)
-    bench_pct  = pd.DataFrame({
-        'p5':  np.percentile(all_equity, 5,  axis=1),
-        'p50': np.percentile(all_equity, 50, axis=1),
-        'p95': np.percentile(all_equity, 95, axis=1),
-    }, index=close_df.index)
 
     pct_ret    = float((all_ret    < strat_total_ret).mean() * 100)
     pct_sharpe = float((all_sharpe < strat_sharpe).mean()    * 100)
