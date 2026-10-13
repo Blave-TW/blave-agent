@@ -94,7 +94,7 @@ wfb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wfb)
 mod = types.SimpleNamespace(fetch_data=lambda h: D.fetch_kline("BTCUSDT", "1h", "2026-01-01", None, h))
 expected = wfb._expected_closed_bar_open("1h", datetime.now(timezone.utc).replace(tzinfo=None))
-seen, ready, _ = wfb._check_freshness(mod, expected)
+seen, ready, _, _ = wfb._check_freshness(mod, expected)
 check(seen == expected and ready, f"wait_for_bar: observed = last closed bar {expected} (got {seen})")
 
 # ── live tick: position comes from the last closed bar ────────────────────────────
