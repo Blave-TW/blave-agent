@@ -1036,9 +1036,6 @@ body.resizing * { cursor: col-resize !important; }
 .cf-row.total { margin-top: var(--space-6); padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); }
 .cf-row.total dt { color: var(--ink); font-weight: 600; }
 .cf-row.total dd { font-size: 15px; font-weight: 600; }
-.cf-row.lev { padding-top: 0; }
-.cf-row.lev dt { font-size: 12px; color: var(--ink-3); }
-.cf-row.lev dd { font-size: 12px; color: var(--ink-2); }
 /* 那一列下面的提醒(群益口數太大,spec-0.1.13 #1):不擋存檔,所以不上紅——灰記號 + ink-2(同 .verdict.is-calm);
    .cf-block 是紅字,只留給單真的會被退的句子。整寬接在那一列的數字下面 */
 .cf-row.has-warn { flex-wrap: wrap; row-gap: var(--space-2); }

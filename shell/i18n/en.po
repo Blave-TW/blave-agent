@@ -1487,9 +1487,6 @@ msgstr "Enter a whole number of lots, e.g. 3"
 msgid "tr.badLotsOld"
 msgstr "This is an older setting with a fractional lot count. Enter a whole number, e.g. 3"
 
-msgid "tr.lev"
-msgstr "Leverage (total ÷ equity)"
-
 msgid "tr.lev.margin"
 msgstr "Above 1× this runs on margin. Blave doesn't set leverage for you: set these contracts to at least {L}× on the exchange, or orders that don't fit are rejected."
 
@@ -1743,7 +1740,28 @@ msgid "tr.nSyms"
 msgstr "{n} symbols"
 
 msgid "tr.grossTip"
-msgstr "Long and short combined; see exchange positions below for each symbol"
+msgstr "Long {l} + short {s}"
+
+msgid "tr.grpLots"
+msgstr "TAIEX futures (lots)"
+
+msgid "tr.grpUnknown"
+msgstr "Currency not set"
+
+msgid "tr.equityMult"
+msgstr "{x}× equity"
+
+msgid "tr.lotsNotionalTip"
+msgstr "≈ {amt} TWD notional"
+
+msgid "tr.typecPending"
+msgstr "Holdings appear after the next run"
+
+msgid "tr.noSignalYet"
+msgstr "No signal yet"
+
+msgid "tr.txfConfirmRef"
+msgstr "{prod} ≈ {amt} TWD"
 
 msgid "tr.col.target"
 msgstr "Target"
@@ -1802,9 +1820,6 @@ msgstr "Below the {m} {c} minimum entry — no position will open"
 msgid "tr.total"
 msgstr "Total"
 
-msgid "tr.ofEquity"
-msgstr "of your equity"
-
 msgid "tr.unitNote"
 msgstr "Amounts in {c}"
 
@@ -1819,18 +1834,6 @@ msgstr "lot"
 
 msgid "tr.lotsAria"
 msgstr "Lots"
-
-msgid "tr.txfConfirm"
-msgstr "{lots} lots of {prod} (≈ {amt} TWD)"
-
-msgid "tr.txfConfirmNoQuote"
-msgstr "{lots} lots of {prod}"
-
-msgid "tr.txfConfirm1"
-msgstr "{lots} lot of {prod} (≈ {amt} TWD)"
-
-msgid "tr.txfConfirmNoQuote1"
-msgstr "{lots} lot of {prod}"
 
 msgid "tr.txfBigNotional"
 msgstr "{lots} lots of {prod} is about {amt} TWD notional, {x}× your equity. Make sure this is the size you want."

@@ -242,23 +242,43 @@ html.ws-sc .side-gate { display: none; }
 .mkt-tag { margin-left: var(--space-8); white-space: nowrap; font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
 .pf-note { display: block; font-size: 12px; color: var(--ink-3); }
 .amt-inw { display: inline-flex; align-items: center; gap: var(--space-6); }
+/* 九位數(300,000,000)放得下;格子只放數字,單位在區標題(units spec §9.6) */
 .amt-in {
-  width: 96px; height: 30px; padding: 0 var(--space-8); border: 1px solid var(--color-greyDark); border-radius: var(--radius-xs);
+  width: calc(11ch + 2 * var(--space-8) + 2px); height: 30px; padding: 0 var(--space-8); border: 1px solid var(--color-greyDark); border-radius: var(--radius-xs);
   background: transparent; color: var(--ink); font: 13px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right;
 }
 .amt-in:focus { border-color: var(--ink); outline: none; }
 .amt-in[aria-invalid="true"] { border-color: var(--color-redText); }
 .pf-note.err { color: var(--color-redText); }
 .amt-in:disabled { color: var(--ink-3); border-color: var(--border-hairline); }
-.amt-unit, .lots-unit { font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
 /* 雲端存完、報告還沒對上(.pend,spec-desktop-cloud-writable §1.2):數字灰一階 + 右邊 6×1 短線,不閃不轉;
    記號一定配儲存列那句字。短線那格在改過的列上留位不畫,欄不跳。目標部位欄整欄降灰 */
 .amt-in.pend { color: var(--ink-2); }
 .amt-dash { display: inline-block; width: 6px; height: 1px; background: var(--ink-3); }
 .amt-dash.off { visibility: hidden; }
 .pf-tbl .pend-col, .pf-tbl .pend-col .ccy, .trv .pf-tbl .pend-col.buy, .trv .pf-tbl .pend-col.sell { color: var(--ink-3); }
-.pf-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
+/* 表底合計是整張表唯一較重的線(units spec §9:區之間靠間距、區標題不加框) */
+.pf-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); padding-top: var(--space-8); border-top: 1px solid var(--color-greyDark); font-size: 12px; color: var(--ink-3); }
 .pf-total .n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.pf-total .n.mult { font-family: var(--font-sans); }
+/* 依計價分區的區標題列(§9.4):單位寫在這、跟欄頭同一級;不加底色與框線,組間距 24 > 組內列距。小計對齊金額欄,倍數接在後面 */
+.pf-tbl tr.grp td { border-bottom: none; padding-top: var(--space-24); padding-bottom: var(--space-4); font: 600 11px/1.4 var(--font-mono); color: var(--ink-3); }
+.pf-tbl tbody:first-of-type tr.grp td { padding-top: var(--space-12); }
+.pf-tbl tr.grp td.cjk { font-family: var(--font-sans); }
+.pf-tbl tr.grp td.n { font-weight: 500; }
+.pf-tbl tr.grp .mult { font-family: var(--font-sans); color: var(--ink-2); }
+/* 線(units spec §9.12):金額表與部位表只留表頭下一條最淡的線,金額表另有表底合計那條較重的;區內列線拿掉,列與區靠間距分開 */
+.pf-tbl.zoned th { border-bottom-color: var(--border-hairline); }
+.pf-tbl.zoned td { border-bottom: none; }
+.cf-amt .cf-row.total { border-top-color: var(--color-greyDark); }
+.cf-row.grp { padding: var(--space-16) 0 0; }
+.cf-rows .cf-row.grp:first-child { padding-top: var(--space-4); }
+.cf-row.grp dt { font: 600 11px/1.4 var(--font-mono); color: var(--ink-3); }
+.cf-row.grp.cjk dt { font-family: var(--font-sans); }
+.cf-row.grp dd { font-size: 11px; font-weight: 500; color: var(--ink-3); }
+.cf-row dd .mult { font-family: var(--font-sans); color: var(--ink-2); }
+.cf-row.grp dd .mult { margin-left: var(--space-8); }
+.cf-row dd .cf-ref { display: block; font: 11px/1.4 var(--font-sans); color: var(--ink-3); }
 /* 部位表「N 支策略」(§2.2;canon › Mini tag):18 高、中性底;熱區用 ::before 外擴到約 32 */
 .net-tag { position: relative; display: inline-flex; align-items: center; gap: var(--space-4); height: 18px; margin-left: var(--space-8); padding: 0 var(--space-6);
   border: 0; border-radius: var(--radius-micro); background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font: 11px/1 var(--font-sans); white-space: nowrap; cursor: pointer; vertical-align: middle; }
@@ -390,7 +410,7 @@ html.ws-sc .side-gate { display: none; }
 .ev-row .hl { color: var(--ink); }
 .ev-row .dim { color: var(--ink-3); }
 
-/* ---- 中欄可窄到 288(視窗 1024):同一張表收欄,不改骨架。<520 標的併到策略名下;<400 單位收到表下一行 ---- */
+/* ---- 中欄可窄到 288(視窗 1024):同一張表收欄,不改骨架。<520 標的併到策略名下 ---- */
 .sub-sym { display: none; font-size: 11px; color: var(--ink-3); }
 .unit-note { display: none; }
 @container (max-width: 520px) {
@@ -414,10 +434,7 @@ html.ws-sc .side-gate { display: none; }
   .main-tabs { padding: 0 var(--space-16) 1px; gap: var(--space-16); }   /* 底下的 1 是 hairline 的位子,不能跟著收 */
   .pf { padding: var(--space-16); }
   .pf-tbl .c-sym { display: none; }
-  /* mockup 是 <400 才收單位。單位現在只寫「USDT」(設計 v4),但這一階收單位的行為刻意不動(保守:
-     480 寬、視窗 1024 時差額欄不能被擠到要橫捲才看得到) */
-  .pf-tbl .ccy:not(.lots), .pf-tbl .amt-unit { display: none; }   /* 「口」不收:沒有單位的口數會被讀成錢 */
-  .unit-note { display: block; }
+  .unit-note { display: block; }   /* 交易歷史表的「金額單位」那一行;部位兩張表的單位在區標題,窄欄照樣看得到 */
   .sub-sym { display: block; }
   .pf-tbl td.key { min-width: 0; }
   .pf-log-row { gap: var(--space-8); }

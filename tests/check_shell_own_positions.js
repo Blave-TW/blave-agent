@@ -26,8 +26,9 @@ class N {
 var document = { createElement: (t) => new N(t), createDocumentFragment: () => { const n = new N("#frag"); n.frag = true; return n; }, createTextNode: (s) => { const n = new N("#text"); n._t = String(s); return n; } };
 var t = (k) => k, LANG = "en", TR = { st: { alive: true, report: null } };
 eval(cut("/* ── 純邏輯(", "/* ── 純邏輯到此").replace(/^const /gm, "var ") + "\n"
-  + ["trEl", "trSec", "trHead", "trTipLabel", "trMoneyInto", "trFmt", "trUnit", "trCcy", "trReport", "trVenueId", "trLivePositions", "trPositions"].map(fnSrc).join("\n"));
+  + ["trEl", "trSec", "trHead", "trTipLabel", "trMoneyInto", "trFmt", "trLotsFmt", "trUnit", "trCcy", "trReport", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trLivePositions", "trPositions"].map(fnSrc).join("\n"));
 var trTipSeq = 0;
+var trVenueKind = (id) => (id === "binance" ? "crypto" : null);
 
 const V = { binance: { credentials: true, pair: true, order: true, account: true } };
 const NOW = new Date().toISOString().replace("Z", "");
@@ -79,7 +80,8 @@ ok("trOwnBook 存在", typeof trOwnBook === "function");
 // 投資組合(Type C):目標 = 金額 × 每個資產的權重;現貨負權重壓 0(同 lib/portfolio.aggregate_portfolio)
 { const tg = trClientTargets({ basket: 1000, btc: 200 }, { basket: { weights: { BTCUSDT: 0.5, "ETH-USDT": 0.3, SOLUSDT: 0 }, market: "swap" },
     btc: { symbol: "BTCUSDT", position: -1, market: "swap" } });
-  ok("Type C 目標:每個資產各自一列,跟同標的的單一策略淨額相加", tg.BTCUSDT === 300 && tg.ETHUSDT === 300 && tg.SOLUSDT === 0);
+  // 權重 0 的候選不開一列(units spec §8.3:上表「N 檔」只數持有的,下表列數同一個篩選)
+  ok("Type C 目標:每個持有的資產各自一列,跟同標的的單一策略淨額相加;權重 0 的不出列", tg.BTCUSDT === 300 && tg.ETHUSDT === 300 && !("SOLUSDT" in tg));
   const sp = trClientTargets({ sb: 1000, s1: 100 }, { sb: { weights: { BTCUSDT: -0.5, ETHUSDT: 0.5 }, market: "spot" },
     s1: { symbol: "BTCUSDT", position: 1, market: "spot" } });
   ok("Type C 現貨:這支策略的負權重先壓 0,不去抵別的策略的多單", sp["BTCUSDT@spot"] === 100 && sp["ETHUSDT@spot"] === 500);

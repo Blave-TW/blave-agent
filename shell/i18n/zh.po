@@ -1492,9 +1492,6 @@ msgstr "請輸入整數口數，例如 3"
 msgid "tr.badLotsOld"
 msgstr "這一格是舊設定的小數口數，請改成整數，例如 3"
 
-msgid "tr.lev"
-msgstr "槓桿（合計 ÷ 淨值）"
-
 msgid "tr.lev.margin"
 msgstr "超過 1 倍要用合約保證金。Blave 不會替你調槓桿：交易所上這些合約至少要設 {L} 倍，不夠的單會被拒。"
 
@@ -1745,10 +1742,31 @@ msgid "tr.col.targetPos"
 msgstr "目標部位"
 
 msgid "tr.nSyms"
-msgstr "{n} 個標的"
+msgstr "{n} 檔"
 
 msgid "tr.grossTip"
-msgstr "多空合計，各標的見下方交易所部位"
+msgstr "多 {l} ＋ 空 {s}"
+
+msgid "tr.grpLots"
+msgstr "台指期（口）"
+
+msgid "tr.grpUnknown"
+msgstr "幣別未定"
+
+msgid "tr.equityMult"
+msgstr "淨值 {x}×"
+
+msgid "tr.lotsNotionalTip"
+msgstr "≈ {amt} TWD（名目）"
+
+msgid "tr.typecPending"
+msgstr "下次執行後算出成分"
+
+msgid "tr.noSignalYet"
+msgstr "還沒有訊號"
+
+msgid "tr.txfConfirmRef"
+msgstr "{prod} ≈ {amt} TWD"
 
 msgid "tr.col.target"
 msgstr "目標"
@@ -1807,9 +1825,6 @@ msgstr "低於最小進場 {m} {c}，不會進場"
 msgid "tr.total"
 msgstr "合計"
 
-msgid "tr.ofEquity"
-msgstr "你淨值的"
-
 msgid "tr.unitNote"
 msgstr "金額單位：{c}"
 
@@ -1824,18 +1839,6 @@ msgstr "口"
 
 msgid "tr.lotsAria"
 msgstr "口數"
-
-msgid "tr.txfConfirm"
-msgstr "{lots} 口{prod}（≈ {amt} TWD）"
-
-msgid "tr.txfConfirmNoQuote"
-msgstr "{lots} 口{prod}"
-
-msgid "tr.txfConfirm1"
-msgstr "{lots} 口{prod}（≈ {amt} TWD）"
-
-msgid "tr.txfConfirmNoQuote1"
-msgstr "{lots} 口{prod}"
 
 msgid "tr.txfBigNotional"
 msgstr "{lots} 口{prod}的名目約 {amt} TWD，是你淨值的 {x} 倍。確認這是你要的口數。"
