@@ -50,8 +50,12 @@ def _notify_best_effort(msg):
         logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
+RECONCILE_CAPS = ('contract_override',)
+
+
 def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False,
-                              own_only=False, needs_baseline=None, baseline_pending=None):
+                              own_only=False, needs_baseline=None, baseline_pending=None,
+                              rollovers=None):
     """Record what this reconcile actually saw, for anything that needs to show
     live positions without querying the exchange itself.
 
@@ -84,6 +88,9 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, r
             'target': target,
             'actual': actual,
             'orders': orders,
+            # what the RUNNING code honours (runtime portfolio_reporter.can_switch_contract):
+            # the lib on disk says nothing about a reconciler that has not restarted yet
+            'caps':   list(RECONCILE_CAPS),
         }
         if ledger is not None:
             doc['ledger'] = ledger
@@ -103,6 +110,8 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, r
             doc['needs_baseline'] = needs_baseline
         if baseline_pending:
             doc['baseline_pending'] = baseline_pending
+        if rollovers:
+            doc['rollovers'] = rollovers
         with open('manager/last_reconcile.json', 'w') as f:
             json.dump(doc, f, indent=2)
     except Exception as e:
@@ -1000,7 +1009,8 @@ def _strategy_key(name):
             sym = None
     if not sym or not isinstance(sym, str):
         return None
-    return market_key(sym.replace('-', '').upper(), strategy_market(name))
+    sym = execution_symbol(name, sym.replace('-', '').upper(), load_portfolio_config())
+    return market_key(sym, strategy_market(name))
 
 
 def _pending_symbols(venue):
@@ -1844,6 +1854,42 @@ def split_key(key):
     return key, 'swap'
 
 
+# ── execution contract (TXF / MXF / TMF) ────────────────────────────────────
+# The three index futures run on one series (lib.data.fetch_twfutures_ohlcv maps
+# MXF/TMF to TXF), so a strategy's SYMBOL only picks the contract it trades.
+# portfolio_config["contracts"] = {strategy: root} swaps that contract without
+# touching the strategy — a deployment setting written by the UI save
+# (runtime _cmd_amounts, UI-authoritative like `amounts`). The book key IS the
+# root, so every strategy→key mapping goes through execution_symbol.
+TXF_FAMILY = ('TXF', 'MXF', 'TMF')
+# TWD per index point: 1 TXF = 4 MXF = 20 TMF. A close of a contract no strategy
+# trades any more (the one switched away from) is valued with the KEY's own
+# number — the strategy's spec already says the new contract.
+TXF_FAMILY_CONTRACT_VALUE = {'TXF': 200, 'MXF': 50, 'TMF': 10}
+
+
+def txf_root(symbol):
+    """'TXF' / 'MXF' / 'TMF' for a family symbol (Shioaji 'R1' suffix accepted), else None."""
+    s = str(symbol or '').replace('-', '').upper()
+    if s.endswith('R1') and len(s) > 2:
+        s = s[:-2]
+    return s if s in TXF_FAMILY else None
+
+
+def execution_symbol(name, signal_symbol, config):
+    """The symbol strategy `name` trades: its contracts override when the signal
+    symbol is a TXF-family root and the override is one too, else the symbol."""
+    if not txf_root(signal_symbol):
+        return signal_symbol
+    want = ((config or {}).get('contracts') or {}).get(name)
+    return want if isinstance(want, str) and want in TXF_FAMILY else signal_symbol
+
+
+def is_txf_family_key(key):
+    sym, market = split_key(key)
+    return market != 'spot' and txf_root(sym) is not None
+
+
 def spot_symbols():
     """Plain symbols whose SPOT inventory the reconciler must read = symbols of
     funded spot strategies (amount != 0 — position 0 still needs the inventory
@@ -1942,8 +1988,11 @@ _UI_EVENT_COOLDOWN_S = 3600
 
 
 def _load_ui_mirror():
-    """{'amounts': {name: float}, 'exchanges': {name: str}} from the UI
-    mirror, or None when absent/invalid (fail-open — see section comment)."""
+    """{'amounts': {name: float}, 'exchanges': {name: str}[, 'contracts':
+    {name: root}]} from the UI mirror, or None when absent/invalid (fail-open —
+    see section comment). `contracts` only when the mirror carries the key: a
+    mirror written by a runtime that predates it must not clear the config's
+    overrides (that would trade the saved TMF lots as TXF lots)."""
     try:
         with open(_UI_MIRROR_PATH) as f:
             raw = json.load(f)
@@ -1951,9 +2000,15 @@ def _load_ui_mirror():
         exchanges = raw.get('exchanges')
         if not isinstance(amounts, dict) or not isinstance(exchanges, dict):
             return None
-        return {'amounts': {str(k): float(v) for k, v in amounts.items()},
-                'exchanges': {str(k): str(v if v is not None else '')
-                              for k, v in exchanges.items()}}
+        out = {'amounts': {str(k): float(v) for k, v in amounts.items()},
+               'exchanges': {str(k): str(v if v is not None else '')
+                             for k, v in exchanges.items()}}
+        if 'contracts' in raw:
+            contracts = raw.get('contracts')
+            if not isinstance(contracts, dict):
+                return None
+            out['contracts'] = {str(k): str(v) for k, v in contracts.items() if v in TXF_FAMILY}
+        return out
     except (OSError, ValueError, TypeError):
         return None
 
@@ -2053,10 +2108,13 @@ def load_portfolio_config():
     ui = _load_ui_mirror()
     if ui is not None and isinstance(config, dict):
         if config.get('amounts') != ui['amounts'] \
-                or config.get('exchanges') != ui['exchanges']:
+                or config.get('exchanges') != ui['exchanges'] \
+                or ('contracts' in ui and (config.get('contracts') or {}) != ui['contracts']):
             _ui_override_alert((config.get('amounts'), config.get('exchanges'), ui))
         config['amounts'] = ui['amounts']
         config['exchanges'] = ui['exchanges']
+        if 'contracts' in ui:
+            config['contracts'] = ui['contracts']
     return config
 
 
@@ -2113,9 +2171,26 @@ def removed_asset_specs(config, target):
         sym = (states.get(name) or {}).get('symbol')
         if not isinstance(spec, dict) or not sym:
             continue
-        key = market_key(str(sym).replace('-', '').upper(), strategy_market(name))
+        sym = execution_symbol(name, str(sym).replace('-', '').upper(), config)
+        key = market_key(sym, strategy_market(name))
         if key not in target:
             out.setdefault(key, spec)
+    for name, spec in specs.items():
+        # the contract a strategy was switched away from: its spec now says the
+        # new contract, so the old key's close is valued with the key's own
+        # contract_value (paper refuses a fill whose value differs from the held)
+        root = txf_root((states.get(name) or {}).get('symbol'))
+        if not root or not isinstance(spec, dict) or spec.get('type') != 'futures_contracts':
+            continue
+        for k in TXF_FAMILY:
+            if k in target:
+                continue
+            have = out.get(k)
+            if have is None or have.get('contract_value') != TXF_FAMILY_CONTRACT_VALUE[k]:
+                # only the unit fields: anything venue-specific in the strategy's
+                # spec (a hand-written capital_symbol) names the NEW contract
+                out[k] = {f: spec[f] for f in ('type', 'currency', 'lot_size') if f in spec}
+                out[k]['contract_value'] = TXF_FAMILY_CONTRACT_VALUE[k]
     return out
 
 
@@ -2228,6 +2303,7 @@ def aggregate_portfolio():
         # Binance-style, OKX reports dashed; without one canon the reconciler
         # sees "BTCUSDT target" and "BTC-USDT actual" as two symbols and churns
         symbol     = symbol.replace('-', '').upper() if symbol else symbol
+        symbol     = execution_symbol(name, symbol, config) if symbol else symbol
         exchange   = exchanges.get(name)
         position   = float(state.get('position', 0))
         amount     = float(amounts.get(name, 0))
@@ -2622,6 +2698,146 @@ def compute_diff(target, actual, threshold=10, gates=None, drift_band=None):
     return orders
 
 
+def _signed_row(row):
+    row = row or {}
+    size = float(row.get('size') or 0)
+    return size if row.get('side') == 'long' else -size if row.get('side') == 'short' else 0.0
+
+
+def _rollover_reduces(target, book):
+    """TXF-family keys still holding something to close: more than the target,
+    or any of it on the other side of the target (a flip's close leg)."""
+    out = set()
+    for k in set(target) | set(book):
+        if not is_txf_family_key(k):
+            continue
+        b, t = _signed_row(book.get(k)), _signed_row(target.get(k))
+        if abs(b) > 1e-9 and (b * t <= 0 or abs(b) > abs(t) + 1e-9):
+            out.add(k)
+    return out
+
+
+_ROLLOVER_PATH = 'state/contract_rollover.json'
+# One writer per file, so neither can lose the other's update: the runtime alone
+# writes the records (at the save), this lib alone writes which of them it saw
+# finished ({strategy: the record's `id`}); a record whose `id` matches is done.
+_ROLLOVER_DONE_PATH = 'state/contract_rollover_done.json'
+
+
+def _read_json_state(path):
+    """dict, {} when absent, None when there but unreadable."""
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _rollover_token(rec):
+    """What a done-mark matches: the runtime's per-write `id` (`at` for a record without one)."""
+    return rec.get('id', rec.get('at'))
+
+
+def _load_rollovers():
+    """Open rollovers {strategy: {'from', 'to', 'at'}} (`to` None = unpicked:
+    nothing to open, the old contract still closing); None = a file is there but
+    unreadable (every family entry then waits)."""
+    raw = _read_json_state(_ROLLOVER_PATH)
+    done = _read_json_state(_ROLLOVER_DONE_PATH)
+    if raw is None or done is None:
+        return None
+    out = {}
+    for n, r in raw.items():
+        if not isinstance(r, dict) or r.get('from') not in TXF_FAMILY:
+            continue
+        if r.get('to') is not None and (r['to'] not in TXF_FAMILY or r['to'] == r['from']):
+            continue
+        if done.get(n) is not None and done.get(n) == _rollover_token(r):
+            continue
+        out[str(n)] = r
+    return out
+
+
+def _mark_rollovers_done(finished):
+    """Record {strategy: at} as finished; entries for records the runtime has
+    since rewritten or dropped are pruned here (this file has no other writer)."""
+    raw = _read_json_state(_ROLLOVER_PATH) or {}
+    done = _read_json_state(_ROLLOVER_DONE_PATH) or {}
+    keep = {n: a for n, a in done.items() if isinstance(raw.get(n), dict) and _rollover_token(raw[n]) == a}
+    keep.update(finished)
+    try:
+        from lib.president_vault import replace_json  # O_EXCL temp named like runtime/atomic_file
+        replace_json(_ROLLOVER_DONE_PATH, keep)
+    except (OSError, ImportError) as e:
+        logging.warning(f"[reconcile] contract rollover done-mark not written ({e}) — next round retries")
+        return
+    for n in finished:
+        guard.audit('contract_rollover_done', strategy=n)
+
+
+def _rollover_strategy_moved(name, rec, config):
+    """This round's config already trades `name` where the record says (or, with
+    `to` None, no longer has it as a member). A round that read the config
+    before the save still targets the old contract — its book matching that
+    target says nothing about the switch, so it must not finish the record."""
+    amounts = (config or {}).get('amounts')
+    member = isinstance(amounts, dict) and name in amounts
+    if rec.get('to') is None:
+        return not member
+    if not member:
+        return False
+    sym = None
+    for fname in ('state.json', 'stats.json'):
+        try:
+            with open(f'strategies/{name}/{fname}') as f:
+                sym = (json.load(f) or {}).get('symbol')
+        except (OSError, ValueError, AttributeError):
+            continue
+        if sym:
+            break
+    return txf_root(execution_symbol(name, str(sym or '').upper(), config)) == rec['to']
+
+
+def _rollovers_this_round(target, book, trusted, config, waiting_keys=()):
+    """(snapshot rows, {new root: [old roots]}) for rollovers still open. Done =
+    this round's config already moved the strategy (_rollover_strategy_moved),
+    and the old contract has nothing left to close (_rollover_reduces: book
+    above target or on the other side of it) and is not waiting on a baseline
+    decision (`waiting_keys`: the seed's pending symbols — their lots are not in
+    the book yet). `trusted` = the book is a real read (no baseline wait)."""
+    recs = _load_rollovers()
+    open_roots = {txf_root(split_key(k)[0]) for k in _rollover_reduces(target, book)}
+    open_roots |= {txf_root(split_key(k)[0]) for k in waiting_keys} - {None}
+    if recs is None:
+        logging.warning(f"[reconcile] {_ROLLOVER_PATH} unreadable — every TXF-family entry waits "
+                        f"while any family contract has something to close")
+        return [], {r: sorted(open_roots - {r}) for r in TXF_FAMILY if open_roots - {r}}
+    rows, hold, finished = [], {}, {}
+    for name, r in sorted(recs.items()):
+        if (trusted and r['from'] not in open_roots
+                and _rollover_strategy_moved(name, r, config)):
+            finished[name] = _rollover_token(r)
+            continue
+        rows.append({'strategy': name, 'from': r['from'], 'to': r.get('to'), 'since': r.get('at')})
+        if r.get('to'):
+            hold.setdefault(r['to'], []).append(r['from'])
+    if finished:
+        _mark_rollovers_done(finished)
+    return rows, {k: sorted(set(v)) for k, v in hold.items()}
+
+
+def _order_phase(order, book):
+    """0 = shrinks a held position only, 1 = a flip (close leg first), 2 = adds."""
+    a = _signed_row(book.get(order['symbol']))
+    t = a + order['signed_diff']
+    if a and t * a < 0:
+        return 1
+    return 0 if abs(t) < abs(a) else 2
+
+
 def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=None):
     """
     Full reconciliation cycle:
@@ -2774,6 +2990,15 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             if k in specs:
                 diff_actual[k]['asset_spec'] = specs[k]
 
+    # Contract rollovers in progress (runtime _cmd_amounts records them at the
+    # save): judged BEFORE the gate / pending filters below — an old contract
+    # held as is (another strategy on it waits, a NaN signal) still holds what it
+    # holds, and its rollover's new contract waits with it. Only that one.
+    diff_actual_full = diff_actual
+    rolls, hold_roots = _rollovers_this_round(
+        target, diff_actual, trusted=needs_baseline is None and portfolio_configured(),
+        config=config, waiting_keys=pending_keys)
+
     # signal gate (resume_wait): a gated symbol is excluded from BOTH sides of
     # the diff — no catch-up entry (absent target would be wrong: it exists,
     # it's gated), and no close-on-removal against whatever the book already
@@ -2822,15 +3047,26 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     if needs_baseline is not None:
         orders = []
 
+    # Reduces before entries (stable: set order means nothing): a contract
+    # rollover's close leaves first, and the snapshot lists them as they go.
+    orders.sort(key=lambda o: _order_phase(o, diff_actual))
+
     # Written before placing, so it records the state that WAS acted on. A
     # reconcile that crashes mid-loop still leaves the observation behind.
     # full_target, not the filtered dict (audit #8): a gated strategy's target
     # must stay visible to the workspace view — carrying 'gated': True — not
     # vanish while it waits for its signal.
+    for row in rolls:
+        # what the page shows: closing the old contract, or waiting because the
+        # old contract is held as is (a waiting / unreadable strategy on it)
+        olds = [k for k in set(full_target) | set(diff_actual_full)
+                if txf_root(split_key(k)[0]) == row['from'] and split_key(k)[1] != 'spot']
+        row['state'] = ('waiting_gate' if any(k in gated_symbols for k in olds) else
+                        'waiting_pending' if any(k in pending_keys for k in olds) else 'closing')
     _write_reconcile_snapshot(full_target, actual, orders, ledger=ledger,
                               gates=entry_gates, read_only=read_only,
                               own_only=own_only, needs_baseline=needs_baseline,
-                              baseline_pending=sorted(pending_keys))
+                              baseline_pending=sorted(pending_keys), rollovers=rolls)
 
     # Checked once via signature inspection (not a runtime try/except TypeError) so a
     # TypeError raised *after* place_order_fn already submitted the order — e.g. while
@@ -2956,6 +3192,21 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                              _resolve_threshold(threshold, symbol, reduce_only))
             if abs(sub_diff) < leg_threshold:
                 continue
+
+            # Contract rollover: the NEW contract of a rollover in progress gets no
+            # entry while the old one still has something to close. Read off the
+            # book at the round's start, so a close that failed, filled in part,
+            # parked (統一 IOC) or waits on a confirmed short read all keep the
+            # entry out; a close that filled lets it go next round (force_next).
+            if is_entry and txf_root(split_key(symbol)[0]) in hold_roots \
+                    and split_key(symbol)[1] != 'spot':
+                waiting = hold_roots[txf_root(split_key(symbol)[0])]
+                guard.audit('entry_held_rollover', symbol=symbol, signed_diff=sub_diff,
+                            waiting_on=waiting)
+                logging.warning(f"[reconcile] {symbol} entry {sub_diff:+g} held — contract "
+                                f"rollover, {waiting} not closed yet")
+                failed = True
+                break
 
             # Kill switch, enforced here rather than only in lib/order_*.py: every
             # reconciler goes through this function, including the hand-written

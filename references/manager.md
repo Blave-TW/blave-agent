@@ -787,6 +787,61 @@ market gets a native-unit type, never another notional path — the notional pat
 `strategy_amounts()` returns `portfolio_config.json["amounts"]` verbatim; the type above is what
 the number means.
 
+**Execution contract — `portfolio_config.json["contracts"]` (TXF / MXF / TMF).** The three index
+futures run on one series (`lib/data.fetch_twfutures_ohlcv` maps MXF/TMF to TXF bars), so a
+TXF-family strategy's `SYMBOL` only picks the contract it trades. `"contracts": {"txf_trend": "TMF"}`
+trades that strategy as TMF without touching the strategy: same signal, no new backtest, no new
+version. `lib/portfolio.execution_symbol(name, symbol, config)` is the one strategy→book-key mapping
+(aggregate, `_strategy_key`, `removed_asset_specs`); a non-family symbol or a value outside the
+three is ignored. Rules:
+- Written only by the 下單設定 save (runtime `_cmd_amounts`, together with `amounts` in one atomic
+  save — the lot count means nothing without its contract) and UI-authoritative like `amounts`:
+  `manager/amounts.ui.json` carries its own `contracts` and wins. **Never edit it by hand** — a
+  wrong contract is a 4×–20× exposure error. A mirror WITHOUT the key keeps the config's (an older
+  runtime's mirror); only entries that differ from `SYMBOL` are stored.
+- `amounts` stays lots of the contract traded (1 TXF = 4 MXF = 20 TMF in exposure). The page
+  converts when the user switches; the machine stores what it is sent.
+- Switching while holding = a rollover the reconciler does by itself: the old contract's net
+  target drops by this strategy's share (other strategies on it keep theirs — a close only when the
+  net target reaches 0), the new contract gets the strategy's lots. Reduces run before entries.
+  The save records the rollover in `state/contract_rollover.json` (`{strategy: {from, to, at}}`,
+  runtime-written; never edit it): **only that record's NEW contract gets no entry while its OLD
+  contract still has something to close** — more than its target, or any of it on the other side
+  (a flip) — judged off the book at the round's start BEFORE the signal-gate / pending filters, so
+  an old contract held as is (another strategy on it waits, a NaN signal) keeps the new one waiting
+  too. Every other contract and strategy trades as usual. A record is finished when this round's
+  config already trades the strategy where `to` says (a round that read the config before the save
+  never finishes it), the old contract has nothing left to close, it is not in the seed's
+  `pending`, and the book is not waiting on its baseline; the lib then writes the record's `id` to
+  `state/contract_rollover_done.json` (`contract_rollover_done` in `state/audit.jsonl`) — one writer
+  per file, the runtime never touches the done file and the lib never rewrites the records. While
+  it waits: `entry_held_rollover` lines, and `last_reconcile.json` carries `rollovers: [{strategy,
+  from, to, since, state: closing|waiting_gate|waiting_pending}]`. Record rules: a second switch
+  while open keeps `from` and moves `to`; switching back to `from` drops it; an unchanged save
+  leaves it; unpicking keeps it with `to: null` (nothing to open, still closing) — and unpicking a
+  strategy that traded an override records `{from: that contract, to: null}` — so re-picking and
+  switching starts from where the lots are; it survives restarts (state file, re-judged every
+  round). An unreadable record or done file: the lib holds every family entry while any family
+  contract has something to close, and the runtime refuses a save that would change a record
+  (`CONTRACT_RECORD_UNREADABLE`; an amount-0 save still goes through).
+- A switch on settlement day closes nothing at market for the expiring month: that row settles
+  at the final settlement price (`settle_expired_months`), and the new contract's entry waits
+  until the old book row is gone.
+- The close of the contract switched away from is valued with that contract's own
+  `contract_value` (`TXF_FAMILY_CONTRACT_VALUE`), not the strategy's new spec — paper refuses a
+  fill whose value differs from the held one. Paper prices TMF/MXF off any family strategy.
+- A switch keeps the exposure: the new lots must be what some exposure behind the old lots
+  converts to (half-up, at least 1 lot) — else `CONTRACT_EXPOSURE_MISMATCH`. Switching and resizing
+  are two saves.
+- The save is refused (nothing written) with `CONTRACT_NEEDS_UPDATE` (any change needs a RUNNING
+  reconciler whose `last_reconcile.json` has `caps: ["contract_override"]` — a stale heartbeat is
+  refused, never judged off the disk; a funded switch already in force is refused only on positive
+  evidence of old code), `CONTRACT_EXPOSURE_MISMATCH`, `CONTRACT_HALTED` (HALT set: the close
+  would go, the entry would not), `CONTRACT_GATED` (a strategy on either contract waits for a new
+  signal), `CONTRACT_PARKED` (統一 lots parked on either contract, or the park file unreadable) —
+  the last three whenever the new amount is above 0 —, `NOT_TXF_FAMILY`, `CONTRACT_TYPE`
+  (Type B/C), `BAD_CONTRACT`.
+
 **Drift band (`notional` rows, `self_ledger` off).** Target is a fixed notional and `actual` is
 size × mark, so a held position reads as a gap every heartbeat and the reconciler trades the
 unrealised P&L — measured 2026-09-21 (uid 29026, 20,000 paper, signal unchanged): 34 fills in
