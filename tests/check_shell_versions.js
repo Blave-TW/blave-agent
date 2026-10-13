@@ -192,7 +192,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
     const doc = { activeElement: null, createElement: (tag) => new El(tag), createDocumentFragment: () => new El("#fragment") };
     const names = ["verEl", "verEntry", "verDate", "verDateDay", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen",
       "verEffective", "verPendingOf", "verHolds", "verHidesAct", "verPaintRerun", "verPaintErr", "verBusy", "verShowTab", "verStatePaint", "verSend", "verBoxCtx", "verIsLots", "verGuard", "verNeedUpdate",
-      "verRestoreAsk", "verRetry", "verAckKind", "verDoRestore", "verRollback", "verPollNeed", "verPollStop", "verPollEnsure", "verPollTick", "verOverlayExpire", "verBusyNote"];
+      "verRestoreAsk", "verRetry", "verAckKind", "verDoRestore", "verRollback", "verSideRefresh", "verPollNeed", "verPollStop", "verPollEnsure", "verPollTick", "verOverlayExpire", "verBusyNote"];
     const consts = ["verSideOf", "VO", "VP", "voKey", "RERUN_WHY"].map((n) => constSrc(verSrc, n)).join("");
     const body = consts + "let vcSeq = 0, vcSide = null;\n" + names.map((n) => fnSrc(verSrc, n)).join("\n") + "\nreturn { " + names.join(", ") + ", VO, VP };";
     const g = {}; new Function("window", fs.readFileSync(path.join(R, "strategy_versions.js"), "utf8")).call(g, g);
@@ -213,7 +213,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const cloud = opt.cloud === true;
       const bag = { name, data: Object.assign({ versions, code: "x = 1\n", displayName: "動能" }, opt.stats ? { stats: opt.stats } : {}), drawn: {}, tab: "bt" };
       const RP = cloud ? { name: null, data: null, drawn: {}, tab: "bt" } : bag, RPC = cloud ? bag : { name: null, data: null };
-      const tracked = [], loads = [], sent = [], boxes = [], said = [], shows = [], timers = [], acks = [], hoPaints = [];
+      const tracked = [], loads = [], sent = [], boxes = [], said = [], shows = [], timers = [], acks = [], hoPaints = [], refreshed = [];
       const vs = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map(), err: null, pend: null });
       const api = { tradeSend: (cmd, args) => { sent.push([cmd, args]); return new Promise((res) => acks.push(res)); }, loadStrategy: async () => null };
       const side = cloud ? "cloud" : "local", st = amounts ? { report: { config: { amounts } } } : null;
@@ -222,11 +222,12 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         verLoad: (...a) => loads.push(["ver"].concat(a)), vcLoad: () => loads.push(["vc"]), hoPaint: () => { hoPaints.push(1); $("rp-act").hidden = false; }, rpShowTab: (tab) => shows.push(tab), rpPaintHead() {}, rpTab: (B) => B.tab,
         running: false, confirmBox: (o) => boxes.push(o), setOpen: async () => {}, setCat() {}, srSay: (x) => said.push(x), submitMessage: async () => true, paneSt: { chat: { off: false } }, paneToggle() {},
         trFmt: (x) => String(x), trUnit: () => "USDT", trTxfSpec: TXF.trTxfSpec, trWith: (b, fn) => fn(), trRowTxf: () => (opt.rowTxf ? {} : null), xpSetTimeMachine() {}, RP_WAIT_DELAY_MS: 200, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {},
-        window: { blave: { loadStrategy: async () => null } }, Date: FakeDate };
+        window: { blave: { loadStrategy: async () => null, cloudRefresh: async () => { refreshed.push("cloud"); } } }, Date: FakeDate,
+        stratRefresh: async () => { refreshed.push("list"); }, stratSelect: async (n, f) => { refreshed.push(["sel", n, f]); }, ENV: { cloudDirty: false }, trPoll: () => refreshed.push("poll") };
       $("ver-menu").hidden = true; $("vc-scrim").hidden = true; $("ver-wrap").hidden = true; $("ver-rerun").hidden = true; $("ver-banner-err").hidden = true;
       const F = new Function(...Object.keys(env), body)(...Object.values(env));
       F.verPaint(bag);
-      return { F, E, $, RP: bag, B: bag, S: env.VS[side], tracked, loads, sent, boxes, said, shows, timers, acks, env };
+      return { F, E, $, RP: bag, B: bag, S: env.VS[side], tracked, loads, sent, boxes, said, shows, timers, acks, env, refreshed };
     }
 
     // 入口:零版 / 名字過不了閘門 → 不出;一版 → 跟多版同一顆
@@ -376,6 +377,8 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         r.B.data.versions = it3();
         r.acks[0]({ ok: true, result: { n: 2, inplace: true, backed_up: false, rerun: "started" } }); await flush();
         ok("ack 成功才記 version_restore;畫面不動;開始算 2 分鐘", r.tracked.filter((x) => x === "version_restore").length === 1 && r.S.data.current === 2 && r.F.VO.get("local|momo").ackAt > 0);
+        // 0.1.23:側欄那一列的名字跟著版本走,還原不經回合 → ack 成功當下重讀側欄、重建列後接回選取(不等回合結束的 stratRefresh)
+        ok("ack 成功:重讀側欄(stratRefresh(false))並 stratSelect(name, true) 接回選取;ack 之前不動", JSON.stringify(r.refreshed) === '["list",["sel","momo",true]]' && /armed\(\); verSideRefresh\(side, name\); return;/.test(fnSrc(verSrc, "verDoRestore")));
         ok("重跑中有輪詢(這台電腦 2 秒)", r.F.VP.local && r.F.VP.local.name === "momo" && r.timers.some(([, ms]) => ms === 2000));
         ok("輪詢上限從 ack 起算,蓋過機器端最晚結束(restore 120 秒 + 重跑 15 分 + 餘裕)", r.F.VP.local.until - Date.now() > 18 * 60000);
         // 報告跟上:current 2 + rerun running → 疊層拿掉
@@ -393,6 +396,16 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         }
         ok("完成:rerun 消失 → 狀態列收掉、讀屏唸完成句、輪詢停、說明句回來、送上雲端照常", bar(r).hidden === true && r.said.join() === "v2 的回測已用最新資料重跑完。" && r.F.VP.local === null
           && r.E["rp-desc"].hidden === false && r.F.verHidesAct() === false && r.F.verHolds(r.B) === false && r.E["rp-act"].hidden === false);
+        await flush();
+        ok("完成:輪詢看到結果而停下的那一刻再重讀一次側欄(頁首那條 verPollEnsure 與 verPollTick 自己那條都接;封頂的佔位不算)", JSON.stringify(r.refreshed) === '["list",["sel","momo",true],"list",["sel","momo",true]]'
+          && /verPollStop\(side\); verSideRefresh\(side, B\.name\); \} return; \}/.test(fnSrc(verSrc, "verPollEnsure")) && /&& !VP\[side\]\.capped\)/.test(fnSrc(verSrc, "verPollEnsure"))
+          && /verPollStop\(side\); verSideRefresh\(side, P\.name\);/.test(fnSrc(verSrc, "verPollTick")));
+        {   // 人已經切去別頁(#rp 藏著):側欄照重讀,但不 stratSelect 把人拉回策略頁
+          const h = rig("zh", "momo", it3({ current: 2, rerun: { n: 2, status: "running", at: 5 } }));
+          h.$("rp").hidden = true; h.B.data.versions = it3({ current: 2 }); h.env.window.blave.loadStrategy = async () => h.B.data;
+          await h.F.verPollTick("local", h.F.VP.local); await flush();
+          ok("完成時頁藏著:只重讀側欄、不接回選取(不拉回策略頁)", h.F.VP.local === null && JSON.stringify(h.refreshed) === '["list"]');
+        }
       }
       // 沒完成 + 再跑一次
       {
@@ -484,6 +497,8 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         ok("雲端有金額又是舊 lib → 守門框先(分岔不需要新 lib)", cg.boxes[0].title === "這個策略正在下單");
         const cl = tm(rig("zh", "momo", it3(), null, { cloud: true }), 2); cl.F.verRestoreAsk(); cl.boxes[0].onOk();
         ok("雲端 inplace:true → 還原確認框 → 同一條指令(走 cloud 那一袋的 api)、輪詢 5 秒", cl.boxes[0].title === "還原成 v2" && cl.sent.length === 1 && cl.F.VP.cloud && cl.timers.some(([, ms]) => ms === 5000));
+        cl.acks[0]({ ok: true, result: { n: 2, inplace: true, rerun: "started" } }); await flush(); await flush();
+        ok("雲端 ack 成功:側欄清單在主行程那份狀態裡 → 叫 cloudRefresh、標 cloudDirty、立刻 trPoll 一輪;不碰這台電腦的 stratRefresh", JSON.stringify(cl.refreshed) === '["cloud","poll"]' && cl.env.ENV.cloudDirty === true);
         const lo = tm(rig("zh", "momo", it3({ inplace: undefined })), 2); lo.F.verRestoreAsk();
         ok("這台電腦不出更新框(lib 跟 app 同包)", lo.boxes[0].title === "還原成 v2" && lo.boxes[0].lines.length === 2);
       }
