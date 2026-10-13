@@ -91,6 +91,47 @@ def build_returns(valid):
     return raw.fillna(ABSENT_FILL_ANNUAL / 365.0), raw.fillna(0.0)
 
 
+def port_returns(valid, ret_df, w_arr):
+    """The proposal's unlevered daily portfolio return, R·w, clipped to the
+    days every WEIGHTED member has data.
+
+    Outside that span ret_df carries 0 for a held member that did not exist
+    yet, and a max drawdown measured on those one-leg-short days comes out too
+    shallow — the page sizes leverage off that drawdown. A zero-weight member
+    adds nothing to R·w, so it must not set the span: a young or stale one
+    would cut away the held legs' worst days. (management_backtest.py clips on
+    every member because its weights move daily; these are fixed.)
+
+    {start, end, days, r}: r[i] is the return of day start+i, calendar-daily.
+    A day no member reported is 0 — what lib/pnl writes for a non-trading day.
+    None when the span is shorter than VOL_WINDOW (a drawdown over a few days
+    is ~0 and would justify any leverage; the target-vol sizing beside it
+    needs the same 90 days), or a value is not finite (NaN/Infinity would make
+    the whole proposal unparseable in the browser).
+    """
+    held = [n for n, w in zip(ret_df.columns, w_arr) if w > 0]
+    spans = [(pd.to_datetime(min(valid[n]['daily_dates'])), pd.to_datetime(max(valid[n]['daily_dates'])))
+             for n in held]
+    if not spans:
+        return None
+    start = max(s[0] for s in spans)
+    end   = min(s[1] for s in spans)
+    days  = pd.date_range(start, end, freq='D')
+    if len(days) < VOL_WINDOW:
+        return None
+    series = pd.Series(ret_df.values @ w_arr, index=ret_df.index).reindex(days, fill_value=0.0)
+    values = np.round(series.values.astype(float), 6)
+    if not np.isfinite(values).all():
+        return None
+    return {
+        'start': start.strftime('%Y-%m-%d'),
+        'end':   end.strftime('%Y-%m-%d'),
+        'days':  int(len(values)),
+        # +0.0 turns -0.0 into 0.0 so a flat day does not cost an extra byte
+        'r':     [float(v) + 0.0 for v in values],
+    }
+
+
 def portfolio_slope_std(w, ret_matrix, lookback):
     """Annualized slope of cumsum(R·w) divided by std, over last `lookback` days."""
     port_ret = ret_matrix @ w
@@ -497,6 +538,10 @@ def main():
             'history_days':   int(len(ret_df)),
             'start':          ret_df.index[0].strftime('%Y-%m-%d'),
             'end':            ret_df.index[-1].strftime('%Y-%m-%d'),
+            # For sizing by max drawdown: the page compounds (1 + L·r) per day
+            # at whatever leverage the user types. Unlike sharpe/ann_vol above,
+            # clipped to the overlap — see port_returns().
+            'port_returns':   port_returns(valid, ret_df, w_arr),
             'computed_at':    int(time.time()),
         }
         _atomic_json(args.json, proposal)
