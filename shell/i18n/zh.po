@@ -1405,6 +1405,9 @@ msgstr "已暫停"
 msgid "tr.notStarted"
 msgstr "尚未啟動下單"
 
+msgid "tr.presBooting"
+msgstr "下單程式啟動中…"
+
 msgid "tr.lastRun"
 msgstr "上次執行到 {t}"
 
@@ -6679,7 +6682,40 @@ msgid "pres.prep.looking"
 msgstr "正在找這台電腦的統一憑證…"
 
 msgid "pres.none.lead"
-msgstr "這台電腦還沒有統一憑證。照順序做，回來時進度會留著。"
+msgstr "這台電腦還沒有統一憑證。"
+
+msgid "pres.none.new"
+msgstr "申請新憑證"
+
+msgid "pres.none.have"
+msgstr "已經有憑證"
+
+msgid "pres.none.newLead"
+msgstr "照順序做，回來時進度會留著。"
+
+msgid "pres.none.h1"
+msgstr "在申請憑證的那台電腦開憑證e總管，按「憑證匯出（備份）」"
+
+msgid "pres.none.h2"
+msgstr "把匯出的檔案複製到這台電腦，按「選擇憑證檔案」"
+
+msgid "pres.none.h2sub"
+msgstr "檔案在 {path}"
+
+msgid "pres.none.pName"
+msgstr "名字"
+
+msgid "pres.none.pId"
+msgstr "身分證"
+
+msgid "pres.none.pExp"
+msgstr "到期日"
+
+msgid "pres.none.pick"
+msgstr "選擇憑證檔案"
+
+msgid "pres.none.badFile"
+msgstr "這個檔案不是憑證檔。選 .pfx 結尾的那個。"
 
 msgid "pres.none.s1"
 msgstr "先請營業員幫你開 API 下單權限與憑證申請權限"
@@ -6734,6 +6770,9 @@ msgstr "這台電腦找到統一憑證，到期 {date}。接著填帳號和交�
 
 msgid "pres.form.foundNoDate"
 msgstr "這台電腦找到統一憑證。接著填帳號和交易密碼。"
+
+msgid "pres.form.picked"
+msgstr "已選好憑證檔。接著填帳號和交易密碼。"
 
 msgid "pres.form.store"
 msgstr "帳號和交易密碼加密存在這台電腦，不會上傳，agent 讀不到。"

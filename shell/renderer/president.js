@@ -26,9 +26,10 @@ const PRES_PFX_ERR = { PFX_PASSWORD: "pres.pfx.errPw", BAD_PW: "pres.pfx.errPw",
   PFX_INVALID: "pres.pfx.errFile", PFX_TOO_LARGE: "pres.pfx.errFile", READ_FAILED: "pres.pfx.errRead", PFX_NONE_FOUND: "pres.pfx.errNone" };
 // 測試主機網址那一格的錯(runtime 的 normalize_host 只認統一的兩台):畫在欄位下,不是列上的「這一步沒有開始」
 const PRES_HOST_ERR = { HOST_NOT_ALLOWED: "pres.err.hostNotAllowed" };
-const PRES_FEATURE = { form: "pres_form_saved", tcem: "pres_tcem_open", cert: "pres_cert_ok", probe: "pres_probe_ok", ready: "pres_ready" };
+const PRES_FEATURE = { form: "pres_form_saved", tcem: "pres_tcem_open", cert: "pres_cert_ok", probe: "pres_probe_ok", ready: "pres_ready", have: "pres_have_cert" };
 
-const presBlank = () => ({ phase: "prep", scan: null, waitTcem: false, tcemMsg: null, acct: "", pw: "", caPw: "",
+// choice = 找不到憑證那一頁選的路:"new"(申請新憑證)/ "have"(已經有憑證,從別台電腦匯出的檔)/ null(還沒選)
+const presBlank = () => ({ phase: "prep", scan: null, waitTcem: false, tcemMsg: null, choice: null, acct: "", pw: "", caPw: "",
   source: "found", picked: false, busy: false, msg: null, sent: null, recheck: false, recert: false,
   test: { url: "" }, info: null, seen: {}, sig: null, started: false, setupSent: false, startSent: false, view: null });
 // 清單上有自己那一列的步驟:這些步驟沒送出去的錯掛在列上(host 記成 probe)
@@ -184,7 +185,11 @@ async function presStep(name, opts) {
 async function presPick() {
   if (PRES.busy) return;
   let r = null; try { r = await window.blave.presidentPick(); } catch (_) { }
-  if (r && r.code === "OK") { PRES.source = "picked"; PRES.picked = true; PRES.msg = null; }
+  if (r && r.code === "OK") {
+    PRES.source = "picked"; PRES.picked = true; PRES.msg = null;
+    // 找不到憑證那一頁「已經有憑證」選到檔就是帳密頁(同 presScan 找到憑證那條;憑證e總管的輪詢用不到了)
+    if (PRES.phase === "prep") { PRES.waitTcem = false; PRES.phase = "form"; presWatch(false); }
+  }
   else if (r && r.code === "BAD_FILE") PRES.msg = { code: "PFX_INVALID", step: "cert" };
   presPaint();
 }
@@ -267,20 +272,37 @@ function presPrepBody(view) {
     f.appendChild(capActs(capBtn("btn-quiet", t("pres.wait.again"), presOpenTcem, "pres-tcem-again", PRES.busy)));
     return f;
   }
-  // d-prep-none:兩步純指示,沒有話術
+  /* d-prep-none:先問「申請新憑證／已經有憑證」(Wei 10-13 乾淨機模擬裁定),兩顆並列、選了才在同一頁展開那條路;主鈕在腳(presFoot)。
+     已經有憑證 = 在別台電腦申請過:叫他在那台匯出 .pfx、複製過來選檔——不叫他在這台登入憑證e總管(10-13 實測換電腦登入回 54101,官方換機程序就是匯出→匯入) */
   f.appendChild(presP("cap-lead", t("pres.none.lead")));
-  const ol = trEl("ol", "pres-todo");
-  const li1 = trEl("li", ""); li1.append(trEl("span", "", t("pres.none.s1")), trEl("span", "sub", t("pres.none.s1sub", { tel: PRES_HOTLINE })));
-  const li2 = trEl("li", ""); li2.append(trEl("span", "", t("pres.none.s2")), trEl("span", "sub", t("pres.none.s2sub")));
-  ol.append(li1, li2); f.appendChild(ol);
-  if (PRES.tcemMsg) f.appendChild(capErr(t(PRES.tcemMsg)));
+  const seg = trEl("div", "pres-seg"); seg.setAttribute("role", "group");
+  const choose = (c) => { if (PRES.choice === c) return; PRES.choice = c; PRES.msg = null; if (c === "have") presTrack("have"); presPaint(); };
+  [["new", "pres.none.new"], ["have", "pres.none.have"]].forEach(([c, k]) => { const b = capBtn("", t(k), () => choose(c), "pres-none-" + c); b.setAttribute("aria-pressed", PRES.choice === c ? "true" : "false"); seg.appendChild(b); });
+  f.appendChild(seg);
+  if (!PRES.choice) return f;
+  const ol = trEl("ol", "pres-todo"), li = (k, sub, mono) => { const l = trEl("li", ""); l.appendChild(trEl("span", "", t(k))); if (sub) l.appendChild(trEl("span", "sub" + (mono ? " pres-mono" : ""), sub)); ol.appendChild(l); };
+  if (PRES.choice === "new") {
+    f.appendChild(presP("cx-hint", t("pres.none.newLead")));
+    li("pres.none.s1", t("pres.none.s1sub", { tel: PRES_HOTLINE })); li("pres.none.s2", t("pres.none.s2sub"));
+    f.appendChild(ol);
+    if (PRES.tcemMsg) f.appendChild(capErr(t(PRES.tcemMsg)));
+  } else {
+    li("pres.none.h1", null); li("pres.none.h2", t("pres.none.h2sub", { path: presPfxPath() }), true);
+    f.appendChild(ol);
+    // 選到的不是 .pfx(主行程 BAD_FILE):這一頁沒有憑證欄位可掛,直接畫在清單下
+    if (PRES.msg && PRES.msg.step === "cert" && PRES.msg.code === "PFX_INVALID") f.appendChild(capErr(t("pres.none.badFile")));
+  }
   return f;
 }
+// 憑證e總管匯出(備份)的預設位置;三個角括號裡的字照語言(路徑本身不進 .po:zh 表不准有半形冒號)
+const presPfxPath = () => "C:\\Users\\<" + t("pres.none.pName") + ">\\PSCCA\\PSC_<" + t("pres.none.pId") + ">_<" + t("pres.none.pExp") + ">.pfx";
 function presFormBody() {
   const f = document.createDocumentFragment();
   f.appendChild(cxVenueField(TR_BAGS.local));
-  // 第一句就是找 PSCCA 的結果(事前準備頁拿掉了);選了別的檔或沒憑證(改帳號回來)就不講
-  if (PRES.source !== "picked" && PRES.scan && PRES.scan.found > 0) f.appendChild(presP("cap-lead", PRES.scan.expiry ? t("pres.form.found", { date: PRES.scan.expiry }) : t("pres.form.foundNoDate")));
+  // 第一句就是找 PSCCA 的結果(事前準備頁拿掉了);「已經有憑證」選到檔過來的講選好了(帳密存過 = 改帳號回來,不講);沒憑證就不講
+  const lead = PRES.source === "picked" ? (PRES.info && PRES.info.saved ? null : t("pres.form.picked"))
+    : PRES.scan && PRES.scan.found > 0 ? (PRES.scan.expiry ? t("pres.form.found", { date: PRES.scan.expiry }) : t("pres.form.foundNoDate")) : null;
+  if (lead) f.appendChild(presP("cap-lead", lead));
   const acctBad = PRES.acct.trim() && !/^[0-9]{11}$/.test(PRES.acct.trim());
   f.appendChild(presInput("pres-acct", t("pres.form.acct"), "acct", { plain: true, mono: true, numeric: true, hint: t("pres.form.acctHint"), err: acctBad ? t("pres.form.acctErr") : null, enter: presPrimary }));
   f.appendChild(presInput("pres-pw", t("pres.form.pw"), "pw", { hint: t("pres.form.pwHint"), enter: presPrimary }));
@@ -450,7 +472,8 @@ function presFoot(view) {
   const go = $("cx-go"), cancel = $("cx-cancel"), where = $("cx-where");
   where.hidden = true; where.textContent = "";
   const prep = view === "d-prep-none" || view === "d-prep-load" || view === "d-prep-wait";
-  const label = view === "d-prep-none" ? t("pres.tcem.open") : view === "d-form" ? (PRES.busy ? t("cx.connecting") : t("pres.form.go"))
+  // 找不到憑證:主鈕跟著選的路(還沒選就沒有主鈕)
+  const label = view === "d-prep-none" ? (PRES.choice === "new" ? t("pres.tcem.open") : PRES.choice === "have" ? t("pres.none.pick") : null) : view === "d-form" ? (PRES.busy ? t("cx.connecting") : t("pres.form.go"))
     : view === "d-done" ? t("pres.done.go") : null;
   go.hidden = !label;
   if (label && go.textContent.trim() !== label) go.textContent = label;
@@ -469,7 +492,7 @@ function presSyncGo(view) {
 function presPrimary() {
   if ($("cx-go").getAttribute("aria-disabled") === "true") return;
   const v = PRES.view;
-  if (v === "d-prep-none") return presOpenTcem();
+  if (v === "d-prep-none") return PRES.choice === "have" ? presPick() : PRES.choice === "new" ? presOpenTcem() : undefined;
   if (v === "d-form") return presGo();
   if (v === "d-done") { presTrack("ready"); return cxModalClose(true); }
 }
@@ -488,7 +511,7 @@ function presPaint() {
   $("cx-env").hidden = false; $("cx-env").textContent = t("env.local");
   presFoot(view);
   box.setAttribute("aria-busy", PRES.busy || ["d-finish", "d-probe", "d-cert-run", "d-setup", "d-t-probe", "d-t-order-run"].indexOf(view) >= 0 ? "true" : "false");
-  const sig = LANG + "|" + JSON.stringify([view, pc, PRES.scan, PRES.busy, PRES.msg, PRES.source, PRES.tcemMsg, PRES.test, PRES.info,
+  const sig = LANG + "|" + JSON.stringify([view, pc, PRES.scan, PRES.busy, PRES.msg, PRES.source, PRES.tcemMsg, PRES.choice, PRES.test, PRES.info,
     PRES.sent && Date.now() - PRES.sent.at >= PRES_NO_MOVE_MS, presDown(), presReport() && presReport().account]);
   if (PRES.sig === sig && box.firstChild) return;
   PRES.sig = sig;
