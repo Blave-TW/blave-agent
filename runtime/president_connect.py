@@ -6,16 +6,9 @@ written to state/president_connect.json, and the portfolio report carries it as
 `president_connect` — the one status the web reads. Nothing goes through the
 agent. Windows cloud boxes only in v1.
 
-Steps, in the order the page walks them:
-  credentials        the 自動下單 form (command_listener._cmd_credentials →
-                     divert_credentials here): account + trading password.
-                     The password goes to the vault, .env gets sentinels, the
-                     fixed certificate path and BOTH hosts (president_url and
-                     president_test_url), so switching environments never
-                     rewrites .env. A new account starts in the TEST
-                     environment ("live": false); a rebind of the same account
-                     keeps the one it was in; a president_url in the bind picks
-                     one explicitly (normalize_host).
+Steps, in the order the page walks them (certificate BEFORE the account: the
+certificate is the thing a user is most likely not to have — nobody types a
+password for nothing):
   president_setup    unitrade (pinned) into the worker's python; cryptography
                      into this one (the envelope and the pfx check run here).
   president_pfx_key  one-time RSA key; the ack carries the public half.
@@ -26,17 +19,20 @@ Steps, in the order the page walks them:
                      would cost a login try), then stored as
                      credentials/president.pfx (fixed name: the user's file
                      name carries the national id), its password into the
-                     vault; then one read-only login (the probe).
-  president_pfx_local {key_id, envelope}: the certificate the user applied for
-                     themselves over RDP (logged in as Administrator, in
-                     憑證e總管). The envelope carries only the password ("pfx"
-                     must be ""; a file in it is refused, not ignored). The
-                     newest file in LOCAL_CERT_DIR (Administrator's PSCCA) the
-                     password opens and that has not expired is COPIED to
-                     credentials/president.pfx — the original stays for next
-                     year's renewal — then the same vault write and probe as
-                     president_pfx. Only the platform copies from PSCCA; no
-                     code here runs, drives or logs in to 憑證e總管.
+                     vault. No login: every login is the user's press
+                     (president_probe / president_host). Works before the
+                     account is bound — the vault then holds only the
+                     certificate password until the bind adds the rest.
+  credentials        the 自動下單 page's account row (command_listener
+                     ._cmd_credentials → divert_credentials here): account +
+                     trading password. The password goes to the vault, .env
+                     gets sentinels, the fixed certificate path and BOTH hosts
+                     (president_url and president_test_url), so switching
+                     environments never rewrites .env. A new account starts in
+                     the TEST environment ("live": false); a rebind of the same
+                     account keeps the one it was in; a president_url in the
+                     bind picks one explicitly (normalize_host). The status
+                     says `creds_saved` afterwards.
   president_probe    `lib/president_worker.py --once`: the user's 「確認登入」 — one real
                      login, even after a failed one stopped logins (lib STOP).
                      Logs in to whichever environment is current.
@@ -47,7 +43,19 @@ Steps, in the order the page walks them:
                      their broker mailed (same password, same certificate) and
                      reported it; "營業員說開好了" is {"env": "live"}. Only the
                      two hosts in HOSTS are accepted. Switching to test removes
-                     the worker service and the account snapshot.
+                     the worker service and the account snapshot. {"env":
+                     "live"} with no accepted test order = the user skipped the
+                     test section (production access already open): the status
+                     says `test_skipped` and the page greys those rows out.
+  president_pfx_local {key_id, envelope}: RETIRED — the platform no longer sends
+                     it (憑證e總管 cannot run on the cloud box's Windows Server,
+                     so nothing can put a certificate under LOCAL_CERT_DIR any
+                     more; the only path is president_pfx from the user's own
+                     PC). Kept so an older web build still gets an answer:
+                     the envelope carries only the password, the newest file
+                     in LOCAL_CERT_DIR the password opens and that has not
+                     expired is COPIED to credentials/president.pfx; same
+                     vault write as president_pfx, no login.
   president_test_order  test environment only: one TMF near-month market IOC buy
                      through runtime/president_test_order.py (see there for why
                      IOC); its time and order number are what the user reads to
@@ -56,9 +64,8 @@ Steps, in the order the page walks them:
                      only after a probe passed on the PRODUCTION host.
 
 Any other way to get the certificate onto the machine is one more command that
-ends where president_pfx ends: the `cert` section with its own `source`, then
-the same probe and finish. Add its name to COMMANDS and _JOBS, and to the api
-allow-list.
+ends where president_pfx ends: the `cert` section with its own `source`. Add
+its name to COMMANDS and _JOBS, and to the api allow-list.
 
 Vault (<base>/credentials/president_vault.json, = lib/president_vault.VAULT)
 and president.pfx: SYSTEM + Administrators only. Unlike 群益's, both must be
@@ -119,6 +126,8 @@ LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "p
                 "UNKNOWN": "unknown"}
 
 _SECTIONS = ("setup", "cert", "probe", "test_order", "worker")
+# every step that logs in (or, for finish, starts what logs in): needs the bind AND the certificate
+_LOGIN_CMDS = ("president_probe", "president_host", "president_test_order", "president_finish")
 # desktop state, this process only (see "desktop app" below)
 _LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None}
 _busy = threading.Lock()
@@ -151,8 +160,8 @@ def _refuse(code, text=""):
 # ── status (state/president_connect.json) ────────────────────────────────────
 
 def _blank():
-    return {"v": 1, "updated_at": None, "busy": None, "env": None,
-            **{s: {"status": "idle", "at": None} for s in _SECTIONS}}
+    return {"v": 1, "updated_at": None, "busy": None, "env": None, "creds_saved": False,
+            "test_skipped": False, **{s: {"status": "idle", "at": None} for s in _SECTIONS}}
 
 
 def read_status():
@@ -334,7 +343,10 @@ def _divert(env, account, password):
         # starts on the test host; the permission is the account's, so a
         # rebind of the same account stays where it was
         target = "live" if same and old.get("live") is True else "test"
-    carry = old.get(_CA_PW) if same and os.path.isfile(p["pfx"]) else None
+    # the certificate stays when it is this account's, or nobody's yet (uploaded
+    # before the first bind — the page asks for it first); another account's goes
+    keep_cert = (same or old.get("account_fp") is None) and os.path.isfile(p["pfx"])
+    carry = old.get(_CA_PW) if keep_cert and _CA_PW in old else None
     vault = {_SECRET: password, "live": target == "live", "account_fp": afp}
     if carry is not None:
         vault[_CA_PW] = carry
@@ -348,7 +360,12 @@ def _divert(env, account, password):
         _update("cert", create=False, reset=True, status="idle")
     for sec in ("probe", "worker") + (() if same else ("test_order",)):
         _update(sec, create=False, reset=True, status="idle")
-    _update(env=target)
+    if same and target == "live":
+        _update(env=target, creds_saved=True)
+    else:
+        # a skip recorded for another account is not this one's (the desktop's rule), and
+        # a skip means production: a rebind that names the test host ends it
+        _update(env=target, creds_saved=True, test_skipped=False)
     if target == "test" and old.get("live") is True:
         _leave_production()
     drop = (_SECRET, _CA_PW, "president_ca_path", "president_url", "president_test_url")
@@ -615,9 +632,7 @@ def _import_cert(args, push, source, pick):
     try:
         pfx, password = cc.open_envelope(args["key_id"], args["envelope"], key_path=p["key"])
         pfx, meta = pick(pfx, password)
-        bound = _read_vault()
-        if not bound.get(_SECRET):
-            _refuse("NOT_BOUND", "save the account and trading password first")
+        bound = _read_vault()  # may be empty or hold only a certificate password: the bind comes after
         try:
             _write_private(p["pfx"], pfx)
         except Exception as e:
@@ -626,8 +641,6 @@ def _import_cert(args, push, source, pick):
         # bind) in between must not be rolled back by this step's older copy
         vault = _read_vault()
         try:
-            if not vault.get(_SECRET):
-                _refuse("NOT_BOUND", "save the account and trading password first")
             if vault.get("account_fp") != bound.get("account_fp"):
                 _refuse("REBOUND", "the account changed during the upload — upload the certificate again")
             _write_vault(dict(vault, **{_CA_PW: password}))
@@ -643,10 +656,11 @@ def _import_cert(args, push, source, pick):
     except Exception as e:
         _update("cert", status="failed", error=cc._code(e, "IMPORT_FAILED"))
         raise
+    # no login here: a passed probe with the previous certificate says nothing about this one
+    _update("probe", reset=True, status="idle")
     _update("cert", status="ok", error=None, source=source, not_after=meta["not_after"],
             issuer_checked=meta["issuer_checked"])
-    return {"cert": {"not_after": meta["not_after"], "issuer_checked": meta["issuer_checked"]},
-            "probe": run_probe(push)}
+    return {"cert": {"not_after": meta["not_after"], "issuer_checked": meta["issuer_checked"]}}
 
 
 def run_host(args, push=None):
@@ -659,9 +673,22 @@ def run_host(args, push=None):
         _refuse("NOT_BOUND", "save the account and trading password first")
     if (vault.get("live") is True) != (target == "live"):
         _write_vault(dict(vault, live=target == "live"))
-    _update(env=target)
+    st = read_status() or {}
     if target == "test":
+        _update(env=target)
         _leave_production()
+        if "env" in args and st.get("test_skipped"):
+            # back from a skip (the desktop's rule): {"env": "test"} is the switch only —
+            # the test-host row takes the login with the URL from the broker's mail, so no
+            # probe against the default test host here. A {"url"} IS that row's press.
+            _update(env=target, test_skipped=False)
+            _update("probe", reset=True, status="idle")
+            return {"env": target, "url": ENV_URLS[target]}
+        _update(test_skipped=False)
+        return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
+    # production before an accepted test order = the user skipped the test section
+    # (production access already open); the page greys those rows out, they stay doable
+    _update(env=target, test_skipped=(st.get("test_order") or {}).get("status") != "ok")
     return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
 
 
@@ -736,7 +763,9 @@ def run_finish(push=None):
 
 def _sweep_interrupted():
     """A runtime publish restarts the bridge and kills a Deferred mid-step: the
-    status keeps `busy` and a section stuck at running/importing."""
+    status keeps `busy` and a section stuck at running/importing. An upload killed
+    between the pfx write and the vault write leaves a new certificate next to the
+    old (or no) password — a login would spend a broker try with it, so it goes."""
     if not _busy.acquire(blocking=False):
         return
     try:
@@ -745,6 +774,11 @@ def _sweep_interrupted():
             return
         for sec in _SECTIONS:
             if (st.get(sec) or {}).get("status") in ("running", "importing"):
+                if sec == "cert":
+                    try:
+                        os.remove(_paths()["pfx"])
+                    except OSError:
+                        pass
                 _update(sec, status="failed", error="INTERRUPTED")
         _update(busy=None)
     finally:
@@ -769,9 +803,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
     if not IS_WINDOWS:
         _refuse("NOT_WINDOWS", "統一期貨 needs a Windows host in this version")
     _sweep_interrupted()
-    if cmd == "president_pfx_key":
-        if not _read_vault().get(_SECRET):
-            _refuse("NOT_BOUND", "save the account and trading password first")
+    if cmd == "president_pfx_key":  # before the bind too: the certificate row comes first
         return cc.cmd_pfx_key(args, key_path=_paths()["key"])
     if cmd not in _JOBS:
         _refuse("BAD_ARGS", "unknown 統一 command")
@@ -788,7 +820,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
             normalize_host(args["url"])  # refused here, before the lock and the status
     elif args:
         _refuse("BAD_ARGS", f"{cmd} takes no arguments")
-    if cmd in ("president_host", "president_test_order") and not _read_vault().get(_SECRET):
+    if cmd in _LOGIN_CMDS and not _read_vault().get(_SECRET):
         _refuse("NOT_BOUND", "save the account and trading password first")
     if cmd == "president_test_order":
         # the runtime's gate; the script re-checks the vault and the host, and
@@ -798,8 +830,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
         probe = (read_status() or {}).get("probe") or {}
         if probe.get("state") != "ok" or probe.get("env") != "test":
             _refuse("PROBE_NOT_OK", "log in on the test host first")
-    if cmd in ("president_probe", "president_host", "president_test_order", "president_finish") and (
-            not os.path.isfile(_paths()["pfx"]) or _CA_PW not in _read_vault()):
+    if cmd in _LOGIN_CMDS and (not os.path.isfile(_paths()["pfx"]) or _CA_PW not in _read_vault()):
         # an unreadable certificate is a CERT block in the lib, and one without its
         # password in the vault logs in with "" — never log in without both. Key
         # presence, not truthiness: a pfx with no password stores "".
@@ -1267,10 +1298,11 @@ def _env_account():
         return None
 
 
-def _local_host(target, push):
+def _local_host(target, push, by_env=True):
     """president_host on the desktop: the same switch, kept in the bundle (the
     app saves the env it asked for; a daemon restart gets it back with the
-    secrets), the reconciler re-handed its line, then the probe there."""
+    secrets), the reconciler re-handed its line, then the probe there.
+    `by_env`: the press was {env: …} (False = {url: …}, the test-host row)."""
     s = _LOCAL["secrets"]
     if (s["live"] is True) != (target == "live"):
         _set_secrets(dict(s, live=target == "live"))
@@ -1278,12 +1310,14 @@ def _local_host(target, push):
     if target == "test":
         _update(env=target)
         _leave_production()
-        if st.get("test_skipped"):
-            # back from a skip: the switch only — the test-host row takes the login (its URL comes
-            # from the broker's mail), so no probe against the default test host here
+        if by_env and st.get("test_skipped"):
+            # back from a skip: {env: test} is the switch only — the test-host row takes the
+            # login (its URL comes from the broker's mail), so no probe against the default
+            # test host here. A {url} IS that row's press and logs in.
             _update(env=target, test_skipped=False)
             _update("probe", reset=True, status="idle")
             return {"env": target, "url": ENV_URLS[target]}
+        _update(test_skipped=False)
         return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
     # production before a test order = the user skipped the test section (production access already
     # open: a reinstall, a second computer); the pages grey those rows out, they stay doable
@@ -1350,7 +1384,7 @@ def _local_jobs(op, args):
             _refuse("CERT_MISSING", "choose the certificate first")
         if op == "host":
             target = args["env"] if "env" in args else normalize_host(args["url"])
-            return lambda push: _local_host(target, push)
+            return lambda push: _local_host(target, push, "env" in args)
         if current_env() != "test":
             _refuse("LIVE_ENV", "test orders run only on the test host")
         probe = (read_status() or {}).get("probe") or {}

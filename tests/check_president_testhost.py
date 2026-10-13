@@ -20,6 +20,9 @@ president_test_order, runtime/president_test_order.py) — no network, no broker
   6. switch to production ("營業員說開好了"): no certificate re-upload, the
      vault on production, the probe on viploginm, the test order record kept for
      the report screen, finish allowed only now
+  7. 「已有正式權限,跳過測試」: {"env": "live"} with no accepted test order → production, the
+     probe there, `test_skipped` in the status (the page greys the test rows out), finish allowed;
+     back to test = the switch only (no probe), the skip cleared
 
 Run: cd blave-agent && /usr/bin/python3 tests/check_president_testhost.py
 """
@@ -366,9 +369,52 @@ check("6 營業員說開好了 → production: vault on, probe on viploginm reco
       and not popen and runs == [["president_worker.py", "--once"]], (r, popen))
 check("6 the test order record stays (the report screen reads its time and number)",
       st["test_order"]["orderno"] == "A0001")
+check("6 production after an accepted test order is not a skip", st["test_skipped"] is False)
 check("6 a test order now → LIVE_ENV", refused(lambda: pc.dispatch("president_test_order", {}, D), "LIVE_ENV") is True)
 ANS = {}
 check("6 finish allowed only now", run_cmd("president_finish", {}) == {"worker": "ok"})
+
+# ── 7. 「已有正式權限,跳過測試」: production with no accepted test order ──
+pc._update("test_order", reset=True, status="idle")
+pc._write_vault(dict(json.load(open(P["vault"])), live=False))
+pc._update(env="test")
+runs.clear()
+ANS = {"probe": {"ok": True, "equity": 1.0, "test_mode": False}}
+r = run_cmd("president_host", {"env": "live"})
+st = pc.read_status()
+check("7 {env: live} with no test order = the test section skipped: vault on, probe on production, test_skipped",
+      json.load(open(P["vault"]))["live"] is True and st["env"] == "live" and st["test_skipped"] is True
+      and r["probe"]["env"] == "live" and runs == [["president_worker.py", "--once"]], (r, st))
+check("7 …finish allowed after that probe (no test order needed)", run_cmd("president_finish", {}) == {"worker": "ok"})
+runs.clear()
+r = run_cmd("president_host", {"env": "test"})
+st = pc.read_status()
+check("7 back from a skip: the switch only, no probe (the test-host row logs in with the mail's URL), skip cleared",
+      json.load(open(P["vault"]))["live"] is False and st["env"] == "test" and st["test_skipped"] is False
+      and "probe" not in r and not runs and st["probe"]["status"] == "idle", (r, st))
+r = run_cmd("president_host", {"url": "test167.pfctrade.com"})
+check("7 …and the test-host row's {url} probes as usual", runs == [["president_worker.py", "--once"]] and r["probe"]["env"] == "test")
+pc._update("test_order", reset=True, status="idle")
+run_cmd("president_host", {"env": "live"})
+runs.clear()
+r = run_cmd("president_host", {"url": "test167.pfctrade.com"})
+st = pc.read_status()
+check("7 skipped, then the test-host row's {url} press: a real login (the switch-only rule is {env: test}'s alone), skip cleared",
+      runs == [["president_worker.py", "--once"]] and r["probe"]["env"] == "test" and st["test_skipped"] is False
+      and st["env"] == "test", (r, st))
+run_cmd("president_host", {"env": "live"})
+write_env(pc.divert_credentials(dict(BIND, president_url="test167.pfctrade.com")))
+check("7 skipped, then a same-account rebind naming the test host: env test and the skip cleared (skipped ⇒ live)",
+      pc.read_status()["env"] == "test" and pc.read_status()["test_skipped"] is False)
+pc._update("cert", status="importing")
+pc._update(busy="president_pfx")
+open(P["pfx"], "wb").write(b"NEW-PFX-OLD-PASSWORD")
+d7 = pc.dispatch("president_setup", {}, D)
+d7.cleanup()
+check("7 an upload interrupted after the pfx landed (vault not yet written): the sweep removes the certificate, cert INTERRUPTED, "
+      "the next login press → CERT_MISSING instead of a broker try with the old password",
+      not os.path.exists(P["pfx"]) and pc.read_status()["cert"]["error"] == "INTERRUPTED"
+      and refused(lambda: pc.dispatch("president_probe", {}, D), "CERT_MISSING") is True)
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("PASS" if not fails else f"FAIL {len(fails)}")

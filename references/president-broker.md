@@ -5,14 +5,17 @@ integration uses the broker's official **Unitrade API** (`pip install unitrade`)
 
 Package docs: https://pfcec.github.io/unitrade/ · PyPI: https://pypi.org/project/unitrade/
 
-**Status: open on the Windows desktop app since 0.1.18; cloud machines are not open yet.** The
+**Status: open on the Windows desktop app since 0.1.18. On a Windows cloud machine it is usable
+only once the web 自動下單 page lists 統一期貨 in its connect menu (the certificate is uploaded
+from the user's own Windows PC — Step 2); until that page is live, send cloud users to the
+desktop app instead of to a page that is not there.** The
 shipped libs (`lib/order_president.py`, `lib/account_president.py`, `lib/president_worker.py`,
 `lib/president_vault.py`) have placed and closed a live order on a real account (2026-10-02) and
 run the broker's test host. The reconciler has a `president` block (`manager/reconciler.py`,
-hand-wired like 群益), but it only trades a venue the desktop onboarding wrote (the connect
-menu's 統一 entry); on a cloud machine the venue is not listed and `president_*` commands stay
-unexposed. A `.env` written by hand (Step 4) is enough for the probe and test orders, not for
-the reconciler; do not work around that. Everything marked *unverified* needs a live account.
+hand-wired like 群益), but it only trades a venue the platform's onboarding wrote (the desktop
+connect menu's 統一 entry, or the web page's `president_*` commands on a cloud machine). A `.env`
+written by hand (Step 4) is enough for the probe and test orders, not for the reconciler; do not
+work around that. Everything marked *unverified* needs a live account.
 
 ---
 
@@ -84,11 +87,13 @@ Ask the user:
   supported Windows", not a wrong password — a wrong password shows 「密碼錯誤」.
 - **Windows cloud machine — the only path:** the user applies for (or exports) the certificate on
   their own Windows PC, then uploads the `.pfx` on the web 自動下單 page (the platform command
-  `president_pfx`, which stores it as `<base>\credentials\president.pfx` and logs in once
-  read-only). The order program reads the `.pfx` directly; it never needs 憑證e總管. A user with no
-  Windows PC at all cannot use 統一 on the cloud. (`president_pfx_local`, which copies the newest
-  file under `C:\Users\Administrator\PSCCA\` that the certificate password opens, is still a
-  platform command, but nothing can put a certificate in that folder on a cloud machine any more.)
+  `president_pfx`: the file is checked on the machine — password, expiry — and stored as
+  `<base>\credentials\president.pfx`; no login happens there). The page asks for the certificate
+  first, the account and trading password after it, and every login is the user's own press
+  (「確認登入」). The order program reads the `.pfx` directly; it never needs 憑證e總管. A user with
+  no Windows PC at all cannot use 統一 on the cloud. (`president_pfx_local`, which copied the newest
+  file under `C:\Users\Administrator\PSCCA\`, is retired: the platform no longer sends it, the
+  command only stays answered for an older web build.)
 - **On a cloud machine you never touch this path.** Do not run, install, click through or log in to
   憑證e總管, do not apply or renew for the user, do not read, list or copy anything under `PSCCA\`,
   and do not run `president_pfx` / `president_pfx_local` yourself. If the user asks you to do any of
