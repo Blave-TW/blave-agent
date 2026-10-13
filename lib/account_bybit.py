@@ -23,6 +23,7 @@ never verified against a real account, so it raises instead of guessing.
 import hashlib
 import hmac
 import json
+import math
 import os
 import time
 
@@ -222,9 +223,26 @@ def get_equity(env: dict) -> dict:
     }
 
 
+def _opt(v, positive=False):
+    """A position detail (entry price, PnL, margin, leverage) as float, or None
+    when the venue left it blank/out — None, never 0: the page shows "—" for a
+    missing value and 0 would read as a real one. Never raises: these fields
+    are display-only and the reconciler reads the same rows."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or (positive and f <= 0):
+        return None
+    return f
+
+
 def get_positions(env: dict) -> list:
     """Open USDT-perp positions. Symbols are already canonical on Bybit
-    ('BTCUSDT'), so no mapping is needed."""
+    ('BTCUSDT'), so no mapping is needed. Rows carry entry_price /
+    unrealized_pnl / margin (positionIM, initial margin; "" on a portfolio-
+    margin account → None) / leverage, each float or None
+    (account_TEMPLATE.get_positions)."""
     rows = _request(env, "GET", "/v5/position/list",
                     {"category": "linear", "settleCoin": "USDT"}).get("list") or []
     positions = []
@@ -244,6 +262,10 @@ def get_positions(env: dict) -> list:
             "side": "long" if (p.get("side") or "").lower() == "buy" else "short",
             "size": size,
             "mark_price": mark_px,
+            "entry_price": _opt(p.get("avgPrice"), positive=True),
+            "unrealized_pnl": _opt(p.get("unrealisedPnl")),
+            "margin": _opt(p.get("positionIM"), positive=True),
+            "leverage": _opt(p.get("leverage"), positive=True),
         })
     return positions
 

@@ -383,8 +383,11 @@ check(e is not None and "TMFJ6 -2" in str(e) and "TMFK6 +1" in str(e),
 snapshot([{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 1},
           {"root": "TMF", "productid": "TMFK6", "net": -1, "net_current": -1},
           {"root": "MXF", "productid": "MXFJ6", "net": 0, "net_current": 0}])
-check(account_president.get_positions({}) == {"TXF": {"side": "long", "size": 1.0, "productid": "TXFJ6"},
-                                              "TMF": {"side": "short", "size": 1.0, "productid": "TMFK6"}},
+_NO_DETAIL = {"entry_price": None, "unrealized_pnl": None, "margin": None, "leverage": None}
+check(account_president.get_positions({}) == {"TXF": {"side": "long", "size": 1.0, "productid": "TXFJ6",
+                                                      **_NO_DETAIL},
+                                              "TMF": {"side": "short", "size": 1.0, "productid": "TMFK6",
+                                                      **_NO_DETAIL}},
       "positions: canonical keys, lots, productid", account_president.get_positions({}))
 snapshot([], account_fp="abc123")
 check(account_president.get_account_id({}) == "president:abc123", "account id is the snapshot fingerprint")

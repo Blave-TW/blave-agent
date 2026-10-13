@@ -15,6 +15,7 @@ every-wallet breakdown so transferred money never vanishes from display.
 import hashlib
 import hmac
 import json
+import math
 import os
 import time
 
@@ -293,11 +294,28 @@ def _multiplier(env, contract):
     return _mult_cache[contract]
 
 
+def _opt(v, positive=False):
+    """A position detail (entry price, PnL, margin, leverage) as float, or None
+    when the venue left it blank/out — None, never 0: the page shows "—" for a
+    missing value and 0 would read as a real one. Never raises: these fields
+    are display-only and the reconciler reads the same rows."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or (positive and f <= 0):
+        return None
+    return f
+
+
 def get_positions(env: dict) -> list:
     """Open USDT-perp positions.
 
-    Returns [{'symbol': str, 'side': str, 'size': float, 'mark_price': float}, ...]
-    Returns [] if flat.
+    Returns [{'symbol': str, 'side': str, 'size': float, 'mark_price': float,
+    'entry_price', 'unrealized_pnl', 'margin', 'leverage'}, ...] — the last
+    four float or None (account_TEMPLATE.get_positions). Returns [] if flat.
+    `leverage` "0" means cross: the cross leverage is `cross_leverage_limit`.
+    margin is `margin` (position margin), `initial_margin` when that is blank.
 
     Gate.io `size` is signed CONTRACTS — converted to base units via the
     contract's quanto_multiplier (the OKX ctVal lesson: exact multiplication,
@@ -345,6 +363,12 @@ def get_positions(env: dict) -> list:
             "side": side,
             "size": size,
             "mark_price": mark_px,
+            "entry_price": _opt(p.get("entry_price"), positive=True),
+            "unrealized_pnl": _opt(p.get("unrealised_pnl")),
+            "margin": (_opt(p.get("margin"), positive=True)
+                       or _opt(p.get("initial_margin"), positive=True)),
+            "leverage": (_opt(p.get("leverage"), positive=True)
+                         or _opt(p.get("cross_leverage_limit"), positive=True)),
         })
     return positions
 

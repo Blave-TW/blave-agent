@@ -219,16 +219,36 @@ def _finite(v, default=None):
     return f if math.isfinite(f) else default
 
 
+# Per-position display details (lib/account_TEMPLATE.get_positions): carried
+# through as-is, never × mark. A None / non-finite / missing value leaves the
+# key OUT of account.json — the page reads an absent key as "—".
+_POSITION_DETAILS = ("mark_price", "entry_price", "unrealized_pnl", "margin", "leverage")
+
+
+def _details(p):
+    out = {}
+    for k in _POSITION_DETAILS:
+        v = _finite(p.get(k))
+        if v is not None:
+            out[k] = v
+    # libs fill mark_price with 0 or the entry price when the venue gave none —
+    # good enough to size a row, not to show as the mark
+    if out.get("mark_price", 0) <= 0 or p.get("mark_estimated"):
+        out.pop("mark_price", None)
+    return out
+
+
 def _norm_positions(raw):
     """Contract shape is {symbol: {'side', 'size': <account currency>}} —
     but the shipped bingx lib (predating the contract) returns a list of
     {'symbol','side','size' in contracts,'mark_price'}. Normalize here so
-    every consumer sees one shape."""
+    every consumer sees one shape. Both shapes keep _POSITION_DETAILS."""
     if isinstance(raw, dict):
         # same NaN scrub as the list shape — agent-written dict-contract
         # modules can return non-finite sizes too
         return {
-            str(k): {"side": (v or {}).get("side"), "size": _finite((v or {}).get("size"), 0.0)}
+            str(k): {"side": (v or {}).get("side"), "size": _finite((v or {}).get("size"), 0.0),
+                     **_details(v or {})}
             for k, v in raw.items()
         }
     out = {}
@@ -242,11 +262,12 @@ def _norm_positions(raw):
             # never × mark; carried as-is with its unit for the display
             out[p["symbol"]] = {"side": p.get("side"), "size": round(size, 4),
                                 "unit": "contracts",
-                                "contract_value": _finite(p.get("contract_value"), 1.0)}
+                                "contract_value": _finite(p.get("contract_value"), 1.0),
+                                **_details(p)}
             continue
         if mark is not None:
             size = size * mark
-        out[p["symbol"]] = {"side": p.get("side"), "size": round(size, 4)}
+        out[p["symbol"]] = {"side": p.get("side"), "size": round(size, 4), **_details(p)}
     return out
 
 

@@ -458,8 +458,9 @@ rows = account_reader._norm_positions([
     {"symbol": "TXF", "side": "long", "size": 2.0, "mark_price": 22000.0, "unit": "contracts",
      "contract_value": 200.0},
     {"symbol": "BTCUSDT", "side": "long", "size": 0.5, "mark_price": 80000.0}])
-check(rows["TXF"] == {"side": "long", "size": 2.0, "unit": "contracts", "contract_value": 200.0}
-      and rows["BTCUSDT"] == {"side": "long", "size": 40000.0},
+check(rows["TXF"] == {"side": "long", "size": 2.0, "unit": "contracts", "contract_value": 200.0,
+                      "mark_price": 22000.0}
+      and rows["BTCUSDT"] == {"side": "long", "size": 40000.0, "mark_price": 80000.0},
       f"account_reader: a contracts row stays 2 lots, a notional row is still size × mark ({rows})")
 # B1: with the book on, a removed contract strategy still closes in lots
 json.dump({"self_ledger": True}, open("manager/portfolio_config.json", "w"))
