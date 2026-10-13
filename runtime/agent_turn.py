@@ -4197,7 +4197,33 @@ def data_access_rule():
     return "\n\n---\n\n## Blave data on this desktop (runtime rule)\n" + body
 
 
-def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""):
+def mcp_blocked_rule(blocked):
+    """Codex 那一輪外殼要掛 `blave`、卻因為用戶自己設定檔裡同名的一段而掛不上(codex_engine.mcp_attach
+    的 blocked_by)。畫面上沒有引擎層訊息的通道,所以跟 browser_rule 掛不上那段同一招:把原因與修法
+    交給 agent,用戶要動雲端時由它在回覆裡講。只給事實與約束、不給成品句(見「逐輪規則」那條硬規矩)。
+    只有檔案路徑,絕不帶那段設定的內容(裡面可能有用戶的接入碼)。"""
+    if not blocked:
+        return ""
+    where = "、".join(f"`{b['path']}`" + ("（管理員統一派發的設定，用戶自己可能改不了）"
+                                          if b["layer"] == "managed" else "")
+                     for b in blocked["paths"])
+    # 還有別的原因(舊寫法陣列、讀不了的設定檔⋯)時不承諾改完就好:用戶照改、下一輪還是掛不上最誤導
+    after = ("另外 Codex 設定裡還有別的地方也讓這一輪掛不上，所以只改這一段不保證就能連上；"
+             "不要說改完就會生效，請用戶改完若還是連不上就回報給 Blave。" if blocked.get("other") else
+             "改完再傳下一則訊息就會生效。")
+    return (
+        "\n\n---\n\n## 雲端主機連線（本輪沒掛上）\n"
+        f"這一輪電腦版本來要掛 `blave` MCP（連用戶的 Blave 雲端主機），但 Codex 的設定檔 {where} 裡"
+        "已經有一段名為 `blave` 的 MCP 設定（`[mcp_servers.blave]`），跟電腦版自己那條撞名，所以沒掛上。"
+        "不要呼叫任何 `mcp__blave` 工具，也不要讀出、引用或改動那段設定的內容。"
+        "用戶這次的要求需要雲端主機時（讀或動雲端上的策略、部位、log、報告，或在雲端主機視角下送出），"
+        "回覆第一句就講：這一輪連不上雲端主機，原因是上面那個設定檔裡名為 blave 的那一段；"
+        "請用戶刪掉那一段或把名稱改掉。" + after + "句子用這一輪回覆的語言自己寫，"
+        "不要照抄這段。不需要雲端主機的要求照常回答，不提這件事。\n"
+    )
+
+
+def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule="", mcp_blocked=None):
     """The Codex engine has no system-prompt channel, so the per-turn rules ride in front of
     the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
     (codex_engine.build_args lifts its size cap), and inlining it would feed it twice.
@@ -4207,7 +4233,8 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + _formatting_rule_for(sink)
-            + mcp_rule(mcp_mounted) + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
+            + mcp_rule(mcp_mounted) + mcp_blocked_rule(None if mcp_mounted else mcp_blocked)
+            + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
             + turn_note_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
 
 
@@ -4242,17 +4269,18 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     summary, recent = ss.get_context(session_id)
     reply_lang = _resolve_reply_lang(ui_lang)
     lang_msg = _lang_basis(message, recent)
-    # 雲端視角只有電腦版認(同 --mcp-config)。Codex 掛不掛由 codex_engine.mcp_server 判(版本、撞名、
+    # 雲端視角只有電腦版認(同 --mcp-config)。Codex 掛不掛由 codex_engine.mcp_attach 判(版本、撞名、
     # shell_snapshot 關不關得掉),同一個值交給 run() 與 _codex_prompt,提示段、圍籬規則、實際掛上三者一致。
     if not isinstance(sink, LocalSink):
         viewing_env = None
     codex_mcp_url = None
+    codex_mcp_blocked = None
     codex_browser_url = None
     mounted = local_mcp_servers(sink, mcp_config, mcp_servers)
     if use_codex:
         import codex_engine  # 只在這條路徑載入:機隊的回合連 import 都不發生
         if "blave" in mounted:
-            codex_mcp_url = codex_engine.mcp_server(codex_bin, WORKSPACE, os.environ)
+            codex_mcp_url, codex_mcp_blocked = codex_engine.mcp_attach(codex_bin, WORKSPACE, os.environ)
         if "blave_browser" in mounted:
             codex_browser_url = codex_engine.browser_server(codex_bin, WORKSPACE, os.environ)
         cloud_mcp = bool(codex_mcp_url)
@@ -4493,7 +4521,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
             await codex_engine.run(
                 codex_bin, _codex_prompt(prompt, sink, bool(codex_mcp_url), browser_mounted,
-                              reply_lang_rule(lang_msg, reply_lang)), WORKSPACE,
+                              reply_lang_rule(lang_msg, reply_lang), codex_mcp_blocked), WORKSPACE,
                 {**os.environ,
                  **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
                 sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort,

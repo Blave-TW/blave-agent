@@ -541,8 +541,12 @@ def _save_monthly(prefix, params, df):
 # An existing monthly directory for the same (prefix, params) is consolidated
 # into the single file on first touch and removed — machines already in the
 # field migrate lazily, no manual step.
+# twstock_price2: the Blave 後復權 series. The api's 2026-10 fix (stock-only dividends now
+# adjusted, ETF duplicate rows deduped) changed past values, and the single-file layout never
+# re-fetches the past — under the old key a fixed tail would land on an under-adjusted history
+# with a fake gap at the seam, so the old `twstock_price_<id>` files are left unread.
 _SINGLE_FILE_PREFIXES = frozenset({
-    'twstock_price', 'twstock_price_nonadj', 'twstock_inst', 'twstock_shareholding',
+    'twstock_price2', 'twstock_price_nonadj', 'twstock_inst', 'twstock_shareholding',
     'twstock_per', 'twstock_foreign_sh',
     'twmarket_index', 'twmarket_turnover', 'twmarket_institutional', 'twmarket_margin',
     'twfutures_institutional',
@@ -2316,7 +2320,7 @@ def fetch_twstock_price_adj(stock_id, start, end, headers):
     _fetch_twstock_daily_public; df.attrs['source'] names the one that answered."""
     def _blave():
         return _extend_cache_monthly(
-            'twstock_price', {'id': stock_id},
+            'twstock_price2', {'id': stock_id},
             lambda s, e: _fetch_twstock_price_raw(stock_id, s, e, headers),
             start, end,
         )
@@ -2468,8 +2472,11 @@ def fetch_twstock_ohlcv(stock_id, schema, headers, start=None, end=None, adjust=
                  - timedelta(days=lookback)).strftime('%Y-%m-%d')
     if start < '2019-01-01':
         start = '2019-01-01'
+    # 'v': 2 on adjusted bars only — same reason as twstock_price2 (_SINGLE_FILE_PREFIXES);
+    # raw bars did not change, so their cache keeps its key.
+    params = {'id': stock_id, 'adj': 1, 'v': 2} if adjust else {'id': stock_id, 'adj': 0}
     df = _extend_cache_monthly(
-        f'twstock_minute_{schema}', {'id': stock_id, 'adj': int(adjust)},
+        f'twstock_minute_{schema}', params,
         lambda s, e: _fetch_twstock_minute_raw(stock_id, schema, s, e, headers, adjust=adjust),
         start, end,
         empty_marker_ttl_hours=24,
@@ -3787,7 +3794,7 @@ def fetch_twstock_price_adj_batch(stock_ids, start, end, headers):
             columns={'open': 'Open', 'close': 'Close'}).astype(float)
         return df.replace(0, float('nan')).ffill()
     return _fetch_twstock_cached_batch(
-        'twstock_price', 'price_adj', _fetch_twstock_price_raw, _parse,
+        'twstock_price2', 'price_adj', _fetch_twstock_price_raw, _parse,
         stock_ids, start, end, headers)
 
 
