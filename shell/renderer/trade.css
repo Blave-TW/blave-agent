@@ -483,6 +483,9 @@ html.ws-sc .side-gate { display: none; }
 .ps-row { display: flex; align-items: center; gap: var(--space-8); min-height: 44px; cursor: pointer; }
 .ps-row.is-locked { cursor: not-allowed; }
 /* translateY(-1px):CJK 字墨中心比 checkbox 低 1px 的光學校正(照雲端抄,落地後截圖再看要不要留) */
+/* 名字前的旗標色塊:同側欄 .strat-wrap[data-flag]::before 那條 2×16 pill(色由 app.css 的 [data-flag] → --flag 來);每列都佔位,沒旗標就透明,名字才對得齊 */
+.ps-flag { flex: none; width: 2px; height: 16px; border-radius: var(--radius-pill); }
+.ps-row[data-flag] .ps-flag { background: var(--flag); }
 .ps-name { min-width: 0; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; transform: translateY(-1px); }
 .ps-cb:disabled ~ .ps-name { color: var(--color-greyDark); cursor: not-allowed; }
 /* 「已不存在」是資訊不是錯誤(用戶沒做錯事):--ink-2,不用 11px 紅字(darkCard 上 4.0:1 過不了小字 AA;§13-2) */
