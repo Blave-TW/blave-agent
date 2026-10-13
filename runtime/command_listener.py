@@ -2339,7 +2339,7 @@ def _proc_supervised(proc, pid):
     return False
 
 
-def _unsupervised_reconciler_pids(proc="/proc"):
+def _unsupervised_reconciler_pids(proc="/proc", all_=False):
     """pids running this workspace's reconciler that no supervisor restart would
     replace (ours excluded), or None when the process list cannot be read.
     /proc is read directly, not pgrep -f: a pattern on a command line also
@@ -2347,7 +2347,7 @@ def _unsupervised_reconciler_pids(proc="/proc"):
     target = os.path.realpath(os.path.join(WORKSPACE, "manager", "reconciler.py"))
     me = os.getpid()
     if platform.system() == "Windows":
-        return _windows_unsupervised_pids(me)
+        return _windows_unsupervised_pids(me, all_)
     try:
         entries = os.listdir(proc)
     except OSError:
@@ -2365,12 +2365,12 @@ def _unsupervised_reconciler_pids(proc="/proc"):
             cwd = os.readlink(os.path.join(proc, d, "cwd"))
         except OSError:
             cwd = None
-        if _runs_reconciler(argv, cwd, target) and not _proc_supervised(proc, int(d)):
+        if _runs_reconciler(argv, cwd, target) and (all_ or not _proc_supervised(proc, int(d))):
             pids.append(int(d))
     return pids
 
 
-def _windows_unsupervised_pids(me):
+def _windows_unsupervised_pids(me, all_=False):
     ps = ("Get-CimInstance Win32_Process | ForEach-Object { "
           "\"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.Name)`t$($_.CommandLine)\" }")
     try:
@@ -2380,10 +2380,10 @@ def _windows_unsupervised_pids(me):
         return None
     if out.returncode != 0:
         return None
-    return _parse_windows_unsupervised(out.stdout, me)
+    return _parse_windows_unsupervised(out.stdout, me, all_)
 
 
-def _parse_windows_unsupervised(text, me):
+def _parse_windows_unsupervised(text, me, all_=False):
     """Win32_Process rows `pid<TAB>ppid<TAB>name<TAB>cmdline`. There is no cwd:
     a python whose command line runs manager\\reconciler.py counts (one
     workspace per machine). Supervised = an nssm.exe ancestor (the service
@@ -2407,9 +2407,121 @@ def _parse_windows_unsupervised(text, me):
                 supervised = True
                 break
             up = rows[up][0]
-        if not supervised:
+        if all_ or not supervised:
             pids.append(pid)
     return pids
+
+
+RECONCILER_SINGLETON = os.path.join("state", "reconciler.pid")  # = manager/reconciler.SINGLETON_PATH
+UPDATE_HOLD_STALE_S = 900  # = manager/reconciler.UPDATE_HOLD_STALE_S
+
+
+def lock_file_free(path):
+    """Nobody holds the exclusive lock on `path` (reconciler.py's singleton, or
+    local_daemon's): taken and dropped at once. A missing file is free; any
+    doubt is held. The OS drops these locks on every exit, SIGKILL included."""
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    try:
+        try:
+            import fcntl
+        except ImportError:
+            import msvcrt
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def update_hold_fresh():
+    """manager/update_workspace.py is swapping files (state/execution/hold)."""
+    try:
+        age = time.time() - os.path.getmtime(os.path.join(WORKSPACE_STATE, "execution", "hold"))
+    except OSError:
+        return False
+    return age <= UPDATE_HOLD_STALE_S
+
+
+def reconciler_absent():
+    """True only when it is CERTAIN no reconciler process exists for this
+    workspace — so the next one to start loads the lib on disk. Stale heartbeat
+    alone is not enough (stuck in a broker call, just back from sleep, an old
+    process waiting on a deferred restart). Desktop: the daemon's own
+    supervisor answers under its lock (no spawn can race it), plus the
+    singleton lock. Cloud: no reconciler.py in the process list (supervised or
+    not — a pre-singleton reconciler takes no lock) AND the singleton lock is
+    free AND no workspace update is swapping files. Unreadable anything = False.
+    Taking the singleton lock can make a reconciler starting in that instant
+    exit 75: start_reconciler.sh retries that quietly in 10 s."""
+    if update_hold_fresh():
+        return False
+    try:  # a fresh heartbeat is a process, whatever the probes below would say
+        import portfolio_reporter  # same runtime dir
+        if time.time() - os.path.getmtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler")) \
+                <= portfolio_reporter.HEARTBEAT_STALE_S:
+            return False
+    except OSError:
+        pass
+    if _local_mode():
+        host = _LOCAL_HOST
+        probe = getattr(host, "idle_for_sure", None)
+        return bool(probe and probe())
+    pids = _unsupervised_reconciler_pids(all_=True)
+    if pids is None or pids:
+        return False
+    return lock_file_free(os.path.join(WORKSPACE, RECONCILER_SINGLETON))
+
+
+def _contracts_start_block():
+    """Why a reconciler must not start, or None: a contract switch with lots on
+    it is in force and the lib on disk would ignore it (a rolled-back lib/):
+    that reconciler would trade 20 TMF as 20 TXF. Runs before every start the
+    runtime makes (resume / restart / boot, the desktop daemon's spawn and
+    crash respawn)."""
+    path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
+    try:
+        with open(path) as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    contracts = _saved_contracts(cfg)
+    if not contracts:
+        return None
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
+            amounts = json.load(f).get("amounts")
+    except (OSError, ValueError, AttributeError):
+        amounts = None
+    if not isinstance(amounts, dict):
+        amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
+    funded = []
+    for n in contracts:
+        try:
+            if float(amounts.get(n, 0)) > 0:
+                funded.append(n)
+        except (TypeError, ValueError):
+            continue
+    if not funded:
+        return None
+    import portfolio_reporter  # same runtime dir
+    if portfolio_reporter._ws_lib_contract_override():
+        return None
+    return (f"CONTRACT_NEEDS_UPDATE: 「{funded[0]}」設定了換合約,但這台機器的下單程式不支援——"
+            "請先更新 blave agent 再啟動下單")
 
 
 def _stray_reconciler_pids():
@@ -3428,7 +3540,9 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
     rolling = {k for k in changed if clean.get(k, 0) > 0}
     if not rolling:
         return out
-    if os.path.exists(os.path.join(WORKSPACE_STATE, "HALT")):
+    if os.path.exists(os.path.join(WORKSPACE_STATE, "HALT")) and not reconciler_absent():
+        # with no reconciler process nothing trades until 啟動下單, which lifts
+        # HALT before it starts one — the rollover then runs whole
         raise ValueError("CONTRACT_HALTED: 下單已停止,這時換合約只會平掉舊合約、不會買進新合約——"
                          "請先啟動下單再換")
     try:
@@ -4421,6 +4535,9 @@ def _restart_reconciler(args):
                                f"not started; try again") from None
         _log("reconciler start skipped — no venue bound")
         return "no venue bound — reconciler not started"
+    block = _contracts_start_block()
+    if block:
+        raise RuntimeError(block)
     if _local_mode():
         if _LOCAL_HOST is None:
             raise RuntimeError("the local daemon is not running")

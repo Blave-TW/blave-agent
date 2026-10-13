@@ -648,13 +648,25 @@ def _reconciler_view(hb, last):
 def can_switch_contract(hb=None, last=None):
     """Whether a contract switch may be saved now. An old reconciler ignores
     portfolio_config["contracts"] and trades the saved lots on the strategy's
-    SYMBOL — 20 TMF read as 20 TXF — so only a running reconciler's own word
-    counts (`caps` in its snapshot, lib/portfolio.RECONCILE_CAPS). A stale
-    heartbeat is fail-closed, never the lib on disk: a reconciler stuck in a
-    long broker call or just back from sleep is still alive and may be the old
-    code under an updated disk (restart deferred)."""
+    SYMBOL — 20 TMF read as 20 TXF. Running (fresh heartbeat): only its own word
+    counts (`caps` in its snapshot, lib/portfolio.RECONCILE_CAPS). Not running:
+    only when it is CERTAIN no reconciler process exists
+    (command_listener.reconciler_absent) does the lib on disk count — the next
+    start loads it, and that start is gated on it again
+    (command_listener._contracts_start_block). A stale heartbeat with a process
+    that may still be there (stuck in a broker call, back from sleep, an old one
+    waiting on a deferred restart) is fail-closed."""
     fresh, caps = _reconciler_view(hb, last)
-    return fresh and caps
+    if fresh:
+        return caps
+    try:
+        import command_listener  # same runtime dir; function-level (it imports us lazily too)
+        absent = command_listener.reconciler_absent()
+    except Exception as e:
+        print(f"[portfolio_reporter] reconciler presence check failed: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return False
+    return absent and _ws_lib_contract_override()
 
 
 def contract_override_broken(hb=None, last=None):

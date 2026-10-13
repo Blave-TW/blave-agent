@@ -833,9 +833,13 @@ three is ignored. Rules:
 - A switch keeps the exposure: the new lots must be what some exposure behind the old lots
   converts to (half-up, at least 1 lot) — else `CONTRACT_EXPOSURE_MISMATCH`. Switching and resizing
   are two saves.
-- The save is refused (nothing written) with `CONTRACT_NEEDS_UPDATE` (any change needs a RUNNING
-  reconciler whose `last_reconcile.json` has `caps: ["contract_override"]` — a stale heartbeat is
-  refused, never judged off the disk; a funded switch already in force is refused only on positive
+- The save is refused (nothing written) with `CONTRACT_NEEDS_UPDATE` (any change needs a running
+  reconciler whose `last_reconcile.json` has `caps: ["contract_override"]`, or a reconciler PROVABLY
+  absent — `command_listener.reconciler_absent`: no `manager/reconciler.py` in the process list,
+  `state/reconciler.pid`'s lock free, no fresh `state/execution/hold`; desktop: the daemon's
+  supervisor idle — with the lib on disk carrying the marker; a stale heartbeat whose process may
+  still be there is refused, and every start the runtime makes refuses while a funded switch is in
+  force and the lib on disk lacks the marker; a funded switch already in force is refused only on positive
   evidence of old code), `CONTRACT_EXPOSURE_MISMATCH`, `CONTRACT_HALTED` (HALT set: the close
   would go, the entry would not), `CONTRACT_GATED` (a strategy on either contract waits for a new
   signal), `CONTRACT_PARKED` (統一 lots parked on either contract, or the park file unreadable) —
