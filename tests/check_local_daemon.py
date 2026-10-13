@@ -17,6 +17,10 @@ check_local_daemon_chain.py).
      `python3`, still uses the bare allowlist env and still talks to crontab —
      whatever the OS says it is; with it set, none of that happens and Type B
      is refused by name.
+  5. The status file follows the machine, not a timer: amounts ack → rebuilt at
+     once; a reconcile round's end (snapshot mtime / round marker gone) → rebuilt
+     at once, even right after another rebuild; triggers landing mid-build
+     coalesce into one more rebuild.
 Run: cd blave-agent && .venv/bin/python tests/check_local_daemon.py
 """
 import ast
@@ -379,6 +383,92 @@ check(tail_[-1]["id"] == big[-1], "[events] sliding reaches the newest event")
 mark_ = ev_mod.load_acked()
 ld_mod._slide_events(ev_mod, tail_)
 check(ev_mod.load_acked() == mark_, "[events] complete window (file has nothing newer) → mark untouched")
+
+# ── 5. the status file follows the machine, not a timer ──────────────────────
+# amounts ack → rebuilt at once; a reconcile round's end → rebuilt at once, even
+# right after another rebuild (the old loop sat out 8 s); triggers landing
+# mid-build coalesce into one rebuild. _status_loop is the real thread;
+# _reconcile_watch is driven by hand (its loop also ticks the reconciler supervisor).
+import threading
+import uuid
+
+d = ld.Daemon(WS, "s")
+for p_ in (d.in_dir, d.ack_dir):
+    os.makedirs(p_, exist_ok=True)
+cl._send_ack = d.write_ack
+builds = []
+real_build = d.reporter.build_report
+
+
+def _slow_build():
+    time.sleep(0.3)
+    doc = real_build()
+    builds.append(time.time())
+    return doc
+
+
+d.reporter.build_report = _slow_build
+t_ = time.time()  # §3's daemon left a status file: wait for THIS loop's first build
+threading.Thread(target=d._status_loop, daemon=True).start()
+
+
+def _status_after(ts, wait_s):
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        try:
+            if os.path.getmtime(d.status_path) > ts:
+                with open(d.status_path) as f:
+                    return json.load(f)
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.05)
+    return None
+
+
+check(_status_after(t_, 3) is not None, "[status] first status written at start")
+cid = uuid.uuid4().hex
+body = json.dumps({"id": cid, "cmd": "amounts", "ts": time.time(), "args": {"amounts": {"typea": 100}}})
+with open(os.path.join(d.in_dir, cid + ".json"), "w") as f:
+    json.dump({"body": body, "mac": ld.sign("s", body)}, f)
+d.handle_file(os.path.join(d.in_dir, cid + ".json"))
+ack_at = os.path.getmtime(d._ack_path(cid))
+doc = _status_after(ack_at, 2)
+check(doc is not None and doc["config"]["amounts"] == {"typea": 100.0},
+      "[status] amounts ack → status rebuilt right after it, with the saved amounts")
+# a round ends right after that rebuild: the old loop's 8 s cooldown would hold this one
+d._reconcile_watch()  # first look only records
+with open(os.path.join(WS, "manager", "last_reconcile.json"), "w") as f:
+    json.dump({"targets": {"typea": 1}}, f)
+t_ = time.time()
+d._reconcile_watch()
+doc = _status_after(t_, 2)
+check(doc is not None and doc["last_reconcile"] == {"targets": {"typea": 1}},
+      "[status] reconcile snapshot written → status rebuilt within 2 s, no cooldown")
+time.sleep(0.5)
+d._reconcile_watch()
+check(not d.dirty.is_set(), "[status] nothing changed → no rebuild asked")
+os.makedirs(os.path.join(WS, "state", "execution"), exist_ok=True)
+open(os.path.join(WS, "state", "execution", "round"), "w").write("1")
+d._reconcile_watch()
+check(not d.dirty.is_set(), "[status] round marker up = a round in progress, not a trigger")
+os.remove(os.path.join(WS, "state", "execution", "round"))
+d._reconcile_watch()
+check(d.dirty.is_set(), "[status] round marker gone (a round that wrote no snapshot) → rebuild asked")
+_status_after(time.time(), 2)
+time.sleep(1)
+n0 = len(builds)
+d.dirty.set()
+time.sleep(0.1)  # that build is in flight (0.3 s)
+for _ in range(4):
+    d.dirty.set()
+    time.sleep(0.02)
+time.sleep(1.5)
+check(len(builds) - n0 == 2, "[status] 4 triggers landing mid-build → one more rebuild, not four "
+      f"(got {len(builds) - n0 - 1})")
+import inspect
+check("self._reconcile_watch()" in inspect.getsource(d._supervise_loop),
+      "[status] the supervisor loop is what polls for a round's end")
+d.stop.set()
 
 shutil.rmtree(BASE, ignore_errors=True)
 print("FAILED" if fails else "all ok")
