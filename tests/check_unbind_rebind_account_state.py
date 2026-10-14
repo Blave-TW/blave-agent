@@ -251,6 +251,19 @@ try:
     cl.subprocess.run, cl.subprocess.Popen = real_run, real_popen
     check((refused or "").startswith("NEEDS_ROUTING:") and not starts,
           f"…and the start itself (_restart_reconciler: restart_reconciler, boot, desktop) refuses before any process ({refused})")
+    # amount 0 counts too: an unrouted 0 member holds its key whole, freezing a routed one's exit
+    cpath = os.path.join(WS, "manager", "portfolio_config.json")
+    keep = open(cpath).read()
+    cfg0 = json.loads(keep)
+    cfg0["amounts"] = {"a1": 0}
+    json.dump(cfg0, open(cpath, "w"))
+    blk = cl._routing_block()
+    check((blk or "").startswith("NEEDS_ROUTING: 「a1」"), f"…an unrouted member at amount 0 also blocks the start ({blk})")
+    cfg0["amounts"], cfg0["exchanges"] = {"a1": 0, "b1": 5}, {"a1": "", "b1": ""}
+    json.dump(cfg0, open(cpath, "w"))
+    blk = cl._routing_block()
+    check((blk or "").startswith("NEEDS_ROUTING: 「a1」、「b1」"), f"…and every unrouted member is named ({blk})")
+    open(cpath, "w").write(keep)
     cl._split_by_type = lambda names: (set(names), set())
     cl.dispatch({"cmd": "amounts", "args": {"amounts": {"a1": 1000}}})
     check(json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))["exchanges"] == {"a1": "okx"},

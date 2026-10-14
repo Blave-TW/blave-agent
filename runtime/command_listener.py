@@ -599,7 +599,7 @@ def _ack_bind_reset():
 
 
 def _routing_block():
-    """Why 啟動下單 must wait, or None: a venue is bound and a member with an amount above 0
+    """Why 啟動下單 must wait, or None: a venue is bound and a member (any amount, 0 too)
     has no exchange routed — the state an unbind leaves (Wei 10-14: the portfolio is kept,
     only the routing goes) until the next 下單設定 save routes it. Starting then would trade
     nothing for those members (lib/portfolio holds their keys as they are); the user must
@@ -621,14 +621,10 @@ def _routing_block():
     src = mirror if isinstance(mirror, dict) and isinstance(mirror.get("amounts"), dict) else cfg
     amounts = src.get("amounts") if isinstance(src.get("amounts"), dict) else {}
     exchanges = src.get("exchanges") if isinstance(src.get("exchanges"), dict) else {}
-    missing = []
-    for name, amt in sorted(amounts.items()):
-        try:
-            funded = float(amt) > 0
-        except (TypeError, ValueError):
-            funded = False
-        if funded and not exchanges.get(name):
-            missing.append(name)
+    # every unrouted member, amount 0 included: lib/portfolio holds an unrouted member's key
+    # whole, so a 0-amount one sharing a key with a routed one would freeze that one's exit too
+    # — and one 下單設定 save routes them all
+    missing = [name for name in sorted(amounts) if not exchanges.get(name)]
     if not missing:
         return None
     # the NOT_TXF shape (`CODE: 「name」…`, every name listed) — the pages match the first
