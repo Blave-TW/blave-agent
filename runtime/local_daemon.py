@@ -666,6 +666,8 @@ class ReconcilerSupervisor:
         self._proc = None
         self._wanted = False
         self._respawn_at = None
+        self._spawn_fail_noted = None
+        self._start_block_noted = None
         self.restarts = 0
         self.last_exit_code = None
         self.last_exit_at = None
@@ -688,10 +690,12 @@ class ReconcilerSupervisor:
     def restart_reconciler(self, why=None):
         with self._lock:
             self._wanted = False
+            self._respawn_at = None
             if not self._stop_locked(why or f"restart (last command: {self.asked_by})"):
                 raise RuntimeError("a reconciler is still running and could not be stopped")
             self._spawn_locked()
             self._wanted = True
+            self._spawn_fail_noted = None
 
     def stop_reconciler(self, why=None):
         with self._lock:
@@ -791,14 +795,21 @@ class ReconcilerSupervisor:
             return cl.lock_file_free(os.path.join(self.ws, cl.RECONCILER_SINGLETON))
 
     def tick(self):
-        """Crash recovery; called about once a second."""
+        """Crash recovery; called about once a second. A failed spawn can leave
+        _proc None while still wanted, so None means "retry", never "nothing to
+        do" — or the reconciler stays down for good with nobody told."""
         with self._lock:
-            if not self._wanted or self._proc is None or self._proc.poll() is None:
+            if not self._wanted:
                 return
+            if self._proc is not None and self._proc.poll() is None:
+                return  # running — or a child we gave up on, not dead yet: never start beside it
             if self._respawn_at is None:
+                self._respawn_at = time.time() + RESTART_DELAY_S
+                if self._proc is None:
+                    self._note(f"reconciler wanted but not running — starting in {RESTART_DELAY_S}s")
+                    return
                 self.last_exit_code = self._proc.returncode
                 self.last_exit_at = int(time.time())
-                self._respawn_at = time.time() + RESTART_DELAY_S
                 self._note(f"reconciler (pid {self._proc.pid}) exited (code "
                            f"{self.last_exit_code}) without this daemon stopping it — "
                            f"restarting in {RESTART_DELAY_S}s")
@@ -807,11 +818,50 @@ class ReconcilerSupervisor:
                 return
             self._respawn_at = None
             try:
-                self._spawn_locked()
-                self.restarts += 1
+                p = self._spawn_locked(confirm=False)
             except Exception as e:
-                _log(f"reconciler restart failed: {type(e).__name__}: {e}")
-                self._respawn_at = time.time() + RESTART_DELAY_S
+                self._respawn_failed(e)
+                return
+            if p is None:
+                self._respawned()
+                return
+        # Windows: the child takes the lock itself, which a CPU-starved box can stretch
+        # to LOCK_TAKE_S and past. Probe under the lock, wait outside it, so a stop
+        # (or the status loop) is never stuck behind a slow child.
+        deadline = time.time() + LOCK_TAKE_S + 2
+        while True:
+            with self._lock:
+                if self._proc is not p:
+                    return  # stopped or replaced meanwhile — whoever did that owns the state now
+                held = self._child_lock_state(p)
+                if held is True:
+                    self._started_locked()
+                    self._respawned()
+                    return
+                if held is None:
+                    self._respawn_failed(RuntimeError("reconciler exited before taking its lock"))
+                    return
+                if time.time() >= deadline:
+                    self._give_up_child(p)
+                    # stays _proc: tick waits for it to be dead before the next try
+                    self._respawn_failed(RuntimeError("reconciler did not take its lock — stopped"))
+                    return
+            time.sleep(0.2)
+
+    def _respawned(self):
+        self.restarts += 1
+        if self._spawn_fail_noted:
+            self._note(f"reconciler started (pid {self._proc.pid}) after failed tries")
+        self._spawn_fail_noted = None
+
+    def _respawn_failed(self, e):
+        msg = f"{type(e).__name__}: {e}"
+        _log(f"reconciler restart failed: {msg}")
+        # once per reason: a CPU-starved machine can fail this every 10 s for minutes
+        if msg != self._spawn_fail_noted and str(e) != self._start_block_noted:
+            self._note(f"reconciler restart failed: {msg} — retrying every {RESTART_DELAY_S}s")
+        self._spawn_fail_noted = msg
+        self._respawn_at = time.time() + RESTART_DELAY_S
 
     def _try_lock(self):
         os.makedirs(os.path.dirname(self._lock_path), exist_ok=True)
@@ -899,11 +949,13 @@ class ReconcilerSupervisor:
         _release_fd(fd)
         return True
 
-    def _spawn_locked(self):
+    def _spawn_locked(self, confirm=True):
+        """Starts one. confirm=False on Windows hands back the child before it
+        holds its lock — the caller confirms it (tick); None = started."""
         import command_listener as cl
         block = cl._contracts_start_block()  # a rolled-back lib/ must not trade a switch it ignores
         if block:
-            if getattr(self, "_start_block_noted", None) != block:  # once per reason, not every respawn try
+            if self._start_block_noted != block:  # once per reason, not every respawn try
                 self._start_block_noted = block
                 self._note(f"reconciler not started: {block}")
             raise RuntimeError(block)
@@ -940,28 +992,59 @@ class ReconcilerSupervisor:
         finally:
             _release_fd(fd)  # POSIX: the child's copy keeps the lock; Windows: the child takes it now
         if _nt():
+            if not confirm:
+                return self._proc
             self._confirm_child_lock()
+        self._started_locked()
+        return None
+
+    def _started_locked(self):
         with atomic_file.replacing(self._pid_path) as f:
             f.write(str(self._proc.pid))
         _log(f"reconciler started (pid {self._proc.pid})")
 
+    def _child_lock_state(self, p):
+        """Windows: True once the lock is held (by anyone: orphans were reaped
+        just before, so that is the child), None when the child is gone, False
+        while neither."""
+        if p.poll() is not None:
+            return None
+        fd = self._try_lock()
+        if fd is None:
+            return True
+        _release_fd(fd)
+        return False
+
+    def _give_up_child(self, p):
+        # EOF first: should the interpreter under the venv launcher ever outlive
+        # TerminateProcess (its job object failing), EOF is what makes it leave
+        if p.stdin:
+            try:
+                p.stdin.close()
+            except OSError:
+                pass
+        p.kill()
+
     def _confirm_child_lock(self):
-        """Windows: the child locks the file itself — wait until it is held (by
-        anyone: orphans were reaped just before, so that is the child) or the
-        child is gone. A child that never takes it is killed and reported."""
+        """restart_reconciler's start (the user waits on that ack anyway): wait
+        for _child_lock_state under the lock. A child that never takes it is
+        stopped and reported; _proc is cleared only once it is dead."""
         deadline = time.time() + LOCK_TAKE_S + 2
+        p = self._proc
         while time.time() < deadline:
-            if self._proc.poll() is not None:
+            held = self._child_lock_state(p)
+            if held is None:
                 self._proc = None
                 raise RuntimeError("reconciler exited before taking its lock")
-            fd = self._try_lock()
-            if fd is None:
+            if held:
                 return
-            _release_fd(fd)
             time.sleep(0.2)
-        self._proc.kill()
-        self._proc.wait(3)
-        self._proc = None
+        self._give_up_child(p)
+        try:
+            p.wait(3)
+            self._proc = None
+        except subprocess.TimeoutExpired:
+            pass
         raise RuntimeError("reconciler did not take its lock — stopped")
 
 

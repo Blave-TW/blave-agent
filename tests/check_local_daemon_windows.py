@@ -288,21 +288,37 @@ popen_kw = []
 
 
 class FakeChild:
-    """A reconciler as the daemon sees it: takes the lock on its own fd after
-    `take_after` seconds (None = never), exits when told."""
+    """A reconciler as the daemon sees it: from `take_after` seconds after it is
+    spawned (None = never on its own, see begin_taking) it polls for the lock
+    on its own fd the way _take_reconciler_lock does; exits when told.
+    outlive=True keeps polling after kill — the venv launcher's interpreter."""
     _next = 900
 
-    def __init__(self, take_after=0.05, exit_now=False):
+    def __init__(self, take_after=0.05, exit_now=False, outlive=False):
         FakeChild._next += 1
         self.pid, self.returncode = FakeChild._next, (1 if exit_now else None)
         self.stdin = types.SimpleNamespace(closed=False, close=lambda: setattr(self.stdin, "closed", True))
         self.fd, self.log = None, []
-        if take_after is not None and not exit_now:
-            threading.Timer(take_after, self._take).start()
+        self.take_after, self.outlive = take_after, outlive
+
+    def spawned(self):
+        if self.take_after is not None and self.returncode is None:
+            threading.Timer(self.take_after, self.begin_taking).start()
+
+    def begin_taking(self):
+        threading.Thread(target=self._take, daemon=True).start()
 
     def _take(self):
-        self.fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-        ld.msvcrt.locking(self.fd, 2, 1)
+        end = time.time() + 30
+        while time.time() < end and (self.returncode is None or self.outlive):
+            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                ld.msvcrt.locking(fd, 2, 1)
+                self.fd = fd
+                return
+            except OSError:
+                os.close(fd)
+                time.sleep(0.02)
 
     def die(self, code=1):
         if self.fd is not None:
@@ -334,6 +350,7 @@ children = []
 def fake_popen(argv, **kw):
     popen_kw.append(kw)
     c = children.pop(0)
+    c.spawned()
     return c
 
 
@@ -392,6 +409,151 @@ try:
     check(False, "[sup nt] child exits before locking → RuntimeError")
 except RuntimeError as e:
     check("exited before" in str(e), f"[sup nt] child exits before locking → RuntimeError: {e}")
+
+# crash respawn whose child misses the lock (CPU-starved box): still wanted, retried, recovers
+children.append(FakeChild())
+sup.restart_reconciler()
+sup._proc.die(1)
+children.append(FakeChild(take_after=None))
+sup.tick()
+sup.tick()
+st = sup.info()
+check(sup._proc.poll() is not None and st["wanted"] is True and st["running"] is False,
+      "[sup nt retry] respawn child never took the lock → stopped, still wanted")
+children.append(FakeChild())
+sup.tick()
+c5 = sup._proc
+check(c5 is not None and c5.fd is not None and sup.info()["running"] is True and sup.restarts == 2,
+      "[sup nt retry] next tick starts a new child that holds the lock")
+
+# the given-up child outlives kill (wait times out): no second one while it is alive
+class StubbornChild(FakeChild):
+    def kill(self):
+        self.log.append("kill")
+
+
+c5.die(1)
+stub = StubbornChild(take_after=None)
+children.append(stub)
+sup.tick()
+sup.tick()
+check(sup._proc is stub and stub.log == ["kill"] and stub.stdin.closed,
+      "[sup nt retry] killed child still alive → kept as _proc, its stdin closed")
+nxt = FakeChild()
+children.append(nxt)
+for _ in range(3):
+    sup.tick()
+check(children == [nxt] and sup._proc is stub, "[sup nt retry] no spawn while the given-up child is alive")
+stub.die(-9)
+sup.tick()
+sup.tick()
+check(sup._proc is nxt and nxt.fd is not None and children == [], "[sup nt retry] once it is dead → respawned")
+
+# the slow one takes the lock after it was given up on (the venv launcher's interpreter
+# outliving TerminateProcess): the retry refuses while it holds the lock, never two holders
+nxt.die(1)
+slow = FakeChild(take_after=None, outlive=True)
+children.append(slow)
+sup.tick()
+sup.tick()
+check(sup._proc is slow and slow.poll() is not None and slow.log == ["kill"],
+      "[sup nt slow] confirm gave up on the slow child")
+slow.begin_taking()
+for _ in range(100):
+    if slow.fd is not None:
+        break
+    time.sleep(0.05)
+check(slow.fd is not None and len(ld.msvcrt.held) == 1, "[sup nt slow] …which then took the lock late")
+after = FakeChild()
+children.append(after)
+holders = []
+for _ in range(3):
+    sup.tick()
+    holders.append(len(ld.msvcrt.held))
+check(children == [after] and max(holders) == 1 and sup.info()["wanted"] is True,
+      "[sup nt slow] retries refuse while it holds the lock — never a second reconciler")
+ld.msvcrt.drop(slow.fd)  # it saw EOF and left
+sup.tick()
+check(sup._proc is after and after.fd is not None and len(ld.msvcrt.held) == 1,
+      "[sup nt slow] lock free again → the next retry starts one")
+with open(os.path.join(WS2, "state", "reconciler.log")) as f:
+    rlog = f.read()
+check(rlog.count("another reconciler holds the lock") == 1,
+      "[sup nt slow] a repeating failure is noted in reconciler.log once, not every retry")
+check("reconciler did not take its lock" in rlog and "after failed tries" in rlog,
+      "[sup nt slow] the lock miss and the recovery are both in reconciler.log")
+after.die(0)
+sup.stop_reconciler()
+
+# stop pressed while a retry is pending: no tick may bring it back
+children.append(FakeChild())
+sup.restart_reconciler()
+sup._proc.die(1)
+children.append(FakeChild(take_after=None))
+sup.tick()
+sup.tick()
+check(sup.info()["wanted"] is True and sup._respawn_at is not None, "[sup nt stop] a retry is pending")
+check(sup.stop_reconciler() is True, "[sup nt stop] stop pressed during the retry wait")
+held_back = FakeChild()
+children.append(held_back)
+for _ in range(3):
+    sup.tick()
+check(children == [held_back] and sup.info()["wanted"] is False and sup.info()["running"] is False,
+      "[sup nt stop] after stop, ticks start nothing")
+children.clear()
+
+# stop pressed while a respawn waits for its child's lock: answered at once, not after the wait
+ld.LOCK_TAKE_S = 3
+children.append(FakeChild())
+sup.restart_reconciler()
+sup._proc.die(1)
+waiting = FakeChild(take_after=None)
+children.append(waiting)
+sup.tick()
+ticker = threading.Thread(target=sup.tick)
+ticker.start()
+for _ in range(100):
+    if sup._proc is waiting:
+        break
+    time.sleep(0.02)
+threading.Timer(0.1, lambda: waiting.die(0)).start()  # leaves on the stop's EOF
+t0 = time.time()
+stopped = sup.stop_reconciler()
+took = time.time() - t0
+ticker.join(10)
+check(stopped is True and took < 2 and not ticker.is_alive(),
+      f"[sup nt stop] stop during the lock wait returns in {took:.2f}s (wait is {ld.LOCK_TAKE_S + 2}s)")
+for _ in range(3):
+    sup.tick()
+with open(os.path.join(WS2, "state", "reconciler.log")) as f:
+    tail = f.read().rsplit("stopping the reconciler", 1)[-1]
+check(children == [] and sup.info()["wanted"] is False and sup._proc is None
+      and "restart failed" not in tail,
+      "[sup nt stop] the abandoned confirm neither resurrects it nor reports the stop as a failure")
+ld.LOCK_TAKE_S = 0.3
+
+# start refused by the contract gate: retried, but noted once, not every 10 s
+import command_listener as _cl  # noqa: E402
+real_block = _cl._contracts_start_block
+_cl._contracts_start_block = lambda: "CONTRACT_NEEDS_UPDATE: test gate"
+children.append(FakeChild())
+_cl._contracts_start_block = real_block
+sup.restart_reconciler()
+_cl._contracts_start_block = lambda: "CONTRACT_NEEDS_UPDATE: test gate"
+sup._proc.die(1)
+for _ in range(5):
+    sup.tick()
+_cl._contracts_start_block = real_block
+with open(os.path.join(WS2, "state", "reconciler.log")) as f:
+    rlog = f.read()
+check(rlog.count("CONTRACT_NEEDS_UPDATE: test gate") == 1 and sup.info()["wanted"] is True,
+      "[sup nt gate] refused start retried but noted once")
+gated_ok = FakeChild()
+children.append(gated_ok)
+sup.tick()
+check(sup._proc is gated_ok and gated_ok.fd is not None, "[sup nt gate] gate lifted → the next try starts it")
+gated_ok.die(0)
+sup.stop_reconciler()
 
 # POSIX path untouched: pass_fds still there, terminate() still first
 nt_mode(False)
