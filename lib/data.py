@@ -308,6 +308,13 @@ def _tmp_path(path):
     return path.with_name(f'{path.name}.{os.getpid()}.{threading.get_ident()}.tmp')
 
 
+# Windows only: os.replace fails with WinError 5 while another process (a second strategy on the
+# same symbol) has the target month open for reading — CPython and pyarrow open without
+# FILE_SHARE_DELETE. Those reads last milliseconds, so wait them out (same idea as
+# lib/strategy.py _replace_bytes). POSIX replace never conflicts with readers: no retry there.
+_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.5) if os.name == 'nt' else ()
+
+
 def _atomic_to_parquet(df, path, footer_meta=None):
     """Write `df` to `path` via same-directory tmp file + os.replace.
     `footer_meta` (bytes→bytes) is merged into the parquet schema metadata.
@@ -324,7 +331,14 @@ def _atomic_to_parquet(df, path, footer_meta=None):
             pq.write_table(table, tmp)
         else:
             df.to_parquet(tmp)
-        os.replace(tmp, path)
+        for delay in _REPLACE_RETRY_DELAYS:
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                time.sleep(delay)
+        else:
+            os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 
