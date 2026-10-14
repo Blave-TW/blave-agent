@@ -1564,25 +1564,68 @@ UPDATE_HOLD_STALE_S = 900  # the script waits --wait-busy 600 at most, plus the 
 _hold_logged = False
 
 
-def _update_hold():
-    """True while a live update hold is on disk (see UPDATE_HOLD_PATH)."""
-    global _hold_logged
+def _pid_gone(pid):
+    """True only when `pid` is known to have exited (manager/wait_for_bar._pid_alive's probe,
+    inverted): any doubt keeps the hold and leaves the age limit in charge."""
+    if os.name == "nt":
+        import ctypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenProcess.restype = ctypes.c_void_p
+        k.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        k.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        k.CloseHandle.argtypes = [ctypes.c_void_p]
+        h = k.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not h:
+            return ctypes.get_last_error() == 87  # ERROR_INVALID_PARAMETER: no such pid
+        try:
+            return k.WaitForSingleObject(h, 0) == 0  # WAIT_OBJECT_0 = exited
+        finally:
+            k.CloseHandle(h)
     try:
-        age = time.time() - UPDATE_HOLD_PATH.stat().st_mtime
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
     except OSError:
+        return False
+    return False
+
+
+def _update_hold():
+    """True while a live hold is on disk: state/execution/hold (the workspace update, the
+    desktop respawn) or any state/execution/hold.<who> (hold.amounts = the 下單設定 save).
+    Each writer removes only its own file. A hold whose writer's pid (first word of the
+    file) is gone is removed at once — a writer killed mid-hold must not stop every round,
+    closes included, for the whole age limit; one older than UPDATE_HOLD_STALE_S is removed
+    whatever it says."""
+    global _hold_logged
+    live = False
+    for path in sorted(UPDATE_HOLD_PATH.parent.glob(UPDATE_HOLD_PATH.name + "*")):
+        if path.name != UPDATE_HOLD_PATH.name and not path.name.startswith(UPDATE_HOLD_PATH.name + "."):
+            continue
+        if path.name.endswith(".tmp"):
+            continue
+        try:
+            age = time.time() - path.stat().st_mtime
+            words = path.read_text(encoding="utf-8", errors="replace").split()
+        except OSError:
+            continue
+        pid = int(words[0]) if words and words[0].isdigit() else None
+        if age > UPDATE_HOLD_STALE_S or (pid is not None and pid != os.getpid() and _pid_gone(pid)):
+            logging.warning(f"[reconciler] {path.name}: its writer is gone or it is {age:.0f}s old "
+                            f"— removing it")
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            continue
+        live = True
+    if not live:
         if _hold_logged:
-            logging.info("[reconciler] workspace update hold released — resuming reconciliation")
+            logging.info("[reconciler] hold released — resuming reconciliation")
             _hold_logged = False
         return False
-    if age > UPDATE_HOLD_STALE_S:
-        logging.warning(f"[reconciler] workspace update hold is {age:.0f}s old (the script died) — removing it")
-        try:
-            UPDATE_HOLD_PATH.unlink()
-        except OSError:
-            pass
-        return False
     if not _hold_logged:
-        logging.info("[reconciler] workspace update in progress — no round until its hold is released")
+        logging.info("[reconciler] a hold is on (workspace update / settings save) — no round until it is released")
         _hold_logged = True
     return True
 

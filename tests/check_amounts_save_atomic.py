@@ -39,7 +39,10 @@ fails = 0
 CONFIG = os.path.join(WS, "manager", "portfolio_config.json")
 MIRROR = os.path.join(WS, "manager", "amounts.ui.json")
 ROLL = os.path.join(WS, "state", "contract_rollover.json")
-HOLD = os.path.join(WS, "state", "execution", "hold")
+HOLD = os.path.join(WS, "state", "execution", "hold.amounts")
+UPD_HOLD = os.path.join(WS, "state", "execution", "hold")
+EVENTS = os.path.join(WS, "state", "events.jsonl")
+HALTF = os.path.join(WS, "state", "HALT")
 
 
 def check(cond, msg):
@@ -134,11 +137,73 @@ del SEEN_HOLD[:]
 save({"btc_a": 66001, "txf_a": 20}, {"txf_a": "TMF"})
 check(SEEN_HOLD and all(h for _, h in SEEN_HOLD), f"4 the reconciler's hold is on during every write ({SEEN_HOLD})")
 check(not os.path.exists(HOLD), "4 …and gone afterwards")
-os.makedirs(os.path.dirname(HOLD), exist_ok=True)
-open(HOLD, "w").write("update")
+os.makedirs(os.path.dirname(UPD_HOLD), exist_ok=True)
+open(UPD_HOLD, "w").write("12345 1")
 save({"btc_a": 66002, "txf_a": 20}, {"txf_a": "TMF"})
-check(os.path.exists(HOLD) and open(HOLD).read() == "update", "4 a hold someone else (the workspace update) holds is left alone")
-os.remove(HOLD)
+check(os.path.exists(UPD_HOLD) and open(UPD_HOLD).read() == "12345 1" and not os.path.exists(HOLD),
+      "4 the save uses its own hold file; the workspace update's hold is never touched")
+os.remove(UPD_HOLD)
+
+# ── 6. a rollback that cannot be done is an alarm ──
+def events_of():
+    try:
+        return [json.loads(l)["type"] for l in open(EVENTS) if l.strip()]
+    except OSError:
+        return []
+
+
+real_remove = os.remove
+
+
+def stuck_remove(path, *a, **k):
+    if os.path.abspath(path) == os.path.abspath(CONFIG):
+        raise PermissionError(13, "[WinError 32] in use", path)
+    return real_remove(path, *a, **k)
+
+
+for p in (CONFIG, MIRROR, ROLL, EVENTS):
+    if os.path.exists(p):
+        real_remove(p)
+cl.os.remove = stuck_remove
+err = save({"btc_a": 66000}, fail=MIRROR)   # first save: config written, mirror fails, config cannot be removed
+cl.os.remove = real_remove
+check((err or "").startswith("SAVE_FAILED:") and os.path.exists(HALTF) and events_of() == ["settings_unsafe"],
+      f"6 first save, the leftover config cannot be removed: HALT + one P1 event settings_unsafe ({events_of()})")
+real_remove(HALTF)
+real_remove(CONFIG)
+real_remove(EVENTS)
+check(save({"btc_a": 66000}) is None, "(a clean save)")
+real_restore = cl._file_restore
+
+
+def stuck_restore(path, data):
+    raise PermissionError(13, "[WinError 32] in use", path)
+
+
+cl._file_restore = stuck_restore
+err = save({"btc_a": 67000}, fail=MIRROR)   # the old mirror stays in charge
+cl._file_restore = real_restore
+check((err or "").startswith("SAVE_FAILED:") and not os.path.exists(HALTF) and events_of() == ["settings_rollback_failed"]
+      and target_of("BTCUSDT") == 66000,
+      f"6 a later save's config cannot be restored: no HALT, one P2 event, the old mirror still trades 66,000 ({events_of()})")
+
+# retries before giving up (Windows sharing violation)
+calls = {"n": 0}
+
+
+def flaky_remove(path, *a, **k):
+    if os.path.abspath(path) == os.path.abspath(CONFIG) and calls["n"] < 2:
+        calls["n"] += 1
+        raise PermissionError(13, "[WinError 32] in use", path)
+    return real_remove(path, *a, **k)
+
+
+cl.atomic_file.REPLACE_RETRY_DELAYS = (0.01, 0.01, 0.01)
+open(CONFIG, "w").write("{}")
+cl.os.remove = flaky_remove
+cl._file_restore(CONFIG, None)
+cl.os.remove = real_remove
+check(not os.path.exists(CONFIG) and calls["n"] == 2, "6 removing the leftover config retries through transient sharing violations")
 
 # ── 5. Windows tree ──
 rows = [(10, 1), (11, 10), (12, 11), (13, 10), (20, 1), (21, 20)]

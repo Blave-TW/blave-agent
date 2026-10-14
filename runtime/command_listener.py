@@ -3516,8 +3516,18 @@ def _file_snapshot(path):
 
 
 def _file_restore(path, data):
-    """Put `path` back as _file_snapshot saw it (None = it did not exist)."""
+    """Put `path` back as _file_snapshot saw it (None = it did not exist). The removal retries
+    like atomic_file.replace_retry (Windows: a reader holding the file is a transient
+    sharing violation); raises if it still cannot."""
     if data is None:
+        for delay in atomic_file.REPLACE_RETRY_DELAYS:
+            try:
+                os.remove(path)
+                return
+            except FileNotFoundError:
+                return
+            except PermissionError:
+                time.sleep(delay)
         try:
             os.remove(path)
         except FileNotFoundError:
@@ -3525,6 +3535,29 @@ def _file_restore(path, data):
         return
     with atomic_file.replacing(path, "wb") as f:
         f.write(data)
+
+
+AMOUNTS_HOLD_NAME = "hold.amounts"   # state/execution/: manager/reconciler._update_hold reads hold*
+
+
+def _settings_alarm(unsafe, what, err):
+    """A failed save could not be rolled back. `unsafe` = the files now trade what the page
+    says was NOT saved (a first save's config left with no mirror): HALT (source settings —
+    the platform keeps that halt at P3, the event is the one P1) and a P1 event. Otherwise the
+    mirror, which is what trades, is still the old one: a P2 event — the config and mirror
+    disagree until the next save. Classes in .claude/docs/notifications.md."""
+    import events
+    if unsafe:
+        try:
+            from lib.guard import trip_halt
+            _in_workspace(trip_halt, f"settings save failed and could not be undone ({what})", "settings")
+        except Exception as e:
+            _log(f"settings-unsafe halt failed: {type(e).__name__}: {e}")
+    try:
+        events.append("settings_unsafe" if unsafe else "settings_rollback_failed",
+                      {"what": what, "error": f"{type(err).__name__}"})
+    except Exception as e:
+        _log(f"settings event not written: {type(e).__name__}: {e}")
 
 
 def _save_amounts_all_or_nothing(path, cfg, write_rollovers, write_mirror):
@@ -3537,25 +3570,28 @@ def _save_amounts_all_or_nothing(path, cfg, write_rollovers, write_mirror):
     mirror (this replaces the old P2-2 order, mirror first, whose only reason was that a round
     triggered by the config write would otherwise read the old mirror; the hold below covers
     that). The rollover record goes first (a round that sees the new contract must find it).
-    Any failure restores what was already written (the record, then the config) and raises
-    SAVE_FAILED — a config without a mirror (first save) would otherwise trade on its own.
-    While the three writes run, state/execution/hold keeps the reconciler from starting a
-    round (manager/reconciler._update_hold, the hold the workspace update uses): no round reads
-    a half-written save; the config mtime it watches is still new afterwards, so the round runs
-    then. The hold is best-effort (a round in between would read the old mirror: old amounts)."""
+    Any failure restores what was already written (the record, then the config; a removal
+    retries like a replace) and raises SAVE_FAILED. A restore that still fails is an alarm:
+    a first save's config left without a mirror would trade on its own — HALT + P1; anything
+    else leaves the old mirror in charge — P2 (_settings_alarm).
+    While the writes run, state/execution/hold.amounts ("<pid> <epoch>") keeps the reconciler
+    from starting a round (manager/reconciler._update_hold reads every hold*; it removes one
+    whose pid is gone, so a listener killed mid-save does not stop trading for 15 minutes).
+    This file is ours alone — the workspace update's hold is another file. Best-effort (a
+    round in between would read the old mirror: old amounts)."""
     rpath = os.path.join(WORKSPACE_STATE, ROLLOVER_PATH_NAME)
-    hold = os.path.join(WORKSPACE_STATE, "execution", "hold")
+    hold = os.path.join(WORKSPACE_STATE, "execution", AMOUNTS_HOLD_NAME)
     made_hold = False
     try:
-        if not os.path.exists(hold):
-            os.makedirs(os.path.dirname(hold), exist_ok=True)
-            with open(hold, "w") as f:
-                f.write(str(os.getpid()))
-            made_hold = True
+        os.makedirs(os.path.dirname(hold), exist_ok=True)
+        with open(hold, "w") as f:
+            f.write(f"{os.getpid()} {int(time.time())}")
+        made_hold = True
     except OSError as e:
         _log(f"amounts save: reconciler hold not written ({type(e).__name__}) — saving without it")
     try:
         r_before, c_before = _file_snapshot(rpath), _file_snapshot(path)
+        mirror_existed = os.path.exists(os.path.join(WORKSPACE, "manager", "amounts.ui.json"))
         write_rollovers()   # one atomic write or none; its own refusals (CONTRACT_…) go out as they are
         done = ["rollover"]
         try:
@@ -3564,13 +3600,19 @@ def _save_amounts_all_or_nothing(path, cfg, write_rollovers, write_mirror):
             done.append("config")
             write_mirror()
         except Exception as e:
+            stuck, last = [], None
             for what, p, before in (("config", path, c_before), ("rollover", rpath, r_before)):
-                if what in done:
-                    try:
-                        _file_restore(p, before)
-                    except OSError as e2:
-                        _log(f"amounts save: {what} not rolled back ({type(e2).__name__}: {e2})")
-            _log(f"amounts save failed, nothing kept: {type(e).__name__}: {e}")
+                if what not in done or _file_snapshot(p) == before:
+                    continue   # not written by this save, or written back unchanged
+                try:
+                    _file_restore(p, before)
+                except OSError as e2:
+                    _log(f"amounts save: {what} not rolled back ({type(e2).__name__}: {e2})")
+                    stuck.append(what)
+                    last = e2
+            if stuck:   # one alarm per save; only a config with no mirror beside it trades on its own
+                _settings_alarm("config" in stuck and not mirror_existed, "+".join(stuck), last)
+            _log(f"amounts save failed: {type(e).__name__}: {e}")
             raise RuntimeError("SAVE_FAILED: 設定檔暫時寫不進去(檔案正被占用),這次什麼都沒改——"
                                "請再存一次") from None
     finally:
