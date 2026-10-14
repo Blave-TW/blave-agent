@@ -21,6 +21,13 @@ try:
     import capital_vault  # run as a script (NSSM / --once): lib/ is sys.path[0]
 except ImportError:
     from lib import capital_vault
+try:
+    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
+except ImportError:
+    try:
+        from lib.winreplace import atomic_replace
+    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+        atomic_replace = os.replace
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", r"C:\blave-agent\workspace")
 OUT_PATH = os.path.join(WORKSPACE, "state", "capital_account.json")
@@ -104,7 +111,7 @@ def _write_snapshot(payload):
     tmp = OUT_PATH + ".tmp"
     with open(tmp, "w") as f:
         json.dump(payload, f)
-    os.replace(tmp, OUT_PATH)
+    atomic_replace(tmp, OUT_PATH)
 
 
 class QueryInProgress(RuntimeError):
@@ -503,7 +510,7 @@ def _write_probe(payload):
     tmp = PROBE_PATH + ".tmp"
     with open(tmp, "w") as f:
         json.dump(payload, f)
-    os.replace(tmp, PROBE_PATH)
+    atomic_replace(tmp, PROBE_PATH)
 
 
 if __name__ == "__main__":

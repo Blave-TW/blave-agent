@@ -119,20 +119,6 @@ def load_config():
     return read_config(CONFIG_PATH)
 
 
-def replace_retry(tmp, path):
-    """os.replace, retried: on Windows it loses with PermissionError to another process
-    holding the target open — the same transient command_listener._finish_mgmt_job
-    retries. (Used for state/tg_offset; telegram.json is rewritten in place on Windows.)"""
-    for attempt in range(5):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if attempt == 4:
-                raise
-            time.sleep(0.3)
-
-
 def write_json_600(path, data):
     """Bot token is a secret — owner-only, never briefly world-readable. Rewritten IN
     PLACE on every platform; a tmp+replace needs write permission on the directory:

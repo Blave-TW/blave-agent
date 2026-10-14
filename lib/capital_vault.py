@@ -10,12 +10,20 @@ the agent do not pick it up in passing (SYSTEM could still take it on purpose).
 
 Imported two ways: capital_worker.py runs as a bare script with lib/ on
 sys.path (`import capital_vault`), order_capital.py as `lib.capital_vault`.
-Keep it free of other lib imports.
+Keep it free of other lib imports (winreplace aside: stdlib only, same two ways).
 """
 import hashlib
 import json
 import os
 import time
+
+try:
+    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
+except ImportError:
+    try:
+        from lib.winreplace import atomic_replace
+    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+        atomic_replace = os.replace
 
 VAULT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                      "credentials", "capital_vault.json")
@@ -52,7 +60,7 @@ def mark_order_sent():
         os.makedirs(os.path.dirname(LAST_ORDER_PATH), exist_ok=True)
         with open(LAST_ORDER_PATH + ".tmp", "w") as f:
             f.write(repr(_last_order_mem))
-        os.replace(LAST_ORDER_PATH + ".tmp", LAST_ORDER_PATH)
+        atomic_replace(LAST_ORDER_PATH + ".tmp", LAST_ORDER_PATH)
     except OSError as e:
         import logging
         logging.warning(f"capital: last-order marker not written ({type(e).__name__}) — "
@@ -88,7 +96,7 @@ def _write_block(block):
         os.makedirs(os.path.dirname(BLOCK), exist_ok=True)
         with open(BLOCK + ".tmp", "w", encoding="utf-8") as f:
             json.dump(block, f)
-        os.replace(BLOCK + ".tmp", BLOCK)
+        atomic_replace(BLOCK + ".tmp", BLOCK)
         return True
     except OSError:
         return False

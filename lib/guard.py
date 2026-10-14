@@ -37,6 +37,10 @@ import logging
 import os
 import threading
 import time
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 from datetime import datetime, timezone
 
 HALT_PATH = "state/HALT"
@@ -270,7 +274,7 @@ def trip_halt(reason, source):
     tmp = HALT_PATH + ".tmp"
     with open(tmp, "w") as f:
         json.dump({"ts": _now(), "reason": reason, "source": source}, f)
-    os.replace(tmp, HALT_PATH)
+    atomic_replace(tmp, HALT_PATH)
     audit("halt_tripped", reason=reason, source=source)
 
 
@@ -341,7 +345,7 @@ def trip_halt_for(strategy, reason, source):
     tmp = halt_path_for(strategy) + ".tmp"
     with open(tmp, "w") as f:
         json.dump({"ts": _now(), "reason": reason, "source": source}, f)
-    os.replace(tmp, halt_path_for(strategy))
+    atomic_replace(tmp, halt_path_for(strategy))
     audit("halt_tripped", reason=reason, source=source, scope=strategy)
 
 

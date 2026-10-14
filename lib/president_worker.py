@@ -43,6 +43,13 @@ try:
     import president_quote
 except ImportError:
     from lib import president_vault, president_quote
+try:
+    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
+except ImportError:
+    try:
+        from lib.winreplace import atomic_replace
+    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+        atomic_replace = os.replace
 
 WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = os.path.join(WORKSPACE, "state")
@@ -88,7 +95,7 @@ def _atomic_write(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
-    os.replace(path + ".tmp", path)
+    atomic_replace(path + ".tmp", path)
 
 
 def _write_snapshot(payload):

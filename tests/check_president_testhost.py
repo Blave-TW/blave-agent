@@ -86,7 +86,7 @@ cc._python_for_worker = lambda: "py"
 popen = []
 pc.subprocess.Popen = lambda argv, **kw: popen.append(argv)
 for name in ("president_vault.py", "president_worker.py", "president_contracts.py", "account_president.py",
-             "venue_errors.py"):
+             "venue_errors.py", "winreplace.py"):
     shutil.copy(os.path.join(ROOT, "lib", name), os.path.join(WS, "lib"))
 open(P["worker"], "a").close()
 BIND = {"president_account": "70000011234", "president_password": "trade-pw"}

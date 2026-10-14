@@ -102,7 +102,7 @@ pc.IS_WINDOWS = True
 check("1 other venues' writes: untouched", pc.divert_credentials({"OKX_API_KEY": "k"}) == {"OKX_API_KEY": "k"})
 check("1 a workspace lib that reads production from .env → LIB_OUTDATED, nothing written",
       refused(lambda: pc.divert_credentials(dict(BIND)), "LIB_OUTDATED") is True and not os.path.exists(P["vault"]))
-for name in ("president_vault.py", "president_worker.py"):
+for name in ("president_vault.py", "president_worker.py", "winreplace.py"):
     shutil.copy(os.path.join(ROOT, "lib", name), os.path.join(WS, "lib"))
 check("1 the shipped lib reads the vault", pc.lib_supports_vault())
 for label, half in (("the account alone", {"president_account": "1"}),

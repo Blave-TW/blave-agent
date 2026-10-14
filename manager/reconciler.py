@@ -4,6 +4,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib import events, guard, venue_errors, venue_traits
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 from lib.portfolio import (reconcile, load_portfolio_config, strategy_amounts,
                            aggregate_portfolio)
 
@@ -1105,7 +1109,7 @@ def _save_outage():
         tmp = OUTAGE_PATH + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(_outage, f)
-        os.replace(tmp, OUTAGE_PATH)
+        atomic_replace(tmp, OUTAGE_PATH)
     except OSError as e:
         logging.warning(f"[reconciler] outage state not persisted: {e}")
 
@@ -1196,7 +1200,7 @@ def _save_account_guard(state):
         tmp = ACCOUNT_GUARD_PATH + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(state, f)
-        os.replace(tmp, ACCOUNT_GUARD_PATH)
+        atomic_replace(tmp, ACCOUNT_GUARD_PATH)
     except OSError as e:
         logging.warning(f"[reconciler] account guard state not persisted: {e}")
 
@@ -1237,7 +1241,7 @@ def _save_account_id_read(venue, supported, error):
         with open(tmp, 'w') as f:
             json.dump({"venue": venue, "supported": supported, "error": error,
                        "at": int(time.time())}, f)
-        os.replace(tmp, ACCOUNT_ID_READ_PATH)
+        atomic_replace(tmp, ACCOUNT_ID_READ_PATH)
     except OSError as e:
         logging.warning(f"[reconciler] account-id read result not persisted: {e}")
 

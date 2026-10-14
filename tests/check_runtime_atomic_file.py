@@ -640,13 +640,11 @@ check("atomic_file.sweep_runtime_temps(ws," in src_ld and "atomic_file.sweep_run
 # ── enumeration: every os.replace / os.rename in runtime/ is reviewed ──
 # (file, enclosing function) → why it is not a write-then-replace that needs atomic_file
 REVIEWED = {
-    ("capital_connect.py", "_write_vault"): "already a random temp name (secrets.token_hex), its own ACL steps",
     ("local_daemon.py", "_link_current"): "os.symlink(tmp) never follows an existing name (EEXIST)",
     ("local_daemon.py", "_spawn_locked"): "reconciler.log rotation: renames the log, writes nothing",
     ("president_connect.py", "_spawn"): "president_worker.log rotation (desktop): renames the log, writes nothing",
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
-    ("telegram_pairing.py", "replace_retry"): "the replace callable atomic_file.replacing is handed",
     ("sdk_pin.py", "_mark_bad"): ".ready → .bad inside $BASE/sdk/<pin> (rename of our own marker); $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
     ("sdk_sync.py", "_rename"): "<pin>.tmp → <pin> directory swap; $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
     ("sdk_sync.py", "_save_state"): "$BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",

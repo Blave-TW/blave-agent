@@ -72,6 +72,10 @@ from datetime import datetime
 from hashlib import sha1
 
 from lib import guard, president_vault
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 from lib.president_contracts import (MONTH_CODES, PROD_RE, ROOTS, TAIPEI,  # noqa: F401
                                      computed_near, entry_roll_at, front_month, prod_id,
                                      settlement_at)
@@ -347,7 +351,7 @@ def _tag_guard(tag):
             tmp = _TAGS_PATH + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"date": today, "tags": tags + [tag]}, f)
-            os.replace(tmp, _TAGS_PATH)
+            atomic_replace(tmp, _TAGS_PATH)
         yield record
 
 

@@ -117,6 +117,8 @@ PROBE_TIMEOUT_S = 150
 SETUP_TIMEOUT_S = 900
 FINISH_TIMEOUT_S = 240
 TEST_ORDER_TIMEOUT_S = 150  # login 30 + reply wait 15 + a close-out login and wait if it ever fills
+SWEEP_RETRY_S = 2  # after a failed step-end write: retried this often,
+SWEEP_FOR_S = 300  # for this long
 VAULT_PW_PREFIX = "vault:"
 CA_SENTINEL = "vault:ca"
 _ACCOUNT, _SECRET, _CA_PW = "president_account", "president_password", "president_ca_password"
@@ -761,28 +763,94 @@ def run_finish(push=None):
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
 
-def _sweep_interrupted():
+def _sweep_interrupted(drop_pfx=True, retry=True):
     """A runtime publish restarts the bridge and kills a Deferred mid-step: the
     status keeps `busy` and a section stuck at running/importing. An upload killed
     between the pfx write and the vault write leaves a new certificate next to the
-    old (or no) password — a login would spend a broker try with it, so it goes."""
+    old (or no) password — a login would spend a broker try with it, so it goes.
+    Raises OSError when the status cannot be read or written; a file that is not JSON
+    holds no `busy` to clear (the next _update starts it over)."""
     if not _busy.acquire(blocking=False):
         return
     try:
-        st = read_status()
-        if not st or not st.get("busy"):
-            return
-        for sec in _SECTIONS:
-            if (st.get(sec) or {}).get("status") in ("running", "importing"):
-                if sec == "cert":
-                    try:
-                        os.remove(_paths()["pfx"])
-                    except OSError:
-                        pass
-                _update(sec, status="failed", error="INTERRUPTED")
-        _update(busy=None)
+        _end_step(drop_pfx=drop_pfx, retry=retry, only_if_busy=True)
+    except ValueError:
+        pass
     finally:
         _busy.release()
+
+
+def _end_step(drop_pfx=False, retry=True, only_if_busy=False):
+    """A step's end (or its remains): `busy` off, a section it left at running/importing
+    failed INTERRUPTED — in one write. Caller holds _busy. No status file = nothing to
+    end; any other read or write failure raises (a silent return would leave `busy`).
+    drop_pfx: only for a step that was killed — a step that ran to its end cleaned up
+    after itself, and a cert stuck at importing there (its failure write failed too)
+    may sit next to the certificate still in use. retry=False: one replace attempt, so
+    the background sweep holds _busy for milliseconds, not the replace backoff."""
+    path = _paths()["status"]
+    with _status_lock:
+        try:
+            with open(path, encoding="utf-8") as f:
+                st = json.load(f)
+        except FileNotFoundError:
+            return
+        if not isinstance(st, dict) or (only_if_busy and not st.get("busy")):
+            return
+        now = int(time.time())
+        stuck = [sec for sec in _SECTIONS
+                 if isinstance(st.get(sec), dict) and st[sec].get("status") in ("running", "importing")]
+        if not stuck and not st.get("busy"):
+            return
+        if drop_pfx and "cert" in stuck:
+            try:
+                os.remove(_paths()["pfx"])
+            except OSError:
+                pass
+        for sec in stuck:
+            st[sec].update(status="failed", error="INTERRUPTED", at=now)
+        st["busy"] = None
+        st["updated_at"] = now
+        with atomic_file.replacing(path, encoding="utf-8",
+                                   replace=None if retry else os.replace) as f:
+            json.dump(st, f)
+
+
+_SWEEPER = {"thread": None}
+_SWEEPER_LOCK = threading.Lock()
+
+
+def _release_step():
+    """Deferred cleanup. If even the retried status write fails, a `busy` left on disk
+    holds the page on 「確認中…」 and hides the retry that would reach _sweep_interrupted —
+    so the sweep is retried from here until it lands or a newer step owns the lock."""
+    try:
+        _end_step()
+    except (OSError, ValueError) as e:
+        print(f"[president_connect] status unusable at step end ({type(e).__name__}); retrying",
+              file=sys.stderr)
+        with _SWEEPER_LOCK:
+            t = _SWEEPER["thread"]
+            if t is None or not t.is_alive():
+                t = threading.Thread(target=_sweep_until_written, daemon=True, name="president-sweep")
+                _SWEEPER["thread"] = t
+                t.start()
+    finally:
+        _busy.release()
+
+
+def _sweep_until_written():
+    deadline = time.monotonic() + SWEEP_FOR_S
+    while time.monotonic() < deadline:
+        time.sleep(SWEEP_RETRY_S)
+        try:
+            _sweep_interrupted(drop_pfx=False, retry=False)
+        except OSError:
+            continue
+        st = read_status()  # None = unreadable right now (the same contention), not "cleared"
+        if _busy.locked() or (isinstance(st, dict) and not st.get("busy")):
+            return
+    print("[president_connect] gave up clearing busy in the status file", file=sys.stderr)
 
 
 _JOBS = {
@@ -843,13 +911,7 @@ def dispatch(cmd, args, deferred_cls, push=None, local=False):
         _busy.release()
         raise
 
-    def cleanup():
-        try:
-            _update(busy=None)
-        finally:
-            _busy.release()
-
-    return deferred_cls(lambda: _JOBS[cmd](args, push), cleanup=cleanup)
+    return deferred_cls(lambda: _JOBS[cmd](args, push), cleanup=_release_step)
 
 
 # ── desktop app (BLAVE_AGENT_LOCAL=1, Windows) ───────────────────────────────
@@ -1438,10 +1500,4 @@ def local_dispatch(args, deferred_cls, push=None):
         _busy.release()
         raise
 
-    def cleanup():
-        try:
-            _update(busy=None)
-        finally:
-            _busy.release()
-
-    return deferred_cls(lambda: job(push), cleanup=cleanup)
+    return deferred_cls(lambda: job(push), cleanup=_release_step)

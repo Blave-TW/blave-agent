@@ -1,6 +1,6 @@
 """拿得到群益／統一密碼的程式檔,agent 改不得(稽核 2026-10-07 S1;Wei 拍板)。
 
-  ① 每個回合的 disallowed 規則含這十支的 Edit(Edit 規則涵蓋 Write / MultiEdit),錨在 workspace;排程回合也有
+  ① 每個回合的 disallowed 規則含這十一支的 Edit(Edit 規則涵蓋 Write / MultiEdit),錨在 workspace;排程回合也有
   ② Bash:重導向進去、sed -i、cp / mv / rm、python open(...,'w')、PowerShell Set-Content、git checkout 這幾支 → deny;
      讀(cat / grep / import)、照常執行它們(含 `> tmp/log 2>&1`)放行
   ③ 每個回合都掛這道 hook
@@ -34,10 +34,14 @@ def t(name, ok, got=None):
 
 FILES = ["lib/president_vault.py", "lib/president_worker.py", "lib/order_president.py", "lib/account_president.py",
          "lib/capital_vault.py", "lib/capital_worker.py", "lib/order_capital.py", "lib/account_capital.py",
-         "manager/reconciler.py", "manager/flatten.py"]
-t("① 十支都在每個回合的 Edit 規則裡(錨在 workspace)", all(f"Edit(/{f})" in at.PROTECTED_EDIT_RULES for f in FILES),
+         "manager/reconciler.py", "manager/flatten.py", "lib/winreplace.py"]
+t("① 十一支都在每個回合的 Edit 規則裡(錨在 workspace)", all(f"Edit(/{f})" in at.PROTECTED_EDIT_RULES for f in FILES),
   [f for f in FILES if f"Edit(/{f})" not in at.PROTECTED_EDIT_RULES])
-t("① 清單本身就是這十支", sorted(at.SECRET_CODE_FILES) == sorted(FILES))
+t("① 清單本身就是這十一支", sorted(at.SECRET_CODE_FILES) == sorted(FILES))
+t("① 含 lib/winreplace.py(四支 vault 檔都 import 它,改它等於改它們)",
+  "lib/winreplace.py" in at.SECRET_CODE_FILES and all(
+      "winreplace" in open(os.path.join(ROOT, f), encoding="utf-8").read()
+      for f in ("lib/president_vault.py", "lib/president_worker.py", "lib/capital_vault.py", "lib/capital_worker.py")))
 t("① 每支都真的存在(改名就要跟著改這份清單)", all(os.path.isfile(os.path.join(ROOT, f)) for f in FILES),
   [f for f in FILES if not os.path.isfile(os.path.join(ROOT, f))])
 before = list(at.PROTECTED_EDIT_RULES)

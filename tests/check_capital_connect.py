@@ -271,7 +271,7 @@ out = cc.divert_credentials({"capital_api_key": "Z123456789", "capital_password"
 check("5 old libs: values stay in .env as before", out == {"capital_api_key": "Z123456789", "capital_password": "trade-pw"})
 check("5 A-4 a bind on a machine that never ran a capital_* step creates no capital_connect status",
       not os.path.exists(status_path))
-for name in ("capital_worker.py", "order_capital.py", "capital_vault.py"):
+for name in ("capital_worker.py", "order_capital.py", "capital_vault.py", "winreplace.py"):
     shutil.copy(os.path.join(ROOT, "lib", name), lib)
 check("5 the shipped libs read the vault", cc.lib_supports_vault())
 out = cc.divert_credentials({"capital_api_key": "Z123456789", "capital_password": "trade-pw", "OTHER": "1"})

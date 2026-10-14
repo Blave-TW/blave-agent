@@ -55,6 +55,14 @@ import time
 from datetime import datetime, time as dtime, timedelta, timezone
 from urllib.parse import urlparse
 
+try:
+    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
+except ImportError:
+    try:
+        from lib.winreplace import atomic_replace
+    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+        atomic_replace = os.replace
+
 _WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(_WS, ".env")
 VAULT = os.path.join(os.path.dirname(_WS), "credentials", "president_vault.json")
@@ -308,7 +316,7 @@ def replace_json(path, obj):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(obj, f)
-        os.replace(tmp, path)
+        atomic_replace(tmp, path)
     except BaseException:
         try:
             os.remove(tmp)

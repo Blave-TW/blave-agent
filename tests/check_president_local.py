@@ -40,7 +40,7 @@ for d in ("lib", "state", "manager"):
     os.makedirs(os.path.join(WS, d))
 with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
     f.write("{}")
-for name in ("president_vault.py", "president_worker.py", "guard.py", "__init__.py"):
+for name in ("president_vault.py", "president_worker.py", "guard.py", "winreplace.py", "__init__.py"):
     src = os.path.join(ROOT, "lib", name)
     if os.path.exists(src):
         shutil.copy(src, os.path.join(WS, "lib"))
