@@ -70,6 +70,8 @@ Pages wired down:                         90000.
 check(rc._parse_vm_stat(VM) == (10000 + 50000 + 4000) * 16384 // (1024 * 1024),
       f"N vm_stat: free + inactive + speculative pages ({rc._parse_vm_stat(VM)} MB)")
 check(rc._parse_vm_stat("garbage") is None, "N vm_stat unreadable → None")
+check(rc.win_available_mb(8 << 30, 3 << 30) == 3072 and rc.win_available_mb(2 << 30, 9 << 30) == 2048,
+      "N Windows: the smaller of free physical memory and commit left")
 
 # ── E ───────────────────────────────────────────────────────────────────────
 sd = os.path.join(WS, "strategies", "e1")
@@ -91,6 +93,21 @@ r, out, err, secs, peak = cl._run_measured("m1", [sys.executable, "-c", code], d
 check(r == 0 and peak >= 250 and secs >= 1.0, f"E a real child: peak {peak} MB (≥250 of 300 allocated), {secs:.1f}s")
 r, *_ = cl._run_measured("m2", [sys.executable, "-c", "import time; time.sleep(30)"], dict(os.environ), 1)
 check(r is None, "E past the timeout the child is killed and the run reads as timed out")
+
+# OOM: a refresh child is the kernel's first pick (Linux); the value itself is pinned anywhere
+tmpadj = os.path.join(BASE, "oom_{pid}")
+real_path = rc.OOM_ADJ_PATH
+rc.OOM_ADJ_PATH = tmpadj
+rc.demote_oom(4242)
+check(open(tmpadj.format(pid=4242)).read() == "1000", "E demote_oom writes 1000 (never 0)")
+rc.OOM_ADJ_PATH = real_path
+if os.path.exists("/proc/self/oom_score_adj"):
+    r, out, *_ = cl._run_measured("oom", [sys.executable, "-c",
+                                          "import time; time.sleep(1); print(open('/proc/self/oom_score_adj').read())"],
+                                  dict(os.environ), 30)
+    check(r == 0 and out.strip() == "1000", f"E Linux: the refresh child runs with oom_score_adj 1000 ({out.strip()})")
+else:
+    print("SKIP E Linux oom_score_adj of a real child (no /proc here)")
 
 # ── O ───────────────────────────────────────────────────────────────────────
 for n, s in (("slow", 300), ("fast", 5), ("mid", 40)):
@@ -177,6 +194,45 @@ check(not cl._STATS_REFRESH_LOCK.acquire(timeout=0.1), "P the sweep cannot take 
 check(idle(), "P (shared run done)")
 check(cl._STATS_REFRESH_LOCK.acquire(timeout=1), "P …and can once it is done")
 cl._STATS_REFRESH_LOCK.release()
+
+# a thread that cannot be started gives its slot and name back, the rest still run
+real_start = threading.Thread.start
+
+
+def flaky_start(self):
+    if self.name == "stats-refresh-p3":
+        raise RuntimeError("can't start new thread")
+    return real_start(self)
+
+
+threading.Thread.start = flaky_start
+ran.clear()
+cl._cmd_stats_refresh({"names": ["p3", "p4"]})
+done = idle()
+threading.Thread.start = real_start
+check(done and ran == ["p4"], f"P a failed thread start: that one not run, the rest are ({ran})")
+check("p3" not in cl._STATS_REFRESH_LOCK.active and cl._STATS_REFRESH_LOCK.acquire(timeout=1),
+      "P …its slot is released (the sweep can take the machine)")
+cl._STATS_REFRESH_LOCK.release()
+d3 = json.load(open(os.path.join(WS, "strategies", "p3", "perf_refresh.json")))
+check(d3.get("status") == "failed" and cl._cmd_stats_refresh({"names": ["p3"]})["started"] == ["p3"] and idle(),
+      f"P …recorded failed and pressable again ({d3})")
+
+# the sweep pauses new button starts for its whole run (no starving it to its deadline)
+ran.clear()
+cl._STATS_REFRESH_LOCK.pause_shared()
+cl._cmd_stats_refresh({"names": ["p5"]})
+time.sleep(1.0)
+check(ran == [], "P while the sweep runs, a new button batch does not start")
+cl._STATS_REFRESH_LOCK.resume_shared()
+check(idle() and ran == ["p5"], "P …and starts when the sweep is done")
+seen = []
+real_members = cl._sweep_members
+cl._sweep_members = lambda names, deadline, now, reason: seen.append(cl._STATS_REFRESH_LOCK._paused) or 0
+cl._bound_venue = lambda: True
+cl._refresh_live_stats("t")
+cl._sweep_members = real_members
+check(seen == [1] and cl._STATS_REFRESH_LOCK._paused == 0, f"P the sweep holds the pause for its run and lifts it after ({seen})")
 rc.may_start = real_may
 
 shutil.rmtree(BASE, ignore_errors=True)

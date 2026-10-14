@@ -5912,6 +5912,7 @@ class _RefreshSlots:
     def __init__(self):
         self._cond = threading.Condition()
         self._excl = False
+        self._paused = 0   # the sweep is on: no NEW shared start (running ones finish)
         self.active = {}   # name -> [estimate_mb, now_mb] of shared runs
 
     def acquire(self, blocking=True, timeout=-1):
@@ -5940,10 +5941,22 @@ class _RefreshSlots:
         """Block until `name` may start beside what runs; free memory changes without telling
         us, so the wait re-reads it every poll_s."""
         with self._cond:
-            while self._excl or not refresh_capacity.may_start(
+            while self._excl or self._paused or not refresh_capacity.may_start(
                     estimate_mb, [tuple(v) for v in self.active.values()]):
                 self._cond.wait(poll_s)
             self.active[name] = [estimate_mb, 0]
+
+    def pause_shared(self):
+        """The pre-report sweep: button batches keep coming would otherwise take the machine
+        between its strategies and starve it to its deadline. New shared starts wait until
+        resume_shared; the ones already running finish."""
+        with self._cond:
+            self._paused += 1
+
+    def resume_shared(self):
+        with self._cond:
+            self._paused = max(0, self._paused - 1)
+            self._cond.notify_all()
 
     def note_rss(self, name, mb):
         with self._cond:
@@ -6201,7 +6214,15 @@ def _run_refresh_queue(queued):
         _STATS_REFRESH_LOCK.acquire_shared(name, est)
         t = threading.Thread(target=one, args=(name, backtest_hash), daemon=True,
                              name=f"stats-refresh-{name}")
-        t.start()
+        try:
+            t.start()
+        except RuntimeError as e:   # no thread to be had: give the slot and the name back
+            _STATS_REFRESH_LOCK.release_shared(name)
+            with _PERF_PENDING_LOCK:
+                _PERF_PENDING.discard(name)
+            _mark_perf(name, "failed", "EXIT")
+            _log(f"stats refresh: {name} not started: {e}")
+            continue
         workers.append(t)
     for t in workers:
         t.join()
@@ -6275,7 +6296,18 @@ def _refresh_live_stats(reason):
     deadline = time.monotonic() + STATS_REFRESH_BUDGET_S
     now = time.time()
     touched = 0
-    for name in sorted(ac_names):
+    _STATS_REFRESH_LOCK.pause_shared()   # button batches wait for the sweep, not the reverse
+    try:
+        touched = _sweep_members(sorted(ac_names), deadline, now, reason)
+    finally:
+        _STATS_REFRESH_LOCK.resume_shared()
+    if touched:
+        _push(_ON_APPLIED, "stats refresh (sweep)")
+
+
+def _sweep_members(names, deadline, now, reason):
+    touched = 0
+    for name in names:
         try:
             age = now - os.stat(_stats_path(name)).st_mtime
         except OSError:
@@ -6295,8 +6327,7 @@ def _refresh_live_stats(reason):
             with _PERF_PENDING_LOCK:
                 _PERF_PENDING.discard(name)
         touched += 1
-    if touched:
-        _push(_ON_APPLIED, "stats refresh (sweep)")
+    return touched
 
 
 def _resume_perf_refresh():

@@ -66,10 +66,18 @@ def available_memory_mb():
             st.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
             if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
                 return None
-            return int(st.ullAvailPhys // (1024 * 1024))
+            # Windows does not overcommit: when the commit limit runs out, the allocation that
+            # fails may be the reconciler's, not the refresh's — so the smaller of the two
+            return win_available_mb(st.ullAvailPhys, st.ullAvailPageFile)
     except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
         return None
     return None
+
+
+def win_available_mb(avail_phys, avail_pagefile):
+    """GlobalMemoryStatusEx bytes → MB: the smaller of free physical memory and the commit
+    charge left (ullAvailPageFile is commit limit − commit charge)."""
+    return int(min(avail_phys, avail_pagefile) // (1024 * 1024))
 
 
 def _parse_vm_stat(text):
@@ -152,12 +160,16 @@ def write_cost(sdir, peak_mb, seconds):
             pass
 
 
+OOM_ADJ_PATH = "/proc/{pid}/oom_score_adj"
+OOM_ADJ = 1000
+
+
 def demote_oom(pid):
     """Linux: the refresh child is the OOM killer's first pick (oom_score_adj 1000, raising
     one's own process's score needs no privilege). Elsewhere a no-op."""
     try:
-        with open(f"/proc/{pid}/oom_score_adj", "w") as f:
-            f.write("1000")
+        with open(OOM_ADJ_PATH.format(pid=pid), "w") as f:
+            f.write(str(OOM_ADJ))
     except OSError:
         pass
 

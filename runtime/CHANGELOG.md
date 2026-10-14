@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **更新績效同時跑的稽核 P2 四條(audit-parallel-refresh-2026-10-14)**:①Windows 剩餘記憶體改取「實體可用」與「commit 剩餘(ullAvailPageFile)」兩者較小(Windows 不 overcommit,commit 用完時失敗的可能是對帳器);②開執行緒失敗時把那支的名額與 `_PERF_PENDING` 還回去、記成 failed EXIT,其餘照跑(原本名額會永久洩漏,sweep 每次等到期限);③測試釘住 refresh 子行程的 `oom_score_adj` 是 1000(任何平台驗寫入的值,Linux 另驗真的子行程讀到 1000);④報告前的 sweep 整輪期間暫停按鈕批「新的」啟動(`_RefreshSlots.pause_shared`,已在跑的照跑完),按鈕一直進來不會再把 sweep 餓到期限;按鈕批最多被延後 sweep 的預算(600 秒)。測試 `tests/check_stats_refresh_parallel.py`。
+
 - **存金額時,路由到統一或群益的投資組合(Type C)策略一律擋下(`_cmd_amounts`)**:原本 `NOT_TXF` 只看 SYMBOL,Type C 的 stats.json 沒有 symbol,所以被放進去。現在判定為 Type C(`_strategy_is_portfolio`,讀不到照舊 fail-open)且交易所是統一或群益時,整筆拒絕、什麼都不寫,沿用錯誤碼 `NOT_TXF`(頁面已經把它翻成句子),訊息寫明是投資組合、哪一家;金額 0 也擋(同其他成員)。測試 `tests/check_amounts_president_symbol.py` 加兩家各兩種金額。
 
 - **`stats_refresh`(更新績效)改成同時跑幾支(Wei 10-14;新模組 `runtime/refresh_capacity.py`,只用標準庫)**:按鈕／chip 排進來的那批,每啟動一支前重新判斷能不能再開一支——同時在跑的少於 min(4, CPU 核心數 // 2),而且「剩餘記憶體 − 預留 1 GB − 在跑那幾支還可能長的量(預估 − 目前用量)」≥ 下一支的預估;一支都沒在跑一律可開;剩餘記憶體讀不到就一次一支。剩餘記憶體:Linux `/proc/meminfo` MemAvailable、macOS `vm_stat`(free + inactive + speculative)、Windows GlobalMemoryStatusEx。每支的預估是它上次 refresh 子行程的峰值(`strategies/<name>/.perf_cost.json` 的 `peak_mb`;POSIX 用 `os.wait4` 拿那一個子行程自己的 ru_maxrss,Windows 讀行程 handle 的 PeakWorkingSetSize,Windows 量到 < 200 MB 當成量到的是啟動器、照沒紀錄算),沒紀錄 1.5 GB;同一個檔也記這支成功那次花了幾秒。順序:上次花得短的先跑,沒紀錄的排最後、照送來的順序。Linux 上 refresh 子行程的 `oom_score_adj` 設 1000,記憶體真的不夠時核心先砍它、不會砍對帳器;其他平台估錯只會變慢。單一鎖改成 `_RefreshSlots`(共享＝按鈕那批、獨佔＝報告前的 sweep):sweep 照舊一次一支、有預算、遇到有人在跑就跳過;BUSY、`_PERF_PENDING`(同一支不會同時跑兩次)、`perf.refresh` 狀態、600 秒／15 分逾時都照舊。子行程改用 Popen＋暫存檔收輸出(輪詢期間不會卡在管線)。測試 `tests/check_stats_refresh_parallel.py`。
