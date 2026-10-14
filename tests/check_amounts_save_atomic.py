@@ -187,6 +187,31 @@ check((err or "").startswith("SAVE_FAILED:") and not os.path.exists(HALTF) and e
       and target_of("BTCUSDT") == 66000,
       f"6 a later save's config cannot be restored: no HALT, one P2 event, the old mirror still trades 66,000 ({events_of()})")
 
+# the rollback's own compare-read blocked: counted as a failed rollback, never skipped
+for p in (CONFIG, MIRROR, ROLL, EVENTS, HALTF):
+    if os.path.exists(p):
+        real_remove(p)
+real_snap = cl._file_snapshot
+reads = {"n": 0}
+
+
+def blocked_snapshot(path):
+    if os.path.abspath(path) == os.path.abspath(CONFIG):
+        reads["n"] += 1
+        if reads["n"] > 1:   # the first read is the pre-save snapshot; the rollback's is blocked
+            raise PermissionError(13, "[WinError 32] in use", path)
+    return real_snap(path)
+
+
+cl._file_snapshot = blocked_snapshot
+err = save({"btc_a": 66000}, fail=MIRROR)
+cl._file_snapshot = real_snap
+check((err or "").startswith("SAVE_FAILED:") and os.path.exists(HALTF) and events_of() == ["settings_unsafe"],
+      f"6 the rollback cannot even read the config back: an alarm (first save → HALT + P1), not a silent skip ({events_of()})")
+for p in (CONFIG, MIRROR, ROLL, EVENTS, HALTF):
+    if os.path.exists(p):
+        real_remove(p)
+
 # retries before giving up (Windows sharing violation)
 calls = {"n": 0}
 

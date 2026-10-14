@@ -3602,9 +3602,11 @@ def _save_amounts_all_or_nothing(path, cfg, write_rollovers, write_mirror):
         except Exception as e:
             stuck, last = [], None
             for what, p, before in (("config", path, c_before), ("rollover", rpath, r_before)):
-                if what not in done or _file_snapshot(p) == before:
-                    continue   # not written by this save, or written back unchanged
+                if what not in done:
+                    continue
                 try:
+                    if _file_snapshot(p) == before:
+                        continue   # written back unchanged
                     _file_restore(p, before)
                 except OSError as e2:
                     _log(f"amounts save: {what} not rolled back ({type(e2).__name__}: {e2})")

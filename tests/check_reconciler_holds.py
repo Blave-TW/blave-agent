@@ -48,6 +48,20 @@ A.write_text(f"{gone.pid} 1")
 check(rec._update_hold() is True and H.exists() and not A.exists(),
       "two writers: the dead one's file goes, the live one's keeps the hold")
 H.unlink()
+# no permission to probe the writer's pid is not "the writer is gone": the hold stays
+A.write_text("424242 1")
+real_kill = rec.os.kill
+
+
+def denied(pid, sig):
+    raise PermissionError(1, "Operation not permitted")
+
+
+rec.os.kill = denied
+if os.name != "nt":
+    check(rec._update_hold() is True and A.exists(), "a pid we may not probe (EPERM) keeps the hold")
+rec.os.kill = real_kill
+A.unlink()
 Path("state/execution/hold.amounts.tmp").write_text(f"{os.getpid()}")
 check(rec._update_hold() is False, "a temp file is not a hold")
 
