@@ -101,6 +101,24 @@ check(err is None and specs["mxf_sma"] == cl._TXF_ASSET_SPECS["TMF"],
 check(specs["txf_sma"]["contract_value"] == 200 and specs["txf_sma"]["margin"] == 650000,
       "…a hand-edited margin on the unchanged TXF spec is kept")
 
+# a portfolio (Type C: stats.json with benchmark_*, no symbol) on 統一 or 群益 → NOT_TXF too
+pdir = os.path.join(WS, "strategies", "port_c")
+os.makedirs(pdir, exist_ok=True)
+with open(os.path.join(pdir, "stats.json"), "w") as f:
+    json.dump({"benchmark_n": 1000, "Sharpe Ratio": 1.0}, f)
+with open(os.path.join(pdir, "strategy.py"), "w") as f:
+    f.write('STRATEGY_NAME = "port_c"\nINTERVAL = "1d"\n')
+cl._portfolio_trading_supported = lambda: True   # a lib that trades Type C: the venue is the only reason
+for env_lines, zh in ((PRESIDENT, "統一期貨"), ("CAPITAL_API_KEY=A123456789\nCAPITAL_PASSWORD=vault:abc\n", "群益期貨")):
+    bind(env_lines)
+    save({"txf_sma": 1})
+    before = open(CONFIG).read()
+    for amt in (5, 0):
+        err = save({"txf_sma": 1, "port_c": amt})
+        check(err is not None and err.startswith("NOT_TXF: 「port_c」") and "Type C" in err and zh in err
+              and open(CONFIG).read() == before,
+              f"{zh}: a Type C portfolio at amount {amt} is refused NOT_TXF, nothing written: {err}")
+
 bind("BINANCE_API_KEY=a\nBINANCE_SECRET_KEY=b\n")
 err = save({"btc_sma": 100, "txf_sma": 1})
 check(err is None and json.load(open(CONFIG))["exchanges"] == {"btc_sma": "binance", "txf_sma": "binance"},

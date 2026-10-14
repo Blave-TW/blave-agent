@@ -49,6 +49,7 @@ import atomic_file
 import capital_connect
 import president_connect
 import telegram_pairing
+import refresh_capacity
 import turn_slots
 import venue_traits
 
@@ -3531,8 +3532,19 @@ def _cmd_amounts(args):
     # anything else (BTCUSDT…) is refused at save time, by name, instead of
     # blowing up in the reconciler's first round. Symbol unreadable = not
     # judged (same fail-open as the Type C check); the picker locks these too.
+    # A portfolio (Type C) on a TW futures broker (統一 or 群益) has no symbol to judge above,
+    # yet it is not a single TXF-family contract either — refused under the same code (the
+    # pages already turn NOT_TXF into a sentence); amount 0 too, like any member there.
     for k in clean:
-        if cfg["exchanges"].get(k) != venue_traits.PRESIDENT:
+        venue = cfg["exchanges"].get(k)
+        if venue not in (venue_traits.PRESIDENT, venue_traits.CAPITAL):
+            continue
+        venue_zh = "統一期貨" if venue == venue_traits.PRESIDENT else "群益期貨"
+        if _strategy_is_portfolio(k):
+            raise ValueError(
+                f"NOT_TXF: 「{k}」是投資組合(Type C)策略,{venue_zh}只能下台指期(TXF／MXF／TMF)單一合約"
+                "——請取消勾選後再儲存")
+        if venue != venue_traits.PRESIDENT:
             continue
         sym = _strategy_futures_symbol(k)
         if sym and sym not in _TXF_ASSET_SPECS:
@@ -5876,8 +5888,9 @@ def _cmd_version_restore(args):
 # `perf.refresh` (strategies/<name>/perf_refresh.json, read by strategy_reporter): running →
 # gone on success, failed + a code otherwise — the same four codes as a restore's re-run, so
 # the page reuses those strings. The pre-report sweep (_start_report_job) runs the live path for
-# every deployed Type A/C strategy and nothing else. One refresh subprocess at a time per
-# machine. An old lib (live tick still rewriting stats.json) runs the live command as an
+# every deployed Type A/C strategy and nothing else, one at a time; the button / chip queue
+# runs several at once, as many as runtime/refresh_capacity.py allows before each start (Wei
+# 10-14). An old lib (live tick still rewriting stats.json) runs the live command as an
 # ordinary live tick: it writes stats.json too.
 STATS_REFRESH_ENV = "BLAVE_STATS_REFRESH"            # = lib/runner.STATS_REFRESH_ENV
 STATS_REFRESH_TIMEOUT_S = 600                        # = manager/wait_for_bar.RUN_TIMEOUT_SECONDS
@@ -5890,7 +5903,60 @@ STATS_REFRESH_MIN_AGE_S = 3600
 STATS_REFRESH_MAX_NAMES = 50
 PERF_REFRESH_FILE = "perf_refresh.json"              # = strategy_reporter.PERF_REFRESH_FILE
 _STATS_REFRESH_NAME_RE = _VERSION_RESTORE_NAME_RE
-_STATS_REFRESH_LOCK = threading.Lock()   # the one refresh subprocess (button queue and sweep)
+class _RefreshSlots:
+    """Who may run a refresh subprocess. The button / chip queue takes SHARED slots, as many at
+    once as refresh_capacity.may_start allows (re-judged before each start); the pre-report
+    sweep takes the machine EXCLUSIVELY, one strategy at a time, as before. The lock-shaped
+    acquire/release/locked are the exclusive side (what the sweep and older callers use)."""
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self._excl = False
+        self.active = {}   # name -> [estimate_mb, now_mb] of shared runs
+
+    def acquire(self, blocking=True, timeout=-1):
+        end = None if timeout is None or timeout < 0 else time.monotonic() + timeout
+        with self._cond:
+            while self._excl or self.active:
+                if not blocking:
+                    return False
+                left = None if end is None else end - time.monotonic()
+                if left is not None and left <= 0:
+                    return False
+                self._cond.wait(left)
+            self._excl = True
+            return True
+
+    def release(self):
+        with self._cond:
+            self._excl = False
+            self._cond.notify_all()
+
+    def locked(self):
+        with self._cond:
+            return self._excl or bool(self.active)
+
+    def acquire_shared(self, name, estimate_mb, poll_s=2.0):
+        """Block until `name` may start beside what runs; free memory changes without telling
+        us, so the wait re-reads it every poll_s."""
+        with self._cond:
+            while self._excl or not refresh_capacity.may_start(
+                    estimate_mb, [tuple(v) for v in self.active.values()]):
+                self._cond.wait(poll_s)
+            self.active[name] = [estimate_mb, 0]
+
+    def note_rss(self, name, mb):
+        with self._cond:
+            if name in self.active and mb:
+                self.active[name][1] = max(self.active[name][1], mb)
+
+    def release_shared(self, name):
+        with self._cond:
+            self.active.pop(name, None)
+            self._cond.notify_all()
+
+
+_STATS_REFRESH_LOCK = _RefreshSlots()   # refresh subprocesses: shared (button queue) / exclusive (sweep)
 _PERF_PENDING = set()                    # names queued or running in this process
 _PERF_PENDING_LOCK = threading.Lock()
 
@@ -5991,21 +6057,78 @@ def _refresh_stats(name, timeout, backtest_hash=None):
                                        PYTHONPATH=WORKSPACE)
     else:
         env = _strategy_subprocess_env("live", **{STATS_REFRESH_ENV: "1", "PYTHONPATH": WORKSPACE})
-    try:
-        r = subprocess.run([_workspace_python(), script], cwd=WORKSPACE, env=env,
-                           capture_output=True, encoding="utf-8", errors="replace",
-                           timeout=timeout, **_child_kw())
-    except subprocess.TimeoutExpired:
+    rc, out, err, seconds, peak = _run_measured(name, [_workspace_python(), script], env, timeout)
+    sdir = os.path.join(WORKSPACE, "strategies", name)
+    if rc is None:
+        refresh_capacity.write_cost(sdir, peak, None)
         raise RuntimeError(f"TIMEOUT: performance refresh of {name} did not finish within {timeout:.0f}s")
-    if r.returncode != 0:
-        tail = _tail(r.stderr) or _tail(r.stdout)
-        raise RuntimeError(f"{_classify_rerun(tail)}: {tail or f'exited {r.returncode}'}")
+    if rc != 0:
+        refresh_capacity.write_cost(sdir, peak, None)
+        tail = _tail(err) or _tail(out)
+        raise RuntimeError(f"{_classify_rerun(tail)}: {tail or f'exited {rc}'}")
+    refresh_capacity.write_cost(sdir, peak, seconds)
     after = _stats_sig(name)
     if after is None:
         raise RuntimeError("EXIT: the run wrote no stats.json")
     if after == before:
         raise RuntimeError(f"SUPERSEDED: the run of {name} wrote nothing — its strategy file changed under it")
     return int(after[0] // 1_000_000_000)
+
+
+def _run_measured(name, argv, env, timeout):
+    """subprocess.run(capture_output, timeout) plus the child's peak memory and wall time:
+    (returncode or None on timeout — the child killed —, stdout, stderr, seconds, peak_mb).
+    POSIX reaps with os.wait4, whose rusage carries that one child's own ru_maxrss — exact, no
+    matter how short the run (sampling a 2-s poll would miss it). Windows reads the peak working
+    set off the process handle. Meanwhile the current size is fed to the slots for the growth
+    term. Output goes to temp files, not pipes: polling must not stall a chatty child."""
+    import tempfile
+    t0 = time.monotonic()
+    peak = 0
+    posix = hasattr(os, "wait4")
+    with tempfile.TemporaryFile() as fo, tempfile.TemporaryFile() as fe:
+        p = subprocess.Popen(argv, cwd=WORKSPACE, env=env, stdout=fo, stderr=fe, **_child_kw())
+        refresh_capacity.demote_oom(p.pid)
+        step = refresh_capacity.sample_interval() if not posix else refresh_capacity.SAMPLE_S
+        rc = None
+        while True:
+            if posix:
+                pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+                if pid:
+                    rc = p.returncode = os.waitstatus_to_exitcode(status)
+                    peak = max(peak, refresh_capacity.maxrss_mb(ru.ru_maxrss))
+                    break
+            else:
+                try:
+                    rc = p.wait(0)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+            if platform.system() != "Darwin":   # macOS: `ps` per sample is not worth it
+                mb = refresh_capacity.rss_mb(p)
+                if mb:
+                    peak = max(peak, mb)
+                    _STATS_REFRESH_LOCK.note_rss(name, mb)
+            if time.monotonic() - t0 > timeout:
+                p.kill()
+                if posix:
+                    _pid, _st, ru = os.wait4(p.pid, 0)
+                    p.returncode = -9
+                    peak = max(peak, refresh_capacity.maxrss_mb(ru.ru_maxrss))
+                else:
+                    p.wait()
+                rc = None
+                break
+            time.sleep(step)
+        if not posix:
+            mb = refresh_capacity.rss_mb(p)   # the peak, read off the handle after exit
+            if mb:
+                peak = max(peak, mb)
+
+        def text(f):
+            f.seek(0)
+            return f.read().decode("utf-8", "replace")
+        return rc, text(fo), text(fe), time.monotonic() - t0, peak
 
 
 def _stats_sig(name):
@@ -6018,13 +6141,14 @@ def _stats_sig(name):
     return st.st_mtime_ns, st.st_size
 
 
-def _refresh_one(name, deadline, what, backtest_hash=None):
+def _refresh_one(name, deadline, what, backtest_hash=None, shared=False):
     """Refresh `name` with the record the page reads: running while it runs, gone on success,
     failed + code otherwise. `deadline` (monotonic) bounds the lock wait and the run; None =
-    no budget (the button). Returns True on success."""
+    no budget (the button). `shared`: the caller already holds a shared slot (the button queue);
+    otherwise the machine is taken exclusively (the sweep). Returns True on success."""
     _mark_perf(name, "running")
     wait = None if deadline is None else max(0.0, deadline - time.monotonic())
-    if not _STATS_REFRESH_LOCK.acquire(timeout=-1 if wait is None else wait):
+    if not shared and not _STATS_REFRESH_LOCK.acquire(timeout=-1 if wait is None else wait):
         # not this strategy's failure: the sweep's budget went to whoever held the machine
         _remove_retry(_perf_path(name), "performance refresh record")
         _log(f"{what}: {name} not refreshed: another refresh held the machine for the whole budget")
@@ -6041,21 +6165,46 @@ def _refresh_one(name, deadline, what, backtest_hash=None):
         _log(f"{what}: {name} not refreshed: {str(e)[:300]}")
         return False
     finally:
-        _STATS_REFRESH_LOCK.release()
+        if not shared:
+            _STATS_REFRESH_LOCK.release()
     _remove_retry(_perf_path(name), "performance refresh record")
     return True
 
 
+def _refresh_order(queued):
+    """Shortest last run first (strategies/<name>/.perf_cost.json), never-measured last; ties
+    keep the order asked for."""
+    def key(item):
+        s = refresh_capacity.last_seconds(os.path.join(WORKSPACE, "strategies", item[1][0]))
+        return (s is None, s or 0.0, item[0])
+    return [x for _, x in sorted(enumerate(queued), key=key)]
+
+
 def _run_refresh_queue(queued):
-    for name, backtest_hash in queued:
+    """Start each queued refresh as soon as refresh_capacity allows (a shared slot), shortest
+    first; several run at once. A name is in _PERF_PENDING from the ack until its run ends, so
+    the same strategy never runs twice at once (button, chip or sweep)."""
+    def one(name, backtest_hash):
         try:
-            _refresh_one(name, None, "stats refresh", backtest_hash)
+            _refresh_one(name, None, "stats refresh", backtest_hash, shared=True)
         finally:
+            _STATS_REFRESH_LOCK.release_shared(name)
             with _PERF_PENDING_LOCK:
                 _PERF_PENDING.discard(name)
-        # per strategy: a deployed strategy's stats.json is tracked by existence only
-        # (strategy_reporter._stats_marker), nothing else would carry the new numbers
-        _push(_ON_APPLIED, "stats refresh")
+            # per strategy: a deployed strategy's stats.json is tracked by existence only
+            # (strategy_reporter._stats_marker), nothing else would carry the new numbers
+            _push(_ON_APPLIED, "stats refresh")
+
+    workers = []
+    for name, backtest_hash in _refresh_order(queued):
+        est = refresh_capacity.estimate_mb(os.path.join(WORKSPACE, "strategies", name))
+        _STATS_REFRESH_LOCK.acquire_shared(name, est)
+        t = threading.Thread(target=one, args=(name, backtest_hash), daemon=True,
+                             name=f"stats-refresh-{name}")
+        t.start()
+        workers.append(t)
+    for t in workers:
+        t.join()
 
 
 def _cmd_stats_refresh(args):
