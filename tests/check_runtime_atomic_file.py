@@ -684,6 +684,7 @@ CREATE_REVIEWED = {
 }
 # plain writes: open / os.fdopen with "w" / "x" / "+" (not "a": the list above), write_text / write_bytes
 WRITE_REVIEWED = {
+    ("refresh_capacity.py", "demote_oom"): "/proc/<pid>/oom_score_adj of our own refresh child: a kernel knob, not a file to replace",
     ("local_daemon.py", "_run"): "state/execution/hold: a pid marker the reconciler only checks for existence (same as manager/update_workspace.py)",
     ("local_daemon.py", "respawn_when_idle"): "the same hold marker (the scan attributes the nested _run to both)",
     ("agent_turn.py", "_image_quota_line"): "BASE/state (strategy_reporter.STATE_DIR): outside the desktop Codex sandbox; cloud runtime = agent user",

@@ -15,8 +15,9 @@ exchange. What must stay true, each asserted here:
      target — and resume once that heartbeat is stale; right after a sleep / clock jump a stale
      heartbeat still freezes for SIGNALS_GAP_GRACE_S. The report carries signals_frozen
      {since, pending} exactly while frozen.
-  4. full unbind, stop confirmed: membership is cleared, Type B crons are dropped; strategies
-     picked again with no venue are ticked, routed nowhere, and no reconciler is started.
+  4. full unbind, stop confirmed: members and amounts are kept, routing is blanked, Type B crons
+     are dropped; the kept (and re-picked) Type A/C members are ticked, routed nowhere, and no
+     reconciler is started.
   5. through all of it the runtime process never imports an order lib; with no venue bound
      no path starts the reconciler (resume, resume_wait, restart_reconciler).
   6. desktop mode (BLAVE_AGENT_LOCAL=1): the real tick again loads no venue module and gets
@@ -299,11 +300,19 @@ try:
     # ── 4. full unbind, stop confirmed: clean sheet, then picked again with no venue ──
     bound_and_trading()
     unbind()
-    cleared = json.load(open(CFG))
-    check(cleared["amounts"] == {} and cleared["exchanges"] == {} and crons == [set()]
+    kept = json.load(open(CFG))
+    check(kept["amounts"] == {"sa": 1000, "sc": 1000, "sb": 1000}
+          and kept["exchanges"] == {"sa": "", "sc": "", "sb": ""} and crons == [set()]
           and os.path.exists(cl.RECONCILER_STOP_MARK),
-          "unbind, stop confirmed: membership cleared, Type B crons dropped, stop marked")
-    check(cycle() == [], "…nothing picked any more: nothing ticked")
+          "unbind, stop confirmed: members and amounts kept (Wei 10-14), routing blanked, Type B crons dropped, stop marked")
+    del spawned[:]
+    cl.subprocess.run = cl.subprocess.Popen = _no_spawn
+    try:
+        got = cycle()
+    finally:
+        cl.subprocess.run, cl.subprocess.Popen = _real_run, _real_popen
+    check(got == ["sa", "sc"] and not starts and not spawned,
+          f"…the kept Type A/C members keep computing signals, routed nowhere, nothing started → {got}")
     del crons[:]
     cl.subprocess.run = cl.subprocess.Popen = _no_spawn
     try:

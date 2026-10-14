@@ -1,6 +1,6 @@
 """How many performance refreshes (`stats_refresh`) may run at once, and what each costs.
 
-Stdlib only. Reads free memory, core count and one child's memory; decides whether one more
+Stdlib plus runtime/atomic_file only (never the workspace). Reads free memory, core count and one child's memory; decides whether one more
 refresh may start now. Never starts, stops or signals anything except raising a refresh child's
 OOM score on Linux (so the kernel takes it, never the reconciler).
 
@@ -148,16 +148,12 @@ def write_cost(sdir, peak_mb, seconds):
     if seconds is not None:
         doc["seconds"] = round(float(seconds), 1)
     doc["at"] = int(time.time())
-    tmp = os.path.join(sdir, f".{COST_FILE}.{os.getpid()}.{time.monotonic_ns()}.tmp")
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        import atomic_file  # same runtime dir: the one replace convention (temp name, symlink-safe)
+        with atomic_file.replacing(os.path.join(sdir, COST_FILE)) as f:
             json.dump(doc, f)
-        os.replace(tmp, os.path.join(sdir, COST_FILE))
     except OSError:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
+        pass
 
 
 OOM_ADJ_PATH = "/proc/{pid}/oom_score_adj"

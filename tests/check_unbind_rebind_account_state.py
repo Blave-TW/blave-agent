@@ -118,9 +118,16 @@ try:
           and set(parked.get("files") or {}) == {SNAP, GUARD},
           "full unbind (stop confirmed): snapshot and guard state parked, then cleared")
     cfg = json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))
-    check(cfg["amounts"] == {} and cfg["exchanges"] == {} and cfg["asset_specs"] == {},
-          "…membership AND asset_specs cleared (0.1.18 P3: a rebind re-derives the TXF specs on the first allocation)")
+    check(cfg["amounts"] == {"a1": 1000} and cfg["exchanges"] == {"a1": ""}
+          and cfg["asset_specs"] == {"a1": {"type": "futures_contracts", "contract_value": 200}}
+          and os.path.exists(cl.RECONCILER_STOP_MARK),
+          "…members, amounts and specs kept (Wei 10-14), only the routing blanked; the reconciler marked stopped")
+    del starts[:]
     cl.dispatch({"cmd": "credentials", "args": {"env": dict(OKX2)}})
+    cfg = json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))
+    check(not starts and cfg["exchanges"] == {"a1": ""} and os.path.exists(cl.RECONCILER_STOP_MARK)
+          and os.path.exists(os.path.join(WS, "state", "HALT")),
+          "rebind: no reconciler started, nothing routed (the next 下單設定 save routes), HALT and stop mark still on")
     check(not os.path.exists(SNAP) and not os.path.exists(GUARD)
           and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
           "rebind with another key: the old account's snapshot and guard state are dropped — its "
@@ -168,6 +175,49 @@ try:
           and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
           "same account, but a parked entry naming any other path is never written, and live "
           "state is never overwritten by a parked copy")
+
+    # ── delete after an unbind (Wei 10-14): kept members no longer block 刪除策略 ──
+    def plant(name):
+        d = os.path.join(WS, "strategies", name)
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, "strategy.py"), "w").write(f'STRATEGY_NAME = "{name}"\nINTERVAL = "1h"\n')
+        return d
+
+    def delete(name):
+        try:
+            return cl.dispatch({"cmd": "delete_strategy", "args": {"name": name}})
+        except Exception as e:
+            return f"ERR {e}"
+
+    trading_on(OKX)
+    d1 = plant("a1")
+    r = delete("a1")
+    check(r.startswith("ERR") and "portfolio" in r and os.path.isdir(d1), f"bound and routed: delete refused ({r})")
+    stop_ok["v"] = False
+    unbind(OKX)
+    stop_ok["v"] = True
+    r = delete("a1")
+    check(r.startswith("ERR") and os.path.isdir(d1),
+          f"unbound but the stop was not confirmed (routing kept): still refused ({r})")
+    trading_on(OKX)
+    json.dump({"amounts": {"a1": 1000}, "exchanges": {"a1": "okx"}, "contracts": {}},
+              open(os.path.join(WS, "manager", "amounts.ui.json"), "w"))
+    unbind(OKX)
+    mir = json.load(open(os.path.join(WS, "manager", "amounts.ui.json")))
+    check(mir["amounts"] == {"a1": 1000} and mir["exchanges"] == {"a1": ""},
+          f"unbind: the UI mirror keeps the amounts and blanks the routing too ({mir})")
+    cl.dispatch({"cmd": "credentials", "args": {"env": dict(OKX)}})
+    r = delete("a1")
+    check(r.startswith("ERR") and os.path.isdir(d1),
+          f"rebound but not yet routed (no save yet): a venue is bound again, so refused as before ({r})")
+    cl.dispatch({"cmd": "credentials_remove", "args": {"env": list(OKX)}})
+    r = delete("a1")
+    cfg = json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))
+    mir = json.load(open(os.path.join(WS, "manager", "amounts.ui.json")))
+    check(not r.startswith("ERR") and not os.path.exists(d1) and "a1" not in cfg["amounts"]
+          and "a1" not in cfg.get("asset_specs", {}) and "a1" not in mir["amounts"] and "a1" not in mir["exchanges"],
+          f"unbound, routed nowhere: delete goes through and the member is pruned with it ({r})")
+    os.remove(os.path.join(WS, "manager", "amounts.ui.json"))
 
     # ── TC-28: the unbind's stop mark outranks a fresh heartbeat ─────────────
     trading_on(OKX)

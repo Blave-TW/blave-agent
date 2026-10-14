@@ -1118,7 +1118,8 @@ def tc12(w):
     w.check("unbound" in h.get("reason", ""), f"HALT: {h.get('reason')}")
     w.eq(w.sup["running"], False, "daemon stopped")
     cfg = json.load(open("manager/portfolio_config.json"))
-    w.eq((cfg["amounts"], cfg["exchanges"]), ({}, {}), "membership cleared")
+    w.eq((sorted(cfg["amounts"]), set(cfg["exchanges"].values())), (["a1"], {""}),
+         "members and amounts kept, routing blanked (Wei 10-14)")
     seed = w.seed()
     w.check(seed.get("seeded_at") == seed0.get("seeded_at") and not seed.get("venue_reset"),
             "the book is kept: it is per venue (a rebind decides — TC-13)")

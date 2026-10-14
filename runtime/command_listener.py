@@ -3958,54 +3958,55 @@ def _cmd_credentials_remove(args):
         # stop below cannot be confirmed (_signals_frozen).
         if not _venue_cred_ids(kept):
             _sync_strategy_crons(set())
-            # …and zero the 下單設定 itself (Wei 2026-08-06): users don't
-            # bounce between venues, and members lingering with no venue bound
-            # block 刪除策略 and friends — a rebind starts from a clean sheet.
-            # STOP THE DAEMON FIRST, THEN CLEAR — the halt above is NOT a
-            # defense here. state/HALT only blocks is_entry legs
-            # (lib/portfolio.py), never reduce legs; clearing membership zeroes
-            # every target, so a live daemon's next mtime-triggered reconcile
-            # (≤5s) would market-flatten every actual position as "reduce".
-            # Nor does deleting the keys save sinopac/capital: their order
-            # libs are module singletons with a cached login session
-            # (lib/order_sinopac.py _get_api) that keeps reading positions
-            # after .env is wiped — only auto-wired venues re-read env per
-            # call and fail closed. With no venue bound there is nothing to
-            # reconcile, so a stopped daemon is the right state; after a
-            # rebind the user's 啟動下單 press restarts it
-            # (_cmd_restart_reconciler), same as every resume. If the stop
-            # cannot be confirmed, keep the membership — a stale-but-consistent
-            # config is the safe direction — and still let the unbind succeed.
-            # What's cleared is membership (amounts/exchanges emptied, legacy
-            # weights dropped) plus asset_specs — a rebind re-derives the TXF
-            # ones on the first allocation, and specs for members that no
-            # longer exist are only something to trip on later. The rest of
-            # the config survives. Partial unbind on a multi-venue machine
-            # keeps daemon and portfolio as-is.
+            # …and unroute the 下單設定 (Wei 2026-10-14; it used to be emptied, 08-06):
+            # members, amounts, contracts and specs stay — a rebind keeps the user's
+            # portfolio, and members with no venue keep computing signals (選著的照算,
+            # 10-13) — only `exchanges` goes blank, so nothing is routed anywhere. A
+            # rebind does not route them either: the next 下單設定 save does
+            # (_cmd_amounts inherits the one bound venue), and trading resumes only on
+            # the user's 啟動下單 press (the stop below + _mark_reconciler_stopped).
+            # STOP THE DAEMON FIRST, THEN UNROUTE — the halt above is NOT a defense
+            # here. state/HALT only blocks is_entry legs (lib/portfolio.py), never
+            # reduce legs; an unrouted member drops out of the targets, so a live
+            # daemon's next mtime-triggered reconcile (≤5s) would market-flatten
+            # every actual position as "reduce". Nor does deleting the keys save
+            # sinopac/capital: their order libs are module singletons with a cached
+            # login session (lib/order_sinopac.py _get_api) that keeps reading
+            # positions after .env is wiped. If the stop cannot be confirmed, keep
+            # the routing — a stale-but-consistent config is the safe direction —
+            # and still let the unbind succeed. Partial unbind on a multi-venue
+            # machine keeps daemon and portfolio as-is.
             if _stop_reconciler():
                 _mark_reconciler_stopped()
                 _park_account_state(_account_identity(lines))
-                # mirror first, config second (P2-2 write order) — and if the
-                # config write below then fails, a {}/{} mirror over a stale
-                # config fails in the SAFE direction (nothing funded).
-                _write_ui_amounts_mirror({}, {}, only_if_present=True, contracts={})
+                # mirror first, config second (P2-2 write order); the mirror is
+                # sourced from itself, never from the config (P1-3)
+                mpath = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
+                try:
+                    with open(mpath) as f:
+                        mirror = json.load(f)
+                except FileNotFoundError:
+                    mirror = None
+                except (OSError, ValueError) as e:
+                    mirror = None
+                    _log(f"ui mirror unroute skipped: {type(e).__name__}: {e}")
+                if isinstance(mirror, dict) and isinstance(mirror.get("exchanges"), dict):
+                    _write_ui_amounts_mirror(mirror.get("amounts"),
+                                             {k: "" for k in mirror["exchanges"]},
+                                             contracts=mirror.get("contracts"))
                 cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
                 try:
                     with open(cpath) as f:
                         cfg = json.load(f)
-                    if isinstance(cfg, dict):
-                        cfg["amounts"] = {}
-                        cfg["exchanges"] = {}
-                        cfg["asset_specs"] = {}
-                        cfg["contracts"] = {}
-                        cfg.pop("weights", None)
+                    if isinstance(cfg, dict) and isinstance(cfg.get("exchanges"), dict):
+                        cfg["exchanges"] = {k: "" for k in cfg["exchanges"]}
                         # atomic: the reconciler mtime-watches + json-loads this
                         with atomic_file.replacing(cpath) as f:
                             json.dump(cfg, f, indent=2)
                 except FileNotFoundError:
-                    pass  # no portfolio was ever written — nothing to clear
+                    pass  # no portfolio was ever written — nothing to unroute
                 except (OSError, ValueError) as e:
-                    _log(f"membership clear failed: {type(e).__name__}: {e}")
+                    _log(f"membership unroute failed: {type(e).__name__}: {e}")
                 # The book is kept per venue, so it survives the unbind: binding the
                 # SAME exchange account back finds the bot's own positions still its
                 # own; a DIFFERENT account resets that venue's book the first time
@@ -4107,6 +4108,33 @@ def _purge_strategy_schedules(entries):
         _log(f"schedule purge failed: {type(e).__name__}: {e}")
 
 
+def _prune_unrouted_member(name):
+    """Drop `name` from the 下單設定 (mirror, then config): amounts, exchanges, contracts,
+    asset_specs, legacy weights. Only for a member routed nowhere on an unbound machine
+    (_cmd_delete_strategy). Raises on a write failure — the files are not deleted then."""
+    mpath = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
+    try:
+        with open(mpath) as f:
+            mirror = json.load(f)
+    except FileNotFoundError:
+        mirror = None
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"ui mirror unreadable ({type(e).__name__}) — try again")
+    if isinstance(mirror, dict):
+        def _drop(d):
+            return {k: v for k, v in d.items() if k != name} if isinstance(d, dict) else d
+        _write_ui_amounts_mirror(_drop(mirror.get("amounts")), _drop(mirror.get("exchanges")),
+                                 contracts=_drop(mirror.get("contracts")) if "contracts" in mirror else None)
+    cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
+    with open(cpath) as f:
+        cfg = json.load(f)
+    for key in ("amounts", "exchanges", "contracts", "asset_specs", "weights"):
+        if isinstance(cfg.get(key), dict):
+            cfg[key].pop(name, None)
+    with atomic_file.replacing(cpath) as f:
+        json.dump(cfg, f, indent=2)
+
+
 def _cmd_delete_strategy(args):
     """Remove a strategy's files from the workspace — the strategy list's 刪除
     button. Pure file removal, no judgment, hence a command and not a chat turn.
@@ -4153,9 +4181,33 @@ def _cmd_delete_strategy(args):
         if isinstance(val, dict):
             members |= set(val)
     if name in members:
-        raise RuntimeError(
-            "strategy is in the 下單設定 portfolio — remove it there first"
-        )
+        # Unbound machine (no venue in .env) and this member routed nowhere: no money
+        # rides on the name — an unbind keeps the portfolio (Wei 10-14), and refusing
+        # here would leave the user unable to delete anything until they rebind. The
+        # member is pruned with the files (mirror first, config second).
+        try:
+            with open(os.path.join(WORKSPACE, ".env")) as f:
+                bound = _venue_cred_ids(f.read().splitlines())
+        except FileNotFoundError:
+            bound = set()
+        except OSError:
+            bound = {"?"}   # unreadable: cannot tell, keep refusing
+        routed = (cfg.get("exchanges") or {}).get(name) if isinstance(cfg.get("exchanges"), dict) else None
+        try:  # the UI mirror is what the reconciler routes by when it exists
+            with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
+                mex = json.load(f).get("exchanges")
+            routed = routed or (mex.get(name) if isinstance(mex, dict) else None)
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError, AttributeError):
+            routed = routed or "?"
+        if bound or routed:
+            raise RuntimeError(
+                "strategy is in the 下單設定 portfolio — remove it there first"
+            )
+        prune_member = True
+    else:
+        prune_member = False
 
     import strategy_reporter  # same runtime dir; resolves consts the way scan() does
 
@@ -4202,6 +4254,8 @@ def _cmd_delete_strategy(args):
         _kill_rerun(name)
     finally:
         _RESTORE_LOCK.release()
+    if prune_member:   # last refusal passed: the membership goes with the files
+        _prune_unrouted_member(name)
     entries = set()
     for p in doomed:
         base = os.path.basename(p)
