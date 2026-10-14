@@ -186,23 +186,80 @@ def rss_mb(proc):
                                  text=True, timeout=5).stdout.strip()
             return int(out) // 1024 if out else None
         if system == "Windows":
-            import ctypes
-            from ctypes import wintypes
-
-            class PMC(ctypes.Structure):
-                _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
-                            ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
-                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
-                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-                            ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
-            c = PMC()
-            c.cb = ctypes.sizeof(PMC)
-            if not ctypes.windll.psapi.GetProcessMemoryInfo(int(proc._handle), ctypes.byref(c), c.cb):
-                return None
-            return int(c.PeakWorkingSetSize // (1024 * 1024))
+            # the venv's python.exe is a launcher: the interpreter that holds the memory is its
+            # child — the peak of the whole process tree, sampled while it runs
+            return _win_tree_peak_mb(proc)
     except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
         return None
     return None
+
+
+def tree_pids(root, rows):
+    """`root` and every descendant in rows [(pid, ppid)] (a pid reused by an unrelated process
+    after its parent died can slip in — only the max is kept, so at worst an over-estimate)."""
+    kids = {}
+    for pid, ppid in rows:
+        if pid != ppid:
+            kids.setdefault(ppid, []).append(pid)
+    out, todo = [], [root]
+    while todo and len(out) < 64:
+        pid = todo.pop()
+        if pid in out:
+            continue
+        out.append(pid)
+        todo.extend(kids.get(pid, []))
+    return out
+
+
+def _win_tree_peak_mb(proc):
+    import ctypes
+    from ctypes import wintypes
+
+    k32, psapi = ctypes.windll.kernel32, ctypes.windll.psapi
+
+    class PE(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_char * 260)]
+
+    class PMC(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+
+    def peak_of(handle):
+        c = PMC()
+        c.cb = ctypes.sizeof(PMC)
+        return c.PeakWorkingSetSize if psapi.GetProcessMemoryInfo(handle, ctypes.byref(c), c.cb) else 0
+
+    best = peak_of(int(proc._handle))   # the launcher itself (readable after exit too)
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = k32.CreateToolhelp32Snapshot(0x2, 0)   # TH32CS_SNAPPROCESS
+    rows = []
+    if snap and snap != wintypes.HANDLE(-1).value:
+        try:
+            e = PE()
+            e.dwSize = ctypes.sizeof(PE)
+            ok = k32.Process32First(snap, ctypes.byref(e))
+            while ok:
+                rows.append((e.th32ProcessID, e.th32ParentProcessID))
+                ok = k32.Process32Next(snap, ctypes.byref(e))
+        finally:
+            k32.CloseHandle(snap)
+    k32.OpenProcess.restype = wintypes.HANDLE
+    for pid in tree_pids(proc.pid, rows)[1:]:
+        h = k32.OpenProcess(0x1000 | 0x0010, False, pid)   # QUERY_LIMITED_INFORMATION | VM_READ
+        if not h:
+            continue
+        try:
+            best = max(best, peak_of(h))
+        finally:
+            k32.CloseHandle(h)
+    return int(best // (1024 * 1024)) or None
 
 
 def maxrss_mb(ru_maxrss):

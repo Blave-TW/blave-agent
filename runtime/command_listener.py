@@ -866,7 +866,7 @@ def _venue_cred_ids(lines, skip_ids=frozenset()):
     }
 
 
-def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False, contracts=None):
+def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False, contracts=None, strict=False):
     """manager/amounts.ui.json — the LAST UI-confirmed amounts/exchanges
     (deployment redline L2, spec §3.1). lib/portfolio's load_portfolio_config
     prefers this file over portfolio_config.json when it exists, so an agent
@@ -875,7 +875,8 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False, contract
     credential-evict routing clear via _clear_evicted_in_ui_mirror, the
     full-unbind membership clear — the only three writers, audited
     2026-08-24), and always BEFORE the corresponding portfolio_config write
-    (audit P2-2): the reconciler mtime-watches the CONFIG, so mirror-first
+    (audit P2-2; _cmd_amounts no longer — it writes config first, mirror last, all or
+    nothing, see _save_amounts_all_or_nothing): the reconciler mtime-watches the CONFIG, so mirror-first
     means the round the config write triggers already sees the new
     authoritative values — the reverse order left a window that traded old
     values and burned the mismatch alert's 24h cooldown on a false positive.
@@ -900,6 +901,8 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False, contract
             json.dump(doc, f, indent=2)
     except OSError as e:
         _log(f"ui amounts mirror write failed: {type(e).__name__}: {e}")
+        if strict:   # _cmd_amounts: the save as a whole fails and is rolled back
+            raise
 
 
 def _fresh_portfolio_config():
@@ -3504,6 +3507,80 @@ def _prune_removed_specs(specs, members, contracts):
             specs.pop(name, None)
 
 
+def _file_snapshot(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def _file_restore(path, data):
+    """Put `path` back as _file_snapshot saw it (None = it did not exist)."""
+    if data is None:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        return
+    with atomic_file.replacing(path, "wb") as f:
+        f.write(data)
+
+
+def _save_amounts_all_or_nothing(path, cfg, write_rollovers, write_mirror):
+    """A 下單設定 save lands whole or not at all (Windows e2e 10-14 C4: the config write hit
+    WinError 5 after the mirror had landed — the page said 沒有接受, the reconciler, which takes
+    amounts from the mirror, bought the new amounts anyway).
+
+    lib/portfolio.load_portfolio_config takes amounts / routing / contracts from the UI mirror
+    when it exists, so the MIRROR is what trades: it is written LAST — config first, then the
+    mirror (this replaces the old P2-2 order, mirror first, whose only reason was that a round
+    triggered by the config write would otherwise read the old mirror; the hold below covers
+    that). The rollover record goes first (a round that sees the new contract must find it).
+    Any failure restores what was already written (the record, then the config) and raises
+    SAVE_FAILED — a config without a mirror (first save) would otherwise trade on its own.
+    While the three writes run, state/execution/hold keeps the reconciler from starting a
+    round (manager/reconciler._update_hold, the hold the workspace update uses): no round reads
+    a half-written save; the config mtime it watches is still new afterwards, so the round runs
+    then. The hold is best-effort (a round in between would read the old mirror: old amounts)."""
+    rpath = os.path.join(WORKSPACE_STATE, ROLLOVER_PATH_NAME)
+    hold = os.path.join(WORKSPACE_STATE, "execution", "hold")
+    made_hold = False
+    try:
+        if not os.path.exists(hold):
+            os.makedirs(os.path.dirname(hold), exist_ok=True)
+            with open(hold, "w") as f:
+                f.write(str(os.getpid()))
+            made_hold = True
+    except OSError as e:
+        _log(f"amounts save: reconciler hold not written ({type(e).__name__}) — saving without it")
+    try:
+        r_before, c_before = _file_snapshot(rpath), _file_snapshot(path)
+        write_rollovers()   # one atomic write or none; its own refusals (CONTRACT_…) go out as they are
+        done = ["rollover"]
+        try:
+            with atomic_file.replacing(path) as f:  # atomic: the reconciler mtime-watches + json-loads this
+                json.dump(cfg, f, indent=2)
+            done.append("config")
+            write_mirror()
+        except Exception as e:
+            for what, p, before in (("config", path, c_before), ("rollover", rpath, r_before)):
+                if what in done:
+                    try:
+                        _file_restore(p, before)
+                    except OSError as e2:
+                        _log(f"amounts save: {what} not rolled back ({type(e2).__name__}: {e2})")
+            _log(f"amounts save failed, nothing kept: {type(e).__name__}: {e}")
+            raise RuntimeError("SAVE_FAILED: 設定檔暫時寫不進去(檔案正被占用),這次什麼都沒改——"
+                               "請再存一次") from None
+    finally:
+        if made_hold:
+            try:
+                os.remove(hold)
+            except OSError:
+                pass
+
+
 def _cmd_amounts(args):
     """策略下單金額 — the 下單設定 page's save button.
 
@@ -3708,15 +3785,10 @@ def _cmd_amounts(args):
         if prev_amt <= 0:
             cfg["asset_specs"][k] = dict(spec)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    # 紅線 L2:UI 儲存=權威副本。鏡像先寫、config 後寫(P2-2)——reconciler
-    # mtime-watch 的是 config,這個順序讓它觸發的那一輪就讀到新權威值。
     cfg["contracts"] = contracts
-    # the rollover record lands before the config the reconciler watches: the
-    # round this save triggers already holds the new contract's entry back
-    _record_rollovers(prev_contracts, contracts, clean, prev_amounts)
-    _write_ui_amounts_mirror(clean, cfg["exchanges"], contracts=contracts)
-    with atomic_file.replacing(path) as f:  # atomic: the reconciler mtime-watches + json-loads this
-        json.dump(cfg, f, indent=2)
+    _save_amounts_all_or_nothing(
+        path, cfg, lambda: _record_rollovers(prev_contracts, contracts, clean, prev_amounts),
+        lambda: _write_ui_amounts_mirror(clean, cfg["exchanges"], contracts=contracts, strict=True))
     # signal_gate 殘留清理:resume_wait 寫下的 baseline 只有在「訊號變動」時由
     # lib/portfolio 的 lift 路徑清掉,但金額歸 0 / 取消勾選的策略在 aggregate
     # 提前 continue,永遠走不到那條路——之後重新 fund 會拿作廢的 baseline 誤
