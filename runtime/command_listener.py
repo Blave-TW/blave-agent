@@ -598,6 +598,44 @@ def _ack_bind_reset():
         _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
 
 
+def _routing_block():
+    """Why 啟動下單 must wait, or None: a venue is bound and a member with an amount above 0
+    has no exchange routed — the state an unbind leaves (Wei 10-14: the portfolio is kept,
+    only the routing goes) until the next 下單設定 save routes it. Starting then would trade
+    nothing for those members (lib/portfolio holds their keys as they are); the user must
+    save first. The UI mirror's routing is what the reconciler uses when it exists."""
+    if not _bound_venue():
+        return None
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
+            mirror = json.load(f)
+    except (OSError, ValueError):
+        mirror = None
+    src = mirror if isinstance(mirror, dict) and isinstance(mirror.get("amounts"), dict) else cfg
+    amounts = src.get("amounts") if isinstance(src.get("amounts"), dict) else {}
+    exchanges = src.get("exchanges") if isinstance(src.get("exchanges"), dict) else {}
+    missing = []
+    for name, amt in sorted(amounts.items()):
+        try:
+            funded = float(amt) > 0
+        except (TypeError, ValueError):
+            funded = False
+        if funded and not exchanges.get(name):
+            missing.append(name)
+    if not missing:
+        return None
+    # the NOT_TXF shape (`CODE: 「name」…`, every name listed) — the pages match the first
+    return ("NEEDS_ROUTING: " + "、".join(f"「{n}」" for n in missing)
+            + " 還沒有對應的交易所——請先到策略組合存一次下單設定,再啟動下單")
+
+
 def _cmd_resume(args):
     from lib.guard import clear_halt
 
@@ -609,6 +647,9 @@ def _cmd_resume(args):
     hold = _book_hold_asking()
     if hold:
         return _held_for_book(hold)
+    block = _routing_block()   # before clearing HALT: a refused start leaves the machine stopped
+    if block:
+        raise RuntimeError(block)
     # 「啟動並補齊部位」must honor the choice: a signal gate left over from an
     # earlier resume_wait would silently keep excluding those strategies from
     # reconciling — remove it BEFORE clearing HALT (mirror of resume_wait's
@@ -662,6 +703,9 @@ def _cmd_resume_wait(args):
     hold = _book_hold_asking()
     if hold:
         return _held_for_book(hold)
+    block = _routing_block()
+    if block:
+        raise RuntimeError(block)
     cfg = load_portfolio_config()
     amounts = strategy_amounts(cfg)
     exchanges = cfg.get("exchanges", {})
@@ -3412,6 +3456,58 @@ def _strategy_market_of(name):
     return None
 
 
+def _held_keys():
+    """Keys with a non-zero row in the last reconcile snapshot (`actual` and the bot's
+    `ledger`), or None when the snapshot cannot be read."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "last_reconcile.json")) as f:
+            snap = json.load(f)
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError):
+        return None
+    held = set()
+    for part in ("actual", "ledger"):
+        rows = snap.get(part) if isinstance(snap, dict) else None
+        for k, row in (rows or {}).items() if isinstance(rows, dict) else ():
+            try:
+                if isinstance(row, dict) and float(row.get("size") or 0):
+                    held.add(str(k))
+            except (TypeError, ValueError):
+                held.add(str(k))
+    return held
+
+
+def _prune_removed_specs(specs, members, contracts):
+    """Drop asset_specs of strategies no longer in the 下單設定 — but only once nothing is
+    held on the key they traded: the close-on-removal of a lot position is valued with the
+    removed strategy's spec (lib/portfolio.removed_asset_specs; paper refuses a lot fill
+    without contract_value), so while the snapshot still shows a position there, or cannot be
+    read, or the key cannot be told, the spec stays and a later save prunes it."""
+    held = _held_keys()
+    for name in [n for n in specs if n not in members]:
+        if held is None:
+            return
+        sym = None
+        for fname in ("state.json", "stats.json"):
+            try:
+                with open(os.path.join(WORKSPACE, "strategies", name, fname), encoding="utf-8") as f:
+                    sym = (json.load(f) or {}).get("symbol")
+            except (OSError, ValueError, AttributeError):
+                continue
+            if sym:
+                break
+        if not isinstance(sym, str) or not sym.strip():
+            if os.path.isdir(os.path.join(WORKSPACE, "strategies", name)):
+                continue   # a strategy whose key cannot be told: keep its spec
+            specs.pop(name, None)   # strategy deleted: nothing can trade under that name again
+            continue
+        sym = sym.replace("-", "").upper()
+        keys = {sym, sym + "@spot", (contracts or {}).get(name) or sym}
+        if not keys & held:
+            specs.pop(name, None)
+
+
 def _cmd_amounts(args):
     """策略下單金額 — the 下單設定 page's save button.
 
@@ -3584,6 +3680,7 @@ def _cmd_amounts(args):
     contracts = _contracts_for_save(args, clean, prev_amounts, cfg)
     if not isinstance(cfg.get("asset_specs"), dict):
         cfg["asset_specs"] = {}
+    _prune_removed_specs(cfg["asset_specs"], clean, prev_contracts)
     # First-allocation TXF/MXF/TMF spec write (mirrors the frontend's own
     # handoff condition in workspace.html's save handler): previous amount
     # was 0/absent, this save makes it positive, and no spec is already
@@ -4452,7 +4549,7 @@ def _restart_reconciler(args):
                                f"not started; try again") from None
         _log("reconciler start skipped — no venue bound")
         return "no venue bound — reconciler not started"
-    block = _contracts_start_block()
+    block = _contracts_start_block() or _routing_block()
     if block:
         raise RuntimeError(block)
     if _local_mode():

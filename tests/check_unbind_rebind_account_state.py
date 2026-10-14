@@ -68,6 +68,7 @@ OKX = {"OKX_API_KEY": "not-a-real-okx-key", "OKX_SECRET_KEY": "not-a-real-okx-se
 OKX2 = dict(OKX, OKX_API_KEY="not-a-real-okx-key-2")
 stop_ok, starts = {"v": True}, []
 cl._stop_reconciler = lambda: stop_ok["v"]
+REAL_RESTART = cl._restart_reconciler
 cl._restart_reconciler = lambda args: starts.append(1) or "reconciler restarted"
 cl._stray_reconciler_pids = lambda: []
 cl._reconciler_supervised = lambda: False
@@ -231,9 +232,34 @@ try:
     cl.dispatch({"cmd": "credentials", "args": {"env": dict(OKX)}})
     del starts[:]
     cl._resume_started_at = None
+    for cmd in ("resume", "resume_wait"):
+        try:
+            cl.dispatch({"cmd": cmd, "args": {}})
+            refused = None
+        except RuntimeError as e:
+            refused = str(e)
+        check((refused or "").startswith("NEEDS_ROUTING: 「a1」") and not starts
+              and os.path.exists(os.path.join(WS, "state", "HALT")),
+              f"rebind, not saved yet: {cmd} refused NEEDS_ROUTING, nothing started, HALT stays ({refused})")
+    real_run, real_popen = cl.subprocess.run, cl.subprocess.Popen
+    cl.subprocess.run = cl.subprocess.Popen = lambda *a, **k: starts.append(a) or (_ for _ in ()).throw(AssertionError("started"))
+    try:
+        REAL_RESTART({})
+        refused = None
+    except Exception as e:
+        refused = str(e)
+    cl.subprocess.run, cl.subprocess.Popen = real_run, real_popen
+    check((refused or "").startswith("NEEDS_ROUTING:") and not starts,
+          f"…and the start itself (_restart_reconciler: restart_reconciler, boot, desktop) refuses before any process ({refused})")
+    cl._split_by_type = lambda names: (set(names), set())
+    cl.dispatch({"cmd": "amounts", "args": {"amounts": {"a1": 1000}}})
+    check(json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))["exchanges"] == {"a1": "okx"},
+          "…the 下單設定 save routes the member to the one bound venue")
+    del starts[:]
+    cl._resume_started_at = None
     r = cl.dispatch({"cmd": "resume", "args": {}})
     check(starts == [1] and r.endswith("reconciler restarted"),
-          f"unbind → rebind → start inside 15 s: the stopped daemon is started again ({r})")
+          f"unbind → rebind → save → start inside 15 s: the stopped daemon is started again ({r})")
     now = time.time() + 2
     os.utime(HB, (now, now))  # the restarted one beats after the mark
     del starts[:]

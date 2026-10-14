@@ -2221,6 +2221,33 @@ def strategy_amounts(config=None):
     return {k: account_value * leverage * float(w) for k, w in weights.items()}
 
 
+def _unrouted_member_keys(amounts, exchanges, states, config):
+    """[(name, key)] for every `amounts` member whose routing is blank: the keys its state
+    trades (Type C: every weight; else its symbol, routed by its contract), or, with no
+    readable state, the key stats.json / SYMBOL name. A member whose key cannot be told at all
+    is left out (logged) — it has never traded anything to protect."""
+    out = []
+    for name in amounts:
+        if (exchanges or {}).get(name):
+            continue
+        state = states.get(name) or {}
+        market = strategy_market(name)
+        keys = []
+        if isinstance(state.get('weights'), dict):
+            keys = [market_key(str(sym).replace('-', '').upper(), market) for sym in state['weights']]
+        elif state.get('symbol'):
+            sym = execution_symbol(name, str(state['symbol']).replace('-', '').upper(), config)
+            keys = [market_key(sym, market)]
+        else:
+            k = _strategy_key(name)
+            if k:
+                keys = [k]
+            else:
+                logging.warning(f"[portfolio] {name}: no exchange routed and no symbol to hold")
+        out.extend((name, k) for k in keys)
+    return out
+
+
 def aggregate_portfolio():
     """
     Aggregate all strategy states into net target positions using portfolio config.
@@ -2396,6 +2423,19 @@ def aggregate_portfolio():
             'contributors': data['contributors'],
             'gated':        data['gated'],
         }
+    # A member with no venue (still a key of `amounts`, its routing blank — an unbind keeps the
+    # portfolio, Wei 10-14) is "no exchange for now", not "removed": the keys it trades are held
+    # as they are on the account (flagged gated + unrouted, so reconcile leaves both sides alone
+    # and the snapshot shows why) — no close-on-removal, no entry. A name not in `amounts` is
+    # removed and closes as ever.
+    for name, key in _unrouted_member_keys(amounts, exchanges, states, config):
+        row = result.get(key)
+        if row is None:
+            row = result[key] = {'side': None, 'size': 0.0, 'exchange': '', 'asset_spec': asset_specs.get(name),
+                                 'market': split_key(key)[1], 'contributors': [], 'gated': True}
+        row['gated'] = True
+        row['unrouted'] = sorted(set(row.get('unrouted') or []) | {name})
+        logging.info(f"[portfolio] {name}: no exchange routed — {key} held as is (save 下單設定 to route)")
     if lifted:
         # merge-on-save (audit #7): re-load the file and remove ONLY the lifted
         # names — dumping our stale in-memory copy would clobber a gate that

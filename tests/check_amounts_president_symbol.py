@@ -90,6 +90,9 @@ with open(os.path.join(WS, "strategies", "mxf_sma", "stats.json"), "w") as f:
     json.dump({"symbol": "TMF", "trades": 3}, f)
 cfg = json.load(open(CONFIG))
 cfg["asset_specs"]["txf_sma"]["margin"] = 650000
+# mxf_sma was unpicked by the save above (nothing held, so its spec was pruned): put the MXF
+# spec back as the stale one this part is about
+cfg["asset_specs"]["mxf_sma"] = dict(cl._TXF_ASSET_SPECS["MXF"])
 json.dump(cfg, open(CONFIG, "w"))
 err = save({"txf_sma": 2, "mxf_sma": 0})
 check(err is None and json.load(open(CONFIG))["asset_specs"]["mxf_sma"]["contract_value"] == 50,
@@ -157,6 +160,25 @@ bind("BINANCE_API_KEY=a\nBINANCE_SECRET_KEY=b\n")
 err = save({"btc_sma": 100, "txf_sma": 1})
 check(err is None and json.load(open(CONFIG))["exchanges"] == {"btc_sma": "binance", "txf_sma": "binance"},
       f"another venue: the same BTCUSDT strategy saves as before ({err})")
+
+# ── asset_specs of a strategy taken out of the 下單設定 are pruned once nothing is held ──
+SNAPF = os.path.join(WS, "manager", "last_reconcile.json")
+bind(CAPITAL)
+check(save({"txf_live": 1}) is None and "txf_live" in json.load(open(CONFIG))["asset_specs"], "spec written on funding")
+json.dump({"actual": {"TXF": {"side": "long", "size": 1}}, "ledger": {"TXF": {"side": "long", "size": 1}}}, open(SNAPF, "w"))
+check(save({}) is None and "txf_live" in json.load(open(CONFIG))["asset_specs"],
+      "unpicked while 1 TXF is still held: the spec stays (its close-on-removal is valued with it)")
+open(SNAPF, "w").write("{broken")
+check(save({}) is None and "txf_live" in json.load(open(CONFIG))["asset_specs"], "snapshot unreadable: the spec stays")
+json.dump({"actual": {}, "ledger": {"TXF": {"side": None, "size": 0}}}, open(SNAPF, "w"))
+check(save({}) is None and "txf_live" not in json.load(open(CONFIG))["asset_specs"],
+      "flat on TXF: the next save prunes the removed strategy's spec")
+cfg = json.load(open(CONFIG))
+cfg["asset_specs"]["ghost"] = {"type": "futures_contracts", "contract_value": 200}
+json.dump(cfg, open(CONFIG, "w"))
+check(save({}) is None and "ghost" not in json.load(open(CONFIG))["asset_specs"],
+      "a spec whose strategy folder is gone is pruned")
+os.remove(SNAPF)
 
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAIL'}")
 sys.exit(1 if fails else 0)
