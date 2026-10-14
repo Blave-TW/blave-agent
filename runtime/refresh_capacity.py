@@ -248,15 +248,26 @@ def _win_tree_peak_mb(proc):
     if not rows:
         return None   # the tree could not be walked: the launcher alone is not a measurement
     k32.OpenProcess.restype = wintypes.HANDLE
+    child_peaks = []
     for pid in tree_pids(proc.pid, rows)[1:]:
         h = k32.OpenProcess(0x1000 | 0x0010, False, pid)   # QUERY_LIMITED_INFORMATION | VM_READ
         if not h:
             continue
         try:
-            best = max(best, peak_of(h))
+            child_peaks.append(peak_of(h))
         finally:
             k32.CloseHandle(h)
-    return int(best // (1024 * 1024)) or None
+    return win_tree_peak_mb(best, child_peaks)
+
+
+def win_tree_peak_mb(launcher_bytes, child_bytes):
+    """MB of the tree's peak, or None unless a child was actually read: a run that ends before
+    a sample sees the interpreter (under one poll) would otherwise record the launcher's few MB
+    — an estimate that low starts too many refreshes next time. None records nothing, so the
+    strategy keeps its last measurement or the default."""
+    if not child_bytes:
+        return None
+    return int(max([launcher_bytes, *child_bytes]) // (1024 * 1024)) or None
 
 
 def maxrss_mb(ru_maxrss):

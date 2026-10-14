@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **Windows refresh 峰值只在取樣期間真的讀到子行程時才記錄(稽核 P2)**:不到一次取樣就結束的 run 只讀得到啟動器的幾 MB,拿掉 200 MB 門檻後這個偏低值會被當預估、下次同時開太多支。`refresh_capacity.win_tree_peak_mb`:沒有讀到任何子行程回 None,什麼都不寫(保留上次的量測或預設 1.5 GB)。測試 `tests/check_stats_refresh_parallel.py`。
+
 - **解除綁定後立刻重綁、存不了設定也啟動不了(Windows e2e 10-14 複測 Bug 14 P1)**:對帳器停掉後 heartbeat 還有 300 秒算「新鮮」,`contract_override_broken` 就去讀 `last_reconcile.json`——解綁時這份已經被收走,於是判成「下單程式不支援已設定的合約」,有台指期換合約生效中的存檔一律被拒(訊息還叫人更新),而「啟動下單」又要先存。修:①`reconciler_presence.heartbeat_live`:heartbeat 新鮮**而且**比 runtime 的停止記號(`state/reconciler_stop_mark`)新,才算在跑;`absent()` 與 `portfolio_reporter._reconciler_view` 都改用這條,停止記號比最後一拍新=確定停了。②`contract_override_broken` 只認正面證據:在跑**而且**它自己的快照在、快照裡沒有 caps 才算舊碼;快照不在(解綁收走、新行程還沒寫)改看磁碟 lib。沒換合約的存檔本來就不碰換合約那道(`changed` 為空);擋住它的是「已生效的換倉在舊碼上」那道防呆,修好之後只在真的看到舊碼時才擋。③(P3)Windows 峰值不再設 200 MB 門檻(子行程樹量對了,實測 130–174 MB);子行程樹走訪失敗時不記錄(不再拿啟動器的值當量測)。④(P3)`SAVE_FAILED` 訊息改全形標點。測試 `tests/check_contract_switch_stopped.py` R 段(解綁→立刻重綁→存檔成功→不擋啟動;報告端兩半各自釘住)、`tests/check_stats_refresh_parallel.py`。
 
 - **存設定回滾的稽核 P2 兩條**:①回滾時「檔案是不是已經是原樣」那一讀也在 try 裡:讀檔被擋(Windows 共享衝突)算回滾失敗、照規則發警報(第一次存檔＝HALT＋`settings_unsafe`),不再悄悄略過;②`tests/check_reconciler_holds.py` 釘住「沒有權限探測 pid 不算寫入者不在」,hold 保留。測試 `tests/check_amounts_save_atomic.py` §6、`tests/check_reconciler_holds.py`。

@@ -86,6 +86,12 @@ real_sys = rc.platform.system
 rc.platform.system = lambda: "Windows"
 rc.write_cost(sd, 50, 1.0)
 check(rc.estimate_mb(sd) == 50, "E Windows: a measured peak is used as is (the tree walk measures the real interpreter)")
+check(rc.win_tree_peak_mb(4 << 20, []) is None,
+      "E Windows: no child seen while sampling (a run under one poll) → nothing recorded, not the launcher's 4 MB")
+check(rc.win_tree_peak_mb(4 << 20, [150 << 20, 20 << 20]) == 150, "E Windows: a child seen → the tree's peak (150 MB)")
+before = rc.read_cost(sd)
+rc.write_cost(sd, rc.win_tree_peak_mb(4 << 20, []), None)
+check(rc.read_cost(sd).get("peak_mb") == before.get("peak_mb"), "E …and a None peak leaves the last measurement in place")
 rc.platform.system = real_sys
 rc.write_cost(os.path.join(WS, "strategies", "gone"), 100, 1.0)
 check(not os.path.exists(os.path.join(WS, "strategies", "gone")), "E no record written for a deleted strategy")
