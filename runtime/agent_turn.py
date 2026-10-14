@@ -153,6 +153,7 @@ SECRET_CODE_FILES = (
     "lib/president_vault.py", "lib/president_worker.py", "lib/order_president.py", "lib/account_president.py",
     "lib/capital_vault.py", "lib/capital_worker.py", "lib/order_capital.py", "lib/account_capital.py",
     "manager/reconciler.py", "manager/flatten.py",
+    "lib/winreplace.py",  # imported by the four vault files: an edit there runs inside them
 )
 PROTECTED_EDIT_RULES.extend(f"Edit(/{f})" for f in SECRET_CODE_FILES)
 

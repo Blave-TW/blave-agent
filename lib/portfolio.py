@@ -2,6 +2,10 @@ import glob, hashlib, inspect, json, logging, math, os, re, time
 from datetime import datetime, timedelta, timezone
 
 from lib import guard, venue_traits
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 
 
 def _append_reconciler_log(order):
@@ -538,7 +542,7 @@ def _save_ledger_seed(seed):
     tmp = _LEDGER_SEED_PATH + '.tmp'
     with open(tmp, 'w') as f:
         json.dump(out, f, indent=2)
-    os.replace(tmp, _LEDGER_SEED_PATH)
+    atomic_replace(tmp, _LEDGER_SEED_PATH)
 
 
 def claim_unvenued_rows(venue=_CURRENT):
@@ -1474,7 +1478,7 @@ def _save_account_short(pending):
         tmp = _ACCOUNT_SHORT_PATH + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(pending, f, indent=2)
-        os.replace(tmp, _ACCOUNT_SHORT_PATH)
+        atomic_replace(tmp, _ACCOUNT_SHORT_PATH)
     except OSError as e:
         logging.warning(f'ledger_account_short persist failed: {e}')
 
@@ -1777,7 +1781,7 @@ def _report_ledger_adoption():
         tmp = _LEDGER_ADOPTION_PATH + '.tmp'
         with open(tmp, 'w') as f:
             json.dump({'ts': datetime.utcnow().isoformat(), 'symbols': rows}, f, indent=2)
-        os.replace(tmp, _LEDGER_ADOPTION_PATH)
+        atomic_replace(tmp, _LEDGER_ADOPTION_PATH)
         guard.audit('ledger_adopted', symbols=rows)
         logging.warning(f"[ledger] quantity book adopted a pre-quantity ledger: {rows}")
     except Exception as e:
@@ -1812,7 +1816,7 @@ def _save_signal_gate(gate):
         tmp = _SIGNAL_GATE_PATH + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(gate, f, indent=2)
-        os.replace(tmp, _SIGNAL_GATE_PATH)
+        atomic_replace(tmp, _SIGNAL_GATE_PATH)
     except OSError as e:
         logging.warning(f'signal_gate persist failed: {e}')
 
@@ -2509,7 +2513,7 @@ def _drift_sigma(symbol):
         tmp = _DRIFT_BAND_PATH + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(cache, f, indent=2)
-        os.replace(tmp, _DRIFT_BAND_PATH)
+        atomic_replace(tmp, _DRIFT_BAND_PATH)
     except OSError as e:
         logging.warning(f'drift_band cache persist failed: {e}')
     return sigma

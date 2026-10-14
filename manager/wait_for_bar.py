@@ -255,12 +255,16 @@ def _load_state(name):
 
 
 def _save_state(name, state):
+    try:
+        from lib.winreplace import atomic_replace
+    except ImportError:  # half-updated workspace: plain replace
+        atomic_replace = os.replace
     os.makedirs(STATE_DIR, exist_ok=True)
     path = f"{STATE_DIR}/{name}.json"
     tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         json.dump(state, f, indent=2)
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
 
 
 def _pid_alive(pid):

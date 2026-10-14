@@ -10,6 +10,10 @@ log tails). Audit 2026-10-02 N1, runtime side.
 existing name, symlink or not), writes it, and `os.replace`s it over `path` —
 replace swaps the directory entry, so a symlink at `path` is replaced, not
 written through. Only a temp this call created is ever removed.
+
+On Windows the replace is retried for about 1.25 s on PermissionError (WinError 5): a reader
+that opened the target without FILE_SHARE_DELETE (CPython's open, Defender scanning the file)
+makes it fail for milliseconds, and a lost status write strands whatever flag it was clearing.
 """
 import contextlib
 import os
@@ -21,6 +25,19 @@ import time
 
 _FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
 
+# = lib/winreplace.REPLACE_RETRY_DELAYS (lib/ and runtime/ ship on separate channels). POSIX: no retry.
+REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.5) if os.name == "nt" else ()
+
+
+def replace_retry(src, dst):
+    for delay in REPLACE_RETRY_DELAYS:
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            time.sleep(delay)
+    os.replace(src, dst)
+
 
 @contextlib.contextmanager
 def replacing(path, mode="w", *, perm=None, prepare=None, replace=None, **open_kw):
@@ -29,7 +46,7 @@ def replacing(path, mode="w", *, perm=None, prepare=None, replace=None, **open_k
 
     perm=None → created like open() (0o666 minus umask). An int → created with it
     and fchmod'ed to exactly it (POSIX). prepare(tmp) runs after the write, before
-    the replace (Windows ACLs). replace(tmp, path) defaults to os.replace."""
+    the replace (Windows ACLs). replace(tmp, path) defaults to replace_retry."""
     d, base = os.path.split(path)
     tmp = os.path.join(d, f".{base}.{secrets.token_hex(6)}.tmp")
     fd = os.open(tmp, _FLAGS, 0o666 if perm is None else perm)
@@ -46,7 +63,7 @@ def replacing(path, mode="w", *, perm=None, prepare=None, replace=None, **open_k
             yield f
         if prepare is not None:
             prepare(tmp)
-        (replace or os.replace)(tmp, path)
+        (replace or replace_retry)(tmp, path)
     except BaseException:
         _drop(tmp)
         raise

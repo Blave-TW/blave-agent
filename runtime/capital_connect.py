@@ -251,7 +251,7 @@ def _write_vault(login_id, password):
             # and to replace or drop it on a rebind/unbind, not to open it
             _icacls(tmp, "/setowner", ADMIN_ACCOUNT)
             _icacls(tmp, "/inheritance:r", "/grant:r", f"{ADMIN_ACCOUNT}:R", "*S-1-5-18:(D,RA)")
-        os.replace(tmp, p["vault"])
+        atomic_file.replace_retry(tmp, p["vault"])
     except BaseException:
         try:
             os.remove(tmp)  # SYSTEM keeps delete at every stage above

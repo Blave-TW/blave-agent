@@ -55,6 +55,10 @@ import time
 
 from lib import guard
 try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+try:
     from lib import reject_token
 except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
     from types import SimpleNamespace as _NS
@@ -224,7 +228,7 @@ def _save(led):
     tmp = LEDGER_PATH + ".tmp"
     with open(tmp, "w") as f:
         json.dump(led, f, indent=1)
-    os.replace(tmp, LEDGER_PATH)
+    atomic_replace(tmp, LEDGER_PATH)
 
 
 class _txn:

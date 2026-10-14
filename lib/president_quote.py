@@ -45,6 +45,13 @@ try:
     import president_vault
 except ImportError:
     from lib import president_contracts as pc, president_vault
+try:
+    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
+except ImportError:
+    try:
+        from lib.winreplace import atomic_replace
+    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+        atomic_replace = os.replace
 
 try:
     from unitrade.core.error import Error as _SdkError
@@ -96,7 +103,7 @@ def _atomic_write(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
-    os.replace(path + ".tmp", path)
+    atomic_replace(path + ".tmp", path)
 
 
 def read_snapshot(root):

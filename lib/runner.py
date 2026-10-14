@@ -12,6 +12,10 @@ import numpy as np
 import pandas as pd
 from dotenv import dotenv_values
 from lib.execute import update_state, load_state, save_state
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 from lib.analysis import plot_pnl, plot_pnl_portfolio, precise_pnl, compute_stats, count_trades
 
 _REPO_ROOT = Path(__file__).parent.parent
@@ -182,7 +186,7 @@ def _write_json_atomic(path, obj, indent=2):
     try:
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(obj, f, indent=indent)
-        os.replace(tmp, path)
+        atomic_replace(tmp, path)
     except Exception:
         try:
             os.remove(tmp)

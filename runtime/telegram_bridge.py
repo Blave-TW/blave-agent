@@ -105,7 +105,7 @@ def load_offset(bot_id):
 def save_offset(offset, bot_id):
     os.makedirs(os.path.dirname(OFFSET_PATH), exist_ok=True)
     try:
-        with atomic_file.replacing(OFFSET_PATH, replace=telegram_pairing.replace_retry) as f:
+        with atomic_file.replacing(OFFSET_PATH) as f:
             json.dump({"bot": bot_id, "offset": offset}, f)
     except OSError as e:
         # the in-memory offset is still right; only a restart before the next save replays

@@ -7,6 +7,10 @@ import re
 import threading
 import time
 from datetime import datetime, timezone
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +28,7 @@ def save_state(strategy_name, state):
     path = f'strategies/{strategy_name}/state.json'
     with open(path + '.tmp', 'w') as f:
         json.dump(state, f, indent=2)
-    os.replace(path + '.tmp', path)
+    atomic_replace(path + '.tmp', path)
 
 
 def update_state(candle, signal, state, mode, symbol=None, send_telegram_fn=None):
@@ -363,7 +367,7 @@ def _write_inflight_marker(key, style, signed_diff):
             json.dump({"key": str(key), "style": style,
                        "signed_diff": round(float(signed_diff), 2),
                        "started_ts": datetime.now(timezone.utc).isoformat()}, f)
-        os.replace(tmp, _marker_path(key))
+        atomic_replace(tmp, _marker_path(key))
     except OSError as e:
         logging.warning(f"[execute] inflight marker write failed for {key}: {e}")
 

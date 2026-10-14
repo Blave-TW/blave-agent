@@ -15,6 +15,10 @@ import tempfile
 import numpy as np
 import pandas as pd
 try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+try:
     from lib.progress import Progress
 except ImportError:  # half-updated workspace (lib/progress.py not copied yet) — fail open, no progress lines
     class Progress:
@@ -273,7 +277,7 @@ def write_mcpt_to_stats(strategy_name, p_value, n, dist=None, actual=None):
     try:
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(stats, f, indent=2)
-        os.replace(tmp, path)
+        atomic_replace(tmp, path)
     except Exception:
         try:
             os.remove(tmp)

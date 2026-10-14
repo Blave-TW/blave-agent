@@ -316,6 +316,7 @@ os.makedirs(os.path.join(WS, "lib"), exist_ok=True)
 os.makedirs(os.path.join(WS, "tmp"), exist_ok=True)
 import shutil as _sh
 _sh.copy(os.path.join(ROOT, "lib", "guard.py"), os.path.join(WS, "lib", "guard.py"))
+_sh.copy(os.path.join(ROOT, "lib", "winreplace.py"), os.path.join(WS, "lib", "winreplace.py"))
 open(os.path.join(WS, "lib", "__init__.py"), "w").close()
 # cancel the SL/TP → (Stop lands here) → close → ledger. Prints between steps, like the real one.
 CLOSE = textwrap.dedent("""
