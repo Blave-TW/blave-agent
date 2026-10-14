@@ -3393,6 +3393,25 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
     return out
 
 
+_TW_MARKETS = {"tw_index_futures": "台指期", "tw_stock_futures": "個股期貨", "tw_stock": "台股"}
+
+
+def _strategy_market_of(name):
+    """strategy_reporter.strategy_market of the strategy's file (folder or single-file layout),
+    None when unreadable or not decidable."""
+    import strategy_reporter  # same runtime dir; reads the file, never runs it
+    for path in (os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                 os.path.join(WORKSPACE, "strategies", name + ".py")):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                return strategy_reporter.strategy_market(f.read())
+        except OSError:
+            continue
+        except Exception:
+            return None
+    return None
+
+
 def _cmd_amounts(args):
     """策略下單金額 — the 下單設定 page's save button.
 
@@ -3532,25 +3551,35 @@ def _cmd_amounts(args):
     # anything else (BTCUSDT…) is refused at save time, by name, instead of
     # blowing up in the reconciler's first round. Symbol unreadable = not
     # judged (same fail-open as the Type C check); the picker locks these too.
-    # A portfolio (Type C) on a TW futures broker (統一 or 群益) has no symbol to judge above,
-    # yet it is not a single TXF-family contract either — refused under the same code (the
-    # pages already turn NOT_TXF into a sentence); amount 0 too, like any member there.
+    # 統一 / 群益 trade TW index futures only (TXF / MXF / TMF): a member routed there whose
+    # SYMBOL is anything else (BTCUSDT…), or a portfolio (Type C, no symbol to judge), is
+    # refused at save time, by name, instead of blowing up in the reconciler's first round.
+    # 統一 keeps its old code NOT_TXF (the pages already say it in a sentence); 群益 and the
+    # reverse direction — a TW futures / stock strategy routed to a crypto venue — are
+    # MARKET_VENUE. Paper takes any market (its own rules). Symbol / market unreadable = not
+    # judged (same fail-open as the Type C check); the picker locks these too.
     for k in clean:
         venue = cfg["exchanges"].get(k)
-        if venue not in (venue_traits.PRESIDENT, venue_traits.CAPITAL):
+        if not venue or venue == "paper":
             continue
-        venue_zh = "統一期貨" if venue == venue_traits.PRESIDENT else "群益期貨"
-        if _strategy_is_portfolio(k):
-            raise ValueError(
-                f"NOT_TXF: 「{k}」是投資組合(Type C)策略,{venue_zh}只能下台指期(TXF／MXF／TMF)單一合約"
-                "——請取消勾選後再儲存")
-        if venue != venue_traits.PRESIDENT:
-            continue
-        sym = _strategy_futures_symbol(k)
-        if sym and sym not in _TXF_ASSET_SPECS:
-            raise ValueError(
-                f"NOT_TXF: 「{k}」的標的是 {sym},統一期貨只能下台指期(TXF／MXF／TMF)"
-                "——請取消勾選後再儲存")
+        if venue in (venue_traits.PRESIDENT, venue_traits.CAPITAL):
+            code = "NOT_TXF" if venue == venue_traits.PRESIDENT else "MARKET_VENUE"
+            label = "統一期貨" if venue == venue_traits.PRESIDENT else "群益期貨"
+            if _strategy_is_portfolio(k):
+                raise ValueError(
+                    f"{code}: 「{k}」是投資組合(Type C)策略,{label}只能下台指期(TXF／MXF／TMF)單一合約"
+                    "——請取消勾選後再儲存")
+            sym = _strategy_futures_symbol(k)
+            if sym and sym not in _TXF_ASSET_SPECS:
+                raise ValueError(
+                    f"{code}: 「{k}」的標的是 {sym},{label}只能下台指期(TXF／MXF／TMF)"
+                    "——請取消勾選後再儲存")
+        elif venue_traits.get(venue, "perp"):   # a crypto exchange
+            market = _strategy_market_of(k)
+            if market in _TW_MARKETS:
+                raise ValueError(
+                    f"MARKET_VENUE: 「{k}」是{_TW_MARKETS[market]}策略,{venue} 是加密貨幣交易所、下不了"
+                    "——請改綁台灣期貨商,或取消勾選後再儲存")
     prev_contracts = _saved_contracts(cfg)
     contracts = _contracts_for_save(args, clean, prev_amounts, cfg)
     if not isinstance(cfg.get("asset_specs"), dict):

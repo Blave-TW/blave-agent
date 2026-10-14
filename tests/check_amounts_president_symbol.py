@@ -109,15 +109,49 @@ with open(os.path.join(pdir, "stats.json"), "w") as f:
 with open(os.path.join(pdir, "strategy.py"), "w") as f:
     f.write('STRATEGY_NAME = "port_c"\nINTERVAL = "1d"\n')
 cl._portfolio_trading_supported = lambda: True   # a lib that trades Type C: the venue is the only reason
-for env_lines, zh in ((PRESIDENT, "統一期貨"), ("CAPITAL_API_KEY=A123456789\nCAPITAL_PASSWORD=vault:abc\n", "群益期貨")):
+CAPITAL = "CAPITAL_API_KEY=A123456789\nCAPITAL_PASSWORD=vault:abc\n"
+for env_lines, zh, code in ((PRESIDENT, "統一期貨", "NOT_TXF"), (CAPITAL, "群益期貨", "MARKET_VENUE")):
     bind(env_lines)
     save({"txf_sma": 1})
     before = open(CONFIG).read()
     for amt in (5, 0):
         err = save({"txf_sma": 1, "port_c": amt})
-        check(err is not None and err.startswith("NOT_TXF: 「port_c」") and "Type C" in err and zh in err
+        check(err is not None and err.startswith(f"{code}: 「port_c」") and "Type C" in err and zh in err
               and open(CONFIG).read() == before,
-              f"{zh}: a Type C portfolio at amount {amt} is refused NOT_TXF, nothing written: {err}")
+              f"{zh}: a Type C portfolio at amount {amt} is refused {code}, nothing written: {err}")
+
+# ── market vs venue (MARKET_VENUE) ──────────────────────────────────────────
+src = {"txf_live": ("TXF", "from lib.data import fetch_twfutures_ohlcv\n"),
+       "tw_stock_a": ("2330", "from lib.data import fetch_twstock_price_adj\n"),
+       "btc_live": ("BTCUSDT", "from lib.data import fetch_kline\n"),
+       "own_data": ("TXF", "")}
+for n, (sym, imp) in src.items():
+    d = os.path.join(WS, "strategies", n)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "stats.json"), "w") as f:
+        json.dump({"symbol": sym, "trades": 3}, f)
+    with open(os.path.join(d, "strategy.py"), "w") as f:
+        f.write(f'{imp}STRATEGY_NAME = "{n}"\nSYMBOL = "{sym}"\nINTERVAL = "1h"\n')
+
+bind(CAPITAL)
+before = open(CONFIG).read() if os.path.exists(CONFIG) else None
+err = save({"btc_live": 100})
+check(err is not None and err.startswith("MARKET_VENUE: 「btc_live」") and "群益期貨" in err
+      and (open(CONFIG).read() if os.path.exists(CONFIG) else None) == before,
+      f"群益: a crypto strategy is refused MARKET_VENUE (統一 already was), nothing written: {err}")
+check(save({"txf_live": 1}) is None, "群益: a TXF strategy saves")
+for n, what in (("txf_live", "台指期"), ("tw_stock_a", "台股")):
+    bind("BINANCE_API_KEY=a\nBINANCE_SECRET_KEY=b\n")
+    err = save({n: 1})
+    check(err is not None and err.startswith(f"MARKET_VENUE: 「{n}」") and what in err and "binance" in err
+          and not os.path.exists(CONFIG),
+          f"binance: a {what} strategy is refused MARKET_VENUE, nothing written: {err}")
+bind("BINANCE_API_KEY=a\nBINANCE_SECRET_KEY=b\n")
+check(save({"btc_live": 100}) is None, "binance: a crypto strategy saves")
+check(save({"btc_live": 100, "own_data": 1}) is None,
+      "binance: a strategy whose market cannot be told (its own data) is not judged (fail-open)")
+bind("PAPER_API_KEY=paper\nPAPER_SECRET_KEY=paper\nPAPER_BOUND_TS=1\n")
+check(save({"txf_live": 1, "btc_live": 100}) is None, "paper: any market, its own rules")
 
 bind("BINANCE_API_KEY=a\nBINANCE_SECRET_KEY=b\n")
 err = save({"btc_sma": 100, "txf_sma": 1})

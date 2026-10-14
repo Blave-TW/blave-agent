@@ -198,7 +198,15 @@ reconciler(True, True)
 refused("BAD_CONTRACT", {"txf_a": 1}, {"txf_b": "TMF"}, "a name not in this save")
 refused("BAD_CONTRACT", {"txf_a": 1}, {"txf_a": "TX"}, "a value outside TXF/MXF/TMF")
 refused("BAD_CONTRACT", {"txf_a": 1}, ["TMF"], "not a mapping")
-refused("NOT_TXF_FAMILY", {"btc_a": 1}, {"btc_a": "TMF"}, "a crypto strategy")
+# on 群益 a crypto member is refused by the venue check first (MARKET_VENUE); the contracts
+# check's own code is pinned directly
+refused("MARKET_VENUE", {"btc_a": 1}, {"btc_a": "TMF"}, "a crypto strategy on 群益")
+try:
+    cl._contracts_for_save({"contracts": {"btc_a": "TMF"}}, {"btc_a": 1.0}, {}, {})
+    nf = None
+except ValueError as e:
+    nf = str(e)
+check((nf or "").startswith("NOT_TXF_FAMILY:"), f"X a crypto strategy with a contract: NOT_TXF_FAMILY ({nf})")
 refused("CONTRACT_TYPE", {"txf_cron": 1}, {"txf_cron": "TMF"}, "a Type B (no INTERVAL)")
 
 open(HALT, "w").close()
