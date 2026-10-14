@@ -99,8 +99,22 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
       && /if k not in \(MCP_TOKEN_ENV, "BLAVE_MCP_URL"\)/.test(ce) && !/BLAVE_MCP_TOKEN\)\]/.test(ce));
     t("codex_engine:版本下限 0.146.0(shell_environment_policy.filters 從 rust-v0.146.0 起);掛上時只拔接入碼+關 shell_snapshot;撞名用 tomllib 查用戶全域、<workspace>/.codex 與 -c 之上的兩個受管層", /_MCP_MIN_VERSION = \(0, 146, 0\)/.test(ce)
       && /shell_environment_policy\.filters\.\{MCP_TOKEN_ENV\}="exclude"/.test(ce) && /"features\.shell_snapshot=false"/.test(ce) && /"features\.shell_snapshot_v2=false"/.test(ce) && !/["'`]shell_environment_policy\.ignore_default_excludes/.test(ce) && /tomllib\.load/.test(ce)
-      && /\(False, os\.path\.join\(home, "config\.toml"\)\)/.test(ce) && /\(False, os\.path\.join\(cwd, "\.codex", "config\.toml"\)\)/.test(ce)
-      && /"\/etc\/codex\/managed_config\.toml"/.test(ce) && /config_toml_base64/.test(ce) && /def _mcp_name_taken\(cwd, env, name="blave"\):/.test(ce) && /isinstance\(servers, dict\) and name in servers/.test(ce)); }
+      && /config_toml_base64/.test(ce) && /def _mcp_name_taken\(cwd, env, name="blave"\):/.test(ce) && /isinstance\(servers, dict\) and name in servers/.test(ce));
+    // e582f50 起三層是具名 tuple:用戶全域($CODEX_HOME 落在 workspace 裡就算 workspace 層)、<workspace>/.codex、受管層
+    const layers = (ce.match(/for layer, path in \(([\s\S]*?)\):\n/) || [])[1] || "";
+    t("codex_engine:撞名查三層——用戶全域、workspace 的 .codex、受管層(非 Windows 是 /etc/codex/managed_config.toml)", /user_path = os\.path\.join\(home, "config\.toml"\)/.test(ce)
+      && /\(user_layer, user_path\)/.test(layers) && /\("workspace", os\.path\.join\(cwd, "\.codex", "config\.toml"\)\)/.test(layers)
+      && /\("managed", _MANAGED_CONFIG_PATH or os\.path\.join\(home, "managed_config\.toml"\)\)/.test(layers)
+      && /_MANAGED_CONFIG_PATH = None if os\.name == "nt" else "\/etc\/codex\/managed_config\.toml"/.test(ce)
+      && /user_layer = \("workspace" if [^\n]*startswith\(ws \+ os\.sep\)\s*\n\s*else "user"\)/.test(ce));
+    // 撞名時只有一種情況照樣掛:user 層、http(沒有 command)、url 逐字相同、key 全在白名單(型別也對)
+    const keys = (ce.match(/_SHADOWABLE_KEYS = \{([\s\S]*?)\n\}/) || [])[1] || "";
+    t("codex_engine:撞名只在 user 層 + http + url 逐字相同 + key 在白名單時才掛;白名單不含 bearer_token / tools / command / headers 以外的認證",
+      /if hit\["layer"\] != "user" or not _shadowable\(hit\["entry"\], url\)\]/.test(ce)
+      && /if not isinstance\(entry, dict\) or "command" in entry or entry\.get\("url"\) != url:\s*\n\s*return False/.test(ce)
+      && /return all\(k in _SHADOWABLE_KEYS and _SHADOWABLE_KEYS\[k\]\(v\) for k, v in entry\.items\(\)\)/.test(ce)
+      && JSON.stringify([...keys.matchAll(/^\s*"([a-z_]+)":/gm)].map((m) => m[1]).sort())
+        === JSON.stringify(["default_tools_approval_mode", "enabled", "http_headers", "startup_timeout_sec", "tool_timeout_sec", "url"])); }
   t("設定檔在 userData 底下(workspace 以外);close / error / spawn 失敗 / stdin 失敗四條路都刪(turnDone:刪檔 + 瀏覽器 token 作廢)", /const mcpDir = \(\) => path\.join\(app\.getPath\("userData"\), "mcp"\);/.test(main) && (main.match(/turnDone\(\)/g) || []).length === 4 && /const turnDone = \(\) => \{ require\("\.\/mcpcode"\)\.removeConfig\(mcpFile\); if \(_browser\) _browser\.endTurn\(\); if \(relay\) relay\.stop\(\); \};/.test(main));
   t("登出清記憶體裡的碼;開 app 清掃(只有拿到單一實例鎖的那一份做:第二份 app 不可以刪掉第一份正在跑那一輪的設定檔);打包清單帶 mcpcode.js", /if \(_mcp\) _mcp\.reset\(\);/.test(main) && /if \(app\.hasSingleInstanceLock\(\)\) require\("\.\/mcpcode"\)\.sweep\(mcpDir\(\)\);/.test(main) && /"mcpcode\.js"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8")));
   t("畫面只拿得到開關(feature-flags),拿不到碼;mcpcode.js 不 log、不 require electron", /handle\("feature-flags", \(\) => \(\{ cloudHandoff: cloudHandoffOn\(\) \}\), \{ cloudHandoff: false \}\);/.test(main)
