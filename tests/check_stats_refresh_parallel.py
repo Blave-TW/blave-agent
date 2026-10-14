@@ -4,7 +4,8 @@
      RESERVE_MB less what the running ones may still grow by covers its estimate; free memory
      unreadable → one at a time; nothing running → always one. macOS vm_stat parsing.
   E  estimate: the strategy's own measured peak (.perf_cost.json), else DEFAULT_PEAK_MB; a
-     Windows peak under WIN_MIN_MEASURED_MB counts as unmeasured. A real child's peak memory and
+     Windows peak is used as measured (the process tree is walked; a failed walk records
+     nothing). A real child's peak memory and
      wall time are measured.
   O  order: shortest last run first, never-measured last, ties in the order asked.
   P  parallel: never more at once than the capacity says (re-judged before every start), the
@@ -84,7 +85,7 @@ check(rc.estimate_mb(sd) == 900 and rc.last_seconds(sd) == 12.5, "E a failed run
 real_sys = rc.platform.system
 rc.platform.system = lambda: "Windows"
 rc.write_cost(sd, 50, 1.0)
-check(rc.estimate_mb(sd) == D, "E Windows: a 50 MB peak (a launcher) is taken as unmeasured")
+check(rc.estimate_mb(sd) == 50, "E Windows: a measured peak is used as is (the tree walk measures the real interpreter)")
 rc.platform.system = real_sys
 rc.write_cost(os.path.join(WS, "strategies", "gone"), 100, 1.0)
 check(not os.path.exists(os.path.join(WS, "strategies", "gone")), "E no record written for a deleted strategy")

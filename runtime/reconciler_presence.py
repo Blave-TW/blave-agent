@@ -209,6 +209,25 @@ def update_hold_fresh(state=None):
 
 
 
+STOP_MARK_NAME = "reconciler_stop_mark"   # = command_listener.RECONCILER_STOP_MARK (state/)
+
+
+def heartbeat_live(state_dir, now=None):
+    """The reconciler's heartbeat is fresh AND newer than the runtime's stop mark. A mark
+    written after the last beat is a confirmed stop (unbind, restart) — the heartbeat stays
+    'fresh' for HEARTBEAT_STALE_S afterwards, but nothing is beating it."""
+    try:
+        hb = os.path.getmtime(os.path.join(state_dir, "heartbeat", "reconciler"))
+    except OSError:
+        return False
+    if (now if now is not None else time.time()) - hb > HEARTBEAT_STALE_S:
+        return False
+    try:
+        return hb > os.path.getmtime(os.path.join(state_dir, STOP_MARK_NAME))
+    except OSError:
+        return True
+
+
 def absent(local, host, pids, workspace=None):
     """True only when it is CERTAIN no reconciler process exists for this
     workspace — so the next one to start loads the lib on disk. Stale heartbeat
@@ -225,12 +244,8 @@ def absent(local, host, pids, workspace=None):
     state = os.path.join(ws, "state")
     if update_hold_fresh(state):
         return False
-    try:  # a fresh heartbeat is a process, whatever the probes below would say
-        if time.time() - os.path.getmtime(os.path.join(state, "heartbeat", "reconciler")) \
-                <= HEARTBEAT_STALE_S:
-            return False
-    except OSError:
-        pass
+    if heartbeat_live(state):   # a live heartbeat is a process, whatever the probes say
+        return False
     if local:
         probe = getattr(host, "idle_for_sure", None)
         return bool(probe and probe())

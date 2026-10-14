@@ -28,9 +28,6 @@ DEFAULT_PEAK_MB = 1536
 # "available" already, so this is only room for change; 1 GB rather than 512 MB because a wrong
 # guess here costs only speed, while too little starves the reconciler.
 RESERVE_MB = 1024
-# Windows measures the process we started; if that is a launcher, its peak is a few MB and
-# would read as "cheap" — a peak under this is taken as unmeasured (DEFAULT_PEAK_MB).
-WIN_MIN_MEASURED_MB = 200
 COST_FILE = ".perf_cost.json"   # strategies/<name>/: {"seconds", "peak_mb", "at"}
 SAMPLE_S = 0.5                  # Linux /proc and Windows handle reads: cheap
 SAMPLE_MAC_S = 2.0              # macOS spawns `ps` per sample
@@ -126,8 +123,6 @@ def read_cost(sdir):
 def estimate_mb(sdir):
     peak = read_cost(sdir).get("peak_mb")
     if not isinstance(peak, (int, float)) or isinstance(peak, bool) or peak <= 0:
-        return DEFAULT_PEAK_MB
-    if platform.system() == "Windows" and peak < WIN_MIN_MEASURED_MB:
         return DEFAULT_PEAK_MB
     return int(peak)
 
@@ -250,6 +245,8 @@ def _win_tree_peak_mb(proc):
                 ok = k32.Process32Next(snap, ctypes.byref(e))
         finally:
             k32.CloseHandle(snap)
+    if not rows:
+        return None   # the tree could not be walked: the launcher alone is not a measurement
     k32.OpenProcess.restype = wintypes.HANDLE
     for pid in tree_pids(proc.pid, rows)[1:]:
         h = k32.OpenProcess(0x1000 | 0x0010, False, pid)   # QUERY_LIMITED_INFORMATION | VM_READ

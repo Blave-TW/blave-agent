@@ -3615,7 +3615,7 @@ def _save_amounts_all_or_nothing(path, cfg, write_rollovers, write_mirror):
             if stuck:   # one alarm per save; only a config with no mirror beside it trades on its own
                 _settings_alarm("config" in stuck and not mirror_existed, "+".join(stuck), last)
             _log(f"amounts save failed: {type(e).__name__}: {e}")
-            raise RuntimeError("SAVE_FAILED: 設定檔暫時寫不進去(檔案正被占用),這次什麼都沒改——"
+            raise RuntimeError("SAVE_FAILED: 設定檔暫時寫不進去（檔案正被占用），這次什麼都沒改——"
                                "請再存一次") from None
     finally:
         if made_hold:

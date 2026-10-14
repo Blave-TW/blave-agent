@@ -252,6 +252,55 @@ check(cl._contracts_start_block() is None, "G the switched strategy at amount 0:
 mir["amounts"]["txf_a"] = 20
 json.dump(mir, open(MIRROR, "w"))
 
+# ── R: unbind → rebind at once → save → start (Windows e2e 10-14 Bug 14) ────
+lib_disk(True)
+for pth in (HALT, os.path.join(WS, "state", "reconciler_stop_mark")):
+    if os.path.exists(pth):
+        os.remove(pth)
+mir = json.load(open(MIRROR))
+mir["amounts"]["txf_a"] = 20
+json.dump(mir, open(MIRROR, "w"))
+heartbeat(1, caps=True)
+check(save({"txf_a": 20}, {"txf_a": "TMF"}) is None, "R (running, a TMF switch in force on txf_a)")
+cl._stop_reconciler = lambda: True
+cl._park_account_state = lambda ident: None
+cl.dispatch({"cmd": "credentials_remove", "args": {"env": ["CAPITAL_API_KEY", "CAPITAL_PASSWORD"]}})
+cfg = json.load(open(CONFIG))
+check(cfg["exchanges"] == {"txf_a": ""} and cfg["contracts"] == {"txf_a": "TMF"}
+      and os.path.exists(os.path.join(WS, "state", "reconciler_stop_mark")),
+      "R unbind: routing blanked, the switch kept, the stop marked")
+os.remove(os.path.join(WS, "manager", "last_reconcile.json")) if os.path.exists(os.path.join(WS, "manager", "last_reconcile.json")) else None
+heartbeat_path = os.path.join(WS, "state", "heartbeat", "reconciler")
+t = os.path.getmtime(os.path.join(WS, "state", "reconciler_stop_mark")) - 2
+os.utime(heartbeat_path, (t, t))   # the last beat just before the stop: still "fresh" by age
+check(not cl.reconciler_presence.heartbeat_live(os.path.join(WS, "state")),
+      "R a stop mark newer than the last beat: not running, however fresh the beat")
+cl.dispatch({"cmd": "credentials", "args": {"env": {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper",
+                                                    "PAPER_BOUND_TS": "7"}}})
+err = save({"txf_a": 20}, {"txf_a": "TMF"})
+check(err is None and json.load(open(CONFIG))["exchanges"] == {"txf_a": "paper"},
+      f"R rebind at once, save the same settings: saved and routed, no CONTRACT_NEEDS_UPDATE ({err})")
+check(save({"txf_a": 20}) is None, "R …the same with `contracts` absent (an older page)")
+check(cl._routing_block() is None and cl._contracts_start_block() is None, "R …and nothing blocks the start")
+# the two reporter halves on their own
+mark = os.path.join(WS, "state", "reconciler_stop_mark")
+SNAPF = os.path.join(WS, "manager", "last_reconcile.json")
+json.dump({"ts": "x", "target": {}, "actual": {}, "orders": []}, open(SNAPF, "w"))   # an old snapshot, no caps
+t = os.path.getmtime(mark) - 2
+os.utime(heartbeat_path, (t, t))
+check(pr.contract_override_broken() is False,
+      "R reporter: an old capless snapshot under a stop mark is not 'running old code' (the disk lib decides)")
+os.remove(mark)
+os.utime(heartbeat_path, None)
+os.remove(SNAPF)
+check(pr.contract_override_broken() is False,
+      "R reporter: running, no snapshot yet (a fresh process) is not evidence of old code")
+json.dump({"ts": "x", "target": {}, "actual": {}, "orders": []}, open(SNAPF, "w"))
+check(pr.contract_override_broken() is True, "R reporter: running and its own snapshot lacks the caps → broken")
+os.remove(SNAPF)
+heartbeat(None)   # back to the stopped machine the L part expects
+lib_disk(False)   # the L part below starts from a rolled-back lib, as G left it
+
 # ── L: desktop supervisor ───────────────────────────────────────────────────
 spawned = []
 sup = ld.ReconcilerSupervisor(WS, lambda **k: dict(os.environ), lambda pid: "", lambda **k: {})

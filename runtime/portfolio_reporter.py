@@ -636,13 +636,20 @@ def _ws_lib_contract_override():
         return False
 
 
+def reconciler_presence_stop_mark():
+    from reconciler_presence import STOP_MARK_NAME  # stdlib only
+    return STOP_MARK_NAME
+
+
 def _reconciler_view(hb, last):
     if hb is None:
         hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
     if last is None:
         last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     caps = last.get("caps") if isinstance(last, dict) else None
-    return _fresh(hb), isinstance(caps, list) and "contract_override" in caps
+    # a stop mark newer than the last beat = confirmed stopped (reconciler_presence.heartbeat_live)
+    stopped = (_mtime(os.path.join(WORKSPACE_STATE, reconciler_presence_stop_mark())) or 0) >= (hb or 0) > 0
+    return _fresh(hb) and not stopped, isinstance(caps, list) and "contract_override" in caps
 
 
 def _reconciler_absent():
@@ -711,8 +718,14 @@ def contract_override_broken(hb=None, last=None):
     reconciler without the caps, or — stopped — a lib on disk without them (what
     its next start loads). Refusing on the disk is the safe direction; it gates
     plain amounts saves of a strategy whose switch is in force."""
+    if last is None:
+        last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     fresh, caps = _reconciler_view(hb, last)
-    return not caps if fresh else not _ws_lib_contract_override()
+    if fresh and isinstance(last, dict):
+        return not caps   # positive evidence only: the running one's own snapshot lacks the caps
+    # stopped, or running with no snapshot (an unbind clears it; a new process has not
+    # written one yet): what runs next is the lib on disk
+    return not _ws_lib_contract_override()
 
 
 def can_trade_portfolio():
