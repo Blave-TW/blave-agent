@@ -134,6 +134,8 @@ def files():
 # here is the fail-closed case (stale heartbeat, presence not provable); the
 # provably-absent case is tests/check_contract_switch_stopped.py.
 cl._unsupervised_reconciler_pids = lambda proc="/proc", all_=False: None
+import reconciler_presence  # noqa: E402
+reconciler_presence.unsupervised_reconciler_pids = lambda proc="/proc", all_=False, workspace=None: None
 for running, caps, disk, want, broken in ((True, True, False, True, False), (True, False, True, False, True),
                                           (False, False, True, False, False), (False, True, True, False, False),
                                           (False, True, False, False, True)):

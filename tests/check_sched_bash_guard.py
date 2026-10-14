@@ -145,6 +145,8 @@ REVIEWED = {
     "lib.runner": "回測引擎;import lib.execute 的 load/save/update_state 與 portfolio.strategy_amounts,不下單",
     "lib.strategy": "只取 portfolio.strategy_amounts(唯讀)",
     "runtime.agent_turn": "manager/close_symbol.py 只出現在給模型的規則文字裡,自己不執行",
+    "runtime.reconciler_presence": "manager/reconciler.py 只拿來比對行程清單的命令列(認出對帳器),"
+                                   "只讀 /proc、Windows 行程清單與兩個鎖檔,不啟動也不停任何行程;只 import 標準庫",
 }
 
 

@@ -1327,6 +1327,8 @@ class Daemon:
             os.makedirs(d, exist_ok=True)
         self.sup.reap_orphan()
         cl._LOCAL_HOST = self.sup
+        import reconciler_presence  # the reporter's presence check reads the host from here
+        reconciler_presence.LOCAL_HOST = self.sup
         # Real-money Binance opens for THIS process only. Every `credentials`
         # command that reaches it is HMAC-signed by the app, and the app's main
         # process runs its own permission check first for the UX

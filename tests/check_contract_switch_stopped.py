@@ -91,6 +91,8 @@ def lib_disk(new):
 
 procs = {"pids": []}
 cl._unsupervised_reconciler_pids = lambda proc="/proc", all_=False: procs["pids"]
+import reconciler_presence as rp  # noqa: E402  the reporter's path (cloud timer) scans from here
+rp.unsupervised_reconciler_pids = lambda proc="/proc", all_=False, workspace=None: procs["pids"]
 
 # ── A: cloud presence ───────────────────────────────────────────────────────
 check(cl.lock_file_free(SINGLETON), "A no singleton file = free")
@@ -270,6 +272,10 @@ sup._proc.wait(10)
 sup._proc = None
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
 cl._LOCAL_HOST = sup
+rp.LOCAL_HOST = sup
+check(pr._reconciler_absent() is True, "L the reporter (built in the daemon's process) asks the same supervisor")
+rp.LOCAL_HOST = None
+check(pr._reconciler_absent() is False, "L …no supervisor registered → not absent")
 check(cl.reconciler_absent() is True, "L reconciler_absent asks the daemon in local mode")
 cl._LOCAL_HOST = None
 check(cl.reconciler_absent() is False, "L local mode without a daemon → not absent")

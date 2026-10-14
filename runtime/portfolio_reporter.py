@@ -645,13 +645,23 @@ def _reconciler_view(hb, last):
     return _fresh(hb), isinstance(caps, list) and "contract_override" in caps
 
 
+def _reconciler_absent():
+    """reconciler_presence.absent for this process: the desktop daemon builds
+    the report in-process and registered its supervisor there (LOCAL_HOST);
+    the cloud timer runs this file alone and scans the process list."""
+    import reconciler_presence  # same runtime dir; stdlib only (never command_listener)
+    return reconciler_presence.absent(
+        local=os.environ.get("BLAVE_AGENT_LOCAL") == "1", host=reconciler_presence.LOCAL_HOST,
+        pids=lambda: reconciler_presence.unsupervised_reconciler_pids(all_=True))
+
+
 def can_switch_contract(hb=None, last=None):
     """Whether a contract switch may be saved now. An old reconciler ignores
     portfolio_config["contracts"] and trades the saved lots on the strategy's
     SYMBOL — 20 TMF read as 20 TXF. Running (fresh heartbeat): only its own word
     counts (`caps` in its snapshot, lib/portfolio.RECONCILE_CAPS). Not running:
     only when it is CERTAIN no reconciler process exists
-    (command_listener.reconciler_absent) does the lib on disk count — the next
+    (reconciler_presence.absent) does the lib on disk count — the next
     start loads it, and that start is gated on it again
     (command_listener._contracts_start_block). A stale heartbeat with a process
     that may still be there (stuck in a broker call, back from sleep, an old one
@@ -660,8 +670,7 @@ def can_switch_contract(hb=None, last=None):
     if fresh:
         return caps
     try:
-        import command_listener  # same runtime dir; function-level (it imports us lazily too)
-        absent = command_listener.reconciler_absent()
+        absent = _reconciler_absent()
     except Exception as e:
         print(f"[portfolio_reporter] reconciler presence check failed: {type(e).__name__}: {e}",
               file=sys.stderr)
@@ -691,8 +700,7 @@ def can_hold_rollover_in_halt(hb=None, last=None):
         caps = last.get("caps") if isinstance(last, dict) else None
         return isinstance(caps, list) and "rollover_halt_freeze" in caps
     try:
-        import command_listener  # same runtime dir
-        absent = command_listener.reconciler_absent()
+        absent = _reconciler_absent()
     except Exception:
         return False
     return absent and _ws_lib_rollover_halt_freeze()
