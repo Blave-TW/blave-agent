@@ -224,6 +224,29 @@ def _denied_forms(k):
 unguarded = sorted(k for k in closure - set(REVIEWED) if not _denied_forms(k))
 t("③ 會下單 / 平倉 / 換 key 的模組(import 閉包 %d 個)每一個都擋:%s" % (len(closure), ",".join(sorted(closure))),
   not unguarded, unguarded)
+# REVIEWED_PATH_ONLY: exempt only for a string naming a manager/lib script; a real import of
+# anything in the closure (command_listener, an order lib…) is still red.
+REVIEWED_PATH_ONLY = {"runtime.reconciler_presence"}
+
+
+def _import_edges(path):
+    here = os.path.basename(os.path.dirname(path))
+    out = set()
+    for n in ast.walk(ast.parse(open(path, encoding="utf-8").read())):
+        if isinstance(n, ast.Import):
+            out |= {_bare(a.name, here) for a in n.names}
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            out |= ({f"{n.module}.{a.name}" for a in n.names} if n.module in ("lib", "manager")
+                    else {_bare(n.module, here)})
+        elif isinstance(n, ast.Call) and "import_module" in ast.unparse(n.func):
+            out.add("lib.order_*")
+    return out
+
+
+bad_imports = {k: sorted(_import_edges(os.path.join(ROOT, *k.split(".")) + ".py") & (closure - set(REVIEWED)))
+               for k in REVIEWED_PATH_ONLY}
+t("③ 只因字串路徑豁免的模組(%s)沒有 import 任何閉包裡的模組" % ",".join(sorted(REVIEWED_PATH_ONLY)),
+  not any(bad_imports.values()) and REVIEWED_PATH_ONLY <= set(REVIEWED), bad_imports)
 stale = sorted(k for k in REVIEWED if k not in closure)
 t("③ REVIEWED 的例外仍在閉包裡(不在就刪掉那一條)", not stale, stale)
 

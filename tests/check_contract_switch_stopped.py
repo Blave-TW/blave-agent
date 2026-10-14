@@ -276,6 +276,19 @@ rp.LOCAL_HOST = sup
 check(pr._reconciler_absent() is True, "L the reporter (built in the daemon's process) asks the same supervisor")
 rp.LOCAL_HOST = None
 check(pr._reconciler_absent() is False, "L …no supervisor registered → not absent")
+check(pr.can_switch_contract() is False,
+      "L desktop, stopped, no supervisor registered: a switch is not offered (can_switch_contract false)")
+heartbeat(None)
+before = open(CONFIG).read()
+cl._LOCAL_HOST = None
+try:
+    cl._cmd_amounts({"amounts": {"txf_a": 4}, "contracts": {"txf_a": "MXF"}})
+    raised = None
+except (ValueError, RuntimeError) as e:
+    raised = str(e)
+check((raised or "").startswith("CONTRACT_NEEDS_UPDATE:") and open(CONFIG).read() == before,
+      f"L …and the save is refused, nothing written ({raised})")
+cl._LOCAL_HOST = sup
 check(cl.reconciler_absent() is True, "L reconciler_absent asks the daemon in local mode")
 cl._LOCAL_HOST = None
 check(cl.reconciler_absent() is False, "L local mode without a daemon → not absent")

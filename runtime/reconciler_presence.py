@@ -12,7 +12,9 @@ import time
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 WORKSPACE_STATE = os.path.join(WORKSPACE, "state")
 RECONCILER_UNIT = "blave-agent-reconciler.service"  # = command_listener.RECONCILER_UNIT
-HEARTBEAT_STALE_S = 300  # = portfolio_reporter.HEARTBEAT_STALE_S
+# a reconciler touches its heartbeat every 5 s; past this it is taken for dead.
+# The one definition: portfolio_reporter imports it from here.
+HEARTBEAT_STALE_S = 300
 # the desktop daemon's reconciler supervisor (local_daemon sets it with command_listener._LOCAL_HOST)
 LOCAL_HOST = None
 

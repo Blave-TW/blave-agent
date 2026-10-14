@@ -69,7 +69,7 @@ API_URL = os.environ.get(
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 
 ORDERS_TAIL = 20  # 最近下單只給一屏的量,orders.jsonl 會一直長
-HEARTBEAT_STALE_S = 300  # reconciler 每 5 秒 touch 一次;超過這個就當它死了
+from reconciler_presence import HEARTBEAT_STALE_S  # noqa: E402  one threshold for both (stdlib-only module)
 
 
 def _read_json(path, default=None):
