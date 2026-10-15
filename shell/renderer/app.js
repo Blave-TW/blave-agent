@@ -2552,7 +2552,15 @@ function phasesSync(b) {
   b.phasesEl.hidden = false;
 }
 /* 即時與重開畫回共用;動詞掛 data-i18n 讓切語言的那一輪掃得到,受詞是 runtime 給的 kind_obj(textContent) */
+// 進行中每秒都叫,清單又在 role=status 裡:列沒變就只改秒數(秒數 aria-hidden)。整份重建會讓讀屏每秒重念、捲動位置被拉回頂端
 function phasesPaint(ol, rows, now, running) {
+  const key = JSON.stringify([running, rows.map((r) => [r.phase, r.obj, r.start, r.end])]);
+  if (ol.__phaseKey === key && ol.__phaseTimes) {
+    const i = rows.length - 1, r = rows[i], tm = ol.__phaseTimes[i];
+    if (tm && running && r.start !== null && r.end === null) tm.textContent = fmtDur((now - r.start) / 1000);
+    return;
+  }
+  ol.__phaseKey = key; ol.__phaseTimes = [];
   ol.textContent = "";
   rows.forEach((r, i) => {
     const li = document.createElement("li");
@@ -2562,10 +2570,12 @@ function phasesPaint(ol, rows, now, running) {
     const key = "phase." + r.phase; verb.dataset.i18n = key; verb.textContent = t(key);
     li.append(mark, verb);
     if (r.obj) { const obj = document.createElement("span"); obj.className = "think-phase-obj" + (r.kind === "search" ? "" : " mono"); obj.textContent = r.obj; li.appendChild(obj); }   // 搜尋字是句子,其餘受詞 mono(同 busySet)
+    let tm = null;
     if (r.start !== null) {
       const stop = r.end !== null ? r.end : running && i === rows.length - 1 ? now : null;
-      if (stop !== null) { const tm = document.createElement("span"); tm.className = "think-phase-time"; tm.textContent = fmtDur((stop - r.start) / 1000); li.appendChild(tm); }
+      if (stop !== null) { tm = document.createElement("span"); tm.className = "think-phase-time"; tm.setAttribute("aria-hidden", "true"); tm.textContent = fmtDur((stop - r.start) / 1000); li.appendChild(tm); }
     }
+    ol.__phaseTimes.push(tm);
     ol.appendChild(li);
   });
 }

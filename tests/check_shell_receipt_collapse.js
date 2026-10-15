@@ -49,7 +49,7 @@ const ctx = {
   whereTag: () => new El("span"), stepWhere: (c) => (c && String(c.tool || "").indexOf("mcp__blave__") === 0 ? "cloud" : "local"),
 };
 const body = cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function receiptFold(", "/* 舊回合的使用者那句");
-const M = new Function(...Object.keys(ctx), body + "; return { busyStart, busyStep, busyStepDone, busyReason, busyEnd, receiptFold, get busy() { return busy; } };")(...Object.values(ctx));
+const M = new Function(...Object.keys(ctx), body + "; return { busyStart, busyStep, busyStepDone, busyReason, busyEnd, receiptFold, phasesPaint, get busy() { return busy; } };")(...Object.values(ctx));
 
 const inWrap = (n) => { for (let p = n.parentNode; p; p = p.parentNode) if (p.classList.contains("think-reason-wrap")) return p; return null; };
 function phasesShown(el) {
@@ -113,6 +113,22 @@ b = liveTurn(); M.busyEnd(false);
 ok("3 沒碰過 ⌄、正常收尾:收著", !st(b).open && !st(b).shown, st(b));
 b = liveTurn(); b.head.click(); b.head.click(); M.busyEnd(true);
 ok("3 出錯收尾(例外):收據自己攤開,aria-expanded=true", st(b).open && st(b).shown && st(b).aria === "true", st(b));
+
+// 5 讀屏與捲動(稽核 0125 P2-1):清單在 role=status 裡,每秒的 paint 列沒變就不能重建
+{ const ol = new El("ol"), rows = [{ phase: "data", kind: "data", obj: "BTCUSDT", start: 0, end: 5000 }, { phase: "backtest", kind: "backtest", obj: "x", start: 5000, end: null }];
+  M.phasesPaint(ol, rows, 7000, true); const li0 = ol.children.slice(), t1 = ol.children[1].querySelector("think-phase-time").textContent;
+  ol.scrollTop = 120;
+  M.phasesPaint(ol, rows.map((r) => ({ ...r })), 9000, true); const t2 = ol.children[1].querySelector("think-phase-time").textContent;
+  ok("5 連續兩次 paint、列沒變:列節點是同一批(不重建、捲動不被拉回),只有進行中那列的秒數在走", ol.children.length === 2 && ol.children.every((c, i) => c === li0[i]) && t1 === "2s" && t2 === "4s" && ol.scrollTop === 120, { t1, t2 });
+  ok("5 秒數節點 aria-hidden(只給眼睛,不進 live region)", ol.querySelectorAll("think-phase-time").every((x) => x.getAttribute("aria-hidden") === "true") && ol.querySelectorAll("think-phase-time").length === 2);
+  M.phasesPaint(ol, rows.concat([{ phase: "report", kind: "report", obj: "", start: 9500, end: null }]).map((r, i) => (i === 1 ? { ...r, end: 9500 } : r)), 9800, true);
+  ok("5 換階段:才重建(多一列、舊的最後一列不再是 is-run)", ol.children.length === 3 && ol.children[0] !== li0[0] && !ol.children[1].classList.contains("is-run") && ol.children[2].classList.contains("is-run"));
+  const live = liveTurn(), first = live.phasesEl.children[0]; tick(); tick(); tick();
+  ok("5 即時回合:計時器跑 3 次,階段列節點不換", live.phasesEl.children[0] === first);
+  ok("5 收合時展開區 visibility:hidden(等淡出跑完才切),展開時 visible 立刻生效——收著的清單不進讀屏",
+    /\.think-fold \{[^}]*opacity: 0; visibility: hidden; transition: opacity var\(--motion-base\) var\(--ease-standard\), visibility 0s linear var\(--motion-base\);/.test(css)
+    && /\.think-indicator\.is-open \.think-fold \{ opacity: 1; visibility: visible; transition: opacity var\(--motion-base\) var\(--ease-standard\), visibility 0s; \}/.test(css));
+  M.busyEnd(false); }
 
 // 4 回放
 const f = M.receiptFold([{ tool: "WebSearch", summary: "q" }, { tool: "Write", summary: "x.py" }]);
