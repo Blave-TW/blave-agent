@@ -201,7 +201,7 @@ Claude Code and Codex are products of their respective owners. Blave Agent is no
 ## For maintainers and existing machines
 
 <details>
-<summary>Releasing the runtime and updating an existing workspace</summary>
+<summary>Releasing the runtime</summary>
 
 ### Releasing the runtime
 
@@ -220,7 +220,12 @@ Fresh installs are handled automatically by the provisioning script — no manua
 
 **Bump `VERSION` (date, `YYYY-MM-DD`, add `-b`/`-c` for same-day repushes) in the same commit as any change machines should pick up** — the platform compares each machine's reported VERSION against this repo's to light the web "update available" indicator; an unbumped push is invisible to users.
 
+</details>
+
 ### Updating an existing workspace
+
+<details>
+<summary>Update steps for an existing workspace</summary>
 
 This section is an operating contract: `references/updating.md` sends agents here, and the desktop app copies the same file list. Keep the heading and the list intact.
 
