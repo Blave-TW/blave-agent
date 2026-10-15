@@ -16,30 +16,35 @@ Star the repo if this is useful — and Watch › Releases to get notified of ne
 
 ## What Makes It Different
 
+Claude Code or Codex can write a trading bot. Running it for real is the hard part. In a terminal, every strategy is a folder of scripts and a chat log, and past a handful they are hard to keep track of. Wiring up your own auto-trading means handling scheduling, exchange APIs, position reconciliation, restarts and keys yourself. Blave Agent is that missing part.
+
+### Your Strategies in One App, Not Scattered Scripts
+
+![A BTC breakout strategy in the app: backtest, trades, parameter scan, out-of-sample and code tabs, with the agent's verdict beside it](docs/readme-backtest.png)
+
+Each strategy sits in the sidebar with its backtest, trades, parameter scan, out-of-sample test, code and saved versions. Restore an old version from the list, and set how much each strategy trades on the Portfolio page.
+
+### Auto-Trading Already Wired Up
+
+- **Connect an exchange:** Binance, OKX, Bybit, BingX, Gate.io, or President Futures on Windows. The key is checked with the exchange first, and a key that can withdraw is refused (Gate.io doesn't report this, so check it yourself).
+- **Set an amount, press Start trading.** The app runs each strategy on schedule and moves the account toward its target positions. Every order attempt is logged (`state/audit.jsonl`).
+- **Pause trading (keep positions)** from the menu bar (system tray on Windows). After you quit and reopen the app, nothing trades until you press Start trading again.
+- **Paper trading** needs no keys.
+
 ### Backtests That Check for Overfitting and Use Real Fees
 
 Overfitting: parameters that just happen to fit past data.
-
-![A BTC breakout backtest: it trailed buy-and-hold and its MCPT p-value of 0.088 missed the 0.05 cutoff, and the agent says so](docs/readme-backtest.png)
 
 - **MCPT p-value** on every Type A backtest (`lib/validation.py`): could shuffled data have done as well?
 - **Parameter scan** for a plateau, not the single best cell (`lib/param_scan.py`); **walk-forward** for out-of-sample results (`lib/walk_forward.py`).
 - **Real fees:** a fee of 0 gets a warning (`lib/quality_check.py`).
 - **One idea, one backtest:** a poor result is reported as it is, not quietly re-tuned (*Iteration Brakes* in [`AGENTS.md`](AGENTS.md)).
 
-### See Whether Live Runs the Code You Backtested
-
-A backtest pins a version of the strategy. If the live code no longer matches it, the web workspace shows "Live · file changed" instead of "Live". The strategy keeps running; the flag is there so you notice (Type A and C, versioned strategies only).
-
-### Reports That Read the News First
-
-Morning briefs, market-close reports, single-symbol briefs and research write-ups. The agent reads at least three news sites first, every chart comes from the actual data, and each report ends with one condition that would prove it wrong.
-
-### A Browser You Can Watch
+### No Ideas? It Searches the Web for You
 
 ![The agent searching a dozen sites for BTC and ETH strategy ideas in the built-in browser](docs/readme-browser.png)
 
-The agent reads the web in the app's built-in browser, on your screen. Exchange account pages and private-network addresses are blocked, and an unfamiliar URL with long parameters waits for your OK.
+Press **Search the Web for Ideas** and the agent reads a dozen-odd sites, then brings back three backtestable ideas, each with entry and exit rules and its source URL. Pick one and it builds and backtests it. The pages it reads open in the app's built-in browser, on your screen; exchange account pages and private-network addresses are blocked.
 
 <a id="quick-start"></a>
 
