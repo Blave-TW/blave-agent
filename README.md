@@ -115,7 +115,7 @@ For any other exchange or broker with an API, the agent can write a helper from 
 
 **Data.**
 
-- Desktop app, no account needed: crypto klines from Binance (USDT-M perpetuals, all intervals, back to listing) and BingX public endpoints; Taiwan stock daily bars straight from TWSE and TPEx with the exchanges' own ex-dividend adjustment (listed from 2010, OTC from the 1990s); Taiwan index futures daily bars from TAIFEX public data (since 1998); market-wide institutional net buying from TWSE (foreign investors since 2004); US stock and ETF daily bars from Yahoo Finance (backtest only, no auto trading); the Crypto Fear & Greed index from alternative.me (since 2018). Blave's indicators, Taiwan intraday and per-stock flow data, futures intraday bars and the rest of the futures data, and the macro calendar need a Blave account with data access.
+- Desktop app, no account needed: crypto klines from Binance (USDT-M perpetuals, all intervals, back to listing) and BingX public endpoints; Taiwan stock daily bars straight from TWSE and TPEx with the exchanges' own ex-dividend adjustment (listed from 2010, OTC from the 1990s); Taiwan index futures daily bars from TAIFEX public data (since 1998); market-wide institutional net buying from TWSE (foreign investors since 2004); US stock and ETF daily bars (backtest only, no auto trading); the Crypto Fear & Greed index (since 2018). Blave's indicators, Taiwan intraday and per-stock flow data, futures intraday bars and the rest of the futures data, and the macro calendar need a Blave account with data access.
 - Cloud machine: market data comes from the Blave API through `lib/data.py` — crypto klines and indicators, Taiwan stocks, futures.
 
 ## Safety and Limits
