@@ -11,7 +11,7 @@
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
-[下載 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [下載 Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe) · [快速開始（從原始碼）](#quick-start) · [關電腦也照跑](https://blave.org/agent/zh)
+[下載 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [下載 Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe) · [快速開始](#quick-start) · [關電腦也照跑](https://blave.org/agent/zh)
 
 覺得有用就按個 Star；想在新版發佈時收到通知，請按 Watch › Releases。
 
@@ -27,9 +27,9 @@ Claude Code 或 Codex 寫得出交易 bot，難的是真的拿來跑。在終端
 
 ### 自動下單已經接好
 
-- **連接交易所：**Binance、OKX、Bybit、BingX、Gate.io，Windows 上還有統一期貨。金鑰先拿去交易所驗過，有提領權限的直接拒絕（Gate.io 查不到這項，請自己確認）。
-- **設好金額，按「啟動下單」。**app 照排程跑每支策略，把帳戶調到目標部位；每一次下單嘗試都記在 `state/audit.jsonl`。
-- **「暫停下單（不動部位）」**在選單列（Windows 是系統匣）。結束 app 再打開後，你沒按「啟動下單」之前不會下任何單。
+- **連接交易所**：Binance、OKX、Bybit、BingX、Gate.io，Windows 上還有統一期貨。金鑰先拿去交易所驗過，有提領權限的直接拒絕（Gate.io 查不到這項，請自己確認）。
+- **設好金額，按「啟動下單」**。app 照排程跑每支策略，把帳戶調到目標部位；每一次下單嘗試都記在 `state/audit.jsonl`。
+- 「**暫停下單（不動部位）**」在選單列（Windows 是系統匣）。結束 app 再打開後，你沒按「啟動下單」之前不會下任何單。
 - **模擬交易**不用金鑰。
 
 ### 回測先查過度擬合，手續費照實算
@@ -38,8 +38,8 @@ Claude Code 或 Codex 寫得出交易 bot，難的是真的拿來跑。在終端
 
 - **MCPT p 值**：每次 Type A 回測都跑（`lib/validation.py`）——把資料打亂後，能不能做出一樣好的成績？
 - **參數掃描**找一整片有效的平台，不挑最高那格（`lib/param_scan.py`）；**walk-forward** 量樣本外表現（`lib/walk_forward.py`）。
-- **手續費照實算：**填 0 會被警告（`lib/quality_check.py`）。
-- **一個想法只回測一次：**結果不好照實回報，不偷偷調參數（見 [`AGENTS.md`](AGENTS.md) 的 *Iteration Brakes*）。
+- **手續費照實算**：填 0 會被警告（`lib/quality_check.py`）。
+- **一個想法只回測一次**：結果不好照實回報，不偷偷調參數（見 [`AGENTS.md`](AGENTS.md) 的 *Iteration Brakes*）。
 
 ### 沒有靈感？它幫你上網找
 
@@ -49,18 +49,9 @@ Claude Code 或 Codex 寫得出交易 bot，難的是真的拿來跑。在終端
 
 <a id="quick-start"></a>
 
-## 快速開始（從原始碼）
+## 快速開始
 
-需要 macOS 13 以上或 Windows 10／11（x64）、Node.js 22.12 以上、`PATH` 上有 Python 3，再加上其中之一：已登入的 Claude Code 或 Codex、一把 DeepSeek API 金鑰，或一個 Blave 帳號。
-
-```
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent/shell
-npm install
-npm start
-```
-
-Windows 在 PowerShell 裡改跑 `npm.cmd install` 與 `npm.cmd start`。
+下載 [macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest)或[Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe)（macOS 13 以上，或 Windows 10／11 x64），打開就能用。
 
 第一次開啟時，選 agent 用哪個 AI：
 
@@ -93,6 +84,19 @@ Windows 在 PowerShell 裡改跑 `npm.cmd install` 與 `npm.cmd start`。
 
 </details>
 
+### 從原始碼跑
+
+需要 macOS 13 以上或 Windows 10／11（x64）、Node.js 22.12 以上、`PATH` 上有 Python 3，再加上其中之一：已登入的 Claude Code 或 Codex、一把 DeepSeek API 金鑰，或一個 Blave 帳號。
+
+```
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent/shell
+npm install
+npm start
+```
+
+Windows 在 PowerShell 裡改跑 `npm.cmd install` 與 `npm.cmd start`。
+
 ## 最新消息
 
 每一版改了什麼，見 [Releases](https://github.com/Blave-TW/blave-agent/releases)；按 Watch › Releases 會收到新版通知。
@@ -121,10 +125,10 @@ Windows 在 PowerShell 裡改跑 `npm.cmd install` 與 `npm.cmd start`。
 
 ## 安全與邊界
 
-- **金鑰：**只給讀取＋交易，不給提領。有提領權限的金鑰在連結時會被拒絕（Binance、OKX、BingX、Bybit）；Gate.io 查不到這個旗標，請自己確認。金鑰放在你電腦工作區的 `.env`（`~/Blave/workspace/.env`，Windows 是 `%USERPROFILE%\Blave\workspace\.env`）或你自己雲端主機的工作區，在網頁綁定的由 Blave 加密保存。agent 讀得到 `.env`，規則禁止它印出金鑰的值（`references/exchange-connect.md`）。
-- **投入金額與恢復交易由你自己做，**電腦版在「自動下單」，雲端主機在網頁工作頁。你開口要求 agent 也會拒絕；它唯一能自己做的是觸發緊急停止。
-- **電腦版只有 Blave 開著時才會下單。**結束 app 再打開後，交易維持暫停，直到你按「啟動下單」。
-- **先驗證再回報：**下完單會向交易所查回結果才說「已下單」，每一次下單嘗試都記在 `state/audit.jsonl`。
+- **金鑰**：只給讀取＋交易，不給提領。有提領權限的金鑰在連結時會被拒絕（Binance、OKX、BingX、Bybit）；Gate.io 查不到這個旗標，請自己確認。金鑰放在你電腦工作區的 `.env`（`~/Blave/workspace/.env`，Windows 是 `%USERPROFILE%\Blave\workspace\.env`）或你自己雲端主機的工作區，在網頁綁定的由 Blave 加密保存。agent 讀得到 `.env`，規則禁止它印出金鑰的值（`references/exchange-connect.md`）。
+- **投入金額與恢復交易由你自己做**，電腦版在「自動下單」，雲端主機在網頁工作頁。你開口要求 agent 也會拒絕；它唯一能自己做的是觸發緊急停止。
+- **電腦版只有 Blave 開著時才會下單**。結束 app 再打開後，交易維持暫停，直到你按「啟動下單」。
+- **先驗證再回報**：下完單會向交易所查回結果才說「已下單」，每一次下單嘗試都記在 `state/audit.jsonl`。
 - 回測講的是過去。MCPT 與參數掃描只能降低回測騙到你的機率，不能消掉。這裡沒有任何內容是投資建議；交易可能虧損，包括虧光。
 
 ## 雲端（付費）

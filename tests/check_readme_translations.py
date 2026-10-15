@@ -20,7 +20,7 @@ LANGS = [("English", "README.md"), ("繁體中文", "README.zh-TW.md"), ("简体
          ("Tiếng Việt", "README.vi.md")]
 TRANSLATIONS = [f for _, f in LANGS if f not in ("README.md", "README.zh-TW.md")]
 # Everything before the first of these is the intro; each one runs to the next "## " heading.
-SECTIONS = ["What Makes It Different", "Quick Start (From Source)", "Safety and Limits",
+SECTIONS = ["What Makes It Different", "Quick Start", "Safety and Limits",
             "Code Signing Policy", "License"]
 SOURCE_RE = re.compile(r"github\.com/Blave-TW/blave-agent/blob/([0-9a-f]{7,40})/README\.md")
 

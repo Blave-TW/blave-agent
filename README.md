@@ -10,7 +10,7 @@ Build, backtest and trade strategies live with Claude Code or Codex. Free and op
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Download for macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Download for Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Quick start (from source)](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
+[Download for macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Download for Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Quick start](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
 
 Star the repo if this is useful — and Watch › Releases to get notified of new versions.
 
@@ -48,18 +48,9 @@ Press **Search the Web for Ideas** and the agent reads a dozen-odd sites, then b
 
 <a id="quick-start"></a>
 
-## Quick Start (From Source)
+## Quick Start
 
-You need macOS 13+ or Windows 10/11 (x64), Node.js 22.12+, Python 3 on your `PATH`, and one of: Claude Code or Codex signed in, a DeepSeek API key, or a Blave account.
-
-```
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent/shell
-npm install
-npm start
-```
-
-On Windows, run `npm.cmd install` and `npm.cmd start` in PowerShell.
+Download the app for [macOS](https://github.com/Blave-TW/blave-agent/releases/latest) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13+, or Windows 10/11 x64) and open it.
 
 On first launch you choose what powers the agent:
 
@@ -91,6 +82,19 @@ The agent sorts every idea into one of three types before writing code:
 - The interface follows the system language (English or Traditional Chinese). To override: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
 
 </details>
+
+### From Source
+
+You need macOS 13+ or Windows 10/11 (x64), Node.js 22.12+, Python 3 on your `PATH`, and one of: Claude Code or Codex signed in, a DeepSeek API key, or a Blave account.
+
+```
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent/shell
+npm install
+npm start
+```
+
+On Windows, run `npm.cmd install` and `npm.cmd start` in PowerShell.
 
 ## News
 
