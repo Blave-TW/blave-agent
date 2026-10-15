@@ -7,7 +7,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> 本文译自英文版 README 的 commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md)，只涵盖变动较少的段落；交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`c327a0d`](https://github.com/Blave-TW/blave-agent/blob/c327a0d/README.md)，只涵盖变动较少的段落；交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -19,39 +19,41 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
 ## 跟别的交易 agent 不一样的地方
 
+Claude Code 或 Codex 写得出交易 bot，难的是真的拿来跑。在终端里，每支策略都是一个文件夹的脚本加一段对话记录，策略一多就管不过来；自己接自动交易，调度、交易所 API、仓位对账、重启、密钥都得自己处理。Blave Agent 补的就是这一段。
+
+### 策略收在一个 app 里，不是散落的脚本
+
+![app 里的 BTC 突破策略：回测、成交记录、参数扫描、样本外验证、代码标签页，旁边是 agent 的判断](docs/readme-backtest.png)
+
+各支策略都在侧边栏，点开就有回测、成交记录、参数扫描、样本外验证、代码与历史版本。旧版本可以从版本列表还原，每支策略交易多少金额在 **Portfolio** 页（策略组合）设置。
+
+### 自动交易已经接好
+
+- **连接交易所：** Binance、OKX、Bybit、BingX、Gate.io，Windows 上还有统一期货。密钥先拿去交易所验证，有提现权限的直接拒绝（Gate.io 查不到这一项，请自己确认）。
+- **设好金额，点 Start trading（启动下单）。** app 按计划运行每支策略，把账户调到目标仓位。每一次下单尝试都记在 `state/audit.jsonl`。
+- **Pause trading (keep positions)（暂停下单，不动仓位）** 在菜单栏（Windows 是系统托盘）。退出 app 再打开后，你没点 Start trading 之前不会下任何单。
+- **模拟交易**不需要密钥。
+
 ### 回测先查过拟合，手续费照实算
 
 过拟合，指参数只是刚好贴合过去的数据。
 
-- 每次 Type A 回测默认都会跑蒙特卡洛排列检验（MCPT，`lib/validation.py`），记下 p 值：把数据打乱之后，能不能做出一样好的成绩？
-- 参数扫描（`lib/param_scan.py`）找的是「一整片都有效」的参数平台，不是最高的那一格。
-- 滚动式样本外验证（walk-forward，`lib/walk_forward.py`）量样本外的表现。
-- 手续费应该符合真实市场。填 0 时 `lib/quality_check.py` 会提出警告，但不强制修改。
-- 一个想法默认只回测一次。结果不好就照实回报，agent 不会偷偷调参数调到数字好看（见 [`AGENTS.md`](AGENTS.md) 的 *Iteration Brakes*）。
+- **MCPT p 值：** 每次 Type A 回测都跑（`lib/validation.py`）——把数据打乱之后，能不能做出一样好的成绩？
+- **参数扫描**找一整片有效的平台，不挑最高那一格（`lib/param_scan.py`）；**walk-forward** 衡量样本外表现（`lib/walk_forward.py`）。
+- **手续费照实算：** 填 0 会被警告（`lib/quality_check.py`）。
+- **一个想法只回测一次：** 结果不好就照实回报，不偷偷调参数（见 [`AGENTS.md`](AGENTS.md) 的 *Iteration Brakes*）。
 
-### 看得到实盘跑的是不是回测那份
+### 没有灵感？它帮你上网找
 
-回测会把策略定版。实盘跑的程序跟定版时不同，这支策略就会被标记——网页工作页显示「上线中 · 文件已改」，而不是干净的「上线中」。标记不会拦下运行。只适用有回测的策略类型（Type A 与 C），而且只限定过版的策略。
+![agent 在内置浏览器里读十几个网站，找 BTC 与 ETH 的策略思路](docs/readme-browser.png)
 
-### 报告先看新闻再动笔
-
-跟它要一份晨报、收盘报告、单一标的简报或研究报告，agent 会先上网读新闻——至少三个不同网站——才开始写。每张图都画自真实的数据序列，不是模型记忆里的数字。每份报告结尾有总结，加一条「什么会推翻这个结论」。爆仓地图把「已发生的强平」与「模型估计」画成两层，各自标明。
-
-### 看得到它在读什么的浏览器
-
-agent 上网查数据用的是 app 内置的浏览器：它正在读哪一页，就在你的画面上，不是藏在背景的进程。交易所帐户后台与内网地址一律拦下；这一轮没去过的网站、网址又带着长参数，会先停下来问你才开。
+点 **Search the Web for Ideas**（上网找点子），agent 会去读十几个网站，带回三个可以回测的思路，每个都写好进出场规则、附上来源网址。挑一个，它就帮你写成策略、跑回测。它读的页面都开在 app 内置的浏览器里，就在你的屏幕上；交易所账户后台与内网地址一律拦下。
 
 <a id="quick-start"></a>
 
 ## 快速开始（从源代码）
 
-需要：
-
-- macOS 13 以上。打包版是通用版：Apple Silicon 与 Intel 同一个安装文件。
-- 或 Windows 10、11，x64（Electron 44 支持的版本；ARM 版尚未测试）。Windows 安装文件还没有代码签名，第一次安装时 Windows 会先弹出安全警告：点说明文字下方的链接，再点底部多出来的按钮。
-- Node.js 22.12 以上与 npm（`shell/package.json` › `engines`）
-- `PATH` 上有 `python3`（Windows 是 `python`）。打包版自带 Python 3.12；从源代码跑时，venv 用的是你系统的 Python。
-- 已安装并登录的 Claude Code 或 Codex、一把按量付费的 DeepSeek API 密钥，或一个 Blave 账号
+需要 macOS 13 以上或 Windows 10／11（x64）、Node.js 22.12 以上、`PATH` 上有 Python 3，再加上其中之一：已登录的 Claude Code 或 Codex、一把 DeepSeek API 密钥，或一个 Blave 账号。
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -60,36 +62,38 @@ npm install
 npm start
 ```
 
-Windows 在 PowerShell 里跑（用 `npm.cmd`：PowerShell 的执行策略挡下 `npm` 脚本时也能跑）：
-
-```powershell
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent\shell
-npm.cmd install
-npm.cmd start
-```
+Windows 在 PowerShell 里改跑 `npm.cmd install` 与 `npm.cmd start`。
 
 第一次打开时，选 agent 用哪个 AI：
 
-- **自己的 Claude Code 或 Codex。** 不需要 Blave 账号，Blave 不收 AI 费用。app 只负责启动 CLI，你的 Claude Code、Codex 登录凭证留在 CLI 自己手上。
-- **自己的 API 密钥（DeepSeek）。** 粘贴按量付费的密钥，DeepSeek 直接向你收费，Blave 不收 AI 费用。密钥留在这台电脑的钥匙串（Windows 上加密存储），agent 读不到：请求由 app 在本机转发。
+- **自己的 Claude Code 或 Codex。** 不需要 Blave 账号，Blave 不收 AI 费用。
+- **自己的 DeepSeek 密钥。** DeepSeek 直接向你收费。密钥留在这台电脑的钥匙串，不会到 agent 手上。
 - **Blave AI。** 登录 Blave 账号，按用量计费。
 
-接着讲你的想法，例如：
+接着讲你的想法：
 
-- 「回测 BTCUSDT 4 小时线：20 期 SMA 上穿 60 期 SMA 做多，跌回下方就空手。手续费单边 0.05%。」
-- 「用 BTC、ETH、SOL 做一个等权重的投资组合，每周再平衡，跑回测。」
+- 「回测 BTCUSDT 4 小时线：20 期 SMA 上穿 60 期 SMA 做多，跌回下方就空仓。手续费单边 0.05%。」
 - 「把这支策略的两个 SMA 长度扫一遍，告诉我参数平台在哪。」
 
-动手写之前，agent 会先判断想法属于哪一型：
+动手写代码之前，agent 会先判断想法属于哪一型：
 
 | 类型 | 是什么 | 回测 |
 |---|---|---|
-| A | 单一标的、固定周期；一个部位（多／空／空手） | 必做 |
+| A | 单一标的、固定周期；一个仓位（多／空／空仓） | 必做 |
 | C | 投资组合：N 个标的加一组权重（总和不超过 1），定期再平衡 | 必做 |
 | B | 其余全部：选股器、网格、套利、警示、一次性下单 | 不做 |
 
-界面语言跟着系统语言（英文或繁体中文）。要强制指定：`BLAVE_LANG=zh npm start`（PowerShell：`$env:BLAVE_LANG="zh"; npm.cmd start`）。
+<details>
+<summary>平台说明</summary>
+
+- macOS 打包版是通用版（Apple Silicon 与 Intel）。Windows 为 Electron 44 支持的版本，ARM 版尚未测试。Windows 安装文件还没有代码签名，第一次安装时 SmartScreen 会弹出警告：点 More info（更多信息）› Run anyway（仍要运行）。
+- Node.js 版本见 `shell/package.json` › `engines`。打包版自带 Python 3.12；从源代码运行时，用你系统的 Python（`python3`，Windows 是 `python`）创建 venv。
+- Codex 在 ChatGPT app 里：Windows 装 Microsoft Store 的「ChatGPT」（`winget install --id 9PLM9XGG6VKS -s msstore`），Mac 装 ChatGPT.app。Windows 上暂时不要用 npm 的 `@openai/codex` 0.161–0.162.1 版本（沙盒有问题）。
+- 用自己的 Claude Code 或 Codex 时，app 只负责启动 CLI，登录凭证留在 CLI 自己手上。DeepSeek 密钥在 Windows 上加密存储，agent 的请求由 app 在本机转发。
+- PowerShell 的执行策略挡下 `npm` 脚本时，`npm.cmd` 照样能跑。
+- 界面语言跟着系统语言（英文或繁体中文）。要强制指定：`BLAVE_LANG=en npm start`（PowerShell：`$env:BLAVE_LANG="en"; npm.cmd start`）。
+
+</details>
 
 ## 最新消息
 
@@ -97,12 +101,11 @@ npm.cmd start
 
 ## 安全与边界
 
-- **交易所密钥放在哪，看你用哪个表面。** 电脑版：写在你电脑上工作区的 `.env`（macOS 是 `~/Blave/workspace/.env`，Windows 是 `%USERPROFILE%\Blave\workspace\.env`）。云端主机：在你自己那台主机工作区的 `.env`。在网页绑定：由 Blave 加密保存。agent 读得到工作区的 `.env`，它的规则禁止打印密钥的值（`references/exchange-connect.md`）。密钥只给读取＋交易，不给提现。有提现权限的密钥在连接时会被拒绝（Binance、OKX、BingX、Bybit；电脑版、云端主机、网页绑定都一样）。Gate.io 查不到这个旗标，请自己确认。
-- 投入金额与恢复交易由你自己做——电脑版在 app 的「自动下单」，云端主机在网页工作页。就算你开口要求，agent 也会拒绝代劳。它唯一可以随时自己做的，是触发紧急停止。紧急停止（`state/HALT`）会挡掉新开仓，平仓与止损照常放行。
-- 电脑版只有在 Blave 开着时才会下单；结束 app 再打开后，交易维持暂停，直到你点「启动下单」。
-- agent 先验证再回报：改完文件会重读确认，下完单会向交易所查回结果才说「已下单」。每一次下单尝试都记在 `state/audit.jsonl`。
-- 回测讲的是过去，不预测、也不保证未来绩效。MCPT 检查成绩在统计上显不显著，参数扫描检查是不是过拟合；两者都只能降低回测骗到你的概率，不能把它消掉。
-- 这里没有任何内容是投资建议。交易可能亏损，包括亏光。
+- **密钥：** 只给读取＋交易权限。有提现权限的密钥在连接时会被拒绝（Binance、OKX、BingX、Bybit）；Gate.io 查不到这个标志，请自己确认。密钥放在你电脑上工作区的 `.env`（`~/Blave/workspace/.env`，Windows 是 `%USERPROFILE%\Blave\workspace\.env`）或你自己的云端主机上，在网页绑定的则由 Blave 加密保存。agent 读得到那份 `.env`，它的规则禁止打印密钥的值（`references/exchange-connect.md`）。
+- **投入资金与恢复交易由你自己做，** 在电脑版的 Auto trading（自动下单）页或网页工作页。就算你开口要求，agent 也会拒绝；它唯一可以随时自己做的，是触发紧急停止。
+- **电脑版只有在 Blave 运行时才会下单。** 退出再重新打开后，交易维持暂停，直到你点 Start trading（启动下单）。
+- **先验证再回报：** 下完单会向交易所查回结果，agent 才说已下单；每一次下单尝试都记在 `state/audit.jsonl`。
+- 回测讲的是过去。MCPT 与参数扫描能降低你看到的只是运气的概率，但不能消除。这里没有任何内容是投资建议；交易可能亏光你所有的钱。
 
 ## 代码签名政策
 
@@ -112,9 +115,7 @@ Windows 版目前还没有代码签名：我们已向 [SignPath Foundation](http
 
 **Apache-2.0**——见 [`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)。可以自由使用、修改、分发，含商业用途；含专利授权。「Blave」与 Blave 标志是商标：fork 请改名。
 
-**你自己写的策略是你的。** `strategies/` 底下你（或 agent 替你）写出来的东西不属于本项目，授权不及于它。
-
-付费的部分不在这个 repo 里：云端主机、市场数据与 Blave 的 LLM proxy 都是 blave.org 的服务。这份代码可以免费在你自己的电脑上跑，接你自己的 AI 订阅与你自己的数据源。
+**你写的策略是你的。** `strategies/` 底下的东西不属于本项目，授权不及于它。付费的部分——云端主机、市场数据与 Blave 的 LLM proxy——是 blave.org 的服务，不在这个 repo 里。
 
 Claude Code 与 Codex 是各自所有者的产品；Blave Agent 与它们没有合作或背书关系。
 

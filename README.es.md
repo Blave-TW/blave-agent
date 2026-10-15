@@ -6,7 +6,7 @@ Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> Esta traducción parte del README en inglés en el commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) y cubre solo las secciones que cambian poco. Los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
+> Esta traducción parte del README en inglés en el commit [`c327a0d`](https://github.com/Blave-TW/blave-agent/blob/c327a0d/README.md) y cubre solo las secciones que cambian poco. Los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -18,39 +18,41 @@ Si te resulta útil, dale una estrella al repositorio, y activa Watch › Releas
 
 ## Qué lo hace diferente
 
+Claude Code o Codex pueden escribir un bot de trading. Lo difícil es ponerlo a operar de verdad. En una terminal, cada estrategia es una carpeta de scripts y un historial de chat, y en cuanto hay unas cuantas cuesta seguirles la pista. Montar tu propio trading automático implica encargarte tú mismo de la programación de tareas, las API de los exchanges, la conciliación de posiciones, los reinicios y las claves. Blave Agent es esa pieza que falta.
+
+### Tus estrategias en una sola app, no en scripts dispersos
+
+![Una estrategia de ruptura de BTC en la app: pestañas de backtest, operaciones, barrido de parámetros, fuera de muestra y código, con el veredicto del agente al lado](docs/readme-backtest.png)
+
+Cada estrategia está en la barra lateral con su backtest, sus operaciones, su barrido de parámetros, su prueba fuera de muestra, su código y sus versiones guardadas. Restaura una versión anterior desde la lista y fija cuánto opera cada estrategia en la página **Portfolio** (Portafolio).
+
+### Trading automático ya conectado
+
+- **Conecta un exchange:** Binance, OKX, Bybit, BingX, Gate.io, o President Futures en Windows. La clave se comprueba primero con el exchange, y una clave que puede retirar fondos se rechaza (Gate.io no informa de este permiso, así que compruébalo tú).
+- **Fija un monto y pulsa Start trading (Iniciar trading).** La app ejecuta cada estrategia según su calendario y lleva la cuenta hacia sus posiciones objetivo. Cada intento de orden queda registrado (`state/audit.jsonl`).
+- **Pause trading (keep positions)** (Pausar trading, conservar posiciones) desde la barra de menús (bandeja del sistema en Windows). Tras cerrar y volver a abrir la app, nada opera hasta que vuelvas a pulsar **Start trading**.
+- **El paper trading** no necesita claves.
+
 ### Backtests que comprueban el sobreajuste y usan comisiones reales
 
 Sobreajuste: parámetros que solo por casualidad encajan con los datos pasados.
 
-- Cada backtest de Tipo A ejecuta por defecto una prueba de permutación de Monte Carlo (MCPT, `lib/validation.py`) y registra un valor p: ¿unos datos barajados podrían haberlo hecho igual de bien?
-- Un barrido de parámetros (`lib/param_scan.py`) busca una meseta de parámetros que funcionen todos, no la mejor celda aislada.
-- Un walk-forward móvil (`lib/walk_forward.py`) mide el rendimiento fuera de muestra.
-- La comisión debería corresponder al mercado real. Con una comisión de 0, `lib/quality_check.py` avisa, pero no obliga a cambiarla.
-- Por defecto, una idea recibe un solo backtest. Un mal resultado se informa tal cual; el agente no reajusta los parámetros a escondidas hasta que los números se vean bien (consulta *Iteration Brakes* en [`AGENTS.md`](AGENTS.md)).
+- **Valor p de MCPT** en cada backtest de Tipo A (`lib/validation.py`): ¿unos datos barajados podrían haberlo hecho igual de bien?
+- **Barrido de parámetros** en busca de una meseta, no de la mejor celda aislada (`lib/param_scan.py`); **walk-forward** para resultados fuera de muestra (`lib/walk_forward.py`).
+- **Comisiones reales:** una comisión de 0 genera un aviso (`lib/quality_check.py`).
+- **Una idea, un backtest:** un mal resultado se informa tal cual, sin reajustarlo a escondidas (*Iteration Brakes* en [`AGENTS.md`](AGENTS.md)).
 
-### Comprueba si en vivo corre el código que pasó el backtest
+### ¿Sin ideas? Busca en la web por ti
 
-Un backtest fija una versión de la estrategia. Si el código que corre en vivo ya no coincide con esa versión, la estrategia queda marcada: el espacio de trabajo web muestra «En vivo · archivo modificado» en lugar de un simple «En vivo». La marca no detiene la estrategia. Solo se aplica a los tipos de estrategia que llevan backtest (Tipo A y C), y solo a estrategias que tienen versiones.
+![El agente buscando ideas de estrategias para BTC y ETH en una docena de sitios con el navegador integrado](docs/readme-browser.png)
 
-### Informes que primero leen las noticias
-
-Pide un resumen matutino, un informe de cierre de mercado, un resumen de un solo símbolo o un informe de investigación. El agente lee las noticias antes de escribir —al menos en tres sitios distintos— y cada gráfico sale de la serie de datos real, nunca de la memoria del modelo. Cada informe termina con un resumen y una condición que demostraría que su lectura es errónea. El mapa de liquidaciones dibuja en dos capas, cada una con su etiqueta, lo que de verdad se liquidó y lo que estima el modelo.
-
-### Un navegador que puedes ver
-
-Cuando el agente lee la web, usa el navegador integrado de la app: la página que está leyendo aparece en tu pantalla, no en un proceso oculto. Las páginas de cuenta de los exchanges y las direcciones de redes privadas están bloqueadas. Una URL de un sitio que no ha visitado en esta ronda y que lleva parámetros largos se detiene y te pregunta antes de abrirse.
+Pulsa **Search the Web for Ideas** (Buscar ideas en la web) y el agente lee una docena de sitios y vuelve con tres ideas que se pueden someter a backtest, cada una con sus reglas de entrada y salida y la URL de su fuente. Elige una y la construye y le hace el backtest. Las páginas que lee se abren en el navegador integrado de la app, en tu pantalla; las páginas de cuenta de los exchanges y las direcciones de redes privadas están bloqueadas.
 
 <a id="quick-start"></a>
 
 ## Inicio rápido (desde el código fuente)
 
-Necesitas:
-
-- macOS 13 o superior. La app empaquetada es una compilación universal: Apple Silicon e Intel, una sola descarga.
-- O Windows 10 u 11, x64 (las versiones que soporta Electron 44; ARM no está probado). El instalador aún no tiene firma de código, así que Windows avisa en la primera instalación: haz clic en el enlace que aparece debajo del texto y luego en el botón nuevo que aparece abajo.
-- Node.js 22.12 o superior, con npm (`shell/package.json` › `engines`)
-- `python3` en tu `PATH` (`python` en Windows). La app empaquetada trae su propio Python 3.12; al ejecutar desde el código fuente se usa el Python de tu sistema para crear el venv.
-- Claude Code o Codex instalado y con sesión iniciada, una clave de API de DeepSeek de pago por uso, o una cuenta de Blave
+Necesitas macOS 13 o superior o Windows 10/11 (x64), Node.js 22.12 o superior, Python 3 en tu `PATH`, y una de estas opciones: Claude Code o Codex con sesión iniciada, una clave de API de DeepSeek, o una cuenta de Blave.
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -59,25 +61,17 @@ npm install
 npm start
 ```
 
-En Windows, en PowerShell (`npm.cmd` funciona aunque la directiva de ejecución de PowerShell bloquee el script `npm`):
-
-```powershell
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent\shell
-npm.cmd install
-npm.cmd start
-```
+En Windows, ejecuta `npm.cmd install` y `npm.cmd start` en PowerShell.
 
 En el primer inicio eliges qué impulsa al agente:
 
-- **Tu propio Claude Code o Codex.** No hace falta una cuenta de Blave, y Blave no cobra nada por la IA. La app solo lanza el CLI; tus credenciales de Claude Code o Codex se quedan con él.
-- **Tu propia clave de API (DeepSeek).** Pega una clave de pago por uso; DeepSeek te cobra directamente y Blave no cobra nada por la IA. La clave se queda en el llavero de este equipo (cifrada en Windows) y el agente nunca la ve: la app reenvía sus solicitudes en local.
+- **Tu propio Claude Code o Codex.** No hace falta una cuenta de Blave; Blave no cobra nada por la IA.
+- **Tu propia clave de DeepSeek.** DeepSeek te cobra directamente. La clave se queda en el llavero de este equipo y nunca llega al agente.
 - **Blave AI.** Inicia sesión con una cuenta de Blave; se cobra por uso.
 
-Después, describe una idea. Por ejemplo:
+Después, describe una idea:
 
 - «Haz un backtest de BTCUSDT en el gráfico de 4h: largo cuando la SMA de 20 periodos cruce por encima de la SMA de 60, fuera del mercado cuando vuelva a cruzar por debajo. Usa una comisión del 0.05% por lado.»
-- «Arma un portafolio de BTC, ETH y SOL con pesos iguales, rebalanceado cada semana, y haz su backtest.»
 - «Barre las dos longitudes de SMA de esa estrategia y muéstrame dónde está la meseta.»
 
 Antes de escribir código, el agente clasifica cada idea en uno de tres tipos:
@@ -88,7 +82,17 @@ Antes de escribir código, el agente clasifica cada idea en uno de tres tipos:
 | C | Un portafolio: N símbolos y un vector de pesos que suma como máximo 1, rebalanceado según un calendario | Obligatorio |
 | B | Todo lo demás: screeners, grids, arbitraje, alertas, ejecución puntual | Ninguno |
 
-La interfaz sigue el idioma del sistema (inglés o chino tradicional). Para forzarlo: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
+<details>
+<summary>Notas por plataforma</summary>
+
+- La app empaquetada para macOS es una compilación universal (Apple Silicon e Intel). Windows: las versiones que soporta Electron 44; ARM no está probado. El instalador de Windows aún no tiene firma de código, así que SmartScreen avisa en la primera instalación: elige More info › Run anyway (Más información › Ejecutar de todas formas).
+- Versión de Node.js: `shell/package.json` › `engines`. La app empaquetada trae su propio Python 3.12; al ejecutar desde el código fuente se usa el Python de tu sistema (`python3`, o `python` en Windows) para crear el venv.
+- Codex viene dentro de la app de ChatGPT: «ChatGPT» de Microsoft Store en Windows (`winget install --id 9PLM9XGG6VKS -s msstore`), ChatGPT.app en Mac. En Windows, por ahora evita las compilaciones 0.161–0.162.1 de `@openai/codex` de npm (su sandbox está roto).
+- Con tu propio Claude Code o Codex, la app solo lanza el CLI; tus credenciales se quedan con él. Una clave de DeepSeek se guarda cifrada en Windows, y la app reenvía las solicitudes del agente en local.
+- `npm.cmd` funciona aunque la directiva de ejecución de PowerShell bloquee el script `npm`.
+- La interfaz sigue el idioma del sistema (inglés o chino tradicional). Para forzarlo: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
+
+</details>
 
 ## Novedades
 
@@ -96,12 +100,11 @@ Los cambios de cada versión están en [Releases](https://github.com/Blave-TW/bl
 
 ## Seguridad y límites
 
-- **Dónde viven las claves del exchange depende de dónde uses el agente.** App de escritorio: en el `.env` del espacio de trabajo en tu ordenador (`~/Blave/workspace/.env` en macOS, `%USERPROFILE%\Blave\workspace\.env` en Windows). Servidor en la nube: en el `.env` del espacio de trabajo de tu propio servidor dedicado. Un exchange vinculado desde la página web: Blave guarda la clave cifrada. El agente puede leer el `.env` del espacio de trabajo; sus reglas le prohíben mostrar los valores de las claves (`references/exchange-connect.md`). Otorga a la clave solo permisos de lectura + trading, nunca de retiro. Una clave con permiso de retiro se rechaza al conectarla (Binance, OKX, BingX, Bybit; igual en la app de escritorio, el servidor en la nube y la página web). Gate.io no informa de ese permiso en absoluto, así que compruébalo tú mismo.
-- Los montos a invertir y la reanudación del trading los haces tú: en la página Trading automático de la app de escritorio, o en el espacio de trabajo web si usas un servidor en la nube. El agente se niega a hacerlo por ti, aunque se lo pidas. Lo único que siempre puede hacer por su cuenta es activar el kill switch. El kill switch (`state/HALT`) bloquea nueva exposición; los cierres y stops siguen pasando.
-- En la app de escritorio, las órdenes solo salen mientras Blave está abierto; después de cerrarlo y volver a abrirlo, el trading queda en pausa hasta que pulses Iniciar trading.
-- El agente verifica antes de informar: vuelve a leer un archivo después de editarlo y consulta una orden en el exchange antes de decir que se colocó. Cada intento de orden queda registrado en `state/audit.jsonl`.
-- Un backtest describe el pasado. No predice ni garantiza resultados futuros. MCPT comprueba si un resultado es estadísticamente significativo, y los barridos de parámetros comprueban si hay sobreajuste; ambos solo reducen la probabilidad de que el backtest te engañe, y ninguno la elimina.
-- Nada de esto constituye asesoramiento de inversión. Operar puede hacerte perder dinero, incluso todo.
+- **Claves:** otórgales solo permisos de lectura y trading. Una clave con permiso de retiro se rechaza al conectarla (Binance, OKX, BingX, Bybit); Gate.io no informa de ese permiso, así que compruébalo tú mismo. Las claves viven en el `.env` del espacio de trabajo en tu ordenador (`~/Blave/workspace/.env`, `%USERPROFILE%\Blave\workspace\.env` en Windows) o en tu propio servidor en la nube, o las guarda Blave cifradas cuando las vinculas en la página web. El agente puede leer ese `.env`; sus reglas le prohíben mostrar los valores de las claves (`references/exchange-connect.md`).
+- **Los montos a invertir y la reanudación del trading los haces tú,** en la página Auto trading (Trading automático) de la app de escritorio o en el espacio de trabajo web. El agente se niega a hacerlo, aunque se lo pidas; lo único que siempre puede hacer por su cuenta es activar el kill switch.
+- **En la app de escritorio, las órdenes solo salen mientras Blave está abierto.** Después de cerrarlo y volver a abrirlo, el trading queda en pausa hasta que pulses **Start trading**.
+- **Verificado antes de informar:** el agente consulta una orden en el exchange antes de decir que se colocó, y cada intento queda registrado en `state/audit.jsonl`.
+- Un backtest describe el pasado. MCPT y los barridos de parámetros reducen la probabilidad de que lo que ves sea suerte; no la eliminan. Nada de esto constituye asesoramiento de inversión, y operar puede hacerte perder todo tu dinero.
 
 ## Política de firma de código
 
@@ -111,9 +114,7 @@ La versión de Windows aún no tiene firma de código: hemos solicitado el progr
 
 **Apache-2.0**: consulta [`LICENSE`](LICENSE) y [`NOTICE`](NOTICE). Puedes usarlo, modificarlo y redistribuirlo, también con fines comerciales; incluye una concesión de patentes. «Blave» y el logotipo de Blave son marcas comerciales: cambia el nombre de tu fork.
 
-**Las estrategias que escribes son tuyas.** Lo que tú (o el agente en tu nombre) escribas dentro de `strategies/` no forma parte de este proyecto y la licencia no lo alcanza.
-
-Las partes de pago no están en este repositorio: los servidores en la nube, los datos de mercado y el proxy de LLM de Blave son servicios de blave.org. Este código se ejecuta en tu propio ordenador sin costo, con tu propia suscripción de IA y tus propias fuentes de datos.
+**Las estrategias que escribes son tuyas.** Todo lo que esté dentro de `strategies/` no forma parte de este proyecto y la licencia no lo alcanza. Las partes de pago —los servidores en la nube, los datos de mercado y el proxy de LLM de Blave— son servicios de blave.org y no están en este repositorio.
 
 Claude Code y Codex son productos de sus respectivos propietarios. Blave Agent no está afiliado a ellos ni cuenta con su respaldo.
 
