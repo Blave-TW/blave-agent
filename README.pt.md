@@ -6,13 +6,13 @@ Crie, faça backtest e opere estratégias ao vivo com Claude Code ou Codex. Grá
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | **Português** | [Tiếng Việt](README.vi.md)
 
-> Esta tradução foi feita a partir do README em inglês no commit [`c327a0d`](https://github.com/Blave-TW/blave-agent/blob/c327a0d/README.md) e cobre só as seções que mudam pouco. Exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
+> Esta tradução foi feita a partir do README em inglês no commit [`00971e7`](https://github.com/Blave-TW/blave-agent/blob/00971e7/README.md) e cobre só as seções que mudam pouco. Exchanges e dados, nuvem, estrutura do repositório, como contribuir e as notas para mantenedores estão na [versão em inglês](README.md). Se algo divergir, vale o original em inglês.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Baixar para macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Baixar para Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Início rápido (a partir do código-fonte)](#quick-start) · [Continue rodando com o PC desligado](https://blave.org/agent/pt)
+[Baixar para macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Baixar para Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Início rápido](#quick-start) · [Continue rodando com o PC desligado](https://blave.org/agent/pt)
 
 Se for útil, dê uma estrela ao repositório, e ative Watch › Releases para saber de cada versão nova.
 
@@ -50,18 +50,9 @@ Clique em **Search the Web for Ideas** (Pesquisar ideias na web) e o agente lê 
 
 <a id="quick-start"></a>
 
-## Início rápido (a partir do código-fonte)
+## Início rápido
 
-Você precisa de macOS 13+ ou Windows 10/11 (x64), Node.js 22.12+, Python 3 no seu `PATH` e uma destas opções: Claude Code ou Codex com login feito, uma chave de API da DeepSeek ou uma conta Blave.
-
-```
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent/shell
-npm install
-npm start
-```
-
-No Windows, rode `npm.cmd install` e `npm.cmd start` no PowerShell.
+Baixe o app para [macOS](https://github.com/Blave-TW/blave-agent/releases/latest) ou [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13 ou posterior, ou Windows 10/11 x64) e abra.
 
 Na primeira abertura, você escolhe o que move o agente:
 
@@ -93,6 +84,19 @@ Antes de escrever código, o agente classifica cada ideia em um de três tipos:
 - A interface segue o idioma do sistema (inglês ou chinês tradicional). Para forçar: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
 
 </details>
+
+### A partir do código-fonte
+
+Você precisa de macOS 13+ ou Windows 10/11 (x64), Node.js 22.12+, Python 3 no seu `PATH` e uma destas opções: Claude Code ou Codex com login feito, uma chave de API da DeepSeek ou uma conta Blave.
+
+```
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent/shell
+npm install
+npm start
+```
+
+No Windows, rode `npm.cmd install` e `npm.cmd start` no PowerShell.
 
 ## Novidades
 

@@ -6,13 +6,13 @@ Xây dựng chiến lược, backtest và giao dịch thật với Claude Code h
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | **Tiếng Việt**
 
-> Bản dịch này dịch từ README tiếng Anh tại commit [`c327a0d`](https://github.com/Blave-TW/blave-agent/blob/c327a0d/README.md) và chỉ gồm các phần ít thay đổi. Sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch này dịch từ README tiếng Anh tại commit [`00971e7`](https://github.com/Blave-TW/blave-agent/blob/00971e7/README.md) và chỉ gồm các phần ít thay đổi. Sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Tải cho macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Tải cho Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Bắt đầu nhanh (từ mã nguồn)](#quick-start) · [Vẫn chạy khi tắt máy](https://blave.org/agent/vi)
+[Tải cho macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Tải cho Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Bắt đầu nhanh](#quick-start) · [Vẫn chạy khi tắt máy](https://blave.org/agent/vi)
 
 Nếu thấy hữu ích, hãy Star repo — và bật Watch › Releases để được báo khi có phiên bản mới.
 
@@ -50,18 +50,9 @@ Nhấn **Search the Web for Ideas** (tìm ý tưởng trên web) và agent sẽ 
 
 <a id="quick-start"></a>
 
-## Bắt đầu nhanh (từ mã nguồn)
+## Bắt đầu nhanh
 
-Bạn cần macOS 13 trở lên hoặc Windows 10/11 (x64), Node.js 22.12 trở lên, Python 3 trong `PATH`, và một trong các thứ sau: Claude Code hoặc Codex đã đăng nhập, một API key DeepSeek, hoặc một tài khoản Blave.
-
-```
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent/shell
-npm install
-npm start
-```
-
-Trên Windows, chạy `npm.cmd install` và `npm.cmd start` trong PowerShell.
+Tải app cho [macOS](https://github.com/Blave-TW/blave-agent/releases/latest) hoặc [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13 trở lên, hoặc Windows 10/11 x64) rồi mở lên.
 
 Lần mở đầu tiên, bạn chọn AI nào chạy agent:
 
@@ -93,6 +84,19 @@ Trước khi viết code, agent xếp mỗi ý tưởng vào một trong ba lo�
 - Giao diện theo ngôn ngữ hệ thống (tiếng Anh hoặc tiếng Trung phồn thể). Để chỉ định: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
 
 </details>
+
+### Chạy từ mã nguồn
+
+Bạn cần macOS 13 trở lên hoặc Windows 10/11 (x64), Node.js 22.12 trở lên, Python 3 trong `PATH`, và một trong các thứ sau: Claude Code hoặc Codex đã đăng nhập, một API key DeepSeek, hoặc một tài khoản Blave.
+
+```
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent/shell
+npm install
+npm start
+```
+
+Trên Windows, chạy `npm.cmd install` và `npm.cmd start` trong PowerShell.
 
 ## Tin mới
 

@@ -7,13 +7,13 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> 本文译自英文版 README 的 commit [`c327a0d`](https://github.com/Blave-TW/blave-agent/blob/c327a0d/README.md)，只涵盖变动较少的段落；交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`00971e7`](https://github.com/Blave-TW/blave-agent/blob/00971e7/README.md)，只涵盖变动较少的段落；交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
-[下载 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [下载 Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe) · [快速开始（从源代码）](#quick-start) · [关电脑也照跑](https://blave.org/agent/cn)
+[下载 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [下载 Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe) · [快速开始](#quick-start) · [关电脑也照跑](https://blave.org/agent/cn)
 
 觉得有用就点个 Star；想在新版发布时收到通知，请点 Watch › Releases。
 
@@ -51,18 +51,9 @@ Claude Code 或 Codex 写得出交易 bot，难的是真的拿来跑。在终端
 
 <a id="quick-start"></a>
 
-## 快速开始（从源代码）
+## 快速开始
 
-需要 macOS 13 以上或 Windows 10／11（x64）、Node.js 22.12 以上、`PATH` 上有 Python 3，再加上其中之一：已登录的 Claude Code 或 Codex、一把 DeepSeek API 密钥，或一个 Blave 账号。
-
-```
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent/shell
-npm install
-npm start
-```
-
-Windows 在 PowerShell 里改跑 `npm.cmd install` 与 `npm.cmd start`。
+下载 [macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest)或[Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe)（macOS 13 及以上，或 Windows 10／11 x64），打开就能用。
 
 第一次打开时，选 agent 用哪个 AI：
 
@@ -94,6 +85,19 @@ Windows 在 PowerShell 里改跑 `npm.cmd install` 与 `npm.cmd start`。
 - 界面语言跟着系统语言（英文或繁体中文）。要强制指定：`BLAVE_LANG=en npm start`（PowerShell：`$env:BLAVE_LANG="en"; npm.cmd start`）。
 
 </details>
+
+### 从源代码运行
+
+需要 macOS 13 以上或 Windows 10／11（x64）、Node.js 22.12 以上、`PATH` 上有 Python 3，再加上其中之一：已登录的 Claude Code 或 Codex、一把 DeepSeek API 密钥，或一个 Blave 账号。
+
+```
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent/shell
+npm install
+npm start
+```
+
+Windows 在 PowerShell 里改跑 `npm.cmd install` 与 `npm.cmd start`。
 
 ## 最新消息
 
