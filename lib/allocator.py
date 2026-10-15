@@ -15,8 +15,8 @@ target, not a weighting input. The method's own knobs live in a module-level
 `PARAMS` dict, edited in the file, exactly like a strategy's top-of-file
 constants (see `references/allocator-code.md`).
 
-The two built-in methods are not files — `manager.py` holds them as functions
-and picks one by name (`equal`, the default for a new portfolio, or `slope`;
+The built-in methods are not files — `manager.py` holds them as functions
+and picks one by name (`equal`, the default for a new portfolio, `slope` or `sharpe`;
 omitting the flag keeps a live portfolio's own method), so this module
 deliberately has no knowledge of them beyond refusing to load a file under
 those names (importing `manager/manager.py` from `lib/` would need the same
@@ -29,9 +29,9 @@ import os
 ALLOCATORS_DIR = 'allocators'
 
 # Reserved: these name the built-in methods on `--allocator`, so a directory
-# with either name could never be reached — refuse it loudly at load time
+# with any of these names could never be reached — refuse it loudly at load time
 # rather than let the user believe their file is the one being traded.
-BUILTIN_ALLOCATORS = ('equal', 'slope')
+BUILTIN_ALLOCATORS = ('equal', 'slope', 'sharpe')
 
 # `target_vol` scales portfolio leverage and is not a weighting input at all —
 # a file declaring it would have it read as the caller's flag and never see the

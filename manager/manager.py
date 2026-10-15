@@ -15,9 +15,10 @@ Usage:
 Default is DRY-RUN: weights are computed and printed but portfolio_config.json
 is NOT touched. Pass --apply only after the user has confirmed the new weights.
 
-Two built-in methods: `equal` (every strategy the same share) and `slope` (the
-slope/std optimiser below). `--allocator <name>` picks either, or swaps in
-allocators/<name>/allocator.py — see references/allocator-code.md.
+Three built-in methods: `equal` (every strategy the same share), `slope` (the
+slope/std optimiser below) and `sharpe` (maximum portfolio Sharpe, falling back
+to equal when nothing in the window made money). `--allocator <name>` picks one,
+or swaps in allocators/<name>/allocator.py — see references/allocator-code.md.
 
 Omitting `--allocator` does NOT mean `equal`: a portfolio that has already been
 applied keeps the method it is live on (a config with a null or absent
@@ -214,6 +215,59 @@ def optimize_weights(ret_df, lookback):
     return {names[i]: round(float(w_opt[i]), 4) for i in range(n)}
 
 
+def sharpe_weights(ret_df, lookback):
+    """Long-only weights that maximise the portfolio's Sharpe ratio
+    (mean / std of R·w) over the last `lookback` days. Constraints: w >= 0,
+    sum(w) = 1, no per-strategy cap — same as `slope`.
+
+    Solved in the convex form rather than on the ratio itself: minimise
+    y'Σy subject to μ'y = 1, y >= 0, then w = y / sum(y). For long-only
+    weights that is the same optimum, but the problem has one minimum, so
+    there are no random restarts and two runs on the same data agree — the
+    walk-forward re-fits every day, and a ratio optimiser that lands in a
+    different local optimum each morning shows up there as turnover.
+
+    Fallbacks, both to equal weight (the default method, so the result is
+    never more aggressive than doing nothing):
+      - no strategy has a positive mean return over the window: the maximum
+        long-only Sharpe is ≤ 0 and chasing it rewards volatility (a bigger
+        std makes a negative ratio closer to 0), so there is nothing to fit;
+      - fewer than 10 days, or the solver fails / returns nothing usable.
+    A singular covariance (identical or perfectly correlated strategies, a
+    leg that never moved) needs no special case: Σ is never inverted, and a
+    small ridge keeps the objective strictly convex so duplicates split
+    evenly instead of the solver picking one arbitrarily.
+    """
+    names  = list(ret_df.columns)
+    n      = len(names)
+    equal  = {name: 1.0 for name in names}
+    recent = ret_df.values[-lookback:] if lookback else ret_df.values
+    if n == 0 or len(recent) < 10:
+        return equal
+    # Sharpe is scale-free, so rescale to unit average variance: daily returns
+    # around 1e-4 would put y near 1e4, where SLSQP's tolerances stop meaning much.
+    scale = float(np.sqrt(np.mean(recent.var(axis=0))))
+    if not np.isfinite(scale) or scale <= 0:
+        return equal
+    x   = recent / scale
+    mu  = x.mean(axis=0)
+    if not np.all(np.isfinite(mu)) or mu.max() <= 0:
+        return equal
+    cov = np.cov(x, rowvar=False).reshape(n, n) + 1e-8 * np.eye(n)
+    pos = mu > 0
+    y0  = np.where(pos, 1.0 / (mu * pos.sum()).clip(min=1e-12), 0.0)   # μ'y0 = 1
+    res = minimize(lambda y: float(y @ cov @ y), y0, jac=lambda y: 2 * cov @ y,
+                   method='SLSQP', bounds=[(0.0, None)] * n,
+                   constraints=[{'type': 'eq', 'fun': lambda y: float(mu @ y) - 1.0,
+                                 'jac': lambda y: mu}],
+                   options={'ftol': 1e-12, 'maxiter': 1000})
+    y = np.clip(res.x, 0, None) if res.x is not None else None
+    if not res.success or y is None or not np.all(np.isfinite(y)) or y.sum() <= 0:
+        return equal
+    w = y / y.sum()
+    return {names[i]: round(float(w[i]), 4) for i in range(n)}
+
+
 # The built-in methods, by the name `--allocator` selects them with. Reserved
 # in lib/allocator.py so a user file can never shadow one. equal is first
 # because it is the default: a fitted method must earn its turnover.
@@ -238,10 +292,15 @@ BUILTIN_METHODS = {
         # changes nothing has no business in the page's parameter form.
         'params': {'lookback': 365},
     },
+    'sharpe': {
+        'display_name': '最佳化 Sharpe',
+        'description': '最大化組合的 Sharpe(平均報酬 ÷ 波動),不放空、權重加總 1;沒有任何一檔是正報酬時改用等權',
+        'params': {'lookback': 365},
+    },
 }
 DEFAULT_METHOD = 'equal'
 
-_BUILTIN_FNS = {'equal': equal_weights, 'slope': optimize_weights}
+_BUILTIN_FNS = {'equal': equal_weights, 'slope': optimize_weights, 'sharpe': sharpe_weights}
 
 
 def default_allocator():

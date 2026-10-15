@@ -501,12 +501,14 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .ci-bar { display: flex; align-items: center; gap: var(--space-8); margin-left: calc(-1 * var(--space-8)); }
 .ci-bar .btn-send { margin-left: auto; }
 /* 附件(照雲端 workspace.css 的 .btn-attach / .attach-chip,色換成外殼的 token):
-   迴紋針 = 32px 中性 ghost(同 .mp-trigger 的 hover 語言);chip = 輸入框上方一行 12px hairline 框,檔名截尾(全名在 title)+ 20px ✕ */
+   迴紋針 = 32px 中性 ghost(同 .mp-trigger 的 hover 語言);chip = 輸入框上方 12px hairline 框,檔名截尾(全名在 title)+ 20px ✕;
+   多檔一個檔一顆,排成一列、放不下換行(chip 之間隔 --space-4) */
 .btn-attach { width: 32px; height: 32px; flex: 0 0 32px; display: flex; align-items: center; justify-content: center;
   border-radius: var(--radius-sm); color: var(--ink-2);
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .btn-attach:hover { background: var(--surface-muted); color: var(--ink); }
-.attach-chip { display: flex; align-items: center; gap: var(--space-4); width: fit-content; max-width: 100%; margin-bottom: var(--space-8);
+.attach-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); margin-bottom: var(--space-8); font-size: 12px; line-height: 1.5; }
+.attach-chip { display: flex; align-items: center; gap: var(--space-4); min-width: 0; max-width: 100%;
   padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8); border: 1px solid var(--border-hairline); border-radius: var(--radius-sm);
   font-size: 12px; line-height: 1.5; color: var(--ink); }
 .attach-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -723,6 +725,30 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   /* 沒描述也留一行高:有/無描述的策略互切時分頁列才不會上下跳 */
   min-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #rp-code { padding: var(--space-16) var(--space-24); }
+/* 策略邏輯(app.js rpPaintLogic;mockup 方案 A,同網頁)。觸發字用 ink-2(比說明亮一階):收著時只有這兩個字,要被看見;
+   跟說明之間 12(.rp-sub 的 8 + 說明的右 4,versions.css)。箭頭共用 .mp-chev(同一列的 .vtrig 那顆)。熱區靠透明 ::before 撐到 44 高,只長在頁首內距裡。展開區不加框、不加線,三組靠 12 分開 */
+.lg-tog {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: var(--space-6);
+  padding: 0; border: 0; background: none; cursor: pointer; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--ink-2); white-space: nowrap;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.lg-tog[hidden] { display: none; }
+.lg-tog::before { content: ""; position: absolute; inset: -13px -8px; }
+.lg-tog:hover { color: var(--ink); }
+.rp.is-logic-open .lg-tog .mp-chev { transform: rotate(-135deg); margin-bottom: -2px; }
+/* 展開時說明完整換行(順便解掉「說明被截斷」);換成多行後觸發器與版本鈕對齊第一行 */
+.rp.is-logic-open .rp-sub { align-items: baseline; }
+.rp.is-logic-open .rp-desc { white-space: normal; }
+.lg-body { margin-top: var(--space-12); }
+.lg-body[hidden] { display: none; }
+.lg { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-16); row-gap: var(--space-12); max-width: 640px; margin: 0; }
+.lg dt { font-size: 12px; font-weight: 400; line-height: 20px; color: var(--ink-3); white-space: nowrap; }
+.lg dd { margin: 0; min-width: 0; }
+.lg ul { margin: 0; padding: 0; list-style: none; }
+.lg li { font-size: 13px; line-height: 20px; color: var(--ink-2); overflow-wrap: anywhere; }
+.lg li + li { margin-top: var(--space-4); }
+.lg-free { margin: 0; max-width: 640px; font-size: 13px; line-height: 20px; color: var(--ink-2); overflow-wrap: anywhere; white-space: pre-line; }   /* 未結構化的文字可能多行,換行照原樣 */
+@media (prefers-reduced-motion: reduce) { .lg-tog, .lg-tog .mp-chev { transition: none; } }
 /* 灰填上 ink-3 只有 3.6:1,升一階 */
 #strat-empty { padding: var(--space-8) var(--space-12); }
 
@@ -955,8 +981,6 @@ body.resizing * { cursor: col-resize !important; }
 @keyframes plan-pulse{50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.plan-st.busy .dot{animation:none}}
 .plan-lead{margin:var(--space-8) 0 0;line-height:1.7;color:var(--ink-2)}
-.plan-sec{margin-top:var(--space-16)}
-.plan-lbl{margin:0 0 var(--space-6);font-size:12px;color:var(--ink-3)}
 /* Blave 餘額:參考資訊,小字靠右;這一頁的焦點仍是下面那句標題。數字跟同頁其他金額同一個字(不用 mono),加 tabular-nums */
 .plan-bal { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); padding-bottom: var(--space-12); margin-bottom: var(--space-16); border-bottom: 1px solid var(--border-hairline); }
 .plan-bal .l { font-size: 12px; color: var(--ink-3); }
@@ -974,9 +998,6 @@ body.resizing * { cursor: col-resize !important; }
 .plan-price{display:flex;align-items:baseline;gap:var(--space-12);flex-wrap:wrap}
 .plan-price .m{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink)}
 .plan-price .h{font-size:12px;color:var(--ink-3)}
-.plan-price .tier{font-size:13px;font-weight:500;color:var(--ink)}   /* 階名用介面字:進 mono 會像程式碼 token */
-.plan-detail > .plan-price{margin-top:var(--space-12)}
-.plan-inc{margin:var(--space-4) 0 0;line-height:1.7;color:var(--ink)}
 .plan-id .plan-fine{margin-top:calc(-1 * var(--space-4))}   /* 餘額列下的自動儲值短句:抵掉一半的欄距,貼著餘額列 */
 .plan-fine{margin:var(--space-6) 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
 .plan-foot{flex:none;padding:var(--space-12) var(--space-16);border-top:1px solid var(--border-hairline)}
@@ -987,15 +1008,13 @@ body.resizing * { cursor: col-resize !important; }
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
 .plan-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
-/* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 收起的細節;底列=一行跟錢有關的話 + 鈕 */
+/* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 外開定價頁的安靜鈕;底列=一行跟錢有關的話 + 鈕 */
 .plan-pane .plan-scroll{padding:var(--space-16)}   /* 第一個東西是一列小字(帳號列),上距跟其他分類對齊 */
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
 .plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
 .plan-pane .plan-rule{text-wrap:pretty}
 .plan-more{margin-top:var(--space-16);display:inline-block}
-.plan-detail{margin-top:var(--space-12);padding-top:var(--space-4);border-top:1px solid var(--border-hairline)}
-.plan-detail[hidden]{display:none}
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 設定左欄底部的帳號區 */
 .set-cats{display:flex;flex-direction:column}

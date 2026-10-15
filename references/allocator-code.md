@@ -8,6 +8,7 @@ one, and there are three kinds of name:
 |---|---|
 | `equal` | every strategy the same share, no window. Built in, and the default for a **new** portfolio. |
 | `slope` | the slope/std optimiser inside `manager.py`, fitted on `lookback` days. Built in. |
+| `sharpe` | maximum portfolio Sharpe (long-only, weights sum to 1, no per-strategy cap), fitted on `lookback` days. Falls back to equal weight when no member has a positive mean return over the window (a negative Sharpe cannot be meaningfully maximised — it would reward volatility), with fewer than 10 days, or when the solver fails. Built in. |
 | anything else | the user's own `allocators/<name>/allocator.py` |
 | omitted | the method the live config was applied with — `equal` only when it has never been applied |
 
@@ -40,8 +41,8 @@ allocators/
 Never put an allocator in `manager/` — the only new file that directory takes
 is a custom executor (see `manager.md`).
 
-**`equal` and `slope` are reserved** — they name the two built-in methods, so
-a directory called either could never be reached. `lib/allocator.py` refuses to
+**`equal`, `slope` and `sharpe` are reserved** — they name the built-in methods, so
+a directory called any of them could never be reached. `lib/allocator.py` refuses to
 load one rather than let the user believe their file is what trades.
 
 **The directory name must match `[A-Za-z0-9_-]{1,64}`** — ASCII letters,
@@ -220,8 +221,8 @@ hour. Everything it needs is already in `returns`.
 
 **`manager/manager.py` and `manager/management_backtest.py` are off limits.**
 A new weighting idea — including "a built-in, but with X" — is always a new
-`allocators/<name>/allocator.py`. No exceptions. That covers both built-ins:
-neither `equal` nor `slope` is yours to edit, and "equal weight but capped" or
+`allocators/<name>/allocator.py`. No exceptions. That covers every built-in:
+none of `equal`, `slope`, `sharpe` is yours to edit, and "equal weight but capped" or
 "slope but with a floor" are new files like anything else.
 
 Editing the built-in looks cheaper and is not:

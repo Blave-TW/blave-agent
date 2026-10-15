@@ -548,6 +548,8 @@ function trEffSym(n, sym, contracts) {
 }
 /* 台指期報價(主行程 txfQuote,5 分鐘快取):沒問到 = null。trTxfWant 在背景補問,回來的值靠金額表簽章含報價、下一輪輪詢重畫 */
 const TR_TXF = { price: null, at: 0, busy: false }, TR_TXF_MS = 300000, TR_TXF_RETRY_MS = 60000;
+// 台股代號 → 名字的表(trTwNamesWant 填;v = 拿到第幾次,進重畫簽章)
+const TR_TWN = { names: null, busy: false, at: 0, v: 0 }, TR_TWN_RETRY_MS = 600000;
 function trTxfPrice() { return TR_TXF.price; }
 // 口數 → 參考金額(TWD;同網頁 txfRefMoney):0 口 = 0;沒有報價 = null,呼叫端畫「—」,不拿口數硬乘出一個像金額的數
 function trTxfRefMoney(spec, lots, price) { if (!(lots > 0)) return 0; return typeof price === "number" && price > 0 ? lots * spec.cv * price : null; }
@@ -1394,9 +1396,11 @@ function trOrderContract(o) { const l = (Array.isArray(o.legs) ? o.legs : []).fi
 // cols = [[字, class, 單位?, title?]]:整表只有一區時單位寫在欄頭(units spec §9.4);title = 欄頭的原生說明(th 在橫捲容器裡,氣泡會被裁)
 function trHead(cols) {
   const thead = document.createElement("thead"), row = document.createElement("tr");
-  // 有說明的欄頭:字畫虛線底線(停上去看得到原生 title;同網頁欄頭 tip 的提示樣式)
-  cols.forEach((c) => { const th = trEl("th", c[1], c[3] ? "" : c[0]); th.scope = "col"; if (c[3]) { const sp = th.appendChild(trEl("span", "th-tip", c[0])); sp.title = c[3]; }
-    if (c[2]) th.appendChild(trEl("span", "ccy", c[2])); row.appendChild(th); });
+  // 單位放欄名後的括號裡、跟欄名同一個字樣(「金額（USDT）」;zh 全形、en 半形,Wei 10-15)。
+  // 有說明的欄頭:字畫虛線底線(停上去看得到原生 title);只剩帳上與優化表的金額兩處,等定案放哪裡
+  cols.forEach((c) => { const label = c[2] ? t("tr.colUnit", { label: c[0], unit: c[2] }) : c[0];
+    const th = trEl("th", c[1], c[3] ? "" : label); th.scope = "col"; if (c[3]) { const sp = th.appendChild(trEl("span", "th-tip", label)); sp.title = c[3]; }
+    row.appendChild(th); });
   thead.appendChild(row); return thead;
 }
 let trTipSeq = 0;
@@ -2458,7 +2462,7 @@ function poPaintCfg() {
   const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.self_ledger, r.order_errors, stamps, trExecState(TR.st), envHeadState(TR.st, now), !!TR.sent, !!TR.notApplied, !!(TR.st && TR.st.alive),
     TR.picked ? [...TR.picked].sort() : null, trCfgUnread(r), trTxfPrice(),   // 報價回來了:口數列的名目、合計、倍數要換上
     r.quote_ccy, r.signals_frozen, trFxView(),   // 分區與「還沒有訊號」;匯率／顯示幣別換了,多區合計要換上
-    trContracts(), TR.ct, r.can_switch_contract, (r.last_reconcile || {}).rollovers, r.scheduled, Object.keys(TR.flash || {}), trLoadingText(), trVenueId(), r.config];   // 合約下拉、換倉中、呼吸點;綁哪家與已存金額(「去啟動」那一列)
+    trContracts(), TR.ct, r.can_switch_contract, (r.last_reconcile || {}).rollovers, r.scheduled, Object.keys(TR.flash || {}), trLoadingText(), trVenueId(), r.config, TR_TWN.v];   // TR_TWN.v:台股名字表拿到了   // 合約下拉、換倉中、呼吸點;綁哪家與已存金額(「去啟動」那一列)
   if (!trShould("cfg", box, data)) return;
   const refocus = trPosFocusOf(box);
   box.textContent = "";
@@ -2486,7 +2490,7 @@ function trPaintPos() {
   const box = $("tr-pos"), r = trReport() || {}, now = Date.now();
   const stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
   const data = [TR.env, TR.list, r.account, r.last_reconcile, r.self_ledger, r.config, r.states, r.order_errors, stamps, r.quote_ccy, r.signals_frozen, r.can_trade_portfolio,
-    trEquity(), trUnit(), trTxfPrice(), trFxView(), trExecState(TR.st), envHeadState(TR.st, now), TR.startAt || 0, !!TR.noAmtLink];
+    trEquity(), trUnit(), trTxfPrice(), trFxView(), trExecState(TR.st), envHeadState(TR.st, now), TR.startAt || 0, !!TR.noAmtLink, TR_TWN.v];
   if (!trShould("pos", box, data)) return;
   const refocus = trPosFocusOf(box);
   box.textContent = "";
@@ -2622,6 +2626,31 @@ function trTxfWant(now) {
   Promise.resolve(window.blave.txfQuote()).then((p) => { if (typeof p === "number" && isFinite(p) && p > 0) TR_TXF.price = p; })
     .catch(() => {}).finally(() => { TR_TXF.busy = false; TR_TXF.at = Date.now(); });
   return true;
+}
+/* 台股代號後面的名字(1438 三地開發;0.1.25,同網頁):總訊號部位表(配置與自動下單 › 部位)與「N 支策略」拆解句。
+   表在主行程(twnames.js,本機快取一天);每個視窗拿到一份就不再問,拿到時 TR_TWN.v +1 讓兩張表的簽章變、重畫一次。拿不到只顯示代號 */
+function trTwNamesWant(now) {
+  const t0 = now == null ? Date.now() : now;
+  if (TR_TWN.names || TR_TWN.busy || t0 - TR_TWN.at < TR_TWN_RETRY_MS) return false;
+  if (typeof window === "undefined" || !window.blave || typeof window.blave.twNames !== "function") return false;
+  TR_TWN.busy = true;
+  Promise.resolve(window.blave.twNames()).then((m) => { if (m && typeof m === "object" && Object.keys(m).length) { TR_TWN.names = m; TR_TWN.v++; trPaint(); } })
+    .catch(() => {}).finally(() => { TR_TWN.busy = false; TR_TWN.at = Date.now(); });
+  return true;
+}
+/* 列的 key(1438@spot / 2330.TW)→ 名字;不是台股、或還沒拿到表 → ""。台指期(TXF…)不是數字代號,不會進來 */
+function trTwName(sym) {
+  const s = String(sym || "").trim().replace(/@spot$/i, "").toUpperCase();
+  if (!TR_TWSTOCK_RE.test(s)) return "";
+  trTwNamesWant();
+  return (TR_TWN.names && TR_TWN.names[s.replace(/\.TWO?$/, "")]) || "";
+}
+/* 代號格裡的名字:截尾(.tw-name 有寬度上限),全名在 title */
+function trTwNameEl(sym) {
+  const nm = trTwName(sym);
+  if (!nm) return null;
+  const el = trEl("span", "tw-name", nm); el.title = nm;
+  return el;
 }
 /* 金額表的策略名(spec-0.1.12-pf-strategy-link):清單上有這支才是鈕,點了開它的進出場紀錄;
    不在清單(被刪、資料夾改名)照舊純文字,不帶人進死路。整列不可點:每列都有金額輸入框 */
@@ -2785,7 +2814,7 @@ function trAmountTable(names, stored, states) {
       // 標的格:台指期列可以換合約(安靜觸發器,canon › Dropdown menu);換倉中掛小標。窄欄時同一份在策略名下那行
       const symInto = (host) => {
         if (ctOn) host.appendChild(ctTrigger("cfg", n, trCt(n), (root) => trCtPick(n, root), trCtLotsFor(n)));
-        else host.append(symText);
+        else { host.append(symText); const tw = isC || txf ? null : trTwNameEl(sym); if (tw) host.appendChild(tw); }
         const roll = txf ? trCtRollTag(n) : null; if (roll) host.appendChild(roll);
         // 換合約換算不足一口:這一格是 0 口(不下單),講出來讓用戶自己決定要不要填口數
         if (txf && TR.ct && TR.ct.basis[n] > 0 && (TR.edits[n] != null ? TR.edits[n] : stored[n] || 0) === 0) host.appendChild(trEl("span", "pf-note ct-under", t("ct.underLot")));
@@ -3127,7 +3156,7 @@ function trNetRows(sym, cs, cell, tb, lot, unit, cols) {
     line.append(trEl("span", "nm", trDisplay(c.name)), trEl("span", "f mono", trFmt(c.amount) + " × " + (c.notYet ? "—" : x2(c.x))), v);
     box.appendChild(line);
   });
-  const ns = trNetSum(cs), base = sym.replace(/@spot$/i, "").replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || sym;
+  const ns = trNetSum(cs), twn = trTwName(sym), base0 = sym.replace(/@spot$/i, "").replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || sym, base = twn ? base0 + " " + twn : base0;
   box.appendChild(trEl("div", "net-sum", ns.kind === "sumOffZero" ? t("tr.net.sumOffZero", { l: amt(ns.l), s: amt(ns.s), base })
     : t(ns.kind === "sumOff" ? "tr.net.sumOff" : "tr.net.sum", { t: lot ? lotsU(ns.t, true) : withU(trFmt(ns.t, true)), l: amt(ns.l), s: amt(ns.s), m: amt(ns.m) })));
   td.appendChild(box); row.appendChild(td); tb.appendChild(row);
@@ -3185,7 +3214,7 @@ function poPartStates(stored, states) {
 }
 /* 各商品的總訊號部位(同網頁 buildSigTargets(mode);設計 autotrade-bridge-mockup A 案):同一標的的各檔策略「金額 × 訊號」加總,一標的一列。兩個地方用同一個列函式:
    - mode "cfg"(策略組合 › 配置):只有「標的｜目標」,目標上色;多支策略的標的用「N 支策略」展開。不管連沒連交易所都一樣
-   - mode "trade"(自動下單 › 部位):讀機器回報的已存配置,「標的｜目標｜帳上｜差額」;策略名與金額用小字寫在標的底下;帳上有、策略沒要的部位在區尾標「策略外」;
+   - mode "trade"(自動下單 › 部位):讀機器回報的已存配置,「標的｜目標｜帳上｜差額」;標的格只寫標的(貢獻的策略與金額在策略組合頁,Wei 10-15 拿掉);帳上有、策略沒要的部位在區尾標「策略外」;
      差額只在下單執行中上色、拒單掛在那一列底下;門檻腳注與淨值倍數在表底合計列。帳上、差額、拒單、門檻、淨值×只在這一頁(同一個差額不在兩頁出現)
    投資組合每個持有的成分一列,權重 0 的不列;還沒算過的投資組合在它的計價區尾列一列講原因 */
 function poSigTable(r, stored, states, mode) {
@@ -3222,23 +3251,17 @@ function poSigTable(r, stored, states, mode) {
   const oneUnit = zones.length === 1 ? trZoneUnit(zones[0]) : null, cols = trade ? 4 : 2;
   const scroll = trEl("div", "pf-scroll"), tbl = trEl("table", "pf-tbl zoned pf-sig");
   const venueName = vid ? trVenueLabel(vid, true) : "";
-  tbl.appendChild(trHead(trade ? [[t("tr.col.symbol"), ""], [t("tr.col.target"), "n", oneUnit], [t("tr.col.held"), "n", null, t("po.actualTip", { venue: venueName })], [t("tr.col.diff"), "n", null, running ? "" : t(hs === "halted" ? "po.diffIdleHalt" : "po.diffIdleStart")]]
+  tbl.appendChild(trHead(trade ? [[t("tr.col.symbol"), ""], [t("tr.col.target"), "n", oneUnit], [t("tr.col.held"), "n", null, t("po.actualTip", { venue: venueName })], [t("tr.col.diff"), "n"]]
     : [[t("tr.col.symbol"), ""], [t("tr.col.target"), "n", oneUnit]]));
   const lotRow = (sym) => trIsLot(last, sym) || !!trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, "")));
   const numText = (lot, v) => (lot ? trLotsFmt(v, true) : trFmt(v, true));
   const symCell = (sym) => { const sp = lotRow(sym) ? trTxfSpec(trCapitalCanon(sym)) : null;
     const c = trEl("td", sp ? "sname" : "sym", sp ? t(sp.prod) : sym.replace(/@spot$/, ""));
+    const tw = sp ? null : trTwNameEl(sym); if (tw) c.appendChild(tw);
     // 這個標的只有剛選進、還沒回報、清單也沒寫市場的策略:不猜「合約」
     const guess = !/@spot$/.test(sym) && (namesOf[sym] || []).length > 0 && namesOf[sym].every((n) => st2[n] && st2[n].notYet === true && !st2[n].market);
     if (!guess) c.appendChild(trEl("span", "mkt-tag", /@spot$/.test(sym) ? t("tr.mkt.spot") : t("tr.mkt.swap"))); return c; };
   const dash = (tip) => { const c = trEl("td", "n na", "—"); if (tip) c.title = t("po.notTradedTip", { venue: venueName }); return c; };
-  // 來源小字「策略 · 金額」:每支貢獻(有金額的)一行;口數策略寫口
-  const srcLines = (cell, sym) => (contribs[sym] || []).forEach((c) => {
-    const sp = trRowTxf(c.name), line = trEl("span", "po-src", trDisplay(c.name) + " · ");
-    line.appendChild(trEl("span", "mono", sp ? trLotsFmt(c.amount) : trFmt(c.amount)));
-    if (sp) line.append(" " + t(trLotsKey(c.amount, "tr.lotsUnit", "tr.lotUnit")));   // 「口」走 sans:放進等寬 span 會多出一格寬的空白
-    cell.appendChild(line);
-  });
   const pending = new Set(), rowOf = {};
   zones.forEach((z) => {
     const tb = document.createElement("tbody");
@@ -3273,7 +3296,6 @@ function poSigTable(r, stored, states, mode) {
     if (notYet) { tc.className = "n na"; tc.title = t("tr.sigNotYet"); }
     if (lt && !noSig && !notYet) { const sp = trTxfSpec(trCapitalCanon(sym)), m = ts && sp ? trTxfRefMoney(sp, Math.abs(ts), trTxfPrice()) : null;
       tc.title = [lt.raw !== null ? t("po.lotsRawTip", { n: trLotsTgtFmt(lt.raw) }) : "", m != null ? t("tr.lotsNotionalTip", { amt: trFmt(Math.round(m)) }) : ""].filter(Boolean).join("\n"); }
-    if (trade) srcLines(sc, sym);
     row.append(sc, tc);
     if (trade) {
       if (!covered(sym)) row.append(dash(true), dash(true));
@@ -3492,7 +3514,7 @@ function trPaintHist() {
     if (who.length) act.title = t("tr.contributors", { names: who.map(trDisplay).join(LANG === "zh" ? "、" : ", ") });
     row.appendChild(act);
     const sym = String(o.symbol || ""), ss = trEl("span", "");
-    if (!(trOrderLots(o) && trTxfSymInto(ss, trOrderContract(o)))) { ss.className = "mono"; ss.textContent = sym.replace(/@spot$/, ""); }
+    if (!(trOrderLots(o) && trTxfSymInto(ss, trOrderContract(o)))) { ss.className = "mono"; ss.textContent = sym.replace(/@spot$/, ""); const tw = trTwNameEl(sym); if (tw) ss.appendChild(tw); }
     ss.appendChild(trEl("span", "mkt-tag", /@spot$/.test(sym) ? t("tr.mkt.spot") : t("tr.mkt.swap")));
     row.appendChild(ss);
     // 金額 = 交易所實際成交(Σ 數量×成交價);任一腿缺成交資料就整筆退回委託目標(部分和比意圖值更誤導)
@@ -3985,9 +4007,9 @@ function trOvEvents(r) {
     if (!e || typeof e !== "object") return;
     push(trMs(e.ts), (body) => {
       body.appendChild(trEl("span", "sell", t("tr.ov.evErr")));
-      const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || "");
-      if (trOrderErrParse(raw)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(sym, raw)));   // 認得的原因:整句在地化(句子自己帶標的)
-      else body.append(" ", trEl("span", "mono", sym), " ", trEl("span", "dim", "— " + raw.slice(0, 160)));
+      const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || ""), twn = trTwName(sym), tw = trTwNameEl(sym);
+      if (trOrderErrParse(raw)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(twn ? sym + " " + twn : sym, raw)));   // 認得的原因:整句在地化(句子自己帶標的;台股帶名字)
+      else { body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw); body.append(" ", trEl("span", "dim", "— " + raw.slice(0, 160))); }
     });
   });
   (Array.isArray(r.events) ? r.events : []).forEach((ev) => {
@@ -4855,9 +4877,9 @@ function envPaintEmpty(kind, pid) {
   else if (view === "starting") page.appendChild(trEl("p", "cv-p", t("env.empty.starting")));
   else {
     page.append(trEl("h4", "", t("env.open.h")), trEl("p", "cv-lead", t("env.open.lead")));
-    // 扣款規則(存在就扣、停機照扣、刪除才停)不在這一頁:啟動確認框一定會經過、三句直接顯示,設定 › 方案內容與計費也講全(spec-0.1.10 §2.3)
+    // 扣款規則(存在就扣、停機照扣、刪除才停)不在這一頁:啟動確認框一定會經過、三句直接顯示,設定頁的底列(pv.f.*)也講(spec-0.1.10 §2.3)
     // 方案制:電腦版只開方案、主機到網站開——這一頁不印開通價(印了會被讀成按下去要付這筆);切換前照舊
-    if (v.p && !planMo()) page.appendChild(planPriceEl(trEl, v, false));
+    if (v.p && !planMo()) page.appendChild(planPriceEl(trEl, v));
   }
   // 鈕上方那一行:錯誤(方案頁同一組 plan.err.*)優先;否則這顆鈕會帶來的錢 / 好消息
   if (err) { const e = trEl("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t(err.key))); page.appendChild(e); }

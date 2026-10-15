@@ -184,7 +184,11 @@
             </span>
             <span class="rp-sub-sep" id="ver-sep" aria-hidden="true" hidden>·</span>
             <p class="rp-desc" id="rp-desc"></p>
+            <!-- 策略邏輯(app.js rpPaintLogic;mockup 方案 A):說明行尾一顆字,點開在這一列下面展開;展開時說明改完整換行。
+                 沒有邏輯(舊策略、舊快取)或看舊版時整顆不出,頁首跟沒有這功能時一樣 -->
+            <button class="lg-tog" id="rp-logic-tog" type="button" aria-expanded="false" aria-controls="rp-logic" hidden><span data-i18n="rp.logic"></span><span class="mp-chev" aria-hidden="true"></span></button>
           </div>
+          <div class="lg-body" id="rp-logic" hidden></div>
           <!-- 雲端停機 / 讀不到時按「送上雲端」:不切視角,在原地講一句 + 一顆「去雲端看」(handoff.js 的 hoNote)。
                role="status":按了鈕畫面只多這一行,讀屏不唸的話等於沒有回應 -->
           <p class="rp-ho-note" id="rp-ho-note" role="status" hidden></p>
@@ -368,21 +372,19 @@
         </div>
         <!-- 回合進行中、草稿非空時按 Enter:不送,這一行講為什麼(e2e 0.1.8 #71);字由 taWaitShow 寫,回合結束即收 -->
         <p class="ta-wait" id="ta-wait" role="status"></p>
-        <!-- 待送附件 chip(照雲端 #attach_chip):檔名 + ✕,隨下一句送出;單檔,再選就取代。
+        <!-- 待送附件 chip(照雲端 #attach_chip):一個檔一顆(檔名 + ✕,由 setAttachments 畫),排成一列、放不下換行;最多 4 個,再加是往後加。
              貼著輸入框(建議列之下):建議列每輪都會長,chip 放它上面會離輸入框 200 多 px(設計稽核 0.1.17)。
-             chip 是輸入框的狀態,送出後泡泡末行的「迴紋針 + 檔名」另外畫(addMsg),重開 app 從逐字稿尾端那行還原 -->
-        <div class="attach-chip" id="attach-chip" hidden>
-          <span class="attach-name" id="attach-name"></span>
-          <!-- 選的模型不讀圖(DeepSeek):次要字,字由 attachHintPaint 組(帶模型名,不掛 data-i18n) -->
+             chip 是輸入框的狀態,送出後泡泡末行的「迴紋針 + 檔名」另外畫(addMsg),重開 app 從逐字稿尾端那幾行還原 -->
+        <div class="attach-chips" id="attach-chips" hidden>
+          <!-- 選的模型不讀圖(DeepSeek):清單有圖就出現一次,在最後一顆 chip 後面;字由 attachHintPaint 組(帶模型名,不掛 data-i18n) -->
           <span class="attach-hint" id="attach-hint" role="note" hidden></span>
-          <button type="button" class="attach-clear" id="attach-clear" data-i18n-aria="ws.attachRemove">✕</button>
         </div>
         <div class="chat-input">
           <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
           <div class="ci-bar">
             <!-- 迴紋針(照雲端 #attach_btn,同一顆中性 ghost):雲端放輸入列最左,電腦版的輸入框是上下兩層,放工具列最左。
                  電腦版另外收拖放到輸入框與貼上剪貼簿的圖(原生能力,雲端沒有) -->
-            <input type="file" id="attach-input" hidden />
+            <input type="file" id="attach-input" multiple hidden />
             <button class="btn-attach" id="attach-btn" type="button" data-i18n-aria="ws.attach">
               <svg class="icon-attach" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path d="M14.29 7.37l-6.13 6.13a4 4 0 01-5.66-5.66l6.13-6.13a2.67 2.67 0 013.77 3.77l-6.13 6.13a1.33 1.33 0 01-1.89-1.89l5.66-5.65" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>

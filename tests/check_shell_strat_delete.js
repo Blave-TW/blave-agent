@@ -50,7 +50,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   cfg({ amounts: { a: 0 }, weights: { w: 1 }, exchanges: { e: "binance" } });
   ok("本機:amounts / weights / exchanges 任一張有它(金額 0 也算)→ 在組合裡", inPortfolio("a") === true && inPortfolio("w") === true && inPortfolio("e") === true && inPortfolio("z") === false);
   ok("B2 本機:檔案裡的 STRATEGY_NAME 不等於資料夾名時,用它也比(組合的 key 是它)", inPortfolio(["foo", "a"]) === true && inPortfolio(["foo", null]) === false);
-  { eval(fnOf(mainSrc, "stratMeta")); ok("B2 stratMeta 讀得出 STRATEGY_NAME;行尾帶註解也讀得到(runtime 用 ast 讀得到)", stratMeta('STRATEGY_NAME = "bar"\nDISPLAY_NAME = "x"').strategyName === "bar"
+  { eval(fnOf(mainSrc, "stratMeta")); eval(fnOf(mainSrc, "stratLogic")); ok("B2 stratMeta 讀得出 STRATEGY_NAME;行尾帶註解也讀得到(runtime 用 ast 讀得到)", stratMeta('STRATEGY_NAME = "bar"\nDISPLAY_NAME = "x"').strategyName === "bar"
     && stratMeta('STRATEGY_NAME = "bar"  # 組合的 key').strategyName === "bar" && stratMeta("STRATEGY_NAME = 'b' # x\n").strategyName === "b"); }
   ok("B2 deleteStrategy 把 STRATEGY_NAME 一起交給組合檢查", /const inPf = inPortfolio\(\[name, sn\]\);/.test(fnOf(mainSrc, "deleteStrategy")));
   cfg("{ half-written");

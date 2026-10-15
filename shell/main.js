@@ -1139,7 +1139,40 @@ function stratMeta(code) {
   };
   // STRATEGY_NAME:組合的 key 是它(不一定等於資料夾名,runtime `_cmd_delete_strategy` 也照它比)
   // SYMBOL / INTERVAL:轉出的貼上步驟與「加密 → XQ」判斷用(renderer/export.js)
-  return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION"), strategyName: pick("STRATEGY_NAME"), symbol: pick("SYMBOL"), interval: pick("INTERVAL") };
+  return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION"), strategyName: pick("STRATEGY_NAME"), symbol: pick("SYMBOL"), interval: pick("INTERVAL"), logic: stratLogic(code) };
+}
+// 策略頁「策略邏輯」:LOGIC 常數(每行 entry: / exit: / stop:)→ { entry, exit, stop };沒有前綴 → { text };
+// 沒有 LOGIC 就退回舊策略的 `# Logic:` 檔頭註解(`[` 開頭是範本佔位,當沒有)→ { text } 或 null。
+// 同一套規則在 runtime/strategy_reporter.py strategy_logic(雲端那份),兩邊跑 tests/fixtures/strategy_logic.json——改一邊就要改另一邊。
+// 上限照契約:每條 300 字、每組 12 條、text 2000 字(都按字元算,不是 UTF-16 單位,同 Python)
+function stratLogic(code) {
+  const src = String(code || ""), lines = (s) => s.split(/\r\n|\r|\n/), cut = (s, n) => Array.from(s).slice(0, n).join("");
+  const PREFIX = /^(entry|exit|stop)\s*[:：]\s*([\s\S]*)$/;
+  const m = /^[ \t]*LOGIC\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|(["'])((?:\\.|(?!\3)[^\\\n])*)\3)/m.exec(src);
+  const text = (m ? (m[1] ?? m[2] ?? m[4] ?? "") : "").trim();
+  if (text) {
+    const ls = lines(text).map((l) => l.trim());
+    if (!ls.some((l) => PREFIX.test(l))) return { text: cut(text, 2000) };
+    const g = { entry: [], exit: [], stop: [] };
+    let cur = null;
+    for (const l of ls) {
+      if (!l) continue;
+      const p = PREFIX.exec(l);
+      if (p) { cur = g[p[1]]; cur.push(p[2].trim()); } else if (cur) cur[cur.length - 1] = (cur[cur.length - 1] + " " + l).trim();
+    }
+    for (const k of Object.keys(g)) g[k] = g[k].filter(Boolean).map((r) => cut(r, 300)).slice(0, 12);
+    if (g.entry.length || g.exit.length || g.stop.length) return g;
+  }
+  const h = /^[ \t]*#[ \t]*Logic[ \t]*[:：](.*)$/m.exec(src.slice(0, 2000));
+  if (!h) return null;
+  const parts = [h[1].trim()];
+  for (const l of lines(src.slice(h.index + h[0].length)).slice(1)) {
+    const c = /^[ \t]*#[ \t]{2,}(\S.*)$/.exec(l);
+    if (!c) break;
+    parts.push(c[1].trim());
+  }
+  const t = parts.filter(Boolean).join(" ").trim();
+  return !t || t.startsWith("[") ? null : { text: cut(t, 2000) };
 }
 
 /* 這支策略程式會不會自己下單(Type B 那一種:AGENTS.md 規定交易所下單一律走 lib/order_*、執行走 lib/execute,
@@ -2132,6 +2165,11 @@ function txfQuote() {
   }).catch(() => { txfFailAt = Date.now(); return txfCache ? txfCache.price : null; }).finally(() => { txfInflight = null; });
   return txfInflight;
 }
+let _twNames = null;
+function twNames() {
+  if (!_twNames) _twNames = require("./twnames").createTwNames({ dir: app.getPath("userData"), get: getJSON, apiBase: API_BASE });
+  return _twNames;
+}
 async function publicPricing() {
   const b = await publicTiers(false);
   if (!(b && b.trial && Number(b.trial.days) > 0)) return null;
@@ -2738,7 +2776,7 @@ const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAG
 /* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
    只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
 const TURN_NOTES = ["report_once", "report_recur"];
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note, attachment }) {
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note, attachments }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
@@ -2748,12 +2786,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 聊天附件(shell/attach.js):同雲端那條契約——落地 workspace/tmp/inbound/、訊息尾端補一行給引擎;
   // 存失敗也照跑回合(補「接收失敗」那行,讓 agent 請用戶重傳),形狀不對才整輪不跑。
   // 這裡只驗不存:落地排在下面「這一輪不跑」的檢查(Codex 不見了、金鑰不見了)之後,不然那兩條路會留下沒有回合的檔。
-  // 長度先拿最長的那一行量(撞名落地的 `<10 位秒數>_` 前綴;「接收失敗」那行比它短)
-  const at = attachment != null ? require("./attach") : null;
+  // 長度先拿最長的那一行量(撞名落地的 `<10 位秒數>_` 前綴;「接收失敗」那行比它短)。多檔:個數、合計、重名任一不對整輪不跑
+  const at = attachments != null ? require("./attach") : null;
   if (at) {
-    const v = at.validate(attachment);
-    if (!v) throw new Error("bad attachment");
-    if (Buffer.byteLength(at.withNote(message, "0000000000_" + v.name), "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
+    const vs = at.validateAll(attachments);
+    if (!vs) throw new Error("bad attachment");
+    if (Buffer.byteLength(at.withNotes(message, vs.map((v) => "0000000000_" + v.name)), "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
   }
   imgWin = win;
   const envPath = await loginShellPath();
@@ -2768,7 +2806,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const useCodex = !!codexBin;
   const llmKey = conn.kind === "apikey" ? loadLlmKey() : null;
   if (conn.kind === "apikey" && !llmKey) throw new Error("APIKEY_MISSING");
-  if (at) message = at.withNote(message, at.save(WS, attachment));
+  if (at) message = at.withNotes(message, at.saveAll(WS, attachments));
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
@@ -3028,6 +3066,7 @@ app.whenReady().then(() => {
   handle("balance", () => balanceHost().read());
   handle("public-pricing", () => publicPricing());
   handle("txf-quote", () => txfQuote());
+  handle("tw-names", () => twNames().names(), {});   // 台股代號 → 名字(twnames.js);拿不到 = {}
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
   ipcMain.handle("plan-start", (e, opts) => (fromOurPage(e) ? planStart(opts).then((r) => {
     tm().track("plan_start_res", { result: r.state ? "ok" : r.error === "NO_CARD" ? "no_card" : r.error === "NO_CREDIT" || r.error === "PLAN_CHARGE_FAILED" ? "no_credit" : r.error === "PLAN_CONFIRM_REQUIRED" ? "confirm" : "error" });

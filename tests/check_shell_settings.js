@@ -566,10 +566,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const seen = [];
   window.blave.openExternal = (u) => { seen.push("ext:" + u); };
   const setClose = () => { seen.push("close"); }, envSwitchGuarded = (e) => { seen.push("env:" + e); return true; };
-  let acct = { plan: { state: "running" } }, acctPending = 0, planBusy = false, planBusyPlan = false, planSince = 0, planSlowSaid = false, planErr = null, planLastView = null, planMoreOpen = false;
-  const PLAN_SLOW_MS = 1e9, srSay = () => {}, planAsk = () => {}, planLogin = () => {}, acctCheck = () => {}, acctUrl = () => "acct", planWebUrl = () => "https://blave.org/agent/zh", planState = () => (acct && acct.plan && acct.plan.state) || "none";   // 同 app.js(未登入 acct 為 null 也會走到展開區)
-  let PV_P = "", PV_R = "", PV_N = 0, PV_H = "", PV_PR = null, PV_U = "", PV_GU = "", PV_X = "", PV_PD = "", PV_T = "", PV_Q = "", PV_D = "", PV_TP = "", PV_TY = "", PV_TIER = "", PV_A = "", PV_TOP = "", PV_YD = "", pub = null;
-  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: PV_A, b: "", v: "", t: PV_T, q: PV_Q, top: PV_TOP, d: PV_D, n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: PV_YD, g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD, tp: PV_TP, ty: PV_TY, tier: PV_TIER });
+  let acct = { plan: { state: "running" } }, acctPending = 0, planBusy = false, planBusyPlan = false, planSince = 0, planSlowSaid = false, planErr = null, planLastView = null;
+  const PLAN_SLOW_MS = 1e9, srSay = () => {}, planAsk = () => {}, planLogin = () => {}, acctCheck = () => {}, acctUrl = () => "acct", planWebUrl = () => "https://blave.org/agent/zh", apiPlanUrl = () => "https://blave.org/landing/zh/pricing", planState = () => (acct && acct.plan && acct.plan.state) || "none";   // 同 app.js(未登入 acct 為 null 也會走到展開區)
+  let PV_P = "", PV_R = "", PV_N = 0, PV_H = "", PV_PR = null, PV_U = "", PV_GU = "", PV_X = "", PV_PD = "", PV_T = "", PV_Q = "", PV_D = "", PV_TIER = "", PV_A = "", PV_TOP = "", PV_YD = "", pub = null;
+  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: PV_A, b: "", v: "", t: PV_T, q: PV_Q, top: PV_TOP, d: PV_D, n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: PV_YD, g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD, tier: PV_TIER });
   eval(fnSrc("dataAccessOf")); eval(fnSrc("planMo")); eval(src.match(/^const planPriceOk = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planFailing = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planPaidAhead = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planEnded = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTierLabel = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("planStopKind"));
   eval(src.match(/^const planTrialOn = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTrialCx = [^\n]*$/m)[0].replace(/^const /, "var "));
   eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var ")); const usageUrl = () => "usage", planWebGo = () => { seen.push("ext:" + planPayUrl()); };
@@ -669,14 +669,12 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   ok("stopped 格照舊:前往網頁管理 + 前往儲值,兩顆都外開", acts.map((b) => b.textContent).join() === "plan.manageStopped,plan.addCredit" && (acts[0]._click(), acts[1]._click(), seen.join() === "ext:https://blave.org/agent/zh,ext:acct"));
   acct = { plan: { state: "starting" } }; acts = paintPlan();
   ok("starting 格照舊:一顆灰掉的「啟動中…」", acts.map((b) => b.textContent).join() === "plan.starting" && acts[0].disabled === true);
-  { // §4 運行中:說明一句;網頁限定那一句只在「方案內容與計費」展開區裡、接在 pv.inc.note 後面
+  { // §4 運行中:說明一句;「方案內容與計費」是外開網站定價頁的安靜鈕,原地不展開
     const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
-    acct = { plan: { state: "running" } }; PV_P = "990"; planMoreOpen = true; paintPlan();
-    const all = walk(dom["set-plan"]), lead = all.filter((n) => n._cls === "plan-lead").map((n) => n.textContent), fine = all.filter((n) => n._cls === "plan-fine").map((n) => n.textContent);
-    ok("運行中:說明只有 pv.d.running 一句;pv.inc.web 在展開區、緊接 pv.inc.note", lead.join() === "pv.d.running" && fine.indexOf("pv.inc.web") === fine.indexOf("pv.inc.note") + 1 && fine.indexOf("pv.inc.note") >= 0);
-    { const tx = all.map((n) => n.textContent);
-      ok("舊制展開區順序不動:三條清單 → 兩段說明 → 計費(設計稽核必修 ①:兩段說明不能跑到清單前面)", tx.indexOf("pv.inc.3") < tx.indexOf("pv.inc.note") && tx.indexOf("pv.inc.note") < tx.indexOf("pv.inc.web") && tx.indexOf("pv.inc.web") < tx.indexOf("plan.bill")); }
-    PV_P = ""; planMoreOpen = false; }
+    acct = { plan: { state: "running" } }; PV_P = "990"; paintPlan();
+    const all = walk(dom["set-plan"]), lead = all.filter((n) => n._cls === "plan-lead").map((n) => n.textContent);
+    ok("運行中:說明只有 pv.d.running 一句", lead.join() === "pv.d.running");
+    PV_P = ""; }
   { /* 沒有主機也能買資料(spec-data-without-machine-flow §1 / §4 / §5):資料那一格從兩態(included / plan)變四態。
        真的跑 planView + planPaint;數字(時價)從 account_status 的 data_hourly 來,這裡用 PV_R 模擬 planVars 的 r */
     const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
@@ -758,10 +756,9 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     ok("方案制沒有方案:狀態「沒有方案」、說明講兩個出口(雲端方案 / API 方案)、底列講先扣錢包再刷卡;鈕 = 安靜的〔API 方案〕+ 實心〔啟動方案〕(只要有月價就能按,時價是 null)",
       /pv\.st\.noPlan/.test(np.st) && np.lead === "pv.d.plan.m" + JSON.stringify(planVars()) && /^pv\.f\.plan\.m/.test(np.rule)
       && JSON.stringify(np.acts) === JSON.stringify([["btn-quiet", "pv.apiPlan", false], ["btn-fill", "plan.startM", false]]));
-    ok("方案制沒有方案:標題不講主機(pv.h.plan.m);展開區 A′ 三行(價格 → pv.inc.one → plan.rule.one),沒有小標、沒有三條清單、沒有完整規則段;運行中那格同一套",
-      /pv\.h\.plan\.m/.test(np.texts) && !/pv\.h\.plan\|/.test(np.texts) && np.texts.indexOf("plan.month{") < np.texts.indexOf("|pv.inc.one|") && np.texts.indexOf("|pv.inc.one|") < np.texts.indexOf("|plan.rule.one|")
-      && !/pv\.inc\.[123m]|plan\.inc\||plan\.bill|plan\.rule\.m|plan\.topup\{/.test(np.texts)
-      && (() => { const r = paintOf({ ...MO, plan: { state: "running", tier: "linux_starter" } }); return /\|pv\.inc\.one\|/.test(r.texts) && /\|plan\.rule\.one\|/.test(r.texts) && !/pv\.inc\.[123m]|plan\.rule\.m|NoServer/.test(r.texts); })(), np.texts);
+    ok("方案制沒有方案:標題不講主機(pv.h.plan.m);運行中那格的字不帶 NoServer",
+      /pv\.h\.plan\.m/.test(np.texts) && !/pv\.h\.plan\|/.test(np.texts)
+      && (() => { const r = paintOf({ ...MO, plan: { state: "running", tier: "linux_starter" } }); return !/NoServer/.test(r.texts); })(), np.texts);
     PV_T = "14"; PV_Q = "100";
     { const of = paintOf({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }), ul = walk(dom["set-plan"]).find((n) => n.className === "plan-scroll").children.find((n) => n.className === "plan-list");
       ok("方案制綁卡那格(offer)跟未登入同組(D 版):標題 pv.h.offer.m、三條列式、沒有說明句(不會未登入講「免費試用」、登入後講「送」);底列照現行 pv.f.offer.m(驗證金、扣款與取消在這裡講);鈕〔前往綁卡〕",
@@ -860,23 +857,27 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       ok("內部帳號(free)、不是試用:底列不再空白 → pv.f.running.free;planOn(沒主機)同一句", tr("running", { next_charge_source: "free" }).rule === "pv.f.running.free"
         && paintOf({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", paid_until: AHEAD, next_charge_source: "free" } }).rule === "pv.f.running.free");
       ok("試用句的日期退路:paid_until 拿不到用 trial_free_until(v.d);兩個都沒有整行不印", (PV_N = 5, PV_U = "", PV_D = "10 月 15 日", /^pv\.f\.running\.trial\{.*"u":"10 月 15 日"/.test(tr("running", {}).rule)) && (PV_D = "", tr("running", {}).rule === "") && ((PV_U = "10 月 15 日"), true));
-      // 「方案內容與計費」展開區 A′(spec §7-5):三行、沒小標;完整規則段與自動儲值句搬走;週期金額不重印;價格行階名 sans + 數字 mono
-      PV_N = 0; PV_P = "1,440"; planMoreOpen = true; PV_A = "50"; PV_TOP = "300";
-      const ex = () => paintOf({ ...MO, data_access: "included", plan: { state: "running", tier: "linux_premium", label: "Linux Premium", paid_until: AHEAD } });
-      const det = () => walk(walk(dom["set-plan"]).find((n) => n.id === "plan-detail"));
-      let e = ex(); let d = det();
-      ok("展開區 A′(方案制、有主機):只剩三行 價格行 → pv.inc.one(.plan-inc)→ plan.rule.one(.plan-fine);沒有「內含」「計費」小標、沒有三條清單、沒有兩段說明、沒有 plan.rule.m 完整規則、沒有 plan.topup、沒有 plan.trialFree;「週期金額 · 下次扣款」只在底列",
-        d.filter((n) => n.className && !/^(plan-price|tier|m|h)$/.test(n.className)).map((n) => n.className + ":" + n.textContent).join() === "plan-inc:pv.inc.one,plan-fine:plan.rule.one"
-        && !/pv\.inc\.[123m]|pv\.inc\.note|pv\.inc\.web|plan\.inc\||plan\.bill|plan\.rule\.m|plan\.topup\{|plan\.trialFree/.test((PV_D = "10 月 15 日", ex().texts))
-        && det().every((n) => !/pv\.f\.running\.m\{/.test(n.textContent)) && /^pv\.f\.running\.m\{/.test(e.rule), d.map((n) => n.className + ":" + n.textContent).join("\n"));
-      PV_D = ""; PV_TIER = "Linux Premium"; PV_TP = "2,880"; PV_TY = "28,800";
-      e = ex(); d = det();
-      const price = d.find((n) => n.className === "plan-price");
-      ok("…價格行:階名 span.tier(介面字,不進 mono)+ span.m plan.month 用自己那一階的 plan.monthly + span.h plan.yearNoNum 用 plan.annual(不用 plan.year 的「用 365 天付 10 個月」);沒有方案列(paid_until 空)印 Starter 開通價、階名照 api 給的",
-        price.children.map((n) => n.className).join() === "tier,m,h" && price.children[0].textContent === "Linux Premium" && /^plan\.month\{.*"p":"2,880"/.test(price.children[1].textContent) && /^plan\.yearNoNum\{.*"y":"28,800"/.test(price.children[2].textContent)
-        && !/plan\.year\{|plan\.monthTier/.test(e.texts)
-        && (PV_U = "", paintOf({ ...MO, data_access: "plan_required" }), (() => { const pr = det().find((n) => n.className === "plan-price"); return /^plan\.month\{.*"p":"1,440"/.test(pr.children.find((n) => n.className === "m").textContent) && !pr.children.some((n) => n.className === "h"); })()), price.children.map((n) => n.className + ":" + n.textContent).join("\n"));
-      PV_TIER = ""; PV_TP = ""; PV_TY = "";
+      // 「方案內容與計費」:外開網站定價頁(不用登入的那一頁),原地不展開;不靠價格,每一格都出
+      PV_N = 0;
+      {
+        const PRICING = "ext:https://blave.org/landing/zh/pricing";
+        const moreOf = (a, signedIn = true) => { const keep = hasToken; hasToken = signedIn; if (a === null) { acct = null; planPaint(); } else paintOf(a); hasToken = keep;
+          const all = walk(dom["set-plan"]), b = all.filter((n) => n.dataset && n.dataset.k === "more");
+          seen.length = 0; featured.length = 0; if (b[0]) b[0]._click();
+          return { n: b.length, cls: b[0] && b[0].className, txt: b[0] && b[0].textContent, attrs: b[0] ? Object.keys(b[0].attrs).join() : "", seen: seen.join(), featured: featured.join(),
+            detail: all.some((n) => n.id === "plan-detail" || /plan-detail|plan-sec|plan-lbl|plan-inc/.test(n.className || "")), texts: all.map((n) => n.textContent).join("|") }; };
+        const cases = [["方案制・有主機", { ...MO, data_access: "included", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } }], ["方案制・沒方案", { ...MO, data_access: "plan_required" }],
+          ["舊制・運行中", { plan: { state: "running" } }], ["舊制・沒主機", { data_access: "none" }], ["未登入", null, false]];
+        const bad = [];
+        for (const P of ["1,440", ""]) { PV_P = P; for (const [name, a, si] of cases) { const m = moreOf(a, si); if (!(m.n === 1 && m.cls === "btn-quiet plan-more" && m.txt === "pv.more" && m.attrs === "" && m.seen === PRICING && m.featured === "" && !m.detail)) bad.push(name + (P ? "" : "(沒價格)") + ":" + JSON.stringify(m)); } }
+        ok("每一格(方案制／舊制、有沒有主機、未登入)、價格查不到也一樣:一顆安靜鈕 pv.more,沒有 aria-expanded／aria-controls,按下外開 landing/zh/pricing、不送 feature_used;沒有展開區塊", bad.length === 0, bad.join("\n"));
+        PV_P = "1,440"; PV_D = "10 月 15 日"; PV_A = "50"; PV_TOP = "300";
+        const gone = /plan\.inc\b|plan\.bill|plan\.rule(\.one|\.running)?\b|pv\.inc\.|pv\.more\.once|plan\.trialFree|plan\.yearNoNum/;
+        const leak = cases.map(([name, a, si]) => [name, moreOf(a, si).texts]).filter(([, tx]) => gone.test(tx)).map(([name, tx]) => name + ":" + tx.match(gone)[0]);
+        ok("原本只在展開區的字(內含／計費小標、pv.inc.*、plan.rule*、pv.more.once、plan.trialFree、年繳價)整頁都不再出現", leak.length === 0, leak.join());
+        ok("planPaint 不再有 planMoreOpen、plan-detail;planPriceEl 只剩開通頁那一支(月價 + 時價)", !/planMoreOpen|plan-detail|aria-expanded/.test(fnSrc("planPaint")) && !/planMoreOpen/.test(src) && !/plan\.yearNoNum|"tier"/.test(fnSrc("planPriceEl")));
+        PV_D = ""; PV_U = "";
+      }
       { paintOf({ ...MO, data_access: "included", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } });
         const id = walk(dom["set-plan"]).find((n) => n.className === "plan-id"), kids = id.children.map((n) => n.className + ":" + n.textContent);
         ok("自動儲值短句搬到帳號列那一組、餘額列正下方(plan-fine 12px,plan.topupShort 帶 api 的門檻與金額);金額拿不到就不出", kids[kids.length - 2].startsWith("plan-bal:plan.bal") && kids[kids.length - 1] === 'plan-fine:plan.topupShort{"a":"50","b":"300"}'
@@ -886,8 +887,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         ok("…沒卡的人(acct.reason = NO_CARD:綁卡拿試用／沒試用兩格)不出那一行(沒有卡可刷,那格底列在講綁卡時開啟自動儲值);有卡照出", !hasShort({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }) && !hasShort({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: false })
           && hasShort({ ...MO, data_access: "plan_required" }) && hasShort({ ...MO, data_access: "included", reason: "NO_CREDIT", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } })); }
       PV_A = ""; PV_TOP = "";
-      ok("切換前(舊制)的展開區照舊:三條清單 → 兩段說明 → 計費(月價、試用免主機費、plan.rule.running);沒有 plan.topup(搬到餘額列下)", (acct = { plan: { state: "running" } }, PV_D = "10/10", paintPlan(), (() => { const tx = walk(dom["set-plan"]).map((n) => n.textContent); return tx.indexOf("pv.inc.3") < tx.indexOf("pv.inc.note") && tx.indexOf("pv.inc.note") < tx.indexOf("pv.inc.web") && tx.indexOf("pv.inc.web") < tx.indexOf("plan.bill") && tx.some((x) => /^plan\.trialFree\{/.test(x)) && tx.includes("plan.rule.running") && !tx.some((x) => /plan\.topup\{|plan\.rule\.one|pv\.inc\.one/.test(x)); })()));
-      PV_D = ""; PV_P = ""; planMoreOpen = false; PV_U = ""; PV_X = ""; PV_GU = ""; PV_N = 0; }
+      PV_D = ""; PV_P = ""; PV_U = ""; PV_X = ""; PV_GU = ""; PV_N = 0; }
     PV_N = 5;
     { const tr = (o) => paintOf({ data_access: "included", data_included: true, ...o });
       const pre = tr({}), preCx = tr({ trial_cancel_at_end: true }), moCx = tr({ ...MO, trial_cancel_at_end: true });
@@ -925,16 +925,16 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
   // 內文講切換器、標題不動。哪些事歸給網頁工作頁、哪些不可以再歸給它——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。
   // spec-desktop-settings-cleanup §4:運行中那段收成一句「那一邊有什麼」;網頁限定那一句搬進「方案內容與計費」(pv.inc.web)
-  ok("內文一句講雲端那一邊有什麼、標題不動;網頁限定那一句在方案內容裡(zh / en)", /msgid "pv\.d\.running"\nmsgstr "在雲端那一邊，可以看主機上的策略、部位與下單，也可以請 agent 在主機上做策略。"/.test(PO[0])
+  ok("內文一句講雲端那一邊有什麼、標題不動;網頁限定那一句(pv.inc.web)兩語都還在表裡(zh / en)", /msgid "pv\.d\.running"\nmsgstr "在雲端那一邊，可以看主機上的策略、部位與下單，也可以請 agent 在主機上做策略。"/.test(PO[0])
     && /msgid "pv\.d\.running"\nmsgstr "On the cloud side you can see the strategies, positions and orders on the machine, and ask the agent to build strategies there\."/.test(PO[1])
     && /msgid "pv\.inc\.web"\nmsgstr "[^\n]*工作頁/.test(PO[0]) && /msgid "pv\.inc\.web"\nmsgstr "[^\n]*workspace on the web/.test(PO[1])
-    && /el\("p", "plan-fine", t\("pv\.inc\.note"\)\), el\("p", "plan-fine", t\("pv\.inc\.web"\)\)/.test(src) && /msgid "pv\.h\.running"\nmsgstr "策略可以在雲端主機上線了"/.test(PO[0])
+    && /msgid "pv\.h\.running"\nmsgstr "策略可以在雲端主機上線了"/.test(PO[0])
     && /msgid "plan\.switchCloud"\nmsgstr "切到雲端"/.test(PO[0]) && /msgid "plan\.switchCloud"\nmsgstr "Switch to cloud"/.test(PO[1]));
 }
 // 聊天裡「拿不到資料」那張卡(spec-data-without-machine-flow §3):none 的出口是錢包(儲值 / 綁卡),不是主機;
 // 從 none 回來時,按小時付的那條要講「會收錢」,免費那條照舊「可以用了」。真的跑 dataCardState / acctPaint / maybeDataCard
 { const mkCard = () => { const c = { states: [] }; c.set = (x) => { c.states.push(x); c.last = x; }; return c; };
-  let acct = null, hasToken = true, cur = "claude", dataCard = null, acctCard = null, sessionId = "s1", turnFaulted = false, running = false, lastUserText = "q", lastUserAttachment = null, lastUserFrom = null, acctGone = null;   // acctGone:acctPaint 補記 acct_card_back 用的,這裡沒按過卡上的鈕
+  let acct = null, hasToken = true, cur = "claude", dataCard = null, acctCard = null, sessionId = "s1", turnFaulted = false, running = false, lastUserText = "q", lastUserAttachments = [], acctGone = null;   // acctGone:acctPaint 補記 acct_card_back 用的,這裡沒按過卡上的鈕
   const creditCards = [], dataCardSessions = new Set(); let turnCards = [];
   let V = { t: 14, p: "1,440", r: "2" };
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};

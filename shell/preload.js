@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("blave", {
   planStart: (opts) => ipcRenderer.invoke("plan-start", opts),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
   txfQuote: () => ipcRenderer.invoke("txf-quote"),   // 台指期指數(雲端視角口數列的參考金額);問不到 = null
+  twNames: () => ipcRenderer.invoke("tw-names"),   // 台股代號 → 名字 { "1438": "三地開發" };拿不到 = {}
   tradeLabels: (labels) => ipcRenderer.send("trade-labels", labels),
   cloudStatus: () => ipcRenderer.invoke("cloud-status"),
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),

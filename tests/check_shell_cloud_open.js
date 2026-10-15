@@ -54,9 +54,9 @@ for (const lang of ["zh", "en"]) {
   ok(lang + " out:價格照舊走 {p} / {h}(月價 + 以 30 天計那一行)", out.page.kids[2].textContent === STR[lang]["plan.month"].replace("{p}", "1,440") + STR[lang]["plan.hour"].replace("{h}", "2").replace("{p}", "1,440"));
   { const act = out.page.kids.find((k) => k.className === "cv-act"), side = act && act.kids[1];
     ok(lang + " out:鈕旁那句縮短(不再預告綁卡)", !!side && side.textContent === W[lang].cli, side && side.textContent); }
-  ok(lang + " out:整頁不出扣款規則(存在就扣 / 停機照扣 / 刪除才停在啟動確認框與設定頁)", !out.text.includes(STR[lang]["plan.rule"]));
+  ok(lang + " out:整頁不出扣款規則(存在就扣 / 停機照扣 / 刪除才停在啟動確認框與設定頁)", !out.text.includes(STR[lang]["cf.body3"]));
   const st = paint(lang, "none", true, "trial");
-  ok(lang + " start:同一段標題 / 說明 / 價格,鈕上方那行與主鈕不動;不出規則行", st.parts.join() === "h4,p.cv-lead,div.plan-price,p.cv-above,div.cv-act" && st.page.kids[1].textContent === W[lang].lead && !st.text.includes(STR[lang]["plan.rule"]), st.parts.join());
+  ok(lang + " start:同一段標題 / 說明 / 價格,鈕上方那行與主鈕不動;不出規則行", st.parts.join() === "h4,p.cv-lead,div.plan-price,p.cv-above,div.cv-act" && st.page.kids[1].textContent === W[lang].lead && !st.text.includes(STR[lang]["cf.body3"]), st.parts.join());
   const mo = paint(lang, "none", true, "plan", true);
   ok(lang + " 方案制 start:開通頁不印開通價、主鈕是〔到網站開雲端主機〕(電腦版只開方案,主機到網站開)", mo.parts.join() === "h4,p.cv-lead,div.cv-act"
     && mo.page.kids.find((k) => k.className === "cv-act").kids[0].textContent === STR[lang]["plan.cloudWeb"], mo.text);
@@ -78,7 +78,7 @@ ok("env.open.1–3 從兩份 .po 與 strings.js 刪掉;env.open.lead 兩語都�
 ok("trade.js 不再讀 env.open.1–3、plan.rule;trade.css 的 .cv-list / .cv-rule 一起拿掉,.cv-lead = 13 / 1.7 / --ink-2、上距 16",
   !/env\.open\.[123]|"plan\.rule"|cv-list|cv-rule/.test(trade) && !/\.cv-list|\.cv-rule/.test(css) && /\.cv-lead \{ margin: var\(--space-16\) 0 0; font-size: 13px; line-height: 1\.7; color: var\(--ink-2\); \}/.test(css));
 ok("plan.hour:en 改成「{h} TWD an hour from your balance (30-day month)」(精簡稽核 A11),zh 不動(開通頁與設定頁共用)", STR.en["plan.hour"] === "{h} TWD an hour from your balance (30-day month)" && STR.zh["plan.hour"] === "以 30 天計 ＝ 每個整點從餘額扣 {h} TWD");
-ok("plan.rule 還在,設定 › 方案內容與計費照讀", ["zh", "en"].every((l) => typeof STR[l]["plan.rule"] === "string") && /t\(view === "running" \? "plan\.rule\.running" : "plan\.rule"\)/.test(app));
+ok("plan.rule / plan.rule.running 隨設定頁展開區一起退役:兩語都沒有、app.js 不再讀;同一條規則在確認框 cf.body3 與底列 pv.f.*", ["zh", "en"].every((l) => !("plan.rule" in STR[l]) && !("plan.rule.running" in STR[l]) && typeof STR[l]["cf.body3"] === "string") && !/"plan\.rule(\.running)?"/.test(app));
 for (const lang of ["zh", "en"]) {
   const boxes = [], tbl = STR[lang], t = (k, vars) => { let s = tbl[k]; if (vars) for (const x in vars) s = s.split("{" + x + "}").join(vars[x]); return s; };
   new Function("t", "planVars", "confirmBox", "planGo", "planMo", cut(app, "planAsk") + "\nreturn planAsk;")(t, () => ({ p: "1,440", h: "2" }), (o) => boxes.push(o), () => {}, () => false)();

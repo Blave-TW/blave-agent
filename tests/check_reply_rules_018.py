@@ -117,8 +117,8 @@ t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(先估、
   and all("# Data wait:" in read("examples", n, "strategy.py").split("import sys")[0] and "tell the user before running" in read("examples", n, "strategy.py")
           for n in ("twstock_momentum", "tw100_foreign_zscore"))
   and "~36 s per stock-year of the per-stock free fetchers" in read("examples", "tw100_foreign_zscore", "strategy.py"))
-t("I 改參數時,DESCRIPTION 與檔頭裡寫到的同一個數字一起改(策略頁的副標是 DESCRIPTION)",
-  "Changing a parameter also changes every place the file states that number: `DESCRIPTION` and the header comment" in agents
+t("I 改參數時,DESCRIPTION、LOGIC 與檔頭裡寫到的同一個數字一起改(策略頁的副標是 DESCRIPTION、展開的策略邏輯是 LOGIC)",
+  "Changing a parameter also changes every place the file states that number: `DESCRIPTION`, `LOGIC` and the header comment" in agents
   and "**Keep the words true to the code.**" in read("references", "strategy-code.md"))
 t("C 內建瀏覽器關著 = 不上網:AGENTS.md 不再叫 agent 退回引擎自己的搜尋", "else the engine's own web search" not in agents and "browser switched off = no web" in agents)
 t("B 資料費時價 2 TWD(不是 3);月價不拿它乘 720", "**2 TWD per UTC clock hour" in read("references", "billing.md") and "Never multiply the 2 TWD data fee" in read("references", "billing.md")

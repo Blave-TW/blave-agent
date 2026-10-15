@@ -109,12 +109,9 @@ msgstr "Message the agent"
 msgid "ws.waitTurn"
 msgstr "The previous turn is still running. Press Enter again when it finishes."
 
-# 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;單檔、5 MiB)
+# 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;一則最多 4 個、單檔 5 MiB、合計 15 MiB)
 msgid "ws.attach"
 msgstr "Attach File"
-
-msgid "ws.attachRemove"
-msgstr "Remove Attachment"
 
 msgid "ws.attachTooLarge"
 msgstr "File is too large. The limit is 5 MB."
@@ -135,6 +132,15 @@ msgstr "{model} can't read images. This one will be skipped."
 
 msgid "ws.attachReadFail"
 msgstr "Couldn't read that file. Please attach it again."
+
+msgid "ws.attachRemoveName"
+msgstr "Remove {name}"
+
+msgid "ws.attachTooMany"
+msgstr "Up to 4 files per message. The rest weren't added."
+
+msgid "ws.attachTotalLarge"
+msgstr "Attachments are limited to 15 MB in total. Some weren't added."
 
 # 輸入框上方建議列的小標與 group 名稱(renderer/suggest.js);逐字同 web workspace_sug_group
 msgid "ws.sugGroup"
@@ -563,6 +569,18 @@ msgstr "Code"
 msgid "rp.tab.rob"
 msgstr "Param Scan"
 
+msgid "rp.logic"
+msgstr "Strategy logic"
+
+msgid "rp.logic.entry"
+msgstr "Entry"
+
+msgid "rp.logic.exit"
+msgstr "Exit"
+
+msgid "rp.logic.stop"
+msgstr "Stop"
+
 msgid "bt.fee"
 msgstr "fee"
 
@@ -919,9 +937,6 @@ msgstr "Stopped · balance under {m} TWD"
 msgid "plan.st.stoppedNoAmt"
 msgstr "Stopped · balance too low"
 
-msgid "plan.bill"
-msgstr "Billing"
-
 msgid "plan.bal"
 msgstr "Blave balance"
 
@@ -1201,28 +1216,10 @@ msgid "pv.st.starting"
 msgstr "Starting"
 
 msgid "pv.more"
-msgstr "What’s included and billing"
-
-msgid "plan.inc"
-msgstr "Included"
-
-msgid "plan.rule"
-msgstr "Billed for as long as the machine exists, in use or not. A stopped machine still bills. Only deleting it ends the charges."
-
-msgid "plan.rule.running"
-msgstr "Billed for as long as the machine exists, in use or not. Turning the plan off means deleting the machine, along with the strategies and data on it."
+msgstr "Plans & Billing on the Web"
 
 msgid "pv.more.once"
 msgstr "The first-card trial is once per person and once per card."
-
-msgid "pv.inc.1"
-msgstr "A cloud machine that stays on 24 hours: strategies run on schedule and place orders"
-
-msgid "pv.inc.2"
-msgstr "Blave data, in the desktop app and on the cloud machine"
-
-msgid "pv.inc.3"
-msgstr "Operate the machine from the browser workspace"
 
 msgid "pv.inc.note"
 msgstr "This computer and the cloud machine are two separate machines, each with its own exchange keys and ledger. A strategy built here can be sent to the cloud, or you can ask the agent to build one on the machine directly."
@@ -1738,6 +1735,9 @@ msgstr "Target"
 
 msgid "tr.col.diff"
 msgstr "Difference"
+
+msgid "tr.colUnit"
+msgstr "{label} ({unit})"
 
 msgid "tr.mkt.spot"
 msgstr "Spot"
@@ -7048,9 +7048,6 @@ msgstr "Monthly"
 msgid "plan.cyc.annual"
 msgstr "Yearly"
 
-msgid "plan.yearNoNum"
-msgstr "or {y} TWD a year"
-
 msgid "pv.st.noPlan"
 msgstr "No plan"
 
@@ -7362,12 +7359,6 @@ msgstr "Trial runs until {u}. Automatic payment is off, so the first period won�
 msgid "pv.f.running.await"
 msgstr "The first period wasn’t charged automatically. Start the plan on the website to continue; otherwise the machine is deleted on {gu}"
 
-msgid "pv.inc.one"
-msgstr "Includes a cloud machine, Blave data and the web workspace"
-
-msgid "plan.rule.one"
-msgstr "Each period: wallet first, then card. No refund on cancel."
-
 msgid "plan.topupShort"
 msgstr "Under {a} TWD, your card tops up {b} TWD; turn off on the web"
 
@@ -7536,8 +7527,14 @@ msgstr "Capital"
 msgid "mg.fundTip"
 msgstr "Defaults to the total on the Allocation tab"
 
-msgid "mg.gateTip"
-msgstr "Sharpe vs 1,000 random-weight portfolios over the same period. A reference figure — it varies a lot with the period."
+msgid "mg.beatsTip.ret"
+msgstr "Share of 1,000 random-weight portfolios over the same period with a lower total return. A reference figure — it varies a lot with the period."
+
+msgid "mg.beatsTip.sharpe"
+msgstr "Share of 1,000 random-weight portfolios over the same period with a lower Sharpe. A reference figure — it varies a lot with the period."
+
+msgid "mg.beatsTip.mdd"
+msgstr "Share of 1,000 random-weight portfolios over the same period with a deeper max drawdown. A reference figure — it varies a lot with the period."
 
 msgid "mg.groupBuiltin"
 msgstr "Built-in"
@@ -7635,6 +7632,12 @@ msgstr "Slope / vol"
 msgid "mg.slopeDesc"
 msgstr "Equity-curve slope ÷ volatility; higher score, higher weight"
 
+msgid "mg.sharpe"
+msgstr "Max Sharpe"
+
+msgid "mg.sharpeDesc"
+msgstr "Highest portfolio Sharpe; long-only, weights sum to 100%. Falls back to equal weight when nothing made money in the window."
+
 msgid "mg.stratEmpty"
 msgstr "No backtested strategies on the machine yet"
 
@@ -7715,12 +7718,6 @@ msgstr "Updating the engine"
 
 msgid "po.hostOld"
 msgstr "Machine is outdated; computed after update"
-
-msgid "po.diffIdleStart"
-msgstr "Not started; no orders"
-
-msgid "po.diffIdleHalt"
-msgstr "Paused; no orders"
 
 msgid "tr.gateFootLead"
 msgstr "Skipped this round: "
@@ -7885,7 +7882,10 @@ msgid "mg.btWaitPerf"
 msgstr "Waiting for performance updates…"
 
 msgid "sz.oldMdd"
-msgstr "Machine version is out of date, so max drawdown isn’t available"
+msgstr "Cloud machine version is out of date, so max drawdown isn’t available. Press Update cloud machine in Settings › General, then rerun the optimization"
+
+msgid "sz.staleMdd"
+msgstr "This result was computed before the update. Rerun the optimization to use max drawdown"
 
 msgid "sz.shortMdd"
 msgstr "Under 90 days of shared data, so max drawdown isn’t available"

@@ -18,10 +18,10 @@ Usage:
     # outputs: manager/pnl.png + manager/stats.json
 
     python3 manager/management_backtest.py --allocator my_method
-    # Weighting method: a built-in (equal, the default, or slope) or
+    # Weighting method: a built-in (equal, the default, slope or sharpe) or
     # allocators/my_method/allocator.py. A user allocator's outputs default to
     # allocators/my_method/ so each method keeps its own stats.json + pnl.png
-    # the way each strategy does; both built-ins share manager/.
+    # the way each strategy does; the built-ins share manager/.
 
     python3 manager/management_backtest.py --members a,b --progress manager/mgmt_progress.json
     # subset of strategies + a progress file the workspace page polls (what its
@@ -137,6 +137,13 @@ def _max_drawdown(ret_arr: np.ndarray) -> float:
 
 def _total_return(ret_arr: np.ndarray) -> float:
     return float((np.prod(1 + ret_arr) - 1) * 100)
+
+
+def _beats_pct(value: float, bench_vals: np.ndarray) -> float:
+    """% of random portfolios strictly worse than `value`, for a metric where
+    higher is better. Max drawdown qualifies as-is: _max_drawdown returns a
+    negative %, so a shallower drawdown is the larger number."""
+    return float((bench_vals < value).mean() * 100) if len(bench_vals) else 0.0
 
 
 def _cum_band(managed_ret: pd.Series, bench_rets: np.ndarray):
@@ -300,7 +307,7 @@ def main():
         sys.exit(3)
 
     # A user allocator keeps its outputs next to the file, so several methods
-    # can be compared without overwriting each other. Both built-ins share
+    # can be compared without overwriting each other. The built-ins share
     # manager/ — last run wins, and stats.json's `allocator` says which it was.
     mod = None
     names = list(ret_df.columns)
@@ -387,15 +394,19 @@ def main():
 
     bench_totals  = np.array([_total_return(bench_rets[i]) for i in range(args.random_n)])
     bench_sharpes = np.array([_sharpe(bench_rets[i])       for i in range(args.random_n)])
-    managed_beats_pct = float((bench_sharpes < m_sharpe).mean() * 100)
+    bench_mdds    = np.array([_max_drawdown(bench_rets[i])  for i in range(args.random_n)])
+    managed_beats_pct = _beats_pct(m_sharpe, bench_sharpes)
+    beats_total       = _beats_pct(m_total, bench_totals)
+    beats_mdd         = _beats_pct(m_mdd, bench_mdds)
 
     print(f'\n{"":─<60}')
     print(f'  Managed   Return: {m_total:+.1f}%  Sharpe: {m_sharpe:.2f}  MDD: {m_mdd:.1f}%')
     print(f'  Random    median={np.median(bench_sharpes):.2f}  '
           f'p5={np.percentile(bench_sharpes, 5):.2f}  '
           f'p95={np.percentile(bench_sharpes, 95):.2f}  (Sharpe)')
-    print(f'  Beats {managed_beats_pct:.1f}% of {args.random_n} random portfolios on Sharpe '
-          f'(reference — this number moves a lot with the period)')
+    print(f'  Beats {args.random_n} random portfolios — total return {beats_total:.1f}%, '
+          f'Sharpe {managed_beats_pct:.1f}%, max drawdown {beats_mdd:.1f}% '
+          f'(reference — these numbers move a lot with the period)')
     print(f'{"":─<60}')
 
     band = _cum_band(managed_ret, bench_rets)
@@ -453,6 +464,9 @@ def main():
             'p5_sharpe':                  round(float(np.percentile(bench_sharpes, 5)),    4),
             'p95_sharpe':                 round(float(np.percentile(bench_sharpes, 95)),   4),
             'managed_beats_pct_sharpe':   round(managed_beats_pct,                         2),
+            'managed_beats_pct_total_return': round(beats_total,                           2),
+            # beaten = the random portfolio's drawdown was deeper
+            'managed_beats_pct_max_drawdown': round(beats_mdd,                             2),
             'median_total_return_%':      round(float(np.median(bench_totals)),             4),
             'p5_total_return_%':          round(float(np.percentile(bench_totals, 5)),      4),
             'p95_total_return_%':         round(float(np.percentile(bench_totals, 95)),     4),

@@ -8,7 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.124 — 2026-10-15(desktop 0.1.25)
+
 - **網頁對話一次附多個檔(0.1.25 多檔附件;`web_bridge`、`model_prefs`)**:poll 網址加 `&att=2` 宣告會收清單,api 只對宣告過的機器送 2 個以上的檔(其餘回 409 請用戶一次傳一個)。inbox 訊息有 `attachments` 就逐個落地,每個檔在訊息尾端補一行(成功「請先讀取」、失敗「接收失敗」,字跟單檔一樣),壞的元素(不是物件、解不開)只算那一個失敗、回合照跑;單檔的 `attachment` 照舊。落地時檔名的 `[`、`]` 換成 `_`(那行字用方括號包住,`]` 會提早收尾),消毒後是 `.`／`..` 算接收失敗;撞名加 `<秒>_` 後仍撞就秒數往後試(最多 5 次),全部撞到算接收失敗,不再覆蓋同名舊檔(含懸空的 symlink)。佇列 entry 改存 `attachment_names`,讀的時候也認舊的 `attachment_name`(換版當下 `web_queue.json` 裡的舊 entry)。雲端 DeepSeek 偏好遇到清單裡任一個是圖就這一輪改用 Sonnet(`model_prefs.resolve` 收一個檔名或清單,Telegram 照舊傳一個)。測試 `tests/check_web_bridge_multi_attach.py`。
+- **策略邏輯(Wei 選 mockup A;0.1.25;`strategy_reporter`)**:每支策略的回報多一個 `logic` 欄:`{entry, exit, stop}`(各為字串陣列)／`{text}`／`null`。來源依序是策略檔的 `LOGIC` 字串常數(每行 `entry:`／`exit:`／`stop:`,全形冒號也收;沒前綴的行接上一條;一個前綴都沒有 → `{text}`;前綴都空當沒有)→ 檔頭 `# Logic:` 註解(前 2000 字;`#` 後至少兩個空白的註解行是續行;`[` 開頭是範本佔位當沒有)→ `null`;上限每條 300 字、每組 12 條、text 2000 字。`strategy_logic()` 是純函式,與電腦版 `shell/main.js` `stratLogic` 跑同一份 `tests/fixtures/strategy_logic.json`(`tests/check_strategy_logic.py`／`check_shell_strat_logic.js`)。`FIELDS` 加 `LOGIC`、`_FALLBACK_RE` 多一條三引號多行的 LOGIC 樣式(語法錯的檔也讀得到),api `openclaw/agent_pure.py` 鏡像同改(`tests/check_runtime_mirror.py`)。`logic` 不進 `_content_marker`(同 type／market:runtime 升級不重送整個機隊),所以沒改過的舊策略要等檔案下次變動才帶上這欄(manifest 每輪續命 api 那份,TTL 不會到期);api `/strategies/one` 整包存、沒有欄位白名單,不用改。
 
 ## 1.1.123 — 2026-10-15(desktop 0.1.24)
 

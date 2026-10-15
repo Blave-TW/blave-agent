@@ -105,6 +105,7 @@ function verPaintTrigger(S) {
   const pd = S.data && S.open === null && VER ? VER.pending(S.data) : null;
   const old = !!S.data && (S.open !== null || !!(pd && pd.status === "running"));
   $("rp-desc").hidden = old;
+  if (typeof rpPaintLogic === "function") rpPaintLogic();   // 策略邏輯跟說明同進退(app.js)
   if (!S.data) { wrap.hidden = true; $("ver-sep").hidden = true; return; }
   const n = S.open === null ? S.data.current : S.open, label = S.open === null ? t("ver.current") : verDateDay((verEntry(S, n) || {}).at);
   $("ver-trig-n").textContent = "v" + n;

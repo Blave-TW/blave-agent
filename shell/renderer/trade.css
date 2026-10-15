@@ -660,7 +660,11 @@ html.ws-sc .side-gate { display: none; }
 .mg-apply-why { font-size: 12px; color: var(--ink-3); }
 .mg-tbl td.key .key-name { display: inline; }
 .mg-tbl tr.total td { padding-top: var(--space-8); border-top: 1px solid var(--color-greyDark); color: var(--ink); }
-.mg-beats { font-size: 13px; font-weight: 600; color: var(--ink); text-decoration: underline dotted; text-underline-offset: 3px; }
+.mg-stat { position: relative; }   /* 各格「贏過」氣泡的定位祖先 */
+.mg-stat-beat { margin-top: var(--space-4); }
+.mg-beats { font-size: 12px; color: var(--ink-3); }
+.mg-stat .tip { width: max-content; max-width: 260px; }
+.mg-stat:last-child .tip { left: auto; right: 0; }
 .mg-refnote { margin: 0 0 var(--space-16); font-size: 12px; color: var(--ink-3); }
 .mg-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-16); margin: var(--space-12) 0; }
 .mg-stat .sl { font-size: 11px; color: var(--ink-3); }
@@ -732,10 +736,10 @@ html.ws-sc .side-gate { display: none; }
 /* 「主機版本較舊，更新後才會算」「下次執行後算出成分」:字不是數,退 sans、可折行(同網頁 .pending) */
 .pf-tbl td.n.pending { font-family: var(--font-sans); white-space: normal; }
 .mg-size-btn .ccy { font: 11px var(--font-mono); color: var(--ink-3); }
+/* 台股代號後面的名字(1438 三地開發;同網頁 .sym-name):sans、次要灰;長的截尾(8em),全名在 title(trTwNameEl) */
+.tw-name { display: inline-block; max-width: 8em; margin-left: var(--space-6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-family: var(--font-sans); color: var(--ink-2); }
+.pf-sig .tw-name { margin-left: var(--space-8); }
 /* 自動下單 › 部位(策略組合配置對照帳上;autotrade-bridge-mockup A 案) */
-.po-src { display: block; margin-top: var(--space-2); font: 11px var(--font-sans); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.po-src .mono { font-family: var(--font-mono); }
-.pf-tbl td.sym .po-src, .pf-tbl td.sname .po-src { font-family: var(--font-sans); }
 /* 拒單那行接在細節行底下、靠左(同網頁:列 → 細節 → 拒單) */
 .pf-tbl td.note.po-err { text-align: left; }
 /* 有說明的欄頭:虛線底線提示可以停上去看(同網頁欄頭 tip) */

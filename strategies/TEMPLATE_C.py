@@ -15,6 +15,11 @@ DESCRIPTION   = "[one plain sentence]"
 VERSION_NOTE  = ""                # one line on what changed since the last backtest;
                                   # every backtest freezes a version and reads this. Leave it
                                   # "" rather than stale — an unchanged note is stored as empty
+# The rules in plain words, shown under the name on the strategy page (strategy-code.md ›
+# Naming & description). One rule per line, prefixed entry: / exit: / stop: (English,
+# lowercase); the rule itself in the user's language, with the real numbers. Fill it in.
+LOGIC = """
+"""
 MARKET        = "spot"          # "spot" | "swap" — ask the user at creation; fixed once deployed
 INTERVAL      = "1d"            # '1d' for equities, '1h'/'4h' for crypto; the platform's signal-refresh schedule follows this
 START         = "2015-01-01"

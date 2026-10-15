@@ -73,7 +73,7 @@ Classify BEFORE writing any code, then read `references/strategy-code.md`.
 
 **Never edit a live strategy in place** (in the 下單組合 with an amount > 0): build the change as a NEW strategy, switch funding only after the user confirms — *Editing a live strategy*; 還原 / 「用 vN 建立新策略」 prompts → *Restoring a version* / *Forking from a version*.
 
-Always set `DISPLAY_NAME` and `DESCRIPTION` with `STRATEGY_NAME` (*Naming & description*). Changing a parameter also changes every place the file states that number: `DESCRIPTION` and the header comment.
+Always set `DISPLAY_NAME`, `DESCRIPTION` and `LOGIC` (one `entry:` / `exit:` / `stop:` rule per line) with `STRATEGY_NAME` (*Naming & description*). Changing a parameter also changes every place the file states that number: `DESCRIPTION`, `LOGIC` and the header comment.
 
 **Type A:** long+short needs FOUR independent thresholds + `lib.strategy.threshold_position`; stops / take-profit / trailing / time stop — as a % or a price distance (ATR multiple, prior low, points) — plus breakeven and cooldown → `lib.exits.apply_exits` with an explicit `trigger`, never your own exit loop (it can't model it, e.g. partial exits → tell the user and stop); `MARKET = "spot"` is long-only; non-price feeds attach by publication time (`lib.data.join_tw_flow` / `align_feed`, *Taiwan daily flows*).
 

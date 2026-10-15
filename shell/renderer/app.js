@@ -929,42 +929,79 @@ $("ta").addEventListener("keydown", (e) => {
   }
 });
 
-/* ── 聊天附件(照雲端工作頁 attach_btn / attach_chip / readAttachment:單檔、5 MiB、base64 隨這一句送)──
-   chip 是輸入框的狀態:選了就掛著,隨下一句送出(純附件也可以送);送出去了才清、沒送出去(busy / 版本閘 / 引擎起不來)留著。
-   電腦版多兩個入口(原生能力):拖到輸入框、在輸入框貼上剪貼簿的圖。來源記在 attachedFrom(埋點分 file / image / paste,不記檔名)。
+/* ── 聊天附件(照雲端工作頁 attach_btn / attach_chip / readAttachment:一則最多 4 個、單檔 5 MiB、合計 15 MiB,base64 隨這一句送)──
+   chip 是輸入框的狀態:選了就掛著,再加是往後加(不取代),隨下一句送出(純附件也可以送);送出去了才清、沒送出去(busy / 版本閘 / 引擎起不來)留著。
+   電腦版多兩個入口(原生能力):拖到輸入框、在輸入框貼上剪貼簿的圖。每個檔各記來源(埋點分 file / image / paste,不記檔名)。
    這裡拿到的只是 File 的位元組:路徑從頭到尾不經過畫面,主行程(shell/attach.js)落地到 workspace/tmp/inbound/ 再交給引擎。 */
-const ATTACH_MAX_BYTES = 5 * 1024 * 1024;   // 同雲端 ATTACH_MAX_BYTES;主行程再擋一次
-let attachedFile = null, attachedFrom = null;
-function setAttachment(file, from) {
-  attachedFile = file || null; attachedFrom = attachedFile ? from || "file" : null;
-  $("attach-chip").hidden = !attachedFile;
-  $("attach-name").textContent = attachedFile ? attachedFile.name : "";
-  $("attach-name").title = attachedFile ? attachedFile.name : "";   // 檔名截尾時看得到全名(含副檔名)
+const ATTACH_MAX_BYTES = 5 * 1024 * 1024;   // 同雲端 ATTACH_MAX_BYTES;以下三個主行程(shell/attach.js)再擋一次,數字要一致
+const ATTACH_MAX_FILES = 4, ATTACH_TOTAL_BYTES = 15 * 1024 * 1024;
+// [{ file, name, from }]:name = 落地時會用的檔名(`[ ]` 換成 `_`,同主行程消毒)再把同則重名改成 `x (2).png`——
+// 主行程拒收消毒後重名的清單,這裡先改好;chip、泡泡、送出的 payload 都用它。陣列整個換掉不就地改:送出 / 停止靠同一份陣列判斷 chip 還是不是那一批
+let attachedFiles = [];
+function setAttachments(list) {
+  attachedFiles = list && list.length ? list : [];
+  const box = $("attach-chips"), hint = $("attach-hint");
+  box.querySelectorAll(".attach-chip").forEach((x) => x.remove());
+  attachedFiles.forEach((a) => box.insertBefore(attachChip(a), hint));
+  box.hidden = !attachedFiles.length;
   attachHintPaint();
+}
+/* 一顆 chip:檔名(截尾時全名在 title)+ ✕(讀屏名稱帶檔名)。建 element,檔名走文字節點 */
+function attachChip(a) {
+  const c = document.createElement("span"); c.className = "attach-chip";
+  const n = document.createElement("span"); n.className = "attach-name"; n.textContent = a.name; n.title = a.name;
+  const x = document.createElement("button"); x.type = "button"; x.className = "attach-clear"; x.textContent = "\u2715";
+  x.setAttribute("aria-label", t("ws.attachRemoveName", { name: a.name }));
+  x.addEventListener("click", () => attachRemove(a));
+  c.append(n, x);
+  return c;
+}
+/* 移除一顆:焦點落到下一顆的 ✕,沒有下一顆就回輸入框 */
+function attachRemove(a) {
+  const i = attachedFiles.indexOf(a);
+  setAttachments(attachedFiles.filter((x) => x !== a));
+  const next = $("attach-chips").querySelectorAll(".attach-clear")[i];
+  (next || $("ta")).focus();
 }
 /* 選的模型不讀圖:api proxy 的 _proxy_deepseek 把 Anthropic 格式的 body(含 image block)原樣轉給 DeepSeek 的 Anthropic 相容端點、
    不檢查也不剝圖,而 DeepSeek 官方文件明列那條端點不支援 image block → 圖被靜默略過(runtime/model_prefs.py 在雲端的對策是該輪換 Claude;
    電腦版模型是畫面選的、自帶金鑰也沒有 Claude 可退)。Blave AI 的 deepseek/* 與自帶金鑰的 deepseek-* 都算;看 mime 不看來源(貼上的圖一樣不讀)。
    chip 上掛一句次要字(模型名進字),不擋送出;換模型跟著重畫(mpPaint)。純函式 attachNoImage,tests/check_shell_attach.js 從原文切出來跑 */
-function attachNoImage(file, modelId) { return !!file && /^image\//.test(file.type || "") && /^deepseek(\/|-)/.test(modelId || ""); }
-function attachHintPaint() {
-  const h = $("attach-hint"), on = attachNoImage(attachedFile, MP.model);
+function attachNoImage(list, modelId) { return (list || []).some((a) => /^image\//.test((a && a.file && a.file.type) || "")) && /^deepseek(\/|-)/.test(modelId || ""); }
+function attachHintPaint() {   // 清單裡只要有一張圖就出現一次,掛在最後一顆 chip 後面
+  const h = $("attach-hint"), on = attachNoImage(attachedFiles, MP.model);
   h.hidden = !on;
   if (!on) { h.textContent = ""; h.removeAttribute("title"); h.removeAttribute("aria-label"); return; }
   const m = mpCur(), model = m ? m.name : MP.model;
   h.textContent = t("ws.attachNoImage", { model }); h.title = t("ws.attachNoImageLong", { model }); h.setAttribute("aria-label", h.title);
 }
-/* 選到 / 拖到 / 貼上一個檔:太大就講一行(同雲端 addNotice);from = file | paste。
-   空檔也在這裡擋:主行程(shell/attach.js validate)不收 0 位元組,而它回絕時 send-message 已經回 started——chip 清了、埋點送了才冒出一句英文錯誤 */
-function takeAttachment(file, from) {
-  if (!file) return false;
-  if (file.size === 0) { addMsg("sys", t("ws.attachEmpty")).dataset.i18n = "ws.attachEmpty"; return false; }
-  if (file.size > ATTACH_MAX_BYTES) { addMsg("sys", t("ws.attachTooLarge")).dataset.i18n = "ws.attachTooLarge"; return false; }
-  // 檔名太長:跟空檔同一個理由先擋。上限是主行程的那一個數字(preload 交過來),這裡不另外寫
-  const nameMax = window.blave.attachNameMax;
-  if (nameMax > 0 && file.name.length > nameMax) { addMsg("sys", t("ws.attachNameLong")).dataset.i18n = "ws.attachNameLong"; return false; }
-  setAttachment(file, from);
-  return true;
+/* 同則重名改成 `x (2).png`、`x (3).png`(連貼幾張截圖,檔名常常一樣);先做跟主行程一樣的 `[ ]` → `_`,比對的是落地時的名字。純函式 */
+function attachName(raw, taken) {
+  const base = String(raw || "").replace(/[\[\]]/g, "_");
+  if (taken.indexOf(base) < 0) return base;
+  const dot = base.lastIndexOf("."), stem = dot > 0 ? base.slice(0, dot) : base, ext = dot > 0 ? base.slice(dot) : "";
+  for (let n = 2; ; n++) { const c = stem + " (" + n + ")" + ext; if (taken.indexOf(c) < 0) return c; }
+}
+/* 選到 / 拖到 / 貼上一批檔:收得下的照收、收不下的不加入,整批最多講一行(第一個原因);from = file | paste。
+   同一個檔(檔名 + 大小 + 修改時間)重加就略過、不講話。
+   空檔、太大、檔名太長也在這裡擋:主行程(shell/attach.js validate)不收,而它回絕時 send-message 已經回 started——chip 清了、埋點送了才冒出一句英文錯誤 */
+function takeAttachments(files, from) {
+  const list = attachedFiles.slice(), nameMax = window.blave.attachNameMax;   // 檔名上限是主行程的那一個數字(preload 交過來),這裡不另外寫
+  let total = list.reduce((sum, a) => sum + a.file.size, 0), say = null, limit = false, added = 0;
+  const same = (f, g) => f === g || (f.name === g.name && f.size === g.size && f.lastModified === g.lastModified);
+  for (const file of Array.prototype.slice.call(files || [])) {
+    if (!file || list.some((a) => same(a.file, file))) continue;
+    let why = file.size === 0 ? "ws.attachEmpty" : file.size > ATTACH_MAX_BYTES ? "ws.attachTooLarge"
+      : list.length >= ATTACH_MAX_FILES ? "ws.attachTooMany" : total + file.size > ATTACH_TOTAL_BYTES ? "ws.attachTotalLarge" : null;
+    const name = why ? "" : attachName(file.name, list.map((a) => a.name));
+    if (!why && nameMax > 0 && name.length > nameMax) why = "ws.attachNameLong";
+    if (why) { say = say || why; limit = limit || why === "ws.attachTooMany" || why === "ws.attachTotalLarge"; continue; }
+    list.push({ file, name, from: from || "file" }); total += file.size; added++;
+  }
+  if (added) setAttachments(list);
+  if (say) addMsg("sys", t(say)).dataset.i18n = say;
+  if (limit) trackFeature("attach_limit_hit");
+  return added > 0;
 }
 /* FileReader 的 data URL 去掉 "data:<mime>;base64," 前綴 → 跟雲端一樣的 payload */
 function readAttachment(file) {
@@ -979,27 +1016,30 @@ function readAttachment(file) {
    paste = 從剪貼簿貼的(不分圖或檔);其餘看 mime 分圖 / 檔。純函式,tests/check_shell_attach.js 從原文切出來跑 */
 const ATTACH_FEATURE = { file: "attach_file", image: "attach_image", paste: "attach_paste" };
 function attachKind(file, from) { return from === "paste" ? "paste" : /^image\//.test((file && file.type) || "") ? "image" : "file"; }
+function attachKinds(list) { return list.map((a) => attachKind(a.file, a.from)).filter((k, i, all) => all.indexOf(k) === i); }   // 一則裡出現哪幾種來源,各送一次
 /* 重開 app 畫回逐字稿:主行程在使用者那句尾端補給引擎的那一行(shell/attach.js NOTE_OK / NOTE_FAIL,同 runtime/web_bridge.py)
    不是給人讀的——拆掉,改畫成跟送出當下一樣的「迴紋針 + 檔名」(雲端 /history 也是把檔名另存、前端補畫)。純函式,tests/check_shell_attach.js 從原文切出來跑。
    跳脫寫法:這行是資料格式不是畫面字 */
 const ATTACH_NOTE_RE = /\n?\[\u7528\u6236\u50b3\u4e86\u6a94\u6848\uff1atmp\/inbound\/([^\n\]]+)\uff0c\u8acb\u5148\u8b80\u53d6\u6a94\u6848\u5167\u5bb9\u518d\u56de\u61c9\]\s*$/;
 const ATTACH_FAIL_RE = /\n?\[\u7528\u6236\u9644\u4e86\u4e00\u500b\u6a94\u6848\u4f46\u63a5\u6536\u5931\u6557\uff0c\u8acb\u544a\u77e5\u7528\u6236\u91cd\u50b3\]\s*$/;
-function splitAttachNote(content) {
-  const s = typeof content === "string" ? content : "";
-  let m = ATTACH_NOTE_RE.exec(s);
-  // 落地檔名撞名時 web_bridge 規則加了 `<10 位秒數>_` 前綴:畫回去要跟送出當下看到的一樣,剝掉(原檔名剛好長這樣的極少數會被多剝,只影響顯示)
-  if (m) return { text: s.slice(0, m.index), attachment: m[1].replace(/^\d{10}_/, "") };
-  m = ATTACH_FAIL_RE.exec(s);
-  if (m) return { text: s.slice(0, m.index), attachment: null };
-  return { text: s, attachment: null };
+function splitAttachNote(content) {   // 多檔是一檔一行:從尾端連續拆到不是那兩種行為止;接收失敗那行不帶檔名、不進清單
+  let s = typeof content === "string" ? content : "";
+  const names = [];
+  for (;;) {
+    let m = ATTACH_NOTE_RE.exec(s);
+    // 落地檔名撞名時 web_bridge 規則加了 `<10 位秒數>_` 前綴:畫回去要跟送出當下看到的一樣,剝掉(原檔名剛好長這樣的極少數會被多剝,只影響顯示)
+    if (m) { names.unshift(m[1].replace(/^\d{10}_/, "")); s = s.slice(0, m.index); continue; }
+    m = ATTACH_FAIL_RE.exec(s);
+    if (m) { s = s.slice(0, m.index); continue; }
+    return { text: s, attachments: names };
+  }
 }
 $("attach-btn").addEventListener("click", () => $("attach-input").click());
 $("attach-input").addEventListener("change", () => {
-  const f = $("attach-input").files && $("attach-input").files[0];
+  const files = Array.prototype.slice.call($("attach-input").files || []);
   $("attach-input").value = "";   // 再選同一個檔也要再觸發 change
-  takeAttachment(f, "file");
+  takeAttachments(files, "file");
 });
-$("attach-clear").addEventListener("click", () => { setAttachment(null); $("ta").focus(); });
 /* 拖放:檔案只認拖到輸入框上,視窗其他地方一律 preventDefault(不然 Chromium 會把檔案當頁面開;導覽守門擋得住,但畫面會閃)。
    拖的不是檔案(選取的文字)而且落在可打字的欄位上 → 不攔,讓它照常插進去;落在別處照舊攔(連結丟到頁面上會被當成導覽)。
    兩支純函式,tests/check_shell_attach.js 從原文切出來跑 */
@@ -1010,26 +1050,26 @@ function dragIsText(e) {
 }
 const ciBox = document.querySelector(".chat-input");
 ["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => { if (dragIsText(e)) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = dragHasFiles(e.dataTransfer) && ciBox.contains(e.target) ? "copy" : "none"; }));
-document.addEventListener("drop", (e) => { if (dragIsText(e)) return; e.preventDefault(); ciBox.classList.remove("is-drag"); if (!ciBox.contains(e.target)) return; const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) takeAttachment(f, "file"); });
+document.addEventListener("drop", (e) => { if (dragIsText(e)) return; e.preventDefault(); ciBox.classList.remove("is-drag"); if (!ciBox.contains(e.target)) return; const files = e.dataTransfer && e.dataTransfer.files; if (files && files.length) takeAttachments(files, "file"); });
 ciBox.addEventListener("dragover", (e) => { if (dragHasFiles(e.dataTransfer)) ciBox.classList.add("is-drag"); });
 ciBox.addEventListener("dragleave", (e) => { if (!ciBox.contains(e.relatedTarget)) ciBox.classList.remove("is-drag"); });
-/* 貼上要不要當附件:回要掛的 File,或 null = 讓文字照常貼(不 preventDefault)。
+/* 貼上要不要當附件:回要掛的 File 清單(剪貼簿有幾個收幾個),或 null = 讓文字照常貼(不 preventDefault)。
    剪貼簿同時有字與圖(從 Excel / Numbers / Word 複製儲存格:text/plain 加一張 PNG)→ 用戶要貼的是字,不攔;
    只有檔沒有字(截圖、複製的圖)→ 附件。從 Finder 複製的檔會連檔名(或路徑)一起以 text/plain 進來:字剛好就是那幾個檔名時仍算檔。
    純函式,tests/check_shell_attach.js 從原文切出來跑 */
-function pasteFile(cd) {
-  const files = cd && cd.files, f = files && files[0];
-  if (!f) return null;
+function pasteFiles(cd) {
+  const files = cd && cd.files && cd.files.length ? Array.prototype.slice.call(cd.files) : null;
+  if (!files) return null;
   const text = String((cd.getData && cd.getData("text/plain")) || "").trim();
-  if (!text) return f;
-  const names = Array.prototype.map.call(files, (x) => x.name);
-  return text.split(/[\r\n]+/).every((line) => names.indexOf(line.trim().split(/[\\/]/).pop()) >= 0) ? f : null;
+  if (!text) return files;
+  const names = files.map((x) => x.name);
+  return text.split(/[\r\n]+/).every((line) => names.indexOf(line.trim().split(/[\\/]/).pop()) >= 0) ? files : null;
 }
 $("ta").addEventListener("paste", (e) => {
-  const f = pasteFile(e.clipboardData);
-  if (!f) return;
+  const files = pasteFiles(e.clipboardData);
+  if (!files) return;
   e.preventDefault();
-  takeAttachment(f, "paste");
+  takeAttachments(files, "paste");
 });
 
 /* ── 輸入框自動長高 ───────────────────────────────
@@ -1168,7 +1208,7 @@ function mpPaint() {
   note.textContent = has ? "" : t("mp.none");
   note.hidden = !note.textContent;
   mpBillPaint();
-  attachHintPaint();   // 換模型:chip 上「不讀圖」那句跟著重算(mpPaint 只在進工作頁之後跑,attachedFile 早已宣告)
+  attachHintPaint();   // 換模型:chip 上「不讀圖」那句跟著重算(mpPaint 只在進工作頁之後跑,attachedFiles 早已宣告)
 }
 /* 引擎是 Blave AI 時,選單底部常駐一句「按用量從 Blave 餘額扣款 · 餘額 N TWD」(e2e 0.1.8 #101:切過去之後沒有任何地方講會扣款)。
    花錢前最後一個停留點是輸入框,所以放這裡;讀不到餘額只出前半句——那半句是規則,永遠成立。別的引擎整句與分隔線都不出 */
@@ -1413,7 +1453,37 @@ function rpPaintHead(B) {
   $("rp-code-pre").textContent = B.data.code || "";
   if (typeof xpPaint === "function") xpPaint();   // 分頁列右端「轉出程式碼」+ 程式碼分頁的檔案切換(renderer/export.js)
   if (typeof verPaint === "function") verPaint(B);   // 第二行的版本觸發器 + 時光機橫幅(renderer/versions.js)
+  if (typeof rpPaintLogic === "function") rpPaintLogic();   // 在 verPaint 之後:看舊版時說明收起,邏輯跟著收
 }
+/* 策略邏輯(mockup 方案 A):說明行尾「策略邏輯」,點開在頁首第二行下面展開,五個分頁都看得到。內容是策略檔寫的字
+   (本機 main.js stratLogic、雲端 cloud.js logicOf),一律 textContent。展開狀態全站一個(不分策略、不分視角),喜歡常開的人開一次就好。
+   沒有邏輯(舊策略、舊快取)或看舊版(versions.js 把 #rp-desc 收起:說明與邏輯寫的都是目前版)時那顆字不出,頁首跟今天一樣 */
+const RP_LOGIC_KEY = "ws_logic_open";
+const RP_LOGIC_LABEL = { entry: "rp.logic.entry", exit: "rp.logic.exit", stop: "rp.logic.stop" };
+function rpPaintLogic() {
+  const B = rpBag(), d = (B && B.data) || {}, lg = d.logic, tog = $("rp-logic-tog"), body = $("rp-logic");
+  const show = !!lg && !$("rp-desc").hidden, open = show && lsGet(RP_LOGIC_KEY) === "1";
+  tog.hidden = !show; tog.setAttribute("aria-expanded", String(open));
+  $("rp").classList.toggle("is-logic-open", open);
+  $("rp-desc").title = open ? "" : d.description || "";   // 展開時說明完整換行,tooltip 多餘
+  body.hidden = !open; body.textContent = "";
+  if (!open) return;
+  if (typeof lg.text === "string") { const p = document.createElement("p"); p.className = "lg-free"; p.textContent = lg.text; body.appendChild(p); return; }
+  const dl = document.createElement("dl"); dl.className = "lg";   // 同網頁 .mh-logic-grid:dt 組名、dd 規則清單
+  for (const k of Object.keys(RP_LOGIC_LABEL)) {
+    if (!Array.isArray(lg[k]) || !lg[k].length) continue;
+    const dt = document.createElement("dt"); dt.dataset.i18n = RP_LOGIC_LABEL[k]; dt.textContent = t(RP_LOGIC_LABEL[k]);
+    const dd = document.createElement("dd"), ul = document.createElement("ul");
+    for (const r of lg[k]) { const li = document.createElement("li"); li.textContent = r; ul.appendChild(li); }
+    dd.appendChild(ul); dl.append(dt, dd);
+  }
+  body.appendChild(dl);
+}
+$("rp-logic-tog").addEventListener("click", () => {
+  const open = $("rp-logic-tog").getAttribute("aria-expanded") !== "true";
+  lsSet(RP_LOGIC_KEY, open ? "1" : "0"); rpPaintLogic();
+  if (open) trackFeature("strategy_logic");
+});
 // 切視角之後:#rp 是共用的 DOM,頁首與圖都要換成這一邊選中的那支;圖若是在另一邊時畫的(容器藏著、量不到寬)也重畫
 function rpRepaint() {
   const B = rpBag();
@@ -1853,7 +1923,7 @@ function receiptFold(steps) {
   return el;
 }
 /* 舊回合的使用者那句:尾端給引擎的附件行拆掉、畫回「迴紋針 + 檔名」(同送出當下) */
-function addHistoryYou(content) { const a = splitAttachNote(content); return addMsg("you", a.text, a.attachment); }
+function addHistoryYou(content) { const a = splitAttachNote(content); return addMsg("you", a.text, a.attachments); }
 function addHistoryAi(content) {
   const r = splitReceipt(content);
   if (r.steps && r.steps.length) $("chat-scroll").appendChild(receiptFold(r.steps));
@@ -1872,7 +1942,7 @@ async function csOpen(id) {
   const turns = await window.blave.loadSession(id);
   if (!turns.length) { csStartNew(); return; }
   sessionId = id; csRemember(); csClearChat();
-  { const first = splitAttachNote((turns.find((x) => x.role === "user") || {}).content || ""); csTitle = first.text || first.attachment || ""; }   // 標題不帶給引擎看的附件那行;純附件開頭的只留檔名(標題是純文字,不放圖示)
+  { const first = splitAttachNote((turns.find((x) => x.role === "user") || {}).content || ""); csTitle = first.text || first.attachments[0] || ""; }   // 標題不帶給引擎看的附件那行;純附件開頭的只留檔名(標題是純文字,不放圖示)
   // 舊回合只有文字(工具收據與思考過程沒有存),照角色畫回去;圖另外存在
   // state/chat-images/,照時間插回去——它落在那一輪的提問與回覆之間,跟當時看到的順序一樣
   const imgs = await window.blave.loadSessionImages(id);
@@ -2126,7 +2196,7 @@ function attachLine(name) {
   s.append($("attach-btn").querySelector(".icon-attach").cloneNode(true), document.createTextNode(name));
   return s;
 }
-function addMsg(cls, text, attachment) {   // attachment:這句帶的檔名(只有 cls === "you"),泡泡末行畫「迴紋針 + 檔名」(同雲端;無縮圖)
+function addMsg(cls, text, attachments) {   // attachments:這句帶的檔名清單(只有 cls === "you"),原句之後一個檔一行「迴紋針 + 檔名」(同雲端;無縮圖)
   const el = document.createElement("div");
   el.className = "msg " + cls;
   if (cls === "you") {
@@ -2135,7 +2205,7 @@ function addMsg(cls, text, attachment) {   // attachment:這句帶的檔名(只�
     const lab = fixedLabel(text);
     b.className = "bubble"; b.textContent = lab || text;   // 固定觸發句只顯示摘要(B5);重送 / 存檔用的仍是原文
     if (lab) b._fixed = text;   // 摘要是照當下語言組的:切語言時 youRelang 用原句重組
-    if (attachment) { if (text) b.appendChild(document.createTextNode("\n")); b.appendChild(attachLine(attachment)); }   // 泡泡是 pre-wrap:換行後自成一行
+    (attachments || []).forEach((name, i) => { if (text || i) b.appendChild(document.createTextNode("\n")); b.appendChild(attachLine(name)); });   // 泡泡是 pre-wrap:換行後自成一行
     el.appendChild(b);
   } else if (cls === "ai") {
     paintAi(el, text, false);
@@ -2617,28 +2687,29 @@ async function stopTurn() {
   try { ok = await window.blave.stopTurn(); } catch (_) { ok = false; }
   if (!ok && !engineWait && running) { turnStopping = false; turnStopped = false; sendBtnSync(); }   // 沒送到:讓用戶再按一次
 }
-function stopRestore(text, attachment, from) {   // attachment:那一句帶的 File,跟句子一起放回 chip(chip 空著才放:用戶之後另外掛的不蓋)
-  if (attachment && !attachedFile) setAttachment(attachment, from);
-  if (!text && !attachment) return;
+function stopRestore(text, attachments) {   // attachments:那一句帶的整份清單,跟句子一起放回 chip(chip 空著才放:用戶之後另外掛的不蓋)
+  const has = !!(attachments && attachments.length);
+  if (has && !attachedFiles.length) setAttachments(attachments);
+  if (!text && !has) return;
   const ta = $("ta");
   if (text) ta.value = ta.value.trim() ? text + "\n" + ta.value : text;
   autosize(); ta.focus();
 }
 async function sendDraft() {
   const msg = $("ta").value.trim();
-  const attachment = attachedFile;   // 純附件(沒打字)也可以送,同雲端
-  if ((!msg && !attachment) || running) return;
+  const attachments = attachedFiles;   // 純附件(沒打字)也可以送,同雲端
+  if ((!msg && !attachments.length) || running) return;
   $("ta").value = ""; autosize();
   // chip 由 submitMessage 在送出去的那一刻清(安裝失敗後按「重試」送出的也走那裡);沒送出去的路(busy / 版本閘 / 引擎起不來)把句子還原到輸入框、檔也留著,不靜默消失
-  await submitMessage(msg, { typed: true, attachment, from: attachedFrom });
+  await submitMessage(msg, { typed: true, attachments });
 }
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框的字;這一句帶的檔送出去了就把 chip 清掉。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
-  // opts.attachment:這一句帶的 File(sendDraft,以及重送 / 安裝失敗後重試帶的同一個)。
+  // opts.attachments:這一句帶的清單 [{ file, name, from }](sendDraft,以及重送 / 安裝失敗後重試帶的同一份)。
   // 「再送一次」連檔一起重送(resendLast)——跟雲端不同:雲端的重送鈕出現時檔已經落在機器上,這裡 started 回來時主行程還沒落地,
   // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送
-  const attachment = opts && opts.attachment ? opts.attachment : null;
-  if ((!msg && !attachment) || running) return false;
+  const attachments = opts && Array.isArray(opts.attachments) ? opts.attachments : [];
+  if ((!msg && !attachments.length) || running) return false;
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
   running = true; sendBtnSync(); stratDelSync(); rpMissSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
@@ -2651,15 +2722,15 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   // opts.note:外殼給這一輪的指示(代號,例「新增報告」的 report_once);不進泡泡、不進訊息本文。重送同一句沿用那一輪存的,不從本文推回來
   lastUserNote = opts && typeof opts.note === "string" ? opts.note : msg === lastUserText ? lastUserNote : null;
   if (!(opts && opts.bubble) && typeof engDropHeld === "function") engDropHeld();   // 安裝失敗時留著等重試的那句:換送別句就不會再送了
-  const bubble = opts && opts.bubble && opts.bubble.isConnected ? opts.bubble : addMsg("you", msg, attachment ? attachment.name : null); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
-  lastUserAttachment = attachment; lastUserFrom = attachment ? (opts && opts.from) || "file" : null;
+  const bubble = opts && opts.bubble && opts.bubble.isConnected ? opts.bubble : addMsg("you", msg, attachments.map((a) => a.name)); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
+  lastUserAttachments = attachments;
   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩。這一句帶的檔放不回 chip(重送時用戶已另外掛了別的檔)→ 泡泡不收,
   // 不然那個檔連同純附件那一句無聲消失(同 turn-end 的 attBack)
-  const unsend = () => { if (!attachment || !attachedFile || attachedFile === attachment) bubble.remove(); if (lastUserTyped) stopRestore(msg, attachment, lastUserFrom); };
+  const unsend = () => { if (!attachments.length || !attachedFiles.length || attachedFiles === attachments) bubble.remove(); if (lastUserTyped) stopRestore(msg, attachments); };
   if (typeof engAfter === "function") engAfter(bubble);   // 安裝中送出:進度卡移到這句底下
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
-  if (!csTitle) { csTitle = msg || attachment.name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
+  if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
   const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); rpMissSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {
@@ -2683,17 +2754,18 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCap = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
     // 附件:送出那一刻才讀位元組(同雲端 readAttachment);選了之後檔被移走 / 刪掉會讀失敗——講一行、chip 留著,不靜默消失
+    // 多檔:任何一個讀不到整句不送、所有 chip 留著
     let att;
-    if (attachment) {
-      try { att = { name: attachment.name, mime: attachment.type || "application/octet-stream", data: await readAttachment(attachment) }; }
+    if (attachments.length) {
+      try { att = await Promise.all(attachments.map(async (a) => ({ name: a.name, mime: a.file.type || "application/octet-stream", data: await readAttachment(a.file) }))); }
       catch (_) { addMsg("sys", t("ws.attachReadFail")).dataset.i18n = "ws.attachReadFail"; unsend(); unlock(); return false; }
     }
     const r = await window.blave.sendMessage({
-      sessionId, message: msg, handoff: opts && opts.handoff, note: lastUserNote, model: MP.model, effort: mpEffort(), viewing, attachment: att });
+      sessionId, message: msg, handoff: opts && opts.handoff, note: lastUserNote, model: MP.model, effort: mpEffort(), viewing, attachments: att });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
     // 送出去了才清 chip(還掛著同一個檔才清:送出途中換掛的不動)。放在這裡不放 sendDraft:安裝失敗後按「重試」送出的那句不經 sendDraft,chip 留著的話下一句會再帶一次同一個檔
-    if (r.started && attachment && attachedFile === attachment) setAttachment(null);
-    if (r.started) { busyStart(); trackFeature("chat_sent"); if (attachment) trackFeature(ATTACH_FEATURE[attachKind(attachment, opts && opts.from)]); return true; }
+    if (r.started && attachments.length && attachedFiles === attachments) setAttachments([]);
+    if (r.started) { busyStart(); trackFeature("chat_sent"); for (const k of attachKinds(attachments)) trackFeature(ATTACH_FEATURE[k]); if (attachments.length > 1) trackFeature("attach_multi"); return true; }
     if (r.blocked === "UPDATE_REQUIRED") {
       // 不是「上一輪還在跑」:這個版本被停用了,要更新才能繼續。鈕帶去 設定 › 一般 最下面的「關於」(那裡有更新鈕)
       faultCard().set({ text: t("minv.chat"), label: t("minv.btn"), out: true, on: () => setOpen().then(() => { setCat("display"); $("set-up-btn").hidden ? null : $("set-up-btn").focus(); }) });
@@ -2894,9 +2966,9 @@ function faultCard() {
 
 /* 「再送一次」(設計師 M3):不自動重送(那句話可能是下單,而且已經隔了好幾分鐘,最後一步留給人),
    也不要他重打(那一輪沒跑是我們知道的事)。不碰輸入框——他可能已經在打下一句。 */
-let lastUserText = "", lastUserAttachment = null, lastUserFrom = null;   // 上一句的字、它帶的 File(沒有 = null)與來源(file / paste)
-function canResend() { return !running && !!(lastUserText || lastUserAttachment); }   // 純附件那句(字是空的)也能重送
-function resendLast() { return canResend() ? submitMessage(lastUserText, { attachment: lastUserAttachment, from: lastUserFrom }) : Promise.resolve(false); }
+let lastUserText = "", lastUserAttachments = [];   // 上一句的字與它帶的清單(各自記來源 file / paste;沒帶 = [])
+function canResend() { return !running && !!(lastUserText || lastUserAttachments.length); }   // 純附件那句(字是空的)也能重送
+function resendLast() { return canResend() ? submitMessage(lastUserText, { attachments: lastUserAttachments }) : Promise.resolve(false); }
 function resendState(card, okText) {
   return { calm: true, text: okText, label: t("fault.resend"), on: async () => {
     if (await resendLast()) {
@@ -2999,7 +3071,7 @@ const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#t
 // 方案頁(web /agent/<lang>/usage#plan;api 通知連結也指這裡):重新付款、換卡、取消、升級、月繳↔年繳都在那邊
 const planPayUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#plan";
 const usageUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop";
-// API 方案在網站定價頁(api ERR007 的 next_steps.api_plan 同一頁)
+// 網站定價頁:API 方案(api ERR007 的 next_steps.api_plan 同一頁)與 Blave Agent 方案內容都在這一頁,不用登入
 const apiPlanUrl = () => "https://blave.org/landing/" + LANG + "/pricing";
 function planRepay() { trackFeature("plan_repay"); window.blave.openExternal(planPayUrl()); }
 // 換卡、改階、恢復這些電腦版沒有入口的事:外開方案頁(不記 plan_repay——那顆只算「重新付款」)
@@ -3224,7 +3296,7 @@ function planVars() {
     pr, yr, y: num(yr), k: num(s.annual_pay_months || pp.annual_pay_months), yd: num(pp.annual_period_days), pd: num(pp.period_days), g: num(s.grace_days || pp.grace_days),
     c: t(cyc === "annual" ? "plan.cyc.annual" : "plan.cyc.monthly"), x, cy,
     u: pl.paid_until ? planDate(pl.paid_until) : "", gu: pl.grace_until ? planDate(pl.grace_until) : "",
-    tp: num(pl.monthly), ty: num(pl.annual), tier: planTierLabel(),
+    tier: planTierLabel(),
     name: cur === "codex" ? "Codex" : cur === "apikey" ? (MP.provider || t("ak.row")) : "Claude Code" };
 }
 // 啟動鈕按不按得下去:方案制只要有月價(時價是 null);切換前照舊要月價與時價都有(確認框兩個都講)
@@ -3281,7 +3353,7 @@ function planView() {
   if (da === "none") return "none";
   return da === "included" ? "included" : "plan";                 // plan = 舊 api(沒有 data_access)且不含資料
 }
-let planMoreOpen = false, planLoginBusy = false, planLastView = null;
+let planLoginBusy = false, planLastView = null;
 function planPaint() {
   if (typeof envPlanChanged === "function") envPlanChanged();   // 開通頁跟著同一份狀態重畫(trade.js);放最前面:下面有提早 return
   const box = $("set-plan"); if (!box) return;
@@ -3393,30 +3465,8 @@ function planPaint() {
   sc.append(el("h5", null, t(V.h, v)));
   if (V.lead) sc.append(el("p", "plan-lead", V.lead));
   if (V.list) { const ul = el("ul", "plan-list"); V.list.forEach((x) => ul.append(el("li", null, x))); sc.append(ul); }
-  // 收起的細節。價格查不到就整段不出
-  if (v.p) {
-    const more = btn("btn-quiet plan-more", t("pv.more"), () => { planMoreOpen = !planMoreOpen; planPaint(); });
-    more.setAttribute("aria-expanded", String(planMoreOpen)); more.setAttribute("aria-controls", "plan-detail"); more.dataset.k = "more";
-    const det = el("div", "plan-detail"); det.id = "plan-detail"; det.hidden = !planMoreOpen;
-    if (mo) {
-      /* 方案制 A′(spec desktop-trial-with-machine §7-5):三行、沒有小標——階名＋價 → 含什麼 → 一句規則。完整規則只留確認框(cf.m.body*),
-         扣款失敗／刪機在事發時由底列講;自動儲值句在餘額列下;「週期金額 · 下次扣款」只在底列(planRunRule),這裡不重印 */
-      det.append(planPriceEl(el, v, mo), el("p", "plan-inc", t("pv.inc.one")), el("p", "plan-fine", t("plan.rule.one")));
-    } else {
-      // 切換前(舊制):內含三條 + 兩段說明 → 計費(月價、時價、試用免主機費、完整規則)
-      const inc = el("div", "plan-sec"); inc.append(el("p", "plan-lbl", t("plan.inc"))); const ul = el("ul", "plan-list");
-      [t("pv.inc.1"), t("pv.inc.2"), t("pv.inc.3")].forEach((x) => ul.append(el("li", null, x)));
-      inc.append(ul, el("p", "plan-fine", t("pv.inc.note")), el("p", "plan-fine", t("pv.inc.web")));
-      const bill = el("div", "plan-sec"); bill.append(el("p", "plan-lbl", t("plan.bill")));
-      bill.append(planPriceEl(el, v, mo));
-      if (v.d) bill.append(el("p", "plan-fine", t("plan.trialFree", v)));
-      // 展開是確認框之前唯一講完整規則的地方(沒登入 / 綁卡那幾格的第一屏刻意不講)
-      bill.append(el("p", "plan-fine", t(view === "running" ? "plan.rule.running" : "plan.rule")));
-      det.append(inc, bill);
-    }
-    if (view === "out" || view === "offer") det.append(el("p", "plan-fine", t("pv.more.once")));
-    sc.append(more, det);
-  }
+  // 外開網站定價頁:不用登入、不靠價格,每一格都出
+  { const more = btn("btn-quiet plan-more", t("pv.more"), ext(apiPlanUrl())); more.dataset.k = "more"; sc.append(more); }
   // 底列:錯誤(有才出)→ 鈕上方那行(這顆鈕會帶來的錢)→ 鈕左小字 + 鈕
   if (err) { const e = el("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); e.append(el("span", "fault-mark"), el("span", null, t(err.key))); foot.append(e); }
   if (V.rule) foot.append(el("p", "plan-rule", V.rule));
@@ -3450,18 +3500,10 @@ async function planLogin() {
   catch (_) { planErr = null; }
   planLoginBusy = oauthPending = false; planPaint(); waitChanged();
 }
-/* 價格那一行(方案頁的計費段、雲端開通頁共用):方案制 = 月價 + 年價(年價、付幾個月、一期幾天都讀 api;缺就用短句);
-   切換前 = 月價 + 時價(那時真的是每小時從餘額扣) */
-function planPriceEl(el, v, mo) {
+/* 雲端開通頁(切換前)的價格那一行:月價 + 時價(那時真的是每小時從餘額扣) */
+function planPriceEl(el, v) {
   const pr = el("div", "plan-price");
-  if (mo) {
-    // 階名用介面字(.tier)、數字 mono(.m):有方案列的人(paid_until 有值)印自己那一階的價,Premium 不該看到 Starter 的數字;沒方案列印開通價。
-    // 年繳只講金額:「用 {yd} 天、付 {k} 個月」在確認框 cf.m.yr.d,這裡講會折成兩行
-    const own = v.u && v.tp, y = own ? v.ty : v.y;
-    if (v.tier) pr.append(el("span", "tier", v.tier));
-    pr.append(el("span", "m", t("plan.month", { ...v, p: own ? v.tp : v.p })));
-    if (y) pr.append(el("span", "h", t("plan.yearNoNum", { ...v, y })));
-  } else { pr.append(el("span", "m", t("plan.month", v))); if (v.h) pr.append(el("span", "h", t("plan.hour", v))); }
+  pr.append(el("span", "m", t("plan.month", v))); if (v.h) pr.append(el("span", "h", t("plan.hour", v)));
   return pr;
 }
 /* 運行中／方案有效那格鈕上方那行(方案制),由上往下命中就停(spec desktop-trial-with-machine §5–6):扣款失敗 → 待開通 → 已取消 →
@@ -3796,9 +3838,9 @@ window.blave.onTurnEnd(async (r) => {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複
     // 那一句帶的檔跟句子一起放回 chip。用戶在回合中另外掛了別的檔(chip 被佔)就放不回去:這時泡泡不收,不然那個檔連同純附件那一句無聲消失
-    const attBack = !lastUserAttachment || !attachedFile || attachedFile === lastUserAttachment;
+    const attBack = !lastUserAttachments.length || !attachedFiles.length || attachedFiles === lastUserAttachments;
     if (attBack && !turnGotReply && !turnHadTool && turnBubble && turnBubble.parentNode) turnBubble.remove();
-    stopRestore(lastUserText, lastUserAttachment, lastUserFrom);
+    stopRestore(lastUserText, lastUserAttachments);
   }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
@@ -3936,7 +3978,7 @@ function applyStatic() {
   if (typeof akRelang === "function") akRelang();     // API 金鑰表單(renderer/apikey.js)
   if (typeof xpRelang === "function") xpRelang();     // 轉出卡(renderer/export.js)
   youRelang();                                        // 固定觸發句的摘要泡泡
-  attachHintPaint();                                  // chip 上「不讀圖」那句帶模型名,不掛 data-i18n
+  setAttachments(attachedFiles);                      // chip 的 ✕ 讀屏名稱與「不讀圖」那句都帶變數,不掛 data-i18n:重畫
   acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();

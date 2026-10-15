@@ -11,12 +11,12 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
 
 const sub = (src.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0];
 ok("泡泡留住節點+unsend(收回泡泡;打字的才塞回輸入框,固定句不塞;帶的檔放不回 chip 時泡泡不收——行為在 check_shell_attach.js 實跑)",
-  /const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachment \? attachment\.name : null\);/.test(sub) && /const unsend = \(\) => \{ if \(!attachment \|\| !attachedFile \|\| attachedFile === attachment\) bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachment, lastUserFrom\); \};/.test(sub));
+  /const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachments\.map\(\(a\) => a\.name\)\);/.test(sub) && /const unsend = \(\) => \{ if \(!attachments\.length \|\| !attachedFiles\.length \|\| attachedFiles === attachments\) bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg, attachments\); \};/.test(sub));
 ok("busy(上一輪還在跑):收回泡泡再上系統行", /unsend\(\); addMsg\("sys", t\("turn\.busy"\)\)\.dataset\.i18n = "turn\.busy"; unlock\(\); return false;/.test(sub));
 ok("版本閘 blocked:收回泡泡", /minv\.chat[\s\S]{0,200}unsend\(\); unlock\(\); return false;/.test(sub));
 ok("暖機中按停止:收回泡泡(還原照舊只認打字的)", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); unsend\(\); return false; \}/.test(sub));
 ok("引擎起不來(catch):收回泡泡", /turn\.engineFailed[\s\S]{0,120}unsend\(\); unlock\(\); return false;/.test(sub));
-ok("真的送出(started)那條不收泡泡", /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); if \(attachment\) trackFeature\(ATTACH_FEATURE\[attachKind\(attachment, opts && opts\.from\)\]\); return true; \}/.test(sub));
+ok("真的送出(started)那條不收泡泡", /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); return true; \}/.test(sub));
 ok("addMsg 回傳節點(收回靠它)", /\$\("chat-scroll"\)\.appendChild\(el\);[\s\S]{0,120}return el;\n\}/.test(src));
 
 // ---- 停止後重複(Wei 定性):按停止把句子放回輸入框時,舊的那則泡泡一併收回;
@@ -27,7 +27,7 @@ ok("addMsg 回傳節點(收回靠它)", /\$\("chat-scroll"\)\.appendChild\(el\);
   const stopBlk = (src.match(/if \(stopped && lastUserTyped\) \{[\s\S]*?\n  \}/) || [""])[0];
   ok("停止:沒回覆也沒收據 → 收回泡泡再還原輸入框(重送不出現兩則)",
     /if \(attBack && !turnGotReply && !turnHadTool && turnBubble && turnBubble\.parentNode\) turnBubble\.remove\(\);/.test(stopBlk)
-    && stopBlk.indexOf("turnBubble.remove()") < stopBlk.indexOf("stopRestore(lastUserText, lastUserAttachment, lastUserFrom)"));
+    && stopBlk.indexOf("turnBubble.remove()") < stopBlk.indexOf("stopRestore(lastUserText, lastUserAttachments)"));
   ok("有回覆或有收據 → 泡泡留著(條件裡兩個旗標都在)", /!turnGotReply && !turnHadTool/.test(stopBlk));
 }
 

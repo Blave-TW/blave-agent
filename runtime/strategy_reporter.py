@@ -159,13 +159,17 @@ _VERSION_404_BACKOFF_S = 3600
 # STRATEGY_NAME is the technical id; DISPLAY_NAME / DESCRIPTION are the
 # human-facing name + one-line blurb driving the workspace list/detail, so a
 # user isn't reading snake_case ids. MODE="live" = deployed for live trading ->
-# "live"; anything else (backtest/draft) -> "draft".
-FIELDS = ("STRATEGY_NAME", "DISPLAY_NAME", "DESCRIPTION", "MODE")
+# "live"; anything else (backtest/draft) -> "draft". LOGIC = the entry/exit/stop
+# rules, usually a multi-line triple-quoted string (strategy_logic()).
+FIELDS = ("STRATEGY_NAME", "DISPLAY_NAME", "DESCRIPTION", "MODE", "LOGIC")
 # Fallback only — see strategy_consts(). A quote inside the value ends the match
 # early here ("Bob's BTC trend" -> "Bob"), which is why ast is the primary path.
 _FALLBACK_RE = {
-    field: re.compile(r'^\s*%s\s*=\s*["\']([^"\']*)["\']' % field, re.M)
-    for field in FIELDS
+    **{field: re.compile(r'^\s*%s\s*=\s*["\']([^"\']*)["\']' % field, re.M)
+       for field in FIELDS if field != "LOGIC"},
+    "LOGIC": re.compile(
+        r'^\s*LOGIC\s*=\s*(?:"""(.*?)"""|\'\'\'(.*?)\'\'\'|["\']([^"\'\n]*)["\'])',
+        re.M | re.S),
 }
 
 
@@ -185,7 +189,7 @@ def strategy_consts(src):
         for field, pattern in _FALLBACK_RE.items():
             m = pattern.search(src)
             if m:
-                out[field] = m.group(1)
+                out[field] = m.group(m.lastindex)   # LOGIC's pattern has one group per quote style
         return out
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):
@@ -197,6 +201,63 @@ def strategy_consts(src):
             if isinstance(target, ast.Name) and target.id in FIELDS and target.id not in out:
                 out[target.id] = node.value.value
     return out
+
+
+# Strategy logic (contract: the workspace's 策略邏輯 disclosure). The desktop app parses the
+# same file with shell/main.js stratLogic — both run tests/fixtures/strategy_logic.json, so
+# change the two together.
+LOGIC_KEYS = ("entry", "exit", "stop")
+_LOGIC_RULE_MAX, _LOGIC_RULES_MAX, _LOGIC_TEXT_MAX = 300, 12, 2000
+_LOGIC_PREFIX_RE = re.compile(r"^(entry|exit|stop)\s*[:：]\s*(.*)$")
+# Older strategies carry the rules only as a header comment. Same 2000-char header window as
+# strategy_type(); continuation lines are comments indented at least two spaces after `#`.
+_LOGIC_HEADER_RE = re.compile(r"^[ \t]*#[ \t]*Logic[ \t]*[:：](.*)$", re.M)
+_LOGIC_CONT_RE = re.compile(r"^[ \t]*#[ \t]{2,}(\S.*)$")
+_LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")   # not str.splitlines(): JS splits on these three only
+
+
+def _logic_rules(text):
+    groups = {k: [] for k in LOGIC_KEYS}
+    current = None
+    for raw in _LINE_SPLIT_RE.split(text):
+        line = raw.strip()
+        if not line:
+            continue
+        m = _LOGIC_PREFIX_RE.match(line)
+        if m:
+            current = groups[m.group(1)]
+            current.append(m.group(2).strip())
+        elif current is not None:
+            current[-1] = (current[-1] + " " + line).strip()
+    return {k: [r[:_LOGIC_RULE_MAX] for r in v if r][:_LOGIC_RULES_MAX]
+            for k, v in groups.items()}
+
+
+def strategy_logic(src, logic_const=None):
+    """{"entry": [...], "exit": [...], "stop": [...]} | {"text": str} | None.
+
+    `logic_const` is the file's LOGIC string (strategy_consts()["LOGIC"]); without one,
+    the `# Logic:` header comment, where a `[...]` value is the template's placeholder."""
+    text = (logic_const or "").strip()
+    if text:
+        if not any(_LOGIC_PREFIX_RE.match(l.strip()) for l in _LINE_SPLIT_RE.split(text)):
+            return {"text": text[:_LOGIC_TEXT_MAX]}
+        rules = _logic_rules(text)
+        if any(rules.values()):
+            return rules
+    m = _LOGIC_HEADER_RE.search(src[:2000])
+    if not m:
+        return None
+    parts = [m.group(1).strip()]
+    for line in _LINE_SPLIT_RE.split(src[m.end():])[1:]:
+        cont = _LOGIC_CONT_RE.match(line)
+        if not cont:
+            break
+        parts.append(cont.group(1).strip())
+    text = " ".join(p for p in parts if p).strip()
+    if not text or text.startswith("["):
+        return None
+    return {"text": text[:_LOGIC_TEXT_MAX]}
 
 
 # Telemetry attributes for the platform's funnel events (strategy_created / backtest_done /
@@ -314,6 +375,7 @@ def _extract(path, fallback_name):
         "name": name,
         "display_name": consts.get("DISPLAY_NAME") or name,
         "description": consts.get("DESCRIPTION") or "",
+        "logic": strategy_logic(src, consts.get("LOGIC")),
         "status": status,
         "code": src[:100000],
     }

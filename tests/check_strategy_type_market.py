@@ -102,7 +102,7 @@ base = {"name": "txf_ma", "status": "draft", "code": "x = 1\n", "display_name": 
 tagged = {**base, "type": "A", "market": "crypto"}
 check(sr._content_marker(base) == sr._content_marker(tagged)
       and sr.strategy_marker(base) == sr.strategy_marker(tagged), "type / market are not in the marker")
-check(sr.FIELDS == ("STRATEGY_NAME", "DISPLAY_NAME", "DESCRIPTION", "MODE"),
+check(sr.FIELDS == ("STRATEGY_NAME", "DISPLAY_NAME", "DESCRIPTION", "MODE", "LOGIC"),
       "FIELDS untouched (mirrored in api/openclaw/agent_pure.py)")
 check(all("type" not in s and "market" not in s for s in sr._scan_sources(include_newborn=True)),
       "_scan_sources (the signature() hot path) computes neither — no second parse per tool step")

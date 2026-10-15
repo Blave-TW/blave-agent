@@ -157,7 +157,7 @@ ok("③ C:工作頁一打開就跟主行程對一次快照(背景安裝可能早
 ok("③ 舊的灰字進度不在了(onEngineProgress / addMsg(\"sys\", t(key)))", !/onEngineProgress/.test(appSrc + src) && !/addMsg\("sys", t\(key\)\)/.test(appSrc));
 ok("③ 安裝中送出:卡移到那句底下(泡泡 → 卡)", /engAfter\(bubble\)/.test(submit));
 ok("③ 失敗:泡泡留著(engHold)、不收回輸入框;卡上沒畫出來(只修 venv)才退回失敗卡", /engHold\(msg, opts, bubble\); unlock\(\); return false;/.test(submit) && /faultCard\(\)\.set\(\{ text: t\("turn\.engineFailed"/.test(submit));
-ok("③ 重試:同一個泡泡、同一句話再走一次 submitMessage(裝好就送出)", /submitMessage\(h\.msg, Object\.assign\(\{\}, h\.opts, \{ bubble: h\.bubble \}\)\)/.test(src) && /opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachment \? attachment\.name : null\)/.test(submit));
+ok("③ 重試:同一個泡泡、同一句話再走一次 submitMessage(裝好就送出)", /submitMessage\(h\.msg, Object\.assign\(\{\}, h\.opts, \{ bubble: h\.bubble \}\)\)/.test(src) && /opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachments\.map\(\(a\) => a\.name\)\)/.test(submit));
 ok("③ 換送別句:等著的那句收掉(留著會像已經送出)", /engDropHeld\(\)/.test(submit));
 ok("③ 安裝中按停止:這句不送、放回輸入框、安裝照跑——停止那條路完全不碰卡", /if \(engineWait && engineAbort\)/.test(stop) && !/ENG\b|eng[A-Z]\w*\(/.test(stop) && /engineAbort = \(\) => \{ unlock\(\); unsend\(\); \};/.test(submit));
 ok("③ 卡的去留只看快照:engPaint 只有在 done 才收(停止 / 失敗都不收)", /if \(ENG\.card && s\.phase === "done"\) engDone\(s\);/.test(src) && (src.match(/ENG\.card = null/g) || []).length === 1);
@@ -185,12 +185,12 @@ ok("③ 顏色只用 token(不寫死 hex、不寫死毫秒)", !/#[0-9a-fA-F]{3,8
       window: { blave: {
         ensureEngine: () => { log.push("ensureEngine"); return new Promise((ok, no) => { resolveEngine = ok; rejectEngine = no; }); },
         engineState: async () => ({ phase: "fail", show: true }),
-        sendMessage: async (p) => { log.push("send:" + p.message + (p.attachment ? "+" + p.attachment.name : "")); return { started: true }; },
+        sendMessage: async (p) => { log.push("send:" + p.message + (p.attachments ? "+" + p.attachments.map((a) => a.name).join("+") : "")); return { started: true }; },
         stopTurn: async () => { log.push("stopTurn-ipc"); return true; } } },
       addMsg: (cls, text) => { const b = { cls, text, isConnected: true, remove() { this.isConnected = false; log.push("bubble-removed"); } }; log.push("bubble:" + text); return b; },
       stopRestore: (t) => log.push("restore:" + t), trackFeature: (n) => log.push("track:" + n),
       engHold: (msg, opts, bubble) => { held.push({ msg, opts, bubble }); log.push("hold"); }, engAfter: () => {}, engDropHeld: () => {}, engOnState: () => {},
-      busyStart: () => log.push("busyStart"), faultCard: () => ({ set: (o) => log.push("fault:" + o.text) }), t: (k) => k,
+      busyStart: () => log.push("busyStart"), attachKinds: () => [], faultCard: () => ({ set: (o) => log.push("fault:" + o.text) }), t: (k) => k,
       sessionId: "s1", MP: { model: null }, mpEffort: () => null, chatViewing: () => ({ env: "local" }), lastUserText: "", csTitle: "x",
       console, Promise, Object, JSON, setTimeout,
     };
@@ -207,15 +207,15 @@ ok("③ 顏色只用 token(不寫死 hex、不寫死毫秒)", !/#[0-9a-fA-F]{3,8
   { const r = mkRig(); const p = r.api.submitMessage("hi", { typed: true }); await tick(); r.reject(new Error("pip")); const res = await p;
     ok("④ 安裝失敗:泡泡留著(engHold)、不放回輸入框、輸入框解鎖", res === false && r.held.length === 1 && r.held[0].msg === "hi" && !r.log.includes("bubble-removed") && !r.log.some((x) => /^restore:/.test(x)) && !r.api.running, r.log); }
   // 帶附件的那句安裝失敗 → chip 留著(檔還沒送);按重試送出去之後 chip 要清,不然下一句會再帶一次同一個檔(稽核 0.1.17)
-  { const r = mkRig(), file = { name: "a.csv", type: "text/csv" };
-    r.known.attachedFile = file; r.known.setAttachment = (f) => { r.known.attachedFile = f || null; r.log.push("chip:" + (f ? f.name : "cleared")); }; r.known.readAttachment = async () => "eA==";
-    const p = r.api.submitMessage("hi", { typed: true, attachment: file, from: "file" }); await tick(); r.reject(new Error("pip")); const res = await p;
-    const heldChip = res === false && r.held.length === 1 && r.held[0].opts.attachment === file && r.known.attachedFile === file && !r.log.includes("chip:cleared");
+  { const r = mkRig(), list = [{ file: { name: "a.csv", type: "text/csv" }, name: "a.csv", from: "file" }, { file: { name: "b.png", type: "image/png" }, name: "b.png", from: "paste" }];
+    r.known.attachedFiles = list; r.known.setAttachments = (l) => { r.known.attachedFiles = l; r.log.push("chip:" + (l.length ? l.map((a) => a.name).join("+") : "cleared")); }; r.known.readAttachment = async () => "eA==";
+    const p = r.api.submitMessage("hi", { typed: true, attachments: list }); await tick(); r.reject(new Error("pip")); const res = await p;
+    const heldChip = res === false && r.held.length === 1 && r.held[0].opts.attachments === list && r.known.attachedFiles === list && !r.log.includes("chip:cleared");
     const h = r.held[0], p2 = r.api.submitMessage(h.msg, Object.assign({}, h.opts, { bubble: h.bubble })); await tick(); r.resolve(); const res2 = await p2;   // engRetry 就是這樣呼叫的(下面 retryRig 驗)
-    ok("④ 帶附件的那句安裝失敗:chip 留著;重試送出(帶同一個檔、同一個泡泡)之後 chip 清掉", heldChip && res2 === true && r.log.includes("send:hi+a.csv") && r.log.includes("chip:cleared") && r.known.attachedFile === null && r.log.filter((x) => /^bubble:/.test(x)).length === 1, r.log); }
-  { const r = mkRig(), file = { name: "a.csv", type: "text/csv" }, other = { name: "b.csv", type: "text/csv" };
-    r.known.attachedFile = other; r.known.setAttachment = () => r.log.push("chip:touched"); r.known.readAttachment = async () => "eA==";
-    const p = r.api.submitMessage("hi", { typed: true, attachment: file, from: "file" }); await tick(); r.resolve(); const res = await p;
+    ok("④ 帶附件的那句安裝失敗:chip 留著;重試送出(帶同一份清單、同一個泡泡)之後 chip 清掉", heldChip && res2 === true && r.log.includes("send:hi+a.csv+b.png") && r.log.includes("chip:cleared") && r.known.attachedFiles.length === 0 && r.log.filter((x) => /^bubble:/.test(x)).length === 1, r.log); }
+  { const r = mkRig(), list = [{ file: { name: "a.csv", type: "text/csv" }, name: "a.csv", from: "file" }], other = [{ file: { name: "b.csv", type: "text/csv" }, name: "b.csv", from: "file" }];
+    r.known.attachedFiles = other; r.known.setAttachments = () => r.log.push("chip:touched"); r.known.readAttachment = async () => "eA==";
+    const p = r.api.submitMessage("hi", { typed: true, attachments: list }); await tick(); r.resolve(); const res = await p;
     ok("④ …送出途中 chip 已經換成別的檔:不清(那是下一句要帶的)", res === true && r.log.includes("send:hi+a.csv") && !r.log.includes("chip:touched"), r.log); }
   // engRetry:同一個對話、沒有回合在跑 → 同一個泡泡再送;回合在跑 → 那句留著只重裝;換了對話 → 泡泡收掉只重裝
   const retryRig = (o) => {

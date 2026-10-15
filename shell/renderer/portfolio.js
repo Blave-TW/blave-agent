@@ -6,7 +6,7 @@
    app.js 的 trackFeature / srSay / autosize / paneSt / paneToggle、stratflags.js 的 sfApplyOrder / SF——都在呼叫時才取。 */
 
 /* ── 純邏輯(tests/check_shell_portfolio.js 從原文切出來跑;這一段不准碰 DOM)────────────── */
-const MG_EQUAL = "equal", MG_SLOPE = "slope";
+const MG_EQUAL = "equal", MG_SLOPE = "slope", MG_SHARPE = "sharpe";
 const MG_LOOKBACK_DEFAULT = 365;      // = manager.py LOOKBACK
 const MG_TARGET_VOL_DEFAULT = 0.3;    // = manager.py TARGET_VOL
 const MG_RANDOM_N = 1000;             // = management_backtest.py --random-n 預設,不傳
@@ -123,6 +123,11 @@ function mpsChipParts(fund, ccy, m, target) {
   const f = typeof fund === "number" && isFinite(fund) ? Math.round(fund).toLocaleString("en-US") : null;
   const v = typeof target === "number" && isFinite(target) ? (m === "lev" ? String(Math.round(target * 100) / 100) + "×" : String(Math.round(target * 10) / 10) + "%") : null;
   return { fund: f, ccy: f === null ? null : ccy || null, target: v };   // 算不出來的那段整段不寫(同網頁 a8239131)
+}
+// random_benchmark → 各指標「贏過」的顯示字(取整);欄位不在(舊 workspace)= null、那格不畫
+function mgBeatsOf(rb) {
+  const f = (v) => (typeof v === "number" && isFinite(v) ? Math.round(v) + "%" : null);
+  return { ret: f(rb && rb.managed_beats_pct_total_return), sharpe: f(rb && rb.managed_beats_pct_sharpe), mdd: f(rb && rb.managed_beats_pct_max_drawdown) };
 }
 /* ── 純邏輯到此 ─────────────────────────────────────────────── */
 
@@ -389,6 +394,7 @@ function mgWireAlloc(name) { return name === MG_SLOPE && !mgReportedBuiltins() ?
 function mgAllocLabel(name) {
   if (name === MG_EQUAL) return t("mg.equal");
   if (name === MG_SLOPE) return t("mg.slope");
+  if (name === MG_SHARPE) return t("mg.sharpe");
   const a = mgMethod(name); return a && typeof a.display_name === "string" && a.display_name ? a.display_name : name;
 }
 // 第一份帶 manager 的報告進來時定方法與參數的初值:機器上留檔的回測 job > 提案 > 現行 config > 預設
@@ -773,19 +779,24 @@ function mgBacktestSec() {
   if (job && job.status === "error" && !(mgShortDaysOf(job.error) !== null && mgShort())) frag.appendChild(trEl("p", "mg-err", t("mg.btError", { e: mgErrLine(job.error) || t("tr.cmdFailed") })));
   const bt = mgBacktest(); if (!bt) return frag;
   const man = bt.managed && typeof bt.managed === "object" ? bt.managed : {}, rb = bt.random_benchmark && typeof bt.random_benchmark === "object" ? bt.random_benchmark : {};
-  // 「贏過 X% 隨機」是附期間注記的參考值,不是通過/不通過的判決
-  const beatsRaw = rb.managed_beats_pct_sharpe, beats = typeof beatsRaw === "number" && isFinite(beatsRaw) ? Math.round(beatsRaw) + "%" : null;
-  const ov = bt.overlap && typeof bt.overlap === "object" ? bt.overlap : null;
-  if (beats !== null) {
-    const win = ov && typeof ov.start === "string" && typeof ov.eval_days === "number" ? " " + t("mg.beatsNote", { s: ov.start, n: ov.eval_days }) : "";
-    frag.appendChild(trTipLabel("mg-beats", t("mg.beats", { p: beats }), t("mg.gateTip") + win));
-  } else if (ov) frag.appendChild(trEl("p", "mg-refnote", t("mg.beatsNone")));
+  // 每個指標各自的「贏過 X% 隨機」(Wei 10-15),附期間注記的參考值、不是判決;舊 workspace 只有 Sharpe 那一個
+  const beats = mgBeatsOf(rb), ov = bt.overlap && typeof bt.overlap === "object" ? bt.overlap : null;
+  const win = ov && typeof ov.start === "string" && typeof ov.eval_days === "number" ? " " + t("mg.beatsNote", { s: ov.start, n: ov.eval_days }) : "";
+  if (!beats.ret && !beats.sharpe && !beats.mdd && ov) frag.appendChild(trEl("p", "mg-refnote", t("mg.beatsNone")));
   const pct = (v) => (typeof v === "number" && isFinite(v) ? (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2) + "%" : null);
   const grid = trEl("div", "mg-stats");
-  const stat = (label, v, cls) => { const c = trEl("div", "mg-stat"); c.append(trEl("div", "sl", label), trEl("div", "sv" + (v === null ? " na" : cls ? " " + cls : ""), v === null ? "—" : v)); return c; };
+  const stat = (label, v, cls, k) => {
+    const c = trEl("div", "mg-stat"); c.append(trEl("div", "sl", label), trEl("div", "sv" + (v === null ? " na" : cls ? " " + cls : ""), v === null ? "—" : v));
+    if (beats[k]) {
+      const b = trEl("div", "mg-stat-beat"), lab = trTipLabel("mg-beats", t("mg.beats", { p: beats[k] }), t({ ret: "mg.beatsTip.ret", sharpe: "mg.beatsTip.sharpe", mdd: "mg.beatsTip.mdd" }[k]) + win);
+      lab.firstChild.dataset.fk = "tip:mg-beat-" + k;   // 三格可能同字(都贏過 85%):重畫後焦點要回到同一格
+      b.appendChild(lab); c.appendChild(b);
+    }
+    return c;
+  };
   const tr0 = man["total_return_%"], dd = man["max_drawdown_%"];
-  grid.append(stat(t("mg.totalReturn"), pct(tr0), tr0 > 0 ? "buy" : tr0 < 0 ? "sell" : ""), stat("Sharpe", typeof man.sharpe === "number" && isFinite(man.sharpe) ? man.sharpe.toFixed(2) : null, ""),
-    stat("Max DD", pct(dd), dd < 0 ? "sell" : ""));
+  grid.append(stat(t("mg.totalReturn"), pct(tr0), tr0 > 0 ? "buy" : tr0 < 0 ? "sell" : "", "ret"), stat("Sharpe", typeof man.sharpe === "number" && isFinite(man.sharpe) ? man.sharpe.toFixed(2) : null, "", "sharpe"),
+    stat("Max DD", pct(dd), dd < 0 ? "sell" : "", "mdd"));
   frag.appendChild(grid);
   const frame = trEl("div", "mg-frame"); frame.appendChild(trEl("div", "chart-cap", t("mg.chartCap")));
   const series = mgWeightSeries(bt), canvas = document.createElement("canvas");
@@ -1018,7 +1029,7 @@ function mgMethodOpen(opener) {
 function mgMethodClose(focusEl) { mgScrimClose("mgm-scrim", focusEl || mgmOpener); mgmOpener = null; }
 function mgMethodFields() {
   const alloc = mgmPend.alloc, a = mgMethod(alloc);
-  $("mgm-desc").textContent = alloc === MG_EQUAL ? t("mg.equalDesc") : alloc === MG_SLOPE ? t("mg.slopeDesc") : a && typeof a.description === "string" ? a.description : "";
+  $("mgm-desc").textContent = alloc === MG_EQUAL ? t("mg.equalDesc") : alloc === MG_SLOPE ? t("mg.slopeDesc") : alloc === MG_SHARPE ? t("mg.sharpeDesc") : a && typeof a.description === "string" ? a.description : "";
   const box = $("mgm-fields"); box.textContent = ""; $("mgm-err").hidden = true;
   const keys = Object.keys(mgmPend.params); $("mgm-params").hidden = !keys.length;   // 方法沒宣告參數(等權)整格不出現
   keys.forEach((k, i) => {
@@ -1087,6 +1098,15 @@ function mgSizePreview(pv) {
     cell.append(k, v); pv.appendChild(cell);
   });
 }
+// 提案沒有 port_returns:雲端 workspace 早於 2026-10-13-l 就是主機舊、要先更新;夠新代表這份是更新前算的,重跑就有。
+// 本機 workspace 跟著 app 一起換,不會是主機舊
+const MPS_RETURNS_CV = "2026-10-13-l";
+function mpsCvKey(v) { const m = /^(\d{4}-\d{2}-\d{2})(?:-([a-z]+))?$/.exec(typeof v === "string" ? v : ""); return m ? [m[1], (m[2] || "").length, m[2] || ""] : null; }
+function mpsCvBefore(v, min) { const a = mpsCvKey(v), b = mpsCvKey(min); if (!a || !b) return true; for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; }
+function mpsNoReturnsKey() {
+  if (TR.env !== "cloud") return "sz.staleMdd";
+  return mpsCvBefore(((TR.st && TR.st.cloud) || {}).config_version, MPS_RETURNS_CV) ? "sz.oldMdd" : "sz.staleMdd";
+}
 function mgSizeRender() {
   const d = mgsDraft, body = $("mgs-body"), pv = trEl("div", "mg-size-pv"), series = mpsSeriesOf(mpsProp());
   body.textContent = "";
@@ -1096,7 +1116,7 @@ function mgSizeRender() {
   const mf = trEl("div", "mg-fld"); mf.appendChild(trEl("span", "mg-fld-l", t("mg.tbMethod")));
   const seg = trEl("div", "mg-size-seg"); seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", t("mg.tbMethod"));
   // 原因點名是最大回撤不能用(設計最終稽核:原本只講「主機版本較舊」,看不出被擋的是哪個)
-  const old = trEl("p", "ps-hint mg-size-old", mpsProp() && "port_returns" in mpsProp() ? t("sz.shortMdd") : t("sz.oldMdd")); old.hidden = !d.oldMsg;
+  const old = trEl("p", "ps-hint mg-size-old", mpsProp() && "port_returns" in mpsProp() ? t("sz.shortMdd") : t(mpsNoReturnsKey())); old.hidden = !d.oldMsg;
   MPS_METHODS.forEach((m) => {
     const b = trEl("button", "", t({ vol: "sz.m.vol", mdd: "sz.m.mdd", lev: "sz.m.lev" }[m])); b.type = "button"; b.setAttribute("role", "radio");
     b.setAttribute("aria-checked", m === d.method ? "true" : "false"); b.dataset.m = m;

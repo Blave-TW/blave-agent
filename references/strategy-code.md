@@ -7,7 +7,7 @@ CRITICAL: Every Type A strategy MUST be based on `strategies/TEMPLATE_A.py`. Cop
 ## Steps
 
 1. Copy `strategies/TEMPLATE_A.py` to `strategies/[strategy_name]/strategy.py`
-2. Set config at the top: `STRATEGY_NAME`, `DISPLAY_NAME`, `DESCRIPTION`, `SYMBOL`, `EXCHANGE`, `INTERVAL`, `START` (see *Naming & description* below)
+2. Set config at the top: `STRATEGY_NAME`, `DISPLAY_NAME`, `DESCRIPTION`, `LOGIC`, `SYMBOL`, `EXCHANGE`, `INTERVAL`, `START` (see *Naming & description* below)
 3. Fill in the three marked sections:
    - `_add_indicators(df, p1, p2)` — add indicator columns, parameterized for scan
    - `fetch_data(hdrs)` — fetch kline, call `_add_indicators` with module params
@@ -29,21 +29,28 @@ When the user asks you to base a strategy on code they point you to — a script
 
 ## Naming & description
 
-Every strategy (Type A, B, and C) sets three name/label fields at the top of the file:
+Every strategy (Type A, B, and C) sets four name/label fields at the top of the file:
 
 - `STRATEGY_NAME` — the **technical id**: lowercase, snake_case, used for the directory, files, and reporting key. Keep it stable; nothing user-facing depends on it. (e.g. `doge_holder_conc`)
 - `DISPLAY_NAME` — the **human-facing name** shown in the workspace strategy list. Write it in plain language: *what it trades + what it does*, NOT the engineer id or a raw indicator name. Use the language the user is conversing in (Chinese users → Chinese). Examples: `doge_holder_conc` → `"DOGE 大戶持倉集中度"`, `rsi_bb_reversal` → `"RSI＋布林通道反轉"`, `supertrend_sol` → `"SOL SuperTrend 順勢"`.
 - `DESCRIPTION` — **one plain sentence** the user could read months later and remember what this strategy does, e.g. `"追蹤 DOGE 大戶持倉集中度,集中度升高時進場做多"`. One line, no jargon dump.
+- `LOGIC` — **the rules**, shown under the name when the user opens 策略邏輯 on the strategy page (web and desktop). A plain string constant (triple-quoted for several lines; not an f-string, dict or list — the platform reads it without running the file). One rule per line, each starting with `entry:`, `exit:` or `stop:` — English, lowercase, half- or full-width colon; the rule after it in the user's language with the real numbers from the code. Several lines with the same prefix are several rules, in order; a line without a prefix continues the rule above it. Use `stop:` for stop-loss / take-profit / trailing / time stops, `exit:` for signal exits. Display caps: 300 characters per rule, 12 rules per prefix — write short rules, not paragraphs.
 
 ```python
 STRATEGY_NAME = "doge_holder_conc"
 DISPLAY_NAME  = "DOGE 大戶持倉集中度"
 DESCRIPTION   = "追蹤 DOGE 大戶持倉集中度,集中度升高時進場做多"
+LOGIC = """
+entry: 大戶持倉集中度高於過去 30 天的 80 百分位
+entry: 4h 收盤價在 50 根均線之上
+exit: 集中度跌回 50 百分位以下
+stop: 進場價下方 2 倍 ATR(14)
+"""
 ```
 
-Always set `DISPLAY_NAME` and `DESCRIPTION` when creating a strategy — the workspace shows the technical id only as a fallback when they are missing.
+Always set `DISPLAY_NAME`, `DESCRIPTION` and `LOGIC` when creating a strategy — the workspace shows the technical id only as a fallback when the names are missing, and shows no 策略邏輯 at all without `LOGIC`. A `LOGIC` with no prefixed line is shown as one block of text; prefer the prefixes. Type B strategies (no entry/exit signal) may leave it `""`.
 
-**Keep the words true to the code.** `DESCRIPTION` is the subtitle of the strategy page, and the header comment (`# Logic:` / `# Signal:`) is what the next reader trusts. When you change a parameter that either of them states as a number (a threshold, a window, a symbol list), change it there in the same edit — measured on the desktop: `THRESHOLD_PCT` went from 0.03 to 0.05 while `DESCRIPTION` and the header still said 0.03%, so the page described a strategy that no longer existed. Same for a fork: its `DESCRIPTION` describes the fork.
+**Keep the words true to the code.** `DESCRIPTION` is the subtitle of the strategy page, `LOGIC` is the rule list under it, and the header comment (`# Signal:` and the like) is what the next reader trusts. When you change a parameter that either of them states as a number (a threshold, a window, a symbol list), change it there in the same edit — measured on the desktop: `THRESHOLD_PCT` went from 0.03 to 0.05 while `DESCRIPTION` and the header still said 0.03%, so the page described a strategy that no longer existed. Same for a fork: its `DESCRIPTION` and `LOGIC` describe the fork. Editing `LOGIC` is an edit like any other: the next backtest mints a new version, and a live strategy shows the file-changed notice.
 
 ## Editing a live strategy (fork, never in place)
 
@@ -758,7 +765,7 @@ CRITICAL: Every Type C strategy MUST be based on `strategies/TEMPLATE_C.py`. Cop
 ### Steps
 
 1. Copy `strategies/TEMPLATE_C.py` to `strategies/[strategy_name]/strategy.py`
-2. Set config: `STRATEGY_NAME`, `DISPLAY_NAME`, `DESCRIPTION`, `UNIVERSE`, `SIGNAL_WINDOW`, `WARMUP`, `FEE`, `START` (see *Naming & description* above)
+2. Set config: `STRATEGY_NAME`, `DISPLAY_NAME`, `DESCRIPTION`, `LOGIC`, `UNIVERSE`, `SIGNAL_WINDOW`, `WARMUP`, `FEE`, `START` (see *Naming & description* above)
 3. Fill in three sections:
    - `fetch_data(hdrs)` — fetches close/open/signal data for all UNIVERSE symbols; returns a **tuple**
    - helpers (e.g. `_compute_weights`, `_rebalance_mask`) — signal → weight conversion

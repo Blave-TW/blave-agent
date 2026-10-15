@@ -15,8 +15,12 @@ const cutF = (s, n) => { const i = s.indexOf("function " + n + "("); if (i < 0) 
 // ── ① 純邏輯 ──
 const pp = block(psrc, "/* ── 純邏輯(", "/* ── 純邏輯到此");
 ok("portfolio.js 的純邏輯區塊不碰 DOM", !/\bdocument\b|\$\(|window\./.test(pp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
-const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts };", P);
+const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf };", P);
 const F = P.out;
+ok("移動窗格回測各指標的贏過:三個欄位各自取整;舊 workspace 只有 Sharpe 時另兩格不畫",
+  J(F.mgBeatsOf({ managed_beats_pct_total_return: 61.4, managed_beats_pct_sharpe: 85.5, managed_beats_pct_max_drawdown: 12 })) === J({ ret: "61%", sharpe: "86%", mdd: "12%" })
+  && J(F.mgBeatsOf({ managed_beats_pct_sharpe: 85 })) === J({ ret: null, sharpe: "85%", mdd: null }) && J(F.mgBeatsOf({})) === J({ ret: null, sharpe: null, mdd: null }));
+ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display_name)", /name === MG_SHARPE\) return t\("mg\.sharpe"\)/.test(psrc) && /MG_SHARPE \? t\("mg\.sharpeDesc"\)/.test(psrc));
 { const prop = { members: ["b", "a"], allocator: null, params: { lookback: 180 } };
   ok("選擇比對:成員順序不管、舊腳本的 allocator null = slope、走查窗雙方都釘住才比", F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 180 }) && !F.mgSameSel(prop, ["a"], "slope", { lookback: 180 })
     && !F.mgSameSel(prop, ["a", "b"], "equal", {}) && !F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 90 }) && F.mgSameSel({ members: ["a", "b"], allocator: "equal", lookback: 0 }, ["a", "b"], "equal", {})); }
@@ -107,7 +111,7 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     confirmBox(o) { ctx.BOX = o; }, trCloudBox: (o) => o, trWith: () => { ctx.DIRECT = (ctx.DIRECT || 0) + 1; return true; }, TR_STALE_MS: 600000, ENV_JUST_MS: 300000, trackFeature() {} });
   vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
-    "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
+    "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
     "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
@@ -131,21 +135,21 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   ok("A 案:自動下單 › 部位四欄「標的｜目標｜帳上｜差額」、沒有輸入框;台股列(交易所不交易)帳上與差額「—」;帳上欄頭 title 講帳戶",
     J(sig.filter((n) => n.tag === "th").map((n) => n.textContent)) === J(["tr.col.symbol", "tr.col.target", "tr.col.held", "tr.col.diff"]) && !sig.some((n) => n.tag === "input" || /amt-in/.test(n.className))
     && !!tw && tw[2] === "—" && tw[3] === "—" && sig.some((n) => /th-tip/.test(n.className) && /po\.actualTip/.test(n.title)), J(rows));
-  ok("A 案:策略名與金額用小字寫在標的底下(「BTC · 500」);右上「到策略組合修改」;帳上不是 0 的列底下一行持倉細節(均價、未實現)",
-    !!btcT && /BTC · 500/.test(btcT[0]) && sig.some((n) => /po-bridge/.test(n.className) && n.text === "po.bridgeEdit")
+  ok("標的格只寫標的與市場小標:貢獻的策略與金額(「BTC · 500」)不列(Wei 10-15 拿掉,樣式一起清);右上「到策略組合修改」;帳上不是 0 的列底下一行持倉細節(均價、未實現)",
+    !!btcT && /^BTCUSDT/.test(btcT[0]) && !/BTC · |500/.test(btcT[0]) && !sig.some((n) => /po-src/.test(n.className)) && !/po-src|srcLines/.test(src) && !/\.po-src/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")) && sig.some((n) => /po-bridge/.test(n.className) && n.text === "po.bridgeEdit")
     && sig.some((n) => /po-det/.test(n.className) && /po\.dEntry/.test(n.textContent) && /po\.dUpnl/.test(n.textContent)), J([btcT, sig.filter((n) => /po-det/.test(n.className)).map((n) => n.textContent)]));
   ok("A 案:策略組合 › 配置的下表退回只有目標(沒有帳上、差額、拒單、合計列)", !sig0.some((n) => n.tag === "th" && /tr\.col\.(held|diff)/.test(n.text)) && !sig0.some((n) => /po-foot|pf-note err/.test(n.className)));
   { const diffCls = (hs, amounts) => { vm.runInContext(`envHeadState = () => ${J(hs)};`, ctx); if (amounts) ctx.TR.st.report.config.amounts = amounts;
       const f = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx));
-      return { cls: f.filter((n) => n.tag === "tr" && n.kids.length === 4 && n.kids[0].tag === "td").map((r) => r.kids[3].className), link: f.some((n) => /po-bridge/.test(n.className)), idle: (f.find((n) => /th-tip/.test(n.className) && /po\.diffIdle/.test(n.title)) || {}).title || "" }; };
+      return { cls: f.filter((n) => n.tag === "tr" && n.kids.length === 4 && n.kids[0].tag === "td").map((r) => r.kids[3].className), link: f.some((n) => /po-bridge/.test(n.className)), idle: (() => { const th = f.filter((n) => n.tag === "th")[3]; return !th ? "no th" : flat(th).some((n) => /th-tip/.test(n.className) || n.title) ? "tip" : th.textContent; })() }; };
     const on = diffCls("running"), off = diffCls("dead"), halt = diffCls("halted");
-    ok("A 案(同網頁 6ae71405):在跑 → 差額上 buy/sell、欄頭不掛 tooltip;沒在跑 → 會下單的差額退 hold 灰;欄頭 tooltip 未啟動／已暫停分兩句",
-      on.cls.some((c) => /\b(buy|sell)\b/.test(c)) && !on.idle && !off.cls.some((c) => /\b(buy|sell)\b/.test(c)) && off.cls.some((c) => /\bhold\b/.test(c))
-      && /po\.diffIdleStart/.test(off.idle) && /po\.diffIdleHalt/.test(halt.idle), J({ on, off, halt }));
+    ok("A 案(同網頁 6ae71405):在跑 → 差額上 buy/sell;沒在跑 → 會下單的差額退 hold 灰;差額欄頭三種狀態都不掛 tooltip(Wei 10-15 拿掉未啟動／已暫停那兩句)",
+      on.cls.some((c) => /\b(buy|sell)\b/.test(c)) && !off.cls.some((c) => /\b(buy|sell)\b/.test(c)) && off.cls.some((c) => /\bhold\b/.test(c))
+      && [on, off, halt].every((x) => x.idle === "tr.col.diff"), J({ on, off, halt }));
     const zeroRun = diffCls("running", { btc: 0, tw: 0 }); ctx.TR.noAmtLink = true; const linked = diffCls("dead", { btc: 0, tw: 0 }); ctx.TR.noAmtLink = false;
     ok("設計稽核電腦版必改 3:「到策略組合修改」只在頁首原因行實際畫出連結(TR.noAmtLink)時藏;在跑但金額全空、原因行沒連結時照畫",
       on.link && zeroRun.link && !linked.link && /TR\.noAmtLink = !!key && t\(key, vars\)\.toLowerCase\(\)\.indexOf\(t\("po\.nav"\)\.toLowerCase\(\)\) >= 0;/.test(src)
-      && /envHeadState\(TR\.st, now\), TR\.startAt \|\| 0, !!TR\.noAmtLink\];/.test(src), J({ zeroRun, linked }));
+      && /envHeadState\(TR\.st, now\), TR\.startAt \|\| 0, !!TR\.noAmtLink, TR_TWN\.v\];/.test(src), J({ zeroRun, linked }));
     ctx.TR = bag({ binance: V }); }
   // 手動部位(Wei 10-14):帳本模式下帳戶比帳本多的那份 = 手動。帳本 size 是成本、讀帳 size 是市值,金額列要比數量(帳本 qty 對 size ÷ mark_price)
   { const run = (pos, led) => { ctx.TR = bag({ binance: V }); const rp = ctx.TR.st.report; rp.self_ledger = true; rp.account.read_at = Math.floor(Date.now() / 1000);
@@ -549,7 +553,15 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
 // 設計最終稽核三條小建議:登入失效卡不重講三次;最大回撤停用的原因點名最大回撤;投入資金空著時表上方先講要去哪裡填
 { const app = fs.readFileSync(path.join(R, "app.js"), "utf8"), S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   ok("登入失效那張卡:帳號列寫「登入已失效」一次;卡片標題「請重新登入」、不再加說明句", /revoked:  \{ h: "pv\.h\.revoked", lead: "", acts:/.test(app) && S.includes('"pv.h.revoked": "請重新登入"') && S.includes('"acct.revoked": "登入已失效"'));
-  ok("最大回撤不能選:原因點名最大回撤(主機版本較舊／共同資料不到 90 天,不能用最大回撤)", /t\("sz\.shortMdd"\) : t\("sz\.oldMdd"\)/.test(psrc) && S.includes('"sz.oldMdd": "主機版本較舊，不能用最大回撤"') && S.includes('"sz.shortMdd": "共同資料不到 90 天，不能用最大回撤"'));
+  ok("最大回撤不能選:原因點名最大回撤(雲端主機版本較舊／更新前算的／共同資料不到 90 天)", /t\("sz\.shortMdd"\) : t\(mpsNoReturnsKey\(\)\)/.test(psrc) && S.includes('"sz.oldMdd": "雲端主機版本較舊，不能用最大回撤；到設定 › 一般〔更新雲端主機〕後重跑一次優化"') && S.includes('"sz.staleMdd": "這份結果是更新前算的，重跑一次優化就能用最大回撤"') && S.includes('"sz.staleMdd": "This result was computed before the update. Rerun the optimization to use max drawdown"') && S.includes('"sz.shortMdd": "共同資料不到 90 天，不能用最大回撤"'));
+{ const ctx = vm.createContext({}); vm.runInContext(["mpsCvKey", "mpsCvBefore", "mpsNoReturnsKey"].map((n) => cutF(psrc, n)).join("\n") + "\nvar MPS_RETURNS_CV = " + J(/const MPS_RETURNS_CV = "([^"]+)"/.exec(psrc)[1]) + "; var TR = null;", ctx);
+  const K = (env, cv) => { ctx.TR = { env, st: { cloud: cv === undefined ? undefined : { config_version: cv } } }; return vm.runInContext("mpsNoReturnsKey()", ctx); };
+  ok("提案沒 port_returns 的原因分兩句:雲端 workspace 早於 2026-10-13-l(或讀不到版號)= 主機舊要先更新;已夠新 = 更新前算的、重跑就好;本機一律後者",
+    K("cloud", "2026-10-13-k") === "sz.oldMdd" && K("cloud", "2026-10-12-z") === "sz.oldMdd" && K("cloud", null) === "sz.oldMdd" && K("cloud", undefined) === "sz.oldMdd"
+    && K("cloud", "2026-10-13-l") === "sz.staleMdd" && K("cloud", "2026-10-13-aa") === "sz.staleMdd" && K("cloud", "2026-10-15-d") === "sz.staleMdd"
+    && K("local", "2026-10-01") === "sz.staleMdd" && K("local", undefined) === "sz.staleMdd"
+    && /"sz\.staleMdd": "這份結果是更新前算的/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8").replace(/msgid "sz\.staleMdd"\nmsgstr /, '"sz.staleMdd": ')), K("cloud", "2026-10-13-k")); }
+
   ok("投入資金空著:優化表上方先講「先按「{method}」填投入資金，建議金額才算得出來。」,{method} 帶工具列鈕現在的方法名;間距上 8、下 16",
     /wrap\.appendChild\(trEl\("p", "pf-note mg-need-fund", t\("mg\.needFund", \{ method: t\(\{ vol: "sz\.m\.vol", mdd: "sz\.m\.mdd", lev: "sz\.m\.lev" \}\[mk\]/.test(psrc)
     && S.includes('"mg.needFund": "先按「{method}」填投入資金，建議金額才算得出來。"') && /\.pf-note\.mg-need-fund \{ display: block; margin: var\(--space-8\) 0 var\(--space-16\); \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8"))); }
@@ -576,11 +588,10 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     det && /trEl\("span", "plan-tot", p\.text/.test(src) && /\.del-body \.plan-tot \{ margin-left: var\(--space-4\); \}/.test(css) && /if \(typeof x === "string"\) p\.textContent = x; else p\.appendChild\(x\);/.test(app)); }
 // A 案字串逐字同網頁 6ae71405(web messages.po;網頁的 {t}/{p}/{u}/{m} 在這裡是 {total}/{v})
 { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), has = (v) => S.includes(JSON.stringify(v));
-  const want = ["{venue} 帳戶裡策略開的部位", "What your strategies hold in your {venue} account", "尚未啟動，不會下單", "Not started; no orders", "已暫停，不會下單", "Paused; no orders",
-    "策略外", "Off-strategy", "這個部位不是 Blave 下單建立的，對帳不會動它。", "均價 {v}", "Entry {v}", "未實現 {v}", "Unrealized {v}", "保證金 {v}", "Margin {v}", "（{x}×）", " ({x}×)",
+  const want = ["{venue} 帳戶裡策略開的部位", "What your strategies hold in your {venue} account", "策略外", "Off-strategy", "這個部位不是 Blave 下單建立的，對帳不會動它。", "均價 {v}", "Entry {v}", "未實現 {v}", "Unrealized {v}", "保證金 {v}", "Margin {v}", "（{x}×）", " ({x}×)",
     "這輪不下單：", "Skipped this round: ", "到策略組合修改", "Edit in Portfolio", "照策略組合 {n} 支策略，合計 {total} 下單。", "Orders follow {n} strategies in Portfolio, total {total}.", "Orders follow {n} strategy in Portfolio, total {total}.",
     "照策略組合 {n} 支策略下單。", "Orders follow {n} strategies in Portfolio.", "Orders follow {n} strategy in Portfolio.", "另有手動 {n}", "Plus manual {n}", "（含手動）", " (incl. manual)",
     "還沒有策略設定金額，先到策略組合設定。", "No strategy has an amount yet. Set one under Portfolio.", "帳上", "Held"];
   const miss = want.filter((v) => !has(v));
-  ok("A 案字串兩語逐字同網頁(帳上、差額 tooltip、策略外、細節三段、門檻前導、到策略組合修改、啟動那句、原因行縮短版)", !miss.length, J(miss)); }
+  ok("A 案字串兩語逐字同網頁(帳上、策略外、細節三段、門檻前導、到策略組合修改、啟動那句、原因行縮短版)", !miss.length, J(miss)); }
 Promise.all([btCancelTest, freshTest, pollTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

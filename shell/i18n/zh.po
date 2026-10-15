@@ -110,12 +110,9 @@ msgstr "跟 agent 說一句話"
 msgid "ws.waitTurn"
 msgstr "上一輪還在跑，結束後再按 Enter 送出。"
 
-# 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;單檔、5 MiB)
+# 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;一則最多 4 個、單檔 5 MiB、合計 15 MiB)
 msgid "ws.attach"
 msgstr "附加檔案"
-
-msgid "ws.attachRemove"
-msgstr "移除附件"
 
 msgid "ws.attachTooLarge"
 msgstr "檔案太大，上限 5MB。"
@@ -138,6 +135,18 @@ msgstr "{model} 不讀圖，這張會被略過。"
 
 msgid "ws.attachReadFail"
 msgstr "讀不到這個檔案，請重新附加。"
+
+# 每顆 chip 的 ✕ 讀屏名稱(帶檔名;多檔時分得出是哪一顆)
+msgid "ws.attachRemoveName"
+msgstr "移除 {name}"
+
+# 一次加的檔超過一則的檔數上限(shell/attach.js ATTACH_MAX_FILES):收得下的照收,多的不加入
+msgid "ws.attachTooMany"
+msgstr "一次最多 4 個檔案，多的沒加入。"
+
+# 加進來會超過合計上限(shell/attach.js ATTACH_TOTAL_BYTES)
+msgid "ws.attachTotalLarge"
+msgstr "附件合計上限 15MB，有檔案沒加入。"
 
 # 輸入框上方建議列的小標與 group 名稱(renderer/suggest.js);逐字同 web workspace_sug_group
 msgid "ws.sugGroup"
@@ -566,6 +575,18 @@ msgstr "程式碼"
 msgid "rp.tab.rob"
 msgstr "參數掃描"
 
+msgid "rp.logic"
+msgstr "策略邏輯"
+
+msgid "rp.logic.entry"
+msgstr "進場"
+
+msgid "rp.logic.exit"
+msgstr "出場"
+
+msgid "rp.logic.stop"
+msgstr "停損"
+
 msgid "bt.fee"
 msgstr "手續費"
 
@@ -922,9 +943,6 @@ msgstr "已停機 · 餘額低於 {m} TWD"
 msgid "plan.st.stoppedNoAmt"
 msgstr "已停機 · 餘額不足"
 
-msgid "plan.bill"
-msgstr "計費"
-
 msgid "plan.bal"
 msgstr "Blave 餘額"
 
@@ -1205,28 +1223,10 @@ msgid "pv.st.starting"
 msgstr "啟動中"
 
 msgid "pv.more"
-msgstr "方案內容與計費"
-
-msgid "plan.inc"
-msgstr "內含"
-
-msgid "plan.rule"
-msgstr "主機存在就會扣，不管有沒有在用；停機照扣，刪除主機才停。"
-
-msgid "plan.rule.running"
-msgstr "主機存在就會扣，不管有沒有在用。停用＝刪除主機，主機上的策略與資料會一併清除。"
+msgstr "到網站看方案內容與計費"
 
 msgid "pv.more.once"
 msgstr "首次綁卡的試用每人一次、每張卡一次。"
-
-msgid "pv.inc.1"
-msgstr "一台 24 小時開著的雲端主機：策略照排程執行、自動下單"
-
-msgid "pv.inc.2"
-msgstr "Blave 的資料，電腦版與雲端主機都拿得到"
-
-msgid "pv.inc.3"
-msgstr "從瀏覽器的工作頁操作這台主機"
 
 msgid "pv.inc.note"
 msgstr "這台電腦與雲端主機是兩台獨立的機器，各自的交易所金鑰與帳本。電腦上做好的策略可以送上雲端，也可以直接請 agent 在主機上做。"
@@ -1743,6 +1743,10 @@ msgstr "目標"
 
 msgid "tr.col.diff"
 msgstr "差額"
+
+# 欄頭帶單位:單位放括號裡、跟欄名同字樣(trHead;Wei 10-15)。zh 全形括號
+msgid "tr.colUnit"
+msgstr "{label}（{unit}）"
 
 msgid "tr.mkt.spot"
 msgstr "現貨"
@@ -7058,9 +7062,6 @@ msgstr "月繳"
 msgid "plan.cyc.annual"
 msgstr "年繳"
 
-msgid "plan.yearNoNum"
-msgstr "或年繳 {y} TWD"
-
 msgid "pv.st.noPlan"
 msgstr "沒有方案"
 
@@ -7372,12 +7373,6 @@ msgstr "試用到 {u}。自動扣款沒有開，到期不會扣第一期，主�
 msgid "pv.f.running.await"
 msgstr "第一期沒有自動扣。到網站開通才會繼續；沒開通的話主機 {gu}刪除"
 
-msgid "pv.inc.one"
-msgstr "含雲端主機、Blave 資料、網頁操作"
-
-msgid "plan.rule.one"
-msgstr "每期先扣錢包，不夠刷卡；取消不退款"
-
 msgid "plan.topupShort"
 msgstr "低於 {a} TWD 時從卡自動儲值 {b} TWD；網頁可關"
 
@@ -7546,8 +7541,15 @@ msgstr "投入資金"
 msgid "mg.fundTip"
 msgstr "預設是配置分頁的合計"
 
-msgid "mg.gateTip"
-msgstr "與 1,000 組隨機權重投組在同一段期間比 Sharpe；參考值，換一段期間會明顯不同"
+# 移動窗格回測三格數字底下各自的「贏過 X%」氣泡;後面接 mg.beatsNote(期間注記)
+msgid "mg.beatsTip.ret"
+msgstr "總報酬高於同一段期間 1,000 組隨機權重投組中的這個比例；參考值，換一段期間會明顯不同"
+
+msgid "mg.beatsTip.sharpe"
+msgstr "Sharpe 高於同一段期間 1,000 組隨機權重投組中的這個比例；參考值，換一段期間會明顯不同"
+
+msgid "mg.beatsTip.mdd"
+msgstr "最大回撤比同一段期間 1,000 組隨機權重投組中的這個比例來得淺；參考值，換一段期間會明顯不同"
 
 msgid "mg.groupBuiltin"
 msgstr "內建"
@@ -7645,6 +7647,12 @@ msgstr "斜率/波動"
 msgid "mg.slopeDesc"
 msgstr "權益曲線斜率 ÷ 波動，分數高者權重高"
 
+msgid "mg.sharpe"
+msgstr "最佳化 Sharpe"
+
+msgid "mg.sharpeDesc"
+msgstr "讓組合的 Sharpe 最高，不放空、權重加總 100%；期間內沒有任何一檔賺錢時改用等權"
+
 msgid "mg.stratEmpty"
 msgstr "主機上還沒有回測完成的策略"
 
@@ -7725,12 +7733,6 @@ msgstr "正在更新引擎"
 
 msgid "po.hostOld"
 msgstr "主機版本較舊，更新後才會算"
-
-msgid "po.diffIdleStart"
-msgstr "尚未啟動，不會下單"
-
-msgid "po.diffIdleHalt"
-msgstr "已暫停，不會下單"
 
 msgid "tr.gateFootLead"
 msgstr "這輪不下單："
@@ -7895,7 +7897,10 @@ msgid "mg.btWaitPerf"
 msgstr "等更新績效…"
 
 msgid "sz.oldMdd"
-msgstr "主機版本較舊，不能用最大回撤"
+msgstr "雲端主機版本較舊，不能用最大回撤；到設定 › 一般〔更新雲端主機〕後重跑一次優化"
+
+msgid "sz.staleMdd"
+msgstr "這份結果是更新前算的，重跑一次優化就能用最大回撤"
 
 msgid "sz.shortMdd"
 msgstr "共同資料不到 90 天，不能用最大回撤"

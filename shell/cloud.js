@@ -115,7 +115,16 @@ function interpretStrategy(res, name) {
   if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
   const str = (v) => (typeof v === "string" ? v : "");
   const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
-  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions), perf: obj(s.perf) } };
+  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions), perf: obj(s.perf), logic: logicOf(s.logic) } };
+}
+/* 策略邏輯(runtime strategy_reporter.strategy_logic 的輸出;api 原樣存):{ entry, exit, stop } 或 { text },其餘 null。
+   舊快取沒有這欄 = null(頁首跟沒有邏輯一樣)。上限同機器端,這裡再切一次:api 不驗這欄 */
+function logicOf(v) {   // 判法與順序同網頁 workspace.html mhLogicNorm
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const rules = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === "string" && x.trim()).slice(0, 12).map((x) => x.trim().slice(0, 300)) : []);
+  const g = { entry: rules(v.entry), exit: rules(v.exit), stop: rules(v.stop) };
+  if (g.entry.length || g.exit.length || g.stop.length) return g;
+  return typeof v.text === "string" && v.text.trim() ? { text: v.text.trim().slice(0, 2000) } : null;
 }
 
 /* 策略版本(/cloud/version = 網頁 /openclaw/agent/version/… 原樣,canon strategy-versions §9)。

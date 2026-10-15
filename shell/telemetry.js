@@ -166,7 +166,11 @@ const EVENTS = {
     // 跑優化／回測前在等更新績效時按「先用目前數字跑」(Wei 10-14,同網頁)
     "mg_run_now",
     // 設定 › 顯示幣別改了帳號的 base_currency 偏好(Wei 10-14;只記名字,不帶幣別)
-    "display_ccy_set"] },
+    "display_ccy_set",
+    // 策略頁說明行尾「策略邏輯」點開(0.1.24;renderer/app.js);收起不記,不帶策略名
+    "strategy_logic",
+    // 多檔附件(0.1.25):attach_multi = 一則帶 2 個以上、回合真的跑起來才送;attach_limit_hit = 加檔時撞到檔數或合計上限(只記名字,不帶個數或大小)
+    "attach_multi", "attach_limit_hit"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
