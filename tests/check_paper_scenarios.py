@@ -1452,7 +1452,6 @@ def _bind_refused(w, answers, code, what, env=None):
     w.check(isinstance(r, ValueError) and str(r).startswith(code + ": ") and "not saved" in str(r),
             f"{what}: refused with {code} ({r})")
     w.check(not any(v in str(r) for v in env.values()), "no key value in the refusal")
-    w.check(OKX_CONFIG in hits, f"OKX was asked for the key's permissions ({sorted(set(hits))})")
     after = _bind_files()
     w.eq([p for p in BIND_WATCHED if after[p] != before[p]], [],
          ".env, routing, manifest, book seed, paper ledger: byte-identical")
@@ -1476,28 +1475,29 @@ def _paper_goes_on(w):
 
 @scenario("TC-38", both_modes=True)
 def tc38(w, local):
+    """A key that may withdraw binds since the withdrawal gate was dropped (Wei 2026-10-15)."""
     _paper_long_on(w, local)
-    _bind_refused(w, {"perm": "read_only,withdraw,trade"}, "WITHDRAW_ENABLED",
-                  "a key that may withdraw")
-    _paper_goes_on(w)
+    w.okx_answers(perm="read_only,withdraw,trade")
+    r = w.cmd("credentials", env=OKX_KEYS)
+    w.check(not isinstance(r, Exception), f"a key that may withdraw: bound ({r})")
+    w.check("OKX_API_KEY" in w.vw.read_env(), "the okx key is in .env")
 
 
 @scenario("TC-39", both_modes=True)
 def tc39(w, local):
     _paper_long_on(w, local)
+    if not local:
+        # a cloud machine makes no venue call before the write any more
+        return
     # the desktop reads the account first (_local_real_key_gate): OKX out of
-    # reach is refused there, before the permission is asked
-    _bind_refused(w, {"down": True}, "REJECTED" if local else "UNKNOWN", "OKX cannot be reached")
-    _bind_refused(w, {"perm": None}, "UNKNOWN", "an answer without `perm`")
-    # OKX refusing the key itself (audit 0.1.8 P2-11): HTTP 401 + 50111, a pair whose secret does not
-    # match (the real signature fails: 50113), and HTTP 200 with a non-zero code. The desktop reads
-    # the account first and fails there (REJECTED); a cloud machine fails on the permission read.
-    _bind_refused(w, {"refuse": (401, "50111", "Invalid OK-ACCESS-KEY.")}, "REJECTED" if local else "UNKNOWN",
+    # reach, or OKX refusing the key itself, is refused there
+    _bind_refused(w, {"down": True}, "REJECTED", "OKX cannot be reached")
+    _bind_refused(w, {"refuse": (401, "50111", "Invalid OK-ACCESS-KEY.")}, "REJECTED",
                   "OKX says the key does not exist (401, 50111)")
-    _bind_refused(w, {}, "REJECTED" if local else "UNKNOWN", "a secret that does not match the key (401, 50113)",
+    _bind_refused(w, {}, "REJECTED", "a secret that does not match the key (401, 50113)",
                   env={**OKX_KEYS, "OKX_SECRET_KEY": "okxsecret-0000"})  # gitleaks:allow
     _bind_refused(w, {"refuse": (200, "50012", "Account status invalid. Check account status")},
-                  "REJECTED" if local else "UNKNOWN", "HTTP 200 with a non-zero code (50012)")
+                  "REJECTED", "HTTP 200 with a non-zero code (50012)")
     if local:  # the cloud bind reads only `perm`, never the account mode
         _bind_refused(w, {"acct_lv": "1"}, "REJECTED", "an account in Spot mode (acctLv 1)")
     _paper_goes_on(w)

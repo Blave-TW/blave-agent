@@ -672,20 +672,16 @@ def v0_05(w):
 
 @cell("V1-11", lib="old", rt="new")
 def v1_11(w):
-    """Cloud bind on the old lib. OKX / BingX / Bybit (_WITHDRAW_CHECKED): the
-    runtime asks lib.account_<id>.withdraw_enabled, the old lib has none →
-    refused before anything is written, the text says 更新 (fail-closed by
-    design; the fleet sits in this state from the runtime publish until the
-    user updates the workspace). Then park/unpark for a real-venue account
-    on Gate.io (no withdrawal check, so no venue call): same keys back → the
-    old lib's snapshot and guard state return; other keys → dropped. The
-    restored files are the old lib's own format."""
-    for vid in sorted(w.cl._WITHDRAW_CHECKED):
+    """Cloud bind on the old lib. OKX / BingX / Bybit: no venue call before the
+    write since the withdrawal gate was dropped (Wei 2026-10-15) — the old lib
+    binds like any other venue. Then park/unpark for a real-venue account on
+    Gate.io: same keys back → the old lib's snapshot and guard state return;
+    other keys → dropped. The restored files are the old lib's own format."""
+    for vid in ("BINGX", "BYBIT", "OKX"):
         r = w.cmd("credentials", env=GATE_KEYS[vid])
-        w.check(isinstance(r, Exception) and "no permission check" in str(r) and "更新" in str(r),
-                f"{vid} on the cloud, old lib: refused, told to update ({str(r)[:100]})")
-        w.check(not os.path.exists(".env") or f"{vid}_API_KEY" not in open(".env").read(),
-                f"{vid}: nothing written")
+        w.check(not isinstance(r, Exception), f"{vid} on the cloud, old lib: bound, no venue call ({str(r)[:100]})")
+        w.check(os.path.exists(".env") and f"{vid}_API_KEY" in open(".env").read(), f"{vid}: written")
+        w.cmd("credentials_remove", env=list(GATE_KEYS[vid]))
     keys = dict(GATE_KEYS["GATEIO"])
     r = w.cmd("credentials", env=keys)
     w.check(not isinstance(r, Exception), f"bind Gate.io on the cloud ({r})")

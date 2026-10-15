@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.125 — 2026-10-15(hotfix)
+
+- **拿掉提領權限閘門(Wei 10-15)**:雲端網頁綁 OKX／BingX／Bybit 不再因 bridge venv 缺 `requests` 被誤拒(09-25 起每台雲端主機都會撞到,錯誤訊息還叫用戶「更新」);Binance 在雲端與聊天綁定不再拒絕有提領權限的 key(交易權限檢查保留;電腦版連接畫面的 Binance 檢查在外殼,隨 0.1.26 拿掉)。本機綁定時 lib 載入失敗新增 `LIB_BROKEN: …(真正原因)`,不再一律叫人更新。`lib/account_*.withdraw_enabled` 保留給舊版電腦版。
+
 ## 1.1.124 — 2026-10-15(desktop 0.1.25)
 
 - **網頁對話一次附多個檔(0.1.25 多檔附件;`web_bridge`、`model_prefs`)**:poll 網址加 `&att=2` 宣告會收清單,api 只對宣告過的機器送 2 個以上的檔(其餘回 409 請用戶一次傳一個)。inbox 訊息有 `attachments` 就逐個落地,每個檔在訊息尾端補一行(成功「請先讀取」、失敗「接收失敗」,字跟單檔一樣),壞的元素(不是物件、解不開)只算那一個失敗、回合照跑;單檔的 `attachment` 照舊。落地時檔名的 `[`、`]` 換成 `_`(那行字用方括號包住,`]` 會提早收尾),消毒後是 `.`／`..` 算接收失敗;撞名加 `<秒>_` 後仍撞就秒數往後試(最多 5 次),全部撞到算接收失敗,不再覆蓋同名舊檔(含懸空的 symlink)。佇列 entry 改存 `attachment_names`,讀的時候也認舊的 `attachment_name`(換版當下 `web_queue.json` 裡的舊 entry)。雲端 DeepSeek 偏好遇到清單裡任一個是圖就這一輪改用 Sonnet(`model_prefs.resolve` 收一個檔名或清單,Telegram 照舊傳一個)。測試 `tests/check_web_bridge_multi_attach.py`。

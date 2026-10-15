@@ -30,6 +30,7 @@ ENV = {"BINANCE_API_KEY": KEY, "BINANCE_SECRET_KEY": SECRET}
 ENV_PATH = os.path.join(WS, ".env")
 GOOD = {"ipRestrict": True, "enableWithdrawals": False,
         "enableSpotAndMarginTrading": True, "enableFutures": True}
+WD_ON = dict(GOOD, enableWithdrawals=True)
 # an eviction clears the old venue's routing and re-syncs the schedules; with
 # no config on this fake machine the first logs a FileNotFoundError every time
 # (noise that hides a real one) and the second would shell out to the DEV BOX's
@@ -73,12 +74,20 @@ msg = refused()
 check(msg and "模擬交易" in msg and not calls and not os.path.exists(ENV_PATH),
       "default LOCAL_OPEN_VENUES: a Binance key is refused before anything is asked or written")
 
-# 2. the daemon's process opens Binance — from here on the gate is what decides
+# 2. the daemon's process opens Binance — from here on the gate is what decides.
+#    Withdrawal permission is not gated (Wei 2026-10-15): on, absent or malformed → written
 cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"BINANCE"})
 for name, value in (
-        ("withdrawals enabled", dict(GOOD, enableWithdrawals=True)),
+        ("withdrawals enabled", WD_ON),
         ("withdrawals field missing", {k: v for k, v in GOOD.items() if k != "enableWithdrawals"}),
         ("withdrawals field not a bool", dict(GOOD, enableWithdrawals="false")),
+):
+    calls.clear()
+    answer(value)
+    check(refused() is None and len(calls) == 1 and os.path.exists(ENV_PATH),
+          f"gate passes: {name} — written")
+    os.remove(ENV_PATH)
+for name, value in (
         ("neither spot nor futures trading enabled", dict(GOOD, enableFutures=False, enableSpotAndMarginTrading=False)),
         ("answer is not an object", "<html>"),
         ("network error", OSError("down")),
@@ -103,13 +112,8 @@ check(bool(msg) and "no permission check" in msg and not os.path.exists(ENV_PATH
       "a widened switch without a checker still writes nothing")
 check(sorted(cl._LOCAL_KEY_CHECKS) == ["BINGX", "BYBIT", "GATEIO", "OKX"],
       "the venues with a desktop checker are exactly OKX, BingX, Gate.io, Bybit (a new one is a decision)")
-check(sorted(cl._WITHDRAW_CHECKED) == ["BINGX", "BYBIT", "OKX"] and cl._WITHDRAW_CHECKED <= set(cl._LOCAL_KEY_CHECKS),
-      "withdrawal permission is checked for exactly OKX, BingX, Bybit (Gate.io exposes no such field)")
-trade_src = open(os.path.join(ROOT, "shell", "renderer", "trade.js"), encoding="utf-8").read()
-import re  # noqa: E402
-flagged = {m.group(1).upper() for m in re.finditer(r'(\w+): \{[^}]*noWdCheck: true', trade_src)}
-check(flagged == set(cl._LOCAL_KEY_CHECKS) - cl._WITHDRAW_CHECKED,
-      f"the app flags exactly the unchecked venues (noWdCheck) so the user is told to check by hand: {sorted(flagged)}")
+check(not hasattr(cl, "_WITHDRAW_CHECKED") and not hasattr(cl, "_withdraw_gate"),
+      "no venue's key is refused for withdrawal permission (Wei 2026-10-15)")
 
 # 4. the passing case: written, 0600, no-whitelist keys are NOT refused (Wei: advise, don't block)
 calls.clear()
@@ -192,31 +196,12 @@ try:
         msg = refused(venv)
         check(bool(msg) and msg.startswith("UNKNOWN:") and open(ENV_PATH).read() == before,
               f"{vid}: an unreadable answer is a refusal, nothing written")
-        # the account reads; then the key's withdrawal permission decides (Wei 2026-09-25):
-        # on / unreadable / not a bool → refused, nothing written; off → written
-        mod.get_equity = lambda env: {"equity": 0.0, "currency": "USDT"}
+        # the account read is the whole check: withdrawal permission is never asked
+        # (Wei 2026-10-15) — a lib still shipping withdraw_enabled (older desktop
+        # runtimes call it) must not be consulted
         real_wd = getattr(mod, "withdraw_enabled", None)
-        if vid in cl._WITHDRAW_CHECKED:
-            check(callable(real_wd), f"{vid}: lib/account_{vid.lower()} ships withdraw_enabled")
-            for wname, wval, wcode in (("withdrawals on", True, "WITHDRAW_ENABLED:"),
-                                       ("permission endpoint refuses", Exception("40001 " + list(venv.values())[0]), "UNKNOWN:"),
-                                       ("answer is not a bool", "false", "UNKNOWN:")):
-                def _wd(env, wval=wval):
-                    if isinstance(wval, Exception):
-                        raise wval
-                    return wval
-                mod.withdraw_enabled = _wd
-                msg = refused(venv)
-                check(bool(msg) and msg.startswith(wcode) and open(ENV_PATH).read() == before
-                      and not any(v in msg for v in venv.values()),
-                      f"{vid}: {wname} → {wcode} nothing written, no key value in the message")
-            del mod.withdraw_enabled
-            msg = refused(venv)
-            check(bool(msg) and "no permission check" in msg and open(ENV_PATH).read() == before,
-                  f"{vid}: a lib without withdraw_enabled is refused, never silently unchecked")
-            mod.withdraw_enabled = lambda env: False
-        else:
-            check(real_wd is None, f"{vid}: no withdrawal check exists (the app tells the user to check by hand)")
+        if real_wd is not None:
+            mod.withdraw_enabled = lambda env: (_ for _ in ()).throw(AssertionError("asked about withdrawals"))
         # passes: written
         seen = []
         mod.get_equity = lambda env, seen=seen: seen.append(dict(env)) or {"equity": 0.0, "currency": "USDT"}
@@ -236,7 +221,34 @@ try:
     msg = refused(VENUE_ENV["OKX"])
     check(bool(msg) and "no permission check" in msg and open(ENV_PATH).read() == before,
           "OKX on a workspace without lib/account_okx: refused, nothing written")
+    import types  # noqa: E402
+    sys.modules["lib.account_okx"] = types.ModuleType("lib.account_okx")
+    msg = refused(VENUE_ENV["OKX"])
+    check(bool(msg) and "no permission check" in msg and open(ENV_PATH).read() == before,
+          "OKX on a lib/account_okx without get_equity: 'no permission check', nothing written")
     del sys.modules["lib.account_okx"]
+    # a lib that is there but will not load is LIB_BROKEN with the real reason — telling
+    # the user to update cannot fix a dependency this python lacks (uid 32755, 10-15)
+    import lib  # noqa: E402
+    broken = tempfile.mkdtemp(prefix="broken-lib-")
+    lib.__path__.insert(0, broken)
+    try:
+        for why, body, want in (
+                ("a dependency this python lacks", "import a_dependency_this_python_lacks\n",
+                 "a_dependency_this_python_lacks"),
+                ("an import-time error carrying a key value",
+                 f"raise RuntimeError({VENUE_ENV['OKX']['OKX_SECRET_KEY']!r})\n", "RuntimeError")):
+            with open(os.path.join(broken, "account_okx.py"), "w") as f:
+                f.write(body)
+            sys.modules.pop("lib.account_okx", None)
+            msg = refused(VENUE_ENV["OKX"])
+            check(bool(msg) and msg.startswith("LIB_BROKEN:") and want in msg and "更新" not in msg
+                  and not any(v in msg for v in VENUE_ENV["OKX"].values())
+                  and open(ENV_PATH).read() == before,
+                  f"OKX lib that will not load ({why}): LIB_BROKEN with the reason, key scrubbed ({msg})")
+    finally:
+        lib.__path__.remove(broken)
+        sys.modules.pop("lib.account_okx", None)
 finally:
     requests.get, requests.post, requests.request = real_wire
 daemon_src = open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()

@@ -69,11 +69,6 @@ if (!process.versions.electron) (async () => {
   ok("② trEnvNames 與主行程 cloudcmd.venueEnvNames 同一組(解除綁定送的就是機器寫的)", ["binance", "okx", "bingx", "gateio", "bybit"].every((v) => J(trEnvNames(v)) === J(CC.venueEnvNames(v)))
     && J(trEnvNames("paper")) === J(["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"]));
   ok("② 名字表與主行程那份同一組交易所", J(Object.keys(CX_VENUES).sort()) === J(Object.keys(CC.CONNECT_VENUES).sort()) && CX_VENUES.okx.pass === true && !CX_VENUES.bybit.pass);
-  // 查不到提領權限的那家:renderer 的旗標要跟 runtime 的 _WITHDRAW_CHECKED 互補(tests/check_local_real_key_gate.py 從這邊反向釘)
-  { const cl = fs.readFileSync(path.join(SHELL, "..", "runtime", "command_listener.py"), "utf8"), m = /_WITHDRAW_CHECKED = frozenset\(\{([^}]*)\}\)/.exec(cl);
-    const checked = m ? m[1].split(",").map((s) => s.trim().replace(/"/g, "").toLowerCase()).filter(Boolean).sort() : null;
-    const flagged = Object.keys(CX_VENUES).filter((v) => CX_VENUES[v].noWdCheck), unflagged = Object.keys(CX_VENUES).filter((v) => v !== "binance" && !CX_VENUES[v].noWdCheck).sort();
-    ok("② noWdCheck 只標 Gate.io = runtime 查得到提領權限的那三家以外", J(flagged) === J(["gateio"]) && !!checked && J(unflagged) === J(checked)); }
   ok("② 顯示名:Gate.io / OKX / BingX(首字大寫會寫錯)", trVenueLabel("gateio") === "Gate.io" && trVenueLabel("okx") === "OKX" && trVenueLabel("bingx") === "BingX" && trVenueLabel("paper", true) === "cx.paperShort");
   ok("② 兩個視角都列五家(runtime 已在電腦版開放這四家,寫入前讀一次帳戶)", J(cxVenuesFor("local")) === J(["binance", "okx", "bingx", "gateio", "bybit"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
 

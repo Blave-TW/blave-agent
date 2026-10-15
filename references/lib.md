@@ -531,8 +531,8 @@ Hand-wire the two reconciler functions ONLY for venues without official libs —
 `env` = exactly that venue's `{ID}_API_KEY` / `{ID}_SECRET_KEY` (+ `{ID}_PASSPHRASE` for okx); ids `binance` / `bingx` / `okx` / `gateio` / `bybit` only — Taiwan brokers and paper are refused with a pointer to their own path.
 Returns `{venue, written (env names), bound, evicted}` — never a value.
 Never write `.env` by hand instead: a hand-written pair is invisible to `lib/venue_wiring` and skips eviction.
-**A `binance` bind is verified with the exchange before anything is written** (the same gate the web connect flow passes through, run on this machine because the key's IP whitelist is this machine's IP): a key with withdrawals enabled, or with neither spot nor futures trading enabled, raises `ValueError` and nothing is written or evicted — as does an unreachable/unreadable answer, on purpose.
-The message starts with a code (`WITHDRAW_ENABLED`, `TRADING_DISABLED`, `INCOMPLETE_PAIR` — both key names have to arrive in the one call, `IP_OR_KEY`, `NETWORK`, …); relay what it means and ask for a new key, never retry in a loop (`RATE_LIMITED` means back off — retrying gets this machine's IP banned from Binance, order flow included).
+**A `binance` bind is verified with the exchange before anything is written** (the same gate the web connect flow passes through, run on this machine because the key's IP whitelist is this machine's IP): a key with neither spot nor futures trading enabled raises `ValueError` and nothing is written or evicted — as does an unreachable/unreadable answer, on purpose.
+The message starts with a code (`TRADING_DISABLED`, `INCOMPLETE_PAIR` — both key names have to arrive in the one call, `IP_OR_KEY`, `NETWORK`, …); relay what it means and ask for a new key, never retry in a loop (`RATE_LIMITED` means back off — retrying gets this machine's IP banned from Binance, order flow included).
 A key without an IP whitelist still binds.
 
 `lib/guard.py` — **kill switch + order audit log.** Enforced inside `lib/order_*.py`'s transport layer and again in `lib/portfolio.reconcile()` — no caller opts in, nothing to wire:

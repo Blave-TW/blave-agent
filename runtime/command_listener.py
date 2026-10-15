@@ -157,11 +157,10 @@ class _BinanceCheckFailed(Exception):
         self.code = code
 
 
-# Every field must come back a boolean or there is no verdict — "absent means
-# false" is conservative for the trading flags and would wave a withdrawal key
-# through (shell/binance_check.js, the same four fields).
-_BINANCE_PERMISSION_FIELDS = ("enableWithdrawals", "enableSpotAndMarginTrading",
-                              "enableFutures", "ipRestrict")
+# Every field must come back a boolean or there is no verdict. Withdrawal
+# permission is no longer gated (Wei 2026-10-15: keys that can withdraw are
+# accepted; the connect dialog only advises read + trade).
+_BINANCE_PERMISSION_FIELDS = ("enableSpotAndMarginTrading", "enableFutures", "ipRestrict")
 # Cooldown after Binance rate-limits us, monotonic deadline (audit S-2). The
 # caller has no back-off of its own: the web command endpoint has no rate limit
 # and a user whose connect attempt failed presses the button again — a 429
@@ -235,9 +234,8 @@ def _binance_restrictions(api_key, secret):
 
 def _binance_bind_check(env):
     """The ONE gate a Binance key passes before it reaches .env: the exchange
-    itself must say the key can trade and cannot withdraw (Wei 2026-09-25:
-    a withdrawal-enabled key is refused — a leaked key must not be able to
-    move money out; this reverses the 09-22 "bind, no warning" call). Runs in
+    itself must say the key can trade (withdrawal permission is no longer
+    refused — Wei 2026-10-15 reversed the 09-25 refusal). Runs in
     every deployment mode —
     desktop, cloud, and therefore the web 連接交易所 flow too, since that lands
     on _cmd_credentials like everything else (Wei 2026-09-22). The check has to
@@ -247,7 +245,7 @@ def _binance_bind_check(env):
 
     Returns the verdict dict on a pass (see _cmd_credentials for the shape);
     raises ValueError on a refusal, with the message starting `<CODE>: ` —
-    WITHDRAW_ENABLED, TRADING_DISABLED, INCOMPLETE_PAIR, or a
+    TRADING_DISABLED, INCOMPLETE_PAIR, or a
     _BinanceCheckFailed code. Fail-closed all the way: no answer, or an answer
     that is not the permission object, is a refusal, never a silent write.
     There is deliberately no parameter that skips any of this (binance_check.js
@@ -273,11 +271,6 @@ def _binance_bind_check(env):
             not isinstance(r.get(f), bool) for f in _BINANCE_PERMISSION_FIELDS):
         raise ValueError("UNKNOWN: Binance's permission answer could not be read "
                          "— not saved")
-    # withdrawals first: a key that can move money out is refused whatever its
-    # trading flags say (same order as binance_check.js classify)
-    if r["enableWithdrawals"]:
-        raise ValueError("WITHDRAW_ENABLED: 這把金鑰有提領權限,沒有儲存 "
-                         "(this key has withdrawal permission — not saved)")
     # spot OR futures: lib/order_binance places both (MARKET="spot" strategies),
     # and reading the account needs neither — same rule as the app's screen
     if not (r["enableSpotAndMarginTrading"] or r["enableFutures"]):
@@ -300,16 +293,6 @@ _LOCAL_KEY_CHECKS = {
     "GATEIO": ("GATEIO_API_KEY", "GATEIO_SECRET_KEY"),
     "BYBIT": ("BYBIT_API_KEY", "BYBIT_SECRET_KEY"),
 }
-# The venues whose API can tell whether the calling key may withdraw
-# (lib/account_<id>.withdraw_enabled): OKX /account/config `perm`, Bybit
-# /user/query-api `permissions.Wallet`, BingX /account/apiPermissions
-# `enableWithdrawals`. Checked in EVERY mode (Wei 2026-09-25) — the desktop
-# inside _local_real_key_gate, a cloud box (and so the web connect flow) by
-# _withdraw_gate alone. Gate.io exposes no such field (its /account/detail has
-# none; /account/main_keys is undocumented) — the app tells the user to check
-# by hand instead (shell/renderer/trade.js CX_VENUES noWdCheck). A venue listed
-# here whose lib lacks the function is refused, never silently unchecked.
-_WITHDRAW_CHECKED = frozenset({"OKX", "BINGX", "BYBIT"})
 
 
 def _scrub(e, secrets):
@@ -320,36 +303,6 @@ def _scrub(e, secrets):
         if len(v) >= 4:
             msg = msg.replace(v, "•••")
     return re.sub(r"https?://\S+", "<url>", msg)[:200]
-
-
-def _withdraw_gate(venue_id, got, full):
-    """Refuse a _WITHDRAW_CHECKED venue's key that may withdraw. `got` = the
-    payload's own credential fields, `full` = those plus the .env flags the lib
-    reads (demo host …). Raises ValueError `<CODE>: <text>`: INCOMPLETE_PAIR
-    (the payload must carry the whole pair — the sibling already in .env is no
-    stand-in, same rule as Binance), WITHDRAW_ENABLED, UNKNOWN (endpoint
-    refused / answer not a bool), or "no permission check" when this
-    workspace's lib lacks withdraw_enabled. Fail-closed."""
-    venue = venue_id.lower()
-    need = _LOCAL_KEY_CHECKS[venue_id]
-    if not all(got.get(k) for k in need):
-        raise ValueError(f"INCOMPLETE_PAIR: {venue} needs {' + '.join(need)} together — not saved")
-    try:
-        wd = __import__(f"lib.account_{venue}", fromlist=["withdraw_enabled"]).withdraw_enabled
-    except (ImportError, AttributeError):
-        raise ValueError(f"no permission check exists for {venue} on this workspace "
-                         "(run 更新 blave agent first) — not saved") from None
-    try:
-        w = wd(full)
-    except Exception as e:  # the permission endpoint refusing is no verdict
-        raise ValueError(f"UNKNOWN: could not read the {venue} key's withdrawal permission "
-                         f"({_scrub(e, got.values())}) — not saved") from None
-    if not isinstance(w, bool):
-        raise ValueError(f"UNKNOWN: {venue}'s withdrawal-permission answer could not be read "
-                         "— not saved")
-    if w:
-        raise ValueError(f"WITHDRAW_ENABLED: 這把 {venue} 金鑰有提領權限,沒有儲存 "
-                         f"(this {venue} key has withdrawal permission — not saved)")
 
 
 def _env_flags():
@@ -378,9 +331,8 @@ def _local_real_key_gate(venue_id, env):
 
     Raises ValueError `<CODE>: <text>`: INCOMPLETE_PAIR, REJECTED (the venue's
     own error, key values and URLs scrubbed), UNKNOWN (an answer that is not an
-    equity, or a withdrawal answer that is not a bool), WITHDRAW_ENABLED (the
-    key may withdraw — _WITHDRAW_CHECKED venues only). Fail-closed: no answer
-    is a refusal."""
+    equity), LIB_BROKEN (lib/account_<id> exists but would not load — this
+    computer's problem, not the venue's). Fail-closed: no answer is a refusal."""
     venue = venue_id.lower()
     need = _LOCAL_KEY_CHECKS.get(venue_id)
     if need is None:
@@ -388,11 +340,21 @@ def _local_real_key_gate(venue_id, env):
     got = {k.upper(): v for k, v in env.items()}
     if not all(got.get(k) for k in need):
         raise ValueError(f"INCOMPLETE_PAIR: {venue} needs {' + '.join(need)} together — not saved")
+    mod_name = f"lib.account_{venue}"
     try:
-        getter = __import__(f"lib.account_{venue}", fromlist=["get_equity"]).get_equity
-    except (ImportError, AttributeError):
+        mod = __import__(mod_name, fromlist=["get_equity"])
+    except ModuleNotFoundError as e:
+        if e.name not in ("lib", mod_name):
+            raise ValueError(f"LIB_BROKEN: lib/account_{venue}.py could not load "
+                             f"({_scrub(e, got.values())}) — not saved") from None
+        mod = None
+    except Exception as e:  # the lib is there but will not load: updating cannot fix that
+        raise ValueError(f"LIB_BROKEN: lib/account_{venue}.py could not load "
+                         f"({_scrub(e, got.values())}) — not saved") from None
+    getter = getattr(mod, "get_equity", None)
+    if getter is None:
         raise ValueError(f"no permission check exists for {venue} on this workspace "
-                         "(run 更新 blave agent first) — not saved") from None
+                         "(run 更新 blave agent first) — not saved")
     full = {**_env_flags(), **got}
     try:
         r = getter(full)
@@ -402,8 +364,6 @@ def _local_real_key_gate(venue_id, env):
     if not isinstance(r, dict) or isinstance(r.get("equity"), bool) \
             or not isinstance(r.get("equity"), (int, float)):
         raise ValueError(f"UNKNOWN: {venue}'s account answer could not be read — not saved")
-    if venue_id in _WITHDRAW_CHECKED:
-        _withdraw_gate(venue_id, got, full)
 
 
 # Desktop data-access flags for every child (BLAVE_DATA_ACCESS / BLAVE_DATA_ACCESS_WHY —
@@ -1238,9 +1198,9 @@ def _cmd_credentials(args):
     refused, and a bind fails when Binance cannot be reached from the machine
     (fail-closed — the user retries). Everything that is not Binance (paper,
     OKX, Gate.io, Bybit, BingX, the TW brokers, data-source keys) is untouched:
-    no call, same behaviour as before — except OKX, BingX and Bybit, whose
-    key's withdrawal permission is refused in every mode (_withdraw_gate), and
-    the desktop, where those plus Gate.io first pass _local_real_key_gate.
+    no call, same behaviour as before — except the desktop, where OKX, BingX,
+    Bybit and Gate.io first pass _local_real_key_gate (an account read).
+    Withdrawal permission is not gated anywhere (Wei 2026-10-15).
 
     Ack shape (`_send_ack`). Success: `result` = {"credentials": N, "binance":
     {"checked": true, "code": "OK"|"NO_IP_RESTRICT", "ipRestrict", "spot",
@@ -1254,7 +1214,7 @@ def _cmd_credentials(args):
     verdict it never got). `ipRestrict` is reported, never enforced: a key with
     no whitelist binds, the caller only warns. Refusal: `ok:false` and `error`
     = "ValueError: <CODE>: <text>", CODE being
-    WITHDRAW_ENABLED, TRADING_DISABLED, INCOMPLETE_PAIR, or one of binance_check.js's
+    TRADING_DISABLED, INCOMPLETE_PAIR, or one of binance_check.js's
     inconclusive codes (NETWORK, RATE_LIMITED, IP_OR_KEY, BAD_KEY_FORMAT,
     BAD_SECRET, CLOCK, UNKNOWN) — nothing was written in any of those cases.
     """
@@ -1295,12 +1255,8 @@ def _cmd_credentials(args):
                 president_connect.local_bind_gate(env)
             else:
                 _local_real_key_gate(vid, env)  # raises = nothing written
-    else:
-        # cloud box (and so the web connect flow): no account read, but a key
-        # that can withdraw is refused here too — one request to the venue
-        got = {k.upper(): v for k, v in env.items()}
-        for vid in sorted(writing & _WITHDRAW_CHECKED):
-            _withdraw_gate(vid, got, {**_env_flags(), **got})
+    # cloud box (and so the web connect flow): no venue call before the write —
+    # withdrawal permission is not gated (Wei 2026-10-15)
     # Binance permission gate, every mode. Last thing before the write and
     # nothing has been read or mutated yet, so a refusal leaves the machine
     # exactly as it was — no half-written .env, no eviction of the venue the
