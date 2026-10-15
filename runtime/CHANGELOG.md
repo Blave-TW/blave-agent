@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **網頁對話一次附多個檔(0.1.25 多檔附件;`web_bridge`、`model_prefs`)**:poll 網址加 `&att=2` 宣告會收清單,api 只對宣告過的機器送 2 個以上的檔(其餘回 409 請用戶一次傳一個)。inbox 訊息有 `attachments` 就逐個落地,每個檔在訊息尾端補一行(成功「請先讀取」、失敗「接收失敗」,字跟單檔一樣),壞的元素(不是物件、解不開)只算那一個失敗、回合照跑;單檔的 `attachment` 照舊。落地時檔名的 `[`、`]` 換成 `_`(那行字用方括號包住,`]` 會提早收尾),消毒後是 `.`／`..` 算接收失敗;撞名加 `<秒>_` 後仍撞就秒數往後試(最多 5 次),全部撞到算接收失敗,不再覆蓋同名舊檔(含懸空的 symlink)。佇列 entry 改存 `attachment_names`,讀的時候也認舊的 `attachment_name`(換版當下 `web_queue.json` 裡的舊 entry)。雲端 DeepSeek 偏好遇到清單裡任一個是圖就這一輪改用 Sonnet(`model_prefs.resolve` 收一個檔名或清單,Telegram 照舊傳一個)。測試 `tests/check_web_bridge_multi_attach.py`。
+
 ## 1.1.123 — 2026-10-15(desktop 0.1.24)
 
 - **Windows refresh 峰值只在取樣期間真的讀到子行程時才記錄(稽核 P2)**:不到一次取樣就結束的 run 只讀得到啟動器的幾 MB,拿掉 200 MB 門檻後這個偏低值會被當預估、下次同時開太多支。`refresh_capacity.win_tree_peak_mb`:沒有讀到任何子行程回 None,什麼都不寫(保留上次的量測或預設 1.5 GB)。測試 `tests/check_stats_refresh_parallel.py`。

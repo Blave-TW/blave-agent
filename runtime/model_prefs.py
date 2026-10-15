@@ -36,16 +36,16 @@ def get(session_id, default=DEFAULT_MODEL):
     return prefs.get(session_id) or prefs.get(LAST_KEY) or default
 
 
-def resolve(session_id, attachment_name=None):
-    """get() 外再加一層單輪覆寫:附件是圖片且目前偏好是 deepseek 系列時,這一輪
-    改用 Claude——DeepSeek 的 Anthropic 相容端點官方文件明列不支援 image block,
-    圖片會被靜默丟棄,模型根本看不到。只影響這一輪,不改寫偏好;用戶已自選
-    anthropic 模型就照舊。"""
+def resolve(session_id, attachment_names=None):
+    """get() 外再加一層單輪覆寫:附件裡任一個是圖片且目前偏好是 deepseek 系列時,
+    這一輪改用 Claude——DeepSeek 的 Anthropic 相容端點官方文件明列不支援 image
+    block,圖片會被靜默丟棄,模型根本看不到。只影響這一輪,不改寫偏好;用戶已自選
+    anthropic 模型就照舊。`attachment_names`:一個檔名(telegram_bridge)或清單(web_bridge)。"""
     model = get(session_id)
-    if (
-        attachment_name
-        and attachment_name.lower().endswith(_IMAGE_EXTS)
-        and model.startswith("deepseek/")
+    if isinstance(attachment_names, str):
+        attachment_names = [attachment_names]
+    if model.startswith("deepseek/") and any(
+        isinstance(n, str) and n.lower().endswith(_IMAGE_EXTS) for n in attachment_names or ()
     ):
         return VISION_MODEL
     return model

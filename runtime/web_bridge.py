@@ -52,7 +52,9 @@ API_BASE = os.environ.get("BLAVE_CHAT_API_BASE", "https://api.blave.org/openclaw
 # lease=1: delivered messages stay recoverable server-side until we ACK at spawn —
 # without it, a message claimed right before a release swap killed this process was
 # gone forever (user watched「思考中」until the watchdog gave up; 07-28 實踩).
-POLL_URL = f"{API_BASE}/poll?lease=1"
+# att=2: this bridge files an `attachments` list; the api only sends 2+ files to a machine
+# that declared it, and tells the user to send one at a time otherwise.
+POLL_URL = f"{API_BASE}/poll?lease=1&att=2"
 ACK_URL = f"{API_BASE}/ack"
 REPORT_URL = f"{API_BASE}/report"
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
@@ -258,22 +260,34 @@ def report_turn_aborted(session_id, message=None):
     _post_chunk({"type": "done", "session_id": session_id}, log=True)
 
 
+# 撞名時 `<秒>_` 前綴最多往後試幾秒;同一秒進來好幾個同名檔(多檔、連續重傳)時才會用到
+SAVE_PREFIX_TRIES = 5
+
+
 def save_attachment(attachment):
     """把 /send 帶來的 inline base64 附件落地,回傳最終檔名(相對 tmp/inbound/);
-    失敗回 None。VM 端不盲信 api——檔名再消毒一次、decode 失敗當接收失敗。"""
+    失敗回 None。VM 端不盲信 api——檔名再消毒一次、decode 失敗當接收失敗。
+    `[` `]` 換成 `_`:檔名會包進給 agent 的 [用戶傳了檔案：…] 那行,`]` 會提早收尾。"""
     try:
         name = "".join(
             c for c in os.path.basename(str(attachment.get("name") or "")) if ord(c) >= 32
-        )
-        if not name:
+        ).replace("[", "_").replace("]", "_")
+        if not name or name in (".", ".."):
             raise ValueError("empty attachment name")
         data = base64.b64decode(attachment.get("data") or "", validate=True)
         os.makedirs(INBOUND_DIR, exist_ok=True)
         path = os.path.join(INBOUND_DIR, name)
-        if os.path.exists(path):
-            name = f"{int(time.time())}_{name}"
-            path = os.path.join(INBOUND_DIR, name)
-        with atomic_file.replacing(path, "wb") as f:  # a dangling symlink there passes the exists() above
+        if os.path.lexists(path):
+            now = int(time.time())
+            for i in range(SAVE_PREFIX_TRIES):
+                prefixed = f"{now + i}_{name}"
+                path = os.path.join(INBOUND_DIR, prefixed)
+                if not os.path.lexists(path):
+                    name = prefixed
+                    break
+            else:
+                raise FileExistsError(f"{name}: every prefixed name taken")
+        with atomic_file.replacing(path, "wb") as f:
             f.write(data)
         return name
     except Exception as e:
@@ -282,12 +296,12 @@ def save_attachment(attachment):
 
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
-                   attachment_name=None, viewing_view=None,
+                   attachment_names=None, viewing_view=None,
                    ui_lang=None, stop_file=None):
     """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
     keep_fresh thread (every slot in _running), not by this loop."""
-    # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
-    model = model_prefs.resolve(session_id, attachment_name)
+    # 有任一張圖的輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
+    model = model_prefs.resolve(session_id, attachment_names)
     cmd = [
         PYTHON_BIN, AGENT_TURN_SCRIPT,
         f"--model={model}",
@@ -474,8 +488,14 @@ def _ingest(m):
         ack_message(mid)  # discarding — release the lease
         return
     content = m.get("content") or ""
-    attachment = m.get("attachment") if isinstance(m.get("attachment"), dict) else None
-    if not session_id or (not content and attachment is None):
+    # 2 個以上走 `attachments`(api 只送給 poll 帶 att=2 的 bridge),1 個照舊 `attachment`。
+    # 清單形狀不對也不丟:每個壞元素算一個接收失敗,讓 agent 告訴用戶。
+    files = m.get("attachments")
+    if files is None:
+        files = [m["attachment"]] if isinstance(m.get("attachment"), dict) else []
+    elif not isinstance(files, list):
+        files = [None]
+    if not session_id or (not content and not files):
         ack_message(mid)
         return
     if mid and _already_have(mid):
@@ -485,22 +505,24 @@ def _ingest(m):
         print(f"[web_bridge] duplicate delivery of {mid} dropped", file=sys.stderr)
         ack_message(mid)
         return
-    attachment_name = None
-    if attachment is not None:
-        saved = save_attachment(attachment)
+    attachment_names, notes = [], []
+    for f in files:
+        saved = save_attachment(f) if isinstance(f, dict) else None
         if saved:
-            attachment_name = saved
+            attachment_names.append(saved)
             note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
         else:
             # 接收失敗也照常跑 turn——讓 agent 告知用戶重傳,不准靜默吞掉
             note = "[用戶附了一個檔案但接收失敗，請告知用戶重傳]"
-        content = f"{content}\n{note}" if content else note
+        notes.append(note)
+    if notes:
+        content = "\n".join([content] * bool(content) + notes)
     ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
     entry = {
         "message_id": mid,
         "session_id": session_id,
         "content": content,
-        "attachment_name": attachment_name,
+        "attachment_names": attachment_names,
         "viewing_strategy": ctx.get("viewing_strategy"),
         "viewing_tab": ctx.get("viewing_tab"),
         "viewing_view": ctx.get("viewing_view"),
@@ -518,6 +540,16 @@ def _ingest(m):
     ack_message(mid)
     if dup:
         print(f"[web_bridge] duplicate delivery of {mid} dropped", file=sys.stderr)
+
+
+def _entry_attachment_names(entry):
+    """Queue entries filed before 1.1.124 carry `attachment_name` (one string or None);
+    web_queue.json can still hold them across the update that swapped this bridge in."""
+    names = entry.get("attachment_names")
+    if isinstance(names, list):
+        return [n for n in names if isinstance(n, str)]
+    name = entry.get("attachment_name")
+    return [name] if isinstance(name, str) and name else []
 
 
 def _remember(mid):
@@ -553,7 +585,7 @@ def _worker(session_id, entry, slot):
         run_agent_turn(session_id, entry.get("content") or "",
                        viewing_strategy=entry.get("viewing_strategy"),
                        viewing_tab=entry.get("viewing_tab"),
-                       attachment_name=entry.get("attachment_name"),
+                       attachment_names=_entry_attachment_names(entry),
                        viewing_view=entry.get("viewing_view"),
                        ui_lang=entry.get("ui_lang"), stop_file=stop_file)
     except Exception as e:
