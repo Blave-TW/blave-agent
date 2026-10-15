@@ -6,7 +6,7 @@ Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> Esta traducción parte del README en inglés en el commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) y cubre solo las secciones que cambian poco. Las novedades, los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
+> Esta traducción parte del README en inglés en el commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) y cubre solo las secciones que cambian poco. Los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -92,7 +92,7 @@ La interfaz sigue el idioma del sistema (inglés o chino tradicional). Para forz
 
 ## Novedades
 
-Las novedades están en la versión en inglés: [README.md › News](README.md#news)
+- **2026-10-15** — Escritorio 0.1.24: página Portfolio (pestañas Allocation y Optimize), con Optimize y su backtest walk-forward también en una máquina en la nube; sin exchange conectado muestra igual la posición de señal total por instrumento, para operar a mano; Optimize dimensiona por Target Volatility, Max Drawdown o Fixed Leverage; «Update performance» ahora procesa varias estrategias a la vez, y Optimize actualiza antes solo las que llevan más de 6 horas sin actualizarse; al vincular un bróker, Auto trading te lleva a Portfolio y, una vez guardados los importes, de vuelta a Start trading; desvincular un exchange conserva tu cartera y tus importes: al volver a vincularlo, guarda una vez en Portfolio para seguir operando; una estrategia calcula su señal al instante con la última vela cerrada en lugar de esperar a la siguiente; una estrategia de futuros del índice de Taiwán cambia entre TXF, MXF y TMF, también con el trading detenido, la posición abierta se traslada al nuevo contrato y los lotes objetivo se redondean primero, así medio lote ya no alterna compra y venta; guardar la configuración de órdenes o sale completo o no cambia nada; Settings › General añade Display currency; las tarjetas de resultados van encima del texto de la respuesta; la primera instalación en Mac ya no pregunta si mover la app a Aplicaciones mientras el motor se está instalando, y si el traslado necesita permiso del sistema, la app te dice qué hacer.
 
 ## Seguridad y límites
 

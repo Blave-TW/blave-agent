@@ -7,7 +7,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> 本文译自英文版 README 的 commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md)，只涵盖变动较少的段落；最新消息、交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md)，只涵盖变动较少的段落；交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -93,7 +93,7 @@ npm.cmd start
 
 ## 最新消息
 
-最新消息见英文版：[README.md › News](README.md#news)。
+- **2026-10-15**——电脑版 0.1.24：新增「策略组合」页（「配置」「优化」两个分页），云端主机也能跑优化与移动窗格回测；没连交易所也看得到各商品的总信号仓位，照着自己下单；优化的仓位大小可选目标波动、最大回撤、固定杠杆；「更新绩效」改为同时跑几支，优化前只更新超过 6 小时没更新的策略；绑好券商后，自动下单页带你到策略组合，存好金额再带你回去启动下单；解除绑定交易所不再清掉策略组合与金额，重新绑定后到策略组合存一次就能继续下单；策略用最新收好的 K 线立刻算信号，不再等下一根；台指期策略可切换大台、小台、微台，停止下单时也能换，有仓位会自动换仓，目标口数先取整，不再为半口来回买卖；保存下单设置改为全部成功或全部不动；「设置 › 一般」新增「显示币别」；结果卡移到回复文字上方；Mac 首次安装时，引擎还在安装就不问要不要移到「应用程序」，需要系统授权时改为告诉你自己怎么移。
 
 ## 安全与边界
 

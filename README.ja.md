@@ -6,7 +6,7 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> この文書は英語版 README の commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) から翻訳したもので、変更の少ない節だけを訳しています。最新情報、対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
+> この文書は英語版 README の commit [`08cf860`](https://github.com/Blave-TW/blave-agent/blob/08cf860/README.md) から翻訳したもので、変更の少ない節だけを訳しています。対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
@@ -92,7 +92,7 @@ npm.cmd start
 
 ## 最新情報
 
-最新情報は英語版をご覧ください：[README.md › News](README.md#news)
+- **2026-10-15** — デスクトップ版 0.1.24：Portfolio ページ（Allocation／Optimize の 2 タブ）を追加し、Optimize とそのウォークフォワード・バックテストはクラウドマシンでも実行可能。取引所に未接続でも銘柄ごとの合計シグナルポジションが見え、それを見て自分で発注できます；Optimize のポジションサイズは Target Volatility・Max Drawdown・Fixed Leverage から選択；「Update performance」は複数の戦略を同時に実行し、Optimize の前には最終更新から 6 時間を超えた戦略だけを更新；ブローカーを接続すると Auto trading から Portfolio へ案内し、金額を保存したら Start trading へ戻ります；取引所の接続を解除してもポートフォリオと金額は残り、再接続後に Portfolio で一度保存すれば取引を再開できます；戦略は次の足を待たず、確定済みの最新の足ですぐシグナルを計算；台湾指数先物の戦略は TXF・MXF・TMF を切り替えられ（取引停止中も可）、建玉は新しい限月へ自動で乗り換え、目標枚数を先に丸めるので半枚分の売買を繰り返しません；発注設定の保存は全部成功するか何も変えないかのどちらかに；Settings › General に Display currency を追加；結果カードは返信テキストの上に；Mac の初回インストールでは、エンジンのインストール中に「アプリケーション」への移動を尋ねなくなり、システムの許可が要る場合は自分で移す手順を表示します。
 
 ## 安全性と限界
 
