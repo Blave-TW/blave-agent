@@ -161,8 +161,8 @@ ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ displ
     && /function busyOpenReceipts\(b\) \{\n  b\.el\.classList\.add\("is-open"\); b\.head\.setAttribute\("aria-expanded", "true"\);\n  busyHoldReason\(b\);\n\}/.test(src));
   ok("chevron 是 .cv7(7px 盒、1.6px),即時與重開畫回同一顆;還沒有步驟時隱藏", (src.match(/className = "think-chev cv7"/g) || []).length === 2 && css.includes(".think-chev { color: var(--ink-3); visibility: hidden; }")
     && css.includes(".think-head.has-reason .think-chev { visibility: visible; }") && !/\.think-chev \{[^}]*width: 5px/.test(css));
-  ok("熱區:整列寬 × 32(錨在 .think-indicator),沒東西可展開就沒有;hover 字與 chevron 提亮到 --ink", /\.think-indicator \{\n  position: relative;/.test(css)
-    && css.includes('.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -3px; height: 32px; }')
+  ok("熱區:整列寬 × 44(上下各擴 9;錨在 .think-indicator),沒東西可展開就沒有;hover 字與 chevron 提亮到 --ink", /\.think-indicator \{\n  position: relative;/.test(css)
+    && css.includes('.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -9px; height: 44px; }')
     && css.includes(".think-head.has-reason:hover .think-verb, .think-head.has-reason:hover .think-chev { color: var(--ink); }") && !/\.think-head \{[^}]*position:/.test(css));
   ok("記號欄固定 8 寬:正在跑那一列記號 4＋右邊補 4;那一列用主墨", css.includes(".think-step.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }")
     && css.includes(".think-step.is-run .think-step-verb, .think-step.is-run .think-step-time { color: var(--ink); }")); }
@@ -241,16 +241,18 @@ ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;�
   const startSrc = cut(src, "function busyStart(", "/* 正在跑的那一步"), stepSrc = cut(src, "function busyStep(", "/* `done` 只是回頭補"), tickSrc = cut(src, "function busyStepTick(", "/* 階段清單:兩列以上"),
     endSrc = cut(src, "function busyEnd(", "/* 思考文字每一輪"), foldSrc = cut(src, "function receiptFold(", "function addHistoryAi("), paintSrc = cut(src, "function phasesPaint(", "function busyHasFold(");
   const pushAt = stepSrc.indexOf("phaseSteps.push");
-  ok("接線:busyStart 在 head 與 wrap 之間放 <ol class=think-phases aria-hidden hidden>;busyStep push {kind, obj = kind_obj, start}(不拿 summary);busyStepTick(同一個 timer)叫 phasesSync;busyEnd 記 phaseEnd 再 phasesSync;receiptFold 走同一支 phasesFrom、start 全 null",
-    /el\.append\(head, phases, wrap\);/.test(startSrc) && /phases\.setAttribute\("aria-hidden", "true"\); phases\.hidden = true;/.test(startSrc) && /phaseSteps: \[\], phaseEnd: 0/.test(startSrc)
+  ok("接線:busyStart 把 <ol class=think-phases hidden> 放進 .think-fold、排在收據前(一塊展開區,不掛 aria-hidden),head 的 aria-controls 指向那塊;busyStep push {kind, obj = kind_obj, start}(不拿 summary);busyStepTick(同一個 timer)叫 phasesSync;busyEnd 記 phaseEnd 再 phasesSync;receiptFold 走同一支 phasesFrom、start 全 null",
+    /fold\.append\(phases, stepsEl, reason\);/.test(startSrc) && /el\.append\(head, wrap\);/.test(startSrc) && /phases\.className = "think-phases"; phases\.hidden = true;/.test(startSrc) && !/aria-hidden", "true"\); phases/.test(startSrc + foldSrc)
+    && /wrap\.id = "think-fold-" \+ \(\+\+thinkFoldSeq\); head\.setAttribute\("aria-controls", wrap\.id\);/.test(startSrc) && /wrap\.id = "think-fold-" \+ \(\+\+thinkFoldSeq\); head\.setAttribute\("aria-controls", wrap\.id\);/.test(foldSrc) && /phaseSteps: \[\], phaseEnd: 0/.test(startSrc)
     && /busy\.phaseSteps\.push\(\{ kind: k\.kind, obj: k\.obj \|\| actTabHost\(k\.tab\), start: Date\.now\(\) \}\)/.test(stepSrc) && pushAt > 0 && !/summary/.test(stepSrc.slice(pushAt, pushAt + 100))
     && /phasesSync\(busy\);/.test(tickSrc) && /busyStepTick\(\); actApply\(\); \}, 1000\);/.test(src) && /b\.phaseEnd = Date\.now\(\); phasesSync\(b\);/.test(endSrc)
-    && /phasesFrom\(steps\.filter\(\(st\) => !st\.more\)\.map\(\(st\) => \(\{ kind: actKindOf\(\{ tool: st\.tool \}\)\.kind, obj: "", start: null \}\)\), null\)/.test(foldSrc) && /el\.append\(head, phases, wrap\);/.test(foldSrc));
+    && /phasesFrom\(steps\.filter\(\(st\) => !st\.more\)\.map\(\(st\) => \(\{ kind: actKindOf\(\{ tool: st\.tool \}\)\.kind, obj: "", start: null \}\)\), null\)/.test(foldSrc) && /fold\.append\(phases, list\); wrap\.appendChild\(fold\); el\.append\(head, wrap\);/.test(foldSrc));
   ok("畫列:記號沿用 .think-step-mark、動詞 phase.*(data-i18n 給切語言掃)、受詞 mono(搜尋字除外)、時長 fmtDur、進行中那列 is-run;不埋點",
     /mark\.className = "think-step-mark"/.test(paintSrc) && /const key = "phase\." \+ r\.phase; verb\.dataset\.i18n = key; verb\.textContent = t\(key\);/.test(paintSrc) && /r\.kind === "search" \? "" : " mono"/.test(paintSrc)
     && /fmtDur\(\(stop - r\.start\) \/ 1000\)/.test(paintSrc) && /running && i === rows\.length - 1 \? " is-run" : ""/.test(paintSrc) && !/trackFeature|feature_used/.test(paintSrc + tickSrc));
-  ok("CSS:清單撐滿(align-self stretch、左縮 15)、列同收據列(12px、上下 3)、收起後只在展開時出現、進行中記號半截主墨",
-    /\.think-phases \{ align-self: stretch;[^}]*margin: 0 0 0 15px;/.test(css) && /\.think-phases\[hidden\], \.think-indicator\.is-done:not\(\.is-open\) \.think-phases \{ display: none; \}/.test(css)
+  ok("CSS:清單左縮 15、列同收據列(12px、上下 3)、沒有另外的顯示規則(跟著 .think-fold 開合)、chevron 翻轉只綁 aria-expanded、進行中記號半截主墨",
+    /\.think-phases \{[^}]*margin: 0 0 var\(--space-4\) 15px;/.test(css) && !/\.think-phases[^{]*\{[^}]*display: none/.test(css)
+    && css.includes('.think-head[aria-expanded="true"] .think-chev { transform: translateY(2px) rotate(-135deg); }') && !/\.is-open \.think-chev/.test(css)
     && /\.think-phase \{ display: flex;[^}]*padding: 3px 0; font-size: 12px;/.test(css) && /\.think-phase\.is-run \.think-step-mark \{ width: 4px; margin-right: var\(--space-4\); background: var\(--ink\); \}/.test(css)
     && /\.think-phase-time \{[^}]*tabular-nums/.test(css));
 }

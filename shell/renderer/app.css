@@ -337,8 +337,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
 .think-head.no-toggle { cursor: default; }
-/* 熱區:整列寬 × 32(視覺列高仍 26)——錨在 .think-indicator,不是字的寬度;沒東西可展開就沒有熱區 */
-.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -3px; height: 32px; }
+/* 熱區:整列寬 × 44(視覺列高仍 26,上下各擴 9;上一則 .msg 下緣 24、收起時下方 gap 4 + margin ≥ 8,伸不進相鄰訊息)——錨在 .think-indicator,不是字的寬度;沒東西可展開就沒有熱區 */
+.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -9px; height: 44px; }
 .think-head .think-verb, .think-head .think-chev { transition: color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
 .think-head.has-reason:hover .think-verb, .think-head.has-reason:hover .think-chev { color: var(--ink); }
 /* 回合結束:tick 條收掉——凍結的秒數已經說了花多久,停住的條子是同一件事講兩次。
@@ -358,7 +358,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 狀態列的 chevron 就是 .cv7;字到 chevron 的 8 是 .think-head 的 gap */
 .think-chev { color: var(--ink-3); visibility: hidden; }
 .think-head.has-reason .think-chev { visibility: visible; }
-.think-indicator.is-open .think-chev { transform: translateY(2px) rotate(-135deg); }
+.think-head[aria-expanded="true"] .think-chev { transform: translateY(2px) rotate(-135deg); }
 
 /* 展開面板:grid-rows 0fr↔1fr 收合(動到面板的真實高度,不用猜 max-height)。
    wrap 只能有一個 grid row(.think-fold)——多一個子元素會掉進 implicit auto row,
@@ -405,10 +405,9 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   font-variant-numeric: tabular-nums;
 }
 
-/* 階段清單(canon › 回合狀態列 9):回合裡出現第二種階段時在狀態列下直接長出來、不用點開;列同收據列(12px、上下 3、左縮 15)。
-   回合結束收起,展開時先列階段、下面才是逐步收據。記號沿用收據的 8×2 短劃,進行中半截、主墨 */
-.think-phases { align-self: stretch; list-style: none; margin: 0 0 0 15px; padding: 0; width: calc(100% - 15px); }
-.think-phases[hidden], .think-indicator.is-done:not(.is-open) .think-phases { display: none; }
+/* 階段清單(canon › 回合狀態列 9):回合裡出現第二種階段才有;住在 .think-fold 裡、排在逐步收據上面,跟著 ⌄ 開合(進行中也預設收著)。
+   列同收據列(12px、上下 3、左縮 15)。記號沿用收據的 8×2 短劃,進行中半截、主墨 */
+.think-phases { list-style: none; margin: 0 0 var(--space-4) 15px; padding: 0; width: calc(100% - 15px); }
 .think-phase { display: flex; align-items: center; gap: var(--space-8); padding: 3px 0; font-size: 12px; line-height: 1.5; }
 .think-phase-verb { flex: none; color: var(--ink-2); }
 .think-phase-obj { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }

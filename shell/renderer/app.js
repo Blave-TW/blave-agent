@@ -1897,11 +1897,12 @@ function receiptFold(steps) {
   const chev = document.createElement("span"); chev.className = "think-chev cv7"; chev.setAttribute("aria-hidden", "true");
   head.append(verb, chev);
   // 階段:同一支 phasesFrom。收據只有工具名(Bash 全 unknown)、沒有開始時間——多半長不出清單,長出來也不畫時長(canon 9:不推算)
-  const phases = document.createElement("ol"); phases.className = "think-phases"; phases.setAttribute("aria-hidden", "true");
+  const phases = document.createElement("ol"); phases.className = "think-phases";
   const rows = phasesFrom(steps.filter((st) => !st.more).map((st) => ({ kind: actKindOf({ tool: st.tool }).kind, obj: "", start: null })), null);
   phases.hidden = rows.length < 2;
   if (!phases.hidden) phasesPaint(phases, rows, 0, false);
   const wrap = document.createElement("div"); wrap.className = "think-reason-wrap";
+  wrap.id = "think-fold-" + (++thinkFoldSeq); head.setAttribute("aria-controls", wrap.id);
   const fold = document.createElement("div"); fold.className = "think-fold";
   const list = document.createElement("ul"); list.className = "think-steps";
   const sides = new Set();
@@ -1918,7 +1919,7 @@ function receiptFold(steps) {
     list.appendChild(li);
   });
   el.classList.toggle("has-both", sides.size > 1);
-  fold.appendChild(list); wrap.appendChild(fold); el.append(head, phases, wrap);
+  fold.append(phases, list); wrap.appendChild(fold); el.append(head, wrap);
   head.addEventListener("click", () => { const open = el.classList.toggle("is-open"); head.setAttribute("aria-expanded", open ? "true" : "false"); });
   return el;
 }
@@ -2286,6 +2287,7 @@ function addImage(src, caption) {
 const TICK_WINDOW = 8;   // 窗口內看得到的格數
 const TICK_PITCH = 6;    // 每格 px(2px 條 + 4px 間距),與 CSS 同值
 let busy = null;
+let thinkFoldSeq = 0;   // aria-controls:每個回合的展開區各一個 id
 
 function motionBaseMs() {
   const v = getComputedStyle(document.documentElement)
@@ -2515,12 +2517,13 @@ function busyStart() {
   stepsEl.className = "think-steps";
   const reason = document.createElement("div");
   reason.className = "think-reason";
-  fold.append(stepsEl, reason);
-  wrap.appendChild(fold);
-  // 階段清單:跑著時在狀態列下直接長出來(不用點開);回合結束收起,展開時排在逐步收據上面(CSS)。不在 role=status 裡
+  // 階段清單跟收據、思考文字住同一塊展開區(spec-turn-receipt-collapse):一顆 ⌄ 管全部,進行中也預設收著。換階段的播報只走 role=status 的 label
   const phases = document.createElement("ol");
-  phases.className = "think-phases"; phases.setAttribute("aria-hidden", "true"); phases.hidden = true;
-  el.append(head, phases, wrap);
+  phases.className = "think-phases"; phases.hidden = true;
+  fold.append(phases, stepsEl, reason);
+  wrap.appendChild(fold);
+  wrap.id = "think-fold-" + (++thinkFoldSeq); head.setAttribute("aria-controls", wrap.id);
+  el.append(head, wrap);
   head.addEventListener("click", () => {
     if (head.classList.contains("no-toggle")) return;
     const open = el.classList.toggle("is-open");
@@ -2620,7 +2623,7 @@ function busyEnd(faulted) {
   if (!busy) return;
   const b = busy; busy = null;
   clearInterval(b.timer); clearTimeout(ACT.timer);
-  b.phaseEnd = Date.now(); phasesSync(b);   // 最後一階段的時長凍結在收尾那一刻;收起後只在展開時出現(CSS)
+  b.phaseEnd = Date.now(); phasesSync(b);   // 最後一階段的時長凍結在收尾那一刻
   const hasFold = b.stepsEl.children.length > 0 || b.reason.textContent.trim() !== "";
   if (hasFold) {
     // 留下來:移到這一輪回覆的**上面**(思考在前、結論在後),動詞改成「思考過程」,
@@ -2631,6 +2634,8 @@ function busyEnd(faulted) {
     b.verb.textContent = t("turn.process"); b.obj.textContent = ""; b.obj.hidden = true;
     b.elapsed.textContent = fmtDur((Date.now() - b.start) / 1000);
     if (b.anchor && b.anchor.parentNode) b.anchor.parentNode.insertBefore(b.el, b.anchor);
+    // 結束一律收起(回覆出來了,焦點在回覆);出錯的回合例外,收據自己攤開
+    b.el.classList.remove("is-open"); b.head.setAttribute("aria-expanded", "false");
     if (faulted && b.stepsEl.children.length) busyOpenReceipts(b);
     return;
   }
