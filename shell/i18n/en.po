@@ -388,7 +388,7 @@ msgid "fault.noCreditBtn"
 msgstr "Add Credit"
 
 msgid "conn.expired"
-msgstr "Your Blave sign-in is no longer valid. Sign in again to continue."
+msgstr "Your Blave sign-in has expired. Please sign in again."
 
 msgid "eng.head"
 msgstr "Setting up this computer (first run only)"
@@ -1547,9 +1547,6 @@ msgstr "Pause and close positions"
 msgid "tr.startWarn1"
 msgstr "Real orders resume immediately, moving your strategies’ positions to the current targets."
 
-msgid "tr.unmanaged"
-msgstr "Outside Blave"
-
 msgid "tr.unmanagedTip"
 msgstr "Blave didn’t open this position; reconciling never touches it."
 
@@ -1682,9 +1679,6 @@ msgstr "Order sizes are derived from your exchange equity, and this cloud machin
 msgid "tr.cloud.onboardExtra"
 msgstr "The exchange connected on this computer doesn’t carry over. The cloud needs its own connection."
 
-msgid "tr.strategies"
-msgstr "Strategies"
-
 msgid "tr.zeroMeansOff"
 msgstr "0 means no orders — the strategy still runs and computes its signal; it just holds no position."
 
@@ -1700,9 +1694,6 @@ msgstr "Amount"
 msgid "tr.col.signal"
 msgstr "Signal"
 
-msgid "tr.amountFoot"
-msgstr "Target position = amount × signal. A signal of 1 is full size; some strategies go above 1."
-
 msgid "tr.net.tag"
 msgstr "{n} strategies"
 
@@ -1714,9 +1705,6 @@ msgstr "Net 0: long {l} and short {s} cancel out, so there's no {base} position 
 
 msgid "tr.net.sumOff"
 msgstr "Net {t}: long {l}, short {s}; {m} cancels out."
-
-msgid "tr.net.foot"
-msgstr "Strategies on the same symbol are added up and only the net is traded; opposite directions cancel out."
 
 msgid "tr.col.targetPos"
 msgstr "Target position"
@@ -1742,17 +1730,11 @@ msgstr "≈ {amt} TWD notional"
 msgid "tr.typecPending"
 msgstr "Holdings appear after the next run"
 
-msgid "tr.noSignalYet"
-msgstr "No signal yet"
-
 msgid "tr.txfConfirmRef"
 msgstr "{prod} ≈ {amt} TWD"
 
 msgid "tr.col.target"
 msgstr "Target"
-
-msgid "tr.col.actual"
-msgstr "Actual"
 
 msgid "tr.col.diff"
 msgstr "Difference"
@@ -1788,16 +1770,16 @@ msgid "tr.pick.twdKeep"
 msgstr "Paper trading does not support TWD-priced instruments yet; once unchecked, it can’t be added back"
 
 msgid "tr.pick.txf"
-msgstr "統一期貨 only trades Taiwan index futures (TXF / MXF / TMF)"
+msgstr "{venue} only trades Taiwan index futures (TXF / MXF / TMF)"
 
 msgid "tr.pick.txfKeep"
-msgstr "統一期貨 only trades Taiwan index futures (TXF / MXF / TMF); once unchecked, it can’t be added back"
+msgstr "{venue} only trades Taiwan index futures (TXF / MXF / TMF); once unchecked, it can’t be added back"
 
 msgid "tr.typeB.rejected"
-msgstr "{name}: No fixed run interval, so for now it runs automatically only in the cloud. Uncheck it in Pick strategies, then save."
+msgstr "“{name}”{more}: No fixed run interval, so for now it runs automatically only in the cloud. Uncheck it in Pick strategies, then save."
 
 msgid "tr.notTxf.rejected"
-msgstr "{name}: not a Taiwan index futures strategy (TXF / MXF / TMF), and 統一期貨 trades nothing else. Uncheck it in Pick strategies, then save."
+msgstr "“{name}”{more}: not a Taiwan index futures strategy (TXF / MXF / TMF), and {venue} trades nothing else. Uncheck it in Pick strategies, then save."
 
 msgid "tr.gateHint"
 msgstr "Below the {m} {c} minimum entry — no position will open"
@@ -1829,9 +1811,6 @@ msgstr "Mini"
 msgid "tr.txfProd.txf"
 msgstr "Full-size"
 
-msgid "tr.unsaved"
-msgstr "Amounts not saved yet — they take effect on Save."
-
 msgid "tr.revert"
 msgstr "Revert"
 
@@ -1842,10 +1821,10 @@ msgid "tr.saving"
 msgstr "Saving…"
 
 msgid "tr.saved"
-msgstr "Saved — this computer now uses the new amounts."
+msgstr "Saved"
 
 msgid "tr.saveTitle"
-msgstr "Confirm trade amounts"
+msgstr "Confirm amounts"
 
 msgid "tr.saveBlankLots"
 msgstr "{names}: a blank lot count is saved as 0 — this strategy won’t place orders."
@@ -1858,25 +1837,7 @@ msgid "tr.cfTagRemove"
 msgstr "remove"
 
 msgid "tr.saveWarn"
-msgstr "Once saved, the order engine reconciles to these amounts — orders may fire immediately."
-
-msgid "tr.exchPositions"
-msgstr "Exchange positions"
-
-msgid "tr.threshold"
-msgstr "What every strategy on this symbol adds up to, against what your exchange account actually holds. Too small a difference means no order."
-
-msgid "tr.posEmpty"
-msgstr "No open positions."
-
-msgid "tr.noPositions"
-msgstr "No positions yet — every strategy's order amount is 0. Set an amount above and check back."
-
-msgid "tr.noReconcile"
-msgstr "No reconcile yet — actual positions appear once auto-trading runs."
-
-msgid "tr.gateFootLead"
-msgstr "Skipped this round: "
+msgstr "Orders may fire right after saving."
 
 msgid "tr.gateFootEntry"
 msgstr "{sym} difference under {m}"
@@ -1889,9 +1850,6 @@ msgstr "{sym} difference within the drift band (under {m})"
 
 msgid "tr.orderFailed"
 msgstr "Order failed: {sym} — {err}"
-
-msgid "tr.orderFailedLast"
-msgstr "Last order failed: {sym} — {err}"
 
 msgid "tr.account"
 msgstr "Account"
@@ -1999,10 +1957,10 @@ msgid "tr.unbindDescPaper"
 msgstr "Unbind to connect a real exchange instead."
 
 msgid "tr.unbindWarn"
-msgstr "This removes this account’s login details from this computer — the order engine can no longer trade with it. Your order settings are also cleared."
+msgstr "This removes this account’s login details from this computer — the order engine can no longer trade with it. Your portfolio and amounts are kept; after you bind again, save once in Portfolio to resume trading."
 
 msgid "tr.unbindWarnPaper"
-msgstr "Your order settings are cleared. If you connect paper trading again, the paper account starts fresh at 100,000 USDT — current positions and history don’t carry over."
+msgstr "Your portfolio and amounts are kept; after you bind again, save once in Portfolio to resume trading. If you bind paper trading again, the paper account’s equity and positions start over; trade history is kept."
 
 msgid "tr.ov.equity"
 msgstr "Total equity"
@@ -2409,7 +2367,7 @@ msgid "env.empty.starting"
 msgstr "The cloud machine is starting, usually about a minute. This page changes to the cloud’s content once it is up."
 
 msgid "env.empty.relogin"
-msgstr "Sign in to Blave again to see your cloud machine. Chats and strategies on this computer aren’t affected."
+msgstr "Your Blave sign-in has expired. Please sign in again. Chats and strategies on this computer aren’t affected."
 
 msgid "env.empty.unreach"
 msgstr "The cloud’s state can’t be read right now. Trading already running in the cloud isn’t affected."
@@ -2948,7 +2906,7 @@ msgid "src.delBody2"
 msgstr "Used by: {names}. After deletion they can’t fetch this data in backtests or live runs."
 
 msgid "src.delBlocked"
-msgstr "It can’t be deleted right now. {name} is trading and uses {source}; without the key its next run can’t fetch the data. Set that strategy’s amount to 0 under Auto trading › Positions first, then come back."
+msgstr "It can’t be deleted right now. {name} is trading and uses {source}; without the key its next run can’t fetch the data. Set that strategy’s amount to 0 under Portfolio first, then come back."
 
 msgid "src.gotIt"
 msgstr "Got It"
@@ -3100,18 +3058,6 @@ msgstr "The cloud is now using the new amounts."
 msgid "tr.cloud.saveStale"
 msgstr "The cloud’s state isn’t current, so saving now could overwrite amounts changed elsewhere. You can save once this page updates."
 
-msgid "tr.cloud.saveLive.h"
-msgstr "The cloud is trading."
-
-msgid "tr.cloud.saveLive.b"
-msgstr "Once the machine receives the new amounts, its next reconcile adjusts positions to them and orders may fill right away, whether or not this computer is on."
-
-msgid "tr.cloud.saveIdle"
-msgstr "The cloud isn’t trading right now. The new amounts are stored on the machine and used once you press Start trading."
-
-msgid "tr.cloud.saveLag"
-msgstr "This page shows the new amounts after the machine’s next report."
-
 msgid "tr.stopAfterStart"
 msgstr "The start command has been sent and may already be in effect. The pause runs after it, so trading ends up paused. Any orders placed before then leave their positions open."
 
@@ -3143,10 +3089,10 @@ msgid "cdel.only"
 msgstr "Only the cloud copy is deleted. Strategies on this computer aren’t affected."
 
 msgid "cdel.inUse"
-msgstr "This strategy is still in the cloud’s trading setup, so it can’t be deleted. Remove it under Auto trading › Positions first, then come back."
+msgstr "This strategy is still in the cloud’s trading setup, so it can’t be deleted. Remove it under Portfolio first, then come back."
 
 msgid "cdel.goPos"
-msgstr "Open Positions"
+msgstr "Open Portfolio"
 
 msgid "cdel.pending"
 msgstr "Deleting…"
@@ -3191,7 +3137,7 @@ msgid "ho.noteB.down"
 msgstr "The agent brings it back and checks that it starts on this computer."
 
 msgid "strat.delInPf"
-msgstr "This strategy is still in your auto-trading portfolio, so it can’t be deleted. Remove it under Auto trading › Positions first, then come back."
+msgstr "This strategy is still in your auto-trading portfolio, so it can’t be deleted. Remove it under Portfolio first, then come back."
 
 msgid "strat.delCfgUnread"
 msgstr "This computer’s trading settings couldn’t be read, so it isn’t clear whether this strategy is in the portfolio. Nothing was deleted; try again in a moment."
@@ -3312,7 +3258,7 @@ msgid "tr.cloud.cxUnknown"
 msgstr "The key was sent, but the cloud machine hasn’t reported the check result. Close this and watch this page: it switches to the trading settings if the connection went through. If not, connect again."
 
 msgid "tr.cloud.unbindWarn"
-msgstr "This removes the exchange keys from the cloud machine. Cloud trading pauses at once, and positions stay at the exchange with nothing managing them. Your order settings are also cleared; you’ll need to set them up again after reconnecting."
+msgstr "This removes the exchange keys from the cloud machine. Cloud trading pauses at once, and positions stay at the exchange with nothing managing them. Your portfolio and amounts are kept; after you reconnect, save once in Portfolio to resume trading."
 
 msgid "tr.cloud.pendRow"
 msgstr "Sent. Waiting for the cloud machine to report back."
@@ -3398,14 +3344,8 @@ msgstr "No orders are going out — exits and stops won’t run either. Once the
 msgid "tr.cloud.closeAllWarn2Unconfirmed"
 msgstr "Strategy amounts are kept: after you update to the latest version and press Start trading, positions are rebuilt to those amounts. If you don’t want that, zero the amounts first."
 
-msgid "tr.cloud.saveIdleUnconfirmed"
-msgstr "The cloud is paused. The new amounts are stored on the machine and used after you update to the latest version and press Start trading."
-
 msgid "tr.cloud.recomputing"
 msgstr "Strategies are recomputing on post-restart data. Catch up becomes available when they finish; close this box and open it again then."
-
-msgid "tr.orderFailedLastWhy"
-msgstr "Last order failed: {why}"
 
 msgid "tr.cloud.haltReasonUnconfirmed"
 msgstr "An old version of the trading program may still be running. Press Update cloud machine first to bring the machine up to date; if you’re not sure why it paused, ask the agent in chat."
@@ -3423,7 +3363,7 @@ msgid "tr.cloud.cxWaiting"
 msgstr "Waiting for the machine to confirm, usually a minute or two. This page switches to order settings on its own; nothing to do."
 
 msgid "tr.startOffNoAmt"
-msgstr "No strategy has an amount, so there’s nothing to start. Set an amount under Positions first."
+msgstr "No strategy has an amount yet. Set one under Portfolio."
 
 msgid "tr.startOffNoAmtRelease"
 msgstr "No strategy has an amount, so there’s nothing to start. To let your own strategy code place orders again, press Release pause."
@@ -3698,10 +3638,7 @@ msgid "tr.pick"
 msgstr "Pick strategies"
 
 msgid "tr.pick.title"
-msgstr "Pick trading strategies"
-
-msgid "tr.pick.hint"
-msgstr "Check the strategies that should enter the amounts table; leave experiments unchecked."
+msgstr "Pick strategies"
 
 msgid "tr.pick.ok"
 msgstr "Done"
@@ -6830,13 +6767,13 @@ msgid "pres.s.probeDone"
 msgstr "Futures account"
 
 msgid "pres.s.worker"
-msgstr "Start the order program"
+msgstr "Connect to President"
 
 msgid "pres.s.workerRun"
-msgstr "Starting…"
+msgstr "Connecting…"
 
 msgid "pres.s.workerFail"
-msgstr "The order program couldn’t read the account. Try again; if it still fails, check Settings › Account."
+msgstr "Couldn’t read the President account. Try again; if it still fails, check Settings › Account."
 
 msgid "pres.cert.name"
 msgstr "President certificate"
@@ -7020,9 +6957,6 @@ msgstr "Quit Blave or shut down and orders stop; positions stay at President and
 
 msgid "pres.done.n2"
 msgstr "Blave manages only its own orders and never touches trades you place by hand."
-
-msgid "pres.done.go"
-msgstr "Set up strategy orders"
 
 
 
@@ -7436,3 +7370,561 @@ msgstr "Each period: wallet first, then card. No refund on cancel."
 
 msgid "plan.topupShort"
 msgstr "Under {a} TWD, your card tops up {b} TWD; turn off on the web"
+
+msgid "po.nav"
+msgstr "Portfolio"
+
+msgid "po.tab.cfg"
+msgstr "Allocation"
+
+msgid "po.tab.opt"
+msgstr "Optimize"
+
+msgid "po.secAmounts"
+msgstr "Strategies and Amounts"
+
+msgid "po.signalsPaused"
+msgstr "Signals paused"
+
+msgid "po.mktPortfolio"
+msgstr "Portfolio"
+
+msgid "po.lotsRawTip"
+msgstr "Before rounding: {n} lots"
+
+msgid "po.sigTargets"
+msgstr "Signal positions by instrument"
+
+msgid "po.sigTargetsTip"
+msgstr "Amount × signal summed across the strategies on the same instrument."
+
+msgid "po.actualTip"
+msgstr "What your strategies hold in your {venue} account"
+
+msgid "po.notTradedTip"
+msgstr "{venue} doesn’t trade this instrument"
+
+msgid "po.fogPick"
+msgstr "Pick strategies to set their sizes."
+
+msgid "po.fogStrat"
+msgstr "Strategy {x}"
+
+msgid "tr.fogConnect"
+msgstr "Connect an exchange and your strategies trade on their own."
+
+msgid "tr.cloud.fogConnect"
+msgstr "The cloud machine needs its own exchange connection; once connected, it trades on its own."
+
+msgid "tr.unmanagedTag"
+msgstr "Off-strategy"
+
+msgid "ct.aria"
+msgstr "Contract: {prod}"
+
+msgid "ct.errBad"
+msgstr "Contract not saved — reload and try again"
+
+msgid "ct.errGated"
+msgstr "A strategy is waiting for a new signal — switch after it enters"
+
+msgid "ct.errNotTxf"
+msgstr "This strategy can't switch contracts"
+
+msgid "ct.errParked"
+msgstr "An order is awaiting its fill report — try again shortly"
+
+msgid "ct.errRun"
+msgstr "Start trading to switch contracts"
+
+msgid "ct.errSplit"
+msgstr "Save the contract switch and the lot change separately"
+
+msgid "ct.errUpdate"
+msgstr "Update the machine to switch contracts"
+
+msgid "ct.half"
+msgstr "Now {n} × {prod}; the new lot count wasn't saved"
+
+msgid "ct.rollClosing"
+msgstr "Closing {from}; {to} opens after"
+
+msgid "ct.rollGate"
+msgstr "A strategy on {from} is waiting for a new signal; switches after it enters"
+
+msgid "ct.rollPending"
+msgstr "An order is awaiting its fill report; switches after it reports"
+
+msgid "ct.rollHalted"
+msgstr "Trading is stopped; the roll happens after you start"
+
+msgid "ct.rolling"
+msgstr "Rolling"
+
+msgid "ct.tagClose"
+msgstr "close {prod}"
+
+msgid "mg.apply"
+msgstr "Apply Amounts"
+
+msgid "mg.applyDiffSet"
+msgstr "Strategies differ from the Allocation tab"
+
+msgid "mg.askAgent"
+msgstr "Discuss with the agent"
+
+msgid "mg.askAgentMsg"
+msgstr "I want to design a new portfolio management method (allocator). Let's discuss how to write it."
+
+msgid "mg.beats"
+msgstr "Beats {p}"
+
+msgid "mg.beatsNone"
+msgstr "No overlap period with data for every member — random comparison unavailable"
+
+msgid "mg.beatsNote"
+msgstr "Stats and the random comparison both cover the {n} days from {s} — the all-member overlap minus the initial weight-fitting window."
+
+msgid "mg.btCancel"
+msgstr "Stop"
+
+msgid "mg.btCancelTip"
+msgstr "Stop and clear the result"
+
+msgid "mg.btError"
+msgstr "Backtest failed: {e}"
+
+msgid "mg.btRandom"
+msgstr "{n} random portfolios"
+
+msgid "mg.btRun"
+msgstr "Backtest"
+
+msgid "mg.btRunningAria"
+msgstr "Backtest running"
+
+msgid "mg.btRunningAt"
+msgstr "Backtesting — day {d}/{t}"
+
+msgid "mg.btTip"
+msgstr "Against 1,000 random weightings; runs in the background, switching tabs won't stop it"
+
+msgid "mg.chartAria"
+msgstr "Managed cumulative return versus the random-portfolio p5–p95 band and median"
+
+msgid "mg.chartAriaW"
+msgstr "Top: managed cumulative return versus the random-portfolio p5–p95 band and median. Bottom: stacked area of each member strategy's portfolio weight over time."
+
+msgid "mg.chartCap"
+msgstr "Cumulative Return"
+
+msgid "mg.colCur"
+msgstr "Current"
+
+msgid "mg.colWeight"
+msgstr "Weight"
+
+msgid "mg.equal"
+msgstr "Equal weight"
+
+msgid "mg.equalDesc"
+msgstr "Equal share per strategy; nothing is fitted."
+
+msgid "mg.fund"
+msgstr "Capital"
+
+msgid "mg.fundTip"
+msgstr "Defaults to the total on the Allocation tab"
+
+msgid "mg.gateTip"
+msgstr "Sharpe vs 1,000 random-weight portfolios over the same period. A reference figure — it varies a lot with the period."
+
+msgid "mg.groupBuiltin"
+msgstr "Built-in"
+
+msgid "mg.groupCustom"
+msgstr "Custom"
+
+msgid "mg.legendBand"
+msgstr "Random p5–p95 (all members live)"
+
+msgid "mg.legendManaged"
+msgstr "Managed"
+
+msgid "mg.legendMedian"
+msgstr "Random median"
+
+msgid "mg.legendRest"
+msgstr "{n} others"
+
+msgid "mg.legendWeights"
+msgstr "Weights"
+
+msgid "mg.lookbackRange"
+msgstr "lookback must be an integer from 10 to 5000"
+
+msgid "mg.methodTitle"
+msgstr "Method"
+
+msgid "mg.moreMethods"
+msgstr "Other methods?"
+
+msgid "mg.noFx"
+msgstr "TWD FX rate unavailable — lots can't be converted."
+
+msgid "mg.optDoneToast"
+msgstr "Optimization done — see Weight Allocation on the Optimize tab."
+
+msgid "mg.optError"
+msgstr "Optimize failed: {e}"
+
+msgid "mg.optRun"
+msgstr "Optimize"
+
+msgid "mg.optRunning"
+msgstr "Optimizing…"
+
+msgid "mg.optTip"
+msgstr "Only fills the Allocation column; ask the agent to apply"
+
+msgid "mg.outdated"
+msgstr "This machine's workspace is behind the version that ships strategy management — update it and Optimize is back."
+
+msgid "mg.paramInvalid"
+msgstr "Invalid value: {k}"
+
+msgid "mg.params"
+msgstr "Parameters"
+
+msgid "mg.propTip"
+msgstr "Capital × implied leverage × weight"
+
+msgid "mg.propTipConv"
+msgstr ", converted to each group's unit"
+
+msgid "mg.propTipLots"
+msgstr "; TAIEX futures in lots"
+
+msgid "mg.secAmounts"
+msgstr "Weight Allocation"
+
+msgid "mg.secBt"
+msgstr "Walk-Forward Backtest"
+
+msgid "mg.short"
+msgstr "Not enough history: {n} days ≤ lookback {l} days, {d} days short; backtest disabled"
+
+msgid "mg.shortDismiss"
+msgstr "Not now"
+
+msgid "mg.shortRun"
+msgstr "Use {n} days"
+
+msgid "mg.shortTip"
+msgstr "{n} days of history ≤ lookback {l} days — cannot backtest"
+
+msgid "mg.single"
+msgstr "Only {n} strategy — nothing to compare against random portfolios; backtest disabled"
+
+msgid "mg.singleTip"
+msgstr "Only 1 strategy — nothing to compare against random portfolios"
+
+msgid "mg.slope"
+msgstr "Slope / vol"
+
+msgid "mg.slopeDesc"
+msgstr "Equity-curve slope ÷ volatility; higher score, higher weight"
+
+msgid "mg.stratEmpty"
+msgstr "No backtested strategies on the machine yet"
+
+msgid "mg.tbMethod"
+msgstr "Method"
+
+msgid "mg.tbMethodTip"
+msgstr "Method and parameters; shared by optimize and backtest"
+
+msgid "mg.tbStrat"
+msgstr "Strategies"
+
+msgid "mg.tbStratN"
+msgstr "{n}"
+
+msgid "mg.timeout"
+msgstr "No response from the machine — try again later"
+
+msgid "mg.totalReturn"
+msgstr "Total Return"
+
+msgid "mg.unitDays"
+msgstr "days"
+
+msgid "sz.lev"
+msgstr "Leverage"
+
+msgid "sz.m.lev"
+msgstr "Fixed Leverage"
+
+msgid "sz.m.mdd"
+msgstr "Max Drawdown"
+
+msgid "sz.m.vol"
+msgstr "Target Volatility"
+
+msgid "sz.pv.amt"
+msgstr "Total exposure"
+
+msgid "sz.pv.mdd"
+msgstr "Max drawdown"
+
+msgid "sz.pv.mddTip"
+msgstr "Deepest drawdown over the backtest at current weights; it can get deeper"
+
+msgid "sz.pv.vol"
+msgstr "Annual volatility"
+
+msgid "sz.pv.volTip"
+msgstr "Last {n} days, at current weights"
+
+msgid "sz.t.mdd"
+msgstr "Tolerable drawdown"
+
+msgid "sz.t.vol"
+msgstr "Annual volatility"
+
+msgid "sz.title"
+msgstr "Position Size"
+
+msgid "ct.recordUnreadable"
+msgstr "The contract-roll record can't be read; TAIEX futures trading is paused"
+
+msgid "po.orderFailedRow"
+msgstr "Order failed: {err}"
+
+msgid "po.orderFailedLast"
+msgstr "Last order failed: {err}"
+
+msgid "ct.waitReport"
+msgstr "Wait for the machine to report the last save before switching contracts"
+
+msgid "tr.loadingEngine"
+msgstr "Installing the engine (first launch)"
+
+msgid "tr.loadingEngineUpd"
+msgstr "Updating the engine"
+
+msgid "po.hostOld"
+msgstr "Machine is outdated; computed after update"
+
+msgid "po.diffIdleStart"
+msgstr "Not started; no orders"
+
+msgid "po.diffIdleHalt"
+msgstr "Paused; no orders"
+
+msgid "tr.gateFootLead"
+msgstr "Skipped this round: "
+
+msgid "tr.startPlanN"
+msgstr "Orders follow {n} strategies in Portfolio."
+
+msgid "tr.startPlanOne"
+msgstr "Orders follow {n} strategy in Portfolio, total {total}."
+
+msgid "tr.startPlanNOne"
+msgstr "Orders follow {n} strategy in Portfolio."
+
+msgid "po.manualPart"
+msgstr "Plus manual {n}"
+
+msgid "po.detInclManual"
+msgstr " (incl. manual)"
+
+msgid "pres.done.ok"
+msgstr "Done"
+
+msgid "po.goCfg"
+msgstr "Go to Portfolio"
+
+msgid "tr.startOffNoAmtShort"
+msgstr "No strategy has an amount yet."
+
+msgid "po.goIdle"
+msgstr "Not trading yet"
+
+msgid "po.goHalt"
+msgstr "Trading paused"
+
+msgid "po.goBtn"
+msgstr "Start in Auto trading"
+
+msgid "tr.opt.catchWill"
+msgstr "Will {side} {sym} {n}"
+
+msgid "tr.opt.buy"
+msgstr "buy"
+
+msgid "tr.opt.sell"
+msgstr "sell"
+
+msgid "tr.opt.catchMore"
+msgstr "and {n} more"
+
+msgid "tr.pick.noTxf"
+msgstr "No TAIEX futures strategies yet."
+
+msgid "tr.sigNotYet"
+msgstr "No signal yet: it appears once the next bar closes"
+
+msgid "tr.startOffNoVenueAmt"
+msgstr "No strategy has an amount {venue} can trade yet."
+
+msgid "mg.waitOne"
+msgstr "Waiting for “{name}” to update performance…"
+
+msgid "mg.waitMany"
+msgstr "Waiting for {n} strategies, including “{name}”, to update performance…"
+
+msgid "mg.runNow"
+msgstr "Run with current numbers"
+
+msgid "set.ccy"
+msgstr "Display currency"
+
+msgid "set.ccyFail"
+msgstr "Couldn't switch. Try again later."
+
+msgid "acct.revoked"
+msgstr "Sign-in expired"
+
+msgid "pv.h.revoked"
+msgstr "Please sign in again"
+
+msgid "mg.applyWhyLogin"
+msgstr "Sign in to Blave to get the TWD rate; TAIEX futures lots can’t be converted without it"
+
+msgid "mg.applyWhyFx"
+msgstr "No TWD rate, so TAIEX futures lots can’t be converted"
+
+msgid "mg.applyWhyQuote"
+msgstr "No TAIEX futures quote yet, so lots can’t be converted"
+
+msgid "mg.applyWhySize"
+msgstr "Set the capital and target first"
+
+msgid "mg.applyWhySame"
+msgstr "Suggested amounts match the current ones"
+
+msgid "mg.applyWhyWait"
+msgstr "Waiting for the machine to report…"
+
+msgid "mg.fxCached"
+msgstr "TWD conversions use the {d} rate (≈); signing in updates it"
+
+msgid "tr.marketVenue.rejected"
+msgstr "“{name}”{more}: this exchange can’t trade its market. Taiwan index futures need {president} or {capital}; crypto needs a crypto exchange. Uncheck it in Pick strategies, then save."
+
+msgid "tr.venueCapitalFull"
+msgstr "Capital Futures"
+
+msgid "tr.startOffNoRoute"
+msgstr "After rebinding, save your order settings once in Portfolio first."
+
+msgid "tr.routeSave"
+msgstr "The linked exchange changed: save to route your strategies to the current one."
+
+msgid "tr.needsRouting.rejected"
+msgstr "“{name}”{more} has no exchange yet. Save the order settings once in Portfolio, then start trading."
+
+msgid "tr.haltUnbound"
+msgstr "Paused automatically when the exchange was unbound: no new positions; closes and stops still run."
+
+msgid "tr.haltUnboundOff"
+msgstr "Paused automatically when the exchange was unbound, and the order program isn’t running: no orders at all."
+
+msgid "tr.saveWarnHalted"
+msgstr "Paused: no new positions, but reductions and closes run as soon as you save."
+
+msgid "tr.rejNameSep"
+msgstr "”, “"
+
+msgid "tr.rejMore"
+msgstr " and {n} more"
+
+msgid "tr.marketVenue.crypto"
+msgstr "“{name}”{more} is a {market} strategy, which a crypto exchange can’t trade. Bind a Taiwan futures broker, or uncheck it in Pick strategies, then save."
+
+msgid "tr.mktName.txf"
+msgstr "TAIEX futures"
+
+msgid "tr.mktName.stockFut"
+msgstr "stock futures"
+
+msgid "tr.mktName.twStock"
+msgstr "Taiwan stock"
+
+msgid "tr.fxOld"
+msgstr "TWD conversions use the {d} rate (≈); signing in updates it."
+
+msgid "mg.applyWhyFxOld"
+msgstr "The saved TWD rate is over 30 days old; sign in to Blave to convert TAIEX futures lots"
+
+msgid "mg.lotsUnder"
+msgstr "0 lots (under 1 lot)"
+
+msgid "mg.lotsUnderFoot"
+msgstr "TAIEX futures below one lot aren’t counted: ≈ {amt} less invested"
+
+msgid "mg.waitPrefixOpt"
+msgstr "Optimize: "
+
+msgid "mg.waitPrefixBt"
+msgstr "Backtest: "
+
+msgid "mg.btWaitPerf"
+msgstr "Waiting for performance updates…"
+
+msgid "sz.oldMdd"
+msgstr "Machine version is out of date, so max drawdown isn’t available"
+
+msgid "sz.shortMdd"
+msgstr "Under 90 days of shared data, so max drawdown isn’t available"
+
+msgid "mg.needFund"
+msgstr "Click “{method}” and enter the capital first; then the suggested amounts can be worked out."
+
+msgid "tr.cloud.notApplied"
+msgstr "The machine hasn’t applied the amounts you just saved yet, so this shows what’s on the machine; it updates once applied."
+
+msgid "ct.underLot"
+msgstr "0 lots (under one lot): the conversion comes to less than one lot, so saving places no order; enter lots yourself to trade."
+
+msgid "tr.err.fileLocked"
+msgstr "A file on the machine couldn’t be written just now (antivirus or backup may have it open). Try again."
+
+msgid "mg.errNoStats"
+msgstr "Some members have no backtest results yet: backtest them first, or remove them and run again."
+
+msgid "tr.saveFailed.rejected"
+msgstr "The settings file couldn’t be written just now, so nothing changed. Please save again."
+
+msgid "po.bridgeEdit"
+msgstr "Edit in Portfolio"
+
+msgid "tr.col.held"
+msgstr "Held"
+
+msgid "tr.startPlan"
+msgstr "Orders follow {n} strategies in Portfolio, total {total}."
+
+msgid "po.dEntry"
+msgstr "Entry {v}"
+
+msgid "po.dUpnl"
+msgstr "Unrealized {v}"
+
+msgid "po.dMargin"
+msgstr "Margin {v}"
+
+msgid "po.dLev"
+msgstr " ({x}×)"

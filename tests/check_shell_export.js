@@ -92,24 +92,18 @@ ok("卡的「下載…」用 id 找回那一輪的快照;亂給的 id / 別的 s
 
 // ── ③ 接線 ──
 ok("onTurnEvent 有 export 分支,交給 xpChunk", /else if \(c\.type === "export"\) \{\s*\n\s*if \(typeof xpChunk === "function"\) xpChunk\(c\);/.test(app));
-const end = app.indexOf("window.blave.onTurnEnd("), paintAt = app.indexOf("paintAi(liveBubble, liveBubble._raw, false)", end), cardAt = app.indexOf("xpTurnEnd(liveBubble)", end);
+const end = app.indexOf("window.blave.onTurnEnd("), paintAt = app.indexOf("paintAi(liveBubble, liveBubble._raw, false)", end), cardAt = app.indexOf("xpTurnEnd()", end);
 ok("回合結束:paintAi 定稿之後才掛轉出卡(順序反了卡會被清掉)", end > 0 && paintAt > end && cardAt > paintAt);
 ok("rpPaintHead 叫 xpPaint(觸發器與程式碼分頁跟著換策略 / 視角)", /function rpPaintHead\(B\) \{[\s\S]*?xpPaint\(\);[\s\S]*?\n\}/.test(app));
 ok("save-export / reveal-export 走 handle()(過 fromOurPage),reveal 只認 token", /handle\("save-export", /.test(main) && /handle\("reveal-export", \(_e, token\) => \{ const p = savedExports\.get\(/.test(main));
 ok("主行程收到 export chunk 就落地、回合結束寫 index", /c\.type === "export"\) \{ const rec = noteExport\(c, sessionId\)/.test(main) && /flushExports\(sessionId, turnXp\)/.test(main));
-{ // 同一則回覆裡結果卡永遠最後:有 .res-group 就插在它前面
-  const put = new Function((/^function xpPut\(host, card\) \{.*\}$/m.exec(xp) || [""])[0] + "\nreturn xpPut;")();
-  const mk = (g) => { const kids = g ? ["text", g] : ["text"]; return { kids, querySelector: () => g, appendChild: (c) => kids.push(c) }; };
-  const g = { before: (c) => h1.kids.splice(h1.kids.indexOf(g), 0, c) }, h1 = mk(g), h2 = mk(null);
-  put(h1, "xp"); put(h2, "xp");
-  ok("轉出卡在結果卡之前(xpPut);沒有結果卡就接在最後;export.js 不再直接 appendChild(xpCard", JSON.stringify(h1.kids.map((x) => (x === g ? "res" : x))) === '["text","xp","res"]' && h2.kids.join() === "text,xp" && !/appendChild\(xpCard/.test(xp));
-}
+ok("轉出卡一律走 results.js 的卡槽(resSlotPut,check_shell_results_slot.js 驗位置);export.js 不再直接 appendChild(xpCard", /list\.forEach\(\(c\) => resSlotPut\(host, xpCard\(c\)\)\);/.test(xp) && !/appendChild\(xpCard/.test(xp));
 { // e2e 0.1.8 #49:這一輪沒有 export chunk(模型漏寫標記),檔案照樣在資料夾裡 → 回合結束仍重掃,程式碼分頁當下就多一份
-  const src = cut(xp, "function xpTurnEnd(bubble)", "function xpCard(", "xpTurnEnd / xpReload");
+  const src = cut(xp, "function xpTurnEnd()", "function xpCard(", "xpTurnEnd / xpReload");
   const run = async (pending, rpName) => {
     const RP = { name: rpName, data: rpName ? { exports: [] } : null }, seen = { load: [], paint: 0, cards: 0 };
     const env = { XP: { pending }, RP, rpBag: () => RP, xpCodePaint: () => { seen.paint++; }, scrollChat: () => {},
-      xpHost: () => ({}), xpPut: () => { seen.cards++; }, xpCard: (c) => c,
+      xpHost: () => ({}), resSlotPut: () => { seen.cards++; }, xpCard: (c) => c,
       window: { blave: { loadStrategy: async (n) => { seen.load.push(n); return { exports: [{ target: "pine", content: "x" }], cryptoKline: false }; } } } };
     const f = new Function(...Object.keys(env), src + "\nreturn xpTurnEnd;")(...Object.values(env));
     f(null); await new Promise((r) => setTimeout(r, 0));

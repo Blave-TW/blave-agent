@@ -13,6 +13,8 @@
 // 這個檔不 require electron;HTTP 由呼叫端注入(測試用假的)。
 const whoOf = (c) => (c && c.token ? c.who || c.token : null);   // = tokenrotate.js 的 whoOf;抄一行是因為這個檔不 require 任何東西
 const ENDPOINT = "/oauth/desktop/cloud/state";
+// 顯示幣別偏好(帳號上的 base_currency,同網頁設定 modal 寫的 agent_user_prefs 那一欄):電腦版的帳號 token 進不了網頁的 cookie 路由,走 desktop 這一支
+const PREFS_ENDPOINT = "/oauth/desktop/cloud/prefs";
 const EVENTS_ENDPOINT = "/oauth/desktop/cloud/events";
 const STRATEGY_ENDPOINT = "/oauth/desktop/cloud/strategy";
 const OVERVIEW_ENDPOINT = "/oauth/desktop/cloud/overview";
@@ -62,6 +64,9 @@ function interpret(res) {
     server_time: typeof b.server_time === "number" ? b.server_time : null,
     fx_rates: b.fx_rates && typeof b.fx_rates === "object" ? b.fx_rates : null,
     currency: typeof b.currency === "string" ? b.currency : null,
+    // 顯示幣別下拉的選項(api 明列的政策清單,同網頁 pfBaseCcyOptions);舊 api 沒這欄 = null,下拉不出現
+    base_currency_options: Array.isArray(b.base_currency_options)
+      ? b.base_currency_options.filter((c) => typeof c === "string" && /^[A-Za-z]{2,8}$/.test(c)).map((c) => c.toUpperCase()) : null,
     strategies: Array.isArray(b.strategies_summary) ? b.strategies_summary.filter((s) => s && typeof s === "object" && typeof s.name === "string") : [],
     /* 「讀到空的清單」跟「這一份沒帶清單」是兩件事(spec-desktop-cloud-s4 §1.1 ②):金額是整份覆蓋,
        把缺席當成空清單,存檔會把整個組合移出。畫面只在這個旗標為真時才算清單已載入。 */
@@ -290,7 +295,9 @@ function createCloudHost(opts) {
     // 版本也要推:看這台電腦時畫面 60 秒才問一次,「關於」那一行要跟上主機回報的版本
     s.config_version, s.latest_config_version, s.config_supports_wf,
     // 側欄偏好改了(在網頁拖過 / 掛了旗標)也要推,不然要等別的欄位變
-    JSON.stringify(s.strat_order || null), JSON.stringify(s.strat_flags || null)].join("|");
+    JSON.stringify(s.strat_order || null), JSON.stringify(s.strat_flags || null),
+    // 顯示幣別換了(這裡或網頁設定改了偏好)要推:合計、投入資金幣別、總權益跟著換
+    s.currency, JSON.stringify(s.base_currency_options || null)].join("|");
   const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt, epoch });
   function emit() { const key = summaryKey(snap); if (key === lastKey) return; lastKey = key; if (opts.onChange) try { opts.onChange(publicSnapshot()); } catch (_) { /* 畫面壞掉不影響輪詢 */ } }
   function drop(next) { gen++; epoch++; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
@@ -417,12 +424,31 @@ function createCloudHost(opts) {
       if (typeof hash !== "string" || !IMAGE_HASH_RE.test(hash)) return Promise.resolve(IMAGE_UNREACHABLE());
       return readOnce(IMAGE_ENDPOINT, hash, { hash }, interpretImage, IMAGE_UNREACHABLE);
     },
+    /* 設定 › 顯示幣別:寫帳號上的 base_currency 偏好(同網頁 setPickCcy),成功後馬上重抓狀態信封,讓 fx 的 base 換掉。
+       在途的那一份是舊幣別的:gen +1 作廢(同網頁 pfSeq),等它落地後再強制重抓一次。選項只認信封明列的(舊 api 沒有 → 不送)。
+       回 { ok, code: "OK" | "BAD" | "NO_LOGIN" | "RATE_LIMITED" | "FAIL" } */
+    async setBaseCurrency(code) {
+      const list = snap && Array.isArray(snap.base_currency_options) ? snap.base_currency_options : null;
+      if (typeof code !== "string" || !list || list.indexOf(code) < 0) return { ok: false, code: "BAD" };
+      let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
+      const tok = c && c.token ? c.token : null;
+      if (!tok || !c.appSecret) return { ok: false, code: "NO_LOGIN" };
+      let res = null;
+      try { res = await opts.post(opts.apiBase + PREFS_ENDPOINT, { token: tok, app_secret: c.appSecret, base_currency: code }); } catch (_) { /* 連不上 */ }
+      let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
+      if (whoOf(cur) !== whoOf(c)) return { ok: false, code: "NO_LOGIN" };
+      if (!res || res.status !== 200) return { ok: false, code: res && res.status === 429 ? "RATE_LIMITED" : "FAIL" };
+      gen++;   // 在途的狀態請求是舊幣別:回來時對不上世代、整份丟掉
+      if (inflight) await inflight.catch(() => {});
+      await refresh(true).catch(() => {});
+      return { ok: true, code: "OK" };
+    },
     // 登出:立刻把手上的東西丟掉、通知畫面清掉,而且作廢還在路上的請求
     reset() { drop(); },
     _delay: delay,
   };
 }
 
-module.exports = { createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, interpretReports, interpretReport, interpretImage,
+module.exports = { PREFS_ENDPOINT, createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, interpretReports, interpretReport, interpretImage,
   interpretVersion, interpretVersionCompare, VERSION_ENDPOINT,
   ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, REPORTS_ENDPOINT, REPORT_ENDPOINT, IMAGE_ENDPOINT, REPORTS_MAX, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };

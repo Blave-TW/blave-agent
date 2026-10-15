@@ -322,7 +322,7 @@ async function main() {
   ok("槽:pine-install.js 往 XP_ACTIONS 推 provider;在 export.js、browser.js 之後載入", /XP_ACTIONS\.push\(tvProvide\);/.test(src) && html.indexOf('src="pine-install.js"') > html.indexOf('src="browser.js"') && html.indexOf('src="browser.js"') > html.indexOf('src="export.js"'));
   ok("槽:只有 Pine 的卡與程式碼分頁有(XQ / MC 沒有)", (xp.match(/xpExt\(\{/g) || []).length === 2 && (xp.match(/if \((c\.target|k) === "pine"\) \w+\.appendChild\(xpExt\(/g) || []).length === 2 && /if \(ctx\.target !== "pine"/.test(src));
   ok("填色:槽拿填色時原本那顆退描邊(xpFill);過期那一面不動;重開畫回來的卡帶 old", /function xpFill\(ctx, who\) \{ if \(ctx\.base && !ctx\.stale\) ctx\.base\.className = who === "ext" \? "btn-out" : "btn-fill"; \}/.test(xp)
-    && /function xpRestore\(rec\) \{ xpPut\(xpHost\(null\), xpCard\(rec, true\)\); \}/.test(xp) && /old: !!old/.test(xp) && /base: dl/.test(xp) && /base: cp/.test(xp) && /xpFill\(c, m\.fill\)/.test(src));
+    && /function xpRestore\(rec\) \{ resSlotPut\(xpHost\(\), xpCard\(rec, true\)\); \}/.test(xp) && /old: !!old/.test(xp) && /base: dl/.test(xp) && /base: cp/.test(xp) && /xpFill\(c, m\.fill\)/.test(src));
   ok("不畫的時候(關了內建瀏覽器、雲端視角、時光機):不放鈕、填色還給原本那顆——不是灰掉", /const tvCan = \(\) => TV\.on === true && xpLocal\(\) && !XP\.tm;/.test(src) && /if \(!tvCan\(\)\) \{\s*if \(e\.btn\.parentNode === slot\) e\.btn\.remove\(\);\s*xpFill\(c, "base"\)/.test(src));
   ok("每一顆鈕都只認用戶真的按(isTrusted)——含會開 agent 回合的「請 agent 貼」", (() => {
     const ls = src.match(/addEventListener\("click", [^\n]*/g) || [];

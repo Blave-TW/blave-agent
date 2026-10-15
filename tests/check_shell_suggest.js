@@ -158,7 +158,7 @@ ok("sugItems:items 不是陣列 → 空", ctx.sugItems({ items: "a" }).length ==
   ok("換對話 / 新對話(csClearChat)收合", /function csClearChat\(\) \{[\s\S]*?sugCollapse\(\)[\s\S]*?\n\}/.test(app));
   ok("turn-event:suggestions → sugChunk、error → sugCollapse", /c\.type === "suggestions"\) \{\n\s*if \(typeof sugChunk === "function"\) sugChunk\(c\);/.test(app) && /c\.type === "error"\) \{\n\s*turnErrored = true;\n\s*if \(typeof sugCollapse === "function"\) sugCollapse\(\);/.test(app));
   const end = cut(app, "window.blave.onTurnEnd(async (r) => {", "\n});\n");
-  ok("turn-end 收尾才長出(回覆定稿、轉出卡之後),出錯與停止都不長", /sugTurnEnd\(!stopped && !faulted\);[^\n]*\n\s*if \(rt\) resTurnEnd\(rt, cloudTurn\);/.test(end) && end.indexOf("sugTurnEnd(") > end.indexOf("xpTurnEnd(liveBubble)"));
+  ok("turn-end 收尾才長出(回覆定稿、轉出卡之後),出錯與停止都不長", /sugTurnEnd\(!stopped && !faulted\);[^\n]*\n\s*if \(rt\) resTurnEnd\(rt, cloudTurn\);/.test(end) && end.indexOf("sugTurnEnd(") > end.indexOf("xpTurnEnd()"));
   ok("collectDraft 不認 suggestions(不會被升成回覆)", !/suggestions/.test(cut(app, "function collectDraft(", "function draftShow(")));
   ok("index.html:建議列預設收合 + inert、group 帶 aria-label key、小標 aria-hidden、腳本與樣式都載入",
     /<div class="sug-wrap is-closed" id="sug-wrap" inert>/.test(html) && /role="group" data-i18n-aria="ws.sugGroup"/.test(html) && /class="sug-cap" aria-hidden="true" data-i18n="ws.sugGroup"/.test(html)

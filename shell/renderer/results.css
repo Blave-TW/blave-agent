@@ -1,6 +1,9 @@
 /* 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §2,mockup A)。不新增 token、不新增元件類型:
    殼 = web 轉出卡 .xp / 電腦版轉出卡 .msg.ai .xp 同一組(bg-body 落在聊天欄的 surface-card 上、md、內距 12、無框無陰影、
    gap 12、置中對齊、標題 13/500、第二行 12 ink-3 上距 2),多一個 icon 16;鈕 = .btn-fill(不縮不換行)。 */
+/* 卡槽(results.js resSlotPut):思考過程下、回覆文字上。槽離本文 12(同卡組離本文);槽是整則唯一內容時不留底距;槽內第一張的上距歸零 */
+.msg.ai > .ai-results:not(:last-child) { margin-bottom: var(--space-12); }
+.msg.ai > .ai-results > :first-child { margin-top: 0; }
 .msg.ai .res-group { display: flex; flex-direction: column; gap: var(--space-8); margin-top: var(--space-12); }
 .res {
   display: flex; align-items: center; gap: var(--space-12); padding: var(--space-12);

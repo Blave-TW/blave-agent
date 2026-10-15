@@ -13,7 +13,10 @@ const wsfile = require("./wsfile");
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
 const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "credentials", "credentials_remove",
-  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore", "stats_refresh"]);
+  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore", "stats_refresh",
+  "manage_optimize", "manage_backtest", "manage_cancel"]);
+// manage_optimize 是 Deferred(腳本最長 120 秒才 ack),等 ack 的時間另給;雲端那條(main.js cloud-send)也用這一份
+const CMD_TIMEOUT_MS = { manage_optimize: 150000 };
 // 只有主行程送得出的(send(…, { trusted: true })):設定 › Agent 規則的兩個寫入(shell/agentrules.js)。不放進 UI_COMMANDS:
 // renderer 的寫入必須經過 rules-save / reply-lang-save 那兩支 IPC——「規則檔讀不到就不寫」那道閘在那裡,通用的 trade-send 繞得過它;
 // api 的雲端白名單(CLOUD_COMMANDS = UI_COMMANDS + …,api/tests/check_desktop_cloud_command.py 釘住)也就不跟著變。
@@ -119,7 +122,18 @@ function argsOk(cmd, a, trusted) {
     if (a.op === "host") return keys.length === 2 && ((a.env === "test" || a.env === "live") || (typeof a.url === "string" && a.url.length > 0 && a.url.length <= 200 && !/[\r\n]/.test(a.url)));
     return keys.length === 1;
   }
-  return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
+  /* 優化與移動窗格回測:剛好 members / allocator / params(= runtime _validate_manage_args 的形狀;語意由 handler 再驗)。
+     成員 1–64 支、不重複、名字不帶路徑字元;allocator 是 null(舊腳本的內建)或目錄名;params ≤ 32 個、值只收有限數字 / 布林 / ≤200 字 */
+  if (cmd === "manage_optimize" || cmd === "manage_backtest") {
+    if (!(keys.length === 3 && ["members", "allocator", "params"].every((k) => keys.indexOf(k) >= 0))) return false;
+    const m = a.members, p = a.params;
+    if (!(Array.isArray(m) && m.length >= 1 && m.length <= 64 && new Set(m).size === m.length
+      && m.every((n) => typeof n === "string" && n.length >= 1 && n.length <= 64 && !/^\./.test(n) && n.indexOf("..") < 0 && !/[/\\,\s\x00-\x1f]/.test(n)))) return false;
+    if (!(a.allocator === null || (typeof a.allocator === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(a.allocator)))) return false;
+    return !!p && typeof p === "object" && !Array.isArray(p) && Object.keys(p).length <= 32 && Object.keys(p).every((k) => k.length >= 1 && k.length <= 64
+      && (typeof p[k] === "boolean" || (typeof p[k] === "number" && isFinite(p[k])) || (typeof p[k] === "string" && p[k].length <= 200)));
+  }
+  return keys.length === 0;   // restart_reconciler / retest_accounts / close_all / manage_cancel:不收參數
 }
 function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,
   platform = process.platform, stopKillMs = STOP_KILL_MS, stopGiveUpMs = STOP_GIVE_UP_MS }) {
@@ -212,7 +226,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   }
   /* 送一個指令並等 ack。回 {ok, result} / {ok:false, error};daemon 沒在跑、逾時也走 error。
      `halt` 在 daemon 沒跑(或 secret 不在)時照送不簽——它是安全方向,daemon 起來就會吃到。 */
-  async function send(cmd, args, { timeoutMs = 20000, trusted = false } = {}) {
+  async function send(cmd, args, { timeoutMs = CMD_TIMEOUT_MS[cmd] || 20000, trusted = false } = {}) {
     if (!UI_COMMANDS.has(cmd) && !(trusted === true && MAIN_ONLY_COMMANDS.has(cmd))) return { ok: false, error: "NOT_ALLOWED" };
     if (!argsOk(cmd, args || {}, trusted === true)) return { ok: false, error: "BAD_ARGS" };
     const live = !!(child && secret);
@@ -361,4 +375,4 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
 
   return { start, stop, send, status, equity, events, noteQuit, sealPresident, presidentLots, _eqTick: eqTick, isRunning: () => !!child };
 }
-module.exports = { createDaemonHost, UI_COMMANDS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, argsOk };
+module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, argsOk };

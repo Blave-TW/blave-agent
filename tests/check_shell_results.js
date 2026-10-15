@@ -22,6 +22,8 @@ function El(tag) {
     setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }, hasAttribute(k) { return k in this.attrs; },
     appendChild(c) { if (c.parentNode) c.parentNode.children.splice(c.parentNode.children.indexOf(c), 1); c.parentNode = this; this.children.push(c); return c; },
     append(...xs) { xs.forEach((x) => this.appendChild(typeof x === "string" ? Txt(x) : x)); },
+    insertBefore(n, ref) { if (n.parentNode) n.parentNode.children.splice(n.parentNode.children.indexOf(n), 1); n.parentNode = this; const i = ref ? this.children.indexOf(ref) : -1; if (i < 0) this.children.push(n); else this.children.splice(i, 0, n); return n; },
+    before(n) { this.parentNode.insertBefore(n, this); },
     after(n) { const p = this.parentNode; if (n.parentNode) n.parentNode.children.splice(n.parentNode.children.indexOf(n), 1); n.parentNode = p; p.children.splice(p.children.indexOf(this) + 1, 0, n); },
     replaceWith(n) { const p = this.parentNode, i = p.children.indexOf(this); n.parentNode = p; p.children[i] = n; this.parentNode = null; },
     remove() { if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1); this.parentNode = null; },
@@ -227,7 +229,7 @@ function box(extra) {
     const sys = El("div"); sys.className = "msg sys"; CHAT.appendChild(sys);
     S.resRestore(hist[0].res);
     const cards = ai.querySelector(".res-group").children;
-    ok("③ 重畫:掛在那一輪最後一則回覆裡(跳過後面的系統行)、舊卡不再播進場動畫;之後有更新的照畫當時的數字 + 「之後有更新」、鈕照常",
+    ok("③ 重畫:掛在那一輪思考過程下的那則回覆裡(跳過後面的系統行)、舊卡不再播進場動畫;之後有更新的照畫當時的數字 + 「之後有更新」、鈕照常",
       cards.length === 3 && cards.every((c) => c.classList.contains("is-still")) && texts(cards[0]).includes("年化報酬 +15.12%Sharpe 1.42最大回撤 −12.40%") && texts(cards[0]).endsWith("之後有更新看回測") && !!cards[0].querySelector("button"), cards.map(texts).join(" / "));
     const you2 = El("div"); you2.className = "msg you"; CHAT.appendChild(you2);
     S.resRestore(hist[1].res);
@@ -299,6 +301,63 @@ function box(extra) {
   // 上一輪還在跑:系統行記著 key(data-i18n),applyStatic 的 data-i18n 那一圈會照新語言重填(引擎進度 0.1.12 起是安裝進度卡,見 check_shell_engine_card)
   ok("④「上一輪還在跑」的系統行掛 data-i18n", /addMsg\("sys", t\("turn\.busy"\)\)\.dataset\.i18n = "turn\.busy";/.test(appSrc)
     && /document\.querySelectorAll\("\[data-i18n\]"\)\.forEach\(\(el\) => \{ el\.textContent = t\(el\.dataset\.i18n\); \}\);/.test(cutFn(appSrc, "applyStatic")));
+}
+// ── ⑤ 卡槽:結果卡(轉出卡 + 結果卡組)在思考過程下、回覆文字上(Wei 10-14,同 web .ai-results);live 與重開同一條路 ──
+{
+  const S = box(), scrolls = [];
+  vm.runInContext(read("export.js").replace(/^(const|let) /gm, "var "), S);
+  S.scrollChat = () => scrolls.push("bottom");
+  const kids = (n) => n.children.filter((c) => c.tagName).map((c) => c.className.split(" ")[0]);
+  const slotOf = (h) => h.children.find((c) => c.tagName && c.classList.contains("ai-results"));
+  const turn = () => {   // 你 → 思考過程 → 回覆(已定稿的段落)→ 圖 → 第二段回覆
+    CHAT.children = [];
+    [["msg you"], ["think-indicator"]].forEach(([c]) => { const e = El("div"); e.className = c; CHAT.appendChild(e); });
+    const ai = El("div"); ai.className = "msg ai"; ai.appendChild(El("p")); ai.appendChild(El("ul")); CHAT.appendChild(ai);
+    const img = El("figure"); img.className = "msg img"; CHAT.appendChild(img);
+    const ai2 = El("div"); ai2.className = "msg ai"; ai2.appendChild(El("p")); CHAT.appendChild(ai2);
+    return { ai, ai2 };
+  };
+  const it = { kind: "strategy", env: "local", ref: "btc", ver: "1|0|1", sub: "new", title: "BTC", facts: { has_bt: false }, at: 1 };
+  const xpRec = { target: "pine", strategy: "btc", filename: "btc.pine", size: 10, session: "s", id: "1" };
+
+  let { ai, ai2 } = turn();
+  ok("⑤ 卡掛在思考過程下面那則回覆(一輪多則回覆時是第一則,不是圖後面那則)", S.resHostNow() === ai);
+  S.XP.pending = [xpRec]; S.xpTurnEnd();
+  const rt = { sid: S.sessionId, ts: 9, items: [], host: ai };
+  S.resAdd(rt, [it]);
+  ok("⑤ live:槽是那則的第一個子節點(在定稿的段落上面),轉出卡在前、結果卡組在後;第二段回覆裡沒有卡",
+    kids(ai)[0] === "ai-results" && ai.children.length === 3 && JSON.stringify(kids(slotOf(ai))) === '["xp-wrap","res-group"]' && !slotOf(ai2),
+    JSON.stringify([kids(ai), slotOf(ai) && kids(slotOf(ai))]));
+  S.resAdd(rt, [{ ...it, ref: "eth", title: "ETH", env: "cloud", sub: "cloud", facts: { is_new: true } }]);
+  const groups = ai.querySelectorAll(".res-group");
+  ok("⑤ 雲端晚到:結果卡組原地重畫,整則只有一組、還在槽裡、轉出卡仍在它前面",
+    groups.length === 1 && groups[0].parentNode === slotOf(ai) && JSON.stringify(kids(slotOf(ai))) === '["xp-wrap","res-group"]' && groups[0].querySelectorAll(".res").length === 2,
+    JSON.stringify([groups.length, kids(slotOf(ai))]));
+
+  ({ ai } = turn());
+  S.resRestore({ ts: 3, items: [it], states: ["ok"] });
+  S.xpRestore({ ...xpRec, ts: 3 });
+  ok("⑤ 重開(先畫結果卡、後畫轉出卡):同一個槽、順序照樣是轉出卡在前", kids(ai)[0] === "ai-results" && JSON.stringify(kids(slotOf(ai))) === '["xp-wrap","res-group"]',
+    JSON.stringify([kids(ai), slotOf(ai) && kids(slotOf(ai))]));
+
+  CHAT.children = []; { const y = El("div"); y.className = "msg you"; CHAT.appendChild(y); }
+  S.resRestore({ ts: 4, items: [it], states: ["ok"] });
+  const lone = CHAT.lastElementChild;
+  ok("⑤ 那一輪沒有回覆文字:另起一則,槽是它唯一的內容", lone.classList.contains("ai") && JSON.stringify(kids(lone)) === '["ai-results"]', JSON.stringify(kids(lone)));
+
+  // 捲動:貼底的捲到底;往上讀的不碰 scrollTop(Chromium scroll anchoring 讓正在讀的那行不跳)
+  ({ ai } = turn());
+  Object.assign(CHAT, { scrollHeight: 2000, clientHeight: 500, scrollTop: 1500 }); scrolls.length = 0;
+  S.resSlotPut(ai, S.xpCard(xpRec));
+  const atBottom = scrolls.length === 1;
+  CHAT.scrollTop = 300; scrolls.length = 0;
+  S.resPaint(ai, [it], null, [it], 5);
+  ok("⑤ 貼底 → 捲到底;往上讀到一半 → 不捲、scrollTop 不動", atBottom && scrolls.length === 0 && CHAT.scrollTop === 300, JSON.stringify([atBottom, scrolls, CHAT.scrollTop]));
+  ok("⑤ 接線:回合結束 xpTurnEnd 不再無條件捲到底、resAdd 不再自己判斷貼底(都交給 resSlotPut)",
+    !/scrollChat\(\)/.test(cutFn(read("export.js"), "xpTurnEnd")) && !/atBottom|scrollChat/.test(cutFn(resSrc, "resAdd")) && /resSlotPut\(host, g\);/.test(cutFn(resSrc, "resPaint")));
+  const css = read("results.css");
+  ok("⑤ CSS:槽離本文 12、槽是唯一內容時不留底距;槽內第一張上距歸零", /\.msg\.ai > \.ai-results:not\(:last-child\) \{ margin-bottom: var\(--space-12\); \}/.test(css) && /\.msg\.ai > \.ai-results > :first-child \{ margin-top: 0; \}/.test(css));
+  CHAT.children = []; delete CHAT.scrollHeight; delete CHAT.clientHeight; delete CHAT.scrollTop;
 }
 // applyStatic 的 data-i18n 那一圈(同 app.js)
 function document_i18n(S) { const walk = (n) => n.children.forEach((c) => { if (!c.tagName) return; if (c.dataset.i18n) c.textContent = S.t(c.dataset.i18n); walk(c); }); walk(DOC.body); }

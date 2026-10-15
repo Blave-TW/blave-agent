@@ -156,8 +156,17 @@ const EVENTS = {
     "perf_update",
     // 統一本機開通「找不到憑證」分兩條路(0.1.23;renderer/president.js):按「已經有憑證」就記(每開一次框一次;申請新憑證那條沿用 pres_tcem_open)
     "pres_have_cert",
-    // 台指期換執行合約(0.1.24 先佔名字,同網頁 gaEvent contract_switch):電腦版還沒有換合約的下拉、沒有送出點;不帶口數
-    "contract_switch"] },
+    // 台指期換執行合約(0.1.24,同網頁 gaEvent contract_switch):策略組合 › 配置／優化的合約下拉選了另一個合約;不帶口數
+    "contract_switch",
+    // 策略組合頁(0.1.24;renderer/portfolio.js):打開這一頁、金額存成功(沒連交易所也算)、優化分頁跑優化／跑回測(ack 成功)、
+    // 套用金額(開確認框那一下)、部位大小框開／確定(只記名字,不帶方法或數字)
+    "portfolio_open", "portfolio_save", "mg_opt_run", "mg_bt_run", "mg_apply", "mg_sizing_open", "mg_sizing_set",
+    // 配置存好、還沒在下單時按「到自動下單啟動」(post-connect-flow 第 10 列):看配置後多少人走到啟動
+    "cfg_go_start",
+    // 跑優化／回測前在等更新績效時按「先用目前數字跑」(Wei 10-14,同網頁)
+    "mg_run_now",
+    // 設定 › 顯示幣別改了帳號的 base_currency 偏好(Wei 10-14;只記名字,不帶幣別)
+    "display_ccy_set"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

@@ -353,7 +353,7 @@ function libLeave(env) {
 /* envShowMain(trade.js)的最後一步:策略庫開著就蓋掉其餘視圖。gate = 雲端沒主機可看(開通頁),那時側欄入口也藏著 */
 function libShowMain(gate) {
   const on = !gate && libBag().open, was = !$("lib").hidden;
-  if (on) { $("rp").hidden = true; $("tr").hidden = true; $("main-empty").hidden = true; $("tr-nav").removeAttribute("aria-current"); }
+  if (on) { $("rp").hidden = true; $("tr").hidden = true; $("po").hidden = true; $("main-empty").hidden = true; $("tr-nav").removeAttribute("aria-current"); $("po-nav").removeAttribute("aria-current"); }
   $("lib").hidden = !on;
   if (on) $("lib-nav").setAttribute("aria-current", "page"); else $("lib-nav").removeAttribute("aria-current");
   if (on && (!was || LIB.paintedEnv !== libEnv())) { libPaint(); if (was) libLoad(false); }   // 剛打開 / 切視角(兩邊都開著也要換成這一邊那袋)

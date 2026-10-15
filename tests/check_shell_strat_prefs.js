@@ -67,7 +67,7 @@ try {
     && /^sfBindDrag\(\$\("strat-list"\)\);$/m.test(sfSrc) && (sfSrc.match(/sfBindDrag\(/g) || []).length === 2 && !/strat-list-cloud/.test(sfSrc));
   ok("④ cloud.js:snapshot 帶 strat_order / strat_flags(fail-soft、1–6、≤200),進 summaryKey(偏好改了也推)",
     /strat_order: Array\.isArray\(b\.strat_order\) \? b\.strat_order\.filter\(\(n\) => typeof n === "string" && n\)\.slice\(0, 200\) : \[\]/.test(read(path.join(SHELL, "cloud.js")))
-    && /Number\.isInteger\(v\) && v >= 1 && v <= 6\)\.slice\(0, 200\)\) : \{\}/.test(read(path.join(SHELL, "cloud.js"))) && /JSON\.stringify\(s\.strat_order \|\| null\), JSON\.stringify\(s\.strat_flags \|\| null\)\]\.join\("\|"\)/.test(read(path.join(SHELL, "cloud.js"))));
+    && /Number\.isInteger\(v\) && v >= 1 && v <= 6\)\.slice\(0, 200\)\) : \{\}/.test(read(path.join(SHELL, "cloud.js"))) && /JSON\.stringify\(s\.strat_order \|\| null\), JSON\.stringify\(s\.strat_flags \|\| null\),/.test(read(path.join(SHELL, "cloud.js"))));
   { const { interpret } = require(path.join(SHELL, "cloud.js"));
     const body = (o) => ({ machine: { state: "running" }, portfolio: {}, portfolio_stale: false, strategies_summary: [], ...o });
     const a = interpret({ status: 200, body: body({ strat_order: ["a", 3, "", "b"], strat_flags: { a: 2, b: 9, c: "1" } }) }), b = interpret({ status: 200, body: body({}) });
@@ -86,7 +86,7 @@ try {
     && /const finish = \(\) => \{ SF\.dragActive = false;[^\n]*SF\.waiters = \[\]; ws\.forEach\(\(r\) => r\(\)\); \};/.test(sfSrc) && /if \(ev\.pointerId === SF\.dragPointer && cleanup\(\)\) finish\(\);/.test(sfSrc));
   ok("④ 旗標值沒變不寫不埋;拖回原位不寫;兩個埋點是字面、都在白名單(0.1.20 A 案的 browser_hb_card、0.1.21 的 perf_update、0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在它們後面)", /if \(next === sfFlagId\(SF\.flags\[name\]\)\) return;/.test(cutFn(sfSrc, "sfSetFlag")) && /if \(to !== from\) \{[^\n]*sfMoved\(\); \}/.test(sfSrc)
     && /trackFeature\("strat_flag_set"\);/.test(cutFn(sfSrc, "sfSetFlag")) && /trackFeature\("strat_reorder"\);/.test(cutFn(sfSrc, "sfMoved"))
-    && (() => { const { EVENTS } = require(path.join(SHELL, "telemetry.js")); const n = EVENTS.feature_used.name; return n.slice(-6).join() === "strat_flag_set,strat_reorder,browser_hb_card,perf_update,pres_have_cert,contract_switch" && n.every((x) => x.length <= 16); })());
+    && (() => { const { EVENTS } = require(path.join(SHELL, "telemetry.js")); const n = EVENTS.feature_used.name; return n.slice(n.indexOf("strat_flag_set"), n.indexOf("contract_switch") + 1).join() === "strat_flag_set,strat_reorder,browser_hb_card,perf_update,pres_have_cert,contract_switch" && n.every((x) => x.length <= 16); })());
   ok("④ 面板:role=menu、色塊 menuitemradio、Esc 不冒泡到 escTop、外點 / resize / 捲動即收、右鍵的刪除那條走 ✕ 的武裝(回合中不給)",
     /sfPop\.setAttribute\("role", "menu"\)/.test(sfSrc) && /c\.setAttribute\("role", "menuitemradio"\)/.test(sfSrc) && /if \(e\.key === "Escape"\) \{ e\.stopPropagation\(\); sfPopClose\(true\); return; \}/.test(sfSrc)
     && /window\.addEventListener\("resize", \(\) => sfPopClose\(false\)\);/.test(sfSrc) && /\$\("strat-list"\)\.addEventListener\("scroll", \(\) => sfPopClose\(false\)\);/.test(sfSrc)

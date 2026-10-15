@@ -36,6 +36,22 @@ function createRotator(opts) {
   const log = opts.log || (() => {});
   const expFile = path.join(opts.dir, EXP_FILE);
   let inflight = null, gen = 0, prev = null, backoffUntil = 0, deadFor = null, recovered = null, paused = false;
+  /* 換到了、但寫不進 Keychain 的那顆新值(只在記憶體)。以前的做法是一分鐘後拿舊值再換一次——舊值只在伺服器寬限 10 分鐘,
+     寫檔一直失敗超過 10 分鐘就只剩重新登入(Mac e2e 10-14 查登入失效時的競態)。新值本身 24 小時有效:之後先重試存它,不必再打 api */
+  let unsaved = null;
+  function flushUnsaved() {
+    if (!unsaved) return null;
+    const cur = opts.loadToken();
+    if (cur === null) { backoffUntil = now() + SAVE_RETRY_MS; log("rotate: token unreadable"); return "unreadable"; }   // 鑰匙圈那一刻讀不到:留著新值、稍後再試(同 once 的 unreadable)
+    if (cur !== unsaved.from) { unsaved = null; return null; }   // 檔裡已經換了(重新登入 / 別人換掉):這顆不是現在的了
+    let saved = false; try { saved = opts.saveToken(unsaved.token); } catch (_) { saved = false; }
+    if (!saved) { backoffUntil = now() + SAVE_RETRY_MS; log("rotate: save failed"); return "save_failed"; }
+    writeExp(unsaved.token, unsaved.expiresIn);
+    prev = { token: cur, until: now() + GRACE_MS };
+    unsaved = null; backoffUntil = 0; deadFor = null;
+    try { if (opts.afterSave) opts.afterSave(); } catch (_) { /* 掛勾壞掉不影響換檔 */ }
+    return "rotated";
+  }
 
   function readExp(tok) {
     try {
@@ -69,7 +85,8 @@ function createRotator(opts) {
       try { if (opts.beforeSave) opts.beforeSave(); } catch (_) { /* 掛勾壞掉不影響換檔 */ }
       // 寫不進去(回 false 或拋:磁碟滿、鎖檔):檔裡還是 cur,伺服器把它當寬限內的舊值——稍後拿它再換一次(伺服器會再發一顆蓋掉這顆沒存下來的)
       let saved = false; try { saved = opts.saveToken(b.access_token); } catch (_) { saved = false; }
-      if (!saved) { backoffUntil = now() + SAVE_RETRY_MS; log("rotate: save failed"); return "save_failed"; }
+      if (!saved) { unsaved = { token: b.access_token, expiresIn: Number(b.expires_in), from: cur }; backoffUntil = now() + SAVE_RETRY_MS; log("rotate: save failed"); return "save_failed"; }
+      unsaved = null;
       writeExp(b.access_token, Number(b.expires_in));
       prev = { token: cur, until: now() + GRACE_MS };
       backoffUntil = 0; deadFor = null;
@@ -97,9 +114,12 @@ function createRotator(opts) {
       if (paused) return Promise.resolve("paused");
       const cur = opts.loadToken();
       if (!cur) return Promise.resolve("none");
+      if (inflight) return inflight;
+      /* 手上有換到但沒存下來的新值:先存它(受它自己的 60 秒退讓),排在「舊值已 401(deadFor)」之前——
+         寫檔失敗超過寬限、舊值 401 之後,Keychain 好了也要存得進去(稽核 r4 P1-1);它 24 小時有效,不再打 api */
+      if (unsaved) { if (now() < backoffUntil) return Promise.resolve("skipped"); const f = flushUnsaved(); if (f) return Promise.resolve(f); }
       const exp = readExp(cur);
       if (exp !== null && exp - now() >= minLeftMs) return Promise.resolve("fresh");
-      if (inflight) return inflight;
       if (deadFor === cur || now() < backoffUntil) return Promise.resolve("skipped");
       return rotate();
     },
@@ -111,6 +131,8 @@ function createRotator(opts) {
       const cur = opts.loadToken();
       if (!cur) return false;
       if (cur !== rejected) return true;          // 已經換過了
+      // 手上有換到但沒存下來的新值:只試存它,不拿舊值去換——寬限內換會把它作廢,寬限外換只會拿到 401(稽核 r4 P1-1)
+      if (unsaved) return flushUnsaved() === "rotated";
       if (recovered === cur) return false;
       recovered = cur;
       inflight = once(prevLive() || cur, cur).catch(() => "retry").finally(() => { inflight = null; });
@@ -122,10 +144,10 @@ function createRotator(opts) {
        伺服器留一列沒人持有的。reset()(登出完成 / 重新登入)解除 */
     pause() { paused = true; },
     /* 登出 / 換帳號:丟掉記憶體裡的舊值、作廢在途的回應、刪期限檔、解除暫停 */
-    reset() { gen++; prev = null; backoffUntil = 0; deadFor = null; recovered = null; paused = false; clearExp(); },
+    reset() { gen++; prev = null; backoffUntil = 0; deadFor = null; recovered = null; paused = false; unsaved = null; clearExp(); },
     /* 登入拿到新 token 時記期限(沒有 expires_in 就清掉,下次啟動照舊式 token 輪替) */
     noteLogin(tok, expiresIn) { writeExp(tok, Number(expiresIn)); },
-    state: () => ({ prev: !!prevLive(), backoffMs: Math.max(0, backoffUntil - now()), inflight: !!inflight, paused }),   // 給測試看的:沒有 token 本身
+    state: () => ({ prev: !!prevLive(), backoffMs: Math.max(0, backoffUntil - now()), inflight: !!inflight, paused, unsaved: !!unsaved }),   // 給測試看的:沒有 token 本身
   };
 }
 

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("blave", {
   compareVersions: (name, a, b) => ipcRenderer.invoke("compare-versions", name, a, b),
   cloudVersion: (q) => ipcRenderer.invoke("cloud-version", { name: q && q.name, op: q && q.op, n: q && q.n, a: q && q.a, b: q && q.b }),
   accountStatus: () => ipcRenderer.invoke("account-status"),
+  authState: () => ipcRenderer.invoke("auth-state"),   // 登入狀態的單一來源:out / in / revoked
   balance: () => ipcRenderer.invoke("balance"),   // Blave 餘額:{ balance, trial } 或 null(讀不到);憑證在主行程
   planStart: (opts) => ipcRenderer.invoke("plan-start", opts),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
@@ -37,6 +38,7 @@ contextBridge.exposeInMainWorld("blave", {
   tradeLabels: (labels) => ipcRenderer.send("trade-labels", labels),
   cloudStatus: () => ipcRenderer.invoke("cloud-status"),
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
+  cloudSetCcy: (code) => ipcRenderer.invoke("cloud-set-ccy", code),   // 設定 › 顯示幣別:寫帳號的 base_currency 偏好
   onCloudState: (fn) => ipcRenderer.on("cloud-state", (_e, s) => fn(s)),
   cloudEvents: (q) => ipcRenderer.invoke("cloud-events", q),
   cloudOverview: (q) => ipcRenderer.invoke("cloud-overview", q),

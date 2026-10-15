@@ -105,7 +105,8 @@ function createCloudCmd(opts) {
        args    — 形狀見契約 §2(api 端 `_cloud_command_args` 再驗一次);沒有就給 {}
        secrets — **只有 cmd === "credentials" 會被放進 body 的頂層 `secrets`**;別的指令帶了一律丟掉
                  (api 對非 credentials 帶 secrets 是 400,而呼叫端傳錯不該讓金鑰白跑一趟網路)
-       opts    — { requestId }:重試時把上一趟回傳的那顆原樣傳回來(冪等)
+       opts    — { requestId, ackWindowMs }:requestId 重試時把上一趟回傳的那顆原樣傳回來(冪等);
+                 ackWindowMs 給 ack 晚到的指令(manage_optimize 跑完腳本才 ack),沒給就是 ACK_WINDOW_MS
      回 { ok:true, result, requestId, id, duplicate } 或 { ok:false, error, kind, requestId, id?, machineState? }。永遠不拋。 */
   async function send(cmd, args, secrets, sendOpts) {
     const requestId = (sendOpts && sendOpts.requestId) || crypto.randomBytes(16).toString("hex");
@@ -141,12 +142,12 @@ function createCloudCmd(opts) {
 
     // 排進去了:從這裡開始,任何問不到都是「結果不明」,不是「沒送到」
     const id = r.id, duplicate = r.duplicate;
-    const deadline = now() + ACK_WINDOW_MS;
+    const deadline = now() + ((sendOpts && sendOpts.ackWindowMs) || ACK_WINDOW_MS);
     let wait = ACK_FIRST_MS;
     for (;;) {
       const left = deadline - now();
       if (left <= 0) break;
-      await sleep(Math.min(wait, left));   // 最後一次縮短到剛好問滿 20 秒
+      await sleep(Math.min(wait, left));   // 最後一次縮短到剛好問滿整個窗
       if (mine !== gen) return dropped(true);   // 便宜的那半(登出 / 換人已經發生過):不必讀憑證
       let ackRes = null;
       // 憑證用送出時讀到的那一份(它本來就在這個閉包的記憶體裡):一輪只讀一次,而且讀失敗不影響在途的這一顆

@@ -80,7 +80,10 @@
       <!-- 自動下單入口:位置照雲端 #pf_nav(策略清單上方)。不放圖示——這個側欄的列本來就沒有圖示 -->
       <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中):入口與清單不畫,原位置放這一句(中欄的開通頁負責說明) -->
       <p class="pf-state side-gate" id="side-gate" hidden></p>
-      <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span></button>
+      <!-- 策略組合(配置／優化)在自動下單上面、圖示 chart-pie;自動下單換 zap(同網頁 #mg_nav / #pf_nav 的順序與圖示) -->
+      <nav class="side-nav" id="side-nav">
+        <button class="strat-row" id="po-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="po.nav"></span></button>
+        <button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg><span class="strat-name" data-i18n="tr.nav"></span></button>
         <!-- 策略庫入口(spec-desktop-library §2):同一顆 .strat-row 解剖,icon 是 lucide library-big;內容由 library.js 畫 -->
         <button class="strat-row" id="lib-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/></svg><span class="strat-name" data-i18n="lib.nav"></span></button>
         <!-- 報告入口(spec-desktop-0.1.6 §1.2):同一顆 .strat-row 解剖,icon 是 lucide file-text;內容由 reports.js 畫 -->
@@ -144,6 +147,19 @@
         <div class="pf" id="tr-assets" role="tabpanel" aria-labelledby="tr-tab-assets" tabindex="0" hidden></div>
         <div class="pf" id="tr-hist" role="tabpanel" aria-labelledby="tr-tab-hist" tabindex="0" hidden></div>
         <div class="pf" id="tr-set" role="tabpanel" aria-labelledby="tr-tab-set" tabindex="0" hidden></div>
+      </div>
+      <!-- 策略組合頁(配置／優化;同網頁 #mg_panel 的兩個分頁)。跟自動下單頁同一份狀態(TR 那一袋的 view 決定哪一頁看得見);
+           配置由 trade.js 畫(金額表 + 各商品的總訊號部位),優化由 portfolio.js 畫 -->
+      <div class="trv" id="po" hidden>
+        <div class="main-head"><div class="txt"><h5 class="main-head-name" id="po-h" tabindex="-1" data-i18n="po.nav"></h5></div></div>
+        <div class="main-tabs" role="tablist" id="po-tabs" data-i18n-aria="po.nav" hidden>
+          <div class="main-tabs-scroll">
+            <button class="main-tab" type="button" role="tab" id="po-tab-cfg" data-tab="cfg" aria-controls="po-cfg" data-i18n="po.tab.cfg"></button>
+            <button class="main-tab" type="button" role="tab" id="po-tab-opt" data-tab="opt" aria-controls="po-opt" data-i18n="po.tab.opt"></button>
+          </div>
+        </div>
+        <div class="pf" id="po-cfg" role="tabpanel" aria-labelledby="po-tab-cfg" tabindex="0" hidden></div>
+        <div class="pf" id="po-opt" role="tabpanel" aria-labelledby="po-tab-opt" tabindex="0" hidden></div>
       </div>
       <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):內容由 trade.js 畫 -->
       <div class="trv" id="cv-empty" hidden>
@@ -439,6 +455,15 @@
               <select class="set-sel" id="set-lang"></select>
             </span>
           </div>
+          <!-- 顯示幣別:帳號上的 base_currency 偏好(同網頁設定 modal 那一個;策略組合的合計、投入資金幣別、總權益跟著換)。
+               沒登入、或 api 還沒回選項(base_currency_options)時整列不出;選項與值由 app.js 的 ccyPaint 畫 -->
+          <div class="set-row" id="set-ccy-row" hidden>
+            <label class="set-gl" for="set-ccy" data-i18n="set.ccy"></label>
+            <span class="set-selw">
+              <select class="set-sel" id="set-ccy"></select>
+            </span>
+          </div>
+          <p class="set-ccy-err" id="set-ccy-err" role="status" hidden></p>
           <!-- 關於(這一頁最下面;版本唯一出現處):第一行「Blave {app} · 已是最新版」+ 文字連結(檢查更新 / 重新啟動以完成更新),只管電腦版;
                第二行「雲端主機 {ws} · 有新版 {lv}」+「更新雲端主機」,只在主機在跑或停機時出現。字與連結由 app.js 的 upPaint 依 upPlan 畫 -->
           <div class="set-about" id="set-up">
@@ -515,13 +540,47 @@
       <button type="button" class="modal-close" id="ps-close" data-i18n-aria="set.close">✕</button>
     </div>
     <div class="ps-body" id="ps-body">
-      <p class="ps-hint" data-i18n="tr.pick.hint"></p>
       <div class="ps-list" id="ps-list"></div>
     </div>
     <div class="modal-foot">
       <span class="del-where" id="ps-where" hidden></span>
       <button type="button" class="btn-out" id="ps-cancel" data-i18n="del.cancel"></button>
       <button type="button" class="btn-fill" id="ps-ok" data-i18n="tr.pick.ok"></button>
+    </div>
+  </div>
+</div>
+
+<!-- 策略組合 › 優化 › 方法(同網頁 #mg_method_scrim):下拉(內建／自訂)+ 一句描述 + 該方法宣告的參數;「確定」只改這一頁,跑優化／回測時才送 -->
+<div class="scrim" id="mgm-scrim" role="dialog" aria-modal="true" aria-labelledby="mgm-title" hidden>
+  <div class="set-modal ps-modal" id="mgm-modal">
+    <div class="modal-head">
+      <h6 id="mgm-title" data-i18n="mg.methodTitle"></h6>
+      <button type="button" class="modal-close" id="mgm-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="ps-body mg-mbody">
+      <label class="mg-fld"><span class="mg-fld-l" data-i18n="mg.tbMethod"></span><select class="mg-sel" id="mgm-sel"></select></label>
+      <p class="ps-hint" id="mgm-desc"></p>
+      <div class="mg-params" id="mgm-params"><div class="mg-ph" data-i18n="mg.params"></div><div id="mgm-fields"></div></div>
+      <p class="mg-err" id="mgm-err" hidden></p>
+      <p class="mg-more"><span data-i18n="mg.moreMethods"></span> <button type="button" class="btn-quiet" id="mgm-ask" data-i18n="mg.askAgent"></button></p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn-out" id="mgm-cancel" data-i18n="del.cancel"></button>
+      <button type="button" class="btn-fill" id="mgm-ok" data-i18n="tr.pick.ok"></button>
+    </div>
+  </div>
+</div>
+<!-- 策略組合 › 優化 › 部位大小(同網頁 #mg_size_scrim):投入資金 + 三種口徑(目標波動／最大回撤／固定槓桿)+ 預覽三格;「確定」只改頁面上的金額 -->
+<div class="scrim" id="mgs-scrim" role="dialog" aria-modal="true" aria-labelledby="mgs-title" hidden>
+  <div class="set-modal ps-modal" id="mgs-modal">
+    <div class="modal-head">
+      <h6 id="mgs-title" data-i18n="sz.title"></h6>
+      <button type="button" class="modal-close" id="mgs-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="ps-body mg-sbody" id="mgs-body"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn-out" id="mgs-cancel" data-i18n="del.cancel"></button>
+      <button type="button" class="btn-fill" id="mgs-ok" data-i18n="tr.pick.ok"></button>
     </div>
   </div>
 </div>
@@ -720,6 +779,7 @@
 <script src="strategy_versions.js"></script>
 <script src="versions.js"></script>
 <script src="perf.js"></script>
+<script src="portfolio.js"></script>
 <script src="browser.js"></script>
 <script src="pine-install.js"></script>
 <script src="engine.js"></script>

@@ -1,5 +1,5 @@
 /* 聊天結果卡(blave-canon output/designer/spec-desktop-result-card-0.1.8.md,mockup A)。
-   回合結束中欄一律不動:這一輪做出來的報告 / 策略,在那一則 agent 回覆的文字之後各出一張卡,用戶按了才換中欄。
+   回合結束中欄一律不動:這一輪做出來的報告 / 策略,在思考過程下、那一則 agent 回覆的文字之上各出一張卡(resSlotPut),用戶按了才換中欄。
    殼同 web 工作頁的轉出卡 .xp(bg-body、md、內距 12、無框無陰影、右邊一顆實心鈕);一輪超過 3 張收在「還有 N 個」。
    卡是那一輪的紀錄:存在主行程 state/chat-results/<session>/(每輪一列 { ts, items }),重開 app 照時間插回那一輪,
    畫之前對一次現況——不在了畫成無鈕的已刪除態、之後又改過加「之後有更新」。
@@ -186,11 +186,27 @@ async function resScanFacts(it) {
   if (s.single) it.facts.single = true;
   if (s.tag) it.facts.tag = s.tag;
 }
-// 這一輪的回覆泡泡:往回找到上一句用戶的話為止的最後一則回覆(同 export.js xpHost);沒有就回 null,真的要出卡才起一則
+// 這一輪的回覆泡泡:往回找到上一句用戶的話為止的第一則回覆——思考過程就插在它上面(busy.anchor),卡槽才會緊接在思考過程下。
+// 同 export.js xpHost;沒有就回 null,真的要出卡才起一則
 function resHostNow() {
+  let host = null;
   for (let n = $("chat-scroll").lastElementChild; n && !n.classList.contains("you"); n = n.previousElementSibling)
-    if (n.classList.contains("msg") && n.classList.contains("ai")) return n;
-  return null;
+    if (n.classList.contains("msg") && n.classList.contains("ai")) host = n;
+  return host;
+}
+/* 結果卡(轉出檔、報告／回測／掃描／策略)放在思考過程下、回覆文字上(Wei 10-14,同 web .ai-results):每則一個槽,當那則的第一個子節點。
+   卡只在回合結束 paintAi 定稿之後才掛——paintAi 清空整則泡泡,槽會跟著被清掉。槽裡轉出卡在前、結果卡組在後(兩份存檔各記 ts,
+   重開時誰先畫不保證),結果卡組重畫時原地換。沒貼底不動 scrollTop:卡插在讀者畫面上方時 Chromium 的 scroll anchoring 已經讓
+   正在讀的那行不跳,再自己補位會多跳一次 */
+function resSlotPut(host, node) {
+  const sc = $("chat-scroll"), atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 24;
+  let slot = host.querySelector(":scope > .ai-results");
+  if (!slot) { slot = resEl("div", "ai-results"); host.insertBefore(slot, host.firstChild); }
+  const g = slot.querySelector(":scope > .res-group");
+  if (node.classList.contains("res-group")) { if (g) g.replaceWith(node); else slot.appendChild(node); }
+  else if (g) g.before(node);
+  else slot.appendChild(node);
+  if (atBottom) scrollChat();
 }
 function resHostFor(rt) {
   if (rt.host && rt.host.isConnected) return rt.host;
@@ -202,7 +218,7 @@ function resHostFor(rt) {
   const el = resEl("div", "msg ai"); rt.anchor.after(el); rt.host = el;
   return el;
 }
-/* 加卡(當場那一批,或雲端晚到的):去重、存檔、畫。晚到的插回那一輪;人停在對話底部才捲,不在底部不捲、不搶焦點 */
+/* 加卡(當場那一批,或雲端晚到的):去重、存檔、畫。晚到的插回那一輪的槽;捲動照 resSlotPut,不搶焦點 */
 function resAdd(rt, items) {
   const add = items.filter((it) => !rt.items.some((x) => resSame(x, it)));
   if (!add.length) return;
@@ -210,17 +226,15 @@ function resAdd(rt, items) {
   try { window.blave.saveTurnResults(rt.sid, { ts: rt.ts, items: add }).catch(() => {}); } catch (_) { /* 存不了:這一輪照畫,重開不回來 */ }
   const host = resHostFor(rt);
   if (!host) return;
-  const sc = $("chat-scroll"), atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 24;
   const prev = host._res, states = prev ? rt.items.map((it) => { const i = prev.items.findIndex((x) => resSame(x, it)); return i >= 0 ? prev.states[i] : "ok"; }) : null;
   resPaint(host, rt.items, states, add, rt.ts);
-  if (atBottom) scrollChat();
 }
 
 /* ── 畫 ── */
 function resPaint(host, items, states, fresh, ts) {
   host.dataset.resTs = String(ts);
   host._res = { items, states: items.map((_, i) => (states && states[i]) || "ok") };
-  const old = host.querySelector(":scope > .res-group"), all = !!old && old.classList.contains("all");   // 晚到的卡重畫整組:展開過的保持展開
+  const old = host.querySelector(".ai-results .res-group"), all = !!old && old.classList.contains("all");   // 晚到的卡重畫整組:展開過的保持展開
   const g = resEl("div", "res-group" + (all ? " all" : ""));
   items.forEach((it, i) => {
     const c = resCard(it, host._res.states[i], !(fresh && fresh.includes(it)));
@@ -236,7 +250,7 @@ function resPaint(host, items, states, fresh, ts) {
     });
     g.appendChild(more);
   }
-  if (old) old.replaceWith(g); else host.appendChild(g);
+  resSlotPut(host, g);
 }
 function resCard(it, state, still) {
   const card = resEl("div", "res" + (state === "gone" ? " is-gone" : "") + (still ? " is-still" : ""));

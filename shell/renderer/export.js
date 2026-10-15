@@ -177,35 +177,29 @@ function xpAsk(target, opener) {
 }
 
 /* ── 對話裡的轉出卡(同 web buildExportNode:檔名 + 平台·語言·大小 + 一顆下載,下面一行誠實句)──
-   runtime 在 done 之前送 export chunk;回覆泡泡在 done 才定稿、回合結束還會重畫一次,所以先收著,回合結束才掛上去 */
+   runtime 在 done 之前送 export chunk;回覆泡泡在 done 才定稿、回合結束還會重畫一次,所以先收著,回合結束才掛進回覆上方的卡槽 */
 function xpChunk(c) {
   if (c && c.session_id && c.session_id !== sessionId) return;
   if (xpChunkOk(c)) XP.pending.push({ id: typeof c.id === "string" ? c.id : null, session: sessionId, target: c.target, strategy: c.strategy,
     filename: c.filename, size: new Blob([c.content]).size });   // 內容不留在畫面:下載由主行程讀那一輪的快照
 }
 /* 重開 app / 切回舊對話(app.js csOpen):主行程存的那幾張卡照時間插回去——index 的 ts 是回合結束時間,排在那一輪回覆之後,
-   所以掛到目前最後一則 agent 回覆下面(同即時那一輪的位置) */
+   所以掛進那一輪回覆的卡槽(同即時那一輪的位置) */
 async function xpHistoryItems(sid) {
   let rows = []; try { rows = await window.blave.loadSessionExports(sid); } catch (_) { return []; }
   return (rows || []).filter((r) => r && XP_PLATFORM[r.target]).map((r) => ({ ts: Number(r.ts) || 0, xp: { ...r, session: sid } }));
 }
-function xpRestore(rec) { xpPut(xpHost(null), xpCard(rec, true)); }
-// 卡掛在哪:這一輪的回覆泡泡;沒有(回覆後面接了圖、或這一輪沒有字)就往回找到上一句用戶的話為止的最後一則回覆(results.js resHostNow,兩種卡同一則),再沒有才另起一則
-function xpHost(bubble) {
-  if (bubble && bubble.isConnected) return bubble;
-  return resHostNow() || addMsg("ai", "");
-}
-// 同一則回覆裡結果卡永遠最後:兩份存檔的 ts 各自記,重開時誰先畫不保證
-function xpPut(host, card) { const g = host.querySelector(":scope > .res-group"); if (g) g.before(card); else host.appendChild(card); }
-function xpTurnEnd(bubble) {
+function xpRestore(rec) { resSlotPut(xpHost(), xpCard(rec, true)); }
+// 卡掛在哪:這一輪思考過程下的那則回覆(results.js resHostNow,兩種卡同一則同一個槽);這一輪沒有字才另起一則
+function xpHost() { return resHostNow() || addMsg("ai", ""); }
+function xpTurnEnd() {
   const list = XP.pending; XP.pending = [];
   // 正開著的那支每一輪結束都重掃轉出檔(只換 exports,不動其他分頁):檔案是 agent 寫進資料夾的,
   // 這一輪有沒有送卡跟檔案在不在是兩件事——只在有卡時重掃,漏卡那一輪程式碼分頁要切走再切回來才看得到
   if (RP.name) xpReload(RP.name);
   if (!list.length) return;
-  const host = xpHost(bubble);
-  list.forEach((c) => xpPut(host, xpCard(c)));
-  scrollChat();
+  const host = xpHost();
+  list.forEach((c) => resSlotPut(host, xpCard(c)));
 }
 async function xpReload(name) {
   let d = null; try { d = await window.blave.loadStrategy(name); } catch (_) { return; }

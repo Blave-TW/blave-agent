@@ -69,6 +69,10 @@
   --color-darkBorder: #2d383e;
   --color-darkText: #eaeff0;
 
+  /* Setup fog(canon › Components › Setup fog、Color › Surfaces):示意底的模糊與實心遮罩(= darkBody 55%);app 寫死 dark,只有這一組值 */
+  --fog-blur: 6px;
+  --fog-mask: rgba(15, 22, 26, .55);
+
   /* radii */
   --radius-micro: 4px;
   --radius-xs: 6px;

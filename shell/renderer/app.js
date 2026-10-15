@@ -425,6 +425,7 @@ function setCat(cat) {
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "rules") rulesOpen(); else rulesClear();   // Agent 規則(renderer/rules.js):離開這一類就丟掉沒存的編輯
   if (cat === "display") aboutIdLoad();
+  if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
   if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
@@ -440,7 +441,48 @@ async function setOpen() {
   $("set-close").focus();
   hasToken = await window.blave.hasBlaveToken();
   paintBlaveBtn();
+  ccyPaint();
   detect();
+}
+/* 設定 › 顯示幣別(Wei 10-14,同網頁設定 modal 的 base_currency 下拉):寫帳號上的偏好,雲端的合計、投入資金幣別、總權益跟著換。
+   選項只用狀態信封明列的 base_currency_options(∪ 目前顯示幣,USD 排最前);舊 api 沒這欄、沒登入 → 整列不出。
+   主行程寫完會作廢在途的舊幣別回應並重抓(cloud.js setBaseCurrency);畫面這邊叫一次輪詢把新的那份拿進 TR_BAGS.cloud */
+const CCY = { busy: null, pin: null, saved: null };
+function ccyCloud() { const c = typeof TR_BAGS !== "undefined" && TR_BAGS.cloud.st ? TR_BAGS.cloud.st.cloud : null; return c && c.code === "OK" ? c : null; }
+function ccyOptions(c) {
+  const o = c && Array.isArray(c.base_currency_options) && c.base_currency_options.length ? c.base_currency_options.slice() : null;
+  if (!o) return null;
+  const cur = typeof c.currency === "string" ? c.currency.toUpperCase() : null;
+  if (cur && o.indexOf(cur) < 0) o.push(cur);
+  o.sort(); const i = o.indexOf("USD"); if (i > 0) { o.splice(i, 1); o.unshift("USD"); }
+  return o;
+}
+function ccyPaint() {
+  const row = $("set-ccy-row"), sel = $("set-ccy"), c = ccyCloud(), o = hasToken && c ? ccyOptions(c) : null;
+  row.hidden = !o;
+  if (!o) { $("set-ccy-err").hidden = true; sel.dataset.sig = ""; return; }
+  const cur = typeof c.currency === "string" ? c.currency.toUpperCase() : "";
+  if (CCY.pin && CCY.pin === cur) CCY.pin = null;   // 新的那份信封到了
+  const shown = CCY.busy || CCY.pin || cur, sig = o.join(",") + "|" + shown + "|" + (CCY.busy ? 1 : 0);
+  if (sel.dataset.sig === sig) return;   // 輪詢重畫不洗掉鍵盤焦點
+  sel.dataset.sig = sig; sel.textContent = "";
+  o.forEach((code) => { const op = document.createElement("option"); op.value = code; op.textContent = code; sel.appendChild(op); });
+  sel.value = shown; sel.disabled = !!CCY.busy;
+}
+async function ccyPick(code) {
+  const c = ccyCloud(); if (CCY.busy || !c) return;
+  // 同值也要能落庫(顯示幣可能是伺服器推出來的、偏好根本沒存過;同網頁):本 session 確定存過同值才免送
+  if (code === String(c.currency || "").toUpperCase() && CCY.saved === code) return;
+  CCY.busy = code; $("set-ccy-err").hidden = true; ccyPaint();
+  let r = null; try { r = await window.blave.cloudSetCcy(code); } catch (_) { r = null; }
+  CCY.busy = null;
+  if (r && r.ok) {
+    CCY.saved = code; CCY.pin = code; trackFeature("display_ccy_set");
+    if (typeof ENV !== "undefined") ENV.cloudDirty = true;
+    if (typeof trPollSoon === "function") trPollSoon(0);
+  } else { const e = $("set-ccy-err"); e.textContent = t("set.ccyFail"); e.hidden = false; }
+  $("set-ccy").dataset.sig = ""; ccyPaint();
+  if (!$("set-scrim").hidden && !$("set-ccy-row").hidden) $("set-ccy").focus();
 }
 function setClose() {
   const sc = $("set-scrim");
@@ -503,6 +545,7 @@ $("set-cats").addEventListener("click", (e) => {
 });
 $("set-scrim").addEventListener("keydown", (e) => trapTab(e, $("set-modal")));   // Esc 在下面那一支 document 層的 escTop
 $("set-lang").addEventListener("change", () => applyLangChoice($("set-lang").value));
+$("set-ccy").addEventListener("change", () => ccyPick($("set-ccy").value));
 
 /* ── 版本與更新(設定 › 一般 › 關於)──────────────────────────────────
    主行程的 updater.js 管下載;這裡只畫狀態。新版在背景下載,永遠不自己重啟:已暫存好 → 「重新啟動以完成更新」;
@@ -1312,7 +1355,7 @@ async function stratRefresh(turnEnd) {
       const opener = code === "NOT_FOUND" ? await stratRefreshAt(x.name) : b;
       const title = t("cdel.title", { name: (x.displayName || x.name).slice(0, 40) });
       confirmBox({ title, ...stratDelBody(code, x.name), ok: t("cdel.gotIt"), opener, single: true, onOk: () => {},
-        alt: code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => trOpen("pos") } : null });
+        alt: code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => poOpen("cfg") } : null });
     }, false, window.blave.platform === "win32" ? "strat.delConfirm.win" : "strat.delConfirm");
     del.disabled = running;
     wrap.append(b);
@@ -1927,7 +1970,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   $("del-cancel").textContent = cancel || t("del.cancel");
   const body = $("del-body"); body.className = "del-body lines" + (choices ? " has-choices" : ""); body.textContent = "";
   if (lead) body.appendChild(lead);
-  lines.forEach((x) => { const p = document.createElement("p"); p.textContent = x; if (okDisabled && okWhy && x === okWhy) p.id = "del-ok-why"; body.appendChild(p); });
+  lines.forEach((x) => { const p = document.createElement("p"); if (typeof x === "string") p.textContent = x; else p.appendChild(x); if (okDisabled && okWhy && x === okWhy) p.id = "del-ok-why"; body.appendChild(p); });
   if (choices) {
     const fs = mk("fieldset", "cf-opts"); fs.appendChild(mk("legend", "", choicesLabel || ""));
     choices.forEach((c) => {
@@ -3055,7 +3098,9 @@ async function acctCheck() {
   acctPending++;
   const s = await window.blave.accountStatus().finally(() => { acctPending--; });
   if (!hasToken) return;                    // 在途時登出了:這筆是舊帳號的
-  if (s) acct = s;                          // 查不到就留著上一次的
+  await authSync();
+  if (AUTH.revoked) acct = null;            // 登入已失效:手上那份是失效前的,不拿它畫「已登入」的方案
+  else if (s) acct = s;                     // 查不到就留著上一次的
   acctPaint();
   if (!acct) planWatchIdle();               // 查不到、手上也沒有:方案頁這時才換成「查不到」那一格
   // 問不到、手上也沒有狀態:中性句不能一直掛著,退回「沒額度 → 儲值」那組(不猜沒卡)
@@ -3206,8 +3251,16 @@ function planOpen() { setOpen().then(() => setCat("plan")); }
 function planToCloud() { setClose(); envSwitchGuarded("cloud"); }
 /* 這一頁現在是哪一格(設計師 v3 的狀態表)。登入是帳號的事、換 AI 是引擎的事:這裡只看有沒有登入與帳號
    狀態,不看 cur(cur 只決定試用說明第一句寫「AI 照用你的…」還是「另有 AI 額度」)。 */
+/* 登入狀態(單一來源 = 主行程 authState;雲端狀態回 REVOKED／NO_APP_SECRET 也算):帳號與方案、公開連結、雲端分頁同一句「登入已失效，請重新登入。」+ 登入鈕 */
+const AUTH = { revoked: false };
+async function authSync() { let s = null; try { s = typeof window.blave.authState === "function" ? await window.blave.authState() : null; } catch (_) { s = null; } AUTH.revoked = s === "revoked"; return AUTH.revoked; }
+function authRevoked() {
+  const c = typeof TR_BAGS !== "undefined" && TR_BAGS.cloud.st ? TR_BAGS.cloud.st.cloud : null;
+  return !!hasToken && (AUTH.revoked || !!(c && (c.code === "REVOKED" || c.code === "NO_APP_SECRET")));
+}
 function planView() {
   if (!hasToken) return "out";
+  if (typeof authRevoked === "function" && authRevoked()) return "revoked";
   if (!acct) return "unknown";
   const st = planBusy && !planBusyPlan ? "starting" : planState();
   if (st !== "none") return st;                                   // starting / running / stopped
@@ -3245,7 +3298,8 @@ function planPaint() {
      訊息格 #acct-hint 只有這裡寫,只放共用那一則(登出時伺服器那顆沒撤成);「瀏覽器已開啟…」在頁尾鈕的左邊,不放兩次。
      餘額列:沒登入整列不出(沒有帳號就沒有餘額);讀不到畫「—」 */
   { const id = el("div", "plan-id"), who = el("div", "plan-bal");
-    who.append(el("span", "l", t("acct.lbl")), el("span", "v" + (hasToken ? "" : " na"), t(hasToken ? "acct.signedIn" : "acct.signedOut")));
+    const rv = typeof authRevoked === "function" && authRevoked();
+    who.append(el("span", "l", t("acct.lbl")), el("span", "v" + (hasToken && !rv ? "" : " na"), t(!hasToken ? "acct.signedOut" : rv ? "acct.revoked" : "acct.signedIn")));
     if (hasToken) { const out = btn("btn-quiet", t("acct.out"), (e) => acctOutAsk(e.currentTarget), running); out.id = "set-acct-btn"; out.dataset.k = "acct-out"; who.append(out); }
     const hint = el("p", "cn-hint"); hint.id = "acct-hint"; hint.hidden = !HINT;
     if (HINT) { hint.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) hint.append(cmdLine(HINT.cmd)); }
@@ -3286,6 +3340,9 @@ function planPaint() {
                 wait: planLoginBusy ? t("pv.w.waiting") : t(mo && cur !== "blave" ? "pv.w.out.cli" : "pv.w.out"),
                 acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     unknown:  { h: "pv.h.unknown", lead: t("pv.d.unknown"), acts: [btn("btn-out", t("plan.recheck"), () => acctCheck())] },
+    // 登入已失效(token 被撤／過期):不是網路問題,也不是「已登入」——同一句 + 登入鈕
+    // 帳號列已經寫「登入已失效」:卡片標題只講要做什麼、不再加說明句(設計最終稽核:同一畫面別講三次)
+    revoked:  { h: "pv.h.revoked", lead: "", acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: t("pv.f.noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
@@ -3716,7 +3773,7 @@ window.blave.onTurnEnd(async (r) => {
     catch (_) { /* noop */ }
   }
   if (liveBubble && liveBubble._raw != null) paintAi(liveBubble, liveBubble._raw, false);   // 定稿:不再藏半截標記
-  if (typeof xpTurnEnd === "function") xpTurnEnd(liveBubble);   // 定稿之後才掛轉出卡:paintAi 會清空泡泡
+  if (typeof xpTurnEnd === "function") xpTurnEnd();   // 定稿之後才掛轉出卡:paintAi 會清空泡泡(連卡槽一起)
   // 上限的那句沒以回覆的形式出來(走 error chunk 或直接結束)時 turnFailOf 看不到:這一輪收過 llm_cap 就照樣記 cap
   if (!stopped && cur === "apikey" && turnCap) turnFail = "cap";
   const faulted = !stopped && (r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut);   // 同 upTurnEnded 的判準

@@ -24,7 +24,7 @@ const pass = (msg) => console.log("PASS  " + msg);
 // 沒列進來的話它們的 key 漂移、漏翻的字面都不會被擋到)。
 // trade.js(自動下單頁)也是手寫的畫面檔;strings.js 是產生的、i18n.js 不放字串,兩個不掃。
 const RENDERER_FILES = ["renderer/app.js", "renderer/index.html",
-  ...fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => /^(report-.*|trade|datasrc|rules|handoff|export|library|reports|newstrategy|capital|welcome|stratflags|perf)\.js$/.test(f)).map((f) => "renderer/" + f)];
+  ...fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => /^(report-.*|trade|portfolio|datasrc|rules|handoff|export|library|reports|newstrategy|capital|welcome|stratflags|perf)\.js$/.test(f)).map((f) => "renderer/" + f)];
 
 const src = read("renderer/strings.js");
 const block = (name) => src.split(`  ${name}: {`)[1].split("\n  },")[0];
@@ -123,13 +123,14 @@ if (!PY) {
 const valsOf = (b) => Object.fromEntries([...b.matchAll(/^\s*("(?:[^"\\]|\\.)*"): ("(?:[^"\\]|\\.)*"),?$/gm)]
   .map((m) => [JSON.parse(m[1]), JSON.parse(m[2])]));
 const enV = valsOf(block("en")), zhV = valsOf(block("zh"));
-const numbered = ["en", "zh"].filter((l) => /\d|\{/.test((l === "en" ? enV : zhV)["tr.threshold"] || ""));
-if (numbered.length) fail(`tr.threshold 帶了數字或參數(${numbered})—— §2:門檻只能來自 gates,文案不提數字`);
-else pass("tr.threshold 兩語都不提數字");
+// 0.1.24 A 案(同網頁):灰色差額格的 tooltip =「這輪不下單:」+ 帶機器回報 gates 數字的原因;沒有 gates 就不掛,前導那句本身不帶數字
+const numbered = ["en", "zh"].filter((l) => /\d|\{/.test((l === "en" ? enV : zhV)["tr.gateFootLead"] || ""));
+if (numbered.length) fail(`tr.gateFootLead 帶了數字或參數(${numbered})—— §2:門檻只能來自 gates,文案不提數字`);
+else pass("tr.gateFootLead 兩語都不提數字");
 const trjs = read("renderer/trade.js");
-if (/t\("tr\.threshold",/.test(trjs)) fail("trade.js 又把值代進 tr.threshold —— §2 只准不帶參數的 t(\"tr.threshold\")");
-else if (!/t\("tr\.threshold"\)/.test(trjs)) fail("trade.js 找不到 t(\"tr.threshold\") 的呼叫");
-else pass("trade.js 的 tr.threshold 不帶參數");
+if (/t\("tr\.gateFootLead",/.test(trjs)) fail("trade.js 又把值代進 tr.gateFootLead");
+else if (!/t\("tr\.gateFootLead"\) \+ why/.test(trjs)) fail("trade.js 找不到 t(\"tr.gateFootLead\") + why");
+else pass("trade.js 的 tr.gateFootLead 不帶參數、接在原因前");
 
 // ---- 6. 雲端視角:網頁限定的事歸給網頁工作頁;agent 做得到的事不可以再歸給網頁 ----
 // A′ 之後 agent 能在雲端主機上做策略,「新增策略要到網頁」是假話。今天仍是網頁限定的:定期報告、每支策略的下單方式與

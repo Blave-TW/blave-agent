@@ -19,7 +19,7 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
   t("daemon 沒跑:resume 直接回 DAEMON_DOWN,不寫檔", (await host.send("resume", {})).error === "DAEMON_DOWN"
     && !fs.existsSync(path.join(WS, "state", "local_cmd", "in")));
   t("畫面沒有的指令不送(delete_strategy)", (await host.send("delete_strategy", { name: "x" })).error === "NOT_ALLOWED");
-  t("白名單不含會動報告排程 / 偏好的指令", !["report_delete", "preferences_set", "manage_backtest", "tz_set"].some((c) => UI_COMMANDS.has(c)));
+  t("白名單不含會動報告排程 / 偏好的指令", !["report_delete", "preferences_set", "tz_set"].some((c) => UI_COMMANDS.has(c)));
   t("設定 › Agent 規則的兩個寫入只准主行程送(trusted),renderer 的 trade-send 送不出來", MAIN_ONLY_COMMANDS.has("preferences_set") && MAIN_ONLY_COMMANDS.has("reply_lang_set")
     && (await host.send("preferences_set", { rules: ["x"] })).error === "NOT_ALLOWED" && (await host.send("reply_lang_set", { lang: "en" })).error === "NOT_ALLOWED");
   // 設定 › Agent 規則:形狀同 api agent_command 的兩支驗證;上限是傳輸天花板(100 × 1000),不是介面的 10 × 150

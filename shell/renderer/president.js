@@ -459,7 +459,7 @@ function presDoneBody(pc) {
   if (exp) kv(t("pres.done.exp"), n !== null ? t("pres.done.expV", { date: exp, n }) : exp, "mono");
   f.appendChild(dl);
   const note = trEl("div", "cx-note");
-  ["pres.done.n1", "pres.done.n2"].forEach((k) => note.appendChild(presP("", t(k))));
+  note.appendChild(presP("", t("pres.done.n1")));   // n2(只管自己下的單)搬到第一次真錢確認框(post-connect-flow 第 2 列):綁好那一刻只需要知道關機就不下單
   f.appendChild(note);
   return f;
 }
@@ -469,14 +469,14 @@ function presMsgText(m) {
   return where === "frame" ? t(PRES_FRAME_ERR[m.code]) : where === "slot" ? t("pres.err.generic") : null;
 }
 
-// 腳:找憑證 / 表單 = 取消 + 主鈕;清單 = 關閉;完成 = 設定策略下單(關框)
+// 腳:找憑證 / 表單 = 取消 + 主鈕;清單 = 關閉;完成 = 「完成」(關框,一律停在自動下單;備案 B)
 function presFoot(view) {
   const go = $("cx-go"), cancel = $("cx-cancel"), where = $("cx-where");
   where.hidden = true; where.textContent = "";
   const prep = view === "d-prep-none" || view === "d-prep-load" || view === "d-prep-wait";
   // 找不到憑證:主鈕跟著選的路(還沒選就沒有主鈕)
   const label = view === "d-prep-none" ? (PRES.choice === "new" ? t("pres.tcem.open") : PRES.choice === "have" ? t("pres.none.pick") : null) : view === "d-form" ? (PRES.busy ? t("cx.connecting") : t("pres.form.go"))
-    : view === "d-done" ? t("pres.done.go") : null;
+    : view === "d-done" ? t("pres.done.ok") : null;
   go.hidden = !label;
   if (label && go.textContent.trim() !== label) go.textContent = label;
   cancel.hidden = view === "d-done";
@@ -496,7 +496,7 @@ function presPrimary() {
   const v = PRES.view;
   if (v === "d-prep-none") return PRES.choice === "have" ? presPick() : PRES.choice === "new" ? presOpenTcem() : undefined;
   if (v === "d-form") return presGo();
-  if (v === "d-done") { presTrack("ready"); return cxModalClose(true); }
+  if (v === "d-done") { presTrack("ready"); cxModalClose(true); if (!(TR.open && TR.view === "tr")) trOpen(); return; }   // 備案 B:不換頁、不承諾去處,停在自動下單(原因行有「到策略組合」)
 }
 
 function presPaint() {
@@ -551,6 +551,10 @@ function presFirstGate(next, opener) {
   const lines = rows.map((x) => t("pres.first.row", { name: trDisplay(x.name), n: x.lots, unit: t(trLotsKey(x.lots, "tr.lotsUnit", "tr.lotUnit")) }));
   lines.push(typeof a.equity === "number" ? t("pres.first.equity", { v: trTwd(a.equity) + " " + TR_TXF_CCY }) : t("pres.first.equityNone"));   // TWD 整數 + 幣別後綴,不用 NT$(canon Numbers)
   lines.push(t("pres.first.margin"));
+  lines.push(t("pres.done.n2"));   // 「只管自己下的單」從綁好頁搬來(post-connect-flow 第 2 列):第一次真錢之前才用得到
   confirmBox({ title: t("pres.first.title"), mark: t("tr.mode.real"), markKind: "real", opener, lines, ok: t("pres.first.ok"),
-    onOk: () => { lsSet(PRES_FIRST_KEY, "1"); trackFeature("pres_first_start"); setTimeout(next, 0); } });
+    // 按了「確定」還不算看過:下一個啟動框可能取消、啟動也可能被拒——啟動指令 ack 成功才記(trRun 叫 presFirstDone;網頁有這個 bug)
+    onOk: () => { PRES_FIRST_ARMED = true; trackFeature("pres_first_start"); setTimeout(next, 0); } });
 }
+let PRES_FIRST_ARMED = false;
+function presFirstDone() { if (!PRES_FIRST_ARMED) return; PRES_FIRST_ARMED = false; lsSet(PRES_FIRST_KEY, "1"); }

@@ -35,7 +35,7 @@ ok("組合成員:都沒有 = false;config 讀不到 = null(交給機器裁決)",
   ok("列尾刪除鈕:機器在跑、不在回合中、名字合規、不在刪除中才畫;跟 HO 旗標無關", /const canDel = kind === "running" && !\(typeof running !== "undefined" && running === true\);/.test(side)
     && /if \(canDel && !deleting && \/\^\[A-Za-z0-9_-\]\{1,64\}\$\/\.test\(x\.name\)/.test(side) && !/hoDownBtn/.test(side));
   ok("刪除框帶雲端記號、開框前先預檢組合成員", /if \(cdelInUse\(cfg, x\.name\) === true\) return cdelBlocked\(x, opener\);/.test(fnOf(trSrc, "cdelAsk")) && /env: "cloud"/.test(fnOf(trSrc, "cdelAsk"))
-    && /okDisabled: true/.test(fnOf(trSrc, "cdelBlocked")) && /trOpen\("pos"\)/.test(fnOf(trSrc, "cdelBlocked"))); }
+    && /okDisabled: true/.test(fnOf(trSrc, "cdelBlocked")) && /poOpen\("cfg"\)/.test(fnOf(trSrc, "cdelBlocked"))); }   // 0.1.24:金額搬到策略組合 › 配置
 
 // ── confirmBox 的 single(只有一顆鈕)──
 ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$\("del-cancel"\)\.hidden = !!single;/.test(appSrc) && /if \(single\) \$\("del-ok"\)\.focus\(\); else \$\("del-cancel"\)\.focus\(\);/.test(appSrc)
@@ -254,6 +254,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, rpTab = (B) => (B.data && B.data.stats ? B.tab : "code"), confirmBox = () => {};
   const document = doc;
   eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
+  eval(fnOf(trSrc, "envNavMark").replace(/^function envNavMark/, "var envNavMark = function"));
   eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));
   eval("var stratSelect = async " + fnOf(appSrc, "stratSelect").replace(/^async /, ""));
   const envCanSwitch = () => true;   // 再點選中那支走 sideReclick(展開層 / 守門那幾態在 check_shell_side_reclick)
@@ -281,7 +282,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
       api: { loadStrategy: (n) => new Promise((res) => pendingLoads.push({ n, res })) } };
     const scope = { $: $2, document: doc, t: (k) => k, ENV: { cur: "cloud", sig: {} }, TR_BAGS: { cloud: C, local: { open: false } }, RP: { name: null }, RPC: { name: null, data: null, tab: "bt", drawn: {} },
       trAlert: () => {}, srSay: (x) => said.push(x), hoPaint: () => {}, window: {} };
-    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpTab"), fnOf(appSrc, "rpShowTab"), fnOf(appSrc, "rpMissKey"), fnOf(appSrc, "rpNobtPaint"),
+    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envNavMark"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpTab"), fnOf(appSrc, "rpShowTab"), fnOf(appSrc, "rpMissKey"), fnOf(appSrc, "rpNobtPaint"),
       appSrc.slice(appSrc.indexOf("const RPC_CACHE = new Map();"), appSrc.indexOf("async function rpCloudSelect(")).replace(/^const |^let /gm, "var "),
       "var rpCloudSelect = async " + fnOf(appSrc, "rpCloudSelect").replace(/^async /, ""),
       "var trPaint = () => envShowMain();"].join("\n");

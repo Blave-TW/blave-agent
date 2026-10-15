@@ -18,7 +18,9 @@ const cutBlock = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b); if (i
 const pure = cutBlock("/* ── 純邏輯(", "/* ── 純邏輯到此") + cutBlock("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此");
 const cut = (name) => { const i = src.indexOf("function " + name + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + name); };
 
-const node = (tag) => ({ tag, cls: "", kids: [], text: "", dataset: {}, on: {}, addEventListener(e, f) { this.on[e] = f; }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
+const node = (tag) => ({ tag, cls: "", kids: [], text: "", dataset: {}, on: {}, parentNode: null, addEventListener(e, f) { this.on[e] = f; }, appendChild(c) { if (c && typeof c === "object") c.parentNode = this; this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.appendChild(x)); },
+  classList: { add() {}, contains() { return false; } }, get nextSibling() { const p = this.parentNode; if (!p) return null; const i = p.kids.indexOf(this); return p.kids[i + 1] || null; },
+  insertBefore(c, ref) { c.parentNode = this; const i = ref ? this.kids.indexOf(ref) : -1; if (i < 0) this.kids.push(c); else this.kids.splice(i, 0, c); return c; },
   setAttribute() {}, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
 const flat = (n, out = []) => { if (n && n.tag) { out.push(n); (n.kids || []).forEach((k) => flat(k, out)); } return out; };
 
@@ -45,12 +47,14 @@ function paint(report, st = {}) {
   if (st.realErrText) delete ctx.trOrderErrText;  // 要看真的在地化那一句:用 trade.js 自己的 trOrderErrText
   vm.createContext(ctx);
   vm.runInContext(pure.replace(/^const /gm, "var "), ctx);
-  vm.runInContext((st.realErrText ? ["trOrderErrText"] : []).concat(["trLivePositions", "trClientTargets", "trGateSide", "trPositions"]).map(cut).join("\n").replace(/^const /gm, "var "), ctx);
-  const frag = vm.runInContext("trPositions(TR.st.report, TR.st.report.config.amounts, TR.st.report.states)", ctx);
-  const all = flat(frag), errRow = all.find((n) => n.cls === "pf-foot err"), pastRow = all.find((n) => n.cls === "pf-foot past"), gateRow = all.find((n) => n.cls === "pf-foot");
+  // 0.1.24:下單失敗從表底搬到出錯那一列底下(策略組合 › 總訊號部位表 poSigTable;同網頁):紅字 = .pf-note.err、灰字 = .pf-note.past
+  ctx.TR.list = []; ctx.TR.just = null; ctx.trManualPart = () => 0; ctx.trPlanTotal = () => ({ text: "x", ccy: null, mult: "", n: 1 }); ctx.trPosDetail = () => ({}); ctx.trFmtPrice = String; ctx.trFmt2 = String; ctx.trRowTxf = () => null; ctx.trLotsKey = (n, a) => a; ctx.trDisplay = (n) => n; ctx.trTipLabel = () => node("span"); ctx.trHasAccount = (r) => ctx.trVenueIds(r).length > 0; ctx.trVenueLabel = (id) => id; ctx.trNoSignalYet = () => false; ctx.trTxfPrice = () => null; ctx.ENV_JUST_MS = 300000;
+  vm.runInContext((st.realErrText ? ["trOrderErrText"] : []).concat(["trLivePositions", "trClientTargets", "trGateSide", "trBook", "poPartStates", "poSigTable"]).map(cut).join("\n").replace(/^const /gm, "var "), ctx);
+  const frag = vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx);   // 0.1.24 A 案:帳上、差額、拒單在自動下單 › 部位
+  const all = flat(frag), errRow = all.find((n) => n.cls === "pf-note err"), pastRow = all.find((n) => n.cls === "pf-note past"), gateRow = all.find((n) => /(^| )hold( |$)/.test(n.cls));   // 0.1.24 A 案:門檻說明是灰色差額格的 tooltip
   const holds = all.filter((n) => /(^| )hold( |$)/.test(n.cls)).length;
   const stamp = pastRow ? (pastRow.kids.find((k) => k.tag === "span" && k.cls === "ts mono") || {}).text || null : null;
-  return { red: errRow ? errRow.textContent : null, past: pastRow ? pastRow.textContent : null, stamp, holds, foot: gateRow ? gateRow.textContent : null };
+  return { red: errRow ? errRow.textContent : null, past: pastRow ? pastRow.textContent : null, stamp, holds, foot: gateRow ? gateRow.title || null : null };
 }
 
 const ERR = { ts: "2026-09-21T14:26:00", symbol: "BTCUSDT", exchange: "binance", error: "order rejected: gross notional 110000 exceeds 10x paper equity 9945" };
@@ -77,7 +81,7 @@ const crypto = (target, actual, o) => base({ config: { amounts: { s: target } },
 // ① + ② Wei 撞到的那個:金額改成 20,000、已成交、目標與實際相符 → 過期紅字不可以留
 t("① 加密列:差額已歸零 → 過期的失敗紅字不掛(這就是 Wei 在 Electron 44 看到的那個)", paint(crypto(20000, 20000)).red === null);
 t("② 加密列、沒有 gate、差額 3 → **不**算欠著(不可以拿「沒有 gate」當口數訊號,不然 ① 就被改回去了)", paint(crypto(20003, 20000)).red === null);
-t("加密列差額真的過了門檻(單還沒送出去)→ 紅字照掛", /ERR:BTCUSDT/.test(paint(crypto(30000, 20000)).red || ""));
+t("加密列差額真的過了門檻(單還沒送出去)→ 紅字照掛", /po\.orderFailedRow/.test(paint(crypto(30000, 20000)).red || ""));
 
 // ③ 口數列:機器端不寫 gates、下單沒門檻,差 1 口就送單
 // 口數列:真快照是 exchange="capital" **而且** asset_spec.type="futures_contracts" 兩個都有;分開測是為了確認兩條路各自都認得出來
@@ -88,15 +92,16 @@ const lots = (target, actual, how) => base({ ...CAPV, order_errors: [{ ts: "2026
   last_reconcile: { ts: "2026-09-21T14:25:59", orders: [], gates: {},
     target: { TXF: how === "spec" ? tRow(target, "sinopac", { type: "futures_contracts", contract_value: 200, currency: "TWD", lot_size: 1 }) : tRow(target, "capital", null) },
     actual: { TXF: aRow(actual, how === "spec" ? "sinopac" : "capital") } } });
-t("③ 口數列差 1 口(asset_spec 認出來)→ 失敗紅字留得住", /ERR:TXF/.test(paint(lots(3, 2, "spec")).red || ""));
-t("③ 口數列差 2 口(exchange=capital 認出來)→ 失敗紅字留得住", /ERR:TXF/.test(paint(lots(5, 3, "cap")).red || ""));
+t("③ 口數列差 1 口(asset_spec 認出來)→ 失敗紅字留得住", /po\.orderFailedRow/.test(paint(lots(3, 2, "spec")).red || ""));
+t("③ 口數列差 2 口(exchange=capital 認出來)→ 失敗紅字留得住", /po\.orderFailedRow/.test(paint(lots(5, 3, "cap")).red || ""));
 t("口數列差額歸零 → 過期紅字照樣不掛", paint(lots(3, 3, "spec")).red === null);
 t("口數列的差額不被畫成灰色(hold):差 1 口是真的會送單", paint(lots(3, 2, "spec")).holds === 0 && paint(crypto(20003, 20000)).holds === 1);
 
 // ④ 丙案:同一筆還欠著的失敗,在跑 → 紅;沒在跑 → 灰字「上次下單失敗」(不是不畫)
 const HALT = { halted: true, at: "2026-09-21T14:28:00", reason: "desktop ui", source: "web", blocked: 0 };
 const DEAD = { heartbeat_at: NOW / 1000 - 3600, alive: false };
-const LAST = (p) => p.past != null && /tr\.orderFailedLast/.test(p.past) && /"sym":"BTCUSDT"/.test(p.past) && /gross notional 110000/.test(p.past);
+// 0.1.24(設計稽核必改 1,同網頁):句子掛在那個標的的列下面,不再重寫標的——「上次下單失敗:{err}」
+const LAST = (p) => p.past != null && /po\.orderFailedLast/.test(p.past) && !/"sym"/.test(p.past) && /gross notional 110000/.test(p.past);
 { const p = paint(crypto(30000, 20000));
   t("④ running:紅字位置與現況相同、沒有灰字變體", p.red != null && p.past === null); }
 { const p = paint(crypto(30000, 20000, { halt: HALT }));
@@ -110,7 +115,7 @@ const LAST = (p) => p.past != null && /tr\.orderFailedLast/.test(p.past) && /"sy
   t("④ 常駐程式不在(st.alive=false,狀態檔裡的「對帳器活著」不能信)→ 灰", p.red === null && LAST(p)); }
 t("④ 沒在跑也**不會**把已解決的那筆撿回來:差額歸零 → 紅灰都不掛(判準沒動,只加了音量)",
   (() => { const p = paint(crypto(20000, 20000, { halt: HALT })); return p.red === null && p.past === null; })());
-t("④ 口數列一樣:halted 時差 1 口的失敗降灰、不是消失", (() => { const p = paint({ ...lots(3, 2, "spec"), halt: HALT }); return p.red === null && p.past != null && /"sym":"TXF"/.test(p.past); })());
+t("④ 口數列一樣:halted 時差 1 口的失敗降灰、不是消失", (() => { const p = paint({ ...lots(3, 2, "spec"), halt: HALT }); return p.red === null && p.past != null && /po\.orderFailedLast/.test(p.past); })());
 
 // 雲端視角:狀態來源跟頁頭同一個(envHeadState)。連不上但上一份回報 1 小時內說在跑 → 頁頭寫「執行中」,這裡就得是紅;
 // 回報太舊(頁頭寫「讀不到」)→ 不能肯定它會再送,降灰
@@ -134,9 +139,9 @@ const banded = (target, actual, band, o) => { const diff = target - actual, g = 
   t("⑤ 帶內那列的腳注講「在容忍帶內」,不是「差額不到 10」也不是「超出不到半口」", /tr\.gateFootBand/.test(p.foot || "") && /"m":"1015"/.test(p.foot || "") && !/gateFootEntry|gateFootReduce/.test(p.foot || "")); }
 { const p = paint(banded(19800, 20000, 1000));
   t("⑤ 同向減倉、差額 200 在帶內 → 同樣不掛、腳注是帶(不是半口)", p.red === null && p.holds === 1 && /tr\.gateFootBand/.test(p.foot || "") && !/gateFootReduce/.test(p.foot || "")); }
-t("⑤ 差額 1,500 超出帶(1,000)→ 綠字、紅字照掛", (() => { const p = paint(banded(21500, 20000, 1000)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
-t("⑤ 翻向(多 → 空)不看帶:快照那輪同向留下的 band_usd 不能把翻向畫成不會動", (() => { const p = paint(banded(-20000, 20000, 1000)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
-t("⑤ 舊快照沒有 band_usd(gates 只有兩側 10):差額 300 照舊會下單、紅字照掛", (() => { const p = paint(banded(20300, 20000, 0)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
+t("⑤ 差額 1,500 超出帶(1,000)→ 綠字、紅字照掛", (() => { const p = paint(banded(21500, 20000, 1000)); return /po\.orderFailedRow/.test(p.red || "") && p.holds === 0; })());
+t("⑤ 翻向(多 → 空)不看帶:快照那輪同向留下的 band_usd 不能把翻向畫成不會動", (() => { const p = paint(banded(-20000, 20000, 1000)); return /po\.orderFailedRow/.test(p.red || "") && p.holds === 0; })());
+t("⑤ 舊快照沒有 band_usd(gates 只有兩側 10):差額 300 照舊會下單、紅字照掛", (() => { const p = paint(banded(20300, 20000, 0)); return /po\.orderFailedRow/.test(p.red || "") && p.holds === 0; })());
 t("⑤ 帶內、對帳器沒在跑 → 也不會把舊拒單撿回來當灰字(判準先於音量)", (() => { const p = paint(banded(20300, 20000, 1015, { halt: HALT })); return p.red === null && p.past === null; })());
 
 // ⑥ 0.0.3 實機:兩天前的拒單(09/21 22:26 那筆 110,000)一按啟動就變成紅字現在式,讀起來像剛剛又失敗
@@ -152,6 +157,6 @@ t("⑤ 帶內、對帳器沒在跑 → 也不會把舊拒單撿回來當灰字(�
   t("⑥ 失敗時間讀不出來 → 不降(失敗不能被講小)", p4.red != null);
   const loc = { ...ERR, error: "gross notional 110000 exceeds 10× paper equity 9945 — refused" };
   const p5 = paint(crypto(30000, 20000, { halt: HALT, order_errors: [loc] }), { realErrText: true });
-  t("⑥ 灰字那一行認得的原因用在地化那一句(同事件列),不出英文原文", /tr\.orderFailedLastWhy/.test(p5.past || "") && /tr\.err\.paperLev/.test(p5.past || "") && !/gross notional/.test(p5.past || "")); }
+  t("⑥ 灰字那一行認得的原因用在地化那一句(同事件列),不出英文原文", !/orderFailed/.test(p5.past || "") && /tr\.err\.paperLev/i.test(p5.past || "") && !/gross notional/.test(p5.past || "")); }
 
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

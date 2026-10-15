@@ -98,15 +98,41 @@ process.exitCode = 1;   // 哪個 await 掛住、事件迴圈空了就會靜靜�
     t("新值存不進去 → 檔裡還是舊的、短退讓", r === "save_failed" && w.token === old && w.rot.state().backoffMs > 0);
     w.saveOk = true; w.clock += 61 * 1000;
     const r2 = await w.rot.ensure(12 * H);
-    t("一分鐘後拿舊值再換:伺服器走寬限分支發新的,本機存的 = 伺服器現值", r2 === "rotated" && w.api.posts[1].b.token === old && w.token === w.api.cur, { r2 }); }
+    t("一分鐘後先重試存那顆換到的新值(不再打 api):本機存的 = 伺服器現值", r2 === "rotated" && w.api.posts.length === 1 && w.token === w.api.cur && !w.rot.state().unsaved, { r2 }); }
+  // 寫檔一直失敗超過寬限(10 分鐘):舊值在伺服器已經作廢,但換到的新值(24 小時)還在——存得進去就繼續,不會被登出
+  { const w = world(), old = w.token; w.saveOk = false;
+    await w.rot.ensure(12 * H);
+    for (let i = 0; i < 12; i++) { w.clock += R.SAVE_RETRY_MS + 1; await w.rot.ensure(12 * H); }   // 12 分鐘都存不進去
+    w.saveOk = true; w.clock += R.SAVE_RETRY_MS + 1;
+    const r = await w.rot.ensure(12 * H);
+    t("寫檔失敗超過寬限之後才存得進去:存的是換到的那顆(伺服器現值),不是拿已作廢的舊值去換(那會 401 登出)",
+      r === "rotated" && w.token === w.api.cur && w.token !== old && w.api.posts.length === 1 && w.api.posts.every((p) => p.b.token === old), { r, posts: w.api.posts.length }); }
 
   { const w = world(), old = w.token; w.saveThrow = true;   // 稽核 P1:writeFileSync 中途拋(磁碟滿 / 防毒鎖檔)
     const r = await w.rot.ensure(12 * H);
     t("saveToken 拋例外 → 當 save_failed:檔裡還是舊的、短退讓,不穿出去", r === "save_failed" && w.token === old && w.rot.state().backoffMs === R.SAVE_RETRY_MS && w.api.cur !== old, { r });
     t("退讓期間不再送", (await w.rot.ensure(12 * H)) === "skipped" && w.api.posts.length === 1);
     w.saveThrow = false; w.clock += R.SAVE_RETRY_MS + 1;
-    t("一分鐘後拿寬限內的舊值再換成功,本機存的 = 伺服器現值", (await w.rot.ensure(12 * H)) === "rotated" && w.api.posts[1].b.token === old && w.token === w.api.cur); }
+    t("一分鐘後存下換到的那顆成功(不再打 api),本機存的 = 伺服器現值", (await w.rot.ensure(12 * H)) === "rotated" && w.api.posts.length === 1 && w.token === w.api.cur); }
 
+  // 稽核 r4 P1-1 重現:寫檔失敗 → 12 分鐘後 api 拒絕舊值、recover 被叫(以前會拿舊值去換 → 401 → deadFor,之後 ensure 永遠 skipped)
+  { const w = world(), old = w.token; w.saveOk = false;
+    await w.rot.ensure(12 * H);
+    w.clock += 12 * 60 * 1000;
+    const rec = await w.rot.recover(old);
+    const postsAfterRecover = w.api.posts.length;
+    w.saveOk = true; w.clock += R.SAVE_RETRY_MS + 1;
+    const r = await w.rot.ensure(12 * H);
+    t("寫檔失敗超過寬限、期間 recover 被叫:recover 不拿舊值去換(不送 api、不變成 deadFor);Keychain 好了之後 ensure 存下那顆新值",
+      rec === false && postsAfterRecover === 1 && r === "rotated" && w.token === w.api.cur && w.token !== old, { rec, postsAfterRecover, r }); }
+  { const w = world(), old = w.token; w.saveOk = false;
+    await w.rot.ensure(12 * H);
+    let calls = 0; Object.defineProperty(w, "readNull", { configurable: true, get: () => ++calls === 2 });   // ensure 讀得到、flush 裡那一次讀不到(極小窗口)
+    w.clock += R.SAVE_RETRY_MS + 1;
+    const r1 = await w.rot.ensure(12 * H);
+    Object.defineProperty(w, "readNull", { configurable: true, value: false, writable: true }); w.saveOk = true; w.clock += R.SAVE_RETRY_MS + 1;
+    const r2 = await w.rot.ensure(12 * H);
+    t("存未存新值時鑰匙圈那一刻讀不到:留著新值稍後再試(不當成換了人丟掉)", r1 === "unreadable" && r2 === "rotated" && w.token === w.api.cur && w.token !== old, { r1, r2 }); }
   // ── Keychain 那一刻讀不到(稽核 P2):不是換了人,不當 stale 丟掉;一分鐘後拿寬限舊值再換 ──
   { const w = world(), old = w.token; w.api.hold = true;
     const p = w.rot.ensure(12 * H); await tick();
@@ -233,5 +259,9 @@ process.exitCode = 1;   // 哪個 await 掛住、事件迴圈空了就會靜靜�
   t("account_status 被拒(403 ACCOUNT_TOKEN_INVALID)→ recover 一次再問", /ACCOUNT_TOKEN_INVALID" && await rotator\(\)\.recover\(acct\)\) return accountStatus\(true\)/.test(body("accountStatus")));
   t("換檔掛勾:先 load 連結紀錄、換完 reseal", /beforeSave: \(\) => connStore\(\)\.load\(\), afterSave: \(\) => connStore\(\)\.reseal\(\)/.test(main));
 
+  { const m = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
+    t("結束時 token 輪替在途:等它落地(最多 5 秒)再走——伺服器換了、回應沒存下來的話,寬限過後重開就被登出",
+      /const rotating = typeof _rot !== "undefined" && !!\(_rot && _rot\.state\(\)\.inflight\);/.test(m) && /if \(quitting \|\| \(!daemon && !installing && !rotating\)\) return;/.test(m)
+      && /rotating \? Promise\.race\(\[_rot\.settle\(\), new Promise\(\(r\) => setTimeout\(r, 5000\)\)\]\) : null/.test(m)); }
   process.exit(red ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

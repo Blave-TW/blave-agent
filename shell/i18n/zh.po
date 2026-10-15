@@ -391,7 +391,7 @@ msgid "fault.noCreditBtn"
 msgstr "前往儲值"
 
 msgid "conn.expired"
-msgstr "Blave 登入已失效，重新登入後繼續。"
+msgstr "登入已失效，請重新登入。"
 
 msgid "eng.head"
 msgstr "正在準備這台電腦（只有第一次）"
@@ -1552,9 +1552,6 @@ msgstr "暫停並關閉部位"
 msgid "tr.startWarn1"
 msgstr "會重新開始送出真實委託，把策略的部位調到目前的目標。"
 
-msgid "tr.unmanaged"
-msgstr "不歸 Blave 管"
-
 msgid "tr.unmanagedTip"
 msgstr "這個部位不是 Blave 下單建立的，對帳不會動它。"
 
@@ -1687,9 +1684,6 @@ msgstr "下單金額是從交易所的淨值算出來的，這台雲端主機還
 msgid "tr.cloud.onboardExtra"
 msgstr "這台電腦上連接的交易所不會帶過來；雲端要自己連一次。"
 
-msgid "tr.strategies"
-msgstr "策略"
-
 msgid "tr.zeroMeansOff"
 msgstr "填 0 就是不下單——策略照常跑、照常算訊號，只是不會有部位。"
 
@@ -1705,9 +1699,6 @@ msgstr "金額"
 msgid "tr.col.signal"
 msgstr "訊號"
 
-msgid "tr.amountFoot"
-msgstr "目標部位 ＝ 金額 × 訊號。訊號 1 是滿倉，有的策略會超過 1。"
-
 msgid "tr.net.tag"
 msgstr "{n} 支策略"
 
@@ -1719,9 +1710,6 @@ msgstr "合計 0：多 {l}、空 {s} 互相抵銷，交易所上不會有 {base}
 
 msgid "tr.net.sumOff"
 msgstr "合計 {t}：多 {l}、空 {s}，互相抵銷了 {m}。"
-
-msgid "tr.net.foot"
-msgstr "同一個標的的策略先相加，只下淨額；方向相反會互相抵銷。"
 
 msgid "tr.col.targetPos"
 msgstr "目標部位"
@@ -1747,17 +1735,11 @@ msgstr "≈ {amt} TWD（名目）"
 msgid "tr.typecPending"
 msgstr "下次執行後算出成分"
 
-msgid "tr.noSignalYet"
-msgstr "還沒有訊號"
-
 msgid "tr.txfConfirmRef"
 msgstr "{prod} ≈ {amt} TWD"
 
 msgid "tr.col.target"
 msgstr "目標"
-
-msgid "tr.col.actual"
-msgstr "實際"
 
 msgid "tr.col.diff"
 msgstr "差額"
@@ -1793,16 +1775,16 @@ msgid "tr.pick.twdKeep"
 msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
 
 msgid "tr.pick.txf"
-msgstr "統一期貨只能下台指期（TXF／MXF／TMF）"
+msgstr "{venue}只能下台指期（TXF／MXF／TMF）"
 
 msgid "tr.pick.txfKeep"
-msgstr "統一期貨只能下台指期（TXF／MXF／TMF）；取消勾選後不能再加回來"
+msgstr "{venue}只能下台指期（TXF／MXF／TMF）；取消勾選後不能再加回來"
 
 msgid "tr.typeB.rejected"
-msgstr "「{name}」沒有固定的執行週期，目前只能在雲端自動執行。到「選擇策略」取消勾選後再儲存。"
+msgstr "「{name}」{more}沒有固定的執行週期，目前只能在雲端自動執行。到「選擇策略」取消勾選後再儲存。"
 
 msgid "tr.notTxf.rejected"
-msgstr "「{name}」的標的不是台指期（TXF／MXF／TMF），統一期貨只能下台指期。到「選擇策略」取消勾選後再儲存。"
+msgstr "「{name}」{more}的標的不是台指期（TXF／MXF／TMF），{venue}只能下台指期。到「選擇策略」取消勾選後再儲存。"
 
 msgid "tr.gateHint"
 msgstr "低於最小進場 {m} {c}，不會進場"
@@ -1834,9 +1816,6 @@ msgstr "小台"
 msgid "tr.txfProd.txf"
 msgstr "大台"
 
-msgid "tr.unsaved"
-msgstr "金額尚未儲存，按「儲存」才會生效。"
-
 msgid "tr.revert"
 msgstr "還原"
 
@@ -1847,10 +1826,10 @@ msgid "tr.saving"
 msgstr "儲存中…"
 
 msgid "tr.saved"
-msgstr "已儲存，這台電腦已套用新金額。"
+msgstr "已儲存"
 
 msgid "tr.saveTitle"
-msgstr "確認下單金額"
+msgstr "確認金額"
 
 # 口數格留空(原本有口數、改成 0 的那幾支列上已寫「原 → 0」)
 msgid "tr.saveBlankLots"
@@ -1864,25 +1843,7 @@ msgid "tr.cfTagRemove"
 msgstr "移出"
 
 msgid "tr.saveWarn"
-msgstr "儲存後，下單機會照新的金額對帳，可能立即產生下單。"
-
-msgid "tr.exchPositions"
-msgstr "交易所部位"
-
-msgid "tr.threshold"
-msgstr "同一個標的、所有策略加起來該有多少，跟你交易所帳戶裡實際有多少的對照。差太小就不下單。"
-
-msgid "tr.posEmpty"
-msgstr "目前無未平倉部位。"
-
-msgid "tr.noPositions"
-msgstr "還沒有部位，策略金額都是 0，先在上面填一個金額再回來看。"
-
-msgid "tr.noReconcile"
-msgstr "還沒有對帳紀錄，實際部位要等自動下單跑起來才看得到。"
-
-msgid "tr.gateFootLead"
-msgstr "這輪不下單："
+msgstr "儲存後可能立即下單。"
 
 msgid "tr.gateFootEntry"
 msgstr "{sym} 差額不到 {m}"
@@ -1895,9 +1856,6 @@ msgstr "{sym} 差額在漂移容忍帶內（不到 {m}）"
 
 msgid "tr.orderFailed"
 msgstr "下單失敗：{sym}——{err}"
-
-msgid "tr.orderFailedLast"
-msgstr "上次下單失敗：{sym}——{err}"
 
 msgid "tr.account"
 msgstr "帳戶"
@@ -2005,10 +1963,10 @@ msgid "tr.unbindDescPaper"
 msgstr "解除後可以改綁真實交易所。"
 
 msgid "tr.unbindWarn"
-msgstr "會把這個帳戶的登入資料從這台電腦移除，下單機不再能用它交易。下單設定也會一併清空。"
+msgstr "會把這個帳戶的登入資料從這台電腦移除，下單機不再能用它交易。策略組合和金額會保留；重新綁定後，到策略組合存一次就能繼續下單。"
 
 msgid "tr.unbindWarnPaper"
-msgstr "下單設定會一併清空。之後再綁模擬交易時，模擬帳戶會從 100,000 USDT 重新開始，現在的部位與紀錄不會帶過去。"
+msgstr "策略組合和金額會保留；重新綁定後，到策略組合存一次就能繼續下單。之後再綁模擬交易時，模擬帳戶的權益與部位會重新開始；成交紀錄保留。"
 
 msgid "tr.ov.equity"
 msgstr "總權益"
@@ -2415,7 +2373,7 @@ msgid "env.empty.starting"
 msgstr "雲端主機啟動中，通常 1 分鐘左右。開好後這一頁會自己換成雲端的內容。"
 
 msgid "env.empty.relogin"
-msgstr "重新登入一次 Blave 之後才看得到你的雲端主機。這台電腦上的對話與策略不受影響。"
+msgstr "登入已失效，請重新登入。這台電腦上的對話與策略不受影響。"
 
 msgid "env.empty.unreach"
 msgstr "現在讀不到雲端的狀態。雲端上正在跑的下單不受影響。"
@@ -2954,7 +2912,7 @@ msgid "src.delBody2"
 msgstr "用到它的策略：{names}。刪除後它們回測與執行時會抓不到這份資料。"
 
 msgid "src.delBlocked"
-msgstr "現在不能刪除。{name} 正在下單，而且用到 {source}；刪了它下一次就抓不到資料。先到 自動下單 › 部位 把這支的金額設為 0，再回來刪除。"
+msgstr "現在不能刪除。{name} 正在下單，而且用到 {source}；刪了它下一次就抓不到資料。先到「策略組合」把這支的金額設為 0，再回來刪除。"
 
 msgid "src.gotIt"
 msgstr "知道了"
@@ -3106,18 +3064,6 @@ msgstr "雲端已套用新金額。"
 msgid "tr.cloud.saveStale"
 msgstr "雲端的狀態不是最新的，現在儲存可能蓋掉別處剛改的金額。這一頁更新後就能存。"
 
-msgid "tr.cloud.saveLive.h"
-msgstr "雲端正在下單。"
-
-msgid "tr.cloud.saveLive.b"
-msgstr "主機一收到新金額，下一輪對帳就照它調整部位，可能馬上成交；這台電腦關著也一樣。"
-
-msgid "tr.cloud.saveIdle"
-msgstr "雲端現在沒有在下單：新金額先存在主機上，按「啟動下單」之後才照它下單。"
-
-msgid "tr.cloud.saveLag"
-msgstr "這一頁要等主機下一次回報才會顯示新金額。"
-
 msgid "tr.stopAfterStart"
 msgstr "啟動的指令已經送出，可能已經生效。暫停會排在它後面執行，所以最後會停在暫停；在那之前如果已經下了單，部位會留著。"
 
@@ -3149,10 +3095,10 @@ msgid "cdel.only"
 msgstr "只刪雲端這一份，這台電腦上的策略不受影響。"
 
 msgid "cdel.inUse"
-msgstr "這支策略還在雲端的下單設定裡，不能刪除。先到「自動下單 › 部位」把它移除，再回來刪除。"
+msgstr "這支策略還在雲端的下單設定裡，不能刪除。先到「策略組合」把它移除，再回來刪除。"
 
 msgid "cdel.goPos"
-msgstr "前往部位"
+msgstr "前往策略組合"
 
 msgid "cdel.pending"
 msgstr "刪除中…"
@@ -3197,7 +3143,7 @@ msgid "ho.noteB.down"
 msgstr "接下來由 agent 搬回來，確認它在這台電腦跑得起來。"
 
 msgid "strat.delInPf"
-msgstr "這支策略還在自動下單的組合裡，不能刪除。先到自動下單頁的「部位」把它移出，再回來刪除。"
+msgstr "這支策略還在自動下單的組合裡，不能刪除。先到「策略組合」把它移出，再回來刪除。"
 
 msgid "strat.delCfgUnread"
 msgstr "讀不到這台電腦的下單設定，分不出這支策略有沒有在組合裡，這次沒有刪除。過一會兒再試。"
@@ -3319,7 +3265,7 @@ msgid "tr.cloud.cxUnknown"
 msgstr "金鑰送出去了，但雲端主機還沒回報檢查結果。先關掉這個框看這一頁：接上了會自己換成下單設定；沒有的話再連一次。"
 
 msgid "tr.cloud.unbindWarn"
-msgstr "會把這個交易所的金鑰從雲端主機移除，雲端的下單會立刻暫停，部位留在交易所、沒有人在管。下單設定也會一併清空，重新連接後要重新設定。"
+msgstr "會把這個交易所的金鑰從雲端主機移除，雲端的下單會立刻暫停，部位留在交易所、沒有人在管。策略組合和金額會保留；重新連接後，到策略組合存一次就能繼續下單。"
 
 msgid "tr.cloud.pendRow"
 msgstr "已送出，等雲端主機回報。"
@@ -3405,14 +3351,8 @@ msgstr "什麼單都不下——平倉與停損也不會執行。問題處理好
 msgid "tr.cloud.closeAllWarn2Unconfirmed"
 msgstr "策略金額會保留：更新到最新版本、再按「啟動下單」之後，下單機會照現有金額把部位重建回來；不想重建，先把金額歸零。"
 
-msgid "tr.cloud.saveIdleUnconfirmed"
-msgstr "雲端已暫停：新金額先存在主機上，更新到最新版本、再按「啟動下單」之後才照它下單。"
-
 msgid "tr.cloud.recomputing"
 msgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"
-
-msgid "tr.orderFailedLastWhy"
-msgstr "上次下單失敗：{why}"
 
 msgid "tr.cloud.haltReasonUnconfirmed"
 msgstr "舊版下單程式可能還在跑。先按「更新雲端主機」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。"
@@ -3430,7 +3370,7 @@ msgid "tr.cloud.cxWaiting"
 msgstr "正在等主機確認，通常一兩分鐘。好了這一頁會自己換成下單設定，不用做任何事。"
 
 msgid "tr.startOffNoAmt"
-msgstr "還沒有策略設定金額，沒有東西可以啟動。先到「部位」替策略設定金額。"
+msgstr "還沒有策略設定金額，先到策略組合設定。"
 
 msgid "tr.startOffNoAmtRelease"
 msgstr "還沒有策略設定金額，沒有東西可以啟動。只想讓你自己的策略程式恢復下單，按「解除暫停」。"
@@ -3442,7 +3382,7 @@ msgid "tr.startOffNoAmtReleaseClose"
 msgstr "還沒有策略設定金額，沒有東西可以啟動。只想讓你自己的策略程式恢復下單，按「平倉並解除暫停」。"
 
 msgid "tr.startOnBook"
-msgstr "帳本上還有 {n} 的部位；啟動後下單程式會先照目前金額（0）平掉。"
+msgstr "帳本上還有 {n}的部位；啟動後下單程式會先照目前金額（0）平掉。"
 
 msgid "tr.release"
 msgstr "解除暫停"
@@ -3705,10 +3645,7 @@ msgid "tr.pick"
 msgstr "選擇策略"
 
 msgid "tr.pick.title"
-msgstr "選擇下單策略"
-
-msgid "tr.pick.hint"
-msgstr "勾選要進入下單金額表的策略；還在測試的先不要勾。"
+msgstr "選擇策略"
 
 msgid "tr.pick.ok"
 msgstr "確定"
@@ -6839,13 +6776,13 @@ msgid "pres.s.probeDone"
 msgstr "期貨帳戶"
 
 msgid "pres.s.worker"
-msgstr "啟動下單程式"
+msgstr "連上統一"
 
 msgid "pres.s.workerRun"
-msgstr "啟動中…"
+msgstr "連線中…"
 
 msgid "pres.s.workerFail"
-msgstr "下單程式沒有讀到帳戶。再試一次；還是不行，看設定 › 帳戶的狀態。"
+msgstr "沒有讀到統一帳戶。再試一次；還是不行，看設定 › 帳戶的狀態。"
 
 msgid "pres.cert.name"
 msgstr "統一憑證"
@@ -7029,9 +6966,6 @@ msgstr "結束 Blave 或關機就不再下單；部位留在統一，不會自�
 
 msgid "pres.done.n2"
 msgstr "Blave 只管自己下的單，不碰你手動下的。"
-
-msgid "pres.done.go"
-msgstr "設定策略下單"
 
 
 
@@ -7446,3 +7380,561 @@ msgstr "每期先扣錢包，不夠刷卡；取消不退款"
 
 msgid "plan.topupShort"
 msgstr "低於 {a} TWD 時從卡自動儲值 {b} TWD；網頁可關"
+
+msgid "po.nav"
+msgstr "策略組合"
+
+msgid "po.tab.cfg"
+msgstr "配置"
+
+msgid "po.tab.opt"
+msgstr "優化"
+
+msgid "po.secAmounts"
+msgstr "策略與金額"
+
+msgid "po.signalsPaused"
+msgstr "訊號暫停更新"
+
+msgid "po.mktPortfolio"
+msgstr "投資組合"
+
+msgid "po.lotsRawTip"
+msgstr "取整前 {n} 口"
+
+msgid "po.sigTargets"
+msgstr "各商品的總訊號部位"
+
+msgid "po.sigTargetsTip"
+msgstr "同一商品的各檔策略「金額 × 訊號」加總。"
+
+msgid "po.actualTip"
+msgstr "{venue} 帳戶裡策略開的部位"
+
+msgid "po.notTradedTip"
+msgstr "{venue} 不交易這個商品"
+
+msgid "po.fogPick"
+msgstr "選好策略就能設金額。"
+
+msgid "po.fogStrat"
+msgstr "策略 {x}"
+
+msgid "tr.fogConnect"
+msgstr "連上交易所，策略就會自動下單。"
+
+msgid "tr.cloud.fogConnect"
+msgstr "雲端主機要自己連一次交易所，連上就會自動下單。"
+
+msgid "tr.unmanagedTag"
+msgstr "策略外"
+
+msgid "ct.aria"
+msgstr "合約：{prod}"
+
+msgid "ct.errBad"
+msgstr "合約沒存到，重新整理後再試"
+
+msgid "ct.errGated"
+msgstr "有策略在等新訊號，進場後才能換合約"
+
+msgid "ct.errNotTxf"
+msgstr "這支策略不能換合約"
+
+msgid "ct.errParked"
+msgstr "有委託還沒回報成交，稍後再換合約"
+
+msgid "ct.errRun"
+msgstr "啟動下單後才能換合約"
+
+msgid "ct.errSplit"
+msgstr "換合約和改口數要分兩次存"
+
+msgid "ct.errUpdate"
+msgstr "主機程式更新後才能換合約"
+
+msgid "ct.half"
+msgstr "已換成{prod} {n} 口，新口數沒存到"
+
+msgid "ct.rollClosing"
+msgstr "{from}平倉中，平完才開{to}"
+
+msgid "ct.rollGate"
+msgstr "{from}上有策略在等新訊號，進場後才換"
+
+msgid "ct.rollPending"
+msgstr "有委託還沒回報成交，回報後才換"
+
+msgid "ct.rollHalted"
+msgstr "下單停止中，啟動後換倉"
+
+msgid "ct.rolling"
+msgstr "換倉中"
+
+msgid "ct.tagClose"
+msgstr "{prod}平倉"
+
+msgid "mg.apply"
+msgstr "套用金額"
+
+msgid "mg.applyDiffSet"
+msgstr "策略跟配置分頁不一樣"
+
+msgid "mg.askAgent"
+msgstr "跟 agent 討論"
+
+msgid "mg.askAgentMsg"
+msgstr "我想設計一個新的投資組合管理方法（allocator），請跟我討論怎麼寫。"
+
+msgid "mg.beats"
+msgstr "贏過 {p}"
+
+msgid "mg.beatsNone"
+msgstr "全員沒有重疊期間，無法與隨機權重比較"
+
+msgid "mg.beatsNote"
+msgstr "統計與隨機對比都只計 {s} 起的 {n} 天——全員重疊期扣掉開頭的權重擬合窗"
+
+msgid "mg.btCancel"
+msgstr "中止"
+
+msgid "mg.btCancelTip"
+msgstr "中止後清空結果"
+
+msgid "mg.btError"
+msgstr "回測失敗：{e}"
+
+msgid "mg.btRandom"
+msgstr "隨機 {n} 組"
+
+msgid "mg.btRun"
+msgstr "跑回測"
+
+msgid "mg.btRunningAria"
+msgstr "回測進行中"
+
+msgid "mg.btRunningAt"
+msgstr "回測中 第 {d}/{t} 天"
+
+msgid "mg.btTip"
+msgstr "對照 1,000 組隨機權重；背景執行，切分頁不中斷"
+
+msgid "mg.chartAria"
+msgstr "管理後累積報酬曲線，對照隨機組合 p5 到 p95 區間與中位數"
+
+msgid "mg.chartAriaW"
+msgstr "上圖：管理後累積報酬曲線，對照隨機組合 p5 到 p95 區間與中位數；下圖：各成員策略權重佔比隨時間的堆疊面積圖。"
+
+msgid "mg.chartCap"
+msgstr "累積報酬"
+
+msgid "mg.colCur"
+msgstr "目前"
+
+msgid "mg.colWeight"
+msgstr "權重"
+
+msgid "mg.equal"
+msgstr "等權"
+
+msgid "mg.equalDesc"
+msgstr "每檔策略同樣份額，不擬合。"
+
+msgid "mg.fund"
+msgstr "投入資金"
+
+msgid "mg.fundTip"
+msgstr "預設是配置分頁的合計"
+
+msgid "mg.gateTip"
+msgstr "與 1,000 組隨機權重投組在同一段期間比 Sharpe；參考值，換一段期間會明顯不同"
+
+msgid "mg.groupBuiltin"
+msgstr "內建"
+
+msgid "mg.groupCustom"
+msgstr "自訂"
+
+msgid "mg.legendBand"
+msgstr "隨機 p5–p95（全員都有資料）"
+
+msgid "mg.legendManaged"
+msgstr "管理後"
+
+msgid "mg.legendMedian"
+msgstr "隨機中位數"
+
+msgid "mg.legendRest"
+msgstr "其他 {n} 支"
+
+msgid "mg.legendWeights"
+msgstr "權重佔比"
+
+msgid "mg.lookbackRange"
+msgstr "lookback 需為 10–5000 的整數"
+
+msgid "mg.methodTitle"
+msgstr "管理方法"
+
+msgid "mg.moreMethods"
+msgstr "其他方法？"
+
+msgid "mg.noFx"
+msgstr "缺 TWD 匯率，口數換算不出來"
+
+msgid "mg.optDoneToast"
+msgstr "優化完成，權重分配在「優化」分頁。"
+
+msgid "mg.optError"
+msgstr "優化失敗：{e}"
+
+msgid "mg.optRun"
+msgstr "跑優化"
+
+msgid "mg.optRunning"
+msgstr "優化中…"
+
+msgid "mg.optTip"
+msgstr "結果只填入「配置」欄；實際套用跟 agent 說"
+
+msgid "mg.outdated"
+msgstr "這台主機的程式還沒更新到支援策略管理的版本——更新完就能跑優化。"
+
+msgid "mg.paramInvalid"
+msgstr "參數格式不對：{k}"
+
+msgid "mg.params"
+msgstr "參數"
+
+msgid "mg.propTip"
+msgstr "投入資金 × 隱含槓桿 × 權重"
+
+msgid "mg.propTipConv"
+msgstr "，換成該區單位"
+
+msgid "mg.propTipLots"
+msgstr "；台指期折成口數"
+
+msgid "mg.secAmounts"
+msgstr "權重分配"
+
+msgid "mg.secBt"
+msgstr "移動窗格回測"
+
+msgid "mg.short"
+msgstr "資料不足：歷史 {n} 天 ≤ lookback {l} 天，還缺 {d} 天；回測已停用"
+
+msgid "mg.shortDismiss"
+msgstr "先不跑"
+
+msgid "mg.shortRun"
+msgstr "改跑 {n} 天"
+
+msgid "mg.shortTip"
+msgstr "歷史 {n} 天 ≤ lookback {l} 天，無法回測"
+
+msgid "mg.single"
+msgstr "僅 {n} 檔策略，無法對比隨機組合；回測已停用"
+
+msgid "mg.singleTip"
+msgstr "僅 1 檔策略，無法對比隨機組合"
+
+msgid "mg.slope"
+msgstr "斜率/波動"
+
+msgid "mg.slopeDesc"
+msgstr "權益曲線斜率 ÷ 波動，分數高者權重高"
+
+msgid "mg.stratEmpty"
+msgstr "主機上還沒有回測完成的策略"
+
+msgid "mg.tbMethod"
+msgstr "方法"
+
+msgid "mg.tbMethodTip"
+msgstr "管理方法與參數；優化與回測共用"
+
+msgid "mg.tbStrat"
+msgstr "策略"
+
+msgid "mg.tbStratN"
+msgstr "{n} 檔"
+
+msgid "mg.timeout"
+msgstr "主機沒有回應，稍後再試"
+
+msgid "mg.totalReturn"
+msgstr "總報酬"
+
+msgid "mg.unitDays"
+msgstr "天"
+
+msgid "sz.lev"
+msgstr "槓桿"
+
+msgid "sz.m.lev"
+msgstr "固定槓桿"
+
+msgid "sz.m.mdd"
+msgstr "最大回撤"
+
+msgid "sz.m.vol"
+msgstr "目標波動"
+
+msgid "sz.pv.amt"
+msgstr "總部位"
+
+msgid "sz.pv.mdd"
+msgstr "最大回撤"
+
+msgid "sz.pv.mddTip"
+msgstr "回測期間按目前權重的最深回撤，未來可能更深"
+
+msgid "sz.pv.vol"
+msgstr "年化波動"
+
+msgid "sz.pv.volTip"
+msgstr "近 {n} 天，按目前權重"
+
+msgid "sz.t.mdd"
+msgstr "可承受回撤"
+
+msgid "sz.t.vol"
+msgstr "年化波動"
+
+msgid "sz.title"
+msgstr "部位大小"
+
+msgid "ct.recordUnreadable"
+msgstr "換倉紀錄讀不出來，台指期暫停下單"
+
+msgid "po.orderFailedRow"
+msgstr "下單失敗：{err}"
+
+msgid "po.orderFailedLast"
+msgstr "上次下單失敗：{err}"
+
+msgid "ct.waitReport"
+msgstr "換合約要等主機回報剛存的設定後再存"
+
+msgid "tr.loadingEngine"
+msgstr "正在安裝引擎（第一次啟動）"
+
+msgid "tr.loadingEngineUpd"
+msgstr "正在更新引擎"
+
+msgid "po.hostOld"
+msgstr "主機版本較舊，更新後才會算"
+
+msgid "po.diffIdleStart"
+msgstr "尚未啟動，不會下單"
+
+msgid "po.diffIdleHalt"
+msgstr "已暫停，不會下單"
+
+msgid "tr.gateFootLead"
+msgstr "這輪不下單："
+
+msgid "tr.startPlanN"
+msgstr "照策略組合 {n} 支策略下單。"
+
+msgid "tr.startPlanOne"
+msgstr "照策略組合 {n} 支策略，合計 {total} 下單。"
+
+msgid "tr.startPlanNOne"
+msgstr "照策略組合 {n} 支策略下單。"
+
+msgid "po.manualPart"
+msgstr "另有手動 {n}"
+
+msgid "po.detInclManual"
+msgstr "（含手動）"
+
+msgid "pres.done.ok"
+msgstr "完成"
+
+msgid "po.goCfg"
+msgstr "到策略組合"
+
+msgid "tr.startOffNoAmtShort"
+msgstr "還沒有策略設定金額。"
+
+msgid "po.goIdle"
+msgstr "還沒開始下單"
+
+msgid "po.goHalt"
+msgstr "下單已暫停"
+
+msgid "po.goBtn"
+msgstr "到自動下單啟動"
+
+msgid "tr.opt.catchWill"
+msgstr "會{side}{sym} {n}"
+
+msgid "tr.opt.buy"
+msgstr "買進"
+
+msgid "tr.opt.sell"
+msgstr "賣出"
+
+msgid "tr.opt.catchMore"
+msgstr "和另外 {n} 檔"
+
+msgid "tr.pick.noTxf"
+msgstr "還沒有台指期策略。"
+
+msgid "tr.sigNotYet"
+msgstr "還沒算出最新訊號：下一根 K 棒收完就有"
+
+msgid "tr.startOffNoVenueAmt"
+msgstr "還沒有{venue}能下的策略金額。"
+
+msgid "mg.waitOne"
+msgstr "等「{name}」更新績效…"
+
+msgid "mg.waitMany"
+msgstr "等「{name}」等 {n} 支更新績效…"
+
+msgid "mg.runNow"
+msgstr "先用目前數字跑"
+
+msgid "set.ccy"
+msgstr "顯示幣別"
+
+msgid "set.ccyFail"
+msgstr "切換失敗，稍後再試。"
+
+msgid "acct.revoked"
+msgstr "登入已失效"
+
+msgid "pv.h.revoked"
+msgstr "請重新登入"
+
+msgid "mg.applyWhyLogin"
+msgstr "需要登入 Blave 才拿得到台幣匯率，台指期口數換算不出來"
+
+msgid "mg.applyWhyFx"
+msgstr "缺台幣匯率，台指期口數換算不出來"
+
+msgid "mg.applyWhyQuote"
+msgstr "還沒拿到台指期報價，口數換算不出來"
+
+msgid "mg.applyWhySize"
+msgstr "先設定投入資金與目標"
+
+msgid "mg.applyWhySame"
+msgstr "建議金額跟目前一樣"
+
+msgid "mg.applyWhyWait"
+msgstr "等主機回報…"
+
+msgid "mg.fxCached"
+msgstr "台幣換算用 {d} 的匯率（≈），登入後會更新"
+
+msgid "tr.marketVenue.rejected"
+msgstr "「{name}」{more}的市場這家交易所下不了：台指期只能用{president}或{capital}，加密只能用加密交易所。到「選擇策略」取消勾選後再儲存。"
+
+msgid "tr.venueCapitalFull"
+msgstr "群益期貨"
+
+msgid "tr.startOffNoRoute"
+msgstr "重新綁定後，先到策略組合存一次下單設定。"
+
+msgid "tr.routeSave"
+msgstr "綁定的交易所換了：按儲存，策略就改下到目前這一家。"
+
+msgid "tr.needsRouting.rejected"
+msgstr "「{name}」{more}還沒有對應的交易所：先到策略組合存一次下單設定，再啟動下單。"
+
+msgid "tr.haltUnbound"
+msgstr "解除綁定時自動暫停：不開新倉；平倉與停損停利照常執行。"
+
+msgid "tr.haltUnboundOff"
+msgstr "解除綁定時自動暫停，下單程式也沒在跑：什麼單都不下。"
+
+msgid "tr.saveWarnHalted"
+msgstr "目前已暫停：不開新倉，但減碼與平倉儲存後就會執行。"
+
+msgid "tr.rejNameSep"
+msgstr "」、「"
+
+msgid "tr.rejMore"
+msgstr "和另外 {n} 支"
+
+msgid "tr.marketVenue.crypto"
+msgstr "「{name}」{more}是{market}策略，加密貨幣交易所下不了。改綁台灣期貨商，或到「選擇策略」取消勾選後再儲存。"
+
+msgid "tr.mktName.txf"
+msgstr "台指期"
+
+msgid "tr.mktName.stockFut"
+msgstr "個股期貨"
+
+msgid "tr.mktName.twStock"
+msgstr "台股"
+
+msgid "tr.fxOld"
+msgstr "台幣換算用的是 {d} 的匯率（≈），登入後會更新。"
+
+msgid "mg.applyWhyFxOld"
+msgstr "上次存下的台幣匯率已超過 30 天，登入 Blave 後才換算得出台指期口數"
+
+msgid "mg.lotsUnder"
+msgstr "0 口（不足一口）"
+
+msgid "mg.lotsUnderFoot"
+msgstr "台指期不足一口的部分沒算進去：少投 ≈ {amt}"
+
+msgid "mg.waitPrefixOpt"
+msgstr "優化："
+
+msgid "mg.waitPrefixBt"
+msgstr "回測："
+
+msgid "mg.btWaitPerf"
+msgstr "等更新績效…"
+
+msgid "sz.oldMdd"
+msgstr "主機版本較舊，不能用最大回撤"
+
+msgid "sz.shortMdd"
+msgstr "共同資料不到 90 天，不能用最大回撤"
+
+msgid "mg.needFund"
+msgstr "先按「{method}」填投入資金，建議金額才算得出來。"
+
+msgid "tr.cloud.notApplied"
+msgstr "主機還沒套用剛存的金額，畫面先顯示主機上的值；套用後會自動更新。"
+
+msgid "ct.underLot"
+msgstr "0 口（不足一口）：換算不到一口，存了不會下單；要下單請自己填口數。"
+
+msgid "tr.err.fileLocked"
+msgstr "主機那邊的檔案暫時寫不進去（可能被防毒或備份程式開著），再試一次。"
+
+msgid "mg.errNoStats"
+msgstr "有成員還沒有回測結果：先回測這幾支，或從名單拿掉再跑。"
+
+msgid "tr.saveFailed.rejected"
+msgstr "設定檔暫時寫不進去，這次什麼都沒改，請再存一次。"
+
+msgid "po.bridgeEdit"
+msgstr "到策略組合修改"
+
+msgid "tr.col.held"
+msgstr "帳上"
+
+msgid "tr.startPlan"
+msgstr "照策略組合 {n} 支策略，合計 {total} 下單。"
+
+msgid "po.dEntry"
+msgstr "均價 {v}"
+
+msgid "po.dUpnl"
+msgstr "未實現 {v}"
+
+msgid "po.dMargin"
+msgstr "保證金 {v}"
+
+msgid "po.dLev"
+msgstr "（{x}×）"

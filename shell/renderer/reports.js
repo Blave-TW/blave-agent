@@ -117,7 +117,7 @@ function rptLeave(env) {
 /* envShowMain(trade.js)的最後一步(libShowMain 之後):報告開著就蓋掉其餘視圖。gate = 雲端沒主機可看(開通頁),那時側欄入口也藏著 */
 function rptShowMain(gate) {
   const on = !gate && rptBag().open, was = !$("rpt").hidden;
-  if (on) { $("rp").hidden = true; $("tr").hidden = true; $("main-empty").hidden = true; $("lib").hidden = true; $("tr-nav").removeAttribute("aria-current"); $("lib-nav").removeAttribute("aria-current"); }
+  if (on) { $("rp").hidden = true; $("tr").hidden = true; $("po").hidden = true; $("main-empty").hidden = true; $("lib").hidden = true; $("tr-nav").removeAttribute("aria-current"); $("po-nav").removeAttribute("aria-current"); $("lib-nav").removeAttribute("aria-current"); }
   $("rpt").hidden = !on;
   if (on) $("rpt-nav").setAttribute("aria-current", "page"); else $("rpt-nav").removeAttribute("aria-current");
   if (on && (!was || RPT.paintedEnv !== libEnv())) { rptPaint(); if (was) rptLoad(libEnv(), false); }   // 剛打開 / 切視角(兩邊都開著也要換成這一邊那袋)

@@ -70,8 +70,8 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     const bare = vm.createContext({ Date: { now: () => 0 }, Promise, Number, isFinite });
     vm.runInContext(constLine(src, "TR_TXF") + "\n" + cutF(src, "trTxfWant"), bare);
     ok("沒有 window.blave(測試、舊 preload)不壞", vm.runInContext("trTxfWant(1e9)", bare) === false); }
-  ok("接線:只在雲端視角、畫到口數列才補問;報價在金額表簽章裡(回來的值下一輪輪詢就畫上)",
-    /if \(txf && cloud\) trTxfWant\(\);/.test(cutF(src, "trAmountTable")) && /trCfgUnread\(r\), trTxfPrice\(\),/.test(cutF(src, "trPaintPos")));
+  ok("接線:兩個視角都在畫到口數列時補問(統一與模擬交易在這台電腦也下台指期);報價在金額表簽章裡(回來的值下一輪輪詢就畫上)",
+    /if \(txf\) trTxfWant\(\);/.test(cutF(src, "trAmountTable")) && /trCfgUnread\(r\), trTxfPrice\(\),/.test(cutF(src, "poPaintCfg")));
 
   /* ── renderer:有報價時照網頁換算(目標部位、合計、倍數) ── */
   { const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")) + src.slice(src.indexOf("/* ── 視角純邏輯("), src.indexOf("/* ── 視角純邏輯到此"));
@@ -89,8 +89,8 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     vm.runInContext("function trUnit() { return UNIT; } function trEquity() { return EQ; }", ctx);
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
       + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
-        "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum",
-        "trTotalText", "trTotalTip", "trAmountTable", "trSaveAmounts"].map((n) => cutF(src, n)).join("\n"), ctx);
+        "trStratName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum",
+        "trTotalText", "trAmountTable", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts"].map((n) => cutF(src, n)).join("\n"), ctx);
     const V = { credentials: true, pair: true, order: true, account: true };
     const paint = (price, unit = "TWD", eq = 2000000, mixed = false) => {
       vm.runInContext("TR_TXF.price = " + J(price) + "; UNIT = " + J(unit) + "; EQ = " + J(eq), ctx);
@@ -107,7 +107,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     /* 2 口 × 部位 0.5 = 1 口(目標部位是口數,units spec §3.3);名目 1 × 200 點值 × 20,000 點 = 4,000,000 TWD 放 title。
        全是口數列也出合計(推翻 desktop-10-08 #4,units spec §5 電腦版 #4):名目 ≈ 8,000,000 TWD · 淨值 4.00×(綁群益、帳戶幣 TWD) */
     ok("有報價:目標部位寫 +1(口數 × 訊號),名目進 title;只有一區 → 單位回欄頭「口」、不畫區標題;合計 ≈ 名目 TWD + 淨值倍數",
-      q.tgt === "+1" && q.tgtTip === 'tr.lotsNotionalTip {"amt":"4,000,000"}' && q.totHidden === false && q.tot === 'tr.total≈ 8,000,000TWD·tr.equityMult {"x":"4.00"}'
+      q.tgt === "+1" && q.tgtTip === 'tr.lotsNotionalTip {"amt":"4,000,000"}' && q.totHidden === false && q.tot === 'tr.total≈ 8,000,000TWD'
       && q.ths.includes("tr.col.amounttr.lotsUnit") && q.ths.includes("tr.col.targetPostr.lotsUnit") && q.grps.length === 0 && !q.units, J(q));
     const n = paint(null);
     ok("沒有報價(離線 / api 錯):目標口數照畫(不靠報價)、title 空;合計「—」、不出倍數,不壞畫面", n.tgt === "+1" && n.tgtTip === "" && n.tot === "tr.total—" && !n.totHidden, J(n));
@@ -117,11 +117,11 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     ok("混列(台指期 + 加密)= 兩區:區標題「台指期(口)」與 USDT;沒有匯率(沒登入)→ 合計「—」,不把 TWD 與 USDT 相加",
       m1.tot === "tr.total—" && J(m1.grps.map((g) => g[0])) === J(["tr.grpLots", "USDT"]) && !m1.ths.some((h) => /TWD|USDT|lotsUnit/.test(h)), J(m1));
     ok("混列、綁群益(帳戶幣 TWD):倍數只有一個、接在表底合計後面(口數名目 8,000,000 ÷ 淨值 2,000,000,USDT 列不算);區標題不掛倍數、一列的區不出小計",
-      J(m2.grps[0]) === J(["tr.grpLots", "", "", "", ""]) && J(m2.grps[1]) === J(["USDT", "", "", "", ""]) && m2.tot === 'tr.total—·tr.equityMult {"x":"4.00"}', J([m2.grps, m2.tot]));
+      J(m2.grps[0]) === J(["tr.grpLots", "", "", "", ""]) && J(m2.grps[1]) === J(["USDT", "", "", "", ""]) && m2.tot === 'tr.total—', J([m2.grps, m2.tot]));
     { ctx.TR_BAGS = { cloud: { st: { cloud: { fx_rates: { USDT: 1, USD: 1, TWD: 32 }, currency: "USD" } } } };
       const m3 = paint(20000, "TWD", 2000000, true);
-      ok("混列有匯率:合計換成顯示幣別的 ≈ 整數(8,000,000 ÷ 32 + 500 = 250,500 USD),title 一行一區(口數區寫名目 TWD)",
-        m3.tot === 'tr.total≈ 250,500USD·tr.equityMult {"x":"4.00"}' && m3.totTip === 'tr.lotsNotionalTip {"amt":"8,000,000"}\n500 USDT', J(m3));
+      ok("混列有匯率:合計換成顯示幣別的 ≈ 整數(8,000,000 ÷ 32 + 500 = 250,500 USD);逐幣別的 title 拿掉(同網頁 63b7b5fe、設計稽核必改 5)",
+        m3.tot === 'tr.total≈ 250,500USD' && m3.totTip === "", J(m3));
       delete ctx.TR_BAGS; }
     { /* units spec §9 + §8 金額表綁 Binance:加密 USDT、SOLUSDC、台股 Type C、凍住後才勾的一支 */
       vm.runInContext("TR_TXF.price = null; UNIT = 'USDT'; EQ = 10000", ctx);
@@ -139,13 +139,13 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
         J(grps.map((g) => g[0])) === J(["USDT", "USDC", "TWD"]) && J(rows.map((r) => r[0])) === J(["BTC", "FRESH", "SOL", "TW"]), J([grps, rows]));
       ok("§9.4 區標題:USDT 兩列出小計 600;一列的 USDC、TWD 不出小計;區標題都不掛倍數", J(grps[0]) === J(["USDT", "", "600", "", ""]) && J(grps[1]) === J(["USDC", "", "", "", ""]) && J(grps[2]) === J(["TWD", "", "", "", ""]), J(grps));
       ok("§8.2 Type C 列:持有 2 檔(0 權重的 2454 不算)、訊號 ×0.99、目標 +297,000 上買色", J(by.TW.slice(1)) === J(['tr.nSyms {"n":2}', "×0.99", "+297,000", "n buy"]), J(by.TW));
-      ok("signals_frozen.pending:訊號寫「—」、目標寫 tr.noSignalYet,不畫 0", by.FRESH[2] === "—" && by.FRESH[3] === "tr.noSignalYet" && /\bna\b/.test(by.FRESH[4]), J(by.FRESH));
+      ok("signals_frozen.pending:訊號寫「—」、目標寫 po.hostOld(主機版本較舊,同網頁 a8239131),不畫 0", by.FRESH[2] === "—" && by.FRESH[3] === "po.hostOld" && /\bna\b/.test(by.FRESH[4]), J(by.FRESH));
       ok("§9.7 三區、沒有匯率:合計「—」;倍數照算、接在合計後面——Binance 會下單的 USDT 600 + USDC 100(缺匯率 1:1)÷ 10,000 = 0.07,台股 300,000 不算",
-        tot.textContent === 'tr.total—·tr.equityMult {"x":"0.07"}', tot.textContent);
+        tot.textContent === 'tr.total—', tot.textContent);
       ctx.TR.st.report.states.tw = undefined; delete ctx.TR.st.report.states.tw;
       const tw2 = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)).filter((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key")
         .find((r) => r.kids[0].kids[0].text === "TW");
-      ok("§8.2 Type C 還沒算過:標的「—」+ tr.typecPending、訊號 ×0、目標 0;quote_ccy 的 TWD 照樣分區", tw2.kids[1].textContent === "—" && tw2.kids[1].title === "tr.typecPending" && tw2.kids[3].textContent === "×0" && tw2.kids[4].textContent === "0"); }
+      ok("§8.2 Type C 還沒算過:標的「—」+ tr.typecPending、訊號「—」(還沒算出成分,同網頁 3b67fa10)、目標 0;quote_ccy 的 TWD 照樣分區", tw2.kids[1].textContent === "—" && tw2.kids[1].title === "tr.typecPending" && tw2.kids[3].textContent === "—" && tw2.kids[4].textContent === "0"); }
     // 確認框(spec-0.1.13 #1 的大口數提醒已隨安全檢查拿掉,Wei 10-13):沒改過的舊列(edits 空,照 stored 送)也照列
     const confirm = (price, lots, eq, unit = "TWD") => { paint(price, unit, eq); ctx.TR.st.report.config.amounts.txf = lots; ctx.BOX = null;
       vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
@@ -183,7 +183,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     const box = (venue, amt) => { levT(venue, amt); ctx.BOX = null; ctx.DELOK.attrs = {}; vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx); return ctx.BOX; };
     { const t12 = levT("okx", 120000), b12 = box("okx", 120000), bp = box("paper", 120000);
       ok("12 倍真錢:金額表沒有 .pf-lev 提醒、合計後面照寫 12.00×;確認框沒有勾選列、儲存不停用、沒有 aria-describedby",
-        !t12.some((n) => /pf-lev/.test(n.className || "")) && t12.find((n) => n.className === "pf-total").textContent === 'tr.total120,000USDT·tr.equityMult {"x":"12.00"}'
+        !t12.some((n) => /pf-lev/.test(n.className || "")) && t12.find((n) => n.className === "pf-total").textContent === 'tr.total120,000USDT'
         && !flat(b12.extra).some((n) => n.className === "cf-ack" || (n.tag === "input" && n.type === "checkbox")) && b12.okDisabled === false && !ctx.DELOK.attrs["aria-describedby"]);
       ok("smallfixes #13 模擬帳戶 12 倍照樣可存:確認鈕不停用、沒有紅字 .cf-block", bp.okDisabled === false && !flat(bp.extra).some((n) => /cf-block/.test(n.className) || / over\b/.test(n.className)));
       const tot = flat(box("okx", 44946800).extra).find((n) => /\btotal\b/.test(n.className));
@@ -232,9 +232,12 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       const bad = cases.filter(([, rep, pend, want]) => J(tagsOf(rep, { pending: pend })) !== J(want)).map(([nm, rep, pend]) => [nm, tagsOf(rep, { pending: pend })]);
       ok("平倉標記只在可能下單時(" + cases.length + " 種狀態逐一列舉;移出的列不下單時只寫 tr.cfTagRemove)", bad.length === 0, J(bad));
       /* 「儲存後可能立即下單」(tr.saveWarn)跟平倉標記同一個判準:只在 trMayFire 時出(同網頁 pfSaveWarn) */
-      const warnOf = (rep, o) => { cf(rep, o); return flat(ctx.BOX.extra).some((n) => n.className === "cf-note" && n.text === "tr.saveWarn"); };
-      const wBad = cases.filter(([, rep, pend, want]) => warnOf(rep, { pending: pend }) !== (want === FIRE)).map(([nm]) => nm);
-      ok("tr.saveWarn 只在可能下單時出(同一組 " + cases.length + " 種狀態)", wBad.length === 0, J(wBad));
+      // 暫停中(HALT,下單程式在跑)換成 tr.saveWarnHalted(不開新倉、減碼與平倉照常)——Mac e2e 10-14:移出策略時「可能立即下單」會嚇到人
+      const warnOf = (rep, o) => { cf(rep, o); const n = flat(ctx.BOX.extra).find((x) => x.className === "cf-note" && /^tr\.saveWarn/.test(x.text)); return n ? n.text : null; };
+      const wBad = cases.filter(([, rep, pend, want]) => { const w = warnOf(rep, { pending: pend }); return want === FIRE ? !(w === "tr.saveWarn" || w === "tr.saveWarnHalted") : w !== null; }).map(([nm]) => nm);
+      const halted = cases.filter(([nm, rep, pend, want]) => want === FIRE && rep.halt && rep.halt.halted && !pend).map(([, rep, pend]) => warnOf(rep, { pending: pend }));
+      ok("儲存後那一句只在可能下單時出(同一組 " + cases.length + " 種狀態);暫停中(HALT、下單程式在跑)寫 tr.saveWarnHalted,其餘寫 tr.saveWarn",
+        wBad.length === 0 && halted.length > 0 && halted.every((w) => w === "tr.saveWarnHalted"), J({ wBad, halted }));
       /* 沒連交易所:不跳確認框、直接存(同網頁 d0d0eb63);有綁才開框。存不進去(雲端設定檔裡有壞值)照樣開框講原因 */
       ctx.DIRECT = 0; cf({ venues: {} });
       const noVenue = { box: ctx.BOX, direct: ctx.DIRECT };
@@ -258,15 +261,16 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       ctx.TR_BAGS = { cloud: { st: { cloud: { fx_rates: { USDT: 1, USD: 1, TWD: 32 }, currency: "USD" } } } };
       const twoFx = cf({}, { tw: true }), twoFxKeep = cf({}, { tw: true, keep: true });
       delete ctx.TR_BAGS;
-      ok("多區有匯率:合計 ≈ 11,375 → ≈ 11,175 USD(300,000 ÷ 32 = 9,375);沒變時只寫 ≈ 11,375",
-        byN(twoFx, "tr.total")[2] === '≈ 11,375→≈ 11,175USD · tr.equityMult {"x":"0.18"}' && byN(twoFxKeep, "tr.total")[2] === '≈ 11,375USD · tr.equityMult {"x":"0.20"}', J([byN(twoFx, "tr.total"), byN(twoFxKeep, "tr.total")])); }
+      ok("多區有匯率:合計 ≈ 11,375 → 11,175 USD(300,000 ÷ 32 = 9,375;≈ 只寫一個,設計稽核必改 7);沒變時只寫 ≈ 11,375",
+        byN(twoFx, "tr.total")[2] === '≈ 11,375→11,175USD · tr.equityMult {"x":"0.18"}' && byN(twoFxKeep, "tr.total")[2] === '≈ 11,375USD · tr.equityMult {"x":"0.20"}', J([byN(twoFx, "tr.total"), byN(twoFxKeep, "tr.total")])); }
     { // 稽核 audit-0.1.13-web S1:打「15OO」沒有 blur 就按儲存 → 先把每一格重驗一次,有錯就不開確認框、不送前綴值 15
       vm.runInContext("UNIT = 'USDT'; EQ = 10000", ctx);
       ctx.TR = { env: "local", list: [{ name: "btc", displayName: "BTC", hasBacktest: true }], listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, sig: {}, reqIds: {},
         st: { alive: true, report: { venues: { okx: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: { btc: 1000 } }, states: { btc: { symbol: "BTCUSDT", market: "swap", position: 1 } } } } };
       const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
-      const inp = all.find((n) => n.tag === "input" && n.className === "amt-in"), sv = all.find((n) => n.className === "btn-fill");
-      inp.value = "15"; inp.on.input(); inp.value = "15OO"; inp.on.input(); ctx.BOX = null; sv.on.click();
+      const inp = all.find((n) => n.tag === "input" && n.className === "amt-in");
+      inp.value = "15"; inp.on.input(); inp.value = "15OO"; inp.on.input(); ctx.BOX = null;
+      const sv = flat(all[0]).find((n) => n.className === "btn-fill" && n.dataset.fk === "save"); sv.on.click();   // 改了才有儲存鈕(沒改時那一格是「去啟動」)
       ok("稽核 S1:沒有 blur 直接按儲存 → 重驗所有格子,15OO 標紅、不開確認框(不送 15)", ctx.BOX === null && ctx.TR.bad.btc === true && inp.attrs["aria-invalid"] === "true");
       inp.value = "1,500"; inp.on.input(); sv.on.click();
       ok("稽核 S1:改成看得懂的值再按 → 開確認框、送 1,500(列上寫 1,000 → 1,500)", !!ctx.BOX && flat(ctx.BOX.extra).some((n) => n.tag === "dd" && n.textContent === "1,000→1,500")); }
@@ -290,7 +294,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
         && !all.some((n) => n.className === "cf-note" && n.textContent === "tr.ccyUnknown")
         && all.some((n) => n.tag === "dd" && n.textContent === "500") && !all.some((n) => /null/.test(n.textContent || "")), J(all.filter((n) => n.tag === "dd").map((n) => n.textContent))); } }
   ok("確認框與金額表同一支 trZoneSum(分區、合計、倍數);口數小字 TWD 寫死在 tr.txfConfirmRef(名目本來就是台幣)",
-    /zt = trZoneSum\(sending, eq\), zt0 = trZoneSum\(stored, eq\)/.test(cutF(src, "trSaveAmounts")) && /const zt = trZoneSum\(am, eq\)/.test(cutF(src, "trAmountTable")) && /^const TR_TXF_CCY = "TWD";$/m.test(src)
+    /zt = trZoneSum\(sending, eq\), zt0 = trZoneSum\(stored, eq, trRowMoneyStored\)/.test(cutF(src, "trSaveAmounts")) && /const zt = trZoneSum\(am, eq\)/.test(cutF(src, "trAmountTable")) && /^const TR_TXF_CCY = "TWD";$/m.test(src)
     && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"tr.txfConfirmRef": "{prod} ≈ {amt} TWD"'));
 
   done = true; console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

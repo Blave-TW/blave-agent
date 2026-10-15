@@ -356,7 +356,10 @@ function cloudHost() {
     apiBase: API_BASE, post: (u, b) => postJSON(u, b),
     getCreds: blaveCreds,
     // 送的是部位與權益:只送給載入自家 index.html 的視窗(今天全 app 只有一個視窗;哪天多了第二個,也不會漏過去)
-    onChange: (snap) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("cloud-state", snap); },
+    onChange: (snap) => {
+      if (snap && (snap.code === "REVOKED" || snap.code === "NO_APP_SECRET")) authRevoked = true; else if (snap && snap.code === "OK") authRevoked = false;   // 登入狀態的單一來源(authState)
+      for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("cloud-state", snap);
+    },
   });
   return _cloud;
 }
@@ -411,7 +414,13 @@ function b64url(buf) {
 
 // token 存 Keychain(safeStorage 背後就是它)。拿不到加密能力時不落地——
 // 寧可每次重新授權,也不要在開源軟體裡留一個明文的計費憑證。
+/* Blave 登入狀態的單一來源(Mac e2e 10-14:設定 › 帳號與方案寫「已登入」、公開連結與雲端分頁寫「登入已失效」,前後矛盾)。
+   revoked = 手上有 token、但伺服器說它不能用了:帳號狀態那一支 401／403(輪替救不回)、或雲端狀態回 REVOKED／NO_APP_SECRET。
+   任何一支拿到 200 就回到 in;存了新 token(登入／輪替)也回到 in。畫面每一處都讀這一份(auth-state) */
+let authRevoked = false;
+function authState() { return !loadToken() ? "out" : authRevoked ? "revoked" : "in"; }
 function saveToken(tok) {
+  authRevoked = false;
   if (!safeStorage.isEncryptionAvailable()) return false;
   // 先寫旁邊再 rename(同目錄、原子):寫到一半失敗(磁碟滿、防毒鎖檔)不能留下空檔或半截——那會被讀成「沒登入」
   const tmp = tokenPath() + ".tmp";
@@ -2077,7 +2086,9 @@ async function accountStatus(retried) {
     const r = await getJSON(`${API_BASE}/openclaw/proxy/v1/account_status`, { "x-api-key": `proxy-${acct}`, ...state });
     // 這顆被拒(過期,或輪替的回應沒收到):拿寬限內的舊值或它自己換一次,換到就再問一次。撤銷的換不動,照舊回 null
     if (!retried && r.status === 403 && r.body && r.body.error_code === "ACCOUNT_TOKEN_INVALID" && await rotator().recover(acct)) return accountStatus(true);
+    if (r.status === 401 || (r.status === 403 && r.body && r.body.error_code === "ACCOUNT_TOKEN_INVALID")) { if (currentWho() === who) authRevoked = true; return null; }
     if (r.status !== 200) return null;
+    authRevoked = false;
     const b = r.body && (r.body.data || r.body);
     if (!(b && typeof b.can_run === "boolean")) return null;
     if (currentWho() !== who) return null;          // 在途時登出 / 換了帳號:舊帳號的答案不寫回、不回給畫面
@@ -3013,6 +3024,7 @@ app.whenReady().then(() => {
   handle("compare-versions", (_e, name, a, b) => compareVersions(String(name || ""), a, b), { code: "ERROR" });
   handle("model-options", (_e, kind) => modelOptions(kind));
   handle("account-status", () => accountStatus());
+  handle("auth-state", () => authState(), "out");   // 登入狀態的單一來源:out／in／revoked(帳號與方案、公開連結、雲端分頁都讀它)
   handle("balance", () => balanceHost().read());
   handle("public-pricing", () => publicPricing());
   handle("txf-quote", () => txfQuote());
@@ -3048,6 +3060,7 @@ app.whenReady().then(() => {
   // 雲端的事件清單:點擊驅動的另一支(另一個速率桶),不啟動輪詢、不留在主行程、不落地。
   // 回 { code: "OK" | "UNREACH", events }——讀不到與「真的沒有事件」是兩件事,畫面要講得出是哪一種
   handle("cloud-events", (_e, q) => cloudHost().events(q && q.days), { code: "UNREACH", events: [] });
+  handle("cloud-set-ccy", (_e, code) => { cloudHost().start(); return cloudHost().setBaseCurrency(code); }, { ok: false, code: "FAIL" });   // 設定 › 顯示幣別(帳號偏好)
   // 雲端的權益曲線與當日損益(總覽分頁;同事件清單:另一個速率桶、不留在主行程、不落地)。回 { code: "OK" | "UNREACH", curve }
   handle("cloud-overview", (_e, q) => cloudHost().overview(q && q.days, q && q.currency), { code: "UNREACH", curve: null });
   handle("cloud-performance", (_e, q) => cloudHost().performance(q && q.days, q && q.currency), { code: "UNREACH", perf: null });
@@ -3083,14 +3096,14 @@ app.whenReady().then(() => {
   const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
   // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
   // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;
     const argsSafe = !args || typeof args !== "object" || Array.isArray(args) ? {} : args;
     // 形狀先在這裡驗一次(同本機 daemon 那一道):renderer 被攻破時塞不進奇形怪狀的參數,也不白吃一格 api 的速率桶
     if (CLOUD_ONLY.indexOf(cmd) >= 0 ? !require("./cloudcmd").cloudArgsOk(cmd, argsSafe) : !require("./daemon").argsOk(cmd, argsSafe)) return { ok: false, error: "BAD_ARGS", kind: "undelivered" };
-    const r = await cloudCmd().send(cmd, argsSafe, null, { requestId: rid });
+    const r = await cloudCmd().send(cmd, argsSafe, null, { requestId: rid, ackWindowMs: require("./daemon").CMD_TIMEOUT_MS[cmd] });
     // 機器收下了:立刻要一份新狀態(refresh 自己有節流)。不等它——回應不該被多一趟網路拖住
     if (r && r.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
     return r;
@@ -3772,7 +3785,10 @@ app.on("before-quit", (e) => {
   }
   // 常駐程式在跑、或背景安裝的 pip 還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)
   const daemon = !!(_tradeHost && _tradeHost.isRunning()), installing = !!(_engineSetup && _engineSetup.busy());
-  if (quitting || (!daemon && !installing)) return;
+  /* token 輪替在途:伺服器那邊可能已經換了、回應還沒回來——這時結束,新值就丟了,檔裡那顆只再活 10 分鐘(寬限),
+     超過才重開就被登出(Mac e2e 10-14 查登入失效)。等它落地再走,最多 5 秒 */
+  const rotating = typeof _rot !== "undefined" && !!(_rot && _rot.state().inflight);
+  if (quitting || (!daemon && !installing && !rotating)) return;
   e.preventDefault(); quitting = true;
-  Promise.all([daemon ? _tradeHost.stop() : null, engineAbort()]).finally(() => app.quit());
+  Promise.all([daemon ? _tradeHost.stop() : null, engineAbort(), rotating ? Promise.race([_rot.settle(), new Promise((r) => setTimeout(r, 5000))]) : null]).finally(() => app.quit());
 });

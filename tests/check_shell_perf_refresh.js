@@ -38,13 +38,13 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   const ld = read(path.join(ROOT, "runtime", "local_daemon.py")), allowedPy = /ALLOWED = frozenset\(\{([\s\S]*?)\}\)/.exec(ld);
   const fixture = JSON.parse(read(path.join(ROOT, "tests", "fixtures", "api_agent_command_allowed.json"))).allowed;
   ok("雲端也送得出:main.js CLOUD_SHIPPED 與 trade.js ENV_CLOUD_CMDS 逐項相等、都在 version_restore 之後接 stats_refresh",
-    Array.isArray(shipped) && JSON.stringify(shipped) === JSON.stringify(envCmds) && shipped.slice(-2).join() === "version_restore,stats_refresh");
+    Array.isArray(shipped) && JSON.stringify(shipped) === JSON.stringify(envCmds) && shipped.indexOf("stats_refresh") === shipped.indexOf("version_restore") + 1);
   ok("runtime local_daemon.ALLOWED 與 fixture(api 的 ALLOWED 副本)都有 stats_refresh;fixture 照字母序", !!allowedPy && /"stats_refresh"/.test(allowedPy[1]) && fixture.includes("stats_refresh")
     && JSON.stringify(fixture) === JSON.stringify(fixture.slice().sort()));
 
   // ── ② 埋點 ──
   const { EVENTS } = require(path.join(S, "telemetry.js")), F = EVENTS.feature_used.name;
-  ok("perf_update 在 browser_hb_card 之後(0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在後面)、≤16 字", F.slice(-4).join() === "browser_hb_card,perf_update,pres_have_cert,contract_switch" && "perf_update".length <= 16);
+  ok("perf_update 在 browser_hb_card 之後(0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在後面)、≤16 字", F.slice(F.indexOf("browser_hb_card"), F.indexOf("contract_switch") + 1).join() === "browser_hb_card,perf_update,pres_have_cert,contract_switch" && "perf_update".length <= 16);
   const click = fnSrc(perfSrc, "perfClick");
   ok("送出點只有 perfClick 一處,而且在 ack started 之後(按下、BUSY、結果不明、拒收都不記)", (perfSrc.match(/trackFeature\("perf_update"\)/g) || []).length === 1
     && /res\.started\.indexOf\(name\) >= 0\) \{ trackFeature\("perf_update"\);/.test(click) && click.indexOf('tradeSend("stats_refresh"') < click.indexOf('trackFeature("perf_update")'));

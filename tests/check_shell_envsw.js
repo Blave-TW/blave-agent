@@ -161,7 +161,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /const CLOUD_ONLY = require\("\.\/cloudcmd"\)\.CLOUD_ONLY_COMMANDS;/.test(mainSrc)
       && JSON.stringify(require("../shell/cloudcmd").CLOUD_ONLY_COMMANDS) === '["delete_strategy"]'
       && !require("../shell/daemon").UI_COMMANDS.has("delete_strategy")
-      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh"\];/.test(mainSrc));
+      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"\];/.test(mainSrc));
     // api 的測試釘住 update 不在 daemon.js 的 UI_COMMANDS(本機 daemon 不收);這裡也釘一次,免得有人為了過白名單把它塞進去
     ok("update 不在 daemon.js 的 UI_COMMANDS", !require("../shell/daemon").UI_COMMANDS.has("update"));
     ok("用本機 app 不觸發雲端 agent 回合:cloud-send 的白名單沒有 update / restart_reconciler", !/"update"|"restart_reconciler"/.test((mainSrc.match(/const CLOUD_SHIPPED = \[[^\]]*\]/) || [""])[0]));
@@ -174,7 +174,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
         !!re && ("../../etc/x" + "-2026-09-22T01:02:03.000Z").replace(re, "_").indexOf("/") < 0 && "1.1.80-2026".replace(re, "_") === "1.1.80-2026"); }
     // 契約 ①:cloudcmd.js 不是 secrets 的信任邊界,閘門在這裡——第三個參數永遠是 null,renderer 塞不進金鑰
     ok("main.js:cloud-send 拒收 secrets(送進 cloudcmd 的第三個參數寫死 null)",
-      /cloudCmd\(\)\.send\(cmd, args[^,]*, null, \{ requestId: rid \}\)/.test(h) && !/secret/i.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
+      /cloudCmd\(\)\.send\(cmd, args[^,]*, null, \{ requestId: rid, ackWindowMs: require\("\.\/daemon"\)\.CMD_TIMEOUT_MS\[cmd\] \}\)/.test(h) && !/secret/i.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
     ok("main.js:機器收下了才叫一次 refresh(true);preload 只多暴露 cloudSend 一支",
       /if \(r && r\.ok\) \{ cloudHost\(\)\.start\(\); cloudHost\(\)\.refresh\(true\)\.catch\(\(\) => \{\}\); \}/.test(h)
       && /cloudSend: \(cmd, args, requestId\) => ipcRenderer\.invoke\("cloud-send", cmd, args, requestId\)/.test(pre)); }
@@ -528,7 +528,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /if \(rt\) resTurnEnd\(rt, cloudTurn\);[^\n]*\n\s*chatSwitchFlush\(\);[^\n]*\n\}\);/.test(app));
     // 雲端中欄畫雲端那支的報告:#rp 共用、資料分兩袋;雲端列是鈕;「送上雲端」在雲端不畫;送出當下 viewing 指的是雲端那一份
     ok("雲端報告:envShowMain 雲端分支依 RPC 掀 #rp、收 #tr(沒主機可看時兩個都收);這台電腦那一半一個字沒變",
-      /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(fn("envShowMain")) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = true; \$\("tr"\)\.hidden = gate \|\| rp;/.test(fn("envShowMain"))
+      /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(fn("envShowMain")) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = true; \$\("tr"\)\.hidden = gate \|\| rp \|\| po; \$\("po"\)\.hidden = gate \|\| rp \|\| !po;/.test(fn("envShowMain"))
       && /const L = TR_BAGS\.local, rp = !L\.open && !!\(RP\.name && RP\.data\);/.test(fn("envShowMain")) && !/envShowLocalMain/.test(code + app));
     ok("雲端報告:側欄雲端列是 button.strat-row(點了 rpCloudSelect;再點選中那支經 sideReclick 收掉,見 check_shell_side_reclick)、選中的帶 aria-current;is-static 退場;#tr-nav 在雲端收掉雲端那支",
       /const wrap = trEl\("div", "strat-wrap cs-row"\), row = trEl\("button", "strat-row"\); row\.type = "button"; row\.dataset\.name = x\.name;/.test(fn("envPaintSide")) && /if \(x\.name === sel\) row\.setAttribute\("aria-current", "true"\);/.test(fn("envPaintSide"))
@@ -556,8 +556,11 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   { // 側欄策略列的呼吸點(Wei 09-22;照網頁 workspace.html stratRunState)
     const N = 1.8e12, S0 = N / 1000;
     const rp = (o = {}) => ({ alive: true, report: { venues: V, config: { amounts: { a: 100, z: 0 } }, scheduled: ["a", "z"], states: { a: { updated_at: S0 - 60 }, z: { updated_at: S0 - 60 } }, halt: {}, reconciler: { alive: true }, ...o } });
-    ok("呼吸點照網頁 `name in amounts`:在金額表裡(金額 0 也算)+ 在排程上 + state 兩小時內動過才亮;不在表裡不亮", envRunDot("a", rp(), N) === true && envRunDot("z", rp(), N) === true && envRunDot("q", rp(), N) === false
-      && envRunDot("a", rp({ config: { amounts: "x" } }), N) === false);
+    // 0.1.24(Wei 10-14,web 9c1d768c):亮 = 在組合裡且主機有排程(金額 0 也算,Wei 10-14 晚改);不看訊號多久前更新、不看有沒有綁交易所;signals_frozen 時整個配置不亮
+    // Wei 10-14 改規則:在策略組合裡就亮——amounts 有這個 key(金額 0 也算)而且主機有排程;runtime 本來就排程金額 0 的成員(_deployed_names)
+    ok("呼吸點:在組合裡(amounts 有 key,金額 0 也算)而且在排程上就亮;不在 amounts 裡、amounts 壞掉都不亮", envRunDot("a", rp(), N) === true && envRunDot("z", rp(), N) === true && envRunDot("q", rp(), N) === false
+      && envRunDot("a", rp({ config: { amounts: "x" } }), N) === false && envRunDot("z", rp({ scheduled: ["a"] }), N) === false);
+    ok("呼吸點:金額 0 的成員在 signals_frozen 時也不亮", envRunDot("z", rp({ signals_frozen: { since: 1, pending: [] } }), N) === false);
     const J = (p, r) => ({ picked: p || {}, removed: r || {} });
     ok("呼吸點 5 分鐘樂觀窗(同網頁 pfJustPicked / pfJustRemoved):剛存進先亮、剛移出先熄;過了 5 分鐘交回真實判定",
       envRunDot("q", rp(), N, J({ q: N - 299999 })) === true && envRunDot("q", rp(), N, J({ q: N - 300000 })) === false
@@ -566,14 +569,15 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("存金額後記樂觀窗:新進的 = picked(並撤銷它的 removed),移出的 = removed(並撤銷 picked),原本就在的不動", jm.picked.b === 7 && !("b" in jm.removed) && jm.removed.c === 7 && !("a" in jm.picked) && !("a" in jm.removed));
     ok("呼吸點前提:這台電腦常駐程式活著 / 雲端主機 running;不然整份不亮(樂觀窗也不算)", envDotsUp("local", { alive: true }) === true && envDotsUp("local", { alive: false }) === false && envDotsUp("local", null) === false
       && envDotsUp("cloud", cloudSt(okc("running"))) === true && ["stopped", "starting", "none"].every((k) => envDotsUp("cloud", cloudSt(okc(k))) === false) && envDotsUp("cloud", cloudSt({ code: "OFFLINE" })) === false);
-    ok("呼吸點:state 過了兩小時 / 沒有 updated_at 熄;排程讀不到(null)不擋、讀得到但不在上面熄",
-      envRunDot("a", rp({ states: { a: { updated_at: S0 - 7200 } } }), N) === false && envRunDot("a", rp({ states: { a: {} } }), N) === false
+    ok("呼吸點:不看訊號多久前更新(日線 20 小時、9 天前、沒有 updated_at 都亮);排程讀不到(null)不擋、讀得到但不在上面熄",
+      envRunDot("a", rp({ states: { a: { updated_at: S0 - 20 * 3600 } } }), N) === true && envRunDot("a", rp({ states: { a: { updated_at: S0 - 9 * 86400 } } }), N) === true && envRunDot("a", rp({ states: { a: {} } }), N) === true
       && envRunDot("a", rp({ scheduled: null }), N) === true && envRunDot("a", rp({ scheduled: ["b"] }), N) === false);
-    ok("呼吸點:一支交易所都沒綁(venues {})熄;沒有回報 / 回報壞了熄", envRunDot("a", rp({ venues: {} }), N) === false && envRunDot("a", null, N) === false && envRunDot("a", { report: null }, N) === false && envRunDot("a", { report: "x" }, N) === false);
+    ok("呼吸點:沒綁交易所也亮(0.1.24 起訊號照跑);沒有回報 / 回報壞了熄", envRunDot("a", rp({ venues: {} }), N) === true && envRunDot("a", null, N) === false && envRunDot("a", { report: null }, N) === false && envRunDot("a", { report: "x" }, N) === false);
+    ok("呼吸點:主機凍結訊號(signals_frozen 是物件)整個配置不亮;null 或舊版沒這欄照常亮",
+      envRunDot("a", rp({ signals_frozen: { since: 1, pending: [] } }), N) === false && envRunDot("a", rp({ signals_frozen: null }), N) === true && envRunDot("a", rp(), N) === true);
     const stp = (g) => ({ reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, gated: g } } });
-    ok("呼吸點照網頁:已暫停(HALT)、重開停止、可能仍在下單都不另外判——state 在動就亮(訊號照更新)",
-      envRunDot("a", rp({ halt: { halted: true, source: "web" } }), N) === true && envRunDot("a", rp(stp(true)), N) === true && envRunDot("a", rp(stp(false)), N) === true
-      && envRunDot("a", rp({ ...stp(true), states: { a: { updated_at: S0 - 9000 } } }), N) === false);
+    ok("呼吸點照網頁:已暫停(HALT)、重開停止、可能仍在下單都不另外判",
+      envRunDot("a", rp({ halt: { halted: true, source: "web" } }), N) === true && envRunDot("a", rp(stp(true)), N) === true && envRunDot("a", rp(stp(false)), N) === true);
     const appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8"), css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
     ok("呼吸點接線:本機列(輪詢每輪 + 清單重建後)與雲端列(簽章帶著亮不亮)都走 envRunDot → envDotInto;點放在名字 span 最前面、讀屏不唸",
       /trPaint\(\);\n\s*envPaintLocalDots\(\);/.test(src) && /if \(typeof envPaintLocalDots === "function"\) envPaintLocalDots\(\);/.test(appSrc)
