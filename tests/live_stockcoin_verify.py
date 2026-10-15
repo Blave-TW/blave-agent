@@ -22,6 +22,9 @@ READ steps (no money moves)
   R6  get_account_id
   R7  multiplier cross-check on every listed contract (public)
   R8  bad-secret and bad-key replies: code, HTTP status, classify()
+  R9  DELETE of a nonexistent order: proves the DELETE signature before cancel_order is trusted
+  R10 (--noop-write) set BTC leverage to its current value: proves the form-body POST
+      signature before any order is sent
 ORDER steps (each one contract, ≈$0.02–$8; everything is closed at the end)
   T1  BTC: open 1 contract long through place_market_order → raw reply
       (contractMultiplier, status of a market order, avgPrice), fee from trades
@@ -31,6 +34,9 @@ ORDER steps (each one contract, ≈$0.02–$8; everything is closed at the end)
   T5  NVDA, XAU, SAMSUNG, OPENAI: open + close 1 contract each (multiplier per class)
   T6  a 36-character clientOrderId on NVDA: accepted or rejected, then closed
   CLEANUP  every leg touched above is closed through the lib (runs even after a failure)
+If a contract's real multiplier is not the table's, place_market_order raises AFTER the
+fill (contractMultiplier mismatch — fail-loud by design); CLEANUP still closes that leg.
+Run order: read steps (+ --noop-write) first, compare R2 with the app, then --trade.
 Not covered yet (later round, needs its own go-ahead): post-only (LIMIT_MAKER), a
 resting limit order + cancel + orphan scan, STOP stop-loss / take-profit, chase /
 TWAP, the full reconciler round, user-data WebSocket.
@@ -73,6 +79,7 @@ def main():
     ap.add_argument("--trade", action="store_true")
     ap.add_argument("--confirm", default="")
     ap.add_argument("--only", default="")
+    ap.add_argument("--noop-write", action="store_true")
     a = ap.parse_args()
     env = load_env(os.path.abspath(a.env))
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -157,6 +164,17 @@ def main():
                                     "http_status": getattr(e, "http_status", None),
                                     "classify": acct.classify(e)})
 
+    if want("R9"):
+        say("R9 DELETE a nonexistent order (want -2013/-1122; -1022 = DELETE params belong in the body)",
+            raw("DELETE", "/futures/order", {"symbol": "BTC-PERP-USDT", "orderId": "1"}))
+    if a.noop_write and want("R10"):
+        cur = raw("GET", "/futures/accountLeverage", {"symbol": "BTC-PERP-USDT"})
+        say("R10 leverage now", cur)
+        lev = cur[0].get("leverage") if isinstance(cur, list) and cur else None
+        if lev:
+            say("R10 POST leverage = same value (form-body signature; -1022 = body signing is wrong)",
+                raw("POST", "/futures/leverage", {"symbol": "BTC-PERP-USDT", "leverage": lev}))
+
     if not a.trade:
         print("read steps done; order steps not run (no --trade)")
         return
@@ -165,9 +183,11 @@ def main():
     one = lambda sym: float(acct.multiplier(order.venue_symbol(sym)))  # one contract in base units
 
     def legs(sym):
-        vs = order.venue_symbol(sym)
-        return [p for p in raw("GET", "/futures/positions", {"symbol": vs}) or []
-                if isinstance(p, dict) and float(p.get("position") or 0) != 0]
+        rows = raw("GET", "/futures/positions", {"symbol": order.venue_symbol(sym)})
+        if not isinstance(rows, list):
+            # an unreadable position must never read as flat
+            raise RuntimeError(f"positions for {sym} UNKNOWN — check the app: {redact(rows)}")
+        return [p for p in rows if float(p.get("position") or 0) != 0]
 
     try:
         if want("T1") or want("T2") or want("T3") or want("T4"):
@@ -211,16 +231,24 @@ def main():
                 "symbol": "NVDA-PERP-USDT", "side": "BUY_OPEN", "orderType": "LIMIT", "priceType": "MARKET",
                 "price": "0", "quantity": "1", "clientOrderId": long_cid}))
     finally:
+        unclean = []
         for sym in sorted(touched):
-            for p in legs(sym):
-                d = "long" if p["side"] == "LONG" else "short"
-                try:
+            try:
+                for p in legs(sym):
+                    d = "long" if p["side"] == "LONG" else "short"
                     say(f"CLEANUP {sym} {d}", order.close_position_partial(
                         env, sym, d, float(p["position"]) * one(sym)))
-                except Exception as e:
-                    say(f"CLEANUP {sym} {d} FAILED — close it in the app", str(e))
-            say(f"CLEANUP {sym} legs (want [])", legs(sym))
+                left = legs(sym)
+                say(f"CLEANUP {sym} legs (want [])", left)
+                if left:
+                    unclean.append(sym)
+            except Exception as e:
+                say(f"CLEANUP {sym} FAILED — check and close it in the app", str(e))
+                unclean.append(sym)
         say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")
+        if unclean:
+            print(f"NOT FLAT: {', '.join(unclean)} — close in the StockCoin app now", flush=True)
+            sys.exit(2)
 
 
 if __name__ == "__main__":
