@@ -407,7 +407,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 
 /* 階段清單(canon › 回合狀態列 9):回合裡出現第二種階段才有;住在 .think-fold 裡、排在逐步收據上面,跟著 ⌄ 開合(進行中也預設收著)。
    列同收據列(12px、上下 3、左縮 15)。記號沿用收據的 8×2 短劃,進行中半截、主墨 */
-.think-phases { list-style: none; margin: 0 0 var(--space-4) 15px; padding: 0; width: calc(100% - 15px); }
+/* 高度上限同收據清單:出錯回合會自己攤開,階段來回切換的長回合可以有幾十列 */
+.think-phases { list-style: none; margin: 0 0 var(--space-4) 15px; padding: 0; width: calc(100% - 15px); max-height: 204px; overflow-y: auto; }
 .think-phase { display: flex; align-items: center; gap: var(--space-8); padding: 3px 0; font-size: 12px; line-height: 1.5; }
 .think-phase-verb { flex: none; color: var(--ink-2); }
 .think-phase-obj { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }

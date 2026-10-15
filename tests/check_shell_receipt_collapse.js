@@ -60,6 +60,8 @@ function phasesShown(el) {
 ok("app.css:展開區只靠 is-open 開(1fr)、預設 0fr;階段清單沒有自己的顯示規則;chevron 翻轉只綁 aria-expanded",
   /\.think-reason-wrap \{[^}]*grid-template-rows: 0fr;/.test(css) && css.includes(".think-indicator.is-open .think-reason-wrap { grid-template-rows: 1fr; }")
   && !/\.think-phases[^{]*\{[^}]*display/.test(css) && css.includes('.think-head[aria-expanded="true"] .think-chev {') && !/is-open[^{]*\.think-chev/.test(css));
+ok("app.css:階段清單高度上限同收據清單(max-height 204、overflow-y auto),出錯回合自己攤開時 60 列不撐爆聊天欄",
+  /\.think-phases \{[^}]*max-height: 204px; overflow-y: auto;/.test(css) && /\.think-steps \{[^}]*max-height: 204px; overflow-y: auto;/.test(css));
 
 const tick = () => timers[timers.length - 1]();
 function liveTurn() {
