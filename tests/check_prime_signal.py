@@ -243,7 +243,13 @@ try:
               f"funded + routed: target = amount × primed signal, like any tick → "
               f"{ {k: (v['side'], v['size']) for k, v in agg.items()} }")
         bind(False)
-        check(lp.aggregate_portfolio() == {}, "unrouted (no venue): the primed state targets nothing")
+        # an unrouted member's keys are held, not dropped (lib/portfolio, workspace 2026-10-14-r):
+        # every row is a size-0 gated hold, which reconcile never trades
+        held = lp.aggregate_portfolio()
+        check(held and all(v["size"] == 0 and v["side"] is None and v["gated"] and v.get("unrouted")
+                           for v in held.values()),
+              f"unrouted (no venue): the primed state trades nothing, every key held → "
+              f"{ {k: (v['size'], v['gated'], v.get('unrouted')) for k, v in held.items()} }")
     finally:
         os.chdir(cwd)
         sys.path.remove(WS)

@@ -588,8 +588,9 @@ def _venue_sizes_usd(symbol, floor):
             return floor, 0.0  # spot minimums are far below the floor everywhere we ship
         r = order.get_contract_rules(env, sym)
         mark = float(order.get_mark_price(env, sym))
-        min_qty_usd = (float(r.get("min_qty") or 0)
-                       * float(r.get("contract_value") or 1) * mark)
+        # min_qty is BASE units on every lib (OKX min_sz × ct_val, Gate min contracts ×
+        # multiplier): × contract_value again priced OKX DOGE's minimum at $836, not $10
+        min_qty_usd = float(r.get("min_qty") or 0) * mark
         # 1.05 is a STALE-MARK buffer, not a placement-slippage one: this
         # value is cached by the caller (manager/reconciler, up to
         # MIN_ORDER_TTL_S) while the gap compared against it is priced now, so
