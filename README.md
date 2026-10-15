@@ -20,6 +20,8 @@ Star the repo if this is useful — and Watch › Releases to get notified of ne
 
 Overfitting: parameters that just happen to fit past data.
 
+![A BTC breakout backtest: it trailed buy-and-hold and its MCPT p-value of 0.088 missed the 0.05 cutoff, and the agent says so](docs/readme-backtest.png)
+
 - Every Type A backtest runs a Monte Carlo permutation test by default (MCPT, `lib/validation.py`) and records a p-value: could shuffled data have done as well?
 - A parameter scan (`lib/param_scan.py`) looks for a plateau of parameters that all work, not the single best cell.
 - Rolling walk-forward (`lib/walk_forward.py`) measures out-of-sample performance.
@@ -35,6 +37,8 @@ A backtest pins a version of the strategy. If the code running live no longer ma
 Ask for a morning brief, a market-close report, a single-symbol brief or a research write-up. The agent reads the news before it writes — at least three different sites — and every chart comes from the actual data series, never from the model's memory. Each report ends with a summary and one condition that would prove its reading wrong. The liquidation map draws what actually got liquidated and the model's estimate as two layers, labelled as such.
 
 ### A Browser You Can Watch
+
+![The agent searching a dozen sites for BTC and ETH strategy ideas in the built-in browser](docs/readme-browser.png)
 
 When the agent reads the web, it uses the app's built-in browser: the page it is reading is on your screen, not in a hidden process. Exchange account pages and private-network addresses are blocked. A URL on a site it has not visited this round, carrying long parameters, stops and asks you before it opens.
 
