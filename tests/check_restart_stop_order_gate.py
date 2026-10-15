@@ -49,9 +49,9 @@ CHOKE = {
     "binance": "_request", "bingx": "_request", "bybit": "_request",
     "gateio": "_request", "okx": "_request",
     "paper": "_gate", "capital": "_send", "sinopac": "place_odd_lot_order",
-    "president": "_send",
+    "president": "_send", "stockcoin": "_request",
 }
-HTTP = {"binance", "bingx", "bybit", "gateio", "okx"}
+HTTP = {"binance", "bingx", "bybit", "gateio", "okx", "stockcoin"}
 # non-GET _send calls outside _request, each with the reason it is not an order
 SEND_OUTSIDE_REQUEST_OK = {
     ("gateio", "set_leverage"): "leverage change — neither opens nor closes anything",
@@ -311,6 +311,12 @@ CASES = {  # lib: (call builder, {intent: request}) — intents as each lib clas
         "reduce": ("POST", "/api/v5/trade/order", {"instId": "BTC-USDT-SWAP", "side": "sell",
                                                    "reduceOnly": "true"}),
         "cancel": ("POST", "/api/v5/trade/cancel-order", {"instId": "BTC-USDT-SWAP", "ordId": "1"})}),
+    "stockcoin": (lambda m, meth, path, body: m._request(meth, path, {}, body), {
+        "entry": ("POST", "/futures/order", {"symbol": "BTC-PERP-USDT", "side": "BUY_OPEN", "orderType": "LIMIT"}),
+        "reduce": ("POST", "/futures/order", {"symbol": "BTC-PERP-USDT", "side": "SELL_CLOSE", "orderType": "LIMIT"}),
+        "protective": ("POST", "/futures/order", {"symbol": "BTC-PERP-USDT", "side": "SELL_CLOSE",
+                                                  "orderType": "STOP"}),
+        "cancel": ("DELETE", "/futures/order", {"symbol": "BTC-PERP-USDT", "orderId": 1})}),
 }
 import importlib  # noqa: E402
 

@@ -1510,8 +1510,8 @@ const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "clou
 const PRES_LOCAL_ON = true;
 // 這台電腦的下拉列不列統一:旗標開、或這個框是「繼續」帶著 president 進來的(少了那一項 select 會變空白)
 const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
-// 不在連接框那五家裡的三個帳戶(lib/account_paper.py、account_capital.py、account_president.py)
-const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD" };
+// 不在連接框那五家裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py;stockcoin 還沒進連接框)
+const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD", stockcoin: "USDT" };
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)
 function trVenueCcy(id) {
   if (Object.prototype.hasOwnProperty.call(TR_VENUE_CCY_OTHER, id)) return TR_VENUE_CCY_OTHER[id];

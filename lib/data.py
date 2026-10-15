@@ -1069,13 +1069,14 @@ def _fetch_kline_raw(symbol, interval, start, end, headers, max_retries=6):
 
 def normalize_symbol(symbol):
     """Any venue/ccxt symbol form → platform canonical dashless uppercase
-    ('BTC/USDT', 'BTC-USDT', 'BTC_USDT', 'btcusdt' → 'BTCUSDT').
+    ('BTC/USDT', 'BTC-USDT', 'BTC_USDT', 'btcusdt', StockCoin's 'BTC-PERP-USDT'
+    → 'BTCUSDT').
 
     THE single normalization recipe (the get_positions() symbol contract in
     references/lib.md quotes it) — a new venue whose symbol format introduces a
     separator not covered here must extend this function, not a local copy.
     """
-    return symbol.replace('/', '').replace('-', '').replace('_', '').upper()
+    return symbol.replace('-PERP-', '-').replace('/', '').replace('-', '').replace('_', '').upper()
 
 
 def fetch_kline(symbol, interval, start, end, headers, max_retries=6):
