@@ -92,7 +92,7 @@ Giao diện theo ngôn ngữ hệ thống (tiếng Anh hoặc tiếng Trung ph�
 
 ## Tin mới
 
-- **2026-10-15** — Bản desktop 0.1.24: trang Portfolio (tab Allocation và Optimize), Optimize và backtest walk-forward của nó cũng chạy được trên máy đám mây; chưa kết nối sàn vẫn thấy tổng vị thế theo tín hiệu của từng sản phẩm để tự đặt lệnh; Optimize định cỡ vị thế theo Target Volatility, Max Drawdown hoặc Fixed Leverage; "Update performance" giờ chạy nhiều chiến lược cùng lúc, và trước khi Optimize chỉ cập nhật các chiến lược đã hơn 6 giờ chưa cập nhật; sau khi liên kết công ty môi giới, Auto trading đưa bạn sang Portfolio, lưu số tiền xong thì đưa bạn quay lại Start trading; hủy liên kết sàn vẫn giữ danh mục và số tiền — liên kết lại rồi lưu một lần ở Portfolio là giao dịch tiếp; chiến lược tính tín hiệu ngay bằng nến đã đóng mới nhất thay vì chờ nến kế tiếp; chiến lược hợp đồng tương lai chỉ số Đài Loan chuyển được giữa TXF, MXF và TMF, kể cả khi đang dừng giao dịch, vị thế đang mở tự chuyển sang hợp đồng mới, số lô mục tiêu được làm tròn trước nên nửa lô không còn gây mua bán qua lại; lưu cài đặt lệnh hoặc thành công toàn bộ hoặc không thay đổi gì; Settings › General thêm Display currency; thẻ kết quả nằm trên phần trả lời; lần cài đầu trên Mac không còn hỏi chuyển app vào Applications khi engine vẫn đang cài, và khi cần quyền hệ thống thì app hướng dẫn bạn tự làm.
+Thay đổi của từng phiên bản xem ở [Releases](https://github.com/Blave-TW/blave-agent/releases).
 
 ## An toàn và giới hạn
 

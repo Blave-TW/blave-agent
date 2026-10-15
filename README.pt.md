@@ -92,7 +92,7 @@ A interface segue o idioma do sistema (inglês ou chinês tradicional). Para for
 
 ## Novidades
 
-- **2026-10-15** — Desktop 0.1.24: página Portfolio (abas Allocation e Optimize), com Optimize e seu backtest walk-forward também numa máquina na nuvem; sem exchange conectada ainda mostra a posição de sinal total por instrumento, para operar manualmente; Optimize dimensiona por Target Volatility, Max Drawdown ou Fixed Leverage; "Update performance" agora processa várias estratégias ao mesmo tempo, e o Optimize atualiza antes só as que estão há mais de 6 horas sem atualização; ao vincular uma corretora, o Auto trading leva você ao Portfolio e, depois de salvar os valores, de volta ao Start trading; desvincular uma exchange mantém sua carteira e seus valores — depois de vincular de novo, salve uma vez no Portfolio para voltar a operar; uma estratégia calcula o sinal na hora com o último candle fechado, em vez de esperar o próximo; uma estratégia de futuros do índice de Taiwan alterna entre TXF, MXF e TMF, também com o trading parado, a posição aberta é rolada para o novo contrato e os lotes-alvo são arredondados antes, então meio lote não alterna mais entre compra e venda; salvar as configurações de ordens ou dá certo por inteiro ou não muda nada; Settings › General ganha Display currency; os cartões de resultado ficam acima do texto da resposta; a primeira instalação no Mac não pergunta mais se deve mover o app para Aplicativos enquanto o motor ainda está sendo instalado, e quando a mudança precisa de permissão do sistema o app diz o que fazer.
+As mudanças de cada versão estão em [Releases](https://github.com/Blave-TW/blave-agent/releases).
 
 ## Segurança e limites
 
