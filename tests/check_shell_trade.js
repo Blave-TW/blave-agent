@@ -665,10 +665,21 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("spec-desktop-005 §2:雲端輸入框不再鋪灰底、不另設 placeholder 色——兩個視角同一個 --ink-3(灰底上 --ink-3 過不了 AA)",
         !/data-env="cloud"\][^{]*\.chat-input/.test(css) && !/data-env="cloud"\][^{]*\.chat-input/.test(app)
         && /\.chat-input textarea::placeholder \{ color: var\(--ink-3\); \}/.test(app) && !/\.ho-down/.test(css)); }
+    { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+      const blk = (w) => { const m = css.match(new RegExp("@container \\(max-width: " + w + "px\\) \\{([\\s\\S]*?)\\n\\}")); return m ? m[1] : ""; };
+      const c700 = blk(700), c520 = blk(520), iCf = css.indexOf(".pf-tbl.cf-apply td.na {"), iPend = css.indexOf(".pf-tbl td.na.pending { color: var(--ink-3); }");
+      ok("0.1.26 稽核 M1:中欄 ≤700 投資組合多空並列拆兩行、中點收掉、標的格可換行(不再只等 ≤520,預設 1280 寬會橫捲)",
+        /\.pf-tbl td\.pos \.pos-main\.split \{ display: inline-grid; justify-items: end; \}/.test(c700) && /\.pf-tbl td\.pos \.pos-main\.split \.sep \{ display: none; \}/.test(c700)
+        && /\.pf-tbl td\.c-sym \{ white-space: normal; \}/.test(c700) && !/pos-main\.split/.test(c520) && /\.pf-tbl \.c-sym \{ display: none; \}/.test(c520), J([c700.length, c520.length]));
+      ok("0.1.26 稽核 M4:「主機版本較舊」那句(td.na.pending)用 --ink-3,排在 cf-apply 的 greyDark 之後才蓋得過;「—」(td.na)維持 greyDark",
+        iCf > 0 && iPend > iCf && /\.pf-tbl td\.na \{ color: var\(--color-greyDark\); \}/.test(css));
+      ok("0.1.26 稽核 M3:投資組合列標的格不是 td.sym(mono),跟台指期一樣走 sname(sans);單一代號列照舊 sym",
+        /\.pf-tbl td\.sym, [^{]*\{ font-family: var\(--font-mono\)/.test(css) && !/\.sname[^{]*\{[^}]*font-family: var\(--font-mono\)/.test(css)
+        && /trEl\("td", \(txf \|\| isC \? "sname" : "sym"\) \+ " c-sym"\)/.test(fnOf("trAmountTable"))); }
     { const tp = fnOf("trAmountTable");
       ok("units §8 金額表 Type C 列:標的欄與名稱下那一小行寫 成分代號(trTypeCLabel)、還沒算過寫「—」+ tr.typecPending;部位格多空並列直接寫兩邊(trPaintPosCell 的 split),不再有 tr.grossTip 的 title",
         /const symText = isC \? \(tcl \? tcl\.text : "—"\) : txf \? t\(txf\.prod\) : sym \|\| "—";/.test(tp)
-        && /symInto\(trEl\("span", "sub-sym" \+ \(isC \|\| txf \? "" : " mono"\)\)\); if \(symTip\) sub\.title = symTip;/.test(tp) && /const symTd = symInto\(trEl\("td", \(txf \? "sname" : "sym"\) \+ " c-sym"\)\); if \(symTip\) symTd\.title = symTip;/.test(tp)
+        && /symInto\(trEl\("span", "sub-sym" \+ \(isC \|\| txf \? "" : " mono"\)\)\); if \(symTip\) sub\.title = symTip;/.test(tp) && /const symTd = symInto\(trEl\("td", \(txf \|\| isC \? "sname" : "sym"\) \+ " c-sym"\)\); if \(symTip\) symTd\.title = symTip;/.test(tp)
         && /else \{ host\.append\(symText\);/.test(tp)
         && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn \}\);/.test(tp)
         && /if \(tc\.long && tc\.short\) \{ main\.classList\.add\("split"\);/.test(fnOf("trPaintPosCell")) && !/tr\.grossTip/.test(tsrc)); }

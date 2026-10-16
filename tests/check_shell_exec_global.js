@@ -149,9 +149,9 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
 
   // ── ④c 樣式(設計稽核 A1／A2／P2)──
   { const css = read(path.join(R, "trade.css"));
-    ok("④c .f-input:disabled 灰階(ink-3 字、hairline 框、not-allowed,不用 opacity)、chevron 一起退色",
-      /\.f-input:disabled \{ color: var\(--ink-3\); border-color: var\(--border-hairline\); cursor: not-allowed; \}/.test(css)
-      && /\.f-selw:has\(\.f-input:disabled\)::after \{ border-color: var\(--border-hairline\); \}/.test(css) && !/\.f-input:disabled[^}]*opacity/.test(css));
+    ok("④c .f-input:disabled 灰階(ink-3 字、hairline 框、not-allowed)、opacity 明寫 1 蓋掉 Chromium 內建 select:disabled 的 .7(0.1.26 稽核 M2)、chevron 一起退色",
+      /\.f-input:disabled \{ color: var\(--ink-3\); border-color: var\(--border-hairline\); cursor: not-allowed; opacity: 1; \}/.test(css)
+      && /\.f-selw:has\(\.f-input:disabled\)::after \{ border-color: var\(--border-hairline\); \}/.test(css) && !/\.f-input:disabled[^}]*opacity: (?!1;)/.test(css));
     ok("④c 分鐘格填錯紅框(聚焦也紅);下單方式選單長名出省略號",
       /\.tr-exec \.f-input\[aria-invalid="true"\], \.tr-exec \.f-input\[aria-invalid="true"\]:focus \{ border-color: var\(--color-redText\); \}/.test(css)
       && /\.tr-exec \.f-input \{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(css)); }

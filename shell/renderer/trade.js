@@ -3002,7 +3002,7 @@ function trAmountTable(names, stored, states) {
       const twdRow = trPaperTw(n);
       if (twdRow) first.appendChild(trEl("span", "pf-note", t("tr.pick.twd")));
       row.appendChild(first);
-      const symTd = symInto(trEl("td", (txf ? "sname" : "sym") + " c-sym")); if (symTip) symTd.title = symTip;   // 商品名是漢字:不進等寬
+      const symTd = symInto(trEl("td", (txf || isC ? "sname" : "sym") + " c-sym")); if (symTip) symTd.title = symTip;   // 商品名與「等 N 檔」是漢字:不進等寬
       row.appendChild(symTd);
       const c = trEl("td", "n"), wrap = trEl("span", "amt-inw"), inp = trEl("input", "amt-in");
       inp.type = "text"; inp.inputMode = txf ? "numeric" : "decimal"; inp.dataset.amt = n;   // 選擇策略確定後的焦點靠它找到新列(psApply)

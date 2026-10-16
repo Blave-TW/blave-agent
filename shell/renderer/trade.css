@@ -444,6 +444,12 @@ html.ws-sc .side-gate { display: none; }
 .unit-note { display: none; }
 /* 1264 寬開著聊天欄、Windows 的捲軸佔 17px 時,金額表的最小寬(五欄表頭不折行)比中欄多幾 px,冒出橫向捲軸(第三台實測):
    中欄 ≤ 600 時表頭可以折行(「目標部位」「Target position」折兩行),省下的寬度讓表收得進去 */
+/* 投資組合多空並列＋「等 N 檔」排一行時,金額表最小寬 zh 563／en 632,預設視窗 1280 的中欄就放不下:≤700 先拆兩行、標的格可換行 */
+@container (max-width: 700px) {
+  .pf-tbl td.pos .pos-main.split { display: inline-grid; justify-items: end; }
+  .pf-tbl td.pos .pos-main.split .sep { display: none; }
+  .pf-tbl td.c-sym { white-space: normal; }
+}
 @container (max-width: 600px) {
   .pf-tbl th { white-space: normal; vertical-align: bottom; }
 }
@@ -468,8 +474,6 @@ html.ws-sc .side-gate { display: none; }
   .main-tabs { padding: 0 var(--space-16) 1px; gap: var(--space-16); }   /* 底下的 1 是 hairline 的位子,不能跟著收 */
   .pf { padding: var(--space-16); }
   .pf-tbl .c-sym { display: none; }
-  .pf-tbl td.pos .pos-main.split { display: inline-grid; justify-items: end; }   /* 投資組合多空並列放不下:拆兩行、中點收掉 */
-  .pf-tbl td.pos .pos-main.split .sep { display: none; }
   .unit-note { display: block; }   /* 交易歷史表的「金額單位」那一行;部位兩張表的單位在區標題,窄欄照樣看得到 */
   .sub-sym { display: block; }
   .pf-tbl td.key { min-width: 0; }
@@ -516,7 +520,7 @@ html.ws-sc .side-gate { display: none; }
 }
 .f-input:focus { outline: none; border-color: var(--ink); }
 /* 停用:真 disabled、灰階、不用 opacity(canon › Disabled;同 .amt-in:disabled)。所有 .f-input 共用 */
-.f-input:disabled { color: var(--ink-3); border-color: var(--border-hairline); cursor: not-allowed; }
+.f-input:disabled { color: var(--ink-3); border-color: var(--border-hairline); cursor: not-allowed; opacity: 1; }   /* 蓋掉 Chromium 內建 select:disabled 的 .7 */
 .f-selw:has(.f-input:disabled)::after { border-color: var(--border-hairline); }
 .cx-manual-note { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cx-row { display: flex; align-items: center; gap: var(--space-12); margin-top: var(--space-12); }
@@ -771,6 +775,7 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl.cf-apply td.buy { color: var(--color-greenText); }
 .pf-tbl.cf-apply td.sell { color: var(--color-redText); }
 .pf-tbl.cf-apply td.na { color: var(--color-greyDark); }
+.pf-tbl td.na.pending { color: var(--ink-3); }   /* 要用戶讀完去更新的句子,不是缺值:greyDark 只給「—」 */
 .pf-note.past .ts { margin-right: var(--space-8); }
 @media (prefers-reduced-motion: reduce) { .amt-in.flash { animation: none; } }
 .pf-tbl.cf-apply .ct-sub .tag { margin-left: var(--space-8); color: var(--ink-3); }
