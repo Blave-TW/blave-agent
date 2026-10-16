@@ -2451,7 +2451,7 @@ function trAskStart(opener, presOk) {
     choicesLabel: t("tr.opt.legend"),
     choices: [
       // Blave 重開(本機):關著的時候策略沒跑,現在補齊用的可能是舊訊號——掛在它影響的那個選項裡。主機重開(B)由重算那一句與閘門講
-      { id: "catch", title: t("tr.opt.catch"), desc: t("tr.opt.catchDesc" + money) + (will ? " " + will : ""), warn: rkS === "app" ? t("tr.opt.catchStale") : null,
+      { id: "catch", title: t("tr.opt.catch"), desc: t("tr.opt.catchDesc" + money, { how: trCatchHow(r, real) }) + (will ? " " + will : ""), warn: rkS === "app" ? t("tr.opt.catchStale") : null,
         disabled: recomputing, why: t("tr.cloud.recomputing"), ok: t("tr.startCatchUp"), onOk: catchUp },
       { id: "wait", title: t("tr.opt.wait"), desc: t("tr.opt.waitDesc" + money), ok: t("tr.startWait"), onOk: () => go("resume_wait") },
     ],
@@ -3830,12 +3830,22 @@ function trExecStored(r) {
   if (!r || r.config === null) return null;
   return trExecKey("execution_effective" in r ? r.execution_effective : (r.config || {}).execution_default);
 }
+// 現在生效的下單方式:台灣期貨券商一律市價;其餘是送出中的那個 → 報告的(讀不到設定時當市價,同網頁 execCurrent)
+function trExecCurrent(r, id) { return trTwBroker(id) ? "market" : TR.exec.edit != null ? TR.exec.edit : trExecStored(r) || "market"; }
+// 啟動框「補齊部位」說明的「怎麼下」(spec portfolio-help-icon §4):跟設定分頁同一個值。real = 連的是真的交易所(同 tr.opt.catchDesc 的 Real 後綴)
+function trCatchHow(r, real) {
+  const k = trExecCurrent(r, trVenueId()), sfx = real ? "Real" : "";
+  if (k.indexOf("twap:") === 0) return t("tr.opt.catchHow.twap" + sfx, { min: k.slice(5) });
+  if (k === "chase") return t("tr.opt.catchHow.chase" + sfx);
+  if (k.indexOf("custom:") === 0) return t("tr.opt.catchHow.custom" + sfx, { module: k.slice(7) });
+  return t("tr.opt.catchHow.market" + sfx);
+}
 function trExecSection(box, r, id) {
   const S = TR, stored = trExecStored(r);
   box.appendChild(trSec(trEl("span", "label", t("tr.exec"))));
   if (stored === null) { box.appendChild(trEl("div", "pf-foot", t("tr.exec.unread"))); return; }
   if (S.exec.edit != null && S.exec.edit === stored) S.exec.edit = null;   // 報告對上了
-  const tw = trTwBroker(id), cur = tw ? "market" : S.exec.edit != null ? S.exec.edit : stored;
+  const tw = trTwBroker(id), cur = trExecCurrent(r, id);
   const isTwap = cur.indexOf("twap:") === 0, busy = !!S.sending.execution;
   const row = trEl("div", "tr-exec"), w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "tr-exec-sel";
   sel.setAttribute("aria-label", t("tr.exec"));

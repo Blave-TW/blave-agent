@@ -1580,10 +1580,34 @@ msgid "tr.opt.catch"
 msgstr "補齊部位"
 
 msgid "tr.opt.catchDesc"
-msgstr "現在就用市價下單，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+msgstr "現在就{how}，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
 
 msgid "tr.opt.catchDescReal"
-msgstr "現在就用市價送出真實委託，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+msgstr "現在就{how}，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+
+msgid "tr.opt.catchHow.market"
+msgstr "用市價下單"
+
+msgid "tr.opt.catchHow.marketReal"
+msgstr "用市價送出真實委託"
+
+msgid "tr.opt.catchHow.twap"
+msgstr "用 TWAP {min} 分鐘分批下單"
+
+msgid "tr.opt.catchHow.twapReal"
+msgstr "用 TWAP {min} 分鐘分批送出真實委託"
+
+msgid "tr.opt.catchHow.chase"
+msgstr "用限價追價下單"
+
+msgid "tr.opt.catchHow.chaseReal"
+msgstr "用限價追價送出真實委託"
+
+msgid "tr.opt.catchHow.custom"
+msgstr "用自訂方式（{module}）下單"
+
+msgid "tr.opt.catchHow.customReal"
+msgstr "用自訂方式（{module}）送出真實委託"
 
 msgid "tr.opt.catchStale"
 msgstr "Blave 關著時訊號沒有更新：現在補齊，用的可能還是關掉之前那一次的訊號，每支策略下一次排程跑完才會換新。"

@@ -1572,10 +1572,34 @@ msgid "tr.opt.catch"
 msgstr "Catch up positions"
 
 msgid "tr.opt.catchDesc"
-msgstr "Places market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+msgstr "{how} now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
 
 msgid "tr.opt.catchDescReal"
-msgstr "Sends real market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+msgstr "{how} now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+
+msgid "tr.opt.catchHow.market"
+msgstr "Places market orders"
+
+msgid "tr.opt.catchHow.marketReal"
+msgstr "Sends real market orders"
+
+msgid "tr.opt.catchHow.twap"
+msgstr "Places TWAP orders over {min} min"
+
+msgid "tr.opt.catchHow.twapReal"
+msgstr "Sends real TWAP orders over {min} min"
+
+msgid "tr.opt.catchHow.chase"
+msgstr "Places chase-limit orders"
+
+msgid "tr.opt.catchHow.chaseReal"
+msgstr "Sends real chase-limit orders"
+
+msgid "tr.opt.catchHow.custom"
+msgstr "Places orders with your custom method ({module})"
+
+msgid "tr.opt.catchHow.customReal"
+msgstr "Sends real orders with your custom method ({module})"
 
 msgid "tr.opt.catchStale"
 msgstr "Signals didn’t update while Blave was closed: catching up now may still trade on the signal from before you closed it; each strategy switches to a fresh one after its next scheduled run."

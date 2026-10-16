@@ -403,7 +403,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const /gm, "var ") + "\n" + fs.readFileSync(path.join(R, "i18n.js"), "utf8").replace(/^(const|let) /gm, "var "), ctx);
   vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var "), ctx);
-  vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + ["trEl", "trReport", "trVenueId", "trEnvNames", "trPaintSet", "trUnbind", "trTipLabel", "trTwBroker", "trExecKey", "trExecStored", "trExecSection"].map(cutF).join("\n"), ctx);
+  vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + ["trEl", "trReport", "trVenueId", "trEnvNames", "trPaintSet", "trUnbind", "trTipLabel", "trTwBroker", "trExecKey", "trExecStored", "trExecCurrent", "trExecSection"].map(cutF).join("\n"), ctx);
   const frag = () => { const f = node("#frag"); f.frag = true; return f; }, textNode = (s) => { const n = node("#text"); n.text = String(s); return n; };
   const tipbs = (root) => flat(root).filter((n) => / tr-tipb\b/.test(" " + n.className));
   // acctOk:true = 已連接、false = 讀帳失敗、null = 還沒讀過(串接中…);bn = Binance 金鑰重查的 state(主行程 binance_link)

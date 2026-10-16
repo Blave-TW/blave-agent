@@ -34,7 +34,7 @@ function world(o) {
   const report = Object.assign({ can_wait_start: true, self_ledger: true }, o.report);
   const env = {
     $, document: { createElement: (tag) => new El(tag) }, requestAnimationFrame: (f) => f(), t: (k) => k, sent, store,
-    TR: { env: o.env || "local", st: { report }, startAt: 0 }, Date,
+    TR: { env: o.env || "local", st: { report }, startAt: 0, exec: { edit: null } }, Date,
     trReport: () => report, trZView: () => ({ off: false }), envHeadState: () => "halted", trIsPaper: () => o.money === "paper", envMoney: () => o.money || null,
     trBookBaseline: () => o.book || "unknown", envMoneyText: (m) => (m ? "tr.mode." + m : ""), trWhereTidy: (x) => x, trVenueId: () => (o.money === "paper" ? "paper" : o.money ? "binance" : null), trVenueLabel: (id) => id || "", trPadLatin: (x) => x,
     trRestartKind: () => o.restart || null, trRecomputing: () => !!o.recomputing, trBothReal: () => null, planVars: () => ({ h: "0.9", m: "50" }), planMo: () => false,
@@ -45,7 +45,7 @@ function world(o) {
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
   };
   const names = Object.keys(env);
-  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAskStart")}\n
+  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAskStart")}\n
     const click = ${okClick};\n return { trAskStart, trStartNotes, click, ctx: () => delCtx };`;
   const M = new Function(...names, body)(...names.map((k) => env[k]));
   Object.keys(ids).forEach((k) => delete ids[k]);
@@ -156,7 +156,7 @@ function world(o) {
         && get("tr.means.presNight") === "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。" && getEn("tr.means.presNight") === "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on.");
       ok("台灣券商停損那一句(逐字,{venue} 帶券商名)", get("tr.means.twStop") === "{venue}沒有券商端停損單；Blave 的停損是這台電腦每根 K 棒算出來才下市價單，電腦睡著或關機時部位沒有保護。"
         && getEn("tr.means.twStop") === "{venue} has no broker-side stop orders; Blave’s stop-loss is computed on this computer each bar and sent as a market order, so a sleeping or shut-down computer leaves the position unprotected."); }
-    ok("真錢的選項說明講「真實委託」;「不會自動平倉」只在細節第 2 點(tr.means.3 不重述)", /真實委託/.test(get("tr.opt.catchDescReal")) && /真實委託/.test(get("tr.opt.waitDescReal")) && !/真實委託/.test(get("tr.opt.catchDesc") + get("tr.opt.waitDesc"))
+    ok("真錢的選項說明講「真實委託」;「不會自動平倉」只在細節第 2 點(tr.means.3 不重述)", /真實委託/.test(get("tr.opt.catchHow.marketReal")) && /真實委託/.test(get("tr.opt.waitDescReal")) && !/真實委託/.test(get("tr.opt.catchHow.market") + get("tr.opt.waitDesc"))
       && /不會自動平倉/.test(get("tr.means.2")) && !/平倉與停損/.test(get("tr.means.3"))); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack)); process.exit(1); });
