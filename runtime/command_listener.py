@@ -47,6 +47,7 @@ if _RUNTIME_DIR not in sys.path:
 
 import atomic_file
 import capital_connect
+import exec_style
 import president_connect
 import telegram_pairing
 import refresh_capacity
@@ -1017,6 +1018,40 @@ def _mark_bind_account_change(venue, reason):
     _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
 
 
+_ACCOUNT_ID_MARK = "@@BLAVE_ACCOUNT_IDS@@ "
+_ACCOUNT_ID_PY = (
+    "import json, sys\n"
+    "from lib.portfolio import _read_account_id\n"
+    "from lib.venue_wiring import read_env\n"
+    "env = read_env('.env')\n"
+    "out = {}\n"
+    "for v in sys.argv[1:]:\n"
+    "    try:\n"
+    "        out[v] = list(_read_account_id(v, env))\n"
+    "    except Exception as e:\n"
+    "        out[v] = type(e).__name__\n"
+    f"print({_ACCOUNT_ID_MARK!r} + json.dumps(out))\n"
+)
+_ACCOUNT_ID_TIMEOUT_S = 90
+
+
+def _read_bind_account_ids(venues):
+    """{venue: [id, error, transient] | exception class name}, read by the workspace interpreter
+    (as _tick_one runs wait_for_bar), for the venues whose account lib this process cannot
+    import. The libs need `requests`, which the cloud bridge's own venv lacks: read in-process,
+    _read_account_id took the ImportError for "no account lib" and no bind on a cloud box ever
+    recorded the account id. The keys stay in .env — the child reads them there, never argv."""
+    r = subprocess.run([_workspace_python(), "-c", _ACCOUNT_ID_PY, *venues], cwd=WORKSPACE,
+                       env=_strategy_subprocess_env(), capture_output=True, encoding="utf-8",
+                       errors="replace", timeout=_ACCOUNT_ID_TIMEOUT_S, **_child_kw())
+    line = next((x for x in reversed((r.stdout or "").splitlines())
+                 if x.startswith(_ACCOUNT_ID_MARK)), None)
+    out = json.loads(line[len(_ACCOUNT_ID_MARK):]) if line else None
+    if not isinstance(out, dict):
+        raise RuntimeError(f"account id read exited {r.returncode}")
+    return out
+
+
 def _bind_book_accounts(venue_ids):
     """After a bind: read each newly bound venue's exchange account id with the
     keys just written and record it as that venue's book account
@@ -1035,12 +1070,33 @@ def _bind_book_accounts(venue_ids):
         pf = _ws_portfolio()
         from lib.venue_wiring import read_env
         env = read_env(os.path.join(WORKSPACE, ".env"))
+        import importlib
+        need_child = []
+        for v in ids:
+            try:
+                importlib.import_module(f"lib.account_{v}")
+            except ImportError:
+                need_child.append(v)
+            except Exception:
+                pass  # the in-process read below reports it per venue, as before
     except Exception as e:
         _log(f"book account not recorded ({type(e).__name__})")
         return out
+    read = {}
+    if need_child:
+        try:
+            read = _read_bind_account_ids(need_child)
+        except Exception as e:
+            _log(f"book account not read for {'/'.join(need_child)} ({type(e).__name__}: {str(e)[:120]})")
     for v in ids:
         try:
-            acct = pf._read_account_id(v, env)
+            if v in need_child:
+                acct = read.get(v)
+                if not (isinstance(acct, list) and len(acct) == 3):
+                    raise RuntimeError(f"account id read: {str(acct)[:80]}")
+                acct = tuple(acct)
+            else:
+                acct = pf._read_account_id(v, env)
             if acct[0] is None and acct[1] is None:
                 continue
             rec_id = ((pf._load_ledger_seed().get("venue_account") or {}).get(v) or {}).get("id")
@@ -1657,8 +1713,9 @@ def _sync_strategy_crons(names):
 
 SCHEDULER_INTERVAL_SECONDS = 60  # matches wait_for_bar.py's own cron cadence
 # Generous: fetch_data() can legitimately take minutes (wait_for_bar.py's own
-# cost-note docstring) on top of the strategy run's own 600s budget inside
-# it — 1200 would be tight. Matches wait_for_bar.py's LOCK_STALE_SECONDS, so
+# cost-note docstring) on top of the strategy run's own 1200s budget inside
+# it (wait_for_bar.py trims that budget to what the probe left of this one,
+# its TICK_BUDGET_SECONDS). Matches wait_for_bar.py's LOCK_STALE_SECONDS, so
 # by the time this would actually fire, that file's own stale-lock recovery
 # is already the active safety net, not this timeout.
 SCHEDULER_TICK_TIMEOUT_SECONDS = 1800
@@ -3765,6 +3822,11 @@ def _cmd_amounts(args):
     if not isinstance(cfg, dict):
         raise RuntimeError("portfolio config unreadable (not a dict) — try again")
     old_amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
+    # 下單方式 is pinned off the membership BEFORE it changes (a config from
+    # before the global setting derives it from amounts), and the legacy map an
+    # older workspace lib reads is re-fanned so a new member trades the same style
+    cfg["execution_default"] = exec_style.settled_default(cfg)
+    cfg["execution"] = exec_style.fan_out(cfg["execution_default"], clean)
     # both from this fail-closed read, before `amounts` is replaced (after it, every save
     # would read as configured and the MG-08 adoption save would hide its targets)
     configured = isinstance(cfg.get("amounts"), dict)
@@ -3952,55 +4014,67 @@ def _execution_engine_ready():
         return False
 
 
-def _cmd_execution(args):
-    """每策略下單方式 — the 下單設定 page's execution-style setting.
+def _exec_spec_strict(spec):
+    """One execution spec off the wire, canonical — ValueError when it is not one."""
+    if not isinstance(spec, dict):
+        raise ValueError("execution spec must be an object")
+    typ = spec.get("type")
+    if typ in ("market", "chase"):
+        return {"type": typ}
+    if typ == "twap":
+        dur = spec.get("duration_min")
+        # Mirror the machine-side consumer (lib/execute.py: int() + clamp to
+        # 1..1440) — an agent-hand-written config with 2000 or "30" must
+        # survive a client's re-save, not get silently dropped by a stricter
+        # gate here. bool is an int subclass — True would int() to 1.
+        if isinstance(dur, bool):
+            raise ValueError("twap duration_min must be a number")
+        try:
+            dur = int(dur)
+        except (TypeError, ValueError, OverflowError):  # Overflow: json Infinity
+            raise ValueError("twap duration_min must be a number")
+        return {"type": "twap", "duration_min": min(max(dur, 1), 1440)}
+    if typ == "custom":
+        module = spec.get("module")
+        if not isinstance(module, str) or not _EXEC_MODULE_RE.fullmatch(module):
+            raise ValueError("bad custom executor module name")
+        return {"type": "custom", "module": module}
+    raise ValueError("execution type must be market/twap/custom/chase")
 
-    Whole-map replace, like `amounts`: the web sends the complete non-market
-    list on every save, so an empty dict is legal ("everyone back to market")
-    and is written as {} rather than dropping the key — one shape, no
-    absent-vs-empty ambiguity downstream. Validation is all-or-nothing: one
-    bad spec rejects the whole payload, never a partial write. Whether a
-    custom module actually exists (manager/executors/<module>.py) is the
-    executor's problem at run time, not this write's.
+
+def _cmd_execution(args):
+    """下單方式 — one style for the whole portfolio.
+
+    `{"execution_default": spec}` is the setting. The older per-strategy
+    `{"execution": {strategy: spec}}` (web pages and agents from before the
+    global setting) is still accepted and turned into one spec by
+    exec_style.from_legacy_map; when both are sent (a current client talking
+    to either runtime) execution_default wins and the map is only validated.
+    Validation is all-or-nothing: one bad spec rejects the whole payload.
+    Writes `execution_default` plus the legacy map fanned out to every member
+    (exec_style.fan_out), so a workspace lib that still resolves per strategy
+    trades every order with the same style. Whether a custom module actually
+    exists (manager/executors/<module>.py) is the executor's problem at run
+    time, not this write's.
     """
+    has_default = "execution_default" in args
     execution = args.get("execution")
-    if not isinstance(execution, dict):
-        raise ValueError("execution needs a {strategy: spec} mapping")
-    if len(execution) > 200:
-        raise ValueError("too many execution entries")
-    clean = {}
-    for k, spec in execution.items():
-        # Same name rule as _cmd_amounts — these are strategy dir names, and
-        # the enqueue API passes args through unvalidated.
-        if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k):
-            raise ValueError("bad strategy name")
-        if not isinstance(spec, dict):
-            raise ValueError("execution spec must be an object")
-        typ = spec.get("type")
-        if typ == "market":
-            clean[k] = {"type": "market"}
-        elif typ == "twap":
-            dur = spec.get("duration_min")
-            # Mirror the machine-side consumer (lib/execute.py: int() + clamp to
-            # 1..1440) — an agent-hand-written config with 2000 or "30" must
-            # survive the web's whole-map re-save, not get silently dropped by a
-            # stricter gate here. bool is an int subclass — True would int() to 1.
-            if isinstance(dur, bool):
-                raise ValueError("twap duration_min must be a number")
-            try:
-                dur = int(dur)
-            except (TypeError, ValueError, OverflowError):  # Overflow: json Infinity
-                raise ValueError("twap duration_min must be a number")
-            clean[k] = {"type": "twap", "duration_min": min(max(dur, 1), 1440)}
-        elif typ == "custom":
-            module = spec.get("module")
-            if not isinstance(module, str) or not _EXEC_MODULE_RE.fullmatch(module):
-                raise ValueError("bad custom executor module name")
-            clean[k] = {"type": "custom", "module": module}
-        elif typ == "chase":
-            clean[k] = {"type": "chase"}
-        else:
-            raise ValueError("execution type must be market/twap/custom/chase")
+    if not has_default and not isinstance(execution, dict):
+        raise ValueError("execution needs an execution_default spec")
+    legacy = None
+    if execution is not None:
+        if not isinstance(execution, dict):
+            raise ValueError("execution needs a {strategy: spec} mapping")
+        if len(execution) > 200:
+            raise ValueError("too many execution entries")
+        legacy = {}
+        for k, spec in execution.items():
+            # Same name rule as _cmd_amounts — these are strategy dir names, and
+            # the enqueue API passes args through unvalidated.
+            if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k):
+                raise ValueError("bad strategy name")
+            legacy[k] = _exec_spec_strict(spec)
+    default = _exec_spec_strict(args["execution_default"]) if has_default else None
 
     path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
     try:
@@ -4012,13 +4086,24 @@ def _cmd_execution(args):
         # fail-closed like _cmd_delete_strategy: manager.py writes this file
         # non-atomically, so unreadable can mean mid-write — falling back to {}
         # here would clobber amounts/exchanges, and this command owns only the
-        # `execution` key. A retry costs nothing.
+        # execution keys. A retry costs nothing.
         raise RuntimeError(
             f"portfolio config unreadable ({type(e).__name__}) — try again"
         )
     if not isinstance(cfg, dict):
         raise RuntimeError("portfolio config unreadable (not a dict) — try again")
-    cfg["execution"] = clean
+    # custom is set by the agent on the machine (references/lib.md), never from a
+    # page: a new one is refused; an older page re-sending the stored map as-is passes
+    stored = cfg.get("execution") if isinstance(cfg.get("execution"), dict) else {}
+    if (default or {}).get("type") == "custom" or any(
+            s["type"] == "custom" and s != exec_style._exec_spec_clean(stored.get(k))
+            for k, s in (legacy or {}).items()):
+        raise ValueError("custom execution styles are set by the agent, not from this command")
+    if default is None:
+        default = exec_style.from_legacy_map(legacy, cfg)
+    amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
+    cfg["execution_default"] = default
+    cfg["execution"] = exec_style.fan_out(default, amounts)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with atomic_file.replacing(path) as f:  # atomic: the reconciler mtime-watches + json-loads this
         json.dump(cfg, f, indent=2)
@@ -4026,8 +4111,7 @@ def _cmd_execution(args):
     # there ignores this config key entirely, so a non-market setting would
     # look saved yet trade as market, silently. The setting is still WRITTEN
     # (it activates the moment the workspace updates) — but the user gets told.
-    if any(s.get("type") != "market" for s in clean.values()) \
-            and not _execution_engine_ready():
+    if default.get("type") != "market" and not _execution_engine_ready():
         def _notice():
             from lib.notify import send_text
             send_text("此機器的執行引擎尚未更新,下單方式設定暫不會生效"
@@ -4036,8 +4120,8 @@ def _cmd_execution(args):
             _in_workspace(_notice)  # lib.notify resolves config relative to cwd
         except Exception as e:
             _log(f"engine-outdated notice failed: {type(e).__name__}")
-        return f"execution={len(clean)} engine_outdated"
-    return f"execution={len(clean)}"
+        return f"execution={default.get('type')} engine_outdated"
+    return f"execution={default.get('type')}"
 
 
 def _stop_reconciler():
@@ -6237,7 +6321,7 @@ def _cmd_version_restore(args):
 # 10-14). An old lib (live tick still rewriting stats.json) runs the live command as an
 # ordinary live tick: it writes stats.json too.
 STATS_REFRESH_ENV = "BLAVE_STATS_REFRESH"            # = lib/runner.STATS_REFRESH_ENV
-STATS_REFRESH_TIMEOUT_S = 600                        # = manager/wait_for_bar.RUN_TIMEOUT_SECONDS
+STATS_REFRESH_TIMEOUT_S = 1200                       # = manager/wait_for_bar.RUN_TIMEOUT_SECONDS
 # The sweep as a whole: a cold 1-min cache on a 1 GB box took 11 minutes per strategy
 # (10-06); five of those in front of a morning report would make it an hour late.
 STATS_REFRESH_BUDGET_S = 600

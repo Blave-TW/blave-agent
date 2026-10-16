@@ -434,7 +434,7 @@ def _order_state(workspace, funded, scheduled=(), now=None):
     # 名冊裡不在金額表的(雲端 Type B 排程)自己叫 lib/order_*,不看金額也不靠對帳器;上面兩個旗標照樣擋得住它
     own = ";「自己排程的策略」照自己的排程跑" if scheduled else ""
     if funded is None:
-        return "自動下單頁的金額讀不到,不確定有沒有照金額下單" + own
+        return "策略組合的金額讀不到,不確定有沒有照金額下單" + own
     if not funded:
         return "沒有策略設金額,不會照金額下單" + own
     try:
@@ -497,11 +497,11 @@ def _deploy_state_line(workspace=None, now=None):
         # 「還沒上線」照畫面的定義(strategy_versions.js:上線中 = 金額 > 0):金額 0 的也算,名字後加註;金額讀不到就不列(不知道)。
         # 金額 0 的排最前面:超過 15 支截斷時,「已在自動下單頁、只差設金額」這件事不能被截掉
         zero_in = sorted(n for n in known if known[n] <= 0 and n not in other)
-        notlive = ([n + "(在自動下單頁、金額 0)" for n in zero_in]
+        notlive = ([n + "(在策略組合、金額 0)" for n in zero_in]
                    + [n for n in names if n not in known and n not in other])[:15] if amounts is not None else []
         paper = os.path.isfile(os.path.join(ws, "state", "paper_ledger.json"))
-        parts = ["自動下單頁有金額:" + ("、".join(funded) if funded else "無") if amounts is not None
-                 else "自動下單頁的金額:讀不到(設定檔壞掉或讀取失敗,不是沒設)"]
+        parts = ["策略組合有金額:" + ("、".join(funded) if funded else "無") if amounts is not None
+                 else "策略組合的金額:讀不到(設定檔壞掉或讀取失敗,不是沒設)"]
         if other:
             parts.append("自己排程的策略:" + "、".join(other))
         parts.append("下單狀態:" + _order_state(ws, funded if amounts is not None else None, other, now))
@@ -512,9 +512,10 @@ def _deploy_state_line(workspace=None, now=None):
             parts.append("還沒上線:" + "、".join(notlive))
         parts.append("模擬交易:" + ("已連接" if paper else "未連接"))
         # 金額讀不到時「還沒上線」那一列不可信(本來就不列),後半句換成不推斷、請用戶去自動下單頁看(設計稽核 0.1.11 R-P2-3)
-        return ("[上線現況(機器事實,提議前先對照——有金額的策略和「自己排程的策略」都算已上線,不要再建議上線(真倉或模擬交易都算);"
-                + ("「還沒上線」裡標了金額 0 的,只建議到自動下單頁設金額;" if amounts is not None
-                   else "金額讀不到時,不要推斷哪些策略還沒上線,也先不要建議上線;用戶問起,就請他到自動下單頁看;")
+        return ("[上線現況(機器事實,提議前先對照——有金額的策略和「自己排程的策略」都算已上線(真倉或模擬交易都算),不要再建議把它們加進策略組合或設金額;"
+                "在模擬交易上跑穩的,下一步是換真倉小額跑;"
+                + ("「還沒上線」裡標了金額 0 的,只建議到「策略組合 › 配置」設金額;" if amounts is not None
+                   else "金額讀不到時,不要推斷哪些策略還沒上線,也先不要建議上線;用戶問起,就請他到「策略組合 › 配置」看;")
                 + "講機器狀況時照「下單狀態」講,不是「執行中」就不要說策略正在跑或正在下單):"
                 + ";".join(parts) + "]")
     except Exception:
@@ -678,6 +679,7 @@ _NAV_ASK_RE = re.compile(
     re.I)
 _NAV_TOPIC_RE = re.compile(
     r"模擬盤|模拟盘|交易所|綁定|绑定|部署|啟動|启动|恢復|恢复|部位|金額|金额|實盤|实盘"
+    r"|加進策略組合|加入策略組合|加进策略组合|加入策略组合|to (?:the |my )?portfolio"
     r"|paper|deploy|bind|exchange|venue|fund"
     r"|go live|live trad|real money|small (?:amount|size)|start trading|resume|restart",
     re.I,
@@ -1502,10 +1504,10 @@ def _pins(base):
     # 部署類建議句例外留英文:點下去送回來的句子要被 nav_topic / 導航句判定認得,
     # 否則 portfolio-steps.md 不注入、UI 標籤又會亂編(29026)。回覆本身仍照目標語言。
     suggest_tail = (
-        " and every line inside the <suggest> block — EXCEPT deployment suggestions (paper "
-        "trading, setting the amount, binding an exchange, starting or resuming trading): "
-        "write each of those lines entirely in English, starting with \"Show me how to\" "
-        "(e.g. Show me how to paper trade 〈strategy name〉), because the page recognises "
+        " and every line inside the <suggest> block — EXCEPT deployment suggestions (adding "
+        "to the portfolio, setting the amount, binding an exchange, going live, starting or "
+        "resuming trading): write each of those lines entirely in English, starting with "
+        "\"Show me how to\" (e.g. Show me how to add 〈strategy name〉 to the portfolio), because the page recognises "
         "that exact phrase to open the right screen" + tail)
     return (base + tail, base + suggest_tail)
 
@@ -1713,7 +1715,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 判準):舊 workspace 指去不存在的腳本,弱模型會自己手寫一份(uid 30979 事故)
     stop_tool = os.path.isfile(os.path.join(WORKSPACE, "manager", "stop_strategy.py"))
     parts.append(
-        "[紅線:部署/金額/綁定/恢復交易一律指引用戶到自動下單頁操作,不代做;"
+        "[紅線:部署/金額/綁定/恢復交易一律指引用戶親手操作(金額在「策略組合 › 配置」,綁定與啟動在「自動下單」),不代做;"
         "急停(HALT)例外可做"
         + (";用戶明確要求停單支策略/平單一幣時可做,用 manager/stop_strategy.py、"
            "manager/close_symbol.py。]" if stop_tool else "。]")
@@ -1737,9 +1739,9 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         if nav_topic(message):
             steps = _portfolio_steps_block(desktop=desktop)
             if steps:
-                where = ("這個電腦版 app 左側的自動下單頁,不是網頁工作頁" if desktop else "網頁工作頁的自動下單頁")
+                where = ("這個電腦版 app,不是網頁工作頁" if desktop else "網頁工作頁")
                 parts.append(
-                    f"[自動下單頁操作步驟(用戶在{where};要帶用戶操作時照這份寫,UI 標籤一字不差、"
+                    f"[策略組合／自動下單操作步驟(用戶在{where};要帶用戶操作時照這份寫,UI 標籤一字不差、"
                     "不要自己發明分頁或按鈕名):\n" + steps + "\n]"
                 )
         # 建議規則的逐輪錨(web 專屬)。系統提示尾端的版本擋不住 in-context 慣性:
@@ -1747,7 +1749,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         # 不服從(2026-08-24 e2e:ETH/BTC vs ETH/SOL 三輪全數問句收尾、零區塊);
         # _lang_directive 已證明「貼著訊息的逐輪指令」對弱模型有效,同機制照搬。
         parts.append(
-            "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、掃參數、跑 MCPT、上模擬盤等)就放進"
+            "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、掃參數、跑組合優化等)就放進"
             " <suggest> 區塊(一行一句、用戶口吻、最多 3),不要在正文用問句提議;"
             "提到策略用它的名稱、不用底線代號。"
             "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但還沒上線的策略)必附區塊,"
@@ -1968,10 +1970,10 @@ TELEGRAM_FORMATTING_RULE = (
 _NAV_RULE = (
     "\n\n---\n\n"
     "## 導航指引（回覆第一行）\n"
-    "用戶要你帶他做部署類操作（「帶我看怎麼…」這類導航句，或直接問怎麼上模擬盤／"
+    "用戶要你帶他做部署類操作（「帶我看怎麼…」這類導航句，或直接問怎麼加進策略組合／上模擬盤／"
     "設金額／綁交易所／啟動下單）時，回覆的**第一行**單獨放一個標記，系統會替用戶把"
-    "自動下單頁開到對的位置，接著才給步驟：\n"
-    "- 設定部位金額、把策略部署上模擬盤／實盤 → `<nav>portfolio.pos</nav>`\n"
+    "頁面開到對的位置（金額在「策略組合 › 配置」，綁定與啟動在「自動下單」），接著才給步驟：\n"
+    "- 把策略加進策略組合、設定部位金額、部署上模擬盤／實盤 → `<nav>portfolio.pos</nav>`\n"
     "- 綁定模擬盤或交易所（含換金鑰） → `<nav>portfolio.venue</nav>`\n"
     "- 啟動／恢復下單 → `<nav>portfolio.run</nav>`\n"
     "一次只放一個、只放第一行、只用這三個值；不是在帶操作（純解釋、討論）就不要放。"
@@ -1983,7 +1985,7 @@ _NAV_RULE = (
 _NAV_RULE_LOCAL = (
     "\n\n---\n\n"
     "## 帶操作（部署類）\n"
-    "用戶要你帶他上模擬盤／設金額／綁交易所／啟動下單時，直接給步驟（≤4 步，照 references/portfolio-steps.md 的"
+    "用戶要你帶他加進策略組合／上模擬盤／設金額／綁交易所／啟動下單時，直接給步驟（≤4 步，照 references/portfolio-steps.md 的"
     "電腦版那套、UI 標籤原文）；這個 app 不會替用戶打開頁面，不要說已經幫他開好。\n"
 )
 
@@ -1994,71 +1996,46 @@ _NAV_RULE_LOCAL = (
 _SUGGEST_RULE = (
     "\n\n---\n\n"
     "## 建議下一步（每輪回覆前必檢查）\n"
-    "寫完回覆後，檢查這一輪是否命中里程碑：\n"
-    "- 剛建立/修改策略、還沒回測 → 建議跑回測\n"
-    "- 剛完成回測，或正在總結／分析／回報某支有回測、還沒部署的策略（問它表現、值不值得用、"
-    "要摘要）→ 必附，而且建議要跟你這則的結論同方向：\n"
-    "  ‧ 結論是可以用 → 建議把該策略上模擬盤（paper）\n"
-    "  ‧ 用戶明顯還在迭代改進中 → 只給一個優化方向（見下面「優化選項」），不提部署\n"
-    "  ‧ 結論是不建議用、還不能用 → 不提部署。訊號本身站不住（MCPT p-value > 0.05，"
-    "或你在正文說訊號不成立）→ 只提換訊號（換一種進場邏輯），不提在同一個訊號上加東西"
-    "（加濾網、調參數、vol targeting 都算）；是參數還沒驗過穩不穩 → 提掃參數（已有 scan.json 就不提）；"
-    "是其他原因（回撤太大、交易太少）→ 挑一個針對那個原因的優化方向\n"
-    "- 模擬盤已穩定跑一段時間且執行無異常 → 建議小額實盤\n"
-    "- 用戶想實際跑但還沒綁任何交易所 → 建議先綁模擬盤\n"
-    "命中時，回覆**必須以 <suggest> 區塊結尾**（其後不得再有任何文字），格式：\n"
-    "這一輪有轉出檔要交付時，`<export … />` 標記照寫、放在 <suggest> 區塊的前一行——"
-    "不能因為要放 <suggest> 就省掉標記。\n"
-    "<suggest>\n帶我看怎麼把〈策略名〉上模擬盤\n</suggest>\n"
-    "一行一個建議、最多 3 個（通常 1 個就好）；句子＝用戶口吻的短指令"
-    "（動詞＋對象＋必要參數），點了會替用戶原句送出。"
-    "部署類建議（上模擬盤、小額實盤、綁定——含 paper）是**導航句**：固定以"
-    "「帶我看怎麼」起手，點了你回操作步驟、不代做（部署由用戶親手在自動下單頁操作）；"
-    "分析／回測類維持一般執行句。"
-    "提到策略時用它的名稱（strategy.py 檔頭 # Strategy: 那行，或用戶慣稱），"
-    "不要用底線目錄代號（寫「把 BTC 4h 均線交叉上模擬盤」，"
-    "不寫「把 btc_ma_cross_4h 上模擬盤」）。"
-    "\n優化選項（只在給優化方向時用，挑最相關的**一個**；只對還沒部署的策略提，"
-    "已在跑的要改就講明另開一支）：\n"
-    "‧ 參數是手挑的、沒驗過穩不穩 → 掃參數找穩定區（plateau）："
-    "「掃一下〈策略名〉的參數，看有沒有穩定區」；策略資料夾已有 scan.json，"
-    "或這輪就是採用掃出的穩健參數重跑回測 → 不要再提掃參數，改提別的方向或不提\n"
-    "‧ MCPT p-value > 0.05（Type A 回測自動算、stats.json 已有，不要建議「跑 MCPT」）→ "
-    "訊號本身沒優勢：建議換訊號（「幫〈標的〉換一種進場訊號另做一支」）；不要建議加濾網、調參數或 vol targeting——"
-    "那些都是在同一個沒優勢的訊號上加東西，一樣是硬拉\n"
-    "‧ 部位固定、波動或回撤起伏大 → 依實現波動調整部位（vol targeting，單一標的"
-    "的策略適用；低波動時部位會放大，上限 VOL_CAP，提的時候講明）："
-    "「幫〈策略名〉加 vol targeting 調部位」\n"
-    "‧ 訊號雜訊多、假訊號一堆 → 加濾網（趨勢／波動／時段）："
-    "「幫〈策略名〉加一個趨勢濾網」\n"
-    "**建議不能跟正文的結論打架**：正文勸退的事（不建議上線、調參數沒意義、訊號要先站得住）"
-    "不准出現在 <suggest>。寫完對一次：用戶點下這句去做的，是不是你剛說不值得做的事——是就換一句。\n"
-    "**下一步的提議只能放在 <suggest> 區塊——禁止在正文結尾用問句提議"
-    "（「要不要我幫你…？」「需要我再…嗎？」這類收尾不要寫，改放 <suggest>）。**\n"
-    "沒命中里程碑、但你想在結尾提議下一步（「要不要我再拉 4h？」「需要補籌碼面嗎？」"
-    "這類話）——**一律把那個提議改寫成 <suggest> 區塊**（1–2 個、用戶口吻），"
-    "正文不留問句；優先挑往策略／回測方向推進的提議。"
-    "純寒暄或一句話問答（打招呼、問單一價格）連提議都不用、直接收尾。\n"
-    "建議句的語言跟正文一致：用戶用英文，區塊內每一行都用英文，導航句以"
-    "「Show me how to」起手（例：Show me how to paper trade 〈strategy name〉）。\n"
-    "中文建議句的逗號、分號、驚嘆號、問號一律全形（，；！？），不要半形；"
-    "英文句用英文標點。\n"
-    "區塊內禁止：形容詞副詞（最強、輕鬆、高勝率）、收益承諾（開始獲利、躺賺）、"
-    "催促（立即、馬上、別錯過）、emoji；策略名與數字必須真實存在。"
-    "用戶**明確拒絕**過的建議（「不要」「先不上」），同一階段不要重提；只是沒點、沒回應"
-    "不算拒絕——到下一個里程碑（回測重跑、換一支策略、回頭再問）可以再提，"
-    "但連續兩輪不要貼一模一樣的句子（換角度或換動詞，例如「上模擬盤」→「先綁模擬盤帳戶」）。\n"
-    # 等你回覆(web／電腦版的對話清單用):跟 <suggest> 同一節、同在 prompt 最尾端——弱模型只守尾端的規則。
-    "**等用戶回覆的標記**：這一輪收尾時，要用戶回答你才能繼續——你問了澄清問題、列出編號選項或方案"
-    "要用戶選一個、需要只有用戶知道的資訊——就在正文最後自成一行寫 `<await/>`"
-    "（有 `<export … />` 時放在它後面；有 <suggest> 區塊時放在區塊的前一行，<suggest> 仍是最後）。"
-    "只是回報結果、交代做了什麼、附 <suggest> 建議（建議列不算等回覆）、純聊天 → 不寫。"
-    "標記本身不解釋、不提。\n"
-    # 0.1.8 e2e:改完報告標題的回覆後面多了「これ以上の提案は不要 — 純修改，不附建議。」與一行為那句日文道歉
-    "**沒有要提議時，正文最後一句寫完就結束，後面什麼都不加**：不寫「沒有建議」「不附建議」"
-    "「這次只是修改」這類交代，不說明為什麼沒有 <suggest>，不提這一節的規則。"
-    "上面的檢查是你心裡做的，檢查的結果不寫進回覆。"
-    "也不評論、不更正自己前面寫的句子：寫錯了就只留對的那一句，不另起一行道歉或解釋。\n"
+    "命中下列時機，回覆以 <suggest> 區塊結尾（其後不得再有文字），方向要跟你這則的結論同方向：\n"
+    "- 剛建立／修改策略、還沒回測 → 跑回測\n"
+    "- 剛回測完，或在總結／評估一支有回測、還沒上線的策略（已在策略組合或模擬盤上的不算）：\n"
+    "  ‧ 結論是可以用 → 「帶我看怎麼把〈策略名〉加進策略組合」\n"
+    "  ‧ 用戶還在迭代 → 只給一個優化方向（見下），不提部署\n"
+    "  ‧ 結論是不建議用 → 不提部署。訊號站不住（MCPT p-value > 0.05，Type A 回測已自動算、不要建議「跑 MCPT」；"
+    "或你說訊號不成立）→ 只提換訊號（「幫〈標的〉換一種進場訊號另做一支」）；**禁止**提在同一個訊號上加東西（濾網、調參數、掃參數、vol targeting 都算，參數是手挑的也一樣）——那是在沒優勢的訊號上硬拉；"
+    "其他原因 → 挑一個針對它的優化方向\n"
+    "- 策略組合裡已有兩支以上策略 → 「幫我跑一次組合優化」或「跑移動窗格回測」\n"
+    "- 已在模擬盤上（上線現況有金額、模擬交易已連接）且穩定跑一段時間、執行無異常 → 必附，不再提「加進策略組合」，依標的分："
+    "加密或台指期 → 「帶我看怎麼把〈策略名〉上小額實盤」；台股（個股、ETF）→ 「到策略組合看〈策略名〉的持股，照著手動下單」"
+    "（真帳的券商自動下單只接期貨商，股票策略不提實盤、券商）\n"
+    "- 想實際跑但還沒綁任何交易所 → 「帶我看怎麼先綁模擬盤帳戶」\n"
+    "- 沒命中、但你想在結尾提議下一步 → 也寫成 <suggest>（1–2 個），優先往策略／回測推進；純寒暄、單一報價什麼都不附\n"
+    "優化選項（挑最相關的一個；只對還沒上線、而且訊號站得住的策略，已在跑的要改就講明另開一支）：參數手挑沒驗過 → 「掃一下〈策略名〉的參數，看有沒有穩定區」"
+    "（已有 scan.json、或這輪就是用掃出的參數重跑 → 不提）；部位固定、回撤起伏大 → 「幫〈策略名〉加 vol targeting 調部位」"
+    "（單一標的適用，低波動時部位會放大、上限 VOL_CAP，要講明）；假訊號多 → 「幫〈策略名〉加一個趨勢濾網」；訊號沒優勢 → 「幫〈標的〉換一種進場訊號另做一支」。\n"
+    "<suggest>\n帶我看怎麼把〈策略名〉加進策略組合\n</suggest>\n"
+    "一行一句、最多 3 個（通常 1 個）；句子＝用戶口吻的短指令，點了會原句送出。部署類（加進策略組合、綁定、小額實盤）是導航句，"
+    "固定以「帶我看怎麼」起手，你回操作步驟、不代做；其他是一般執行句。策略寫名稱（strategy.py 的 # Strategy: 或用戶慣稱）："
+    "寫「把 BTC 4h 均線交叉加進策略組合」，不寫「把 btc_ma_cross_4h 加進策略組合」；〈〉只是佔位，不寫進句子。"
+    "有轉出檔時 `<export … />` 照寫、放在 <suggest> 區塊的前一行。\n"
+    "語言跟正文一致：英文用戶每行都用英文，導航句以「Show me how to」起手（Show me how to add 〈strategy name〉 to the portfolio）；"
+    "中文句的逗號、分號、驚嘆號、問號一律全形（，；！？）。\n"
+    "區塊內禁止形容詞副詞（最強、輕鬆、高勝率）、收益承諾（開始獲利、躺賺）、催促（立即、馬上、別錯過）、emoji；策略名與數字必須真實存在。\n"
+    "**建議不能跟正文的結論打架**：用戶點下這句去做的，若是你剛說不值得做的事，就換一句。用戶**明確拒絕**過的（「不要」「先不上」）同一階段不重提；"
+    "只是沒點不算拒絕，但連續兩輪不貼一模一樣的句子（換角度或換動詞，例如「加進策略組合」→「先綁模擬盤帳戶」）。\n"
+    "**下一步的提議只放 <suggest>：禁止在正文結尾用問句提議，也不在正文列出幾個方向問用戶挑哪個**（「要不要我幫你…？」「需要我再…嗎？」「哪個先試？」都不寫），"
+    "挑一個寫進 <suggest>；只有缺了用戶才知道的資訊、你做不下去時才問。"
+    "沒有要提議時，正文最後一句寫完就結束，後面什麼都不加：不寫「沒有建議」「不附建議」這類交代，不說明為什麼沒有 <suggest>；"
+    "上面的檢查是你心裡做的，檢查的結果不寫進回覆；也不評論、不更正自己前面寫的句子，寫錯了就只留對的那一句，不道歉。\n"
+)
+
+# 等你回覆(web／電腦版的對話清單用)。獨立一節、排在 _SUGGEST_RULE 之後當 prompt 的最後一段:弱模型只守尾端的規則。
+_AWAIT_RULE = (
+    "\n\n---\n\n"
+    "## 等用戶回覆的標記\n"
+    "這一輪收尾時，要用戶回答你才能繼續——你問了澄清問題、列出編號選項或方案要用戶選一個、需要只有用戶知道的資訊——"
+    "就在正文最後自成一行寫 `<await/>`（有 `<export … />` 時放在它後面；有 <suggest> 區塊時放在區塊的前一行，<suggest> 仍是最後）。"
+    "只是回報結果、交代做了什麼、附 <suggest> 建議（建議列不算等回覆）、純聊天 → 不寫。標記本身不解釋、不提。\n"
 )
 
 # Web renders standard Markdown in the browser — tables, headings, and
@@ -2075,9 +2052,10 @@ WEB_FORMATTING_RULE = (
     + _NO_NARRATION
     + _NAV_RULE
     + _SUGGEST_RULE
+    + _AWAIT_RULE
 )
 
-# 電腦版(LocalSink):同一份,只換導航那段;建議規則照樣在最尾端。
+# 電腦版(LocalSink):同一份,只換導航那段;建議與等回覆兩節照樣在最尾端。
 LOCAL_FORMATTING_RULE = WEB_FORMATTING_RULE.replace(_NAV_RULE, _NAV_RULE_LOCAL)
 
 

@@ -851,7 +851,8 @@ _LIVE_CHUNK_BUDGET = int(1.5 * 1024 * 1024)
 # Stripped tier by tier until the chunk fits. The web redraws the open strategy from
 # every live chunk: tier 1 loses the 進出場紀錄 K 線/trades (back after the turn-end
 # cache refetch), tier 2 also the equity curve — the list/status/metrics always arrive.
-_LIVE_STRIP_TIERS = (("candles", "panes", "trades"), ("daily_dates", "daily_returns"))
+_LIVE_STRIP_TIERS = (("candles", "panes", "trades"),
+                     ("daily_dates", "daily_returns", "benchmark_band"))  # band rides on daily_dates
 
 
 def live_chunk(strategies, touched=None):

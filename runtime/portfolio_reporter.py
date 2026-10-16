@@ -35,6 +35,7 @@ chat transport and strategy_reporter: the token resolves to this user only.
 """
 import ast
 import ctypes
+import hashlib
 import json
 import math
 import os
@@ -50,6 +51,7 @@ from datetime import datetime, timedelta, timezone
 
 import atomic_file
 import events
+import exec_style
 import kline_cache_heal
 import sdk_sync
 import venue_traits
@@ -226,9 +228,33 @@ def _portfolio_weights(raw):
     return dict(top)
 
 
+def _portfolio_universe(raw):
+    """Every member of a Type C state's `weights`, zero weights included, in the
+    state's order (canonical, validated as _portfolio_weights, at most
+    PORTFOLIO_WEIGHTS_MAX). `weights` drops zeros, so a portfolio that is flat
+    right now would otherwise report no members at all and the amounts table
+    could neither name what it trades nor tell its currency."""
+    if not isinstance(raw, dict):
+        return []
+    out = []
+    for k, v in raw.items():
+        sym = str(k).replace("-", "").upper()
+        if not _WEIGHT_SYM_RE.match(sym) or isinstance(v, bool) or sym in out:
+            continue
+        try:
+            float(v)
+        except (TypeError, ValueError):
+            continue
+        out.append(sym)
+        if len(out) >= PORTFOLIO_WEIGHTS_MAX:
+            break
+    return out
+
+
 def strategy_states():
     """{name: {symbol, position, market, updated_at}} from strategies/*/state.json;
-    a portfolio (Type C) state also carries `type`, `weights` and `rebalance_at`."""
+    a portfolio (Type C) state also carries `type`, `weights`, `universe` and
+    `rebalance_at`."""
     root = os.path.join(WORKSPACE, "strategies")
     states = {}
     try:
@@ -250,12 +276,115 @@ def strategy_states():
         if weights is not None:
             states[name]["type"] = "portfolio"
             states[name]["weights"] = weights
+            states[name]["universe"] = _portfolio_universe(data.get("weights"))
             try:
                 ra = int(data.get("rebalance_at"))
                 states[name]["rebalance_at"] = ra if ra > 0 else None
             except (TypeError, ValueError):
                 states[name]["rebalance_at"] = None
     return states
+
+
+def _code_hash(src_bytes):
+    """= workspace lib/strategy.code_hash (the runtime cannot import the workspace lib)."""
+    return hashlib.sha256(src_bytes).hexdigest()[:16]
+
+
+def _price_markets(src_bytes):
+    """The markets of the lib.data price fetchers the strategy uses (strategy_reporter's table;
+    Taiwan futures as its internal "tw_futures")."""
+    import strategy_reporter as sr
+    fetchers, _ = sr._referenced_fetchers(src_bytes.decode("utf-8", errors="replace"))
+    return {sr._PRICE_FETCHERS[n] for n in fetchers}
+
+
+_TAIPEI_MARKETS = {"tw_stock", "tw_futures", "tw_stock_futures"}
+_TAIPEI = timezone(timedelta(hours=8))
+
+
+def _bar_date(bar_at, markets):
+    """The trading date of a bar label (epoch seconds), "YYYY-MM-DD". Taiwan bars are labelled
+    at Taipei midnight by some fetchers (fetch_twstock_ohlcv: 16:00 UTC the day before) and at
+    UTC midnight of the trading date by others (the batch daily prices): read in UTC+8 both are
+    that date. Everything else in UTC."""
+    tz = _TAIPEI if markets and markets <= _TAIPEI_MARKETS else timezone.utc
+    return datetime.fromtimestamp(bar_at, tz).strftime("%Y-%m-%d")
+
+
+def _expected_closed_bar_open(td, now):
+    """= workspace lib/bar_ready.expected_closed_bar_open (the runtime cannot import the
+    workspace lib): open label, naive UTC, of the newest closed epoch-aligned bar."""
+    epoch = datetime(1970, 1, 1)
+    return epoch + ((now - epoch) // td) * td - td
+
+
+# Taiwan sessions end 13:30 (stocks) / 13:45 (futures day session), Taipei time
+_TW_DAY_CLOSE_MIN = 13 * 60 + 45
+
+
+def _tw_latest_closed_date(now):
+    """The newest Taiwan trading date whose daily bar has closed at `now` (naive UTC): today in
+    Taipei once past the close on a weekday, else the weekday before. The holiday table is not
+    known here: on a holiday this names the holiday, older than any bar, so no preview — a miss
+    on the safe side."""
+    t = now + timedelta(hours=8)
+    day = t.date() if t.weekday() <= 4 and t.hour * 60 + t.minute >= _TW_DAY_CLOSE_MIN \
+        else t.date() - timedelta(days=1)
+    while day.weekday() > 4:
+        day -= timedelta(days=1)
+    return day.strftime("%Y-%m-%d")
+
+
+def _preview_is_latest(bar_at, markets, td, now):
+    """Is the preview's bar the newest closed one at `now` (naive UTC)? Taiwan daily: its trading
+    date (_bar_date) is _tw_latest_closed_date — a backtest run during the session or before
+    today's close stays a day behind; Taiwan intraday: never (labels not told apart here).
+    Everything else: its label is the bar wait_for_bar expects now (_expected_closed_bar_open)."""
+    if markets and markets <= _TAIPEI_MARKETS:
+        return td == timedelta(days=1) and _bar_date(bar_at, markets) == _tw_latest_closed_date(now)
+    return datetime(1970, 1, 1) + timedelta(seconds=bar_at) == _expected_closed_bar_open(td, now)
+
+
+def typec_previews(cfg, states, now=None):
+    """{name: {type, market, weights, rebalance_at, bar_at, bar_date}} for picked Type C strategies whose
+    report row has no live weights yet: the last row of their latest backtest
+    (strategies/<name>/backtest_state.json, lib/runner._typec_preview), shown by the page as a
+    preview. Only while that file's code_hash is the current strategy.py's — strategy.py only:
+    a file the strategy reads beside it, or a later lib, is not compared — and never for a
+    strategy on US-stock prices. Only while its bar is still the newest closed one at report
+    time (_preview_is_latest; Wei: a preview shows the latest data or nothing) — a backtest that
+    was current when written goes stale a bar later. Display only — nothing reads it to trade."""
+    amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    out = {}
+    for name in (amounts if isinstance(amounts, dict) else {}):
+        if not isinstance(name, str) or isinstance((states.get(name) or {}).get("weights"), dict):
+            continue
+        d = os.path.join(WORKSPACE, "strategies", name)
+        data = _read_json(os.path.join(d, "backtest_state.json"))
+        if not isinstance(data, dict) or not isinstance(data.get("code_hash"), str):
+            continue
+        try:
+            with open(os.path.join(d, "strategy.py"), "rb") as f:
+                src = f.read()
+        except OSError:
+            continue
+        markets = _price_markets(src)
+        # a live tick refuses US-stock prices (lib.data UsStockNotHere): no orders would ever come
+        if _code_hash(src) != data["code_hash"] or "us_stock" in markets:
+            continue
+        weights = _portfolio_weights(data.get("weights"))
+        try:
+            bar_at, ra = int(data.get("bar_at")), int(data.get("rebalance_at"))
+        except (TypeError, ValueError):
+            continue
+        td = _ac_interval(name)
+        if weights is None or td is None or not _preview_is_latest(bar_at, markets, td, now):
+            continue
+        out[name] = {"type": "portfolio", "market": _strategy_market(name), "weights": weights,
+                     "rebalance_at": ra if ra > 0 else None, "bar_at": bar_at,
+                     "bar_date": _bar_date(bar_at, markets)}
+    return out
 
 
 def signals_frozen(cfg):
@@ -1473,9 +1602,17 @@ def build_report():
     stopped = restart_stop(hb, cfg if isinstance(cfg, dict) else {}, vens)
     configured = portfolio_configured(cfg_path, hb, last)
 
+    states = strategy_states()
     report = {
         "config": cfg,
-        "states": strategy_states(),
+        # 下單方式 as a current workspace lib resolves it — a config not saved
+        # since the global setting has no execution_default and is derived
+        # (exec_style.portfolio_execution)
+        "execution_effective": exec_style.portfolio_execution(cfg) if isinstance(cfg, dict) else None,
+        "states": states,
+        # picked Type C with no live weights yet: their backtest's last row, a preview the page
+        # labels as such (typec_previews); never traded on
+        "previews": typec_previews(cfg, states),
         # None = signals recomputing normally (see signals_frozen)
         "signals_frozen": signals_frozen(cfg),
         # each strategy's amount currency, None = cannot be told (strategy_quote_ccy)
