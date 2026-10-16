@@ -128,6 +128,7 @@ put({"amounts": {"a": 100, "b": 50, "z": 0}, "exchanges": {"a": "paper", "b": "p
 r = cl._cmd_execution({"execution_default": {"type": "twap", "duration_min": "45"}})
 c = got()
 check(r == "execution=twap" and c["execution_default"] == {"type": "twap", "duration_min": 45}
+      and c["execution_fanned_from"] == {"type": "twap", "duration_min": 45}
       and c["execution"] == {n: {"type": "twap", "duration_min": 45} for n in ("a", "b", "z")}
       and c["amounts"] == {"a": 100, "b": 50, "z": 0} and c["self_ledger"] is True,
       f"4 新格式:寫 execution_default、展開到每支成員(含金額 0),其他欄位不動 ({r} {c})")
@@ -230,7 +231,8 @@ check(got()["execution_default"] == TW30 and got()["execution"] == {"c": TW30},
 
 
 # 複審 1-P2-1:新 runtime + 舊 workspace,agent 照舊 references 直接改 map → 存金額不能靜默洗掉
-put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": MK, "execution": {"B": CX}})
+put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": MK, "execution": {"B": CX},
+     "execution_fanned_from": MK})
 cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
 c = got()
 check(c["execution_default"] == CX and c["execution"] == {"A": CX, "B": CX},
@@ -241,9 +243,69 @@ cl._cmd_amounts({"amounts": {"A": 1000, "B": 100, "C": 5}})
 check(got()["execution_default"] == TW30 and got()["execution"] == {n: TW30 for n in "ABC"},
       "5 map 是 runtime 自己展開的那份 → 照舊釘住,新成員跟著展開")
 put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": TW30,
-     "execution": {"A": {"type": "twap", "duration_min": "30"}, "B": CH}})
+     "execution": {"A": {"type": "twap", "duration_min": "30"}, "B": CH}, "execution_fanned_from": TW30})
 cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
 check(got()["execution_default"] == CH, "5 手改只動了 B(A 只是寫法不同)→ 採用 B 改成的追價")
+# 整合稽核 M1:agent 照 references/deployment.md 直接在 amounts 加一支 → map 還沒展開到它,不算改成市價
+put({"amounts": {"A": 1000, "B": 100, "N": 300}, "exchanges": {"A": "", "B": "", "N": ""}, "execution_default": TW30,
+     "execution": {"A": TW30, "B": TW30}, "execution_fanned_from": TW30})
+cl._cmd_amounts({"amounts": {"A": 1000, "B": 100, "N": 300}})
+check(got()["execution_default"] == TW30 and got()["execution"] == {n: TW30 for n in "ABN"},
+      f"5 TWAP 時 agent 手加一支成員(map 沒有它)→ 存金額維持 TWAP、展開到新成員 ({got()['execution_default']})")
+put({"amounts": {"A": 1000, "Z": 0}, "exchanges": {"A": "", "Z": ""}, "execution_default": CH, "execution": {"A": CH},
+     "execution_fanned_from": CH})
+cl._cmd_amounts({"amounts": {"A": 1000, "Z": 0}})
+check(got()["execution_default"] == CH and got()["execution"] == {"A": CH, "Z": CH},
+      "5 追價時手加一支金額 0 的成員 → 維持追價")
+check(got().get("execution_fanned_from") == CH, "5 存金額時記下 map 是從哪一種展開的(execution_fanned_from)")
+# 整合稽核 N1:agent 照新版 references 直接改 execution_default、沒動 map → 存金額不能蓋回 map 那一種
+T60 = {"type": "twap", "duration_min": 60}
+for want in (CH, T60, MK, CX):
+    stale = CH if want == CX else TW30
+    put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": want,
+         "execution": {"A": stale, "B": stale}, "execution_fanned_from": stale})
+    cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
+    c = got()
+    check(c["execution_default"] == want and c["execution_fanned_from"] == want
+          and c["execution"] == exec_style.fan_out(want, ["A", "B"]),
+          f"5 agent 直接把 execution_default 從 {stale['type']} 改成 {want} → 存金額保留、map 重新展開 ({c['execution_default']})")
+put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": TW30,
+     "execution": {"A": TW30, "B": CH}, "execution_fanned_from": TW30})
+cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
+check(got()["execution_default"] == CH, "5 有 execution_fanned_from 時舊 references 的 agent 改 map(B 追價)照樣換算進來")
+# 有 execution_default、沒有 execution_fanned_from = 新版 references 的 agent 在舊 map 上改了 default → 保留 default
+for want in (CH, T60, MK, CX):
+    put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": want,
+         "execution": {"A": TW30, "B": CH}})
+    cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
+    check(got()["execution_default"] == want and got()["execution_fanned_from"] == want,
+          f"5 有 default 沒有 fanned_from(舊的混雜 map)→ 保留 agent 寫的 {want}")
+put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution": {"B": CH}})
+cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
+check(got()["execution_default"] == MK, "5 兩個欄位都沒有的舊設定 → 從 map 金額加權換算(A 市價 1000 勝)")
+# 稽核 F1:舊網頁存金額是先原封送 execution、再送 amounts——舊 agent 改過的 map 不能在第一步被洗掉
+for b_spec in (CH, CX):
+    put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": TW30,
+         "execution": {"A": TW30, "B": b_spec}, "execution_fanned_from": TW30})
+    cl._cmd_execution({"execution": {"A": TW30, "B": b_spec}})
+    cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
+    c = got()
+    check(c["execution_default"] == b_spec and c["execution_fanned_from"] == b_spec,
+          f"5 舊 agent 把 B 改成 {b_spec['type']},舊網頁接著原封送 execution 再送 amounts → 換算進來,不洗掉 ({c['execution_default']})")
+# P3:execution_fanned_from 是壞值 → 當成沒有這個欄位(信 default)
+put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": CH,
+     "execution": {"A": TW30, "B": TW30}, "execution_fanned_from": {"type": "limit"}})
+cl._cmd_amounts({"amounts": {"A": 1000, "B": 100}})
+check(got()["execution_default"] == CH and got()["execution_fanned_from"] == CH,
+      "5 execution_fanned_from 手寫成壞值 → 當成沒有,保留 agent 寫的追價")
+# P3:刪除(沒路由的成員)時 execution 裡那一筆一起拿掉,之後舊格式不帶它也不會被當成改成市價
+put({"amounts": {"A": 1000, "B": 100}, "exchanges": {"A": "", "B": ""}, "execution_default": TW30,
+     "execution": {"A": TW30, "B": TW30}, "execution_fanned_from": TW30})
+cl._prune_unrouted_member("B")
+c = got()
+check("B" not in c["execution"] and "B" not in c["amounts"], "5 刪除策略時 execution map 裡那一筆一起拿掉")
+cl._cmd_execution({"execution": {"A": TW30}})
+check(got()["execution_default"] == TW30, "5 刪掉之後舊格式只帶 A → 維持 TWAP,不變市價")
 
 
 def old_lib_resolve(contributors, config):

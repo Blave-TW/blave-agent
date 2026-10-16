@@ -112,21 +112,45 @@ def from_legacy_map(execution, cfg):
     return portfolio_execution(legacy_cfg)
 
 
+def fanned_from(spec):
+    """What execution_fanned_from records next to a fan_out(spec, ...) map:
+    the canonical spec, market for one that is not a spec (fan_out wrote {})."""
+    return _exec_spec_clean(spec) or {"type": "market"}
+
+
 def settled_default(cfg):
     """The portfolio-wide spec to keep when the runtime rewrites the config on
-    its own (an amounts save). The map is normally the runtime's own fan-out of
-    execution_default; when it is not, something outside the runtime edited it
-    — an agent following the references of a workspace older than the global
-    setting — and that edit is folded in through from_legacy_map instead of
-    being silently overwritten."""
+    its own (an amounts save).
+
+    The map is normally the runtime's own fan-out, and the runtime records the
+    spec it fanned out in execution_fanned_from. Map equal to that fan-out →
+    nobody touched the map, so execution_default stands as it is (an agent on
+    current references edits execution_default directly and leaves the map
+    stale). Map differs → something outside the runtime edited it (an agent on
+    the references of a workspace older than the global setting) and that edit
+    is folded in through from_legacy_map instead of being silently overwritten.
+    execution_default without a valid execution_fanned_from stands as it is: no shipped
+    runtime ever wrote execution_default, so only an agent on current
+    references can have put it there, over a legacy map.
+
+    Only the map's own keys are compared: a member in amounts the map has no
+    entry for is "not fanned out yet" (an agent adds a strategy to amounts by
+    hand, references/deployment.md), not "changed to market". The price: an
+    edit that DELETES an entry is not detected."""
     cfg = cfg if isinstance(cfg, dict) else {}
     current = portfolio_execution(cfg)
     if not isinstance(cfg.get("execution_default"), dict):
         return current
     amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
     stored = cfg.get("execution") if isinstance(cfg.get("execution"), dict) else {}
-    expected = fan_out(current, amounts)
-    if stored == expected:
+    base = _exec_spec_clean(cfg.get("execution_fanned_from"))
+    if base is None:   # missing or not a spec (hand-written): same as no record
         return current
+    if stored == fan_out(base, stored):
+        return current
+    names = set(amounts) | set(stored)
+    clean_base = _exec_spec_clean(base)
     edited = {k: _exec_spec_clean(v) or {"type": "market"} for k, v in stored.items()}
-    return from_legacy_map(edited, dict(cfg, execution=expected))
+    if clean_base is not None and clean_base["type"] != "market":
+        edited.update({n: dict(clean_base) for n in names - set(stored)})
+    return from_legacy_map(edited, dict(cfg, execution=fan_out(base, names)))

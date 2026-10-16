@@ -3827,6 +3827,7 @@ def _cmd_amounts(args):
     # older workspace lib reads is re-fanned so a new member trades the same style
     cfg["execution_default"] = exec_style.settled_default(cfg)
     cfg["execution"] = exec_style.fan_out(cfg["execution_default"], clean)
+    cfg["execution_fanned_from"] = exec_style.fanned_from(cfg["execution_default"])
     # both from this fail-closed read, before `amounts` is replaced (after it, every save
     # would read as configured and the MG-08 adoption save would hide its targets)
     configured = isinstance(cfg.get("amounts"), dict)
@@ -4100,10 +4101,14 @@ def _cmd_execution(args):
             for k, s in (legacy or {}).items()):
         raise ValueError("custom execution styles are set by the agent, not from this command")
     if default is None:
-        default = exec_style.from_legacy_map(legacy, cfg)
+        # fold a map edited outside the runtime in first (exec_style.settled_default),
+        # or an older page's as-is re-send would read it back as "unchanged" and wipe it
+        default = exec_style.from_legacy_map(
+            legacy, dict(cfg, execution_default=exec_style.settled_default(cfg)))
     amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
     cfg["execution_default"] = default
     cfg["execution"] = exec_style.fan_out(default, amounts)
+    cfg["execution_fanned_from"] = exec_style.fanned_from(default)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with atomic_file.replacing(path) as f:  # atomic: the reconciler mtime-watches + json-loads this
         json.dump(cfg, f, indent=2)
@@ -4484,7 +4489,7 @@ def _purge_strategy_schedules(entries):
 
 def _prune_unrouted_member(name):
     """Drop `name` from the 下單設定 (mirror, then config): amounts, exchanges, contracts,
-    asset_specs, legacy weights. Only for a member routed nowhere on an unbound machine
+    asset_specs, legacy weights, the execution map. Only for a member routed nowhere on an unbound machine
     (_cmd_delete_strategy). Raises on a write failure — the files are not deleted then."""
     mpath = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
     try:
@@ -4502,7 +4507,7 @@ def _prune_unrouted_member(name):
     cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
     with open(cpath) as f:
         cfg = json.load(f)
-    for key in ("amounts", "exchanges", "contracts", "asset_specs", "weights"):
+    for key in ("amounts", "exchanges", "contracts", "asset_specs", "weights", "execution"):
         if isinstance(cfg.get(key), dict):
             cfg[key].pop(name, None)
     with atomic_file.replacing(cpath) as f:
