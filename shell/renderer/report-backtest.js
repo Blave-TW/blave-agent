@@ -30,7 +30,10 @@
     const dates = Array.isArray(stats && stats.daily_dates) ? stats.daily_dates : [];
     const rets = Array.isArray(stats && stats.daily_returns) ? stats.daily_returns : [];
     const n = Math.min(dates.length, rets.length);
-    const out = { dates: [], equity: [], drawdown: [] };
+    const out = { dates: [], equity: [], drawdown: [], band: null };
+    // 帶跟權益走同一組索引:跳過的日期帶也跳過,第 i 點才會是同一天
+    const raw = readBand(stats);
+    const band = raw ? { p5: [], p50: [], p95: [] } : null;
     let cum = 1;
     let peak = 1;
     for (let i = 0; i < n; i++) {
@@ -40,7 +43,9 @@
       out.dates.push(dates[i]);
       out.equity.push(100 * cum);
       out.drawdown.push(100 * (cum / peak - 1));
+      if (band) { band.p5.push(raw.p5[i]); band.p50.push(raw.p50[i]); band.p95.push(raw.p95[i]); }
     }
+    out.band = band;
     return out;
   }
 
@@ -160,6 +165,24 @@
       if (!Number.isInteger(counts[i]) || counts[i] < 0) return null;
     }
     return { edges: edges, counts: counts, actual: d.actual };
+  }
+
+  /* Type C 的隨機投組範圍帶:五條都要是跟 daily_dates 等長的正數陣列,任一條不合整組不要——
+   * 半套的帶會畫出一段斷掉的灰。值是權益倍數(1.0 起),×100 對齊 buildSeries 的 100 起算。
+   * 回傳的仍以 daily_dates 為索引;對到圖上的哪一天由 buildSeries 決定。 */
+  const BAND_KEYS = ["p5", "p25", "p50", "p75", "p95"];
+  function readBand(stats) {
+    const b = stats && stats.benchmark_band;
+    const dates = stats && stats.daily_dates;
+    if (!b || typeof b !== "object" || !Array.isArray(dates)) return null;
+    const out = {};
+    for (let k = 0; k < BAND_KEYS.length; k++) {
+      const a = b[BAND_KEYS[k]];
+      if (!Array.isArray(a) || a.length !== dates.length) return null;
+      for (let i = 0; i < a.length; i++) if (!isNum(a[i]) || a[i] <= 0) return null;
+      out[BAND_KEYS[k]] = a.map(function (v) { return v * 100; });
+    }
+    return out;
   }
 
   // 軸刻度:1/2/5 × 10^k 的步距,目標 ~target 格
@@ -330,6 +353,9 @@
 
   const EQ_MULTS = [0.1, 0.2, 0.5, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500];
   const DD_STEPS = [0.5, 1, 2, 5, 10, 20, 25, 50];
+  /* 帶在圖上最厚處不到這個像素數就不填色、只畫中位數:2px 策略線加 1.2px 虛線本身就佔掉約 4px,
+   * 再薄看起來是一條粗線不是範圍。用像素不用比例——canvas 高固定,拉寬不會讓判定來回跳。 */
+  const BAND_NARROW_PX = 10;
 
   /* 一張 canvas、上下兩區、共用同一個 xAt:兩張圖各畫各的遲早會在某個寬度差一個像素。 */
   function drawChart(canvas, series) {
@@ -385,10 +411,13 @@
     }
 
     // ---- 權益(對數軸:+100% 與 −50% 在圖上等距,才不會把後段的波動誇大)----
+    const band = series.band;
     let min = 100, max = 100; // 100 = 損益兩平,永遠留在視野內
     for (let i = 0; i < n; i++) {
       if (series.equity[i] < min) min = series.equity[i];
       if (series.equity[i] > max) max = series.equity[i];
+      // p5 / p95 也要進視野,不然寬帶被裁掉看起來像 bug
+      if (band) { if (band.p5[i] < min) min = band.p5[i]; if (band.p95[i] > max) max = band.p95[i]; }
     }
     if (!(min > 0) || min === max) { min = Math.max(min * 0.9, 1e-6); max = max * 1.1 || 1; }
     let lo = Math.log(min), hi = Math.log(max);
@@ -401,6 +430,27 @@
       hline(yEq(v), m === 1);
       ylabel((m < 1 ? m.toFixed(1) : String(m)) + "×", yEq(v));
     });
+    let narrow = false;
+    if (band) {
+      let thick = 0;
+      for (let i = 0; i < n; i++) thick = Math.max(thick, yEq(band.p5[i]) - yEq(band.p95[i]));
+      narrow = thick < BAND_NARROW_PX;
+      if (!narrow) {
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) ctx.lineTo(xAt(i), yEq(band.p95[i]));
+        for (let i = n - 1; i >= 0; i--) ctx.lineTo(xAt(i), yEq(band.p5[i]));
+        ctx.closePath();
+        ctx.fillStyle = rgbaToken("--color-greyDark", 0.55);
+        ctx.fill();
+      }
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = token("--color-greyMedium");
+      ctx.lineWidth = 1.2;
+      path(band.p50, yEq);
+      ctx.stroke();
+      ctx.restore();
+    }
     ctx.strokeStyle = cLine;
     ctx.lineWidth = 2;
     ctx.lineJoin = "round";
@@ -446,21 +496,51 @@
       ctx.textAlign = i === 0 ? "left" : i === n - 1 ? "right" : "center";
       ctx.fillText(series.dates[i].slice(0, 10), xAt(i), H - 6);
     });
+    return { narrow: narrow };
+  }
+
+  // 圖例項帶說明:沿用指標標籤的 .mp-tip / .tip(hover 與鍵盤 focus 都會出)
+  function legendItem(cls, text, tip) {
+    const item = el("span", "bt-legend" + (cls ? " " + cls : ""));
+    if (!tip) { item.textContent = text; return item; }
+    const id = "bt-tip-" + ++tipSeq;
+    const btn = el("button", "mp-tip", text);
+    btn.type = "button";
+    btn.setAttribute("aria-describedby", id);
+    const bubble = el("span", "tip", tip);
+    bubble.id = id;
+    bubble.setAttribute("role", "tooltip");
+    item.appendChild(btn);
+    item.appendChild(bubble);
+    return item;
+  }
+
+  /* 收不收合要畫過才知道(看像素厚度),所以隨機那幾項由 redraw 依 drawChart 的結果換;
+   * 沒有帶就永遠是「權益 / 回撤」兩項,跟加帶之前一樣。 */
+  function setLegend(head, band, narrow) {
+    head.textContent = "";
+    head.appendChild(legendItem("", t("bt.equity")));
+    if (band && narrow) {
+      head.appendChild(legendItem("med", t("bt.legendMedian"), t("bt.tip.bandNarrow")));
+    } else if (band) {
+      head.appendChild(legendItem("band", t("bt.legendBand"), t("bt.tip.band")));
+      head.appendChild(legendItem("med", t("bt.legendMedian")));
+    }
+    head.appendChild(legendItem("dd", t("bt.drawdown")));
   }
 
   function buildChart(series) {
     const wrap = el("div", "bt-block");
     const head = el("div", "bt-label");
-    head.appendChild(el("span", "bt-legend", t("bt.equity")));
-    head.appendChild(el("span", "bt-legend dd", t("bt.drawdown")));
+    setLegend(head, null, false);
     wrap.appendChild(head);
     const frame = el("div", "bt-frame");
     const canvas = el("canvas", "bt-canvas");
     canvas.setAttribute("role", "img");
-    canvas.setAttribute("aria-label", t("bt.chartAria"));
+    canvas.setAttribute("aria-label", t(series.band ? "bt.chartAriaBand" : "bt.chartAria"));
     frame.appendChild(canvas);
     wrap.appendChild(frame);
-    return { node: wrap, canvas: canvas };
+    return { node: wrap, canvas: canvas, head: head, narrow: null };
   }
 
   // ---------------------------------------------------------------- 4. 月報酬熱圖
@@ -706,7 +786,14 @@
     if (chart || mcptChart) {
       // 兩張圖各自 try:一張畫壞不該讓另一張跟著空白
       const redraw = function () {
-        if (chart) try { drawChart(chart.canvas, series); } catch (e) { console.warn("[backtest]", e); }
+        if (chart) try {
+          const g = drawChart(chart.canvas, series);
+          // ResizeObserver 每一下都會進來;圖例只在收合狀態真的變了才重建
+          if (g && series.band && g.narrow !== chart.narrow) {
+            chart.narrow = g.narrow;
+            setLegend(chart.head, series.band, g.narrow);
+          }
+        } catch (e) { console.warn("[backtest]", e); }
         if (mcptChart) try { drawMcpt(mcptChart.canvas, mcptChart.dist, mcptChart.labels); } catch (e) { console.warn("[backtest]", e); }
       };
       if (typeof ResizeObserver === "function") {
@@ -729,6 +816,6 @@
   window.BlaveReport._bt = {
     buildSeries: buildSeries, buildMonthly: buildMonthly, buildYearly: buildYearly,
     readMcpt: readMcpt, fmtSignedPct: fmtSignedPct,
-    readMcptDist: readMcptDist, annualReturn: annualReturn, annualVol: annualVol, dailyWinRate: dailyWinRate,
+    readMcptDist: readMcptDist, readBand: readBand, annualReturn: annualReturn, annualVol: annualVol, dailyWinRate: dailyWinRate,
   };
 })();

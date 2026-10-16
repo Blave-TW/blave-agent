@@ -319,6 +319,38 @@ function trZView(state, r) {
   }
   return none;
 }
+/* 還沒選策略／還沒設金額時缺的是哪一步(spec-autotrade-empty v3 §2)。只在「沒有任何金額 > 0、沒有沒路由的成員、讀得到設定」時成立;
+   有金額但這家下不了、重新綁定後沒路由的照 0.1.24(回 null)。rows = 選擇策略框會列的候選(trPickRows,鎖照套),null = 清單還沒載入。
+   "pick" 有能勾的 /"noStrat" 沒有回測完成的 /"noVenue" 有、但這家全鎖住 /"amt" 選了、金額全是 0 /
+   "draft" 已存一支都沒有、選擇策略框有還沒儲存的草稿(draft = trZDraft();已存有成員時草稿不改判斷,照 "amt") */
+function trZCase(r, rows, draft) {
+  if (!r || typeof r !== "object" || r.config === null || trCfgUnread(r)) return null;
+  const c = r.config && typeof r.config === "object" ? r.config : {}, a = c.amounts && typeof c.amounts === "object" && !Array.isArray(c.amounts) ? c.amounts : {};
+  if (trUnrouted(r).length || Object.keys(a).some((n) => Number(a[n]) > 0)) return null;
+  if (Object.keys(a).length) return "amt";
+  if (draft) return "draft";
+  if (!rows) return "pick";
+  return rows.some((x) => !x.locked) ? "pick" : rows.length ? "noVenue" : "noStrat";
+}
+const TR_ZCASE_LINE = { pick: "tr.startOffNoPick", noStrat: "tr.startOffNoStrat", noVenue: "tr.startOffNoVenueStrat", amt: "tr.startOffZeroAmt", draft: "tr.startOffDraft" };
+const TR_ZCASE_BTN = { pick: "tr.pick", noStrat: "ns.chip", noVenue: "ns.chip", amt: "po.goAmounts", draft: "po.goAmounts" };
+/* 頁首與部位分頁在這一格怎麼畫(spec §2–§4、§6-1:一個畫面一句導引、一顆實心鈕)。
+   o.zc = trZCase;o.pure = 純 Z(trZView 回 tr.startOffNoAmt、沒有解除暫停、有啟動鈕);o.dead = 狀態行原本是「尚未啟動下單」(不是異常停止);
+   o.pend = 等回報那一句的 key;o.wait = 等待中(canon:等待中絕不出霧);o.tab = 自動下單頁目前的分頁。
+   回 fog = 部位要上的霧("pick" / "noStrat" / "noVenue" / "draft",null 不上);fogOn = 霧正在眼前;btn / fill = 頁首鈕字與實心(null = 不畫);
+   status = 取代狀態行的 key(""= 空著留高度,null = 照舊);reason = 原因行的 key(undefined = 照舊 zv.reason 那條);desc = 停用的啟動下單 aria-describedby */
+function trZGuide(o) {
+  const zc = o.zc || null, fog = !o.wait && (zc === "pick" || zc === "noStrat" || zc === "noVenue" || zc === "draft") ? zc : null, fogOn = !!fog && o.tab === "pos";
+  const line = zc ? TR_ZCASE_LINE[zc] : null, moved = !!(o.pure && o.dead && zc), pend = o.pend || null;
+  return {
+    fog, fogOn,
+    btn: o.pure && !pend && !fogOn ? (zc ? TR_ZCASE_BTN[zc] : "po.goCfg") : null,
+    fill: !!zc,
+    status: moved ? (fogOn || pend ? "" : line) : null,
+    reason: o.pure && zc ? (pend || (fogOn || moved ? null : line)) : undefined,
+    desc: o.pure && fogOn ? "tr-pos-fog-msg" : moved && !pend ? "tr-desc" : "tr-noamt",
+  };
+}
 /* 解除暫停會不會開始平倉(§8 確認框):只有重開停止(R)會讓對帳器從「每輪跳過」變回照常跑;單純 HALT 下對帳器本來就在跑。
    **從沒設定過**(portfolio_configured === false)才是「對帳器唯讀、什麼單都不下」——機器端的 portfolio_configured() 是
    「設定檔或 UI 鏡像檔存在」,所以「檔在、但讀不壞」照樣算設定過:對帳器照跑、照平倉。那一種在這裡不能當成安全,
@@ -444,7 +476,7 @@ function trCurrentAmounts(names, stored, edits) {
 }
 /* 要送出去的 amounts。key 在不在 = 在不在組合裡(runtime 的 _cmd_amounts):表上的每一支都送(同網頁 currentAmounts)——
    表只列已存的 ∪ picker 勾的(trNames),在表上就是在組合裡,$0 也留著 key(0 = 收斂到空手,拿掉 key 反而會讓對帳器失去路由;
-   勾了、立即送失敗的那一支也靠這一份補進去)。移出組合只剩「picker 取消勾選」一條路(spec-desktop-strategy-picker §12-5)——
+   勾了還沒存的草稿也靠這一份一起寫進去)。移出組合只剩「picker 取消勾選」一條路(spec-desktop-strategy-picker §12-5)——
    以前「回測過就進表、金額 > 0 才新加入」「清單載入後不在清單上 = 移出」兩條推論都退役,兩個視角同一套。
    keep = 表上沒列、但要原樣帶著的存量(雲端讀不到的那幾支,trHidden)。 */
 function trAmountsToSend(names, stored, edits, keep) {
@@ -607,15 +639,26 @@ function trSuffixZone(sym) {
   const q = TR_QUOTE_SUFFIX.find((x) => s.length > x.length && s.slice(-x.length) === x);
   return q || null;
 }
-/* 投資組合(Type C)的持有權重(§8.2):現貨負權重先壓 0、壞值當 0,「持有」= w' ≠ 0。state.weights 是整個 universe(含 0),
-   n 只數持有的。keys = 全部候選(推計價用)。不是投資組合回 null */
+/* 投資組合(Type C)的持有權重(§8.2):現貨負權重先壓 0、壞值當 0,「持有」= w' ≠ 0。n 只數持有的。
+   keys = 全部成分(推計價、列成分用):回報的 weights 丟掉 0 權重,runtime 另帶 st.universe(含 0);舊 runtime 沒這欄,
+   空手時 keys 就是空的(照舊)。不是投資組合回 null */
 function trTypeC(st) {
   const w = st && st.weights && typeof st.weights === "object" && !Array.isArray(st.weights) ? st.weights : null;
   if (!w) return null;
   const out = { n: 0, long: 0, short: 0, keys: Object.keys(w) };
+  (Array.isArray(st.universe) ? st.universe : []).forEach((k) => { if (typeof k === "string" && k && out.keys.indexOf(k) < 0) out.keys.push(k); });
   out.keys.forEach((k) => { let x = Number(w[k]); if (!isFinite(x) || (st.market === "spot" && x < 0)) x = 0;
     if (!x) return; out.n++; if (x > 0) out.long += x; else out.short -= x; });
   return out;
+}
+/* 金額表 Type C 列的標的格(Wei 10-16):3 檔以內直接列代號,超過寫「前 3 檔 等 N 檔」;持有中與空手同一種寫法。
+   代號去掉計價尾碼(同部位表 short)。hover 列全部成分,空手再講一句。keys 空(舊 runtime 的空手列)照舊寫「0 檔」。tf = t */
+function trShortSym(sym) { const s = String(sym || "").replace(/@spot$/i, ""); return s.replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || s; }
+function trTypeCLabel(tc, tf) {
+  if (!tc.keys.length) return { text: tf("tr.nSyms", { n: tc.n }), tip: "" };
+  const syms = tc.keys.map(trShortSym), sep = tf("ak.sep"), list = syms.join(sep);
+  const text = syms.length <= 3 ? list : tf("tr.typecSymsMore", { list: syms.slice(0, 3).join(sep), n: syms.length, k: syms.length - 3 });
+  return { text, tip: tc.n ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
 }
 // 台指期目標口數取整 = 機器對帳器的規則 sign(x)·floor(|x|+0.5)(−0.5 → −1;Math.round(−0.5) 是 −0,會差一口)
 function trRoundLots(x) { return (x < 0 ? -1 : 1) * Math.floor(Math.abs(x) + 0.5 + 1e-9); }   // 1e-9 = 機器 lib/portfolio 與網頁 pfRoundLots 同一個:浮點加總的 2.4999… 歸到 3
@@ -631,7 +674,7 @@ function trRowZone(n, sym, tc, portfolio, qmap) {
   }
   if (!isC) return trSuffixZone(sym) || TR_ZONE_UNKNOWN;
   // 還沒算出權重的投資組合退回清單的標的(可能是「2330,2454」一串),逐檔推
-  const syms = tc ? tc.keys : String(sym || "").split(/[\s,;|/]+/).filter(Boolean);
+  const syms = tc && tc.keys.length ? tc.keys : String(sym || "").split(/[\s,;|/]+/).filter(Boolean);
   const zs = new Set(syms.map((x) => (trTxfSpec(trCanonSym(x)) ? null : trSuffixZone(x))));
   return zs.size === 1 && !zs.has(null) ? [...zs][0] : TR_ZONE_UNKNOWN;
 }
@@ -812,21 +855,15 @@ function trUniverse(code) {
   const m = /^UNIVERSE\s*=\s*\[([^\]]*)\]/m.exec(typeof code === "string" ? code : "");
   return m ? (m[1].match(/["'][^"']{1,32}["']/g) || []).map((s) => s.slice(1, -1)) : [];
 }
-/* 「確定」之後立刻送的那一份:$0 的兩個方向——勾了、不在 stored 的以 0 加進去(策略進 cron、呼吸點亮);
-   取消勾選、金額 ≤ 0 的拿掉 key(移出、點熄)。**有錢而被取消勾選的還在裡面**:那會平倉,留到儲存的確認框。
-   沒有 $0 變動回 null(只關框、什麼都不送)。
-   keep = 雲端讀不到的存量(trPickKeep):框裡沒列、用戶沒看到,既不算移出也不算 staged,原樣帶著送(同 trAmountsToSend 的 keep)。 */
-function trPickApply(picked, stored, keep) {
-  const k = Array.isArray(keep) ? keep : [];
-  const added = [...picked].filter((n) => !(n in stored)), removedZero = Object.keys(stored).filter((n) => !picked.has(n) && !(stored[n] > 0) && k.indexOf(n) < 0);
-  if (!added.length && !removedZero.length) return null;
-  const amounts = {};
-  Object.keys(stored).forEach((n) => { if (removedZero.indexOf(n) < 0) amounts[n] = stored[n]; });
-  added.forEach((n) => { amounts[n] = 0; });
-  return { added, removedZero, amounts };
+/* picker 的勾選是草稿(0.1.26 Wei):按「確定」只改表上列哪些,按「儲存」才連金額一起寫進 amounts(進排程、亮呼吸點、算訊號)。
+   回草稿跟已存的差在哪:added = 勾了、不在 stored;removed = 在 stored、被取消勾選(金額多少都算)。picked 為 null = 跟著 stored 走,沒有差。
+   keep = 雲端讀不到的存量(trPickKeep):框裡沒列、用戶沒看到,不算移出,儲存時原樣帶著送(同 trAmountsToSend 的 keep)。 */
+function trPickDiff(picked, stored, keep) {
+  const k = Array.isArray(keep) ? keep : [], st = stored || {};
+  if (!picked) return { added: [], removed: [] };
+  return { added: [...picked].filter((n) => !(n in st)), removed: Object.keys(st).filter((n) => !picked.has(n) && k.indexOf(n) < 0) };
 }
-// 有錢、被取消勾選、還沒送出的(儲存列要出、確認框要講平倉)。picked 為 null = 跟著 stored 走,沒有 staged;keep 同上
-function trPickStaged(picked, stored, keep) { const k = Array.isArray(keep) ? keep : []; return picked ? Object.keys(stored || {}).filter((n) => stored[n] > 0 && !picked.has(n) && k.indexOf(n) < 0) : []; }
+function trPickDirty(picked, stored, keep) { const d = trPickDiff(picked, stored, keep); return d.added.length + d.removed.length > 0; }
 // picker 兩支的 keep:雲端 = trHidden(picked 就是表上的名單:雲端的 names 已濾過清單,結果同);這台電腦的清單可信,沒有
 function trPickKeep(env, picked, stored, list) { return env === "cloud" ? trHidden(picked ? [...picked] : [], stored, list) : []; }
 function trSetEq(a, b) { const s = new Set(b); return a.size === s.size && [...a].every((n) => s.has(n)); }
@@ -958,6 +995,16 @@ function trFirstReadPending(r) { return !r.last_reconcile && !trVenueIds(r).some
    改了金額或補成交 → 差額進門檻內 → 那筆是歷史(總覽事件照舊逐筆列) */
 /* 台灣期貨那條腿的代號 → 列用的家族代號(群益平倉的 TM2610、統一的 TXFJ6 / MXFJ6)。"*" = 整台機器,原樣 */
 function trTwFutCanon(sym) { const s = trCanonSym(String(sym || "")); if (s === "*") return s; const m = /^(TXF|MXF|TMF)/.exec(s); return m ? m[1] : trCapitalCanon(s); }
+/* 市場小標:台指期 = 期貨、台股代號 = 現貨(券商現股沒有永續);其餘才看 @spot／market 分現貨與合約。
+   runtime 對沒宣告 MARKET 的策略一律回 swap,台股、台指期也是——不能只看那一個值。fut = 呼叫端已知是口數列。
+   合約代碼只認完整形狀:trCapitalCanon 的前綴比對會把 TX 開頭的加密幣也當台指期 */
+const TR_TWFUT_RE = /^(?:(?:TXF|MXF|TMF)(?:[A-Z]\d)?(?:R1)?|(?:MTX|TX|TM)\d{4})$/;
+function trMktKey(sym, spot, fut) {
+  const s = trCanonSym(String(sym || "").trim().replace(/@spot$/i, ""));
+  if (fut || TR_TWFUT_RE.test(s)) return "tr.mkt.fut";
+  if (TR_TWSTOCK_RE.test(s)) return "tr.mkt.spot";
+  return spot || /@spot$/i.test(String(sym || "")) ? "tr.mkt.spot" : "tr.mkt.swap";
+}
 /* 每個還欠著單的標的各掛它最新的一筆(同網頁 pfLiveOrderErrs;兩檔同時被拒兩列都要看得到)。回 Map(列 key → 那一筆)。
    close-all(全部平倉沒做成,error 以「close-all:」開頭)例外:只在沒在跑時掛——按了啟動那口部位就歸對帳器管——而且該列實際不是 0;
    "*"(整台機器,呼叫端畫在表底)只認台灣期貨券商那筆、看還有沒有台指期部位。ctx = { open: Set(實際不是 0 的列), twOpen, running };缺 = close-all 一律不掛 */
@@ -1047,7 +1094,7 @@ const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity",
 /* 雲端送得出去的指令:**只開真的有 UI 在用的**(稽核 S-2)。`amounts` = 雲端填金額(S4);`delete_strategy` = 雲端側欄的刪除;
    `credentials_remove` / `retest_accounts` = 雲端設定分頁(S5)。`credentials` 永遠不在這裡:金鑰只走主行程專用的 cloud-connect。
    沒有 `update` / `restart_reconciler`:用本機 app 不觸發雲端 agent 回合(Wei 09-22)。主行程還會再擋一次(CLOUD_SHIPPED,兩份逐項相等)。 */
-const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
+const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
 function envApi(env, host) {
   if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); });
     /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事
@@ -1217,6 +1264,13 @@ function envJustMark(just, stored, sending, nowMs) {
   Object.keys(stored || {}).forEach((n) => { if (!(n in (sending || {}))) { delete just.picked[n]; just.removed[n] = nowMs; } });
   return just;
 }
+/* 收回 envJustMark 那一次(雲端存檔 ack 回 ok、之後回報卻是 timeout(主機沒套用)或 changed(別處改過)):那一份沒有生效,
+   剛加入的不能強制亮、剛移出的不能強制熄,改回照主機回報判(稽核 v026 M2)。before 讀不到(null)= 送出的都當剛加入 */
+function envJustUndo(just, before, sent) {
+  Object.keys(sent || {}).forEach((n) => { if (!before || !(n in before)) delete just.picked[n]; });
+  Object.keys(before || {}).forEach((n) => { if (!(n in (sent || {}))) delete just.removed[n]; });
+  return just;
+}
 // 側欄雲端清單列尾的狀態字:有投入金額的才講,而且只講出事的(已停 / 可能仍在下單);正常在下單由名字前的呼吸點表示,不再寫「下單中」(Wei 09-26,同網頁側欄只有點)
 function envStratWord(name, st) {
   const r = st && st.report, a = r && r.config && r.config.amounts;
@@ -1249,6 +1303,7 @@ function trNewBag(env) {
     cxSaved: null, cxPend: null,   // 雲端(S5):金鑰已存到主機、等回報的那一態 / 設定分頁按過重新測試或解除、等回報
     sig: {},                       // 各面板上次畫的資料指紋:沒變就不重畫(輸入框的焦點、捲動位置都留著)
     cx: { busy: false, err: null, retest: false }, unbinding: false,
+    exec: { edit: null, err: null, raw: null },   // 下單方式:送出、報告還沒對上的那個值 / 一行錯誤 / TWAP 時長格裡看不懂的原字
     ov: { mode: "equity", days: 30, curve: null, curveErr: false, perf: null, perfErr: false, ui: [], uiErr: false, geo: null, at: 0 },   // curve null = 還沒讀過;curveErr = 這一輪讀不到(不是「沒有紀錄」);perf null = 沒有這一份(這台電腦)或讀不到(看 perfErr)
     bad: {},                       // 金額輸入框裡看不懂的字(name → true):有任何一格就不給儲存
     raw: {},                       // 輸入框裡打到一半 / 打錯的原字(name → 字):報告重畫時放回去,不換回上一個看得懂的值(設計稽核 B7)
@@ -1296,12 +1351,11 @@ const TR_TAB_FEATURE = { over: "trade_overview", pos: "trade_positions", assets:
 const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益只在雲端視角(renderer/capital.js)
 /* 連接框列得出來的真實交易所(env 名同 cloudcmd.CONNECT_VENUES、網頁 CX_VENUES;群益在 Mac 上跑不起來,不列)。
    pass = 多一格 <ENV>_PASSPHRASE。CX_LOCAL_REAL = 這台電腦綁得了的(runtime local_daemon 放行的那幾家;另外四家的金鑰
-   由 command_listener._local_real_key_gate 在寫入前讀一次帳戶)。noWdCheck = 那家的 API 查不到自己有沒有提領權限
-   (runtime _WITHDRAW_CHECKED 沒列的那幾家;tests/check_shell_connect_venues 釘兩邊一致),連接框多講一句要用戶自己確認 */
+   由 command_listener._local_real_key_gate 在寫入前讀一次帳戶)。 */
 /* ccy = 那家 lib/account_*.py get_equity 回的幣別(字面值;BingX 是動態 row.asset,這裡是它的預設值)。
    讀帳失敗時 runtime 寫 currency: null,畫面靠它推幣別(tests/check_venue_ccy.py 逐支對 lib) */
 const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, okx: { label: "OKX", env: "OKX", pass: true, ccy: "USD" },
-  bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", noWdCheck: true, ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" } };
+  bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" } };
 const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit"];
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
 /* 統一期貨入口:0.1.18 藏、統一行情(lib/president_quote 實盤 tick)驗過後開。關著時只藏連接框的下拉那一項,其餘(帳戶列、
@@ -1438,6 +1492,7 @@ function trPushLabels() {
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
     quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), ok: t("tm.ok"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
     quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
+    unsavedTitle: t("tm.unsavedTitle"), unsavedBody: t("tm.unsavedBody"), unsavedGo: t("tm.unsavedGo"), unsavedNote: t("tm.unsavedNote"),   // 結束 / 關窗攔截:策略組合有還沒儲存的變更
     presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }),   // 結束攔截:統一還有部位(主行程填口數)
     updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
     moveAuthExists: t("tm.move.authExists"), moveAuthApps: t("tm.move.authApps"), gotIt: t("src.gotIt"),   // 搬移要系統授權時的提示框(只有「知道了」)
@@ -1510,7 +1565,7 @@ async function trPoll() {
         trCloudOwnerCheck(C);
         trSentCheck(C, now);
         if (typeof ccyPaint === "function" && !$("set-scrim").hidden) ccyPaint();   // 設定 › 顯示幣別:新的那份信封到了就換上
-        if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; C.ov.curveErr = false; C.ov.perf = null; C.ov.perfErr = false; }   // ui 與 uiErr、curve 與 curveErr 各是一組,一起清
+        if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.picked = null; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; C.ov.curveErr = false; C.ov.perf = null; C.ov.perfErr = false; }   // ui 與 uiErr、curve 與 curveErr 各是一組,一起清
         if (typeof rpCloudPrune === "function") rpCloudPrune(C.list);   // 看著的那支被雲端刪了 / 換了帳號:報告收掉、回自動下單頁
         if (typeof libCloudChanged === "function") libCloudChanged(C.list);   // 策略庫雲端視角的「已安裝」(renderer/library.js):清單多了那支才算下載完成
         if (typeof rpCloudWatch === "function") rpCloudWatch(C.list);   // 開著那支在平台上換了內容(回合結束後才同步到、或網頁發起的回合):補抓
@@ -1578,8 +1633,9 @@ function trSentCheck(C, now) {
     if (trSentSettled(C.notApplied, (rep0.config || {}).amounts, 0, null, ctOk0) === "same") { C.notApplied = null; C.notAppliedCt = null; C.sig.cfg = null; srSay(t("tr.cloud.pendDone")); } }
   if (!C.sent) return;
   const amts = (((C.st || {}).report || {}).config || {}).amounts;
-  // 報告又是真相:picker 的選擇交回 stored——但「取消勾選有錢的 X」只 stage、沒跟著 $0 那趟送出,還在等儲存:對上了也不能丟
-  const done = () => { C.sent = null; if (C.ct) C.ct.sent = null; if (C.save === "sent") C.save = null; C.sig.cfg = null; if (!trPickStaged(C.picked, amts, trPickKeep("cloud", C.picked, amts, (C.list || []).map((x) => x.name))).length) C.picked = null; };
+  /* 報告又是真相:picker 的草稿交回 stored。比的是送出的那一份(不是報告):那一份就是存的時候的草稿,
+     主機沒套用(timeout / 別處改了)時也要放掉,表才會照主機上的值畫;存完之後又勾了別的才留著 */
+  const done = () => { const sent = C.sent; C.sent = null; if (C.ct) C.ct.sent = null; if (C.save === "sent") C.save = null; C.sig.cfg = null; if (!trPickDirty(C.picked, sent, trPickKeep("cloud", C.picked, sent, (C.list || []).map((x) => x.name)))) C.picked = null; };
   if (envCloudKind(C.st) !== "running") { done(); return; }
   const rep = (C.st || {}).report || {}, ctSent = C.ct && C.ct.sent;
   const ctOk = !ctSent || Object.keys(ctSent).every((n) => trCtReported(rep, n, C.list) === ctSent[n]);
@@ -1588,8 +1644,10 @@ function trSentCheck(C, now) {
   // 30 秒到了還不符:改顯示主機上的值,儲存列那一格講「主機還沒套用」;之後報告對上剛存的那份就收掉那一句
   const pinned = C.sent, pinnedCt = ctSent ? Object.assign({}, ctSent) : null;
   done();
-  if (v === "same") srSay(t("tr.cloud.pendDone"));
-  else if (v === "timeout") { C.notApplied = pinned; C.notAppliedCt = pinnedCt; }   // "changed":別處改了,照主機上的值畫,不講主機還沒套用
+  if (v === "same") { srSay(t("tr.cloud.pendDone")); return; }
+  if (v === "timeout") { C.notApplied = pinned; C.notAppliedCt = pinnedCt; }   // "changed":別處改了,照主機上的值畫,不講主機還沒套用
+  // 兩種都不算存成功:ack 那一刻點的燈收回,側欄改照主機回報畫
+  if (C.just) { envJustUndo(C.just, C.sentBefore, pinned); ENV.sig.side = null; }
 }
 
 /* 金額表要的三件事(標的、合約/現貨、是不是投資組合策略)不在 listStrategies 裡,從 loadStrategy 的 stats 與
@@ -1642,10 +1700,13 @@ function trPendKey(bag, now, z) {
    底稿用 trBase()——等回報期間那是送出的那一份,跟金額表、跟儲存列同一個判準(trAmountTable 的 dirty)。 */
 function trAmountsEdited() {
   const base = trBase();
-  return base ? trDirty(trNames(), base, TR.edits) || Object.keys(TR.bad).length > 0 || trPickStaged(TR.picked, base, trPickKeep(TR.env, TR.picked, base, trListNames())).length > 0 : false;
+  return base ? trDirty(trNames(), base, TR.edits) || Object.keys(TR.bad).length > 0 || trPickDirty(TR.picked, base, trPickKeep(TR.env, TR.picked, base, trListNames())) : false;
 }
 /* 金額表的底稿。雲端存完、報告還沒對上時是送出的那一份(S.sent):報告還是舊的,拿它當底會把剛存的那幾格送回舊值 */
 function trBase() { return TR.env === "cloud" && TR.sent ? TR.sent : trStored(); }
+/* 結束 / 關窗前主行程來問(main.js draftGate,executeJavaScript):兩個視角裡有沒有還沒儲存的策略組合變更——勾選草稿、金額、換合約。
+   草稿只在記憶體裡,不另外存(Wei 0.1.26):有就先問一聲再走 */
+function trUnsavedAny() { return Object.keys(TR_BAGS).some((k) => trWith(TR_BAGS[k], () => trAmountsEdited() || trCtDirty(trNames()))); }
 /* 表上列哪些(spec-desktop-strategy-picker §6):已存的 ∪ picker 勾的——picked 是 Set 就照它,null 就是已存的 key。
    不再看 hasBacktest:回測過但沒勾的不進表。這台電腦:已存但清單找不到的名字也列(用內部名畫,要移掉去 picker 取消勾選);
    雲端:清單找不到的走 trHidden(表上不列、原樣帶著送——api 讀不到 ≠ 已刪除)。 */
@@ -1688,6 +1749,25 @@ function trLoadingText() {
   const s = TR.env === "local" && typeof ENG !== "undefined" ? ENG.snap : null;
   if (s && s.phase === "run") return t(s.kind === "first" ? "tr.loadingEngine" : "tr.loadingEngineUpd");
   return t("tr.loading");
+}
+/* 空狀態導引這一刻的判斷(trZGuide 的輸入在這裡湊齊):頁首、部位、總覽三處同一份。zv / pend 沒給就照 trPaintHead 同一條算 */
+// 選擇策略框有沒存的勾選(Z-draft 的輸入):底稿與 keep 同金額表的 dirty(trAmountsEdited)
+function trZDraft() { const base = trBase(); return !!base && trPickDirty(TR.picked, base, trPickKeep(TR.env, TR.picked, base, trListNames())); }
+function trZRows(r) { return TR.listLoaded ? trPickRows(TR.list, [], (r || {}).can_trade_portfolio === true, trVenueId() === PAPER, trTwBroker(trVenueId()), {}) : null; }
+function trZNow(state, zv, pend) {
+  const r = trReport() || {};
+  if (!zv) { zv = trZView(state, r); pend = trAmountsEdited() ? null : trPendKey(TR, Date.now(), zv.off && !zv.noStart); }
+  const zc = trZCase(trReport(), trZRows(r), trZDraft());
+  const wait = !trReport() || !TR.listLoaded || trFirstReadPending(r) || trPickOff() || !!pend;
+  const g = trZGuide({ zc, pure: zv.reason === "tr.startOffNoAmt" && !zv.release && !zv.noStart, dead: state === "dead" && trDeadKind(r) !== "died", pend, wait, tab: TR.view === "tr" ? TR.tab : null });
+  g.zc = zc; return g;
+}
+function trZVars(key) { return key === "tr.startOffNoVenueStrat" ? { venue: trVenueLabel(trVenueId(), true) } : null; }
+// 下單程式在跑、沒有金額(spec §6-2):缺的是策略還是金額分開講;有金額但這家下不了、沒路由的照舊那一句
+function trRunZText(r) {
+  const zc = trZCase(r, trZRows(r), trZDraft());
+  return zc === "draft" ? t("tr.runningZDraft") : zc === "pick" ? t("tr.runningZPick") : zc === "noStrat" ? t("tr.runningZNoStrat") : zc === "noVenue" ? t("tr.runningZNoVenue", { venue: trVenueLabel(trVenueId(), true) })
+    : zc === "amt" ? t("tr.runningZZero") : t("tr.runningZ");
 }
 function trStateText(state) {
   const r = trReport() || {}, rec = r.reconciler || {};
@@ -1732,6 +1812,16 @@ function trStateText(state) {
   // 失敗而且下單程式沒在跑:整句換成帶出口的那一句(到「設定」),不把三個狀態串成一串(設計稽核 desktop-10-08 #7)
   if (trFailStopped(state, r)) return t("cx.failStopped");
   return trFailedIds(r).length || trKeyBad(TR.env) ? cxFailWord(TR.env) + " · " + s : s;
+}
+/* 標題下那一行 = trStateText 再換兩處(spec-autotrade-empty;trStateText 本身照舊,其餘各態不受影響):
+   ① 下單程式在跑、沒有金額:「還沒有策略設定金額」換成缺的那一步(§6-2);
+   ② 純 Z 還沒啟動:「尚未啟動下單(· 上次執行)」不寫,缺哪一步那句搬到這一行;霧開著或等回報時空著(v2 §2)。
+   只認 dead 分支自己那句(異常停止、統一開機中、串接失敗停著、過場、常駐程式不在跑都是別的字,照舊) */
+function trHeadText(state, zg) {
+  const s = trStateText(state), r = trReport() || {}, rz = t("tr.runningZ"), ns = t("tr.notStarted");
+  if (s.length >= rz.length && s.slice(s.length - rz.length) === rz) return s.slice(0, s.length - rz.length) + trRunZText(r);
+  if (state === "dead" && zg && zg.status !== null && (s === ns || s.indexOf(ns + " · ") === 0)) return zg.status ? t(zg.status, trZVars(zg.status)) : "";
+  return s;
 }
 /* 讀帳失敗 + 下單程式沒在跑(停著、或 HALT 但對帳器不在):統一登入失敗停掉就是這一型。HALT 中對帳器還活著的不算(它在跑) */
 function trFailStopped(state, r) { return (trFailedIds(r).length > 0 || trKeyBad(TR.env)) && (state === "dead" || (state === "halted" && !trRecRunning(TR.st))); }
@@ -1899,7 +1989,7 @@ async function trRun(want, steps, cmd) {
 
 function trPaintHead() {
   // state = 文字與鈕字用的(雲端讀不到新狀態時 = 上一份回報自己說的,見 envHeadState);綠點另外看保守的 trExecState
-  const state = envHeadState(TR.st, Date.now()), text = trStateText(state), ro = TR.env === "cloud";
+  const state = envHeadState(TR.st, Date.now()), text = trHeadText(state, trZNow(state)), ro = TR.env === "cloud";
   const kind = ro ? envCloudKind(TR.st) : null, stopped = kind === "stopped";
   // 綠點只留切換器那一顆(設計 v4 §6):這一行不再畫點,它是這頁狀態的文字載體
   // 標題列狀態行。雲端讀不到新狀態時,後面接「最後更新」(保留上一次的數字,但要講它不是現況)
@@ -1935,7 +2025,7 @@ function trPaintHead() {
      這兩種以前沒有 .wrap,現在靠 trNoAmounts 一起接住 */
   desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown") || died || failStop || state === "halted" || state === "unconfirmed" || trNoAmounts(trReport()) || (state === "noaccount" && trNoAccountStopped(trReport())));   // 帶出口 / 原因行的句子不截(已暫停的原因行常駐,不可以被省略號吃掉)
   // 狀態變了講一次(輪詢每幾秒重畫,不能每次都講)
-  if (TR.lastSaid !== null && TR.lastSaid !== text && TR.open && TR.view !== "po" && state !== "loading") srSay(text);
+  if (TR.lastSaid !== null && TR.lastSaid !== text && text && TR.open && TR.view !== "po" && state !== "loading") srSay(text);
   TR.lastSaid = text;
   /* 雲端連續讀不到:同樣寫在全頁唯一的紅字槽(讀得到了就自己收掉)。
      **這一格現在也裝指令的失敗**(§1.4 那五種話),所以這裡只准動自己那一則:
@@ -2030,9 +2120,13 @@ function trPaintHead() {
   b.setAttribute("aria-disabled", locked ? "true" : "false"); b.classList.toggle("is-busy", busy);
   trPaintGoStop(trStartPending(TR.pending));
   // 沒有策略設金額(§8):啟動下單停用、原因行常駐(aria-describedby 指過去);暫停中另給「解除暫停」
-  trPaintNoAmt(pend || zv.reason, zv.book ? { n: trBookQty(zv.book) } : null); trPaintGoRel(zv.release, zv.noStart, zv.close);
-  trPaintGoCfg(!pend && zv.reason === "tr.startOffNoAmt" && !zv.release && !zv.noStart);
-  if (zv.off || zv.book) b.setAttribute("aria-describedby", "tr-noamt");   // 帳本非空那句講的是按下去會發生什麼,讀屏也要聽到
+  // 空狀態導引(spec-autotrade-empty):純 Z 時原因行、頁首鈕字與停用鈕的說明跟著缺的那一步換;其餘照 zv
+  const zg = trZNow(state, zv, pend);
+  if (zg.reason !== undefined) trPaintNoAmt(zg.reason, trZVars(zg.reason));
+  else trPaintNoAmt(pend || zv.reason, zv.book ? { n: trBookQty(zv.book) } : null);
+  trPaintGoRel(zv.release, zv.noStart, zv.close);
+  trPaintGoCfg(zg.btn, zg.fill, zg.zc);
+  if (zv.off || zv.book) b.setAttribute("aria-describedby", zg.desc);   // 帳本非空那句講的是按下去會發生什麼,讀屏也要聽到
   if (trStartPending(TR.pending)) b.setAttribute("aria-describedby", "tr-go-hint");
   // 狀態不明時鈕照給、而且不看狀態檔裡的 listener 旗標(那份檔就是不能信的那個):暫停是安全方向
   const usable = state === "unknown" ? !!(TR.st && TR.st.alive) : up;
@@ -2062,14 +2156,31 @@ function trPaintGoRel(on, solid, close) {
   u.disabled = off; u.classList.toggle("is-busy", rel);
   if (!off && TR.relParked) { TR.relParked = false; const ae = document.activeElement; if (!ae || ae === document.body || ae === $("tr-h")) u.focus(); }
 }
-/* 備案 B(post-connect-flow;設計稽核 review-post-connect-b 必改 1):純 Z(沒有能下的金額、沒有「解除暫停」)時,動作列多一顆描邊「到策略組合」,
-   放在停用的「啟動下單」左邊——同 Z＋暫停時「解除暫停」的排法;原因行只留一句話,頁首高度不跳(#108) */
-function trPaintGoCfg(on) {
+/* 備案 B(post-connect-flow;設計稽核 review-post-connect-b 必改 1):純 Z(沒有能下的金額、沒有「解除暫停」)時,動作列多一顆鈕,
+   放在停用的「啟動下單」左邊——同 Z＋暫停時「解除暫停」的排法;原因行只留一句話,頁首高度不跳(#108)。
+   spec-autotrade-empty v3:缺的是哪一步(zc)就寫那件事、按了直接做,而且實心(它是畫面上唯一能按的鈕);
+   沒路由、這家下不了(zc = null)照舊描邊「到策略組合」。部位上霧時由 trZGuide 收掉(卡上那顆是唯一的鈕) */
+function trPaintGoCfg(key, fill, zc) {
   let u = $("tr-go-cfg");
-  if (!on) { if (u) { if (document.activeElement === u) $("tr-h").focus(); u.remove(); } return; }
-  if (!u) { u = trEl("button", "btn-out", t("po.goCfg")); u.type = "button"; u.id = "tr-go-cfg"; u.addEventListener("click", () => poOpen("cfg", true)); $("tr-act").insertBefore(u, $("tr-go")); }
-  if (u.textContent !== t("po.goCfg")) u.textContent = t("po.goCfg");
+  TR.zBridge = !!key;
+  if (!key) { if (u) { if (document.activeElement === u) $("tr-h").focus(); u.remove(); } return; }
+  if (!u) { u = trEl("button", "btn-out", ""); u.type = "button"; u.id = "tr-go-cfg"; u.addEventListener("click", () => trZGo(u.dataset.go, u)); $("tr-act").insertBefore(u, $("tr-go")); }
+  u.dataset.go = zc || "cfg"; u.dataset.fk = "go-" + u.dataset.go;
+  u.classList.toggle("btn-fill", !!fill); u.classList.toggle("btn-out", !fill);
+  if (u.textContent !== t(key)) u.textContent = t(key);
 }
+/* 頁首鈕與部位霧卡上的鈕按下去(spec §4):選擇策略 = 到配置頁、開選擇策略框(opener 是配置頁的 #tr-pick,確定後焦點落在第一個金額格);
+   設定金額 = 到配置頁、焦點在第一個金額格;新增策略 = 側欄＋同一個新增策略框 */
+async function trZGo(kind, from) {
+  if (kind === "noStrat" || kind === "noVenue") { if (typeof nsOpen === "function") nsOpen(from); return; }
+  if (kind !== "pick" && kind !== "amt" && kind !== "draft") { poOpen("cfg", true); return; }
+  await poOpen("cfg");
+  if (TR.view !== "po") return;
+  if (kind === "amt" || kind === "draft") { trFocusFirstAmt(); return; }
+  const b = $("tr-pick");
+  if (b && b.isConnected && !b.disabled) { psToAmt = true; psOpen(b); if ($("ps-scrim").hidden) psToAmt = false; } else $("po-h").focus();
+}
+function trFocusFirstAmt() { const i = $("po-cfg").querySelector(".amt-in:not(:disabled)"); if (i && i.offsetParent) i.focus(); else psRefocus(); }
 /* 鈕旁的原因行(Z 時常駐,--ink-3 12px,在狀態行下面自己一行)。句子裡的「部位」做成連結,點了切到部位分頁。
    **節點常駐、只換內容**(e2e 0.1.8 #108):原本沒有原因就把節點拿掉,連續操作時頁首高度一下多 22px 一下少 22px,
    分頁列跟著跳、容易點錯。沒有原因時清空內容,高度由 CSS 的 min-height 佔著 */
@@ -2102,7 +2213,7 @@ function trPaintNoAmt(key, vars) {
   // 備案 B:Z 時出口是動作列的「到策略組合」(trPaintGoCfg),原因行只留一句話。有金額、但這家都下不了(加密策略、改綁統一)講成「還沒有{venue}能下的策略金額」
   if (key === "tr.startOffNoAmt") {
     const rr = trReport() || {}, a = (rr.config || {}).amounts || {}, any = Object.keys(a).some((k) => Number(a[k]) > 0);
-    line.append(trUnrouted(rr).length ? t("tr.startOffNoRoute") : any ? t("tr.startOffNoVenueAmt", { venue: trVenueLabel(trVenueId(), true) }) : t("tr.startOffNoAmtShort"));
+    line.append(trUnrouted(rr).length ? t("tr.startOffNoRoute") : any ? t("tr.startOffNoVenueAmt", { venue: trVenueLabel(trVenueId(), true) }) : t("tr.cfgNull"));   // 沒有金額、讀得到設定的那幾格由 trZGuide 換成缺哪一步;剩下的是設定讀不到
   } else if (at < 0) line.append(text);
   else {
     const a = trEl("button", "btn-quiet tr-noamt-link", text.slice(at, at + word.length)); a.type = "button"; a.addEventListener("click", () => poOpen("cfg", true));
@@ -2368,6 +2479,7 @@ function trSetTab(tab, focus) {
     if (on && focus) b.focus();
   });
   TR_TABS.forEach((k) => { $("tr-" + k).hidden = k !== tab; });
+  trPaintHead();   // 部位上霧時頁首那顆導引鈕收起、狀態行空著(spec-autotrade-empty §3):頁首跟著分頁換
   trPaintTab();
 }
 function trPaint() {
@@ -2456,7 +2568,7 @@ function trPaintOnboard(state) {
 function poPaintCfg() {
   const box = $("po-cfg"), r = trReport() || {};
   if (TR.view !== "po" || box.hidden) return;
-  const names = trNames(), stored = trBase(), states = r.states || {};
+  const names = trNames(), stored = trBase(), states = poCfgStates(r);
   // 灰字的時間戳滿 24 小時才帶日期:dead 時快照凍住、app 一直開著,沒有別的資料會變——每一筆失敗的時間戳本身進簽章,跨過那一刻才會重畫
   const now = Date.now(), stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
   const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.self_ledger, r.order_errors, stamps, trExecState(TR.st), envHeadState(TR.st, now), !!TR.sent, !!TR.notApplied, !!(TR.st && TR.st.alive),
@@ -2475,8 +2587,8 @@ function poPaintCfg() {
     // 主機讀不到設定檔:金額不畫(畫 0 是假話)、不給存,下一份報告讀到就自己恢復
     box.appendChild(trSec(trTipLabel("label", t("po.secAmounts"), t("tr.zeroMeansOff")), trPickBtn()));
     box.appendChild(trEl("div", "pf-state", t("tr.cfgNull")));
-  } else if (!names.length && !trPickStaged(TR.picked, stored, trPickKeep(TR.env, TR.picked, stored, trListNames())).length && !Object.keys(TR.bad).length) {
-    // 一支都沒選(或連可選的都沒有):Setup fog(canon › Components › Setup fog);有錢的策略剛被取消勾選、等著儲存時不上霧(儲存列是唯一的出口)
+  } else if (!names.length && !trPickDirty(TR.picked, stored, trPickKeep(TR.env, TR.picked, stored, trListNames())) && !Object.keys(TR.bad).length) {
+    // 一支都沒選(或連可選的都沒有):Setup fog(canon › Components › Setup fog);草稿把策略都取消勾選、等著儲存時不上霧(儲存列是唯一的出口)
     box.appendChild(poFog("pick"));
   } else {
     box.appendChild(trAmountTable(names, stored, states));
@@ -2484,17 +2596,28 @@ function poPaintCfg() {
   }
   trPosFocusBack(box, refocus, $("po-h"));
 }
+/* 策略組合 › 配置才用:投資組合還沒有實盤權重時,畫機器回報的回測最後一期(r.previews,機器端 portfolio_reporter.typec_previews)並標成預覽。
+   自動下單 › 部位不用:對帳器只照實盤的 state.json 下單,拿預覽算差額會畫出一筆不會發生的單 */
+function poCfgStates(r) {
+  const out = Object.assign({}, r.states || {}), pv = r.previews;
+  if (pv && typeof pv === "object") Object.keys(pv).forEach((n) => { const p = pv[n], cur = out[n];
+    if (cur && cur.weights && typeof cur.weights === "object") return;
+    if (p && p.weights && typeof p.weights === "object" && !Array.isArray(p.weights)) out[n] = Object.assign({}, p, { preview: true }); });
+  return out;
+}
 /* ── 自動下單 › 部位:唯讀的策略組合配置對照帳上(設計 autotrade-bridge-mockup A 案;同網頁 buildPositionsSection → buildSigTargets("trade"))──
    讀機器回報的已存配置(不是策略組合頁上未儲存的修改):按下啟動會照的就是這一份 */
 function trPaintPos() {
-  const box = $("tr-pos"), r = trReport() || {}, now = Date.now();
+  const box = $("tr-pos"), r = trReport() || {}, now = Date.now(), fog = trZNow(envHeadState(TR.st, now)).fog;
   const stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
   const data = [TR.env, TR.list, r.account, r.last_reconcile, r.self_ledger, r.config, r.states, r.order_errors, stamps, r.quote_ccy, r.signals_frozen, r.can_trade_portfolio,
-    trEquity(), trUnit(), trTxfPrice(), trFxView(), trExecState(TR.st), envHeadState(TR.st, now), TR.startAt || 0, !!TR.noAmtLink, TR_TWN.v];
+    trEquity(), trUnit(), trTxfPrice(), trFxView(), trExecState(TR.st), envHeadState(TR.st, now), TR.startAt || 0, !!TR.noAmtLink, !!TR.zBridge, fog, TR_TWN.v];
   if (!trShould("pos", box, data)) return;
   const refocus = trPosFocusOf(box);
   box.textContent = "";
-  box.appendChild(poSigTable(r, trStored() || {}, r.states || {}, "trade"));
+  // 還沒選策略(或沒有能勾的):部位是唯一真的空著的一格,上霧＋卡(spec-autotrade-empty §4);選了、金額 0 照畫表
+  if (fog) box.appendChild(poFog(fog === "pick" ? "pos-pick" : fog === "draft" ? "pos-draft" : "pos-new"));
+  else box.appendChild(poSigTable(r, trStored() || {}, r.states || {}, "trade"));
   trPosFocusBack(box, refocus, $("tr-tab-pos"));
 }
 /* 「選擇策略」現在開不開得了(picker §2):儲存生命週期中不開(存好了還在等主機回報對上時,底稿是上一份回報,
@@ -2738,8 +2861,8 @@ function trAmountTable(names, stored, states) {
     bar.textContent = ""; bar.hidden = false;
     if (TR.save === "saving") { bar.appendChild(trEl("span", "txt", t("tr.saving"))); return; }
     if (TR.save === "saved") { const ok = trEl("span", "txt ok", t("tr.saved")); ok.setAttribute("role", "status"); bar.appendChild(ok); return; }
-    // dirty 含「有錢的策略被取消勾選還沒送出」(picker §6):那列已經從表上消失,儲存列是它唯一的出口;換了合約也算
-    const dirty = trDirty(names, stored, TR.edits) || anyBad() || trPickStaged(TR.picked, stored, hidden).length > 0 || trCtDirty(names);
+    // dirty 含 picker 的草稿(0.1.26:新勾的、被取消勾選的,金額 0 也算):被取消勾選的那列已經從表上消失,儲存列是它唯一的出口;換了合約也算
+    const dirty = trDirty(names, stored, TR.edits) || anyBad() || trPickDirty(TR.picked, stored, hidden) || trCtDirty(names);
     const routeDirty = !dirty && !sentOn && trRouteDirty(trReport());   // 路由跟現在綁的那家不同:沒改金額也要能存一次
     // 雲端存完、還沒對上、而且沒再改:只有一句等回報的話,沒有鈕(不出「已儲存 ✓」:這台電腦沒有套用任何東西)
     if (sentOn && !dirty && TR.save !== "failed") { bar.appendChild(trEl("span", "txt", t("tr.cloud.pendAmounts"))); return; }
@@ -2756,7 +2879,7 @@ function trAmountTable(names, stored, states) {
     if (TR.save === "failed") bar.appendChild(trEl("span", "txt err", TR.saveErr || t("tr.cmdFailed")));
     else { bar.hidden = !dirty && !routeDirty; bar.appendChild(trEl("span", "txt", cfgBad ? (cloud ? t("tr.cloud.cfgUnread") : t("tr.cfgUnreadLocal")) : stale ? t("tr.cloud.saveStale") : routeDirty ? t("tr.routeSave") : "")); }   // 有改動時只放兩顆鈕(同網頁):「尚未儲存」那句退場
     const rv = trEl("button", "pf-cancel", t("tr.revert")); rv.type = "button"; rv.dataset.fk = "revert";
-    // 還原 = 回到底稿(雲端存完還沒對上時是送出的那一份);picker 的選擇一起放掉(被 staged 移除的列帶原金額回來);內容變了,request_id 也跟著換(S4 §4)
+    // 還原 = 回到底稿(雲端存完還沒對上時是送出的那一份);picker 的草稿一起放掉(新勾的列消失、被取消勾選的列帶原金額回來);內容變了,request_id 也跟著換(S4 §4)
     rv.addEventListener("click", () => { TR.edits = {}; TR.bad = {}; TR.raw = {}; TR.picked = null; TR.ct.edits = {}; TR.ct.basis = {}; delete TR.reqIds.amounts; TR.saveUnknownAt = 0; TR.save = TR.sent && cloud ? "sent" : null; TR.saveErr = null; TR.sig.cfg = null; poPaintCfg(); $("po-h").focus(); });
     const sv = trEl("button", "btn-fill", t("tr.save")); sv.type = "button"; sv.dataset.fk = "save";
     sv.disabled = anyBad() || stale || cfgBad; svBtn = sv;   // 有一格看不懂就不給存:確認框列的必須是用戶打的那個數
@@ -2804,13 +2927,15 @@ function trAmountTable(names, stored, states) {
       // 台指期列:這一格是口數;標的欄寫商品名(微台／小台／大台,同網頁)。換了合約(待存)就照新的那一個
       const txf = isC ? null : trRowTxfNew(n), ctOn = !isC && trCtGate(n);
       if (txf) trTxfWant();   // 口數列的參考金額要報價:統一與模擬交易在這台電腦也下台指期
-      // 投資組合(§8):標的寫持有檔數(權重 0 的候選不算);還沒算過權重寫「—」並說下次執行後才有。上表不列成分(下表一檔一列)
-      const symText = isC ? (tc ? t("tr.nSyms", { n: tc.n }) : "—") : txf ? t(txf.prod) : sym || "—", symTip = isC && !tc ? t("tr.typecPending") : "";
+      // 投資組合(§8):標的列成分代號(trTypeCLabel);還沒算過權重寫「—」並說下次執行後才有。持有多少看下表(一檔一列)
+      const tcl = isC && tc ? trTypeCLabel(tc, t) : null;
+      const symText = isC ? (tcl ? tcl.text : "—") : txf ? t(txf.prod) : sym || "—";
+      const symTip = isC && !tc ? t("tr.typecPending") : tcl ? tcl.tip : "";
       const row = document.createElement("tr");
       const first = trEl("td", "key");
       first.appendChild(trStratName(n));
       // 市場標籤:剛選進、還沒回報、清單也沒寫市場的不猜(不先標「合約」)
-      if (isC || market) first.appendChild(trEl("span", "mkt-tag", isC ? t("po.mktPortfolio") : market === "spot" ? t("tr.mkt.spot") : t("tr.mkt.swap")));
+      if (isC || market) first.appendChild(trEl("span", "mkt-tag", isC ? t("po.mktPortfolio") : t(trMktKey(sym, market === "spot", !!txf))));
       // 標的格:台指期列可以換合約(安靜觸發器,canon › Dropdown menu);換倉中掛小標。窄欄時同一份在策略名下那行
       const symInto = (host) => {
         if (ctOn) host.appendChild(ctTrigger("cfg", n, trCt(n), (root) => trCtPick(n, root), trCtLotsFor(n)));
@@ -2834,7 +2959,7 @@ function trAmountTable(names, stored, states) {
       const symTd = symInto(trEl("td", (txf ? "sname" : "sym") + " c-sym")); if (symTip) symTd.title = symTip;   // 商品名是漢字:不進等寬
       row.appendChild(symTd);
       const c = trEl("td", "n"), wrap = trEl("span", "amt-inw"), inp = trEl("input", "amt-in");
-      inp.type = "text"; inp.inputMode = txf ? "numeric" : "decimal";
+      inp.type = "text"; inp.inputMode = txf ? "numeric" : "decimal"; inp.dataset.amt = n;   // 選擇策略確定後的焦點靠它找到新列(psApply)
       // 送出中:本機照舊 disabled;雲端用唯讀(ack 最長約 20 秒,disabled 會把焦點丟到 BODY)
       if (cloud) { inp.disabled = locked; inp.readOnly = TR.save === "saving"; } else inp.disabled = locked || TR.save === "saving";
       inp.setAttribute("aria-label", trDisplay(n) + " — " + (txf ? t("tr.lotsAria") : zoneOf[n] !== TR_ZONE_UNKNOWN ? t("tr.amountAria", { ccy: zoneOf[n] }) : t("tr.col.amount")));
@@ -3029,13 +3154,14 @@ function trSaveAmounts(names, stored, opener, o) {
         dd.appendChild(trEl("span", "tag", mayFire && was > 0 && trStratHeld(n) !== false ? t("tr.cfTagRemove") + " · " + t("tr.cfTagClose") : t("tr.cfTagRemove")));
         return cfRow("", trDisplay(n), dd);
       }
-      const now = Number(sending[n]) || 0;
+      const now = Number(sending[n]) || 0, joining = !(n in stored);   // picker 草稿新勾的(0.1.26 起跟著儲存一起寫):金額 0 也不是「沒變」
       if (was > 0 && now !== was) arrow(dd, trFmt(was));
       dd.append(trEl("span", "n", trFmt(now)));
+      if (joining) dd.appendChild(trEl("span", "tag", t("tr.cfTagAdd")));
       const close = trCloseTag(was, now, mayFire, trStratHeld(n)); if (close) dd.appendChild(trEl("span", "tag", close));
       const ctClose = trCtCloseTag(n, sending, stored); if (ctClose) dd.appendChild(trEl("span", "tag", ctClose));
       if (sp) dd.appendChild(lotsRef(sp, now, swapped ? TR_TXF_SPECS[from] : null));
-      return cfRow(now === was && !swapped ? "same" : "", trDisplay(n), dd);
+      return cfRow(now === was && !swapped && !joining ? "same" : "", trDisplay(n), dd);
     };
     zones.forEach((z) => {
       const ns = keys.filter((n) => trZoneOf(n) === z);
@@ -3091,7 +3217,7 @@ function trSaveAmounts(names, stored, opener, o) {
       // 雲端存完、報告還沒對上:換合約的存檔一律擋(底稿那一份還沒被主機確認,換算基準不可信;稽核 P0-1)
       if (ctAll && trWith(S, trCtPend)) { S.save = "failed"; S.saveErr = t("ct.waitReport"); repaint(); return; }
       S.save = "saving"; S.saveErr = null; repaint();
-      // 這一版沒有「下單方式」欄(一律市價),所以只送 amounts(+ 換了合約時的 contracts),不送 execution。
+      // 只送 amounts(+ 換了合約時的 contracts);下單方式是設定分頁的另一個指令(trExecSend)。
       // 雲端走 trSend:單飛 + request_id 沿用(沒送到 / 結果不明之後同一份內容重按 = 同一顆);本機照舊直送
       const steps = trCtSteps(sending, stored, ctAll, (n) => trWith(S, () => trCtStored(n)));
       // 「存之前的值」在送出前記(ack 回來時手上的回報可能已經是第一步的中間值);分兩步時第一步的值也算「還沒套用完」(同網頁稽核 r5 P1-A)
@@ -3238,9 +3364,9 @@ function poSigTable(r, stored, states, mode) {
   const hs = envHeadState(TR.st, Date.now()), running = hs === "running" || hs === "unconfirmed";
   const det = recon ? trPosDetail(r) : {}, detRows = [];   // 持倉細節(均價、未實現、保證金、槓桿):帳上不是 0 的列底下一行小字
   if (trade) {
-    // 區段標題「策略組合」+ 右上「到策略組合修改」:只有頁首原因行**實際畫出**連結時才藏(trPaintNoAmt 記的 TR.noAmtLink)——一個畫面一條橋
+    // 區段標題「策略組合」+ 右上「到策略組合修改」:頁首原因行**實際畫出**連結(TR.noAmtLink)或動作列有導引鈕(TR.zBridge)時藏——一個畫面一條橋
     const sec = trSec(trEl("span", "label", t("po.nav")));
-    if (!TR.noAmtLink) { const acts = trEl("div", "pf-acts"), lk = trEl("button", "btn-quiet po-bridge", t("po.bridgeEdit")); lk.type = "button"; lk.dataset.fk = "po-bridge"; lk.addEventListener("click", () => poOpen("cfg", true)); acts.appendChild(lk); sec.appendChild(acts); }
+    if (!TR.noAmtLink && !TR.zBridge) { const acts = trEl("div", "pf-acts"), lk = trEl("button", "btn-quiet po-bridge", t("po.bridgeEdit")); lk.type = "button"; lk.dataset.fk = "po-bridge"; lk.addEventListener("click", () => poOpen("cfg", true)); acts.appendChild(lk); sec.appendChild(acts); }
     frag.appendChild(sec);
   } else frag.appendChild(trSec(trTipLabel("label", t("po.sigTargets"), t("po.sigTargetsTip"))));
   const qmap = trQuoteMap() || {};
@@ -3260,7 +3386,7 @@ function poSigTable(r, stored, states, mode) {
     const tw = sp ? null : trTwNameEl(sym); if (tw) c.appendChild(tw);
     // 這個標的只有剛選進、還沒回報、清單也沒寫市場的策略:不猜「合約」
     const guess = !/@spot$/.test(sym) && (namesOf[sym] || []).length > 0 && namesOf[sym].every((n) => st2[n] && st2[n].notYet === true && !st2[n].market);
-    if (!guess) c.appendChild(trEl("span", "mkt-tag", /@spot$/.test(sym) ? t("tr.mkt.spot") : t("tr.mkt.swap"))); return c; };
+    if (!guess) c.appendChild(trEl("span", "mkt-tag", t(trMktKey(sym, false, !!sp)))); return c; };
   const dash = (tip) => { const c = trEl("td", "n na", "—"); if (tip) c.title = t("po.notTradedTip", { venue: venueName }); return c; };
   const pending = new Set(), rowOf = {};
   zones.forEach((z) => {
@@ -3343,7 +3469,14 @@ function poSigTable(r, stored, states, mode) {
     tb.appendChild(row); rowOf[sym] = row;   // 拒單接在細節行底下(列 → 細節 → 拒單,同網頁)
   }
   scroll.appendChild(tbl); frag.appendChild(scroll);
-  if (!trade) return frag;
+  if (!trade) {
+    // 預覽標上它是哪一天的:機器端照市場換好的交易日 bar_date(台股、台指期 UTC+8,其餘 UTC),外殼不自己換算;幾支日期不同時寫最舊的那天
+    const pvs = Object.keys(stored).map((n) => st2[n]).filter((x) => x && x.preview === true);
+    const pvDates = pvs.map((x) => x.bar_date).filter((x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+    const pvDate = pvDates.length ? pvDates[0].split("-").slice(1).map(Number).join("/") : "—";   // 沒有日期也照樣標成預覽
+    if (pvs.length) frag.appendChild(trEl("div", "pf-foot", t("po.previewNote", { date: pvDate })));
+    return frag;
+  }
   /* 表底合計列:左邊未實現與保證金的合計(有細節的列全部都有才加,缺一列的和是低估),右邊「合計 ≈ X · 淨值 N×」(跟金額表、啟動框同一個格式 trPlanTotal) */
   const foot = trEl("div", "pf-total po-foot"); let footN = 0;
   const oneCcy = detRows.every((x) => x.ccy === (detRows[0] || {}).ccy);   // 台幣(口數列)與帳戶幣不相加
@@ -3515,7 +3648,7 @@ function trPaintHist() {
     row.appendChild(act);
     const sym = String(o.symbol || ""), ss = trEl("span", "");
     if (!(trOrderLots(o) && trTxfSymInto(ss, trOrderContract(o)))) { ss.className = "mono"; ss.textContent = sym.replace(/@spot$/, ""); const tw = trTwNameEl(sym); if (tw) ss.appendChild(tw); }
-    ss.appendChild(trEl("span", "mkt-tag", /@spot$/.test(sym) ? t("tr.mkt.spot") : t("tr.mkt.swap")));
+    ss.appendChild(trEl("span", "mkt-tag", t(trMktKey(sym, false, !!o.asset_spec && o.asset_spec.type === "futures_contracts"))));
     row.appendChild(ss);
     // 金額 = 交易所實際成交(Σ 數量×成交價);任一腿缺成交資料就整筆退回委託目標(部分和比意圖值更誤導)
     const legs = Array.isArray(o.legs) ? o.legs : [];
@@ -3559,7 +3692,7 @@ function trPaintSet() {
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;
-  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), !ro && id === "president" && [presWip(r), trPresStopped(r, id)]])) return;
+  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), trExecStored(r), TR.exec, !!TR.sending.execution, !ro && id === "president" && [presWip(r), trPresStopped(r, id)]])) return;
   const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
@@ -3626,14 +3759,108 @@ function trPaintSet() {
   if (TR.cx.err) box.appendChild(errLine(TR.cx.err));
   // 解除綁定的後果只在確認框講(同畫面不講兩次);模擬帳戶那句是「之後可以改綁真實交易所」、雲端那句是唯讀視角的說明,照留
   if (id === PAPER || ro) box.appendChild(trEl("div", "pf-foot", id === PAPER ? t("tr.unbindDescPaper") : t("tr.cloud.unbindDesc")));
-  // 規格 §6:網頁限定的事各自在自己的位置講一行(一句事實 + 一顆「前往工作頁」),不集中成整頁級的免責聲明。
-  // 寫法紅線:講「這件事在網頁的雲端工作頁做」,不講「app 做不到」
-  if (ro) {
-    const p = trEl("div", "pf-foot"), go = trEl("button", "btn-quiet", t("plan.openWs")); go.type = "button";
-    go.addEventListener("click", () => window.blave.openExternal(planWebUrl()));
-    p.append(t("tr.cloud.onlyWebExec") + " ", go); box.appendChild(p);
-  }
+  trExecSection(box, r, id);
   const back = hadFocus && $(hadFocus); if (back && !back.disabled) back.focus(); else if (hadFocus) $("tr-tab-set").focus();
+}
+/* ── 設定 › 下單方式:整個組合一種(0.1.26;機器端 runtime/exec_style.py)───────────────
+   對帳器把每個標的各策略的部位加總後只下一筆,所以下單方式是組合層級的一個設定,不分策略。
+   選單三項:市價 / TWAP / 限價追價。TWAP 多一格時長(整數分鐘 1–1440 = runtime _exec_spec_strict 的範圍;範圍外不送、講一行),
+   片數由機器依金額與交易所最小單量算,不是設定。追價沒有參數(機器端 45 秒追不到轉市價)。
+   自訂(custom)只能跟 agent 說:是現值時列成選項,改選別的 = 放棄自訂。
+   改了立即送(同網頁),送出帶兩份:execution_default(runtime 1.1.127 起)+ 展開到每支成員的舊 map(更舊的 runtime 只認它)。
+   現值讀報告的 execution_effective(runtime 依同一條遷移規則算好的);沒有這欄 = 舊 runtime,讀 config.execution_default。
+   台灣期貨券商(統一、群益)的下單程式不經這一層、只下市價單:選單停用、固定顯示市價,下面一行講為什麼。 */
+const TR_TWAP_DEFAULT_MIN = 15;   // = 網頁 TWAP_MINS 唯一的固定選項
+function trExecKey(spec) {
+  if (!spec || typeof spec !== "object") return "market";
+  if (spec.type === "twap") { const n = Math.round(Number(spec.duration_min)); return Number.isFinite(n) && n >= 1 ? "twap:" + Math.min(n, 1440) : "market"; }
+  if (spec.type === "chase") return "chase";
+  if (spec.type === "custom" && typeof spec.module === "string" && /^[a-z0-9_]{1,64}$/.test(spec.module)) return "custom:" + spec.module;
+  return "market";
+}
+function trExecSpec(key) {
+  if (key.indexOf("twap:") === 0) return { type: "twap", duration_min: parseInt(key.slice(5), 10) };
+  if (key === "chase") return { type: "chase" };
+  if (key.indexOf("custom:") === 0) return { type: "custom", module: key.slice(7) };
+  return { type: "market" };
+}
+function trExecArgs(key, amounts) {
+  const spec = trExecSpec(key), map = {};
+  if (spec.type !== "market") Object.keys(amounts && typeof amounts === "object" ? amounts : {}).forEach((n) => { map[n] = Object.assign({}, spec); });
+  return { execution_default: spec, execution: map };
+}
+function trExecMinutes(text) {
+  const v = String(text == null ? "" : text).trim();
+  if (!/^\d{1,4}$/.test(v)) return null;
+  const n = parseInt(v, 10); return n >= 1 && n <= 1440 ? n : null;
+}
+// null = 設定檔讀不到(不給改)
+function trExecStored(r) {
+  if (!r || r.config === null) return null;
+  return trExecKey("execution_effective" in r ? r.execution_effective : (r.config || {}).execution_default);
+}
+function trExecSection(box, r, id) {
+  const S = TR, stored = trExecStored(r);
+  box.appendChild(trSec(trEl("span", "label", t("tr.exec"))));
+  if (stored === null) { box.appendChild(trEl("div", "pf-foot", t("tr.exec.unread"))); return; }
+  if (S.exec.edit != null && S.exec.edit === stored) S.exec.edit = null;   // 報告對上了
+  const tw = trTwBroker(id), cur = tw ? "market" : S.exec.edit != null ? S.exec.edit : stored;
+  const isTwap = cur.indexOf("twap:") === 0, busy = !!S.sending.execution;
+  const row = trEl("div", "tr-exec"), w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "tr-exec-sel";
+  sel.setAttribute("aria-label", t("tr.exec"));
+  const opts = ["market", "twap", "chase"].concat(cur.indexOf("custom:") === 0 ? [cur] : [], tw ? [] : ["custom-ask"]);   // 統一／群益不列入口(同網頁)
+  opts.forEach((k) => { const o = trEl("option", "", k === "market" ? t("tr.exec.market") : k === "twap" ? t("tr.exec.twap") : k === "chase" ? t("tr.exec.chase")
+    : k === "custom-ask" ? t("tr.exec.customAsk") : t("tr.exec.custom", { module: k.slice(7) })); o.value = k; sel.appendChild(o); });
+  sel.value = isTwap ? "twap" : cur; sel.disabled = tw || busy;
+  w.appendChild(sel); row.appendChild(w);
+  let min = null;
+  if (isTwap) {
+    min = trEl("input", "f-input txt"); min.id = "tr-exec-min"; min.type = "text"; min.inputMode = "numeric"; min.maxLength = 4;
+    min.setAttribute("aria-label", t("tr.exec.minLabel"));
+    min.value = S.exec.raw != null ? S.exec.raw : cur.slice(5); min.disabled = busy;
+    if (S.exec.raw != null && S.exec.err) { min.setAttribute("aria-invalid", "true"); min.setAttribute("aria-describedby", "tr-exec-err"); }
+    row.append(min, trEl("span", "u", t("tr.exec.minUnit")));
+    min.addEventListener("change", () => {
+      const n = trExecMinutes(min.value);
+      if (n == null) { S.exec.raw = min.value; S.exec.err = t("tr.exec.badMin"); S.sig.set = null; trPaintSet(); srSay(S.exec.err); return; }
+      trExecSend("twap:" + n);
+    });
+  }
+  sel.addEventListener("change", () => {
+    // 「自訂——跟 agent 說」是入口不是狀態(同網頁 chatAskCustomExec):不改設定,選單彈回原值,帶一句話進聊天框
+    if (sel.value === "custom-ask") { sel.value = isTwap ? "twap" : cur; trExecAskCustom(); return; }
+    if (sel.value === "twap") { const n = min ? trExecMinutes(min.value) : null; trExecSend("twap:" + (n || TR_TWAP_DEFAULT_MIN)); }
+    else trExecSend(sel.value);
+  });
+  box.appendChild(row);
+  // 分鐘格填錯 = 欄位錯誤:欄位下一行紅字(canon › States › Error,同網頁 .pf-note.err);送出失敗才是 .plan-err 那一行
+  if (S.exec.err && S.exec.raw != null) { const p = trEl("p", "pf-note err", S.exec.err); p.id = "tr-exec-err"; box.appendChild(p); }
+  else if (S.exec.err) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", S.exec.err)); box.appendChild(p); }
+  else if (S.env === "cloud" && S.exec.edit != null) box.appendChild(trEl("p", "pf-note", t("tr.cloud.pendRow")));
+  const note = tw ? t("tr.exec.tw") : [t("tr.exec.all"), isTwap ? t("tr.exec.noteTwap") : cur === "chase" ? t("tr.exec.noteChase") : ""].filter(Boolean).join(LANG === "zh" ? "" : " ");
+  box.appendChild(trEl("div", "pf-foot tr-exec-note", note));
+}
+/* 同網頁 chatAskCustomExec:框是空的才放那一句,已有草稿就不覆蓋、只聚焦;**不送出**。
+   雲端視角也填本機聊天框(本機 agent 經 blave 工具去改雲端主機),絕不送進雲端——同 trErrAsk */
+function trExecAskCustom() {
+  const ta = $("ta"); if (!ta) return;
+  if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
+  if (!ta.value.trim()) ta.value = t(TR.env === "cloud" ? "tr.exec.customPrefillCloud" : "tr.exec.customPrefill");
+  autosize(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+async function trExecSend(key) {
+  const S = TR, cloud = S.env === "cloud", r = trReport();
+  if (!r || r.config === null || S.sending.execution || ENV.cur !== S.env || key.indexOf("custom:") === 0) return;   // custom 只能跟 agent 設(宿主也拒收)
+  const args = trExecArgs(key, (r.config || {}).amounts);
+  // 在途時選單停用(trSend 自己掛 S.sending;本機那條這裡掛,連點不送第二次)
+  const flight = cloud ? trSend(S, "execution", args) : (S.sending.execution = S.api.tradeSend("execution", args));
+  S.exec = { edit: key, err: null, raw: null }; S.sig.set = null; trPaintSet();
+  let res = null;
+  try { res = await flight; } catch (_) { } finally { if (!cloud) delete S.sending.execution; }
+  if (!res || !res.ok) { S.exec = { edit: null, err: trSendError(res, "save", S.env) || t("tr.cmdFailed"), raw: null }; srSay(S.exec.err); }
+  else trackFeature("exec_set");
+  S.sig.set = null; if (TR === S && S.open) trPaintSet();
+  trPollSoon(cloud ? 1500 : 300);
 }
 // 解除綁定要移掉的環境變數名。宿主(daemon.js argsOk 的 REMOVABLE)只放行這一版認得的 key,多送一個就整包 BAD_ARGS。
 function trEnvNames(id) {
@@ -3699,13 +3926,15 @@ function trCurvePoints() {
 function trPaintOver() {
   const box = $("tr-over"), r = trReport() || {};
   if (!TR.ov.curve || (TR.ov.at || 0) < Date.now() - 60000) { TR.ov.at = Date.now(); trLoadCurve(); }
-  const data = [TR.env, trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.curveErr, TR.ov.perf, TR.ov.perfErr, TR.ov.ui, TR.ov.uiErr, r.orders, r.halt, r.events, r.order_errors];
+  // 還沒選策略／金額全 0(spec-autotrade-empty §3):權益曲線、事件沒有資料時整區不畫,不印空狀態句——頁首那一句是這一頁唯一的導引
+  const z = !!trZCase(trReport(), trZRows(r), trZDraft());
+  const data = [TR.env, trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.curveErr, TR.ov.perf, TR.ov.perfErr, TR.ov.ui, TR.ov.uiErr, r.orders, r.halt, r.events, r.order_errors, z];
   if (!trShould("over", box, data)) return;
   box.textContent = "";
   box.appendChild(trOvStats());
   box.appendChild(trOvPerf());   // 績效條:PnL 條與曲線之間(同網頁 mockup 序);沒有這一份就是空的
-  box.appendChild(trOvCurve());
-  box.appendChild(trOvEvents(r));
+  box.appendChild(trOvCurve(z));
+  box.appendChild(trOvEvents(r, z));
   trEvListFocus(box);
   if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
@@ -3797,7 +4026,7 @@ function trPnlServerPoints() {
   const from = Date.now() / 1000 - TR.ov.days * 86400, win = pc.filter((p) => p && typeof p.ts === "number" && isFinite(p.ts) && p.ts >= from);
   return { pts: win.filter((p) => typeof p.pnl === "number" && isFinite(p.pnl)).map((p) => ({ t: p.ts, v: p.pnl })).sort((a, b) => a.t - b.t), anom: win.some((p) => p.pnl == null) };
 }
-function trOvCurve() {
+function trOvCurve(z) {
   const frag = document.createDocumentFragment(), sec = trEl("div", "pf-sec");
   const modes = trEl("span", "ov-modes"); modes.setAttribute("role", "group"); modes.setAttribute("aria-label", t("tr.ov.curve"));
   [["equity", t("tr.ov.modeEquity")], ["pnl", t("tr.ov.modePnl")]].forEach((m) => {
@@ -3823,6 +4052,7 @@ function trOvCurve() {
   all.forEach((p, i) => { if (i && p.b !== all[i - 1].b) cut = i; });
   const isPnl = TR.ov.mode === "pnl", srv = isPnl ? trPnlServerPoints() : null;   // 平台那條優先;沒有才本機推算
   const pts = srv ? srv.pts : isPnl ? all.slice(cut) : all;
+  if (z && pts.length < 2 && all.length < 2 && ((trPnlServerPoints() || {}).pts || []).length < 2) return document.createDocumentFragment();   // 另一個模式畫得出來就照舊(切換鈕要留著)
   if (pts.length < 2) {
     frag.appendChild(trEl("div", "pf-state", pts.length ? t("tr.ov.emptyBaseline") : t("tr.ov.empty")));
     return frag;
@@ -3974,7 +4204,7 @@ function trOvFills(r, from) {
   go.addEventListener("click", () => trSetTab("hist", true));
   acts.append(cnt, go); return acts;
 }
-function trOvEvents(r) {
+function trOvEvents(r, z) {
   const frag = document.createDocumentFragment(), label = trEl("span", "label", t("tr.ov.events")); label.id = "tr-ev-label";
   const from = Date.now() - TR.ov.days * 86400000, rows = [];
   frag.appendChild(trSec(label, trOvFills(r, from)));
@@ -4022,6 +4252,7 @@ function trOvEvents(r) {
   /* 讀不到就說讀不到:絕不可以把「這一輪沒讀到」畫成「這段期間沒有事件」(同權益曲線的先例——讀不到就不畫,不斷言)。
      報告裡的那幾種(下單、現在的 HALT、下單失敗)是另一個來源,讀得到就照列,所以這一句是加在清單上面、不取代清單。 */
   if (TR.ov.uiErr) frag.appendChild(trEl("div", "pf-state", t("tr.ov.evUnreach")));
+  if (!rows.length && z && !TR.ov.uiErr) return document.createDocumentFragment();
   if (!rows.length) { if (!TR.ov.uiErr) frag.appendChild(trEl("div", "pf-state", t("tr.ov.evEmpty"))); return frag; }
   rows.sort((a, b) => b.ms - a.ms);
   // 240px 的捲動容器;一天一組 .ev-group,日期標 sticky 只釘在自己那組的範圍內(trade.css)。tabindex 由 trEvListFocus 在畫完後決定
@@ -4115,15 +4346,16 @@ function cxIpChip(ip) {
 }
 // 檢查結果 → 那一句(spec §5.3)。字面 key 一個一個寫:check_shell_strings 靠字面掃「用到的 key」
 /* Binance 以外的四家:句子不能寫死「Binance」。REJECTED = 那一家拒絕(runtime 讀帳戶失敗,原因已遮過金鑰);UNKNOWN = 回了但不是權益;
-   NO_CHECK = 這台的 lib 還沒有那一家的帳戶讀取器(更新之前) */
+   NO_CHECK = 這台的 lib 還沒有那一家的帳戶讀取器(更新之前);LIB_BROKEN = 那支 lib 在、但載入失敗(這台電腦的程式壞了,
+   不歸咎交易所,叫人回報) */
 function cxChkTextVenue(r) {
   const c = r && r.code, name = trVenueLabel(CXF.venue, true), d = (r && r.detail) || {};
   if (c === "BAD_KEY_FORMAT") return t("cx.chk.keyFormatV", { venue: name });
-  if (c === "WITHDRAW_ENABLED") return t("cx.chk.withdrawV", { venue: name });
   if (c === "INCOMPLETE_PAIR") return CX_VENUES[CXF.venue] && CX_VENUES[CXF.venue].pass ? t("cx.chk.incompletePass") : t("cx.chk.incomplete");
   if (c === "REJECTED") return trErrToken(d.reason) === "okx_account_mode" ? t("cx.err.okxMode") : t("cx.chk.rejectedV", { venue: name, reason: String(d.reason || "—").slice(0, 200) });
   if (c === "UNKNOWN") return t("cx.chk.unknownV", { venue: name });
   if (c === "NO_CHECK") return t("cx.chk.noCheckV", { venue: name });
+  if (c === "LIB_BROKEN") return t("cx.chk.libBrokenV", { venue: name, reason: String(d.reason || "—").slice(0, 200) });
   return null;
 }
 function cxChkText(r) {
@@ -4132,7 +4364,7 @@ function cxChkText(r) {
   // 不走 cxChkTextVenue 那句「{venue} 沒有接受這把金鑰：{reason}」(那條只有本機才有 reason,雲端會永遠是「：—」,設計稽核 005 第 2 條)
   if (CXF.venue !== BINANCE && CXF.venue !== PAPER && !(CXF.env === "cloud" && c === "REJECTED")) { const v = cxChkTextVenue(r); if (v) return v; }
   if (CXF.env === "cloud") return cxChkTextCloud(r);
-  return c === "WITHDRAW_ENABLED" ? t("cx.chk.withdraw") : c === "TRADING_DISABLED" ? (CXF.ip ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
+  return c === "TRADING_DISABLED" ? (CXF.ip ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
     : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
     : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t(window.blave.platform === "win32" ? "cx.chk.clock.win" : "cx.chk.clock") : c === "RATE_LIMITED" ? t("cx.chk.rate") : c === "NETWORK" ? t("cx.chk.network")
     : c === "SEND_FAILED" ? cxSendFailText(r)
@@ -4147,11 +4379,11 @@ function cxSendFailText(r) {
   return TR_BAGS.local.st && TR_BAGS.local.st.alive ? t("cx.chk.sendFail", { err: e }) : t("cx.down");
 }
 const cxGateSlow = (r) => !!r && r.code === "SEND_FAILED" && !!r.detail && r.detail.error === "UNKNOWN_RESULT";
-/* 雲端連接的結果 → 那一句(spec-desktop-cloud-s5 §4;提領開著主機一樣擋,同一句)。
+/* 雲端連接的結果 → 那一句(spec-desktop-cloud-s5 §4)。
    本機那組寫死「這台電腦」的(時間、網路、限速)另寫雲端版;「上面這個 IP」在雲端就是主機的 IP,沿用。 */
 function cxChkTextCloud(r) {
   const c = r && r.code, d = (r && r.detail) || {};
-  return c === "WITHDRAW_ENABLED" ? t("cx.chk.withdraw") : c === "TRADING_DISABLED" ? (cxCloudIp() ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
+  return c === "TRADING_DISABLED" ? (cxCloudIp() ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
     : c === "INCOMPLETE_PAIR" ? t("cx.chk.incomplete") : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
     : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t("cx.chk.clockCloud") : c === "NETWORK" ? t("cx.chk.networkCloud")
     : c === "RATE_LIMITED" ? t("cx.chk.rateCloud") : c === "RATE_BANNED" ? t("cx.chk.bannedCloud") : c === "RATE_BACKOFF" ? t("cx.chk.backoffCloud")
@@ -4237,8 +4469,6 @@ function cxModalPaint() {
     if (CX_VENUES[venue]) note.appendChild(trEl("p", "cx-sub", t((trReport() || {}).self_ledger === true ? "cx.note.subAcctOwn" : "cx.note.subAcct")
       + (venue === BINANCE ? (LANG === "zh" ? "" : " ") + t("tr.lev.binance5") : "")));
     note.appendChild(trEl("p", "", venue === BINANCE ? t("cx.note.one") : t("cx.note.oneV", { venue: trVenueLabel(venue, true) })));
-    // 查不到提領權限的那家(runtime _WITHDRAW_CHECKED 沒有它 = Gate.io;本機與雲端主機同一張表):講明 Blave 不會替他擋,要自己確認
-    if (CX_VENUES[venue] && CX_VENUES[venue].noWdCheck) note.appendChild(trEl("p", "cx-hint", t("cx.note.wdUnchecked", { venue: trVenueLabel(venue, true) })));
     if (cloud) {   // 雲端的五處差異之 2:主機的 IP,不查、沒有「再查一次」;拿不到不擋(白名單本來就不強制)
       if (cip) note.appendChild(cxIpChip(cip));
       else { const w = trEl("div", "cx-chipw"), chip = trEl("span", "cx-chip is-empty"); chip.appendChild(trEl("span", "v", t("cx.ip.cloudNone"))); w.appendChild(chip); note.appendChild(w); }
@@ -4398,11 +4628,12 @@ async function cxRetest() {
 }
 
 /* ── 選擇下單策略的框(#ps-scrim;spec-desktop-strategy-picker,照雲端工作頁 psOpen / psApply)────────────
-   殼同 cx 框(.scrim > .set-modal);兩個視角共用,雲端視角 head 灰底 + 「雲端」記號 + 鈕上方目的地行(這個框的「確定」會寫主機設定檔)。
+   殼同 cx 框(.scrim > .set-modal);兩個視角共用,雲端視角 head 灰底 + 「雲端」記號;「確定」不寫主機(0.1.26 起只改草稿),所以沒有目的地行——目的地寫在儲存的確認框。
    候選集合在開框時算一次,框開著不隨輪詢重建(打勾到一半被洗掉比名單慢幾秒更糟)。
    Esc 與 Tab 圈都在這裡自己接(app.js 的 escTop / trapTab 不動):escTop 沒認得這個框時回 null、不會 preventDefault,
    這裡就補上;它先關了別層(defaultPrevented)這裡就不再關第二層。 */
-let psOpener = null, psMode = "amounts";   // 同一個框兩種用途:配置(勾選會改 amounts)與優化(只改優化自己的清單,portfolio.js)
+// 同一個框兩種用途:配置(勾選改表上的草稿,儲存才寫 amounts)與優化(只改優化自己的清單,portfolio.js)。psToAmt = 從自動下單頁的導引開的(spec-autotrade-empty §4)
+let psOpener = null, psMode = "amounts", psToAmt = false;
 function psWire() {
   $("ps-cancel").addEventListener("click", () => psClose());
   $("ps-close").addEventListener("click", () => psClose());
@@ -4453,8 +4684,6 @@ function psOpen(opener, mode) {
   psOpener = opener || null;
   $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";
-  $("ps-where").hidden = !cloud || mg;   // 優化清單的「確定」不寫主機:不出目的地那一行
-  $("ps-where").textContent = cloud && !mg ? trWhereTidy(t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(envMoney(S.st)), venue: trVenueLabel(trVenueId(), true) })) : "";
   const list = $("ps-list"); list.textContent = "";
   if (!rows.length) list.appendChild(trEl("div", "pf-state", t("tr.pick.empty")));
   else rows.forEach((r, i) => list.appendChild(psRow(r, cloud, i)));
@@ -4481,49 +4710,33 @@ function psOpen(opener, mode) {
 function psClose() {
   const sc = $("ps-scrim"); if (sc.hidden) return;
   sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false;
-  const o = psOpener; psOpener = null;
+  const o = psOpener; psOpener = null; psToAmt = false;
   if (o && o.isConnected && !o.disabled) o.focus(); else psRefocus();
 }
 // 確定之後表重畫、開框那顆鈕已經是新的一顆:焦點落回它;沒有(讀不到設定那一態鈕停用)就退到分頁鈕,不能掉到 BODY
 function psRefocus() { const b = $("tr-pick"); if (b && b.isConnected && !b.disabled && b.offsetParent) b.focus(); else $("po-h").focus(); }
-/* 「確定」(picker §6):勾的集合成為 picked、表只列這些;$0 的加 / 減立刻送一份 amounts(不開確認框——$0 不會下單、也不會平倉);
-   有錢的移除只 stage(表上那列消失、儲存列出現,按「儲存」的確認框講會平倉)。走跟儲存同一條送出路。 */
-async function psApply() {
-  const S = TR, cloud = S.env === "cloud";
+/* 「確定」(picker §6;0.1.26 Wei 改成草稿):勾的集合成為 picked、表只列這些,什麼都不送——加入與移出(金額 0 也一樣)
+   都等「儲存」連金額一起寫(trSaveAmounts,同一份原子寫入);呼吸點、主機排程與總訊號部位都只看已存的那一份,所以存之前不會動。還原把 picked 丟掉 */
+function psApply() {
+  const S = TR;
   const sel = new Set([...$("ps-list").querySelectorAll(".ps-cb")].filter((c) => c.checked).map((c) => c.value));
+  const refocus = psToAmt ? trFocusFirstAmt : psRefocus;
   if (psMode === "mg") { psOpener = null; psClose(); mgSetMembers(S, [...sel]); return; }   // 只改優化分頁自己的清單,不送任何指令
   psClose();
   const mine = () => TR === S && S.open && S.view === "po";
-  // 框開著期間報告變成 config: null / 讀不到設定:底稿已不可信,關框、什麼都不送(儲存列那句由 trAmountTable 講)
-  if (trStored() === null || trCfgUnread(trReport())) { S.sig.cfg = null; if (mine()) poPaintCfg(); psRefocus(); return; }
-  const stored = trBase() || {};
-  S.picked = trSetEq(sel, trNamesOf(null)) ? null : sel;   // 跟已存的一模一樣 = 沒改:stored 照舊是真相
-  const ch = trPickApply(sel, stored, trPickKeep(S.env, sel, stored, trListNames()));
-  S.sig.cfg = null; if (mine()) poPaintCfg();
-  if (!ch) { psRefocus(); return; }
-  // 呼吸點:新加的立刻亮、$0 移出的立刻熄(同雲端 pfJustPicked / pfJustRemoved)
-  envJustMark(S.just, stored, ch.amounts, Date.now());
-  if (!cloud) envPaintLocalDots(); else ENV.sig.side = null;
-  S.save = "saving"; S.saveErr = null; S.sig.cfg = null; if (mine()) poPaintCfg();
-  if (cloud) { const key = trAmountsKey(ch.amounts); if (S.reqFor.amounts !== key) delete S.reqIds.amounts; S.reqFor.amounts = key; }
-  const before = trSentBeforeOf(S);   // 存之前的值:送出前記(ack 回來時手上的回報可能已經換過)
-  const res = cloud ? await trSend(S, "amounts", { amounts: ch.amounts }) : await S.api.tradeSend("amounts", { amounts: ch.amounts });
-  clearTimeout(S.saveTimer);
-  if (res && res.ok && cloud) {
-    // 同 trSaveAmounts:ack ok = 主機已寫進設定檔,新加那列的 0 帶 .pend、儲存列講存好了等回報。打到一半的金額留著(這一份沒帶它們)
-    const rc = S.st && S.st.cloud;
-    S.notApplied = null; S.sentBefore = before; S.save = "sent"; S.sent = ch.amounts; S.sentAt = Date.now(); S.sentRep = rc && typeof rc.reported_at === "number" ? rc.reported_at : null; S.saveUnknownAt = 0;
-    srSay(t("tr.cloud.pendAmounts"));
-  } else if (res && res.ok) S.save = null;   // 這台電腦:沒有金額變動,不出「已儲存」那行(講「已套用新金額」是假話)
-  else {
-    // 失敗:儲存列出錯誤,表上的列不退回(照雲端)——用戶填金額按儲存時整份會再送一次,那一份就包含它
-    S.save = "failed"; S.saveErr = trSendError(res, "save", S.env); srSay(S.saveErr);
-    S.saveUnknownAt = cloud && trKindOf(res) === "unknown" ? Date.now() : 0;
+  // 框開著期間報告變成 config: null / 讀不到設定:底稿已不可信,不記草稿(儲存列那句由 trAmountTable 講)
+  let added = [];
+  if (trStored() !== null && !trCfgUnread(trReport())) {
+    added = trPickDiff(sel, trBase() || {}, []).added;
+    S.picked = trSetEq(sel, trNamesOf(null)) ? null : sel;   // 跟已存的一模一樣 = 沒改:stored 照舊是真相
+    if (S.save === "saved") { clearTimeout(S.saveTimer); S.save = null; }   // 「已儲存」那一行會蓋掉儲存列:又改了就收起來
   }
   S.sig.cfg = null;
-  try { S.st = await S.api.tradeStatus(); } catch (_) { }
-  if (mine()) { poPaintCfg(); psRefocus(); }
-  trPollSoon(1500);
+  if (!mine()) return;
+  poPaintCfg();
+  // 新勾了:下一步是填金額,焦點落在第一支新列的金額格(同網頁;勾選順序 = 框裡的順序);沒有新勾的或那格停用就回〔選擇策略〕
+  const inp = added.length ? [...$("po-cfg").querySelectorAll(".amt-in")].find((x) => x.dataset.amt === added[0]) : null;
+  if (inp && !inp.disabled && inp.offsetParent) inp.focus(); else refocus();
 }
 
 /* ── 視角:「這台電腦｜雲端」切換器、頂列灰底、雲端側欄、雲端空態(spec-desktop-local-and-cloud §1–§4.1)────────

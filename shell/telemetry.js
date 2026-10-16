@@ -170,7 +170,12 @@ const EVENTS = {
     // 策略頁說明行尾「策略邏輯」點開(0.1.24;renderer/app.js);收起不記,不帶策略名
     "strategy_logic",
     // 多檔附件(0.1.25):attach_multi = 一則帶 2 個以上、回合真的跑起來才送;attach_limit_hit = 加檔時撞到檔數或合計上限(只記名字,不帶個數或大小)
-    "attach_multi", "attach_limit_hit"] },
+    "attach_multi", "attach_limit_hit",
+    // 自動下單 › 部位的霧卡(0.1.26;renderer/portfolio.js poFog):按〔選擇策略〕／〔新增策略〕就記(勾了沒存那張的〔設定金額〕也記 trade_fog_pick,同網頁);頁首同一件事的鈕不算(分開看卡有沒有人按)。
+    // 網頁 GA4 同一件事叫 trade_pos_fog_pick／trade_pos_fog_new(這裡 name 上限 16 字)
+    "trade_fog_pick", "trade_fog_new",
+    // 下單方式(0.1.26,自動下單 › 設定):整個組合的下單方式改了、機器 ack 成功才送(不帶選了哪一種)
+    "exec_set"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

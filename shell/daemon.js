@@ -12,7 +12,7 @@ const wsfile = require("./wsfile");
 
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
-const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "credentials", "credentials_remove",
+const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "execution", "credentials", "credentials_remove",
   "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore", "stats_refresh",
   "manage_optimize", "manage_backtest", "manage_cancel"]);
 // manage_optimize 是 Deferred(腳本最長 120 秒才 ack),等 ack 的時間另給;雲端那條(main.js cloud-send)也用這一份
@@ -64,6 +64,13 @@ const PREFS_RULES_CEILING = 100, PREFS_RULE_CHARS_CEILING = 1000;
 const PREFS_FILE_CHARS_MAX = 16000;   // = agentrules.READ_PY 的讀取上限;超過就讀不回來,設定頁變 readFail、連刪都刪不了
 const PREFS_LINE_BREAK = /[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]/;
 const REPLY_LANGS = ["zh", "cn", "en", "es", "pt", "vi", "ja"], REPLY_LANG_CUSTOM_MAX = 40;   // = runtime strategy_reporter
+function execSpecOk(s) {
+  if (!s || typeof s !== "object" || Array.isArray(s)) return false;
+  const k = Object.keys(s);
+  if (s.type === "market" || s.type === "chase") return k.length === 1;
+  if (s.type === "twap") return k.length === 2 && Number.isInteger(s.duration_min) && s.duration_min >= 1 && s.duration_min <= 1440;
+  return false;   // custom 只能由 agent 在機器上設;渲染端從不送,收了等於讓被攻破的渲染端切到某個自訂執行器
+}
 function argsOk(cmd, a, trusted) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const keys = Object.keys(a);
@@ -86,6 +93,14 @@ function argsOk(cmd, a, trusted) {
     // 值只收三個家族代號原字(不收 TXFR1、小寫)。策略的 SYMBOL 是不是台指期家族這裡不知道,由機器端判
     return c === undefined || (!!c && typeof c === "object" && !Array.isArray(c) && Object.keys(c).length <= 200
       && Object.keys(c).every((k) => CONTRACT_NAME_RE.test(k) && Object.prototype.hasOwnProperty.call(m, k) && CONTRACT_ROOTS.indexOf(c[k]) >= 0));
+  }
+  /* 下單方式(整個組合一種;= runtime _cmd_execution):execution_default 必帶;execution 是給舊 runtime 的展開 map(選填,
+     值必須跟 execution_default 一樣——兩份講不同的話,新舊 runtime 會照不同的那份下單)。custom 拒收(見 execSpecOk) */
+  if (cmd === "execution") {
+    if (!keys.every((k) => k === "execution_default" || k === "execution") || !execSpecOk(a.execution_default)) return false;
+    const m = a.execution;
+    return m === undefined || (!!m && typeof m === "object" && !Array.isArray(m) && Object.keys(m).length <= 200
+      && Object.keys(m).every((k) => CONTRACT_NAME_RE.test(k) && JSON.stringify(m[k]) === JSON.stringify(a.execution_default)));
   }
   if (cmd === "resume" || cmd === "resume_wait") return keys.every((k) => k === "strategies") && (a.strategies === undefined
     || (Array.isArray(a.strategies) && a.strategies.length > 0 && a.strategies.length <= 200 && a.strategies.every((n) => typeof n === "string" && NAME_RE.test(n))));

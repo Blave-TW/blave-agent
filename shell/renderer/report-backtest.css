@@ -124,15 +124,16 @@
 /* ---- 3 / 4 共用:小標 + 資料 frame ---- */
 .bt-label {
   display: flex;
+  flex-wrap: wrap;                    /* 有隨機帶時四項,窄欄放不下一行 */
   align-items: center;
-  gap: var(--space-12);
+  gap: var(--space-4) var(--space-12);
   margin-bottom: var(--space-8);
   font-size: 12px;
   line-height: 1.5;
   color: var(--ink-3);
 }
 /* 圖例:兩條線的顏色要有文字對應,不能只靠「上面那條 / 下面那條」 */
-.bt-legend { display: inline-flex; align-items: center; gap: var(--space-6); }
+.bt-legend { position: relative; display: inline-flex; align-items: center; gap: var(--space-6); }
 .bt-legend::before {
   content: "";
   width: var(--space-12);
@@ -141,6 +142,21 @@
   background: var(--color-primary);
 }
 .bt-legend.dd::before { background: var(--color-red); }
+/* 隨機投組:帶 = 方塊(與圖上同色同 0.55)、中位數 = 虛線段(與圖上同色);
+   畫法跟策略組合頁同一個概念,全站一種長相 */
+.bt-legend.band::before {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-micro);
+  background: color-mix(in srgb, var(--color-greyDark) 55%, transparent);
+}
+.bt-legend.med::before {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed var(--color-greyMedium);
+  background: none;
+}
 
 .bt-frame {
   padding: var(--space-16);           /* canon › Density:frame 自身內距 16 */

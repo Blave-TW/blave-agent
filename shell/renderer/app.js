@@ -1891,35 +1891,36 @@ function splitReceipt(content) {
 }
 function receiptFold(steps) {
   const el = document.createElement("div"); el.className = "think-indicator is-done";
-  const head = document.createElement("button"); head.type = "button"; head.className = "think-head has-reason";
-  head.setAttribute("aria-expanded", "false");
+  const head = document.createElement("button"); head.type = "button"; head.className = "think-head";
   const verb = document.createElement("span"); verb.className = "think-verb"; verb.dataset.i18n = "turn.process"; verb.textContent = t("turn.process");
   const chev = document.createElement("span"); chev.className = "think-chev cv7"; chev.setAttribute("aria-hidden", "true");
   head.append(verb, chev);
   // 階段:同一支 phasesFrom。收據只有工具名(Bash 全 unknown)、沒有開始時間——多半長不出清單,長出來也不畫時長(canon 9:不推算)
   const phases = document.createElement("ol"); phases.className = "think-phases";
-  const rows = phasesFrom(steps.filter((st) => !st.more).map((st) => ({ kind: actKindOf({ tool: st.tool }).kind, obj: "", start: null })), null);
-  phases.hidden = rows.length < 2;
+  const recs = [], sides = new Set();
+  steps.forEach((st) => {
+    if (st.more) return;
+    const c = { tool: st.tool, summary: st.summary };
+    if (!stepLabel(c, true)) return;   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來
+    recs.push({ c, kind: actKindOf({ tool: st.tool }).kind, error: false, ms: null });
+    sides.add(stepWhere({ tool: st.tool }));
+  });
+  const rows = phasesFrom(recs.map((r) => ({ kind: r.kind, obj: "", start: null })), null);
+  phaseIdxOf(recs.map((r) => r.kind)).forEach((n, i) => { recs[i].phase = n; });
+  phases.hidden = rows.length < 1;
   if (!phases.hidden) phasesPaint(phases, rows, 0, false);
   const wrap = document.createElement("div"); wrap.className = "think-reason-wrap";
   wrap.id = "think-fold-" + (++thinkFoldSeq); head.setAttribute("aria-controls", wrap.id);
   const fold = document.createElement("div"); fold.className = "think-fold";
-  const list = document.createElement("ul"); list.className = "think-steps";
-  const sides = new Set();
-  steps.forEach((st) => {
-    const li = document.createElement("li"); li.className = "think-step";
-    if (st.more) { li.textContent = st.more; list.appendChild(li); return; }
-    const lab = stepLabel(st, true);   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來;收據上的都是做完的步驟
-    if (!lab) return;
-    sides.add(stepWhere({ tool: st.tool }));
-    const mark = document.createElement("span"); mark.className = "think-step-mark";
-    const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = lab.verb;
-    const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = lab.obj;
-    li.append(mark, whereTag(stepWhere({ tool: st.tool })), v, obj);
-    list.appendChild(li);
-  });
   el.classList.toggle("has-both", sides.size > 1);
-  fold.append(phases, list); wrap.appendChild(fold); el.append(head, wrap);
+  fold.append(phases); wrap.appendChild(fold); el.append(head, wrap);
+  // runtime 只留前 12 步(「…另有 N 步」):被截過時清單最後幾列不是真正的最後幾步,只畫階段(spec §2 回放)
+  const cut = steps.some((st) => st.more);
+  const drew = faultPaint(phases, rows.length, cut ? [] : recs, false) || rows.length > 0;
+  if (!drew) return el;   // 沒東西可攤:只留「思考過程」那一行,不給 ⌄、不掛 aria-expanded(沒有可開合的東西)
+  head.classList.add("has-reason");
+  // 回放的收據都來自停止／出錯的回合:預設攤開(Wei 10-16,跟網頁一致——錯誤通知寫「上面是已經執行的步驟」)
+  el.classList.add("is-open"); head.setAttribute("aria-expanded", "true");
   head.addEventListener("click", () => { const open = el.classList.toggle("is-open"); head.setAttribute("aria-expanded", open ? "true" : "false"); });
   return el;
 }
@@ -1927,7 +1928,7 @@ function receiptFold(steps) {
 function addHistoryYou(content) { const a = splitAttachNote(content); return addMsg("you", a.text, a.attachments); }
 function addHistoryAi(content) {
   const r = splitReceipt(content);
-  if (r.steps && r.steps.length) $("chat-scroll").appendChild(receiptFold(r.steps));
+  if (r.steps && r.steps.length) fitSteps($("chat-scroll").appendChild(receiptFold(r.steps)));   // 進了 DOM 才量得到欄寬
   if (!r.steps || r.text.trim()) addMsg("ai", r.text);
 }
 /* 舊的瀏覽器紀錄用的是回合開始的時間,比 runtime 寫進逐字稿的那句用戶訊息早幾秒:區塊不能排在那句上面。
@@ -2482,9 +2483,13 @@ function busyStart() {
   if (busy) { actReset(); actApply(true); return; }
   const el = document.createElement("div");
   el.className = "think-indicator";
-  // 送出到第一個字之間唯一的回饋,所以要讓輔助科技讀到;polite 不打斷回覆
-  el.setAttribute("role", "status");
-  el.setAttribute("aria-live", "polite");
+  // 送出到第一個字之間唯一的回饋,所以要讓輔助科技讀到;polite 不打斷回覆。
+  // live region 只包狀態列那一行(spec-turn-phases-one-layer §6):展開區在外面,長出新階段、換當下動作都不會被念。
+  // 包一層 div 而不是掛在 <button> 上(status 跟 button 是兩種 role);這層不設 position,熱區 ::before 照舊錨在 .think-indicator
+  const live = document.createElement("div");
+  live.className = "think-live";
+  live.setAttribute("role", "status");
+  live.setAttribute("aria-live", "polite");
   // 整輪只有這一顆 <button>(不在思考 ↔ 工具之間換節點,換了會 reflow)
   const head = document.createElement("button");
   head.type = "button";
@@ -2513,46 +2518,49 @@ function busyStart() {
   wrap.className = "think-reason-wrap";
   const fold = document.createElement("div");
   fold.className = "think-fold";
-  const stepsEl = document.createElement("ul");
-  stepsEl.className = "think-steps";
   const reason = document.createElement("div");
   reason.className = "think-reason";
-  // 階段清單跟收據、思考文字住同一塊展開區(spec-turn-receipt-collapse):一顆 ⌄ 管全部,進行中也預設收著。換階段的播報只走 role=status 的 label
+  // 展開區只有一層:階段清單,後面接思考文字(spec-turn-phases-one-layer)。一顆 ⌄ 管全部,進行中也預設收著。換階段的播報只走 role=status 的 label
   const phases = document.createElement("ol");
   phases.className = "think-phases"; phases.hidden = true;
-  fold.append(phases, stepsEl, reason);
+  fold.append(phases, reason);
   wrap.appendChild(fold);
   wrap.id = "think-fold-" + (++thinkFoldSeq); head.setAttribute("aria-controls", wrap.id);
-  el.append(head, wrap);
+  live.appendChild(head);
+  el.append(live, wrap);
   head.addEventListener("click", () => {
     if (head.classList.contains("no-toggle")) return;
     const open = el.classList.toggle("is-open");
     head.setAttribute("aria-expanded", open ? "true" : "false");
   });
   $("chat-scroll").appendChild(el);
-  busy = { el, head, ticksIn, verb, obj, elapsed, stepsEl, reason, stepRows: {}, sides: new Set(),
-           start: Date.now(), steps: 0, timer: null, phasesEl: phases, phaseSteps: [], phaseEnd: 0 };
+  busy = { el, live, head, ticksIn, verb, obj, elapsed, reason, stepRows: {}, recs: [], sides: new Set(),
+           start: Date.now(), steps: 0, timer: null, phasesEl: phases, phaseSteps: [], phaseEnd: 0,
+           sub: null, subRec: null, subPhase: -1, subAt: 0, subTimer: null };
   actReset(); actApply(true);
   busyElapsed(); busyTick();          // 第 0 秒:條子不會是空的
-  busy.timer = setInterval(() => { busyElapsed(); busyTick(); busyStepTick(); actApply(); }, 1000);
+  busy.timer = setInterval(() => { busyElapsed(); busyTick(); phasesSync(busy); actApply(); }, 1000);   // 進行中那一階段的累計時長同一個 timer 走
 }
-/* 正在跑的那一步顯示自己的秒數(看得出是卡在這一步,還是一直在換步驟);清單跟到最新一列——游標在清單上(人在讀前面的)就不搶 */
-function busyStepTick() {
-  const ul = busy.stepsEl, now = Date.now();
-  ul.querySelectorAll(".think-step.is-run").forEach((li) => { li.querySelector(".think-step-time").textContent = fmtDur((now - li.__t0) / 1000); });
-  if (!ul.matches(":hover")) ul.scrollTop = ul.scrollHeight;
-  phasesSync(busy);   // 進行中那一階段的累計時長同一個 timer 走
-}
-/* 階段清單:兩列以上才出(只有一種階段的短回合維持一行);列數少,每秒整份重建 */
+/* 階段清單:一個階段就畫(spec-turn-phases-one-layer §3:當下動作要有地方掛,⌄ 才點得出東西)。
+   當下動作那一行(busy.sub)跟著進行中那一列走:換階段時 phasesPaint 重建了列,把同一個 <ul> 搬進新的最後一列,不新建 */
 function phasesSync(b) {
-  if (!b || !b.phasesEl) return;
+  if (!b || !b.phasesEl) return [];
   const rows = phasesFrom(b.phaseSteps, b.phaseEnd || null);
-  if (rows.length < 2) { b.phasesEl.hidden = true; return; }
+  if (rows.length < 1) { b.phasesEl.hidden = true; return rows; }
   phasesPaint(b.phasesEl, rows, Date.now(), !b.phaseEnd);
   b.phasesEl.hidden = false;
+  if (b === busy) busyHasFold();
+  const last = b.phasesEl.children[b.phasesEl.children.length - 1];
+  if (b.sub && last && b.sub.parentNode !== last) { last.appendChild(b.sub); fitSteps(b.sub); }
+  return rows;
+}
+// 每一步落在第幾列階段(同 phasesFrom 的併列:跟上一列同一種不開新列、讀取類不開列);第一個會開階段的步驟之前是 -1。純函式
+function phaseIdxOf(kinds) {
+  let n = -1, last = null;
+  return (kinds || []).map((k) => { const p = PHASE_OF[k]; if (p && p !== last) { n++; last = p; } return n; });
 }
 /* 即時與重開畫回共用;動詞掛 data-i18n 讓切語言的那一輪掃得到,受詞是 runtime 給的 kind_obj(textContent) */
-// 進行中每秒都叫,清單又在 role=status 裡:列沒變就只改秒數(秒數 aria-hidden)。整份重建會讓讀屏每秒重念、捲動位置被拉回頂端
+// 進行中每秒都叫:列沒變就只改秒數(秒數 aria-hidden)。整份重建會讓當下動作那一行每秒被拔掉重掛
 function phasesPaint(ol, rows, now, running) {
   const key = JSON.stringify([running, rows.map((r) => [r.phase, r.obj, r.start, r.end])]);
   if (ol.__phaseKey === key && ol.__phaseTimes) {
@@ -2568,8 +2576,9 @@ function phasesPaint(ol, rows, now, running) {
     const mark = document.createElement("span"); mark.className = "think-step-mark";
     const verb = document.createElement("span"); verb.className = "think-phase-verb";
     const key = "phase." + r.phase; verb.dataset.i18n = key; verb.textContent = t(key);
-    li.append(mark, verb);
-    if (r.obj) { const obj = document.createElement("span"); obj.className = "think-phase-obj" + (r.kind === "search" ? "" : " mono"); obj.textContent = r.obj; li.appendChild(obj); }   // 搜尋字是句子,其餘受詞 mono(同 busySet)
+    // 受詞欄一律放(空的也放):列是 grid(8px auto minmax(0,1fr) auto),少一格時長就會落進受詞那一欄。搜尋字是句子,其餘受詞 mono(同 busySet)
+    const obj = document.createElement("span"); obj.className = "think-phase-obj" + (r.kind === "search" ? "" : " mono"); obj.textContent = r.obj || "";
+    li.append(mark, verb, obj);
     let tm = null;
     if (r.start !== null) {
       const stop = r.end !== null ? r.end : running && i === rows.length - 1 ? now : null;
@@ -2579,10 +2588,10 @@ function phasesPaint(ol, rows, now, running) {
     ol.appendChild(li);
   });
 }
-function busyHasFold() {
-  if (busy) busy.head.classList.remove("no-toggle"), busy.head.classList.add("has-reason");
-}
-/* 工具開跑:收據多一列。受詞(指令 / 檔名)放 summary,太長由 CSS 截。 */
+// 可展開 = 至少一個階段,或有思考文字(spec-turn-phases-one-layer §3);只讀檔的短回合沒有東西可攤,不給 ⌄
+function busyHasFoldOf(b) { if (b) b.head.classList.remove("no-toggle"), b.head.classList.add("has-reason"); }
+function busyHasFold() { busyHasFoldOf(busy); }
+/* 工具開跑:記一步(不畫逐步清單,spec-turn-phases-one-layer §4)。步驟留在記憶體,給當下動作與出錯時的最後 3 步用 */
 function busyStep(c) {
   if (!busy) return;
   actToolStart(c);
@@ -2590,34 +2599,134 @@ function busyStep(c) {
   if (!lab) return;
   busy.steps += 1;
   { const k = actKindOf(c); busy.phaseSteps.push({ kind: k.kind, obj: k.obj || actTabHost(k.tab), start: Date.now() }); }   // 階段清單的原料:受詞只拿 kind_obj,不拿 summary(指令全文)
-  const li = document.createElement("li");
-  li.className = "think-step is-run";
-  const mark = document.createElement("span"); mark.className = "think-step-mark";
-  const verb = document.createElement("span"); verb.className = "think-step-verb";
-  verb.textContent = lab.verb;
-  const obj = document.createElement("span"); obj.className = "think-step-obj";
-  obj.textContent = lab.obj;
-  const time = document.createElement("span"); time.className = "think-step-time";
-  li.append(mark, whereTag(stepWhere(c)), verb, obj, time);   // ④ 這一步實際做在哪(事實)
+  const rec = { c, kind: busy.phaseSteps[busy.phaseSteps.length - 1].kind, error: false, ms: null, phase: -1 };
+  rec.phase = phasesFrom(busy.phaseSteps, null).length - 1;
+  busy.recs.push(rec);
+  if (c.id) busy.stepRows[c.id] = rec;
   // 位置記號只在這一輪兩邊都做過事時才畫(.has-both,app.css):整輪都在同一邊,每列都掛同一個字只是佔寬度
   busy.sides.add(stepWhere(c)); busy.el.classList.toggle("has-both", busy.sides.size > 1);
-  li.__t0 = Date.now(); li.__c = c; time.textContent = fmtDur(0);
-  busy.stepsEl.appendChild(li);
-  if (c.id) busy.stepRows[c.id] = li;
-  busyHasFold(); busyStepTick();
+  phasesSync(busy); subApply();
 }
-/* `done` 只是回頭補那一列的耗時 / 錯誤態,不是新步驟。 */
+/* `done` 只是回頭補那一步的耗時 / 錯誤態,不是新步驟。 */
 function busyStepDone(c) {
   actToolDone(c);
-  const li = busy && c.id && busy.stepRows[c.id];
-  if (!li) return;
-  li.classList.remove("is-run");
-  // 做完換完成式;出錯的那一步換成失敗的說法(不留「正在…」,也不用完成式:英文過去式「Placed an order」配失敗的步驟會被讀成下了單)
-  if (c.error) li.classList.add("is-err");
-  li.querySelector(".think-step-verb").textContent = stepLabel(li.__c, true, !!c.error).verb;
-  const ms = Number(c.ms) || 0;
-  if (ms > 0) li.querySelector(".think-step-time").textContent =
-    ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms";
+  const rec = busy && c.id && busy.stepRows[c.id];
+  if (!rec) return;
+  rec.error = !!c.error;
+  rec.ms = Number(c.ms) || 0;
+}
+/* 當下動作(spec-turn-phases-one-layer §1):進行中那一階段底下一行,寫最晚開始的那次工具呼叫(進行式動詞＋受詞,同狀態列 act.*)。
+   兩個工具之間留著上一步(間隔常只有幾十毫秒,清空會閃)。字至少停 ACT_HOLD_MS(同摘要 label),期間只留最新一個待換;
+   換階段那一刻直接換成新階段的這一步、重新計時——新階段底下不顯示上一階段的步驟。換字不做動畫。
+   自己一組狀態,不共用 ACT(兩者換字的觸發條件不同)。aria-hidden:摘要 label 已經用「正在＋動詞」播報過 */
+function subApply() {
+  const b = busy;
+  if (!b) return;
+  const rec = b.recs[b.recs.length - 1];
+  if (!rec || rec.phase < 0 || b.subRec === rec) return;   // 還沒有階段:沒有列可掛
+  const now = Date.now(), moved = rec.phase !== b.subPhase, wait = ACT_HOLD_MS - (now - b.subAt);
+  clearTimeout(b.subTimer);
+  if (!moved && b.subRec && wait > 0) { b.subTimer = setTimeout(subApply, wait); return; }
+  b.subRec = rec; b.subPhase = rec.phase; b.subAt = now;
+  if (!b.sub) {
+    b.sub = document.createElement("ul"); b.sub.className = "think-sub"; b.sub.setAttribute("aria-hidden", "true");
+    b.sub.appendChild(document.createElement("li"));
+  }
+  subRow(b.sub.children[0], rec.c, stepLabel(rec.c));   // 進行式:這一行寫的是還在跑的步驟,英文過去式會說成做完了
+  phasesSync(b); fitSteps(b.sub);
+}
+const fmtStepMs = (ms) => (ms > 0 ? (ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms") : "");
+/* 子列(當下動作、出錯的最後幾步共用):位置記號＋動詞＋受詞(＋耗時)。受詞全文放 data-full,fitSteps 依欄寬截頭保尾。
+   位置記號照收據規則:這一輪兩邊都做過事(.has-both)才看得到。time === undefined = 不要耗時那一欄 */
+function subRow(li, c, lab, time) {
+  li.className = "think-sub-row"; li.textContent = "";
+  const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = lab.verb;
+  li.append(whereTag(stepWhere(c)), v);
+  if (lab.obj) {
+    const obj = document.createElement("span"); obj.className = "think-step-obj" + (actKindOf(c).kind === "search" ? "" : " mono");
+    obj.dataset.full = lab.obj; obj.textContent = lab.obj; li.appendChild(obj);
+  }
+  if (time !== undefined) { const tm = document.createElement("span"); tm.className = "think-step-time"; tm.textContent = time; li.appendChild(tm); }
+  return li;
+}
+/* 出錯／中斷的回合要列哪幾步(spec-turn-phases-one-layer §2)。recs = [{phase, error}](照開始順序),rows = 階段列數。
+   掛在含最後一個出錯步驟的那一階段;沒有出錯的步驟(中斷、逾時、引擎掛掉)掛最後一階段。只取那一階段裡的步驟、最後 FAULT_TAIL 步,
+   不跨回上一階段。第一個階段開之前的讀取步算進第一階段(它們沒有自己的列)。rows = 0 → row -1:最後幾步直接當清單本身。
+   回 { row, idx(recs 的索引), err(那一階段有沒有出錯的步驟) }。純函式,tests/check_shell_turn_phases.js */
+const FAULT_TAIL = 3;
+function faultTail(recs, rows) {
+  const norm = (p) => (rows > 0 ? Math.max(p, 0) : -1);
+  let row = rows > 0 ? rows - 1 : -1;
+  for (let i = recs.length - 1; i >= 0; i--) if (recs[i].error) { row = norm(recs[i].phase); break; }
+  const idx = [];
+  recs.forEach((r, i) => { if (norm(r.phase) === row) idx.push(i); });
+  return { row, idx: idx.slice(-FAULT_TAIL), err: recs.some((r) => r.error && norm(r.phase) === row) };
+}
+/* 把最後幾步畫進階段清單(即時收尾與回放共用)。紅只上階段記號,子列的字不上紅(darkCard 上過不了 AA)。
+   timed:即時回合才有耗時欄(被中斷、沒等到 done 的那一步留空);回放的步驟沒有耗時。不加 aria-hidden:這是定案的內容。回傳畫了沒 */
+function faultPaint(ol, rows, recs, timed) {
+  const tail = faultTail(recs, rows);
+  if (!tail.idx.length) return false;
+  const ul = document.createElement("ul"); ul.className = "think-sub" + (tail.row < 0 ? " is-top" : "");
+  tail.idx.forEach((i, n) => {
+    const r = recs[i];
+    const li = subRow(document.createElement("li"), r.c, stepLabel(r.c, true, !!r.error), timed ? fmtStepMs(r.ms) : undefined);
+    if (n === tail.idx.length - 1) li.classList.add("is-last");
+    ul.appendChild(li);
+  });
+  if (tail.row < 0) ol.parentNode.insertBefore(ul, ol.nextSibling);
+  else { const li = ol.children[tail.row]; li.appendChild(ul); if (tail.err) li.classList.add("is-err"); }
+  fitSteps(ul);
+  return true;
+}
+/* 受詞截頭保尾(spec-turn-phases-one-layer §1;照搬網頁 workspace.html fitStepObj):檔名才是識別,目錄前綴不是——從斜線起截,
+   「…/top5/strategy.py」。自己截字串、不靠 direction:rtl(WebKit 上會靜默退化成砍尾巴)。字寬量一次(canvas,不進 DOM 不 reflow) */
+let stepCharW = 0;
+function stepCharWidth(el) {
+  if (stepCharW) return stepCharW;
+  const cv = document.createElement("canvas"), ctx = cv.getContext ? cv.getContext("2d") : null;
+  if (!ctx || typeof getComputedStyle !== "function") return 0;
+  const cs = getComputedStyle(el);
+  ctx.font = cs.fontSize + " " + cs.fontFamily;
+  stepCharW = ctx.measureText("0000000000").width / 10;
+  return stepCharW;
+}
+function fitStepObj(obj, avail, charW) {
+  const full = obj.dataset.full || "";
+  const max = Math.floor(avail / charW);
+  // 量不到寬度(還沒進 DOM / 整塊 display:none)→ 先放全文,之後 ResizeObserver 拿到真寬度再截一次
+  if (max < 2 || full.length <= max) { obj.textContent = full; return; }
+  let tail = full.slice(-(max - 1));
+  const cut = tail.indexOf("/");   // 不露出半個目錄名,一律從斜線起算
+  if (cut > 0) tail = tail.slice(cut);
+  obj.textContent = "…" + tail;
+}
+// 讀一輪再寫一輪:每列都「量→改」會逐列觸發 reflow。只截 mono 的受詞(路徑、指令):字寬只有一個,量一次就對。
+// 搜尋字是句子(12px 無襯線)不截頭,交給 CSS 從尾巴截——混著量會把字寬記錯,截過頭再被 CSS 補第二個「…」(稽核 2026-10-16 必修 1)
+function fitSteps(root) {
+  const scope = root || $("chat-scroll");
+  const objs = scope && scope.querySelectorAll ? scope.querySelectorAll(".think-step-obj.mono") : [];
+  if (!objs.length) return;
+  const charW = stepCharWidth(objs[0]);
+  if (!charW) return;
+  const plan = [];
+  objs.forEach((obj) => {
+    const li = obj.parentNode, kids = li.children;
+    const gap = parseFloat(getComputedStyle(li).columnGap) || 0;
+    let avail = li.clientWidth, shown = 0;
+    // 位置記號整輪同一邊時是 display:none(寬 0):不佔 gap
+    for (let i = 0; i < kids.length; i++) { const w = kids[i] === obj ? 1 : kids[i].getBoundingClientRect().width; if (!w) continue; shown++; if (kids[i] !== obj) avail -= w; }
+    avail -= gap * (shown - 1);
+    plan.push([obj, avail]);
+  });
+  plan.forEach((p) => fitStepObj(p[0], p[1], charW));
+}
+// 聊天欄寬度會變(拖分隔線、收合側欄、視窗縮放):一個 observer 全收,下一個 frame 重截一次
+if (typeof window !== "undefined" && typeof ResizeObserver === "function" && typeof document !== "undefined" && document.getElementById) {
+  const box = document.getElementById("chat-scroll");
+  let fitRaf = false;
+  if (box) new ResizeObserver(() => { if (fitRaf) return; fitRaf = true; requestAnimationFrame(() => { fitRaf = false; fitSteps(); }); }).observe(box);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { stepCharW = 0; fitSteps(); });   // 字型晚到:第一次量到的是 fallback 的字寬
 }
 /* 思考文字累積在同一個 log,段與段之間空一行。 */
 function busyReason(text) {
@@ -2629,24 +2738,30 @@ function busyReason(text) {
 function busyHide() {
   if (busy) busy.el.hidden = true;    // 回覆在串流了,字本身就是「還在跑」
 }
-function busyEnd(faulted) {
+// faulted = 出錯的回合(列最後 3 步並自己攤開);stopped = 用戶按了停止(列最後 3 步,但照舊收著:停止不是失敗)
+function busyEnd(faulted, stopped) {
   if (!busy) return;
   const b = busy; busy = null;
-  clearInterval(b.timer); clearTimeout(ACT.timer);
-  b.phaseEnd = Date.now(); phasesSync(b);   // 最後一階段的時長凍結在收尾那一刻
-  const hasFold = b.stepsEl.children.length > 0 || b.reason.textContent.trim() !== "";
+  clearInterval(b.timer); clearTimeout(ACT.timer); clearTimeout(b.subTimer);
+  if (b.sub) { b.sub.remove(); b.sub = null; }   // 當下動作:回合結束就收掉;中斷的回合由最後 3 步取代,兩者不並存
+  b.phaseEnd = Date.now(); const rows = phasesSync(b);   // 最後一階段的時長凍結在收尾那一刻
+  const tail = (faulted || stopped) && faultPaint(b.phasesEl, rows.length, b.recs, true);
+  // 只讀、沒思考的回合不留(Wei 10-16);出錯的例外:錯誤通知要指得到「上面是已經執行的步驟」。停止的只讀回合照規則不留
+  const hasFold = rows.length > 0 || (faulted && tail) || b.reason.textContent.trim() !== "";
   if (hasFold) {
     // 留下來:移到這一輪回覆的**上面**(思考在前、結論在後),動詞改成「思考過程」,
     // 秒數凍結在總耗時,tick 條收掉——那個凍結的秒數已經說了花多久。
     b.el.hidden = false;
     b.el.classList.add("is-done");
-    b.el.removeAttribute("role"); b.el.removeAttribute("aria-live");
+    b.live.removeAttribute("role"); b.live.removeAttribute("aria-live");
     b.verb.textContent = t("turn.process"); b.obj.textContent = ""; b.obj.hidden = true;
     b.elapsed.textContent = fmtDur((Date.now() - b.start) / 1000);
+    b.elapsed.removeAttribute("aria-hidden");   // 結束了不再每秒跳:按鈕名稱才會是「思考過程 4m 12s」
+    busyHasFoldOf(b);
     if (b.anchor && b.anchor.parentNode) b.anchor.parentNode.insertBefore(b.el, b.anchor);
     // 結束一律收起(回覆出來了,焦點在回覆);出錯的回合例外,收據自己攤開
     b.el.classList.remove("is-open"); b.head.setAttribute("aria-expanded", "false");
-    if (faulted && b.stepsEl.children.length) busyOpenReceipts(b);
+    if (faulted && (rows.length || tail)) busyOpenReceipts(b);
     return;
   }
   if (b.el.hidden || reducedMotion()) { b.el.remove(); return; }
@@ -2655,7 +2770,7 @@ function busyEnd(faulted) {
 }
 
 /* 思考文字每一輪都先收著(Wei 0928 第 2b 點):那是模型自己的獨白,多半是英文,等的人要看的是步驟。
-   有思考文字才在步驟下面留一顆「顯示思考內容」,按了才出;一輪只掛一次,按過之後後面來的字直接看得到 */
+   有思考文字才在階段清單後面留一顆「顯示思考內容」,按了才出;一輪只掛一次,按過之後後面來的字直接看得到 */
 function busyHoldReason(b) {
   if (b.held || !b.reason.textContent.trim()) return;
   b.held = true; b.el.classList.add("reason-held");
@@ -2664,7 +2779,7 @@ function busyHoldReason(b) {
   show.addEventListener("click", () => { b.el.classList.remove("reason-held"); show.remove(); b.reason.setAttribute("tabindex", "-1"); b.reason.focus(); });   // 鈕消失,焦點接到剛出來的字
   b.reason.before(show);
 }
-/* 出錯的回合(設計稽核 005 第 12 條,Wei 同意):工具收據自己攤開——「做到哪」不該還要多按一下;思考文字照樣收著 */
+/* 出錯的回合(設計稽核 005 第 12 條,Wei 同意):階段清單與最後 3 步自己攤開——「做到哪」不該還要多按一下;思考文字照樣收著 */
 function busyOpenReceipts(b) {
   b.el.classList.add("is-open"); b.head.setAttribute("aria-expanded", "true");
   busyHoldReason(b);
@@ -3834,7 +3949,7 @@ window.blave.onTurnEnd(async (r) => {
   // 上限的那句沒以回覆的形式出來(走 error chunk 或直接結束)時 turnFailOf 看不到:這一輪收過 llm_cap 就照樣記 cap
   if (!stopped && cur === "apikey" && turnCap) turnFail = "cap";
   const faulted = !stopped && (r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut);   // 同 upTurnEnded 的判準
-  busyEnd(faulted);
+  busyEnd(faulted, stopped);
   if (!stopped && (faulted || turnFail)) trackEvent("turn_failed", { reason: /AGENT_BIN_MISSING/.test(r.errTail || "") ? "engine_missing" : turnFail || "other" });
   turnFail = null;
   if (!loggedOut && r.code === 0) dataTurnEnd();

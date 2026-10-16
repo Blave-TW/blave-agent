@@ -393,6 +393,8 @@ function updater() {
       for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup, restarting: !!restarting });
       // 已經為了更新收工、交給 quitAndInstall 之後 Squirrel 才失敗(它是 setImmediate 排的,restartToUpdate 早就回了):改走結束 app(稽核 P1-2)
       if (restarting === "installing" && st.phase === "error") app.quit();
+      // 直接裝那一支(沒在下單)先設了 draftOk 才 install:Squirrel／NSIS 之後才失敗、app 還開著,收回——下次結束照樣問草稿(稽核 P3-1)
+      else if (st.phase === "error") draftOk = false;
     },
     log: (m) => console.error("[updater] " + m),
     onFail: (stage) => tm().track("update_failed", { stage }),
@@ -2492,6 +2494,23 @@ function stratPrefsSet(patch) {
   if (Object.keys(w).length) try { uiPrefsPatch(w); } catch (_) { /* 寫不進去:這一次的記憶只在畫面上 */ }
   return stratPrefsGet();
 }
+/* 雲端那一袋的部位大小(renderer/portfolio.js mgSizingCloudLoad):同一個 ui-prefs.json,綁這次登入的 who——
+   換帳號 / 重新登入讀不到上一份(回 null = 照預設)。形狀在這裡清洗才落地,renderer 讀回來再洗一次 */
+function mgSizingClean(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const pos = (x) => (typeof x === "number" && isFinite(x) && x > 0 ? x : null), tg = v.target && typeof v.target === "object" ? v.target : {};
+  return { fund: pos(v.fund), fundCcy: typeof v.fundCcy === "string" && /^[A-Z]{2,8}$/.test(v.fundCcy) ? v.fundCcy : null,
+    method: ["vol", "mdd", "lev"].indexOf(v.method) >= 0 ? v.method : "vol", target: { vol: pos(tg.vol), mdd: pos(tg.mdd), lev: pos(tg.lev) } };
+}
+function mgSizingCloudGet() {
+  const who = currentWho(); if (!who) return null;
+  try { const o = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).mgSizingCloud; return o && o.who === who ? mgSizingClean(o.v) : null; } catch (_) { return null; }
+}
+function mgSizingCloudSet(v) {
+  const who = currentWho(), c = mgSizingClean(v);
+  if (!who || !c) return false;
+  try { uiPrefsPatch({ mgSizingCloud: { who, v: c } }); return true; } catch (_) { return false; }   // 寫不進去:這一次的設定只在畫面上
+}
 
 async function blaveModels() {
   const acct = loadToken();
@@ -2985,6 +3004,7 @@ function guardNavigation(win) {
 }
 
 function createWindow() {
+  draftOk = false;   // 新的畫面、新的草稿:之前那一次「要離開」不算數
   const win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 1024, minHeight: 680,
     titleBarStyle: "hiddenInset",
@@ -3135,7 +3155,7 @@ app.whenReady().then(() => {
   const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
   // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
   // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;
@@ -3282,6 +3302,8 @@ app.whenReady().then(() => {
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
   handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
+  handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);
+  handle("mg-sizing-cloud-set", (_e, v) => mgSizingCloudSet(v), false);
   handle("library-download", (_e, id) => libraryDownload(id), { ok: false, kind: "fail" });
   // 本機報告(renderer/reports.js):讀 <WS>/reports 的信封 / 本體 + sidecar 圖(data URI);renderer 不碰 fs
   handle("reports-list", () => reportsList(), { reports: [] });
@@ -3382,6 +3404,10 @@ const MENU_EN = { menuAbout: "About Blave", menuServices: "Services", menuHide: 
   menuView: "View", menuLocal: "This Computer", menuCloud: "Cloud", menuActualSize: "Actual Size", menuZoomIn: "Zoom In", menuZoomOut: "Zoom Out",
   menuFullEnter: "Enter Full Screen", menuFullExit: "Exit Full Screen", menuWindow: "Window", menuMinimize: "Minimize", menuZoom: "Zoom",
   menuFront: "Bring All to Front", menuHelp: "Help", menuSite: "Blave Website" };
+// draftOk = 這一次離開已經問過「還沒儲存，要離開嗎」(或沒有草稿);結束被取消、改成收起來、或開了新視窗就收回。
+// draftNote = 有草稿、但後面那道框(下單中 / 回合中 / 統一有部位)本來就會問:草稿那句併進那個框,不連跳兩個
+let draftOk = false, draftNote = false;
+const draftNoted = (d) => (draftNote && tmLabels.unsavedNote ? d + "\n\n" + tmLabels.unsavedNote : d);
 let tray = null, trayTimer = null, quitConfirmed = false, quitAsking = false, hiddenSaid = false, lastVenue = null, trayKey = "";
 /* 為了更新而重開(restartToUpdate)確認之後的那一段:null | "stopping"(收工中,最多 11 秒)| "installing"(已交給 quitAndInstall)。
    stopping 期間:入口再按不跳第二個框、選單列那一行停用、不開新回合、紅燈只收視窗、Cmd+Q 等它自己結束(稽核 0.1.10 P1-1 / P2-8) */
@@ -3400,6 +3426,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 統一有部位時結束 Blave(Wei 10-07:擋一下、講白不會平倉)
   presQuitTitle: "Quit Blave?", presQuitBody: "{lots} lot(s) are still open at 統一期貨 (President Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 統一 app.",
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
+  unsavedTitle: "Leave without saving?", unsavedBody: "Your Portfolio changes will be lost.", unsavedGo: "Leave",
+  unsavedNote: "Unsaved Portfolio changes will be lost.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
   updateBody: "After the restart, this computer places no more orders and closes nothing; positions stay at {venue}. Press Start trading to resume.",
@@ -3524,21 +3552,40 @@ const updateWaiting = () => { try { const p = updater().state().phase; return p 
 async function restartToUpdate() {
   const used = () => { try { tm().track("feature_used", { name: "update_restart" }); } catch (_) { /* 追蹤不擋更新 */ } };
   const phase = () => updater().state().phase, turnBusy = () => !!(activeTurn || turnStarting);
-  const live = tradeMaybeLive();
   // 已經在收工 / 結束(restarting、quitConfirmed、quitting)跟「框開著」同一種:不再問、不再收一次工
-  const step = planRestart({ phase: phase(), turn: turnBusy(), asking: quitAsking || moveAsking || !!restarting || quitConfirmed || quitting, trading: !!live });
-  if (step === "not_ready") return { ok: false, error: "NOT_READY" };
-  if (step === "busy") return { ok: false, error: "TURN_BUSY" };
-  if (step === "asking") return { ok: false, error: "ASKING" };
+  const plan = () => planRestart({ phase: phase(), turn: turnBusy(), asking: quitAsking || moveAsking || !!restarting || quitConfirmed || quitting, trading: !!tradeMaybeLive() });
+  const stop = (st) => (st === "not_ready" ? { ok: false, error: "NOT_READY" } : st === "busy" ? { ok: false, error: "TURN_BUSY" } : st === "asking" ? { ok: false, error: "ASKING" } : null);
+  let step = plan();
+  if (stop(step)) return stop(step);
+  /* 策略組合有沒存的草稿(稽核 M1):在任何收工與 install 之前先問——quitAndInstall 一送出去就收不回來。
+     直接裝那一支單獨問這一道、留下就什麼都不動;下單中那一支下面本來就有框,草稿那句併進去(同結束攔截)。
+     問完狀態可能變了(開始下單、回合開始):重新判一次 */
+  let note = false;
+  if (!draftOk) {
+    if (step === "install") {
+      if (!(await draftGate(null))) return { ok: false, error: "CANCELED" };
+    } else {
+      quitAsking = true;
+      try { note = await draftDirty(null); } finally { quitAsking = false; }
+    }
+    step = plan();
+    if (stop(step)) return stop(step);
+    // 下單中那一支只記了有沒有草稿;問的那 1.5 秒剛好停了單、改走直接裝:這時要單獨問(稽核 P3-2)
+    if (step === "install" && note && !(await draftGate(null, true))) return { ok: false, error: "CANCELED" };
+  }
+  const live = tradeMaybeLive() || {};   // 問草稿那段之間剛好停了:字裡的交易所名留空,不拋例外
   // 安裝程式不能留著:結束後它還在寫 venv,下次開 app 就是兩支 pip 寫同一個資料夾(Windows 上它還握著隨包 Python 的 DLL)
-  if (step === "install") { await engineAbort(); const res = updater().install(); if (res.ok) used(); return res; }
+  if (step === "install") {
+    draftOk = true;   // quitAndInstall 會關視窗、走 before-quit:草稿那一道已經問過了
+    await engineAbort(); const res = updater().install(); if (res.ok) used(); else draftOk = false; return res;
+  }
   let r = null;
   try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
   quitAsking = true;
   const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.updateReady);
   try {
     r = await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTitle,
-      detail: TT.quitDetail(tmLabels.updateBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""),
+      detail: TT.quitDetail(tmLabels.updateBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : "") + (note && tmLabels.unsavedNote ? "\n\n" + tmLabels.unsavedNote : ""),
       buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId });
   } catch (_) { r = null; } finally { quitAsking = false; }
   if (!r || r.response !== sg.goIndex) return { ok: false, error: "CANCELED" };
@@ -3547,7 +3594,7 @@ async function restartToUpdate() {
   const ph = phase();
   if (ph !== "ready" && ph !== "blocked") return { ok: false, error: "NOT_READY" };
   used();
-  setRestarting("stopping"); quitConfirmed = true;
+  setRestarting("stopping"); quitConfirmed = true; draftOk = true;
   try {
     if (_tradeHost) { _tradeHost.noteQuit(); await _tradeHost.stop(); }
     await engineAbort();
@@ -3771,8 +3818,15 @@ app.on("browser-window-created", (_e, win) => {
     // 更新重開收工中:紅燈只收視窗(放行會變成走結束 app → 裝了但不重開);交給 quitAndInstall 之後就放行,它要關視窗才能重開
     if (restarting === "stopping") { e.preventDefault(); win.hide(); return; }
     const trading = tradeMaybeLive(), turn = !!(activeTurn || turnStarting);
-    if (quitting || quitConfirmed || (!trading && !turn)) return;
-    e.preventDefault(); win.hide();
+    if (quitting || quitConfirmed || (!trading && !turn)) {
+      // 真的要關(不是收起來):主視窗有沒存的策略組合草稿就先問;只收起來的那兩態草稿還在記憶體裡,不問
+      if (!quitting && !quitConfirmed && !draftOk && isOurPageUrl(win.webContents.getURL())) {
+        e.preventDefault();
+        if (!quitAsking && !moveAsking) draftGate(win).then((go) => { if (go && !win.isDestroyed()) { draftOk = true; win.close(); } });
+      }
+      return;
+    }
+    e.preventDefault(); win.hide(); draftOk = false; draftNote = false;   // 只收起來、沒結束:這一次「要離開」不算數
     // 「背景照常下單」那則只在真的在下單時講(字寫的是下單)
     if (trading && !hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; notifWatch(new Notification({ title: tmLabels.running, body: tmLabels.hidden }), "hidden").show(); }
   });
@@ -3787,12 +3841,48 @@ function quitOnSignals(proc, quit) {
   for (const s of sigs) proc.on(s, () => quit());
   return sigs;
 }
+/* 策略組合有還沒儲存的勾選或金額(Wei 0.1.26:草稿不另外存):離開前問一次。回 true = 可以走(沒有草稿、或選了離開)。
+   畫面自己才知道有沒有草稿:直接問它(trUnsavedAny);畫面卡住 1.5 秒沒回、或問不到就放行——不能讓人結束不了 app */
+function draftMainWin() { return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) || null; }
+async function draftDirty(win) {
+  const w = win || draftMainWin();
+  if (!w || w.isDestroyed()) return false;
+  try {
+    const ask = w.webContents.executeJavaScript("typeof trUnsavedAny === 'function' && trUnsavedAny() === true").catch(() => false);
+    return (await Promise.race([ask, new Promise((r) => setTimeout(() => r(false), 1500))])) === true;
+  } catch (_) { return false; }
+}
+async function draftGate(win, known) {   // known = 剛問過、確定有草稿:不再問畫面一次
+  const w = win || draftMainWin();
+  quitAsking = true;
+  try {
+    if (known !== true && !(await draftDirty(w))) return true;
+    try { showMain(); } catch (_) { /* 叫不出視窗也照問 */ }
+    const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.unsavedGo);
+    const r = await dialog.showMessageBox(w, { type: "warning", noLink: true, message: tmLabels.unsavedTitle, detail: tmLabels.unsavedBody, buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId });
+    return r.response === sg.goIndex;
+  } catch (_) { return true; } finally { quitAsking = false; }
+}
 // 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。
 // 就算這段沒跑到(當機、被強殺),daemon 讀到 stdin EOF 也會自己收。
 let quitting = false;
 app.on("before-quit", (e) => {
   // 更新重開正在收工:它收完會自己裝 / 結束;這時再跑一次下面的 stop 只會多送一次 SIGTERM、跟 quitAndInstall 搶(稽核 P2-8)
   if (restarting === "stopping") { e.preventDefault(); return; }
+  /* 策略組合有沒存的草稿:沒有別的框要問就單獨問這一道;下單中 / 回合中 / 統一有部位時後面那道框本來就會問,
+     草稿那句併進去(draftNote),不連跳兩個框。那幾道按了取消就收回 draftOk,下次結束再問 */
+  if (!quitting && !quitConfirmed && !draftOk) {
+    e.preventDefault();
+    if (quitAsking || moveAsking) return;
+    quitAsking = true;
+    draftDirty(null).then((dirty) => {
+      quitAsking = false;
+      const more = !!tradeMaybeLive() || !!(activeTurn || turnStarting) || (_tradeHost && _tradeHost.presidentLots ? _tradeHost.presidentLots() : 0) > 0;
+      if (!dirty || more) { draftOk = true; draftNote = dirty; app.quit(); return; }
+      draftGate(null, true).then((go) => { if (go) { draftOk = true; app.quit(); } });
+    });
+    return;
+  }
   // 自動下單還在跑:結束 = 停止下單、部位留著不平——先問一次(從選單列「結束 Blave…」、Cmd+Q、Dock 結束都走這裡)
   const live = !quitting && !quitConfirmed && tradeMaybeLive();
   // 統一還有部位(不論在不在下單):同一道框改講「這幾口不會平倉」(設計稿 d-quit;不替用戶平倉、不給第三顆鈕)
@@ -3805,9 +3895,9 @@ app.on("before-quit", (e) => {
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: presLots > 0 ? tmLabels.presQuitTitle : tmLabels.quitTitle,
       // 雲端也「確定在下單」時多一句:結束這個 app 不影響雲端。不確定就不說(那一句是在替雲端做保證)
-      detail: presLots > 0 ? tmLabels.presQuitBody.replace("{lots}", () => String(presLots))
-        : TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
-      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; if (_tradeHost && live) _tradeHost.noteQuit(); app.quit(); } }, () => { quitAsking = false; });
+      detail: draftNoted(presLots > 0 ? tmLabels.presQuitBody.replace("{lots}", () => String(presLots))
+        : TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : "")), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
+      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; if (_tradeHost && live) _tradeHost.noteQuit(); app.quit(); } else { draftOk = false; draftNote = false; } }, () => { quitAsking = false; draftOk = false; draftNote = false; });
     return;
   }
   // 本機 agent 回合還在跑(可能正在更新雲端主機):結束會把它斷掉,先問一次(同自動下單那一道;已經確認過就不再問)
@@ -3818,8 +3908,8 @@ app.on("before-quit", (e) => {
     quitAsking = true;
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTurnTitle,
-      detail: tmLabels.quitTurnBody, buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
-      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });
+      detail: draftNoted(tmLabels.quitTurnBody), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
+      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } else { draftOk = false; draftNote = false; } }, () => { quitAsking = false; draftOk = false; draftNote = false; });
     return;
   }
   // 常駐程式在跑、或背景安裝的 pip 還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)

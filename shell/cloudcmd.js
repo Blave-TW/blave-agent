@@ -210,8 +210,9 @@ function connectSecrets(a, shapeOk, nowSec) {
   return { venue: a.venue, secrets };
 }
 /* 機器查權限的拒絕碼(runtime `_binance_bind_check` / `_local_real_key_gate`,與 binance_check.js 同一套)。
-   WITHDRAW_ENABLED = 提領權限開著(Wei 09-25 拍板要擋;Binance / OKX / BingX / Bybit 每個模式都查,Gate.io 查不到)。 */
-const CONNECT_CODES = ["WITHDRAW_ENABLED", "TRADING_DISABLED", "INCOMPLETE_PAIR", "IP_OR_KEY", "BAD_KEY_FORMAT", "BAD_SECRET", "CLOCK", "RATE_LIMITED", "NETWORK", "UNKNOWN"];
+   提領權限不檢查(Wei 2026-10-15),所以沒有 WITHDRAW_ENABLED;舊 runtime 送來的會走一般拒絕(REJECTED + 原文)。
+   LIB_BROKEN 刻意不在這張表:表上的代號回 detail {},它要帶原因,由 interpretVenueBind 從遮過的原文取。 */
+const CONNECT_CODES = ["TRADING_DISABLED", "INCOMPLETE_PAIR", "IP_OR_KEY", "BAD_KEY_FORMAT", "BAD_SECRET", "CLOCK", "RATE_LIMITED", "NETWORK", "UNKNOWN"];
 /* cloudCmd.send("credentials") 的回傳 → { ok, code, detail }(純函式;detail 裡沒有金鑰——這個回傳本來就不含)。
      ok      → OK | NO_IP_RESTRICT(沒設白名單,不擋);detail = { spot, futures }。舊 runtime 回字串 "credentials=N" 也算 OK(Wei:這版不管)
      rejected→ 表上的代號;RATE_LIMITED 依說明字串再分 RATE_BANNED(418)/ RATE_BACKOFF(冷卻中、這次沒去問);其餘 REJECTED + 原文前 200 字
@@ -243,16 +244,20 @@ function interpretConnect(r, secrets) {
 
 /* 這台電腦綁 OKX / BingX / Gate.io / Bybit 的 daemon 回覆 → { ok, code, detail }(純函式)。runtime 的 _local_real_key_gate
    在寫入前用那一家的 lib/account_* 讀一次帳戶:成功的 ack(binance: null)= 讀得到帳戶(不等於交易權限已確認);
-   拒絕是 "ValueError: <CODE>: …"——INCOMPLETE_PAIR / UNKNOWN / WITHDRAW_ENABLED 照代號;REJECTED 取括號裡那家的原因(先過 interpretConnect 的遮罩);
-   「no permission check exists」(這台的 lib 缺那一支)→ NO_CHECK;daemon 自己的代號(DAEMON_DOWN…)→ SEND_FAILED */
+   拒絕是 "ValueError: <CODE>: …"——INCOMPLETE_PAIR / UNKNOWN 照代號;REJECTED 取括號裡那家的原因(先過 interpretConnect 的遮罩);
+   「no permission check exists」(這台的 lib 缺那一支)→ NO_CHECK;
+   "LIB_BROKEN: lib/account_x.py could not load (…)"(lib 在、import 失敗;尾巴的「— not saved」可有可無)→ LIB_BROKEN,
+   detail.reason = 冒號後整句(遮過、截 200)——是這台電腦的程式壞了,不是交易所拒絕;daemon 自己的代號(DAEMON_DOWN…)→ SEND_FAILED */
 function interpretVenueBind(r, secrets) {
   if (r && r.ok) return { ok: true, code: "READ_OK", detail: {} };
   const err = r && typeof r.error === "string" ? r.error : "DAEMON_DOWN";
   if (/^[A-Z_]+$/.test(err)) return { ok: false, code: "SEND_FAILED", detail: { error: err } };
   const out = interpretConnect({ ok: false, kind: "rejected", error: err }, secrets);
-  if (out.code === "INCOMPLETE_PAIR" || out.code === "UNKNOWN" || out.code === "WITHDRAW_ENABLED") return { ok: false, code: out.code, detail: {} };
+  if (out.code === "INCOMPLETE_PAIR" || out.code === "UNKNOWN") return { ok: false, code: out.code, detail: {} };
   const shown = (out.detail && out.detail.error) || "";
   if (/no permission check exists/.test(shown)) return { ok: false, code: "NO_CHECK", detail: {} };
+  const lb = /^\s*ValueError:\s*LIB_BROKEN:\s*(.*?)(?:\s*—\s*not saved)?\s*$/.exec(shown);
+  if (lb) return { ok: false, code: "LIB_BROKEN", detail: { reason: lb[1].slice(0, 200) } };
   const m = /^\s*ValueError:\s*REJECTED:[^(]*\((.*)\)\s*—\s*not saved\s*$/.exec(shown) || /^\s*ValueError:\s*REJECTED:\s*(.*)$/.exec(shown);
   if (m) return { ok: false, code: "REJECTED", detail: { reason: m[1].slice(0, 200) } };
   return { ok: false, code: "SEND_FAILED", detail: { error: shown } };

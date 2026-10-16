@@ -201,8 +201,8 @@
 .wtag.cloud { background: var(--surface-muted); color: var(--ink); }
 .sysline { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-24); font-size: 11px; line-height: 1.4; color: var(--ink-3); text-align: center; }
 .sysline::before, .sysline::after { content: ""; flex: 1; height: 1px; background: var(--border-hairline); }
-.think-step .wtag { flex: none; display: none; }
-.think-indicator.has-both .think-step .wtag { display: inline-flex; }   /* 這一輪兩邊都做過事才畫 */
+.think-sub-row .wtag { flex: none; display: none; }
+.think-indicator.has-both .think-sub-row .wtag { display: inline-flex; }   /* 這一輪兩邊都做過事才畫 */
 .msg.you .bubble {
   background: var(--surface-muted); border-radius: var(--radius-lg);
   padding: var(--space-8) var(--space-16); max-width: 84%; min-width: 0;
@@ -312,7 +312,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    等待指示器 — 網頁工作頁「思考列」的 v1 子集
    來源:web/app/static/css/agent/workspace.css 約 1830–1945(.think-indicator /
    .think-head / .think-ticks / .think-verb / .think-elapsed / .is-fading)。
-   搬過來的是 tick 條 + 動詞 + 秒數,以及展開面板(chevron / .think-steps 工具收據 /
+   搬過來的是 tick 條 + 動詞 + 秒數,以及展開面板(chevron / 階段清單 /
    .think-reason 思考文字)。回合結束後整塊留下來當可再點開的「思考過程」標記。
    差別兩處:① 色改引 tokens.css 的角色變數(--ink / --ink-3),不寫死 dark token,
    因為這個外殼的 CSS 亮暗兩態都成立;② 它是 .chat-scroll 的最後一個兄弟節點
@@ -337,6 +337,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
 .think-head.no-toggle { cursor: default; }
+/* role=status 只包狀態列那一行(展開區在外面)。不設 position:熱區 ::before 要錨在 .think-indicator */
+.think-live { display: flex; max-width: 100%; min-width: 0; }
 /* 熱區:整列寬 × 44(視覺列高仍 26,上下各擴 9;上一則 .msg 下緣 24、收起時下方 gap 4 + margin ≥ 8,伸不進相鄰訊息)——錨在 .think-indicator,不是字的寬度;沒東西可展開就沒有熱區 */
 .think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -9px; height: 44px; }
 .think-head .think-verb, .think-head .think-chev { transition: color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
@@ -370,58 +372,43 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   transition: grid-template-rows var(--motion-base) var(--ease-standard);
 }
 .think-indicator.is-open .think-reason-wrap { grid-template-rows: 1fr; }
-/* 收合時 visibility:hidden(等收合的淡出跑完才切):展開區不進讀屏、裡面的鈕 tab 不到;清單在 role=status 裡,收著時長新階段也不會被念 */
+/* 收合時 visibility:hidden(等收合的淡出跑完才切):展開區不進讀屏、裡面的鈕 tab 不到 */
 .think-fold { min-height: 0; opacity: 0; visibility: hidden; transition: opacity var(--motion-base) var(--ease-standard), visibility 0s linear var(--motion-base); }
 .think-indicator.is-open .think-fold { opacity: 1; visibility: visible; transition: opacity var(--motion-base) var(--ease-standard), visibility 0s; }
 
-/* 工具收據:一次呼叫一列——記號 + 動詞 + 受詞 + 耗時。記號沿用 tick 條的 2px 短劃
-   語言(不引入勾勾 / 圓點 / chip),列界靠行距。8 列半的高度上限:第 9 列露出
-   上半截就是「下面還有」的提示;沒有上限的話 50 次呼叫的回合展開是 1200px。 */
-.think-steps {
-  list-style: none; margin: 0 0 var(--space-4) 15px; padding: 0;
-  max-width: calc(100% - 15px); max-height: 204px; overflow-y: auto;
-}
-.think-steps:empty { display: none; }
-.think-step {
-  display: flex; align-items: center; gap: var(--space-8);
-  padding: 3px 0; font-size: 12px; line-height: 1.5;
-}
+/* 階段清單(canon › 回合狀態列 9;spec-turn-phases-one-layer):展開區只有這一層,一個階段就畫;住在 .think-fold 裡跟著 ⌄ 開合(進行中也預設收著)。
+   列 12px、上下 3、左縮 15;沒有高度上限、不內捲——交給聊天欄自己捲(內捲自動捲到底時最上面那一列會被裁一半)。
+   列是 grid(記號 8、動詞、受詞、時長):子清單 grid-column 1/-1 換到下一行;用 flex＋wrap 會把時長擠下去 */
+.think-phases { list-style: none; margin: 0 0 var(--space-4) 15px; padding: 0; width: calc(100% - 15px); }
+.think-phase { display: grid; grid-template-columns: 8px auto minmax(0, 1fr) auto; column-gap: var(--space-8); align-items: center; padding: 3px 0; font-size: 12px; line-height: 1.5; }
+/* 記號沿用 tick 條的 2px 短劃語言。記號欄固定 8 寬:進行中那一列的記號是半截 4、主墨 */
 .think-step-mark { flex: none; width: 8px; height: 2px; background: var(--ink-3); }
-/* 記號欄固定 8 寬:正在跑那一列的記號是 4,右邊補 4,字才跟上面的列對齊。正在跑的那一列用主墨 */
-.think-step.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }
-.think-step.is-run .think-step-verb, .think-step.is-run .think-step-time { color: var(--ink); }
-.think-step.is-run .think-step-obj { color: var(--ink-2); }
-/* 錯誤是狀態不是內容:紅只上在記號與耗時,動詞受詞不變色 */
-.think-step.is-err .think-step-mark { background: var(--color-red); }
-/* 秒數不讓位:先截受詞,受詞截完還放不下(英文長動詞＋位置記號)才截動詞。受詞的 shrink 9999:比例小一點動詞就會先被削掉不到 1px、多出一個「…」 */
-.think-step-verb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
-.think-step-obj {
-  flex: 0 9999 auto; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--ink-3);
-}
-.think-step-time {
-  flex: none; margin-left: auto; padding-left: var(--space-8);
-  font-size: 11px; color: var(--ink-3); white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 階段清單(canon › 回合狀態列 9):回合裡出現第二種階段才有;住在 .think-fold 裡、排在逐步收據上面,跟著 ⌄ 開合(進行中也預設收著)。
-   列同收據列(12px、上下 3、左縮 15)。記號沿用收據的 8×2 短劃,進行中半截、主墨 */
-/* 高度上限同收據清單:出錯回合會自己攤開,階段來回切換的長回合可以有幾十列 */
-.think-phases { list-style: none; margin: 0 0 var(--space-4) 15px; padding: 0; width: calc(100% - 15px); max-height: 204px; overflow-y: auto; }
-.think-phase { display: flex; align-items: center; gap: var(--space-8); padding: 3px 0; font-size: 12px; line-height: 1.5; }
-.think-phase-verb { flex: none; color: var(--ink-2); }
-.think-phase-obj { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
+.think-phase-verb { color: var(--ink-2); }
+.think-phase-obj { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
 .think-phase-obj.mono { font-size: 11px; }
 .think-phase-time {
-  flex: none; margin-left: auto; padding-left: var(--space-8);
   font-size: 11px; color: var(--ink-3); white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .think-phase.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }
 .think-phase.is-run .think-phase-verb, .think-phase.is-run .think-phase-time { color: var(--ink); }
 .think-phase.is-run .think-phase-obj { color: var(--ink-2); }
+/* 錯誤是狀態不是內容:那一階段有失敗的步驟,紅只上記號;子列的字不上紅(darkCard 上過不了 AA) */
+.think-phase.is-err .think-step-mark { background: var(--color-red); }
+
+/* 子列:進行中那一階段的當下動作,或出錯那一階段的最後 3 步。巢在階段 <li> 裡;左縮 16 = 記號 8 + gap 8,文字對齊階段動詞。
+   不畫記號(會被讀成另一列階段)、不畫圖示;整行 --ink-3,靠顏色與縮排分層級。列距 1 比階段列的 3 緊:看得出是上一列的附屬 */
+.think-sub { grid-column: 1 / -1; min-width: 0; list-style: none; margin: 0; padding: 0 0 0 16px; }
+/* 分不出任何階段(回放只有工具名):最後幾步直接當清單本身,左緣同階段清單 */
+.think-sub.is-top { margin: 0 0 var(--space-4) 15px; padding: 0; }
+.think-sub-row { display: flex; align-items: center; gap: var(--space-8); padding: 1px 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 耗時不讓位:先截受詞(fitSteps 截頭保尾,CSS 的 ellipsis 只是量不到寬度時的退路),受詞截完還放不下才截動詞 */
+.think-sub-row .think-step-verb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.think-sub-row .think-step-obj { flex: 0 9999 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.think-sub-row .think-step-obj.mono { font-size: 11px; }
+.think-sub-row .think-step-time { flex: none; margin-left: auto; padding-left: var(--space-8); font-size: 11px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* 出錯／被中斷的那一步(最後一列)提亮;耗時照舊 --ink-3 */
+.think-sub-row.is-last .think-step-verb, .think-sub-row.is-last .think-step-obj { color: var(--ink-2); }
 
 /* 思考文字:展開來就是要讀的,所以走無襯線、會換行、有高度上限可捲 */
 .think-reason {

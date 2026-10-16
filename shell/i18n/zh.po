@@ -626,6 +626,21 @@ msgstr "回撤"
 msgid "bt.chartAria"
 msgstr "回測期間的權益曲線與回撤"
 
+msgid "bt.chartAriaBand"
+msgstr "回測期間的權益曲線、隨機投組範圍與回撤"
+
+msgid "bt.legendBand"
+msgstr "隨機 p5–p95"
+
+msgid "bt.legendMedian"
+msgstr "隨機中位數"
+
+msgid "bt.tip.band"
+msgstr "1000 組隨機權重的投組，每天調回原權重、不計手續費。每天各自取 5%–95% 的範圍，不是某一組投組的路徑。"
+
+msgid "bt.tip.bandNarrow"
+msgstr "隨機投組的範圍太窄，只畫中位數。"
+
 msgid "bt.monthly"
 msgstr "月報酬"
 
@@ -795,7 +810,7 @@ msgid "bt.tip.benchmark"
 msgstr "同一段期間買進後一直持有這個標的的報酬。策略要贏過它，才算比什麼都不做好。"
 
 msgid "bt.tip.benchmarkRank"
-msgstr "跟隨機挑標的、買進持有的投組比，這支策略的總報酬贏過其中多少。"
+msgstr "跟 1000 組隨機權重的投組比（同一批標的、持股數約同這支策略，每天調回原權重、不計手續費），這支策略的總報酬贏過其中多少。"
 
 msgid "bt.tip.annVol"
 msgstr "每日報酬的標準差換算成一年。數字越大，權益的起伏越劇烈。"
@@ -1232,7 +1247,7 @@ msgid "pv.inc.note"
 msgstr "這台電腦與雲端主機是兩台獨立的機器，各自的交易所金鑰與帳本。電腦上做好的策略可以送上雲端，也可以直接請 agent 在主機上做。"
 
 msgid "pv.inc.web"
-msgstr "定期報告、每支策略的下單方式與策略管理，在網頁的雲端工作頁。"
+msgstr "定期報告與策略管理，在網頁的雲端工作頁。"
 
 msgid "pv.signin"
 msgstr "登入 Blave"
@@ -1310,20 +1325,16 @@ msgid "cx.lead"
 msgstr "只存在這台電腦的工作區（~/Blave/workspace/.env），Blave 不會上傳。agent 和你的策略程式讀得到，才能替你下單、讀帳戶。"
 
 msgid "cx.note.one"
-msgstr "在 Binance 建金鑰時：只開交易權限、提領務必關閉，並把這個 IP 加進白名單。"
+msgstr "在 Binance 建金鑰時：建議只開讀取和交易權限、不開提領，並把這個 IP 加進白名單。"
 
 msgid "cx.note.oneV"
-msgstr "在 {venue} 建金鑰時：只開交易權限，提領務必關閉。有設 IP 白名單的話，把這個 IP 加進去。"
+msgstr "在 {venue} 建金鑰時：建議只開讀取和交易權限、不開提領。有設 IP 白名單的話，把這個 IP 加進去。"
 
 msgid "cx.note.subAcct"
 msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。Blave 會管這個帳戶上的所有部位，你手動開的單也可能被平掉。"
 
 msgid "cx.note.subAcctOwn"
 msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
-
-# 查不到提領權限的那家(Gate.io):Blave 不會替他擋,講明要自己確認
-msgid "cx.note.wdUnchecked"
-msgstr "Blave 查不到 {venue} 金鑰有沒有提領權限，不會替你擋下：連接前請自己確認這把金鑰的提領是關閉的。"
 
 msgid "cx.store.q"
 msgstr "金鑰存在哪？"
@@ -1733,7 +1744,16 @@ msgid "tr.lotsNotionalTip"
 msgstr "≈ {amt} TWD（名目）"
 
 msgid "tr.typecPending"
-msgstr "下次執行後算出成分"
+msgstr "計算中…"
+
+msgid "tr.typecMembers"
+msgstr "成分：{list}"
+
+msgid "tr.typecMembersFlat"
+msgstr "成分：{list}（目前空手）"
+
+msgid "tr.typecSymsMore"
+msgstr "{list} 等 {n} 檔"
 
 msgid "tr.txfConfirmRef"
 msgstr "{prod} ≈ {amt} TWD"
@@ -1753,6 +1773,9 @@ msgstr "現貨"
 
 msgid "tr.mkt.swap"
 msgstr "合約"
+
+msgid "tr.mkt.fut"
+msgstr "期貨"
 
 msgid "tr.amountAria"
 msgstr "金額（{ccy}）"
@@ -1846,6 +1869,9 @@ msgstr "平倉"
 msgid "tr.cfTagRemove"
 msgstr "移出"
 
+msgid "tr.cfTagAdd"
+msgstr "加入"
+
 msgid "tr.saveWarn"
 msgstr "儲存後可能立即下單。"
 
@@ -1863,6 +1889,54 @@ msgstr "下單失敗：{sym}——{err}"
 
 msgid "tr.account"
 msgstr "帳戶"
+
+msgid "tr.exec"
+msgstr "下單方式"
+
+msgid "tr.exec.market"
+msgstr "市價"
+
+msgid "tr.exec.twap"
+msgstr "TWAP"
+
+msgid "tr.exec.chase"
+msgstr "限價追價"
+
+msgid "tr.exec.custom"
+msgstr "自訂：{module}"
+
+msgid "tr.exec.customAsk"
+msgstr "自訂——跟 agent 說"
+
+msgid "tr.exec.customPrefill"
+msgstr "我想自訂下單方式："
+
+msgid "tr.exec.customPrefillCloud"
+msgstr "我想自訂雲端主機的下單方式："
+
+msgid "tr.exec.minLabel"
+msgstr "TWAP 時長（分鐘）"
+
+msgid "tr.exec.minUnit"
+msgstr "分鐘"
+
+msgid "tr.exec.badMin"
+msgstr "時長請填 1 到 1440 的整數分鐘。"
+
+msgid "tr.exec.all"
+msgstr "組合裡每一筆單都用這個方式下。"
+
+msgid "tr.exec.noteTwap"
+msgstr "TWAP 會把單拆成小份，在時間窗內分批市價執行——單量大時比較不會推動價格、滑價較小。"
+
+msgid "tr.exec.noteChase"
+msgstr "限價追價會掛限價單跟著盤口移動，成交價通常比市價單好，追不到會自動轉市價保證成交。"
+
+msgid "tr.exec.tw"
+msgstr "統一期貨、群益期貨的單一律以市價送出，TWAP 與限價追價不適用。"
+
+msgid "tr.exec.unread"
+msgstr "設定檔暫時讀不到，下單方式先不能改；下一份回報讀到就恢復。"
 
 msgid "tr.equity"
 msgstr "淨值"
@@ -2448,9 +2522,6 @@ msgstr "指令送得太密，這一個沒有送出。等一下再按一次。"
 msgid "tr.cloud.tooSoonStop"
 msgstr "剛才已經送過暫停了，這一次沒有送出。等一下再按一次；雲端上的狀態以這一頁為準。"
 
-msgid "tr.cloud.onlyWebExec"
-msgstr "每支策略的下單方式與策略管理，在網頁的雲端工作頁。"
-
 msgid "tr.cloud.notSent"
 msgstr "這個指令沒有送出（Blave 這邊暫時記不下這筆操作紀錄）。再按一次試試。"
 
@@ -2715,12 +2786,6 @@ msgstr "查不到這台電腦的對外 IP"
 msgid "cx.ip.retry"
 msgstr "再查一次"
 
-msgid "cx.chk.withdraw"
-msgstr "這把金鑰有提領權限，沒有儲存。到 Binance 把這把金鑰的提領關掉，或換一把沒有提領權限的金鑰，再回來連一次。"
-
-msgid "cx.chk.withdrawV"
-msgstr "這把金鑰有提領權限，沒有儲存。到 {venue} 把這把金鑰的提領關掉，或換一把沒有提領權限的金鑰，再回來連一次。"
-
 msgid "cx.chk.trading"
 msgstr "這把金鑰沒開交易權限，沒有儲存。通常是還沒設 IP 白名單：把上面的 IP 加進白名單、勾選交易權限，再連一次。"
 
@@ -2744,6 +2809,10 @@ msgstr "{venue} 回了看不懂的帳戶資料，沒有儲存。過幾分鐘再�
 
 msgid "cx.chk.noCheckV"
 msgstr "這一版還不能在這台電腦檢查 {venue} 的金鑰，沒有儲存。先更新 Blave 再試。"
+
+# lib/account_<venue>.py 在、但 import 失敗(runtime LIB_BROKEN):是這台電腦的程式壞了,不歸咎交易所
+msgid "cx.chk.libBrokenV"
+msgstr "這台電腦上 {venue} 的程式載入失敗，沒有儲存（{reason}）。請回報給 Blave。"
 
 msgid "cx.chk.secret"
 msgstr "Secret Key 對不上這把 API Key，沒有儲存。從 Binance 重新複製 Secret；它只在建立金鑰時顯示一次，找不到就要重建一把。"
@@ -3309,6 +3378,24 @@ msgstr "agent 還在回覆"
 
 msgid "tm.quitTurnBody"
 msgstr "現在結束 Blave 會把這一回合中斷（包括正在做的雲端更新）。等它跑完再結束比較安全。"
+
+# 結束 / 關窗攔截:策略組合有還沒儲存的勾選或金額(草稿不另外存)
+msgid "tm.unsavedTitle"
+msgstr "還沒儲存，要離開嗎？"
+
+msgid "tm.unsavedBody"
+msgstr "策略組合的變更會丟掉。"
+
+msgid "tm.unsavedGo"
+msgstr "離開"
+
+# 下單中 / 回合中結束、或下單中更新重開時,併進那個框的一句(不另跳草稿框)
+msgid "tm.unsavedNote"
+msgstr "策略組合還有沒儲存的變更，離開後會丟掉。"
+
+# 自動下單頁空狀態 Z-draft(spec-autotrade-empty §2):已存一支都沒有、選擇策略框有沒存的草稿;原因句與霧卡共用。0.1.26 整合 autotrade-empty 時接上
+msgid "tr.startOffDraft"
+msgstr "勾好的策略還沒儲存。"
 
 msgid "tr.restartStoppedLocal"
 msgstr "Blave 重開過，什麼單都不下——部位現在沒有人在管，停損也不會執行。按「啟動下單」繼續。"
@@ -6466,7 +6553,7 @@ msgid "wd.r.twd.fq"
 msgstr "日"
 
 msgid "wd.r.twd.sy"
-msgstr "上市股 2010 年起"
+msgstr "上市櫃 2010 年起"
 
 msgid "wd.r.twd.an"
 msgstr "個股日線"
@@ -7403,6 +7490,9 @@ msgstr "各商品的總訊號部位"
 msgid "po.sigTargetsTip"
 msgstr "同一商品的各檔策略「金額 × 訊號」加總。"
 
+msgid "po.previewNote"
+msgstr "回測最後一期 {date}（預覽，尚未下單）"
+
 msgid "po.actualTip"
 msgstr "{venue} 帳戶裡策略開的部位"
 
@@ -7642,7 +7732,7 @@ msgid "mg.singleTip"
 msgstr "僅 1 檔策略，無法對比隨機組合"
 
 msgid "mg.slope"
-msgstr "斜率/波動"
+msgstr "最佳化 斜率/波動"
 
 msgid "mg.slopeDesc"
 msgstr "權益曲線斜率 ÷ 波動，分數高者權重高"
@@ -7758,9 +7848,6 @@ msgstr "完成"
 msgid "po.goCfg"
 msgstr "到策略組合"
 
-msgid "tr.startOffNoAmtShort"
-msgstr "還沒有策略設定金額。"
-
 msgid "po.goIdle"
 msgstr "還沒開始下單"
 
@@ -7790,6 +7877,43 @@ msgstr "還沒算出最新訊號：下一根 K 棒收完就有"
 
 msgid "tr.startOffNoVenueAmt"
 msgstr "還沒有{venue}能下的策略金額。"
+
+msgid "tr.startOffNoPick"
+msgstr "還沒選策略。"
+
+msgid "tr.startOffNoStrat"
+msgstr "還沒有回測完成的策略。"
+
+msgid "tr.startOffZeroAmt"
+msgstr "策略金額都是 0。"
+
+msgid "tr.startOffNoVenueStrat"
+msgstr "還沒有{venue}能下的策略。"
+
+msgid "tr.fogPosPick"
+msgstr "選好策略，就能啟動下單。"
+
+msgid "tr.fogPosNew"
+msgstr "請代理做一支策略，回測完成就能下單。"
+
+msgid "po.goAmounts"
+msgstr "設定金額"
+
+msgid "tr.runningZPick"
+msgstr "下單程式在跑 · 還沒選策略"
+
+msgid "tr.runningZNoStrat"
+msgstr "下單程式在跑 · 還沒有回測完成的策略"
+
+msgid "tr.runningZNoVenue"
+msgstr "下單程式在跑 · 還沒有{venue}能下的策略"
+
+msgid "tr.runningZZero"
+msgstr "下單程式在跑 · 策略金額都是 0"
+
+# Z-draft(spec-autotrade-empty §2):下單程式在跑、已存一支都沒有、選擇策略框有沒存的勾選
+msgid "tr.runningZDraft"
+msgstr "下單程式在跑 · 勾好的策略還沒儲存"
 
 msgid "mg.waitOne"
 msgstr "等「{name}」更新績效…"
@@ -7886,6 +8010,14 @@ msgstr "0 口（不足一口）"
 
 msgid "mg.lotsUnderFoot"
 msgstr "台指期不足一口的部分沒算進去：少投 ≈ {amt}"
+
+# 優化表下:台指期 half-up 進位讓整份組合比計畫總部位多超過 5%(portfolio.js MG_LOTS_OVER_WARN)。pct = 那一支自己比配置多幾 %;只有一支進位用這句
+msgid "mg.lotsOverFoot"
+msgstr "台指期進位成 {lots} 口，比配置多 {pct}%"
+
+# 同上,兩支以上台指期成員進位:一支一行、帶策略名
+msgid "mg.lotsOverFootN"
+msgstr "{name}：台指期進位成 {lots} 口，比配置多 {pct}%"
 
 msgid "mg.waitPrefixOpt"
 msgstr "優化："

@@ -190,6 +190,7 @@ html.ws-sc .side-gate { display: none; }
    分頁列不收(底線是整欄的分隔線)。還沒連交易所的引導畫面(#tr-onboard)本來就是整欄置中的 46ch,不套 */
 #tr > .pf:not(#tr-onboard) > * { max-width: 760px; }
 #tr > .pf:not(#tr-onboard) > .pf-scroll { max-width: calc(760px + 2 * var(--space-4)); }   /* 多的是 focus 框的留白(見 .pf-scroll),表本身仍是 760 */
+#tr > .pf:not(#tr-onboard) > .fog { max-width: none; }   /* 部位的霧(spec-autotrade-empty §4)鋪滿整欄,同策略組合頁 */
 #tr > .main-head { max-width: calc(760px + 2 * var(--space-24)); }
 .pf[hidden] { display: none; }
 .pf:focus-visible { outline-offset: -2px; }
@@ -395,7 +396,7 @@ html.ws-sc .side-gate { display: none; }
 .cv-tip .v { color: var(--ink); }
 .cv-tip .d:last-child { white-space: normal; word-break: keep-all; }   /* 288 寬:卡寬釘在繪圖區(trade.js 設 maxWidth),第三行「相對區間起點」可以換行、數字不斷 */
 @media (prefers-reduced-motion: reduce) { .cv-tip { animation: none; } }
-/* 事件清單(spec-0.1.19 §1.2):240 = 1 個日期標(≈29)＋7.5 列(12/1.6＋4·4＋1 ≈ 28)——第 8 列露出上半截就是「下面還有」,同 app.css .think-steps 的 204;
+/* 事件清單(spec-0.1.19 §1.2):240 = 1 個日期標(≈29)＋7.5 列(12/1.6＋4·4＋1 ≈ 28)——第 8 列露出上半截就是「下面還有」;
    component-metric,不是 spacing scale 值。不設 overscroll-behavior: contain:區塊在頁面中段,捲到底後滾輪要能繼續捲外層 .pf */
 .ev-list { max-height: 240px; overflow-y: auto; }
 /* 標題列右側「成交 N 筆 · 看交易歷史」:12px ink-3,連結是既有 .btn-quiet;0 筆整行不出(trade.js trOvFills) */
@@ -485,9 +486,20 @@ html.ws-sc .side-gate { display: none; }
   -webkit-appearance: none; appearance: none;
 }
 .f-input:focus { outline: none; border-color: var(--ink); }
+/* 停用:真 disabled、灰階、不用 opacity(canon › Disabled;同 .amt-in:disabled)。所有 .f-input 共用 */
+.f-input:disabled { color: var(--ink-3); border-color: var(--border-hairline); cursor: not-allowed; }
+.f-selw:has(.f-input:disabled)::after { border-color: var(--border-hairline); }
 .cx-manual-note { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cx-row { display: flex; align-items: center; gap: var(--space-12); margin-top: var(--space-12); }
 .cx-row .n { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+/* 設定 › 下單方式:選單 + TWAP 時長格(+ 單位)一列;沿用 .f-selw / .f-input,這裡只有排列 */
+.tr-exec { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-12); }
+.tr-exec .f-selw { flex: 0 0 200px; }
+.tr-exec .f-input { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* 自訂的長模組名出 … */
+.tr-exec .f-input.txt { flex: 0 0 72px; }
+.tr-exec .f-input[aria-invalid="true"], .tr-exec .f-input[aria-invalid="true"]:focus { border-color: var(--color-redText); }
+.tr-exec + .pf-note.err { margin-top: var(--space-6); }
+.tr-exec .u { font-size: 12px; color: var(--ink-3); }
 .cx-row .cn-st { color: var(--ink-2); }
 .cx-row .cn-st.cx-wait { margin-top: 0; color: var(--ink-3); }   /* 串接中…:圓環 + 灰字;.cx-wait 自帶的 margin-top 在列裡會把它壓低 */
 
