@@ -1580,10 +1580,10 @@ msgid "tr.opt.catch"
 msgstr "補齊部位"
 
 msgid "tr.opt.catchDesc"
-msgstr "現在就{how}，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+msgstr "現在就{how}，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
 
 msgid "tr.opt.catchDescReal"
-msgstr "現在就{how}，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+msgstr "現在就{how}，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
 
 msgid "tr.opt.catchHow.market"
 msgstr "用市價下單"

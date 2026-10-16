@@ -1572,10 +1572,10 @@ msgid "tr.opt.catch"
 msgstr "Catch up positions"
 
 msgid "tr.opt.catchDesc"
-msgstr "{how} now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+msgstr "{how} now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
 
 msgid "tr.opt.catchDescReal"
-msgstr "{how} now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+msgstr "{how} now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
 
 msgid "tr.opt.catchHow.market"
 msgstr "Places market orders"

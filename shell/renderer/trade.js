@@ -3842,11 +3842,13 @@ function trCatchHow(r, real) {
 }
 function trExecSection(box, r, id) {
   const S = TR, stored = trExecStored(r);
-  box.appendChild(trSec(trEl("span", "label", t("tr.exec"))));
-  if (stored === null) { box.appendChild(trEl("div", "pf-foot", t("tr.exec.unread"))); return; }
+  if (stored === null) { box.append(trSec(trEl("span", "label", t("tr.exec"))), trEl("div", "pf-foot", t("tr.exec.unread"))); return; }
   if (S.exec.edit != null && S.exec.edit === stored) S.exec.edit = null;   // 報告對上了
   const tw = trTwBroker(id), cur = trExecCurrent(r, id);
   const isTwap = cur.indexOf("twap:") === 0, busy = !!S.sending.execution;
+  // TWAP／限價追價的原理收進區段標籤的 tooltip(稽核 W3),畫面上只留一句「每一筆單都用這個方式下」
+  const how = tw ? null : isTwap ? t("tr.exec.noteTwap") : cur === "chase" ? t("tr.exec.noteChase") : null;
+  box.appendChild(trSec(how ? trTipLabel("label", t("tr.exec"), how) : trEl("span", "label", t("tr.exec"))));
   const row = trEl("div", "tr-exec"), w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "tr-exec-sel";
   sel.setAttribute("aria-label", t("tr.exec"));
   const opts = ["market", "twap", "chase"].concat(cur.indexOf("custom:") === 0 ? [cur] : [], tw ? [] : ["custom-ask"]);   // 統一／群益不列入口(同網頁)
@@ -3878,8 +3880,7 @@ function trExecSection(box, r, id) {
   if (S.exec.err && S.exec.raw != null) { const p = trEl("p", "pf-note err", S.exec.err); p.id = "tr-exec-err"; box.appendChild(p); }
   else if (S.exec.err) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", S.exec.err)); box.appendChild(p); }
   else if (S.env === "cloud" && S.exec.edit != null) box.appendChild(trEl("p", "pf-note", t("tr.cloud.pendRow")));
-  const note = tw ? t("tr.exec.tw") : [t("tr.exec.all"), isTwap ? t("tr.exec.noteTwap") : cur === "chase" ? t("tr.exec.noteChase") : ""].filter(Boolean).join(LANG === "zh" ? "" : " ");
-  box.appendChild(trEl("div", "pf-foot tr-exec-note", note));
+  box.appendChild(trEl("div", "pf-foot tr-exec-note", tw ? t("tr.exec.tw") : t("tr.exec.all")));
 }
 /* 同網頁 chatAskCustomExec:框是空的才放那一句,已有草稿就不覆蓋、只聚焦;**不送出**。
    雲端視角也填本機聊天框(本機 agent 經 blave 工具去改雲端主機),絕不送進雲端——同 trErrAsk */

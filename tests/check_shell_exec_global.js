@@ -56,22 +56,26 @@ ok("② trExecStored:讀 execution_effective;沒有這欄(舊 runtime)讀 config
 
 // ── ③④ 畫面與互動(假 DOM)──
 function mk(tag) {
-  return { tag, children: [], attrs: {}, on: {}, textContent: "", value: "", disabled: false, className: "", id: "",
+  return { tag, children: [], attrs: {}, dataset: {}, on: {}, textContent: "", value: "", disabled: false, className: "", id: "",
     appendChild(c) { this.children.push(c); return c; }, append(...cs) { cs.forEach((c) => this.children.push(typeof c === "string" ? { tag: "#text", textContent: c, children: [] } : c)); },
     setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(e, f) { this.on[e] = f; } };
 }
 const all = (n) => [n].concat(...(n.children || []).map(all));
 const find = (root, id) => all(root).find((n) => n.id === id);
 const text = (root) => all(root).map((n) => n.textContent || "").join("|");
+const note = (root) => (all(root).find((n) => n.className === "pf-foot tr-exec-note") || {}).textContent;
+// 區段標籤是 tr-tipb 鈕、aria-describedby 指到 role=tooltip 的氣泡 → 回氣泡的字;不是就回 null
+const howTip = (root) => { const b = all(root).find((n) => /\btr-tipb\b/.test(n.className)), tip = all(root).find((n) => n.attrs && n.attrs.role === "tooltip");
+  return b && tip && b.attrs["aria-describedby"] === tip.id && b.textContent === "tr.exec" ? tip.textContent : null; };
 const sent = [], said = [], tracked = [];
-const ctx = vm.createContext({ LANG: "zh", J, document: { createElement: mk }, sent, said, tracked,
+const ctx = vm.createContext({ LANG: "zh", J, document: { createElement: mk, createDocumentFragment: () => mk("#frag"), createTextNode: (s) => ({ tag: "#text", textContent: s, children: [] }) }, sent, said, tracked,
   t: (k, p) => k + (p ? J(p) : ""), srSay: (m) => said.push(m), trackFeature: (n) => tracked.push(n), trPollSoon() {}, trPaint() {}, trPaintSet() {},
   trTwBroker: (id) => id === "capital" || id === "president", ENV: { cur: "local" }, trSendError: (res) => "ERR:" + (res && res.error),
   trSec: (label) => { const s = mk("div"); s.appendChild(label); return s; } });
 const TA = { value: "", focused: 0, sel: null, focus() { this.focused++; }, setSelectionRange(a, b) { this.sel = [a, b]; } };
 Object.assign(ctx, { $: (id) => (id === "ta" ? TA : null), autosize() {}, paneSt: { chat: { off: true } }, paneToggle(n, off) { ctx.paneSt.chat.off = off; } });
-["trEl", "trExecKey", "trExecSpec", "trExecArgs", "trExecMinutes", "trExecStored", "trExecCurrent", "trCatchHow", "trExecSection", "trExecSend", "trExecAskCustom"].forEach((n) => vm.runInContext(cutF(trade, n), ctx));
-vm.runInContext(`var TR_TWAP_DEFAULT_MIN = 15; var REP = null; var VID = "binance"; function trReport() { return REP; } function trVenueId() { return VID; }
+["trEl", "trTipLabel", "trExecKey", "trExecSpec", "trExecArgs", "trExecMinutes", "trExecStored", "trExecCurrent", "trCatchHow", "trExecSection", "trExecSend", "trExecAskCustom"].forEach((n) => vm.runInContext(cutF(trade, n), ctx));
+vm.runInContext(`var trTipSeq = 0; var TR_TWAP_DEFAULT_MIN = 15; var REP = null; var VID = "binance"; function trReport() { return REP; } function trVenueId() { return VID; }
   var TR = { env: "local", open: true, sig: {}, sending: {}, exec: { edit: null, err: null, raw: null },
     api: { tradeSend: async (cmd, args) => { sent.push([cmd, args]); return globalThis.NEXT || { ok: true }; } } };
   async function trSend(S, cmd, args) { return S.api.tradeSend(cmd, args); }`, ctx);
@@ -81,10 +85,12 @@ const rep = (eff, cfg) => ({ config: Object.assign({ amounts: { a: 100, b: 0 } }
 let box = paint(rep({ type: "market" }), "okx"), sel = find(box, "tr-exec-sel");
 ok("③ 市價:三個選項 + 常駐的「自訂——跟 agent 說」入口、選中市價、沒有時長格、說明只有「組合裡每一筆單都用這個方式下」",
   !!sel && J(sel.children.map((o) => o.value)) === J(["market", "twap", "chase", "custom-ask"]) && sel.children[3].textContent === "tr.exec.customAsk" && sel.value === "market" && !sel.disabled
-  && !find(box, "tr-exec-min") && /tr\.exec\.all/.test(text(box)) && !/noteTwap|noteChase|tr\.exec\.tw\b/.test(text(box)));
+  && !find(box, "tr-exec-min") && note(box) === "tr.exec.all" && !all(box).some((n) => n.className === "tip") && !/noteTwap|noteChase|tr\.exec\.tw\b/.test(text(box)));
 box = paint(rep({ type: "twap", duration_min: 45 }), "binance"); sel = find(box, "tr-exec-sel");
 let min = find(box, "tr-exec-min");
-ok("③ TWAP 45 分:選單停在 TWAP、時長格是 45、說明多 TWAP 那句", sel.value === "twap" && !!min && min.value === "45" && /tr\.exec\.noteTwap/.test(text(box)));
+ok("③ TWAP 45 分:選單停在 TWAP、時長格是 45;原理收進區段標籤的 tooltip(稽核 W3),說明行只剩「每一筆單都用這個方式下」", sel.value === "twap" && !!min && min.value === "45" && howTip(box) === "tr.exec.noteTwap" && note(box) === "tr.exec.all");
+box = paint(rep({ type: "chase" }), "okx");
+ok("③ 限價追價:原理收進區段標籤的 tooltip,說明行只剩「每一筆單都用這個方式下」", howTip(box) === "tr.exec.noteChase" && note(box) === "tr.exec.all");
 box = paint(rep({ type: "custom", module: "my_exec" }), "okx"); sel = find(box, "tr-exec-sel");
 ok("③ custom 是現值:列成第四個選項並選中(只能跟 agent 建,這裡不新增),入口項排最後", sel.children.length === 5 && sel.value === "custom:my_exec" && sel.children[4].value === "custom-ask");
 for (const tw of ["president", "capital"]) {
@@ -186,10 +192,10 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
     ok("⑥ 補齊部位的「怎麼下」:四種 × 模擬／真錢、統一／群益一律市價、送出中優先、舊 runtime、讀不到設定", !bad.length, bad.join(";"));
     const ST = new Function(S + "\nreturn STRINGS;")(), fill = (s, v) => Object.keys(v).reduce((a, k) => a.split("{" + k + "}").join(v[k]), s);
     ok("⑥ 市價那句與改前逐字相同(兩語、模擬／真錢);TWAP 句子接得通",
-      fill(ST.zh["tr.opt.catchDesc"], { how: ST.zh["tr.opt.catchHow.market"] }) === "現在就用市價下單，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
-      && fill(ST.zh["tr.opt.catchDescReal"], { how: ST.zh["tr.opt.catchHow.marketReal"] }) === "現在就用市價送出真實委託，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
-      && fill(ST.en["tr.opt.catchDesc"], { how: ST.en["tr.opt.catchHow.market"] }) === "Places market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
-      && fill(ST.en["tr.opt.catchDescReal"], { how: ST.en["tr.opt.catchHow.marketReal"] }) === "Sends real market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+      fill(ST.zh["tr.opt.catchDesc"], { how: ST.zh["tr.opt.catchHow.market"] }) === "現在就用市價下單，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
+      && fill(ST.zh["tr.opt.catchDescReal"], { how: ST.zh["tr.opt.catchHow.marketReal"] }) === "現在就用市價送出真實委託，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
+      && fill(ST.en["tr.opt.catchDesc"], { how: ST.en["tr.opt.catchHow.market"] }) === "Places market orders now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
+      && fill(ST.en["tr.opt.catchDescReal"], { how: ST.en["tr.opt.catchHow.marketReal"] }) === "Sends real market orders now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
       && fill(ST.zh["tr.opt.catchDesc"], { how: fill(ST.zh["tr.opt.catchHow.twap"], { min: 30 }) }).startsWith("現在就用 TWAP 30 分鐘分批下單，把部位")
       && /desc: t\("tr\.opt\.catchDesc" \+ money, \{ how: trCatchHow\(r, real\) \}\)/.test(trade)); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
