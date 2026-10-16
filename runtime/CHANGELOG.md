@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.126 — 2026-10-16(hotfix)
+
+- **重新加入的策略不再拿舊訊號下單(稽核 B3;`command_listener._cmd_amounts`)**:策略不在下單設定裡就不排程,`state.json` 停在最後一次跑的部位(取消勾選前、或 agent 單跑一次的訊號)。存檔把它加回來又給金額時,對帳器幾秒內就照那份舊部位下單,新訊號還沒算。0.1.26 選策略框改成成員和金額一次存,每次重新加入都會撞到(以前勾選先送 $0、等一輪,常剛好遮掉)。修:寫設定之前,對這次新加入的每支策略(不在存檔前的成員裡,金額多少都算),`state.json` 寫在最近一根 K 的 epoch 切點之前、或比 `strategy.py` 舊、或是 Type B,就移成 `state.json.prejoin` 並刪掉它的 `state/bar_wait/<名>.json`(沒有 state = 不貢獻目標,排程一分鐘內重算當根)。當根內寫的 state 和它的 bar_wait 都留著,跟 main 的行為一樣(同一根內取消又加回、fork 換倉當根跑的訊號照樣對沖;刪 bar_wait 會在台股／台指期日 K 這種 epoch 切點早於收盤的週期上,用更新的那根重算、一買一賣,稽核 F1)。「存檔前的成員」= 這次存檔自己那次 fail-closed 讀到的 `amounts` ∪ `amounts.ui.json` 裡金額大於 0 的名字(對帳器實際持倉的名單;mirror 有效與否照抄 lib `_load_ui_mirror` 的判斷:金額要能轉數字、`contracts` 要是 dict,`tests/check_rejoin_stale_state.py` S17 盯住兩邊一致),任一有就不算新加入:存檔不會去平掉一支用戶沒動的策略(稽核 F2／F3;前面那次吞錯的預讀遇到 manager.py 非原子寫會判錯)。原本就在名單裡的策略完全不碰。移不開、讀不到(權限錯誤)就回 `SAVE_FAILED:` 拒絕這次存檔,什麼都還沒寫。**第一次寫 `amounts`、而且機器交易過**(`_traded_on_a_real_venue`)那次存檔不處理:那是 lib 收編既有部位的一輪,策略本來就在 `amounts` 外面跑,藏掉目標會讓帳本收編到空、下一個訊號再買一次(paper 情境 MG-08 抓到,實測兩倍部位);這個判斷取自同一次讀檔、在寫入新金額之前;mirror 有效就不算第一次(mirror 跟第一次寫 `amounts` 是同一次存檔寫的,稽核 R2)。代價:TXF 週末加回的策略要等開盤第一根才有 state(期間本來就下不了單);Type B 加回會先等 kickoff 跑完。已知限制(稽核 F4,沒處理):帳本還沒有可信 baseline(`book_ready` 為假:還沒遷移到只管自己部位的舊機器、或 seed 遺失)時,lib 的 `_auto_baseline` 照目標收編;這時加入一支 state 被移開、而它獨占的 key 上帳戶剛好有倉的策略,那份倉會算成用戶的,等它出新訊號時機器再買一份。換綁帳戶走 `venue_reset`(歸零、不看目標),不受影響。`references/strategy-code.md` 補 fork 換倉的規則。測試 `tests/check_rejoin_stale_state.py`;`tests/check_amounts_save_atomic.py` 的 fixture 改成先寫 strategy.py 再寫 state.json(跟真的跑一樣)。
+
 ## 1.1.125 — 2026-10-15(hotfix)
 
 - **拿掉提領權限閘門(Wei 10-15)**:雲端網頁綁 OKX／BingX／Bybit 不再因 bridge venv 缺 `requests` 被誤拒(09-25 起每台雲端主機都會撞到,錯誤訊息還叫用戶「更新」);Binance 在雲端與聊天綁定不再拒絕有提領權限的 key(交易權限檢查保留;電腦版連接畫面的 Binance 檢查在外殼,隨 0.1.26 拿掉)。本機綁定時 lib 載入失敗新增 `LIB_BROKEN: …(真正原因)`,不再一律叫人更新。`lib/account_*.withdraw_enabled` 保留給舊版電腦版。

@@ -3581,6 +3581,83 @@ def _save_amounts_all_or_nothing(path, cfg, write_rollovers, write_mirror):
                 pass
 
 
+def _prejoin_state_current(name, mtime, now):
+    """A Type A/C state.json written after its latest bar boundary (the bar wait_for_bar
+    expects, epoch-floored the same way) by the strategy.py on disk now: nothing newer to
+    compute. A Type B, an unreadable INTERVAL or strategy.py, or an older file: not current."""
+    import portfolio_reporter  # same runtime dir
+    td = portfolio_reporter._ac_interval(name)
+    if td is None:
+        return False
+    step = td.total_seconds()
+    try:
+        code = os.path.getmtime(os.path.join(WORKSPACE, "strategies", name, "strategy.py"))
+    except OSError:
+        return False
+    return mtime >= (now // step) * step and mtime >= code
+
+
+def _mirror_members():
+    """(valid, funded names) of the UI mirror, judged the way lib/portfolio._load_ui_mirror
+    judges it (runtime never imports the workspace lib): valid = the reconciler takes its
+    `amounts` over the config's; funded = names it trades there (amount > 0 — a $0 name holds
+    nothing, and setting its state aside closes nothing). Absent, corrupt or the wrong shape
+    is (False, set()) there and here; a file that cannot be opened refuses the save."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json"), encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return False, set()
+    except PermissionError as e:
+        raise RuntimeError("SAVE_FAILED: 設定檔暫時讀不到（檔案正被占用），這次什麼都沒改——"
+                           "請再存一次") from e
+    except (OSError, ValueError):
+        return False, set()
+    try:
+        amounts, exchanges = raw.get("amounts"), raw.get("exchanges")
+        if not isinstance(amounts, dict) or not isinstance(exchanges, dict):
+            return False, set()
+        amounts = {str(k): float(v) for k, v in amounts.items()}
+        if "contracts" in raw and not isinstance(raw.get("contracts"), dict):
+            return False, set()
+    except (AttributeError, TypeError, ValueError):
+        return False, set()
+    return True, {k for k, v in amounts.items() if v > 0}
+
+
+def _retire_prejoin_signals(joining):
+    """Outside `amounts` a strategy is not scheduled, so its state.json is whatever its last
+    run wrote — days old after an unpick, or an agent's one-off signal run. The save that adds
+    it back used to trade that position within one reconciler round, before any new signal
+    (audit B3: the 0.1.26 picker saves membership and amount together, so every re-add hit it).
+    Before the config write, a joining strategy whose state.json is not current moves it to
+    state.json.prejoin (no state = no target, lib/portfolio) and loses its wait_for_bar record,
+    so the scheduler computes the current bar within a minute. A current state keeps both: its
+    record either says this bar is done (the state is that run's) or lets the next tick run
+    anyway, and deleting it would recompute on data a member is not yet trading — on a TW daily
+    bar that closes after the epoch cut, an entry and its reversal minutes apart.
+    A state.json that cannot be read or moved refuses the save; nothing has been written yet."""
+    now = time.time()
+    for name in sorted(joining):
+        src = os.path.join(WORKSPACE, "strategies", name, "state.json")
+        try:
+            if _prejoin_state_current(name, os.path.getmtime(src), now):
+                continue
+            atomic_file.replace_retry(src, src + ".prejoin")
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            raise RuntimeError(
+                f"SAVE_FAILED: 「{name}」上一次的訊號檔暫時讀不到或移不開（檔案正被占用），"
+                "這次什麼都沒改——請再存一次") from e
+        try:
+            os.remove(os.path.join(WORKSPACE_STATE, "bar_wait", f"{name}.json"))
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            _log(f"prejoin: bar_wait record of {name} not removed ({type(e).__name__})")
+
+
 def _cmd_amounts(args):
     """策略下單金額 — the 下單設定 page's save button.
 
@@ -3675,6 +3752,9 @@ def _cmd_amounts(args):
             cfg = json.load(f)
     except FileNotFoundError:
         cfg = _fresh_portfolio_config()  # fresh machine — first write creates the file
+    except PermissionError as e:
+        raise RuntimeError("SAVE_FAILED: 設定檔暫時讀不到（檔案正被占用），這次什麼都沒改——"
+                           "請再存一次") from e
     except (OSError, ValueError) as e:
         # fail-closed like _cmd_execution: unreadable can mean manager.py
         # mid-write — rebuilding from {} here would wipe keys this command
@@ -3685,6 +3765,17 @@ def _cmd_amounts(args):
     if not isinstance(cfg, dict):
         raise RuntimeError("portfolio config unreadable (not a dict) — try again")
     old_amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
+    # both from this fail-closed read, before `amounts` is replaced (after it, every save
+    # would read as configured and the MG-08 adoption save would hide its targets)
+    configured = isinstance(cfg.get("amounts"), dict)
+    # a member in either copy is not joining: the mirror is what the reconciler trades, the
+    # config what the scheduler runs — a save must not close what the user did not touch
+    joining = set(clean) - set(old_amounts)
+    if joining:
+        mirror_valid, mirror_funded = _mirror_members()
+        joining -= mirror_funded
+        # a valid mirror means a UI save has written `amounts` before: never the adoption save
+        configured = configured or mirror_valid
     cfg["amounts"] = clean
     old = cfg.get("exchanges") or {}
     # Only inherit venues that are STILL BOUND (keys in .env) — after 解除綁定
@@ -3784,6 +3875,11 @@ def _cmd_amounts(args):
             prev_amt = 0.0
         if prev_amt <= 0:
             cfg["asset_specs"][k] = dict(spec)
+    if configured or not _traded_on_a_real_venue():
+        # the save that first writes `amounts` on a machine that has traded is the lib's
+        # adoption round: its strategies were running outside `amounts`, and hiding their
+        # targets then left the book empty and bought the held position again (MG-08)
+        _retire_prejoin_signals(joining)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     cfg["contracts"] = contracts
     _save_amounts_all_or_nothing(

@@ -53,8 +53,10 @@ def check(cond, msg):
 
 for n, sym in (("btc_a", "BTCUSDT"), ("txf_a", "TXF")):
     json.dump({"symbol": sym}, open(os.path.join(WS, "strategies", n, "stats.json"), "w"))
-    json.dump({"symbol": sym, "position": 1}, open(os.path.join(WS, "strategies", n, "state.json"), "w"))
     open(os.path.join(WS, "strategies", n, "strategy.py"), "w").write(f'SYMBOL = "{sym}"\nINTERVAL = "1h"\n')
+    # after strategy.py, as a real run writes it: a state older than its code is set aside on
+    # the save that picks it (command_listener._retire_prejoin_signals)
+    json.dump({"symbol": sym, "position": 1}, open(os.path.join(WS, "strategies", n, "state.json"), "w"))
 open(os.path.join(WS, "manager", "wait_for_bar.py"), "w").write("# present\n")
 open(os.path.join(WS, ".env"), "w").write("PAPER_API_KEY=paper\nPAPER_SECRET_KEY=paper\nPAPER_BOUND_TS=1\n")
 cl._sync_strategy_crons = lambda names: None

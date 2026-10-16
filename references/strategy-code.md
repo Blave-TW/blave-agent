@@ -88,7 +88,12 @@ The flow is FORK → EDIT → DEPLOY → SWITCH:
    the Blave Agent runtime the platform schedules a funded strategy on its
    own within ~a minute of the 下單設定 save; on crontab machines YOU must
    schedule it per `references/deployment.md` first. Either way, verify
-   `state.json` exists before step 5.
+   `state.json` exists before step 5. On the runtime, the save that picks a
+   strategy sets aside (`state.json.prejoin`) a `state.json` written before
+   its latest bar closed or before its `strategy.py` last changed — a
+   one-off signal run counts only inside the bar it ran in. If the switch
+   comes later, have the user pick the fork at amount 0 first and save; its
+   schedule then keeps `state.json` current until the switch.
 5. Only after the user confirms: switch via 下單設定 in ONE save — set the
    fork's amount, and set the original's amount to 0 while KEEPING it
    selected (a 0 amount stops sizing but preserves its routing and registry,
@@ -211,7 +216,9 @@ The user already chose in the dialog: no confirmation question. Do these, in thi
 6. Stop. The funding switch is the user's own hands (deployment redline): tell them step 5
    above — one save in 自動下單, the fork's amount in and the original's amount to 0 while
    keeping it selected — and what the switch will do (same symbol and direction: little or no
-   trading; otherwise a full close and re-entry).
+   trading; otherwise a full close and re-entry). The step 5 run nets only if the switch lands
+   inside the same bar; later, the original closes at once and the fork enters on its first
+   scheduled signal — unless the fork was picked at amount 0 first (step 4).
 
 ## Signal Contract
 
