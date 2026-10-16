@@ -188,8 +188,8 @@ ok("新增的句子不提哪個市場不能自動下單(Wei 10-16 更正:不擋�
   ok("部位霧 Z-draft:卡「勾好的策略還沒儲存。」(id tr-pos-fog-msg)＋實心〔設定金額〕#tr-pos-draft,按下走 trZGo(draft);示意底同部位那張", dr.msg.textContent === "tr.startOffDraft" && dr.msg.id === "tr-pos-fog-msg"
     && dr.btn.textContent === "po.goAmounts" && dr.btn.className === "btn-fill" && dr.btn.id === "tr-pos-draft" && J(fx.go[2]) === J(["draft", "tr-pos-draft"]) && J(flat(dr.under).map((n) => n.tag)) === J(flat(pk.under).map((n) => n.tag)), J([dr.msg, fx.go]));
   const tel = fs.readFileSync(path.join(R, "..", "telemetry.js"), "utf8"), wl = (tel.match(/feature_used: \{ name: \[([\s\S]*?)\] \}/) || [, ""])[1];
-  ok("埋點:卡上三顆記 trade_fog_pick／trade_fog_new／trade_fog_pick(勾了沒存那張同網頁 trade_pos_fog_pick;≤ 16 字、白名單順序 attach_limit_hit → trade_fog_pick, trade_fog_new → exec_set → po_help → lib_mkt_pick,canon product-telemetry.md);頁首導引鈕不記這兩個(分開看)", J(fx.tm) === J(["trade_fog_pick", "trade_fog_new", "trade_fog_pick"])
-    && /"attach_limit_hit",[\s\S]*"trade_fog_pick", "trade_fog_new",[\s\S]*"exec_set",[\s\S]*"po_help",[\s\S]*"lib_mkt_pick"$/.test(wl.trim()) && fx.tm.every((n) => n.length <= 16)
+  ok("埋點:卡上三顆記 trade_fog_pick／trade_fog_new／trade_fog_pick(勾了沒存那張同網頁 trade_pos_fog_pick;≤ 16 字、白名單順序 attach_limit_hit → trade_fog_pick, trade_fog_new → exec_set → po_help_cfg, po_help_opt → lib_mkt_pick,canon product-telemetry.md);頁首導引鈕不記這兩個(分開看)", J(fx.tm) === J(["trade_fog_pick", "trade_fog_new", "trade_fog_pick"])
+    && /"attach_limit_hit",[\s\S]*"trade_fog_pick", "trade_fog_new",[\s\S]*"exec_set",[\s\S]*"po_help_cfg", "po_help_opt",[\s\S]*"lib_mkt_pick"$/.test(wl.trim()) && fx.tm.every((n) => n.length <= 16)
     && !/trade_fog_/.test(cutF(src, "trPaintGoCfg") + cutF(src, "trZGo")), J([fx.tm, wl.trim().slice(-60)]));
   const all = flat(pk.under), ths = all.filter((n) => n.tag === "th").map((n) => n.textContent), trs = all.filter((n) => n.tag === "tr");
   ok("部位示意底:區段標題「策略組合」、四欄(標的｜目標｜帳上｜差額)、三列 BTC／ETH／SOL、合計 13,000;不上 buy／sell 色;不讀用戶資料",

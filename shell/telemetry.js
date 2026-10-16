@@ -176,8 +176,8 @@ const EVENTS = {
     "trade_fog_pick", "trade_fog_new",
     // 下單方式(0.1.26,自動下單 › 設定):整個組合的下單方式改了、機器 ack 成功才送(不帶選了哪一種)
     "exec_set",
-    // 策略組合 › 配置／優化區段標籤旁的問號外開教學(0.1.26;renderer/trade.js poHelpGroup):兩顆共用這個名字,網頁 GA4 portfolio_help_open 另帶 tab
-    "po_help",
+    // 策略組合 › 配置／優化區段標籤旁的問號外開教學(0.1.26;renderer/trade.js poHelpGroup):一顆一個名字,網頁 GA4 portfolio_help_open 另帶 tab
+    "po_help_cfg", "po_help_opt",
     // 策略庫市場選單(0.1.26;renderer/library.js libMktPick):選了不同的市場才送,重選同一項不送;不帶選了哪個市場。網頁 GA4 同一件事是 library_filter_change(filter=market)
     "lib_mkt_pick"] },
 };

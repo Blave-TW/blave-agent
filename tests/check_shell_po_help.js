@@ -1,4 +1,4 @@
-// 策略組合區段標籤旁的問號外連教學(spec portfolio-help-icon §1):配置、優化各一顆,外開教學頁對應段落、記 po_help;
+// 策略組合區段標籤旁的問號外連教學(spec portfolio-help-icon §1):配置、優化各一顆,外開教學頁對應段落、各記 po_help_cfg／po_help_opt;
 // 讀屏只念一次(aria-label,氣泡 aria-hidden、不掛 describedby／title);重畫後焦點靠 data-fk 找回
 // 跑法:node tests/check_shell_po_help.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -25,7 +25,7 @@ ok("可及名稱只有 aria-label;氣泡 aria-hidden;不掛 aria-describedby、�
   && !("aria-describedby" in b.attrs) && b.title === undefined);
 ok("icon 是 svg、aria-hidden(Lucide circle-help:一個 circle 兩條 path)", b.kids[0].tag === "svg" && b.kids[0].attrs["aria-hidden"] === "true" && b.kids[0].kids.map((k) => k.tag).join() === "circle,path,path");
 b.on.click(); make("optimize", "po-help-opt").kids[1].on.click();
-ok("按下:外開教學頁帶段落錨點,記 po_help(兩顆同名)", JSON.stringify(opened) === JSON.stringify(["https://blave.org/docs/zh/portfolio#amounts", "https://blave.org/docs/zh/portfolio#optimize"]) && JSON.stringify(tracked) === JSON.stringify(["po_help", "po_help"]));
+ok("按下:外開教學頁帶段落錨點,記 po_help_cfg／po_help_opt(一顆一個名字)", JSON.stringify(opened) === JSON.stringify(["https://blave.org/docs/zh/portfolio#amounts", "https://blave.org/docs/zh/portfolio#optimize"]) && JSON.stringify(tracked) === JSON.stringify(["po_help_cfg", "po_help_opt"]));
 ok("配置的三種標籤狀態(載入中、讀不到設定、有表)都走 poCfgSec;霧後面的示意底不放問號",
   (cutF(src, "poPaintCfg").match(/poCfgSec\(\)/g) || []).length === 2 && /poCfgSec\(\)/.test(cutF(src, "trAmountTable")) && !/poHelpGroup|poCfgSec/.test(cutF(psrc, "poFogCfg")));
 ok("優化:只在「權重分配」區段畫出來時才有(mgSuggest 在 !prop return 之後)", /if \(!prop\) return frag;[\s\S]*poHelpGroup\(trEl\("span", "label", t\("mg\.secAmounts"\)\), "optimize", "po-help-opt"\)/.test(cutF(psrc, "mgSuggest")));

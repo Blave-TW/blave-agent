@@ -1469,7 +1469,7 @@ function trTipLabel(cls, text, tip) {
 }
 function trSec(labelNode, acts) { const s = trEl("div", "pf-sec"); s.appendChild(labelNode); if (acts) s.appendChild(acts); return s; }
 /* 策略組合區段標籤旁的問號:外開教學頁的那一段(spec portfolio-help-icon §1)。氣泡跟 aria-label 是同一句,
-   不掛 aria-describedby、不加 title(讀屏會念兩次)。兩顆共用一個埋點名(feature_used name 上限 16 字;網頁 GA 另帶 tab) */
+   不掛 aria-describedby、不加 title(讀屏會念兩次)。feature_used 只有 name 一格,哪一顆寫進名字(網頁 GA 改帶 tab) */
 function poHelpGroup(label, anchor, fk) {
   const g = trEl("span", "lbl-grp"), hb = trEl("button", "pf-help"); hb.type = "button"; hb.dataset.fk = fk;
   hb.setAttribute("aria-label", t("po.help"));
@@ -1479,7 +1479,7 @@ function poHelpGroup(label, anchor, fk) {
   ["M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"].forEach((d) => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); ic.appendChild(p); });
   hb.appendChild(ic);
   const tip = hb.appendChild(trEl("span", "pf-help-tip", t("po.help"))); tip.setAttribute("aria-hidden", "true");
-  hb.addEventListener("click", () => { window.blave.openExternal(docsUrl("portfolio") + "#" + anchor); trackFeature("po_help"); });
+  hb.addEventListener("click", () => { window.blave.openExternal(docsUrl("portfolio") + "#" + anchor); trackFeature(fk === "po-help-opt" ? "po_help_opt" : "po_help_cfg"); });
   g.append(label, hb); return g;
 }
 function poCfgSec() { return trSec(poHelpGroup(trTipLabel("label", t("po.secAmounts"), t("tr.zeroMeansOff")), "amounts", "po-help-cfg"), trPickBtn()); }
