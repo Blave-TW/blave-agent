@@ -5102,6 +5102,9 @@ msgstr "加密貨幣"
 msgid "idea.mkt.tw"
 msgstr "台股"
 
+msgid "idea.mkt.txf"
+msgstr "台指期（TXF／MXF／TMF）"
+
 msgid "idea.topicTpl"
 msgstr "，方向是「{t}」"
 
