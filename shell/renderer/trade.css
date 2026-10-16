@@ -317,7 +317,16 @@ html.ws-sc .side-gate { display: none; }
 .net-line .v { min-width: 72px; text-align: right; white-space: nowrap; }
 .net-sum { margin-top: var(--space-4); padding-top: var(--space-6); border-top: 1px solid var(--border-hairline); color: var(--ink-2); white-space: normal; }
 /* 訊號欄(ux-order-1-4-5 §2.1):不上紅綠,方向由目標部位那欄講 */
-.pf-tbl td.sig { color: var(--ink-2); }
+/* 配置表「部位」格(spec portfolio-help-icon §2.2):方向字 sans、數字 mono 不帶號、副行訊號倍數或持倉檔數。
+   方向一定有字,顏色不是唯一管道;空手／不下單是字不是數,退 sans、不上色 */
+.pf-tbl td.pos .cell2 { display: inline-grid; justify-items: end; line-height: 1.35; }
+.pf-tbl td.pos .num { color: var(--ink); }
+.pf-tbl td.pos :is(.dir, .pos-word, .pos-sub) { font-family: var(--font-sans); }
+.pf-tbl td.pos :is(.dir, .pos-word) { font-size: 12px; }
+.pf-tbl td.pos .pos-word, .pf-tbl td.pos .pos-sub { color: var(--ink-3); }
+.pf-tbl td.pos .pos-sub { font-size: 11px; }
+.pf-tbl td.pos .sep { margin: 0 var(--space-4); color: var(--color-greyDark); }
+.pf-tbl td.pos.pend-col :is(.dir, .num) { color: var(--ink-3); }
 .pf-foot { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
 .pf-foot.err { color: var(--color-redText); }
 .pf-foot.past .ts { margin-right: var(--space-8); }   /* 對帳器沒在跑時的「上次下單失敗」:色階留 .pf-foot 的 greyMedium,只多一個時間 */
@@ -459,6 +468,8 @@ html.ws-sc .side-gate { display: none; }
   .main-tabs { padding: 0 var(--space-16) 1px; gap: var(--space-16); }   /* 底下的 1 是 hairline 的位子,不能跟著收 */
   .pf { padding: var(--space-16); }
   .pf-tbl .c-sym { display: none; }
+  .pf-tbl td.pos .pos-main.split { display: inline-grid; justify-items: end; }   /* 投資組合多空並列放不下:拆兩行、中點收掉 */
+  .pf-tbl td.pos .pos-main.split .sep { display: none; }
   .unit-note { display: block; }   /* 交易歷史表的「金額單位」那一行;部位兩張表的單位在區標題,窄欄照樣看得到 */
   .sub-sym { display: block; }
   .pf-tbl td.key { min-width: 0; }

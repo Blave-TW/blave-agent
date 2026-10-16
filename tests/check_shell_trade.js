@@ -666,12 +666,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         !/data-env="cloud"\][^{]*\.chat-input/.test(css) && !/data-env="cloud"\][^{]*\.chat-input/.test(app)
         && /\.chat-input textarea::placeholder \{ color: var\(--ink-3\); \}/.test(app) && !/\.ho-down/.test(css)); }
     { const tp = fnOf("trAmountTable");
-      ok("units §8 金額表 Type C 列:標的欄與名稱下那一小行寫 成分代號(trTypeCLabel)、還沒算過寫「—」+ tr.typecPending;多空混合目標不上色、不帶號、title 拆多空",
+      ok("units §8 金額表 Type C 列:標的欄與名稱下那一小行寫 成分代號(trTypeCLabel)、還沒算過寫「—」+ tr.typecPending;部位格多空並列直接寫兩邊(trPaintPosCell 的 split),不再有 tr.grossTip 的 title",
         /const symText = isC \? \(tcl \? tcl\.text : "—"\) : txf \? t\(txf\.prod\) : sym \|\| "—";/.test(tp)
         && /symInto\(trEl\("span", "sub-sym" \+ \(isC \|\| txf \? "" : " mono"\)\)\); if \(symTip\) sub\.title = symTip;/.test(tp) && /const symTd = symInto\(trEl\("td", \(txf \? "sname" : "sym"\) \+ " c-sym"\)\); if \(symTip\) symTd\.title = symTip;/.test(tp)
         && /else \{ host\.append\(symText\);/.test(tp)
-        && /\(noSig \? "na pending" : v === 0 \? "na" : mixed \? "" : v > 0 \? "buy" : "sell"\)/.test(tp) && /tgt\.title = mixed \? t\("tr\.grossTip", \{ l: trFmt\(a \* tc\.long\), s: trFmt\(a \* tc\.short\) \}\)/.test(tp)
-        && /else tgt\.textContent = txf \? trLotsFmt\(v, true\) : trFmt\(v, !mixed\);/.test(tp)); }
+        && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn \}\);/.test(tp)
+        && /if \(tc\.long && tc\.short\) \{ main\.classList\.add\("split"\);/.test(fnOf("trPaintPosCell")) && !/tr\.grossTip/.test(tsrc)); }
     const tp = fnOf("trAmountTable");
     ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」、合計換不了寫「—」",
       /const parse = \(s\) => \(txf \? trParseLots\(s\) : trParseAmount\(s\)\);/.test(tp) && /const v = parse\(inp\.value\);/.test(tp) && /inp\.value = blank \? "" : trFmt\(parse\(inp\.value\)\)/.test(tp)
@@ -696,12 +696,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         return ST.zh["tr.saveBlankLots"] === "{names}：口數留空會存成 0，這支策略不會下單。" && /blank lot count is saved as 0/.test(ST.en["tr.saveBlankLots"] || ""); })());
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
       const has = (k, v) => S.includes(J(k) + ": " + J(v));
-      ok("查證 #1 字串沿用網頁譯法(workspace_pf_lots_unit / lots_aria / grp_lots / grp_unknown / cf_equity_mult / lots_notional_tip / typec_n / typec_pending / no_signal_yet / target_gross_tip / txf_prod_*)",
+      ok("查證 #1 字串沿用網頁譯法(workspace_pf_lots_unit / lots_aria / grp_lots / grp_unknown / cf_equity_mult / lots_notional_tip / typec_n / typec_pending / no_signal_yet / txf_prod_*;target_gross_tip 隨部位欄合併退役)",
         has("tr.lotsUnit", "口") && has("tr.lotsUnit", "lots") && has("tr.lotsAria", "口數") && has("tr.lotsAria", "Lots")
         && has("tr.grpLots", "台指期（口）") && has("tr.grpLots", "TAIEX futures (lots)") && has("tr.grpUnknown", "幣別未定") && has("tr.grpUnknown", "Currency not set")
         && has("tr.equityMult", "淨值 {x}×") && has("tr.equityMult", "{x}× equity") && has("tr.lotsNotionalTip", "≈ {amt} TWD（名目）") && has("tr.lotsNotionalTip", "≈ {amt} TWD notional")
         && has("tr.nSyms", "{n} 檔") && has("tr.typecPending", "計算中…") && has("tr.typecPending", "Computing…")
-        && has("po.hostOld", "主機版本較舊，更新後才會算") && has("po.hostOld", "Machine is outdated; computed after update") && has("tr.grossTip", "多 {l} ＋ 空 {s}") && has("tr.grossTip", "Long {l} + short {s}")
+        && has("po.hostOld", "主機版本較舊，更新後才會算") && has("po.hostOld", "Machine is outdated; computed after update") && !/"tr\.grossTip":/.test(S) && has("tr.col.pos", "部位") && has("tr.col.pos", "Position")
         && !/"tr\.(ofEquity|lev|txfConfirm|txfConfirm1|txfConfirmNoQuote|txfConfirmNoQuote1)":/.test(S)
         && has("tr.txfProd.txf", "大台") && has("tr.txfProd.mxf", "小台") && has("tr.txfProd.tmf", "微台") && has("tr.txfProd.txf", "Full-size") && has("tr.txfProd.mxf", "Mini") && has("tr.txfProd.tmf", "Micro")); }
     { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
@@ -1456,8 +1456,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && !/回報/.test((po2("zh").match(/msgid "tr\.cloud\.pendAmounts"\nmsgstr "([^\n]*)"/) || [])[1] || ""));
     // §2-3b:兩種「—」要分得出來
     const pos = fnS("trAmountTable");
-    ok("§2-3b 等回報時目標部位不畫「—」(那是「策略沒有部位」的意思),改畫待回報記號;表下常駐一句說明",
-      /else if \(v === 0 && sentOn\) \{ tgt\.textContent = ""; tgt\.appendChild\(trEl\("span", "amt-dash"\)\); \}\n\s*else tgt\.textContent = /.test(pos) && (pos.match(/tgt\.textContent = "—"/g) || []).length === 1 && /else if \(notYet\) \{ tgt\.textContent = "—";/.test(pos)   // 唯一的「—」是訊號還沒算出來(post-connect-flow 第 7 列,帶 tooltip),不是等回報
+    const cellF = fnS("trPaintPosCell");
+    ok("§2-3b 等回報時部位格不畫「—」(那是「策略沒有部位」的意思),部位是 0 時改畫待回報記號;表下常駐一句說明",
+      /if \(zero && f\.sentOn\) \{ td\.appendChild\(trEl\("span", "amt-dash"\)\); return; \}/.test(cellF) && (cellF.match(/textContent = "—"/g) || []).length === 1 && /if \(f\.notYet\) \{[^\n]*td\.textContent = "—"; td\.title = t\("tr\.sigNotYet"\); return; \}/.test(cellF)   // 唯一的「—」是訊號還沒算出來(post-connect-flow 第 7 列,帶 tooltip),不是等回報
       && /if \(sentOn\) frag\.appendChild\(trEl\("div", "pf-foot", t\("tr\.cloud\.pendTarget"\)\)\);/.test(pos)); }
   { /* 動作後的爆發輪詢窗(§2-4:真正的止血)。窗是**時間**不是條件——報告永遠不來也會到期,
        到期回到誠實的等待畫面,不會一直轉。這裡把兩個純函式真的跑一遍。 */
@@ -1805,7 +1806,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh", envHeadState: () => "running", trKeyBad: () => false });
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
     const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
     const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
     ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
@@ -1938,7 +1939,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: { okx: { label: "OKX" }, binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trUnit: () => "USDT", trEquity: () => null, trMoneyInto() {}, envHeadState: () => "running", trKeyBad: () => false });
       const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
       vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
+        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
       const venuesOf = (id) => ({ [id]: { credentials: true, pair: true, order: true, account: true } });
       const bag = (venue, amounts, o) => ({ env: "local", list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: Object.assign({ venues: venuesOf(venue), config: { amounts } }, STALE) }, ...o });
       const paint = (b, states) => { ctx.TR = b; const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
@@ -1966,12 +1967,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           r.kids[2].kids[0].kids.length === 1 && q.ths.includes("tr.colUnit " + JSON.stringify({ label: "tr.col.amount", unit: "tr.lotsUnit" })) && inp.inputMode === "numeric" && /tr\.lotsAria$/.test(inp.attrs["aria-label"])
           && r.kids[1].className === "sname c-sym" && r.kids[1].textContent === "tr.txfProd.txf" && inp.value === "2", J([q.ths, inp.attrs, r.kids[1].className]));
         // units spec §3.3:目標部位是口數(不靠報價),§5 電腦版 #4 推翻 desktop-10-08 #4:全是口數列也出合計(名目 ≈ TWD;沒報價寫「—」)
-        ok("查證 #1:沒有報價 → 目標部位照寫 +2(口數 × 訊號,上買色);全是口數列 → 合計照出,名目換不了寫「—」",
-          r.kids[4].textContent === "+2" && /\bbuy\b/.test(r.kids[4].className) && q.totHidden === false && q.tot === "tr.total—", J([r.kids[4].textContent, q.tot, q.totHidden]));
+        const dirOf = (td) => { const leg = td.kids[0] && td.kids[0].kids[0] && td.kids[0].kids[0].kids[0]; return leg && leg.kids[0] ? leg.kids[0].className : ""; };   // td › .cell2 › .pos-main › .pos-leg › .dir
+        ok("查證 #1:沒有報價 → 部位照寫「多 2」(口數 × 訊號,方向字上買色、數字不帶號);全是口數列 → 合計照出,名目換不了寫「—」",
+          /^tr\.rel\.long 2tr\.sigLine /.test(r.kids[3].textContent) && dirOf(r.kids[3]) === "dir buy" && q.totHidden === false && q.tot === "tr.total—", J([r.kids[3].textContent, q.tot, q.totHidden]));
         { const z = paintT("capital", { txf: 0 }, 1000000);
           // 這組的帳戶幣是 USDT(trUnit 假的):群益的倍數只在帳戶幣 TWD 時出,不跨幣別相除
-          ok("#4 0 口的口數列:合計列照出(≈ 0 TWD),帳戶幣不是 TWD 不出倍數;目標部位寫 0 不寫「—」", z.totHidden === false && z.tot === "tr.total≈ 0TWD" && z.rowOf("TXF").kids[4].textContent === "0", z.tot); }
-        ok("ux §2.1 訊號欄:目標部位前一欄寫這支的訊號(×1.00),表頭「金額 | 訊號」", r.kids[3].textContent === "×1.00" && r.kids[3].className === "n sig");
+          ok("#4 0 口的口數列:合計列照出(≈ 0 TWD),帳戶幣不是 TWD 不出倍數;部位寫「不下單」不寫「—」", z.totHidden === false && z.tot === "tr.total≈ 0TWD" && z.rowOf("TXF").kids[3].textContent === "tr.amtOff", z.tot); }
+        ok("spec portfolio-help-icon §2:訊號併進部位格的副行(訊號 ×1.00),一列四格、沒有獨立的訊號欄", r.kids.length === 4 && r.kids[3].textContent.endsWith('tr.sigLine {"x":"×1.00"}') && r.kids[3].className === "n pos");
         const qm = paintT("capital", { txf: 2, btc_bn: 500 }, 1000000);
         ok("查證 #1:表上混一列口數 → 兩區;沒有報價也沒有匯率 → 合計「—」(不拿半個未知數湊加總)", qm.tot === "tr.total—", qm.tot);
         const qc = paintT("okx", { btc_bn: 500 }, 1000);

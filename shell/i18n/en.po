@@ -1699,8 +1699,20 @@ msgstr "Symbol"
 msgid "tr.col.amount"
 msgstr "Amount"
 
-msgid "tr.col.signal"
-msgstr "Signal"
+msgid "tr.col.pos"
+msgstr "Position"
+
+msgid "tr.flat"
+msgstr "Flat"
+
+msgid "tr.amtOff"
+msgstr "No orders"
+
+msgid "tr.sigLine"
+msgstr "Signal {x}"
+
+msgid "tr.typeCHold"
+msgstr "{n} holdings"
 
 msgid "tr.net.tag"
 msgstr "{n} strategies"
@@ -1714,14 +1726,8 @@ msgstr "Net 0: long {l} and short {s} cancel out, so there's no {base} position 
 msgid "tr.net.sumOff"
 msgstr "Net {t}: long {l}, short {s}; {m} cancels out."
 
-msgid "tr.col.targetPos"
-msgstr "Target position"
-
 msgid "tr.nSyms"
 msgstr "{n} symbols"
-
-msgid "tr.grossTip"
-msgstr "Long {l} + short {s}"
 
 msgid "tr.grpLots"
 msgstr "TAIEX futures (lots)"
@@ -3119,7 +3125,7 @@ msgid "tr.cloud.pendAmounts"
 msgstr "The new amounts are saved on the cloud machine."
 
 msgid "tr.cloud.pendTarget"
-msgstr "Target positions still use the old amounts and update on the next report."
+msgstr "The Position column still uses the old amounts and updates on the next report."
 
 msgid "tr.cloud.pendDone"
 msgstr "The cloud is now using the new amounts."

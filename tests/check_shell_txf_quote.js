@@ -90,7 +90,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
       + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
         "trStratName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum",
-        "trTotalText", "trAmountTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts"].map((n) => cutF(src, n)).join("\n"), ctx);
+        "trTotalText", "trPaintPosCell", "trAmountTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts"].map((n) => cutF(src, n)).join("\n"), ctx);
     const V = { credentials: true, pair: true, order: true, account: true };
     const paint = (price, unit = "TWD", eq = 2000000, mixed = false) => {
       vm.runInContext("TR_TXF.price = " + J(price) + "; UNIT = " + J(unit) + "; EQ = " + J(eq), ctx);
@@ -100,24 +100,26 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
       const row = all.find((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key"), tot = all.find((n) => n.className === "pf-total");
       const ths = all.filter((n) => n.tag === "th").map((n) => n.textContent), grps = all.filter((n) => n.tag === "tr" && n.className === "grp").map((n) => n.kids.map((k) => k.textContent));
-      return { tgt: row.kids[4].textContent, tgtTip: row.kids[4].title, tot: tot.textContent, totTip: (tot.kids[1] || {}).title || "", totHidden: tot.hidden, ths, grps,
+      // 部位格:口數與 tooltip 在 .num 上、方向字是 .dir(spec portfolio-help-icon §2)
+      const pc = row.kids[3], num = flat(pc).find((x) => x.className === "num"), dir = flat(pc).find((x) => /^dir /.test(x.className));
+      return { tgt: num ? num.textContent : pc.textContent, dir: dir ? dir.className : "", tgtTip: num ? num.title : pc.title, tot: tot.textContent, totTip: (tot.kids[1] || {}).title || "", totHidden: tot.hidden, ths, grps,
         units: all.some((n) => /pf-foot unit-note/.test(n.className) || n.className === "amt-unit" || n.className === "lots-unit") };
     };
     const q = paint(20000);
     /* 2 口 × 部位 0.5 = 1 口(目標部位是口數,units spec §3.3);名目 1 × 200 點值 × 20,000 點 = 4,000,000 TWD 放 title。
        全是口數列也出合計(推翻 desktop-10-08 #4,units spec §5 電腦版 #4):名目 ≈ 8,000,000 TWD · 淨值 4.00×(綁群益、帳戶幣 TWD) */
-    ok("有報價:目標部位寫 +1(口數 × 訊號),名目進 title;只有一區 → 單位回欄頭「口」、不畫區標題;合計 ≈ 名目 TWD + 淨值倍數",
-      q.tgt === "+1" && q.tgtTip === 'tr.lotsNotionalTip {"amt":"4,000,000"}' && q.totHidden === false && q.tot === 'tr.total≈ 8,000,000TWD'
-      && q.ths.includes("tr.colUnit " + JSON.stringify({ label: "tr.col.amount", unit: "tr.lotsUnit" })) && q.ths.includes("tr.colUnit " + JSON.stringify({ label: "tr.col.targetPos", unit: "tr.lotsUnit" })) && q.grps.length === 0 && !q.units, J(q));
+    ok("有報價:部位寫「多 1」(口數 × 訊號,數字不帶號),名目進數字的 title;只有一區 → 單位回欄頭「口」、不畫區標題;合計 ≈ 名目 TWD + 淨值倍數",
+      q.tgt === "1" && q.dir === "dir buy" && q.tgtTip === 'tr.lotsNotionalTip {"amt":"4,000,000"}' && q.totHidden === false && q.tot === 'tr.total≈ 8,000,000TWD'
+      && q.ths.includes("tr.colUnit " + JSON.stringify({ label: "tr.col.amount", unit: "tr.lotsUnit" })) && q.ths.includes("tr.colUnit " + JSON.stringify({ label: "tr.col.pos", unit: "tr.lotsUnit" })) && q.grps.length === 0 && !q.units, J(q));
     const n = paint(null);
-    ok("沒有報價(離線 / api 錯):目標口數照畫(不靠報價)、title 空;合計「—」、不出倍數,不壞畫面", n.tgt === "+1" && n.tgtTip === "" && n.tot === "tr.total—" && !n.totHidden, J(n));
+    ok("沒有報價(離線 / api 錯):目標口數照畫(不靠報價)、title 空;合計「—」、不出倍數,不壞畫面", n.tgt === "1" && n.tgtTip === "" && n.tot === "tr.total—" && !n.totHidden, J(n));
     const f = paint(20000, "USDT", null);
-    ok("R2-S2:讀帳失敗(帳戶幣退成 USDT、沒有淨值)→ 合計照標 TWD(口數區的名目),倍數不跨幣別相除(不出)", f.tot === "tr.total≈ 8,000,000TWD" && f.tgt === "+1", J(f));
+    ok("R2-S2:讀帳失敗(帳戶幣退成 USDT、沒有淨值)→ 合計照標 TWD(口數區的名目),倍數不跨幣別相除(不出)", f.tot === "tr.total≈ 8,000,000TWD" && f.tgt === "1", J(f));
     const m1 = paint(20000, "USDT", null, true), m2 = paint(20000, "TWD", 2000000, true);
     ok("混列(台指期 + 加密)= 兩區:區標題「台指期(口)」與 USDT;沒有匯率(沒登入)→ 合計「—」,不把 TWD 與 USDT 相加",
       m1.tot === "tr.total—" && J(m1.grps.map((g) => g[0])) === J(["tr.grpLots", "USDT"]) && !m1.ths.some((h) => /TWD|USDT|lotsUnit/.test(h)), J(m1));
     ok("混列、綁群益(帳戶幣 TWD):倍數只有一個、接在表底合計後面(口數名目 8,000,000 ÷ 淨值 2,000,000,USDT 列不算);區標題不掛倍數、一列的區不出小計",
-      J(m2.grps[0]) === J(["tr.grpLots", "", "", "", ""]) && J(m2.grps[1]) === J(["USDT", "", "", "", ""]) && m2.tot === 'tr.total—', J([m2.grps, m2.tot]));
+      J(m2.grps[0]) === J(["tr.grpLots", "", "", ""]) && J(m2.grps[1]) === J(["USDT", "", "", ""]) && m2.tot === 'tr.total—', J([m2.grps, m2.tot]));
     { ctx.TR_BAGS = { cloud: { st: { cloud: { fx_rates: { USDT: 1, USD: 1, TWD: 32 }, currency: "USD" } } } };
       const m3 = paint(20000, "TWD", 2000000, true);
       ok("混列有匯率:合計換成顯示幣別的 ≈ 整數(8,000,000 ÷ 32 + 500 = 250,500 USD);逐幣別的 title 拿掉(同網頁 63b7b5fe、設計稽核必改 5)",
@@ -133,19 +135,19 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
           states: { btc: { symbol: "BTCUSDT", position: 1 }, sol: { symbol: "SOLUSDC", market: "spot", position: 0.5 }, tw: { weights: { 2330: 0.5, 2317: 0.49 }, universe: ["2330", "2454", "2317"], market: "spot" } } } } };
       const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
       const grps = all.filter((n) => n.tag === "tr" && n.className === "grp").map((n) => n.kids.map((k) => k.textContent));
-      const rows = all.filter((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key").map((r) => [r.kids[0].kids[0].text, r.kids[1].textContent, r.kids[3].textContent, r.kids[4].textContent, r.kids[4].className]);
+      const rows = all.filter((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key").map((r) => [r.kids[0].kids[0].text, r.kids[1].textContent, r.kids[3].textContent, r.kids[3].className]);
       const by = Object.fromEntries(rows.map((r) => [r[0], r])), tot = all.find((n) => n.className === "pf-total");
       ok("§9.3 綁 Binance:區順序 USDT(帳戶幣)→ USDC → TWD;SOLUSDC 在 USDC 區(不被帳戶幣吃掉);區內照金額排",
         J(grps.map((g) => g[0])) === J(["USDT", "USDC", "TWD"]) && J(rows.map((r) => r[0])) === J(["BTC", "FRESH", "SOL", "TW"]), J([grps, rows]));
-      ok("§9.4 區標題:USDT 兩列出小計 600;一列的 USDC、TWD 不出小計;區標題都不掛倍數", J(grps[0]) === J(["USDT", "", "600", "", ""]) && J(grps[1]) === J(["USDC", "", "", "", ""]) && J(grps[2]) === J(["TWD", "", "", "", ""]), J(grps));
-      ok("§8.2 Type C 列:標的列 weights ∪ universe 全部成分、持有的排前面(0 權重的 2454 照列、排最後);訊號 ×0.99、目標 +297,000 只算持有的、上買色", J(by.TW.slice(1)) === J(["2317" + "ak.sep" + "2330" + "ak.sep" + "2454", "×0.99", "+297,000", "n buy"]), J(by.TW));
-      ok("signals_frozen.pending:訊號寫「—」、目標寫 po.hostOld(主機版本較舊,同網頁 a8239131),不畫 0", by.FRESH[2] === "—" && by.FRESH[3] === "po.hostOld" && /\bna\b/.test(by.FRESH[4]), J(by.FRESH));
+      ok("§9.4 區標題:USDT 兩列出小計 600;一列的 USDC、TWD 不出小計;區標題都不掛倍數", J(grps[0]) === J(["USDT", "", "600", ""]) && J(grps[1]) === J(["USDC", "", "", ""]) && J(grps[2]) === J(["TWD", "", "", ""]), J(grps));
+      ok("§8.2 Type C 列:標的列 weights ∪ universe 全部成分、持有的排前面(0 權重的 2454 照列、排最後);部位「多 297,000」只算持有的、副行持倉 2 檔", J(by.TW.slice(1)) === J(["2317" + "ak.sep" + "2330" + "ak.sep" + "2454", 'tr.rel.long 297,000tr.typeCHold {"n":2}', "n pos"]), J(by.TW));
+      ok("signals_frozen.pending:部位寫 po.hostOld(主機版本較舊,同網頁 a8239131),不畫空手", by.FRESH[2] === "po.hostOld" && /\bna pending\b/.test(by.FRESH[3]), J(by.FRESH));
       ok("§9.7 三區、沒有匯率:合計「—」;倍數照算、接在合計後面——Binance 會下單的 USDT 600 + USDC 100(缺匯率 1:1)÷ 10,000 = 0.07,台股 300,000 不算",
         tot.textContent === 'tr.total—', tot.textContent);
       ctx.TR.st.report.states.tw = undefined; delete ctx.TR.st.report.states.tw;
       const tw2 = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)).filter((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key")
         .find((r) => r.kids[0].kids[0].text === "TW");
-      ok("§8.2 Type C 還沒算過:標的「—」+ tr.typecPending、訊號「—」(還沒算出成分,同網頁 3b67fa10)、目標 0;quote_ccy 的 TWD 照樣分區", tw2.kids[1].textContent === "—" && tw2.kids[1].title === "tr.typecPending" && tw2.kids[3].textContent === "—" && tw2.kids[4].textContent === "0"); }
+      ok("§8.2 Type C 還沒算過:標的「—」+ tr.typecPending、部位「—」+ tr.sigNotYet(還沒算出成分,同網頁 3b67fa10),不畫空手;quote_ccy 的 TWD 照樣分區", tw2.kids[1].textContent === "—" && tw2.kids[1].title === "tr.typecPending" && tw2.kids[3].textContent === "—" && tw2.kids[3].title === "tr.sigNotYet" && tw2.kids.length === 4); }
     // 確認框(spec-0.1.13 #1 的大口數提醒已隨安全檢查拿掉,Wei 10-13):沒改過的舊列(edits 空,照 stored 送)也照列
     const confirm = (price, lots, eq, unit = "TWD") => { paint(price, unit, eq); ctx.TR.st.report.config.amounts.txf = lots; ctx.BOX = null;
       vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);

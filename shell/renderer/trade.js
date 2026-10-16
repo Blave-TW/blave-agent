@@ -2839,6 +2839,37 @@ async function trStratOpen(n, el) {
   }
   resFocusHead();
 }
+/* 配置表「部位」格(spec portfolio-help-icon §2,同網頁 pfPaintPosCell):主行方向字＋不帶號的數字,副行訊號倍數／投資組合持倉檔數,
+   副行只在有方向時畫。判斷順序:主機版本較舊 → 還沒有訊號 → 金額 0 不下單 → 空手 → 多／空。
+   口數列取整同機器對帳器(trRoundLots),取整前的原值與名目台幣掛在數字上;取整後 0 口是空手,原值照樣掛著。
+   雲端等回報(sentOn):數字是拿舊金額算的,整格灰一階;部位是 0 時畫金額欄同一種短線 */
+function trPaintPosCell(td, a, pos, tc, f) {
+  const pc = f.sentOn ? " pend-col" : "";
+  td.textContent = ""; td.title = ""; td.className = "n pos" + pc;
+  if (f.noSig) { td.className = "n pos na pending" + pc; td.textContent = t("po.hostOld"); return; }
+  if (f.notYet) { td.className = "n pos na" + pc; td.textContent = "—"; td.title = t("tr.sigNotYet"); return; }
+  const raw = a * pos, lots = f.txf ? trRoundLots(raw) : null;
+  const zero = !a || (f.txf ? !lots : tc ? !tc.long && !tc.short : !pos);
+  if (zero && f.sentOn) { td.appendChild(trEl("span", "amt-dash")); return; }
+  const word = (k) => td.appendChild(trEl("span", "pos-word", t(k)));
+  if (!a) { word("tr.amtOff"); return; }
+  const rawTip = f.txf && raw !== lots ? t("po.lotsRawTip", { n: trLotsTgtFmt(raw) }) : "";
+  if (zero) { const w = word("tr.flat"); if (rawTip) w.title = rawTip; return; }
+  const leg = (v, num) => { const g = trEl("span", "pos-leg"); g.append(trEl("span", "dir " + (v > 0 ? "buy" : "sell"), t(v > 0 ? "tr.rel.long" : "tr.rel.short")), " ", num); return g; };
+  const money = (v) => trEl("span", "num", trFmt(Math.abs(v)));
+  const main = trEl("span", "pos-main");
+  let sub;
+  if (f.txf) {
+    const num = trEl("span", "num", trLotsFmt(Math.abs(lots))), m = trTxfRefMoney(f.txf, Math.abs(lots), trTxfPrice());
+    num.title = [rawTip, m != null ? t("tr.lotsNotionalTip", { amt: trFmt(Math.round(m)) }) : ""].filter(Boolean).join("\n");
+    main.appendChild(leg(lots, num)); sub = t("tr.sigLine", { x: trSignalText(pos, null) });
+  } else if (tc) {
+    if (tc.long && tc.short) { main.classList.add("split"); main.append(leg(1, money(a * tc.long)), trEl("span", "sep", "·"), leg(-1, money(a * tc.short))); }
+    else main.appendChild(leg(tc.long - tc.short, money(a * (tc.long - tc.short))));
+    sub = t("tr.typeCHold", { n: tc.n });
+  } else { main.appendChild(leg(pos, money(a * pos))); sub = t("tr.sigLine", { x: trSignalText(pos, null) }); }
+  const box = trEl("span", "cell2"); box.append(main, trEl("span", "pos-sub", sub)); td.appendChild(box);
+}
 function trAmountTable(names, stored, states) {
   const frag = document.createDocumentFragment();
   frag.appendChild(poCfgSec());
@@ -2919,7 +2950,7 @@ function trAmountTable(names, stored, states) {
   const zoneOf = {}; names.forEach((n) => { zoneOf[n] = trZoneOf(n); });
   const zoneKeys = Object.keys(zoneOf).map((n) => zoneOf[n]), zones = trZoneOrder(zoneKeys, trVenueId(), trMultZone(trVenueId(), trUnit(), zoneKeys));
   const oneUnit = zones.length === 1 ? trZoneUnit(zones[0]) : null;
-  const head = trHead([[t("tr.col.strategy"), ""], [t("tr.col.symbol"), "c-sym"], [t("tr.col.amount"), "n", oneUnit], [t("tr.col.signal"), "n c-sig"], [t("tr.col.targetPos"), "n" + (sentOn ? " pend-col" : ""), oneUnit]]);
+  const head = trHead([[t("tr.col.strategy"), ""], [t("tr.col.symbol"), "c-sym"], [t("tr.col.amount"), "n", oneUnit], [t("tr.col.pos"), "n" + (sentOn ? " pend-col" : ""), oneUnit]]);
   if (sentOn) head.querySelector("th:last-child").title = t("tr.cloud.pendTarget");
   tbl.appendChild(head);
   // 排序鍵跟顯示同一套換算(同網頁 sortVal):口數列換成參考金額,換不了當 0
@@ -2931,13 +2962,13 @@ function trAmountTable(names, stored, states) {
       const g = trEl("tr", "grp"), sub = trEl("span", "");
       const c0 = trEl("td", "grp-l" + (z === TR_ZONE_LOTS || z === TR_ZONE_UNKNOWN ? " cjk" : ""), trZoneLabel(z)), c3 = trEl("td", "n"), c4 = trEl("td", "n");
       c3.appendChild(sub);
-      g.append(c0, trEl("td", "c-sym"), c3, trEl("td", "c-sig"), c4); tb.appendChild(g);
+      g.append(c0, trEl("td", "c-sym"), c3, c4); tb.appendChild(g);
       grpCells[z] = { sub };
     }
     names.filter((n) => zoneOf[n] === z).sort((a, b) => sortVal(b) - sortVal(a)).forEach((n) => {
       const x = TR.list.find((y) => y.name === n) || {}, st = states[n] || {};
       const sym = trEffSym(n, st.symbol || x.symbol, trContracts()), market = st.market || x.market, tc = trTypeC(st), isC = !!tc || x.portfolio === true, noSig = trNoSignalYet(n);
-      // 回報的 states 裡還沒有這支(還沒跑出第一次 live tick):訊號與目標部位寫「—」,不是 ×0／0;狀態裡有、訊號真的是 0 照舊 ×0
+      // 回報的 states 裡還沒有這支(還沒跑出第一次 live tick;選擇策略框新勾、還沒存的也是):部位寫「—」,不是空手
       const notYet = !isC && !noSig && !(states && states[n]);
       // 台指期列:這一格是口數;標的欄寫商品名(微台／小台／大台,同網頁)。換了合約(待存)就照新的那一個
       const txf = isC ? null : trRowTxfNew(n), ctOn = !isC && trCtGate(n);
@@ -2987,12 +3018,9 @@ function trAmountTable(names, stored, states) {
       const setPend = (on) => { inp.classList.toggle("pend", on); if (dash) dash.classList.toggle("off", !on); };
       if (dash) { dash.setAttribute("aria-hidden", "true"); wrap.appendChild(dash); setPend(TR.edits[n] == null); }
       c.appendChild(wrap); row.appendChild(c);
-      // 訊號欄(§2.1、§8.2):目標部位 = 金額 × 這一格;投資組合 = 持有權重合計。還沒有訊號(凍住後才勾)寫「—」
-      // 投資組合還沒算出成分(沒有權重):訊號也是「—」,不是 ×0(同網頁 3b67fa10)
+      // 投資組合還沒算出成分(沒有權重):一樣是「—」,不是空手(同網頁 3b67fa10)
       const cNotYet = isC && !tc && !noSig;
-      const sgc = row.appendChild(trEl("td", "n sig" + (noSig || notYet || cNotYet ? " na" : ""), noSig || notYet || cNotYet ? "—" : trSignalText(st.position, tc)));
-      if (notYet || cNotYet) sgc.title = t("tr.sigNotYet");
-      const tgt = trEl("td", "n na", "—");
+      const tgt = trEl("td", "n pos");
       const pos = typeof st.position === "number" ? st.position : 0;
       // 最小進場額:機器端只在門檻大於平台那顆 10 時才回報;填得比它小就永遠不會進場,而且完全靜音
       const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" ? "@spot" : "")] : null;
@@ -3000,25 +3028,13 @@ function trAmountTable(names, stored, states) {
       let gateRow = null;
       if (gate != null && !txf) {   // 口數列不掛(同網頁:門檻是錢,這一格是口)
         gateRow = document.createElement("tr");
-        const ntd = trEl("td", "note"); ntd.colSpan = 5;
+        const ntd = trEl("td", "note"); ntd.colSpan = 4;
         ntd.appendChild(trEl("span", "pf-note", t("tr.gateHint", { m: trFmt(gate), c: trUnit() || "" }).replace(/ {2,}/g, " ").replace(/ (?=，)/g, "")));
         gateRow.appendChild(ntd);
       }
       const repaint = () => {
-        /* 目標部位(units spec §3.3、§8.2、§9.6):跟同列金額同單位、只放數字。口數列 = 口數 × 訊號,取整同機器對帳器(trRoundLots),
-           名目 TWD 放 title;投資組合 = 金額 × 持有權重合計,多空混合不帶號、中性色、title 拆多空;沒部位寫 0 */
-        const a = TR.edits[n] != null ? TR.edits[n] : stored[n] || 0, mixed = !!tc && tc.long > 0 && tc.short > 0;
-        const v = txf ? trRoundLots(a * pos) : isC ? (tc ? a * (mixed ? tc.long + tc.short : tc.long - tc.short) : 0) : a * pos;
-        tgt.className = "n " + (noSig ? "na pending" : v === 0 ? "na" : mixed ? "" : v > 0 ? "buy" : "sell") + (sentOn ? " pend-col" : "");
-        const m = txf && v ? trTxfRefMoney(txf, Math.abs(v), trTxfPrice()) : null, raw = txf ? a * pos : null;
-        // 口數列 tooltip:取整前的原值(跟取整後不同才寫)+ 名目台幣,一行一項(同網頁 pfLotsTip)
-        tgt.title = mixed ? t("tr.grossTip", { l: trFmt(a * tc.long), s: trFmt(a * tc.short) })
-          : [raw != null && raw !== v ? t("po.lotsRawTip", { n: trLotsTgtFmt(raw) }) : "", m != null ? t("tr.lotsNotionalTip", { amt: trFmt(Math.round(m)) }) : ""].filter(Boolean).join("\n");
-        /* 等回報那段目標部位是拿**舊金額**算的:0 時畫跟金額欄同一種待回報記號,表下另有一句常駐說明(spec §2-3b) */
-        if (noSig) tgt.textContent = t("po.hostOld");
-        else if (notYet) { tgt.textContent = "—"; tgt.className = "n na" + (sentOn ? " pend-col" : ""); tgt.title = t("tr.sigNotYet"); }
-        else if (v === 0 && sentOn) { tgt.textContent = ""; tgt.appendChild(trEl("span", "amt-dash")); }
-        else tgt.textContent = txf ? trLotsFmt(v, true) : trFmt(v, !mixed);
+        const a = TR.edits[n] != null ? TR.edits[n] : stored[n] || 0;
+        trPaintPosCell(tgt, a, pos, tc, { noSig, notYet: notYet || cNotYet, txf, sentOn });
         if (gateRow) {
           const show = a > 0 && a < gate;
           if (show && !gateRow.parentNode) row.insertAdjacentElement("afterend", gateRow);
@@ -3026,7 +3042,7 @@ function trAmountTable(names, stored, states) {
           row.classList.toggle("has-note", show || !!badRow.parentNode);
         }
       };
-      const badRow = document.createElement("tr"), btd = trEl("td", "note"); btd.colSpan = 5;
+      const badRow = document.createElement("tr"), btd = trEl("td", "note"); btd.colSpan = 4;
       const bmsg = trEl("span", "pf-note err", ""); bmsg.id = "tr-bad-" + n;
       btd.appendChild(bmsg); badRow.appendChild(btd);
       const markBad = (why) => {                    // why:null / false = 沒事;"bad" = 不是數字;"big" = 超過上限;"twd" = 模擬交易的台幣標的不能加

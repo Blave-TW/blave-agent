@@ -240,13 +240,14 @@ function poFogCfg() {
   const f = document.createDocumentFragment();
   f.appendChild(trSec(trEl("span", "label", t("po.secAmounts"))));
   const tbl = trEl("table", "pf-tbl zoned");
-  tbl.appendChild(trHead([[t("tr.col.strategy"), ""], [t("tr.col.symbol"), "c-sym"], [t("tr.col.amount"), "n", "USDT"], [t("tr.col.signal"), "n c-sig"], [t("tr.col.targetPos"), "n", "USDT"]]));
+  tbl.appendChild(trHead([[t("tr.col.strategy"), ""], [t("tr.col.symbol"), "c-sym"], [t("tr.col.amount"), "n", "USDT"], [t("tr.col.pos"), "n", "USDT"]]));
   const tb = document.createElement("tbody");
-  [["A", "BTCUSDT", "10,000", "×1.00", "+10,000", "buy"], ["B", "ETHUSDT", "6,000", "×−0.50", "−3,000", "sell"], ["C", "SOLUSDT", "4,000", "×0", "0", "na"]].forEach((x) => {
+  [["A", "BTCUSDT", 10000, 1], ["B", "ETHUSDT", 6000, -0.5], ["C", "SOLUSDT", 4000, 0]].forEach((x) => {
     const r = document.createElement("tr"), k = trEl("td", "key", t("po.fogStrat", { x: x[0] }));
     k.appendChild(trEl("span", "mkt-tag", t("tr.mkt.swap")));
-    const a = trEl("td", "n"); a.appendChild(trEl("span", "amt-in fog-amt", x[2]));
-    r.append(k, trEl("td", "sym c-sym", x[1]), a, trEl("td", "n sig", x[3]), trEl("td", "n " + x[5], x[4])); tb.appendChild(r);
+    const a = trEl("td", "n"); a.appendChild(trEl("span", "amt-in fog-amt", trFmt(x[2])));
+    const ps = trEl("td"); trPaintPosCell(ps, x[2], x[3], null, {});
+    r.append(k, trEl("td", "sym c-sym", x[1]), a, ps); tb.appendChild(r);
   });
   tbl.appendChild(tb); f.appendChild(tbl);
   const tot = trEl("div", "pf-total"); tot.append(trEl("span", "", t("tr.total")), trEl("span", "n", "20,000")); f.appendChild(tot);

@@ -115,7 +115,7 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -196,16 +196,17 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
       held((rp) => { rp.account.venues.binance = { ok: false, error: "x" }; }) === null && held((rp) => { rp.account.venues.binance.positions = {}; rp.account.read_at = Math.floor(Date.now() / 1000) - 400; }) === null
       && held((rp, T) => { rp.account.venues.binance.positions = {}; rp.config.amounts.btc2 = 5; rp.states.btc2 = { symbol: "BTCUSDT", position: -1 }; }) === null
       && held((rp, T) => { T.list[0].portfolio = true; }) === null && (ctx.TR = bag({}), vm.runInContext("TR = this.TR; trStratHeld('btc')", ctx)) === null); }
-  // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 訊號與目標「—」+ tooltip;有這支、position 0 → 照舊 ×0
+  // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 部位「—」+ tooltip;有這支、position 0 → 空手
   { ctx.TR = bag({}); ctx.TR.st.report.states = { tw: { symbol: "2330", position: 1, market: "spot" } }; ctx.TR.edits = {};
     const am = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
-    const sig = am.filter((n) => /\bsig\b/.test(n.className)), tip = am.filter((n) => n.title === "tr.sigNotYet");
-    ok("金額表:states 缺 btc → 訊號「—」、目標「—」,兩格 tooltip tr.sigNotYet;tw 照常 ×1.00", sig.some((n) => n.textContent === "—") && sig.some((n) => n.textContent === "×1.00") && tip.length === 2, J(sig.map((n) => n.textContent)));
+    const pc = am.filter((n) => n.tag === "td" && /\bpos\b/.test(n.className)), tip = am.filter((n) => n.title === "tr.sigNotYet");
+    ok("金額表:states 缺 btc → 部位「—」,tooltip tr.sigNotYet;tw 照常 多＋副行訊號 ×1.00;沒有獨立的訊號欄", pc.some((n) => n.textContent === "—" && n.title === "tr.sigNotYet")
+      && pc.some((n) => /^tr\.rel\.long /.test(n.textContent) && n.textContent.includes('tr.sigLine {"x":"×1.00"}')) && tip.length === 1 && !am.some((n) => /\bsig\b/.test(n.className)), J(pc.map((n) => n.textContent)));
     const cfg = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'cfg')", ctx));
     ok("總訊號部位表:states 缺 btc → BTCUSDT 目標「—」(tooltip tr.sigNotYet),不是 0", cfg.some((n) => n.tag === "td" && n.textContent === "—" && n.title === "tr.sigNotYet"));
     ctx.TR.st.report.states.btc = { symbol: "BTCUSDT", position: 0 };
     const am0 = flat(vm.runInContext("trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
-    ok("狀態裡有 btc、position 0 → 訊號照舊 ×0、目標 0,沒有 tr.sigNotYet", am0.some((n) => /\bsig\b/.test(n.className) && n.textContent === "×0") && !am0.some((n) => n.title === "tr.sigNotYet")); }
+    ok("狀態裡有 btc、position 0 → 部位寫空手,沒有 tr.sigNotYet", am0.some((n) => n.tag === "td" && /\bpos\b/.test(n.className) && n.textContent === "tr.flat") && !am0.some((n) => n.title === "tr.sigNotYet")); }
   // post-connect-flow 第 4 列:配置頁「去啟動」那一列,envHeadState 每個值都列舉
   { ctx.TR = bag({ binance: V });
     const k = (st) => vm.runInContext("trGoStartKey(" + J(st) + ", TR.st.report)", ctx);
@@ -660,7 +661,7 @@ ok("優化表:台指期取整成 0 口而有錢 → mg.lotsUnder、累計少投 
     && psrc.indexOf('t("mg.lotsUnderFoot"') < psrc.indexOf("const over = mgLotsOver(") && cutF(psrc, "mgSuggestTable").indexOf("wrap.appendChild(tbl);") < cutF(psrc, "mgSuggestTable").indexOf('t("mg.lotsUnderFoot"')
     && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.lotsOverFoot": "台指期進位成 {lots} 口，比配置多 {pct}%"')); }
 ok("等待那一行前面寫「優化：」或「回測：」", /t\(w === "opt" \? "mg\.waitPrefixOpt" : "mg\.waitPrefixBt"\) \+ \(n === 1/.test(psrc) && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.waitPrefixOpt": "優化："'));
-ok("投資組合還沒算出成分(沒有權重):金額表訊號寫「—」(tooltip tr.sigNotYet),不是 ×0", /const cNotYet = isC && !tc && !noSig;/.test(src) && /noSig \|\| notYet \|\| cNotYet \? "—" : trSignalText\(st\.position, tc\)/.test(src));
+ok("投資組合還沒算出成分(沒有權重):金額表部位寫「—」(tooltip tr.sigNotYet),不是空手", /const cNotYet = isC && !tc && !noSig;/.test(src) && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn \}\);/.test(src));
 ok("剛選進、還沒回報、清單沒寫市場:金額表與部位表都不先標「合約」", /if \(isC \|\| market\) first\.appendChild\(trEl\("span", "mkt-tag"/.test(src) && /if \(!guess\) c\.appendChild\(trEl\("span", "mkt-tag"/.test(src));
 // runtime NEEDS_ROUTING 閘門改成任何沒路由的成員都擋(金額 0 也算):只有金額 0 的成員沒路由也落 Z
 { const ctx = vm.createContext({ TR: { list: [] } }); const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));

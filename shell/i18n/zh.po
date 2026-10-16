@@ -1707,8 +1707,20 @@ msgstr "標的"
 msgid "tr.col.amount"
 msgstr "金額"
 
-msgid "tr.col.signal"
-msgstr "訊號"
+msgid "tr.col.pos"
+msgstr "部位"
+
+msgid "tr.flat"
+msgstr "空手"
+
+msgid "tr.amtOff"
+msgstr "不下單"
+
+msgid "tr.sigLine"
+msgstr "訊號 {x}"
+
+msgid "tr.typeCHold"
+msgstr "持倉 {n} 檔"
 
 msgid "tr.net.tag"
 msgstr "{n} 支策略"
@@ -1722,14 +1734,8 @@ msgstr "合計 0：多 {l}、空 {s} 互相抵銷，交易所上不會有 {base}
 msgid "tr.net.sumOff"
 msgstr "合計 {t}：多 {l}、空 {s}，互相抵銷了 {m}。"
 
-msgid "tr.col.targetPos"
-msgstr "目標部位"
-
 msgid "tr.nSyms"
 msgstr "{n} 檔"
-
-msgid "tr.grossTip"
-msgstr "多 {l} ＋ 空 {s}"
 
 msgid "tr.grpLots"
 msgstr "台指期（口）"
@@ -3129,7 +3135,7 @@ msgid "tr.cloud.pendAmounts"
 msgstr "新金額已存到雲端主機。"
 
 msgid "tr.cloud.pendTarget"
-msgstr "目標部位還是照舊金額算的，下一次回報才會更新。"
+msgstr "「部位」欄還是照舊金額算的，下一次回報才會更新。"
 
 msgid "tr.cloud.pendDone"
 msgstr "雲端已套用新金額。"
