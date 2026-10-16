@@ -588,13 +588,13 @@ _BLAVE_DATA = frozenset({
 # Classes and constants that carry no fetch. BASE is deliberately absent: a
 # strategy that takes it builds its own Blave URL.
 _DATA_INERT = frozenset({
-    "DataAccessError", "BatchIncomplete", "UnknownFetcher", "TwPublicUnavailable", "UsStockUnavailable",
-    "UsStockNotHere", "UsStockNotFound", "FeedNotPublished", "closed_bars_only", "live_feeds",
+    "DataAccessError", "BatchIncomplete", "UnknownFetcher", "TwPublicUnavailable", "TwCdnUnavailable",
+    "UsStockUnavailable", "UsStockNotHere", "UsStockNotFound", "FeedNotPublished", "closed_bars_only", "live_feeds",
     "FEED_TIMING", "TW_FLOWS", "TWSE_INDUSTRY_NAMES", "PUBLIC_SOURCE_EN",
 })
-# Shipped lib modules that call Blave fetchers themselves (the report builders).
-# The test lists every lib module that reaches lib.data's Blave names.
-_LIB_REACHING_BLAVE = frozenset({"report_bricks", "report_templates"})
+# Shipped lib modules that call Blave themselves (the report builders; paper_data's
+# USD rate). The test lists every lib module that reaches lib.data's Blave names.
+_LIB_REACHING_BLAVE = frozenset({"paper_data", "report_bricks", "report_templates"})
 _DYNAMIC_IMPORTS = {"__import__", "import_module", "exec", "eval"}
 
 

@@ -910,8 +910,8 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     ("BTCUSDT@spot") — split with lib.portfolio.split_key.
 
     OFFICIAL VENUES AUTO-WIRE (see get_positions) — lib.execute.dispatch_order
-    resolves the user's per-strategy execution style (下單方式: market / TWAP /
-    custom, portfolio_config["execution"]) and routes market legs straight
+    resolves the portfolio-wide execution style (下單方式: market / TWAP / chase /
+    custom, portfolio_config["execution_default"]) and routes market legs straight
     through lib/venue_wiring (spot buys sized in quote currency, spot sells
     capped at inventory, swap converted at the live mark with reduce legs
     ceiled to a whole lot and capped at the position). TWAP / custom legs run

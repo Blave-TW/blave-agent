@@ -18,7 +18,8 @@ cache/
 │   └── ...
 ├── twstock_price2_2330.parquet     ← daily 台股/台市 datasets: ONE file per stock, coverage meta in the parquet footer (see below)
 ├── twstock_daily_2330_twse/   ← 台股日K from the exchange itself (src = twse / tpex / finmind), monthly files
-├── twstock_exright_twse/      ← whole-market 除權息 table per month (twse / tpex); twstock_public_market.json = which exchange lists each id (1-day)
+├── twstock_adjev_twse/        ← whole-market price-continuity events per month (除權息, 減資, 變更面額, ETF 分割; twse / tpex); twstock_public_market.json = which exchange lists each id (1-day). The older 除權息-only twstock_exright_* is no longer read
+├── twstock_cdn/               ← Blave CDN copies: manifest.json, stock/<id>.parquet, year/<YYYY>.parquet, recent.parquet, events.parquet (+ .meta.json with the ETag); a stock file is re-downloaded only when the manifest lists a later last day
 ├── fear_greed_alternative.me/ ← Crypto Fear & Greed index, monthly files
 ├── twstock_broker_stock_2330/ ← per-day files (broker data only)
 │   ├── 2024-01-02.parquet

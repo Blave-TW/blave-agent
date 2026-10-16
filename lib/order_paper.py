@@ -18,10 +18,9 @@ PRICE (the whole model, Wei 2026-08-21):
   * fills are IMMEDIATE at that price — no wait for the next bar (the live-paper
     convention, e.g. Freqtrade dry-run). Paper therefore diverges a little from
     the next-bar-open backtest; that is normal and a useful look-ahead check.
-  * ONE USD account, any asset, NO FX: the reconciler sizes qty = USD ÷ price,
-    so PnL = qty × (mark − entry) = USD_notional × (mark/entry − 1), a unitless
-    return — currency and contract unit cancel (product decision B). A TXF or
-    TW-stock position needs no point value / lot / FX here.
+  * ONE USD account, any asset (product decision B). NOTIONAL positions need
+    no FX: the reconciler sizes qty = USD ÷ price, so PnL = USD_notional ×
+    (mark/entry − 1), a unitless return.
   * CONTRACT positions (Wei 2026-09-22): a strategy whose asset_spec.type is
     futures_contracts / shares is reconciled in whole lots, never notional —
     place_contract_market_order books `qty` as a LOT COUNT with the spec's
@@ -33,8 +32,15 @@ PRICE (the whole model, Wei 2026-08-21):
     there is no liquidation model either, so paper results can look better
     than a real account at high leverage). Contract positions are checked on
     lots × the spec's `margin` (TAIFEX initial margin, written with the spec by
-    the platform) against equity itself (1×, as a broker would). The account
-    is unit-less (no FX), as everywhere in paper.
+    the platform) against equity itself (1×, as a broker would).
+  * CONTRACT money is in the contract's currency (TXF: lots × 200 × Δindex is
+    TWD), so it is converted at the fill: realized PnL and fee ÷ the USD rate
+    (lib/paper_data.usd_rate) before they reach cash; open-position PnL and
+    margin ÷ the current rate whenever equity is computed. The row keeps
+    quote_ccy, the native-unit entry/margin, and `fx` = the last rate it used.
+    A TWD entry with no rate is refused; a reduce falls back to the row's own
+    `fx`. Rows opened before this existed (no quote_ccy) are stamped on the
+    first read that has a rate; cash already booked unconverted stays as is.
 
 Contract rules are permissive (fetch_data gives OHLC, not an instrument spec):
 no min-qty / min-notional / step gating — the reconciler's own slice threshold
@@ -68,6 +74,19 @@ except ImportError:  # half-updated workspace (lib/reject_token.py not landed): 
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 from lib.paper_data import current_price, PaperNoPrice
+try:
+    from lib.paper_data import PaperNoFx, quote_ccy, usd_rate
+except ImportError:  # half-updated workspace (lib/paper_data.py without FX): contract money unconverted, as before
+    class PaperNoFx(PaperNoPrice):
+        pass
+
+    def quote_ccy(symbol, declared=None):
+        return "USD"
+
+    def usd_rate(ccy, env, max_age=None):
+        if str(ccy or "USD").upper() in ("USD", "USDT", "USDC"):
+            return 1.0
+        raise PaperNoFx(f"lib/paper_data.py has no FX — update the workspace")
 
 try:
     import fcntl
@@ -263,9 +282,14 @@ class _txn:
             raise
 
     def __exit__(self, et, ev, tb):
+        # audits queued inside the block describe ledger changes — written only
+        # once those changes are saved, so a refused order can't log them twice
+        pending = self.led.pop("_after_save", []) if isinstance(getattr(self, "led", None), dict) else []
         try:
             if et is None:
                 _save(self.led)
+                for event, fields in pending:
+                    guard.audit(event, **fields)
         finally:
             self._release()
 
@@ -318,6 +342,8 @@ def _record_fill(led, o, qty, price, fee, realized=0.0, kind=None):
                          "symbol": o["symbol"], "market": o["market"],
                          "side": o["side"], "qty": qty, "price": price, "fee": fee,
                          "realized": realized, "kind": kind or o["type"]})
+    if o.get("quote_ccy") and o["quote_ccy"] != "USD":  # realized/fee above are USD
+        led["fills"][-1].update(ccy=o["quote_ccy"], fx=o.get("fx"))
     del led["fills"][:-MAX_FILLS]
 
 
@@ -337,6 +363,49 @@ def _new_order(led, sym, market, side, typ, price, qty, cid, reduce_only=False,
 
 def _cv(pos):
     return float((pos or {}).get("contract_value") or 1.0)
+
+
+def _row_ccy(sym, pos):
+    return (pos or {}).get("quote_ccy") or quote_ccy(sym)
+
+
+def _row_fx(env, sym, pos):
+    """USD rate for a held contract row's money. No live/disk rate → the
+    row's own last `fx`; a pre-FX row that has never had one → 1.0, which is
+    the old unconverted behaviour, kept only until the first rate arrives."""
+    if (pos or {}).get("unit") != "contracts":
+        return 1.0
+    try:
+        return usd_rate(_row_ccy(sym, pos), env)
+    except PaperNoFx:
+        fx = (pos or {}).get("fx")
+        if fx:
+            return float(fx)
+        log.warning(f"paper {sym}: no USD rate yet — valued unconverted")
+        return 1.0
+
+
+def _fill_fx(env, led, sym, currency, adding):
+    """(ccy, rate) for a contract fill. The held row's currency wins over the
+    caller's; an exposure-adding fill without a rate is refused (PaperError),
+    a reduce takes _row_fx's fallbacks."""
+    pos = led["positions"].get(sym)
+    if pos and float(pos.get("qty") or 0) != 0:
+        ccy = _row_ccy(sym, pos)
+        # a reduce takes the row's own currency, so a mislabelled row can still be closed
+        if adding and currency and quote_ccy(sym, currency) != ccy:
+            raise PaperError(f"{sym}: position is held in {ccy} — a "
+                             f"{quote_ccy(sym, currency)} fill cannot be netted into it")
+    else:
+        pos, ccy = None, quote_ccy(sym, currency)
+    if ccy == "USD":
+        return ccy, 1.0
+    if not adding and pos is not None:
+        return ccy, _row_fx(env, sym, pos)
+    try:
+        return ccy, usd_rate(ccy, env)
+    except PaperNoFx as e:
+        raise PaperError(str(e))
 
 
 def _cap_reduce(led, sym, signed):
@@ -365,7 +434,7 @@ def _equity(env, led, marks):
     upnl = 0.0
     for sym, p in led["positions"].items():
         mark, _ = _pos_mark(env, led, sym, marks)
-        upnl += (mark - p["entry"]) * p["qty"] * _cv(p)
+        upnl += (mark - p["entry"]) * p["qty"] * _cv(p) / _row_fx(env, sym, p)
     spot_value = 0.0
     prices = {}
     for asset, amt in led["spot"].items():
@@ -382,7 +451,7 @@ def _equity(env, led, marks):
 
 
 def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_value=None,
-                     margin=None):
+                     margin=None, fx=None):
     """Net one-way position update; returns realized PnL. Only exposure-adding
     fills are checked against equity and contract margin (computed on the
     would-be state, committed only if it passes). Reduce/close never refused — no liquidation
@@ -393,7 +462,9 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
     notional fill (qty in base units, value 1). The two never mix on one
     symbol: the held position's unit decides, and a fill in the other unit is
     refused rather than summed lots with coins. `margin` (per lot) rides
-    with contract_value and is what the leverage check counts for the row."""
+    with contract_value and is what the leverage check counts for the row.
+    fx=(ccy, rate) from _fill_fx on a contract fill: realized is booked ÷ rate
+    (the caller's `fee` is already USD); None = USD."""
     pos = led["positions"].get(sym, {"qty": 0.0, "entry": 0.0})
     held_cv = _cv(pos) if pos.get("unit") == "contracts" else None
     if float(pos["qty"]) != 0 and (held_cv is None) != (contract_value is None):
@@ -413,6 +484,10 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
         closed = min(abs(q0), abs(signed_qty))
         realized = (price - e0) * closed * cv * (1 if q0 > 0 else -1)
         entry = price if abs(signed_qty) > abs(q0) else e0
+    if fx is None and contract_value is not None:
+        fx = _fill_fx(env, led, sym, None, abs(q1) > abs(q0))
+    ccy, rate = fx or ("USD", 1.0)
+    realized /= rate
     new_cash = led["cash"] + realized - fee
     new_positions = dict(led["positions"])
     if abs(q1) < 1e-12:
@@ -421,7 +496,8 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
         new_positions[sym] = {"qty": q1, "entry": entry}
         if contract_value is not None:
             new_positions[sym].update(unit="contracts", contract_value=cv,
-                                      margin=float(margin or pos.get("margin") or 0))
+                                      margin=float(margin or pos.get("margin") or 0),
+                                      quote_ccy=ccy, fx=rate)
     if abs(q1) > abs(q0) + 1e-12:
         marks.setdefault(sym, price)
         trial = dict(led, cash=new_cash, positions=new_positions)
@@ -430,8 +506,8 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
             raise PaperError("paper account equity would be <= 0 — refused "
                              "(reset_account to start over)")
         # contract lots are margin-checked; notional has no cap (see docstring)
-        margin_used = sum(abs(p["qty"]) * float(p.get("margin") or 0)
-                          for p in new_positions.values() if p.get("unit") == "contracts")
+        margin_used = sum(abs(p["qty"]) * float(p.get("margin") or 0) / _row_fx(env, s, p)
+                          for s, p in new_positions.items() if p.get("unit") == "contracts")
         if margin_used > equity + 1e-9:  # 1×: margin must be covered, as at a broker
             raise PaperError(reject_token.tag(reject_token.PAPER_MARGIN, f"contract margin {margin_used:.0f} exceeds paper equity "
                              f"{equity:.0f} — refused"))
@@ -485,12 +561,38 @@ def _norm_status(raw):
     return "open"
 
 
+def _stamp_pre_fx_rows(env, led, marks):
+    """A contract row opened before contract money was converted has no
+    quote_ccy, and its open PnL was being added to the USD account in TWD.
+    Stamp it the first time a rate is available — from here on it is valued
+    ÷ rate, which moves equity once by upnl × (1 − 1/rate); that move is
+    audited (paper_fx_cutover). Cash already booked is not restated."""
+    for sym, p in led["positions"].items():
+        if p.get("unit") != "contracts" or p.get("quote_ccy"):
+            continue
+        ccy = quote_ccy(sym)
+        if ccy == "USD":
+            p.update(quote_ccy=ccy, fx=1.0)
+            continue
+        try:
+            rate = usd_rate(ccy, env)
+        except PaperNoFx:
+            continue
+        mark, priced = _pos_mark(env, led, sym, marks)
+        upnl = (mark - p["entry"]) * p["qty"] * _cv(p) if priced else 0.0
+        p.update(quote_ccy=ccy, fx=rate)
+        led.setdefault("_after_save", []).append(("paper_fx_cutover", dict(
+            venue=VENUE, symbol=sym, ccy=ccy, fx=rate, lots=p["qty"],
+            upnl_native=round(upnl, 2), equity_change_usd=round(upnl / rate - upnl, 2))))
+
+
 def _settle(env, led):
     """Fill resting limits the mark has reached; fire protective triggers the
     mark has crossed. Called at the top of every ledger transaction, so a read
     is the matching cadence."""
     _prune(led)
     marks = {}
+    _stamp_pre_fx_rows(env, led, marks)
     for o in list(led["orders"].values()):
         if o["status"] != "open":
             continue
@@ -551,13 +653,15 @@ def _settle(env, led):
             continue
         signed = -pos["qty"]
         cv = _cv(pos) if pos.get("unit") == "contracts" else None
-        fee = abs(signed) * mark * (cv or 1.0) * TAKER_FEE
+        fx = _fill_fx(env, led, sym, None, False) if cv is not None else None
+        fee = abs(signed) * mark * (cv or 1.0) * TAKER_FEE / (fx[1] if fx else 1.0)
         o = _new_order(led, sym, "swap", "sell" if long else "buy", "market", mark,
                        abs(signed), None, reduce_only=True,
                        direction="long" if long else "short")
         if cv is not None:
-            o["unit"], o["contract_value"] = "contracts", cv
-        realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks, contract_value=cv)
+            o.update(unit="contracts", contract_value=cv, quote_ccy=fx[0], fx=fx[1])
+        realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks, contract_value=cv,
+                                    fx=fx)
         _record_fill(led, o, abs(signed), mark, fee, realized, kind=hit)
         led["protective"].pop(sym, None)
         guard.audit("order_ok", venue=VENUE, symbol=sym, intent="protective",
@@ -653,14 +757,16 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
 
 
 def place_contract_market_order(env, symbol, direction, lots, contract_value,
-                                client_order_id=None, reduce_only=False, margin=None):
+                                client_order_id=None, reduce_only=False, margin=None,
+                                currency=None):
     """Simulated market order in WHOLE LOTS (asset_spec.type futures_contracts /
     shares — see module docstring). `lots` is a positive integer count; a
     reduce leg is capped at the held lots (never flips through zero). Fee is
     taker on lots × price × contract_value. `margin` (initial margin per lot,
     required on an entry — the leverage check counts it; a reduce leg needs
-    none). Same idempotency as place_market_order. Returns the fill view with
-    executed_qty in lots."""
+    none). `currency` = the spec's currency of that money (None → inferred,
+    paper_data.quote_ccy; a held row's own wins). Same idempotency as
+    place_market_order. Returns the fill view with executed_qty in lots."""
     sym = str(symbol).upper()
     if direction not in ("long", "short"):
         raise ValueError(f"direction must be long|short, got {direction!r}")
@@ -698,14 +804,28 @@ def place_contract_market_order(env, symbol, direction, lots, contract_value,
                 if signed == 0:
                     guard.audit("order_ok", order_id="", note="nothing to reduce", **fields)
                     return False
-            fee = abs(signed) * price * cv * TAKER_FEE
+            q0 = float(led["positions"].get(sym, {}).get("qty") or 0)
+            refused_open = 0.0
+            try:
+                fx = _fill_fx(env, led, sym, currency, abs(q0 + signed) > abs(q0))
+            except PaperError:
+                if not (q0 and (q0 > 0) != (signed > 0) and abs(signed) > abs(q0)):
+                    raise
+                # flip with no rate for the new leg: close what is held (the
+                # row's own fx), refuse only the opening part
+                refused_open, signed = abs(signed) - abs(q0), -q0
+                fx = _fill_fx(env, led, sym, currency, False)
+            fee = abs(signed) * price * cv * TAKER_FEE / fx[1]
             o = _new_order(led, sym, "swap", side, "market", price, abs(signed),
                            client_order_id, reduce_only=reduce_only, direction=direction)
-            o["unit"], o["contract_value"] = "contracts", cv
+            o.update(unit="contracts", contract_value=cv, quote_ccy=fx[0], fx=fx[1])
             realized = _apply_swap_fill(env, led, sym, signed, price, fee, marks,
-                                        contract_value=cv, margin=mg or None)
+                                        contract_value=cv, margin=mg or None, fx=fx)
             _record_fill(led, o, abs(signed), price, fee, realized)
             guard.audit("order_ok", order_id=o["order_id"], price=price, **fields)
+            if refused_open:
+                guard.audit("order_error", error=f"opening {refused_open:g} lot(s) refused: "
+                            f"no USD rate for {fx[0]}", **fields)
             return _fill_view(o)
     except guard.Halted:
         raise
@@ -990,7 +1110,7 @@ def snapshot(env):
                    "priced": priced}
             if p.get("unit") == "contracts":  # size is LOTS — the wiring must not × mark
                 row.update(unit="contracts", contract_value=_cv(p),
-                           margin=float(p.get("margin") or 0))
+                           margin=float(p.get("margin") or 0), quote_ccy=_row_ccy(sym, p))
             positions.append(row)
         return {"equity": equity, "cash": led["cash"], "unrealized": upnl,
                 "spot_value": spot_value, "positions": positions,

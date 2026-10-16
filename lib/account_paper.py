@@ -48,7 +48,10 @@ def get_positions(env: dict) -> list:
     unrealized_pnl is order_paper._equity's own formula; None when the symbol
     lost its price (the mark fell back to entry). margin exists only on
     contract rows (lots × the spec's per-lot margin) — a notional paper
-    position locks no margin. leverage is always None: paper has no setting."""
+    position locks no margin. On a contract row both stay in the contract's
+    own currency (TWD for TXF — the app and web label lot rows TWD, as a TW
+    broker reports them); only equity is folded to USD. leverage is always
+    None: paper has no setting."""
     rows = []
     for p in _paper.snapshot(env)["positions"]:
         size, mark = float(p["size"]), float(p["mark_price"])

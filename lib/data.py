@@ -9,6 +9,7 @@ import hashlib
 import json
 import shutil
 import numbers
+import random
 import time
 import threading
 import logging
@@ -114,7 +115,8 @@ def _desktop_denied(r):
 
 
 def _retry_get(url, max_retries=6, **kwargs):
-    """GET with exponential backoff on transient failures (2, 4, 8, 16, 32, 64 s).
+    """GET with exponential backoff on transient failures: 2, 4, 8, 16, 32 s between the
+    six tries (~1 min of waiting); after the last try it raises at once.
 
     Retries 429 (Blave per-IP rate limit, 500/5min), 5xx (incl. 503, which the
     API returns when upstream FinMind itself rate-limits), and connection/read
@@ -153,6 +155,8 @@ def _retry_get(url, max_retries=6, **kwargs):
                 # .response as before so the callers switching on status still work.
                 raise requests.HTTPError(f'{exc} — {r.text[:200]}', response=r) from exc
             return r
+        if attempt == max_retries - 1:
+            break   # no retry left: sleeping first would only delay the raise
         wait = 2 ** (attempt + 1)
         print(f"  {r.status_code} transient — retrying in {wait}s ({url.split('/')[-2]}/{url.split('/')[-1]})")
         time.sleep(wait)
@@ -344,7 +348,7 @@ def _atomic_to_parquet(df, path, footer_meta=None):
 
 
 def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
-                          empty_marker_ttl_hours=None, month_by_month=False):
+                          empty_marker_ttl_hours=None, month_by_month=False, present_fresh_after=None):
     """Monthly-partitioned cache.
 
     Past months (before current month) are stored immutably — fetched once, never re-fetched,
@@ -367,6 +371,10 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
     instead of a whole span per call — for a source that is itself one throttled
     request per month (TWSE STOCK_DAY: 3 s each, ~7 min for ten years), so a run
     cut short keeps the months it already has and the next run resumes there.
+
+    present_fresh_after (opt-in, naive UTC datetime): a current-month file written at or
+    after it is served as is, no delta fetch — for a source that publishes once a day at a
+    known time (the exchanges' 17:35 final), so a warm call does not re-ask every stock-month.
 
     Directory: cache/{prefix}_{params}/
     Files:     YYYY-MM.parquet  (one per month)
@@ -479,6 +487,12 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
     for ym in present_months:
         path     = cache_dir / f'{ym}.parquet'
         ym_start = f'{ym}-01'
+        if path.exists() and present_fresh_after is not None and \
+                datetime.utcfromtimestamp(path.stat().st_mtime) >= present_fresh_after:
+            cached = pd.read_parquet(path)
+            if not cached.empty:
+                frames.append(_normalise_index(cached))
+            continue
         if path.exists():
             cached = _normalise_index(pd.read_parquet(path))
             last_ts = cached.index[-1].strftime('%Y-%m-%d')
@@ -694,6 +708,28 @@ def _migrate_monthly_to_single(prefix, params):
     return (_normalise_index(df) if not df.empty else df), meta
 
 
+_LEFTOVERS, _LEFTOVERS_LOCK = {}, threading.Lock()
+
+
+def _migrating_leftovers(stale):
+    """`<stale>.migrating.<pid>` dirs a killed migration left behind. The cache dir is listed
+    once per process, not once per id: a glob per id made a warm 2,000-stock read O(n²) —
+    16k directory entries scanned 4,000 times, five of the six minutes of a full-market tick."""
+    parent = stale.parent
+    with _LEFTOVERS_LOCK:
+        found = _LEFTOVERS.get(parent)
+        if found is None:
+            found = {}
+            try:
+                for entry in os.scandir(parent):
+                    if '.migrating.' in entry.name:
+                        found.setdefault(entry.name.split('.migrating.')[0], []).append(Path(entry.path))
+            except OSError:
+                pass
+            _LEFTOVERS[parent] = found
+    return found.get(stale.name, [])
+
+
 def _read_single(prefix, params):
     """→ (frame, meta) or (None, None) when nothing is cached. Migrates a
     monthly directory on first touch."""
@@ -709,7 +745,7 @@ def _read_single(prefix, params):
                 # A monthly dir (rename lost a race / an earlier cold write beat the
                 # migration) or an orphan .migrating.* would otherwise sit forever.
                 stale = _monthly_cache_dir(prefix, params)
-                for d in [stale] + list(stale.parent.glob(f'{stale.name}.migrating.*')):
+                for d in [stale] + _migrating_leftovers(stale):
                     if d.is_dir():
                         shutil.rmtree(d, ignore_errors=True)
                 return (_normalise_index(df) if not df.empty else df), meta
@@ -807,7 +843,9 @@ def _extend_cache_single(prefix, params, fetch_raw_fn, start, end):
             meta['from'] = req_from
             changed = True
         delta_start = None
-        if meta['to'] >= current_ym or _tail_needs_completion(meta, meta['to']):
+        if _tail_fresh(meta, _fresh_since(), cap_to):
+            pass   # fetched moments ago by the same tick (see _fresh_since)
+        elif meta['to'] >= current_ym or _tail_needs_completion(meta, meta['to']):
             floor = f"{meta['to']}-01"
             if not df.empty:
                 floor = max(floor, df.index[-1].strftime('%Y-%m-%d'))
@@ -1058,7 +1096,7 @@ def fetch_kline(symbol, interval, start, end, headers, max_retries=6):
     /kline as placeholders (O=H=L=C, Volume 0) where Binance has the real bar,
     so a cache dir fed by both sources is a mixed one.
 
-    `max_retries` is _retry_get's (default 6, ~2 min of backoff on 429/5xx):
+    `max_retries` is _retry_get's (default 6, ~1 min of backoff on 429/5xx):
     a caller inside a latency budget passes fewer (the reconciler's σ lookup).
     """
     # Venue forms like 'BTC/USDT' → Binance 'BTCUSDT'; the API 400s on
@@ -1935,9 +1973,16 @@ def fetch_cme_cot(contract, start, end, headers):
 _TWSE_STOCK_DAY      = 'https://www.twse.com.tw/exchangeReport/STOCK_DAY'
 _TWSE_STOCK_DAY_ALL  = 'https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL'
 _TWSE_EXRIGHT        = 'https://www.twse.com.tw/rwd/zh/exRight/TWT49U'
+_TWSE_REDUCTION      = 'https://www.twse.com.tw/rwd/zh/reducation/TWTAUU'
+_TWSE_PAR_CHANGE     = 'https://www.twse.com.tw/rwd/zh/change/TWTB8U'
+_TWSE_ETF_SPLIT      = 'https://www.twse.com.tw/rwd/zh/split/TWTCAU'
 _TPEX_TRADING_STOCK  = 'https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock'
 _TPEX_MAINBOARD      = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
 _TPEX_EXRIGHT        = 'https://www.tpex.org.tw/www/zh-tw/bulletin/exDailyQ'
+_TPEX_REDUCTION      = 'https://www.tpex.org.tw/www/zh-tw/bulletin/revivt'
+_TPEX_PAR_CHANGE     = 'https://www.tpex.org.tw/www/zh-tw/bulletin/pvChgRslt'
+_TPEX_ETF_SPLIT      = 'https://www.tpex.org.tw/www/zh-tw/bulletin/etfSplitRslt'
+_TPEX_ETF_REV_SPLIT  = 'https://www.tpex.org.tw/www/zh-tw/bulletin/etfRvsRslt'
 _FINMIND_DATA        = 'https://api.finmindtrade.com/api/v4/data'
 _TWSE_STOCK_DAY_FROM = '2010-01'      # STOCK_DAY: 「查詢日期小於99年1月4日」 before this
 _TW_PUBLIC_SOURCE_ZH = '資料來源:臺灣證券交易所、證券櫃檯買賣中心(政府資料開放授權)'
@@ -1958,17 +2003,18 @@ class TwPublicUnavailable(RuntimeError):
 
 
 def _twstock_daily_source():
-    """'public' (exchange → FinMind free → Blave) or 'blave' (the Blave endpoint only).
+    """'cdn' (Blave CDN → Blave → exchange → FinMind free), 'public' (exchange → FinMind free →
+    Blave) or 'blave' (the Blave endpoint only).
 
-    The free sources run only on the user's own computer: the desktop build marks itself
-    with BLAVE_AGENT_LOCAL=1 (shell/daemon.js, runtime/agent_turn.py — the same flag
-    lib/venue.py reads), and there the chain is the default; a cloud fleet machine (flag
-    absent) stays on Blave exactly as before, so no Blave server ever hits twse.com.tw,
-    tpex.org.tw or FinMind. BLAVE_TWSTOCK_DAILY_SOURCE=public|blave overrides either way."""
+    The CDN and the free sources run only on the user's own computer: the desktop build marks
+    itself with BLAVE_AGENT_LOCAL=1 (shell/daemon.js, runtime/agent_turn.py — the same flag
+    lib/venue.py reads), and there 'cdn' is the default; a cloud fleet machine (flag absent)
+    stays on Blave exactly as before, so no Blave server ever hits twse.com.tw, tpex.org.tw or
+    FinMind. BLAVE_TWSTOCK_DAILY_SOURCE=cdn|public|blave overrides either way."""
     forced = os.environ.get('BLAVE_TWSTOCK_DAILY_SOURCE', '').strip().lower()
-    if forced in ('public', 'blave'):
+    if forced in ('cdn', 'public', 'blave'):
         return forced
-    return 'public' if os.environ.get('BLAVE_AGENT_LOCAL') == '1' else 'blave'
+    return 'cdn' if os.environ.get('BLAVE_AGENT_LOCAL') == '1' else 'blave'
 
 
 def _tw_public_session():
@@ -2139,37 +2185,89 @@ def _tw_public_probe_market(stock_id, ym):
     raise TwPublicUnavailable(f'{stock_id}: no rows on TWSE or TPEx for {ym}')
 
 
-def _twse_exright_rows(year, end_day):
-    r = _tw_public_get(_TWSE_EXRIGHT, {'response': 'json', 'startDate': f'{year}0101',
-                                       'endDate': end_day.replace('-', '')})
-    j = r.json()
-    stat = str(j.get('stat', ''))
-    if stat != 'OK':
-        if '沒有符合條件' in stat:
-            return []
-        raise TwPublicUnavailable(f'TWSE TWT49U {year}: {stat[:60]}')
-    # 資料日期, 股票代號, 股票名稱, 除權息前收盤價, 除權息參考價, …
-    return [(_roc_date(x[0]), x[1].strip(), _tw_num(x[3]), _tw_num(x[4])) for x in j.get('data', [])]
+# Every exchange table whose (前收盤, 參考價) pair is a price-continuity break: 除權息, 減資
+# (退還股款／彌補虧損), 變更面額 and ETF 分割／反分割. Each answers a whole year per request; the
+# first column is the trading day the new reference applies (ex-date / 恢復買賣日期).
+# TWTAUU refuses a start before 2011-01-01 — earlier years are simply not covered there.
+_TW_ADJ_TABLES = {
+    'twse': (('exright', _TWSE_EXRIGHT), ('reduction', _TWSE_REDUCTION),
+             ('par', _TWSE_PAR_CHANGE), ('split', _TWSE_ETF_SPLIT)),
+    'tpex': (('exright', _TPEX_EXRIGHT), ('reduction', _TPEX_REDUCTION), ('par', _TPEX_PAR_CHANGE),
+             ('split', _TPEX_ETF_SPLIT), ('revsplit', _TPEX_ETF_REV_SPLIT)),
+}
+_TW_ADJ_FIRST_YEAR = {_TWSE_REDUCTION: 2011}
+_TW_ADJ_DATE  = ('資料日期', '除權息日期', '恢復買賣日期')
+_TW_ADJ_CODE  = ('股票代號', '證券代號', 'ETF代號', '代號')
+_TW_ADJ_PREV  = ('除權息前收盤價', '停止買賣前收盤價格', '最後交易日之收盤價格')
+_TW_ADJ_REF   = ('除權息參考價', '恢復買賣參考價', '減資恢復買賣開始日參考價格', '恢復買賣開始參考價')
 
 
-def _tpex_exright_rows(year, end_day):
-    r = _tw_public_get(_TPEX_EXRIGHT, {'startDate': f'{year}/01/01', 'endDate': end_day.replace('-', '/'),
-                                       'response': 'json'})
-    tables = r.json().get('tables') or []
-    if not tables:
-        raise TwPublicUnavailable(f'TPEx exDailyQ {year}: no tables in the answer')
-    # 除權息日期, 代號, 名稱, 除權息前收盤價, 除權息參考價, …
-    return [(_roc_date(x[0]), x[1].strip(), _tw_num(x[3]), _tw_num(x[4])) for x in tables[0].get('data', [])]
+def _tw_roc_compact(s):
+    """'1080909' / '990104' (TPEx 減資 and 面額 tables) or any _roc_date form → Timestamp."""
+    t = str(s).strip()
+    if t.isdigit() and len(t) in (6, 7):
+        return pd.Timestamp(year=int(t[:-4]) + 1911, month=int(t[-4:-2]), day=int(t[-2:]))
+    return _roc_date(t)
+
+
+def _tw_adj_table_rows(url, fields, data):
+    """Rows of one corporate-action table → (date, stock_id, prev_close, ref_price), columns
+    found by their published names. A 減資並現金增資 row carries a 除權參考價 that replaces
+    the resumption reference on that day."""
+    f = [re.sub(r'\s+', '', str(x)) for x in fields]
+
+    def col(names):
+        for n in names:
+            if n in f:
+                return f.index(n)
+        raise TwPublicUnavailable(f'{url}: unrecognized columns {f[:6]}')
+    i_d, i_c, i_p, i_r = col(_TW_ADJ_DATE), col(_TW_ADJ_CODE), col(_TW_ADJ_PREV), col(_TW_ADJ_REF)
+    i_x = f.index('除權參考價') if '除權參考價' in f else None
+    rows = []
+    for x in data:
+        ref = _tw_num(x[i_r])
+        if i_x is not None and _tw_num(x[i_x]) > 0:
+            ref = _tw_num(x[i_x])
+        rows.append((_tw_roc_compact(x[i_d]), str(x[i_c]).strip(), _tw_num(x[i_p]), ref))
+    return rows
+
+
+def _tw_adj_year_rows(market, year, end_day):
+    """All of one exchange's price-continuity events in `year` up to `end_day`."""
+    rows = []
+    for _kind, url in _TW_ADJ_TABLES[market]:
+        if year < _TW_ADJ_FIRST_YEAR.get(url, 0):
+            continue
+        if market == 'twse':
+            r = _tw_public_get(url, {'response': 'json', 'startDate': f'{year}0101',
+                                     'endDate': end_day.replace('-', '')})
+            j = r.json()
+            stat = str(j.get('stat', ''))
+            if stat != 'OK':
+                if '沒有符合條件' in stat:
+                    continue
+                raise TwPublicUnavailable(f'TWSE {url.rsplit("/", 1)[-1]} {year}: {stat[:60]}')
+            rows += _tw_adj_table_rows(url, j.get('fields') or [], j.get('data') or [])
+        else:
+            r = _tw_public_get(url, {'startDate': f'{year}/01/01', 'endDate': end_day.replace('-', '/'),
+                                     'response': 'json'})
+            tables = r.json().get('tables') or []
+            if not tables:
+                raise TwPublicUnavailable(f'TPEx {url.rsplit("/", 1)[-1]} {year}: no tables in the answer')
+            rows += _tw_adj_table_rows(url, tables[0].get('fields') or [], tables[0].get('data') or [])
+    return rows
 
 
 def _tw_exright_events(market, start, end):
-    """The exchange's whole-market 除權息計算結果表 (TWSE TWT49U / TPEx exDailyQ) rows with
-    ex-dates in [start, end]: index = ex-date, columns stock_id / prev_close / ref_price.
-    One parquet per month under cache/twstock_exright_{market}/: a past month is fetched
-    once (completed once if written before the month ended, like every monthly cache), the
-    current month re-fetched when older than an hour. Both sites answer a whole year per
-    request, so a missing month costs one request and fills the year's other months too."""
-    cache_dir = _CACHE_DIR / f'twstock_exright_{market}'
+    """The exchange's whole-market price-continuity events (_TW_ADJ_TABLES: 除權息, 減資, 變更面額,
+    ETF 分割／反分割) with dates in [start, end]: index = the day the new reference applies,
+    columns stock_id / prev_close / ref_price. One parquet per month under
+    cache/twstock_adjev_{market}/ (the 除權息-only twstock_exright_* months from before are
+    left unread): a past month is fetched once (completed once if written before the month
+    ended, like every monthly cache), the current month re-fetched when older than an hour.
+    Each table answers a whole year per request, so a missing month costs one request per
+    table and fills the year's other months too."""
+    cache_dir = _CACHE_DIR / f'twstock_adjev_{market}'
     cache_dir.mkdir(parents=True, exist_ok=True)
     today = datetime.now(_TPE)
     current_ym = today.strftime('%Y-%m')
@@ -2184,9 +2282,8 @@ def _tw_exright_events(market, start, end):
             return _written_before_month_end(path, ym)
         return time.time() - path.stat().st_mtime > 3600
 
-    rows_of = _twse_exright_rows if market == 'twse' else _tpex_exright_rows
     for year in sorted({ym[:4] for ym in months if _needs(ym)}):
-        rows = rows_of(year, min(f'{year}-12-31', today.strftime('%Y-%m-%d')))
+        rows = _tw_adj_year_rows(market, int(year), min(f'{year}-12-31', today.strftime('%Y-%m-%d')))
         df = pd.DataFrame(rows, columns=['date'] + _TW_EXRIGHT_COLS)
         df = df.astype({'stock_id': str, 'prev_close': float, 'ref_price': float})
         df.index = pd.DatetimeIndex(df.pop('date'), name='date')
@@ -2222,10 +2319,23 @@ def _tw_forward_adjust(df, events):
     return out
 
 
+def _tw_last_final_utc(now=None):
+    """Naive-UTC instant of the latest weekday 17:35 Taipei (the exchanges' final daily
+    version, FEED_TIMING twstock_price) not after `now`."""
+    now = now or datetime.now(_TPE)
+    t = now.replace(hour=17, minute=35, second=0, microsecond=0)
+    if t > now:
+        t -= timedelta(days=1)
+    while t.weekday() >= 5:
+        t -= timedelta(days=1)
+    return t.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _fetch_twstock_daily_public(stock_id, start, end, adjust=False):
     """Daily OHLCV for one stock from its own exchange — TWSE STOCK_DAY (listed, 2010-01-04
     on) or TPEx tradingStock (OTC) — month by month through the monthly cache: a past month
-    is fetched once, the current month re-fetched per call. adjust=True forward-adjusts with
+    is fetched once, the current month re-fetched only when its file predates the latest
+    17:35 Taipei final (_tw_last_final_utc). adjust=True forward-adjusts with
     the exchange's 除權息計算結果表 (_tw_forward_adjust). Raises TwPublicUnavailable / a
     requests error when the exchange cannot serve it; the caller falls back."""
     # A window that has not happened yet (end left to us, start past Taipei tomorrow) is an
@@ -2242,7 +2352,7 @@ def _fetch_twstock_daily_public(stock_id, start, end, adjust=False):
         lambda s, e: _fetch_twstock_daily_public_raw(stock_id, market, s, e), start, end,
         # TWSE says 「沒有符合條件」 for a month the id had no rows — and, unverified, maybe
         # when it throttles too; an empty month is re-asked once a day, never cached for good
-        empty_marker_ttl_hours=24, month_by_month=True)
+        empty_marker_ttl_hours=24, month_by_month=True, present_fresh_after=_tw_last_final_utc())
     if adjust and not df.empty:
         df = _tw_forward_adjust(df, _tw_exright_for(stock_id, market, start, end))
     df.attrs['source'] = 'TWSE' if market == 'twse' else 'TPEx'
@@ -2279,17 +2389,492 @@ def _fetch_twstock_daily_free(stock_id, start, end, adjust=False):
     return df
 
 
+# ── Daily bars from the Blave CDN (desktop) ───────────────────────────────────
+# The same exchange numbers as the path above, collected once a day by Blave from TWSE
+# MI_INDEX / TPEx dailyQuotes (whole-market day files) and published as one parquet per stock
+# at download.blave.org — five cold stocks cost five GETs instead of ~200 throttled exchange
+# requests each. Files carry the exchanges' raw OHLCV plus their own (前收盤, 參考價) events
+# (除權息, 減資, 變更面額, ETF 分割); adjustment is _tw_forward_adjust, as on the exchange path.
+# Attribution is unchanged: the data is the exchanges', released under the Open Government
+# Data License, so anything citing it carries _TW_PUBLIC_SOURCE_ZH / _EN.
+_TW_CDN_BASE        = os.environ.get('BLAVE_TWSTOCK_CDN_BASE', 'https://download.blave.org/data/twstock/daily/v1/')
+_TW_CDN_SCHEMA      = 'twstock-daily-v1'
+_TW_CDN_FIRST_DAY   = '2010-01-04'
+_TW_CDN_RECHECK_S   = 600           # a manifest behind the expected day is re-asked at most this often
+_TW_CDN_PUBLISHED   = (18, 5)       # Taipei: published 17:55 after the exchanges' 17:30 final + 10 min cache
+_TW_CDN_WHOLE_MARKET_IDS = 40       # a batch above this reads the whole-market year files
+_TW_CDN_SESSION     = None
+
+
+class TwCdnUnavailable(TwPublicUnavailable):
+    """The Blave CDN cannot serve this request (unreachable, switched off, id or range not on
+    it) — the caller moves on to the next source."""
+
+
+def _tw_cdn_dir():
+    return _CACHE_DIR / 'twstock_cdn'
+
+
+def _tw_cdn_get(key, etag=None):
+    """GET one CDN file → (body or None when 304, etag). Raises TwCdnUnavailable."""
+    global _TW_CDN_SESSION
+    if _TW_CDN_SESSION is None:
+        _TW_CDN_SESSION = requests.Session()
+    headers = dict(_TW_PUBLIC_HEADERS)
+    if etag:
+        headers['If-None-Match'] = etag
+    for attempt in range(2):
+        try:
+            r = _TW_CDN_SESSION.get(_TW_CDN_BASE + key, headers=headers, timeout=30)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt:
+                raise TwCdnUnavailable(f'{key}: {type(e).__name__}') from e
+            time.sleep(1)
+            continue
+        if r.status_code == 304:
+            return None, etag
+        if r.status_code == 200:
+            return r.content, r.headers.get('ETag')
+        if r.status_code < 500 or attempt:
+            raise TwCdnUnavailable(f'{key}: HTTP {r.status_code}')
+        time.sleep(1)
+
+
+def _tw_cdn_write(path, body, meta):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _tmp_path(path)
+    try:
+        tmp.write_bytes(body)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    side = path.with_name(path.name + '.meta.json')
+    tmp = _tmp_path(side)
+    try:
+        tmp.write_text(json.dumps(meta))
+        os.replace(tmp, side)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _tw_cdn_meta(path):
+    try:
+        return json.loads(path.with_name(path.name + '.meta.json').read_text())
+    except Exception:
+        return {}
+
+
+def _tw_cdn_expected_asof(now=None):
+    """The latest weekday whose CDN publication time has passed — what a fresh manifest's
+    `asof` should be unless that day was a holiday."""
+    now = now or datetime.now(_TPE)
+    d = now.date() if (now.hour, now.minute) >= _TW_CDN_PUBLISHED else now.date() - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.strftime('%Y-%m-%d')
+
+
+def _tw_official_expected_day(now=None):
+    """The latest weekday whose exchange bar is final (FEED_TIMING twstock_price, 17:35)."""
+    now = now or datetime.now(_TPE)
+    d = now.date() if (now.hour, now.minute) >= (17, 35) else now.date() - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.strftime('%Y-%m-%d')
+
+
+def _tw_cdn_manifest():
+    """The CDN manifest, cached; re-asked (conditional GET) only while its `asof` is behind
+    the expected day, at most every _TW_CDN_RECHECK_S. Raises TwCdnUnavailable when there is
+    none or Blave switched the CDN off (`enabled: false` sends every desktop back to the
+    exchange path within the hour — a fresh manifest is still re-asked hourly)."""
+    path = _tw_cdn_dir() / 'manifest.json'
+    meta = _tw_cdn_meta(path)
+    try:
+        cached = json.loads(path.read_text())
+    except Exception:
+        cached = None
+    age = time.time() - meta.get('checked_at', 0)
+    stale = (cached is None or cached.get('asof', '') < _tw_cdn_expected_asof())
+    if (stale and age > _TW_CDN_RECHECK_S) or age > 3600:
+        try:
+            body, etag = _tw_cdn_get('manifest.json', meta.get('etag') if cached else None)
+            if body is not None:
+                try:
+                    fresh = json.loads(body)
+                except ValueError as e:
+                    raise TwCdnUnavailable(f'manifest is not JSON ({e})') from e
+                if fresh.get('schema') != _TW_CDN_SCHEMA or not all(
+                        k in fresh for k in ('asof', 'stocks', 'years', 'files')):
+                    raise TwCdnUnavailable(f"manifest schema {fresh.get('schema')!r} or keys not understood")
+                cached = fresh
+                _tw_cdn_write(path, body, {'etag': etag, 'checked_at': time.time()})
+            else:
+                _tw_cdn_write(path, path.read_bytes(), {'etag': etag, 'checked_at': time.time()})
+        except TwCdnUnavailable:
+            # remember the miss too, or every stock call of a backtest re-asks a dead CDN
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.with_name(path.name + '.meta.json').write_text(
+                json.dumps({**meta, 'checked_at': time.time()}))
+            if cached is None:
+                raise
+    if cached is None:
+        raise TwCdnUnavailable('no manifest')
+    if not cached.get('enabled'):
+        raise TwCdnUnavailable('switched off by Blave (manifest enabled=false)')
+    return cached
+
+
+def _tw_cdn_parquet(key, body):
+    """Refuse a body that is not a readable parquet before it reaches the cache."""
+    try:
+        return pq.read_table(io.BytesIO(body))
+    except Exception as e:
+        raise TwCdnUnavailable(f'{key}: unreadable file ({type(e).__name__})') from e
+
+
+def _tw_cdn_stock_file(stock_id, manifest):
+    """One stock's CDN file → (raw DataFrame, events list, last day actually in the file).
+    Downloaded when the cached copy's own last day is before the manifest's last day for the
+    id. The cached copy's last day is read from the file, never copied from the manifest: a
+    CDN edge can still serve the previous version for a few minutes after a publication,
+    and that copy must not count as current."""
+    entry = manifest['stocks'].get(stock_id)
+    if entry is None:
+        raise TwCdnUnavailable(f'{stock_id} is not on the CDN')
+    key = f'stock/{stock_id}.parquet'
+    path = _tw_cdn_dir() / 'stock' / f'{stock_id}.parquet'
+    meta = _tw_cdn_meta(path)
+    if not path.exists() or meta.get('last', '') < entry[2]:
+        body, etag = _tw_cdn_get(key, meta.get('etag') if path.exists() else None)
+        if body is not None:
+            table = _tw_cdn_parquet(key, body)
+            dates = table.column('date').to_pandas()
+            last = str(pd.Timestamp(dates.max()).date()) if len(dates) else ''
+            _tw_cdn_write(path, body, {'etag': etag, 'last': last})
+    try:
+        table = pq.read_table(path)
+    except Exception as e:
+        raise TwCdnUnavailable(f'{key}: unreadable cached file ({type(e).__name__})') from e
+    events = json.loads((table.schema.metadata or {}).get(b'blave.events', b'[]'))
+    return table.to_pandas(), events, _tw_cdn_meta(path).get('last', '')
+
+
+def _tw_cdn_events_frame(events, start, end):
+    """[[date, prev_close, ref_price, kind], …] → the frame _tw_forward_adjust takes."""
+    ev = pd.DataFrame([(pd.Timestamp(d), float(p), float(r)) for d, p, r, *_ in events],
+                      columns=['date', 'prev_close', 'ref_price']).set_index('date')
+    ev.insert(0, 'stock_id', '')
+    end_ts = pd.Timestamp(end) if end else pd.Timestamp.max
+    return ev[(ev.index >= pd.Timestamp(start)) & (ev.index <= end_ts)]
+
+
+def _tw_cdn_bars(raw):
+    """CDN rows → the fetch_twstock_price frame, built exactly as _tw_daily_frame builds it
+    (untraded prices null → forward-filled)."""
+    if raw.empty:
+        return pd.DataFrame(columns=_TW_DAILY_COLS)
+    df = pd.DataFrame({'Open': raw['open'].values, 'High': raw['high'].values, 'Low': raw['low'].values,
+                       'Close': raw['close'].values, 'Volume': raw['volume'].values},
+                      index=pd.DatetimeIndex(pd.to_datetime(raw['date']), name='date')).sort_index()
+    return df.astype(float).replace(0, float('nan')).ffill()
+
+
+def _tw_slice(df, start, end):
+    end_ts = pd.Timestamp(end) + pd.Timedelta(days=1) if end else pd.Timestamp.max
+    return df[(df.index >= pd.Timestamp(start)) & (df.index < end_ts)]
+
+
+def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
+    """Daily OHLCV for one stock from the Blave CDN (the exchanges' numbers, see the block
+    comment). Final days the CDN has not published yet (17:35–18:05 on a trading day, or a late
+    publication) are filled from the exchange path for those days only. attrs['asof'] = the day
+    the frame is complete through (the CDN's asof, or the latest 17:35 final once the exchange
+    answered for the days after it). Raises TwCdnUnavailable when the CDN cannot serve the
+    request; the caller falls back."""
+    if end is None and (datetime.now(_TPE) + timedelta(days=1)).strftime('%Y-%m-%d') < start:
+        df = _tw_daily_frame([])
+        df.attrs['source'] = 'TWSE/TPEx'
+        return df
+    manifest = _tw_cdn_manifest()
+    if start < manifest.get('first_day', _TW_CDN_FIRST_DAY):
+        raise TwCdnUnavailable(f'the CDN starts {_TW_CDN_FIRST_DAY} (asked from {start})')
+    raw, events, file_last = _tw_cdn_stock_file(stock_id, manifest)
+    entry = manifest['stocks'][stock_id]
+    market = entry[0]
+    df = _tw_cdn_bars(raw)
+    # an edge copy older than the manifest says: its own last day is what we have
+    asof = min(manifest['asof'], file_last) if file_last < entry[2] else manifest['asof']
+    ev = _tw_cdn_events_frame(events, start, end)
+    want_to = end or datetime.now(_TPE).strftime('%Y-%m-%d')
+    complete = asof
+    final = _tw_official_expected_day()
+    if want_to > asof and final > asof:
+        tail_start = (pd.Timestamp(asof) + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        try:
+            extra = _fetch_twstock_daily_public(stock_id, tail_start, end, adjust=False)
+            # before 17:35 the exchange already shows today's 14:00 / 15:30 version: not final
+            idx = pd.DatetimeIndex(extra.index)   # an empty answer has a plain index
+            extra = extra[(idx > pd.Timestamp(asof)) & (idx <= pd.Timestamp(final))]
+            if not extra.empty:
+                df = pd.concat([df, extra[_TW_DAILY_COLS]]).ffill()
+                if adjust:
+                    ev = pd.concat([ev, _tw_exright_for(stock_id, market, tail_start, end)])
+            complete = final
+        except Exception as e:
+            print(f"  ⚠️  {stock_id} daily bars: days after the CDN's {asof} not available from the exchange "
+                  f"({type(e).__name__}: {str(e)[:120]}) — serving through {asof}")
+    df = _tw_slice(df, start, end)
+    if adjust and not df.empty:
+        df = _tw_forward_adjust(df, ev)
+    df.attrs['source'] = 'TWSE' if market == 'twse' else 'TPEx'
+    df.attrs['via'] = 'Blave CDN'
+    df.attrs['asof'] = complete
+    return df
+
+
+def _tw_cdn_hashed(key, manifest, covered_from=None):
+    """A whole-market file (year/<YYYY>.parquet, recent.parquet, events.parquet) checked by the
+    sha256 the manifest names for it: downloaded until the bytes match (an edge copy from
+    before the publication does not), then served from the cache. covered_from (the open
+    year): a cached copy whose own last day reaches it is kept even if the year has grown
+    since — recent.parquet carries those days, so a whole-market user does not re-download
+    the open year every day."""
+    want = manifest['files'].get(key)
+    if want is None:
+        raise TwCdnUnavailable(f'{key} is not in the manifest')
+    path = _tw_cdn_dir() / key
+    meta = _tw_cdn_meta(path)
+    if path.exists() and covered_from and meta.get('last', '') >= covered_from:
+        return path
+    if not path.exists() or meta.get('sha256') != want:
+        body, etag = _tw_cdn_get(key, meta.get('etag') if path.exists() else None)
+        if body is not None:
+            table = _tw_cdn_parquet(key, body)
+            got = hashlib.sha256(body).hexdigest()
+            if got != want:
+                print(f"  ⚠️  {key}: the CDN served a copy older than its manifest — using it, asking again next call")
+            last = ''
+            if 'date' in table.column_names and table.num_rows:
+                last = str(pd.Timestamp(table.column('date').to_pandas().max()).date())
+            _tw_cdn_write(path, body, {'etag': etag if got == want else None, 'sha256': got, 'last': last})
+    return path
+
+
+def _tw_cdn_whole_market(ids, start, end, manifest):
+    """Rows for `ids` from the whole-market year files + recent.parquet and the events table,
+    each checked against the manifest's sha256. → (rows with stock_id, events frame)."""
+    last = min(end or manifest['asof'], manifest['asof'])
+    want = [y for y in sorted(manifest['years']) if y.isdigit() and len(y) == 4 and start[:4] <= y <= last[:4]]
+    frames = []
+    for y in want:
+        info = manifest['years'][y]
+        path = _tw_cdn_hashed(f'year/{y}.parquet', manifest,
+                              None if info.get('immutable') else manifest.get('recent_from'))
+        frames.append(pq.read_table(path, filters=[('stock_id', 'in', list(ids))]).to_pandas())
+    recent = _tw_cdn_hashed('recent.parquet', manifest)
+    events = _tw_cdn_hashed('events.parquet', manifest)
+    frames.append(pq.read_table(recent, filters=[('stock_id', 'in', list(ids))]).to_pandas())
+    rows = pd.concat(frames, ignore_index=True)
+    rows['date'] = pd.to_datetime(rows['date'])
+    rows = rows.drop_duplicates(['stock_id', 'date'], keep='last')
+    ev = pd.read_parquet(events)
+    ev = ev[ev['stock_id'].isin(ids)]
+    return rows, ev
+
+
+def _tw_cdn_refuse_behind(frames, end, manifest, due_hm, label):
+    """CDN frames ({id: df}) that stop before the latest 17:35 final the window asks for (a late
+    CDN the exchange could not fill in): FeedNotPublished in a live scope — a live tick (incl.
+    wait_for_bar's priming) must not compute on the older day while Blave-access machines have
+    the final one — else a ⚠️ line; attrs['asof'] names the day either way."""
+    if not manifest:
+        return
+    need = min(end or datetime.now(_TPE).strftime('%Y-%m-%d'), _tw_official_expected_day())
+    # an id that did not trade on the CDN's last day (suspended, delisted) says nothing about lag
+    behind = sorted(sid for sid, df in frames.items()
+                    if sid in manifest['stocks'] and manifest['stocks'][sid][2] >= manifest['asof']
+                    and df.attrs.get('asof', need) < need)
+    if not behind:
+        return
+    asof = min(frames[sid].attrs['asof'] for sid in behind)
+    if _live_feeds:
+        global _feed_refused
+        due = pd.Timestamp(f"{need} {'%02d:%02d' % due_hm}", tz='Asia/Taipei')
+        err = FeedNotPublished('twstock_price', need, due, pd.Timestamp(asof))
+        if _feed_refused is None:
+            _feed_refused = err
+        raise err
+    print(f"  ⚠️  {label}: Blave CDN data ends {asof}, the latest exchange final is {need} — "
+          f"{len(behind)} of {len(frames)} id(s) served through {asof} (df.attrs['asof'])")
+
+
+def _tw_final_only(df):
+    """Drop a bar after the latest 17:35 final: before then the exchange shows today's 14:00 /
+    15:30 version, which a CDN-served id never carries."""
+    return df[pd.DatetimeIndex(df.index) <= pd.Timestamp(_tw_official_expected_day())]
+
+
+def _tw_cdn_whole_complete(ids, end, manifest):
+    """The day whole-market rows are complete through: the manifest's asof, or the latest 17:35
+    final when the exchange shows no session after it (a holiday). A few listed ids are probed
+    rather than every one — the probe only tells "the CDN is late" from "there was no session"."""
+    asof, final = manifest['asof'], _tw_official_expected_day()
+    recent_last = _tw_cdn_meta(_tw_cdn_dir() / 'recent.parquet').get('last') or asof
+    if recent_last < asof:
+        return recent_last   # an edge copy from before the publication: its own last day
+    if (end or datetime.now(_TPE).strftime('%Y-%m-%d')) <= asof or final <= asof:
+        return asof
+    after = (pd.Timestamp(asof) + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+    for sid in [i for i in ids if manifest['stocks'][i][2] == asof][:3]:
+        try:
+            got = _fetch_twstock_daily_public(sid, after, end, adjust=False)
+        except Exception:
+            return asof
+        idx = pd.DatetimeIndex(got.index)
+        if ((idx > pd.Timestamp(asof)) & (idx <= pd.Timestamp(final))).any():
+            return asof
+    return final
+
+
+def _twstock_cdn_batch(stock_ids, start, end, adjust):
+    """{id: frame} for a batch without Blave access: the CDN (per stock, or the whole-market
+    files above _TW_CDN_WHOLE_MARKET_IDS ids), then the key-free single-stock chain for an id
+    the CDN does not list. For an id it lists the CDN is authoritative: no rows in the window
+    (listed later, delisted before) is an empty frame, not a month-by-month exchange crawl.
+    Ids still missing → BatchIncomplete (no partial result is returned silently). Frames that
+    stop before the latest 17:35 final the window asks for (a late CDN the exchange could not
+    fill in) → FeedNotPublished in a live scope, else a ⚠️ line; attrs['asof'] names the day."""
+    ids = list(dict.fromkeys(stock_ids))
+    results, failed = {}, []
+    try:
+        manifest = _tw_cdn_manifest()
+        on_cdn = [i for i in ids if i in manifest['stocks']] if start >= manifest.get('first_day', _TW_CDN_FIRST_DAY) else []
+    except TwCdnUnavailable as e:
+        print(f"  ⚠️  台股 batch: Blave CDN unavailable ({e}) — fetching each id from the exchange")
+        manifest, on_cdn = None, []
+    first_day = (manifest or {}).get('first_day', _TW_CDN_FIRST_DAY)
+    if start < first_day and len(ids) > _TW_CDN_WHOLE_MARKET_IDS:
+        # the exchange path is ~200 throttled requests per listed stock: hours for a universe
+        raise BatchIncomplete(
+            f'台股 daily batch without Blave access starts {first_day} on the Blave CDN (asked from {start}); '
+            f'ask from {first_day}, or for at most {_TW_CDN_WHOLE_MARKET_IDS} ids, or with Blave data access.',
+            {}, ids)
+    whole = len(on_cdn) > _TW_CDN_WHOLE_MARKET_IDS
+    if whole:
+        try:
+            rows, ev = _tw_cdn_whole_market(on_cdn, start, end, manifest)
+            complete = _tw_cdn_whole_complete(on_cdn, end, manifest)
+        except Exception as e:
+            print(f"  ⚠️  台股 batch: Blave CDN whole-market files unavailable ({type(e).__name__}: {str(e)[:100]}) "
+                  f"— fetching each id")
+            whole, rows, ev = False, None, None
+    if whole:
+        for sid in on_cdn:
+            df = _tw_daily_frame([])
+            df.attrs['source'] = 'TWSE' if manifest['stocks'][sid][0] == 'twse' else 'TPEx'
+            df.attrs['via'] = 'Blave CDN'
+            df.attrs['asof'] = complete
+            results[sid] = df
+        for sid, g in rows.groupby('stock_id'):
+            df = _tw_slice(_tw_cdn_bars(g), start, end)
+            if adjust and not df.empty:
+                e = ev[ev['stock_id'] == sid]
+                e = e.assign(date=pd.to_datetime(e['date'])).set_index('date')[['stock_id', 'prev_close', 'ref_price']]
+                df = _tw_forward_adjust(df, e[(e.index >= pd.Timestamp(start))])
+            df.attrs['source'] = 'TWSE' if manifest['stocks'][sid][0] == 'twse' else 'TPEx'
+            df.attrs['via'] = 'Blave CDN'
+            df.attrs['asof'] = complete
+            results[sid] = df
+    elif on_cdn:
+        def _one(sid):
+            try:
+                return sid, _fetch_twstock_daily_cdn(sid, start, end, adjust)
+            except Exception:
+                return sid, None
+        asof = manifest['asof']
+        lagging = (end or datetime.now(_TPE).strftime('%Y-%m-%d')) > asof and _tw_official_expected_day() > asof
+        # a late CDN sends every id to the exchange for its tail: one id per market first warms
+        # the market list and that market's year tables, so the pool does not fetch them N times
+        first = list({manifest['stocks'][sid][0]: sid for sid in reversed(on_cdn)}.values()) if lagging else []
+        for sid in first:
+            _, df = _one(sid)
+            if df is not None:
+                results[sid] = df
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for fut in as_completed([pool.submit(_one, sid) for sid in on_cdn if sid not in first]):
+                sid, df = fut.result()
+                if df is not None:
+                    results[sid] = df
+    for sid in ids:
+        if sid in results:
+            continue
+        try:
+            results[sid] = _tw_final_only(_fetch_twstock_daily_free(sid, start, end, adjust))
+        except Exception as e:
+            print(f"  ⚠️  {sid} daily bars: no key-free source could serve it ({type(e).__name__}: {str(e)[:100]})")
+            failed.append(sid)
+    if failed:
+        raise BatchIncomplete(
+            f'台股 daily batch without Blave access: {len(failed)} of {len(ids)} ids could not be fetched '
+            f'from the Blave CDN or the key-free sources: {failed[:20]}', results, failed)
+    _tw_cdn_refuse_behind(results, end, manifest, (17, 35) if not whole else _TW_CDN_PUBLISHED, '台股 batch')
+    return {sid: results[sid] for sid in ids}
+
+
 def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
-    """Source chain for the two daily entries: exchange → FinMind free → Blave (`blave_fn`),
-    logging which one served; BLAVE_TWSTOCK_DAILY_SOURCE=blave skips the free ones, and so
-    does a malformed `start` — the Blave 400 names the expected format."""
+    """Source chain for the two daily entries, logging which one served:
+    'cdn' (desktop default) Blave CDN → Blave (`blave_fn`; a desktop without data access
+    falls straight through) → exchange → FinMind free; 'public' exchange → FinMind free →
+    Blave; 'blave' the Blave endpoint only — and so does a malformed `start`, whose Blave 400
+    names the expected format."""
     try:
         datetime.strptime(start, '%Y-%m-%d')
         well_formed = True
     except (TypeError, ValueError):
         well_formed = False
+    source = _twstock_daily_source() if well_formed else 'blave'
+
+    def _blave():
+        df = blave_fn()
+        df.attrs['source'] = 'Blave'
+        logging.info('%s daily bars served by Blave', stock_id)
+        return df
+
+    if source == 'cdn':
+        errors, df = [], None
+        try:
+            df = _fetch_twstock_daily_cdn(stock_id, start, end, adjust)
+            manifest = _tw_cdn_manifest()
+        except Exception as e:
+            errors.append(e)
+            print(f"  ⚠️  {stock_id} daily bars: Blave CDN failed ({type(e).__name__}: {str(e)[:120]}) — trying Blave")
+        if not errors:
+            # outside the try: a refusal must not send the chain on to the next source
+            _tw_cdn_refuse_behind({stock_id: df}, end, manifest, (17, 35), f'{stock_id} daily bars')
+            logging.info('%s daily bars served by the Blave CDN (%s)', stock_id, df.attrs['source'])
+            return df
+        try:
+            return _blave()
+        except Exception as e:
+            errors.append(e)
+            no_access = isinstance(e, DataAccessError) or (
+                isinstance(e, requests.HTTPError) and getattr(e.response, 'status_code', None) in (401, 403))
+            if not no_access:
+                print(f"  ⚠️  {stock_id} daily bars: Blave failed ({type(e).__name__}: {str(e)[:120]}) — trying the exchange")
+        try:
+            df = _tw_final_only(_fetch_twstock_daily_free(stock_id, start, end, adjust))
+            logging.info('%s daily bars served by %s', stock_id, df.attrs['source'])
+            return df
+        except Exception as e:
+            # Same contract as the 'public' chain: "no Blave access" surfaces as the gate error
+            # carrying the free sources' failure, so a caller can tell an outage from a paywall.
+            if isinstance(errors[-1], DataAccessError):
+                raise errors[-1] from e
+            raise e from errors[-1]
+
     free_err = None
-    if well_formed and _twstock_daily_source() != 'blave':
+    if source == 'public':
         try:
             df = _fetch_twstock_daily_free(stock_id, start, end, adjust)
             logging.info('%s daily bars served by %s', stock_id, df.attrs['source'])
@@ -2299,16 +2884,28 @@ def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
             print(f"  ⚠️  {stock_id} daily bars: free sources failed ({type(e).__name__}: "
                   f"{str(e)[:120]}) — trying Blave")
     try:
-        df = blave_fn()
+        return _blave()
     except DataAccessError as e:
         # Keep the free chain's failure on the gate error: without it a caller reads "no Blave
         # access" where the true cause is the exchange / FinMind being down.
         if free_err is not None:
             raise e from free_err
         raise
-    df.attrs['source'] = 'Blave'
-    logging.info('%s daily bars served by Blave', stock_id)
-    return df
+
+
+def _twstock_batch(blave_call, stock_ids, start, end, adjust):
+    """Batch daily bars: Blave first, unchanged; on the desktop ('cdn' source) a call refused
+    for lack of data access (DataAccessError, 401/403) is served from the CDN instead."""
+    if _twstock_daily_source() != 'cdn':
+        return blave_call()
+    try:
+        return blave_call()
+    except DataAccessError:
+        pass
+    except requests.HTTPError as e:
+        if getattr(e.response, 'status_code', None) not in (401, 403):
+            raise
+    return _twstock_cdn_batch(stock_ids, start, end, adjust)
 
 
 def _fetch_twstock_price_raw(stock_id, start, end, headers):
@@ -3117,10 +3714,26 @@ def _only_types(df, types):
     return df[df['type'].isin(types)]
 
 
+_FULL_AT_KEY = b'blave_full_fetched_at'
+
+
+def _full_fetched_at(path):
+    """When this file's whole history was last fetched. A /bulk refresh only replaces the
+    recent rows and keeps the stamp, so the 30-day full re-read still happens; files
+    without it (every full write) are as old as their mtime."""
+    try:
+        raw = (pq.read_schema(path).metadata or {}).get(_FULL_AT_KEY)
+        if raw:
+            return float(raw)
+    except Exception:
+        pass
+    return path.stat().st_mtime
+
+
 def _load_fundamental_cache(path, max_age_days=30, prefix=None):
     if not path.exists():
         return None
-    if (time.time() - path.stat().st_mtime) / 86400 > max_age_days:
+    if (time.time() - _full_fetched_at(path)) / 86400 > max_age_days:
         return None
     if prefix and _filing_due_since(prefix, path.stat().st_mtime):
         return None
@@ -3140,14 +3753,86 @@ def _filing_due_since(prefix, written_epoch):
     freq, fns = rules[prefix]
     now = pd.Timestamp.now(tz='Asia/Taipei')
     written = pd.Timestamp(written_epoch, unit='s', tz='UTC').tz_convert('Asia/Taipei')
-    stamps = pd.date_range((written - pd.Timedelta(days=400)).normalize().tz_localize(None),
-                           now.normalize().tz_localize(None), freq=freq).tz_localize('Asia/Taipei')
-    return any(((fn(stamps) > written) & (fn(stamps) <= now)).any() for fn in fns)
+    key = (prefix, written.normalize(), now.normalize())
+    times = _FILING_TIMES.get(key)
+    if times is None:
+        # one date_range per (written day, today), not per file: 2,000 cache files written in
+        # the same tick spent ~25 s here building the same stamps
+        stamps = pd.date_range((written - pd.Timedelta(days=400)).normalize().tz_localize(None),
+                               now.normalize().tz_localize(None), freq=freq).tz_localize('Asia/Taipei')
+        times = _FILING_TIMES[key] = [fn(stamps) for fn in fns]
+    return any(((t > written) & (t <= now)).any() for t in times)
 
 
-def _save_fundamental_cache(path, df):
+_FILING_TIMES = {}
+
+
+def _save_fundamental_cache(path, df, full_fetched_at=None):
     path.parent.mkdir(exist_ok=True)
-    df.to_parquet(path, compression='snappy')
+    if full_fetched_at is None:
+        df.to_parquet(path, compression='snappy')
+        return
+    table = pa.Table.from_pandas(df)
+    table = table.replace_schema_metadata({**(table.schema.metadata or {}),
+                                           _FULL_AT_KEY: repr(float(full_fetched_at)).encode()})
+    pq.write_table(table, path, compression='snappy')
+
+
+def _fundamental_frame(records):
+    df = pd.DataFrame(records)
+    df['date'] = pd.to_datetime(df['date'])
+    return df.set_index('date').sort_index()
+
+
+def _frame_records(df):
+    """A cached frame back to the api's record shape, so a merged frame is built (and its
+    dtypes inferred) exactly like one parsed from a single full answer."""
+    out = df.reset_index()
+    out['date'] = out['date'].dt.strftime('%Y-%m-%d')
+    return out.to_dict(orient='records')
+
+
+_FUNDAMENTAL_BULK = frozenset({'monthly_revenue', 'ratios'})
+
+
+def _bulk_refresh_fundamental(prefix, endpoint, pending, headers):
+    """Filing-day refresh for a large universe: ids whose full-history cache went stale only
+    because a filing came due (still inside the 30-day full window) get the last
+    _BULK_FUNDAMENTAL_DAYS of rows from one /bulk request, spliced onto their cached older
+    rows. → ({id: frame}, ids still pending for /batch)."""
+    if endpoint not in _FUNDAMENTAL_BULK or len(pending) < _BULK_MIN_IDS:
+        return {}, pending
+    stale = {}
+    for sid in pending:
+        path = _fundamental_cache_path(prefix, sid)
+        if path.exists():
+            full_at = _full_fetched_at(path)
+            if (time.time() - full_at) / 86400 <= 30:
+                stale[sid] = (path, full_at)
+    if len(stale) < _BULK_MIN_IDS:
+        return {}, pending
+    today = datetime.now(_TPE).date()
+    start = (today - timedelta(days=_BULK_FUNDAMENTAL_DAYS - 1)).isoformat()
+    bulk = _fetch_twstock_bulk(endpoint, start, today.isoformat(), headers)
+    if bulk is None:
+        return {}, pending
+    records, covered, failed = bulk
+    done = {}
+    for sid, (path, full_at) in stale.items():
+        if sid not in covered or sid in failed:
+            continue
+        try:
+            cached = pd.read_parquet(path)
+        except Exception:
+            continue   # unreadable: a full /batch fetch replaces it
+        older = _frame_records(cached[cached.index < pd.Timestamp(start)]) if not cached.empty else []
+        rows = older + list(records.get(sid) or ())
+        if not rows:
+            continue
+        df = _fundamental_frame(rows)
+        _save_fundamental_cache(path, df, full_fetched_at=full_at)
+        done[sid] = df
+    return done, [sid for sid in pending if sid not in done]
 
 
 def _fetch_twstock_fundamental_raw(endpoint, stock_id, headers):
@@ -3197,8 +3882,9 @@ def _ratios_range(df, start, end):
     of None — cast, so it is NaN like every other gap."""
     if df.empty:
         return df
-    cols = [c for c in df.columns if c != 'stock_id']
-    df = df.astype({c: float for c in cols})
+    cast = {c: float for c in df.columns if c != 'stock_id' and df[c].dtype != 'float64'}
+    if cast:   # only the odd column: casting all 46 of 2,000 stocks' frames took ~10 s a tick
+        df = df.astype(cast)
     return df if start is None and end is None else df.loc[start:end]
 
 
@@ -3407,6 +4093,9 @@ def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers, types=None):
         else:
             pending.append(sid)
     pending = list(dict.fromkeys(pending))
+    if not types:
+        refreshed, pending = _bulk_refresh_fundamental(prefix, endpoint, pending, headers)
+        results.update(refreshed)
 
     url = f'{BASE}/studio/market/twstock/batch/{endpoint}'
     params = {'types': ','.join(types)} if types else {}
@@ -3521,6 +4210,72 @@ def _mark_empty_months(prefix, sid, start, end):
             pd.DataFrame().to_parquet(path)
 
 
+# /bulk: one request answers a dataset for every listed stock over a date window (api
+# 2026-10). Worth it once a universe is a sizeable part of the market — below that the
+# ~50-id /batch chunks download less. An older api (404) or any error → the /batch path.
+_BULK_MIN_IDS = 400
+_BULK_FUNDAMENTAL_DAYS = 400   # = the api's BULK_FUNDAMENTAL_MAX_DAYS
+_BULK_BUILDING_WAIT_S = 90     # > the api's build budget (45 s) + its last chunk + gzip + one poll
+# 503 `building` polls per dataset per fetch: every poll counts against the api's
+# `twstock_bulk` 60 / 5 min, and one tick asks up to 4 datasets twice (check + run)
+_BULK_MAX_POLLS = 6
+
+
+def _fetch_twstock_bulk(endpoint, start, end, headers):
+    """→ (records {id: rows}, covered ids, failed ids), or None to fall back to /batch.
+    `covered` is the universe the api answered for: an id in it with no rows has none in
+    the window; an id outside it was not looked at and must be asked of /batch."""
+    url = f'{BASE}/studio/market/twstock/bulk/{endpoint}'
+    give_up = time.monotonic() + _BULK_BUILDING_WAIT_S
+    polls = 0
+    while True:
+        try:
+            # one attempt each, bounded under the edge proxy's 100 s: /batch is the retry
+            r = _retry_get(url, max_retries=1, headers=headers,
+                           params={'start': start, 'end': end}, timeout=90)
+            body = r.json()
+            return body['data'], set(body['stock_ids']), set(body.get('failed') or ())
+        except DataAccessError:
+            raise
+        except requests.HTTPError as e:
+            # 503 `building`: another machine's request is building this very answer
+            building = getattr(e.response, 'status_code', None) == 503 and '"building"' in (
+                getattr(e.response, 'text', '') or '')
+            if building and polls < _BULK_MAX_POLLS and time.monotonic() < give_up:
+                polls += 1
+                try:
+                    wait = float(e.response.headers.get('Retry-After') or 3)
+                except ValueError:
+                    wait = 3.0
+                # jitter: machines that ticked together must not come back together
+                time.sleep(min(wait, 30) + random.uniform(0, 2))
+                continue
+            print(f'  [bulk] {endpoint}: {str(e)[:160]} — using /batch')
+            return None
+        except Exception as e:   # timed out, connection, malformed body
+            print(f'  [bulk] {endpoint}: {type(e).__name__}: {str(e)[:160]} — using /batch')
+            return None
+
+
+def _fresh_since():
+    """BLAVE_FETCH_FRESH_SINCE (naive-UTC ISO): manager/wait_for_bar sets it on the run that
+    follows its freshness check, which fetched the same data moments before — a daily cache
+    whose tail was fetched since then is served as is instead of asking the api again."""
+    v = os.environ.get('BLAVE_FETCH_FRESH_SINCE')
+    if not v:
+        return None
+    try:
+        return datetime.strptime(v, _META_TS_FMT).strftime(_META_TS_FMT)
+    except ValueError:
+        return None
+
+
+def _tail_fresh(meta, fresh_since, cap_to):
+    """The single-file cache already reaches cap_to with a tail fetched at/after fresh_since."""
+    return bool(fresh_since and meta and meta.get('to', '') >= cap_to
+                and meta.get('tail_fetched_at', '') >= fresh_since)
+
+
 class BatchIncomplete(RuntimeError):
     """A batch fetch where some ids still failed after the retry pass (server `failed` —
     upstream quota / error — or an errored request). `partial` holds the ids that did come
@@ -3533,7 +4288,7 @@ class BatchIncomplete(RuntimeError):
 
 def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids, start, end, headers,
                          chunk_size=50, mark_empty_months=True, start_param='start', end_param='end',
-                         date_chunk_days=None):
+                         date_chunk_days=None, bulk_endpoint=None):
     """Shared batch fetcher for monthly-cached datasets (Taiwan stocks and stock futures).
 
     Phase 1: ids that already have a local cache are extended (current-month delta).
@@ -3550,6 +4305,8 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
 
     raw_fn(id, start, end, headers) -> DataFrame   single-id fallback (missing past months)
     parse_fn(records) -> DataFrame                 one id's batch records -> cached frame
+    bulk_endpoint                                  台股 /bulk name: phase 1's delta comes from one
+                                                   whole-market request when to_extend is large
     """
     results, uncached = {}, []
 
@@ -3676,7 +4433,31 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
         widen = (prev_ym >= start[:7]
                  and any(_prev_month_needs_completion(_id) for _id in to_extend))
         prefetch_start = f'{prev_ym}-01' if widen else f'{current_ym}-01'
-        prefetch_batch, prefetch_failed = _fetch_batch_range(to_extend, prefetch_start, tomorrow)
+        fresh = _fresh_since()
+        if single and fresh:
+            cap_to = min((end or now.strftime('%Y-%m-%d'))[:7], current_ym)
+            to_ask = [_id for _id in to_extend
+                      if not _tail_fresh(_read_single_meta(prefix, {'id': _id}), fresh, cap_to)]
+        else:
+            to_ask = to_extend
+        bulk = None
+        if bulk_endpoint and len(to_ask) >= _BULK_MIN_IDS:
+            bulk = _fetch_twstock_bulk(bulk_endpoint, prefetch_start, tomorrow, headers)
+        if bulk is None:
+            prefetch_batch, prefetch_failed = _fetch_batch_range(to_ask, prefetch_start, tomorrow) \
+                if to_ask else ({}, set())
+        else:
+            records, covered, bulk_failed = bulk
+            prefetch_batch = {}
+            for _id in to_ask:
+                if _id in covered and _id not in bulk_failed and records.get(_id):
+                    df = _normalise_index(parse_fn(records[_id]))
+                    prefetch_batch[_id] = df[~df.index.duplicated(keep='last')].sort_index()
+            rest = [_id for _id in to_ask if _id not in covered or _id in bulk_failed]
+            prefetch_failed = set()
+            if rest:
+                more, prefetch_failed = _fetch_batch_range(rest, prefetch_start, tomorrow)
+                prefetch_batch.update(more)
 
     def _make_fetch_fn(_id):
         def _fetch(s, e):
@@ -3778,12 +4559,16 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
     return results
 
 
+_TWSTOCK_BULK_DAILY = frozenset({'price', 'price_adj'})
+
+
 def _fetch_twstock_cached_batch(prefix, endpoint, raw_fn, parse_fn, stock_ids, start, end, headers):
     """Shared batch fetcher for monthly-cached 台股 datasets. Thin wrapper over
     _fetch_batch_cached — kept for existing callers (stock_ids param name, 50/chunk)."""
     return _fetch_batch_cached(
         prefix, f'{BASE}/studio/market/twstock/batch/{endpoint}', 'stock_ids',
-        raw_fn, parse_fn, stock_ids, start, end, headers, chunk_size=50)
+        raw_fn, parse_fn, stock_ids, start, end, headers, chunk_size=50,
+        bulk_endpoint=endpoint if endpoint in _TWSTOCK_BULK_DAILY else None)
 
 
 def fetch_twstock_shareholding_batch(stock_ids, start, end, headers):
@@ -3807,9 +4592,11 @@ def fetch_twstock_price_adj_batch(stock_ids, start, end, headers):
         df = df.set_index('date').sort_index()[['open', 'close']].rename(
             columns={'open': 'Open', 'close': 'Close'}).astype(float)
         return df.replace(0, float('nan')).ffill()
-    return _fetch_twstock_cached_batch(
+    results = _twstock_batch(lambda: _fetch_twstock_cached_batch(
         'twstock_price2', 'price_adj', _fetch_twstock_price_raw, _parse,
-        stock_ids, start, end, headers)
+        stock_ids, start, end, headers), stock_ids, start, end, True)
+    return {sid: df[['Open', 'Close']] if {'Open', 'Close'} <= set(df.columns) else df
+            for sid, df in results.items()}
 
 
 def fetch_twstock_price_batch(stock_ids, start, end, headers):
@@ -3825,9 +4612,9 @@ def fetch_twstock_price_batch(stock_ids, start, end, headers):
             columns={'open': 'Open', 'high': 'High', 'low': 'Low',
                      'close': 'Close', 'volume': 'Volume'}).astype(float)
         return df.replace(0, float('nan')).ffill()
-    results = _fetch_twstock_cached_batch(
+    results = _twstock_batch(lambda: _fetch_twstock_cached_batch(
         'twstock_price_nonadj', 'price', _fetch_twstock_price_nonadj_raw, _parse,
-        stock_ids, start, end, headers)
+        stock_ids, start, end, headers), stock_ids, start, end, False)
     return {sid: _sanity_check_ohlc(df, f'{sid} twstock price')
             for sid, df in results.items()}
 

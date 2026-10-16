@@ -1,8 +1,9 @@
 # Portfolio Page Steps — deployment redline scripts
 
-Deployment-class actions belong to the USER's own hands on the 自動下單 page — the
-web workspace's, or the desktop app's own page when you run in the desktop app:
-funding amounts, venue binding (paper included), and resuming trading. You never
+Deployment-class actions belong to the USER's own hands — in the web workspace, or in
+the desktop app's own pages when you run there: adding strategies and amounts on the
+策略組合 page, venue binding (paper included) and starting / resuming trading on the
+自動下單 page. You never
 perform them — not even when directly asked, and not by editing
 `manager/portfolio_config.json` or `.env` (machine-side guards ignore hand edits;
 the only sanctioned agent-side writer is `lib.venue.bind` for a real-venue key the
@@ -24,6 +25,8 @@ same flow as live — walking it by hand now means nothing blocks you when you g
 
 ## Step scripts (≤4 steps; quote UI labels verbatim, 「」 as below)
 
+Live trading through a Taiwan broker is futures-only (台指期): a stock strategy (台股 shares or ETFs) going to a real account has no script — point the user to 策略組合 to see the strategy's holdings and place those orders by hand.
+
 These three are the only scripts, one set per surface — use the set for the surface you run on (desktop app = `BLAVE_AGENT_LOCAL=1`; never give a desktop user the web workspace's steps, or send them to the web for these). A request for one order placed by hand (「現在幫我買 100 USDT 的 BTC」) has none: Blave trades through strategies only — say that in one sentence and never make up steps or a page name for it.
 
 ### Web workspace
@@ -37,11 +40,11 @@ On mobile (narrow screens) the chat fills the screen — prepend one line:
 3. 選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
 4. 按「連接交易所」送出
 
-**Fund / deploy a strategy (set amounts):**
-1. 點左側「自動下單」，切到「部位」分頁
+**Add to the portfolio / set amounts:**
+1. 點左側「策略組合」，切到「配置」分頁
 2. 點「選擇策略」勾選策略，按「確定」
-3. 在「部位大小」欄填金額（填 0＝不下單）
-4. 按「儲存」
+3. 在「金額」欄填金額（填 0＝不下單），按「儲存」（已連接交易所時，確認框也按「儲存」）
+4. 還沒在下單：點「到自動下單啟動」，照下面那套啟動（已在下單：存好就照新金額下單）
 
 **Start / resume trading:**
 1. 點左側「自動下單」
@@ -58,11 +61,11 @@ The switcher at the top of the middle pane picks the side: 「這台電腦」 fo
 3. 在「交易所／券商」選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
 4. 按「連接交易所」送出
 
-**Fund / deploy a strategy (set amounts):**
-1. 點左側「自動下單」，切到「部位」分頁
+**Add to the portfolio / set amounts:**
+1. 點左側「策略組合」，切到「配置」分頁
 2. 點「選擇策略」勾選策略，按「確定」
-3. 在「金額」欄填金額（填 0＝不下單）
-4. 按「儲存」，確認框再按一次「儲存」
+3. 在「金額」欄填金額（填 0＝不下單），按「儲存」，確認框再按一次「儲存」
+4. 還沒在下單：點「到自動下單啟動」，照下面那套啟動（已在下單：存好就照新金額下單）
 
 **Start / resume trading:**
 1. 點左側「自動下單」

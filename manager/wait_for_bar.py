@@ -149,6 +149,73 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+# ── Fallback copy of lib/bar_ready ───────────────────────────────────────────
+# The readiness and priming rule lives in lib/bar_ready (lib/runner's Type C preview asks it too).
+# update_workspace writes file by file, so a workspace can hold this manager beside a lib that
+# has no bar_ready yet; without a copy here every Type A/C tick would die at import, before
+# main() could alert. Used only then. tests/check_bar_ready_fallback.py keeps both copies giving
+# the same answers — change them together.
+_FB_PRIME_GRACE_SECONDS = 300
+_FB_INTERVAL_RE = re.compile(r"^(\d+)(min|m|h|d|w)$")
+_FB_UNIT_TO_KW = {"min": "minutes", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
+
+
+def _fb_interval_to_timedelta(interval):
+    m = _FB_INTERVAL_RE.match(interval)
+    if not m:
+        raise ValueError(f"unrecognized INTERVAL format: {interval!r}")
+    n, unit = int(m.group(1)), m.group(2)
+    return timedelta(**{_FB_UNIT_TO_KW[unit]: n})
+
+
+def _fb_expected_closed_bar_open(interval, now):
+    td = _fb_interval_to_timedelta(interval)
+    epoch = datetime(1970, 1, 1)
+    floored = epoch + ((now - epoch) // td) * td
+    return floored - td
+
+
+def _fb_naive_utc(ts):
+    import pandas as pd
+    ts = pd.Timestamp(ts)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert("UTC").tz_localize(None)
+    return ts.to_pydatetime()
+
+
+def _fb_judge(data, expected):
+    if isinstance(data, tuple):
+        close_df = data[0]
+        if close_df.empty:
+            return None, False, None, None
+        last_valid = close_df.apply(lambda col: col.last_valid_index())
+        if last_valid.isna().any():
+            return None, False, last_valid[last_valid.isna()].index[0], None
+        straggler_symbol = last_valid.idxmin()
+        straggler_ts = _fb_naive_utc(last_valid[straggler_symbol])
+        ready = all(_fb_naive_utc(ts) >= expected for ts in last_valid)
+        return straggler_ts, ready, straggler_symbol, {str(k): _fb_naive_utc(v) for k, v in last_valid.items()}
+    if data.empty:
+        return None, False, None, None
+    last_ts = _fb_naive_utc(data.index[-1])
+    return last_ts, last_ts >= expected, None, {"": last_ts}
+
+
+def _fb_member_in_grace(latest, expected, now, td):
+    grace = timedelta(seconds=_FB_PRIME_GRACE_SECONDS)
+    return any(m < expected and now < m + 2 * td + grace for m in latest.values())
+
+
+try:
+    from lib.bar_ready import (PRIME_GRACE_SECONDS, expected_closed_bar_open as _expected_closed_bar_open,  # noqa: E402
+                               interval_to_timedelta as _interval_to_timedelta, judge as _judge,
+                               member_in_grace, naive_utc as _naive_utc)
+except ImportError:   # half-updated workspace: lib without bar_ready
+    PRIME_GRACE_SECONDS = _FB_PRIME_GRACE_SECONDS
+    _expected_closed_bar_open, _interval_to_timedelta = _fb_expected_closed_bar_open, _fb_interval_to_timedelta
+    _judge, member_in_grace, _naive_utc = _fb_judge, _fb_member_in_grace, _fb_naive_utc
+
 STALE_TIMEOUT_MINUTES = 15
 STALL_POLL_MINUTES = 15            # once a stall is confirmed (alerted, data still hasn't moved),
                                     # only re-check this often instead of every minute
@@ -157,7 +224,14 @@ STALL_REALERT_SECONDS = 24 * 3600  # repeat the stale-data alert at most this of
                                     # stuck symbol (delisted) gets exactly one alert ever, then
                                     # silence, even though the strategy never runs again
 STATE_DIR = "state/bar_wait"
-RUN_TIMEOUT_SECONDS = 600          # kill a strategy subprocess that hangs (e.g. a stuck order API call)
+RUN_TIMEOUT_SECONDS = 1200         # kill a strategy subprocess that hangs (e.g. a stuck order API call).
+                                    # A whole-market Type C run (~1,700 TW stocks) took 6 min on an M-series
+                                    # Mac; at 600 a slower box was killed every attempt and never computed.
+TICK_BUDGET_SECONDS = 1800         # = runtime command_listener.SCHEDULER_TICK_TIMEOUT_SECONDS: the scheduler
+                                    # SIGKILLs this whole process past it (no finally, no state write, the
+                                    # strategy child orphaned), so the run gets what the probe left of it
+TICK_MARGIN_SECONDS = 60           # time kept back for this process to record the run and exit
+_STARTED = time.monotonic()
 # The lock also has to outlive _check_freshness, which is NOT subprocess-timeout-bounded —
 # it runs fetch_data() in-process and can legitimately take several minutes across multiple
 # retried HTTP sources (e.g. txf_composite_60m pulls 60m/1d/TAIEX/dividend series). Generous
@@ -166,9 +240,9 @@ RUN_TIMEOUT_SECONDS = 600          # kill a strategy subprocess that hangs (e.g.
 # only the fallback: a lock whose recorded pid is gone is taken over at once (_acquire_lock),
 # so a listener restart that kills a mid-flight tick doesn't silence the next 30 ticks.
 LOCK_STALE_SECONDS = 1800
+TAKEOVER_STALE_SECONDS = 60     # a takeover holds its marker for milliseconds
 RETRY_BACKOFF_SECONDS = 300        # after a failed run OR a fetch_data() error, don't re-attempt every single minute
 WRAPPER_ERROR_COOLDOWN_SECONDS = 6 * 3600         # this script's own crashes, not the strategy's
-PRIME_GRACE_SECONDS = 300          # see Priming in the module docstring
 
 
 def _load_strategy_module(name):
@@ -202,32 +276,6 @@ def _alert_failure():
         _alert_failure_mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_alert_failure_mod)
     return _alert_failure_mod
-
-
-# Unit spellings actually in use across strategies/examples: '1h', '5min',
-# '1d', but also the bare-'m' form ('60m', '1m') — both must resolve to the
-# SAME meaning here as in manager/healthcheck.py's copy of this table; if one
-# changes, change both or the two scripts silently disagree on cadence.
-_INTERVAL_RE = re.compile(r"^(\d+)(min|m|h|d|w)$")
-_UNIT_TO_KW = {"min": "minutes", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
-
-
-def _interval_to_timedelta(interval):
-    m = _INTERVAL_RE.match(interval)
-    if not m:
-        raise ValueError(f"unrecognized INTERVAL format: {interval!r}")
-    n, unit = int(m.group(1)), m.group(2)
-    return timedelta(**{_UNIT_TO_KW[unit]: n})
-
-
-def _expected_closed_bar_open(interval, now):
-    """Open-time label of the most recently closed bar, epoch-aligned (matches
-    how the underlying kline sources bucket bars — UTC midnight / top-of-hour)."""
-    td = _interval_to_timedelta(interval)
-    epoch = datetime(1970, 1, 1)
-    since_epoch = now - epoch
-    floored = epoch + (since_epoch // td) * td
-    return floored - td
 
 
 def _default_state():
@@ -322,11 +370,19 @@ def _lock_note_child(name, pid):
         pass
 
 
+def _lock_stale(path, max_age):
+    try:
+        age = time.time() - os.path.getmtime(path)
+    except OSError:
+        age = 0
+    return age > max_age or _lock_holder_dead(path)
+
+
 def _acquire_lock(name, _retried=False):
     """Atomic-create lock file, cross-platform (no fcntl/msvcrt — those differ
     by OS). A lock whose recorded holder pid is gone, or that is older than
     LOCK_STALE_SECONDS, is assumed abandoned by a crashed/killed process and
-    is cleared once, then retried."""
+    is taken over once (_take_over), then retried."""
     os.makedirs(STATE_DIR, exist_ok=True)
     lock_path = f"{STATE_DIR}/{name}.lock"
     try:
@@ -337,22 +393,44 @@ def _acquire_lock(name, _retried=False):
     except FileExistsError:
         if _retried:
             return None
-        try:
-            age = time.time() - os.path.getmtime(lock_path)
-        except OSError:
-            age = 0
-        if age > LOCK_STALE_SECONDS or _lock_holder_dead(lock_path):
-            # Move, don't remove: two ticks judging the same lock dead would otherwise let the
-            # slower one delete the lock the faster one just created. os.replace is atomic, so
-            # exactly one mover succeeds; the other's O_EXCL retry then fails as it should.
-            stale = lock_path + ".stale"
+        judged = _lock_pids(lock_path)  # before the verdict: what _take_over re-checks against
+        if _lock_stale(lock_path, LOCK_STALE_SECONDS):
+            return _take_over(name, lock_path, judged)
+        return None  # another run is genuinely still in flight — skip this tick
+
+
+def _take_over(name, lock_path, judged):
+    """Several ticks can judge the same lock dead at once. Moving or deleting it unguarded lets a
+    slower one remove the lock a faster one has just re-created (both then run strategy.py for the
+    same bar). So takeovers are serialized by an O_EXCL marker, and under it the lock is removed
+    only if it still holds the pids that were judged dead and is still stale; the live holder's
+    lock is never touched, so lock_path is never missing while someone holds it."""
+    marker = lock_path + ".takeover"
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        # a taker killed between create and remove would block every later takeover
+        if _lock_stale(marker, TAKEOVER_STALE_SECONDS):
             try:
-                os.replace(lock_path, stale)
-                os.remove(stale)
+                os.remove(marker)
             except OSError:
                 pass
-            return _acquire_lock(name, _retried=True)
-        return None  # another run is genuinely still in flight — skip this tick
+        return None
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        if _lock_pids(lock_path) != judged or not _lock_stale(lock_path, LOCK_STALE_SECONDS):
+            return None
+        try:
+            os.remove(lock_path)
+        except OSError:
+            return None
+        return _acquire_lock(name, _retried=True)
+    finally:
+        try:
+            os.remove(marker)
+        except OSError:
+            pass
 
 
 def _release_lock(lock_path):
@@ -363,18 +441,6 @@ def _release_lock(lock_path):
         os.remove(lock_path)
     except OSError:
         pass
-
-
-def _naive_utc(ts):
-    """Bar timestamp → naive UTC datetime, the frame `expected` lives in. A tz-aware label
-    (Taiwan data is Asia/Taipei) is converted first; dropping its tz as-is would read
-    Taipei wall-clock as UTC and call a bar 8h early "landed". Naive labels are taken as
-    UTC, as before."""
-    import pandas as pd
-    ts = pd.Timestamp(ts)
-    if ts.tzinfo is not None:
-        ts = ts.tz_convert("UTC").tz_localize(None)
-    return ts.to_pydatetime()
 
 
 class _FeedWait(str):
@@ -437,26 +503,6 @@ def _check_freshness(mod, expected):
     return _judge(data, expected)
 
 
-def _judge(data, expected):
-    if isinstance(data, tuple):
-        close_df = data[0]
-        if close_df.empty:
-            return None, False, None, None
-        last_valid = close_df.apply(lambda col: col.last_valid_index())
-        if last_valid.isna().any():
-            # at least one symbol has literally never had a data point
-            return None, False, last_valid[last_valid.isna()].index[0], None
-        straggler_symbol = last_valid.idxmin()
-        straggler_ts = _naive_utc(last_valid[straggler_symbol])
-        ready = all(_naive_utc(ts) >= expected for ts in last_valid)
-        return straggler_ts, ready, straggler_symbol, {str(k): _naive_utc(v) for k, v in last_valid.items()}
-    else:
-        if data.empty:
-            return None, False, None, None
-        last_ts = _naive_utc(data.index[-1])
-        return last_ts, last_ts >= expected, None, {"": last_ts}
-
-
 def _fingerprint(latest):
     """(fingerprint, newest ISO) of _check_freshness's `latest`, or (None, None)."""
     if not latest:
@@ -464,6 +510,9 @@ def _fingerprint(latest):
     import hashlib
     body = json.dumps(sorted((k, v.isoformat()) for k, v in latest.items()))
     return hashlib.sha1(body.encode()).hexdigest(), max(latest.values()).isoformat()
+
+
+_fetched_since = None   # naive UTC: when this tick's _check_freshness began fetching
 
 
 def _run_strategy_protected(name):
@@ -479,20 +528,33 @@ def _run_strategy_protected(name):
     os.makedirs(strategy_dir, exist_ok=True)
     script_path = f"{strategy_dir}/strategy.py"
 
+    timeout = int(min(RUN_TIMEOUT_SECONDS, TICK_BUDGET_SECONDS - TICK_MARGIN_SECONDS
+                      - (time.monotonic() - _STARTED)))
+    if timeout < TICK_MARGIN_SECONDS:
+        output = (f"[wait_for_bar] not started: the freshness check took "
+                  f"{int(time.monotonic() - _STARTED)}s of the {TICK_BUDGET_SECONDS}s tick budget")
+        _alert_failure().alert(name, "timeout", output)
+        return False
+
     # Popen rather than subprocess.run: the child pid goes into the lock (_lock_holder_dead)
     # before the run, and the except/kill mirrors run()'s own so a SIGTERM→SystemExit still
     # takes the child down with us.
+    env = None
+    if _fetched_since is not None:
+        # this tick's freshness check just fetched the same data: the run reads it from the
+        # cache instead of asking the api again (lib/data.py › _fresh_since)
+        env = {**os.environ, "BLAVE_FETCH_FRESH_SINCE": _fetched_since.strftime("%Y-%m-%dT%H:%M:%S")}
     with subprocess.Popen([sys.executable, script_path], stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, text=True) as proc:
+                          stderr=subprocess.PIPE, text=True, env=env) as proc:
         _lock_note_child(name, proc.pid)
         try:
-            out, err = proc.communicate(timeout=RUN_TIMEOUT_SECONDS)
+            out, err = proc.communicate(timeout=timeout)
             output, returncode = (out or "") + (err or ""), proc.returncode
         except subprocess.TimeoutExpired:
             proc.kill()
             out, _ = proc.communicate()
             output = (out or "") + \
-                f"\n[wait_for_bar] killed after exceeding {RUN_TIMEOUT_SECONDS}s timeout"
+                f"\n[wait_for_bar] killed after exceeding {timeout}s timeout"
             returncode = -1
         except BaseException:
             proc.kill()
@@ -522,8 +584,11 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
         pass
     who = f"（卡住的是 {straggler_symbol}，若已下市/長期停牌請從 UNIVERSE 移除）" if straggler_symbol is not None else ""
     if isinstance(straggler_symbol, _FeedWait):
-        who = (f"（K 棒已到，等的是外部資料 {straggler_symbol}：應在 "
-               f"{straggler_symbol.due_at.strftime('%m-%d %H:%M')} 前發布，還沒進來）")
+        due = straggler_symbol.due_at.strftime('%m-%d %H:%M')
+        if straggler_symbol == "twstock_price":   # the bars themselves are late (Blave CDN behind)
+            who = f"（等的是台股日 K 本身：應在 {due} 前發布，還沒進來）"
+        else:
+            who = f"（K 棒已到，等的是外部資料 {straggler_symbol}：應在 {due} 前發布，還沒進來）"
     try:
         from lib.notify import send_text
         send_text(
@@ -572,6 +637,7 @@ def _alert_wrapper_error(name, exc):
 
 
 def _tick(name):
+    global _fetched_since
     mod = _load_strategy_module(name)
     interval = getattr(mod, "INTERVAL", None)
     if not interval:
@@ -609,6 +675,7 @@ def _tick(name):
         return  # a previous tick's run is still in flight — skip, don't overlap
     try:
         try:
+            _fetched_since = datetime.now(timezone.utc).replace(tzinfo=None)
             observed_ts, ready, straggler_symbol, latest = _check_freshness(mod, expected)
         except Exception as e:
             if not _is_feed_wait(e):
@@ -768,11 +835,7 @@ def _maybe_prime(name, state, now, expected, td, latest, straggler_symbol):
         return  # state from before priming: its last run covered this data
     if state.get("prime_tried_fp") == fp:
         return
-    # A member's next bar is due at its bar + 2·td. Any member still behind but inside the grace
-    # is waited for, so the bar is computed once on complete data; one stuck for days is long
-    # past its grace and holds nothing up — but it must not let the others in batch by batch.
-    grace = timedelta(seconds=PRIME_GRACE_SECONDS)
-    if any(m < expected and now < m + 2 * td + grace for m in latest.values()):
+    if member_in_grace(latest, expected, now, td):
         return
     if _tw_futures_closed(name, now):
         return  # re-checked on later ticks; the first inside the session computes

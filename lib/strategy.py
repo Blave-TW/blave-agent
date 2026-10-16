@@ -111,7 +111,7 @@ VERSIONS_LOCK_TIMEOUT_S = 30
 # Results computed from some other code, moved aside by restore() (canon §5). pnl.png is one of
 # them: the workspace shows it on the backtest tab, and the background re-run is the only thing
 # that redraws it.
-RESTORE_STASHED = ('stats.json', 'scan.json', 'wf.json', 'pnl.png')
+RESTORE_STASHED = ('stats.json', 'scan.json', 'wf.json', 'pnl.png', 'backtest_state.json')
 PRE_RESTORE_KEEP = 3   # versions/pre-restore.py (newest), pre-restore.1.py, pre-restore.2.py
 _lock_held = threading.local()
 
@@ -348,7 +348,7 @@ def restore(name, v):
         summary), drift.json removed. They don't (a non-UTF-8 original, decoded with
         'replace' when minted) → current untouched, inplace=False, and the re-run mints a
         new version as it always did.
-      - stats.json / scan.json / wf.json / pnl.png move to versions/pre-restore/: they came
+      - stats.json / scan.json / wf.json / pnl.png / backtest_state.json move to versions/pre-restore/: they came
         from other code, and until the re-run finishes every reader must see "no backtest",
         never v's code beside another version's numbers."""
     from lib.portfolio import strategy_amounts   # lazy: heavy module, only needed here

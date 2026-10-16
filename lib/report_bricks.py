@@ -323,8 +323,9 @@ def _price_twstock(b, stock_id, bars):
         df["Volume"] = df["Volume"] / 1000.0
         if df.index.tz is None:
             df.index = df.index.tz_localize("Asia/Taipei")
-        # publish(lang="en") swaps it through lib.data.PUBLIC_SOURCE_EN.
-        foot.append(("src_free", _data._TW_PUBLIC_SOURCE_ZH if src in ("TWSE", "TPEx") else f"資料來源:{src}"))
+        # Whichever free source answered, the numbers are the exchanges' and no vendor is ever
+        # named on a report. publish(lang="en") swaps it through lib.data.PUBLIC_SOURCE_EN.
+        foot.append(("src_free", _data._TW_PUBLIC_SOURCE_ZH))
     df = T._clean_ohlc(df) if df is not None else df
     if df is None or len(df) < 2:
         raise ValueError(f"{stock_id} 日 K 不足兩個交易日")

@@ -301,13 +301,18 @@ def load_twap_log(twap_key):
 # ---------------------------------------------------------------------------
 # Execution dispatch (下單方式) — reconciler-facing
 # ---------------------------------------------------------------------------
-# The web 下單設定 stores a per-strategy execution style in
-# portfolio_config.json["execution"]:
-#     {"<strategy>": {"type": "market"}
-#                  | {"type": "twap",   "duration_min": 30}
-#                  | {"type": "chase"}
-#                  | {"type": "custom", "module": "<manager/executors/*.py>"}}
-# No entry = market. dispatch_order() is the single entry point the reconciler
+# One execution style for the whole portfolio, portfolio_config.json
+# ["execution_default"]:
+#     {"type": "market"}
+#   | {"type": "twap",   "duration_min": 30}
+#   | {"type": "chase"}
+#   | {"type": "custom", "module": "<manager/executors/*.py>"}
+# Orders are netted per symbol across strategies, so a per-strategy style never
+# had a clean meaning (the largest contributor's won). The legacy per-strategy
+# map portfolio_config.json["execution"] is still written by the runtime, fanned
+# out to every member, for workspaces older than this file — see
+# portfolio_execution() for how a config without the key is read.
+# dispatch_order() is the single entry point the reconciler
 # template routes place_order through (official auto-wired venues only — TW
 # brokers keep their hand-wired signed-diff reconcilers and never come here).
 #
@@ -532,24 +537,80 @@ def _venue_mark_price(symbol):
         return None
 
 
-def resolve_execution(contributors, config=None):
-    """The execution spec for one netted order. Orders are netted per symbol
-    (multiple contributing strategies, no single name at execution time), so
-    the largest-|contribution| strategy's spec decides; that strategy having
-    no entry means market, even if a smaller contributor configured TWAP."""
-    if not contributors:
+def _exec_spec_clean(spec):
+    """Canonical form of one execution spec, None when it is not one. Same
+    rules as the runtime's write gate (int duration clamped 1..1440, bool
+    refused) so a derived default compares equal to what a save writes."""
+    if not isinstance(spec, dict):
+        return None
+    typ = spec.get("type")
+    if typ in ("market", "chase"):
+        return {"type": typ}
+    if typ == "twap":
+        dur = spec.get("duration_min")
+        if isinstance(dur, bool):
+            return None
+        try:
+            dur = int(dur)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return {"type": "twap", "duration_min": min(max(dur, 1), 1440)}
+    if typ == "custom":
+        module = spec.get("module")
+        if isinstance(module, str) and re.fullmatch(r"[a-z0-9_]{1,64}", module):
+            return {"type": "custom", "module": module}
+    return None
+
+
+def portfolio_execution(config):
+    """The one execution spec every order of this portfolio uses.
+
+    `execution_default` when present — returned as stored, so a malformed
+    hand-written one still reaches dispatch_order's loud market fallback.
+    Without it (config last saved by a runtime before the global setting),
+    derived from the legacy per-strategy map: each member with an amount > 0
+    weighs in with its amount behind its own spec (no entry = market); the
+    heaviest spec wins and a tie is market. Amount-weighted because the old
+    rule let the largest contributor decide, so the big strategies' style is
+    the one most of the volume already traded with."""
+    cfg = config if isinstance(config, dict) else {}
+    if isinstance(cfg.get("execution_default"), dict):
+        return cfg["execution_default"]
+    legacy = cfg.get("execution") if isinstance(cfg.get("execution"), dict) else {}
+    amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
+    if not amounts and isinstance(cfg.get("weights"), dict):
+        amounts = cfg["weights"]
+    weight = {}
+    for name, amt in amounts.items():
+        try:
+            amt = float(amt)
+        except (TypeError, ValueError):
+            continue
+        if not amt > 0 or amt == float("inf"):
+            continue
+        key = json.dumps(_exec_spec_clean(legacy.get(name)) or {"type": "market"},
+                         sort_keys=True)
+        weight[key] = weight.get(key, 0.0) + amt
+    if not weight:
         return {"type": "market"}
+    top = max(weight.values())
+    winners = [k for k, w in weight.items() if w == top]
+    return json.loads(winners[0]) if len(winners) == 1 else {"type": "market"}
+
+
+def resolve_execution(contributors, config=None):
+    """The execution spec for one netted order: the portfolio-wide setting
+    (portfolio_execution), whoever contributed to it. `contributors` is kept
+    for the reconciler template's call signature only."""
     try:
         from lib.portfolio import load_portfolio_config
-        cfg = (config if config is not None else load_portfolio_config()).get("execution") or {}
+        cfg = config if config is not None else load_portfolio_config()
     except Exception as e:
         # mid-write read (the web listener rewrites portfolio_config.json) —
         # defer the leg (None → skip) instead of trading a WRONG style once
         logging.warning(f"[execute] execution config unreadable ({e}) — leg deferred")
         return None
-    top = max(contributors, key=lambda c: abs(float(c.get("contribution", 0) or 0)))
-    spec = cfg.get(top.get("strategy"))
-    return spec if isinstance(spec, dict) else {"type": "market"}
+    return portfolio_execution(cfg)
 
 
 def _venue_min_slice_usd(symbol, floor=_MIN_SLICE_USD):

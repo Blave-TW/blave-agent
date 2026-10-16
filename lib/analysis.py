@@ -267,23 +267,72 @@ def plot_pnl(df, result, title='Strategy PnL', output_path=os.path.join(tempfile
     return output_path
 
 
-# Portfolios per block on the bands-free path: T × 50 floats instead of T × n.
+# Portfolios per block: T × 50 floats instead of T × n.
 _BENCH_BLOCK = 50
+# Keeps α > 0 when the strategy holds one name (N=1 → α=0). numpy's small-α Dirichlet
+# stays finite here; measured median 1/Σw² ≈ 1.0 at S=20 and ≈ 1.04 at S=1700.
+_BENCH_ALPHA_MIN = 1e-4
+BENCH_BAND_PCTS = (5, 25, 50, 75, 95)
 
 
-def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42, bands=True):
+def held_count(delta_w, w_held):
+    """Median number of names held on a rebalance row — a row where count_trades sees a
+    trade (|Δw| nonzero at 4 dp); w_held is the weight row in force from that bar on
+    (the runner's w_curr). None when the strategy never rebalanced."""
+    dw   = np.round(np.nan_to_num(np.asarray(delta_w, dtype=float)), 4)
+    rows = (dw != 0).any(axis=1)
+    if not rows.any():
+        return None
+    held = (np.round(np.nan_to_num(np.asarray(w_held, dtype=float))[rows], 4) > 0).sum(axis=1)
+    return float(np.median(held))
+
+
+def bench_alpha(n_held, S):
+    """Symmetric Dirichlet concentration whose expected effective holdings (1/E[Σw²])
+    equal n_held out of S names: (Sα+1)/(α+1) = N. Capped at 1 — uniform on the
+    simplex, the pre-0.1.26 benchmark — from N ≥ (S+1)/2 on, which is also where the
+    formula reaches 1; the cap is checked first because N = S divides by zero."""
+    if n_held is None or n_held >= (S + 1) / 2:
+        return 1.0
+    return max((n_held - 1) / (S - n_held), _BENCH_ALPHA_MIN)
+
+
+def _bench_band(day_eq):
+    """benchmark_band from the (days × n) day-end equity of every random portfolio: each
+    day's own percentiles across the n paths, not any one portfolio's path. None when a
+    value is non-finite or ≤ 0 — the frontend draws nothing rather than a broken band,
+    and a raw NaN would make the api refuse the whole strategy (allow_nan=False)."""
+    q = np.round(np.percentile(day_eq, BENCH_BAND_PCTS, axis=1), 4)   # (5, days)
+    if not np.isfinite(q).all() or (q <= 0).any():
+        return None
+    return {f'p{p}': q[i].tolist() for i, p in enumerate(BENCH_BAND_PCTS)}
+
+
+def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42, bands=True,
+                        n_held=None):
     """
-    Compare strategy against n random B&H portfolios (Dirichlet weights).
+    Compare strategy against n random constant-mix portfolios over the whole universe
+    (symmetric Dirichlet weights, rebalanced to them every bar, no fees).
 
-    bands=False skips the p5/p50/p95 equity bands (returned as None) — they only feed
-    plot_pnl_portfolio — and works through the portfolios a block at a time. The full
-    T × n matrix (plus its cumprod and percentiles) measured 2.8 GB RSS for 5 symbols of
-    5min bars over a year: past a 4 GB machine's headroom for a performance refresh
-    that draws no chart. The stats are the same either way (tests/check_bench_blockwise.py).
+    n_held (held_count): the strategy's typical number of names; sets the Dirichlet
+    concentration (bench_alpha) so the random portfolios are about as concentrated as
+    the strategy. None → α = 1, the pre-0.1.26 draw, bit for bit.
+
+    Portfolios are worked through a block at a time, which also yields
+    stats['benchmark_band'] (day-end equity percentiles, one point per calendar day, the
+    same days as lib.pnl.daily_returns_typeC). bands=True additionally builds the full
+    T × n matrix for the per-bar p5/p50/p95 that only pnl.png draws (returned as
+    bench_pct, else None): 2.8 GB RSS for 5 symbols of 5min bars over a year — past a 4 GB
+    machine's headroom for a performance refresh that draws no chart.
     """
     daily_ret = close_df.pct_change().fillna(0).values
-    rng       = np.random.default_rng(seed)
-    W         = rng.dirichlet(np.ones(daily_ret.shape[1]), size=n)  # (n, S)
+    S         = daily_ret.shape[1]
+    alpha     = bench_alpha(n_held, S)
+    W         = np.random.default_rng(seed).dirichlet(np.full(S, alpha), size=n)  # (n, S)
+    method    = 'dirichlet_eff_n' if n_held is not None else 'dirichlet_uniform'
+    if not np.isfinite(W).all():   # an older numpy's small-α draw can underflow to 0/0
+        alpha, method = 1.0, 'dirichlet_uniform'
+        W     = np.random.default_rng(seed).dirichlet(np.ones(S), size=n)
 
     # compute total return and Sharpe for each portfolio using compute_stats
     all_ret_list    = []
@@ -295,29 +344,33 @@ def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42
         all_ret_list.append((equity[-1] - 1) * 100)
         all_sharpe_list.append(s)
 
+    # day-end bar of every calendar day, empty days carrying the previous one — the
+    # resample daily_returns_typeC applies, so the band lines up with daily_dates
+    day_end = (pd.Series(np.arange(len(close_df)), index=close_df.index)
+               .resample('1D').last().ffill().astype(int).values)
+    day_eq = []
+    for lo in range(0, n, _BENCH_BLOCK):
+        block = daily_ret @ W[lo:lo + _BENCH_BLOCK].T  # (T, ≤ _BENCH_BLOCK)
+        for k in range(block.shape[1]):
+            _one(block[:, k])
+        day_eq.append(np.cumprod(1 + np.nan_to_num(block), axis=0)[day_end])
+    band = _bench_band(np.hstack(day_eq))
+
+    bench_pct = None
     if bands:
-        all_daily = pd.DataFrame(daily_ret @ W.T, index=close_df.index) # (T, n)
-        for col in all_daily.columns:
-            _one(all_daily[col].values)
-        all_equity = np.cumprod(1 + all_daily.values, axis=0)  # (T, n)
+        all_equity = np.cumprod(1 + daily_ret @ W.T, axis=0)  # (T, n)
         bench_pct  = pd.DataFrame({
             'p5':  np.percentile(all_equity, 5,  axis=1),
             'p50': np.percentile(all_equity, 50, axis=1),
             'p95': np.percentile(all_equity, 95, axis=1),
         }, index=close_df.index)
-    else:
-        bench_pct = None
-        for lo in range(0, n, _BENCH_BLOCK):
-            block = daily_ret @ W[lo:lo + _BENCH_BLOCK].T  # (T, ≤ _BENCH_BLOCK)
-            for k in range(block.shape[1]):
-                _one(block[:, k])
     all_ret    = pd.Series(all_ret_list)
     all_sharpe = pd.Series(all_sharpe_list)
 
     pct_ret    = float((all_ret    < strat_total_ret).mean() * 100)
     pct_sharpe = float((all_sharpe < strat_sharpe).mean()    * 100)
 
-    print(f"\n── Random B&H Benchmark (n={n}) ──")
+    print(f"\n── Random portfolio benchmark (n={n}, alpha={alpha:.4g}) ──")
     print(f"  Total Return  median={all_ret.median():.1f}%  "
           f"p5={all_ret.quantile(.05):.1f}%  p95={all_ret.quantile(.95):.1f}%")
     print(f"  Sharpe        median={all_sharpe.median():.2f}  "
@@ -326,6 +379,8 @@ def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42
 
     stats = {
         'benchmark_n':                   n,
+        'benchmark_method':              method,
+        'benchmark_eff_n':               None if n_held is None else round(float(n_held), 1),
         'benchmark_median_ret_%':        round(float(all_ret.median()),         2),
         'benchmark_p5_ret_%':            round(float(all_ret.quantile(.05)),    2),
         'benchmark_p95_ret_%':           round(float(all_ret.quantile(.95)),    2),
@@ -333,6 +388,8 @@ def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42
         'benchmark_strategy_ret_pct':    round(pct_ret,    1),
         'benchmark_strategy_sharpe_pct': round(pct_sharpe, 1),
     }
+    if band is not None:
+        stats['benchmark_band'] = band
     return stats, bench_pct
 
 
@@ -349,8 +406,8 @@ def plot_pnl_portfolio(pf_ret, close_df, title='Portfolio PnL', output_path=os.p
 
     if bench_pct is not None:
         b = bench_pct.reindex(idx, method='ffill')
-        ax1.fill_between(idx, b['p5'], b['p95'], color='#9E9E9E', alpha=0.2, label='Random B&H p5–p95')
-        ax1.plot(idx, b['p50'], color='#9E9E9E', linewidth=1, linestyle='--', label='Random B&H median')
+        ax1.fill_between(idx, b['p5'], b['p95'], color='#9E9E9E', alpha=0.2, label='Random p5–p95')
+        ax1.plot(idx, b['p50'], color='#9E9E9E', linewidth=1, linestyle='--', label='Random median')
 
     ax1.plot(idx, pf_equity, color='#2196F3', linewidth=2, label=title)
     ax1.set_ylabel('Portfolio Value')

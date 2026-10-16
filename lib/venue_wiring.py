@@ -21,6 +21,7 @@ from spot_scope() so removing a spot strategy sells its inventory down and
 personal coins never enter.
 """
 import importlib
+import inspect
 import json
 import logging
 import math
@@ -965,9 +966,15 @@ def _paper_contract_order(env, symbol, signed_diff, asset_spec, reduce_only):
             raise RuntimeError(f"{symbol}: asset_spec has no usable margin (initial margin "
                                f"per lot) — a paper contract entry cannot be leverage-checked; "
                                f"fix portfolio_config asset_specs")
+    kw = {}
+    try:
+        if "currency" in inspect.signature(order_paper.place_contract_market_order).parameters:
+            kw["currency"] = (asset_spec or {}).get("currency")
+    except (TypeError, ValueError):
+        pass  # half-updated workspace (an order_paper without FX): no currency, as before
     result = order_paper.place_contract_market_order(
         env, sym, direction, lots, cv, client_order_id=_cid(), reduce_only=reduce_only,
-        margin=margin if not reduce_only else None)
+        margin=margin if not reduce_only else None, **kw)
     if result is False:
         return False
     placed = dict(result)

@@ -195,6 +195,38 @@ def _write_json_atomic(path, obj, indent=2):
         raise
 
 
+# Type C preview: typec_live_state() of a backtest / performance refresh's last row plus the
+# code_hash it was computed with. The page shows it, marked as a preview, while a picked strategy
+# has no live state.json yet (runtime/portfolio_reporter.typec_previews); nothing trades on it.
+BACKTEST_STATE_FILE = 'backtest_state.json'
+
+
+def _utcnow():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _typec_preview(weights, price_df, config, src0, fetch_trims, data):
+    """The preview, or None when this row is not the one a live tick would compute right now:
+    align_feed cut the fetch's tail (live waits for that row — fetch_trims None = not recorded,
+    same), or the scheduler would not compute on this data yet (lib.bar_ready.computes_now: a
+    member one bar behind inside its grace, a member with no data at all). A member stuck for
+    days is no reason: live computes without it too, and both rows carry it as NaN."""
+    if src0 is None or fetch_trims is None or fetch_trims:
+        return None
+    try:
+        from lib.bar_ready import computes_now
+        if not computes_now(data, config.get('INTERVAL', '1h'), _utcnow()):
+            return None
+        from lib.strategy import code_hash
+        out = typec_live_state(weights, price_df, market=config.get('MARKET', 'swap'))
+    except Exception as e:
+        logging.warning("backtest preview skipped: %s", e)
+        return None
+    out['code_hash'] = code_hash(src0)
+    return out
+
+
 def _write_stats(out_dir, stats):
     return _write_json_atomic(Path(out_dir) / 'stats.json', stats)
 
@@ -1645,9 +1677,21 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     except ImportError:
         live_feeds = contextlib.nullcontext
     recorder = _FetchRecorder(config) if mode == 'backtest' else None
-    with closed_bars_only(), (live_feeds() if mode != 'backtest' else contextlib.nullcontext()), \
-            (recorder.recording() if recorder else contextlib.nullcontext()):
-        data = fetch_data_fn(hdrs)
+    # the bars align_feed cut off this fetch's tail (a live tick would wait for them instead):
+    # a backtest whose tail was cut cannot stand in for the live target (_typec_preview)
+    try:
+        import lib.data as _data
+        _data._feed_trims = []
+    except ImportError:   # half-updated workspace: nothing is recorded
+        _data = None
+    try:
+        with closed_bars_only(), (live_feeds() if mode != 'backtest' else contextlib.nullcontext()), \
+                (recorder.recording() if recorder else contextlib.nullcontext()):
+            data = fetch_data_fn(hdrs)
+    finally:
+        fetch_trims = list(getattr(_data, '_feed_trims', None) or []) if _data is not None else None
+        if _data is not None:
+            _data._feed_trims = None
     compute_t0 = time.monotonic()
     result = compute_fn(data)
     if mode == 'backtest':
@@ -1966,6 +2010,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────
+        backtest_state = _typec_preview(weights_orig, price_df, config, src0, fetch_trims, data)
         if mode == 'backtest':
             for msg in _weight_row_warnings(weights_orig, price_df.index):
                 logging.warning(msg)
@@ -2014,10 +2059,12 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             print("  ⚠️ WARNING: 0 trades — the weight vector never changed; "
                   "all stats are meaningless. Check thresholds against the data's actual range.")
 
-        from lib.analysis import random_bh_benchmark
-        # bands only feed pnl.png, which a quiet run (live refresh) never draws
+        from lib.analysis import random_bh_benchmark, held_count
+        # bands only feed pnl.png, which a quiet run (live refresh) never draws;
+        # stats['benchmark_band'] comes out of both paths
         bench_stats, bench_pct = random_bh_benchmark(close_df, total_ret * 100, sharpe,
-                                                     bands=not quiet)
+                                                     bands=not quiet,
+                                                     n_held=held_count(delta_w, w_curr))
 
         def _v(x):
             if x is None: return None
@@ -2026,6 +2073,9 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
 
         from lib.pnl import daily_returns_typeC
         d_dates, d_rets = daily_returns_typeC(pf_series)
+        band = bench_stats.get('benchmark_band')
+        if band and any(len(v) != len(d_dates) for v in band.values()):
+            del bench_stats['benchmark_band']   # misaligned points would plot on the wrong days
 
         # No automatic MCPT for Type C — see _auto_mcpt's docstring (mcpt() is single-series).
         carried = _carry_over(out_dir, mode)  # refresh keeps MCPT + Generated At; backtest drops/restamps
@@ -2056,6 +2106,13 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
                 return
             _write_stats(out_dir, stats)
+            try:
+                if backtest_state is not None:
+                    _write_json_atomic(out_dir / BACKTEST_STATE_FILE, backtest_state)
+                else:   # an older one describes other data or other code
+                    (out_dir / BACKTEST_STATE_FILE).unlink(missing_ok=True)
+            except Exception as e:
+                logging.warning("backtest preview not written: %s", e)
             if mode == 'backtest':
                 try:  # same as Type A: the record must not be able to fail the run
                     _mint_version(config, stats, mode, src0)

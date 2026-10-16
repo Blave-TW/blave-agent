@@ -10,12 +10,12 @@ would silently disagree with what the strategy traded on). So we resolve the
 symbol back to the strategy trading it and call that strategy's `fetch_data`,
 taking the latest bar's Close as "the current price".
 
-Why this needs no FX / point-value / lot math even across asset classes: the
-reconciler sizes orders as qty = USD ÷ price, so paper's PnL is
-qty × (mark − entry) = USD_notional × (mark/entry − 1) — a unitless return.
-The currency and contract unit cancel out, which is exactly the returns model
-the backtest itself uses (log(Close/Close.shift(1))). One USD account, any
-asset (product decision B, 2026-08-21).
+One USD account, any asset (product decision B). A NOTIONAL position needs no
+FX: the reconciler sizes qty = USD ÷ price, so PnL = USD_notional × (mark/entry
+− 1), a unitless return. A CONTRACT position (lots × contract_value, TXF family
+and later TW shares) is NOT unitless — lots × point value × Δindex is TWD — so
+its money (PnL, fee, margin) goes through usd_rate() before it touches the USD
+account. quote_ccy() says which currency a symbol's contract money is in.
 
 Fills are immediate at this price (no wait for the next bar — the live-paper
 convention every serious system uses, e.g. Freqtrade dry-run; paper deliberately
@@ -30,7 +30,13 @@ import json
 import logging
 import os
 import re
+import math
 import time
+
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 
 log = logging.getLogger("paper_data")
 
@@ -204,3 +210,117 @@ def _resolve_price(symbol, env):
     except Exception as e:
         raise PaperNoPrice(f"no strategy trades {symbol} and generic price "
                            f"lookup failed: {type(e).__name__}: {e}")
+
+
+# ── FX for contract money (lots × point value is in the contract's currency) ──
+
+class PaperNoFx(PaperNoPrice):
+    """No USD rate for a contract currency — an entry must be refused (booking
+    TWD as USD inflates equity ~32×)."""
+
+
+_USD_LIKE = ("USD", "USDT", "USDC")
+_TW_STOCK_RE = re.compile(r"^\d{4,6}[A-Z]?(?:\.TWO?)?$")
+# TAIFEX futures codes (stock futures CDF…, sector TEF/TFF, E4F) — three
+# characters ending in F, Shioaji 'R1'/'R2' month alias allowed
+_TAIFEX_RE = re.compile(r"^[A-Z][A-Z0-9]F(?:R[12])?$")
+FX_PATH = "state/paper_fx.json"
+# api's own table refreshes hourly from a daily bank rate, so an hour-old copy
+# is current; the on-disk copy of any age is still the right fallback (USDTWD
+# moves ~0.1%/day — far inside what a stale-by-days paper mark costs).
+_FX_TTL_S = 3600
+_FX_URL_PATH = "/fx_rates"
+_FX_RETRY_S = 60  # with no rate at all, don't re-hit a failing api inside every ledger lock
+_fx_cache = {}  # ccy -> (fetched_at, rate)
+_fx_failed_at = [0.0]
+# same band api common/fx.py guards with: a parse slip (inverted pair, cents) is
+# a refused rate, not a 1000× ledger
+_FX_SANE = {"TWD": (10.0, 100.0)}
+
+
+def quote_ccy(symbol, declared=None):
+    """Currency a CONTRACT position's money is in: the asset_spec's `currency`
+    when given, else TWD for TAIFEX futures codes and TW stock codes, else USD."""
+    if isinstance(declared, str) and declared.strip():
+        c = declared.strip().upper()
+        return "USD" if c in _USD_LIKE else c
+    s = _norm(symbol)
+    if _txf_root(s) or _TAIFEX_RE.match(s) or _TW_STOCK_RE.match(s):
+        return "TWD"
+    return "USD"
+
+
+def _sane(rate, ccy=None):
+    try:
+        r = float(rate)
+    except (TypeError, ValueError):
+        return None
+    lo, hi = _FX_SANE.get(ccy, (0.0, math.inf))
+    return r if math.isfinite(r) and lo < r < hi else None
+
+
+def _read_fx_file():
+    try:
+        with open(FX_PATH) as f:
+            d = json.load(f)
+        return (d.get("rates") or {}), float(d.get("ts") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}, 0.0
+
+
+def _write_fx_file(rates):
+    try:
+        os.makedirs(os.path.dirname(FX_PATH), exist_ok=True)
+        tmp = FX_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"rates": rates, "ts": int(time.time())}, f)
+        atomic_replace(tmp, FX_PATH)
+    except OSError as e:
+        log.warning(f"[paper_data] fx cache write failed: {e}")
+
+
+def _fetch_fx(env):
+    """The platform's own table (api common/fx.get_fx_rates: 1 USD = N ccy) —
+    the one the app and web fold TWD with, so the ledger and the screen agree."""
+    import requests
+    from lib.data import BASE
+    r = requests.get(BASE + _FX_URL_PATH, headers=_hdrs(env), timeout=5)
+    r.raise_for_status()
+    body = r.json()
+    rates = body.get("rates", body) if isinstance(body, dict) else {}
+    return {str(k).upper(): float(v) for k, v in rates.items() if _sane(v, str(k).upper())}
+
+
+def usd_rate(ccy, env, max_age=_FX_TTL_S):
+    """Units of `ccy` per 1 USD (TWD ≈ 32): usd = amount / rate. 1.0 for USD /
+    USDT / USDC. Process cache → fresh state/paper_fx.json → api → that file
+    at any age; RAISES PaperNoFx when there has never been a rate — never a
+    constant."""
+    c = str(ccy or "USD").upper()
+    if c in _USD_LIKE:
+        return 1.0
+    now = time.time()
+    hit = _fx_cache.get(c)
+    if hit and max_age and now - hit[0] < max_age:
+        return hit[1]
+    rates, ts = _read_fx_file()
+    disk = _sane(rates.get(c), c)
+    if disk and max_age and now - ts < max_age:
+        _fx_cache[c] = (now, disk)
+        return disk
+    if disk or now - _fx_failed_at[0] >= _FX_RETRY_S:
+        try:
+            fresh = _fetch_fx(env)
+            if fresh.get(c):
+                _write_fx_file(fresh)
+                _fx_cache[c] = (now, float(fresh[c]))
+                return float(fresh[c])
+            log.warning(f"[paper_data] fx table has no {c}")
+        except Exception as e:
+            log.warning(f"[paper_data] fx fetch failed: {type(e).__name__}: {e}")
+        _fx_failed_at[0] = now
+    if disk:
+        _fx_cache[c] = (now, disk)  # don't re-hit a failing api on every mark this hour
+        return disk
+    raise PaperNoFx(f"no USD rate for {c} yet — a {c} contract fill cannot be booked "
+                    f"in the USD paper account")

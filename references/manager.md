@@ -91,7 +91,7 @@ Required workflow:
 
 Polls every 5 seconds; only reconciles when a strategy's `state.json` mtime changes (plus `state/execution/kick`, touched when an async execution completes). `get_positions()` and `place_order()` are exchange-specific stubs to fill in once. `lib/portfolio.py` contains `reconcile()` logic; applies `leverage` from portfolio_config.
 
-**Execution styles:** on auto-wired official venues, `place_order()` routes through `lib.execute.dispatch_order`, which reads `portfolio_config["execution"]` (per-strategy 市價/TWAP/custom — see `references/lib.md` › *Execution styles*). TWAP/custom run in a background thread; while one is in flight for a symbol, further legs for that symbol return `False` (deferred) and the residual gap re-reconciles after completion. Hand-wired venues (TW brokers) bypass this entirely.
+**Execution styles:** on auto-wired official venues, `place_order()` routes through `lib.execute.dispatch_order`, which reads the portfolio-wide `portfolio_config["execution_default"]` (one 市價/TWAP/chase/custom setting for every order — see `references/lib.md` › *Execution styles*). TWAP/custom run in a background thread; while one is in flight for a symbol, further legs for that symbol return `False` (deferred) and the residual gap re-reconciles after completion. Hand-wired venues (TW brokers) bypass this entirely.
 
 **Wiring exchange order libraries (required, not optional):** `get_positions()` and `place_order()` must call into a `lib/order_*.py` helper — never remain as `raise NotImplementedError`. When writing a new order library, immediately update `reconciler.py` to import and call it in the same session.
 
