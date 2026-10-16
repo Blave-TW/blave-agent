@@ -57,14 +57,43 @@ if (!process.versions.electron) {
   const block = src.slice(a, b);
   ok("① 純邏輯區塊不碰 DOM / i18n", !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
   const P = {}; vm.createContext(P); vm.runInContext(block.replace(/^const /gm, "var "), P);
-  ok("① 市場分段:category 正好是 Crypto → 加密、TW Stock → 台股;其餘(US Stock / Forex / Other / 未知 / 缺)只在全部", P.libMarket({ category: "TW Stock" }) === "tw" && P.libMarket({ category: "Crypto", report: { symbol: "TXF" } }) === "crypto"
-    && ["US Stock", "Forex", "Other", "台股", "trend", "crypto", ""].every((c) => P.libMarket({ category: c, report: { symbol: "TXF" } }) === "other") && P.libMarket({}) === "other" && P.libMarket(null) === "other"
-    && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }], "crypto").map((s) => s.id).join() === "2"
+  // 市場選單(同網頁 library_rules.market;web tests/check_library_market.js 同一組):market 欄位優先,舊 api 退回 category
+  ok("① 市場:market 欄位優先於 category;四個值各自成立", P.libMarket({ market: "txf", category: "TW Stock" }) === "txf" && P.libMarket({ market: "usstock", category: "Crypto" }) === "usstock"
+    && ["crypto", "txf", "twstock", "usstock"].every((m) => P.libMarket({ market: m }) === m) && JSON.stringify([...P.LIB_MARKETS]) === '["crypto","txf","twstock","usstock"]');
+  ok("① 市場:沒有 market → Crypto → crypto、TW Stock → twstock、US Stock → usstock;其餘(Forex / Other / 大小寫錯 / 原型鍵 / 缺)回 null,只在全部", P.libMarket({ category: "Crypto" }) === "crypto" && P.libMarket({ category: "TW Stock" }) === "twstock" && P.libMarket({ category: "US Stock" }) === "usstock"
+    && ["Forex", "Other", "台股", "trend", "crypto", "", "toString", "__proto__", undefined].every((c) => P.libMarket({ category: c }) === null) && P.libMarket({}) === null && P.libMarket(null) === null);
+  ok("① 市場:沒有 market 時任何 category 都不會變成 txf(台期所上架的歸在 TW Stock,分不出來);認不得的 market 值退回 category", ["Crypto", "TW Stock", "US Stock", "Forex", "Other", undefined].every((c) => P.libMarket({ category: c }) !== "txf")
+    && P.libMarket({ market: "moon", category: "Crypto" }) === "crypto" && P.libMarket({ market: "tw", category: "TW Stock" }) === "twstock" && P.libMarket({ market: 1, category: "Forex" }) === null);
+  ok("① 市場:libVisible 照 libMarket 篩;null 的只在全部", P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }, { id: 3, market: "txf", category: "TW Stock" }], "crypto").map((s) => s.id).join() === "2"
+    && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }, { id: 3, market: "txf", category: "TW Stock" }], "txf").map((s) => s.id).join() === "3"
+    && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }, { id: 3, market: "txf", category: "TW Stock" }], "twstock").length === 0
     && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }], "all").length === 2);
+  ok("① 找點子框的市場預設:加密 → crypto、台股 → tw;台指期 / 美股 / 全部 / 認不得 → any(框只有這三格,ideaOpen 不動)", P.libIdeaMkt("crypto") === "crypto" && P.libIdeaMkt("twstock") === "tw"
+    && ["txf", "usstock", "all", "tw", "", undefined].every((m) => P.libIdeaMkt(m) === "any"));
   const v = P.libVisible(LIST, "all");
   ok("① 一份清單(0.1.6 §2.1):官方或已驗證在前(其中已驗證 → 樣本長 → 新;官方但未驗證的 #86 墊在這一段尾)、未驗證的社群策略在最後(同一套排序:樣本同長就新的先);回的是陣列", Array.isArray(v) && v.map((s) => s.id).join() === "74,101,72,5,9,86,12,8");
-  ok("① 分段:台股 1 支;加密 7 支(2 支未驗證在尾);沒有的市場空陣列", P.libVisible(LIST, "tw").map((s) => s.id).join() === "74" && P.libVisible(LIST, "crypto").map((s) => s.id).join() === "101,72,5,9,86,12,8"
-    && P.libVisible([], "tw").length === 0 && P.libVisible(null, "all").length === 0);
+  ok("① 市場:舊 api(沒有 market)台股 1 支、台指期 0 支;加密 7 支(2 支未驗證在尾);api 帶 market 時 #74 改歸台指期;沒有的市場空陣列", P.libVisible(LIST, "twstock").map((s) => s.id).join() === "74" && P.libVisible(LIST, "txf").length === 0 && P.libVisible(LIST, "crypto").map((s) => s.id).join() === "101,72,5,9,86,12,8"
+    && P.libVisible(LIST.map((s) => (s.id === 74 ? Object.assign({}, s, { market: "txf" }) : s)), "txf").map((s) => s.id).join() === "74" && P.libVisible(LIST.map((s) => (s.id === 74 ? Object.assign({}, s, { market: "txf" }) : s)), "twstock").length === 0
+    && P.libVisible([], "twstock").length === 0 && P.libVisible(null, "all").length === 0 && P.libVisible(LIST, "usstock").length === 0);
+  {   // 選市場的埋點:選了不同的才送 lib_mkt_pick(一次)、重選同一項不送也不重畫;兩種都先收起並還焦點
+    const C = { bag: { mkt: "all" }, sent: [], painted: 0, closed: [] };
+    vm.createContext(C); vm.runInContext("var libBag = () => bag, libTrack = (n) => sent.push(n), libPaint = () => { painted++; }, libMktClose = (f) => closed.push(f);\n" + cutFn(src, "libMktPick"), C);
+    C.libMktPick("txf"); C.libMktPick("txf"); C.libMktPick("crypto");
+    ok("① 市場選單埋點:all → txf 送、txf → txf 不送不重畫、txf → crypto 再送;每次都 libMktClose(true)", C.sent.join() === "lib_mkt_pick,lib_mkt_pick" && C.painted === 2 && C.bag.mkt === "crypto" && C.closed.join() === "true,true,true", JSON.stringify({ sent: C.sent, painted: C.painted }));
+  }
+  {   // 選單每一項的支數:清單還沒到全空、0 也印、選中那項 aria-checked + 觸發器的值;bag 裡認不得的市場(舊版的 tw)回全部
+    const el = (o) => Object.assign({ textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } }, o);
+    const items = ["all", "crypto", "txf", "twstock", "usstock"].map((m) => { const l = el({ textContent: "L:" + m }), mv = el(); return el({ dataset: { mkt: m }, querySelector: (q) => (q === ".l" ? l : mv), mv }); });
+    const dom = { "lib-mkt-menu": { querySelectorAll: () => items }, "lib-mkt-v": el() };
+    const C = { LIB_MARKETS: P.LIB_MARKETS, libVisible: P.libVisible, $: (id) => dom[id], bag: { mkt: "txf" }, LIB: { data: null } };
+    vm.createContext(C); vm.runInContext("var libBag = () => bag;\n" + cutFn(src, "libPaintMkt"), C);
+    C.libPaintMkt(); const pre = items.map((b) => b.mv.textContent).join("|");
+    C.LIB.data = { strategies: LIST }; C.libPaintMkt();
+    const cnt = items.map((b) => b.mv.textContent).join("|"), chk = items.map((b) => b.attrs["aria-checked"]).join(), v1 = dom["lib-mkt-v"].textContent;
+    C.bag.mkt = "tw"; C.libPaintMkt();
+    ok("① 市場選單支數:清單沒到全空;全部 8 / 加密 7 / 台指期 0 / 台股 1 / 美股 0(0 也印);選中那項 checked、觸發器寫它的字;bag 是舊值 tw → 回全部", pre === "||||" && cnt === "8|7|0|1|0" && chk === "false,false,true,false,false" && v1 === "L:txf"
+      && C.bag.mkt === "all" && dom["lib-mkt-v"].textContent === "L:all", JSON.stringify({ pre, cnt, chk, v1, after: C.bag.mkt }));
+  }
   ok("① 關卡數值的字:費率 0.0005 → 0.05%、0.001 → 0.10%、0.00125 → 0.125%、壞值 —;p 照範本四位小數、< 0.001 整段換成 p < 0.001、壞值 —;fail 計數", P.libRate(0.0005) === "0.05%" && P.libRate(0.001) === "0.10%" && P.libRate(0.00125) === "0.125%" && P.libRate(0) === "0.00%" && P.libRate(null) === "—" && P.libRate("x") === "—"
     && P.libP("p = {p}", 0.0012) === "p = 0.0012" && P.libP("p = {p}", 0.0004) === "p < 0.001" && P.libP("p = {p}", null) === "—" && P.libGateFails({ mcpt: "fail", robust: "pass", fee: "fail" }) === 2 && P.libGateFails({ mcpt: "na", robust: "pass", fee: "pass" }) === 0 && P.libGateFails(null) === 0);
   ok("① 樣本年數一位小數;沒有區間 → null;上架天數", P.libYears(LIST[0]) === 6.5 && P.libYears(LIST[1]) === 12.4 && P.libYears(LIST[3]) === null && P.libListedDays(LIST[0], Date.parse("2026-09-25T00:00:00Z")) === 107 && P.libListedDays({}, 0) === null);
@@ -139,7 +168,7 @@ if (!process.versions.electron) {
 
   // ── ② 主行程 ──
   const M = {}; vm.createContext(M);
-  vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libNoteLangs") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize")
+  vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "LIB_MARKETS", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libNoteLangs") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize")
   + "\n" + mainSrc.match(/^const LIB_NOTE_HTML_MAX = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + cutFn(mainSrc, "libNoteSanitize"), M);
   ok("② 清單不是陣列 / body 不是物件 → null", M.libSanitize(null) === null && M.libSanitize({}) === null && M.libSanitize({ strategies: "x" }) === null && M.libSanitize([]) === null);
   const good = M.libSanitize({ strategies: LIST });
@@ -154,6 +183,8 @@ if (!process.versions.electron) {
   ok("② 全空的報告(200 + 全 null,S3 暫時讀不到)→ null、不進快取;只有回測期間也算有東西", M.libReportSanitize({}) === null && M.libReportSanitize({ equity: null, equity_from: null, equity_to: null, backtest_start: null, backtest_end: null }) === null
     && M.libReportSanitize({ equity: [1, 0], backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).equity === null && M.libReportSanitize({ backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).backtest_end === "2021-01-01");
   ok("② blave_data:只收 none / required,其餘(缺、布林、大小寫錯)一律 null", M.libSanitize({ strategies: [S({ id: 1, blave_data: "none" }), S({ id: 2, blave_data: "required" }), S({ id: 3 }), S({ id: 4, blave_data: true }), S({ id: 5, blave_data: "None" })] }).map((x) => x.blave_data).join() === "none,required,,,");
+  ok("② market:只收 crypto / txf / twstock / usstock,其餘(缺、舊值 tw、大小寫錯、數字)一律 null;category 照舊收", M.libSanitize({ strategies: ["crypto", "txf", "twstock", "usstock", undefined, "tw", "TXF", 3].map((m, i) => S({ id: i + 1, market: m, category: "TW Stock" })) }).map((x) => x.market + ":" + x.category).join()
+    === "crypto:TW Stock,txf:TW Stock,twstock:TW Stock,usstock:TW Stock,null:TW Stock,null:TW Stock,null:TW Stock,null:TW Stock");
   const bad = M.libSanitize({ strategies: [null, 5, "x", { id: "101", title: "a", price: 0 }, { id: 101, title: "", price: 0 }, { id: 101, title: "a", price: -1 }, { id: 101, title: "a", price: "0" }, { id: 1.5, title: "a", price: 0 }, { id: true, title: "a", price: 0 }, LIST[0]] });
   ok("② 壞的那一筆整筆丟掉(id 不是正整數 / 標題空 / 價格負或不是數字),好的照留", bad.length === 1 && bad[0].id === 101);
   const ctl = M.libSanitize({ strategies: [S({ id: 3, title: "a\u0000b\nc\u007fd", description: "l1\nl2\u0000x", summary: "s\ts", category: 7, created_at: 9, purchase_count: -2, purchased: "yes", is_official: 1, verified: "true", direction: 3, max_exposure: "1",
@@ -366,8 +397,25 @@ if (!process.versions.electron) {
   ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁多一顆 #chat-lib 是籤的第一顆(0.1.17 起起手籤 #chat-eg 退役,籤下面是資料清單 #wl);#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後(中間只許 export.js)、app.js 前",
     html.indexOf('id="lib-nav"') > html.indexOf('id="tr-nav"') && html.indexOf('id="lib-nav"') < html.indexOf("</nav>") && html.indexOf('id="chat-lib"') < html.indexOf('id="wl"') && !html.includes('id="chat-eg"') && html.indexOf('id="chat-lib"') > html.indexOf('class="wc-chips"')
     && html.indexOf('id="lib"') > html.indexOf('id="rp"') && html.indexOf('id="lib"') < html.indexOf('id="main-empty"') && /<link rel="stylesheet" href="library\.css">/.test(html) && /<script src="handoff\.js"><\/script>\s*(?:<script src="export\.js"><\/script>\s*)?<script src="library\.js"><\/script>\s*<script src="app\.js">/.test(html));
-  ok("③ #lib 的骨架:region + aria-labelledby 到 h5、h5 tabindex=-1、分段 group 三顆、返回鈕、#lib-body tabindex=0、#lib-state role=status", /<div class="lib" id="lib" role="region" aria-labelledby="lib-h" hidden>/.test(html) && /<h5 class="main-head-name" id="lib-h" tabindex="-1" data-i18n="lib\.nav">/.test(html)
-    && (html.slice(html.indexOf('id="lib-seg"'), html.indexOf("</div>", html.indexOf('id="lib-seg"'))).match(/data-mkt="(all|crypto|tw)"/g) || []).length === 3 && /<button class="lib-back" id="lib-back" type="button" hidden>/.test(html) && /<div class="lib-body" id="lib-body" tabindex="0">/.test(html) && /<p class="lib-state" id="lib-state" role="status" hidden>/.test(html));
+  { const i = html.indexOf('id="lib-mkt-menu"'), menu = html.slice(html.lastIndexOf("<div", i), html.indexOf("</div>", i)), btns = menu.match(/<button[^>]*>/g) || [];
+    const trig = (html.match(/<button[^>]*id="lib-mkt-trig"[^>]*>/) || [""])[0];
+    ok("③ 市場選單(同網頁 #lib_mkt):依序 all|crypto|txf|twstock|usstock;面板 role=menu、hidden、aria 名 lib.mkt.aria;選項全是 menuitemradio、tabindex=-1、恰一個選中(全部);觸發鈕 aria-haspopup=menu + aria-controls;分段控件 #lib-seg 拿掉",
+      JSON.stringify((menu.match(/data-mkt="(\w+)"/g) || []).map((x) => x.split('"')[1])) === '["all","crypto","txf","twstock","usstock"]' && /class="ct-menu lib-mkt-menu" id="lib-mkt-menu" role="menu" data-i18n-aria="lib\.mkt\.aria" hidden/.test(menu)
+      && btns.length === 5 && btns.every((b) => /class="ct-mi"/.test(b) && /role="menuitemradio"/.test(b) && /tabindex="-1"/.test(b)) && btns.filter((b) => /aria-checked="true"/.test(b)).length === 1 && /aria-checked="true"[^>]*data-mkt="all"/.test(btns[0])
+      && /aria-haspopup="menu" aria-expanded="false" aria-controls="lib-mkt-menu"/.test(trig) && html.indexOf('id="lib-mkt"') > html.indexOf('class="lib-tools"') && !html.includes('id="lib-seg"') && !/lib-seg/.test(src)
+      && ["lib.mkt.all", "lib.mkt.crypto", "lib.mkt.txf", "lib.mkt.tw", "lib.mkt.us"].every((k) => menu.includes('data-i18n="' + k + '"')));
+    ok("③ 市場選單 0 支那項:印「0」、照樣可選(網頁同一套)——項目不帶 disabled / aria-disabled,支數只在清單還沒到時留空、libMktPick 不看支數",
+      btns.every((b) => !/disabled/.test(b)) && /textContent = list \? String\(n\) : "";/.test(cutFn(src, "libPaintMkt")) && !/disabled|libVisible/.test(cutFn(src, "libMktPick")) && !/n \? String\(n\)/.test(src));
+    ok("③ 市場字串逐字:全部 / 加密 / 台指期 / 台股 / 美股;All / Crypto / TAIEX Futures / TW Stocks / US Stocks;標籤 市場 / Market",
+      ["lib.mkt.all", "lib.mkt.crypto", "lib.mkt.txf", "lib.mkt.tw", "lib.mkt.us", "lib.mkt.aria"].map((k) => STR.zh[k] + "/" + STR.en[k]).join("|") === "全部/All|加密/Crypto|台指期/TAIEX Futures|台股/TW Stocks|美股/US Stocks|市場/Market");
+    ok("③ 市場選單的接線:鍵盤同換合約選單(↑↓ 繞回、Home / End、Esc 擋 stopPropagation 並還焦點、Tab 關);點外面(capture)關;選完焦點回觸發鈕、選了不同市場才送 lib_mkt_pick(重選同一項不送、不重畫);開詳情 / 離開策略庫都收起來,清單重畫時焦點在面板裡就還給觸發鈕;清單重畫就重算支數",
+      ["ArrowDown", "ArrowUp", "Home", "End", "Tab"].every((k) => src.includes('e.key === "' + k + '"')) && /if \(e\.key === "Escape"\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); libMktClose\(true\); \}/.test(src)
+      && /document\.addEventListener\("pointerdown", \(e\) => \{ if \(!g\("lib-mkt-menu"\)\.hidden && !g\("lib-mkt"\)\.contains\(e\.target\)\) libMktClose\(false\); \}, true\);/.test(src)
+      && /function libMktPick\(mkt\) \{\s*libMktClose\(true\);\s*if \(mkt === libBag\(\)\.mkt\) return;\s*libBag\(\)\.mkt = mkt; libTrack\("lib_mkt_pick"\); libPaint\(\);\s*\}/.test(src) && (src.match(/libTrack\("lib_mkt_pick"\)/g) || []).length === 1
+      && /libMktClose\(!det && \$\("lib-mkt-menu"\)\.contains\(document\.activeElement\)\);[^\n]*\n  if \(det\)/.test(cutFn(src, "libPaint")) && /libMktClose\(false\); \$\("lib"\)\.hidden = true;/.test(cutFn(src, "libLeave"))
+      && /^function libPaintList\(\) \{\n[^\n]*\n  libPaintMkt\(\);/.test(cutFn(src, "libPaintList")) && /ideaOpen\(b, from, libIdeaMkt\(libBag\(\)\.mkt\)\)/.test(src)); }
+  ok("③ #lib 的骨架:region + aria-labelledby 到 h5、h5 tabindex=-1、返回鈕、#lib-body tabindex=0、#lib-state role=status", /<div class="lib" id="lib" role="region" aria-labelledby="lib-h" hidden>/.test(html) && /<h5 class="main-head-name" id="lib-h" tabindex="-1" data-i18n="lib\.nav">/.test(html)
+    && /<button class="lib-back" id="lib-back" type="button" hidden>/.test(html) && /<div class="lib-body" id="lib-body" tabindex="0">/.test(html) && /<p class="lib-state" id="lib-state" role="status" hidden>/.test(html));
   ok("③ 社群段拆了(0.1.6 §2):index.html / library.js / library.css 沒有 lib-comm、字串表沒有 lib.comm.*;清單頂端的 #lib-gate 拿掉(spec-0.1.13 §2.2:閘門卡搬進第二組),兩組的殼 #lib-grps 在 #lib-rows 之前;退役的 lib.gate.noCard / noBalance / unknown 兩語都刪了", !/lib-comm/.test(html) && !/lib-comm|\.comm\b|library_comm/.test(src) && !/lib-comm/.test(read(path.join(R, "library.css")))
     && ["lib.comm.title", "lib.comm.sub", "lib.gate.noData", "lib.gate.noCard", "lib.gate.noBalance", "lib.gate.unknown"].every((k) => !(k in STR.zh) && !(k in STR.en)) && !/lib\.gate\.(noCard|noBalance|unknown)"/.test(src)
     && !/id="lib-gate"/.test(html) && !/\$\("lib-gate"\)/.test(src) && html.indexOf('id="lib-grps"') > html.indexOf('id="lib-body"') && html.indexOf('id="lib-grps"') < html.indexOf('id="lib-rows"'));
@@ -571,7 +619,7 @@ app.whenReady().then(async () => {
   let r = await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 80)); const q = (x) => [...document.querySelectorAll(x)];
     return { on: !document.getElementById("lib").hidden, cur: document.getElementById("lib-nav").getAttribute("aria-current"), empty: document.getElementById("main-empty").hidden, tr: document.getElementById("tr").hidden,
       ids: q("#lib-rows .lib-row").map((b) => b.dataset.id).join(), foot: document.getElementById("lib-foot"), web: document.getElementById("lib-web"),
-      gate: q("#lib-grps > *").length === 0 && q("#lib .lib-grp, #lib .lib-gate").length === 0, comm: document.getElementById("lib-comm"), chev: q("#lib [aria-expanded]").length,
+      gate: q("#lib-grps > *").length === 0 && q("#lib .lib-grp, #lib .lib-gate").length === 0, comm: document.getElementById("lib-comm"), chev: q("#lib [aria-expanded]:not(#lib-mkt-trig)").length,
       tags12: q('#lib-rows .lib-row[data-id="12"] .tag').map((x) => x.textContent).join("|"), tags8: q('#lib-rows .lib-row[data-id="8"] .tag').map((x) => x.textContent + ":" + x.className).join("|"), l2_12: q('#lib-rows .lib-row[data-id="12"] .l2')[0].textContent,
       tags101: q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), tags5: q('#lib-rows .lib-row[data-id="5"] .tag').map((x) => x.textContent).join("|"), tags9: q('#lib-rows .lib-row[data-id="9"] .tag').map((x) => x.textContent).join("|"), tag5gap: (() => { const p = q('#lib-rows .lib-row[data-id="5"] .tag.is-price')[0]; const a = p.children[0].getBoundingClientRect(), b = p.children[1].getBoundingClientRect(); return p.children.length === 2 && p.children[1].textContent === "TWD" && b.left - a.right >= 3; })(),
       l2: q('#lib-rows .lib-row[data-id="101"] .l2')[0].textContent, ann: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].textContent, annCls: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].className, annColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .num .v')[0]).color, inkColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .t')[0]).color, greenText: getComputedStyle(document.documentElement).getPropertyValue("--color-greenText").trim(),
@@ -583,15 +631,26 @@ app.whenReady().then(async () => {
     r.tags101 === (await T("lib.verified")) + "|" + (await T("lib.free")) && r.tags5 === (await T("lib.verified")) + "|1,500TWD" && r.tag5gap && r.tags9 === (await T("lib.verified")) + "|" + (await T("lib.owned"))
     && r.l2 === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 樣本 6.5 年" && r.ann === "+24.61%" && /\bup\b/.test(r.annCls) && r.annColor !== r.inkColor && r.imgs === 0 && r.title5 === "Cash-and-Carry <img onerror=x> Arbitrage"
     && r.tags86 === (await T("lib.free")), JSON.stringify(r));   // 官方但未驗證(#86):既無「已驗證」也無「未驗證」
-  r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; q('#lib-seg button[data-mkt="tw"]')[0].click(); const tw = q("#lib-rows .lib-row").map((b) => b.dataset.id).join(), twState = document.getElementById("lib-state").hidden;
-    q('#lib-seg button[data-mkt="crypto"]')[0].click(); const cr = q("#lib-rows .lib-row").map((b) => b.dataset.id).join(); const pressed = q("#lib-seg button").map((b) => b.getAttribute("aria-pressed")).join();
-    q('#lib-seg button[data-mkt="all"]')[0].click(); return { tw, twState, cr, pressed, all: q("#lib-rows .lib-row").length }; })()`);
-  ok("④ 分段:台股 1 支;加密 7 支(未驗證的兩支在尾);按下的那格 aria-pressed;回全部 8", r.tw === "74" && r.twState && r.cr === "101,72,5,9,86,12,8" && r.pressed === "false,true,false" && r.all === 8, JSON.stringify(r));
+  // 市場選單:點觸發器開、點項目選(真的 click,走接線那條);每一項的支數、0 也印;選完焦點回觸發鈕;Esc 收起並還焦點
+  const PICK = `const pick = (m) => { document.getElementById("lib-mkt-trig").click(); document.querySelector('#lib-mkt-menu .ct-mi[data-mkt="' + m + '"]').click(); };`;
+  r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; ${PICK} const trig = document.getElementById("lib-mkt-trig"), menu = document.getElementById("lib-mkt-menu");
+    trig.click(); const open = { hidden: menu.hidden, exp: trig.getAttribute("aria-expanded"), focus: document.activeElement && document.activeElement.dataset.mkt, counts: q("#lib-mkt-menu .ct-mv").map((x) => x.textContent).join("|"),
+      inLib: menu.getBoundingClientRect().right <= document.getElementById("lib").getBoundingClientRect().right, z: getComputedStyle(menu).position };
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })); const up = document.activeElement.dataset.mkt;
+    document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); const esc = { hidden: menu.hidden, exp: trig.getAttribute("aria-expanded"), focus: document.activeElement === trig };
+    pick("twstock"); const tw = q("#lib-rows .lib-row").map((b) => b.dataset.id).join(), twState = document.getElementById("lib-state").hidden, twFocus = document.activeElement === trig, twV = document.getElementById("lib-mkt-v").textContent;
+    pick("txf"); const txf = { n: q("#lib-rows .lib-row").length, empty: !document.getElementById("lib-state").hidden, checked: document.querySelector('#lib-mkt-menu .ct-mi[data-mkt="txf"]').getAttribute("aria-checked"), dis: document.querySelector('#lib-mkt-menu .ct-mi[data-mkt="txf"]').disabled, v: document.getElementById("lib-mkt-v").textContent };
+    pick("crypto"); const cr = q("#lib-rows .lib-row").map((b) => b.dataset.id).join(); const checked = q("#lib-mkt-menu .ct-mi").map((b) => b.getAttribute("aria-checked")).join();
+    pick("all"); return { open, up, esc, tw, twState, twFocus, twV, txf, cr, checked, closed: menu.hidden, all: q("#lib-rows .lib-row").length, v: document.getElementById("lib-mkt-v").textContent }; })()`);
+  ok("④ 市場選單:開了焦點在選中那項(全部)、aria-expanded、面板在 #lib 內不超出右緣;支數 全部 8 / 加密 7 / 台指期・美股 0(0 也印) / 台股 1;↑ 從第一項繞到美股;Esc 收起、焦點回觸發鈕",
+    !r.open.hidden && r.open.exp === "true" && r.open.focus === "all" && r.open.counts === "8|7|0|1|0" && r.open.inLib && r.open.z === "absolute" && r.up === "usstock" && r.esc.hidden && r.esc.exp === "false" && r.esc.focus, JSON.stringify(r));
+  ok("④ 市場選單:台股 1 支(#74,舊 api 沒有 market 退回 category)、觸發器寫「台股」、選完焦點回觸發鈕;台指期 0 支照樣能選(選中、觸發器寫「台指期」)、0 列 → 空狀態;加密 7 支;選中那項 aria-checked;回全部 8 支、收起", r.tw === "74" && r.twState && r.twFocus && r.twV === (await T("lib.mkt.tw"))
+    && r.txf.n === 0 && r.txf.empty && r.txf.checked === "true" && r.txf.dis === false && r.txf.v === (await T("lib.mkt.txf")) && r.cr === "101,72,5,9,86,12,8" && r.checked === "false,true,false,false,false" && r.closed && r.all === 8 && r.v === (await T("lib.mkt.all")), JSON.stringify(r));
   // 只有未驗證的社群策略:照列(不再有「主段空」這回事);切到台股 0 列 → lib.emptyMkt
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; const keep = window.__lib.list; window.__lib.list = { strategies: ${JSON.stringify([LIST[4], LIST[5]])}, signedIn: true, dataAccess: "included" }; await libLoad(true);
     const a = { state: document.getElementById("lib-state").hidden, ids: q("#lib-rows .lib-row").map((b) => b.dataset.id).join() };
-    q('#lib-seg button[data-mkt="tw"]')[0].click(); const st = document.getElementById("lib-state"), b = { state: st.hidden, text: st.firstChild && st.firstChild.textContent, btn: q("#lib-state button").map((x) => x.textContent + ":" + x.className).join(), n: q("#lib-rows .lib-row").length };
-    q('#lib-seg button[data-mkt="all"]')[0].click(); window.__lib.list = keep; await libLoad(true); return { a, b, back: q("#lib-rows .lib-row").length }; })()`);
+    ${PICK} pick("twstock"); const st = document.getElementById("lib-state"), b = { state: st.hidden, text: st.firstChild && st.firstChild.textContent, btn: q("#lib-state button").map((x) => x.textContent + ":" + x.className).join(), n: q("#lib-rows .lib-row").length };
+    pick("all"); window.__lib.list = keep; await libLoad(true); return { a, b, back: q("#lib-rows .lib-row").length }; })()`);
   ok("④ 只有未驗證的社群策略時:兩支照列(新的先)、不出空狀態;切到台股 0 列 → lib.emptyMkt + 一顆描邊「新增策略」(內建瀏覽器關著,找點子不出;spec-0.1.13 §2.5)", r.a.state && r.a.ids === "12,8" && !r.b.state && r.b.text === (await T("lib.emptyMkt")) && r.b.btn === (await T("ns.chip")) + ":btn-out" && r.b.n === 0 && r.back === 8, JSON.stringify(r));
   // 詳情
   const gatesOf = `q("#lib-det .gates li").map((li) => li.querySelector(".gn").textContent + "=" + li.querySelector(".gr > .gv").textContent + "[" + [...li.querySelectorAll(".gr > .gx")].map((x) => x.textContent).join(";") + "]").join("|")`;
@@ -855,7 +914,7 @@ app.whenReady().then(async () => {
   ok("④ 互斥:開自動下單 → 策略庫收(入口 aria-current 拿掉);再開策略庫 → 自動下單收", r.a.lib && !r.a.tr && r.a.cur === null && r.a.open === false && !r.b.lib && r.b.tr && r.b.trOpen === false, JSON.stringify(r));
   r = await js(`(() => { document.getElementById("chat-lib").click(); return { sent: window.__lib.sent.length, opened: window.__lib.opened, tools: [...document.querySelectorAll("#lib-head-list .lib-tools > *")].map((x) => x.id || x.className).join() }; })()`);
   await wait(30);
-  ok("④ 歡迎頁 chip 只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場分段", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-seg", JSON.stringify(r));
+  ok("④ 歡迎頁 chip 只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場選單", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-mkt", JSON.stringify(r));
 
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
   app.exit(red ? 1 : 0);

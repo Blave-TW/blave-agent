@@ -19,11 +19,17 @@
 /* ── 純邏輯(tests/check_shell_library.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
 const LIB_DAY = 86400000;
 const LIB_PAIR_RE = /^([A-Z0-9]{1,10})USDT$/;
-// 清單只有公開策略,api 在 approve / 官方上架時把 category 收斂成固定幾個值;Crypto / TW Stock 以外(US Stock、Forex、Other)沒有分頁,只在「全部」
+/* 市場選單(同網頁 library_rules.market / MARKETS):api 的 market 優先;舊 api 沒有它時退回 category,而 category 分不出台指期
+   (台期所上架的歸在 TW Stock),所以退回時不會有 txf。null = 只在「全部」 */
+const LIB_MARKETS = ["crypto", "txf", "twstock", "usstock"];
+const LIB_CATEGORY_MARKET = { Crypto: "crypto", "TW Stock": "twstock", "US Stock": "usstock" };
 function libMarket(s) {
-  const cat = s && s.category;
-  return cat === "Crypto" ? "crypto" : cat === "TW Stock" ? "tw" : "other";
+  if (!s) return null;
+  if (LIB_MARKETS.includes(s.market)) return s.market;
+  return Object.prototype.hasOwnProperty.call(LIB_CATEGORY_MARKET, s.category) ? LIB_CATEGORY_MARKET[s.category] : null;
 }
+// 找點子框只認 crypto / tw / any:台指期、美股沒有對應的那句話,交給「不限」
+function libIdeaMkt(mkt) { return mkt === "crypto" ? "crypto" : mkt === "twstock" ? "tw" : "any"; }
 function libDays(from, to) {
   const t0 = Date.parse(typeof from === "string" ? from : ""), t1 = Date.parse(typeof to === "string" ? to : "");
   return isFinite(t0) && isFinite(t1) && t1 >= t0 ? Math.round((t1 - t0) / LIB_DAY) : null;
@@ -348,7 +354,7 @@ function libLeave(env) {
   const B = libBag(env);
   if (!B.open) return;
   B.open = false; LIB.noNew = null; LIB.dlFail = null;
-  if (B === libBag()) { $("lib").hidden = true; $("lib-nav").removeAttribute("aria-current"); libChartDrop(); }
+  if (B === libBag()) { libMktClose(false); $("lib").hidden = true; $("lib-nav").removeAttribute("aria-current"); libChartDrop(); }
 }
 /* envShowMain(trade.js)的最後一步:策略庫開著就蓋掉其餘視圖。gate = 雲端沒主機可看(開通頁),那時側欄入口也藏著 */
 function libShowMain(gate) {
@@ -429,9 +435,41 @@ function libPaint() {
   // 筆記層的返回鈕寫策略名(一眼知道回到哪);全文放 title(單行截斷)
   $("lib-back-l").hidden = reading; $("lib-back-s").hidden = !reading; $("lib-back-s").textContent = reading ? det.title : "";
   if (reading) $("lib-back").title = det.title; else $("lib-back").removeAttribute("title");
-  $("lib-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mkt === B.mkt ? "true" : "false"));
+  libMktClose(!det && $("lib-mkt-menu").contains(document.activeElement));   // 選單開著時清單重畫(清單到了、換語言):焦點在面板裡就還給觸發鈕,不掉到 body
   if (det) { $("lib-rows").textContent = ""; $("lib-grps").textContent = ""; $("lib-state").hidden = true; if (reading) libPaintNote(det); else libPaintDetail(det); }
   else { libChartDrop(); $("lib-det").hidden = true; $("lib-det").textContent = ""; libPaintDesc(); libPaintList(); $("lib-body").scrollTop = B.scroll || 0; }
+}
+// 市場選單:選中的那項、觸發器上的值、每一項的支數(0 也印、照樣可選;網頁同一套)。清單還沒到就都不印;清單每重畫一次就跟著重算
+function libPaintMkt() {
+  const B = libBag(), list = LIB.data ? LIB.data.strategies : null;
+  if (B.mkt !== "all" && !LIB_MARKETS.includes(B.mkt)) B.mkt = "all";
+  $("lib-mkt-menu").querySelectorAll(".ct-mi").forEach((b) => {
+    const on = b.dataset.mkt === B.mkt, n = list ? libVisible(list, b.dataset.mkt).length : 0;
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    if (on) $("lib-mkt-v").textContent = b.querySelector(".l").textContent;
+    b.querySelector(".ct-mv").textContent = list ? String(n) : "";
+  });
+}
+function libMktClose(focus) {
+  const m = $("lib-mkt-menu");
+  if (m.hidden) return;
+  m.hidden = true; m.style.left = "";
+  $("lib-mkt-trig").setAttribute("aria-expanded", "false");
+  if (focus) $("lib-mkt-trig").focus();
+}
+function libMktOpen() {
+  const m = $("lib-mkt-menu"), trig = $("lib-mkt-trig");
+  m.hidden = false; m.style.left = "";
+  // 中欄窄、觸發器被擠到列尾時:面板往左挪,不超出中欄右緣
+  const gap = 8, over = m.getBoundingClientRect().right - ($("lib").getBoundingClientRect().right - gap);
+  if (over > 0) m.style.left = -Math.round(over) + "px";
+  trig.setAttribute("aria-expanded", "true");
+  (m.querySelector('[aria-checked="true"]') || m.querySelector(".ct-mi")).focus();
+}
+function libMktPick(mkt) {
+  libMktClose(true);
+  if (mkt === libBag().mkt) return;
+  libBag().mkt = mkt; libTrack("lib_mkt_pick"); libPaint();
 }
 /* 頁首說明句(§2.7):排序那句;找點子開著時後面接「沒有合適的,〔請 agent 上網找點子〕。」——文字鈕和句號包在同一個 nowrap 裡,句號不單獨掉行 */
 function libPaintDesc() {
@@ -444,10 +482,10 @@ function libPaintDesc() {
   nw.append(libIdeaBtn("btn-quiet", "idea.link", "lib_head"), LANG === "zh" ? "\u3002" : ".");
   d.appendChild(nw);
 }
-// 找點子的入口鈕(頁首 / 第一組空 / 市場空):市場預設照清單分段
+// 找點子的入口鈕(頁首 / 第一組空 / 市場空):市場預設照清單選的市場
 function libIdeaBtn(cls, key, from) {
   const b = libEl("button", cls, t(key)); b.type = "button";
-  b.addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(b, from, libBag().mkt === "all" ? "any" : libBag().mkt); });
+  b.addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(b, from, libIdeaMkt(libBag().mkt)); });
   return b;
 }
 // 重畫清單但焦點留在原本那一列(找點子開關切換時;libBack 同一套 data-id 找法);焦點原本在被拿掉的文字鈕上就交給頁首標題,不掉到 body
@@ -504,6 +542,7 @@ function libRow(s) {
 }
 function libPaintList() {
   const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), grps = $("lib-grps");
+  libPaintMkt();
   rows.textContent = ""; state.hidden = true; state.textContent = ""; grps.textContent = "";
   if (!LIB.data) {
     if (LIB.skel) {
@@ -947,7 +986,16 @@ function libChartDraw(host, r) {
   g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); else sideReclick(() => libLeave()); });   // 再點一次 = 回 welcome(trade.js sideReclick)
   g("chat-lib").addEventListener("click", () => libOpen());
   g("lib-back").addEventListener("click", libBack);
-  g("lib-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mkt]"); if (!b) return; libBag().mkt = b.dataset.mkt; libPaint(); });
+  g("lib-mkt-trig").addEventListener("click", () => { if (g("lib-mkt-menu").hidden) libMktOpen(); else libMktClose(false); });
+  g("lib-mkt-menu").addEventListener("click", (e) => { const b = e.target.closest(".ct-mi[data-mkt]"); if (b) libMktPick(b.dataset.mkt); });
+  g("lib-mkt-menu").addEventListener("keydown", (e) => {   // 鍵盤同換合約選單(portfolio.js ctMenuBuild);Esc 擋在這裡,不讓 app.js escTop 再收一次
+    const items = [...g("lib-mkt-menu").querySelectorAll(".ct-mi")], i = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); libMktClose(true); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+    else if (e.key === "Home" || e.key === "End") { e.preventDefault(); items[e.key === "Home" ? 0 : items.length - 1].focus(); }
+    else if (e.key === "Tab") libMktClose(false);
+  });
+  document.addEventListener("pointerdown", (e) => { if (!g("lib-mkt-menu").hidden && !g("lib-mkt").contains(e.target)) libMktClose(false); }, true);
   g("lib-body").addEventListener("scroll", () => { const B = libBag(); if (!B.detail) B.scroll = g("lib-body").scrollTop; });
   window.addEventListener("focus", () => { libRefresh(); libIdeaSync(); });   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
   g("chat-idea").addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(g("chat-idea"), "welcome", "any"); });   // 歡迎頁籤:開找點子框,市場不限

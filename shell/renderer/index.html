@@ -235,10 +235,18 @@
             <!-- 說明句由 library.js libPaintDesc 畫(找點子開著時句尾接文字鈕;不用 data-i18n,換語言時 applyStatic 才不會把鈕洗掉) -->
             <p class="lib-desc" id="lib-desc"></p>
             <div class="lib-tools">
-              <div class="lib-seg" id="lib-seg" role="group" data-i18n-aria="lib.mkt.aria">
-                <button type="button" data-mkt="all" aria-pressed="true" data-i18n="lib.mkt.all"></button>
-                <button type="button" data-mkt="crypto" aria-pressed="false" data-i18n="lib.mkt.crypto"></button>
-                <button type="button" data-mkt="tw" aria-pressed="false" data-i18n="lib.mkt.tw"></button>
+              <!-- 市場選單(同網頁 #lib_mkt):觸發器 Outlined control、面板借 .ct-menu / .ct-mi＋列尾計數(library.js libPaintMkt) -->
+              <div class="lib-mkt" id="lib-mkt">
+                <button type="button" class="lib-mkt-trig" id="lib-mkt-trig" aria-haspopup="menu" aria-expanded="false" aria-controls="lib-mkt-menu">
+                  <span class="k" data-i18n="lib.mkt.aria"></span><span class="v" id="lib-mkt-v"></span><span class="ct-cv" aria-hidden="true"></span>
+                </button>
+                <div class="ct-menu lib-mkt-menu" id="lib-mkt-menu" role="menu" data-i18n-aria="lib.mkt.aria" hidden>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="true" tabindex="-1" data-mkt="all"><span class="l" data-i18n="lib.mkt.all"></span><span class="ct-mv"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-mkt="crypto"><span class="l" data-i18n="lib.mkt.crypto"></span><span class="ct-mv"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-mkt="txf"><span class="l" data-i18n="lib.mkt.txf"></span><span class="ct-mv"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-mkt="twstock"><span class="l" data-i18n="lib.mkt.tw"></span><span class="ct-mv"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-mkt="usstock"><span class="l" data-i18n="lib.mkt.us"></span><span class="ct-mv"></span></button>
+                </div>
               </div>
             </div>
           </div>

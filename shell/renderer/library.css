@@ -8,7 +8,7 @@
 .lib-head-list[hidden] { display: none; }
 .lib-desc { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); min-height: 18px; }
 .lib-tools { display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; margin-top: var(--space-12); }
-/* 市場分段 = .cn-lang 同配方(Outlined control segment) */
+/* Outlined control segment(.cn-lang 同配方;匯出檔案切換、歡迎頁資料清單、找點子框共用) */
 .lib-seg { display: inline-flex; border: 1px solid var(--border-frame); border-radius: var(--radius-xs); }
 .lib-seg button { position: relative; height: 30px; padding: 0 var(--space-12); font-size: 12px; color: var(--ink-3); white-space: nowrap; transition: color var(--motion-fast) var(--ease-standard); }
 .lib-seg button::before { content: ""; position: absolute; inset: -7px 0; }
@@ -18,6 +18,16 @@
 .lib-seg button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
 .lib-seg button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .lib-seg button:focus-visible { outline-offset: -2px; }
+/* 市場選單(同網頁 .lib-mkt-*):觸發器 = Outlined control(框與高同 .lib-seg)＋箭頭 .ct-cv;面板借換合約選單的 .ct-menu / .ct-mi,改掛觸發器下 */
+.lib-mkt { position: relative; }
+.lib-mkt-trig { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 30px; padding: 0 var(--space-12); border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
+  font-size: 12px; white-space: nowrap; transition: background var(--motion-fast) var(--ease-standard); }
+.lib-mkt-trig::before { content: ""; position: absolute; inset: -7px 0; }
+.lib-mkt-trig:hover, .lib-mkt-trig[aria-expanded="true"] { background: var(--color-darkBorder); }
+.lib-mkt-trig .k { color: var(--ink-3); }
+.lib-mkt-trig .v { color: var(--ink); font-weight: 600; }
+.lib-mkt-trig[aria-expanded="true"] .ct-cv { transform: translateY(2.5px) rotate(-135deg); }
+.ct-menu.lib-mkt-menu { position: absolute; top: calc(100% + var(--space-8)); left: 0; }
 .lib-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-24) var(--space-24); }
 .lib-body > * { max-width: 760px; }
 .lib-body:focus-visible { outline-offset: -2px; }
@@ -169,4 +179,4 @@
 .nt-sk-gap { height: var(--space-24); }
 /* 購買框裡的購買中那一行(spin16 來自 trade.css) */
 .cf-busy { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-8) 0 0; font-size: 12px; color: var(--ink-2); }
-@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back, .lib-noteln { transition: none; } .sk { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-mkt-trig, .lib-mkt-trig .ct-cv, .lib-back, .lib-noteln { transition: none; } .sk { animation: none; } }

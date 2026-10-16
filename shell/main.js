@@ -2242,6 +2242,7 @@ function dataAccessWhy(signedIn) {
    壞的那一筆整筆丟掉、清單不是陣列 → null(畫面畫「讀不到」)。快取 5 分鐘(同 ACCT_FRESH_MS);身分或語言換了就重打。 */
 const LIB_TITLE_MAX = 200, LIB_TEXT_MAX = 5000, LIB_STR_MAX = 60, LIB_SPARK_MAX = 512, LIB_EQUITY_MAX = 400;
 const LIB_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const LIB_MARKETS = ["crypto", "txf", "twstock", "usstock"];
 const libFin = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 const libDay = (v) => (typeof v === "string" && LIB_DAY_RE.test(v) ? v : null);
 // 權益曲線:2 點起、上限給定、全部有限正數(累積報酬倍數)
@@ -2271,6 +2272,7 @@ function libSanitize(body) {
         spark: libCurveOk(r.spark, LIB_SPARK_MAX), equity_from: day(r.equity_from), equity_to: day(r.equity_to) };
     }
     out.push({ id, title, summary: str(s.summary, LIB_TEXT_MAX, true), description: str(s.description, LIB_TEXT_MAX, true), price, category: str(s.category, LIB_STR_MAX),
+      market: LIB_MARKETS.includes(s.market) ? s.market : null,   // 策略庫市場選單;舊 api 沒有 → null,renderer 退回 category
       created_at: str(s.created_at, LIB_STR_MAX), purchase_count: Number.isInteger(s.purchase_count) && s.purchase_count >= 0 ? s.purchase_count : 0,
       purchased: s.purchased === true, is_owner: s.is_owner === true, is_official: s.is_official === true, verified: s.verified === true,
       direction: str(s.direction, LIB_STR_MAX), max_exposure: fin(s.max_exposure), report,

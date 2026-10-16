@@ -4206,8 +4206,14 @@ msgstr "全部"
 msgid "lib.mkt.crypto"
 msgstr "加密"
 
+msgid "lib.mkt.txf"
+msgstr "台指期"
+
 msgid "lib.mkt.tw"
 msgstr "台股"
+
+msgid "lib.mkt.us"
+msgstr "美股"
 
 msgid "lib.free"
 msgstr "免費"
