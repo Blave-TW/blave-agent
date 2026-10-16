@@ -5058,9 +5058,6 @@ msgstr "Nothing fits?"
 msgid "idea.link"
 msgstr "Have the agent search the web for ideas"
 
-msgid "idea.btn"
-msgstr "Have the Agent Search for Ideas"
-
 msgid "idea.title"
 msgstr "Search the Web for Strategy Ideas"
 

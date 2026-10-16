@@ -10,7 +10,7 @@
      總報酬、關卡數值、回測期間;沒有任何開網頁的入口。
    - 付不出資料費(spec-desktop-0.1.6 §3)、沒登入(spec-0.1.13 §2):why 只有一個來源(主行程 libraryList 回的 why);清單分「現在就能用」與第二組,
      閘門卡掛在第二組頭上,詳情主鈕照這支要不要 Blave 資料分流(libGrouping / libCta)。本機「用這支」由主行程代下載。
-   - 上網找點子(spec-0.1.13 §5):四個入口都問 libIdeaOn,框本身在 newstrategy.js(ideaOpen)。
+   - 上網找點子(spec-0.1.13 §5):三個入口都問 libIdeaOn,框本身在 newstrategy.js(ideaOpen)。
    - 付費策略在 app 內買(§4.4):購買框兩段對齊網頁 libBuy / libPurchase;憑證只在主行程(帳號 token + app 專用密鑰)。
    用到 app.js 的 $ / t / LANG / hasToken / running / RP / RPC / csTitle / csStartNew / submitMessage / confirmBox / delClose / setOpen / setCat /
    planOpen / stratSelect / rpCloudSelect / paneSt / paneToggle、trade.js 的 ENV / TR_BAGS / trLeave / envShowMain / envCanSwitch / envCloudKind /
@@ -311,7 +311,7 @@ function libCtaOf(s) {
     installedName: libInstalledOf(s, c.env),
   }));
 }
-/* 找點子入口(§1.4):四個入口都問這一支;LIB.brOn 是內建瀏覽器開關的快取(libIdeaSync 更新) */
+/* 找點子入口(§1.4):三個入口都問這一支;LIB.brOn 是內建瀏覽器開關的快取(libIdeaSync 更新) */
 function libIdeaNow() {
   const a = typeof acct !== "undefined" ? acct : null;
   return libIdeaOn({ env: libEnv(), browserOn: LIB.brOn === true, engine: typeof cur !== "undefined" ? cur : null,
@@ -482,7 +482,7 @@ function libPaintDesc() {
   nw.append(libIdeaBtn("btn-quiet", "idea.link", "lib_head"), LANG === "zh" ? "\u3002" : ".");
   d.appendChild(nw);
 }
-// 找點子的入口鈕(頁首 / 第一組空 / 市場空):市場預設照清單選的市場
+// 找點子的入口鈕(頁首 / 第一組空):市場預設照清單選的市場
 function libIdeaBtn(cls, key, from) {
   const b = libEl("button", cls, t(key)); b.type = "button";
   b.addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(b, from, libIdeaMkt(libBag().mkt)); });
@@ -559,10 +559,10 @@ function libPaintList() {
     return;
   }
   const v = libVisible(LIB.data.strategies, B.mkt);
-  if (!v.length) {   // 市場分段整個空(§2.5):一行字 + 一個填充動作——找點子開著就請 agent 上網找,否則新增策略
-    state.hidden = false; state.append(t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"), document.createElement("br"));
-    if (libIdeaNow()) state.appendChild(libIdeaBtn("btn-out", "idea.btn", "lib_empty"));
-    else { const b = libEl("button", "btn-out", t("ns.chip")); b.type = "button"; b.addEventListener("click", () => { if (typeof nsOpen === "function") nsOpen(b); }); state.appendChild(b); }
+  // 市場分段整個空(§2.5):一行字;找點子開著時頁首說明句已有那個連結,這裡不再給一次(稽核 W4),關著才接〔新增策略〕
+  if (!v.length) {
+    state.hidden = false; state.append(t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"));
+    if (!libIdeaNow()) { const b = libEl("button", "btn-out", t("ns.chip")); b.type = "button"; b.addEventListener("click", () => { if (typeof nsOpen === "function") nsOpen(b); }); state.append(document.createElement("br"), b); }
     return;
   }
   // 沒權限時分兩組(§2.2 / §2.3):閘門卡掛在它管的第二組頭上;第二組空就平鋪(這個分段全部能直接用)
