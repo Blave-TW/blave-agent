@@ -32,9 +32,9 @@ function world(init) {
 
   // ── 連接:查過才存 ──
   { const w = world({ http: perm({ enableWithdrawals: true }) }); const r = await w.link.connect(K, S);
-    t("提領權限開著 → WITHDRAW_ENABLED,不存(Wei 2026-09-25 拍板):沒交給 daemon、沒寫 state", r.ok === false && r.code === "WITHDRAW_ENABLED" && w.sent.length === 0 && w.saved === null); }
+    t("提領權限開著照樣存(Wei 2026-10-15):一整對交給 daemon、state 記下好的結果", r.ok === true && r.code === "OK" && w.sent.length === 1 && w.saved && w.saved.prev.ok === true); }
   for (const [name, http, code] of [["交易權限沒開", perm({ enableSpotAndMarginTrading: false, enableFutures: false, ipRestrict: false }), "TRADING_DISABLED"],
-    ["提領開著且交易沒開", perm({ enableWithdrawals: true, enableSpotAndMarginTrading: false, enableFutures: false }), "WITHDRAW_ENABLED"],
+    ["提領開著且交易沒開", perm({ enableWithdrawals: true, enableSpotAndMarginTrading: false, enableFutures: false }), "TRADING_DISABLED"],
     ["-2015", { status: 401, body: { code: -2015 } }, "IP_OR_KEY"], ["-1022", { status: 400, body: { code: -1022 } }, "BAD_SECRET"], ["-1021", { status: 400, body: { code: -1021 } }, "CLOCK"],
     ["200 但看不懂", { status: 200, body: {} }, "UNKNOWN"], ["連不上", "throw", "NETWORK"]]) {
     const w = world({ http }); const r = await w.link.connect(K, S);
@@ -73,7 +73,7 @@ function world(init) {
     w.http = perm(); await w.link.recheck();
     t("用戶修好了(白名單改成新 IP)→ verdict 清掉、基準 IP 換成新的", w.link.state().verdict === null && w.saved.ipThen === "198.51.100.9");
     w.http = perm({ enableWithdrawals: true }); await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
-    t("重查時提領開著 → 無 verdict、無通知、畫面狀態照舊是好的(只在連接當下擋;Wei:已綁的不管)", w.notes.length === 1 && w.link.state().verdict === null && w.link.state().last.ok === true && w.saved.verdict === null && w.saved.prev.ok === true); }
+    t("重查時提領開著 → 無 verdict、無通知、畫面狀態照舊是好的(提領不檢查)", w.notes.length === 1 && w.link.state().verdict === null && w.link.state().last.ok === true && w.saved.verdict === null && w.saved.prev.ok === true); }
   { const w = world(); await w.link.connect(K, S); w.http = perm({ enableSpotAndMarginTrading: false, enableFutures: false });
     await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
     t("交易權限沒了 → TRADING_LOST(P2)", w.notes.length === 1 && w.notes[0].reason === "TRADING_LOST" && w.notes[0].level === "P2");

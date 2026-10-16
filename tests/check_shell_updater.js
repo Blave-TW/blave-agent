@@ -111,7 +111,7 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   t("tmLabels 預設物件就有回合中結束那兩句(畫面還沒交字前按結束也不會是空的)", (() => { const i = mainSrc.indexOf("let tmLabels = {"), j = mainSrc.indexOf("};", i); const d = mainSrc.slice(i, j);
     return /quitTurnTitle: "/.test(d) && /quitTurnBody: "/.test(d); })() && !/tmLabels\.quitTurnTitle \|\|/.test(mainSrc));
   t("關視窗:本機 agent 回合在跑時也只藏起來(同下單中);「背景照常下單」那則只在真的在下單時講",
-    /const trading = tradeMaybeLive\(\), turn = !!\(activeTurn \|\| turnStarting\);\s*if \(quitting \|\| quitConfirmed \|\| \(!trading && !turn\)\) return;\s*e\.preventDefault\(\); win\.hide\(\);/.test(mainSrc) && /if \(trading && !hiddenSaid/.test(mainSrc));
+    /const trading = tradeMaybeLive\(\), turn = !!\(activeTurn \|\| turnStarting\);\s*if \(quitting \|\| quitConfirmed \|\| \(!trading && !turn\)\) \{[\s\S]{0,600}?\n      return;\n    \}\n    e\.preventDefault\(\); win\.hide\(\);/.test(mainSrc) && /if \(trading && !hiddenSaid/.test(mainSrc));
   t("回合收尾時視窗可能已關:送 turn-end 前先看 isDestroyed", /if \(!win\.isDestroyed\(\)\) win\.webContents\.send\("turn-end"/.test(mainSrc));
   t("結束 Blave:本機 agent 回合還在跑時先問一次(同自動下單那一道),確認過才結束", /if \(!quitting && !quitConfirmed && \(activeTurn \|\| turnStarting\)\) \{\s*e\.preventDefault\(\);/.test(mainSrc) && /message: tmLabels\.quitTurnTitle/.test(mainSrc));
   const cfg = fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8");

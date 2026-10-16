@@ -359,7 +359,7 @@ os.remove(os.path.join(SDIR, "env.json"))
 r = send([NAME])
 check(r == {"started": [NAME], "skipped": {}} and wait_idle() and child_env().get("BLAVE_MODE") == "live",
       f"deployed + edited: still the live refresh, no CODE_CHANGED ({r})")
-check(TIMEOUTS.get(NAME) == cl.STATS_REFRESH_TIMEOUT_S == 600, f"the live path keeps the 600-s budget ({TIMEOUTS})")
+check(TIMEOUTS.get(NAME) == cl.STATS_REFRESH_TIMEOUT_S == 1200, f"the live path keeps the strategy run's 1200-s budget ({TIMEOUTS})")
 cl._refresh_stats = _orig_refresh_stats
 
 # ── 3c. audit follow-ups ────────────────────────────────────────────────────

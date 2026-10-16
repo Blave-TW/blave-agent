@@ -68,9 +68,9 @@ ok("stayGo win32:[動作, 留下]、預設與 Esc = 1(留下)、goIndex 0", JSON
 ok("stayGo macOS(及其他):[留下, 動作]、預設與 Esc = 0、goIndex 1——跟改之前一模一樣", [M, X].every((r) => JSON.stringify(r) === JSON.stringify({ buttons: ["STAY", "GO"], defaultId: 0, cancelId: 0, goIndex: 1 })), JSON.stringify(M));
 const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
 const twoBtn = sites.filter((x) => x.obj && /buttons:\s*\[?\s*(sg\.buttons|tmLabels\.quitStay)/.test(x.obj));
-ok("兩顆鈕「取消 + 動作」的框(更新確認、結束攔截兩道)三處都走 stayGo,不再寫死陣列與 0/1", twoBtn.length === 3 && twoBtn.every((x) => /buttons: sg\.buttons, defaultId: sg\.defaultId, cancelId: sg\.cancelId/.test(x.obj))
-  && (main.match(/const sg = TT\.stayGo\(process\.platform, tmLabels\.quitStay, tmLabels\.(updateReady|quitGo)\);/g) || []).length === 3, twoBtn.map((x) => x.at).join());
-ok("…回傳值照 goIndex 判(不再寫死 response === 1 / !== 1)", (main.match(/r\.response (===|!==) sg\.goIndex/g) || []).length === 3 && [main.slice(main.indexOf("async function restartToUpdate("), main.indexOf("const moveDeclinedPath")), main.slice(main.indexOf('app.on("before-quit"'))]
+ok("兩顆鈕「取消 + 動作」的框(更新確認、結束攔截兩道、還沒儲存要離開嗎)四處都走 stayGo,不再寫死陣列與 0/1", twoBtn.length === 4 && twoBtn.every((x) => /buttons: sg\.buttons, defaultId: sg\.defaultId, cancelId: sg\.cancelId/.test(x.obj))
+  && (main.match(/const sg = TT\.stayGo\(process\.platform, tmLabels\.quitStay, tmLabels\.(updateReady|quitGo|unsavedGo)\);/g) || []).length === 4, twoBtn.map((x) => x.at).join());
+ok("…回傳值照 goIndex 判(不再寫死 response === 1 / !== 1)", (main.match(/r\.response (===|!==) sg\.goIndex/g) || []).length === 4 && [main.slice(main.indexOf("async function restartToUpdate("), main.indexOf("const moveDeclinedPath")), main.slice(main.indexOf('app.on("before-quit"'))]
   .every((x) => x.length > 200 && !/r\.response (===|!==) [01]\b/.test(x)));   // 搬到應用程式那一問只在 macOS 出現,照舊
 // ② 暫停失敗那個框只有一顆鈕:noLink 之後它不再是系統翻譯的通用鈕,字由畫面依語言交(tm.ok),noLink 照留
 const po = (l) => fs.readFileSync(path.join(SHELL, "i18n", l + ".po"), "utf8");

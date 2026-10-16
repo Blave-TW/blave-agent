@@ -82,6 +82,7 @@ def scenario(sid, both_modes=False):
 
 MARKS = {"BTCUSDT": 50000.0, "ETHUSDT": 2000.0, "SOLUSDT": 100.0, "DOGEUSDT": 0.2,
          "TMF": 20000.0}
+TWD_PER_USD = 32.0
 
 TRADE_SRC = '''STRATEGY_NAME = {name!r}
 SYMBOL = {symbol!r}
@@ -171,6 +172,10 @@ class World:
         _data.fetch_kline = _no_kline
         self.rec = None
         self.marks(**MARKS)
+        # TMF money is TWD on a USD account: the rate rides the same on-disk
+        # channel the fills read (lib/paper_data.usd_rate), never the network
+        json.dump({"rates": {"TWD": TWD_PER_USD}, "ts": int(time.time())},
+                  open("state/paper_fx.json", "w"))
         self._load_reconciler()
 
     # ── checks ──

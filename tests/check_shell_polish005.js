@@ -77,13 +77,13 @@ app.whenReady().then(async () => {
     const el = busy.el; busyEnd(${faulted});
     const rs = el.querySelector(".think-reason"), show = el.querySelector(".think-reason-show");
     return { open: el.classList.contains("is-open"), aria: el.querySelector(".think-head").getAttribute("aria-expanded"),
-      stepsShown: el.querySelector(".think-steps").getBoundingClientRect().height > 0, reasonShown: rs.getBoundingClientRect().height > 0,
+      stepsShown: !!el.querySelector(".think-sub") && el.querySelector(".think-sub").getBoundingClientRect().height > 0, reasonShown: rs.getBoundingClientRect().height > 0,
       show: show ? show.textContent : null, id: (el.id = "turn" + Math.random().toString(36).slice(2)) };
   })()`);
   await wait(50);
   const f = await turn(true, true); await wait(400);
-  const f2 = await js(`(() => { const el = $("${f.id}"); return { stepsShown: el.querySelector(".think-steps").getBoundingClientRect().height > 0, reasonShown: el.querySelector(".think-reason").getBoundingClientRect().height > 0 }; })()`);
-  ok("③ 出錯的回合:整塊自己攤開(is-open、aria-expanded=true),工具收據看得到", f.open && f.aria === "true" && f2.stepsShown);
+  const f2 = await js(`(() => { const el = $("${f.id}"); return { stepsShown: !!el.querySelector(".think-sub") && el.querySelector(".think-sub").getBoundingClientRect().height > 0, reasonShown: el.querySelector(".think-reason").getBoundingClientRect().height > 0 }; })()`);
+  ok("③ 出錯的回合:整塊自己攤開(is-open、aria-expanded=true),最後幾步看得到(Bash 分不出階段:直接當清單本身)", f.open && f.aria === "true" && f2.stepsShown);
   ok("③ …思考文字收著,下面一顆「顯示思考內容」", !f2.reasonShown && f.show === (await js(`t("turn.showReason")`)));
   const g = await js(`(() => { const el = $("${f.id}"); el.querySelector(".think-reason-show").click();
     return { reasonShown: el.querySelector(".think-reason").getBoundingClientRect().height > 0, gone: !el.querySelector(".think-reason-show"), focus: document.activeElement === el.querySelector(".think-reason") }; })()`);

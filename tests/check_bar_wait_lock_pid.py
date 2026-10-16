@@ -8,10 +8,14 @@
   ⑤ 持有者死、但它的 strategy.py 子行程(鎖第二行)還活 → 不接管;兩個都死才接管;
   ⑥ _run_strategy_protected 把子 pid 寫進鎖第二行;
   ⑦ _release_lock 只刪自己的鎖(被接管後原持有者的 finally 不會刪掉接管者的鎖);
-  ⑧ 多個 tick 同時判死同一把鎖,只有一個接管成功(os.replace 原子搬走)。
+  ⑧ 多個 tick 同時判死同一把鎖,只有一個接管成功;
+  ⑨ 判死之後、動手之前別人已經接管(鎖換成活人的)→ 不碰那把鎖、這一 tick 跳過
+     (舊版的 os.replace 會把接管者剛建的鎖搬走,兩個都拿到鎖,同一根 bar 跑兩次);
+  ⑩ 接管到一半被殺、留下的 .takeover 記號:持有者死了就清掉,下一 tick 照常接管。
 
 跑法:cd blave-agent && .venv/bin/python tests/check_bar_wait_lock_pid.py
 """
+import glob
 import importlib.util
 import os
 import subprocess
@@ -42,6 +46,10 @@ def leave_lock(content):
     os.makedirs(wfb.STATE_DIR, exist_ok=True)
     with open(LOCK, "w") as f:
         f.write(content)
+
+
+def leftovers():
+    return glob.glob(LOCK + ".stale*") + glob.glob(LOCK + ".takeover")
 
 
 def read_lock():
@@ -168,8 +176,49 @@ open(go, "w").close()
 results = [r.communicate(timeout=30)[0].strip() for r in racers]
 t("⑧ eight simultaneous takeovers → exactly one WIN", results.count("WIN") == 1, results)
 t("⑧ lock left behind belongs to one of the racers",
-  read_lock().strip() in {str(r.pid) for r in racers} and not os.path.exists(LOCK + ".stale"), read_lock())
+  read_lock().strip() in {str(r.pid) for r in racers} and leftovers() == [],
+  (read_lock(), leftovers()))
 os.remove(LOCK)
+
+# ⑨ judged dead, then a faster tick takes over before this one acts → the new lock is left alone
+real_dead = wfb._lock_holder_dead
+winner = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+try:
+    leave_lock(str(dead.pid))
+    calls = []
+
+    def judged_then_overtaken(path):
+        verdict = real_dead(path)
+        if not calls:
+            calls.append(path)
+            os.remove(LOCK)
+            fd = os.open(LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(winner.pid).encode())
+            os.close(fd)
+        return verdict
+
+    wfb._lock_holder_dead = judged_then_overtaken
+    got = wfb._acquire_lock("s")
+    t("⑨ overtaken after the verdict → skip, the faster tick's lock stays",
+      got is None and read_lock() == str(winner.pid) and leftovers() == [],
+      (got, read_lock(), leftovers()))
+finally:
+    wfb._lock_holder_dead = real_dead
+    winner.kill()
+    winner.wait()
+os.remove(LOCK)
+
+# ⑩ a takeover marker left by a killed taker is cleared, not a permanent block
+leave_lock(str(dead.pid))
+with open(LOCK + ".takeover", "w") as f:
+    f.write(str(dead.pid))
+got = wfb._acquire_lock("s")
+t("⑩ dead taker's marker → this tick skips and clears it",
+  got is None and not os.path.exists(LOCK + ".takeover"), got)
+got = wfb._acquire_lock("s")
+t("⑩ next tick takes the dead lock over", got == LOCK and read_lock() == str(os.getpid()), got)
+if got:
+    wfb._release_lock(got)
 
 print("ALL PASS" if not fails else f"{len(fails)} FAIL")
 sys.exit(1 if fails else 0)

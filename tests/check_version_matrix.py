@@ -42,6 +42,7 @@ listed in KNOWN_BUGS: reported "xfail"; it fails the run the day it passes.
 
 Run:  cd blave-agent && .venv/bin/python tests/check_version_matrix.py
       … --old-ref <ref>   … --old-src /path/worktree   … --only V1-01,V2-03   … --keep
+      … --doc /path/version-matrix-2026-09-24.md   (a worktree outside the monorepo)
 """
 import argparse
 import concurrent.futures
@@ -1423,6 +1424,49 @@ def v6_03(ctx):
     return (0 if ok else 1), "\n".join(out), None
 
 
+@cell("V6-08", lib="old", rt="-", kind="static")
+def v6_08(ctx):
+    """A half-updated workspace: the NEW manager/wait_for_bar.py on the OLD lib, which has no
+    lib/bar_ready.py (update_workspace writes file by file — refused / kept leave the tree part
+    new, part old — and the scheduler starts a fresh wait_for_bar every minute). The tick must
+    still load (on its own fallback copy of the rule), run the strategy and record the bar; an
+    import-time crash would stop every Type A/C signal before main() could alert."""
+    ws = make_ws(ctx.src["old"], ctx.src["new"], ctx.base, prefix="ws68-")
+    shutil.copy2(os.path.join(ctx.src["new"], "manager", "wait_for_bar.py"),
+                 os.path.join(ws, "manager", "wait_for_bar.py"))
+    out, ok = [], True
+    half = not os.path.exists(os.path.join(ws, "lib", "bar_ready.py"))
+    out.append(("ok   " if half else "FAIL ") + "the old lib has no lib/bar_ready.py (the half-updated state)")
+    ok &= half
+    d = os.path.join(ws, "strategies", "vm_demo")
+    os.makedirs(d)
+    with open(os.path.join(d, "strategy.py"), "w") as f:
+        f.write(
+            "INTERVAL = '1d'\n"
+            "def fetch_data(hdrs):\n"
+            "    import pandas as pd\n"
+            "    idx = pd.date_range(end=pd.Timestamp.now('UTC').tz_localize(None).normalize(), periods=5, freq='D')\n"
+            "    return pd.DataFrame({'Close': 1.0}, index=idx)\n"
+            "if __name__ == '__main__':\n"
+            "    open('strategies/vm_demo/ran', 'w').write('1')\n")
+    env = _child_env(ctx.base, ctx.blocked)
+    env["BLAVE_AGENT_WORKSPACE"] = env["BLAVE_AGENT_HOME"] = env["BLAVECLAW_HOME"] = env["BLAVE_AGENT_BASE"] = ws
+    p = subprocess.run([sys.executable, os.path.join("manager", "wait_for_bar.py"), "vm_demo"], cwd=ws, env=env,
+                       capture_output=True, text=True, timeout=CHILD_TIMEOUT_S)
+    tail = (p.stdout + p.stderr).strip()[-400:]
+    good = p.returncode == 0 and "Traceback" not in p.stdout + p.stderr
+    out.append(("ok   " if good else "FAIL ") + f"wait_for_bar.py loads and exits 0 (rc={p.returncode}) {tail if not good else ''}")
+    ran = os.path.exists(os.path.join(d, "ran"))
+    try:
+        st = json.load(open(os.path.join(ws, "state", "bar_wait", "vm_demo.json")))
+    except (OSError, ValueError):
+        st = {}
+    out.append(("ok   " if ran and st.get("last_processed_bar") else "FAIL ")
+               + f"…and the tick ran the strategy and recorded the bar (ran={ran}, {st.get('last_processed_bar')})")
+    ok &= good and ran and bool(st.get("last_processed_bar"))
+    return (0 if ok else 1), "\n".join(out), ws
+
+
 @cell("V6-04", lib="old", rt="new")
 def v6_04(w):
     """A strategy written against the NEW local lib, sent to a cloud machine still
@@ -1524,6 +1568,9 @@ def resolve_old(a, base):
 
 
 def parent(a):
+    global DOC
+    if a.doc:
+        DOC = os.path.abspath(a.doc)
     bad = enumerate_check()
     print("== enumeration: doc ↔ cells")
     for b in bad:
@@ -1566,7 +1613,8 @@ def parent(a):
     print()
     print(f"{len(ids) - len(failed) - len(xfail)}/{len(ids)} cells pass"
           + (f"; known bugs reproduced: {','.join(sorted(xfail))}" if xfail else "")
-          + (f"; FAILED: {','.join(sorted(failed))}" if failed else ""))
+          + (f"; FAILED: {','.join(sorted(failed))}" if failed else "")
+          + (f"; enumeration FAILED ({len(bad)})" if bad else ""))
     return 1 if failed or bad else 0
 
 
@@ -1581,6 +1629,8 @@ def main():
     ap.add_argument("--old-src")
     ap.add_argument("--old-ref", default=OLD_REF)
     ap.add_argument("--new-src", default=ROOT)
+    ap.add_argument("--doc", help="the matrix doc (default: ../.claude/output/specs/ of this repo; "
+                    "a worktree outside the monorepo has to pass it)")
     ap.add_argument("--tmp", help="parent dir for scratch workspaces (default: system temp)")
     ap.add_argument("--only")
     ap.add_argument("-j", "--jobs", type=int, default=4)

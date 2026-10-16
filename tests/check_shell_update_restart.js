@@ -28,6 +28,10 @@ function rig(o) {
   const log = [], boxes = [], tracked = [];
   let quitConfirmed = false, child = !!o.trading, phase = o.phase || "blocked", nDialog = 0;
   const ctx = {
+    // 草稿關卡(0.1.26 稽核 M1):沒給 o.draft = 已經問過(draftOk);給了就是畫面上有 / 沒有草稿、草稿框按留下 / 離開
+    draftOk: o.draft === undefined, draftNote: false,
+    draftDirty: async () => { log.push("draftDirty"); if (o.stopDuringDraft) child = false; return o.draft === "stay" || o.draft === "leave"; },
+    draftGate: async () => { log.push("draftGate"); return o.draft !== "stay"; },
     quitAsking: !!o.asking, moveAsking: !!o.moveAsking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
     planRestart, cloudSt: () => (o.cloud ? { trading: true } : null), BrowserWindow: { getAllWindows: () => [] },
     tradeMaybeLive: () => (child ? { venue: "binance" } : null), venueName: (id) => (id === "binance" ? "Binance" : ""),
@@ -50,6 +54,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   { const r = rig({ trading: false, phase: "ready" }), res = await r.run();
     t("沒在下單:直接 install,不跳框、不收工;裝成才送埋點 feature_used update_restart", res.ok === true && r.log.join() === "install:ok,used" && r.boxes.length === 0 && r.tracked.join() === "feature_used:update_restart", r.log); }
+  // ── 0.1.26 稽核 M1:更新重開也先過草稿關卡,而且在任何收工與 install 之前 ──
+  { const r = rig({ trading: false, phase: "ready", draft: "stay" }), res = await r.run();
+    t("M1 沒在下單、有草稿、按留下:只問草稿那一道,不 install、不送埋點,回 CANCELED;draftOk 不設", res.error === "CANCELED" && r.log.join() === "draftGate" && r.ctx.draftOk === false, r.log); }
+  { const r = rig({ trading: false, phase: "ready", draft: "leave" }), res = await r.run();
+    t("M1 …按離開:記 draftOk(之後 quitAndInstall 關窗、before-quit 都不再擋)才 install", res.ok === true && r.log.join() === "draftGate,install:ok,used" && r.ctx.draftOk === true, r.log); }
+  { const r = rig({ trading: false, phase: "ready", draft: "clean" }), res = await r.run();
+    t("M1 …沒有草稿:草稿關卡放行,照常 install", res.ok === true && r.log.join() === "draftGate,install:ok,used" && r.ctx.draftOk === true, r.log); }
+  { const r = rig({ trading: false, phase: "ready", draft: "leave", installRes: { ok: false, error: "NOT_READY" } }), res = await r.run();
+    t("M1 …install 沒成:收回 draftOk(app 還開著,下次結束再問草稿)", res.ok === false && r.ctx.draftOk === false, r.log); }
+  { const r = rig({ trading: true, response: 1, draft: "leave" }); r.ctx.tmLabels.unsavedNote = "NOTE"; const res = await r.run();
+    t("M1 下單中、有草稿:不另跳草稿框,那句併進更新確認框;按確認照樣停單收工再 install,draftOk 記下",
+      res.ok === true && !r.log.includes("draftGate") && r.log[0] === "draftDirty" && r.boxes.length === 1 && /\n\nNOTE$/.test(r.boxes[0].detail) && r.log.includes("install:ok") && r.ctx.draftOk === true, [r.log, r.boxes.map((b) => b.detail)]); }
+  { const r = rig({ trading: true, response: 0, draft: "leave" }); r.ctx.tmLabels.unsavedNote = "NOTE"; const res = await r.run();
+    t("M1 …按取消:什麼都不動、draftOk 不設", res.error === "CANCELED" && !r.log.includes("stop:start") && !r.log.some((x) => /^install/.test(x)) && r.ctx.draftOk === false, r.log); }
+  { const r = rig({ trading: true, response: 1, draft: "clean" }); r.ctx.tmLabels.unsavedNote = "NOTE"; await r.run();
+    t("M1 …下單中、沒有草稿:確認框不帶那一句", r.boxes.length === 1 && !/NOTE/.test(r.boxes[0].detail), r.boxes.map((b) => b.detail)); }
+  // 稽核 P3-2:下單中按更新、查草稿那段剛好停了單 → 改走直接裝之前要單獨問草稿
+  { const r = rig({ trading: true, phase: "blocked", draft: "stay", stopDuringDraft: true }), res = await r.run();
+    t("P3-2 下單中查草稿時剛好停單、有草稿、按留下:不 install,回 CANCELED", res.error === "CANCELED" && r.log.join() === "draftDirty,draftGate" && r.ctx.draftOk === false, r.log); }
+  { const r = rig({ trading: true, phase: "blocked", draft: "leave", stopDuringDraft: true }), res = await r.run();
+    t("P3-2 …按離開:問過才 install", res.ok === true && r.log.join() === "draftDirty,draftGate,install:ok,used" && r.ctx.draftOk === true, r.log); }
+  { const r = rig({ trading: true, phase: "blocked", draft: "clean", stopDuringDraft: true }), res = await r.run();
+    t("P3-2 …沒有草稿:不問,照常 install", res.ok === true && r.log.join() === "draftDirty,install:ok,used", r.log); }
+  // 稽核 P3-1:直接裝送出之後 Squirrel／NSIS 才失敗(onState phase error、restarting 不是 installing):收回 draftOk
+  { const ON = cut(src, "onState: (st) =>").replace(/^onState: /, ""), log = [];
+    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => log.push("app.quit") } };
+    const on = new Function("ctx", "with (ctx) { return (" + ON + "); }")(ctx);
+    on({ phase: "ready" }); const kept = ctx.draftOk;
+    on({ phase: "error" }); const dropped = ctx.draftOk === false && log.length === 0;
+    ctx.draftOk = true; ctx.restarting = "installing"; on({ phase: "error" });
+    t("P3-1 直接裝之後才失敗:draftOk 收回(下次結束照樣問草稿);收工後失敗那條照舊 app.quit()", kept === true && dropped && log.join() === "app.quit", [kept, dropped, log]); }
   { const r = rig({ trading: false, phase: "ready", installing: true }), res = await r.run();
     t("0.1.12 背景安裝的 pip 在跑:先收掉 pip(等它結束)再 install", res.ok === true && r.log.join() === "engineAbort,install:ok,used", r.log); }
   { const r = rig({ trading: true, response: 1, installing: true }), res = await r.run();
@@ -267,7 +302,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── 0.1.12 結束 app:背景安裝的 pip 在跑就先收掉(稽核 0.1.12 P1-1);沒在裝、常駐程式也沒在跑就直接放行 ──
   { const BQ = cut(src, 'app.on("before-quit", (e) => {');
     const quitRig = (o) => {
-      const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, moveAsking: !!o.moveAsking, activeTurn: o.turn ? {} : null, turnStarting: false,
+      const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, draftOk: true, draftNote: false, draftNoted: (d) => d, moveAsking: !!o.moveAsking, activeTurn: o.turn ? {} : null, turnStarting: false,
         tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), showMain: () => log.push("showMain"), BrowserWindow: { getAllWindows: () => [] }, tmLabels: { ...L, quitBody: "q {venue}", quitTitle: "t", quitTurnTitle: "tt", quitTurnBody: "tb" }, venueName: () => "Binance", cloudSt: () => null,
         TT: { quitDetail: TT.quitDetail, cloudTrading: () => false, stayGo: TT.stayGo }, process: { platform: "darwin" }, dialog: { showMessageBox: () => { log.push("dialog"); return new Promise(() => {}); } },
         _tradeHost: o.daemon ? { isRunning: () => true, stop: () => new Promise((ok) => setTimeout(() => { log.push("daemon:stopped"); ok(); }, 10)) } : null,

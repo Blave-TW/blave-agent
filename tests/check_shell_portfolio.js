@@ -3,6 +3,7 @@
 //   ② 台指期換合約:口數換算、兩步存檔、錯誤碼人話、總訊號部位的口數取整
 //   ③ shell/daemon.js:manage_* 只在這台電腦開、形狀檢查、優化等 ack 的時間
 //   ④ 設計 desktop-portfolio-spec §9.1 #15:沒連交易所存金額不開確認框;連 Binance 時台股列的實際是「—」;自動下單 › 部位沒有金額輸入框
+//   ⑤ 部位大小設好就維持(Wei 10-16):按確定 / 套用釘值、跑優化不跟著走、換幣別換算、最大回撤不被退回值蓋掉、重開(本機 localStorage、雲端 ui-prefs.json 綁 who)
 // 跑法:node tests/check_shell_portfolio.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -15,7 +16,7 @@ const cutF = (s, n) => { const i = s.indexOf("function " + n + "("); if (i < 0) 
 // ── ① 純邏輯 ──
 const pp = block(psrc, "/* ── 純邏輯(", "/* ── 純邏輯到此");
 ok("portfolio.js 的純邏輯區塊不碰 DOM", !/\bdocument\b|\$\(|window\./.test(pp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
-const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf };", P);
+const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf, mpsFundAs, mpsSizingPin, mpsTargetOf, mgLotsOver };", P);
 const F = P.out;
 ok("移動窗格回測各指標的贏過:三個欄位各自取整;舊 workspace 只有 Sharpe 時另兩格不畫",
   J(F.mgBeatsOf({ managed_beats_pct_total_return: 61.4, managed_beats_pct_sharpe: 85.5, managed_beats_pct_max_drawdown: 12 })) === J({ ret: "61%", sharpe: "86%", mdd: "12%" })
@@ -28,7 +29,8 @@ ok("資料不足:從回測 log 尾抓歷史天數(不 anchor 行首);認不得 n
 ok("參數:只收方法宣告的 key、target_vol 永遠排除、現值在範圍內才沿用", J(F.mgFitParams({ params: { lookback: 365, target_vol: 0.3, x: true } }, { lookback: 90, x: false, zz: 1 })) === J({ lookback: 90, x: false })
   && J(F.mgFitParams({ params: { lookback: 365 } }, { lookback: 5 })) === J({ lookback: 365 }));
 ok("權重 %:整數就整數、非整數留 1 位;壞值 null", F.mgWeightPct(0.25) === "25" && F.mgWeightPct(0.1234) === "12.3" && F.mgWeightPct(NaN) === null);
-ok("部位大小設定清理:壞值回預設(目標波動、全部 null)", J(F.mpsSizingClean({ fund: -1, method: "x", target: { vol: 12, mdd: "a" } })) === J({ fund: null, method: "vol", target: { vol: 12, mdd: null, lev: null } }));
+ok("部位大小設定清理:壞值回預設(目標波動、全部 null)", J(F.mpsSizingClean({ fund: -1, method: "x", target: { vol: 12, mdd: "a" } })) === J({ fund: null, fundCcy: null, method: "vol", target: { vol: 12, mdd: null, lev: null } })
+  && F.mpsSizingClean({ fund: 5, fundCcy: "TWD" }).fundCcy === "TWD" && F.mpsSizingClean({ fund: 5, fundCcy: "twd" }).fundCcy === null && F.mpsSizingClean({ fundCcy: "TWD" }).fundCcy === null);
 { const r = [0.1, -0.2, 0.05, -0.1];
   ok("複利回撤:1× 序列 +10% −20% +5% −10% 的最深回撤 = 24.4%;淨值歸零以下 = 100", Math.abs(F.mpsMddAt(1, r) - 24.4) < 1e-9 && F.mpsMddAt(10, r) === 100);
   const L = F.mpsSolveLev(15, r);
@@ -147,9 +149,10 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
       on.cls.some((c) => /\b(buy|sell)\b/.test(c)) && !off.cls.some((c) => /\b(buy|sell)\b/.test(c)) && off.cls.some((c) => /\bhold\b/.test(c))
       && [on, off, halt].every((x) => x.idle === "tr.col.diff"), J({ on, off, halt }));
     const zeroRun = diffCls("running", { btc: 0, tw: 0 }); ctx.TR.noAmtLink = true; const linked = diffCls("dead", { btc: 0, tw: 0 }); ctx.TR.noAmtLink = false;
-    ok("設計稽核電腦版必改 3:「到策略組合修改」只在頁首原因行實際畫出連結(TR.noAmtLink)時藏;在跑但金額全空、原因行沒連結時照畫",
-      on.link && zeroRun.link && !linked.link && /TR\.noAmtLink = !!key && t\(key, vars\)\.toLowerCase\(\)\.indexOf\(t\("po\.nav"\)\.toLowerCase\(\)\) >= 0;/.test(src)
-      && /envHeadState\(TR\.st, now\), TR\.startAt \|\| 0, !!TR\.noAmtLink, TR_TWN\.v\];/.test(src), J({ zeroRun, linked }));
+    ctx.TR.zBridge = true; const bridged = diffCls("dead", { btc: 0, tw: 0 }); ctx.TR.zBridge = false;
+    ok("設計稽核電腦版必改 3 + spec-autotrade-empty §5:「到策略組合修改」在頁首原因行實際畫出連結(TR.noAmtLink)或動作列有導引鈕(TR.zBridge)時藏;在跑但金額全空、兩者都沒有時照畫",
+      on.link && zeroRun.link && !linked.link && !bridged.link && /TR\.noAmtLink = !!key && t\(key, vars\)\.toLowerCase\(\)\.indexOf\(t\("po\.nav"\)\.toLowerCase\(\)\) >= 0;/.test(src)
+      && /envHeadState\(TR\.st, now\), TR\.startAt \|\| 0, !!TR\.noAmtLink, !!TR\.zBridge, fog, TR_TWN\.v\];/.test(src) && /TR\.zBridge = !!key;/.test(src), J({ zeroRun, linked, bridged }));
     ctx.TR = bag({ binance: V }); }
   // 手動部位(Wei 10-14):帳本模式下帳戶比帳本多的那份 = 手動。帳本 size 是成本、讀帳 size 是市值,金額列要比數量(帳本 qty 對 size ÷ mark_price)
   { const run = (pos, led) => { ctx.TR = bag({ binance: V }); const rp = ctx.TR.st.report; rp.self_ledger = true; rp.account.read_at = Math.floor(Date.now() / 1000);
@@ -276,18 +279,107 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   const e2 = flat(vm.runInContext("TR = this.TR; poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx)).filter((n) => /pf-note (err|past)/.test(n.className)).map((n) => n.textContent);
   ok("必改 1:兩檔同時被拒,兩列各掛自己那一筆;字是「下單失敗/上次下單失敗:{err}」不帶標的", e2.length === 2 && e2.some((x) => /boom-b/.test(x)) && e2.some((x) => /boom-e/.test(x)) && e2.every((x) => /po\.orderFailed(Row|Last)/.test(x) && !/BTCUSDT|ETHUSDT/.test(x.replace(/"err":"[^"]*"/, ""))), J(e2)); }
 
-// Wei 拍板:套用後記住這次的本金,重複套用不漂移(槓桿 < 1 時預設本金 = 已存合計會一次比一次小)
+// Wei 拍板:套用後記住這次的本金,重複套用不漂移(槓桿 < 1 時預設本金 = 已存合計會一次比一次小);10-16 起連同當下方法的目標一起釘
 { const saved = []; let stored = 280000;
-  const ctx = vm.createContext({ MG_SIZE_KEY: "ws_mg_sizing", mgSave: (S, k, v) => saved.push([S.env, k, v]), mpsFundDefault: () => stored });
-  vm.runInContext(cutF(psrc, "mpsFundOf") + "\n" + cutF(psrc, "mgPinFund"), ctx);
-  ctx.G = { sizing: { fund: null, method: "vol", target: {} } }; ctx.S = { env: "local" };
-  const lev = 0.48, apply = () => { const used = vm.runInContext("mpsFundOf(G.sizing)", ctx); stored = Math.round(used * lev); ctx.used = used; vm.runInContext("mgPinFund(S, G, used)", ctx); return used; };
+  const ctx = vm.createContext({ MG_SIZE_KEY: "ws_mg_sizing", MPS_METHODS: ["vol", "mdd", "lev"], mgSave: (S, k, v) => saved.push([S.env, k, v]), mpsFundDefault: () => stored, mpsCcy: () => "USDT", mpsConv: (v) => v });
+  vm.runInContext(["mpsSizingClean", "mpsFundAs", "mpsSizingPin", "mpsFundOf", "mgPinUsed"].map((n) => cutF(psrc, n)).join("\n"), ctx);
+  ctx.G = { sizing: F.mpsSizingClean(null) }; ctx.S = { env: "local" };
+  const lev = 0.48, apply = () => { const used = vm.runInContext("mpsFundOf(G.sizing)", ctx); stored = Math.round(used * lev); ctx.used = used; vm.runInContext("mgPinUsed(S, G, 'USDT', used, 'vol', 10.6)", ctx); return used; };
   const a1 = apply(), a2 = apply(), a3 = apply();
-  ok("本金不漂移:第一次預設 = 已存合計(280,000),套用成功後記住;第二、三次仍是 280,000(不是 134,400);存進部位大小設定一次",
-    a1 === 280000 && a2 === 280000 && a3 === 280000 && saved.length === 1 && saved[0][1] === "ws_mg_sizing" && saved[0][2].fund === 280000, J([a1, a2, a3, saved]));
-  ctx.G = { sizing: { fund: 50000 } }; vm.runInContext("mgPinFund(S, G, 999)", ctx);
-  ok("自己填過本金的不蓋;存成功才記(onSaved),取消不記;雲端走同一個 mgSave(只放記憶體)", ctx.G.sizing.fund === 50000 && saved.length === 1
-    && /const fundUsed = mpsFundOf\(G\.sizing\);/.test(psrc) && /onSaved: \(sending, was\) => \{[^\n]*mgPinFund\(S, G, fundUsed\);/.test(psrc) && /if \(\(S \|\| TR\)\.env !== "local"\) return;/.test(cutF(psrc, "mgSave"))); }
+  ok("本金不漂移:第一次預設 = 已存合計(280,000),套用成功後記住(帶幣別、連同當下目標);第二、三次仍是 280,000;存進部位大小設定一次",
+    a1 === 280000 && a2 === 280000 && a3 === 280000 && saved.length === 1 && saved[0][1] === "ws_mg_sizing" && saved[0][2].fund === 280000 && saved[0][2].fundCcy === "USDT" && saved[0][2].target.vol === 10.6 && ctx.G.sizingSet === true, J([a1, a2, a3, saved]));
+  ctx.G = { sizing: F.mpsSizingClean({ fund: 50000, fundCcy: "USDT", method: "vol", target: { vol: 20 } }) }; vm.runInContext("mgPinUsed(S, G, 'USDT', 999, 'vol', 10.6)", ctx);
+  ok("自己填過本金與目標的不蓋;存成功才記(onSaved),取消不記", ctx.G.sizing.fund === 50000 && ctx.G.sizing.target.vol === 20 && saved.length === 1
+    && /const fundUsed = mpsFundOf\(G\.sizing\), ccyUsed = mpsCcy\(\)/.test(psrc) && /onSaved: \(sending, was\) => \{[^\n]*mgPinUsed\(S, G, ccyUsed, fundUsed, mUsed, tgUsed\);/.test(psrc)); }
+// 稽核 10-16:本金填過、換幣別又缺匯率時 mpsFundOf 也是 null;不能當「沒填」叫人重填,要講缺匯率
+{ let ccy = "USDT", expired = false, cloud = { code: "OK" }; const fx = { USDT: 1 };
+  const ctx = vm.createContext({ MPS_METHODS: ["vol", "mdd", "lev"], mpsCcy: () => ccy, mpsConv: (v, a, b) => (a === b ? v : fx[a] && fx[b] ? (v / fx[a]) * fx[b] : null),
+    mpsFundDefault: () => null, mgSameAsAmounts: () => true, trFxView: () => ({ expired }), TR_BAGS: { cloud: { st: { get cloud() { return cloud; } } } } });
+  vm.runInContext(["mpsSizingClean", "mpsFundAs", "mpsFundOf", "mpsFundFxMissing", "mgFxWhy", "mgApplyWhy"].map((n) => cutF(psrc, n)).join("\n"), ctx);
+  const of = vm.runInContext("mpsFundOf", ctx), miss = vm.runInContext("mpsFundFxMissing", ctx), why = vm.runInContext("mgApplyWhy", ctx);
+  const none = F.mpsSizingClean(null), usdt = F.mpsSizingClean({ fund: 1000, fundCcy: "USDT" });
+  const same = [miss(none), miss(usdt)]; ccy = "TWD"; const gap = [of(usdt), miss(usdt)];
+  const d = { eff: null, rows: [], fundFx: true }, w = [why(d, false, true)]; cloud = null; w.push(why(d, false, true)); expired = true; w.push(why(d, false, true));
+  expired = false; cloud = { code: "OK" }; w.push(why({ eff: null, rows: [], fundFx: false }, false, true));
+  ok("本金 1,000 USDT、現在是 TWD 又缺匯率:判成缺匯率(不是沒填);套用鈕講缺匯率(登入正常／沒登入／匯率過期各走既有句),沒填才講先設定投入資金;表上方不叫人去填",
+    same.every((x) => x === false) && gap[0] === null && gap[1] === true && J(w) === J(["mg.applyWhyFx", "mg.applyWhyLogin", "mg.applyWhyFxOld", "mg.applyWhySize"])
+    && /return \{ amount, lev, eff, rows, fundFx: mpsFundFxMissing\(G\.sizing\) \};/.test(cutF(psrc, "mpsRows")) && /const d = mpsRows\(\)/.test(cutF(psrc, "mgSuggestTable"))
+    && /if \(mpsFundOf\(mgBag\(\)\.sizing\) === null && !d\.fundFx\) \{/.test(cutF(psrc, "mgSuggestTable")), J([same, gap, w])); }
+// Wei 10-16:部位大小設好之後,跑優化 / 換方法 / 增減策略 / 重開都要維持;只有用戶自己改才變
+{ let ccy = "USDT", fx = { USDT: 1, USD: 1, TWD: 32 };
+  const store = {}, cloudSet = [];
+  const ctx = vm.createContext({ console, JSON, Promise, MG_SIZE_KEY: "ws_mg_sizing", MG_SEL_KEY: "ws_mg_members",
+    localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+    window: { blave: { mgSizingCloud: () => Promise.resolve(ctx.cloudFile), mgSizingCloudSet: (v) => { cloudSet.push(v); ctx.cloudFile = JSON.parse(JSON.stringify(v)); return Promise.resolve(true); } } },
+    mpsCcy: () => ccy, mpsConv: (v, a, b) => (fx[a] && fx[b] ? (v / fx[a]) * fx[b] : null), mpsFundDefault: () => ctx.defaultFund, mgPaint: () => { ctx.painted = (ctx.painted || 0) + 1; } });
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\n" + ["mgBag", "mgSizingCloudLoad", "mgSave", "mpsFundOf", "mgSizeNum", "mgSizeParse"].map((n) => cutF(psrc, n)).join("\n"), ctx);
+  ctx.TR = { env: "local", sig: {} };
+  // 開框時的顯示 = 預設:本金 86,372(已存合計)、目標波動 10.6%(這份結果的歷史波動)。用戶只換了一下方法又換回,按確定
+  const prop1 = { ann_vol_pct: 10.6, port_returns: { r: [0.01, -0.02, 0.015, -0.01] } }; ctx.defaultFund = 86372;
+  const draft = (s, prop, method) => { const f0 = vm.runInContext("mpsFundOf", ctx)(s), d = { method: method || vm.runInContext("mpsMethodOf", ctx)(s, F.mpsSeriesOf(prop)), methodDirty: false, fund: String(f0), fund0: f0, fundDirty: false, t: {}, t0: {}, dirty: {} };
+    ["vol", "mdd", "lev"].forEach((m) => { const v = F.mpsTargetOf(s, m, prop); d.t0[m] = v; d.t[m] = v === null ? "" : m === "vol" ? v.toFixed(1) : m === "lev" ? v.toFixed(2) : String(Math.round(v * 10) / 10); d.dirty[m] = false; }); return d; };
+  const okSave = (d) => { const G = vm.runInContext("mgBag()", ctx), r = vm.runInContext("mgSizeParse", ctx)(d); G.sizing = r.sizing; G.sizingSet = true; vm.runInContext("mgSave", ctx)(ctx.TR, "ws_mg_sizing", G.sizing); return r; };
+  const r1 = okSave(draft(F.mpsSizingClean(null), prop1));
+  ok("按確定沒打字:畫面上的本金與所選方法的目標釘成明確值(帶幣別),方法沒點過不寫", r1.bad === false && r1.sizing.fund === 86372 && r1.sizing.fundCcy === "USDT" && r1.sizing.target.vol === 10.6 && r1.sizing.target.mdd === null && r1.sizing.method === "vol", J(r1));
+  // 跑完優化:新的一份結果歷史波動 14%、已存合計變了 → 設定不跟著走
+  const prop2 = { ann_vol_pct: 14, port_returns: { r: [0.02, -0.03, 0.01] } }; ctx.defaultFund = 120000;
+  const G = vm.runInContext("mgBag()", ctx);
+  ok("跑優化後:目標波動仍 10.6%、本金仍 86,372;槓桿照新的歷史波動重算(10.6 ÷ 14)",
+    F.mpsTargetOf(G.sizing, "vol", prop2) === 10.6 && vm.runInContext("mpsFundOf", ctx)(G.sizing) === 86372 && Math.abs(F.mpsLevFor(G.sizing, prop2) - 10.6 / 14) < 1e-12, J(G.sizing));
+  // 換優化方法(工具列,不是部位大小)不碰 sizing;增減策略讓投入資金換幣別 → 換算顯示、存檔不動,換回原幣別就是原值
+  ccy = "TWD"; const asTwd = vm.runInContext("mpsFundOf", ctx)(G.sizing); delete fx.TWD; const noFx = vm.runInContext("mpsFundOf", ctx)(G.sizing); fx.TWD = 32; ccy = "USDT";
+  ok("增減策略換了投入資金幣別:USDT 86,372 → TWD 2,763,904(照匯率換,不把 86,372 當台幣);缺匯率 = null(不猜);換回 USDT 原值、存檔沒動",
+    asTwd === 2763904 && noFx === null && vm.runInContext("mpsFundOf", ctx)(G.sizing) === 86372 && G.sizing.fund === 86372 && G.sizing.fundCcy === "USDT", J([asTwd, noFx]));
+  // 在 TWD 下打開框、本金沒動按確定:存檔維持 USDT 原值(不被換算後的數蓋掉)
+  ccy = "TWD"; const r2 = vm.runInContext("mgSizeParse", ctx)(draft(G.sizing, prop2)); ccy = "USDT";
+  ok("別的幣別下開框按確定、本金沒動:存檔仍是 86,372 USDT;用戶改本金才換成新幣別", r2.sizing.fund === 86372 && r2.sizing.fundCcy === "USDT"
+    && (() => { ccy = "TWD"; const d = draft(G.sizing, prop2); d.fund = "3,000,000"; d.fundDirty = true; const r = vm.runInContext("mgSizeParse", ctx)(d); ccy = "USDT"; return r.sizing.fund === 3000000 && r.sizing.fundCcy === "TWD"; })(), J(r2));
+  // 存著最大回撤、這份結果沒有序列(畫面退回目標波動):沒點分段按確定,方法仍是最大回撤
+  const Gm = vm.runInContext("mgBag()", ctx); Gm.sizing = F.mpsSizingClean({ fund: 1000, fundCcy: "USDT", method: "mdd", target: { mdd: 15 } });
+  const r3 = vm.runInContext("mgSizeParse", ctx)(draft(Gm.sizing, { ann_vol_pct: 20 }));
+  ok("最大回撤暫時不能用(畫面退回目標波動),沒點分段按確定:存著的方法仍是最大回撤、回撤目標 15% 不動;點過才換", r3.sizing.method === "mdd" && r3.sizing.target.mdd === 15
+    && (() => { const d = draft(Gm.sizing, { ann_vol_pct: 20 }); d.method = "lev"; d.methodDirty = true; return vm.runInContext("mgSizeParse", ctx)(d).sizing.method === "lev"; })()
+    && /d\.method = m; d\.methodDirty = true;/.test(cutF(psrc, "mgSizeRender")) && /methodDirty: false/.test(cutF(psrc, "mgSizeOpen")), J(r3));
+  { const p3 = { ann_vol_pct: 10.63 }, r = vm.runInContext("mgSizeParse", ctx)(draft(F.mpsSizingClean(null), p3));
+    ok("按確定沒打字釘的是未取整的原值:歷史波動 10.63% → 槓桿剛好 1(框裡顯示 10.6 也不會讓表動一下)", r.sizing.target.vol === 10.63 && F.mpsLevFor(r.sizing, p3) === 1
+      && /d\.fundDirty \? 0 : d\.fund0, d\.method, d\.dirty\[d\.method\] \? 0 : d\.t0\[d\.method\]/.test(cutF(psrc, "mgSizeParse")) && /mgsDraft\.t0\[m\] = v;/.test(cutF(psrc, "mgSizeOpen")), J(r)); }
+  // 清空 = 回預設(用戶自己的選擇)
+  Gm.sizing = r1.sizing;
+  { const d = draft(G.sizing, prop2); d.t.vol = ""; d.dirty.vol = true; const r = vm.runInContext("mgSizeParse", ctx)(d);
+    ok("清空目標 = 回預設(null,跟著優化結果走);本金照舊", r.sizing.target.vol === null && r.sizing.fund === 86372, J(r)); }
+  vm.runInContext("mgSave", ctx)(ctx.TR, "ws_mg_sizing", r1.sizing);
+  // 重開 app(本機):新的一袋從 localStorage 讀回
+  const B2 = { env: "local", sig: {} }; ctx.B2 = B2; const G2 = vm.runInContext("mgBag(B2)", ctx);
+  ok("重開(本機):新的一袋讀回同一份設定", J(G2.sizing) === J(r1.sizing) && JSON.parse(store.ws_mg_sizing).target.vol === 10.6, J(G2.sizing));
+  // 雲端:寫進主行程(ui-prefs.json),重開後新的一袋非同步讀回;讀回前用戶已經設過就不蓋;換人(C.mg 清掉)回來的那份丟掉
+  const C = { env: "cloud", sig: {} }; ctx.C = C; ctx.TR = C; const Gc = vm.runInContext("mgBag(C)", ctx);
+  Gc.sizing = r1.sizing; vm.runInContext("mgSave", ctx)(C, "ws_mg_sizing", Gc.sizing);
+  const cloudTest = (async () => {
+    await new Promise((r) => setTimeout(r, 5));
+    const C2 = { env: "cloud", sig: {} }; ctx.C2 = C2; ctx.TR = C2; const before = J(vm.runInContext("mgBag(C2)", ctx).sizing);
+    await new Promise((r) => setTimeout(r, 5));
+    const after = C2.mg.sizing;
+    const C3 = { env: "cloud", sig: {} }; ctx.C3 = C3; const G3 = vm.runInContext("mgBag(C3)", ctx); G3.sizingSet = true; G3.sizing = F.mpsSizingClean({ fund: 7 });
+    const C4 = { env: "cloud", sig: {} }; ctx.C4 = C4; vm.runInContext("mgBag(C4)", ctx); C4.mg = null;
+    await new Promise((r) => setTimeout(r, 5));
+    ok("重開(雲端):設定寫進主行程(只寫部位大小,不寫成員清單);新的一袋讀回同一份並重畫;讀回前已設過的不蓋;換人後回來的丟掉",
+      cloudSet.length === 1 && before === J(F.mpsSizingClean(null)) && J(after) === J(r1.sizing) && ctx.painted >= 1 && G3.sizing.fund === 7 && C4.mg === null && !("ws_mg_sizing" in store && JSON.parse(store.ws_mg_sizing).fund === 7), J([cloudSet.length, after])); })();
+  global.__sizingCloudTest = cloudTest; }
+// 主行程:雲端部位大小存 ui-prefs.json、綁 who(換人 / 重新登入讀不到上一份)、清洗後才落地、不動其他鍵
+{ const os = require("os"), msrc = fs.readFileSync(path.join(R, "..", "main.js"), "utf8"), pre = fs.readFileSync(path.join(R, "..", "preload.js"), "utf8");
+  const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "blave-mgs-")); let who = "A";
+  const ctx = { fs, path, app: { getPath: () => TMP }, currentWho: () => who };
+  vm.runInNewContext([/^const uiPrefsPath = .*$/m.exec(msrc)[0], cutF(msrc, "uiPrefsPatch"), cutF(msrc, "mgSizingClean"), cutF(msrc, "mgSizingCloudGet"), cutF(msrc, "mgSizingCloudSet")].join("\n") + "\nthis.get = mgSizingCloudGet; this.set = mgSizingCloudSet;", ctx);
+  fs.writeFileSync(path.join(TMP, "ui-prefs.json"), JSON.stringify({ pdfDir: "/x", stratOrder: ["a"] }));
+  const a0 = ctx.get(), w = ctx.set({ fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6, mdd: "x" }, evil: "<script>" }), back = ctx.get();
+  who = "B"; const asB = ctx.get(); who = null; const none = ctx.get(), wNone = ctx.set({ fund: 1 }); who = "A";
+  const file = JSON.parse(fs.readFileSync(path.join(TMP, "ui-prefs.json"), "utf8"));
+  ok("主行程:沒存過 = null;存了讀回(清洗、丟多餘鍵);換人 / 沒登入讀不到也不寫;pdfDir 與側欄偏好不動;IPC 只收自家頁面",
+    a0 === null && w === true && J(back) === J({ fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6, mdd: null, lev: null } }) && asB === null && none === null && wNone === false
+    && file.pdfDir === "/x" && J(file.stratOrder) === J(["a"]) && file.mgSizingCloud.who === "A" && !fs.readdirSync(TMP).some((f) => /blave-tmp/.test(f))
+    && /handle\("mg-sizing-cloud", \(\) => mgSizingCloudGet\(\), null\);/.test(msrc) && /handle\("mg-sizing-cloud-set", \(_e, v\) => mgSizingCloudSet\(v\), false\);/.test(msrc)
+    && /mgSizingCloud: \(\) => ipcRenderer\.invoke\("mg-sizing-cloud"\)/.test(pre) && /mgSizingCloudSet: \(v\) => ipcRenderer\.invoke\("mg-sizing-cloud-set", v\)/.test(pre), J([a0, back, asB, file]));
+  fs.rmSync(TMP, { recursive: true, force: true }); }
 // 第三台實測(cs-0124-w3)+ 設計稽核電腦版必改
 { const ctx = vm.createContext({ t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), TR: { list: [{ name: "txf", symbol: "TXF", twd: true }, { name: "tsmc", symbol: "2330", twd: true }, { name: "btc", symbol: "BTCUSDT" }] }, PAPER: "paper", TR_TWD_RE: /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/, CX_VENUES: { binance: {} } });
   vm.runInContext(["trCanonSym", "trTxfSpec", "trCapitalCanon", "trTwBroker", "trVenueKind", "trTradesSym", "trPaperTw"].map((n) => { try { return cutF(src, n); } catch (_) { return ""; } }).join("\n") + "\nvar TR_TXF_SPECS = " + J({ TXF: { cv: 200, prod: "x" }, MXF: { cv: 50, prod: "y" }, TMF: { cv: 10, prod: "z" } }) + ";", ctx);
@@ -318,11 +410,11 @@ ok("1264 寬開著聊天欄(Windows 捲軸佔 17px):中欄 ≤ 600 時表頭可�
   ok("統一綁好頁:主鈕 pres.done.ok(完成／Done),pres.done.go 退場;按了關框、一律停在自動下單", /view === "d-done" \? t\("pres\.done\.ok"\)/.test(pres) && /cxModalClose\(true\); if \(!\(TR\.open && TR\.view === "tr"\)\) trOpen\(\);/.test(pres)
     && S.includes('"pres.done.ok": "完成"') && S.includes('"pres.done.ok": "Done"') && !/"pres\.done\.go"/.test(S));
   ok("Z 時(設計稽核必改 1):「到策略組合」是動作列的描邊鈕,插在停用的「啟動下單」左邊;只在純 Z(沒有解除暫停、不是等回報)時出;原因行只留一句話",
-    /u = trEl\("button", "btn-out", t\("po\.goCfg"\)\); u\.type = "button"; u\.id = "tr-go-cfg"; u\.addEventListener\("click", \(\) => poOpen\("cfg", true\)\); \$\("tr-act"\)\.insertBefore\(u, \$\("tr-go"\)\);/.test(src)
-    && /trPaintGoCfg\(!pend && zv\.reason === "tr\.startOffNoAmt" && !zv\.release && !zv\.noStart\);/.test(src) && !/tr-noamt-go/.test(src)
-    && S.includes('"po.goCfg": "到策略組合"') && S.includes('"tr.startOffNoAmtShort": "還沒有策略設定金額。"'));
-  ok("Z 時(設計稽核必改 2):有金額、但這家都下不了 → 「還沒有{venue}能下的策略金額。」;完全沒有金額照舊短句",
-    /line\.append\(trUnrouted\(rr\)\.length \? t\("tr\.startOffNoRoute"\) : any \? t\("tr\.startOffNoVenueAmt", \{ venue: trVenueLabel\(trVenueId\(\), true\) \}\) : t\("tr\.startOffNoAmtShort"\)\);/.test(src)
+    /u = trEl\("button", "btn-out", ""\); u\.type = "button"; u\.id = "tr-go-cfg"; u\.addEventListener\("click", \(\) => trZGo\(u\.dataset\.go, u\)\); \$\("tr-act"\)\.insertBefore\(u, \$\("tr-go"\)\);/.test(src)
+    && /trPaintGoCfg\(zg\.btn, zg\.fill, zg\.zc\);/.test(src) && /if \(kind !== "pick" && kind !== "amt" && kind !== "draft"\) \{ poOpen\("cfg", true\); return; \}/.test(src) && !/tr-noamt-go/.test(src)
+    && S.includes('"po.goCfg": "到策略組合"') && !/"tr\.startOffNoAmtShort"/.test(S));
+  ok("Z 時(設計稽核必改 2):有金額、但這家都下不了 → 「還沒有{venue}能下的策略金額。」;完全沒有金額由 trZGuide 換成缺哪一步(spec-autotrade-empty),剩下的只有設定讀不到",
+    /line\.append\(trUnrouted\(rr\)\.length \? t\("tr\.startOffNoRoute"\) : any \? t\("tr\.startOffNoVenueAmt", \{ venue: trVenueLabel\(trVenueId\(\), true\) \}\) : t\("tr\.cfgNull"\)\);/.test(src)
     && S.includes('"tr.startOffNoVenueAmt": "還沒有{venue}能下的策略金額。"') && S.includes('"tr.startOffNoVenueAmt": "No strategy has an amount {venue} can trade yet."'));
   ok("pres.s.worker* 改名:連上統一／連線中…／沒有讀到統一帳戶…(跟頁首的「下單程式」分開)", S.includes('"pres.s.worker": "連上統一"') && S.includes('"pres.s.workerRun": "連線中…"') && S.includes('"pres.s.workerFail": "沒有讀到統一帳戶。再試一次；還是不行，看設定 › 帳戶的狀態。"'));
   ok("選擇策略框:每一列都被「只下台指期」鎖住 → 清單底下 tr.pick.noTxf + 到策略庫(關框、開策略庫)", /if \(!mg && rows\.length && rows\.every\(\(r\) => r\.note === "txf"\)\) \{/.test(src) && /psClose\(\); if \(typeof libOpen === "function"\) libOpen\(\);/.test(src) && S.includes('"tr.pick.noTxf": "還沒有台指期策略。"'));
@@ -388,7 +480,7 @@ ok("P2-4 TXFR1 不認成口數列(同網頁 pfCtStored;runtime 沒覆寫時 TXFR
 const btCancelTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 15, slow: 15, fastFor: 60000 };\n" + ["mgBag", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 15, slow: 15, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   let done = false;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
     loadStrategy: async () => ({ perf: done ? { at: 1 } : { at: 1, refresh: { status: "running" } } }) } };
@@ -407,7 +499,7 @@ const freshTest = (async () => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => members, mgStrategies: () => Object.keys(ranAt).map((n) => ({ name: n, ran_at: ranAt[n] })), mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     let loads = 0;
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.slice() : null]); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async (n) => { loads++; return n in perfAt ? { perf: { at: perfAt[n] } } : {}; } } };
@@ -425,7 +517,7 @@ const freshTest = (async () => {
 const pollTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 40, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 40, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   let refreshed = false, t0 = 0, tRun = 0;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); setTimeout(() => { refreshed = true; }, 10); return { ok: true, result: { started: ["a"], skipped: {} } }; } tRun = Date.now(); return { ok: true, result: {} }; },
     tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: refreshed ? { at: Math.floor(Date.now() / 1000) } : { at: 1, refresh: { status: "running" } } }) } };
@@ -441,7 +533,7 @@ const refreshEdgeTest = (async () => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date: FixedDate, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => members, mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     const T0 = Date.now(); let runAt = null;
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
       tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.length : null]); if (cmd !== "stats_refresh") { runAt = Date.now() - T0; return { ok: true, result: {} }; } return ack(a.names); },
@@ -474,7 +566,7 @@ const refreshEdgeTest = (async () => {
 const cancelGenTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   let done = false, ackDelay = 0;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
@@ -495,7 +587,7 @@ const cancelGenTest = (async () => {
 const runNowTest = (async () => {
   const mk = () => { const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature(n) { sent.push("feature:" + n); }, mgPaint() {}, trPollSoon() {},
       mgMembers: () => ["a", "b", "c"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a", "b", "c"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 2000, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunOptimize", "mgSendOptimize", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 2000, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunOptimize", "mgSendOptimize", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: { at: 1, refresh: { status: "running" } } }) } };
     return { sent, ctx }; };
@@ -520,7 +612,7 @@ const runNowTest = (async () => {
 const refreshFlagTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
     tradeStatus: async () => ({}), loadStrategy: async () => { if (slow) await wait(80); return { perf: { at: 1, refresh: { status: "running" } } }; } } };
@@ -538,6 +630,35 @@ const refreshFlagTest = (async () => {
 ok("優化表:台指期取整成 0 口而有錢 → mg.lotsUnder、累計少投 → 表底 mg.lotsUnderFoot(換成投入資金幣別;換不了寫 TWD)",
   /else if \(r\.spec && nx === 0 && r\.moneyTwd > 0\) \{ cell\.textContent = t\("mg\.lotsUnder"\); underTwd \+= r\.moneyTwd; \}/.test(psrc) && /t\("mg\.lotsUnderFoot", \{ amt \}\)/.test(psrc)
   && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.lotsUnder": "0 口（不足一口）"'));
+{ // 台指期進位超配(Wei 10-16):列舉。TMF 一口 = 20000 點 × 10 = 200,000 TWD;投入資金幣別 = TWD(toF 原值)
+  const PL = 200000, rnd = T.out.trRoundLots, row = (name, twd) => ({ name, spec: { cv: 10 }, money: twd, moneyTwd: twd, perLot: PL, lots: rnd(twd / PL) });
+  const crypto = { name: "btc", spec: null, money: 500000, moneyTwd: null, perLot: null, lots: null }, id = (v) => v, L = (rows, eff, toF) => J(F.mgLotsOver(rows, eff, toF || id));
+  const cases = [
+    ["剛好一口", [row("a", 200000)], 1e6, "[]"],
+    ["捨去(1.3 → 1 口,少投)", [row("a", 260000)], 1e6, "[]"],
+    ["進位但整份只多 2%(0.9 → 1 口)", [row("a", 180000), crypto], 1e6, "[]"],
+    ["進位、整份多 6%(0.7 → 1 口)→ 比配置多 43%", [row("a", 140000), crypto], 1e6, J([{ name: "a", lots: 1, pct: 43 }])],
+    ["整份剛好多 5% 不講(門檻是超過)", [row("a", 150000)], 1e6, "[]"],
+    ["0.5 口照 half-up 進位成 1 口 → 多 100%", [row("a", 100000)], 1e6, J([{ name: "a", lots: 1, pct: 100 }])],
+    ["兩支都進位 → 兩支都列", [row("a", 140000), row("b", 140000)], 1e6, J([{ name: "a", lots: 1, pct: 43 }, { name: "b", lots: 1, pct: 43 }])],
+    ["一支進位一支捨去互相抵掉 → 不講", [row("a", 140000), row("b", 260000)], 1e6, "[]"],
+    ["不足一口(0 口)的少投也扣:+60k −80k → 不講", [row("a", 140000), row("b", 80000)], 1e6, "[]"],
+    ["多口數:2.6 → 3 口,整份多 8% → 多 15%", [row("a", 520000)], 1e6, J([{ name: "a", lots: 3, pct: 15 }])],
+    ["沒有計畫總部位(eff null／0)", [row("a", 140000)], null, "[]"],
+    ["eff 0", [row("a", 140000)], 0, "[]"],
+    ["缺台指期報價(lots null)→ 不判", [Object.assign(row("a", 140000), { lots: null, perLot: null })], 1e6, "[]"],
+    ["權重 0 的台指期列不算", [Object.assign(row("a", 0), { money: 0, moneyTwd: 0 }), crypto], 1e6, "[]"],
+    ["只有加密列", [crypto], 1e6, "[]"],
+  ];
+  const bad = cases.filter(([, rows, eff, want]) => L(rows, eff) !== want).map(([n, rows, eff, want]) => n + " 要 " + want + " 得 " + L(rows, eff));
+  ok("優化表進位超配 mgLotsOver:" + cases.length + " 種情境(剛好、捨去、小進位、超過 5%、等於 5%、0.5 進位、兩支、互抵、不足一口、多口、缺計畫、缺報價、權重 0、只有加密)", !bad.length, bad.join(";"));
+  ok("mgLotsOver:缺匯率(toF 回 null)不判;投入資金是 USD 時折算後再比(6% 的台幣多投在 USD 計畫上一樣算)",
+    L([row("a", 140000)], 1e6, () => null) === "[]" && L([row("a", 140000)], 1e6 / 32, (v) => v / 32) === J([{ name: "a", lots: 1, pct: 43 }]));
+  ok("門檻常數 = 5%,少投／多投兩句都畫在優化表下方(表之後)、同一個 pf-note 段落;一支用 mg.lotsOverFoot、兩支以上一支一行用 mg.lotsOverFootN(帶策略名)",
+    /const MG_LOTS_OVER_WARN = 0\.05;/.test(psrc) && /const over = mgLotsOver\(d\.rows, d\.eff, \(v\) => mpsConv\(v, TR_TXF_CCY, mpsCcy\(\)\)\);/.test(psrc)
+    && /over\.forEach\(\(o\) => wrap\.appendChild\(trEl\("p", "pf-note", over\.length === 1 \? t\("mg\.lotsOverFoot", \{ lots: o\.lots, pct: o\.pct \}\) : t\("mg\.lotsOverFootN", \{ name: trDisplay\(o\.name\), lots: o\.lots, pct: o\.pct \}\)\)\)\);/.test(psrc)
+    && psrc.indexOf('t("mg.lotsUnderFoot"') < psrc.indexOf("const over = mgLotsOver(") && cutF(psrc, "mgSuggestTable").indexOf("wrap.appendChild(tbl);") < cutF(psrc, "mgSuggestTable").indexOf('t("mg.lotsUnderFoot"')
+    && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.lotsOverFoot": "台指期進位成 {lots} 口，比配置多 {pct}%"')); }
 ok("等待那一行前面寫「優化：」或「回測：」", /t\(w === "opt" \? "mg\.waitPrefixOpt" : "mg\.waitPrefixBt"\) \+ \(n === 1/.test(psrc) && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.waitPrefixOpt": "優化："'));
 ok("投資組合還沒算出成分(沒有權重):金額表訊號寫「—」(tooltip tr.sigNotYet),不是 ×0", /const cNotYet = isC && !tc && !noSig;/.test(src) && /noSig \|\| notYet \|\| cNotYet \? "—" : trSignalText\(st\.position, tc\)/.test(src));
 ok("剛選進、還沒回報、清單沒寫市場:金額表與部位表都不先標「合約」", /if \(isC \|\| market\) first\.appendChild\(trEl\("span", "mkt-tag"/.test(src) && /if \(!guess\) c\.appendChild\(trEl\("span", "mkt-tag"/.test(src));
@@ -594,4 +715,4 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     "還沒有策略設定金額，先到策略組合設定。", "No strategy has an amount yet. Set one under Portfolio.", "帳上", "Held"];
   const miss = want.filter((v) => !has(v));
   ok("A 案字串兩語逐字同網頁(帳上、策略外、細節三段、門檻前導、到策略組合修改、啟動那句、原因行縮短版)", !miss.length, J(miss)); }
-Promise.all([btCancelTest, freshTest, pollTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
+Promise.all([btCancelTest, freshTest, pollTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

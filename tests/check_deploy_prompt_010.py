@@ -78,7 +78,7 @@ for name, setup, want, may_run in cases:
     line = at._deploy_state_line(WS)
     t(f"#8 {name}:下單狀態={want}", f"下單狀態:{want}" in line, line)
     t(f"#8 {name}:名冊照列(有金額兩支、金額 0 一支)",
-      "自動下單頁有金額:btc_sma_test、supertrend_sol" in line and "還沒上線:eth_ti_1h(在自動下單頁、金額 0)" in line, line)
+      "策略組合有金額:btc_sma_test、supertrend_sol" in line and "還沒上線:eth_ti_1h(在策略組合、金額 0)" in line, line)
     if not may_run:
         body = line.split("):", 1)[-1]   # 開頭那句規則本身會引用「執行中」三個字,只看事實部分
         t(f"#8 {name}:事實部分沒有「在跑」的字眼", not [w for w in RUNNING_WORDS if w in body], body)
@@ -105,7 +105,7 @@ beat(5)
 write("manager/amounts.ui.json", {"amounts": {"btc_sma_test": 0}, "exchanges": {}})
 line = at._deploy_state_line(WS)
 t("#8 金額照 UI 鏡像(amounts.ui.json 優先,同 lib/portfolio)",
-  "自動下單頁有金額:無" in line and "下單狀態:沒有策略設金額" in line, line)
+  "策略組合有金額:無" in line and "下單狀態:沒有策略設金額" in line, line)
 
 fresh({"a1": 100}, registry={"a1": {"type": "wait_for_bar"}, "typeb_cron": {"type": "cron"}, "reconciler": {}})
 write("strategies/typeb_cron/strategy.py", "# Strategy: b\n")
@@ -145,10 +145,11 @@ fresh({"a1": 100, "z": 0})
 t("#8 _trading_names 行為不變(下單設定的 key,金額 0 也算)", at._trading_names(WS) == {"a1", "z"}, at._trading_names(WS))
 
 # ── 0.1.11 B8 事實那一行 agent 會原樣講給用戶聽:列舉每一種狀態,內部名稱一個都不能出現(照畫面講「自動下單」) ──
-_RULE0 = "[上線現況(機器事實,提議前先對照——有金額的策略和「自己排程的策略」都算已上線,不要再建議上線(真倉或模擬交易都算);"
+_RULE0 = ("[上線現況(機器事實,提議前先對照——有金額的策略和「自己排程的策略」都算已上線(真倉或模擬交易都算),不要再建議把它們加進策略組合或設金額;"
+          "在模擬交易上跑穩的,下一步是換真倉小額跑;")
 _RULE9 = "講機器狀況時照「下單狀態」講,不是「執行中」就不要說策略正在跑或正在下單):"
-HEAD_OK = _RULE0 + "「還沒上線」裡標了金額 0 的,只建議到自動下單頁設金額;" + _RULE9
-HEAD_UNREAD = _RULE0 + "金額讀不到時,不要推斷哪些策略還沒上線,也先不要建議上線;用戶問起,就請他到自動下單頁看;" + _RULE9
+HEAD_OK = _RULE0 + "「還沒上線」裡標了金額 0 的,只建議到「策略組合 › 配置」設金額;" + _RULE9
+HEAD_UNREAD = _RULE0 + "金額讀不到時,不要推斷哪些策略還沒上線,也先不要建議上線;用戶問起,就請他到「策略組合 › 配置」看;" + _RULE9
 INTERNAL = ("對帳", "下單設定", "portfolio_config", "deployments", "manager/", ".json", "reconciler", "部署", "綁定", "排程:", "模擬盤", "單支暫停")
 b8 = []
 for name, setup, _want, _run in cases:
@@ -170,7 +171,7 @@ for name, line in b8:
 fresh(FUNDED)
 line = at._deploy_state_line(WS)
 t("B8 / P1-1 定稿:「自動下單沒在跑」「還沒上線」(金額 0 的加註)「模擬交易:已連接」;段名「[上線現況」、規則句逐字",
-  "下單狀態:自動下單沒在跑(" in line and "還沒上線:eth_ti_1h(在自動下單頁、金額 0)、undeployed_one;" in line
+  "下單狀態:自動下單沒在跑(" in line and "還沒上線:eth_ti_1h(在策略組合、金額 0)、undeployed_one;" in line
   and "模擬交易:已連接" in line and line.startswith(HEAD_OK), line)
 fresh({"a1": 100}, registry={"a1": {"type": "wait_for_bar"}, "typeb_cron": {"type": "cron"}})
 write("strategies/typeb_cron/strategy.py", "# Strategy: b\n")
@@ -187,32 +188,33 @@ fresh(FUNDED)
 beat(5)
 r = rows(at._deploy_state_line(WS))
 notlive = re.split(r"、(?![^()]*\))", r.get("還沒上線", ""))   # 註記裡也有「、」,括號內的不切
-t("P1-1 金額 0 的策略在「還沒上線」、帶「(在自動下單頁、金額 0)」;資料夾都在但沒放進自動下單頁的不帶註記",
-  "eth_ti_1h(在自動下單頁、金額 0)" in notlive and "undeployed_one" in notlive, r)
+t("P1-1 金額 0 的策略在「還沒上線」、帶「(在策略組合、金額 0)」;資料夾都在但沒放進自動下單頁的不帶註記",
+  "eth_ti_1h(在策略組合、金額 0)" in notlive and "undeployed_one" in notlive, r)
 t("P1-1 金額 0 的策略只出現在「還沒上線」那一列(不再另列「金額 0」)",
   [k for k, v in r.items() if "eth_ti_1h" in v] == ["還沒上線"] and not any("金額 0(不下單)" in k for k in r), r)
 t("P1-1 有金額的(> 0)不在「還沒上線」", not any(n.startswith(("btc_sma_test", "supertrend_sol")) for n in notlive), r)
 fresh({"z0": 0}, registry={"z0": {"type": "wait_for_bar"}, "reconciler": {}})
 shutil.rmtree(os.path.join(WS, "strategies", "z0"))
-t("P1-1 金額 0、資料夾已經不在的也照列(資訊不比舊的「金額 0」列少)", "z0(在自動下單頁、金額 0)" in rows(at._deploy_state_line(WS)).get("還沒上線", ""))
+t("P1-1 金額 0、資料夾已經不在的也照列(資訊不比舊的「金額 0」列少)", "z0(在策略組合、金額 0)" in rows(at._deploy_state_line(WS)).get("還沒上線", ""))
 fresh(FUNDED)
 write("manager/portfolio_config.json", "{broken")
 bl = at._deploy_state_line(WS)
 t("P1-1 金額讀不到:不列「還沒上線」(不知道哪些有金額,不猜)", "讀不到" in bl and "還沒上線" not in rows(bl), bl)
-t("R-P2-3 金額讀不到:規則句後半換成「不要推斷、請用戶到自動下單頁看」(逐字),不再叫 agent 照「還沒上線」建議", bl.startswith(HEAD_UNREAD) and "只建議到自動下單頁設金額" not in bl, bl)
+t("R-P2-3 金額讀不到:規則句後半換成「不要推斷、請用戶到自動下單頁看」(逐字),不再叫 agent 照「還沒上線」建議", bl.startswith(HEAD_UNREAD) and "只建議到「策略組合 › 配置」設金額" not in bl, bl)
 fresh(FUNDED)
 t("R-P2-4 讀得到:規則句逐字(有金額的與「自己排程的策略」都算已上線);不帶讀不到那半句", at._deploy_state_line(WS).startswith(HEAD_OK) and "金額讀不到時" not in at._deploy_state_line(WS))
 fresh({"zz": 0})
 for i in range(20):
     write(f"strategies/s{i:02d}/strategy.py", "# Strategy: x\n")
 nl = re.split(r"、(?![^()]*\))", rows(at._deploy_state_line(WS)).get("還沒上線", ""))
-t("複驗 R-P2-2 還沒上線超過 15 支:金額 0 的排最前面、註記不會被截掉(照舊最多 15 支)", nl[0] == "zz(在自動下單頁、金額 0)" and len(nl) == 15, nl[:3])
+t("複驗 R-P2-2 還沒上線超過 15 支:金額 0 的排最前面、註記不會被截掉(照舊最多 15 支)", nl[0] == "zz(在策略組合、金額 0)" and len(nl) == 15, nl[:3])
 src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
 t("P1-1 同段 prompt 的舊詞:導航句「設金額上線 / 連接模擬交易或交易所」、里程碑「有回測但還沒上線」「就不提上線」",
   "portfolio.pos=設金額上線、" in src and "portfolio.venue=連接模擬交易或交易所、" in src and "有回測但還沒上線的策略" in src and "就不提上線、" in src
   and "設金額/部署" not in src and "有回測但未部署" not in src and "就不提部署" not in src)
-t("P1-1 建議句的「上模擬盤」與「先綁模擬盤帳戶」不動(nav_topic 靠這些字附步驟)",
-  "「上模擬盤」→「先綁模擬盤帳戶」" in src and at.nav_topic("帶我看怎麼把 BTC 均線交叉上模擬盤"))
+t("P1-1 建議句的「加進策略組合」與「先綁模擬盤帳戶」(nav_topic 靠這些字附步驟)",
+  "「加進策略組合」→「先綁模擬盤帳戶」" in src and at.nav_topic("帶我看怎麼把 BTC 均線交叉加進策略組合")
+  and at.nav_topic("帶我看怎麼先綁模擬盤帳戶"))
 
 # ── #7b 步驟依表面注入 ───────────────────────────────────────────────
 real = os.path.join(ROOT, "references", "portfolio-steps.md")
@@ -252,10 +254,10 @@ shutil.copy(real, os.path.join(WS, "references", "portfolio-steps.md"))
 nav_msg = "帶我看怎麼把 BTC 均線交叉上模擬盤"
 pd = at.build_prompt(None, None, nav_msg, suggest_directive=True, desktop=True)
 pw = at.build_prompt(None, None, nav_msg, suggest_directive=True)
-t("#7b build_prompt 電腦版:注入電腦版那套,講明是 app 左側的自動下單頁",
-  "確認框再按一次「儲存」" in pd and "電腦版 app 左側的自動下單頁" in pd and "點下方『工作區』分頁" not in pd)
+t("#7b build_prompt 電腦版:注入電腦版那套,講明是電腦版 app",
+  "確認框再按一次「儲存」" in pd and "用戶在這個電腦版 app,不是網頁工作頁" in pd and "點下方『工作區』分頁" not in pd)
 t("#7b build_prompt 網頁:注入網頁那套,講明是網頁工作頁",
-  "點下方『工作區』分頁" in pw and "網頁工作頁的自動下單頁" in pw and "確認框再按一次「儲存」" not in pw and "電腦版 app" not in pw)
+  "點下方『工作區』分頁" in pw and "用戶在網頁工作頁;" in pw and "確認框再按一次「儲存」" not in pw and "電腦版 app" not in pw)
 
 # 表面只看表面:電腦版起的排程報告回合(ReportSink + BLAVE_AGENT_LOCAL=1)也是電腦版
 rs = at.ReportSink.__new__(at.ReportSink)
@@ -269,10 +271,10 @@ os.environ.pop("BLAVE_AGENT_LOCAL", None)
 t("#7b 電腦版聊天(LocalSink)不靠環境變數也是電腦版", at._desktop_surface(ls) and at._formatting_rule_for(ls) is at.LOCAL_FORMATTING_RULE)
 
 L, Wr = at._formatting_rule_for(ls), at.WebSink.formatting_rule
-t("#7b 網頁的格式規則不變:導航標記與「系統會替用戶把自動下單頁開到對的位置」都在", Wr is at.WEB_FORMATTING_RULE and at._NAV_RULE in Wr)
+t("#7b 網頁的格式規則不變:導航標記與「系統會替用戶把頁面開到對的位置」都在", Wr is at.WEB_FORMATTING_RULE and at._NAV_RULE in Wr)
 t("#7b 電腦版的格式規則:不承諾自動開頁、不要 <nav> 標記,改成直接給電腦版步驟",
   "系統會替用戶" not in L and "<nav>" not in L and "不要說已經幫他開好" in L and "電腦版那套" in L)
-t("#7b 電腦版的建議規則照樣在 system prompt 最尾端", L.endswith(at._SUGGEST_RULE) and L.replace(at._NAV_RULE_LOCAL, at._NAV_RULE) == Wr)
+t("#7b 電腦版的建議規則照樣在 system prompt 最尾端", L.endswith(at._SUGGEST_RULE + at._AWAIT_RULE) and L.replace(at._NAV_RULE_LOCAL, at._NAV_RULE) == Wr)
 fresh({})
 msg = nav_msg
 t("#7b 導航句的逐輪錨:網頁有 <nav>,電腦版沒有",
@@ -289,11 +291,12 @@ t("#8 電腦版雲端視角:不注入本機的上線現況(不然本機狀態會
 
 # ── #7a 建議規則 ─────────────────────────────────────────────────────
 rule = at._SUGGEST_RULE
-mcpt = next(l for l in rule.splitlines() if "MCPT p-value > 0.05（Type A" in l)
-t("#7a MCPT 沒過:只提換訊號,不開加濾網", "建議換訊號" in mcpt and "不要建議加濾網" in mcpt and "建議加濾網或換訊號" not in rule, mcpt)
+mcpt = next(l for l in rule.splitlines() if "MCPT p-value > 0.05，Type A" in l)
+t("#7a MCPT 沒過:只提換訊號,不開加濾網", "只提換訊號" in mcpt and "提在同一個訊號上加東西（濾網、調參數、掃參數、vol targeting" in mcpt
+  and "建議加濾網或換訊號" not in rule, mcpt)
 t("#7a 里程碑:建議跟結論同方向,不建議用 → 不提部署、不在同一個訊號上加東西",
-  "建議要跟你這則的結論同方向" in rule and "結論是不建議用、還不能用 → 不提部署" in rule
-  and "不提在同一個訊號上加東西" in rule and "已有可用回測" not in rule)
+  "方向要跟你這則的結論同方向" in rule and "結論是不建議用 → 不提部署" in rule
+  and "**禁止**提在同一個訊號上加東西" in rule and "已有可用回測" not in rule)
 t("#7a 有「建議不能跟正文的結論打架」那條,而且在最後一段之前(最後一段仍是沒有建議就結束)",
   "建議不能跟正文的結論打架" in rule and "沒有要提議時" in rule.strip().splitlines()[-1])
 fresh({})

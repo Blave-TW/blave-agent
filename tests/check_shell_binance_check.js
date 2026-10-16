@@ -6,18 +6,20 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
 const ok200 = (b) => ({ status: 200, body: { ipRestrict: true, createTime: 1700000000000, enableReading: true, enableWithdrawals: false, enableSpotAndMarginTrading: true, enableFutures: true, ...b } });
 (async () => {
   t("全對:有白名單、合約開、提領關 → OK", classify(ok200(), "futures").code === "OK" && classify(ok200(), "futures").ok === true);
-  t("提領開著 → WITHDRAW_ENABLED,不收(Wei 2026-09-25 拍板;三種 market 都一樣,白名單開不開也一樣)", ["futures", "spot", "any"].every((m) => { const r = classify(ok200({ enableWithdrawals: true }), m, true); return r.ok === false && r.code === "WITHDRAW_ENABLED"; })
-    && classify(ok200({ enableWithdrawals: true, ipRestrict: false }), "any", true).code === "WITHDRAW_ENABLED");
+  t("提領開著照樣收(Wei 2026-10-15):三種 market 都 OK;沒白名單照舊 NO_IP_RESTRICT 放行", ["futures", "spot", "any"].every((m) => { const r = classify(ok200({ enableWithdrawals: true }), m); return r.ok === true && r.code === "OK"; })
+    && classify(ok200({ enableWithdrawals: true, ipRestrict: false }), "any").code === "NO_IP_RESTRICT");
   t("沒設白名單的一般 key:交易權限全關 → TRADING_DISABLED", classify(ok200({ ipRestrict: false, enableSpotAndMarginTrading: false, enableFutures: false }), "futures").code === "TRADING_DISABLED");
   t("現貨開、合約沒開、要做合約 → FUTURES_DISABLED(白名單沒問題,是 Futures 那格)", classify(ok200({ enableFutures: false }), "futures").code === "FUTURES_DISABLED");
   t("做現貨只看現貨那一格", classify(ok200({ enableFutures: false }), "spot").code === "OK" && classify(ok200({ enableSpotAndMarginTrading: false }), "spot").code === "TRADING_DISABLED");
   t("交易開著但沒有白名單(用戶自己關了安全管控):放行但帶提醒", (() => { const r = classify(ok200({ ipRestrict: false }), "futures"); return r.ok === true && r.code === "NO_IP_RESTRICT" && r.detail.warn === true; })());
   t("200 但不是權限物件(空物件、HTML 字串、欄位型別不對):不下結論 = UNKNOWN,不是「交易權限沒了」", classify({ status: 200, body: {} }, "futures").code === "UNKNOWN" && classify({ status: 200, body: "<html>" }, "futures").code === "UNKNOWN"
     && classify(ok200({ enableFutures: "true" }), "futures").code === "UNKNOWN" && classify(ok200({ ipRestrict: 1 }), "futures").code === "UNKNOWN");
-  t("提領那一格缺席或不是 boolean → 不下結論(缺席不能當成「沒開」放行)", (() => { const b = ok200().body; delete b.enableWithdrawals; const r = classify({ status: 200, body: b }, "futures"); return r.ok === false && r.code === "UNKNOWN"; })()
-    && classify(ok200({ enableWithdrawals: "false" }), "futures").ok === false && classify(ok200({ enableWithdrawals: "true" }), "futures").code === "UNKNOWN");
-  t("提領開著且交易關著 → 連接 WITHDRAW_ENABLED(提領先於交易那格判)、重查 TRADING_DISABLED", classify(ok200({ enableWithdrawals: true, enableFutures: false, enableSpotAndMarginTrading: false }), "futures", true).code === "WITHDRAW_ENABLED"
-    && classify(ok200({ enableWithdrawals: true, enableFutures: false, enableSpotAndMarginTrading: false }), "futures", false).code === "TRADING_DISABLED");
+  t("提領那一格不看了:缺席或不是 boolean 都不影響結論", (() => { const b = ok200().body; delete b.enableWithdrawals; return classify({ status: 200, body: b }, "futures").code === "OK"; })()
+    && classify(ok200({ enableWithdrawals: "true" }), "futures").code === "OK");
+  t("提領開著但交易關著 → 照舊 TRADING_DISABLED / FUTURES_DISABLED(交易那格的檢查不變)", classify(ok200({ enableWithdrawals: true, enableFutures: false, enableSpotAndMarginTrading: false }), "futures").code === "TRADING_DISABLED"
+    && classify(ok200({ enableWithdrawals: true, enableFutures: false, enableSpotAndMarginTrading: false }), "any").code === "TRADING_DISABLED"
+    && classify(ok200({ enableWithdrawals: true, enableFutures: false }), "futures").code === "FUTURES_DISABLED");
+  t("交易兩格與白名單仍然要是 boolean(缺席不能當成「沒開」下結論)", ["enableSpotAndMarginTrading", "enableFutures", "ipRestrict"].every((k) => { const b = ok200().body; delete b[k]; return classify({ status: 200, body: b }, "any").code === "UNKNOWN"; }));
   t("429 / 418 = RATE_LIMITED(呼叫端要退讓)", classify({ status: 429, body: { code: -1003 } }, "futures").code === "RATE_LIMITED" && classify({ status: 418, body: {} }, "futures").code === "RATE_LIMITED");
   const E = (code, status = 400) => classify({ status, body: { code, msg: "x" } }, "futures").code;
   t("錯誤碼對應:-2015 / -2014 / -1022 / -1021 / 其他", E(-2015, 401) === "IP_OR_KEY" && E(-2014) === "BAD_KEY_FORMAT" && E(-1022) === "BAD_SECRET" && E(-1021) === "CLOCK" && E(-9999) === "UNKNOWN" && classify({ status: 500, body: "oops" }, "futures").code === "UNKNOWN");
@@ -48,12 +50,12 @@ const ok200 = (b) => ({ status: 200, body: { ipRestrict: true, createTime: 17000
   t("nextPrev:沒結論的(斷網/時鐘/限速/不明/testnet)都不覆寫,有結論的才覆寫", ["NETWORK", "CLOCK", "UNKNOWN", "RATE_LIMITED", "SKIPPED_TESTNET"].every((c) => nextPrev(OK, { ok: c === "SKIPPED_TESTNET", code: c }) === OK) && nextPrev(OK, bad("TRADING_DISABLED")).code === "TRADING_DISABLED");
   t("重查:交易權限沒了 = TRADING_LOST;全部是 P2", (() => { const a = recheckVerdict(OK, bad("TRADING_DISABLED")), f = recheckVerdict(OK, bad("FUTURES_DISABLED"));
     return a.reason === "TRADING_LOST" && a.level === "P2" && f.reason === "TRADING_LOST" && a.confirm === true && Object.keys(VERDICT_LEVEL).every((k) => VERDICT_LEVEL[k] === "P2"); })());
-  // 提領(Wei 2026-09-25):只在連接當下擋;重查不看提領、表上沒有這一則(已綁的不管)
-  t("連接擋提領、重查不看:同一份回應 check → WITHDRAW_ENABLED,recheck → OK", await (async () => { const http = async () => ok200({ enableWithdrawals: true });
-    const a = await check({ apiKey: "K", secret: "S", market: "any", http }), r = await recheck({ apiKey: "K", secret: "S", market: "any", http });
-    return a.ok === false && a.code === "WITHDRAW_ENABLED" && r.ok === true && r.code === "OK"; })());
-  t("重查時提領開著 → 沒有 verdict、表上也沒有這個 reason", !("WITHDRAW_ON" in VERDICT_LEVEL) && recheckVerdict(OK, classify(ok200({ enableWithdrawals: true }), "any", false)) === null && Object.keys(VERDICT_LEVEL).length === 4);
-  t("重查仍然要求四個欄位都是 boolean(提領那格缺席 / 不是 boolean → 不下結論)", classify(ok200({ enableWithdrawals: undefined }), "any", false).code === "UNKNOWN" && classify(ok200({ enableWithdrawals: "false" }), "any", false).code === "UNKNOWN");
+  // 提領(Wei 2026-10-15):連接與重查都不看
+  t("提領開著:check 與 recheck 都 OK;沒開交易照樣 TRADING_DISABLED", await (async () => { const http = async () => ok200({ enableWithdrawals: true }), off = async () => ok200({ enableWithdrawals: true, enableSpotAndMarginTrading: false, enableFutures: false });
+    const a = await check({ apiKey: "K", secret: "S", market: "any", http }), r = await recheck({ apiKey: "K", secret: "S", market: "any", http }), x = await check({ apiKey: "K", secret: "S", market: "any", http: off });
+    return a.ok === true && a.code === "OK" && r.ok === true && r.code === "OK" && x.ok === false && x.code === "TRADING_DISABLED"; })());
+  t("重查時提領開著 → 沒有 verdict、表上也沒有這個 reason", !("WITHDRAW_ON" in VERDICT_LEVEL) && recheckVerdict(OK, classify(ok200({ enableWithdrawals: true }), "any")) === null && Object.keys(VERDICT_LEVEL).length === 4);
+  t("原始碼裡沒有 WITHDRAW_ENABLED 這個代號了", !/WITHDRAW_ENABLED|enableWithdrawals/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "binance_check.js"), "utf8")));
   t("重查:存著的金鑰對不上(-1022 / -2014)歸金鑰被拒,不掉進權限類;-2015 三種都是 P2", recheckVerdict(OK, bad("BAD_SECRET")).reason === "KEY_REJECTED" && recheckVerdict(OK, bad("BAD_KEY_FORMAT")).reason === "KEY_REJECTED"
     && ["1.1.1.1|2.2.2.2", "1.1.1.1|1.1.1.1", "|"].every((p) => recheckVerdict(OK, bad("IP_OR_KEY"), p.split("|")[0] || null, p.split("|")[1] || null).level === "P2"));
   t("重查:斷網、時鐘、不明錯誤都不叫人(不因為斷網就停單)", [bad("NETWORK"), bad("CLOCK"), bad("UNKNOWN"), bad("RATE_LIMITED")].every((c) => recheckVerdict(OK, c, "1", "2") === null));

@@ -43,11 +43,12 @@ for name, raw, want_text, want_flag in [
     got = at.extract_await(raw)
     ok(f"extract_await:{name}", got == (want_text, want_flag), got)
 
-# ── 2. 規則在 prompt 最尾端的那一節(_SUGGEST_RULE),web 與電腦版都帶 ──
-ok("規則併在 _SUGGEST_RULE 裡", "<await/>" in at._SUGGEST_RULE)
+# ── 2. 規則是 prompt 最尾端那一節(_AWAIT_RULE,緊接在建議規則後),web 與電腦版都帶 ──
+ok("規則獨立在 _AWAIT_RULE,不再混在建議規則裡", "<await/>" in at._AWAIT_RULE and "<await/>" not in at._SUGGEST_RULE)
 for rule_name in ("WEB_FORMATTING_RULE", "LOCAL_FORMATTING_RULE"):
     rule = getattr(at, rule_name)
-    ok(f"{rule_name} 以 _SUGGEST_RULE 收尾(標記規則仍在 prompt 最尾端)", rule.endswith(at._SUGGEST_RULE))
+    ok(f"{rule_name} 以建議規則＋等回覆規則收尾(標記規則仍在 prompt 最尾端)",
+       rule.endswith(at._SUGGEST_RULE + at._AWAIT_RULE))
 
 # ── 3. 列舉每個 sink:runtime/ 裡所有有 finalize 的類別都要在這裡被餵過標記 ──
 src_sinks = {}

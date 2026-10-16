@@ -4,7 +4,8 @@
 //   1. 新回合長出兩種階段:收著(aria-expanded=false);收合列不多任何節點;aria-controls 指向整塊展開區、每輪各一個 id
 //   2. 按 ⌄ 收起 → 再來 ≥3 次進度更新(新步驟、步驟做完、計時器、思考文字)仍收著;再按一次展開;Enter / Space 同樣開關
 //   3. 回合結束一律收起(展開過也一樣);出錯的回合例外,收據自己攤開
-//   4. 回放(receiptFold)收著
+//   4. 回放(receiptFold)預設攤開(Wei 10-16:回放的收據都來自停止／出錯的回合;spec-turn-phases-one-layer 舊帳 1)
+//   一層化之後(spec-turn-phases-one-layer):展開區只剩階段清單＋思考文字,role=status 只包狀態列那一行,清單沒有高度上限
 // 純 node:切 app.js 原文跑在假 DOM 上(不起 Electron);「看得到」= 清單沒 hidden、在展開區裡、而展開區開著(app.css 的 1fr 規則)
 // 跑法:node tests/check_shell_receipt_collapse.js
 const fs = require("fs"), path = require("path");
@@ -27,6 +28,7 @@ class El {
   append(...cs) { cs.forEach((c) => this.appendChild(c)); }
   insertBefore(c, ref) { if (c.parentNode) c.remove(); c.parentNode = this; const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, c); return c; }
   before(c) { this.parentNode.insertBefore(c, this); }
+  get nextSibling() { const p = this.parentNode; return p ? p.children[p.children.indexOf(this) + 1] || null : null; }
   remove() { if (this.parentNode) { const p = this.parentNode; p.children.splice(p.children.indexOf(this), 1); this.parentNode = null; } }
   matches() { return false; } focus() {}
   addEventListener(t, f) { (this._on[t] = this._on[t] || []).push(f); }
@@ -60,8 +62,8 @@ function phasesShown(el) {
 ok("app.css:展開區只靠 is-open 開(1fr)、預設 0fr;階段清單沒有自己的顯示規則;chevron 翻轉只綁 aria-expanded",
   /\.think-reason-wrap \{[^}]*grid-template-rows: 0fr;/.test(css) && css.includes(".think-indicator.is-open .think-reason-wrap { grid-template-rows: 1fr; }")
   && !/\.think-phases[^{]*\{[^}]*display/.test(css) && css.includes('.think-head[aria-expanded="true"] .think-chev {') && !/is-open[^{]*\.think-chev/.test(css));
-ok("app.css:階段清單高度上限同收據清單(max-height 204、overflow-y auto),出錯回合自己攤開時 60 列不撐爆聊天欄",
-  /\.think-phases \{[^}]*max-height: 204px; overflow-y: auto;/.test(css) && /\.think-steps \{[^}]*max-height: 204px; overflow-y: auto;/.test(css));
+ok("app.css:階段清單沒有高度上限、不內捲(內捲自動捲到底會把最上面一列裁一半,spec-turn-phases-one-layer §3);逐步清單的樣式拿掉",
+  /\.think-phases \{ list-style: none;[^}]*\}/.test(css) && !/\.think-phases \{[^}]*(max-height|overflow)/.test(css) && !/\.think-steps?[ {.]/.test(css));
 
 const tick = () => timers[timers.length - 1]();
 function liveTurn() {
@@ -79,7 +81,10 @@ ok("1 新回合長出兩種階段(寫進清單了),但預設收著、aria-expand
 ok("1 head 是 <button type=button>(鍵盤 Enter / Space 開關靠原生按鈕)", b.head.tagName === "BUTTON" && b.head.type === "button");
 ok("1 收合列不加字:head 只有 tick 條、摘要、時長、chevron 四個節點", headKids(b.head) === "think-ticks|think-sum|think-elapsed|think-chev cv7", headKids(b.head));
 const ctl1 = b.head.getAttribute("aria-controls"), wrap1 = inWrap(b.phasesEl);
-ok("1 aria-controls 指向整塊展開區(清單、收據、思考文字都在裡面)", !!ctl1 && wrap1.id === ctl1 && inWrap(b.stepsEl) === wrap1 && inWrap(b.reason) === wrap1 && b.phasesEl.getAttribute("aria-hidden") === null, { ctl1, id: wrap1 && wrap1.id });
+ok("1 aria-controls 指向整塊展開區(清單、思考文字都在裡面)", !!ctl1 && wrap1.id === ctl1 && inWrap(b.reason) === wrap1 && b.phasesEl.getAttribute("aria-hidden") === null, { ctl1, id: wrap1 && wrap1.id });
+{ let p = b.head.parentNode; const live = p && p.getAttribute("role") === "status" && p.getAttribute("aria-live") === "polite" ? p : null;
+  const inLive = (n) => { for (let q = n; q; q = q.parentNode) if (q === live) return true; return false; };
+  ok("1 role=status 只包狀態列那一行(head);展開區、階段清單不在 live region 裡;整塊 .think-indicator 不掛 role", !!live && b.el.getAttribute("role") === null && !inLive(wrap1) && !inLive(b.phasesEl) && live.parentNode === b.el); }
 
 // 2 滑鼠
 b.head.click(); s = st(b);
@@ -132,9 +137,10 @@ ok("3 出錯收尾(例外):收據自己攤開,aria-expanded=true", st(b).open &&
 
 // 4 回放
 const f = M.receiptFold([{ tool: "WebSearch", summary: "q" }, { tool: "Write", summary: "x.py" }]);
-const fRows = f.querySelector(".think-phases").children.length, fs1 = phasesShown(f), fh = f.querySelector(".think-head"), fw = inWrap(f.querySelector(".think-phases"));
+const fRows = f.querySelector(".think-phases").children.length, fh = f.querySelector(".think-head"), fw = inWrap(f.querySelector(".think-phases"));
+const fs1 = phasesShown(f), fa1 = fh.getAttribute("aria-expanded");
 fh.click(); const fs2 = phasesShown(f), fa2 = fh.getAttribute("aria-expanded"); fh.key(" "); const fs3 = phasesShown(f);
-ok("4 回放(兩種階段):收著;按 ⌄ 才出、再按(Space)收起;aria-controls 指向展開區", fRows === 2 && !fs1 && fs2 && fa2 === "true" && !fs3 && fh.getAttribute("aria-controls") === fw.id, { fRows, fs1, fs2, fs3 });
+ok("4 回放(兩種階段):預設攤開(aria-expanded=true);按 ⌄ 收起、再按(Space)展開;aria-controls 指向展開區", fRows === 2 && fs1 && fa1 === "true" && !fs2 && fa2 === "false" && fs3 && fh.getAttribute("aria-controls") === fw.id, { fRows, fs1, fs2, fs3 });
 
 console.log(red ? `\n${red} FAILED` : "\nALL PASS");
 process.exit(red ? 1 : 0);

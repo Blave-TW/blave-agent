@@ -294,12 +294,20 @@ strategy("basket", state=portfolio_state({"BTC-USDT": 0.5, "ETHUSDT": 0.3, "SOLU
 st = pr.strategy_states()["basket"]
 check(st["weights"] == {"BTCUSDT": 0.5, "ETHUSDT": 0.3, "SOLUSDT": 0.2},
       f"…validated: canonical keys, finite floats only, zero / malformed dropped ({st['weights']})")
+check(st["universe"] == ["BTCUSDT", "ETHUSDT", "SOLUSDT", "NANUSDT", "ZEROUSDT"],
+      f"…universe keeps every member, zero weight included, in state order ({st.get('universe')})")
+strategy("basket", state=portfolio_state({"GOOGLUSDT": 0, "AMZNUSDT": 0}, 1790000000))
+st = pr.strategy_states()["basket"]
+check(st.get("type") == "portfolio" and st["weights"] == {} and st["universe"] == ["GOOGLUSDT", "AMZNUSDT"],
+      f"…a flat portfolio (every weight 0) still names its members ({st})")
 many = {f"C{i:03d}USDT": 1 / 300 for i in range(300)}
 many["BIGUSDT"] = 0.2
 strategy("basket", state=portfolio_state(many, 1790000000))
 big = pr.strategy_states()["basket"]["weights"]
 check(len(big) == pr.PORTFOLIO_WEIGHTS_MAX and big.get("BIGUSDT") == 0.2,
       f"…capped at {pr.PORTFOLIO_WEIGHTS_MAX} symbols, largest weights kept ({len(big)})")
+check(len(pr.strategy_states()["basket"]["universe"]) == pr.PORTFOLIO_WEIGHTS_MAX,
+      f"…universe capped at {pr.PORTFOLIO_WEIGHTS_MAX} too")
 strategy("basket", state=portfolio_state({"BTCUSDT": 0.5, "ETHUSDT": 0.3, "SOLUSDT": 0.2}, 1790000000))
 strategy("single", state={"symbol": "BTCUSDT", "position": 1.0})
 report_states = json.loads(json.dumps(pr.strategy_states()))  # the wire

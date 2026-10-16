@@ -28,7 +28,7 @@ ok("用的是上次存下的匯率時,優化表下講是哪一天的(≈);字串
 // ① 停用原因
 { const ctx = vm.createContext({ TR: { save: null, env: "local", listLoaded: true, st: { alive: true } }, TR_BAGS: { cloud: { st: { cloud: { code: "OK" } } } }, trFxView: () => ({ fx: null, base: "USD" }),
     mgSameAsAmounts: () => true, trCfgUnread: () => false, trReport: () => ({}), trStored: () => ({}) });
-  vm.runInContext(cutF(pf, "mgApplyWhy"), ctx);
+  vm.runInContext(cutF(pf, "mgApplyWhy") + "\n" + cutF(pf, "mgFxWhy"), ctx);
   const why = (d, q, ch) => vm.runInContext("mgApplyWhy(" + J(d) + ", " + J(q) + ", " + J(ch) + ")", ctx);
   const fxRow = { rows: [{ fxMissing: true }], eff: 100 }, quoteRow = { rows: [{ fxMissing: false }], eff: 100 };
   const okFx = why(fxRow, true, true);

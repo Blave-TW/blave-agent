@@ -1,7 +1,11 @@
 """Minimal check: the key-free Taiwan daily-bar path in lib.data — TWSE STOCK_DAY / TPEx
-tradingStock month by month, 除權息 factors from TWT49U / exDailyQ, FinMind free as the second
-source, Blave as the last. No network: the exchange session is stubbed and replays recorded
-answers from tests/fixtures/tw_free_daily/ (one real fetch each, 2026-09-24).
+tradingStock month by month, price-continuity factors from the exchanges' tables (TWT49U /
+exDailyQ 除權息, TWTAUU / revivt 減資, TWTB8U / pvChgRslt 變更面額, TWTCAU / etfSplitRslt /
+etfRvsRslt ETF 分割), FinMind free as the second source. No network: the exchange session is
+stubbed and replays recorded answers from tests/fixtures/tw_free_daily/ (one real fetch each,
+2026-09-24; the 減資／面額／分割 tables 2026-10-15); the Blave CDN answers "not published" and
+the Blave endpoint 403 (a desktop without data access) unless a test says otherwise. The CDN
+path itself is tests/check_tw_cdn_daily.py.
 
   - 2330 2024-01 = 22 rows, values as recorded (01-02 close 593 / 27,997,826 shares, 01-31 628)
   - 6488 (OTC) 2024-01 from TPEx: 成交仟股 ×1,000, ROC dates, name padding harmless
@@ -11,7 +15,8 @@ answers from tests/fixtures/tw_free_daily/ (one real fetch each, 2026-09-24).
     6488 2023 from exDailyQ; the event table is served from cache on the second call
   - a backfill cut short keeps the months already fetched; the re-run asks only for the rest
   - a second price call for the same month makes no request; the throttle spaces twse.com.tw requests 3 s, others 1 s
-  - source order: exchange → FinMind free → Blave, and BLAVE_TWSTOCK_DAILY_SOURCE=blave
+  - source order: desktop default CDN → Blave → exchange → FinMind free; 'public' exchange →
+    FinMind free → Blave; BLAVE_TWSTOCK_DAILY_SOURCE=blave
   - FEED_TIMING['twstock_price'] = 17:35 Taipei; align_feed hides today's bar before that
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_tw_free_daily.py
@@ -76,6 +81,16 @@ ROUTES = [   # (url, params that must match) → fixture file
     (D._TWSE_EXRIGHT, {"startDate": "20230101", "endDate": "20231231"}, "twse_twt49u_2023.json"),
     (D._TWSE_EXRIGHT, {"startDate": "20240101", "endDate": "20241231"}, "twse_twt49u_2024.json"),
     (D._TPEX_EXRIGHT, {"startDate": "2023/01/01", "endDate": "2023/12/31"}, "tpex_exdailyq_2023.json"),
+    (D._TWSE_REDUCTION, {"startDate": "20230101"}, "twse_twtauu_2023.json"),
+    (D._TWSE_REDUCTION, {"startDate": "20240101"}, "twse_twtauu_2024.json"),
+    (D._TWSE_PAR_CHANGE, {"startDate": "20230101"}, "twse_twtb8u_2023.json"),
+    (D._TWSE_PAR_CHANGE, {"startDate": "20240101"}, "twse_twtb8u_2024.json"),
+    (D._TWSE_ETF_SPLIT, {"startDate": "20230101"}, "twse_twtcau_2023.json"),
+    (D._TWSE_ETF_SPLIT, {"startDate": "20240101"}, "twse_twtcau_2024.json"),
+    (D._TPEX_REDUCTION, {"startDate": "2023/01/01"}, "tpex_revivt_2023.json"),
+    (D._TPEX_PAR_CHANGE, {"startDate": "2023/01/01"}, "tpex_pvchgrslt_2023.json"),
+    (D._TPEX_ETF_SPLIT, {"startDate": "2023/01/01"}, "tpex_etfsplitrslt_2023.json"),
+    (D._TPEX_ETF_REV_SPLIT, {"startDate": "2023/01/01"}, "tpex_etfrvsrslt_2023.json"),
     (D._FINMIND_DATA, {"dataset": "TaiwanStockPrice", "data_id": "2330"}, "finmind_2330_2024-01.json"),
 ]
 
@@ -100,6 +115,18 @@ sleeps = []
 D.time.sleep = lambda s: sleeps.append(s)          # throttle / backoff waits are recorded, not slept
 os.environ.pop("BLAVE_TWSTOCK_DAILY_SOURCE", None)
 os.environ["BLAVE_AGENT_LOCAL"] = "1"              # the desktop marker: the free chain is the default here
+
+
+def _cdn_not_published(key, etag=None):
+    raise D.TwCdnUnavailable(f"{key}: HTTP 403 (not published — test)")
+
+
+def _blave_no_access(url, **kw):
+    raise requests.HTTPError("403 Client Error: FORBIDDEN (test)", response=FakeResponse({"code": "ERR005"}, 403))
+
+
+D._tw_cdn_get = _cdn_not_published                 # never the network: this file is the exchange path
+D._retry_get = _blave_no_access
 
 
 def fresh(down=()):
@@ -229,13 +256,24 @@ def t_factors():
     check(list(ev.index.strftime("%m-%d")) == ["03-16", "06-15", "09-14", "12-14"]
           and f == [1.00541, 1.00468, 1.00558, 1.00523],
           f"2330 2023 TWT49U factors 前收/參考價 = {f} on the four ex-dates")
-    check(s.calls[-1][1].get("startDate") == "20230101" and s.calls[-1][1].get("endDate") == "20231231",
+    t49 = [p for u, p in s.calls if u == D._TWSE_EXRIGHT]
+    check(len(t49) == 1 and t49[0].get("startDate") == "20230101" and t49[0].get("endDate") == "20231231",
           "one TWT49U request covers the year (startDate/endDate, not strDate)")
+    asked = [u for u, _ in s.calls if u in (D._TWSE_EXRIGHT, D._TWSE_REDUCTION, D._TWSE_PAR_CHANGE, D._TWSE_ETF_SPLIT)]
+    check(asked == [D._TWSE_EXRIGHT, D._TWSE_REDUCTION, D._TWSE_PAR_CHANGE, D._TWSE_ETF_SPLIT],
+          "a TWSE year asks each of the four tables once (除權息, 減資, 變更面額, ETF 分割)")
     n = len(s.calls)
     D._tw_exright_for("2330", "twse", "2023-03-01", "2023-06-30")
     check(len(s.calls) == n, "event table for those months served from the monthly cache (no request)")
-    check(len(list((D._CACHE_DIR / "twstock_exright_twse").glob("2023-*.parquet"))) == 12,
-          "the year's answer is split into 12 month files")
+    check(len(list((D._CACHE_DIR / "twstock_adjev_twse").glob("2023-*.parquet"))) == 12,
+          "the year's answer is split into 12 month files (twstock_adjev_*; the 除權息-only twstock_exright_* is not read)")
+    red = D._tw_exright_events("twse", "2023-01-01", "2023-12-31")
+    check(len(red) == 10 + 26, f"TWSE 2023 = 10 除權息 rows (fixture) + 26 減資 rows (got {len(red)})")
+    tauu = json.loads(_fixture("twse_twtauu_2023.json"))["data"][0]
+    row = red[(red["stock_id"] == tauu[1].strip()) & (red.index == D._roc_date(tauu[0]))]
+    want_ref = D._tw_num(tauu[8]) if D._tw_num(tauu[8]) > 0 else D._tw_num(tauu[4])
+    check(len(row) == 1 and row["prev_close"].iloc[0] == D._tw_num(tauu[3]) and row["ref_price"].iloc[0] == want_ref,
+          f"a TWTAUU row: 恢復買賣日期 → date, 停止買賣前收盤價格 / 恢復買賣參考價 (除權參考價 when present) → the factor ({tauu[:5]})")
     days = pd.bdate_range("2023-01-02", "2023-12-29")
     bars = pd.DataFrame({"Open": 100.0, "High": 100.0, "Low": 100.0, "Close": 100.0, "Volume": 1.0}, index=days)
     adj = D._tw_forward_adjust(bars, ev)
@@ -246,6 +284,10 @@ def t_factors():
     tp = D._tw_exright_for("6488", "tpex", "2023-01-01", "2023-12-31")
     check(tp["prev_close"].tolist() == [443.0, 542.0] and tp["ref_price"].tolist() == [436.5, 532.5],
           "6488 2023 exDailyQ: 01-05 443/436.5, 07-19 542/532.5")
+    rv = json.loads(_fixture("tpex_revivt_2023.json"))["tables"][0]["data"][0]
+    got = D._tw_exright_for(rv[1].strip(), "tpex", "2023-01-01", "2023-12-31")
+    check(len(got) == 1 and got.index[0] == D._tw_roc_compact(rv[0]) and got["prev_close"].iloc[0] == D._tw_num(rv[3]),
+          f"a TPEx revivt row: 7-digit ROC date {rv[0]} → {D._tw_roc_compact(rv[0]).date()}, 最後交易日之收盤價格 as prev_close")
 
 
 def t_adj_entry():
@@ -292,12 +334,25 @@ def t_fallback():
         return FakeResponse({"data": [{"date": "2024-01-02", "open": 590, "high": 593, "low": 589,
                                        "close": 593, "volume": 27997826}]})
     D._retry_get = fake_retry_get
+    os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"] = "public"
     try:
         df = quiet(D.fetch_twstock_price, "2330", "2024-01-01", "2024-01-31", {"api-key": "x"})
     finally:
         D._retry_get = real_retry_get
+        del os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"]
+    u = urls(s)
     check(df.attrs.get("source") == "Blave" and blave_calls == [f"{D.BASE}/studio/market/twstock/price/2330"]
-          and u.index(D._FINMIND_DATA) < len(s.calls), "both free sources down → the Blave endpoint, last")
+          and D._FINMIND_DATA in u, "'public': both free sources down → the Blave endpoint, last")
+
+    s = fresh()
+    blave_calls.clear()
+    D._retry_get = fake_retry_get
+    try:
+        df = quiet(D.fetch_twstock_price, "2330", "2024-01-01", "2024-01-31", {"api-key": "x"})
+    finally:
+        D._retry_get = real_retry_get
+    check(df.attrs.get("source") == "Blave" and len(blave_calls) == 1 and s.calls == [],
+          "desktop default with Blave access and the CDN not reachable: Blave answers, no exchange request")
 
     s = fresh()
     os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"] = "blave"
@@ -329,9 +384,9 @@ def t_fallback():
         os.environ.pop("BLAVE_TWSTOCK_DAILY_SOURCE", None)
         os.environ["BLAVE_AGENT_LOCAL"] = "1"
     s = fresh()
-    df = D.fetch_twstock_price("2330", "2024-01-01", "2024-01-31", {})
+    df = quiet(D.fetch_twstock_price, "2330", "2024-01-01", "2024-01-31", {})
     check(df.attrs.get("source") == "TWSE" and urls(s)[-1] == D._TWSE_STOCK_DAY,
-          "desktop default (BLAVE_AGENT_LOCAL=1, no override): the exchange chain")
+          "desktop default, CDN not reachable and no Blave access (403): the exchange chain")
 
     s = fresh()
     future = (pd.Timestamp.now(tz=TPE) + pd.Timedelta(days=3)).strftime("%Y-%m-%d")

@@ -241,8 +241,24 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
       R("ValueError: IP_OR_KEY: rejected by binance").code === "IP_OR_KEY" && R("ValueError: BAD_SECRET: x").code === "BAD_SECRET"
       && R("ValueError: RATE_LIMITED: HTTPError 429").code === "RATE_LIMITED" && R("ValueError: RATE_LIMITED: HTTPError 418 banned").code === "RATE_BANNED"
       && R("ValueError: RATE_LIMITED: backing off 40s").code === "RATE_BACKOFF");
-    t("連接結果:WITHDRAW_ENABLED 是認得的代號(提領開著主機擋下);不認得的代號走一般拒絕(原文截 200)", R("ValueError: WITHDRAW_ENABLED: 這把金鑰有提領權限").code === "WITHDRAW_ENABLED" && M.CONNECT_CODES.includes("WITHDRAW_ENABLED")
+    t("連接結果:提領不再擋(Wei 2026-10-15),WITHDRAW_ENABLED 不在表上;舊 runtime 送來的和其他不認得的代號都走一般拒絕(原文截 200)", !M.CONNECT_CODES.includes("WITHDRAW_ENABLED")
+      && R("ValueError: WITHDRAW_ENABLED: 這把金鑰有提領權限").code === "REJECTED" && /WITHDRAW_ENABLED/.test(R("ValueError: WITHDRAW_ENABLED: x").detail.error)
       && R("ValueError: EVIL_CODE: " + "z ".repeat(500)).code === "REJECTED" && R("boom " + "z ".repeat(500)).detail.error.length === 200);
+    { const V = (e, sec) => M.interpretVenueBind({ ok: false, error: e }, sec || {}), K = "Ab1CdE2fGh3IjK4lMn5OpQ6rSt7UvW8x";
+      const a = V("ValueError: LIB_BROKEN: lib/account_okx.py could not load (SyntaxError: invalid syntax, line 12) — not saved");
+      const b = V("ValueError: LIB_BROKEN: lib/account_bybit.py could not load (ImportError: No module named 'pybit')");
+      const c = V("ValueError: LIB_BROKEN: lib/account_okx.py could not load (RuntimeError: " + K + ")", { OKX_API_KEY: K });
+      const d = V("ValueError: LIB_BROKEN: lib/account_okx.py could not load (" + "y".repeat(400) + ")");
+      t("本機綁定 LIB_BROKEN(lib 在、import 失敗):自己的代號,reason = 冒號後整句,「— not saved」尾巴有沒有都收",
+        a.ok === false && a.code === "LIB_BROKEN" && a.detail.reason === "lib/account_okx.py could not load (SyntaxError: invalid syntax, line 12)"
+        && b.code === "LIB_BROKEN" && b.detail.reason === "lib/account_bybit.py could not load (ImportError: No module named 'pybit')");
+      t("LIB_BROKEN 的 reason 也遮金鑰、截 200;不在 CONNECT_CODES(表上的代號會丟掉原因)",
+        c.code === "LIB_BROKEN" && c.detail.reason.indexOf(K) < 0 && /•••/.test(c.detail.reason) && d.code === "LIB_BROKEN" && d.detail.reason.length <= 200 && !M.CONNECT_CODES.includes("LIB_BROKEN"));
+      t("LIB_BROKEN 不吃掉旁邊幾條:NO_CHECK / REJECTED / UNKNOWN 照舊;句中提到 LIB_BROKEN 不算",
+        V("ValueError: no permission check exists for okx on this workspace (run 更新 blave agent first) — not saved").code === "NO_CHECK"
+        && V("ValueError: REJECTED: okx did not accept this key (RuntimeError: 50113) — not saved").code === "REJECTED"
+        && V("ValueError: UNKNOWN: okx's account answer could not be read — not saved").code === "UNKNOWN"
+        && V("RuntimeError: wrapped ValueError: LIB_BROKEN: x").code === "SEND_FAILED"); }
     t("連接結果:被拒原文用這一次送出的金鑰值再遮一次(模擬那三個不是祕密,不遮)", (() => {
       const r = M.interpretConnect({ ok: false, kind: "rejected", error: "boom KEYaaaaaaaa / SECbbbbbbbb paper" }, { BINANCE_API_KEY: "KEYaaaaaaaa", BINANCE_SECRET_KEY: "SECbbbbbbbb", PAPER_API_KEY: "paper" });
       return r.code === "REJECTED" && !/KEYaaaaaaaa|SECbbbbbbbb/.test(r.detail.error) && /paper/.test(r.detail.error); })()

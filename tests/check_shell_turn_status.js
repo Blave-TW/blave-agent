@@ -93,7 +93,8 @@ ok("步驟清單:對不到 → 中性的「正在處理」、不帶 kind 的受�
   && SL({ tool: "mcp__x__y", kind: "brand_new_kind", kind_obj: "leak" }).obj === "" && SL({ tool: "ToolSearch", kind: "silent" }) === null && SL({ tool: "ToolSearch" }) === null);
 ok("步驟清單:重開畫回的收據只有工具名,照名稱分類", SL({ tool: "mcp__blave_browser__browser_read", summary: "" }).verb === "Reading" && SL({ tool: "Bash", summary: "lib/runner.py" }).verb === "Working"
   && SL({ tool: "Bash", summary: "lib/runner.py" }).obj === "lib/runner.py");
-ok("接線:即時那列與重開畫回那列都走 stepLabel,不再畫 c.tool / st.tool", /verb\.textContent = lab\.verb;/.test(src) && /v\.textContent = lab\.verb;/.test(src)
+ok("接線:子列(當下動作、最後幾步;即時與重開畫回共用 subRow)走 stepLabel,不再畫 c.tool / st.tool", /v\.textContent = lab\.verb;/.test(cut(src, "function subRow(", "/* 出錯／中斷的回合要列哪幾步"))
+  && /subRow\(b\.sub\.children\[0\], rec\.c, stepLabel\(rec\.c\)\);/.test(src) && /subRow\(document\.createElement\("li"\), r\.c, stepLabel\(r\.c, true, !!r\.error\)/.test(src)
   && !/textContent = c\.tool/.test(src) && !/textContent = st\.tool/.test(src));
 // 做完的步驟用完成式;正在跑的照舊
 ok("步驟清單:做完的步驟換完成式(step.*),正在跑的照舊(act.*);讀多頁的數字照樣在字裡、受詞不變", SL({ kind: "web_read", summary: "coindesk.com" }).verb === "Reading"
@@ -128,11 +129,11 @@ ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ displ
   && /\.think-obj \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px;/.test(css) && /\.think-verb \{ flex: none; font-size: 12px;/.test(css));
 
 // ── 展開的步驟清單與狀態列的樣子(Wei 0928 第 2b 點)──
-{ const stepSrc = cut(src, "function busyStepTick(", "/* `done` 只是回頭補"), doneSrc = cut(src, "function busyStepDone(", "/* 思考文字累積");
-  ok("正在跑的那一步每秒更新自己的秒數、清單跟到最新一列(游標在清單上不搶);每秒的 interval 有叫它", /busyStepTick\(\); actApply\(\); \}, 1000\);/.test(src)
-    && /querySelectorAll\("\.think-step\.is-run"\)\.forEach\(\(li\) => \{ li\.querySelector\("\.think-step-time"\)\.textContent = fmtDur\(\(now - li\.__t0\) \/ 1000\); \}\);/.test(stepSrc)
-    && /if \(!ul\.matches\(":hover"\)\) ul\.scrollTop = ul\.scrollHeight;/.test(stepSrc) && /li\.__t0 = Date\.now\(\); li\.__c = c;/.test(stepSrc));
-  ok("做完換完成式;出錯的那一步換成失敗的說法(#165:不留「正在抓資料」;也不用完成式——英文過去式配失敗的步驟會被讀成做成了)", /if \(c\.error\) li\.classList\.add\("is-err"\);\s*li\.querySelector\("\.think-step-verb"\)\.textContent = stepLabel\(li\.__c, true, !!c\.error\)\.verb;/.test(doneSrc));
+{ const stepSrc = cut(src, "function busyStep(", "/* 當下動作(spec-turn-phases-one-layer"), doneSrc = cut(src, "function busyStepDone(", "/* 當下動作(spec-turn-phases-one-layer");
+  ok("逐步清單拿掉(spec-turn-phases-one-layer §4):不再建 .think-steps、沒有逐步秒數與自動捲動;步驟留在記憶體(recs / stepRows)", !/think-steps|stepsEl|busyStepTick|scrollTop = ul\.scrollHeight/.test(src)
+    && /busy\.recs\.push\(rec\);/.test(stepSrc) && /if \(c\.id\) busy\.stepRows\[c\.id\] = rec;/.test(stepSrc) && /phasesSync\(busy\); actApply\(\); \}, 1000\);/.test(src));
+  ok("做完只補那一步的耗時 / 錯誤態;出錯的那一步在最後幾步裡換成失敗的說法(#165:不留「正在抓資料」;也不用完成式——英文過去式配失敗的步驟會被讀成做成了)", /rec\.error = !!c\.error;\s*rec\.ms = Number\(c\.ms\) \|\| 0;/.test(doneSrc)
+    && /stepLabel\(r\.c, true, !!r\.error\)/.test(cut(src, "function faultPaint(", "/* 受詞截頭保尾")));
   const ZH_ALL = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")().zh;
   { const f = M.stepLabel({ kind: "data", summary: "fetch_kline BTCUSDT" }, true, true), o = M.stepLabel({ kind: "order" }, true, true), ZH = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")().zh, zh = (k, v) => ZH[k].replace(/\{(\w+)\}/g, (m, n) => v[n]);
     ok("失敗的步驟:英文「Failed: fetching data」(接進行式,不是 Fetched / Placed),受詞照留;中文「沒成功：抓資料」(沒有「正在」)", f.verb === "Failed: fetching data" && f.obj === "fetch_kline BTCUSDT" && o.verb === "Failed: running an order command"
@@ -152,10 +153,12 @@ ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ displ
   ok("#166 查說明文件 / 找檔案(agent 讀自己的文件與原始碼):受詞是指令內容,不上畫面——步驟清單與狀態列都只留動詞", M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).obj === "" && M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).verb === "Checked the docs"
     && M.stepLabel({ kind: "files", summary: "grep references/lib.md" }).obj === "" && M.stepLabel({ tool: "Grep", summary: "fetch_funding" }).obj === "" && M.stepLabel({ tool: "Read", summary: "references/lib.md" }).obj === ""
     && M.stepLabel({ kind: "file_read", summary: "strategy.py" }).obj === "strategy.py" && /busySet\(actLabel\(w\), STEP_NO_OBJ\.includes\(w\.kind\) \? "" : w\.obj, w\.kind\);/.test(src));
-  ok("重開畫回的收據:步驟都是做完的 → 完成式", /const lab = stepLabel\(st, true\);/.test(cut(src, "function receiptFold(", "function addHistoryAi(")));
-  ok("位置記號只在這一輪兩邊都做過事時才畫:即時與重開畫回都算,靠 .has-both 開關", /busy\.sides\.add\(stepWhere\(c\)\); busy\.el\.classList\.toggle\("has-both", busy\.sides\.size > 1\);/.test(stepSrc)
+  ok("重開畫回的收據:步驟都是做完的 → 完成式(最後幾步走 faultPaint 的 stepLabel(…, true, …))", /if \(!stepLabel\(c, true\)\) return;/.test(cut(src, "function receiptFold(", "function addHistoryAi("))
+    && /stepLabel\(r\.c, true, !!r\.error\)/.test(cut(src, "function faultPaint(", "/* 受詞截頭保尾")));
+  ok("位置記號只在這一輪兩邊都做過事時才畫:即時與重開畫回都算,靠 .has-both 開關;逐步清單拿掉後掛在子列上", /busy\.sides\.add\(stepWhere\(c\)\); busy\.el\.classList\.toggle\("has-both", busy\.sides\.size > 1\);/.test(stepSrc)
     && /sides\.add\(stepWhere\(\{ tool: st\.tool \}\)\);/.test(src) && /el\.classList\.toggle\("has-both", sides\.size > 1\);/.test(src)
-    && css.includes(".think-step .wtag { flex: none; display: none; }") && css.includes(".think-indicator.has-both .think-step .wtag { display: inline-flex; }"));
+    && /li\.append\(whereTag\(stepWhere\(c\)\), v\);/.test(src)
+    && css.includes(".think-sub-row .wtag { flex: none; display: none; }") && css.includes(".think-indicator.has-both .think-sub-row .wtag { display: inline-flex; }"));
   ok("思考文字每一輪都先收著:第一段字來就掛「顯示思考內容」,一輪只掛一次;出錯回合照舊自己攤開收據", /busyHasFold\(\); busyHoldReason\(busy\);/.test(src)
     && /function busyHoldReason\(b\) \{\n  if \(b\.held \|\| !b\.reason\.textContent\.trim\(\)\) return;\n  b\.held = true; b\.el\.classList\.add\("reason-held"\);/.test(src)
     && /function busyOpenReceipts\(b\) \{\n  b\.el\.classList\.add\("is-open"\); b\.head\.setAttribute\("aria-expanded", "true"\);\n  busyHoldReason\(b\);\n\}/.test(src));
@@ -164,8 +167,8 @@ ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ displ
   ok("熱區:整列寬 × 44(上下各擴 9;錨在 .think-indicator),沒東西可展開就沒有;hover 字與 chevron 提亮到 --ink", /\.think-indicator \{\n  position: relative;/.test(css)
     && css.includes('.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -9px; height: 44px; }')
     && css.includes(".think-head.has-reason:hover .think-verb, .think-head.has-reason:hover .think-chev { color: var(--ink); }") && !/\.think-head \{[^}]*position:/.test(css));
-  ok("記號欄固定 8 寬:正在跑那一列記號 4＋右邊補 4;那一列用主墨", css.includes(".think-step.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }")
-    && css.includes(".think-step.is-run .think-step-verb, .think-step.is-run .think-step-time { color: var(--ink); }")); }
+  ok("記號欄固定 8 寬:進行中那一階段記號 4＋右邊補 4;那一列用主墨", css.includes(".think-phase.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }")
+    && css.includes(".think-phase.is-run .think-phase-verb, .think-phase.is-run .think-phase-time { color: var(--ink); }")); }
 
 // ── 瀏覽卡 ──
 ok("卡頭不放狀態字:進行中的卡走 brLine(圖示疊＋已讀 d/n),不走 brStat", /\n  h\.append\(brLine\(b\)\);/.test(brSrc) && !/br\.browsing|br\.compiling/.test(cut(brSrc, "function brLine(", "function brOrder(")));
@@ -236,24 +239,24 @@ ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;�
   ok("併列:開頭的讀取步不開列;同階段併成一列、受詞取最後非空;讀取步的時間算進當下階段(end = 下一階段第一步的 start);最後一列 end = 收起時間",
     r1.map((r) => r.phase).join() === "data,write,backtest,run" && r1[0].obj === "ETHUSDT" && r1[0].start === 1000 && r1[0].end === 3000 && r1[2].end === 5000 && r1[3].end === 9000, r1);
   ok("web_read_many 的數字不當受詞、也不蓋掉前一個受詞", (() => { const r = pf([S("web_read", 0, "coindesk.com"), S("web_read_many", 10, "3")], null); return r.length === 1 && r[0].obj === "coindesk.com" && r[0].kind === "web_read"; })());
-  ok("短回合(只讀檔)零列;只有一種階段一列(phasesSync 兩列以上才出);回合還在跑最後一列 end = null", pf([S("docs", 0), S("file_read", 1)], 5).length === 0 && pf([S("data", 0), S("data", 1)], null).length === 1 && pf([S("data", 0), S("backtest", 1)], null)[1].end === null);
+  ok("短回合(只讀檔)零列;只有一種階段一列(phasesSync 一列就畫);回合還在跑最後一列 end = null", pf([S("docs", 0), S("file_read", 1)], 5).length === 0 && pf([S("data", 0), S("data", 1)], null).length === 1 && pf([S("data", 0), S("backtest", 1)], null)[1].end === null);
   ok("重開畫回(start 全 null):列照出、start / end 都 null → 不畫時長、不推算", (() => { const r = pf([S("data", null), S("backtest", null)], null); return r.length === 2 && r.every((x) => x.start === null && x.end === null); })());
-  const startSrc = cut(src, "function busyStart(", "/* 正在跑的那一步"), stepSrc = cut(src, "function busyStep(", "/* `done` 只是回頭補"), tickSrc = cut(src, "function busyStepTick(", "/* 階段清單:兩列以上"),
+  const startSrc = cut(src, "function busyStart(", "/* 階段清單:一個階段就畫"), stepSrc = cut(src, "function busyStep(", "/* `done` 只是回頭補"), tickSrc = cut(src, "function phasesSync(", "// 每一步落在第幾列階段"),
     endSrc = cut(src, "function busyEnd(", "/* 思考文字每一輪"), foldSrc = cut(src, "function receiptFold(", "function addHistoryAi("), paintSrc = cut(src, "function phasesPaint(", "function busyHasFold(");
   const pushAt = stepSrc.indexOf("phaseSteps.push");
-  ok("接線:busyStart 把 <ol class=think-phases hidden> 放進 .think-fold、排在收據前(一塊展開區,不掛 aria-hidden),head 的 aria-controls 指向那塊;busyStep push {kind, obj = kind_obj, start}(不拿 summary);busyStepTick(同一個 timer)叫 phasesSync;busyEnd 記 phaseEnd 再 phasesSync;receiptFold 走同一支 phasesFrom、start 全 null",
-    /fold\.append\(phases, stepsEl, reason\);/.test(startSrc) && /el\.append\(head, wrap\);/.test(startSrc) && /phases\.className = "think-phases"; phases\.hidden = true;/.test(startSrc) && !/aria-hidden", "true"\); phases/.test(startSrc + foldSrc)
+  ok("接線:busyStart 把 <ol class=think-phases hidden> 放進 .think-fold、排在思考文字前(一塊展開區,不掛 aria-hidden),head 包在 role=status 那層、展開區在外面,head 的 aria-controls 指向那塊;busyStep push {kind, obj = kind_obj, start}(不拿 summary);每秒的 timer 叫 phasesSync;busyEnd 記 phaseEnd 再 phasesSync;receiptFold 走同一支 phasesFrom、start 全 null",
+    /fold\.append\(phases, reason\);/.test(startSrc) && /live\.appendChild\(head\);\s*el\.append\(live, wrap\);/.test(startSrc) && /phases\.className = "think-phases"; phases\.hidden = true;/.test(startSrc) && !/aria-hidden", "true"\); phases/.test(startSrc + foldSrc)
     && /wrap\.id = "think-fold-" \+ \(\+\+thinkFoldSeq\); head\.setAttribute\("aria-controls", wrap\.id\);/.test(startSrc) && /wrap\.id = "think-fold-" \+ \(\+\+thinkFoldSeq\); head\.setAttribute\("aria-controls", wrap\.id\);/.test(foldSrc) && /phaseSteps: \[\], phaseEnd: 0/.test(startSrc)
     && /busy\.phaseSteps\.push\(\{ kind: k\.kind, obj: k\.obj \|\| actTabHost\(k\.tab\), start: Date\.now\(\) \}\)/.test(stepSrc) && pushAt > 0 && !/summary/.test(stepSrc.slice(pushAt, pushAt + 100))
-    && /phasesSync\(busy\);/.test(tickSrc) && /busyStepTick\(\); actApply\(\); \}, 1000\);/.test(src) && /b\.phaseEnd = Date\.now\(\); phasesSync\(b\);/.test(endSrc)
-    && /phasesFrom\(steps\.filter\(\(st\) => !st\.more\)\.map\(\(st\) => \(\{ kind: actKindOf\(\{ tool: st\.tool \}\)\.kind, obj: "", start: null \}\)\), null\)/.test(foldSrc) && /fold\.append\(phases, list\); wrap\.appendChild\(fold\); el\.append\(head, wrap\);/.test(foldSrc));
+    && /phasesPaint\(b\.phasesEl, rows, Date\.now\(\), !b\.phaseEnd\);/.test(tickSrc) && /phasesSync\(busy\); actApply\(\); \}, 1000\);/.test(src) && /b\.phaseEnd = Date\.now\(\); const rows = phasesSync\(b\);/.test(endSrc)
+    && /kind: actKindOf\(\{ tool: st\.tool \}\)\.kind/.test(foldSrc) && /phasesFrom\(recs\.map\(\(r\) => \(\{ kind: r\.kind, obj: "", start: null \}\)\), null\)/.test(foldSrc) && /fold\.append\(phases\); wrap\.appendChild\(fold\); el\.append\(head, wrap\);/.test(foldSrc));
   ok("畫列:記號沿用 .think-step-mark、動詞 phase.*(data-i18n 給切語言掃)、受詞 mono(搜尋字除外)、時長 fmtDur、進行中那列 is-run;不埋點",
     /mark\.className = "think-step-mark"/.test(paintSrc) && /const key = "phase\." \+ r\.phase; verb\.dataset\.i18n = key; verb\.textContent = t\(key\);/.test(paintSrc) && /r\.kind === "search" \? "" : " mono"/.test(paintSrc)
     && /fmtDur\(\(stop - r\.start\) \/ 1000\)/.test(paintSrc) && /running && i === rows\.length - 1 \? " is-run" : ""/.test(paintSrc) && !/trackFeature|feature_used/.test(paintSrc + tickSrc));
-  ok("CSS:清單左縮 15、列同收據列(12px、上下 3)、沒有另外的顯示規則(跟著 .think-fold 開合)、chevron 翻轉只綁 aria-expanded、進行中記號半截主墨",
+  ok("CSS:清單左縮 15、列 grid(記號 8、動詞、受詞、時長;12px、上下 3)、沒有另外的顯示規則(跟著 .think-fold 開合)、chevron 翻轉只綁 aria-expanded、進行中記號半截主墨",
     /\.think-phases \{[^}]*margin: 0 0 var\(--space-4\) 15px;/.test(css) && !/\.think-phases[^{]*\{[^}]*display: none/.test(css)
     && css.includes('.think-head[aria-expanded="true"] .think-chev { transform: translateY(2px) rotate(-135deg); }') && !/\.is-open \.think-chev/.test(css)
-    && /\.think-phase \{ display: flex;[^}]*padding: 3px 0; font-size: 12px;/.test(css) && /\.think-phase\.is-run \.think-step-mark \{ width: 4px; margin-right: var\(--space-4\); background: var\(--ink\); \}/.test(css)
+    && /\.think-phase \{ display: grid; grid-template-columns: 8px auto minmax\(0, 1fr\) auto; column-gap: var\(--space-8\);[^}]*padding: 3px 0; font-size: 12px;/.test(css) && /\.think-phase\.is-run \.think-step-mark \{ width: 4px; margin-right: var\(--space-4\); background: var\(--ink\); \}/.test(css)
     && /\.think-phase-time \{[^}]*tabular-nums/.test(css));
 }
 

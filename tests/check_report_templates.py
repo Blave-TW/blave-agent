@@ -496,8 +496,9 @@ d.fetch_market_direction = gate
 # B1(稽核):免費日線真的壞(交易所 / FinMind 連不上)時走真實鏈路 — _twstock_daily 退到 Blave、閘門丟
 # DataAccessError 但帶 cause → 範本丟真正的錯誤,不 skip、不講綁卡。
 d.fetch_twstock_price = saved["fetch_twstock_price"]   # 真的那支:走 _twstock_daily 的來源鏈
-real_free, real_cache = d._fetch_twstock_daily_free, d._CACHE_DIR
+real_free, real_cache, real_cdn = d._fetch_twstock_daily_free, d._CACHE_DIR, d._fetch_twstock_daily_cdn
 d._fetch_twstock_daily_free = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("twse.com.tw unreachable"))
+d._fetch_twstock_daily_cdn = lambda *a, **k: (_ for _ in ()).throw(d.TwCdnUnavailable("test: CDN not reachable"))
 d._CACHE_DIR = __import__("pathlib").Path(tempfile.mkdtemp(prefix="rpt-cache-"))
 atexit.register(shutil.rmtree, str(d._CACHE_DIR), True)
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
@@ -512,7 +513,7 @@ os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"] = "blave"     # 強制走 Blave:第二�
 p = T.symbol_brief("2330", "2026-09-02", H)
 check(bool(p.skip) and "日 K" in p.skip, "BLAVE_TWSTOCK_DAILY_SOURCE=blave 強制走 Blave:沒有免費鏈,仍是無權限 skip")
 os.environ.pop("BLAVE_TWSTOCK_DAILY_SOURCE"); os.environ.pop("BLAVE_AGENT_LOCAL")
-d._fetch_twstock_daily_free, d._CACHE_DIR = real_free, real_cache
+d._fetch_twstock_daily_free, d._CACHE_DIR, d._fetch_twstock_daily_cdn = real_free, real_cache, real_cdn
 d.fetch_twstock_price = lambda sid, s, e, h: free_tw
 os.environ["BLAVE_DATA_ACCESS_WHY"] = "signed_out"
 p = T.crypto_market_brief("2026-09-02", H)
@@ -547,6 +548,13 @@ try:
     T.symbol_brief("2330", "2026-09-02", H); check(False, "免費日線沒帶 source:不產一份沒有顯名的報告")
 except ValueError as e:
     check("資料來源" in str(e), "免費日線沒帶 source:不產一份沒有顯名的報告(顯名是授權條件)")
+vendor = free_tw.copy(); vendor.attrs = {"source": "FinMind"}
+d.fetch_twstock_price = lambda sid, s, e, h: vendor
+for lang, want in (("zh", d._TW_PUBLIC_SOURCE_ZH), ("en", d._TW_PUBLIC_SOURCE_EN)):
+    raw = open(tpub(T.symbol_brief("2330", "2026-09-02", H), NAR, lang=lang), encoding="utf-8").read()
+    foot = [i["text"] for i in json.loads(raw)["blocks"][-1]["items"]]
+    check(want in foot and "FinMind" not in raw,
+          f"免費日線走最後備援(attrs source=FinMind,{lang}):頁尾印交易所那行,整份報告不出現供應商名稱")
 d.fetch_twstock_price = lambda sid, s, e, h: free_tw
 os.environ.pop("BLAVE_DATA_ACCESS_WHY"); os.environ.pop("BLAVE_DATA_ACCESS")
 for k, fn in saved.items():

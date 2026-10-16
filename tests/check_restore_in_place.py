@@ -121,7 +121,7 @@ def hashes():
 
 
 def results_in_place():
-    for f, body in (("scan.json", "{}"), ("wf.json", "{}")):
+    for f, body in (("scan.json", "{}"), ("wf.json", "{}"), ("backtest_state.json", "{}")):
         (OUT / f).write_text(body)
 
 
@@ -161,7 +161,7 @@ stash = VDIR / "pre-restore"
 check(all(not (OUT / f).exists() for f in strategy.RESTORE_STASHED)
       and sorted(p.name for p in stash.iterdir()) == sorted(strategy.RESTORE_STASHED)
       and (stash / "pnl.png").read_bytes() == before_pnl,
-      "…stats.json / scan.json / wf.json / pnl.png moved into versions/pre-restore/")
+      "…stats.json / scan.json / wf.json / pnl.png / backtest_state.json moved into versions/pre-restore/")
 lv = strategy.list_versions(NAME)
 check([i.get("current") for i in lv] == [None, True, None] and "current" not in index()["items"][1],
       "list_versions marks the current entry (in the answer only, never stored)")

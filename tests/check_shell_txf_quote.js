@@ -130,7 +130,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
           { name: "fresh", displayName: "FRESH", hasBacktest: true, symbol: "ETHUSDT" }],
         st: { alive: true, report: { venues: { binance: V }, can_trade_portfolio: true, config: { amounts: { btc: 500, sol: 100, tw: 300000, fresh: 100 } },
           quote_ccy: { btc: "USDT", sol: "USDC", tw: "TWD", fresh: "USDT" }, signals_frozen: { since: 1, pending: ["fresh"] },
-          states: { btc: { symbol: "BTCUSDT", position: 1 }, sol: { symbol: "SOLUSDC", market: "spot", position: 0.5 }, tw: { weights: { 2330: 0.5, 2454: 0, 2317: 0.49 }, market: "spot" } } } } };
+          states: { btc: { symbol: "BTCUSDT", position: 1 }, sol: { symbol: "SOLUSDC", market: "spot", position: 0.5 }, tw: { weights: { 2330: 0.5, 2317: 0.49 }, universe: ["2330", "2454", "2317"], market: "spot" } } } } };
       const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
       const grps = all.filter((n) => n.tag === "tr" && n.className === "grp").map((n) => n.kids.map((k) => k.textContent));
       const rows = all.filter((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key").map((r) => [r.kids[0].kids[0].text, r.kids[1].textContent, r.kids[3].textContent, r.kids[4].textContent, r.kids[4].className]);
@@ -138,7 +138,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       ok("§9.3 綁 Binance:區順序 USDT(帳戶幣)→ USDC → TWD;SOLUSDC 在 USDC 區(不被帳戶幣吃掉);區內照金額排",
         J(grps.map((g) => g[0])) === J(["USDT", "USDC", "TWD"]) && J(rows.map((r) => r[0])) === J(["BTC", "FRESH", "SOL", "TW"]), J([grps, rows]));
       ok("§9.4 區標題:USDT 兩列出小計 600;一列的 USDC、TWD 不出小計;區標題都不掛倍數", J(grps[0]) === J(["USDT", "", "600", "", ""]) && J(grps[1]) === J(["USDC", "", "", "", ""]) && J(grps[2]) === J(["TWD", "", "", "", ""]), J(grps));
-      ok("§8.2 Type C 列:持有 2 檔(0 權重的 2454 不算)、訊號 ×0.99、目標 +297,000 上買色", J(by.TW.slice(1)) === J(['tr.nSyms {"n":2}', "×0.99", "+297,000", "n buy"]), J(by.TW));
+      ok("§8.2 Type C 列:標的列 weights ∪ universe 全部成分、持有的排前面(0 權重的 2454 照列、排最後);訊號 ×0.99、目標 +297,000 只算持有的、上買色", J(by.TW.slice(1)) === J(["2317" + "ak.sep" + "2330" + "ak.sep" + "2454", "×0.99", "+297,000", "n buy"]), J(by.TW));
       ok("signals_frozen.pending:訊號寫「—」、目標寫 po.hostOld(主機版本較舊,同網頁 a8239131),不畫 0", by.FRESH[2] === "—" && by.FRESH[3] === "po.hostOld" && /\bna\b/.test(by.FRESH[4]), J(by.FRESH));
       ok("§9.7 三區、沒有匯率:合計「—」;倍數照算、接在合計後面——Binance 會下單的 USDT 600 + USDC 100(缺匯率 1:1)÷ 10,000 = 0.07,台股 300,000 不算",
         tot.textContent === 'tr.total—', tot.textContent);

@@ -49,11 +49,12 @@ if (!process.versions.electron) (async () => {
       const e = await H({}, okx);
       ok("①b REJECTED:帶那一家的原因,金鑰值遮掉", e.ok === false && e.code === "REJECTED" && /50113 bad sign/.test(e.detail.reason) && e.detail.reason.indexOf(K) < 0);
       const codeOf = async (err) => { reply = { ok: false, error: err }; return (await H({}, okx)).code; };
-      ok("①b INCOMPLETE_PAIR / UNKNOWN / no permission check → 各自的代號;看不懂的句子 → SEND_FAILED(遮過)",
+      ok("①b INCOMPLETE_PAIR / UNKNOWN / no permission check / LIB_BROKEN → 各自的代號;舊 runtime 的 WITHDRAW_ENABLED 與看不懂的句子 → SEND_FAILED(遮過)",
         (await codeOf("ValueError: INCOMPLETE_PAIR: okx needs OKX_API_KEY + OKX_SECRET_KEY + OKX_PASSPHRASE together — not saved")) === "INCOMPLETE_PAIR"
         && (await codeOf("ValueError: UNKNOWN: okx's account answer could not be read — not saved")) === "UNKNOWN"
         && (await codeOf("ValueError: no permission check exists for okx on this workspace (run 更新 blave agent first) — not saved")) === "NO_CHECK"
-        && (await codeOf("ValueError: WITHDRAW_ENABLED: 這把 okx 金鑰有提領權限,沒有儲存 (this okx key has withdrawal permission — not saved)")) === "WITHDRAW_ENABLED"
+        && (await codeOf("ValueError: LIB_BROKEN: lib/account_okx.py could not load (SyntaxError: invalid syntax) — not saved")) === "LIB_BROKEN"
+        && (await codeOf("ValueError: WITHDRAW_ENABLED: 這把 okx 金鑰有提領權限,沒有儲存 (this okx key has withdrawal permission — not saved)")) === "SEND_FAILED"
         && (await codeOf("RuntimeError: .env unreadable (OSError) — try again")) === "SEND_FAILED");
       reply = { ok: false, error: "DAEMON_DOWN" };
       ok("①b daemon 自己的代號原樣", J((await H({}, okx)).detail) === J({ error: "DAEMON_DOWN" }));
@@ -69,6 +70,7 @@ if (!process.versions.electron) (async () => {
   ok("② trEnvNames 與主行程 cloudcmd.venueEnvNames 同一組(解除綁定送的就是機器寫的)", ["binance", "okx", "bingx", "gateio", "bybit"].every((v) => J(trEnvNames(v)) === J(CC.venueEnvNames(v)))
     && J(trEnvNames("paper")) === J(["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"]));
   ok("② 名字表與主行程那份同一組交易所", J(Object.keys(CX_VENUES).sort()) === J(Object.keys(CC.CONNECT_VENUES).sort()) && CX_VENUES.okx.pass === true && !CX_VENUES.bybit.pass);
+  ok("② 提領不再檢查(Wei 2026-10-15):沒有任何一家帶 noWdCheck,renderer 也不再提 cx.note.wdUnchecked", Object.keys(CX_VENUES).every((v) => !("noWdCheck" in CX_VENUES[v])) && !/noWdCheck|wdUnchecked|WITHDRAW_ENABLED/.test(src));
   ok("② 顯示名:Gate.io / OKX / BingX(首字大寫會寫錯)", trVenueLabel("gateio") === "Gate.io" && trVenueLabel("okx") === "OKX" && trVenueLabel("bingx") === "BingX" && trVenueLabel("paper", true) === "cx.paperShort");
   ok("② 兩個視角都列五家(runtime 已在電腦版開放這四家,寫入前讀一次帳戶)", J(cxVenuesFor("local")) === J(["binance", "okx", "bingx", "gateio", "bybit"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
 
@@ -125,9 +127,10 @@ app.whenReady().then(async () => {
     !!ph && ph[0] === (await js(`t("cx.passHint")`)) && /不是 OKX 的登入密碼/.test(await js(`STRINGS.zh["cx.passHint"]`)) && ph[1] === "cx-pass-hint" && ph[2] === true);
   await pick("bingx");
   ok("③ 沒有 Passphrase 的交易所:沒有那一行", await js(`!document.querySelector("#cx-body .cx-hint[id$='-hint']")`));
-  // 雲端主機同樣查 OKX / BingX / Bybit 的提領權限(runtime _withdraw_gate 每個模式都跑):框裡只有 Gate.io 講「Blave 查不到,請自己確認」
-  const wdHint = async (venue, label) => (await js(`[...document.querySelectorAll("#cx-body .cx-note .cx-hint")].map((p) => p.textContent)`)).indexOf(await js(`t("cx.note.wdUnchecked", { venue: ${J(label)} })`)) >= 0;
-  ok("③ 雲端:只有 Gate.io 有「查不到提領權限」那行,OKX / Binance 沒有", (await pick("gateio"), await wdHint("gateio", "Gate.io")) && (await pick("okx"), !(await wdHint("okx", "OKX"))) && (await pick("binance"), !(await wdHint("binance", "Binance"))));
+  // 提領不再檢查:每一家的說明都是「建議只開讀取和交易」那句,沒有「會被拒絕」
+  const noteHas = async (key, label) => (await js(`[...document.querySelectorAll("#cx-body .cx-note p")].map((p) => p.textContent)`)).indexOf(await js(label ? `t(${J(key)}, { venue: ${J(label)} })` : `t(${J(key)})`)) >= 0;
+  ok("③ 雲端:Gate.io / OKX 講 cx.note.oneV、Binance 講 cx.note.one(建議語氣)", (await pick("gateio"), await noteHas("cx.note.oneV", "Gate.io")) && (await pick("okx"), await noteHas("cx.note.oneV", "OKX")) && (await pick("binance"), await noteHas("cx.note.one"))
+    && /建議/.test(await js(`STRINGS.zh["cx.note.one"]`)) && /建議/.test(await js(`STRINGS.zh["cx.note.oneV"]`)) && !/拒絕/.test(await js(`STRINGS.zh["cx.note.one"] + STRINGS.zh["cx.note.oneV"]`)));
   ok("③ 三格都是密碼欄、不自動完成", await js(`[...document.querySelectorAll("#cx-body input")].length > 0 && [...document.querySelectorAll("#cx-body input")].every((i) => i.type === "password" && i.autocomplete === "off")`));
   await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
@@ -184,10 +187,10 @@ app.whenReady().then(async () => {
     return js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`); };
   ok("③ 沒填齊(OKX):講三格要一起給", (await say("INCOMPLETE_PAIR")).indexOf(await js(`t("cx.chk.incompletePass")`)) >= 0);
   ok("③ UNKNOWN / NO_CHECK:那一家的句子", (await say("UNKNOWN")) === (await js(`t("cx.chk.unknownV", { venue: "OKX" })`)) && (await say("NO_CHECK")) === (await js(`t("cx.chk.noCheckV", { venue: "OKX" })`)));
-  ok("③ WITHDRAW_ENABLED:講 OKX 這把金鑰有提領權限、沒有儲存(不是 Binance 的句子)", (await say("WITHDRAW_ENABLED")) === (await js(`t("cx.chk.withdrawV", { venue: "OKX" })`)) && !/Binance/.test(await say("WITHDRAW_ENABLED")));
-  await pick("gateio");
-  ok("③ Gate.io:連接框多一行「Blave 查不到提領權限,請自己確認」;OKX 沒有", (await js(`[...document.querySelectorAll("#cx-body .cx-note .cx-hint")].map((p) => p.textContent)`)).indexOf(await js(`t("cx.note.wdUnchecked", { venue: "Gate.io" })`)) >= 0
-    && (await pick("okx"), (await js(`[...document.querySelectorAll("#cx-body .cx-note .cx-hint")].map((p) => p.textContent)`)).indexOf(await js(`t("cx.note.wdUnchecked", { venue: "OKX" })`)) < 0));
+  { await run(`window.__over.venueConnect = async () => ({ ok: false, code: "LIB_BROKEN", detail: { reason: "lib/account_okx.py could not load (SyntaxError: invalid syntax)" } })`); await js(`$("cx-go").click()`); await wait(300);
+    const lb = await js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`);
+    ok("③ LIB_BROKEN:講這台電腦的程式載入失敗、帶原因、請回報;不是 UNKNOWN 那句、不怪交易所", lb === (await js(`t("cx.chk.libBrokenV", { venue: "OKX", reason: "lib/account_okx.py could not load (SyntaxError: invalid syntax)" })`))
+      && lb !== (await js(`t("cx.chk.unknownV", { venue: "OKX" })`)) && /這台電腦|this computer/.test(lb)); }
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });   // 換家會清欄位;下面的等待狀態要它們在
   await run(`window.__over.venueConnect = async () => ({ ok: false, code: "REJECTED", detail: { reason: "AccountModeError: OKX 帳戶模式不支援合約 [okx_account_mode] (OKX acctLv=1)" } })`);
   await js(`$("cx-go").click()`); await wait(300);

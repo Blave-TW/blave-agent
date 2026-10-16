@@ -90,6 +90,30 @@ check(math.isclose(st["Sortino Ratio"], round(sortino, 4), abs_tol=1e-4)
       f"Sortino / Omega from the portfolio's own returns ({st['Sortino Ratio']} / {st['Omega Ratio']} "
       f"vs {sortino:.4f} / {omega:.4f})")
 
+
+
+def band_ok(stats, label):
+    """benchmark_band per the 0.1.26 contract: five series, each as long as daily_dates,
+    p5 ≤ … ≤ p95 at every point, last point = the benchmark_* return columns."""
+    b = stats.get("benchmark_band") or {}
+    keys = ["p5", "p25", "p50", "p75", "p95"]
+    n = len(stats.get("daily_dates") or [])
+    check(sorted(b) == sorted(keys) and all(len(b[q]) == n for q in keys) and n > 0,
+          f"{label}: benchmark_band has p5…p95, each as long as daily_dates ({n})")
+    check(all(b[a][i] <= b[c][i] for a, c in zip(keys, keys[1:]) for i in range(n)),
+          f"{label}: benchmark_band p5 ≤ p25 ≤ p50 ≤ p75 ≤ p95 at every point")
+    ends = [(b["p5"][-1], "benchmark_p5_ret_%"), (b["p50"][-1], "benchmark_median_ret_%"),
+            (b["p95"][-1], "benchmark_p95_ret_%")]
+    check(all(abs((v - 1) * 100 - stats[k]) <= 0.0051 for v, k in ends),
+          f"{label}: band end − 1 = benchmark p5 / median / p95 return "
+          f"({[round((v - 1) * 100, 2) for v, _ in ends]} vs {[stats[k] for _, k in ends]})")
+    # compute() holds the top 2 of 5 → α = (2−1)/(5−2)
+    check(stats.get("benchmark_method") == "dirichlet_eff_n" and stats.get("benchmark_eff_n") == 2.0,
+          f"{label}: benchmark_method / eff_n ({stats.get('benchmark_method')}, {stats.get('benchmark_eff_n')})")
+
+
+band_ok(st, "backtest")
+
 # no market fields (the 0.1.12 venue check was dropped before release): a performance refresh of a
 # live strategy (a live tick itself does not touch stats.json) neither carries a stale `market` /
 # `market_symbols` left in stats.json nor records a new one
@@ -109,6 +133,7 @@ finally:
 lv = json.loads((WS / "strategies" / "pf" / "stats.json").read_text())
 check("market" not in lv and "market_symbols" not in lv,
       f"performance refresh: no market / market_symbols carried or recorded ({lv.get('market')}, {lv.get('market_symbols')})")
+band_ok(lv, "performance refresh")
 
 # Type A writes the same report keys (Ann. Return is derived by the report when absent)
 with contextlib.redirect_stdout(io.StringIO()):

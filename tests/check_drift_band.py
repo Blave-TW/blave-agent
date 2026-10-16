@@ -350,6 +350,9 @@ def paper_round(target_lots, spec=TXF_SPEC):
     return legs, pos, [(f["side"], f["qty"], f["price"]) for f in snap["fills"][before:]]
 
 
+TWD_PER_USD = 32.0  # TXF money is TWD; the paper account is USD (lib/paper_data.usd_rate)
+os.makedirs("state", exist_ok=True)
+json.dump({"rates": {"TWD": TWD_PER_USD}, "ts": int(time.time())}, open("state/paper_fx.json", "w"))
 set_mark(20000)
 legs, pos, fills = paper_round(2)
 check(legs == [(2.0, False)] and fills == [("buy", 2.0, 20000.0)]
@@ -377,10 +380,10 @@ legs, pos, fills = paper_round(0)
 check(legs == [(1.0, True)] and fills == [("buy", 1.0, 22000.0)] and pos is None,
       "target 0: the whole short is bought back, position gone")
 cash = order_paper.snapshot(PAPER_ENV)["cash"]
-# 2 lots bought at 20000, 3 sold at 22000 (2 × 2000 × 200 = 800,000 realized), rest flat
-# 800,000 realized less taker fees (0.05% of lots × price × 200 on each leg ≈ 13k)
-check(780000 < cash - cash_after_entry < 800000,
-      f"PnL is lots × contract_value × Δprice: cash {cash_after_entry:.0f} → {cash:.0f}")
+# 2 lots bought at 20000, 3 sold at 22000 (2 × 2000 × 200 = 800,000 TWD realized), rest flat
+# 800,000 TWD less taker fees (0.05% of lots × price × 200 on each leg ≈ 13k), booked ÷ 32 in USD
+check(780000 / TWD_PER_USD < cash - cash_after_entry < 800000 / TWD_PER_USD,
+      f"PnL is lots × contract_value × Δprice ÷ USDTWD: cash {cash_after_entry:.0f} → {cash:.0f}")
 legs, pos, fills = paper_round(2, spec={"type": "futures_contracts"})
 check(legs == [(2.0, False)] and fills == [] and pos is None and order_errors
       and "contract_value" in order_errors[0],
@@ -418,17 +421,17 @@ def refused(*a, **k):
         return str(e)
 
 
+# margin is TWD per lot, equity USD: 701,000 TWD ÷ 32 = 21,906.25 USD a TX lot
+lev = refused(POOR, "TXF", "long", 5, 200, margin=701000)
+check(lev and "contract margin 109531 exceeds paper equity" in lev,
+      f"1×: five TX lots (5 × 701,000 TWD = 109,531 USD) on 100,000 USD equity are refused ({lev})")
+check(order_paper.place_contract_market_order(POOR, "TXF", "long", 4, 200, margin=701000)["executed_qty"] == 4.0
+      and order_paper.snapshot(POOR)["positions"][0]["margin"] == 701000.0,
+      "…4 lots (87,625 USD ≤ 100,000) open, and the position carries its per-lot margin in TWD")
 lev = refused(POOR, "TXF", "long", 1, 200, margin=701000)
-check(lev and "contract margin 701000 exceeds paper equity" in lev,
-      f"1×: one TX lot (701,000 margin) on 100,000 equity is refused on margin ({lev})")
-# TMF-sized margin on the priced symbol: 2 × 35,050 fits, a third lot does not
-check(order_paper.place_contract_market_order(POOR, "TXF", "long", 2, 200, margin=35050)["executed_qty"] == 2.0
-      and order_paper.snapshot(POOR)["positions"][0]["margin"] == 35050.0,
-      "…2 lots at 35,050 margin (70,100 ≤ 100,000) open, and the position carries its margin")
-lev = refused(POOR, "TXF", "long", 1, 200, margin=35050)
-check(lev and "contract margin 105150 exceeds paper equity" in lev,
-      f"…a third lot (105,150 > 100,000) is refused — 1×, not 10× ({lev})")
-order_paper.place_contract_market_order(POOR, "TXF", "long", 2, 200, reduce_only=True)
+check(lev and "contract margin 109531 exceeds paper equity" in lev,
+      f"…a fifth lot is refused — 1×, not 10× ({lev})")
+order_paper.place_contract_market_order(POOR, "TXF", "long", 4, 200, reduce_only=True)
 venue_wiring.read_env = lambda path=".env": dict(PAPER_ENV)
 order_paper.reset_account(PAPER_ENV, cash=5000000)  # POOR's newer bind stamp would otherwise keep its ledger
 # default cash: 100,000 for a ledger created from now on; an existing ledger keeps its own

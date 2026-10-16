@@ -113,8 +113,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // L = TR_BAGS.local(設定 › 連線這一刀永遠是這台電腦的);S = 進來那一刻的 TR
   const fn = (name) => { const i = code.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = code.indexOf("\nfunction ", i + 1), k = code.indexOf("\nasync function ", i + 1); return code.slice(i, Math.min(j < 0 ? 1e9 : j, k < 0 ? 1e9 : k)); };
   // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
-  // psApply:picker 的 $0 立即送——本機直送、雲端走 trSend 且同 trSaveAmounts 用 reqFor.amounts 綁內容(spec-desktop-strategy-picker §6)
-  const entries = ["trSend", "trSaveAmounts", "trUnbind", "cxRetest", "cdelRun", "psApply"];
+  // psApply 不在這裡:0.1.26 起 picker 的勾選是草稿,儲存才走 trSaveAmounts 送出;trExecSend:下單方式(0.1.26)
+  const entries = ["trSend", "trSaveAmounts", "trExecSend", "trUnbind", "cxRetest", "cdelRun"];
   const users = code.split(/\n(?:async )?function /).filter((b) => /S\.api\.tradeSend\(/.test(b)).map((b) => b.slice(0, b.indexOf("(")));
   ok("用 S.api 送指令的函式就是這幾個(多一個就要有人看過它的 request_id 有沒有沿用):" + users.join(), users.length === entries.length && users.every((n) => entries.indexOf(n) >= 0));
   // 會改變執行狀態的那三個指令一律經過 trSend(冪等:重試沿用同一顆 request_id);直接叫 S.api.tradeSend 會繞過它
@@ -161,7 +161,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /const CLOUD_ONLY = require\("\.\/cloudcmd"\)\.CLOUD_ONLY_COMMANDS;/.test(mainSrc)
       && JSON.stringify(require("../shell/cloudcmd").CLOUD_ONLY_COMMANDS) === '["delete_strategy"]'
       && !require("../shell/daemon").UI_COMMANDS.has("delete_strategy")
-      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"\];/.test(mainSrc));
+      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"\];/.test(mainSrc));
     // api 的測試釘住 update 不在 daemon.js 的 UI_COMMANDS(本機 daemon 不收);這裡也釘一次,免得有人為了過白名單把它塞進去
     ok("update 不在 daemon.js 的 UI_COMMANDS", !require("../shell/daemon").UI_COMMANDS.has("update"));
     ok("用本機 app 不觸發雲端 agent 回合:cloud-send 的白名單沒有 update / restart_reconciler", !/"update"|"restart_reconciler"/.test((mainSrc.match(/const CLOUD_SHIPPED = \[[^\]]*\]/) || [""])[0]));
@@ -490,9 +490,9 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && stepWhere({ tool: "mcp__blave__get_ssh_access" }) === "cloud" && stepWhere({ tool: "mcp__blave__list_strategies", summary: "" }) === "cloud"
       && stepWhere({ tool: "Bash", summary: "ssh blaveagent@1.2.3.4" }) === "local" && stepWhere({ tool: "Bash", summary: "lib/runner.py" }) === "local"
       && stepWhere({ tool: "Read", summary: "雲端主機 cloud" }) === "local" && stepWhere({ tool: "mcp__other__x" }) === "local" && stepWhere({ where: "x" }) === "local" && stepWhere(null) === "local" && !/summary/.test(appFn("stepWhere").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")));
-    ok("④ 動作列每一列在記號與動詞之間插 .wtag;你的那則下面不再掛 .wtag(.to 整個拿掉);.wtag 走 data-i18n",
-      /li\.append\(mark, whereTag\(stepWhere\(c\)\), verb, obj, time\);/.test(app) && (app.match(/whereTag\(/g) || []).length === 3
-      && /li\.append\(mark, whereTag\(stepWhere\(\{ tool: st\.tool \}\)\), v, obj\);/.test(app)   // 第三處:重開 app 畫回的收據(receiptFold)
+    ok("④ 動作列(子列:當下動作、出錯的最後幾步;即時與重開畫回共用 subRow)在動詞前插 .wtag;你的那則下面不再掛 .wtag(.to 整個拿掉);.wtag 走 data-i18n",
+      /li\.append\(whereTag\(stepWhere\(c\)\), v\);/.test(appFn("subRow")) && (app.match(/whereTag\(/g) || []).length === 2
+      && /sides\.add\(stepWhere\(\{ tool: st\.tool \}\)\);/.test(appFn("receiptFold"))   // 重開 app 畫回的收據(receiptFold)照樣算這一輪做在哪幾邊
       && !/className = "to"|\.msg\.you \.to\b/.test(app + fs.readFileSync(path.join(R, "app.css"), "utf8"))
       && /s\.dataset\.i18n = env === "cloud" \? "chat\.tgt\.cloud" : "env\.local"; s\.textContent = t\(s\.dataset\.i18n\);/.test(appFn("whereTag")));
     // 雲端來的字串會進這幾支(報告頁首、雲端清單點一支、分頁、.wtag):函式體內一律 textContent。app.js 別處有合法的 innerHTML,所以逐支切出來查

@@ -169,7 +169,7 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
   const run = (trading, turn, restarting) => {
     let handler = null, prevented = false, hidden = false;
     const ctx = { app: { on: (_ev, f) => f(null, { on: (ev, h) => { if (ev === "close") handler = h; }, hide: () => { hidden = true; } }) },
-      tradeMaybeLive: () => trading, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: !!restarting, restarting: restarting || null, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
+      draftOk: true, tradeMaybeLive: () => trading, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: !!restarting, restarting: restarting || null, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
     new Function("ctx", "with (ctx) { " + CLOSE + "); }")(ctx);
     handler({ preventDefault: () => { prevented = true; } });
     return { prevented, hidden };

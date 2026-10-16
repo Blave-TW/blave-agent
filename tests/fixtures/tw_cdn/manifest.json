@@ -1,0 +1,41 @@
+{
+ "schema": "twstock-daily-v1",
+ "asof": "2026-10-14",
+ "enabled": true,
+ "first_day": "2010-01-04",
+ "recent_from": "2026-08-31",
+ "attribution": {
+  "zh": "資料來源：臺灣證券交易所、證券櫃檯買賣中心 每日收盤行情、除權除息計算結果表、減資／變更面額／ETF分割(反分割)恢復買賣參考價，依政府資料開放授權條款釋出（https://data.gov.tw/license）",
+  "en": "Source: Taiwan Stock Exchange and Taipei Exchange daily closing quotes, ex-rights/ex-dividend results and capital-reduction / par-value-change / ETF split resumption reference prices, released under the Open Government Data License (https://data.gov.tw/license)"
+ },
+ "license_url": "https://data.gov.tw/license",
+ "base_url": "https://download.blave.org/data/twstock/daily/v1/",
+ "years": {
+  "2022": {
+   "immutable": true,
+   "last": "2022-12-30"
+  }
+ },
+ "stocks": {
+  "0050": [
+   "twse",
+   "2010-01-04",
+   "2025-07-31"
+  ],
+  "2330": [
+   "twse",
+   "2010-01-04",
+   "2024-02-29"
+  ],
+  "2603": [
+   "twse",
+   "2010-01-04",
+   "2022-11-30"
+  ]
+ },
+ "files": {
+  "year/2022.parquet": "d4858e268c15c503bf5b08194dcc1177e6609ad304ae46d8425c600f2b04a816",
+  "recent.parquet": "65b8a8b3c0d0222ad8609aac423bfec9289329a6fa7c8fc0f8bee1b6dc12cb59",
+  "events.parquet": "cdce120ad3f55454afae8a8e6cbd725b36be2cc2af93d264baa777dddfc325f7"
+ }
+}

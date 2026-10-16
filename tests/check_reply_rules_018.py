@@ -230,7 +230,7 @@ t("第九批 #3 建議規則的最後一段:沒有要提議 → 正文寫完就�
   "沒有要提議時，正文最後一句寫完就結束，後面什麼都不加" in last and "不說明為什麼沒有 <suggest>" in last
   and "檢查的結果不寫進回覆" in last and "不評論、不更正自己前面寫的句子" in last)
 t("第九批 #3 這一段在每輪都會帶的規則最尾端(web 與電腦版共用的 WEB_FORMATTING_RULE)",
-  re.search(r"^WEB_FORMATTING_RULE = \(.*?\+ _SUGGEST_RULE\n\)", turn_src, re.M | re.S) is not None and rule.rstrip().endswith(last))
+  re.search(r"^WEB_FORMATTING_RULE = \(.*?\+ _SUGGEST_RULE\n    \+ _AWAIT_RULE\n\)", turn_src, re.M | re.S) is not None and rule.rstrip().endswith(last))
 t("第九批 #3 規則裡沒有叫模型「說明沒有建議」的句子", not re.search(r"(說明|註明|寫出|回報)[^。\n]{0,12}沒有(建議|提議)", rule))
 
 # 研究題直接出報告(Wei 核准):29026 實測對話回合只讀 AGENTS.md,觸發與資料檢查必須在 AGENTS › Reports

@@ -108,6 +108,7 @@ check(rc == 0 and b_q is True, f"quiet backtest (restore re-run) still draws pnl
 rc, b_rf, bench_rf = run_mode(BLAVE_MODE="live", BLAVE_STATS_REFRESH="1")
 check(rc == 0 and b_rf is False, f"live performance refresh: bands=False ({rc}, {b_rf})")
 check(bench_rf == bench_bt, f"refresh on the same data keeps every benchmark_* value ({len(bench_bt)} keys)")
+check("benchmark_band" in bench_rf, "live performance refresh still writes benchmark_band (blockwise)")
 
 shutil.rmtree(BASE, ignore_errors=True)
 print("FAILED" if fails else "ALL PASS")
