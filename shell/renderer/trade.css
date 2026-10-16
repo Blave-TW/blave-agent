@@ -211,6 +211,24 @@ html.ws-sc .side-gate { display: none; }
 .tr-tipb:hover, .tr-tipb:focus-visible { color: var(--ink-2); }
 .trv .tip { left: 0; bottom: auto; top: calc(100% + 6px); max-width: min(320px, 100%); }
 .tr-tipb:hover:not([data-tip-off]) + .tip, .tr-tipb:focus-visible:not([data-tip-off]) + .tip { display: block; }
+/* 區段標籤＋問號外連教學(spec portfolio-help-icon §1.1)。.pf-sec 是 baseline 對齊,這一組不 center 會浮高;
+   .lbl-grp 不設 position,標籤的 .tip 仍以 .pf-sec 為定位基準 */
+.lbl-grp { display: inline-flex; align-items: center; gap: var(--space-8); align-self: center; margin-right: var(--space-4); }
+.pf-help { position: relative; z-index: 2; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
+  border-radius: var(--radius-sm); color: var(--ink-3); transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+/* 熱區 44:左邊只擴 6——標籤本身是 tooltip 觸發點,兩個熱區之間留 2 不重疊 */
+.pf-help::before { content: ""; position: absolute; inset: -10px -14px -10px -6px; }
+/* 往下開:面板頂端往上開會被分頁列裁掉。延遲只掛在出現那一側(hover 規則裡),移開時 visibility 0s 立刻收 */
+.pf-help-tip { position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; padding: 6px 10px; border-radius: var(--radius-sm);
+  background: var(--surface-muted); color: var(--ink-2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 12px; font-weight: 400; line-height: 1.45; white-space: nowrap; pointer-events: none;
+  visibility: hidden; opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard), visibility 0s; }
+@media (hover: hover) {
+  .pf-help:hover { background-color: var(--surface-muted); color: var(--ink); }
+  .pf-help:hover .pf-help-tip { visibility: visible; opacity: 1; transition-delay: var(--motion-tooltip-delay); }
+}
+.pf-help:focus-visible .pf-help-tip { visibility: visible; opacity: 1; transition-delay: 0s; }
+@media (hover: none) { .pf-help-tip { display: none; } }
 .trv .pf-state { padding: var(--space-24) 0; }
 
 /* ---- 表格 ---- */

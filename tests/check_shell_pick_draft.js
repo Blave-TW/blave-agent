@@ -22,14 +22,14 @@ const psList = { querySelectorAll: () => picks.map((v) => ({ checked: true, valu
 const sends = [];
 // 配置分頁:psApply 確定後找新列金額格用;FOCUSED 記最後拿到焦點的是誰
 const poCfg = { querySelectorAll: (sel) => (sel === ".amt-in" ? ["a", "z", "new1"].map((n) => ({ dataset: { amt: n }, offsetParent: {}, disabled: false, focus() { ctx.FOCUSED = "amt:" + n; } })) : []) };
-const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, setTimeout, clearTimeout,
+const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, setTimeout, clearTimeout,
   $: (id) => (id === "ps-list" ? psList : id === "po-cfg" ? poCfg : { focus() {}, hidden: false }), t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: { binance: { label: "Binance" } },
   srSay() {}, trIsPaper: () => false, trackFeature() {}, trPollSoon() {}, envPaintLocalDots() {}, ENV: { sig: {} }, psClose() {}, psRefocus() { ctx.FOCUSED = "pick-btn"; }, mgSetMembers() {},
   PAINTS: 0, poPaintCfg() { ctx.PAINTS++; }, confirmBox(o) { ctx.BOX = o; }, trCloudBox: (o) => o, trWith: (S, f) => f(), TR_STALE_MS: 600000 });
 ctx.psMode = "amounts";
 vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
 const pure = block("/* ── 純邏輯(", "/* ── 純邏輯到此") + block("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此");
-vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0, psMode = 'amounts', psToAmt = false;\n" + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
+vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0, psMode = 'amounts', psToAmt = false;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
   "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
   "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart",

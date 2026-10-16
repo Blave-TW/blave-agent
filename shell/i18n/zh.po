@@ -1696,7 +1696,7 @@ msgid "tr.cloud.onboardExtra"
 msgstr "這台電腦上連接的交易所不會帶過來；雲端要自己連一次。"
 
 msgid "tr.zeroMeansOff"
-msgstr "填 0 就是不下單——策略照常跑、照常算訊號，只是不會有部位。"
+msgstr "部位＝金額 × 訊號。填 0 就是不下單——策略照常跑、照常算訊號，只是不會有部位。"
 
 msgid "tr.col.strategy"
 msgstr "策略"
@@ -7474,6 +7474,9 @@ msgstr "優化"
 
 msgid "po.secAmounts"
 msgstr "策略與金額"
+
+msgid "po.help"
+msgstr "看教學"
 
 msgid "po.signalsPaused"
 msgstr "訊號暫停更新"

@@ -89,6 +89,7 @@
 
   /* motion */
   --motion-fast: 0.15s;
+  --motion-tooltip-delay: 0.5s;   /* 問號外連的氣泡:滑鼠停這麼久才出(canon 頂列互動 ⑥,同 web main.css) */
   --motion-base: 0.18s;
   --motion-blink: 1.05s;       /* 呼吸點/游標閃爍的共用節拍(canon › Motion) */
   --motion-enter: 0.8s;        /* 敘事進場(canon › Motion;內建瀏覽器的匯流) */

@@ -695,7 +695,7 @@ function mgSuggest() {
   const prop = mgProposal();
   if (!prop) return frag;
   const sec = trEl("div", "pf-sec");
-  sec.appendChild(trEl("span", "label", t("mg.secAmounts")));
+  sec.appendChild(poHelpGroup(trEl("span", "label", t("mg.secAmounts")), "optimize", "po-help-opt"));
   sec.appendChild(mgSizeChip());
   const acts = trEl("div", "pf-acts");
   // 停用時旁邊一定有一句原因(停用鈕的 title 觸控看不到;Mac e2e 10-14:缺台幣匯率時原本什麼都沒寫)。內容由 mgSuggestTable 跟著停用條件一起寫

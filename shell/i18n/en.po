@@ -1688,7 +1688,7 @@ msgid "tr.cloud.onboardExtra"
 msgstr "The exchange connected on this computer doesn’t carry over. The cloud needs its own connection."
 
 msgid "tr.zeroMeansOff"
-msgstr "0 means no orders — the strategy still runs and computes its signal; it just holds no position."
+msgstr "Position = amount × signal. 0 means no orders — the strategy still runs and computes its signal; it just holds no position."
 
 msgid "tr.col.strategy"
 msgstr "Strategy"
@@ -7460,6 +7460,9 @@ msgstr "Optimize"
 
 msgid "po.secAmounts"
 msgstr "Strategies and Amounts"
+
+msgid "po.help"
+msgstr "View Guide"
 
 msgid "po.signalsPaused"
 msgstr "Signals paused"

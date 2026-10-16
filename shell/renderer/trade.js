@@ -1468,6 +1468,21 @@ function trTipLabel(cls, text, tip) {
   frag.append(b, box); return frag;
 }
 function trSec(labelNode, acts) { const s = trEl("div", "pf-sec"); s.appendChild(labelNode); if (acts) s.appendChild(acts); return s; }
+/* 策略組合區段標籤旁的問號:外開教學頁的那一段(spec portfolio-help-icon §1)。氣泡跟 aria-label 是同一句,
+   不掛 aria-describedby、不加 title(讀屏會念兩次)。兩顆共用一個埋點名(feature_used name 上限 16 字;網頁 GA 另帶 tab) */
+function poHelpGroup(label, anchor, fk) {
+  const g = trEl("span", "lbl-grp"), hb = trEl("button", "pf-help"); hb.type = "button"; hb.dataset.fk = fk;
+  hb.setAttribute("aria-label", t("po.help"));
+  const NS = "http://www.w3.org/2000/svg", ic = document.createElementNS(NS, "svg");   // Lucide circle-help
+  ic.setAttribute("class", "ic"); ic.setAttribute("viewBox", "0 0 24 24"); ic.setAttribute("aria-hidden", "true");
+  const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", "12"); c.setAttribute("cy", "12"); c.setAttribute("r", "10"); ic.appendChild(c);
+  ["M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"].forEach((d) => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); ic.appendChild(p); });
+  hb.appendChild(ic);
+  const tip = hb.appendChild(trEl("span", "pf-help-tip", t("po.help"))); tip.setAttribute("aria-hidden", "true");
+  hb.addEventListener("click", () => { window.blave.openExternal(docsUrl("portfolio") + "#" + anchor); trackFeature("po_help"); });
+  g.append(label, hb); return g;
+}
+function poCfgSec() { return trSec(poHelpGroup(trTipLabel("label", t("po.secAmounts"), t("tr.zeroMeansOff")), "amounts", "po-help-cfg"), trPickBtn()); }
 // 重畫一個面板之前:資料指紋沒變就跳過;焦點在這個面板裡的輸入框時也跳過(打到一半不能被輪詢洗掉)
 function trShould(key, box, data) {
   const sig = LANG + "|" + JSON.stringify(data);
@@ -2581,11 +2596,11 @@ function poPaintCfg() {
   // 「選擇策略」三個分支都在(後兩個停用):鈕不在不在之間跳,位置穩定(picker §2)
   if (!TR.listLoaded || !trReport()) {
     // 策略清單還沒回來(或讀失敗):不畫金額表、更不畫儲存列——「清單是空的」在這時候不是事實,不能邀請人把策略移出組合
-    box.appendChild(trSec(trTipLabel("label", t("po.secAmounts"), t("tr.zeroMeansOff")), trPickBtn()));
+    box.appendChild(poCfgSec());
     box.appendChild(trEl("div", "pf-state", trLoadingText()));   // 策略組合頁頁首沒有狀態行:等什麼寫在這裡(只此一處)
   } else if (stored === null) {
     // 主機讀不到設定檔:金額不畫(畫 0 是假話)、不給存,下一份報告讀到就自己恢復
-    box.appendChild(trSec(trTipLabel("label", t("po.secAmounts"), t("tr.zeroMeansOff")), trPickBtn()));
+    box.appendChild(poCfgSec());
     box.appendChild(trEl("div", "pf-state", t("tr.cfgNull")));
   } else if (!names.length && !trPickDirty(TR.picked, stored, trPickKeep(TR.env, TR.picked, stored, trListNames())) && !Object.keys(TR.bad).length) {
     // 一支都沒選(或連可選的都沒有):Setup fog(canon › Components › Setup fog);草稿把策略都取消勾選、等著儲存時不上霧(儲存列是唯一的出口)
@@ -2826,7 +2841,7 @@ async function trStratOpen(n, el) {
 }
 function trAmountTable(names, stored, states) {
   const frag = document.createDocumentFragment();
-  frag.appendChild(trSec(trTipLabel("label", t("po.secAmounts"), t("tr.zeroMeansOff")), trPickBtn()));
+  frag.appendChild(poCfgSec());
   const total = trEl("div", "pf-total"), bar = trEl("div", "pf-savebar"), cloud = TR.env === "cloud";
   /* 雲端(spec-desktop-cloud-s4):跟本機同一張表、同一套驗證,只差三件——讀不到新狀態不給存(amounts 是整份覆蓋,
      拿舊報告當底會蓋掉別處剛改的)、存完要等主機回報才對得上(.pend 記號)、送出走 trSend(單飛 + request_id 沿用)。 */

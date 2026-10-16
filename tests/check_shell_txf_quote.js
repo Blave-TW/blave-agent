@@ -81,14 +81,14 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
     const mk = node; const node2 = (tag) => { const n = mk(tag); n.classList = { toggle() {}, add(c) { n.className += " " + c; } }; n.on = {}; n.addEventListener = (e, f) => { n.on[e] = f; }; return n; };
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
-    const ctx = vm.createContext({ document: { createElement: node2, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
+    const ctx = vm.createContext({ document: { createElement: node2, createElementNS: (_ns, tag) => node2(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
       $: (id) => (id === "del-ok" ? ctx.DELOK : null), DELOK: { attrs: {}, disabled: false, setAttribute(k, v) { this.attrs[k] = v; } },
       t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: {}, srSay() {}, trIsPaper: () => ctx.PAPERV === true, UNIT: "TWD", EQ: 2000000,
       confirmBox(o) { ctx.BOX = o; }, trCloudBox: (o) => o, trCcy: () => "TWD",
       trWith: () => { ctx.DIRECT = (ctx.DIRECT || 0) + 1; return true; } });   // onOk 的第一步:記一次「直接存了」、走早退那條,不碰送出鏈
     vm.runInContext("function trUnit() { return UNIT; } function trEquity() { return EQ; }", ctx);
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-      + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
+      + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
         "trStratName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum",
         "trTotalText", "trAmountTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts"].map((n) => cutF(src, n)).join("\n"), ctx);
     const V = { credentials: true, pair: true, order: true, account: true };

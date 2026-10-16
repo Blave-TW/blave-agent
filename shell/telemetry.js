@@ -175,7 +175,9 @@ const EVENTS = {
     // 網頁 GA4 同一件事叫 trade_pos_fog_pick／trade_pos_fog_new(這裡 name 上限 16 字)
     "trade_fog_pick", "trade_fog_new",
     // 下單方式(0.1.26,自動下單 › 設定):整個組合的下單方式改了、機器 ack 成功才送(不帶選了哪一種)
-    "exec_set"] },
+    "exec_set",
+    // 策略組合 › 配置／優化區段標籤旁的問號外開教學(0.1.26;renderer/trade.js poHelpGroup):兩顆共用這個名字,網頁 GA4 portfolio_help_open 另帶 tab
+    "po_help"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
