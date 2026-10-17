@@ -71,6 +71,39 @@ if (!process.versions.electron) {
     const d = build(dense), r = TP.initialRange(d.tr, d.c, 2000), g = geom(d.tr, d.c, 2000, r);
     ok("① 緊鄰時左緣停在兩根中間(+0.5 根):最早收進來那顆離圖邊 ≥ 6px、間距 ≥ 24px", sound(g) && r.from % 1 === 0.5 && g.n < g.total, J({ r, g })); }
 
+  // 跟網頁 execDefaultRange 同一組輸入、同一組期望值(網頁 tests/check_exec_range.js 用同一張表)。輸入用網頁的形狀:
+  // spans = 每段部位落在圖上的 K 棒索引(同一根兩筆就寫兩次)、tail = 最後一根、first = 0、plotW、hasOpen
+  { const ten = (a, step, len) => Array.from({ length: 10 }, (_, k) => [a + k * step, a + k * step + len]);
+    const PARITY = [
+      ["front", ten(1200, 70, 40), 1999, 1000, false, { from: 1168, to: 2003 }],
+      ["tail", ten(100, 70, 40), 1999, 1000, false, { from: 69, to: 871 }],
+      ["both", ten(800, 30, 15), 2999, 1000, false, { from: 787, to: 1128 }],
+      ["overflow", Array.from({ length: 60 }, (_, k) => [20 + k * 30, 35 + k * 30]), 1899, 480, false, { from: 1629, to: 1903 }],
+      ["openTail", Array.from({ length: 40 }, (_, k) => [20 + k * 30, 35 + k * 30]).concat([[2990]]), 2999, 480, true, { from: 935.5, to: 3003 }],
+      ["dense", [Array.from({ length: 996 }, (_, k) => 3000 + k * 2)], 4999, 2000, true, { from: 4840.5, to: 5003 }],
+      ["sameBar", [Array.from({ length: 40 }, (_, k) => 1000 + k * 100).flatMap((b) => (b === 4600 ? [b, b] : [b]))], 4999, 96, true, { from: 4599.5, to: 5003 }],
+      ["minCenter", [[1500, 1510], [1520, 1530]], 2999, 1000, false, { from: 1450, to: 1580 }],
+      ["minTail", Array.from({ length: 60 }, (_, k) => [20 + k * 10, 25 + k * 10]), 619, 96, false, { from: 493, to: 623 }],
+    ];
+    const fromSpans = (spans, tail, hasOpen) => {
+      const candles = []; for (let i = 0; i <= tail; i++) candles.push([T0 + i * DAY, 100, 101, 99, 100, 1]);
+      const trades = []; let pos = 0;
+      spans.forEach((bars, k) => { const open = hasOpen && k === spans.length - 1; let prev = -1, j = 0;
+        bars.forEach((b, i) => { j = b === prev ? j + 1 : 0; prev = b; const delta = !open && i === bars.length - 1 ? -pos : 1; pos += delta;
+          trades.push({ ts: T0 + b * DAY + j * 60, price: 100, delta, direction: delta > 0 ? "buy" : "sell", position: pos }); }); });
+      return build({ candles, trades, trades_start_position: 0 });
+    };
+    const got = PARITY.map(([name, spans, tail, w, open]) => { const { c, tr } = fromSpans(spans, tail, open); return [name, TP.initialRange(tr, c, w)]; });
+    const bad = got.filter(([name, r], i) => J(r) !== J(PARITY[i][5]));
+    ok("① 跟網頁同一張期望值表(前端/尾端/兩端空白、裝不下、未平倉、逐筆緊鄰、同一根兩筆、130 根置中/貼尾)", !bad.length, J(bad));
+    // 設了 BLAVE_WEB_DIR 就把網頁的 execDefaultRange 抽出來,同一組輸入直接比
+    const webDir = process.env.BLAVE_WEB_DIR, wsPath = webDir && path.join(webDir, "app", "main", "templates", "agent", "workspace.html");
+    if (!wsPath || !fs.existsSync(wsPath)) console.log("SKIP  網頁 execDefaultRange 直接比對(設 BLAVE_WEB_DIR 指到 web 樹才跑)");
+    else { const html = read(wsPath), a = html.indexOf("const EXEC_MARK_GAP"), b = html.indexOf("function execTrackRange");
+      const web = a > 0 && b > a ? new Function(html.slice(a, b) + "; return execDefaultRange;")() : null;
+      const diff = web ? PARITY.filter(([, spans, tail, w, open], i) => J(web(spans, tail, 0, w, open)) !== J(got[i][1])).map((x) => x[0]) : ["找不到 execDefaultRange"];
+      ok("① 網頁 execDefaultRange 同一組輸入結果相同", !diff.length, J(diff)); } }
+
   // 最少 130 根優先
   { const close = build(fixture(620, Array.from({ length: 60 }, (_, k) => [20 + k * 10, 25 + k * 10]))), r2 = TP.initialRange(close.tr, close.c, 24 * 4);
     ok("① 最少 130 根:貼著資料尾端時往左補,不超出最後一根 + 4", r2.from === 623 - 130 && r2.to === 623, J(r2));

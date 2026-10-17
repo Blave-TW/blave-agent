@@ -388,7 +388,8 @@
     const to = flat && last - newest > span ? newest + Math.max(5, Math.round(span * 0.15)) : last + RIGHT_PAD;
     let left = from - Math.max(5, Math.round((to - from) * 0.04));
     // 停在沒收進來那根與最早收進來那根的中間:兩根緊鄰時 +1 會讓最早那顆箭頭貼在圖邊被裁一半(同網頁 execFrameTrades)
-    if (older !== null) left = Math.min(from, Math.max(left, older + 0.5));
+    // 名額邊界剛好切在同一根 K 棒的兩筆之間(older 跟 from 同一根):分不開,留半根讓那根的箭頭不貼邊
+    if (older !== null) left = older >= from ? from - 0.5 : Math.min(from, Math.max(left, older + 0.5));
     return { from: Math.max(LEFT_PAD, left), to: to, span: span };
   }
   function initialRange(tracks, candles, plotWidth) {
