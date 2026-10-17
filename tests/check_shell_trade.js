@@ -2239,7 +2239,16 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const again = paintUi([{ ts: d0 - 30, type: "resume_wait" }, { ts: d0 - 120, type: "halt" }, { ts: d0 - 200, type: "resume" }]);
       const n = (rows, re) => rows.filter((x) => re.test(x)).length;
       ok("稽核 0127b1 P1-6:第一次啟動寫「已啟動下單」、暫停之後的才寫「已恢復下單」(先照時間排);兩種都不帶說明(不再「已恢復下單 — 恢復下單」)",
-        first.length === 1 && n(first, /tr\.ov\.evStart/) === 1 && n(again, /tr\.ov\.evResume/) === 1 && n(again, /tr\.ov\.evStart/) === 1 && ![...first, ...again].some((x) => /tr\.ov\.ev(Start|Resume).*—/.test(x)), J([first, again])); }
+        first.length === 1 && n(first, /tr\.ov\.evStart/) === 1 && n(again, /tr\.ov\.evResume/) === 1 && n(again, /tr\.ov\.evStart/) === 1 && ![...first, ...again].some((x) => /tr\.ov\.ev(Start|Resume).*—/.test(x)), J([first, again]));
+      // 主機重開後停住也算暫停(同網頁):雲端的 ui 流裡那一筆、或這台電腦的機器事件(r.events,ts 是 ISO 字串)在前 → 「已恢復下單」
+      const paintEv = (ui, events) => { ctx.TR = { st: { report: { events } }, list: [], ov: { days: 7, ui, uiErr: false } }; return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((x) => x.className === "ev-row").map((x) => x.textContent); };
+      const iso = (sec) => new Date(sec * 1000).toISOString();
+      const cloudMrs = paintEv([{ ts: d0 - 30, type: "resume" }, { ts: d0 - 120, type: "machine_restart_stopped", data: { downtime_s: 600 } }], []);
+      const localMrs = paintEv([{ ts: d0 - 30, type: "resume" }], [{ ts: iso(d0 - 120), type: "machine_restart_stopped", payload: { downtime_s: 600 } }]);
+      const afterMrs = paintEv([{ ts: d0 - 120, type: "resume" }], [{ ts: iso(d0 - 30), type: "machine_restart_stopped", payload: {} }]);
+      ok("事件列:主機重開後停住(machine_restart_stopped)在前也算暫停 → 「已恢復下單」;雲端 ui 流與機器事件兩種來源都認;在後面的不影響前面那次啟動",
+        n(cloudMrs, /tr\.ov\.evResume/) === 1 && n(cloudMrs, /tr\.ov\.evRestartStopped/) === 1 && n(localMrs, /tr\.ov\.evResume/) === 1 && n(localMrs, /tr\.ov\.evStart/) === 0
+        && n(afterMrs, /tr\.ov\.evStart/) === 1 && n(afterMrs, /tr\.ov\.evResume/) === 0, J([cloudMrs, localMrs, afterMrs])); }
     { const one = { ...CAP, ts: now - 30, signed_diff: -1 }, all = paintHist([CAP, CAP_SPEC, BTC, one]), syms = all.filter((n) => n.tag === "span" && (n.className === "mono" || n.className === "") && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
       ok("spec-0.1.13 #14 下單紀錄:群益單「大台（TX2610）」;只有別名的口數單(TMF)只寫商品名;加密單照舊代號;台指期小標寫期貨不寫合約",
         syms.includes("tr.txfProd.txf（TX2610）tr.mkt.fut") && syms.includes("tr.txfProd.tmftr.mkt.fut") && syms.includes("BTCUSDTtr.mkt.swap"), J(syms));

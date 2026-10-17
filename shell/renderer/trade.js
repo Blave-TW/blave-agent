@@ -4401,8 +4401,12 @@ function trOvEvents(r, z) {
      有了它,「已暫停下單」那一列在恢復之後不會消失,也才有「已恢復下單 / 已連接 / 已解除」。 */
   // 照時間排:「啟動」還是「恢復」看前一筆暫停／啟動是哪一個(稽核 0127b1 P1-6)
   const ui = (Array.isArray(TR.ov.ui) ? TR.ov.ui : []).slice().sort((a, b) => ((a && a.ts) || 0) - ((b && b.ts) || 0)), uiHalts = [];
+  // 主機重開後停住(machine_restart_stopped)也是暫停(那一列寫「已暫停下單」,同網頁):機器事件在 r.events,不在 ui 裡,照時間插進來只拿來判前一筆
+  const stops = (Array.isArray(r.events) ? r.events : []).filter((ev) => ev && ev.type === "machine_restart_stopped").map((ev) => ({ ms: trMs(ev.ts), stop: true })).filter((x) => x.ms != null);
+  const seq = ui.filter((ev) => ev && typeof ev.ts === "number").map((ev) => ({ ms: ev.ts * 1000, ev })).concat(stops).sort((a, b) => a.ms - b.ms);
   let lastRun = null;
-  ui.forEach((ev) => {
+  seq.forEach(({ ev, stop }) => {
+    if (stop) { lastRun = "halt"; return; }
     if (!ev || typeof ev.ts !== "number" || typeof ev.type !== "string") return;
     const d = ev.data && typeof ev.data === "object" ? ev.data : ev;   // 平台格式的欄位在 data;這台電腦那一份直接放最外層
     const venue = trVenueLabel(String(d.venue || ""), true);
@@ -4412,6 +4416,7 @@ function trOvEvents(r, z) {
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = t("tr.ov.evConnected", { venue });
+    else if (ev.type === "machine_restart_stopped") { const txt = trEventText(ev.type, d); if (txt) { head = txt[0]; note = txt[1]; } lastRun = "halt"; }
     else if (ev.type === "venue_disconnected" && venue) head = t("tr.ov.evDisconnected", { venue });
     else { const txt = trEventText(ev.type, d); if (txt) { head = txt[0]; note = txt[1]; } }   // 雲端才有的型別(desktop_action、交易所連不上…)
     if (!head) return;
