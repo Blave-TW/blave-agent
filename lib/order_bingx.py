@@ -671,6 +671,11 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
             if not order.get("orderId"):
                 raise BingXError("N/A", f"{otype} response missing orderId", "trade/order")
             placed[kind] = order
+    except guard.Halted as e:
+        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
+        raise ProtectionFailed(
+            guard.protection_halted_text(symbol, direction, wanted, placed, False) + f" {e}"
+        ) from e
     except Exception as e:
         raise ProtectionFailed(
             f"{symbol} {direction} position may be NAKED — placing protective orders "

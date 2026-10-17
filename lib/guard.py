@@ -277,6 +277,25 @@ def _check_halt_freeze(intent, fields):
         f"closing that one symbol). Only the user may clear the halt.")
 
 
+def protection_halted_text(symbol, direction, wanted, placed, after_entry):
+    """ProtectionFailed text when HALT refused SL/TP (order libs' place_protective_orders):
+    names only what is actually missing, and the entry only when there was one."""
+    names = {"sl": "stop-loss", "tp": "take-profit"}
+    missing = [names[k] for k in wanted if k not in placed]
+    done = [names[k] for k in wanted if k in placed]
+    what = " and ".join(missing) + (" were" if len(missing) > 1 else " was")
+    if after_entry:
+        head = (f"{symbol} {direction} position is OPEN WITH NO STOP-LOSS"
+                if "sl" in wanted and "sl" not in placed else f"{symbol} {direction} position is open")
+        head += f": the entry filled, then trading was paused (state/HALT) and its {what} not placed"
+    else:
+        head = f"{symbol} {direction}: the {what} not placed — trading is paused (state/HALT)"
+    if done:
+        head += f"; the {' and '.join(done)} went out before the pause"
+    return (f"{head}. A paused machine sends no order and nothing places it later on its own — "
+            f"tell the user now; after they press 啟動下單, place it with place_protective_orders.")
+
+
 # ── account hold: an unconfirmed exchange account gets no order at all ───────
 # manager/reconciler writes it (state/venue_account.json): a `book_hold` for a
 # venue — the bound key's account could not be matched to the one the bot's

@@ -10,8 +10,9 @@ the thread-local one.
   R  lib.portfolio.reconcile: reduce / close / flip / safety HALT / deferred close-all
   E  lib.execute: a reduce TWAP stops at its next slice too
   P  the close pass is held by exactly flatten.py and close_symbol.py
-  W  two-step open_position (Binance/OKX/Gate.io): a pause between fill and SL/TP
-     refuses the SL/TP too (Wei: no exception) and raises ProtectionFailed saying so
+  W  SL/TP under HALT (Binance/OKX/Gate.io/BingX): a pause between open_position's fill
+     and its SL/TP refuses them too (Wei: no exception); ProtectionFailed names what is
+     missing, and the entry only when there was one
   F  runtime portfolio_reporter.halt_freezes: unknown says "frozen", never "exits still run"
 
 No network, no exchange, no process but this one's own child. Run:
@@ -269,30 +270,78 @@ check(flat.index("grant_halt_closes(") > flat.index("claim_close_all_pass()"),
 # ── W: a pause between open_position's fill and its SL/TP ────────────────────
 print("== W open_position window")
 import importlib  # noqa: E402
-for v in ("binance", "okx", "gateio"):
+
+
+def _w_err(fn):
+    try:
+        fn()
+    except Exception as e:  # noqa: BLE001
+        return e
+    return None
+
+
+for v in ("binance", "okx", "gateio", "bingx"):
     m = importlib.import_module(f"lib.order_{v}")
-    hit = []
-    m._send = lambda *a, **k: hit.append(a) or (_ for _ in ()).throw(AssertionError("reached the venue"))
+    hit, sends = [], {"n": 0}
+
+    def _send(*a, **k):
+        hit.append(a)
+        raise AssertionError("reached the venue")
+
+    m._send = _send
     m.get_position_mode = lambda env: "oneway"
     m.format_price = lambda env, symbol, price: str(price)
     m._position_side = lambda env, direction: "BOTH"
 
-    def _entry(env, symbol, direction, qty, **k):
-        guard.trip_halt("user request", "web")  # the pause lands right after the fill
-        return {"order_id": "e1", "status": "filled", "executed_qty": qty}
+    def _denied():
+        return len([r for r in audits("order_denied_halt") if r.get("intent") == "protective"])
 
-    m.place_market_order = _entry
-    denied = len([r for r in audits("order_denied_halt") if r.get("intent") == "protective"])
-    try:
-        m.open_position({}, "BTCUSDT", "long", 0.01, sl_price=90000.0, tp_price=110000.0)
-        err = None
-    except Exception as e:  # noqa: BLE001
-        err = e
-    check(isinstance(err, m.ProtectionFailed) and isinstance(err.__cause__, guard.Halted)
-          and "NO STOP-LOSS" in str(err) and "啟動下單" in str(err) and "place_protective_orders" in str(err)
-          and not hit and len([r for r in audits("order_denied_halt") if r.get("intent") == "protective"]) > denied,
-          f"W {v}: SL/TP refused, nothing reaches the venue, ProtectionFailed names the unprotected "
-          f"position and the fix ({type(err).__name__}: {str(err)[:80]})")
+    def ok_pf(err, before):
+        return (isinstance(err, m.ProtectionFailed) and isinstance(err.__cause__, guard.Halted) and not hit
+                and _denied() > before and "啟動下單" in str(err) and "place_protective_orders" in str(err))
+
+    if v != "bingx":  # BingX attaches SL/TP to the entry: no window to test
+        def _entry(env, symbol, direction, qty, **k):
+            guard.trip_halt("user request", "web")  # the pause lands right after the fill
+            return {"order_id": "e1", "status": "filled", "executed_qty": qty}
+
+        m.place_market_order = _entry
+        before = _denied()
+        err = _w_err(lambda: m.open_position({}, "BTCUSDT", "long", 0.01, sl_price=90000.0, tp_price=110000.0))
+        check(ok_pf(err, before) and "OPEN WITH NO STOP-LOSS" in str(err) and "entry filled" in str(err)
+              and "stop-loss and take-profit were not placed" in str(err),
+              f"W1 {v}: pause after the fill — SL/TP refused, nothing reaches the venue, the error says the "
+              f"position has no stop ({str(err)[:90]})")
+        reset_halt()
+
+    # SL went out, then the pause: the TP alone is refused (a real _request for the SL would hit the
+    # venue, so the SL's POST is answered here and the pause lands right after it)
+    real_request = m._request
+
+    def _sl_then_halt(*a, **k):
+        guard.trip_halt("user request", "web")
+        m._request = real_request
+        return ([{"algoId": "s1"}] if v == "okx" else {"algoId": "s1", "id": "s1", "orderId": "s1"})
+
+    if v == "bingx":
+        m._unwrap_order = lambda o: o
+    m._request = _sl_then_halt
+    m.get_open_algo_orders = lambda env, symbol=None: []
+    before = _denied()
+    err = _w_err(lambda: m.place_protective_orders({}, "BTCUSDT", "long", sl_price=90000.0, tp_price=110000.0))
+    m._request = real_request
+    check(ok_pf(err, before) and "take-profit was not placed" in str(err) and "stop-loss went out" in str(err)
+          and "NO STOP-LOSS" not in str(err) and "entry" not in str(err),
+          f"W2 {v}: SL placed, TP refused — names only the TP, says the SL is there ({str(err)[:90]})")
+    reset_halt()
+
+    guard.trip_halt("user request", "web")
+    before = _denied()
+    err = _w_err(lambda: m.place_protective_orders({}, "BTCUSDT", "long", tp_price=110000.0))
+    check(ok_pf(err, before) and "take-profit was not placed" in str(err)
+          and "entry" not in str(err) and "NO STOP-LOSS" not in str(err),
+          f"W3 {v}: standalone place_protective_orders under HALT — no entry story, no claim about the stop "
+          f"({str(err)[:90]})")
     reset_halt()
 
 # ── F: the report's `freeze` when the evidence is missing ────────────────────

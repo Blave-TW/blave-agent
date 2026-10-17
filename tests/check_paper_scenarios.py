@@ -2352,6 +2352,14 @@ def c01(w):
          "rebalance: SOL dropped out → only the bot's 3 SOL sold")
     w.eq(w.paper_pos(SOL), 5.0, "the manual 5 SOL stays")
     w.eq(w.book(), {B: (0.01, 500.0), E: (0.25, 500.0)}, "book per asset")
+    # 0.1.27 full freeze, Type C: a rebalance landing while paused waits whole; 啟動下單 sends it
+    w.cmd("halt", reason="user")
+    w.weights("basket", {B: 1.0}, T2 + 604800)
+    w.eq(w.settle(), [], "HALT (full freeze): the rebalance's sell and buy both wait")
+    w.eq((w.book(), w.paper_pos(E)), ({B: (0.01, 500.0), E: (0.25, 500.0)}, 0.25), "…book and position untouched")
+    w.start()
+    w.eq(sorted(w.settle()), sorted([(B, "buy", 0.01, False), (E, "sell", 0.25, True)]),
+         "啟動下單: the paused rebalance goes out as usual")
 
 
 @scenario("C-02")

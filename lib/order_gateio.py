@@ -630,7 +630,7 @@ def cancel_algo_order(env, symbol, algo_id):
 
 
 def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
-                            tp_price=None, verify=True):
+                            tp_price=None, verify=True, _after_entry=False):
     """Reduce-only conditional SL/TP for an EXISTING futures position via
     /futures/usdt/price_orders (market execution: initial price "0" + tif
     ioc; trigger on MARK price). direction is the POSITION's direction.
@@ -679,13 +679,9 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                                   "price_orders")
             placed[kind] = {"algoId": str(order["id"]), "raw": order}
     except guard.Halted as e:
+        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
         raise ProtectionFailed(
-            f"{symbol} {direction} position is OPEN WITH NO STOP-LOSS/TAKE-PROFIT "
-            f"(placed before the pause: {list(placed) or 'none'}): trading was paused "
-            f"(state/HALT) after the entry filled, and a paused machine sends no order. "
-            f"Nothing re-places them on its own — alert the user now: the position stays "
-            f"unprotected until they press 啟動下單; then re-place them with "
-            f"place_protective_orders. {e}"
+            guard.protection_halted_text(symbol, direction, wanted, placed, _after_entry) + f" {e}"
         ) from e
     except Exception as e:
         raise ProtectionFailed(
@@ -717,7 +713,8 @@ def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
     protection = {}
     if sl_price is not None or tp_price is not None:
         protection = place_protective_orders(env, symbol, direction, qty=None,
-                                             sl_price=sl_price, tp_price=tp_price)
+                                             sl_price=sl_price, tp_price=tp_price,
+                                             _after_entry=True)
     return {"entry": entry, "protection": protection}
 
 

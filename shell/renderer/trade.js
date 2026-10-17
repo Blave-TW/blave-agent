@@ -2281,7 +2281,7 @@ function trAskRelease(opener) {
   const go = () => { srSay(t("tr.releaseHint")); return trRun("released", [(S) => trSend(S, "resume", {}, "release")], "resume"); };
   if (k.kind === "x0") {
     // 自動觸發的 HALT(金鑰被拒、讀帳失敗、帳戶守衛):清 HALT 等於確認那件事處理好了(帳戶守衛那一種就是確認帳戶變更)
-    const auto = !!(r.halt && r.halt.halted) && trHaltStopsAll(r.halt);
+    const auto = !!(r.halt && r.halt.halted) && trHaltStopsAll(r.halt) && !(trHaltFreeze(r) && trHaltByUser(r.halt));
     confirmBox(trCloudBox({ title: t("tr.relTitle"), opener, lines: [t("tr.relBody")].concat(auto ? [t("tr.relAuto")] : []), ok: t("tr.release"), onOk: go }));
     return;
   }

@@ -1267,11 +1267,21 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           J(sends) === J([["resume", {}, null, "release"]]) && env2.ran && env2.ran.want === "released" && env2.ran.cmd === "resume");
       });
     })();
-    ok("§8 X0 自動觸發的 HALT 多一句;X1/X2 主鈕是「先不要」(single:焦點在它)、平掉並解除是破壞性次鈕", /const auto = !!\(r\.halt && r\.halt\.halted\) && trHaltStopsAll\(r\.halt\);/.test(rel) && /\.concat\(auto \? \[t\("tr\.relAuto"\)\] : \[\]\)/.test(rel)
+    ok("§8 X0 自動觸發的 HALT 多一句;X1/X2 主鈕是「先不要」(single:焦點在它)、平掉並解除是破壞性次鈕", /const auto = !!\(r\.halt && r\.halt\.halted\) && trHaltStopsAll\(r\.halt\) && !\(trHaltFreeze\(r\) && trHaltByUser\(r\.halt\)\);/.test(rel) && /\.concat\(auto \? \[t\("tr\.relAuto"\)\] : \[\]\)/.test(rel)
       && /single: true,/.test(rel) && /ok: t\("tr\.relNotNow"\), onOk: \(\) => \{\}, alt: \{ label: t\("tr\.relCloseGo"\), danger: true, onOk: go \}/.test(rel)
       && /title: x1 \? \(k\.n \? t\("tr\.relX1Title", \{ n: k\.n \}\) : t\("tr\.relX1TitleN"\)\) : k\.rows \? t\("tr\.relX2Title"\) : t\("tr\.relX2TitleN"\)/.test(rel) && /lines: \[x1 \? \(k\.rows \? t\("tr\.relX1Lead"\) : t\("tr\.relX1BodyN"\)\) : k\.rows \? t\("tr\.relX2Lead"\) : t\("tr\.relX2BodyN"\)\]/.test(rel)
       && /: k\.rows \? t\("tr\.relX2Title"\) : t\("tr\.relX2TitleN"\)/.test(rel)
       && /extra\.appendChild\(trEl\("p", "cf-note", t\("tr\.relSelfCode"\)\)\);/.test(rel) && /k\.rows\.length > 6 \? k\.rows\.slice\(0, 5\) : k\.rows/.test(rel));
+    { // 稽核 N1:X0 解除框的「這次暫停是系統自動觸發的」——凍結 lib 上 holds_all 一律 true,用戶自己按的暫停不能講成自動觸發(同狀態行 inkReason 的排除)
+      const helpers = src.slice(src.indexOf("const TR_HALT_KEEP_EXITS = "), src.indexOf("\n}\n", src.indexOf("function trHaltStopsAll(")) + 3);
+      const vmN = require("vm"), relAuto = (halt) => { const c = { t: (k) => k, trReport: () => ({ halt }), trReleaseKind: () => ({ kind: "x0" }), trCloudBox: (o) => o, srSay() {}, trRun() {} };
+        c.confirmBox = (o) => { c.box = o; }; vmN.createContext(c); vmN.runInContext(helpers + "\n" + fnS("trAskRelease") + "\ntrAskRelease(null);", c);
+        return c.box.lines.indexOf("tr.relAuto") >= 0; };
+      ok("N1 X0 解除框:凍結＋用戶按的(web / desktop / 沒 source)不講自動觸發;凍結＋自動來源照講;舊 lib 帳戶守衛撐起的 holds_all 照講;單純舊 HALT 不講",
+        !relAuto({ halted: true, freeze: true, holds_all: true, source: "web" }) && !relAuto({ halted: true, freeze: true, holds_all: true, source: "desktop" })
+        && !relAuto({ halted: true, freeze: true, holds_all: true }) && relAuto({ halted: true, freeze: true, holds_all: true, source: "reconciler" })
+        && relAuto({ halted: true, freeze: false, holds_all: true, source: "reconciler" }) && relAuto({ halted: true, freeze: false, holds_all: true, source: "web" })
+        && !relAuto({ halted: true, freeze: false, holds_all: false, source: "web" })); }
     ok("§8 接線:主鈕 disabled 帶 zv.off、aria-describedby 指原因行、title 不讓「連不上」蓋掉原因;原因行與解除暫停鈕每次畫", /b\.disabled = flying \|\| zv\.off \|\| \(!busy && !usable\);/.test(head)
       && /if \(zv\.off \|\| zv\.book\) b\.setAttribute\("aria-describedby", zg\.desc\);/.test(head) && /b\.title = zv\.off \? "" :/.test(head) && /else trPaintNoAmt\(pend \|\| zv\.reason, zv\.book \? \{ n: trBookQty\(zv\.book\) \} : null\);\n\s*trPaintGoRel\(zv\.release, zv\.noStart, zv\.close\);/.test(head)
       && /if \(trZView\(envHeadState\(TR\.st, Date\.now\(\)\), r\)\.off\) return;/.test(fnS("trAskStart")));
