@@ -3,7 +3,7 @@
 lib/runner writes strategies/<name>/backtest_state.json (typec_live_state of the last row +
 code_hash) only when a live tick would compute that same row (lib.bar_ready.computes_now, every
 case in tests/check_typec_preview_parity.py) and align_feed cut nothing off the fetch's tail;
-otherwise it writes none and removes an older one. runtime/portfolio_reporter.typec_previews forwards it for a picked strategy with no
+otherwise it writes none and removes an older one of other code. runtime/portfolio_reporter.typec_previews forwards it for a picked strategy with no
 live weights, only while code_hash is the current strategy.py's. wait_for_bar never reads it:
 a tick still probes and never writes state.json from it. Also pins the timeout constants the
 workspace and the runtime keep in step, and the run budget left after a slow probe.
@@ -97,8 +97,10 @@ check(not (SDIR / "state.json").exists(), "a backtest never writes state.json")
 
 never = CLOSE.copy()
 never["3008"] = np.nan   # a tick would never compute on this (tests/check_typec_preview_parity.py has every case)
-check(backtest(lambda h: (never, OPEN.copy())) is None,
-      "the scheduler would not compute on this data: no preview, and the older one is removed")
+prev = json.loads(PREVIEW.read_text())
+check(backtest(lambda h: (never, OPEN.copy())) == prev,
+      "the scheduler would not compute on this data: no new preview; the older one of the same code stays "
+      "(the reporter marks it not latest; tests/check_backtest_preview_a1.py removes one of other code)")
 
 backtest(lambda h: (CLOSE.copy(), OPEN.copy()))
 
@@ -109,6 +111,7 @@ def trimmed(h):
     return CLOSE.iloc[:-1].copy(), OPEN.iloc[:-1].copy()
 
 
+PREVIEW.unlink()   # a same-code older one would stay (above)
 check(backtest(trimmed) is None, "align_feed cut the fetch's tail: no preview")
 check(data._feed_trims is None, "…the trim recorder is switched off after the fetch")
 pv = backtest(lambda h: (CLOSE.copy(), OPEN.copy()))

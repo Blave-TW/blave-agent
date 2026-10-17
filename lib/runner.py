@@ -195,9 +195,11 @@ def _write_json_atomic(path, obj, indent=2):
         raise
 
 
-# Type C preview: typec_live_state() of a backtest / performance refresh's last row plus the
-# code_hash it was computed with. The page shows it, marked as a preview, while a picked strategy
-# has no live state.json yet (runtime/portfolio_reporter.typec_previews); nothing trades on it.
+# Backtest preview: the target a live tick would hold if it ran on a backtest / performance
+# refresh's last row (Type C: typec_live_state; Type A: the last signal) plus the code_hash it was
+# computed with and that row's close(s). The page shows it while a strategy has no live state.json
+# yet, and the save dialog turns it into shares (runtime/portfolio_reporter.backtest_previews);
+# nothing trades on it.
 BACKTEST_STATE_FILE = 'backtest_state.json'
 
 
@@ -206,25 +208,83 @@ def _utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _typec_preview(weights, price_df, config, src0, fetch_trims, data):
-    """The preview, or None when this row is not the one a live tick would compute right now:
+def _preview_row_is_live(config, src0, fetch_trims, data):
+    """Is the backtest's last row the one a live tick would compute right now? Not when
     align_feed cut the fetch's tail (live waits for that row — fetch_trims None = not recorded,
     same), or the scheduler would not compute on this data yet (lib.bar_ready.computes_now: a
     member one bar behind inside its grace, a member with no data at all). A member stuck for
     days is no reason: live computes without it too, and both rows carry it as NaN."""
     if src0 is None or fetch_trims is None or fetch_trims:
-        return None
+        return False
+    from lib.bar_ready import computes_now
+    return bool(computes_now(data, config.get('INTERVAL', '1h'), _utcnow()))
+
+
+def _typec_preview(weights, price_df, config, src0, fetch_trims, data):
+    """The Type C preview (typec_live_state + code_hash + `closes`, the last row's close per
+    held symbol), or None when that row is not the live one (_preview_row_is_live)."""
     try:
-        from lib.bar_ready import computes_now
-        if not computes_now(data, config.get('INTERVAL', '1h'), _utcnow()):
+        if not _preview_row_is_live(config, src0, fetch_trims, data):
             return None
         from lib.strategy import code_hash
         out = typec_live_state(weights, price_df, market=config.get('MARKET', 'swap'))
+        last = price_df['close'].iloc[-1]
+        closes = {}
+        for col, px in zip(price_df['close'].columns, last.to_numpy(dtype=float)):
+            sym = str(col).replace('-', '').upper()
+            if out['weights'].get(sym) and math.isfinite(px) and px > 0:
+                closes[sym] = float(px)
+        out['closes'] = closes
     except Exception as e:
         logging.warning("backtest preview skipped: %s", e)
         return None
     out['code_hash'] = code_hash(src0)
     return out
+
+
+def _typea_preview(signals, df, config, src0, fetch_trims, data):
+    """The Type A preview: the position a live tick would write from the last bar (the same
+    ffill as the live path, before clamp_spot — live clamps the NET spot target in
+    lib/portfolio), that bar's label and close, and code_hash. None when the row is not the live
+    one (_preview_row_is_live)."""
+    try:
+        if df.empty or not _preview_row_is_live(config, src0, fetch_trims, data):
+            return None
+        from lib.strategy import code_hash
+        pos = float(signals.reindex(df.index).ffill().fillna(0).iloc[-1])
+        close = float(df['Close'].iloc[-1])
+        if not (math.isfinite(pos) and math.isfinite(close) and close > 0):
+            return None
+        return {'type': 'signal', 'symbol': config.get('SYMBOL', ''),
+                'market': config.get('MARKET', 'swap'), 'position': pos,
+                'bar_at': int(pd.Timestamp(df.index[-1]).timestamp()), 'close': close,
+                'updated_at': int(time.time()), 'code_hash': code_hash(src0)}
+    except Exception as e:
+        logging.warning("backtest preview skipped: %s", e)
+        return None
+
+
+def _write_preview(out_dir, preview, src0):
+    """backtest_state.json ← preview. None (this run's last row is not the live one) removes an
+    older file of other code; one of the same code stays — an earlier bar of this strategy, which
+    the save dialog still prices from and the reporter marks `latest: false` (a Taiwan daily
+    re-run during the session is never computable, and would otherwise wipe the only preview).
+    Never fails the run."""
+    path = Path(out_dir) / BACKTEST_STATE_FILE
+    try:
+        if preview is not None:
+            _write_json_atomic(path, preview)
+            return
+        from lib.strategy import code_hash
+        try:
+            with open(path, encoding='utf-8') as f:
+                kept = json.load(f).get('code_hash')
+        except (OSError, ValueError, AttributeError):
+            kept = None
+        if src0 is None or kept != code_hash(src0):
+            path.unlink(missing_ok=True)
+    except Exception as e:
+        logging.warning("backtest preview not written: %s", e)
 
 
 def _write_stats(out_dir, stats):
@@ -1709,6 +1769,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     if isinstance(result, pd.Series):
         df      = data
         signals = result
+        signals_live = result   # the preview's position: what the live path below reads
         if mode == 'backtest':  # live clamps the NET spot target in lib/portfolio (after netting strategies)
             from lib.exits import clamp_spot
             signals = clamp_spot(signals, config.get('MARKET'))
@@ -1717,6 +1778,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         if warmup > 0:
             df      = df.iloc[warmup:]
             signals = signals.iloc[warmup:]
+            signals_live = signals_live.iloc[warmup:]
 
         # Drop bars with invalid prices (e.g. futures overnight gaps). Open counts too: a
         # valid Close on an Open-0 bar would book overnight = 0/close[t-1] - 1 = -100%.
@@ -1749,6 +1811,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────
+        backtest_state = _typea_preview(signals_live, df, config, src0, fetch_trims, data)
         n   = len(df)
         pos = signals.ffill().fillna(0).values  # shape (n,)
 
@@ -1943,6 +2006,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
                 return
             _write_stats(out_dir, stats)
+            _write_preview(out_dir, backtest_state, src0)
             if mode == 'backtest':
                 try:  # a version is a record of the run, not part of it — never fail the backtest
                     _mint_version(config, stats, mode, src0)
@@ -2106,13 +2170,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
                 return
             _write_stats(out_dir, stats)
-            try:
-                if backtest_state is not None:
-                    _write_json_atomic(out_dir / BACKTEST_STATE_FILE, backtest_state)
-                else:   # an older one describes other data or other code
-                    (out_dir / BACKTEST_STATE_FILE).unlink(missing_ok=True)
-            except Exception as e:
-                logging.warning("backtest preview not written: %s", e)
+            _write_preview(out_dir, backtest_state, src0)
             if mode == 'backtest':
                 try:  # same as Type A: the record must not be able to fail the run
                     _mint_version(config, stats, mode, src0)

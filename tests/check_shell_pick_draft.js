@@ -29,10 +29,11 @@ const ctx = vm.createContext({ document: { createElement: node, createElementNS:
 ctx.psMode = "amounts";
 vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
 const pure = block("/* ── 純邏輯(", "/* ── 純邏輯到此") + block("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此");
+vm.runInContext("var delCtx = null;\n" + (src.match(/^const TR_CF = [^\n]*\n/m) || [""])[0].replace(/^const /, "var "), ctx);
 vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0, psMode = 'amounts', psToAmt = false;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
   "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-  "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart",
+  "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart",
   "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet", "trAmountsEdited", "trSentBeforeOf", "psApply", "trCtReported", "trSentCheck", "trWith", "trUnsavedAny"].map(cutF).join("\n"), ctx);
 
 // 這台電腦、沒連交易所(儲存不開確認框,直接送);已存:a 有錢、z 金額 0。new1 是回測過、還沒進組合的
@@ -54,7 +55,8 @@ const bar = (f) => f.find((n) => n.className === "pf-savebar");
 const btn = (f, fk) => f.find((n) => n.dataset && n.dataset.fk === fk);
 const dot = (S, n) => vm.runInContext(`envRunDot(${J(n)}, TR.st, Date.now(), TR.just)`, ctx);
 const sigSyms = () => flat(vm.runInContext("poSigTable(TR.st.report, trStored() || {}, TR.st.report.states, 'cfg')", ctx)).filter((n) => n.tag === "td").map((n) => n.textContent).join("|");
-const save = async (f) => { btn(f, "save").on.click(); for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
+// 0.1.27 起存金額一律開框(只有什麼都沒變才直接存;canon 確認 modal):開了就按主鈕
+const save = async (f) => { ctx.BOX = null; btn(f, "save").on.click(); if (ctx.BOX) await ctx.BOX.onOk(); for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
 
 (async () => {
   // ① 確定後不寫入
@@ -106,12 +108,12 @@ const save = async (f) => { btn(f, "save").on.click(); for (let i = 0; i < 5; i+
     await save(f);
     ok("④ 按儲存:送出空的 amounts", sends.length === 1 && J(sends[0].args.amounts) === J({}), J(sends)); }
 
-  // ⑤ 連交易所時的確認框:新勾的列標「加入」,不是退灰的「沒變」
+  // ⑤ 確認框:新勾的列標「加入」;已存沒變的不列(0.1.27 canon 確認 modal:表只列會變的,推翻 0124 D2 的「沒變的退灰」)
   { const S = fresh(); S.st.report.venues = { binance: { credentials: true, pair: true, order: true, account: true } };
     pick(["a", "z", "new1"]);
     btn(table(), "save").on.click();
     const rows = ctx.BOX ? flat(ctx.BOX.extra).filter((n) => /^cf-row( |$)/.test(n.className)) : [], r = rows.find((n) => /^NEW1/.test(n.textContent));
-    ok("⑤ 確認框:new1 那列不退灰、標 tr.cfTagAdd;已存沒變的 a 退灰", !!r && !/same/.test(r.className) && /tr\.cfTagAdd/.test(r.textContent) && /same/.test((rows.find((n) => /^A/.test(n.textContent)) || {}).className || ""), J(rows.map((n) => [n.className, n.textContent])));
+    ok("⑤ 確認框:new1 那列標 tr.cfTagAdd(金額 0 也算會變);已存沒變的 a、z 不列", !!r && /tr\.cfTagAdd/.test(r.textContent) && !rows.some((n) => /^(A|Z)/.test(n.textContent)), J(rows.map((n) => [n.className, n.textContent])));
     ok("⑤ 框還沒按確定:沒有送出", sends.length === 0); }
 
   // ⑥ 讀不到設定時按確定:不記草稿

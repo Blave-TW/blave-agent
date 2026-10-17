@@ -142,6 +142,9 @@ html.ws-sc .side-gate { display: none; }
 .main-head:not(:has(.act)) { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
 .main-head > .txt { display: contents; }
 .main-head-name { grid-column: 1; grid-row: 1; align-self: center; }   /* 標題與 32 高的主鈕共用一條中線;沒有鈕的標頭列高就是標題,無影響 */
+/* 策略組合頁首:標題右邊常駐「自動下單中・模擬／真錢」(存金額會送單時;spec F4) */
+.po-title { grid-column: 1; grid-row: 1; align-self: center; display: flex; align-items: center; gap: var(--space-8); min-width: 0; }
+.po-title .mode { flex: none; }
 /* 啟動在途時主鈕右邊多一顆「暫停下單」文字鈕(#tr-go-stop),間距 8 */
 .main-head .act { grid-column: 2; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: var(--space-8); }
 /* `.txt` 底下其餘的孩子(狀態句、原因行、更新入口、唯讀說明、停機區塊、紅字)一律跨滿寬,自己一列 */
@@ -304,6 +307,11 @@ html.ws-sc .side-gate { display: none; }
 .cf-amt .arr { margin: 0 var(--space-4); }
 .cf-amt .tag { font: 400 11px/1.4 var(--font-sans); color: var(--ink-3); }
 .cf-amt .n + .tag { margin-left: var(--space-8); }
+/* 存金額框(canon › 確認 modal):會送單時列首是買進／賣出;草稿還在算時表的位置一句;策略層的變動(移出、加入金額 0、換合約)在標的表下 */
+.del-body.lines p.cf-wait { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-3); }
+.cf-live + .cf-strat { margin-top: var(--space-12); }
+/* 配置表的草稿列:「未儲存」(mini tag 同 .mkt-tag)與存了會送單時的那一句 */
+.pf-tbl td.key .pf-note.live { color: var(--ink-2); }
 /* 部位表「N 支策略」(§2.2;canon › Mini tag):18 高、中性底;熱區用 ::before 外擴到約 32 */
 .net-tag { position: relative; display: inline-flex; align-items: center; gap: var(--space-4); height: 18px; margin-left: var(--space-8); padding: 0 var(--space-6);
   border: 0; border-radius: var(--radius-micro); background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font: 11px/1 var(--font-sans); white-space: nowrap; cursor: pointer; vertical-align: middle; }
@@ -765,22 +773,11 @@ html.ws-sc .side-gate { display: none; }
 .mg-size-pv .v { margin-top: auto; font: 600 17px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
 .mg-size-pv .v small { margin-left: var(--space-2); font-size: 11px; font-weight: 500; color: var(--ink-3); }
 .mg-size-pv .v.warn { color: var(--color-redText); }
-/* 套用金額的確認表(策略｜目前｜目標｜差額) */
-.cf-apply-wrap { overflow-x: auto; }
-.pf-tbl.cf-apply td.key .key-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: normal; }
-.pf-tbl.cf-apply tr.same td { color: var(--ink-3); }
-.pf-tbl.cf-apply tr.total td { padding-top: var(--space-8); border-top: 1px solid var(--color-greyDark); }
-.pf-tbl.cf-apply .ct-sub { display: flex; flex-wrap: wrap; column-gap: var(--space-4); font-size: 11px; color: var(--ink-3); }
-.pf-tbl.cf-apply .ct-sub .now { color: var(--ink-2); }
 .cf-ref .arr { margin: 0 var(--space-4); }
 .pf-frozen.err { color: var(--color-redText); }
-.pf-tbl.cf-apply td.buy { color: var(--color-greenText); }
-.pf-tbl.cf-apply td.sell { color: var(--color-redText); }
-.pf-tbl.cf-apply td.na { color: var(--color-greyDark); }
 .pf-tbl td.na.pending { color: var(--ink-3); }   /* 要用戶讀完去更新的句子,不是缺值:greyDark 只給「—」 */
 .pf-note.past .ts { margin-right: var(--space-8); }
 @media (prefers-reduced-motion: reduce) { .amt-in.flash { animation: none; } }
-.pf-tbl.cf-apply .ct-sub .tag { margin-left: var(--space-8); color: var(--ink-3); }
 /* 「主機版本較舊，更新後才會算」「下次執行後算出成分」:字不是數,退 sans、可折行(同網頁 .pending) */
 .pf-tbl td.n.pending { font-family: var(--font-sans); white-space: normal; }
 .mg-size-btn .ccy { font: 11px var(--font-mono); color: var(--ink-3); }

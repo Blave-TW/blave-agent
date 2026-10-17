@@ -387,6 +387,112 @@ def typec_previews(cfg, states, now=None):
     return out
 
 
+# backtest_previews: besides the picked strategies, the most recently backtested ones — the
+# save dialog needs a draft's preview, a draft is what was just backtested, and the report is
+# size-capped by the api (PORTFOLIO_WEIGHTS_MAX)
+PREVIEW_EXTRA_MAX = 5
+_PREVIEW_SYM_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
+
+
+def _finite_pos(v):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) and x > 0 else None
+
+
+def backtest_previews(cfg, states, now=None):
+    """{name: preview} for the save dialog (and, `latest` only, the amounts table): every
+    strategy's backtest_state.json (lib/runner._typec_preview / _typea_preview) whose code_hash is
+    the current strategy.py's, never on US-stock prices. Names: the picked ones with no live
+    signal yet (Type C: no live weights; Type A: no state.json) plus the PREVIEW_EXTRA_MAX most
+    recently written files of strategies not picked — those are drafts, and a stale state.json of
+    an unpicked one is not what a save would compute. `latest` = its bar is still the newest
+    closed one (_preview_is_latest); the dialog uses either and names the bar.
+      Type C: {type: portfolio, market, weights, closes, rebalance_at, bar_at, bar_date, latest}
+      Type A: {type: signal, symbol, market, position, close, bar_at, bar_date, latest}
+    `daily_tw` = a Taiwan daily bar (the dialog says "close" instead of a time). Display only."""
+    amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
+    amounts = amounts if isinstance(amounts, dict) else {}
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    root = os.path.join(WORKSPACE, "strategies")
+    names = []
+    for name in amounts:
+        st = states.get(name) if isinstance(name, str) else None
+        if isinstance(name, str) and not st:
+            names.append(name)
+        elif isinstance(name, str) and isinstance(st, dict) and st.get("symbol") is None \
+                and not isinstance(st.get("weights"), dict):
+            names.append(name)
+    extra = []
+    try:
+        entries = os.listdir(root)
+    except OSError:
+        entries = []
+    for name in entries:
+        if name in amounts:
+            continue
+        mt = _mtime(os.path.join(root, name, "backtest_state.json"))
+        if mt is not None:
+            extra.append((mt, name))
+    names += [n for _mt, n in sorted(extra, reverse=True)[:PREVIEW_EXTRA_MAX]]
+    out = {}
+    for name in names:
+        d = os.path.join(root, name)
+        data = _read_json(os.path.join(d, "backtest_state.json"))
+        if not isinstance(data, dict) or not isinstance(data.get("code_hash"), str):
+            continue
+        try:
+            with open(os.path.join(d, "strategy.py"), "rb") as f:
+                src = f.read()
+        except OSError:
+            continue
+        markets = _price_markets(src)
+        if _code_hash(src) != data["code_hash"] or "us_stock" in markets:
+            continue
+        try:
+            bar_at = int(data.get("bar_at"))
+        except (TypeError, ValueError):
+            continue
+        td = _ac_interval(name)
+        if td is None:
+            continue
+        row = {"bar_at": bar_at, "bar_date": _bar_date(bar_at, markets),
+               "latest": _preview_is_latest(bar_at, markets, td, now),
+               "daily_tw": bool(markets) and markets <= _TAIPEI_MARKETS and td == timedelta(days=1),
+               "market": _strategy_market(name)}
+        if data.get("type") == "signal":
+            sym, close = data.get("symbol"), _finite_pos(data.get("close"))
+            try:
+                pos = float(data.get("position"))
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(sym, str) or not _PREVIEW_SYM_RE.match(sym) or not math.isfinite(pos):
+                continue
+            row.update({"type": "signal", "symbol": sym, "position": pos})
+            if close is not None:
+                row["close"] = close
+        else:
+            weights = _portfolio_weights(data.get("weights"))
+            if weights is None:
+                continue
+            try:
+                ra = int(data.get("rebalance_at"))
+            except (TypeError, ValueError):
+                ra = 0
+            raw = data.get("closes") if isinstance(data.get("closes"), dict) else {}
+            closes = {}
+            for k, v in raw.items():
+                ksym, px = str(k).replace("-", "").upper(), _finite_pos(v)
+                if ksym in weights and px is not None:
+                    closes[ksym] = px
+            row.update({"type": "portfolio", "weights": weights, "closes": closes,
+                        "rebalance_at": ra if ra > 0 else None})
+        out[name] = row
+    return out
+
+
 def signals_frozen(cfg):
     """{since, pending} while the scheduler holds every Type A/C signal still
     (command_listener._signals_frozen: no venue bound, an unbind's reconciler
@@ -1631,6 +1737,9 @@ def build_report():
         # picked Type C with no live weights yet: their backtest's last row, a preview the page
         # labels as such (typec_previews); never traded on
         "previews": typec_previews(cfg, states),
+        # every backtested Type A/C's last-row target, drafts included, with `latest`
+        # (backtest_previews); its presence tells a shell this machine computes them
+        "backtest_previews": backtest_previews(cfg, states),
         # None = signals recomputing normally (see signals_frozen)
         "signals_frozen": signals_frozen(cfg),
         # each strategy's amount currency, None = cannot be told (strategy_quote_ccy)

@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.129 — 2026-10-17(desktop 0.1.27)
+
+- **存金額確認框的預覽(0.1.27 加到策略組合;`portfolio_reporter.backtest_previews`)**:報告多一個頂層 `backtest_previews: {name: …}`,給電腦版存金額框把還沒有實盤訊號的策略(策略頁「加到策略組合」建的草稿、勾了還沒跑第一輪的)換算成「下一輪要送的單／目標有變的標的」。來源同 `typec_previews` 的 `strategies/<name>/backtest_state.json`(`code_hash` 要等於目前 `strategy.py`、用到美股價格的不送),但:①名單 = `amounts` 裡還沒有實盤訊號的(Type C 沒權重、Type A 沒 state.json)＋**不在 `amounts` 的**最近寫過預覽的前 `PREVIEW_EXTRA_MAX`(5)支(草稿就是剛回測的那支;報告有大小上限,不全送);②過時的也送,帶 `latest`(= `_preview_is_latest`)讓頁面自己挑——框照用、表頭寫是哪一根,配置表照舊只用最新的;③Type A 也有:`{type: signal, symbol, market, position, close, bar_at, bar_date, latest, daily_tw}`;Type C 多 `closes`(持有標的那一根的收盤價,換算股數用)。`daily_tw` = 台股／台指期日線(框寫「依 MM-DD 收盤算」)。這個 key 在不在 = 這台主機算不算得出草稿的預覽(外殼沒看到就講「要等主機更新」,不等)。workspace lib 那邊 `lib/runner` 的 Type A 回測／績效刷新也寫 `backtest_state.json`(最後一根的部位,在 `clamp_spot` 之前,同排程寫的那個值)、Type C 加 `closes`;新鮮度規則跟 0.1.26 的 Type C 同一條(`_preview_row_is_live`);但這一輪算不出最新那根時(例如台股日線盤中重跑,`computes_now` 為假),**同一份程式碼的舊預覽留著不刪**(之前會刪,框就只剩「計算中」),別的程式碼的照舊刪——reporter 會標它 `latest: false`,配置表照舊只用最新的(`typec_previews` 沒動)。舊的 `previews` 不變(舊外殼讀它)。只給頁面看:對帳器與排程都不讀。測試 `tests/check_backtest_preview_a1.py`。
+
 ## 1.1.128 — 2026-10-17(desktop 0.1.27)
 
 - **回覆中排隊送出:撤回單則＋待送數(0.1.27 回合中鎖減量;`web_bridge`)**:新控制訊息 `withdraw`(`target_id` = /send 回的 message_id)只從本機佇列拿掉那一則,回 `withdraw_result` chunk(`withdrawn`／`running`=那則已在跑、什麼都不做／`not_found`,帶 `pending_ids`);撤掉的是最後一則且沒有回合在跑時,再送 `turn_state: cancelled`(`message_ids` 只點名那則)。每個 `turn_state` 帶 `pending_ids`(這條對話還在排的 id);訊息排到跑中或排隊中的對話後面時當場報一次(不等 60 秒的 queued 重報)。舊 `interrupt` 行為不變,`cancelled` 多帶 `message_ids`(撤掉的全部),api 按則標取消。poll URL 加 `wd=1` 宣告看得懂 `withdraw`。快照帶單調遞增的 `pending_seq`(微秒時鐘,重啟不倒退;api 只收比已存的新的,晚到的舊快照丟掉)。回合收尾送 `queued` 前在 lock 裡重讀佇列:收尾途中最後一則被撤回就不送 `queued`;撤回落在 `queued` 送出後、離開 `_running` 前,收尾補一個 `cancelled`(`message_ids` 空),api 不會卡在 `queued` 到 TTL。**出貨順序**:api 先(舊 api 會把 `pending_ids`／`message_ids` 丟掉、`cancelled` 照舊整串標,不壞),再 publish 這版 runtime。測試 `tests/check_web_bridge_withdraw.py`。

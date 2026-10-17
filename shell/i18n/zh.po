@@ -1915,9 +1915,6 @@ msgstr "儲存中…"
 msgid "tr.saved"
 msgstr "已儲存"
 
-msgid "tr.saveTitle"
-msgstr "確認金額"
-
 # 口數格留空(原本有口數、改成 0 的那幾支列上已寫「原 → 0」)
 msgid "tr.saveBlankLots"
 msgstr "{names}：口數留空會存成 0，這支策略不會下單。"
@@ -1931,9 +1928,6 @@ msgstr "移出"
 
 msgid "tr.cfTagAdd"
 msgstr "加入"
-
-msgid "tr.saveWarn"
-msgstr "儲存後可能立即下單。"
 
 msgid "tr.gateFootEntry"
 msgstr "{sym} 差額不到 {m}"
@@ -7658,9 +7652,6 @@ msgstr "上圖：管理後累積報酬曲線，對照隨機組合 p5 到 p95 區
 msgid "mg.chartCap"
 msgstr "累積報酬"
 
-msgid "mg.colCur"
-msgstr "目前"
-
 msgid "mg.colWeight"
 msgstr "權重"
 
@@ -8025,6 +8016,73 @@ msgstr "解除綁定時自動暫停，下單程式也沒在跑：什麼單都不
 
 msgid "tr.saveWarnHalted"
 msgstr "目前已暫停：不開新倉，但減碼與平倉儲存後就會執行。"
+
+# 存金額確認框(0.1.27 加到策略組合;canon design-system › 確認 modal):標題就是動作,會送單=儲存並下單;表頭時間只講一次
+msgid "tr.cf.title"
+msgstr "儲存金額"
+
+msgid "tr.cf.titleFire"
+msgstr "儲存並下單"
+
+msgid "tr.cf.capOrders"
+msgstr "下一輪要送的單（{n} 筆）"
+
+msgid "tr.cf.capChanges"
+msgstr "目標有變的 {n} 檔（{ccy}）"
+
+msgid "tr.cf.capChangesOne"
+msgstr "目標有變的 1 檔（{ccy}）"
+
+msgid "tr.cf.capAmounts"
+msgstr "金額有變的 {n} 支"
+
+msgid "tr.cf.capAmountsOne"
+msgstr "金額有變的 1 支"
+
+msgid "tr.cf.asofClose"
+msgstr "依 {d} 收盤算"
+
+msgid "tr.cf.asofBar"
+msgstr "依 {d} 那根算"
+
+msgid "tr.cf.buy"
+msgstr "買進"
+
+msgid "tr.cf.sell"
+msgstr "賣出"
+
+msgid "tr.cf.unitShares"
+msgstr "股"
+
+msgid "tr.cf.unitCoins"
+msgstr "顆"
+
+msgid "tr.cf.codeChanged"
+msgstr "{names} 改過程式還沒回測，沒列進來；存了之後排程照最新的程式算。"
+
+msgid "tr.cf.hostOldCloud"
+msgstr "{names} 要等雲端主機更新才算得出，沒列進來。"
+
+msgid "tr.cf.hostOld"
+msgstr "{names} 要等這台電腦的 Blave 更新才算得出，沒列進來。"
+
+msgid "tr.cf.late"
+msgstr "{names} 還沒算出來；存了之後由排程補上它的訊號。"
+
+msgid "po.unsaved"
+msgstr "未儲存"
+
+msgid "po.willOrder"
+msgstr "存了就會下單"
+
+msgid "po.live"
+msgstr "自動下單中・{mode}"
+
+msgid "po.add"
+msgstr "加到策略組合"
+
+msgid "po.addGo"
+msgstr "到策略組合"
 
 msgid "tr.rejNameSep"
 msgstr "」、「"

@@ -91,11 +91,12 @@ ok("側欄:策略組合(chart-pie)在自動下單(zap)上面", html.indexOf('id=
 ok("自動下單落點一律總覽(trNeedsSetup 退場);原因行的連結開策略組合", !/trNeedsSetup/.test(src) && /trSetTab\("over"\); return; \}/.test(src) && /poOpen\("cfg", true\)/.test(cutF(src, "trPaintNoAmt")));
 ok("選擇策略框的名字前同一顆呼吸點、同一個判定(envRunDot)", /r\.live = dotsUp && envRunDot\(r\.name, S\.st, now, S\.just\);/.test(src));
 ok("優化／回測跑之前先更新超過 6 小時的成員績效(stats_refresh 分批 50)", /tradeSend\("stats_refresh", \{ names: names\.slice\(i, i \+ MG_REFRESH_BATCH\) \}\)/.test(psrc) && /mgRefreshThen\(S, \(\) => mgSendOptimize\(S\), null, "opt"\)/.test(psrc) && /mgRefreshThen\(S, \(\) => \{ if \(gone\(\)\) return; G\.btWaiting = false; mgSendBacktest\(S\); \}, gone, "bt"\);/.test(psrc) && /G\.refreshing\[w\] = true;/.test(psrc) && /refreshing: \{ opt: false, bt: false \}/.test(psrc));
-ok("套用金額:策略集合跟配置不同就停用;一律開確認框(逐策略「目前｜目標｜差額」)", /!mgSameAsAmounts\(\)/.test(cutF(psrc, "mgApply")) && /if \(!fromOpt && !trHasAccount\(trReport\(\)\) && !blocked\) \{ box\.onOk\(\); return; \}/.test(src)
-  && /if \(fromOpt\) extra\.appendChild\(poApplyTable\(sending, stored, mayFire\)\);/.test(src));
+// 0.1.27 Wei §7-3:套用金額跟配置的儲存同一個框、同一條規則(只列會變的;在跑時列要下的單),逐策略的套用表 poApplyTable 退場
+ok("套用金額:策略集合跟配置不同就停用;走同一個存金額框(沒有另一張套用表、不分 fromOpt)", /!mgSameAsAmounts\(\)/.test(cutF(psrc, "mgApply")) && /if \(!anyChange && !blocked\) \{ box\.onOk\(\); return; \}/.test(src)
+  && !/poApplyTable|fromOpt/.test(src + psrc));
 // 設計稽核 review-desktop-portfolio 必改 3、6、8
-ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊合約}平倉」);套用框也標", /const close = trCloseTag\(was, now, mayFire, trStratHeld\(n\)\);/.test(src) && /const ctClose = trCtCloseTag\(n, sending, stored\);/.test(src)
-  && /const close = trCloseTag\(cur, nx, mayFire, trStratHeld\(n\)\), ctClose = swapped \? trCtCloseTag\(n, amounts, stored\) : null;/.test(psrc) && !/const ctCloses = /.test(src));
+ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」「{舊合約}平倉」);套用金額走同一個框,一起標", /const close = trCloseTag\(was, now, mayFire, trStratHeld\(n\)\);/.test(src) && /const ctClose = trCtCloseTag\(n, sending, stored\);/.test(src)
+  && !/const ctCloses = /.test(src));
 { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
   const c700 = (css.match(/@container \(max-width: 700px\) \{([\s\S]*?)\n\}/) || [])[1] || "";
   ok("0.1.26 複看 N1:中欄 ≤700 投資組合標的格可換行時用 text-wrap: pretty,不會只剩「檔」「more」一個字掉到第二行(1180–1300／聊天欄 452 實測)", /\.pf-tbl td\.c-sym \{ white-space: normal; \}\n\s*\.pf-tbl td\.c-sym \{ text-wrap: pretty; \}/.test(c700));
@@ -114,10 +115,11 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     $: () => null, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: { binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false,
     confirmBox(o) { ctx.BOX = o; }, trCloudBox: (o) => o, trWith: () => { ctx.DIRECT = (ctx.DIRECT || 0) + 1; return true; }, TR_STALE_MS: 600000, ENV_JUST_MS: 300000, trackFeature() {} });
   vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
+  vm.runInContext("var delCtx = null;\n" + (src.match(/^const TR_CF = [^\n]*\n/m) || [""])[0].replace(/^const /, "var "), ctx);
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -127,12 +129,13 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   ctx.TR = bag({}); ctx.BOX = null; ctx.DIRECT = 0;
   const amt = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
   vm.runInContext("trSaveAmounts(trNames(), trBase(), null)", ctx);
-  ok("#15 沒連交易所:配置分頁畫金額表(有輸入框);按儲存直接存,不開確認框", amt.some((n) => /amt-in/.test(n.className)) && ctx.BOX === null && ctx.DIRECT === 1, J({ box: !!ctx.BOX, direct: ctx.DIRECT }));
+  // 0.1.27 Wei:存了有東西會變就一律出框(推翻 10-13「沒連交易所不跳框」);沒在下單 → 「儲存金額」
+  ok("#15 沒連交易所:配置分頁畫金額表(有輸入框);按儲存開「儲存金額」框、沒有記號", amt.some((n) => /amt-in/.test(n.className)) && !!ctx.BOX && ctx.BOX.title === "tr.cf.title" && !ctx.BOX.mark && ctx.DIRECT === 0, J({ box: !!ctx.BOX, direct: ctx.DIRECT }));
   const sig0 = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'cfg')", ctx));
   ok("#15 沒連交易所:總訊號部位表只有「標的｜目標」兩欄、目標上色", J(sig0.filter((n) => n.tag === "th").map((n) => n.text)) === J(["tr.col.symbol", "tr.col.target"]) && sig0.some((n) => n.tag === "td" && /\bbuy\b/.test(n.className)));
   ctx.TR = bag({ binance: V }); ctx.BOX = null; ctx.DIRECT = 0;
   vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
-  ok("#15 連上交易所:開確認框(標題「確認金額」)", !!ctx.BOX && ctx.BOX.title === "tr.saveTitle" && ctx.DIRECT === 0);
+  ok("#15 連上交易所、下單程式沒在跑:按下去不會送單 → 「儲存金額」", !!ctx.BOX && ctx.BOX.title === "tr.cf.title" && ctx.DIRECT === 0, J(ctx.BOX && ctx.BOX.title));
   // A 案(autotrade-bridge-mockup):自動下單 › 部位 = 唯讀配置對照帳上,同一個列函式 poSigTable(…, "trade")
   const sig = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx));
   const rows = sig.filter((n) => n.tag === "tr" && n.kids.length === 4 && n.kids[0].tag === "td").map((r) => r.kids.map((c) => c.textContent)), tw = rows.find((r) => r[0].startsWith("2330")), btcT = rows.find((r) => r[0].startsWith("BTCUSDT"));

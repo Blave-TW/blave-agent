@@ -1,0 +1,223 @@
+// 「加到策略組合」＋存金額確認框(spec tw-holdings-a1-save-preview §1-3、§2.2、§5、§7;canon design-system › 確認 modal)。
+// 從 trade.js／portfolio.js 原文切出真的 trSaveAmounts／trCfRows／poAdd 跑在假 DOM 上,主機那一端是記錄 tradeSend 的假 api。不起 Electron。
+//   ① 出框判準與框的兩種樣子:會送單(在跑)×不送單 × 有無同檔重疊 × 預覽到／沒到;暫停中一律「儲存金額」;什麼都沒變才直接存
+//   ② F3 既有分支各一條:模擬交易台股往上加擋、雲端 hidden／badStored、換合約列(合約平倉標＋名目＋兩步存)、口數留空、匯率舊、暫停句、移出列
+//   ③ §5 邊界:CODE_CHANGED、BUSY、逾時、signals_frozen、舊主機、只改金額、移出
+//   ④ A1 鈕:沒回測不出、不在組合填色、在組合描邊;按了只建草稿、不寫設定,沒有最新預覽才送 stats_refresh;草稿存成功記 po_add_saved
+// 跑法:node tests/check_shell_a1_save.js
+const fs = require("fs"), path = require("path"), vm = require("vm");
+const R = path.join(__dirname, "..", "shell", "renderer");
+const src = fs.readFileSync(path.join(R, "trade.js"), "utf8"), psrc = fs.readFileSync(path.join(R, "portfolio.js"), "utf8");
+const S0 = (() => { const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"); return (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); })();
+let red = 0; const ok = (name, c, info) => { console.log((c ? "PASS  " : "FAIL  ") + name + (c || !info ? "" : "\n      " + info)); if (!c) red++; };
+const J = JSON.stringify;
+const block = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b); if (i < 0 || j < 0) throw new Error("找不到標記:" + a); return src.slice(i, j); };
+const cutF = (n, s0) => { const s = s0 || src, i = s.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return (s.slice(i - 6, i) === "async " ? "async " : "") + s.slice(i, k + 1); } throw new Error("no " + n); };
+
+const node = (tag) => { const n = { tag, id: "", className: "", kids: [], text: "", attrs: {}, hidden: false, disabled: false, value: "", parentNode: null, dataset: {}, title: "", on: {},
+  classList: { toggle() {}, add(c) { n.className += " " + c; }, remove() {}, contains: () => false }, appendChild(c) { if (c && typeof c === "object") c.parentNode = n; n.kids.push(c); return c; },
+  append(...c) { c.forEach((x) => n.appendChild(x)); }, insertAdjacentElement() {}, remove() {}, insertBefore(c) { n.kids.push(c); return c; }, focus() {},
+  querySelector() { return { title: "" }; }, setAttribute(k, v) { n.attrs[k] = v; }, removeAttribute(k) { delete n.attrs[k]; }, addEventListener(e, f) { n.on[e] = f; },
+  get nextSibling() { return null; }, get textContent() { return n.text + n.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { n.text = v; n.kids = []; } }; return n; };
+const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
+
+const sends = [], feats = [];
+let GEN = 0;
+const DOM = { "del-title": node("h6"), "del-ok": node("button"), "del-mark": node("span"), "del-scrim": node("div"), "po-cfg": { querySelectorAll: () => [] }, "po-h": node("h5"), "rp": node("div") };
+const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, Promise, isFinite, console, setTimeout, clearTimeout,
+  $: (id) => DOM[id] || { focus() {}, hidden: false }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: { binance: { label: "Binance" } },
+  srSay() {}, trackFeature(n) { feats.push(n); }, trPollSoon() {}, envPaintLocalDots() {}, ENV: { sig: {}, cur: "local" }, psClose() {}, psRefocus() {}, mgSetMembers() {}, poPaintCfg() {},
+  confirmBox(o) { ctx.BOX = o; ctx.delCtx = { box: o }; DOM["del-scrim"].hidden = false; }, trCloudBox: (o) => o, TR_STALE_MS: 600000, ENV_JUST_MS: 300000, delCtx: null });
+vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
+const pure = block("/* ── 純邏輯(", "/* ── 純邏輯到此") + block("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此");
+const consts = (src.match(/^const TR_CF = [^\n]*\n/m) || [""])[0].replace(/^const /, "var ");
+vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSeq = 0, psMode = 'amounts', psToAmt = false;\n" + ["trEl", "trFmt", "trFmt2", "trFmtPrice", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
+  "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
+  "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
+  "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper",
+  "trCfStates", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail"].map((n) => cutF(n)).join("\n")
+  + "\n" + ["poAddBtn", "poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
+
+const V = { credentials: true, pair: true, order: true, account: true };
+const now = Math.floor(Date.now() / 1000), BAR = now - 3600;
+// 已存:btc 500(BTCUSDT 多 1)、tw 100000(台股 2330 多 1)。新策略 n5:台股等權 2330／2454(重疊 2330)或 2603／2382(不重疊)
+const pv5 = (ov, extra) => Object.assign({ type: "portfolio", market: "spot", weights: ov ? { "2330": 0.5, "2454": 0.5 } : { "2603": 0.5, "2382": 0.5 },
+  closes: ov ? { "2330": 1000, "2454": 1300 } : { "2603": 190, "2382": 290 }, bar_at: BAR, bar_date: "2026-10-16", latest: true, daily_tw: true }, extra || {});
+function bag(o) {
+  o = o || {};
+  const venues = o.firing || o.halted ? (o.paper ? { paper: V } : { binance: V }) : {};
+  const r = { venues, config: { amounts: Object.assign({ btc: 500, tw: 100000 }, o.amounts || {}) }, quote_ccy: { btc: "USDT", tw: "TWD", n5: "TWD" }, last_reconcile: o.firing || o.halted ? { ts: new Date().toISOString().slice(0, 19), actual: {}, target: {}, gates: {} } : null,
+    states: Object.assign({ btc: { symbol: "BTCUSDT", position: 1 }, tw: { symbol: "2330", position: 1, market: "spot" } }, o.states || {}),
+    account: { read_at: now, venues: o.firing || o.halted ? { [o.paper ? "paper" : "binance"]: { ok: true, equity: 10000, currency: "USDT", positions: { BTCUSDT: { side: "long", size: 500, mark_price: 50000 } } } } : {} },
+    reconciler: { alive: true }, can_trade_portfolio: true, can_paper_twstock: true, backtest_previews: o.oldHost ? undefined : Object.assign(o.noPv ? {} : { n5: pv5(o.ov !== false, o.pv) }, o.pvs || {}) };
+  if (o.oldHost) delete r.backtest_previews;
+  if (o.halted) r.halt = { halted: true };
+  if (o.frozen) r.signals_frozen = { since: now, pending: o.frozen };
+  Object.assign(r, o.rep || {});
+  const S = { env: o.env || "local", open: true, view: "po", listLoaded: true, picked: o.picked ? new Set(o.picked) : null, sent: null, save: null, saveErr: null, edits: Object.assign({}, o.edits || {}), bad: {}, raw: Object.assign({}, o.raw || {}), sig: {}, reqIds: {}, reqFor: {},
+    ct: { edits: {}, basis: {}, sent: null }, just: { picked: {}, removed: {} }, flash: {}, pending: null, pvReq: o.pvReq || {},
+    list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330", market: "spot", twd: true, twdAll: true },
+      { name: "n5", displayName: "N5", hasBacktest: true, symbol: null, portfolio: true, market: "spot", twd: true, twdAll: true, universe: ["2330", "2454"] }].concat(o.list || []),
+    st: { alive: true, report: r } };
+  const gen = ++GEN;   // 上一個情境排在微任務裡的送出不算進這一個
+  S.api = { tradeSend: async (cmd, args) => { if (gen === GEN) sends.push({ cmd, args: JSON.parse(J(args)) }); if (cmd === "amounts") r.config.amounts = Object.assign({}, args.amounts);
+    return cmd === "stats_refresh" ? { ok: true, result: o.ack || { started: args.names, skipped: {} } } : { ok: true }; }, tradeStatus: async () => S.st };
+  ctx.TR = S; ctx.TR_BAGS = { local: S, cloud: S }; vm.runInContext("TR = this.TR; TR_BAGS = this.TR_BAGS;", ctx);
+  sends.length = 0; feats.length = 0; ctx.BOX = null; ctx.delCtx = null;
+  return S;
+}
+const tick = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); };
+// 開框;回 { title, ok, mark, okDisabled, rows: [文字…], notes: [{cls,text}], direct }
+function open(S) {
+  vm.runInContext("trSaveAmounts(trNames(), trBase(), null)", ctx);
+  const b = ctx.BOX; if (!b) return { direct: true };
+  const all = flat(b.extra), rows = all.filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.textContent);
+  const f = { title: b.title, ok: b.ok, mark: b.mark, okDisabled: !!b.okDisabled, rows, cap: (all.find((n) => n.className === "cf-sub") || {}).textContent || "", wait: all.some((n) => n.className === "cf-wait"),
+    notes: all.filter((n) => /^cf-(note|block|zeroed)$/.test(n.className)).map((n) => n.className + ":" + n.textContent) };
+  Object.defineProperty(f, "box", { value: b, enumerable: false }); return f;
+}
+const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 200000 } }, o || {});
+
+(async () => {
+  // ── ① 不在跑:儲存金額;預覽到,列目標有變的標的
+  { bag(draft()); const f = open();
+    ok("① 不在跑+重疊+預覽到:標題「儲存金額」、主鈕「儲存」、無記號;表頭「目標有變的 N 檔(TWD)」帶收盤日",
+      f.title === "tr.cf.title" && f.ok === "tr.save" && !f.mark && /^tr\.cf\.capChanges \{"n":"2","ccy":"TWD"\}，tr\.cf\.asofClose \{"d":"\d\d-\d\d"\}$/.test(f.cap), J(f));
+    ok("① …2330 原 → 新(100,000 → 200,000)、下面一行股數 200 股(200,000 ÷ 1,000);新標的 2454 只寫新值與 76 股(100,000 ÷ 1,300 捨去)",
+      f.rows.some((x) => /^2330100,000→200,000200 tr\.cf\.unitShares$/.test(x)) && f.rows.some((x) => /^2454100,00076 tr\.cf\.unitShares$/.test(x)) && f.rows.length === 2, J(f.rows));
+    ok("① …框底沒有否定句、沒有常駐後果句", f.notes.length === 0, J(f.notes)); }
+  { bag(draft({ ov: false })); const f = open();
+    ok("① 不在跑+不重疊:照樣出框,只列新的兩檔(既有的 2330 沒變不列)", f.title === "tr.cf.title" && f.rows.length === 2 && !f.rows.some((x) => /^2330/.test(x)), J(f.rows)); }
+  // ── ① 在跑:儲存並下單
+  { const S = bag(draft({ firing: true, paper: true })); const f = open();
+    ok("① 在跑+重疊+預覽到:標題與主鈕「儲存並下單」、記號「模擬」;表頭「下一輪要送的單(N 筆)」",
+      f.title === "tr.cf.titleFire" && f.ok === "tr.cf.titleFire" && f.mark === "tr.mode.paper" && /^tr\.cf\.capOrders \{"n":"\d"\}/.test(f.cap), J(f));
+    ok("① …每列「買進／賣出 標的 數量 單位」:台股以股(2330 帳上 0 → 目標 200,000 → 買 200 股;2454 買 76 股)",
+      f.rows.some((x) => x === "tr.cf.buy2330200 tr.cf.unitShares") && f.rows.some((x) => x === "tr.cf.buy245476 tr.cf.unitShares"), J(f.rows));
+    ok("① …BTC 帳上 500、目標 500:差額 0 不列", !f.rows.some((x) => /BTCUSDT/.test(x)), J(f.rows));
+  }
+  { bag(draft({ firing: true })); const f = open();
+    ok("① 真錢在跑(Binance):記號「真錢」;交易所不交易的台股不算要送的單——只改 BTC 時才是「儲存並下單」", f.title === "tr.cf.title" && !f.mark, J(f));
+    bag({ firing: true, edits: { btc: 1000 } }); const g = open();
+    ok("① …改 BTC:「儲存並下單」+「真錢」", g.title === "tr.cf.titleFire" && g.mark === "tr.mode.real", J(g)); }
+  { bag({ firing: true, edits: { btc: 1000 }, rep: {} }); const f = open();
+    ok("① 在跑+只改既有金額(不需要預覽):BTC 目標 1,000 − 帳上 500 → 買 0.01 顆(現價 50,000)",
+      f.title === "tr.cf.titleFire" && f.rows.length === 1 && f.rows[0] === "tr.cf.buyBTCUSDT0.01 tr.cf.unitCoins", J(f.rows)); }
+  { bag({ firing: true, edits: { btc: 504 } }); const f = open();
+    ok("① 在跑但差額沒過下單門檻(10):按下去不送單 → 照「儲存金額」列目標的變動、無記號", f.title === "tr.cf.title" && !f.mark && f.rows.length === 1, J(f)); }
+  // ── ① 預覽沒到 → 計算中、主鈕停用;到了換上表
+  { const S = bag(draft({ noPv: true })); const f = open(); await tick();
+    ok("① 預覽沒到:框照開,表的位置「計算中…」、主鈕停用;背景送 stats_refresh 只對這一支",
+      f.wait && f.okDisabled && f.rows.length === 0 && sends.some((x) => x.cmd === "stats_refresh" && J(x.args) === J({ names: ["n5"] })), J({ f, sends }));
+    S.st.report.backtest_previews = { n5: pv5(true) }; DOM["del-scrim"].hidden = false;
+    vm.runInContext("trCfTick()", ctx);
+    const rows = flat(f.box.extra).filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.textContent);
+    ok("① …報告帶來預覽(trCfTick):換上表、主鈕可按", rows.length === 2 && DOM["del-ok"].disabled === false, J({ rows, dis: DOM["del-ok"].disabled })); }
+  { bag(draft({ firing: true, paper: true, noPv: true })); const f = open();
+    ok("① 在跑+預覽沒到:標題已是「儲存並下單」,表寫計算中、主鈕停用", f.title === "tr.cf.titleFire" && f.wait && f.okDisabled, J(f)); }
+  { const S = bag(draft({ pv: { latest: false } })); const f = open(); await tick();
+    ok("① 預覽不是最新那根:框不等它,照用;背景再送一次 stats_refresh", !f.wait && f.rows.length === 2 && sends.some((x) => x.cmd === "stats_refresh"), J({ f, sends })); }
+  // ── ① 暫停中:儲存金額、不列單、沿用暫停句
+  { bag(draft({ halted: true })); const f = open();
+    ok("① 暫停中(HALT):「儲存金額」框、列目標變動不列單、無記號;表下沿用 tr.saveWarnHalted",
+      f.title === "tr.cf.title" && !f.mark && !f.rows.some((x) => /tr\.cf\.(buy|sell)/.test(x)) && f.notes.some((x) => x === "cf-note:tr.saveWarnHalted"), J(f)); }
+  // ── ① 什麼都沒變:直接存
+  { bag({ edits: {} }); const f = open(); await tick();
+    ok("① 金額完全沒變:不開框直接存", f.direct === true && sends.filter((x) => x.cmd === "amounts").length === 1, J({ f, sends })); }
+  { bag({ edits: { btc: 600 } }); const f = open();
+    ok("① 沒綁交易所也出框(推翻 10-13「沒連交易所不跳框」)", !f.direct && f.title === "tr.cf.title", J(f)); }
+
+  // ── ② F3 既有分支
+  { bag({ picked: ["btc", "tw", "n5"], edits: { n5: 200000 }, rep: { venues: { paper: V }, account: { read_at: now, venues: {} } } });
+    vm.runInContext("trPaperTwOk = function () { return false; }", ctx);
+    const f = open();
+    ok("② 模擬交易不支援台股往上加:cf-block 點名、主鈕停用", f.okDisabled && f.notes.some((x) => /^cf-block:tr\.pick\.twd：/.test(x)), J(f.notes));
+    vm.runInContext(cutF("trPaperTwOk"), ctx); }
+  { const S = bag({ env: "cloud", edits: { btc: 600 }, amounts: { gone: 50, bad: -1 } }); S.list.push({ name: "bad", displayName: "BAD", hasBacktest: true, symbol: "ETHUSDT" });
+    const f = open();
+    ok("② 雲端:清單找不到的那支照原樣帶著(tr.cloud.hidden)、主機設定的壞值點名並擋(tr.cloud.badStored)",
+      f.notes.some((x) => /^cf-note:tr\.cloud\.hidden/.test(x)) && f.notes.some((x) => /^cf-block:tr\.cloud\.badStored/.test(x)) && f.okDisabled, J(f.notes)); }
+  { const S = bag({ edits: {}, list: [{ name: "fut", displayName: "FUT", hasBacktest: true, symbol: "TXF" }], amounts: { fut: 2 }, states: { fut: { symbol: "TXF", position: 1 } },
+      rep: { config: { amounts: { btc: 500, tw: 100000, fut: 2 }, contracts: { fut: "TXF" } }, can_switch_contract: true } });
+    S.ct.edits.fut = "MXF"; S.edits.fut = 8;
+    const f = open();
+    ok("② 換合約:策略層那一列寫「大台 → 小台」(lotsRef);標的表列 大台 2 → 0、小台 8",
+      f.rows.some((x) => x === "FUT8tr.txfProd.txf→tr.txfProd.mxf") && f.rows.some((x) => /^tr\.txfProd\.txf2→0/.test(x)) && f.rows.some((x) => /^tr\.txfProd\.mxf8/.test(x)), J(f.rows));
+    await f.box.onOk(); await tick();
+    const am = sends.filter((x) => x.cmd === "amounts");
+    ok("② …按儲存:照 trCtSteps 送(contracts 帶著新合約)", am.length >= 1 && J(am[am.length - 1].args.contracts || {}).indexOf("MXF") >= 0, J(am)); }
+  { const S = bag({ edits: { btc: 600 }, list: [{ name: "fut", displayName: "FUT", hasBacktest: true, symbol: "TXF" }], amounts: { fut: 0 }, states: { fut: { symbol: "TXF", position: 1 } } });
+    S.raw.fut = "";
+    const f = open();
+    ok("② 口數格留空:cf-zeroed 點名", f.notes.some((x) => /^cf-zeroed:tr\.saveBlankLots/.test(x)), J(f.notes)); }
+  { bag({ edits: { btc: 600 } });
+    vm.runInContext("trFxView = function () { return { cached: Date.now() - 8 * 86400000 }; }", ctx);
+    const f = open();
+    ok("② 匯率 7 天以上:tr.fxOld 講日期", f.notes.some((x) => /^cf-note:tr\.fxOld/.test(x)), J(f.notes));
+    vm.runInContext(cutF("trFxView"), ctx); }
+  { bag({ picked: ["btc"], halted: true }); const f = open();
+    ok("② 移出(暫停中):策略層那一列「原 → 移出」(帳上沒這檔就不標平倉,trStratHeld);暫停句照出", f.rows.some((x) => /^TW100,000→tr\.cfTagRemove/.test(x)) && f.notes.some((x) => /saveWarnHalted/.test(x)), J(f)); }
+  { bag({ picked: ["btc"] }); const f = open();
+    ok("② 移出(不在跑):框照開;標的表 2330 原 → 0,策略列只寫「移出」", f.title === "tr.cf.title" && f.rows.some((x) => /^2330100,000→0/.test(x)) && f.rows.some((x) => /^TW100,000→tr\.cfTagRemove$/.test(x)), J(f.rows)); }
+
+  // ── ③ §5 邊界
+  { bag(draft({ noPv: true, pvReq: { n5: { at: Date.now(), code: "CODE_CHANGED" } } })); const f = open();
+    ok("③ CODE_CHANGED:不等,框寫「改過程式還沒回測」、主鈕可按", !f.wait && !f.okDisabled && f.notes.some((x) => /^cf-note:tr\.cf\.codeChanged/.test(x)), J(f)); }
+  { const S = bag(draft({ noPv: true, ack: { started: [], skipped: { n5: "BUSY" } } })); const f = open(); await tick();
+    ok("③ BUSY:視為重跑中,照等(計算中、主鈕停用)", f.wait && f.okDisabled && (S.pvReq.n5 || {}).code == null, J({ f, req: S.pvReq })); }
+  { const S = bag(draft({ noPv: true, ack: { started: [], skipped: { n5: "CODE_CHANGED" } } })); open(); await tick();
+    ok("③ ack 回 CODE_CHANGED:記下來,框改寫那一句", (S.pvReq.n5 || {}).code === "CODE_CHANGED", J(S.pvReq)); }
+  { bag(draft({ noPv: true })); const f = open();
+    const cf = vm.runInContext("TR_CF.cur", ctx); cf.until = Date.now() - 1; vm.runInContext("trCfTick()", ctx);
+    const notes = flat(f.box.extra).filter((n) => n.className === "cf-note").map((n) => n.textContent);
+    ok("③ 逾時:計算中換成一句說明、主鈕恢復", notes.some((x) => /^tr\.cf\.late/.test(x)) && DOM["del-ok"].disabled === false, J({ notes, dis: DOM["del-ok"].disabled })); }
+  { const t2 = vm.runInContext("TR_CF_WAIT_TW_MS", ctx), t5 = vm.runInContext("TR_CF_WAIT_MS", ctx);
+    ok("③ 逾時上限:台股日線 2 分、其他 5 分", t2 === 120000 && t5 === 300000, J({ t2, t5 })); }
+  { bag(draft({ noPv: true, frozen: ["n5"] })); const f = open();
+    ok("③ signals_frozen(剛睡醒、對帳器可能還活著):同計算中", f.wait && f.okDisabled, J(f)); }
+  { bag(draft({ oldHost: true, env: "cloud" })); const f = open();
+    ok("③ 雲端舊主機(沒有 backtest_previews):框照開、只列算得出的,一句講要等雲端主機更新;不送 stats_refresh",
+      !f.wait && !f.okDisabled && f.notes.some((x) => /^cf-note:tr\.cf\.hostOldCloud/.test(x)) && !sends.some((x) => x.cmd === "stats_refresh"), J({ f, sends })); }
+  { bag(draft({ noPv: true, oldHost: true })); const f = open();
+    ok("③ 本機舊 runtime:同上,換本機那一句", f.notes.some((x) => /^cf-note:tr\.cf\.hostOld /.test(x)), J(f.notes)); }
+
+  // ── 單位換算
+  { const q = (s, m, p) => vm.runInContext(`trCfQty(${J(s)}, ${m}, ${p})`, ctx);
+    ok("數量:台股不足 1 股捨去;加密 4 位有效;沒價格回 null(不湊數)", q("2330@spot", 1999, 1000).n === 1 && q("2330", 999, 1000).n === 0 && q("BTCUSDT", 123.4, 50000).text === "0.002468" && q("BTCUSDT", 5, null) === null,
+      J([q("2330@spot", 1999, 1000), q("BTCUSDT", 123.4, 50000)])); }
+
+  // ── ④ A1 鈕
+  { const S = bag({ edits: {} }); ctx.RP = { name: "n5", data: { code: "x", stats: {} } }; ctx.RPC = ctx.RP;
+    let b = vm.runInContext("poAddBtn(false)", ctx);
+    ok("④ 回測過、不在組合:填色「加到策略組合」", !!b && b.className === "btn-fill" && b.text === "po.add" && b.id === "rp-po", J(b && { c: b.className, t: b.text }));
+    ctx.RP = { name: "tw", data: { code: "x", stats: {} } }; b = vm.runInContext("poAddBtn(false)", ctx);
+    ok("④ 已在組合:描邊「到策略組合」", !!b && b.className === "btn-out" && b.text === "po.addGo");
+    S.listLoaded = false; ctx.RP = { name: "n5", data: { code: "x", stats: {} } };
+    ok("④ 策略清單還沒載入(沒開過策略組合)也照出:看這一頁讀到的 stats", !!vm.runInContext("poAddBtn(false)", ctx)); S.listLoaded = true;
+    ctx.RP = { name: "nobt", data: { code: "x" } };
+    ok("④ 沒回測過(NO_STATS):鈕不出現", vm.runInContext("poAddBtn(false)", ctx) === null);
+    ctx.xpIsTypeB = () => true; ctx.RP = { name: "n5", data: { code: "x", stats: {} } };
+    ok("④ Type B:鈕不出現", vm.runInContext("poAddBtn(false)", ctx) === null); delete ctx.xpIsTypeB; }
+  { const S = bag({ edits: {}, noPv: true }); ctx.poOpen = async () => { S.view = "po"; };
+    await vm.runInContext("poAdd(TR, 'n5', false)", ctx); await tick();
+    ok("④ 按 A1:草稿勾進(picked 多 n5)、金額格空著、不送 amounts;沒有預覽 → 只對這支送 stats_refresh;記 po_add",
+      S.picked && S.picked.has("n5") && S.raw.n5 === "" && !sends.some((x) => x.cmd === "amounts") && J(sends.filter((x) => x.cmd === "stats_refresh").map((x) => x.args)) === J([{ names: ["n5"] }]) && feats.includes("po_add") && S.a1.has("n5"), J({ sends, feats }));
+    S.edits.n5 = 100000; S.st.report.backtest_previews = { n5: pv5(true) };
+    const f = open(); await f.box.onOk(); await tick();
+    ok("④ 從 A1 進來的草稿存成功:記 po_add_saved;沒在跑不記 po_save_orders", feats.includes("po_add_saved") && !feats.includes("po_save_orders") && feats.includes("portfolio_save"), J(feats)); }
+  { const S = bag({ edits: {} }); ctx.poOpen = async () => { S.view = "po"; };
+    await vm.runInContext("poAdd(TR, 'n5', false)", ctx); await tick();
+    ok("④ 已有最新那根的預覽:不送 stats_refresh", !sends.some((x) => x.cmd === "stats_refresh"), J(sends)); }
+  { const S = bag(draft({ firing: true, paper: true })); const f = open(); await f.box.onOk(); await tick();
+    ok("④ 按「儲存並下單」存成功:記 po_save_orders", feats.includes("po_save_orders"), J(feats)); }
+  { const S = bag({ edits: {} }); ctx.poOpen = async () => { S.view = "po"; };
+    await vm.runInContext("poAdd(TR, 'tw', true)", ctx);
+    ok("④ 描邊那顆:只跳過去(不改草稿),記 po_add_go", S.picked === null && feats.includes("po_add_go"), J(feats)); }
+
+  // ── 字串:兩語都有、中文全形
+  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
+    ok("字串:新 key 兩語都有;標題與主鈕同字(儲存並下單)", keys.every((k) => S0.en[k] && S0.zh[k]) && S0.zh["tr.cf.titleFire"] === "儲存並下單" && S0.zh["tr.cf.title"] === "儲存金額" && S0.zh["po.add"] === "加到策略組合",
+      J(keys.filter((k) => !S0.en[k] || !S0.zh[k]))); }
+  console.log(red ? `\n${red} FAILED` : "\nall checks passed");
+  process.exit(red ? 1 : 0);
+})().catch((e) => { console.error(e); process.exit(1); });

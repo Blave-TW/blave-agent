@@ -392,7 +392,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
   ok("頂列記號 = 交易所名 / 模擬;狀態句只有短狀態詞(不接「 · Binance」);視窗標題走同一支;tr.tb 不再用", /tm\.textContent = envVenueText\(mny, id\);/.test(src)
     && /ENV\.sig\.tb = tsig; txt\.textContent = ""; txt\.title = tbState;/.test(src) && /if \(tbUp\) txt\.append\(trEl\("span", "up", tbState\)\);/.test(src)
     && /const money = envVenueText\(cur\.money, cur\.venue\);/.test(src) && !/"tr\.tb"/.test(src) && /out\.money = envMoney\(st\); out\.venue = trVenueIds\(st && st\.report\)\[0\] \|\| null;/.test(src));
-  ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時 okDisabled 而且不出「儲存後…」那句(那句另外只在 trMayFire 時出)", /const blocked = badStored\.length > 0 \|\| paperTw\.length > 0;/.test(src) && /lines: \[\], extra, okDisabled: blocked,/.test(src) && /if \(!blocked && mayFire\) extra\.appendChild\(trEl\("p", "cf-note", t\(trExecState\(S\.st\) === "halted" \? "tr\.saveWarnHalted" : "tr\.saveWarn"\)\)\);/.test(src)
+  ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時(或草稿還在算)okDisabled;常駐的「儲存後可能立即下單」退場(canon 確認 modal:不放後果句),只剩暫停中那一句", /const blocked = badStored\.length > 0 \|\| paperTw\.length > 0;/.test(src) && /lines: \[\], extra: frag,\n\s*okDisabled: blocked \|\| cf\.wait,/.test(src) && /if \(!blocked && mayFire && trExecState\(S\.st\) === "halted"\) extra\.appendChild\(trEl\("p", "cf-note", t\("tr\.saveWarnHalted"\)\)\);/.test(src) && !/"tr\.saveWarn"/.test(src)
     && /\$\("del-ok"\)\.disabled = !!okDisabled \|\| !!\(choices && !pre\);/.test(appSrc) && /classList\.remove\("has-alt", "has-choices"\); \$\("del-ok"\)\.disabled = false;/.test(appSrc));   // choices 有預選(pre)那列才一開就能按(方案制預選的週期)
   ok(".cf-* 是通用樣式(在 app.css、不綁金額確認框):下一批「送上雲端」要重用", /\.cf-row\.total dd \{ font-size: 15px/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")) && !/\.cf-row(?!\.grp|s \.cf-row\.grp| dd \.(mult|cf-ref)|\.total \{ border-top-color|\.same)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));   // 例外:分區標題列、口數小字與沒變的列退灰只有金額確認框用
   ok("畫面上不再出現「對帳沒有在跑」「心跳」;刪掉的四個 key 兩語都刪了", !/"tr\.(paperCcy|saveLine|recDead|lastBeat)"/.test(S) && !/最後心跳|對帳沒有在跑|last heartbeat|Reconciler not running/.test(S)); }
@@ -683,8 +683,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("0.1.26 稽核 M1:中欄 ≤700 投資組合多空並列拆兩行、中點收掉、標的格可換行(不再只等 ≤520,預設 1280 寬會橫捲)",
         /\.pf-tbl td\.pos \.pos-main\.split \{ display: inline-grid; justify-items: end; \}/.test(c700) && /\.pf-tbl td\.pos \.pos-main\.split \.sep \{ display: none; \}/.test(c700)
         && /\.pf-tbl td\.c-sym \{ white-space: normal; \}/.test(c700) && !/pos-main\.split/.test(c520) && /\.pf-tbl \.c-sym \{ display: none; \}/.test(c520), J([c700.length, c520.length]));
-      ok("0.1.26 稽核 M4:「主機版本較舊」那句(td.na.pending)用 --ink-3,排在 cf-apply 的 greyDark 之後才蓋得過;「—」(td.na)維持 greyDark",
-        iCf > 0 && iPend > iCf && /\.pf-tbl td\.na \{ color: var\(--color-greyDark\); \}/.test(css));
+      ok("0.1.26 稽核 M4:「主機版本較舊」那句(td.na.pending)用 --ink-3,排在 td.na 的 greyDark 之後才蓋得過;「—」(td.na)維持 greyDark(套用金額表 cf-apply 0.1.27 退場)",
+        iCf < 0 && iPend > css.indexOf(".pf-tbl td.na { color: var(--color-greyDark); }") && /\.pf-tbl td\.na \{ color: var\(--color-greyDark\); \}/.test(css));
       ok("0.1.26 稽核 M3:投資組合列標的格不是 td.sym(mono),跟台指期一樣走 sname(sans);單一代號列照舊 sym",
         /\.pf-tbl td\.sym, [^{]*\{ font-family: var\(--font-mono\)/.test(css) && !/\.sname[^{]*\{[^}]*font-family: var\(--font-mono\)/.test(css)
         && /trEl\("td", \(txf \|\| isC \? "sname" : "sym"\) \+ " c-sym"\)/.test(fnOf("trAmountTable"))); }
@@ -696,10 +696,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn \}\);/.test(tp)
         && /if \(tc\.long && tc\.short\) \{ main\.classList\.add\("split"\);/.test(fnOf("trPaintPosCell")) && !/tr\.grossTip/.test(tsrc)); }
     const tp = fnOf("trAmountTable");
-    ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」、合計換不了寫「—」",
+    ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」(策略列與標的列都是;框裡不再有合計列,canon 確認 modal 只列會變的)",
       /const parse = \(s\) => \(txf \? trParseLots\(s\) : trParseAmount\(s\)\);/.test(tp) && /const v = parse\(inp\.value\);/.test(tp) && /inp\.value = blank \? "" : trFmt\(parse\(inp\.value\)\)/.test(tp)
       && /if \(gate != null && !txf\)/.test(tp)
-      && /if \(sp\) dd\.appendChild\(lotsRef\(sp, now, swapped \? TR_TXF_SPECS\[from\] : null\)\);/.test(fnOf("trSaveAmounts")) && /dd\.append\(moved \? trTotalText\(tt\)\.replace\(\/\^≈ \/, ""\) : trTotalText\(tt\)\);/.test(fnOf("trSaveAmounts"))
+      && /if \(sp\) dd\.appendChild\(lotsRef\(sp, now, swapped \? TR_TXF_SPECS\[from\] : null\)\);/.test(fnOf("trSaveAmounts")) && /if \(x\.lots\) \{ if \(sp\) dd\.appendChild\(lotsRef\(sp, x\.now, null\)\); \}/.test(fnOf("trSaveAmounts"))
       && /ref\.append\(m == null \? t\(sp\.prod\) : t\("tr\.txfConfirmRef", \{ prod: t\(sp\.prod\), amt: trFmt\(Math\.round\(m\)\) \}\)\)/.test(fnOf("trSaveAmounts")));
     // A 段錯誤輸入 7-2:口數格留空靜默存成 0。留空的格不換成「0」、記進 raw;確認框點名「留空會存成 0、不會下單」(不擋);改成 0 的那幾支已有自己那句,不重講;錢的格照舊正規化
     // 進欄位時拿掉千分位(同網頁 d0a249ef):「1,999」再打一個 0 不會變成看不懂的「1,9990」。把 focus handler 抓出來對假 input 跑:
@@ -714,7 +714,6 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("7-2 接線:離開欄位時口數格留空不變 0(raw 記成 \"\");確認框出 tr.saveBlankLots(cf-zeroed 那一句的位置)、改成 0 的排除;兩語都有",
       /const blank = txf && !String\(inp\.value\)\.trim\(\);/.test(tp) && /if \(TR\.raw\) \{ if \(blank\) TR\.raw\[n\] = ""; else delete TR\.raw\[n\]; \}/.test(tp)
       && /const blank = trBlankLots\(Object\.keys\(sending\), TR\.raw, trRowTxfNew, zeroed\);/.test(fnOf("trSaveAmounts")) && /trEl\("p", "cf-zeroed", t\("tr\.saveBlankLots", \{ names: blank\.map\(trDisplay\)/.test(fnOf("trSaveAmounts"))
-      && /dlT\.appendChild\(cfRow\("total", t\("tr\.total"\), dd\)\); \}\n\s*extra\.appendChild\(dlT\);/.test(fnOf("trSaveAmounts"))
       && (() => { const ST = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
         return ST.zh["tr.saveBlankLots"] === "{names}：口數留空會存成 0，這支策略不會下單。" && /blank lot count is saved as 0/.test(ST.en["tr.saveBlankLots"] || ""); })());
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
@@ -1131,10 +1130,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("B2 去向行濾掉空段:「雲端 ·  · 」→「雲端」;三段齊全照原樣", trWhereTidy("雲端 ·  · ") === "雲端" && trWhereTidy("雲端 · 真錢 · Binance") === "雲端 · 真錢 · Binance"
       && trWhereTidy("Cloud · Paper · ") === "Cloud · Paper" && /o\.footWhere = trWhereTidy\(t\("tr\.cloud\.footWhere"/.test(src)); }
   { // 0.0.3 實機:同一組金額,表上「你淨值的 N x」跟確認框的倍數要一樣(兩處用同一個淨值快照)
-    ok("淨值快照:確認框用表上畫的那一個(同視角);沒畫過 / 另一個視角 / 壞值才用現在的", trShownEquity({ env: "local", v: 9945 }, "local", 9961) === 9945
-      && trShownEquity({ env: "cloud", v: 9945 }, "local", 9961) === 9961 && trShownEquity(null, "local", 9961) === 9961 && trShownEquity({ env: "local", v: null }, "local", 9961) === 9961 && trShownEquity({ env: "local", v: NaN }, "local", 5) === 5);
-    ok("淨值快照接線:表上那行記下它用的淨值,確認框讀它", /const eq = trEquity\(\); TR\.eqShown = \{ env: TR\.env, v: eq \};/.test(src)
-      && /const zt = trZoneSum\(am, eq\)/.test(src) && /const eq = trShownEquity\(TR\.eqShown, TR\.env, trEquity\(\)\), zt = trZoneSum\(sending, eq\), zt0 = trZoneSum\(stored, eq, trRowMoneyStored\);/.test(src)); }
+    // 淨值快照(確認框倍數跟表上一致)隨確認框不再列合計與淨值倍數退場(0.1.27,canon 確認 modal):倍數在自動下單 › 部位的合計列
+    ok("確認框不再算淨值倍數:trShownEquity／TR.eqShown 退場", !/trShownEquity|eqShown/.test(src) && /const zt = trZoneSum\(am, eq\)/.test(src)); }
   { // 0.0.3 實機:按下啟動之後,啟動前的失敗不再講成現在式
     ok("按下啟動記時間(表底紅字只給這之後的失敗)", /const go = \(cmd\) => \{ TR\.startAt = Date\.now\(\); return trRunStart\(cmd\); \};/.test(fnS("trAskStart")));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
@@ -1861,7 +1858,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /const sent = C\.sent; C\.sent = null;[^\n]*if \(!trPickDirty\(C\.picked, sent, trPickKeep\("cloud", C\.picked, sent, .*?\)\)\) C\.picked = null; \}/.test(cutF("trSentCheck"))
       && /C\.reqFor = \{\}; C\.sig\.cfg = null; C\.picked = null;/.test(cutF("trCloudOwnerCheck")) && !/trPickStaged|trPickApply/.test(src));
     ok("儲存走 trSendAmounts(env, …, trListNames()):雲端只把清單找不到的帶著;確認框移出的列沿用 trRemoved(列上標 tr.cfTagRemove)", /const sending = trSendAmounts\(S\.env, names, stored, TR\.edits, trListNames\(\)\), removed = trRemoved\(stored, sending\);/.test(save)
-      && /const keys = Object\.keys\(sending\)\.concat\(removed\)/.test(save) && /t\("tr\.cfTagRemove"\)/.test(save) && !/tr\.saveRemoved/.test(save) && !/loaded/.test(cutF("trSendAmounts")));
+      && /const stratRows = removed\.concat\(/.test(save) && /t\("tr\.cfTagRemove"\)/.test(save) && !/tr\.saveRemoved/.test(save) && !/loaded/.test(cutF("trSendAmounts")));
     ok("picker 的殼:框在 index.html(cx 之後、del 之前)、切視角守門含 ps-scrim、開框 inert、Esc / Tab 在 trade.js 自己接(app.js 不動)、關框焦點回開框那顆鈕",
       (() => { const html = fs.readFileSync(path.join(R, "index.html"), "utf8"), i = html.indexOf('id="cx-scrim"'), j = html.indexOf('id="ps-scrim"'), k = html.indexOf('id="del-scrim"');
         return i > 0 && j > i && k > j && /role="dialog" aria-modal="true" aria-labelledby="ps-title" hidden/.test(html) && /data-i18n="tr\.pick\.title"/.test(html) && !/tr\.pick\.hint/.test(html) && /id="ps-ok" data-i18n="tr\.pick\.ok"/.test(html); })()
