@@ -11,7 +11,7 @@ const el = () => {
     classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)), has: (c) => cls.has(c), add: (c) => cls.add(c), remove: (c) => cls.delete(c) },
     contains: () => false, addEventListener: (ev, fn) => { if (ev === "click") n.onclick = fn; }, focus: () => { document.activeElement = n; },
     querySelector: () => null, querySelectorAll: () => [],
-    setAttribute: (k, v) => { n.attrs[k] = String(v); }, removeAttribute: (k) => { delete n.attrs[k]; },
+    setAttribute: (k, v) => { n.attrs[k] = String(v); }, removeAttribute: (k) => { delete n.attrs[k]; }, getAttribute: (k) => (k in n.attrs ? n.attrs[k] : null),
     append: (...x) => { x.forEach((y) => { n.children.push(y); n._txt += typeof y === "string" ? y : y.textContent || ""; }); },
     appendChild: (x) => { n.children.push(x); n._txt += x.textContent || ""; return x; } };
   Object.defineProperty(n, "className", { get: () => n._cls, set: (v) => { n._cls = v; } });
@@ -47,6 +47,10 @@ const boxes = [], confirmBox = (o) => { boxes.push(o); }, featured = [], trackFe
 const trExecState = (st) => (st && st.exec) || "running";
 const trVenueIds = () => ["binance"], trVenueLabel = (id) => id, envMoney = () => "real", envMoneyText = (m) => m, trWhereTidy = (x) => x;
 const paneSt = { chat: { off: false } }, paneToggle = () => {};
+// busy.js(回合中的鎖):鎖態用真的兩支,原因句記下來
+const busySrc = fs.readFileSync(path.join(R, "busy.js"), "utf8"), busyFn = (n) => { const i = busySrc.indexOf("function " + n + "("); return busySrc.slice(i, busySrc.indexOf("\n", i)); };
+eval(busyFn("busyLock") + "\n" + busyFn("busyLocked") + "\n" + busyFn("busyOn"));
+const told = [], busySlot = (id, anchor) => ({ id, anchor }), busyTell = (slot, kind) => { told.push([slot.id, kind]); }, busySendTell = () => told.push(["ta-wait", "send"]), busyStopThen = (fn) => fn();
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var CS_BOOTED = false, UP_CHECKING = false, UP_CLOUD_BUSY = false;
@@ -62,7 +66,7 @@ const cloud = (o, kind) => ({ kind: kind || "running", alive: true, cloud: { con
 const plan = (up, st, x) => upPlan({ up, cloud: st && st.cloud, kind: st ? envCloudKind(st) : "loading", localTurn: false, mem: {}, now: 0, cloudStale: !!(st && trRestartUnconfirmed(st.report)), wu: st ? upWu(st.report) : null, ...(x || {}) });
 const paint = (up, st) => { UP = up; TR_BAGS.cloud.st = st === undefined ? TR_BAGS.cloud.st : st; upPaint(); const b = $("set-up-btn"), w = $("ws-update");
   const cb = $("set-upc-btn");
-  return { cspin: cb.children.some((c) => c && c.className === "spin16"), caria: cb.attrs["aria-label"], ctitle: cb.title, line: $("set-up-line").textContent, cline: $("set-upc").hidden ? null : $("set-upc-line").textContent, clink: cb.hidden ? null : cb.textContent, cdis: cb.disabled, link: b.textContent, kind: b.dataset.kind, dis: b.disabled, spin: b.children.some((c) => c && c.className === "spin16"), title: b.title,
+  return { cspin: cb.children.some((c) => c && c.className === "spin16"), caria: cb.attrs["aria-label"], ctitle: cb.title, line: $("set-up-line").textContent, cline: $("set-upc").hidden ? null : $("set-upc-line").textContent, clink: cb.hidden ? null : cb.textContent, cdis: cb.disabled, caria2: cb.attrs["aria-disabled"] === undefined ? null : cb.attrs["aria-disabled"], aria: b.attrs["aria-disabled"] === undefined ? null : b.attrs["aria-disabled"], link: b.textContent, kind: b.dataset.kind, dis: b.disabled, spin: b.children.some((c) => c && c.className === "spin16"), title: b.title,
     slot: w.hidden ? null : w.firstElementChild.textContent, slotKind: w.dataset.kind, slotDis: w.disabled, slotAria: w.attrs["aria-disabled"], status: w.classList.has("is-status"), slotTitle: w.title }; };
 const mono = (n, s) => (n.children || []).some((c) => c && c.className === "mono" && c.textContent === s);
 // ── 關於那一行:七種寫法(§4)。字一律由 upPlan 決定,upPaint 用「 · 」接、版號 mono ──
@@ -104,8 +108,8 @@ ok("雲端版號讀不到(舊機器 / api 快取 null):不印「雲端主機 nul
 { const lagSt = cloud({ cloud: { config_version: "2026-09-22-p" } });
   UP_CLOUD_BUSY = true; const busy = paint(idle, lagSt); UP_CLOUD_BUSY = false;
   running = true; const turn = paint(idle, lagSt); running = false;
-  ok("停用一定講原因(canon Disabled):刷新中 = 16/2 圓環(aria-label 留著更新雲端主機、不掛 title);本機回合在跑 = 停用 + title up.busy;可按時沒有 title",
-    busy.cspin && busy.cdis && busy.caria === "up.cloud.go" && busy.ctitle === "" && !turn.cspin && turn.cdis && turn.ctitle === "up.busy" && turn.clink === "up.cloud.go…" && paint(idle, lagSt).ctitle === ""); }
+  ok("停用一定講原因(canon Disabled):刷新中 = 16/2 圓環(aria-label 留著更新雲端主機、不掛 title);本機回合在跑 = 鎖(aria-disabled、不是原生 disabled)+ title busy.cloudUpd;可按時沒有 title",
+    busy.cspin && busy.cdis && busy.caria === "up.cloud.go" && busy.ctitle === "" && !turn.cspin && !turn.cdis && turn.caria2 === "true" && turn.ctitle === "busy.cloudUpd" && turn.clink === "up.cloud.go…" && paint(idle, lagSt).ctitle === "" && paint(idle, lagSt).caria2 === null); }
 ok("讀不到最新版號但 lib 沒有 walk_forward:第二行寫「· 有新版」(不帶版號)+ 連結", paint(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: false } })).cline === 'up.row.cloud{"cv":"2026-09-24-b"} · up.row.cloudNewBare');
 ok("雲端主機的 lib 沒有 walk_forward(config_supports_wf false):就算 api 讀不到最新版號(lv null)也算落後——樣本外驗證的〔去更新〕→「檢查更新」才有出口(稽核 P2-5);true / 缺欄位照舊",
   plan(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: false } })).cloudLag === true && plan(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: true } })).cloudLag === false
@@ -163,8 +167,10 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     ok("主行程那邊拋例外(IPC reject):upInstall 不冒 unhandled rejection、當成沒裝成重讀狀態(稽核 P2-3)", !threw && reads === 1); }
   calls.length = 0; paint(idle, applying); await $("ws-update").onclick();
   ok("(c) 按更新中那一格什麼都不做", calls.length === 0 && sent.length === 0);
-  running = true; p = paint({ ...C, phase: "ready" }, cloud()); calls.length = 0; await $("ws-update").onclick(); await $("set-up-btn").onclick();
-  ok("(b) 這台電腦有回合在跑:那一格與關於的連結都停用、原因 up.busy(重開會把回合斷掉),按了不裝", p.slot === "up.restart" && p.slotDis && p.slotTitle === "up.busy" && p.link === "up.restart" && p.dis && p.title === "up.busy" && calls.length === 0);
+  running = true; p = paint({ ...C, phase: "ready" }, cloud()); calls.length = 0; told.length = 0; await $("ws-update").onclick(); await $("set-up-btn").onclick();
+  ok("(b) 這台電腦有回合在跑:那一格與關於的連結都是鎖(aria-disabled、不是原生 disabled)、title busy.update(重開會把回合斷掉);按了不裝,原因寫進各自的槽",
+    p.slot === "up.restart" && !p.slotDis && p.slotAria === "true" && p.slotTitle === "busy.update" && p.link === "up.restart" && !p.dis && p.aria === "true" && p.title === "busy.update" && calls.length === 0
+    && JSON.stringify(told) === '[["ws-up-why","update"],["set-up-why","update"]]');
   running = false;
   document.activeElement = $("ws-update"); paint(idle, cloud());
   ok("那一格收掉時焦點交給輸入框(不掉到 BODY)", document.activeElement === $("ta"));
@@ -232,7 +238,7 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     /UPD\.turnCloud = false;[^\n]*\n\s*running = true; sendBtnSync\(\);/.test(fnSrc("submitMessage")) && !/UPD\.done/.test(fnSrc("submitMessage"))
     && /if \(!UPD\.turnCloud && stepWhere\(c\) === "cloud"\) \{ UPD\.turnCloud = true; upPaint\(\); \}\s*busyStep\(c\);/.test(src)
     && /const faulted = !stopped && \(r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut\);/.test(src) && /upTurnEnded\(faulted\);\s*running = false;/.test(src) && !/UPD/.test(fnSrc("busyStep")));
-  ok("接線:關於第一行的連結 = 重新啟動 / 檢查更新;第二行 = upCloudUpdate;那一格只有 restart 會做事;up.c.msg 只在 upCloudSend 送;沒有 upGo / 每秒重畫 / open-about", /const k = \$\("set-up-btn"\)\.dataset\.kind; if \(k === "restart"\) upInstall\(\); else if \(k === "check"\) upCheck\(\);/.test(src) && /if \(\$\("ws-update"\)\.dataset\.kind === "restart"\) upInstall\(\);/.test(src)
+  ok("接線:關於第一行的連結 = 重新啟動 / 檢查更新;第二行 = upCloudUpdate;那一格只有 restart 會做事;up.c.msg 只在 upCloudSend 送;沒有 upGo / 每秒重畫 / open-about", /const b = \$\("set-up-btn"\), k = b\.dataset\.kind; if \(k === "restart" && busyLocked\(b\)\) \{[^}]*\} if \(k === "restart"\) upInstall\(\); else if \(k === "check"\) upCheck\(\);/.test(src) && /const w = \$\("ws-update"\); if \(w\.dataset\.kind !== "restart"\) return; if \(busyLocked\(w\)\) \{[^}]*\} upInstall\(\);/.test(src)
     && /\$\("set-upc-btn"\)\.addEventListener\("click", \(\) => upCloudUpdate\(\$\("set-upc-btn"\)\)\);/.test(src) && (src.match(/t\("up\.c\.msg"\)/g) || []).length === 1 && /t\("up\.c\.msg"\)/.test(fnSrc("upCloudSend")) && !/upCloudRecheck/.test(src)
     && !/upGo|upInstallLocal|UP_TICK|upClock|onOpenAbout|doneChatHidden|UP_REPORT_WAIT_MS/.test(src));
   // ── 主機刪掉又重開:落後 / 追上 / 更新期間都是那台的事,清掉 ──
@@ -639,13 +645,15 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     // 登出:按了才出確認框(Wei 2026-09-28 定案);三句說明不常駐
     const press = (o) => { boxes.length = 0; cur = o.cur; acct = o.acct; hasToken = true; planPaint(); const b = page().who.btn; b._click(); return boxes[0]; };
     const own = press({ cur: "claude", acct: { plan: { state: "none" } } });
-    ok("按「登出」:出確認框(標題、確認鈕、開它的那顆鈕);用自己的 CLI、沒有主機 → 兩句", !!own && own.title === "acct.cf.title" && own.ok === "acct.cf.ok" && own.opener === page().who.btn && own.lines.join() === "acct.out.1,acct.out.2" && own.onOk === acctSignOut);
+    ok("按「登出」:出確認框(標題、確認鈕、開它的那顆鈕);用自己的 CLI、沒有主機 → 兩句", !!own && own.title === "acct.cf.title" && own.ok === "acct.cf.ok" && own.opener === page().who.btn && own.lines.join() === "acct.out.1,acct.out.2" && typeof own.onOk === "function");
     ok("用 Blave AI:多一句「登出會回到選 AI 的畫面」,排第一", press({ cur: "blave", acct: { plan: { state: "none" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.2");
     ok("帳號有主機(啟動中 / 運行中 / 已停機):多一句「登出不會停用雲端主機,主機費照扣」;沒有主機不出", ["starting", "running", "stopped"].every((st) => press({ cur: "claude", acct: { plan: { state: st } } }).lines.join() === "acct.out.1,acct.out.4,acct.out.2")
       && press({ cur: "blave", acct: { plan: { state: "running" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.4,acct.out.2");
-    { boxes.length = 0; running = true; acctOutAsk(null); running = false; oauthPending = true; acctOutAsk(null); oauthPending = false; ok("回合進行中 / 等待登入中:不出框", boxes.length === 0); }
-    ok("確認框按下去才走登出那一支;登出之後(用自己 CLI 的人留在原地)焦點回左欄的「帳號與方案」、讀屏念一次;用 Blave AI 的人照舊回選 AI 的畫面", /confirmBox\(\{ title: t\("acct\.cf\.title"\), lines, ok: t\("acct\.cf\.ok"\), opener, onOk: acctSignOut \}\);/.test(src)
-      && /async function acctSignOut\(\) \{\n  if \(!hasToken \|\| running \|\| oauthPending \|\| planLoginBusy\) return;\n  const r = await window\.blave\.signOutBlave\(\);/.test(src)
+    { boxes.length = 0; oauthPending = true; acctOutAsk(null); oauthPending = false; ok("等待登入中:不出框", boxes.length === 0);
+      cur = "claude"; acct = { plan: { state: "none" } }; running = true; acctOutAsk(null); running = false;
+      ok("回合進行中(busy-lock spec §2.3:登出放開):照出框,第一句講正在回覆的這條會先停", boxes.length === 1 && boxes[0].lines.join() === "busy.cut.out,acct.out.1,acct.out.2"); }
+    ok("確認框按下去才走登出那一支(回合中先停再登出:busyStopThen);登出之後(用自己 CLI 的人留在原地)焦點回左欄的「帳號與方案」、讀屏念一次;用 Blave AI 的人照舊回選 AI 的畫面", /confirmBox\(\{ title: t\("acct\.cf\.title"\), lines, ok: t\("acct\.cf\.ok"\), opener, onOk: \(\) => busyStopThen\(acctSignOut, opener\) \}\);/.test(src)
+      && /async function acctSignOut\(\) \{\n  if \(!hasToken \|\| oauthPending \|\| planLoginBusy \|\| acctOutBusy\) return;\n  acctOutBusy = true;\n  const r = await window\.blave\.signOutBlave\(\)\.finally\(\(\) => \{ acctOutBusy = false; \}\);/.test(src)
       && /srSay\(t\("acct\.outDone"\)\);\n    const c = document\.querySelector\('\.set-cat\[data-set-cat="plan"\]'\); if \(c\) c\.focus\(\);/.test(src) && /await window\.blave\.clearConnection\(\);\n  cur = null;\n  setClose\(\);/.test(src));
     // 訊息格
     dom["set-scrim"] = node(); dom["set-scrim"].hidden = false; dom["set-plan"].hidden = false;

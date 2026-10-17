@@ -773,7 +773,7 @@ function libPaintCta(s) {
 
 // 回合中點了停用的主鈕:就地寫那句(不整個重畫,焦點留在鈕上);記下是哪一支,忙碌中重畫時補回
 function libBusyTell(s) {
-  LIB.busyTold = s.id;
+  LIB.busyTold = s.id; busyHit("send");
   const n = $("lib-cta-note"), b = libCtaMain();
   if (n) { n.textContent = t("turn.busy"); n.hidden = false; }
   if (b) b.setAttribute("aria-describedby", "lib-cta-note");

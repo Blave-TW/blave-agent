@@ -5084,8 +5084,8 @@ function envPaintSide(kind, st) {
   const prefs = { order: st && st.cloud && Array.isArray(st.cloud.strat_order) ? st.cloud.strat_order : [], flags: st && st.cloud && st.cloud.strat_flags && typeof st.cloud.strat_flags === "object" ? st.cloud.strat_flags : {} };
   const list = typeof sfApplyOrder === "function" ? sfApplyOrder(shown, prefs.order) : shown;
   const ho = typeof HO !== "undefined" && HO.on && typeof hoCloudLive === "function" && hoCloudLive();
-  // 列尾的刪除:機器停著 / agent 回合中 / 名字不合規 / 刪除中 → 不畫(跟 HO 旗標無關)
-  const canDel = kind === "running" && !(typeof running !== "undefined" && running === true);
+  // 列尾的刪除:機器停著 / 名字不合規 / 刪除中 → 不畫(跟 HO 旗標無關)。agent 回合中照畫、是鎖(busy.js),點了講原因
+  const canDel = kind === "running";
   // 側欄**不放任何 handoff 提示**(Wei 看實機後拍板):等著送上來的那條回頭路住在中欄的「準備好了」卡(規格 §2)
   const sel = typeof RPC !== "undefined" ? RPC.name : null, dotsUp = envDotsUp("cloud", st);
   const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], prefs.flags, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st), dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)])]);
@@ -5110,8 +5110,10 @@ function envPaintSide(kind, st) {
       if (r && (!ae || ae === document.body)) r.focus();
     });
     wrap.appendChild(row);
-    if (canDel && !deleting && /^[A-Za-z0-9_-]{1,64}$/.test(x.name) && typeof armedDelete === "function")
-      wrap.appendChild(armedDelete(wrap, t("cdel.aria", { name: x.displayName || x.name }), (btn) => cdelAsk(x, btn), true));
+    if (canDel && !deleting && /^[A-Za-z0-9_-]{1,64}$/.test(x.name) && typeof armedDelete === "function") {
+      const d = armedDelete(wrap, t("cdel.aria", { name: x.displayName || x.name }), (btn) => cdelAsk(x, btn), true);
+      busyLock(d, busyOn()); d.onBusy = () => stratDelBusy(wrap); wrap.appendChild(d);
+    }
     box.appendChild(wrap);
   });
 }

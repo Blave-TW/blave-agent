@@ -193,7 +193,7 @@ async function capUpload() {
 /* 交給 agent(過渡期與遠端桌面後備):本機 agent 經 blave MCP 帶用戶走 RDP 流程。聊天欄收著就先展開(過程在那裡);
    回合在跑時鈕是停用的(submitMessage 也會擋) */
 async function capHandoff(which) {
-  if (typeof running !== "undefined" && running) return;
+  if (typeof running !== "undefined" && running) { CAP.msg = { code: "TURN_BUSY" }; capPaint(); busyHit("send"); return; }   // 送一句話:回合中送不出去,原因寫在框裡的訊息槽
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
   const ok = await submitMessage(t(which === "rdp" ? "cap.ho.promptRdp" : which === "verify" ? "cap.ho.promptVerify" : which === "read" ? "cap.ho.promptRead" : "cap.ho.prompt"), { viewing: { env: "cloud" } });
   if (ok) { capTrack("rdp"); cxModalClose(true); }
@@ -240,10 +240,11 @@ function capErr(text, calm) {
   const p = trEl("p", "plan-err" + (calm ? " is-calm" : "")), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
   p.setAttribute("role", "status"); p.append(m, trEl("span", "", text)); return p;
 }
-function capBtn(cls, text, on, id, off) {
+function capBtn(cls, text, on, id, off, busy) {   // busy:只因回合在跑而鎖(交給 agent 那幾顆)——aria-disabled 但點得到,由 capHandoff 講原因
   const b = trEl("button", cls, text); b.type = "button"; if (id) b.id = id;
-  if (off) { if (cls === "btn-quiet") b.disabled = true; else b.setAttribute("aria-disabled", "true"); }
-  b.addEventListener("click", () => { if (b.getAttribute("aria-disabled") === "true") return; on(); });
+  if (busy) b.setAttribute("aria-disabled", "true");
+  else if (off) { if (cls === "btn-quiet") b.disabled = true; else b.setAttribute("aria-disabled", "true"); }
+  b.addEventListener("click", () => { if (b.getAttribute("aria-disabled") === "true" && !busy) return; on(); });
   return b;
 }
 const capActs = (...btns) => { const d = trEl("div", "cap-acts"); btns.filter(Boolean).forEach((b) => d.appendChild(b)); return d; };
@@ -275,6 +276,7 @@ function capMsgText(m) {
   if (!m) return null;
   const c = m.code;
   if (c === "BUSY") return t("cap.err.busy");
+  if (c === "TURN_BUSY") return t("turn.busy");
   if (c === "UNKNOWN_RESULT") return t("cap.err.credsUnknown");
   if (c === "BAD_FORMAT") return t("cap.err.idFormat");
   if (c === "KEY_TIMEOUT" || c === "KEY_EXPIRED" || c === "KEY_INVALID") return t("cap.pfx.errKey");
@@ -322,8 +324,8 @@ function capPickBody() {
   opts.appendChild(o);
   return capFrag(opts, capActs(capBtn("btn-quiet", t("cap.c.rdp"), () => { CAP.route = "rdp"; capPaint(); }, "cap-opt-rdp")));
 }
-const capReadHo = () => capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("read"), "cap-ho", typeof running !== "undefined" && running);
-const capHoBtn = (which, id) => capBtn("btn-fill", t("cap.ho.go"), () => capHandoff(which), id, typeof running !== "undefined" && running);
+const capReadHo = () => capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("read"), "cap-ho", false, typeof running !== "undefined" && running);
+const capHoBtn = (which, id) => capBtn("btn-fill", t("cap.ho.go"), () => capHandoff(which), id, false, typeof running !== "undefined" && running);
 function capRdpBody() {
   return capFrag(capDo(t("cap.c.rdpDo")), capActs(capHoBtn("rdp", "cap-ho"), capBtn("btn-quiet", t("cap.c.other"), () => { CAP.route = null; capPaint(); }, "cap-other")));
 }
@@ -376,7 +378,7 @@ function capRows(view, cc) {
     // 先下載檢核工具,按過就翻成「再查一次」(同簽署列);再查過還是 321 → 列頭一句「還沒記到」
     const dl = () => { window.blave.openExternal(CAP_VERIFY_URL); CAP.verifyDl = true; capPaint(); };
     const again = () => { CAP.verifyChecked = true; capStep("probe"); };
-    const ho = capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("verify"), "cap-ho", typeof running !== "undefined" && running);
+    const ho = capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("verify"), "cap-ho", false, typeof running !== "undefined" && running);
     rows.push(capRow("cur", t("cap.s.verify"), "", capFrag(CAP.verifyChecked ? capErr(t("cap.s.verifyNot")) : null, capDo(t("cap.c.verifyDo")),
       CAP.verifyDl || CAP.verifyChecked ? capActs(capBtn("btn-fill", t("cap.retry"), again, "cap-probe", off), capBtn("btn-quiet", t("cap.c.verifyDl"), dl, "cap-verify-dl"), ho)
         : capActs(capBtn("btn-fill", t("cap.c.verifyDl"), dl, "cap-verify-dl"), ho))));
@@ -467,6 +469,7 @@ function capFootRestore() {
 }
 // cx-go 按下(trade.js 的 cxConnect 交過來)
 function capPrimary() {
+  if (CAP.view === "c-handoff" && typeof running !== "undefined" && running && !capDown() && !CAP.busy) return capHandoff("setup");   // 只因回合在跑而鎖:講原因
   if ($("cx-go").getAttribute("aria-disabled") === "true") return;
   if (CAP.view === "c-form") return capGo();
   if (CAP.view === "c-done" || CAP.view === "c-done-ts") return cxModalClose(true);
@@ -475,6 +478,7 @@ function capPrimary() {
 
 function capPaint() {
   if ($("cx-scrim").hidden || CXF.venue !== CAPITAL || CXF.env !== "cloud") return;
+  if (CAP.msg && CAP.msg.code === "TURN_BUSY" && !(typeof running !== "undefined" && running)) CAP.msg = null;
   const cc = capCC(), ctx = capCtx();
   let view = capView(cc, CAP, ctx);
   capAdvance(view, cc);

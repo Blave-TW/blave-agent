@@ -213,7 +213,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const cloud = opt.cloud === true;
       const bag = { name, data: Object.assign({ versions, code: "x = 1\n", displayName: "動能" }, opt.stats ? { stats: opt.stats } : {}), drawn: {}, tab: "bt" };
       const RP = cloud ? { name: null, data: null, drawn: {}, tab: "bt" } : bag, RPC = cloud ? bag : { name: null, data: null };
-      const tracked = [], loads = [], sent = [], boxes = [], said = [], shows = [], timers = [], acks = [], hoPaints = [], refreshed = [];
+      const tracked = [], loads = [], sent = [], boxes = [], said = [], shows = [], timers = [], acks = [], hoPaints = [], refreshed = [], hits = [];
       const vs = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map(), err: null, pend: null });
       const api = { tradeSend: (cmd, args) => { sent.push([cmd, args]); return new Promise((res) => acks.push(res)); }, loadStrategy: async () => null };
       const side = cloud ? "cloud" : "local", st = amounts ? { report: { config: { amounts } } } : null;
@@ -223,11 +223,12 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         running: false, confirmBox: (o) => boxes.push(o), setOpen: async () => {}, setCat() {}, srSay: (x) => said.push(x), submitMessage: async () => true, paneSt: { chat: { off: false } }, paneToggle() {},
         trFmt: (x) => String(x), trUnit: () => "USDT", trTxfSpec: TXF.trTxfSpec, trWith: (b, fn) => fn(), trRowTxf: () => (opt.rowTxf ? {} : null), xpSetTimeMachine() {}, RP_WAIT_DELAY_MS: 200, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {},
         window: { blave: { loadStrategy: async () => null, cloudRefresh: async () => { refreshed.push("cloud"); } } }, Date: FakeDate,
-        stratRefresh: async () => { refreshed.push("list"); }, stratSelect: async (n, f) => { refreshed.push(["sel", n, f]); }, ENV: { cloudDirty: false }, trPoll: () => refreshed.push("poll") };
+        stratRefresh: async () => { refreshed.push("list"); }, stratSelect: async (n, f) => { refreshed.push(["sel", n, f]); }, ENV: { cloudDirty: false }, trPoll: () => refreshed.push("poll"),
+        busyHit: (k) => hits.push(k), busyFixLink: (el, action) => { const b = new El("button"); b.className = "btn-quiet busy-fix"; b.dataset.fix = action; el.appendChild(b); } };
       $("ver-menu").hidden = true; $("vc-scrim").hidden = true; $("ver-wrap").hidden = true; $("ver-rerun").hidden = true; $("ver-banner-err").hidden = true;
       const F = new Function(...Object.keys(env), body)(...Object.values(env));
       F.verPaint(bag);
-      return { F, E, $, RP: bag, B: bag, S: env.VS[side], tracked, loads, sent, boxes, said, shows, timers, acks, env, refreshed };
+      return { F, E, $, RP: bag, B: bag, S: env.VS[side], tracked, loads, sent, boxes, said, shows, timers, acks, env, refreshed, hits };
     }
 
     // 入口:零版 / 名字過不了閘門 → 不出;一版 → 跟多版同一顆
@@ -570,11 +571,12 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         const btn = bar(r).kids[1]; btn.setAttribute("aria-disabled", "true");
         btn.click();
         const note = bar(r).kids[2];
-        ok("S8:回合中點「再跑一次」→ 不送指令,原因(turn.busy)寫在狀態列句子下方那一行", r.sent.length === 0 && note.id === "ver-rerun-busy" && note.hidden === false && note.className === "vb-err"
-          && note.textContent === zh["turn.busy"] && note.kids[0].className === "fault-mark");
+        ok("S8:回合中點「再跑一次」→ 不送指令,原因(busy.rerun)＋「查看」寫在狀態列句子下方那一行;記 lock_perf(busyHit rerun)", r.sent.length === 0 && note.id === "ver-rerun-busy" && note.hidden === false && note.className === "vb-err"
+          && note.kids[1].textContent === zh["busy.rerun"] && note.kids[0].className === "fault-mark" && note.kids[2].dataset.fix === "view" && r.hits.join() === "rerun");
         r.F.verBusy();
         ok("S8:回合結束(verBusy 解鎖)→ 那一行收掉", note.hidden === true);
-        ok("S8:「還原成這一版」回合中被點 → 原因寫進橫幅的原因行(同一條 recipe)", /S\.err = \{ key: "turn\.busy", v: S\.open \}; verPaintErr\(S\)/.test(verSrc));
+        ok("S8:「還原成這一版」回合中被點(硬鎖,Wei 10-17)→ 原因 busy.restore 寫進橫幅的原因行(同一條 recipe)＋「查看」、記 lock_restore",
+          /S\.err = \{ key: "busy\.restore", v: S\.open \}; verPaintErr\(S\);[^\n]*\n\s*busyHit\("restore"\);/.test(verSrc) && /if \(S\.err\.key === "busy\.restore"\) busyFixLink\(el, "view"\);/.test(fnSrc(verSrc, "verPaintErr")));
       }
       ok("S3:沒完成那一列、回滾原因行的 fault 記號對齊首行中線(margin-top 8px),圓環維持 1px",
         /\.vr-t \.fault-mark, \.vb-err \.fault-mark \{ flex: none; margin-top: 8px; \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")) && /\.vr-t \.spin16 \{ flex: none; margin-top: 1px; \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")));

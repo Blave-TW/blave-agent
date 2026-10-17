@@ -172,7 +172,7 @@ async function tvSend(c) {
 }
 async function tvAgentPaste(e) {
   const key = tvKeyOf(e.ctx), id = e.ctx.strategy;
-  if (running === true) { if (key) tvSet(key, { type: "busy" }); return; }
+  if (running === true) { if (key) tvSet(key, { type: "busy" }); busyHit("send"); return; }
   const msg = tvPasteMsg(id, t("tv.msg.paste")); if (!msg) return;
   if (paneSt.chat.off) paneToggle("chat", false);
   if (await submitMessage(msg)) trackFeature("tv_agent_paste");

@@ -91,10 +91,10 @@ function perfPaint(B) {
   perfBusy();
   perfPollEnsure(side, B);
 }
-// 回合進行中:鈕 aria-disabled + title 原因(同版本還原那兩顆;spec §8)。app.js 在上鎖 / 解鎖的同一處叫它
+// 回合進行中:鈕 aria-disabled(同版本還原那兩顆;spec §8),點了在 meta 列下講原因＋查看(busy.js)。app.js 在上鎖 / 解鎖的同一處叫它
 function perfBusy() {
   const b = $("perf-btn"); if (!b) return;
-  if (typeof running !== "undefined" && running === true) { b.setAttribute("aria-disabled", "true"); b.title = t("turn.busy"); return; }
+  if (typeof running !== "undefined" && running === true) { b.setAttribute("aria-disabled", "true"); b.title = t("busy.perf"); return; }
   b.removeAttribute("aria-disabled");
   if (b.dataset.tip) b.title = b.dataset.tip; else b.removeAttribute("title");
 }
@@ -102,7 +102,7 @@ function perfBusy() {
    PF_WHY 有的 skip 碼(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)= 失敗行寫專屬原因;其餘(拒收、NO_STATS、daemon 不在)= 沒更新成功,鈕就是重試 */
 async function perfClick(B) {
   const b = $("perf-btn");
-  if (b && b.getAttribute("aria-disabled") === "true") return;   // 回合進行中:原因在 title
+  if (b && b.getAttribute("aria-disabled") === "true") { busyTell(busySlot("perf-why", $("rp-bt").querySelector(".bt-meta") || b), "perf"); return; }   // 回合進行中:觸控看不到 title
   const side = pfSide(B), name = B.name, p = perfOf(B);
   if (!p || !name) return;
   const o = { at0: p.at, ackAt: 0, failed: null };

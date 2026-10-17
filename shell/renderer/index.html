@@ -339,7 +339,7 @@
     <button class="chat-strip" id="chat-strip" type="button" data-i18n-aria="ws.chatExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="9.8,3.6 5.4,8 9.8,12.4"/></svg></button>
     <section class="pane-chat">
       <!-- 對話列(照雲端 .chat-head):清單鈕 → 目前對話標題 → 新對話。標題是用戶打的字,
-           一律 textContent。回合進行中兩顆鈕都鎖住——第一版一次只跑一條對話。 -->
+           一律 textContent。回合進行中清單照開;新對話是鎖(busy.js,一次只跑一條),點了在標題列下方講原因。 -->
       <div class="chat-head" id="cs-head">
         <button class="cs-btn" id="cs-toggle" type="button" aria-controls="cs-list" aria-expanded="false" data-i18n-aria="cs.all">
           <svg class="ic cs-ico-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></svg>
@@ -783,6 +783,7 @@
 <script src="president.js"></script>
 <script src="datasrc.js"></script>
 <script src="apikey.js"></script>
+<script src="busy.js"></script>
 <script src="handoff.js"></script>
 <script src="export.js"></script>
 <script src="library.js"></script>

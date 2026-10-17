@@ -107,7 +107,7 @@ msgstr "Describe a trading idea…"
 
 # 回合進行中、草稿非空時按 Enter:輸入框上方一行(e2e 0.1.8 #71)
 msgid "ws.waitTurn"
-msgstr "The previous turn is still running. Press Enter again when it finishes."
+msgstr "Wait for this reply to finish before sending."
 
 # 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;一則最多 4 個、單檔 5 MiB、合計 15 MiB)
 msgid "ws.attach"
@@ -367,7 +367,7 @@ msgid "phase.schedule"
 msgstr "Set schedule"
 
 msgid "turn.busy"
-msgstr "The previous turn is still running."
+msgstr "Wait for this reply to finish before sending."
 
 msgid "turn.engineFailed"
 msgstr "Engine setup failed: {msg}"
@@ -3169,9 +3169,6 @@ msgstr "Bring the strategy {id} from my cloud machine back to this computer as {
 msgid "up.about"
 msgstr "About"
 
-msgid "up.busy"
-msgstr "A conversation is still replying. Update after it finishes."
-
 msgid "up.backup"
 msgstr "Blave updated to {av}. {n} official files you had changed were replaced; the old copies are in {dir} ({view})."
 
@@ -3917,7 +3914,7 @@ msgid "rob.btnSent"
 msgstr "Sent — See Chat"
 
 msgid "rob.busy"
-msgstr "The agent is still answering your last message. Wait a few seconds and send again."
+msgstr "Wait for this reply to finish before sending."
 
 msgid "rob.emptyCap"
 msgstr "When the agent finishes, the verdict and heatmap appear here."
@@ -6165,7 +6162,7 @@ msgid "tv.err.narrow"
 msgstr "The middle column is too narrow: at this width TradingView doesn’t show the Pine Editor button. Widen it and try again."
 
 msgid "tv.err.busy"
-msgstr "The agent is replying. Try again in a moment."
+msgstr "Wait for this reply to finish before sending."
 
 msgid "tv.err.unknown"
 msgstr "That did not go through. Try again."
@@ -8162,3 +8159,63 @@ msgstr "You've built 1 strategy."
 
 msgid "acct.builtN"
 msgstr "You've built {n} strategies."
+
+# 回合中的鎖(busy.js;設計 spec busy-lock-2026-10 第一期):點了被鎖的控件,在控件附近的訊息槽講一句原因＋補救連結
+msgid "busy.update"
+msgstr "A conversation is still replying. Restarting would interrupt it."
+
+msgid "busy.perf"
+msgstr "The agent is replying and may still be editing strategies. Refresh after it finishes."
+
+msgid "busy.rerun"
+msgstr "The agent is replying and may still be editing strategies. Run it again after it finishes."
+
+msgid "busy.restore"
+msgstr "The agent is replying and may be editing this strategy. Restore after it finishes."
+
+msgid "busy.del"
+msgstr "The agent is replying and may be editing this strategy. Delete it after it finishes."
+
+msgid "busy.chatDel"
+msgstr "This conversation is still replying. Stop it before deleting."
+
+msgid "busy.switch"
+msgstr "Wait for this reply to finish before switching conversations."
+
+msgid "busy.new"
+msgstr "Wait for this reply to finish before starting a new conversation."
+
+msgid "busy.cloudUpd"
+msgstr "Wait for this reply to finish before sending the update."
+
+# 補救連結:停止 = 停掉回覆中的那條;查看 = 回到聊天欄看那條回覆
+msgid "busy.fix.stop"
+msgstr "Stop"
+
+msgid "busy.fix.view"
+msgstr "View"
+
+# 回合中換 AI(設定 › 模型接入):先問,確認了先停那條再換
+msgid "busy.cut.title"
+msgstr "Stop the reply in progress?"
+
+msgid "busy.cut.body"
+msgstr "Switching AI stops the reply in progress first."
+
+msgid "busy.cut.ok"
+msgstr "Stop and switch"
+
+# 先停再做:等回合收掉時按的那顆鈕旁那一行;20 秒停不下來就不做,改講這句(留「停止」再按)
+msgid "busy.stopping"
+msgstr "Stopping…"
+
+msgid "busy.stopFail"
+msgstr "It didn't stop. Try again in a moment."
+
+# 回合中登出:確認框第一句
+msgid "busy.cut.out"
+msgstr "The reply in progress will be stopped first."
+
+# 刪對話沒刪成(主行程回 false):對話清單上方那一行,不無聲關框
+msgid "cs.delFail"
+msgstr "Couldn't delete it. Try again."

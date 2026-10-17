@@ -3,7 +3,7 @@
 //   本機:main.js deleteStrategy 擋還在組合裡的(規則同機器端 _cmd_delete_strategy)
 const fs = require("fs"), path = require("path"), os = require("os");
 const R = path.join(__dirname, "..", "shell", "renderer");
-const trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8"), appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
+const trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8"), appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8"), busySrc = fs.readFileSync(path.join(R, "busy.js"), "utf8");
 const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), html = fs.readFileSync(path.join(R, "index.html"), "utf8");
 let red = 0; const ok = (n, c, why) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) { red++; if (why !== undefined) console.log("      ", why); } };
 const pending = [];   // 非同步的段落:收尾前等它們跑完
@@ -32,7 +32,8 @@ ok("組合成員:都沒有 = false;config 讀不到 = null(交給機器裁決)",
     && /if \(k === "rejected"\) \{\s*delete CDEL\.ids\[name\];/.test(run) && /\/\/ 沒送到[^\n]*\n\s*if \(res && typeof res\.requestId === "string"\) CDEL\.ids\[name\] = res\.requestId;/.test(run));
   ok("機器回「還在組合裡」→ 重開擋下那一態;成功 → 壓抑 + 選中那支收掉", /\/remove it there first\/\.test\(err\)/.test(run) && /CDEL\.gone\.set\(name, Date\.now\(\)\)/.test(run) && /RPC\.name === name[^\n]*rpCloudSelect\(null\)/.test(run));
   const side = fnOf(trSrc, "envPaintSide");
-  ok("列尾刪除鈕:機器在跑、不在回合中、名字合規、不在刪除中才畫;跟 HO 旗標無關", /const canDel = kind === "running" && !\(typeof running !== "undefined" && running === true\);/.test(side)
+  ok("列尾刪除鈕:機器在跑、名字合規、不在刪除中才畫;回合中照畫、是鎖(aria-disabled + 點了講原因,busy.js);跟 HO 旗標無關", /const canDel = kind === "running";/.test(side)
+    && /busyLock\(d, busyOn\(\)\); d\.onBusy = \(\) => stratDelBusy\(wrap\);/.test(side)
     && /if \(canDel && !deleting && \/\^\[A-Za-z0-9_-\]\{1,64\}\$\/\.test\(x\.name\)/.test(side) && !/hoDownBtn/.test(side));
   ok("刪除框帶雲端記號、開框前先預檢組合成員", /if \(cdelInUse\(cfg, x\.name\) === true\) return cdelBlocked\(x, opener\);/.test(fnOf(trSrc, "cdelAsk")) && /env: "cloud"/.test(fnOf(trSrc, "cdelAsk"))
     && /okDisabled: true/.test(fnOf(trSrc, "cdelBlocked")) && /poOpen\("cfg"\)/.test(fnOf(trSrc, "cdelBlocked"))); }   // 0.1.24:金額搬到策略組合 › 配置
@@ -81,7 +82,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   const mk = (tag) => { const n = { tag, className: "", hidden: false, disabled: false, dataset: {}, attrs: {}, kids: [], on: {}, textContent: "", innerHTML: "", title: "", type: "", parent: null, cls: new Set(),
     style: { p: {}, setProperty(k, v) { this.p[k] = v; }, removeProperty(k) { delete this.p[k]; } },
     classList: { add: (c) => n.cls.add(c), remove: (c) => n.cls.delete(c), contains: (c) => n.cls.has(c), toggle: () => {} },
-    setAttribute(k, v) { n.attrs[k] = String(v); }, removeAttribute(k) { delete n.attrs[k]; }, getBoundingClientRect: () => ({ width: 90 }), focus() { focused = n; },
+    setAttribute(k, v) { n.attrs[k] = String(v); }, removeAttribute(k) { delete n.attrs[k]; }, getAttribute(k) { return k in n.attrs ? n.attrs[k] : null; }, getBoundingClientRect: () => ({ width: 90 }), focus() { focused = n; },
     get isConnected() { let x = n; while (x.parent) x = x.parent; return x === dom["strat-list"] || x.root === true; },
     addEventListener(ev, fn) { (n.on[ev] = n.on[ev] || []).push(fn); }, fire(ev) { return Promise.all((n.on[ev] || []).map((f) => f({}))); },
     append(...c) { c.forEach((x) => n.appendChild(x)); }, appendChild(c) { c.parent = n; n.kids.push(c); return c; }, remove() { if (n.parent) n.parent.kids = n.parent.kids.filter((x) => x !== n); n.parent = null; },
@@ -91,10 +92,10 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   let items = ["a", "b", "c"].map(ETH), result = false, lists = 0, idSeen = null; const boxes = [];
   const scope = { $, document: { createElement: mk, createDocumentFragment: () => Object.assign(mk("#frag"), { frag: true }) }, t: (k, v) => { if (v && "id" in v) idSeen = v.id; return k; },
     RP: { list: [], name: null }, stratNameFill: (nm, x) => { nm.textContent = x; }, stratTip: (d) => d, sideReclick: () => {}, stratSelect: () => {},
-    trOpen: () => {}, confirmBox: (o) => boxes.push(o),
+    trOpen: () => {}, confirmBox: (o) => boxes.push(o), told: [], busySlot: (id, anchor) => ({ id, anchor }), busyTell: (slot, kind) => scope.told.push([slot.id, kind, slot.anchor]),
     window: { blave: { platform: "darwin", listStrategies: async () => { lists++; return items.slice(); }, deleteStrategy: async () => result } } };
   const hasSync = /\nfunction stratDelSync\(/.test(appSrc), hasAt = /\nasync function stratRefreshAt\(/.test(appSrc);
-  const api = new Function(...Object.keys(scope), ["var running = false;", fnOf(appSrc, "armedDelete"), fnOf(trSrc, "trEl"), fnOf(trSrc, "cdelBoth"), ...["stratDelBody", "stratBlockedNote"].filter((f) => appSrc.includes("\nfunction " + f + "(")).map((f) => fnOf(appSrc, f)),   // 舊版(修之前)沒有 stratDelBody:照樣跑完、逐條紅
+  const api = new Function(...Object.keys(scope), ["var running = false;", fnOf(busySrc, "busyLock"), fnOf(busySrc, "busyLocked"), fnOf(appSrc, "stratDelBusy"), fnOf(appSrc, "armedDelete"), fnOf(trSrc, "trEl"), fnOf(trSrc, "cdelBoth"), ...["stratDelBody", "stratBlockedNote"].filter((f) => appSrc.includes("\nfunction " + f + "(")).map((f) => fnOf(appSrc, f)),   // 舊版(修之前)沒有 stratDelBody:照樣跑完、逐條紅
     hasSync ? fnOf(appSrc, "stratDelSync") : "function stratDelSync() {}", hasAt ? "var stratRefreshAt = async " + fnOf(appSrc, "stratRefreshAt") : "",
     "var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""), "return { stratRefresh, stratDelSync, setRunning: (v) => { running = v; } };"].join("\n"))(...Object.values(scope));
   const wrapOf = (name) => $("strat-list").kids.find((w) => w.kids[0].dataset.name === name), delOf = (name) => wrapOf(name).kids[1], rowOf = (name) => wrapOf(name).kids[0];
@@ -104,11 +105,15 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   pending.push((async () => {
     await api.stratRefresh(false);
     const d0 = delOf("a"); api.setRunning(true); api.stratDelSync();
-    const hidMid = d0.disabled === true;
+    const lockMid = d0.attrs["aria-disabled"] === "true" && d0.disabled === false;
+    result = true; boxes.length = 0; scope.told.length = 0; await d0.fire("click"); await d0.fire("click");
+    const toldMid = scope.told.length === 2 && scope.told.every((x) => x[0] === "strat-why" && x[1] === "del" && x[2] === wrapOf("a")) && !d0.cls.has("is-armed") && boxes.length === 0 && wrapOf("a") === d0.parent;
     api.setRunning(false); api.stratDelSync();
-    ok("回合開始:回合前畫好的列,刪除鈕跟著收起;結束後回來(以前只在重建列時看一次 running,回合中照樣按得到)", hasSync && hidMid && d0.disabled === false);
-    api.setRunning(true); await api.stratRefresh(false); api.setRunning(false); api.stratDelSync();
-    ok("回合結束那次重讀趕在 running 歸零前畫好列:歸零後鈕要回來", hasSync && delOf("a").disabled === false);
+    ok("回合開始:回合前畫好的列,✕ 照畫、轉成 aria-disabled(硬鎖);點了不武裝、不刪,在那一列下講原因(strat-why / del);結束後解鎖", hasSync && lockMid && toldMid && !("aria-disabled" in d0.attrs), scope.told);
+    api.setRunning(true); await api.stratRefresh(false);
+    const drawnBusy = delOf("a").attrs["aria-disabled"] === "true";
+    api.setRunning(false); api.stratDelSync();
+    ok("回合中重建的列:✕ 一樣畫、一樣鎖;回合結束那次重讀趕在 running 歸零前畫好列:歸零後解鎖", hasSync && drawnBusy && !("aria-disabled" in delOf("a").attrs));
     const flips = appSrc.split("\n").filter((l) => /(^\s*|[;{]\s*)running = (true|false);/.test(l) && !/^let running/.test(l));
     ok("列舉:每一個改 running 的地方都同步刪除鈕(" + flips.length + " 處)", flips.length >= 3 && flips.every((l) => /stratDelSync\(\)/.test(l)), flips.filter((l) => !/stratDelSync\(\)/.test(l)).map((l) => l.trim().slice(0, 80)));
     const tryDel = async (r, name) => { result = r; boxes.length = 0; await api.stratRefresh(false); const d = delOf(name || "a"); await d.fire("click"); await d.fire("click"); return boxes; };
@@ -195,9 +200,9 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
 { const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), strings = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   const STR = new Function(strings + "\nreturn STRINGS;")();
   const mk = () => { const n = { cls: new Set(), style: { p: {}, setProperty(k, v) { this.p[k] = v; }, removeProperty(k) { delete this.p[k]; } }, on: {}, attrs: {}, textContent: "", innerHTML: "",
-    classList: { add: (c) => n.cls.add(c), remove: (c) => n.cls.delete(c), contains: (c) => n.cls.has(c) }, setAttribute: (k, v) => { n.attrs[k] = v; }, addEventListener: (e, f) => { n.on[e] = f; }, getBoundingClientRect: () => ({ width: 83.2 }) }; return n; };
+    classList: { add: (c) => n.cls.add(c), remove: (c) => n.cls.delete(c), contains: (c) => n.cls.has(c) }, setAttribute: (k, v) => { n.attrs[k] = v; }, getAttribute: (k) => (k in n.attrs ? n.attrs[k] : null), addEventListener: (e, f) => { n.on[e] = f; }, getBoundingClientRect: () => ({ width: 83.2 }) }; return n; };
   const document = { createElement: () => mk() }, t = (k) => STR.zh[k];
-  eval(fnOf(appSrc, "armedDelete"));
+  eval(fnOf(busySrc, "busyLocked")); eval(fnOf(appSrc, "armedDelete"));
   let ran = 0; const row = mk(), del = armedDelete(row, "x", async () => { ran++; }, false, "strat.delConfirm");
   del.on.click();
   const armed = del.cls.has("is-armed") && del.textContent === "移到垃圾桶？" && row.style.p["--armed-w"] === "84px" && ran === 0;
@@ -252,7 +257,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   const window = { blave: { listStrategies: async () => [{ name: "a", displayName: "A", mtime: 1 }, { name: "b", displayName: "B", mtime: 2 }],
     loadStrategy: async (n) => { loads++; return { name: n, stats: null, code: "x" }; }, deleteStrategy: async () => true } };
   const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, rpTab = (B) => (B.data && B.data.stats ? B.tab : "code"), confirmBox = () => {};
-  const document = doc;
+  const document = doc, busyLock = () => {};
   eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
   eval(fnOf(trSrc, "envNavMark").replace(/^function envNavMark/, "var envNavMark = function"));
   eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));

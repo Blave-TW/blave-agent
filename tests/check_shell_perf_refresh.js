@@ -119,7 +119,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       // 上線中的判準只有一份(versions.js verPicked:下單設定有這個 key,金額 0 也算);真的那支,讀 env.TR_BAGS
       verPicked: null,
       xpIsTypeB, verPendingOf: () => opt.pending || null, VS, RERUN_WHY: { DATA: "data", REFUSED: "refused", TIMEOUT: "timeout" }, shlFmtTime,
-      window: { blave: { loadStrategy: async () => (opt.reload ? opt.reload() : null) } }, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {}, Date: FakeDate };
+      window: { blave: { loadStrategy: async () => (opt.reload ? opt.reload() : null) } }, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {}, Date: FakeDate,
+      told: [], busySlot: (id, anchor) => ({ id, anchor }), busyTell: (slot, kind) => env.told.push([slot.id, kind, slot.anchor]) };
     env.verPicked = new Function("TR_BAGS", verPickedSrc + "\nreturn verPicked;")(env.TR_BAGS);
     const F = new Function(...Object.keys(env), body)(...Object.values(env));
     const upd = () => host.querySelector(".upd"), fail = () => host.querySelector(".upd-fail"), btn = () => host.querySelector("btn-quiet");
@@ -240,12 +241,12 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       await ackWhy("NOT_RUNNABLE") === "這類策略不能更新績效" && await ackWhy("INDEX_BROKEN") === "版本索引讀不到，請先回測一次" && await ackWhy("CONFIG_UNREADABLE") === "下單設定讀不到，沒有更新" && await ackWhy("NO_STATS") === "中途出錯"
       && await ackWhy("NOT_RUNNABLE", "en") === "This kind of strategy can't update its performance." && await ackWhy("INDEX_BROKEN", "en") === "The version index can't be read; run a backtest first." && await ackWhy("CONFIG_UNREADABLE", "en") === "The trading settings can't be read; nothing was updated.");
   }
-  // 回合進行中:鈕 aria-disabled + title 原因,按了不送;解鎖後 title 回到時間那句
+  // 回合進行中:鈕 aria-disabled + title 原因,按了不送、在 meta 列下講原因(busy.js perf);解鎖後 title 回到時間那句
   {
     const r = rig("zh", { running: true }); r.F.perfPaint(r.B);
-    ok("回合進行中:aria-disabled、title = turn.busy", r.btn().attrs["aria-disabled"] === "true" && r.btn().title === "上一輪還在跑。");
+    ok("回合進行中:aria-disabled、title = busy.perf", r.btn().attrs["aria-disabled"] === "true" && r.btn().title === STR.zh["busy.perf"]);
     r.btn().click(); await flush();
-    ok("按了不送、不畫更新中", r.sent.length === 0 && r.btn());
+    ok("按了不送、不畫更新中;原因句寫進 meta 列下的 perf-why(觸控看不到 title)", r.sent.length === 0 && r.btn() && r.env.told.length === 1 && r.env.told[0][0] === "perf-why" && r.env.told[0][1] === "perf" && r.env.told[0][2] === r.meta);
     r.env.running = false;   // perfBusy 讀的是呼叫當下的 running
     const F2 = new Function(...Object.keys(r.env), body)(...Object.values(r.env)); F2.perfBusy();
     ok("解鎖:aria-disabled 拿掉、title 回到「MM/DD HH:mm 更新 · 每天報告前自動更新一次」", !("aria-disabled" in r.btn().attrs) && r.btn().title === tipZh(nowS() - 3600));

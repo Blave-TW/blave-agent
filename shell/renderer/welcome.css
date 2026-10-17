@@ -33,10 +33,10 @@
 .st-row .since { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* hover 底色照策略庫列(library.css .lib-row:hover):--surface-muted 跟市場 tag 同色,tag 會不見(spec §10-1)。
    列裡的灰字一起提亮(canon);disabled 沒有 hover、字取 --ink-3、不用 opacity */
-.st-row:hover:not(:disabled) { background: var(--surface-card); color: var(--ink); }
-.st-row:hover:not(:disabled) .g { color: var(--ink); }
-.st-row:hover:not(:disabled) .since { color: var(--ink-2); }
-.st-row:disabled { cursor: not-allowed; color: var(--ink-3); }
+.st-row:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-card); color: var(--ink); }
+.st-row:hover:not(:disabled):not([aria-disabled="true"]) .g { color: var(--ink); }
+.st-row:hover:not(:disabled):not([aria-disabled="true"]) .since { color: var(--ink-2); }
+.st-row:disabled, .st-row[aria-disabled="true"] { cursor: not-allowed; color: var(--ink-3); }
 .st-row:focus-visible { outline-offset: -2px; }
 /* 窄(容器 < 480;1024 視窗的中欄約 336):tag 欄拿掉(句子本身講了市場),起始年移到句子下一行 */
 @container (max-width: 479px) {

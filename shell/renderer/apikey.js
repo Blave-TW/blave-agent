@@ -163,7 +163,10 @@ function akRelang() { const f = AK.form; if (f && !f.busy) akMount(f.el.input ? 
 
 function akRemoveAsk(opener) {
   const s = akSaved(); if (!s) return;
-  confirmBox({ title: t("ak.rmTitle", { p: s.name }), lines: [t(cur === "apikey" ? "ak.rmBodyCur" : "ak.rmBody")], ok: t("ak.remove"), opener, onOk: akRemove });
+  // 回合中移除正在用的這把:工作頁會換成連結畫面,那條回覆先停(同登出)
+  const cut = cur === "apikey" && busyOn();
+  confirmBox({ title: t("ak.rmTitle", { p: s.name }), lines: (cut ? [t("busy.cut.out")] : []).concat([t(cur === "apikey" ? "ak.rmBodyCur" : "ak.rmBody")]), ok: t("ak.remove"), opener,
+    onOk: cut ? () => busyStopThen(akRemove, opener) : akRemove });
 }
 async function akRemove() {
   try { await window.blave.apikeyRemove(); } catch (_) { /* 主行程那邊刪不掉也照樣收表單;下一次偵測會講實話 */ }
