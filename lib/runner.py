@@ -1601,36 +1601,44 @@ def tw_carry_closes(prev, targets, end_date):
     return fields, need
 
 
-# The child: {groups: {day: [code]}, hdrs, fn, paths} on stdin → one "TWCLOSE {day: {code:
-# [date, close]}}" line, the last raw close on or before each day. os._exit skips the
-# interpreter-exit join of lib.data's thread pools.
+# The child: {groups: {day: [code]}, hdrs, fn, paths, budget_s} on stdin → one "TWCLOSE {day:
+# {code: [date, close]}}" line, the last raw close on or before each day. It ends itself with
+# os._exit — on success, on error, and from a timer just past the parent's budget — so neither
+# lib.data's thread pools (joined at a normal exit) nor a killed parent leave it running.
 _TW_CLOSE_CHILD = r"""
-import importlib, json, math, os, sys
-p = json.load(sys.stdin)
-sys.path[:0] = p['paths'] + [os.getcwd()]
-import pandas as pd
-m, a = p['fn'].split(':')
-f = getattr(importlib.import_module(m), a)
-out = {}
-for day, codes in p['groups'].items():
-    start = (pd.Timestamp(day) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
-    got = f(list(codes), start, day, p['hdrs']) or {}
-    res = out.setdefault(day, {})
-    for code in codes:
-        try:
-            df = got.get(code)
-            c = df['Close'][df['Close'] > 0].dropna()
-            if getattr(c.index, 'tz', None) is not None:
-                c.index = c.index.tz_convert('Asia/Taipei').tz_localize(None)
-            c = c[c.index <= pd.Timestamp(day)]   # never a close after the round's own day
-            px = float(c.iloc[-1])
-            if math.isfinite(px) and px > 0:
-                res[code] = [pd.Timestamp(c.index[-1]).strftime('%Y-%m-%d'), px]
-        except Exception:
-            pass
-sys.stdout.write('\nTWCLOSE ' + json.dumps(out) + '\n')
-sys.stdout.flush()
-os._exit(0)
+import json, os, sys
+try:
+    p = json.load(sys.stdin)
+    import threading
+    t = threading.Timer(float(p['budget_s']) + 2, os._exit, (0,))
+    t.daemon = True
+    t.start()
+    sys.path[:0] = p['paths'] + [os.getcwd()]
+    import importlib, math
+    import pandas as pd
+    m, a = p['fn'].split(':')
+    f = getattr(importlib.import_module(m), a)
+    out = {}
+    for day, codes in p['groups'].items():
+        start = (pd.Timestamp(day) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+        got = f(list(codes), start, day, p['hdrs']) or {}
+        res = out.setdefault(day, {})
+        for code in codes:
+            try:
+                df = got.get(code)
+                c = df['Close'][df['Close'] > 0].dropna()
+                if getattr(c.index, 'tz', None) is not None:
+                    c.index = c.index.tz_convert('Asia/Taipei').tz_localize(None)
+                c = c[c.index <= pd.Timestamp(day)]   # never a close after the round's own day
+                px = float(c.iloc[-1])
+                if math.isfinite(px) and px > 0:
+                    res[code] = [pd.Timestamp(c.index[-1]).strftime('%Y-%m-%d'), px]
+            except Exception:
+                pass
+    sys.stdout.write('\nTWCLOSE ' + json.dumps(out) + '\n')
+    sys.stdout.flush()
+finally:
+    os._exit(0)
 """
 
 
@@ -1638,9 +1646,11 @@ def _tw_fetch_child(groups, hdrs, budget_s):
     """{day: {code: [date, close]}} from a child process, or None when it failed or ran past
     budget_s (then it is killed — that pid only). Headers go over stdin, never argv."""
     import subprocess, sys
-    payload = json.dumps({'groups': groups, 'hdrs': hdrs, 'fn': TW_CLOSE_FETCH,
+    payload = json.dumps({'groups': groups, 'hdrs': hdrs, 'fn': TW_CLOSE_FETCH, 'budget_s': budget_s,
                           'paths': [str(Path(__file__).resolve().parent.parent)]})
-    proc = subprocess.Popen([sys.executable, '-c', _TW_CLOSE_CHILD], stdin=subprocess.PIPE,
+    # -E, not -I: -I also drops the user site, and a cloud machine's pandas may live there
+    # (pip3 at provisioning on a PEP 668 image, or the agent's own --user installs)
+    proc = subprocess.Popen([sys.executable, '-E', '-c', _TW_CLOSE_CHILD], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     try:
@@ -1727,10 +1737,11 @@ def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs):
             for k in TW_CLOSE_FIELDS:
                 state.pop(k, None)
             state.update(more)
+            # a new mtime: the reconciler runs one more round on the same target (no order).
+            # Setting the mtime back would hide a real new target landing in between.
+            # The stat-then-replace above still leaves a microsecond window; closing it needs a
+            # file lock between writers
             save_state(strategy_name, state)
-            # the reconciler runs a round on every state.json mtime change: the price is not a
-            # new target, so the second write keeps the first one's mtime
-            os.utime(path, ns=(saved, saved))
     except Exception as e:
         logging.warning("Taiwan target close not recorded (retried next tick): %s", e)
 

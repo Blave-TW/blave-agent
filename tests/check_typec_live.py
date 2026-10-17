@@ -155,6 +155,23 @@ check(abs(held().get("SOLUSDT", 0) - 5.0) < 1e-9,
 check([s[:2] for s in got if s[0] != "SOLUSDT"] == [("BTCUSDT", "long"), ("ETHUSDT", "long")],
       f"…BTC and ETH top up to their new weights ({got})")
 
+# (1b) ────────────────────────────────────────────────────────────────────────
+print("== (1b) the sizing-close second write: one more round on the same target, no order")
+pos_before, basket_before = [dict(r) for r in POS], json.load(open("strategies/basket/state.json"))
+fresh({"amounts": {"basket": 1000}, "exchanges": {"basket": "binance"}})
+base = portfolio_state({"BTCUSDT": 0.5, "ETHUSDT": 0.3, "SOLUSDT": 0.2}, 1790000000)
+strategy("basket", state=base)
+hold()
+rnd()
+first = list(SENT)
+del SENT[:]
+strategy("basket", state=dict(base, raw_closes={"2330": 1000.0}, raw_close_dates={"2330": "2026-10-16"},
+                              raw_closes_est=["2330"], raw_close_want={"2330": "2026-10-16"}))
+rnd()
+check(len(first) == 3 and SENT == [], f"first round places the orders, the round the second write triggers places none ({first}, {SENT})")
+POS[:] = pos_before
+strategy("basket", state=basket_before)
+
 # (2) ────────────────────────────────────────────────────────────────────────
 print("== (2) netting with a single-symbol strategy")
 fresh({"amounts": {"basket": 1000, "btc_short": 200}, "exchanges": {"basket": "binance", "btc_short": "binance"}})

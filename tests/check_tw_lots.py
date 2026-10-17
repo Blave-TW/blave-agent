@@ -195,12 +195,30 @@ class SpyPopen(RealPopen):
 runner.TW_CLOSE_FETCH, subprocess.Popen = "twfake:hang", SpyPopen
 t0 = time.monotonic()
 try:
-    r = runner.tw_fetch_closes({}, {"2330": ("2026-10-16", False)}, {}, budget_s=2)
+    r = runner.tw_fetch_closes({}, {"2330": ("2026-10-16", False)}, {"api-key": "SENTINELKEY", "secret-key": "SENTINELSEC"},
+                               budget_s=2)
 finally:
     runner.TW_CLOSE_FETCH, subprocess.Popen = "twfake:batch", RealPopen
 el = time.monotonic() - t0
 check(r is None and el < 4 and len(spawned) == 1 and spawned[0].poll() is not None,
       f"a hung lookup is killed at the budget — that child, and it is gone ({el:.2f}s)")
+argv = " ".join(map(str, spawned[0].args)) if spawned else ""
+check(spawned and "SENTINEL" not in argv, "the data keys reach the child over stdin, never on its command line")
+
+# the strategy process killed mid-lookup (wait_for_bar's timeout): the child ends itself just past the budget
+orphan = subprocess.Popen([sys.executable, "-E", "-c", runner._TW_CLOSE_CHILD], stdin=subprocess.PIPE,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(WS))
+orphan.stdin.write(json.dumps({"groups": {"2026-10-16": ["2330"]}, "hdrs": {}, "fn": "twfake:hang", "budget_s": 1,
+                               "paths": [ROOT]}).encode())
+orphan.stdin.close()
+try:
+    orphan.wait(timeout=8)
+    gone = True
+except subprocess.TimeoutExpired:
+    orphan.kill()
+    orphan.wait()
+    gone = False
+check(gone, "no parent reading it: a hung lookup child exits on its own timer (no 13-minute orphan)")
 
 IDX = pd.bdate_range("2026-06-01", "2026-10-16")
 CLOSE = pd.DataFrame({"2330": np.linspace(900, 1300, len(IDX)), "2454": np.linspace(1000, 1400, len(IDX))},
@@ -241,7 +259,8 @@ real_save = runner.save_state
 
 def spy_save(name, st):
     real_save(name, st)
-    stamps.append((name, "raw_closes" in st, os.stat(WS / "strategies" / name / "state.json").st_mtime_ns))
+    stamps.append((name, "raw_closes" in st, os.stat(WS / "strategies" / name / "state.json").st_mtime_ns,
+                   {k: v for k, v in st.items() if not k.startswith("raw_")}))
 
 
 runner.save_state = spy_save
@@ -249,9 +268,8 @@ try:
     live(tick_c)
 finally:
     runner.save_state = real_save
-mt_c = os.stat(WS / "strategies/pfc/state.json").st_mtime_ns
-check([s[1] for s in stamps] == [False, True] and mt_c == stamps[0][2],
-      f"position saved first, close added by a second write that keeps the first mtime (no extra reconcile round) {stamps}")
+check([s[1] for s in stamps] == [False, True] and [s[3] for s in stamps][0] == [s[3] for s in stamps][1],
+      f"position saved first, close added by a second write with the very same target ({[s[:2] for s in stamps]})")
 live(tick_a)
 sc, sa = read("pfc"), read("pfa")
 check(sc.get("raw_closes") == {"2330": 1100.0, "2454": 1250.0} and sc.get("raw_close_dates", {}).get("2330") == "2026-10-16",
