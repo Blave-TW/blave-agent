@@ -940,8 +940,9 @@ async function awakeLoad() { try { AWAKE = (await window.blave.keepAwake()) !== 
 function awakePaint() {
   const sw = $("set-awake-sw"); if (!sw) return;
   sw.classList.toggle("off", !AWAKE); sw.setAttribute("aria-checked", AWAKE ? "true" : "false");
-  // Windows 關掉時多講一句:統一期貨有部位那條不看這個開關(Wei 10-07 的規則照擋)
-  $("set-awake-lead").textContent = t(AWAKE ? "set.awake.lead" : window.blave.platform === "win32" ? "set.awake.leadOffWin" : "set.awake.leadOff");
+  // Windows 開著時限定接電源(Modern Standby 用電池時系統仍會收回);關掉時多講一句:統一期貨有部位那條不看這個開關(Wei 10-07 的規則照擋)
+  const win = window.blave.platform === "win32";
+  $("set-awake-lead").textContent = t(AWAKE ? (win ? "set.awake.leadWin" : "set.awake.lead") : win ? "set.awake.leadOffWin" : "set.awake.leadOff");
 }
 $("set-awake-sw").addEventListener("click", async () => {
   let r = null;

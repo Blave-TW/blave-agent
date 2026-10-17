@@ -43,6 +43,7 @@ function world(o) {
     trSend: (S, cmd) => { sent.push(cmd); return Promise.resolve(o.reply ? o.reply(cmd) : { ok: true }); },
     // 真的 trRun 依序跑每一步、前一步沒成功就停;這裡只留這一條(過場態、紅字不在這支測試的範圍)
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
+    window: { blave: { platform: o.platform || "darwin" } },
     AWAKE: o.awake, tracked: [], switched: [], trackFeature: (n) => env.tracked.push(n), envSwitchGuarded: (e) => { env.switched.push(e); return true; },
   };
   const names = Object.keys(env);
@@ -99,6 +100,14 @@ function world(o) {
     ok("本機:防睡開著時細節用 1a / 2pa(框真的讀到 AWAKE)", lis.map((n) => n.textContent).slice(0, 2).join() === "tr.means.1a,tr.means.2pa");
     if (b) await b.fire("click");
     ok("按出口:記 awake_cloud_go、框關、切到 cloud、沒送任何指令", w.env.tracked.join() === "awake_cloud_go" && !w.open() && w.env.switched.join() === "cloud" && w.sent.length === 0, { t: w.env.tracked, s: w.env.switched }); }
+  { const w = world({ money: "paper", awake: true, platform: "win32" }), lis = w.body.all().filter((n) => n.tag === "li");
+    ok("本機 · Windows:框真的依平台換成 1aWin / 2pa", lis.map((n) => n.textContent).slice(0, 2).join() === "tr.means.1aWin,tr.means.2pa"); }
+  // 設定 › 一般的說明句(app.js awakePaint)依平台切換:Mac 用共用句、Windows 開著時用接電源限定那句
+  { const paint = (platform, on) => { const els = {}, el = () => ({ cls: new Set(), attrs: {}, classList: { toggle() {} }, setAttribute() {}, textContent: "" });
+      const $$ = (id) => els[id] || (els[id] = el());
+      new Function("$", "t", "window", "AWAKE", fn(app, "awakePaint") + "; awakePaint();")($$, (k) => k, { blave: { platform } }, on); return els["set-awake-lead"].textContent; };
+    ok("設定頁 · Mac 開著:set.awake.lead;關著:set.awake.leadOff", paint("darwin", true) === "set.awake.lead" && paint("darwin", false) === "set.awake.leadOff");
+    ok("設定頁 · Windows 開著:set.awake.leadWin;關著:set.awake.leadOffWin", paint("win32", true) === "set.awake.leadWin" && paint("win32", false) === "set.awake.leadOffWin"); }
   { const w = world({ money: "paper", awake: false }), lis = w.body.all().filter((n) => n.tag === "li");
     ok("防睡關著:框用舊版 1 / 2p,出口照樣在", lis.map((n) => n.textContent).slice(0, 2).join() === "tr.means.1,tr.means.2p" && lis[lis.length - 1].textContent === "tr.means.cloud tr.means.cloudGo"); }
   { const w = world({ money: "real", env: "cloud", awake: true }), lis = w.body.all().filter((n) => n.tag === "li");
@@ -113,7 +122,7 @@ function world(o) {
     // 統一(這台電腦、設計師裁定):完成頁那兩句說明搬過來——常駐「同月份分不清」取代三種加密口吻,細節多一條夜盤;三種帳本狀態都一樣
     ok("統一 · 真錢:常駐 tr.keep.pres(不是 tr.keep.own*)、細節多夜盤那一條;pres 只有這台電腦且 venue 是統一才傳(雲端不接統一)", ["none", "built", undefined].every((b) => flat({ real: true, own: true, pres: true, book: b, venue: "統一期貨" }).indexOf("tr.keep.pres / ") === 0)
       && flat({ real: true, own: true, pres: true, tw: true, venue: "統一期貨" }) === "tr.keep.pres / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.twStop|tr.means.presNight"
-      && /pres: !cloud && trVenueId\(\) === "president" \}\);/.test(trade));
+      && /pres: !cloud && trVenueId\(\) === "president", win: window\.blave\.platform === "win32" \}\);/.test(trade));
     // 台灣期貨券商沒有券商端停損單型(統一 place_stop_order 是 NotImplementedError、群益同樣沒做):「交易所端停損單建議掛上」在那裡是假的,換成「停損是這台電腦算的、睡著沒保護」
     const TW = new Function(fn(trade, "trTwBroker") + "; return trTwBroker;")();
     ok("統一 · 真錢:第 4 點是 tr.means.twStop(帶券商名)、不出 tr.means.4", flat({ real: true, own: true, pres: true, tw: true, venue: "統一期貨" }).indexOf("tr.means.4") < 0
@@ -121,6 +130,9 @@ function world(o) {
     ok("群益 · 真錢:同樣 twStop、不出 tr.means.4(靠 venue 判斷,不是只看 pres)", flat({ real: true, own: true, tw: true, venue: "群益" }) === "tr.keep.own / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.twStop");
     ok("防睡開著(awake)· 模擬:第 1、2 點換成閒置不睡的那組(tr.means.1a / 2pa),第 3 點照舊", flat({ awake: true, paper: true, own: true, venue: "" }) === " / tr.det.local:tr.means.1a|tr.means.2pa|tr.means.3");
     ok("防睡開著 · 真錢:tr.means.1a / 2a,交易所停損單照舊排第 4", flat({ awake: true, real: true, own: true, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1a|tr.means.2a|tr.means.3|tr.means.4");
+    ok("防睡開著 · Mac:第 1 點是共用的 tr.means.1a(不出「筆電要接著電源」)", flat({ awake: true, win: false, real: true, own: true, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1a|tr.means.2a|tr.means.3|tr.means.4");
+    ok("防睡開著 · Windows:第 1 點換成 tr.means.1aWin(接電源限定),其餘照舊", flat({ awake: true, win: true, real: true, own: true, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1aWin|tr.means.2a|tr.means.3|tr.means.4");
+    ok("防睡關著 · Windows:照舊版 tr.means.1(1aWin 只在開著時)", flat({ awake: false, win: true, paper: true, own: true, venue: "" }) === " / tr.det.local:tr.means.1|tr.means.2p|tr.means.3");
     ok("防睡開著 · 雲端:不受影響(主機不靠這台電腦)", flat({ awake: true, cloud: true, real: true, own: true, v: { h: "0.9", m: "50" } }) === flat({ cloud: true, real: true, own: true, v: { h: "0.9", m: "50" } }));
     ok("加密交易所 · 真錢:照舊 tr.means.4、不出 twStop", flat({ real: true, own: true, tw: false, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.4");
     ok("tw 旗標從既有 venue id 判:capital / president 都算,其餘不算;call site 用 trTwBroker(trVenueId())", TW("capital") && TW("president") && !TW("binance") && !TW("paper") && !TW(null)

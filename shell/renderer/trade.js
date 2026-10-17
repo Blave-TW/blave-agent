@@ -2409,7 +2409,7 @@ function trStartNotes(o) {
   } else {
     // awake = 設定 › 一般「自動下單時不讓電腦睡」開著:閒置不會睡,停的只剩闔蓋、沒電、手動睡眠、關機、結束 Blave;關著照舊版
     const a = o.awake ? "a" : "";
-    items.push(t("tr.means.1" + a), o.paper ? t("tr.means.2p" + a) : t("tr.means.2" + a, { venue: o.venue }), t("tr.means.3"));
+    items.push(t(o.awake && o.win ? "tr.means.1aWin" : "tr.means.1" + a), o.paper ? t("tr.means.2p" + a) : t("tr.means.2" + a, { venue: o.venue }), t("tr.means.3"));
     // 台灣期貨券商(群益／統一)沒有券商端停損單型(lib/order_president place_stop_order 是 NotImplementedError):「建議掛上」那句在那裡是假的
     if (o.real) items.push(o.tw ? t("tr.means.twStop", { venue: o.venue }) : t("tr.means.4"));
     if (o.pres) items.push(t("tr.means.presNight"));   // 台指期夜盤也會下單、電腦要一直開著
@@ -2441,7 +2441,7 @@ function trAskStart(opener, presOk) {
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
   const recomputing = trRecomputing(r), rkS = trRestartKind(r);
-  const notes = trStartNotes({ awake: typeof AWAKE === "undefined" || AWAKE !== false, cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, mo: cloud && planMo(), venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), tw: trTwBroker(trVenueId()), pres: !cloud && trVenueId() === "president" });
+  const notes = trStartNotes({ awake: typeof AWAKE === "undefined" || AWAKE !== false, cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, mo: cloud && planMo(), venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), tw: trTwBroker(trVenueId()), pres: !cloud && trVenueId() === "president", win: window.blave.platform === "win32" });
   if (!cloud) notes.details[notes.details.length - 1].items.push(trAwakeCloudGo());   // 要 24 小時跑:去雲端那一袋(K4)
   const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
   const money = real ? "Real" : "";
