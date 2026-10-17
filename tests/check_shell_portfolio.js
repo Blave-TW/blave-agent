@@ -156,6 +156,11 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     ok("兩支策略一支沒價格:整列照舊寫 TWD,不拿有價格的那支算張數", half.tw && half.tw.text === "+3,105,000 TWD", J(half.tds.map((c) => c.textContent)));
     ok("現貨 Type C 負權重當 0:只算做多那支(1,600,000 ÷ 800 = 2 張)", shortC.tw && shortC.tw.text === 'po.twLots {"n":"2"}' && shortC.tw.kids.some((k) => k.text === "1,600,000 TWD"), J(shortC.tds.map((c) => c.textContent)));
     ok("混加密:台股列照寫張數,加密列不動(+500)", mix.tw && mix.tw.text === 'po.twLots {"n":"2"}' && mix.tds.some((c) => c.textContent === "+500"), J(mix.tds.map((c) => c.textContent)));
+    const keepTR = ctx.TR; ctx.TR = bag({ paper: V }, { can_paper_twstock: true });
+    // P1-2:還沒算出訊號的台股列(沒有 state)key 是 2330@spot,要對得上 notYet,寫「—」不寫 0
+    const py = twRun({ tw: 500000 }, {}), pyc = py.tds.find((c) => c.textContent === "—");
+    ok("模擬交易:還沒有 state 的台股列寫「—」(tr.sigNotYet),不是 0", py.tds.length === 1 && !!pyc && pyc.title === "tr.sigNotYet", J(py.tds.map((c) => c.textContent)));
+    ctx.TR = keepTR;
   }
   ctx.TR = bag({ binance: V }); ctx.BOX = null; ctx.DIRECT = 0;
   vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);

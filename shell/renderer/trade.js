@@ -553,22 +553,25 @@ function trSignalText(pos, tc) {
 /* 部位表「N 支策略」拆解(§2.2):跟 trClientTargets 同一套算法,但逐支留著,不只留加總。只算金額 > 0 的策略。
    回 { 標的 key: [{ name, amount, x, v, w }] }(x = 訊號或權重、v = 貢獻、w = 是不是投資組合的權重) */
 function trContribs(amounts, states, contracts) {
-  const out = {}, add = (k, row) => { (out[k] = out[k] || []).push(row); };
+  const out = {}, add = (k, row) => { (out[k] = out[k] || []).push(row); }, paperTw = trPaperTwNow();
   Object.keys(amounts || {}).forEach((n) => {
     const a = Number(amounts[n]) || 0, s = (states || {})[n];
     if (!(a > 0) || !s) return;
     if (s.weights && typeof s.weights === "object") {
       Object.keys(s.weights).forEach((sym) => {
         let w = Number(s.weights[sym]); if (!isFinite(w)) w = 0;
-        if (s.market === "spot" && w < 0) w = 0;
+        const spot = s.market === "spot" || trTwCash(sym, paperTw);
+        if (spot && w < 0) w = 0;
         if (!w) return;   // 權重 0 的候選不是持有(units spec §8.3):上表「N 檔」與下表列數同一個篩選
-        add(trCanonSym(sym) + (s.market === "spot" ? "@spot" : ""), { name: n, amount: a, x: w, v: a * w, w: true });
+        add(trCanonSym(sym) + (spot ? "@spot" : ""), { name: n, amount: a, x: w, v: a * w, w: true });
       });
       return;
     }
     if (!s.symbol) return;
-    const pos = typeof s.position === "number" ? s.position : 0;
-    add(trCanonSym(trEffSym(n, s.symbol, contracts)) + (s.market === "spot" ? "@spot" : ""), { name: n, amount: a, x: pos, v: a * pos, w: false, notYet: s.notYet === true });
+    const sym = trCanonSym(trEffSym(n, s.symbol, contracts)), cash = trTwCash(sym, paperTw);
+    let pos = typeof s.position === "number" ? s.position : 0;
+    if (cash && pos < 0) pos = 0;
+    add(sym + (s.market === "spot" || cash ? "@spot" : ""), { name: n, amount: a, x: pos, v: a * pos, w: false, notYet: s.notYet === true });
   });
   return out;
 }
@@ -886,13 +889,14 @@ function trSigned(p) {
   if (p && (p.side === "short" || p.side === "sell")) return -size;
   return 0;
 }
+// 模擬交易的台股(機器的 lib 回報 can_paper_twstock):現股帳戶——不管 MARKET 一律 @spot、每支策略自己的空頭壓 0 再加總,不抵掉別支的多單
+// (同 lib/portfolio.aggregate_portfolio 的 _paper_tw_market 與空頭歸零;網頁 pfClientTargets 同一條)。照目標分列的地方都要用同一條,key 才對得上
+function trPaperTwNow() { return typeof trVenueId === "function" && typeof PAPER !== "undefined" && trVenueId() === PAPER && typeof trPaperTwOk === "function" && trPaperTwOk(); }
+function trTwCash(sym, paperTw) { return !!paperTw && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
 function trClientTargets(amounts, states, contracts) {
   const out = {};
-  // 模擬交易的台股(機器的 lib 回報 can_paper_twstock):現股帳戶——一律 @spot、每支策略自己的空頭壓 0 再加總,不抵掉別支的多單
-  // (同 lib/portfolio.aggregate_portfolio 的 _paper_tw_market 與空頭歸零;網頁 pfClientTargets 同一條)
-  const paperTw = typeof trVenueId === "function" && typeof PAPER !== "undefined" && trVenueId() === PAPER && typeof trPaperTwOk === "function" && trPaperTwOk();
-  const twCash = (sym) => paperTw && TR_TWSTOCK_RE.test(trCanonSym(sym));
+  const paperTw = trPaperTwNow(), twCash = (sym) => trTwCash(sym, paperTw);
   Object.keys(amounts || {}).forEach((n) => {
     const s = (states || {})[n];
     // 投資組合(Type C,lib/runner.typec_live_state):每個資產 金額 × 權重,現貨的負權重壓 0(同 lib/portfolio.aggregate_portfolio)
@@ -2557,13 +2561,13 @@ function trWaitStranded(r) {
   if (!trHasAccount(r) || trFirstReadPending(r)) return 0;
   const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), contracts = trContracts();
   const target = trClientTargets(stored, st2, contracts), bk = trBook(r, target), vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {};
-  const keys = new Set(), notYet = new Set();
+  const keys = new Set(), notYet = new Set(), paperTw = trPaperTwNow();
   Object.keys(stored).forEach((n) => {
     const s = st2[n];
     if (!(Number(stored[n]) > 0) || !s) return;
-    if (s.weights && typeof s.weights === "object") { Object.keys(s.weights).forEach((sym) => keys.add(trCanonSym(sym) + (s.market === "spot" ? "@spot" : ""))); return; }
+    if (s.weights && typeof s.weights === "object") { Object.keys(s.weights).forEach((sym) => keys.add(trCanonSym(sym) + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : ""))); return; }
     if (!s.symbol) return;
-    const k = trCanonSym(trEffSym(n, s.symbol, contracts)) + (s.market === "spot" ? "@spot" : "");
+    const sym = trCanonSym(trEffSym(n, s.symbol, contracts)), k = sym + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : "");
     keys.add(k); if (s.notYet === true) notYet.add(k);
   });
   let n = 0;
@@ -3137,7 +3141,7 @@ function trAmountTable(names, stored, states) {
       const tgt = trEl("td", "n pos");
       const pos = typeof st.position === "number" ? st.position : 0;
       // 最小進場額:機器端只在門檻大於平台那顆 10 時才回報;填得比它小就永遠不會進場,而且完全靜音
-      const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" ? "@spot" : "")] : null;
+      const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" || trTwCash(sym, trPaperTwNow()) ? "@spot" : "")] : null;
       const gate = g0 && typeof g0.entry_usd === "number" ? g0.entry_usd : g0 && g0.side !== "reduce" && typeof g0.usd === "number" ? g0.usd : null;
       let gateRow = null;
       if (gate != null && !txf) {   // 口數列不掛(同網頁:門檻是錢,這一格是口)
@@ -3222,7 +3226,7 @@ function trStratHeld(n) {
   if (trVenueIds(r).some((id) => { const e = trLiveEntry(r, id); return !!e && e.ok === false; })) return null;
   const at = r.account ? trMs(r.account.read_at) : null; if (at != null && Date.now() - at > 6 * 60 * 1000) return null;
   const stored = trStored() || {}, st2 = poPartStates(stored, st), bk = trBook(r, trClientTargets(stored, st2, trContracts()));
-  const keyOf = (m) => { const q = st2[m]; return q && q.symbol && !q.weights ? trCanonSym(trEffSym(m, q.symbol, trContracts())) + (q.market === "spot" ? "@spot" : "") : null; };
+  const paperTw = trPaperTwNow(), keyOf = (m) => { const q = st2[m]; if (!q || !q.symbol || q.weights) return null; const y = trCanonSym(trEffSym(m, q.symbol, trContracts())); return y + (q.market === "spot" || trTwCash(y, paperTw) ? "@spot" : ""); };
   const key = keyOf(n);
   if (Object.keys(stored).some((m) => m !== n && keyOf(m) === key)) return null;
   if (bk.mine[key]) return true;
@@ -3509,7 +3513,8 @@ function poSigTable(r, stored, states, mode) {
   // 沒有任何金額、也沒有要平、沒有策略外的部位:整段不出(連標題都不印;自動下單頁由原因行那條連結當出口)。下單頁「選了策略、金額全 0」照畫,目標 0 灰
   if (!((trade ? picked : fundedN) && (syms.length || waiting.length)) && !extra.length && !outside.length) return frag;
   const showPlan = trade ? picked : true;
-  const namesOf = {}; Object.keys(stored).forEach((n) => { const s = st2[n]; if (!s || !s.symbol || s.weights) return; const k = trCanonSym(trEffSym(n, s.symbol, trContracts())) + (s.market === "spot" ? "@spot" : ""); (namesOf[k] = namesOf[k] || []).push(n); });
+  const paperTw = trPaperTwNow(), namesOf = {};
+  Object.keys(stored).forEach((n) => { const s = st2[n]; if (!s || !s.symbol || s.weights) return; const sym = trCanonSym(trEffSym(n, s.symbol, trContracts())), k = sym + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : ""); (namesOf[k] = namesOf[k] || []).push(n); });
   const vid = trVenueId(), vk = trVenueKind(vid), covered = (sym) => recon && trTradesSym(vk, sym);
   const hs = envHeadState(TR.st, Date.now()), running = hs === "running" || hs === "unconfirmed";
   const det = recon ? trPosDetail(r) : {}, detRows = [];   // 持倉細節(均價、未實現、保證金、槓桿):帳上不是 0 的列底下一行小字
