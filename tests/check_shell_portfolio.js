@@ -254,6 +254,12 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     ok("補齊說明:BTC 目標 500、帳上 400 → 「會買進 BTCUSDT 100 USDT」;台股(交易所不交易)不列", /tr\.opt\.catchWill \{"side":"tr\.opt\.buy","sym":"BTCUSDT","n":"100 USDT"\}/.test(w) && !/2330/.test(w), w);
     ctx.TR.st.report.config.amounts.btc = 400;   // 目標 = 帳上:差額 0 → 不講會送什麼單(沒有單)
     ok("補齊說明:差額為 0(目標 400、帳上 400)→ 不出「會買進…」;有差額時才出", vm.runInContext("trCatchWill(TR.st.report)", ctx) === null);
+    // 0.1.27 模擬交易台股(can_paper_twstock):差額是台幣,照標的寫 TWD,BTC 那筆照舊帳戶幣
+    { const PV = { paper: V }; ctx.TR = bag(PV, { can_paper_twstock: true });
+      ctx.TR.st.report.account.venues = { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } };
+      const pw = vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx) || "";
+      ok("補齊說明(模擬交易台股):2330 寫「100,000 TWD」、BTC 寫 USDT,不把台股標成 USDT",
+        /"sym":"2330","n":"100,000 TWD"/.test(pw) && /"sym":"BTCUSDT","n":"500 USDT"/.test(pw) && !/"sym":"2330","n":"[^"]*USDT"/.test(pw), pw); }
     ok("補齊說明接在 catch 選項的 desc 後面;舊 lib 單一鈕那條接在 lines 最後", /desc: t\("tr\.opt\.catchDesc" \+ money, \{ how: trCatchHow\(r, real\) \}\) \+ \(will \? " " \+ will : ""\)/.test(src) && /\.concat\(\[t\("tr\.startWarn1"\)\]\)\.concat\(will \? \[will\] : \[\]\)/.test(src)); }
   // runtime 10-14:解除綁定保留成員與金額、只清路由。解除 → 重新綁定 → 頁面是 Z(路由空的)→ 存一次 → 可以啟動
   { const rep = (venues, ex) => ({ venues, config: { amounts: { btc: 500, tw: 0 }, exchanges: ex }, states: { btc: { symbol: "BTCUSDT", position: 1 } }, account: { read_at: Math.floor(Date.now() / 1000), venues: {} } });

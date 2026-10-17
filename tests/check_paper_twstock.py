@@ -250,21 +250,66 @@ print("== tw_session_open: 09:00–13:30 Taipei on a trading day")
 TPE = timezone(timedelta(hours=8))
 ts = lambda *a: datetime(*a, tzinfo=TPE).timestamp()  # noqa: E731
 verdict = [True]
-data.is_tw_trading_day = lambda d, h: verdict[0]
-paper_data._tw_day_cache.clear()
+fetches = []
+
+
+def fake_day(d, h, **kw):
+    fetches.append((d, kw))
+    if isinstance(verdict[0], Exception):
+        raise verdict[0]
+    return verdict[0]
+
+
+def fresh(process_only=False):
+    """A new process: empty memory cache; process_only=False also wipes the disk copy."""
+    paper_data._tw_day_cache.clear()
+    if not process_only and os.path.exists(paper_data.TW_DAY_PATH):
+        os.remove(paper_data.TW_DAY_PATH)
+
+
+data.is_tw_trading_day = fake_day
+fresh()
 op = paper_data.tw_session_open
 check([op(ENV, ts(2026, 10, 19, 8, 59)), op(ENV, ts(2026, 10, 19, 9, 0)), op(ENV, ts(2026, 10, 19, 13, 29)),
        op(ENV, ts(2026, 10, 19, 13, 30)), op(ENV, ts(2026, 10, 18, 10, 0))] == [False, True, True, False, False],
       "Mon 08:59 shut, 09:00 open, 13:29 open, 13:30 shut, Sunday shut")
+check(fetches and fetches[0][1] == {"timeout": 3, "max_retries": 1}, f"one short fetch, no retry ({fetches[:1]})")
 verdict[0] = False
-paper_data._tw_day_cache.clear()
+fresh()
 check(op(ENV, ts(2026, 10, 19, 10, 0)) is False, "a holiday in the table is shut")
 verdict[0] = None
-paper_data._tw_day_cache.clear()
+fresh()
 check(op(ENV, ts(2026, 10, 19, 10, 0)) is True, "table unknown (no API plan): the weekday decides")
-data.is_tw_trading_day = lambda d, h: (_ for _ in ()).throw(data.DataAccessError("no plan"))
-paper_data._tw_day_cache.clear()
+verdict[0] = data.DataAccessError("no plan")
+fresh()
 check(op(ENV, ts(2026, 10, 19, 10, 0)) is True, "table refused: the weekday decides")
+
+print("== B3: the day's verdict is on disk — a fresh process (the account reader) does not refetch")
+verdict[0] = False
+fresh()
+fetches.clear()
+op(ENV, ts(2026, 10, 19, 10, 0))
+fresh(process_only=True)
+check(op(ENV, ts(2026, 10, 19, 11, 0)) is False and len(fetches) == 1, f"known verdict reused across processes ({len(fetches)} fetch)")
+verdict[0] = OSError("api down")
+fresh()
+fetches.clear()
+check(op(ENV, ts(2026, 10, 20, 10, 0)) is True, "api down: the weekday rule")
+fresh(process_only=True)
+op(ENV, ts(2026, 10, 20, 10, 1))
+check(len(fetches) == 1, f"a failed fetch is not retried by the next process inside {paper_data._TW_DAY_RETRY_S}s ({len(fetches)})")
+d = json.load(open(paper_data.TW_DAY_PATH))
+d["checked_at"] -= paper_data._TW_DAY_RETRY_S + 1
+json.dump(d, open(paper_data.TW_DAY_PATH, "w"))
+fresh(process_only=True)
+op(ENV, ts(2026, 10, 20, 10, 15))
+check(len(fetches) == 2, "…and is retried once that window passes")
+verdict[0] = True
+fresh(process_only=True)
+fetches.clear()
+op(ENV, ts(2026, 10, 21, 10, 0))
+check(len(fetches) == 1 and json.load(open(paper_data.TW_DAY_PATH))["date"] == "2026-10-21", "a new day fetches again")
+fresh()
 
 print("== reconcile holds paper TW keys while shut")
 from lib import portfolio  # noqa: E402
@@ -292,11 +337,32 @@ json.dump({"amounts": {"tsmc_a": 50000, "tsmc_b": 30000, "btc_s": 1000, "tw_bask
            "exchanges": {"tsmc_a": "paper", "tsmc_b": "paper", "btc_s": "paper"}},
           open("manager/portfolio_config.json", "w"))
 tg = pf.aggregate_portfolio()
-check(tg["2330"]["side"] == "long" and tg["2330"]["size"] == 30000,
-      f"2330: −50,000 short is flat, +30,000 long stays ({tg['2330']['side']} {tg['2330']['size']})")
-check(tg["BTCUSDT"]["side"] == "short", "BTC short untouched")
+check("2330" not in tg and tg["2330@spot"]["market"] == "spot",
+      "a TW Type A (MARKET swap) on paper is held as cash shares: key 2330@spot")
+check(tg["2330@spot"]["side"] == "long" and tg["2330@spot"]["size"] == 30000,
+      f"2330: −50,000 short is flat, +30,000 long stays ({tg['2330@spot']['side']} {tg['2330@spot']['size']})")
+check(tg["BTCUSDT"]["side"] == "short" and tg["BTCUSDT"]["market"] == "swap", "BTC short untouched, still swap")
+check("2330" in pf.spot_symbols() and "BTCUSDT" not in pf.spot_symbols(), "the spot scope reads the 2330 shares")
+check(pf._strategy_key("tsmc_b") == "2330@spot", "a strategy's book key follows it")
+json.dump({"amounts": {"tsmc_b": 30000}, "exchanges": {"tsmc_b": "binance"}}, open("manager/portfolio_config.json", "w"))
+check("2330" in pf.aggregate_portfolio(), "another venue keeps the strategy's own MARKET")
 json.dump({"amounts": {"tsmc_a": 50000}, "exchanges": {"tsmc_a": "paper"}}, open("manager/portfolio_config.json", "w"))
-check(pf.aggregate_portfolio()["2330"]["side"] is None, "a lone short signal is a flat target (close)")
+check(pf.aggregate_portfolio()["2330@spot"]["side"] is None, "a lone short signal is a flat target (close)")
+print("== spot pays cash: a TW buy beyond the cash is refused (no leverage)")
+SESSION[0] = True
+mark(1000)
+msg = refused(order_paper.place_spot_market_order, ENV, "2330", "buy", quote_qty=snap()["cash"] * R * 2)
+check(msg and "insufficient paper cash" in msg, f"2× the cash in TWD is refused ({msg})")
+print("== item 5: a 0-share skip is audited on every order path")
+audits0 = []
+real_audit = order_paper.guard.audit
+order_paper.guard.audit = lambda ev, **f: audits0.append((ev, f.get("note")))
+order_paper.place_market_order(ENV, "2330", "long", 0.4)
+order_paper.place_limit_order(ENV, "2330", "long", 0.4, 990)
+order_paper.place_spot_limit_order(ENV, "2330", "buy", 0.4, 990)
+order_paper.guard.audit = real_audit
+check(sum(1 for ev, n in audits0 if ev == "order_ok" and n == "under one share") == 3,
+      f"market, limit and spot limit each write order_ok 'under one share' ({audits0})")
 os.remove("strategies/tsmc_a/state.json")
 os.remove("manager/portfolio_config.json")
 
@@ -305,11 +371,11 @@ import ast  # noqa: E402
 fsrc = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
 fn = next(n for n in ast.parse(fsrc).body if isinstance(n, ast.FunctionDef) and n.name == "_defer_tw_close")
 recorded = []
-ns = {"logging": __import__("logging"), "_record_order_error": lambda *a: recorded.append(a)}
+ns = {"logging": __import__("logging"), "_record_order_error": lambda *a: recorded.append(a), "guard": order_paper.guard}
 exec(compile(ast.Module([fn], []), "flatten._defer_tw_close", "exec"), ns)
-check(ns["_defer_tw_close"]("paper", "2330", RuntimeError("boom")) is False and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
+check(ns["_defer_tw_close"]("paper", "2330", RuntimeError("boom")) is None and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
       "any other close error stays an error")
-check(ns["_defer_tw_close"]("paper", "2330", order_paper.PaperMarketClosed("shut")) is True
+check(ns["_defer_tw_close"]("paper", "2330", order_paper.PaperMarketClosed("shut")) == "deferred"
       and json.load(open(pf._PAPER_TW_CLOSE_PATH))["keys"] == ["2330"]
       and recorded and recorded[-1][3] == {"kind": "market_closed_deferred"}, "a market-closed close is booked for later and said")
 ns["_defer_tw_close"]("paper", "2454@spot", order_paper.PaperMarketClosed("shut"))
@@ -321,8 +387,73 @@ check(pf._paper_tw_deferred({}, True) == set() and not os.path.exists(pf._PAPER_
 pf.defer_paper_tw_close(["2330"])
 check(pf._paper_tw_deferred(held, False) == set() and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
       "resumed (no HALT) before the open: the deferral is dropped, the strategies rule")
-check("deferred = _paper_tw_deferred(diff_actual, halted_at_start)" in open(os.path.join(ROOT, "lib", "portfolio.py")).read(),
-      "reconcile drops deferred keys from the target before the session hold")
+check("deferred = _paper_tw_deferred(diff_actual_full, halted_at_start)" in open(os.path.join(ROOT, "lib", "portfolio.py")).read(),
+      "reconcile judges deferred keys on the unfiltered book")
+order_paper.guard.restart_stopped = lambda: True
+recorded.clear()
+check(ns["_defer_tw_close"]("paper", "2330@spot", order_paper.PaperMarketClosed("shut")) == "refused"
+      and not os.path.exists(pf._PAPER_TW_CLOSE_PATH) and "再按一次全部平倉" in recorded[-1][2],
+      f"B2: stopped after a restart — not deferred, said as an error ({recorded[-1][2] if recorded else None})")
+order_paper.guard.restart_stopped = lambda: False
+
+print("== B1: 「等新訊號」start, signal unchanged, close-all after the close → closed at the open")
+os.makedirs("state", exist_ok=True)
+json.dump({"symbol": "2330", "position": 1}, open("strategies/tsmc_b/state.json", "w"))
+json.dump({"amounts": {"tsmc_b": 30000}, "exchanges": {"tsmc_b": "paper"}, "self_ledger": False},
+          open("manager/portfolio_config.json", "w"))
+json.dump({"tsmc_b": 1.0}, open("state/signal_gate.json", "w"))
+open("state/HALT", "w").write("close_all")
+pf.defer_paper_tw_close(["2330@spot"])
+paper_data.tw_session_open = lambda env=None, now=None: True
+sent = []
+
+
+def place(symbol, diff, spec, reduce_only=False, **k):
+    sent.append((symbol, diff, reduce_only))
+    return {"executed_qty": abs(diff) / 1000, "avg_price": 1000}
+
+
+pf.reconcile(lambda: {"2330@spot": {"side": "long", "size": 30000.0}}, place)
+check(sent and sent[0][0] == "2330@spot" and sent[0][1] < 0,
+      f"the gated 2330 is closed in the first round after the open ({sent})")
+pf.reconcile(lambda: {}, place)
+check(not os.path.exists(pf._PAPER_TW_CLOSE_PATH), "and the deferral clears once flat")
+os.remove("state/HALT")
+for f in ("state/signal_gate.json", "manager/portfolio_config.json", "strategies/tsmc_b/state.json"):
+    os.path.exists(f) and os.remove(f)
+
+print("== B5: the reconcile gate for a paper TW stock is TWD-scaled and at least one share")
+from lib import execute as ex  # noqa: E402
+real_detect = venue_wiring.detect_venue
+venue_wiring.detect_venue = lambda env: "paper"
+rate(R)
+mark(1000)
+paper_data._price_cache["2330"] = (time.time(), 1000.0, "tsmc_a")
+check(ex._venue_sizes_usd("2330@spot", 10) == (1050.0, 1000.0), f"2330 at 1,000: gate 1.05 shares = 1,050 TWD ({ex._venue_sizes_usd('2330@spot', 10)})")
+paper_data._price_cache["2330"] = (time.time(), 8.0, "tsmc_a")
+check(ex._venue_sizes_usd("2330@spot", 10) == (320.0, 8.0), "an 8 TWD stock: the 10 USD floor in TWD (320), not 10")
+check(ex._venue_sizes_usd("BTCUSDT@spot", 10) == (10, 0.0), "crypto spot keeps the flat 10")
+paper_data._price_cache["2330"] = (time.time(), 1000.0, "tsmc_a")
+gate = lambda sym, reduce_only=False: ex._venue_sizes_usd(sym, 10)[0]  # noqa: E731
+row = {"side": "long", "size": 30500.0, "exchange": "paper", "asset_spec": None, "market": "spot", "contributors": [], "gated": False}
+held = {"2330@spot": {"side": "long", "size": 30000.0}}
+check(pf.compute_diff({"2330@spot": row}, held, 10) and not pf.compute_diff({"2330@spot": row}, held, gate),
+      "a 500 TWD gap (half a share): sent every round on the flat 10, held under the share gate")
+row["size"] = 31200.0
+check(pf.compute_diff({"2330@spot": row}, held, gate), "a 1,200 TWD gap (over one share) still trades")
+from manager import reconciler as rc  # noqa: E402
+rc._min_order_gate.clear()
+check(rc._symbol_threshold("2330@spot", True) == 1050.0 and rc._symbol_threshold("2330@spot") == 1050.0,
+      f"partial reduce gate = entry gate ≈ 1.05 shares ({rc._symbol_threshold('2330@spot', True)}), not half a share")
+check(rc._close_gate("2330@spot") == rc.THRESHOLD, "a whole-position close keeps its own gate (untouched)")
+check(rc._symbol_threshold("BTCUSDT@spot", True) == rc.THRESHOLD, "crypto spot reduce gate unchanged")
+row["size"] = 29500.0
+check(not pf.compute_diff({"2330@spot": row}, held, rc._symbol_threshold),
+      "a 500 TWD shrink (half a share) is left alone — no floored-to-0 order and audit each round")
+row["size"] = 0.0
+check(pf.compute_diff({"2330@spot": dict(row, side=None)}, held, rc._symbol_threshold), "a full close still goes")
+rc._min_order_gate.clear()
+venue_wiring.detect_venue = real_detect
 
 print("== Type C components priced without the basket's fetch_data")
 calls.clear()

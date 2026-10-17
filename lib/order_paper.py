@@ -916,6 +916,7 @@ def place_contract_market_order(env, symbol, direction, lots, contract_value,
             _check_session(env, sym)
             signed = _tw_signed(led, sym, signed)
             if signed == 0:
+                guard.audit("order_ok", order_id="", note="under one share", **fields)
                 return False
             refused_open = 0.0
             try:
@@ -983,6 +984,7 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
                 if not (reduce_only and abs(float(qty) - abs(q0)) < 1e-9):
                     qty = math.floor(float(qty) + 1e-9)
                 if qty <= 0:
+                    guard.audit("order_ok", order_id="", note="under one share", **fields)
                     return False
             marks = {}
             mark = _price(env, sym, marks)
@@ -1114,8 +1116,8 @@ def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
 
 def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
                             client_order_id=None):
-    """Confirmed simulated spot market — BUY sized in quote (USDT), SELL in
-    base, at the current price. Below zero → False."""
+    """Confirmed simulated spot market — BUY sized in quote (USDT; TWD for a TW
+    share), SELL in base, at the current price. Below zero → False."""
     sym = str(symbol).upper()
     side = str(side).lower()
     if side not in ("buy", "sell"):
@@ -1180,6 +1182,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
             if is_tw_stock(sym):
                 base_qty = math.floor(float(base_qty) + 1e-9)
                 if base_qty <= 0:
+                    guard.audit("order_ok", order_id="", note="under one share", **fields)
                     return False
             if side == "buy" and led["cash"] < float(base_qty) * px * (1 + SPOT_FEE) / _spot_fx(env, base):
                 raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash to rest a {sym} buy"))

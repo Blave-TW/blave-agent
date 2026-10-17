@@ -882,22 +882,29 @@ function trSigned(p) {
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
 function trClientTargets(amounts, states, contracts) {
   const out = {};
+  // 模擬交易的台股(機器的 lib 回報 can_paper_twstock):現股帳戶——一律 @spot、每支策略自己的空頭壓 0 再加總,不抵掉別支的多單
+  // (同 lib/portfolio.aggregate_portfolio 的 _paper_tw_market 與空頭歸零;網頁 pfClientTargets 同一條)
+  const paperTw = typeof trVenueId === "function" && typeof PAPER !== "undefined" && trVenueId() === PAPER && typeof trPaperTwOk === "function" && trPaperTwOk();
+  const twCash = (sym) => paperTw && TR_TWSTOCK_RE.test(trCanonSym(sym));
   Object.keys(amounts || {}).forEach((n) => {
     const s = (states || {})[n];
     // 投資組合(Type C,lib/runner.typec_live_state):每個資產 金額 × 權重,現貨的負權重壓 0(同 lib/portfolio.aggregate_portfolio)
     if (s && s.weights && typeof s.weights === "object") {
       Object.keys(s.weights).forEach((sym) => {
         let w = Number(s.weights[sym]); if (!isFinite(w)) w = 0;
-        if (s.market === "spot" && w < 0) w = 0;
+        const spot = s.market === "spot" || twCash(sym);
+        if (spot && w < 0) w = 0;
         if (!w) return;   // 0 權重的候選不開一列目標 0(§8.3);帳戶上還有部位時,那一列由「實際」帶出來
-        const k = trCanonSym(sym) + (s.market === "spot" ? "@spot" : "");
+        const k = trCanonSym(sym) + (spot ? "@spot" : "");
         out[k] = (out[k] || 0) + amounts[n] * w;
       });
       return;
     }
     if (!s || !s.symbol) return;
-    const pos = typeof s.position === "number" ? s.position : 0;
-    const k = trCanonSym(trEffSym(n, s.symbol, contracts)) + (s.market === "spot" ? "@spot" : "");
+    let pos = typeof s.position === "number" ? s.position : 0;
+    const sym = trCanonSym(trEffSym(n, s.symbol, contracts)), cash = twCash(sym);
+    if (cash && pos < 0) pos = 0;
+    const k = sym + (s.market === "spot" || cash ? "@spot" : "");
     out[k] = (out[k] || 0) + amounts[n] * pos;
   });
   Object.keys(out).forEach((k) => { if (/@spot$/.test(k) && out[k] < 0) out[k] = 0; });
@@ -2481,7 +2488,9 @@ function trCatchWill(r) {
     const spec = trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))), raw = target[sym] || 0, ts = spec ? trLotsTarget(raw).lots : raw, as = bk.mine[sym] || 0, d = ts - as;
     const gs = spec ? null : trGateSide(gates[sym], ts, as);
     if (spec ? !Math.round(Math.abs(d)) : Math.abs(d) < (gs ? gs.usd : 10)) return;
-    const n = spec ? trLotsFmt(Math.abs(d)) + " " + t(trLotsKey(Math.abs(d), "tr.lotsUnit", "tr.lotUnit")) : trFmt(Math.round(Math.abs(d))) + (trUnit() ? " " + trUnit() : "");
+    // 台股的差額是台幣(模擬交易以台幣計價、帳戶幣是 USDT):照標的的幣別寫,不寫帳戶幣
+    const u = TR_TWSTOCK_RE.test(trCanonSym(sym.replace(/@spot$/, ""))) ? TR_TXF_CCY : trUnit();
+    const n = spec ? trLotsFmt(Math.abs(d)) + " " + t(trLotsKey(Math.abs(d), "tr.lotsUnit", "tr.lotUnit")) : trFmt(Math.round(Math.abs(d))) + (u ? " " + u : "");
     out.push(t("tr.opt.catchWill", { side: t(d > 0 ? "tr.opt.buy" : "tr.opt.sell"), sym: spec ? t(spec.prod) : sym.replace(/@spot$/, ""), n }));
   });
   if (!out.length) return null;

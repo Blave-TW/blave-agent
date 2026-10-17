@@ -259,6 +259,13 @@ def _seed_key(symbol, venue):
 _CURRENT = object()  # "the venue this machine trades on" — see book_venue()
 
 
+def _paper_tw_market(exchange, sym, market):
+    """A TW stock on paper is held as cash shares whatever the strategy's
+    MARKET says (Wei 10-17): spot pays the full price from cash, no leverage,
+    no short — what a real 現股 account can do."""
+    return 'spot' if exchange == 'paper' and _tw_stock(sym) else market
+
+
 def _tw_stock(sym):
     try:
         from lib.paper_data import is_tw_stock
@@ -302,6 +309,9 @@ def _paper_tw_deferred(diff_actual, halted):
     except (OSError, ValueError, AttributeError):
         keys = set()
     held = {k for k in keys if float((diff_actual.get(k) or {}).get('size') or 0) > 0}
+    if held and not halted:
+        _record_order_error(','.join(sorted(held)), 'paper',
+                            'close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單')
     if not halted or not held:
         try:
             os.remove(_PAPER_TW_CLOSE_PATH)
@@ -1099,8 +1109,10 @@ def _strategy_key(name):
             sym = None
     if not sym or not isinstance(sym, str):
         return None
-    sym = execution_symbol(name, sym.replace('-', '').upper(), load_portfolio_config())
-    return market_key(sym, strategy_market(name))
+    config = load_portfolio_config()
+    sym = execution_symbol(name, sym.replace('-', '').upper(), config)
+    return market_key(sym, _paper_tw_market((config.get('exchanges') or {}).get(name), sym,
+                                            strategy_market(name)))
 
 
 def _pending_symbols(venue):
@@ -1993,7 +2005,7 @@ def spot_symbols():
     for name, state in load_all_states().items():
         sym = (state.get('symbol') or '').replace('-', '').upper()
         if sym and exchanges.get(name) and float(amounts.get(name, 0)) != 0 \
-                and strategy_market(name) == 'spot':
+                and _paper_tw_market(exchanges.get(name), sym, strategy_market(name)) == 'spot':
             out.add(sym)
     return out
 
@@ -2405,13 +2417,14 @@ def aggregate_portfolio():
                     continue
                 if w != w:  # NaN
                     w = 0.0
-                if w < 0 and (market == 'spot' or (exchange == 'paper' and _tw_stock(sym))):
+                m = _paper_tw_market(exchange, sym, market)
+                if w < 0 and (m == 'spot' or (exchange == 'paper' and _tw_stock(sym))):
                     # this strategy's own short intent must not cancel another
                     # strategy's long on the same coin — spot cannot short, nor
                     # can a TW stock on paper (Wei 10-17: a short is a close)
                     w = 0.0
-                key = market_key(str(sym).replace('-', '').upper(), market)
-                _add(key, market, exchange, asset_spec, amount * w,
+                key = market_key(str(sym).replace('-', '').upper(), m)
+                _add(key, m, exchange, asset_spec, amount * w,
                      {'strategy': name, 'position': w, 'amount': amount,
                       'contribution': round(amount * w, 4), 'portfolio': True}, gated)
             continue
@@ -2468,7 +2481,7 @@ def aggregate_portfolio():
         # spot and swap are different inventories — same symbol, different key,
         # so a spot strategy and a perp strategy on BTCUSDT never net against
         # each other (they'd converge the WRONG account's position)
-        market = strategy_market(name)
+        market = _paper_tw_market(exchange, symbol, strategy_market(name))
         key = market_key(symbol, market)
 
         if key not in totals:
@@ -3199,6 +3212,13 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     # it's gated), and no close-on-removal against whatever the book already
     # holds. The gate lifts inside aggregate_portfolio() the moment the
     # strategy's signal changes; from that round on the symbol diffs normally.
+    # close-all deferred to the TW session (defer_paper_tw_close): judged on the
+    # unfiltered book and exempt from the gate / pending holds below — the
+    # user's explicit close outranks a wait for a new signal
+    deferred = _paper_tw_deferred(diff_actual_full, halted_at_start)
+    if deferred:
+        logging.info(f"[reconcile] close-all deferred to the TW session: {sorted(deferred)}")
+        target = {k: v for k, v in target.items() if k not in deferred}
     gated_symbols = {k for k, v in target.items() if v.get('gated')}
     full_target = target  # snapshot keeps gated rows (flagged 'gated': True)
     if gated_symbols:
@@ -3210,12 +3230,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         # a symbol whose strategy's state was unreadable when the baseline was
         # written: neither bought nor sold until resolve_pending decides it
         logging.info(f"[reconcile] waiting on an unreadable strategy's state: {sorted(pending_keys)}")
-        target = {k: v for k, v in target.items() if k not in pending_keys}
-        diff_actual = {k: v for k, v in diff_actual.items() if k not in pending_keys}
-    deferred = _paper_tw_deferred(diff_actual, halted_at_start)
-    if deferred:
-        logging.info(f"[reconcile] close-all deferred to the TW session: {sorted(deferred)}")
-        target = {k: v for k, v in target.items() if k not in deferred}
+        hold = set(pending_keys) - deferred
+        target = {k: v for k, v in target.items() if k not in hold}
+        diff_actual = {k: v for k, v in diff_actual.items() if k not in hold}
     closed_keys = _paper_tw_closed_keys(target, diff_actual)
     if closed_keys:
         logging.info(f"[reconcile] TW market closed — paper holds {sorted(closed_keys)} until the session")

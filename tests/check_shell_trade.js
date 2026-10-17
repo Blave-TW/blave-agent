@@ -239,6 +239,19 @@ ok("dirty:改回原值不算改過", trDirty(names, stored, { b: 300 }) === fals
 
 const states = { s1: { symbol: "BTC-USDT", position: 1 }, s2: { symbol: "BTCUSDT", position: -0.5 }, s3: { symbol: "ETHUSDT", position: -1, market: "spot" }, s4: { position: 1 } };
 ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbol 的跳過", J(trClientTargets({ s1: 1000, s2: 400, s3: 100, s4: 9 }, states)) === J({ BTCUSDT: 800, "ETHUSDT@spot": 0 }));
+// 0.1.27 模擬交易的台股(回報 can_paper_twstock):同網頁 pfClientTargets 與 lib/portfolio.aggregate_portfolio——一律 @spot、每支的空頭先壓 0 再加總
+{ const tw = { long: { symbol: "2330", position: 1 }, short: { symbol: "2330", position: -1 }, c: { weights: { "2454": 0.5, "2317": -0.5, BTCUSDT: -0.5 }, market: "swap" }, btc: { symbol: "BTCUSDT", position: -1 } };
+  const amt = { long: 30000, short: 50000, c: 10000, btc: 1000 };
+  globalThis.PAPER = "paper"; let vid = "paper", okTw = true;
+  globalThis.trVenueId = () => vid; globalThis.trPaperTwOk = () => okTw;
+  const on = trClientTargets(amt, tw);
+  vid = "binance"; const crypto = trClientTargets(amt, tw);
+  vid = "paper"; okTw = false; const old = trClientTargets(amt, tw);
+  delete globalThis.trVenueId; delete globalThis.trPaperTwOk; delete globalThis.PAPER;
+  const SJ = (o) => J(Object.keys(o).sort().map((k) => [k, o[k]]));
+  ok("模擬交易台股:一多 30,000 一空 50,000 → 2330@spot 30,000(空頭不抵多單);投資組合的台股負權重壓 0、加密照舊可空;別家交易所或舊 lib 照舊加總",
+    SJ(on) === SJ({ "2330@spot": 30000, "2454@spot": 5000, BTCUSDT: -6000 })
+    && SJ(crypto) === SJ({ 2330: -20000, 2454: 5000, 2317: -5000, BTCUSDT: -6000 }) && SJ(old) === SJ(crypto)); }
 { const pr = trTypeC({ weights: { BTCUSDT: 0.5, ETHUSDT: -0.3, SOLUSDT: 0 }, market: "swap" });
   ok("units §8.2/§8.3 投資組合那一列:檔數只數持有的(w' ≠ 0,universe 裡的 0 權重不算);多、空各自加總", pr && pr.n === 2 && Math.abs(pr.long - 0.5) < 1e-9 && Math.abs(pr.short - 0.3) < 1e-9 && J(pr.keys) === J(["BTCUSDT", "ETHUSDT", "SOLUSDT"]));
   ok("…現貨的負權重壓 0(同 trClientTargets)、壞權重當 0、都不算持有;單一標的策略回 null", J(trTypeC({ weights: { A: -0.5, B: 0.5, C: "x" }, market: "spot" })) === J({ n: 1, long: 0.5, short: 0, keys: ["A", "B", "C"] })
