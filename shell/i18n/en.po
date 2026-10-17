@@ -7518,6 +7518,18 @@ msgstr "Portfolio"
 msgid "po.lotsRawTip"
 msgstr "Before rounding: {n} lots"
 
+msgid "po.twLots"
+msgstr "{n} lots"
+
+msgid "po.twLot"
+msgstr "{n} lot"
+
+msgid "po.twLotsTip"
+msgstr "At the {d} close of {px}, whole lots only (1 lot = 1,000 shares; odd lots dropped)"
+
+msgid "po.twLotsTipEst"
+msgstr "Estimated at the {d} close of {px}: the close on the day the target changed wasn’t recorded. Whole lots only (1 lot = 1,000 shares; odd lots dropped)"
+
 msgid "po.sigTargets"
 msgstr "Signal positions by instrument"
 

@@ -282,7 +282,113 @@ def strategy_states():
                 states[name]["rebalance_at"] = ra if ra > 0 else None
             except (TypeError, ValueError):
                 states[name]["rebalance_at"] = None
+        states[name].update(_tw_closes(data))
     return states
+
+
+# Taiwan stock / ETF code, = shell trade.js TR_TWSTOCK_RE and lib/paper_data._TW_STOCK_RE
+_TW_STOCK_RE = re.compile(r"^\d{4,6}[A-Z]?(?:\.TWO?)?$")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TW_LOT = 1000
+
+
+def _fin(v):
+    if isinstance(v, bool):
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
+
+
+def _tw_closes(data):
+    """A state's Taiwan-stock sizing closes (lib/runner.tw_target_closes), validated:
+    {closes: {SYM: px}, close_dates: {SYM: date}, closes_est: [SYM]} or {} — only symbols with
+    both a finite positive close and a date, at most PORTFOLIO_WEIGHTS_MAX."""
+    px, dt = data.get("closes"), data.get("close_dates")
+    if not isinstance(px, dict) or not isinstance(dt, dict):
+        return {}
+    est = data.get("closes_est") if isinstance(data.get("closes_est"), list) else []
+    closes, dates = {}, {}
+    for k, v in px.items():
+        sym = str(k).upper()
+        d = dt.get(k)
+        if not _TW_STOCK_RE.match(sym) or not isinstance(d, str) or not _DATE_RE.match(d):
+            continue
+        x = _fin(v)
+        if x is None or x <= 0:
+            continue
+        closes[sym], dates[sym] = x, d
+        if len(closes) >= PORTFOLIO_WEIGHTS_MAX:
+            break
+    if not closes:
+        return {}
+    out = {"closes": closes, "close_dates": dates}
+    marked = sorted({str(k).upper() for k in est} & set(closes))
+    if marked:
+        out["closes_est"] = marked
+    return out
+
+
+def tw_lots(cfg, states):
+    """{row key: {lots, twd, price, price_date, est}} for every Taiwan-stock row of the
+    portfolio page's 「各商品的總訊號部位」 — the contract the desktop (trade.js trTwLots) and
+    the web table both follow. Row key = the table's: SYM, plus "@spot" for a spot strategy.
+      twd    = Σ amount × weight (Type C, a spot strategy's negative weight as 0) or
+               amount × position (Type A); a spot row below 0 is 0 (lib/portfolio)
+      shares = Σ amount × weight / that strategy's own close (closes[SYM], the close of the
+               round its target last changed — never re-priced while it holds)
+      lots   = sign × floor(|shares| / 1000): whole lots only, the odd lot dropped; under one
+               lot is 0
+      price  = |twd| / |shares| (one strategy: its close), price_date the newest close_dates,
+               est = any contributor's close is in closes_est (priced at a later close)
+    A row any funded contributor has no close for is left out: the page shows TWD as before."""
+    amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
+    if not isinstance(amounts, dict):
+        return {}
+    acc, broken = {}, set()
+    for name, amt in amounts.items():
+        st = states.get(name) if isinstance(name, str) else None
+        a = _fin(amt)
+        if not isinstance(st, dict) or not a:
+            continue
+        spot = st.get("market") == "spot"
+        if isinstance(st.get("weights"), dict):
+            legs = {k: _fin(w) for k, w in st["weights"].items()}
+            legs = {k: (0.0 if spot and w is not None and w < 0 else w) for k, w in legs.items()}
+        elif st.get("symbol"):
+            legs = {str(st["symbol"]).replace("-", "").upper(): _fin(st.get("position", 0))}
+        else:
+            continue
+        closes = st.get("closes") or {}
+        dates = st.get("close_dates") or {}
+        est = set(st.get("closes_est") or [])
+        for sym, w in legs.items():
+            if not _TW_STOCK_RE.match(sym) or not w:
+                continue
+            key = sym + ("@spot" if spot else "")
+            row = acc.setdefault(key, {"twd": 0.0, "shares": 0.0, "date": None, "est": False})
+            row["twd"] += a * w
+            px = closes.get(sym)
+            if not px:
+                broken.add(key)
+                continue
+            row["shares"] += a * w / px
+            row["date"] = max(row["date"] or "", dates.get(sym) or "") or None
+            row["est"] = row["est"] or sym in est
+    out = {}
+    for key, row in acc.items():
+        if key in broken:
+            continue
+        twd, shares = row["twd"], row["shares"]
+        if key.endswith("@spot") and twd < 0:
+            twd = shares = 0.0
+        lots = int(math.floor(abs(shares) / TW_LOT + 1e-9)) * (1 if shares >= 0 else -1)
+        out[key] = {"lots": lots, "twd": round(twd, 2),
+                    "price": round(abs(twd) / abs(shares), 4) if shares else None,
+                    "price_date": row["date"], "est": row["est"]}
+    return out
 
 
 def _code_hash(src_bytes):
@@ -1631,6 +1737,8 @@ def build_report():
         # picked Type C with no live weights yet: their backtest's last row, a preview the page
         # labels as such (typec_previews); never traded on
         "previews": typec_previews(cfg, states),
+        # the Taiwan-stock rows of 「各商品的總訊號部位」 in whole lots (tw_lots); display only
+        "tw_lots": tw_lots(cfg, states),
         # None = signals recomputing normally (see signals_frozen)
         "signals_frozen": signals_frozen(cfg),
         # each strategy's amount currency, None = cannot be told (strategy_quote_ccy)

@@ -245,7 +245,7 @@ Taiwan stock data (universe, batch functions, fundamental factors, lookahead-bia
 
 `lib/execute.py` — all order execution logic (state management + algo orders):
 - `from lib.execute import update_state, load_state, save_state` — state management
-- `state.json` schema: `{"position": float, "symbol": str}` — `position` is the current signal value (positive=long, negative=short, 0=flat); all deployment config (exchange, asset_spec) lives in `portfolio_config.json`, not in state
+- `state.json` schema: `{"position": float, "symbol": str}` — `position` is the current signal value (positive=long, negative=short, 0=flat); all deployment config (exchange, asset_spec) lives in `portfolio_config.json`, not in state. A Taiwan-stock target also carries `closes` / `close_dates` (and `closes_est`), written by the live tick (`lib/runner.tw_target_closes`): the unadjusted close the portfolio page sizes whole lots with, taken on the tick the target changed and carried while it holds — leave them alone, nothing trades on them
 - `from lib.execute import run_twap` — TWAP execution engine (exchange-agnostic). The reconciler's execution dispatch (below) drives it automatically; call it directly only for standalone Type B tooling.
   - `run_twap(symbol, side, total_qty, duration_min, n_slices, place_slice_fn, twap_key, signal_price=None, send_telegram_fn=None, stop_event=None, notify_slices=True)`
   - `place_slice_fn(symbol, side, qty) → {'fill_price': float, 'fill_qty': float}` — raise on failure; 3 consecutive slice failures abort the run
