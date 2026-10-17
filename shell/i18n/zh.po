@@ -683,6 +683,27 @@ msgstr "翻向"
 msgid "tr.position"
 msgstr "部位 {n}"
 
+msgid "tr.tip.closedWin"
+msgstr "此段倉位已平倉，獲利約 {n}"
+
+msgid "tr.tip.closedLoss"
+msgstr "此段倉位已平倉，虧損約 {n}"
+
+msgid "tr.tip.openWin"
+msgstr "此段倉位在回測結束時仍持有（浮動損益），獲利約 {n}"
+
+msgid "tr.tip.openLoss"
+msgstr "此段倉位在回測結束時仍持有（浮動損益），虧損約 {n}"
+
+msgid "tr.tip.partial"
+msgstr "此段接續紀錄起點前已持有的部位，進場成本不在紀錄內，損益無法回推。"
+
+msgid "tr.tip.openNoPx"
+msgstr "此段倉位在回測結束時仍持有。"
+
+msgid "tr.mapAria"
+msgstr "圖的範圍（整段回測）"
+
 msgid "bt.grpReturns"
 msgstr "報酬"
 

@@ -109,6 +109,7 @@
   --bg-body: var(--color-white);
   --surface-card: var(--color-surface);
   --surface-muted: var(--color-greyLight);       /* 軌道 / outlined hover 填色 */
+  --surface-row-hover: var(--color-white);       /* 表格列與清單列 hover:落在頁面地色,比卡面低一階(= web main.css) */
   --surface-field: var(--color-pureWhite);
   --surface-control-on: var(--color-pureWhite);  /* segment 選中格(canon 語意角色變數) */
   --border-hairline: var(--color-greyLight);
@@ -147,6 +148,7 @@
   --bg-body: var(--color-darkBody);
   --surface-card: var(--color-darkCard);
   --surface-muted: var(--color-darkBorder);
+  --surface-row-hover: var(--color-darkBody);
   --surface-field: var(--color-darkBody);
   --surface-control-on: var(--color-darkBorder);
   --border-hairline: var(--color-darkBorder);
