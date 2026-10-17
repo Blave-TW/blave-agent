@@ -4870,7 +4870,7 @@ def _taipei_date(value):
     raise TypeError(f"date must be 'YYYY-MM-DD', a date or a datetime, got {type(value).__name__}")
 
 
-def fetch_twstock_holidays(headers, year=None):
+def fetch_twstock_holidays(headers, year=None, timeout=20, max_retries=2):
     """TWSE 年度休市表 (annual market holiday schedule) for `year` (default: this Taipei year).
 
     DataFrame, one row per listed day: date (Timestamp), name, type, note. type is
@@ -4893,7 +4893,7 @@ def fetch_twstock_holidays(headers, year=None):
     try:
         # 5xx 預設退避約兩分鐘;休市表只是判斷用,拿不到就回 None,不值得讓報告卡那麼久。
         r = _retry_get(f'{BASE}/studio/market/twmarket/holidays', headers=headers,
-                       params={'year': year}, timeout=20, max_retries=2)
+                       params={'year': year}, timeout=timeout, max_retries=max_retries)
         payload = r.json()
     except (requests.exceptions.RequestException, ValueError) as e:
         print(f"  [holidays] {year}: holiday table unavailable ({type(e).__name__}) — trading-day status unknown")
@@ -4918,7 +4918,7 @@ def fetch_twstock_holidays(headers, year=None):
     return df
 
 
-def is_tw_trading_day(date, headers):
+def is_tw_trading_day(date, headers, timeout=20, max_retries=2):
     """Is `date` a TWSE trading day? 'YYYY-MM-DD', date, datetime or Timestamp; a tz-aware
     value is converted to Taipei first, a naive one is taken as a Taipei date. True / False,
     or None when unknown (holiday table unavailable or that year not published).
@@ -4927,7 +4927,8 @@ def is_tw_trading_day(date, headers):
     d = _taipei_date(date)
     if d.weekday() >= 5:
         return False
-    table = fetch_twstock_holidays(headers, d.year)
+    kw = {} if (timeout, max_retries) == (20, 2) else {'timeout': timeout, 'max_retries': max_retries}
+    table = fetch_twstock_holidays(headers, d.year, **kw)
     if table is None:
         return None
     closed = table[table['type'].isin(['holiday', 'settlement_only'])]['date'].dt.date

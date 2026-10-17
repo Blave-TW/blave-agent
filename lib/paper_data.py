@@ -268,7 +268,13 @@ def _tw_stock_price(symbol, hdrs):
 
 
 _TW_OPEN_MIN, _TW_CLOSE_MIN = 9 * 60, 13 * 60 + 30
-_TW_DAY_TTL_S = 3600
+TW_DAY_PATH = "state/paper_tw_day.json"
+# The account reader is a fresh process every minute and asks inside the ledger
+# lock, so the day's verdict lives on disk: a known verdict holds for the day,
+# an unreadable table is retried at most every _TW_DAY_RETRY_S, and one fetch
+# is capped at a few seconds (api down: the weekday rule, fast).
+_TW_DAY_RETRY_S = 600
+_TW_DAY_TIMEOUT_S = 3
 _tw_day_cache = {}  # Taipei date -> (checked_at, True/False/None)
 
 
@@ -277,26 +283,55 @@ def is_tw_stock(symbol):
     return bool(_TW_STOCK_RE.match(_norm(symbol)))
 
 
+def _tw_day_fresh(hit, now):
+    return hit is not None and (hit[1] is not None or now - hit[0] < _TW_DAY_RETRY_S)
+
+
+def _tw_day_verdict(day, env):
+    now = time.time()
+    hit = _tw_day_cache.get(day)
+    if _tw_day_fresh(hit, now):
+        return hit[1]
+    try:
+        with open(TW_DAY_PATH) as f:
+            d = json.load(f)
+        if d.get("date") == day.isoformat():
+            hit = (float(d.get("checked_at") or 0), d.get("verdict"))
+            if _tw_day_fresh(hit, now):
+                _tw_day_cache[day] = hit
+                return hit[1]
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    try:
+        from lib.data import is_tw_trading_day
+        verdict = is_tw_trading_day(day.isoformat(), _hdrs(env), timeout=_TW_DAY_TIMEOUT_S,
+                                    max_retries=1)
+    except Exception as e:
+        log.info(f"[paper_data] TW holiday table unavailable ({type(e).__name__}) — weekday rule")
+        verdict = None
+    _tw_day_cache[day] = (now, verdict)
+    try:
+        os.makedirs(os.path.dirname(TW_DAY_PATH), exist_ok=True)
+        tmp = TW_DAY_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"date": day.isoformat(), "verdict": verdict, "checked_at": int(now)}, f)
+        atomic_replace(tmp, TW_DAY_PATH)
+    except OSError as e:
+        log.warning(f"[paper_data] TW day cache write failed: {e}")
+    return verdict
+
+
 def tw_session_open(env=None, now=None):
     """True inside a TWSE regular session: 09:00–13:30 Taipei on a trading day.
     The holiday table (lib.data.is_tw_trading_day) needs a Blave API plan; when
     it can't be read the weekday alone decides. Typhoon closures are in no
-    table, so a paper fill can still happen on one."""
+    table, so a paper fill can still happen on one. Outside the hours no
+    fetch at all."""
     from datetime import datetime, timedelta, timezone
     t = datetime.fromtimestamp(time.time() if now is None else now, timezone(timedelta(hours=8)))
     if t.weekday() >= 5 or not (_TW_OPEN_MIN <= t.hour * 60 + t.minute < _TW_CLOSE_MIN):
         return False
-    day = t.date()
-    hit = _tw_day_cache.get(day)
-    if hit is None or time.time() - hit[0] >= _TW_DAY_TTL_S:
-        try:
-            from lib.data import is_tw_trading_day
-            verdict = is_tw_trading_day(day.isoformat(), _hdrs(env))
-        except Exception as e:
-            log.info(f"[paper_data] TW holiday table unavailable ({type(e).__name__}) — weekday rule")
-            verdict = None
-        _tw_day_cache[day] = hit = (time.time(), verdict)
-    return hit[1] is not False
+    return _tw_day_verdict(t.date(), env) is not False
 
 
 # ── FX for contract money (lots × point value is in the contract's currency) ──
