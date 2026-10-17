@@ -1,4 +1,4 @@
-import contextlib, hashlib, json, logging, math, os, shutil, time
+import contextlib, hashlib, json, logging, math, os, re, shutil, time
 from pathlib import Path
 try:
     import fcntl
@@ -1525,6 +1525,235 @@ def typec_live_state(weights, price_df, now=None, market='swap'):
             'updated_at': int(now if now is not None else time.time())}
 
 
+_TW_STOCK_RE = re.compile(r"^\d{4,6}[A-Z]?(?:\.TWO?)?$")
+TW_CLOSE_FIELDS = ('raw_closes', 'raw_close_dates', 'raw_closes_est', 'raw_close_want')
+# the price lookup is display-only and runs after the tick's state.json is saved, in a child
+# process killed after this many seconds — lib.data's batch fetch retries for minutes and its
+# thread pools are joined at interpreter exit, so a thread could not bound the tick
+TW_CLOSE_BUDGET_S = 10
+# "module:function" the child calls with (codes, start, end, headers)
+TW_CLOSE_FETCH = 'lib.data:fetch_twstock_price_batch'
+# a close still short of its round's date (that day's bar not in yet) is retried each tick for
+# this long, then kept as an estimate
+TW_CLOSE_WANT_DAYS = 7
+
+
+def tw_carry_closes(prev, targets, end_date):
+    """The Taiwan-stock sizing closes this tick can carry without any I/O, and what is left
+    to price. The portfolio page (shell trade.js trTwLots, runtime portfolio_reporter.tw_lots)
+    turns them into whole lots. Returns (fields, need): fields = {raw_closes: {SYM: px},
+    raw_close_dates: {SYM: date}, raw_closes_est: [SYM], raw_close_want: {SYM: date}} (only the
+    non-empty ones), need = {SYM: (want date, estimate)}.
+
+    A symbol is priced once, at the close of the round its target changed (want = that round's
+    Taipei date), and carried while the target holds — a daily re-price would move the shares
+    every day and ask for orders nobody needs. A close dated before its want (that day's bar was
+    not in yet) is carried as an estimate and asked for again until the want-day close arrives
+    or TW_CLOSE_WANT_DAYS pass. A state from before these fields (same target, no close) is
+    priced at the latest close and stays an estimate."""
+    prev = prev if isinstance(prev, dict) else {}
+    if isinstance(prev.get('weights'), dict):
+        before = {str(k).replace('-', '').upper(): v for k, v in prev['weights'].items()}
+    elif prev.get('symbol'):
+        before = {str(prev['symbol']).replace('-', '').upper(): prev.get('position', 0)}
+    else:
+        before = {}
+    get = lambda k: prev.get(k) if isinstance(prev.get(k), dict) else {}
+    old_px, old_dt, old_want = get('raw_closes'), get('raw_close_dates'), get('raw_close_want')
+    old_est = prev.get('raw_closes_est') if isinstance(prev.get('raw_closes_est'), list) else []
+    old_est = {x for x in old_est if isinstance(x, str)}
+    closes, dates, est, want, need = {}, {}, set(), {}, {}
+    for sym, tgt in targets.items():
+        try:
+            tgt = float(tgt)
+        except (TypeError, ValueError):
+            continue
+        if not _TW_STOCK_RE.match(sym) or not math.isfinite(tgt) or tgt == 0:
+            continue
+        try:
+            same = sym in before and abs(float(before[sym]) - tgt) <= 1e-9
+        except (TypeError, ValueError):
+            same = False
+        if not same:
+            need[sym] = (end_date, False)
+            continue
+        px, dt = old_px.get(sym), old_dt.get(sym)
+        if not (isinstance(px, (int, float)) and not isinstance(px, bool) and math.isfinite(px)
+                and px > 0 and isinstance(dt, str)):
+            need[sym] = (end_date, True)
+            continue
+        closes[sym], dates[sym] = float(px), dt
+        w = old_want.get(sym)
+        if isinstance(w, str) and dt < w:
+            est.add(sym)
+            if (pd.Timestamp(end_date) - pd.Timestamp(w)).days <= TW_CLOSE_WANT_DAYS:
+                want[sym] = w
+                need[sym] = (w, False)
+        elif sym in old_est and not isinstance(w, str):
+            est.add(sym)
+    fields = {}
+    if closes:
+        fields['raw_closes'], fields['raw_close_dates'] = closes, dates
+    if est:
+        fields['raw_closes_est'] = sorted(est)
+    if want:
+        fields['raw_close_want'] = want
+    return fields, need
+
+
+# The child: {groups: {day: [code]}, hdrs, fn, paths, budget_s} on stdin → one "TWCLOSE {day:
+# {code: [date, close]}}" line, the last raw close on or before each day. It ends itself with
+# os._exit — on success, on error, and from a timer just past the parent's budget — so neither
+# lib.data's thread pools (joined at a normal exit) nor a killed parent leave it running.
+_TW_CLOSE_CHILD = r"""
+import json, os, sys
+try:
+    p = json.load(sys.stdin)
+    import threading
+    t = threading.Timer(float(p['budget_s']) + 2, os._exit, (0,))
+    t.daemon = True
+    t.start()
+    sys.path[:0] = p['paths'] + [os.getcwd()]
+    import importlib, math
+    import pandas as pd
+    m, a = p['fn'].split(':')
+    f = getattr(importlib.import_module(m), a)
+    out = {}
+    for day, codes in p['groups'].items():
+        start = (pd.Timestamp(day) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+        got = f(list(codes), start, day, p['hdrs']) or {}
+        res = out.setdefault(day, {})
+        for code in codes:
+            try:
+                df = got.get(code)
+                c = df['Close'][df['Close'] > 0].dropna()
+                if getattr(c.index, 'tz', None) is not None:
+                    c.index = c.index.tz_convert('Asia/Taipei').tz_localize(None)
+                c = c[c.index <= pd.Timestamp(day)]   # never a close after the round's own day
+                px = float(c.iloc[-1])
+                if math.isfinite(px) and px > 0:
+                    res[code] = [pd.Timestamp(c.index[-1]).strftime('%Y-%m-%d'), px]
+            except Exception:
+                pass
+    sys.stdout.write('\nTWCLOSE ' + json.dumps(out) + '\n')
+    sys.stdout.flush()
+finally:
+    os._exit(0)
+"""
+
+
+def _tw_fetch_child(groups, hdrs, budget_s):
+    """{day: {code: [date, close]}} from a child process, or None when it failed or ran past
+    budget_s (then it is killed — that pid only). Headers go over stdin, never argv."""
+    import subprocess, sys
+    payload = json.dumps({'groups': groups, 'hdrs': hdrs, 'fn': TW_CLOSE_FETCH, 'budget_s': budget_s,
+                          'paths': [str(Path(__file__).resolve().parent.parent)]})
+    # -E, not -I: -I also drops the user site, and a cloud machine's pandas may live there
+    # (pip3 at provisioning on a PEP 668 image, or the agent's own --user installs)
+    proc = subprocess.Popen([sys.executable, '-E', '-c', _TW_CLOSE_CHILD], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    try:
+        out, _ = proc.communicate(payload.encode(), timeout=budget_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        logging.warning("Taiwan target close: lookup over %ss, killed (retried next tick)", budget_s)
+        return None
+    for line in reversed(out.decode('utf-8', 'replace').splitlines()):
+        if line.startswith('TWCLOSE '):
+            return json.loads(line[8:])
+    logging.warning("Taiwan target close not recorded (exit %s, retried next tick)", proc.returncode)
+    return None
+
+
+def tw_fetch_closes(fields, need, hdrs, budget_s=None):
+    """fields (tw_carry_closes) with the `need` symbols priced from the unadjusted daily close
+    (fetch_twstock_price_batch, as a broker app shows, with its CDN / no-key fallback and month
+    cache). The strategy's own close cannot be used: lib.data's dividend adjustment is anchored
+    at the fetch window's start (2330 on 2026-10-16: 2420 from a 10-day window, 2755.89 from
+    2020). A close dated before its want is recorded as an estimate with raw_close_want, asked
+    for again next tick. None = nothing new (failed or over the budget) — the next tick
+    retries; the caller has already saved the state without it."""
+    budget_s = TW_CLOSE_BUDGET_S if budget_s is None else budget_s
+    groups = {}
+    for sym, (day, _e) in need.items():
+        groups.setdefault(day, {})[re.sub(r'\.TWO?$', '', sym)] = sym
+    got = _tw_fetch_child({d: sorted(c) for d, c in groups.items()}, hdrs, budget_s)
+    if not got:
+        return None
+    out = {k: dict(v) if isinstance(v, dict) else list(v) for k, v in fields.items()}
+    closes, dates = out.setdefault('raw_closes', {}), out.setdefault('raw_close_dates', {})
+    est, want = set(out.get('raw_closes_est', [])), out.setdefault('raw_close_want', {})
+    changed = False
+    for day, codes in groups.items():
+        for code, sym in codes.items():
+            try:
+                d, px = got[day][code]
+                d, px = str(d), float(px)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not (math.isfinite(px) and px > 0) or d > day:
+                continue
+            if sym in closes and dates.get(sym, '') >= d:
+                continue   # the bar asked for is still not in: keep what is carried
+            closes[sym], dates[sym], changed = px, d, True
+            if need[sym][1]:   # a pre-field state: no round to wait for, an estimate for good
+                est.add(sym)
+            elif d < day:
+                est.add(sym)
+                want[sym] = day
+            else:
+                want.pop(sym, None)
+                est.discard(sym)
+    if not changed:
+        return None
+    out['raw_closes_est'] = sorted(est)
+    return {k: v for k, v in out.items() if v}
+
+
+def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs):
+    """Carry what needs no I/O into `state`, save it, then price the rest under a time budget
+    and save again only if something new came in. Never fails the tick: the target position
+    is on disk before any of this can go wrong."""
+    need = {}
+    try:
+        for k in TW_CLOSE_FIELDS:
+            state.pop(k, None)
+        fields, need = tw_carry_closes(prev, targets, _taipei_date(bar_ts))
+        state.update(fields)
+    except Exception as e:
+        logging.warning("Taiwan target close carry skipped: %s", e)
+    save_state(strategy_name, state)
+    if not need:
+        return
+    try:
+        path = f'strategies/{strategy_name}/state.json'
+        saved = os.stat(path).st_mtime_ns
+        more = tw_fetch_closes({k: state[k] for k in TW_CLOSE_FIELDS if k in state}, need, hdrs)
+        # another writer (an agent's hand-run live tick takes no scheduler lock) may have saved
+        # a newer target meanwhile: never write this older one back over it
+        if more and os.stat(path).st_mtime_ns == saved:
+            for k in TW_CLOSE_FIELDS:
+                state.pop(k, None)
+            state.update(more)
+            # a new mtime: the reconciler runs one more round on the same target (no order).
+            # Setting the mtime back would hide a real new target landing in between.
+            # The stat-then-replace above still leaves a microsecond window; closing it needs a
+            # file lock between writers
+            save_state(strategy_name, state)
+    except Exception as e:
+        logging.warning("Taiwan target close not recorded (retried next tick): %s", e)
+
+
+def _taipei_date(ts):
+    """The Taipei trading date of a bar label (Taiwan bars are labelled at Taipei or UTC
+    midnight of the trading date; read in UTC+8 both are that date)."""
+    t = pd.Timestamp(ts)
+    t = t.tz_localize('UTC') if t.tzinfo is None else t
+    return t.tz_convert('Asia/Taipei').strftime('%Y-%m-%d')
+
+
 def _fill_invalid_cells(close_v, open_v):
     """Type C price arrays (n, k) with invalid cells repaired per asset — the portfolio
     cannot drop a bar for one asset the way Type A drops it. Left alone, an Open-0 cell books
@@ -1741,11 +1970,15 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             signal = float(signals.ffill().fillna(0).iloc[-1])
             logging.info(f"signal={signal:.4f} close={candle['close']}")
 
+            prev = dict(state)
             update_state(candle, signal, state, mode,
                          symbol=config.get('SYMBOL', ''),
                          send_telegram_fn=(lambda m: _send_best_effort(send_telegram_fn, m))
                          if send_telegram_fn else None)
-            save_state(strategy_name, state)
+            _tw_closes_after_save(
+                strategy_name, state, prev,
+                {str(state['symbol']).replace('-', '').upper(): state.get('position', 0)}
+                if state.get('symbol') else {}, t, hdrs)
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────
@@ -2006,7 +2239,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             prev = load_state(strategy_name) or {}
             if prev.get('rebalance_at') != live['rebalance_at']:
                 logging.info(f"Type C rebalance at {live['rebalance_at']}: {live['weights']}")
-            save_state(strategy_name, live)
+            _tw_closes_after_save(strategy_name, live, prev, live['weights'],
+                                  price_df.index[-1], hdrs)
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────

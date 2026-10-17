@@ -7580,6 +7580,18 @@ msgstr "投資組合"
 msgid "po.lotsRawTip"
 msgstr "取整前 {n} 口"
 
+msgid "po.twLots"
+msgstr "{n} 張"
+
+msgid "po.twLot"
+msgstr "{n} 張"
+
+msgid "po.twLotsTip"
+msgstr "以 {d} 收盤價 {px} 換算，只算整張（1 張＝1,000 股，零股捨去）"
+
+msgid "po.twLotsTipEst"
+msgstr "以 {d} 收盤價 {px} 估算：目標變動那天的價格沒記到。只算整張（1 張＝1,000 股，零股捨去）"
+
 msgid "po.sigTargets"
 msgstr "各商品的總訊號部位"
 
