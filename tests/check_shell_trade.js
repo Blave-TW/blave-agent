@@ -2356,14 +2356,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const run = (env, report) => { ctx.TR = { env, st: { alive: true, running: true, report }, pending: null }; vm.runInContext("var TR = this.TR", ctx);
       return [vm.runInContext("trExecState(TR.st)", ctx), vm.runInContext('trStateText("running")', ctx)]; };
     const two = run("local", rep({ TXFJ6: { size: 2 } })), none = run("local", rep({})), noPos = run("local", rep(undefined));
-    ok("A 統一 2 口在倉(這台電腦、Windows):狀態句 = 自動下單執行中 · 統一有 2 口在倉，電腦保持清醒;沒部位就只有前半句", two[0] === "running" && two[1] === "自動下單執行中 · 統一有 2 口在倉，電腦保持清醒"
+    ok("A 統一 2 口在倉(這台電腦、Windows):狀態句 = 自動下單執行中 · 統一有 2 口在倉，接著電源時電腦保持清醒;沒部位就只有前半句", two[0] === "running" && two[1] === "自動下單執行中 · 統一有 2 口在倉，接著電源時電腦保持清醒"
       && none[1] === "自動下單執行中" && noPos[1] === "自動下單執行中", J([two, none, noPos]));
     const fail = run("local", rep({ TXFJ6: { size: 1 } }, false));
-    ok("A 讀帳失敗前綴照接、清醒那段在最尾;Z(沒策略設金額)不接", /^串接失敗 · 自動下單執行中 · 統一有 1 口在倉，電腦保持清醒$/.test(fail[1]) && run("local", rep({ TXFJ6: { size: 1 } }, true, {}))[1] === t_zh("tr.runningZ"), fail[1]);
+    ok("A 讀帳失敗前綴照接、清醒那段在最尾;Z(沒策略設金額)不接", /^串接失敗 · 自動下單執行中 · 統一有 1 口在倉，接著電源時電腦保持清醒$/.test(fail[1]) && run("local", rep({ TXFJ6: { size: 1 } }, true, {}))[1] === t_zh("tr.runningZ"), fail[1]);
     ok("A 雲端視角不接;Mac 不接", run("cloud", rep({ TXFJ6: { size: 2 } }))[1].indexOf("清醒") < 0
       && ((ctx.window.blave.platform = "darwin"), run("local", rep({ TXFJ6: { size: 2 } }))[1] === "自動下單執行中"));
     ctx.window.blave.platform = "win32"; vm.runInContext('LANG = "en"', ctx);
-    ok("A en:lot(s) open at President, this computer stays awake;兩語都不講平倉", run("local", rep({ TXFJ6: { size: 3 } }))[1] === "Auto-trading running · 3 lot(s) open at President, this computer stays awake"
+    ok("A en:lot(s) open at President, this computer stays awake while plugged in;兩語都不講平倉", run("local", rep({ TXFJ6: { size: 3 } }))[1] === "Auto-trading running · 3 lot(s) open at President, this computer stays awake while plugged in"
       && !/平倉|close/i.test(vm.runInContext('STRINGS.zh["tr.presAwake"] + STRINGS.en["tr.presAwake"]', ctx)));
     ok("A 橫幅退場:index.html 沒有 #pres-banner、president.js / trade.js 沒有 presBannerPaint、CSS 沒有 .pres-banner、pres.held.* 兩個 key 退役",
       !/pres-banner/.test(fs.readFileSync(path.join(R, "index.html"), "utf8")) && !/presBannerPaint|pres\.held\./.test(pres + src) && !/pres-banner/.test(fs.readFileSync(path.join(R, "president.css"), "utf8"))
