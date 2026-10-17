@@ -1817,7 +1817,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh", envHeadState: () => "running", trKeyBad: () => false });
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
     const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
     const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
     ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
@@ -1950,7 +1950,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: { okx: { label: "OKX" }, binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trUnit: () => "USDT", trEquity: () => null, trMoneyInto() {}, envHeadState: () => "running", trKeyBad: () => false });
       const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
       vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
+        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
       const venuesOf = (id) => ({ [id]: { credentials: true, pair: true, order: true, account: true } });
       const bag = (venue, amounts, o) => ({ env: "local", list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: Object.assign({ venues: venuesOf(venue), config: { amounts } }, STALE) }, ...o });
       const paint = (b, states) => { ctx.TR = b; const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
@@ -1966,6 +1966,31 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && p0.sv.disabled === false && !("aria-describedby" in p0.sv.attrs) && !p0.bar.kids.some((k) => k.id === "tr-save-why"), J(p0.rows.map((r) => r.className)));
       const p2 = paint(bag("paper", { tw_old: 30 }, { edits: { tw_old: 20 } }));
       ok("金額表(模擬交易):台幣計價的存量照舊 tr.pick.twd", J(notes(p2.rowOf("TW_OLD"))) === J(["tr.pick.twd"]));
+      /* Wei 10-17:剛勾進、還沒存也還沒跑過的台股 Type C(回報 quote_ccy 沒有它、states 沒有它、清單沒有標的)——欄頭與合計一個單位都沒有。
+         退回清單的 twd、本機 strategy_kinds 的 market、雲端清單的 market;真的推不出,欄頭寫「幣別未定」並講原因 */
+      { const zt = (list, report, states) => { ctx.TR = bag("okx", {}, { list, picked: new Set(list.map((x) => x.name)) }); Object.assign(ctx.TR.st.report, { quote_ccy: {}, states: states || {} }, report || {});
+          const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
+          const ths = all.filter((n) => n.tag === "th"), tot = all.find((n) => n.className === "pf-total"), grp = all.filter((n) => /^grp-l/.test(n.className));
+          return { ths: ths.map((n) => n.textContent), tip: ths.map((n) => (n.kids[0] && n.kids[0].title) || "").filter(Boolean), tot: tot ? tot.textContent : null, grp: grp.map((n) => [n.textContent, n.title || ""]) }; };
+        const amt = (u) => "tr.colUnit " + JSON.stringify({ label: "tr.col.amount", unit: u }), C = (o) => Object.assign({ hasBacktest: true, portfolio: true, symbol: null, market: "spot" }, o);
+        const tw = zt([C({ name: "tw_breakout_candle", twd: true })]);
+        ok("台股 Type C 還沒跑過(清單 twd):欄頭「金額（TWD）」、合計帶 TWD", tw.ths.includes(amt("TWD")) && /TWD$/.test(tw.tot), J(tw));
+        const kd = zt([C({ name: "tw_dyn", twd: false })], { strategy_kinds: { tw_dyn: { type: "C", market: "tw_stock" } } });
+        ok("UNIVERSE 動態取得(twd 讀不出):本機看 strategy_kinds 的 market tw_stock → TWD", kd.ths.includes(amt("TWD")), J(kd));
+        const cl = zt([C({ name: "tw_cloud", twd: false, srcMarket: "tw_stock" })]);
+        ok("雲端清單帶 market tw_stock → TWD;envCloudList 把 market 帶成 srcMarket(不撞 spot／swap 的 market)", cl.ths.includes(amt("TWD"))
+          && /srcMarket: typeof x\.market === "string" \? x\.market : null/.test(cutF("envCloudList")) && /srcMarket: x\.srcMarket \|\| null/.test(src), J(cl));
+        const cr = zt([C({ name: "c_new", twd: false })], { strategy_kinds: { c_new: { type: "C", market: "crypto" } } });
+        ok("推不出(加密 Type C 還沒跑):欄頭寫「金額（幣別未定）」、停上去講跑過一次就知道", cr.ths.includes(amt("tr.grpUnknown")) && J(cr.tip) === J(["tr.ccyAfterRun"]), J(cr));
+        const mx = zt([C({ name: "mix", twd: false })], {}, { mix: { weights: { BTCUSDT: 0.5, BTCUSD: 0.5 }, market: "swap" } });
+        ok("跑過還是推不出(成分混幣別):原因改講混了幣別,不說跑一次就知道", mx.ths.includes(amt("tr.grpUnknown")) && J(mx.tip) === J(["tr.ccyMixed"]), J(mx));
+        const ta = zt([{ name: "b", hasBacktest: true, symbol: "BTCUSD", market: "swap" }]);
+        ok("單一標的看不出計價(BTCUSD,還沒跑過):原因講看不出計價,不說跑一次就知道(runtime 跑過也判不出)", ta.ths.includes(amt("tr.grpUnknown")) && J(ta.tip) === J(["tr.ccyMixed"]), J(ta));
+        const mixK = zt([C({ name: "mx2", twd: true })], { strategy_kinds: { mx2: { type: "C", market: "mixed" } } });
+        const held = zt([C({ name: "h", twd: true })], {}, { h: { weights: { BTCUSDT: 0.5, 2330: 0.5 }, market: "spot" } });
+        ok("台股＋加密混的不當台股:strategy_kinds 說 mixed 就不看 twd(twd 只是「有一檔台股」);已經有成分還推不出的不退回市場", mixK.ths.includes(amt("tr.grpUnknown")) && held.ths.includes(amt("tr.grpUnknown")), J([mixK, held]));
+        const two = zt([C({ name: "c_new", twd: false }), { name: "btc", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }]);
+        ok("兩區時未定區的區標題掛原因(title)", two.grp.some((g) => g[0] === "tr.grpUnknown" && g[1] === "tr.ccyAfterRun"), J(two)); }
       /* 查證報告 #1:群益台指期(雲端視角)——這一格是口數不是錢。對齊網頁 TXF_SPECS / txfRefMoney / paintTotal */
       { const TST = { txf: { symbol: "TXF", position: 1 }, btc_bn: { symbol: "BTCUSDT", position: 1 } };
         const paintT = (venue, amounts, eq) => { ctx.trEquity = () => eq; ctx.TR = bag(venue, amounts, { env: "cloud" }); ctx.TR.st.report.states = TST;

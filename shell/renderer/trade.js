@@ -1133,7 +1133,7 @@ function envCloudList(st) {
   return a.filter((x) => x && typeof x.name === "string" && x.name).map((x) => ({
     name: x.name, displayName: typeof x.display_name === "string" && x.display_name ? x.display_name : x.name,
     hasBacktest: x.has_backtest === true, mtime: x.updated_at == null ? null : x.updated_at, sig: typeof x.sig === "string" && x.sig ? x.sig : null, remote: true,
-    symbol: typeof x.symbol === "string" && x.symbol ? x.symbol : null, portfolio: x.is_portfolio === true }));
+    symbol: typeof x.symbol === "string" && x.symbol ? x.symbol : null, portfolio: x.is_portfolio === true, srcMarket: typeof x.market === "string" ? x.market : null }));
 }
 /* 雲端那一邊現在是哪一種(主行程 cloud.js 的 code + machine.state):
    loading(還沒問到)| signedOut(沒登入 / 舊登入沒有 app 專用密鑰 / 憑證被撤銷——都要登入才看得到)| unreach(還沒成功讀到過)|
@@ -1684,7 +1684,7 @@ async function trLoadStrategies(S) {
             twd: trIsTwd([sym].concat(x.remote ? [] : trUniverse(d && d.code))) };   // 雲端清單不帶組合的標的:雲端的 Type C 看不出來
       S.meta.set(x.name, m);
     }
-    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio, twd: m.twd === true });
+    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio, twd: m.twd === true, srcMarket: x.srcMarket || null });
   }
   S.list = out;
 }
@@ -2717,7 +2717,19 @@ function trQuoteMap() { const q = (trReport() || {}).quote_ccy; return q && type
    或主機的 lib 不會算投資組合(can_trade_portfolio 不是 true;缺席 = 更舊的 runtime) */
 function trHostOld() { const r = trReport() || {}; return !!(r.signals_frozen && typeof r.signals_frozen === "object") || r.can_trade_portfolio !== true; }
 function trNoSignalYet(n) { const f = (trReport() || {}).signals_frozen; return !!f && typeof f === "object" && Array.isArray(f.pending) && f.pending.indexOf(n) >= 0; }
-function trZoneOf(n) { const st = ((trReport() || {}).states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}; return trRowZone(n, st.symbol || x.symbol, trTypeC(st), x.portfolio === true, trQuoteMap()); }
+/* 推不出區、也還沒有成分的列(剛勾進、還沒存也還沒跑過的投資組合:回報沒有它的 quote_ccy)退回策略本身的市場。
+   先看 runtime strategy_market(本機在 strategy_kinds;雲端讀清單的 market,同網頁 stratMarket——api 的 ?summary=1 目前還不帶,
+   雲端這一層要等它補上;"mixed" 就是未定),沒有才看清單的 twd——twd 是「有一檔台股」,
+   混了加密的也是 true。只認台股 → TWD,同網頁 pfRowUnit;加密的幣別要看成分,不拿帳戶幣猜(§9.2) */
+function trZoneOf(n) {
+  const r = trReport() || {}, st = (r.states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}, tc = trTypeC(st);
+  const z = trRowZone(n, st.symbol || x.symbol, tc, x.portfolio === true, trQuoteMap());
+  if (z !== TR_ZONE_UNKNOWN || (tc && tc.keys.length)) return z;
+  const k = r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds[n] : null, mk = x.srcMarket || (k && k.market);
+  return (mk ? mk === "tw_stock" : x.twd === true) ? TR_TXF_CCY : z;
+}
+// 幣別未定的原因:全是還沒回報的投資組合 = 跑過一次、算出成分就知道;單一標的(BTCUSD 這種)或跑過還未定 = 混了幣別或看不出計價,再跑也不會變
+function trUnknownWhy(ns, states) { return ns.some((n) => (states && states[n]) || !(TR.list.find((y) => y.name === n) || {}).portfolio) ? t("tr.ccyMixed") : t("tr.ccyAfterRun"); }
 function trZoneLabel(z) { return z === TR_ZONE_LOTS ? t("tr.grpLots") : z === TR_ZONE_UNKNOWN ? t("tr.grpUnknown") : z; }
 // 整表只有一區時寫在欄頭的單位:口數區寫「口」,未定區不寫
 function trZoneUnit(z) { return z === TR_ZONE_LOTS ? t("tr.lotsUnit") : z === TR_ZONE_UNKNOWN ? null : z; }
@@ -2949,8 +2961,10 @@ function trAmountTable(names, stored, states) {
   /* 依計價分區(units spec §9):一區一個 tbody,區標題寫單位;只有一區時不畫區標題,單位回欄頭 */
   const zoneOf = {}; names.forEach((n) => { zoneOf[n] = trZoneOf(n); });
   const zoneKeys = Object.keys(zoneOf).map((n) => zoneOf[n]), zones = trZoneOrder(zoneKeys, trVenueId(), trMultZone(trVenueId(), trUnit(), zoneKeys));
-  const oneUnit = zones.length === 1 ? trZoneUnit(zones[0]) : null;
-  const head = trHead([[t("tr.col.strategy"), ""], [t("tr.col.symbol"), "c-sym"], [t("tr.col.amount"), "n", oneUnit], [t("tr.col.pos"), "n" + (sentOn ? " pend-col" : ""), oneUnit]]);
+  // 整表都是未定區:欄頭寫「幣別未定」、停上去講原因(單位回欄頭的規則照舊,只是未定區也要有字)
+  const oneUnknown = zones.length === 1 && zones[0] === TR_ZONE_UNKNOWN;
+  const oneUnit = oneUnknown ? t("tr.grpUnknown") : zones.length === 1 ? trZoneUnit(zones[0]) : null;
+  const head = trHead([[t("tr.col.strategy"), ""], [t("tr.col.symbol"), "c-sym"], [t("tr.col.amount"), "n", oneUnit, oneUnknown ? trUnknownWhy(names, states) : ""], [t("tr.col.pos"), "n" + (sentOn ? " pend-col" : ""), oneUnit]]);
   if (sentOn) head.querySelector("th:last-child").title = t("tr.cloud.pendTarget");
   tbl.appendChild(head);
   // 排序鍵跟顯示同一套換算(同網頁 sortVal):口數列換成參考金額,換不了當 0
@@ -2961,6 +2975,7 @@ function trAmountTable(names, stored, states) {
       // 區標題列(§9.4):不加框線、不加底色,區與區之間靠間距;每一格照欄位排(窄欄收掉標的欄時對齊不跑)
       const g = trEl("tr", "grp"), sub = trEl("span", "");
       const c0 = trEl("td", "grp-l" + (z === TR_ZONE_LOTS || z === TR_ZONE_UNKNOWN ? " cjk" : ""), trZoneLabel(z)), c3 = trEl("td", "n"), c4 = trEl("td", "n");
+      if (z === TR_ZONE_UNKNOWN) c0.title = trUnknownWhy(names.filter((n) => zoneOf[n] === z), states);
       c3.appendChild(sub);
       g.append(c0, trEl("td", "c-sym"), c3, c4); tb.appendChild(g);
       grpCells[z] = { sub };
