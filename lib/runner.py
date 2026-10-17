@@ -1525,6 +1525,64 @@ def typec_live_state(weights, price_df, now=None, market='swap'):
             'updated_at': int(now if now is not None else time.time())}
 
 
+# manager/reconciler.THRESHOLD — not imported: that module configures logging on import
+_RECONCILE_THRESHOLD = 10
+
+
+def _ladder_sizing_lines(ladder, config):
+    """Backtest hint for a lib.strategy.ladder_position strategy: its base order is only
+    1/Σ mult**k of the amount, and live never sends an order under the venue minimum — so a
+    thin amount enters rungs later than the backtest, at a different average. Printed, never
+    blocking. Lots when the 下單設定 spec is lots/shares or SYMBOL is a TAIFEX index root;
+    otherwise the reconciler's entry gate, looked up on the bound venue when it can be."""
+    from lib.strategy import ladder_sizing
+    from lib.portfolio import NATIVE_UNIT_TYPES, load_portfolio_config, strategy_amounts, txf_root
+    name, symbol = config.get('STRATEGY_NAME'), config.get('SYMBOL')
+    try:
+        cfg = load_portfolio_config()
+        amount = strategy_amounts(cfg).get(name)
+        spec = (cfg.get('asset_specs') or {}).get(name)
+    except Exception:
+        amount, spec = None, None
+    lots = (isinstance(spec, dict) and spec.get('type') in NATIVE_UNIT_TYPES) or bool(txf_root(symbol))
+    devs, mult = ladder['devs'], ladder['mult']
+    if lots:
+        unit, floor_note, min_order = ' lots', 'whole lots, rounded half-up', None
+    else:
+        min_order, lot = float(_RECONCILE_THRESHOLD), 0.0
+        try:
+            from lib.execute import _venue_sizes_usd
+            min_order, lot = _venue_sizes_usd(f"{symbol}@spot" if config.get('MARKET') == 'spot' else symbol,
+                                              float(_RECONCILE_THRESHOLD))
+            min_order = max(float(_RECONCILE_THRESHOLD), float(min_order))
+        except Exception as e:
+            logging.warning("ladder sizing: venue minimum lookup failed: %s", e)
+        unit = ''
+        floor_note = (f"venue minimum order {min_order:,.2f}" if lot > 0 else
+                      f"flat {min_order:,.0f} floor — venue minimum not looked up, it can be higher")
+    full = ladder_sizing(amount or 0, devs, mult, min_order=min_order, lots=lots)
+    roll_warn = ([f"⚠️ WARNING: {symbol} rolls monthly and this ladder_position call has no settle= — pass "
+                  f"settle=txf_settlement_mask(df.index), or the roll spread reads as a dip or a take-profit"]
+                 if txf_root(symbol) and not ladder.get('rolls', True) else [])
+    lines = [f"Scaling in: the base order is {full['base_frac'] * 100:.2f}% of the strategy's amount; "
+             f"every order trades from an amount of {full['min_amount']:,.2f}{unit} ({floor_note}, "
+             f"this strategy alone, before netting) — tell the user before deploying"
+             if full['min_amount'] is not None else
+             f"Scaling in: the base order is {full['base_frac'] * 100:.2f}% of the strategy's amount ({floor_note})"]
+    if amount:
+        if full['skipped']:
+            first = next((k for k, x in enumerate(full['trades']) if x), None)
+            why = ("it never enters at all" if first is None else
+                   f"its first order goes out at rung {first}, later than the backtest" if first else
+                   "those rungs merge into the next one that trades")
+            lines.append(f"⚠️ WARNING: at the saved amount {amount:,.2f}{unit} live sends nothing for order(s) "
+                         f"{full['skipped']} (0 = base): {why}, so entries and the average cost differ "
+                         f"from the backtest — raise the amount or use fewer / flatter rungs")
+        else:
+            lines.append(f"Scaling in: at the saved amount {amount:,.2f}{unit} every order trades")
+    return lines + roll_warn
+
+
 def _fill_invalid_cells(close_v, open_v):
     """Type C price arrays (n, k) with invalid cells repaired per asset — the portfolio
     cannot drop a bar for one asset the way Type A drops it. Left alone, an Open-0 cell books
@@ -1704,6 +1762,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         signals_raw, *_rest = result
         exec_at_close_orig  = _rest[0] if _rest else None
         result              = signals_raw
+    # read before clamp_spot / warmup / reindex — attrs need not survive them
+    ladder = result.attrs.get('ladder') if isinstance(result, pd.Series) else None
 
     # ── Type A: signal strategy ───────────────────────────────────────────────
     if isinstance(result, pd.Series):
@@ -1868,6 +1928,14 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             for p in (plot_series_findings(config['__file__']) if plot_series_findings else []):
                 logging.warning(p['msg'])
                 print(f"  ⚠️ WARNING: {p['msg']}")
+
+        if mode == 'backtest' and isinstance(ladder, dict):
+            try:
+                for line in _ladder_sizing_lines(ladder, config):
+                    logging.warning(line)
+                    print(f"  {line}")
+            except Exception as e:
+                logging.warning("ladder sizing hint skipped: %s", e)
 
         # Hand-written exit loop → WARNING line only, never blocks (lib/quality_check.py).
         if mode == 'backtest' and config.get('__file__'):
