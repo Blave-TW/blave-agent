@@ -222,6 +222,10 @@ ok("③ 回合結束(busySync):所有原因句收掉,借用的原因行(#rp-ho-n
     && !!STR.zh["cs.delFail"] && !!STR.en["cs.delFail"]);
 }
 ok("字:「上一輪還在跑」這類工程用語不再出現在任何 zh 字串", Object.values(STR.zh).every((v) => !/上一輪還在跑/.test(v)));
+{ const css = read(path.join(R, "app.css")), m = css.match(/\.busy-fix::before \{([^}]*)\}/), body = m ? m[1] : "";
+  const h = /height: (\d+)px/.exec(body), viz = css.match(/\.busy-fix, \.busy-fix:hover \{([^}]*)\}/);
+  ok("補救鈕熱區:.busy-fix::before 置中固定高 ≥ 44(不靠全域 -6 的 30);視覺那條不加 padding／高度",
+    !!h && Number(h[1]) >= 44 && /top: 50%/.test(body) && /translateY\(-50%\)/.test(body) && !!viz && !/padding|height|line-height/.test(viz[1]), body); }
 (async () => {
   for (let n = 0; n < pend.length; n++) await pend[n];   // 巢狀的 await_ 會在跑的時候再推進來
   console.log(red ? red + " 紅" : "ALL PASS");

@@ -1214,6 +1214,8 @@ body.resizing * { cursor: col-resize !important; }
 .busy-why[hidden] { display: none; }
 /* 補救連結(停止／查看):主墨＋greyDark 底線(同 mockup .lk、網頁同一顆),跟灰色的原因句分得開;借用別人原因行(版本、轉出、掃描)時同一個樣子 */
 .busy-fix, .busy-fix:hover { margin-left: var(--space-4); color: var(--ink); text-decoration-color: var(--color-greyDark); }
+/* 補救鈕熱區 44 高(全域 .btn-quiet 的 -6 只到約 30):置中固定 44,不看字的行盒;寬照全域左右各 4。只動這一顆,不改視覺(同網頁 .busy-fix::before) */
+.busy-fix::before { inset: auto -4px; top: 50%; height: 44px; transform: translateY(-50%); }
 #cs-why { padding: 0 var(--space-12) var(--space-8); }
 #busy-cut-why { padding: 0 var(--space-16) var(--space-8); }
 #strat-why { padding: var(--space-4) var(--space-12) var(--space-8) var(--space-24); }   /* 左緣對齊列裡的策略名 */
