@@ -651,13 +651,15 @@ function trTypeC(st) {
     if (!x) return; out.n++; if (x > 0) out.long += x; else out.short -= x; });
   return out;
 }
-/* 金額表 Type C 列的標的格(Wei 10-16):3 檔以內直接列代號,超過寫「前 3 檔 等 N 檔」;持有中與空手同一種寫法。
-   代號去掉計價尾碼(同部位表 short)。hover 列全部成分,空手再講一句。keys 空(舊 runtime 的空手列)照舊寫「0 檔」。tf = t */
+/* 金額表 Type C 列的標的格(Wei 10-16):3 檔以內直接列,超過寫「前 3 檔 等 N 檔」;持有中與空手同一種寫法。
+   台股寫名字(nameOf = trTwName,查不到退回代號),其餘去掉計價尾碼(同部位表 short)。hover 列全部成分(台股「名字（代號）」),空手再講一句。
+   keys 空(舊 runtime 的空手列)照舊寫「0 檔」。tf = t;nameOf 由呼叫端傳,這段純邏輯不碰名字表 */
 function trShortSym(sym) { const s = String(sym || "").replace(/@spot$/i, ""); return s.replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || s; }
-function trTypeCLabel(tc, tf) {
+function trTypeCLabel(tc, tf, nameOf) {
   if (!tc.keys.length) return { text: tf("tr.nSyms", { n: tc.n }), tip: "" };
-  const syms = tc.keys.map(trShortSym), sep = tf("ak.sep"), list = syms.join(sep);
-  const text = syms.length <= 3 ? list : tf("tr.typecSymsMore", { list: syms.slice(0, 3).join(sep), n: syms.length, k: syms.length - 3 });
+  const sep = tf("ak.sep"), codes = tc.keys.map(trShortSym), names = tc.keys.map((k) => (typeof nameOf === "function" && nameOf(k)) || "");
+  const shown = codes.map((c, i) => names[i] || c), list = codes.map((c, i) => (names[i] ? tf("tr.twNameCode", { name: names[i], code: c }) : c)).join(sep);
+  const text = shown.length <= 3 ? shown.join(sep) : tf("tr.typecSymsMore", { list: shown.slice(0, 3).join(sep), n: shown.length, k: shown.length - 3 });
   return { text, tip: tc.n ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
 }
 // 台指期目標口數取整 = 機器對帳器的規則 sign(x)·floor(|x|+0.5)(−0.5 → −1;Math.round(−0.5) 是 −0,會差一口)
@@ -2989,7 +2991,7 @@ function trAmountTable(names, stored, states) {
       const txf = isC ? null : trRowTxfNew(n), ctOn = !isC && trCtGate(n);
       if (txf) trTxfWant();   // 口數列的參考金額要報價:統一與模擬交易在這台電腦也下台指期
       // 投資組合(§8):標的列成分代號(trTypeCLabel);還沒算過權重寫「—」並說下次執行後才有。持有多少看下表(一檔一列)
-      const tcl = isC && tc ? trTypeCLabel(tc, t) : null;
+      const tcl = isC && tc ? trTypeCLabel(tc, t, trTwName) : null;
       const symText = isC ? (tcl ? tcl.text : "—") : txf ? t(txf.prod) : sym || "—";
       const symTip = isC && !tc ? t("tr.typecPending") : tcl ? tcl.tip : "";
       const row = document.createElement("tr");

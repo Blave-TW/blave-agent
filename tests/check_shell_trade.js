@@ -262,8 +262,19 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
       && L({ weights: { GOOGLUSDT: 0.5 }, universe: ["GOOGLUSDT", "AMZNUSDT"], market: "swap" }).text === L(flat).text && /^tr\.typecMembers\{/.test(L({ weights: { GOOGLUSDT: 0.5 }, universe: ["GOOGLUSDT", "AMZNUSDT"], market: "swap" }).tip));
     ok("…超過 3 檔:前 3 檔(持有的排前面)+ 總數;hover 列全部 5 檔", L(big).text === "tr.typecSymsMore" + J({ list: ["TSLA", "GOOGL", "AMZN"].join("ak.sep"), n: 5, k: 2 })
       && L(big).tip === "tr.typecMembers" + J({ list: ["TSLA", "GOOGL", "AMZN", "NVDA", "BTC"].join("ak.sep") }) && trShortSym("ETHUSDT@spot") === "ETH" && trShortSym("USDT") === "USDT");
+    // Wei 0.1.26:台股成分寫名字(nameOf = trTwName,查不到退代號),hover 寫「名字（代號）」;加密照舊
+    { const NM = { 1303: "南亞", 2603: "長榮", 2801: "彰銀" }, nameOf = (k) => NM[k] || "";
+      const tw = { weights: { 1303: 0.01, 2603: 0.01 }, universe: ["1303", "2603", "2801", "9999", "2330"], market: "spot" };
+      const LN = trTypeCLabel(trTypeC(tw), tf, nameOf), pair = (n, c) => "tr.twNameCode" + J({ name: n, code: c });
+      ok("…台股成分寫名字、查不到的退回代號;hover 台股寫「名字（代號）」、查不到的只寫代號", LN.text === "tr.typecSymsMore" + J({ list: ["南亞", "長榮", "彰銀"].join("ak.sep"), n: 5, k: 2 })
+        && LN.tip === "tr.typecMembers" + J({ list: [pair("南亞", "1303"), pair("長榮", "2603"), pair("彰銀", "2801"), "9999", "2330"].join("ak.sep") }));
+      ok("…加密成分不查名字:同一個 nameOf 下照舊寫 BTC、ETH;沒給 nameOf 也照舊寫代號", J(trTypeCLabel(trTypeC({ weights: { BTCUSDT: 0.5, ETHUSDT: 0.5 }, market: "swap" }), tf, nameOf)) === J({ text: "BTC" + "ak.sep" + "ETH", tip: "tr.typecMembers" + J({ list: "BTC" + "ak.sep" + "ETH" }) })
+        && trTypeCLabel(trTypeC(tw), tf).text === "tr.typecSymsMore" + J({ list: ["1303", "2603", "2801"].join("ak.sep"), n: 5, k: 2 }));
+      const STR = (() => { const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"); return (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); })();
+      ok("…「等 N 檔」「and N more」數字兩邊是不間斷空格(檔／more 不會單獨掉到下一行);名字（代號）兩語都有", STR.zh["tr.typecSymsMore"] === "{list} 等\u00a0{n}\u00a0檔" && STR.en["tr.typecSymsMore"] === "{list} and\u00a0{k}\u00a0more"
+        && STR.zh["tr.twNameCode"] === "{name}（{code}）" && STR.en["tr.twNameCode"] === "{name} ({code})"); }
     ok("…舊 runtime 的空手列(keys 空)照舊寫 0 檔、不掛 hover;金額表那一格用 trTypeCLabel", J(L({ weights: {}, market: "swap" })) === J({ text: "tr.nSyms" + J({ n: 0 }), tip: "" })
-      && /const tcl = isC && tc \? trTypeCLabel\(tc, t\) : null;/.test(src) && /const symTip = isC && !tc \? t\("tr\.typecPending"\) : tcl \? tcl\.tip : "";/.test(src)); }
+      && /const tcl = isC && tc \? trTypeCLabel\(tc, t, trTwName\) : null;/.test(src) && /const symTip = isC && !tc \? t\("tr\.typecPending"\) : tcl \? tcl\.tip : "";/.test(src)); }
   ok("§8.3 上下兩表同一個篩選:0 權重的成分不進部位表(trContribs / trClientTargets)", !("SOLUSDT" in trContribs({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))
     && !("SOLUSDT" in trClientTargets({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))); }
 // 台指期換執行合約(txf-contract-switch §2):生效合約 = config.contracts[name](合法家族代號、策略 SYMBOL 也是台指期家族),否則照 SYMBOL;

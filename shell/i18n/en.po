@@ -1781,7 +1781,10 @@ msgid "tr.typecMembersFlat"
 msgstr "Members: {list} (flat right now)"
 
 msgid "tr.typecSymsMore"
-msgstr "{list} and {k} more"
+msgstr "{list} and {k} more"
+
+msgid "tr.twNameCode"
+msgstr "{name} ({code})"
 
 msgid "tr.txfConfirmRef"
 msgstr "{prod} ≈ {amt} TWD"
