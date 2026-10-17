@@ -31,7 +31,7 @@ ok("Blave AI + 已登入:開選單時重讀餘額一次", open({ cur: "blave", h
 ok("沒登入 / 別的引擎:不讀", [{ cur: "blave", hasToken: false }, { cur: "claude", hasToken: true }, { cur: "codex", hasToken: true }].every((o) => open(o, true).checks.length === 0));
 ok("鍵盤開的:焦點落在選中那一列;滑鼠開的不動焦點;沒有選中列也不炸", open({ cur: "claude" }, false).focused.join() === "row" && open({ cur: "claude" }, true).focused.length === 0 && open({ cur: "claude", noRow: true }, false).err === null);
 { const w = open({ cur: "blave", running: true, hasToken: true, acctAt: 0 }, true);
-  ok("回合進行中:不開、也不讀餘額", w.err === null && w.$("mp-panel").hidden === true && w.checks.length === 0); }
+  ok("回合進行中:照開(模型開跑才讀,只影響下一輪;busy-lock spec §2.3)", w.err === null && w.$("mp-panel").hidden === false && w.checks.length === 1); }
 { const w = world({ cur: "blave" }); let err = null; try { w.M.mpPickModel("b", false); } catch (e) { err = String(e); }
   ok("mpPickModel() 同樣不丟例外(鍵盤選的焦點跟到選中列)", err === null && w.focused.join() === "row", err); }
 { const w = open({ cur: "claude" }, true); w.M.mpClose(true);

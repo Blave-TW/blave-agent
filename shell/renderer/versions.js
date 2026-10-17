@@ -187,13 +187,15 @@ function verPaintErr(S) {
   const txt = verEl("span");
   t(S.err.key).split("{v}").forEach((p, i) => { if (i) txt.appendChild(verEl("span", "mono", "v" + S.err.v)); if (p) txt.append(p); });
   el.append(m, txt); el.hidden = false;
+  if (S.err.key === "busy.restore") busyFixLink(el, "view");
 }
-// 點到 aria-disabled 的鈕(回合進行中):把 turn.busy 寫進那一列的原因行,同回滾原因行的 recipe;回合結束(verBusy)就收掉
+// 點到 aria-disabled 的「再跑一次」(回合進行中):原因寫進那一列的原因行＋「查看」(busy.js),同回滾原因行的 recipe;回合結束(verBusy)就收掉
 function verBusyNote(el) {
   if (!el) return;
   el.textContent = "";
   const m = verEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
-  el.append(m, verEl("span", "", t("turn.busy"))); el.hidden = false;
+  el.append(m, verEl("span", "", t("busy.rerun"))); busyFixLink(el, "view"); el.hidden = false;
+  busyHit("rerun");
 }
 // 回合進行中:「還原成這一版」「再跑一次」是 aria-disabled(同頁首 #rp-ho:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它
 function verBusy() {
@@ -201,11 +203,11 @@ function verBusy() {
   if (!busy) {
     const nb = $("ver-rerun-busy"); if (nb) nb.hidden = true;
     const S = VS[verSideOf(rpBag())];
-    if (S.err && S.err.key === "turn.busy") { S.err = null; verPaintErr(S); }
+    if (S.err && S.err.key === "busy.restore") { S.err = null; verPaintErr(S); }
   }
   ["ver-restore", "ver-retry"].forEach((id) => {
     const b = $(id); if (!b) return;
-    if (busy) { b.setAttribute("aria-disabled", "true"); b.title = t("turn.busy"); } else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
+    if (busy) { b.setAttribute("aria-disabled", "true"); b.title = t(id === "ver-restore" ? "busy.restore" : "busy.rerun"); } else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
   });
 }
 
@@ -586,7 +588,8 @@ async function verPollTick(side, P) {
 $("ver-back").addEventListener("click", verBack);
 $("ver-restore").addEventListener("click", () => {
   if ($("ver-restore").getAttribute("aria-disabled") !== "true") { verRestoreAsk(); return; }
-  const S = VS[verSideOf(rpBag())]; S.err = { key: "turn.busy", v: S.open }; verPaintErr(S);   // 設計稽核 S8
+  const S = VS[verSideOf(rpBag())]; S.err = { key: "busy.restore", v: S.open }; verPaintErr(S);   // 設計稽核 S8;硬鎖(Wei 10-17)
+  busyHit("restore");
 });
 
 /* ── 比較兩個版本(唯讀、沒有腳;預設 A = 正在看的舊版或上一版、B = 目前版) ── */

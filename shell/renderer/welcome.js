@@ -130,7 +130,7 @@ function stPaint() {
   const box = $("st-rows"); if (!box || ST.lang === LANG) return;
   ST.lang = LANG; box.textContent = "";
   ST_ROWS.forEach(([mk, y]) => {
-    const b = wdEl("button", "st-row"); b.type = "button"; b.dataset.starter = mk; b.disabled = runningNow();
+    const b = wdEl("button", "st-row"); b.type = "button"; b.dataset.starter = mk; busyLock(b, runningNow());
     const g = wdEl("span", "g", "↳"); g.setAttribute("aria-hidden", "true");
     const mkKey = "wd.mk." + mk, rowKey = "starter_" + mk + "_row";   // key 先組好再查(同 wdK;各市場兩語齊不齊由 tests/check_shell_welcome_data.js 列舉)
     // 中間的空白文字節點給讀屏斷詞(grid 裡看不出來):不然按鈕名字是「加密BTC 日線…2020 起」
@@ -139,10 +139,10 @@ function stPaint() {
     box.appendChild(b);
   });
 }
-// 回合進行中三列是真的 disabled(canon › Disabled);app.js 送出 / 解鎖那三排跟 nsSync 一起叫
-function stSync() { const box = $("st-rows"); if (box) box.querySelectorAll(".st-row").forEach((b) => { b.disabled = runningNow(); }); }
+// 回合進行中三列是鎖(busy.js):aria-disabled、點了在輸入框上方講原因;app.js 送出 / 解鎖那三排跟 nsSync 一起叫
+function stSync() { const box = $("st-rows"); if (box) box.querySelectorAll(".st-row").forEach((b) => busyLock(b, runningNow())); }
 function stGo(mk) {
-  if (runningNow()) return;
+  if (runningNow()) { busySendTell(); return; }
   WD.mk = mk; wdPaint();   // 資料摺疊的分段跟著最後點的那句走
   const sendKey = "starter_" + mk + "_send", text = t(sendKey), a = typeof acct !== "undefined" ? acct : null;
   // 新策略開新對話(Wei;同 nsSend、策略庫、找點子):這條對話講過話(csTitle 在 submitMessage 第一個 await 之前就設好)就先開新的。

@@ -184,7 +184,10 @@ const EVENTS = {
     // starter_new / starter_no_new = 送出起手句的那一輪結束時本機策略清單有沒有多一支(同 lib_installed / library_no_new);wd_fold_open = 點開「可以回測的資料」
     "starter_crypto", "starter_tw", "starter_txf", "starter_fill", "starter_new", "starter_no_new", "wd_fold_open",
     // 按下「登入 Blave」、瀏覽器打開之前(0.1.26;renderer/app.js blaveGo / blaveLoginFlow / planLogin):對 login_done 算 app 帶去網頁登入／註冊的完成率
-    "login_click"] },
+    "login_click",
+    // 回合中的鎖(0.1.27;renderer/busy.js,設計 spec busy-lock-2026-10 §4):點了被鎖的更新／績效刷新或再跑一次／回覆中那條的刪除／切換或新對話／
+    // 送一句話(Enter、送一句的鈕)／還原／刪策略各一個名字;lock_fix = 按了原因句的補救(停止／查看)。lock_switch、lock_send 第二期(多對話並行)起不再送
+    "lock_update", "lock_perf", "lock_chat_del", "lock_switch", "lock_send", "lock_fix", "lock_restore", "lock_del"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

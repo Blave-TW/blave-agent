@@ -1597,12 +1597,20 @@ function loadSession(id) {
       .map((r) => ({ role: r.role, content: r.content, ts: r.created_at }));
   } catch (_) { return []; } finally { db.close(); }
 }
+// 回合中只拒刪正在回覆的那條(回覆沒地方落);別條照刪。runtime 那邊同時在寫 session.db(WAL、30 秒 busy timeout),
+// 這裡也等一下寫鎖,不然撞到它 commit 的那一瞬就回 false
 function deleteSession(id) {
-  if (!okSessionId(id) || activeTurn) return false;
+  if (!okSessionId(id) || ((activeTurn || turnStarting) && id === turnSessionId)) return false;
   const db = sessionDb(false); if (!db) return false;
   try {
-    db.prepare("DELETE FROM turns WHERE session_id = ?").run(id);
-    db.prepare("DELETE FROM session_meta WHERE session_id = ?").run(id);
+    db.exec("PRAGMA busy_timeout = 3000");
+    // 兩張表一起刪或都不刪:只在 BEGIN 等一次寫鎖;只刪掉 turns 的話清單上消失了、摘要卻成了孤兒
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.prepare("DELETE FROM turns WHERE session_id = ?").run(id);
+      db.prepare("DELETE FROM session_meta WHERE session_id = ?").run(id);
+      db.exec("COMMIT");
+    } catch (err) { try { db.exec("ROLLBACK"); } catch (_) { /* BEGIN 就沒拿到鎖 */ } throw err; }
     try { fs.rmSync(path.join(IMG_DIR, id), { recursive: true, force: true }); } catch (_) { /* 圖刪不掉不擋 */ }
     try { fs.rmSync(path.join(RES_DIR, id), { recursive: true, force: true }); } catch (_) { /* 結果卡同上 */ }
     try { fs.rmSync(path.join(META_DIR, id + ".json"), { force: true }); } catch (_) { /* 對話 meta 同上 */ }
@@ -2579,7 +2587,7 @@ function saveModelPrefs(prefs) {
 const SAFE_ID = /^[A-Za-z0-9][\w.:\/-]{0,127}$/;
 const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
 
-let activeTurn = null, turnStarting = false;
+let activeTurn = null, turnStarting = false, turnSessionId = null;   // turnSessionId:正在回覆的那條;只在 activeTurn / turnStarting 期間有意義
 /* 停止鈕:每一輪一個旗標檔(runtime/turn_stop.py 的 BLAVE_TURN_INTERRUPT_FILE)。建檔 = 要停;runtime 輪詢到就殺掉這一輪
    的工具與引擎、照「已停止」收尾。只動這一輪的子行程樹——常駐程式、策略、對帳器不是它的子行程。路徑在送出當下就定好,
    spawn 之前按停止也寫得進去(runtime 一起來就看到)。runtime 卡死時的保險:agent_turn 沉默滿 STOP_KILL_MS 才殺它。
@@ -3330,6 +3338,7 @@ app.whenReady().then(() => {
     const cloudUp = cloudHandoffOn() && payload && payload.handoff === "up";
     // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
     // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db(下面補問版本閘的那段 await 也算在內)
+    turnSessionId = payload && payload.sessionId;   // deleteSession 只拒刪這一條
     turnStarting = true;
     newTurnStop();
     // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊

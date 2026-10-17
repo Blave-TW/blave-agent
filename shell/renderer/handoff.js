@@ -121,7 +121,7 @@ function hoNote(key) {
 
 function hoAsk(dir, id, opener) {
   if (!HO.on || !HO_ID_RE.test(id)) return;
-  if (typeof running !== "undefined" && running) return;                 // 鈕本身是 aria-disabled;這裡再守一次
+  if (typeof running !== "undefined" && running) { busyTell($("rp-ho-note"), "send"); return; }   // 鈕是 aria-disabled:點了在頁首那一行講原因
   if (!envCanSwitch()) return;                                           // IME 選字中、別的框開著
   // 雲端沒在運行(沒登入、沒綁卡、沒主機、啟動中):切過去,那一頁自己會講。
   // 記下要送哪一支:那一頁通完(登入 / 啟動好)之後,雲端中欄會留一格「準備好了」卡,主鈕把人送回來按這顆鈕。

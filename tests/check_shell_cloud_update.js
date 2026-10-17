@@ -24,6 +24,7 @@ eval(["trHasAccount", "trPresWip", "trSetupOnly", "trRecRunning", "trRestartStop
 const trVenueIds = (r) => (r && r.venue ? [r.venue] : []), trVenueLabel = (id) => id || "", envMoney = (st) => (st && st.report && st.report.venue === "paper" ? "paper" : "real");
 const envMoneyText = (m) => (m === "paper" ? "模擬" : "真錢"), trWhereTidy = (s) => s;
 const paneSt = { chat: { off: false } }, paneToggle = () => {}, upPaint = () => {}, upRefresh = () => Promise.resolve(), $ = (id) => ({ id });
+const told = [], busySlot = (id, anchor) => ({ id, anchor }), busyTell = (slot, kind) => told.push([slot.id, kind]);   // busy.js(回合中的鎖)
 // 最小假 DOM:lede 那一句經 upRich 畫成 p(版號包 .mono)走 lead 槽
 class El { constructor(tag) { this.tag = tag; this.className = ""; this.children = []; this._t = ""; } append(...x) { x.forEach((y) => this.children.push(y)); }
   get textContent() { return this.children.length ? this.children.map((c) => (typeof c === "string" ? c : c.textContent)).join("") : this._t; } set textContent(v) { this._t = String(v); this.children.length = 0; } }
@@ -97,7 +98,7 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
   reset({ ...st("halted"), kind: "stopped" }); await upCloudUpdate();
   ok("雲端停機:不送", boxes.length === 0 && sent.length === 0);
   reset(st("halted")); running = true; await upCloudUpdate();
-  ok("這台電腦有回合在跑:不送(送不出去)", sent.length === 0 && boxes.length === 0);
+  ok("這台電腦有回合在跑:不送(送不出去)、不刷新、不記 cloud_upd_open;在按的那顆鈕下講原因(busy.js cloudUpd)", sent.length === 0 && boxes.length === 0 && refreshes === 0 && tracked.length === 0 && told.length === 1 && told[0][0] === "upc-why" && told[0][1] === "cloudUpd");
 
   { const dc = cut(src, "delClose") || "";
     ok("確認框的 onCancel:只在沒按主鈕 / 第二動作鈕就收掉時叫(取消、✕、Esc、框外、被程式收掉);主鈕與第二動作鈕先記 acted", /if \(c && c\.onCancel && !c\.acted\) c\.onCancel\(\);/.test(dc)

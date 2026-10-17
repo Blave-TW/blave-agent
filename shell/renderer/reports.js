@@ -271,7 +271,7 @@ function rptPaintTools() {
 }
 // 回合中點了「新增報告」:把那句寫進工具列下的訊息槽(role=status 唸一次),鈕 describedby 指過去
 function rptBusyTell() {
-  RPT.busyTold = true;
+  RPT.busyTold = true; busyHit("send");
   rptPaintTools();
   $("rpt-ask").setAttribute("aria-describedby", "rpt-msg");
 }

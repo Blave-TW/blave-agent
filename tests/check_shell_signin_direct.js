@@ -37,7 +37,7 @@ ok("report-share / report-sharelist 不再開帳號與方案", !/setCat\("plan"\
 { // 按登入的埋點:三個開瀏覽器的入口都在 startOAuth 之前送 login_click(planSignIn 的入口都經 planLogin)
   const before = (body) => { const a = body.indexOf('trackFeature("login_click")'), b = body.indexOf("window.blave.startOAuth("); return a > 0 && b > a; };
   const flow = cut(app, "blaveLoginFlow"), start = flow.slice(flow.indexOf("async function start()"));
-  ok("login_click 在 blaveGo / blaveLoginFlow.start / planLogin 的 startOAuth 之前各送一次", before(cut(app, "blaveGo")) && before(start) && before(cut(app, "planLogin"))
+  ok("login_click 在 blaveGoNow / blaveLoginFlow.start / planLogin 的 startOAuth 之前各送一次", before(cut(app, "blaveGoNow")) && before(start) && before(cut(app, "planLogin"))
     && (app.match(/trackFeature\("login_click"\)/g) || []).length === 3);
   ok("授權網址帶 src=desktop_app(註冊來源)", /device_label: [^\n]*\n(?:\s*\/\/[^\n]*\n)?\s*src: "desktop_app",\n\s*\}\);\n\s*const authUrl = /.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")));
 }

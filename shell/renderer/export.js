@@ -132,7 +132,7 @@ function xpSetTimeMachine(label) { XP.tm = label || null; if (XP.tm) XP.sel = "p
 function xpNote(text) { const n = $("xp-note"); if (!n) return; n.textContent = text || ""; n.hidden = !text; }
 function xpOpen() {
   const b = $("xp-btn"), m = $("xp-menu");
-  if (xpDisabled()) { xpNote(running === true ? t("turn.busy") : t("xp.why.tm", { v: XP.tm })); return; }
+  if (xpDisabled()) { if (running === true) busyHit("send"); xpNote(running === true ? t("turn.busy") : t("xp.why.tm", { v: XP.tm })); return; }
   const d = RP.data, all = xpOffAll(d); m.textContent = "";
   if (all) m.appendChild(xpMk("p", "xp-why", t(XP_OFF_KEY[all])));
   for (const k of XP_ORDER) {
@@ -292,7 +292,7 @@ function xpView(host, ex, d) {
   cp.addEventListener("click", () => xpCopy(cp, ex.content));
   if (ex.stale) {
     const again = xpMk("button", "btn-fill", t("xp.again")); again.type = "button"; again.id = "xp-again";
-    again.addEventListener("click", () => { if (running === true) { xpNote(t("turn.busy")); return; } xpAsk(k, again); });
+    again.addEventListener("click", () => { if (running === true) { busyHit("send"); xpNote(t("turn.busy")); return; } xpAsk(k, again); });
     grp.append(again, cp);
   } else {
     const dl = xpMk("button", "btn-out", t("xp.dl")); dl.type = "button";

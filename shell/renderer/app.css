@@ -1201,6 +1201,21 @@ body.resizing * { cursor: col-resize !important; }
 .cs-del:hover { background: var(--bg-body); color: var(--ink); }
 /* 紅字在灰填上 3.0:1 不過 AA,墊 bg-body 才有 4.5:1;有了底色也才讀得出是一顆鈕 */
 .cs-del.is-armed, .cs-del.is-armed:hover { color: var(--color-red); background: var(--bg-body); padding: 0 var(--space-6); }
+/* 回合中的鎖(busy.js):鈕照畫、aria-disabled(可聚焦、可點),灰階同 :disabled;點了在 .busy-why 講原因＋一顆 .btn-quiet 補救 */
+.cs-btn[aria-disabled="true"], .cs-btn[aria-disabled="true"]:hover, .cs-newrow[aria-disabled="true"], .cs-newrow[aria-disabled="true"]:hover,
+.cs-del[aria-disabled="true"], .cs-del[aria-disabled="true"]:hover { background: none; color: var(--color-greyDark); cursor: not-allowed; }
+.cs-item[aria-disabled="true"] { cursor: not-allowed; }
+.cs-item[aria-disabled="true"] .cs-name { color: var(--color-greyDark); }
+.btn-quiet[aria-disabled="true"], .btn-quiet[aria-disabled="true"]:hover { color: var(--color-greyDark); cursor: not-allowed; text-decoration: none; }
+.ws-update[aria-disabled="true"]:not(.is-status), .ws-update[aria-disabled="true"]:not(.is-status):hover { color: var(--color-greyDark); cursor: not-allowed; }
+.ws-update[aria-disabled="true"]:hover span { text-decoration: none; }
+.busy-why { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.busy-why[hidden] { display: none; }
+.busy-why .busy-fix { margin-left: var(--space-4); color: var(--ink-2); }
+.busy-why .busy-fix:hover { color: var(--ink); }
+#cs-why { padding: 0 var(--space-12) var(--space-8); }
+#strat-why { padding: var(--space-4) var(--space-12) var(--space-8) var(--space-24); }   /* 左緣對齊列裡的策略名 */
+#ws-up-why { text-align: right; margin-bottom: var(--space-6); }
 @media (prefers-reduced-motion: reduce) {
   .cs-btn, .cs-newrow, .cs-item, .cs-del { transition: none; }
 }

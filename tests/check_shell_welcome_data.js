@@ -271,9 +271,9 @@ if (!process.versions.electron) {
     ok("② 三列的順序固定 加密｜台股｜台指期、年份同送出句;tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
       /const ST_ROWS = \[\["crypto", 2020\], \["tw", 2022\], \["txf", 2015\]\];/.test(src) && STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股"
       && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");
-    ok("② 起手句的列:button.st-row[data-starter]、↳ aria-hidden、tag + 句子 + 起始年;送出照 suggest 的寫法(submitMessage 回 true 才記 starter_<mk> 與 pending);回合中真的 disabled",
-      /wdEl\("button", "st-row"\); b\.type = "button"; b\.dataset\.starter = mk; b\.disabled = runningNow\(\);/.test(cutFn(src, "stPaint")) && /g\.setAttribute\("aria-hidden", "true"\)/.test(cutFn(src, "stPaint"))
-      && /submitMessage\(text\)\.then\(\(ok\) => \{ if \(ok\) \{ trackFeature\(ST_FEATURE\[mk\]\); ST\.pending = \{ before \}; \} \}\);/.test(cutFn(src, "stGo")) && /b\.disabled = runningNow\(\);/.test(cutFn(src, "stSync")));
+    ok("② 起手句的列:button.st-row[data-starter]、↳ aria-hidden、tag + 句子 + 起始年;送出照 suggest 的寫法(submitMessage 回 true 才記 starter_<mk> 與 pending);回合中是鎖(aria-disabled,點了在輸入框上方講原因;busy-lock spec)",
+      /wdEl\("button", "st-row"\); b\.type = "button"; b\.dataset\.starter = mk; busyLock\(b, runningNow\(\)\);/.test(cutFn(src, "stPaint")) && /if \(runningNow\(\)\) \{ busySendTell\(\); return; \}/.test(cutFn(src, "stGo")) && /g\.setAttribute\("aria-hidden", "true"\)/.test(cutFn(src, "stPaint"))
+      && /submitMessage\(text\)\.then\(\(ok\) => \{ if \(ok\) \{ trackFeature\(ST_FEATURE\[mk\]\); ST\.pending = \{ before \}; \} \}\);/.test(cutFn(src, "stGo")) && /busyLock\(b, runningNow\(\)\)/.test(cutFn(src, "stSync")));
     // stTurnEnd:原文接假的 RP / trackFeature 跑
     const turn = (before, after, pending) => { const tf = [], C = { RP: { list: after.map((name) => ({ name })) }, trackFeature: (n) => tf.push(n), ST: { pending: pending ? { before: new Set(before) } : null } };
       vm.createContext(C); vm.runInContext(cutFn(src, "stTurnEnd") + "\nstTurnEnd(); stTurnEnd();", C); return tf.join(); };
@@ -435,9 +435,10 @@ app.whenReady().then(async () => {
       $("st-rows").querySelector('[data-starter="crypto"]').click(); r.ta2 = $("ta").value; r.tf2 = window.__tf.slice(); return r; })()`);
     ok("③ Blave AI 已登入但不能跑 → 點起手句只填不送:自己的字留著、整句送出版接在下一行、沒有泡泡;連點兩列只換那一句;只記 starter_fill(不記 welcome_data_row);資料分段跟著換到最後點的市場",
       fill.ta === "my idea\n" + Z["starter_txf_send"] && fill.ta2 === "my idea\n" + Z["starter_crypto_send"] && fill.tf.join() === "starter_fill" && fill.tf2.join() === "starter_fill,starter_fill" && fill.msgs === 0 && fill.running === false && fill.seg === "txf", JSON.stringify(fill));
-    const dis = await js(`(() => { running = true; stSync(); const b = [...$("st-rows").querySelectorAll(".st-row")]; const r = { dis: b.every((x) => x.disabled), cur: getComputedStyle(b[0]).cursor, op: getComputedStyle(b[0]).opacity };
-      running = false; stSync(); r.back = b.every((x) => !x.disabled); cur = "claude"; hasToken = false; acct = null; $("ta").value = ""; WD.filled = ""; WD.pre = ""; WD.mk = "crypto"; WD.key = ""; wdPaint(); return r; })()`);
-    ok("③ 回合進行中三列是真的 disabled(cursor not-allowed、不用 opacity),回合結束解除", dis.dis && dis.cur === "not-allowed" && dis.op === "1" && dis.back, JSON.stringify(dis)); }
+    const dis = await js(`(() => { running = true; stSync(); const b = [...$("st-rows").querySelectorAll(".st-row")]; const r = { dis: b.every((x) => x.getAttribute("aria-disabled") === "true" && !x.disabled), cur: getComputedStyle(b[0]).cursor, op: getComputedStyle(b[0]).opacity };
+      const n0 = $("chat-scroll").querySelectorAll(".msg").length; b[0].click(); r.told = $("ta-wait").textContent === t("turn.busy") && $("chat-scroll").querySelectorAll(".msg").length === n0;
+      running = false; stSync(); r.back = b.every((x) => !x.hasAttribute("aria-disabled")); taWaitShow(false); cur = "claude"; hasToken = false; acct = null; $("ta").value = ""; WD.filled = ""; WD.pre = ""; WD.mk = "crypto"; WD.key = ""; wdPaint(); return r; })()`);
+    ok("③ 回合進行中三列是鎖(aria-disabled、cursor not-allowed、不用 opacity);點了不送、輸入框上方講原因;回合結束解除", dis.dis && dis.cur === "not-allowed" && dis.op === "1" && dis.told && dis.back, JSON.stringify(dis)); }
   { // 三張卡(§1.6):讀到策略庫 → 挑三支、容器 ≥ 640 三欄並排、看全部 {n} 支
     await js(`(() => { const R = (sym, iv) => ({ annual_return: 18.2, sharpe: 1.31, max_drawdown: -22.5, symbol: sym, interval: iv, spark: Array.from({ length: 64 }, (_, i) => 1 + i * 0.02), equity_from: "2020-01-01", equity_to: "2026-06-30" });
       const S = (id, market, sym, iv, o) => Object.assign({ id, title: "S" + id, price: 0, market, is_official: true, verified: true, blave_data: "none", created_at: "2026-06-10 00:00:00", purchase_count: 0, report: R(sym, iv) }, o || {});

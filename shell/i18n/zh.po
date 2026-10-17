@@ -108,7 +108,7 @@ msgstr "說一個交易想法…"
 
 # 回合進行中、草稿非空時按 Enter:輸入框上方一行(e2e 0.1.8 #71)
 msgid "ws.waitTurn"
-msgstr "上一輪還在跑，結束後再按 Enter 送出。"
+msgstr "這條回覆完才能送出。"
 
 # 聊天附件(照雲端 workspace_attach / workspace_attach_remove / workspace_attach_too_large;一則最多 4 個、單檔 5 MiB、合計 15 MiB)
 msgid "ws.attach"
@@ -373,7 +373,7 @@ msgid "phase.schedule"
 msgstr "設定排程"
 
 msgid "turn.busy"
-msgstr "上一輪還在跑。"
+msgstr "這條回覆完才能送出。"
 
 msgid "turn.engineFailed"
 msgstr "引擎準備失敗：{msg}"
@@ -3158,9 +3158,6 @@ msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉�
 msgid "up.about"
 msgstr "關於"
 
-msgid "up.busy"
-msgstr "有對話還在回覆，結束後再更新"
-
 msgid "up.backup"
 msgstr "Blave 已更新到 {av}。你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。"
 
@@ -3907,7 +3904,7 @@ msgid "rob.btnSent"
 msgstr "已送出，看對話"
 
 msgid "rob.busy"
-msgstr "agent 正在回覆上一則訊息，稍等幾秒再送出。"
+msgstr "這條回覆完才能送出。"
 
 msgid "rob.emptyCap"
 msgstr "agent 掃完後，這裡會出現結論與熱圖。"
@@ -6157,7 +6154,7 @@ msgid "tv.err.narrow"
 msgstr "中欄太窄，TradingView 在這個寬度不顯示 Pine 編輯器的按鈕。把中欄拉寬再試一次。"
 
 msgid "tv.err.busy"
-msgstr "agent 正在回覆，請稍候再試。"
+msgstr "這條回覆完才能送出。"
 
 msgid "tv.err.unknown"
 msgstr "沒有送出去，請再試一次。"
@@ -8158,3 +8155,63 @@ msgstr "你已經建了 1 支策略。"
 
 msgid "acct.builtN"
 msgstr "你已經建了 {n} 支策略。"
+
+# 回合中的鎖(busy.js;設計 spec busy-lock-2026-10 第一期):點了被鎖的控件,在控件附近的訊息槽講一句原因＋補救連結
+msgid "busy.update"
+msgstr "有 1 條對話正在回覆，重新啟動會中斷它。"
+
+msgid "busy.perf"
+msgstr "agent 正在回覆，可能還在改策略，回覆完再刷新。"
+
+msgid "busy.rerun"
+msgstr "agent 正在回覆，可能還在改策略，回覆完再重跑。"
+
+msgid "busy.restore"
+msgstr "agent 正在回覆，可能正在改這支策略，回覆完再還原。"
+
+msgid "busy.del"
+msgstr "agent 正在回覆，可能正在改這支策略，回覆完再刪除。"
+
+msgid "busy.chatDel"
+msgstr "這條還在回覆，停止後才能刪除。"
+
+msgid "busy.switch"
+msgstr "這條回覆完才能切換對話。"
+
+msgid "busy.new"
+msgstr "這條回覆完才能開新對話。"
+
+msgid "busy.cloudUpd"
+msgstr "這條回覆完才能送更新。"
+
+# 補救連結:停止 = 停掉回覆中的那條;查看 = 回到聊天欄看那條回覆
+msgid "busy.fix.stop"
+msgstr "停止"
+
+msgid "busy.fix.view"
+msgstr "查看"
+
+# 回合中換 AI(設定 › 模型接入):先問,確認了先停那條再換
+msgid "busy.cut.title"
+msgstr "要先停止正在回覆的這條嗎？"
+
+msgid "busy.cut.body"
+msgstr "切換 AI 之前，會先停止正在回覆的這條。"
+
+msgid "busy.cut.ok"
+msgstr "停止並切換"
+
+# 先停再做:等回合收掉時按的那顆鈕旁那一行;20 秒停不下來就不做,改講這句(留「停止」再按)
+msgid "busy.stopping"
+msgstr "停止中…"
+
+msgid "busy.stopFail"
+msgstr "沒停下來，請稍後再試。"
+
+# 回合中登出:確認框第一句
+msgid "busy.cut.out"
+msgstr "正在回覆的這條會先停止。"
+
+# 刪對話沒刪成(主行程回 false):對話清單上方那一行,不無聲關框
+msgid "cs.delFail"
+msgstr "沒有刪成，再試一次。"

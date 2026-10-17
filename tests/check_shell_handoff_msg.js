@@ -172,7 +172,7 @@ t("index.html:載入 handoff.js;報告頁首分成 .txt / .act 兩塊(鈕不畫�
 t("app.css:icon + 字的描邊鈕、確認框的兩欄變體;列尾的「拉回」退場(.ho-down 家族清掉)", /\.btn-out\.has-ic \{ display: inline-flex;/.test(css) && !/\.ho-down/.test(css)
   && /\.cf-rows\.kv dt \{ flex: 0 0 56px;/.test(css) && /:lang\(en\) \.cf-rows\.kv dt \{ flex-basis: 84px; \}/.test(css));
 // 列現在是鈕(點了畫雲端那支的報告),鈕不能包鈕:「拉回」掛在同一個 wrap 裡、不在列裡
-t("trade.js:雲端清單列尾是刪除鈕(在 wrap 裡,不在鈕裡;跟 HO 無關)、拉回搬到頁首;空態換成新的那一句", /wrap\.appendChild\(armedDelete\(wrap, t\("cdel\.aria"/.test(trSrc) && !/hoDownBtn/.test(trSrc + src)
+t("trade.js:雲端清單列尾是刪除鈕(在 wrap 裡,不在鈕裡;跟 HO 無關)、拉回搬到頁首;空態換成新的那一句", /const d = armedDelete\(wrap, t\("cdel\.aria"[^\n]*\n[^\n]*wrap\.appendChild\(d\);/.test(trSrc) && !/hoDownBtn/.test(trSrc + src)
   && /ho \? t\("ho\.emptyHint"\) : t\("side\.cloud\.emptyCut1"\)/.test(trSrc) && /const ho = typeof HO !== "undefined" && HO\.on && typeof hoCloudLive === "function" && hoCloudLive\(\);/.test(trSrc));
 // A′:輸入框上方「操作對象」那行已整列拿掉(tests/check_shell_envsw.js 釘);「agent 還不能操作雲端主機」那句已刪
 t("trade.js:envPaint 不再看 HO.on;chat.tgt.cut1 從程式、DOM、字串表全部消失", !/HO\.on\)/.test(trSrc.slice(trSrc.indexOf("function envPaint("), trSrc.indexOf("function envPaintSide(")))

@@ -36,7 +36,7 @@ const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
 const calls = app.match(/window\.blave\.startOAuth\([^)]*\)/g) || [];
 const fnOf = (re) => { const m = app.match(re); return m ? app.slice(m.index, app.indexOf("\n}\n", m.index)) : ""; };
 t(`startOAuth 呼叫 ${calls.length} 處,帶 "blave" 的只有 1 處`, calls.length >= 4 && calls.filter((c) => /"blave"/.test(c)).length === 1);
-t("…那一處在 blaveGo 裡", /window\.blave\.startOAuth\(LANG, "blave"\)/.test(fnOf(/async function blaveGo\(/)));
+t("…那一處在 blaveGoNow 裡(blaveGo 只是回合中的守門,0.1.27)", /window\.blave\.startOAuth\(LANG, "blave"\)/.test(fnOf(/async function blaveGoNow\(/)));
 t("…登入失效的 blaveLoginFlow 不帶", /window\.blave\.startOAuth\(LANG\)/.test(fnOf(/function blaveLoginFlow\(/)));
 
 console.log(red ? `\n${red} 紅` : "\n全綠");
