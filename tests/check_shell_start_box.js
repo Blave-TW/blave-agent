@@ -43,9 +43,10 @@ function world(o) {
     trSend: (S, cmd) => { sent.push(cmd); return Promise.resolve(o.reply ? o.reply(cmd) : { ok: true }); },
     // 真的 trRun 依序跑每一步、前一步沒成功就停;這裡只留這一條(過場態、紅字不在這支測試的範圍)
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
+    AWAKE: o.awake, tracked: [], switched: [], trackFeature: (n) => env.tracked.push(n), envSwitchGuarded: (e) => { env.switched.push(e); return true; },
   };
   const names = Object.keys(env);
-  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAskStart")}\n
+  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAwakeCloudGo")}\n${fn(trade, "trAskStart")}\n
     const click = ${okClick};\n return { trAskStart, trStartNotes, click, ctx: () => delCtx };`;
   const M = new Function(...names, body)(...names.map((k) => env[k]));
   Object.keys(ids).forEach((k) => delete ids[k]);
@@ -54,7 +55,7 @@ function world(o) {
   const opts = $("del-body").all().filter((n) => n.cls.has("cf-opt")).map((row) => ({ row, input: row.kids.find((k) => k.tag === "input"), t: row.kids.filter((k) => k.cls && k.cls.has("cf-opt-t")).map((k) => k.textContent)[0], d: row.kids.find((k) => k.cls && k.cls.has("cf-opt-d")), w: row.kids.find((k) => k.cls && k.cls.has("cf-opt-w")) }));
   const pick = (id) => { const o2 = opts.find((x) => x.input.value === id); opts.forEach((x) => { x.input.checked = x === o2; }); return o2.input.fire("change"); };
   const press = async () => { await M.click(); await new Promise((r) => setTimeout(r, 0)); };
-  return { M, sent, store, opts, pick, press, okb: $("del-ok"), open: () => !$("del-scrim").hidden, body: $("del-body"), modal: $("del-modal"), mark: $("del-mark") };
+  return { M, env, sent, store, opts, pick, press, okb: $("del-ok"), open: () => !$("del-scrim").hidden, body: $("del-body"), modal: $("del-modal"), mark: $("del-mark") };
 }
 
 (async () => {
@@ -92,6 +93,16 @@ function world(o) {
     ok("只有一種啟動方式的舊機:沒有選項、主鈕可按、字是「啟動並補齊部位」", w.opts.length === 0 && w.okb.disabled === false && w.okb.textContent === "tr.startCatchUp" && !w.modal.cls.has("has-choices")
       && w.body.kids.some((k) => k.textContent === "tr.startWarn1"));
     await w.press(); ok("…按下去送 resume(＋restart_reconciler)", w.sent.join() === "resume,restart_reconciler", w.sent); }
+  // ---- K4:這台電腦的啟動框細節最後一行是「要 24 小時跑」+ 一顆鈕;按了記 awake_cloud_go、收框、切到雲端那一袋;雲端的框沒有這一行
+  { const w = world({ money: "paper", awake: true }), lis = w.body.all().filter((n) => n.tag === "li"), last = lis[lis.length - 1], b = last && last.all().find((n) => n.tag === "button");
+    ok("本機:細節最後一行是雲端出口(字 + 鈕)", !!b && last.textContent === "tr.means.cloud tr.means.cloudGo" && b.textContent === "tr.means.cloudGo" && b.cls.has("btn-quiet"), last && last.textContent);
+    ok("本機:防睡開著時細節用 1a / 2pa(框真的讀到 AWAKE)", lis.map((n) => n.textContent).slice(0, 2).join() === "tr.means.1a,tr.means.2pa");
+    if (b) await b.fire("click");
+    ok("按出口:記 awake_cloud_go、框關、切到 cloud、沒送任何指令", w.env.tracked.join() === "awake_cloud_go" && !w.open() && w.env.switched.join() === "cloud" && w.sent.length === 0, { t: w.env.tracked, s: w.env.switched }); }
+  { const w = world({ money: "paper", awake: false }), lis = w.body.all().filter((n) => n.tag === "li");
+    ok("防睡關著:框用舊版 1 / 2p,出口照樣在", lis.map((n) => n.textContent).slice(0, 2).join() === "tr.means.1,tr.means.2p" && lis[lis.length - 1].textContent === "tr.means.cloud tr.means.cloudGo"); }
+  { const w = world({ money: "real", env: "cloud", awake: true }), lis = w.body.all().filter((n) => n.tag === "li");
+    ok("雲端的框:沒有雲端出口", !lis.some((n) => /tr\.means\.cloud/.test(n.textContent))); }
   // ---- 4
   { const N = world({ money: "paper" }).M.trStartNotes, flat = (o) => { const n = N(o); return n.keep.join("|") + " / " + n.details.map((g) => g.label + ":" + (g.items ? g.items.join("|") : g.text)).join(";"); };
     // 設計稽核 desktop-10-08 #3:睡眠那一句(tr.keep.sleep)退役——它跟細節的第 1、2 點是同一件事;本機四點全在「細節」,常駐只留 venue 通用的「只調整 Blave 那一份」
@@ -108,6 +119,9 @@ function world(o) {
     ok("統一 · 真錢:第 4 點是 tr.means.twStop(帶券商名)、不出 tr.means.4", flat({ real: true, own: true, pres: true, tw: true, venue: "統一期貨" }).indexOf("tr.means.4") < 0
       && /o\.tw \? t\("tr\.means\.twStop", \{ venue: o\.venue \}\) : t\("tr\.means\.4"\)/.test(trade));
     ok("群益 · 真錢:同樣 twStop、不出 tr.means.4(靠 venue 判斷,不是只看 pres)", flat({ real: true, own: true, tw: true, venue: "群益" }) === "tr.keep.own / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.twStop");
+    ok("防睡開著(awake)· 模擬:第 1、2 點換成閒置不睡的那組(tr.means.1a / 2pa),第 3 點照舊", flat({ awake: true, paper: true, own: true, venue: "" }) === " / tr.det.local:tr.means.1a|tr.means.2pa|tr.means.3");
+    ok("防睡開著 · 真錢:tr.means.1a / 2a,交易所停損單照舊排第 4", flat({ awake: true, real: true, own: true, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1a|tr.means.2a|tr.means.3|tr.means.4");
+    ok("防睡開著 · 雲端:不受影響(主機不靠這台電腦)", flat({ awake: true, cloud: true, real: true, own: true, v: { h: "0.9", m: "50" } }) === flat({ cloud: true, real: true, own: true, v: { h: "0.9", m: "50" } }));
     ok("加密交易所 · 真錢:照舊 tr.means.4、不出 twStop", flat({ real: true, own: true, tw: false, venue: "Binance" }) === "tr.keep.own / tr.det.local:tr.means.1|tr.means.2|tr.means.3|tr.means.4");
     ok("tw 旗標從既有 venue id 判:capital / president 都算,其餘不算;call site 用 trTwBroker(trVenueId())", TW("capital") && TW("president") && !TW("binance") && !TW("paper") && !TW(null)
       && /tw: trTwBroker\(trVenueId\(\)\), pres: !cloud/.test(trade));
@@ -139,7 +153,7 @@ function world(o) {
     ok("啟動後不再寫「看過細節」的旗標(trStartSeenKey 退役)", !Object.keys(a.store).length && !/trStartSeenKey|tr_start_seen_/.test(trade), a.store); }
   // ---- 字串
   { const has = (k) => (strings.match(new RegExp('"' + k.replace(/\./g, "\\.") + '":', "g")) || []).length === 2;
-    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.means.twStop", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.det.local", "tr.det.cloud", "cf.more"];
+    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.means.twStop", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.det.local", "tr.det.cloud", "cf.more", "tr.means.1a", "tr.means.2a", "tr.means.2pa", "tr.means.cloud", "tr.means.cloudGo"];
     const GONE = ["tr.startOwnOnly", "tr.startChoice", "tr.startWarn2", "tr.startWarn2Local", "tr.means.l", "tr.cloud.means.l", "tr.cloud.means.2", "tr.keep.sleep"];
     ok("新字串兩語都在;退役的兩語都拿掉、程式也不再引用", NEW.every(has) && GONE.every((k) => strings.indexOf('"' + k + '"') < 0 && trade.indexOf('"' + k + '"') < 0), NEW.filter((k) => !has(k)).concat(GONE.filter((k) => strings.indexOf('"' + k + '"') >= 0)));
     const zh = strings.slice(strings.indexOf("\n  zh: {")), get = (k) => (zh.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";

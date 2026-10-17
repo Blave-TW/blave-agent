@@ -439,6 +439,7 @@ function setCat(cat) {
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "rules") rulesOpen(); else rulesClear();   // Agent 規則(renderer/rules.js):離開這一類就丟掉沒存的編輯
   if (cat === "display") aboutIdLoad();
+  if (cat === "display" && typeof awakeLoad === "function") awakeLoad();   // 設定 › 一般的防睡開關
   if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
@@ -932,6 +933,22 @@ $("set-id-copy").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(INSTALL_ID); } catch (_) { return; }
   const b = $("set-id-copy"); b.textContent = t("about.idCopied"); srSay(t("about.idCopied"));
   clearTimeout(INSTALL_ID_T); INSTALL_ID_T = setTimeout(() => { b.textContent = t("about.idCopy"); }, 2000);
+});
+/* 設定 › 一般:自動下單時不讓電腦睡。AWAKE 給啟動確認框同步讀(trAskStart → trStartNotes 的 awake);讀不到當開著,同主行程的預設 */
+var AWAKE = true;
+async function awakeLoad() { try { AWAKE = (await window.blave.keepAwake()) !== false; } catch (_) { AWAKE = true; } awakePaint(); }
+function awakePaint() {
+  const sw = $("set-awake-sw"); if (!sw) return;
+  sw.classList.toggle("off", !AWAKE); sw.setAttribute("aria-checked", AWAKE ? "true" : "false");
+  // Windows 關掉時多講一句:統一期貨有部位那條不看這個開關(Wei 10-07 的規則照擋)
+  $("set-awake-lead").textContent = t(AWAKE ? "set.awake.lead" : window.blave.platform === "win32" ? "set.awake.leadOffWin" : "set.awake.leadOff");
+}
+$("set-awake-sw").addEventListener("click", async () => {
+  let r = null;
+  try { r = await window.blave.keepAwakeSet(!AWAKE); } catch (_) { r = null; }
+  if (typeof r !== "boolean") return;   // 沒切成:畫面維持原狀
+  if (AWAKE && !r) trackFeature("awake_off");
+  AWAKE = r; awakePaint(); srSay($("set-awake-lead").textContent);
 });
 $("set-terms").addEventListener("click", () => window.blave.openExternal(legalUrl("terms_of_service")));   // 服務條款:跟版本資訊同一塊(設定 › 一般 › 關於)
 $("set-privacy").addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
@@ -2090,7 +2107,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
     cv.setAttribute("aria-hidden", "true"); sm.appendChild(cv); d.open = !!detailsOpen;
     details.forEach((g) => {
       const box = mk("div"); if (g.label) box.appendChild(mk("span", "lbl", g.label));
-      if (g.items) { const ul = mk("ul"); g.items.forEach((x) => ul.appendChild(mk("li", "", x))); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
+      if (g.items) { const ul = mk("ul"); g.items.forEach((x) => { const li = mk("li", "", typeof x === "string" ? x : null); if (typeof x !== "string") li.appendChild(x); ul.appendChild(li); }); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
       inner.appendChild(box);
     });
     d.append(sm, inner); body.appendChild(d);
@@ -4189,6 +4206,7 @@ function applyStatic() {
   acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();
+  if (typeof awakePaint === "function") awakePaint();   // 設定 › 一般的防睡開關底下那句
   if (typeof libRepaint === "function") libRepaint();   // 策略庫的清單 / 詳情(renderer/library.js 用 t() 現組的字)
   if (typeof rptRepaint === "function") rptRepaint();   // 報告清單 / 閱讀頁 / 新增報告框(renderer/reports.js)
   if (typeof nsRepaint === "function") nsRepaint();     // 新增策略框的預覽句與閘門句(renderer/newstrategy.js)
@@ -4210,6 +4228,7 @@ function applyStatic() {
   syncLangControls();
   applyStatic();
   hasToken = await window.blave.hasBlaveToken();
+  awakeLoad();                     // 防睡開關:啟動確認框要同步讀到它
   hoInit();                        // 「送上雲端 / 拉回」的功能開關(renderer/handoff.js;預設關 = 兩顆鈕都不畫)
   pubLoad().then(() => { acctPaintAcct(); cnFreePaint(); });   // 連結畫面尾註那句要的天數、綁卡前額度的數字;拿不到就不出
   const prev = await window.blave.loadConnection();

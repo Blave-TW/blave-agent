@@ -2628,7 +2628,7 @@ function tradeHost() {
         ...PY_ENV }),   // 打包版不讓 Python 把 __pycache__ 寫進 .app(簽章後 bundle 一變 codesign --verify 就不過)
       log: (m) => console.error("[trade]", m),
     });
-    // 統一(只有 Windows):有部位時不睡、daemon 重起後補交帳密——跟著常駐程式走,5 秒一輪
+    // 統一(只有 Windows):daemon 重起後補交帳密——跟著常駐程式走,5 秒一輪(防睡併進 awakeSync)
     if (WIN) { const tm = setInterval(() => startStep("president", presSync), 5000); if (tm.unref) tm.unref(); }
   }
   return _tradeHost;
@@ -2646,16 +2646,49 @@ function president() {
   });
   return _president;
 }
-/* 有統一部位才讓電腦不睡(Wei 10-07);沒部位、app 收工就放掉。daemon 每次起來都是空手:存著的帳密再交一次 */
-let presBlocker = null;
+/* daemon 每次起來都是空手:存著的帳密再交一次 */
 function presSync() {
   if (!_tradeHost || !WIN) return;
   const r = _tradeHost.status().report; if (!r) return;
-  const held = president().heldLots(r) > 0;
-  if (held && presBlocker === null) presBlocker = powerSaveBlocker.start("prevent-app-suspension");
-  else if (!held && presBlocker !== null) { powerSaveBlocker.stop(presBlocker); presBlocker = null; }
   president().resync(r).catch(() => {});
 }
+/* 不讓電腦閒置睡眠(spec desktop-keep-awake K1):A = 自動下單在跑或可能在跑,且設定 › 一般的開關開著(ui-prefs keepAwake,缺 = 開);
+   B = Windows 上有統一期貨部位(Wei 10-07),不看開關。A 的判斷順序照 renderer trExecState——重開沒停住(unconfirmed)要排在 alive 之前:
+   那段 alive 一律 false,先看 alive 會把最該擋的那一態放掉;tradeLive 也不認它與「剛按啟動」。
+   o = { st, startAt, now, keepAwake, win, presLots }。純函式(tests/check_shell_keep_awake.js 切出來跑) */
+const AWAKE_START_MS = 60000;   // 剛按啟動、報告還沒收斂的那一段;同 renderer TR_CONFIRM_MS
+function awakeWanted(o) {
+  if (o.win && o.presLots > 0) return true;
+  if (!o.keepAwake) return false;
+  if (o.startAt && o.now - o.startAt < AWAKE_START_MS) return true;
+  const st = o.st, r = st && st.report;
+  if (!r || r.error || !r.venues || typeof r.venues !== "object") return false;
+  if (!Object.keys(r.venues).some((k) => venueReady(r.venues[k]))) return false;
+  if (r.halt && r.halt.halted) return false;
+  const x = r.reconciler && r.reconciler.stopped;
+  if (x && typeof x === "object" && x.reason === "machine_restart") return x.gated === false;
+  if (!st.alive || !(r.reconciler && r.reconciler.alive)) return false;
+  return !(r.daemon && r.daemon.reconciler && r.daemon.reconciler.running === false);
+}
+// 只有一顆 blocker:要持有又沒有才開、不要又有才關,重複叫不疊(K2)
+function awakeApply(want, cur, pb) {
+  if (want && cur === null) return pb.start("prevent-app-suspension");
+  if (!want && cur !== null) { pb.stop(cur); return null; }
+  return cur;
+}
+let awakeBlocker = null, awakeStartAt = 0;
+const keepAwakeGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).keepAwake !== false; } catch (_) { return true; } };
+function keepAwakeSet(on) {
+  try { uiPrefsPatch({ keepAwake: on === true }); } catch (_) { /* 寫不進去:照舊值 */ }
+  awakeSync();
+  return keepAwakeGet();
+}
+function awakeSync() {
+  const st = _tradeHost ? _tradeHost.status() : null;
+  const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, presLots: WIN && _tradeHost ? _tradeHost.presidentLots() : 0 });
+  awakeBlocker = awakeApply(want, awakeBlocker, powerSaveBlocker);
+}
+const awakeRelease = () => { awakeBlocker = awakeApply(false, awakeBlocker, powerSaveBlocker); };
 /* 設定 › Agent 規則:這台電腦的常駐規則與回覆語言(agentrules.js)。讀是 runtime 的 python、寫是 daemon 的指令。 */
 let _agentRules = null;
 const RULES_CMDS = new Set(["preferences_set", "reply_lang_set"]);
@@ -3114,6 +3147,11 @@ app.whenReady().then(() => {
     // 最低版本閘:只擋啟動類(resume / resume_wait);暫停、改金額、移除金鑰永遠放行,已在跑的下單不主動停
     if (require("./minversion").START_CMDS.has(cmd)) { await minGate().ensureFresh(); if (!minGate().tradeAllowed(cmd)) return { ok: false, error: "UPDATE_REQUIRED" }; }
     const out = tradeHost().send(cmd, args && typeof args === "object" ? args : {});
+    if ((require("./minversion").START_CMDS.has(cmd) && intent !== "release") || cmd === "restart_reconciler") {
+      const at = awakeStartAt = Date.now(); startStep("awake", awakeSync);
+      Promise.resolve(out).then((r) => { if ((!r || !r.ok) && awakeStartAt === at) { awakeStartAt = 0; startStep("awake", awakeSync); } }).catch(() => {});   // 沒送成:不是「剛按啟動」
+    }
+    else if (cmd === "halt") { awakeStartAt = 0; Promise.resolve(out).finally(() => startStep("awake", awakeSync)); }
     if (cmd === "credentials_remove" || cmd === "credentials") Promise.resolve(out).then((r) => { if (r && r.ok) binanceLink().recheck(); }).catch(() => {});   // 解除綁定、或改綁模擬交易把 Binance 擠掉:.env 沒有金鑰了 → 重查那一輪會把比對基準清掉
     // 「解除暫停」(§8)送的也是 resume,但它不啟動對帳器、也不照策略下單:不可以記成開始下單(稽核 B1)
     if ((cmd === "resume" || cmd === "resume_wait") && intent !== "release") Promise.resolve(out).then((r) => {
@@ -3312,6 +3350,8 @@ app.whenReady().then(() => {
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
+  handle("keep-awake", () => keepAwakeGet(), true);
+  handle("keep-awake-set", (_e, on) => keepAwakeSet(on === true), null);
   handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
   handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);
@@ -3824,7 +3864,7 @@ function binanceNotify(v) {
   return true;
 }
 // updater().poll():ready ↔ blocked 只跟著下單狀態變、沒有事件,靠這 5 秒那一輪補推(聊天那一格的「…」跟著暫停 / 開始下單換)
-function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { startStep("tray", traySync); startStep("app menu", appMenuSync); startStep("p1", p1Sync); startStep("update poll", () => updater().poll()); }, 5000); if (trayTimer.unref) trayTimer.unref(); traySync(); } }   // 可能在下單的話一開就出,不等第一個 5 秒(常駐的那顆等畫面交字)
+function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { startStep("tray", traySync); startStep("app menu", appMenuSync); startStep("p1", p1Sync); startStep("awake", awakeSync); startStep("update poll", () => updater().poll()); }, 5000); if (trayTimer.unref) trayTimer.unref(); traySync(); } }   // 可能在下單的話一開就出,不等第一個 5 秒(常駐的那顆等畫面交字)
 app.on("browser-window-created", (_e, win) => {
   win.on("close", (e) => {
     // 關視窗不等於結束:自動下單在跑、或本機 agent 回合在跑(可能正在更新雲端)時只把視窗藏起來,回合 / 下單照走
@@ -3879,6 +3919,7 @@ async function draftGate(win, known) {   // known = 剛問過、確定有草稿:
 // 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。
 // 就算這段沒跑到(當機、被強殺),daemon 讀到 stdin EOF 也會自己收。
 let quitting = false;
+app.on("will-quit", () => startStep("awake", awakeRelease));
 app.on("before-quit", (e) => {
   // 更新重開正在收工:它收完會自己裝 / 結束;這時再跑一次下面的 stop 只會多送一次 SIGTERM、跟 quitAndInstall 搶(稽核 P2-8)
   if (restarting === "stopping") { e.preventDefault(); return; }

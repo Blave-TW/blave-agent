@@ -207,7 +207,7 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
 { const START = cut("function trayStart("), STEP = cut("function startStep(");
   let tick = null, p1 = 0; const errs = [];
   let polls = 0;
-  const ctx = { trayTimer: null, setInterval: (f) => { tick = f; return {}; }, traySync: () => {}, appMenuSync: () => {}, p1Sync: () => { p1++; }, console: { error: (e) => errs.push(e) },
+  const ctx = { trayTimer: null, setInterval: (f) => { tick = f; return {}; }, traySync: () => {}, appMenuSync: () => {}, p1Sync: () => { p1++; }, awakeSync: () => {}, console: { error: (e) => errs.push(e) },
     updater: () => ({ poll: () => { polls++; throw new Error("poll boom"); } }) };
   new Function("ctx", "with (ctx) { " + STEP + "\n" + START + "\n trayStart(); }")(ctx);
   ctx.traySync = () => { throw new Error("tray boom"); };

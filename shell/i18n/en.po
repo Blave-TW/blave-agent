@@ -1684,6 +1684,33 @@ msgstr "Only Blave’s own share is traded; don’t trade the same product and m
 msgid "tr.means.presNight"
 msgstr "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on."
 
+msgid "tr.means.1a"
+msgstr "While auto-trading runs, Blave keeps the computer from idle sleep (the screen still turns off); it trades only while Blave is open and the network is up."
+
+msgid "tr.means.2a"
+msgstr "A closed lid, a dead battery, manual sleep, shutdown or quitting Blave: auto-trading stops, positions stay on {venue} and are not closed."
+
+msgid "tr.means.2pa"
+msgstr "A closed lid, a dead battery, manual sleep, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
+
+msgid "tr.means.cloud"
+msgstr "To run around the clock without this computer:"
+
+msgid "tr.means.cloudGo"
+msgstr "Use a cloud host"
+
+msgid "set.awake"
+msgstr "Keep the computer awake while auto-trading"
+
+msgid "set.awake.lead"
+msgstr "While auto-trading runs, the computer won’t idle-sleep; the screen still turns off. A closed lid, a dead battery or manual sleep still stops it."
+
+msgid "set.awake.leadOff"
+msgstr "The computer sleeps as your system settings say; auto-trading stops while it sleeps."
+
+msgid "set.awake.leadOffWin"
+msgstr "The computer sleeps as your system settings say; auto-trading stops while it sleeps. With President Futures positions open, it still stays awake."
+
 msgid "tr.quote.pres"
 msgstr "Live quotes: President Futures"
 

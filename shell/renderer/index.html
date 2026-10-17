@@ -477,6 +477,11 @@
             </span>
           </div>
           <p class="set-ccy-err" id="set-ccy-err" role="status" hidden></p>
+          <!-- 自動下單時不讓電腦睡(ui-prefs keepAwake,缺 = 開;主行程 awakeSync 照它持有防睡)。開關狀態與下面那句由 app.js 的 awakePaint 畫 -->
+          <div class="set-awake">
+            <div class="sw-row"><span class="sw-l" id="set-awake-l" data-i18n="set.awake"></span><button type="button" class="sw" id="set-awake-sw" role="switch" aria-checked="true" aria-labelledby="set-awake-l"></button></div>
+            <p class="priv-lead" id="set-awake-lead"></p>
+          </div>
           <!-- 關於(這一頁最下面;版本唯一出現處):第一行「Blave {app} · 已是最新版」+ 文字連結(檢查更新 / 重新啟動以完成更新),只管電腦版;
                第二行「雲端主機 {ws} · 有新版 {lv}」+「更新雲端主機」,只在主機在跑或停機時出現。字與連結由 app.js 的 upPaint 依 upPlan 畫 -->
           <div class="set-about" id="set-up">

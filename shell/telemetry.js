@@ -189,7 +189,9 @@ const EVENTS = {
     "trades_row_pick", "trades_mark_pick", "trades_map_move",
     // 回合中的鎖(0.1.27;renderer/busy.js,設計 spec busy-lock-2026-10 §4):點了被鎖的更新／績效刷新或再跑一次／回覆中那條的刪除／切換或新對話／
     // 送一句話(Enter、送一句的鈕)／還原／刪策略各一個名字;lock_fix = 按了原因句的補救(停止／查看)。lock_switch、lock_send 第二期(多對話並行)起不再送
-    "lock_update", "lock_perf", "lock_chat_del", "lock_switch", "lock_send", "lock_fix", "lock_restore", "lock_del"] },
+    "lock_update", "lock_perf", "lock_chat_del", "lock_switch", "lock_send", "lock_fix", "lock_restore", "lock_del",
+    // 防睡(spec desktop-keep-awake):awake_cloud_go = 啟動確認框細節裡「改用雲端主機」;awake_off = 設定 › 一般的防睡開關切成關
+    "awake_cloud_go", "awake_off"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
