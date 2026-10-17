@@ -714,9 +714,11 @@ html.ws-sc .side-gate { display: none; }
 .mg-stat:last-child .tip { left: auto; right: 0; }
 .mg-refnote { margin: 0 0 var(--space-16); font-size: 12px; color: var(--ink-3); }
 .mg-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-16); margin: var(--space-12) 0; }
-.mg-stat .sl { font-size: 11px; color: var(--ink-3); }
-.mg-stat .sv { margin-top: var(--space-4); font: 600 18px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.mg-stat .sl { font-size: 11px; line-height: 1.5; color: var(--ink-3); }   /* 釘死:normal 隨字體變,中文 label 行盒比英文高,會把該格值行往下推 */
+.mg-stat .sv { margin-top: var(--space-4); font: 600 18px/1.1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
 .mg-stat:first-child .sv { font-size: 24px; }
+/* 分開的 grid cell 做不到真 baseline:18px 兩格補到 24px 那格的行盒高再底對齊,值與「贏過」各自同一條線(同網頁 .bt-stats.cols3) */
+.mg-stat:not(:first-child) .sv { min-height: calc(24px * 1.1); display: flex; align-items: flex-end; }
 .mg-stat .sv.na { color: var(--color-greyDark); }
 .mg-frame { background: var(--surface-card); border-radius: var(--radius-lg); overflow: hidden; padding: var(--space-16) var(--space-16) var(--space-8); }
 .mg-frame .chart-cap { font: 600 11px var(--font-sans); color: var(--ink-3); margin-bottom: var(--space-8); }
