@@ -7,8 +7,9 @@ the desktop library groups "usable without a card" on it.
      anything data.py no longer has.
   2. The split is the one data.py's own code implies: a def that reaches a `BASE` URL (through any
      private helper, `_retry_get` excluded — it only compares against BASE) is Blave, unless it
-     branches on the desktop's Binance kline source (`_kline_source`, no Blave fallback). The
-     Taiwan daily pair's free-first chain still falls back to Blave, so it counts as Blave.
+     branches on the desktop's Binance kline source (`_kline_source`, no Blave fallback) or goes
+     through the Taiwan daily-bar router (`_twstock_daily` / `_twstock_batch`: without data access
+     the desktop is served from the public CDN, 2010 on), so those need no key.
      Inert names are not functions. Every shipped lib module that reaches a Blave name or BASE
      of lib.data is in _LIB_REACHING_BLAVE.
   3. Deeply nested code (ast.parse MemoryError) → None, nothing raised. Classifier cases: plain / aliased / module-attribute / getattr reach into lib.data, direct
@@ -67,7 +68,7 @@ def refs(node):
     return out
 
 
-DESKTOP_BRANCH = {"_kline_source"}
+DESKTOP_BRANCH = {"_kline_source", "_twstock_daily", "_twstock_batch"}   # 台股日K:電腦版沒權限改走公開 CDN
 direct = {k: "BASE" in refs(v) and k != "_retry_get" for k, v in funcs.items()}
 calls = {k: (refs(v) & set(funcs)) - {k} for k, v in funcs.items()}
 
@@ -81,7 +82,12 @@ check(implied_blave == blave & public,
       f"_BLAVE_DATA matches what data.py reaches — should add {sorted(implied_blave - blave)}, "
       f"should drop {sorted((blave & public) - implied_blave)}")
 check(len(blave) > 50 and len(pub) > 15, f"the sets are not empty shells ({len(blave)} / {len(pub)})")
-check({"fetch_twstock_price", "fetch_twstock_price_adj"} <= blave, "Taiwan daily pair falls back to Blave → Blave")
+import re as _re
+_cdn_first = _re.search(r"^_TW_CDN_FIRST_DAY\s*=\s*'([0-9-]+)'", open(os.path.join(ROOT, "lib", "data.py"), encoding="utf-8").read(), _re.M)
+check(_cdn_first and _cdn_first.group(1) == qc._TW_CDN_FIRST_DAY, f"quality_check._TW_CDN_FIRST_DAY = data.py's ({_cdn_first and _cdn_first.group(1)} / {qc._TW_CDN_FIRST_DAY})")
+check(qc._TW_CDN_BATCH <= pub, "the CDN-only batch pair is in the public set")
+check({"fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch"} <= pub,
+      "Taiwan daily bars: the desktop serves them from the public CDN without a data key (0.1.26) → public")
 
 # every shipped lib module that reaches lib.data's Blave names (or BASE) must be in _LIB_REACHING_BLAVE
 reaching = set()
@@ -111,7 +117,15 @@ HEAD = 'STRATEGY_NAME = "x"\n'
 CASES = [
     ("kline only", "def fetch_data(h):\n    from lib.data import fetch_kline\n    return fetch_kline('BTCUSDT','1h','2020-01-01',None,h)\n", False),
     ("kline + public helpers + runner", "from lib.data import fetch_kline, txf_settlement_mask, FEED_TIMING\nfrom lib.runner import run\nfrom lib.strategy import add_realized_vol\n", False),
-    ("single-ticker tw daily falls back to Blave", "from lib.data import fetch_twstock_price_adj\n", True),
+    ("single-ticker tw daily: public CDN on the desktop", "from lib.data import fetch_twstock_price_adj\n", False),
+    ("tw daily batch, START on the CDN (2010-01-04 on)", "START = '2012-01-01'\nfrom lib.data import fetch_twstock_price_adj_batch\n", False),
+    ("tw daily batch, START on the CDN's first day", "START, END = '2010-01-04', None\nfrom lib.data import fetch_twstock_price_batch\n", False),
+    ("tw daily batch, START before the CDN → BatchIncomplete on a keyless desktop", "START = '2005-01-01'\nfrom lib.data import fetch_twstock_price_adj_batch\n", None),
+    ("tw daily batch, no START", "from lib.data import fetch_twstock_price_adj_batch\n", None),
+    ("tw daily batch, START not a plain date", "import datetime\nSTART = str(datetime.date(2012, 1, 1))\nfrom lib.data import fetch_twstock_price_batch\n", None),
+    ("single-ticker tw daily, START before 2010: only slower, still public", "START = '2001-01-01'\nfrom lib.data import fetch_twstock_price_adj\n", False),
+    ("batch before 2010 + a Blave fetcher: True wins", "START = '2005-01-01'\nfrom lib.data import fetch_twstock_price_adj_batch, fetch_twstock_institutional_batch\n", True),
+    ("tw daily + institutional flows still needs Blave", "from lib.data import fetch_twstock_price_adj_batch, fetch_twstock_institutional_batch\n", True),
     ("whale", "from lib.data import fetch_kline, fetch_whale_hunter\n", True),
     ("aliased import", "from lib.data import fetch_holder_concentration as hc\nhc('DOGEUSDT')\n", True),
     ("module alias attr", "from lib import data as d\nd.fetch_taker_intensity('BTCUSDT')\n", True),
@@ -172,8 +186,8 @@ for label, src, want in CASES:
 EXPECT = {
     "strategies/TEMPLATE_A.py": False, "strategies/TEMPLATE_C.py": False,
     "examples/btc_sma_cross/strategy.py": False,      # fetch_kline
-    "examples/tsmc_ma/strategy.py": True,             # fetch_twstock_price_adj: Blave fallback
-    "examples/twstock_momentum/strategy.py": True,    # per-ticker fetch_twstock_price_adj loop
+    "examples/tsmc_ma/strategy.py": False,            # fetch_twstock_price_adj: public CDN on the desktop
+    "examples/twstock_momentum/strategy.py": False,   # per-ticker fetch_twstock_price_adj loop: public CDN
     "examples/btc_ti_5min/strategy.py": True,         # fetch_taker_intensity
     "examples/cl_sma/strategy.py": True,              # fetch_db_kline
     "examples/tw100_foreign_zscore/strategy.py": True,

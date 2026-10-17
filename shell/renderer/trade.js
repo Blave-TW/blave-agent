@@ -1685,10 +1685,11 @@ async function trLoadStrategies(S) {
       const mk = /^MARKET\s*=\s*["'](spot|swap)["']/m.exec((d && d.code) || "");
       m = { mtime: x.mtime, symbol: sym, market: mk ? mk[1] : "swap",
             portfolio: x.remote ? !!x.portfolio : !sym && Object.keys(s).some((k) => k.indexOf("benchmark_") === 0),
-            twd: trIsTwd([sym].concat(x.remote ? [] : trUniverse(d && d.code))), twdAll: trAllTwd([sym].concat(x.remote ? [] : trUniverse(d && d.code))) };   // 雲端清單不帶組合的標的:雲端的 Type C 看不出來
+            universe: x.remote ? [] : trUniverse(d && d.code) };   // 雲端清單不帶組合的標的:雲端的 Type C 看不出來
+      m.twd = trIsTwd([sym].concat(m.universe)); m.twdAll = trAllTwd([sym].concat(m.universe));
       S.meta.set(x.name, m);
     }
-    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio, twd: m.twd === true, twdAll: m.twdAll === true, srcMarket: x.srcMarket || null });
+    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio, twd: m.twd === true, twdAll: m.twdAll === true, universe: m.universe || [], srcMarket: x.srcMarket || null });
   }
   S.list = out;
 }
@@ -2993,9 +2994,12 @@ function trAmountTable(names, stored, states) {
       const txf = isC ? null : trRowTxfNew(n), ctOn = !isC && trCtGate(n);
       if (txf) trTxfWant();   // 口數列的參考金額要報價:統一與模擬交易在這台電腦也下台指期
       // 投資組合(§8):標的列成分代號(trTypeCLabel);還沒算過權重寫「—」並說下次執行後才有。持有多少看下表(一檔一列)
-      const tcl = isC && tc ? trTypeCLabel(tc, t, trTwName) : null;
+      // 還沒跑過、回報沒有成分(選擇策略框剛勾進的草稿也是)的,先列策略檔的 UNIVERSE(Wei 10-16:≤3 檔全列、>3 檔「等 N 檔」、hover 全列);
+      // 動態組出來讀不到 UNIVERSE 的才寫「—」
+      const draftTc = isC && !tc && Array.isArray(x.universe) && x.universe.length ? { n: 0, long: 0, short: 0, keys: x.universe.slice() } : null;
+      const tcl = isC && (tc || draftTc) ? trTypeCLabel(tc || draftTc, t, trTwName) : null;
       const symText = isC ? (tcl ? tcl.text : "—") : txf ? t(txf.prod) : sym || "—";
-      const symTip = isC && !tc ? t("tr.typecPending") : tcl ? tcl.tip : "";
+      const symTip = isC && !tcl ? t("tr.typecPending") : tcl ? tcl.tip : "";
       const row = document.createElement("tr");
       const first = trEl("td", "key");
       first.appendChild(trStratName(n));

@@ -22,6 +22,7 @@ Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
 """
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -540,9 +541,12 @@ _SPOT_FIX = ("The backtest clamps it to flat, same as live, but scans and walk-f
 # Every public top-level name in lib/data.py sits in exactly one of these three
 # sets — tests/check_blave_data_need.py enumerates data.py and goes red on a new
 # or moved one. "Public" = never calls api.blave.org on the desktop build:
-# fetch_kline(_batch) go to Binance there (BLAVE_KLINE_SOURCE=binance). The
-# single-ticker Taiwan daily pair is NOT public: when the exchanges / FinMind
-# fail it falls back to Blave, which stops a keyless desktop.
+# fetch_kline(_batch) go to Binance there (BLAVE_KLINE_SOURCE=binance). Taiwan
+# daily bars (fetch_twstock_price[_adj][_batch]) are public too: on the desktop a
+# keyless call is served from the Blave CDN (2010-01-04 on; lib/data.py
+# _twstock_daily / _twstock_batch). The batch pair cannot reach before the CDN's
+# first day — it raises BatchIncomplete — so a batch strategy whose top-level START
+# is earlier (or can't be read) is "can't tell", see _TW_CDN_BATCH below.
 _DESKTOP_PUBLIC_DATA = frozenset({
     "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_usstock_price",
     "fetch_fear_greed", "fetch_binance_ticker_24h",
@@ -550,6 +554,8 @@ _DESKTOP_PUBLIC_DATA = frozenset({
     "fetch_txf_daily_public", "fetch_twmarket_index_public", "fetch_twmarket_institutional_public",
     "fetch_twmarket_margin_public", "fetch_twmarket_turnover_public",
     "fetch_twse_day_all_public", "tw_market_public_allowed",
+    # 台股日K:電腦版沒有資料權限時改走公開 CDN(lib/data.py _twstock_daily / _twstock_batch,2010 起),不需要 Blave 資料 key
+    "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
     "align_feed", "feed_available_at", "join_tw_flow", "normalize_symbol",
     "settlement_signals_from_db", "twstock_industry_name", "txf_settlement_mask",
 })
@@ -578,13 +584,15 @@ _BLAVE_DATA = frozenset({
     "fetch_twstock_institutional", "fetch_twstock_institutional_batch", "fetch_twstock_list",
     "fetch_twstock_market_value_all", "fetch_twstock_monthly_revenue",
     "fetch_twstock_monthly_revenue_batch", "fetch_twstock_ohlcv", "fetch_twstock_ohlcv_symbols",
-    "fetch_twstock_per", "fetch_twstock_per_batch", "fetch_twstock_price", "fetch_twstock_price_adj",
-    "fetch_twstock_price_adj_batch",
-    "fetch_twstock_price_batch", "fetch_twstock_quote", "fetch_twstock_quote_batch",
+    "fetch_twstock_per", "fetch_twstock_per_batch", "fetch_twstock_quote", "fetch_twstock_quote_batch",
     "fetch_twstock_ratios", "fetch_twstock_ratios_batch",
     "fetch_twstock_shareholding", "fetch_twstock_shareholding_batch",
     "fetch_twstock_trader_flows", "is_tw_trading_day", "twstock_disposal_mask",
 })
+# Batch Taiwan daily bars come only from the CDN on a keyless desktop, and the CDN
+# starts on this day: an earlier (or unreadable) START is "can't tell" (None).
+_TW_CDN_BATCH = frozenset({"fetch_twstock_price_batch", "fetch_twstock_price_adj_batch"})
+_TW_CDN_FIRST_DAY = "2010-01-04"   # = lib/data.py _TW_CDN_FIRST_DAY
 # Classes and constants that carry no fetch. BASE is deliberately absent: a
 # strategy that takes it builds its own Blave URL.
 _DATA_INERT = frozenset({
@@ -692,7 +700,36 @@ def _blave_data_need(source: str):
 
     if used & _BLAVE_DATA:
         return True
+    if used & _TW_CDN_BATCH:
+        start = _top_start(tree)
+        if start is None or start < _TW_CDN_FIRST_DAY:
+            unknown = True
     return None if unknown else False
+
+
+def _top_start(tree):
+    """The top-level START as 'YYYY-MM-DD', or None when there is none or it isn't a
+    plain date string (a call, a variable, a datetime)."""
+    found = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        for target in targets:
+            names = target.elts if isinstance(target, ast.Tuple) else [target]
+            for i, name in enumerate(names):
+                if not (isinstance(name, ast.Name) and name.id == "START"):
+                    continue
+                v = value.elts[i] if (isinstance(target, ast.Tuple) and isinstance(value, ast.Tuple)
+                                      and len(value.elts) == len(target.elts)) else value
+                found = v
+    if not (isinstance(found, ast.Constant) and isinstance(found.value, str)):
+        return None
+    m = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})", found.value.strip())
+    return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

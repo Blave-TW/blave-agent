@@ -274,7 +274,8 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
       ok("…「等 N 檔」「and N more」數字兩邊是不間斷空格(檔／more 不會單獨掉到下一行);名字（代號）兩語都有", STR.zh["tr.typecSymsMore"] === "{list} 等\u00a0{n}\u00a0檔" && STR.en["tr.typecSymsMore"] === "{list} and\u00a0{k}\u00a0more"
         && STR.zh["tr.twNameCode"] === "{name}（{code}）" && STR.en["tr.twNameCode"] === "{name} ({code})"); }
     ok("…舊 runtime 的空手列(keys 空)照舊寫 0 檔、不掛 hover;金額表那一格用 trTypeCLabel", J(L({ weights: {}, market: "swap" })) === J({ text: "tr.nSyms" + J({ n: 0 }), tip: "" })
-      && /const tcl = isC && tc \? trTypeCLabel\(tc, t, trTwName\) : null;/.test(src) && /const symTip = isC && !tc \? t\("tr\.typecPending"\) : tcl \? tcl\.tip : "";/.test(src)); }
+      && /const tcl = isC && \(tc \|\| draftTc\) \? trTypeCLabel\(tc \|\| draftTc, t, trTwName\) : null;/.test(src) && /const symTip = isC && !tcl \? t\("tr\.typecPending"\) : tcl \? tcl\.tip : "";/.test(src)
+      && /universe: x\.remote \? \[\] : trUniverse\(d && d\.code\)/.test(src)); }
   ok("§8.3 上下兩表同一個篩選:0 權重的成分不進部位表(trContribs / trClientTargets)", !("SOLUSDT" in trContribs({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))
     && !("SOLUSDT" in trClientTargets({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))); }
 // 台指期換執行合約(txf-contract-switch §2):生效合約 = config.contracts[name](合法家族代號、策略 SYMBOL 也是台指期家族),否則照 SYMBOL;

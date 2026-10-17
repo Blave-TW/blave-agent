@@ -149,6 +149,12 @@ if (!process.versions.electron) {
     ok("① wcReco:不能用 Blave 資料(none / billed / null)→ 免資料的排最前;沒登入 → 免登入(libAnonOk)的排最前",
       ["none", "billed", null].every((da) => ids(all, { dataAccess: da, signedIn: true }) === "201,221,211") && ids(all, { dataAccess: "included", signedIn: false }) === "201,221,211",
       [ids(all, { dataAccess: "none", signedIn: true }), ids(all, { dataAccess: "included", signedIn: false })].join(" | "));
+    { const a1 = S({ id: 241, market: "crypto", blave_data: "none" }), a2 = S({ id: 242, market: "crypto", blave_data: "none" }), r1 = S({ id: 243, market: "txf", blave_data: "required" }), r2 = S({ id: 244, market: "twstock", blave_data: "required" });
+      ok("① wcReco:現在就能用的那組先挑完再輪到要登入的——沒登入、免登入的兩支都是加密:兩支都進,第三張才是要登入的;不會被「每市場一支」擠掉",
+        ids([r1, r2, a1, a2], { dataAccess: null, signedIn: false }) === "241,242,243", ids([r1, r2, a1, a2], { dataAccess: null, signedIn: false })); }
+    { const k1 = S({ id: 251, market: "crypto", blave_data: "none", created_at: "2026-06-12 00:00:00" }), k2 = S({ id: 252, market: "crypto", blave_data: "none", created_at: "2026-06-11 00:00:00" }), k3 = S({ id: 253, market: "txf", blave_data: "none", created_at: "2026-06-10 00:00:00" });
+      ok("① wcReco:三支都能用、市場依序 加密、加密、台指期 → 三支照推薦排序回傳(加密、加密、台指期),不是挑的順序(加密、台指期、加密)",
+        ids([k3, k2, k1], { dataAccess: "included", signedIn: true }) === "251,252,253", ids([k3, k2, k1], { dataAccess: "included", signedIn: true })); }
     ok("① wcReco:不滿三個市場就照順序補滿 3;裝過的(installed 回呼)扣掉;空清單 / 壞輸入回空陣列",
       ids([c1, c2, c3], { dataAccess: "included", signedIn: true }).split(",").length === 3 && ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }) === "221,211,202"
       && P.wcReco([], {}).length === 0 && P.wcReco(null, {}).length === 0 && ids([c1], { dataAccess: "included", signedIn: true }) === "201",

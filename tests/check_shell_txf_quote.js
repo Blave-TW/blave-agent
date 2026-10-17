@@ -147,7 +147,13 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       ctx.TR.st.report.states.tw = undefined; delete ctx.TR.st.report.states.tw;
       const tw2 = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)).filter((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key")
         .find((r) => r.kids[0].kids[0].text === "TW");
-      ok("§8.2 Type C 還沒算過:標的「—」+ tr.typecPending、部位「—」+ tr.sigNotYet(還沒算出成分,同網頁 3b67fa10),不畫空手;quote_ccy 的 TWD 照樣分區", tw2.kids[1].textContent === "—" && tw2.kids[1].title === "tr.typecPending" && tw2.kids[3].textContent === "—" && tw2.kids[3].title === "tr.sigNotYet" && tw2.kids.length === 4); }
+      ok("§8.2 Type C 還沒算過:標的「—」+ tr.typecPending、部位「—」+ tr.sigNotYet(還沒算出成分,同網頁 3b67fa10),不畫空手;quote_ccy 的 TWD 照樣分區", tw2.kids[1].textContent === "—" && tw2.kids[1].title === "tr.typecPending" && tw2.kids[3].textContent === "—" && tw2.kids[3].title === "tr.sigNotYet" && tw2.kids.length === 4);
+      // 選擇策略框剛勾進的台股 Type C 草稿(沒存、沒跑過、回報沒有成分):標的列策略檔的 UNIVERSE(Wei 10-16:≤3 全列、>3「等 N 檔」、hover 全列)
+      const twItem = ctx.TR.list.find((y) => y.name === "tw"), rowOf = () => flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)).filter((n) => n.tag === "tr" && n.kids[0] && n.kids[0].className === "key").find((r) => r.kids[0].kids[0].text === "TW");
+      twItem.universe = ["2330", "2454", "2317", "2308", "2881"]; const tw3 = rowOf();
+      twItem.universe = ["2330", "2454"]; const tw4 = rowOf(); delete twItem.universe;
+      ok("§8.2 Type C 草稿(還沒有成分):標的改列策略檔 UNIVERSE——5 檔寫「前 3 檔 等 5 檔」、hover 全列;2 檔直接列;部位照舊「—」", tw3.kids[1].textContent === "tr.typecSymsMore " + J({ list: ["2330", "2454", "2317"].join("ak.sep"), n: 5, k: 2 })
+        && tw3.kids[1].title === "tr.typecMembersFlat " + J({ list: ["2330", "2454", "2317", "2308", "2881"].join("ak.sep") }) && tw4.kids[1].textContent === "2330" + "ak.sep" + "2454" && tw3.kids[3].textContent === "—", J([tw3.kids[1], tw4.kids[1]])); }
     // 確認框(spec-0.1.13 #1 的大口數提醒已隨安全檢查拿掉,Wei 10-13):沒改過的舊列(edits 空,照 stored 送)也照列
     const confirm = (price, lots, eq, unit = "TWD") => { paint(price, unit, eq); ctx.TR.st.report.config.amounts.txf = lots; ctx.BOX = null;
       vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);

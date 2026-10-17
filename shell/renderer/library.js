@@ -178,16 +178,19 @@ function libCurve(spark, from, to) {
 // 這一語言的成功筆記 id / 標題(spec-0.1.12-library-notes §2.2):缺就是缺,不拿另一個語言頂
 function libNoteId(s, lang) { const m = s && s.success_note_ids; const v = m && typeof m === "object" ? m[lang] : null; return Number.isInteger(v) && v > 0 ? v : null; }
 /* 歡迎頁的三張卡(spec-starters §1.6):免費、官方、沒裝過也沒買過 → libVisible 的順序 → 不能用 Blave 資料的人(沒登入時是免登入的)
-   排最前 → 每個市場先挑一支、挑滿 3 支,不滿再照順序補。回傳照排序後的順序。c = { dataAccess, signedIn, installed(s) } */
+   排最前、而且這組先挑完 → 每個市場先挑一支、挑滿 3 支,不滿再照順序補。回傳照推薦排序(能用的在前)。c = { dataAccess, signedIn, installed(s) } */
 function wcReco(list, c) {
   const seen = c && typeof c.installed === "function" ? c.installed : () => false;
   let cands = libVisible((Array.isArray(list) ? list : []).filter((s) => s && libIsFree(s) && s.is_official === true && !s.purchased && !s.is_owner && !seen(s)), "all");
   const first = c && c.signedIn === false ? libAnonOk : c && c.dataAccess !== "included" ? (s) => libNeeds(s) === "none" : null;
-  if (first) cands = cands.filter(first).concat(cands.filter((s) => !first(s)));
-  const picked = new Set(), mk = new Set();
-  cands.forEach((s) => { const m = String(libMarket(s)); if (picked.size < 3 && !mk.has(m)) { mk.add(m); picked.add(s); } });
-  cands.forEach((s) => { if (picked.size < 3) picked.add(s); });
-  return cands.filter((s) => picked.has(s));
+  // 現在就能用的那組先挑完(每市場一支 → 補滿),才輪到要登入／要資料的:不然「每市場先一支」會讓別的市場的那支擠掉第二支能用的
+  const groups = first ? [cands.filter(first), cands.filter((s) => !first(s))] : [cands], picked = [];
+  groups.forEach((g) => {
+    const mk = new Set(picked.map((s) => String(libMarket(s))));
+    g.forEach((s) => { const m = String(libMarket(s)); if (picked.length < 3 && !mk.has(m)) { mk.add(m); picked.push(s); } });
+    g.forEach((s) => { if (picked.length < 3 && !picked.includes(s)) picked.push(s); });
+  });
+  return [].concat(...groups).filter((s) => picked.includes(s));   // 畫的順序照推薦排序(能用的在前、組內 libVisible 順序),不照挑的順序(稽核 r3)
 }
 function libNoteTitle(s, lang) { const m = s && s.success_note_titles; const v = m && typeof m === "object" ? m[lang] : null; return typeof v === "string" && v.trim() ? v.trim() : null; }
 /* 筆記內文白名單重建(§2.4)。root = 解析好的惰性文件 body;mk(tag, cls) 造一個沒有屬性的空元素。只用 mk + 附加字串重建,
