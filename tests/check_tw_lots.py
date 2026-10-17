@@ -432,5 +432,15 @@ pm = pr.tw_lots({"amounts": {"tw_c": 1_000_000, "a": 1_600_000}, "exchanges": {"
 check(pm["2330@spot"]["unit"] == "lots",
       f"a row with any non-paper contributor stays in lots ({pm})")
 
+# unrouted (config.exchanges[name] == "": unbound, not saved since): the reconciler skips it
+# (lib/portfolio.aggregate_portfolio), so the row does not count it (audit v027-integ2 P3-1)
+pu = pr.tw_lots({"amounts": {"tw_a": 2_100_000, "tw_c": 1_000_000},
+                 "exchanges": {"tw_a": "", "tw_c": "paper"}}, P)
+check(set(pu) == {"2330@spot"} and pu["2330@spot"]["twd"] == 400_000
+      and pu["2330@spot"]["unit"] == "shares",
+      f"an unrouted strategy is not a contributor; only the paper Type C sizes the row ({pu})")
+check(pr.tw_lots({"amounts": {"tw_a": 2_100_000}}, P).get("2330", {}).get("twd") == 2_100_000,
+      "no exchanges entry at all: counted as before (non-paper)")
+
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

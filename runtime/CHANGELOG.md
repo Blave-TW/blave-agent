@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.133 — 2026-10-18(desktop 0.1.27)
+
+- **`portfolio_reporter.tw_lots` 跳過沒路由的策略(0.1.27 稽核 P3-1)**:`config.exchanges[名字]` 是空字串(解除綁定後還沒存過下單設定)的策略不算貢獻者,同 `lib/portfolio.aggregate_portfolio` 跳過沒有交易所的策略;之前會多出一列對帳器根本不下的張數。沒有這個 key 的策略照舊算(非 paper)。電腦版 `trade.js trTwLots` 同一條,而且判「模擬交易」改成逐支讀 `config.exchanges[名字]`(`trPaperOf`,同 lib 與這裡;還沒有路由紀錄的那支照現在綁的那家,因為 runtime 存檔時會繼承它),不再看整台第一家。只給頁面看。測試 `tests/check_tw_lots.py`。
+
 ## 1.1.132 — 2026-10-18(desktop 0.1.27)
 
 - **模擬交易的台股列寫股數、swap 的台股 Type A 併進 @spot(0.1.27 稽核 P1-1／實跑 B1;`portfolio_reporter.tw_lots`)**:網頁要對的契約,1.1.131 那條的增量。①每列多兩欄:`shares` = 正負號 × floor(|Σ 金額 × 權重 ÷ 那支策略自己的 `raw_closes[SYM]`|)(整股,不足 1 股捨去),`unit` = `"shares"`(這一列每支貢獻策略的 `config.exchanges[名字]` 都是 `"paper"`:模擬盤照整股成交,`lib/order_paper._tw_signed`)或 `"lots"`(其他:券商整張下單,頁面照舊寫 `lots`)。`lots` 照舊、意思不變。②`config.exchanges[名字] == "paper"` 的策略,台股腿不管 `MARKET` 一律當現股(同 `lib/portfolio._paper_tw_market`):列 key 是 `SYM@spot`、那支策略自己的負權重／負 position 先當 0 再加總。之前 TEMPLATE_A 預設的 `MARKET="swap"` 台股 Type A 在模擬盤上會多出一列 `SYM`(還可能是假的空頭列),`SYM@spot` 那列少算它的金額;對帳器本來就照 @spot 下單,只錯在頁面。舊網頁不讀 `unit`,模擬盤台股照舊寫張數(那一列的金額已經改對)。電腦版 `trade.js trTwLots` 同一條(用綁定的交易所是不是模擬交易、`can_paper_twstock` 判斷,同 `trClientTargets`)。只給頁面看:對帳器與排程都不讀。測試 `tests/check_tw_lots.py`。

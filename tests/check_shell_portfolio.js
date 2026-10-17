@@ -242,6 +242,53 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
       held((rp) => { rp.account.venues.binance = { ok: false, error: "x" }; }) === null && held((rp) => { rp.account.venues.binance.positions = {}; rp.account.read_at = Math.floor(Date.now() / 1000) - 400; }) === null
       && held((rp, T) => { rp.account.venues.binance.positions = {}; rp.config.amounts.btc2 = 5; rp.states.btc2 = { symbol: "BTCUSDT", position: -1 }; }) === null
       && held((rp, T) => { T.list[0].portfolio = true; }) === null && (ctx.TR = bag({}), vm.runInContext("TR = this.TR; trStratHeld('btc')", ctx)) === null); }
+  // 稽核 v027-integ2 P2-1:模擬交易的台股(can_paper_twstock、路由 paper)、MARKET="swap" 的 2330 Type A——照目標分列的四處都要用 2330@spot 去對帳本
+  { const pt = (o) => { const now = Math.floor(Date.now() / 1000); ctx.TR = bag({ paper: V }, { can_paper_twstock: true }); ctx.TR.edits = {};
+      const rp = ctx.TR.st.report; rp.config.amounts = { btc: 0, tw: o.amt != null ? o.amt : 100000 }; rp.config.exchanges = { btc: "paper", tw: "paper" };
+      rp.states = o.noState ? {} : { tw: { symbol: "2330", position: o.pos != null ? o.pos : 1, market: "swap" } };
+      rp.account = { read_at: now, venues: { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } } };
+      rp.last_reconcile = { ts: now, actual: o.held ? { "2330@spot": { side: "long", size: o.held } } : {}, gates: o.gates || {} };
+      vm.runInContext("TR = this.TR;", ctx); return rp; };
+    pt({ noState: true, held: 100000 });
+    const cw = vm.runInContext("trCatchWill(TR.st.report)", ctx);
+    ok("P2-1 (a) 還沒算出訊號的 swap 台股 Type A(沒有 state):補齊說明不講 2330(contribs 的 key 是 2330@spot,notYet 對得上)", !/2330/.test(cw || ""), J(cw));
+    pt({ pos: 1, held: 100000 });
+    const sh = vm.runInContext("trStratHeld('tw')", ctx);
+    ctx.TR.edits = { tw: 0 }; ctx.BOX = null; const keepEx = vm.runInContext("trExecState", ctx);
+    try { vm.runInContext('trExecState = () => "running"; trSaveAmounts(trNames(), trBase(), null)', ctx); } finally { ctx.__keep = keepEx; vm.runInContext("trExecState = __keep;", ctx); }
+    const boxTxt = ctx.BOX && ctx.BOX.extra ? flat(ctx.BOX.extra).map((n) => n.text).join("|") : J(ctx.BOX);
+    ok("P2-1 (b) 帳本有 2330@spot、金額改 0:trStratHeld 是 true,存金額框標「平倉」", sh === true && /tr\.cfTagClose/.test(boxTxt), J([sh, boxTxt]));
+    pt({ pos: 0, held: 100000 });
+    const wsN = vm.runInContext("trWaitStranded(TR.st.report)", ctx);
+    ok("P2-1 (c) 訊號 0、帳本 2330@spot 100,000:「等新訊號會一直開著」算 1 檔", wsN === 1, J(wsN));
+    pt({ pos: 1, amt: 100, gates: { "2330@spot": { entry_usd: 5000 } } });
+    const made = [], ce = ctx.document.createElement; ctx.document.createElement = (tag) => { const n = ce(tag); made.push(n); return n; };
+    try { vm.runInContext("trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx); } finally { ctx.document.createElement = ce; }
+    ok("P2-1 (d) 最小進場額讀 gates[\"2330@spot\"]:金額表有這一列的門檻提示", made.some((n) => /^tr\.gateHint /.test(n.text)), J(made.filter((n) => /gate/i.test(n.text)).map((n) => n.text)));
+    // Type C 含台股、MARKET="swap":每個台股成分照現股(@spot、負權重壓 0),加密成分照舊
+    const tc = (ex) => { pt({}); const rp = ctx.TR.st.report; rp.config.amounts = { pc: 1000000 }; rp.config.exchanges = ex;
+      rp.states = { pc: { market: "swap", weights: { 2330: 0.5, 2603: -0.2, BTCUSDT: 0.3 } } }; vm.runInContext("TR = this.TR;", ctx);
+      return { t: vm.runInContext("trClientTargets(TR.st.report.config.amounts, TR.st.report.states, null)", ctx), c: Object.keys(vm.runInContext("trContribs(TR.st.report.config.amounts, TR.st.report.states, null)", ctx)).sort() }; };
+    const tcP = tc({ pc: "paper" });
+    ok("P2-1 Type C swap 含台股(模擬交易):2330 → 2330@spot、2603 負權重壓 0 不出列、BTCUSDT 照舊;目標與拆解同一組 key",
+      J(tcP.t) === J({ "2330@spot": 500000, BTCUSDT: 300000 }) && J(tcP.c) === J(["2330@spot", "BTCUSDT"]), J(tcP));
+    // P3-1:逐支看 config.exchanges[名],不看整台第一家——路由到別家(binance)的那支照它自己的 MARKET
+    const mx = () => { pt({}); const rp = ctx.TR.st.report; rp.venues = { binance: V, paper: V };
+      rp.config.amounts = { a: 500000, b: 300000, pc: 1000000 }; rp.config.exchanges = { a: "paper", b: "binance", pc: "binance" };
+      rp.states = { a: { symbol: "2330", position: 1, market: "swap", raw_closes: { 2330: 1000 } }, b: { symbol: "2330", position: -1, market: "swap", raw_closes: { 2330: 1000 } },
+        pc: { market: "swap", weights: { 2603: -0.2 } } }; vm.runInContext("TR = this.TR;", ctx); return rp; };
+    const rpM = mx(), tgM = vm.runInContext("trClientTargets(TR.st.report.config.amounts, TR.st.report.states, null)", ctx), A = rpM.config.amounts, S = rpM.states;
+    ctx.__m = [A, S]; const lots = (k) => vm.runInContext(`trTwLots(${J(k)}, __m[0], __m[1])`, ctx);
+    ok("P3-1 多家混綁(第一家 binance):路由 paper 的 swap Type A 併進 2330@spot;路由 binance 的空頭與 Type C 負權重照留在 2330／2603(同 lib aggregate_portfolio)",
+      J(tgM) === J({ "2330@spot": 500000, 2330: -300000, 2603: -200000 }), J(tgM));
+    const l1 = lots("2330@spot"), l2 = lots("2330");
+    ok("P3-1 多家混綁:trTwLots 2330@spot 寫 500 股(全是 paper)、2330 寫張數(binance,-300 股 → 0 張)",
+      !!l1 && l1.unit === "shares" && l1.shares === 500 && !!l2 && l2.unit === "lots" && l2.shares === -300 && l2.lots === 0, J([l1, l2]));
+    rpM.config.exchanges = { a: "paper", b: "", pc: "binance" };
+    const l3 = lots("2330");
+    ok("P3-1 路由空字串的策略(解綁後還沒存)不算進 trTwLots(同 reporter tw_lots、lib 跳過)", l3 === null && lots("2330@spot").shares === 500, J([l3, lots("2330@spot")]));
+    rpM.config.exchanges = { b: "binance", pc: "binance" };
+    ok("P3-1 這支還沒有路由紀錄(剛加、還沒存):照現在綁的那家(第一家 binance,不是 paper)", J(Object.keys(vm.runInContext("trClientTargets(TR.st.report.config.amounts, TR.st.report.states, null)", ctx)).sort()) === J(["2330", "2603"])); }
   // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 部位「—」+ tooltip;有這支、position 0 → 空手
   { ctx.TR = bag({}); ctx.TR.st.report.states = { tw: { symbol: "2330", position: 1, market: "spot" } }; ctx.TR.edits = {};
     const am = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));

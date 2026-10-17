@@ -348,6 +348,7 @@ def tw_lots(cfg, states):
                shares, lib/order_paper._tw_signed), else "lots" (a broker fills whole lots)
       price  = |twd| / |shares| (one strategy: its close), price_date the newest raw_close_dates,
                est = any contributor's close is in raw_closes_est (priced at a later close)
+    A strategy whose config.exchanges entry is "" (unrouted) is not a contributor.
     A row any funded contributor has no close for is left out: the page shows TWD as before."""
     amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
     if not isinstance(amounts, dict):
@@ -358,6 +359,10 @@ def tw_lots(cfg, states):
         st = states.get(name) if isinstance(name, str) else None
         a = _fin(amt)
         if not isinstance(st, dict) or not a:
+            continue
+        if name in exchanges and not exchanges[name]:
+            # routing blanked (venue unbound, not saved since): the reconciler trades nothing
+            # for it (lib/portfolio.aggregate_portfolio skips a strategy with no exchange)
             continue
         paper = exchanges.get(name) == "paper"
         if isinstance(st.get("weights"), dict):

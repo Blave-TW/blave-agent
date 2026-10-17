@@ -553,9 +553,9 @@ function trSignalText(pos, tc) {
 /* 部位表「N 支策略」拆解(§2.2):跟 trClientTargets 同一套算法,但逐支留著,不只留加總。只算金額 > 0 的策略。
    回 { 標的 key: [{ name, amount, x, v, w }] }(x = 訊號或權重、v = 貢獻、w = 是不是投資組合的權重) */
 function trContribs(amounts, states, contracts) {
-  const out = {}, add = (k, row) => { (out[k] = out[k] || []).push(row); }, paperTw = trPaperTwNow();
+  const out = {}, add = (k, row) => { (out[k] = out[k] || []).push(row); };
   Object.keys(amounts || {}).forEach((n) => {
-    const a = Number(amounts[n]) || 0, s = (states || {})[n];
+    const a = Number(amounts[n]) || 0, s = (states || {})[n], paperTw = trPaperOf(n);
     if (!(a > 0) || !s) return;
     if (s.weights && typeof s.weights === "object") {
       Object.keys(s.weights).forEach((sym) => {
@@ -890,15 +890,21 @@ function trSigned(p) {
   return 0;
 }
 // 模擬交易的台股(機器的 lib 回報 can_paper_twstock):現股帳戶——不管 MARKET 一律 @spot、每支策略自己的空頭壓 0 再加總,不抵掉別支的多單
-// (同 lib/portfolio.aggregate_portfolio 的 _paper_tw_market 與空頭歸零;網頁 pfClientTargets 同一條)。照目標分列的地方都要用同一條,key 才對得上
-function trPaperTwNow() { return typeof trVenueId === "function" && typeof PAPER !== "undefined" && trVenueId() === PAPER && typeof trPaperTwOk === "function" && trPaperTwOk(); }
-function trTwCash(sym, paperTw) { return !!paperTw && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
+// (同 lib/portfolio.aggregate_portfolio 的 _paper_tw_market 與空頭歸零;網頁 pfClientTargets 同一條)。照目標分列的地方都要用同一條,key 才對得上。
+// 逐支看 config.exchanges[名](同 lib 與 runtime portfolio_reporter.tw_lots),不看整台第一家:多家同綁時路由到別家的那支不併進 @spot。
+// 這支還沒有路由紀錄(剛加、還沒存;舊 runtime 沒有 exchanges)= runtime 存的時候繼承唯一綁著的那家,先照現在這家算;空字串 = 沒路由,不算
+function trPaperOf(n) {
+  if (typeof PAPER === "undefined" || typeof trPaperTwOk !== "function" || !trPaperTwOk()) return false;
+  const c = ((typeof trReport === "function" && trReport()) || {}).config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
+  const v = ex && Object.prototype.hasOwnProperty.call(ex, n) ? ex[n] : typeof trVenueId === "function" ? trVenueId() : null;
+  return v === PAPER;
+}
+function trTwCash(sym, paper) { return !!paper && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
 function trClientTargets(amounts, states, contracts) {
   const out = {};
-  const paperTw = trPaperTwNow(), twCash = (sym) => trTwCash(sym, paperTw);
   Object.keys(amounts || {}).forEach((n) => {
-    const s = (states || {})[n];
+    const s = (states || {})[n], paperTw = trPaperOf(n), twCash = (sym) => trTwCash(sym, paperTw);
     // 投資組合(Type C,lib/runner.typec_live_state):每個資產 金額 × 權重,現貨的負權重壓 0(同 lib/portfolio.aggregate_portfolio)
     if (s && s.weights && typeof s.weights === "object") {
       Object.keys(s.weights).forEach((sym) => {
@@ -923,15 +929,18 @@ function trClientTargets(amounts, states, contracts) {
 }
 /* 台股列的股數(0.1.27,= runtime portfolio_reporter.tw_lots,網頁同一條):每支策略自己的部分除以它 state 的 raw_closes[SYM]
    (目標最後變動那一輪的未還原收盤價,目標沒變不重算)再加總。真實券商整張下單:捨去到整張(1 張 = 1000 股,零股不算),買不起一張 = 0 張;
-   模擬交易(paperTw)照模擬盤的成交規則整股下單(lib/order_paper._tw_signed):unit "shares"、捨去到整股,而且不管 MARKET 都當現股(@spot、每支的空頭壓 0,同 trClientTargets)。
+   路由到模擬交易的策略(trPaperOf,逐支)照模擬盤的成交規則整股下單(lib/order_paper._tw_signed):不管 MARKET 都當現股(@spot、自己的空頭壓 0,同 trClientTargets);
+   這一列每支貢獻策略都是模擬交易才寫 unit "shares"(捨去到整股),否則 "lots"。路由是空字串的策略(解綁後還沒存)不算:對帳器不交易沒路由的策略(lib 跳過)。
    有金額的貢獻策略只要一支沒有價格(舊 lib、那一輪抓價失敗)就回 null:那一列照舊寫 TWD */
 const TW_LOT_SHARES = 1000;
-function trTwLots(key, amounts, states, paperTw) {
+function trTwLots(key, amounts, states) {
   const spotKey = /@spot$/.test(key), sym = key.replace(/@spot$/, "");
   if (!TR_TWSTOCK_RE.test(sym)) return null;
-  let twd = 0, shares = 0, date = null, est = false, any = false;
+  const c = ((typeof trReport === "function" && trReport()) || {}).config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
+  let twd = 0, shares = 0, date = null, est = false, any = false, allPaper = true;
   for (const n of Object.keys(amounts || {})) {
-    const s = (states || {})[n], a = Number(amounts[n]), spot = !!s && (s.market === "spot" || !!paperTw);
+    if (ex && Object.prototype.hasOwnProperty.call(ex, n) && !ex[n]) continue;
+    const s = (states || {})[n], a = Number(amounts[n]), paperTw = trPaperOf(n), spot = !!s && (s.market === "spot" || paperTw);
     if (!s || !a || !isFinite(a) || spot !== spotKey) continue;
     let w;
     if (s.weights && typeof s.weights === "object") {
@@ -945,7 +954,7 @@ function trTwLots(key, amounts, states, paperTw) {
     if (!w || !isFinite(w)) continue;
     const px = s.raw_closes && typeof s.raw_closes === "object" ? Number(s.raw_closes[sym]) : NaN;
     if (!(px > 0) || !isFinite(px)) return null;
-    any = true; twd += a * w; shares += (a * w) / px;
+    any = true; allPaper = allPaper && paperTw; twd += a * w; shares += (a * w) / px;
     const d = s.raw_close_dates && s.raw_close_dates[sym];
     if (typeof d === "string" && (!date || d > date)) date = d;
     if (Array.isArray(s.raw_closes_est) && s.raw_closes_est.indexOf(sym) >= 0) est = true;
@@ -953,7 +962,7 @@ function trTwLots(key, amounts, states, paperTw) {
   if (!any) return null;
   if (spotKey && twd < 0) twd = shares = 0;
   const sg = shares < 0 ? -1 : 1, lots = Math.floor(Math.abs(shares) / TW_LOT_SHARES + 1e-9) * sg;
-  return { lots, shares: Math.floor(Math.abs(shares) + 1e-9) * sg, unit: paperTw ? "shares" : "lots", twd, price: shares ? Math.abs(twd) / Math.abs(shares) : null, date, est };
+  return { lots, shares: Math.floor(Math.abs(shares) + 1e-9) * sg, unit: allPaper ? "shares" : "lots", twd, price: shares ? Math.abs(twd) / Math.abs(shares) : null, date, est };
 }
 /* 只管自己的部位(回報 self_ledger === true,lib/portfolio.own_positions_only):對帳器拿目標去比的是 Blave 的帳本,不是交易所整個帳戶。
    帳本在對帳快照的 ledger(size = 成本)。還沒有(新規則的第一輪還沒跑)就照機器端第一輪那條規則先算:
@@ -2564,9 +2573,9 @@ function trWaitStranded(r) {
   if (!trHasAccount(r) || trFirstReadPending(r)) return 0;
   const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), contracts = trContracts();
   const target = trClientTargets(stored, st2, contracts), bk = trBook(r, target), vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {};
-  const keys = new Set(), notYet = new Set(), paperTw = trPaperTwNow();
+  const keys = new Set(), notYet = new Set();
   Object.keys(stored).forEach((n) => {
-    const s = st2[n];
+    const s = st2[n], paperTw = trPaperOf(n);
     if (!(Number(stored[n]) > 0) || !s) return;
     if (s.weights && typeof s.weights === "object") { Object.keys(s.weights).forEach((sym) => keys.add(trCanonSym(sym) + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : ""))); return; }
     if (!s.symbol) return;
@@ -3144,7 +3153,7 @@ function trAmountTable(names, stored, states) {
       const tgt = trEl("td", "n pos");
       const pos = typeof st.position === "number" ? st.position : 0;
       // 最小進場額:機器端只在門檻大於平台那顆 10 時才回報;填得比它小就永遠不會進場,而且完全靜音
-      const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" || trTwCash(sym, trPaperTwNow()) ? "@spot" : "")] : null;
+      const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" || trTwCash(sym, trPaperOf(n)) ? "@spot" : "")] : null;
       const gate = g0 && typeof g0.entry_usd === "number" ? g0.entry_usd : g0 && g0.side !== "reduce" && typeof g0.usd === "number" ? g0.usd : null;
       let gateRow = null;
       if (gate != null && !txf) {   // 口數列不掛(同網頁:門檻是錢,這一格是口)
@@ -3229,7 +3238,7 @@ function trStratHeld(n) {
   if (trVenueIds(r).some((id) => { const e = trLiveEntry(r, id); return !!e && e.ok === false; })) return null;
   const at = r.account ? trMs(r.account.read_at) : null; if (at != null && Date.now() - at > 6 * 60 * 1000) return null;
   const stored = trStored() || {}, st2 = poPartStates(stored, st), bk = trBook(r, trClientTargets(stored, st2, trContracts()));
-  const paperTw = trPaperTwNow(), keyOf = (m) => { const q = st2[m]; if (!q || !q.symbol || q.weights) return null; const y = trCanonSym(trEffSym(m, q.symbol, trContracts())); return y + (q.market === "spot" || trTwCash(y, paperTw) ? "@spot" : ""); };
+  const keyOf = (m) => { const q = st2[m]; if (!q || !q.symbol || q.weights) return null; const y = trCanonSym(trEffSym(m, q.symbol, trContracts())); return y + (q.market === "spot" || trTwCash(y, trPaperOf(m)) ? "@spot" : ""); };
   const key = keyOf(n);
   if (Object.keys(stored).some((m) => m !== n && keyOf(m) === key)) return null;
   if (bk.mine[key]) return true;
@@ -3516,8 +3525,8 @@ function poSigTable(r, stored, states, mode) {
   // 沒有任何金額、也沒有要平、沒有策略外的部位:整段不出(連標題都不印;自動下單頁由原因行那條連結當出口)。下單頁「選了策略、金額全 0」照畫,目標 0 灰
   if (!((trade ? picked : fundedN) && (syms.length || waiting.length)) && !extra.length && !outside.length) return frag;
   const showPlan = trade ? picked : true;
-  const paperTw = trPaperTwNow(), namesOf = {};
-  Object.keys(stored).forEach((n) => { const s = st2[n]; if (!s || !s.symbol || s.weights) return; const sym = trCanonSym(trEffSym(n, s.symbol, trContracts())), k = sym + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : ""); (namesOf[k] = namesOf[k] || []).push(n); });
+  const namesOf = {};
+  Object.keys(stored).forEach((n) => { const s = st2[n]; if (!s || !s.symbol || s.weights) return; const sym = trCanonSym(trEffSym(n, s.symbol, trContracts())), k = sym + (s.market === "spot" || trTwCash(sym, trPaperOf(n)) ? "@spot" : ""); (namesOf[k] = namesOf[k] || []).push(n); });
   const vid = trVenueId(), vk = trVenueKind(vid), covered = (sym) => recon && trTradesSym(vk, sym);
   const hs = envHeadState(TR.st, Date.now()), running = hs === "running" || hs === "unconfirmed";
   const det = recon ? trPosDetail(r) : {}, detRows = [];   // 持倉細節(均價、未實現、保證金、槓桿):帳上不是 0 的列底下一行小字
@@ -3534,7 +3543,7 @@ function poSigTable(r, stored, states, mode) {
   const zoneKeys = items.map((it) => it.z), zones = trZoneOrder(zoneKeys, vid, trMultZone(vid, trUnit(), zoneKeys));
   // 配置表的台股列寫整張數、單位在格子裡(「N 張」＋小字 TWD):整表只有台股那一區時,欄頭不再掛「（TWD）」
   const twLots = {};
-  if (!trade) syms.forEach((sym) => { if (zoneOfSym[sym] === TR_TXF_CCY) { const x = trTwLots(sym, stored, st2, paperTw); if (x) twLots[sym] = x; } });
+  if (!trade) syms.forEach((sym) => { if (zoneOfSym[sym] === TR_TXF_CCY) { const x = trTwLots(sym, stored, st2); if (x) twLots[sym] = x; } });
   const oneUnit = zones.length === 1 && !(zones[0] === TR_TXF_CCY && !trade) ? trZoneUnit(zones[0]) : null, cols = trade ? 4 : 2;
   const scroll = trEl("div", "pf-scroll"), tbl = trEl("table", "pf-tbl zoned pf-sig");
   const venueName = vid ? trVenueLabel(vid, true) : "";
