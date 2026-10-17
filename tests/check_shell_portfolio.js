@@ -16,7 +16,7 @@ const cutF = (s, n) => { const i = s.indexOf("function " + n + "("); if (i < 0) 
 // ── ① 純邏輯 ──
 const pp = block(psrc, "/* ── 純邏輯(", "/* ── 純邏輯到此");
 ok("portfolio.js 的純邏輯區塊不碰 DOM", !/\bdocument\b|\$\(|window\./.test(pp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
-const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf, mpsFundAs, mpsSizingPin, mpsTargetOf, mgLotsOver, mgSharpeText };", P);
+const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf, mpsFundAs, mpsSizingPin, mpsTargetOf, mgLotsOver, mgSharpeText, mgPctText };", P);
 const F = P.out;
 ok("移動窗格回測各指標的贏過:三個欄位各自取整;舊 workspace 只有 Sharpe 時另兩格不畫",
   J(F.mgBeatsOf({ managed_beats_pct_total_return: 61.4, managed_beats_pct_sharpe: 85.5, managed_beats_pct_max_drawdown: 12 })) === J({ ret: "61%", sharpe: "86%", mdd: "12%" })
@@ -24,6 +24,11 @@ ok("移動窗格回測各指標的贏過:三個欄位各自取整;舊 workspace 
 ok("稽核 0127b1 P2-28／v027-integ2 P3-3:三格的 Sharpe 負值用 U+2212、先取整再判正負(-0.004 寫 0.00,不寫 −0.00);壞值 null",
   F.mgSharpeText(-0.5) === "\u22120.50" && F.mgSharpeText(-0.004) === "0.00" && F.mgSharpeText(-0.005) === "\u22120.01" && F.mgSharpeText(0) === "0.00" && F.mgSharpeText(1.234) === "1.23"
   && F.mgSharpeText(NaN) === null && F.mgSharpeText(null) === null && /stat\("Sharpe", mgSharpeText\(man\.sharpe\)/.test(psrc));
+ok("報酬／Max DD 的百分比先取到兩位再判正負與上色:±0.004 寫 0.00%、v 0(不上色);壞值 null;三格都走 mgPctText",
+  J([F.mgPctText(0.004), F.mgPctText(-0.004), F.mgPctText(-1.5), F.mgPctText(2), F.mgPctText(0.005)]) === J([{ s: "0.00%", v: 0 }, { s: "0.00%", v: 0 }, { s: "\u22121.50%", v: -1.5 }, { s: "+2.00%", v: 2 }, { s: "+0.01%", v: 0.01 }])
+  && F.mgPctText(NaN) === null && F.mgPctText(undefined) === null
+  && /stat\(t\("mg\.totalReturn"\), tr0 && tr0\.s, !tr0 \? "" : tr0\.v > 0 \? "buy" : tr0\.v < 0 \? "sell"/.test(psrc) && /stat\("Max DD", dd && dd\.s, dd && dd\.v < 0 \? "sell"/.test(psrc)
+  && /mgPctText\(man\["total_return_%"\]\), dd = mgPctText\(man\["max_drawdown_%"\]\)/.test(psrc));
 ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display_name)", /name === MG_SHARPE\) return t\("mg\.sharpe"\)/.test(psrc) && /MG_SHARPE \? t\("mg\.sharpeDesc"\)/.test(psrc));
 { const prop = { members: ["b", "a"], allocator: null, params: { lookback: 180 } };
   ok("選擇比對:成員順序不管、舊腳本的 allocator null = slope、走查窗雙方都釘住才比", F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 180 }) && !F.mgSameSel(prop, ["a"], "slope", { lookback: 180 })
@@ -289,8 +294,16 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     rpM.config.exchanges = { a: "paper", b: "", pc: "binance" };
     const l3 = lots("2330");
     ok("P3-1 路由空字串的策略(解綁後還沒存)不算進 trTwLots(同 reporter tw_lots、lib 跳過)", l3 === null && lots("2330@spot").shares === 500, J([l3, lots("2330@spot")]));
+    const tgU = vm.runInContext("trClientTargets(TR.st.report.config.amounts, TR.st.report.states, null)", ctx), cU = vm.runInContext("trContribs(TR.st.report.config.amounts, TR.st.report.states, null)", ctx);
+    ok("路由空字串的策略(解綁後還沒存)在目標與拆解都貢獻 0、那一列照出(同 lib aggregate_portfolio 的 unrouted 列、網頁 pfTargetParts)",
+      J(tgU) === J({ "2330@spot": 500000, 2330: 0, 2603: -200000 }) && cU["2330"].length === 1 && cU["2330"][0].v === 0 && cU["2330"][0].x === -1, J([tgU, cU["2330"]]));
+    const tgt = () => Object.keys(vm.runInContext("trClientTargets(TR.st.report.config.amounts, TR.st.report.states, null)", ctx)).sort();
     rpM.config.exchanges = { b: "binance", pc: "binance" };
-    ok("P3-1 這支還沒有路由紀錄(剛加、還沒存):照現在綁的那家(第一家 binance,不是 paper)", J(Object.keys(vm.runInContext("trClientTargets(TR.st.report.config.amounts, TR.st.report.states, null)", ctx)).sort()) === J(["2330", "2603"])); }
+    ok("P3-1 a 還沒有路由紀錄、同時綁多家(binance＋paper):不當模擬交易", J(tgt()) === J(["2330", "2603"]));
+    rpM.venues = { paper: V, president: V };
+    ok("a 沒有路由紀錄、同時綁多家而且第一家就是 paper(paper＋president):仍不當模擬交易(同網頁 pfPaperOf、runtime 只繼承唯一綁著那家)", J(tgt()) === J(["2330", "2603"]), J(tgt()));
+    rpM.venues = { paper: V };
+    ok("沒有路由紀錄、只綁模擬交易一家:a 當模擬交易併進 2330@spot(runtime 存檔時會繼承它),路由 binance 的 b 照留 2330", J(tgt()) === J(["2330", "2330@spot", "2603"]), J(tgt())); }
   // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 部位「—」+ tooltip;有這支、position 0 → 空手
   { ctx.TR = bag({}); ctx.TR.st.report.states = { tw: { symbol: "2330", position: 1, market: "spot" } }; ctx.TR.edits = {};
     const am = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));

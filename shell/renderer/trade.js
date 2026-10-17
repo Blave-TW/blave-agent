@@ -555,7 +555,7 @@ function trSignalText(pos, tc) {
 function trContribs(amounts, states, contracts) {
   const out = {}, add = (k, row) => { (out[k] = out[k] || []).push(row); };
   Object.keys(amounts || {}).forEach((n) => {
-    const a = Number(amounts[n]) || 0, s = (states || {})[n], paperTw = trPaperOf(n);
+    const a = Number(amounts[n]) || 0, s = (states || {})[n], paperTw = trPaperOf(n), off = trRouteBlank(n);
     if (!(a > 0) || !s) return;
     if (s.weights && typeof s.weights === "object") {
       Object.keys(s.weights).forEach((sym) => {
@@ -563,7 +563,7 @@ function trContribs(amounts, states, contracts) {
         const spot = s.market === "spot" || trTwCash(sym, paperTw);
         if (spot && w < 0) w = 0;
         if (!w) return;   // 權重 0 的候選不是持有(units spec §8.3):上表「N 檔」與下表列數同一個篩選
-        add(trCanonSym(sym) + (spot ? "@spot" : ""), { name: n, amount: a, x: w, v: a * w, w: true });
+        add(trCanonSym(sym) + (spot ? "@spot" : ""), { name: n, amount: a, x: w, v: off ? 0 : a * w, w: true });
       });
       return;
     }
@@ -571,7 +571,7 @@ function trContribs(amounts, states, contracts) {
     const sym = trCanonSym(trEffSym(n, s.symbol, contracts)), cash = trTwCash(sym, paperTw);
     let pos = typeof s.position === "number" ? s.position : 0;
     if (cash && pos < 0) pos = 0;
-    add(sym + (s.market === "spot" || cash ? "@spot" : ""), { name: n, amount: a, x: pos, v: a * pos, w: false, notYet: s.notYet === true });
+    add(sym + (s.market === "spot" || cash ? "@spot" : ""), { name: n, amount: a, x: pos, v: off ? 0 : a * pos, w: false, notYet: s.notYet === true });
   });
   return out;
 }
@@ -892,19 +892,26 @@ function trSigned(p) {
 // 模擬交易的台股(機器的 lib 回報 can_paper_twstock):現股帳戶——不管 MARKET 一律 @spot、每支策略自己的空頭壓 0 再加總,不抵掉別支的多單
 // (同 lib/portfolio.aggregate_portfolio 的 _paper_tw_market 與空頭歸零;網頁 pfClientTargets 同一條)。照目標分列的地方都要用同一條,key 才對得上。
 // 逐支看 config.exchanges[名](同 lib 與 runtime portfolio_reporter.tw_lots),不看整台第一家:多家同綁時路由到別家的那支不併進 @spot。
-// 這支還沒有路由紀錄(剛加、還沒存;舊 runtime 沒有 exchanges)= runtime 存的時候繼承唯一綁著的那家,先照現在這家算;空字串 = 沒路由,不算
+// 這支還沒有路由紀錄(剛加、還沒存;舊 runtime 沒有 exchanges)= runtime 存的時候繼承唯一綁著的那家:只綁模擬交易一家才算,
+// 同時綁多家時 runtime 不知道要繼承誰,不當模擬交易(同網頁 pfPaperOf);空字串 = 沒路由,不算
 function trPaperOf(n) {
   if (typeof PAPER === "undefined" || typeof trPaperTwOk !== "function" || !trPaperTwOk()) return false;
+  const r = (typeof trReport === "function" && trReport()) || {}, ex = r.config && typeof r.config.exchanges === "object" ? r.config.exchanges : null;
+  if (ex && Object.prototype.hasOwnProperty.call(ex, n)) return ex[n] === PAPER;
+  const ids = trVenueIds(r);
+  return ids.length === 1 && ids[0] === PAPER;
+}
+// 解除綁定後還沒重存下單設定:路由被清成 ""。對帳器不交易它(lib/portfolio 標 unrouted、原樣持有),目標與拆解都貢獻 0(同網頁 pfUnrouted;整台那支 trUnrouted 回的是名單)
+function trRouteBlank(n) {
   const c = ((typeof trReport === "function" && trReport()) || {}).config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
-  const v = ex && Object.prototype.hasOwnProperty.call(ex, n) ? ex[n] : typeof trVenueId === "function" ? trVenueId() : null;
-  return v === PAPER;
+  return !!ex && Object.prototype.hasOwnProperty.call(ex, n) && ex[n] === "";
 }
 function trTwCash(sym, paper) { return !!paper && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
 function trClientTargets(amounts, states, contracts) {
   const out = {};
   Object.keys(amounts || {}).forEach((n) => {
-    const s = (states || {})[n], paperTw = trPaperOf(n), twCash = (sym) => trTwCash(sym, paperTw);
+    const s = (states || {})[n], paperTw = trPaperOf(n), twCash = (sym) => trTwCash(sym, paperTw), a = trRouteBlank(n) ? 0 : amounts[n];
     // 投資組合(Type C,lib/runner.typec_live_state):每個資產 金額 × 權重,現貨的負權重壓 0(同 lib/portfolio.aggregate_portfolio)
     if (s && s.weights && typeof s.weights === "object") {
       Object.keys(s.weights).forEach((sym) => {
@@ -913,7 +920,7 @@ function trClientTargets(amounts, states, contracts) {
         if (spot && w < 0) w = 0;
         if (!w) return;   // 0 權重的候選不開一列目標 0(§8.3);帳戶上還有部位時,那一列由「實際」帶出來
         const k = trCanonSym(sym) + (spot ? "@spot" : "");
-        out[k] = (out[k] || 0) + amounts[n] * w;
+        out[k] = (out[k] || 0) + a * w;
       });
       return;
     }
@@ -922,7 +929,7 @@ function trClientTargets(amounts, states, contracts) {
     const sym = trCanonSym(trEffSym(n, s.symbol, contracts)), cash = twCash(sym);
     if (cash && pos < 0) pos = 0;
     const k = sym + (s.market === "spot" || cash ? "@spot" : "");
-    out[k] = (out[k] || 0) + amounts[n] * pos;
+    out[k] = (out[k] || 0) + a * pos;
   });
   Object.keys(out).forEach((k) => { if (/@spot$/.test(k) && out[k] < 0) out[k] = 0; });
   return out;

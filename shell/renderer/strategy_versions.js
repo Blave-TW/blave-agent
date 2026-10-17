@@ -76,8 +76,8 @@
     if (!spec || n === null) return DASH;
     // MCPT 的排列次數有限,p 不會真的是 0:四捨五入成 0.000 是假象,不到半個最小刻度就寫 <0.001
     if (key === "mcpt_p" && n < 0.0005) return "<0.001";
-    var body = Math.abs(n).toFixed(spec.dp);
-    return (spec.signed ? signStr(n) : n < 0 ? MINUS : "") + body + spec.unit;
+    var r = Number(n.toFixed(spec.dp)); // 先取整再判號:−0.004 寫 0.00,不寫 −0.00
+    return (spec.signed ? signStr(r) : r < 0 ? MINUS : "") + Math.abs(r).toFixed(spec.dp) + spec.unit;
   }
 
   // 比較表的「差」欄:{text, tone}。tone 是 "up"(綠)/"down"(紅)/""(中性)。
@@ -87,7 +87,7 @@
     var x = num(a);
     var y = num(b);
     if (!spec || x === null || y === null) return { text: DASH, tone: "" };
-    var d = y - x;
+    var d = Number((y - x).toFixed(spec.dp)); // 差也先取整:顯示 0.00 的差不帶號、不上色
     var text = signStr(d) + Math.abs(d).toFixed(spec.dp) + (spec.delta || "");
     var tone = "";
     if (d !== 0 && spec.better !== "none") {

@@ -148,6 +148,12 @@ function mgSharpeText(x) {
   const v = Number(x.toFixed(2));
   return (v < 0 ? "\u2212" : "") + Math.abs(v).toFixed(2);
 }
+// 報酬／回撤的百分比:同樣先取到兩位再判正負與上色,0.004 寫 0.00%、不帶 + / −、不上色。回 { s: 顯示字, v: 取整後的值 },壞值 null
+function mgPctText(x) {
+  if (typeof x !== "number" || !isFinite(x)) return null;
+  const v = Number(x.toFixed(2));
+  return { s: (v > 0 ? "+" : v < 0 ? "\u2212" : "") + Math.abs(v).toFixed(2) + "%", v };
+}
 function mgBeatsOf(rb) {
   const f = (v) => (typeof v === "number" && isFinite(v) ? Math.round(v) + "%" : null);
   return { ret: f(rb && rb.managed_beats_pct_total_return), sharpe: f(rb && rb.managed_beats_pct_sharpe), mdd: f(rb && rb.managed_beats_pct_max_drawdown) };
@@ -873,7 +879,6 @@ function mgBacktestSec() {
   const beats = mgBeatsOf(rb), ov = bt.overlap && typeof bt.overlap === "object" ? bt.overlap : null;
   const win = ov && typeof ov.start === "string" && typeof ov.eval_days === "number" ? " " + t("mg.beatsNote", { s: ov.start, n: ov.eval_days }) : "";
   if (!beats.ret && !beats.sharpe && !beats.mdd && ov) frag.appendChild(trEl("p", "mg-refnote", t("mg.beatsNone")));
-  const pct = (v) => (typeof v === "number" && isFinite(v) ? (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2) + "%" : null);
   const grid = trEl("div", "mg-stats");
   const stat = (label, v, cls, k) => {
     const c = trEl("div", "mg-stat"); c.append(trEl("div", "sl", label), trEl("div", "sv" + (v === null ? " na" : cls ? " " + cls : ""), v === null ? "—" : v));
@@ -884,9 +889,9 @@ function mgBacktestSec() {
     }
     return c;
   };
-  const tr0 = man["total_return_%"], dd = man["max_drawdown_%"];
-  grid.append(stat(t("mg.totalReturn"), pct(tr0), tr0 > 0 ? "buy" : tr0 < 0 ? "sell" : "", "ret"), stat("Sharpe", mgSharpeText(man.sharpe), "", "sharpe"),
-    stat("Max DD", pct(dd), dd < 0 ? "sell" : "", "mdd"));
+  const tr0 = mgPctText(man["total_return_%"]), dd = mgPctText(man["max_drawdown_%"]);
+  grid.append(stat(t("mg.totalReturn"), tr0 && tr0.s, !tr0 ? "" : tr0.v > 0 ? "buy" : tr0.v < 0 ? "sell" : "", "ret"), stat("Sharpe", mgSharpeText(man.sharpe), "", "sharpe"),
+    stat("Max DD", dd && dd.s, dd && dd.v < 0 ? "sell" : "", "mdd"));
   frag.appendChild(grid);
   const frame = trEl("div", "mg-frame"); frame.appendChild(trEl("div", "chart-cap", t("mg.chartCap")));
   const series = mgWeightSeries(bt), canvas = document.createElement("canvas");

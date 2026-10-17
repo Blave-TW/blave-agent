@@ -246,11 +246,11 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
 { const tw = { long: { symbol: "2330", position: 1 }, short: { symbol: "2330", position: -1 }, c: { weights: { "2454": 0.5, "2317": -0.5, BTCUSDT: -0.5 }, market: "swap" }, btc: { symbol: "BTCUSDT", position: -1 } };
   const amt = { long: 30000, short: 50000, c: 10000, btc: 1000 };
   globalThis.PAPER = "paper"; let vid = "paper", okTw = true;
-  globalThis.trVenueId = () => vid; globalThis.trPaperTwOk = () => okTw;
+  globalThis.trReport = () => ({ venues: { [vid]: { credentials: true, pair: true, order: true, account: true } } }); globalThis.trPaperTwOk = () => okTw;
   const on = trClientTargets(amt, tw);
   vid = "binance"; const crypto = trClientTargets(amt, tw);
   vid = "paper"; okTw = false; const old = trClientTargets(amt, tw);
-  delete globalThis.trVenueId; delete globalThis.trPaperTwOk; delete globalThis.PAPER;
+  delete globalThis.trReport; delete globalThis.trPaperTwOk; delete globalThis.PAPER;
   const SJ = (o) => J(Object.keys(o).sort().map((k) => [k, o[k]]));
   ok("模擬交易台股:一多 30,000 一空 50,000 → 2330@spot 30,000(空頭不抵多單);投資組合的台股負權重壓 0、加密照舊可空;別家交易所或舊 lib 照舊加總",
     SJ(on) === SJ({ "2330@spot": 30000, "2454@spot": 5000, BTCUSDT: -6000 })

@@ -299,7 +299,9 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       ok("時光機:橫幅帶年份與時間;觸發器只有 MM/DD(設計稽核 ⑤)", old.E["ver-trig-l"].textContent === "12/18" && old.E["ver-banner-t"].all((k) => k.className === "mono" && k.tagName === "span")[0].textContent === (Y - 1) + "/12/18 09:40");
       const pOf = (row) => row.all((k) => k.className === "v mono")[2].textContent;
       ok("p 值:< 0.0005 寫 <0.001(含 0);其餘照舊三位", pOf(rows[0]) === "<0.001" && pOf(rows[1]) === "<0.001" && pOf(rows[2]) === "0.030"
-        && g.blaveVersions.fmt("mcpt_p", 0.0005) === "0.001" && g.blaveVersions.fmt("mcpt_p", 0.106) === "0.106" && g.blaveVersions.fmt("mcpt_p", null) === "—" && g.blaveVersions.fmt("ret", 0.0001) === "+0.00%");
+        && g.blaveVersions.fmt("mcpt_p", 0.0005) === "0.001" && g.blaveVersions.fmt("mcpt_p", 0.106) === "0.106" && g.blaveVersions.fmt("mcpt_p", null) === "—" && g.blaveVersions.fmt("ret", 0.0001) === "0.00%");
+      ok("先取到兩位再判正負(網頁 1e70bdf1):四捨五入成 0 的不帶 − / +,差取整成 0 也不上色", g.blaveVersions.fmt("sharpe", -0.004) === "0.00" && g.blaveVersions.fmt("sharpe", -0.006) === "\u22120.01"
+        && g.blaveVersions.fmt("ret", -0.004) === "0.00%" && JSON.stringify(g.blaveVersions.delta("sharpe", 1.001, 1.003)) === JSON.stringify({ text: "0.00", tone: "" }));
       ok("摘要「初版」照畫(UI 不過濾;規則在 references/strategy-code.md 叫 agent 別寫)", rows[1].all((k) => k.className === "vmi-note")[0].textContent === "初版"
         && ref.includes('never write "初版" / "initial version" — v1 is the initial version'));
       ok("小標逐字「版本」/「Versions」", r.E["ver-menu"].kids[0].textContent === "版本" && en1.E["ver-menu"].kids[0].textContent === "Versions");
