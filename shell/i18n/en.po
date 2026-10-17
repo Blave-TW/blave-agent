@@ -8074,6 +8074,9 @@ msgstr "Paused automatically when the exchange was unbound, and the order progra
 msgid "tr.saveWarnHalted"
 msgstr "Paused: no new positions, but reductions and closes run as soon as you save."
 
+msgid "tr.saveWarnFreeze"
+msgstr "Paused: nothing is sent when you save; the new amounts take effect once you press Start trading."
+
 msgid "tr.rejNameSep"
 msgstr "”, “"
 

@@ -3350,7 +3350,10 @@ function trSaveAmounts(names, stored, opener, o) {
   // 換算用的是 7 天以上前存下的台幣匯率(登入失效／讀不到雲端):確認框講是哪一天的(稽核 r4 P2)
   { const fv = trFxView(); if (fv.cached && Date.now() - fv.cached > 7 * 86400000) extra.appendChild(trEl("p", "cf-note", t("tr.fxOld", { d: new Date(fv.cached).toISOString().slice(0, 10) }))); }
   // 暫停中(HALT,下單程式在跑):不開新倉,但減碼與平倉存了就會執行——不講「可能立即下單」(Mac e2e 10-14,移出策略時會嚇到人)
-  if (!blocked && mayFire) extra.appendChild(trEl("p", "cf-note", t(trExecState(S.st) === "halted" ? "tr.saveWarnHalted" : "tr.saveWarn")));
+  // 凍結(halt.freeze)時減碼平倉也不送,那句是假話:改講凍結版。凍結時 holds_all 一律 true、mayFire 為假,所以另開條件
+  // 剛按啟動(HALT 馬上要解除)兩種暫停句都不對,講 tr.saveWarn
+  const pausedNow = trExecState(S.st) === "halted" && !trStartPending(S.pending), frozen = pausedNow && trHaltFreeze(S.st && S.st.report);
+  if (!blocked && (mayFire || frozen)) extra.appendChild(trEl("p", "cf-note", t(frozen ? "tr.saveWarnFreeze" : pausedNow ? "tr.saveWarnHalted" : "tr.saveWarn")));
   const box = trCloudBox({
     title: fromOpt ? t("mg.apply") : t("tr.saveTitle"), mark: trIsPaper() ? t("tr.mode.paper") : null, lines: [], extra, okDisabled: blocked, ok: t("tr.save"), opener,
     onCancel: opt.onCancel,

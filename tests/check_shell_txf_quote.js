@@ -246,6 +246,12 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       const halted = cases.filter(([nm, rep, pend, want]) => want === FIRE && rep.halt && rep.halt.halted && !pend).map(([, rep, pend]) => warnOf(rep, { pending: pend }));
       ok("儲存後那一句只在可能下單時出(同一組 " + cases.length + " 種狀態);暫停中(HALT、下單程式在跑)寫 tr.saveWarnHalted,其餘寫 tr.saveWarn",
         wBad.length === 0 && halted.length > 0 && halted.every((w) => w === "tr.saveWarnHalted"), J({ wBad, halted }));
+      // 凍結(halt.freeze,新 runtime 帶 holds_all: true):減碼平倉也不送,寫 tr.saveWarnFreeze;剛按啟動、舊 runtime(沒 freeze)照舊
+      const fz = { reconciler: { alive: true }, halt: { halted: true, holds_all: true, freeze: true, source: "desktop" } };
+      const fzW = [warnOf(fz), warnOf({ reconciler: { alive: true }, halt: { halted: true, holds_all: false, freeze: false } }), warnOf(fz, { pending: { want: "running" } }),
+        warnOf({ reconciler: { alive: false, stopped: { reason: "machine_restart" } }, halt: { halted: true, holds_all: true, freeze: true } })];
+      ok("凍結中存金額:寫 tr.saveWarnFreeze(不講減碼平倉照走);freeze false 照舊 tr.saveWarnHalted;剛按啟動回 tr.saveWarn;重開停住加凍結也寫凍結版",
+        J(fzW) === J(["tr.saveWarnFreeze", "tr.saveWarnHalted", "tr.saveWarn", "tr.saveWarnFreeze"]), J(fzW));
       /* 沒連交易所:不跳確認框、直接存(同網頁 d0d0eb63);有綁才開框。存不進去(雲端設定檔裡有壞值)照樣開框講原因 */
       ctx.DIRECT = 0; cf({ venues: {} });
       const noVenue = { box: ctx.BOX, direct: ctx.DIRECT };
