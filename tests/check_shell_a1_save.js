@@ -218,15 +218,35 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("B5 …暫停中:都不會", w("ec") === false);
     bag(draft({ list: [EC], pvs: { ec: pvA("ETHUSDT") } }));
     ok("B5 …沒在跑:都不會", w("ec") === false);
+    bag(draft({ list: [EC], pvs: { ec: pvA("ETHUSDT") } })).pending = { want: "running" };
+    ok("B5 …啟動在途(trCfFiring 為真)但還沒綁帳:不會", vm.runInContext("trCfFiring(TR.st, TR.pending)", ctx) === true && w("ec") === false);
     ok("B5 草稿列那一句走 trCfWillOrder(不是只看 trCfFiring)", /if \(trCfWillOrder\(n, .*?\)\) first\.appendChild\(trEl\("span", "pf-note live", t\("po\.willOrder"\)\)\)/.test(src)
       && !/trCfFiring\(TR\.st, TR\.pending\)\) first\.appendChild/.test(src)); }
-  // B6:已存的投資組合這一刻算不出(沒有 live 權重、沒有預覽),帳上有它的成分:不列成賣單(對帳器照原本的 state.json,不會賣)
-  { const PC = (u) => ({ name: "pc", displayName: "PC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: u });
-    const run = (u) => { const S = bag({ firing: true, edits: { btc: 1000 }, amounts: { pc: 1000 }, list: [PC(u)], noPv: true });
-      S.st.report.account.venues.binance.positions.ETHUSDT = { side: "long", size: 300, mark_price: 3000 }; return open(); };
-    const f = run(["ETHUSDT"]), g = run(undefined);
-    ok("B6 算不出的投資組合:清單 UNIVERSE 的成分不列賣單;只列 BTC 那筆", f.rows.length === 1 && /^tr\.cf\.buyBTCUSDT/.test(f.rows[0]), J(f.rows));
-    ok("B6 …讀不到 UNIVERSE:帳上不在新目標裡的都不列賣單", g.rows.length === 1 && /^tr\.cf\.buyBTCUSDT/.test(g.rows[0]), J(g.rows)); }
+  // B6／R1:已存的投資組合這一刻算不出(沒有 state.json、沒有預覽):對帳器只算有 state.json 的,它沒有貢獻,帳上的成分下一輪照樣賣——要列成賣單
+  const PC = (u) => ({ name: "pc", displayName: "PC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: u });
+  const eth = (S) => { S.st.report.account.venues.binance.positions.ETHUSDT = { side: "long", size: 300, mark_price: 3000 }; return S; };
+  { const run = (u) => { eth(bag({ firing: true, edits: { btc: 1000 }, amounts: { pc: 1000 }, list: [PC(u)], noPv: true })); return open(); };
+    const f = run(["ETHUSDT"]), g = run(undefined), SELL = "tr.cf.sellETHUSDT0.1 tr.cf.unitCoins";
+    ok("B6 算不出的投資組合:清單 UNIVERSE 的成分照樣列賣單(買 BTC + 賣 ETH)、「儲存並下單」", f.title === "tr.cf.titleFire" && f.rows.length === 2 && /^tr\.cf\.buyBTCUSDT/.test(f.rows[0]) && f.rows[1] === SELL, J(f));
+    ok("B6 …讀不到 UNIVERSE(雲端清單一律 []):一樣列賣單", g.title === "tr.cf.titleFire" && g.rows.length === 2 && g.rows[1] === SELL, J(g)); }
+  { const EX = { name: "ex", displayName: "EX", hasBacktest: true, symbol: "ETHUSDT", market: "swap" };
+    eth(bag({ firing: true, picked: ["btc", "tw", "pc"], amounts: { pc: 1000, ex: 300 }, states: { ex: { symbol: "ETHUSDT", position: 1 } }, list: [PC([]), EX], noPv: true }));
+    const f = open();
+    ok("R1 沒 state.json、沒預覽的投資組合在,移出帳上有 ETH 的 EX:「儲存並下單」+ 記號、列賣 ETH;策略列「移出 · 平倉」",
+      f.title === "tr.cf.titleFire" && f.mark === "tr.mode.real" && f.rows.includes("tr.cf.sellETHUSDT0.1 tr.cf.unitCoins") && f.rows.includes("EX300→tr.cfTagRemove · tr.cfTagClose"), J(f)); }
+  // R2:已經有別的單(買 BTC)時,舊預覽那一句照出、表頭照寫那一根
+  { bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { btc: 1000, ec: 300 }, list: [EC], noPv: true, pvs: { ec: pvA("ETHUSDT", { position: 0, close: 3000, latest: false }) } });
+    const f = open();
+    ok("R2 有單 + 草稿預覽不是最新那根:列買 BTC、表下點名 EC、表頭寫依哪一根", f.title === "tr.cf.titleFire" && f.rows.some((x) => /^tr\.cf\.buyBTCUSDT/.test(x))
+      && f.notes.some((x) => /^cf-note:tr\.cf\.oldPv \{"names":"EC"\}$/.test(x)) && /tr\.cf\.asofBar /.test(f.cap), J(f)); }
+  // R3:讀過帳、因舊預覽判成「儲存並下單」:原 → 新的列只有這家下得了、帳上有部位的才標平倉
+  { const r3 = (ed, pos) => { const S = bag({ firing: true, picked: ["btc", "tw", "ec"], edits: Object.assign({ ec: 300 }, ed), list: [EC], noPv: true,
+      pvs: { ec: pvA("ETHUSDT", { position: 0, close: 3000, latest: false }) } }); if (pos) S.st.report.account.venues.binance.positions.BTCUSDT = pos; return open(); };
+    const f = r3({ tw: 0 });
+    ok("R3 Binance 在跑、舊預覽判成儲存並下單、台股 tw 改 0:2330 原 → 0 不標平倉(Binance 不交易台股)",
+      f.title === "tr.cf.titleFire" && f.rows.some((x) => /^2330100,000→0/.test(x)) && !f.rows.some((x) => /^2330.*tr\.cfTagClose/.test(x)), J(f));
+    const g = r3({ btc: 0 }, { side: "long", size: 5, mark_price: 50000 });
+    ok("R3 …BTC 改 0、帳上還有 5(沒過下單門檻):BTCUSDT 原 → 0 標平倉", g.title === "tr.cf.titleFire" && g.rows.some((x) => /^BTCUSDT500→0tr\.cfTagClose/.test(x)), J(g)); }
   // ② F3「{舊合約}平倉」有帳的情境:群益帳上有舊合約(大台)部位、換到小台後沒人撐 → 策略列標 ct.tagClose
   { const S = bag({ edits: {}, list: [{ name: "fut", displayName: "FUT", hasBacktest: true, symbol: "TXF" }], amounts: { fut: 2 }, states: { fut: { symbol: "TXF", position: 1 } },
       rep: { venues: { capital: V }, config: { amounts: { btc: 500, tw: 100000, fut: 2 }, contracts: { fut: "TXF" } }, can_switch_contract: true,

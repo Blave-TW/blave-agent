@@ -8073,7 +8073,7 @@ msgid "tr.cf.firstRead"
 msgstr "帳上還沒讀到；下一輪照目標補齊。"
 
 msgid "tr.cf.oldPv"
-msgstr "{names} 還沒算到最新那根；下一輪照最新那根下單。"
+msgstr "{names} 還沒算到最新那根；下一輪照最新那根算，有單就送。"
 
 msgid "po.unsaved"
 msgstr "未儲存"

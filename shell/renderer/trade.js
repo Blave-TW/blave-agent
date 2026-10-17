@@ -3270,17 +3270,17 @@ function trCfQty(sym, money, px) {
    回 { kind: "orders" | "changes", rows: [...], zones: [...], st }:
      orders  = [{ sym, side: "buy"|"sell", lots?, qty?, money, z, by }](會送單:新目標 − 帳上,過了下單門檻才列;門檻同部位表 sigRow)
      changes = [{ sym, was, now, lots, qty?, z, by }](目標有變的,口數列比取整後的口數);by = 撐這一列的策略
-   算不出的策略(st.missing)貢獻的標的不列:那一格的目標不知道 */
+   算不出的單一標的策略(st.missing)貢獻的那一檔不列:那一格的目標不知道。算不出的投資組合不遮:對帳器只算有 state.json 的,
+   它沒有 state.json 就沒有貢獻,帳上那些檔下一輪照樣賣——寧可多列一筆可能的單,不能少列會送的單 */
 function trCfRows(o) {
   const st = trCfStates(o.r, o.stored, o.sending, o.contractsAfter);
   const known = (am) => { const x = {}; Object.keys(am).forEach((n) => { if (st.missing.indexOf(n) < 0) x[n] = am[n]; }); return x; };
   const before = trClientTargets(known(o.stored), st.states, o.contractsBefore), after = trClientTargets(known(o.sending), st.states, o.contractsAfter);
   // 算不出的那幾支碰到的標的(單一標的才知道是哪一檔):這幾列不列,免得把少算一支的目標當成要下的單
   const blind = new Set();
-  let blindHeld = false;
-  st.missing.forEach((n) => { const s = ((o.r || {}).states || {})[n], syms = trCfSymsOf(n, s, o.contractsAfter);
-    // 投資組合判不出成分(動態組出、沒有 UNIVERSE):帳上不在新目標裡的標的都可能是它撐的,不列成賣單
-    if (syms) syms.forEach((k) => blind.add(k)); else blindHeld = true; });
+  st.missing.forEach((n) => { const s = ((o.r || {}).states || {})[n], x = TR.list.find((y) => y.name === n) || {};
+    if (x.portfolio || (s && s.weights)) return;
+    (trCfSymsOf(n, s, o.contractsAfter) || []).forEach((k) => blind.add(k)); });
   // 區(單位)跟部位表同一個判法:只看撐這個標的的那幾支策略的計價(trContribs)
   const qmap = trQuoteMap() || {}, cs0 = trContribs(known(o.stored), st.states, o.contractsBefore), cs1 = trContribs(known(o.sending), st.states, o.contractsAfter);
   const zoneOf = (sym) => trSymZone(sym, (cs1[sym] || []).concat(cs0[sym] || []).map((c) => qmap[c.name]));
@@ -3289,7 +3289,7 @@ function trCfRows(o) {
   const marks = trMarks(o.r || {}), priceOf = (sym) => { const k = trCanonSym(sym.replace(/@spot$/i, "")); return st.px[k] || marks[k] || marks[trCanonSym(sym)] || null; };
   const rows = [];
   if (o.firing) {
-    const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k] && !(blindHeld && !(k in after)))).filter((k, i, a) => a.indexOf(k) === i && !blind.has(k) && o.covered(k));
+    const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && !blind.has(k) && o.covered(k));
     syms.forEach((sym) => {
       const lot = o.lot(sym), raw = after[sym] || 0, ts = lot ? trLotsTarget(raw).lots : raw, as = o.mine[sym] || 0, d = ts - as;
       const gs = lot ? null : trGateSide(o.gates[sym], ts, as), acts = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
@@ -3306,7 +3306,7 @@ function trCfRows(o) {
     const lot = o.lot(sym), was = before[sym] || 0, now = after[sym] || 0;
     const same = lot ? trRoundLots(was) === trRoundLots(now) : Math.round(was) === Math.round(now);
     if (same) return;
-    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym) };
+    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: o.covered(sym) && !!o.mine[sym] };
     if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym)) : null;
     rows.push(row);
   });
@@ -3395,7 +3395,7 @@ function trSaveAmounts(names, stored, opener, o) {
     /* 列不出單不等於不會送單,下面兩種一律寫「儲存並下單」(canon:會送就必須寫「下單」):
        第一次讀帳還沒回來(下一輪照目標補齊);用到的預覽不是最新那根(下一輪照最新那根算,可能就有單) */
     const willOrder = (n) => trCfWillOrder(n, m.st.states[n] || (r.states || {})[n], ctAfter);
-    const oldPv = !orders && firing && recon && !firstRead ? m.st.old.filter((n) => relevant(n) && willOrder(n)) : [];
+    const oldPv = firing && recon && !firstRead ? m.st.old.filter((n) => relevant(n) && willOrder(n)) : [];
     const unread = !orders && firstRead && Object.keys(sending).concat(Object.keys(stored)).some((n) => relevant(n) && willOrder(n));
     const fire = orders || unread || oldPv.length > 0;
     const amtOnly = Object.keys(sending).filter((n) => (n in stored) && Number(sending[n]) !== old(n));
@@ -3412,8 +3412,8 @@ function trSaveAmounts(names, stored, opener, o) {
     else {
       const zones = m.rows.map((x) => x.z).filter((z, i, a) => a.indexOf(z) === i), multi = zones.length > 1;
       const ccys = zones.map((z) => (z === TR_ZONE_LOTS ? t("tr.lotsUnit") : z === TR_ZONE_UNKNOWN ? t("tr.grpUnknown") : z)).join(LANG === "zh" ? "、" : ", ");
-      // 時間只講一次(canon):框裡任何一列(口數列、照金額寫的列、只改金額的列都算)是預覽撐的,表頭寫是哪一根;台股日線寫「收盤」
-      const pvAt = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => x.by || [])) : amtOnly);
+      // 時間只講一次(canon):框裡任何一列(口數列、照金額寫的列、只改金額的列都算)是預覽撐的、或表下點名了舊預覽(oldPv),表頭寫是哪一根;台股日線寫「收盤」
+      const pvAt = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => x.by || []), oldPv) : amtOnly);
       // 台股日線照機器給的交易日(bar_date,UTC+8 換好的),不拿本機時區換 bar_at
       const asof = !pvAt ? "" : pvAt.dailyTw && pvAt.date ? t("tr.cf.asofClose", { d: pvAt.date.slice(5) }) : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
       if (m.rows.length) {
@@ -3434,7 +3434,8 @@ function trSaveAmounts(names, stored, opener, o) {
             const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
             if (x.was) arrow(dd, f(x.was));
             dd.append(trEl("span", "n", f(x.now)));
-            const close = trCloseTag(x.was, x.now, fire, null); if (close) dd.appendChild(trEl("span", "tag", close));
+            // 讀過帳:只有這家下得了、帳上真的有部位的才標平倉;第一次讀帳前不知道,照標
+            const close = trCloseTag(x.was, x.now, fire, recon && !firstRead ? x.held : null); if (close) dd.appendChild(trEl("span", "tag", close));
             if (multi && !x.lots && x.z !== TR_ZONE_UNKNOWN) dd.appendChild(trEl("span", "ccy", x.z));
             if (x.lots) { if (sp) dd.appendChild(lotsRef(sp, x.now, null)); }
             else if (x.qty && x.qty.n > 0) dd.appendChild(trEl("span", "cf-ref", x.qty.text + unit(x.qty.unit)));

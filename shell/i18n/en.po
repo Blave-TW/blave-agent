@@ -8058,7 +8058,7 @@ msgid "tr.cf.firstRead"
 msgstr "Your account hasn't been read yet. The next round places orders to reach these targets."
 
 msgid "tr.cf.oldPv"
-msgstr "{names} isn't computed on the latest bar yet. The next round places orders on the latest one."
+msgstr "{names} isn't computed on the latest bar yet. The next round computes on the latest bar and places any orders it needs."
 
 msgid "po.unsaved"
 msgstr "Unsaved"
