@@ -142,6 +142,12 @@ function mpsChipParts(fund, ccy, m, target) {
   return { fund: f, ccy: f === null ? null : ccy || null, target: v };   // 算不出來的那段整段不寫(同網頁 a8239131)
 }
 // random_benchmark → 各指標「贏過」的顯示字(取整);欄位不在(舊 workspace)= null、那格不畫
+// 兩位小數、負號用 U+2212;先取整再判正負,-0.004 寫 0.00 不寫 −0.00
+function mgSharpeText(x) {
+  if (typeof x !== "number" || !isFinite(x)) return null;
+  const v = Number(x.toFixed(2));
+  return (v < 0 ? "\u2212" : "") + Math.abs(v).toFixed(2);
+}
 function mgBeatsOf(rb) {
   const f = (v) => (typeof v === "number" && isFinite(v) ? Math.round(v) + "%" : null);
   return { ret: f(rb && rb.managed_beats_pct_total_return), sharpe: f(rb && rb.managed_beats_pct_sharpe), mdd: f(rb && rb.managed_beats_pct_max_drawdown) };
@@ -879,7 +885,7 @@ function mgBacktestSec() {
     return c;
   };
   const tr0 = man["total_return_%"], dd = man["max_drawdown_%"];
-  grid.append(stat(t("mg.totalReturn"), pct(tr0), tr0 > 0 ? "buy" : tr0 < 0 ? "sell" : "", "ret"), stat("Sharpe", typeof man.sharpe === "number" && isFinite(man.sharpe) ? (man.sharpe < 0 ? "−" : "") + Math.abs(man.sharpe).toFixed(2) : null, "", "sharpe"),
+  grid.append(stat(t("mg.totalReturn"), pct(tr0), tr0 > 0 ? "buy" : tr0 < 0 ? "sell" : "", "ret"), stat("Sharpe", mgSharpeText(man.sharpe), "", "sharpe"),
     stat("Max DD", pct(dd), dd < 0 ? "sell" : "", "mdd"));
   frag.appendChild(grid);
   const frame = trEl("div", "mg-frame"); frame.appendChild(trEl("div", "chart-cap", t("mg.chartCap")));

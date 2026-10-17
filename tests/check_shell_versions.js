@@ -440,6 +440,11 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         ok("回滾:焦點交給重新出現的「還原成這一版」(設計稽核 S1)", doc.activeElement === r.E["ver-restore"]);
         ok("NO_VERSION → 回滾到時光機看 v2(橫幅兩顆鈕)+ 原因行 rsErrGone;不記埋點", r.S.open === 2 && r.S.data.current === 3 && r.E["ver-banner"].hidden === false && bar(r).hidden === true
           && errLine(r).hidden === false && errLine(r).textContent === "主機上已經沒有 v2（只保留最近 20 版），這一版只能看、不能還原。" && !r.tracked.includes("version_restore"));
+        { const el = errLine(r), keep = r.S.err; r.S.err = { key: "busy.restore", v: 2 }; r.F.verPaintErr(r.S);
+          const fixed = el.all((k) => k.dataset.fix === "view").length; el.dataset.busy = "1";   // 真的 busyFixLink 會在這裡記 data-busy(假的只掛鈕)
+          r.S.err = keep; r.F.verPaintErr(r.S);
+          ok("稽核 v027-integ2:原因行從回合中那句(busy.restore)換成別的原因時拿掉 data-busy,回合結束不會把它一起收(同 b920ac9)",
+            fixed === 1 && !("busy" in el.dataset) && el.hidden === false && /v2/.test(el.textContent)); }
         r.F.verBack();
         ok("…離開時光機,原因行收掉", errLine(r).hidden === true);
       }

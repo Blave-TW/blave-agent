@@ -181,7 +181,8 @@ function verPaintRerun(S, pd) {
 // 回滾的原因行(spec §7):時光機橫幅文字與鈕的下方;離開時光機(verReset)或再按一次還原就收掉
 function verPaintErr(S) {
   const el = $("ver-banner-err"); if (!el) return;
-  el.textContent = "";
+  // data-busy 只屬於 busy.restore 那句(busyFixLink 記的):換成別的原因先拿掉,回合結束 busySync 才不會連它一起收(同 b920ac9 xpNote)
+  el.textContent = ""; delete el.dataset.busy;
   if (!S.err || S.open === null) { el.hidden = true; return; }
   const m = verEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
   const txt = verEl("span");

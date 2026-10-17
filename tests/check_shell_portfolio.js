@@ -16,12 +16,14 @@ const cutF = (s, n) => { const i = s.indexOf("function " + n + "("); if (i < 0) 
 // ── ① 純邏輯 ──
 const pp = block(psrc, "/* ── 純邏輯(", "/* ── 純邏輯到此");
 ok("portfolio.js 的純邏輯區塊不碰 DOM", !/\bdocument\b|\$\(|window\./.test(pp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
-const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf, mpsFundAs, mpsSizingPin, mpsTargetOf, mgLotsOver };", P);
+const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf, mpsFundAs, mpsSizingPin, mpsTargetOf, mgLotsOver, mgSharpeText };", P);
 const F = P.out;
 ok("移動窗格回測各指標的贏過:三個欄位各自取整;舊 workspace 只有 Sharpe 時另兩格不畫",
   J(F.mgBeatsOf({ managed_beats_pct_total_return: 61.4, managed_beats_pct_sharpe: 85.5, managed_beats_pct_max_drawdown: 12 })) === J({ ret: "61%", sharpe: "86%", mdd: "12%" })
   && J(F.mgBeatsOf({ managed_beats_pct_sharpe: 85 })) === J({ ret: null, sharpe: "85%", mdd: null }) && J(F.mgBeatsOf({})) === J({ ret: null, sharpe: null, mdd: null }));
-ok("稽核 0127b1 P2-28:三格的 Sharpe 負值用 U+2212(同報酬那兩格的 pct),不是 ASCII -", /man\.sharpe < 0 \? "\u2212" : ""\) \+ Math\.abs\(man\.sharpe\)\.toFixed\(2\)/.test(psrc));
+ok("稽核 0127b1 P2-28／v027-integ2 P3-3:三格的 Sharpe 負值用 U+2212、先取整再判正負(-0.004 寫 0.00,不寫 −0.00);壞值 null",
+  F.mgSharpeText(-0.5) === "\u22120.50" && F.mgSharpeText(-0.004) === "0.00" && F.mgSharpeText(-0.005) === "\u22120.01" && F.mgSharpeText(0) === "0.00" && F.mgSharpeText(1.234) === "1.23"
+  && F.mgSharpeText(NaN) === null && F.mgSharpeText(null) === null && /stat\("Sharpe", mgSharpeText\(man\.sharpe\)/.test(psrc));
 ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display_name)", /name === MG_SHARPE\) return t\("mg\.sharpe"\)/.test(psrc) && /MG_SHARPE \? t\("mg\.sharpeDesc"\)/.test(psrc));
 { const prop = { members: ["b", "a"], allocator: null, params: { lookback: 180 } };
   ok("選擇比對:成員順序不管、舊腳本的 allocator null = slope、走查窗雙方都釘住才比", F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 180 }) && !F.mgSameSel(prop, ["a"], "slope", { lookback: 180 })
