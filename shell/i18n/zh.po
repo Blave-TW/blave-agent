@@ -1856,10 +1856,10 @@ msgid "tr.typeCNextHost"
 msgstr "投資組合策略要等主機的程式更新後，才能自動下單。"
 
 msgid "tr.pick.twd"
-msgstr "模擬交易暫不支援台幣計價的標的"
+msgstr "模擬交易要等主機的程式更新後，才能下台股"
 
 msgid "tr.pick.twdKeep"
-msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
+msgstr "模擬交易要等主機的程式更新後，才能下台股；取消勾選後不能再加回來"
 
 msgid "tr.pick.txf"
 msgstr "{venue}只能下台指期（TXF／MXF／TMF）"

@@ -11,6 +11,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 ## 1.1.128 — 2026-10-17(desktop 0.1.27)
 
 - **回覆中排隊送出:撤回單則＋待送數(0.1.27 回合中鎖減量;`web_bridge`)**:新控制訊息 `withdraw`(`target_id` = /send 回的 message_id)只從本機佇列拿掉那一則,回 `withdraw_result` chunk(`withdrawn`／`running`=那則已在跑、什麼都不做／`not_found`,帶 `pending_ids`);撤掉的是最後一則且沒有回合在跑時,再送 `turn_state: cancelled`(`message_ids` 只點名那則)。每個 `turn_state` 帶 `pending_ids`(這條對話還在排的 id);訊息排到跑中或排隊中的對話後面時當場報一次(不等 60 秒的 queued 重報)。舊 `interrupt` 行為不變,`cancelled` 多帶 `message_ids`(撤掉的全部),api 按則標取消。poll URL 加 `wd=1` 宣告看得懂 `withdraw`。快照帶單調遞增的 `pending_seq`(微秒時鐘,重啟不倒退;api 只收比已存的新的,晚到的舊快照丟掉)。回合收尾送 `queued` 前在 lock 裡重讀佇列:收尾途中最後一則被撤回就不送 `queued`;撤回落在 `queued` 送出後、離開 `_running` 前,收尾補一個 `cancelled`(`message_ids` 空),api 不會卡在 `queued` 到 TTL。**出貨順序**:api 先(舊 api 會把 `pending_ids`／`message_ids` 丟掉、`cancelled` 照舊整串標,不壞),再 publish 這版 runtime。測試 `tests/check_web_bridge_withdraw.py`。
+- **模擬盤開放台股(0.1.27;`portfolio_reporter.can_paper_twstock`)**:報告多一個頂層 `can_paper_twstock`,workspace lib 會把台股的台幣金額換成美元記帳、台股代號當現貨庫存、休市時對帳器原樣持有(`lib/paper_data.tw_session_open` 與 `lib/portfolio._paper_tw_closed_keys` 都在磁碟上)才是 true。電腦版與網頁照它拿掉模擬交易的台幣鎖;缺這欄(舊 runtime)或 false(舊 lib)照舊鎖住。只動回報,下單不經 runtime。runtime 1.1.128 要比外殼與網頁先到全機隊。
 
 ## 1.1.127 — 2026-10-16(desktop 0.1.26)
 

@@ -187,6 +187,8 @@ def current_price(symbol, env, max_age=_PRICE_TTL_S):
 def _resolve_price(symbol, env):
     name = _resolve_strategy(symbol)
     hdrs = _hdrs(env)
+    if not name and is_tw_stock(symbol):
+        return _tw_stock_price(symbol, hdrs)
     if name:
         mod = _load_strategy(name)
         try:
@@ -197,10 +199,10 @@ def _resolve_price(symbol, env):
         except Exception as e:
             raise PaperNoPrice(f"{name}.fetch_data failed for {symbol}: "
                                f"{type(e).__name__}: {e}")
-    # No bar strategy owns this symbol (Type B crypto / manual): best-effort
-    # generic 1m crypto kline over a short recent window. Crypto-biased by
-    # nature — a TW symbol has no such feed, so this RAISES for it rather than
-    # guessing, and the caller must fail the fill loud.
+    # No bar strategy owns this symbol (Type B crypto / manual, a Type C
+    # component): best-effort generic 1m crypto kline over a short recent
+    # window. A TW stock code took _tw_stock_price above; anything else with
+    # no such feed RAISES rather than guessing.
     try:
         from datetime import datetime, timedelta, timezone
         from lib.data import fetch_kline
@@ -210,6 +212,91 @@ def _resolve_price(symbol, env):
     except Exception as e:
         raise PaperNoPrice(f"no strategy trades {symbol} and generic price "
                            f"lookup failed: {type(e).__name__}: {e}")
+
+
+# ── TW stocks: Type C components, session ───────────────────────────────────
+
+_START_RE = re.compile(r'^\s*START\s*=\s*["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']', re.M)
+
+
+def _portfolio_owner(symbol):
+    """(name, START) of a Type C strategy whose live weights hold `symbol`, or
+    None. Its fetch_data is never called for a price: it pulls the whole
+    universe (a TW 100-stock basket runs minutes), far past the account
+    reader's 60s budget."""
+    want = _norm(symbol)
+    for path in sorted(glob.glob("strategies/*/state.json")):
+        try:
+            with open(path) as f:
+                w = json.load(f).get("weights")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not isinstance(w, dict) or want not in {_norm(k) for k in w}:
+            continue
+        name = os.path.basename(os.path.dirname(path))
+        try:
+            with open(f"strategies/{name}/strategy.py") as f:
+                m = _START_RE.search(f.read())
+        except OSError:
+            m = None
+        return name, (m.group(1) if m else None)
+    return None
+
+
+def _tw_stock_price(symbol, hdrs):
+    """Latest daily Close of a TW stock no Type A strategy prices. A Type C
+    component: the dividend-adjusted close anchored at that strategy's START —
+    lib.data's adjustment is anchored at the window start (2330 on 2026-10-16:
+    2420 from a 10-day window, 2755.89 from 2020), so only the strategy's own
+    START reproduces the close it rebalanced on. No owner (Type B / manual):
+    the unadjusted close, what a broker app shows. Desktop: Blave CDN, no key."""
+    from datetime import datetime, timedelta, timezone
+    from lib import data
+    code = _norm(symbol)
+    owner = _portfolio_owner(code)
+    try:
+        if owner:
+            df = data.fetch_twstock_price_adj(code, owner[1] or "2015-01-01", None, hdrs)
+        else:
+            start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
+            df = data.fetch_twstock_price(code, start, None, hdrs)
+        return _last_close(df), owner[0] if owner else None
+    except PaperNoPrice:
+        raise
+    except Exception as e:
+        raise PaperNoPrice(f"no daily close for TW stock {code}: {type(e).__name__}: {e}")
+
+
+_TW_OPEN_MIN, _TW_CLOSE_MIN = 9 * 60, 13 * 60 + 30
+_TW_DAY_TTL_S = 3600
+_tw_day_cache = {}  # Taipei date -> (checked_at, True/False/None)
+
+
+def is_tw_stock(symbol):
+    """A TWSE/TPEx stock or ETF code (2330, 00878, 6488.TWO) — not a futures code."""
+    return bool(_TW_STOCK_RE.match(_norm(symbol)))
+
+
+def tw_session_open(env=None, now=None):
+    """True inside a TWSE regular session: 09:00–13:30 Taipei on a trading day.
+    The holiday table (lib.data.is_tw_trading_day) needs a Blave API plan; when
+    it can't be read the weekday alone decides. Typhoon closures are in no
+    table, so a paper fill can still happen on one."""
+    from datetime import datetime, timedelta, timezone
+    t = datetime.fromtimestamp(time.time() if now is None else now, timezone(timedelta(hours=8)))
+    if t.weekday() >= 5 or not (_TW_OPEN_MIN <= t.hour * 60 + t.minute < _TW_CLOSE_MIN):
+        return False
+    day = t.date()
+    hit = _tw_day_cache.get(day)
+    if hit is None or time.time() - hit[0] >= _TW_DAY_TTL_S:
+        try:
+            from lib.data import is_tw_trading_day
+            verdict = is_tw_trading_day(day.isoformat(), _hdrs(env))
+        except Exception as e:
+            log.info(f"[paper_data] TW holiday table unavailable ({type(e).__name__}) — weekday rule")
+            verdict = None
+        _tw_day_cache[day] = hit = (time.time(), verdict)
+    return hit[1] is not False
 
 
 # ── FX for contract money (lots × point value is in the contract's currency) ──

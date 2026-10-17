@@ -50,7 +50,8 @@ def get_positions(env: dict) -> list:
     contract rows (lots × the spec's per-lot margin) — a notional paper
     position locks no margin. On a contract row both stay in the contract's
     own currency (TWD for TXF — the app and web label lot rows TWD, as a TW
-    broker reports them); only equity is folded to USD. leverage is always
+    broker reports them), and so does unrealized_pnl on a TW stock row (size
+    is shares, the mark TWD); only equity is folded to USD. leverage is always
     None: paper has no setting."""
     rows = []
     for p in _paper.snapshot(env)["positions"]:
@@ -80,15 +81,18 @@ def get_positions(env: dict) -> list:
 
 
 def get_holdings(env: dict) -> list:
-    """Display-only: simulated spot coins (wallet 'spot') + the USDT cash pool
-    (wallet 'cash'). Unpriceable coins are listed with usdt_value None."""
+    """Display-only: simulated spot coins and TW shares (wallet 'spot') + the
+    USDT cash pool (wallet 'cash'). usdt_value is in the account's USD (a TW
+    share's TWD value ÷ the rate); unpriceable rows carry None."""
     s = _paper.snapshot(env)
     rows = []
     for asset, d in s["spot"].items():
         amt = float(d["amount"])
-        px = d.get("price")
-        rows.append({"asset": asset, "amount": amt,
-                     "usdt_value": (amt * px) if px else None, "wallet": "spot"})
+        if "usd_value" in d:
+            usd = d["usd_value"]
+        else:  # an order_paper from before TW shares: price is USDT
+            usd = amt * d["price"] if d.get("price") else None
+        rows.append({"asset": asset, "amount": amt, "usdt_value": usd, "wallet": "spot"})
     rows.append({"asset": "USDT", "amount": float(s["cash"]),
                  "usdt_value": float(s["cash"]), "wallet": "cash"})
     rows.sort(key=lambda r: -(r["usdt_value"] or 0))

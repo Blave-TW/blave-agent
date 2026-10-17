@@ -290,6 +290,9 @@ def _flatten_spot(vid, order, env, book=None):
             result = order.place_spot_market_order(env, sym, "sell", base_qty=amt,
                                                    client_order_id=cid)
         except Exception as e:
+            if _defer_tw_close(vid, f"{sym}@spot", e):
+                unclosed.add(f"{sym}@spot")
+                continue
             logging.error(f"[{vid}] close-all spot {sym} failed: {e}")
             _record_order_error(sym, vid, f"close-all spot: {e}")
             errors += 1
@@ -328,6 +331,25 @@ def _flatten_spot(vid, order, env, book=None):
         closed_symbols.add(f"{sym}@spot")
         logging.info(f"[{vid}] sold spot {sym} ({amt})")
     return closed, errors, closed_symbols, unclosed
+
+
+def _defer_tw_close(vid, key, exc):
+    """A paper TW stock close refused because the TWSE session is shut
+    (order_paper.PaperMarketClosed): handed to the reconciler's first round
+    after the open (lib.portfolio.defer_paper_tw_close), said once on the
+    page. The book keeps the position until then. False = any other error."""
+    if type(exc).__name__ != "PaperMarketClosed":
+        return False
+    try:
+        from lib.portfolio import defer_paper_tw_close
+        defer_paper_tw_close([key])
+    except Exception as e:
+        logging.error(f"[{vid}] {key}: could not defer the close ({e})")
+        return False
+    logging.info(f"[{vid}] {key}: TW market closed — close deferred to the next session")
+    _record_order_error(key, vid, "close-all: 台股休市中,開盤後第一輪平倉",
+                        {"kind": "market_closed_deferred"})
+    return True
 
 
 def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed):
@@ -741,6 +763,9 @@ def flatten():
                         kw["book_months"] = months_by_key.get(key, set())
                     result = order.close_position_partial(env, sym, side, size, client_order_id=cid, **kw)
             except Exception as e:
+                if sym and _defer_tw_close(vid, _book_key(vid, sym), e):
+                    unclosed.add(_book_key(vid, sym))
+                    continue
                 logging.error(f"[{vid}] close {p.get('symbol')} failed: {e}")
                 _record_order_error(_book_key(vid, sym) if sym else "?", vid, f"close-all: {e}")
                 errors += 1
