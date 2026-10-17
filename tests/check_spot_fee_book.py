@@ -254,7 +254,8 @@ flatten._read_env = lambda path=".env": {"BINANCE_API_KEY": "k", "BINANCE_SECRET
 flatten._wait_for_inflight = lambda *a, **k: []
 flatten._record_order_error = lambda *a, **k: None
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
-                                      restart_stopped=lambda: False)
+                                      restart_stopped=lambda: False,
+                                      grant_halt_closes=lambda *a: None)
 import lib.account_binance as _ab  # noqa: E402
 _ab.get_account_id = lambda env: "U1"  # close-all checks the book's account first — no network
 for p in ("lib/account_binance.py", "lib/order_binance.py"):

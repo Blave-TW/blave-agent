@@ -204,7 +204,7 @@ def _request(method, path, env, body=None, params=None, retries=3):
             raise guard.Halted(
                 f"state/HALT is set ({guard.halt_info()}) — entry order for "
                 f"{fields.get('instId')} refused before reaching the exchange. "
-                f"Closes, SL/TP and cancels still work. Only the user may "
+                f"Trading is paused: only cancels go out. Only the user may "
                 f"clear the halt (guard.clear_halt)."
             )
         guard.audit("order_attempt", **fields)
@@ -815,7 +815,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     """Confirmed spot market order. side: 'buy'|'sell'. BUYs size in QUOTE
     currency (tgtCcy=quote_ccy, sz=USDT amount — no price conversion on our
     side); SELLs in base qty floored to the spot step. Below min → False.
-    Guard: buy=entry (halt blocks), sell=reduce (never trapped) — classified
+    Guard: buy=entry, sell=reduce — classified
     off tdMode=cash in _order_intent."""
     inst = _spot_inst(symbol)
     side = side.lower()

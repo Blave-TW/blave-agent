@@ -23,13 +23,12 @@
 #   IDEMPOTENT       client_order_id unique per intent; resubmits must not
 #                    double an order.
 #   HALTABLE+AUDITED every order-mutating request goes through lib/guard:
-#                    state/HALT blocks NEW-EXPOSURE orders before any network
-#                    call, but closes/reduces/cancels MUST still pass (classify
-#                    intent from the request BODY, not just the URL params).
-#                    Call guard.check_restart_stop(intent, fields) BEFORE
-#                    the HALT check: after a machine restart it refuses every
-#                    order, closes included (tests/check_restart_stop_order_gate.py
-#                    fails for any lib/order_*.py that skips it).
+#                    classify intent from the request BODY, not just the URL
+#                    params, and call guard.check_restart_stop(intent, fields)
+#                    BEFORE the entry check: it refuses every order after a
+#                    machine restart and under state/HALT (closes included;
+#                    cancels pass) — tests/check_restart_stop_order_gate.py
+#                    fails for any lib/order_*.py that skips it.
 #   STOP-SAFE        right after `from lib import guard`, call
 #                    guard.mark_money_process(): the chat's Stop then never kills
 #                    a process that loaded this lib (tests/check_turn_stop.py fails
@@ -82,7 +81,7 @@ def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
     """
     Reduce an existing position by a BASE-currency qty, reduce-only semantics.
     direction is the position BEING CLOSED ('long'|'short'). Must work under
-    state/HALT (closing is always allowed). If the venue's close call is already
+    a close pass under state/HALT (manager/flatten.py). If the venue's close call is already
     qty-capable, alias it — but this NAME must exist (see header).
     """
     raise NotImplementedError

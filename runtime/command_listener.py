@@ -1905,7 +1905,7 @@ def _downtime_watch_loop():
 
 # ── machine restart = trading stopped (Wei 2026-09-22) ───────────────────────
 # After an OS boot (reboot, VM stop/start, maintenance) the reconciler stays
-# down — not HALT, which still lets closes out — until the user presses
+# down — not HALT, which on a lib before the 0.1.27 freeze still lets closes out — until the user presses
 # 啟動下單. A runtime release restarts this process but not the OS, so the boot
 # id is unchanged and nothing happens; a dropped connection is not a boot at
 # all. The cloud reconciler already has no boot persistence (no [Install] /
@@ -2085,8 +2085,8 @@ def _stop_after_restart():
     autostarted one that survives the kill still sends nothing, closes
     included. Then whatever came up on this boot is stopped. The record is for
     a machine whose reconciler was alive when it went down — halted included
-    (HALT left as it is): halted, it was still running closes and stops, which
-    this boot no longer does, and the pages must not keep saying it does. A
+    (HALT left as it is): halted on a pre-0.1.27 lib, it was still running closes
+    and stops, which this boot no longer does, and the pages must not keep saying it does. A
     reconciler already dead stays dead, without a record."""
     last_up = _downtime_read_stamp()
     try:
@@ -2564,7 +2564,7 @@ def _signals_frozen():
     newer than the last confirmed stop and younger than RECONCILER_ALIVE_S.
     That is the full unbind whose stop could not be confirmed
     (_cmd_credentials_remove, "membership kept"): the survivor still holds the
-    routing, HALT lets its reduce legs through, and a TW broker's cached login
+    routing, HALT on a pre-0.1.27 lib lets its reduce legs through, and a TW broker's cached login
     outlives the wiped keys — a target that moved would be traded. Its own idle
     gate (manager/reconciler._venue_bound) fails closed, but a daemon still
     running code from before that workspace update fails OPEN on an unreadable
@@ -4345,8 +4345,8 @@ def _cmd_credentials_remove(args):
             # (_cmd_amounts inherits the one bound venue), and trading resumes only on
             # the user's 啟動下單 press (the stop below + _mark_reconciler_stopped).
             # STOP THE DAEMON FIRST, THEN UNROUTE — the halt above is NOT a defense
-            # here. state/HALT only blocks is_entry legs (lib/portfolio.py), never
-            # reduce legs; an unrouted member drops out of the targets, so a live
+            # here. On a lib before the 0.1.27 freeze state/HALT only blocks is_entry
+            # legs (lib/portfolio.py), never reduce legs; an unrouted member drops out of the targets, so a live
             # daemon's next mtime-triggered reconcile (≤5s) would market-flatten
             # every actual position as "reduce". Nor does deleting the keys save
             # sinopac/capital: their order libs are module singletons with a cached

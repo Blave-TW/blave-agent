@@ -430,7 +430,13 @@ def _order_state(workspace, funded, scheduled=(), now=None):
     if os.path.exists(os.path.join(st, "reconciler_stopped.json")):
         return "已停止(機器或 Blave 重開後停住,等用戶按「啟動下單」)"
     if os.path.exists(os.path.join(st, "HALT")):
-        return "已暫停(不開新倉;要恢復由用戶按「啟動下單」)"
+        try:  # 0.1.27 起的 lib 暫停=完全凍結;舊 lib 只擋新倉(同 portfolio_reporter._ws_lib_halt_freeze)
+            with open(os.path.join(workspace, "lib", "guard.py"), "rb") as f:
+                freeze = b"def _check_halt_freeze" in f.read()
+        except OSError:
+            freeze = False
+        return ("已暫停(什麼單都不送,平倉、減碼、停損停利也不送;要恢復由用戶按「啟動下單」)" if freeze
+                else "已暫停(不開新倉;要恢復由用戶按「啟動下單」)")
     # 名冊裡不在金額表的(雲端 Type B 排程)自己叫 lib/order_*,不看金額也不靠對帳器;上面兩個旗標照樣擋得住它
     own = ";「自己排程的策略」照自己的排程跑" if scheduled else ""
     if funded is None:

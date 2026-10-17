@@ -653,7 +653,8 @@ flatten._read_env = lambda path=".env": dict(ENVS)
 flatten._record_order_error = lambda *a, **k: FERR.append(a)
 flatten._wait_for_inflight = lambda *a, **k: []
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
-                                      restart_stopped=lambda: False)
+                                      restart_stopped=lambda: False,
+                                      grant_halt_closes=lambda *a: None)
 
 
 def close_all():

@@ -43,8 +43,9 @@ futures round trip, whole-lot + intraday odd-lot stock fills). Design rules:
 5. ALIAS vs RESOLVED CODE. Orders are sent with the near-month alias
    (TM0000), but every report/position carries the RESOLVED contract
    (e.g. TM2608) — reconcile on the resolved code, never the alias.
-6. HALTABLE + AUDITED. Entry orders check lib/guard's state/HALT before any
-   COM call (audit 'order_denied_halt'); closes/sells always pass. Every
+6. HALTABLE + AUDITED. Every order checks lib/guard's state/HALT before any
+   COM call (audit 'order_denied_halt'; closes only inside the user's explicit
+   close — lib/guard close pass). Every
    accepted order audits 'order_sent'; rejections 'order_error'; confirmed
    fills 'order_filled'. sNewClose=2 (auto) cannot express intent, so the
    futures function REQUIRES an explicit intent= argument (fail-closed).
@@ -344,8 +345,8 @@ def _check_halt(fields):
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for "
-            f"{fields['symbol']} refused before reaching the broker. Closes/sells "
-            f"still work. Only the user may clear the halt (guard.clear_halt).")
+            f"{fields['symbol']} refused before reaching the broker. Trading is "
+            f"paused. Only the user may clear the halt (guard.clear_halt).")
 
 
 # ── futures ──────────────────────────────────────────────────────────────────
@@ -357,9 +358,9 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
     symbol: near-month alias only ('TX00' 大台 / 'MTX00' 小台 / 'TM0000' 微台).
     action: 'buy'|'sell'. lots: 口數 (int ≥ 1).
     intent: REQUIRED, 'entry'|'reduce' — sNewClose=2 can't tell opening from
-    closing, so the caller must declare it: 'entry' is blocked under HALT,
-    'reduce' (flattening) always passes. Declaring a real entry as 'reduce'
-    defeats the kill switch — don't.
+    closing, so the caller must declare it: under HALT both are refused, but
+    'reduce' passes inside the user's explicit close (lib/guard close pass).
+    Declaring a real entry as 'reduce' defeats that — don't.
 
     Returns _await_fill()'s dict; 'filled' carries the RESOLVED contract
     (e.g. TM2608) in 'symbol' — reconcile against that, not the alias.
@@ -424,8 +425,8 @@ def place_stock_order(env, symbol, action, lots, price=None, confirm_timeout=15)
     price: numeric limit price (nSpecialTradeType=2) or None for market
     (nSpecialTradeType=1, bstrPrice '0'). ROD in both cases; a limit order
     resting unfilled returns status 'sent' at timeout — that is not a failure.
-    Buys are entries (HALT-blocked); sells reduce a long-only cash account
-    (sFlag=0 現股) and always pass.
+    Buys are entries; sells reduce a long-only cash account (sFlag=0 現股).
+    Both are HALT-blocked outside a close pass.
 
     T+2 settlement is NOT pre-checked by the broker (live-verified): an
     unfunded account's buy still fills — remind the user to fund by T+2."""
@@ -475,7 +476,7 @@ def place_odd_lot_order(env, symbol, action, shares, price, confirm_timeout=15):
     1067 (live-measured); nTradeType=0 ROD + nSpecialTradeType=2 限價.
     Matching runs every 5s from 09:10; unfilled orders do NOT carry over to
     the 盤後零股 window. Reports come back under market type 'TC', not 'TS'.
-    Buys are entries (HALT-blocked); sells always pass."""
+    Buys are entries, sells reduces; both HALT-blocked outside a close pass."""
     if action not in ("buy", "sell"):
         raise ValueError(f"action must be 'buy' or 'sell', got {action!r}")
     shares = int(shares)

@@ -779,7 +779,7 @@ def _gate(intent, **fields):
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — paper entry order for "
-            f"{fields.get('symbol')} refused. Closes, SL/TP and cancels still work. "
+            f"{fields.get('symbol')} refused. Trading is paused: only cancels go out. "
             f"Only the user may clear the halt (guard.clear_halt).")
     guard.audit("order_attempt", **fields)
     return fields

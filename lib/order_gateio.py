@@ -223,8 +223,8 @@ def _request(method, path, env, body=None, query="", retries=3):
             raise guard.Halted(
                 f"state/HALT is set ({guard.halt_info()}) — entry order for "
                 f"{fields.get('contract') or fields.get('currency_pair')} refused "
-                f"before reaching the exchange. Closes, SL/TP and cancels still "
-                f"work. Only the user may clear the halt (guard.clear_halt)."
+                f"before reaching the exchange. Trading is paused: only cancels go "
+                f"out. Only the user may clear the halt (guard.clear_halt)."
             )
         guard.audit("order_attempt", **fields)
         try:
@@ -573,7 +573,7 @@ def close_position(env, symbol, direction, qty, client_order_id=None):
 
 def close_position_partial(env, symbol, direction, qty, client_order_id=None):
     """Cross-venue reconciler contract name — reduce the position by a BASE
-    qty, reduce-only semantics, works under HALT."""
+    qty, reduce-only semantics; under HALT only inside a close pass."""
     return close_position(env, symbol, direction, qty,
                           client_order_id=client_order_id)
 
@@ -834,7 +834,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     """Confirmed spot market order. side: 'buy'|'sell'. BUYs size in QUOTE
     currency (Gate.io native: market-buy amount IS the quote spend); SELLs
     in base qty floored to the pair's amount step. Below min → False.
-    Guard: buy=entry (halt blocks), sell=reduce (never trapped)."""
+    Guard: buy=entry, sell=reduce."""
     pair = _spot_pair(symbol)
     side = side.lower()
     if side not in ("buy", "sell"):

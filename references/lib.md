@@ -538,12 +538,14 @@ The message starts with a code (`TRADING_DISABLED`, `INCOMPLETE_PAIR` — both k
 A key without an IP whitelist still binds.
 
 `lib/guard.py` — **kill switch + order audit log.** Enforced inside `lib/order_*.py`'s transport layer and again in `lib/portfolio.reconcile()` — no caller opts in, nothing to wire:
-- If the file `state/HALT` exists, every ENTRY order raises `guard.Halted` before any network call. Reduce-only closes, SL/TP, and cancels still work (flattening must never be trapped). The file's existence is authoritative — malformed content still halts.
+- If the file `state/HALT` exists, EVERY order raises `guard.Halted` before any network call — entries, reduce-only closes, SL/TP (a full freeze: a paused machine sends nothing; orders already resting on the exchange are left alone). Cancels and leverage changes still pass. The file's existence is authoritative — malformed content still halts.
+- Closing while paused is the user's explicit close only: `manager/flatten.py` (暫停並關閉部位) and `manager/close_symbol.py` take the close pass (`guard.grant_halt_closes`), and a close-all leg the reconciler finishes for flatten runs inside `guard.halt_close_pass`. Reduces only — never call either from a strategy or an ad-hoc script.
+- A Type B script or monitor that moves a resting stop by cancel + re-place must check `guard.halted()` (and `guard.restart_stopped()`) before the cancel: under HALT the cancel passes and the new stop is refused, which leaves the position with no stop at all.
 - **Per-strategy halt (monitor-only)** — `halt_path_for(strategy)` → `state/HALT_<strategy>`; `halted_for(strategy)` → True if the global HALT OR that file exists (never False under the global HALT); `halt_info_for(strategy)` → attribution dict or None (global wins; unreadable file still halts); `trip_halt_for(strategy, reason, source)` writes it atomically and audits `halt_tripped` with `scope`; `clear_halt_for(strategy, source)` removes it (only on explicit user request).
   - Use it for a strategy's own circuit breaker instead of the global HALT, which freezes every strategy.
   - **`lib/order_*` and the reconciler never read it** — a strategy or monitor must call `halted_for` itself before opening exposure.
   - `manager/stop_strategy.py` trips it for the stopped strategy.
-- `reconcile()` denies exposure-adding legs itself, before calling `place_order_fn`. That is the layer that covers a reconciler whose exchange has no official `lib/order_*.py` and whose `place_order` was hand-written — the transport-layer check alone would miss it. Denials are audited and logged, but deliberately NOT sent to Telegram: the user tripped the halt to stop the noise.
+- `reconcile()` denies every leg itself while halted, before calling `place_order_fn`. That is the layer that covers a reconciler whose exchange has no official `lib/order_*.py` and whose `place_order` was hand-written — the transport-layer check alone would miss it. Denials are audited and logged, but deliberately NOT sent to Telegram: the user tripped the halt to stop the noise.
 - `trip_halt(reason, source)` — set it (user says 停 / healthcheck anomaly). `clear_halt(source)` — **only on explicit user instruction; NEVER clear a halt on your own initiative.** `halted()` / `halt_info()` — check state.
 - Every order attempt / outcome / denial is appended to `state/audit.jsonl` (fsynced). When the user asks "你到底下了什麼單", read this file — it is the record of what was actually sent, not what was intended.
 
@@ -591,7 +593,7 @@ A key without an IP whitelist still binds.
 - `commission` comes from `userTrades` (order query has none, lags fill ~1s — retried) and is NOT always USDT: BNB-discount accounts pay BNB, so read `commission_asset` alongside
 - `BINANCE_DEMO=true` routes to the demo / testnet hosts, reads included — see *Demo / testnet flags* below
 - **Spot layer** (strategies declaring `MARKET = "spot"`): `place_spot_market_order(env, symbol, 'buy'|'sell', base_qty=, quote_qty=, client_order_id=)` — BUYs are sized in QUOTE currency (`quote_qty` → Binance `quoteOrderQty`, no price conversion), SELLs in base qty floored to the SPOT step (separate rules from futures — `get_spot_rules`/`format_spot_qty`); response carries fills inline (`FULL`), no polling; broker prefix `x-GBN6HWR2`; below min → `False`.
-  - Guard: buy=entry (halt blocks), sell=reduce (never trapped).
+  - Guard: buy=entry, sell=reduce (HALT blocks both).
   - Spot cannot short — `lib/portfolio` clamps net-negative spot targets to 0, loudly.
   - Plus `get_spot_balances(env)` / `get_spot_price(env, symbol)` for reconciler wirings.
 
@@ -621,7 +623,7 @@ A key without an IP whitelist still binds.
 - Ledger `state/paper_ledger.json` (atomic writes + flock / msvcrt; `PAPER_INITIAL_EQUITY` in `.env` seeds it, default 100,000 USDT for a ledger created from now on — an existing ledger keeps its own `initial_cash`; the web writes `PAPER_BOUND_TS` on every bind and a ledger older than the bind is re-seeded, so unbind→rebind is a fresh 100,000);
   - reduce/close legs are never refused by the equity/leverage checks (only exposure-adding fills are);
   - `reset_account(env, cash=None)` wipes and re-seeds — **explicit user request only**;
-  - client_order_id is idempotent (resend → the earlier fill), HALT blocks entries and never closes, every attempt lands in `state/audit.jsonl` with `venue: paper`
+  - client_order_id is idempotent (resend → the earlier fill), HALT blocks every order (closes only inside the user's explicit close), every attempt lands in `state/audit.jsonl` with `venue: paper`
 
 `lib/order_bybit.py` — **Bybit order execution (USDT linear perp + spot, UTA). Ships implemented — NEVER hand-write Bybit order calls; import from here.** Same contract and surface as the other order libs. Bybit facts, measured live 2026-09-09:
 - **SL/TP are native and ATOMIC** — `takeProfit`/`stopLoss`/`tpslMode:"Full"` ride on `/v5/order/create` itself, so `open_position(sl_price=, tp_price=)` leaves no naked window. A flat position auto-cancels them
@@ -669,7 +671,7 @@ Never parse the token yourself to decide what to trade.
 - `place_odd_lot_order(env, symbol, 'buy'|'sell', shares, client_tag=)` — one confirmed odd-lot order (1-999 shares). Returns exchange-reported `status` / `filled_qty` / `avg_fill_price` / `msg` — report those, never the intent. Raises `SinopacError` on rejection (with the broker's message), `OrderNotConfirmed` if never acknowledged (query again, do NOT blindly resubmit).
 - `client_tag`: ≤6 alphanumeric chars (Shioaji `custom_field`), unique per intent — a same-day resubmit with the same tag raises `DuplicateOrder` locally (Shioaji has no exchange-side clientOrderId dedup).
 - `get_sinopac_positions(env)` — `{symbol: {'side': 'long', 'size': TWD}}` (reconciler shape, odd-lot-aware via `unit=Share`); `get_account_balance(env)` — settlement balance in TWD, raises on failure.
-- Buy orders pass through `lib/guard` (halt + audit) like BingX; sells are never trapped. Login + CA activation happen on first call and fail loudly if the CA certificate isn't activated.
+- Orders pass through `lib/guard` (halt + audit) like BingX — buys and sells alike. Login + CA activation happen on first call and fail loudly if the CA certificate isn't activated.
 - Futures (TXF) are NOT covered yet — raw-Shioaji pattern with mandatory confirmation is in `references/sinopac-broker.md`; harvest into this lib after the first live futures deployment.
 
 `lib/order_capital.py` — **Capital (群益) order execution (台指期 + 台股) — SKCOM COM API, Windows only. Ships implemented — NEVER hand-write SKCOM order calls; import from here.**
@@ -681,7 +683,7 @@ Taiwan-broker shape (follows `lib/order_sinopac.py`, not the perp template); all
 - All prices/amounts in **TWD**.
   - Every accepted order returns a 13-digit seq; fill confirmation comes async via `OnNewData` `D` rows deduped on (KeyNo, type, exchange seq) — connect REPLAYS the whole session day and TS rows arrive duplicated.
   - `status='filled'` carries the **RESOLVED contract** (`TM2608`, never the `TM0000` alias you sent — always reconcile positions/fills on the resolved code) plus exchange-reported `fill_qty`/`avg_fill_price`/`fill_ids`; timeout → `status='sent'` (order ACCEPTED — a resting ROD limit is normal, and it may have filled unseen: query reports, never blindly resubmit).
-- Entry orders pass through `lib/guard` (halt + audit: `order_denied_halt`/`order_sent`/`order_error`/`order_filled`); closes/sells are never trapped. **No broker attribution — 群益 is the broker itself** (no header/prefix/aff code, unlike every exchange lib).
+- Entry orders pass through `lib/guard` (halt + audit: `order_denied_halt`/`order_sent`/`order_error`/`order_filled`); closes/sells are HALT-blocked too outside the user's explicit close. **No broker attribution — 群益 is the broker itself** (no header/prefix/aff code, unlike every exchange lib).
 
 `lib/capital_vault.py` — **Capital (群益) credential resolver.** `resolve(env)` → `(login_id, password)`: plain `.env` values as-is; the cloud-box sentinels (`capital_api_key=` empty, `capital_password=vault:<fingerprint>`) → `C:\blave-agent\credentials\capital_vault.json`, readable only as Administrator (raises from any other identity — your shell included). Used by `capital_worker.py` and `order_capital.py`, which also refuse to log in again with credentials 群益 answered 300/307 to (`state/capital_login_block.json` — never delete it to retry); never read the vault yourself.
 
@@ -705,7 +707,7 @@ The platform account_reader runs as LocalSystem and cannot pass SKCOM's 602 iden
   - An entry goes to the month the bot already holds for that root if any (never two months at once), else the computed near month;
   - held rows are classified by `lib/president_contracts.py` — front/entry month = the bot's, past-settlement and unlisted = settled residue (ignored, never closed), past-settlement with the list unread = `ListUnknown` (a transient read failure, the round is skipped), any other month = the user's own, left out of every read and never closed;
   - `book_months` (the contract months `'2026-10'` the caller's self_ledger book holds for that root — the reconciler and 全部平倉 pass it) replaces the calendar: only those months are the bot's — and raises `EntryDeferred` (a wait, not an error) while the snapshot has not caught up.
-  - `intent` is REQUIRED (entry HALT-blocked, reduce always passes).
+  - `intent` is REQUIRED (both HALT-blocked; reduce passes only inside the user's explicit close).
   - `client_tag` (≤10 alphanumeric, rides in `note`) is refused locally if already sent today (recorded after the broker took the send) — the broker has no client order id.
 - Returns `status='filled'` with `fill_qty`/`avg_fill_price` from `on_match`, or `status='sent'` when no fill was seen within the timeout, or `status='unknown'` for a status code the SDK does not define — never resubmit on either. Success codes 0000/0001/0003/0004/0006 (live market orders answer 0004 directly); 9999 / 99xx / ERRn raise `PresidentError`. Entries and closes both return `ack` / `statuscode`.
 - `close_position_partial` / `format_qty` (flatten contract), and `cancel_order` / `modify_order` / `place_stop_order` stubs that raise. No limit layer (chase falls back to market, loudly), no native stop orders, no broker attribution.

@@ -21,8 +21,10 @@ every machine since 2026-09-23 unless its config says "self_ledger": false):
 
 Semantics — panic button, not portfolio management:
   - HALT is (re)tripped here too, so a manual run gets the same guarantee:
-    nothing re-opens after the flatten (closes always pass the guard; only the
-    user pressing 啟動下單 clears the halt). Exception: after a machine restart
+    nothing re-opens after the flatten (only the user pressing 啟動下單 clears
+    the halt). HALT freezes every order, so this process takes the close pass
+    (guard.grant_halt_closes): its reduces — and the netted restore — go out,
+    nothing else does. Exception: after a machine restart
     (lib/guard.RESTART_STOP_PATH) no HALT is added and the closes pass only on
     the one-time pass the platform's close_all hands us (guard.claim_close_all_pass);
     the machine stays stopped afterwards.
@@ -442,9 +444,9 @@ def _wait_for_inflight(timeout_s=30.0, poll_s=1.0, symbol=None):
     """After HALT is tripped, give in-flight TWAP/chase/custom executions a
     moment to drain before closing over them (audit P1 #4): flatten and a
     still-running execution firing orders on the same symbol can over-close.
-    HALT already stops entry executions at their next slice; reduce ones may
-    legitimately outlive the wait — after the timeout we proceed anyway (a
-    panic close must not block forever) but say so loudly, per symbol.
+    HALT stops executions of either direction at their next slice; one stuck
+    in a venue call may outlive the wait — after the timeout we proceed anyway
+    (a panic close must not block forever) but say so loudly, per symbol.
     symbol: only that swap symbol's executions (manager/close_symbol.py)."""
     from lib.execute import list_inflight
 
@@ -508,6 +510,7 @@ def flatten():
             return False
     elif not guard.halted():
         guard.trip_halt("close all positions", "flatten")
+    guard.grant_halt_closes("flatten")
     _wait_for_inflight(timeout_s=_inflight_wait_s())
     closed = errors = 0
     # self_ledger scope (see module docstring): ON → close only the bot's own

@@ -671,8 +671,8 @@ check(recon(360, busy) == "skip" and placed == [], "transient round: place_order
 ETH = {"ETHUSDT": {"side": "long", "size": 50.0}}
 guard.trip_halt("user request", "web")
 rec._sync_halt_flag(os.path.getmtime(guard.HALT_PATH))
-check(recon(660, ETH) == "ok" and ("ETHUSDT", -50.0, True) in placed,
-      f"control: under a plain HALT the reduce leg still goes out {placed}")
+check(recon(660, ETH) == "ok" and placed == [],
+      f"under a plain HALT (a full freeze) not even the reduce leg goes out {placed}")
 rec._save_account_guard({"venue": "okx", "account_id": "A", "pending": {
     "reason": "exchange account changed", "venue": "okx", "account_id": "B"}})
 check(recon(960, ETH) == "skip" and placed == [],

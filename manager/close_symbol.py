@@ -6,7 +6,8 @@
 
 For "close that one coin" requests. manager/flatten.py is the whole-account
 panic button and trips the global HALT; this touches nothing but the named
-symbol and never trips HALT (every other strategy keeps trading).
+symbol and never trips HALT (every other strategy keeps trading). Under HALT
+it still closes: an explicit close takes the guard's close pass (reduces only).
 
 Keys: the .env NAMES are passed explicitly and only those are used. Every
 other credential and demo flag of the venue is removed from the env the libs
@@ -488,6 +489,10 @@ def run_close(ctx, dry_run=False):
     if dry_run:
         print("dry run — nothing sent")
         return OK
+    # an explicit close goes out while trading is paused — without the pass the
+    # cancels below would pass HALT and the close after them would not
+    from lib import guard
+    guard.grant_halt_closes("close_symbol")
 
     unprotected = (f"WARNING: protective orders on {sym} were cancelled but the {side} position may "
                    f"still be OPEN and UNPROTECTED — check and close it on the exchange now")

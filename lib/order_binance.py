@@ -27,9 +27,10 @@ Design rules (same contract as lib/order_bingx.py — non-negotiable):
    ids freely once the order is terminal — so on OrderNotConfirmed, re-query;
    never blindly resubmit.
 5. HALTABLE + AUDITED. Every order-mutating request passes through lib/guard:
-   state/HALT blocks entry orders BEFORE any network call (reduce-only closes,
-   SL/TP and cancels still pass — flattening must never be trapped), and every
-   attempt/outcome/denial lands in state/audit.jsonl.
+   state/HALT blocks every order BEFORE any network call — entries, closes,
+   SL/TP; cancels still pass, closes only inside the user's explicit close
+   (lib/guard close pass) — and every attempt/outcome/denial lands in
+   state/audit.jsonl.
 
 Verified against ccxt's production binance parser + official docs + live
 orders on the real account (2026-08-04). Binance quirks handled here:
@@ -185,7 +186,7 @@ def _order_intent(method, path, params):
     p = params or {}
     if path == "/api/v3/order":
         # spot has no positions: BUY builds exposure (halt blocks it), SELL
-        # liquidates inventory (never trapped — same rule as reduce-only)
+        # liquidates inventory (same rule as reduce-only)
         return "reduce" if p.get("side") == "SELL" else "entry"
     is_reduce = (str(p.get("reduceOnly", "")).lower() == "true" or
                  str(p.get("closePosition", "")).lower() == "true")
@@ -215,8 +216,8 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for "
             f"{fields.get('symbol')} refused before reaching the exchange. "
-            f"Closes, SL/TP and cancels still work. Only the user may clear "
-            f"the halt (guard.clear_halt)."
+            f"Trading is paused: only cancels go out (closes on the user's explicit "
+            f"close only). Only the user may clear the halt (guard.clear_halt)."
         )
 
     guard.audit("order_attempt", **fields)
@@ -910,8 +911,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     in quote currency, no price conversion or step math on our side); SELLs
     pass base_qty (coin amount, floored to the spot step — you can only sell
     inventory you hold). Below min qty/notional → returns False (intentional
-    skip, reconciler convention). Guard: buy=entry (halt blocks), sell=reduce
-    (never trapped).
+    skip, reconciler convention). Guard: buy=entry, sell=reduce.
 
     newOrderRespType=FULL makes the placement response itself carry the fills
     (spot fills synchronously) — status/avgPrice/executedQty/commission come
@@ -1018,7 +1018,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price,
     order that would cross is refused with -2010 "Order would immediately
     match and take." and RETURNS {'status': 'post_only_rejected'} instead of
     raising; other -2010 messages (insufficient balance, …) stay fatal.
-    Guard: buy=entry (halt blocks), sell=reduce (never trapped)."""
+    Guard: buy=entry, sell=reduce."""
     symbol = _canonical(symbol)
     side = side.lower()
     if side not in ("buy", "sell"):

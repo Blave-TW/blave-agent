@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.130 — 2026-10-17(desktop 0.1.27)
+
+- **暫停＝完全凍結(Wei 10-17;`portfolio_reporter.halt_freezes`)**:workspace lib 0.1.27 起 `state/HALT` 期間一張單都不送(平倉、減碼、反手第一腳、停損停利都算;只有用戶明確的平倉——`manager/flatten.py`、`manager/close_symbol.py`——拿得到放行)。報告的 `halt` 多一欄 `freeze`(沒暫停時也帶,給暫停框選句):跑著的對帳器快照 `caps` 有 `halt_freeze`,或確定沒有對帳器行程時磁碟上的 `lib/guard.py` 有凍結閘門,才是 true;`freeze` 為 true 時 `holds_all` 一律 true。舊 lib(雲端還沒說「更新」)照舊 false,頁面維持「平倉停損照走」的講法。agent 回合的下單狀態一行同樣照磁碟上的 lib 講(`agent_turn._order_state`)。`command_listener` 只改註解。沒有對帳器心跳時每份報告多一次 `_reconciler_absent()`(同 `can_hold_rollover_in_halt` 的判法)。**出貨順序**:api 先(見 0.1.27 回報的 api 清單)、再 publish 這版 runtime、最後外殼與 workspace VERSION。測試 `tests/check_halt_freeze.py`、`tests/check_paper_scenarios.py` TC-06／TC-07。
+
 ## 1.1.128 — 2026-10-17(desktop 0.1.27)
 
 - **回覆中排隊送出:撤回單則＋待送數(0.1.27 回合中鎖減量;`web_bridge`)**:新控制訊息 `withdraw`(`target_id` = /send 回的 message_id)只從本機佇列拿掉那一則,回 `withdraw_result` chunk(`withdrawn`／`running`=那則已在跑、什麼都不做／`not_found`,帶 `pending_ids`);撤掉的是最後一則且沒有回合在跑時,再送 `turn_state: cancelled`(`message_ids` 只點名那則)。每個 `turn_state` 帶 `pending_ids`(這條對話還在排的 id);訊息排到跑中或排隊中的對話後面時當場報一次(不等 60 秒的 queued 重報)。舊 `interrupt` 行為不變,`cancelled` 多帶 `message_ids`(撤掉的全部),api 按則標取消。poll URL 加 `wd=1` 宣告看得懂 `withdraw`。快照帶單調遞增的 `pending_seq`(微秒時鐘,重啟不倒退;api 只收比已存的新的,晚到的舊快照丟掉)。回合收尾送 `queued` 前在 lock 裡重讀佇列:收尾途中最後一則被撤回就不送 `queued`;撤回落在 `queued` 送出後、離開 `_running` 前,收尾補一個 `cancelled`(`message_ids` 空),api 不會卡在 `queued` 到 TTL。**出貨順序**:api 先(舊 api 會把 `pending_ids`／`message_ids` 丟掉、`cancelled` 照舊整串標,不壞),再 publish 這版 runtime。測試 `tests/check_web_bridge_withdraw.py`。

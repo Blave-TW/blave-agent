@@ -462,7 +462,7 @@ class World:
         stopped = pr.restart_stop(hb, cfg if isinstance(cfg, dict) else {}, pr.venues())
         return {"self_ledger": pr.own_positions_only(cfg, hb, last),
                 "portfolio_configured": pr.portfolio_configured(cfg_path, hb, last),
-                "halt": pr.halt_state(), "stopped": stopped, "account_guard": pr.account_guard(),
+                "halt": pr.halt_state(hb, last), "stopped": stopped, "account_guard": pr.account_guard(),
                 "alive": pr._fresh(hb) and stopped is None,
                 "last": last or {}, "order_errors": self.order_errors(),
                 "states": pr.strategy_states(), "can_wait_start": pr._workspace_has_signal_gate(),
@@ -1037,9 +1037,15 @@ def tc06(w):
     w.sig("a1", 2)
     w.eq(w.settle(), [], "HALT: entry legs denied")
     w.check(len(w.audit("order_denied_halt")) >= 1, "…audited as order_denied_halt")
-    w.check((w.report()["halt"].get("blocked") or 0) >= 1, "report halt.blocked counts it")
+    h = w.report()["halt"]
+    w.check((h.get("blocked") or 0) >= 1, "report halt.blocked counts it")
+    w.check(h.get("freeze") is True and h.get("holds_all") is True,
+            f"report: a freezing reconciler, so the page says nothing goes out ({h})")
     w.sig("a1", 0)
-    w.eq(w.settle(), [(B, "sell", 0.02, True)], "HALT: the close still goes out")
+    w.eq(w.settle(), [], "HALT (a full freeze): the close waits too")
+    w.eq(w.paper_pos(), {B: 0.02}, "…the position is untouched")
+    w.start()
+    w.eq(w.settle(), [(B, "sell", 0.02, True)], "啟動下單: the exit goes out")
 
 
 @scenario("TC-07")
@@ -1047,10 +1053,11 @@ def tc07(w):
     _long(w)
     w.cmd("halt", reason="user")
     w.sig("a1", -1)
-    w.eq(w.settle(), [(B, "sell", 0.02, True)], "HALT × flip: close leg fills, opening leg denied")
-    last = w.orders_log()[-1]
-    w.check(last.get("failed") is True and len(last["legs"]) == 1, "logged failed:true with the close leg")
-    w.eq((w.book(), w.paper_pos()), ({}, {}), "flat, not short")
+    w.eq(w.settle(), [], "HALT × flip: not even the close leg goes out")
+    w.eq((w.book(), w.paper_pos()), ({B: (0.02, 1000.0)}, {B: 0.02}), "still long, untouched")
+    w.start()
+    w.eq(w.settle(), [(B, "sell", 0.02, True), (B, "sell", 0.02, False)],
+         "啟動下單: the flip runs close first, then opens")
 
 
 @scenario("TC-08")
