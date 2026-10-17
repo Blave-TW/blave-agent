@@ -615,7 +615,8 @@
     else if (!wantCap && st.cap) { st.cap.remove(); st.cap = null; }
   }
   // 原因句＋〔停止〕(呼叫端給 busyFix 才有連結);點了被鎖的鈕再寫一次,讀屏重唸
-  function robCapFill(cap, opts) { cap.textContent = opts.t("rob.busy"); if (typeof opts.busyFix === "function") opts.busyFix(cap); }
+  // 別處寫了新的一句時,呼叫端會把這句收起來(hidden):再寫一次要放回來
+  function robCapFill(cap, opts) { cap.textContent = opts.t("rob.busy"); cap.hidden = false; if (typeof opts.busyFix === "function") opts.busyFix(cap); }
   function wireBtn(container, st, info, opts) {
     st.btn.addEventListener("click", () => {
       if (st.btn.getAttribute("aria-disabled") === "true") { if (st.cap) robCapFill(st.cap, opts); return; }

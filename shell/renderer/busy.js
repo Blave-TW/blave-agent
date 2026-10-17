@@ -42,14 +42,22 @@ function busySlot(id, anchor) {
   if (anchor && anchor.parentNode && anchor.nextSibling !== s) anchor.parentNode.insertBefore(s, anchor.nextSibling);
   return s;
 }
+/* 同一畫面同一事實只講一次(稽核 0127b1 P1-5):寫新的一句原因,先收掉別處還掛著的舊句(data-busy 的槽)。
+   不收的兩句:輸入框上方那句(回合本身的狀態,不是 data-busy)、「停止中…」(busy-cut-why:用戶剛按的動作還在進行) */
+function busyQuietOthers(keep) {
+  document.querySelectorAll("[data-busy]").forEach((s) => { if (s !== keep && s.id !== "busy-cut-why") busyQuiet(s); });
+}
+// 掛補救鈕的地方都是一句原因句(各頁自己的槽也一樣:轉出、策略庫、版本、掃描／驗證):在這裡收掉別處的舊句、記 data-busy,回合結束 busySync 一起收
 function busyFixLink(el, action) {
   if (!el || !action) return;
   const b = document.createElement("button"); b.type = "button"; b.className = "btn-quiet busy-fix"; b.textContent = t(action === "stop" ? "busy.fix.stop" : "busy.fix.view");
   b.addEventListener("click", () => busyFix(action));
   el.append(" ", b);
+  busyQuietOthers(el); el.dataset.busy = "1";
 }
 function busyTell(slot, kind) {
   const L = BUSY[kind]; if (!slot || !L) return;
+  busyQuietOthers(slot);
   slot.textContent = "";
   const s = document.createElement("span"); s.textContent = t(L.key); slot.appendChild(s);
   busyFixLink(slot, L.fix);

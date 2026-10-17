@@ -730,7 +730,7 @@
       if (v && !btn.disabled && document.activeElement === btn && typeof opts.refocus === "function") opts.refocus();
       btn.disabled = v;
     };
-    const capFill = () => { busyCap.textContent = t("rob.busy"); if (typeof opts.busyFix === "function") opts.busyFix(busyCap); };
+    const capFill = () => { busyCap.textContent = t("rob.busy"); busyCap.hidden = false; if (typeof opts.busyFix === "function") opts.busyFix(busyCap); };   // 被別處的新句收起來過也放回來
     function recalc() {
       const locked = behind ? false : snt || busyNow;   // 輪數估算不得解鎖這兩態的鈕
       const v = read();

@@ -125,7 +125,7 @@ env.clearTimeout = (i) => { if (timers[i - 1]) timers[i - 1].live = false; };
 doc.activeElement = null; doc.body = root;
 // busyOn 讀 S.running(S = env):讓測試切回合狀態
 const mkBusy = (extra) => new Function("S", ...Object.keys(env), (extra || "") + busySrc.replace(/function busyOn\(\) \{[^\n]*\}/, "function busyOn() { return S.running === true; }")
-  + "\nreturn { BUSY, BUSY_FEATURE, busyTell, busySlot, busySync, busyStopThen, busyCut, busyHit, busySendTell, busyOn, get pending() { return BUSY_PENDING; } };")(env, ...Object.values(env));
+  + "\nreturn { BUSY, BUSY_FEATURE, busyTell, busyFixLink, busySlot, busySync, busyStopThen, busyCut, busyHit, busySendTell, busyOn, get pending() { return BUSY_PENDING; } };")(env, ...Object.values(env));
 const B = mkBusy();
 const head = $("cs-head");
 const slot = B.busySlot("cs-why", head);
@@ -140,6 +140,11 @@ B.busyTell(slot, "switch");
 ok("③ 一個容器一個槽:新的一句取代舊的(只剩一顆補救)", slot.kids[0].textContent === STR.zh["busy.switch"] && slot.kids.filter((k) => typeof k !== "string" && k.tag === "button").length === 1);
 $("set-scrim").hidden = false; $("cs-list").hidden = false; calls.length = 0;
 B.busyTell(B.busySlot("perf-why", $("x")), "perf");
+{ const perfSlot = B.busySlot("perf-why", $("x")), cap = new El("p"); $("x").appendChild(cap); cap.textContent = "x";
+  ok("③ 稽核 0127b1 P1-5:同一畫面只留一句——別的槽寫新句時,上一句(cs-why)收掉", slot.hidden && slot.textContent === "" && !("busy" in slot.dataset) && !perfSlot.hidden && perfSlot.dataset.busy === "1");
+  B.busyFixLink(cap, "stop");
+  ok("③ P1-5:各頁自己的原因句(掃描／驗證／轉出…經 busyFixLink 掛〔停止〕)也算一句:收掉別處的、自己記 data-busy", perfSlot.hidden && cap.dataset.busy === "1");
+  B.busyTell(perfSlot, "perf"); }
 B.busySlot("perf-why", $("x")).kids.find((k) => typeof k !== "string" && k.tag === "button").click();
 ok("③ 按「查看」:關設定、收清單、展開聊天欄、捲到底、焦點回輸入框;記 lock_fix", calls.join() === "setClose,list:false,pane:chat:false,scroll,focus:ta" && tracked.slice(-2).join() === "lock_perf,lock_fix", calls);
 const want = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send", sendAway: "lock_send" };
