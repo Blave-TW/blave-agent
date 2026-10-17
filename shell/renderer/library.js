@@ -746,7 +746,7 @@ function libPaintCta(s) {
       const b = btn("btn-fill", c.paid ? buyLabel() : t("lib.use"), () => libBusyTell(s));
       b.setAttribute("aria-disabled", "true"); b.title = t("turn.busy"); row.appendChild(b);
       note.setAttribute("role", "status");
-      if (LIB.busyTold === s.id) { note.textContent = t("turn.busy"); b.setAttribute("aria-describedby", "lib-cta-note"); }
+      if (LIB.busyTold === s.id) { note.textContent = t("turn.busy"); busyFixLink(note, "stop"); b.setAttribute("aria-describedby", "lib-cta-note"); }
       break;
     }
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
@@ -775,7 +775,7 @@ function libPaintCta(s) {
 function libBusyTell(s) {
   LIB.busyTold = s.id; busyHit("send");
   const n = $("lib-cta-note"), b = libCtaMain();
-  if (n) { n.textContent = t("turn.busy"); n.hidden = false; }
+  if (n) { n.textContent = t("turn.busy"); busyFixLink(n, "stop"); n.hidden = false; }   // 不在輸入框旁:補〔停止〕(聊天欄收著時看不到送出鍵)
   if (b) b.setAttribute("aria-describedby", "lib-cta-note");
 }
 

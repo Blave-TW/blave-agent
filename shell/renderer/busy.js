@@ -14,14 +14,15 @@ const BUSY = {
   new:      { key: "busy.new",      fix: "stop" },
   cloudUpd: { key: "busy.cloudUpd", fix: "stop" },
   send:     { key: "turn.busy",     fix: null },
+  sendAway: { key: "turn.busy",     fix: "stop" },   // 不在輸入框旁的送一句話(看不到送出鍵):補〔停止〕
 };
 // 埋點名(spec §4;tests/check_shell_telemetry.js 掃這張表):被擋那一下記哪一把鎖
-const BUSY_FEATURE = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send" };
+const BUSY_FEATURE = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send", sendAway: "lock_send" };
 // 停止之後等回合真的收掉再做(登出 / 換 AI / 移除自帶金鑰);主行程 STOP_KILL_MS 5 秒沒輸出就砍,這裡給到 20 秒。
 // 逾時不照做:確認框說了「會先停止」,停不下來就在原位講一句、留「停止」再按
 const BUSY_STOP_WAIT_MS = 20000;
 // 單一待辦:同時只等一件事,新的取代舊的(連按登出、登出後又換 AI 不會疊出好幾件、執行順序不定)。回合一結束(busySync)當場做,不輪詢
-let BUSY_PENDING = null;   // { fn, slot, timer }
+let BUSY_PENDING = null;   // { fn, timer }
 
 function busyOn() { return typeof running !== "undefined" && running === true; }
 function busyLock(el, on) { if (!el) return; if (on) el.setAttribute("aria-disabled", "true"); else el.removeAttribute("aria-disabled"); }
@@ -29,7 +30,10 @@ function busyLocked(el) { return !!el && el.getAttribute("aria-disabled") === "t
 function busyHit(kind) { if (BUSY_FEATURE[kind] && typeof trackFeature === "function") trackFeature(BUSY_FEATURE[kind]); }
 
 // 送一句話被擋、那顆鈕旁邊沒有自己的原因行:寫在輸入框上方那一行(同 Enter),回合結束 sendBtnSync 收
-function busySendTell() { taWaitShow(true); busyHit("send"); }
+function busySendTell() {
+  if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著:原因句寫在看不見的那一欄等於沒講(設計稽核 0127)
+  taWaitShow(true); busyHit("send");
+}
 
 // 容器的訊息槽:第一次用到才建,接在 anchor 後面(已建好但被重畫移走了就搬回 anchor 後面)
 function busySlot(id, anchor) {
@@ -65,27 +69,35 @@ function busyView() {
   scrollChat(true);
   $("ta").focus();
 }
-function busyStopThen(fn, anchor) {
+// 「停止中…」與逾時句的槽:掛在不會被重畫的容器上——設定開著在設定標題列下方,關著在聊天標題列下方(聊天欄收著先展開)。
+// 每次寫都重新取一次(設定裡那幾頁會整頁重畫,按的那顆鈕旁邊的節點會被拆掉)。
+// expand:用戶剛按下確認才展開聊天欄;20 秒後的逾時句不動版面(用戶可能已經在做別的事)
+function busyCutSlot(expand) {
+  const sc = $("set-scrim"), inSet = sc && !sc.hidden;
+  if (expand && !inSet && typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
+  return busySlot("busy-cut-why", inSet ? $("set-modal").querySelector(".modal-head") : $("cs-head"));
+}
+function busyStopThen(fn) {
   if (!busyOn()) { fn(); return; }
-  if (BUSY_PENDING) { clearTimeout(BUSY_PENDING.timer); busyQuiet(BUSY_PENDING.slot); }
-  const slot = busySlot("busy-cut-why", anchor && anchor.isConnected && anchor !== document.body && anchor.parentNode ? anchor.parentNode : $("cs-head"));
+  if (BUSY_PENDING) clearTimeout(BUSY_PENDING.timer);
+  const slot = busyCutSlot(true);
   slot.textContent = t("busy.stopping"); slot.hidden = false; slot.dataset.busy = "1";
-  const p = BUSY_PENDING = { fn, slot, timer: setTimeout(() => busyStopTimeout(p), BUSY_STOP_WAIT_MS) };
+  const p = BUSY_PENDING = { fn, timer: setTimeout(() => busyStopTimeout(p), BUSY_STOP_WAIT_MS) };
   stopTurn();
 }
 function busyStopTimeout(p) {
   if (BUSY_PENDING !== p) return;
   BUSY_PENDING = null;
-  p.slot.textContent = "";
-  const s = document.createElement("span"); s.textContent = t("busy.stopFail"); p.slot.appendChild(s);
-  busyFixLink(p.slot, "stop"); p.slot.hidden = false; p.slot.dataset.busy = "1";
+  const slot = busyCutSlot(false);
+  slot.textContent = "";
+  const s = document.createElement("span"); s.textContent = t("busy.stopFail"); slot.appendChild(s);
+  busyFixLink(slot, "stop"); slot.hidden = false; slot.dataset.busy = "1";
 }
 function busyQuiet(slot) { if (slot) { slot.hidden = true; slot.textContent = ""; delete slot.dataset.busy; } }
 // 會中斷這條回覆的動作(換 AI):回合中先問,確認了先停、等收掉再做;沒回合直接做。go 不可以再過守門(逾時會自己再跳框)
 function busyCut(opener, go) {
   if (!busyOn()) { go(); return; }
-  const at = opener || document.activeElement;
-  confirmBox({ title: t("busy.cut.title"), lines: [t("busy.cut.body")], ok: t("busy.cut.ok"), opener, onOk: () => busyStopThen(go, at) });
+  confirmBox({ title: t("busy.cut.title"), lines: [t("busy.cut.out")], ok: t("busy.cut.ok"), opener, onOk: () => busyStopThen(go) });
 }
 
 // 回合開跑 / 結束時(app.js 上鎖、解鎖那幾串)叫:對話清單的鎖切 aria-disabled(策略列的 ✕ 在 stratDelSync);結束時收掉所有原因句

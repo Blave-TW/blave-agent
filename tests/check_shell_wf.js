@@ -190,7 +190,7 @@ if (!process.versions.electron) {
     function node(tag) {
       const n = { tagName: tag.toUpperCase(), nodeType: 1, childNodes: [], parentNode: null, attrs: {}, style: { setProperty() {} }, dataset: {}, className: "",
         get classList() { const c = () => n.className.split(/\s+/).filter(Boolean); return { add: (x) => { if (!c().includes(x)) n.className = c().concat(x).join(" "); }, remove: (x) => { n.className = c().filter((y) => y !== x).join(" "); }, contains: (x) => c().includes(x) }; },
-        setAttribute(k, v) { n.attrs[k] = String(v); }, getAttribute(k) { return k in n.attrs ? n.attrs[k] : null; }, addEventListener() {},
+        setAttribute(k, v) { n.attrs[k] = String(v); }, getAttribute(k) { return k in n.attrs ? n.attrs[k] : null; }, removeAttribute(k) { delete n.attrs[k]; }, addEventListener() {},
         appendChild(ch) { if (ch.nodeType === 11) { ch.childNodes.splice(0).forEach((x) => n.appendChild(x)); return ch; } ch.parentNode = n; n.childNodes.push(ch); return ch; },
         append(...xs) { xs.forEach((x) => n.appendChild(typeof x === "string" ? DOC.createTextNode(x) : x)); }, remove() {}, contains(x) { return flat(n).includes(x); },
         get textContent() { return n.childNodes.map((x) => x.textContent).join(""); }, set textContent(v) { n.childNodes = []; if (v !== "" && v != null) n.appendChild(DOC.createTextNode(String(v))); } };
@@ -345,7 +345,7 @@ if (!process.versions.electron) {
     && /id="rp-wf" role="tabpanel" hidden/.test(html) && /report-wf\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>/.test(html));
   ok("③ rpShowTab 把 wf 交給 renderWf(t / busy / turn / scope / gate / onRun / onUpdate / buildMeta 從外面交進去);三處回合開始 / 結束都叫 rpWfSync;雲端狀態輪詢也叫(閘門翻面)",
     /R\.renderWf\(\$\("rp-wf"\), rpWfData\(B\.data, B\.name\), rpWfOpts\(\)\)/.test(app) && /function rpWfData\(data, name\) \{ return \{ stats: data\.stats, wf: data\.wf \|\| null, code: data\.code, name \}; \}/.test(app)
-    && /return \{ t, busy: running, turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, onUpdate: rpWfUpdate, buildMeta: R\.buildMeta,\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
+    && /return \{ t, busy: running, turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: \(el\) => busyFixLink\(el, "stop"\), onUpdate: rpWfUpdate, buildMeta: R\.buildMeta,\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
     && /window\.BlaveReport\.wfTurnEnded\(turnSeq, faulted \|\| stopped, \{ refetch: rpWfRefetch \}\);\n  upTurnEnded\(faulted\);\n  running = false;[^\n]*rpWfSync\(\);/.test(app)
     && /const gate = !cloud \? true : typeof c\.config_supports_wf === "boolean" \? c\.config_supports_wf : null;/.test(app)
     && (app.match(/rpRobSync\(\); rpWfSync\(\);/g) || []).length === 3 && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));
@@ -357,10 +357,10 @@ if (!process.versions.electron) {
   { const css = read("renderer/report-wf.css"), wfjs = read("renderer/report-wf.js"), robjs = read("renderer/report-robust.js");
     ok("③ R1 每輪明細:表頭固定 58(折不折行看資料不看語言),捲動框上限 = 表頭 + 12.5 列 × 50(12 輪不捲、13 輪起固定露出半列)",
       /\.wf-run-tbl thead th \{ vertical-align: bottom; height: 58px; \}/.test(css) && /\.wf-scroll \{\s*max-height: calc\(58px \+ 12\.5 \* 50px\);/.test(css) && !/en 58/.test(css));
-    ok("③ R2 拿著焦點的鈕被停用前先交給分頁鈕(樣本外驗證 setDis、參數掃描 syncEmpty);送不出去時焦點落在 body 也交回;app.js 兩支 refocus",
-      /const setDis = \(v\) => \{ if \(v && !btn\.disabled && document\.activeElement === btn && typeof opts\.refocus === "function"\) opts\.refocus\(\); btn\.disabled = v; \};/.test(wfjs)
+    ok("③ R2 回合中是 aria-disabled(焦點留得住,busy-lock spec §8);其他原因原生停用前先把焦點交給分頁鈕(樣本外驗證 setDis);送不出去時焦點落在 body 也交回;app.js 兩支 refocus",
+      /if \(busyNow\) \{ btn\.disabled = false; btn\.setAttribute\("aria-disabled", "true"\); return; \}\n\s*btn\.removeAttribute\("aria-disabled"\);\n\s*if \(v && !btn\.disabled && document\.activeElement === btn && typeof opts\.refocus === "function"\) opts\.refocus\(\);\n\s*btn\.disabled = v;/.test(wfjs)
       && !/[^.]btn\.disabled = (locked|true)/.test(wfjs.slice(wfjs.indexOf("function recalc"), wfjs.indexOf("function setBusy")))
-      && /if \(opts\.busy && !st\.btn\.disabled && document\.activeElement === st\.btn && typeof opts\.refocus === "function"\) opts\.refocus\(\);\s*st\.btn\.disabled = !!opts\.busy;/.test(robjs)
+      && /if \(opts\.busy\) st\.btn\.setAttribute\("aria-disabled", "true"\); else st\.btn\.removeAttribute\("aria-disabled"\);/.test(robjs)
       && (wfjs.match(/if \(document\.activeElement === document\.body && typeof opts\.refocus === "function"\) opts\.refocus\(\);/g) || []).length === 1
       && (robjs.match(/if \(document\.activeElement === document\.body && typeof opts\.refocus === "function"\) opts\.refocus\(\);/g) || []).length === 1
       && /function rpRobRefocus\(\) \{ const b = \$\("rp-tabs-scroll"\)\.querySelector\('\.rp-tab\[data-tab="rob"\]'\); if \(b && !b\.disabled\) b\.focus\(\); \}/.test(app)); }
@@ -560,7 +560,7 @@ app.whenReady().then(async () => {
   // 空狀態
   const EMPTY = `(() => { const q = (s) => [...window.__box.querySelectorAll(s)]; const b = window.__box.querySelector(".wf-empty .wf-go");
     return { knobs: q(".wf-empty input").map((i) => i.value + (i.disabled ? "x" : "")), tl: q(".wf-tl-row").length, est: (window.__box.querySelector(".wf-empty .wf-est") || {}).textContent, estBad: !!window.__box.querySelector(".wf-est.is-bad"),
-      btn: b && b.textContent, dis: b && b.disabled, spin: !!(b && b.querySelector(".spin16")), cap: (window.__box.querySelector(".wf-cap") || {}).textContent, lead: (window.__box.querySelector(".wf-empty p.lead") || {}).textContent, card: !!window.__box.querySelector(".wf-card") }; })()`;
+      btn: b && b.textContent, dis: b && (b.disabled || b.getAttribute("aria-disabled") === "true"), aria: b && b.getAttribute("aria-disabled"), capFix: !!window.__box.querySelector(".wf-cap button.busy-fix"), spin: !!(b && b.querySelector(".spin16")), cap: (window.__box.querySelector(".wf-cap") || {}).textContent, lead: (window.__box.querySelector(".wf-empty p.lead") || {}).textContent, card: !!window.__box.querySelector(".wf-card") }; })()`;
   r = await js(`(() => { window.__render(${D(null)}, false); return ${EMPTY}; })()`);
   ok("② 空狀態(699 天):預填 365 / 30、迷你時間軸 5 列(1、2、3、⋮、N)、共 11 輪、開始驗證可按", r.knobs.join() === "365,30" && r.tl === 5 && r.est === (await tf("wf.estRuns", { n: "11" })) && r.btn === (await tf("wf.btnRun")) && !r.dis && !r.card);
   r = await js(`(() => { const i = window.__box.querySelector(".wf-empty input"); i.value = "690"; i.dispatchEvent(new Event("input")); return ${EMPTY}; })()`);
@@ -577,8 +577,20 @@ app.whenReady().then(async () => {
   // 回合進行中 / 送出 / 回合結束
   r = await js(`(() => { window.__render(${D(null)}, false); const i = window.__box.querySelector(".wf-empty input"); i.value = "400"; i.dispatchEvent(new Event("input"));
     window.__turn = 5; window.__sync(true); const a = ${EMPTY}; window.__sync(false); const b = ${EMPTY}; return { a, b }; })()`);
-  ok("② 別的回合進行中:鈕停用 + 一行「agent 正在回覆」;回合結束解鎖——打到一半的 400 沒被洗掉(就地換,不重畫)",
-    r.a.dis && r.a.cap === (await tf("rob.busy")) && r.a.knobs[0] === "400" && !r.b.dis && !r.b.cap && r.b.knobs[0] === "400");
+  ok("② 別的回合進行中:鈕鎖住(aria-disabled)+ 一行常駐原因;回合結束解鎖——打到一半的 400 沒被洗掉(就地換,不重畫)",
+    r.a.dis && r.a.aria === "true" && r.a.cap === (await tf("rob.busy")) && r.a.knobs[0] === "400" && !r.b.dis && !r.b.cap && r.b.knobs[0] === "400", JSON.stringify(r));
+  // 〔停止〕:同 app.js rpWfOpts 交真的 busyFixLink;回合中實點 → 真的 stopTurn 走下去(轉成停止中)、記 lock_fix;點被鎖的鈕本身不送、也不是原生 disabled
+  r = await js(`(() => { const tr = []; const tf0 = window.trackFeature; window.trackFeature = (n) => tr.push(n);
+    running = true; turnStopping = false; window.__calls = [];
+    window.BlaveReport.renderWf(window.__box, ${D(null)}, { ...window.__opts(true), busyFix: (el) => busyFixLink(el, "stop") });
+    const b = window.__box.querySelector(".wf-empty .wf-go"); b.click();
+    const cap = window.__box.querySelector(".wf-cap"), fix = cap && cap.querySelector("button.busy-fix");
+    const o = { native: b.disabled, aria: b.getAttribute("aria-disabled"), sent: window.__calls.length, txt: cap && cap.textContent, role: cap && cap.getAttribute("role"), fix: fix && fix.textContent };
+    if (fix) fix.click();
+    o.stopping = turnStopping; o.tr = tr.slice(); running = false; window.trackFeature = tf0; return o; })()`);
+  await new Promise((res) => setTimeout(res, 50)); await js(`turnStopping = false; turnStopped = false; 0`);
+  ok("② 走勢驗證〔停止〕實點:鈕 aria-disabled(不是原生 disabled)、點了不送;原因句「…送出。 停止」、role=status;點〔停止〕→ 回合轉停止中、記 lock_fix",
+    !r.native && r.aria === "true" && r.sent === 0 && r.txt === (await tf("rob.busy")) + " " + (await tf("busy.fix.stop")) && r.role === "status" && r.fix === (await tf("busy.fix.stop")) && r.stopping === true && r.tr.includes("lock_fix"), JSON.stringify(r));
   r = await js(`(async () => { window.__render(${D(SAMPLE)}, false); window.__box.querySelector(".wf-bar .wf-go").click(); window.__turn = 9;
     await new Promise((r) => setTimeout(r, 40)); return { calls: window.__calls, page: ${PAGE} }; })()`);
   ok("② 重新驗證 → onRun(資料夾名、365、30、rerun、鈕)→ 已送出:舊結果整塊拿掉、旋鈕鎖住、鈕停用且環在鈕裡「已送出，看對話」",
