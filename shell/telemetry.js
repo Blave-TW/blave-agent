@@ -179,7 +179,12 @@ const EVENTS = {
     // 策略組合 › 配置／優化區段標籤旁的問號外開教學(0.1.26;renderer/trade.js poHelpGroup):一顆一個名字,網頁 GA4 portfolio_help_open 另帶 tab
     "po_help_cfg", "po_help_opt",
     // 策略庫市場選單(0.1.26;renderer/library.js libMktPick):選了不同的市場才送,重選同一項不送;不帶選了哪個市場。網頁 GA4 同一件事是 library_filter_change(filter=market)
-    "lib_mkt_pick"] },
+    "lib_mkt_pick",
+    // 歡迎頁起手句(0.1.26;renderer/welcome.js):starter_crypto / _tw / _txf = 點了、回合真的跑起來;starter_fill = Blave AI 跑不了、只填進輸入框(不分市場);
+    // starter_new / starter_no_new = 送出起手句的那一輪結束時本機策略清單有沒有多一支(同 lib_installed / library_no_new);wd_fold_open = 點開「可以回測的資料」
+    "starter_crypto", "starter_tw", "starter_txf", "starter_fill", "starter_new", "starter_no_new", "wd_fold_open",
+    // 按下「登入 Blave」、瀏覽器打開之前(0.1.26;renderer/app.js blaveGo / blaveLoginFlow / planLogin):對 login_done 算 app 帶去網頁登入／註冊的完成率
+    "login_click"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

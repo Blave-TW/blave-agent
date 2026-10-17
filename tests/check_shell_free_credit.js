@@ -83,18 +83,21 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
     ok("③ 白名單:acct_card_shown 與 acct_card_click 同一份、新值接在表尾、≤16 字", JSON.stringify(EVENTS.acct_card_shown.card) === JSON.stringify(WANT) && JSON.stringify(EVENTS.acct_card_click.card) === JSON.stringify(WANT) && WANT.every((v) => v.length <= 16));
     // 卡片的字:切 acctPaint 出來跑,只看 text
     const cards = [];
-    const P = new Function("t", "acct", "acctCard", "creditCards", "cnFreeQ", `let acctGone = null, dataCardSync = () => {}, mpBillPaint = undefined, planWatch = () => {}, libIdeaPaint = undefined, wdPaint = undefined, $ = () => null;
+    const P = new Function("t", "acct", "acctCard", "creditCards", "cnFreeQ", "RP", "LANG", `let acctGone = null, dataCardSync = () => {}, mpBillPaint = undefined, planWatch = () => {}, libIdeaPaint = undefined, wdPaint = undefined, $ = () => null;
       const acctSub = () => null, acctAction = () => ({}), resendSecond = () => null, resendState = (c, x) => ({ text: x }), acctShown = () => {}, acctBackTrack = () => {};
-      ${fn("acctCardKind")}\n${fn("acctFreeUpText")}\n${fn("acctPaint")}\nacctPaint();`);
+      ${fn("acctCardKind")}\n${fn("acctFreeUpText")}\n${fn("acctBuiltText")}\n${fn("acctPaint")}\nacctPaint();`);
     const mk = () => { const c = {}; c.set = (s) => { c.last = s; }; return c; };
-    const run = (acct, q) => { const pre = mk(), turn = mk(); P((k, v) => k + (v && v.q ? "{" + v.q + "}" : ""), acct, pre, [turn], () => q); return [pre.last.text, turn.last.text].join(" / "); };
+    const run = (acct, q, n, lang) => { const pre = mk(), turn = mk(); P((k, v) => k + (v && v.q ? "{" + v.q + "}" : "") + (v && v.n ? "{" + v.n + "}" : ""), acct, pre, [turn], () => q, { list: Array(n || 0).fill({}) }, lang || "zh"); return [pre.last.text, turn.last.text].join(" / "); };
     ok("③ 用完、沒綁卡、有數字:預檢卡「acct.freeUp{30}」、402 卡「fault.freeUp{30}」", run(UP, "30") === "acct.freeUp{30} / fault.freeUp{30}", run(UP, "30"));
+    ok("③ 預檢卡先講建了幾支(spec-starters §1.7):1 支 acct.built1、N 支 acct.builtN{n};en 兩句間一個空格、zh 不留;0 支不加;402 卡不動",
+      run(UP, "30", 1) === "acct.built1{1}acct.freeUp{30} / fault.freeUp{30}" && run(UP, "30", 3, "en") === "acct.builtN{3} acct.freeUp{30} / fault.freeUp{30}" && run(UP, "30", 0, "en") === "acct.freeUp{30} / fault.freeUp{30}"
+      && run({ can_run: false, reason: "NO_CARD" }, "30", 3) === "acct.noCard / fault.needCard", [run(UP, "30", 1), run(UP, "30", 3, "en")].join(" | "));
     ok("③ 數字拿不到:NoNum 那兩句", run(UP, "") === "acct.freeUpNoNum / fault.freeUpNoNum", run(UP, ""));
     ok("③ 沒綁卡、沒用完(或舊 api):原字 acct.noCard / fault.needCard", run({ can_run: false, reason: "NO_CARD" }, "30") === "acct.noCard / fault.needCard");
     ok("③ 有卡沒餘額:原字,不管 used_up", run({ can_run: false, reason: "NO_CREDIT", free_ai_credit_used_up: true }, "30") === "acct.noCredit / fault.noCredit");
     ok("③ 能跑:原字(可以開始了 / 額度到了)", run({ can_run: true, free_ai_credit_used_up: true }, "30") === "acct.ready / acct.creditIn");
     ok("③ 鈕與小字不動:兩張卡仍走 acctAction(前往綁卡)+ acctSub;402 卡第二顆仍是「再送一次」(「改用自己的 AI」先不做)",
-      /acctFreeUpText\("pre"\) : t\(s\.reason === "NO_CREDIT" \? "acct\.noCredit" : "acct\.noCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "pre"\)/.test(app)
+      /acctBuiltText\(RP\.list\.length\) \+ acctFreeUpText\("pre"\) : t\(s\.reason === "NO_CREDIT" \? "acct\.noCredit" : "acct\.noCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "pre"\)/.test(app)
       && /acctFreeUpText\("turn"\) : t\("fault\.needCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "turn"\), second: resendSecond\(\)/.test(app));
     // 字串:zh / en 都有、zh 逐字
     const KEYS = ["cn.h.free", "cn.blave.descFree", "plan.free", "acct.freeUp", "acct.freeUpNoNum", "fault.freeUp", "fault.freeUpNoNum"];

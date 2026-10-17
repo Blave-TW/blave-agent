@@ -4,7 +4,7 @@
    - 清單、份數、「desktop 袋那一份在不在這台電腦」都由主行程給(憑證只在那裡);每次切到這一類重抓一次。
    - 標題、署名是不可信字串:一律 textContent。公開網址由代碼自己組(shrUrl),不用 api 給的路徑。
    - 分享框的上限那一句(D)也在這裡:shrLimitPaint 由 report-share.js 在開框 / 問到狀態 / 送出被擋時叫。
-   用到 app.js 的 $ / t / LANG / confirmBox / srSay / setOpen / setClose / setCat、library.js 的 libEl / libTrack、report-share.js 的 SHR / shrUrl / shrCopy / shrSet / shrFill / shrClose、
+   用到 app.js 的 $ / t / LANG / confirmBox / srSay / setOpen / setClose / setCat / planSignIn / hasToken、library.js 的 libEl / libTrack、report-share.js 的 SHR / shrUrl / shrCopy / shrSet / shrFill / shrClose、
    results.js 的 resOpenReport、trade.js 的 ENV / TR_BAGS / envCloudKind / envSwitchGuarded、app.js 的 rpWaitHold——都在呼叫時才取。 */
 
 /* ── 純邏輯(tests/check_shell_share_list.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
@@ -95,8 +95,9 @@ function shlPaint() {
     const row = libEl("div", "shl-msgrow");
     if (SHL.view !== "gate") { const m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); row.appendChild(m); }
     row.appendChild(libEl("p", "shl-msg", t(SHL.view === "fail" ? "shl.loadFail" : SHL.view === "gate" ? "shl.gate" : "conn.expired")));
-    const b = libEl("button", "btn-out", t(SHL.view === "fail" ? "br.reload" : "cn.blave.btn")); b.type = "button";
-    b.addEventListener("click", SHL.view === "fail" ? shlLoad : shlToAcct);
+    // 登入那兩態用 signInLabel:等待中切走再切回來被重畫,也是「取消等待」、按了有反應(稽核 r2 S4)
+    const b = SHL.view === "fail" ? libEl("button", "btn-out", t("br.reload")) : signInLabel(libEl("button", "btn-out"), t("cn.blave.btn")); b.type = "button";
+    b.addEventListener("click", SHL.view === "fail" ? shlLoad : () => shlSignIn(b));
     row.appendChild(b); box.appendChild(row);
     return;
   }
@@ -145,7 +146,8 @@ function shlFlash(btn) {
   btn.textContent = t("shr.copied"); srSay(t("shr.copied"));
   btn._shlT = setTimeout(() => { if (btn.isConnected) btn.textContent = t("shr.copy"); }, SHL_FLASH_MS);
 }
-function shlToAcct() { setCat("plan"); const c = document.querySelector('.set-cat[data-set-cat="plan"]'); if (c) c.focus(); }
+// 沒登入 / 登入失效:原地登入,不跳去帳號與方案那一類;登入回來重抓清單(之前是切回這一類時 shlOpen 才抓)
+async function shlSignIn(b) { await planSignIn(b, true); if (hasToken) shlLoad(); }   // 在設定 › 公開連結裡面:關設定照舊取消這次登入
 // 標題 = 打開那份報告:關設定、切到那一袋的視角、開閱讀頁。按了才發現不在 → 念一句(清單下次打開會更新)
 async function shlGo(row) {
   const env = shlSource(row) === "cloud" ? "cloud" : "local";

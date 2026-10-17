@@ -1984,8 +1984,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           const ths = all.filter((n) => n.tag === "th"), tot = all.find((n) => n.className === "pf-total"), grp = all.filter((n) => /^grp-l/.test(n.className));
           return { ths: ths.map((n) => n.textContent), tip: ths.map((n) => (n.kids[0] && n.kids[0].title) || "").filter(Boolean), tot: tot ? tot.textContent : null, grp: grp.map((n) => [n.textContent, n.title || ""]) }; };
         const amt = (u) => "tr.colUnit " + JSON.stringify({ label: "tr.col.amount", unit: u }), C = (o) => Object.assign({ hasBacktest: true, portfolio: true, symbol: null, market: "spot" }, o);
-        const tw = zt([C({ name: "tw_breakout_candle", twd: true })]);
-        ok("台股 Type C 還沒跑過(清單 twd):欄頭「金額（TWD）」、合計帶 TWD", tw.ths.includes(amt("TWD")) && /TWD$/.test(tw.tot), J(tw));
+        const tw = zt([C({ name: "tw_breakout_candle", twd: true, twdAll: true })]);
+        ok("台股 Type C 還沒跑過(清單 UNIVERSE 全是台股 twdAll):欄頭「金額（TWD）」、合計帶 TWD", tw.ths.includes(amt("TWD")) && /TWD$/.test(tw.tot), J(tw));
+        const twMix = zt([C({ name: "tw_btc", twd: true, twdAll: false })]);
+        ok("台股混加密的 Type C 還沒跑過、runtime 也判不出市場(只有 twd「有一檔台股」):幣別未定,不當 TWD(稽核 S2,同網頁 pfRowUnit)", twMix.ths.includes(amt("tr.grpUnknown")) && !twMix.ths.includes(amt("TWD")), J(twMix));
+        { const A = {}; vm.createContext(A); vm.runInContext("var TR_TWD_RE = " + (/const TR_TWD_RE = (\/[^\n]+\/[a-z]*);/.exec(src) || [])[1] + ";\n" + cutF("trAllTwd"), A);
+          ok("trAllTwd:每一檔都是台股才算;混加密、空清單、只有 null 都不算", A.trAllTwd(["2330", "2454"]) && A.trAllTwd([null, "2330"]) && !A.trAllTwd(["2330", "BTCUSDT"]) && !A.trAllTwd([]) && !A.trAllTwd([null])); }
         const kd = zt([C({ name: "tw_dyn", twd: false })], { strategy_kinds: { tw_dyn: { type: "C", market: "tw_stock" } } });
         ok("UNIVERSE 動態取得(twd 讀不出):本機看 strategy_kinds 的 market tw_stock → TWD", kd.ths.includes(amt("TWD")), J(kd));
         const cl = zt([C({ name: "tw_cloud", twd: false, srcMarket: "tw_stock" })]);

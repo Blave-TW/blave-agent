@@ -103,7 +103,7 @@ msgid "ws.noStrategies"
 msgstr "No strategies yet."
 
 msgid "ws.placeholder"
-msgstr "Message the agent"
+msgstr "Describe a trading idea…"
 
 # 回合進行中、草稿非空時按 Enter:輸入框上方一行(e2e 0.1.8 #71)
 msgid "ws.waitTurn"
@@ -4189,9 +4189,6 @@ msgstr "{name} · Out-of-Sample"
 msgid "lib.nav"
 msgstr "Strategy Library"
 
-msgid "lib.chip"
-msgstr "See Ready-Made Strategies"
-
 msgid "lib.desc"
 msgstr "Verified first, then longest backtest."
 
@@ -4462,9 +4459,6 @@ msgstr "USD"
 msgid "lib.fxNote"
 msgstr "Amounts shown in USD; billed in TWD."
 
-msgid "lib.gate.signedOutBuy"
-msgstr "Sign in to Blave to buy it and download to this computer."
-
 msgid "lib.note.billed"
 msgstr "If the backtest uses Blave data, the data fee is charged per clock hour of use."
 
@@ -4497,9 +4491,6 @@ msgstr "This strategy can't be downloaded without signing in anymore. It may hav
 # 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
 msgid "lib.dl.rateLimited"
 msgstr "Too many downloads right now. Please try again later."
-
-msgid "lib.gate.signedOut"
-msgstr "Sign in to Blave to download to this computer."
 
 msgid "lib.gate.login"
 msgstr "Sign in"
@@ -6440,9 +6431,6 @@ msgstr "Your API key is no longer on this computer. Set it up again in Settings 
 # ── Welcome-page data list (renderer/welcome.js; mockup data-scope §1) ──
 # Numbers in the right-column notes ({t} trial days, {r} TWD per hour, {d} trial end) come from account_status / public pricing, never hard-coded; NoNum variants when unavailable.
 # The word "paid" never appears; the price shows exactly once (wd.note.billed).
-msgid "wd.start"
-msgstr "Start a strategy"
-
 msgid "wd.title"
 msgstr "Data You Can Backtest"
 
@@ -6450,7 +6438,7 @@ msgid "wd.mk.crypto"
 msgstr "Crypto"
 
 msgid "wd.mk.tw"
-msgstr "Taiwan Stocks"
+msgstr "TW Stocks"
 
 msgid "wd.mk.txf"
 msgstr "TAIEX Futures"
@@ -8103,3 +8091,59 @@ msgstr "Margin {v}"
 
 msgid "po.dLev"
 msgstr " ({x}×)"
+
+# Welcome page starters (0.1.26; renderer/welcome.js; spec-starters §1.7 / §5.1). Key names borrowed from the web workspace.
+# Row text shows the rule only; the _send sentence is what gets sent. Rows use U+2011 (non-breaking hyphen) in "N‑day" so it never breaks at the hyphen; _send keeps a plain hyphen. Never add a return figure or a comparison with the market / 0050.
+msgid "workspace_wel_h"
+msgstr "Turn Your Trading Idea Into a Strategy That Runs Itself"
+
+msgid "starter_crypto_row"
+msgstr "BTC daily: buy on a close above the 200‑day MA, sell on a close below"
+
+msgid "starter_crypto_send"
+msgstr "BTC daily: buy on a close above the 200-day MA, sell on a close below. Build it as a strategy and backtest from 2020."
+
+msgid "starter_tw_row"
+msgstr "Hold TSMC, MediaTek, Hon Hai, Delta Electronics and Fubon Financial in equal weights, rebalanced monthly"
+
+msgid "starter_tw_send"
+msgstr "Hold TSMC (2330), MediaTek (2454), Hon Hai (2317), Delta Electronics (2308) and Fubon Financial (2881) in equal weights, rebalanced monthly. Build it as a strategy and backtest from 2022."
+
+msgid "starter_txf_row"
+msgstr "TAIEX futures daily: go long on a close above the 20‑day high, exit on a close below the 10‑day low"
+
+msgid "starter_txf_send"
+msgstr "TAIEX futures daily: go long on a close above the 20-day high, exit on a close below the 10-day low. Build it as a strategy and backtest from 2015."
+
+# {y} = the year the backtest starts
+msgid "starter_since"
+msgstr "From {y}"
+
+# Data rows the user can actually use (single list; the free column of the two-column version); {name} = wd.r.<id>.an. Filled in, not sent
+msgid "wd.ask.build"
+msgstr "Build and backtest a strategy with {name}"
+
+msgid "workspace_wel_or"
+msgstr "No idea yet? Run a ready-made one first"
+
+# {n} = number of strategies in the library
+msgid "workspace_wel_more"
+msgstr "See all {n} in the library →"
+
+# Card meta: {span} = "2020–2025" or a single year
+msgid "workspace_lib_bt_span"
+msgstr "Backtest {span}"
+
+msgid "workspace_lib_detail"
+msgstr "Details"
+
+# Welcome-page card stat label (short; the library panel keeps lib.annLabel)
+msgid "wc.annLabel"
+msgstr "Annual"
+
+# First sentence of the "free AI credit used up" pre-check card; {n} = strategies in the sidebar. Not shown when 0
+msgid "acct.built1"
+msgstr "You've built 1 strategy."
+
+msgid "acct.builtN"
+msgstr "You've built {n} strategies."

@@ -134,6 +134,8 @@
 }
 /* 圖例:兩條線的顏色要有文字對應,不能只靠「上面那條 / 下面那條」 */
 .bt-legend { position: relative; display: inline-flex; align-items: center; gap: var(--space-6); }
+/* 圖例泡泡同 .bt-mk:不宣告就被圖例字寬縮成一條直的(Wei 10-17 截圖) */
+.bt-legend .tip { width: max-content; }
 .bt-legend::before {
   content: "";
   width: var(--space-12);

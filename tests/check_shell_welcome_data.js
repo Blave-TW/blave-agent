@@ -49,14 +49,22 @@ if (!process.versions.electron) {
   ok("① 名下有主機 / API 方案(included)→ 單一清單、incl;有主機的人就算試用日期還在也不講「免費到」", M(true, { data_access: "included", plan: { state: "running" } }, "included", 5) === '{"cmp":false,"k":"incl"}' && M(true, { data_access: "included", plan: { state: "none" } }, "included", 0) === '{"cmp":false,"k":"incl"}' && M(true, { data_included: true }, "included", 0) === '{"cmp":false,"k":"incl"}');
 
   // ── ② 原文鎖 ──
-  const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl"'));
-  ok("② index.html:三顆籤(#chat-lib / #chat-idea / #chat-ns)之後是 #wl,起手籤 #chat-eg 退役;#wl 在 .wc-inner 裡、#main-empty 裡", /id="chat-lib"[\s\S]*id="chat-idea"[\s\S]*id="chat-ns"/.test(chips) && !html.includes('id="chat-eg"') && !/ws\.chatExample/.test(html + appSrc)
-    && html.indexOf('id="wl"') > html.indexOf('id="main-empty"') && html.indexOf('id="wl"') < html.indexOf("</section>", html.indexOf('id="main-empty"')));
-  ok("② 標題:.wc-head 裡依序是記號 svg.wc-mark 與 h4.wc-h(wd.start),整行在三顆籤之前;兩語的字是「開始一支策略」/ Start a strategy;整份 index.html 只有一個",
-    /<div class="wc-head">\s*<svg class="wc-mark"[^>]*>\s*<path [^>]*\/>\s*<\/svg>\s*<h4 class="wc-h" data-i18n="wd\.start"><\/h4>\s*<\/div>\s*<div class="wc-chips">/.test(html.slice(html.indexOf('class="wc-inner"'), html.indexOf('id="chat-lib"'))) && html.split('class="wc-h"').length === 2 && html.split('class="wc-mark"').length === 2
-    && STR.zh["wd.start"] === "開始一支策略" && STR.en["wd.start"] === "Start a strategy");
-  ok("② #wl 骨架:小標 wd.title、市場分段 #wl-seg(.lib-seg 配方、三格 crypto / tw / txf、加密預設選中)、#wl-body、頁尾 .wl-foot 裡依序是 #wl-all(.btn-quiet、字固定 = data-i18n wd.all,同設定頁條款那兩顆外開鈕的做法)與 #wl-state(aria-live);狀態句不在清單上面",
-    /<span class="wl-cap" data-i18n="wd\.title"><\/span>/.test(html) && /<span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html)
+  const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl-fold"'));
+  const wcBox = html.slice(html.indexOf('id="main-empty"'), html.indexOf("</section>", html.indexOf('id="main-empty"')));
+  ok("② index.html(0.1.26 起手句版,mockup C;不分有沒有策略只有一頁):#main-empty 裡只有一個 .wc-inner#wc(預設 hidden,等第一次策略清單讀完);由上到下 .wc-head → #st-rows → 籤(#chat-ns、#chat-idea;#chat-lib 與起手籤 #chat-eg 退役)→ #wl-fold → #wl → #wc-reco",
+    /<div class="wc-inner" id="wc" hidden>/.test(wcBox) && wcBox.split('class="wc-inner"').length === 2 && /id="chat-ns"[\s\S]*id="chat-idea"/.test(chips) && !html.includes('id="chat-lib"') && !html.includes('id="chat-eg"') && !/ws\.chatExample/.test(html + appSrc)
+    && ['class="wc-head"', 'id="st-rows"', 'class="wc-chips"', 'id="wl-fold"', 'id="wl"', 'id="wc-reco"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
+  { const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]), dup = ids.filter((x, i) => ids.indexOf(x) !== i);
+    ok("② 入口籤的 id 不重複:index.html 每一個 id 都只出現一次(列舉全部 " + ids.length + " 個)", ids.length > 100 && dup.length === 0, dup.join(", ")); }
+  ok("② 標題:.wc-head 裡依序是記號 svg.wc-mark 與 h4.wc-h#wc-h(workspace_wel_h,借網頁的 key),整行在起手句之前;起手句容器 role=group、aria-labelledby 指到標題;兩語照 spec 定稿;整份 index.html 只有一個",
+    /<div class="wc-head">\s*<svg class="wc-mark"[^>]*>\s*<path [^>]*\/>\s*<\/svg>\s*<h4 class="wc-h" id="wc-h" data-i18n="workspace_wel_h"><\/h4>\s*<\/div>\s*<div class="st-rows" id="st-rows" role="group" aria-labelledby="wc-h"><\/div>/.test(wcBox) && html.split('class="wc-h"').length === 2 && html.split('class="wc-mark"').length === 2
+    && STR.zh["workspace_wel_h"] === "把你的交易想法，變成自動跑的策略" && STR.en["workspace_wel_h"] === "Turn Your Trading Idea Into a Strategy That Runs Itself" && !("wd.start" in STR.zh) && !("wd.start" in STR.en) && !("lib.chip" in STR.zh) && !("lib.chip" in STR.en));
+  ok("② 資料摺疊(§1.5):#wl-fold 是 button、aria-expanded=false、aria-controls=wl、字 = wd.title、行尾是共用的 .mp-chev(canon Trigger + caret;不再用 ›,Wei)、收起朝下展開翻上只綁 aria-expanded;#wl 預設 hidden(每次開 app 都收起來,不讀不寫任何偏好)",
+    /<button class="wl-fold" id="wl-fold" type="button" aria-expanded="false" aria-controls="wl"><span data-i18n="wd\.title"><\/span><span class="mp-chev" aria-hidden="true"><\/span><\/button>/.test(html)
+    && /\.wl-fold \{[^}]*display: inline-flex; align-items: center;/.test(css) && /\.wl-fold\[aria-expanded="true"\] \.mp-chev \{ transform: rotate\(-135deg\); margin-bottom: -2px; \}/.test(css) && !/›/.test(html.slice(html.indexOf('id="wl-fold"'), html.indexOf("</button>", html.indexOf('id="wl-fold"')))) && /<div class="wl" id="wl" hidden>/.test(html)
+    && !/localStorage|Prefs|prefs/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
+  ok("② #wl 骨架:頂端小標拿掉(摺疊鈕已經寫了 wd.title)、市場分段 #wl-seg(.lib-seg 配方、三格 crypto / tw / txf、加密預設選中)、#wl-body、頁尾 .wl-foot 裡依序是 #wl-all(.btn-quiet、字固定 = data-i18n wd.all,同設定頁條款那兩顆外開鈕的做法)與 #wl-state(aria-live);狀態句不在清單上面",
+    /<div class="wl-top">\s*<span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html)
     && (html.slice(html.indexOf('id="wl-seg"'), html.indexOf("</span>", html.indexOf('id="wl-seg"'))).match(/data-mk="(crypto|tw|txf)" aria-pressed="(true|false)" data-i18n="wd\.mk\.\1"/g) || []).length === 3
     && /data-mk="crypto" aria-pressed="true"/.test(html) && /<div class="wl-body" id="wl-body"><\/div>\s*<div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd\.all"><\/button><p class="wl-state" id="wl-state" aria-live="polite"><\/p><\/div>/.test(html)
     && html.split('id="wl-state"').length === 2);
@@ -65,12 +73,14 @@ if (!process.versions.electron) {
     /wdPaint\(\)/.test(cutFn(appSrc, "acctPaint")) && /acct = await window\.blave\.accountStatus\(\); acctAt = Date\.now\(\);\n[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc)
     && /\[data-i18n-aria\]"\)\.forEach[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);[^\n]*\n\}/.test(appSrc) && /hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc));
   ok("② 起手籤整個拿掉:app.js 沒有 chat-eg,兩語字串表與 .po 都沒有 ws.chatExample", !/chat-eg/.test(appSrc) && !("ws.chatExample" in STR.zh) && !("ws.chatExample" in STR.en) && !/ws\.chatExample/.test(read(path.join(SHELL, "i18n", "zh.po")) + read(path.join(SHELL, "i18n", "en.po"))));
-  ok("② welcome.css:.main-empty 是容器(container-type)、兩欄只在 ≥760 的容器查詢裡、免費欄不靠 order 換位(DOM 順序就是免費在前)、不寫 hex、減少動態有收;小字不 nowrap(設計稽核 2);清單在時 .wc-inner 上對齊不置中(稽核 4);欄小標用 .wl-cap(稽核 1)",
+  ok("② welcome.css:.main-empty 是容器(container-type)、兩欄只在 ≥760 的容器查詢裡、免費欄不靠 order 換位(DOM 順序就是免費在前)、不寫 hex、減少動態有收;小字不 nowrap(設計稽核 2);.wc-inner 最寬 760、上對齊不置中(稽核 4);欄小標用 .wl-cap(稽核 1)",
     /\.main-empty \{ container-type: inline-size; \}/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2 \{ grid-template-columns: 1fr 1fr;/.test(css)
     && /\.wl-body \{[^}]*grid-template-columns: 1fr;/.test(css) && !/\border:\s*-?\d/.test(css) && !/#[0-9a-fA-F]{3,8}\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")) && /prefers-reduced-motion/.test(css)
-    && !/\.wd-mt \{[^}]*nowrap/.test(css) && /\.wc-inner:has\(\.wl\) \{ margin: 0 0 auto; padding-top: var\(--space-32\); \}/.test(css) && !/wd-cap/.test(src + css) && /wdEl\("span", "wl-cap"/.test(src));
-  ok("② 右欄不上鎖不變灰:welcome.js 不給列 disabled / aria-disabled / 鎖的 class;每一列都是 button", !/disabled|is-locked|lock/i.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && /wdEl\("button", "wd-row"\)/.test(src));
-  ok("② 點列只填不送:wdFill 不叫 sendDraft / submitMessage,填完 autosize + focus,記 welcome_data_row", !/sendDraft|submitMessage/.test(src) && /ta\.value = [^\n]*;\n\s*WD\.filled = ta\.value; autosize\(\); ta\.focus\(\);\n\s*trackFeature\("welcome_data_row"\);/.test(src));
+    && !/\.wd-mt \{[^}]*nowrap/.test(css) && /\.wc-inner \{ width: 100%; max-width: 760px; margin: 0 0 auto; padding-top: var\(--space-32\); align-items: stretch; \}/.test(css) && !/wd-cap/.test(src + css) && /wdEl\("span", "wl-cap"/.test(src));
+  ok("② 右欄不上鎖不變灰:資料清單(wdRow / wdPaint / wdNote)不給列 disabled / aria-disabled / 鎖的 class;每一列都是 button", !/disabled|is-locked|lock/i.test((cutFn(src, "wdRow") + cutFn(src, "wdPaint") + cutFn(src, "wdNote")).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && /wdEl\("button", "wd-row"\)/.test(src));
+  ok("② 點列只填不送:wdRow / wdFillText / wdFill 不叫 sendDraft / submitMessage;wdFillText 填完 autosize + focus、不送埋點;wdFill = wdFillText + welcome_data_row(起手句只填不送走 wdFillText + starter_fill,不灌資料列的數)",
+    !/sendDraft|submitMessage|trackFeature/.test(cutFn(src, "wdFillText")) && !/sendDraft|submitMessage/.test(cutFn(src, "wdRow") + cutFn(src, "wdFill")) && /ta\.value = [^\n]*;\n\s*WD\.filled = ta\.value; autosize\(\); ta\.focus\(\);\n\}/.test(cutFn(src, "wdFillText"))
+    && /^function wdFill\(text\) \{ wdFillText\(text\); trackFeature\("welcome_data_row"\); \}$/.test(cutFn(src, "wdFill")) && /wdFillText\(text\); trackFeature\("starter_fill"\);/.test(cutFn(src, "stGo")) && !/wdFill\(/.test(cutFn(src, "stGo")));
   { const F = require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name;
     ok("② telemetry 白名單:welcome_data_row / welcome_data_all 接在 topup_lib 後面(0.1.17 聊天附件三個再接在後面)、≤16 字", F.slice(F.indexOf("topup_lib") + 1, F.indexOf("topup_lib") + 3).join() === "welcome_data_row,welcome_data_all" && ["welcome_data_row", "welcome_data_all"].every((n) => n.length <= 16));
     const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
@@ -88,7 +98,7 @@ if (!process.versions.electron) {
   ok("② 字串表的 wd.r.* 恰好是 WD_ROWS × 四個欄位:沒有多出來的列(BingX、CME／ICE、公開大盤、公開期貨法人、異常漲跌,與只進目錄的 14 列)、沒有多出來的欄位(.nt / .sn / .us / .wnm)", extra.length === 0, extra.join(", "));
   ok("② 列的順序就是畫面順序(WD_ROWS 沒有順序欄):加密 bnk fng ti conc liq fr、台股 twd inst rev twm br、台指期 txd txk txio fi pcr",
     ["crypto", "tw", "txf"].map((mk) => ROWS.filter((r) => r[1] === mk).map((r) => r[0]).join(" ")).join("|") === "bnk fng ti conc liq fr|twd inst rev twm br|txd txk txio fi pcr" && /const wdWel = \(mk\) => WD_ROWS\.filter\(\(r\) => r\[1\] === mk\);/.test(src));
-  const fixed = ["wd.start", "wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.out.m", "wd.note.outNoNum", "wd.note.none", "wd.note.none.m", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask"];
+  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.out.m", "wd.note.outNoNum", "wd.note.none", "wd.note.none.m", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask", "wd.ask.build"];
   ok("② 固定字 " + fixed.length + " 個 zh / en 都有、wd.* 除了列的字就只有這些;三個市場的歡迎頁兩欄都有列(免費欄空著那句 wd.empty.* 與 .wl-empty 隨台指期免費日線退役)", fixed.every((k) => STR.zh[k] && STR.en[k])
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && !k.startsWith("wd.r.")).sort().join() === fixed.slice().sort().join())
     && ["crypto", "tw", "txf"].every((mk) => [TAB.WD_P, TAB.WD_B].every((sr) => ROWS.some((r) => r[1] === mk && r[2] === sr)))
@@ -99,7 +109,7 @@ if (!process.versions.electron) {
     && ["zh", "en"].every((L) => ["wd.note.out", "wd.note.out.m", "wd.note.none", "wd.note.none.m"].every((k) => /\{t\}/.test(STR[L][k])) && /\{d\}/.test(STR[L]["wd.state.trial"])));
   // 右欄那句的兩態(wdNote 原文接假 DOM 在純 node 跑):方案制(planMo 真)試用結束會自動扣方案費,講「免費試用」不講「送」;切換前照舊「送」;沒天數兩態都是不帶數字那句
   { const note = (L, mo, k, v) => {
-      const C = { planMo: () => mo, planOpen() {}, document: { createElement: (tag) => ({ tag, kids: [], append(...a) { this.kids.push(...a); }, appendChild(a) { this.kids.push(a); return a; }, addEventListener() {} }) } };
+      const C = { planMo: () => mo, planOpen() {}, signInLabel: (b, label) => { b.textContent = label; return b; }, document: { createElement: (tag) => ({ tag, kids: [], append(...a) { this.kids.push(...a); }, appendChild(a) { this.kids.push(a); return a; }, addEventListener() {} }) } };
       vm.createContext(C);
       vm.runInContext(read(path.join(R, "strings.js")) + "\n" + read(path.join(R, "i18n.js")).replace(/^let LANG = "en";$/m, 'var LANG = "' + L + '";') + "\n" + src.slice(src.indexOf("const wdEl ="), src.indexOf("const wdK =")) + "\n" + cutFn(src, "wdNote"), C);
       const into = C.document.createElement("span"); C.wdNote(k, v, into);
@@ -126,16 +136,19 @@ if (!process.versions.electron) {
     const txKeys = ["zh", "en"].flatMap((L) => Object.keys(STR[L]).filter((k) => /^wd\.r\..*\.tx$/.test(k)).map((k) => L + ":" + k));
     ok("② 起手句退役:兩語字串表與 .po 沒有 wd.r.*.tx、welcome.js 不再讀 \"tx\"、第二行的 class(wd-l2 / wd-gl / wd-tx)在 js 與 css 都沒有;商品市場仍沒有列",
       txKeys.length === 0 && !/wd\.r\.[a-z0-9]+\.tx"/.test(po) && !/"tx"/.test(code) && !/wd-l2|wd-gl|wd-tx/.test(src + css) && !ROWS.some((r) => r[1] === "cmd"), txKeys.join(", "));
-    ok("② 點列接的是討論句:wdRow 的 click = wdFill(wdAsk(t(\"wd.ask\"), wdK(id, \"an\")));列裡只有 .wd-l1 一行(名字 + 小字,小字 = 頻率・起始年)",
-      /l1\.append\(wdEl\("span", "wd-nm", [^\n]*\), wdEl\("span", "wd-mt", wdK\(id, "fq"\) \+ t\("wd\.sep"\) \+ wdK\(id, "sy"\)\)\);\n\s*b\.appendChild\(l1\);\n\s*b\.addEventListener\("click", \(\) => wdFill\(wdAsk\(t\("wd\.ask"\), wdK\(id, "an"\)\)\)\);/.test(cutFn(src, "wdRow")));
+    ok("② 點列接的句子(§1.5):拿得到的列(單一清單、對比版免費欄)= wd.ask.build「幫我建一支並回測」;對比版 Blave 資料欄 = 討論句 wd.ask;列裡只有 .wd-l1 一行(名字 + 小字,小字 = 頻率・起始年)",
+      /l1\.append\(wdEl\("span", "wd-nm", [^\n]*\), wdEl\("span", "wd-mt", wdK\(id, "fq"\) \+ t\("wd\.sep"\) \+ wdK\(id, "sy"\)\)\);\n\s*b\.appendChild\(l1\);\n\s*b\.addEventListener\("click", \(\) => wdFill\(wdAsk\(t\(build \? "wd\.ask\.build" : "wd\.ask"\), wdK\(id, "an"\)\)\)\);/.test(cutFn(src, "wdRow"))
+      && /col\.appendChild\(wdRow\(r\[0\], src === WD_P\)\)/.test(cutFn(src, "wdPaint")) && /wdWel\(WD\.mk\)\.forEach\(\(r\) => col\.appendChild\(wdRow\(r\[0\], true\)\)\)/.test(cutFn(src, "wdPaint"))
+      && STR.zh["wd.ask.build"] === "用{name}幫我建一支策略並回測" && STR.en["wd.ask.build"] === "Build and backtest a strategy with {name}");
     ok("② welcome.css:列高下限 44、只剩一行時垂直置中(.wd-row 是 grid,align-content: center)、內距 8/16(卡內距);小字靠右成欄(.wd-l1 space-between、間距 12、baseline、放不下整段折行)",
       /\.wd-row \{\s*display: grid; align-content: center; width: 100%; min-height: 44px; padding: var\(--space-8\) var\(--space-16\);/.test(css)
       && /\.wd-l1 \{ display: flex; align-items: baseline; justify-content: space-between; gap: var\(--space-2\) var\(--space-12\); flex-wrap: wrap; \}/.test(css));
-    ok("② welcome.css(A2):清單在時 .wc-inner 子項靠左撐滿;記號與標題並排一行(.wc-head:flex、置中、隔 12);記號的寬與色各自一行(只改值),上面空的那段用負 margin 切掉;標題 20/600、不留上距;籤靠左、離那一行 16(Wei 10-12 拉開一階);小標列與頁尾不內縮(同一條左軸)",
-      /\.wc-inner:has\(\.wl\) \{ align-items: stretch; \}/.test(css) && /\.wc-inner:has\(\.wl\) \.wc-head \{ display: flex; align-items: center; gap: var\(--space-12\); \}/.test(css)
-      && /\.wc-inner:has\(\.wl\) \.wc-mark \{\n  width: var\(--[a-z0-9-]+\);\n  color: var\(--[a-zA-Z0-9-]+\);\n  margin-top: calc\(-1 \* var\(--[a-z0-9-]+\)\);\n\}/.test(css)
-      && /\.wc-h \{ margin: 0; font-size: 20px; font-weight: 600; line-height: 1\.4; color: var\(--ink\); \}/.test(css)
-      && /\.wc-inner:has\(\.wl\) \.wc-chips \{ margin-top: var\(--space-16\); justify-content: flex-start; \}/.test(css)
+    ok("② welcome.css(mockup C):.wc-inner 子項靠左撐滿;記號與標題並排一行、上緣對齊(.wc-head:flex、flex-start、隔 12);記號的寬與色各自一行(只改值),寬 32、上移 6;標題 20/600、不留上距、text-wrap: balance;起手句離標題 12;籤靠左、離起手句 16;小標列與頁尾不內縮(同一條左軸)",
+      /\.wc-head \{ display: flex; align-items: flex-start; gap: var\(--space-12\); \}/.test(css)
+      && /\.wc-mark \{\n  width: var\(--space-32\);\n  color: var\(--ink\);\n  margin-top: calc\(-1 \* var\(--space-6\)\);\n\}/.test(css)
+      && /\.wc-h \{ margin: 0; font-size: 20px; font-weight: 600; line-height: 1\.4; color: var\(--ink\); text-wrap: balance; word-break: auto-phrase; \}/.test(css)
+      && /\.st-rows \{ margin: var\(--space-12\) calc\(-1 \* var\(--space-12\)\) 0;/.test(css)
+      && /\.wc-chips \{ margin-top: var\(--space-16\); justify-content: flex-start; \}/.test(css)
       && /\.wl-top \{[^}]*padding: 0; \}/.test(css) && /\.wl-colh \{[^}]*padding: 0 0 var\(--space-8\); border-bottom: 0; margin-bottom: 0; \}/.test(css)
       && /\.wl-foot \{ display: flex; align-items: center; justify-content: space-between; gap: var\(--space-4\) var\(--space-16\); flex-wrap: wrap; margin-top: var\(--space-4\); padding: 0; \}/.test(css)
       && /\.wl-state \{ margin: 0; padding: 0; /.test(css) && /\.wl-foot > \.btn-quiet \{ display: inline-flex; align-items: center; min-height: 44px; color: var\(--ink-2\); \}/.test(css));
@@ -145,11 +158,11 @@ if (!process.versions.electron) {
       && /\.wd-row:first-child, \.wl-colh \+ \.wd-row \{ border-top-left-radius: var\(--radius-lg\); border-top-right-radius: var\(--radius-lg\); \}/.test(css)
       && /\.wd-row:last-child \{ border-bottom: 0; border-bottom-left-radius: var\(--radius-lg\); border-bottom-right-radius: var\(--radius-lg\); \}/.test(css)
       && /\.wd-row:hover \{ background: var\(--surface-muted\); \}/.test(css) && /\.wd-row:hover \.wd-mt \{ color: var\(--ink-2\); \}/.test(css) && /\.wd-row:hover::after \{ color: var\(--ink\); \}/.test(css)
-      && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after \{ transition: none; \} \}/.test(css)
+      && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after, \.st-row, \.wl-fold, \.wl-fold \.mp-chev \{ transition: none; \} \}/.test(css)
       && !/wd-go|"go"/.test(src));
-    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);兩欄清單的 760 斷點還在",
+    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有三條:兩欄清單 760、起手句窄版 480、卡片三欄 640",
       !/wdCatalog|WD\.all|\ball:\s*(true|false)|WD_NT|wd-cat|wd-foot|wd-tag|wd\.less|wd\.h\.|wd\.src\.|wd\.foot\.|txfo|<table|"table"/.test(src + css + html.slice(html.indexOf('id="wl"'), html.indexOf("</section>", html.indexOf('id="wl"'))))
-      && !/1040px|859\.98|max-width: \d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container/g) || []).length === 1
+      && !/1040px|859\.98|max-width: (?!479px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (max-width: 479px)", "@container (min-width: 640px)"].sort().join()
       && !/msgid "wd\.(less|h\.|src\.|foot\.|mk\.txfo)/.test(po) && !/msgid "wd\.r\.[a-z0-9]+\.(nt|sn|us|wnm)"/.test(po));
     // 「看全部資料」:wdDocs 原文 + app.js 的 docsUrl 原文在純 node 跑;外開與埋點換成記錄器
     { const dl = /^const docsUrl = \(page\) => "https:\/\/blave\.org\/docs\/" \+ LANG \+ "\/" \+ page;$/m.exec(appSrc);
@@ -183,20 +196,20 @@ if (!process.versions.electron) {
       vm.createContext(C);
       const i18n = read(path.join(R, "i18n.js")); if (!/^let LANG = "en";$/m.test(i18n)) throw new Error("i18n.js 的 LANG 宣告變了");
       vm.runInContext(read(path.join(R, "strings.js")) + "\n" + i18n.replace(/^let LANG = "en";$/m, 'var LANG = "' + L + '";') + "\n"
-        + src.slice(src.indexOf("const WD_P ="), src.indexOf("function wdNote(")).replace(/^const /gm, "var ") + "\n" + cutFn(src, "wdAsk") + "\n" + cutFn(src, "wdRow") + "\n" + cutFn(src, "wdFill"), C);
-      return { C, ta, log, click: (id) => { const b = C.wdRow(id); b.onclick(); return b; } };
+        + src.slice(src.indexOf("const WD_P ="), src.indexOf("function wdNote(")).replace(/^const /gm, "var ") + "\n" + cutFn(src, "wdAsk") + "\n" + cutFn(src, "wdRow") + "\n" + cutFn(src, "wdFillText") + "\n" + cutFn(src, "wdFill"), C);
+      return { C, ta, log, click: (id, build) => { const b = C.wdRow(id, build); b.onclick(); return b; } };
     };
     const bad = [], seen = {}; let built = 0;
-    for (const L of ["zh", "en"]) {
-      const X = lab(L), S = STR[L], tpl = S["wd.ask"], [pre, post] = tpl.split("{name}");
+    for (const L of ["zh", "en"]) for (const build of [false, true]) {
+      const X = lab(L), S = STR[L], tk = build ? "wd.ask.build" : "wd.ask", tpl = S[tk], [pre, post] = tpl.split("{name}");
       for (const [id] of ROWS) {
         X.ta.value = ""; X.C.WD.filled = ""; X.C.WD.pre = "";
-        const b = X.click(id), got = X.ta.value, an = S["wd.r." + id + ".an"] || "", why = [];
+        const b = X.click(id, build), got = X.ta.value, an = S["wd.r." + id + ".an"] || "", why = [];
         const mt = S["wd.r." + id + ".fq"] + S["wd.sep"] + S["wd.r." + id + ".sy"], l1 = b.kids[0] || {}, k = l1.kids || [];
         if (b.tag !== "button" || b.kids.length !== 1 || l1.className !== "wd-l1" || k.length !== 2 || k[0].className !== "wd-nm" || k[1].className !== "wd-mt") why.push("列不是只有一行「名字 + 小字」");
         if (k[0] && k[0].textContent !== S["wd.r." + id + ".nm"]) why.push("列上顯示的名字不是 .nm");
         if (k[1] && k[1].textContent !== mt) why.push("小字不是 頻率・起始年");
-        if (!an || nosp(got) !== nosp(askOf(L, id))) why.push("不是模板代入 .an");
+        if (!an || nosp(got) !== nosp(String(tpl).replace("{name}", an))) why.push("不是模板代入 .an");
         if (!got.startsWith(pre) || !got.endsWith(post) || got.length <= tpl.length - 6) why.push("句子不完整");
         if (/[{}]|wd\.|undefined|null/.test(got)) why.push("佔位或 key 漏出來");
         if (/[()（）〈〉]/.test(got)) why.push("有括號");
@@ -205,12 +218,12 @@ if (!process.versions.electron) {
         if (L === "en" && /[^\x20-\x7e]/.test(got)) why.push("英文句子有非 ASCII 字");
         if (/\b(BTC|ETH|SOL|TSMC|Hon Hai)\b|台積電|鴻海|\d{4}/.test(an)) why.push(".an 帶了幣種 / 標的 / 年份");
         if (seen[L + got]) why.push("跟 " + seen[L + got] + " 同一句"); seen[L + got] = id;
-        if (why.length) bad.push(L + ":" + id + "「" + got + "」" + why.join("、"));
+        if (why.length) bad.push(L + ":" + tk + ":" + id + "「" + got + "」" + why.join("、"));
         built++;
       }
     }
-    ok("② 歡迎頁 " + ROWS.length + " 列 × zh / en:每一列點下去都是完整句子(模板 wd.ask 代入 .an)、沒有括號與佔位、中英之間有空白、不帶幣種標的、各列不同句;列上顯示的是 .nm、小字是 頻率・起始年",
-      ROWS.length > 0 && built === ROWS.length * 2 && bad.length === 0, bad.join("\n    "));
+    ok("② 歡迎頁 " + ROWS.length + " 列 × zh / en × 兩個模板(wd.ask / wd.ask.build):每一列點下去都是完整句子(模板代入 .an)、沒有括號與佔位、中英之間有空白、不帶幣種標的、各列不同句;列上顯示的是 .nm、小字是 頻率・起始年",
+      ROWS.length > 0 && built === ROWS.length * 4 && bad.length === 0, bad.join("\n    "));
     // wdFill 的情境(同 ③,這裡不靠 Electron)。A / B / C = 三列的句子
     const SA = askOf("zh", "bnk"), SB = askOf("zh", "ti"), SC = askOf("zh", "liq"), eq = (got, pre, sent) => got.startsWith(pre) && nosp(got.slice(pre.length)) === nosp(sent);
     let X = lab("zh"); const A = X.click("bnk") && X.ta.value;
@@ -227,6 +240,76 @@ if (!process.versions.electron) {
     X = lab("zh"); X.C.paneSt.chat.off = true; X.click("fng");
     ok("② 聊天欄收著 → 先展開(paneToggle(\"chat\", false))再填", JSON.stringify(X.log.pane) === '[["chat",false]]' && eq(X.ta.value, "", askOf("zh", "fng")) && X.log.tf.length === 1, JSON.stringify(X.log)); }
 
+  // ── 起手句(0.1.26;spec-starters §1.4 / §2 / §4.1 / §5.1)──
+  { const a = src.indexOf("/* ── 純邏輯("), b = src.indexOf("/* ── 純邏輯到此"), Q = {}; vm.createContext(Q); vm.runInContext(src.slice(a, b), Q);
+    // §2.2 那張表逐列列舉:true = 只填不送
+    const TABLE = [
+      [{ engine: "claude", signedIn: false, canRun: false }, false], [{ engine: "codex", signedIn: true, canRun: false }, false], [{ engine: "apikey", signedIn: true, canRun: null }, false],
+      [{ engine: "blave", signedIn: true, canRun: null }, false], [{ engine: "blave", signedIn: true, canRun: true }, false], [{ engine: "blave", signedIn: true, canRun: false }, true],
+      [{ engine: "blave", signedIn: false, canRun: false }, false], [{ engine: "blave", signedIn: false, canRun: null }, false], [{ engine: null, signedIn: true, canRun: true }, true], [{ engine: undefined, signedIn: false, canRun: null }, true]];
+    const badT = TABLE.filter(([c, want]) => Q.stFill(c) !== want).map(([c]) => JSON.stringify(c));
+    ok("② stFill(§2.2 表逐列):自接 Claude／Codex／API 金鑰一律送;Blave AI 已登入且確定不能跑才只填;查不到當能跑;沒登入照送(交給登入卡);還沒連 AI 只填", badT.length === 0, badT.join(" "));
+    const WANT = {
+      zh: { crypto: ["BTC 日線：收盤站上 200 日均線買進，跌破賣出", "BTC 日線：收盤站上 200 日均線買進，跌破賣出。幫我建成策略，回測 2020 年至今。"],
+        tw: ["台積電、聯發科、鴻海、台達電、富邦金五檔等權持有，每月再平衡", "台積電（2330）、聯發科（2454）、鴻海（2317）、台達電（2308）、富邦金（2881）五檔等權持有，每月再平衡。幫我建成策略，回測 2022 年至今。"],
+        txf: ["台指期日線：收盤突破 20 日高點做多，跌破 10 日低點平倉", "台指期日線：收盤突破 20 日高點做多，跌破 10 日低點平倉。幫我建成策略，回測 2015 年至今。"] },
+      en: { crypto: ["BTC daily: buy on a close above the 200\u2011day MA, sell on a close below", "BTC daily: buy on a close above the 200-day MA, sell on a close below. Build it as a strategy and backtest from 2020."],
+        tw: ["Hold TSMC, MediaTek, Hon Hai, Delta Electronics and Fubon Financial in equal weights, rebalanced monthly", "Hold TSMC (2330), MediaTek (2454), Hon Hai (2317), Delta Electronics (2308) and Fubon Financial (2881) in equal weights, rebalanced monthly. Build it as a strategy and backtest from 2022."],
+        txf: ["TAIEX futures daily: go long on a close above the 20\u2011day high, exit on a close below the 10\u2011day low", "TAIEX futures daily: go long on a close above the 20-day high, exit on a close below the 10-day low. Build it as a strategy and backtest from 2015."] } };
+    const badS = [];
+    for (const L of ["zh", "en"]) for (const mk of ["crypto", "tw", "txf"]) {
+      const row = STR[L]["starter_" + mk + "_row"], send = STR[L]["starter_" + mk + "_send"];
+      if (row !== WANT[L][mk][0] || send !== WANT[L][mk][1]) badS.push(L + ":" + mk + " 不是定稿");
+      if (/%|0050|大盤|報酬|return|benchmark|outperform|beat/i.test(row + send)) badS.push(L + ":" + mk + " 寫了報酬或比較");
+      if (/\(\d{4}\)|（\d{4}）/.test(row)) badS.push(L + ":" + mk + " 列上帶了代號");
+    }
+    ok("② en 列上的「N‑day」用不斷行連字號 U+2011(spec §10;1440 寬時不會斷成「10-」/「day」),送出那句維持一般連字號;歡迎頁卡片的年化標籤另開 wc.annLabel = 年化 / Annual(spec §10-4),策略庫面板的 lib.annLabel 不動",
+      ["crypto", "txf"].every((mk) => /\d\u2011day/.test(STR.en["starter_" + mk + "_row"]) && !/\d-day/.test(STR.en["starter_" + mk + "_row"]) && /\d-day/.test(STR.en["starter_" + mk + "_send"]) && !/\u2011/.test(STR.en["starter_" + mk + "_send"]))
+      && STR.zh["wc.annLabel"] === "年化" && STR.en["wc.annLabel"] === "Annual" && STR.en["lib.annLabel"] === "Annualized · backtest" && STR.zh["lib.annLabel"] === "年化・回測" && /\[\[t\("wc\.annLabel"\), libPct\(r\.annual_return\)/.test(cutFn(src, "wcCard")));
+    ok("② 起手句六句 × 兩語逐字是 spec §5.1 定稿;沒有報酬率、%、0050、大盤或任何比較字;台股只在送出那句帶代號;起始年 {y} 起 / From {y}", badS.length === 0
+      && STR.zh["starter_since"] === "{y} 起" && STR.en["starter_since"] === "From {y}", badS.join("、"));
+    ok("② 三列的順序固定 加密｜台股｜台指期、年份同送出句;tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
+      /const ST_ROWS = \[\["crypto", 2020\], \["tw", 2022\], \["txf", 2015\]\];/.test(src) && STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股"
+      && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");
+    ok("② 起手句的列:button.st-row[data-starter]、↳ aria-hidden、tag + 句子 + 起始年;送出照 suggest 的寫法(submitMessage 回 true 才記 starter_<mk> 與 pending);回合中真的 disabled",
+      /wdEl\("button", "st-row"\); b\.type = "button"; b\.dataset\.starter = mk; b\.disabled = runningNow\(\);/.test(cutFn(src, "stPaint")) && /g\.setAttribute\("aria-hidden", "true"\)/.test(cutFn(src, "stPaint"))
+      && /submitMessage\(text\)\.then\(\(ok\) => \{ if \(ok\) \{ trackFeature\(ST_FEATURE\[mk\]\); ST\.pending = \{ before \}; \} \}\);/.test(cutFn(src, "stGo")) && /b\.disabled = runningNow\(\);/.test(cutFn(src, "stSync")));
+    // stTurnEnd:原文接假的 RP / trackFeature 跑
+    const turn = (before, after, pending) => { const tf = [], C = { RP: { list: after.map((name) => ({ name })) }, trackFeature: (n) => tf.push(n), ST: { pending: pending ? { before: new Set(before) } : null } };
+      vm.createContext(C); vm.runInContext(cutFn(src, "stTurnEnd") + "\nstTurnEnd(); stTurnEnd();", C); return tf.join(); };
+    ok("② stTurnEnd:起手句那一輪結束、清單多了一支 → starter_new;沒多(含停止、出錯、只是改名以外的動)→ starter_no_new;只算一次;沒送過起手句不記",
+      turn(["a"], ["a", "b"], true) === "starter_new" && turn(["a"], ["a"], true) === "starter_no_new" && turn([], [], true) === "starter_no_new" && turn(["a", "b"], ["a"], true) === "starter_no_new" && turn([], ["x"], false) === "");
+    ok("② app.js 接線:stratRefresh 畫完清單設 RP.loaded 再叫 wcSync(不閃:#wc 在那之前一直 hidden);送出／unlock／回合結束三排都叫 stSync;回合結束在 libTurnEnd 那條 then 裡、排在最前面叫 stTurnEnd(清單重讀完才比;後面任一支拋例外 pending 也不會漏到下一輪,稽核 B3);enterWorkspace 叫 wcArm(3 秒保底從進工作頁起算,稽核 B1)",
+      /RP\.loaded = true; if \(typeof wcSync === "function"\) wcSync\(\);/.test(cutFn(appSrc, "stratRefresh")) && (appSrc.match(/if \(typeof nsSync === "function"\) nsSync\(\); if \(typeof stSync === "function"\) stSync\(\);/g) || []).length === 3
+      && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof stTurnEnd === "function"\) stTurnEnd\(\); if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc)
+      && /stratRefresh\(false\);\n\s*if \(typeof wcArm === "function"\) wcArm\(\);/.test(cutFn(appSrc, "enterWorkspace")) && !/\nsetTimeout\(/.test(src) && /WC\.armed = true; setTimeout\(\(\) => \{ if \(!WC\.shown\) wcSync\(\); \}, 3000\);/.test(cutFn(src, "wcArm"))
+      && /function wcSync\(\) \{\n  if \(!WC\.shown\) \{ WC\.shown = true; \$\("wc"\)\.hidden = false; \}/.test(src));
+    ok("② 卡上〔用這支〕一律開詳情、焦點放詳情主鈕(wcDetail(s, true);稽核 M1:直接 libAsk 的失敗只畫在藏著的 #lib);welcome.js 不直接叫 libAsk / libSend",
+      /use\.addEventListener\("click", \(\) => wcDetail\(s, true\)\);/.test(cutFn(src, "wcCard")) && !/libAsk\(|libSend\(/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && /libCtaMain\(\)/.test(cutFn(src, "wcDetail")));
+    // 新策略開新對話(Wei):這條對話講過話(csTitle)就先 csStartNew,送出與只填不送兩條都一樣;聊天欄收著先展開;只填不送時補回預檢卡
+    { const run = (title, fill) => { const log = [], C = { csTitle: title, sessionId: "old", RP: { list: [] }, WD: {}, ST: {}, ST_FEATURE: { crypto: "starter_crypto" }, hasToken: true, cur: "blave", acct: { can_run: !fill },
+          paneSt: { chat: { off: true } }, paneToggle: () => log.push("pane"), runningNow: () => false, wdPaint: () => {}, t: (k) => k, stFill: (c) => c.canRun === false,
+          csStartNew: () => { log.push("new"); C.sessionId = "new"; C.csTitle = ""; }, wdFillText: (x) => log.push("fill:" + C.sessionId), trackFeature: () => {}, acctPrecheck: () => log.push("precheck"),
+          submitMessage: (x) => { log.push("send:" + C.sessionId); return Promise.resolve(false); } };
+        vm.createContext(C); vm.runInContext(cutFn(src, "stGo"), C); C.stGo("crypto"); return { log: log.join(), sid: C.sessionId }; };
+      const a = run("舊對話", false), b = run("", false), c = run("舊對話", true), d = run("", true);
+      ok("起手句:有舊對話時先開新對話再送(sessionId 換掉);新對話不重開;只填不送也先開新對話再填、補回預檢卡;聊天欄收著先展開",
+        a.sid === "new" && a.log === "pane,new,send:new" && b.sid === "old" && b.log === "pane,send:old" && c.log === "pane,new,fill:new,precheck" && d.log === "pane,fill:old", JSON.stringify([a, b, c, d])); }
+    ok("② 卡片(spec §10-5):內距 12、三格欄距 8、標籤列靠上;市場行的「回測 年–年」包成不換行的一段;標題 word-break: auto-phrase(§9-3)",
+      /\.wc-card \{[^}]*padding: var\(--space-12\);/.test(css) && /\.wc-stats \{[^}]*gap: var\(--space-2\) var\(--space-8\);/.test(css) && /\.wc-stat \.k \{ align-self: start;/.test(css)
+      && /\.wc-card-m \.nw \{ white-space: nowrap; \}/.test(css) && /meta\.append\(" · ", wdEl\("span", "nw", t\("workspace_lib_bt_span"/.test(cutFn(src, "wcCard")) && /word-break: auto-phrase;/.test(css));
+    // wcLoad(稽核 B2):原文接假的 LIB / libLoad 跑——讀不到只再試一次,之後要 stale(登入翻轉)或換語言才再問
+    { const C = { WC: { shown: true, retried: null }, LIB: { data: null, failed: false, stale: false, loading: false }, LANG: "zh", calls: 0 }; C.libLoad = () => { C.calls++; };
+      vm.createContext(C); vm.runInContext(cutFn(src, "wcLoad"), C);
+      const go = () => { C.wcLoad(); return C.calls; };
+      const first = go(); C.LIB.failed = true; const retry = go(), again = go() + go(); C.LIB.stale = true; const stale = go(); C.LIB.stale = false; C.LANG = "en"; const lang = go(); const lang2 = go();
+      C.LIB.data = { lang: "en" }; C.LIB.failed = false; const have = go(); C.LIB.loading = true; C.LIB.stale = true; const busy = go(); C.LIB.loading = false; C.WC.shown = false; const hidden = go();
+      ok("② wcLoad:還沒資料 → 問;讀不到 → 只再試一次,之後帳號刷新 / 回合結束都不再打;登入翻轉(stale)或換語言才再問;手上有同語言的資料、正在讀、頁還沒出來都不打",
+        first === 1 && retry === 2 && again === 4 && stale === 3 && lang === 4 && lang2 === 4 && have === 4 && busy === 4 && hidden === 4, JSON.stringify({ first, retry, again, stale, lang, lang2, have, busy, hidden })); }
+    const F = require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name, i = F.indexOf("lib_mkt_pick");
+    ok("② telemetry 白名單:七個起手句名字接在 lib_mkt_pick 後面、順序同 spec §4.1、≤16 字(總數由 check_shell_telemetry 鎖;之後的版本可以再接在後面);welcome.js 送的 feature 名字都在白名單裡",
+      F.slice(i + 1, i + 8).join() === "starter_crypto,starter_tw,starter_txf,starter_fill,starter_new,starter_no_new,wd_fold_open" && F.length >= 158 && F.slice(i + 1).every((n) => n.length <= 16)
+      && [...src.matchAll(/trackFeature\("([a-z_]+)"\)/g)].map((m) => m[1]).every((n) => F.includes(n)) && ["crypto", "tw", "txf"].every((mk) => F.includes("starter_" + mk))); }
   // ── ③ Electron ──
   const bin = GATE.bin(SHELL, "③");
   if (!bin) { console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0); }
@@ -254,7 +337,7 @@ app.whenReady().then(async () => {
   const snap = () => js(`(() => { const body = $("wl-body"), cols = [...body.querySelectorAll(":scope > .wl-col")];
     // 欄的範圍 = 它子項的聯集:兩欄並排時 .wl-col 是 display: contents,自己沒有盒子(getBoundingClientRect 全 0,並排的斷言會假綠)
     const rc = (c) => { const k = [...c.children].map((e) => e.getBoundingClientRect()); return { left: Math.min(...k.map((r) => r.left)), right: Math.max(...k.map((r) => r.right)), top: Math.min(...k.map((r) => r.top)), bottom: Math.max(...k.map((r) => r.bottom)) }; };
-    return { visible: !$("main-empty").hidden && !$("wl").hidden, cmp2: body.classList.contains("cmp2"), cols: cols.map((c) => ({ cap: (c.querySelector(".wl-cap") || {}).textContent || "", note: (c.querySelector(".wl-note") || {}).textContent || "",
+    return { visible: !$("main-empty").hidden && !$("wc").hidden && !$("wl").hidden, cmp2: body.classList.contains("cmp2"), cols: cols.map((c) => ({ cap: (c.querySelector(".wl-cap") || {}).textContent || "", note: (c.querySelector(".wl-note") || {}).textContent || "",
         rows: c.querySelectorAll(".wd-row").length, locked: c.querySelectorAll(".wd-row[disabled], .wd-row[aria-disabled], .wd-row.is-locked").length,
         dim: [...c.querySelectorAll(".wd-row")].some((b) => parseFloat(getComputedStyle(b).opacity) < 1), r: rc(c) })),
       state: $("wl-state").textContent, stateBtn: !!$("wl-state").querySelector("button"), seg: !$("wl-seg").hidden, all: $("wl-all").textContent, text: $("wl").textContent,
@@ -262,6 +345,13 @@ app.whenReady().then(async () => {
       ta: $("ta").value, msgs: $("chat-scroll").querySelectorAll(".msg").length, running, tf: window.__tf.slice() }; })()`);
   const paint = (code) => js(`(() => { ${code}; WD.key = ""; wdPaint(); return true; })()`);
   const Z = STR.zh, DAY = 86400000;
+  const askB = (L, id) => String(STR[L]["wd.ask.build"]).replace("{name}", STR[L]["wd.r." + id + ".an"]);
+  // 起手句版:整頁等第一次清單讀完才出現(stub 的 listStrategies 回空陣列);三列起手句;資料摺疊預設收起,點了才展開並記 wd_fold_open
+  { const f0 = await js(`({ wc: $("wc").hidden, wl: $("wl").hidden, exp: $("wl-fold").getAttribute("aria-expanded"), loaded: RP.loaded === true, rows: [...$("st-rows").querySelectorAll(".st-row")].map((b) => b.dataset.starter).join(), reco: $("wc-reco").hidden, tf: window.__tf.slice() })`);
+    await js(`$("wl-fold").click(); true`); await wait(50);
+    await wait(300); const f1 = await js(`({ wl: $("wl").hidden, exp: $("wl-fold").getAttribute("aria-expanded"), tf: window.__tf.slice(), rot: getComputedStyle($("wl-fold").querySelector(".mp-chev")).transform, mid: (() => { const t = $("wl-fold").querySelector("span").getBoundingClientRect(), c = $("wl-fold").querySelector(".mp-chev").getBoundingClientRect(); return Math.abs((t.top + t.bottom) / 2 - (c.top + c.bottom) / 2); })() })`);
+    ok("③ 開 app:清單讀完才顯示 #wc(RP.loaded)、三列起手句 crypto / tw / txf;#wl 收起、aria-expanded=false;策略庫讀不到 → 整塊卡片不見;點摺疊 → 展開、aria-expanded=true、箭頭翻上、箭頭跟字垂直置中(差 ≤ 2px;盒子轉 45° 後的外框量)、記 wd_fold_open 一次",
+      !f0.wc && f0.loaded && f0.rows === "crypto,tw,txf" && f0.wl && f0.exp === "false" && f0.reco && !f0.tf.includes("wd_fold_open") && !f1.wl && f1.exp === "true" && f1.rot !== "none" && f1.mid <= 2 && f1.tf.filter((n) => n === "wd_fold_open").length === 1, JSON.stringify([f0, f1])); }
 
   // 沒登入:對比版
   await paint(`hasToken = false; acct = null; pub = null; WD.mk = "crypto"`);
@@ -279,15 +369,15 @@ app.whenReady().then(async () => {
   ok("③ 「看全部資料」鈕字、市場分段看得到、沒有 TWD 字樣(沒登入不講價)", s.all === Z["wd.all"] && s.seg && !/TWD/.test(s.text));
   // 點列:落進輸入框、不送出
   await js(`$("wl-body").querySelector(".wl-col .wd-row").click()`); await wait(50); s = await snap();
-  ok("③ 點免費欄第一列 → 討論句(wd.ask × wd.r.bnk.an)落進輸入框、沒有送出(沒有泡泡、沒在跑)、記 welcome_data_row", nosp(s.ta) === nosp(askOf("zh", "bnk")) && !/[{}()（）]|wd\./.test(s.ta) && s.msgs === 0 && s.running === false && s.tf.includes("welcome_data_row"), JSON.stringify([s.ta, s.msgs, s.tf]));
+  ok("③ 點免費欄第一列 → 建策略那句(wd.ask.build × wd.r.bnk.an)落進輸入框、沒有送出(沒有泡泡、沒在跑)、記 welcome_data_row", nosp(s.ta) === nosp(askB("zh", "bnk")) && !/[{}()（）]|wd\./.test(s.ta) && s.msgs === 0 && s.running === false && s.tf.includes("welcome_data_row"), JSON.stringify([s.ta, s.msgs, s.tf]));
   await js(`$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row").click()`); await wait(50); s = await snap();
   ok("③ 再點另一列 → 上一句直接換掉(不疊成兩句)", nosp(s.ta) === nosp(askOf("zh", "ti")) && !s.ta.includes("\n"), s.ta);
   await js(`$("ta").value = "my own draft"; $("wl-body").querySelector(".wl-col .wd-row").click()`); await wait(50); s = await snap();
-  ok("③ 自己打到一半的字留著,那一句接在後面另起一行", s.ta.startsWith("my own draft\n") && nosp(s.ta.slice(13)) === nosp(askOf("zh", "bnk")), s.ta);
+  ok("③ 自己打到一半的字留著,那一句接在後面另起一行", s.ta.startsWith("my own draft\n") && nosp(s.ta.slice(13)) === nosp(askB("zh", "bnk")), s.ta);
   await js(`$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row").click()`); await wait(50); s = await snap();
   ok("③ 接著再點另一列 → 只換那一句,自己打的字還在(稽核 P1)", s.ta.startsWith("my own draft\n") && nosp(s.ta.slice(13)) === nosp(askOf("zh", "ti")), s.ta);
   await js(`$("ta").value += " edited"; $("wl-body").querySelector(".wl-col .wd-row").click()`); await wait(50); s = await snap();
-  ok("③ 點完自己又改了字再點一列 → 改過的整段留著,新的一句接在後面", s.ta.startsWith("my own draft\n") && s.ta.includes(" edited\n") && nosp(s.ta.split("\n").pop()) === nosp(askOf("zh", "bnk")) && s.ta.split("\n").length === 3, s.ta);
+  ok("③ 點完自己又改了字再點一列 → 改過的整段留著,新的一句接在後面", s.ta.startsWith("my own draft\n") && s.ta.includes(" edited\n") && nosp(s.ta.split("\n").pop()) === nosp(askB("zh", "bnk")) && s.ta.split("\n").length === 3, s.ta);
   await js(`$("ta").value = ""; WD.filled = ""; WD.pre = ""`);
   // 一列一行:幾何與熱區實測(canon › Verification:熱區用 elementFromPoint 量,不用 CSS 推)
   const geo = () => js(`[...$("wl-body").querySelectorAll(".wd-row")].map((b) => { b.scrollIntoView({ block: "center" });
@@ -311,9 +401,9 @@ app.whenReady().then(async () => {
     const tx = (e) => { const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect(); }, q = (s) => document.querySelector(s), foot = q(".wl-foot").getBoundingClientRect(), st = $("wl-state"), all = tx($("wl-all"));
     return { tok, cols: [...$("wl-body").querySelectorAll(".wl-col")].map((c) => [...c.querySelectorAll(".wd-row")].map((b) => { const s = getComputedStyle(b), r = b.getBoundingClientRect();
         return { bg: s.backgroundColor, rad: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].join(" "), bb: s.borderBottomWidth, go: getComputedStyle(b, "::after").content, kids: b.children.length, l: r.left, r: r.right, t: r.top, b: r.bottom }; })),
-      axis: { mark: q(".wc-mark").getBoundingClientRect().left, chip: q(".wc-chip:not([hidden])").getBoundingClientRect().left, title: tx(q(".wl-top .wl-cap")).left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
-      order: [q(".wc-head").getBoundingClientRect().bottom, q(".wc-chips").getBoundingClientRect().top, q(".wc-chips").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
-      head: (() => { const sh = q(".wc-mark path").getBoundingClientRect(), h = q(".wc-h").getBoundingClientRect(), t = tx(q(".wc-h")); return { gap: t.left - sh.right, mid: (sh.top + sh.bottom) / 2 - (h.top + h.bottom) / 2, shH: sh.height, lineH: h.height, toChips: q(".wc-chips").getBoundingClientRect().top - q(".wc-head").getBoundingClientRect().bottom }; })(),
+      axis: { mark: q(".wc-mark").getBoundingClientRect().left, chip: q(".wc-chip:not([hidden])").getBoundingClientRect().left, st: tx(q(".st-row .g")).left, fold: tx(q(".wl-fold > span")).left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
+      order: [q(".wc-head").getBoundingClientRect().bottom, q("#st-rows").getBoundingClientRect().top, q("#st-rows").getBoundingClientRect().bottom, q(".wc-chips").getBoundingClientRect().top, q(".wc-chips").getBoundingClientRect().bottom, q("#wl-fold").getBoundingClientRect().top, q("#wl-fold").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
+      head: (() => { const sh = q(".wc-mark path").getBoundingClientRect(), h = q(".wc-h").getBoundingClientRect(), t = tx(q(".wc-h")); return { gap: t.left - sh.right, mid: (sh.top + sh.bottom) / 2 - (h.top + h.bottom) / 2, shH: sh.height, lineH: h.height, toRows: q("#st-rows").getBoundingClientRect().top - q(".wc-head").getBoundingClientRect().bottom, toChips: q(".wc-chips").getBoundingClientRect().top - q("#st-rows").getBoundingClientRect().bottom }; })(),
       h: q(".wc-h").textContent, hTag: q(".wc-h").tagName, stIn: st.parentElement === q(".wl-foot") && st.previousElementSibling === $("wl-all"), stMid: st.textContent ? (tx(st).top + tx(st).bottom) / 2 - (all.top + all.bottom) / 2 : null, stRight: st.textContent ? foot.right - tx(st).right : null, footRight: foot.right - Math.max(...[...document.querySelectorAll(".wd-row")].map((b) => b.getBoundingClientRect().right)),
       over: $("main-empty").scrollWidth - $("main-empty").clientWidth }; })()`);
   const cardOk = (k) => k.tok.lg !== "0px" && !/rgba\(0, 0, 0, 0\)|transparent/.test(k.tok.bg) && k.cols.every((rows) => rows.length > 0 && rows.every((x, i) => { const first = i === 0, last = i === rows.length - 1, lg = k.tok.lg, z = "0px";
@@ -322,10 +412,48 @@ app.whenReady().then(async () => {
   let k = await card();
   ok("③ A2 兩欄:兩欄各自是一張完整的卡(列 = --surface-card;各欄第一列上兩角、最後一列下兩角 = --radius-lg,中間的列直角;列間 1px 線、最後一列沒有;列緊貼;行尾 › 是 ::after、列裡沒有多的節點),兩張卡之間有欄距 16、等寬",
     k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
-  ok("③ A2 同一條左軸:記號、第一顆籤、小標、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號與標題那一行 → 三顆籤(隔 16)→ 清單",
-    axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toChips - 16) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
-  ok("③ A2 記號與標題並排:同一行、記號在左(圖形右緣到標題的字隔 12)、圖形的垂直中線對到標題那行字的中線(差 ≤ 1)、圖形不比那行字高;標題是 h4「開始一支策略」",
-    Math.abs(k.head.gap - 12) < 0.6 && Math.abs(k.head.mid) <= 1 && k.head.shH <= k.head.lineH && k.head.shH >= 16 && k.h === Z["wd.start"] && k.hTag === "H4", JSON.stringify([k.head, k.h, k.hTag]));
+  ok("③ 同一條左軸:記號、起手句的 ↳、第一顆籤、摺疊鈕的字、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號與標題那一行 →(隔 12)起手句 →(隔 16)籤 → 摺疊鈕 → 清單",
+    axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toRows - 12) < 0.6 && Math.abs(k.head.toChips - 16) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
+  ok("③ 記號與標題並排:同一行、記號在左(圖形右緣到標題的字隔 12)、圖形的垂直中線對到標題第一行字的中線(差 ≤ 1)、圖形不比那行字高;標題是 h4 workspace_wel_h",
+    Math.abs(k.head.gap - 12) < 0.6 && Math.abs(k.head.mid) <= 1 && k.head.shH <= k.head.lineH && k.head.shH >= 16 && k.h === Z["workspace_wel_h"] && k.hTag === "H4", JSON.stringify([k.head, k.h, k.hTag]));
+  { // 起手句的列(§1.4):tag 欄三列等寬(subgrid)、句子不溢出、↳ 不進讀屏名字;只填不送 / 回合中 disabled
+    const geoSt = () => js(`[...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tg = b.querySelector(".tag"), tx = b.querySelector(".txt"), sn = b.querySelector(".since"), r = (e) => e.getBoundingClientRect();
+      return { mk: b.dataset.starter, tagW: r(tg).width, tagL: r(tg).left, tagOn: getComputedStyle(tg).display !== "none", txtL: r(tx).left, txtT: r(tx).top, sinceT: r(sn).top, sinceL: r(sn).left, over: tx.scrollWidth - tx.clientWidth, rowOver: b.scrollWidth - b.clientWidth, h: r(b).height, txt: tx.textContent, since: sn.textContent }; })`);
+    const g1 = await geoSt();
+    ok("③ 起手句 1600 寬:tag 靠左(不撐滿欄;spec §9)、三列 tag 左緣同一條 x、句子左緣同一條 x(tag 欄照最長的那個等寬)、起始年在同一行、句子不溢出、列高 ≥ 36;字是定稿列上那句與「{y} 起」",
+      g1.length === 3 && g1.every((x) => x.tagOn && Math.abs(x.tagL - g1[0].tagL) < 0.6 && Math.abs(x.txtL - g1[0].txtL) < 0.6 && Math.abs(x.sinceT - x.txtT) < 4 && x.over <= 0 && x.rowOver <= 0 && x.h >= 36)
+      && Math.min(...g1.map((x) => x.tagW)) < Math.max(...g1.map((x) => x.tagW)) - 4   /* 加密 / 台股 比 台指期 窄:沒被撐滿欄 */
+      && g1.map((x) => x.txt).join("|") === ["crypto", "tw", "txf"].map((mk) => Z["starter_" + mk + "_row"]).join("|") && g1.map((x) => x.since).join() === "2020 起,2022 起,2015 起", JSON.stringify(g1));
+    { const pt = await js(`(() => { const b = $("st-rows").querySelector(".st-row"); b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+      const look = () => js(`(() => { const b = $("st-rows").querySelector(".st-row"), pr = document.createElement("i"); pr.style.cssText = "position:absolute;background:var(--surface-card)"; document.body.appendChild(pr); const card = getComputedStyle(pr).backgroundColor; pr.remove();
+        return { on: b.matches(":hover"), bg: getComputedStyle(b).backgroundColor, tag: getComputedStyle(b.querySelector(".tag")).backgroundColor, card, name: b.textContent }; })()`);
+      w.webContents.sendInputEvent({ type: "mouseMove", x: pt.x, y: pt.y }); await wait(400); const h = await look(); w.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 }); await wait(300);
+      ok("③ 起手句 hover:底色 = --surface-card(spec §10-1),跟市場 tag 不同色、tag 看得到;按鈕名字裡 tag、句子、起始年之間有空白(讀屏不黏在一起)",
+        h.on && h.bg === h.card && h.bg !== h.tag && h.name === "↳" + Z["wd.mk.crypto"] + " " + Z["starter_crypto_row"] + " " + Z["starter_since"].replace("{y}", "2020"), JSON.stringify(h)); }
+    const fill = await js(`(() => { window.__tf.length = 0; cur = "blave"; hasToken = true; acct = { can_run: false, reason: "NO_CARD" }; $("ta").value = "my idea"; WD.filled = ""; WD.pre = "";
+      $("st-rows").querySelector('[data-starter="txf"]').click(); const r = { ta: $("ta").value, tf: window.__tf.slice(), msgs: $("chat-scroll").querySelectorAll(".msg").length, running, seg: $("wl-seg").querySelector('[aria-pressed="true"]').dataset.mk };
+      $("st-rows").querySelector('[data-starter="crypto"]').click(); r.ta2 = $("ta").value; r.tf2 = window.__tf.slice(); return r; })()`);
+    ok("③ Blave AI 已登入但不能跑 → 點起手句只填不送:自己的字留著、整句送出版接在下一行、沒有泡泡;連點兩列只換那一句;只記 starter_fill(不記 welcome_data_row);資料分段跟著換到最後點的市場",
+      fill.ta === "my idea\n" + Z["starter_txf_send"] && fill.ta2 === "my idea\n" + Z["starter_crypto_send"] && fill.tf.join() === "starter_fill" && fill.tf2.join() === "starter_fill,starter_fill" && fill.msgs === 0 && fill.running === false && fill.seg === "txf", JSON.stringify(fill));
+    const dis = await js(`(() => { running = true; stSync(); const b = [...$("st-rows").querySelectorAll(".st-row")]; const r = { dis: b.every((x) => x.disabled), cur: getComputedStyle(b[0]).cursor, op: getComputedStyle(b[0]).opacity };
+      running = false; stSync(); r.back = b.every((x) => !x.disabled); cur = "claude"; hasToken = false; acct = null; $("ta").value = ""; WD.filled = ""; WD.pre = ""; WD.mk = "crypto"; WD.key = ""; wdPaint(); return r; })()`);
+    ok("③ 回合進行中三列是真的 disabled(cursor not-allowed、不用 opacity),回合結束解除", dis.dis && dis.cur === "not-allowed" && dis.op === "1" && dis.back, JSON.stringify(dis)); }
+  { // 三張卡(§1.6):讀到策略庫 → 挑三支、容器 ≥ 640 三欄並排、看全部 {n} 支
+    await js(`(() => { const R = (sym, iv) => ({ annual_return: 18.2, sharpe: 1.31, max_drawdown: -22.5, symbol: sym, interval: iv, spark: Array.from({ length: 64 }, (_, i) => 1 + i * 0.02), equity_from: "2020-01-01", equity_to: "2026-06-30" });
+      const S = (id, market, sym, iv, o) => Object.assign({ id, title: "S" + id, price: 0, market, is_official: true, verified: true, blave_data: "none", created_at: "2026-06-10 00:00:00", purchase_count: 0, report: R(sym, iv) }, o || {});
+      LIB.data = { strategies: [S(301, "crypto", "BTCUSDT", "1d"), S(302, "txf", "TXF", "1d"), S(303, "twstock", "2330", "1d"), S(304, "crypto", "ETHUSDT", "1h"), S(305, "crypto", "SOLUSDT", "1h", { price: 900 })], signedIn: false, dataAccess: null, why: null, lang: LANG };
+      LIB.failed = false; WC.key = null; wcPaint(); return true; })()`); await wait(400);
+    const cards = () => js(`({ hidden: $("wc-reco").hidden, n: $("wc-cards").querySelectorAll(".wc-card").length, ids: [...$("wc-cards").querySelectorAll(".wc-curve")].map((h) => h.dataset.id).join(), tops: [...$("wc-cards").querySelectorAll(".wc-card")].map((c) => Math.round(c.getBoundingClientRect().top)),
+      lefts: [...$("wc-cards").querySelectorAll(".wc-card")].map((c) => Math.round(c.getBoundingClientRect().left)), more: $("wc-more").textContent, charts: $("wc-cards").querySelectorAll(".wc-curve canvas").length, over: $("main-empty").scrollWidth - $("main-empty").clientWidth,
+      btn: [...$("wc-cards").querySelectorAll(".wc-card-a button")].map((b) => b.textContent).join("|"), verified: $("wc-cards").querySelectorAll(".tag").length,
+      clamp: [...$("wc-cards").querySelectorAll(".wc-card-h .t")].map((e) => getComputedStyle(e).webkitLineClamp).join(), metaWrap: [...$("wc-cards").querySelectorAll(".wc-card-m")].every((e) => getComputedStyle(e).whiteSpace === "normal" && e.scrollWidth <= e.clientWidth),
+      stats1: [...$("wc-cards").querySelectorAll(".wc-stats")].every((st) => new Set([...st.querySelectorAll(".v")].map((c) => Math.round(c.getBoundingClientRect().top))).size === 1 && st.scrollWidth <= st.clientWidth) })`);
+    const c1 = await cards();
+    ok("③ 三張卡:免費官方、一個市場一支(付費那支不進)、三欄同一排、每張有曲線與〔用這支〕〔看詳情〕、「看策略庫全部 5 支 →」、不橫向溢出;沒有「已驗證」(Wei 10-17)、標題最多兩行、市場行折行不截、三格數字同一排(spec §10-3)",
+      !c1.hidden && c1.n === 3 && c1.ids === "301,302,303" && new Set(c1.tops).size === 1 && new Set(c1.lefts).size === 3 && c1.more === Z["workspace_wel_more"].replace("{n}", "5") && c1.charts >= 3 && c1.over <= 0
+      && c1.btn === [1, 2, 3].map(() => Z["lib.use"] + "|" + Z["workspace_lib_detail"]).join("|") && c1.verified === 0 && c1.clamp === "2,2,2" && c1.metaWrap && c1.stats1, JSON.stringify(c1));
+    w.setSize(1000, 900); await wait(400); const c2 = await cards(); w.setSize(1600, 900); await wait(400);
+    ok("③ 1000 寬(中欄 < 640):三張卡上下疊、不橫向溢出", c2.n === 3 && new Set(c2.lefts).size === 1 && new Set(c2.tops).size === 3 && c2.over <= 0, JSON.stringify(c2)); }
   { // hover:底換 --surface-muted、小字從 --ink-3 換 --ink-2(ink-3 壓在 hover 底上不到 4.5:1)、› 換色
     const tgt = `$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row")`, look = () => js(`(() => { const b = ${tgt}; return { on: b.matches(":hover"), mt: getComputedStyle(b.querySelector(".wd-mt")).color, bg: getComputedStyle(b).backgroundColor, go: getComputedStyle(b, "::after").color }; })()`);
     const pt = await js(`(() => { const b = ${tgt}; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
@@ -337,7 +465,9 @@ app.whenReady().then(async () => {
     ok("③ 市場分段三格的熱區實測 ≥ 44(視覺 30 高、::before 上下外擴,沒有被容器裁掉)", sh.length === 3 && sh.every((x) => x.h === 30 && x.hit >= 44), JSON.stringify(sh)); }
   // 窄:上下疊、免費在上
   w.setSize(1000, 900); await wait(400); s = await snap();
-  ok("③ 1000 寬(中欄 < 760):上下疊、免費欄在上", s.cmp2 && s.cols.length === 2 && s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
+  ok("③ 1000 寬(中欄 < 760):上下疊、免費欄在上", s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cmp2 && s.cols.length === 2 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
+  { const nw = await js(`({ w: $("main-empty").clientWidth, rows: [...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tx = b.querySelector(".txt"), sn = b.querySelector(".since"); return { tag: getComputedStyle(b.querySelector(".tag")).display, below: sn.getBoundingClientRect().top >= tx.getBoundingClientRect().bottom - 1, left: Math.abs(sn.getBoundingClientRect().left - tx.getBoundingClientRect().left), over: b.scrollWidth - b.clientWidth }; }) })`);
+    ok("③ 1000 寬(中欄 < 480):起手句的 tag 欄藏起來、起始年折到句子下一行且跟句子同左緣、不溢出", nw.w - 48 < 480 && nw.rows.length === 3 && nw.rows.every((x) => x.tag === "none" && x.below && x.left < 0.6 && x.over <= 0), JSON.stringify(nw)); }
   w.setSize(1600, 900); await wait(400);
   // 台指期:免費欄是日線那一列(期交所),分線在 Blave 欄
   await js(`$("wl-seg").querySelector('[data-mk="txf"]').click()`); await wait(50); s = await snap();

@@ -852,6 +852,8 @@ function trPickPrefs(S, sf) {
    (4–6 位數字,可帶一個英文字尾:2330、00878、00631L;帶 .TW / .TWO 也算)。syms = 單一標的與組合的標的清單;看不出來 = 不是(不擋) */
 const TR_TWD_RE = /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/;
 function trIsTwd(syms) { return (Array.isArray(syms) ? syms : [syms]).some((s) => typeof s === "string" && TR_TWD_RE.test(s.trim().toUpperCase())); }
+// 每一檔都是台股(至少一檔):Type C 推不出區時退回幣別只認這個——「有一檔台股」(trIsTwd)混了加密也是 true
+function trAllTwd(syms) { const v = (Array.isArray(syms) ? syms : [syms]).filter((s) => typeof s === "string" && s.trim()); return v.length > 0 && v.every((s) => TR_TWD_RE.test(s.trim().toUpperCase())); }
 // 程式碼頂層的 UNIVERSE = [...](Type C 的標的清單;stats.json 不帶)。只收字面字串,動態組出來的讀不到 = 空陣列
 function trUniverse(code) {
   const m = /^UNIVERSE\s*=\s*\[([^\]]*)\]/m.exec(typeof code === "string" ? code : "");
@@ -1683,10 +1685,10 @@ async function trLoadStrategies(S) {
       const mk = /^MARKET\s*=\s*["'](spot|swap)["']/m.exec((d && d.code) || "");
       m = { mtime: x.mtime, symbol: sym, market: mk ? mk[1] : "swap",
             portfolio: x.remote ? !!x.portfolio : !sym && Object.keys(s).some((k) => k.indexOf("benchmark_") === 0),
-            twd: trIsTwd([sym].concat(x.remote ? [] : trUniverse(d && d.code))) };   // 雲端清單不帶組合的標的:雲端的 Type C 看不出來
+            twd: trIsTwd([sym].concat(x.remote ? [] : trUniverse(d && d.code))), twdAll: trAllTwd([sym].concat(x.remote ? [] : trUniverse(d && d.code))) };   // 雲端清單不帶組合的標的:雲端的 Type C 看不出來
       S.meta.set(x.name, m);
     }
-    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio, twd: m.twd === true, srcMarket: x.srcMarket || null });
+    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio, twd: m.twd === true, twdAll: m.twdAll === true, srcMarket: x.srcMarket || null });
   }
   S.list = out;
 }
@@ -2720,15 +2722,15 @@ function trQuoteMap() { const q = (trReport() || {}).quote_ccy; return q && type
 function trHostOld() { const r = trReport() || {}; return !!(r.signals_frozen && typeof r.signals_frozen === "object") || r.can_trade_portfolio !== true; }
 function trNoSignalYet(n) { const f = (trReport() || {}).signals_frozen; return !!f && typeof f === "object" && Array.isArray(f.pending) && f.pending.indexOf(n) >= 0; }
 /* 推不出區、也還沒有成分的列(剛勾進、還沒存也還沒跑過的投資組合:回報沒有它的 quote_ccy)退回策略本身的市場。
-   先看 runtime strategy_market(本機在 strategy_kinds;雲端讀清單的 market,同網頁 stratMarket——api 的 ?summary=1 目前還不帶,
-   雲端這一層要等它補上;"mixed" 就是未定),沒有才看清單的 twd——twd 是「有一檔台股」,
-   混了加密的也是 true。只認台股 → TWD,同網頁 pfRowUnit;加密的幣別要看成分,不拿帳戶幣猜(§9.2) */
+   先看 runtime strategy_market(本機在 strategy_kinds;雲端讀 /oauth/desktop/cloud/state 的 strategies_summary[].market,同網頁 stratMarket——
+   api 從策略索引的 summary 帶出來(651fb09e),機器 runtime 要會回報 market(11593e0 起)才有;"mixed" 就是未定),沒有才看清單的 twdAll——UNIVERSE 每一檔都是台股才算(twd 是「有一檔台股」,
+   混了加密的也是 true,不能拿來當幣別;稽核 S2)。只認台股 → TWD,同網頁 pfRowUnit;加密的幣別要看成分,不拿帳戶幣猜(§9.2) */
 function trZoneOf(n) {
   const r = trReport() || {}, st = (r.states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}, tc = trTypeC(st);
   const z = trRowZone(n, st.symbol || x.symbol, tc, x.portfolio === true, trQuoteMap());
   if (z !== TR_ZONE_UNKNOWN || (tc && tc.keys.length)) return z;
   const k = r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds[n] : null, mk = x.srcMarket || (k && k.market);
-  return (mk ? mk === "tw_stock" : x.twd === true) ? TR_TXF_CCY : z;
+  return (mk ? mk === "tw_stock" : x.twdAll === true) ? TR_TXF_CCY : z;
 }
 // 幣別未定的原因:全是還沒回報的投資組合 = 跑過一次、算出成分就知道;單一標的(BTCUSD 這種)或跑過還未定 = 混了幣別或看不出計價,再跑也不會變
 function trUnknownWhy(ns, states) { return ns.some((n) => (states && states[n]) || !(TR.list.find((y) => y.name === n) || {}).portfolio) ? t("tr.ccyMixed") : t("tr.ccyAfterRun"); }

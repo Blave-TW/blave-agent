@@ -294,32 +294,29 @@
           <div class="rpt-read" id="rpt-read" hidden></div>
         </div>
       </div>
-      <!-- 起手範例放在中欄(Wei):聊天欄只留一句話;中欄本來就空著,範例鈕在這裡
-           同時交代了「這一欄之後會出現什麼」。點了直接送出。 -->
+      <!-- 歡迎頁(renderer/welcome.js;設計 output/designer/strategy-creation-2026-10-15 spec-starters,mockup C):沒選策略就是這一頁,
+           不分有沒有策略(Wei 10-17)。記號＋標題 → 三句起手句(點了就送出)→ 入口籤 → 「可以回測的資料 ›」(預設收起)→ 三張策略庫卡。
+           整頁等第一次策略清單讀完才顯示(app.js stratRefresh 設 RP.loaded):卡要扣掉已經裝過的,不能先畫一版再換 -->
       <div class="main-empty" id="main-empty">
-        <!-- 全部靠左、同一條軸:品牌記號與標題「開始一支策略」並排一行(.wc-head)→ 起手短籤 → 資料清單(一張卡)。
-             記號與籤的基礎值在 app.css(照雲端工作頁的 welcome),靠左、尺寸與顏色由 welcome.css 蓋 -->
-        <div class="wc-inner">
+        <div class="wc-inner" id="wc" hidden>
           <div class="wc-head">
             <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
               <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
             </svg>
-            <h4 class="wc-h" data-i18n="wd.start"></h4>
+            <h4 class="wc-h" id="wc-h" data-i18n="workspace_wel_h"></h4>
           </div>
+          <div class="st-rows" id="st-rows" role="group" aria-labelledby="wc-h"></div>
           <div class="wc-chips">
-            <!-- 「看現成策略」開策略庫(不送訊息;同雲端歡迎頁那顆 workspace_chip_free) -->
-            <button class="wc-chip" id="chat-lib" type="button" data-i18n="lib.chip"></button>
+            <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁那顆) -->
+            <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
             <!-- 「上網找點子」開找點子框(spec-0.1.13 §5.1;只在這台電腦視角、內建瀏覽器開著、引擎跑得動時出,library.js libIdeaPaint 切 hidden) -->
             <button class="wc-chip" id="chat-idea" type="button" data-i18n="idea.chip" hidden></button>
-            <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁第二顆) -->
-            <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
           </div>
-          <!-- 可以回測的資料(renderer/welcome.js;設計 mockup data-scope §1):取代了原本第四顆「回測一支 BTC 20/50 均線策略」的起手籤。
-               依市場分段;帳號狀態決定兩欄對比(免費 vs Blave 資料)或單一清單;整列可點 → 那一句落進輸入框不送出;
-               「看全部資料」用瀏覽器開網站的資料文件頁(welcome.js wdDocs)。列由 wdPaint 畫 -->
-          <div class="wl" id="wl">
+          <button class="wl-fold" id="wl-fold" type="button" aria-expanded="false" aria-controls="wl"><span data-i18n="wd.title"></span><span class="mp-chev" aria-hidden="true"></span></button>
+          <!-- 可以回測的資料(welcome.js wdPaint;mockup data-scope §1):依市場分段;帳號狀態決定兩欄對比(免費 vs Blave 資料)或單一清單;
+               整列可點 → 那一句落進輸入框不送出;「看全部資料」用瀏覽器開網站的資料文件頁。每次開 app 都是收起來的 -->
+          <div class="wl" id="wl" hidden>
             <div class="wl-top">
-              <span class="wl-cap" data-i18n="wd.title"></span>
               <span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd.title">
                 <button type="button" data-mk="crypto" aria-pressed="true" data-i18n="wd.mk.crypto"></button>
                 <button type="button" data-mk="tw" aria-pressed="false" data-i18n="wd.mk.tw"></button>
@@ -328,6 +325,12 @@
             </div>
             <div class="wl-body" id="wl-body"></div>
             <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd.all"></button><p class="wl-state" id="wl-state" aria-live="polite"></p></div>
+          </div>
+          <!-- 還沒想法？先跑一支現成的:三張策略庫卡(library.js wcReco 挑、welcome.js wcPaint 畫);讀不到或挑出 0 支整塊藏起來 -->
+          <div class="wc-reco" id="wc-reco" hidden>
+            <p class="wel-or" data-i18n="workspace_wel_or"></p>
+            <div class="wc-cards" id="wc-cards"></div>
+            <button class="btn-quiet wel-more" id="wc-more" type="button"></button>
           </div>
         </div>
       </div>

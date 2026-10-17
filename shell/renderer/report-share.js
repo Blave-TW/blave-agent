@@ -5,7 +5,7 @@
    - 公開狀態每次打開閱讀頁問一次(shrDecorate);問不到照「未公開」畫,api 在按下去時再守。清單列不加「公開」記號(拍板 5)。
    - 報告標題、lead、api 回的顯示名稱都是不可信字串:一律 textContent。
    reports.js 叫兩個點:rptPaint 叫 shrClear(換頁 / 回清單),rptRender 畫完叫 shrDecorate。
-   用到 app.js 的 $ / t / LANG / confirmBox / trapTab / setOpen / setCat、library.js 的 libEl / libTrack、reports.js 的 RPT / rptFmtStamp——都在呼叫時才取。 */
+   用到 app.js 的 $ / t / LANG / confirmBox / trapTab / planSignIn、library.js 的 libEl / libTrack、reports.js 的 RPT / rptFmtStamp——都在呼叫時才取。 */
 
 /* ── 純邏輯(tests/check_shell_report_share.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
 const SHR_SITE = "https://blave.org/";
@@ -135,9 +135,9 @@ function shrRevokeAsk(c, opener) {
     confirmBox({ title: t("shr.revokeFailTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailBody")], ok: t("cdel.gotIt"), single: true, env: c.env, opener: opener.isConnected ? opener : $("rpt-back"), onOk: () => {} });   // 標題寫結果,不再是問句
   } });
 }
-// 未登入(只會發生在本機視角):鈕照出、按下才守門;主鈕開設定 › 帳號與方案,不做登入後自動續走(spec DT3)
+// 未登入(只會發生在本機視角):鈕照出、按下才守門;主鈕直接開瀏覽器登入(app.js planSignIn),不做登入後自動續走(spec DT3)
 function shrGateAsk(opener) {
-  confirmBox({ title: t("shr.dlgTitle"), lines: [t("shr.gate")], ok: t("shr.gateGo"), opener, onOk: () => setOpen().then(() => setCat("plan")) });
+  confirmBox({ title: t("shr.dlgTitle"), lines: [t("shr.gate")], ok: t("shr.gateGo"), opener, onOk: () => planSignIn(null) });
 }
 
 /* ── 確認框(DT2)────────────────────────────────────── */

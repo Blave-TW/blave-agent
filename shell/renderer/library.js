@@ -13,7 +13,7 @@
    - 上網找點子(spec-0.1.13 §5):三個入口都問 libIdeaOn,框本身在 newstrategy.js(ideaOpen)。
    - 付費策略在 app 內買(§4.4):購買框兩段對齊網頁 libBuy / libPurchase;憑證只在主行程(帳號 token + app 專用密鑰)。
    用到 app.js 的 $ / t / LANG / hasToken / running / RP / RPC / csTitle / csStartNew / submitMessage / confirmBox / delClose / setOpen / setCat /
-   planOpen / stratSelect / rpCloudSelect / paneSt / paneToggle、trade.js 的 ENV / TR_BAGS / trLeave / envShowMain / envCanSwitch / envCloudKind /
+   planOpen / planSignIn / stratSelect / rpCloudSelect / paneSt / paneToggle、trade.js 的 ENV / TR_BAGS / trLeave / envShowMain / envCanSwitch / envCloudKind /
    envHeadState——都在呼叫時才取(這支比 app.js 先載)。 */
 
 /* ── 純邏輯(tests/check_shell_library.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
@@ -177,6 +177,18 @@ function libCurve(spark, from, to) {
 }
 // 這一語言的成功筆記 id / 標題(spec-0.1.12-library-notes §2.2):缺就是缺,不拿另一個語言頂
 function libNoteId(s, lang) { const m = s && s.success_note_ids; const v = m && typeof m === "object" ? m[lang] : null; return Number.isInteger(v) && v > 0 ? v : null; }
+/* 歡迎頁的三張卡(spec-starters §1.6):免費、官方、沒裝過也沒買過 → libVisible 的順序 → 不能用 Blave 資料的人(沒登入時是免登入的)
+   排最前 → 每個市場先挑一支、挑滿 3 支,不滿再照順序補。回傳照排序後的順序。c = { dataAccess, signedIn, installed(s) } */
+function wcReco(list, c) {
+  const seen = c && typeof c.installed === "function" ? c.installed : () => false;
+  let cands = libVisible((Array.isArray(list) ? list : []).filter((s) => s && libIsFree(s) && s.is_official === true && !s.purchased && !s.is_owner && !seen(s)), "all");
+  const first = c && c.signedIn === false ? libAnonOk : c && c.dataAccess !== "included" ? (s) => libNeeds(s) === "none" : null;
+  if (first) cands = cands.filter(first).concat(cands.filter((s) => !first(s)));
+  const picked = new Set(), mk = new Set();
+  cands.forEach((s) => { const m = String(libMarket(s)); if (picked.size < 3 && !mk.has(m)) { mk.add(m); picked.add(s); } });
+  cands.forEach((s) => { if (picked.size < 3) picked.add(s); });
+  return cands.filter((s) => picked.has(s));
+}
 function libNoteTitle(s, lang) { const m = s && s.success_note_titles; const v = m && typeof m === "object" ? m[lang] : null; return typeof v === "string" && v.trim() ? v.trim() : null; }
 /* 筆記內文白名單重建(§2.4)。root = 解析好的惰性文件 body;mk(tag, cls) 造一個沒有屬性的空元素。只用 mk + 附加字串重建,
    來源的屬性一個都不搬(事件屬性、href、style 從構造上就進不來)。a 拆成純文字:筆記裡的連結都導去網頁版,電腦版不導流。
@@ -373,7 +385,7 @@ async function libLoad(force) {
   LIB.loading = true; LIB.failed = false; LIB.skel = false; LIB.stale = false;
   let shownAt = 0;
   // canon Loader:200ms 內回來不畫 skeleton;畫了至少留 300ms(rpWaitHold 同一個數)
-  const timer = setTimeout(() => { if (LIB.seq !== seq || LIB.data) return; LIB.skel = true; shownAt = Date.now(); if (!$("lib").hidden) libPaint(); }, 200);
+  const timer = setTimeout(() => { if (LIB.seq !== seq || LIB.data) return; LIB.skel = true; shownAt = Date.now(); if (!$("lib").hidden) libPaint(); if (typeof wcPaint === "function") wcPaint(); }, 200);
   let r = null;
   try { r = await window.blave.libraryList(LANG, fresh); } catch (_) { r = null; }
   if (LIB.seq !== seq) return;
@@ -387,6 +399,7 @@ async function libLoad(force) {
   if (r && Array.isArray(r.strategies)) LIB.data = { strategies: r.strategies, signedIn: r.signedIn === true, dataAccess: r.dataAccess || null, why: typeof r.why === "string" ? r.why : null, lang: LANG };
   else LIB.failed = true;   // 手上有舊清單就照畫舊的;沒有才畫「讀不到」
   if (!$("lib").hidden && (prev === null || prev !== JSON.stringify(LIB.data) || LIB.paintedEnv !== libEnv())) libPaint();   // 沒變就不重畫(捲動、焦點、曲線都留著)
+  if (typeof wcPaint === "function") wcPaint();   // 歡迎頁的三張卡(renderer/welcome.js;自己有指紋)
 }
 // 登入 / 登出 / 換帳號 / 買了(app.js 在 hasToken 翻轉的地方叫;購買成功自己叫):手上那份作廢,開著就立刻重問
 function libInvalidate() { LIB.stale = true; LIB.dlFail = null; LIB.cloudInstalled = {}; LIB.cloudWait = null; LIB.cloudNames = null; libRefresh(); }   // 雲端「已安裝」是這個帳號的記憶:換人就丟
@@ -411,6 +424,7 @@ function libTurnEnd() {
 }
 function libInstalledSet(id, name) {
   LIB.installed[String(id)] = name;
+  if (typeof wcPaint === "function") wcPaint();   // 剛裝好的那支立刻從歡迎頁的卡拿掉(回合結束時 wcSync 比這裡早跑;稽核 B4)
   window.blave.libraryInstalled({ id, name }).then((m) => { if (m && typeof m === "object") LIB.installed = m; }).catch(() => {});
 }
 // 回合開始 / 結束(running 變了)、購買中、對照表變了:詳情的 CTA 就地重畫;清單的 tag 在 libStratChanged
@@ -601,10 +615,10 @@ function libGateBtn(why) {
   b.type = "button"; b.addEventListener("click", () => { if (why !== "unknown") libTrack(why === "no_balance" ? "topup_lib" : "bind_lib"); planOpen(); });
   return b;
 }
-// 「登入 Blave」(詳情主鈕與沒登入那組的閘門卡同一顆):開 設定 › 帳號與方案
+// 「登入 Blave」(詳情主鈕與沒登入那組的閘門卡同一顆):直接開瀏覽器登入(app.js planSignIn)。登入後 libInvalidate 重畫,詳情主鈕換成下一步
 function libSignInBtn() {
-  const b = libEl("button", "btn-fill", t("cn.blave.btn")); b.type = "button";
-  b.addEventListener("click", () => setOpen().then(() => setCat("plan")));
+  const b = signInLabel(libEl("button", "btn-fill"), t("cn.blave.btn")); b.type = "button";
+  b.addEventListener("click", () => planSignIn(b));
   return b;
 }
 /* 詳情 noData 鈕下那句(§3):第一句看資料需求(要用 / 未標),第二句看原因——no_card 不接(鈕字已經講了) */
@@ -723,7 +737,7 @@ function libPaintCta(s) {
   const dis = (label) => { const b = btn("btn-fill", label); b.disabled = true; return b; };
   const buyLabel = () => t("lib.buy", { price: libPriceText(s) || "—" });
   switch (c.state) {
-    case "signedOut": row.appendChild(libSignInBtn()); note.classList.add("up"); note.textContent = t(c.paid ? "lib.gate.signedOutBuy" : "lib.gate.signedOut"); break;   // 只講登入、不提卡與資料:登入後真的撞到資料牆再講(Wei 10-02)
+    case "signedOut": row.appendChild(libSignInBtn()); break;   // 鈕本身就說了「登入 Blave」,鈕下不再補一句(Wei 10-17);卡與資料登入後真的撞到資料牆再講(Wei 10-02)
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libNoDataText(s, c.why); break;
     case "busy": {   // 點了才講(同策略版本):不常駐那句;aria-disabled 讓鍵盤停得上去,點 / Enter / Space 才把原因寫進鈕下
       const b = btn("btn-fill", c.paid ? buyLabel() : t("lib.use"), () => libBusyTell(s));
@@ -984,7 +998,6 @@ function libChartDraw(host, r) {
 (function libWire() {
   const g = (id) => document.getElementById(id);
   g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); else sideReclick(() => libLeave()); });   // 再點一次 = 回 welcome(trade.js sideReclick)
-  g("chat-lib").addEventListener("click", () => libOpen());
   g("lib-back").addEventListener("click", libBack);
   g("lib-mkt-trig").addEventListener("click", () => { if (g("lib-mkt-menu").hidden) libMktOpen(); else libMktClose(false); });
   g("lib-mkt-menu").addEventListener("click", (e) => { const b = e.target.closest(".ct-mi[data-mkt]"); if (b) libMktPick(b.dataset.mkt); });
@@ -1000,5 +1013,5 @@ function libChartDraw(host, r) {
   window.addEventListener("focus", () => { libRefresh(); libIdeaSync(); });   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
   g("chat-idea").addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(g("chat-idea"), "welcome", "any"); });   // 歡迎頁籤:開找點子框,市場不限
   libIdeaSync();
-  window.blave.libraryInstalled().then((m) => { if (m && typeof m === "object") LIB.installed = m; }).catch(() => {});
+  window.blave.libraryInstalled().then((m) => { if (m && typeof m === "object") { LIB.installed = m; if (typeof wcPaint === "function") wcPaint(); } }).catch(() => {});
 })();

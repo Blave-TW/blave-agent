@@ -122,6 +122,9 @@ const __fixed = {
   reportPdf: async (view, id, ver, lang) => { window.__s.calls.push(["pdf", view, id, ver, lang]); if (window.__s.pdfHold) await new Promise((r) => { window.__s.pdfHold = r; }); return window.__s.pdf; },
   onReportPdfSaving: (fn) => { window.__s.saving = fn; },
   openExternal: async (u) => { window.__s.calls.push(["ext", u]); return true; }, trackFeature: (n) => { window.__s.tracked.push(n); },
+  // 登入:瀏覽器那頭一直等,直到 cancelOAuth(或測試自己 reject)
+  startOAuth: () => { window.__s.calls.push(["oauth"]); return new Promise((res, rej) => { window.__s.oauthReject = () => rej(new Error("cancelled")); }); },
+  cancelOAuth: () => { window.__s.calls.push(["cancelOAuth"]); if (window.__s.oauthReject) window.__s.oauthReject(); },
 };
 window.blave = new Proxy(__fixed, { get: (o, k) => (k in o ? o[k] : typeof k !== "string" ? undefined : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {} : async () => undefined) });`;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -198,7 +201,12 @@ app.whenReady().then(async () => {
   await js(`window.__s.list = { code: "NO_LOGIN" }; setCat("shares")`); await wait(200); p = await pane();
   ok("④ 未登入:一句 +「登入 Blave」(沒有錯誤記號)", p.msg === (await T("shl.gate")) && p.mark === 0 && p.btn === (await T("cn.blave.btn")), JSON.stringify(p));
   await js(`document.querySelector("#set-shares .shl-msgrow .btn-out").click()`); await wait(100);
-  ok("④ …點了切到「帳號與方案」", (await js(`document.querySelector('.set-cat[aria-current="true"]').dataset.setCat`)) === "plan");
+  { const w1 = await js(`({ cat: document.querySelector('.set-cat[aria-current="true"]').dataset.setCat, btn: document.querySelector("#set-shares .shl-msgrow .btn-out").textContent })`), oa = await calls("oauth");
+    ok("④ …點了原地登入:分類停在「公開連結」、startOAuth 叫一次、鈕字換成「取消等待」", w1.cat === "shares" && oa.length === 1 && w1.btn === (await T("oauth.cancel")), JSON.stringify([w1, oa]));
+    await js(`window.__s.oauthReject(); true`); await wait(200);
+    const w2 = await js(`({ cat: document.querySelector('.set-cat[aria-current="true"]').dataset.setCat, btn: document.querySelector("#set-shares .shl-msgrow .btn-out").textContent })`);
+    ok("④ …取消之後鈕字換回「登入 Blave」、還在公開連結", w2.cat === "shares" && w2.btn === (await T("cn.blave.btn")), JSON.stringify(w2));
+    await js(`window.__s.tracked.length = 0; true`); }
 
   // 標題 = 打開報告
   await js(`window.__s.list = { code: "OK", shares: ${JSON.stringify(ROWS)}, limits: { liveCount: 4, liveLimit: 50 } }; setCat("shares")`); await wait(200);

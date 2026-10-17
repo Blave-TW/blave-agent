@@ -104,7 +104,7 @@ msgid "ws.noStrategies"
 msgstr "還沒有策略。"
 
 msgid "ws.placeholder"
-msgstr "跟 agent 說一句話"
+msgstr "說一個交易想法…"
 
 # 回合進行中、草稿非空時按 Enter:輸入框上方一行(e2e 0.1.8 #71)
 msgid "ws.waitTurn"
@@ -4200,9 +4200,6 @@ msgstr "{name} · 樣本外驗證"
 msgid "lib.nav"
 msgstr "策略庫"
 
-msgid "lib.chip"
-msgstr "看現成策略"
-
 msgid "lib.desc"
 msgstr "已驗證優先，再看樣本期長短。"
 
@@ -4474,9 +4471,6 @@ msgstr "TWD"
 msgid "lib.fxNote"
 msgstr "金額以 TWD 計價。"
 
-msgid "lib.gate.signedOutBuy"
-msgstr "登入 Blave 之後才能購買，並下載到這台電腦。"
-
 msgid "lib.note.billed"
 msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費。"
 
@@ -4509,9 +4503,6 @@ msgstr "這支現在不能免登入下載，可能已經下架，或改成要登
 # 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
 msgid "lib.dl.rateLimited"
 msgstr "下載次數太多，請稍後再試。"
-
-msgid "lib.gate.signedOut"
-msgstr "登入 Blave 之後才能下載到這台電腦。"
 
 msgid "lib.gate.login"
 msgstr "登入"
@@ -6453,9 +6444,6 @@ msgstr "這台電腦上找不到你的 API 金鑰了。到 設定 › 模型接�
 # ── 歡迎頁的資料清單(renderer/welcome.js;mockup data-scope §1)──
 # 右欄那幾句的數字(試用天數 {t}、每小時 {r} TWD、試用到期 {d})都來自 account_status / 公開價目,不寫死;拿不到用 NoNum 那句。
 # 整頁不出現「付費」兩個字;價格只在 wd.note.billed 出現一次。
-msgid "wd.start"
-msgstr "開始一支策略"
-
 msgid "wd.title"
 msgstr "可以回測的資料"
 
@@ -8120,3 +8108,59 @@ msgstr "保證金 {v}"
 
 msgid "po.dLev"
 msgstr "（{x}×）"
+
+# 歡迎頁起手句(0.1.26;renderer/welcome.js;spec-starters §1.7 / §5.1)。key 名借網頁工作頁的。
+# 列上只寫規則,送出的是 _send 那一整句。任何地方都不准寫報酬率,也不准跟大盤或 0050 比較
+msgid "workspace_wel_h"
+msgstr "把你的交易想法，變成自動跑的策略"
+
+msgid "starter_crypto_row"
+msgstr "BTC 日線：收盤站上 200 日均線買進，跌破賣出"
+
+msgid "starter_crypto_send"
+msgstr "BTC 日線：收盤站上 200 日均線買進，跌破賣出。幫我建成策略，回測 2020 年至今。"
+
+msgid "starter_tw_row"
+msgstr "台積電、聯發科、鴻海、台達電、富邦金五檔等權持有，每月再平衡"
+
+msgid "starter_tw_send"
+msgstr "台積電（2330）、聯發科（2454）、鴻海（2317）、台達電（2308）、富邦金（2881）五檔等權持有，每月再平衡。幫我建成策略，回測 2022 年至今。"
+
+msgid "starter_txf_row"
+msgstr "台指期日線：收盤突破 20 日高點做多，跌破 10 日低點平倉"
+
+msgid "starter_txf_send"
+msgstr "台指期日線：收盤突破 20 日高點做多，跌破 10 日低點平倉。幫我建成策略，回測 2015 年至今。"
+
+# {y} = 回測起始年
+msgid "starter_since"
+msgstr "{y} 起"
+
+# 用戶拿得到的資料列(單一清單、對比版的免費欄);{name} = wd.r.<id>.an。只填不送
+msgid "wd.ask.build"
+msgstr "用{name}幫我建一支策略並回測"
+
+msgid "workspace_wel_or"
+msgstr "還沒想法？先跑一支現成的"
+
+# {n} = 策略庫總支數
+msgid "workspace_wel_more"
+msgstr "看策略庫全部 {n} 支 →"
+
+# 卡上的回測期間;{span} =「2020–2025」或單一年
+msgid "workspace_lib_bt_span"
+msgstr "回測 {span}"
+
+msgid "workspace_lib_detail"
+msgstr "看詳情"
+
+# 歡迎頁卡片的年化標籤(短;策略庫面板照舊用 lib.annLabel)
+msgid "wc.annLabel"
+msgstr "年化"
+
+# 額度用完預檢卡的第一句;{n} = 側欄的策略數,0 支不出。中文 1 跟 N 同一句
+msgid "acct.built1"
+msgstr "你已經建了 1 支策略。"
+
+msgid "acct.builtN"
+msgstr "你已經建了 {n} 支策略。"

@@ -813,6 +813,8 @@ async function startOAuth(lang, forBlaveAi) {
       client_id: CLIENT_ID, redirect_uri: redirectUri,
       code_challenge: challenge, code_challenge_method: "S256", state,
       device_label: os.hostname().replace(/\.local$/, "").slice(0, 64),
+      // 註冊來源(api clean_signup_source 只收 [A-Za-z0-9_]):授權頁要把它寫進 localStorage.blave_src,註冊頁才讀得到
+      src: "desktop_app",
     });
     const authUrl = `${WEB_BASE}/desktop/${lang || "zh"}/authorize?${q}`;
     // 開發時把網址印出來(challenge / state 本來就是公開值,verifier 不在裡面):

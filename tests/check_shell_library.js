@@ -138,6 +138,22 @@ if (!process.versions.electron) {
   const pubComm = S({ id: 130, title: "comm", is_official: false, verified: false, blave_data: "none" }), pubPaid = S({ id: 131, title: "paid", price: 500, blave_data: "none" });
   ok("① libAnonOk(§1.1b):官方 × 免費 × none 三個缺一不可;未標不算", P.libAnonOk(pubOff) && !P.libAnonOk(reqOff) && !P.libAnonOk(nullOff) && !P.libAnonOk(pubComm) && !P.libAnonOk(pubPaid)
     && !P.libAnonOk(Object.assign({}, pubOff, { is_official: "true" })) && !P.libAnonOk(null));
+  { // 歡迎頁三張卡 wcReco(spec-starters §1.6):候選 = 免費 × 官方 × 沒買過沒裝過;libVisible 順序;不能用 Blave 資料(沒登入時改免登入)的排前面;每市場先一支再補滿 3
+    const c1 = S({ id: 201, market: "crypto", blave_data: "none" }), c2 = S({ id: 202, market: "crypto", blave_data: "required" }), c3 = S({ id: 203, market: "crypto", blave_data: "required" });
+    const t1 = S({ id: 211, market: "txf", blave_data: "required" }), w1 = S({ id: 221, market: "twstock", verified: false, blave_data: "none" });
+    const junk = [S({ id: 231, market: "txf", price: 500, blave_data: "none" }), S({ id: 232, market: "usstock", is_official: false, verified: false, blave_data: "none" }), S({ id: 233, market: "usstock", purchased: true, blave_data: "none" }), S({ id: 234, market: "usstock", is_owner: true })];
+    const ids = (list, c) => P.wcReco(list, c).map((x) => x.id).join();
+    const all = [w1, t1, c2, c1, ...junk];
+    ok("① wcReco:有資料(included)→ 已驗證在前、一個市場一支;付費、社群、買過、自己的都不進",
+      ids(all, { dataAccess: "included", signedIn: true }) === "211,202,221" || ids(all, { dataAccess: "included", signedIn: true }) === "202,211,221", ids(all, { dataAccess: "included", signedIn: true }));
+    ok("① wcReco:不能用 Blave 資料(none / billed / null)→ 免資料的排最前;沒登入 → 免登入(libAnonOk)的排最前",
+      ["none", "billed", null].every((da) => ids(all, { dataAccess: da, signedIn: true }) === "201,221,211") && ids(all, { dataAccess: "included", signedIn: false }) === "201,221,211",
+      [ids(all, { dataAccess: "none", signedIn: true }), ids(all, { dataAccess: "included", signedIn: false })].join(" | "));
+    ok("① wcReco:不滿三個市場就照順序補滿 3;裝過的(installed 回呼)扣掉;空清單 / 壞輸入回空陣列",
+      ids([c1, c2, c3], { dataAccess: "included", signedIn: true }).split(",").length === 3 && ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }) === "221,211,202"
+      && P.wcReco([], {}).length === 0 && P.wcReco(null, {}).length === 0 && ids([c1], { dataAccess: "included", signedIn: true }) === "201",
+      ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }));
+  }
   ok("① libPickData(§8):none / required / 未標 → unknown", P.libPickData(pubOff) === "none" && P.libPickData(reqOff) === "required" && P.libPickData(nullOff) === "unknown" && P.libPickData({ blave_data: "x" }) === "unknown");
   const G = (c) => P.libGrouping(Object.assign({ env: "local", signedIn: true, dataAccess: "included", why: null }, c));
   ok("① libGrouping(§1.2):雲端 null > 沒登入 signedOut > 有卡(included / billed)null > none 照 why(壞值 unknown)> 登入但查不到 unknown",
@@ -394,8 +410,8 @@ if (!process.versions.electron) {
       && STR.zh["lib.note.back"] === "回到策略" && STR.en["lib.note.back"] === "Back to Strategy" && STR.zh["lib.note.err"] === "讀不到這篇筆記。" && STR.en["lib.note.err"] === "Couldn't load this note."); }
 
   // ── ③ 接線 ──
-  ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁多一顆 #chat-lib 是籤的第一顆(0.1.17 起起手籤 #chat-eg 退役,籤下面是資料清單 #wl);#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後(中間只許 export.js)、app.js 前",
-    html.indexOf('id="lib-nav"') > html.indexOf('id="tr-nav"') && html.indexOf('id="lib-nav"') < html.indexOf("</nav>") && html.indexOf('id="chat-lib"') < html.indexOf('id="wl"') && !html.includes('id="chat-eg"') && html.indexOf('id="chat-lib"') > html.indexOf('class="wc-chips"')
+  ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁的「看現成策略」#chat-lib 退役(0.1.26 起手句版:策略庫入口是三張卡＋看全部 #wc-more＋側欄),籤在三張卡 #wc-reco 之前;#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後(中間只許 export.js)、app.js 前",
+    html.indexOf('id="lib-nav"') > html.indexOf('id="tr-nav"') && html.indexOf('id="lib-nav"') < html.indexOf("</nav>") && !html.includes('id="chat-lib"') && !/chat-lib/.test(src) && !html.includes('id="chat-eg"') && html.indexOf('class="wc-chips"') < html.indexOf('id="wc-reco"')
     && html.indexOf('id="lib"') > html.indexOf('id="rp"') && html.indexOf('id="lib"') < html.indexOf('id="main-empty"') && /<link rel="stylesheet" href="library\.css">/.test(html) && /<script src="handoff\.js"><\/script>\s*(?:<script src="export\.js"><\/script>\s*)?<script src="library\.js"><\/script>\s*<script src="app\.js">/.test(html));
   { const i = html.indexOf('id="lib-mkt-menu"'), menu = html.slice(html.lastIndexOf("<div", i), html.indexOf("</div>", i)), btns = menu.match(/<button[^>]*>/g) || [];
     const trig = (html.match(/<button[^>]*id="lib-mkt-trig"[^>]*>/) || [""])[0];
@@ -423,8 +439,8 @@ if (!process.versions.electron) {
     /t\(typeof planMo === "function" && planMo\(\) \? "lib\.gate\.bindCard\.m" : "lib\.gate\.bindCard", \{ t: tDays \}\)/.test(src) && STR.zh["lib.gate.bindCard.m"] === "綁卡，免費試用 {t} 天資料" && STR.en["lib.gate.bindCard.m"] === "Add a Card, Start a {t}\u2011Day Free Trial"
     && ["lib.gate.bindCard", "lib.gate.bindCard.m"].every((k) => /\{t\}/.test(STR.zh[k]) && /\{t\}/.test(STR.en[k])));
   { const brSrc = read(path.join(R, "browser.js"));
-    ok("③ 找點子入口(spec-0.1.13 §1.4 / §5.1):歡迎頁 #chat-idea 是第二顆籤(看現成策略之後、新增策略之前)、預設 hidden;頁首說明句 #lib-desc 沒有 data-i18n(由 libPaintDesc 畫,換語言才不會洗掉文字鈕)",
-      html.indexOf('id="chat-idea"') > html.indexOf('id="chat-lib"') && html.indexOf('id="chat-idea"') < html.indexOf('id="chat-ns"') && /<button class="wc-chip" id="chat-idea" type="button" data-i18n="idea\.chip" hidden><\/button>/.test(html)
+    ok("③ 找點子入口(spec-0.1.13 §1.4 / §5.1):歡迎頁 #chat-idea 是第二顆籤(新增策略之後;mockup C)、預設 hidden;頁首說明句 #lib-desc 沒有 data-i18n(由 libPaintDesc 畫,換語言才不會洗掉文字鈕)",
+      html.indexOf('id="chat-idea"') > html.indexOf('id="chat-ns"') && html.indexOf('id="chat-idea"') < html.indexOf('id="wl-fold"') && /<button class="wc-chip" id="chat-idea" type="button" data-i18n="idea\.chip" hidden><\/button>/.test(html)
       && /<p class="lib-desc" id="lib-desc"><\/p>/.test(html) && !/data-i18n="lib\.desc"/.test(html));
     ok("③ 四個入口共用 libIdeaNow;開關在開機、libOpen、回前景、設定裡切內建瀏覽器時重問(libIdeaSync),切視角 / 帳號狀態變了重畫(libIdeaPaint),換引擎(enterWorkspace)重問",
       /\n  libIdeaSync\(\);\n/.test(src.slice(src.indexOf("(function libWire()"))) && /envShowMain\(\);\n\s*libIdeaSync\(\);/.test(cutFn(src, "libOpen")) && /libIdeaPaint\(\);/.test(cutFn(src, "libShowMain"))
@@ -444,7 +460,7 @@ if (!process.versions.electron) {
   ok("③ 開別的視圖就 libLeave:trOpen(那一邊)、stratSelect(本機,選了才)、rpCloudSelect(雲端,選了才)", /if \(typeof libLeave === "function"\) libLeave\(S\.env\);/.test(cutFn(trSrc, "trOpen"))
     && /if \(name && typeof libLeave === "function"\) libLeave\("local"\);/.test(cutFn(appSrc, "stratSelect")) && /if \(name && typeof libLeave === "function"\) libLeave\("cloud"\);/.test(cutFn(appSrc, "rpCloudSelect")));
   ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3
-    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
+    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ (?:if \(typeof stTurnEnd === "function"\) stTurnEnd\(\); )?if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
   ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略也不寫(lib.note.paid 連字串一起拿掉,扣款去向只在購買框 lib.buy.lead)", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); if \(c\.pub\) note\.textContent = t\("lib\.pub"\); break;/.test(src)
     && !/lib\.note\.paid|paidNote/.test(src) && !("lib.note.paid" in STR.zh) && !("lib.note.paid" in STR.en) && /case "paid": [^\n]*libBuyBox\(s, "confirm", b, \{\}\)\)\); break;/.test(src) && /case "buying": row\.appendChild\(dis\(t\("lib\.buy\.busy"\)\)\); break;/.test(src));
@@ -600,6 +616,8 @@ const __fixed = {
   // 報告:report 是物件就回它、"throw" 就丟例外(打不到)、函式就依 id 決定;主行程失敗回 null
   libraryReport: async (id, lang) => { window.__lib.reportCalls.push([id, lang]); const r = window.__lib.report; if (r === "throw") throw new Error("x"); return typeof r === "function" ? r(id) : r; },
   openExternal: async (u) => { window.__lib.opened = u; return true; },
+  // 登入:只記次數、當成用戶在瀏覽器按了取消(狀態留在未登入,後面幾格照沒登入畫)
+  startOAuth: async () => { window.__lib.oauth = (window.__lib.oauth || 0) + 1; throw new Error("OAUTH_CANCELLED"); },
 };
 window.blave = new Proxy(__fixed, { get: (o, k) => (k in o ? o[k] : typeof k !== "string" ? undefined : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {} : async () => undefined) });`;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -708,9 +726,9 @@ app.whenReady().then(async () => {
   // 閘門態
   const cta = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0], qb = q("#lib-cta .btn-quiet"); return { btn: b ? b.textContent : null, dis: b ? b.disabled : null, quiet: qb.map((x) => x.textContent).join("|"), note: q("#lib-cta .note")[0].textContent, up: q("#lib-cta .note")[0].classList.contains("up"), err: q("#lib-cta .err").map((x) => x.textContent).join() }; })()`);
   await js(`hasToken = false; libSync();`); r = await cta();
-  ok("④ 未登入(0.1.6 §3.2 末):主鈕「登入 Blave」、閘門句升一階、沒有文字鈕", r.btn === (await T("cn.blave.btn")) && r.dis === false && r.up && r.quiet === "" && r.note === (await T("lib.gate.signedOut")), JSON.stringify(r));
-  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 60)); const out = { set: !document.getElementById("set-scrim").hidden, cat: (document.querySelector('.set-cat[aria-current="true"]') || { dataset: {} }).dataset.setCat }; setClose(); return out; })()`);
-  ok("④ 「登入 Blave」→ 設定 › 帳號與方案", r.set && r.cat === "plan", JSON.stringify(r));
+  ok("④ 未登入:主鈕「登入 Blave」、鈕下不再補句(Wei 10-17)、沒有文字鈕", r.btn === (await T("cn.blave.btn")) && r.dis === false && r.quiet === "" && r.note === "", JSON.stringify(r));
+  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; const n0 = window.__lib.oauth || 0; q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 60)); const out = { set: !document.getElementById("set-scrim").hidden, oauth: (window.__lib.oauth || 0) - n0, opened: window.__lib.opened, btn: (q("#lib-cta .btn-fill")[0] || {}).textContent }; if (out.set) setClose(); return out; })()`);
+  ok("④ 「登入 Blave」→ 直接開瀏覽器登入(startOAuth 一次),不開設定 › 帳號與方案;取消回來鈕字還原", !r.set && r.oauth === 1 && r.opened === undefined && r.btn === (await T("cn.blave.btn")), JSON.stringify(r));
   // 付不出資料費(0.1.6 §3.2):主鈕照 why 分流、鈕下說明升一階;試用天數來自 planVars().t(acct.trial_days),不寫死
   await js(`hasToken = true; LIB.data.dataAccess = "none"; LIB.data.why = "no_card"; acct = { trial_eligible: true, trial_days: 14 }; libSync();`); r = await cta();
   ok("④ no_card 有試用(#101 未標資料需求):主鈕「綁卡，送 14 天資料」、說明只有第一句 lib.need.unknown(no_card 不接第二句,鈕字已講);沒有文字鈕", r.btn === (await T("lib.gate.bindCard", { t: 14 })) && r.dis === false && r.up && r.quiet === "" && r.note === (await T("lib.need.unknown")), JSON.stringify(r));
@@ -912,9 +930,9 @@ app.whenReady().then(async () => {
   r = await js(`(async () => { await trOpen("over"); const a = { lib: document.getElementById("lib").hidden, tr: document.getElementById("tr").hidden, cur: document.getElementById("lib-nav").getAttribute("aria-current"), open: libBag().open };
     await libOpen(); const b = { lib: document.getElementById("lib").hidden, tr: document.getElementById("tr").hidden, trOpen: TR_BAGS.local.open }; return { a, b }; })()`);
   ok("④ 互斥:開自動下單 → 策略庫收(入口 aria-current 拿掉);再開策略庫 → 自動下單收", r.a.lib && !r.a.tr && r.a.cur === null && r.a.open === false && !r.b.lib && r.b.tr && r.b.trOpen === false, JSON.stringify(r));
-  r = await js(`(() => { document.getElementById("chat-lib").click(); return { sent: window.__lib.sent.length, opened: window.__lib.opened, tools: [...document.querySelectorAll("#lib-head-list .lib-tools > *")].map((x) => x.id || x.className).join() }; })()`);
+  r = await js(`(() => { document.getElementById("wc-more").click(); return { sent: window.__lib.sent.length, opened: window.__lib.opened, tools: [...document.querySelectorAll("#lib-head-list .lib-tools > *")].map((x) => x.id || x.className).join() }; })()`);
   await wait(30);
-  ok("④ 歡迎頁 chip 只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場選單", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-mkt", JSON.stringify(r));
+  ok("④ 歡迎頁「看策略庫全部」只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場選單", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-mkt", JSON.stringify(r));
 
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
   app.exit(red ? 1 : 0);

@@ -5,24 +5,77 @@
    市場分段沿用 .lib-seg(Outlined control segment);小標同 .sug-cap(13/600 --ink-3);文字鈕沿用 .btn-quiet。
    兩欄 vs 上下疊看中欄寬、不看視窗寬:.main-empty 是容器,內容寬 ≥ 760 才並排(700 時每欄 344、列內可用 294,最長的英文列要 314 會折行——設計稽核);免費欄永遠在前(窄時在上)。 */
 .main-empty { container-type: inline-size; }
-/* 清單在籤下面之後,內容高度隨市場／模式變,垂直置中會跳:改上對齊、頂部留 32(不用 min-height 鎖高) */
-.wc-inner { width: 100%; max-width: 780px; }
-.wc-inner:has(.wl) { margin: 0 0 auto; padding-top: var(--space-32); }
-.wc-inner:has(.wl) { align-items: stretch; }
-/* 記號與標題並排一行:記號在左、標題在右,隔 12,整行貼左軸 */
-.wc-inner:has(.wl) .wc-head { display: flex; align-items: center; gap: var(--space-12); }
-/* logo 尺寸／顏色:只改 width 與 color 這兩行的值。
-   圖形只佔 viewBox 下面 3/4(最高點在 y=45/180),上面那 1/4 是空的:用負 margin 切掉,垂直置中的才是圖形本身、對到標題那行字的中線。
-   改寬度時 margin-top 跟著改成寬的 1/4 */
-.wc-inner:has(.wl) .wc-mark {
+/* 0.1.26 起手句版(spec-starters §1.2;mockup C):內容最寬 760、上對齊、頂部留 32(視窗上面已經有 52 的標題帶)。不用 min-height 鎖高 */
+.wc-inner { width: 100%; max-width: 760px; margin: 0 0 auto; padding-top: var(--space-32); align-items: stretch; }
+/* 記號與標題並排一行、上緣對齊:圖形只佔 viewBox 下面 3/4,寬 32 時看得到的 24 從 y=8 起,上移 6 讓它的中線對到第一行字的中線(28/2)。
+   標題折兩行時從逗號斷(text-wrap: balance) */
+.wc-head { display: flex; align-items: flex-start; gap: var(--space-12); }
+.wc-mark {
   width: var(--space-32);
   color: var(--ink);
-  margin-top: calc(-1 * var(--space-8));
+  margin-top: calc(-1 * var(--space-6));
 }
-.wc-h { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }   /* = trade.css .cv-open h4 */
-.wc-inner:has(.wl) .wc-chips { margin-top: var(--space-16); justify-content: flex-start; }   /* Wei 10-12:標題與起手鈕拉開一階 */
-.wl { width: 100%; margin-top: var(--space-32); }
-.wl-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8) var(--space-16); flex-wrap: wrap; padding: 0; }
+.wc-h { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); text-wrap: balance; word-break: auto-phrase; }   /* = trade.css .cv-open h4 */
+/* 起手句(§1.4):照「建議下一步」的列(suggest.css .sug-item)多兩格,市場 tag 與起始年。subgrid 讓三列的 tag 欄等寬,
+   欄寬跟著這個語言最長的 tag(不寫死寬度)。左右 -12 抵掉列的內距,字的左緣對齊標題 */
+.st-rows { margin: var(--space-12) calc(-1 * var(--space-12)) 0; display: grid; grid-template-columns: auto max-content minmax(0, 1fr) auto; }
+.st-row {
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: var(--space-12); align-items: baseline;
+  min-height: 36px; padding: var(--space-8) var(--space-12); border-radius: var(--radius-sm);
+  font-size: 13px; line-height: 1.6; color: var(--ink-2); text-align: left;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+/* Mini tag(同 library.css .lib .tag 的配方;win32 字重 400 那條在 app.css):起手句的市場 tag */
+.main-empty .tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; background: var(--tag-neutral-bg); color: var(--tag-neutral-text); }
+.st-row .g { color: var(--ink-3); }
+.st-row .tag { justify-self: start; align-self: start; margin-top: var(--space-2); }   /* 欄等寬、tag 本身靠左照字寬(spec §9) */
+.st-row .txt { min-width: 0; overflow-wrap: anywhere; }
+.st-row .since { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* hover 底色照策略庫列(library.css .lib-row:hover):--surface-muted 跟市場 tag 同色,tag 會不見(spec §10-1)。
+   列裡的灰字一起提亮(canon);disabled 沒有 hover、字取 --ink-3、不用 opacity */
+.st-row:hover:not(:disabled) { background: var(--surface-card); color: var(--ink); }
+.st-row:hover:not(:disabled) .g { color: var(--ink); }
+.st-row:hover:not(:disabled) .since { color: var(--ink-2); }
+.st-row:disabled { cursor: not-allowed; color: var(--ink-3); }
+.st-row:focus-visible { outline-offset: -2px; }
+/* 窄(容器 < 480;1024 視窗的中欄約 336):tag 欄拿掉(句子本身講了市場),起始年移到句子下一行 */
+@container (max-width: 479px) {
+  .st-rows { grid-template-columns: auto minmax(0, 1fr); }
+  .st-row .tag { display: none; }
+  .st-row .since { grid-column: 2; }
+}
+.wc-chips { margin-top: var(--space-16); justify-content: flex-start; }
+/* 「可以回測的資料」:disclosure 文字鈕。箭頭共用 .mp-chev(canon Dropdown › Trigger + caret 的安靜觸發器版;同策略頁「策略邏輯」.lg-tog):
+   收起朝下、展開翻上;翻轉只綁 aria-expanded。字到箭頭 6、垂直置中靠 inline-flex(Wei:› 沒對齊字的中線、方向也不對) */
+.wl-fold { align-self: flex-start; margin-top: var(--space-8); padding: 0; display: inline-flex; align-items: center; gap: var(--space-6); min-height: 44px; font-size: 13px; color: var(--ink-2); transition: color var(--motion-fast) var(--ease-standard); }
+.wl-fold:hover { color: var(--ink); }
+.wl-fold[aria-expanded="true"] .mp-chev { transform: rotate(-135deg); margin-bottom: -2px; }
+/* 還沒想法？＋三張卡(長相照網頁 .lib-card:--surface-card、--radius-lg、無框無陰影;內距 12、三格欄距 8 照 spec §10-5);容器 ≥ 640 三欄 */
+.wel-or { margin: var(--space-32) 0 var(--space-16); display: flex; align-items: center; gap: var(--space-12); font-size: 12px; color: var(--ink-3); }
+.wel-or::before, .wel-or::after { content: ""; flex: 1; height: 1px; background: var(--border-hairline); }
+.wc-cards { display: grid; grid-template-columns: 1fr; gap: var(--space-12); }
+@container (min-width: 640px) { .wc-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.wc-card { display: flex; flex-direction: column; gap: var(--space-8); min-width: 0; padding: var(--space-12); border-radius: var(--radius-lg); background: var(--surface-card); }
+.wc-card.is-skel { min-height: 180px; }
+/* 標題最多兩行;市場行可以折行、不截(回測年份是決定要不要用的資訊;spec §10-3) */
+.wc-card-h { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-8); min-width: 0; }
+.wc-card-h .t { min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wc-card-m { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+.wc-card-m .nw { white-space: nowrap; }   /* 「回測 2014–2026」要換就整段一起換(spec §10-5) */
+.wc-curve { height: 48px; }
+.wc-curve.is-empty { display: none; }
+/* 三格數字排在同一行(spec §10-3):標籤在上一排、數字在下一排,欄寬照內容;卡太窄時只讓標籤折行(1440 en 卡內 189 放不下三個單行標籤) */
+.wc-stats { display: grid; grid-template-columns: repeat(3, auto); grid-template-rows: auto auto; grid-auto-flow: column; justify-content: start; gap: var(--space-2) var(--space-8); }
+.wc-stat { display: contents; }
+.wc-stat .k { align-self: start; font-size: 11px; color: var(--ink-3); }   /* 標籤列靠上對齊(spec §10-4) */
+.wc-stat .v { font-size: 14px; color: var(--ink); white-space: nowrap; }
+.wc-stat .v.up { color: var(--color-greenText); }
+.wc-stat .v.down { color: var(--color-redText); }
+.wc-card-a { margin-top: auto; padding-top: var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+.wel-more { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin-top: var(--space-4); color: var(--ink-2); }
+.wel-more:hover { color: var(--ink); }
+.wl { width: 100%; margin-top: var(--space-4); }
+.wl-top { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-8) var(--space-16); flex-wrap: wrap; padding: 0; }
 .wl-cap { font-size: 13px; font-weight: 600; color: var(--ink-3); }
 .wl-state { margin: 0; padding: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .wl-state:empty { display: none; }
@@ -66,4 +119,4 @@
   .wl-body.cmp2 .wl-col:first-child > * { grid-column: 1; }
   .wl-body.cmp2 .wl-col:last-child > * { grid-column: 2; }
 }
-@media (prefers-reduced-motion: reduce) { .wd-row, .wd-row::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .wd-row, .wd-row::after, .st-row, .wl-fold, .wl-fold .mp-chev { transition: none; } }

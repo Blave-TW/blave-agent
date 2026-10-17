@@ -3,6 +3,7 @@
 //   2. 用戶往上捲之後:計時器每秒更新、當下動作子列換字、狀態列換字、新 chunk 都不動 scrollTop
 //   3. 自己捲回底部、或送出新訊息(scrollChat(true))才恢復跟著捲
 //   4. 程式捲到底的 scroll 事件晚到、那時內容又長高了:不算用戶往上捲
+//   5. 往上捲一點點也放開(稽核 M1):同一個 frame「chunk 捲到底＋用戶上捲」、觸控板每次只捲幾 px、滾輪往上;開較短的舊對話後內容晚長高不誤放開
 // 純 node:切 app.js 原文跑在假 DOM、假時鐘上(不起 Electron)。跑法:node tests/check_shell_chat_stick.js
 const fs = require("fs"), path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
@@ -71,9 +72,45 @@ grow(50); M.scrollChat(); grow(200); box.flush();
 M.scrollChat(); box.flush();
 ok("程式捲到底的事件晚到、內容已長高:照舊黏底", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
 
-// 離底 40px 內往上捲一點點:照舊黏底
-userScrollTo(bottom() - 30); grow(80); M.scrollChat(); box.flush();
-ok("離底 30px(40px 內):照舊跟著捲", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+// 離底 40px 內往上捲一點點:也放開(觸控板慢慢捲時每次都在 40px 內,照舊黏底的話永遠逃不掉;稽核 M1)
+{ userScrollTo(bottom() - 30); const t0 = box.scrollTop; grow(80); M.scrollChat(); box.flush();
+  ok("離底 30px(往上捲,40px 內):放開、不再跟著捲", box.scrollTop === t0, [box.scrollTop, t0, bottom()]); }
+userScrollTo(bottom() - 20); grow(30); M.scrollChat(); box.flush();
+ok("往下捲回離底 40px 內:恢復跟著捲", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+// 稽核 M1 模擬 A:串流中同一個 frame「chunk 捲到底＋用戶往上捲 50px」,scroll 事件下一個 frame 才到
+M.scrollChat(true); box.flush();
+grow(100); M.scrollChat(); box.scrollTop = box.scrollTop - 50; box.flush();
+{ const t0 = box.scrollTop; grow(20); M.scrollChat(); box.flush();
+  ok("同一個 frame 內 chunk 捲底＋用戶上捲 50px:之後的 chunk 不再拉回底部", box.scrollTop === t0 && bottom() - box.scrollTop > 40, [box.scrollTop, t0, bottom()]); }
+// 模擬 A2:觸控板慢捲,每 frame 上捲 8px、每 2 frame 一個 chunk
+M.scrollChat(true); box.flush();
+for (let i = 0; i < 30; i++) { box.scrollTop = box.scrollTop - 8; box.flush(); if (i % 2) { grow(5); M.scrollChat(); box.flush(); } }
+ok("觸控板慢捲(30 frame × 8px、中間夾 chunk):逃得掉,離底 > 200px", bottom() - box.scrollTop > 200, bottom() - box.scrollTop);
+// 滾輪往上:事件一到就放開(scroll 還沒變也一樣)
+M.scrollChat(true); box.flush();
+(box._on.wheel || []).forEach((f) => f({ type: "wheel", deltaY: -3 })); grow(50); M.scrollChat(); box.flush();
+ok("滾輪往上:不等 scroll 事件就放開", bottom() - box.scrollTop === 50, bottom() - box.scrollTop);
+M.scrollChat(true); box.flush();
+(box._on.wheel || []).forEach((f) => f({ type: "wheel", deltaY: 3 })); grow(50); M.scrollChat(); box.flush();
+ok("滾輪往下:不放開", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+// 稽核 r2 S1:回覆還短、聊天欄還不能捲(scrollTop 0)時滾輪往上 / 按 ↑:不放開,之後內容長過一屏照樣跟著捲
+{ box.scrollHeight = 300; box.scrollTop = 0; box.flush(); M.scrollChat(true); box.flush();
+  (box._on.wheel || []).forEach((f) => f({ type: "wheel", deltaY: -3 })); (box._on.keydown || []).forEach((f) => f({ type: "keydown", key: "ArrowUp" }));
+  grow(600); M.scrollChat(); box.flush();
+  ok("還不能捲時滾輪往上、按 ↑:不放開,內容長過一屏照樣跟著捲", box.scrollTop === bottom() && bottom() > 0, [box.scrollTop, bottom()]);
+  ok("wheel listener 是 passive(不擋捲動)、兩條都要 scrollTop > 0 才放開", /addEventListener\("wheel", \(e\) => \{ if \(e\.deltaY < 0 && \$\("chat-scroll"\)\.scrollTop > 0\) chatStick = false; \}, \{ passive: true \}\);/.test(src)
+    && /"Home"\) && \$\("chat-scroll"\)\.scrollTop > 0\) chatStick = false;/.test(src)); }
+// 模擬 B:上一條對話很長 → 清空(chatTop 歸零)→ 開較短的舊對話,強制捲底後圖片／字型晚到長高 >40 才收到 scroll 事件
+M.scrollChat(true); box.flush(); grow(5000); M.scrollChat(); box.flush();
+box.scrollHeight = 400; box.scrollTop = box.scrollTop; box.flush();
+box.scrollHeight = 2000; M.scrollChat(true); grow(120); box.flush();
+grow(300); M.scrollChat(); box.flush();
+ok("開較短的舊對話後內容晚長高:不誤放開,之後 img load 照樣跟著捲", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+ok("程式捲完同步 chatTop、清空對話時 chatTop 歸零;滾輪與往上的按鍵放開", /box\.scrollTop = box\.scrollHeight; chatTop = box\.scrollTop;/.test(src)
+  && /chatStick = true; chatTop = 0;/.test(src.slice(src.indexOf("function csClearChat("), src.indexOf("function csClearChat(") + 1500)) && /addEventListener\("wheel", \(e\) => \{ if \(e\.deltaY < 0 && \$\("chat-scroll"\)\.scrollTop > 0\) chatStick = false; \}/.test(src));
+// 內容變短(建議列收掉、泡泡收回)被瀏覽器夾回底部:照舊黏著
+M.scrollChat(true); box.flush(); box.scrollHeight -= 60; box.scrollTop = box.scrollTop; box.flush(); grow(40); M.scrollChat(); box.flush();
+ok("內容變短被夾回底部:照舊跟著捲", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
 
 // 2. 回合進行中,用戶往上捲
 env.now = 0; M.busyStart(); box.flush();
@@ -116,6 +153,12 @@ grow(70); M.faultCard().set({ text: "turn.engineFailed" }); box.flush();
 ok("往上捲後錯誤卡進來:拉到底", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
 grow(60); M.scrollChat(); box.flush();
 ok("…之後恢復跟著捲", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+// 同一張錯誤卡用一模一樣的內容重畫(回前景、每 5 秒重查;稽核 S1):不再拉到底;內容變了才拉
+{ const card = M.faultCard(); card.set({ text: "fault.noCredit", label: "fault.noCreditBtn" }); box.flush();
+  userScrollTo(40); grow(30); card.set({ text: "fault.noCredit", label: "fault.noCreditBtn" }); box.flush();
+  ok("錯誤卡同內容重畫:不拉回底部", box.scrollTop === 40, box.scrollTop);
+  card.set({ text: "fault.needCard", label: "acct.addCard" }); box.flush();
+  ok("錯誤卡內容變了:拉到底", box.scrollTop === bottom(), [box.scrollTop, bottom()]); }
 ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走強制捲",
   /else \{ addMsg\("sys", line\); scrollChat\(true\); \}/.test(src) && /if \(exitLine\) addMsg\("sys", exitLine\); if \(pendingErr\.length \|\| exitLine\) scrollChat\(true\);/.test(src));
 
