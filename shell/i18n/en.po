@@ -2270,8 +2270,8 @@ msgstr "Equity curve, {a} to {b}, {n} records"
 msgid "tr.ov.evResume"
 msgstr "Trading resumed"
 
-msgid "tr.ov.evResumeNote"
-msgstr "orders resumed"
+msgid "tr.ov.evStart"
+msgstr "Trading started"
 
 msgid "tr.ov.evConnected"
 msgstr "Connected {venue}"

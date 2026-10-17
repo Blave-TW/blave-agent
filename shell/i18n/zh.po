@@ -2280,8 +2280,8 @@ msgstr "權益曲線，{a} 到 {b}，{n} 筆"
 msgid "tr.ov.evResume"
 msgstr "已恢復下單"
 
-msgid "tr.ov.evResumeNote"
-msgstr "恢復下單"
+msgid "tr.ov.evStart"
+msgstr "已啟動下單"
 
 msgid "tr.ov.evConnected"
 msgstr "已連接 {venue}"

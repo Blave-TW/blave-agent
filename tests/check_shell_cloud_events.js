@@ -51,7 +51,7 @@ ok("其他型別不受影響(機器事件照舊)", trEventText("exchange_recover
   ok("renderer 不出現中文字面(map 裡放的是 key,不是句子)", !/[一-鿿]/.test(cut("const TR_DT_ACTION = {", "function trEventText(").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""))); }
 
 // ui 那一段(會碰 DOM,只驗寫法)
-{ const loop = cut("const ui = Array.isArray(TR.ov.ui)", "// 目前的 HALT");
+{ const loop = cut("const ui = (Array.isArray(TR.ov.ui)", "// 目前的 HALT");
   ok("ui:平台格式的欄位包在 data 裡,這台電腦那一份在最外層——兩邊同一支迴圈", /const d = ev\.data && typeof ev\.data === "object" \? ev\.data : ev;/.test(loop) && /String\(d\.venue \|\| ""\)/.test(loop));
   ok("ui:認不得的型別交給 trEventText(雲端才有的 desktop_action / 交易所連不上…),還是認不得就不畫", /else \{ const txt = trEventText\(ev\.type, d\); if \(txt\) \{ head = txt\[0\]; note = txt\[1\]; \} \}/.test(loop) && /if \(!head\) return;/.test(loop));
   ok("ui:halt 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);沒有 source = 人按的", /d\.source === "reconciler" \|\| d\.source === "portfolio" \? "tr\.ov\.evHaltAuto" : "tr\.ov\.evHalt"/.test(loop));

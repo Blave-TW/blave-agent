@@ -2234,6 +2234,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
         ok("§1.4 文案兩語:成交 {n} 筆 · / {n} fills · / {n} fill ·;連結字的名詞 = 分頁標籤(交易歷史 / Order History)", S.includes('"tr.ov.evFills": "成交 {n} 筆 ·"') && S.includes('"tr.ov.evFillsOne": "成交 {n} 筆 ·"')
           && S.includes('"tr.ov.evFills": "{n} fills ·"') && S.includes('"tr.ov.evFillsOne": "{n} fill ·"') && S.includes('"tr.ov.evFillsLink": "看交易歷史"') && S.includes('"tr.ov.evFillsLink": "View order history"')); } }
+    { const paintUi = (ui) => { ctx.TR = { st: { report: {} }, list: [], ov: { days: 7, ui, uiErr: false } }; return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((n) => n.className === "ev-row").map((r) => r.textContent); };
+      const d0 = Math.floor(Date.now() / 1000), first = paintUi([{ ts: d0 - 60, type: "resume" }]);
+      const again = paintUi([{ ts: d0 - 30, type: "resume_wait" }, { ts: d0 - 120, type: "halt" }, { ts: d0 - 200, type: "resume" }]);
+      const n = (rows, re) => rows.filter((x) => re.test(x)).length;
+      ok("稽核 0127b1 P1-6:第一次啟動寫「已啟動下單」、暫停之後的才寫「已恢復下單」(先照時間排);兩種都不帶說明(不再「已恢復下單 — 恢復下單」)",
+        first.length === 1 && n(first, /tr\.ov\.evStart/) === 1 && n(again, /tr\.ov\.evResume/) === 1 && n(again, /tr\.ov\.evStart/) === 1 && ![...first, ...again].some((x) => /tr\.ov\.ev(Start|Resume).*—/.test(x)), J([first, again])); }
     { const one = { ...CAP, ts: now - 30, signed_diff: -1 }, all = paintHist([CAP, CAP_SPEC, BTC, one]), syms = all.filter((n) => n.tag === "span" && (n.className === "mono" || n.className === "") && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
       ok("spec-0.1.13 #14 下單紀錄:群益單「大台（TX2610）」;只有別名的口數單(TMF)只寫商品名;加密單照舊代號;台指期小標寫期貨不寫合約",
         syms.includes("tr.txfProd.txf（TX2610）tr.mkt.fut") && syms.includes("tr.txfProd.tmftr.mkt.fut") && syms.includes("BTCUSDTtr.mkt.swap"), J(syms));

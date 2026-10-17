@@ -4390,15 +4390,18 @@ function trOvEvents(r, z) {
   /* 這台電腦:從這個 app 的畫面做的動作(宿主在指令 ack 成功時記的;聊天裡做的不會有)。
      雲端:平台的事件流(/cloud/events),欄位包在 data 裡、型別也多得多——認不得的型別不畫(沒有文案就是一行代號)。
      有了它,「已暫停下單」那一列在恢復之後不會消失,也才有「已恢復下單 / 已連接 / 已解除」。 */
-  const ui = Array.isArray(TR.ov.ui) ? TR.ov.ui : [], uiHalts = [];
+  // 照時間排:「啟動」還是「恢復」看前一筆暫停／啟動是哪一個(稽核 0127b1 P1-6)
+  const ui = (Array.isArray(TR.ov.ui) ? TR.ov.ui : []).slice().sort((a, b) => ((a && a.ts) || 0) - ((b && b.ts) || 0)), uiHalts = [];
+  let lastRun = null;
   ui.forEach((ev) => {
     if (!ev || typeof ev.ts !== "number" || typeof ev.type !== "string") return;
     const d = ev.data && typeof ev.data === "object" ? ev.data : ev;   // 平台格式的欄位在 data;這台電腦那一份直接放最外層
     const venue = trVenueLabel(String(d.venue || ""), true);
     let head = null, note = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
-    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); }
-    else if (ev.type === "resume" || ev.type === "resume_wait") { head = t("tr.ov.evResume"); note = t("tr.ov.evResumeNote"); }
+    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
+    else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = t("tr.ov.evConnected", { venue });
     else if (ev.type === "venue_disconnected" && venue) head = t("tr.ov.evDisconnected", { venue });
     else { const txt = trEventText(ev.type, d); if (txt) { head = txt[0]; note = txt[1]; } }   // 雲端才有的型別(desktop_action、交易所連不上…)
