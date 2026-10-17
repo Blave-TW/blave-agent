@@ -70,16 +70,17 @@ function busyView() {
   $("ta").focus();
 }
 // 「停止中…」與逾時句的槽:掛在不會被重畫的容器上——設定開著在設定標題列下方,關著在聊天標題列下方(聊天欄收著先展開)。
-// 每次寫都重新取一次(設定裡那幾頁會整頁重畫,按的那顆鈕旁邊的節點會被拆掉)
-function busyCutSlot() {
+// 每次寫都重新取一次(設定裡那幾頁會整頁重畫,按的那顆鈕旁邊的節點會被拆掉)。
+// expand:用戶剛按下確認才展開聊天欄;20 秒後的逾時句不動版面(用戶可能已經在做別的事)
+function busyCutSlot(expand) {
   const sc = $("set-scrim"), inSet = sc && !sc.hidden;
-  if (!inSet && typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
+  if (expand && !inSet && typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
   return busySlot("busy-cut-why", inSet ? $("set-modal").querySelector(".modal-head") : $("cs-head"));
 }
 function busyStopThen(fn) {
   if (!busyOn()) { fn(); return; }
   if (BUSY_PENDING) clearTimeout(BUSY_PENDING.timer);
-  const slot = busyCutSlot();
+  const slot = busyCutSlot(true);
   slot.textContent = t("busy.stopping"); slot.hidden = false; slot.dataset.busy = "1";
   const p = BUSY_PENDING = { fn, timer: setTimeout(() => busyStopTimeout(p), BUSY_STOP_WAIT_MS) };
   stopTurn();
@@ -87,7 +88,7 @@ function busyStopThen(fn) {
 function busyStopTimeout(p) {
   if (BUSY_PENDING !== p) return;
   BUSY_PENDING = null;
-  const slot = busyCutSlot();
+  const slot = busyCutSlot(false);
   slot.textContent = "";
   const s = document.createElement("span"); s.textContent = t("busy.stopFail"); slot.appendChild(s);
   busyFixLink(slot, "stop"); slot.hidden = false; slot.dataset.busy = "1";

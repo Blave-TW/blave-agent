@@ -242,8 +242,20 @@ app.whenReady().then(async () => {
     const b = window.__box.querySelector(".rob-empty button.btn-fill"), p = window.__box.querySelector(".rob-empty .rob-empty-txt"); return { has: !!b, dis: b && window.__lk(b), txt: b && b.textContent, line: p && p.textContent, before: p && p.nextElementSibling === b, cap: !!window.__box.querySelector(".rob-cap"), heat: !!window.__box.querySelector(".rob-tbl") }; })()`);
   ok("② 沒有 scan:空狀態 = 一句「還沒掃過參數。」+ 一顆「開始掃描」填色鈕(句在鈕前)、可按、沒有熱圖", r.has && !r.dis && r.txt === (await js(`t("rob.btnScan")`)) && r.line === (await js(`t("rob.empty")`)) && r.before && !r.cap && !r.heat);
   r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true);
-    const b = window.__box.querySelector(".rob-empty button.btn-fill"); return { dis: window.__lk(b), txt: b.textContent, cap: (window.__box.querySelector(".rob-cap") || {}).textContent }; })()`);
-  ok("② 回合進行中:鈕鎖住(aria-disabled)+ 一行常駐原因;文字仍是「開始掃描」", r.dis && r.txt === (await js(`t("rob.btnScan")`)) && r.cap === (await js(`t("rob.busy")`)));
+    const b = window.__box.querySelector(".rob-empty button.btn-fill"); return { dis: window.__lk(b), native: b.disabled, aria: b.getAttribute("aria-disabled"), txt: b.textContent, cap: (window.__box.querySelector(".rob-cap") || {}).textContent }; })()`);
+  ok("② 回合進行中:鈕鎖住(aria-disabled,不是原生 disabled:鍵盤停得上去)+ 一行常駐原因;文字仍是「開始掃描」", r.dis && !r.native && r.aria === "true" && r.txt === (await js(`t("rob.btnScan")`)) && r.cap === (await js(`t("rob.busy")`)));
+  // 〔停止〕:同 app.js rpRobOpts 交真的 busyFixLink;回合中實點 → 真的 stopTurn 走下去(轉成停止中)、記 lock_fix;點被鎖的鈕本身不送
+  r = await js(`(() => { const tr = []; const tf = window.trackFeature; window.trackFeature = (n) => tr.push(n);
+    running = true; turnStopping = false; window.__calls = [];
+    window.BlaveReport.renderRobust(window.__box, { stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, { ...window.__opts(true), busyFix: (el) => busyFixLink(el, "stop") });
+    const b = window.__box.querySelector(".rob-empty button.btn-fill"); b.click();
+    const cap = window.__box.querySelector(".rob-cap"), fix = cap && cap.querySelector("button.busy-fix");
+    const o = { sent: window.__calls.length, txt: cap && cap.textContent, role: cap && cap.getAttribute("role"), fix: fix && fix.textContent };
+    if (fix) fix.click();
+    o.stopping = turnStopping; o.tr = tr.slice(); running = false; window.trackFeature = tf; return o; })()`);
+  ok("② 〔停止〕實點:原因句「…送出。 停止」、role=status;點被鎖的鈕不送;點〔停止〕→ 回合轉停止中、記 lock_fix",
+    r.sent === 0 && r.txt === (await js(`t("rob.busy") + " " + t("busy.fix.stop")`)) && r.role === "status" && r.fix === (await js(`t("busy.fix.stop")`)) && r.stopping === true && r.tr.includes("lock_fix"), JSON.stringify(r));
+  await wait(50); await js(`turnStopping = false; turnStopped = false; 0`);
   r = await js(`(async () => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, false);
     const b0 = window.__box.querySelector(".rob-empty button"); b0.focus(); b0.click();
     window.__turn = 7; window.__sync(true);   // 送出 → app 那邊回合開始:busy + 新序號(promise 還沒回來)

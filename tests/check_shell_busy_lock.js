@@ -174,8 +174,8 @@ ok("③ 回合結束(busySync):所有原因句收掉,借用的原因行(#rp-ho-n
   inSet.parentNode.kids = inSet.parentNode.kids.filter((x) => x !== inSet); inSet.parentNode = null;
   $("set-scrim").hidden = true; env.paneSt.chat.off = true; calls.length = 0; fire();
   const why2 = doc.getElementById("busy-cut-why"), fx = why2 && why2.kids.find((k) => typeof k !== "string" && k.tag === "button");
-  ok("③ 設定開著時「停止中…」在設定標題列下方;逾時重新取槽(舊節點被拆了也寫得出來)、寫到聊天標題列下方並展開聊天欄",
-    atSet && why2 && why2.isConnected && $("cs-head").nextSibling === why2 && calls.includes("pane:chat:false"), { atSet, calls });
+  ok("③ 設定開著時「停止中…」在設定標題列下方;逾時重新取槽(舊節點被拆了也寫得出來)、寫到聊天標題列下方,聊天欄收著也不動版面",
+    atSet && why2 && why2.isConnected && $("cs-head").nextSibling === why2 && !calls.includes("pane:chat:false"), { atSet, calls });
   ok("③ 20 秒還沒停:不做(確認框說了會先停),講「沒停下來」並留「停止」可再按", did.join() === "a,c" && !B.pending && !why2.hidden && why2.kids[0].textContent === STR.zh["busy.stopFail"] && fx && fx.textContent === STR.zh["busy.fix.stop"]);
   env.paneSt.chat.off = true; calls.length = 0; B.busySendTell();
   ok("③ 送一句話被擋、聊天欄收著:先展開聊天欄再寫輸入框上方那一句", calls.join() === "pane:chat:false,ta", calls);

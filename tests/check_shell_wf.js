@@ -579,6 +579,18 @@ app.whenReady().then(async () => {
     window.__turn = 5; window.__sync(true); const a = ${EMPTY}; window.__sync(false); const b = ${EMPTY}; return { a, b }; })()`);
   ok("② 別的回合進行中:鈕鎖住(aria-disabled)+ 一行常駐原因;回合結束解鎖——打到一半的 400 沒被洗掉(就地換,不重畫)",
     r.a.dis && r.a.aria === "true" && r.a.cap === (await tf("rob.busy")) && r.a.knobs[0] === "400" && !r.b.dis && !r.b.cap && r.b.knobs[0] === "400", JSON.stringify(r));
+  // 〔停止〕:同 app.js rpWfOpts 交真的 busyFixLink;回合中實點 → 真的 stopTurn 走下去(轉成停止中)、記 lock_fix;點被鎖的鈕本身不送、也不是原生 disabled
+  r = await js(`(() => { const tr = []; const tf0 = window.trackFeature; window.trackFeature = (n) => tr.push(n);
+    running = true; turnStopping = false; window.__calls = [];
+    window.BlaveReport.renderWf(window.__box, ${D(null)}, { ...window.__opts(true), busyFix: (el) => busyFixLink(el, "stop") });
+    const b = window.__box.querySelector(".wf-empty .wf-go"); b.click();
+    const cap = window.__box.querySelector(".wf-cap"), fix = cap && cap.querySelector("button.busy-fix");
+    const o = { native: b.disabled, aria: b.getAttribute("aria-disabled"), sent: window.__calls.length, txt: cap && cap.textContent, role: cap && cap.getAttribute("role"), fix: fix && fix.textContent };
+    if (fix) fix.click();
+    o.stopping = turnStopping; o.tr = tr.slice(); running = false; window.trackFeature = tf0; return o; })()`);
+  await new Promise((res) => setTimeout(res, 50)); await js(`turnStopping = false; turnStopped = false; 0`);
+  ok("② 走勢驗證〔停止〕實點:鈕 aria-disabled(不是原生 disabled)、點了不送;原因句「…送出。 停止」、role=status;點〔停止〕→ 回合轉停止中、記 lock_fix",
+    !r.native && r.aria === "true" && r.sent === 0 && r.txt === (await tf("rob.busy")) + " " + (await tf("busy.fix.stop")) && r.role === "status" && r.fix === (await tf("busy.fix.stop")) && r.stopping === true && r.tr.includes("lock_fix"), JSON.stringify(r));
   r = await js(`(async () => { window.__render(${D(SAMPLE)}, false); window.__box.querySelector(".wf-bar .wf-go").click(); window.__turn = 9;
     await new Promise((r) => setTimeout(r, 40)); return { calls: window.__calls, page: ${PAGE} }; })()`);
   ok("② 重新驗證 → onRun(資料夾名、365、30、rerun、鈕)→ 已送出:舊結果整塊拿掉、旋鈕鎖住、鈕停用且環在鈕裡「已送出，看對話」",
