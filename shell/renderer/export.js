@@ -129,7 +129,8 @@ function xpSync() {
 /* 策略版本(另案)的時光機進出時呼叫:label = 正在看的那一版(如 "v5"),null = 回到目前版。
    時光機裡觸發器 aria-disabled、程式碼分頁只剩 Python(轉出檔只屬於目前版本) */
 function xpSetTimeMachine(label) { XP.tm = label || null; if (XP.tm) XP.sel = "py"; xpSync(); xpCodePaint(); }
-function xpNote(text) { const n = $("xp-note"); if (!n) return; n.textContent = text || ""; n.hidden = !text; }
+// data-busy 只屬於回合中那句(busyFixLink 掛〔停止〕時才記):換成別的原因(時光機)先拿掉,回合結束 busySync 才不會連它一起收
+function xpNote(text) { const n = $("xp-note"); if (!n) return; delete n.dataset.busy; n.textContent = text || ""; n.hidden = !text; }
 function xpOpen() {
   const b = $("xp-btn"), m = $("xp-menu");
   if (xpDisabled()) { if (running === true) { busyHit("send"); xpNote(t("turn.busy")); busyFixLink($("xp-note"), "stop"); } else xpNote(t("xp.why.tm", { v: XP.tm })); return; }

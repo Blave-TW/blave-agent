@@ -145,6 +145,7 @@ B.busyTell(B.busySlot("perf-why", $("x")), "perf");
   B.busyFixLink(cap, "stop");
   ok("③ P1-5:各頁自己的原因句(掃描／驗證／轉出…經 busyFixLink 掛〔停止〕)也算一句:收掉別處的、自己記 data-busy", perfSlot.hidden && cap.dataset.busy === "1");
   B.busyTell(perfSlot, "perf"); }
+ok("③ P1-5:轉出那一行換成別的原因(時光機)時先拿掉 data-busy,回合結束不會把它一起收", /function xpNote\(text\) \{ const n = \$\("xp-note"\); if \(!n\) return; delete n\.dataset\.busy;/.test(read(path.join(R, "export.js"))));
 B.busySlot("perf-why", $("x")).kids.find((k) => typeof k !== "string" && k.tag === "button").click();
 ok("③ 按「查看」:關設定、收清單、展開聊天欄、捲到底、焦點回輸入框;記 lock_fix", calls.join() === "setClose,list:false,pane:chat:false,scroll,focus:ta" && tracked.slice(-2).join() === "lock_perf,lock_fix", calls);
 const want = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send", sendAway: "lock_send" };
