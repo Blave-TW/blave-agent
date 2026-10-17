@@ -2348,11 +2348,17 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
 
 # A funded member that has not written its first state.json yet (just joined — runtime
 # _retire_prejoin_signals moved an old one away — or never computed) leaves what it replaces on
-# the book until it does. Each key it trades is anchored at the first round that sees it
-# waiting: frozen = the book there minus what the other members want then. Inside the window
-# the key's target is the others' target now plus that frozen part (plus the last share of any
-# member that leaves the key meanwhile), so a neighbour's own signal — a stop included — or
-# amount still trades, and only the leaving member's close and the newcomer's entry wait.
+# the book until it does. What it replaces is fixed at the save, not read off the book: each key
+# it trades is anchored on the previous round's snapshot — frozen = the contributions there of
+# the members that no longer contribute because they left `amounts`, were set to 0, or are
+# themselves waiting again. book − others would freeze a mark-to-market book's unrealised PnL
+# and anything a neighbour changed between the save and the first round (a stop, a new amount).
+# Inside the window the key's target is the others' target now + frozen (+ the last share of any
+# member that leaves the key meanwhile), so a neighbour's own signal and amount trade, and only
+# the leaving member's close and the newcomer's entry wait. A member still funded but missing
+# from the key (a Type C weights dict without it) is its own 0, not a departure. Several
+# newcomers on one key swap together: one that has computed stays out of the target until the
+# last of them has (or timed out), else the first one's entry stacks on the frozen part.
 # Without it, swapping a strategy for a new version on the same coin closed the position one
 # round (the newcomer contributes nothing yet) and bought it back the next. One bar of its
 # INTERVAL at most, never longer than FIRST_SIGNAL_WAIT_MAX_S: past that it is reconciled as
@@ -2430,7 +2436,7 @@ def _finite(v):
 
 
 def _first_signal_book():
-    """{'members': {name: {since[, expired]}}, 'anchors': {key: {frozen, seen, departed}}}."""
+    """{'members': {name: {since[, expired]}}, 'anchors': {key: {frozen, seen, departed, cohort}}}."""
     if _first_signal_unsaved is not None:
         return json.loads(json.dumps(_first_signal_unsaved))
     try:
@@ -2515,54 +2521,93 @@ def _first_signal_holds(amounts, exchanges, now=None):
 def _first_signal_anchor_ok(a):
     return (isinstance(a, dict) and _finite(a.get('frozen'))
             and all(isinstance(a.get(p), dict) and all(_finite(v) for v in a[p].values())
-                    for p in ('seen', 'departed')))
+                    for p in ('seen', 'departed'))
+            and isinstance(a.get('cohort', []), list))
 
 
-def _first_signal_targets(target, book, trusted, skip=()):
+def _last_snapshot_target():
+    """The previous round's snapshot target (reconcile writes this round's after the diff)."""
+    try:
+        with open('manager/last_reconcile.json') as f:
+            tg = json.load(f).get('target')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return tg if isinstance(tg, dict) else None
+
+
+def _contribs(row):
+    out = {}
+    for c in (row or {}).get('contributors') or []:
+        if isinstance(c, dict) and c.get('strategy') is not None:
+            v = c.get('contribution')
+            out[str(c['strategy'])] = float(v) if _finite(v) and not c.get('gated') else 0.0
+    return out
+
+
+def _first_signal_targets(target, trusted, funded, skip=()):
     """reconcile's half of the first-signal wait: each key aggregate_portfolio flagged
     first_signal_hold (held for a member's first signal and by nothing else) gets its window
-    target — the others' target now + frozen (book − others at the anchor round) + the last
-    share of every member that has left the key since. Not gated: the diff runs on it. While
-    the book cannot be trusted (a baseline wait) or the key waits on a pending baseline, there
-    is nothing to anchor on and it stays held as is on both sides."""
+    target — the others' target now + frozen + the last share of every member that has left the
+    key since. frozen = what the previous round's snapshot had from the members that no longer
+    contribute (not in `funded`, or waiting again); a gated contribution is no holding to keep.
+    Not gated: the diff runs on it. While the book cannot be trusted (a baseline wait) or the key
+    waits on a pending baseline, it stays held as is on both sides and nothing is anchored: the
+    baseline decides from this round's target what is the bot's."""
     flagged = [k for k, v in target.items() if v.get('first_signal_hold')]
     if not flagged:
         return target
     target = dict(target)
     for k in flagged:
         target[k] = {f: v for f, v in target[k].items() if f != 'first_signal_hold'}
+    funded = set(funded)
     data = _first_signal_book()
-    anchors, changed = data['anchors'], False
+    anchors, changed, last = data['anchors'], False, None
     for k in flagged:
         row = target[k]
         if not trusted or k in skip:
             continue
-        cur = {}
-        for c in row.get('contributors') or []:
-            v = c.get('contribution')
-            cur[str(c.get('strategy'))] = float(v) if _finite(v) else 0.0
-        normal = _signed_row(row)
+        cur = _contribs(row)
+        waiting = set(row.get('awaiting') or {})
         a = anchors.get(k)
         if not _first_signal_anchor_ok(a):
             if a is not None:
                 logging.warning(f"[portfolio] {k}: first-signal anchor {a!r} is unusable — re-anchored")
-            a = anchors[k] = {'frozen': _signed_row(book.get(k)) - normal, 'seen': cur, 'departed': {}}
+            if last is None:
+                last = _last_snapshot_target() or {}
+            prev = last.get(k) if isinstance(last.get(k), dict) else {}
+            frozen = sum(v for n, v in _contribs(prev).items()
+                         if n not in cur and (n not in funded or n in waiting))
+            if prev.get('awaiting') and _finite(prev.get('frozen')):
+                frozen += prev['frozen']  # the key was already in a window whose anchor is lost
+            # a newcomer that computed before any round saw it wait is in no row of the snapshot
+            known = {n for r in last.values() if isinstance(r, dict)
+                     for n in list(_contribs(r)) + list(r.get('awaiting') or {}) + list(r.get('unrouted') or [])}
+            cohort = sorted(waiting | ({n for n in cur if n not in known} if last else set()))
+            seen = {n: v for n, v in cur.items() if n not in cohort}
+            a = anchors[k] = {'frozen': frozen, 'seen': seen, 'departed': {}, 'cohort': cohort}
             changed = True
         else:
+            cohort = sorted(set(a.get('cohort') or []) | waiting)
+            seen = {n: v for n, v in cur.items() if n not in cohort}
             departed = dict(a['departed'])
-            departed.update({s: c for s, c in a['seen'].items() if s not in cur})
-            departed = {s: c for s, c in departed.items() if s not in cur}
-            if departed != a['departed'] or cur != a['seen']:
-                a = anchors[k] = {'frozen': a['frozen'], 'seen': cur, 'departed': departed}
+            departed.update({n: c for n, c in a['seen'].items()
+                             if n not in seen and (n not in funded or n in waiting)})
+            departed = {n: c for n, c in departed.items() if n not in seen}
+            if departed != a['departed'] or seen != a['seen'] or cohort != a.get('cohort'):
+                a = anchors[k] = {'frozen': a['frozen'], 'seen': seen, 'departed': departed,
+                                  'cohort': cohort}
                 changed = True
         frozen = a['frozen'] + sum(a['departed'].values())
-        s = normal + frozen
+        s = sum(a['seen'].values()) + frozen
         if row.get('market') == 'spot' and s < 0:
             s = 0.0
         if native_units(row.get('asset_spec'), row.get('exchange')):
             s = math.copysign(math.floor(abs(s) + 0.5 + 1e-9), s) if s else 0.0
         target[k] = _signed_target_row(row, s)
         target[k].update(gated=False, frozen=round(frozen, 8))
+        done = [n for n in a['cohort'] if n in cur]
+        if done:
+            target[k]['cohort'] = done
     if changed:
         _first_signal_save(data)
     return target
@@ -3455,8 +3500,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         config=config, waiting_keys=pending_keys)
     halt_targets = _halt_rollover_targets(rolls, target, diff_actual)
     try:
-        target = _first_signal_targets(target, diff_actual, trusted=needs_baseline is None,
-                                       skip=pending_keys)
+        target = _first_signal_targets(target, trusted=needs_baseline is None,
+                                       skip=pending_keys,
+                                       funded={n for n, a in strategy_amounts(config).items() if a})
     except Exception as e:
         # never a reason to hold more: the flagged keys reconcile as if nobody waited
         logging.error(f"[reconcile] first-signal window target failed ({type(e).__name__}: {e}) "
@@ -3498,8 +3544,13 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     if halted_at_start:
         # HALT holds a rollover's lots on its old contract (_halt_rollover_targets)
         for k, signed in halt_targets.items():
-            if k in gated_symbols or k in pending_keys or (target.get(k) or {}).get('awaiting'):
-                continue  # held as is anyway / on its first-signal window target
+            if k in gated_symbols or k in pending_keys:
+                continue  # held as is anyway
+            if (target.get(k) or {}).get('awaiting'):
+                # a first-signal window target leaves the rolling strategy's lots out: held as is
+                target = {x: v for x, v in target.items() if x != k}
+                diff_actual = {x: v for x, v in diff_actual.items() if x != k}
+                continue
             base = target.get(k) or {'exchange': (diff_actual.get(k) or {}).get('exchange'),
                                      'asset_spec': (diff_actual.get(k) or {}).get('asset_spec'),
                                      'market': 'swap', 'contributors': [], 'gated': False}

@@ -263,14 +263,16 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
   const DC = { name: "dc", displayName: "DC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: ["BTCUSDT", "SOLUSDT"] };
   const pvC = { type: "portfolio", market: "swap", weights: { BTCUSDT: 0.5, SOLUSDT: 0.5 }, closes: { BTCUSDT: 50000, SOLUSDT: 150 }, bar_at: BAR, bar_date: "2026-10-16", latest: true, daily_tw: false };
   const HELD = (syms, names) => "cf-note:tr.cf.held " + J({ syms, names }), side = (f) => f.rows.filter((x) => /^tr\.cf\.(buy|sell)/.test(x));
-  { bag({ firing: true, picked: ["btc", "tw", "db"], edits: { btc: 0, db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR() } });
+  // 存檔前那一輪的快照(對帳器第一輪拿它當錨點):btc 在 BTC 上貢獻 500
+  const PRE = () => ({ BTCUSDT: { side: "long", size: 500, gated: false, contributors: [{ strategy: "btc", position: 1, amount: 500, contribution: 500 }] } });
+  { bag({ firing: true, picked: ["btc", "tw", "db"], edits: { btc: 0, db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR(PRE()) } });
     const f = open();
     ok("S1 單一→單一(btc 改 0、加同標的草稿 db,預覽最新多 1):「儲存金額」、不列單;BTC 這一輪不會動那句",
       f.title === "tr.cf.title" && !f.mark && side(f).length === 0 && f.notes.includes(HELD("BTCUSDT", "DB")) && f.rows.includes("BTC500→0"), J(f)); }
-  { bag({ firing: true, picked: ["tw", "db"], edits: { db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR() } });
+  { bag({ firing: true, picked: ["tw", "db"], edits: { db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR(PRE()) } });
     const f = open();
     ok("S1 …移出 btc(不是改 0):策略列「移出」不帶平倉", f.title === "tr.cf.title" && f.rows.includes("BTC500→tr.cfTagRemove") && f.notes.includes(HELD("BTCUSDT", "DB")), J(f)); }
-  { bag({ firing: true, picked: ["btc", "tw", "dc"], edits: { btc: 0, dc: 1000 }, list: [DC], noPv: true, pvs: { dc: pvC }, rep: { last_reconcile: LR() } });
+  { bag({ firing: true, picked: ["btc", "tw", "dc"], edits: { btc: 0, dc: 1000 }, list: [DC], noPv: true, pvs: { dc: pvC }, rep: { last_reconcile: LR(PRE()) } });
     const f = open();
     ok("S1 單一→組合(btc 改 0、加含 BTC 的草稿組合):只列買 SOL、不列賣 BTC;BTC 不會動那句", f.title === "tr.cf.titleFire" && J(side(f)) === J(["tr.cf.buySOLUSDT3.3333 tr.cf.unitCoins"])
       && f.notes.includes(HELD("BTCUSDT", "DC")), J(f)); }
@@ -279,11 +281,11 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("S1 …對帳器是舊 lib(caps 沒有 first_signal_wait):不說不會動、移出的 btc 照標平倉", !f.notes.some((x) => /tr\.cf\.held/.test(x)) && f.rows.includes("BTC500→tr.cfTagRemove · tr.cfTagClose"), J(f)); }
   // 已存、還沒有 state.json 的 db:等待窗內不動 BTC;過了窗(快照不再列它在等)照常對帳,沒貢獻的 BTC 照賣
   { const w = (awaiting) => { bag({ firing: true, picked: ["btc", "tw", "db"], amounts: { db: 500 }, edits: { btc: 0 }, list: [DB], noPv: true,
-      rep: { last_reconcile: LR(awaiting ? { BTCUSDT: { side: "long", size: 500, gated: true, contributors: [], awaiting: { db: now + 3000 } } } : {}) } }); return open(); };
+      rep: { last_reconcile: LR(awaiting ? { BTCUSDT: Object.assign(PRE().BTCUSDT, { frozen: 0, awaiting: { db: now + 3000 } }) } : {}) } }); return open(); };
     const f = w(false), g = w(true);
     ok("S1 等待逾時(或新成員一直算不出):照常處理——列賣 BTC、「儲存並下單」,出場不被卡住", f.title === "tr.cf.titleFire" && side(f).includes("tr.cf.sellBTCUSDT0.01 tr.cf.unitCoins") && !f.notes.some((x) => /tr\.cf\.held/.test(x)), J(f));
-    ok("S1 …還在等待窗內:不列賣 BTC、BTC 不會動那句;它算出來前目標不知道、這次又改了 btc,標題照「儲存並下單」",
-      g.title === "tr.cf.titleFire" && side(g).length === 0 && g.notes.includes(HELD("BTCUSDT", "DB")), J(g)); }
+    ok("S1 …還在等待窗內(db 是純新加、frozen 0),這次把 btc 改 0:btc 那 500 變成被換掉的那段,不列賣 BTC、說它先不動",
+      side(g).length === 0 && g.notes.includes(HELD("BTCUSDT", "DB")), J(g)); }
   { bag({ halted: true, picked: ["btc", "tw", "db"], edits: { btc: 0, db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR(), halt: { halted: true } } });
     const f = open();
     ok("S1 暫停中:框照舊(儲存金額 + 暫停那句),不加不會動那句", f.title === "tr.cf.title" && f.notes.includes("cf-note:tr.saveWarnHalted") && !f.notes.some((x) => /tr\.cf\.held/.test(x)), J(f)); }
@@ -308,6 +310,30 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     bag({ firing: true, picked: ["btc", "tw", "db"], amounts: { db: 500 }, list: [DB], noPv: true, states: { btc: { symbol: "BTCUSDT", position: 0 } }, edits: { tw: 100001 },
       rep: { last_reconcile: LR(at([{ strategy: "btc", position: 1, amount: 500, contribution: 300 }], 200)) } }); const h = open();
     ok("D2 …btc 停損(訊號 0)、frozen 200:列賣 BTC 300 那段(0.006),留 200", J(side(h)) === J(["tr.cf.sellBTCUSDT0.006 tr.cf.unitCoins"]), J(h)); }
+  // 錨點 = 存檔前那一輪的快照:純新加(沒換掉誰)沒有被凍的那段;同一次存檔一起改的鄰居金額照送;現貨不放空
+  // 草稿算不出(主機不出預覽):框照對帳器下一輪那份列
+  { bag({ firing: true, picked: ["btc", "tw", "db"], edits: { db: 500 }, list: [DB], oldHost: true, rep: { last_reconcile: LR(PRE()) } }); const f = open();
+    ok("A 純新加 db(BTC,算不出)、btc 不動:frozen 0,不說「被換掉的那段」、不列 BTC 單", !f.wait && side(f).length === 0 && !f.notes.some((x) => /tr\.cf\.held/.test(x)), J(f));
+    bag({ firing: true, picked: ["tw", "db"], edits: { db: 500 }, list: [DB], oldHost: true, rep: { last_reconcile: LR(PRE()) } }); const g = open();
+    ok("A …同一格把 btc 移出:有被換掉的那段(500),說它先不動", !g.wait && side(g).length === 0 && g.notes.includes(HELD("BTCUSDT", "DB")), J(g)); }
+  { const C1 = { name: "c1", displayName: "C1", hasBacktest: true, symbol: "BTCUSDT", market: "swap" };
+    const pre = { BTCUSDT: { side: "long", size: 700, gated: false, contributors: [{ strategy: "btc", position: 1, amount: 500, contribution: 500 }, { strategy: "c1", position: 1, amount: 200, contribution: 200 }] } };
+    const acct = { read_at: now, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: { BTCUSDT: { side: "long", size: 700, mark_price: 50000 } } } } };
+    bag({ firing: true, picked: ["btc", "tw", "db", "c1"], amounts: { c1: 200 }, states: { c1: { symbol: "BTCUSDT", position: 1 } }, edits: { btc: 0, db: 500, c1: 50 }, list: [DB, C1], oldHost: true,
+      rep: { last_reconcile: LR(pre), account: acct } }); const f = open();
+    ok("D3 換策略同一次把鄰居 c1 200→50:這一輪就賣 c1 那 150(0.003),btc 那 500 先不動", f.title === "tr.cf.titleFire" && J(side(f)) === J(["tr.cf.sellBTCUSDT0.003 tr.cf.unitCoins"]), J(f)); }
+  { const D1 = { name: "d1", displayName: "D1", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }, D2 = { name: "d2", displayName: "D2", hasBacktest: true, symbol: "BTCUSDT", market: "swap" };
+    const win = { BTCUSDT: { side: "long", size: 500, gated: false, frozen: 500, cohort: ["d1"], contributors: [{ strategy: "d1", position: 1, amount: 500, contribution: 500 }], awaiting: { d2: now + 3000 } } };
+    bag({ firing: true, picked: ["btc", "tw", "d1", "d2"], amounts: { btc: 0, d1: 500, d2: 500 }, states: { d1: { symbol: "BTCUSDT", position: 1 } }, edits: { tw: 100001 }, list: [D1, D2], oldHost: true,
+      rep: { last_reconcile: LR(win) } }); const f = open();
+    ok("D4 btc 換成 d1+d2、d1 已算出多單、d2 還在等:不在被凍的 500 上再買 d1 那 500", side(f).length === 0, J(f)); }
+  { const SP = { name: "sp", displayName: "SP", hasBacktest: true, symbol: "BTCUSDT", market: "spot" }, C1S = { name: "c1s", displayName: "C1S", hasBacktest: true, symbol: "BTCUSDT", market: "spot" };
+    const DBS = { name: "dbs", displayName: "DBS", hasBacktest: true, symbol: "BTCUSDT", market: "spot" };
+    const lr = LR({ "BTCUSDT@spot": { side: "long", size: 500, gated: false, contributors: [{ strategy: "sp", position: 1, amount: 500, contribution: 500 }, { strategy: "c1s", position: 0, amount: 600, contribution: 0 }] } });
+    lr.actual = { "BTCUSDT@spot": { side: "long", size: 500 } };
+    bag({ firing: true, picked: ["btc", "tw", "sp", "c1s", "dbs"], amounts: { sp: 500, c1s: 600 }, states: { sp: { symbol: "BTCUSDT", position: 1, market: "spot" }, c1s: { symbol: "BTCUSDT", position: -1, market: "spot" } },
+      edits: { sp: 0, dbs: 500 }, list: [SP, C1S, DBS], oldHost: true, rep: { last_reconcile: lr } }); const f = open();
+    ok("G4 現貨:c1s 空 600 + 被換掉的 500 = −100 → 目標 0,只賣帳上那 500(0.01),不賣超過", J(side(f)) === J(["tr.cf.sellBTCUSDT0.01 tr.cf.unitCoins"]), J(f)); }
   // UNIVERSE 的註解:跟 lib/portfolio 讀同一份 fixture
   { const fx = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "universe_comments.json"), "utf8"));
     vm.runInContext(cutF("trUniverse"), ctx); const u = vm.runInContext("trUniverse(" + J(fx.code) + ")", ctx);

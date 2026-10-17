@@ -551,6 +551,36 @@ guard.clear_halt("test")
 guard._halt_flag = False
 check(r == [] and v.held == {"TXF": 1}, f"H9 halted mid-round: no close-only half ({r}, {v.held})")
 
+
+# a rollover off a contract that a newcomer also waits on (its first signal): the window target
+# has no room for the rolling strategy's lot, so the old contract is held as is under HALT
+def rolled_beside_newcomer():
+    setup({"a": ("TXF", 1, 1, "TXF", "capital"), "o": ("TXF", 1, 2, "TXF", "capital")})
+    v = Venue({"TXF": 3})
+    assert v.round() == []
+    os.makedirs("strategies/d")
+    with open("strategies/d/strategy.py", "w") as f:
+        f.write('SYMBOL = "TXF"\nINTERVAL = "1h"\n')
+    cfg = json.load(open("manager/portfolio_config.json"))
+    cfg["amounts"].update(a=20, o=0, d=2)
+    cfg["exchanges"]["d"] = "capital"
+    cfg["contracts"] = {"a": "TMF"}
+    cfg["asset_specs"].update(a=spec("TMF"), d=spec("TXF"))
+    json.dump(cfg, open("manager/portfolio_config.json", "w"))
+    with open(portfolio._ROLLOVER_PATH, "w") as f:
+        json.dump({"a": {"from": "TXF", "to": "TMF", "at": "t0"}}, f)
+    return v
+
+
+v = rolled_beside_newcomer()
+r = halted_rounds(v)
+check(r == [[], []] and v.held == {"TXF": 3},
+      f"H12 HALT, a rolls off TXF while d waits there for its first signal: TXF held as is ({r}, {v.held})")
+v = rolled_beside_newcomer()
+r = v.round()
+check(r == [("TXF", -1, True)] and v.held == {"TXF": 2},
+      f"H12 …not halted: a's lot closes for the rollover, o's 2 wait for d ({r}, {v.held})")
+
 # ── P: paper prices the switched contract ───────────────────────────────────
 for d in ("strategies",):
     shutil.rmtree(d, ignore_errors=True)

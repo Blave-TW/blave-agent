@@ -3252,9 +3252,11 @@ function trCfStates(r, stored, sending, contracts) {
 /* 下一輪對帳器先不動的部分(lib/portfolio 的 first_signal_wait 與訊號閘)。快照 caps 沒有 first_signal_wait = 舊 lib,前一種不算。
    還沒算出第一個訊號的成員:草稿一律算(存檔時 runtime 移走它的舊 state.json;當根的 state 會留著、對帳器就不等,框照等算,只差那句說明);
    已存的看快照 awaiting 還在窗內(過了窗它照常對帳,沒貢獻的部位照賣)。標的同對帳器:SYMBOL,組合看 UNIVERSE,都沒有看預覽。
-   等第一個訊號只凍「被換掉的那段」:對帳器在第一輪記下 frozen(帳上 − 其他成員當時要的),窗內目標 = 其他成員現在要的 + frozen
-   + 之後離開這檔的成員最後那份;別支自己的訊號、金額照送。anchor = 快照那一列已經記下的(還沒記 = 這次存檔後第一輪才記,那一輪不動)。
-   訊號閘:快照那一列 gated,而且撐它的閘中策略這次還有金額。回 { wait: {標的: [策略]}, gate: [標的], anchor: {標的: {frozen, contributors}} } */
+   等第一個訊號只凍「被換掉的那段」:對帳器第一輪看上一輪快照(= 現在這份),frozen = 那一列裡這次不再有貢獻的成員(移出／歸 0、
+   或自己又在等)的貢獻;窗內目標 = 其他成員現在要的 + frozen + 之後離開這檔的成員最後那份,別支自己的訊號、金額照送。
+   同一檔兩支以上新成員:先算出來的那支(快照列 cohort)等最後一支算出來才算進去。快照那一列已在窗內(帶 awaiting 與 frozen)就沿用它的 frozen;
+   基準還沒寫(needs_baseline)或那一檔在等 pending,對帳器整檔不動,不給 anchor。
+   訊號閘:快照那一列 gated,而且撐它的閘中策略這次還有金額。回 { wait: {標的: [策略]}, gate: [標的], anchor: {標的: {frozen, contributors, cohort}} } */
 function trCfHolds(r, stored, sending, contracts, st) {
   const last = (r && r.last_reconcile) || {}, tg = last.target && typeof last.target === "object" ? last.target : {}, live = (r && r.states) || {};
   const wait = {}, gate = [], now = Date.now() / 1000, funded = (n) => Number(sending[n]) > 0;
@@ -3272,9 +3274,11 @@ function trCfHolds(r, stored, sending, contracts, st) {
       Object.keys(a).forEach((n) => { const s = live[n];
         if (n in stored && funded(n) && Number(a[n]) > now && !(s && (s.symbol || (s.weights && typeof s.weights === "object")))) add(trCanonKey(k), n); }); });
   }
-  const anchor = {};
-  Object.keys(tg).forEach((k) => { const row = tg[k] || {}, cs = Array.isArray(row.contributors) ? row.contributors : [];
-    if (newLib && row.gated !== true && typeof row.frozen === "number" && isFinite(row.frozen) && wait[trCanonKey(k)]) anchor[trCanonKey(k)] = { frozen: row.frozen, contributors: cs };
+  const anchor = {}, pend = Array.isArray(last.baseline_pending) ? last.baseline_pending.map(trCanonKey) : [];
+  if (newLib && last.needs_baseline == null) Object.keys(wait).forEach((k) => { if (pend.indexOf(k) < 0) anchor[k] = { frozen: 0, contributors: [], cohort: [] }; });
+  Object.keys(tg).forEach((k) => { const row = tg[k] || {}, cs = Array.isArray(row.contributors) ? row.contributors : [], an = anchor[trCanonKey(k)];
+    if (an) { const inWin = !!row.awaiting && typeof row.frozen === "number" && isFinite(row.frozen);
+      an.contributors = cs; if (inWin) { an.frozen = row.frozen; an.cohort = Array.isArray(row.cohort) ? row.cohort : []; } }
     if (row.gated !== true) return;
     // 閘中的那支貢獻列帶 gated: true(同一個 lib 起);舊 lib 沒有這欄:沒綁交易所以外的 gated 列都當閘中,撐它的還有金額就算
     if (cs.some((c) => c && funded(c.strategy) && (newLib ? c.gated === true : !row.unrouted))) gate.push(trCanonKey(k)); });
@@ -3327,17 +3331,20 @@ function trCfRows(o) {
   if (o.firing) {
     const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && o.covered(k));
     syms.forEach((sym) => {
-      // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)。對帳器已經記下 frozen 的那檔例外:
-      // 下一輪 = 其他成員這次存的 + frozen + 這次離開的成員在快照上那份,照算
-      const an = blind.has(sym) ? holds.anchor[sym] : null;
-      if (blind.has(sym) && !an) { if (o.mine[sym] || after[sym]) { hit(held.wait, sym); (holds.wait[sym] || []).forEach((n) => hit(held.names, n)); } if (Math.round(before[sym] || 0) !== Math.round(after[sym] || 0)) held.unknown = true; return; }
-      const others = an ? (cs1[sym] || []).filter((c) => (holds.wait[sym] || []).indexOf(c.name) < 0).reduce((a, c) => a + c.v, 0) : 0;
-      const gone = an ? an.contributors.filter((c) => c && !(cs1[sym] || []).some((x) => x.name === c.strategy)).reduce((a, c) => a + (Number(c.contribution) || 0), 0) : 0;
-      const raw = an ? Math.max(/@spot$/.test(sym) ? 0 : -Infinity, others + an.frozen + gone) : after[sym] || 0;
-      const lot = o.lot(sym), ts = lot ? trLotsTarget(raw).lots : raw, as = o.mine[sym] || 0, d = ts - as;
+      // 新成員算不出(沒預覽):下一輪 = 其他成員這次存的 + 被換掉的那段,照算。基準未寫／pending 時對帳器整檔不動(沒有 anchor),
+      // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)
+      const an0 = holds.wait[sym] ? holds.anchor[sym] : null, an = blind.has(sym) ? an0 : null, ws = holds.wait[sym] || [], lot = o.lot(sym);
+      if (blind.has(sym) && !an) { if (o.mine[sym] || after[sym]) { hit(held.wait, sym); ws.forEach((n) => hit(held.names, n)); } if (Math.round(before[sym] || 0) !== Math.round(after[sym] || 0)) held.unknown = true; return; }
+      // 被換掉的那段:快照列裡這次不再有貢獻的成員(沒金額、或自己又在等);先算出來的新成員(cohort)不算離開
+      const gone = an0 ? an0.contributors.filter((c) => c && c.gated !== true && an0.cohort.indexOf(c.strategy) < 0 && (!(Number(o.sending[c.strategy]) > 0) || ws.indexOf(c.strategy) >= 0))
+        .reduce((a, c) => a + (isFinite(Number(c.contribution)) ? Number(c.contribution) : 0), 0) : 0;
+      const frozen = an0 ? an0.frozen + gone : 0, froze = lot ? Math.round(Math.abs(frozen)) > 0 : Math.abs(frozen) >= 1;
+      const others = an ? (cs1[sym] || []).filter((c) => ws.indexOf(c.name) < 0 && an.cohort.indexOf(c.name) < 0).reduce((a, c) => a + c.v, 0) : 0;
+      const raw = an ? Math.max(/@spot$/.test(sym) ? 0 : -Infinity, others + frozen) : after[sym] || 0;
+      const ts = lot ? trLotsTarget(raw).lots : raw, as = o.mine[sym] || 0, d = ts - as;
       const gs = lot ? null : trGateSide(o.gates[sym], ts, as), acts = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
       if (acts && gated.has(sym)) { hit(held.gate, sym); return; }
-      if (!acts) { if (holds.wait[sym] && o.mine[sym]) { hit(held.wait, sym); holds.wait[sym].forEach((n) => hit(held.names, n)); } return; }
+      if (!acts) { if (ws.length && o.mine[sym] && (froze || !an0)) { hit(held.wait, sym); ws.forEach((n) => hit(held.names, n)); } return; }
       const row = { sym, side: d > 0 ? "buy" : "sell", money: Math.abs(d), z: zoneOf(sym), by: by(sym) };
       if (lot) row.lots = Math.round(Math.abs(d));
       else { const q = trCfQty(sym, d, priceOf(sym)); if (q && q.n === 0) return; row.qty = q; }

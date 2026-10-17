@@ -1,17 +1,23 @@
 """A funded member with no state.json yet (just joined, its old one moved away by the runtime's
 _retire_prejoin_signals, or never computed) leaves what it replaces on the book until it writes its
-first state — at most one bar of its INTERVAL, never longer than FIRST_SIGNAL_WAIT_MAX_S. Each key it
-trades is anchored at the first round that sees it waiting; inside the window the key's target is the
-others' target now + that frozen part, so only the leaving member's close and the newcomer's entry
-wait — a neighbour's own signal (a stop included) or amount still trades. Swapping a strategy for a
-new version on the same coin used to close the position one round and buy it back the next.
+first state — at most one bar of its INTERVAL, never longer than FIRST_SIGNAL_WAIT_MAX_S. What it
+replaces is fixed at the save: frozen = the previous round's snapshot contributions of the members that
+no longer contribute (left / 0 / waiting again); inside the window the key's target is the others'
+target now + frozen, so only the leaving member's close and the newcomer's entry wait — a neighbour's
+own signal (a stop included, even one between the save and the first round) or amount (even one changed
+in the same save) still trades, and a mark-to-market book's PnL is not frozen. Swapping a strategy for
+a new version on the same coin used to close the position one round and buy it back the next.
 
 Through the real aggregate_portfolio → reconcile with a fake venue:
   single → single switch, single → portfolio (UNIVERSE), portfolio keys from the backtest preview,
   no keys at all → not held (audit), the window (bar / cap / re-save does not restart it / leaving
   amounts clears it), past the window the exit goes out and the wait never restarts, an unrelated
   key still trades; a neighbour's stop and add go out once, a 5m neighbour beside a 1d newcomer, a
-  member leaving mid-window waits too, a 150-stock UNIVERSE only freezes the difference; a
+  member leaving mid-window waits too, a 150-stock UNIVERSE only freezes the difference; a stop
+  between the save and the first round, a neighbour amount changed in the same save, a mark move in
+  account-read mode (same orders as no swap at all); two newcomers on one key swap together; a Type C
+  neighbour dropping the key is its own exit; a member coming back; an untrusted book / a pending key
+  (nothing anchored); another gate wins; spot never goes short; lots stay whole; a
   non-UTF-8 strategy.py, a bug in the helper, a write that fails, a clock set back, NaN in the file;
   UNIVERSE comments (tests/fixtures/universe_comments.json, the shell reads the same); the gated
   contributor flag; HALT.
@@ -41,10 +47,11 @@ def check(cond, msg):
     fails += 0 if cond else 1
 
 
-def strat(name, symbol=None, interval="1h", universe=None, state=None, preview=None):
+def strat(name, symbol=None, interval="1h", universe=None, state=None, preview=None, market=None):
     d = f"strategies/{name}"
     os.makedirs(d, exist_ok=True)
     src = (f'SYMBOL = "{symbol}"\n' if symbol else "") + f'INTERVAL = "{interval}"\n'
+    src += f'MARKET = "{market}"\n' if market else ""
     if universe:
         src += "UNIVERSE = [" + ", ".join(f'"{u}"' for u in universe) + "]\n"
     open(f"{d}/strategy.py", "w").write(src)
@@ -54,9 +61,9 @@ def strat(name, symbol=None, interval="1h", universe=None, state=None, preview=N
         json.dump(preview, open(f"{d}/backtest_state.json", "w"))
 
 
-def config(amounts):
-    json.dump({"self_ledger": False, "amounts": amounts, "exchanges": {n: "binance" for n in amounts}, "asset_specs": {}},
-              open("manager/portfolio_config.json", "w"))
+def config(amounts, specs=None):
+    json.dump({"self_ledger": False, "amounts": amounts, "exchanges": {n: "binance" for n in amounts},
+               "asset_specs": specs or {}}, open("manager/portfolio_config.json", "w"))
 
 
 def fresh():
@@ -101,12 +108,26 @@ class Venue:
         return list(self.calls)
 
 
+def swap(before, after, held, specs=None):
+    """A round on the config before the save (its snapshot is what the first round after it anchors
+    on), then the save."""
+    config(before, specs)
+    v = Venue(held)
+    got = v.round()
+    assert got == [], f"the round before the save already traded: {got}"
+    config(after, specs)
+    return v
+
+
+def snap_row(key):
+    return json.load(open("manager/last_reconcile.json"))["target"].get(key) or {}
+
+
 # ── single → single: btc to 0, its new version db joins on BTC
 fresh()
 strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
 strat("db", "BTCUSDT")
-config({"btc": 0, "db": 500})
-v = Venue({"BTCUSDT": 500})
+v = swap({"btc": 500}, {"btc": 0, "db": 500}, {"BTCUSDT": 500})
 check(v.round() == [] and v.held == {"BTCUSDT": 500}, f"switch: BTC is not closed while db has no first signal ({v.calls})")
 snap = json.load(open("manager/last_reconcile.json"))
 row = snap["target"].get("BTCUSDT") or {}
@@ -127,8 +148,7 @@ fresh()
 strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
 strat("eth", "ETHUSDT", state={"symbol": "ETHUSDT", "position": 1})
 strat("dc", universe=["ETHUSDT", "SOLUSDT"])
-config({"btc": 500, "dc": 600})
-v = Venue({"BTCUSDT": 500, "ETHUSDT": 300})
+v = swap({"btc": 500, "eth": 300}, {"btc": 500, "dc": 600}, {"BTCUSDT": 500, "ETHUSDT": 300})
 check(v.round() == [] and v.held["ETHUSDT"] == 300, f"switch to a portfolio: ETH is held through its UNIVERSE ({v.calls})")
 json.dump({"symbol": None, "position": 0, "weights": {"ETHUSDT": 0.5, "SOLUSDT": 0.5}, "rebalance_at": 1},
           open("strategies/dc/state.json", "w"))
@@ -138,8 +158,7 @@ check(v.round() == [("SOLUSDT", 300)], f"its first weights: only the SOL leg is 
 fresh()
 strat("eth", "ETHUSDT", state={"symbol": "ETHUSDT", "position": 1})
 strat("pc", preview={"type": "portfolio", "weights": {"ETHUSDT": 0.5, "SOLUSDT": 0.5}})
-config({"pc": 600})
-v = Venue({"ETHUSDT": 300})
+v = swap({"eth": 300}, {"pc": 600}, {"ETHUSDT": 300})
 check(v.round() == [] and audits("first_signal_wait")[-1]["keys"] == ["ETHUSDT", "SOLUSDT"],
       f"keys from the preview when the code has no literal UNIVERSE ({v.calls})")
 
@@ -147,8 +166,7 @@ check(v.round() == [] and audits("first_signal_wait")[-1]["keys"] == ["ETHUSDT",
 fresh()
 strat("eth", "ETHUSDT", state={"symbol": "ETHUSDT", "position": 1})
 strat("pc")
-config({"pc": 600})
-v = Venue({"ETHUSDT": 300})
+v = swap({"eth": 300}, {"pc": 600}, {"ETHUSDT": 300})
 check(v.round() == [("ETHUSDT", -300)] and len(audits("first_signal_wait_no_keys")) == 1,
       f"no SYMBOL / UNIVERSE / preview: the removed member's ETH closes as before, one audit line ({v.calls})")
 check(v.round() == [] and len(audits("first_signal_wait_no_keys")) == 1, "and the audit line is not repeated every round")
@@ -157,8 +175,7 @@ check(v.round() == [] and len(audits("first_signal_wait_no_keys")) == 1, "and th
 fresh()
 strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
 strat("db", "BTCUSDT")
-config({"btc": 0, "db": 500})
-v = Venue({"BTCUSDT": 500})
+v = swap({"btc": 500}, {"btc": 0, "db": 500}, {"BTCUSDT": 500})
 v.round()
 backdate("db", 3601)
 check(v.round() == [("BTCUSDT", -500)], f"db never computed: past one 1h bar BTC closes as before — an exit is never parked ({v.calls})")
@@ -177,8 +194,7 @@ for interval, age, held in (("5m", 200, True), ("5m", 301, False), ("1d", 7000, 
     fresh()
     strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
     strat("db", "BTCUSDT", interval=interval)
-    config({"btc": 0, "db": 500})
-    v = Venue({"BTCUSDT": 500})
+    v = swap({"btc": 500}, {"btc": 0, "db": 500}, {"BTCUSDT": 500})
     v.round()
     backdate("db", age)
     got = v.round()
@@ -190,18 +206,16 @@ fresh()
 strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
 strat("eth", "ETHUSDT", state={"symbol": "ETHUSDT", "position": 1})
 strat("db", "BTCUSDT")
-config({"btc": 0, "db": 500})
-v = Venue({"BTCUSDT": 500, "ETHUSDT": 300})
+v = swap({"btc": 500, "eth": 300}, {"btc": 0, "db": 500}, {"BTCUSDT": 500, "ETHUSDT": 300})
 check(v.round() == [("ETHUSDT", -300)], f"removing eth while db waits on BTC: ETH still closes ({v.calls})")
 
 # ── direction 2: only the difference the save made is frozen
-def neighbours(c1_pos=1, c1_interval="1h", db_interval="1h"):
+def neighbours(c1_pos=1, c1_interval="1h", db_interval="1h", c1_after=200):
     fresh()
     strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
     strat("c1", "BTCUSDT", interval=c1_interval, state={"symbol": "BTCUSDT", "position": c1_pos})
     strat("db", "BTCUSDT", interval=db_interval)
-    config({"btc": 0, "c1": 200, "db": 500})
-    return Venue({"BTCUSDT": 700})
+    return swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": c1_after, "db": 500}, {"BTCUSDT": 500 + 200 * c1_pos})
 
 
 v = neighbours()
@@ -220,12 +234,58 @@ v.round()
 json.dump({"symbol": "BTCUSDT", "position": 2}, open("strategies/c1/state.json", "w"))
 check(v.round() == [("BTCUSDT", 200)] and v.round() == [], f"c1 scales up while db waits: one buy ({v.calls})")
 
-v = neighbours()
-config({"btc": 0, "c1": 400, "db": 500})
-check(v.round() == [] and v.held["BTCUSDT"] == 700,
-      f"c1 raised 200→400 in the same save as the swap: anchored after the save, so that raise waits too ({v.calls})")
+v = neighbours(c1_after=400)
+check(v.round() == [("BTCUSDT", 200)] and v.round() == [],
+      f"c1 raised 200→400 in the same save as the swap: the raise goes out now, once ({v.calls})")
+c1_back = v.held["BTCUSDT"]
 json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
-check(v.round() == [("BTCUSDT", 200)], f"db's first signal: c1's raise goes out then, btc's 500 nets into db's ({v.calls})")
+check(v.round() == [] and c1_back == 900, f"db's first signal takes btc's 500 over: no order ({v.calls})")
+v = neighbours(c1_after=50)
+check(v.round() == [("BTCUSDT", -150)], f"c1 cut 200→50 in the same save: its 150 is sold now, btc's 500 waits ({v.calls})")
+
+v = neighbours()
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/c1/state.json", "w"))
+got = [v.round() for _ in range(3)]
+check(got == [[("BTCUSDT", -200)], [], []] and v.held["BTCUSDT"] == 500,
+      f"c1 stops out after the save, before the first round: sold at once, btc's 500 stays ({got})")
+
+# account-read mode: the book is qty × mark, so a mark move must not be frozen with the swap
+class MarkVenue(Venue):
+    def __init__(self, qty, mark):
+        super().__init__({})
+        self.qty, self.mark = dict(qty), mark
+
+    def positions(self):
+        return {k: {"side": "long" if q > 0 else "short", "size": abs(q) * self.mark, "exchange": "binance"}
+                for k, q in self.qty.items() if q}
+
+    def place(self, symbol, signed_diff, asset_spec, reduce_only=False):
+        self.calls.append((symbol, round(signed_diff, 4)))
+        self.qty[symbol] = self.qty.get(symbol, 0) + signed_diff / self.mark
+        return {"executed_qty": abs(signed_diff) / self.mark, "avg_price": self.mark}
+
+
+def marked(do_swap):
+    fresh()
+    strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("db", "BTCUSDT")
+    config({"btc": 500, "c1": 200})
+    v = MarkVenue({"BTCUSDT": 700}, 1.0)
+    out = [v.round()]
+    if do_swap:
+        config({"btc": 0, "c1": 200, "db": 500})
+    for i, mark in enumerate((1.045, 0.97, 0.97, 1.045)):
+        v.mark = mark
+        if do_swap and i == 3:
+            json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
+        out.append(v.round())
+    return out
+
+
+base, swapped = marked(False), marked(True)
+check(swapped == base, f"self_ledger off, the mark moves 1.045 → 0.97 → 1.045 across the window: the swap sends "
+                       f"exactly what no swap sends — no unrealised PnL frozen ({swapped} vs {base})")
 
 v = neighbours(c1_interval="5m", db_interval="1d")
 v.round()
@@ -242,6 +302,161 @@ check(v.round() == [] and v.held["BTCUSDT"] == 700,
 backdate("db", 3601)
 check(v.round() == [("BTCUSDT", -700)], f"past the window both close ({v.calls})")
 
+# a member that leaves inside the window and comes back trades its own signal again
+v = neighbours()
+v.round()
+config({"btc": 0, "c1": 0, "db": 500})
+v.round()
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/c1/state.json", "w"))
+config({"btc": 0, "c1": 200, "db": 500})
+check(v.round() == [("BTCUSDT", -200)] and v.held["BTCUSDT"] == 500,
+      f"c1 out and back inside the window: no longer counted as left, its own 0 sells its 200 ({v.calls})")
+
+# two newcomers on one key: the first to compute waits for the other — no 2× exposure meanwhile
+def pair():
+    fresh()
+    strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("d1", "BTCUSDT")
+    strat("d2", "BTCUSDT")
+    return swap({"btc": 500}, {"btc": 0, "d1": 500, "d2": 500}, {"BTCUSDT": 500})
+
+
+v = pair()
+check(v.round() == [], f"btc → d1 + d2: nothing moves ({v.calls})")
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/d1/state.json", "w"))
+got = v.round()
+check(got == [] and v.held["BTCUSDT"] == 500 and snap_row("BTCUSDT").get("cohort") == ["d1"],
+      f"d1 long first: not bought on top of the frozen 500 while d2 waits ({got}, {snap_row('BTCUSDT')})")
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/d2/state.json", "w"))
+check(v.round() == [] and v.held["BTCUSDT"] == 500, f"d2 flat: d1's 500 takes btc's over, no order at all ({v.calls})")
+v = pair()
+v.round()
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/d1/state.json", "w"))
+v.round()
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/d2/state.json", "w"))
+check(v.round() == [("BTCUSDT", 500)], f"both long: the second 500 is bought once both have computed ({v.calls})")
+v = pair()
+v.round()
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/d1/state.json", "w"))
+v.round()
+backdate("d2", 3601)
+check(v.round() == [] and v.held["BTCUSDT"] == 500, f"d2 never computes: past its window d1 alone holds the 500 ({v.calls})")
+v = pair()
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/d1/state.json", "w"))
+check(v.round() == [] and v.held["BTCUSDT"] == 500,
+      f"d1 computed before the first round saw it wait: still swapped with d2, nothing bought ({v.calls})")
+
+# a Type C neighbour whose weights drop the key: its own exit, not a departure to freeze
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("pc", universe=["BTCUSDT", "ETHUSDT"],
+      state={"symbol": None, "position": 0, "weights": {"BTCUSDT": 0.2, "ETHUSDT": 0.3}, "rebalance_at": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500, "pc": 1000}, {"btc": 0, "pc": 1000, "db": 500}, {"BTCUSDT": 700, "ETHUSDT": 300})
+check(v.round() == [], f"btc → db beside a portfolio holding 200 of BTC: nothing moves ({v.calls})")
+json.dump({"symbol": None, "position": 0, "weights": {"ETHUSDT": 0.3}, "rebalance_at": 2}, open("strategies/pc/state.json", "w"))
+check(v.round() == [("BTCUSDT", -200)] and v.held["BTCUSDT"] == 500,
+      f"pc's weights drop BTC (key gone, not 0): its 200 is sold now, btc's 500 waits ({v.calls})")
+
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("pc", universe=["BTCUSDT", "ETHUSDT"],
+      state={"symbol": None, "position": 0, "weights": {"BTCUSDT": 0.2, "ETHUSDT": 0.3}, "rebalance_at": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500, "pc": 1000}, {"btc": 0, "pc": 1000, "db": 500}, {"BTCUSDT": 700, "ETHUSDT": 300})
+json.dump({"symbol": None, "position": 0, "weights": {"ETHUSDT": 0.3}, "rebalance_at": 2}, open("strategies/pc/state.json", "w"))
+check(v.round() == [("BTCUSDT", -200)], f"…the same between the save and the first round: not frozen either ({v.calls})")
+
+# taken out and added back before any round: the runtime moved its state away, so it waits again —
+# its own last share is what is frozen
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+v = swap({"btc": 500}, {"btc": 500}, {"BTCUSDT": 500})
+os.rename("strategies/btc/state.json", "strategies/btc/state.json.prejoin")
+check(v.round() == [] and v.held["BTCUSDT"] == 500, f"btc out and back in one go (state moved away): its 500 stays ({v.calls})")
+
+# the anchor lost inside the window (record unreadable): re-anchored on the snapshot's window row
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500}, {"btc": 0, "db": 500}, {"BTCUSDT": 500})
+v.round()
+b = book()
+b["anchors"] = {}
+json.dump(b, open("state/first_signal_wait.json", "w"))
+check(v.round() == [] and v.held["BTCUSDT"] == 500, f"anchor gone mid-window: btc's 500 still frozen ({v.calls})")
+
+# a member that was waiting for a new signal (resume_wait) held nothing of its own: nothing to freeze
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+json.dump({"btc": 1}, open("state/signal_gate.json", "w"))
+v = swap({"btc": 500}, {"btc": 0, "db": 500}, {})
+check(v.round() == [] and not v.held.get("BTCUSDT"), f"a gated btc swapped for db: nothing bought for the leaving one ({v.calls})")
+
+# a member routed again in the same save (it held its key as is while unrouted) is no newcomer
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("x", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+json.dump({"self_ledger": False, "amounts": {"btc": 500, "x": 200}, "exchanges": {"btc": "binance", "x": ""},
+           "asset_specs": {}}, open("manager/portfolio_config.json", "w"))
+v = Venue({"BTCUSDT": 700})
+check(v.round() == [] and "x" in (snap_row("BTCUSDT").get("unrouted") or []), f"x unrouted: BTC held as is ({v.calls})")
+config({"btc": 0, "x": 200, "db": 500})
+check(v.round() == [] and v.held["BTCUSDT"] == 700, f"x routed again as btc → db: x's 200 is not sold as a newcomer's ({v.calls})")
+
+# another gate on the key wins: a signal-gated neighbour holds the whole key as is
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": 200, "db": 500}, {"BTCUSDT": 700})
+json.dump({"c1": 1}, open("state/signal_gate.json", "w"))
+got, row = v.round(), snap_row("BTCUSDT")
+check(got == [] and row.get("gated") is True and "frozen" not in row and set(row.get("awaiting") or {}) == {"db"},
+      f"c1 waits for a new signal: the key stays gated, no window target over it ({got}, {row})")
+
+# spot never goes short: the others' short intent plus frozen is clamped at 0
+fresh()
+strat("sp", "BTCUSDT", market="spot", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", market="spot", state={"symbol": "BTCUSDT", "position": 0})
+strat("db", "BTCUSDT", market="spot")
+v = swap({"sp": 500, "c1": 600}, {"sp": 0, "c1": 600, "db": 500}, {"BTCUSDT@spot": 500})
+json.dump({"symbol": "BTCUSDT", "position": -1}, open("strategies/c1/state.json", "w"))
+got, row = v.round(), snap_row("BTCUSDT@spot")
+check(row.get("side") is None and row.get("size") == 0 and got == [("BTCUSDT@spot", -500)],
+      f"spot: c1 -600 + frozen 500 = -100 is a 0 target, only what is held is sold ({got}, {row})")
+
+# lots stay whole: a half lot from a neighbour plus the frozen lots rounds half-up
+fresh()
+lot = {"type": "futures_contracts", "contract_value": 1, "currency": "USDT", "lot_size": 1, "margin": 1}
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 2, "c1": 1}, {"btc": 0, "c1": 1, "db": 2}, {"BTCUSDT": 3},
+         specs={"btc": lot, "c1": lot, "db": lot})
+json.dump({"symbol": "BTCUSDT", "position": 0.5}, open("strategies/c1/state.json", "w"))
+got, row = v.round(), snap_row("BTCUSDT")
+check(row.get("size") == 3 and got == [], f"lots: 0.5 + frozen 2 = 2.5 → 3 lots, no half-lot order ({got}, {row})")
+
+# an untrusted book or a pending key: held as is on both sides, nothing anchored
+fresh()
+json.dump({"target": {"BTCUSDT": {"side": "long", "size": 500, "contributors": [
+    {"strategy": "btc", "position": 1, "amount": 500, "contribution": 500}]}}}, open("manager/last_reconcile.json", "w"))
+waiting = lambda: {"BTCUSDT": {"side": None, "size": 0.0, "exchange": "binance", "asset_spec": None, "market": "swap",
+                               "contributors": [], "gated": True, "first_signal_hold": True,
+                               "awaiting": {"db": round(time.time()) + 3000}}}
+for label, kw in (("the book cannot be trusted (baseline wait)", {"trusted": False}),
+                  ("the key waits on a pending baseline", {"trusted": True, "skip": {"BTCUSDT"}})):
+    out = portfolio._first_signal_targets(waiting(), funded={"db"}, **kw)["BTCUSDT"]
+    check(out.get("gated") is True and "frozen" not in out and "first_signal_hold" not in out
+          and not portfolio._first_signal_book()["anchors"],
+          f"{label}: the key stays held as is, no anchor written ({out})")
+out = portfolio._first_signal_targets(waiting(), trusted=True, funded={"db"})["BTCUSDT"]
+check(out.get("gated") is False and out.get("frozen") == 500 and portfolio._first_signal_book()["anchors"].get("BTCUSDT"),
+      f"…and once it can be trusted, btc's 500 from the snapshot is the anchor ({out})")
+
 # a TW portfolio with a large literal UNIVERSE: only the difference is frozen, neighbours trade
 fresh()
 codes = [str(1100 + i) for i in range(150)]
@@ -249,8 +464,8 @@ strat("old", "2454", state={"symbol": "2454", "position": 1})
 strat("n1", "2330", state={"symbol": "2330", "position": 1})
 strat("n2", "2317", state={"symbol": "2317", "position": 1})
 strat("tw", universe=codes + ["2330", "2317", "2454"])
-config({"old": 0, "n1": 100, "n2": 100, "tw": 3000})
-v = Venue({"2454": 300, "2330": 100, "2317": 100})
+v = swap({"old": 300, "n1": 100, "n2": 100}, {"old": 0, "n1": 100, "n2": 100, "tw": 3000},
+         {"2454": 300, "2330": 100, "2317": 100})
 check(v.round() == [], f"tw joins with 153 keys, old leaves 2454: nothing moves ({v.calls})")
 json.dump({"symbol": "2330", "position": 0}, open("strategies/n1/state.json", "w"))
 json.dump({"symbol": "2317", "position": 2}, open("strategies/n2/state.json", "w"))
@@ -261,10 +476,10 @@ check(got == [("2317", 100), ("2330", -100)] and v.held["2454"] == 300,
 # ── a non-UTF-8 strategy.py never takes the round down
 fresh()
 strat("eth", "ETHUSDT", state={"symbol": "ETHUSDT", "position": 1})
+strat("old", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
 os.makedirs("strategies/bad", exist_ok=True)
 open("strategies/bad/strategy.py", "wb").write('# 換成新版\nSYMBOL = "BTCUSDT"\nINTERVAL = "1h"\n'.encode("big5"))
-config({"bad": 500})
-v = Venue({"ETHUSDT": 300, "BTCUSDT": 500})
+v = swap({"eth": 300, "old": 500}, {"bad": 500}, {"ETHUSDT": 300, "BTCUSDT": 500})
 check(v.round() == [("ETHUSDT", -300)] and v.held["BTCUSDT"] == 500,
       f"a Big5 strategy.py: its SYMBOL still read, BTC held, eth's removal closes ETH ({v.calls})")
 open("strategies/bad/strategy.py", "wb").write('# -*- coding: big5 -*-\n# 現貨\nMARKET = "spot"\nSYMBOL = "BTCUSDT"\n'.encode("big5"))
@@ -312,7 +527,7 @@ def clocked(prep=None, fail_write=False):
     fresh()
     strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
     strat("db", "BTCUSDT")
-    config({"btc": 0, "db": 500})
+    v = swap({"btc": 500}, {"btc": 0, "db": 500}, {"BTCUSDT": 500})
     if prep:
         prep()
     clock, real_replace = Clock(), portfolio.atomic_replace
@@ -323,7 +538,7 @@ def clocked(prep=None, fail_write=False):
                 raise OSError(28, "No space left on device")
             return real_replace(src, dst)
         portfolio.atomic_replace = boom
-    v, seen = Venue({"BTCUSDT": 500}), []
+    seen = []
     try:
         for step in (0, 1800, 1801, 3600):
             clock.t += step
@@ -370,9 +585,8 @@ check(cs["g"].get("gated") is True and "gated" not in cs["h"], f"the gated contr
 fresh()
 strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
 strat("db", "BTCUSDT")
-config({"btc": 0, "db": 500})
+v = swap({"btc": 500}, {"btc": 0, "db": 500}, {"BTCUSDT": 500})
 open(guard.HALT_PATH, "w").write("test")
-v = Venue({"BTCUSDT": 500})
 check(v.round() == [], f"halted, inside the window: nothing ({v.calls})")
 backdate("db", 3601)
 got = v.round()

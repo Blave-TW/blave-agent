@@ -290,13 +290,18 @@ own. If the user says the split is wrong, reseed by hand (below).
 `state.json` yet (it just joined — the runtime moved its old one to `state.json.prejoin` — or
 it has never computed) leaves what it replaces on the book until it writes one: swapping a
 strategy for a new version on the same coin no longer closes the position one round and buys
-it back the next. Each key it will trade is anchored at the first round that sees it waiting —
-`frozen` = the book on that key minus what the other members want there — and inside the
-window the key's target is the others' target now + `frozen` (+ the last share of any member
-that leaves the key meanwhile). So a neighbour's own signal — a stop included — or amount
-change still trades; only the leaving member's close and the newcomer's entry wait. Another
-gate on the key (signal gate, unrouted member, a baseline wait) holds it as is on both sides
-instead. Its keys: `SYMBOL` (or `stats.json` `symbol`), else a literal `UNIVERSE = [...]`
+it back the next. Each key it will trade is anchored on the previous round's snapshot —
+`frozen` = the contributions there of the members that no longer contribute (taken out of
+`amounts`, set to 0, or waiting for their own first signal again); never the book, so an
+account-read book's unrealised PnL is not frozen — and inside the window the key's target is
+the others' target now + `frozen` (+ the last share of any member that leaves the key
+meanwhile). So a neighbour's own signal — a stop included, even one between the save and the
+first round — or amount change, even in the same save, still trades; only the leaving member's
+close and the newcomer's entry wait. A member still funded that drops the key (a Type C
+weights dict without it) is its own exit, not a departure. Two or more newcomers on one key
+swap together: one that has computed stays out of the target until the last of them has (or
+timed out). Another gate on the key (signal gate, unrouted member, a baseline wait, a pending
+baseline) holds it as is on both sides instead, and nothing is anchored. Its keys: `SYMBOL` (or `stats.json` `symbol`), else a literal `UNIVERSE = [...]`
 (comments ignored), else its `backtest_state.json` assets; none known = nothing frozen
 (`first_signal_wait_no_keys` audit line). The wait is at most one bar of its `INTERVAL` and
 never longer than `lib.portfolio.FIRST_SIGNAL_WAIT_MAX_S` (2 h), counted from the first round
@@ -304,8 +309,8 @@ that saw it without a state (`state/first_signal_wait.json`; a re-save does not 
 start that is not a time at or before now counts from now). Past that it reconciles as before —
 no state, no contribution — so an exit is never parked behind a strategy that never computes
 (`first_signal_wait_expired`); a fault in this wait reconciles the round without it
-(`first_signal_wait_error`). The snapshot row carries `awaiting: {strategy: until_epoch}` and
-`frozen`; the audit lines `first_signal_wait` / `…_expired` answer "why didn't it move".
+(`first_signal_wait_error`). The snapshot row carries `awaiting: {strategy: until_epoch}`,
+`frozen`, and `cohort` (newcomers already computed, still held back); the audit lines `first_signal_wait` / `…_expired` answer "why didn't it move".
 Under HALT nothing is sent, inside or past the window — only a close the user asks for
 (全部平倉 / 平倉) goes out; once HALT is cleared, a key past its window reconciles as above.
 
