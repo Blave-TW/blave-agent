@@ -98,6 +98,11 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   && /const close = trCloseTag\(cur, nx, mayFire, trStratHeld\(n\)\), ctClose = swapped \? trCtCloseTag\(n, amounts, stored\) : null;/.test(psrc) && !/const ctCloses = /.test(src));
 { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
   const c700 = (css.match(/@container \(max-width: 700px\) \{([\s\S]*?)\n\}/) || [])[1] || "";
+  { const base = css.indexOf(".mg-stat:not(:first-child) .sv { min-height: calc(28px * 1.1)"), fold = css.indexOf("@container (max-width: 600px) {\n  .mg-stats {"),
+      body = fold < 0 ? "" : css.slice(fold, css.indexOf("\n}", fold));
+    ok("移動窗格三格:主指標 28、另兩格補到 28 行盒;中欄 ≤600 折兩欄(主指標整列、撤補高),而且排在 base 之後(同特異度靠 source order)",
+      /\.mg-stat:first-child \.sv \{ font-size: 28px; \}/.test(css) && base > 0 && fold > base
+      && /\.mg-stats \{ grid-template-columns: repeat\(2, 1fr\); \}/.test(body) && /\.mg-stat:first-child \{ grid-column: span 2; \}/.test(body) && /min-height: 0; display: block;/.test(body)); }
   ok("0.1.26 複看 N1:中欄 ≤700 投資組合標的格可換行時用 text-wrap: pretty,不會只剩「檔」「more」一個字掉到第二行(1180–1300／聊天欄 452 實測)", /\.pf-tbl td\.c-sym \{ white-space: normal; \}\n\s*\.pf-tbl td\.c-sym \{ text-wrap: pretty; \}/.test(c700));
   ok("必改 6:.pf-total 靠右、間距 12(同網頁 units §9.7)", /\.pf-total \{[^}]*justify-content: flex-end;[^}]*gap: var\(--space-12\);/.test(css));
   ok("必改 8:窄欄的合約鈕跟策略名左緣對齊(-8,同觸發器左右 padding 8);優化表那顆接在名字後面維持 8", /\.ct-trig \{[^}]*padding: 0 var\(--space-8\); margin-left: calc\(-1 \* var\(--space-8\)\);/.test(css) && /\.sub-sym \.ct-trig \{ margin-left: calc\(-1 \* var\(--space-8\)\); \}/.test(css) && /\.mg-tbl \.ct-trig \{ margin-left: var\(--space-8\); \}/.test(css)); }
