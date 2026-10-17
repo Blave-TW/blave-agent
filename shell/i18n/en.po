@@ -1759,6 +1759,12 @@ msgstr "TAIEX futures (lots)"
 msgid "tr.grpUnknown"
 msgstr "Currency not set"
 
+msgid "tr.ccyAfterRun"
+msgstr "Can't tell which currency this strategy trades in yet. It shows up after the strategy runs once."
+
+msgid "tr.ccyMixed"
+msgstr "These symbols mix currencies, or their currency can't be told from the symbol."
+
 msgid "tr.equityMult"
 msgstr "{x}× equity"
 
@@ -7514,9 +7520,6 @@ msgstr "Signal positions by instrument"
 
 msgid "po.sigTargetsTip"
 msgstr "Amount × signal summed across the strategies on the same instrument."
-
-msgid "po.previewNote"
-msgstr "Backtest's last bar {date} (preview, no orders yet)"
 
 msgid "po.actualTip"
 msgstr "What your strategies hold in your {venue} account"

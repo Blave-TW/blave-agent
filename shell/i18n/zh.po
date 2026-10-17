@@ -1767,6 +1767,12 @@ msgstr "台指期（口）"
 msgid "tr.grpUnknown"
 msgstr "幣別未定"
 
+msgid "tr.ccyAfterRun"
+msgstr "還判斷不出這支策略用哪種幣計價，策略跑過一次後就會知道。"
+
+msgid "tr.ccyMixed"
+msgstr "這些標的混了不同幣別，或從代號看不出計價。"
+
 msgid "tr.equityMult"
 msgstr "淨值 {x}×"
 
@@ -7528,9 +7534,6 @@ msgstr "各商品的總訊號部位"
 
 msgid "po.sigTargetsTip"
 msgstr "同一商品的各檔策略「金額 × 訊號」加總。"
-
-msgid "po.previewNote"
-msgstr "回測最後一期 {date}（預覽，尚未下單）"
 
 msgid "po.actualTip"
 msgstr "{venue} 帳戶裡策略開的部位"

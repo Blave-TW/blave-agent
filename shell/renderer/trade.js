@@ -2611,13 +2611,13 @@ function poPaintCfg() {
   }
   trPosFocusBack(box, refocus, $("po-h"));
 }
-/* 策略組合 › 配置才用:投資組合還沒有實盤權重時,畫機器回報的回測最後一期(r.previews,機器端 portfolio_reporter.typec_previews)並標成預覽。
+/* 策略組合 › 配置才用:投資組合還沒有實盤權重時,畫機器回報的回測最後一期(r.previews,機器端 portfolio_reporter.typec_previews)。
    自動下單 › 部位不用:對帳器只照實盤的 state.json 下單,拿預覽算差額會畫出一筆不會發生的單 */
 function poCfgStates(r) {
   const out = Object.assign({}, r.states || {}), pv = r.previews;
   if (pv && typeof pv === "object") Object.keys(pv).forEach((n) => { const p = pv[n], cur = out[n];
     if (cur && cur.weights && typeof cur.weights === "object") return;
-    if (p && p.weights && typeof p.weights === "object" && !Array.isArray(p.weights)) out[n] = Object.assign({}, p, { preview: true }); });
+    if (p && p.weights && typeof p.weights === "object" && !Array.isArray(p.weights)) out[n] = p; });
   return out;
 }
 /* ── 自動下單 › 部位:唯讀的策略組合配置對照帳上(設計 autotrade-bridge-mockup A 案;同網頁 buildPositionsSection → buildSigTargets("trade"))──
@@ -3515,14 +3515,7 @@ function poSigTable(r, stored, states, mode) {
     tb.appendChild(row); rowOf[sym] = row;   // 拒單接在細節行底下(列 → 細節 → 拒單,同網頁)
   }
   scroll.appendChild(tbl); frag.appendChild(scroll);
-  if (!trade) {
-    // 預覽標上它是哪一天的:機器端照市場換好的交易日 bar_date(台股、台指期 UTC+8,其餘 UTC),外殼不自己換算;幾支日期不同時寫最舊的那天
-    const pvs = Object.keys(stored).map((n) => st2[n]).filter((x) => x && x.preview === true);
-    const pvDates = pvs.map((x) => x.bar_date).filter((x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
-    const pvDate = pvDates.length ? pvDates[0].split("-").slice(1).map(Number).join("/") : "—";   // 沒有日期也照樣標成預覽
-    if (pvs.length) frag.appendChild(trEl("div", "pf-foot", t("po.previewNote", { date: pvDate })));
-    return frag;
-  }
+  if (!trade) return frag;
   /* 表底合計列:左邊未實現與保證金的合計(有細節的列全部都有才加,缺一列的和是低估),右邊「合計 ≈ X · 淨值 N×」(跟金額表、啟動框同一個格式 trPlanTotal) */
   const foot = trEl("div", "pf-total po-foot"); let footN = 0;
   const oneCcy = detRows.every((x) => x.ccy === (detRows[0] || {}).ccy);   // 台幣(口數列)與帳戶幣不相加

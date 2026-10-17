@@ -1,7 +1,7 @@
 // 投資組合預覽(機器回報 previews;runtime/portfolio_reporter.typec_previews)。不起 Electron。
-//   ① 策略組合 › 配置:回報有預覽 → 畫它並標成預覽;回報沒預覽(過時被 reporter 拿掉)→ 這支沒有權重,總訊號部位那一列是「計算中…」
+//   ① 策略組合 › 配置:回報有預覽 → 畫它;回報沒預覽(過時被 reporter 拿掉)→ 這支沒有權重,總訊號部位那一列是「計算中…」
 //   ② 實盤權重在就用實盤的,預覽不蓋過去;自動下單 › 部位從不用預覽
-//   ③ 註記的日期只讀 bar_date(機器端照市場換好的交易日),外殼不從 bar_at 換算
+//   ③ 預覽數字照畫,表底不加「預覽,尚未下單」註記(Wei 0.1.26)
 // 跑法:node tests/check_shell_typec_preview.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -15,7 +15,7 @@ const C = {}; vm.runInNewContext(cutF(src, "poCfgStates") + "\nthis.f = poCfgSta
 const W = { "2330": 0.5, "2454": 0.5 };
 const pv = { type: "portfolio", market: "spot", weights: W, rebalance_at: 1, bar_at: 1791936000, bar_date: "2026-10-14" };
 const withPv = C.f({ states: {}, previews: { tw4: pv } });
-ok("① 有預覽:配置頁拿到它的權重並標 preview", withPv.tw4 && withPv.tw4.preview === true && withPv.tw4.weights === W);
+ok("① 有預覽:配置頁拿到它的權重", withPv.tw4 && withPv.tw4.weights === W);
 const gone = C.f({ states: {}, previews: {} });
 ok("① 預覽過時被機器拿掉(previews 沒這支):這支沒有權重", !gone.tw4);
 const poSig = cutF(src, "poSigTable");
@@ -24,10 +24,10 @@ ok("① 沒有權重的投資組合:總訊號部位那一列寫 tr.typecPending(
   && /trHostOld\(\) \? t\("po\.hostOld"\) : t\("tr\.typecPending"\)/.test(poSig)
   && S.zh["tr.typecPending"] === "計算中…" && S.en["tr.typecPending"] === "Computing…");
 const live = C.f({ states: { tw4: { type: "portfolio", weights: { "2330": 0 } } }, previews: { tw4: pv } });
-ok("② 實盤權重在(就算全 0):用實盤的,預覽不蓋過去", live.tw4.preview !== true && live.tw4.weights["2330"] === 0);
+ok("② 實盤權重在(就算全 0):用實盤的,預覽不蓋過去", live.tw4.weights["2330"] === 0 && !("2454" in live.tw4.weights));
 ok("② 只有配置頁用預覽:poPaintCfg 用 poCfgStates,自動下單 › 部位照讀 r.states",
   /states = poCfgStates\(r\)/.test(cutF(src, "poPaintCfg")) && /poSigTable\(r, trStored\(\) \|\| \{\}, r\.states \|\| \{\}, "trade"\)/.test(cutF(src, "trPaintPos")));
-ok("③ 註記日期讀 bar_date,不碰 bar_at;字串帶 {date}",
-  /x\.bar_date/.test(poSig) && !/bar_at/.test(poSig) && /\{date\}/.test(S.zh["po.previewNote"]) && /\{date\}/.test(S.en["po.previewNote"]));
+ok("③ 配置頁的總訊號部位表不帶預覽註記;字串已刪", /if \(!trade\) return frag;/.test(poSig) && !/previewNote|bar_date|preview/.test(poSig)
+  && !("po.previewNote" in S.zh) && !("po.previewNote" in S.en) && !/previewNote/.test(src));
 console.log(red ? `\n${red} FAILED` : "\nall checks passed");
 process.exit(red ? 1 : 0);
