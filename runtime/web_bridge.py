@@ -646,7 +646,9 @@ def _worker(session_id, entry, slot):
     with _lock:
         stop_file = (_running.get(session_id) or {}).get("stop_file")
     try:
-        _turn_state(session_id, "running")
+        # the id tells the api which queued message just started; it writes that one into
+        # history now, so a reply never lands above the question it answers
+        _turn_state(session_id, "running", running_id=entry.get("message_id"))
         run_agent_turn(session_id, entry.get("content") or "",
                        viewing_strategy=entry.get("viewing_strategy"),
                        viewing_tab=entry.get("viewing_tab"),
