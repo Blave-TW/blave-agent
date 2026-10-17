@@ -1,5 +1,5 @@
 // 策略頁「進出場紀錄」的預設範圍、圖↔表連動、交易地圖(0.1.27;設計稿 trades-tab-range 方案三)。
-//   ① 純函式:initialRange(裝得下整段/裝不下往回收到箭頭間距 ≥ 24px/至少 130 根/首根之前的點不算/寬 0 退回)、
+//   ① 純函式:initialRange(框收進來的成交:前端/尾端/兩端空白、裝不下往回收到箭頭間距 ≥ 24px 且兩端不裁/至少 130 根/首根之前的點不算/寬 0 退回)、
 //      clampRange、trackPnl、mapBars、nearestMarker、fmtAmount;CSS 的 hover 與選中是兩種底
 //   ② 真的畫(隨包的 Electron、offscreen):一打開的範圍、點列 → 同段一起亮 + 框住那段、再點取消、
 //      交易地圖 ←/→ 與點擊會移範圍、列的損益 tooltip、埋點名字
@@ -31,38 +31,72 @@ if (!process.versions.electron) {
   const build = (st) => { const c = TP.sanitizeCandles(st.candles), tr = TP.buildTracks(TP.sanitizeTrades(st.trades), TP.startPosition(st)); tr.forEach((x) => { x.pnl = TP.trackPnl(x, c[c.length - 1].close); }); return { c, tr }; };
   const J = JSON.stringify;
 
-  // 10 段、每段 2 筆 = 20 筆,寬 1000 → 上限 41 筆:整段
-  { const { c, tr } = build(fixture(2000, Array.from({ length: 10 }, (_, k) => [100 + k * 150, 140 + k * 150])));
-    const r = TP.initialRange(tr, c, 1000);
-    ok("① 裝得下(20 筆 ≤ 1000/24)→ 整段:左緣 -2、右緣最後一根 + 4", r.from === -2 && r.to === 1999 + 4, J(r)); }
-  // 60 段 × 2 筆 = 120 筆,寬 480 → 上限 20 筆 = 最新 10 段;第 10 新那段的進場 = 第 50 段
+  // 框進來的箭頭的幾何:筆數、平均間距(px)、兩端箭頭離圖邊幾 px、最新那筆在不在、範圍裡的箭頭是不是「從某筆起往後全部」(沒有跳過)
+  const geom = (tr, c, W, r) => {
+    const all = []; tr.forEach((t) => t.points.forEach((p) => { if (p.ts >= c[0].time) all.push(Math.round((p.ts - c[0].time) / DAY)); }));
+    all.sort((x, y) => x - y);
+    const inR = all.filter((i) => i >= r.from && i <= r.to), n = inR.length, ppb = W / (r.to - r.from);
+    return { n, avg: n > 1 ? ((inR[n - 1] - inR[0]) * ppb) / (n - 1) : Infinity, edgeL: (inR[0] - r.from) * ppb, edgeR: (r.to - inR[n - 1]) * ppb,
+      newest: inR[n - 1] === all[all.length - 1], contiguous: n === all.filter((i) => i >= inR[0]).length, total: all.length };
+  };
+  // 箭頭約 12px 寬:中心離圖邊 ≥ 6px 才不被裁
+  const sound = (g) => g.avg >= 24 && g.edgeL >= 6 && g.edgeR >= 6 && g.newest && g.contiguous;
+  const W = 1000;
+
+  // 裁定三的三個例子:範圍框的是收進來的成交,不是整段 K 線
+  { const P = Array.from({ length: 10 }, (_, k) => [1200 + k * 70, 1240 + k * 70]), { c, tr } = build(fixture(2000, P)), r = TP.initialRange(tr, c, W), g = geom(tr, c, W, r);
+    ok("① 前端空白(成交從第 1200 根才開始):全部裝得下也不拉回回測起點,左緣 = 第一筆 − 4%、右緣 = 最後一根 + 4;間距 ≥ 24px、兩端箭頭不被裁",
+      r.from === 1200 - Math.round((2003 - 1200) * 0.04) && r.to === 2003 && g.n === 20 && sound(g), J({ r, g })); }
+  { const P = Array.from({ length: 10 }, (_, k) => [100 + k * 70, 140 + k * 70]), { c, tr } = build(fixture(2000, P)), r = TP.initialRange(tr, c, W), g = geom(tr, c, W, r);
+    const span = 770 - 100, to = 770 + Math.round(span * 0.15);
+    ok("① 尾端空白(早就空手、最後一筆在第 770 根):右緣 = 最後一筆 + 15%,左緣 = 第一筆 − 4%;間距 ≥ 24px、兩端箭頭不被裁",
+      r.to === to && r.from === 100 - Math.round((to - 100) * 0.04) && g.n === 20 && sound(g), J({ r, g })); }
+  { const P = Array.from({ length: 10 }, (_, k) => [800 + k * 30, 815 + k * 30]), { c, tr } = build(fixture(3000, P)), r = TP.initialRange(tr, c, W), g = geom(tr, c, W, r);
+    ok("① 兩端都有空白:左右都貼著成交框;間距 ≥ 24px、兩端箭頭不被裁", r.from > 700 && r.to < 1200 && g.n === 20 && sound(g), J({ r, g })); }
+
+  // 裝不下:名額用扣掉留白後的寬度算,間距照樣 ≥ 24px;沒收進來的那根不被左側留白框進來
   { const P = Array.from({ length: 60 }, (_, k) => [20 + k * 30, 35 + k * 30]);
-    const { c, tr } = build(fixture(1900, P));
-    const r = TP.initialRange(tr, c, 480), entry = P[50][0], pad = Math.max(5, Math.round((1899 - entry) * 0.04));
-    ok("① 裝不下 → 從最新往回收 10 段(20 筆),左緣 = 第 10 新那段的進場再留 4%,但不留到前一段的平倉箭頭", entry - pad <= P[49][1] && r.from === P[49][1] + 1 && r.to === 1903, J({ r, entry, pad }));
-    const P2 = Array.from({ length: 60 }, (_, k) => [20 + k * 30, 25 + k * 30]), b2 = build(fixture(1900, P2)), r4 = TP.initialRange(b2.tr, b2.c, 480);
-    ok("① 前一段離得夠遠 → 左緣就是進場 − 4%", r4.from === P2[50][0] - Math.max(5, Math.round((1899 - P2[50][0]) * 0.04)), J(r4));
-    const inRange = tr.reduce((n, t) => n + t.points.filter((p) => { const i = Math.round((p.ts - T0) / DAY); return i >= r.from && i <= 1899; }).length, 0);
-    ok("① 框進來的箭頭數 ≤ 圖寬 / 24(間距保證)", inRange <= Math.floor(480 / 24), inRange);
-    const close = build(fixture(700, Array.from({ length: 60 }, (_, k) => [20 + k * 10, 25 + k * 10]))), r2 = TP.initialRange(close.tr, close.c, 24 * 4);
-    ok("① 最少 130 根:收進來的段落都在最後 130 根內時,左緣退到最後一根往前 130 根", r2.from === 700 - 130 && r2.to === 703, J(r2)); }
-  // 未平倉段要算進去;調倉也是一筆箭頭
+    for (const w of [480, 700, 1000]) { const { c, tr } = build(fixture(1900, P)), r = TP.initialRange(tr, c, w), g = geom(tr, c, w, r);
+      ok("① 裝不下(寬 " + w + "):從最新往回收,間距 ≥ 24px、兩端不裁、沒有跳過任何一筆、不是全部", sound(g) && g.n < g.total && r.to === 1903, J({ r, g })); }
+    const e = build(fixture(3000, P.slice(0, 40))), r = TP.initialRange(e.tr, e.c, 480), g = geom(e.tr, e.c, 480, r);
+    ok("① 裝不下且早就空手:右緣 = 最後一筆 + 15%,間距 ≥ 24px、兩端不裁", r.to < 1300 && sound(g), J({ r, g }));
+    const op = build(fixture(3000, P.slice(0, 40).concat([[2990, null]]))), ro = TP.initialRange(op.tr, op.c, 480);
+    ok("① 最後一段未平倉 → 右緣照舊停在最後一根 + 4", ro.to === 3003, J(ro));
+    const near = build(fixture(1220, P.slice(0, 40))), rn = TP.initialRange(near.tr, near.c, 480);
+    ok("① 尾端空檔比成交跨度短 → 右緣照舊", rn.to === 1223, J(rn)); }
+
+  // 沒收進來那根跟最早收進來那根緊鄰(逐筆收、每 2 根一筆):左緣停在兩根中間,最早那顆不貼圖邊
+  { const dense = fixture(5000, []);
+    dense.trades = Array.from({ length: 996 }, (_, k) => ({ ts: T0 + (3000 + k * 2) * DAY, price: 100, delta: 1, direction: "buy", position: k + 1 }));
+    const d = build(dense), r = TP.initialRange(d.tr, d.c, 2000), g = geom(d.tr, d.c, 2000, r);
+    ok("① 緊鄰時左緣停在兩根中間(+0.5 根):最早收進來那顆離圖邊 ≥ 6px、間距 ≥ 24px", sound(g) && r.from % 1 === 0.5 && g.n < g.total, J({ r, g })); }
+
+  // 最少 130 根優先
+  { const close = build(fixture(620, Array.from({ length: 60 }, (_, k) => [20 + k * 10, 25 + k * 10]))), r2 = TP.initialRange(close.tr, close.c, 24 * 4);
+    ok("① 最少 130 根:貼著資料尾端時往左補,不超出最後一根 + 4", r2.from === 623 - 130 && r2.to === 623, J(r2));
+    const mid = build(fixture(3000, [[1500, 1510], [1520, 1530]])), rm = TP.initialRange(mid.tr, mid.c, W);
+    ok("① 最少 130 根:成交在中間時往兩側平均補(以成交為中心)", rm.to - rm.from === 130 && Math.abs((rm.from + rm.to) / 2 - 1515) <= 1, J(rm));
+    const tiny = build(fixture(100, [[10, 20], [40, 50]])), rt = TP.initialRange(tiny.tr, tiny.c, W);
+    ok("① 整段資料不到 130 根 → 整段", J(rt) === J({ from: -2, to: 103 }), J(rt));
+    const head = build(fixture(3000, [[3, 8], [12, 18]])), rh = TP.initialRange(head.tr, head.c, W);
+    ok("① 成交貼著首根:左緣不早於首根(-2)、往右補到 130", rh.from === -2 && rh.to === 128, J(rh)); }
+
+  // 未平倉段與調倉都算筆數(未平倉 → 右緣照舊)
   { const { c, tr } = build(fixture(1000, [[100, 200, 0], [300, 400, 0], [500, 600, 3], [900, null, 2]]));
-    // 最新段 3 筆(開倉 + 2 調倉、未平倉),次新 5 筆(開 + 3 調 + 平)。上限 8 → 兩段剛好
-    const r = TP.initialRange(tr, c, 8 * 24 + 5), pad = Math.max(5, Math.round((999 - 500) * 0.04));
-    ok("① 未平倉段與調倉都算筆數:上限 8 收進最新兩段(3 + 5),左緣 = 第二段進場 − 4%", r.from === Math.min(500 - pad, 1000 - 130) && r.to === 1003, J(r));
+    const r = TP.initialRange(tr, c, 8 * 24 + 5), g = geom(tr, c, 8 * 24 + 5, r);
+    ok("① 未平倉段與調倉都算筆數:右緣停在最後一根 + 4,收進來的筆數沒有跳過", r.to === 1003 && g.contiguous && g.newest, J({ r, g }));
     // 一段從不歸零、每 100 根調一次倉:上限 4 筆 → 左緣 = 第 4 新那筆(4600)− 4%;4% 比到下一筆(4500)的距離短,照留
     const sparse = fixture(5000, []);
     sparse.trades = Array.from({ length: 40 }, (_, k) => ({ ts: T0 + (1000 + k * 100) * DAY, price: 100, delta: 1, direction: "buy", position: k + 1 }));
     const sp = build(sparse), r6 = TP.initialRange(sp.tr, sp.c, 4 * 24);
     const r7 = TP.initialRange(sp.tr, sp.c, 30);
-    ok("① 名額下限 4 筆(同網頁):寬 30 只裝得下 1 筆,仍照 4 筆收(沒有下限會只收最新一筆、被 130 根下限蓋成 4870)", r7.from === 4584 && J(r7) === J(r6), J(r7));
-    ok("① 最新那段自己就超過上限 → 逐筆往回數:收到第 4 新那筆為止,左緣 = 那筆 − 4%", r6.from === 4600 - Math.max(5, Math.round((4999 - 4600) * 0.04)) && r6.to === 5003, J(r6)); }
+    ok("① 名額下限 4 筆(同網頁):寬 30 只裝得下 1 筆,仍照 4 筆收(沒有下限會只收最新一筆、被 130 根下限蓋成 4873)", r7.from === 4584 && J(r7) === J(r6), J(r7));
+    ok("① 最新那段自己就超過上限 → 逐筆往回數:收到第 4 新那筆為止,左緣 = 那筆 − 4%", r6.from === 4600 - Math.round((5003 - 4600) * 0.04) && r6.to === 5003, J(r6)); }
   // 首根 K 棒之前的點:不上圖、不佔名額
-  { const st = fixture(1000, [[100, 200], [300, 400], [500, 600]]);
+  { const st = fixture(1000, [[100, 200], [300, 400], [500, 600]]), base = build(fixture(1000, [[100, 200], [300, 400], [500, 600]]));
     st.trades.unshift({ ts: T0 - 50 * DAY, price: 99, delta: 1, direction: "buy", position: 1 }, { ts: T0 - 40 * DAY, price: 98, delta: -1, direction: "sell", position: 0 });
     const { c, tr } = build(st);
-    ok("① 首根 K 棒之前那段不佔名額:上限 6 筆仍是整段", J(TP.initialRange(tr, c, 6 * 24)) === J({ from: -2, to: 1003 }), J(TP.initialRange(tr, c, 6 * 24)));
+    ok("① 首根 K 棒之前那段不佔名額:範圍跟沒有那段時一樣", J(TP.initialRange(tr, c, 6 * 24)) === J(TP.initialRange(base.tr, base.c, 6 * 24)), J([TP.initialRange(tr, c, 6 * 24), TP.initialRange(base.tr, base.c, 6 * 24)]));
     ok("① 寬 0 / 沒有段 → 退回最近 130 根", J(TP.initialRange(tr, c, 0)) === J({ from: 870, to: 1003 }) && J(TP.initialRange([], c, 900)) === J({ from: 870, to: 1003 })); }
 
   ok("① clampRange:範圍寬度不變、夾在 [-2, 最後一根 + 4];比整段寬就貼左", J(TP.clampRange(-50, 100, 999)) === J({ from: -2, to: 98 }) && J(TP.clampRange(950, 100, 999)) === J({ from: 903, to: 1003 })
@@ -133,7 +167,8 @@ const day = (i) => { const d = new Date((T0 + i * DAY + 8 * 3600) * 1000); retur
 app.whenReady().then(async () => {
   { const { win, ev } = await open(SMALL);
     const vt = await ev(VT);
-    ok("② 筆數少 → 一打開就是整段(地圖外框 = 第一根到最後一根)", vt === day(0) + " – " + day(599), vt);
+    // 3 段 5 筆全部裝得下:框收進來的成交(第 50 根起),不拉回第一根;最後一段未平倉 → 右緣到最後一根
+    ok("② 筆數少 → 框住全部成交(左緣在第一筆之前一點、不是回測起點,右緣到最後一根)", vt.split(" – ")[0] < day(50) && vt.split(" – ")[0] > day(0) && vt.endsWith(day(599)), vt);
     win.destroy(); }
 
   const { win, ev } = await open(BIG);
