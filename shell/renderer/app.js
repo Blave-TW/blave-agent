@@ -3105,7 +3105,7 @@ function faultCard() {
       b2.hidden = !s.second; if (s.second) { b2.textContent = s.second.label; b2.disabled = false; h2 = s.second.on; }
       sub.hidden = !s.sub; sub.textContent = "";
       if (s.sub) sub.append(s.sub);
-      scrollChat();
+      scrollChat(!s.calm);   // 出錯要讓人看到(同網頁):往上捲著也拉到底;calm 的(「可以開始了。」)照黏底規則
     },
   };
 }
@@ -3924,7 +3924,7 @@ window.blave.onTurnEvent((c) => {
     const line = t("turn.error", { msg: c.message || "" });
     // 本機 agent、這一輪還沒有任何回覆:先不畫,回合結束問過 CLI 的登入狀態再決定出哪一則
     // (設計師 M4)。先畫再換掉會閃,讀屏也已經念出去收不回來。
-    if (holdErrors()) pendingErr.push(line); else addMsg("sys", line);
+    if (holdErrors()) pendingErr.push(line); else { addMsg("sys", line); scrollChat(true); }
   }
   scrollChat();
 });
@@ -3973,7 +3973,7 @@ window.blave.onTurnEnd(async (r) => {
   if (loggedOut) addFault(localAuthFault(cur));
   // 上限到了但引擎那句錯誤沒以回覆的形式出來(走 error chunk 或直接結束):照樣講「這一輪用量到上限」
   else if (!stopped && cur === "apikey" && turnCap && !turnFaulted && typeof akFault === "function") { turnFaulted = true; addFault(akFault("API Error: 429", true)); }
-  else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); }
+  else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); if (pendingErr.length || exitLine) scrollChat(true); }
   pendingErr = [];
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前

@@ -48,13 +48,13 @@ const ctx = {
   clearTimeout: (id) => { env.timers = env.timers.filter((x) => x.id !== id); },
   requestAnimationFrame: () => {}, getComputedStyle: () => ({ getPropertyValue: () => "180ms" }), window: {},
   chatEdge: () => {}, TICK_WINDOW: 24, TICK_PITCH: 4, brNeedsUser: () => false, brHost: () => "", brReg: (h) => h,
-  whereTag: () => new El("span"), stepWhere: () => "local",
+  whereTag: () => new El("span"), stepWhere: () => "local", srSay: () => {},
 };
-const body = cut("function scrollChat", "/* ── agent 回覆的顯示") + cut("let busy = null;", "/* 停止(照雲端工作頁");
+const body = cut("function scrollChat", "/* ── agent 回覆的顯示") + cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function faultCard()", "/* 「再送一次」");
 // 舊程式沒有黏底那段(只有一行 scrollChat):照樣切得出來跑,這條測試對舊程式要紅
 const stickSrc = src.indexOf("let chatStick") >= 0 ? cut("const CHAT_STICK_PX", "function scrollChat") : "";
 const M = new Function(...Object.keys(ctx), stickSrc + body +
-  "; return { scrollChat, busyStart, busyStep, busyStepDone, busyReason, get busy() { return busy; } };")(...Object.values(ctx));
+  "; return { scrollChat, faultCard, busyStart, busyStep, busyStepDone, busyReason, get busy() { return busy; } };")(...Object.values(ctx));
 const at = (ms) => { env.now = ms; const due = env.timers.filter((x) => x.at <= ms); env.timers = env.timers.filter((x) => x.at > ms); due.forEach((x) => x.f()); box.flush(); };
 const grow = (px) => { box.scrollHeight += px; };
 const bottom = () => box.scrollHeight - box.clientHeight;
@@ -107,5 +107,16 @@ ok("送出那條路有設回黏底(在畫自己那則泡泡之前)", (() => { co
 // img load 會把 Event 當參數傳進 scrollChat:不可以當成強制捲
 userScrollTo(20); M.scrollChat({ type: "load" }); box.flush();
 ok("img load 的 Event 參數不算強制捲", box.scrollTop === 20, box.scrollTop);
+
+// 出錯要讓人看到(對齊網頁 scrollDown(true)):往上捲著,錯誤卡／錯誤通知進來也拉到底並恢復跟捲;calm 的卡照黏底規則
+userScrollTo(30); grow(70);
+M.faultCard().set({ calm: true, text: "plan.done" }); box.flush();
+ok("往上捲後 calm 卡(可以開始了)進來:不拉", box.scrollTop === 30, box.scrollTop);
+grow(70); M.faultCard().set({ text: "turn.engineFailed" }); box.flush();
+ok("往上捲後錯誤卡進來:拉到底", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+grow(60); M.scrollChat(); box.flush();
+ok("…之後恢復跟著捲", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走強制捲",
+  /else \{ addMsg\("sys", line\); scrollChat\(true\); \}/.test(src) && /if \(exitLine\) addMsg\("sys", exitLine\); if \(pendingErr\.length \|\| exitLine\) scrollChat\(true\);/.test(src));
 
 process.exit(red ? 1 : 0);
