@@ -1526,23 +1526,29 @@ def typec_live_state(weights, price_df, now=None, market='swap'):
 
 
 _TW_STOCK_RE = re.compile(r"^\d{4,6}[A-Z]?(?:\.TWO?)?$")
+TW_CLOSE_FIELDS = ('raw_closes', 'raw_close_dates', 'raw_closes_est', 'raw_close_want')
+# the price lookup is display-only and runs after the tick's state.json is saved: it gets this
+# many seconds, once per tick, and is skipped while an earlier one is still running
+TW_CLOSE_BUDGET_S = 10
+# a close still short of its round's date (that day's bar not in yet) is retried each tick for
+# this long, then kept as an estimate
+TW_CLOSE_WANT_DAYS = 7
+_tw_close_inflight = []
 
 
-def tw_target_closes(prev, targets, end_date, hdrs, fetch=None):
-    """The unadjusted close each Taiwan-stock target is sized at, for the portfolio page's
-    「N 張」 (shell trade.js poSigTable): {'closes': {SYM: px}, 'close_dates': {SYM: date},
-    'closes_est': [SYM]} — empty dict when no target is a Taiwan stock.
+def tw_carry_closes(prev, targets, end_date):
+    """The Taiwan-stock sizing closes this tick can carry without any I/O, and what is left
+    to price. The portfolio page (shell trade.js trTwLots, runtime portfolio_reporter.tw_lots)
+    turns them into whole lots. Returns (fields, need): fields = {raw_closes: {SYM: px},
+    raw_close_dates: {SYM: date}, raw_closes_est: [SYM], raw_close_want: {SYM: date}} (only the
+    non-empty ones), need = {SYM: (want date, estimate)}.
 
-    Priced once, on the round the symbol's target changed, and carried while it holds —
-    re-pricing daily would move the shares a few each day and ask for orders nobody needs.
-    The strategy's own close cannot be used: lib.data's dividend adjustment is anchored at
-    the fetch window's start (2330 on 2026-10-16: 2420 from a 10-day window, 2755.89 from 2020), so
-    the raw daily close (fetch_twstock_price_batch, as a broker app shows) up to end_date is
-    taken instead. A state from before this field (same target, no close) is priced at the
-    latest close and listed in closes_est. A fetch failure leaves the symbol out — the page
-    falls back to TWD — and the next tick retries.
-
-    prev: the previous state ({} if none); targets: {SYM: weight or position} of this tick."""
+    A symbol is priced once, at the close of the round its target changed (want = that round's
+    Taipei date), and carried while the target holds — a daily re-price would move the shares
+    every day and ask for orders nobody needs. A close dated before its want (that day's bar was
+    not in yet) is carried as an estimate and asked for again until the want-day close arrives
+    or TW_CLOSE_WANT_DAYS pass. A state from before these fields (same target, no close) is
+    priced at the latest close and stays an estimate."""
     prev = prev if isinstance(prev, dict) else {}
     if isinstance(prev.get('weights'), dict):
         before = {str(k).replace('-', '').upper(): v for k, v in prev['weights'].items()}
@@ -1550,10 +1556,11 @@ def tw_target_closes(prev, targets, end_date, hdrs, fetch=None):
         before = {str(prev['symbol']).replace('-', '').upper(): prev.get('position', 0)}
     else:
         before = {}
-    old_px = prev.get('closes') if isinstance(prev.get('closes'), dict) else {}
-    old_dt = prev.get('close_dates') if isinstance(prev.get('close_dates'), dict) else {}
-    old_est = set(prev.get('closes_est') or []) if isinstance(prev.get('closes_est'), list) else set()
-    closes, dates, est, need = {}, {}, set(), {}
+    get = lambda k: prev.get(k) if isinstance(prev.get(k), dict) else {}
+    old_px, old_dt, old_want = get('raw_closes'), get('raw_close_dates'), get('raw_close_want')
+    old_est = prev.get('raw_closes_est') if isinstance(prev.get('raw_closes_est'), list) else []
+    old_est = {x for x in old_est if isinstance(x, str)}
+    closes, dates, est, want, need = {}, {}, set(), {}, {}
     for sym, tgt in targets.items():
         try:
             tgt = float(tgt)
@@ -1565,44 +1572,140 @@ def tw_target_closes(prev, targets, end_date, hdrs, fetch=None):
             same = sym in before and abs(float(before[sym]) - tgt) <= 1e-9
         except (TypeError, ValueError):
             same = False
-        px = old_px.get(sym)
-        if same and isinstance(px, (int, float)) and math.isfinite(px) and px > 0 \
-                and isinstance(old_dt.get(sym), str):
-            closes[sym], dates[sym] = float(px), old_dt[sym]
-            if sym in old_est:
-                est.add(sym)
-        else:
-            need[sym] = same   # same target, no recorded close = a pre-field state → estimate
-    if need:
-        if fetch is None:
-            from lib.data import fetch_twstock_price_batch as fetch
-        codes = {re.sub(r'\.TWO?$', '', s): s for s in need}
-        start = (pd.Timestamp(end_date) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+        if not same:
+            need[sym] = (end_date, False)
+            continue
+        px, dt = old_px.get(sym), old_dt.get(sym)
+        if not (isinstance(px, (int, float)) and not isinstance(px, bool) and math.isfinite(px)
+                and px > 0 and isinstance(dt, str)):
+            need[sym] = (end_date, True)
+            continue
+        closes[sym], dates[sym] = float(px), dt
+        w = old_want.get(sym)
+        if isinstance(w, str) and dt < w:
+            est.add(sym)
+            if (pd.Timestamp(end_date) - pd.Timestamp(w)).days <= TW_CLOSE_WANT_DAYS:
+                want[sym] = w
+                need[sym] = (w, False)
+        elif sym in old_est and not isinstance(w, str):
+            est.add(sym)
+    fields = {}
+    if closes:
+        fields['raw_closes'], fields['raw_close_dates'] = closes, dates
+    if est:
+        fields['raw_closes_est'] = sorted(est)
+    if want:
+        fields['raw_close_want'] = want
+    return fields, need
+
+
+def tw_fetch_closes(fields, need, hdrs, fetch=None, budget_s=None):
+    """fields (tw_carry_closes) with the `need` symbols priced from the unadjusted daily close
+    (fetch_twstock_price_batch, as a broker app shows). The strategy's own close cannot be
+    used: lib.data's dividend adjustment is anchored at the fetch window's start (2330 on
+    2026-10-16: 2420 from a 10-day window, 2755.89 from 2020). A close dated before its want
+    is recorded as an estimate with raw_close_want, asked for again next tick. None = nothing
+    new (fetch failed, timed out, or still running from an earlier tick) — the next tick
+    retries; the caller has already saved the state without it."""
+    import threading
+    budget_s = TW_CLOSE_BUDGET_S if budget_s is None else budget_s
+    if any(t.is_alive() for t in _tw_close_inflight):
+        logging.warning("Taiwan target close: the previous lookup is still running, skipped")
+        return None
+    _tw_close_inflight[:] = []
+    groups = {}
+    for sym, (day, _e) in need.items():
+        groups.setdefault(day, {})[re.sub(r'\.TWO?$', '', sym)] = sym
+    got = {}
+
+    def work():
+        f = fetch
+        if f is None:
+            from lib.data import fetch_twstock_price_batch as f
+        for day, codes in groups.items():
+            start = (pd.Timestamp(day) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+            got[day] = f(list(codes), start, day, hdrs) or {}
+
+    err = []
+
+    def run_():
         try:
-            got = fetch(list(codes), start, end_date, hdrs) or {}
+            work()
         except Exception as e:
-            logging.warning("Taiwan target close not recorded (retried next tick): %s", e)
-            got = {}
+            err.append(e)
+
+    th = threading.Thread(target=run_, name='tw-close', daemon=True)
+    _tw_close_inflight.append(th)
+    th.start()
+    th.join(budget_s)
+    if th.is_alive():
+        logging.warning("Taiwan target close: lookup over %ss, skipped (retried next tick)", budget_s)
+        return None
+    if err:
+        logging.warning("Taiwan target close not recorded (retried next tick): %s", err[0])
+    out = {k: dict(v) if isinstance(v, dict) else list(v) for k, v in fields.items()}
+    closes, dates = out.setdefault('raw_closes', {}), out.setdefault('raw_close_dates', {})
+    est, want = set(out.get('raw_closes_est', [])), out.setdefault('raw_close_want', {})
+    changed = False
+    for day, codes in groups.items():
         for code, sym in codes.items():
-            df = got.get(code)
+            df = got.get(day, {}).get(code)
             try:
                 c = df['Close'][df['Close'] > 0].dropna()
                 if getattr(c.index, 'tz', None) is not None:   # a tz-aware frame would not compare
                     c.index = c.index.tz_convert('Asia/Taipei').tz_localize(None)
-                c = c[c.index <= pd.Timestamp(end_date)]
-                px, day = float(c.iloc[-1]), pd.Timestamp(c.index[-1]).strftime('%Y-%m-%d')
+                c = c[c.index <= pd.Timestamp(day)]   # never a close after the round's own day
+                px, d = float(c.iloc[-1]), pd.Timestamp(c.index[-1]).strftime('%Y-%m-%d')
             except Exception:
                 continue
-            if math.isfinite(px) and px > 0:
-                closes[sym], dates[sym] = px, day
-                if need[sym]:
-                    est.add(sym)
-    if not closes:
-        return {}
-    out = {'closes': closes, 'close_dates': dates}
-    if est:
-        out['closes_est'] = sorted(est)
-    return out
+            if not (math.isfinite(px) and px > 0):
+                continue
+            if sym in closes and dates.get(sym, '') >= d:
+                continue   # the bar asked for is still not in: keep what is carried
+            closes[sym], dates[sym], changed = px, d, True
+            if need[sym][1]:   # a pre-field state: no round to wait for, an estimate for good
+                est.add(sym)
+            elif d < day:
+                est.add(sym)
+                want[sym] = day
+            else:
+                want.pop(sym, None)
+                est.discard(sym)
+    if not changed:
+        return None
+    out['raw_closes_est'] = sorted(est)
+    return {k: v for k, v in out.items() if v}
+
+
+def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs):
+    """Carry what needs no I/O into `state`, save it, then price the rest under a time budget
+    and save again only if something new came in. Never fails the tick: the target position
+    is on disk before any of this can go wrong."""
+    need = {}
+    try:
+        for k in TW_CLOSE_FIELDS:
+            state.pop(k, None)
+        fields, need = tw_carry_closes(prev, targets, _taipei_date(bar_ts))
+        state.update(fields)
+    except Exception as e:
+        logging.warning("Taiwan target close carry skipped: %s", e)
+    save_state(strategy_name, state)
+    if not need:
+        return
+    try:
+        path = f'strategies/{strategy_name}/state.json'
+        saved = os.stat(path).st_mtime_ns
+        more = tw_fetch_closes({k: state[k] for k in TW_CLOSE_FIELDS if k in state}, need, hdrs)
+        if more:
+            for k in TW_CLOSE_FIELDS:
+                state.pop(k, None)
+            state.update(more)
+            save_state(strategy_name, state)
+            # the reconciler runs a round on every state.json mtime change: the price is not a
+            # new target, so the second write keeps the first one's mtime
+            os.utime(path, ns=(saved, saved))
+    except Exception as e:
+        logging.warning("Taiwan target close not recorded (retried next tick): %s", e)
 
 
 def _taipei_date(ts):
@@ -1834,13 +1937,10 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                          symbol=config.get('SYMBOL', ''),
                          send_telegram_fn=(lambda m: _send_best_effort(send_telegram_fn, m))
                          if send_telegram_fn else None)
-            for k in ('closes', 'close_dates', 'closes_est'):
-                state.pop(k, None)
-            if state.get('symbol'):
-                state.update(tw_target_closes(
-                    prev, {str(state['symbol']).replace('-', '').upper(): state.get('position', 0)},
-                    _taipei_date(t), hdrs))
-            save_state(strategy_name, state)
+            _tw_closes_after_save(
+                strategy_name, state, prev,
+                {str(state['symbol']).replace('-', '').upper(): state.get('position', 0)}
+                if state.get('symbol') else {}, t, hdrs)
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────
@@ -2101,9 +2201,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             prev = load_state(strategy_name) or {}
             if prev.get('rebalance_at') != live['rebalance_at']:
                 logging.info(f"Type C rebalance at {live['rebalance_at']}: {live['weights']}")
-            live.update(tw_target_closes(prev, live['weights'],
-                                         _taipei_date(price_df.index[-1]), hdrs))
-            save_state(strategy_name, live)
+            _tw_closes_after_save(strategy_name, live, prev, live['weights'],
+                                  price_df.index[-1], hdrs)
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────

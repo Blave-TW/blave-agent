@@ -903,7 +903,7 @@ function trClientTargets(amounts, states, contracts) {
   Object.keys(out).forEach((k) => { if (/@spot$/.test(k) && out[k] < 0) out[k] = 0; });
   return out;
 }
-/* 台股列的整張數(0.1.27,= runtime portfolio_reporter.tw_lots,網頁同一條):每支策略自己的部分除以它 state 的 closes[SYM]
+/* 台股列的整張數(0.1.27,= runtime portfolio_reporter.tw_lots,網頁同一條):每支策略自己的部分除以它 state 的 raw_closes[SYM]
    (目標最後變動那一輪的未還原收盤價,目標沒變不重算),加總股數後捨去到整張(1 張 = 1000 股,零股不算);買不起一張 = 0 張。
    有金額的貢獻策略只要一支沒有價格(舊 lib、那一輪抓價失敗)就回 null:那一列照舊寫 TWD */
 const TW_LOT_SHARES = 1000;
@@ -922,12 +922,12 @@ function trTwLots(key, amounts, states) {
     } else if (s.symbol && trCanonSym(s.symbol) === sym) w = typeof s.position === "number" ? s.position : 0;
     else continue;
     if (!w || !isFinite(w)) continue;
-    const px = s.closes && typeof s.closes === "object" ? Number(s.closes[sym]) : NaN;
+    const px = s.raw_closes && typeof s.raw_closes === "object" ? Number(s.raw_closes[sym]) : NaN;
     if (!(px > 0) || !isFinite(px)) return null;
     any = true; twd += a * w; shares += (a * w) / px;
-    const d = s.close_dates && s.close_dates[sym];
+    const d = s.raw_close_dates && s.raw_close_dates[sym];
     if (typeof d === "string" && (!date || d > date)) date = d;
-    if (Array.isArray(s.closes_est) && s.closes_est.indexOf(sym) >= 0) est = true;
+    if (Array.isArray(s.raw_closes_est) && s.raw_closes_est.indexOf(sym) >= 0) est = true;
   }
   if (!any) return null;
   if (spotKey && twd < 0) twd = shares = 0;
@@ -3516,7 +3516,7 @@ function poSigTable(r, stored, states, mode) {
         tc.className = "n " + (tw.lots > 0 ? "buy" : tw.lots < 0 ? "sell" : "na");
         tc.textContent = t(Math.abs(tw.lots) === 1 ? "po.twLot" : "po.twLots", { n: trFmt(tw.lots) });
         tc.appendChild(trEl("span", "sub", trFmt(tw.twd) + " " + TR_TXF_CCY));
-        if (tw.price && tw.date) tc.title = t(tw.est ? "po.twLotsTipEst" : "po.twLotsTip", { d: tw.date.slice(5).replace("-", "/"), px: trFmtPrice(tw.price) });
+        if (tw.price && tw.date) tc.title = t(tw.est ? "po.twLotsTipEst" : "po.twLotsTip", { d: tw.date.slice(5).replace("-", "/"), px: trFmt(tw.price) });
       } else if (zones.length === 1) tc.textContent = numText(lot, ts) + " " + TR_TXF_CCY;
     }
     if (lt && !noSig && !notYet) { const sp = trTxfSpec(trCapitalCanon(sym)), m = ts && sp ? trTxfRefMoney(sp, Math.abs(ts), trTxfPrice()) : null;

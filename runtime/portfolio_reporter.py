@@ -303,13 +303,13 @@ def _fin(v):
 
 
 def _tw_closes(data):
-    """A state's Taiwan-stock sizing closes (lib/runner.tw_target_closes), validated:
-    {closes: {SYM: px}, close_dates: {SYM: date}, closes_est: [SYM]} or {} — only symbols with
+    """A state's Taiwan-stock sizing closes (lib/runner.tw_carry_closes / tw_fetch_closes), validated:
+    {raw_closes: {SYM: px}, raw_close_dates: {SYM: date}, raw_closes_est: [SYM]} or {} — only symbols with
     both a finite positive close and a date, at most PORTFOLIO_WEIGHTS_MAX."""
-    px, dt = data.get("closes"), data.get("close_dates")
+    px, dt = data.get("raw_closes"), data.get("raw_close_dates")
     if not isinstance(px, dict) or not isinstance(dt, dict):
         return {}
-    est = data.get("closes_est") if isinstance(data.get("closes_est"), list) else []
+    est = data.get("raw_closes_est") if isinstance(data.get("raw_closes_est"), list) else []
     closes, dates = {}, {}
     for k, v in px.items():
         sym = str(k).upper()
@@ -324,10 +324,10 @@ def _tw_closes(data):
             break
     if not closes:
         return {}
-    out = {"closes": closes, "close_dates": dates}
-    marked = sorted({str(k).upper() for k in est} & set(closes))
+    out = {"raw_closes": closes, "raw_close_dates": dates}
+    marked = sorted({str(k).upper() for k in est if isinstance(k, str)} & set(closes))
     if marked:
-        out["closes_est"] = marked
+        out["raw_closes_est"] = marked
     return out
 
 
@@ -337,12 +337,12 @@ def tw_lots(cfg, states):
     the web table both follow. Row key = the table's: SYM, plus "@spot" for a spot strategy.
       twd    = Σ amount × weight (Type C, a spot strategy's negative weight as 0) or
                amount × position (Type A); a spot row below 0 is 0 (lib/portfolio)
-      shares = Σ amount × weight / that strategy's own close (closes[SYM], the close of the
+      shares = Σ amount × weight / that strategy's own close (raw_closes[SYM], the close of the
                round its target last changed — never re-priced while it holds)
       lots   = sign × floor(|shares| / 1000): whole lots only, the odd lot dropped; under one
                lot is 0
-      price  = |twd| / |shares| (one strategy: its close), price_date the newest close_dates,
-               est = any contributor's close is in closes_est (priced at a later close)
+      price  = |twd| / |shares| (one strategy: its close), price_date the newest raw_close_dates,
+               est = any contributor's close is in raw_closes_est (priced at a later close)
     A row any funded contributor has no close for is left out: the page shows TWD as before."""
     amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
     if not isinstance(amounts, dict):
@@ -361,9 +361,9 @@ def tw_lots(cfg, states):
             legs = {str(st["symbol"]).replace("-", "").upper(): _fin(st.get("position", 0))}
         else:
             continue
-        closes = st.get("closes") or {}
-        dates = st.get("close_dates") or {}
-        est = set(st.get("closes_est") or [])
+        closes = st.get("raw_closes") or {}
+        dates = st.get("raw_close_dates") or {}
+        est = set(st.get("raw_closes_est") or [])
         for sym, w in legs.items():
             if not _TW_STOCK_RE.match(sym) or not w:
                 continue
