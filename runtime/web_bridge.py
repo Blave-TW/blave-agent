@@ -54,7 +54,9 @@ API_BASE = os.environ.get("BLAVE_CHAT_API_BASE", "https://api.blave.org/openclaw
 # gone forever (user watched「思考中」until the watchdog gave up; 07-28 實踩).
 # att=2: this bridge files an `attachments` list; the api only sends 2+ files to a machine
 # that declared it, and tells the user to send one at a time otherwise.
-POLL_URL = f"{API_BASE}/poll?lease=1&att=2"
+# wd=1: this bridge answers the `withdraw` control message; the api refuses /withdraw for
+# a machine that did not declare it (an old bridge would discard it silently).
+POLL_URL = f"{API_BASE}/poll?lease=1&att=2&wd=1"
 ACK_URL = f"{API_BASE}/ack"
 REPORT_URL = f"{API_BASE}/report"
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
@@ -421,23 +423,60 @@ def _persist_queue():
         print(f"[web_bridge] queue persist failed: {e}", file=sys.stderr)
 
 
-def _turn_state(session_id, state):
-    _post_chunk({"type": "turn_state", "session_id": session_id, "state": state},
+def _pending_ids(session_id):
+    """Caller holds _lock. The ids still waiting in this session's queue — sent on every
+    turn_state so the api can tell a reloaded page how many are lined up."""
+    return [e.get("message_id") for e in _queues.get(session_id, []) if e.get("message_id")]
+
+
+def _turn_state(session_id, state, **extra):
+    with _lock:
+        pending = _pending_ids(session_id)
+    _post_chunk({"type": "turn_state", "session_id": session_id, "state": state,
+                 "pending_ids": pending, **extra},
                 log=state != "running")
 
 
 def _cancel_queued(session_id):
     """Withdraw a session's not-yet-started messages (Stop pressed while queued).
-    A running turn is left alone here — _stop_running handles it. Returns whether
-    anything was withdrawn."""
+    A running turn is left alone here — _stop_running handles it. Returns the entries
+    withdrawn (empty when nothing was)."""
     with _lock:
         if session_id in _running:
-            return False
+            return []
         dropped = _queues.pop(session_id, None)
         _queued_at.pop(session_id, None)
         if dropped:
             _persist_queue()
-    return bool(dropped)
+    return dropped or []
+
+
+def _withdraw(session_id, target_id):
+    """Withdraw ONE queued message, leaving the running turn and the rest of the queue
+    alone. `running` when it has already started: nothing is stopped, the page offers
+    Stop instead."""
+    with _lock:
+        if (_running.get(session_id) or {}).get("message_id") == target_id:
+            result = "running"
+        else:
+            q = _queues.get(session_id) or []
+            idx = next((i for i, e in enumerate(q) if e.get("message_id") == target_id), None)
+            if idx is None:
+                result = "not_found"
+            else:
+                q.pop(idx)
+                if not q:
+                    _queues.pop(session_id, None)
+                    _queued_at.pop(session_id, None)
+                _persist_queue()
+                result = "withdrawn"
+        pending = _pending_ids(session_id)
+        idle = session_id not in _running and not pending
+    _post_chunk({"type": "withdraw_result", "session_id": session_id, "message_id": target_id,
+                 "result": result, "pending_ids": pending}, log=True)
+    if result == "withdrawn" and idle:
+        # nothing left running or waiting: end the api's `queued` now, not at its TTL
+        _turn_state(session_id, "cancelled", message_ids=[target_id])
 
 
 def _stop_running(session_id):
@@ -478,10 +517,18 @@ def _ingest(m):
     mtype = m.get("type")
     session_id = m.get("session_id") or ""
     if mtype == "interrupt":
-        if session_id and _cancel_queued(session_id):
-            _turn_state(session_id, "cancelled")
+        dropped = _cancel_queued(session_id) if session_id else []
+        if dropped:
+            _turn_state(session_id, "cancelled",
+                        message_ids=[e["message_id"] for e in dropped if e.get("message_id")])
         elif session_id:
             _stop_running(session_id)
+        ack_message(mid)
+        return
+    if mtype == "withdraw":
+        target = m.get("target_id")
+        if session_id and isinstance(target, str) and target:
+            _withdraw(session_id, target)
         ack_message(mid)
         return
     if mtype != "user_message":
@@ -529,17 +576,26 @@ def _ingest(m):
         "ui_lang": ctx.get("ui_lang"),
         "ts": m.get("timestamp") or int(time.time() * 1000),
     }
+    behind = None
     with _lock:
         if mid and mid in _seen:   # a redelivery that raced us through the attachment save
             dup = True
         else:
             dup = False
+            # Lining up behind a turn or another waiting message: the dispatcher will not
+            # report this session for up to QUEUED_REFRESH, so the new count goes now.
+            behind = "running" if session_id in _running else (
+                "queued" if _queues.get(session_id) else None)
             _queues.setdefault(session_id, []).append(entry)
             _remember(mid)
             _persist_queue()
+            if behind == "queued":
+                _queued_at[session_id] = time.time()
     ack_message(mid)
     if dup:
         print(f"[web_bridge] duplicate delivery of {mid} dropped", file=sys.stderr)
+    elif behind:
+        _turn_state(session_id, behind)
 
 
 def _entry_attachment_names(entry):
