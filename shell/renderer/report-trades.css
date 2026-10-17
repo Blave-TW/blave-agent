@@ -14,22 +14,42 @@
   min-height: 0;
 }
 
-/* 無框的卡面色圓角塊(canon › Terminal › Cards:dark 靠色調提升分隔,半徑上限 lg)。
-   下限 320:子面板 7:2 分完,主圖還剩得下看得清楚的高度 */
-.tr-chart {
+/* 無框的卡面色圓角塊(canon › Terminal › Cards:dark 靠色調提升分隔,半徑上限 lg),圖與交易地圖同一張。
+   下限 360 = 圖 320(子面板 7:2 分完,主圖還剩得下看得清楚的高度)+ 地圖 */
+.tr-card {
   /* 圖:清單 = 2:1 分剩下的高度(basis 0,不讓清單的內容高度先把圖擠到下限) */
   flex: 2 1 0;
-  min-height: 320px;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--surface-card);
 }
+.tr-chart { flex: 1 1 0; min-height: 0; width: 100%; }
+/* 游標落在箭頭上:點下去會跳到那段部位 */
+.tr-chart.is-onmark { cursor: pointer; }
 /* 圖建不起來時同一塊面放一行字,不是壞掉的空框 */
-.tr-chart.is-error {
+.tr-card.is-error {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* 交易地圖:視覺 28 高,上下各 4 的透明 padding 把熱區補到 36(觸控 44),跟圖之間只靠這 4 的間距、不加線 */
+.tr-map {
+  flex: none;
+  height: 36px;
+  padding: var(--space-4) var(--space-8);
+  margin-bottom: var(--space-4);
+  cursor: pointer;
+  touch-action: none;
+}
+.tr-map canvas { display: block; width: 100%; height: 100%; }
+.tr-map:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; border-radius: var(--radius-sm); }
+@media (pointer: coarse) {
+  .tr-map { height: 44px; padding-block: var(--space-8); margin-top: calc(-1 * var(--space-4)); margin-bottom: 0; }
 }
 
 /* 區段標籤列:組間 24 / 到第一列 8(標籤到第一列的視覺間距要大於列距) */
@@ -49,6 +69,10 @@
   min-height: 120px;
   max-height: 360px;
   overflow-y: auto;
+  /* 清單是一張卡:row-hover 的前提是「列在卡上,hover 落回頁面地色」,坐在地色上 hover 跟底同色看不見 */
+  padding: var(--space-4) 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
   font-size: 12px;
   container: tr-list / inline-size;   /* 列的折法看清單本身的寬,不看視窗(中欄、面板寬度各不同) */
 }
@@ -72,8 +96,10 @@
   transition: background var(--motion-fast) var(--ease-standard);
 }
 .tr-row:last-child { border-bottom-color: transparent; }
+/* hover(含圖上箭頭帶出的那一列)與選中那段部位是兩種底(canon › 語意角色變數:hover 不借選中的底);選中寫在後面,兩者疊到時選中贏 */
 .tr-row:hover,
-.tr-row[aria-current="true"] { background: var(--surface-muted); color: var(--ink); }
+.tr-row.is-hot { background: var(--surface-row-hover); color: var(--ink); }
+.tr-row.is-sel { background: var(--surface-muted); color: var(--ink); }
 .tr-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
 .tr-ts { flex: none; font-family: var(--font-mono); color: var(--ink-3); }
@@ -81,11 +107,12 @@
 .tr-l1, .tr-l2 { display: contents; }
 /* 每一段內部不斷行:「買進」跟數量、「→ 部位」跟數字不會被拆到兩行 */
 .tr-side, .tr-kind, .tr-px, .tr-pos { white-space: nowrap; }
-/* 方向詞上語意色;數量/價格/部位維持灰階(dark 下 green/red 即文字用色階,
-   canon › Trading colors:dark 端 greenText/redText 重映射回同值) */
+/* 方向詞上語意色(文字用色階:light 的 green/red 在卡面上不到 AA;dark 端 greenText/redText 重映射回同值);
+   數量/價格/部位維持灰階。選中那段的列底是 muted,紅綠字在上面不夠對比,方向靠字面讀得出來,改墨色 */
 .tr-side { flex: none; }
-.tr-side.is-buy { color: var(--color-green); }
-.tr-side.is-sell { color: var(--color-red); }
+.tr-side.is-buy { color: var(--color-greenText); }
+.tr-side.is-sell { color: var(--color-redText); }
+.tr-row.is-sel .tr-side { color: var(--ink); }
 /* 種類小標:最亮一階,整片調倉列裡一眼可挑(調倉列沒有這一格) */
 .tr-kind { flex: none; font-size: 11px; color: var(--ink); }
 .tr-px { flex: none; font-family: var(--font-mono); color: var(--ink-3); }

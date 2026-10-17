@@ -677,6 +677,27 @@ msgstr "Flip"
 msgid "tr.position"
 msgstr "Position {n}"
 
+msgid "tr.tip.closedWin"
+msgstr "This position is closed, profit of about {n}"
+
+msgid "tr.tip.closedLoss"
+msgstr "This position is closed, loss of about {n}"
+
+msgid "tr.tip.openWin"
+msgstr "Still open at the end of the backtest window (unrealized), profit of about {n}"
+
+msgid "tr.tip.openLoss"
+msgstr "Still open at the end of the backtest window (unrealized), loss of about {n}"
+
+msgid "tr.tip.partial"
+msgstr "This segment continues a position held before the recorded trades begin; its entry cost is not in the log, so P&L can't be reconstructed."
+
+msgid "tr.tip.openNoPx"
+msgstr "Still open at the end of the backtest window."
+
+msgid "tr.mapAria"
+msgstr "Chart range (whole backtest)"
+
 msgid "bt.grpReturns"
 msgstr "Returns"
 

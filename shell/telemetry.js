@@ -184,7 +184,9 @@ const EVENTS = {
     // starter_new / starter_no_new = 送出起手句的那一輪結束時本機策略清單有沒有多一支(同 lib_installed / library_no_new);wd_fold_open = 點開「可以回測的資料」
     "starter_crypto", "starter_tw", "starter_txf", "starter_fill", "starter_new", "starter_no_new", "wd_fold_open",
     // 按下「登入 Blave」、瀏覽器打開之前(0.1.26;renderer/app.js blaveGo / blaveLoginFlow / planLogin):對 login_done 算 app 帶去網頁登入／註冊的完成率
-    "login_click"] },
+    "login_click",
+    // 進出場紀錄的交易地圖(0.1.27;renderer/report-trades.js):點清單一列跳到那段部位、點圖上箭頭、用交易地圖移範圍(拖、點、方向鍵)。取消選取不記
+    "trades_row_pick", "trades_mark_pick", "trades_map_move"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
