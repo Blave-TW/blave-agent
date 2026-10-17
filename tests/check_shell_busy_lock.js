@@ -224,8 +224,14 @@ ok("③ 回合結束(busySync):所有原因句收掉,借用的原因行(#rp-ho-n
 ok("字:「上一輪還在跑」這類工程用語不再出現在任何 zh 字串", Object.values(STR.zh).every((v) => !/上一輪還在跑/.test(v)));
 { const css = read(path.join(R, "app.css")), m = css.match(/\.busy-fix::before \{([^}]*)\}/), body = m ? m[1] : "";
   const h = /height: (\d+)px/.exec(body), viz = css.match(/\.busy-fix, \.busy-fix:hover \{([^}]*)\}/);
-  ok("補救鈕熱區:.busy-fix::before 置中固定高 ≥ 44(不靠全域 -6 的 30);視覺那條不加 padding／高度",
-    !!h && Number(h[1]) >= 44 && /top: 50%/.test(body) && /translateY\(-50%\)/.test(body) && !!viz && !/padding|height|line-height/.test(viz[1]), body); }
+  ok("補救鈕熱區:.busy-fix::before 置中固定高 ≥ 44(不靠全域 -6 的 30)、寬至少 44;視覺那條不加 padding／高度",
+    !!h && Number(h[1]) >= 44 && /top: 50%/.test(body) && /left: 50%/.test(body) && /width: max\(44px,/.test(body) && /translate\(-50%, -50%\)/.test(body) && !!viz && !/padding|height|line-height/.test(viz[1]), body);
+  // 稽核 0127b1 P1-4:44 高的熱區要落在原因句自己的盒子裡——行盒 18,上下各要 ≥ 13 內距;busyFixLink 寫進的每一種容器都要點名
+  const pad = css.match(/:is\(([^)]*)\):has\(> \.busy-fix\) \{([^}]*)\}/), lst = pad ? pad[1].split(",").map((x) => x.trim()) : [];
+  const pt = pad && /padding-top: (\d+)px/.exec(pad[2]), pb = pad && /padding-bottom: (\d+)px/.exec(pad[2]);
+  ok("補救鈕熱區不伸進鄰列:掛了補救鈕的原因句上下內距 ≥ (44 − 18) / 2,而且涵蓋 busyFixLink 寫進的每一種容器",
+    !!pt && !!pb && Number(pt[1]) >= 13 && Number(pb[1]) >= 13
+    && [".busy-why", ".xp-note", ".rp-ho-note", ".rob-cap", ".wf-cap", "#lib-cta-note", "#ver-banner-err", "#ver-rerun-busy"].every((x) => lst.indexOf(x) >= 0), JSON.stringify(lst)); }
 { const css = read(path.join(R, "app.css")), rob = read(path.join(R, "report-robust.js"));
   const grey = css.match(/\.btn-fill:disabled, [^{]*\{([^}]*)\}/), na = css.match(/\n(\.lib-cta \.btn-fill\[aria-disabled="true"\][^{]*)\{([^}]*)\}/);
   ok("稽核 0127b1 P1-3:回合中鎖住的「開始掃描／開始驗證」照 Disabled ①——跟填色鈕停用同一組灰、游標 not-allowed;掃描只在被鎖(不是已送出)時掛 .is-lock",
