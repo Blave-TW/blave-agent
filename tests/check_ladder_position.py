@@ -156,11 +156,13 @@ def real_trades(amount, devs, mult, gate, lot, floor=False):
     cs = [mult ** k for k in range(len(devs) + 1)]
     tot = sum(cs)
     held, sent = 0.0, []
+    gaps = real_trades.gaps = []
     for k in range(len(cs)):
         row = {"side": "long", "size": amount * (sum(cs[:k + 1]) / tot), "exchange": "x", "asset_spec": None,
                "market": "swap", "contributors": [], "gated": False}
         hold = {"BTCUSDT": {"side": "long", "size": held}} if held else {}
         o = compute_diff({"BTCUSDT": row}, hold, gate)
+        gaps.append(row["size"] - held)
         q = (math.floor(o[0]["signed_diff"] / lot + (1e-9 if floor else 0.5)) * lot
              if o and o[0]["signed_diff"] > 0 else 0.0)
         sent.append(q)
@@ -194,6 +196,14 @@ D9 = [0.01 * k for k in range(1, 10)]
 mn9 = ladder_sizing(1000, D9, 1.0, min_order=52.5, lot=50.0)["min_amount"]
 check(all(real_trades(mn9, D9, 1.0, 52.5, 50.0)) and all(real_trades(math.ceil(mn9 * 1.005 * 100) / 100, D9, 1.0, 52.5, 50.0)),
       f"min amount {mn9} (9 rungs, lot 50) is not a lone working point: 0.5% above still trades every order")
+# lot $0.06, ten rungs, mult=1: lot rounding squeezes the last gap onto the gate (110.2 → 9.99999…)
+D10 = [0.015 * (k + 1) for k in range(10)]
+mn10 = ladder_sizing(1, D10, 1.0, min_order=10, lot=0.06)["min_amount"]
+real_trades(mn10, D10, 1.0, 10, 0.06)
+check(min(real_trades.gaps) >= 10 * 1.001, f"min amount {mn10} (lot 0.06, 10 rungs): every gap ≥ 0.1% over the gate "
+                                           f"(smallest {min(real_trades.gaps):.6f})")
+check(ladder_sizing(0.6, [0.02], 1.0, min_order=0.05, lot=0.1, lot_floor=True)["trades"][0] > 0.29,
+      "floored lots: 0.3 / 0.1 = 2.9999… is 3 lots, as lib.order_paper floors (q + 1e-9)")
 mn0 = ladder_sizing(1000, DEVS, MULT, min_order=52.5)["min_amount"]
 check(all(real_trades(mn0, DEVS, MULT, 52.5, 1e-9)), f"min amount {mn0} (no lot): every order goes out through compute_diff")
 
@@ -214,6 +224,26 @@ try:
     lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "BTCUSDT"})
     check(any("WARNING" in l and "[0]" in l and "rung 1" in l for l in lines), "runner warns: $1000 BTC base not sent")
     check("one lot 50.00" in lines[0] and "merge" in lines[0], "a coarse lot is named, with the merge caveat")
+    cfg({"lad": 330.0})
+    lines = _ladder_sizing_lines({"devs": DEVS, "mult": 1.0}, {"STRATEGY_NAME": "lad", "SYMBOL": "BTCUSDT"})
+    check(any("WARNING" in l and "[5]" in l for l in lines),
+          "runner passes the venue lot: $330, mult=1, $50 lot — rung 5 merges (no lot → no warning)")
+    import lib.paper_data as _pd
+    _had = hasattr(_pd, "is_tw_stock")
+    _old_tw = getattr(_pd, "is_tw_stock", None)
+    try:
+        _pd.is_tw_stock = lambda sym: sym == "2330"
+        _ex._venue_sizes_usd = lambda sym, floor: (1050.0, 1000.0)
+        cfg({"lad": 5500.0}, exchanges={"lad": "paper"})
+        lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "2330", "MARKET": "spot"})
+        check(any("WARNING" in l and "[0, 1, 2] " in l for l in lines),
+              "runner floors a TW stock's shares: 5,500 TWD skips [0, 1, 2] (half-up would say [0, 1, 2, 4])")
+    finally:
+        if _had:
+            _pd.is_tw_stock = _old_tw
+        else:
+            del _pd.is_tw_stock
+    _ex._venue_sizes_usd = lambda sym, floor: (52.5, 50.0)
     cfg({"lad": 3.0}, {"lad": {"type": "futures_contracts"}})
     lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "TMF"})
     check(any("WARNING" in l and "lots" in l and "rung 3" in l for l in lines), "runner warns: TMF 3 lots first order at rung 3")
@@ -232,7 +262,8 @@ try:
     _ex._venue_sizes_usd = lambda sym, floor: (_ for _ in ()).throw(RuntimeError("offline"))
     cfg({})
     lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "BTCUSDT"})
-    check(len(lines) == 1 and "not looked up" in lines[0], "lookup failure: the flat floor, said so; no amount → no verdict")
+    check(len(lines) == 1 and "flat 10 floor" in lines[0] and "not looked up" in lines[0],
+          "lookup failure: the reconciler's flat 10, said so; no amount → no verdict")
 finally:
     _pf.load_portfolio_config, _pf.strategy_amounts, _ex._venue_sizes_usd = _saved
 
@@ -254,11 +285,16 @@ cases = [
     ('SYMBOL = "CDF"\ndef fetch_data(h):\n    return fetch_twfutures_ohlcv(SYMBOL, "1d", "a", None, h)\n', ", settle=txf_settlement_mask(df.index)", 0, "CDF with settle="),
     ('SYMBOL = "CDF"\ndef fetch_data(h):\n    return fetch_stock_futures_batch_daily(["CDF"], "a", None, h)\n', "", 1, "fetch_stock_futures_batch_daily, no settle="),
     ('SYMBOL = "TMF"\n', "", 1, "SYMBOL = TMF, no settle="),
+    ('SYMBOL = "TMF"\n', "POS5", 1, "SYMBOL = TMF, five positional arguments, no settle"),
+    ('SYMBOL = "TMF"\n', "POS6", 0, "SYMBOL = TMF, settle as the sixth positional argument"),
     ('SYMBOL = "BTCUSDT"\ndef fetch_data(h):\n    return fetch_kline(SYMBOL, "1h", "a", None, h)\n', "", 0, "crypto ladder"),
     ('SYMBOL = "CL"\ndef fetch_data(h):\n    return fetch_db_kline("NYMEX", SYMBOL, "ohlcv-1d", "a", None, h)\n', "", 1, "fetch_db_kline without settlement_signals_from_db"),
 ]
+POS = {"POS5": "    return ladder_position(e, df, [0.02], 1.0, 0.03)\n",
+       "POS6": "    return ladder_position(e, df, [0.02], 1.0, 0.03, txf_settlement_mask(df.index))\n"}
 for head, extra, n, what in cases:
-    got = roll_findings(src(head, extra))
+    code = src(head, extra) if extra not in POS else src(head).replace(LAD.format(extra=""), POS[extra])
+    got = roll_findings(code)
     check(len(got) == n, f"ladder_roll: {what} → {n} warning(s) (got {len(got)})")
 ok_db = src('SYMBOL = "CL"\ndef fetch_data(h):\n    return fetch_db_kline("NYMEX", SYMBOL, "ohlcv-1d", "a", None, h)\n'
             ).replace("    return ladder_position(", "    return settlement_signals_from_db(df, ladder_position(") + ")\n"

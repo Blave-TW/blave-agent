@@ -202,7 +202,7 @@ def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False, lot=None, 
     Returns {'orders': planned size per order (base first), 'targets': cumulative target after
     each order, 'trades': what live sends at each rung (0 = nothing), 'skipped': indices whose
     trade is 0, 'base_frac': base order ÷ full ladder, 'min_amount': an amount at which every
-    order trades, rounded up and re-checked so it is not on the gate's edge (None if not found)}.
+    order trades with every gap at least 0.1% over the gate, re-checked 0.5% above (None if not found)}.
     """
     devs = [float(d) for d in devs]
     if not devs or mult <= 0:
@@ -214,14 +214,14 @@ def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False, lot=None, 
     total = sum(costs)
     cum = [sum(costs[:k + 1]) / total for k in range(len(costs))]
 
-    def plan(a):
+    def plan(a, edge=1.0):
         if lots:
             targets = [math.floor(abs(a) * f + 0.5 + 1e-9) for f in cum]
             return targets, [t - p for t, p in zip(targets, [0] + targets[:-1])]
         targets, trades, held = [a * f for f in cum], [], 0.0
         for t in targets:
             gap = t - held
-            if gap < min_order:                      # lib.portfolio.compute_diff: abs(diff) < gate → skip
+            if gap < min_order * edge:               # lib.portfolio.compute_diff: abs(diff) < gate → skip
                 trades.append(0.0)
                 continue
             if not lot:
@@ -238,12 +238,13 @@ def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False, lot=None, 
         return targets, trades
 
     def every(a):
-        return all(plan(a)[1])
+        # 0.1% over the gate on every rung: lot rounding can squeeze a later gap onto the gate itself
+        return all(plan(a, 1.001)[1])
 
     if lots:
         min_amount = next((a for a in range(1, 10001) if every(a)), None)
     else:
-        a = math.ceil(min_order * total / min(costs) * 1.001 * 100) / 100
+        a = math.ceil(min_order * total / min(costs) * 100) / 100   # no amount below this can pass
         step = max(0.01, (lot or 0) / 100)
         min_amount = None
         for _ in range(100000):

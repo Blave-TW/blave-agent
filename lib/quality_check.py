@@ -264,8 +264,8 @@ def _taifex_trigger(tree: ast.AST, fetchers=_TWFUTURES_PRICE_FETCHERS):
     A strategy is treated as TAIFEX if it fetches a TAIFEX price series, or —
     covering fetches hidden behind a helper module — declares SYMBOL as an
     index-futures contract. Stock futures (e.g. 'CDF') can't be enumerated
-    statically, but they necessarily fetch via fetch_twfutures_* so the call
-    trigger covers them."""
+    statically; the call trigger covers them when they fetch via one of `fetchers`
+    (the mask guard: fetch_twfutures_*; a ladder also fetch_stock_futures_batch_daily)."""
     trigger = None
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _call_name(node) in fetchers:
@@ -344,13 +344,15 @@ def _check_ladder_roll(tree: ast.AST) -> list[dict]:
     out = []
     trigger = _taifex_trigger(tree, _LADDER_ROLL_FETCHERS)
     if trigger is not None:
+        fix = ("build one continuous near-month series from the per-month rows first, then pass "
+               "settle=txf_settlement_mask(df.index)" if "fetch_stock_futures_batch_daily" in trigger[1]
+               else "pass settle=txf_settlement_mask(df.index)")
         for c in calls:
             if len(c.args) < 6 and not any(k.arg == "settle" for k in c.keywords):
                 out.append(_w(c.lineno, f"TAIFEX futures strategy ({trigger[1]}): ladder_position without "
                                         "settle= — the ladder carries its base fill across the monthly roll, "
-                                        "so the next contract's spread reads as a dip or a take-profit. Pass "
-                                        "settle=txf_settlement_mask(df.index) (references/strategy-code.md › "
-                                        "Scaling in)."))
+                                        f"so the next contract's spread reads as a dip or a take-profit. Fix: "
+                                        f"{fix} (references/strategy-code.md › Scaling in)."))
     if "fetch_db_kline" in names and "settlement_signals_from_db" not in names:
         out.append(_w(calls[0].lineno, "ladder_position on fetch_db_kline futures without "
                                        "settlement_signals_from_db — the ladder resets on the new contract's "

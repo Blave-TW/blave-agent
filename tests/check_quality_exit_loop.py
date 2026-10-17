@@ -312,6 +312,39 @@ check(any(l.strip().startswith("⚠️ WARNING: hand-written exit loop") for l i
 rc, out, wrote = backtest(clean_src)
 check(rc == 0 and wrote and "hand-written exit loop" not in out,
       f"the same strategy on apply_exits: finishes, no exit-loop warning (rc={rc})")
+
+# a TAIFEX ladder without settle=: run() prints the ladder_roll WARNING and still finishes
+LADDER_TMF = """import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+STRATEGY_NAME = "e2e_exit_test"
+SYMBOL = "TMF"; INTERVAL = "1d"; START = "2020-01-01"; END = None
+FEE = 0.0005
+
+def fetch_data(hdrs):
+    import numpy as np, pandas as pd
+    idx = pd.date_range("2020-01-01", periods=400, freq="D", tz="Asia/Taipei")
+    c = 15000 * np.exp(np.cumsum(np.random.default_rng(3).normal(0, 0.012, 400)))
+    return pd.DataFrame({"Open": c, "High": c * 1.003, "Low": c * 0.997, "Close": c, "Volume": 1.0}, index=idx)
+
+def compute_signals(df):
+    from lib.strategy import ladder_position
+    from lib.data import txf_settlement_mask
+    settle = txf_settlement_mask(df.index)
+    cond = df["Close"] < df["Close"].shift(1)
+    return ladder_position(cond, df, devs=[0.02, 0.05], mult=1.0, tp_pct=0.03{SETTLE}), settle
+
+if __name__ == '__main__':
+    from lib.runner import run
+    run(locals(), fetch_data, compute_signals, None)
+"""
+rc, out, wrote = backtest(LADDER_TMF.replace("{SETTLE}", ""))
+check(rc == 0 and wrote and any(l.strip().startswith("⚠️ WARNING: TAIFEX futures strategy") and "settle=" in l
+                                for l in out.splitlines()),
+      f"TMF ladder without settle=: finishes and prints the ladder_roll WARNING (rc={rc})")
+rc, out, wrote = backtest(LADDER_TMF.replace("{SETTLE}", ", settle=settle"))
+check(rc == 0 and wrote and "ladder_position without settle=" not in out and "Scaling in:" in out,
+      f"the same ladder with settle=: finishes, no roll warning, the Scaling in line is printed (rc={rc})")
 shutil.rmtree(WS)
 
 # PLOT_SERIES warning vs references/marketplace.md install-flow step 7 / fork step 5 (run as is): Codex

@@ -3,6 +3,10 @@ from datetime import datetime, timedelta, timezone
 
 from lib import guard, venue_traits
 try:
+    from lib.execute import RECONCILE_THRESHOLD
+except ImportError:  # half-updated workspace (lib/execute.py not landed yet): the value it carries
+    RECONCILE_THRESHOLD = 10
+try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
@@ -1915,10 +1919,10 @@ def spot_symbols():
 _SPOT_SCOPE_PATH = 'manager/spot_scope.json'
 
 
-# threshold default MUST track manager/reconciler.py THRESHOLD (both 10):
+# threshold default is manager/reconciler.py THRESHOLD (both lib.execute.RECONCILE_THRESHOLD):
 # a scope threshold above the reconcile one strands inventory in scope forever
 # (rows below reconcile threshold never sell, never leave scope) — audit L1
-def spot_scope(inventory_value_fn, threshold=10):
+def spot_scope(inventory_value_fn, threshold=RECONCILE_THRESHOLD):
     """{symbol: usd_value} of every spot inventory the reconciler must treat
     as `actual` — and the rule that makes REMOVING a spot strategy exit its
     position instead of orphaning it (futures parity: strategy leaves →
@@ -2606,7 +2610,7 @@ def _close_threshold(threshold, symbol):
     return threshold(symbol, True) if flat is None else flat
 
 
-def compute_diff(target, actual, threshold=10, gates=None, drift_band=None):
+def compute_diff(target, actual, threshold=RECONCILE_THRESHOLD, gates=None, drift_band=None):
     """
     Compute required position adjustments.
     target:  output of aggregate_portfolio()
@@ -2941,7 +2945,7 @@ def _order_phase(order, book):
     return 0 if abs(t) < abs(a) else 2
 
 
-def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=None):
+def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, send_telegram_fn=None):
     """
     Full reconciliation cycle:
       1. aggregate_portfolio() → target (weighted positions × account value, in account currency)
