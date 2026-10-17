@@ -11,6 +11,10 @@ What this pins:
      session reports the new count at once, a message into an idle session does not.
   6. The old `interrupt` is unchanged: running → stop flag, queue untouched; not running →
      the whole queue is dropped and `cancelled` now names every dropped id.
+  7. A withdraw that empties the queue while the finished turn is still reporting `done`
+     or `queued` never leaves the api on `queued`: the worker re-reads the queue and ends
+     the turn with `cancelled` when it was emptied behind its back.
+  8. Every snapshot carries a strictly increasing `pending_seq`.
 Run: cd blave-agent && .venv/bin/python tests/check_web_bridge_withdraw.py
 """
 import json
@@ -44,7 +48,19 @@ def check(label, ok, detail=""):
 
 
 posted = []
-wb._post_chunk = lambda chunk, log=False: posted.append(chunk)
+hooks = {}
+
+
+def _post(chunk, log=False):
+    posted.append({k: v for k, v in chunk.items() if k != "pending_seq"})
+    seqs.append(chunk.get("pending_seq"))
+    hook = hooks.pop((chunk["type"], chunk.get("state")), None)
+    if hook:
+        hook()
+
+
+seqs = []
+wb._post_chunk = _post
 wb.ack_message = lambda mid: None
 
 
@@ -151,6 +167,37 @@ wb._ingest({"type": "interrupt", "message_id": "i2", "session_id": "s1"})
 check("沒在跑:整條佇列撤回、cancelled 點名全部", "s1" not in wb._queues
       and [(c["state"], c.get("message_ids")) for c in of("turn_state")]
       == [("cancelled", ["m2", "m3"])], posted)
+
+print("7. 回合收尾時撤回最後一則")
+wb.run_agent_turn = lambda *a, **k: True
+wb.turn_slots.release = lambda slot: None
+wb.sync_portfolio = wb.sync_strategies = lambda **kw: None
+for during in ("done", "queued"):
+    reset(running="m1", queue=("m2",))
+    hooks[("turn_state", during)] = lambda: withdraw("m2")
+    wb._worker("s1", entry("m1"), None)
+    states = [c["state"] for c in of("turn_state")]
+    check(f"撤回落在 {during} 送出途中 → 最後一個 turn_state 不是 queued", states
+          and states[-1] in ("done", "cancelled") and "s1" not in wb._running
+          and "s1" not in wb._queues, posted)
+    check(f"…撤回本身照常 withdrawn({during})",
+          [c["result"] for c in of("withdraw_result")] == ["withdrawn"], posted)
+reset(running="m1", queue=("m2",))
+hooks[("turn_state", "done")] = lambda: withdraw("m2")
+wb._worker("s1", entry("m1"), None)
+check("落在 done 途中:重讀後不送 queued", [c["state"] for c in of("turn_state")] == ["running", "done"],
+      posted)
+reset(running="m1", queue=("m2",))
+hooks[("turn_state", "queued")] = lambda: withdraw("m2")
+wb._worker("s1", entry("m1"), None)
+check("落在 queued 途中:收尾補 cancelled(message_ids 空)",
+      [(c["state"], c.get("message_ids")) for c in of("turn_state")]
+      == [("running", None), ("done", None), ("queued", None), ("cancelled", [])], posted)
+
+print("8. pending_seq")
+nums = [x for x in seqs if x is not None]
+check("每個快照都帶、嚴格遞增", len(nums) > 10 and all(b > a for a, b in zip(nums, nums[1:])),
+      nums[:5])
 
 print()
 if failures:

@@ -423,17 +423,26 @@ def _persist_queue():
         print(f"[web_bridge] queue persist failed: {e}", file=sys.stderr)
 
 
+_last_pending_seq = 0
+
+
 def _pending_ids(session_id):
     """Caller holds _lock. The ids still waiting in this session's queue — sent on every
-    turn_state so the api can tell a reloaded page how many are lined up."""
-    return [e.get("message_id") for e in _queues.get(session_id, []) if e.get("message_id")]
+    turn_state so the api can tell a reloaded page how many are lined up — and the
+    snapshot's `pending_seq`. Chunks are POSTed outside the lock from several threads,
+    so they can land out of order; the api keeps only the newest seq. Wall-clock based
+    so a restarted bridge does not start below what the api already holds."""
+    global _last_pending_seq
+    _last_pending_seq = max(_last_pending_seq + 1, time.time_ns() // 1000)
+    ids = [e.get("message_id") for e in _queues.get(session_id, []) if e.get("message_id")]
+    return ids, _last_pending_seq
 
 
 def _turn_state(session_id, state, **extra):
     with _lock:
-        pending = _pending_ids(session_id)
+        pending, seq = _pending_ids(session_id)
     _post_chunk({"type": "turn_state", "session_id": session_id, "state": state,
-                 "pending_ids": pending, **extra},
+                 "pending_ids": pending, "pending_seq": seq, **extra},
                 log=state != "running")
 
 
@@ -470,10 +479,10 @@ def _withdraw(session_id, target_id):
                     _queued_at.pop(session_id, None)
                 _persist_queue()
                 result = "withdrawn"
-        pending = _pending_ids(session_id)
+        pending, seq = _pending_ids(session_id)
         idle = session_id not in _running and not pending
     _post_chunk({"type": "withdraw_result", "session_id": session_id, "message_id": target_id,
-                 "result": result, "pending_ids": pending}, log=True)
+                 "result": result, "pending_ids": pending, "pending_seq": seq}, log=True)
     if result == "withdrawn" and idle:
         # nothing left running or waiting: end the api's `queued` now, not at its TTL
         _turn_state(session_id, "cancelled", message_ids=[target_id])
@@ -663,10 +672,18 @@ def _worker(session_id, entry, slot):
         # dispatcher cannot start its next message, so that turn's `running` can never
         # land between this `done` (which clears the api's turnactive) and `queued`.
         _turn_state(session_id, "done")
+        # Re-read: a withdraw landing while `done` was in flight may have emptied the
+        # queue, and it cannot end the turn itself while this session is in _running.
+        with _lock:
+            more = bool(_queues.get(session_id))
         if more:
             _turn_state(session_id, "queued")   # honest: the next one is not running yet
         with _lock:
             _running.pop(session_id, None)
+            emptied = more and not _queues.get(session_id)
+        if emptied:
+            # withdrawn between that `queued` and here: end it now, not at the api's TTL
+            _turn_state(session_id, "cancelled", message_ids=[])
         _wake.set()
     sync_portfolio(since=turn_end)
     sync_strategies(since=turn_end, include_newborn=True)
