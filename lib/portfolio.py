@@ -3658,8 +3658,10 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             # understates a real index-futures trade (would send "Bought TXF
             # $1.00" for a 1-lot TXF entry). Same flag as compute_diff()'s
             # threshold exemption above.
+            # A paper TW stock row is booked in TWD (the strategy's amount currency), not USD.
             unit = ('{amount:g} shares' if asset_type(asset_spec) == 'shares' else
-                    '{amount:g} lots' if is_lot_based else '${amount:.2f}')
+                    '{amount:g} lots' if is_lot_based else
+                    '{amount:,.0f} TWD' if _tw_stock(split_key(symbol)[0]) else '${amount:.2f}')
             if reduce_only:
                 key     = 'order_close_long'  if sub_diff < 0 else 'order_close_short'
                 default = (f'📉 Closed long {{symbol}} {unit}' if sub_diff < 0 else

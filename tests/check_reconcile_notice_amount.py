@@ -44,16 +44,16 @@ portfolio._record_order_error = lambda s, x, e: None
 sent = []
 
 
-def run(target_usd, held_usd, fill, spec=None, exchange=None):
+def run(target_usd, held_usd, fill, spec=None, exchange=None, sym="BTCUSDT"):
     del sent[:]
-    target = {"BTCUSDT": {"side": "long" if target_usd >= 0 else "short", "size": abs(target_usd),
-                          "exchange": exchange, "asset_spec": spec, "contributors": []}}
-    actual = {"BTCUSDT": {"side": "long", "size": abs(held_usd)}}
+    target = {sym: {"side": "long" if target_usd >= 0 else "short", "size": abs(target_usd),
+                    "exchange": exchange, "asset_spec": spec, "contributors": []}}
+    actual = {sym: {"side": "long", "size": abs(held_usd)}}
     portfolio.aggregate_portfolio = lambda: target
     portfolio.reconcile(get_positions_fn=lambda: actual,
                         place_order_fn=lambda symbol, signed_diff, spec, **kw: fill,
                         threshold=10, send_telegram_fn=lambda text: sent.append(text))
-    return [(t.split("|")[0], {"amount": float(t.split("|")[1])}) for t in sent]
+    return [(t.split("|")[0], {"amount": float(t.split("|")[1])}) for t in sent if "|" in t]
 
 
 # a $57.67 close asked; the venue filled 0.0003 BTC at 82,300 = $24.69
@@ -82,6 +82,17 @@ run(2, 0, {"executed_qty": 0.0, "avg_price": 0.0, "exchange": "capital", "resolv
 rows = [json.loads(x) for x in open("manager/orders.jsonl") if x.strip()]
 check(not rows or "resolved_symbol" not in rows[-1]["legs"][0],
       f"an unconfirmed capital order (0 filled) does not carry its alias as the month contract: {rows[-1:]}")
+
+# the default templates: a paper TW stock row is TWD, not "$" (paper e2e 0127b1 B2)
+open("manager/portfolio_config.json", "w").write(json.dumps({"self_ledger": False}))
+del sent[:]
+portfolio._paper_tw_closed_keys = lambda target, diff_actual: set()
+run(500000, 0, {"executed_qty": 460, "avg_price": 1085.0}, exchange="paper", sym="2330@spot")
+tw_line = list(sent)
+run(200, 0, {"executed_qty": 0.002, "avg_price": 82300.0})
+check(len(tw_line) == 1 and tw_line[0].endswith(" 499,100 TWD") and "$" not in tw_line[0]
+      and len(sent) == 1 and sent[0].endswith(" $164.60"),
+      f"default notice: a TW stock fill reads TWD, crypto keeps $: {tw_line} / {sent}")
 
 print("\n" + ("PASS" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)
