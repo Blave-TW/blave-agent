@@ -156,7 +156,7 @@ check("舊 entry 的 attachment_name 讀成清單",
       [wb._entry_attachment_names(x) for x in loaded] == [["old.png"], []], loaded)
 seen = []
 wb.run_agent_turn = lambda sid, msg, **kw: seen.append(model_prefs.resolve(sid, kw.get("attachment_names")))
-wb._turn_state = lambda sid, st: None
+wb._turn_state = lambda sid, st, **kw: None
 wb.sync_portfolio = wb.sync_strategies = lambda **kw: None
 wb._worker("s9", loaded[0], None)
 check("…_worker 照樣把它交給 resolve(圖 → VISION_MODEL)", seen == [model_prefs.VISION_MODEL], seen)

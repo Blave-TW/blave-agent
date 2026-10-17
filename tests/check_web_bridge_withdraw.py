@@ -187,6 +187,7 @@ hooks[("turn_state", "done")] = lambda: withdraw("m2")
 wb._worker("s1", entry("m1"), None)
 check("落在 done 途中:重讀後不送 queued", [c["state"] for c in of("turn_state")] == ["running", "done"],
       posted)
+check("開跑的 running 帶 running_id = 那則的 message_id", of("turn_state")[0].get("running_id") == "m1", posted)
 reset(running="m1", queue=("m2",))
 hooks[("turn_state", "queued")] = lambda: withdraw("m2")
 wb._worker("s1", entry("m1"), None)
