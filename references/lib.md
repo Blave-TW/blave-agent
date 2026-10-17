@@ -546,6 +546,19 @@ A key without an IP whitelist still binds.
 - `trip_halt(reason, source)` — set it (user says 停 / healthcheck anomaly). `clear_halt(source)` — **only on explicit user instruction; NEVER clear a halt on your own initiative.** `halted()` / `halt_info()` — check state.
 - Every order attempt / outcome / denial is appended to `state/audit.jsonl` (fsynced). When the user asks "你到底下了什麼單", read this file — it is the record of what was actually sent, not what was intended.
 
+**Multiplied contracts — the symbol follows the venue.** Low-priced coins trade under different names and units per venue (venues' public contract lists, 2026-10-16):
+
+| Coin | Binance | Bybit | BingX | OKX | Gate.io |
+|:-|:-|:-|:-|:-|:-|
+| PEPE | `1000PEPEUSDT` | `1000PEPEUSDT` | `1000PEPE-USDT` | `PEPE-USDT-SWAP` (1 contract = 10,000,000 PEPE) | `PEPE_USDT` (10,000,000) |
+| SHIB | `1000SHIBUSDT` | `SHIB1000USDT` | `1000SHIB-USDT` | `SHIB-USDT-SWAP` (1,000,000) | `SHIB_USDT` (10,000) |
+| SATS | `1000SATSUSDT` | `10000SATSUSDT` | `10000SATS-USDT` | `SATS-USDT-SWAP` (10,000,000) | `SATS_USDT` (10,000,000) |
+| BABYDOGE | `1MBABYDOGEUSDT` | `1000000BABYDOGEUSDT` | `1000000BABYDOGE-USDT` | — | — |
+
+- Write the strategy's `SYMBOL` as the chosen venue's name (canonical dashless: `1000PEPEUSDT` on Binance/Bybit/BingX, `PEPEUSDT` on OKX/Gate.io, `SHIB1000USDT` on Bybit). Never assume a prefix carries over — check the venue's contract list.
+- A prefixed name is priced per N coins (`1000PEPEUSDT` ≈ 1000 × `PEPEUSDT`); an OKX/Gate.io name is priced per coin and the order lib converts base qty to contracts. A price level or threshold copied between two venues can be N× off.
+- `fetch_kline` (and the API `/kline`) only carries Binance names, priced per contract (`1000PEPEUSDT` = per 1000 PEPE). Blave Studio on the web shows these coins per coin (the mobile apps still per contract), so a level the user read off the web Studio is 1000× smaller than the same bar in `fetch_kline`.
+
 `lib/order_TEMPLATE.py` — **contract for writing a new perp venue's order lib** (Taiwan brokers follow `lib/order_sinopac.py` instead). Copy it, keep the filename convention (`lib/order_{exchange}.py`). The reconciler calls four FIXED names — `get_contract_rules` / `format_qty` / `place_market_order` / `close_position_partial` — a lib missing any of them crashes at reconcile time, mid-trade. `lib/order_bingx.py` is the reference implementation.
 
 `lib/order_bingx.py` — **BingX swap (USDT-M perp) order execution. Ships implemented — NEVER hand-write BingX order calls in a strategy; import from here.** All functions take `env` (dotenv dict) first. `direction` is always the POSITION's direction (`'long'`/`'short'`); position mode (one-way vs hedge) is auto-detected.
@@ -740,6 +753,7 @@ One line per trap, collected from the sections above (the section named in *Wher
 |:-|:-|:-|
 | `.env` / headers | `X-API-KEY`, request signing | Headers are `api-key` / `secret-key` from `blave_api_key` / `blave_secret_key`; build `hdrs` once, no signing |
 | `fetch_kline` | A symbol that "works" taken as the user's instrument | Binance USDT-M perps only; another venue → `fetch_bingx_kline` or stop (`XAUUSDT` ≠ BingX `GOLD(XAU)-USDT`) |
+| *Multiplied contracts* | `1000PEPEUSDT` written for an OKX / Gate.io strategy, or a price level carried across venues / from Studio | `SYMBOL` is the chosen venue's own name; Binance-named data is priced per N coins, the web Studio per coin |
 | `fetch_kline` | Assuming all-finite `Volume` | Bars can carry NaN Volume — `dropna` / `fillna` inside volume logic |
 | *Data-depth discipline* | Repeating a remembered depth limit (「1m 只到 45 天」) | One narrow live probe this turn; then fix the stale note in the strategy file |
 | *Data-depth discipline* | Reading an empty window as "no history" | Pre-listing windows return empty with HTTP 200; fetch from the dataset start and read `df.index[0]` |
