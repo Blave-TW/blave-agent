@@ -53,6 +53,15 @@ for (const [name, s, o, exp] of rows) ok(`${exp ? "持有" : "放掉"}:${name}`,
   cur = M.awakeApply(true, cur, pb);
   ok("放掉後再要:開新的一顆(不重用舊 id)", cur === 2 && log.length === 3, log);
 }
+{
+  // Electron 第一顆 blocker 的 id 是 0(實測):判斷要看 null,不能看真假值
+  const log = []; const pb = { start: () => { log.push("start"); return 0; }, stop: (id) => log.push("stop:" + id) };
+  let cur = null;
+  for (const w of [true, true, true]) cur = M.awakeApply(w, cur, pb);
+  ok("id 0:連續三次要持有只開一顆、仍算持有", log.join() === "start" && cur === 0, log);
+  cur = M.awakeApply(false, cur, pb);
+  ok("id 0:放掉時真的 stop(0)、回到 null", log.join() === "start,stop:0" && cur === null, log);
+}
 
 // ---- 3. 接線
 ok("5 秒那一輪(trayStart)叫 awakeSync", /function trayStart\(\)[^\n]*startStep\("awake", awakeSync\)/.test(main));
