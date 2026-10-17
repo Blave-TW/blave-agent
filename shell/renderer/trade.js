@@ -278,7 +278,7 @@ function trTradableFunded(r) {
     if ((vid === "president" || vid === "capital") && (x.portfolio === true || !!(st[n] && st[n].weights))) return false;   // 投資組合:成分統一下不了(同網頁 pfTxfOnly)
     if (!sym) return true;   // 標的看不出來:不判(同 runtime NOT_TXF 的 fail-open)
     if (vid === "president" || vid === "capital") return !!trTxfSpec(sym);   // 群益同一條(runtime MARKET_VENUE)   // 不去 R1:runtime 存的時候 TXFR1 不算台指期
-    if (vid === "paper") return !(x.twd === true || /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/.test(sym)) || !!trTxfSpec(sym);   // 同 TR_TWD_RE
+    if (vid === "paper" && r.can_paper_twstock !== true) return !(x.twd === true || /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/.test(sym)) || !!trTxfSpec(sym);   // 同 TR_TWD_RE
     return true;
   }).length;
 }
@@ -712,8 +712,8 @@ function trZoneOrder(keys, venueId, acctZone) {
    加密所與模擬交易(kind "crypto")的台指期與台股。認不得的交易所(kind null)一律當有交易:不能藏掉它的差額與拒單 */
 function trTradesSym(kind, sym) {
   const s = trCanonSym(String(sym || "").replace(/@spot$/i, ""));
-  // 模擬交易(lib/order_paper):台指期以口數成交、保證金對淨值檢查;台股不支援(外殼鎖住,同 trPaperTw)
-  return kind === "tw" ? !!trTxfSpec(s) : !((kind === "crypto" || kind === "paper") && TR_TWD_RE.test(s) && !(kind === "paper" && trTxfSpec(s)));
+  // 模擬交易(lib/order_paper):台指期以口數成交、保證金對淨值檢查;台股要機器的 lib 會換匯(回報 can_paper_twstock),否則外殼鎖住(同 trPaperTw)
+  return kind === "tw" ? !!trTxfSpec(s) : !((kind === "crypto" || kind === "paper") && TR_TWD_RE.test(s) && !(kind === "paper" && (trTxfSpec(s) || trPaperTwOk())));
 }
 // 1 USD 換多少該幣(api get_fx_rates;USD 本身 1);拿不到 = null
 function trFxRate(fx, ccy) {
@@ -1773,7 +1773,7 @@ function trLoadingText() {
 /* 空狀態導引這一刻的判斷(trZGuide 的輸入在這裡湊齊):頁首、部位、總覽三處同一份。zv / pend 沒給就照 trPaintHead 同一條算 */
 // 選擇策略框有沒存的勾選(Z-draft 的輸入):底稿與 keep 同金額表的 dirty(trAmountsEdited)
 function trZDraft() { const base = trBase(); return !!base && trPickDirty(TR.picked, base, trPickKeep(TR.env, TR.picked, base, trListNames())); }
-function trZRows(r) { return TR.listLoaded ? trPickRows(TR.list, [], (r || {}).can_trade_portfolio === true, trVenueId() === PAPER, trTwBroker(trVenueId()), {}) : null; }
+function trZRows(r) { return TR.listLoaded ? trPickRows(TR.list, [], (r || {}).can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}) : null; }
 function trZNow(state, zv, pend) {
   const r = trReport() || {};
   if (!zv) { zv = trZView(state, r); pend = trAmountsEdited() ? null : trPendKey(TR, Date.now(), zv.off && !zv.noStart); }
@@ -3163,8 +3163,10 @@ function trManualPart(r, sym, lot, bk) {
   const acctQty = trSigned(pos) / mark, d = acctQty - bookQty;
   return Math.abs(d) <= 0.005 * Math.max(Math.abs(acctQty), Math.abs(bookQty)) ? 0 : d * mark;
 }
-/* 模擬交易不支援的台幣標的(台股;台指期照機器支援):金額不能往上加——配置分頁的輸入格與套用金額走同一道(trSaveAmounts) */
-function trPaperTw(n) { const x = TR.list.find((y) => y.name === n); return trVenueId() === PAPER && !!x && x.twd === true && !trTxfSpec(x.symbol); }
+/* 機器的 lib 會在模擬交易裡下台股(台幣換美元記帳、休市不下單;runtime 回報 can_paper_twstock)。缺這欄 = 舊 runtime,照舊鎖 */
+function trPaperTwOk() { return ((typeof trReport === "function" && trReport()) || {}).can_paper_twstock === true; }
+/* 模擬交易下不了的台幣標的(台股,機器的 lib 太舊時;台指期照機器支援):金額不能往上加——配置分頁的輸入格與套用金額走同一道(trSaveAmounts) */
+function trPaperTw(n) { const x = TR.list.find((y) => y.name === n); return trVenueId() === PAPER && !!x && x.twd === true && !trTxfSpec(x.symbol) && !trPaperTwOk(); }
 /* 「{舊合約}平倉」:這支換了合約、舊合約上別的策略加起來取整是 0(沒人撐了)、而且帳上那個合約真的還有部位才標;其他策略還撐著就只是減倉,不標 */
 function trCtCloseTag(n, sending, stored) {
   const from = trCtStored(n), r = trReport() || {};
@@ -3509,7 +3511,7 @@ function poSigTable(r, stored, states, mode) {
   // 帳上不為 0 的每一列都進表底合計的分母(沒有細節的、含手動的以空物件記):缺一列,那一項就不畫(缺一列的和是低估)
   function detRow(sym, tb, lot, as, manual) {
     const hasManual = Math.abs(manual) > 1e-9, x = as ? det[sym] || {} : null, has = !!x && Object.keys(x).length > 0;
-    const unit = trUnit(), rowCcy = lot ? TR_TXF_CCY : unit, ccy = rowCcy !== unit ? rowCcy : null, money = (v) => (ccy ? v + " " + ccy : v);
+    const unit = trUnit(), rowCcy = lot || zoneOfSym[sym] === TR_TXF_CCY ? TR_TXF_CCY : unit, ccy = rowCcy !== unit ? rowCcy : null, money = (v) => (ccy ? v + " " + ccy : v);
     if (x) detRows.push(Object.assign({ ccy: rowCcy || "" }, hasManual ? {} : x));
     if (!has && !hasManual) return;
     const td = trEl("td", "note po-det"), seg = (node) => { if (segN++) td.append(" · "); td.append(node); }; let segN = 0;
@@ -4736,7 +4738,7 @@ function psOpen(opener, mode) {
   const cloud = S.env === "cloud", names = mg ? mgMembers() : trNames(), prefs = trPickPrefs(S, typeof SF !== "undefined" ? SF : null);
   // 優化只是試算、不下單:下單才有的鎖(模擬交易的台幣標的、統一只下台指期、舊 lib 的投資組合)不套
   const rows = mg ? trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, true, false, false, prefs.flags)
-    : trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER, trTwBroker(trVenueId()), prefs.flags);   // 台灣期貨券商(統一、群益)只下台指期:非台指期的列鎖住,已勾的可以取消
+    : trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), prefs.flags);   // 台灣期貨券商(統一、群益)只下台指期:非台指期的列鎖住,已勾的可以取消
   const dotsUp = envDotsUp(S.env, S.st), now = Date.now();
   rows.forEach((r) => { r.live = dotsUp && envRunDot(r.name, S.st, now, S.just); });
   psOpener = opener || null;

@@ -59,7 +59,7 @@ RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze')
 
 def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False,
                               own_only=False, needs_baseline=None, baseline_pending=None,
-                              rollovers=None):
+                              rollovers=None, market_closed=None):
     """Record what this reconcile actually saw, for anything that needs to show
     live positions without querying the exchange itself.
 
@@ -116,6 +116,8 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, r
             doc['baseline_pending'] = baseline_pending
         if rollovers:
             doc['rollovers'] = rollovers
+        if market_closed:
+            doc['market_closed'] = market_closed
         with open('manager/last_reconcile.json', 'w') as f:
             json.dump(doc, f, indent=2)
     except Exception as e:
@@ -255,6 +257,90 @@ def _seed_key(symbol, venue):
 
 
 _CURRENT = object()  # "the venue this machine trades on" — see book_venue()
+
+
+def _tw_stock(sym):
+    try:
+        from lib.paper_data import is_tw_stock
+    except ImportError:
+        return False
+    return is_tw_stock(sym)
+
+
+_PAPER_TW_CLOSE_PATH = 'state/paper_tw_close.json'
+
+
+def defer_paper_tw_close(keys):
+    """manager/flatten: close-all reached paper TW stock keys while the TWSE
+    session was shut. The reconciler closes them in its first round after the
+    open (they are dropped from the target while HALT holds — a close leg,
+    which HALT lets through). Pressing 啟動下單 before that cancels it: the
+    strategies' targets rule again."""
+    keys = sorted(set(keys))
+    if not keys:
+        return
+    try:
+        with open(_PAPER_TW_CLOSE_PATH) as f:
+            have = json.load(f).get('keys') or []
+    except (OSError, ValueError, AttributeError):
+        have = []
+    os.makedirs(os.path.dirname(_PAPER_TW_CLOSE_PATH), exist_ok=True)
+    tmp = _PAPER_TW_CLOSE_PATH + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump({'keys': sorted(set(have) | set(keys)), 'ts': int(time.time())}, f)
+    os.replace(tmp, _PAPER_TW_CLOSE_PATH)
+
+
+def _paper_tw_deferred(diff_actual, halted):
+    """Keys flatten deferred (defer_paper_tw_close) that are still held. Not
+    halted any more = the user resumed: the deferral is dropped."""
+    try:
+        with open(_PAPER_TW_CLOSE_PATH) as f:
+            keys = set(json.load(f).get('keys') or [])
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError, AttributeError):
+        keys = set()
+    held = {k for k in keys if float((diff_actual.get(k) or {}).get('size') or 0) > 0}
+    if not halted or not held:
+        try:
+            os.remove(_PAPER_TW_CLOSE_PATH)
+        except OSError:
+            pass
+        return set()
+    if held != keys:
+        tmp = _PAPER_TW_CLOSE_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump({'keys': sorted(held), 'ts': int(time.time())}, f)
+        os.replace(tmp, _PAPER_TW_CLOSE_PATH)
+    return held
+
+
+def _paper_tw_closed_keys(target, diff_actual):
+    """Keys of TW stocks traded on paper while the TWSE session is shut
+    (lib.paper_data.tw_session_open): held as is on BOTH sides, like a gated
+    symbol — no entry and no close until 09:00, the way the exchange would
+    hold them. A daily strategy's after-close signal so fills the next session
+    at the latest close. Empty on an older lib/paper_data."""
+    try:
+        from lib.paper_data import is_tw_stock, tw_session_open
+    except ImportError:
+        return set()
+    keys = set()
+    for k in set(target) | set(diff_actual):
+        if not is_tw_stock(split_key(k)[0]):
+            continue
+        venue = (target.get(k) or {}).get('exchange') or (diff_actual.get(k) or {}).get('exchange')
+        if (venue or book_venue()) == 'paper':
+            keys.add(k)
+    if not keys:
+        return set()
+    try:
+        from lib.venue_wiring import read_env
+        env = read_env()
+    except Exception:
+        env = {}
+    return set() if tw_session_open(env) else keys
 
 
 def book_venue():
@@ -2319,9 +2405,10 @@ def aggregate_portfolio():
                     continue
                 if w != w:  # NaN
                     w = 0.0
-                if market == 'spot' and w < 0:
+                if w < 0 and (market == 'spot' or (exchange == 'paper' and _tw_stock(sym))):
                     # this strategy's own short intent must not cancel another
-                    # strategy's long on the same coin — spot cannot short
+                    # strategy's long on the same coin — spot cannot short, nor
+                    # can a TW stock on paper (Wei 10-17: a short is a close)
                     w = 0.0
                 key = market_key(str(sym).replace('-', '').upper(), market)
                 _add(key, market, exchange, asset_spec, amount * w,
@@ -2373,6 +2460,10 @@ def aggregate_portfolio():
                 gated = True
 
         contribution = amount * position
+        if contribution < 0 and exchange == 'paper' and _tw_stock(symbol):
+            # Wei 10-17: paper never shorts a TW stock — a short signal is flat,
+            # and does not cancel another strategy's long on the same stock
+            contribution = 0.0
 
         # spot and swap are different inventories — same symbol, different key,
         # so a spot strategy and a perp strategy on BTCUSDT never net against
@@ -3121,6 +3212,15 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         logging.info(f"[reconcile] waiting on an unreadable strategy's state: {sorted(pending_keys)}")
         target = {k: v for k, v in target.items() if k not in pending_keys}
         diff_actual = {k: v for k, v in diff_actual.items() if k not in pending_keys}
+    deferred = _paper_tw_deferred(diff_actual, halted_at_start)
+    if deferred:
+        logging.info(f"[reconcile] close-all deferred to the TW session: {sorted(deferred)}")
+        target = {k: v for k, v in target.items() if k not in deferred}
+    closed_keys = _paper_tw_closed_keys(target, diff_actual)
+    if closed_keys:
+        logging.info(f"[reconcile] TW market closed — paper holds {sorted(closed_keys)} until the session")
+        target = {k: v for k, v in target.items() if k not in closed_keys}
+        diff_actual = {k: v for k, v in diff_actual.items() if k not in closed_keys}
 
     # per-symbol venue gates, for the snapshot (unrelated to gated_symbols
     # above — that is the SIGNAL gate). The drift band only when the diff is
@@ -3190,7 +3290,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     _write_reconcile_snapshot(full_target, actual, orders, ledger=ledger,
                               gates=entry_gates, read_only=read_only,
                               own_only=own_only, needs_baseline=needs_baseline,
-                              baseline_pending=sorted(pending_keys), rollovers=rolls)
+                              baseline_pending=sorted(pending_keys), rollovers=rolls,
+                              market_closed=sorted(closed_keys))
 
     # Checked once via signature inspection (not a runtime try/except TypeError) so a
     # TypeError raised *after* place_order_fn already submitted the order — e.g. while

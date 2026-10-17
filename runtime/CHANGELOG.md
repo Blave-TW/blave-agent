@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **模擬盤開放台股(0.1.27;`portfolio_reporter.can_paper_twstock`)**:報告多一個頂層 `can_paper_twstock`,workspace lib 會把台股的台幣金額換成美元記帳、台股代號當現貨庫存、休市時對帳器原樣持有(`lib/paper_data.tw_session_open` 與 `lib/portfolio._paper_tw_closed_keys` 都在磁碟上)才是 true。電腦版與網頁照它拿掉模擬交易的台幣鎖;缺這欄(舊 runtime)或 false(舊 lib)照舊鎖住。只動回報,下單不經 runtime。runtime 1.1.128 要比外殼與網頁先到全機隊。
+
 ## 1.1.127 — 2026-10-16(desktop 0.1.26)
 
 - **投資組合(Type C)剛勾、還沒實盤算過時,報告帶回測最後一期當預覽(Wei 10-15;`portfolio_reporter.typec_previews`)**:全市場 Type C 第一次實盤要好幾分鐘,這段時間策略組合頁空著。報告多一個頂層 `previews: {name: {type, market, weights, rebalance_at, bar_at, bar_date}}`(`bar_date` = 那根 K 棒的交易日 "YYYY-MM-DD":價格全來自台股／台指期 fetcher 的用 UTC+8 換——`fetch_twstock_ohlcv` 日 K 標在台北午夜、批次日價標在 UTC 午夜,兩種都換得對——其餘用 UTC;頁面直接顯示它、不自己換算):`amounts` 有這支、`states` 裡沒有它的權重、workspace lib 回測寫的 `strategies/<name>/backtest_state.json` 存在,而且檔內 `code_hash` 等於目前 `strategy.py` 的(`_code_hash` = workspace `lib/strategy.code_hash`;只比對 strategy.py),策略用到美股價格(`strategy_reporter._PRICE_FETCHERS` 的 us_stock,實盤會被 `UsStockNotHere` 拒絕)的不送。而且它的 K 棒在**報告當下**還是最新一根已收盤的(Wei 10-16:預覽只顯示最新資料;`_preview_is_latest`):台股／台指期日線看交易日——台北時間平日 13:45 收盤後算今天、之前與週末算前一個平日(沒有假日表,假日那天會判成過時、不送,偏保守),跟 `bar_date` 同一套;其餘用 `_expected_closed_bar_open`(= workspace `lib/bar_ready.expected_closed_bar_open`,測試釘兩邊一致)要剛好等於;台股非日線一律不送。回測當下是最新、隔一根就自動消失,頁面回到「計算中…」。權重照 `_portfolio_weights` 過濾、截前 100。只給頁面看:不進 `states`,對帳器與排程都不讀(稽核 audit-typec-adopt-2026-10-15 否決了拿它寫 state.json)。舊外殼不認這欄。測試 `tests/check_typec_preview.py`。

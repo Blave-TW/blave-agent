@@ -1826,10 +1826,10 @@ msgid "tr.typeCNextHost"
 msgstr "Portfolio strategies can auto-trade once the machine's software is updated."
 
 msgid "tr.pick.twd"
-msgstr "Paper trading does not support TWD-priced instruments yet"
+msgstr "Paper trading can trade Taiwan stocks once the machine's software is updated"
 
 msgid "tr.pick.twdKeep"
-msgstr "Paper trading does not support TWD-priced instruments yet; once unchecked, it can’t be added back"
+msgstr "Paper trading can trade Taiwan stocks once the machine's software is updated; once unchecked, it can’t be added back"
 
 msgid "tr.pick.txf"
 msgstr "{venue} only trades Taiwan index futures (TXF / MXF / TMF)"

@@ -875,6 +875,24 @@ def can_trade_portfolio():
         return False
 
 
+def can_paper_twstock():
+    """The workspace lib paper-trades TW stocks: TWD money folded into the USD
+    ledger, TW codes as spot inventory, the TWSE session held by the reconcile
+    (lib/paper_data.tw_session_open + lib/portfolio._paper_tw_closed_keys).
+    Asked of the disk like can_trade_portfolio — the pages unlock TW stock
+    amounts on paper only beside a lib that books them in USD."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "paper_data.py"), encoding="utf-8",
+                  errors="replace") as f:
+            pd_ok = "def tw_session_open(" in f.read()
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), encoding="utf-8",
+                  errors="replace") as f:
+            pf_ok = "def _paper_tw_closed_keys(" in f.read()
+        return pd_ok and pf_ok
+    except OSError:
+        return False
+
+
 def _ws_lib_own_only():
     """The workspace lib/portfolio.py on disk has the own-positions-only rule
     (every config without "self_ledger": false diffs against the book)."""
@@ -1671,6 +1689,9 @@ def build_report():
         "self_ledger": own_positions_only(cfg, hb, last),
         # can_trade_portfolio: a Type C strategy may be funded (the pages unlock it)
         "can_trade_portfolio": can_trade_portfolio(),
+        # can_paper_twstock: a TW stock strategy may be funded on paper (the
+        # pages lift their TWD lock). Absent = old runtime: keep the lock.
+        "can_paper_twstock": can_paper_twstock(),
         # can_switch_contract: the 標的 cell may switch a 台指期 strategy between
         # TXF / MXF / TMF (config["contracts"]). Absent = old runtime: the page
         # must not offer it, and the api refuses `contracts` without it.

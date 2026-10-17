@@ -185,6 +185,11 @@ def hand_wired_venue():
 
 
 _SPOT_QUOTES = ("USDT", "USDC")
+try:
+    from lib.paper_data import is_tw_stock as _is_tw_stock
+except ImportError:  # half-updated workspace (lib/paper_data.py without TW stocks)
+    def _is_tw_stock(sym):
+        return False
 
 
 def _spot_base(sym):
@@ -193,6 +198,8 @@ def _spot_base(sym):
     reconcile then re-buys the full target every round until the wallet is
     empty. A loud failure lands in the get_positions error contract and the
     auto-halt wrapper instead."""
+    if _is_tw_stock(sym):
+        return sym  # a TW share is its own inventory (paper; TWD-quoted)
     for q in _SPOT_QUOTES:
         if sym.endswith(q) and len(sym) > len(q):
             return sym[: -len(q)]

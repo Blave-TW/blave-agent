@@ -208,7 +208,7 @@ ok("等待中的判準:報告沒到、清單沒載入、第一次讀帳沒回來
 ok("Z-draft 的輸入:三個呼叫點(頁首／部位 trZNow、在跑那句 trRunZText、總覽)都帶 trZDraft();草稿判準同金額表的 dirty(trBase 為底、trPickKeep)",
   /const zc = trZCase\(trReport\(\), trZRows\(r\), trZDraft\(\)\);/.test(now) && /const zc = trZCase\(r, trZRows\(r\), trZDraft\(\)\);/.test(cutF(src, "trRunZText"))
   && (src.match(/trZCase\(/g) || []).length === 4 && /const base = trBase\(\); return !!base && trPickDirty\(TR\.picked, base, trPickKeep\(TR\.env, TR\.picked, base, trListNames\(\)\)\);/.test(cutF(src, "trZDraft")));
-ok("候選清單跟選擇策略框同一套鎖(能不能下台股、統一／群益只下台指期、舊 lib 的投資組合)", /trPickRows\(TR\.list, \[\], \(r \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER, trTwBroker\(trVenueId\(\)\), \{\}\)/.test(cutF(src, "trZRows")));
+ok("候選清單跟選擇策略框同一套鎖(能不能下台股、統一／群益只下台指期、舊 lib 的投資組合)", /trPickRows\(TR\.list, \[\], \(r \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER && !trPaperTwOk\(\), trTwBroker\(trVenueId\(\)\), \{\}\)/.test(cutF(src, "trZRows")));
 ok("部位:有霧就上霧(pick → pos-pick,draft → pos-draft,其餘 → pos-new),重畫簽章帶霧的種類;Z-amt 照畫表", /if \(fog\) box\.appendChild\(poFog\(fog === "pick" \? "pos-pick" : fog === "draft" \? "pos-draft" : "pos-new"\)\);\n\s*else box\.appendChild\(poSigTable/.test(pos) && /!!TR\.zBridge, fog, TR_TWN\.v\];/.test(pos));
 ok("切分頁時頁首跟著重畫(部位上霧時導引鈕收、狀態行空)", /trPaintHead\(\);[^\n]*\n\s*trPaintTab\(\);\n\}/.test(cutF(src, "trSetTab")));
 ok("頁首鈕行為:選擇策略 = 到配置頁開框(opener 是配置頁 #tr-pick,確定後焦點到第一個金額格);設定金額 = 到配置頁、焦點第一個金額格;新增策略 = nsOpen",

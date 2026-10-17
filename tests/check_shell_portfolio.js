@@ -117,7 +117,7 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -236,6 +236,7 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     ok("trTradableFunded:統一 + 只有 BTC 有金額 → 0(Z,啟動下單停用);統一 + 台指期 → 1;模擬 + 台股 → 0、模擬 + 台指期 → 1;Binance 照算;標的不明 → 算",
       f("president", [{ name: "b", symbol: "BTCUSDT" }], { b: 5000 }) === 0 && f("president", [{ name: "x", symbol: "TXF" }, { name: "b", symbol: "BTCUSDT" }], { x: 1, b: 5000 }) === 1
       && f("paper", [{ name: "t", symbol: "2330", twd: true }], { t: 1000 }) === 0 && f("paper", [{ name: "x", symbol: "TXF", twd: true }], { x: 1 }) === 1
+      && (ctx.TR = { list: [{ name: "t", symbol: "2330", twd: true }], env: "local" }, vm.runInContext("trTradableFunded(" + J({ venues: { paper: V }, config: { amounts: { t: 1000 } }, states: {}, can_paper_twstock: true }) + ")", ctx)) === 1
       && f("binance", [{ name: "b", symbol: "BTCUSDT" }], { b: 1 }) === 1 && f("president", [], { q: 1 }) === 1 && f("president", [], { q: 1 }, { q: { symbol: "BTCUSDT" } }) === 0
       // 同 runtime NOT_TXF:不去 R1(TXFR1 不算);投資組合在統一下算不能下(稽核第三輪 P1-A)
       && f("president", [{ name: "r", symbol: "TXFR1" }], { r: 1 }) === 0 && f("president", [{ name: "pf", portfolio: true }], { pf: 1 }) === 0
@@ -385,12 +386,18 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   fs.rmSync(TMP, { recursive: true, force: true }); }
 // 第三台實測(cs-0124-w3)+ 設計稽核電腦版必改
 { const ctx = vm.createContext({ t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), TR: { list: [{ name: "txf", symbol: "TXF", twd: true }, { name: "tsmc", symbol: "2330", twd: true }, { name: "btc", symbol: "BTCUSDT" }] }, PAPER: "paper", TR_TWD_RE: /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/, CX_VENUES: { binance: {} } });
-  vm.runInContext(["trCanonSym", "trTxfSpec", "trCapitalCanon", "trTwBroker", "trVenueKind", "trTradesSym", "trPaperTw"].map((n) => { try { return cutF(src, n); } catch (_) { return ""; } }).join("\n") + "\nvar TR_TXF_SPECS = " + J({ TXF: { cv: 200, prod: "x" }, MXF: { cv: 50, prod: "y" }, TMF: { cv: 10, prod: "z" } }) + ";", ctx);
+  vm.runInContext(["trCanonSym", "trTxfSpec", "trCapitalCanon", "trTwBroker", "trVenueKind", "trTradesSym", "trPaperTwOk", "trPaperTw"].map((n) => { try { return cutF(src, n); } catch (_) { return ""; } }).join("\n") + "\nvar TR_TXF_SPECS = " + J({ TXF: { cv: 200, prod: "x" }, MXF: { cv: 50, prod: "y" }, TMF: { cv: 10, prod: "z" } }) + ";", ctx);
   let vid = "paper"; ctx.trVenueId = () => vid;
   const run = (x) => vm.runInContext(x, ctx);
   ok("模擬交易照機器(lib/order_paper):台指期以口數成交 → 部位表對得上帳(不是「—」)、picker 不鎖;台股仍不支援;加密交易所不交易台指期",
     run('trVenueKind("paper")') === "paper" && run('trTradesSym("paper", "TXF")') && run('trTradesSym("paper", "TMF")') && !run('trTradesSym("paper", "2330")') && run('trTradesSym("paper", "BTCUSDT")')
-    && !run('trTradesSym("crypto", "TXF")') && !run('trPaperTw("txf")') && run('trPaperTw("tsmc")') && !run('trPaperTw("btc")') && (vid = "binance", !run('trPaperTw("tsmc")'))); }
+    && !run('trTradesSym("crypto", "TXF")') && !run('trPaperTw("txf")') && run('trPaperTw("tsmc")') && !run('trPaperTw("btc")') && (vid = "binance", !run('trPaperTw("tsmc")')));
+  // 0.1.27:機器的 lib 回報 can_paper_twstock 才解鎖台股;加密所照舊不交易台股
+  vid = "paper"; ctx.trReport = () => ({ can_paper_twstock: true });
+  ok("模擬交易台股:回報 can_paper_twstock 時部位表算它、金額不鎖;加密所照舊不交易台股;沒有這欄照舊鎖",
+    run('trTradesSym("paper", "2330")') && run('trTradesSym("paper", "2330@spot")') && !run('trPaperTw("tsmc")') && !run('trTradesSym("crypto", "2330")')
+    && (ctx.trReport = () => ({ can_paper_twstock: false }), !run('trTradesSym("paper", "2330")') && run('trPaperTw("tsmc")'))
+    && (ctx.trReport = () => null, run('trPaperTw("tsmc")'))); }
 ok("① 台指期報價兩個視角都問(統一、模擬交易在這台電腦也下台指期)", /if \(txf\) trTxfWant\(\);/.test(src) && !/if \(txf && cloud\) trTxfWant/.test(src));
 ok("③ 套用金額走同一道:trSaveAmounts 擋模擬交易台股往上加(cf-block、okDisabled),配置分頁的輸入格也是 trPaperTw",
   /const paperTw = Object\.keys\(sending\)\.filter\(\(n\) => trPaperTw\(n\) && \(Number\(sending\[n\]\) \|\| 0\) > old\(n\)\);/.test(src) && /const blocked = badStored\.length > 0 \|\| paperTw\.length > 0;/.test(src) && /const twdRow = trPaperTw\(n\);/.test(src)
@@ -399,8 +406,8 @@ ok("③ 套用金額走同一道:trSaveAmounts 擋模擬交易台股往上加(cf
   ok("確認框「平倉」:帳上沒有這支的部位(trStratHeld false)不標;讀不到(null)照舊標;兩個確認框都帶",
     vm.runInContext("trCloseTag(5, 0, true, false)", ctx) === null && vm.runInContext("trCloseTag(5, 0, true, null)", ctx) === "tr.cfTagClose" && vm.runInContext("trCloseTag(5, 0, true, true)", ctx) === "tr.cfTagClose"
     && /mayFire && was > 0 && trStratHeld\(n\) !== false/.test(src)); }
-ok("口數列的未實現／保證金寫台幣(帳戶幣不是台幣時),表底不把台幣跟帳戶幣加在一起;拒單接在細節行底下、靠左",
-  /rowCcy = lot \? TR_TXF_CCY : unit, ccy = rowCcy !== unit \? rowCcy : null/.test(src) && /const oneCcy = detRows\.every/.test(src) && /tb\.appendChild\(row\); rowOf\[sym\] = row;   \/\/ 拒單接在細節行底下/.test(src)
+ok("口數列與台股列(模擬交易的台股以台幣回報)的未實現／保證金寫台幣(帳戶幣不是台幣時),表底不把台幣跟帳戶幣加在一起;拒單接在細節行底下、靠左",
+  /rowCcy = lot \|\| zoneOfSym\[sym\] === TR_TXF_CCY \? TR_TXF_CCY : unit, ccy = rowCcy !== unit \? rowCcy : null/.test(src) && /const oneCcy = detRows\.every/.test(src) && /tb\.appendChild\(row\); rowOf\[sym\] = row;   \/\/ 拒單接在細節行底下/.test(src)
   && /\.pf-tbl td\.note\.po-err \{ text-align: left; \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8")));
 ok("設計稽核電腦版必改 1:合計算不出來 → 啟動框只寫「照策略組合 N 支策略下單。」、表底右邊整段不畫(含淨值)",
   /if \(!p\.ok\) return t\(p\.n === 1 \? "tr\.startPlanNOne" : "tr\.startPlanN", \{ n: String\(p\.n\) \}\);/.test(src) && /if \(pt && pt\.ok\) \{/.test(src) && /ok: zt\.total\.v != null,/.test(src));

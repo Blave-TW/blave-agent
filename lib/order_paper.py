@@ -41,6 +41,14 @@ PRICE (the whole model, Wei 2026-08-21):
     A TWD entry with no rate is refused; a reduce falls back to the row's own
     `fx`. Rows opened before this existed (no quote_ccy) are stamped on the
     first read that has a rate; cash already booked unconverted stays as is.
+  * TW STOCKS (0.1.27) are TWD-priced: the amount is TWD, so a notional qty is
+    shares and its PnL / fee — and a spot row's cost / proceeds (`2330@spot`
+    is inventory of the code itself) — go through the same rate. Like the
+    exchange (Wei 10-17): every TW stock order — closes, SL/TP and close-all
+    included — waits for the TWSE session (paper_data.tw_session_open;
+    PaperMarketClosed), quantities are whole shares floored (0 → no order;
+    a full close takes a legacy fractional row whole), and nothing goes
+    short: a sell past the long closes it, a short from flat is refused.
 
 Contract rules are permissive (fetch_data gives OHLC, not an instrument spec):
 no min-qty / min-notional / step gating — the reconciler's own slice threshold
@@ -55,6 +63,7 @@ only. Reduce/close legs are NEVER refused by the equity/margin checks.
 """
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -87,6 +96,15 @@ except ImportError:  # half-updated workspace (lib/paper_data.py without FX): co
         if str(ccy or "USD").upper() in ("USD", "USDT", "USDC"):
             return 1.0
         raise PaperNoFx(f"lib/paper_data.py has no FX — update the workspace")
+
+try:
+    from lib.paper_data import is_tw_stock, tw_session_open
+except ImportError:  # half-updated workspace (lib/paper_data.py without TW stocks): no session rule
+    def is_tw_stock(symbol):
+        return False
+
+    def tw_session_open(env=None, now=None):
+        return True
 
 try:
     import fcntl
@@ -183,10 +201,42 @@ def format_spot_qty(env, symbol, qty):
 
 
 def _spot_base(sym):
+    if is_tw_stock(sym):
+        return sym  # a TW share is its own inventory, quoted in TWD (quote_ccy)
     for q in ("USDT", "USDC"):
         if sym.endswith(q) and len(sym) > len(q):
             return sym[: -len(q)]
-    raise PaperError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"paper spot supports USDT/USDC quotes only, got {sym}"))
+    raise PaperError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"paper spot supports USDT/USDC quotes and TW stocks only, got {sym}"))
+
+
+class PaperMarketClosed(PaperError):
+    """A TW stock order outside the TWSE session — closes included, as at the
+    exchange. manager/flatten defers such a close to the first round after
+    the open (lib.portfolio.defer_paper_tw_close); the reconciler holds the
+    rows quietly (lib.portfolio._paper_tw_closed_keys)."""
+
+
+def _check_session(env, sym):
+    if is_tw_stock(sym) and not tw_session_open(env):
+        raise PaperMarketClosed(f"{sym}: 台股休市中(交易時段 09:00–13:30)— paper order refused "
+                                f"outside the TWSE session")
+
+
+def _tw_signed(led, sym, signed):
+    """A TW stock fill in whole shares, floored, never short: a sell past the
+    long is cut to closing it, a short from flat (or adding to a legacy short)
+    is refused. A fill that flattens the row exactly keeps its fraction, so a
+    row booked before whole shares can still be closed. 0 = nothing to send."""
+    if not signed or not is_tw_stock(sym):
+        return signed
+    q0 = float(led["positions"].get(sym, {}).get("qty", 0))
+    if q0 + signed < -1e-9:
+        if q0 <= 1e-12:
+            raise PaperError(f"{sym}: 台股不能放空 — paper refuses a TW stock short")
+        signed = -q0
+    if abs(q0 + signed) < 1e-9:
+        return signed
+    return math.copysign(math.floor(abs(signed) + 1e-9), signed)
 
 
 # ── ledger ───────────────────────────────────────────────────────────────────
@@ -370,13 +420,16 @@ def _row_ccy(sym, pos):
 
 
 def _row_fx(env, sym, pos):
-    """USD rate for a held contract row's money. No live/disk rate → the
-    row's own last `fx`; a pre-FX row that has never had one → 1.0, which is
-    the old unconverted behaviour, kept only until the first rate arrives."""
-    if (pos or {}).get("unit") != "contracts":
+    """USD rate for a held row's money — a contract row, or a notional row on
+    a TWD-priced symbol (a TW stock: qty is shares, so qty × Δprice is TWD).
+    No live/disk rate → the row's own last `fx`; a pre-FX row that has never
+    had one → 1.0, the old unconverted behaviour, kept only until the first
+    rate arrives."""
+    ccy = _row_ccy(sym, pos)
+    if ccy == "USD":
         return 1.0
     try:
-        return usd_rate(_row_ccy(sym, pos), env)
+        return usd_rate(ccy, env)
     except PaperNoFx:
         fx = (pos or {}).get("fx")
         if fx:
@@ -406,6 +459,11 @@ def _fill_fx(env, led, sym, currency, adding):
         return ccy, usd_rate(ccy, env)
     except PaperNoFx as e:
         raise PaperError(str(e))
+
+
+def _adds(led, sym, signed):
+    q0 = float(led["positions"].get(sym, {}).get("qty", 0))
+    return abs(q0 + signed) > abs(q0) + 1e-12
 
 
 def _cap_reduce(led, sym, signed):
@@ -441,13 +499,31 @@ def _equity(env, led, marks):
         if amt <= 0:
             continue
         try:
-            px = _price(env, asset + "USDT", marks)
+            px = _price(env, _spot_pair(asset), marks)
+            rate = _spot_fx(env, asset, fallback=led.get("spot_fx", {}).get(asset))
         except PaperError:
-            px = None  # unpriceable — listed by holdings, valued None
-        prices[asset] = px
+            px = rate = None  # unpriceable — listed by holdings, valued None
+        prices[asset] = (px, rate)
         if px:
-            spot_value += amt * px
+            spot_value += amt * px / rate
     return led["cash"] + upnl + spot_value, upnl, spot_value, prices
+
+
+def _spot_pair(asset):
+    return asset if is_tw_stock(asset) else asset + "USDT"
+
+
+def _spot_fx(env, asset, fallback=None):
+    """USD rate for a spot asset's quote: 1.0 for a USDT pair, the TWD rate for
+    a TW share. No rate → `fallback` (a sell's own last rate) or PaperError."""
+    if not is_tw_stock(asset):
+        return 1.0
+    try:
+        return usd_rate("TWD", env)
+    except PaperNoFx as e:
+        if fallback:
+            return float(fallback)
+        raise PaperError(str(e))
 
 
 def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_value=None,
@@ -484,7 +560,7 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
         closed = min(abs(q0), abs(signed_qty))
         realized = (price - e0) * closed * cv * (1 if q0 > 0 else -1)
         entry = price if abs(signed_qty) > abs(q0) else e0
-    if fx is None and contract_value is not None:
+    if fx is None:
         fx = _fill_fx(env, led, sym, None, abs(q1) > abs(q0))
     ccy, rate = fx or ("USD", 1.0)
     realized /= rate
@@ -494,6 +570,8 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
         new_positions.pop(sym, None)
     else:
         new_positions[sym] = {"qty": q1, "entry": entry}
+        if contract_value is None and ccy != "USD":
+            new_positions[sym].update(quote_ccy=ccy, fx=rate)
         if contract_value is not None:
             new_positions[sym].update(unit="contracts", contract_value=cv,
                                       margin=float(margin or pos.get("margin") or 0),
@@ -518,10 +596,16 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
     return realized
 
 
-def _fill_spot(led, o, base_qty, price, fee_rate):
+def _fill_spot(led, o, base_qty, price, fee_rate, env=None):
+    """Cost, proceeds and fee ÷ the quote's USD rate before they touch the USD
+    cash (a TW share's are TWD); the fill records them in USD."""
     base = _spot_base(o["symbol"])
+    rate = _spot_fx(env, base, fallback=None if o["side"] == "buy" else led.get("spot_fx", {}).get(base))
+    if rate != 1.0:
+        o.update(quote_ccy="TWD", fx=rate)
+        led.setdefault("spot_fx", {})[base] = rate
     if o["side"] == "buy":
-        cost = base_qty * price
+        cost = base_qty * price / rate
         fee = cost * fee_rate
         if led["cash"] < cost + fee:
             raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash for {o['symbol']} buy "
@@ -532,12 +616,13 @@ def _fill_spot(led, o, base_qty, price, fee_rate):
         held = led["spot"].get(base, 0.0)
         if base_qty > held + 1e-12:
             raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient {base} to sell ({held} < {base_qty})"))
-        proceeds = base_qty * price
+        proceeds = base_qty * price / rate
         fee = proceeds * fee_rate
         led["cash"] += proceeds - fee
         left = held - base_qty
         if left <= 1e-12:
             led["spot"].pop(base, None)
+            led.get("spot_fx", {}).pop(base, None)
         else:
             led["spot"][base] = left
     _record_fill(led, o, base_qty, price, fee)
@@ -562,17 +647,20 @@ def _norm_status(raw):
 
 
 def _stamp_pre_fx_rows(env, led, marks):
-    """A contract row opened before contract money was converted has no
-    quote_ccy, and its open PnL was being added to the USD account in TWD.
+    """A contract row opened before contract money was converted, or a TW
+    stock row opened while paper booked it unconverted, has no quote_ccy, and
+    its open PnL was being added to the USD account in TWD.
     Stamp it the first time a rate is available — from here on it is valued
     ÷ rate, which moves equity once by upnl × (1 − 1/rate); that move is
     audited (paper_fx_cutover). Cash already booked is not restated."""
     for sym, p in led["positions"].items():
-        if p.get("unit") != "contracts" or p.get("quote_ccy"):
+        if p.get("quote_ccy"):
             continue
+        contracts = p.get("unit") == "contracts"
         ccy = quote_ccy(sym)
         if ccy == "USD":
-            p.update(quote_ccy=ccy, fx=1.0)
+            if contracts:
+                p.update(quote_ccy=ccy, fx=1.0)
             continue
         try:
             rate = usd_rate(ccy, env)
@@ -597,6 +685,8 @@ def _settle(env, led):
         if o["status"] != "open":
             continue
         sym = o["symbol"]
+        if is_tw_stock(sym) and not tw_session_open(env):
+            continue  # the exchange matches nothing outside the session
         try:
             mark = _price(env, sym, marks)
         except PaperError:
@@ -613,7 +703,7 @@ def _settle(env, led):
         fill_px = px
         if o["market"] == "spot":
             try:
-                _fill_spot(led, o, qty, fill_px, SPOT_FEE)
+                _fill_spot(led, o, qty, fill_px, SPOT_FEE, env=env)
             except PaperError as e:
                 o["status"] = "canceled"
                 o["reason"] = str(e)
@@ -625,9 +715,15 @@ def _settle(env, led):
                 o["status"] = "canceled"
                 o["reason"] = "nothing left to reduce"
                 continue
-        fee = abs(signed) * fill_px * MAKER_FEE
         try:
-            realized = _apply_swap_fill(env, led, sym, signed, fill_px, fee, marks)
+            signed = _tw_signed(led, sym, signed)
+            if signed == 0:
+                o["status"] = "canceled"
+                o["reason"] = "under one share"
+                continue
+            fx = _fill_fx(env, led, sym, None, _adds(led, sym, signed))
+            fee = abs(signed) * fill_px * MAKER_FEE / fx[1]
+            realized = _apply_swap_fill(env, led, sym, signed, fill_px, fee, marks, fx=fx)
         except PaperError as e:
             o["status"] = "canceled"
             o["reason"] = str(e)
@@ -638,6 +734,8 @@ def _settle(env, led):
         if not pos:
             led["protective"].pop(sym, None)
             continue
+        if is_tw_stock(sym) and not tw_session_open(env):
+            continue  # a stop on a TW stock triggers in the session, as at the exchange
         try:
             mark = _price(env, sym, marks)
         except PaperError:
@@ -653,13 +751,15 @@ def _settle(env, led):
             continue
         signed = -pos["qty"]
         cv = _cv(pos) if pos.get("unit") == "contracts" else None
-        fx = _fill_fx(env, led, sym, None, False) if cv is not None else None
-        fee = abs(signed) * mark * (cv or 1.0) * TAKER_FEE / (fx[1] if fx else 1.0)
+        fx = _fill_fx(env, led, sym, None, False)
+        fee = abs(signed) * mark * (cv or 1.0) * TAKER_FEE / fx[1]
         o = _new_order(led, sym, "swap", "sell" if long else "buy", "market", mark,
                        abs(signed), None, reduce_only=True,
                        direction="long" if long else "short")
         if cv is not None:
-            o.update(unit="contracts", contract_value=cv, quote_ccy=fx[0], fx=fx[1])
+            o.update(unit="contracts", contract_value=cv)
+        if cv is not None or fx[0] != "USD":
+            o.update(quote_ccy=fx[0], fx=fx[1])
         realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks, contract_value=cv,
                                     fx=fx)
         _record_fill(led, o, abs(signed), mark, fee, realized, kind=hit)
@@ -742,10 +842,18 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
                 if signed == 0:
                     guard.audit("order_ok", order_id="", note="nothing to reduce", **fields)
                     return False
-            fee = abs(signed) * price * TAKER_FEE
+            _check_session(env, sym)
+            signed = _tw_signed(led, sym, signed)
+            if signed == 0:
+                guard.audit("order_ok", order_id="", note="under one share", **fields)
+                return False
+            fx = _fill_fx(env, led, sym, None, _adds(led, sym, signed))
+            fee = abs(signed) * price * TAKER_FEE / fx[1]
             o = _new_order(led, sym, "swap", side, "market", price, abs(signed),
                            client_order_id, reduce_only=reduce_only, direction=direction)
-            realized = _apply_swap_fill(env, led, sym, signed, price, fee, marks)
+            if fx[0] != "USD":
+                o.update(quote_ccy=fx[0], fx=fx[1])
+            realized = _apply_swap_fill(env, led, sym, signed, price, fee, marks, fx=fx)
             _record_fill(led, o, abs(signed), price, fee, realized)
             guard.audit("order_ok", order_id=o["order_id"], price=price, **fields)
             return _fill_view(o)
@@ -805,6 +913,10 @@ def place_contract_market_order(env, symbol, direction, lots, contract_value,
                     guard.audit("order_ok", order_id="", note="nothing to reduce", **fields)
                     return False
             q0 = float(led["positions"].get(sym, {}).get("qty") or 0)
+            _check_session(env, sym)
+            signed = _tw_signed(led, sym, signed)
+            if signed == 0:
+                return False
             refused_open = 0.0
             try:
                 fx = _fill_fx(env, led, sym, currency, abs(q0 + signed) > abs(q0))
@@ -863,6 +975,15 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
             if prev is not None:
                 return {"order_id": prev["order_id"], "status": prev["status"],
                         "client_order_id": prev.get("client_order_id") or ""}
+            _check_session(env, sym)
+            if is_tw_stock(sym):
+                q0 = float(led["positions"].get(sym, {}).get("qty", 0))
+                if not buy and not reduce_only and q0 <= 1e-12:
+                    raise PaperError(f"{sym}: 台股不能放空 — paper refuses a TW stock short")
+                if not (reduce_only and abs(float(qty) - abs(q0)) < 1e-9):
+                    qty = math.floor(float(qty) + 1e-9)
+                if qty <= 0:
+                    return False
             marks = {}
             mark = _price(env, sym, marks)
             crosses = (px >= mark) if buy else (px <= mark)
@@ -881,8 +1002,16 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
                         o["status"] = "canceled"
                         o["reason"] = "nothing left to reduce"
                         return {"order_id": o["order_id"], "status": "canceled"}
-                fee = abs(signed) * mark * TAKER_FEE
-                realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks)
+                signed = _tw_signed(led, sym, signed)
+                if signed == 0:
+                    o["status"] = "canceled"
+                    o["reason"] = "under one share"
+                    return {"order_id": o["order_id"], "status": "canceled"}
+                fx = _fill_fx(env, led, sym, None, _adds(led, sym, signed))
+                fee = abs(signed) * mark * TAKER_FEE / fx[1]
+                if fx[0] != "USD":
+                    o.update(quote_ccy=fx[0], fx=fx[1])
+                realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks, fx=fx)
                 _record_fill(led, o, abs(signed), mark, fee, realized)
             guard.audit("order_ok", order_id=o["order_id"], **fields)
             return {"order_id": o["order_id"], "status": o["status"],
@@ -1001,6 +1130,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
                 return _fill_view(prev) if prev["status"] == "filled" else False
             price = _price(env, sym, {})
             base = _spot_base(sym)
+            _check_session(env, sym)
             if side == "buy":
                 if quote_qty is None:
                     raise ValueError("spot buys are sized in quote currency — pass quote_qty")
@@ -1009,11 +1139,13 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
                 if base_qty is None:
                     raise ValueError("spot sells are sized in base currency — pass base_qty")
                 q = min(float(base_qty), led["spot"].get(base, 0.0))
+            if is_tw_stock(sym) and not (side == "sell" and abs(q - led["spot"].get(base, 0.0)) < 1e-9):
+                q = math.floor(q + 1e-9)  # whole shares; selling all takes a legacy fraction too
             if q <= 0:
                 guard.audit("order_ok", order_id="", note="zero/again", **fields)
                 return False
             o = _new_order(led, sym, "spot", side, "market", price, q, client_order_id)
-            _fill_spot(led, o, q, price, SPOT_FEE)
+            _fill_spot(led, o, q, price, SPOT_FEE, env=env)
             guard.audit("order_ok", order_id=o["order_id"], price=price, **fields)
             return _fill_view(o)
     except guard.Halted:
@@ -1044,7 +1176,12 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
                         "client_order_id": prev.get("client_order_id") or ""}
             mark = _price(env, sym, {})
             base = _spot_base(sym)
-            if side == "buy" and led["cash"] < float(base_qty) * px * (1 + SPOT_FEE):
+            _check_session(env, sym)
+            if is_tw_stock(sym):
+                base_qty = math.floor(float(base_qty) + 1e-9)
+                if base_qty <= 0:
+                    return False
+            if side == "buy" and led["cash"] < float(base_qty) * px * (1 + SPOT_FEE) / _spot_fx(env, base):
                 raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash to rest a {sym} buy"))
             if side == "sell" and led["spot"].get(base, 0.0) + 1e-12 < float(base_qty):
                 raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient {base} to rest a sell"))
@@ -1057,7 +1194,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
                 guard.audit("order_ok", order_id=o["order_id"], note="post_only_rejected", **fields)
                 return {"status": "post_only_rejected", "order_id": o["order_id"]}
             if crosses:
-                _fill_spot(led, o, float(base_qty), mark, SPOT_FEE)
+                _fill_spot(led, o, float(base_qty), mark, SPOT_FEE, env=env)
             guard.audit("order_ok", order_id=o["order_id"], **fields)
             return {"order_id": o["order_id"], "status": o["status"],
                     "client_order_id": client_order_id or ""}
@@ -1111,13 +1248,22 @@ def snapshot(env):
             if p.get("unit") == "contracts":  # size is LOTS — the wiring must not × mark
                 row.update(unit="contracts", contract_value=_cv(p),
                            margin=float(p.get("margin") or 0), quote_ccy=_row_ccy(sym, p))
+            elif _row_ccy(sym, p) != "USD":
+                row["quote_ccy"] = _row_ccy(sym, p)
             positions.append(row)
         return {"equity": equity, "cash": led["cash"], "unrealized": upnl,
                 "spot_value": spot_value, "positions": positions,
-                "spot": {a: {"amount": v, "price": prices.get(a)}
+                "spot": {a: _spot_view(v, *(prices.get(a) or (None, None)))
                          for a, v in led["spot"].items() if v > 0},
                 "created_ts": led["created_ts"], "initial_cash": led["initial_cash"],
                 "fills": list(led["fills"][-50:])}
+
+
+def _spot_view(amount, px, rate):
+    """price = the quote's own (TWD for a TW share); usd_value = amount at
+    market in the account's USD, None when unpriceable."""
+    return {"amount": amount, "price": px,
+            "usd_value": amount * px / rate if px and rate else None}
 
 
 def reset_account(env, cash=None):
