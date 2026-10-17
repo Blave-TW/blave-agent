@@ -1828,7 +1828,7 @@ function csClearChat() {
   if (typeof brReset === "function") brReset();   // 內建瀏覽器的區塊與展開層(renderer/browser.js)
   if (typeof sugCollapse === "function") sugCollapse();   // 建議列屬於眼前這條對話,換對話即作廢(同 web csSwitch)
   $("chat-scroll").innerHTML = "";
-  liveBubble = null; busy = null; swLine = null; swHeld = null;
+  liveBubble = null; busy = null; swLine = null; swHeld = null; chatStick = true;
   acctCard = null; creditCards.length = 0; dataCard = null;   // 卡片跟著聊天欄一起清掉
   if (typeof engReattach === "function") engReattach();   // 安裝進度卡不屬於哪一條對話:清完補回來(engine.js)
 }
@@ -1956,7 +1956,7 @@ async function csOpen(id) {
     .reduce(histFixOrder, [])
     .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addHistoryYou(x.turn.content) : addHistoryAi(x.turn.content)));
   if (typeof engReattach === "function") engReattach();   // 舊回合畫回去之後,安裝進度卡移到最下面(csClearChat 補回來時在最上面)
-  csRenderHead(); csShowList(false); scrollChat();
+  csRenderHead(); csShowList(false); scrollChat(true);
 }
 // 用 trade.js 那顆 trStamp(MM/DD HH:mm,24 小時制):toLocaleString 會跟著語系給 12 小時制與不補零的月日
 function csTime(sec) { return trStamp(sec); }
@@ -2150,7 +2150,22 @@ let running = false;
 let turnSeq = 0;   // 回合序號:每跑起來一輪 +1。參數掃描分頁的「已送出」只認送出那一輪(掃描回合沒產出,下一輪無關的回合不可以又鎖回「已送出」)
 let liveBubble = null;
 
-function scrollChat() { $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight; chatEdge(); }
+/* 黏底:離底 CHAT_STICK_PX 內才跟著捲。只有 scrollTop 變小(用戶往上捲)才放開——內容長高不會改 scrollTop,
+   程式捲到底的 scroll 事件晚一個 frame 才到、那時內容可能又長了,不能拿「當下離底多遠」判放開。
+   捲回底部或送出新訊息(scrollChat(true))才再黏上。force 要 === true:img load 會把 Event 傳進來 */
+const CHAT_STICK_PX = 40;
+let chatStick = true, chatTop = 0;
+$("chat-scroll").addEventListener("scroll", () => {
+  const box = $("chat-scroll");
+  if (box.scrollHeight - box.scrollTop - box.clientHeight <= CHAT_STICK_PX) chatStick = true;
+  else if (box.scrollTop < chatTop) chatStick = false;
+  chatTop = box.scrollTop;
+});
+function scrollChat(force) {
+  if (force === true) chatStick = true;
+  if (chatStick) $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight;
+  chatEdge();
+}
 
 /* ── agent 回覆的顯示 ─────────────────────────────────
    原文留在 el._raw(串流是一段一段接上來的),畫面由 paintAi 重畫。做兩件事:
@@ -2847,6 +2862,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
   const viewing = opts && opts.viewing && typeof opts.viewing === "object" ? opts.viewing : chatViewing();
+  chatStick = true;   // 送出新訊息:往上捲著也恢復跟著捲
   // 泡泡留住節點:沒送出去的路(busy / 版本閘 / 暖機中停止 / 引擎起不來)要收回泡泡+還原到輸入框,
   // 不然那句話看起來送了兩次——留著的 ghost 泡泡跟之後真的送出的那則長一模一樣(Wei 實測截圖)
   // opts.note:外殼給這一輪的指示(代號,例「新增報告」的 report_once);不進泡泡、不進訊息本文。重送同一句沿用那一輪存的,不從本文推回來
