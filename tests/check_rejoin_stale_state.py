@@ -10,8 +10,8 @@ the account within one reconciler round, before any new signal.
   S2  the new signal after the re-add trades, its own direction (short), not the old one.
   S3  continuing members are untouched: state.json (content, mtime), bar_wait record — an
       amount raise on a member whose last tick is hours old trades in the same round, and a
-      member sharing the re-added one's symbol waits with it (the key is held until its first
-      signal, lib/portfolio first_signal_wait) — then nets against it, no sell and buy-back.
+      member sharing the re-added one's symbol trades its own change while that one waits (lib/portfolio
+      first_signal_wait freezes only what the waiting one replaces).
   S4  picked at $0, funded by a second save before any new tick (the web picker's two
       saves): still no order; the first tick after the pick trades.
   S5  a stale state.json that cannot be moved refuses the save before anything is written.
@@ -181,10 +181,10 @@ def s3(w):
     w.check(not any(os.path.exists(f"strategies/{n}/state.json.prejoin") for n in ("c1", "e1")),
             "S3: no .prejoin for members")
     w.sig("c1", 0)
-    w.eq(w.settle(), [], "S3: c1, sharing BTC with a1 that has no first signal yet, waits with it (lib first_signal_wait)")
+    w.eq(w.settle(), [(B, "sell", 0.02, True)],
+         "S3: c1, sharing BTC with a1 that has no first signal yet, exits on its own signal (lib first_signal_wait freezes only what a1 replaces)")
     w.sig("a1", 1)
-    w.eq(w.settle(), [], "S3: a1's first signal takes over c1's share — no sell and buy-back")
-    w.eq(w.paper_pos(B), 0.02, "S3: BTC stays at a1's share")
+    w.eq(w.settle(), [(B, "buy", 0.02, False)], "S3: a1's first new signal enters")
 
 
 @case

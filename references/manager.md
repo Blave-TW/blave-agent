@@ -288,18 +288,26 @@ own. If the user says the split is wrong, reseed by hand (below).
 
 **A member without its first signal.** A funded, routed strategy in `amounts` with no
 `state.json` yet (it just joined — the runtime moved its old one to `state.json.prejoin` — or
-it has never computed) holds every key it will trade as it is, on both sides of the diff, like
-a signal-gated symbol: swapping a strategy for a new version on the same coin no longer closes
-the position one round and buys it back the next. Its keys: `SYMBOL` (or `stats.json`
-`symbol`), else a literal `UNIVERSE = [...]`, else its `backtest_state.json` assets; none
-known = nothing held (`first_signal_wait_no_keys` audit line). The wait is at most one bar of
-its `INTERVAL` and never longer than `lib.portfolio.FIRST_SIGNAL_WAIT_MAX_S` (2 h), counted
-from the first round that saw it without a state (`state/first_signal_wait.json`; a re-save
-does not restart it). Past that it reconciles as before — no state, no contribution — so an
-exit is never parked behind a strategy that never computes (`first_signal_wait_expired`).
-The snapshot row carries `gated: true` and `awaiting: {strategy: until_epoch}`; the audit
-lines `first_signal_wait` / `…_expired` answer "why didn't it move". HALT is unchanged:
-nothing is opened, and a close past the window still goes out as a reduce.
+it has never computed) leaves what it replaces on the book until it writes one: swapping a
+strategy for a new version on the same coin no longer closes the position one round and buys
+it back the next. Each key it will trade is anchored at the first round that sees it waiting —
+`frozen` = the book on that key minus what the other members want there — and inside the
+window the key's target is the others' target now + `frozen` (+ the last share of any member
+that leaves the key meanwhile). So a neighbour's own signal — a stop included — or amount
+change still trades; only the leaving member's close and the newcomer's entry wait. Another
+gate on the key (signal gate, unrouted member, a baseline wait) holds it as is on both sides
+instead. Its keys: `SYMBOL` (or `stats.json` `symbol`), else a literal `UNIVERSE = [...]`
+(comments ignored), else its `backtest_state.json` assets; none known = nothing frozen
+(`first_signal_wait_no_keys` audit line). The wait is at most one bar of its `INTERVAL` and
+never longer than `lib.portfolio.FIRST_SIGNAL_WAIT_MAX_S` (2 h), counted from the first round
+that saw it without a state (`state/first_signal_wait.json`; a re-save does not restart it, a
+start that is not a time at or before now counts from now). Past that it reconciles as before —
+no state, no contribution — so an exit is never parked behind a strategy that never computes
+(`first_signal_wait_expired`); a fault in this wait reconciles the round without it
+(`first_signal_wait_error`). The snapshot row carries `awaiting: {strategy: until_epoch}` and
+`frozen`; the audit lines `first_signal_wait` / `…_expired` answer "why didn't it move".
+Under HALT nothing is sent, inside or past the window — only a close the user asks for
+(全部平倉 / 平倉) goes out; once HALT is cleared, a key past its window reconciles as above.
 
 **A spot row without a quantity** (a seed from before quantities, a fill with
 no `executed_qty`) is written off the first time the reconciler builds the

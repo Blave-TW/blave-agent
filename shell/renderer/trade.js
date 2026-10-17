@@ -854,9 +854,15 @@ const TR_TWD_RE = /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/;
 function trIsTwd(syms) { return (Array.isArray(syms) ? syms : [syms]).some((s) => typeof s === "string" && TR_TWD_RE.test(s.trim().toUpperCase())); }
 // 每一檔都是台股(至少一檔):Type C 推不出區時退回幣別只認這個——「有一檔台股」(trIsTwd)混了加密也是 true
 function trAllTwd(syms) { const v = (Array.isArray(syms) ? syms : [syms]).filter((s) => typeof s === "string" && s.trim()); return v.length > 0 && v.every((s) => TR_TWD_RE.test(s.trim().toUpperCase())); }
-// 程式碼頂層的 UNIVERSE = [...](Type C 的標的清單;stats.json 不帶)。只收字面字串,動態組出來的讀不到 = 空陣列
+// 程式碼頂層的 UNIVERSE = [...](Type C 的標的清單;stats.json 不帶)。只收字面字串,動態組出來的讀不到 = 空陣列。
+// 先去掉 # 註解(同一行引號裡的 # 不算),同 lib/portfolio _strip_py_comments:註解裡的代號或 ] 不能多算、也不能截斷
 function trUniverse(code) {
-  const m = /^UNIVERSE\s*=\s*\[([^\]]*)\]/m.exec(typeof code === "string" ? code : "");
+  const strip = (line) => { let q = null, esc = false;
+    for (let i = 0; i < line.length; i++) { const ch = line[i];
+      if (esc) esc = false; else if (q) { if (ch === "\\") esc = true; else if (ch === q) q = null; }
+      else if (ch === '"' || ch === "'") q = ch; else if (ch === "#") return line.slice(0, i); }
+    return line; };
+  const m = /^UNIVERSE\s*=\s*\[([^\]]*)\]/m.exec((typeof code === "string" ? code : "").split("\n").map(strip).join("\n"));
   return m ? (m[1].match(/["'][^"']{1,32}["']/g) || []).map((s) => s.slice(1, -1)) : [];
 }
 /* picker 的勾選是草稿(0.1.26 Wei):按「確定」只改表上列哪些,按「儲存」才連金額一起寫進 amounts(進排程、亮呼吸點、算訊號)。
@@ -3243,10 +3249,12 @@ function trCfStates(r, stored, sending, contracts) {
   });
   return { states, px, pv: pvs, missing, stale, old };
 }
-/* 下一輪對帳器先不動的標的(lib/portfolio 的 first_signal_wait 與訊號閘)。快照 caps 沒有 first_signal_wait = 舊 lib,前一種不算。
+/* 下一輪對帳器先不動的部分(lib/portfolio 的 first_signal_wait 與訊號閘)。快照 caps 沒有 first_signal_wait = 舊 lib,前一種不算。
    還沒算出第一個訊號的成員:草稿一律算(存檔時 runtime 移走它的舊 state.json;當根的 state 會留著、對帳器就不等,框照等算,只差那句說明);
    已存的看快照 awaiting 還在窗內(過了窗它照常對帳,沒貢獻的部位照賣)。標的同對帳器:SYMBOL,組合看 UNIVERSE,都沒有看預覽。
-   訊號閘:快照那一列 gated,而且撐它的閘中策略這次還有金額。回 { wait: {標的: [策略]}, gate: [標的] } */
+   等第一個訊號只凍「被換掉的那段」:對帳器在第一輪記下 frozen(帳上 − 其他成員當時要的),窗內目標 = 其他成員現在要的 + frozen
+   + 之後離開這檔的成員最後那份;別支自己的訊號、金額照送。anchor = 快照那一列已經記下的(還沒記 = 這次存檔後第一輪才記,那一輪不動)。
+   訊號閘:快照那一列 gated,而且撐它的閘中策略這次還有金額。回 { wait: {標的: [策略]}, gate: [標的], anchor: {標的: {frozen, contributors}} } */
 function trCfHolds(r, stored, sending, contracts, st) {
   const last = (r && r.last_reconcile) || {}, tg = last.target && typeof last.target === "object" ? last.target : {}, live = (r && r.states) || {};
   const wait = {}, gate = [], now = Date.now() / 1000, funded = (n) => Number(sending[n]) > 0;
@@ -3264,11 +3272,13 @@ function trCfHolds(r, stored, sending, contracts, st) {
       Object.keys(a).forEach((n) => { const s = live[n];
         if (n in stored && funded(n) && Number(a[n]) > now && !(s && (s.symbol || (s.weights && typeof s.weights === "object")))) add(trCanonKey(k), n); }); });
   }
+  const anchor = {};
   Object.keys(tg).forEach((k) => { const row = tg[k] || {}, cs = Array.isArray(row.contributors) ? row.contributors : [];
+    if (newLib && row.gated !== true && typeof row.frozen === "number" && isFinite(row.frozen) && wait[trCanonKey(k)]) anchor[trCanonKey(k)] = { frozen: row.frozen, contributors: cs };
     if (row.gated !== true) return;
     // 閘中的那支貢獻列帶 gated: true(同一個 lib 起);舊 lib 沒有這欄:沒綁交易所以外的 gated 列都當閘中,撐它的還有金額就算
     if (cs.some((c) => c && funded(c.strategy) && (newLib ? c.gated === true : !row.unrouted))) gate.push(trCanonKey(k)); });
-  return { wait, gate };
+  return { wait, gate, anchor };
 }
 /* 表頭的「依哪一根算」:只看真的撐到框裡某一列的預覽(names = 那幾列的貢獻策略)。回 { at, date, dailyTw } 取最舊那根;沒有一列用到預覽回 null */
 function trCfAsof(st, names) {
@@ -3317,9 +3327,14 @@ function trCfRows(o) {
   if (o.firing) {
     const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && o.covered(k));
     syms.forEach((sym) => {
-      // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)
-      if (blind.has(sym)) { if (o.mine[sym] || after[sym]) { hit(held.wait, sym); (holds.wait[sym] || []).forEach((n) => hit(held.names, n)); } if (Math.round(before[sym] || 0) !== Math.round(after[sym] || 0)) held.unknown = true; return; }
-      const lot = o.lot(sym), raw = after[sym] || 0, ts = lot ? trLotsTarget(raw).lots : raw, as = o.mine[sym] || 0, d = ts - as;
+      // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)。對帳器已經記下 frozen 的那檔例外:
+      // 下一輪 = 其他成員這次存的 + frozen + 這次離開的成員在快照上那份,照算
+      const an = blind.has(sym) ? holds.anchor[sym] : null;
+      if (blind.has(sym) && !an) { if (o.mine[sym] || after[sym]) { hit(held.wait, sym); (holds.wait[sym] || []).forEach((n) => hit(held.names, n)); } if (Math.round(before[sym] || 0) !== Math.round(after[sym] || 0)) held.unknown = true; return; }
+      const others = an ? (cs1[sym] || []).filter((c) => (holds.wait[sym] || []).indexOf(c.name) < 0).reduce((a, c) => a + c.v, 0) : 0;
+      const gone = an ? an.contributors.filter((c) => c && !(cs1[sym] || []).some((x) => x.name === c.strategy)).reduce((a, c) => a + (Number(c.contribution) || 0), 0) : 0;
+      const raw = an ? Math.max(/@spot$/.test(sym) ? 0 : -Infinity, others + an.frozen + gone) : after[sym] || 0;
+      const lot = o.lot(sym), ts = lot ? trLotsTarget(raw).lots : raw, as = o.mine[sym] || 0, d = ts - as;
       const gs = lot ? null : trGateSide(o.gates[sym], ts, as), acts = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
       if (acts && gated.has(sym)) { hit(held.gate, sym); return; }
       if (!acts) { if (holds.wait[sym] && o.mine[sym]) { hit(held.wait, sym); holds.wait[sym].forEach((n) => hit(held.names, n)); } return; }
@@ -3450,7 +3465,7 @@ function trSaveAmounts(names, stored, opener, o) {
       // 時間只講一次(canon):框裡任何一列(口數列、照金額寫的列、只改金額的列都算)是預覽撐的、或表下點名了舊預覽(oldPv),表頭寫是哪一根;台股日線寫「收盤」
       const pvAt = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => x.by || []), oldPv) : amtOnly);
       // 台股日線照機器給的交易日(bar_date,UTC+8 換好的),不拿本機時區換 bar_at
-      const asof = !pvAt ? "" : pvAt.dailyTw && pvAt.date ? t("tr.cf.asofClose", { d: pvAt.date.slice(5) }) : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
+      const asof = !pvAt ? "" : pvAt.dailyTw && pvAt.date ? t("tr.cf.asofClose", { d: pvAt.date.slice(5).replace("-", "/") }) : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
       if (m.rows.length) {
         sub.textContent = (m.kind === "orders" ? t("tr.cf.capOrders", { n: String(m.rows.length) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys })) + (asof ? (LANG === "zh" ? "，" : ", ") + asof : "");
         body.appendChild(sub);
@@ -3583,8 +3598,8 @@ function trCfTick() {
   if (!cf || delCtx !== cf.ctx || $("del-scrim").hidden) { TR_CF.cur = null; return; }
   cf.paint();
 }
-// 表頭的「MM-DD」／「MM-DD HH:MM」(本機時區)
-function trCfMD(sec, hm) { const d = new Date(sec * 1000), p = (x) => String(x).padStart(2, "0"); return p(d.getMonth() + 1) + "-" + p(d.getDate()) + (hm ? " " + p(d.getHours()) + ":" + p(d.getMinutes()) : ""); }
+// 表頭的「MM/DD」／「MM/DD HH:MM」(本機時區)
+function trCfMD(sec, hm) { const d = new Date(sec * 1000), p = (x) => String(x).padStart(2, "0"); return p(d.getMonth() + 1) + "/" + p(d.getDate()) + (hm ? " " + p(d.getHours()) + ":" + p(d.getMinutes()) : ""); }
 /* 請機器背景重算這支的回測到最新資料(stats_refresh,同「更新績效」那條;同碼不定版):只為了拿到最新那一根的預覽。
    一分鐘內請過就不再請;ack 的 CODE_CHANGED(程式改過還沒回測)記下來,框上講那一句、不等它 */
 function trPvRequest(S, name) {

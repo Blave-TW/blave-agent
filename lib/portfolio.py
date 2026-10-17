@@ -1092,10 +1092,9 @@ def _strategy_key(name):
         pass
     if not sym:
         try:
-            with open(f'strategies/{name}/strategy.py') as f:
-                m = _SYMBOL_RE.search(f.read())
+            m = _SYMBOL_RE.search(_strategy_source(name))
             sym = m.group(1) if m else None
-        except OSError:
+        except (OSError, ValueError):
             sym = None
     if not sym or not isinstance(sym, str):
         return None
@@ -1921,13 +1920,26 @@ _MARKET_RE = re.compile(r'^\s*MARKET\s*=\s*["\']([a-z]+)["\']', re.M)
 SPOT_SUFFIX = '@spot'
 
 
+def _strategy_source(name):
+    """strategy.py as text for the constant regexes. Decoded as Python would (a PEP 263 coding
+    line, else UTF-8); a file in neither (a Big5 save) is read with replacement characters
+    rather than raising — the constants are ASCII, and a decode error here used to take the
+    whole reconcile round down with it. OSError is the caller's."""
+    import tokenize
+    try:
+        with tokenize.open(f'strategies/{name}/strategy.py') as f:
+            return f.read()
+    except (SyntaxError, ValueError):
+        with open(f'strategies/{name}/strategy.py', 'rb') as f:
+            return f.read().decode('utf-8', 'replace')
+
+
 def strategy_market(name):
     """'spot' | 'swap' from the strategy.py MARKET constant (default swap)."""
     try:
-        with open(f'strategies/{name}/strategy.py') as f:
-            m = _MARKET_RE.search(f.read())
+        m = _MARKET_RE.search(_strategy_source(name))
         return m.group(1) if m else 'swap'
-    except OSError:
+    except (OSError, ValueError):
         return 'swap'
 
 
@@ -2335,23 +2347,54 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
 
 
 # A funded member that has not written its first state.json yet (just joined — runtime
-# _retire_prejoin_signals moved an old one away — or never computed): until it does, the keys it
-# trades are held as they are on BOTH sides, like a gated symbol. Without it, swapping a strategy
-# for a new version on the same coin closed the position one round (the newcomer contributes
-# nothing yet) and bought it back the next. One bar of its INTERVAL at most, never longer than
-# FIRST_SIGNAL_WAIT_MAX_S: past that it is reconciled as before (no state = no contribution), so
-# a member that never computes can never park an exit.
+# _retire_prejoin_signals moved an old one away — or never computed) leaves what it replaces on
+# the book until it does. Each key it trades is anchored at the first round that sees it
+# waiting: frozen = the book there minus what the other members want then. Inside the window
+# the key's target is the others' target now plus that frozen part (plus the last share of any
+# member that leaves the key meanwhile), so a neighbour's own signal — a stop included — or
+# amount still trades, and only the leaving member's close and the newcomer's entry wait.
+# Without it, swapping a strategy for a new version on the same coin closed the position one
+# round (the newcomer contributes nothing yet) and bought it back the next. One bar of its
+# INTERVAL at most, never longer than FIRST_SIGNAL_WAIT_MAX_S: past that it is reconciled as
+# before (no state = no contribution), so a member that never computes can never park an exit.
 FIRST_SIGNAL_WAIT_MAX_S = 7200
 _FIRST_SIGNAL_WAIT_PATH = 'state/first_signal_wait.json'
+_FIRST_SIGNAL_CLOCK_SKEW_S = 300
 _INTERVAL_RE = re.compile(r'^\s*INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
-# same literal-list rule as the shell's trUniverse: what the save dialog can see is what is held
+# same rule as the shell's trUniverse (# comments stripped first): what the save dialog can see
+# is what is held
 _UNIVERSE_RE = re.compile(r'^UNIVERSE\s*=\s*\[([^\]]*)\]', re.M)
+# the book a failed write could not persist: newer than the file, so the next round reads it —
+# a full disk must not restart every window each round
+_first_signal_unsaved = None
+_first_signal_errors = set()
+
+
+def _strip_py_comments(src):
+    """src without its # comments; a # inside a '…' / "…" literal on that line is kept."""
+    out = []
+    for line in src.split('\n'):
+        quote, esc, cut = None, False, len(line)
+        for i, ch in enumerate(line):
+            if esc:
+                esc = False
+            elif quote:
+                if ch == '\\':
+                    esc = True
+                elif ch == quote:
+                    quote = None
+            elif ch in '"\'':
+                quote = ch
+            elif ch == '#':
+                cut = i
+                break
+        out.append(line[:cut])
+    return '\n'.join(out)
 
 
 def _first_signal_window_s(name):
     try:
-        with open(f'strategies/{name}/strategy.py') as f:
-            m = _INTERVAL_RE.search(f.read())
+        m = _INTERVAL_RE.search(_strategy_source(name))
         from lib.bar_ready import interval_to_timedelta
         bar = interval_to_timedelta(m.group(1)).total_seconds() if m else None
     except (OSError, ValueError, OverflowError):
@@ -2368,10 +2411,9 @@ def _first_signal_keys(name):
     market = strategy_market(name)
     syms = []
     try:
-        with open(f'strategies/{name}/strategy.py') as f:
-            m = _UNIVERSE_RE.search(f.read())
+        m = _UNIVERSE_RE.search(_strip_py_comments(_strategy_source(name)))
         syms = [x[1:-1] for x in re.findall(r'["\'][^"\']{1,32}["\']', m.group(1))] if m else []
-    except OSError:
+    except (OSError, ValueError):
         pass
     if not syms:
         pv = _read_json_state(f'strategies/{name}/backtest_state.json') or {}
@@ -2383,29 +2425,62 @@ def _first_signal_keys(name):
     return sorted({market_key(str(s).replace('-', '').upper(), market) for s in syms if s})
 
 
-def _first_signal_holds(amounts, exchanges, now=None):
-    """{name: (keys, until)} for the members held this round. state/first_signal_wait.json =
-    {name: {since[, expired]}} anchors the window at the first round a member was seen without
-    a state (a re-save does not restart it); a member leaves the file once it has a state.json
-    or is no longer funded and routed."""
-    now = time.time() if now is None else now
+def _finite(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _first_signal_book():
+    """{'members': {name: {since[, expired]}}, 'anchors': {key: {frozen, seen, departed}}}."""
+    if _first_signal_unsaved is not None:
+        return json.loads(json.dumps(_first_signal_unsaved))
     try:
         with open(_FIRST_SIGNAL_WAIT_PATH) as f:
             book = json.load(f)
-        book = book if isinstance(book, dict) else {}
     except (OSError, ValueError):
         book = {}
+    book = book if isinstance(book, dict) else {}
+    return {part: book[part] if isinstance(book.get(part), dict) else {}
+            for part in ('members', 'anchors')}
+
+
+def _first_signal_save(book):
+    global _first_signal_unsaved
+    try:
+        os.makedirs(os.path.dirname(_FIRST_SIGNAL_WAIT_PATH), exist_ok=True)
+        tmp = _FIRST_SIGNAL_WAIT_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(book, f, indent=2)
+        atomic_replace(tmp, _FIRST_SIGNAL_WAIT_PATH)
+        _first_signal_unsaved = None
+    except OSError as e:
+        _first_signal_unsaved = book
+        logging.warning(f'first_signal_wait persist failed (kept in memory): {e}')
+
+
+def _first_signal_holds(amounts, exchanges, now=None):
+    """{name: (keys, until)} for the members waiting this round. A member's window starts at the
+    first round that saw it funded and routed without a state (a re-save does not restart it);
+    it leaves the record once it has a state.json or is no longer funded and routed. A start
+    that is not a finite time at or before now (a corrupt file, a clock set back) counts from
+    now — still one window at most."""
+    now = time.time() if now is None else now
+    book = _first_signal_book()
+    members = book['members']
     want = [n for n, a in amounts.items()
             if a and (exchanges or {}).get(n) and not os.path.exists(f'strategies/{n}/state.json')]
     out, changed = {}, False
-    for name in [n for n in book if n not in want]:
-        del book[name]
+    for name in [n for n in members if n not in want]:
+        del members[name]
         changed = True
     for name in want:
-        rec = book.get(name)
-        if not isinstance(rec, dict) or not isinstance(rec.get('since'), (int, float)):
+        rec = members.get(name)
+        if not (isinstance(rec, dict) and _finite(rec.get('since'))
+                and rec['since'] <= now + _FIRST_SIGNAL_CLOCK_SKEW_S):
+            if isinstance(rec, dict):
+                logging.warning(f"[portfolio] {name}: first-signal wait start {rec.get('since')!r} "
+                                f"is unusable — counted from now")
             keys = _first_signal_keys(name)
-            rec = book[name] = {'since': now}
+            rec = members[name] = {'since': now}
             changed = True
             if keys:
                 guard.audit('first_signal_wait', strategy=name, keys=keys,
@@ -2428,16 +2503,69 @@ def _first_signal_holds(amounts, exchanges, now=None):
                             f"{round(now - rec['since'])}s — {keys} reconciled without it")
             continue
         out[name] = (keys, until)
+    held = {k for keys, _ in out.values() for k in keys}
+    for key in [k for k in book['anchors'] if k not in held]:
+        del book['anchors'][key]
+        changed = True
     if changed:
-        try:
-            os.makedirs(os.path.dirname(_FIRST_SIGNAL_WAIT_PATH), exist_ok=True)
-            tmp = _FIRST_SIGNAL_WAIT_PATH + '.tmp'
-            with open(tmp, 'w') as f:
-                json.dump(book, f, indent=2)
-            atomic_replace(tmp, _FIRST_SIGNAL_WAIT_PATH)
-        except OSError as e:
-            logging.warning(f'first_signal_wait persist failed: {e}')
+        _first_signal_save(book)
     return out
+
+
+def _first_signal_anchor_ok(a):
+    return (isinstance(a, dict) and _finite(a.get('frozen'))
+            and all(isinstance(a.get(p), dict) and all(_finite(v) for v in a[p].values())
+                    for p in ('seen', 'departed')))
+
+
+def _first_signal_targets(target, book, trusted, skip=()):
+    """reconcile's half of the first-signal wait: each key aggregate_portfolio flagged
+    first_signal_hold (held for a member's first signal and by nothing else) gets its window
+    target — the others' target now + frozen (book − others at the anchor round) + the last
+    share of every member that has left the key since. Not gated: the diff runs on it. While
+    the book cannot be trusted (a baseline wait) or the key waits on a pending baseline, there
+    is nothing to anchor on and it stays held as is on both sides."""
+    flagged = [k for k, v in target.items() if v.get('first_signal_hold')]
+    if not flagged:
+        return target
+    target = dict(target)
+    for k in flagged:
+        target[k] = {f: v for f, v in target[k].items() if f != 'first_signal_hold'}
+    data = _first_signal_book()
+    anchors, changed = data['anchors'], False
+    for k in flagged:
+        row = target[k]
+        if not trusted or k in skip:
+            continue
+        cur = {}
+        for c in row.get('contributors') or []:
+            v = c.get('contribution')
+            cur[str(c.get('strategy'))] = float(v) if _finite(v) else 0.0
+        normal = _signed_row(row)
+        a = anchors.get(k)
+        if not _first_signal_anchor_ok(a):
+            if a is not None:
+                logging.warning(f"[portfolio] {k}: first-signal anchor {a!r} is unusable — re-anchored")
+            a = anchors[k] = {'frozen': _signed_row(book.get(k)) - normal, 'seen': cur, 'departed': {}}
+            changed = True
+        else:
+            departed = dict(a['departed'])
+            departed.update({s: c for s, c in a['seen'].items() if s not in cur})
+            departed = {s: c for s, c in departed.items() if s not in cur}
+            if departed != a['departed'] or cur != a['seen']:
+                a = anchors[k] = {'frozen': a['frozen'], 'seen': cur, 'departed': departed}
+                changed = True
+        frozen = a['frozen'] + sum(a['departed'].values())
+        s = normal + frozen
+        if row.get('market') == 'spot' and s < 0:
+            s = 0.0
+        if native_units(row.get('asset_spec'), row.get('exchange')):
+            s = math.copysign(math.floor(abs(s) + 0.5 + 1e-9), s) if s else 0.0
+        target[k] = _signed_target_row(row, s)
+        target[k].update(gated=False, frozen=round(frozen, 8))
+    if changed:
+        _first_signal_save(data)
+    return target
 
 
 def aggregate_portfolio():
@@ -2636,17 +2764,30 @@ def aggregate_portfolio():
         row['gated'] = True
         row['unrouted'] = sorted(set(row.get('unrouted') or []) | {name})
         logging.info(f"[portfolio] {name}: no exchange routed — {key} held as is (save 下單設定 to route)")
-    for name, (keys, until) in _first_signal_holds(amounts, exchanges).items():
+    # only an optimisation against a close-and-buy-back: no bug in it may stop this round's exits
+    try:
+        holds = _first_signal_holds(amounts, exchanges)
+    except Exception as e:
+        holds = {}
+        err = f'{type(e).__name__}: {e}'[:200]
+        logging.error(f"[portfolio] first-signal wait failed ({err}) — nothing held for it this round")
+        if err not in _first_signal_errors:
+            _first_signal_errors.add(err)
+            guard.audit('first_signal_wait_error', error=err)
+    for name, (keys, until) in holds.items():
         for key in keys:
             row = result.get(key)
             if row is None:
                 row = result[key] = {'side': None, 'size': 0.0, 'exchange': exchanges.get(name),
                                      'asset_spec': asset_specs.get(name), 'market': split_key(key)[1],
-                                     'contributors': [], 'gated': True}
-            row['gated'] = True
+                                     'contributors': [], 'gated': False}
+            if not row['gated'] or row.get('first_signal_hold'):
+                # reconcile turns it into the window target (_first_signal_targets); any other
+                # gate on the key keeps it held as is
+                row['gated'] = row['first_signal_hold'] = True
             row['awaiting'] = dict(row.get('awaiting') or {}, **{name: round(until)})
-        logging.info(f"[portfolio] {name}: no first signal yet — {keys} held as is "
-                     f"(at most {round(until - time.time())}s more)")
+        logging.info(f"[portfolio] {name}: no first signal yet — what it replaces on {keys} is "
+                     f"held (at most {round(until - time.time())}s more)")
     if lifted:
         # merge-on-save (audit #7): re-load the file and remove ONLY the lifted
         # names — dumping our stale in-memory copy would clobber a gate that
@@ -3313,6 +3454,15 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         target, diff_actual, trusted=needs_baseline is None and portfolio_configured(),
         config=config, waiting_keys=pending_keys)
     halt_targets = _halt_rollover_targets(rolls, target, diff_actual)
+    try:
+        target = _first_signal_targets(target, diff_actual, trusted=needs_baseline is None,
+                                       skip=pending_keys)
+    except Exception as e:
+        # never a reason to hold more: the flagged keys reconcile as if nobody waited
+        logging.error(f"[reconcile] first-signal window target failed ({type(e).__name__}: {e}) "
+                      f"— those keys reconcile without it this round")
+        target = {k: (dict({f: x for f, x in v.items() if f != 'first_signal_hold'}, gated=False)
+                      if v.get('first_signal_hold') else v) for k, v in target.items()}
 
     # signal gate (resume_wait): a gated symbol is excluded from BOTH sides of
     # the diff — no catch-up entry (absent target would be wrong: it exists,
@@ -3348,8 +3498,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     if halted_at_start:
         # HALT holds a rollover's lots on its old contract (_halt_rollover_targets)
         for k, signed in halt_targets.items():
-            if k in gated_symbols or k in pending_keys:
-                continue  # held as is anyway
+            if k in gated_symbols or k in pending_keys or (target.get(k) or {}).get('awaiting'):
+                continue  # held as is anyway / on its first-signal window target
             base = target.get(k) or {'exchange': (diff_actual.get(k) or {}).get('exchange'),
                                      'asset_spec': (diff_actual.get(k) or {}).get('asset_spec'),
                                      'market': 'swap', 'contributors': [], 'gated': False}

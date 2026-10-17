@@ -8076,10 +8076,10 @@ msgid "tr.cf.oldPv"
 msgstr "{names} 還沒算到最新那根；下一輪照最新那根算，有單就送。"
 
 msgid "tr.cf.held"
-msgstr "{syms} 這一輪不會動，等 {names} 算出第一個訊號，最多等一根 K 棒。"
+msgstr "{syms} 被換掉的那段先不動，等 {names} 算出第一個訊號，最多等一根 K 棒。"
 
 msgid "tr.cf.gated"
-msgstr "{syms} 這一輪不會動，等新訊號才進場。"
+msgstr "{syms} 這一輪不會動，等新訊號才動。"
 
 msgid "po.unsaved"
 msgstr "未儲存"
