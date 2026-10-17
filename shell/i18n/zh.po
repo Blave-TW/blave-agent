@@ -1645,6 +1645,9 @@ msgstr "等新訊號"
 msgid "tr.opt.waitDesc"
 msgstr "現在不下單。每條策略等下一次進場、出場或翻向才開始交易。"
 
+msgid "tr.opt.waitStranded"
+msgstr "有 {n} 筆部位策略已經想平：選「等新訊號」的話，這些部位會一直開著，直到策略的訊號再改變。"
+
 msgid "tr.opt.waitDescReal"
 msgstr "現在不下單。每條策略等下一次進場、出場或翻向才送出真實委託。"
 

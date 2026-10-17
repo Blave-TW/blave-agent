@@ -1100,7 +1100,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /const recomputing = trRecomputing\(r\), rkS = trRestartKind\(r\);/.test(start)
       && /disabled: recomputing, why: t\("tr\.cloud\.recomputing"\), ok: t\("tr\.startCatchUp"\), onOk: catchUp \},/.test(start)
       && /const catchUp = \(\) => \{ if \(!trRecomputing\(trReport\(\)\)\) go\("resume"\); \};/.test(start)
-      && /desc: t\("tr\.opt\.waitDesc" \+ money\), ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
+      && /desc: t\("tr\.opt\.waitDesc" \+ money\), warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null,\n\s*ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
       && /ok: t\("tr\.startCatchUp"\), okDisabled: recomputing, okWhy: recomputing \? t\("tr\.cloud\.recomputing"\) : null, onOk: catchUp,/.test(start));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     ok("recomputed 文字(zh / en)", /msgid "tr\.cloud\.recomputing"\nmsgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"/.test(po("zh"))

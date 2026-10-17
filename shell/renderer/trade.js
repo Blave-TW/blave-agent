@@ -2451,6 +2451,7 @@ function trAskStart(opener, presOk) {
   const money = real ? "Real" : "";
   // 補齊會送出的單(post-connect-flow 第 8 列):口數或金額取自部位表的差額,最多三檔,其餘「等 N 檔」
   const will = trCatchWill(r);
+  const stranded = trWaitStranded(r);
   // 照什麼、多少錢下單(設計 A6):跟自動下單 › 部位表底合計同一個格式(trPlanTotal),讀已存配置
   const pl = trPlanLine(trStored()), plan = pl ? [pl] : [];
   confirmBox(trCloudBox(Object.assign({
@@ -2465,7 +2466,8 @@ function trAskStart(opener, presOk) {
       // Blave 重開(本機):關著的時候策略沒跑,現在補齊用的可能是舊訊號——掛在它影響的那個選項裡。主機重開(B)由重算那一句與閘門講
       { id: "catch", title: t("tr.opt.catch"), desc: t("tr.opt.catchDesc" + money, { how: trCatchHow(r, real) }) + (will ? " " + will : ""), warn: rkS === "app" ? t("tr.opt.catchStale") : null,
         disabled: recomputing, why: t("tr.cloud.recomputing"), ok: t("tr.startCatchUp"), onOk: catchUp },
-      { id: "wait", title: t("tr.opt.wait"), desc: t("tr.opt.waitDesc" + money), ok: t("tr.startWait"), onOk: () => go("resume_wait") },
+      { id: "wait", title: t("tr.opt.wait"), desc: t("tr.opt.waitDesc" + money), warn: stranded ? t("tr.opt.waitStranded", { n: stranded }) : null,
+        ok: t("tr.startWait"), onOk: () => go("resume_wait") },
     ],
     ok: t("tr.start"),
   } : {
@@ -2493,6 +2495,35 @@ function trCatchWill(r) {
   });
   if (!out.length) return null;
   return out.slice(0, 3).join(LANG === "zh" ? "、" : "; ") + (out.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: out.length - 3 }) : "") + (LANG === "zh" ? "。" : ".");
+}
+
+/* 選「等新訊號」會一直開著的部位(Wei 10-17):帳上有 Blave 的部位、策略的目標已經比它小(平倉、減碼、翻向)。
+   resume_wait 把每條有金額策略的現在訊號記成基準,它的標的兩邊都不動,直到訊號方向再變——暫停中已經想平的部位就一直開著。
+   標的範圍照機器端的 gate:有金額的策略碰到的每個標的(投資組合權重 0 的成分也算);還沒算出訊號的不算;差額過門檻的才算(同 trCatchWill)。回幾檔 */
+function trWaitStranded(r) {
+  if (!trHasAccount(r) || trFirstReadPending(r)) return 0;
+  const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), contracts = trContracts();
+  const target = trClientTargets(stored, st2, contracts), bk = trBook(r, target), vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {};
+  const keys = new Set(), notYet = new Set();
+  Object.keys(stored).forEach((n) => {
+    const s = st2[n];
+    if (!(Number(stored[n]) > 0) || !s) return;
+    if (s.weights && typeof s.weights === "object") { Object.keys(s.weights).forEach((sym) => keys.add(trCanonSym(sym) + (s.market === "spot" ? "@spot" : ""))); return; }
+    if (!s.symbol) return;
+    const k = trCanonSym(trEffSym(n, s.symbol, contracts)) + (s.market === "spot" ? "@spot" : "");
+    keys.add(k); if (s.notYet === true) notYet.add(k);
+  });
+  let n = 0;
+  keys.forEach((sym) => {
+    const as = bk.mine[sym] || 0;
+    if (!as || notYet.has(sym) || !trTradesSym(vk, sym)) return;
+    const spec = trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))), raw = target[sym] || 0, ts = spec ? trLotsTarget(raw).lots : raw, d = ts - as;
+    if (!(ts * as < 0 || Math.abs(ts) < Math.abs(as))) return;
+    const gs = spec ? null : trGateSide(gates[sym], ts, as);
+    if (spec ? !Math.round(Math.abs(d)) : Math.abs(d) < (gs ? gs.usd : 10)) return;
+    n++;
+  });
+  return n;
 }
 
 /* ── 分頁 ───────────────────────────────────────────── */

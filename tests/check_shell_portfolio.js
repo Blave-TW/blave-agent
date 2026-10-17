@@ -117,7 +117,7 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -254,6 +254,17 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     ok("補齊說明:BTC 目標 500、帳上 400 → 「會買進 BTCUSDT 100 USDT」;台股(交易所不交易)不列", /tr\.opt\.catchWill \{"side":"tr\.opt\.buy","sym":"BTCUSDT","n":"100 USDT"\}/.test(w) && !/2330/.test(w), w);
     ctx.TR.st.report.config.amounts.btc = 400;   // 目標 = 帳上:差額 0 → 不講會送什麼單(沒有單)
     ok("補齊說明:差額為 0(目標 400、帳上 400)→ 不出「會買進…」;有差額時才出", vm.runInContext("trCatchWill(TR.st.report)", ctx) === null);
+    // 0.1.27 等新訊號的提醒(Wei 10-17):帳上有 Blave 的部位、目標比它小(平、減、翻)、差額過門檻,才算一筆
+    const ws = (amt, pos, held, extra) => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; r.config.amounts.btc = amt; r.states.btc.position = pos;
+      r.account.venues.binance.positions = held == null ? {} : { BTCUSDT: { side: held > 0 ? "long" : "short", size: Math.abs(held), entry_price: 60000 } }; Object.assign(r, extra || {});
+      return vm.runInContext("TR = this.TR; trWaitStranded(TR.st.report)", ctx); };
+    const wsC = { tw: 0 };
+    ok("等新訊號提醒:訊號 0、帳上 400 → 1;目標 200、帳上 400(減碼)→ 1;翻空 → 1",
+      ws(500, 0, 400) === 1 && ws(200, 1, 400) === 1 && ws(500, -1, 400) === 1, J([ws(500, 0, 400), ws(200, 1, 400), ws(500, -1, 400)]));
+    ok("等新訊號提醒:要加碼(目標 500、帳上 400)、帳上沒部位、差額沒過門檻(目標 395)、策略沒金額 → 0",
+      ws(500, 1, 400) === 0 && ws(500, 0, null) === 0 && ws(395, 1, 400) === 0 && ws(0, 0, 400) === 0, J([ws(500, 1, 400), ws(500, 0, null), ws(395, 1, 400), ws(0, 0, 400)]));
+    ok("等新訊號提醒:還沒算出訊號(states 沒有這支)→ 不算", (() => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; delete r.states.btc; return vm.runInContext("TR = this.TR; trWaitStranded(TR.st.report)", ctx); })() === 0);
+    ok("等新訊號提醒掛在 wait 選項的 warn,只在 > 0 時", /warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null/.test(src) && /const stranded = trWaitStranded\(r\);/.test(src));
     ok("補齊說明接在 catch 選項的 desc 後面;舊 lib 單一鈕那條接在 lines 最後", /desc: t\("tr\.opt\.catchDesc" \+ money, \{ how: trCatchHow\(r, real\) \}\) \+ \(will \? " " \+ will : ""\)/.test(src) && /\.concat\(\[t\("tr\.startWarn1"\)\]\)\.concat\(will \? \[will\] : \[\]\)/.test(src)); }
   // runtime 10-14:解除綁定保留成員與金額、只清路由。解除 → 重新綁定 → 頁面是 Z(路由空的)→ 存一次 → 可以啟動
   { const rep = (venues, ex) => ({ venues, config: { amounts: { btc: 500, tw: 0 }, exchanges: ex }, states: { btc: { symbol: "BTCUSDT", position: 1 } }, account: { read_at: Math.floor(Date.now() / 1000), venues: {} } });

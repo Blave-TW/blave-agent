@@ -1637,6 +1637,9 @@ msgstr "Wait for new signals"
 msgid "tr.opt.waitDesc"
 msgstr "No orders now. Each strategy starts trading only at its next entry, exit, or flip."
 
+msgid "tr.opt.waitStranded"
+msgstr "Positions the strategies already want closed: {n}. With Wait for new signals they stay open until the signal changes again."
+
 msgid "tr.opt.waitDescReal"
 msgstr "No orders now. Each strategy sends real orders only at its next entry, exit, or flip."
 
