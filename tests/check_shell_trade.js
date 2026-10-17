@@ -984,7 +984,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /\.btn-quiet \{\n  flex: none; padding: 0;/.test(acss) && !/\.app \{[^}]*font-family/.test(acss) && !/\.set-about \.st\.bad|\.up-cf/.test(acss)
       && /#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right: calc\(var\(--space-32\) \+ var\(--space-8\)\); \}/.test(css));
     { const en = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8");
-      ok("停機那幾句 en 用彎撇號(同檔其他句)", ["tr.cloud.restartStopped", "tr.restartStoppedLocal", "tr.ov.evRestartStoppedNote", "tm.evRestartStoppedNote", "tr.cloud.means.4"]
+      ok("停機那幾句 en 用彎撇號(同檔其他句;事件列 tr.ov.evRestartStoppedNote 0127b1 改成沒有撇號的一句)", ["tr.cloud.restartStopped", "tr.restartStoppedLocal", "tm.evRestartStoppedNote", "tr.cloud.means.4"]
         .every((k) => { const m = en.match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m && !/'/.test(m[1]) && /’/.test(m[1]); })); }
     ok("「暫停下單」文字鈕:--ink-2、熱區跟主鈕等高", /\.main-head \.tr-go-stop \{ color: var\(--ink-2\); min-height: 32px;/.test(css)); }
   { // S5 雲端連接的結果句
@@ -1085,7 +1085,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("「沒開著的時段」那一句整句拿掉:兩份 .po 與產生的 strings.js 都沒有 tr.ov.gapNote", !/tr\.ov\.gapNote/.test(po("zh") + po("en") + strs) && !/沒開著的時段沒有紀錄|connects straight across/.test(strs));
     ok("A′ / B0 / S1 文字照稽核;事件兩句 note 同網頁語序", /^什麼單都不下——平倉與停損也不會執行。/.test(get("zh", "tr.haltReasonAll")) && /^No orders are going out — exits and stops won’t run either\./.test(get("en", "tr.haltReasonAll"))
       && /^主機重開過，什麼單都不下/.test(get("zh", "tr.cloud.restartNoAccountZ")) && get("zh", "tr.cloud.restartNoAccountStart") === null && get("zh", "tr.cloud.restartNoAccount") === null
-      && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行；停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "平倉與停損不會執行；什麼單都不下"
+      && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行；停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "什麼單都不送"   // 稽核 0127b1 P2-20:跟狀態列同一個講法,一句就夠
       && /更新到最新版本、再按「啟動下單」/.test(get("zh", "tr.cloud.closeAllWarn2Unconfirmed")) && get("zh", "tr.cloud.saveIdleUnconfirmed") === null   // 存金額框的 idle 那句 0.1.24 退場
       && /after you update to the latest version and press Start trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && get("en", "tr.cloud.saveIdleUnconfirmed") === null
       && get("en", "tr.cloud.restartStartWarn2") === null && get("zh", "tr.cloud.restartStartWarn2") === null);

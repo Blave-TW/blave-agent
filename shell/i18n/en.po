@@ -3492,7 +3492,7 @@ msgid "tr.haltReason"
 msgstr "No new positions; exits and stops still run."
 
 msgid "tr.haltReasonFreeze"
-msgstr "No orders are sent — not exits, reductions, stops or take-profits."
+msgstr "No orders are sent, not even exits, reductions, stops or take-profits."
 
 msgid "tr.cloud.restartStartLine"
 msgstr "No orders have gone out since the machine restarted, so your positions may not match the current signals."
@@ -3504,7 +3504,7 @@ msgid "tr.ov.evRestartStopped"
 msgstr "Machine restarted — trading paused"
 
 msgid "tr.ov.evRestartStoppedNote"
-msgstr "exits and stops won’t run; no orders at all"
+msgstr "no orders are sent"
 
 msgid "tm.evRestartStoppedNote"
 msgstr "Your machine restarted and auto-trading is paused. No orders are going out — nothing is managing your positions, and exits and stops won’t run. Press Start trading on the Auto trading page to resume, then choose to catch up or wait for new signals. Stop orders placed on the exchange are unaffected."

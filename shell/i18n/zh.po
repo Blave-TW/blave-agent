@@ -3503,7 +3503,7 @@ msgid "tr.haltReason"
 msgstr "不開新倉；平倉與停損停利照常執行。"
 
 msgid "tr.haltReasonFreeze"
-msgstr "什麼單都不送——平倉、減碼與停損停利也不會執行。"
+msgstr "什麼單都不送，平倉、減碼與停損停利也不會執行。"
 
 msgid "tr.cloud.restartStartLine"
 msgstr "主機重開後到現在都沒有下單，部位可能跟策略現在的訊號不一致。"
@@ -3515,7 +3515,7 @@ msgid "tr.ov.evRestartStopped"
 msgstr "主機重開，已暫停下單"
 
 msgid "tr.ov.evRestartStoppedNote"
-msgstr "平倉與停損不會執行；什麼單都不下"
+msgstr "什麼單都不送"
 
 msgid "tm.evRestartStoppedNote"
 msgstr "主機重開過，自動下單已暫停，什麼單都不下——部位現在沒有人在管，平倉與停損也不會執行。到「自動下單」按「啟動下單」繼續，可選補齊部位或等新訊號。交易所端的停損單不受影響。"

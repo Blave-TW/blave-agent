@@ -371,7 +371,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   }
   /* 自動下單執行中結束 app(主行程的結束確認框按了「結束 Blave」):這台電腦從這一刻起什麼單都不下、也不平倉,
      再開時是「已暫停」。不記的話時間軸上看不出下單是什麼時候停的(e2e 0.1.8 #76)。沿用 halt 那一列,
-     holds_all 讓說明換成「平倉與停損不會執行；什麼單都不下」(renderer trHaltStopsAll) */
+     holds_all 讓說明換成「什麼單都不送」(renderer trHaltStopsAll) */
   function noteQuit() { uiEvent("halt", { holds_all: true }); }
   function events({ days } = {}) {
     /* 檔案不在 = 這台電腦上真的沒做過那幾件事(空清單就是誠實的答案)。其餘(EACCES / EIO / 檔壞了)是**讀不到**,
