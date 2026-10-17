@@ -569,12 +569,13 @@ def _save_monthly(prefix, params, df):
 # An existing monthly directory for the same (prefix, params) is consolidated
 # into the single file on first touch and removed — machines already in the
 # field migrate lazily, no manual step.
-# twstock_price2: the Blave 後復權 series. The api's 2026-10 fix (stock-only dividends now
-# adjusted, ETF duplicate rows deduped) changed past values, and the single-file layout never
-# re-fetches the past — under the old key a fixed tail would land on an under-adjusted history
-# with a fake gap at the seam, so the old `twstock_price_<id>` files are left unread.
+# twstock_price3: the Blave 後復權 series. The api changed past values twice in 2026-10
+# (stock-only dividends + ETF duplicate rows, then splits / 減資 / 面額變更 from the exchange
+# event tables), and the single-file layout never re-fetches the past — under an old key a fixed
+# tail would land on an under-adjusted history with a fake gap at the seam, so the old
+# `twstock_price_<id>` / `twstock_price2_<id>` files are left unread.
 _SINGLE_FILE_PREFIXES = frozenset({
-    'twstock_price2', 'twstock_price_nonadj', 'twstock_inst', 'twstock_shareholding',
+    'twstock_price3', 'twstock_price_nonadj', 'twstock_inst', 'twstock_shareholding',
     'twstock_per', 'twstock_foreign_sh',
     'twmarket_index', 'twmarket_turnover', 'twmarket_institutional', 'twmarket_margin',
     'twfutures_institutional',
@@ -2304,10 +2305,12 @@ def _tw_forward_adjust(df, events):
     """後復權 by the api's forward_adjust rule (api/tw/twstock/adjuster.py): rows before an
     ex-date keep their price, rows from the ex-date on are multiplied by 除權息前收盤價 ÷
     除權息參考價. For cash and stock dividends that is prev_close × (1 + stock_ratio) ÷
-    (prev_close − cash), the Blave factor; the exchange tables also carry other ex-rights
-    events (現金增資 and the like) that Blave's adjustment leaves out, so from such a date
-    the two series differ by that event's factor. An event with no bar before it in the
-    frame is skipped and OHLC is rounded to 2, both as there."""
+    (prev_close − cash). The api adjusts with these same exchange events, so the two series
+    agree except where the api falls back to its dividend formula on a bar no exchange event
+    reaches (mostly pre-2010 and 興櫃-era history), and on an event day before the CDN's
+    17:55 publish, when the api already has the morning-listed event and this frame does not.
+    An event with no bar before it in the frame is skipped and OHLC is rounded to 2, both as
+    there."""
     factor = pd.Series(1.0, index=df.index)
     for ex_date, prev_close, ref in events[['prev_close', 'ref_price']].sort_index().itertuples():
         if not (prev_close > 0 and ref > 0) or ex_date <= df.index[0]:
@@ -2931,7 +2934,7 @@ def fetch_twstock_price_adj(stock_id, start, end, headers):
     _fetch_twstock_daily_public; df.attrs['source'] names the one that answered."""
     def _blave():
         return _extend_cache_monthly(
-            'twstock_price2', {'id': stock_id},
+            'twstock_price3', {'id': stock_id},
             lambda s, e: _fetch_twstock_price_raw(stock_id, s, e, headers),
             start, end,
         )
@@ -3083,9 +3086,9 @@ def fetch_twstock_ohlcv(stock_id, schema, headers, start=None, end=None, adjust=
                  - timedelta(days=lookback)).strftime('%Y-%m-%d')
     if start < '2019-01-01':
         start = '2019-01-01'
-    # 'v': 2 on adjusted bars only — same reason as twstock_price2 (_SINGLE_FILE_PREFIXES);
+    # 'v': 3 on adjusted bars only — same reason as twstock_price3 (_SINGLE_FILE_PREFIXES);
     # raw bars did not change, so their cache keeps its key.
-    params = {'id': stock_id, 'adj': 1, 'v': 2} if adjust else {'id': stock_id, 'adj': 0}
+    params = {'id': stock_id, 'adj': 1, 'v': 3} if adjust else {'id': stock_id, 'adj': 0}
     df = _extend_cache_monthly(
         f'twstock_minute_{schema}', params,
         lambda s, e: _fetch_twstock_minute_raw(stock_id, schema, s, e, headers, adjust=adjust),
@@ -4593,7 +4596,7 @@ def fetch_twstock_price_adj_batch(stock_ids, start, end, headers):
             columns={'open': 'Open', 'close': 'Close'}).astype(float)
         return df.replace(0, float('nan')).ffill()
     results = _twstock_batch(lambda: _fetch_twstock_cached_batch(
-        'twstock_price2', 'price_adj', _fetch_twstock_price_raw, _parse,
+        'twstock_price3', 'price_adj', _fetch_twstock_price_raw, _parse,
         stock_ids, start, end, headers), stock_ids, start, end, True)
     return {sid: df[['Open', 'Close']] if {'Open', 'Close'} <= set(df.columns) else df
             for sid, df in results.items()}

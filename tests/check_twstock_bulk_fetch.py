@@ -146,9 +146,9 @@ def _warm(mode, ids=ALL, fetch=d.fetch_twstock_price_adj_batch):
 
 
 old, old_calls = _warm("404")        # 404 on /bulk → exactly the old /batch path
-old_files = _snapshot("twstock_price2")
+old_files = _snapshot("twstock_price3")
 new, new_calls = _warm("ok")
-new_files = _snapshot("twstock_price2")
+new_files = _snapshot("twstock_price3")
 check(new_calls == [("bulk", "price_adj"), ("batch", "price_adj")],
       f"warm large universe: one /bulk request + one /batch for the id outside its universe ({new_calls[:4]})")
 check(old_calls.count(("batch", "price_adj")) == 10 and old_calls[0] == ("bulk", "price_adj"),
@@ -400,9 +400,9 @@ d._CACHE_DIR.mkdir(parents=True)
 d._LEFTOVERS.clear()
 frame = pd.DataFrame({"Close": [1.0]}, index=pd.to_datetime(["2026-10-01"]))
 for i in range(40):
-    d._write_single("twstock_price2", {"id": str(5000 + i)}, frame,
+    d._write_single("twstock_price3", {"id": str(5000 + i)}, frame,
                     {"from": "2026-10", "to": "2026-10", "tail_fetched_at": "2026-10-02T00:00:00"})
-stale = d._monthly_cache_dir("twstock_price2", {"id": "5003"})
+stale = d._monthly_cache_dir("twstock_price3", {"id": "5003"})
 (stale.parent / f"{stale.name}.migrating.999").mkdir()
 stale.mkdir()
 listings = []
@@ -410,7 +410,7 @@ real_scandir = d.os.scandir
 d.os.scandir = lambda path: listings.append(path) or real_scandir(path)
 try:
     for i in range(40):
-        d._read_single("twstock_price2", {"id": str(5000 + i)})
+        d._read_single("twstock_price3", {"id": str(5000 + i)})
 finally:
     d.os.scandir = real_scandir
 check(not stale.exists() and not (stale.parent / f"{stale.name}.migrating.999").exists(),
