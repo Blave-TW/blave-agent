@@ -879,7 +879,7 @@ function mgBacktestSec() {
     return c;
   };
   const tr0 = man["total_return_%"], dd = man["max_drawdown_%"];
-  grid.append(stat(t("mg.totalReturn"), pct(tr0), tr0 > 0 ? "buy" : tr0 < 0 ? "sell" : "", "ret"), stat("Sharpe", typeof man.sharpe === "number" && isFinite(man.sharpe) ? man.sharpe.toFixed(2) : null, "", "sharpe"),
+  grid.append(stat(t("mg.totalReturn"), pct(tr0), tr0 > 0 ? "buy" : tr0 < 0 ? "sell" : "", "ret"), stat("Sharpe", typeof man.sharpe === "number" && isFinite(man.sharpe) ? (man.sharpe < 0 ? "−" : "") + Math.abs(man.sharpe).toFixed(2) : null, "", "sharpe"),
     stat("Max DD", pct(dd), dd < 0 ? "sell" : "", "mdd"));
   frag.appendChild(grid);
   const frame = trEl("div", "mg-frame"); frame.appendChild(trEl("div", "chart-cap", t("mg.chartCap")));

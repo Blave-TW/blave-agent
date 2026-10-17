@@ -21,6 +21,7 @@ const F = P.out;
 ok("移動窗格回測各指標的贏過:三個欄位各自取整;舊 workspace 只有 Sharpe 時另兩格不畫",
   J(F.mgBeatsOf({ managed_beats_pct_total_return: 61.4, managed_beats_pct_sharpe: 85.5, managed_beats_pct_max_drawdown: 12 })) === J({ ret: "61%", sharpe: "86%", mdd: "12%" })
   && J(F.mgBeatsOf({ managed_beats_pct_sharpe: 85 })) === J({ ret: null, sharpe: "85%", mdd: null }) && J(F.mgBeatsOf({})) === J({ ret: null, sharpe: null, mdd: null }));
+ok("稽核 0127b1 P2-28:三格的 Sharpe 負值用 U+2212(同報酬那兩格的 pct),不是 ASCII -", /man\.sharpe < 0 \? "\u2212" : ""\) \+ Math\.abs\(man\.sharpe\)\.toFixed\(2\)/.test(psrc));
 ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display_name)", /name === MG_SHARPE\) return t\("mg\.sharpe"\)/.test(psrc) && /MG_SHARPE \? t\("mg\.sharpeDesc"\)/.test(psrc));
 { const prop = { members: ["b", "a"], allocator: null, params: { lookback: 180 } };
   ok("選擇比對:成員順序不管、舊腳本的 allocator null = slope、走查窗雙方都釘住才比", F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 180 }) && !F.mgSameSel(prop, ["a"], "slope", { lookback: 180 })
