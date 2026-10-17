@@ -115,16 +115,27 @@ for b_price in (97.5, 102.5):
                          mult=R_MULT, tp_pct=0.03, settle=settle)
     check(wt.iloc[2] == 0.0 and abs(wt.iloc[3] - r_cum1) < 1e-12,
           "a trigger on the settle bar is ignored; the next contract's trigger enters")
-check(w.attrs.get("ladder") == {"devs": DEVS, "mult": MULT, "rolls": False}, "attrs['ladder'] carries devs / mult / rolls")
+# settle on a bar the runner drops (Open=0): the reset still happens there
+dv = roll_frame(97.5)[["Open", "Close"]]
+dv.iloc[2, dv.columns.get_loc("Open")] = 0.0
+settle = pd.Series([False, False, True, False, False, False], index=dv.index)
+wv = ladder_position(pd.Series([True] + [False] * 5, index=dv.index), dv, R_DEVS, mult=R_MULT, tp_pct=0.03,
+                     settle=settle)
+check(np.allclose(wv.to_numpy()[3:], 0.0), "a settle bar the runner drops still ends the cycle (97.5 adds no rung)")
+check(w.attrs.get("ladder") == {"devs": DEVS, "mult": MULT}, "attrs['ladder'] carries devs / mult")
+from lib.exits import apply_exits
+check(apply_exits(w, df, stop_pct=0.5).attrs.get("ladder") == w.attrs["ladder"],
+      "apply_exits around the ladder keeps attrs['ladder'] (the runner's sizing line survives)")
 
 # ── ladder_sizing ──
 from lib.strategy import ladder_sizing
+from lib.portfolio import compute_diff
 s1 = ladder_sizing(1000, DEVS, MULT, min_order=52.5)        # BTC perp lot ≈ $50, × 1.05 like the reconciler
 check(abs(s1["orders"][0] - 1000 / total) < 1e-9 and s1["skipped"] == [0],
       f"$1000 BTC at a $52.5 minimum: base ${s1['orders'][0]:.2f} is not sent")
 check(abs(s1["trades"][1] - 1000 * cum[2]) < 1e-9, "the skipped base merges into rung 1's order")
-check(abs(s1["min_amount"] - 52.5 * total) < 1e-6 and not ladder_sizing(s1["min_amount"], DEVS, MULT, min_order=52.5)["skipped"],
-      f"min amount {s1['min_amount']:.2f} = 52.5 × Σ, and at it every order trades")
+check(52.5 * total * 1.001 <= s1["min_amount"] <= 52.5 * total * 1.01 and s1["min_amount"] == round(s1["min_amount"], 2),
+      f"min amount {s1['min_amount']:.2f} sits ≥ 0.1% above 52.5 × Σ = {52.5 * total:.4f} (off the gate's edge), in cents")
 check(not ladder_sizing(1000, DEVS, MULT, min_order=10)["skipped"], "$1000 at the flat $10 floor: every order trades")
 t10 = ladder_sizing(10, DEVS, MULT, lots=True)
 check(t10["targets"] == [0, 1, 1, 3, 5, 10] and t10["skipped"] == [0, 2],
@@ -134,34 +145,124 @@ check(t3["targets"] == [0, 0, 0, 1, 2, 3] and t3["skipped"] == [0, 1, 2], f"TMF 
 flat = ladder_sizing(6, DEVS, 1.0, lots=True)
 check(flat["trades"] == [1] * 6 and flat["min_amount"] == 6, "mult=1, 5 rungs: 6 lots = 1 lot per order, the minimum")
 check(ladder_sizing(1, DEVS, MULT, lots=True)["min_amount"] is not None, "geometric lots: a minimum exists")
+DEV7 = [0.01 * k for k in range(1, 8)]
+tie = ladder_sizing(4, DEV7, 1.0, lots=True)
+check(tie["targets"] == [1, 1, 2, 2, 3, 3, 4, 4],
+      f"half-up ties: 0.5 lot → 1, 1.5 → 2 (round() would give 0 and 2) — {tie['targets']}")
+
+# notional with a coarse lot vs the real lib.portfolio.compute_diff + half-up lot rounding
+# (lib.venue_wiring._entry_qty), every amount on a grid — the prediction must match each one
+def real_trades(amount, devs, mult, gate, lot, floor=False):
+    cs = [mult ** k for k in range(len(devs) + 1)]
+    tot = sum(cs)
+    held, sent = 0.0, []
+    for k in range(len(cs)):
+        row = {"side": "long", "size": amount * (sum(cs[:k + 1]) / tot), "exchange": "x", "asset_spec": None,
+               "market": "swap", "contributors": [], "gated": False}
+        hold = {"BTCUSDT": {"side": "long", "size": held}} if held else {}
+        o = compute_diff({"BTCUSDT": row}, hold, gate)
+        q = (math.floor(o[0]["signed_diff"] / lot + (1e-9 if floor else 0.5)) * lot
+             if o and o[0]["signed_diff"] > 0 else 0.0)
+        sent.append(q)
+        held += q
+    return sent
+
+import math
+mism = []
+for m, dv_ in ((1.0, DEVS), (1.8, DEVS), (1.0, [0.01 * k for k in range(1, 11)])):
+    for amount in range(200, 6000, 7):
+        got = ladder_sizing(amount, dv_, m, min_order=52.5, lot=50.0)["trades"]
+        want = real_trades(amount, dv_, m, 52.5, 50.0)
+        if [bool(x) for x in got] != [bool(x) for x in want] or not np.allclose(got, want):
+            mism.append((m, len(dv_), amount, got, want))
+check(not mism, f"lot rounding: ladder_sizing matches compute_diff + half-up lots on every amount ({mism[:2]})")
+mism = []
+for m in (1.0, 1.8):   # paper TW stock: 2330 at 1,000, gate 1.05 shares, whole shares floored
+    for amount in range(5000, 120000, 337):
+        got = ladder_sizing(amount, DEVS, m, min_order=1050.0, lot=1000.0, lot_floor=True)["trades"]
+        want = real_trades(amount, DEVS, m, 1050.0, 1000.0, floor=True)
+        if not np.allclose(got, want):
+            mism.append((m, amount, got, want))
+check(not mism, f"lot_floor: ladder_sizing matches compute_diff + floored shares on every amount ({mism[:2]})")
+lm = ladder_sizing(330, DEVS, 1.0, min_order=52.5, lot=50.0)
+check(lm["trades"] == [50, 50, 50, 50, 100, 0], f"$330, mult=1, $50 lot: the last rung merges ({lm['trades']})")
+mn = ladder_sizing(330, DEVS, 1.0, min_order=52.5, lot=50.0)["min_amount"]
+check(all(real_trades(mn, DEVS, 1.0, 52.5, 50.0)) and all(real_trades(math.ceil(mn * 1.005 * 100) / 100, DEVS, 1.0, 52.5, 50.0)),
+      f"min amount {mn} (lot 50): every order goes out through compute_diff, and 0.5% above too")
+# nine rungs, mult=1: the first amount where every order trades (525.53) merges a rung again 0.5% above
+D9 = [0.01 * k for k in range(1, 10)]
+mn9 = ladder_sizing(1000, D9, 1.0, min_order=52.5, lot=50.0)["min_amount"]
+check(all(real_trades(mn9, D9, 1.0, 52.5, 50.0)) and all(real_trades(math.ceil(mn9 * 1.005 * 100) / 100, D9, 1.0, 52.5, 50.0)),
+      f"min amount {mn9} (9 rungs, lot 50) is not a lone working point: 0.5% above still trades every order")
+mn0 = ladder_sizing(1000, DEVS, MULT, min_order=52.5)["min_amount"]
+check(all(real_trades(mn0, DEVS, MULT, 52.5, 1e-9)), f"min amount {mn0} (no lot): every order goes out through compute_diff")
 
 # runner's backtest hint — portfolio and venue lookups stubbed, nothing on disk or network
+import tempfile
 import lib.portfolio as _pf, lib.execute as _ex
 from lib.runner import _ladder_sizing_lines
 _saved = (_pf.load_portfolio_config, _pf.strategy_amounts, _ex._venue_sizes_usd)
+def cfg(amounts, specs=None, exchanges=None):
+    _pf.load_portfolio_config = lambda: {"amounts": amounts, "asset_specs": specs or {}, "exchanges": exchanges or {}}
+    _pf.strategy_amounts = lambda c=None: dict(amounts)
+cdf_file = os.path.join(tempfile.mkdtemp(prefix="ladcdf-"), "strategy.py")
+open(cdf_file, "w").write('SYMBOL = "CDF"\ndef fetch_data(h):\n    from lib.data import fetch_twfutures_ohlcv\n'
+                          '    return fetch_twfutures_ohlcv(SYMBOL, "1d", "2024-01-01", None, h)\n')
 try:
-    _pf.load_portfolio_config = lambda: {"amounts": {"lad": 1000.0}, "asset_specs": {}}
-    _pf.strategy_amounts = lambda cfg=None: {"lad": 1000.0}
+    cfg({"lad": 1000.0})
     _ex._venue_sizes_usd = lambda sym, floor: (52.5, 50.0)
     lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "BTCUSDT"})
     check(any("WARNING" in l and "[0]" in l and "rung 1" in l for l in lines), "runner warns: $1000 BTC base not sent")
-    _pf.load_portfolio_config = lambda: {"amounts": {"lad": 3.0},
-                                          "asset_specs": {"lad": {"type": "futures_contracts"}}}
-    _pf.strategy_amounts = lambda cfg=None: {"lad": 3.0}
+    check("one lot 50.00" in lines[0] and "merge" in lines[0], "a coarse lot is named, with the merge caveat")
+    cfg({"lad": 3.0}, {"lad": {"type": "futures_contracts"}})
     lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "TMF"})
     check(any("WARNING" in l and "lots" in l and "rung 3" in l for l in lines), "runner warns: TMF 3 lots first order at rung 3")
-    _pf.strategy_amounts = lambda cfg=None: {"lad": 6.0}
-    lines = _ladder_sizing_lines({"devs": DEVS, "mult": 1.0, "rolls": False}, {"STRATEGY_NAME": "lad", "SYMBOL": "TMF"})
-    check(any("WARNING" in l and "settle=" in l for l in lines), "runner: TMF ladder without settle= is warned")
-    lines = _ladder_sizing_lines({"devs": DEVS, "mult": 1.0, "rolls": True}, {"STRATEGY_NAME": "lad", "SYMBOL": "TMF"})
-    check(not any("WARNING" in l for l in lines), "runner: TMF 6 lots, mult=1, settle passed — no warning")
+    cfg({"lad": 3.0}, exchanges={"lad": "capital"})
+    lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "CDF"})
+    check(any("lots" in l and "rung 3" in l for l in lines), "CDF on a native-unit venue (no spec): lots via native_units")
+    cfg({"lad": 3.0})
+    lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "CDF", "__file__": cdf_file})
+    check(any("lots" in l and "rung 3" in l for l in lines), "CDF with no venue saved: lots via the TAIFEX test")
+    cfg({"lad": 3000.0}, exchanges={"lad": "binance"})
+    lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "BTCUSDT"})
+    check(not any(" lots" in l for l in lines), "a notional venue stays notional")
+    cfg({"lad": 6.0}, {"lad": {"type": "futures_contracts"}})
+    lines = _ladder_sizing_lines({"devs": DEVS, "mult": 1.0}, {"STRATEGY_NAME": "lad", "SYMBOL": "TMF"})
+    check(not any("WARNING" in l for l in lines), "runner: TMF 6 lots, mult=1 — no warning")
     _ex._venue_sizes_usd = lambda sym, floor: (_ for _ in ()).throw(RuntimeError("offline"))
-    _pf.load_portfolio_config = lambda: {"amounts": {}, "asset_specs": {}}
-    _pf.strategy_amounts = lambda cfg=None: {}
+    cfg({})
     lines = _ladder_sizing_lines({"devs": DEVS, "mult": MULT}, {"STRATEGY_NAME": "lad", "SYMBOL": "BTCUSDT"})
     check(len(lines) == 1 and "not looked up" in lines[0], "lookup failure: the flat floor, said so; no amount → no verdict")
 finally:
     _pf.load_portfolio_config, _pf.strategy_amounts, _ex._venue_sizes_usd = _saved
+
+# one $10 gate: the reconciler, lib.execute and the runner read the same constant
+import manager.reconciler as _rc
+check(_rc.THRESHOLD == _ex.RECONCILE_THRESHOLD == _ex._RESIDUAL_USD, "THRESHOLD is lib.execute.RECONCILE_THRESHOLD")
+
+# quality check: a ladder across a roll — the mask guard's TAIFEX test, plus stock-futures daily data
+from lib.quality_check import ladder_roll_findings
+def roll_findings(src):
+    f = os.path.join(tempfile.mkdtemp(prefix="ladqc-"), "strategy.py")
+    open(f, "w").write(src)
+    return ladder_roll_findings(f)
+LAD = "    return ladder_position(e, df, devs=[0.02], mult=1.0, tp_pct=0.03{extra})\n"
+def src(head, extra=""):
+    return head + "def compute_signals(df):\n    from lib.strategy import ladder_position\n    e = df['Close'] > 0\n" + LAD.format(extra=extra)
+cases = [
+    ('SYMBOL = "CDF"\ndef fetch_data(h):\n    return fetch_twfutures_ohlcv(SYMBOL, "1d", "a", None, h)\n', "", 1, "CDF via fetch_twfutures_ohlcv, no settle="),
+    ('SYMBOL = "CDF"\ndef fetch_data(h):\n    return fetch_twfutures_ohlcv(SYMBOL, "1d", "a", None, h)\n', ", settle=txf_settlement_mask(df.index)", 0, "CDF with settle="),
+    ('SYMBOL = "CDF"\ndef fetch_data(h):\n    return fetch_stock_futures_batch_daily(["CDF"], "a", None, h)\n', "", 1, "fetch_stock_futures_batch_daily, no settle="),
+    ('SYMBOL = "TMF"\n', "", 1, "SYMBOL = TMF, no settle="),
+    ('SYMBOL = "BTCUSDT"\ndef fetch_data(h):\n    return fetch_kline(SYMBOL, "1h", "a", None, h)\n', "", 0, "crypto ladder"),
+    ('SYMBOL = "CL"\ndef fetch_data(h):\n    return fetch_db_kline("NYMEX", SYMBOL, "ohlcv-1d", "a", None, h)\n', "", 1, "fetch_db_kline without settlement_signals_from_db"),
+]
+for head, extra, n, what in cases:
+    got = roll_findings(src(head, extra))
+    check(len(got) == n, f"ladder_roll: {what} → {n} warning(s) (got {len(got)})")
+ok_db = src('SYMBOL = "CL"\ndef fetch_data(h):\n    return fetch_db_kline("NYMEX", SYMBOL, "ohlcv-1d", "a", None, h)\n'
+            ).replace("    return ladder_position(", "    return settlement_signals_from_db(df, ladder_position(") + ")\n"
+check(not roll_findings(ok_db), "fetch_db_kline + settlement_signals_from_db → no warning")
 
 try:
     ladder_position(pd.Series([True, False, False]), d0, DEVS, mult=MULT, tp_pct=TP); ok = False

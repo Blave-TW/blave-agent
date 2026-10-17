@@ -14,7 +14,10 @@ from lib.portfolio import (reconcile, load_portfolio_config, strategy_amounts,
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 POLL_INTERVAL  = 5    # seconds between polls
-THRESHOLD = 10   # minimum diff (in account currency) to place an order
+try:
+    from lib.execute import RECONCILE_THRESHOLD as THRESHOLD  # minimum diff (account currency) to place an order
+except ImportError:  # half-updated workspace (lib/execute.py not landed yet): the value it carries
+    THRESHOLD = 10
                  # (lib/portfolio.spot_scope's threshold default tracks this)
 MIN_ORDER_TTL_S = 60  # how long a symbol's venue minimum stays cached: the LOT
                       # is static for the session, its account-currency VALUE

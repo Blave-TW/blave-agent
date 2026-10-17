@@ -334,8 +334,10 @@ _KICK_PATH = "state/execution/kick"
 _MIN_SLICE_USD = 20.0        # floor only — the real per-venue minimum (min qty
                              # × mark can be $100+ on BTC perps) is looked up at
                              # dispatch via _venue_min_slice_usd
-_RESIDUAL_USD = 10.0         # tracks manager/reconciler.THRESHOLD — a gap
-                             # smaller than this is not worth an order
+# The reconciler's flat order gate (manager/reconciler.THRESHOLD imports it). Lives here
+# because lib/runner reads it too and manager/reconciler configures logging on import.
+RECONCILE_THRESHOLD = 10
+_RESIDUAL_USD = float(RECONCILE_THRESHOLD)  # a gap smaller than this is not worth an order
 _OVERDUE_GRACE_S = 900
 _REDUCE_ESCAPE_S = 600       # overdue + stopped this long, a REDUCE leg may
                              # abandon the wedged run — closes must never be

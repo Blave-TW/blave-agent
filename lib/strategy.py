@@ -114,7 +114,7 @@ def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03, settle=None):
     the spread to the next contract must not read as a dip or a take-profit; only a trigger
     enters again.
     A loop, not vectorizable: the TP level moves with every fill.
-    The result's attrs["ladder"] carries devs / mult (and whether rolls are seen) for the runner.
+    The result's attrs["ladder"] carries devs / mult for the runner's sizing line.
     """
     devs = [float(d) for d in devs]
     if not devs or any(d <= 0 for d in devs) or any(b <= a for a, b in zip(devs, devs[1:])):
@@ -182,30 +182,34 @@ def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03, settle=None):
                 filled += 1
         out[t] = sum(costs[:filled]) / total
     res = pd.Series(out, index=df.index)
-    res.attrs["ladder"] = {"devs": devs, "mult": float(mult), "rolls": settle is not None or inst is not None}
+    res.attrs["ladder"] = {"devs": devs, "mult": float(mult)}
     return res
 
 
-def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False):
+def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False, lot=None, lot_floor=False):
     """What live actually sends for a ladder_position strategy funded with `amount`.
 
-    Live trades the gap between the cumulative target and what it already holds, and a gap
-    under the venue minimum is not sent — it merges into the next rung. Notional (`lots=False`):
-    `min_order` is the smallest order in the amount's currency (the reconciler's entry gate,
-    max($10, venue minimum)). Lots (`lots=True`, TAIFEX / shares — the amount is whole units):
-    each cumulative target rounds half-up to whole lots like lib.portfolio.aggregate_portfolio,
-    and `min_order` is ignored. Sized per strategy, before netting with others on the symbol.
+    Live trades the gap between the cumulative target and what it already holds; a gap under
+    the entry gate is not sent and merges into the next rung. Notional (`lots=False`):
+    `min_order` is the entry gate in the amount's currency (the reconciler's max($10, venue
+    minimum)); `lot`, when the venue has one, is a lot's value — an entry rounds half-up to whole
+    lots (lib.venue_wiring._entry_qty), so a rung can land up to half a lot over its target and
+    shrink the next gap; `lot_floor=True` floors instead (paper TW stocks: whole shares, floored). Both are valued at the current mark for every rung: an approximation,
+    deeper rungs trade lower. Lots (`lots=True`, TAIFEX / shares — the amount is whole units):
+    each cumulative target rounds half-up like lib.portfolio.aggregate_portfolio. Sized per
+    strategy, before netting with others on the symbol, on the self_ledger book.
 
     Returns {'orders': planned size per order (base first), 'targets': cumulative target after
     each order, 'trades': what live sends at each rung (0 = nothing), 'skipped': indices whose
-    trade is 0, 'base_frac': base order ÷ full ladder, 'min_amount': smallest amount at which
-    every order trades (None if none up to 10,000 lots)}.
+    trade is 0, 'base_frac': base order ÷ full ladder, 'min_amount': an amount at which every
+    order trades, rounded up and re-checked so it is not on the gate's edge (None if not found)}.
     """
     devs = [float(d) for d in devs]
     if not devs or mult <= 0:
         raise ValueError("ladder_sizing: devs must be non-empty and mult > 0")
     if not lots and not (min_order and min_order > 0):
         raise ValueError("ladder_sizing: pass min_order (the venue minimum) for a notional amount")
+    lot = float(lot) if lot and lot > 0 and not lots else None
     costs = [mult ** k for k in range(len(devs) + 1)]
     total = sum(costs)
     cum = [sum(costs[:k + 1]) / total for k in range(len(costs))]
@@ -213,19 +217,42 @@ def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False):
     def plan(a):
         if lots:
             targets = [math.floor(abs(a) * f + 0.5 + 1e-9) for f in cum]
-            trades = [t - p for t, p in zip(targets, [0] + targets[:-1])]
-            return targets, trades
+            return targets, [t - p for t, p in zip(targets, [0] + targets[:-1])]
         targets, trades, held = [a * f for f in cum], [], 0.0
         for t in targets:
-            trades.append(t - held if t - held >= min_order * (1 - 1e-9) else 0.0)
-            held += trades[-1]
+            gap = t - held
+            if gap < min_order:                      # lib.portfolio.compute_diff: abs(diff) < gate → skip
+                trades.append(0.0)
+                continue
+            if not lot:
+                q = gap
+            elif lot_floor:
+                q = math.floor(gap / lot + 1e-9) * lot     # lib.order_paper: whole shares, floored
+            else:
+                q = math.floor(gap / lot + 0.5) * lot      # lib.venue_wiring._entry_qty
+            if not q:
+                trades.append(0.0)
+                continue
+            trades.append(q)
+            held += q
         return targets, trades
 
-    targets, trades = plan(amount)
+    def every(a):
+        return all(plan(a)[1])
+
     if lots:
-        min_amount = next((a for a in range(1, 10001) if all(plan(a)[1])), None)
+        min_amount = next((a for a in range(1, 10001) if every(a)), None)
     else:
-        min_amount = min_order * total / min(costs)
+        a = math.ceil(min_order * total / min(costs) * 1.001 * 100) / 100
+        step = max(0.01, (lot or 0) / 100)
+        min_amount = None
+        for _ in range(100000):
+            # 0.5% above passes too: an amount a hair over a merge point is not reported
+            if every(a) and every(math.ceil(a * 1.005 * 100) / 100):
+                min_amount = a
+                break
+            a = math.ceil((a + step) * 100) / 100
+    targets, trades = plan(amount)
     return {'orders': [amount * c / total for c in costs], 'targets': targets, 'trades': trades,
             'skipped': [k for k, x in enumerate(trades) if not x], 'base_frac': costs[0] / total,
             'min_amount': min_amount}

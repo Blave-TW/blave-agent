@@ -1525,48 +1525,61 @@ def typec_live_state(weights, price_df, now=None, market='swap'):
             'updated_at': int(now if now is not None else time.time())}
 
 
-# manager/reconciler.THRESHOLD — not imported: that module configures logging on import
-_RECONCILE_THRESHOLD = 10
-
-
 def _ladder_sizing_lines(ladder, config):
     """Backtest hint for a lib.strategy.ladder_position strategy: its base order is only
-    1/Σ mult**k of the amount, and live never sends an order under the venue minimum — so a
-    thin amount enters rungs later than the backtest, at a different average. Printed, never
-    blocking. Lots when the 下單設定 spec is lots/shares or SYMBOL is a TAIFEX index root;
+    1/Σ mult**k of the amount, and live never sends an order under the entry gate — so a thin
+    amount enters rungs later than the backtest, at a different average. Printed, never
+    blocking. Lots when lib.portfolio.native_units says so for the 下單設定 spec / venue, or —
+    no venue saved yet — when the strategy is TAIFEX (the settlement-mask guard's own test);
     otherwise the reconciler's entry gate, looked up on the bound venue when it can be."""
+    from lib.execute import RECONCILE_THRESHOLD
     from lib.strategy import ladder_sizing
-    from lib.portfolio import NATIVE_UNIT_TYPES, load_portfolio_config, strategy_amounts, txf_root
+    from lib.portfolio import load_portfolio_config, native_units, strategy_amounts, txf_root
     name, symbol = config.get('STRATEGY_NAME'), config.get('SYMBOL')
     try:
         cfg = load_portfolio_config()
         amount = strategy_amounts(cfg).get(name)
         spec = (cfg.get('asset_specs') or {}).get(name)
+        exchange = (cfg.get('exchanges') or {}).get(name)
     except Exception:
-        amount, spec = None, None
-    lots = (isinstance(spec, dict) and spec.get('type') in NATIVE_UNIT_TYPES) or bool(txf_root(symbol))
+        amount, spec, exchange = None, None, None
+    lots = native_units(spec, *([exchange] if exchange else []))
+    if not lots and not exchange:
+        try:
+            from lib.quality_check import taifex_strategy
+            lots = bool(config.get('__file__')) and taifex_strategy(config['__file__'])
+        except ImportError:
+            lots = False
+        lots = lots or bool(txf_root(symbol))
     devs, mult = ladder['devs'], ladder['mult']
+    lot = 0.0
     if lots:
         unit, floor_note, min_order = ' lots', 'whole lots, rounded half-up', None
     else:
-        min_order, lot = float(_RECONCILE_THRESHOLD), 0.0
+        min_order = float(RECONCILE_THRESHOLD)
         try:
             from lib.execute import _venue_sizes_usd
             min_order, lot = _venue_sizes_usd(f"{symbol}@spot" if config.get('MARKET') == 'spot' else symbol,
-                                              float(_RECONCILE_THRESHOLD))
-            min_order = max(float(_RECONCILE_THRESHOLD), float(min_order))
+                                              float(RECONCILE_THRESHOLD))
+            min_order = max(float(RECONCILE_THRESHOLD), float(min_order))
         except Exception as e:
             logging.warning("ladder sizing: venue minimum lookup failed: %s", e)
         unit = ''
-        floor_note = (f"venue minimum order {min_order:,.2f}" if lot > 0 else
+        floor_note = (f"venue minimum order {min_order:,.2f}, one lot {lot:,.2f}" if lot > 0 else
                       f"flat {min_order:,.0f} floor — venue minimum not looked up, it can be higher")
-    full = ladder_sizing(amount or 0, devs, mult, min_order=min_order, lots=lots)
-    roll_warn = ([f"⚠️ WARNING: {symbol} rolls monthly and this ladder_position call has no settle= — pass "
-                  f"settle=txf_settlement_mask(df.index), or the roll spread reads as a dip or a take-profit"]
-                 if txf_root(symbol) and not ladder.get('rolls', True) else [])
+    try:   # paper TW stocks trade whole shares, floored (lib.order_paper)
+        from lib.paper_data import is_tw_stock
+        lot_floor = bool(is_tw_stock(symbol))
+    except Exception:
+        lot_floor = False
+    full = ladder_sizing(amount or 0, devs, mult, min_order=min_order, lots=lots, lot=lot or None,
+                         lot_floor=lot_floor)
     lines = [f"Scaling in: the base order is {full['base_frac'] * 100:.2f}% of the strategy's amount; "
-             f"every order trades from an amount of {full['min_amount']:,.2f}{unit} ({floor_note}, "
-             f"this strategy alone, before netting) — tell the user before deploying"
+             f"every order trades at an amount of {full['min_amount']:,.2f}{unit} ({floor_note}, "
+             f"this strategy alone, before netting"
+             + ("; with whole-lot rounding a rung can still merge into the one before it at some amounts "
+                "above that — check the user's amount with lib.strategy.ladder_sizing" if lot > 0 else "")
+             + ") — tell the user before deploying"
              if full['min_amount'] is not None else
              f"Scaling in: the base order is {full['base_frac'] * 100:.2f}% of the strategy's amount ({floor_note})"]
     if amount:
@@ -1580,7 +1593,7 @@ def _ladder_sizing_lines(ladder, config):
                          f"from the backtest — raise the amount or use fewer / flatter rungs")
         else:
             lines.append(f"Scaling in: at the saved amount {amount:,.2f}{unit} every order trades")
-    return lines + roll_warn
+    return lines
 
 
 def _fill_invalid_cells(close_v, open_v):
@@ -1937,15 +1950,16 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             except Exception as e:
                 logging.warning("ladder sizing hint skipped: %s", e)
 
-        # Hand-written exit loop → WARNING line only, never blocks (lib/quality_check.py).
+        # Hand-written exit loop / a ladder across a roll → WARNING lines only, never block.
         if mode == 'backtest' and config.get('__file__'):
-            try:
-                from lib.quality_check import exit_loop_findings
-                for p in exit_loop_findings(config['__file__']):
-                    logging.warning(p['msg'])
-                    print(f"  ⚠️ WARNING: {p['msg']}")
-            except Exception as e:  # stale quality_check / parse trouble: skip the hint, keep the run
-                logging.warning("exit-loop hint skipped: %s", e)
+            for fn in ('exit_loop_findings', 'ladder_roll_findings'):
+                try:
+                    from lib import quality_check as _qc
+                    for p in getattr(_qc, fn)(config['__file__']):
+                        logging.warning(p['msg'])
+                        print(f"  ⚠️ WARNING: {p['msg']}")
+                except Exception as e:  # stale quality_check / parse trouble: skip the hint, keep the run
+                    logging.warning("%s hint skipped: %s", fn, e)
 
         equity   = np.cumprod(1 + np.nan_to_num(pf_ret))
         result_d = {

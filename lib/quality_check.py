@@ -259,15 +259,16 @@ def _call_name(node: ast.Call):
     return None
 
 
-def _check_txf_settlement_mask(tree: ast.AST) -> list[dict]:
-    # A strategy is treated as TAIFEX if it fetches a TAIFEX price series, or —
-    # covering fetches hidden behind a helper module — declares SYMBOL as an
-    # index-futures contract. Stock futures (e.g. 'CDF') can't be enumerated
-    # statically, but they necessarily fetch via fetch_twfutures_* so the call
-    # trigger covers them.
+def _taifex_trigger(tree: ast.AST, fetchers=_TWFUTURES_PRICE_FETCHERS):
+    """(line, why) when the strategy is TAIFEX, else None.
+    A strategy is treated as TAIFEX if it fetches a TAIFEX price series, or —
+    covering fetches hidden behind a helper module — declares SYMBOL as an
+    index-futures contract. Stock futures (e.g. 'CDF') can't be enumerated
+    statically, but they necessarily fetch via fetch_twfutures_* so the call
+    trigger covers them."""
     trigger = None
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _call_name(node) in _TWFUTURES_PRICE_FETCHERS:
+        if isinstance(node, ast.Call) and _call_name(node) in fetchers:
             trigger = (node.lineno, f"calls {_call_name(node)}()")
             break
     if trigger is None:
@@ -285,6 +286,17 @@ def _check_txf_settlement_mask(tree: ast.AST) -> list[dict]:
             ):
                 trigger = (node.lineno, f"SYMBOL = '{value.value}'")
                 break
+    return trigger
+
+
+def taifex_strategy(filepath: str) -> bool:
+    """True for a strategy the settlement-mask guard treats as TAIFEX."""
+    tree = _parse_for_runner(filepath)
+    return tree is not None and _taifex_trigger(tree) is not None
+
+
+def _check_txf_settlement_mask(tree: ast.AST) -> list[dict]:
+    trigger = _taifex_trigger(tree)
     if trigger is None:
         return []
 
@@ -315,6 +327,43 @@ def _check_txf_settlement_mask(tree: ast.AST) -> list[dict]:
             "mask must zero the signal and be returned as exec_at_close. " + _MASK_FIX,
         )]
     return []
+
+
+# ── Ladder across a contract roll ───────────────────────────────────────────────
+
+# Wider than the mask guard's trigger on purpose: a ladder on per-contract-month stock-futures
+# data rolls too, and a false hit here is a warning, not a refused backtest.
+_LADDER_ROLL_FETCHERS = _TWFUTURES_PRICE_FETCHERS | {"fetch_stock_futures_batch_daily"}
+
+
+def _check_ladder_roll(tree: ast.AST) -> list[dict]:
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and _call_name(n) == "ladder_position"]
+    if not calls:
+        return []
+    names = {_call_name(n) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    out = []
+    trigger = _taifex_trigger(tree, _LADDER_ROLL_FETCHERS)
+    if trigger is not None:
+        for c in calls:
+            if len(c.args) < 6 and not any(k.arg == "settle" for k in c.keywords):
+                out.append(_w(c.lineno, f"TAIFEX futures strategy ({trigger[1]}): ladder_position without "
+                                        "settle= — the ladder carries its base fill across the monthly roll, "
+                                        "so the next contract's spread reads as a dip or a take-profit. Pass "
+                                        "settle=txf_settlement_mask(df.index) (references/strategy-code.md › "
+                                        "Scaling in)."))
+    if "fetch_db_kline" in names and "settlement_signals_from_db" not in names:
+        out.append(_w(calls[0].lineno, "ladder_position on fetch_db_kline futures without "
+                                       "settlement_signals_from_db — the ladder resets on the new contract's "
+                                       "first bar, but only the settlement exit flattens the old contract's last "
+                                       "bar; without it the roll gap is booked (references/strategy-code.md › "
+                                       "Scaling in)."))
+    return out
+
+
+def ladder_roll_findings(filepath: str) -> list[dict]:
+    """Ladder-across-a-roll check only — the runner's non-blocking backtest warning."""
+    tree = _parse_for_runner(filepath)
+    return _check_ladder_roll(tree) if tree is not None else []
 
 
 # ── PLOT_SERIES declaration check (Type A) ──────────────────────────────────────
@@ -754,12 +803,13 @@ _CHECKS = (
     ("end", _check_end),
     ("spot_short", _check_spot_short),
     ("exit_loop", _check_exit_loop),
+    ("ladder_roll", _check_ladder_roll),
 )
 # Every id a finding can carry, with its level. tests/check_scan_context.py enumerates it.
 CHECK_LEVELS = {
     "read": "CRITICAL", "compute_signals": "CRITICAL", "txf_mask": "CRITICAL", "end": "CRITICAL",
     "template": "WARNING", "fee": "WARNING", "plot_series": "WARNING", "spot_short": "WARNING",
-    "exit_loop": "WARNING",
+    "exit_loop": "WARNING", "ladder_roll": "WARNING",
 }
 CONTEXTS = ("install", "fork", "edit")
 # WARNINGs that refuse the file in these contexts: an unfinished template is not installed or forked.
@@ -772,6 +822,7 @@ USER_EFFECT = {
     "plot_series": "the backtest chart has no indicator line",
     "spot_short": "its short signals stay flat because spot cannot short",
     "exit_loop": "its stop / target exits are custom code rather than the standard exit helper",
+    "ladder_roll": "its scale-in ladder can add or take profit on a futures contract roll instead of a real move",
 }
 # edit: the user decides whether a warning gets fixed; this is what fixing it would mean.
 EDIT_FIX = {
@@ -780,6 +831,7 @@ EDIT_FIX = {
     "plot_series": "declare PLOT_SERIES",
     "spot_short": "make compute_signals long-only",
     "exit_loop": "use lib.exits.apply_exits",
+    "ladder_roll": "reset the ladder at each contract roll",
 }
 
 

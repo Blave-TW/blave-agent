@@ -269,6 +269,8 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
     # a DataFrame, not a list: pandas deep-copies attrs on every operation on the Series
     res.attrs["exits"] = pd.DataFrame(exits, columns=["time", "reason", "order_price"])
     res.attrs["exits_unarmed"] = pd.DataFrame(unarmed, columns=["time", "exit", "dist"])
+    if isinstance(signal, pd.Series) and "ladder" in signal.attrs:   # keeps the runner's ladder sizing line
+        res.attrs["ladder"] = signal.attrs["ladder"]
     for name in sorted({u["exit"] for u in unarmed} - _unarmed_warned):
         _unarmed_warned.add(name)
         warnings.warn(f"apply_exits: {name}_dist was NaN, <= 0 or past zero on the signal bar of at least "
