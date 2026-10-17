@@ -179,7 +179,7 @@ def _check_fee(tree: ast.AST) -> list[dict]:
 # settlement_signals_from_db) return flat for an unfilled template's all-NaN signal, so
 # calling them proves nothing. tests/check_quality_template_helpers.py enumerates
 # lib/strategy.py and lib/exits.py, so a new helper there has to be put on one side.
-_SIGNAL_HELPERS = {"threshold_position", "hysteresis"}
+_SIGNAL_HELPERS = {"threshold_position", "hysteresis", "ladder_position"}
 
 
 def _check_compute_signals(tree: ast.AST) -> list[dict]:
@@ -479,7 +479,9 @@ def _check_exit_loop(tree: ast.AST) -> list[dict]:
                            "cooldown_bars=; it handles "
                            "High/Low touches, gaps, invalid bars, rolls and no same-bar re-entry. If the "
                            "rule is one it cannot model, tell the user that instead of hand-rolling a "
-                           "loop (references/strategy-code.md › Exits on top of an existing signal).")]
+                           "loop (references/strategy-code.md › Exits on top of an existing signal). A scale-in / "
+                           "DCA ladder with an average-cost take-profit is lib.strategy.ladder_position "
+                           "(references/strategy-code.md › Scaling in).")]
     return []
 
 

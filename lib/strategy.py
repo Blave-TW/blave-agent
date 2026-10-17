@@ -92,6 +92,70 @@ def threshold_position(x, buy_th, sell_th, cover_th, short_th):
                 pos = -1
         out[i] = pos
     return pd.Series(out, index=x.index)
+
+
+def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03):
+    """Scale-in (DCA) ladder state machine → long position Series in [0, 1].
+
+    A bar where `entry` is True while flat buys the base order; layer k is added once a Close
+    is at or below base_fill × (1 − devs[k]) — every rung measured from the base fill, several
+    in one bar if price gaps through them. Order k costs mult**k base orders, and the signal is
+    cost bought so far ÷ cost of the full ladder, so a full ladder is 1.0. Every order fills at
+    the next valid bar's Open (the last valid Close if that Open is invalid), and the average
+    cost is built from those fills; the position exits to 0.0 on the first Close ≥ average ×
+    (1 + tp_pct). The exit bar never re-checks `entry`: a level trigger still true on the next
+    bar re-enters then — pass an edge (`cond & ~cond.shift(1, fill_value=False)`) for one cycle
+    per dip. A bar whose Close is not finite and > 0 holds, like lib.exits.apply_exits.
+    A loop, not vectorizable: the TP level moves with every fill.
+    """
+    devs = [float(d) for d in devs]
+    if not devs or any(d <= 0 for d in devs) or any(b <= a for a, b in zip(devs, devs[1:])):
+        raise ValueError("ladder_position: devs must be positive and strictly increasing")
+    if mult <= 0 or tp_pct <= 0:
+        raise ValueError("ladder_position: mult and tp_pct must be > 0")
+    if isinstance(entry, pd.Series):
+        if not entry.index.equals(df.index):
+            raise ValueError("ladder_position: entry must be on df's index")
+        trig = entry.eq(True).tolist()
+    else:
+        trig = (np.asarray(entry) == True).tolist()  # noqa: E712 — NaN / None count as False
+        if len(trig) != len(df):
+            raise ValueError("ladder_position: entry must have one value per df row")
+    costs = [mult ** k for k in range(len(devs) + 1)]
+    total = sum(costs)
+    close, opn = df['Close'].tolist(), df['Open'].tolist()
+
+    def ok(v):
+        return v == v and 0 < v < float("inf")
+
+    out = np.zeros(len(close))
+    filled = 0        # orders signalled (base = 1)
+    booked = 0        # orders whose fill price is known
+    base = cost = qty = 0.0
+    last = None       # last valid Close
+    for t, c in enumerate(close):
+        if not ok(c):
+            out[t] = sum(costs[:filled]) / total
+            continue
+        if filled > booked:                  # orders signalled on the last valid bar fill at this Open
+            fill = opn[t] if ok(opn[t]) else last
+            if booked == 0:
+                base, cost, qty = fill, 0.0, 0.0
+            for k in range(booked, filled):
+                cost += costs[k]
+                qty += costs[k] / fill
+            booked = filled
+        last = c
+        if filled == 0:
+            if trig[t]:
+                filled = 1
+        elif c >= cost / qty * (1 + tp_pct):
+            filled = booked = 0
+        else:
+            while filled <= len(devs) and c <= base * (1 - devs[filled - 1]):
+                filled += 1
+        out[t] = sum(costs[:filled]) / total
+    return pd.Series(out, index=df.index)
 # ── Strategy versions (.claude/docs/strategy-versions.md) ─────────────────────
 # One version = one BACKTEST of one STRATEGY_NAME. lib/runner.py mints them into
 # strategies/<name>/versions/; the functions below read them back for the agent

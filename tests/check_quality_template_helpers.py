@@ -134,14 +134,15 @@ check(len(unfilled(exits_only)) == 1, "TEMPLATE_A + apply_exits only: still flag
 
 # The list is closed, so a new helper has to be classified here. lib/strategy.py and lib/exits.py
 # are where strategy-code.md sends a strategy for these; their convention: a helper that makes a
-# position takes the indicator `x` first, one that reshapes a position takes `signal` first.
+# position takes the indicator `x` (or the `entry` condition) first, one that reshapes a position
+# takes `signal` first.
 makers, reshapers = set(), set()
 for mod in (lib.strategy, lib.exits):
     for name, fn in inspect.getmembers(mod, inspect.isfunction):
         if fn.__module__ != mod.__name__ or name.startswith("_"):
             continue
         first = next(iter(inspect.signature(fn).parameters), None)
-        (makers if first == "x" else reshapers if first == "signal" else set()).add(name)
+        (makers if first in ("x", "entry") else reshapers if first == "signal" else set()).add(name)
 check(makers == _SIGNAL_HELPERS, f"_SIGNAL_HELPERS is exactly lib's position-making helpers ({sorted(makers)})")
 check(reshapers == {"apply_exits", "apply_vol_scaling", "clamp_spot"} and not reshapers & _SIGNAL_HELPERS,
       f"signal-reshaping helpers are known and none is in the list ({sorted(reshapers)})")

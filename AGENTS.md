@@ -75,7 +75,7 @@ Classify BEFORE writing any code, then read `references/strategy-code.md`.
 
 Always set `DISPLAY_NAME`, `DESCRIPTION` and `LOGIC` (one `entry:` / `exit:` / `stop:` rule per line) with `STRATEGY_NAME` (*Naming & description*). Changing a parameter also changes every place the file states that number: `DESCRIPTION`, `LOGIC` and the header comment.
 
-**Type A:** long+short needs FOUR independent thresholds + `lib.strategy.threshold_position`; stops / take-profit / trailing / time stop — as a % or a price distance (ATR multiple, prior low, points) — plus breakeven and cooldown → `lib.exits.apply_exits` with an explicit `trigger`, never your own exit loop (it can't model it, e.g. partial exits → tell the user and stop); `MARKET = "spot"` is long-only; non-price feeds attach by publication time (`lib.data.join_tw_flow` / `align_feed`, *Taiwan daily flows*).
+**Type A:** long+short needs FOUR independent thresholds + `lib.strategy.threshold_position`; stops / take-profit / trailing / time stop — as a % or a price distance (ATR multiple, prior low, points) — plus breakeven and cooldown → `lib.exits.apply_exits` with an explicit `trigger`, never your own exit loop (it can't model it, e.g. partial exits → tell the user and stop) — a scale-in / DCA ladder is an entry schedule, not an exit loop: `lib.strategy.ladder_position` (*Scaling in*); `MARKET = "spot"` is long-only; non-price feeds attach by publication time (`lib.data.join_tw_flow` / `align_feed`, *Taiwan daily flows*).
 
 **FEE must reflect the real market — never 0, never the template placeholder, never copied unchecked — and it is PER SIDE:** the engine charges it on every change, so a round trip pays it twice. TAIFEX index futures: the TXF/MXF/TMF table in `references/lib.md`.
 
