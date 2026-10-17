@@ -91,7 +91,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
       + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
         "trStratName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum",
-        "trTotalText", "trPaintPosCell", "trAmountTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trGateSide", "trTradesSym", "trVenueKind", "poPartStates", "trTwBroker", "trTxfPrice"].map((n) => cutF(src, n)).join("\n"), ctx);
+        "trTotalText", "trPaintPosCell", "trAmountTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trGateSide", "trTradesSym", "trVenueKind", "poPartStates", "trTwBroker", "trTxfPrice"].map((n) => cutF(src, n)).join("\n"), ctx);
     const V = { credentials: true, pair: true, order: true, account: true };
     const paint = (price, unit = "TWD", eq = 2000000, mixed = false) => {
       vm.runInContext("TR_TXF.price = " + J(price) + "; UNIT = " + J(unit) + "; EQ = " + J(eq), ctx);
@@ -176,10 +176,15 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       { const zero = (rec) => { paint(20000, "TWD", 2000000); if (rec) ctx.TR.st.report.reconciler = { alive: true }; ctx.TR.edits = { txf: 0 }; ctx.BOX = null;
           vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
           const all = flat(ctx.BOX.extra);
-          return { title: ctx.BOX.title, dds: all.filter((n) => n.tag === "dd").map((n) => n.textContent), zeroed: all.some((n) => n.className === "cf-zeroed") }; };
+          return { title: ctx.BOX.title, ok: ctx.BOX.ok, mark: ctx.BOX.mark, dds: all.filter((n) => n.tag === "dd").map((n) => n.textContent), zeroed: all.some((n) => n.className === "cf-zeroed"),
+            notes: all.filter((n) => n.className === "cf-note").map((n) => n.textContent), firstPending: vm.runInContext("trFirstReadPending(trReport())", ctx) }; };
         const z0 = zero(false), z1 = zero(true);
-        ok("#4 口數列改成 0:沒在下單 →「儲存金額」列 1 → 0;群益在下單(帳上讀不到)→ 也只列目標(帳上沒讀到不猜單);改成 0 那句(cf-zeroed)不出",
-          z0.title === "tr.cf.title" && z0.dds.some((x) => /^1→0/.test(x)) && !z0.zeroed && !z1.zeroed, J([z0, z1])); } }
+        ok("#4 口數列改成 0:沒在下單 →「儲存金額」列 1 → 0、不標平倉;改成 0 那句(cf-zeroed)不出",
+          z0.title === "tr.cf.title" && z0.dds.some((x) => x === "1→0tr.txfProd.txf") && !z0.zeroed && !z0.notes.length, J(z0));
+        // 稽核 v027-a1 B1:群益在下單、第一次讀帳還沒回來——按下去下一輪就平倉,框不能寫「儲存金額」
+        ok("#4 口數列改成 0、在下單但第一次讀帳還沒回來:標題與主鈕「儲存並下單」+ 記號;列目標 1 → 0 標平倉;表下一句帳上還沒讀到",
+          z1.firstPending === true && z1.title === "tr.cf.titleFire" && z1.ok === "tr.cf.titleFire" && !!z1.mark && z1.dds.some((x) => x === "1→0tr.cfTagClosetr.txfProd.txf")
+          && J(z1.notes) === J(["tr.cf.firstRead"]) && !z1.zeroed, J(z1)); } }
     { vm.runInContext("TR_TXF.price = null; UNIT = null; EQ = 5000", ctx);
       ctx.TR = { env: "local", list: [{ name: "btc", displayName: "BTC", hasBacktest: true }], listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, sig: {},
         st: { alive: true, report: { venues: { myex: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: { btc: 500 } }, states: { btc: { symbol: "BTCUSDT", position: 1 } } } } };

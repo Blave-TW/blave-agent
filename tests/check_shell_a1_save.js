@@ -35,7 +35,7 @@ vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSe
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
   "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper",
-  "trCfStates", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail"].map((n) => cutF(n)).join("\n")
+  "trCfStates", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail"].map((n) => cutF(n)).join("\n")
   + "\n" + ["poAddBtn", "poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
 const V = { credentials: true, pair: true, order: true, account: true };
@@ -181,6 +181,64 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
   { bag(draft({ noPv: true, oldHost: true })); const f = open();
     ok("③ 本機舊 runtime:同上,換本機那一句", f.notes.some((x) => /^cf-note:tr\.cf\.hostOld /.test(x)), J(f.notes)); }
 
+  // ── 稽核 v027-a1 修正
+  const FX = { name: "fx", displayName: "FX", hasBacktest: true, symbol: "TXF", market: "swap", twd: true, twdAll: true };
+  const EC = { name: "ec", displayName: "EC", hasBacktest: true, symbol: "ETHUSDT", market: "swap" };
+  const pvA = (sym, extra) => Object.assign({ type: "signal", symbol: sym, market: "swap", position: 1, bar_at: BAR, bar_date: "2026-10-16", latest: true, daily_tw: false }, extra || {});
+  { bag({ picked: ["btc", "tw", "fx"], edits: { fx: 2 }, list: [FX], quote: true, noPv: true, pvs: { fx: pvA("TXF", { bar_at: BAR - 3 * 86400, bar_date: "2026-10-13", latest: false, daily_tw: true }) } });
+    const f = open();
+    ok("B2 台指期口數列只靠舊預覽撐:表頭照樣寫是哪一根(依 10-13 收盤)", f.rows.some((x) => /^tr\.txfProd\.txf/.test(x)) && /tr\.cf\.asofClose \{"d":"10-13"\}$/.test(f.cap), J(f)); }
+  { bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: pvA("ETHUSDT") } });
+    const f = open();
+    ok("B2 沒有價格、只能照金額寫的單(ETHUSDT 300):表頭照樣寫依哪一根", f.title === "tr.cf.titleFire" && f.rows.some((x) => /^tr\.cf\.buyETHUSDT300/.test(x)) && /tr\.cf\.asofBar /.test(f.cap), J(f)); }
+  { bag({ firing: true, picked: ["btc", "tw", "n5"], edits: { btc: 1000, n5: 200000 } });
+    const f = open();
+    ok("B2 列全是 live 撐的(BTC 照帳上現價換算),組合裡另有一份不相干的預覽(Binance 不交易的台股草稿):表頭不寫時間",
+      f.title === "tr.cf.titleFire" && f.rows.length === 1 && /BTCUSDT/.test(f.rows[0]) && !/asof/.test(f.cap), J(f)); }
+  { bag({ edits: { btc: 1000 } }); const f = open();
+    ok("B2 沒用到預覽:表頭不寫時間", f.rows.length === 1 && !/asof/.test(f.cap), J(f)); }
+  // B3:在跑、草稿的預覽不是最新那根、照它算這一刻沒有單——下一輪照最新那根算可能就有,框保守寫「儲存並下單」
+  const b3 = (pvx) => { bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: pvA("ETHUSDT", Object.assign({ position: 0, close: 3000 }, pvx)) } }); return open(); };
+  { const f = b3({ latest: false });
+    ok("B3 在跑+草稿預覽不是最新那根(部位 0):「儲存並下單」+ 記號,表下一句點名這支", f.title === "tr.cf.titleFire" && f.ok === "tr.cf.titleFire" && f.mark === "tr.mode.real"
+      && f.notes.some((x) => /^cf-note:tr\.cf\.oldPv \{"names":"EC"\}$/.test(x)), J(f));
+    const g = b3({ latest: undefined });
+    ok("B3 …主機沒寫 latest(判不出):一樣保守", g.title === "tr.cf.titleFire" && g.notes.some((x) => /tr\.cf\.oldPv/.test(x)), J(g));
+    const h = b3({ latest: true });
+    ok("B3 …預覽就是最新那根、部位 0:沒有單 →「儲存金額」、沒有那一句", h.title === "tr.cf.title" && !h.mark && !h.notes.some((x) => /oldPv/.test(x)), J(h)); }
+  { bag({ firing: true, picked: ["btc", "tw", "n5"], edits: { n5: 200000 }, pv: { latest: false } }); const f = open();
+    ok("B3 …舊預覽的草稿這家交易所下不了(Binance 不交易台股):照「儲存金額」", f.title === "tr.cf.title" && !f.notes.some((x) => /oldPv/.test(x)), J(f)); }
+  // B5:草稿列「存了就會下單」與框同一個判準(trCfWillOrder)
+  { const w = (n) => vm.runInContext(`trCfWillOrder(${J(n)}, trPvOf(trReport(), ${J(n)}), trContracts())`, ctx);
+    bag(draft({ firing: true, list: [EC], pvs: { ec: pvA("ETHUSDT") } }));
+    ok("B5 trCfWillOrder:Binance 在跑——台股草稿不會下單、加密草稿會", w("n5") === false && w("ec") === true);
+    bag(draft({ firing: true, paper: true }));
+    ok("B5 …模擬交易(收台股):台股草稿會下單", w("n5") === true);
+    bag(draft({ halted: true, list: [EC], pvs: { ec: pvA("ETHUSDT") } }));
+    ok("B5 …暫停中:都不會", w("ec") === false);
+    bag(draft({ list: [EC], pvs: { ec: pvA("ETHUSDT") } }));
+    ok("B5 …沒在跑:都不會", w("ec") === false);
+    ok("B5 草稿列那一句走 trCfWillOrder(不是只看 trCfFiring)", /if \(trCfWillOrder\(n, .*?\)\) first\.appendChild\(trEl\("span", "pf-note live", t\("po\.willOrder"\)\)\)/.test(src)
+      && !/trCfFiring\(TR\.st, TR\.pending\)\) first\.appendChild/.test(src)); }
+  // B6:已存的投資組合這一刻算不出(沒有 live 權重、沒有預覽),帳上有它的成分:不列成賣單(對帳器照原本的 state.json,不會賣)
+  { const PC = (u) => ({ name: "pc", displayName: "PC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: u });
+    const run = (u) => { const S = bag({ firing: true, edits: { btc: 1000 }, amounts: { pc: 1000 }, list: [PC(u)], noPv: true });
+      S.st.report.account.venues.binance.positions.ETHUSDT = { side: "long", size: 300, mark_price: 3000 }; return open(); };
+    const f = run(["ETHUSDT"]), g = run(undefined);
+    ok("B6 算不出的投資組合:清單 UNIVERSE 的成分不列賣單;只列 BTC 那筆", f.rows.length === 1 && /^tr\.cf\.buyBTCUSDT/.test(f.rows[0]), J(f.rows));
+    ok("B6 …讀不到 UNIVERSE:帳上不在新目標裡的都不列賣單", g.rows.length === 1 && /^tr\.cf\.buyBTCUSDT/.test(g.rows[0]), J(g.rows)); }
+  // ② F3「{舊合約}平倉」有帳的情境:群益帳上有舊合約(大台)部位、換到小台後沒人撐 → 策略列標 ct.tagClose
+  { const S = bag({ edits: {}, list: [{ name: "fut", displayName: "FUT", hasBacktest: true, symbol: "TXF" }], amounts: { fut: 2 }, states: { fut: { symbol: "TXF", position: 1 } },
+      rep: { venues: { capital: V }, config: { amounts: { btc: 500, tw: 100000, fut: 2 }, contracts: { fut: "TXF" } }, can_switch_contract: true,
+        last_reconcile: { ts: new Date().toISOString().slice(0, 19), actual: {}, target: {}, gates: {} },
+        account: { read_at: now, venues: { capital: { ok: true, equity: 2000000, currency: "TWD", positions: { TX2611: { side: "long", size: 2 } } } } } } });
+    S.ct.edits.fut = "MXF"; S.edits.fut = 8;
+    const f = open();
+    ok("② 換合約+帳上有舊合約部位:策略列標「{大台}平倉」(ct.tagClose)", f.rows.some((x) => /^FUT8ct\.tagClose \{"prod":"tr\.txfProd\.txf"\}/.test(x)), J(f.rows));
+    S.st.report.account.venues.capital.positions = {}; const g = open();
+    ok("② …帳上沒有舊合約部位:不標", !g.rows.some((x) => /ct\.tagClose/.test(x)), J(g.rows)); }
+  ok("死碼:trCfStates 裡沒有 keyOf、框狀態沒有 changed", !/keyOf/.test(cutF("trCfStates")) && !/changed: false/.test(cutF("trSaveAmounts")));
+
   // ── 單位換算
   { const q = (s, m, p) => vm.runInContext(`trCfQty(${J(s)}, ${m}, ${p})`, ctx);
     ok("數量:台股不足 1 股捨去;加密 4 位有效;沒價格回 null(不湊數)", q("2330@spot", 1999, 1000).n === 1 && q("2330", 999, 1000).n === 0 && q("BTCUSDT", 123.4, 50000).text === "0.002468" && q("BTCUSDT", 5, null) === null,
@@ -215,7 +273,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("④ 描邊那顆:只跳過去(不改草稿),記 po_add_go", S.picked === null && feats.includes("po_add_go"), J(feats)); }
 
   // ── 字串:兩語都有、中文全形
-  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
+  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
     ok("字串:新 key 兩語都有;標題與主鈕同字(儲存並下單)", keys.every((k) => S0.en[k] && S0.zh[k]) && S0.zh["tr.cf.titleFire"] === "儲存並下單" && S0.zh["tr.cf.title"] === "儲存金額" && S0.zh["po.add"] === "加到策略組合",
       J(keys.filter((k) => !S0.en[k] || !S0.zh[k]))); }
   console.log(red ? `\n${red} FAILED` : "\nall checks passed");

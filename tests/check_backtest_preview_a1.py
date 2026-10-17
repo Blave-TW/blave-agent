@@ -157,5 +157,11 @@ drafts = [n for n in pr.backtest_previews({"amounts": {}}, pr.strategy_states(),
 check(sorted(drafts) == sorted(f"x{i}" for i in range(2, pr.PREVIEW_EXTRA_MAX + 2)),
       f"at most PREVIEW_EXTRA_MAX drafts, newest files first ({sorted(drafts)})")
 
+# the newest file's code no longer matches: it must not take a draft's slot (x1 moves back in)
+(WS / "strategies" / f"x{pr.PREVIEW_EXTRA_MAX + 1}" / "strategy.py").write_text('INTERVAL = "1d"\n# edited\n')
+drafts = [n for n in pr.backtest_previews({"amounts": {}}, pr.strategy_states(), now=NOW) if n.startswith("x")]
+check(sorted(drafts) == sorted(f"x{i}" for i in range(1, pr.PREVIEW_EXTRA_MAX + 1)),
+      f"a file with a changed code_hash does not use up a draft slot ({sorted(drafts)})")
+
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

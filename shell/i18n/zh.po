@@ -8069,6 +8069,12 @@ msgstr "{names} 要等這台電腦的 Blave 更新才算得出，沒列進來。
 msgid "tr.cf.late"
 msgstr "{names} 還沒算出來；存了之後由排程補上它的訊號。"
 
+msgid "tr.cf.firstRead"
+msgstr "帳上還沒讀到；下一輪照目標補齊。"
+
+msgid "tr.cf.oldPv"
+msgstr "{names} 還沒算到最新那根；下一輪照最新那根下單。"
+
 msgid "po.unsaved"
 msgstr "未儲存"
 

@@ -8054,6 +8054,12 @@ msgstr "{names}: listed once Blave on this computer is updated."
 msgid "tr.cf.late"
 msgstr "{names} hasn't finished computing. Once saved, the schedule fills in its signal."
 
+msgid "tr.cf.firstRead"
+msgstr "Your account hasn't been read yet. The next round places orders to reach these targets."
+
+msgid "tr.cf.oldPv"
+msgstr "{names} isn't computed on the latest bar yet. The next round places orders on the latest one."
+
 msgid "po.unsaved"
 msgstr "Unsaved"
 

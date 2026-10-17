@@ -407,7 +407,8 @@ def backtest_previews(cfg, states, now=None):
     strategy's backtest_state.json (lib/runner._typec_preview / _typea_preview) whose code_hash is
     the current strategy.py's, never on US-stock prices. Names: the picked ones with no live
     signal yet (Type C: no live weights; Type A: no state.json) plus the PREVIEW_EXTRA_MAX most
-    recently written files of strategies not picked — those are drafts, and a stale state.json of
+    recently written files of strategies not picked that pass the checks below (a file whose code
+    no longer matches must not take a draft's slot) — those are drafts, and a stale state.json of
     an unpicked one is not what a save would compute. `latest` = its bar is still the newest
     closed one (_preview_is_latest); the dialog uses either and names the bar.
       Type C: {type: portfolio, market, weights, closes, rebalance_at, bar_at, bar_date, latest}
@@ -436,9 +437,12 @@ def backtest_previews(cfg, states, now=None):
         mt = _mtime(os.path.join(root, name, "backtest_state.json"))
         if mt is not None:
             extra.append((mt, name))
-    names += [n for _mt, n in sorted(extra, reverse=True)[:PREVIEW_EXTRA_MAX]]
-    out = {}
-    for name in names:
+    picked = len(names)
+    names += [n for _mt, n in sorted(extra, reverse=True)]
+    out, drafts = {}, 0
+    for i, name in enumerate(names):
+        if i >= picked and drafts >= PREVIEW_EXTRA_MAX:
+            break
         d = os.path.join(root, name)
         data = _read_json(os.path.join(d, "backtest_state.json"))
         if not isinstance(data, dict) or not isinstance(data.get("code_hash"), str):
@@ -490,6 +494,7 @@ def backtest_previews(cfg, states, now=None):
             row.update({"type": "portfolio", "weights": weights, "closes": closes,
                         "rebalance_at": ra if ra > 0 else None})
         out[name] = row
+        drafts += i >= picked
     return out
 
 
