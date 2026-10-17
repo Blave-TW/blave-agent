@@ -295,12 +295,17 @@ def _halted(fn):
 
 
 for mod, send in ENTRY.items():
+    # HALT freezes everything; the restore exists for flatten, which holds a close pass
     with guard.netted_restore("BTCUSDT", "short", 0.02, "test"):
         guard.arm_restore("BTCUSDT", "short", 0.02)
+        no_pass = _halted(send)
+    with guard.halt_close_pass("BTCUSDT", "test"), guard.netted_restore("BTCUSDT", "short", 0.02, "test"):
+        guard.arm_restore("BTCUSDT", "short", 0.02)
         first, second = _halted(send), _halted(send)
-    check(not first and second and _halted(send),
-          f"{mod.__name__}: the armed restore passes the HALT gate once; a second entry and one "
-          f"outside the pass are refused ({first}, {second})")
+    check(no_pass and not first and second and _halted(send),
+          f"{mod.__name__}: inside a close pass the armed restore passes the HALT gate once; a second "
+          f"entry, one outside the restore and one outside the close pass are refused "
+          f"({no_pass}, {first}, {second})")
 guard.clear_halt("test")
 
 # ── an unconfirmed exchange account gets no Blave order at all, closes included (D6 #2) ──
@@ -348,11 +353,13 @@ check(_halted(REDUCE[ob][1]), "…under its HALT it refuses the close too")
 _hold({"bind_reset": {"venue": "binance", "at": 1}})
 check(_halted(REDUCE[ob][1]), "a bind that found another account: nothing before 啟動下單")
 _hold({"bind_reset": {"venue": "binance", "at": 1, "acked": True}})
-check(not _halted(REDUCE[ob][1]), "…an acknowledged one holds nothing")
+check(not guard.account_held("binance"), "…an acknowledged one holds nothing")
+check(_halted(REDUCE[ob][1]), "…the HALT itself still refuses the close (a full freeze)")
 _hold({"book_hold": {"venue": "paper", "reason": "?", "ask": True},
        "pending": {"venue": "paper", "reason": "?"}})
 try:
-    px._gate("reduce", symbol="BTCUSDT", side="sell", qty=0.01)
+    with guard.halt_close_pass("BTCUSDT", "test"):  # past the HALT freeze, onto the account hold
+        px._gate("reduce", symbol="BTCUSDT", side="sell", qty=0.01)
     paper_ok = True
 except guard.Halted:
     paper_ok = False

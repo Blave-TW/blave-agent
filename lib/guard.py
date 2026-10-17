@@ -3,26 +3,34 @@ Trading guard: filesystem kill switch + append-only order audit log.
 
 Why this exists: every safety rule in AGENTS.md (verify-then-report,
 iteration brakes) runs through the model following instructions. This is the
-one brake that does NOT: if the file state/HALT exists, no new-exposure order
-leaves this machine, regardless of what the agent believes it is doing.
+one brake that does NOT: if the file state/HALT exists, no order leaves this
+machine, regardless of what the agent believes it is doing.
 lib/order_*.py enforces it inside the transport layer, so every path that
 uses the lib — strategies, reconciler, TWAP slices, ad-hoc scripts — is
 covered without any caller opting in.
 
-HALT semantics — blocks NEW EXPOSURE only:
-- Blocked while halted: entry orders (anything that opens or adds to a
-  position).
-- Still allowed: reduce-only closes, protective SL/TP orders, cancels.
-  A kill switch that traps a losing position is worse than none — flattening
-  must always work under halt.
+HALT semantics — a full freeze (Wei 2026-10-17, 0.1.27):
+- Blocked while halted: every order — entries, reduces and closes, a flip's
+  close leg, protective SL/TP. The reconciler sends nothing; a strategy's
+  exit waits for 啟動下單 like its entry does. Orders already resting on the
+  exchange are the exchange's and are left alone.
+- Still allowed: cancels and leverage changes (they open and close nothing;
+  an execution being stopped must still pull its own resting order).
+- The one way to close under HALT is an explicit user close: manager/flatten.py
+  (the 暫停並關閉部位 button) and manager/close_symbol.py hold the close pass
+  (grant_halt_closes), and a close-all leg the reconciler finishes for flatten
+  (paper TW stocks after hours) runs inside halt_close_pass. Reduces only — plus
+  the one armed netted restore, which gives the user back what the bot netted.
 - The file's EXISTENCE is authoritative. Its JSON content ({ts, reason,
   source}) is attribution only — a malformed or hand-touched HALT file still
   halts (fail-closed).
 
-Who trips it: the user (e.g. "全部停止" → agent runs trip_halt), a monitor
-like manager/healthcheck.py on anomalies, or anyone creating state/HALT by
-hand. Clearing requires an explicit user instruction — the agent must NEVER
-clear a halt on its own initiative.
+Who trips it: the user (e.g. "全部停止" → agent runs trip_halt), a safety
+check that finds the book or the account in doubt (reconciler, execute,
+portfolio, settings), or anyone creating state/HALT by hand. Every one of
+those wants nothing to move: a close sized off a book in doubt is itself an
+order in doubt. Clearing requires an explicit user instruction — the agent
+must NEVER clear a halt on its own initiative.
 
 Audit log: state/audit.jsonl — one JSON line per order attempt, outcome,
 halt denial, and halt change, fsynced per line so it survives a crash.
@@ -58,7 +66,8 @@ _halt_flag = False
 
 
 class Halted(Exception):
-    """Raised instead of sending an entry order while state/HALT exists."""
+    """Raised instead of sending an order while state/HALT exists (or the
+    restart stop / an account hold refuses it)."""
 
 
 def _now():
@@ -69,12 +78,12 @@ def halted():
     return _halt_flag or os.path.exists(HALT_PATH)
 
 
-# ── netted restore: the one non-reduce order HALT lets through ─────────────
+# ── netted restore: the one non-reduce order a close pass lets through ─────
 # On a one-way account the bot's entry may have been netted into the user's
 # opposite position (lib.venue_wiring._netted_exit). Undoing it is a plain,
 # non-reduce order of at most the recorded netted quantity — the only way to
-# give the user their position back. HALT must not freeze the user's position
-# at the bot's size, so the caller opens this pass for THAT order: this thread
+# give the user their position back. A flatten under HALT must not leave the
+# user's position at the bot's size, so the caller opens this pass for THAT order: this thread
 # only, one order only, and only the symbol, direction and at most the quantity
 # it names. Each order lib's place_market_order offers its own order
 # (arm_restore) before sending; entry_blocked() lets through only an armed
@@ -115,7 +124,8 @@ def arm_restore(symbol, direction, qty, reduce_only=False):
 
 
 def entry_blocked():
-    """HALT blocks an entry order — except the one armed netted restore."""
+    """HALT blocks an entry order — except the one armed netted restore (which
+    check_restart_stop lets this far only inside a close pass)."""
     if not halted():
         return False
     p = getattr(_restore, "pass_", None)
@@ -184,21 +194,106 @@ def claim_close_all_pass():
     return ok
 
 
+def _order_label(fields):
+    return (fields.get('symbol') or fields.get('instId') or fields.get('contract')
+            or fields.get('currency_pair') or '?')
+
+
 def check_restart_stop(intent, fields=None):
-    """Every order-lib gate calls this before its HALT check: raises Halted for
-    any order intent while the restart record exists. `fields` = the audit dict."""
+    """Every order-lib gate calls this before its own HALT check: raises Halted
+    for any order intent while the restart record exists, and — the HALT
+    freeze — while state/HALT exists. `fields` = the audit dict."""
     fields = fields or {}
-    if intent in _RESTART_PASS or not restart_stopped():
+    if intent in _RESTART_PASS:
         return
-    if _close_all_granted and intent == "reduce":
+    if restart_stopped():
+        if not (_close_all_granted and intent == "reduce"):
+            audit("order_denied_restart", **{**fields, "intent": intent})
+            raise Halted(
+                f"the machine restarted and trading is stopped until the user presses "
+                f"啟動下單 — {intent} order for {_order_label(fields)} "
+                f"refused before reaching the venue (closes included). Never remove "
+                f"{RESTART_STOP_PATH} yourself.")
         audit("order_allowed_close_all", **{**fields, "intent": intent})
+    _check_halt_freeze(intent, fields)
+
+
+# ── HALT close pass: the user's explicit close while trading is paused ───────
+# Process-wide for a process that exists only to close (manager/flatten.py,
+# manager/close_symbol.py — tests/check_halt_freeze.py enumerates the callers);
+# thread-local for one close-all leg the reconciler finishes for flatten. Same
+# trust argument as claim_close_all_pass: code running as this user could just
+# as well delete state/HALT, so the pass adds no power — it keeps the freeze
+# from being bypassed by accident, not by intent.
+_halt_closes_granted = False
+_halt_close_local = threading.local()
+
+
+def grant_halt_closes(source):
+    """manager/flatten.py and manager/close_symbol.py only: this process may
+    send reduce orders (and flatten's armed netted restore) under HALT."""
+    global _halt_closes_granted
+    _halt_closes_granted = True
+    audit("halt_close_pass_granted", source=source)
+
+
+class halt_close_pass:
+    """One close-all leg on this thread (lib.portfolio.reconcile, flatten's
+    deferred paper TW closes): reduces pass HALT inside the block."""
+
+    def __init__(self, symbol, source):
+        self.symbol, self.source = symbol, source
+
+    def __enter__(self):
+        _halt_close_local.on = True
+        return self
+
+    def __exit__(self, *exc):
+        _halt_close_local.on = False
+        return False
+
+
+def halt_closes_allowed():
+    return _halt_closes_granted or getattr(_halt_close_local, "on", False)
+
+
+_FREEZE_BLOCKS = frozenset(("entry", "reduce", "protective"))
+
+
+def _check_halt_freeze(intent, fields):
+    if intent not in _FREEZE_BLOCKS or not halted():
         return
-    audit("order_denied_restart", **{**fields, "intent": intent})
+    if halt_closes_allowed() and intent in ("reduce", "entry"):
+        # entry goes on to the lib's entry_blocked(): only an armed netted restore passes
+        if intent == "reduce":
+            audit("order_allowed_halt_close", **{**fields, "intent": intent})
+        return
+    audit("order_denied_halt", **{**fields, "intent": intent})
     raise Halted(
-        f"the machine restarted and trading is stopped until the user presses "
-        f"啟動下單 — {intent} order for {fields.get('symbol') or fields.get('instId') or fields.get('contract') or fields.get('currency_pair') or '?'} "
-        f"refused before reaching the venue (closes included). Never remove "
-        f"{RESTART_STOP_PATH} yourself.")
+        f"state/HALT is set ({halt_info()}) — trading is paused: no order of any kind "
+        f"(entries, closes, SL/TP) is sent until the user presses 啟動下單. "
+        f"{intent} order for {_order_label(fields)} refused before reaching the venue. "
+        f"Closing while paused is the user's explicit close (暫停並關閉部位, or "
+        f"closing that one symbol). Only the user may clear the halt.")
+
+
+def protection_halted_text(symbol, direction, wanted, placed, after_entry):
+    """ProtectionFailed text when HALT refused SL/TP (order libs' place_protective_orders):
+    names only what is actually missing, and the entry only when there was one."""
+    names = {"sl": "stop-loss", "tp": "take-profit"}
+    missing = [names[k] for k in wanted if k not in placed]
+    done = [names[k] for k in wanted if k in placed]
+    what = " and ".join(missing) + (" were" if len(missing) > 1 else " was")
+    if after_entry:
+        head = (f"{symbol} {direction} position is OPEN WITH NO STOP-LOSS"
+                if "sl" in wanted and "sl" not in placed else f"{symbol} {direction} position is open")
+        head += f": the entry filled, then trading was paused (state/HALT) and its {what} not placed"
+    else:
+        head = f"{symbol} {direction}: the {what} not placed — trading is paused (state/HALT)"
+    if done:
+        head += f"; the {' and '.join(done)} went out before the pause"
+    return (f"{head}. A paused machine sends no order and nothing places it later on its own — "
+            f"tell the user now; after they press 啟動下單, place it with place_protective_orders.")
 
 
 # ── account hold: an unconfirmed exchange account gets no order at all ───────

@@ -23,10 +23,10 @@ layer caused naked positions, duplicate orders, and TP-reported-as-SL bugs):
    e.g. "mystrat20260709120500") — resubmitting the same id is rejected by the
    exchange (error 101481) instead of opening a second position.
 5. HALTABLE + AUDITED. Every order-mutating request passes through lib/guard:
-   if state/HALT exists, entry orders raise guard.Halted BEFORE any network
-   call (reduce-only closes, SL/TP, and cancels still work — flattening must
-   never be trapped), and every attempt/outcome/denial is appended to
-   state/audit.jsonl. See lib/guard.py for semantics.
+   if state/HALT exists, every order raises guard.Halted BEFORE any network
+   call (cancels still pass; closes only inside the user's explicit close),
+   and every attempt/outcome/denial is appended to state/audit.jsonl. See
+   lib/guard.py for semantics.
 
 Verified against ccxt's production parser + BingX official docs + two
 fleet-debugged implementations. Known quirks handled here so callers never
@@ -173,7 +173,7 @@ def _order_intent(method, path, params):
     p = params or {}
     if path == "/openApi/spot/v1/trade/order":
         # spot has no positions: BUY builds exposure (halt blocks it), SELL
-        # liquidates inventory (never trapped — same rule as reduce-only)
+        # liquidates inventory (same rule as reduce-only)
         return "reduce" if p.get("side") == "SELL" else "entry"
     is_reduce = (str(p.get("reduceOnly", "")).lower() == "true" or
                  str(p.get("closePosition", "")).lower() == "true")
@@ -203,8 +203,8 @@ def _request(method, path, env, params=None, signed=True, retries=3):
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for "
             f"{fields.get('symbol')} refused before reaching the exchange. "
-            f"Closes, SL/TP and cancels still work. Only the user may clear "
-            f"the halt (guard.clear_halt)."
+            f"Trading is paused: only cancels go out (closes on the user's explicit "
+            f"close only). Only the user may clear the halt (guard.clear_halt)."
         )
 
     guard.audit("order_attempt", **fields)
@@ -671,6 +671,11 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
             if not order.get("orderId"):
                 raise BingXError("N/A", f"{otype} response missing orderId", "trade/order")
             placed[kind] = order
+    except guard.Halted as e:
+        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
+        raise ProtectionFailed(
+            guard.protection_halted_text(symbol, direction, wanted, placed, False) + f" {e}"
+        ) from e
     except Exception as e:
         raise ProtectionFailed(
             f"{symbol} {direction} position may be NAKED — placing protective orders "
@@ -922,7 +927,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     side); SELLs pass base_qty (floored to the spot step — you can only sell
     inventory you hold). Below min qty/notional → returns False (intentional
     skip). Polls to a terminal state; returns get_spot_order()'s dict.
-    Guard: buy=entry (halt blocks), sell=reduce (never trapped)."""
+    Guard: buy=entry, sell=reduce."""
     sym = _bingx_symbol(symbol)
     side = side.lower()
     if side not in ("buy", "sell"):
@@ -994,7 +999,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
     dialect surfaces as CANCELED via get_spot_order instead, which the chase
     executor accounts the same way. qty is floored to the spot step and price
     to the spot tick here (callers pass raw floats).
-    Guard: buy=entry (halt blocks), sell=reduce (never trapped)."""
+    Guard: buy=entry, sell=reduce."""
     sym = _bingx_symbol(symbol)
     side = side.lower()
     if side not in ("buy", "sell"):

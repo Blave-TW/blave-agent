@@ -223,8 +223,8 @@ def _request(method, path, env, body=None, query="", retries=3):
             raise guard.Halted(
                 f"state/HALT is set ({guard.halt_info()}) — entry order for "
                 f"{fields.get('contract') or fields.get('currency_pair')} refused "
-                f"before reaching the exchange. Closes, SL/TP and cancels still "
-                f"work. Only the user may clear the halt (guard.clear_halt)."
+                f"before reaching the exchange. Trading is paused: only cancels go "
+                f"out. Only the user may clear the halt (guard.clear_halt)."
             )
         guard.audit("order_attempt", **fields)
         try:
@@ -573,7 +573,7 @@ def close_position(env, symbol, direction, qty, client_order_id=None):
 
 def close_position_partial(env, symbol, direction, qty, client_order_id=None):
     """Cross-venue reconciler contract name — reduce the position by a BASE
-    qty, reduce-only semantics, works under HALT."""
+    qty, reduce-only semantics; under HALT only inside a close pass."""
     return close_position(env, symbol, direction, qty,
                           client_order_id=client_order_id)
 
@@ -630,7 +630,7 @@ def cancel_algo_order(env, symbol, algo_id):
 
 
 def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
-                            tp_price=None, verify=True):
+                            tp_price=None, verify=True, _after_entry=False):
     """Reduce-only conditional SL/TP for an EXISTING futures position via
     /futures/usdt/price_orders (market execution: initial price "0" + tif
     ioc; trigger on MARK price). direction is the POSITION's direction.
@@ -678,6 +678,11 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                 raise GateioError("N/A", f"{kind} response missing id: {order}",
                                   "price_orders")
             placed[kind] = {"algoId": str(order["id"]), "raw": order}
+    except guard.Halted as e:
+        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
+        raise ProtectionFailed(
+            guard.protection_halted_text(symbol, direction, wanted, placed, _after_entry) + f" {e}"
+        ) from e
     except Exception as e:
         raise ProtectionFailed(
             f"{symbol} {direction} position may be NAKED — placing protective orders "
@@ -708,7 +713,8 @@ def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
     protection = {}
     if sl_price is not None or tp_price is not None:
         protection = place_protective_orders(env, symbol, direction, qty=None,
-                                             sl_price=sl_price, tp_price=tp_price)
+                                             sl_price=sl_price, tp_price=tp_price,
+                                             _after_entry=True)
     return {"entry": entry, "protection": protection}
 
 
@@ -834,7 +840,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     """Confirmed spot market order. side: 'buy'|'sell'. BUYs size in QUOTE
     currency (Gate.io native: market-buy amount IS the quote spend); SELLs
     in base qty floored to the pair's amount step. Below min → False.
-    Guard: buy=entry (halt blocks), sell=reduce (never trapped)."""
+    Guard: buy=entry, sell=reduce."""
     pair = _spot_pair(symbol)
     side = side.lower()
     if side not in ("buy", "sell"):

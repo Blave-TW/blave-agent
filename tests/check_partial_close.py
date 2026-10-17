@@ -50,7 +50,8 @@ flatten._read_env = lambda path=".env": {"OKX_API_KEY": "x", "OKX_SECRET_KEY": "
 flatten._wait_for_inflight = lambda *a, **k: []
 flatten._record_order_error = lambda *a, **k: ERRS.append(a)
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
-                                      restart_stopped=lambda: False)
+                                      restart_stopped=lambda: False,
+                                      grant_halt_closes=lambda *a: None)
 # the close fills above the entry's 70000: a book reduced by the fill's notional (the
 # format before signed_qty) and one reduced pro rata at its average cost then differ
 FILL = {"swap": 0.004, "spot": 0.2, "swap_px": 90000.0}

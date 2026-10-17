@@ -26,10 +26,9 @@ combination below was proven live. Design rules:
    custom_field) unique per intent; a resubmit with the same tag the same day
    is refused locally before reaching the exchange. Weaker than an
    exchange-side check, but Shioaji has no clientOrderId-style dedup.
-5. HALTABLE + AUDITED. Buy (entry) orders check lib/guard's state/HALT before
-   any network call and every attempt/outcome is appended to
-   state/audit.jsonl. Sells (reduce-only for a long-only stock account) are
-   never trapped.
+5. HALTABLE + AUDITED. Every order checks lib/guard's state/HALT before any
+   network call (sells only inside the user's explicit close) and every
+   attempt/outcome is appended to state/audit.jsonl.
 
 Field-verified quirks (all cost real debugging on a live account):
 - CA must be activated AFTER login (api.activate_ca), and only exists in live
@@ -300,7 +299,7 @@ def place_odd_lot_order(env, symbol, action, shares, client_tag=None, confirm_ti
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — buy order for {symbol} refused "
-            f"before reaching the broker. Sells still work. Only the user may clear "
+            f"before reaching the broker. Trading is paused. Only the user may clear "
             f"the halt (guard.clear_halt)."
         )
     if client_tag:

@@ -44,8 +44,9 @@ Design rules:
    under a cross-process lock held from the check to the record). A process
    killed between the send and the record leaves the tag reusable — the
    snapshot check on reduces is the backstop there.
-4. HALTABLE + AUDITED. guard.check_restart_stop first, then HALT blocks
-   entries (closes always pass); every send audits order_sent / order_error /
+4. HALTABLE + AUDITED. guard.check_restart_stop first (it also refuses every
+   order under HALT, closes outside the user's explicit close included); every
+   send audits order_sent / order_error /
    order_filled.
 5. ONE SESSION PER CALL, ALWAYS LOGGED OUT. Unitrade starts non-daemon
    threads at login; a process that skips logout() never exits. Concurrent
@@ -416,7 +417,7 @@ def _check_halt(fields):
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for {fields['symbol']} refused "
-            f"before reaching 統一. Closes still work. Only the user may clear the halt.")
+            f"before reaching 統一. Trading is paused. Only the user may clear the halt.")
 
 
 def _send(api, obj, reports, fields):

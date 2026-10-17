@@ -3444,7 +3444,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
   updateBody: "After the restart, this computer places no more orders and closes nothing; positions stay at {venue}. Press Start trading to resume.",
-  ev_halt: "Trading was paused automatically", ev_halt_n: "No new positions are opened. Open Blave to check.",
+  ev_halt: "Trading was paused automatically", ev_halt_n: "No orders at all — exits and stops won’t run. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",

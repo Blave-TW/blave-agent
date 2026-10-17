@@ -181,8 +181,8 @@ def _request(env, method, path, params=None, body=None, retries=3):
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for "
             f"{fields.get('symbol')} refused before reaching the exchange. "
-            f"Closes, SL/TP and cancels still work. Only the user may clear "
-            f"the halt (guard.clear_halt)."
+            f"Trading is paused: only cancels go out (closes on the user's explicit "
+            f"close only). Only the user may clear the halt (guard.clear_halt)."
         )
     guard.audit("order_attempt", **fields)
     try:
@@ -479,7 +479,7 @@ def place_market_order(env: dict, symbol: str, direction: str, qty: float,
 def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
                            client_order_id: str = None):
     """Reduce an existing position by a BASE qty, reduce-only. `direction` is
-    the position BEING CLOSED. Works under HALT — closing is always allowed."""
+    the position BEING CLOSED. Under HALT only inside a close pass (lib/guard)."""
     return place_market_order(env, symbol, direction, qty,
                               client_order_id=client_order_id, reduce_only=True)
 
@@ -781,8 +781,7 @@ def place_spot_market_order(env: dict, symbol: str, side: str,
     quoteCoin — the USD amount goes straight in, no price conversion); SELLs in
     base qty floored to basePrecision. Below minOrderAmt → False.
 
-    Guard: buy = entry (HALT blocks), sell = reduce (never trapped — clearing
-    inventory must not be blocked by a halt).
+    Guard: buy = entry, sell = reduce (HALT blocks both outside a close pass).
 
     The buy fee is charged in the BASE coin (measured: a 6 USDT buy reported
     cumExecQty 66.3 DOGE and credited 66.2337), so the sellable amount is always

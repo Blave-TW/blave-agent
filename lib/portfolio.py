@@ -18,7 +18,7 @@ def _append_reconciler_log(order):
     # self_ledger mode is different (audit P1 #2): this file IS the position
     # book — a dropped line means a real fill the bot will never know about,
     # and the next reconcile re-buys it. Trip HALT so nothing compounds the
-    # gap (closes still pass; only the user resumes) — same fail-loud posture
+    # gap (nothing is sent while halted; only the user resumes) — same fail-loud posture
     # as every other ledger-integrity failure.
     try:
         os.makedirs('manager', exist_ok=True)
@@ -54,7 +54,7 @@ def _notify_best_effort(msg):
         logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
-RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze')
+RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze', 'halt_freeze')
 
 
 def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False,
@@ -280,8 +280,9 @@ _PAPER_TW_CLOSE_PATH = 'state/paper_tw_close.json'
 def defer_paper_tw_close(keys):
     """manager/flatten: close-all reached paper TW stock keys while the TWSE
     session was shut. The reconciler closes them in its first round after the
-    open (they are dropped from the target while HALT holds — a close leg,
-    which HALT lets through). Pressing 啟動下單 before that cancels it: the
+    open (they are dropped from the target while HALT holds, and their close
+    legs — the only legs a halted round sends — go out inside
+    guard.halt_close_pass). Pressing 啟動下單 before that cancels it: the
     strategies' targets rule again."""
     keys = sorted(set(keys))
     if not keys:
@@ -2987,10 +2988,9 @@ def _halt_rollover_targets(rolls, target, book):
     half-up. An old contract's target is kept between its normal target and its
     book: the hold only stops a close, it never reaches past what is held.
     Held there, the old contract keeps the rolling strategy's lots while halted
-    (the new contract cannot be bought under HALT) and the new contract reads
-    what the others on it want; every other strategy's exit on either, and the
-    rolling one's own exit to flat (share 0), still go — HALT never traps a
-    reduce a signal asked for."""
+    and the new contract reads what the others on it want. A halted round sends
+    nothing (HALT is a full freeze), so this only keeps the snapshot honest: it
+    lists the orders 啟動下單 would send, close first."""
     sums, olds, news = {}, set(), set()
     for row in rolls:
         frm, to, name = row.get('from'), row.get('to'), row.get('strategy')
@@ -3065,9 +3065,10 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     This prevents simultaneous long+short on hedge-mode exchanges (OKX 兩倉模式, etc.).
     If place_order_fn does not accept reduce_only, the kwarg is silently dropped.
 
-    Kill switch: while state/HALT exists, legs that ADD exposure are denied here
-    (audited to state/audit.jsonl) before place_order_fn is called. Legs that
-    reduce or close a position always go through — see lib/guard.py.
+    Kill switch: while state/HALT exists, every leg is denied here — entries,
+    reduces, closes, a flip's close leg — (audited to state/audit.jsonl) before
+    place_order_fn is called. The one exception is a close-all leg flatten
+    deferred to this reconciler (paper TW stocks after hours) — see lib/guard.py.
 
     Returns the orders that got AT LEAST ONE confirmed fill this round — not
     every order attempted. Callers use truthiness to schedule an immediate
@@ -3115,7 +3116,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     # aggregate; an account lib / hand-written get_positions returning venue
     # format ('BTC-USDT') would otherwise split one instrument into two rows —
     # buy leg on one, close leg on the other, churning fees every round (and
-    # under HALT the close leg still passes: it would quietly flatten a real
+    # once trading resumes the close leg would quietly flatten a real
     # position). Normalize here so no wiring mistake can reach compute_diff.
     def _canon_key(k):
         sym, market = split_key(str(k))
@@ -3386,10 +3387,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 continue
         t_signed = a_signed + diff
 
-        # Third element is is_entry — whether the leg ADDS exposure, which is the
-        # only thing state/HALT blocks. A flip's second leg always does; a plain
-        # adjustment only when it grows the position (|target| > |actual|), so a
-        # halt never traps a position that is being reduced.
+        # Third element is is_entry — whether the leg ADDS exposure. A flip's
+        # second leg always does; a plain adjustment only when it grows the
+        # position (|target| > |actual|).
         if a_signed != 0 and t_signed != 0 and t_signed * a_signed < 0:
             sub_orders = [(-a_signed, True, False), (t_signed, False, True)]
         else:
@@ -3442,13 +3442,11 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             if abs(sub_diff) < leg_threshold:
                 continue
 
-            # HALT and a rollover (Wei 10-14): a halted round would send the old
-            # contract's close (reduces pass HALT) and deny the new one's entry —
-            # the user flat on a switch they saved to keep trading. The old
-            # contract's target keeps the rolling strategy's share while halted
-            # (_halt_rollover_targets, above); 啟動下單 lifts HALT, then close
-            # first, open next. Here only the unreadable-record case: no way to
-            # tell which contracts roll, so no family leg at all.
+            # HALT and a rollover (Wei 10-14): neither contract trades until
+            # 啟動下單 lifts HALT, then close first, open next. The freeze below
+            # denies the legs anyway; this keeps the rollover's own audit line
+            # and the unreadable-record case (no way to tell which contracts
+            # roll, so no family leg at all).
             if symbol_root in roll_roots and (halted_at_start or guard.halted()):
                 guard.audit('rollover_halted', symbol=symbol, signed_diff=sub_diff)
                 logging.info(f"[reconcile] {symbol} {sub_diff:+g} held — contract rollover "
@@ -3471,17 +3469,20 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 failed = True
                 break
 
-            # Kill switch, enforced here rather than only in lib/order_*.py: every
-            # reconciler goes through this function, including the hand-written
-            # place_order_fn of an exchange that has no official lib/order_* module.
-            # Deliberately silent on Telegram — the user tripped the halt, and a
-            # denial every poll is the noise they were trying to stop.
-            if is_entry and (halted_at_start or guard.halted()):
+            # Kill switch (a full freeze, Wei 10-17), enforced here rather than
+            # only in lib/order_*.py: every reconciler goes through this function,
+            # including the hand-written place_order_fn of an exchange that has no
+            # official lib/order_* module. Deliberately silent on Telegram — a
+            # denial every poll is the noise a pause exists to stop.
+            halted_leg = halted_at_start or guard.halted()
+            close_all_leg = halted_leg and reduce_only and symbol in deferred
+            if halted_leg and not close_all_leg:
                 guard.audit('order_denied_halt', symbol=symbol, signed_diff=sub_diff,
-                            exchange=order.get('exchange'), source='reconcile')
+                            exchange=order.get('exchange'), source='reconcile',
+                            intent='entry' if is_entry else 'reduce')
                 logging.warning(
-                    f"[reconcile] {symbol} entry {sub_diff:+.2f} denied — state/HALT is set "
-                    f"({guard.halt_info()})"
+                    f"[reconcile] {symbol} {'entry' if is_entry else 'reduce'} {sub_diff:+.2f} "
+                    f"denied — state/HALT is set ({guard.halt_info()})"
                 )
                 failed = True
                 break
@@ -3525,9 +3526,15 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 mark_inflight(f"{symbol}#market", "market", sub_diff)
                 marked = True
             try:
-                placed = _call_place(symbol, sub_diff, asset_spec, reduce_only,
-                                     exchange=order.get('exchange'),
-                                     contributors=order.get('contributors'))
+                if close_all_leg:
+                    with guard.halt_close_pass(symbol, 'close_all_deferred'):
+                        placed = _call_place(symbol, sub_diff, asset_spec, reduce_only,
+                                             exchange=order.get('exchange'),
+                                             contributors=order.get('contributors'))
+                else:
+                    placed = _call_place(symbol, sub_diff, asset_spec, reduce_only,
+                                         exchange=order.get('exchange'),
+                                         contributors=order.get('contributors'))
             except Exception as e:
                 log_msg = f"order error {symbol}: {e}"
                 logging.error(log_msg)

@@ -222,7 +222,7 @@ _net_position_mode`; unreadable → never), and two reads agree
 (`venue_wiring._netted_exit`). A book row with no recorded netted amount (the
 user closed the bot's position by hand and opened their own opposite one) takes
 the reduce-only path and, confirmed, the write-off — never an order that grows
-the user's position. Close-all restores a netted share the same way under HALT:
+the user's position. Close-all (it holds the HALT close pass) restores a netted share the same way under HALT:
 `lib.guard.netted_restore` opens a pass for that one order — this thread only,
 the named symbol and direction, at most the recorded quantity; each order lib's
 `place_market_order` arms it with its own order and the HALT gate spends it
@@ -824,14 +824,14 @@ three is ignored. Rules:
   round). An unreadable record or done file: the lib holds every family entry while any family
   contract has something to close, and the runtime refuses a save that would change a record
   (`CONTRACT_RECORD_UNREADABLE`; an amount-0 save still goes through).
-- HALT and a rollover: while HALT is on, each open rollover's strategy is counted on its OLD
-  contract, not the new one (its amount × position valued over cv_to / cv_from, at least 1 lot
-  per strategy when non-zero; each key summed, then whole lots, the old contract's target kept
-  between its normal target and its book) — so the old contract keeps exactly that strategy's lots and nothing is closed
-  only to be left unbought. Every other strategy's exit on either contract, and the rolling
-  strategy's own exit to flat, still go (HALT never traps a reduce a signal asked for); an order
-  sized before a mid-round HALT is re-sized to that target. `rollovers[].state` reads `halted`;
-  啟動下單 lifts HALT and the rollover runs close-first. A start that keeps HALT (restart_reconciler,
+- HALT and a rollover: HALT sends nothing, so neither contract trades while it is on — not the
+  rollover, not any strategy's exit. The snapshot counts each open rollover's strategy on its OLD
+  contract (its amount × position valued over cv_to / cv_from, at least 1 lot per strategy when
+  non-zero; each key summed, then whole lots, the old contract's target kept between its normal
+  target and its book), so the orders it lists are the ones 啟動下單 would send. `rollovers[].state`
+  reads `halted`; 啟動下單 lifts HALT and the rollover runs close-first. If the old contract expires
+  while halted it settles at the final settlement price (`settle_expired_months` still runs in a
+  halted round — only sends stop), and the new contract waits for 啟動下單. A start that keeps HALT (restart_reconciler,
   boot) behaves the same. An unreadable record holds every family leg under HALT and shows
   `state: record_unreadable`. An unpicked rollover (`to` null) is a plain close.
 - A switch on settlement day closes nothing at market for the expiring month: that row settles

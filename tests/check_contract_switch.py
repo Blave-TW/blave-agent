@@ -441,7 +441,8 @@ check(r == [[], []] and v.held == {"TXF": 1},
       f"H1 HALT: the old contract is NOT closed either (no half rollover) ({r}, {v.held})")
 check([x.get("state") for x in snap.get("rollovers", [])] == ["halted"] and set(rolls_file() or {}) == {"s1"},
       f"H1 snapshot says halted, record open ({snap.get('rollovers')})")
-check("rollover_halt_freeze" in snap.get("caps", []), "H1 caps say the running code freezes")
+check("rollover_halt_freeze" in snap.get("caps", []) and "halt_freeze" in snap.get("caps", []),
+      "H1 caps say the running code freezes")
 guard.clear_halt("test")
 guard._halt_flag = False
 r = [v.round(), v.round()]
@@ -456,16 +457,20 @@ check(r == [] and v.held == {"TXF": 1}, f"H3 restart under HALT: nothing sent, n
 os.remove("state/HALT")
 guard._halt_flag = False
 
-# an unpicked rollover (nothing to open) is a plain close: passes HALT like any close
+# an unpicked rollover (nothing to open) is a plain close: HALT holds it like any close
 setup({"c": ("MXF", 1, 1, "MXF", "capital")})
 with open(portfolio._ROLLOVER_PATH, "w") as f:
     json.dump({"s1": {"from": "TMF", "to": None, "at": "t0"}}, f)
 guard.trip_halt("test", "test")
-r = Venue({"TMF": 20, "MXF": 3}).round()
-check(("TMF", -20, True) in r and ("MXF", -2, True) in r,
-      f"H4 HALT: an unpicked rollover's close and an unrelated reduce still go ({r})")
+v = Venue({"TMF": 20, "MXF": 3})
+r = v.round()
+check(r == [] and v.held == {"TMF": 20, "MXF": 3},
+      f"H4 HALT: an unpicked rollover's close and an unrelated reduce wait too ({r})")
 guard.clear_halt("test")
 guard._halt_flag = False
+r = v.round()
+check(("TMF", -20, True) in r and ("MXF", -2, True) in r,
+      f"H4 …after 啟動下單 both closes go ({r})")
 
 setup({"s1": ("TXF", 1, 20, "TMF", "capital"), "c": ("MXF", 0, 1, "MXF", "capital")}, contracts={"s1": "TMF"})
 with open(portfolio._ROLLOVER_PATH, "w") as f:
@@ -492,8 +497,8 @@ setup({"a": ("TXF", 1, 20, "TMF", "capital"), "b": ("TXF", 0, 1, "TXF", "capital
       contracts={"a": "TMF"}, roll={"a": ("TXF", "TMF")})
 v = Venue({"TXF": 2})
 r = halted_rounds(v)
-check(r[0] == [("TXF", -1.0, True)] and v.held == {"TXF": 1},
-      f"H6 HALT: b's exit on TXF goes, a's lot stays for the rollover ({r}, {v.held})")
+check(r == [[], []] and v.held == {"TXF": 2},
+      f"H6 HALT: nothing goes — not b's exit on TXF, not a's rollover ({r}, {v.held})")
 r = [v.round(), v.round()]
 check(v.held == {"TXF": 0, "TMF": 20}, f"H6 …after 啟動下單: close a's lot, then TMF ({r}, {v.held})")
 
@@ -501,16 +506,22 @@ check(v.held == {"TXF": 0, "TMF": 20}, f"H6 …after 啟動下單: close a's lot
 setup({"a": ("TXF", 0, 20, "TMF", "capital")}, contracts={"a": "TMF"}, roll={"a": ("TXF", "TMF")})
 v = Venue({"TXF": 1})
 r = halted_rounds(v)
-check(r[0] == [("TXF", -1.0, True)] and v.held.get("TXF") == 0,
-      f"H7 HALT: the rolling strategy's own exit to flat goes ({r}, {v.held})")
+check(r == [[], []] and v.held.get("TXF") == 1,
+      f"H7 HALT: the rolling strategy's own exit to flat waits too ({r}, {v.held})")
+r = [v.round(), v.round()]
+check(v.held.get("TXF") == 0 and not v.held.get("TMF"),
+      f"H7 …after 啟動下單 the exit goes, nothing opens ({r}, {v.held})")
 
 # a strategy on the NEW contract that never switched exits while halted
 setup({"a": ("TXF", 1, 20, "TMF", "capital"), "c": ("TMF", 0, 5, "TMF", "capital")},
       contracts={"a": "TMF"}, roll={"a": ("TXF", "TMF")})
 v = Venue({"TXF": 1, "TMF": 5})
 r = halted_rounds(v)
-check(("TMF", -5, True) in r[0] and not any(c[0] == "TXF" for c in r[0]) and v.held == {"TXF": 1, "TMF": 0},
-      f"H8 HALT: c's exit on TMF goes, the old TXF lot stays ({r}, {v.held})")
+check(r == [[], []] and v.held == {"TXF": 1, "TMF": 5},
+      f"H8 HALT: c's exit on TMF waits, the old TXF lot stays ({r}, {v.held})")
+r = [v.round(), v.round(), v.round()]
+check(v.held == {"TXF": 0, "TMF": 20},
+      f"H8 …after 啟動下單: c exits, a rolls close-first ({r}, {v.held})")
 
 # a small switch: the share on the old contract would round to 0 (1 TXF → 9 TMF = 0.45 TXF)
 for lots in (9, 1):

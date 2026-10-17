@@ -248,7 +248,7 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   email). Raising it to P2 needs, in this order: api routing that `kind` to its own P2 event,
   `notifications.md` ranking it, then the machine writing it. Entries and closes both return the broker's
   `ack` (first status code) and `statuscode` (last).
-- Entries are blocked while `state/HALT` is set; reduces always pass.
+- Every order is blocked while `state/HALT` is set; a reduce passes only inside the user's explicit close (`manager/flatten.py`).
 
 ### Near month
 
@@ -519,7 +519,7 @@ Trading-layer checklist (`venue-onboarding.md` §3):
 |---|---|
 | confirmed fills reported (not intent), single market IOC buy + close | ✓ live 10-02 |
 | close-only (`"1"`) close of a held position, snapshot-checked | ✓ live 10-02 |
-| HALT blocks entries, closes pass; restart gate; audit trail | ✓ tests (no live HALT run) |
+| HALT blocks every order (closes only in the user's explicit close); restart gate; audit trail | ✓ tests (no live HALT run) |
 | unit = 口, canonical TXF/MXF/TMF ↔ month code | ✓ live (TMFJ6) |
 | IOC not filled → cancel report | ✗ never observed |
 | partial fills | ✗ not seen |

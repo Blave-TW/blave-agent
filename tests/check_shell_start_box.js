@@ -38,7 +38,7 @@ function world(o) {
     trReport: () => report, trZView: () => ({ off: false }), envHeadState: () => "halted", trIsPaper: () => o.money === "paper", envMoney: () => o.money || null,
     trBookBaseline: () => o.book || "unknown", envMoneyText: (m) => (m ? "tr.mode." + m : ""), trWhereTidy: (x) => x, trVenueId: () => (o.money === "paper" ? "paper" : o.money ? "binance" : null), trVenueLabel: (id) => id || "", trPadLatin: (x) => x,
     trRestartKind: () => o.restart || null, trRecomputing: () => !!o.recomputing, trBothReal: () => null, planVars: () => ({ h: "0.9", m: "50" }), planMo: () => false,
-    trPlanLine: () => o.plan || null, trCatchWill: () => o.will || null, trStored: () => ({}),   // 0.1.24 A6:照策略組合 N 支、合計 ≈ X(格式在 check_shell_portfolio.js 驗)
+    trPlanLine: () => o.plan || null, trCatchWill: () => o.will || null, trWaitStranded: () => o.stranded || 0, trStored: () => ({}),   // 0.1.24 A6:照策略組合 N 支、合計 ≈ X(格式在 check_shell_portfolio.js 驗)
     trHeldVenue: (res) => (res && res.held) || null, trRecRunning: () => !!o.recRunning, lsGet: (k) => (k in store ? store[k] : null), lsSet: (k, v) => { store[k] = v; },
     trSend: (S, cmd) => { sent.push(cmd); return Promise.resolve(o.reply ? o.reply(cmd) : { ok: true }); },
     // 真的 trRun 依序跑每一步、前一步沒成功就停;這裡只留這一條(過場態、紅字不在這支測試的範圍)
@@ -86,6 +86,9 @@ function world(o) {
   { const w = world({ money: "paper", restart: "app" });
     ok("Blave 重開後:最上面一句狀態句;舊訊號那一句掛在「補齊部位」裡,「等新訊號」沒有", w.body.kids[0].tag === "p" && w.body.kids[0].textContent === "tr.restartStartLineLocal"
       && w.opts[0].w && w.opts[0].w.textContent === "tr.opt.catchStale" && !w.opts[1].w); }
+  { const w = world({ money: "real", stranded: 2 }), w0 = world({ money: "real" });
+    ok("有策略已經想平的部位(trWaitStranded > 0):提醒掛在「等新訊號」、「補齊部位」不掛;沒有就兩個都不掛",
+      w.opts[1].w && w.opts[1].w.textContent === "tr.opt.waitStranded" && !w.opts[0].w && !w0.opts[1].w && !w0.opts[0].w); }
   { const w = world({ money: "real", env: "cloud", restart: "machine" });
     ok("主機重開後:狀態句是主機那一句;不掛舊訊號那一句(由重算與閘門講)", w.body.kids[0].textContent === "tr.cloud.restartStartLine" && !w.opts[0].w); }
   { const w = world({ money: "paper", report: { can_wait_start: false } });

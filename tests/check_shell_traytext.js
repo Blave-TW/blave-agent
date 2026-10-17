@@ -219,4 +219,15 @@ t("preload:renderer 待接的三個入口都在", /minVersionState:/.test(pre) &
   const trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
   const keys = eval(/const TR_MENU_KEYS = (\[[\s\S]*?\]);/.exec(trSrc)[1]).map((k) => "menu" + k.charAt(5).toUpperCase() + k.slice(6));
   t("renderer 交的鍵跟主行程的鍵一模一樣(少一個 = 那一格永遠是英文)", JSON.stringify(keys.slice().sort()) === JSON.stringify(Object.keys(MENU_EN).sort())); }
+{ // T2:真的跑一次 trPushLabels(zh)——T1 用正規式讀原始碼,`//` 註解吃掉同一行後面的 key 它看不出來(0.1.27 稽核:ev_order_error 被吃掉,中文本機「下單失敗」通知變英文)
+  const vm = require("vm"), tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"), mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const S = vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + ";STRINGS");
+  const src = (a, b) => tr.slice(tr.indexOf(a), tr.indexOf(b, tr.indexOf(a)) + b.length);
+  let got = null;
+  vm.runInNewContext(src("function trPushLabels()", "\n}\n") + src("const TR_MENU_KEYS = [", "];") + ";trPushLabels();",
+    { window: { blave: { platform: "darwin", tradeLabels: (o) => { got = o; } } }, LANG: "zh", t: (k) => S.zh[k] || S.en[k] || k });
+  const i = mainSrc.indexOf("let tmLabels = {"), defs = [...mainSrc.slice(i, mainSrc.indexOf("};", i)).matchAll(/(ev_\w+): /g)].map((m) => m[1]);
+  const bad = defs.filter((k) => !got || typeof got[k] !== "string" || !/[\u4e00-\u9fff]/.test(got[k]));
+  t("T2 中文本機的 P1 通知:主行程每一個 ev_* 字 trPushLabels 都交了中文" + (bad.length ? ":缺 " + bad.join() : ""), defs.length >= 10 && bad.length === 0
+    && got.ev_order_error === "下單失敗" && got.ev_order_error_n === S.zh["tm.evOrderErrNote"]); }
 Promise.all(after).then(() => { console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0); });

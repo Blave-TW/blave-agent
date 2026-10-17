@@ -130,8 +130,11 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
     /if \(CX_VENUES\[venue\]\) note\.appendChild\(trEl\("p", "cx-sub", t\(\(trReport\(\) \|\| \{\}\)\.self_ledger === true \? "cx\.note\.subAcctOwn" : "cx\.note\.subAcct"\)/.test(cxp)
     && /venue === BINANCE \? \(LANG === "zh" \? "" : " "\) \+ t\("tr\.lev\.binance5"\) : ""/.test(cxp) && cxp.indexOf("cx-sub") < cxp.indexOf('"cx.note.one"')); }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
-  ok("order-copy #8 暫停框:主鈕「暫停開新倉 / Pause new positions」,第一句改講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停開新倉") && has("tr.stopKeep", "Pause new positions")
-    && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。")); }
+  ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause trading」(0.1.27);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause trading")
+    && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"));
+  ok("0.1.27 完全凍結:暫停框照 halt.freeze 換句(Freeze 那組講什麼單都不送);freeze 那兩句不提照常執行",
+    /lines: \[t\(\(r\.self_ledger === true \? "tr\.stopChoiceSelf" : "tr\.stopChoice"\) \+ \(trHaltFreeze\(r\) \? "Freeze" : ""\)\)/.test(src)
+    && ["tr.stopChoiceFreeze", "tr.stopChoiceSelfFreeze", "tr.haltReasonFreeze", "tr.haltUnboundFreeze", "tr.acct.doneSameFreeze"].every((k) => S3.includes(J(k) + ": ") && !new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*照常執行').test(S3))); }
 { // order-copy #14:lib 的 [order_reject:<kind>] 放在最前面 → 六句白話(每句自己帶標的);沒有 token 照舊原文
   const K = ["insufficient_margin", "below_min_size", "symbol_unavailable", "key_permission", "reduce_only_rejected", "paper_margin"];
   ok("order-copy #14 token:六種都認、只認最前面;舊的兩個 token 照舊;沒有 token = null", K.every((k) => trErrToken("[order_reject:" + k + "] Binance error -2019: x") === k)
@@ -816,7 +819,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && trExecState({ alive: true, report: { venues: V2, halt: {}, reconciler: { alive: false, stopped: null } } }) === "dead");
     // 定稿(eval-downtime-behavior-unified):已暫停一律帶原因行;重開那條優先、墨色;HALT 那條次要灰;常駐不截斷
     const stx = src.slice(src.indexOf("function trStateText("), src.indexOf("\nfunction ", src.indexOf("function trStateText(") + 1));
-    ok("狀態行:重開(主機 / Blave)講 B、HALT 講 A,兩者同時講 B", /\+ trHaltReasonText\(r, TR\.acctDone\); \}/.test(stx) && /return rk === "machine" \? t\(z \? "tr\.cloud\.restartStoppedZ" : "tr\.cloud\.restartStopped"\)\n\s*: rk === "app" \? t\(z \? \(H && trSelfOrdering\(r\) \? "tr\.restartStoppedLocalZH" : "tr\.restartStoppedLocalZ"\) : "tr\.restartStoppedLocal"\)\n\s*: trHaltStopsAll\(r && r\.halt\) \? \(trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.haltReasonUnconfirmed"\) : t\(z \? "tr\.haltReasonAllZ" : "tr\.haltReasonAll"\)\) : t\("tr\.haltReason"\);/.test(src)
+    ok("狀態行:重開(主機 / Blave)講 B、HALT 講 A,兩者同時講 B", /\+ trHaltReasonText\(r, TR\.acctDone\); \}/.test(stx) && /return rk === "machine" \? t\(z \? "tr\.cloud\.restartStoppedZ" : "tr\.cloud\.restartStopped"\)\n\s*: rk === "app" \? t\(z \? \(H && trSelfOrdering\(r\) \? "tr\.restartStoppedLocalZH" : "tr\.restartStoppedLocalZ"\) : "tr\.restartStoppedLocal"\)\n\s*: trHaltFreeze\(r\) && trHaltByUser\(r\.halt\) && !trRestartUnconfirmed\(r\) \? t\("tr\.haltReasonFreeze"\)\n\s*: trHaltStopsAll\(r && r\.halt\) \? \(trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.haltReasonUnconfirmed"\) : t\(z \? "tr\.haltReasonAllZ" : "tr\.haltReasonAll"\)\) : t\("tr\.haltReason"\);/.test(src)
       && /\|\| died \|\| failStop \|\| state === "halted" \|\| state === "unconfirmed" \|\| trNoAmounts\(trReport\(\)\) \|\| \(state === "noaccount" && trNoAccountStopped\(trReport\(\)\)\)\);/.test(src) && /else if \(inkAt > 0\) tx\.append\(full\.slice\(0, inkAt\), trEl\("span", "ink", inkReason\), full\.slice\(inkAt \+ inkReason\.length\)\);/.test(src) && !/rkCut/.test(src));
     const Vp = { paper: { credentials: true, pair: true, order: true, account: true } };
     const reopened = { alive: true, report: { venues: Vp, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
@@ -1022,10 +1025,19 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     TR.st = H("reconciler"); const aP = trStateText("halted"); TR.st = H("portfolio"); const pP = trStateText("halted");
     TR.st = H("reconciler", { reason: "machine_restart", at: 1 }); const bP = trStateText("halted");
     ok("A′ 狀態行:reconciler → 什麼單都不下;portfolio → A;重開(B)仍優先", aP === "tr.halted · tr.haltReasonAll" && pP === "tr.halted · tr.haltReason" && bP === "tr.halted · tr.cloud.restartStopped");
+    // 0.1.27 完全凍結(runtime 帶 halt.freeze + holds_all):用戶按的暫停講「什麼單都不送」、自動暫停照 A′、重開(B)仍優先;凍結時存金額不再講「可能立即下單」
+    const F = (src, stopped) => { const x = H(src, stopped); x.report.halt.freeze = true; x.report.halt.holds_all = true; return x; };
+    const fz = {}; ["web", "desktop", undefined, "reconciler", "portfolio"].forEach((x) => { TR.st = F(x); fz[String(x)] = trStateText("halted"); });
+    TR.st = F("web", { reason: "machine_restart", at: 1 }); const fB = trStateText("halted");
+    ok("0.1.27 凍結 狀態行:web / desktop / 沒有 source → haltReasonFreeze;reconciler / portfolio → haltReasonAll;重開仍優先",
+      ["web", "desktop", "undefined"].every((k) => fz[k] === "tr.halted · tr.haltReasonFreeze") && fz.reconciler === "tr.halted · tr.haltReasonAll"
+      && fz.portfolio === "tr.halted · tr.haltReasonAll" && fB === "tr.halted · tr.cloud.restartStopped", JSON.stringify(fz));
+    ok("0.1.27 凍結:trMayFire 為 false(暫停中存金額不會立刻下單);舊 lib 的單純 HALT 照舊 true",
+      trMayFire(F("web"), null) === false && trMayFire(H("web"), null) === true);
     const head = fnS("trPaintHead");
-    ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| trHaltStopsAll\(hr\.halt\) \|\| trAcctAsk\(hr\)\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
+    ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\)\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\);/.test(src)
+    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -1101,7 +1113,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /const recomputing = trRecomputing\(r\), rkS = trRestartKind\(r\);/.test(start)
       && /disabled: recomputing, why: t\("tr\.cloud\.recomputing"\), ok: t\("tr\.startCatchUp"\), onOk: catchUp \},/.test(start)
       && /const catchUp = \(\) => \{ if \(!trRecomputing\(trReport\(\)\)\) go\("resume"\); \};/.test(start)
-      && /desc: t\("tr\.opt\.waitDesc" \+ money\), ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
+      && /desc: t\("tr\.opt\.waitDesc" \+ money\), warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null,\n\s*ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
       && /ok: t\("tr\.startCatchUp"\), okDisabled: recomputing, okWhy: recomputing \? t\("tr\.cloud\.recomputing"\) : null, onOk: catchUp,/.test(start));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     ok("recomputed 文字(zh / en)", /msgid "tr\.cloud\.recomputing"\nmsgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"/.test(po("zh"))
@@ -1268,11 +1280,21 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           J(sends) === J([["resume", {}, null, "release"]]) && env2.ran && env2.ran.want === "released" && env2.ran.cmd === "resume");
       });
     })();
-    ok("§8 X0 自動觸發的 HALT 多一句;X1/X2 主鈕是「先不要」(single:焦點在它)、平掉並解除是破壞性次鈕", /const auto = !!\(r\.halt && r\.halt\.halted\) && trHaltStopsAll\(r\.halt\);/.test(rel) && /\.concat\(auto \? \[t\("tr\.relAuto"\)\] : \[\]\)/.test(rel)
+    ok("§8 X0 自動觸發的 HALT 多一句;X1/X2 主鈕是「先不要」(single:焦點在它)、平掉並解除是破壞性次鈕", /const auto = !!\(r\.halt && r\.halt\.halted\) && trHaltStopsAll\(r\.halt\) && !\(trHaltFreeze\(r\) && trHaltByUser\(r\.halt\)\);/.test(rel) && /\.concat\(auto \? \[t\("tr\.relAuto"\)\] : \[\]\)/.test(rel)
       && /single: true,/.test(rel) && /ok: t\("tr\.relNotNow"\), onOk: \(\) => \{\}, alt: \{ label: t\("tr\.relCloseGo"\), danger: true, onOk: go \}/.test(rel)
       && /title: x1 \? \(k\.n \? t\("tr\.relX1Title", \{ n: k\.n \}\) : t\("tr\.relX1TitleN"\)\) : k\.rows \? t\("tr\.relX2Title"\) : t\("tr\.relX2TitleN"\)/.test(rel) && /lines: \[x1 \? \(k\.rows \? t\("tr\.relX1Lead"\) : t\("tr\.relX1BodyN"\)\) : k\.rows \? t\("tr\.relX2Lead"\) : t\("tr\.relX2BodyN"\)\]/.test(rel)
       && /: k\.rows \? t\("tr\.relX2Title"\) : t\("tr\.relX2TitleN"\)/.test(rel)
       && /extra\.appendChild\(trEl\("p", "cf-note", t\("tr\.relSelfCode"\)\)\);/.test(rel) && /k\.rows\.length > 6 \? k\.rows\.slice\(0, 5\) : k\.rows/.test(rel));
+    { // 稽核 N1:X0 解除框的「這次暫停是系統自動觸發的」——凍結 lib 上 holds_all 一律 true,用戶自己按的暫停不能講成自動觸發(同狀態行 inkReason 的排除)
+      const helpers = src.slice(src.indexOf("const TR_HALT_KEEP_EXITS = "), src.indexOf("\n}\n", src.indexOf("function trHaltStopsAll(")) + 3);
+      const vmN = require("vm"), relAuto = (halt) => { const c = { t: (k) => k, trReport: () => ({ halt }), trReleaseKind: () => ({ kind: "x0" }), trCloudBox: (o) => o, srSay() {}, trRun() {} };
+        c.confirmBox = (o) => { c.box = o; }; vmN.createContext(c); vmN.runInContext(helpers + "\n" + fnS("trAskRelease") + "\ntrAskRelease(null);", c);
+        return c.box.lines.indexOf("tr.relAuto") >= 0; };
+      ok("N1 X0 解除框:凍結＋用戶按的(web / desktop / 沒 source)不講自動觸發;凍結＋自動來源照講;舊 lib 帳戶守衛撐起的 holds_all 照講;單純舊 HALT 不講",
+        !relAuto({ halted: true, freeze: true, holds_all: true, source: "web" }) && !relAuto({ halted: true, freeze: true, holds_all: true, source: "desktop" })
+        && !relAuto({ halted: true, freeze: true, holds_all: true }) && relAuto({ halted: true, freeze: true, holds_all: true, source: "reconciler" })
+        && relAuto({ halted: true, freeze: false, holds_all: true, source: "reconciler" }) && relAuto({ halted: true, freeze: false, holds_all: true, source: "web" })
+        && !relAuto({ halted: true, freeze: false, holds_all: false, source: "web" })); }
     ok("§8 接線:主鈕 disabled 帶 zv.off、aria-describedby 指原因行、title 不讓「連不上」蓋掉原因;原因行與解除暫停鈕每次畫", /b\.disabled = flying \|\| zv\.off \|\| \(!busy && !usable\);/.test(head)
       && /if \(zv\.off \|\| zv\.book\) b\.setAttribute\("aria-describedby", zg\.desc\);/.test(head) && /b\.title = zv\.off \? "" :/.test(head) && /else trPaintNoAmt\(pend \|\| zv\.reason, zv\.book \? \{ n: trBookQty\(zv\.book\) \} : null\);\n\s*trPaintGoRel\(zv\.release, zv\.noStart, zv\.close\);/.test(head)
       && /if \(trZView\(envHeadState\(TR\.st, Date\.now\(\)\), r\)\.off\) return;/.test(fnS("trAskStart")));

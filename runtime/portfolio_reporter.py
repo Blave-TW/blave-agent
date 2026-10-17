@@ -823,6 +823,35 @@ def _ws_lib_rollover_halt_freeze():
         return False
 
 
+def _ws_lib_halt_freeze():
+    """The workspace lib on disk refuses every order under HALT (0.1.27)."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "guard.py"), "rb") as f:
+            return b"def _check_halt_freeze" in f.read()
+    except OSError:
+        return False
+
+
+def halt_freezes(hb=None, last=None):
+    """Whether a HALT here sends nothing at all — closes, exits and SL/TP
+    included — or, on an older lib, only refuses entries. Same evidence rule as
+    can_hold_rollover_in_halt: a running reconciler's caps, else (provably no
+    process) the lib on disk. Unknown (stale heartbeat, a process that may still
+    be there, a failed check) = True: "exits and SL/TP still run" is the promise
+    that hurts when false — the user stops watching a position nobody manages."""
+    fresh, _ = _reconciler_view(hb, last)
+    if last is None:
+        last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
+    if fresh:
+        caps = last.get("caps") if isinstance(last, dict) else None
+        return isinstance(caps, list) and "halt_freeze" in caps
+    try:
+        absent = _reconciler_absent()
+    except Exception:
+        return True
+    return not absent or _ws_lib_halt_freeze()
+
+
 def can_hold_rollover_in_halt(hb=None, last=None):
     """A switch saved under HALT is safe only with code that freezes the whole
     rollover while halted — older code would send the old contract's close
@@ -962,12 +991,19 @@ def restart_stop(hb=None, cfg=None, vens=None):
             "recomputed": recomputed}
 
 
-def halt_state():
+def halt_state(hb=None, last=None):
     """Kill-switch state, read the same way lib/guard.py writes it: the FILE'S
-    EXISTENCE is authoritative and unreadable content still counts as halted."""
+    EXISTENCE is authoritative and unreadable content still counts as halted.
+    `freeze` (also when not halted, for the pause dialog) = halt_freezes()."""
     path = os.path.join(WORKSPACE_STATE, "HALT")
+    try:
+        freeze = halt_freezes(hb, last)
+    except Exception as e:
+        print(f"[portfolio_reporter] halt freeze check failed: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        freeze = True
     if not os.path.exists(path):
-        return {"halted": False}
+        return {"halted": False, "freeze": freeze}
     info = _read_json(path, {}) or {}
     guard_state = _read_json(os.path.join(WORKSPACE_STATE, "venue_account.json"), {})
     guard_state = guard_state if isinstance(guard_state, dict) else {}
@@ -978,12 +1014,14 @@ def halt_state():
         "reason": info.get("reason"),
         "source": info.get("source"),
         "blocked": _halt_denials(info.get("ts")),
-        # true = the reconciler skips every round: no Blave order of any kind,
-        # closes and exits included (an account-guard trip awaiting confirmation,
-        # or a book hold awaiting book_account_confirm). false = a plain HALT:
-        # entries refused, closes / exits still go out. Orders resting on the
-        # exchange (SL/TP) fire either way — they are the exchange's.
-        "holds_all": bool(guard_state.get("pending"))
+        # true = no Blave order of any kind, closes and exits included: every
+        # HALT on a freezing lib (`freeze`), or on an older one an account-guard
+        # trip awaiting confirmation / a book hold awaiting book_account_confirm.
+        # false = an older lib's plain HALT: entries refused, closes / exits still
+        # go out. Orders resting on the exchange (SL/TP) fire either way — they
+        # are the exchange's.
+        "freeze": freeze,
+        "holds_all": freeze or bool(guard_state.get("pending"))
         or bool(isinstance(mark, dict) and mark.get("venue") and not mark.get("acked"))
         or bool(isinstance(hold, dict) and hold.get("venue")),
     }
@@ -1667,7 +1705,7 @@ def build_report():
         # one "not trading" line: one the user did on purpose, the other is a
         # fault. `blocked` turns "stopped" from a claim into something visible —
         # it is the count of orders the switch actually refused.
-        "halt": halt_state(),
+        "halt": halt_state(hb, last),
         "account_guard": account_guard(),
         # id not present in the dict = no key stored for it. Front end reads
         # this as venues[id] (web/.../workspace.html cxSupport()) — id present

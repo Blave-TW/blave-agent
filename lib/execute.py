@@ -822,6 +822,11 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     # chase / custom would slice a lot count as dollars.
     if (asset_spec or {}).get("type") in ("futures_contracts", "shares"):
         return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
+    # a close under HALT holds a thread-local close pass (lib/guard.halt_close_pass):
+    # an executor thread would not carry it and would stop at its first slice
+    from lib import guard
+    if reduce_only and guard.halted() and guard.halt_closes_allowed():
+        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
 
     spec = resolve_execution(contributors)
     if spec is None:  # config mid-write — skip, the next round re-reads
@@ -954,7 +959,6 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
     ['writeoff'] carries the wiring's verdict on a remainder, applied by _finish."""
     from lib import guard
     from lib.venue_wiring import auto_place_order
-    is_entry = not reduce_only
 
     def _slice(_sym, _side, usd):
         if stop.is_set():
@@ -965,7 +969,7 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
                 why["stop"] = "restart"
             stop.set()
             raise RuntimeError("machine restarted — stopping execution until 啟動下單")
-        if is_entry and guard.halted():
+        if guard.halted():  # a full freeze: a reduce stops at its next slice too
             if why is not None:
                 why["stop"] = "halt"
             stop.set()
@@ -1281,7 +1285,7 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                 stop.set()
                 reason = "machine restarted"
                 break
-            if is_entry and guard.halted():
+            if guard.halted():
                 stop.set()
                 reason = "state/HALT set"
                 break
@@ -1317,6 +1321,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                 if guard.restart_stopped():
                     stop.set()  # the resting order is cancelled right below
                     reason = "machine restarted"
+                    break
+                if guard.halted():
+                    stop.set()  # cancelled right below: a fill after the freeze is a trade the user paused
+                    reason = "state/HALT set"
                     break
                 if _account_held(tools.get("venue") or exchange):
                     stop.set()  # cancelled right below; a cancel is not an order

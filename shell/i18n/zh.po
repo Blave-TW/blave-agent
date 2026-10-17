@@ -1569,14 +1569,20 @@ msgstr "雲端主機的下單機回報下單失敗：{sym}——{err}。請用 b
 msgid "tr.stopChoiceSelf"
 msgstr "平倉與停損停利照常執行。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
 
+msgid "tr.stopChoiceSelfFreeze"
+msgstr "暫停期間什麼單都不送，平倉、減碼與停損停利也不會執行；交易所上已掛的停損單照常有效。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
+
 msgid "tr.stopChoice"
 msgstr "平倉與停損停利照常執行。「關閉部位」會市價平掉這個帳戶上的所有部位，包含你自己手動開的單。"
+
+msgid "tr.stopChoiceFreeze"
+msgstr "暫停期間什麼單都不送，平倉、減碼與停損停利也不會執行；交易所上已掛的停損單照常有效。「關閉部位」會市價平掉這個帳戶上的所有部位，包含你自己手動開的單。"
 
 msgid "tr.closeAllWarn2"
 msgstr "策略金額會保留：之後按「啟動下單」，下單機會照現有金額把部位重建回來；不想重建，先把金額歸零。"
 
 msgid "tr.stopKeep"
-msgstr "暫停開新倉"
+msgstr "暫停下單"
 
 msgid "tr.stopFlat"
 msgstr "暫停並關閉部位"
@@ -1638,6 +1644,9 @@ msgstr "等新訊號"
 
 msgid "tr.opt.waitDesc"
 msgstr "現在不下單。每條策略等下一次進場、出場或翻向才開始交易。"
+
+msgid "tr.opt.waitStranded"
+msgstr "有 {n} 筆部位策略已經想平：選「等新訊號」的話，這些部位會一直開著，直到策略的訊號再改變。"
 
 msgid "tr.opt.waitDescReal"
 msgstr "現在不下單。每條策略等下一次進場、出場或翻向才送出真實委託。"
@@ -2239,7 +2248,7 @@ msgid "tr.ov.evResume"
 msgstr "已恢復下單"
 
 msgid "tr.ov.evResumeNote"
-msgstr "恢復開新倉"
+msgstr "恢復下單"
 
 msgid "tr.ov.evConnected"
 msgstr "已連接 {venue}"
@@ -2378,7 +2387,7 @@ msgid "tm.notifTitle"
 msgstr "已暫停下單"
 
 msgid "tm.notifBody"
-msgstr "停開新倉；部位沒有動。要恢復，到 Blave 的「自動下單」按「啟動下單」。"
+msgstr "已停止下單；部位沒有動。要恢復，到 Blave 的「自動下單」按「啟動下單」。"
 
 msgid "tm.pauseFail"
 msgstr "暫停的指令沒有送到，它可能還在交易。打開 Blave 再按一次「暫停下單」。"
@@ -3460,6 +3469,9 @@ msgstr "Blave 重開過，什麼單都不下——部位現在沒有人在管，
 msgid "tr.haltReason"
 msgstr "不開新倉；平倉與停損停利照常執行。"
 
+msgid "tr.haltReasonFreeze"
+msgstr "什麼單都不送——平倉、減碼與停損停利也不會執行。"
+
 msgid "tr.cloud.restartStartLine"
 msgstr "主機重開後到現在都沒有下單，部位可能跟策略現在的訊號不一致。"
 
@@ -3577,11 +3589,14 @@ msgstr "回答送出了，主機回報後這裡會更新。"
 msgid "tr.acct.doneSame"
 msgstr "已確認是同一個 {v} 帳戶：Blave 的部位照舊管理，平倉與停損停利照常執行；按「啟動下單」恢復開新倉。"
 
+msgid "tr.acct.doneSameFreeze"
+msgstr "已確認是同一個 {v} 帳戶：Blave 的部位照舊管理；按「啟動下單」恢復下單。"
+
 msgid "tr.acct.doneDiff"
 msgstr "{v} 已從零開始：之前的部位交給你處理，Blave 不會再動它們。按「啟動下單」後，策略會在這個帳戶重新開部位。"
 
 msgid "tr.relBody"
-msgstr "解除後，暫停時被擋下的新倉會恢復放行，包含你自己的策略程式下的單。還沒有策略設定金額，所以不會照策略下單。"
+msgstr "解除後，暫停時被擋下的單會恢復放行，包含你自己的策略程式下的單。還沒有策略設定金額，所以不會照策略下單。"
 
 msgid "tr.relAuto"
 msgstr "這次暫停是系統自動觸發的（例如金鑰被拒、讀帳連續失敗、帳戶變更）。確定問題處理好了再解除。"
@@ -8019,6 +8034,9 @@ msgstr "「{name}」{more}還沒有對應的交易所：先到策略組合存一
 
 msgid "tr.haltUnbound"
 msgstr "解除綁定時自動暫停：不開新倉；平倉與停損停利照常執行。"
+
+msgid "tr.haltUnboundFreeze"
+msgstr "解除綁定時自動暫停：什麼單都不送，平倉與停損停利也不會執行。"
 
 msgid "tr.haltUnboundOff"
 msgstr "解除綁定時自動暫停，下單程式也沒在跑：什麼單都不下。"

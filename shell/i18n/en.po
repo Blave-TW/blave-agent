@@ -1561,14 +1561,20 @@ msgstr "The cloud machine's order engine reported a failed order: {sym} — {err
 msgid "tr.stopChoiceSelf"
 msgstr "Exits, stops and take-profits keep running. Closing positions here only closes positions opened by auto-trading; ones you opened manually are left alone."
 
+msgid "tr.stopChoiceSelfFreeze"
+msgstr "While paused no orders are sent — not exits, reductions, stops or take-profits; stop orders already resting on the exchange still work. Closing positions here only closes positions opened by auto-trading; ones you opened manually are left alone."
+
 msgid "tr.stopChoice"
 msgstr "Exits, stops and take-profits keep running. Closing positions here market-closes ALL positions on this account, including ones you opened manually."
+
+msgid "tr.stopChoiceFreeze"
+msgstr "While paused no orders are sent — not exits, reductions, stops or take-profits; stop orders already resting on the exchange still work. Closing positions here market-closes ALL positions on this account, including ones you opened manually."
 
 msgid "tr.closeAllWarn2"
 msgstr "Strategy amounts are kept: pressing Start trading later rebuilds positions to those amounts. If you don't want that, zero the amounts first."
 
 msgid "tr.stopKeep"
-msgstr "Pause new positions"
+msgstr "Pause trading"
 
 msgid "tr.stopFlat"
 msgstr "Pause and close positions"
@@ -1630,6 +1636,9 @@ msgstr "Wait for new signals"
 
 msgid "tr.opt.waitDesc"
 msgstr "No orders now. Each strategy starts trading only at its next entry, exit, or flip."
+
+msgid "tr.opt.waitStranded"
+msgstr "Positions the strategies already want closed: {n}. With Wait for new signals they stay open until the signal changes again."
 
 msgid "tr.opt.waitDescReal"
 msgstr "No orders now. Each strategy sends real orders only at its next entry, exit, or flip."
@@ -2229,7 +2238,7 @@ msgid "tr.ov.evResume"
 msgstr "Trading resumed"
 
 msgid "tr.ov.evResumeNote"
-msgstr "new entries resumed"
+msgstr "orders resumed"
 
 msgid "tr.ov.evConnected"
 msgstr "Connected {venue}"
@@ -2368,7 +2377,7 @@ msgid "tm.notifTitle"
 msgstr "Trading paused"
 
 msgid "tm.notifBody"
-msgstr "No new positions will be opened; existing positions are untouched. To resume, press Start trading on the Auto trading page in Blave."
+msgstr "No orders will be sent; existing positions are untouched. To resume, press Start trading on the Auto trading page in Blave."
 
 msgid "tm.pauseFail"
 msgstr "The pause command didn’t go through, so it may still be trading. Open Blave and press Pause trading again."
@@ -3449,6 +3458,9 @@ msgstr "Blave was restarted, so no orders are going out — nothing is managing 
 msgid "tr.haltReason"
 msgstr "No new positions; exits and stops still run."
 
+msgid "tr.haltReasonFreeze"
+msgstr "No orders are sent — not exits, reductions, stops or take-profits."
+
 msgid "tr.cloud.restartStartLine"
 msgstr "No orders have gone out since the machine restarted, so your positions may not match the current signals."
 
@@ -3566,11 +3578,14 @@ msgstr "Your answer is on its way; this updates once the machine reports back."
 msgid "tr.acct.doneSame"
 msgstr "Confirmed as the same {v} account: Blave keeps managing its positions, and exits and stops run as usual. Press Start trading to open new positions again."
 
+msgid "tr.acct.doneSameFreeze"
+msgstr "Confirmed as the same {v} account: Blave keeps managing its positions. Press Start trading to resume."
+
 msgid "tr.acct.doneDiff"
 msgstr "{v} starts from zero: the earlier positions are yours to handle and Blave won't touch them. Once you press Start trading, strategies open positions on this account again."
 
 msgid "tr.relBody"
-msgstr "New positions blocked during the pause, including orders from your own strategy code, are allowed again. No strategy has an amount, so no strategy will trade."
+msgstr "Orders blocked during the pause, including orders from your own strategy code, are allowed again. No strategy has an amount, so no strategy will trade."
 
 msgid "tr.relAuto"
 msgstr "This pause was triggered automatically (for example a rejected key, repeated account-read failures or an account change). Release only once that’s fixed."
@@ -8004,6 +8019,9 @@ msgstr "“{name}”{more} has no exchange yet. Save the order settings once in 
 
 msgid "tr.haltUnbound"
 msgstr "Paused automatically when the exchange was unbound: no new positions; closes and stops still run."
+
+msgid "tr.haltUnboundFreeze"
+msgstr "Paused automatically when the exchange was unbound: no orders are sent, exits and stops included."
 
 msgid "tr.haltUnboundOff"
 msgstr "Paused automatically when the exchange was unbound, and the order program isn’t running: no orders at all."

@@ -204,7 +204,7 @@ def _request(method, path, env, body=None, params=None, retries=3):
             raise guard.Halted(
                 f"state/HALT is set ({guard.halt_info()}) — entry order for "
                 f"{fields.get('instId')} refused before reaching the exchange. "
-                f"Closes, SL/TP and cancels still work. Only the user may "
+                f"Trading is paused: only cancels go out. Only the user may "
                 f"clear the halt (guard.clear_halt)."
             )
         guard.audit("order_attempt", **fields)
@@ -689,7 +689,7 @@ def cancel_algo_order(env, symbol, algo_id):
 
 
 def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
-                            tp_price=None, verify=True):
+                            tp_price=None, verify=True, _after_entry=False):
     """Reduce-only conditional SL/TP for an EXISTING swap position via
     /api/v5/trade/order-algo (ordType=conditional, market execution via
     ordPx=-1). qty=None protects the whole position (closeFraction=1).
@@ -727,6 +727,11 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                 raise OKXError("N/A", f"{kind} response missing algoId: {rows}",
                                "order-algo")
             placed[kind] = {"algoId": str(algo_id), "raw": rows[0]}
+    except guard.Halted as e:
+        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
+        raise ProtectionFailed(
+            guard.protection_halted_text(symbol, direction, wanted, placed, _after_entry) + f" {e}"
+        ) from e
     except Exception as e:
         raise ProtectionFailed(
             f"{symbol} {direction} position may be NAKED — placing protective orders "
@@ -757,7 +762,8 @@ def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
     protection = {}
     if sl_price is not None or tp_price is not None:
         protection = place_protective_orders(env, symbol, direction, qty=None,
-                                             sl_price=sl_price, tp_price=tp_price)
+                                             sl_price=sl_price, tp_price=tp_price,
+                                             _after_entry=True)
     return {"entry": entry, "protection": protection}
 
 
@@ -815,7 +821,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     """Confirmed spot market order. side: 'buy'|'sell'. BUYs size in QUOTE
     currency (tgtCcy=quote_ccy, sz=USDT amount — no price conversion on our
     side); SELLs in base qty floored to the spot step. Below min → False.
-    Guard: buy=entry (halt blocks), sell=reduce (never trapped) — classified
+    Guard: buy=entry, sell=reduce — classified
     off tdMode=cash in _order_intent."""
     inst = _spot_inst(symbol)
     side = side.lower()

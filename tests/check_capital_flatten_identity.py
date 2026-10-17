@@ -92,7 +92,8 @@ _lp0.book_ready = lambda config=None: True  # the book cases below have a baseli
 WAITS = []
 flatten._wait_for_inflight = lambda *a, **k: WAITS.append(k) or []
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
-                                      restart_stopped=lambda: False)
+                                      restart_stopped=lambda: False,
+                                      grant_halt_closes=lambda *a: None)
 EXTRA_ENV = {}
 flatten._read_env = lambda path=".env": dict({
     "CAPITAL_API_KEY": "x", "CAPITAL_PASSWORD": "x",

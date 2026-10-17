@@ -120,7 +120,7 @@ flatten._read_env = lambda *a, **k: touched.append("env") or {}
 flatten.guard = types.SimpleNamespace(
     halted=lambda: touched.append("halted") or True,
     trip_halt=lambda *a, **k: touched.append("trip_halt"),
-    restart_stopped=lambda: False)
+    restart_stopped=lambda: False, grant_halt_closes=lambda *a: None)
 flatten._wait_for_inflight = lambda *a, **k: touched.append("inflight") or []
 flatten.load_portfolio_config = lambda: touched.append("cfg") or {}
 flatten.zero_ledger_symbols = lambda s, venue=None: touched.append("zero")

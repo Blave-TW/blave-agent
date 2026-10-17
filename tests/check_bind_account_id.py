@@ -214,8 +214,15 @@ check(r == {"venue": "binance", "same": True, "outcome": "kept"} and book_qty() 
 s1 = open(SEED).read()
 r = confirm(venue="binance", same=True)
 check(r["outcome"] == "unchanged" and open(SEED).read() == s1, "…answering again changes nothing")
-check(pr.halt_state()["halted"] and not pr.halt_state()["holds_all"],
-      "…the answer leaves the HALT for the user (plain now: closes would go out)")
+_real_freezes = pr.halt_freezes
+pr.halt_freezes = lambda hb=None, last=None: False  # an older lib: only the account question held closes
+hs_old = pr.halt_state()
+pr.halt_freezes = lambda hb=None, last=None: True  # 0.1.27 lib: HALT itself holds everything
+hs_new = pr.halt_state()
+pr.halt_freezes = _real_freezes
+check(hs_old["halted"] and not hs_old["holds_all"] and hs_new["halted"] and hs_new["holds_all"],
+      "…the answer leaves the HALT for the user: the account hold is gone (older lib: closes would go "
+      "out again; freezing lib: the HALT alone still holds everything)")
 r = confirm(venue="binance", same=False)
 check(r["outcome"] == "nothing_to_confirm" and open(SEED).read() == s1 and book_qty() == 0.001,
       f"…a stale 'different' from the other device's dialog, after the question is gone: "

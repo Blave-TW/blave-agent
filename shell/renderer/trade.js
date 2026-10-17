@@ -192,6 +192,12 @@ const TR_HALT_KEEP_EXITS = ["portfolio", "web", "user", "flatten", "desktop"];
 /* 新 runtime 在 halt 裡帶 holds_all(halt.halted 時一定有):true = 那家交易所什麼單都不下(平倉停損也不跑),false = 單純 HALT。
    有它就只看它——換金鑰後答完「同一個帳戶」,HALT 的 source 還是 reconciler,照來源名單會講成「什麼單都不下」,那時是假話。
    欄位不在(舊 runtime)才退回來源名單 */
+/* 0.1.27 起的 lib:HALT = 完全凍結(runtime 帶 halt.freeze,沒暫停時也帶,給暫停框用)。true = 暫停期間什麼單都不送,
+   平倉、減碼、停損停利都算;缺欄位(舊 runtime)或 false(機器上的 lib 還沒更新)= 舊講法(不開新倉、平倉停損照走) */
+function trHaltFreeze(r) { return !!(r && r.halt && r.halt.freeze === true); }
+/* 用戶自己按的暫停(含沒有 source 的手動 HALT):凍結時講「什麼單都不送」,不講「問題處理好之後」那句(那是自動暫停的) */
+const TR_HALT_USER = ["web", "user", "flatten", "desktop"];
+function trHaltByUser(h) { const src = h && h.source; return !src || TR_HALT_USER.indexOf(src) >= 0; }
 function trHaltStopsAll(h) {
   if (h && typeof h.holds_all === "boolean") return h.holds_all;
   const src = h && h.source; return !!(h && typeof src === "string" && src && TR_HALT_KEEP_EXITS.indexOf(src) < 0);
@@ -230,17 +236,18 @@ function trHaltReasonText(r, done) {
   const rk = trRestartKind(r), z = trNoAmounts(r) && !trRestartUnconfirmed(r), H = !!(r && r.halt && r.halt.halted);
   const vl = (v) => (typeof trVenueLabel === "function" ? trVenueLabel(v, true) : v), bh = trBookHold(r);
   if (H && bh && bh.ask !== false) return t("tr.acct.reason", { v: vl(bh.venue) });   // 要回答的那一題優先:它的出口是「確認帳戶」,不是啟動下單
-  if (H && !bh && done && (done.outcome === "kept" || done.outcome === "reset")) return t(done.outcome === "kept" ? "tr.acct.doneSame" : "tr.acct.doneDiff", { v: vl(done.venue) });
+  if (H && !bh && done && (done.outcome === "kept" || done.outcome === "reset")) return t(done.outcome === "kept" ? (trHaltFreeze(r) ? "tr.acct.doneSameFreeze" : "tr.acct.doneSame") : "tr.acct.doneDiff", { v: vl(done.venue) });
   // 照 HALT 的實際原因講(Mac e2e 10-14:解綁造成的暫停被講成「Blave 重開過」)。主機重開停住(machine)那一種最根本,照舊優先;
   // 解綁那一種再分下單程式在不在跑:沒在跑就什麼單都不下,在跑照 A 的規則(不開新倉、平倉照常)
   // 「平倉與停損停利照常執行」只有對帳器真的活著才成立(從沒啟動過、自己掛了、解綁時被停掉都不成立;稽核 r4 P1-2)
   if (H && rk !== "machine" && /^exchange unbound/.test(String((r.halt && r.halt.reason) || ""))) {
     const sup = r.daemon && r.daemon.reconciler, alive = !!(r.reconciler && r.reconciler.alive) && !(sup && sup.running === false);
-    return t(alive ? "tr.haltUnbound" : "tr.haltUnboundOff");
+    return t(alive ? (trHaltFreeze(r) ? "tr.haltUnboundFreeze" : "tr.haltUnbound") : "tr.haltUnboundOff");
   }
   // ZH(「新倉也被擋著——包含你自己的策略程式下的單」)只在真的有自己下單的策略時講;沒有就退回 Z 那一句
   return rk === "machine" ? t(z ? "tr.cloud.restartStoppedZ" : "tr.cloud.restartStopped")
     : rk === "app" ? t(z ? (H && trSelfOrdering(r) ? "tr.restartStoppedLocalZH" : "tr.restartStoppedLocalZ") : "tr.restartStoppedLocal")
+    : trHaltFreeze(r) && trHaltByUser(r.halt) && !trRestartUnconfirmed(r) ? t("tr.haltReasonFreeze")
     : trHaltStopsAll(r && r.halt) ? (trRestartUnconfirmed(r) ? t("tr.cloud.haltReasonUnconfirmed") : t(z ? "tr.haltReasonAllZ" : "tr.haltReasonAll")) : t("tr.haltReason");
 }
 /* ── 沒有策略設金額(spec-desktop-update-experience-v2 §8,Wei 09-23)──
@@ -1523,7 +1530,8 @@ function trPushLabels() {
     updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
     moveAuthExists: t("tm.move.authExists"), moveAuthApps: t("tm.move.authApps"), gotIt: t("src.gotIt"),   // 搬移要系統授權時的提示框(只有「知道了」)
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
-    ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evHaltNote"), ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
+    ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evRestartStoppedNote"),   // 本機的 lib 隨 app 出貨:0.1.27 起 HALT 是完全凍結
+    ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
     ev_execution_interrupted: t("tr.ov.evExecInterrupted"), ev_execution_interrupted_n: t("tr.ov.evExecInterruptedNote"),
     ev_execution_fallback_market: t("tr.ov.evExecFallback"), ev_execution_fallback_market_n: t("tr.ov.evExecFallbackNote"),
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
@@ -2032,7 +2040,7 @@ function trPaintHead() {
   // A′(自動暫停、什麼單都不下)與沒有交易所的重開停止(B0)同 B 一級
   // 用原因句本身定位(同下面 C 的紅字):前面有「串接失敗 · 」、後面接「最後更新」都照樣升(新狀態稽核 §3-1)
   const hr = trReport() || {};
-  const inkReason = state === "halted" && (trRestartKind(hr) || trHaltStopsAll(hr.halt) || trAcctAsk(hr)) ? trHaltReasonText(hr, TR.acctDone) : state === "noaccount" && trNoAccountStopped(hr) ? t("tr.cloud.restartNoAccountZ") : "";
+  const inkReason = state === "halted" && (trRestartKind(hr) || (trHaltStopsAll(hr.halt) && !(trHaltFreeze(hr) && trHaltByUser(hr.halt))) || trAcctAsk(hr)) ? trHaltReasonText(hr, TR.acctDone) : state === "noaccount" && trNoAccountStopped(hr) ? t("tr.cloud.restartNoAccountZ") : "";
   const inkAt = inkReason ? full.indexOf(inkReason) : -1;
   /* 「可能仍在下單」那一條原因行用紅字(錢可能還在外面暴露、而用戶以為停了);狀態詞本身一般墨色。
      紅的只有原因那一句本身:前面可能有「串接失敗 · 」、後面可能接「 · 最後更新…」(回報過舊),兩種都不能讓紅字消失 */
@@ -2280,7 +2288,7 @@ function trAskRelease(opener) {
   const go = () => { srSay(t("tr.releaseHint")); return trRun("released", [(S) => trSend(S, "resume", {}, "release")], "resume"); };
   if (k.kind === "x0") {
     // 自動觸發的 HALT(金鑰被拒、讀帳失敗、帳戶守衛):清 HALT 等於確認那件事處理好了(帳戶守衛那一種就是確認帳戶變更)
-    const auto = !!(r.halt && r.halt.halted) && trHaltStopsAll(r.halt);
+    const auto = !!(r.halt && r.halt.halted) && trHaltStopsAll(r.halt) && !(trHaltFreeze(r) && trHaltByUser(r.halt));
     confirmBox(trCloudBox({ title: t("tr.relTitle"), opener, lines: [t("tr.relBody")].concat(auto ? [t("tr.relAuto")] : []), ok: t("tr.release"), onOk: go }));
     return;
   }
@@ -2373,7 +2381,7 @@ function trAskStop(opener) {
     title: t("tr.stop"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lead: trStartPending(TR.pending) ? trStopAfterStartLead(r.can_flatten === true) : null,
     // 重開沒停住(C):沒有啟動鈕,「之後按啟動下單」要先更新(audit S1)
-    lines: [r.self_ledger === true ? t("tr.stopChoiceSelf") : t("tr.stopChoice"), trRestartUnconfirmed(r) ? t("tr.cloud.closeAllWarn2Unconfirmed") : t("tr.closeAllWarn2")],
+    lines: [t((r.self_ledger === true ? "tr.stopChoiceSelf" : "tr.stopChoice") + (trHaltFreeze(r) ? "Freeze" : "")), trRestartUnconfirmed(r) ? t("tr.cloud.closeAllWarn2Unconfirmed") : t("tr.closeAllWarn2")],
     ok: t("tr.stopKeep"), onOk: () => trRun("halted", [(S) => trSend(S, "halt", { reason: "desktop ui" })], "halt"),
     // 沒有平倉層的 workspace 不給「看起來成功但沒平」的鈕(同雲端 can_flatten)
     alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [(S) => trSend(S, "close_all", {})], "close_all") } : null,
@@ -2451,6 +2459,7 @@ function trAskStart(opener, presOk) {
   const money = real ? "Real" : "";
   // 補齊會送出的單(post-connect-flow 第 8 列):口數或金額取自部位表的差額,最多三檔,其餘「等 N 檔」
   const will = trCatchWill(r);
+  const stranded = trWaitStranded(r);
   // 照什麼、多少錢下單(設計 A6):跟自動下單 › 部位表底合計同一個格式(trPlanTotal),讀已存配置
   const pl = trPlanLine(trStored()), plan = pl ? [pl] : [];
   confirmBox(trCloudBox(Object.assign({
@@ -2465,7 +2474,8 @@ function trAskStart(opener, presOk) {
       // Blave 重開(本機):關著的時候策略沒跑,現在補齊用的可能是舊訊號——掛在它影響的那個選項裡。主機重開(B)由重算那一句與閘門講
       { id: "catch", title: t("tr.opt.catch"), desc: t("tr.opt.catchDesc" + money, { how: trCatchHow(r, real) }) + (will ? " " + will : ""), warn: rkS === "app" ? t("tr.opt.catchStale") : null,
         disabled: recomputing, why: t("tr.cloud.recomputing"), ok: t("tr.startCatchUp"), onOk: catchUp },
-      { id: "wait", title: t("tr.opt.wait"), desc: t("tr.opt.waitDesc" + money), ok: t("tr.startWait"), onOk: () => go("resume_wait") },
+      { id: "wait", title: t("tr.opt.wait"), desc: t("tr.opt.waitDesc" + money), warn: stranded ? t("tr.opt.waitStranded", { n: stranded }) : null,
+        ok: t("tr.startWait"), onOk: () => go("resume_wait") },
     ],
     ok: t("tr.start"),
   } : {
@@ -2495,6 +2505,35 @@ function trCatchWill(r) {
   });
   if (!out.length) return null;
   return out.slice(0, 3).join(LANG === "zh" ? "、" : "; ") + (out.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: out.length - 3 }) : "") + (LANG === "zh" ? "。" : ".");
+}
+
+/* 選「等新訊號」會一直開著的部位(Wei 10-17):帳上有 Blave 的部位、策略的目標已經比它小(平倉、減碼、翻向)。
+   resume_wait 把每條有金額策略的現在訊號記成基準,它的標的兩邊都不動,直到訊號方向再變——暫停中已經想平的部位就一直開著。
+   標的範圍照機器端的 gate:有金額的策略碰到的每個標的(投資組合權重 0 的成分也算);還沒算出訊號的不算;差額過門檻的才算(同 trCatchWill)。回幾檔 */
+function trWaitStranded(r) {
+  if (!trHasAccount(r) || trFirstReadPending(r)) return 0;
+  const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), contracts = trContracts();
+  const target = trClientTargets(stored, st2, contracts), bk = trBook(r, target), vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {};
+  const keys = new Set(), notYet = new Set();
+  Object.keys(stored).forEach((n) => {
+    const s = st2[n];
+    if (!(Number(stored[n]) > 0) || !s) return;
+    if (s.weights && typeof s.weights === "object") { Object.keys(s.weights).forEach((sym) => keys.add(trCanonSym(sym) + (s.market === "spot" ? "@spot" : ""))); return; }
+    if (!s.symbol) return;
+    const k = trCanonSym(trEffSym(n, s.symbol, contracts)) + (s.market === "spot" ? "@spot" : "");
+    keys.add(k); if (s.notYet === true) notYet.add(k);
+  });
+  let n = 0;
+  keys.forEach((sym) => {
+    const as = bk.mine[sym] || 0;
+    if (!as || notYet.has(sym) || !trTradesSym(vk, sym)) return;
+    const spec = trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))), raw = target[sym] || 0, ts = spec ? trLotsTarget(raw).lots : raw, d = ts - as;
+    if (!(ts * as < 0 || Math.abs(ts) < Math.abs(as))) return;
+    const gs = spec ? null : trGateSide(gates[sym], ts, as);
+    if (spec ? !Math.round(Math.abs(d)) : Math.abs(d) < (gs ? gs.usd : 10)) return;
+    n++;
+  });
+  return n;
 }
 
 /* ── 分頁 ───────────────────────────────────────────── */
@@ -4288,7 +4327,7 @@ function trOvEvents(r, z) {
     const venue = trVenueLabel(String(d.venue || ""), true);
     let head = null, note = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
-    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); }
+    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); }
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t("tr.ov.evResume"); note = t("tr.ov.evResumeNote"); }
     else if (ev.type === "venue_connected" && venue) head = t("tr.ov.evConnected", { venue });
     else if (ev.type === "venue_disconnected" && venue) head = t("tr.ov.evDisconnected", { venue });

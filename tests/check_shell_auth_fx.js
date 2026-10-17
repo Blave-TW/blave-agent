@@ -74,6 +74,9 @@ ok("每一處同一句:conn.expired(帳號頁、公開連結、分享)= 「登�
   const never = why(base({ reconciler: { alive: false } })), died = why(base({ reconciler: { alive: true, heartbeat_at: 9 }, daemon: { reconciler: { running: false, wanted: true } } }));
   ok("HALT 原因是解除綁定:對帳器真的活著才講「平倉與停損停利照常執行」(tr.haltUnbound);重開後沒在跑、從沒啟動過、自己掛了都講「什麼單都不下」(tr.haltUnboundOff);別的原因照舊",
     why(base()) === "tr.haltUnbound" && off === "tr.haltUnboundOff" && never === "tr.haltUnboundOff" && died === "tr.haltUnboundOff" && why(base({ halt: { halted: true, reason: "desktop ui", source: "desktop" } })) !== "tr.haltUnbound", J([why(base()), off, never, died]));
+  ok("0.1.27 完全凍結(halt.freeze):解除綁定、對帳器活著也講什麼單都不送(tr.haltUnboundFreeze);沒在跑照舊 haltUnboundOff",
+    why(base({ halt: { halted: true, reason: "exchange unbound (paper)", source: "web", freeze: true, holds_all: true } })) === "tr.haltUnboundFreeze"
+    && why(base({ halt: { halted: true, reason: "exchange unbound (paper)", source: "web", freeze: true, holds_all: true }, reconciler: { alive: false } })) === "tr.haltUnboundOff");
   // 稽核 r4 P2:沒有路由、帳本上又有部位 → 不是可按的「啟動下單」(按了會被 NEEDS_ROUTING 拒)
   const zv = vm.runInContext("trZView('halted', " + J(base({ config: { amounts: { a: 1 }, exchanges: { a: "" } }, last_reconcile: { ledger: { BTCUSDT: { side: "long", size: 5 } } } })) + ")", ctx);
   ok("沒有路由、帳本上有部位:啟動下單停用、原因講要先存(不是 tr.startOnBook)", zv.off === true && zv.reason === "tr.startOffNoAmt", J(zv)); }

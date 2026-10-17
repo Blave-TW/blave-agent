@@ -168,7 +168,7 @@ Every backtest costs the user real credit. These limits are absolute; no goal ju
 
 ## Kill Switch (state/HALT)
 
-If `state/HALT` exists, `lib/order_*` refuses all NEW-EXPOSURE orders (closes, SL/TP, cancels still work). When the user says 停 / 全部停止 / stop trading:
+If `state/HALT` exists, `lib/order_*` refuses EVERY order — entries, closes, SL/TP (cancels still pass); a close while paused is only the user's explicit one (`manager/flatten.py`, `manager/close_symbol.py`). When the user says 停 / 全部停止 / stop trading:
 
 ```
 python3 -c "from lib.guard import trip_halt; trip_halt('user request', 'user')"
