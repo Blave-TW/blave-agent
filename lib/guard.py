@@ -234,6 +234,7 @@ def grant_halt_closes(source):
     send reduce orders (and flatten's armed netted restore) under HALT."""
     global _halt_closes_granted
     _halt_closes_granted = True
+    audit("halt_close_pass_granted", source=source)
 
 
 class halt_close_pass:
@@ -272,8 +273,8 @@ def _check_halt_freeze(intent, fields):
         f"state/HALT is set ({halt_info()}) — trading is paused: no order of any kind "
         f"(entries, closes, SL/TP) is sent until the user presses 啟動下單. "
         f"{intent} order for {_order_label(fields)} refused before reaching the venue. "
-        f"Closing while paused is the user's explicit close (暫停並關閉部位 / "
-        f"manager/close_symbol.py). Only the user may clear the halt.")
+        f"Closing while paused is the user's explicit close (暫停並關閉部位, or "
+        f"closing that one symbol). Only the user may clear the halt.")
 
 
 # ── account hold: an unconfirmed exchange account gets no order at all ───────

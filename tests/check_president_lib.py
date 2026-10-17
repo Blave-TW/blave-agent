@@ -366,12 +366,16 @@ api = use([ACK])
 check(raises(guard.Halted, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry")) is not None
       and not api.sent, "HALT: entry refused before login")
 snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
-r = op.place_futures_market_order({}, "TMF", "sell", 1, "reduce", confirm_timeout=0.4)
-check(len(api.sent) == 1, "HALT: reduce passes")
+check(raises(guard.Halted, lambda: op.place_futures_market_order({}, "TMF", "sell", 1, "reduce",
+                                                                 confirm_timeout=0.4)) is not None
+      and not api.sent, "HALT: reduce refused too (full freeze)")
+with guard.halt_close_pass("TMF", "test"):
+    r = op.place_futures_market_order({}, "TMF", "sell", 1, "reduce", confirm_timeout=0.4)
+check(len(api.sent) == 1, "HALT: the user's close (inside the close pass) is sent")
 os.remove("state/HALT")
 check(all(a.logged_out for a in apis), "every session logged out")
 audits = [json.loads(line)["event"] for line in open("state/audit.jsonl")]
-check({"order_sent", "order_error", "order_filled", "order_denied_halt"} <= set(audits), "audit trail", set(audits))
+check({"order_sent", "order_error", "order_filled", "order_denied_halt", "order_allowed_halt_close"} <= set(audits), "audit trail", set(audits))
 
 # ── 4. snapshot + worker parsing ─────────────────────────────────────────────
 snapshot([{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 1},

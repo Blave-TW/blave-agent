@@ -1277,6 +1277,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     stop.set()  # the resting order is cancelled right below
                     reason = "machine restarted"
                     break
+                if guard.halted():
+                    stop.set()  # cancelled right below: a fill after the freeze is a trade the user paused
+                    reason = "state/HALT set"
+                    break
                 if _account_held(tools.get("venue") or exchange):
                     stop.set()  # cancelled right below; a cancel is not an order
                     reason = "exchange account unconfirmed"

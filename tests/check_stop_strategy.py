@@ -332,7 +332,7 @@ msg = refused(cs.prepare, "bingx", "XRPUSDT", "long", "BINGX_API_KEY", "BINGX_SE
 check(msg is not None and "nothing changed" in msg, "unexpected prepare error → refused (exit 2)")
 
 # ── stop() ──────────────────────────────────────────────────────────────────
-os.makedirs("state")
+os.makedirs("state", exist_ok=True)  # close_symbol's grant_halt_closes audit may have made it
 REG = {"xrp_5x_v2": {"type": "cron"}, "xrp_v2_monitor": {"type": "daemon"}, "keep": {}}
 with open("state/deployments.json", "w") as f:
     json.dump(REG, f)

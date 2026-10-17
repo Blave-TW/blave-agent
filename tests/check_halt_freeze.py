@@ -10,6 +10,9 @@ the thread-local one.
   R  lib.portfolio.reconcile: reduce / close / flip / safety HALT / deferred close-all
   E  lib.execute: a reduce TWAP stops at its next slice too
   P  the close pass is held by exactly flatten.py and close_symbol.py
+  W  two-step open_position (Binance/OKX/Gate.io): a pause between fill and SL/TP
+     refuses the SL/TP too (Wei: no exception) and raises ProtectionFailed saying so
+  F  runtime portfolio_reporter.halt_freezes: unknown says "frozen", never "exits still run"
 
 No network, no exchange, no process but this one's own child. Run:
     .venv/bin/python tests/check_halt_freeze.py
@@ -108,10 +111,13 @@ def refused(intent):
         return True
 before = refused("reduce")
 guard.grant_halt_closes("flatten")
-print(before, refused("reduce"), refused("protective"))
+import json
+granted = [r.get("source") for r in map(json.loads, open(guard.AUDIT_PATH))
+           if r.get("event") == "halt_close_pass_granted"]
+print(before, refused("reduce"), refused("protective"), granted == ["flatten"])
 """], capture_output=True, text=True, cwd=tempfile.mkdtemp(prefix="halt-freeze-child-"))
-check(child.stdout.split() == ["True", "False", "True"],
-      f"G9 the process-wide pass (flatten / close_symbol): reduces go, SL/TP never "
+check(child.stdout.split() == ["True", "False", "True", "True"],
+      f"G9 the process-wide pass (flatten / close_symbol): reduces go, SL/TP never; the grant is audited with its source "
       f"({child.stdout.strip()} {child.stderr.strip()[-200:]})")
 
 # ── R: reconcile ─────────────────────────────────────────────────────────────
@@ -213,6 +219,31 @@ check(isinstance(out, dict) and len(sent) == 1 and not execute.list_inflight(),
 _vw.auto_place_order = _real_auto
 reset_halt()
 
+execute._CHASE_POLL_S, execute._CHASE_TIMEOUT_S = 0.02, 2.0
+chase = {"place": 0, "status": 0, "cancel": 0, "market": 0}
+
+
+def _chase_status(oid):
+    chase["status"] += 1
+    if chase["status"] == 1:
+        guard.trip_halt("user request", "web")  # lands while the limit rests
+    return {"status": "new", "executed_qty": 0.0, "avg_price": 0.0}
+
+
+_vw.auto_place_order = lambda *a, **k: chase.__setitem__("market", chase["market"] + 1)
+tools = {"bbo": lambda: (100.0, 100.1), "venue": "binance", "status": _chase_status,
+         "place": lambda *a, **k: chase.__setitem__("place", chase["place"] + 1) or {"order_id": "o1", "status": "new"},
+         "cancel": lambda oid: chase.__setitem__("cancel", chase["cancel"] + 1) or {"status": "canceled"}}
+stop, t0 = threading.Event(), __import__("time").time()
+try:
+    execute._chase_thread("BTCUSDT", -100.0, None, True, "binance", None, tools, stop)
+finally:
+    _vw.auto_place_order = _real_auto
+took = __import__("time").time() - t0
+check(chase["place"] == 1 and chase["cancel"] >= 1 and chase["market"] == 0 and chase["status"] <= 3 and took < 1.5,
+      f"E3 HALT lands while a chase limit rests: cancelled at the next poll, no re-post, no market ({chase}, {took:.2f}s)")
+reset_halt()
+
 # ── P: who holds the close pass ──────────────────────────────────────────────
 print("== P close-pass holders")
 holders, scoped = set(), set()
@@ -234,6 +265,70 @@ check(scoped == {"lib/portfolio.py"}, f"P2 the thread-local pass: lib/portfolio.
 flat = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
 check(flat.index("grant_halt_closes(") > flat.index("claim_close_all_pass()"),
       "P3 flatten takes the pass only past the restart-stop branch (no pass → nothing closes there)")
+
+# ── W: a pause between open_position's fill and its SL/TP ────────────────────
+print("== W open_position window")
+import importlib  # noqa: E402
+for v in ("binance", "okx", "gateio"):
+    m = importlib.import_module(f"lib.order_{v}")
+    hit = []
+    m._send = lambda *a, **k: hit.append(a) or (_ for _ in ()).throw(AssertionError("reached the venue"))
+    m.get_position_mode = lambda env: "oneway"
+    m.format_price = lambda env, symbol, price: str(price)
+    m._position_side = lambda env, direction: "BOTH"
+
+    def _entry(env, symbol, direction, qty, **k):
+        guard.trip_halt("user request", "web")  # the pause lands right after the fill
+        return {"order_id": "e1", "status": "filled", "executed_qty": qty}
+
+    m.place_market_order = _entry
+    denied = len([r for r in audits("order_denied_halt") if r.get("intent") == "protective"])
+    try:
+        m.open_position({}, "BTCUSDT", "long", 0.01, sl_price=90000.0, tp_price=110000.0)
+        err = None
+    except Exception as e:  # noqa: BLE001
+        err = e
+    check(isinstance(err, m.ProtectionFailed) and isinstance(err.__cause__, guard.Halted)
+          and "NO STOP-LOSS" in str(err) and "啟動下單" in str(err) and "place_protective_orders" in str(err)
+          and not hit and len([r for r in audits("order_denied_halt") if r.get("intent") == "protective"]) > denied,
+          f"W {v}: SL/TP refused, nothing reaches the venue, ProtectionFailed names the unprotected "
+          f"position and the fix ({type(err).__name__}: {str(err)[:80]})")
+    reset_halt()
+
+# ── F: the report's `freeze` when the evidence is missing ────────────────────
+print("== F reporter freeze")
+_ws = tempfile.mkdtemp(prefix="halt-freeze-ws-")
+os.environ["BLAVE_AGENT_BASE"], os.environ["BLAVE_AGENT_WORKSPACE"] = _ws, os.path.join(_ws, "workspace")
+sys.path.append(os.path.join(ROOT, "runtime"))
+import portfolio_reporter as pr  # noqa: E402
+
+
+def _absent_raises():
+    raise OSError("process list unreadable")
+
+
+def freezes(fresh, caps, absent, disk):
+    pr._reconciler_view = lambda hb, last: (fresh, False)
+    pr._reconciler_absent = absent if callable(absent) else (lambda: absent)
+    pr._ws_lib_halt_freeze = lambda: disk
+    return pr.halt_freezes(hb=1, last={"caps": caps})
+
+
+check(freezes(True, ["halt_freeze"], False, False) is True, "F1 running reconciler with the cap → freeze")
+check(freezes(True, [], True, True) is False, "F2 running reconciler without it (old lib) → no freeze")
+check(freezes(False, None, True, True) is True and freezes(False, None, True, False) is False,
+      "F3 provably no reconciler → the lib on disk decides")
+check(freezes(False, None, False, False) is True,
+      "F4 stale heartbeat, a process maybe there → freeze (unknown is the cautious word)")
+check(freezes(False, None, _absent_raises, False) is True, "F5 presence check fails → freeze")
+
+
+def _boom(hb=None, last=None):
+    raise RuntimeError("boom")
+
+
+pr.halt_freezes = _boom
+check(pr.halt_state(hb=1, last={})["freeze"] is True, "F6 halt_freezes itself raises → the report still says freeze")
 
 print(f"\ncheck_halt_freeze: {red} FAILED" if red else "\ncheck_halt_freeze: all ok")
 sys.exit(1 if red else 0)

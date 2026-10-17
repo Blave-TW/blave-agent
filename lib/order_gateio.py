@@ -678,6 +678,15 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                 raise GateioError("N/A", f"{kind} response missing id: {order}",
                                   "price_orders")
             placed[kind] = {"algoId": str(order["id"]), "raw": order}
+    except guard.Halted as e:
+        raise ProtectionFailed(
+            f"{symbol} {direction} position is OPEN WITH NO STOP-LOSS/TAKE-PROFIT "
+            f"(placed before the pause: {list(placed) or 'none'}): trading was paused "
+            f"(state/HALT) after the entry filled, and a paused machine sends no order. "
+            f"Nothing re-places them on its own — alert the user now: the position stays "
+            f"unprotected until they press 啟動下單; then re-place them with "
+            f"place_protective_orders. {e}"
+        ) from e
     except Exception as e:
         raise ProtectionFailed(
             f"{symbol} {direction} position may be NAKED — placing protective orders "

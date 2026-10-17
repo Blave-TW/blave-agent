@@ -1523,7 +1523,8 @@ function trPushLabels() {
     updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
     moveAuthExists: t("tm.move.authExists"), moveAuthApps: t("tm.move.authApps"), gotIt: t("src.gotIt"),   // 搬移要系統授權時的提示框(只有「知道了」)
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
-    ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evRestartStoppedNote"),   // 本機的 lib 隨 app 出貨:0.1.27 起 HALT 是完全凍結 ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
+    ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evRestartStoppedNote"),   // 本機的 lib 隨 app 出貨:0.1.27 起 HALT 是完全凍結
+    ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
     ev_execution_interrupted: t("tr.ov.evExecInterrupted"), ev_execution_interrupted_n: t("tr.ov.evExecInterruptedNote"),
     ev_execution_fallback_market: t("tr.ov.evExecFallback"), ev_execution_fallback_market_n: t("tr.ov.evExecFallbackNote"),
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),

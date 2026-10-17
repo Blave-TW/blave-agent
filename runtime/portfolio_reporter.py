@@ -836,8 +836,9 @@ def halt_freezes(hb=None, last=None):
     """Whether a HALT here sends nothing at all — closes, exits and SL/TP
     included — or, on an older lib, only refuses entries. Same evidence rule as
     can_hold_rollover_in_halt: a running reconciler's caps, else (provably no
-    process) the lib on disk. Unknown = False: the pages then keep the older,
-    weaker promise rather than claim a freeze the machine may not do."""
+    process) the lib on disk. Unknown (stale heartbeat, a process that may still
+    be there, a failed check) = True: "exits and SL/TP still run" is the promise
+    that hurts when false — the user stops watching a position nobody manages."""
     fresh, _ = _reconciler_view(hb, last)
     if last is None:
         last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
@@ -847,8 +848,8 @@ def halt_freezes(hb=None, last=None):
     try:
         absent = _reconciler_absent()
     except Exception:
-        return False
-    return absent and _ws_lib_halt_freeze()
+        return True
+    return not absent or _ws_lib_halt_freeze()
 
 
 def can_hold_rollover_in_halt(hb=None, last=None):
@@ -1000,7 +1001,7 @@ def halt_state(hb=None, last=None):
     except Exception as e:
         print(f"[portfolio_reporter] halt freeze check failed: {type(e).__name__}: {e}",
               file=sys.stderr)
-        freeze = False
+        freeze = True
     if not os.path.exists(path):
         return {"halted": False, "freeze": freeze}
     info = _read_json(path, {}) or {}
