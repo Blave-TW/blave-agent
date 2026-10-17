@@ -652,7 +652,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     { boxes.length = 0; oauthPending = true; acctOutAsk(null); oauthPending = false; ok("等待登入中:不出框", boxes.length === 0);
       cur = "claude"; acct = { plan: { state: "none" } }; running = true; acctOutAsk(null); running = false;
       ok("回合進行中(busy-lock spec §2.3:登出放開):照出框,第一句講正在回覆的這條會先停", boxes.length === 1 && boxes[0].lines.join() === "busy.cut.out,acct.out.1,acct.out.2"); }
-    ok("確認框按下去才走登出那一支(回合中先停再登出:busyStopThen);登出之後(用自己 CLI 的人留在原地)焦點回左欄的「帳號與方案」、讀屏念一次;用 Blave AI 的人照舊回選 AI 的畫面", /confirmBox\(\{ title: t\("acct\.cf\.title"\), lines, ok: t\("acct\.cf\.ok"\), opener, onOk: \(\) => busyStopThen\(acctSignOut, opener\) \}\);/.test(src)
+    ok("確認框按下去才走登出那一支(回合中先停再登出:busyStopThen);登出之後(用自己 CLI 的人留在原地)焦點回左欄的「帳號與方案」、讀屏念一次;用 Blave AI 的人照舊回選 AI 的畫面", /confirmBox\(\{ title: t\("acct\.cf\.title"\), lines, ok: t\("acct\.cf\.ok"\), opener, onOk: \(\) => busyStopThen\(acctSignOut\) \}\);/.test(src)
       && /async function acctSignOut\(\) \{\n  if \(!hasToken \|\| oauthPending \|\| planLoginBusy \|\| acctOutBusy\) return;\n  acctOutBusy = true;\n  const r = await window\.blave\.signOutBlave\(\)\.finally\(\(\) => \{ acctOutBusy = false; \}\);/.test(src)
       && /srSay\(t\("acct\.outDone"\)\);\n    const c = document\.querySelector\('\.set-cat\[data-set-cat="plan"\]'\); if \(c\) c\.focus\(\);/.test(src) && /await window\.blave\.clearConnection\(\);\n  cur = null;\n  setClose\(\);/.test(src));
     // 訊息格

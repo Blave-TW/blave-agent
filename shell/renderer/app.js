@@ -323,7 +323,7 @@ function acctOutAsk(opener) {
   const hasMachine = !!acct && ["starting", "running", "stopped"].includes(planState());
   const lines = (busyOn() ? [t("busy.cut.out")] : []).concat(cur === "blave" ? [t("acct.out.3")] : [], [t("acct.out.1")], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
   // 回合中登出:token 撤掉後那條回覆的下一個請求會失敗、斷在半路,所以先停再登出(busyStopThen)
-  confirmBox({ title: t("acct.cf.title"), lines, ok: t("acct.cf.ok"), opener, onOk: () => busyStopThen(acctSignOut, opener) });
+  confirmBox({ title: t("acct.cf.title"), lines, ok: t("acct.cf.ok"), opener, onOk: () => busyStopThen(acctSignOut) });
 }
 let acctOutBusy = false;   // 撤銷在路上:第二下不再撤一次
 async function acctSignOut() {
@@ -1684,7 +1684,7 @@ function rpNobtPaint(B, has) {
 // 交給 report-robust.js 的環境:回合狀態(busy + 序號)與這一袋是哪一邊(scope:本機 / 雲端同名策略的「已送出」不互相污染)
 function rpRobOpts() {
   const R = window.BlaveReport || {};
-  return { t, busy: running, turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, buildMeta: R.buildMeta, resync: rpRobSync, refocus: rpRobRefocus };
+  return { t, busy: running, turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, busyFix: (el) => busyFixLink(el, "stop"), buildMeta: R.buildMeta, resync: rpRobSync, refocus: rpRobRefocus };
 }
 // 「去資料來源」:開設定 › 資料來源;清單畫好後焦點交給第一列缺金鑰列的「新增」(srcPaintList 消費 SRC.focusMiss)
 function rpGoDataSrc() { trackFeature("missing_key_go"); setOpen().then(() => { if ($("set-scrim").hidden) return; SRC.focusMiss = true; setCat("src"); }); }
@@ -1723,7 +1723,7 @@ function rpWfCloud() { const st = TR_BAGS.cloud.st; return (st && st.cloud) || {
 function rpWfOpts() {
   const R = window.BlaveReport || {}, cloud = rpBag() === RPC, c = cloud ? rpWfCloud() : null;
   const gate = !cloud ? true : typeof c.config_supports_wf === "boolean" ? c.config_supports_wf : null;
-  return { t, busy: running, turn: turnSeq, scope: cloud ? "cloud" : "local", gate, onRun: rpWfAsk, onUpdate: rpWfUpdate, buildMeta: R.buildMeta,
+  return { t, busy: running, turn: turnSeq, scope: cloud ? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: (el) => busyFixLink(el, "stop"), onUpdate: rpWfUpdate, buildMeta: R.buildMeta,
     resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch };
 }
 /* 雲端結果比回合晚到:留著「已送出」的期間 report-wf.js 每 30 秒叫一次(失敗退回後也補抓一次),name = 送出的那一支(複驗 P2-R2)。

@@ -8174,12 +8174,9 @@ msgstr "Stop"
 msgid "busy.fix.view"
 msgstr "View"
 
-# 回合中換 AI(設定 › 模型接入):先問,確認了先停那條再換
+# 回合中換 AI(設定 › 模型接入):先問(內文共用 busy.cut.out),確認了先停那條再換
 msgid "busy.cut.title"
-msgstr "Stop the reply in progress?"
-
-msgid "busy.cut.body"
-msgstr "Switching AI stops the reply in progress first."
+msgstr "Switch AI?"
 
 msgid "busy.cut.ok"
 msgstr "Stop and switch"
@@ -8191,7 +8188,7 @@ msgstr "Stopping…"
 msgid "busy.stopFail"
 msgstr "It didn't stop. Try again in a moment."
 
-# 回合中登出:確認框第一句
+# 回合中登出／移除自帶金鑰:確認框第一句;換 AI 確認框的內文也用這句
 msgid "busy.cut.out"
 msgstr "The reply in progress will be stopped first."
 

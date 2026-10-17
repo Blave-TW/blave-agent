@@ -604,16 +604,20 @@
   // 就地把鈕與那一行說明對到現在的回合狀態;不重建節點(焦點留在鈕上)。結果頁的「已送出」由整片重畫處理,這裡不換字
   function syncBtn(st, opts) {
     const on = isSent(st, opts);
-    // 拿著焦點的鈕要停用(暖機 / 別的回合開了):先把焦點交給分頁鈕,不讓它掉到 <body>(設計複稽核 R2,0.1.9 就有)
-    if (opts.busy && !st.btn.disabled && document.activeElement === st.btn && typeof opts.refocus === "function") opts.refocus();
-    st.btn.disabled = !!opts.busy;
+    // 回合中是鎖(busy-lock spec §8):aria-disabled,焦點留得住;原因句常駐在鈕下＋〔停止〕
+    if (opts.busy) st.btn.setAttribute("aria-disabled", "true"); else st.btn.removeAttribute("aria-disabled");
     if (st.kind === "empty") st.btn.textContent = opts.t(on ? "rob.btnSent" : "rob.btnScan");
     const wantCap = !!opts.busy && !on;   // 回合進行中 submit 會直接回 false,按了沒反應像壞掉:鎖鈕 + 一行說明
-    if (wantCap && !st.cap) { st.cap = el("p", "rob-cap", opts.t("rob.busy")); st.box.appendChild(st.cap); }
+    if (wantCap && !st.cap) {
+      st.cap = el("p", "rob-cap"); st.cap.setAttribute("role", "status"); robCapFill(st.cap, opts); st.box.appendChild(st.cap);
+    }
     else if (!wantCap && st.cap) { st.cap.remove(); st.cap = null; }
   }
+  // 原因句＋〔停止〕(呼叫端給 busyFix 才有連結);點了被鎖的鈕再寫一次,讀屏重唸
+  function robCapFill(cap, opts) { cap.textContent = opts.t("rob.busy"); if (typeof opts.busyFix === "function") opts.busyFix(cap); }
   function wireBtn(container, st, info, opts) {
     st.btn.addEventListener("click", () => {
+      if (st.btn.getAttribute("aria-disabled") === "true") { if (st.cap) robCapFill(st.cap, opts); return; }
       if (typeof opts.onScan !== "function") return;
       const key = sentKey(opts, st.name), sig = st.sig;
       const begin = () => sent.set(key, { sig, turn: null, pending: true });   // 呼叫端在確認框按下、送出之前叫

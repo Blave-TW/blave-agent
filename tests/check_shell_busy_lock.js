@@ -71,10 +71,10 @@ ok("② 放開(spec §2.3):設定、模型、登出、登入不再看 running", 
 ok("② 換 AI / 登出:回合中走確認框、先停再做(busyCut / busyStopThen),不是靜默擋",
   /if \(busyOn\(\)\) \{ busyCut\(null, \(\) => connectNow\(kind, info\)\); return; \}/.test(fnSrc(appSrc, "connect")) && /busyCut\(b, \(\) => blaveGoNow\(b\)\)/.test(fnSrc(appSrc, "blaveGo"))
   && !/busyOn\(\)/.test(fnSrc(appSrc, "connectNow")) && !/busyOn\(\)/.test(fnSrc(appSrc, "blaveGoNow"))
-  && /onOk: \(\) => busyStopThen\(acctSignOut, opener\)/.test(fnSrc(appSrc, "acctOutAsk")) && /busyOn\(\) \? \[t\("busy\.cut\.out"\)\]/.test(fnSrc(appSrc, "acctOutAsk"))
+  && /onOk: \(\) => busyStopThen\(acctSignOut\)/.test(fnSrc(appSrc, "acctOutAsk")) && /busyOn\(\) \? \[t\("busy\.cut\.out"\)\]/.test(fnSrc(appSrc, "acctOutAsk"))
   && /if \(!hasToken \|\| oauthPending \|\| planLoginBusy \|\| acctOutBusy\) return;\n  acctOutBusy = true;\n  const r = await window\.blave\.signOutBlave\(\)\.finally\(\(\) => \{ acctOutBusy = false; \}\);/.test(fnSrc(appSrc, "acctSignOut")));
 { const ak = read(path.join(R, "apikey.js")), ask = fnSrc(ak, "akRemoveAsk");
-  ok("② 回合中移除正在用的自帶金鑰:確認框先講會停、按下走 busyStopThen(akRemove)", /const cut = cur === "apikey" && busyOn\(\);/.test(ask) && /cut \? \[t\("busy\.cut\.out"\)\] : \[\]/.test(ask) && /onOk: cut \? \(\) => busyStopThen\(akRemove, opener\) : akRemove/.test(ask)); }
+  ok("② 回合中移除正在用的自帶金鑰:確認框先講會停、按下走 busyStopThen(akRemove)", /const cut = cur === "apikey" && busyOn\(\);/.test(ask) && /cut \? \[t\("busy\.cut\.out"\)\] : \[\]/.test(ask) && /onOk: cut \? \(\) => busyStopThen\(akRemove\) : akRemove/.test(ask)); }
 const natives = [];
 for (const f of fs.readdirSync(R).filter((n) => /\.js$/.test(n))) {
   const src = read(path.join(R, f));
@@ -107,6 +107,7 @@ class El {
   appendChild(c) { if (typeof c === "string") { this.kids.push(c); return c; } if (c.parentNode) c.parentNode.kids = c.parentNode.kids.filter((x) => x !== c); c.parentNode = this; this.kids.push(c); return c; }
   insertBefore(c, ref) { if (c.parentNode) c.parentNode.kids = c.parentNode.kids.filter((x) => x !== c); c.parentNode = this; const i = ref ? this.kids.indexOf(ref) : -1; if (i < 0) this.kids.push(c); else this.kids.splice(i, 0, c); return c; }
   addEventListener(ev, fn) { (this.on[ev] = this.on[ev] || []).push(fn); } click() { (this.on.click || []).forEach((f) => f({})); } focus() { calls.push("focus:" + this.id); }
+  querySelector(sel) { const c = sel.replace(/^\./, ""); return this.all().find((x) => (" " + x.className + " ").includes(" " + c + " ")) || null; }
   all() { const out = []; const walk = (x) => x.kids.forEach((k) => { if (typeof k !== "string") { out.push(k); walk(k); } }); walk(this); return out; }
 }
 const root = new El("body"), byId = {};
@@ -141,7 +142,7 @@ $("set-scrim").hidden = false; $("cs-list").hidden = false; calls.length = 0;
 B.busyTell(B.busySlot("perf-why", $("x")), "perf");
 B.busySlot("perf-why", $("x")).kids.find((k) => typeof k !== "string" && k.tag === "button").click();
 ok("③ 按「查看」:關設定、收清單、展開聊天欄、捲到底、焦點回輸入框;記 lock_fix", calls.join() === "setClose,list:false,pane:chat:false,scroll,focus:ta" && tracked.slice(-2).join() === "lock_perf,lock_fix", calls);
-const want = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send" };
+const want = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send", sendAway: "lock_send" };
 const FEATURES = require(path.join(SH, "telemetry.js")).EVENTS.feature_used.name;
 ok("③ 每一把鎖都有字(zh / en)、都對到 spec §4 的埋點名,名字都在白名單上",
   JSON.stringify(Object.keys(B.BUSY).sort()) === JSON.stringify(Object.keys(want).sort()) && Object.keys(want).every((k) => B.BUSY_FEATURE[k] === want[k] && STR.zh[B.BUSY[k].key] && STR.en[B.BUSY[k].key])
@@ -155,19 +156,29 @@ ok("③ 回合結束(busySync):所有原因句收掉,借用的原因行(#rp-ho-n
   calls.length = 0; let did = []; env.running = false; B.busyCut(null, () => did.push("a"));
   ok("③ 沒有回合:換 AI 直接做、不開框", did.join() === "a" && calls.length === 0);
   env.running = true; const btn = Object.assign(new El("button"), { id: "out" }); $("plan-row").appendChild(btn);
+  $("set-scrim").hidden = true; env.paneSt.chat.off = false;
   B.busyCut(btn, () => did.push("b"));
   const box = calls.find((x) => x && typeof x === "object");
-  ok("③ 回合中換 AI:先開框(busy.cut.*),還沒按不停也不做", did.join() === "a" && box && box.title === STR.zh["busy.cut.title"] && box.ok === STR.zh["busy.cut.ok"] && !calls.includes("stop"));
+  ok("③ 回合中換 AI:先開框(標題一句、內文 busy.cut.out,不重複),還沒按不停也不做", did.join() === "a" && box && box.title === STR.zh["busy.cut.title"] && box.lines.join() === STR.zh["busy.cut.out"] && box.ok === STR.zh["busy.cut.ok"] && !calls.includes("stop"));
   box.onOk();
   const why = doc.getElementById("busy-cut-why");
-  ok("③ 按下確認:叫停止、按的那顆鈕旁寫「停止中…」、還沒做", calls.includes("stop") && did.join() === "a" && why && !why.hidden && why.textContent === STR.zh["busy.stopping"] && $("plan-row").nextSibling === why && !!B.pending);
-  B.busyStopThen(() => did.push("c"), btn);
+  ok("③ 按下確認:叫停止、「停止中…」寫在不會被重畫的聊天標題列下方(設定關著)、還沒做", calls.includes("stop") && did.join() === "a" && why && !why.hidden && why.textContent === STR.zh["busy.stopping"] && $("cs-head").nextSibling === why && !!B.pending);
+  B.busyStopThen(() => did.push("c"));
   ok("③ 單一待辦:又排一件,取代上一件(不疊)、舊的計時作廢", B.pending && timers.filter((x) => x.live).length === 1);
   env.running = false; B.busySync();
   ok("③ 回合一結束(busySync)當場做,而且只做最後那一件;停止中那行收掉", did.join() === "a,c" && !B.pending && why.hidden && timers.filter((x) => x.live).length === 0);
-  env.running = true; B.busyStopThen(() => did.push("d"), btn); fire();
-  const fx = why.kids.find((k) => typeof k !== "string" && k.tag === "button");
-  ok("③ 20 秒還沒停:不做(確認框說了會先停),原位講「沒停下來」並留「停止」可再按", did.join() === "a,c" && !B.pending && !why.hidden && why.kids[0].textContent === STR.zh["busy.stopFail"] && fx && fx.textContent === STR.zh["busy.fix.stop"]);
+  // 設定開著:槽在設定標題列下方;等待中整頁重畫把槽拆掉、又把設定關了 → 逾時那句重新取槽,寫到看得見的聊天標題列下方(聊天欄收著先展開)
+  const sm = $("set-modal"), mh = Object.assign(new El("div"), { className: "modal-head" }); sm.appendChild(mh); $("set-scrim").hidden = false;
+  env.running = true; B.busyStopThen(() => did.push("d"));
+  const inSet = doc.getElementById("busy-cut-why"), atSet = mh.nextSibling === inSet && inSet.textContent === STR.zh["busy.stopping"];
+  inSet.parentNode.kids = inSet.parentNode.kids.filter((x) => x !== inSet); inSet.parentNode = null;
+  $("set-scrim").hidden = true; env.paneSt.chat.off = true; calls.length = 0; fire();
+  const why2 = doc.getElementById("busy-cut-why"), fx = why2 && why2.kids.find((k) => typeof k !== "string" && k.tag === "button");
+  ok("③ 設定開著時「停止中…」在設定標題列下方;逾時重新取槽(舊節點被拆了也寫得出來)、寫到聊天標題列下方並展開聊天欄",
+    atSet && why2 && why2.isConnected && $("cs-head").nextSibling === why2 && calls.includes("pane:chat:false"), { atSet, calls });
+  ok("③ 20 秒還沒停:不做(確認框說了會先停),講「沒停下來」並留「停止」可再按", did.join() === "a,c" && !B.pending && !why2.hidden && why2.kids[0].textContent === STR.zh["busy.stopFail"] && fx && fx.textContent === STR.zh["busy.fix.stop"]);
+  env.paneSt.chat.off = true; calls.length = 0; B.busySendTell();
+  ok("③ 送一句話被擋、聊天欄收著:先展開聊天欄再寫輸入框上方那一句", calls.join() === "pane:chat:false,ta", calls);
   env.running = false; B.busySync();
   ok("③ 逾時那件之後回合才結束:也不補做", did.join() === "a,c");
 }

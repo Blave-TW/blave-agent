@@ -723,7 +723,14 @@
     setWait(holdLeft(rec, opts, nowOf(opts)) !== null);
     const read = () => ({ lookback: parseInt(iLb.value, 10) || 0, step: parseInt(iSt.value, 10) || 0 });
     // 拿著焦點的鈕要停用(別的回合開了、送不出去):先把焦點交給分頁鈕,不讓它掉到 <body>(設計複稽核 R2)
-    const setDis = (v) => { if (v && !btn.disabled && document.activeElement === btn && typeof opts.refocus === "function") opts.refocus(); btn.disabled = v; };
+    // 回合中(且不是已送出)是鎖:aria-disabled、焦點留得住,原因句常駐＋〔停止〕(busy-lock spec §8);其他原因照舊原生 disabled
+    const setDis = (v) => {
+      if (busyNow) { btn.disabled = false; btn.setAttribute("aria-disabled", "true"); return; }
+      btn.removeAttribute("aria-disabled");
+      if (v && !btn.disabled && document.activeElement === btn && typeof opts.refocus === "function") opts.refocus();
+      btn.disabled = v;
+    };
+    const capFill = () => { busyCap.textContent = t("rob.busy"); if (typeof opts.busyFix === "function") opts.busyFix(busyCap); };
     function recalc() {
       const locked = behind ? false : snt || busyNow;   // 輪數估算不得解鎖這兩態的鈕
       const v = read();
@@ -752,7 +759,7 @@
       if (inited && next === busyNow) return;   // 雲端輪詢每 15 秒叫一次:狀態沒變就不重算(時間軸五列不必重建)
       inited = true;
       busyNow = next;
-      if (busyNow && !busyCap) { busyCap = el("p", "wf-cap", t("rob.busy")); box.appendChild(busyCap); }
+      if (busyNow && !busyCap) { busyCap = el("p", "wf-cap"); busyCap.setAttribute("role", "status"); capFill(); box.appendChild(busyCap); }
       else if (!busyNow && busyCap) { busyCap.remove(); busyCap = null; }
       recalc();
     }
@@ -761,6 +768,7 @@
     iLb.addEventListener("input", recalc);
     iSt.addEventListener("input", recalc);
     btn.addEventListener("click", () => {
+      if (btn.getAttribute("aria-disabled") === "true") { if (busyCap) capFill(); return; }
       if (behind) { if (typeof opts.onUpdate === "function") opts.onUpdate(btn); return; }
       const v = read();   // 送出時再驗一次
       const nn = total ? wfRunsOf(total, v.lookback, v.step) : null;
