@@ -606,6 +606,7 @@
     const on = isSent(st, opts);
     // 回合中是鎖(busy-lock spec §8):aria-disabled,焦點留得住;原因句常駐在鈕下＋〔停止〕
     if (opts.busy) st.btn.setAttribute("aria-disabled", "true"); else st.btn.removeAttribute("aria-disabled");
+    st.btn.classList.toggle("is-lock", !!opts.busy && !on);   // 被鎖才變灰;「已送出」轉圈那一態不灰(app.css)
     if (st.kind === "empty") st.btn.textContent = opts.t(on ? "rob.btnSent" : "rob.btnScan");
     const wantCap = !!opts.busy && !on;   // 回合進行中 submit 會直接回 false,按了沒反應像壞掉:鎖鈕 + 一行說明
     if (wantCap && !st.cap) {

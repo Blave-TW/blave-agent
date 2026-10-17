@@ -12,7 +12,7 @@
 }
 .xp-chip::before { content: ""; position: absolute; inset: -8px -1px; }   /* 30 → 44 熱區:pseudo 錨在 padding box(扣掉 1px 邊框剩 28),所以是 -8 */
 .xp-chip:hover { background: var(--surface-muted); color: var(--ink); }
-.xp-chip[aria-disabled="true"] { color: var(--ink-3); cursor: default; }
+.xp-chip[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; }
 .xp-chip[aria-disabled="true"]:hover { background: transparent; }
 /* canon 的 CSS chevron:開啟翻上,開 / 關各自 translateY 補墨跡重心 */
 .xp-cv {

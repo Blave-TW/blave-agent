@@ -648,7 +648,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp-head .act[hidden] { display: none; }
 /* 「送上雲端 / 拉回」(renderer/handoff.js)。icon + 字的描邊鈕:左 8、右 12——icon 自帶留白,視覺才對稱 */
 .btn-out.has-ic { display: inline-flex; align-items: center; gap: var(--space-6); padding-left: var(--space-8); }
-#rp-ho[aria-disabled="true"] { color: var(--ink-3); cursor: default; }
+#rp-ho[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; }
 #rp-ho[aria-disabled="true"]:hover { background: transparent; }
 /* 確認框的兩欄變體:「標籤｜左對齊內容」(.cf-row 原本是「名稱｜右對齊數字」) */
 .cf-rows.kv dt { flex: 0 0 56px; color: var(--ink-3); }
@@ -1366,8 +1366,11 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 /* 失效的實心鈕:框取比填色亮一階的灰——只靠填色的話對 darkBody 只有 1.5:1,看不出那裡有一顆鈕(canon Disabled) */
 /* 回合進行中「點了才講」的鈕(策略庫主鈕、報告「新增報告」;aria-disabled:鍵盤停得上去、點了才把原因寫在鈕下)長相同 :disabled、hover 不給回饋。
    只點名這兩處:datasrc / 下單啟動過場 / 群益開通的 aria-disabled 實心鈕各有自己的長相,不跟著變灰 */
-.btn-fill:disabled, .lib-cta .btn-fill[aria-disabled="true"] { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: default; opacity: 1; }
-.btn-out:disabled, #rpt-ask[aria-disabled="true"] { color: var(--ink-3); background: transparent; cursor: default; }
+.btn-fill:disabled, .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock, .wf-go[aria-disabled="true"] { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: default; opacity: 1; }
+.btn-out:disabled, #rpt-ask[aria-disabled="true"], .btn-out.is-lock { color: var(--ink-3); background: transparent; cursor: default; }
+/* 回合中的鎖(參數掃描「開始掃描」、樣本外驗證「開始驗證」):長相同上,游標照 canon › Disabled ①。掃描的 aria-disabled 也包含「已送出」轉圈那一態,
+   所以掃描靠 report-robust.js 的 .is-lock 只點名「被鎖」;驗證的「已送出」是原生 disabled,aria-disabled 只會是鎖 */
+.lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock, .btn-out.is-lock, .wf-go[aria-disabled="true"] { cursor: not-allowed; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* ── Windows 捲軸 ─────────────────────────────────

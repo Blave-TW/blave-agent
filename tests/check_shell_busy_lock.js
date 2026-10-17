@@ -226,6 +226,12 @@ ok("字:「上一輪還在跑」這類工程用語不再出現在任何 zh 字�
   const h = /height: (\d+)px/.exec(body), viz = css.match(/\.busy-fix, \.busy-fix:hover \{([^}]*)\}/);
   ok("補救鈕熱區:.busy-fix::before 置中固定高 ≥ 44(不靠全域 -6 的 30);視覺那條不加 padding／高度",
     !!h && Number(h[1]) >= 44 && /top: 50%/.test(body) && /translateY\(-50%\)/.test(body) && !!viz && !/padding|height|line-height/.test(viz[1]), body); }
+{ const css = read(path.join(R, "app.css")), rob = read(path.join(R, "report-robust.js"));
+  const grey = css.match(/\.btn-fill:disabled, [^{]*\{([^}]*)\}/), na = css.match(/\n(\.lib-cta \.btn-fill\[aria-disabled="true"\][^{]*)\{([^}]*)\}/);
+  ok("稽核 0127b1 P1-3:回合中鎖住的「開始掃描／開始驗證」照 Disabled ①——跟填色鈕停用同一組灰、游標 not-allowed;掃描只在被鎖(不是已送出)時掛 .is-lock",
+    !!grey && /\.btn-fill\.is-lock/.test(grey[0]) && /\.wf-go\[aria-disabled="true"\]/.test(grey[0]) && !!na && /\.wf-go\[aria-disabled="true"\]/.test(na[1]) && /\.btn-fill\.is-lock/.test(na[1]) && /cursor: not-allowed/.test(na[2])
+    && /st\.btn\.classList\.toggle\("is-lock", !!opts\.busy && !on\)/.test(rob)
+    && /#rp-ho\[aria-disabled="true"\] \{[^}]*cursor: not-allowed/.test(css)); }
 (async () => {
   for (let n = 0; n < pend.length; n++) await pend[n];   // 巢狀的 await_ 會在跑的時候再推進來
   console.log(red ? red + " 紅" : "ALL PASS");
