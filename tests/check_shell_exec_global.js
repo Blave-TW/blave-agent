@@ -155,6 +155,8 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
 
   // ── ④c 樣式(設計稽核 A1／A2／P2)──
   { const css = read(path.join(R, "trade.css"));
+    ok("0.1.26 複看:區段標籤的 tooltip 鈕行高 18,跟純文字標籤同高(下單方式在市價／TWAP 切換時選單不跳);只限 .pf-sec,總覽數字卡的標籤不動",
+      /\.pf-sec \.tr-tipb \{ line-height: 18px; \}/.test(css) && !/^\.tr-tipb \{[^}]*line-height/m.test(css));
     ok("④c .f-input:disabled 灰階(ink-3 字、hairline 框、not-allowed)、opacity 明寫 1 蓋掉 Chromium 內建 select:disabled 的 .7(0.1.26 稽核 M2)、chevron 一起退色",
       /\.f-input:disabled \{ color: var\(--ink-3\); border-color: var\(--border-hairline\); cursor: not-allowed; opacity: 1; \}/.test(css)
       && /\.f-selw:has\(\.f-input:disabled\)::after \{ border-color: var\(--border-hairline\); \}/.test(css) && !/\.f-input:disabled[^}]*opacity: (?!1;)/.test(css));

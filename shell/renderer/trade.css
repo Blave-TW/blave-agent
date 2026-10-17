@@ -209,6 +209,7 @@ html.ws-sc .side-gate { display: none; }
    這一頁的標籤都在捲動容器頂端,往上彈會被裁掉,所以改往下 */
 .tr-tipb { padding: 0; font-size: 12px; color: var(--ink-3); cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
 .tr-tipb:hover, .tr-tipb:focus-visible { color: var(--ink-2); }
+.pf-sec .tr-tipb { line-height: 18px; }   /* 跟純文字的區段標籤同高:下單方式在市價／TWAP 間切換,選單不跳 */
 .trv .tip { left: 0; bottom: auto; top: calc(100% + 6px); max-width: min(320px, 100%); }
 .tr-tipb:hover:not([data-tip-off]) + .tip, .tr-tipb:focus-visible:not([data-tip-off]) + .tip { display: block; }
 /* 區段標籤＋問號外連教學(spec portfolio-help-icon §1.1)。.pf-sec 是 baseline 對齊,這一組不 center 會浮高;
@@ -449,6 +450,7 @@ html.ws-sc .side-gate { display: none; }
   .pf-tbl td.pos .pos-main.split { display: inline-grid; justify-items: end; }
   .pf-tbl td.pos .pos-main.split .sep { display: none; }
   .pf-tbl td.c-sym { white-space: normal; }
+  .pf-tbl td.c-sym { text-wrap: pretty; }   /* 換行後別只剩「檔」「more」一個字;要排在 white-space 之後 */
 }
 @container (max-width: 600px) {
   .pf-tbl th { white-space: normal; vertical-align: bottom; }
