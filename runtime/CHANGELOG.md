@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.128 — 2026-10-17(desktop 0.1.27)
+
+- **回覆中排隊送出:撤回單則＋待送數(0.1.27 回合中鎖減量;`web_bridge`)**:新控制訊息 `withdraw`(`target_id` = /send 回的 message_id)只從本機佇列拿掉那一則,回 `withdraw_result` chunk(`withdrawn`／`running`=那則已在跑、什麼都不做／`not_found`,帶 `pending_ids`);撤掉的是最後一則且沒有回合在跑時,再送 `turn_state: cancelled`(`message_ids` 只點名那則)。每個 `turn_state` 帶 `pending_ids`(這條對話還在排的 id);訊息排到跑中或排隊中的對話後面時當場報一次(不等 60 秒的 queued 重報)。舊 `interrupt` 行為不變,`cancelled` 多帶 `message_ids`(撤掉的全部),api 按則標取消。poll URL 加 `wd=1` 宣告看得懂 `withdraw`。快照帶單調遞增的 `pending_seq`(微秒時鐘,重啟不倒退;api 只收比已存的新的,晚到的舊快照丟掉)。回合收尾送 `queued` 前在 lock 裡重讀佇列:收尾途中最後一則被撤回就不送 `queued`;撤回落在 `queued` 送出後、離開 `_running` 前,收尾補一個 `cancelled`(`message_ids` 空),api 不會卡在 `queued` 到 TTL。**出貨順序**:api 先(舊 api 會把 `pending_ids`／`message_ids` 丟掉、`cancelled` 照舊整串標,不壞),再 publish 這版 runtime。測試 `tests/check_web_bridge_withdraw.py`。
+
 ## 1.1.127 — 2026-10-16(desktop 0.1.26)
 
 - **投資組合(Type C)剛勾、還沒實盤算過時,報告帶回測最後一期當預覽(Wei 10-15;`portfolio_reporter.typec_previews`)**:全市場 Type C 第一次實盤要好幾分鐘,這段時間策略組合頁空著。報告多一個頂層 `previews: {name: {type, market, weights, rebalance_at, bar_at, bar_date}}`(`bar_date` = 那根 K 棒的交易日 "YYYY-MM-DD":價格全來自台股／台指期 fetcher 的用 UTC+8 換——`fetch_twstock_ohlcv` 日 K 標在台北午夜、批次日價標在 UTC 午夜,兩種都換得對——其餘用 UTC;頁面直接顯示它、不自己換算):`amounts` 有這支、`states` 裡沒有它的權重、workspace lib 回測寫的 `strategies/<name>/backtest_state.json` 存在,而且檔內 `code_hash` 等於目前 `strategy.py` 的(`_code_hash` = workspace `lib/strategy.code_hash`;只比對 strategy.py),策略用到美股價格(`strategy_reporter._PRICE_FETCHERS` 的 us_stock,實盤會被 `UsStockNotHere` 拒絕)的不送。而且它的 K 棒在**報告當下**還是最新一根已收盤的(Wei 10-16:預覽只顯示最新資料;`_preview_is_latest`):台股／台指期日線看交易日——台北時間平日 13:45 收盤後算今天、之前與週末算前一個平日(沒有假日表,假日那天會判成過時、不送,偏保守),跟 `bar_date` 同一套;其餘用 `_expected_closed_bar_open`(= workspace `lib/bar_ready.expected_closed_bar_open`,測試釘兩邊一致)要剛好等於;台股非日線一律不送。回測當下是最新、隔一根就自動消失,頁面回到「計算中…」。權重照 `_portfolio_weights` 過濾、截前 100。只給頁面看:不進 `states`,對帳器與排程都不讀(稽核 audit-typec-adopt-2026-10-15 否決了拿它寫 state.json)。舊外殼不認這欄。測試 `tests/check_typec_preview.py`。

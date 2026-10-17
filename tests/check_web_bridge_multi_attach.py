@@ -72,7 +72,7 @@ def read(name):
 
 
 print("1. poll 宣告")
-check("POLL_URL 帶 lease=1 與 att=2", wb.POLL_URL.endswith("/poll?lease=1&att=2"), wb.POLL_URL)
+check("POLL_URL 帶 lease=1、att=2 與 wd=1", wb.POLL_URL.endswith("/poll?lease=1&att=2&wd=1"), wb.POLL_URL)
 
 print("2. 三個檔")
 raws = [b"\x89PNG" + bytes(range(256)), b"a,b\n1,2\n", "報表".encode() * 100]

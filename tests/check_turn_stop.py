@@ -284,7 +284,7 @@ check("bridge: …and only that session's", not os.path.exists(os.path.join(wb.S
 wb._running.clear()
 wb._queues["sC"] = [{"message_id": "m3", "session_id": "sC", "content": "hi"}]
 states = []
-wb._turn_state = lambda sid, st: states.append((sid, st))
+wb._turn_state = lambda sid, st, **kw: states.append((sid, st))
 wb._persist_queue = lambda: None
 wb._ingest({"type": "interrupt", "message_id": "y", "session_id": "sC"})
 check("bridge: Stop on a queued message still withdraws it", states == [("sC", "cancelled")]
