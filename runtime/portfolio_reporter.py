@@ -332,31 +332,36 @@ def _tw_closes(data):
 
 
 def tw_lots(cfg, states):
-    """{row key: {lots, twd, price, price_date, est}} for every Taiwan-stock row of the
-    portfolio page's 「各商品的總訊號部位」 — the contract the desktop (trade.js trTwLots) and
+    """{row key: {lots, shares, unit, twd, price, price_date, est}} for every Taiwan-stock row of
+    the portfolio page's 「各商品的總訊號部位」 — the contract the desktop (trade.js trTwLots) and
     the web table both follow. Row key = the table's: SYM, plus "@spot" for a spot strategy.
-      twd    = Σ amount × weight (Type C, a spot strategy's negative weight as 0) or
+    A strategy whose config.exchanges entry is "paper" holds TW stocks as cash shares whatever
+    its MARKET says (lib/portfolio._paper_tw_market): its legs key as SYM@spot and its own
+    negative weight / position counts as 0, before summing.
+      twd    = Σ amount × weight (Type C, a spot leg's negative weight as 0) or
                amount × position (Type A); a spot row below 0 is 0 (lib/portfolio)
-      shares = Σ amount × weight / that strategy's own close (raw_closes[SYM], the close of the
-               round its target last changed — never re-priced while it holds)
+      shares = sign × floor(|Σ amount × weight / that strategy's own close|) (raw_closes[SYM],
+               the close of the round its target last changed — never re-priced while it holds)
       lots   = sign × floor(|shares| / 1000): whole lots only, the odd lot dropped; under one
                lot is 0
+      unit   = "shares" when every contributor trades on paper (the paper account fills whole
+               shares, lib/order_paper._tw_signed), else "lots" (a broker fills whole lots)
       price  = |twd| / |shares| (one strategy: its close), price_date the newest raw_close_dates,
                est = any contributor's close is in raw_closes_est (priced at a later close)
     A row any funded contributor has no close for is left out: the page shows TWD as before."""
     amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
     if not isinstance(amounts, dict):
         return {}
+    exchanges = cfg.get("exchanges") if isinstance(cfg.get("exchanges"), dict) else {}
     acc, broken = {}, set()
     for name, amt in amounts.items():
         st = states.get(name) if isinstance(name, str) else None
         a = _fin(amt)
         if not isinstance(st, dict) or not a:
             continue
-        spot = st.get("market") == "spot"
+        paper = exchanges.get(name) == "paper"
         if isinstance(st.get("weights"), dict):
-            legs = {k: _fin(w) for k, w in st["weights"].items()}
-            legs = {k: (0.0 if spot and w is not None and w < 0 else w) for k, w in legs.items()}
+            legs = {str(k).replace("-", "").upper(): _fin(w) for k, w in st["weights"].items()}
         elif st.get("symbol"):
             legs = {str(st["symbol"]).replace("-", "").upper(): _fin(st.get("position", 0))}
         else:
@@ -367,8 +372,15 @@ def tw_lots(cfg, states):
         for sym, w in legs.items():
             if not _TW_STOCK_RE.match(sym) or not w:
                 continue
+            spot = st.get("market") == "spot" or paper
+            if spot and w < 0 and (paper or isinstance(st.get("weights"), dict)):
+                w = 0.0
+            if not w:
+                continue
             key = sym + ("@spot" if spot else "")
-            row = acc.setdefault(key, {"twd": 0.0, "shares": 0.0, "date": None, "est": False})
+            row = acc.setdefault(key, {"twd": 0.0, "shares": 0.0, "date": None, "est": False,
+                                       "paper": True})
+            row["paper"] = row["paper"] and paper
             row["twd"] += a * w
             px = closes.get(sym)
             if not px:
@@ -384,8 +396,10 @@ def tw_lots(cfg, states):
         twd, shares = row["twd"], row["shares"]
         if key.endswith("@spot") and twd < 0:
             twd = shares = 0.0
-        lots = int(math.floor(abs(shares) / TW_LOT + 1e-9)) * (1 if shares >= 0 else -1)
-        out[key] = {"lots": lots, "twd": round(twd, 2),
+        sign = 1 if shares >= 0 else -1
+        lots = int(math.floor(abs(shares) / TW_LOT + 1e-9)) * sign
+        out[key] = {"lots": lots, "shares": int(math.floor(abs(shares) + 1e-9)) * sign,
+                    "unit": "shares" if row["paper"] else "lots", "twd": round(twd, 2),
                     "price": round(abs(twd) / abs(shares), 4) if shares else None,
                     "price_date": row["date"], "est": row["est"]}
     return out

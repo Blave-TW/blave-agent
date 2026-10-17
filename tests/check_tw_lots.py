@@ -408,5 +408,29 @@ sp = pr.tw_lots({"amounts": {"s": 2_000_000, "a": 1_600_000}}, S)["2330@spot"]
 check(sp["twd"] == 1_600_000 and sp["lots"] == 2,
       f"spot Type C negative weight counts as 0: only the long strategy sizes the row ({sp})")
 
+# paper (config.exchanges[name] == "paper"): every TW leg is cash shares whatever MARKET says,
+# each strategy's own short counts as 0 before summing, and the row is whole shares (paper e2e B1)
+P = {"tw_a": {"market": "swap", "symbol": "2330", "position": 1.0, "raw_closes": {"2330": 2420.0},
+              "raw_close_dates": {"2330": "2026-10-16"}},
+     "tw_c": {"market": "spot", "weights": {"2330": 0.4}, "raw_closes": {"2330": 2420.0},
+              "raw_close_dates": {"2330": "2026-10-16"}}}
+PX = {"tw_a": "paper", "tw_c": "paper"}
+pp = pr.tw_lots({"amounts": {"tw_a": 2_100_000, "tw_c": 1_000_000}, "exchanges": PX}, P)
+check(set(pp) == {"2330@spot"} and pp["2330@spot"]["twd"] == 2_500_000
+      and pp["2330@spot"]["shares"] == 1033 and pp["2330@spot"]["lots"] == 1
+      and pp["2330@spot"]["unit"] == "shares",
+      f"paper: a swap Type A folds into SYM@spot, 2,500,000 at 2420 = 1033 shares, no bare SYM row ({pp})")
+pn = pr.tw_lots({"amounts": {"tw_a": 3_000_000, "tw_c": 1_000_000}, "exchanges": PX},
+                dict(P, tw_a=dict(P["tw_a"], position=-1.0)))
+check(set(pn) == {"2330@spot"} and pn["2330@spot"]["twd"] == 400_000 and pn["2330@spot"]["shares"] == 165,
+      f"paper: the swap Type A short counts as 0, the Type C long is kept (400,000 at 2420 = 165 shares) ({pn})")
+pl = pr.tw_lots({"amounts": {"tw_a": 2_100_000}}, P)
+check(set(pl) == {"2330"} and pl["2330"]["unit"] == "lots",
+      f"no exchange (not paper): the swap Type A keeps its own row in whole lots ({pl})")
+pm = pr.tw_lots({"amounts": {"tw_c": 1_000_000, "a": 1_600_000}, "exchanges": {"tw_c": "paper"}},
+                dict(P, a=S["a"]))
+check(pm["2330@spot"]["unit"] == "lots",
+      f"a row with any non-paper contributor stays in lots ({pm})")
+
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

@@ -921,24 +921,27 @@ function trClientTargets(amounts, states, contracts) {
   Object.keys(out).forEach((k) => { if (/@spot$/.test(k) && out[k] < 0) out[k] = 0; });
   return out;
 }
-/* 台股列的整張數(0.1.27,= runtime portfolio_reporter.tw_lots,網頁同一條):每支策略自己的部分除以它 state 的 raw_closes[SYM]
-   (目標最後變動那一輪的未還原收盤價,目標沒變不重算),加總股數後捨去到整張(1 張 = 1000 股,零股不算);買不起一張 = 0 張。
+/* 台股列的股數(0.1.27,= runtime portfolio_reporter.tw_lots,網頁同一條):每支策略自己的部分除以它 state 的 raw_closes[SYM]
+   (目標最後變動那一輪的未還原收盤價,目標沒變不重算)再加總。真實券商整張下單:捨去到整張(1 張 = 1000 股,零股不算),買不起一張 = 0 張;
+   模擬交易(paperTw)照模擬盤的成交規則整股下單(lib/order_paper._tw_signed):unit "shares"、捨去到整股,而且不管 MARKET 都當現股(@spot、每支的空頭壓 0,同 trClientTargets)。
    有金額的貢獻策略只要一支沒有價格(舊 lib、那一輪抓價失敗)就回 null:那一列照舊寫 TWD */
 const TW_LOT_SHARES = 1000;
-function trTwLots(key, amounts, states) {
+function trTwLots(key, amounts, states, paperTw) {
   const spotKey = /@spot$/.test(key), sym = key.replace(/@spot$/, "");
   if (!TR_TWSTOCK_RE.test(sym)) return null;
   let twd = 0, shares = 0, date = null, est = false, any = false;
   for (const n of Object.keys(amounts || {})) {
-    const s = (states || {})[n], a = Number(amounts[n]);
-    if (!s || !a || !isFinite(a) || (s.market === "spot") !== spotKey) continue;
+    const s = (states || {})[n], a = Number(amounts[n]), spot = !!s && (s.market === "spot" || !!paperTw);
+    if (!s || !a || !isFinite(a) || spot !== spotKey) continue;
     let w;
     if (s.weights && typeof s.weights === "object") {
       const k0 = Object.keys(s.weights).find((k) => trCanonSym(k) === sym);
       w = k0 === undefined ? 0 : Number(s.weights[k0]);
       if (spotKey && w < 0) w = 0;
-    } else if (s.symbol && trCanonSym(s.symbol) === sym) w = typeof s.position === "number" ? s.position : 0;
-    else continue;
+    } else if (s.symbol && trCanonSym(s.symbol) === sym) {
+      w = typeof s.position === "number" ? s.position : 0;
+      if (paperTw && w < 0) w = 0;
+    } else continue;
     if (!w || !isFinite(w)) continue;
     const px = s.raw_closes && typeof s.raw_closes === "object" ? Number(s.raw_closes[sym]) : NaN;
     if (!(px > 0) || !isFinite(px)) return null;
@@ -949,8 +952,8 @@ function trTwLots(key, amounts, states) {
   }
   if (!any) return null;
   if (spotKey && twd < 0) twd = shares = 0;
-  const lots = Math.floor(Math.abs(shares) / TW_LOT_SHARES + 1e-9) * (shares < 0 ? -1 : 1);
-  return { lots, twd, price: shares ? Math.abs(twd) / Math.abs(shares) : null, date, est };
+  const sg = shares < 0 ? -1 : 1, lots = Math.floor(Math.abs(shares) / TW_LOT_SHARES + 1e-9) * sg;
+  return { lots, shares: Math.floor(Math.abs(shares) + 1e-9) * sg, unit: paperTw ? "shares" : "lots", twd, price: shares ? Math.abs(twd) / Math.abs(shares) : null, date, est };
 }
 /* 只管自己的部位(回報 self_ledger === true,lib/portfolio.own_positions_only):對帳器拿目標去比的是 Blave 的帳本,不是交易所整個帳戶。
    帳本在對帳快照的 ledger(size = 成本)。還沒有(新規則的第一輪還沒跑)就照機器端第一輪那條規則先算:
@@ -3531,7 +3534,7 @@ function poSigTable(r, stored, states, mode) {
   const zoneKeys = items.map((it) => it.z), zones = trZoneOrder(zoneKeys, vid, trMultZone(vid, trUnit(), zoneKeys));
   // 配置表的台股列寫整張數、單位在格子裡(「N 張」＋小字 TWD):整表只有台股那一區時,欄頭不再掛「（TWD）」
   const twLots = {};
-  if (!trade) syms.forEach((sym) => { if (zoneOfSym[sym] === TR_TXF_CCY) { const x = trTwLots(sym, stored, st2); if (x) twLots[sym] = x; } });
+  if (!trade) syms.forEach((sym) => { if (zoneOfSym[sym] === TR_TXF_CCY) { const x = trTwLots(sym, stored, st2, paperTw); if (x) twLots[sym] = x; } });
   const oneUnit = zones.length === 1 && !(zones[0] === TR_TXF_CCY && !trade) ? trZoneUnit(zones[0]) : null, cols = trade ? 4 : 2;
   const scroll = trEl("div", "pf-scroll"), tbl = trEl("table", "pf-tbl zoned pf-sig");
   const venueName = vid ? trVenueLabel(vid, true) : "";
@@ -3581,10 +3584,14 @@ function poSigTable(r, stored, states, mode) {
     const tw = !trade && !noSig && !notYet && z === TR_TXF_CCY ? twLots[sym] : null;
     if (!trade && !noSig && !notYet && z === TR_TXF_CCY) {
       if (tw) {
-        tc.className = "n " + (tw.lots > 0 ? "buy" : tw.lots < 0 ? "sell" : "na");
-        tc.textContent = t(Math.abs(tw.lots) === 1 ? "po.twLot" : "po.twLots", { n: trFmt(tw.lots) });
+        // 模擬交易寫股數(模擬盤整股成交),其他寫整張(真實券商整張下單)
+        const sh = tw.unit === "shares", q = sh ? tw.shares : tw.lots, d = tw.date ? tw.date.slice(5).replace("-", "/") : null;
+        tc.className = "n " + (q > 0 ? "buy" : q < 0 ? "sell" : "na");
+        tc.textContent = t(sh ? (Math.abs(q) === 1 ? "po.twShare" : "po.twShares") : (Math.abs(q) === 1 ? "po.twLot" : "po.twLots"), { n: trFmt(q) });
         tc.appendChild(trEl("span", "sub", trFmt(tw.twd) + " " + TR_TXF_CCY));
-        if (tw.price && tw.date) tc.title = t(tw.est ? "po.twLotsTipEst" : "po.twLotsTip", { d: tw.date.slice(5).replace("-", "/"), px: trFmt(tw.price) });
+        // 「0」為什麼是 0 寫在格子裡(td 不能聚焦,title 鍵盤與觸控都看不到):買不起一張／一股
+        if (!q && tw.twd > 0 && tw.price) tc.appendChild(trEl("span", "sub", t(sh ? "po.twSharesZero" : "po.twLotsZero", { px: trFmt(tw.price), n: trFmt(tw.shares) })));
+        if (tw.price && d) tc.title = t(sh ? (tw.est ? "po.twSharesTipEst" : "po.twSharesTip") : (tw.est ? "po.twLotsTipEst" : "po.twLotsTip"), { d, px: trFmt(tw.price) });
       } else if (zones.length === 1) tc.textContent = numText(lot, ts) + " " + TR_TXF_CCY;
     }
     if (lt && !noSig && !notYet) { const sp = trTxfSpec(trCapitalCanon(sym)), m = ts && sp ? trTxfRefMoney(sp, Math.abs(ts), trTxfPrice()) : null;

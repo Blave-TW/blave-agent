@@ -7578,6 +7578,24 @@ msgstr "At the {d} close of {px}, whole lots only (1 lot = 1,000 shares; odd lot
 msgid "po.twLotsTipEst"
 msgstr "Estimated at the {d} close of {px}: the close on the day the target changed wasn’t recorded. Whole lots only (1 lot = 1,000 shares; odd lots dropped)"
 
+msgid "po.twShares"
+msgstr "{n} shares"
+
+msgid "po.twShare"
+msgstr "{n} share"
+
+msgid "po.twSharesTip"
+msgstr "At the {d} close of {px}, in whole shares as the paper account fills them (fractions dropped)"
+
+msgid "po.twSharesTipEst"
+msgstr "Estimated at the {d} close of {px}: the close on the day the target changed wasn’t recorded. Whole shares, as the paper account fills them (fractions dropped)"
+
+msgid "po.twLotsZero"
+msgstr "Under 1 lot at the {px} close (about {n} shares)"
+
+msgid "po.twSharesZero"
+msgstr "Under 1 share at the {px} close"
+
 msgid "po.sigTargets"
 msgstr "Signal positions by instrument"
 

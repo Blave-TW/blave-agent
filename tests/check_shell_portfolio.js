@@ -156,7 +156,18 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     ok("兩支策略一支沒價格:整列照舊寫 TWD,不拿有價格的那支算張數", half.tw && half.tw.text === "+3,105,000 TWD", J(half.tds.map((c) => c.textContent)));
     ok("現貨 Type C 負權重當 0:只算做多那支(1,600,000 ÷ 800 = 2 張)", shortC.tw && shortC.tw.text === 'po.twLots {"n":"2"}' && shortC.tw.kids.some((k) => k.text === "1,600,000 TWD"), J(shortC.tds.map((c) => c.textContent)));
     ok("混加密:台股列照寫張數,加密列不動(+500)", mix.tw && mix.tw.text === 'po.twLots {"n":"2"}' && mix.tds.some((c) => c.textContent === "+500"), J(mix.tds.map((c) => c.textContent)));
+    const subs = (c) => (c ? c.kids.filter((k) => k && k.className === "sub").map((k) => k.text) : []);
+    ok("沒連交易所、買不起一張:「0」的原因寫在格子裡(小字),不只 title", subs(zero.tw).some((x) => /^po\.twLotsZero /.test(x)), J(subs(zero.tw)));
+    // 0.1.27 稽核 P1-1／實跑 B1(Wei 10-18):連模擬交易時寫「N 股」(模擬盤整股成交,lib/order_paper);MARKET="swap" 的 Type A 也當現股併進 @spot、空頭壓 0
     const keepTR = ctx.TR; ctx.TR = bag({ paper: V }, { can_paper_twstock: true });
+    const SW = { symbol: "2330", position: 1, market: "swap", raw_closes: { 2330: 1085 }, raw_close_dates: { 2330: "2026-10-16" } };
+    const pap = twRun({ tw: 500000 }, { tw: SW }), pz = twRun({ tw: 1000 }, { tw: SW });
+    const pmix = twRun({ tw: 2100000, tc: 1000000 }, { tw: Object.assign({}, SW, { raw_closes: { 2330: 2420 } }), tc: { market: "spot", weights: { 2330: 0.4 }, raw_closes: { 2330: 2420 }, raw_close_dates: { 2330: "2026-10-16" } } });
+    const pneg = twRun({ tw: 3000000, tc: 1000000 }, { tw: Object.assign({}, SW, { position: -1, raw_closes: { 2330: 2420 } }), tc: { market: "spot", weights: { 2330: 0.4 }, raw_closes: { 2330: 2420 }, raw_close_dates: { 2330: "2026-10-16" } } });
+    ok("模擬交易:500,000 TWD ÷ 1,085 = 460 股(整股捨去)、小字 TWD、上色 buy、tooltip 講整股", pap.tw && pap.tw.text === 'po.twShares {"n":"460"}' && subs(pap.tw)[0] === "500,000 TWD" && /\bbuy\b/.test(pap.tw.className) && /^po\.twSharesTip /.test(pap.tw.title), J(pap.tw && [pap.tw.textContent, pap.tw.className, pap.tw.title]));
+    ok("模擬交易買不起一股:0 股＋小字講原因", pz.tw && pz.tw.text === 'po.twShares {"n":"0"}' && subs(pz.tw).some((x) => /^po\.twSharesZero /.test(x)), J(pz.tw && [pz.tw.textContent, subs(pz.tw)]));
+    ok("模擬交易 swap 的 Type A 併進同一列:2,500,000 ÷ 2,420 = 1,033 股,只有一列", pmix.tds.length === 1 && pmix.tw && pmix.tw.text === 'po.twShares {"n":"1,033"}', J(pmix.tds.map((c) => c.textContent)));
+    ok("模擬交易 swap 的 Type A 空頭壓 0,不抵掉別支的多單(400,000 ÷ 2,420 = 165 股)", pneg.tds.length === 1 && pneg.tw && pneg.tw.text === 'po.twShares {"n":"165"}', J(pneg.tds.map((c) => c.textContent)));
     // P1-2:還沒算出訊號的台股列(沒有 state)key 是 2330@spot,要對得上 notYet,寫「—」不寫 0
     const py = twRun({ tw: 500000 }, {}), pyc = py.tds.find((c) => c.textContent === "—");
     ok("模擬交易:還沒有 state 的台股列寫「—」(tr.sigNotYet),不是 0", py.tds.length === 1 && !!pyc && pyc.title === "tr.sigNotYet", J(py.tds.map((c) => c.textContent)));

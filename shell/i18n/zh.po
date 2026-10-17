@@ -7592,6 +7592,24 @@ msgstr "以 {d} 收盤價 {px} 換算，只算整張（1 張＝1,000 股，零�
 msgid "po.twLotsTipEst"
 msgstr "以 {d} 收盤價 {px} 估算：目標變動那天的價格沒記到。只算整張（1 張＝1,000 股，零股捨去）"
 
+msgid "po.twShares"
+msgstr "{n} 股"
+
+msgid "po.twShare"
+msgstr "{n} 股"
+
+msgid "po.twSharesTip"
+msgstr "以 {d} 收盤價 {px} 換算，照模擬盤整股成交（不足 1 股捨去）"
+
+msgid "po.twSharesTipEst"
+msgstr "以 {d} 收盤價 {px} 估算：目標變動那天的價格沒記到。照模擬盤整股成交（不足 1 股捨去）"
+
+msgid "po.twLotsZero"
+msgstr "收盤 {px}，不足 1 張（約 {n} 股）"
+
+msgid "po.twSharesZero"
+msgstr "收盤 {px}，不足 1 股"
+
 msgid "po.sigTargets"
 msgstr "各商品的總訊號部位"
 
