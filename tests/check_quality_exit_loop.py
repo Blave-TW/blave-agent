@@ -162,8 +162,32 @@ def compute_signals(df):
     return sig
 """
 
+# a scale-in ladder written by hand (the 2026-10-17 3Commas RSI DCA): average cost vs take-profit
+HAND_DCA = """
+DEVS, MULT, TP_PCT = [0.02, 0.05, 0.095, 0.16, 0.25], 1.8, 0.03
+def compute_signals(df):
+    out, n, base, cost, qty = [], 0, None, 0.0, 0.0
+    for i, c in enumerate(df['Close']):
+        if n == 0 and df['RSI'].iat[i] < 28:
+            n, base, cost, qty = 1, c, 1.0, 1.0 / c
+        elif n:
+            avg_cost = cost / qty
+            if c >= avg_cost * (1 + TP_PCT):
+                n, cost, qty = 0, 0.0, 0.0
+            elif n <= len(DEVS) and c <= base * (1 - DEVS[n - 1]):
+                cost += MULT ** n; qty += MULT ** n / c; n += 1
+        out.append(cost)
+    return out
+"""
+
 POSITIVES = {
     "29026 e2e_exit_test (SL/TP on High/Low vs entry_price)": E2E_EXIT_TEST_29026,
+    "hand-written DCA ladder (avg_cost vs take-profit, no lib helper)": HAND_DCA,
+    "hand-written loop beside a ladder_position call (a stop on top of the ladder)": HAND_DCA + """
+def _ladder(df):
+    from lib import strategy as S
+    return S.ladder_position(df['RSI'] < 28, df, DEVS, mult=MULT, tp_pct=TP_PCT)
+""",
     "2026-09-23 e2e_0923_ma same-bar re-entry stop": E2E_0923_MA,
     "short take-profit, entry named `ep`, level inline": SHORT_TP_EP,
 }
@@ -173,6 +197,7 @@ for label, src in POSITIVES.items():
 f = flags(E2E_EXIT_TEST_29026)[0]
 check("apply_exits" in f["msg"] and "trigger=" in f["msg"] and "tell the user" in f["msg"],
       "the message says: apply_exits(trigger=...), or tell the user what it can't model")
+check("ladder_position" in flags(HAND_DCA)[0]["msg"], "the message points a scale-in ladder at lib.strategy.ladder_position")
 check(f["line"] == E2E_EXIT_TEST_29026.splitlines().index(
           "            if lows[i] <= sl_price or highs[i] >= tp_price:") + 1,
       f"points at the SL/TP comparison line ({f['line']})")
@@ -190,6 +215,12 @@ NEGATIVES = {
     "same strategy using apply_exits": E2E_EXIT_TEST_29026.replace(
         "    return pd.Series(signal, index=df.index)",
         "    from lib.exits import apply_exits\n    return apply_exits(pd.Series(signal, index=df.index), df, stop_pct=SL_PCT, trigger=\"intrabar\")"),
+    "scale-in ladder via lib.strategy.ladder_position": """
+DEVS, MULT, TP_PCT = [0.02, 0.05, 0.095, 0.16, 0.25], 1.8, 0.03
+def compute_signals(df):
+    from lib.strategy import ladder_position
+    return ladder_position(df['RSI'] < 28, df, DEVS, mult=MULT, tp_pct=TP_PCT)
+""",
     "four-threshold state machine loop (no entry price)": """
 def compute_signals(df):
     x, pos, out = df['z'].to_numpy(), 0, []

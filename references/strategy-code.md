@@ -237,6 +237,8 @@ The user already chose in the dialog: no confirmation question. Do these, in thi
 
 `nan` vs `0.0`: use `nan` to hold the current position (e.g. inside a trend). Use `0.0` to exit at next open.
 
+A same-side size change (0.3 → 0.5) is a trade: fee on |Δw|, counted in Trades; live buys or sells the cost difference.
+
 ## Three-Layer Architecture
 
 ```
@@ -369,7 +371,7 @@ With `settlement_signals_from_db`, exits first and settlement last: `return sett
 
 In both modes the exit fills at the **next bar's Open** — the runner cannot fill at a stop price, and live works the same way (the tick after the bar exits). `result.attrs["exits"]` records, per exit, the reason and (intrabar) the price a resting order would have filled at — the level, or the Open when the bar gapped through it. When you report a stop's effect, say the backtest exits at the next Open, and quote `order_price` only as "a resting order would have filled at". A bar touching both the stop and the take-profit counts as the stop (unless it opened beyond the TP).
 
-**"`apply_exits` can't do X" is never a reason to write your own exit loop.** If the rule the user asked for is not one it models (partial exits / scaling out, a take-profit that changes after entry, an exit on another instrument's price…), say so in one sentence — what it can't model and what the closest supported exit is — and let the user choose. Do not hand-roll a loop "because the helper is close-only / can't see High/Low / can't reach the entry price": it can (`trigger="intrabar"` measures from the fill), and a hand-rolled one is how the same-bar re-entry bug shipped.
+**"`apply_exits` can't do X" is never a reason to write your own exit loop.** If the rule the user asked for is not one it models (partial exits / scaling out, a take-profit that changes after entry on a signal that does not itself scale in — a DCA ladder is *Scaling in*, an exit on another instrument's price…), say so in one sentence — what it can't model and what the closest supported exit is — and let the user choose. Do not hand-roll a loop "because the helper is close-only / can't see High/Low / can't reach the entry price": it can (`trigger="intrabar"` measures from the fill), and a hand-rolled one is how the same-bar re-entry bug shipped.
 
 **The pitfall `apply_exits` avoids:** a hand-written loop that exits on the stop and then, on the same bar, re-checks the entry *state* (`MA_F > MA_S`, `x > BUY_TH`) re-enters at once — the position series comes out bar-for-bar identical and the stop does nothing. A trend filter stays true for hundreds of bars; after an exit the strategy must wait for a fresh entry (the base signal leaving and re-taking that side), which `apply_exits` does.
 
@@ -672,6 +674,22 @@ def compute_signals(df):
 ```
 
 Default values: `TARGET_VOL=0.10`, `VOL_CAP=2.0`. For 1h bars: `VOL_LOOKBACK=720`, `PERIODS_PER_YEAR=8760`.
+
+## Scaling in — DCA ladders, pyramiding, adding on dips
+
+A ladder ("buy on the trigger, add at −2 / −5 / −9.5%, each order 1.8× the last, take profit at +3% over the average cost") is an **entry schedule**, not an exit on top of a signal — build the whole position with **`lib.strategy.ladder_position`**, never a hand-written loop and never `apply_exits(tp_pct=…)` (its TP is measured from the first fill, not the average):
+
+```python
+def compute_signals(df, rsi_entry=RSI_ENTRY, tp_pct=TP_PCT):
+    from lib.strategy import ladder_position
+    return ladder_position(df['RSI'] < rsi_entry, df, devs=DEVS, mult=MULT, tp_pct=tp_pct)
+```
+
+- **signal = cost bought so far ÷ cost of the full ladder** (base order = 1, order k = `mult**k`), so the full ladder is 1.0 and the strategy's amount is the full-ladder budget. Live tops up the cost difference at every new rung.
+- Long only. Every rung is measured from the **base fill**, checked on the Close, filled at the next Open; a gap through several rungs adds them all on that bar. A bar whose Close is NaN or ≤ 0 holds, as in `apply_exits`.
+- The average-cost take-profit is the lib's state machine: it exits on the first Close ≥ average × (1 + `tp_pct`), and the exit bar never re-checks the trigger. A level trigger (`RSI < 28`) still true on the next bar re-enters then; for one cycle per dip pass an edge (`cond & ~cond.shift(1, fill_value=False)`).
+- A stop or time exit on top of the ladder is not something it models — say so and let the user choose.
+- **Say this when you report the backtest:** the engine rebalances to the target fraction every bar, while a real ladder holds a fixed quantity per order, so the backtest only approximates it and drifts further the deeper the ladder fills (a five-rung fill and back to +3% over the average typically shows roughly 0.2–0.5 percentage points less in the engine than real, depending on the path).
 
 ## Futures Strategies (CME / NYMEX / ICE)
 
