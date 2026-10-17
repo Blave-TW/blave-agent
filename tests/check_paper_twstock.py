@@ -441,6 +441,18 @@ check(pf.compute_diff({"2330@spot": row}, held, 10) and not pf.compute_diff({"23
       "a 500 TWD gap (half a share): sent every round on the flat 10, held under the share gate")
 row["size"] = 31200.0
 check(pf.compute_diff({"2330@spot": row}, held, gate), "a 1,200 TWD gap (over one share) still trades")
+from manager import reconciler as rc  # noqa: E402
+rc._min_order_gate.clear()
+check(rc._symbol_threshold("2330@spot", True) == 1050.0 and rc._symbol_threshold("2330@spot") == 1050.0,
+      f"partial reduce gate = entry gate ≈ 1.05 shares ({rc._symbol_threshold('2330@spot', True)}), not half a share")
+check(rc._close_gate("2330@spot") == rc.THRESHOLD, "a whole-position close keeps its own gate (untouched)")
+check(rc._symbol_threshold("BTCUSDT@spot", True) == rc.THRESHOLD, "crypto spot reduce gate unchanged")
+row["size"] = 29500.0
+check(not pf.compute_diff({"2330@spot": row}, held, rc._symbol_threshold),
+      "a 500 TWD shrink (half a share) is left alone — no floored-to-0 order and audit each round")
+row["size"] = 0.0
+check(pf.compute_diff({"2330@spot": dict(row, side=None)}, held, rc._symbol_threshold), "a full close still goes")
+rc._min_order_gate.clear()
 venue_wiring.detect_venue = real_detect
 
 print("== Type C components priced without the basket's fetch_data")

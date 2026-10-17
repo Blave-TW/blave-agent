@@ -649,6 +649,27 @@ def _paper_tw_sizes(vid, order, env, sym, floor):
     return max(floor_twd, share * 1.05), share
 
 
+def _paper_tw_reduce_gate(symbol, floor):
+    """The partial-reduce gate for a paper TW stock: the entry gate (≈ 1.05
+    shares). Shares are floored, so a shrink under one share is sent and
+    floored to 0 every round — the half-lot gate other venues use would let
+    those through. A whole-position close never asks this (it has its own
+    gate). None for anything else, or when it can't be told."""
+    try:
+        from lib import venue_wiring as vw
+        from lib.portfolio import split_key
+        env = vw.read_env()
+        vid = vw.detect_venue(env)
+        if vid != "paper":
+            return None
+        import importlib as _il
+        tw = _paper_tw_sizes(vid, _il.import_module("lib.order_paper"), env, split_key(symbol)[0], floor)
+        return tw[0] if tw else None
+    except Exception as e:
+        logging.warning(f"[execute] TW reduce gate unavailable for {symbol} ({e})")
+        return None
+
+
 def _venue_sizes_usd(symbol, floor):
     """(min slice USD, one LOT USD) off one venue round trip — the reconciler
     gates its two sides off these and must not pay two mark lookups for them.

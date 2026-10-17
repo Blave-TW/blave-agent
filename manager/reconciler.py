@@ -118,7 +118,13 @@ def _symbol_threshold(symbol, reduce_only=False):
             # the behaviour before this function existed.
             logging.warning(f"[reconciler] venue minimum unavailable for {symbol} ({e})")
             entry, lot_usd = THRESHOLD, 0.0
-        cached = (now + MIN_ORDER_TTL_S, entry, max(THRESHOLD, 0.5 * lot_usd),
+        reduce = max(THRESHOLD, 0.5 * lot_usd)
+        try:
+            from lib.execute import _paper_tw_reduce_gate
+            reduce = _paper_tw_reduce_gate(symbol, THRESHOLD) or reduce
+        except ImportError:  # an older lib/execute.py
+            pass
+        cached = (now + MIN_ORDER_TTL_S, entry, reduce,
                   THRESHOLD - 0.5 * lot_usd if 0 < lot_usd < 2 * THRESHOLD else THRESHOLD)
         _min_order_gate[symbol] = cached
     return cached[2] if reduce_only else cached[1]
