@@ -747,16 +747,15 @@ function libPaintCta(s) {
       break;
     }
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
-    case "pending": row.appendChild(dis(t("lib.pending"))); note.textContent = LIB.pending && LIB.pending.stage === "dl" ? "" : t("lib.note.pending"); break;   // 下載中對話裡還沒有東西可看
+    case "pending": row.appendChild(dis(t("lib.pending"))); break;   // 鈕本身說了進行中,鈕下不再補「進度在右邊的對話」(Wei 10-17)
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); break;
     case "installed":
       row.append(btn("btn-fill", t("lib.open"), () => (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name))), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
       break;
     case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); break;
-    case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); if (c.pub) note.textContent = t("lib.pub"); break;
-    default:   // free:分組中而這支只用公開資料,鈕下講一句(沒有任何登入或卡的字;§0.1)
+    case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); break;
+    default:   // free:鈕下不再補「只用公開價格」那句(Wei 10-17)
       row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b)));
-      if (c.pub) note.textContent = t("lib.pub");
   }
   if (row.childNodes.length) box.appendChild(row);
   note.hidden = !note.textContent && c.state !== "busy";   // 忙碌態那一格空著也留在無障礙樹裡:帶著內容才出現的 live region 讀屏常常不唸

@@ -4406,7 +4406,7 @@ msgid "lib.iv.1d"
 msgstr "Daily"
 
 msgid "lib.use"
-msgstr "Use This"
+msgstr "Install & Backtest"
 
 msgid "lib.open"
 msgstr "Open Strategy"
@@ -4461,9 +4461,6 @@ msgstr "Amounts shown in USD; billed in TWD."
 
 msgid "lib.note.billed"
 msgstr "If the backtest uses Blave data, the data fee is charged per clock hour of use."
-
-msgid "lib.note.pending"
-msgstr "Progress is in the chat on the right."
 
 msgid "lib.err.noNew"
 msgstr "The turn ended without a new strategy. See what the agent said in the chat."
@@ -5044,9 +5041,6 @@ msgstr "This hour's data fee couldn't be charged; top up and it's back right awa
 
 msgid "lib.why.unknown"
 msgstr "Your account's data status couldn't be checked."
-
-msgid "lib.pub"
-msgstr "Uses public exchange prices only, no Blave data."
 
 # ── 上網找點子(spec-0.1.13 §5、§7;只在這台電腦視角)。idea.mkt.any 是空字串:.po 的空 msgstr 等於沒翻,所以不進表,由 newstrategy.js 代空字串 ──
 msgid "idea.chip"

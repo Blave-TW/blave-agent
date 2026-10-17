@@ -4418,7 +4418,7 @@ msgid "lib.iv.1d"
 msgstr "日線"
 
 msgid "lib.use"
-msgstr "用這支"
+msgstr "安裝並回測"
 
 msgid "lib.open"
 msgstr "打開這支策略"
@@ -4473,9 +4473,6 @@ msgstr "金額以 TWD 計價。"
 
 msgid "lib.note.billed"
 msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費。"
-
-msgid "lib.note.pending"
-msgstr "進度在右邊的對話。"
 
 msgid "lib.err.noNew"
 msgstr "這一輪結束了，但沒看到新策略。看對話裡 agent 怎麼說。"
@@ -5057,9 +5054,6 @@ msgstr "這一小時付不出資料費，儲值後馬上恢復。"
 
 msgid "lib.why.unknown"
 msgstr "現在查不到帳號的資料狀態。"
-
-msgid "lib.pub"
-msgstr "這支只用交易所公開價格，不用 Blave 資料。"
 
 # ── 上網找點子(spec-0.1.13 §5、§7;只在這台電腦視角)。idea.mkt.any 是空字串:.po 的空 msgstr 等於沒翻,所以不進表,由 newstrategy.js 代空字串 ──
 msgid "idea.chip"
