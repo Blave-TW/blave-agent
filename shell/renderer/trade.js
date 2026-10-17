@@ -2488,7 +2488,9 @@ function trCatchWill(r) {
     const spec = trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))), raw = target[sym] || 0, ts = spec ? trLotsTarget(raw).lots : raw, as = bk.mine[sym] || 0, d = ts - as;
     const gs = spec ? null : trGateSide(gates[sym], ts, as);
     if (spec ? !Math.round(Math.abs(d)) : Math.abs(d) < (gs ? gs.usd : 10)) return;
-    const n = spec ? trLotsFmt(Math.abs(d)) + " " + t(trLotsKey(Math.abs(d), "tr.lotsUnit", "tr.lotUnit")) : trFmt(Math.round(Math.abs(d))) + (trUnit() ? " " + trUnit() : "");
+    // 台股的差額是台幣(模擬交易以台幣計價、帳戶幣是 USDT):照標的的幣別寫,不寫帳戶幣
+    const u = TR_TWSTOCK_RE.test(trCanonSym(sym.replace(/@spot$/, ""))) ? TR_TXF_CCY : trUnit();
+    const n = spec ? trLotsFmt(Math.abs(d)) + " " + t(trLotsKey(Math.abs(d), "tr.lotsUnit", "tr.lotUnit")) : trFmt(Math.round(Math.abs(d))) + (u ? " " + u : "");
     out.push(t("tr.opt.catchWill", { side: t(d > 0 ? "tr.opt.buy" : "tr.opt.sell"), sym: spec ? t(spec.prod) : sym.replace(/@spot$/, ""), n }));
   });
   if (!out.length) return null;

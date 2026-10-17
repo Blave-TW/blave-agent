@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **模擬盤開放台股(0.1.27;`portfolio_reporter.can_paper_twstock`)**:報告多一個頂層 `can_paper_twstock`,workspace lib 會把台股的台幣金額換成美元記帳、台股代號當現貨庫存、休市時對帳器原樣持有(`lib/paper_data.tw_session_open` 與 `lib/portfolio._paper_tw_closed_keys` 都在磁碟上)才是 true。電腦版與網頁照它拿掉模擬交易的台幣鎖;缺這欄(舊 runtime)或 false(舊 lib)照舊鎖住。只動回報,下單不經 runtime。runtime 1.1.128 要比外殼與網頁先到全機隊。
+- **模擬盤開放台股(0.1.27;`portfolio_reporter.can_paper_twstock`)**:報告多一個頂層 `can_paper_twstock`,workspace lib 會把台股的台幣金額換成美元記帳、台股代號當現貨庫存、休市時對帳器原樣持有(`lib/paper_data.tw_session_open` 與 `lib/portfolio._paper_tw_closed_keys` 都在磁碟上)才是 true。電腦版與網頁照它拿掉模擬交易的台幣鎖;缺這欄(舊 runtime)或 false(舊 lib)照舊鎖住。只動回報,下單不經 runtime。runtime 1.1.128 要比外殼與網頁先到全機隊。注意:同批 workspace lib 讓模擬盤的台股一律走現股(`SYMBOL@spot`),所以之前留下的模擬盤台股 swap 部位(`2330` 這種不帶 `@spot` 的 key),會在下一個台股交易時段的第一輪被自動平掉、改買現股,等於多付一次來回手續費(模擬帳戶的錢)。
 
 ## 1.1.127 — 2026-10-16(desktop 0.1.26)
 

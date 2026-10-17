@@ -422,6 +422,27 @@ os.remove("state/HALT")
 for f in ("state/signal_gate.json", "manager/portfolio_config.json", "strategies/tsmc_b/state.json"):
     os.path.exists(f) and os.remove(f)
 
+print("== B5: the reconcile gate for a paper TW stock is TWD-scaled and at least one share")
+from lib import execute as ex  # noqa: E402
+real_detect = venue_wiring.detect_venue
+venue_wiring.detect_venue = lambda env: "paper"
+rate(R)
+mark(1000)
+paper_data._price_cache["2330"] = (time.time(), 1000.0, "tsmc_a")
+check(ex._venue_sizes_usd("2330@spot", 10) == (1050.0, 1000.0), f"2330 at 1,000: gate 1.05 shares = 1,050 TWD ({ex._venue_sizes_usd('2330@spot', 10)})")
+paper_data._price_cache["2330"] = (time.time(), 8.0, "tsmc_a")
+check(ex._venue_sizes_usd("2330@spot", 10) == (320.0, 8.0), "an 8 TWD stock: the 10 USD floor in TWD (320), not 10")
+check(ex._venue_sizes_usd("BTCUSDT@spot", 10) == (10, 0.0), "crypto spot keeps the flat 10")
+paper_data._price_cache["2330"] = (time.time(), 1000.0, "tsmc_a")
+gate = lambda sym, reduce_only=False: ex._venue_sizes_usd(sym, 10)[0]  # noqa: E731
+row = {"side": "long", "size": 30500.0, "exchange": "paper", "asset_spec": None, "market": "spot", "contributors": [], "gated": False}
+held = {"2330@spot": {"side": "long", "size": 30000.0}}
+check(pf.compute_diff({"2330@spot": row}, held, 10) and not pf.compute_diff({"2330@spot": row}, held, gate),
+      "a 500 TWD gap (half a share): sent every round on the flat 10, held under the share gate")
+row["size"] = 31200.0
+check(pf.compute_diff({"2330@spot": row}, held, gate), "a 1,200 TWD gap (over one share) still trades")
+venue_wiring.detect_venue = real_detect
+
 print("== Type C components priced without the basket's fetch_data")
 calls.clear()
 paper_data._price_cache.clear()

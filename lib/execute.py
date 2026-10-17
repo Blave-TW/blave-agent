@@ -628,6 +628,27 @@ def _venue_min_slice_usd(symbol, floor=_MIN_SLICE_USD):
     return _venue_sizes_usd(symbol, floor)[0]
 
 
+def _paper_tw_sizes(vid, order, env, sym, floor):
+    """A TW stock on paper: its diffs are TWD, not USD, and it trades whole
+    shares. (floor in TWD, one share), the entry gate at 1.05 shares like a
+    lot — else a residual under one share is re-sent, floored to 0, every
+    round. No rate: one share alone. None for anything else."""
+    if vid != "paper":
+        return None
+    try:
+        from lib.paper_data import is_tw_stock, usd_rate
+    except ImportError:
+        return None
+    if not is_tw_stock(sym):
+        return None
+    share = float(order.get_spot_price(env, sym))
+    try:
+        floor_twd = floor * usd_rate("TWD", env)
+    except Exception:
+        floor_twd = 0.0
+    return max(floor_twd, share * 1.05), share
+
+
 def _venue_sizes_usd(symbol, floor):
     """(min slice USD, one LOT USD) off one venue round trip — the reconciler
     gates its two sides off these and must not pay two mark lookups for them.
@@ -645,6 +666,9 @@ def _venue_sizes_usd(symbol, floor):
             return floor, 0.0
         order = _il.import_module(f"lib.order_{vid}")
         sym, market = split_key(symbol)
+        tw = _paper_tw_sizes(vid, order, env, sym, floor)
+        if tw is not None:
+            return tw
         if market == "spot":
             return floor, 0.0  # spot minimums are far below the floor everywhere we ship
         r = order.get_contract_rules(env, sym)
