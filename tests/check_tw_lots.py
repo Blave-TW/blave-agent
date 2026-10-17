@@ -12,14 +12,12 @@ no row).
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_tw_lots.py
 """
-import builtins
 import contextlib
 import io
 import json
 import os
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 
@@ -51,21 +49,77 @@ def check(cond, msg):
     fails += (not cond)
 
 
-calls = []
-RAW = {"2330": 1000.0, "2454": 1250.0}
+os.chdir(WS)
+runner._REPO_ROOT = WS
+# the lookup runs in a child process (lib/runner._tw_fetch_child): the fakes live in a module
+# the child imports from the workspace root, prices and calls go through files
+(WS / "twfake.py").write_text('''
+import json, time
+import pandas as pd
 DAYS = ["2026-10-15", "2026-10-16", "2026-10-17"]
 
 
-def fake_batch(codes, start, end, hdrs):
-    """Daily raw bars through 10-17 (one day past the round), cut at `end` by the caller."""
-    calls.append(list(codes))
-    idx = pd.to_datetime(DAYS)
-    return {c: pd.DataFrame({"Close": [RAW[c] - 5, RAW[c], RAW[c] + 77]}, index=idx) for c in codes if c in RAW}
+def _log(codes):
+    with open("calls.log", "a") as f:
+        f.write(json.dumps(sorted(codes)) + "\\n")
 
 
-def tc(prev, tg, day="2026-10-16", fetch=fake_batch):
-    fields, need = runner.tw_carry_closes(prev, tg, day)
-    more = runner.tw_fetch_closes(fields, need, {}, fetch=fetch, budget_s=5) if need else None
+def batch(codes, start, end, hdrs):
+    _log(codes)
+    raw = json.load(open("raw.json"))
+    return {c: pd.DataFrame({"Close": [raw[c] - 5, raw[c], raw[c] + 77]}, index=pd.to_datetime(DAYS))
+            for c in codes if c in raw}
+
+
+def tz(codes, start, end, hdrs):
+    idx = pd.DatetimeIndex(["2026-10-15", "2026-10-16"]).tz_localize("Asia/Taipei")
+    return {c: pd.DataFrame({"Close": [990.0, 995.0]}, index=idx) for c in codes}
+
+
+def lag(codes, start, end, hdrs):
+    return {c: pd.DataFrame({"Close": [1000.0]}, index=pd.to_datetime(["2026-10-15"])) for c in codes}
+
+
+def boom(*a):
+    raise RuntimeError("feed down")
+
+
+def pool(codes, start, end, hdrs):
+    # what lib.data does: a thread pool, here with a worker still busy — joined at interpreter exit
+    from concurrent.futures import ThreadPoolExecutor
+    ThreadPoolExecutor(1).submit(time.sleep, 60)
+    return batch(codes, start, end, hdrs)
+
+
+def hang(*a):
+    time.sleep(60)
+    return {}
+''')
+RAW = {"2330": 1000.0, "2454": 1250.0}
+
+
+def set_raw():
+    (WS / "raw.json").write_text(json.dumps(RAW))
+
+
+def calls():
+    p = WS / "calls.log"
+    out = [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
+    p.unlink(missing_ok=True)
+    return out
+
+
+set_raw()
+runner.TW_CLOSE_FETCH = "twfake:batch"
+
+
+def tc(prev, tg, day="2026-10-16", fn="twfake:batch"):
+    runner.TW_CLOSE_FETCH = fn
+    try:
+        fields, need = runner.tw_carry_closes(prev, tg, day)
+        more = runner.tw_fetch_closes(fields, need, {}, budget_s=30) if need else None
+    finally:
+        runner.TW_CLOSE_FETCH = "twfake:batch"
     return more if more is not None else fields
 
 
@@ -76,12 +130,14 @@ check(first == {"raw_closes": {"2330": 1000.0, "2454": 1250.0},
       f"first tick: each Taiwan target at the raw close of the round's own day, never the day after ({first})")
 prev = dict({"weights": {"2330": 0.5, "2454": 0.5}}, **first)
 RAW["2330"] = 1100.0
-calls.clear()
+set_raw()
+calls()
 same = tc(prev, {"2330": 0.5, "2454": 0.5})
-check(same["raw_closes"]["2330"] == 1000.0 and not calls, "target unchanged: the old close is carried, nothing fetched")
+check(same["raw_closes"]["2330"] == 1000.0 and not calls(), "target unchanged: the old close is carried, nothing fetched")
 moved = tc(prev, {"2330": 0.4, "2454": 0.5})
-check(moved["raw_closes"] == {"2330": 1100.0, "2454": 1250.0} and calls == [["2330"]],
-      f"one weight changed: only that symbol re-priced ({moved['raw_closes']}, {calls})")
+mc = calls()
+check(moved["raw_closes"] == {"2330": 1100.0, "2454": 1250.0} and mc == [["2330"]],
+      f"one weight changed: only that symbol re-priced ({moved['raw_closes']}, {mc})")
 old = tc({"weights": {"2330": 0.5}}, {"2330": 0.5})
 check(old.get("raw_closes_est") == ["2330"] and old["raw_closes"]["2330"] == 1100.0 and "raw_close_want" not in old,
       "pre-field state (same target, no close): latest close, an estimate for good")
@@ -91,59 +147,61 @@ check(tc({}, {"BTCUSDT": 1.0}) == {}, "no Taiwan target: no fields at all")
 check(tc({"symbol": "2330", "position": 1.0, "raw_closes": {"2330": 900.0},
           "raw_close_dates": {"2330": "2026-10-01"}}, {"2330": 1.0})["raw_closes"]["2330"] == 900.0,
       "Type A state: same position carries its close")
-
-
-def tz_batch(codes, start, end, hdrs):
-    idx = pd.DatetimeIndex(["2026-10-15", "2026-10-16"]).tz_localize("Asia/Taipei")
-    return {c: pd.DataFrame({"Close": [990.0, 995.0]}, index=idx) for c in codes}
-
-
-check(tc({}, {"2330": 1.0}, fetch=tz_batch).get("raw_closes") == {"2330": 995.0},
+check(tc({}, {"2330": 1.0}, fn="twfake:tz").get("raw_closes") == {"2330": 995.0},
       "a tz-aware daily frame is read too (not silently skipped every tick)")
 check(runner._taipei_date(pd.Timestamp("2026-10-15 16:00", tz="UTC")) == "2026-10-16"
       and runner._taipei_date(pd.Timestamp("2026-10-16")) == "2026-10-16",
       "bar label → Taipei trading date (16:00 UTC the day before / UTC midnight)")
 
 # ── the round's close not in yet: an estimate, retried until it arrives ───────
-lag = lambda codes, s, e, h: {c: pd.DataFrame({"Close": [1000.0]}, index=pd.to_datetime(["2026-10-15"])) for c in codes}
-p1 = tc({}, {"2330": 1.0}, fetch=lag)
+p1 = tc({}, {"2330": 1.0}, fn="twfake:lag")
 check(p1.get("raw_close_dates") == {"2330": "2026-10-15"} and p1.get("raw_closes_est") == ["2330"]
       and p1.get("raw_close_want") == {"2330": "2026-10-16"},
       f"only the day before is in: recorded as an estimate, the round's date kept to ask again ({p1})")
 st1 = dict({"weights": {"2330": 1.0}}, **p1)
-calls.clear()
+calls()
 p2 = tc(st1, {"2330": 1.0}, day="2026-10-19")
-check(calls == [["2330"]] and p2["raw_closes"]["2330"] == RAW["2330"] and p2["raw_close_dates"]["2330"] == "2026-10-16"
+pc = calls()
+check(pc == [["2330"]] and p2["raw_closes"]["2330"] == RAW["2330"] and p2["raw_close_dates"]["2330"] == "2026-10-16"
       and "raw_closes_est" not in p2 and "raw_close_want" not in p2,
       f"next tick: asked again for the round's day (not today's), settled, estimate dropped ({p2})")
-calls.clear()
 tc(dict({"weights": {"2330": 1.0}}, **p2), {"2330": 1.0}, day="2026-10-20")
-check(not calls, "…then carried, no more lookups")
+check(not calls(), "…then carried, no more lookups")
 stale = runner.tw_carry_closes(dict(st1), {"2330": 1.0}, "2026-10-30")
 check(stale[1] == {} and stale[0].get("raw_closes_est") == ["2330"],
       "still short after TW_CLOSE_WANT_DAYS: kept as an estimate, no more retries")
 
-
 # ── never costs the tick its state ────────────────────────────────────────────
-def boom(*a):
-    raise RuntimeError("feed down")
-
-
-check(tc({}, {"2330": 1.0}, fetch=boom) == {}, "fetch failure: nothing recorded, no exception")
-gate = threading.Event()
-slow = lambda *a: gate.wait(30) or {}
 t0 = time.monotonic()
-r = runner.tw_fetch_closes({}, {"2330": ("2026-10-16", False)}, {}, fetch=slow, budget_s=0.5)
-check(r is None and time.monotonic() - t0 < 2, f"a slow lookup is cut at the budget ({time.monotonic() - t0:.2f}s)")
-calls.clear()
-check(runner.tw_fetch_closes({}, {"2330": ("2026-10-16", False)}, {}, fetch=fake_batch, budget_s=0.5) is None
-      and not calls, "…and the next tick does not stack a second one while it still runs")
-gate.set()
-time.sleep(0.2)
+runner.TW_CLOSE_FETCH = "twfake:pool"
+try:
+    pp = runner.tw_fetch_closes({}, {"2330": ("2026-10-16", False)}, {})
+finally:
+    runner.TW_CLOSE_FETCH = "twfake:batch"
+check(pp and pp["raw_closes"] == {"2330": 1100.0} and time.monotonic() - t0 < runner.TW_CLOSE_BUDGET_S,
+      f"a lookup whose thread pool is still busy hands its answer back without waiting for the pool ({time.monotonic() - t0:.2f}s)")
+check(tc({}, {"2330": 1.0}, fn="twfake:boom") == {}, "fetch failure: nothing recorded, no exception")
+check(tc({}, {"2330": 1.0}, fn="twfake_gone:batch") == {}, "lookup module fails to import: nothing recorded, no exception")
+import subprocess  # noqa: E402
+spawned, RealPopen = [], subprocess.Popen
 
-data.fetch_twstock_price_batch = fake_batch
-os.chdir(WS)
-runner._REPO_ROOT = WS
+
+class SpyPopen(RealPopen):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        spawned.append(self)
+
+
+runner.TW_CLOSE_FETCH, subprocess.Popen = "twfake:hang", SpyPopen
+t0 = time.monotonic()
+try:
+    r = runner.tw_fetch_closes({}, {"2330": ("2026-10-16", False)}, {}, budget_s=2)
+finally:
+    runner.TW_CLOSE_FETCH, subprocess.Popen = "twfake:batch", RealPopen
+el = time.monotonic() - t0
+check(r is None and el < 4 and len(spawned) == 1 and spawned[0].poll() is not None,
+      f"a hung lookup is killed at the budget — that child, and it is gone ({el:.2f}s)")
+
 IDX = pd.bdate_range("2026-06-01", "2026-10-16")
 CLOSE = pd.DataFrame({"2330": np.linspace(900, 1300, len(IDX)), "2454": np.linspace(1000, 1400, len(IDX))},
                      index=IDX)
@@ -203,42 +261,106 @@ live(lambda: tick_a(0.0))
 check(read("pfa").get("position") == 0 and "raw_closes" not in read("pfa"),
       "Type A goes flat: the old close does not linger in state.json")
 
-# lookup import fails / times out: the target position is still saved this tick
-real_import = builtins.__import__
-
-
-def no_data(name, *a, **k):
-    if name == "lib.data" and a and a[2] and "fetch_twstock_price_batch" in a[2]:
-        raise ImportError("half-updated workspace")
-    return real_import(name, *a, **k)
-
-
-builtins.__import__ = no_data
+# lookup import fails / hangs: the target position is still saved this tick
+runner.TW_CLOSE_FETCH = "twfake_gone:batch"
 try:
     live(lambda: tick_c(0.25))
     live(lambda: tick_a(1.0))
 finally:
-    builtins.__import__ = real_import
+    runner.TW_CLOSE_FETCH = "twfake:batch"
 sc, sa = read("pfc"), read("pfa")
 check(sc["weights"] == {"2330": 0.25, "2454": 0.25} and "raw_closes" not in sc and sa["position"] == 1.0,
       f"import of the price lookup fails: the new target is saved anyway, just without a close ({sc['weights']})")
-gate2 = threading.Event()
-data.fetch_twstock_price_batch = lambda *a: gate2.wait(30) or {}
-runner.TW_CLOSE_BUDGET_S, keep = 0.5, runner.TW_CLOSE_BUDGET_S
+runner.TW_CLOSE_FETCH, runner.TW_CLOSE_BUDGET_S, keep = "twfake:hang", 1, runner.TW_CLOSE_BUDGET_S
 t0 = time.monotonic()
 try:
     live(lambda: tick_c(0.4))
 finally:
-    runner.TW_CLOSE_BUDGET_S = keep
-    gate2.set()
-check(read("pfc")["weights"]["2330"] == 0.4 and time.monotonic() - t0 < 10,
-      f"price lookup hangs: the new target is saved, the tick bounded ({time.monotonic() - t0:.2f}s)")
-time.sleep(0.2)
+    runner.TW_CLOSE_FETCH, runner.TW_CLOSE_BUDGET_S = "twfake:batch", keep
+el = time.monotonic() - t0
+check(read("pfc")["weights"]["2330"] == 0.4 and el < 5,
+      f"price lookup hangs: the new target is saved, the tick bounded ({el:.2f}s)")
+
+# the whole strategy process, as wait_for_bar runs it: a lookup stuck 60 s costs ≤ the budget
+STRAT = WS / "strategies" / "pfp"
+STRAT.mkdir(parents=True, exist_ok=True)
+(STRAT / "strategy.py").write_text('INTERVAL = "1d"\nMARKET = "spot"\n')
+probe = f"""
+import os, sys, time
+t_import = time.monotonic()
+sys.path[:0] = [{ROOT!r}, {os.path.join(ROOT, "runtime")!r}]
+os.environ["MPLBACKEND"] = "Agg"
+import dotenv; dotenv.dotenv_values = lambda *a, **k: {{}}
+import numpy as np, pandas as pd
+import lib.runner as runner
+runner.dotenv_values = lambda *a, **k: {{}}
+runner._REPO_ROOT = __import__("pathlib").Path(os.getcwd())
+runner.TW_CLOSE_FETCH = "twfake:hang"
+idx = pd.bdate_range("2026-06-01", "2026-10-16")
+c = pd.DataFrame({{"2330": np.linspace(900, 1300, len(idx))}}, index=idx)
+print("TICK", time.monotonic(), flush=True)
+os.environ["BLAVE_MODE"] = "live"
+runner.run({{"STRATEGY_NAME": "pfp", "INTERVAL": "1d", "START": "2026-06-01", "FEE": 0.003, "MARKET": "spot",
+            "__file__": os.path.abspath("strategies/pfp/strategy.py")}}, lambda h: (c.copy(), c.copy()),
+           lambda d: (np.full((len(d[0]), 1), 0.5), pd.concat({{"close": d[0], "open": d[1]}}, axis=1)))
+"""
+proc = subprocess.Popen([sys.executable, "-c", probe], cwd=str(WS), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                        env=dict(os.environ, BLAVE_MODE="live"))
+try:
+    out, _ = proc.communicate(timeout=90)
+except subprocess.TimeoutExpired:
+    proc.kill()
+    out, _ = proc.communicate()
+end = time.monotonic()
+tick_at = [float(x.split()[1]) for x in out.decode().splitlines() if x.startswith("TICK ")]
+spent = end - tick_at[0] if tick_at else None
+pst = json.loads((STRAT / "state.json").read_text()) if (STRAT / "state.json").exists() else {}
+check(proc.returncode == 0 and spent is not None and spent <= 12 and pst.get("weights", {}).get("2330") == 0.5,
+      f"strategy process with a lookup stuck 60 s: target saved, process out {spent and round(spent, 2)} s after the tick began (≤ 12)")
+
+# another writer saved a newer target while the lookup ran: the older one is never written back
+real_fetch = runner.tw_fetch_closes
+
+
+def racing(fields, need, hdrs, budget_s=None):
+    time.sleep(0.01)
+    runner.save_state("pfc", {"type": "portfolio", "market": "spot", "weights": {"2330": 0.9, "2454": 0.1}})
+    return real_fetch(fields, need, hdrs, budget_s)
+
+
+runner.tw_fetch_closes = racing
+try:
+    live(lambda: tick_c(0.3))
+finally:
+    runner.tw_fetch_closes = real_fetch
+check(read("pfc")["weights"] == {"2330": 0.9, "2454": 0.1},
+      f"race: a hand-run tick's newer target survives the lookup's second write ({read('pfc')['weights']})")
+
+# the second write itself raises: the tick still ends normally, the saved target stays
+n_save = []
+
+
+def flaky(name, st):
+    n_save.append(1)
+    if len(n_save) >= 2:
+        raise OSError("disk full")
+    real_save(name, st)
+
+
+runner.save_state = flaky
+try:
+    live(lambda: tick_c(0.35))
+    ok_end = True
+except Exception:
+    ok_end = False
+finally:
+    runner.save_state = real_save
+check(ok_end and len(n_save) == 2 and read("pfc")["weights"]["2330"] == 0.35,
+      "second write raises: the tick ends normally, the first save's target stays")
 
 # ── reporter: forwarded per state, summed into whole lots ─────────────────────
 import portfolio_reporter as pr  # noqa: E402
 
-data.fetch_twstock_price_batch = fake_batch
 live(lambda: tick_c(0.5))
 live(lambda: tick_a(1.0))
 st = pr.strategy_states()
