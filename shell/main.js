@@ -2655,16 +2655,19 @@ function presSync() {
 /* 不讓電腦閒置睡眠(spec desktop-keep-awake K1):A = 自動下單在跑或可能在跑,且設定 › 一般的開關開著(ui-prefs keepAwake,缺 = 開);
    B = Windows 上有統一期貨部位(Wei 10-07),不看開關。A 的判斷順序照 renderer trExecState——重開沒停住(unconfirmed)要排在 alive 之前:
    那段 alive 一律 false,先看 alive 會把最該擋的那一態放掉;tradeLive 也不認它與「剛按啟動」。
-   o = { st, startAt, now, keepAwake, win, presLots }。純函式(tests/check_shell_keep_awake.js 切出來跑) */
+   o = { st, startAt, now, keepAwake, win, presLots, prev }(prev = 上一輪有沒有持有)。純函式(tests/check_shell_keep_awake.js 切出來跑) */
 const AWAKE_START_MS = 60000;   // 剛按啟動、報告還沒收斂的那一段;同 renderer TR_CONFIRM_MS
 function awakeWanted(o) {
   if (o.win && o.presLots > 0) return true;
   if (!o.keepAwake) return false;
   if (o.startAt && o.now - o.startAt < AWAKE_START_MS) return true;
   const st = o.st, r = st && st.report;
-  if (!r || r.error || !r.venues || typeof r.venues !== "object") return false;
+  if (!r) return false;
+  if (r.error) return o.prev === true && !!st.alive;   // 這一輪狀態檔 build 失敗:常駐程式還在就可能還在下單,沿用上一輪
+  if (!r.venues || typeof r.venues !== "object") return false;
   if (!Object.keys(r.venues).some((k) => venueReady(r.venues[k]))) return false;
-  if (r.halt && r.halt.halted) return false;
+  // 同 renderer trHaltStopsAll:holds_all 不是 true 的暫停(舊語意／留在舊 lib)仍會平倉停損,要醒著
+  if (r.halt && r.halt.halted && r.halt.holds_all === true) return false;
   const x = r.reconciler && r.reconciler.stopped;
   if (x && typeof x === "object" && x.reason === "machine_restart") return x.gated === false;
   if (!st.alive || !(r.reconciler && r.reconciler.alive)) return false;
@@ -2685,7 +2688,7 @@ function keepAwakeSet(on) {
 }
 function awakeSync() {
   const st = _tradeHost ? _tradeHost.status() : null;
-  const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, presLots: WIN && _tradeHost ? _tradeHost.presidentLots() : 0 });
+  const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, presLots: WIN && _tradeHost ? _tradeHost.presidentLots() : 0, prev: awakeBlocker !== null });
   awakeBlocker = awakeApply(want, awakeBlocker, powerSaveBlocker);
 }
 const awakeRelease = () => { awakeBlocker = awakeApply(false, awakeBlocker, powerSaveBlocker); };

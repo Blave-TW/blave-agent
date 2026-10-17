@@ -1693,7 +1693,7 @@ msgid "tr.means.presNight"
 msgstr "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。"
 
 msgid "tr.means.1a"
-msgstr "自動下單在跑時，Blave 不讓電腦閒置睡眠（螢幕照常會關）；要 Blave 開著、連得上網才會下單。"
+msgstr "自動下單在跑時，Blave 不讓電腦閒置睡眠（螢幕照常會關；Windows 筆電要接著電源）；要 Blave 開著、連得上網才會下單。"
 
 msgid "tr.means.2a"
 msgstr "闔蓋、沒電、手動睡眠、關機、結束 Blave：自動下單停止，部位留在{venue}，不會自動平倉。"
@@ -1711,13 +1711,13 @@ msgid "set.awake"
 msgstr "自動下單時不讓電腦睡"
 
 msgid "set.awake.lead"
-msgstr "自動下單在跑時，電腦不會閒置睡眠，螢幕照常會關。闔蓋、沒電、手動睡眠照樣會停。"
+msgstr "自動下單在跑時，電腦不會閒置睡眠，螢幕照常會關；Windows 筆電要接著電源。闔蓋、沒電、手動睡眠照樣會停。"
 
 msgid "set.awake.leadOff"
 msgstr "電腦照系統設定睡眠；睡著時自動下單停止。"
 
 msgid "set.awake.leadOffWin"
-msgstr "電腦照系統設定睡眠；睡著時自動下單停止。統一期貨有部位時，電腦仍會保持清醒。"
+msgstr "電腦照系統設定睡眠；睡著時自動下單停止。統一期貨有部位時，接著電源的電腦仍會保持清醒。"
 
 msgid "tr.quote.pres"
 msgstr "實盤行情：統一期貨"
