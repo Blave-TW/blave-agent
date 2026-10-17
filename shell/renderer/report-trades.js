@@ -344,47 +344,88 @@
     return track.points[track.points.length - 1].posAfter * lastClose - cash;
   }
 
-  // 一打開的範圍(陣列索引):裝得下就整段;裝不下就從最新一段往回收,收到箭頭平均間距
-  // 會小於 MARK_GAP 為止,左緣 = 最後收進來那段的第一筆再留 4%,且至少 MIN_BARS 根
-  // (稀疏策略不被放大到 K 棒太粗;高頻策略因此可能密過 MARK_GAP,兩條衝突時根數下限贏)。
-  // 按筆數不按天數(1 分線的一個月是 4 萬根)。首根 K 棒之前的點不上圖、不佔名額。
-  // 最新那一段自己就裝不下(連續調倉、從不歸零的策略)時改逐筆往回數,不然會退回固定根數
+  // 一打開的範圍(陣列索引),框的是「收進來的成交」,不是整段 K 線(設計稿 trades-tab-range 裁定一～三):
+  //  - 名額:從最新一段往回收,收到箭頭平均間距會小於 MARK_GAP 為止。間距用「成交實際佔的寬度」算
+  //    (圖寬扣掉兩側留白換成的像素),不拿全寬算。按筆數不按天數;首根 K 棒之前的點不上圖、不佔名額;
+  //    最新那一段自己就裝不下(連續調倉、從不歸零)時改逐筆往回數
+  //  - 左緣:最早收進來那筆再留 4%,不跨過沒收進來的那根箭頭,也不早於首根(前面的空白交給地圖)
+  //  - 右緣:有未平倉部位、或尾端空檔不比成交跨度長 → 最後一根 + RIGHT_PAD(要看得到現在的價格);
+  //    否則最後一筆 + 15%(早就空手的策略,箭頭才不會全擠在左緣)
+  //  - 最少 MIN_BARS 根優先(稀疏策略不被放大到 K 棒太粗):不足時往兩側補(可以是小數根),不超出資料範圍
+  //  - 沒有任何成交落在圖上 → 最近 MIN_BARS 根
   const MARK_GAP = 24;
   const MIN_BARS = 130;
   const RIGHT_PAD = 4; // 右緣多留幾根,未平倉部位與最後的價格不貼邊
-  const LEFT_PAD = -2;
-  function initialRange(tracks, candles, plotWidth) {
+  const LEFT_PAD = -2; // 首根左邊留一點空,首根的箭頭不被圖邊裁掉
+  function rangeForCap(tracks, candles, cap) {
     const last = candles.length - 1;
-    const to = last + RIGHT_PAD;
-    const fallback = { from: Math.max(0, last + 1 - MIN_BARS), to: to };
-    if (last < 0 || !(plotWidth > 0)) return fallback;
-    const cap = Math.max(4, Math.floor(plotWidth / MARK_GAP)); // 下限 4 筆,同網頁 execDefaultRange
     const first = candles[0].time;
     let used = 0;
-    let from = null;
-    for (let k = tracks.length - 1; k >= 0; k--) {
+    let from = null; // 收進來最早那根箭頭
+    let newest = null; // 最新一根箭頭
+    let older = null; // 沒收進來的最新一根箭頭
+    for (let k = tracks.length - 1; k >= 0 && older === null; k--) {
       const pts = tracks[k].points.filter(function (p) {
         return p.ts >= first;
       });
       if (!pts.length) continue;
+      if (newest === null) newest = snapIndex(pts[pts.length - 1].ts, candles);
       if (used + pts.length > cap) {
-        // older = 沒收進來的最新一根箭頭:左側留白不准把它框進來,間距保證才不會差一筆
-        let older;
         if (from === null) {
           from = snapIndex(pts[pts.length - cap].ts, candles);
           older = snapIndex(pts[pts.length - cap - 1].ts, candles);
         } else {
           older = snapIndex(pts[pts.length - 1].ts, candles);
         }
-        const pad = Math.max(5, Math.round((last - from) * 0.04));
-        const left = Math.min(from, Math.max(from - pad, older + 1));
-        return { from: Math.max(0, Math.min(left, last + 1 - MIN_BARS)), to: to };
+        break;
       }
       used += pts.length;
       from = snapIndex(pts[0].ts, candles);
     }
-    if (from === null) return fallback;
-    return { from: LEFT_PAD, to: to };
+    if (from === null) return null;
+    const span = newest - from;
+    const flat = tracks[tracks.length - 1].closed;
+    const to = flat && last - newest > span ? newest + Math.max(5, Math.round(span * 0.15)) : last + RIGHT_PAD;
+    let left = from - Math.max(5, Math.round((to - from) * 0.04));
+    // 停在沒收進來那根與最早收進來那根的中間:兩根緊鄰時 +1 會讓最早那顆箭頭貼在圖邊被裁一半(同網頁 execFrameTrades)
+    // 名額邊界剛好切在同一根 K 棒的兩筆之間(older 跟 from 同一根):分不開,留半根讓那根的箭頭不貼邊
+    if (older !== null) left = older >= from ? from - 0.5 : Math.min(from, Math.max(left, older + 0.5));
+    return { from: Math.max(LEFT_PAD, left), to: to, span: span };
+  }
+  function initialRange(tracks, candles, plotWidth) {
+    const last = candles.length - 1;
+    const fallback = { from: Math.max(0, last + 1 - MIN_BARS), to: last + RIGHT_PAD };
+    if (last < 0 || !(plotWidth > 0)) return fallback;
+    // 留白多寬要等範圍框出來才知道:先用全寬的名額框一次,用框出來的留白重算名額,
+    // 名額只減不增,收斂為止
+    let cap = Math.max(4, Math.floor(plotWidth / MARK_GAP));
+    let r = rangeForCap(tracks, candles, cap);
+    if (!r) return fallback;
+    for (;;) {
+      const fit = Math.max(4, Math.floor((plotWidth * r.span) / (r.to - r.from) / MARK_GAP));
+      if (fit >= cap) break;
+      cap = fit;
+      r = rangeForCap(tracks, candles, cap);
+    }
+    let from = r.from;
+    let to = r.to;
+    const lo = LEFT_PAD;
+    const hi = last + RIGHT_PAD;
+    if (to - from < MIN_BARS) {
+      if (hi - lo <= MIN_BARS) return { from: lo, to: hi };
+      const need = MIN_BARS - (to - from);
+      from -= need / 2;
+      to += need / 2;
+      if (from < lo) {
+        to += lo - from;
+        from = lo;
+      }
+      if (to > hi) {
+        from -= to - hi;
+        to = hi;
+      }
+    }
+    return { from: from, to: to };
   }
 
   // 交易地圖拖曳/點擊/方向鍵後的範圍:寬度不變,夾在整段回測(含兩側留白)裡
