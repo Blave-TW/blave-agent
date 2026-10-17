@@ -286,6 +286,21 @@ the machine migrates. What was adopted is one `ledger_baseline` line in
 `state/audit.jsonl` — show it when the user asks what the bot considers its
 own. If the user says the split is wrong, reseed by hand (below).
 
+**A member without its first signal.** A funded, routed strategy in `amounts` with no
+`state.json` yet (it just joined — the runtime moved its old one to `state.json.prejoin` — or
+it has never computed) holds every key it will trade as it is, on both sides of the diff, like
+a signal-gated symbol: swapping a strategy for a new version on the same coin no longer closes
+the position one round and buys it back the next. Its keys: `SYMBOL` (or `stats.json`
+`symbol`), else a literal `UNIVERSE = [...]`, else its `backtest_state.json` assets; none
+known = nothing held (`first_signal_wait_no_keys` audit line). The wait is at most one bar of
+its `INTERVAL` and never longer than `lib.portfolio.FIRST_SIGNAL_WAIT_MAX_S` (2 h), counted
+from the first round that saw it without a state (`state/first_signal_wait.json`; a re-save
+does not restart it). Past that it reconciles as before — no state, no contribution — so an
+exit is never parked behind a strategy that never computes (`first_signal_wait_expired`).
+The snapshot row carries `gated: true` and `awaiting: {strategy: until_epoch}`; the audit
+lines `first_signal_wait` / `…_expired` answer "why didn't it move". HALT is unchanged:
+nothing is opened, and a close past the window still goes out as a reduce.
+
 **A spot row without a quantity** (a seed from before quantities, a fill with
 no `executed_qty`) is written off the first time the reconciler builds the
 book: one order error saying so, one `ledger_writeoff` audit line, the coins

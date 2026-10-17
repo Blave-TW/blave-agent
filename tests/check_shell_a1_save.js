@@ -35,7 +35,7 @@ vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSe
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
   "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper",
-  "trCfStates", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail"].map((n) => cutF(n)).join("\n")
+  "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail"].map((n) => cutF(n)).join("\n")
   + "\n" + ["poAddBtn", "poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
 const V = { credentials: true, pair: true, order: true, account: true };
@@ -257,6 +257,43 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("② 換合約+帳上有舊合約部位:策略列標「{大台}平倉」(ct.tagClose)", f.rows.some((x) => /^FUT8ct\.tagClose \{"prod":"tr\.txfProd\.txf"\}/.test(x)), J(f.rows));
     S.st.report.account.venues.capital.positions = {}; const g = open();
     ok("② …帳上沒有舊合約部位:不標", !g.rows.some((x) => /ct\.tagClose/.test(x)), J(g.rows)); }
+  // S1:換策略。對帳器(快照 caps 帶 first_signal_wait)對還沒算出第一個訊號的成員,它的標的這一輪先不動;框照它列
+  const LR = (target, old) => ({ ts: new Date().toISOString().slice(0, 19), actual: {}, target: target || {}, gates: {}, caps: old ? ["contract_override"] : ["contract_override", "rollover_halt_freeze", "first_signal_wait"] });
+  const DB = { name: "db", displayName: "DB", hasBacktest: true, symbol: "BTCUSDT", market: "swap" };
+  const DC = { name: "dc", displayName: "DC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: ["BTCUSDT", "SOLUSDT"] };
+  const pvC = { type: "portfolio", market: "swap", weights: { BTCUSDT: 0.5, SOLUSDT: 0.5 }, closes: { BTCUSDT: 50000, SOLUSDT: 150 }, bar_at: BAR, bar_date: "2026-10-16", latest: true, daily_tw: false };
+  const HELD = (syms, names) => "cf-note:tr.cf.held " + J({ syms, names }), side = (f) => f.rows.filter((x) => /^tr\.cf\.(buy|sell)/.test(x));
+  { bag({ firing: true, picked: ["btc", "tw", "db"], edits: { btc: 0, db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR() } });
+    const f = open();
+    ok("S1 單一→單一(btc 改 0、加同標的草稿 db,預覽最新多 1):「儲存金額」、不列單;BTC 這一輪不會動那句",
+      f.title === "tr.cf.title" && !f.mark && side(f).length === 0 && f.notes.includes(HELD("BTCUSDT", "DB")) && f.rows.includes("BTC500→0"), J(f)); }
+  { bag({ firing: true, picked: ["tw", "db"], edits: { db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR() } });
+    const f = open();
+    ok("S1 …移出 btc(不是改 0):策略列「移出」不帶平倉", f.title === "tr.cf.title" && f.rows.includes("BTC500→tr.cfTagRemove") && f.notes.includes(HELD("BTCUSDT", "DB")), J(f)); }
+  { bag({ firing: true, picked: ["btc", "tw", "dc"], edits: { btc: 0, dc: 1000 }, list: [DC], noPv: true, pvs: { dc: pvC }, rep: { last_reconcile: LR() } });
+    const f = open();
+    ok("S1 單一→組合(btc 改 0、加含 BTC 的草稿組合):只列買 SOL、不列賣 BTC;BTC 不會動那句", f.title === "tr.cf.titleFire" && J(side(f)) === J(["tr.cf.buySOLUSDT3.3333 tr.cf.unitCoins"])
+      && f.notes.includes(HELD("BTCUSDT", "DC")), J(f)); }
+  { bag({ firing: true, picked: ["tw", "db"], edits: { db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR(null, true) } });
+    const f = open();
+    ok("S1 …對帳器是舊 lib(caps 沒有 first_signal_wait):不說不會動、移出的 btc 照標平倉", !f.notes.some((x) => /tr\.cf\.held/.test(x)) && f.rows.includes("BTC500→tr.cfTagRemove · tr.cfTagClose"), J(f)); }
+  // 已存、還沒有 state.json 的 db:等待窗內不動 BTC;過了窗(快照不再列它在等)照常對帳,沒貢獻的 BTC 照賣
+  { const w = (awaiting) => { bag({ firing: true, picked: ["btc", "tw", "db"], amounts: { db: 500 }, edits: { btc: 0 }, list: [DB], noPv: true,
+      rep: { last_reconcile: LR(awaiting ? { BTCUSDT: { side: "long", size: 500, gated: true, contributors: [], awaiting: { db: now + 3000 } } } : {}) } }); return open(); };
+    const f = w(false), g = w(true);
+    ok("S1 等待逾時(或新成員一直算不出):照常處理——列賣 BTC、「儲存並下單」,出場不被卡住", f.title === "tr.cf.titleFire" && side(f).includes("tr.cf.sellBTCUSDT0.01 tr.cf.unitCoins") && !f.notes.some((x) => /tr\.cf\.held/.test(x)), J(f));
+    ok("S1 …還在等待窗內:不列賣 BTC、BTC 不會動那句;它算出來前目標不知道、這次又改了 btc,標題照「儲存並下單」",
+      g.title === "tr.cf.titleFire" && side(g).length === 0 && g.notes.includes(HELD("BTCUSDT", "DB")), J(g)); }
+  { bag({ halted: true, picked: ["btc", "tw", "db"], edits: { btc: 0, db: 500 }, list: [DB], noPv: true, pvs: { db: pvA("BTCUSDT", { close: 50000 }) }, rep: { last_reconcile: LR(), halt: { halted: true } } });
+    const f = open();
+    ok("S1 暫停中:框照舊(儲存金額 + 暫停那句),不加不會動那句", f.title === "tr.cf.title" && f.notes.includes("cf-note:tr.saveWarnHalted") && !f.notes.some((x) => /tr\.cf\.held/.test(x)), J(f)); }
+  // S3:等新訊號(訊號閘)擋下的標的不列單;閘中那支自己移出,閘跟著走,照列
+  { const gt = { BTCUSDT: { side: "long", size: 500, gated: true, contributors: [{ strategy: "btc", position: 1, amount: 500, contribution: 500, gated: true }] } };
+    bag({ firing: true, edits: { btc: 1000 }, rep: { last_reconcile: LR(gt) } }); const f = open();
+    ok("S3 btc 在等新訊號、改金額 500→1000:不列買 BTC、「儲存金額」、表下說等新訊號", f.title === "tr.cf.title" && side(f).length === 0 && f.notes.includes("cf-note:tr.cf.gated " + J({ syms: "BTCUSDT" })), J(f));
+    bag({ firing: true, picked: ["tw"], rep: { last_reconcile: LR(gt) } }); const g = open();
+    ok("S3 …移出閘中的 btc 本身:照列賣 BTC", g.title === "tr.cf.titleFire" && side(g).includes("tr.cf.sellBTCUSDT0.01 tr.cf.unitCoins"), J(g)); }
+  ok("R3 原 → 新列的 held 只看帳上(這家下不下得了由 covered 在列單時判)", /held: !!o\.mine\[sym\] \}/.test(cutF("trCfRows")) && !/held: o\.covered/.test(cutF("trCfRows")));
   ok("死碼:trCfStates 裡沒有 keyOf、框狀態沒有 changed", !/keyOf/.test(cutF("trCfStates")) && !/changed: false/.test(cutF("trSaveAmounts")));
 
   // ── 單位換算
@@ -293,7 +330,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("④ 描邊那顆:只跳過去(不改草稿),記 po_add_go", S.picked === null && feats.includes("po_add_go"), J(feats)); }
 
   // ── 字串:兩語都有、中文全形
-  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
+  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
     ok("字串:新 key 兩語都有;標題與主鈕同字(儲存並下單)", keys.every((k) => S0.en[k] && S0.zh[k]) && S0.zh["tr.cf.titleFire"] === "儲存並下單" && S0.zh["tr.cf.title"] === "儲存金額" && S0.zh["po.add"] === "加到策略組合",
       J(keys.filter((k) => !S0.en[k] || !S0.zh[k]))); }
   console.log(red ? `\n${red} FAILED` : "\nall checks passed");

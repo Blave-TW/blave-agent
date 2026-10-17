@@ -95,7 +95,7 @@ ok("優化／回測跑之前先更新超過 6 小時的成員績效(stats_refres
 ok("套用金額:策略集合跟配置不同就停用;走同一個存金額框(沒有另一張套用表、不分 fromOpt)", /!mgSameAsAmounts\(\)/.test(cutF(psrc, "mgApply")) && /if \(!anyChange && !blocked\) \{ box\.onOk\(\); return; \}/.test(src)
   && !/poApplyTable|fromOpt/.test(src + psrc));
 // 設計稽核 review-desktop-portfolio 必改 3、6、8
-ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」「{舊合約}平倉」);套用金額走同一個框,一起標", /const close = trCloseTag\(was, now, mayFire, trStratHeld\(n\)\);/.test(src) && /const ctClose = trCtCloseTag\(n, sending, stored\);/.test(src)
+ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」「{舊合約}平倉」);套用金額走同一個框,一起標", /const close = trCloseTag\(was, now, mayFire && !keepsPos\(n\), trStratHeld\(n\)\);/.test(src) && /const ctClose = trCtCloseTag\(n, sending, stored\);/.test(src)
   && !/const ctCloses = /.test(src));
 { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
   const c700 = (css.match(/@container \(max-width: 700px\) \{([\s\S]*?)\n\}/) || [])[1] || "";
@@ -119,7 +119,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],

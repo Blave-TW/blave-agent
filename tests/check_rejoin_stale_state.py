@@ -10,12 +10,14 @@ the account within one reconciler round, before any new signal.
   S2  the new signal after the re-add trades, its own direction (short), not the old one.
   S3  continuing members are untouched: state.json (content, mtime), bar_wait record — an
       amount raise on a member whose last tick is hours old trades in the same round, and a
-      member sharing the re-added one's symbol trades its own change while that one waits.
+      member sharing the re-added one's symbol waits with it (the key is held until its first
+      signal, lib/portfolio first_signal_wait) — then nets against it, no sell and buy-back.
   S4  picked at $0, funded by a second save before any new tick (the web picker's two
       saves): still no order; the first tick after the pick trades.
   S5  a stale state.json that cannot be moved refuses the save before anything is written.
   S6  fork-and-switch: the fork's one-off signal run inside the current bar nets against the
-      original in the same save (no trade); one from an earlier bar is set aside.
+      original in the same save (no trade); one from an earlier bar is set aside, and the
+      symbol waits for the fork's first scheduled signal instead of closing and buying back.
   S7  unpick and re-add inside the same bar: the state is the current bar's — kept, trades at
       once, and its bar_wait record is kept too (F1: no recompute on newer data).
   S8  strategy.py edited after the state was written (same bar): set aside.
@@ -179,9 +181,10 @@ def s3(w):
     w.check(not any(os.path.exists(f"strategies/{n}/state.json.prejoin") for n in ("c1", "e1")),
             "S3: no .prejoin for members")
     w.sig("c1", 0)
-    w.eq(w.settle(), [(B, "sell", 0.02, True)], "S3: c1, sharing BTC with the waiting a1, exits on its own signal")
+    w.eq(w.settle(), [], "S3: c1, sharing BTC with a1 that has no first signal yet, waits with it (lib first_signal_wait)")
     w.sig("a1", 1)
-    w.eq(w.settle(), [(B, "buy", 0.02, False)], "S3: a1's first new signal enters")
+    w.eq(w.settle(), [], "S3: a1's first signal takes over c1's share — no sell and buy-back")
+    w.eq(w.paper_pos(B), 0.02, "S3: BTC stays at a1's share")
 
 
 @case
@@ -242,10 +245,11 @@ def s6(w):
     w.sig("f2", 1)
     age_state("f2", 2 * 3600)   # run an earlier bar
     r = w.amounts(a1=0, f1=0, f2=1000)
-    w.eq(w.settle(), [(B, "sell", 0.02, True)], "S6: a fork run on an earlier bar is not traded: f1 to 0 closes")
+    w.eq(w.settle(), [], "S6: a fork run on an earlier bar is not traded, and BTC waits for its first signal (no close)")
     w.check(state("f2") is None, "S6: f2's older state.json set aside")
     w.sig("f2", 1)
-    w.eq(w.settle(), [(B, "buy", 0.02, False)], "S6: f2's first scheduled signal enters")
+    w.eq(w.settle(), [], "S6: f2's first scheduled signal takes BTC over — no close and buy-back")
+    w.eq(w.paper_pos(B), 0.02, "S6: BTC still long 0.02")
 
 
 @case

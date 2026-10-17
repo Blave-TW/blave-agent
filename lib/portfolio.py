@@ -54,7 +54,7 @@ def _notify_best_effort(msg):
         logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
-RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze')
+RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze', 'first_signal_wait')
 
 
 def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False,
@@ -2334,6 +2334,112 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
     return out
 
 
+# A funded member that has not written its first state.json yet (just joined — runtime
+# _retire_prejoin_signals moved an old one away — or never computed): until it does, the keys it
+# trades are held as they are on BOTH sides, like a gated symbol. Without it, swapping a strategy
+# for a new version on the same coin closed the position one round (the newcomer contributes
+# nothing yet) and bought it back the next. One bar of its INTERVAL at most, never longer than
+# FIRST_SIGNAL_WAIT_MAX_S: past that it is reconciled as before (no state = no contribution), so
+# a member that never computes can never park an exit.
+FIRST_SIGNAL_WAIT_MAX_S = 7200
+_FIRST_SIGNAL_WAIT_PATH = 'state/first_signal_wait.json'
+_INTERVAL_RE = re.compile(r'^\s*INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
+# same literal-list rule as the shell's trUniverse: what the save dialog can see is what is held
+_UNIVERSE_RE = re.compile(r'^UNIVERSE\s*=\s*\[([^\]]*)\]', re.M)
+
+
+def _first_signal_window_s(name):
+    try:
+        with open(f'strategies/{name}/strategy.py') as f:
+            m = _INTERVAL_RE.search(f.read())
+        from lib.bar_ready import interval_to_timedelta
+        bar = interval_to_timedelta(m.group(1)).total_seconds() if m else None
+    except (OSError, ValueError, OverflowError):
+        bar = None
+    return min(bar, FIRST_SIGNAL_WAIT_MAX_S) if bar and bar > 0 else FIRST_SIGNAL_WAIT_MAX_S
+
+
+def _first_signal_keys(name):
+    """Book keys a not-yet-computed member will trade: its SYMBOL (_strategy_key), else a
+    portfolio's literal UNIVERSE, else its last backtest preview's assets. [] = cannot tell."""
+    k = _strategy_key(name)
+    if k:
+        return [k]
+    market = strategy_market(name)
+    syms = []
+    try:
+        with open(f'strategies/{name}/strategy.py') as f:
+            m = _UNIVERSE_RE.search(f.read())
+        syms = [x[1:-1] for x in re.findall(r'["\'][^"\']{1,32}["\']', m.group(1))] if m else []
+    except OSError:
+        pass
+    if not syms:
+        pv = _read_json_state(f'strategies/{name}/backtest_state.json') or {}
+        if isinstance(pv.get('weights'), dict):
+            syms = list(pv['weights'])
+        elif isinstance(pv.get('symbol'), str) and pv['symbol']:
+            sym = execution_symbol(name, pv['symbol'].replace('-', '').upper(), load_portfolio_config())
+            return [market_key(sym, market)]
+    return sorted({market_key(str(s).replace('-', '').upper(), market) for s in syms if s})
+
+
+def _first_signal_holds(amounts, exchanges, now=None):
+    """{name: (keys, until)} for the members held this round. state/first_signal_wait.json =
+    {name: {since[, expired]}} anchors the window at the first round a member was seen without
+    a state (a re-save does not restart it); a member leaves the file once it has a state.json
+    or is no longer funded and routed."""
+    now = time.time() if now is None else now
+    try:
+        with open(_FIRST_SIGNAL_WAIT_PATH) as f:
+            book = json.load(f)
+        book = book if isinstance(book, dict) else {}
+    except (OSError, ValueError):
+        book = {}
+    want = [n for n, a in amounts.items()
+            if a and (exchanges or {}).get(n) and not os.path.exists(f'strategies/{n}/state.json')]
+    out, changed = {}, False
+    for name in [n for n in book if n not in want]:
+        del book[name]
+        changed = True
+    for name in want:
+        rec = book.get(name)
+        if not isinstance(rec, dict) or not isinstance(rec.get('since'), (int, float)):
+            keys = _first_signal_keys(name)
+            rec = book[name] = {'since': now}
+            changed = True
+            if keys:
+                guard.audit('first_signal_wait', strategy=name, keys=keys,
+                            until=round(now + _first_signal_window_s(name)))
+            else:
+                rec['expired'] = True
+                guard.audit('first_signal_wait_no_keys', strategy=name)
+                logging.warning(f"[portfolio] {name}: no state.json yet and no SYMBOL / UNIVERSE / "
+                                f"preview to tell its keys — nothing held for it")
+        if rec.get('expired'):
+            continue
+        until = rec['since'] + _first_signal_window_s(name)
+        keys = _first_signal_keys(name)
+        if now >= until or not keys:
+            rec['expired'] = True
+            changed = True
+            guard.audit('first_signal_wait_expired', strategy=name, keys=keys,
+                        waited_s=round(now - rec['since']))
+            logging.warning(f"[portfolio] {name}: still no state.json after "
+                            f"{round(now - rec['since'])}s — {keys} reconciled without it")
+            continue
+        out[name] = (keys, until)
+    if changed:
+        try:
+            os.makedirs(os.path.dirname(_FIRST_SIGNAL_WAIT_PATH), exist_ok=True)
+            tmp = _FIRST_SIGNAL_WAIT_PATH + '.tmp'
+            with open(tmp, 'w') as f:
+                json.dump(book, f, indent=2)
+            atomic_replace(tmp, _FIRST_SIGNAL_WAIT_PATH)
+        except OSError as e:
+            logging.warning(f'first_signal_wait persist failed: {e}')
+    return out
+
+
 def aggregate_portfolio():
     """
     Aggregate all strategy states into net target positions using portfolio config.
@@ -2413,7 +2519,8 @@ def aggregate_portfolio():
                 key = market_key(str(sym).replace('-', '').upper(), market)
                 _add(key, market, exchange, asset_spec, amount * w,
                      {'strategy': name, 'position': w, 'amount': amount,
-                      'contribution': round(amount * w, 4), 'portfolio': True}, gated)
+                      'contribution': round(amount * w, 4), 'portfolio': True,
+                      **({'gated': True} if gated else {})}, gated)
             continue
 
         symbol     = state.get('symbol')
@@ -2485,6 +2592,8 @@ def aggregate_portfolio():
             'position':          position,
             'amount':            amount,
             'contribution': round(contribution, 4),
+            # only when set: a gated key places no order, so orders.jsonl rows never carry it
+            **({'gated': True} if gated else {}),
         })
 
     result = {}
@@ -2527,6 +2636,17 @@ def aggregate_portfolio():
         row['gated'] = True
         row['unrouted'] = sorted(set(row.get('unrouted') or []) | {name})
         logging.info(f"[portfolio] {name}: no exchange routed — {key} held as is (save 下單設定 to route)")
+    for name, (keys, until) in _first_signal_holds(amounts, exchanges).items():
+        for key in keys:
+            row = result.get(key)
+            if row is None:
+                row = result[key] = {'side': None, 'size': 0.0, 'exchange': exchanges.get(name),
+                                     'asset_spec': asset_specs.get(name), 'market': split_key(key)[1],
+                                     'contributors': [], 'gated': True}
+            row['gated'] = True
+            row['awaiting'] = dict(row.get('awaiting') or {}, **{name: round(until)})
+        logging.info(f"[portfolio] {name}: no first signal yet — {keys} held as is "
+                     f"(at most {round(until - time.time())}s more)")
     if lifted:
         # merge-on-save (audit #7): re-load the file and remove ONLY the lifted
         # names — dumping our stale in-memory copy would clobber a gate that
