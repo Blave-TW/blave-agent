@@ -8109,7 +8109,7 @@ msgstr "目前已暫停：不開新倉，但減碼與平倉儲存後就會執行
 
 # 暫停＝完全凍結(halt.freeze)時存金額框那句:舊句「減碼與平倉照走」在凍結後是假話
 msgid "tr.saveWarnFreeze"
-msgstr "目前已暫停：儲存後什麼單都不送，按「啟動下單」才照新金額執行。"
+msgstr "已暫停，按「啟動下單」才照新金額下單。"
 
 msgid "tr.rejNameSep"
 msgstr "」、「"

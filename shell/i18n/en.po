@@ -8093,7 +8093,7 @@ msgid "tr.saveWarnHalted"
 msgstr "Paused: no new positions, but reductions and closes run as soon as you save."
 
 msgid "tr.saveWarnFreeze"
-msgstr "Paused: nothing is sent when you save; the new amounts take effect once you press Start trading."
+msgstr "Paused. Orders follow the new amounts once you press Start trading."
 
 msgid "tr.rejNameSep"
 msgstr "”, “"
