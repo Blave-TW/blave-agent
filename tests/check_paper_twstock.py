@@ -496,6 +496,50 @@ SESSION[0] = True
 order_paper.place_spot_market_order(ENV, "2454", "buy", quote_qty=33000)
 check(abs(order_paper.get_spot_balances(ENV)["2454"] - 22.0) < 1e-9, "a basket component fills: 33,000 TWD / 1,500 = 22 shares")
 
+print("== a stock suspended past the 14-day window still prices its close-out (last close)")
+real_daily = data.fetch_twstock_price
+halt_calls = []
+
+
+def halted_daily(code, start, end, hdrs):
+    halt_calls.append(start)
+    if code != "1805":
+        return real_daily(code, start, end, hdrs)
+    last = pd.Timestamp.now().floor("D") - pd.Timedelta(days=40)
+    if pd.Timestamp(start) > last:
+        return pd.DataFrame(columns=["Open", "Close"])
+    return pd.DataFrame({"Open": [52.0, 50.0], "Close": [52.0, 50.0]},
+                        index=[last - pd.Timedelta(days=1), last])
+
+
+data.fetch_twstock_price = halted_daily
+led = json.load(open(order_paper.LEDGER_PATH))
+led["spot"]["1805"] = 300.0
+json.dump(led, open(order_paper.LEDGER_PATH, "w"))
+paper_data._price_cache.clear()
+px, _ = paper_data.current_price("1805", ENV)
+check(px == 50.0 and len(halt_calls) == 2, f"short window empty → the long window's last close ({px}, {halt_calls})")
+paper_data._price_cache.clear()
+r = order_paper.place_spot_market_order(ENV, "1805", "sell", base_qty=300.0)
+check(bool(r) and "1805" not in order_paper.get_spot_balances(ENV), f"the close-out of a suspended stock goes ({r})")
+halt_calls.clear()
+
+
+def failing_daily(code, start, end, hdrs):
+    halt_calls.append(start)
+    raise OSError("source down")
+
+
+data.fetch_twstock_price = failing_daily
+paper_data._price_cache.clear()
+try:
+    paper_data.current_price("1805", ENV)
+    check(False, "a failing source must raise PaperNoPrice")
+except paper_data.PaperNoPrice:
+    check(len(halt_calls) == 1, f"a failing source is not retried on the long window ({halt_calls})")
+data.fetch_twstock_price = real_daily
+paper_data._price_cache.clear()
+
 print("== a TW row booked before this is stamped once, audited")
 led = json.load(open(order_paper.LEDGER_PATH))
 led["positions"]["2317"] = {"qty": 10.0, "entry": 180.0}

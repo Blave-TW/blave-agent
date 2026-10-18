@@ -226,6 +226,12 @@ def _resolve_price(symbol, env):
 
 # ── TW stocks: price, session ────────────────────────────────────────────────
 
+# A stock suspended past the short window has no bar in it: its last close (up to the long
+# window back) still prices the close-out — without one every order on it, closes included,
+# is refused.
+_TW_PRICE_WINDOWS_D = (14, 400)
+
+
 def _tw_stock_price(symbol, hdrs):
     """Latest unadjusted daily Close of a TW stock — fetch_twstock_price, the
     same data and cache as the page's fetch_twstock_price_batch, under the same
@@ -235,13 +241,16 @@ def _tw_stock_price(symbol, hdrs):
     from datetime import datetime, timedelta, timezone
     from lib import data
     code = re.sub(r"\.TWO?$", "", _norm(symbol))
-    start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
-    try:
-        return _last_close(data.fetch_twstock_price(code, start, None, hdrs))
-    except PaperNoPrice:
-        raise
-    except Exception as e:
-        raise PaperNoPrice(f"no daily close for TW stock {code}: {type(e).__name__}: {e}")
+    for days in _TW_PRICE_WINDOWS_D:
+        start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        try:
+            return _last_close(data.fetch_twstock_price(code, start, None, hdrs))
+        except PaperNoPrice as e:
+            empty = e
+        except Exception as e:
+            # a failing source is not retried on a longer window (the account reader's budget)
+            raise PaperNoPrice(f"no daily close for TW stock {code}: {type(e).__name__}: {e}")
+    raise PaperNoPrice(f"no daily close for TW stock {code} in {_TW_PRICE_WINDOWS_D[-1]} days: {empty}")
 
 
 _TW_OPEN_MIN, _TW_CLOSE_MIN = 9 * 60, 13 * 60 + 30
