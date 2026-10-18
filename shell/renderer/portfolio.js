@@ -716,7 +716,7 @@ function mgToolbar(outdated, fog) {
     line.appendChild(b); tb.appendChild(line); });
   return tb;
 }
-// 權重分配(警示條 → 有提案才畫:區段標 + 部位大小設定鈕 + 套用 + 表)。還沒有建議:什麼字都不印,工具列的「跑優化」就是提示(Wei 10-13)
+// 權重分配(警示條 → 有提案才畫:區段標 + 部位大小設定鈕 + 套用 + 表)。兩檔以上、還沒有建議也沒有回測時不畫這一段,改出 Setup fog(mgFogOn,實機 integ2 10-18)
 function mgSuggest() {
   const frag = document.createDocumentFragment(), G = mgBag(), sh = mgBlocked() ? null : mgShort();
   if (sh && !G.shortDismissed) {
