@@ -344,6 +344,18 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     bag({ firing: true, picked: ["btc", "tw", "db"], amounts: { db: 500 }, list: [DB], noPv: true, states: { btc: { symbol: "BTCUSDT", position: 0 } }, edits: { tw: 100001 },
       rep: { last_reconcile: LR(at([{ strategy: "btc", position: 1, amount: 500, contribution: 300 }], 200)) } }); const h = open();
     ok("D2 …btc 停損(訊號 0)、frozen 200:列賣 BTC 300 那段(0.006),留 200", J(side(h)) === J(["tr.cf.sellBTCUSDT0.006 tr.cf.unitCoins"]), J(h)); }
+  // 稽核 0b16add 存活突變:(a) 窗內目標第二道夾(夾到同一輪沒有等待時的目標 after)、(b) 讀帳模式帳上變少時 frozen 跟著縮
+  { const D1 = { name: "d1", displayName: "D1", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }, D2 = { name: "d2", displayName: "D2", hasBacktest: true, symbol: "BTCUSDT", market: "swap" };
+    const acct = (size) => ({ read_at: now, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: { BTCUSDT: { side: "long", size, mark_price: 50000 } } } } });
+    // (a) 帳上 1,000;btc 300 留著、d1 已算出(cohort)500、d2 還在等:其他成員要 300,同一輪沒有等待時是 800,落在 [300, 1,000] 裡 → 目標夾到 800,賣 200
+    const winA = { BTCUSDT: { side: "long", size: 1000, gated: false, frozen: 0, cohort: ["d1"], awaiting: { d2: now + 3000 }, contributors: [{ strategy: "btc", position: 1, amount: 300, contribution: 300 }] } };
+    bag({ firing: true, picked: ["btc", "tw", "d1", "d2"], amounts: { btc: 300, d1: 500, d2: 500 }, states: { d1: { symbol: "BTCUSDT", position: 1 } }, edits: { tw: 100001 }, list: [D1, D2], noPv: true,
+      rep: { last_reconcile: LR(winA), account: acct(1000) } }); const f = open();
+    ok("M-a 窗內目標夾到同一輪沒有等待時的目標:帳上 1,000、其他成員 300、沒有等待時 800 → 只賣 200(0.004),不賣 700", J(side(f)) === J(["tr.cf.sellBTCUSDT0.004 tr.cf.unitCoins"]), J(f));
+    // (b) 快照 frozen 300、btc 當時 500;帳上只剩 600(< 500 + 300):frozen 縮成 100。btc 改 200 → 目標 300,賣 300(0.006);沒縮會只賣 100
+    const winB = { BTCUSDT: { side: "long", size: 800, gated: false, frozen: 300, awaiting: { db: now + 3000 }, contributors: [{ strategy: "btc", position: 1, amount: 500, contribution: 500 }] } };
+    bag({ firing: true, picked: ["btc", "tw", "db"], amounts: { db: 500 }, edits: { btc: 200 }, list: [DB], noPv: true, rep: { last_reconcile: LR(winB), account: acct(600) } }); const g = open();
+    ok("M-b 讀帳模式帳上少了:frozen 跟著縮(300 → 100),btc 500→200 賣 300(0.006)", J(side(g)) === J(["tr.cf.sellBTCUSDT0.006 tr.cf.unitCoins"]), J(g)); }
   // 錨點 = 存檔前那一輪的快照:純新加(沒換掉誰)沒有被凍的那段;同一次存檔一起改的鄰居金額照送;現貨不放空
   // 草稿算不出(主機不出預覽):框照對帳器下一輪那份列
   { bag({ firing: true, picked: ["btc", "tw", "db"], edits: { db: 500 }, list: [DB], oldHost: true, rep: { last_reconcile: LR(PRE()) } }); const f = open();

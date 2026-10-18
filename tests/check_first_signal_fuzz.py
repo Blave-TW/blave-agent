@@ -45,6 +45,10 @@ _holds = getattr(portfolio, "_first_signal_holds", None)
 if _holds:
     portfolio._first_signal_holds = (lambda amounts, exchanges, now=None:
                                      _holds(amounts, exchanges, now=CLOCK[0]) if FEATURE[0] else {})
+# keys a fixed history marks as waiting on an unreadable state (op "pend": ledger mode, N rounds)
+PEND = [set()]
+_resolve = portfolio.resolve_pending
+portfolio.resolve_pending = lambda target, actual, config: set(PEND[0]) | set(_resolve(target, actual, config) or ())
 GLOBS = {"_baseline_seen": None, "_baseline_wait": None, "_pending_seen": {}, "_mismatch_noted": set(),
          "_unconfigured_logged": False, "_first_signal_unsaved": None, "_first_signal_errors": set()}
 
@@ -102,7 +106,10 @@ class Venue:
 # the audit's fuzz (ae06e6a) seeds 2625 (two newcomers on one key, a neighbour on a second
 # exchange: the pair bought 600 where the same round without the wait bought 500, then sold 100),
 # 2342 (lots on a book: a newcomer past its own window kept in the cohort, 3 lots bought for 2) and
-# 1624 (a hand close, then a buy where the round without the wait sold)
+# 1624 (a hand close, then a buy where the round without the wait sold); the audit of 0b16add seeds
+# 1357, 1550 and 8354 (lots on a paper book: a leaver's lots the account does not hold, a newcomer
+# waiting on the key, nothing held — a window target of 0 closed what the round without it, which
+# has no row there, leaves; 8354 ended MXF −1)
 FIXED = [
     (2625, {"kind": "swap", "ledger": False, "labels": {"n1": "okx"}, "refuse": ["okx"],
             "single": {"n1": "BTCUSDT", "n2": "BTCUSDT", "l1": "ETHUSDT", "l2": "BTCUSDT", "d1": "BTCUSDT", "d2": "BTCUSDT"},
@@ -137,6 +144,9 @@ FIXED = [
                     [["tick", 1500], ["compute", "d2", -0.5], ["hand", "BTCUSDT", 0.5]],
                     [["tick", 1500], ["signal", "n2", 0]],
                     [["tick", 60], ["signal", "l2", 1]]]}),
+    (1357, {"kind": "lots", "ledger": True, "single": {"n1": "GDF", "n2": "GDF", "l1": "UDF", "l2": "GDF", "d1": "GDF", "d2": "UDF"}, "init": {"n1": 2.0, "n2": 1.0, "l1": 3.0, "l2": 1.0}, "states": {"n1": {"position": 1}, "n2": {"position": 1}, "l1": {"position": -1}, "l2": {"position": 0}}, "pre": [[], [], [["hand", "UDF", 0.0]]], "win": [[["save", {"n1": 2.0, "n2": 1.0, "l2": 1.0, "d1": 2.0}], ["tick", 189]], [["tick", 300]], [["tick", 60], ["save", {"n1": 2.0, "n2": 1.0, "l2": 1.0, "d1": 2.0, "d2": 1.0}], ["hand", "UDF", 0.0], ["compute", "d1", 0]], [["tick", 900], ["compute", "d2", -1], ["route", "l2", True], ["save", {"n1": 2.0, "n2": 1.0, "l2": 1.0, "d1": 2.0, "d2": 1.0}]], [["tick", 300], ["save", {"n1": 1.0, "n2": 1.0, "l2": 1.0, "d1": 2.0, "d2": 1.0}]], [["tick", 300], ["halt", False]], [["tick", 900], ["restore", "n1", 0]]]}),
+    (1550, {"kind": "lots", "ledger": True, "single": {"n1": "GDF", "n2": "UDF", "l1": "UDF", "l2": "UDF", "d1": "GDF", "d2": "UDF"}, "init": {"n1": 2.0, "n2": 2.0, "l1": 3.0}, "states": {"n1": {"position": -1}, "n2": {"position": 1}, "l1": {"position": 0.5}}, "pre": [[], [], [["hand", "GDF", 0.0]]], "win": [[["save", {"n1": 2.0, "n2": 2.0, "l1": 3.0}], ["tick", 59]], [["tick", 600], ["pend", "UDF", 3], ["save", {"n1": 2.0, "n2": 2.0, "l1": 3.0, "d2": 1.0}]], [["tick", 60], ["vanish", "n2"], ["route", "n1", True]], [["tick", 60], ["pend", "UDF", 3], ["save", {"n1": 2.0, "n2": 2.0, "l1": 3.0, "d2": 1.0}]], [["tick", 300]], [["tick", 1500]], [["tick", 300], ["signal", "n2", 0.5], ["signal", "n2", 1]], [["tick", 1500], ["pend", "GDF", 3]], [["tick", 300], ["save", {"n1": 2.0, "n2": 1.0, "l1": 3.0, "d2": 1.0}], ["signal", "n1", 0.5]], [["tick", 60], ["vanish", "n1"], ["save", {"n1": 2.0, "n2": 0.0, "l1": 3.0, "d2": 1.0}], ["save", {"n1": 2.0, "l1": 3.0, "d2": 3.0}]]]}),
+    (8354, {"kind": "lots", "ledger": True, "keys": ["MXF", "TMF"], "single": {"n1": "MXF", "n2": "MXF", "l1": "MXF", "l2": "TMF", "d1": "MXF", "d2": "MXF"}, "init": {"l1": 1.0, "l2": 2.0}, "states": {"l1": {"position": 0.5}, "l2": {"position": -1}}, "pre": [[], [], [["hand", "MXF", 0.0]]], "win": [[["save", {"d1": 1.0}], ["tick", 136]], [["tick", 60], ["reject", True]], [["tick", 600]], [["tick", 60], ["hand", "MXF", 0.9], ["route", "d1", False]], [["tick", 900], ["route", "d1", True]], [["tick", 600]], [["tick", 300], ["reject", True], ["pend", "MXF", 2]], [["tick", 900]], [["tick", 600], ["save", {"d1": 1.0, "d2": 1.0}], ["route", "d1", False]], [["tick", 1500], ["halt", False]], [["tick", 60], ["halt", False]]]}),
 ]
 
 
@@ -256,7 +266,8 @@ class World:
         self.ops = ops
         self.kind = ops.get("kind") or ("spot" if ops.get("spot") else "swap")
         self.lots = self.kind == "lots"
-        self.keys = LOT_KEYS if self.lots else KEYS
+        self.keys = tuple(ops.get("keys") or (LOT_KEYS if self.lots else KEYS))
+        self.pend_left = {}
         self.ex = "paper" if self.lots else "binance"
         self.v = Venue(lots=self.lots, label=self.ex, refuse=ops.get("refuse") or ())
         self.market = "spot" if self.kind == "spot" else "swap"
@@ -343,6 +354,9 @@ class World:
                 self.v.qty[k] = float(round(q)) if self.lots else q
         elif op == "mark":
             self.v.mark = ev[1]
+        elif op == "pend":
+            if self.ops["ledger"]:
+                self.pend_left[self.key(ev[1])] = ev[2]
         elif op == "save":
             new = dict(ev[1])
             for n in new:
@@ -378,10 +392,13 @@ class World:
         return {k: sum(x for s, x in venue.fills if s == k) for k in map(self.key, self.keys)}
 
     def round(self, check):
+        PEND[0] = {k for k, left in self.pend_left.items() if left > 0}
         off = self.off_round() if check and FEATURE[0] else None
         self.v.fills = []
         portfolio.reconcile(self.v.positions, self.v.place)
         self.v.reject = False
+        for k in self.pend_left:
+            self.pend_left[k] -= 1
         snap = json.load(open("manager/last_reconcile.json"))
         try:
             self.gate = json.load(open("state/signal_gate.json"))  # a gate lifts in the lib
@@ -412,6 +429,7 @@ class World:
         # after the windows: nothing left in the way, both paths settle on the same targets
         self.apply(("halt", False))
         self.apply(("ungate",))
+        self.pend_left = {}
         self.routed |= set(self.amounts)
         self.write_config()
         self.round(check)  # a member routed again starts its own window here

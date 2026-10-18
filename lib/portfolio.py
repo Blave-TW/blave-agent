@@ -2745,6 +2745,11 @@ def _first_signal_targets(target, trusted, funded, skip=(), book=None, account=F
                 target[k] = dict(row, gated=False) if k in flagged else row
             continue
         hold = a['frozen'] + sum(a['departed'].values())
+        if k in flagged and not row.get('contributors') and abs(hold) < 1e-9:
+            # nothing held and nobody else on it: the round without the wait has no row here,
+            # and its close-on-removal (not a target of 0) decides
+            del target[k]
+            continue
         if k in flagged:
             others = _settled(row, sum(a['seen'].values()))
             held = _book_signed(book.get(k))
