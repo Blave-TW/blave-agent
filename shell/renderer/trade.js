@@ -3557,6 +3557,13 @@ function trTwClosedKeys(last) {
   if (ms == null || Date.now() - ms >= TR_STALE_MS || !Array.isArray(last.market_closed)) return new Set();
   return new Set(last.market_closed.filter((k) => typeof k === "string").map(trCanonKey));
 }
+/* 對帳快照 target 裡標 gated: true 的列(lib/portfolio:「等新訊號」啟動、或對執行中的組合加了策略,下一個訊號之前不送單;同網頁 pfGatedKeys):
+   這一輪不會下單——差額灰、不算待下單、不掛拒單。舊 runtime 沒這欄 = 空;快照過舊(TR_STALE_MS)不用 */
+function trGatedKeys(last) {
+  const ms = last ? trMs(last.ts) : null, tg = last && last.target && typeof last.target === "object" ? last.target : null;
+  if (ms == null || Date.now() - ms >= TR_STALE_MS || !tg) return new Set();
+  return new Set(Object.keys(tg).filter((k) => !!tg[k] && tg[k].gated === true).map(trCanonKey));
+}
 /* 還沒跑過(沒有狀態檔)的策略也要在總訊號部位表列商品寫 0(同網頁 pfTargetParts,Wei 10-13):標的退回回測的 symbol、訊號 0 */
 function poPartStates(stored, states) {
   const out = Object.assign({}, states || {});
@@ -3577,7 +3584,7 @@ function poSigTable(r, stored, states, mode) {
   const frag = document.createDocumentFragment(), trade = mode === "trade";
   const st2 = poPartStates(stored, states), target = trClientTargets(stored, st2, trContracts()), contribs = trContribs(stored, st2, trContracts());
   const recon = trade && trHasAccount(r), bk = recon ? trBook(r, target) : null, mine = bk ? bk.mine : {}, last = bk ? bk.last : null, gates = (last || {}).gates || {};
-  const twClosed = recon ? trTwClosedKeys(last) : new Set();
+  const twClosed = recon ? trTwClosedKeys(last) : new Set(), gatedK = recon ? trGatedKeys(last) : new Set();
   // 綁了但第一次讀帳還沒回來(沒有對帳快照、綁定的交易所也還沒有任何讀帳結果):帳上與差額寫「—」,不畫一個手上沒有的 0(帳上本來有部位的人會以為要整筆下單)
   const firstRead = recon && trFirstReadPending(r);
   // Blave 帳本上有、已經沒有策略要的(對帳器會平掉):列成目標 0。帳上有、帳本沒有的(用戶自己的):區尾「策略外」,目標與差額「—」
@@ -3682,14 +3689,15 @@ function poSigTable(r, stored, states, mode) {
         // 上色對齊真正觸發下單的門檻:平台 10,或該標的在交易所的最小下單量(gates);口數列差 1 口就送單。沒在下單時不上色(上色 = 機器會去買／賣)
         // 休市中的模擬盤台股:兩邊都不下(market_closed),過門檻的差額也灰、不算會下單,原因寫「休市中，開盤後下單」
         const gs = lot ? null : trGateSide(gates[sym], ts, as), willTrade = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
-        const closed = twClosed.has(sym), acts = willTrade && !closed;
+        // 等新訊號(快照 target gated):下一個訊號之前不送單——先於休市判,gated 那列開盤也不下
+        const gated = gatedK.has(sym), closed = !gated && twClosed.has(sym), acts = willTrade && !closed && !gated;
         const held = !acts && Math.round(Math.abs(d)) > 0;
         const dc = trEl("td", "n " + (acts && running ? (d > 0 ? "buy" : "sell") : acts || held ? "hold" : "na"), numText(lot, d));
         // 灰色差額 = 低於下單門檻、這輪不下單:「這輪不下單:」+ 原因放這一格的 tooltip(門檻腳注不再佔合計列);減倉／平倉門檻等於平坦的 10 時沒有要解釋的(同網頁)
         const short = sym.replace(/@spot$/i, "").replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || sym;
-        const why = !held ? null : closed ? (willTrade ? t("po.twClosedHold") : null) : lot ? t("tr.gateFootReduce", { sym: short })
+        const why = !held ? null : gated ? t(trIsPaper() ? "tr.opt.waitDesc" : "tr.opt.waitDescReal") : closed ? (willTrade ? t("po.twClosedHold") : null) : lot ? t("tr.gateFootReduce", { sym: short })
           : gs && !((gs.reduce || gs.close) && gs.usd <= 10) ? (gs.band ? t("tr.gateFootBand", { sym: short, m: trFmt(gs.usd) }) : gs.reduce ? t("tr.gateFootReduce", { sym: short }) : t("tr.gateFootEntry", { sym: short, m: trFmt(gs.usd) })) : null;
-        if (why) dc.title = closed ? why : t("tr.gateFootLead") + why;
+        if (why) dc.title = closed || gated ? why : t("tr.gateFootLead") + why;
         row.append(trEl("td", "n", numText(lot, as)), dc);
         if (acts) pending.add(sym);   // 不看 running:沒在跑時灰字「上次下單失敗」也要掛得上(丙案)
       }

@@ -345,7 +345,7 @@ ok("門檻側:|實際|>|目標| 走減倉側", J(trGateSide({ entry_usd: 84, red
   ok("close_usd 比該側大 → 取該側", J(u({ entry_usd: 84, reduce_usd: 5, close_usd: 10 }, 0, 300)) === J({ usd: 5, reduce: true, close: false, band: false }));
   // 0.1.24 A 案:門檻說明改成灰色差額格的 tooltip;被平坦的 10 擋住的全平/翻向不講半口,用通用那句
   ok("灰色差額的 tooltip(同網頁 6ae71405):「這輪不下單:」接在原因前;減倉／全平／翻向被平坦的 10 擋住時沒有要解釋的、不掛 tooltip",
-    /gs && !\(\(gs\.reduce \|\| gs\.close\) && gs\.usd <= 10\) \? \(gs\.band \? t\("tr\.gateFootBand"/.test(src) && /\) : null;\n\s*if \(why\) dc\.title = closed \? why : t\("tr\.gateFootLead"\) \+ why;/.test(src) && !/po\.gateTip/.test(src)); }
+    /gs && !\(\(gs\.reduce \|\| gs\.close\) && gs\.usd <= 10\) \? \(gs\.band \? t\("tr\.gateFootBand"/.test(src) && /\) : null;\n\s*if \(why\) dc\.title = closed \|\| gated \? why : t\("tr\.gateFootLead"\) \+ why;/.test(src) && !/po\.gateTip/.test(src)); }
 // 漂移容忍帶(稽核 B1;lib/portfolio.compute_diff:同向且兩邊都有倉時 applied = max(該側, band_usd),快照 gates 多 band_usd、usd 已含它;
 // web 的 pfGateSide 同一條規則):帶內的差額只是 mark 在動,不畫成會下單、也不讓 trLiveOrderErr 把舊拒單當仍欠著
 { const G = { entry_usd: 84, reduce_usd: 42, close_usd: 10, band_usd: 500, usd: 500 }, u = (g, t, a) => trGateSide(g, t, a);
@@ -2299,7 +2299,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
       t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: { binance: { label: "Binance" } }, PAPER: "paper", trUnit: () => "TWD", TR_STALE_MS: 600000,
       envHeadState: () => "running", trPlanTotal: () => ({ text: "x", ccy: null, mult: "", n: 1 }), trRowTxf: () => null, trDisplay: (n) => n, trFmt2: String, trFmtPrice: String, poOpen() {} });
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trReport", "trContracts", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trBook", "trTwClosedKeys", "trPaperTwOk", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trStored", "trEquity", "trTxfPrice", "trNoSignalYet", "trVenueLabel", "trNetRows", "trWithUnit", "trTwNamesWant", "trTwName", "trTwNameEl"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trReport", "trContracts", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trIsPaper", "trPaperTwOk", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trStored", "trEquity", "trTxfPrice", "trNoSignalYet", "trVenueLabel", "trNetRows", "trWithUnit", "trTwNamesWant", "trTwName", "trTwNameEl"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const V = { credentials: true, pair: true, order: true, account: true };
     // 對帳快照照真的形狀(check_shell_stale_err.js 那一份):口數列 exchange = capital、asset_spec.type = futures_contracts;MXF 只在帳戶上(快照沒有)
@@ -2350,7 +2350,18 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const o = diffOf(open), st = diffOf(stale);
       ok("P2-3 休市中的模擬盤台股:差額灰(hold)、title 是 po.twClosedHold;沒有 market_closed 或快照過舊時照常上買色",
         !!shut && shut.className === "n hold" && shut.title === "po.twClosedHold" && !!o && o.className === "n buy" && !o.title && !!st && st.className === "n buy",
-        [shut && [shut.className, shut.title], o && o.className, st && st.className]); }
+        [shut && [shut.className, shut.title], o && o.className, st && st.className]);
+      // F7:快照 target 標 gated(「等新訊號」啟動、或執行中加了策略):差額灰、title 是啟動框「等新訊號」那句(同網頁 pfGatedKeys);先於休市判;過舊不採用
+      const g = JSON.parse(JSON.stringify(TWREP)); g.last_reconcile.target["2330@spot"].gated = true;
+      const gOpen = JSON.parse(JSON.stringify(g)); delete gOpen.last_reconcile.market_closed;
+      const gStale = JSON.parse(JSON.stringify(gOpen)); gStale.last_reconcile.ts = now - 3600; gStale.account.read_at = now - 3600;
+      const gc = diffOf(g), go = diffOf(gOpen), gs = diffOf(gStale);
+      const bg = JSON.parse(JSON.stringify(BTCREP)); bg.last_reconcile.target.BTCUSDT.gated = true;
+      const brow = paintP(bg).find((n) => n.tag === "tr" && n.kids.length === 4 && n.kids[0].tag === "td" && n.kids[0].textContent.startsWith("BTCUSDT")), bd = brow && brow.kids[3];
+      ok("F7 gated 的列:差額灰(hold)不上買色,title 是 tr.opt.waitDesc(模擬)／waitDescReal(真錢);gated＋休市講等新訊號不講開盤;快照過舊照常上色",
+        !!gc && gc.className === "n hold" && gc.title === "tr.opt.waitDesc" && !!go && go.className === "n hold" && go.title === "tr.opt.waitDesc"
+        && !!bd && bd.className === "n hold" && bd.title === "tr.opt.waitDescReal" && !!gs && gs.className === "n buy",
+        [gc && [gc.className, gc.title], go && [go.className, go.title], bd && [bd.className, bd.title], gs && gs.className]); }
     { const r = JSON.parse(JSON.stringify(BTCREP)); r.config.amounts = { b: 300, tw: 300000, sol: 100 };
       r.states = { b: { symbol: "BTCUSDT", market: "swap", position: 1 }, tw: { weights: { 2330: 0.5, 2454: 0 }, market: "spot" }, sol: { symbol: "SOLUSDC", market: "spot", position: 1 } };
       r.quote_ccy = { b: "USDT", tw: "TWD", sol: "USDC" };
