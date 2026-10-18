@@ -105,6 +105,11 @@ try:
     from lib.paper_data import legacy_tw_price
 except ImportError:  # half-updated workspace (lib/paper_data.py before the rebase): rows left as they are
     legacy_tw_price = None
+try:
+    from lib.paper_data import tw_price_note
+except ImportError:  # half-updated workspace (lib/paper_data.py before intraday TW prices)
+    def tw_price_note(symbol):
+        return None
 
 try:
     from lib.paper_data import is_tw_stock, tw_session_open
@@ -403,6 +408,9 @@ def _record_fill(led, o, qty, price, fee, realized=0.0, kind=None):
                          "realized": realized, "kind": kind or o["type"]})
     if o.get("quote_ccy") and o["quote_ccy"] != "USD":  # realized/fee above are USD
         led["fills"][-1].update(ccy=o["quote_ccy"], fx=o.get("fx"))
+    note = tw_price_note(o["symbol"]) if is_tw_stock(o["symbol"]) else None
+    if note:
+        o["price_note"] = led["fills"][-1]["price_note"] = note
     del led["fills"][:-MAX_FILLS]
 
 

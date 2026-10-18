@@ -19,6 +19,7 @@ os.makedirs("state", exist_ok=True)
 os.makedirs("strategies/tsmc_a", exist_ok=True)
 open("strategies/tsmc_a/strategy.py", "w").write('''STRATEGY_NAME = "tsmc_a"
 SYMBOL = "2330"
+INTERVAL = "1d"
 
 
 def fetch_data(hdrs):

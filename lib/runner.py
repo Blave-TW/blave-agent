@@ -1533,6 +1533,8 @@ TW_CLOSE_FIELDS = ('raw_closes', 'raw_close_dates', 'raw_closes_est', 'raw_close
 TW_CLOSE_BUDGET_S = 10
 # "module:function" the child calls with (codes, start, end, headers)
 TW_CLOSE_FETCH = 'lib.data:fetch_twstock_price_batch'
+# and with (code, schema, headers) → [date, close] for an intraday Type A: the bar paper fills at
+TW_INTRADAY_FETCH = 'lib.paper_data:tw_intraday_close'
 # a close still short of its round's date (that day's bar not in yet) is retried each tick for
 # this long, then kept as an estimate
 TW_CLOSE_WANT_DAYS = 7
@@ -1619,11 +1621,29 @@ try:
     m, a = p['fn'].split(':')
     f = getattr(importlib.import_module(m), a)
     out = {}
+    intraday = p.get('intraday') or {}
+    if intraday:
+        m, a = p['ifn'].split(':')
+        fi = getattr(importlib.import_module(m), a)
     for day, codes in p['groups'].items():
-        start = (pd.Timestamp(day) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
-        got = f(list(codes), start, day, p['hdrs']) or {}
         res = out.setdefault(day, {})
+        daily = []
         for code in codes:
+            try:
+                if code not in intraday:
+                    raise LookupError
+                d, px = fi(code, intraday[code], p['hdrs'])
+                if d <= day and math.isfinite(px) and px > 0:
+                    res[code] = [d, float(px)]
+                    continue
+            except Exception:
+                pass
+            daily.append(code)   # no intraday bar: the daily close, an estimate until its day lands
+        if not daily:
+            continue
+        start = (pd.Timestamp(day) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+        got = f(list(daily), start, day, p['hdrs']) or {}
+        for code in daily:
             try:
                 df = got.get(code)
                 c = df['Close'][df['Close'] > 0].dropna()
@@ -1642,11 +1662,13 @@ finally:
 """
 
 
-def _tw_fetch_child(groups, hdrs, budget_s):
+def _tw_fetch_child(groups, hdrs, budget_s, intraday=None):
     """{day: {code: [date, close]}} from a child process, or None when it failed or ran past
-    budget_s (then it is killed — that pid only). Headers go over stdin, never argv."""
+    budget_s (then it is killed — that pid only). Headers go over stdin, never argv.
+    intraday = {code: schema}: those codes at their latest unadjusted bar (TW_INTRADAY_FETCH)."""
     import subprocess, sys
     payload = json.dumps({'groups': groups, 'hdrs': hdrs, 'fn': TW_CLOSE_FETCH, 'budget_s': budget_s,
+                          'intraday': intraday or {}, 'ifn': TW_INTRADAY_FETCH,
                           'paths': [str(Path(__file__).resolve().parent.parent)]})
     # -E, not -I: -I also drops the user site, and a cloud machine's pandas may live there
     # (pip3 at provisioning on a PEP 668 image, or the agent's own --user installs)
@@ -1667,19 +1689,23 @@ def _tw_fetch_child(groups, hdrs, budget_s):
     return None
 
 
-def tw_fetch_closes(fields, need, hdrs, budget_s=None):
+def tw_fetch_closes(fields, need, hdrs, budget_s=None, schema=None):
     """fields (tw_carry_closes) with the `need` symbols priced from the unadjusted daily close
     (fetch_twstock_price_batch, as a broker app shows, with its CDN / no-key fallback and month
     cache). The strategy's own close cannot be used: lib.data's dividend adjustment is anchored
     at the fetch window's start (2330 on 2026-10-16: 2420 from a 10-day window, 2755.89 from
-    2020). A close dated before its want is recorded as an estimate with raw_close_want, asked
+    2020). schema (an intraday Type A, paper_data.tw_intraday_schema): its latest unadjusted
+    bar instead — the bar paper fills at (lib/paper_data._tw_stock_price), so mid-session the
+    page does not size at the day before's close; that bar unreadable → the daily close.
+    A close dated before its want is recorded as an estimate with raw_close_want, asked
     for again next tick. None = nothing new (failed or over the budget) — the next tick
     retries; the caller has already saved the state without it."""
     budget_s = TW_CLOSE_BUDGET_S if budget_s is None else budget_s
     groups = {}
     for sym, (day, _e) in need.items():
         groups.setdefault(day, {})[re.sub(r'\.TWO?$', '', sym)] = sym
-    got = _tw_fetch_child({d: sorted(c) for d, c in groups.items()}, hdrs, budget_s)
+    intraday = {c: schema for codes in groups.values() for c in codes} if schema else None
+    got = _tw_fetch_child({d: sorted(c) for d, c in groups.items()}, hdrs, budget_s, intraday)
     if not got:
         return None
     out = {k: dict(v) if isinstance(v, dict) else list(v) for k, v in fields.items()}
@@ -1712,7 +1738,7 @@ def tw_fetch_closes(fields, need, hdrs, budget_s=None):
     return {k: v for k, v in out.items() if v}
 
 
-def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs):
+def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs, schema=None):
     """Carry what needs no I/O into `state`, save it, then price the rest under a time budget
     and save again only if something new came in. Never fails the tick: the target position
     is on disk before any of this can go wrong."""
@@ -1730,7 +1756,8 @@ def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs):
     try:
         path = f'strategies/{strategy_name}/state.json'
         saved = os.stat(path).st_mtime_ns
-        more = tw_fetch_closes({k: state[k] for k in TW_CLOSE_FIELDS if k in state}, need, hdrs)
+        more = tw_fetch_closes({k: state[k] for k in TW_CLOSE_FIELDS if k in state}, need, hdrs,
+                               schema=schema)
         # another writer (an agent's hand-run live tick takes no scheduler lock) may have saved
         # a newer target meanwhile: never write this older one back over it
         if more and os.stat(path).st_mtime_ns == saved:
@@ -1744,6 +1771,14 @@ def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs):
             save_state(strategy_name, state)
     except Exception as e:
         logging.warning("Taiwan target close not recorded (retried next tick): %s", e)
+
+
+def _tw_schema(interval):
+    try:
+        from lib.paper_data import tw_intraday_schema
+    except ImportError:  # half-updated workspace: the daily close, as before
+        return None
+    return tw_intraday_schema(interval)
 
 
 def _taipei_date(ts):
@@ -2051,7 +2086,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             _tw_closes_after_save(
                 strategy_name, state, prev,
                 {str(state['symbol']).replace('-', '').upper(): state.get('position', 0)}
-                if state.get('symbol') else {}, t, hdrs)
+                if state.get('symbol') else {}, t, hdrs, schema=_tw_schema(interval))
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────

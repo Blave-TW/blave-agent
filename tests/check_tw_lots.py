@@ -340,10 +340,10 @@ check(proc.returncode == 0 and spent is not None and spent <= 12 and pst.get("we
 real_fetch = runner.tw_fetch_closes
 
 
-def racing(fields, need, hdrs, budget_s=None):
+def racing(fields, need, hdrs, budget_s=None, **k):
     time.sleep(0.01)
     runner.save_state("pfc", {"type": "portfolio", "market": "spot", "weights": {"2330": 0.9, "2454": 0.1}})
-    return real_fetch(fields, need, hdrs, budget_s)
+    return real_fetch(fields, need, hdrs, budget_s, **k)
 
 
 runner.tw_fetch_closes = racing

@@ -16,6 +16,7 @@ RAW = {"2330": 2420.0, "2454": 1255.0, "2317": 201.5, "6488": 700.0}
 ADJ = 1.1388
 open("strategies/tw_a/strategy.py", "w").write(f'''SYMBOL = "2330"
 MARKET = "swap"
+INTERVAL = "1d"
 
 
 def fetch_data(hdrs):

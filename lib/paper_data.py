@@ -232,15 +232,68 @@ def _resolve_price(symbol, env):
 _TW_PRICE_WINDOWS_D = (14, 400)
 
 
+_TW_SCHEMAS_MIN = ((60, "60m"), (30, "30m"), (15, "15m"), (5, "5m"), (1, "1m"))
+_tw_price_note = {}  # code -> why the last price is not what its owner trades on
+
+
+def tw_intraday_schema(interval):
+    """The fetch_twstock_ohlcv schema an intraday INTERVAL's bar closes on (the longest
+    one dividing it: 1h/4h → 60m, 15m → 15m); None for a daily or longer interval."""
+    m = re.match(r"^(\d+)(min|m|h)$", str(interval or ""))
+    if not m:
+        return None
+    mins = int(m.group(1)) * (60 if m.group(2) == "h" else 1)
+    return next((sch for n, sch in _TW_SCHEMAS_MIN if mins % n == 0), None) if mins < 1440 else None
+
+
+def tw_intraday_close(code, schema, hdrs):
+    """[Taipei date, Close] of the latest unadjusted `schema` bar of a TW stock — the paper
+    fill and mark of an intraday Type A, and the close the portfolio page sizes its shares
+    with (lib/runner child), so both read the same bar. Needs Blave data (no CDN)."""
+    from datetime import datetime, timedelta, timezone
+    from lib import data
+    start = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    df = data.fetch_twstock_ohlcv(code, schema, hdrs, start=start, adjust=False)
+    px = _last_close(df)
+    t = df.index[-1]
+    t = (t.tz_localize("UTC") if t.tzinfo is None else t).tz_convert("Asia/Taipei")
+    return [t.strftime("%Y-%m-%d"), px]
+
+
+def tw_price_note(symbol):
+    """Why a TW stock's paper price is the previous daily close rather than its intraday
+    owner's latest bar (that bar could not be read); None when it is what the owner trades."""
+    return _tw_price_note.get(re.sub(r"\.TWO?$", "", _norm(symbol)))
+
+
+def _tw_owner_schema(symbol):
+    name = _resolve_strategy(symbol)
+    mod = _load_strategy(name) if name else None
+    # lib/runner's default when a strategy sets no INTERVAL
+    return tw_intraday_schema(getattr(mod, "INTERVAL", "1h")) if mod else None
+
+
 def _tw_stock_price(symbol, hdrs):
-    """Latest unadjusted daily Close of a TW stock — fetch_twstock_price, the
-    same data and cache as the page's fetch_twstock_price_batch, under the same
-    code (runner strips .TW/.TWO before its batch call). A Type C fetch_data is
-    never run for it: a whole TW universe takes minutes, far past the account
-    reader's 60s budget. Desktop: Blave CDN, no key."""
+    """Latest unadjusted Close of a TW stock. Daily (fetch_twstock_price, the
+    same chain as the page's fetch_twstock_price_batch, under the same code —
+    runner strips .TW/.TWO before its batch call); a symbol an intraday Type A
+    trades takes that strategy's latest bar instead (tw_intraday_close, the bar
+    the page sizes with) — the daily close would fill a 10:00 signal at the
+    day before's close. That bar unreadable → the daily close, noted
+    (tw_price_note). A Type C fetch_data is never run for it: a whole TW
+    universe takes minutes, far past the account reader's 60s budget."""
     from datetime import datetime, timedelta, timezone
     from lib import data
     code = re.sub(r"\.TWO?$", "", _norm(symbol))
+    schema = _tw_owner_schema(symbol)
+    _tw_price_note.pop(code, None)
+    if schema:
+        try:
+            return tw_intraday_close(code, schema, hdrs)[1]
+        except Exception as e:
+            log.warning(f"[paper_data] {code} {schema} bar unavailable ({type(e).__name__}: {e}) "
+                        f"— the previous daily close")
+            _tw_price_note[code] = f"previous daily close: the {schema} bar could not be read"
     for days in _TW_PRICE_WINDOWS_D:
         start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
         try:
