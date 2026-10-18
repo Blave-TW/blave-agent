@@ -331,7 +331,14 @@ def _tw_closes(data):
     return out
 
 
-def tw_lots(cfg, states):
+def _bound_venue_ids(vens):
+    """Venues that can trade: paired key, order and account libs present — field for field the
+    desktop's trVenueIds (trade.js), so both sides agree on when "" means "unrouted"."""
+    return sorted(k for k, v in (vens or {}).items() if isinstance(v, dict) and v.get("credentials")
+                  and v.get("pair") and v.get("order") and v.get("account"))
+
+
+def tw_lots(cfg, states, vens=None):
     """{row key: {lots, shares, unit, twd, price, price_date, est}} for every Taiwan-stock row of
     the portfolio page's 「各商品的總訊號部位」 — the contract the desktop (trade.js trTwLots) and
     the web table both follow. Row key = the table's: SYM, plus "@spot" for a spot strategy.
@@ -348,19 +355,23 @@ def tw_lots(cfg, states):
                shares, lib/order_paper._tw_signed), else "lots" (a broker fills whole lots)
       price  = |twd| / |shares| (one strategy: its close), price_date the newest raw_close_dates,
                est = any contributor's close is in raw_closes_est (priced at a later close)
-    A strategy whose config.exchanges entry is "" (unrouted) is not a contributor.
+    A strategy whose config.exchanges entry is "" (unrouted) is not a contributor — only while a
+    venue is bound (vens, _bound_venue_ids; None = treat as bound). With nothing bound every route
+    is "" (runtime has no venue to inherit) and the page shows signal positions: "" counts then,
+    as a broker row (lots). Same rule as the desktop's trRouteBlank.
     A row any funded contributor has no close for is left out: the page shows TWD as before."""
     amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
     if not isinstance(amounts, dict):
         return {}
     exchanges = cfg.get("exchanges") if isinstance(cfg.get("exchanges"), dict) else {}
+    bound = vens is None or bool(_bound_venue_ids(vens))
     acc, broken = {}, set()
     for name, amt in amounts.items():
         st = states.get(name) if isinstance(name, str) else None
         a = _fin(amt)
         if not isinstance(st, dict) or not a:
             continue
-        if name in exchanges and not exchanges[name]:
+        if bound and name in exchanges and not exchanges[name]:
             # routing blanked (venue unbound, not saved since): the reconciler trades nothing
             # for it (lib/portfolio.aggregate_portfolio skips a strategy with no exchange)
             continue
@@ -1795,7 +1806,7 @@ def build_report():
         # labels as such (typec_previews); never traded on
         "previews": typec_previews(cfg, states),
         # the Taiwan-stock rows of 「各商品的總訊號部位」 in whole lots (tw_lots); display only
-        "tw_lots": tw_lots(cfg, states),
+        "tw_lots": tw_lots(cfg, states, vens),
         # None = signals recomputing normally (see signals_frozen)
         "signals_frozen": signals_frozen(cfg),
         # each strategy's amount currency, None = cannot be told (strategy_quote_ccy)

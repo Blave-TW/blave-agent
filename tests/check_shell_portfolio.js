@@ -304,6 +304,26 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     ok("a 沒有路由紀錄、同時綁多家而且第一家就是 paper(paper＋president):仍不當模擬交易(同網頁 pfPaperOf、runtime 只繼承唯一綁著那家)", J(tgt()) === J(["2330", "2603"]), J(tgt()));
     rpM.venues = { paper: V };
     ok("沒有路由紀錄、只綁模擬交易一家:a 當模擬交易併進 2330@spot(runtime 存檔時會繼承它),路由 binance 的 b 照留 2330", J(tgt()) === J(["2330", "2330@spot", "2603"]), J(tgt())); }
+  // 回歸(v027-integ2 實機):一家交易所都沒綁(venues {})時 runtime 沒有可繼承的,每支路由都是 ""——那是「只看訊號」,
+  // 目標、拆解、張數照訊號算(trRouteBlank 只在有綁交易所時才算沒路由);不是模擬交易,台股寫整張,0 張帶原因小字
+  { const nv = (amounts, states) => { ctx.TR = bag({}, { can_paper_twstock: true }); ctx.TR.edits = {}; const rp = ctx.TR.st.report;
+      rp.config.amounts = amounts; rp.config.exchanges = {}; Object.keys(amounts).forEach((n) => { rp.config.exchanges[n] = ""; });
+      rp.states = states; rp.quote_ccy = {}; Object.keys(amounts).forEach((n) => { rp.quote_ccy[n] = "TWD"; }); rp.last_reconcile = null;
+      vm.runInContext("TR = this.TR;", ctx); ctx.__m = [amounts, states];
+      return { t: vm.runInContext("trClientTargets(__m[0], __m[1], null)", ctx), c: vm.runInContext("trContribs(__m[0], __m[1], null)", ctx),
+        lots: (k) => vm.runInContext(`trTwLots(${J(k)}, __m[0], __m[1])`, ctx), paper: (n) => vm.runInContext(`trPaperOf(${J(n)})`, ctx),
+        cells: () => flat(vm.runInContext("poSigTable(TR.st.report, __m[0], __m[1], 'cfg')", ctx)) }; };
+    const C = nv({ c: 1000000 }, { c: { market: "spot", weights: { 2330: 0.5, 2603: 0.3 }, raw_closes: { 2330: 2420, 2603: 200 }, raw_close_dates: { 2330: "2026-10-16", 2603: "2026-10-16" } } });
+    const c1 = C.lots("2330@spot"), c2 = C.lots("2603@spot"), cc = C.cells().map((n) => n.textContent || n.text || "");
+    ok("沒綁交易所、台股 Type C 路由 \"\":目標與拆解照訊號(不是 0)、不是模擬交易、張數寫整張(2603 1,500 股 → 1 張;2330 206 股 → 0 張)",
+      J(C.t) === J({ "2330@spot": 500000, "2603@spot": 300000 }) && C.c["2330@spot"][0].v === 500000 && C.paper("c") === false
+      && !!c1 && c1.unit === "lots" && c1.lots === 0 && c1.shares === 206 && !!c2 && c2.unit === "lots" && c2.lots === 1, J([C.t, c1, c2]));
+    ok("沒綁交易所、台股 Type C:總訊號部位表寫「N 張」,0 張那列帶原因小字(po.twLotsZero),不寫 0 TWD",
+      cc.some((x) => /^po\.twLot /.test(x) && x.includes('"n":"1"')) && cc.some((x) => /^po\.twLotsZero /.test(x)), J(cc.filter((x) => /^po\.tw/.test(x))));
+    const A = nv({ a: 5000000 }, { a: { symbol: "2330", position: 1, market: "swap", raw_closes: { 2330: 2420 }, raw_close_dates: { 2330: "2026-10-16" } } });
+    const a1 = A.lots("2330"), ac = A.cells().map((n) => n.textContent || n.text || "");
+    ok("沒綁交易所、台股 Type A 路由 \"\":目標 5,000,000、2330 寫 2 張(swap 照自己的 MARKET,不併 @spot)",
+      J(A.t) === J({ 2330: 5000000 }) && !!a1 && a1.unit === "lots" && a1.lots === 2 && ac.some((x) => /^po\.twLots /.test(x) && x.includes('"n":"2"')), J([A.t, a1, ac.filter((x) => /^po\.tw/.test(x))])); }
   // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 部位「—」+ tooltip;有這支、position 0 → 空手
   { ctx.TR = bag({}); ctx.TR.st.report.states = { tw: { symbol: "2330", position: 1, market: "spot" } }; ctx.TR.edits = {};
     const am = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));

@@ -901,10 +901,12 @@ function trPaperOf(n) {
   const ids = trVenueIds(r);
   return ids.length === 1 && ids[0] === PAPER;
 }
-// 解除綁定後還沒重存下單設定:路由被清成 ""。對帳器不交易它(lib/portfolio 標 unrouted、原樣持有),目標與拆解都貢獻 0(同網頁 pfUnrouted;整台那支 trUnrouted 回的是名單)
+// 有交易所綁著、路由卻是 ""(解除綁定後還沒重存下單設定):對帳器不交易它(lib/portfolio 標 unrouted、原樣持有),目標與拆解都貢獻 0
+// (同網頁 pfUnrouted、runtime tw_lots;整台那支 trUnrouted 回的是名單,閘門同一條)。一家都沒綁時 runtime 沒有可繼承的,每支都是 "":
+// 那是「只看訊號」,照訊號算目標與張數,不當沒路由
 function trRouteBlank(n) {
-  const c = ((typeof trReport === "function" && trReport()) || {}).config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
-  return !!ex && Object.prototype.hasOwnProperty.call(ex, n) && ex[n] === "";
+  const r = (typeof trReport === "function" && trReport()) || {}, c = r.config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
+  return !!ex && Object.prototype.hasOwnProperty.call(ex, n) && ex[n] === "" && trVenueIds(r).length > 0;
 }
 function trTwCash(sym, paper) { return !!paper && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
@@ -937,16 +939,15 @@ function trClientTargets(amounts, states, contracts) {
 /* 台股列的股數(0.1.27,= runtime portfolio_reporter.tw_lots,網頁同一條):每支策略自己的部分除以它 state 的 raw_closes[SYM]
    (目標最後變動那一輪的未還原收盤價,目標沒變不重算)再加總。真實券商整張下單:捨去到整張(1 張 = 1000 股,零股不算),買不起一張 = 0 張;
    路由到模擬交易的策略(trPaperOf,逐支)照模擬盤的成交規則整股下單(lib/order_paper._tw_signed):不管 MARKET 都當現股(@spot、自己的空頭壓 0,同 trClientTargets);
-   這一列每支貢獻策略都是模擬交易才寫 unit "shares"(捨去到整股),否則 "lots"。路由是空字串的策略(解綁後還沒存)不算:對帳器不交易沒路由的策略(lib 跳過)。
+   這一列每支貢獻策略都是模擬交易才寫 unit "shares"(捨去到整股),否則 "lots"。trRouteBlank 的策略(有綁交易所、路由空字串)不算:對帳器不交易沒路由的策略(lib 跳過)。
    有金額的貢獻策略只要一支沒有價格(舊 lib、那一輪抓價失敗)就回 null:那一列照舊寫 TWD */
 const TW_LOT_SHARES = 1000;
 function trTwLots(key, amounts, states) {
   const spotKey = /@spot$/.test(key), sym = key.replace(/@spot$/, "");
   if (!TR_TWSTOCK_RE.test(sym)) return null;
-  const c = ((typeof trReport === "function" && trReport()) || {}).config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
   let twd = 0, shares = 0, date = null, est = false, any = false, allPaper = true;
   for (const n of Object.keys(amounts || {})) {
-    if (ex && Object.prototype.hasOwnProperty.call(ex, n) && !ex[n]) continue;
+    if (trRouteBlank(n)) continue;
     const s = (states || {})[n], a = Number(amounts[n]), paperTw = trPaperOf(n), spot = !!s && (s.market === "spot" || paperTw);
     if (!s || !a || !isFinite(a) || spot !== spotKey) continue;
     let w;

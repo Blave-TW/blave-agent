@@ -434,11 +434,29 @@ check(pm["2330@spot"]["unit"] == "lots",
 
 # unrouted (config.exchanges[name] == "": unbound, not saved since): the reconciler skips it
 # (lib/portfolio.aggregate_portfolio), so the row does not count it (audit v027-integ2 P3-1)
+VB = {"paper": {"credentials": True, "pair": True, "order": True, "account": True}}
 pu = pr.tw_lots({"amounts": {"tw_a": 2_100_000, "tw_c": 1_000_000},
-                 "exchanges": {"tw_a": "", "tw_c": "paper"}}, P)
+                 "exchanges": {"tw_a": "", "tw_c": "paper"}}, P, VB)
 check(set(pu) == {"2330@spot"} and pu["2330@spot"]["twd"] == 400_000
       and pu["2330@spot"]["unit"] == "shares",
-      f"an unrouted strategy is not a contributor; only the paper Type C sizes the row ({pu})")
+      f"a venue bound: an unrouted strategy is not a contributor; only the paper Type C sizes the row ({pu})")
+# nothing bound (signal-only, report venues {}): runtime had no venue to inherit, every route is "";
+# those are signal positions, not unrouted — sized in whole lots (v027-integ2 regression: was {})
+nc = pr.tw_lots({"amounts": {"tw_c": 1_000_000}, "exchanges": {"tw_c": ""}}, P, {})
+check(nc.get("2330@spot", {}).get("twd") == 400_000 and nc["2330@spot"]["lots"] == 0
+      and nc["2330@spot"]["shares"] == 165 and nc["2330@spot"]["unit"] == "lots",
+      f"no venue bound: a Type C routed \"\" is sized (400,000 at 2420 = 165 shares, 0 lots, unit lots) ({nc})")
+na = pr.tw_lots({"amounts": {"tw_a": 5_000_000}, "exchanges": {"tw_a": ""}}, P, {})
+check(na.get("2330", {}).get("lots") == 2 and na["2330"]["unit"] == "lots",
+      f"no venue bound: a Type A routed \"\" is sized (5,000,000 at 2420 = 2 lots) ({na})")
+half = {"binance": {"credentials": True, "pair": True, "order": False, "account": True}}
+check(pr.tw_lots({"amounts": {"tw_a": 5_000_000}, "exchanges": {"tw_a": ""}}, P, half).get("2330", {}).get("lots") == 2,
+      "a venue without its order lib is not bound (same as the desktop's trVenueIds): still signal-only")
+check(pr.tw_lots({"amounts": {"tw_a": 5_000_000}, "exchanges": {"tw_a": ""}}, P,
+                 {"binance": dict(half["binance"], order=True)}) == {},
+      "one venue bound, this strategy routed \"\": not a contributor")
+check('"tw_lots": tw_lots(cfg, states, vens)' in open(pr.__file__).read(),
+      "the report passes the bound venues into tw_lots")
 check(pr.tw_lots({"amounts": {"tw_a": 2_100_000}}, P).get("2330", {}).get("twd") == 2_100_000,
       "no exchanges entry at all: counted as before (non-paper)")
 

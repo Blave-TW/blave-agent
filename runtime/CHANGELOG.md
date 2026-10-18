@@ -10,7 +10,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## 1.1.133 — 2026-10-18(desktop 0.1.27)
 
-- **`portfolio_reporter.tw_lots` 跳過沒路由的策略(0.1.27 稽核 P3-1)**:`config.exchanges[名字]` 是空字串(解除綁定後還沒存過下單設定)的策略不算貢獻者,同 `lib/portfolio.aggregate_portfolio` 跳過沒有交易所的策略;之前會多出一列對帳器根本不下的張數。沒有這個 key 的策略照舊算(非 paper)。電腦版 `trade.js trTwLots` 同一條,而且判「模擬交易」改成逐支讀 `config.exchanges[名字]`(`trPaperOf`,同 lib 與這裡;還沒有路由紀錄的那支照現在綁的那家,因為 runtime 存檔時會繼承它),不再看整台第一家。只給頁面看。測試 `tests/check_tw_lots.py`。
+- **`portfolio_reporter.tw_lots` 跳過沒路由的策略(0.1.27 稽核 P3-1)**:`config.exchanges[名字]` 是空字串(解除綁定後還沒存過下單設定)的策略不算貢獻者,同 `lib/portfolio.aggregate_portfolio` 跳過沒有交易所的策略;之前會多出一列對帳器根本不下的張數。**只在至少綁了一家交易所時才跳過**(`tw_lots(cfg, states, vens)`,綁定判準 `_bound_venue_ids` = 金鑰成對＋`order_*`／`account_*` 都在,逐欄同電腦版 `trVenueIds`):一家都沒綁時 runtime 沒有可繼承的,每支路由都是 `""`,那是「只看訊號」,照訊號算張數(`unit` `"lots"`)——實機測到沒連交易所的台股 Type C 存 1,000,000 TWD 後 `tw_lots` 是 `{}`、表上每檔寫 0 TWD。沒有這個 key 的策略照舊算(非 paper)。電腦版 `trade.js trTwLots` 同一條,而且判「模擬交易」改成逐支讀 `config.exchanges[名字]`(`trPaperOf`,同 lib 與這裡;還沒有路由紀錄的那支照現在綁的那家,因為 runtime 存檔時會繼承它),不再看整台第一家。只給頁面看。測試 `tests/check_tw_lots.py`。
 
 ## 1.1.132 — 2026-10-18(desktop 0.1.27)
 
