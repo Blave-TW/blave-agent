@@ -271,7 +271,9 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     pt({ pos: 1, held: 100000 });
     const sh = vm.runInContext("trStratHeld('tw')", ctx);
     ctx.TR.edits = { tw: 0 }; ctx.BOX = null; const keepEx = vm.runInContext("trExecState", ctx);
-    try { vm.runInContext('trExecState = () => "running"; trSaveAmounts(trNames(), trBase(), null)', ctx); } finally { ctx.__keep = keepEx; vm.runInContext("trExecState = __keep;", ctx); }
+    // 台股開盤中(不照牆上時鐘):休市時那一列標「休市中，開盤後下單」,見 check_shell_a1_save F15
+    ctx.__keepTw = vm.runInContext("trTwSessionOpen", ctx);
+    try { vm.runInContext('trExecState = () => "running"; trTwSessionOpen = () => true; trSaveAmounts(trNames(), trBase(), null)', ctx); } finally { ctx.__keep = keepEx; vm.runInContext("trExecState = __keep; trTwSessionOpen = __keepTw;", ctx); }
     // 0.1.27 存金額框改列下一輪要送的單(A1):帳本那 2330@spot 要對得上,列「賣出 2330」整筆,取代「平倉」標記
     const cfRows = ctx.BOX && ctx.BOX.extra ? flat(ctx.BOX.extra).filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.textContent) : [];
     ok("P2-1 (b) 帳本有 2330@spot、金額改 0:trStratHeld 是 true,存金額框列賣出 2330 帳上那 100,000", sh === true && J(cfRows) === J(["tr.cf.sell2330100,000 TWD"]), J([sh, cfRows]));

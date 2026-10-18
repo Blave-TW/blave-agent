@@ -159,4 +159,9 @@ t("⑤ 帶內、對帳器沒在跑 → 也不會把舊拒單撿回來當灰字(�
   const p5 = paint(crypto(30000, 20000, { halt: HALT, order_errors: [loc] }), { realErrText: true });
   t("⑥ 灰字那一行認得的原因用在地化那一句(同事件列),不出英文原文", !/orderFailed/.test(p5.past || "") && /tr\.err\.paperLev/i.test(p5.past || "") && !/gross notional/.test(p5.past || "")); }
 
+// 節流中的重複失敗只更新那一列的 last_at／count(4647a2e,同網頁 5d0d7f30):時間寫最後一次失敗;ts 留在第一次
+{ const first = "2026-09-19T14:26:00", lastAt = "2026-09-21T14:26:00";
+  const pl = paint(crypto(30000, 20000, { halt: HALT, order_errors: [{ ...ERR, ts: first, last_at: lastAt, count: 7 }] })), p0 = paint(crypto(30000, 20000, { halt: HALT, order_errors: [{ ...ERR, ts: first }] }));
+  t("⑦ 有 last_at:時間寫最後一次失敗(4 分鐘前 → 只帶 HH:mm);沒有 last_at 照舊寫 ts(逾 24 小時帶日期)", /^\d\d:\d\d$/.test(pl.stamp || "") && /^\d\d\/\d\d \d\d:\d\d$/.test(p0.stamp || "")); }
+
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

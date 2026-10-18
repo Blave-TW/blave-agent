@@ -35,9 +35,11 @@ vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSe
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
   "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper",
-  "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail"].map((n) => cutF(n)).join("\n")
+  "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
   + "\n" + ["poAddBtn", "poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
+// 台股時段照牆上時鐘會讓結果隨星期幾變:預設開盤,休市那組(F15)自己切 TW_OPEN = false
+vm.runInContext("var TW_OPEN = true, trTwSessionOpenReal = trTwSessionOpen; trTwSessionOpen = function (ms, day) { return TW_OPEN; };", ctx);
 const V = { credentials: true, pair: true, order: true, account: true };
 const now = Math.floor(Date.now() / 1000), BAR = now - 3600;
 // 已存:btc 500(BTCUSDT 多 1)、tw 100000(台股 2330 多 1)。新策略 n5:台股等權 2330／2454(重疊 2330)或 2603／2382(不重疊)
@@ -294,6 +296,33 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     bag({ firing: true, paper: true, picked: ["btc", "tw", "dt"], edits: { dt: 100000 }, list: [DT], noPv: true, rep: { last_reconcile: LR() } });
     const got = JSON.parse(vm.runInContext("JSON.stringify([trCfSymsOf('dt', null, {}), Object.keys(trCfHolds(trReport(), trBase(), Object.assign({}, trBase(), { dt: 100000 }), {}, null).wait)])", ctx));
     ok("S1 模擬交易的 swap 台股新成員:先不動的標的與它的標的都是 2330@spot(同對帳器)", J(got) === J([["2330@spot"], ["2330@spot"]]), J(got)); }
+  // F13:台股列寫股數。實盤 state 的未還原收盤(raw_closes,同 trTwLots)也是價格來源——模擬帳戶沒持有台股時 mark 沒有台股價
+  { const TWC = { weights: { "2330": 1 }, market: "spot", raw_closes: { "2330": 1000 }, raw_close_dates: { "2330": "2026-10-16" } };
+    bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { tw: 150000 }, noPv: true, states: { tw: TWC } }); const f = open();
+    ok("F13 在跑、模擬交易、台股 Type C 有 raw_closes、帳上沒台股:列「買進 2330 150 股」,不是只寫 TWD", f.rows.includes("tr.cf.buy2330150 tr.cf.unitShares"), J(f));
+    bag({ picked: ["btc", "tw"], edits: { tw: 150000 }, noPv: true, states: { tw: TWC } }); const g = open();
+    ok("F13 不在跑(目標有變):100,000 → 150,000 下面小字 150 股", g.rows.some((x) => /^2330100,000→150,000/.test(x) && /150 tr\.cf\.unitShares/.test(x)), J(g));
+    // 0.1.27 以前的 lib 寫的預覽沒有 closes:別支 live 策略查到的同一檔照用;一檔都沒價格時表頭不寫「依 MM/DD 收盤算」
+    const OLDPV = { type: "portfolio", market: "spot", weights: { "2330": 1 }, bar_at: BAR, bar_date: "2026-10-16", latest: true, daily_tw: true };
+    bag({ picked: ["btc", "tw", "n5"], edits: { n5: 50000 }, pvs: { n5: OLDPV }, states: { tw: TWC } }); const h = open();
+    ok("F13 草稿的舊預覽沒有 closes:用 tw 的 raw_closes 換股數(2330 100,000 → 150,000、150 股)", h.rows.some((x) => /^2330100,000→150,000/.test(x) && /150 tr\.cf\.unitShares/.test(x)), J(h));
+    bag({ picked: ["btc", "tw", "n5"], edits: { n5: 50000 }, pvs: { n5: Object.assign({}, OLDPV, { weights: { "2603": 1 } }) } }); const k = open();
+    ok("F13 一檔都沒價格:表頭不寫「依 10/16 收盤算」", k.rows.some((x) => /^2603/.test(x)) && !/asofClose/.test(k.cap), J(k)); }
+  // F14:等新訊號那句最多點名三檔,其餘「和另外 N 檔」
+  { const ks = ["2303", "2317", "2330", "2382", "2454"], w = {}, gt = {}; ks.forEach((x) => { w[x] = 0.2; gt[x + "@spot"] = { side: "long", size: 20000, gated: true, contributors: [{ strategy: "tw", position: 0.2, amount: 100000, contribution: 20000, gated: true }] }; });
+    bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { tw: 200000 }, noPv: true, states: { tw: { weights: w, market: "spot" } }, rep: { last_reconcile: LR(gt) } }); const f = open();
+    const n = f.notes.find((x) => /^cf-note:tr\.cf\.gated /.test(x)), syms = n ? JSON.parse(n.slice("cf-note:tr.cf.gated ".length)).syms : "";
+    ok("F14 五檔等新訊號:句子點名前三檔、其餘「和另外 2 檔」", syms === '2303、2317、2330tr.opt.catchMore {"n":2}', J(f)); }
+  // F15:休市中(對帳器把台股留到開盤):台股的單標「休市中，開盤後下單」、排最後、不算進「下一輪要送的 N 筆」,表下講休市那句
+  { const TWC = { weights: { "2330": 1 }, market: "spot", raw_closes: { "2330": 1000 } };
+    vm.runInContext("TW_OPEN = false", ctx);
+    bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { btc: 1000 }, noPv: true, states: { tw: TWC } }); const f = open();
+    vm.runInContext("TW_OPEN = true", ctx);
+    const btc = f.rows.findIndex((x) => /^tr\.cf\.buyBTCUSDT/.test(x)), tw = f.rows.findIndex((x) => /^tr\.cf\.buy2330/.test(x));
+    ok("F15 休市中:台股那列標 po.twClosedHold、排在 BTC 後面;表頭只算 BTC 那 1 筆;表下 tr.opt.catchTwClosed",
+      btc === 0 && tw === 1 && /po\.twClosedHold$/.test(f.rows[tw]) && !/twClosedHold/.test(f.rows[btc]) && /^tr\.cf\.capOrders \{"n":"1"\}/.test(f.cap) && f.notes.includes("cf-note:tr.opt.catchTwClosed"), J(f));
+    bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { btc: 1000 }, noPv: true, states: { tw: TWC } }); const g = open();
+    ok("F15 開盤中:照舊兩筆、不標休市", /^tr\.cf\.capOrders \{"n":"2"\}/.test(g.cap) && !g.rows.some((x) => /twClosedHold/.test(x)) && !g.notes.includes("cf-note:tr.opt.catchTwClosed"), J(g)); }
   // S3:等新訊號(訊號閘)擋下的標的不列單;閘中那支自己移出,閘跟著走,照列
   { const gt = { BTCUSDT: { side: "long", size: 500, gated: true, contributors: [{ strategy: "btc", position: 1, amount: 500, contribution: 500, gated: true }] } };
     bag({ firing: true, edits: { btc: 1000 }, rep: { last_reconcile: LR(gt) } }); const f = open();

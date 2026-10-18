@@ -2801,7 +2801,7 @@ function poPaintCfg() {
   if (TR.view !== "po" || box.hidden) return;
   const names = trNames(), stored = trBase(), states = poCfgStates(r);
   // 灰字的時間戳滿 24 小時才帶日期:dead 時快照凍住、app 一直開著,沒有別的資料會變——每一筆失敗的時間戳本身進簽章,跨過那一刻才會重畫
-  const now = Date.now(), stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
+  const now = Date.now(), stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.last_at || e.ts, now) : null);
   const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.self_ledger, r.order_errors, stamps, trExecState(TR.st), envHeadState(TR.st, now), !!TR.sent, !!TR.notApplied, !!(TR.st && TR.st.alive),
     TR.picked ? [...TR.picked].sort() : null, trCfgUnread(r), trTxfPrice(),   // 報價回來了:口數列的名目、合計、倍數要換上
     r.quote_ccy, r.signals_frozen, trFxView(),   // 分區與「還沒有訊號」;匯率／顯示幣別換了,多區合計要換上
@@ -2840,7 +2840,7 @@ function poCfgStates(r) {
    讀機器回報的已存配置(不是策略組合頁上未儲存的修改):按下啟動會照的就是這一份 */
 function trPaintPos() {
   const box = $("tr-pos"), r = trReport() || {}, now = Date.now(), fog = trZNow(envHeadState(TR.st, now)).fog;
-  const stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
+  const stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.last_at || e.ts, now) : null);
   const data = [TR.env, TR.list, r.account, r.last_reconcile, r.self_ledger, r.config, r.states, r.order_errors, stamps, r.quote_ccy, r.signals_frozen, r.can_trade_portfolio,
     trEquity(), trUnit(), trTxfPrice(), trFxView(), trExecState(TR.st), envHeadState(TR.st, now), TR.startAt || 0, !!TR.noAmtLink, !!TR.zBridge, fog, TR_TWN.v];
   if (!trShould("pos", box, data)) return;
@@ -3413,9 +3413,13 @@ function trCfStates(r, stored, sending, contracts) {
     if (!pv) { missing.push(n); return; }
     states[n] = pv; pvs[n] = { at: pv.bar_at, date: pv.bar_date, dailyTw: pv.daily_tw };
     if (!pv.latest) { old.push(n); if (draft) stale.push(n); }
-    if (pv.weights) Object.keys(pv.closes).forEach((k) => { const v = Number(pv.closes[k]); if (v > 0) px[trCanonSym(k)] = v; });
+    if (pv.weights) Object.keys(pv.closes || {}).forEach((k) => { const v = Number(pv.closes[k]); if (v > 0) px[trCanonSym(k)] = v; });
     else if (pv.close) px[trCanonSym(trEffSym(n, pv.symbol, contracts))] = pv.close;
   });
+  /* 台股換股數用未還原收盤(實盤 state 的 raw_closes,同 trTwLots 與模擬盤成交價);預覽的 closes 是策略自己的還原價,只在沒有時用。
+     任一支 live 策略查到的同一檔都算:0.1.27 以前的 lib 寫的預覽沒有 closes */
+  Object.keys(live).forEach((n) => { const rc = live[n] && live[n].raw_closes;
+    if (rc && typeof rc === "object") Object.keys(rc).forEach((k) => { const v = Number(rc[k]), c = trCanonSym(k); if (v > 0 && isFinite(v) && TR_TWSTOCK_RE.test(c)) px[c] = v; }); });
   return { states, px, pv: pvs, missing, stale, old };
 }
 /* 下一輪對帳器先不動的部分(lib/portfolio 的 first_signal_wait 與訊號閘)。快照 caps 沒有 first_signal_wait = 舊 lib,前一種不算。
@@ -3519,6 +3523,10 @@ function trCfRows(o) {
   const marks = trMarks(o.r || {}), priceOf = (sym) => { const k = trCanonSym(sym.replace(/@spot$/i, "")); return st.px[k] || marks[k] || marks[trCanonSym(sym)] || null; };
   const rows = [];
   if (o.firing) {
+    /* 休市中的台股:對帳器留到開盤(lib/portfolio._paper_tw_closed_keys、lib/order_paper._check_session),同部位表的 trTwClosedKeys 與補齊那句的 trTwSessionOpen。
+       照列但標 closed、排最後,不算進「下一輪要送的 N 筆」 */
+    const r0 = o.r || {}, twShut = !trTwSessionOpen(Date.now(), r0.tw_trading_day), twHeld = trTwClosedKeys(r0.last_reconcile);
+    const twClosed = (sym) => TR_TWSTOCK_RE.test(trCanonSym(sym.replace(/@spot$/i, ""))) && (twShut || twHeld.has(sym));
     const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && o.covered(k));
     syms.forEach((sym) => {
       // 新成員算不出(沒預覽):下一輪 = 其他成員這次存的 + 被換掉的那段,照算。基準未寫／pending 時對帳器整檔不動(沒有 anchor),
@@ -3538,9 +3546,10 @@ function trCfRows(o) {
       const row = { sym, side: d > 0 ? "buy" : "sell", money: Math.abs(d), z: zoneOf(sym), by: by(sym) };
       if (lot) row.lots = Math.round(Math.abs(d));
       else { const q = trCfQty(sym, d, priceOf(sym)); if (q && q.n === 0) return; row.qty = q; }
+      if (twClosed(sym)) row.closed = true;
       rows.push(row);
     });
-    rows.sort((a, b) => (a.side === b.side ? 0 : a.side === "buy" ? -1 : 1) || (a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0));
+    rows.sort((a, b) => ((a.closed ? 1 : 0) - (b.closed ? 1 : 0)) || (a.side === b.side ? 0 : a.side === "buy" ? -1 : 1) || (a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0));
     return { kind: "orders", rows, st, held };
   }
   Object.keys(before).concat(Object.keys(after)).filter((k, i, a) => a.indexOf(k) === i && !blind.has(k)).forEach((sym) => {
@@ -3662,12 +3671,15 @@ function trSaveAmounts(names, stored, opener, o) {
       const zones = m.rows.map((x) => x.z).filter((z, i, a) => a.indexOf(z) === i), multi = zones.length > 1;
       const ccys = zones.map((z) => (z === TR_ZONE_LOTS ? t("tr.lotsUnit") : z === TR_ZONE_UNKNOWN ? t("tr.grpUnknown") : z)).join(LANG === "zh" ? "、" : ", ");
       // 時間只講一次(canon):框裡任何一列(口數列、照金額寫的列、只改金額的列都算)是預覽撐的、或表下點名了舊預覽(oldPv),表頭寫是哪一根;台股日線寫「收盤」
-      const pvAt = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => x.by || []), oldPv) : amtOnly);
+      const pvAt0 = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => x.by || []), oldPv) : amtOnly);
+      // 「依 MM/DD 收盤算」讀起來像列上有價格:列出的標的一個都沒有數量(股、口)時不寫。不是台股日線的「依那根算」照寫(B2)
+      const pvAt = pvAt0 && pvAt0.dailyTw && m.rows.length && !m.rows.some((x) => x.lots || (x.qty && x.qty.n > 0)) ? null : pvAt0;
       // 台股日線照機器給的交易日(bar_date,UTC+8 換好的),不拿本機時區換 bar_at
       const asof = !pvAt ? "" : pvAt.dailyTw && pvAt.date ? t("tr.cf.asofClose", { d: pvAt.date.slice(5).replace("-", "/") }) : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
       if (m.rows.length) {
-        sub.textContent = (m.kind === "orders" ? t("tr.cf.capOrders", { n: String(m.rows.length) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys })) + (asof ? (LANG === "zh" ? "，" : ", ") + asof : "");
-        body.appendChild(sub);
+        const nOpen = m.rows.filter((x) => !x.closed).length, asofTail = asof ? (LANG === "zh" ? "，" : ", ") + asof : "";
+        sub.textContent = m.kind === "orders" && !nOpen ? asof : (m.kind === "orders" ? t("tr.cf.capOrders", { n: String(nOpen) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys })) + asofTail;
+        if (sub.textContent) body.appendChild(sub);
         const dl = trEl("dl", "cf-rows cf-amt");
         m.rows.forEach((x) => {
           const label = trEl("dt", ""), dd = document.createElement("dd"), sp = x.lots != null && x.lots !== false ? trTxfSpec(trCapitalCanon(x.sym.replace(/@spot$/, ""))) : null;
@@ -3679,6 +3691,7 @@ function trSaveAmounts(names, stored, opener, o) {
             if (x.lots != null) dd.append(trFmt(x.lots) + unit("lots", x.lots));
             else if (x.qty) dd.append(x.qty.text + unit(x.qty.unit));
             else dd.append(trFmt(Math.round(x.money)) + (x.z && x.z !== TR_ZONE_UNKNOWN ? " " + x.z : ""));
+            if (x.closed) dd.appendChild(trEl("span", "tag", t("po.twClosedHold")));
           } else {
             const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
             if (x.was) arrow(dd, f(x.was));
@@ -3692,6 +3705,7 @@ function trSaveAmounts(names, stored, opener, o) {
           const row = trEl("div", "cf-row"); row.append(label, dd); dl.appendChild(row);
         });
         body.appendChild(dl);
+        if (m.kind === "orders" && nOpen < m.rows.length) body.appendChild(trEl("p", "cf-note", t("tr.opt.catchTwClosed")));
       } else if (amtOnly.length) {
         // 金額改了、但這一刻沒有一個標的的目標跟著變(訊號 0、或改的那支算不出):表上改列金額的「原 → 新」,不出一個空框
         sub.textContent = t(amtOnly.length === 1 ? "tr.cf.capAmountsOne" : "tr.cf.capAmounts", { n: String(amtOnly.length) }); body.appendChild(sub);
@@ -3708,7 +3722,9 @@ function trSaveAmounts(names, stored, opener, o) {
     if (late) body.appendChild(trEl("p", "cf-note", t("tr.cf.late", { names: list(waiting) })));
     if (unread) body.appendChild(trEl("p", "cf-note", t("tr.cf.firstRead")));
     if (oldPv.length) body.appendChild(trEl("p", "cf-note", t("tr.cf.oldPv", { names: list(oldPv) })));
-    const syms = (ks) => ks.map((k) => { const b = k.replace(/@spot$/, ""), sp = trTxfSpec(trCapitalCanon(b)), tw = sp ? "" : trTwName(k); return sp ? t(sp.prod) : b + (tw ? " " + tw : ""); }).join(LANG === "zh" ? "、" : ", ");
+    // 一句最多點名三檔,其餘「和另外 N 檔」(同補齊那句 trCatchWill)
+    const syms = (ks) => { const ns = ks.map((k) => { const b = k.replace(/@spot$/, ""), sp = trTxfSpec(trCapitalCanon(b)), tw = sp ? "" : trTwName(k); return sp ? t(sp.prod) : b + (tw ? " " + tw : ""); });
+      return ns.slice(0, 3).join(LANG === "zh" ? "、" : ", ") + (ns.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: ns.length - 3 }) : ""); };
     if (held.wait.length) body.appendChild(trEl("p", "cf-note", t("tr.cf.held", { syms: syms(held.wait), names: list(held.names) })));
     if (held.gate.length) body.appendChild(trEl("p", "cf-note", t("tr.cf.gated", { syms: syms(held.gate) })));
     const title = t(fire ? "tr.cf.titleFire" : "tr.cf.title");
@@ -4086,7 +4102,8 @@ function poSigTable(r, stored, states, mode) {
     const plain = trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
     const loud = !closeAll && trErrLoud(le, hs, TR.startAt, r.last_reconcile);
     const line = trEl("span", loud ? "pf-note err" : "pf-note past");
-    if (!loud) { const stamp = trErrStamp(le.ts, Date.now()); if (stamp) line.appendChild(trEl("span", "ts mono", stamp)); }
+    // 節流中的重複失敗只更新那一列的 last_at／count(4647a2e):時間寫最後一次失敗;哪一筆還在失敗照舊看 ts(trLiveOrderErrs)
+    if (!loud) { const stamp = trErrStamp(le.last_at || le.ts, Date.now()); if (stamp) line.appendChild(trEl("span", "ts mono", stamp)); }
     // 不可信輸入(機器回報的原文):截長、走文字節點
     line.append(plain || (loud ? t("po.orderFailedRow", { err: trOrderErrRaw(err) }) : t("po.orderFailedLast", { err: trOrderErrRaw(err) })));
     // 「請 agent 查原因」:只把一句話填進本機聊天框、不送出(聊天框那一句離開了這一列,照舊帶標的);平倉失敗的答案就是那行字,不問
