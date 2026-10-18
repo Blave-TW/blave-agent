@@ -194,5 +194,14 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
   if (dead.length) fail(`S0–S7 那一套的字還在表裡:[${dead}]`); else pass("S0–S7 那一套的字(tm.cloudUpdate* / up.chat / up.update / up.c.*)兩語都刪了");
 }
 
+// ---- 9. 綁模擬帳戶說明講台股成交價的出處 ----
+// 模擬盤台股照未還原收盤價成交、股利不入帳(lib/paper_data;網頁 workspace_cx_paper_note 同句),只寫「照策略的行情資料成交」台股不成立
+{ const note = (lang) => (block(lang).match(/"cx\.paperNote": "([^"]*)"/) || [])[1] || "";
+  const MUST = { zh: ["未還原收盤價", "股利不入帳"], en: ["unadjusted close", "dividends not credited"] };
+  const miss = Object.entries(MUST).filter(([l, ws]) => !ws.every((w) => note(l).includes(w))).map(([l]) => l);
+  if (miss.length) fail(`cx.paperNote 沒寫台股照未還原收盤價成交、股利不入帳:[${miss}]`);
+  else pass("cx.paperNote 兩語都寫台股照未還原收盤價成交、股利不入帳");
+}
+
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");
 process.exit(bad ? 1 : 0);
