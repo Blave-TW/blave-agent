@@ -1013,7 +1013,8 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
 
 def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors,
             style, filled_usd, vwap, aborted, below_min=False,
-            already_reported=False, filled_base=None, writeoff=None, netted_qty=0.0):
+            already_reported=False, filled_base=None, writeoff=None, netted_qty=0.0,
+            halted=False):
     """Async completion: one orders.jsonl entry (the web 交易歷史 source of
     truth) mirroring the synchronous reconcile entry shape.
 
@@ -1032,7 +1033,9 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
     leg's notional is rebuilt from base × vwap. `writeoff` is the wiring's
     verdict that what is left of a full close can never be sold: applied
     here, AFTER the fill is logged (the zero row is a cutoff). Off, neither
-    argument is read."""
+    argument is read.
+
+    halted=True: the user's 暫停 stopped it; a zero fill then is the pause, not an order error."""
     from lib.portfolio import _append_reconciler_log, _record_order_error
     # files reach a machine one at a time: beside a lib.portfolio from before
     # the quantity book this must still log the fill exactly as it used to
@@ -1048,6 +1051,9 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
         if below_min:
             logging.info(f"[execute] {symbol} {style}: nothing the venue would "
                          f"accept at this size — skipped")
+        elif halted:
+            logging.info(f"[execute] {symbol} {style}: stopped by state/HALT "
+                         f"before any fill")
         elif already_reported:
             # The caller's crash path already recorded the venue's OWN message,
             # which is the one worth reading. Adding "no slices filled" on top
@@ -1398,6 +1404,17 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                    f"${filled:,.2f}/${total:,.2f} {symbol} | VWAP={vwap}{tail}")
         else:
             logging.info(f"[execute] {key} chase ended with no fills ({reason})")
+    except guard.Halted as e:
+        # 暫停 landed between the halted() check and a (re-)post or the market
+        # remainder: the guard refused the order, which is the pause working —
+        # stop like the halted() branches do, no error notice, no order error.
+        stop.set()
+        reason = "state/HALT set"
+        logging.info(f"[execute] {key} chase stopped by state/HALT ({e})")
+        if active_oid is not None and not _retire(active_oid):
+            cancel_uncertain = True
+            notify(f"⚠️ {symbol}: chase could not confirm its resting order "
+                   f"was cancelled — restart the reconciler to sweep it if it lingers")
     except Exception as e:
         crashed = True
         logging.error(f"[execute] {key} chase crashed: {e}")
@@ -1436,6 +1453,7 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             _finish(symbol, signed_diff, asset_spec, reduce_only, tools.get("venue"),
                     contributors, "chase", filled, vwap, aborted or crashed,
                     below_min=below_min, already_reported=crashed,
+                    halted=reason == "state/HALT set",
                     filled_base=sum(f.get("book", f["base"]) for f in fills),
                     writeoff=seen.get("writeoff"),
                     netted_qty=min(room, sum(f["base"] for f in fills)))

@@ -245,6 +245,61 @@ check(chase["place"] == 1 and chase["cancel"] >= 1 and chase["market"] == 0 and 
       f"E3 HALT lands while a chase limit rests: cancelled at the next poll, no re-post, no market ({chase}, {took:.2f}s)")
 reset_halt()
 
+# E4/E5 (testnet 0.1.27 P3): the pause lands AFTER the chase's halted() check, so the venue
+# wiring's guard refuses the order and raises Halted. That is the pause working, not a crash:
+# no "Chase execution error" notice, no order error, no market order.
+notes, errors = [], []
+_real_notify, _real_err = execute._notify_fn, portfolio._record_order_error
+execute._notify_fn = notes.append
+portfolio._record_order_error = lambda *a, **k: errors.append(a)
+
+
+def _refuse():
+    guard.trip_halt("user request", "web")
+    raise guard.Halted("state/HALT is set — order refused")
+
+
+def _halt_chase(place, market, timeout):
+    del notes[:], errors[:]
+    c = {"place": 0, "cancel": 0, "market": 0, "bbo": 0}
+
+    def bbo():
+        c["bbo"] += 1
+        return (100.0, 100.1) if c["bbo"] == 1 else (100.5, 100.6)   # moves after the first post
+
+    def _place(*a, **k):
+        c["place"] += 1
+        return place(c["place"])
+
+    def _market(*a, **k):
+        c["market"] += 1
+        return market()
+
+    t = {"bbo": bbo, "venue": "binance", "place": _place,
+         "status": lambda oid: {"status": "new", "executed_qty": 0.0, "avg_price": 0.0},
+         "cancel": lambda oid: c.__setitem__("cancel", c["cancel"] + 1) or {"status": "canceled"}}
+    execute._CHASE_TIMEOUT_S = timeout
+    _vw.auto_place_order = _market
+    try:
+        execute._chase_thread("BTCUSDT", -100.0, None, True, "binance", None, t, threading.Event())
+    finally:
+        _vw.auto_place_order = _real_auto
+        reset_halt()
+    return c
+
+
+c = _halt_chase(lambda n: {"order_id": "o1", "status": "new"} if n == 1 else _refuse(),
+                lambda: {"avg_price": 1.0, "executed_qty": 1.0}, 2.0)
+check(c["place"] == 2 and c["cancel"] >= 1 and c["market"] == 0 and not errors
+      and not any("error" in m.lower() or "crashed" in m for m in notes),
+      f"E4 HALT between the halted() check and the re-post: stopped, no error notice, no order error ({c}, {notes}, {errors})")
+c = _halt_chase(lambda n: {"order_id": "o1", "status": "new"}, _refuse, 0.1)
+check(c["market"] == 1 and c["cancel"] >= 1 and not errors
+      and not any("error" in m.lower() or "crashed" in m for m in notes),
+      f"E5 HALT before the market remainder: stopped, no error notice, no order error ({c}, {notes}, {errors})")
+execute._notify_fn, portfolio._record_order_error = _real_notify, _real_err
+execute._CHASE_TIMEOUT_S = 2.0
+
 # ── P: who holds the close pass ──────────────────────────────────────────────
 print("== P close-pass holders")
 holders, scoped = set(), set()
