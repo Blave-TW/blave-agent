@@ -331,6 +331,18 @@ def _tw_closes(data):
     return out
 
 
+def tw_trading_day():
+    """Today's (Taipei) TWSE trading-day verdict the workspace lib already looked up
+    (state/paper_tw_day.json, lib/paper_data.tw_session_open): {date, trading} or None when
+    there is none for today (no lookup yet, the holiday table unreadable). The desktop's
+    session clock has no holiday table of its own; this lets it say "closed" on a holiday."""
+    rec = _read_json(os.path.join(WORKSPACE_STATE, "paper_tw_day.json"))
+    today = datetime.now(_TAIPEI).strftime("%Y-%m-%d")
+    if not isinstance(rec, dict) or rec.get("date") != today or not isinstance(rec.get("verdict"), bool):
+        return None
+    return {"date": today, "trading": rec["verdict"]}
+
+
 def deferred_close():
     """Paper TW stock keys close-all deferred to the session open (lib/portfolio
     defer_paper_tw_close, state/paper_tw_close.json), sorted; [] when none. 啟動下單
@@ -1830,6 +1842,8 @@ def build_report():
         "tw_lots": tw_lots(cfg, states, vens),
         # paper TW closes waiting for the open; 啟動下單 cancels them (deferred_close)
         "deferred_close": deferred_close(),
+        # today's TWSE trading-day verdict, None = unknown (tw_trading_day)
+        "tw_trading_day": tw_trading_day(),
         # None = signals recomputing normally (see signals_frozen)
         "signals_frozen": signals_frozen(cfg),
         # each strategy's amount currency, None = cannot be told (strategy_quote_ccy)

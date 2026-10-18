@@ -344,6 +344,26 @@ for v in ("binance", "okx", "gateio", "bingx"):
           f"({str(err)[:90]})")
     reset_halt()
 
+# Bybit sets SL and TP in one trading-stop call (open_position attaches them to the entry):
+# a standalone place_protective_orders under HALT raises ProtectionFailed like the other four
+import lib.order_bybit as by  # noqa: E402
+by_hit = []
+by._send = lambda *a, **k: by_hit.append(a) or (_ for _ in ()).throw(AssertionError("reached the venue"))
+by.get_contract_rules = lambda env, symbol: {"tick": 0.1, "step": 0.001, "min_qty": 0.001}
+by._position_rows = lambda env, symbol: []
+by._position_idx = lambda rows, direction: 0
+guard.trip_halt("user request", "web")
+err = _w_err(lambda: by.place_protective_orders({}, "BTCUSDT", "long", sl_price=90000.0, tp_price=110000.0))
+check(isinstance(err, by.ProtectionFailed) and isinstance(err.__cause__, guard.Halted) and not by_hit
+      and "stop-loss and take-profit were not placed" in str(err) and "place_protective_orders" in str(err)
+      and "entry" not in str(err),
+      f"W3 bybit: standalone place_protective_orders under HALT — ProtectionFailed, nothing sent ({str(err)[:90]})")
+reset_halt()
+_pp = [f for f in sorted(os.listdir(os.path.join(ROOT, "lib"))) if f.startswith("order_") and f != "order_paper.py"
+       and "def place_protective_orders" in open(os.path.join(ROOT, "lib", f), encoding="utf-8").read()]
+check(_pp and all("guard.protection_halted_text(" in open(os.path.join(ROOT, "lib", f), encoding="utf-8").read() for f in _pp),
+      f"every venue lib with place_protective_orders words a HALT refusal as ProtectionFailed ({_pp})")
+
 # ── F: the report's `freeze` when the evidence is missing ────────────────────
 print("== F reporter freeze")
 _ws = tempfile.mkdtemp(prefix="halt-freeze-ws-")

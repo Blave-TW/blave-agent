@@ -10,6 +10,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## 1.1.133 — 2026-10-18(desktop 0.1.27)
 
+- **報告多 `tw_trading_day`(0.1.27 稽核 P3-3c;`portfolio_reporter.tw_trading_day`)**:今天(台北)台股是不是交易日,讀 workspace lib 已經查到、存在 `state/paper_tw_day.json` 的那一筆:`{date, trading}`;今天還沒查過、查不到假日表(`verdict` 是 null)、或檔案是別天的 → `null`。電腦版 `trade.js trTwSessionOpen` 有這欄而且 `trading` 是 false 時講休市(國定假日不再講成開盤),沒有就照舊只看星期與時段。只給頁面看。測試 `tests/check_paper_twstock.py`、`tests/check_shell_portfolio.js`。
+
 - **`downtime_pause_view` 的模擬盤台股 key 帶 `@spot`(0.1.27 稽核 P3-1 同源;只給頁面看)**:路由 `config.exchanges[名字] == "paper"` 的台股策略不管 `MARKET` 一律當現股(同 `lib/portfolio._paper_tw_market`),那一列查快照的 key 改成 `SYM@spot`;之前 swap 的台股 Type A 查的是 `2330`,模擬盤上真正的部位在 `2330@spot`,「實際」那格讀不到。不改下單。
 
 - **報告多 `deferred_close`、重開機時在延後平倉檔上蓋 `restart_at`(0.1.27 下單路徑跨分支稽核 P2-1;`portfolio_reporter.deferred_close`、`command_listener._stamp_tw_close_restart`)**:休市時按「全部平倉」,模擬盤台股會延到開盤(workspace `state/paper_tw_close.json`),在那之前按啟動下單(補齊、等新訊號都是)會取消它。報告頂層多 `deferred_close: [key]`(台股代號,現股帶 `@spot`;只收台股代號格式、排序、最多 100 個;沒有＝`[]`),電腦版與網頁的啟動框照它先講「會取消、是哪幾檔」。主機重開判定要停時(`_stop_after_restart` 寫 `reconciler_stopped.json` 的同一刻),若延後檔還在就加 `restart_at`(= 停止紀錄的 `at`):重開後一定要按啟動下單才會恢復,而那一下會一併取消延後的平倉,workspace lib 看到這個欄位就把取消那行寫成「機器重開後按了啟動下單…」,不再寫成「開盤前已按啟動下單」。舊 lib 不讀這欄、照舊那一句;舊網頁不讀 `deferred_close`。只動回報與一個 state 欄位,不改下單。測試 `tests/check_paper_twstock.py`、`tests/check_machine_restart_stop.py`。

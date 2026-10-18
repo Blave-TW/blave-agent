@@ -985,9 +985,11 @@ function trCatchShares(d, tw) {
   return Math.floor(Math.abs(d) / tw.price + 1e-9);
 }
 /* 台股一般交易時段(台北 09:00–13:30、週一到週五;台灣沒有日光節約,直接 +8 小時)。
-   跟 lib/paper_data.tw_session_open 同一個時段,但沒有假日表:國定假日這裡會講成開盤 */
-function trTwSessionOpen(ms) {
+   跟 lib/paper_data.tw_session_open 同一個時段;假日表借機器已查到的今天那一筆(回報 tw_trading_day,
+   lib 寫在 state/paper_tw_day.json)。沒有那一筆(還沒查過、查不到假日表)時只看星期,國定假日會講成開盤 */
+function trTwSessionOpen(ms, day) {
   const d = new Date(ms + 8 * 3600000), wd = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  if (day && day.date === d.toISOString().slice(0, 10) && day.trading === false) return false;
   return wd >= 1 && wd <= 5 && m >= 540 && m < 810;
 }
 /* 只管自己的部位(回報 self_ledger === true,lib/portfolio.own_positions_only):對帳器拿目標去比的是 Blave 的帳本,不是交易所整個帳戶。
@@ -2606,7 +2608,7 @@ function trCatchWill(r) {
   });
   if (!out.length) return null;
   // 模擬盤休市不收台股的單(lib/order_paper._check_session),對帳器留到開盤:「現在就下單」對台股那幾筆不成立
-  const closed = anyTw && !trTwSessionOpen(Date.now()) ? " " + t("tr.opt.catchTwClosed") : "";
+  const closed = anyTw && !trTwSessionOpen(Date.now(), r.tw_trading_day) ? " " + t("tr.opt.catchTwClosed") : "";
   return out.slice(0, 3).join(LANG === "zh" ? "、" : "; ") + (out.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: out.length - 3 }) : "") + (LANG === "zh" ? "。" : ".") + closed;
 }
 

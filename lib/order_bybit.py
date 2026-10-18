@@ -501,7 +501,13 @@ def place_protective_orders(env: dict, symbol: str, direction: str,
         body["stopLoss"] = _floor_str(sl_price, tick)
     if tp_price is not None:
         body["takeProfit"] = _floor_str(tp_price, tick)
-    return _request(env, "POST", "/v5/position/trading-stop", body=body)
+    try:
+        return _request(env, "POST", "/v5/position/trading-stop", body=body)
+    except guard.Halted as e:
+        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
+        raise ProtectionFailed(
+            guard.protection_halted_text(symbol, direction, wanted, {}, False) + f" {e}"
+        ) from e
 
 
 def open_position(env: dict, symbol: str, direction: str, qty: float,
