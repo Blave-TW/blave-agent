@@ -3,8 +3,8 @@
 # Universe: Taiwan 100 stocks across sectors
 # Signal:   外資買超 time-series z-score → positive z → proportional weight
 # Rebalance: weekly (first trading day of each ISO week)
-# Data wait: prices and flows come from Blave through `*_batch` calls — minutes even when nothing is cached, not
-#           the ~36 s per stock-year of the per-stock free fetchers; tell the user before running.
+# Data wait: prices and flows come through `*_batch` calls (prices Blave CDN first) — minutes even when nothing
+#           is cached, not the ~36 s per stock-year of the exchange-path fallback; tell the user before running.
 
 import sys
 from pathlib import Path

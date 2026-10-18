@@ -777,7 +777,7 @@ One line per trap, collected from the sections above (the section named in *Wher
 | `fetch_cme_cot` | `join` by report date; diffing rows for change; "leveraged funds net short = bearish" | `align_feed(..., 'cme_cot', ...)`; `*_change` is CFTC's own; say basis trades show up as plain shorts |
 | `fetch_cvd_*` | Treating CVD as spot or trade-by-trade | Perps only, venue-reported turnover; a stale venue drops out (`stale: true`) rather than under-reporting |
 | *Taiwan stock price* | Charting `fetch_twstock_price_adj` | Adjusted is for backtests; charts and 「現在多少」 use `fetch_twstock_price` |
-| *Taiwan stock price* | TW desktop backtest started without saying the wait | ~36 s per uncached listed stock-year (12 s OTC), `*_batch` minutes; runs resume from the monthly cache |
+| *Taiwan stock price* | TW desktop backtest started without saying a long wait | Blave CDN (default): seconds per cold stock; the exchange-path fallback (a ⚠️ line names it): ~36 s per uncached listed stock-year (12 s OTC); runs resume from the monthly cache |
 | Attribution lines | Exchange / TAIFEX / Yahoo / alternative.me / TWSE-calendar numbers shown without the source line | Carry `df.attrs['source']` (zh: `source_zh`) verbatim next to the numbers — it is the licence condition |
 | `fetch_twstock_ohlcv` | Expecting shares; `headers` in the fifth slot | Volume in lots (張); `headers` is the third argument (the kline order is accepted too); history from 2019-01-01 |
 | `fetch_twstock_market_value_all` | Top-N rebuilt from shares × price; ETFs filtered by code prefix | `top=` plus `~df['is_etf']`; `is_etf` False = "not in the ETF set" |

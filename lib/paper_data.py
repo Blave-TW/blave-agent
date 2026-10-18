@@ -274,9 +274,14 @@ def _tw_owner_schema(symbol):
 
 
 def _tw_stock_price(symbol, hdrs):
-    """Latest unadjusted Close of a TW stock. Daily (fetch_twstock_price, the
-    same chain as the page's fetch_twstock_price_batch, under the same code —
-    runner strips .TW/.TWO before its batch call); a symbol an intraday Type A
+    """Latest unadjusted Close of a TW stock. Daily: fetch_twstock_price, under
+    the code the page's fetch_twstock_price_batch asks with (runner strips
+    .TW/.TWO). Both are Blave-CDN first and read the same per-stock CDN file
+    (lib.data _fetch_twstock_daily_cdn); only while the CDN is behind the
+    latest final do they differ in where the missing days come from — this
+    one the single Blave endpoint (desktop without access: the exchange), the
+    page the Blave batch endpoint — same exchange numbers, separate caches.
+    A symbol an intraday Type A
     trades takes that strategy's latest bar instead (tw_intraday_close, the bar
     the page sizes with) — the daily close would fill a 10:00 signal at the
     day before's close. That bar unreadable → the daily close, noted

@@ -3,9 +3,10 @@
 # Universe: 台股藍籌 20 支（跨產業）
 # Signal:   60 日價格動能排名，每週選前 5 名等權配置
 # Rebalance: 每週第一個交易日(收盤定權重、隔日開盤成交)
-# Data wait: on the desktop each listed stock not yet cached takes ~36 s per year of daily bars (TWSE, one month
-#           per request). UNIVERSE × years since START is the wait — tell the user before running; over ~25 min,
-#           start with a later START (what is fetched stays cached).
+# Data wait: daily bars come from the Blave CDN first — seconds per stock not yet cached. Only when a ⚠️ line says
+#           the exchange path served them (CDN down) does each take ~36 s per year (TWSE, one month per request):
+#           then UNIVERSE × years since START is the wait — tell the user before running; over ~25 min, start with
+#           a later START (what is fetched stays cached).
 
 import sys
 from pathlib import Path

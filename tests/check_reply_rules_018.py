@@ -112,11 +112,13 @@ t("研究腳本留在 tmp/research/、做成報告時沿用不重做",
   and """`python3 -c "import glob,os; fs=sorted(glob.glob('tmp/research/*.py'), key=os.path.getmtime, reverse=True); [os.remove(f) for f in fs[20:]]"`""" in section(read("references", "reports.md"), "### Research scripts"))
 
 # 第五批
-t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(先估、先講、超過 25 分鐘先提短期間),範例策略的檔頭也寫了(agent 抄的就是範例)",
-  "**Desktop Taiwan backtest: say the wait first**" in agents and "`fetch_twstock_price[_adj]` costs ~36 s per uncached listed stock-year, `*_batch` minutes" in agents
+t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(CDN 優先只要幾秒、退到交易所路徑才 ~36 秒／檔年,超過 25 分鐘先提短期間),範例策略的檔頭也寫了(agent 抄的就是範例)",
+  "**Desktop Taiwan backtest: say a long wait first**" in agents and "from the Blave CDN (the default) a cold stock takes seconds" in agents
+  and "only when a ⚠️ line says the exchange path served it does `fetch_twstock_price[_adj]` cost ~36 s per uncached listed stock-year" in agents
   and all("# Data wait:" in read("examples", n, "strategy.py").split("import sys")[0] and "tell the user before running" in read("examples", n, "strategy.py")
           for n in ("twstock_momentum", "tw100_foreign_zscore"))
-  and "~36 s per stock-year of the per-stock free fetchers" in read("examples", "tw100_foreign_zscore", "strategy.py"))
+  and "~36 s per stock-year of the exchange-path fallback" in read("examples", "tw100_foreign_zscore", "strategy.py")
+  and "Blave CDN first — seconds per stock" in read("examples", "twstock_momentum", "strategy.py"))
 t("I 改參數時,DESCRIPTION、LOGIC 與檔頭裡寫到的同一個數字一起改(策略頁的副標是 DESCRIPTION、展開的策略邏輯是 LOGIC)",
   "Changing a parameter also changes every place the file states that number: `DESCRIPTION`, `LOGIC` and the header comment" in agents
   and "**Keep the words true to the code.**" in read("references", "strategy-code.md"))
