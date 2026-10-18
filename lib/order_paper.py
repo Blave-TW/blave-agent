@@ -11,7 +11,9 @@ names + limit/spot/protective helpers, lib/guard built in).
 PRICE (the whole model, Wei 2026-08-21):
   Fills use the price the STRATEGY sees, from the STRATEGY's own data source —
   resolved via lib/paper_data.current_price (see that module for why: adjusted
-  vs raw prices, per-strategy endpoints). NOT an independent public feed.
+  vs raw prices, per-strategy endpoints). NOT an independent public feed. TW
+  stocks are the exception: the unadjusted daily close the portfolio page sizes
+  shares with; dividends are not booked (lib/paper_data).
   * one price per symbol (latest bar Close) — NO bid/ask, NO spread, NO
     slippage. Beginner-tier fidelity (Webull/TradingView do the same); fees are
     the one realism kept.

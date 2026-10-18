@@ -2,8 +2,9 @@
 spot cost and proceeds are TWD and lib/order_paper books them ÷ the USD rate;
 `2330@spot` is inventory of its own code; outside the TWSE session the
 reconciler holds TW stock keys and a direct entry is refused; a Type C
-component is priced from its daily close without running the basket's
-fetch_data. Offline: every price and rate is stubbed.
+stock — Type A, Type C component or nobody's — fills and marks at its
+unadjusted daily close (the page's share price), never the strategy's own
+adjusted fetch_data. Offline: every price and rate is stubbed.
 
 Run: cd blave-agent && .venv/bin/python tests/check_paper_twstock.py
 """
@@ -22,7 +23,7 @@ SYMBOL = "2330"
 
 def fetch_data(hdrs):
     import pandas as pd
-    px = float(open("state/mark.txt").read())
+    px = float(open("state/mark.txt").read()) * 1.1   # adjusted: paper must not fill at it
     idx = pd.date_range(end=pd.Timestamp.now().floor("D"), periods=2, freq="D")
     return pd.DataFrame({"Open": px, "Close": px}, index=idx)
 ''')
@@ -63,7 +64,8 @@ calls = []
 def fake_daily(adjusted):
     def f(code, start, end, hdrs):
         calls.append((code, start, adjusted))
-        px = {"2454": 1500.0, "2317": 200.0, "6488": 700.0}[code]
+        px = float(open("state/mark.txt").read()) if code == "2330" else \
+            {"2454": 1500.0, "2317": 200.0, "6488": 700.0}[code]
         if adjusted:
             px *= 1.1
         idx = pd.date_range(end=pd.Timestamp.now().floor("D"), periods=3, freq="D")
@@ -455,23 +457,29 @@ check(pf.compute_diff({"2330@spot": dict(row, side=None)}, held, rc._symbol_thre
 rc._min_order_gate.clear()
 venue_wiring.detect_venue = real_detect
 
-print("== Type C components priced without the basket's fetch_data")
+print("== every TW stock at its unadjusted close (Wei 10-18: page shares = paper shares)")
 calls.clear()
 paper_data._price_cache.clear()
 px, owner = paper_data.current_price("2454", ENV)
-check(abs(px - 1650.0) < 1e-9 and owner == "tw_basket" and calls == [("2454", "2018-01-01", True)],
-      f"adjusted close anchored at the basket's START ({px}, {calls})")
+check(px == 1500.0 and owner is None and len(calls) == 1 and calls[0][0] == "2454" and calls[0][2] is False,
+      f"a Type C component: the unadjusted close, not adjusted at the basket's START ({px}, {calls})")
 check(not os.path.exists("state/basket_fetch_called"), "the basket's fetch_data never ran")
 calls.clear()
 px, owner = paper_data.current_price("6488", ENV)
 check(px == 700.0 and owner is None and calls and calls[0][2] is False,
       "a TW code nobody trades: the unadjusted close")
 mark(1000)
+calls.clear()
 px, owner = paper_data.current_price("2330", ENV)
-check(px == 1000.0 and owner == "tsmc_a", "a Type A owner still prices its own symbol")
+check(px == 1000.0 and owner is None and calls and calls[0][2] is False,
+      f"a Type A's own symbol: the unadjusted close, not its fetch_data (1,100 adjusted) ({px})")
+paper_data._price_cache.clear()
+calls.clear()
+paper_data.current_price("6488.TWO", ENV)
+check(calls and calls[0][0] == "6488", f"an OTC code asks under the page's code, .TWO stripped ({calls})")
 SESSION[0] = True
 order_paper.place_spot_market_order(ENV, "2454", "buy", quote_qty=33000)
-check(abs(order_paper.get_spot_balances(ENV)["2454"] - 20.0) < 1e-9, "a basket component fills: 33,000 TWD / 1,650 = 20 shares")
+check(abs(order_paper.get_spot_balances(ENV)["2454"] - 22.0) < 1e-9, "a basket component fills: 33,000 TWD / 1,500 = 22 shares")
 
 print("== a TW row booked before this is stamped once, audited")
 led = json.load(open(order_paper.LEDGER_PATH))

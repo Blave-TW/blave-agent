@@ -4,11 +4,21 @@ Paper price resolver — the fill/mark price for the simulated `paper` venue.
 The rule (Wei 2026-08-21): a paper order fills at the price the STRATEGY itself
 sees, from the STRATEGY's own data source — never an independent public feed.
 Two strategies on the same symbol can pull it from different endpoints and even
-different adjustments (crypto `fetch_kline`, futures `fetch_db_kline`, TW stock
-`fetch_twstock_price_adj` — the last one is DIVIDEND-ADJUSTED, so a raw quote
-would silently disagree with what the strategy traded on). So we resolve the
+different adjustments (crypto `fetch_kline`, futures `fetch_db_kline`). So we resolve the
 symbol back to the strategy trading it and call that strategy's `fetch_data`,
 taking the latest bar's Close as "the current price".
+
+TW stocks are the exception (Wei 2026-10-18): every TW stock fills and marks at
+the UNADJUSTED daily close — the price a broker app shows and the one the
+portfolio page turns TWD into shares with (lib/runner.tw_fetch_closes), so the
+shares on the page are the shares the paper account buys. A dividend-adjusted
+close is anchored at its fetch window's start (2330 on 2026-10-16: 2420 from a
+10-day window, 2755.89 from 2020) and sized ~12% fewer shares than the page.
+Dividends are not booked: on an ex-date the unadjusted close drops and the
+paper equity drops with it, never paid back (no cash dividend credited, no
+stock-dividend shares added), so paper trails a dividend-adjusted backtest by
+the yield. The own-positions book diffs fill-time cost, not the mark, so an
+ex-date drop sends no order.
 
 One USD account, any asset (product decision B). A NOTIONAL position needs no
 FX: the reconciler sizes qty = USD ÷ price, so PnL = USD_notional × (mark/entry
@@ -170,6 +180,7 @@ def current_price(symbol, env, max_age=_PRICE_TTL_S):
     served from a short process-level cache (see _price_cache). Returns
     (price, strategy_name).
 
+    TW stocks: the unadjusted daily close (module docstring), name None.
     Type A/C: the strategy's fetch_data, latest Close. Fallback when no bar
     strategy claims the symbol (Type B / manual / not-yet-run): a generic
     1m crypto kline via the same Blave API — best-effort, and it RAISES
@@ -185,10 +196,10 @@ def current_price(symbol, env, max_age=_PRICE_TTL_S):
 
 
 def _resolve_price(symbol, env):
-    name = _resolve_strategy(symbol)
     hdrs = _hdrs(env)
-    if not name and is_tw_stock(symbol):
-        return _tw_stock_price(symbol, hdrs)
+    if is_tw_stock(symbol):
+        return _tw_stock_price(symbol, hdrs), None
+    name = _resolve_strategy(symbol)
     if name:
         mod = _load_strategy(name)
         try:
@@ -201,8 +212,7 @@ def _resolve_price(symbol, env):
                                f"{type(e).__name__}: {e}")
     # No bar strategy owns this symbol (Type B crypto / manual, a Type C
     # component): best-effort generic 1m crypto kline over a short recent
-    # window. A TW stock code took _tw_stock_price above; anything else with
-    # no such feed RAISES rather than guessing.
+    # window. Anything with no such feed RAISES rather than guessing.
     try:
         from datetime import datetime, timedelta, timezone
         from lib.data import fetch_kline
@@ -214,53 +224,20 @@ def _resolve_price(symbol, env):
                            f"lookup failed: {type(e).__name__}: {e}")
 
 
-# ── TW stocks: Type C components, session ───────────────────────────────────
-
-_START_RE = re.compile(r'^\s*START\s*=\s*["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']', re.M)
-
-
-def _portfolio_owner(symbol):
-    """(name, START) of a Type C strategy whose live weights hold `symbol`, or
-    None. Its fetch_data is never called for a price: it pulls the whole
-    universe (a TW 100-stock basket runs minutes), far past the account
-    reader's 60s budget."""
-    want = _norm(symbol)
-    for path in sorted(glob.glob("strategies/*/state.json")):
-        try:
-            with open(path) as f:
-                w = json.load(f).get("weights")
-        except (OSError, ValueError, AttributeError):
-            continue
-        if not isinstance(w, dict) or want not in {_norm(k) for k in w}:
-            continue
-        name = os.path.basename(os.path.dirname(path))
-        try:
-            with open(f"strategies/{name}/strategy.py") as f:
-                m = _START_RE.search(f.read())
-        except OSError:
-            m = None
-        return name, (m.group(1) if m else None)
-    return None
-
+# ── TW stocks: price, session ────────────────────────────────────────────────
 
 def _tw_stock_price(symbol, hdrs):
-    """Latest daily Close of a TW stock no Type A strategy prices. A Type C
-    component: the dividend-adjusted close anchored at that strategy's START —
-    lib.data's adjustment is anchored at the window start (2330 on 2026-10-16:
-    2420 from a 10-day window, 2755.89 from 2020), so only the strategy's own
-    START reproduces the close it rebalanced on. No owner (Type B / manual):
-    the unadjusted close, what a broker app shows. Desktop: Blave CDN, no key."""
+    """Latest unadjusted daily Close of a TW stock — fetch_twstock_price, the
+    same data and cache as the page's fetch_twstock_price_batch, under the same
+    code (runner strips .TW/.TWO before its batch call). A Type C fetch_data is
+    never run for it: a whole TW universe takes minutes, far past the account
+    reader's 60s budget. Desktop: Blave CDN, no key."""
     from datetime import datetime, timedelta, timezone
     from lib import data
-    code = _norm(symbol)
-    owner = _portfolio_owner(code)
+    code = re.sub(r"\.TWO?$", "", _norm(symbol))
+    start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
     try:
-        if owner:
-            df = data.fetch_twstock_price_adj(code, owner[1] or "2015-01-01", None, hdrs)
-        else:
-            start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
-            df = data.fetch_twstock_price(code, start, None, hdrs)
-        return _last_close(df), owner[0] if owner else None
+        return _last_close(data.fetch_twstock_price(code, start, None, hdrs))
     except PaperNoPrice:
         raise
     except Exception as e:
