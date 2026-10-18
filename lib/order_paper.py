@@ -699,6 +699,7 @@ def _stamp_pre_fx_rows(env, led, marks):
 
 TW_RAW = "raw"  # a TW stock row booked at the unadjusted close (px_basis / spot_px_basis)
 TW_REBASE_RETRY_S = 3600
+TW_REBASE_SANE = (0.1, 10.0)  # raw ÷ adjusted: dividends put it under 1, a capital reduction a little over
 
 
 def _rebase_tw_rows(env, led, marks):
@@ -739,6 +740,14 @@ def _rebase_tw_rows(env, led, marks):
             return False, None
         led.get("tw_rebase_wait", {}).pop(sym, None)
         f = raw / old
+        if not TW_REBASE_SANE[0] < f < TW_REBASE_SANE[1]:
+            # not an adjustment (a fetch_data whose Close is not the price): an irreversible
+            # restatement on it would wreck the row — marked as it is, audited
+            log.warning(f"paper {sym}: rebase factor {f:.4g} (raw {raw} / adjusted {old}) out of range — row left as is")
+            led.setdefault("_after_save", []).append(("paper_tw_rebase", dict(
+                venue=VENUE, symbol=sym, adjusted=old, raw=raw, factor=round(f, 6),
+                skipped="factor out of range")))
+            return True, None
         if sym not in scaled:
             scaled[sym] = _rescale_tw_triggers(led, sym, f)
         return True, (f, old, raw, rate, scaled[sym])

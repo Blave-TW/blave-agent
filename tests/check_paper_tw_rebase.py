@@ -200,6 +200,21 @@ equity()
 L = led()
 check(L["spot_px_basis"].get("9999") == "raw" and L["cash"] == cash and not rebases(), "no owner: marked only")
 
+print("== a factor no adjustment can give (owner's Close is not the price): marked, not restated")
+L = led()
+L["positions"]["2330"].pop("px_basis")
+e_before = L["positions"]["2330"]["entry"]
+put(L)
+open("strategies/tw_a/strategy.py", "a").write("\n\ndef fetch_data(hdrs):\n    import pandas as pd\n"
+                                              "    return pd.DataFrame({'Close': [1.02]}, index=[pd.Timestamp.now().floor('D')])\n")
+paper_data._mod_cache.clear()
+audits.clear()
+equity()
+L = led()
+skipped = [f for f in rebases() if f.get("skipped")]
+check(L["positions"]["2330"].get("px_basis") == "raw" and L["positions"]["2330"]["entry"] == e_before and len(skipped) == 1,
+      f"factor 2420/1.02 out of range: entry kept, marked, audited as skipped ({skipped})")
+
 print("== crypto rows are untouched")
 L = led()
 L["positions"]["BTCUSDT"] = {"qty": 1.0, "entry": 50000.0}
