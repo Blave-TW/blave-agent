@@ -646,6 +646,8 @@ html.ws-sc .side-gate { display: none; }
 .fog { position: relative; flex: 1; min-height: 360px; overflow: hidden; margin: calc(-1 * var(--space-24)); }
 .fog-under { padding: var(--space-24); filter: blur(var(--fog-blur)); pointer-events: none; user-select: none; transform: translateZ(0); overflow: hidden; }
 .fog::after { content: ""; position: absolute; inset: 0; background: var(--fog-mask); pointer-events: none; }
+/* 優化分頁的霧在工具列下面:上緣不往上吃進工具列 */
+#po-opt > .fog.mg-fog { margin-top: var(--space-16); }
 .fog-card { position: absolute; z-index: 1; left: 50%; top: 48px; transform: translateX(-50%); width: 360px; max-width: calc(100% - 32px); box-sizing: border-box;
   padding: var(--space-24); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
 .fog-card p { margin: 0 0 var(--space-16); font-size: 14px; line-height: 1.6; color: var(--ink); }

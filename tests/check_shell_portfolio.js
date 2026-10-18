@@ -885,4 +885,16 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     "還沒有策略設定金額，先到策略組合設定。", "No strategy has an amount yet. Set one under Portfolio.", "帳上", "Held"];
   const miss = want.filter((v) => !has(v));
   ok("A 案字串兩語逐字同網頁(帳上、策略外、細節三段、門檻前導、到策略組合修改、啟動那句、原因行縮短版)", !miss.length, J(miss)); }
+// 實機 integ2 10-18:優化分頁選了 2 檔、還沒跑優化也沒跑回測時下方整片空白 → Setup fog(CTA 跑優化,工具列那顆藏起來)
+{ const st = { blocked: false, members: ["a", "b"], prop: null, bt: null, running: false, job: null, short: null };
+  const ctx = vm.createContext({ mgBlocked: () => st.blocked, mgMembers: () => st.members, mgProposal: () => st.prop, mgBacktest: () => st.bt, mgRunning: () => st.running, mgJob: () => st.job, mgShort: () => st.short });
+  vm.runInContext(cutF(psrc, "mgFogOn"), ctx);
+  const G0 = () => ({ err: null, optBusy: false, btSending: false, shortDismissed: false, wait: { opt: null, bt: null } }), on = (o, g) => { const keep = Object.assign({}, st); Object.assign(st, o || {}); try { return vm.runInContext("mgFogOn", ctx)(Object.assign(G0(), g || {})); } finally { Object.assign(st, keep); } };
+  ok("優化分頁的霧:2 檔、沒權重沒回測 → 開;1 檔／0 檔、有權重、有回測、回測在跑、回測失敗、資料不足警示、送出中、等績效、機器落後 → 不開",
+    on() === true && on({ members: ["a"] }) === false && on({ members: [] }) === false && on({ prop: {} }) === false && on({ bt: {} }) === false && on({ running: true }) === false
+    && on({ job: { status: "error" } }) === false && on({ short: { n: 10, l: 60 } }) === false && on({ short: { n: 10, l: 60 } }, { shortDismissed: true }) === true
+    && on({}, { optBusy: true }) === false && on({}, { btSending: true }) === false && on({}, { wait: { opt: { left: ["a"] }, bt: null } }) === false && on({ blocked: true }) === false && on({}, { err: "x" }) === false);
+  ok("…霧開著時工具列的「跑優化」藏起來、霧上 CTA 是 mg.optRun 接 mgRunOptimize;兩語都有 mg.fogOpt 帶 {n}",
+    /if \(fog\) box\.appendChild\(poFog\("opt"\)\);/.test(psrc) && /opt\.hidden = !!fog;/.test(psrc) && /kind === "opt"\) \{ b\.id = "mg-fog-opt"; b\.dataset\.fk = "mg-fog-opt"; b\.addEventListener\("click", mgRunOptimize\); \}/.test(psrc)
+    && (() => { const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"), S2 = (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); return /\{n\}/.test(S2.zh["mg.fogOpt"]) && /\{n\}/.test(S2.en["mg.fogOpt"]); })()); }
 Promise.all([btCancelTest, freshTest, pollTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

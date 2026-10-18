@@ -331,6 +331,19 @@
     return { from: s.from - pad, to: s.to + pad };
   }
 
+  // 點一筆要看的範圍(實機 10-18:一直在場、每天微調的策略整段就是 2021–2026,框整段等於縮到看不見):
+  // 這段部位框起來不比現在的視野(viewBars 根)寬 → 照舊框整段、墊整段灰帶、同段的列一起亮;
+  // 比視野寬 → 以這一筆為中心看 MIN_BARS 根、灰帶只墊這一根、清單只亮這一列
+  function pickView(track, candles, ts, viewBars) {
+    const whole = trackBarRange(track, candles);
+    if (whole.to - whole.from <= Math.max(MIN_BARS, viewBars || 0)) {
+      const s = trackSpan(track, candles);
+      return { range: whole, band: s, whole: true };
+    }
+    const i = snapIndex(ts, candles);
+    return { range: clampRange(i - MIN_BARS / 2, MIN_BARS, candles.length - 1), band: { from: i, to: i }, whole: false };
+  }
+
   // 這段部位的損益 = Σ賣出金額 − Σ買進金額(同雲端 buildPositionTracks / finalizeOpenTrack):
   // 未平倉的用最後一根收盤價算浮動;partial 的進場成本不在紀錄裡,不給數字
   function trackPnl(track, lastClose) {
@@ -1038,7 +1051,11 @@
     const els = new Map(); // point id → 已長出來的列
     let selTrack = -1;
     let currentId = null;
+    let selOnly = false;
     let hotEl = null;
+    const isSel = function (entry) {
+      return selOnly ? entry.id === currentId : entry.trackIdx === selTrack;
+    };
     function buildRow(entry) {
       const p = entry.point;
       const isBuy = p.direction === "buy";
@@ -1057,7 +1074,7 @@
       l2.appendChild(el("span", "tr-pos", t("tr.position", { n: p.posAfter.toFixed(4) })));
       row.append(l1, l2);
       row.title = rowTip(entry.track);
-      if (entry.trackIdx === selTrack) row.classList.add("is-sel");
+      if (isSel(entry)) row.classList.add("is-sel");
       if (entry.id === currentId) row.setAttribute("aria-current", "true");
       row.addEventListener("click", function () {
         onPick(entry.trackIdx, entry.id, false);
@@ -1082,11 +1099,13 @@
     return {
       pick: onPick,
       // trackIdx = -1 取消選取;id = 被點的那一筆(aria-current 只掛它,同段其他列只是一起亮)
-      select: function (trackIdx, id) {
+      // onlyRow:這段太長、只亮點的那一列(pickView whole false)
+      select: function (trackIdx, id, onlyRow) {
         selTrack = trackIdx;
         currentId = trackIdx < 0 ? null : id;
+        selOnly = !!onlyRow;
         els.forEach(function (row, rid) {
-          row.classList.toggle("is-sel", rows[indexOf.get(rid)].trackIdx === trackIdx);
+          row.classList.toggle("is-sel", isSel(rows[indexOf.get(rid)]));
           if (rid === currentId) row.setAttribute("aria-current", "true");
           else row.removeAttribute("aria-current");
         });
@@ -1169,24 +1188,27 @@
 
     const listEl = el("div", "tr-list");
     root.appendChild(listEl);
-    let selected = -1;
-    // 點列與點箭頭同一件事:圖框住整段部位、墊灰帶、同段的列一起亮;再點同一段就取消(範圍不動)
+    let selected = null;
+    // 點列與點箭頭同一件事:圖框住那段部位(太長就只看這一筆附近,pickView)、墊灰帶、亮列;再點同一段(長段是同一筆)就取消(範圍不動)
     const list = buildList(listEl, buildRows(tracks), withYear, dateOnly, function pick(trackIdx, id, fromChart) {
-      if (trackIdx === selected) {
-        selected = -1;
+      const track = tracks[trackIdx];
+      const pi = Number(/_(\d+)$/.exec(id)[1]);
+      const cur = built ? built.getRange() : null;
+      const v = candles.length ? pickView(track, candles, track.points[pi].ts, cur ? cur.to - cur.from : 0) : { whole: true };
+      const key = v.whole ? "t" + trackIdx : id;
+      if (key === selected) {
+        selected = null;
         list.select(-1);
         if (built) built.segments.setBand(null);
         return;
       }
-      selected = trackIdx;
-      list.select(trackIdx, id);
+      selected = key;
+      list.select(trackIdx, id, !v.whole);
       if (fromChart) list.reveal(id);
       trackFeature(fromChart ? "trades_mark_pick" : "trades_row_pick");
       if (!built) return;
-      const track = tracks[trackIdx];
-      const s = trackSpan(track, candles);
-      built.segments.setBand({ t0: candles[s.from].time, t1: candles[s.to].time });
-      built.setRange(trackBarRange(track, candles));
+      built.segments.setBand({ t0: candles[v.band.from].time, t1: candles[v.band.to].time });
+      built.setRange(v.range);
     });
     if (built) wireChartToList(built, host, candles, list);
   }
@@ -1251,6 +1273,7 @@
     buildRows: buildRows,
     buildSegments: buildSegments,
     trackBarRange: trackBarRange,
+    pickView: pickView,
     trackSpan: trackSpan,
     trackPnl: trackPnl,
     initialRange: initialRange,

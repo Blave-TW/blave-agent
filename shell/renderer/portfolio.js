@@ -232,13 +232,15 @@ const PO = { wired: false };
 function poFog(kind) {
   const fog = trEl("div", "fog"), under = trEl("div", "fog-under pf"), pos = kind === "pos-pick" || kind === "pos-new" || kind === "pos-draft";
   under.setAttribute("aria-hidden", "true"); under.inert = true;
-  if (kind === "connect") under.appendChild(poFogOver()); else if (pos) under.appendChild(poFogPos()); else under.appendChild(poFogCfg());
+  if (kind === "opt") fog.classList.add("mg-fog");
+  if (kind === "connect") under.appendChild(poFogOver()); else if (pos) under.appendChild(poFogPos()); else if (kind === "opt") under.appendChild(poFogOpt()); else under.appendChild(poFogCfg());
   const card = trEl("div", "fog-card");
-  const msg = card.appendChild(trEl("p", "", t(kind === "pick" ? "po.fogPick" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? "tr.fogPosNew" : kind === "pos-draft" ? "tr.startOffDraft" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect")));
+  const msg = card.appendChild(trEl("p", "", kind === "opt" ? t("mg.fogOpt", { n: mgMembers().length }) : t(kind === "pick" ? "po.fogPick" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? "tr.fogPosNew" : kind === "pos-draft" ? "tr.startOffDraft" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect")));
   if (pos) msg.id = "tr-pos-fog-msg";
-  const b = trEl("button", "btn-fill", t(kind === "pick" || kind === "pos-pick" ? "tr.pick" : kind === "pos-new" ? "ns.chip" : kind === "pos-draft" ? "po.goAmounts" : "cx.connect")); b.type = "button";
+  const b = trEl("button", "btn-fill", t(kind === "opt" ? "mg.optRun" : kind === "pick" || kind === "pos-pick" ? "tr.pick" : kind === "pos-new" ? "ns.chip" : kind === "pos-draft" ? "po.goAmounts" : "cx.connect")); b.type = "button";
   if (kind === "pick") { b.id = "tr-pick"; b.dataset.fk = "pick"; b.disabled = trPickOff(); b.addEventListener("click", () => psOpen(b)); }
   // 部位霧只在選擇策略框開得了時才出(trZNow 的 wait 含 trPickOff),停用在這裡只是保險,不會有停用而沒有原因的卡
+  else if (kind === "opt") { b.id = "mg-fog-opt"; b.dataset.fk = "mg-fog-opt"; b.addEventListener("click", mgRunOptimize); }
   else if (kind === "pos-pick") { b.id = "tr-pos-pick"; b.dataset.fk = "pos-pick"; b.disabled = trPickOff(); b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("pick", b); }); }
   else if (kind === "pos-new") { b.id = "tr-pos-new"; b.dataset.fk = "pos-new"; b.addEventListener("click", () => { trackFeature("trade_fog_new"); trZGo("noStrat", b); }); }
   else if (kind === "pos-draft") { b.id = "tr-pos-draft"; b.dataset.fk = "pos-draft"; b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("draft", b); }); }
@@ -268,6 +270,23 @@ function poFogCfg() {
   const tb2 = document.createElement("tbody");
   [["BTCUSDT", "+10,000", "buy"], ["ETHUSDT", "−3,000", "sell"], ["SOLUSDT", "0", "na"]].forEach((x) => { const r = document.createElement("tr"); r.append(trEl("td", "sym", x[0]), trEl("td", "n " + x[2], x[1])); tb2.appendChild(r); });
   t2.appendChild(tb2); f.appendChild(t2);
+  return f;
+}
+// 示意底(策略組合 › 優化):權重分配表＋移動窗格回測的一條有回撤的線,數字寫死
+function poFogOpt() {
+  const f = document.createDocumentFragment();
+  f.appendChild(trSec(trEl("span", "label", t("mg.secAmounts"))));
+  const tbl = trEl("table", "pf-tbl zoned mg-tbl");
+  tbl.appendChild(trHead([[t("tr.col.strategy"), ""], [t("mg.colWeight"), "n"], [t("tr.col.amount"), "n", "USDT"]]));
+  const tb = document.createElement("tbody");
+  [["A", "50%", "10,000"], ["B", "30%", "6,000"], ["C", "20%", "4,000"]].forEach((x) => { const r = document.createElement("tr"); r.append(trEl("td", "key", t("po.fogStrat", { x: x[0] })), trEl("td", "n", x[1]), trEl("td", "n", x[2])); tb.appendChild(r); });
+  tbl.appendChild(tb); f.appendChild(tbl);
+  f.appendChild(trSec(trEl("span", "label", t("mg.secBt"))));
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"), pl = document.createElementNS(NS, "polyline");
+  svg.setAttribute("viewBox", "0 0 600 180"); svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("class", "fog-curve");
+  pl.setAttribute("fill", "none"); pl.setAttribute("stroke", "currentColor"); pl.setAttribute("stroke-width", "2");
+  pl.setAttribute("points", "0,120 30,112 60,124 90,100 120,96 150,118 180,132 210,126 240,104 270,110 300,92 330,98 360,120 390,102 420,88 450,96 480,84 510,100 540,90 570,78 600,86");
+  svg.appendChild(pl); f.appendChild(svg);
   return f;
 }
 // 示意底(自動下單 › 部位):區段標題＋標的｜目標｜帳上｜差額＋合計,數字寫死、不上紅綠(示意底不放大塊亮色)
@@ -638,16 +657,23 @@ function mgPaint() {
   if (S.sig.opt === sig && box.childElementCount) { mgDrawChart(); return; }
   const keep = trPosFocusOf(box);
   S.sig.opt = sig; G.chartSig = null; box.textContent = "";
-  const blocked = mgBlocked();
+  const blocked = mgBlocked(), fog = !!m && mgFogOn(G);
   if (blocked) box.appendChild(mgOutdatedBox());   // 因在前、果在後:先讀到為什麼不能按,再看到被關掉的控制項
-  box.appendChild(mgToolbar(blocked));
+  box.appendChild(mgToolbar(blocked, fog));
   if (m) {
     if (G.err && !blocked) box.appendChild(trEl("p", "mg-err", G.err));
-    box.appendChild(mgSuggest());
-    box.appendChild(mgBacktestSec());
+    if (fog) box.appendChild(poFog("opt"));
+    else { box.appendChild(mgSuggest()); box.appendChild(mgBacktestSec()); }
   }
   trPosFocusBack(box, keep, $("po-h"));
   mgDrawChart();
+}
+/* 選了兩檔以上、還沒有權重也沒有回測(沒在跑、沒錯、沒警示):工具列下面原本整片空白(實機 integ2 10-18)→ Setup fog,CTA 是「跑優化」。
+   「策略 N 檔」「方法」與「跑回測」留在工具列;同一個動作只出現一次,工具列的「跑優化」在霧開著時藏起來 */
+function mgFogOn(G) {
+  if (mgBlocked() || G.err || G.optBusy || G.btSending || mgMembers().length < 2 || mgProposal() || mgBacktest() || mgRunning()) return false;
+  const j = mgJob(), sh = mgShort();
+  return !(j && j.status === "error") && !(sh && !G.shortDismissed) && !["opt", "bt"].some((w) => G.wait[w] && G.wait[w].left.length);
 }
 // 機器落後:同頁警示條;出口是設定 › 一般的「檢查更新」(雲端 = 更新雲端主機)
 function mgOutdatedBox() {
@@ -659,7 +685,7 @@ function mgOutdatedBox() {
   return box;
 }
 // 單一工具列(全頁按鈕只在這一列):左設定組(策略 N 檔、方法),右「跑優化」「跑回測」
-function mgToolbar(outdated) {
+function mgToolbar(outdated, fog) {
   const G = mgBag(), tb = trEl("div", "mg-toolbar"), set = trEl("div", "tb-set");
   const bs = trEl("button", "tb-fld"); bs.type = "button"; bs.dataset.mgOpen = "strat"; bs.dataset.fk = "mg-strat"; bs.title = t("tr.pick");
   bs.append(trEl("span", "", t("mg.tbStrat")), trEl("span", "v", t("mg.tbStratN", { n: mgMembers().length })));
@@ -675,6 +701,7 @@ function mgToolbar(outdated) {
   if (G.optBusy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); opt.append(sp, t("mg.optRunning")); } else opt.textContent = t("mg.optRun");
   opt.disabled = outdated || G.optBusy || !mgMembers().length;
   opt.addEventListener("click", mgRunOptimize);
+  opt.hidden = !!fog;   // 霧上的 CTA 就是這顆;右對齊的一組,藏左邊這顆「跑回測」不會位移
   const bt = trEl("button", "btn-out tb-run2", t("mg.btRun")); bt.type = "button"; bt.dataset.fk = "mg-bt";
   const reason = outdated ? null : mgBtBlockReason();
   bt.disabled = outdated || !!reason || mgRunning() || G.btSending;

@@ -132,6 +132,21 @@ if (!process.versions.electron) {
     ok("① 首根 K 棒之前那段不佔名額:範圍跟沒有那段時一樣", J(TP.initialRange(tr, c, 6 * 24)) === J(TP.initialRange(base.tr, base.c, 6 * 24)), J([TP.initialRange(tr, c, 6 * 24), TP.initialRange(base.tr, base.c, 6 * 24)]));
     ok("① 寬 0 / 沒有段 → 退回最近 130 根", J(TP.initialRange(tr, c, 0)) === J({ from: 870, to: 1003 }) && J(TP.initialRange([], c, 900)) === J({ from: 870, to: 1003 })); }
 
+  // 實機 integ2 10-18:Supertrend SOL 一直在場、每天微調(2132 筆一段):點一筆不再縮成整段、整片清單變灰
+  { const P = [[10, null, 1800]], { c, tr } = build(fixture(2000, P)), pick = tr[0].points[900], i = Math.round((pick.ts - c[0].time) / DAY);
+    const v = TP.pickView(tr[0], c, pick.ts, 300);
+    ok("① pickView 長段(比視野寬):以那一筆為中心看 130 根、灰帶只墊那一根、不是整段", !v.whole && v.range.to - v.range.from === 130 && Math.abs((v.range.from + v.range.to) / 2 - i) <= 0.5
+      && v.band.from === i && v.band.to === i, J({ v, i }));
+    const tl = build(fixture(1830, P)), e = TP.pickView(tl.tr[0], tl.c, tl.tr[0].points[tl.tr[0].points.length - 1].ts, 300);
+    ok("① pickView 長段點最新那筆(離尾端不到 65 根):範圍夾在資料尾端(最後一根 + 4),寬度照樣 130,灰帶仍在那一根", e.range.to === 1833 && e.range.to - e.range.from === 130 && e.band.from === 1810, J(e));
+    const short = build(fixture(2000, [[500, 540]])), w = TP.pickView(short.tr[0], short.c, short.tr[0].points[0].ts, 300);
+    ok("① pickView 短段(框得進視野):照舊框整段 trackBarRange、灰帶整段", w.whole && J(w.range) === J(TP.trackBarRange(short.tr[0], short.c)) && w.band.from === 500 && w.band.to === 540, J(w));
+    const zoomed = TP.pickView(tr[0], c, pick.ts, 5000);
+    ok("① pickView 視野本來就是整段(縮到最遠):長段也照舊框整段", zoomed.whole, J(zoomed));
+    const src = read(path.join(R, "report-trades.js"));
+    ok("① 點長段只亮點的那一列(select 第三個參數)、短段同段一起亮;同一筆再點才取消", /list\.select\(trackIdx, id, !v\.whole\);/.test(src) && /return selOnly \? entry\.id === currentId : entry\.trackIdx === selTrack;/.test(src)
+      && /const key = v\.whole \? "t" \+ trackIdx : id;/.test(src)); }
+
   ok("① clampRange:範圍寬度不變、夾在 [-2, 最後一根 + 4];比整段寬就貼左", J(TP.clampRange(-50, 100, 999)) === J({ from: -2, to: 98 }) && J(TP.clampRange(950, 100, 999)) === J({ from: 903, to: 1003 })
     && J(TP.clampRange(400, 100, 999)) === J({ from: 400, to: 500 }) && J(TP.clampRange(10, 5000, 999)) === J({ from: -2, to: 4998 }));
 

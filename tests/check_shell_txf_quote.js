@@ -140,7 +140,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       ok("§9.3 綁 Binance:區順序 USDT(帳戶幣)→ USDC → TWD;SOLUSDC 在 USDC 區(不被帳戶幣吃掉);區內照金額排",
         J(grps.map((g) => g[0])) === J(["USDT", "USDC", "TWD"]) && J(rows.map((r) => r[0])) === J(["BTC", "FRESH", "SOL", "TW"]), J([grps, rows]));
       ok("§9.4 區標題:USDT 兩列出小計 600;一列的 USDC、TWD 不出小計;區標題都不掛倍數", J(grps[0]) === J(["USDT", "", "600", ""]) && J(grps[1]) === J(["USDC", "", "", ""]) && J(grps[2]) === J(["TWD", "", "", ""]), J(grps));
-      ok("§8.2 Type C 列:標的列 weights ∪ universe 全部成分、持有的排前面(0 權重的 2454 照列、排最後);部位「多 297,000」只算持有的、副行持倉 2 檔", J(by.TW.slice(1)) === J(["2317" + "ak.sep" + "2330" + "ak.sep" + "2454", 'tr.rel.long 297,000tr.typeCHold {"n":2}', "n pos"]), J(by.TW));
+      ok("§8.2 Type C 列:有持股時標的格只列持有的(實機 integ2 10-18:數字是持股數,0 權重的 2454 不列);部位「多 297,000」只算持有的、副行持倉 2 檔", J(by.TW.slice(1)) === J(["2317" + "ak.sep" + "2330", 'tr.rel.long 297,000tr.typeCHold {"n":2}', "n pos"]), J(by.TW));
       ok("signals_frozen.pending:部位寫 po.hostOld(主機版本較舊,同網頁 a8239131),不畫空手", by.FRESH[2] === "po.hostOld" && /\bna pending\b/.test(by.FRESH[3]), J(by.FRESH));
       ok("§9.7 三區、沒有匯率:合計「—」;倍數照算、接在合計後面——Binance 會下單的 USDT 600 + USDC 100(缺匯率 1:1)÷ 10,000 = 0.07,台股 300,000 不算",
         tot.textContent === 'tr.total—', tot.textContent);
@@ -195,8 +195,8 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
         && !flat(b12.extra).some((n) => n.className === "cf-ack" || (n.tag === "input" && n.type === "checkbox")) && b12.okDisabled === false && !ctx.DELOK.attrs["aria-describedby"]);
       ok("smallfixes #13 模擬帳戶 12 倍照樣可存:確認鈕不停用、沒有紅字 .cf-block", bp.okDisabled === false && !flat(bp.extra).some((n) => /cf-block/.test(n.className) || / over\b/.test(n.className)));
       const tot = flat(box("okx", 44946800).extra).find((n) => /\btotal\b/.test(n.className));
-      ok("淨值倍數千分位兩位小數:44,946,800 ÷ 10,000 = 4,494.68×(確認框合計;金額表同一個 trMultFmt)", /tr\.equityMult \{"x":"4,494\.68"\}$/.test(tot.textContent)
-        && (src.match(/t\("tr\.equityMult", \{ x: trMultFmt\(zt\.mult\) \}\)/g) || []).length === 2 && !/equityMult", \{ x: [^}]*toFixed/.test(src), tot.textContent);
+      ok("淨值倍數千分位兩位小數:44,946,800 ÷ 10,000 = 4,494.68×(確認框合計;金額表與啟動框都讀 trZoneSum 的 multText,只此一處 trMultFmt)", /tr\.equityMult \{"x":"4,494\.68"\}$/.test(tot.textContent)
+        && (src.match(/t\("tr\.equityMult", \{ x: trMultFmt\(mult\) \}\)/g) || []).length === 1 && (src.match(/"tr\.equityMult"/g) || []).length === 1 && !/equityMult", \{ x: [^}]*toFixed/.test(src), tot.textContent);
       ok("拿掉的字串與 CSS 不留殘骸;tr.lev.binance5 留著(連接框子帳戶說明還在用)", (() => {
         const gone = ["tr.lev.margin", "tr.lev.marginShort", "tr.lev.pctLt1", "tr.lev.loss", "tr.lev.lossPaper", "tr.lev.ack", "tr.txfBigNotional", "tr.txfBigNotional1", "tr.txfBigLots"];
         const po = ["zh", "en"].map((l) => fs.readFileSync(path.join(S, "i18n", l + ".po"), "utf8")), strs = fs.readFileSync(path.join(R, "strings.js"), "utf8");
