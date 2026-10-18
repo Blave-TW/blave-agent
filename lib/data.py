@@ -2572,15 +2572,28 @@ def _tw_cdn_events_frame(events, start, end):
     return ev[(ev.index >= pd.Timestamp(start)) & (ev.index <= end_ts)]
 
 
-def _tw_cdn_bars(raw):
+def _tw_cdn_bars(raw, fill=True):
     """CDN rows → the fetch_twstock_price frame, built exactly as _tw_daily_frame builds it
-    (untraded prices null → forward-filled)."""
+    (untraded prices null → forward-filled). fill=False keeps the untraded rows null, for a
+    frame that is adjusted before it is filled (_tw_cdn_adjust_fill)."""
     if raw.empty:
         return pd.DataFrame(columns=_TW_DAILY_COLS)
     df = pd.DataFrame({'Open': raw['open'].values, 'High': raw['high'].values, 'Low': raw['low'].values,
                        'Close': raw['close'].values, 'Volume': raw['volume'].values},
                       index=pd.DatetimeIndex(pd.to_datetime(raw['date']), name='date')).sort_index()
-    return df.astype(float).replace(0, float('nan')).ffill()
+    df = df.astype(float).replace(0, float('nan'))
+    return df.ffill() if fill else df
+
+
+def _tw_cdn_adjust_fill(df, events, adjust):
+    """Unfilled CDN bars → adjusted (when asked), then forward-filled. Adjusting first is what
+    the Blave endpoint does: a halted day has no price there, so an ex-date that falls inside a
+    halt (6242 2016-08-31, 1805 2011-09-08 減資) shows the last traded adjusted price until the
+    stock trades again. Filling first would carry the pre-event price into the event day and
+    put a fake jump there, undone on the resumption day."""
+    if adjust and not df.empty:
+        df = _tw_forward_adjust(df, events)
+    return df.ffill()
 
 
 def _tw_slice(df, start, end):
@@ -2605,7 +2618,7 @@ def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
     raw, events, file_last = _tw_cdn_stock_file(stock_id, manifest)
     entry = manifest['stocks'][stock_id]
     market = entry[0]
-    df = _tw_cdn_bars(raw)
+    df = _tw_cdn_bars(raw, fill=False)
     # an edge copy older than the manifest says: its own last day is what we have
     asof = min(manifest['asof'], file_last) if file_last < entry[2] else manifest['asof']
     ev = _tw_cdn_events_frame(events, start, end)
@@ -2620,16 +2633,14 @@ def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
             idx = pd.DatetimeIndex(extra.index)   # an empty answer has a plain index
             extra = extra[(idx > pd.Timestamp(asof)) & (idx <= pd.Timestamp(final))]
             if not extra.empty:
-                df = pd.concat([df, extra[_TW_DAILY_COLS]]).ffill()
+                df = pd.concat([df, extra[_TW_DAILY_COLS]])
                 if adjust:
                     ev = pd.concat([ev, _tw_exright_for(stock_id, market, tail_start, end)])
             complete = final
         except Exception as e:
             print(f"  ⚠️  {stock_id} daily bars: days after the CDN's {asof} not available from the exchange "
                   f"({type(e).__name__}: {str(e)[:120]}) — serving through {asof}")
-    df = _tw_slice(df, start, end)
-    if adjust and not df.empty:
-        df = _tw_forward_adjust(df, ev)
+    df = _tw_slice(_tw_cdn_adjust_fill(df, ev, adjust), start, end)
     df.attrs['source'] = 'TWSE' if market == 'twse' else 'TPEx'
     df.attrs['via'] = 'Blave CDN'
     df.attrs['asof'] = complete
@@ -2780,11 +2791,10 @@ def _twstock_cdn_batch(stock_ids, start, end, adjust):
             df.attrs['asof'] = complete
             results[sid] = df
         for sid, g in rows.groupby('stock_id'):
-            df = _tw_slice(_tw_cdn_bars(g), start, end)
-            if adjust and not df.empty:
-                e = ev[ev['stock_id'] == sid]
-                e = e.assign(date=pd.to_datetime(e['date'])).set_index('date')[['stock_id', 'prev_close', 'ref_price']]
-                df = _tw_forward_adjust(df, e[(e.index >= pd.Timestamp(start))])
+            e = ev[ev['stock_id'] == sid]
+            e = e.assign(date=pd.to_datetime(e['date'])).set_index('date')[['stock_id', 'prev_close', 'ref_price']]
+            df = _tw_slice(_tw_cdn_adjust_fill(_tw_cdn_bars(g, fill=False), e[(e.index >= pd.Timestamp(start))],
+                                               adjust), start, end)
             df.attrs['source'] = 'TWSE' if manifest['stocks'][sid][0] == 'twse' else 'TPEx'
             df.attrs['via'] = 'Blave CDN'
             df.attrs['asof'] = complete
