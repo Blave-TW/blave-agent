@@ -256,6 +256,13 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
   const on = trClientTargets(amt, tw);
   vid = "binance"; const crypto = trClientTargets(amt, tw);
   vid = "paper"; okTw = false; const old = trClientTargets(amt, tw);
+  // 稽核 web-integ B3:標的格與「持有：」(trTypeC)同一條——MARKET=swap 的台股投資組合路由到模擬交易,負權重壓 0
+  okTw = true; const tcPaper = trTypeC(tw.c, "c"), tcNoName = trTypeC(tw.c);
+  vid = "binance"; const tcBn = trTypeC(tw.c, "c"); vid = "paper";
+  ok("trTypeC:模擬交易的台股負權重壓 0(不算持有);加密的負權重照舊算空頭;別家交易所、沒給策略名照舊",
+    J(tcPaper) === J({ n: 2, long: 0.5, short: 0.5, keys: ["2317", "2454", "BTCUSDT"], held: ["2454", "BTCUSDT"] })
+    && tcBn.n === 3 && tcBn.short === 1 && tcNoName.n === 3
+    && (src.match(/tc = trTypeC\(st, n\)/g) || []).length === 2 && !/trTypeC\(st\)/.test(src));
   delete globalThis.trReport; delete globalThis.trPaperTwOk; delete globalThis.PAPER;
   const SJ = (o) => J(Object.keys(o).sort().map((k) => [k, o[k]]));
   ok("模擬交易台股:一多 30,000 一空 50,000 → 2330@spot 30,000(空頭不抵多單);投資組合的台股負權重壓 0、加密照舊可空;別家交易所或舊 lib 照舊加總",

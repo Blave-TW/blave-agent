@@ -650,14 +650,15 @@ function trSuffixZone(sym) {
   return q || null;
 }
 /* 投資組合(Type C)的持有權重(§8.2):現貨負權重先壓 0、壞值當 0,「持有」= w' ≠ 0。n 只數持有的。
+   n = 策略名:路由到模擬交易的台股(trPaperOf)不管 MARKET 一律現股,負權重同樣壓 0(同 trClientTargets、lib/portfolio.aggregate_portfolio、網頁 pfHeldWeight)。
    keys = 全部成分(推計價、列成分用):回報的 weights 丟掉 0 權重,runtime 另帶 st.universe(含 0);舊 runtime 沒這欄,
    空手時 keys 就是空的(照舊)。不是投資組合回 null */
-function trTypeC(st) {
+function trTypeC(st, n) {
   const w = st && st.weights && typeof st.weights === "object" && !Array.isArray(st.weights) ? st.weights : null;
   if (!w) return null;
-  const out = { n: 0, long: 0, short: 0, keys: Object.keys(w), held: [] };
+  const out = { n: 0, long: 0, short: 0, keys: Object.keys(w), held: [] }, paperTw = n != null && trPaperOf(n);
   (Array.isArray(st.universe) ? st.universe : []).forEach((k) => { if (typeof k === "string" && k && out.keys.indexOf(k) < 0) out.keys.push(k); });
-  out.keys.forEach((k) => { let x = Number(w[k]); if (!isFinite(x) || (st.market === "spot" && x < 0)) x = 0;
+  out.keys.forEach((k) => { let x = Number(w[k]); if (!isFinite(x) || (x < 0 && (st.market === "spot" || (paperTw && trTwCash(k, true))))) x = 0;
     if (!x) return; out.n++; out.held.push(k); if (x > 0) out.long += x; else out.short -= x; });
   return out;
 }
@@ -2880,7 +2881,7 @@ function trNoSignalYet(n) { const f = (trReport() || {}).signals_frozen; return 
    api 從策略索引的 summary 帶出來(651fb09e),機器 runtime 要會回報 market(11593e0 起)才有;"mixed" 就是未定),沒有才看清單的 twdAll——UNIVERSE 每一檔都是台股才算(twd 是「有一檔台股」,
    混了加密的也是 true,不能拿來當幣別;稽核 S2)。只認台股 → TWD,同網頁 pfRowUnit;加密的幣別要看成分,不拿帳戶幣猜(§9.2) */
 function trZoneOf(n) {
-  const r = trReport() || {}, st = (r.states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}, tc = trTypeC(st);
+  const r = trReport() || {}, st = (r.states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}, tc = trTypeC(st, n);
   const z = trRowZone(n, st.symbol || x.symbol, tc, x.portfolio === true, trQuoteMap());
   if (z !== TR_ZONE_UNKNOWN || (tc && tc.keys.length)) return z;
   const k = r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds[n] : null, mk = x.srcMarket || (k && k.market);
@@ -3150,7 +3151,7 @@ function trAmountTable(names, stored, states) {
     }
     names.filter((n) => zoneOf[n] === z).sort((a, b) => sortVal(b) - sortVal(a)).forEach((n) => {
       const x = TR.list.find((y) => y.name === n) || {}, st = states[n] || {};
-      const sym = trEffSym(n, st.symbol || x.symbol, trContracts()), market = st.market || x.market, tc = trTypeC(st), isC = !!tc || x.portfolio === true, noSig = trNoSignalYet(n);
+      const sym = trEffSym(n, st.symbol || x.symbol, trContracts()), market = st.market || x.market, tc = trTypeC(st, n), isC = !!tc || x.portfolio === true, noSig = trNoSignalYet(n);
       // 回報的 states 裡還沒有這支(還沒跑出第一次 live tick;選擇策略框新勾、還沒存的也是):部位寫「—」,不是空手
       const notYet = !isC && !noSig && !(states && states[n]);
       // 台指期列:這一格是口數;標的欄寫商品名(微台／小台／大台,同網頁)。換了合約(待存)就照新的那一個
