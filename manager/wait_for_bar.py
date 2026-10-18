@@ -98,7 +98,7 @@ checks throttle down to once every STALL_POLL_MINUTES instead of every
 minute — and resume at full speed the moment the data moves. This needs no
 trading-calendar knowledge; it reacts to observed data behavior only.
 
-TWSE/TPEx stock daily strategies (fetch_twstock_price*, _tw_stock_daily) do use the calendar:
+TWSE/TPEx stock daily strategies (only fetch_twstock_price* prices, _tw_stock_daily) do use the calendar:
 their bars exist on trading days only, so the expected bar is the latest weekday not on the
 TWSE holiday table. Otherwise every Sunday, Monday morning and day after a holiday waited on a
 bar that never comes, alerted, and ran Monday's bar twice (once for "Sunday", once for itself).
@@ -141,6 +141,7 @@ Concurrency: a stale-safe lock file (state/bar_wait/<name>.lock) guards the
 fetch+run section so an overrunning previous tick's subprocess can't overlap
 with the next minute's — see _acquire_lock.
 """
+import ast
 import importlib.util
 import json
 import logging
@@ -663,6 +664,8 @@ def _tick(name):
 
     # Fast path: this bar's already been run — stay quiet, no fetch, no log, no lock.
     if state.get("last_processed_bar") == expected_iso:
+        if tw_stock and (state.get("pending_since") or state.get("stall_alert_at")):
+            _clear_wait(name, state)   # a wait left by an older wait_for_bar on a closed day
         return
 
     # Backoff: don't hammer a run (or a fetch_data() that itself keeps raising)
@@ -686,7 +689,7 @@ def _tick(name):
         if mapped != expected:
             expected, expected_iso = mapped, mapped.isoformat()
             if state.get("last_processed_bar") == expected_iso:
-                _save_state(name, state)
+                _clear_wait(name, state)
                 return
 
     lock_path = _acquire_lock(name)
@@ -793,14 +796,16 @@ def _tw_futures_kind(name):
         text = ""
     if _TW_FUT_FETCH in text and _TW_FUT_SYMBOL_RE.search(text):
         return "index"
+    return "lots" if _sized_in_lots(name) else None
+
+
+def _sized_in_lots(name):
     try:
         with open("manager/portfolio_config.json", encoding="utf-8") as f:
             spec = (json.load(f).get("asset_specs") or {}).get(name)
     except (OSError, ValueError, AttributeError):
         spec = None
-    if isinstance(spec, dict) and spec.get("type") == "futures_contracts":
-        return "lots"
-    return None
+    return isinstance(spec, dict) and spec.get("type") == "futures_contracts"
 
 
 def _tw_holiday(day):
@@ -841,19 +846,60 @@ def _tw_futures_closed(name, now):
     return _tw_holiday(session_day)
 
 
-_TW_STOCK_FETCH_RE = re.compile(r"\bfetch_twstock_price")
+# runtime/strategy_reporter._PRICE_FETCHERS' names (this process cannot import runtime;
+# tests/check_tw_stock_bar_calendar pins the copies equal).
+_PRICE_FETCHERS = frozenset((
+    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline",
+    "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch",
+    "fetch_twstock_price_adj_batch", "fetch_twstock_ohlcv",
+    "fetch_twfutures_ohlcv", "fetch_twfutures_ohlcv_batch", "fetch_stock_futures_batch_daily",
+    "fetch_usstock_price", "fetch_db_kline"))
+# UTC-midnight trading-date labels. fetch_twstock_ohlcv is labelled at Taipei midnight and
+# stays on the calendar floor.
+_TW_STOCK_DAILY_FETCHERS = frozenset((
+    "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch",
+    "fetch_twstock_price_adj_batch"))
+
+
+def _price_fetchers(src):
+    """The lib.data price fetchers `src` refers to — runtime/strategy_reporter._referenced_fetchers'
+    rule: ast, so comments and strings never count (TEMPLATE_C names fetch_twstock_price in a
+    comment); comment-stripped regex when the file does not parse."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+        return set(re.findall(r"\bfetch_[a-z0-9_]+\b", code)) & _PRICE_FETCHERS
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            found.add(node.attr)
+        elif isinstance(node, ast.ImportFrom):
+            found.update(a.name for a in node.names)
+    return found & _PRICE_FETCHERS
 
 
 def _tw_stock_daily(name):
-    """A TWSE/TPEx stock strategy on fetch_twstock_price* (Type A or a Type C universe): its daily
-    bars are labelled at UTC midnight of trading days only. TAIFEX strategies keep their own
-    handling. Text and config only, like _tw_futures_kind."""
+    """Every price the strategy reads is a TWSE/TPEx stock daily bar (Type A or a Type C
+    universe), and it is not sized in contracts. Any other price fetcher beside them (mixed)
+    keeps the calendar floor: a Taiwan strategy that also reads BTC as a feature then gets the
+    old weekend alert back — wrong in the noisy direction, never a crypto bar silently skipped.
+    Text and config only, like _tw_futures_kind."""
     try:
         with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
-            text = f.read()
+            fetchers = _price_fetchers(f.read())
     except OSError:
         return False
-    return bool(_TW_STOCK_FETCH_RE.search(text)) and _tw_futures_kind(name) is None
+    return bool(fetchers) and fetchers <= _TW_STOCK_DAILY_FETCHERS and not _sized_in_lots(name)
+
+
+def _clear_wait(name, state):
+    """Nothing is pending on a closed day: a wait or alert left from before (holiday table
+    down, an older wait_for_bar) must not date or mute the next real stall."""
+    state["pending_since"] = state["stall_alert_at"] = None
+    _save_state(name, state)
 
 
 def _tw_skip_weekend(day):

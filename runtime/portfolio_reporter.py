@@ -952,6 +952,30 @@ def _naive_utc(iso):
     return t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
 
 
+# = workspace manager/wait_for_bar._TW_STOCK_DAILY_FETCHERS (tests/check_tw_stock_bar_calendar)
+_TW_STOCK_DAILY_FETCHERS = frozenset((
+    "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch",
+    "fetch_twstock_price_adj_batch"))
+
+
+def _tw_stock_daily(name, cfg):
+    """= workspace wait_for_bar._tw_stock_daily: only TWSE/TPEx stock daily prices (not
+    fetch_twstock_ohlcv), not sized in contracts. Its expected 1d bar skips weekends, and
+    wait_for_bar writes no bar_wait file there to show it checked."""
+    import strategy_reporter as sr
+    try:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                  encoding="utf-8", errors="replace") as f:
+            src = f.read()
+    except OSError:
+        return False
+    spec = ((cfg or {}).get("asset_specs") or {}).get(name)
+    if isinstance(spec, dict) and spec.get("type") == "futures_contracts":
+        return False
+    return (sr.strategy_market(src) == "tw_stock"
+            and sr._referenced_fetchers(src)[0] <= _TW_STOCK_DAILY_FETCHERS)
+
+
 def _recomputed_since(down_to, cfg, vens):
     """Every funded Type A/C strategy's signal is current as of the boot: its
     last processed bar is at least the bar that had just closed when the
@@ -985,6 +1009,9 @@ def _recomputed_since(down_to, cfg, vens):
         if td is None:
             continue  # unfunded or Type B — the reconciler does not trade its signal
         need = epoch + ((boot - epoch) // td) * td - td
+        if td == timedelta(days=1) and _tw_stock_daily(name, cfg):
+            while need.weekday() >= 5:   # = wait_for_bar's expected bar; holidays: the file mtime
+                need -= td
         path = os.path.join(WORKSPACE_STATE, "bar_wait", f"{name}.json")
         st = _read_json(path, {}) or {}
         processed = _naive_utc(st.get("last_processed_bar"))
