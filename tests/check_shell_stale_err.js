@@ -43,13 +43,14 @@ function paint(report, st = {}) {
   ctx.trContracts = () => null; ctx.trVenueKind = (id) => (id === "capital" ? "tw" : id === "paper" ? "crypto" : null);
   ctx.trVenueIds = (r) => Object.keys((r && r.venues) || {}); ctx.trLiveEntry = (r, id) => ((r && r.account && r.account.venues) || {})[id] || null;
   ctx.trOrderErrText = (sym, err) => "ERR:" + sym + ":" + err;
+  ctx.trIsPaper = () => true; ctx.trDisplay = (n) => n;
   if (st.startAt) ctx.TR.startAt = st.startAt;   // 這個視角這次按下啟動的時間(trAskStart 記的)
   if (st.realErrText) delete ctx.trOrderErrText;  // 要看真的在地化那一句:用 trade.js 自己的 trOrderErrText
   vm.createContext(ctx);
   vm.runInContext(pure.replace(/^const /gm, "var "), ctx);
   // 0.1.24:下單失敗從表底搬到出錯那一列底下(策略組合 › 總訊號部位表 poSigTable;同網頁):紅字 = .pf-note.err、灰字 = .pf-note.past
   ctx.TR.list = []; ctx.TR.just = null; ctx.trManualPart = () => 0; ctx.trPlanTotal = () => ({ text: "x", ccy: null, mult: "", n: 1 }); ctx.trPosDetail = () => ({}); ctx.trFmtPrice = String; ctx.trFmt2 = String; ctx.trRowTxf = () => null; ctx.trLotsKey = (n, a) => a; ctx.trDisplay = (n) => n; ctx.trTipLabel = () => node("span"); ctx.trHasAccount = (r) => ctx.trVenueIds(r).length > 0; ctx.trVenueLabel = (id) => id; ctx.trNoSignalYet = () => false; ctx.trTxfPrice = () => null; ctx.ENV_JUST_MS = 300000;
-  vm.runInContext((st.realErrText ? ["trOrderErrText"] : []).concat(["trLivePositions", "trClientTargets", "trGateSide", "trBook", "trTwClosedKeys", "trGatedKeys", "poPartStates", "poSigTable", "trTwNamesWant", "trTwName", "trTwNameEl"]).map(cut).join("\n").replace(/^const /gm, "var "), ctx);
+  vm.runInContext((st.realErrText ? ["trOrderErrText"] : []).concat(["trLivePositions", "trClientTargets", "trGateSide", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trTwNamesWant", "trTwName", "trTwNameEl"]).map(cut).join("\n").replace(/^const /gm, "var "), ctx);
   const frag = vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx);   // 0.1.24 A 案:帳上、差額、拒單在自動下單 › 部位
   const all = flat(frag), errRow = all.find((n) => n.cls === "pf-note err"), pastRow = all.find((n) => n.cls === "pf-note past"), gateRow = all.find((n) => /(^| )hold( |$)/.test(n.cls));   // 0.1.24 A 案:門檻說明是灰色差額格的 tooltip
   const holds = all.filter((n) => /(^| )hold( |$)/.test(n.cls)).length;
@@ -163,5 +164,15 @@ t("⑤ 帶內、對帳器沒在跑 → 也不會把舊拒單撿回來當灰字(�
 { const first = "2026-09-19T14:26:00", lastAt = "2026-09-21T14:26:00";
   const pl = paint(crypto(30000, 20000, { halt: HALT, order_errors: [{ ...ERR, ts: first, last_at: lastAt, count: 7 }] })), p0 = paint(crypto(30000, 20000, { halt: HALT, order_errors: [{ ...ERR, ts: first }] }));
   t("⑦ 有 last_at:時間寫最後一次失敗(4 分鐘前 → 只帶 HH:mm);沒有 last_at 照舊寫 ts(逾 24 小時帶日期)", /^\d\d:\d\d$/.test(pl.stamp || "") && /^\d\d\/\d\d \d\d:\d\d$/.test(p0.stamp || "")); }
+
+// ⑧ 等第一個訊號(快照列帶 awaiting,lib 已把目標換成窗內目標):差額照對帳器這一輪要走的那段算——被留住的灰、tooltip tr.cf.held;優先序 gated > awaiting > 休市
+{ const CAPS = ["contract_override", "rollover_halt_freeze", "halt_freeze", "first_signal_wait"], AW = { d: NOW / 1000 + 1800 };
+  const win = (signed, extra) => { const r = crypto(30000, 20000, { order_errors: [] }); r.last_reconcile.caps = CAPS;
+    Object.assign(r.last_reconcile.target.BTCUSDT, { side: signed >= 0 ? "long" : "short", size: Math.abs(signed), awaiting: AW, frozen: 10000 }, extra || {}); return r; };
+  const held = paint(win(20000)), part = paint(win(25000)), gat = paint(win(20000, { gated: true })), old = paint((() => { const r = win(20000); r.last_reconcile.caps = ["contract_override"]; return r; })());
+  t("⑧ 窗內目標 = 帳上(20,000):差額 +10,000 灰(hold)、tooltip 是 tr.cf.held 點名 BTC 與 d", held.holds === 1 && /^tr\.cf\.held/.test(held.foot || "") && /"syms":"BTC"/.test(held.foot) && /"names":"d"/.test(held.foot));
+  t("⑧ 窗內目標 25,000:還有 5,000 要買,照上色、不灰", part.holds === 0);
+  t("⑧ 同一列又 gated:tooltip 照等新訊號(gated 優先)", gat.holds === 1 && /^tr\.opt\.waitDesc/.test(gat.foot || ""));
+  t("⑧ 舊 lib(caps 沒有 first_signal_wait):照舊整段會下單", old.holds === 0); }
 
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

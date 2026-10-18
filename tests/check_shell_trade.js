@@ -345,7 +345,7 @@ ok("門檻側:|實際|>|目標| 走減倉側", J(trGateSide({ entry_usd: 84, red
   ok("close_usd 比該側大 → 取該側", J(u({ entry_usd: 84, reduce_usd: 5, close_usd: 10 }, 0, 300)) === J({ usd: 5, reduce: true, close: false, band: false }));
   // 0.1.24 A 案:門檻說明改成灰色差額格的 tooltip;被平坦的 10 擋住的全平/翻向不講半口,用通用那句
   ok("灰色差額的 tooltip(同網頁 6ae71405):「這輪不下單:」接在原因前;減倉／全平／翻向被平坦的 10 擋住時沒有要解釋的、不掛 tooltip",
-    /gs && !\(\(gs\.reduce \|\| gs\.close\) && gs\.usd <= 10\) \? \(gs\.band \? t\("tr\.gateFootBand"/.test(src) && /\) : null;\n\s*if \(why\) dc\.title = closed \|\| gated \? why : t\("tr\.gateFootLead"\) \+ why;/.test(src) && !/po\.gateTip/.test(src)); }
+    /gs && !\(\(gs\.reduce \|\| gs\.close\) && gs\.usd <= 10\) \? \(gs\.band \? t\("tr\.gateFootBand"/.test(src) && /\) : null;\n\s*if \(why\) dc\.title = closed \|\| gated \|\| awaiting \? why : t\("tr\.gateFootLead"\) \+ why;/.test(src) && !/po\.gateTip/.test(src)); }
 // 漂移容忍帶(稽核 B1;lib/portfolio.compute_diff:同向且兩邊都有倉時 applied = max(該側, band_usd),快照 gates 多 band_usd、usd 已含它;
 // web 的 pfGateSide 同一條規則):帶內的差額只是 mark 在動,不畫成會下單、也不讓 trLiveOrderErr 把舊拒單當仍欠著
 { const G = { entry_usd: 84, reduce_usd: 42, close_usd: 10, band_usd: 500, usd: 500 }, u = (g, t, a) => trGateSide(g, t, a);
@@ -2296,7 +2296,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
       t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: { binance: { label: "Binance" } }, PAPER: "paper", trUnit: () => "TWD", TR_STALE_MS: 600000,
       envHeadState: () => "running", trPlanTotal: () => ({ text: "x", ccy: null, mult: "", n: 1 }), trRowTxf: () => null, trDisplay: (n) => n, trFmt2: String, trFmtPrice: String, poOpen() {} });
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trReport", "trContracts", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trIsPaper", "trPaperTwOk", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trStored", "trEquity", "trTxfPrice", "trNoSignalYet", "trVenueLabel", "trNetRows", "trWithUnit", "trTwNamesWant", "trTwName", "trTwNameEl"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trReport", "trContracts", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit", "trVenueKind", "trTwBroker", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "trIsPaper", "trPaperTwOk", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trStored", "trEquity", "trTxfPrice", "trNoSignalYet", "trVenueLabel", "trNetRows", "trWithUnit", "trTwNamesWant", "trTwName", "trTwNameEl"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const V = { credentials: true, pair: true, order: true, account: true };
     // 對帳快照照真的形狀(check_shell_stale_err.js 那一份):口數列 exchange = capital、asset_spec.type = futures_contracts;MXF 只在帳戶上(快照沒有)
