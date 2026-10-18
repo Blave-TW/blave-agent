@@ -138,6 +138,29 @@ def _reject_front(error):
     return reject_token.to_front(error)
 
 
+# A rejection that will not clear by itself (paper cash short, margin, min size) comes back
+# every round: one notice per symbol and reason per cooldown (paper e2e 10-18: five "Order
+# failed" in 2m16s). The numbers in the text move with the mark, so they are not the reason.
+# order_errors.json still gets every round — the pages read its newest row as "failing now".
+ORDER_ERROR_NOTIFY_COOLDOWN_S = 3600
+_order_error_notified = {}  # symbol -> (reason, notified_at); process-level, like the reconciler's own
+
+
+def _order_error_reason(error):
+    return re.sub(r'\d[\d.,]*', '#', _reject_plain(error))
+
+
+def _order_error_fresh(symbol, error, now=None):
+    """True = notify this failure; a repeat of the same symbol + reason inside the cooldown is False."""
+    now = time.time() if now is None else now
+    reason = _order_error_reason(error)
+    hit = _order_error_notified.get(symbol)
+    if hit and hit[0] == reason and now - hit[1] < ORDER_ERROR_NOTIFY_COOLDOWN_S:
+        return False
+    _order_error_notified[symbol] = (reason, now)
+    return True
+
+
 def _reject_plain(error):
     """The message without its [order_reject:<kind>] token — for notices read by people (TG, desktop)."""
     try:
@@ -3565,11 +3588,13 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                          exchange=order.get('exchange'),
                                          contributors=order.get('contributors'))
             except Exception as e:
-                log_msg = f"order error {symbol}: {e}"
-                logging.error(log_msg)
                 _record_order_error(symbol, order.get('exchange'), e)
-                notices.append(('order_error', '⚠️ Order failed {symbol}: {error}',
-                                {'symbol': symbol, 'error': _reject_plain(e)}))
+                if _order_error_fresh(symbol, e):
+                    logging.error(f"order error {symbol}: {e}")
+                    notices.append(('order_error', '⚠️ Order failed {symbol}: {error}',
+                                    {'symbol': symbol, 'error': _reject_plain(e)}))
+                else:
+                    logging.debug(f"order error {symbol}: same reason again, already notified")
                 failed = True
                 break
 
@@ -3580,6 +3605,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                 logging.info(f"[reconcile] {symbol} skipped by place_order — "
                              f"below minimum or async execution in flight")
                 continue
+            _order_error_notified.pop(symbol, None)   # it went through: a later failure is news again
 
             # self_ledger: the wiring closed the bot's whole book on this side
             # and says what is left can never be sold (see
