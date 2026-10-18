@@ -7804,7 +7804,7 @@ msgstr "Only fills the Allocation column; ask the agent to apply"
 
 # 優化分頁:選了兩檔以上、還沒有權重也沒有回測時,霧上 CTA 卡那一句(鈕是 mg.optRun)
 msgid "mg.fogOpt"
-msgstr "Get a weight for each of these {n} strategies. For walk-forward results, use Backtest."
+msgstr "Get a weight for each of these {n} strategies."
 
 msgid "mg.outdated"
 msgstr "This machine's workspace is behind the version that ships strategy management — update it and Optimize is back."

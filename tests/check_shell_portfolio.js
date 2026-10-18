@@ -900,7 +900,7 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     on() === true && on({ members: ["a"] }) === false && on({ members: [] }) === false && on({ prop: {} }) === false && on({ bt: {} }) === false && on({ running: true }) === false
     && on({ job: { status: "error" } }) === false && on({ short: { n: 10, l: 60 } }) === false && on({ short: { n: 10, l: 60 } }, { shortDismissed: true }) === true
     && on({}, { optBusy: true }) === false && on({}, { btSending: true }) === false && on({}, { wait: { opt: { left: ["a"] }, bt: null } }) === false && on({ blocked: true }) === false && on({}, { err: "x" }) === false);
-  ok("…霧開著時工具列的「跑優化」藏起來、霧上 CTA 是 mg.optRun 接 mgRunOptimize;兩語都有 mg.fogOpt 帶 {n}",
+  ok("…霧開著時工具列的「跑優化」藏起來、霧上 CTA 是 mg.optRun 接 mgRunOptimize;兩語都有 mg.fogOpt 帶 {n}、只有一句(canon 一句話＋一顆鈕,不講工具列已有的跑回測)",
     /if \(fog\) box\.appendChild\(poFog\("opt"\)\);/.test(psrc) && /opt\.hidden = !!fog;/.test(psrc) && /kind === "opt"\) \{ b\.id = "mg-fog-opt"; b\.dataset\.fk = "mg-fog-opt"; b\.addEventListener\("click", mgRunOptimize\); \}/.test(psrc)
-    && (() => { const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"), S2 = (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); return /\{n\}/.test(S2.zh["mg.fogOpt"]) && /\{n\}/.test(S2.en["mg.fogOpt"]); })()); }
+    && (() => { const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"), S2 = (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); return /\{n\}/.test(S2.zh["mg.fogOpt"]) && /\{n\}/.test(S2.en["mg.fogOpt"]) && !/跑回測|。.+/.test(S2.zh["mg.fogOpt"]) && !/Backtest|\.\s\S/.test(S2.en["mg.fogOpt"]); })()); }
 Promise.all([btCancelTest, freshTest, pollTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
