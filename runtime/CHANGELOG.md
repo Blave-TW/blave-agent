@@ -10,6 +10,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## 1.1.133 — 2026-10-18(desktop 0.1.27)
 
+- **策略回報多 `source_marketplace_id`(網頁策略庫判斷「這台主機有沒有裝這支」;`strategy_reporter._read_source_id`)**:`references/marketplace.md` 安裝流程第 7 步搬進 `strategies/<name>/` 之後、跑回測之前,agent 寫 `strategies/<name>/source.json` = `{"marketplace_id": <id>}`(電腦版下載好的策略、web 下載、bundle 每支都寫同一個 id、別人分享的都寫;fork 不寫)。runtime 讀到正整數(`type(v) is int`,0／負／字串／浮點／布林／壞 JSON 都當沒有)才在那支策略上帶 `source_marketplace_id`(沒有＝欄位不出現),live `strategies` chunk 與 report_cache 都帶。id 也進 `_content_marker`(strategy_marker)與 `signature()`:回測跑完才寫檔時 stats／scan／wf 都沒變,不進指紋的話增量回報永遠不送、回合中也不推 chunk。已知:裝好之前就存在的策略沒有這個檔,要重裝一次才會帶。**api 要跟著改**(這邊先出不會壞,只是側欄看不到):`openclaw/agent_strategies._summary_fields` 是白名單,`?summary=1`(網頁側欄與 `libMachineList`)目前會丟掉這欄;live chunk 原樣轉發。測試 `tests/check_source_marketplace_id.py`。
 - **報告多 `tw_trading_day`(0.1.27 稽核 P3-3c;`portfolio_reporter.tw_trading_day`)**:今天(台北)台股是不是交易日,讀 workspace lib 已經查到、存在 `state/paper_tw_day.json` 的那一筆:`{date, trading}`;今天還沒查過、查不到假日表(`verdict` 是 null)、或檔案是別天的 → `null`。電腦版 `trade.js trTwSessionOpen` 有這欄而且 `trading` 是 false 時講休市(國定假日不再講成開盤),沒有就照舊只看星期與時段。只給頁面看。測試 `tests/check_paper_twstock.py`、`tests/check_shell_portfolio.js`。
 
 - **`downtime_pause_view` 的模擬盤台股 key 帶 `@spot`(0.1.27 稽核 P3-1 同源;只給頁面看)**:路由 `config.exchanges[名字] == "paper"` 的台股策略不管 `MARKET` 一律當現股(同 `lib/portfolio._paper_tw_market`),那一列查快照的 key 改成 `SYM@spot`;之前 swap 的台股 Type A 查的是 `2330`,模擬盤上真正的部位在 `2330@spot`,「實際」那格讀不到。不改下單。

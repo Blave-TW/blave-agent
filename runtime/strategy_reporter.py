@@ -416,6 +416,24 @@ def _read_backtest(name):
     return data if isinstance(data, dict) else None
 
 
+# The library listing a strategy was installed from (references/marketplace.md install flow,
+# written at the move step); the web's 策略庫 tells "on this machine" by it. Forks never get one.
+SOURCE_FILE = "source.json"
+
+
+def _read_source_id(name):
+    """strategies/<name>/source.json's `marketplace_id` as a positive int, else None.
+    Strict int: the web compares it with `===` against the listing id."""
+    try:
+        with open(os.path.join(STRATEGIES_DIR, name, SOURCE_FILE), encoding="utf-8") as f:
+            v = json.load(f).get("marketplace_id")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if type(v) is int and 0 < v < 10 ** 10:
+        return v
+    return None
+
+
 def _read_scan(name):
     """Parameter-scan output (blave-agent lib/param_scan.write_scan) lands in
     strategies/<name>/scan.json — a rows×cols Sharpe grid + neighbourhood means +
@@ -669,7 +687,8 @@ def _content_marker(s):
     and the version ledger. Hashed rather than embedded — a 20-entry `versions` summary
     is ~4KB, and the manifest carries one marker per strategy."""
     blob = json.dumps([s.get("code"), s.get("display_name"), s.get("description"),
-                       s.get("versions")], sort_keys=True, ensure_ascii=False)
+                       s.get("versions"), s.get("source_marketplace_id")],
+                      sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 
@@ -736,7 +755,7 @@ def signature(include_newborn=False):
     deployed = _deployed_names()
     return json.dumps(sorted(
         [s["name"], s["status"], _stats_marker(s["name"], s["status"], deployed),
-         _scan_marker(s["name"]), _wf_marker(s["name"])]
+         _scan_marker(s["name"]), _wf_marker(s["name"]), s.get("source_marketplace_id")]
         for s in _scan_sources(include_newborn)
     ))
 
@@ -798,6 +817,9 @@ def _scan_sources(include_newborn=False):
             continue
         if not s:
             continue
+        src_id = _read_source_id(s["name"])
+        if src_id is not None:
+            s["source_marketplace_id"] = src_id
         if not include_newborn and s["name"] not in _seen_names \
                 and _is_newborn(s["name"], src_path):
             continue
