@@ -44,10 +44,11 @@ function world(o) {
     // 真的 trRun 依序跑每一步、前一步沒成功就停;這裡只留這一條(過場態、紅字不在這支測試的範圍)
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
     window: { blave: { platform: o.platform || "darwin" } },
+    LANG: "zh", trTwName: (s) => ({ "2330": "台積電" })[s] || "",
     AWAKE: o.awake, tracked: [], switched: [], trackFeature: (n) => env.tracked.push(n), envSwitchGuarded: (e) => { env.switched.push(e); return true; },
   };
   const names = Object.keys(env);
-  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAwakeCloudGo")}\n${fn(trade, "trAskStart")}\n
+  const body = `let delCtx = null; ${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAwakeCloudGo")}\n${fn(trade, "trDeferredCloseLine")}\n${fn(trade, "trAskStart")}\n
     const click = ${okClick};\n return { trAskStart, trStartNotes, click, ctx: () => delCtx };`;
   const M = new Function(...names, body)(...names.map((k) => env[k]));
   Object.keys(ids).forEach((k) => delete ids[k]);
@@ -91,6 +92,15 @@ function world(o) {
   { const w = world({ money: "real", stranded: 2 }), w0 = world({ money: "real" });
     ok("有策略已經想平的部位(trWaitStranded > 0):提醒掛在「等新訊號」、「補齊部位」不掛;沒有就兩個都不掛",
       w.opts[1].w && w.opts[1].w.textContent === "tr.opt.waitStranded" && !w.opts[0].w && !w0.opts[1].w && !w0.opts[0].w); }
+  // 0.1.27 稽核 P2-1:休市時按的全部平倉延到開盤(回報 deferred_close)——兩種啟動都會取消它,框裡先講;舊機只有一顆主鈕也講
+  { const w = world({ money: "paper", report: { deferred_close: ["2330@spot"] } }), w0 = world({ money: "paper" }), w1 = world({ money: "paper", report: { can_wait_start: false, deferred_close: ["2330@spot"] } });
+    ok("P2-1 有延後的台股平倉:框的狀態句(選項之上、兩種啟動共用)講會取消;沒有就不講;舊機一顆主鈕也講", w.body.kids.some((k) => k.tag === "p" && k.textContent === "tr.deferredClose")
+      && !w0.body.all().some((k) => k.textContent === "tr.deferredClose") && w1.body.kids.some((k) => k.textContent === "tr.deferredClose")); }
+  { const L = new Function("LANG", "t", "trTwName", fn(trade, "trDeferredCloseLine") + "; return trDeferredCloseLine;")("zh", (k, v) => k + "|" + JSON.stringify(v || {}), (s) => ({ "2330": "台積電" })[s] || "");
+    ok("P2-1 那一句列出哪幾檔:代號＋股名、去掉 @spot、最多三檔其餘「和另外 N 檔」;空的、不是陣列 = null",
+      L({ deferred_close: ["2330@spot", "2454@spot"] }) === 'tr.deferredClose|{"syms":"2330 台積電、2454"}'
+      && L({ deferred_close: ["1101@spot", "1102@spot", "1103@spot", "2330@spot"] }) === 'tr.deferredClose|{"syms":"1101、1102、1103tr.opt.catchMore|{\\"n\\":1}"}'
+      && L({ deferred_close: [] }) === null && L({ deferred_close: "2330" }) === null && L({}) === null, L({ deferred_close: ["1101@spot", "1102@spot", "1103@spot", "2330@spot"] })); }
   { const w = world({ money: "real", env: "cloud", restart: "machine" });
     ok("主機重開後:狀態句是主機那一句;不掛舊訊號那一句(由重算與閘門講)", w.body.kids[0].textContent === "tr.cloud.restartStartLine" && !w.opts[0].w); }
   { const w = world({ money: "paper", report: { can_wait_start: false } });

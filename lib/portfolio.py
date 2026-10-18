@@ -287,7 +287,9 @@ def defer_paper_tw_close(keys):
     open (they are dropped from the target while HALT holds, and their close
     legs — the only legs a halted round sends — go out inside
     guard.halt_close_pass). Pressing 啟動下單 before that cancels it: the
-    strategies' targets rule again."""
+    strategies' targets rule again. A machine restart in between stamps the
+    file `restart_at` (runtime command_listener._stop_after_restart), so the
+    cancel says the start came after a restart."""
     keys = sorted(set(keys))
     if not keys:
         return
@@ -303,20 +305,26 @@ def defer_paper_tw_close(keys):
     os.replace(tmp, _PAPER_TW_CLOSE_PATH)
 
 
+_PAPER_TW_CANCEL = 'close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單'
+_PAPER_TW_CANCEL_RESTART = ('close-all: 機器重開後按了啟動下單(重開後要按它才會恢復下單),'
+                            '延後的台股平倉一併取消,改照策略目標下單')
+
+
 def _paper_tw_deferred(diff_actual, halted):
     """Keys flatten deferred (defer_paper_tw_close) that are still held. Not
     halted any more = the user resumed: the deferral is dropped."""
     try:
         with open(_PAPER_TW_CLOSE_PATH) as f:
-            keys = set(json.load(f).get('keys') or [])
+            rec = json.load(f)
+        keys = set(rec.get('keys') or [])
     except FileNotFoundError:
         return set()
     except (OSError, ValueError, AttributeError):
-        keys = set()
+        rec, keys = {}, set()
     held = {k for k in keys if float((diff_actual.get(k) or {}).get('size') or 0) > 0}
     if held and not halted:
         _record_order_error(','.join(sorted(held)), 'paper',
-                            'close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單')
+                            _PAPER_TW_CANCEL_RESTART if rec.get('restart_at') else _PAPER_TW_CANCEL)
     if not halted or not held:
         try:
             os.remove(_PAPER_TW_CLOSE_PATH)
@@ -326,7 +334,7 @@ def _paper_tw_deferred(diff_actual, halted):
     if held != keys:
         tmp = _PAPER_TW_CLOSE_PATH + '.tmp'
         with open(tmp, 'w') as f:
-            json.dump({'keys': sorted(held), 'ts': int(time.time())}, f)
+            json.dump({**rec, 'keys': sorted(held), 'ts': int(time.time())}, f)
         os.replace(tmp, _PAPER_TW_CLOSE_PATH)
     return held
 

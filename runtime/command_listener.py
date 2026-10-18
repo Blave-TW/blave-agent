@@ -2104,6 +2104,8 @@ def _stop_after_restart():
         except OSError as e:
             _log(f"!!! restart stop record NOT written ({type(e).__name__}: {e}) — "
                  "the reconciler is not gated; relying on the kill alone")
+    if info is not None:
+        _stamp_tw_close_restart(info["at"])
     failed_sent = False
     if not (_stop_reconciler() or _stop_reconciler()):
         failed_sent = _restart_stop_failed(last_up)
@@ -2126,6 +2128,26 @@ def _stop_after_restart():
     _log(f"machine restarted after {info['down_to'] - info['down_from']}s — "
          "reconciler kept stopped until 啟動下單")
     return info
+
+
+# lib/portfolio._PAPER_TW_CLOSE_PATH: paper TW closes flatten deferred to the open
+PAPER_TW_CLOSE_PATH = os.path.join(WORKSPACE_STATE, "paper_tw_close.json")
+
+
+def _stamp_tw_close_restart(at):
+    """A deferred paper TW close outlives this restart only until 啟動下單 —
+    the press that lifts the stop also cancels it (lib/portfolio
+    _paper_tw_deferred). Stamped here, while the restart is still known: by
+    the reconciler's next round the record is gone, and its cancel line would
+    read as if the user had resumed early on purpose."""
+    try:
+        with open(PAPER_TW_CLOSE_PATH, encoding="utf-8") as f:
+            rec = json.load(f)
+        if not isinstance(rec, dict) or not rec.get("keys"):
+            return
+        _write_atomic(PAPER_TW_CLOSE_PATH, json.dumps({**rec, "restart_at": int(at)}))
+    except (OSError, ValueError):
+        pass
 
 
 RECONCILER_GATED_MARKER = os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler.gated")

@@ -389,6 +389,21 @@ check(pf._paper_tw_deferred({}, True) == set() and not os.path.exists(pf._PAPER_
 pf.defer_paper_tw_close(["2330"])
 check(pf._paper_tw_deferred(held, False) == set() and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
       "resumed (no HALT) before the open: the deferral is dropped, the strategies rule")
+errs = lambda: json.load(open("manager/order_errors.json")) if os.path.exists("manager/order_errors.json") else []  # noqa: E731
+pf.defer_paper_tw_close(["2330"])
+pf._paper_tw_deferred(held, False)
+check(errs() and "開盤前已按啟動下單" in errs()[-1]["error"], f"the cancel is said: resumed before the open ({errs()[-1:]})")
+pf.defer_paper_tw_close(["2330", "2454@spot"])
+d = json.load(open(pf._PAPER_TW_CLOSE_PATH))
+d["restart_at"] = 1700000000   # runtime command_listener._stop_after_restart
+json.dump(d, open(pf._PAPER_TW_CLOSE_PATH, "w"))
+pf._paper_tw_deferred({"2330": {"side": "long", "size": 10000}}, True)
+d = json.load(open(pf._PAPER_TW_CLOSE_PATH))
+check(d.get("keys") == ["2330"] and d.get("restart_at") == 1700000000,
+      f"a halted round that trims the deferral (2454 already flat) keeps the restart stamp ({d})")
+pf._paper_tw_deferred({"2330": {"side": "long", "size": 10000}}, False)
+check("機器重開後按了啟動下單" in errs()[-1]["error"] and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
+      f"restarted in between: the cancel says the start came after a restart, not an early resume ({errs()[-1:]})")
 check("deferred = _paper_tw_deferred(diff_actual_full, halted_at_start)" in open(os.path.join(ROOT, "lib", "portfolio.py")).read(),
       "reconcile judges deferred keys on the unfiltered book")
 order_paper.guard.restart_stopped = lambda: True
@@ -496,6 +511,16 @@ check(row.get("quote_ccy") == "TWD" and row.get("fx") == R and len(cut) == 1 and
 
 print("== runtime reports the capability off the disk")
 import portfolio_reporter  # noqa: E402
+portfolio_reporter.WORKSPACE_STATE = os.path.abspath("state")
+check(portfolio_reporter.deferred_close() == [], "no deferral: deferred_close []")
+json.dump({"keys": ["2454@spot", "2330", "BTCUSDT", 5, "6488.TWO@spot"], "ts": 1}, open("state/paper_tw_close.json", "w"))
+check(portfolio_reporter.deferred_close() == ["2330", "2454@spot", "6488.TWO@spot"],
+      f"deferred_close: TW stock keys only, sorted ({portfolio_reporter.deferred_close()})")
+open("state/paper_tw_close.json", "w").write("{")
+check(portfolio_reporter.deferred_close() == [], "unreadable: []")
+os.remove("state/paper_tw_close.json")
+check('"deferred_close": deferred_close(),' in open(portfolio_reporter.__file__, encoding="utf-8").read(),
+      "the report carries deferred_close")
 portfolio_reporter.WORKSPACE = ROOT
 check(portfolio_reporter.can_paper_twstock() is True, "this workspace: can_paper_twstock true")
 old = tempfile.mkdtemp(prefix="oldws-")

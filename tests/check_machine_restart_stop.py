@@ -143,6 +143,7 @@ try:
                                    "down_to": T + 1300, "offline_s": 300},
           "…exactly one machine_restart_stopped event, with the stop interval")
     check(not os.path.exists(HALT), "…and NO HALT (a halt would still let closes out)")
+    check(not os.path.exists(os.path.join(STATE, "paper_tw_close.json")), "…no deferred TW close: none is created")
     check(open(cl.BOOT_RECORD).read() == "boot-b"
           and boot_check(T + 1400) is None and stops == [1],
           "…boot recorded: the next runtime restart on this boot does nothing")
@@ -174,8 +175,14 @@ try:
     machine_went_down(T + 5000, halted=True)
     halt_before = open(HALT).read()
     boot["id"] = "boot-c"
+    TWC = os.path.join(STATE, "paper_tw_close.json")
+    json.dump({"keys": ["2330@spot"], "ts": T + 4000}, open(TWC, "w"))
     info = boot_check(T + 5200)
     ev = events()
+    twc = json.load(open(TWC))
+    check(twc == {"keys": ["2330@spot"], "ts": T + 4000, "restart_at": info["at"]},
+          f"a paper TW close deferred before the boot is stamped restart_at (its cancel at 啟動下單 says why) ({twc})")
+    os.remove(TWC)
     check(info is not None and stops == [1] and open(HALT).read() == halt_before
           and json.load(open(cl.RESTART_STOP_PATH))["reason"] == "machine_restart"
           and [e["type"] for e in ev] == ["machine_restart_stopped"]

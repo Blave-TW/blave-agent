@@ -8005,6 +8005,10 @@ msgstr "和另外 {n} 檔"
 msgid "tr.opt.catchTwClosed"
 msgstr "台股現在休市，台股的單要等開盤後的第一輪才會成交。"
 
+# 啟動框:休市時按的全部平倉延到開盤還沒執行(回報 deferred_close),啟動下單會取消它;{syms} = 代號＋股名
+msgid "tr.deferredClose"
+msgstr "休市時按的全部平倉還在等開盤（{syms}）。現在啟動下單會取消這筆平倉，改照策略的目標部位下單；要平掉就等開盤平完再啟動。"
+
 msgid "tr.pick.noTxf"
 msgstr "還沒有台指期策略。"
 

@@ -7990,6 +7990,10 @@ msgstr "and {n} more"
 msgid "tr.opt.catchTwClosed"
 msgstr "The Taiwan stock market is closed now; Taiwan stock orders fill in the first round after the open."
 
+# 啟動框:休市時按的全部平倉延到開盤還沒執行(回報 deferred_close),啟動下單會取消它;{syms} = 代號＋股名
+msgid "tr.deferredClose"
+msgstr "The close-all you pressed while the market was shut is still waiting for the open ({syms}). Starting now cancels it and trades to the strategies’ targets; to close them, start after they close at the open."
+
 msgid "tr.pick.noTxf"
 msgstr "No TAIEX futures strategies yet."
 

@@ -331,6 +331,24 @@ def _tw_closes(data):
     return out
 
 
+def deferred_close():
+    """Paper TW stock keys close-all deferred to the session open (lib/portfolio
+    defer_paper_tw_close, state/paper_tw_close.json), sorted; [] when none. 啟動下單
+    (resume or resume_wait) cancels them, so the start box lists them first."""
+    rec = _read_json(os.path.join(WORKSPACE_STATE, "paper_tw_close.json"))
+    keys = rec.get("keys") if isinstance(rec, dict) else None
+    if not isinstance(keys, list):
+        return []
+    out = set()
+    for k in keys:
+        if not isinstance(k, str):
+            continue
+        sym, spot = (k[:-5], "@spot") if k.endswith("@spot") else (k, "")
+        if _TW_STOCK_RE.match(sym.upper()):
+            out.add(sym.upper() + spot)
+    return sorted(out)[:PORTFOLIO_WEIGHTS_MAX]
+
+
 def _bound_venue_ids(vens):
     """Venues that can trade: paired key, order and account libs present — field for field the
     desktop's trVenueIds (trade.js), so both sides agree on when "" means "unrouted"."""
@@ -1810,6 +1828,8 @@ def build_report():
         "previews": typec_previews(cfg, states),
         # the Taiwan-stock rows of 「各商品的總訊號部位」 in whole lots (tw_lots); display only
         "tw_lots": tw_lots(cfg, states, vens),
+        # paper TW closes waiting for the open; 啟動下單 cancels them (deferred_close)
+        "deferred_close": deferred_close(),
         # None = signals recomputing normally (see signals_frozen)
         "signals_frozen": signals_frozen(cfg),
         # each strategy's amount currency, None = cannot be told (strategy_quote_ccy)

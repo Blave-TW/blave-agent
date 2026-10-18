@@ -10,6 +10,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## 1.1.133 — 2026-10-18(desktop 0.1.27)
 
+- **報告多 `deferred_close`、重開機時在延後平倉檔上蓋 `restart_at`(0.1.27 下單路徑跨分支稽核 P2-1;`portfolio_reporter.deferred_close`、`command_listener._stamp_tw_close_restart`)**:休市時按「全部平倉」,模擬盤台股會延到開盤(workspace `state/paper_tw_close.json`),在那之前按啟動下單(補齊、等新訊號都是)會取消它。報告頂層多 `deferred_close: [key]`(台股代號,現股帶 `@spot`;只收台股代號格式、排序、最多 100 個;沒有＝`[]`),電腦版與網頁的啟動框照它先講「會取消、是哪幾檔」。主機重開判定要停時(`_stop_after_restart` 寫 `reconciler_stopped.json` 的同一刻),若延後檔還在就加 `restart_at`(= 停止紀錄的 `at`):重開後一定要按啟動下單才會恢復,而那一下會一併取消延後的平倉,workspace lib 看到這個欄位就把取消那行寫成「機器重開後按了啟動下單…」,不再寫成「開盤前已按啟動下單」。舊 lib 不讀這欄、照舊那一句;舊網頁不讀 `deferred_close`。只動回報與一個 state 欄位,不改下單。測試 `tests/check_paper_twstock.py`、`tests/check_machine_restart_stop.py`。
+
 - **`portfolio_reporter.tw_lots` 跳過沒路由的策略(0.1.27 稽核 P3-1)**:`config.exchanges[名字]` 是空字串(解除綁定後還沒存過下單設定)的策略不算貢獻者,同 `lib/portfolio.aggregate_portfolio` 跳過沒有交易所的策略;之前會多出一列對帳器根本不下的張數。**只在至少綁了一家交易所時才跳過**(`tw_lots(cfg, states, vens)`,綁定判準 `_bound_venue_ids` = 金鑰成對＋`order_*`／`account_*` 都在,逐欄同電腦版 `trVenueIds`):一家都沒綁時 runtime 沒有可繼承的,每支路由都是 `""`,那是「只看訊號」,照訊號算張數(`unit` `"lots"`)——實機測到沒連交易所的台股 Type C 存 1,000,000 TWD 後 `tw_lots` 是 `{}`、表上每檔寫 0 TWD。沒有這個 key 的策略照舊算(非 paper)。電腦版 `trade.js trTwLots` 同一條,而且判「模擬交易」改成逐支讀 `config.exchanges[名字]`(`trPaperOf`,同 lib 與這裡;還沒有路由紀錄的那支照現在綁的那家,因為 runtime 存檔時會繼承它),不再看整台第一家。只給頁面看。測試 `tests/check_tw_lots.py`。
 - **`tw_lots` 每列多 `odd_shares`(Wei 10-18:沒連交易所時照著去券商下單＝整股單＋零股單)**:`odd_shares` = 正負號 × (|`shares`| − |`lots`| × 1000),0–999 的零股。`lots`、`shares`、`unit` 意思不變。頁面在 `unit` `"lots"` 時寫「N 張 M 股」(不足一張「M 股」、剛好整張「N 張」、不足一股才寫 0 並附原因),不再寫「0 張」;`"shares"`(模擬交易)照舊寫股數。舊網頁不讀這欄,照舊寫整張。電腦版 `trade.js trTwLots` 回 `odd` 同一條。只給頁面看。測試 `tests/check_tw_lots.py`。
 

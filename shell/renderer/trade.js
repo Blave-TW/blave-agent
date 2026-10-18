@@ -2537,14 +2537,14 @@ function trAskStart(opener, presOk) {
   const will = trCatchWill(r);
   const stranded = trWaitStranded(r);
   // 照什麼、多少錢下單(設計 A6):跟自動下單 › 部位表底合計同一個格式(trPlanTotal),讀已存配置
-  const pl = trPlanLine(trStored()), plan = pl ? [pl] : [];
+  const pl = trPlanLine(trStored()), plan = pl ? [pl] : [], dc = trDeferredCloseLine(r), dcl = dc ? [dc] : [];
   confirmBox(trCloudBox(Object.assign({
     title: t("tr.start"), mark: paper ? t("tr.mode.paper") : real ? t("tr.mode.real") : null, markKind: real ? "real" : "paper", opener,
     lead: trBothReal(),
     keep: notes.keep, details: notes.details,   // 細節一律收合:展開時整框在 1366 寬就出捲軸(設計稽核 desktop-10-08 #3)
   }, canWait ? {
     // 重開過(主機 / Blave):到現在都沒有下單,部位可能跟訊號對不上——最上面的狀態句,在選「補齊 / 等新訊號」之前講
-    lines: plan.concat(rkS === "machine" ? [t("tr.cloud.restartStartLine")] : rkS === "app" ? [t("tr.restartStartLineLocal")] : []),
+    lines: plan.concat(rkS === "machine" ? [t("tr.cloud.restartStartLine")] : rkS === "app" ? [t("tr.restartStartLineLocal")] : []).concat(dcl),
     choicesLabel: t("tr.opt.legend"),
     choices: [
       // Blave 重開(本機):關著的時候策略沒跑,現在補齊用的可能是舊訊號——掛在它影響的那個選項裡。主機重開(B)由重算那一句與閘門講
@@ -2556,10 +2556,20 @@ function trAskStart(opener, presOk) {
     ok: t("tr.start"),
   } : {
     // 機器端只有一種啟動方式(舊 lib,沒有 can_wait_start):沒有東西可選,照舊一顆主鈕
-    lines: plan.concat(rkS === "machine" ? [t("tr.cloud.restartStartLine")] : rkS === "app" ? [t("tr.restartStartLineLocal")] : [])
+    lines: plan.concat(rkS === "machine" ? [t("tr.cloud.restartStartLine")] : rkS === "app" ? [t("tr.restartStartLineLocal")] : []).concat(dcl)
       .concat(recomputing ? [t("tr.cloud.recomputing")] : []).concat([t("tr.startWarn1")]).concat(will ? [will] : []),
     ok: t("tr.startCatchUp"), okDisabled: recomputing, okWhy: recomputing ? t("tr.cloud.recomputing") : null, onOk: catchUp,
   })));
+}
+
+/* 休市時按的全部平倉延到開盤、還沒執行(回報 deferred_close,lib/portfolio.defer_paper_tw_close):啟動下單(補齊、等新訊號都是)
+   會取消它、改照策略目標下單(lib/portfolio._paper_tw_deferred),框裡先講、列出是哪幾檔。沒有就 null */
+function trDeferredCloseLine(r) {
+  const keys = Array.isArray(r && r.deferred_close) ? r.deferred_close.filter((k) => typeof k === "string" && k) : [];
+  if (!keys.length) return null;
+  const labs = keys.slice(0, 3).map((k) => { const s = k.replace(/@spot$/, ""), n = trTwName(s); return n ? s + " " + n : s; });
+  const syms = labs.join(LANG === "zh" ? "、" : ", ") + (keys.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: keys.length - 3 }) : "");
+  return t("tr.deferredClose", { syms });
 }
 
 /* 啟動確認框「細節」最後一行:這台電腦醒著才跑,要 24 小時就到雲端那一袋(開主機、登入都在那一頁自己講;app 內閉環,不外開網頁)。

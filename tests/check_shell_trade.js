@@ -848,7 +848,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("HALT + Blave 結束再打開:kind = app、狀態 halted、狀態行是 Blave 重開那條(不是 HALT 的「平倉照常」)",
         trRestartKind(haltApp.report) === "app" && trExecState(haltApp) === "halted" && trStateText("halted") === "tr.halted · tr.restartStoppedLocal"); }
     ok("主機重開 + 已按過暫停:講重開那條(kind = machine 優先)", trRestartKind({ halt: { halted: true }, reconciler: { stopped: { reason: "machine_restart" } } }) === "machine");
-    ok("啟動框:重開過才多那一行(主機 / Blave 各一句,最上面的狀態句),HALT 後再啟動不加", /lines: plan\.concat\(rkS === "machine" \? \[t\("tr\.cloud\.restartStartLine"\)\] : rkS === "app" \? \[t\("tr\.restartStartLineLocal"\)\] : \[\]\),/.test(src));   // 0.1.24 A6:最上面先一句「照策略組合 N 支…」
+    ok("啟動框:重開過才多那一行(主機 / Blave 各一句,最上面的狀態句),HALT 後再啟動不加", /lines: plan\.concat\(rkS === "machine" \? \[t\("tr\.cloud\.restartStartLine"\)\] : rkS === "app" \? \[t\("tr\.restartStartLineLocal"\)\] : \[\]\)\.concat\(dcl\),/.test(src));   // 0.1.24 A6:最上面先一句「照策略組合 N 支…」
     { /* Wei 0.0.6:這台電腦沒有「自己下單」的策略程式時,「解除暫停」與「包含你自己的策略程式下的單」都在講一顆不存在的東西。
          主行程掃 strategies/<name>/*.py 是否 import lib.order_* / lib.execute,寫進 report.selfOrdering;renderer 只認嚴格 === false(雲端 / 舊格式沒欄位照現行) */
       const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
