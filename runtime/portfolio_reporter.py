@@ -339,7 +339,7 @@ def _bound_venue_ids(vens):
 
 
 def tw_lots(cfg, states, vens=None):
-    """{row key: {lots, shares, unit, twd, price, price_date, est}} for every Taiwan-stock row of
+    """{row key: {lots, odd_shares, shares, unit, twd, price, price_date, est}} for every Taiwan-stock row of
     the portfolio page's 「各商品的總訊號部位」 — the contract the desktop (trade.js trTwLots) and
     the web table both follow. Row key = the table's: SYM, plus "@spot" for a spot strategy.
     A strategy whose config.exchanges entry is "paper" holds TW stocks as cash shares whatever
@@ -349,8 +349,10 @@ def tw_lots(cfg, states, vens=None):
                amount × position (Type A); a spot row below 0 is 0 (lib/portfolio)
       shares = sign × floor(|Σ amount × weight / that strategy's own close|) (raw_closes[SYM],
                the close of the round its target last changed — never re-priced while it holds)
-      lots   = sign × floor(|shares| / 1000): whole lots only, the odd lot dropped; under one
-               lot is 0
+      lots   = sign × floor(|shares| / 1000): the whole-lot part; under one lot is 0
+      odd_shares = sign × (|shares| − |lots| × 1000): the odd-lot remainder (0–999). With no
+               exchange bound the user places it by hand: a whole-lot order + an odd-lot order
+               ("2 張 340 股"), so the page shows both
       unit   = "shares" when every contributor trades on paper (the paper account fills whole
                shares, lib/order_paper._tw_signed), else "lots" (a broker fills whole lots)
       price  = |twd| / |shares| (one strategy: its close), price_date the newest raw_close_dates,
@@ -413,8 +415,9 @@ def tw_lots(cfg, states, vens=None):
         if key.endswith("@spot") and twd < 0:
             twd = shares = 0.0
         sign = 1 if shares >= 0 else -1
+        whole = int(math.floor(abs(shares) + 1e-9))
         lots = int(math.floor(abs(shares) / TW_LOT + 1e-9)) * sign
-        out[key] = {"lots": lots, "shares": int(math.floor(abs(shares) + 1e-9)) * sign,
+        out[key] = {"lots": lots, "odd_shares": (whole - abs(lots) * TW_LOT) * sign, "shares": whole * sign,
                     "unit": "shares" if row["paper"] else "lots", "twd": round(twd, 2),
                     "price": round(abs(twd) / abs(shares), 4) if shares else None,
                     "price_date": row["date"], "est": row["est"]}

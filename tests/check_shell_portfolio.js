@@ -128,7 +128,7 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     confirmBox(o) { ctx.BOX = o; }, trCloudBox: (o) => o, trWith: () => { ctx.DIRECT = (ctx.DIRECT || 0) + 1; return true; }, TR_STALE_MS: 600000, ENV_JUST_MS: 300000, trackFeature() {} });
   vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
-    "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
+    "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTwLotsText", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
     "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
@@ -143,18 +143,19 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   ok("#15 沒連交易所:配置分頁畫金額表(有輸入框);按儲存直接存,不開確認框", amt.some((n) => /amt-in/.test(n.className)) && ctx.BOX === null && ctx.DIRECT === 1, J({ box: !!ctx.BOX, direct: ctx.DIRECT }));
   const sig0 = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'cfg')", ctx));
   ok("#15 沒連交易所:總訊號部位表只有「標的｜目標」兩欄、目標上色", J(sig0.filter((n) => n.tag === "th").map((n) => n.text)) === J(["tr.col.symbol", "tr.col.target"]) && sig0.some((n) => n.tag === "td" && /\bbuy\b/.test(n.className)));
-  { // 0.1.27 台股整張(Wei 10-17):主字「N 張」、小字原 TWD 目標;捨去零股、買不起一張寫 0 張;整表只有台股時欄頭不掛（TWD）;沒有價格的列照舊寫 TWD
+  { // 0.1.27 台股張數(Wei 10-18 改:整股單＋零股單):主字「N 張 M 股」、小字原 TWD 目標;不足一張寫「M 股」、剛好整張「N 張」、不足一股才 0;整表只有台股時欄頭不掛（TWD）;沒有價格的列照舊寫 TWD
     const twRun = (amounts, st) => { vm.runInContext("TR.netOpen = TR.netOpen || new Set();", ctx); const f = flat(vm.runInContext(`poSigTable(TR.st.report, ${J(amounts)}, ${J(st)}, 'cfg')`, ctx));
       const tds = f.filter((n) => n.tag === "tr" && n.kids.length === 2 && n.kids[0].tag === "td").map((r) => r.kids[1]);
       return { th: f.filter((n) => n.tag === "th").map((n) => n.textContent), tw: tds.find((c) => /TWD|twLot/.test(c.textContent)), tds }; };
     const TWS = { symbol: "2330", position: 1, market: "spot", raw_closes: { 2330: 1000 }, raw_close_dates: { 2330: "2026-10-16" } };
-    const two = twRun({ tw: 2105000 }, { tw: TWS }), zero = twRun({ tw: 999999 }, { tw: TWS });
+    const two = twRun({ tw: 2105000 }, { tw: TWS }), zero = twRun({ tw: 999999 }, { tw: TWS }), sub1 = twRun({ tw: 500 }, { tw: TWS });
     const est = twRun({ tw: 2105000 }, { tw: Object.assign({}, TWS, { raw_closes_est: ["2330"] }) }), none = twRun({ tw: 2105000 }, { tw: { symbol: "2330", position: 1, market: "spot" } });
     const mix = twRun({ tw: 2105000, btc: 500 }, { tw: TWS, btc: { symbol: "BTCUSDT", position: 1 } });
-    ok("台股列:2,105,000 TWD ÷ 1,000 = 2,105 股 → 主字 2 張(零股捨去)、小字 2,105,000 TWD、上色 buy;tooltip 寫 MM/DD 收盤價",
-      two.tw && two.tw.text === 'po.twLots {"n":"2"}' && two.tw.kids.some((k) => k.className === "sub" && k.text === "2,105,000 TWD") && /\bbuy\b/.test(two.tw.className)
-      && two.tw.title === 'po.twLotsTip {"d":"10/16","px":"1,000"}', J(two.tw && [two.tw.textContent, two.tw.className, two.tw.title]));
-    ok("買不起一張(999,999 TWD ÷ 1,000 = 999 股):寫 0 張、灰字", zero.tw && zero.tw.text === 'po.twLots {"n":"0"}' && /\bna\b/.test(zero.tw.className), J(zero.tw && [zero.tw.textContent, zero.tw.className]));
+    ok("台股列:2,105,000 TWD ÷ 1,000 = 2,105 股 → 主字「2 張 105 股」(整股單＋零股單)、小字 2,105,000 TWD、上色 buy;tooltip 寫 MM/DD 收盤價與整股／零股",
+      two.tw && two.tw.text === 'po.twLots {"n":"2"} po.twShares {"n":"105"}' && two.tw.kids.some((k) => k.className === "sub" && k.text === "2,105,000 TWD") && /\bbuy\b/.test(two.tw.className)
+      && two.tw.title === 'po.twLotsTip {"d":"10/16","px":"1,000","l":"2","s":"105"}', J(two.tw && [two.tw.textContent, two.tw.className, two.tw.title]));
+    ok("不足一張(999,999 TWD ÷ 1,000 = 999 股):寫「999 股」、上色 buy,不出現 0 張、不掛原因小字", zero.tw && zero.tw.text === 'po.twShares {"n":"999"}' && /\bbuy\b/.test(zero.tw.className)
+      && !zero.tw.kids.some((k) => k && /twSharesZero|twLotsZero/.test(k.text || "")), J(zero.tw && [zero.tw.textContent, zero.tw.className]));
     ok("舊 state 補的價格:tooltip 改寫估算那句", est.tw && /^po\.twLotsTipEst /.test(est.tw.title));
     ok("整表只有台股:欄頭「目標」不掛（TWD）;沒有價格的列照舊寫金額、單位寫進格子", J(two.th) === J(["tr.col.symbol", "tr.col.target"]) && none.tw && none.tw.text === "+2,105,000 TWD", J([two.th, none.tw && none.tw.textContent]));
     const one = twRun({ tw: 1000000 }, { tw: TWS });
@@ -163,9 +164,14 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
     ok("en 單數:剛好 1 張用 po.twLot", one.tw && one.tw.text === 'po.twLot {"n":"1"}', J(one.tw && one.tw.textContent));
     ok("兩支策略一支沒價格:整列照舊寫 TWD,不拿有價格的那支算張數", half.tw && half.tw.text === "+3,105,000 TWD", J(half.tds.map((c) => c.textContent)));
     ok("現貨 Type C 負權重當 0:只算做多那支(1,600,000 ÷ 800 = 2 張)", shortC.tw && shortC.tw.text === 'po.twLots {"n":"2"}' && shortC.tw.kids.some((k) => k.text === "1,600,000 TWD"), J(shortC.tds.map((c) => c.textContent)));
-    ok("混加密:台股列照寫張數,加密列不動(+500)", mix.tw && mix.tw.text === 'po.twLots {"n":"2"}' && mix.tds.some((c) => c.textContent === "+500"), J(mix.tds.map((c) => c.textContent)));
+    ok("混加密:台股列照寫張數,加密列不動(+500)", mix.tw && mix.tw.text === 'po.twLots {"n":"2"} po.twShares {"n":"105"}' && mix.tds.some((c) => c.textContent === "+500"), J(mix.tds.map((c) => c.textContent)));
     const subs = (c) => (c ? c.kids.filter((k) => k && k.className === "sub").map((k) => k.text) : []);
-    ok("沒連交易所、買不起一張:「0」的原因寫在格子裡(小字),不只 title", subs(zero.tw).some((x) => /^po\.twLotsZero /.test(x)), J(subs(zero.tw)));
+    ok("沒連交易所、不足一股(500 TWD ÷ 1,000):寫 0 股、灰字,原因寫在格子裡(小字 po.twSharesZero),不只 title", sub1.tw && sub1.tw.text === 'po.twShares {"n":"0"}' && /\bna\b/.test(sub1.tw.className)
+      && subs(sub1.tw).some((x) => /^po\.twSharesZero /.test(x)), J(sub1.tw && [sub1.tw.textContent, subs(sub1.tw)]));
+    ok("剛好整張不帶零股:1,000 股 → 只寫「1 張」;trTwLots 的 odd = 零股(同 runtime odd_shares)", one.tw && one.tw.text === 'po.twLot {"n":"1"}'
+      && vm.runInContext("[trTwLotsText(2, 340), trTwLotsText(0, 340), trTwLotsText(2, 0), trTwLotsText(0, 0), trTwLotsText(0, 1), trTwLotsText(-1, -5)].join('|')", ctx)
+        === ['po.twLots {"n":"2"} po.twShares {"n":"340"}', 'po.twShares {"n":"340"}', 'po.twLots {"n":"2"}', 'po.twShares {"n":"0"}', 'po.twShare {"n":"1"}', '-po.twLot {"n":"1"} po.twShares {"n":"5"}'].join("|"),
+      J(one.tw && one.tw.textContent));
     // 0.1.27 稽核 P1-1／實跑 B1(Wei 10-18):連模擬交易時寫「N 股」(模擬盤整股成交,lib/order_paper);MARKET="swap" 的 Type A 也當現股併進 @spot、空頭壓 0
     const keepTR = ctx.TR; ctx.TR = bag({ paper: V }, { can_paper_twstock: true });
     const SW = { symbol: "2330", position: 1, market: "swap", raw_closes: { 2330: 1085 }, raw_close_dates: { 2330: "2026-10-16" } };
@@ -315,11 +321,11 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
         cells: () => flat(vm.runInContext("poSigTable(TR.st.report, __m[0], __m[1], 'cfg')", ctx)) }; };
     const C = nv({ c: 1000000 }, { c: { market: "spot", weights: { 2330: 0.5, 2603: 0.3 }, raw_closes: { 2330: 2420, 2603: 200 }, raw_close_dates: { 2330: "2026-10-16", 2603: "2026-10-16" } } });
     const c1 = C.lots("2330@spot"), c2 = C.lots("2603@spot"), cc = C.cells().map((n) => n.textContent || n.text || "");
-    ok("沒綁交易所、台股 Type C 路由 \"\":目標與拆解照訊號(不是 0)、不是模擬交易、張數寫整張(2603 1,500 股 → 1 張;2330 206 股 → 0 張)",
+    ok("沒綁交易所、台股 Type C 路由 \"\":目標與拆解照訊號(不是 0)、不是模擬交易、張＋零股(2603 1,500 股 → 1 張 500 股;2330 206 股 → 0 張 206 股)",
       J(C.t) === J({ "2330@spot": 500000, "2603@spot": 300000 }) && C.c["2330@spot"][0].v === 500000 && C.paper("c") === false
-      && !!c1 && c1.unit === "lots" && c1.lots === 0 && c1.shares === 206 && !!c2 && c2.unit === "lots" && c2.lots === 1, J([C.t, c1, c2]));
-    ok("沒綁交易所、台股 Type C:總訊號部位表寫「N 張」,0 張那列帶原因小字(po.twLotsZero),不寫 0 TWD",
-      cc.some((x) => /^po\.twLot /.test(x) && x.includes('"n":"1"')) && cc.some((x) => /^po\.twLotsZero /.test(x)), J(cc.filter((x) => /^po\.tw/.test(x))));
+      && !!c1 && c1.unit === "lots" && c1.lots === 0 && c1.odd === 206 && c1.shares === 206 && !!c2 && c2.unit === "lots" && c2.lots === 1 && c2.odd === 500, J([C.t, c1, c2]));
+    ok("沒綁交易所、台股 Type C:總訊號部位表寫「1 張 500 股」「206 股」,不寫 0 張、不寫 0 TWD",
+      cc.some((x) => x === 'po.twLot {"n":"1"} po.twShares {"n":"500"}300,000 TWD') && cc.some((x) => x === 'po.twShares {"n":"206"}500,000 TWD') && !cc.some((x) => /twLotsZero|po\.twLots \{"n":"0"\}/.test(x)), J(cc.filter((x) => /^po\.tw/.test(x))));
     const A = nv({ a: 5000000 }, { a: { symbol: "2330", position: 1, market: "swap", raw_closes: { 2330: 2420 }, raw_close_dates: { 2330: "2026-10-16" } } });
     const a1 = A.lots("2330"), ac = A.cells().map((n) => n.textContent || n.text || "");
     ok("沒綁交易所、台股 Type A 路由 \"\":目標 5,000,000、2330 寫 2 張(swap 照自己的 MARKET,不併 @spot)",

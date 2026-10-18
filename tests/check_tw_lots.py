@@ -394,16 +394,22 @@ S = {"c": {"market": "spot", "weights": {"2330": 0.5, "2454": 0.5}, "raw_closes"
 lots = pr.tw_lots({"amounts": {"c": 4_210_000, "a": 0}}, S)
 check(lots["2330@spot"]["lots"] == 2 and lots["2330@spot"]["twd"] == 2_105_000,
       f"2,105,000 TWD at 1000 = 2105 shares → 2 lots, odd 105 dropped ({lots.get('2330@spot')})")
-check(lots["2454@spot"]["lots"] == 1, "2,105,000 at 1250 = 1684 shares → 1 lot")
-check(pr.tw_lots({"amounts": {"c": 1_500_000}}, S)["2330@spot"]["lots"] == 0,
-      "750,000 TWD at 1000 = 750 shares → 0 lots (cannot afford one)")
+check(lots["2330@spot"]["odd_shares"] == 105 and lots["2330@spot"]["shares"] == 2105,
+      "the odd lot is reported (odd_shares 105): placed by hand as a whole-lot + an odd-lot order")
+check(lots["2454@spot"]["lots"] == 1 and lots["2454@spot"]["odd_shares"] == 684, "2,105,000 at 1250 = 1684 shares → 1 lot + 684")
+u = pr.tw_lots({"amounts": {"c": 1_500_000}}, S)["2330@spot"]
+check(u["lots"] == 0 and u["odd_shares"] == 750, f"750,000 TWD at 1000 = 750 shares → 0 lots + 750 odd ({u})")
+x = pr.tw_lots({"amounts": {"c": 4_000_000}}, S)["2330@spot"]
+check(x["lots"] == 2 and x["odd_shares"] == 0, f"exactly 2,000 shares → 2 lots, odd 0 ({x})")
+z = pr.tw_lots({"amounts": {"c": 1_000}}, S)["2330@spot"]
+check(z["lots"] == 0 and z["odd_shares"] == 0 and z["shares"] == 0, f"under one share → 0 / 0 ({z})")
 two = pr.tw_lots({"amounts": {"c": 2_000_000, "a": 1_200_000}}, S)["2330@spot"]
 check(two["lots"] == 2 and two["est"] is True and two["price_date"] == "2026-10-16",
       f"two strategies: each at its own close (1000 + 1500 shares → 2 lots), est carried, newest date ({two})")
 check("2454@spot" not in pr.tw_lots({"amounts": {"n": 1_000_000}}, S),
       "a contributor without a close: no row (the page keeps TWD)")
 neg = pr.tw_lots({"amounts": {"a": 2_000_000}}, dict(S, a=dict(S["a"], position=-1.0)))["2330@spot"]
-check(neg["lots"] == 0 and neg["twd"] == 0, "spot row below 0 is 0 lots")
+check(neg["lots"] == 0 and neg["odd_shares"] == 0 and neg["twd"] == 0, "spot row below 0 is 0 lots")
 sp = pr.tw_lots({"amounts": {"s": 2_000_000, "a": 1_600_000}}, S)["2330@spot"]
 check(sp["twd"] == 1_600_000 and sp["lots"] == 2,
       f"spot Type C negative weight counts as 0: only the long strategy sizes the row ({sp})")

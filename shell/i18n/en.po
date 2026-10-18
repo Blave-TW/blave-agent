@@ -7581,10 +7581,10 @@ msgid "po.twLot"
 msgstr "{n} lot"
 
 msgid "po.twLotsTip"
-msgstr "At the {d} close of {px}, whole lots only (1 lot = 1,000 shares; odd lots dropped)"
+msgstr "At the {d} close of {px}: {l} whole lots + {s} odd-lot shares (1 lot = 1,000 shares)"
 
 msgid "po.twLotsTipEst"
-msgstr "Estimated at the {d} close of {px}: the close on the day the target changed wasn’t recorded. Whole lots only (1 lot = 1,000 shares; odd lots dropped)"
+msgstr "Estimated at the {d} close of {px}: the close on the day the target changed wasn’t recorded. {l} whole lots + {s} odd-lot shares (1 lot = 1,000 shares)"
 
 msgid "po.twShares"
 msgstr "{n} shares"
@@ -7597,9 +7597,6 @@ msgstr "At the {d} close of {px}, in whole shares as the paper account fills the
 
 msgid "po.twSharesTipEst"
 msgstr "Estimated at the {d} close of {px}: the close on the day the target changed wasn’t recorded. Whole shares, as the paper account fills them (fractions dropped)"
-
-msgid "po.twLotsZero"
-msgstr "Under 1 lot at the {px} close (about {n} shares)"
 
 msgid "po.twSharesZero"
 msgstr "Under 1 share at the {px} close"

@@ -943,7 +943,7 @@ function trClientTargets(amounts, states, contracts) {
   return out;
 }
 /* 台股列的股數(0.1.27,= runtime portfolio_reporter.tw_lots,網頁同一條):每支策略自己的部分除以它 state 的 raw_closes[SYM]
-   (目標最後變動那一輪的未還原收盤價,目標沒變不重算)再加總。真實券商整張下單:捨去到整張(1 張 = 1000 股,零股不算),買不起一張 = 0 張;
+   (目標最後變動那一輪的未還原收盤價,目標沒變不重算)再加總。券商(含沒綁交易所、照著去下單):整股單＋零股單,lots = 整張、odd = 零股(= runtime odd_shares);
    路由到模擬交易的策略(trPaperOf,逐支)照模擬盤的成交規則整股下單(lib/order_paper._tw_signed):不管 MARKET 都當現股(@spot、自己的空頭壓 0,同 trClientTargets);
    這一列每支貢獻策略都是模擬交易才寫 unit "shares"(捨去到整股),否則 "lots"。trRouteBlank 的策略(有綁交易所、路由空字串)不算:對帳器不交易沒路由的策略(lib 跳過)。
    有金額的貢獻策略只要一支沒有價格(舊 lib、那一輪抓價失敗)就回 null:那一列照舊寫 TWD */
@@ -975,8 +975,8 @@ function trTwLots(key, amounts, states) {
   }
   if (!any) return null;
   if (spotKey && twd < 0) twd = shares = 0;
-  const sg = shares < 0 ? -1 : 1, lots = Math.floor(Math.abs(shares) / TW_LOT_SHARES + 1e-9) * sg;
-  return { lots, shares: Math.floor(Math.abs(shares) + 1e-9) * sg, unit: allPaper ? "shares" : "lots", twd, price: shares ? Math.abs(twd) / Math.abs(shares) : null, date, est };
+  const sg = shares < 0 ? -1 : 1, whole = Math.floor(Math.abs(shares) + 1e-9), lots = Math.floor(Math.abs(shares) / TW_LOT_SHARES + 1e-9) * sg;
+  return { lots, odd: (whole - Math.abs(lots) * TW_LOT_SHARES) * sg, shares: whole * sg, unit: allPaper ? "shares" : "lots", twd, price: shares ? Math.abs(twd) / Math.abs(shares) : null, date, est };
 }
 /* 啟動框「補齊部位」台股那一筆的股數:模擬盤整股成交(tw.unit "shares",trTwLots),差額 d(TWD)÷ 價格捨去到整股;
    帳上還沒有部位時就是部位表那一格的 tw.shares。不是 "shares"(真實券商、舊 lib 沒價格)= null,照舊寫 TWD */
@@ -2944,6 +2944,13 @@ function trTwName(sym) {
   trTwNamesWant();
   return (TR_TWN.names && TR_TWN.names[s.replace(/\.TWO?$/, "")]) || "";
 }
+/* 券商台股列(沒綁交易所、照著去券商下單):整股單＋零股單 →「2 張 340 股」;不足一張「340 股」;剛好整張「2 張」;不足一股「0 股」 */
+function trTwLotsText(lots, odd) {
+  const L = Math.abs(lots || 0), O = Math.abs(odd || 0), parts = [];
+  if (L) parts.push(t(L === 1 ? "po.twLot" : "po.twLots", { n: trFmt(L) }));
+  if (O || !L) parts.push(t(O === 1 ? "po.twShare" : "po.twShares", { n: trFmt(O) }));
+  return (lots < 0 || odd < 0 ? "-" : "") + parts.join(" ");
+}
 /* 代號格裡的名字:截尾(.tw-name 有寬度上限),全名在 title */
 function trTwNameEl(sym) {
   const nm = trTwName(sym);
@@ -3631,13 +3638,14 @@ function poSigTable(r, stored, states, mode) {
     if (!trade && !noSig && !notYet && z === TR_TXF_CCY) {
       if (tw) {
         // 模擬交易寫股數(模擬盤整股成交),其他寫整張(真實券商整張下單)
-        const sh = tw.unit === "shares", q = sh ? tw.shares : tw.lots, d = tw.date ? tw.date.slice(5).replace("-", "/") : null;
+        const sh = tw.unit === "shares", q = tw.shares, d = tw.date ? tw.date.slice(5).replace("-", "/") : null;
         tc.className = "n " + (q > 0 ? "buy" : q < 0 ? "sell" : "na");
-        tc.textContent = t(sh ? (Math.abs(q) === 1 ? "po.twShare" : "po.twShares") : (Math.abs(q) === 1 ? "po.twLot" : "po.twLots"), { n: trFmt(q) });
+        tc.textContent = sh ? t(Math.abs(q) === 1 ? "po.twShare" : "po.twShares", { n: trFmt(q) }) : trTwLotsText(tw.lots, tw.odd);
         tc.appendChild(trEl("span", "sub", trFmt(tw.twd) + " " + TR_TXF_CCY));
-        // 「0」為什麼是 0 寫在格子裡(td 不能聚焦,title 鍵盤與觸控都看不到):買不起一張／一股
-        if (!q && tw.twd > 0 && tw.price) tc.appendChild(trEl("span", "sub", t(sh ? "po.twSharesZero" : "po.twLotsZero", { px: trFmt(tw.price), n: trFmt(tw.shares) })));
-        if (tw.price && d) tc.title = t(sh ? (tw.est ? "po.twSharesTipEst" : "po.twSharesTip") : (tw.est ? "po.twLotsTipEst" : "po.twLotsTip"), { d, px: trFmt(tw.price) });
+        // 「0」為什麼是 0 寫在格子裡(td 不能聚焦,title 鍵盤與觸控都看不到):買不起一股(券商也收零股,不足一張不再是 0)
+        if (!q && tw.twd > 0 && tw.price) tc.appendChild(trEl("span", "sub", t("po.twSharesZero", { px: trFmt(tw.price) })));
+        if (tw.price && d) tc.title = sh ? t(tw.est ? "po.twSharesTipEst" : "po.twSharesTip", { d, px: trFmt(tw.price) })
+          : t(tw.est ? "po.twLotsTipEst" : "po.twLotsTip", { d, px: trFmt(tw.price), l: trFmt(Math.abs(tw.lots)), s: trFmt(Math.abs(tw.odd)) });
       } else if (zones.length === 1) tc.textContent = numText(lot, ts) + " " + TR_TXF_CCY;
     }
     if (lt && !noSig && !notYet) { const sp = trTxfSpec(trCapitalCanon(sym)), m = ts && sp ? trTxfRefMoney(sp, Math.abs(ts), trTxfPrice()) : null;
