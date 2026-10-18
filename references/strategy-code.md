@@ -4,7 +4,7 @@ NOTE: This guide covers **Type A (Signal Strategy)** and **Type C (Portfolio Str
 
 ## Start here
 
-This file is ~80 KB: read it with `Read` and an `offset` / `limit` around the section you need — never `cat … | head -400` (a Bash result over its size limit is cut to a preview, and the read is wasted). Every rule below still applies; this only says what to read first.
+This file is ~80 KB: read one section by its line range (`Read` with `offset` / `limit`, or `sed -n 'a,bp'`) — never the whole file piped to `head` (a result over the output limit is cut to a preview, and the read is wasted). Every rule below still applies; this only says what to read first.
 
 **Taiwan stock picking / rotation (Type C, 台股選股)** — read exactly these, then write:
 1. `strategies/TEMPLATE_C.py` — the `hdrs` lines for a probe script and the industry-sampled UNIVERSE (`lib.strategy.twstock_universe_by_sector`) are in it.
@@ -802,7 +802,7 @@ If `paired` is False: tell the user "Telegram is not paired yet. Please complete
 
 ## Type C — Portfolio Strategy
 
-CRITICAL: Every Type C strategy MUST be based on `strategies/TEMPLATE_C.py`. Copy it and fill in the marked sections. Read `examples/tw100_foreign_zscore/strategy.py` as a complete working reference.
+CRITICAL: Every Type C strategy MUST be based on `strategies/TEMPLATE_C.py`. Copy it and fill in the marked sections. Complete working references: `examples/twstock_momentum/strategy.py` (Taiwan stock picking, top-N) and `examples/tw100_foreign_zscore/strategy.py` (z-score weights on an extra feed).
 
 ### Steps
 
