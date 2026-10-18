@@ -3252,9 +3252,10 @@ function trCfStates(r, stored, sending, contracts) {
 /* 下一輪對帳器先不動的部分(lib/portfolio 的 first_signal_wait 與訊號閘)。快照 caps 沒有 first_signal_wait = 舊 lib,前一種不算。
    還沒算出第一個訊號的成員:草稿一律算(存檔時 runtime 移走它的舊 state.json;當根的 state 會留著、對帳器就不等,框照等算,只差那句說明);
    已存的看快照 awaiting 還在窗內(過了窗它照常對帳,沒貢獻的部位照賣)。標的同對帳器:SYMBOL,組合看 UNIVERSE,都沒有看預覽。
-   等第一個訊號只凍「被換掉的那段」:對帳器第一輪看上一輪快照(= 現在這份),frozen = 那一列裡這次不再有貢獻的成員(移出／歸 0、
-   或自己又在等)的貢獻;窗內目標 = 其他成員現在要的 + frozen + 之後離開這檔的成員最後那份,別支自己的訊號、金額照送。
-   同一檔兩支以上新成員:先算出來的那支(快照列 cohort)等最後一支算出來才算進去。快照那一列已在窗內(帶 awaiting 與 frozen)就沿用它的 frozen;
+   等第一個訊號只凍「被換掉、帳上還撐著的那段」:對帳器第一輪看上一輪快照(= 現在這份),這次不再有貢獻的成員(移出／歸 0、或自己又在等)
+   各取它在快照的貢獻,但不超過帳上扣掉留下成員那份之後還有的(閘中的取剩下的,見 trCfRows 的 trCfHold);窗內目標 = 其他成員現在要的 + 那段,
+   而且永遠落在 [帳上, 其他成員現在要的] 之間——別支的減碼(停損)照送,加碼先抵掉那段、窗結束才送。
+   同一檔兩支以上新成員:先算出來的那支(快照列 cohort)等最後一支算出來才算進去;算過的成員又在等不算新成員。快照那一列已在窗內(帶 awaiting 與 frozen)就沿用它的 frozen;
    基準還沒寫(needs_baseline)或那一檔在等 pending,對帳器整檔不動,不給 anchor。
    訊號閘:快照那一列 gated,而且撐它的閘中策略這次還有金額。回 { wait: {標的: [策略]}, gate: [標的], anchor: {標的: {frozen, contributors, cohort}} } */
 function trCfHolds(r, stored, sending, contracts, st) {
@@ -3278,7 +3279,7 @@ function trCfHolds(r, stored, sending, contracts, st) {
   if (newLib && last.needs_baseline == null) Object.keys(wait).forEach((k) => { if (pend.indexOf(k) < 0) anchor[k] = { frozen: 0, contributors: [], cohort: [] }; });
   Object.keys(tg).forEach((k) => { const row = tg[k] || {}, cs = Array.isArray(row.contributors) ? row.contributors : [], an = anchor[trCanonKey(k)];
     if (an) { const inWin = !!row.awaiting && typeof row.frozen === "number" && isFinite(row.frozen);
-      an.contributors = cs; if (inWin) { an.frozen = row.frozen; an.cohort = Array.isArray(row.cohort) ? row.cohort : []; } }
+      an.contributors = cs; an.inWin = inWin; if (inWin) { an.frozen = row.frozen; an.cohort = Array.isArray(row.cohort) ? row.cohort : []; } }
     if (row.gated !== true) return;
     // 閘中的那支貢獻列帶 gated: true(同一個 lib 起);舊 lib 沒有這欄:沒綁交易所以外的 gated 列都當閘中,撐它的還有金額就算
     if (cs.some((c) => c && funded(c.strategy) && (newLib ? c.gated === true : !row.unrouted))) gate.push(trCanonKey(k)); });
@@ -3315,6 +3316,24 @@ function trCfQty(sym, money, px) {
    其他算不出的(過了等待窗、舊 lib)沒有貢獻:對帳器只算有 state.json 的,帳上那些檔下一輪照樣賣,照列。
    回傳另帶 held = {wait: [這一輪不動、沒列單的標的], names: [在等的策略], gate: [被訊號閘擋下的標的], unknown: 目標不知道的那檔這次有動}(框的說明句與標題用) */
 function trCfRows(o) {
+  /* 被換掉、帳上還撐著的那段(同 lib/portfolio _first_signal_targets):離開的成員(沒金額、或自己又在等)只算帳上 as 扣掉留下成員那份之後
+     還有的,同號且不超過;閘中的離開成員自己的目標沒到帳,取剩下的全部。快照已在窗內(an.inWin)就從它的 frozen 接著扣這次才離開的 */
+  function trCfHold(an, sending, ws, as) {
+    const within = (v, room) => (v * room <= 0 ? 0 : Math.abs(v) <= Math.abs(room) ? v : room), val = (c) => (isFinite(Number(c.contribution)) ? Number(c.contribution) : 0);
+    const cs = an.contributors.filter((c) => c && c.strategy != null && an.cohort.indexOf(c.strategy) < 0).sort((a, b) => (String(a.strategy) < String(b.strategy) ? -1 : 1));
+    const back = (c) => ws.indexOf(c.strategy) >= 0, leaving = (c) => !(Number(sending[c.strategy]) > 0) || back(c);
+    if (an.inWin) {
+      let room = as - cs.reduce((a, c) => a + val(c), 0) - an.frozen, hold = an.frozen;
+      cs.filter(leaving).forEach((c) => { room += val(c); const x = within(val(c), room); room -= x; hold += x; });
+      return hold;
+    }
+    let room = as - cs.filter((c) => !leaving(c)).reduce((a, c) => a + val(c), 0), hold = 0;
+    const take = (v) => { const x = within(v, room); room -= x; hold += x; };
+    take(cs.filter((c) => leaving(c) && !back(c) && c.gated !== true).reduce((a, c) => a + val(c), 0));
+    cs.filter((c) => back(c) && c.gated !== true).forEach((c) => take(val(c)));
+    if (cs.some((c) => leaving(c) && c.gated === true)) { hold += room; room = 0; }
+    return hold;
+  }
   const st = trCfStates(o.r, o.stored, o.sending, o.contractsAfter);
   const known = (am) => { const x = {}; Object.keys(am).forEach((n) => { if (st.missing.indexOf(n) < 0) x[n] = am[n]; }); return x; };
   const before = trClientTargets(known(o.stored), st.states, o.contractsBefore), after = trClientTargets(known(o.sending), st.states, o.contractsAfter);
@@ -3335,13 +3354,12 @@ function trCfRows(o) {
       // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)
       const an0 = holds.wait[sym] ? holds.anchor[sym] : null, an = blind.has(sym) ? an0 : null, ws = holds.wait[sym] || [], lot = o.lot(sym);
       if (blind.has(sym) && !an) { if (o.mine[sym] || after[sym]) { hit(held.wait, sym); ws.forEach((n) => hit(held.names, n)); } if (Math.round(before[sym] || 0) !== Math.round(after[sym] || 0)) held.unknown = true; return; }
-      // 被換掉的那段:快照列裡這次不再有貢獻的成員(沒金額、或自己又在等);先算出來的新成員(cohort)不算離開
-      const gone = an0 ? an0.contributors.filter((c) => c && c.gated !== true && an0.cohort.indexOf(c.strategy) < 0 && (!(Number(o.sending[c.strategy]) > 0) || ws.indexOf(c.strategy) >= 0))
-        .reduce((a, c) => a + (isFinite(Number(c.contribution)) ? Number(c.contribution) : 0), 0) : 0;
-      const frozen = an0 ? an0.frozen + gone : 0, froze = lot ? Math.round(Math.abs(frozen)) > 0 : Math.abs(frozen) >= 1;
+      const as = o.mine[sym] || 0, frozen = an0 ? trCfHold(an0, o.sending, ws, as) : 0, froze = lot ? Math.round(Math.abs(frozen)) > 0 : Math.abs(frozen) >= 1;
       const others = an ? (cs1[sym] || []).filter((c) => ws.indexOf(c.name) < 0 && an.cohort.indexOf(c.name) < 0).reduce((a, c) => a + c.v, 0) : 0;
-      const raw = an ? Math.max(/@spot$/.test(sym) ? 0 : -Infinity, others + frozen) : after[sym] || 0;
-      const ts = lot ? trLotsTarget(raw).lots : raw, as = o.mine[sym] || 0, d = ts - as;
+      // 窗內目標永遠落在 [帳上, 其他成員要的] 之間:等待只會少動,不會比沒有它時多買或反向
+      const settle = (x) => { const y = /@spot$/.test(sym) ? Math.max(0, x) : x; return lot ? trLotsTarget(y).lots : y; }, base = an ? settle(others) : 0;
+      const raw = an ? Math.min(Math.max(settle(others + frozen), Math.min(base, as)), Math.max(base, as)) : after[sym] || 0;
+      const ts = lot ? trLotsTarget(raw).lots : raw, d = ts - as;
       const gs = lot ? null : trGateSide(o.gates[sym], ts, as), acts = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
       if (acts && gated.has(sym)) { hit(held.gate, sym); return; }
       if (!acts) { if (ws.length && o.mine[sym] && (froze || !an0)) { hit(held.wait, sym); ws.forEach((n) => hit(held.names, n)); } return; }

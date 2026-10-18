@@ -1,12 +1,13 @@
 """A funded member with no state.json yet (just joined, its old one moved away by the runtime's
 _retire_prejoin_signals, or never computed) leaves what it replaces on the book until it writes its
 first state — at most one bar of its INTERVAL, never longer than FIRST_SIGNAL_WAIT_MAX_S. What it
-replaces is fixed at the save: frozen = the previous round's snapshot contributions of the members that
-no longer contribute (left / 0 / waiting again); inside the window the key's target is the others'
-target now + frozen, so only the leaving member's close and the newcomer's entry wait — a neighbour's
-own signal (a stop included, even one between the save and the first round) or amount (even one changed
-in the same save) still trades, and a mark-to-market book's PnL is not frozen. Swapping a strategy for
-a new version on the same coin used to close the position one round and buy it back the next.
+replaces is fixed at its first trusted round: the previous round's snapshot shares of the members that
+no longer contribute (left / 0 / waiting again), bounded by what the book holds beyond the others'
+share; inside the window the key's target is the others' target now + that, never outside [book now,
+the others' target now] — a neighbour's reduction (a stop included, even one between the save and the
+first round) trades at once, its add is netted against the hold until the window closes. Swapping a
+strategy for a new version on the same coin used to close the position one round and buy it back the
+next. The invariant itself is fuzzed in tests/check_first_signal_fuzz.py.
 
 Through the real aggregate_portfolio → reconcile with a fake venue:
   single → single switch, single → portfolio (UNIVERSE), portfolio keys from the backtest preview,
@@ -20,7 +21,10 @@ Through the real aggregate_portfolio → reconcile with a fake venue:
   (nothing anchored); another gate wins; spot never goes short; lots stay whole; a
   non-UTF-8 strategy.py, a bug in the helper, a write that fails, a clock set back, NaN in the file;
   UNIVERSE comments (tests/fixtures/universe_comments.json, the shell reads the same); the gated
-  contributor flag; HALT.
+  contributor flag; HALT; a leaver's target that never reached the book (HALT, rejected, closed by
+  hand), a save right after an entry round, a signal-gated leaver, another gate in the first round
+  after the save, a neighbour whose state vanishes and comes back, no snapshot, a newcomer computing
+  past its window, the anchor lost with one newcomer computed.
 
 Run: cd blave-agent && .venv/bin/python tests/check_first_signal_wait.py
 """
@@ -224,22 +228,28 @@ json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/c1/state.json",
 got = [v.round() for _ in range(3)]
 check(got == [[("BTCUSDT", -200)], [], []] and v.held["BTCUSDT"] == 500,
       f"c1 stops out while db waits: its 200 is sold once, three rounds, btc's 500 stays ({got})")
+# a neighbour's add inside the window is netted against the hold (the wait never buys where the
+# same round without it would sell): it goes out when the window closes
 json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/c1/state.json", "w"))
-check(v.round() == [("BTCUSDT", 200)], f"c1 back in: bought back, the frozen 500 untouched ({v.calls})")
+check(v.round() == [] and v.held["BTCUSDT"] == 500,
+      f"c1 back in while db waits: netted against btc's 500 held, no order ({v.calls})")
 json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
-check(v.round() == [] and v.held["BTCUSDT"] == 700, f"db's first signal takes btc's 500 over: no order ({v.calls})")
+check(v.round() == [("BTCUSDT", 200)] and v.held["BTCUSDT"] == 700,
+      f"db's first signal takes btc's 500 over, c1's 200 goes out now ({v.calls})")
 
 v = neighbours()
 v.round()
 json.dump({"symbol": "BTCUSDT", "position": 2}, open("strategies/c1/state.json", "w"))
-check(v.round() == [("BTCUSDT", 200)] and v.round() == [], f"c1 scales up while db waits: one buy ({v.calls})")
+check(v.round() == [] and v.round() == [], f"c1 scales up while db waits: netted against the hold ({v.calls})")
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
+check(v.round() == [("BTCUSDT", 200)] and v.held["BTCUSDT"] == 900, f"…bought once db has computed ({v.calls})")
 
 v = neighbours(c1_after=400)
-check(v.round() == [("BTCUSDT", 200)] and v.round() == [],
-      f"c1 raised 200→400 in the same save as the swap: the raise goes out now, once ({v.calls})")
-c1_back = v.held["BTCUSDT"]
+check(v.round() == [] and v.round() == [],
+      f"c1 raised 200→400 in the same save as the swap: netted against btc's 500 held ({v.calls})")
 json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
-check(v.round() == [] and c1_back == 900, f"db's first signal takes btc's 500 over: no order ({v.calls})")
+check(v.round() == [("BTCUSDT", 200)] and v.held["BTCUSDT"] == 900,
+      f"db's first signal takes btc's 500 over, c1's raise goes out once ({v.calls})")
 v = neighbours(c1_after=50)
 check(v.round() == [("BTCUSDT", -150)], f"c1 cut 200→50 in the same save: its 150 is sold now, btc's 500 waits ({v.calls})")
 
@@ -414,8 +424,8 @@ strat("db", "BTCUSDT")
 v = swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": 200, "db": 500}, {"BTCUSDT": 700})
 json.dump({"c1": 1}, open("state/signal_gate.json", "w"))
 got, row = v.round(), snap_row("BTCUSDT")
-check(got == [] and row.get("gated") is True and "frozen" not in row and set(row.get("awaiting") or {}) == {"db"},
-      f"c1 waits for a new signal: the key stays gated, no window target over it ({got}, {row})")
+check(got == [] and row.get("gated") is True and row.get("frozen") == 500 and set(row.get("awaiting") or {}) == {"db"},
+      f"c1 waits for a new signal: the key stays gated, no window target over it — anchored all the same ({got}, {row})")
 
 # spot never goes short: the others' short intent plus frozen is clamped at 0
 fresh()
@@ -453,7 +463,8 @@ for label, kw in (("the book cannot be trusted (baseline wait)", {"trusted": Fal
     check(out.get("gated") is True and "frozen" not in out and "first_signal_hold" not in out
           and not portfolio._first_signal_book()["anchors"],
           f"{label}: the key stays held as is, no anchor written ({out})")
-out = portfolio._first_signal_targets(waiting(), trusted=True, funded={"db"})["BTCUSDT"]
+out = portfolio._first_signal_targets(waiting(), trusted=True, funded={"db"},
+                                     book={"BTCUSDT": {"side": "long", "size": 500}})["BTCUSDT"]
 check(out.get("gated") is False and out.get("frozen") == 500 and portfolio._first_signal_book()["anchors"].get("BTCUSDT"),
       f"…and once it can be trusted, btc's 500 from the snapshot is the anchor ({out})")
 
@@ -596,6 +607,196 @@ v.held["BTCUSDT"] = 0
 json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
 check(v.round() == [] and v.held.get("BTCUSDT", 0) == 0, f"halted: db's first signal opens nothing ({v.calls})")
 os.remove(guard.HALT_PATH)
+
+# ── what is held is what the book has: a leaver's target that never reached it is nothing to keep
+def three(btc_pos=0):
+    fresh()
+    strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": btc_pos})
+    strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("db", "BTCUSDT")
+    config({"btc": 500, "c1": 200})
+    return Venue({"BTCUSDT": 200 + 500 * btc_pos})
+
+
+v = three()
+v.round()
+open(guard.HALT_PATH, "w").write("test")
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/btc/state.json", "w"))
+check(v.round() == [], f"E1 setup: btc turns long under HALT, the entry is denied ({v.calls})")
+config({"btc": 0, "c1": 200, "db": 500})
+v.round()
+os.remove(guard.HALT_PATH)
+got = [v.round(), v.round()]
+row = snap_row("BTCUSDT")
+check(got == [[], []] and v.held["BTCUSDT"] == 200 and row.get("frozen") == 0,
+      f"E1 btc's long never reached the book, then btc → db: nothing bought for it, after HALT either ({got}, {row.get('frozen')})")
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/db/state.json", "w"))
+check(v.round() == [] and v.held["BTCUSDT"] == 200, f"E1 db flat: c1's 200 stays, nothing to sell back ({v.calls})")
+
+
+class Rejecting(Venue):
+    reject = False
+
+    def place(self, symbol, signed_diff, asset_spec, reduce_only=False):
+        if self.reject:
+            raise RuntimeError("insufficient margin")
+        return Venue.place(self, symbol, signed_diff, asset_spec, reduce_only)
+
+
+v = three()
+v.__class__ = Rejecting
+v.round()
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/btc/state.json", "w"))
+v.reject = True
+v.round()
+v.reject = False
+check(v.held["BTCUSDT"] == 200, f"E1 setup: btc's entry is rejected ({v.held})")
+config({"btc": 0, "c1": 200, "db": 500})
+check(v.round() == [] and snap_row("BTCUSDT").get("frozen") == 0,
+      f"E1 btc's long was rejected, then btc → db: nothing bought for it ({v.calls})")
+
+v = three(btc_pos=1)
+v.round()
+v.held["BTCUSDT"] = 200
+config({"btc": 0, "c1": 200, "db": 500})
+check(v.round() == [] and v.held["BTCUSDT"] == 200,
+      f"E1 btc's 500 closed by hand before the save: nothing bought back for it ({v.calls})")
+
+v = three(btc_pos=1)
+v.round()
+v.held["BTCUSDT"] = 450
+config({"btc": 0, "c1": 200, "db": 500})
+check(v.round() == [] and snap_row("BTCUSDT").get("frozen") == 250,
+      f"E1 part of it closed by hand: only the 250 still there is held ({v.calls}, {snap_row('BTCUSDT').get('frozen')})")
+
+# the snapshot's own read is from before that round's orders: a save right after an entry holds it
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+config({"btc": 500})
+v = Venue({})
+check(v.round() == [("BTCUSDT", 500)], f"btc enters ({v.calls})")
+config({"btc": 0, "db": 500})
+check(v.round() == [] and v.held["BTCUSDT"] == 500,
+      f"saved right after the entry round: btc's 500 is held, not sold ({v.calls})")
+
+# E2: a signal-gated leaver holds what the book has beyond the others' share
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+json.dump({"btc": 1}, open("state/signal_gate.json", "w"))
+v = swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": 200, "db": 500}, {"BTCUSDT": 700})
+got = v.round()
+check(got == [] and snap_row("BTCUSDT").get("frozen") == 500,
+      f"E2 a signal-gated btc swapped for db: its 500 on the book is held, not sold ({got}, {snap_row('BTCUSDT').get('frozen')})")
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
+check(v.round() == [] and v.held["BTCUSDT"] == 700, f"E2 db long: no buy-back ({v.calls})")
+
+# E3: another gate holds the key in the first round after the save — the anchor is taken all the same
+for label, block, lift in (
+        ("c1 signal-gated", lambda: json.dump({"c1": 1}, open("state/signal_gate.json", "w")),
+         lambda: os.remove("state/signal_gate.json")),
+        ("c1 unrouted", lambda: json.dump({"self_ledger": False, "amounts": {"btc": 0, "c1": 200, "db": 500},
+                                           "exchanges": {"btc": "binance", "db": "binance"}, "asset_specs": {}},
+                                          open("manager/portfolio_config.json", "w")),
+         lambda: config({"btc": 0, "c1": 200, "db": 500}))):
+    fresh()
+    strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("db", "BTCUSDT")
+    v = swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": 200, "db": 500}, {"BTCUSDT": 700})
+    block()
+    got = [v.round(), v.round()]
+    lift()
+    got.append(v.round())
+    check(got == [[], [], []] and snap_row("BTCUSDT").get("frozen") == 500,
+          f"E3 {label} for two rounds after the save, then free: btc's 500 still held ({got})")
+    json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
+    check(v.round() == [] and v.held["BTCUSDT"] == 700, f"E3 {label}: db long, no buy-back ({v.calls})")
+
+# Q5: a neighbour whose state vanishes inside the window is not a newcomer when it comes back
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": 200, "db": 500}, {"BTCUSDT": 700})
+v.round()
+os.remove("strategies/c1/state.json")
+check(v.round() == [] and snap_row("BTCUSDT").get("frozen") == 700,
+      f"Q5 c1's state vanishes: its 200 is held with btc's ({v.calls})")
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/c1/state.json", "w"))
+row = snap_row("BTCUSDT")
+check(v.round() == [("BTCUSDT", -200)] and "c1" not in (snap_row("BTCUSDT").get("cohort") or []),
+      f"Q5 c1 back with a stop: sold that round, not parked with the newcomers ({v.calls})")
+
+# no snapshot to anchor on: the leaver's part is not kept, a neighbour's is never sold as a newcomer's
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+config({"btc": 0, "c1": 200, "db": 500})
+v = Venue({"BTCUSDT": 700})
+check(v.round() == [("BTCUSDT", -500)] and v.held["BTCUSDT"] == 200,
+      f"no snapshot: btc's 500 is sold as before, c1's 200 stays ({v.calls})")
+
+# a newcomer past its window that computes later, inside another member's window, is a member
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": 200, "db": 500}, {"BTCUSDT": 700})
+v.round()
+backdate("db", 3601)
+check(v.round() == [("BTCUSDT", -500)], f"db never computed: btc's 500 sold past its window ({v.calls})")
+os.remove("strategies/c1/state.json")
+v.round()
+json.dump({"symbol": "BTCUSDT", "position": 1}, open("strategies/db/state.json", "w"))
+check(v.round() == [("BTCUSDT", 300)] and "db" not in (snap_row("BTCUSDT").get("cohort") or []),
+      f"db computes late while c1 waits: a member, its entry buys what the round without the wait would ({v.calls})")
+
+# the anchor lost while one of two newcomers has computed: it stays out until the other has
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("d1", "BTCUSDT")
+strat("d2", "BTCUSDT")
+v = swap({"btc": 500}, {"btc": 0, "d1": 500, "d2": 500}, {"BTCUSDT": 500})
+v.round()
+json.dump({"symbol": "BTCUSDT", "position": -1}, open("strategies/d1/state.json", "w"))
+v.round()
+b = book()
+b["anchors"] = {}
+json.dump(b, open("state/first_signal_wait.json", "w"))
+got = v.round()
+check(got == [] and v.held["BTCUSDT"] == 500 and portfolio._first_signal_book()["anchors"]["BTCUSDT"]["cohort"] == ["d1", "d2"],
+      f"anchor lost after d1 computed short: d1 stays in the cohort, btc's 500 held ({got})")
+
+# a neighbour whose state is gone already in the first round after the save: no newcomer either
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500, "c1": 200}, {"btc": 0, "c1": 200, "db": 500}, {"BTCUSDT": 700})
+os.remove("strategies/c1/state.json")
+check(v.round() == [] and snap_row("BTCUSDT").get("frozen") == 700, f"c1's state gone at the save: its 200 held with btc's ({v.calls})")
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/c1/state.json", "w"))
+check(v.round() == [("BTCUSDT", -200)] and "c1" not in (snap_row("BTCUSDT").get("cohort") or []),
+      f"…c1 back with a stop: sold that round ({v.calls})")
+
+# a member leaving inside the window holds only what the book still has of it
+fresh()
+strat("btc", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("n2", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("db", "BTCUSDT")
+v = swap({"btc": 500, "c1": 200, "n2": 300}, {"btc": 0, "c1": 200, "n2": 300, "db": 500}, {"BTCUSDT": 1000})
+v.round()
+v.held["BTCUSDT"] = 800  # c1's 200 closed by hand
+config({"btc": 0, "n2": 300, "db": 500})
+check(v.round() == [], f"c1 closed by hand, then taken out inside the window: nothing ({v.calls})")
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/n2/state.json", "w"))
+check(v.round() == [("BTCUSDT", -300)] and v.held["BTCUSDT"] == 500,
+      f"…n2 stops: its 300 is sold, nothing kept for c1's 200 that is no longer there ({v.calls})")
 
 print(f"\n{fails} FAILED" if fails else "\nall ok")
 sys.exit(1 if fails else 0)
