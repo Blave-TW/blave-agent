@@ -237,7 +237,7 @@ The user already chose in the dialog: no confirmation question. Do these, in thi
 
 `nan` vs `0.0`: use `nan` to hold the current position (e.g. inside a trend). Use `0.0` to exit at next open.
 
-A same-side size change (0.3 → 0.5) is a trade: fee on |Δw|, counted in Trades; live buys or sells the cost difference.
+A same-side size change (0.3 → 0.5) is a trade: fee on |Δw|, counted in Trades; live buys or sells the cost difference when it is above the venue minimum (a smaller one is not sent and merges into the next change).
 
 ## Three-Layer Architecture
 
@@ -682,13 +682,18 @@ A ladder ("buy on the trigger, add at −2 / −5 / −9.5%, each order 1.8× th
 ```python
 def compute_signals(df, rsi_entry=RSI_ENTRY, tp_pct=TP_PCT):
     from lib.strategy import ladder_position
+    # level trigger = 3Commas semantics (re-enters while RSI stays low); for one cycle per dip pass an edge
     return ladder_position(df['RSI'] < rsi_entry, df, devs=DEVS, mult=MULT, tp_pct=tp_pct)
 ```
 
 - **signal = cost bought so far ÷ cost of the full ladder** (base order = 1, order k = `mult**k`), so the full ladder is 1.0 and the strategy's amount is the full-ladder budget. Live tops up the cost difference at every new rung.
-- Long only. Every rung is measured from the **base fill**, checked on the Close, filled at the next Open; a gap through several rungs adds them all on that bar. A bar whose Close is NaN or ≤ 0 holds, as in `apply_exits`.
+- Long only. Every rung is measured from the **base fill**, checked on the Close, filled at the next valid Open; a gap through several rungs adds them all on that bar. A bar the runner drops (Open or Close NaN or ≤ 0) holds and is not looked at.
 - The average-cost take-profit is the lib's state machine: it exits on the first Close ≥ average × (1 + `tp_pct`), and the exit bar never re-checks the trigger. A level trigger (`RSI < 28`) still true on the next bar re-enters then; for one cycle per dip pass an edge (`cond & ~cond.shift(1, fill_value=False)`).
+- **Contract rolls end the cycle.** TAIFEX index and stock futures (no `instrument_id` in the series): pass the mask — `settle = txf_settlement_mask(df.index)`, `return ladder_position(…, settle=settle), settle` — the settle bar is flat and the ladder starts over on the next contract, so the roll spread is never read as a dip or a take-profit. `fetch_db_kline` futures (with `instrument_id`): the ladder drops its old base on the new contract's first bar, but the old contract's last bar is flattened only by `settlement_signals_from_db` — still return `settlement_signals_from_db(df, ladder_position(…))`. The quality check and the backtest warn when either is missing.
 - A stop or time exit on top of the ladder is not something it models — say so and let the user choose.
+- **The base order is small, and live never sends an order under the venue minimum.** With five rungs at ×1.8 the base is 2.4% of the amount: $1000 on BTC perps (one lot ≈ $50) skips the base and first trades at rung 1; TMF 3 lots trades nothing until rung 3. Live then enters later than the backtest at a different average cost, while the take-profit is still read off the backtest's average. **Before deploying**, compute what live will actually send — `lib.strategy.ladder_sizing(amount, devs, mult, min_order=…)` for a notional amount (`min_order` = max($10, the venue's minimum order); `lots=True` for TAIFEX / shares, the amount is whole lots) — and tell the user each order's size and `min_amount`, the smallest amount at which every order trades. Pass `lot=` (one lot's value) on a venue with coarse lots: an entry rounds half-up to whole lots, so near the minimum a rung can merge into the one before it. The backtest prints the same as a `Scaling in:` line, with a `⚠️ WARNING` when the saved amount skips an order — only while the returned Series still carries the ladder (`attrs`): wrapped in `apply_exits` it does, a Series rebuilt from values does not; then run `ladder_sizing` yourself. For lots, suggest `mult=1` and an amount of rungs + 1 (one lot per order). Notional sizing assumes the self_ledger book (the default): an older machine diffing against the account mark also skips same-side adds inside its drift band.
+- **Go live with 「等新訊號」 or while the backtest is flat.** A plain start while the backtest is k rungs deep buys all k rungs at once at the current price — a different average than the backtest's. 「等新訊號」 adds no rung until the current cycle exits; the next cycle trades normally.
+- **Trades counts orders, not cycles:** every rung is a size change, so a full five-rung cycle and its exit is 7 Trades. Say so when you report Trades for a ladder.
 - **Say this when you report the backtest:** the engine rebalances to the target fraction every bar, while a real ladder holds a fixed quantity per order, so the backtest only approximates it and drifts further the deeper the ladder fills (a five-rung fill and back to +3% over the average typically shows roughly 0.2–0.5 percentage points less in the engine than real, depending on the path).
 
 ## Futures Strategies (CME / NYMEX / ICE)

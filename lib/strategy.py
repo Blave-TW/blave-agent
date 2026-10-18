@@ -2,6 +2,7 @@ import ast
 import contextlib
 import hashlib
 import json
+import math
 import os
 import shutil
 import threading
@@ -94,19 +95,26 @@ def threshold_position(x, buy_th, sell_th, cover_th, short_th):
     return pd.Series(out, index=x.index)
 
 
-def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03):
+def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03, settle=None):
     """Scale-in (DCA) ladder state machine → long position Series in [0, 1].
 
     A bar where `entry` is True while flat buys the base order; layer k is added once a Close
     is at or below base_fill × (1 − devs[k]) — every rung measured from the base fill, several
     in one bar if price gaps through them. Order k costs mult**k base orders, and the signal is
     cost bought so far ÷ cost of the full ladder, so a full ladder is 1.0. Every order fills at
-    the next valid bar's Open (the last valid Close if that Open is invalid), and the average
-    cost is built from those fills; the position exits to 0.0 on the first Close ≥ average ×
-    (1 + tp_pct). The exit bar never re-checks `entry`: a level trigger still true on the next
-    bar re-enters then — pass an edge (`cond & ~cond.shift(1, fill_value=False)`) for one cycle
-    per dip. A bar whose Close is not finite and > 0 holds, like lib.exits.apply_exits.
+    the next valid bar's Open, and the average cost is built from those fills; the position
+    exits to 0.0 on the first Close ≥ average × (1 + tp_pct). The exit bar never re-checks
+    `entry`: a level trigger still true on the next bar re-enters then — pass an edge
+    (`cond & ~cond.shift(1, fill_value=False)`) for one cycle per dip. A bar the runner drops
+    (Open or Close not finite and > 0) holds and is not looked at.
+    A contract roll ends the cycle: a True bar of `settle` (TAIFEX: txf_settlement_mask(df.index),
+    whose series has no instrument_id) is flat and the ladder starts over, and so is the first
+    bar of a new `instrument_id` (orders signalled on the old contract are dropped). The
+    settlement exit already flattens the real position there, so the old fills are gone and
+    the spread to the next contract must not read as a dip or a take-profit; only a trigger
+    enters again.
     A loop, not vectorizable: the TP level moves with every fill.
+    The result's attrs["ladder"] carries devs / mult for the runner's sizing line.
     """
     devs = [float(d) for d in devs]
     if not devs or any(d <= 0 for d in devs) or any(b <= a for a, b in zip(devs, devs[1:])):
@@ -121,9 +129,20 @@ def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03):
         trig = (np.asarray(entry) == True).tolist()  # noqa: E712 — NaN / None count as False
         if len(trig) != len(df):
             raise ValueError("ladder_position: entry must have one value per df row")
+    if settle is None:
+        roll = [False] * len(df)
+    elif isinstance(settle, pd.Series):
+        if not settle.index.equals(df.index):
+            raise ValueError("ladder_position: settle must be on df's index")
+        roll = settle.eq(True).tolist()
+    else:
+        roll = (np.asarray(settle) == True).tolist()  # noqa: E712
+        if len(roll) != len(df):
+            raise ValueError("ladder_position: settle must have one value per df row")
     costs = [mult ** k for k in range(len(devs) + 1)]
     total = sum(costs)
     close, opn = df['Close'].tolist(), df['Open'].tolist()
+    inst = df['instrument_id'].tolist() if 'instrument_id' in df.columns else None
 
     def ok(v):
         return v == v and 0 < v < float("inf")
@@ -132,21 +151,28 @@ def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03):
     filled = 0        # orders signalled (base = 1)
     booked = 0        # orders whose fill price is known
     base = cost = qty = 0.0
-    last = None       # last valid Close
+    contract = None   # instrument_id of the last valid bar
     for t, c in enumerate(close):
-        if not ok(c):
+        if not (ok(c) and ok(opn[t])):       # same bars lib.runner drops
+            if roll[t]:
+                filled = booked = 0
             out[t] = sum(costs[:filled]) / total
             continue
+        if inst is not None and not pd.isna(inst[t]):
+            if contract is not None and inst[t] != contract:
+                filled = booked = 0
+            contract = inst[t]
         if filled > booked:                  # orders signalled on the last valid bar fill at this Open
-            fill = opn[t] if ok(opn[t]) else last
+            fill = opn[t]
             if booked == 0:
                 base, cost, qty = fill, 0.0, 0.0
             for k in range(booked, filled):
                 cost += costs[k]
                 qty += costs[k] / fill
             booked = filled
-        last = c
-        if filled == 0:
+        if roll[t]:
+            filled = booked = 0
+        elif filled == 0:
             if trig[t]:
                 filled = 1
         elif c >= cost / qty * (1 + tp_pct):
@@ -155,7 +181,82 @@ def ladder_position(entry, df, devs, mult=1.0, tp_pct=0.03):
             while filled <= len(devs) and c <= base * (1 - devs[filled - 1]):
                 filled += 1
         out[t] = sum(costs[:filled]) / total
-    return pd.Series(out, index=df.index)
+    res = pd.Series(out, index=df.index)
+    res.attrs["ladder"] = {"devs": devs, "mult": float(mult)}
+    return res
+
+
+def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False, lot=None, lot_floor=False):
+    """What live actually sends for a ladder_position strategy funded with `amount`.
+
+    Live trades the gap between the cumulative target and what it already holds; a gap under
+    the entry gate is not sent and merges into the next rung. Notional (`lots=False`):
+    `min_order` is the entry gate in the amount's currency (the reconciler's max($10, venue
+    minimum)); `lot`, when the venue has one, is a lot's value — an entry rounds half-up to whole
+    lots (lib.venue_wiring._entry_qty), so a rung can land up to half a lot over its target and
+    shrink the next gap; `lot_floor=True` floors instead (paper TW stocks: whole shares, floored). Both are valued at the current mark for every rung: an approximation,
+    deeper rungs trade lower. Lots (`lots=True`, TAIFEX / shares — the amount is whole units):
+    each cumulative target rounds half-up like lib.portfolio.aggregate_portfolio. Sized per
+    strategy, before netting with others on the symbol, on the self_ledger book.
+
+    Returns {'orders': planned size per order (base first), 'targets': cumulative target after
+    each order, 'trades': what live sends at each rung (0 = nothing), 'skipped': indices whose
+    trade is 0, 'base_frac': base order ÷ full ladder, 'min_amount': an amount at which every
+    order trades with every gap at least 0.1% over the gate, re-checked 0.5% above (None if not found)}.
+    """
+    devs = [float(d) for d in devs]
+    if not devs or mult <= 0:
+        raise ValueError("ladder_sizing: devs must be non-empty and mult > 0")
+    if not lots and not (min_order and min_order > 0):
+        raise ValueError("ladder_sizing: pass min_order (the venue minimum) for a notional amount")
+    lot = float(lot) if lot and lot > 0 and not lots else None
+    costs = [mult ** k for k in range(len(devs) + 1)]
+    total = sum(costs)
+    cum = [sum(costs[:k + 1]) / total for k in range(len(costs))]
+
+    def plan(a, edge=1.0):
+        if lots:
+            targets = [math.floor(abs(a) * f + 0.5 + 1e-9) for f in cum]
+            return targets, [t - p for t, p in zip(targets, [0] + targets[:-1])]
+        targets, trades, held = [a * f for f in cum], [], 0.0
+        for t in targets:
+            gap = t - held
+            if gap < min_order * edge:               # lib.portfolio.compute_diff: abs(diff) < gate → skip
+                trades.append(0.0)
+                continue
+            if not lot:
+                q = gap
+            elif lot_floor:
+                q = math.floor(gap / lot + 1e-9) * lot     # lib.order_paper: whole shares, floored
+            else:
+                q = math.floor(gap / lot + 0.5) * lot      # lib.venue_wiring._entry_qty
+            if not q:
+                trades.append(0.0)
+                continue
+            trades.append(q)
+            held += q
+        return targets, trades
+
+    def every(a):
+        # 0.1% over the gate on every rung: lot rounding can squeeze a later gap onto the gate itself
+        return all(plan(a, 1.001)[1])
+
+    if lots:
+        min_amount = next((a for a in range(1, 10001) if every(a)), None)
+    else:
+        a = math.ceil(min_order * total / min(costs) * 100) / 100   # no amount below this can pass
+        step = max(0.01, (lot or 0) / 100)
+        min_amount = None
+        for _ in range(100000):
+            # 0.5% above passes too: an amount a hair over a merge point is not reported
+            if every(a) and every(math.ceil(a * 1.005 * 100) / 100):
+                min_amount = a
+                break
+            a = math.ceil((a + step) * 100) / 100
+    targets, trades = plan(amount)
+    return {'orders': [amount * c / total for c in costs], 'targets': targets, 'trades': trades,
+            'skipped': [k for k, x in enumerate(trades) if not x], 'base_frac': costs[0] / total,
+            'min_amount': min_amount}
 # ── Strategy versions (.claude/docs/strategy-versions.md) ─────────────────────
 # One version = one BACKTEST of one STRATEGY_NAME. lib/runner.py mints them into
 # strategies/<name>/versions/; the functions below read them back for the agent

@@ -267,5 +267,38 @@ check(run(1, 0, asset_spec={"type": "futures_contracts"}, exchange="capital") ==
 check(fake.rule_calls == 0,
       "a lot-based row never asks the venue for an account-currency minimum")
 
+# THRESHOLD comes from lib.execute.RECONCILE_THRESHOLD; a half-updated workspace whose
+# lib/execute.py has no such name yet falls back to the same 10 instead of failing the import
+import importlib, types  # noqa: E402
+from lib import execute as _execute  # noqa: E402
+check(reconciler.THRESHOLD == _execute.RECONCILE_THRESHOLD == 10, "THRESHOLD is lib.execute.RECONCILE_THRESHOLD (10)")
+check(all(inspect.signature(f).parameters["threshold"].default == reconciler.THRESHOLD
+          for f in (portfolio.compute_diff, portfolio.spot_scope, portfolio.reconcile)),
+      "lib.portfolio compute_diff / spot_scope / reconcile default to the same threshold")
+_real = sys.modules["lib.execute"]
+sys.modules["lib.execute"] = types.ModuleType("lib.execute")
+try:
+    importlib.reload(reconciler)
+    check(reconciler.THRESHOLD == 10, f"stale lib/execute.py (no RECONCILE_THRESHOLD): falls back to 10 ({reconciler.THRESHOLD})")
+except Exception as e:
+    check(False, f"stale lib/execute.py: the reconciler must still import ({e!r})")
+finally:
+    sys.modules["lib.execute"] = _real
+    importlib.reload(reconciler)
+check(reconciler.THRESHOLD == _execute.RECONCILE_THRESHOLD, "restored: THRESHOLD read from lib.execute again")
+# lib/portfolio has the same fallback; reloaded last (reconciler's bindings to it go stale after this)
+sys.modules["lib.execute"] = types.ModuleType("lib.execute")
+try:
+    importlib.reload(portfolio)
+    check(portfolio.RECONCILE_THRESHOLD == 10
+          and all(inspect.signature(f).parameters["threshold"].default == 10
+                  for f in (portfolio.compute_diff, portfolio.spot_scope, portfolio.reconcile)),
+          f"stale lib/execute.py: lib.portfolio falls back to 10 ({portfolio.RECONCILE_THRESHOLD})")
+except Exception as e:
+    check(False, f"stale lib/execute.py: lib.portfolio must still import ({e!r})")
+finally:
+    sys.modules["lib.execute"] = _real
+    importlib.reload(portfolio)
+
 print("\n" + ("PASS" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)
