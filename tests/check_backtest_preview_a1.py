@@ -13,6 +13,7 @@ Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_backtest_prev
 import contextlib
 import io
 import json
+import shutil
 import os
 import sys
 import tempfile
@@ -146,6 +147,29 @@ check("ta" in pr.backtest_previews({"amounts": {}}, pr.strategy_states(), now=NO
 
 (SDIR / "strategy.py").write_text('INTERVAL = "1d"\nMARKET = "spot"\n# edited\n')
 check("ta" not in pr.backtest_previews({"amounts": {}}, pr.strategy_states(), now=NOW), "strategy.py changed since the backtest: none")
+
+# ── Taiwan stocks: the preview carries the unadjusted close (the save dialog's share count) —
+# the strategy's own close is adjusted, anchored at its fetch window's start
+day = pd.Timestamp(IDX[-1]).strftime("%Y-%m-%d")
+(WS / "twfake.py").write_text(f"""
+import pandas as pd
+def batch(codes, start, end, hdrs):
+    return {{c: pd.DataFrame({{"Close": [111.0, 222.0, 999.0]}}, index=pd.to_datetime(["2025-07-01", "{day}", "2099-01-01"])) for c in codes}}
+""")
+fetch0, runner.TW_CLOSE_FETCH = runner.TW_CLOSE_FETCH, "twfake:batch"
+TDIR, TCFG = strat("twa", 'INTERVAL = "1d"\nMARKET = "spot"\n# Type A TW\n')
+run(dict(TCFG, SYMBOL="2330"), lambda h: DF.copy(), signals)
+tpv = json.loads((TDIR / runner.BACKTEST_STATE_FILE).read_text())
+check(tpv.get("raw_closes") == {"2330": 222.0} and tpv["close"] == float(DF["Close"].iloc[-1]),
+      f"Taiwan Type A preview: raw_closes = the unadjusted close of its bar's date, close stays the strategy's ({tpv.get('raw_closes')})")
+got = pr.backtest_previews({"amounts": {}}, pr.strategy_states(), now=NOW).get("twa")
+check(got is not None and got.get("raw_closes") == {"2330": 222.0}, f"…forwarded by the reporter ({got and got.get('raw_closes')})")
+check("raw_closes" not in (a or {}), "crypto previews carry no raw_closes (no lookup)")
+runner.TW_CLOSE_FETCH = "twfake:nope"
+run(dict(TCFG, SYMBOL="2330"), lambda h: DF.copy(), signals)
+check("raw_closes" not in json.loads((TDIR / runner.BACKTEST_STATE_FILE).read_text()), "lookup failed: the preview is written without it")
+runner.TW_CLOSE_FETCH = fetch0
+shutil.rmtree(TDIR)
 
 for i in range(pr.PREVIEW_EXTRA_MAX + 2):
     d = WS / "strategies" / f"x{i}"

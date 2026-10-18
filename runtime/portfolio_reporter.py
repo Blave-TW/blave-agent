@@ -582,6 +582,7 @@ def backtest_previews(cfg, states, now=None):
     closed one (_preview_is_latest); the dialog uses either and names the bar.
       Type C: {type: portfolio, market, weights, closes, rebalance_at, bar_at, bar_date, latest}
       Type A: {type: signal, symbol, market, position, close, bar_at, bar_date, latest}
+    Both may carry raw_closes {SYM: unadjusted close} for Taiwan stocks (the dialog's share count).
     `daily_tw` = a Taiwan daily bar (the dialog says "close" instead of a time). Display only."""
     amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
     amounts = amounts if isinstance(amounts, dict) else {}
@@ -662,6 +663,12 @@ def backtest_previews(cfg, states, now=None):
                     closes[ksym] = px
             row.update({"type": "portfolio", "weights": weights, "closes": closes,
                         "rebalance_at": ra if ra > 0 else None})
+        # Taiwan stocks' unadjusted close (lib/runner._preview_raw_closes): shares are sized at it
+        rc = data.get("raw_closes") if isinstance(data.get("raw_closes"), dict) else {}
+        held = {row["symbol"]} if row["type"] == "signal" else set(row["weights"])
+        raw = {str(k): _finite_pos(v) for k, v in rc.items() if str(k) in held and _finite_pos(v) is not None}
+        if raw:
+            row["raw_closes"] = raw
         out[name] = row
         drafts += i >= picked
     return out

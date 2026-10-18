@@ -1211,7 +1211,7 @@ function trPvOf(r, n) {
   const src = trPvHost(r) ? r.backtest_previews : r && r.previews && typeof r.previews === "object" ? r.previews : {};
   const p = Object.prototype.hasOwnProperty.call(src, n) ? src[n] : null;
   if (!p || typeof p !== "object") return null;
-  const at = typeof p.bar_at === "number" && isFinite(p.bar_at) ? p.bar_at : null, base = { market: p.market, bar_at: at, bar_date: typeof p.bar_date === "string" && /^\d{4}-\d\d-\d\d$/.test(p.bar_date) ? p.bar_date : null, daily_tw: p.daily_tw === true, latest: trPvHost(r) ? p.latest === true : true };   // 舊主機的 previews 本來就只送最新那根;新主機沒寫 latest = 判不出,當不是最新
+  const at = typeof p.bar_at === "number" && isFinite(p.bar_at) ? p.bar_at : null, base = { raw_closes: p.raw_closes && typeof p.raw_closes === "object" && !Array.isArray(p.raw_closes) ? p.raw_closes : null, market: p.market, bar_at: at, bar_date: typeof p.bar_date === "string" && /^\d{4}-\d\d-\d\d$/.test(p.bar_date) ? p.bar_date : null, daily_tw: p.daily_tw === true, latest: trPvHost(r) ? p.latest === true : true };   // 舊主機的 previews 本來就只送最新那根;新主機沒寫 latest = 判不出,當不是最新
   if (p.weights && typeof p.weights === "object" && !Array.isArray(p.weights)) {
     const closes = p.closes && typeof p.closes === "object" && !Array.isArray(p.closes) ? p.closes : {};
     return Object.assign(base, { type: "portfolio", weights: p.weights, closes });
@@ -3415,9 +3415,11 @@ function trCfStates(r, stored, sending, contracts) {
     if (!pv.latest) { old.push(n); if (draft) stale.push(n); }
     if (pv.weights) Object.keys(pv.closes || {}).forEach((k) => { const v = Number(pv.closes[k]); if (v > 0) px[trCanonSym(k)] = v; });
     else if (pv.close) px[trCanonSym(trEffSym(n, pv.symbol, contracts))] = pv.close;
+    // 台股:預覽帶的未還原收盤(runtime 1.1.134 起)蓋掉還原價
+    if (pv.raw_closes && typeof pv.raw_closes === "object") Object.keys(pv.raw_closes).forEach((k) => { const v = Number(pv.raw_closes[k]), c = trCanonSym(k); if (v > 0 && isFinite(v) && TR_TWSTOCK_RE.test(c)) px[c] = v; });
   });
-  /* 台股換股數用未還原收盤(實盤 state 的 raw_closes,同 trTwLots 與模擬盤成交價);預覽的 closes 是策略自己的還原價,只在沒有時用。
-     任一支 live 策略查到的同一檔都算:0.1.27 以前的 lib 寫的預覽沒有 closes */
+  /* 台股換股數用未還原收盤:實盤 state 的 raw_closes(目標最後變動那一根,同 trTwLots 與總訊號部位表)優先,任一支 live 策略查到的同一檔都算;
+     草稿用預覽的 raw_closes;都沒有才用預覽的還原價(0.1.27 以前的 lib 寫的預覽沒有 closes) */
   Object.keys(live).forEach((n) => { const rc = live[n] && live[n].raw_closes;
     if (rc && typeof rc === "object") Object.keys(rc).forEach((k) => { const v = Number(rc[k]), c = trCanonSym(k); if (v > 0 && isFinite(v) && TR_TWSTOCK_RE.test(c)) px[c] = v; }); });
   return { states, px, pv: pvs, missing, stale, old };

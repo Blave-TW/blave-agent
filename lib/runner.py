@@ -1798,6 +1798,36 @@ def tw_fetch_closes(fields, need, hdrs, budget_s=None, schema=None):
     return {k: v for k, v in out.items() if v}
 
 
+def _preview_raw_closes(preview, hdrs):
+    """preview + raw_closes {SYM: unadjusted close} for its Taiwan stocks, the close paper fills
+    at: the save dialog sizes shares from it. The preview's own close is the strategy's adjusted
+    one, anchored at the fetch window's start (tw_fetch_closes). The lookup is the live path's
+    child process under TW_CLOSE_BUDGET_S; failed or over it = the preview without the field (the
+    dialog falls back). Never fails the run."""
+    try:
+        if not preview or preview.get('bar_at') is None:
+            return preview
+        syms = [preview.get('symbol')] if preview.get('type') == 'signal' else list(preview.get('closes') or {})
+        codes = {re.sub(r'\.TWO?$', '', s): s for s in syms if isinstance(s, str) and _TW_STOCK_RE.match(s)}
+        if not codes:
+            return preview
+        day = _taipei_date(pd.Timestamp(int(preview['bar_at']), unit='s'))
+        got = _tw_fetch_child({day: sorted(codes)}, hdrs, TW_CLOSE_BUDGET_S) or {}
+        raw = {}
+        for code, sym in codes.items():
+            try:
+                d, px = got[day][code]
+                d, px = str(d), float(px)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(px) and px > 0 and d <= day:
+                raw[sym] = px
+        return dict(preview, raw_closes=raw) if raw else preview
+    except Exception as e:
+        logging.warning("backtest preview: Taiwan unadjusted close skipped: %s", e)
+        return preview
+
+
 def _tw_closes_after_save(strategy_name, state, prev, targets, bar_ts, hdrs, schema=None):
     """Carry what needs no I/O into `state`, save it, then price the rest under a time budget
     and save again only if something new came in. Never fails the tick: the target position
@@ -2152,7 +2182,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────
-        backtest_state = _typea_preview(signals_live, df, config, src0, fetch_trims, data)
+        backtest_state = _preview_raw_closes(_typea_preview(signals_live, df, config, src0, fetch_trims, data), hdrs)
         n   = len(df)
         pos = signals.ffill().fillna(0).values  # shape (n,)
 
@@ -2425,7 +2455,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             return
 
         # ── Performance: backtest, or a refresh of a live strategy ─────────────
-        backtest_state = _typec_preview(weights_orig, price_df, config, src0, fetch_trims, data)
+        backtest_state = _preview_raw_closes(_typec_preview(weights_orig, price_df, config, src0, fetch_trims, data), hdrs)
         if mode == 'backtest':
             for msg in _weight_row_warnings(weights_orig, price_df.index):
                 logging.warning(msg)

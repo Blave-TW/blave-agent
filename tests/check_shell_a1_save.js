@@ -88,6 +88,9 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("① …2330 原 → 新(100,000 → 200,000)、下面一行股數 200 股(200,000 ÷ 1,000);新標的 2454 只寫新值與 76 股(100,000 ÷ 1,300 捨去)",
       f.rows.some((x) => /^2330100,000→200,000200 tr\.cf\.unitShares$/.test(x)) && f.rows.some((x) => /^2454100,00076 tr\.cf\.unitShares$/.test(x)) && f.rows.length === 2, J(f.rows));
     ok("① …框底沒有否定句、沒有常駐後果句", f.notes.length === 0, J(f.notes)); }
+  // 稽核 571a664 P2:草稿的預覽帶未還原收盤(raw_closes,runtime 1.1.134)時用它換股數,不用還原價(2330 200,000 ÷ 1,250 = 160 股、2454 100,000 ÷ 1,480 = 67 股)
+  { bag(Object.assign(draft(), { pv: { raw_closes: { "2330": 1250, "2454": 1480 } } })); const f = open();
+    ok("① …預覽帶 raw_closes:2330 寫 160 股、2454 寫 67 股(不是還原價的 200／76)", f.rows.some((x) => /^2330100,000→200,000160 tr\.cf\.unitShares$/.test(x)) && f.rows.some((x) => /^2454100,00067 tr\.cf\.unitShares$/.test(x)), J(f.rows)); }
   { bag(draft({ ov: false })); const f = open();
     ok("① 不在跑+不重疊:照樣出框,只列新的兩檔(既有的 2330 沒變不列)", f.title === "tr.cf.title" && f.rows.length === 2 && !f.rows.some((x) => /^2330/.test(x)), J(f.rows)); }
   // ── ① 在跑:儲存並下單
