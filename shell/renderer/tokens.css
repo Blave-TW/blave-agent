@@ -110,7 +110,8 @@
   --surface-card: var(--color-surface);
   --surface-muted: var(--color-greyLight);       /* 軌道 / outlined hover 填色 */
   --surface-field: var(--color-pureWhite);
-  --surface-control-on: var(--color-pureWhite);  /* segment 選中格(canon 語意角色變數) */
+  --surface-control-on: var(--color-pureWhite);  /* 不是 segment 的選中填色(canon 語意角色變數) */
+  --surface-segment-on: var(--color-pureWhite);  /* segment 選中格(canon 語意角色變數) */
   --border-hairline: var(--color-greyLight);
   --border-frame: var(--color-greyLight);
   --ink: var(--color-black);
@@ -149,6 +150,7 @@
   --surface-muted: var(--color-darkBorder);
   --surface-field: var(--color-darkBody);
   --surface-control-on: var(--color-darkBorder);
+  --surface-segment-on: var(--color-greyDark);   /* control-on 的 darkBorder 跟 --surface-muted 同色,當 segment 選中格分不出來 */
   --border-hairline: var(--color-darkBorder);
   --border-frame: var(--color-greyDark);
   --ink: var(--color-darkText);

@@ -57,10 +57,10 @@ html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起
 .envsw button:hover { color: var(--ink); }
 .envsw button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; z-index: 1; }
 /* 安靜分段(canon segment):選中 = 墊一階底色 + 圖示變深,不反白——「現在在哪一邊」已經有灰頂列、側欄、視窗標題三個通道 */
-.envsw button[aria-pressed="true"] { background: var(--surface-control-on); color: var(--ink); box-shadow: var(--shadow-sm); }
+.envsw button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); box-shadow: var(--shadow-sm); }
 /* 格內唯一的記號:掛在圖示右上角,不佔寬;底下墊一圈格子的底色,跟圖示線條分開 */
 .envsw .run-dot, .envsw .dot { position: absolute; top: 5px; right: 7px; margin: 0; box-shadow: 0 0 0 2px var(--bg-body); }
-.envsw button[aria-pressed="true"] .run-dot, .envsw button[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px var(--surface-control-on); }
+.envsw button[aria-pressed="true"] .run-dot, .envsw button[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px var(--surface-segment-on); }
 .envsw .dot.bad { top: 7px; }
 .envsw-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 

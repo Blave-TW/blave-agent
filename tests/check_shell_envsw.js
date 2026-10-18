@@ -366,7 +366,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const cellSrc = fn("envPaintCell");
   ok("A 格內不再放錢記號與狀態詞(只 append 圖示與一個記號);詞進 title 與 aria-label", (cellSrc.match(/b\.appendChild\(/g) || []).length === 2 && !/"mode |"w"|"w /.test(cellSrc) && /b\.title = tip \+/.test(cellSrc) && /setAttribute\("aria-label", tip\)/.test(cellSrc) && /aria-keyshortcuts/.test(cellSrc));
   const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
-  ok("A 選中格不反白(不用 --control-fill)、格寬固定 40", !/\.envsw[^{]*\{[^}]*--control-fill/.test(css) && /\.envsw button \{[^}]*width: 40px/.test(css) && /\.envsw button\[aria-pressed="true"\] \{[^}]*--surface-control-on/.test(css));
+  ok("A 選中格不反白(不用 --control-fill)、格寬固定 40", !/\.envsw[^{]*\{[^}]*--control-fill/.test(css) && /\.envsw button \{[^}]*width: 40px/.test(css) && /\.envsw button\[aria-pressed="true"\] \{[^}]*--surface-segment-on/.test(css));
   { const appCss = fs.readFileSync(path.join(R, "app.css"), "utf8");
     ok("雲端沒主機:兩份 .strat-list 都藏起來時「設定」仍釘底(.ws-foot 自己 margin-top:auto,不靠清單的 flex:1 撐)", /\.ws-foot \{[^}]*margin-top: auto;/.test(appCss)
       && /\$\("strat-list"\)\.hidden = cloud; \$\("strat-list-cloud"\)\.hidden = !cloud \|\| gate;/.test(fn("envPaint"))); }
