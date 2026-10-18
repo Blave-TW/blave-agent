@@ -7615,6 +7615,10 @@ msgstr "以 {d} 收盤價 {px} 估算：目標變動那天的價格沒記到。�
 msgid "po.twSharesZero"
 msgstr "收盤 {px}，不足 1 股"
 
+# 自動下單 › 部位:休市中的模擬盤台股差額(last_reconcile.market_closed)灰色,tooltip 寫原因(同網頁 workspace_pf_paper_tw_closed)
+msgid "po.twClosedHold"
+msgstr "休市中，開盤後下單"
+
 msgid "po.sigTargets"
 msgstr "各商品的總訊號部位"
 

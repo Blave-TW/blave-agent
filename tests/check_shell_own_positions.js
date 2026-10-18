@@ -31,7 +31,7 @@ var document = { createElement: (t) => new N(t), createDocumentFragment: () => {
 var t = (k) => k, LANG = "en", TR = { st: { alive: true, report: null } };
 eval(cut("/* ── 純邏輯(", "/* ── 純邏輯到此").replace(/^const /gm, "var ") + "\n" + cut("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此").replace(/^const /gm, "var ") + "\n"
   + ["trEl", "trSec", "trHead", "trTipLabel", "trMoneyInto", "trFmt", "trFmt2", "trFmtPrice", "trLotsFmt", "trLotsTgtFmt", "trUnit", "trCcy", "trReport", "trContracts", "trVenueId", "trQuoteMap", "trZoneLabel", "trZoneUnit",
-    "trLivePositions", "trTwBroker", "trBook", "poPartStates", "poSigTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trPosDetail", "trManualPart", "trStored", "trEquity", "trTxfPrice", "trNoSignalYet", "trVenueLabel"].map(fnSrc).join("\n"));
+    "trLivePositions", "trTwBroker", "trBook", "trTwClosedKeys", "poPartStates", "poSigTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trPosDetail", "trManualPart", "trStored", "trEquity", "trTxfPrice", "trNoSignalYet", "trVenueLabel"].map(fnSrc).join("\n"));
 var trTipSeq = 0;
 var trVenueKind = (id) => (id === "binance" ? "crypto" : id === "capital" ? "tw" : null);
 TR.list = []; TR.just = null; TR.env = "local";

@@ -7601,6 +7601,10 @@ msgstr "Estimated at the {d} close of {px}: the close on the day the target chan
 msgid "po.twSharesZero"
 msgstr "Under 1 share at the {px} close"
 
+# 自動下單 › 部位:休市中的模擬盤台股差額(last_reconcile.market_closed)灰色,tooltip 寫原因(同網頁 workspace_pf_paper_tw_closed)
+msgid "po.twClosedHold"
+msgstr "Market closed; orders go in after the open"
+
 msgid "po.sigTargets"
 msgstr "Signal positions by instrument"
 

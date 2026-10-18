@@ -49,7 +49,7 @@ function paint(report, st = {}) {
   vm.runInContext(pure.replace(/^const /gm, "var "), ctx);
   // 0.1.24:下單失敗從表底搬到出錯那一列底下(策略組合 › 總訊號部位表 poSigTable;同網頁):紅字 = .pf-note.err、灰字 = .pf-note.past
   ctx.TR.list = []; ctx.TR.just = null; ctx.trManualPart = () => 0; ctx.trPlanTotal = () => ({ text: "x", ccy: null, mult: "", n: 1 }); ctx.trPosDetail = () => ({}); ctx.trFmtPrice = String; ctx.trFmt2 = String; ctx.trRowTxf = () => null; ctx.trLotsKey = (n, a) => a; ctx.trDisplay = (n) => n; ctx.trTipLabel = () => node("span"); ctx.trHasAccount = (r) => ctx.trVenueIds(r).length > 0; ctx.trVenueLabel = (id) => id; ctx.trNoSignalYet = () => false; ctx.trTxfPrice = () => null; ctx.ENV_JUST_MS = 300000;
-  vm.runInContext((st.realErrText ? ["trOrderErrText"] : []).concat(["trLivePositions", "trClientTargets", "trGateSide", "trBook", "poPartStates", "poSigTable", "trTwNamesWant", "trTwName", "trTwNameEl"]).map(cut).join("\n").replace(/^const /gm, "var "), ctx);
+  vm.runInContext((st.realErrText ? ["trOrderErrText"] : []).concat(["trLivePositions", "trClientTargets", "trGateSide", "trBook", "trTwClosedKeys", "poPartStates", "poSigTable", "trTwNamesWant", "trTwName", "trTwNameEl"]).map(cut).join("\n").replace(/^const /gm, "var "), ctx);
   const frag = vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx);   // 0.1.24 A 案:帳上、差額、拒單在自動下單 › 部位
   const all = flat(frag), errRow = all.find((n) => n.cls === "pf-note err"), pastRow = all.find((n) => n.cls === "pf-note past"), gateRow = all.find((n) => /(^| )hold( |$)/.test(n.cls));   // 0.1.24 A 案:門檻說明是灰色差額格的 tooltip
   const holds = all.filter((n) => /(^| )hold( |$)/.test(n.cls)).length;
