@@ -655,22 +655,26 @@ function trSuffixZone(sym) {
 function trTypeC(st) {
   const w = st && st.weights && typeof st.weights === "object" && !Array.isArray(st.weights) ? st.weights : null;
   if (!w) return null;
-  const out = { n: 0, long: 0, short: 0, keys: Object.keys(w) };
+  const out = { n: 0, long: 0, short: 0, keys: Object.keys(w), held: [] };
   (Array.isArray(st.universe) ? st.universe : []).forEach((k) => { if (typeof k === "string" && k && out.keys.indexOf(k) < 0) out.keys.push(k); });
   out.keys.forEach((k) => { let x = Number(w[k]); if (!isFinite(x) || (st.market === "spot" && x < 0)) x = 0;
-    if (!x) return; out.n++; if (x > 0) out.long += x; else out.short -= x; });
+    if (!x) return; out.n++; out.held.push(k); if (x > 0) out.long += x; else out.short -= x; });
   return out;
 }
-/* 金額表 Type C 列的標的格(Wei 10-16):3 檔以內直接列,超過寫「前 3 檔 等 N 檔」;持有中與空手同一種寫法。
-   台股寫名字(nameOf = trTwName,查不到退回代號),其餘去掉計價尾碼(同部位表 short)。hover 列全部成分(台股「名字（代號）」),空手再講一句。
+/* 金額表 Type C 列的標的格(Wei 10-16):3 檔以內直接列,超過寫「前 3 檔 等 N 檔」。
+   數什麼(實機 10-18:同一支依序寫過 283／30／112 檔):有持股 = 持有的檔數(hover「持有：」列持有的);空手或還沒跑過 = 策略檔的 UNIVERSE
+   (universe = 清單 trUniverse 解出來的全長),讀不到 UNIVERSE 才退回回報的成分(state 的 weights ∪ universe,那是策略那一輪輸出的候選,會隨每輪變)。
+   台股寫名字(nameOf = trTwName,查不到退回代號),其餘去掉計價尾碼(同部位表 short)。hover 台股寫「名字（代號）」。
    keys 空(舊 runtime 的空手列)照舊寫「0 檔」。tf = t;nameOf 由呼叫端傳,這段純邏輯不碰名字表 */
 function trShortSym(sym) { const s = String(sym || "").replace(/@spot$/i, ""); return s.replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || s; }
-function trTypeCLabel(tc, tf, nameOf) {
-  if (!tc.keys.length) return { text: tf("tr.nSyms", { n: tc.n }), tip: "" };
-  const sep = tf("ak.sep"), codes = tc.keys.map(trShortSym), names = tc.keys.map((k) => (typeof nameOf === "function" && nameOf(k)) || "");
+function trTypeCLabel(tc, tf, nameOf, universe) {
+  const held = tc.n > 0 && Array.isArray(tc.held) && tc.held.length ? tc.held : null;
+  const keys = held || (Array.isArray(universe) && universe.length ? universe : tc.keys);
+  if (!keys.length) return { text: tf("tr.nSyms", { n: tc.n }), tip: "" };
+  const sep = tf("ak.sep"), codes = keys.map(trShortSym), names = keys.map((k) => (typeof nameOf === "function" && nameOf(k)) || "");
   const shown = codes.map((c, i) => names[i] || c), list = codes.map((c, i) => (names[i] ? tf("tr.twNameCode", { name: names[i], code: c }) : c)).join(sep);
   const text = shown.length <= 3 ? shown.join(sep) : tf("tr.typecSymsMore", { list: shown.slice(0, 3).join(sep), n: shown.length, k: shown.length - 3 });
-  return { text, tip: tc.n ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
+  return { text, tip: held ? tf("tr.typecHeld", { list }) : tc.n ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
 }
 // 台指期目標口數取整 = 機器對帳器的規則 sign(x)·floor(|x|+0.5)(−0.5 → −1;Math.round(−0.5) 是 −0,會差一口)
 function trRoundLots(x) { return (x < 0 ? -1 : 1) * Math.floor(Math.abs(x) + 0.5 + 1e-9); }   // 1e-9 = 機器 lib/portfolio 與網頁 pfRoundLots 同一個:浮點加總的 2.4999… 歸到 3
@@ -765,29 +769,31 @@ function trZoneTotals(amounts, zoneOf, money, fx, base) {
 /* 淨值倍數(表底合計後面那一個):綁定的交易所會下單的列全部換成帳戶幣加總 ÷ 淨值。
    台灣期貨券商 = 口數列的名目 TWD ÷ TWD 淨值(缺報價 = null)。其他(加密所、模擬、認不得的交易所)= 台股與口數列以外的每一列,
    含幣別未定的(多算比漏算安全);換帳戶幣用平台匯率,缺任一邊匯率或幣別未定就當 1:1——穩定幣之間這就是實際值,丟掉那一列才會把倍數講小。
-   沒綁、帳戶幣未知、加密帳戶讀成 TWD、沒有淨值 = null */
-function trEquityMult(amounts, zoneOf, money, venueId, acct, equity, fx) {
+   模擬交易會下台股時(paperTw = 機器回報 can_paper_twstock)台股列也算:台幣換帳戶幣,缺匯率 = null。
+   沒綁、帳戶幣未知、加密帳戶讀成 TWD、沒有淨值、一列都沒算進去 = null(不寫 0.00×) */
+function trEquityMult(amounts, zoneOf, money, venueId, acct, equity, fx, paperTw) {
   if (!venueId || !acct || !(typeof equity === "number" && isFinite(equity) && equity > 0)) return null;
   const tw = venueId === "capital" || venueId === "president";
   if (tw !== (acct === TR_TXF_CCY)) return null;
   const rA = trFxRate(fx, acct);
-  let v = 0;
+  let v = 0, any = false;
   for (const n of Object.keys(amounts || {})) {
     const a = Number(amounts[n]) || 0, z = zoneOf(n);
     if (tw) {
       if (z !== TR_ZONE_LOTS) continue;
       const m = money ? money(n, a) : a;
       if (m == null) return null;
-      v += m;
+      v += m; any = true;
     } else {
+      if (z === TR_TXF_CCY && venueId === "paper" && paperTw) { if (!a) continue; const rT = trFxRate(fx, TR_TXF_CCY); if (!rA || !rT) return null; v += (a * rA) / rT; any = true; continue; }
       // 模擬交易以口數成交台指期、保證金對淨值檢查:口數列的名目(TWD)也算進倍數(Windows e2e 10-14);缺報價或匯率 = 不知道
-      if (z === TR_ZONE_LOTS && venueId === "paper") { const m = money ? money(n, a) : null; if (!a) continue; const rT = trFxRate(fx, TR_TXF_CCY); if (m == null || !rA || !rT) return null; v += (m * rA) / rT; continue; }
+      if (z === TR_ZONE_LOTS && venueId === "paper") { const m = money ? money(n, a) : null; if (!a) continue; const rT = trFxRate(fx, TR_TXF_CCY); if (m == null || !rA || !rT) return null; v += (m * rA) / rT; any = true; continue; }
       if (z === TR_ZONE_LOTS || z === TR_TXF_CCY) continue;
       const rZ = z === TR_ZONE_UNKNOWN ? null : trFxRate(fx, z);
-      v += rA && rZ ? (a * rA) / rZ : a;
+      v += rA && rZ ? (a * rA) / rZ : a; any = true;
     }
   }
-  return v / equity;
+  return any ? v / equity : null;
 }
 /* 累積損益的線段(照雲端 drawOvPnl):相鄰兩點都在 0 的同一側 → 一段,顏色跟著那一側(>= 0 算綠);
    跨過 0 → 在交越點(線性內插的時間)切成兩段,各取各的顏色。回 [{ t0, v0, t1, v1, pos, cut0?, cut1? }] */
@@ -971,6 +977,18 @@ function trTwLots(key, amounts, states) {
   if (spotKey && twd < 0) twd = shares = 0;
   const sg = shares < 0 ? -1 : 1, lots = Math.floor(Math.abs(shares) / TW_LOT_SHARES + 1e-9) * sg;
   return { lots, shares: Math.floor(Math.abs(shares) + 1e-9) * sg, unit: allPaper ? "shares" : "lots", twd, price: shares ? Math.abs(twd) / Math.abs(shares) : null, date, est };
+}
+/* 啟動框「補齊部位」台股那一筆的股數:模擬盤整股成交(tw.unit "shares",trTwLots),差額 d(TWD)÷ 價格捨去到整股;
+   帳上還沒有部位時就是部位表那一格的 tw.shares。不是 "shares"(真實券商、舊 lib 沒價格)= null,照舊寫 TWD */
+function trCatchShares(d, tw) {
+  if (!tw || tw.unit !== "shares" || !(tw.price > 0)) return null;
+  return Math.floor(Math.abs(d) / tw.price + 1e-9);
+}
+/* 台股一般交易時段(台北 09:00–13:30、週一到週五;台灣沒有日光節約,直接 +8 小時)。
+   跟 lib/paper_data.tw_session_open 同一個時段,但沒有假日表:國定假日這裡會講成開盤 */
+function trTwSessionOpen(ms) {
+  const d = new Date(ms + 8 * 3600000), wd = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return wd >= 1 && wd <= 5 && m >= 540 && m < 810;
 }
 /* 只管自己的部位(回報 self_ledger === true,lib/portfolio.own_positions_only):對帳器拿目標去比的是 Blave 的帳本,不是交易所整個帳戶。
    帳本在對帳快照的 ledger(size = 成本)。還沒有(新規則的第一輪還沒跑)就照機器端第一輪那條規則先算:
@@ -2560,18 +2578,26 @@ function trCatchWill(r) {
   const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), target = trClientTargets(stored, st2, trContracts()), bk = trBook(r, target);
   const vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {}, contribs = trContribs(stored, st2, trContracts());
   const out = [];
+  let anyTw = false;
   Object.keys(target).concat(Object.keys(bk.mine).filter((k) => !(k in target))).sort().forEach((sym) => {
     if (!trTradesSym(vk, sym) || (contribs[sym] || []).some((c) => c.notYet)) return;   // 訊號還沒算出來:會下什麼單不知道,不講
     const spec = trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))), raw = target[sym] || 0, ts = spec ? trLotsTarget(raw).lots : raw, as = bk.mine[sym] || 0, d = ts - as;
     const gs = spec ? null : trGateSide(gates[sym], ts, as);
     if (spec ? !Math.round(Math.abs(d)) : Math.abs(d) < (gs ? gs.usd : 10)) return;
-    // 台股的差額是台幣(模擬交易以台幣計價、帳戶幣是 USDT):照標的的幣別寫,不寫帳戶幣
-    const u = TR_TWSTOCK_RE.test(trCanonSym(sym.replace(/@spot$/, ""))) ? TR_TXF_CCY : trUnit();
-    const n = spec ? trLotsFmt(Math.abs(d)) + " " + t(trLotsKey(Math.abs(d), "tr.lotsUnit", "tr.lotUnit")) : trFmt(Math.round(Math.abs(d))) + (u ? " " + u : "");
-    out.push(t("tr.opt.catchWill", { side: t(d > 0 ? "tr.opt.buy" : "tr.opt.sell"), sym: spec ? t(spec.prod) : sym.replace(/@spot$/, ""), n }));
+    // 台股的差額是台幣(模擬交易以台幣計價、帳戶幣是 USDT):照標的的幣別寫,不寫帳戶幣;模擬盤寫股數(同策略組合表)
+    const sym0 = sym.replace(/@spot$/, ""), twStock = !spec && TR_TWSTOCK_RE.test(trCanonSym(sym0)), u = twStock ? TR_TXF_CCY : trUnit();
+    const sh = twStock ? trCatchShares(d, trTwLots(sym, stored, st2)) : null;
+    if (sh === 0) return;   // 不足 1 股:模擬盤整股成交,這一筆不會下
+    const n = spec ? trLotsFmt(Math.abs(d)) + " " + t(trLotsKey(Math.abs(d), "tr.lotsUnit", "tr.lotUnit"))
+      : sh != null ? t(sh === 1 ? "po.twShare" : "po.twShares", { n: trFmt(sh) }) : trFmt(Math.round(Math.abs(d))) + (u ? " " + u : "");
+    const twn = twStock ? trTwName(sym0) : "", lab = spec ? t(spec.prod) : twn ? sym0 + " " + twn : sym0;
+    if (twStock) anyTw = true;
+    out.push(t("tr.opt.catchWill", { side: t(d > 0 ? "tr.opt.buy" : "tr.opt.sell"), sym: (LANG === "zh" && /^[\x21-\x7e]/.test(lab) ? " " : "") + lab, n }));
   });
   if (!out.length) return null;
-  return out.slice(0, 3).join(LANG === "zh" ? "、" : "; ") + (out.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: out.length - 3 }) : "") + (LANG === "zh" ? "。" : ".");
+  // 模擬盤休市不收台股的單(lib/order_paper._check_session),對帳器留到開盤:「現在就下單」對台股那幾筆不成立
+  const closed = anyTw && !trTwSessionOpen(Date.now()) ? " " + t("tr.opt.catchTwClosed") : "";
+  return out.slice(0, 3).join(LANG === "zh" ? "、" : "; ") + (out.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: out.length - 3 }) : "") + (LANG === "zh" ? "。" : ".") + closed;
 }
 
 /* 選「等新訊號」會一直開著的部位(Wei 10-17):帳上有 Blave 的部位、策略的目標已經比它小(平倉、減碼、翻向)。
@@ -2878,7 +2904,10 @@ function trFxView() {
 // 金額表與確認框共用的分區合計與淨值倍數(分母是畫面上那一份淨值);acctZone 只給區的排序用
 function trZoneSum(amounts, eq, money) {
   const fv = trFxView(), vid = trVenueId(), acct = trUnit(), mf = money || trRowMoney;
-  return { ...trZoneTotals(amounts, trZoneOf, mf, fv.fx, fv.base), mult: trEquityMult(amounts, trZoneOf, mf, vid, acct, eq, fv.fx),
+  const mult = trEquityMult(amounts, trZoneOf, mf, vid, acct, eq, fv.fx, trPaperTwOk());
+  // 倍數那一段的字:綁了交易所但淨值還沒讀到寫「淨值 —」(不寫 0.00×);沒綁、或這個帳戶不交易這些列,整段不出
+  const multText = mult != null ? t("tr.equityMult", { x: trMultFmt(mult) }) : vid && !(typeof eq === "number" && isFinite(eq) && eq > 0) ? t("tr.equityMultNa") : "";
+  return { ...trZoneTotals(amounts, trZoneOf, mf, fv.fx, fv.base), mult, multText,
     acctZone: trMultZone(vid, acct, Object.keys(amounts).map(trZoneOf)) };
 }
 // 合計那個數:換算出來的(≈)取整、不帶小數;null = 「—」。逐幣別的 tooltip 退場(同網頁 63b7b5fe)
@@ -3112,7 +3141,7 @@ function trAmountTable(names, stored, states) {
       // 還沒跑過、回報沒有成分(選擇策略框剛勾進的草稿也是)的,先列策略檔的 UNIVERSE(Wei 10-16:≤3 檔全列、>3 檔「等 N 檔」、hover 全列);
       // 動態組出來讀不到 UNIVERSE 的才寫「—」
       const draftTc = isC && !tc && Array.isArray(x.universe) && x.universe.length ? { n: 0, long: 0, short: 0, keys: x.universe.slice() } : null;
-      const tcl = isC && (tc || draftTc) ? trTypeCLabel(tc || draftTc, t, trTwName) : null;
+      const tcl = isC && (tc || draftTc) ? trTypeCLabel(tc || draftTc, t, trTwName, x.universe) : null;
       const symText = isC ? (tcl ? tcl.text : "—") : txf ? t(txf.prod) : sym || "—";
       const symTip = isC && !tcl ? t("tr.typecPending") : tcl ? tcl.tip : "";
       const row = document.createElement("tr");
@@ -3306,7 +3335,7 @@ function trSaveAmounts(names, stored, opener, o) {
      「平倉」只在存完可能真的下單時標(trMayFire)。淨值倍數只有一個,接在合計後面。換了合約的列:策略名下寫「大台 → 微台」 */
   const eq = trShownEquity(TR.eqShown, TR.env, trEquity()), zt = trZoneSum(sending, eq), zt0 = trZoneSum(stored, eq, trRowMoneyStored);
   const mayFire = trMayFire(S.st, S.pending), old = (n) => Number(stored[n]) || 0;
-  const multText = zt.mult != null ? t("tr.equityMult", { x: trMultFmt(zt.mult) }) : "";
+  const multText = zt.multText;
   const keys = Object.keys(sending).concat(removed), zones = trZoneOrder(keys.map(trZoneOf), trVenueId(), zt.acctZone);
   const arrow = (dd, was) => { dd.append(trEl("span", "was", was), trEl("span", "arr", "→")); };
   const cfRow = (cls, label, dd) => { const r = trEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(trEl("dt", "", label), dd); return r; };
@@ -3722,16 +3751,17 @@ function trPlanTotal(stored) {
      1 大台 → 20 微台那幾秒會把合計講成 1/20(稽核 P1-2)。ack 在機器寫檔之後才回,機器手上已經是那一份 */
   if (trCtPend()) stored = trBase() || stored;
   const zt = trZoneSum(stored || {}, trEquity(), trRowMoneyStored);
-  return { ok: zt.total.v != null, text: trTotalText(zt.total), ccy: zt.total.v != null ? zt.total.ccy : null, mult: zt.mult != null ? t("tr.equityMult", { x: trMultFmt(zt.mult) }) : "",
+  return { ok: zt.total.v != null, text: trTotalText(zt.total), ccy: zt.total.v != null ? zt.total.ccy : null, mult: zt.multText,
     n: Object.keys(stored || {}).filter((k) => stored[k] > 0).length };
 }
 /* 啟動確認框最上面那一句:「照策略組合 N 支策略，合計 ≈ X 下單。」沒有金額就不出。
-   合計包成 .plan-tot:句子裡的半形空格在 CJK 字旁只剩一條縫,「合計 ≈」要跟表底一樣分得開(同網頁 01b51a54) */
+   合計包成 .plan-tot:句子裡的半形空格在 CJK 字旁只剩一條縫,「合計 ≈」要跟表底一樣分得開(同網頁 01b51a54);
+   不是 ≈ 的合計不補(數字前面那一格空格就夠,補了變成兩格寬) */
 function trPlanLine(stored) {
   const p = trPlanTotal(stored); if (!p.n) return null;
   if (!p.ok) return t(p.n === 1 ? "tr.startPlanNOne" : "tr.startPlanN", { n: String(p.n) });   // 合計算不出來:句子裡不夾「—」
   const mark = "\u0000", parts = t(p.n === 1 ? "tr.startPlanOne" : "tr.startPlan", { n: String(p.n), total: mark }).split(mark), frag = document.createDocumentFragment();
-  frag.append(parts[0], trEl("span", "plan-tot", p.text + (p.ccy ? " " + p.ccy : "")), parts.slice(1).join(""));
+  frag.append(parts[0], trEl("span", "plan-tot" + (p.text.indexOf("≈") === 0 ? " approx" : ""), p.text + (p.ccy ? " " + p.ccy : "")), parts.slice(1).join(""));
   return frag;
 }
 

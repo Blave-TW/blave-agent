@@ -377,7 +377,7 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
   // 第 8 列:補齊會送出的單(取自部位表的差額)
   { ctx.TR = bag({ binance: V }); ctx.TR.st.report.account.read_at = Math.floor(Date.now() / 1000);
     const w = vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx);
-    ok("補齊說明:BTC 目標 500、帳上 400 → 「會買進 BTCUSDT 100 USDT」;台股(交易所不交易)不列", /tr\.opt\.catchWill \{"side":"tr\.opt\.buy","sym":"BTCUSDT","n":"100 USDT"\}/.test(w) && !/2330/.test(w), w);
+    ok("補齊說明:BTC 目標 500、帳上 400 → 「會買進 BTCUSDT 100 USDT」;台股(交易所不交易)不列", /tr\.opt\.catchWill \{"side":"tr\.opt\.buy","sym":" BTCUSDT","n":"100 USDT"\}/.test(w) && !/2330/.test(w), w);
     ctx.TR.st.report.config.amounts.btc = 400;   // 目標 = 帳上:差額 0 → 不講會送什麼單(沒有單)
     ok("補齊說明:差額為 0(目標 400、帳上 400)→ 不出「會買進…」;有差額時才出", vm.runInContext("trCatchWill(TR.st.report)", ctx) === null);
     // 0.1.27 模擬交易台股(can_paper_twstock):差額是台幣,照標的寫 TWD,BTC 那筆照舊帳戶幣
@@ -385,7 +385,20 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
       ctx.TR.st.report.account.venues = { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } };
       const pw = vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx) || "";
       ok("補齊說明(模擬交易台股):2330 寫「100,000 TWD」、BTC 寫 USDT,不把台股標成 USDT",
-        /"sym":"2330","n":"100,000 TWD"/.test(pw) && /"sym":"BTCUSDT","n":"500 USDT"/.test(pw) && !/"sym":"2330","n":"[^"]*USDT"/.test(pw), pw); }
+        /"sym":" 2330","n":"100,000 TWD"/.test(pw) && /"sym":" BTCUSDT","n":"500 USDT"/.test(pw) && !/"sym":" 2330","n":"[^"]*USDT"/.test(pw), pw); }
+    // 實機 integ2 10-18:台股寫「代號 名字」、模擬盤照股數(同策略組合表那一格);休市時補一句「開盤後第一輪才成交」,開盤中不補;crypto 那筆不受影響
+    { const PV = { paper: V }; ctx.TR = bag(PV, { can_paper_twstock: true }); const rp = ctx.TR.st.report;
+      rp.account.venues = { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } }; rp.config.exchanges = { btc: "paper", tw: "paper" };
+      rp.states.tw.raw_closes = { 2330: 1030 }; rp.states.tw.raw_close_dates = { 2330: "2026-10-16" };
+      vm.runInContext("TR_TWN.names = { 2330: '台積電' };", ctx);
+      const at = (ms) => { const real = Date.now; Date.now = () => ms; try { return vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx) || ""; } finally { Date.now = real; } };
+      const sat = at(Date.UTC(2026, 9, 17, 3, 0)), mon = at(Date.UTC(2026, 9, 19, 2, 0)), monLate = at(Date.UTC(2026, 9, 19, 6, 0));
+      vm.runInContext("TR_TWN.names = null;", ctx);
+      ok("補齊說明(模擬交易台股):「買進 2330 台積電 97 股」(100,000 ÷ 1,030 捨去,同部位表);週六與 14:00 補休市句,週一 10:00 不補",
+        sat.includes(J({ side: "tr.opt.buy", sym: " 2330 台積電", n: "po.twShares " + J({ n: "97" }) })) && /"sym":" BTCUSDT","n":"500 USDT"/.test(sat)
+        && /tr\.opt\.catchTwClosed$/.test(sat) && /tr\.opt\.catchTwClosed$/.test(monLate) && !/catchTwClosed/.test(mon), J([sat, mon, monLate])); }
+    ok("台股時段(台北):週一到週五 09:00–13:30;週末、08:59、13:30 都算休市", vm.runInContext("[trTwSessionOpen(Date.UTC(2026,9,19,1,0)), trTwSessionOpen(Date.UTC(2026,9,19,5,29)), trTwSessionOpen(Date.UTC(2026,9,19,5,30)), trTwSessionOpen(Date.UTC(2026,9,19,0,59)), trTwSessionOpen(Date.UTC(2026,9,17,2,0)), trTwSessionOpen(Date.UTC(2026,9,18,2,0))].join()", ctx) === "true,true,false,false,false,false");
+    ok("模擬盤台股股數:差額 ÷ 價格捨去到整股;不是整股成交(整張／舊 lib 沒價格)= null", vm.runInContext("[trCatchShares(100000, { unit: 'shares', price: 1030 }), trCatchShares(-500, { unit: 'shares', price: 1030 }), trCatchShares(100000, { unit: 'lots', price: 1030 }), trCatchShares(1, null)].join()", ctx) === "97,0,,");
     // 0.1.27 等新訊號的提醒(Wei 10-17):帳上有 Blave 的部位、目標比它小(平、減、翻)、差額過門檻,才算一筆
     const ws = (amt, pos, held, extra) => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; r.config.amounts.btc = amt; r.states.btc.position = pos;
       r.account.venues.binance.positions = held == null ? {} : { BTCUSDT: { side: held > 0 ? "long" : "short", size: Math.abs(held), entry_price: 60000 } }; Object.assign(r, extra || {});
@@ -604,7 +617,7 @@ ok("P1-1 trRoundLots 補 1e-9(同機器 lib/portfolio、網頁 pfRoundLots):0.01
   ok("P0-1 1 大台換 20 微台、待對上時再改別支金額存檔:存著的合約讀送出的那一份(微台),不帶 contracts、一步送,微台那支照 20 口(不是 400)",
     vm.runInContext("trCtStored('a')", ctx) === "TMF" && ctAll === null && steps.length === 1 && steps[0].amounts.a === 20 && !steps[0].contracts && vm.runInContext("trRowTxf('a').cv", ctx) === 10, J({ ctAll, steps }));
   // 補稽核 P1-2:待對上時啟動框／表底合計／預設本金的口數配 ct.sent 的那一份(S.sent),跟已對上時同一個數
-  { const need = ["trRowMoneyStored", "trZoneOf", "trZoneSum", "trTotalText", "trFxView", "trQuoteMap", "trPlanTotal", "trVenueId", "trVenueIds", "trTxfPrice", "trMultFmt", "trSymZone", "trEffSym", "trFmt"];
+  { const need = ["trRowMoneyStored", "trZoneOf", "trZoneSum", "trTotalText", "trFxView", "trQuoteMap", "trPlanTotal", "trVenueId", "trVenueIds", "trTxfPrice", "trMultFmt", "trSymZone", "trEffSym", "trFmt", "trPaperTwOk"];
     vm.runInContext(need.map((n) => { try { return cutF(src, n); } catch (_) { return ""; } }).join("\n") + "\nvar TR_TXF = { price: 20000 }; function trEquity() { return null; } function trUnit() { return 'TWD'; }", ctx);
     const tot = (T) => { ctx.TR = T; return vm.runInContext("(function () { const p = trPlanTotal(trStored()); return p.text + ' ' + p.ccy; })()", ctx); };
     const only = (T) => { delete T.st.report.config.amounts.b; if (T.sent) delete T.sent.b; T.list = [T.list[0]]; return T; };
@@ -613,6 +626,10 @@ ok("P1-1 trRoundLots 補 1e-9(同機器 lib/portfolio、網頁 pfRoundLots):0.01
     const tp1 = tot(pend), td1 = tot(done), tb1 = tot(before);
     ok("P1-2 1 大台 → 20 微台待對上:合計 = 已對上時的值(4,000,000),不是 1 微台的 200,000;mpsFundDefault 同一條", tp1 === td1 && tb1 === td1 && /4,000,000/.test(tp1)
       && /if \(trCtPend\(\)\) stored = trBase\(\) \|\| stored;/.test(src) && /trZoneSum\(\(trCtPend\(\) \? trBase\(\) : trStored\(\)\) \|\| \{\}, null, trRowMoneyStored\)/.test(psrc), J([tp1, td1, tb1])); }
+    // 實機 integ2 10-18:綁了交易所、淨值還沒讀到 → 倍數那一段寫「淨值 —」;沒綁整段不出
+    { const only = (T) => { delete T.st.report.config.amounts.b; if (T.sent) delete T.sent.b; T.list = [T.list[0]]; return T; }, bound = only(bag()); bound.st.report.venues = { president: { credentials: true, pair: true, order: true, account: true } };
+      ctx.TR = bound; const na = vm.runInContext("trZoneSum(trStored(), null, trRowMoneyStored).multText", ctx); ctx.TR = only(bag()); const none = vm.runInContext("trZoneSum(trStored(), null, trRowMoneyStored).multText", ctx);
+      ok("淨值讀不到:綁了交易所 → tr.equityMultNa(不是 0.00×、也不是空白);沒綁 → 空字串", na === "tr.equityMultNa" && none === "", J([na, none])); }
   // Windows e2e 10-14:微台 1 口 → 大台 → 微台,口數要回到 1(換算基準 = 原本的名目,存檔後也留著;不足一口不補成 1)
   { const L = { env: "local", list: [{ name: "a", symbol: "TXF" }], edits: {}, bad: {}, raw: {}, sig: {}, reqIds: {}, save: null, sent: null,
       st: { alive: true, report: { config: { amounts: { a: 1 }, contracts: { a: "TMF" } }, can_switch_contract: true, states: {} } }, ct: { edits: {}, basis: {}, sent: null } };
@@ -858,8 +875,8 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
 // 網頁 01b51a54(設計師必改):細節行未實現取整到元、帶正負號;啟動框合計包成 .plan-tot(≈ 前面補間距)
 { const det = /seg\(t\("po\.dUpnl", \{ v: money\(trFmt\(Math\.round\(x\.unrealized_pnl\) \|\| 0, true\)\) \}\)\)/.test(src) && /t\("po\.dUpnl", \{ v: trFmt\(Math\.round\(su\) \|\| 0, true\) \}\)/.test(src);
   const css = fs.readFileSync(path.join(R, "trade.css"), "utf8"), app = fs.readFileSync(path.join(R, "app.js"), "utf8");
-  ok("細節行與表底的未實現取整到元、帶正負號;啟動框合計是 .plan-tot、左邊補 --space-4,confirmBox 收得下節點",
-    det && /trEl\("span", "plan-tot", p\.text/.test(src) && /\.del-body \.plan-tot \{ margin-left: var\(--space-4\); \}/.test(css) && /if \(typeof x === "string"\) p\.textContent = x; else p\.appendChild\(x\);/.test(app)); }
+  ok("細節行與表底的未實現取整到元、帶正負號;啟動框合計是 .plan-tot、≈ 的才在左邊補 --space-4(不是 ≈ 就不補,免得「合計」後面兩格寬),confirmBox 收得下節點",
+    det && /trEl\("span", "plan-tot" \+ \(p\.text\.indexOf\("≈"\) === 0 \? " approx" : ""\), p\.text/.test(src) && /\.del-body \.plan-tot\.approx \{ margin-left: var\(--space-4\); \}/.test(css) && /if \(typeof x === "string"\) p\.textContent = x; else p\.appendChild\(x\);/.test(app)); }
 // A 案字串逐字同網頁 6ae71405(web messages.po;網頁的 {t}/{p}/{u}/{m} 在這裡是 {total}/{v})
 { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), has = (v) => S.includes(JSON.stringify(v));
   const want = ["{venue} 帳戶裡策略開的部位", "What your strategies hold in your {venue} account", "策略外", "Off-strategy", "這個部位不是 Blave 下單建立的，對帳不會動它。", "均價 {v}", "Entry {v}", "未實現 {v}", "Unrealized {v}", "保證金 {v}", "Margin {v}", "（{x}×）", " ({x}×)",

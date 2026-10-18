@@ -1831,6 +1831,10 @@ msgstr "These symbols mix currencies, or their currency can't be told from the s
 msgid "tr.equityMult"
 msgstr "{x}× equity"
 
+# 綁了交易所但淨值還沒讀到:倍數寫「—」,不寫 0.00×
+msgid "tr.equityMultNa"
+msgstr "— equity"
+
 msgid "tr.lotsNotionalTip"
 msgstr "≈ {amt} TWD notional"
 
@@ -1842,6 +1846,10 @@ msgstr "Members: {list}"
 
 msgid "tr.typecMembersFlat"
 msgstr "Members: {list} (flat right now)"
+
+# Type C 列的標的格 hover:有持股時列持有的那幾檔
+msgid "tr.typecHeld"
+msgstr "Holding: {list}"
 
 msgid "tr.typecSymsMore"
 msgstr "{list} and {k} more"
@@ -4481,7 +4489,7 @@ msgid "lib.again"
 msgstr "Download Again"
 
 msgid "lib.pending"
-msgstr "Downloading & Backtesting…"
+msgstr "Installing & Backtesting…"
 
 msgid "lib.buy"
 msgstr "Buy & Use · {price}"
@@ -4493,7 +4501,7 @@ msgid "lib.buy.price"
 msgstr "Price {price}"
 
 msgid "lib.buy.lead"
-msgstr "Charged to your Blave Agent balance; the download and backtest start right after. No orders are placed."
+msgstr "Charged to your Blave Agent balance; the install and backtest start right after. No orders are placed."
 
 msgid "lib.buy.ok"
 msgstr "Confirm Purchase"
@@ -4559,7 +4567,7 @@ msgid "lib.gate.login"
 msgstr "Sign in"
 
 msgid "lib.cf.title"
-msgstr "Download \"{title}\"?"
+msgstr "Install \"{title}\"?"
 
 msgid "lib.cf.l1"
 msgstr "The agent downloads it into strategies/ and runs a backtest on fresh data; the result shows up in the sidebar."
@@ -4574,7 +4582,7 @@ msgid "lib.cf.cloudNote"
 msgstr "This goes to the agent on your cloud machine; this computer isn't affected."
 
 msgid "lib.cf.ok"
-msgstr "Download & Backtest"
+msgstr "Install & Backtest"
 
 msgid "lib.cf.titleAgain"
 msgstr "Download \"{title}\" Again?"
@@ -7976,6 +7984,10 @@ msgstr "sell"
 
 msgid "tr.opt.catchMore"
 msgstr "and {n} more"
+
+# 模擬交易台股休市(週末、09:00–13:30 以外):補齊的台股單要等開盤
+msgid "tr.opt.catchTwClosed"
+msgstr "The Taiwan stock market is closed now; Taiwan stock orders fill in the first round after the open."
 
 msgid "tr.pick.noTxf"
 msgstr "No TAIEX futures strategies yet."

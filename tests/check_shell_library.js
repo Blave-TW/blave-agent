@@ -584,7 +584,7 @@ if (!process.versions.electron) {
     { const box = () => F.calls.box[F.calls.box.length - 1], pick = () => ({ title: box().title, lines: box().lines.join("|"), ok: box().ok });
       F.libAsk(s101); const fresh = pick();
       F.ctaState = "installed"; F.libAsk(s101); const again = pick(); F.libAsk(s72); const againFee = pick(); F.env = "cloud"; F.libAsk(s101); const againCloud = pick(); F.env = "local"; F.ctaState = "free";
-      ok("⑥ 確認框(未安裝):標題 lib.cf.title、內文不帶覆蓋那句、鈕 lib.cf.ok", fresh.title === "下載「BTC 通道動能共振」？" && fresh.lines === [z["lib.cf.l1Local"], z["lib.cf.l2"]].join("|") && fresh.ok === z["lib.cf.ok"], JSON.stringify(fresh));
+      ok("⑥ 確認框(未安裝):標題 lib.cf.title、內文不帶覆蓋那句、鈕 lib.cf.ok", fresh.title === "安裝「BTC 通道動能共振」？" && fresh.ok === "安裝並回測" && fresh.lines === [z["lib.cf.l1Local"], z["lib.cf.l2"]].join("|") && fresh.ok === z["lib.cf.ok"], JSON.stringify(fresh));
       ok("⑥ 確認框(已安裝 → 再下載一份):標題 lib.cf.titleAgain、第一行 lib.cf.l0Again 帶 libWhere(本機 / 雲端各自)、其餘照舊(資料費那行照出)、鈕 lib.cf.okAgain",
         again.title === "再下載一份「BTC 通道動能共振」？" && again.ok === "覆蓋並回測"
         && again.lines === ["會整份覆蓋" + z["lib.where.local"] + "的策略清單裡同名的那支，並重跑回測。", z["lib.cf.l1Local"], z["lib.cf.l2"]].join("|")
@@ -787,7 +787,7 @@ app.whenReady().then(async () => {
     const open = !document.getElementById("del-scrim").hidden, title = document.getElementById("del-title").textContent, full = document.getElementById("del-title").title, lines = q("#del-body p").map((p) => p.textContent), okTxt = document.getElementById("del-ok").textContent, env = document.getElementById("del-env").hidden, focus = document.activeElement && document.activeElement.id;
     document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
     const b = q("#lib-cta .btn-fill")[0]; return { open, title, full, lines, okTxt, env, focus, sent: window.__lib.sent.map((p) => [p.message, p.viewing && p.viewing.env, p.sessionId && /^desktop-/.test(p.sessionId)]), pending: LIB.pending && LIB.pending.id, btn: b.textContent, dis: b.disabled, note: q("#lib-cta .note")[0].textContent, running }; })()`);
-  ok("④ 「用這支」→ 確認框(標題帶策略名、兩段、本機那句 l1Local、「下載並回測」、焦點在取消、本機不掛雲端記號)→ 確認 → 外殼代下載 → 送 lib.msgLocal(逐字)、viewing.env=local → 進行中態",
+  ok("④ 「用這支」→ 確認框(標題帶策略名、兩段、本機那句 l1Local、「安裝並回測」、焦點在取消、本機不掛雲端記號)→ 確認 → 外殼代下載 → 送 lib.msgLocal(逐字)、viewing.env=local → 進行中態",
     r.open && r.title === (await T("lib.cf.title", { title: "BTC 通道動能共振" })) && r.full === r.title && !/…/.test(r.title) && r.lines.length === 2 && r.lines[0] === (await T("lib.cf.l1Local")) && r.okTxt === (await T("lib.cf.ok")) && r.env && r.focus === "del-cancel"
     && (await js("window.__lib.downloads.join()")) === "101" && r.sent.length === 1 && r.sent[0][0] === "策略庫的「BTC 通道動能共振」（#101）已經下載好了，幫我安裝並跑一次回測看看結果" && r.sent[0][1] === "local" && r.sent[0][2] && r.pending === 101 && r.btn === (await T("lib.pending")) && r.dis && r.note === "" && r.running, JSON.stringify(r));
   // turn-end:本機多了一支 → 記對照表;回合結束不換頁(結果卡 spec §1:新策略不自動選中,由 results.js 出卡,見 check_shell_results.js)

@@ -1839,6 +1839,10 @@ msgstr "這些標的混了不同幣別，或從代號看不出計價。"
 msgid "tr.equityMult"
 msgstr "淨值 {x}×"
 
+# 綁了交易所但淨值還沒讀到:倍數寫「—」,不寫 0.00×
+msgid "tr.equityMultNa"
+msgstr "淨值 —"
+
 msgid "tr.lotsNotionalTip"
 msgstr "≈ {amt} TWD（名目）"
 
@@ -1850,6 +1854,10 @@ msgstr "成分：{list}"
 
 msgid "tr.typecMembersFlat"
 msgstr "成分：{list}（目前空手）"
+
+# Type C 列的標的格 hover:有持股時列持有的那幾檔
+msgid "tr.typecHeld"
+msgstr "持有：{list}"
 
 msgid "tr.typecSymsMore"
 msgstr "{list} 等 {n} 檔"
@@ -4493,7 +4501,7 @@ msgid "lib.again"
 msgstr "再下載一份"
 
 msgid "lib.pending"
-msgstr "下載與回測中…"
+msgstr "安裝與回測中…"
 
 msgid "lib.buy"
 msgstr "購買並使用 {price}"
@@ -4505,7 +4513,7 @@ msgid "lib.buy.price"
 msgstr "價格 {price}"
 
 msgid "lib.buy.lead"
-msgstr "從 Blave Agent 餘額扣款；買了就會開始下載並回測，不會自動下單。"
+msgstr "從 Blave Agent 餘額扣款；買了就會開始安裝並回測，不會自動下單。"
 
 msgid "lib.buy.ok"
 msgstr "確認購買"
@@ -4571,7 +4579,7 @@ msgid "lib.gate.login"
 msgstr "登入"
 
 msgid "lib.cf.title"
-msgstr "下載「{title}」？"
+msgstr "安裝「{title}」？"
 
 msgid "lib.cf.l1"
 msgstr "agent 會把策略下載到 strategies/ 資料夾，用最新資料跑一次回測，結果出現在左側欄。"
@@ -4586,7 +4594,7 @@ msgid "lib.cf.cloudNote"
 msgstr "這一句會送給雲端主機上的 agent；這台電腦不受影響。"
 
 msgid "lib.cf.ok"
-msgstr "下載並回測"
+msgstr "安裝並回測"
 
 msgid "lib.cf.titleAgain"
 msgstr "再下載一份「{title}」？"
@@ -7991,6 +7999,10 @@ msgstr "賣出"
 
 msgid "tr.opt.catchMore"
 msgstr "和另外 {n} 檔"
+
+# 模擬交易台股休市(週末、09:00–13:30 以外):補齊的台股單要等開盤
+msgid "tr.opt.catchTwClosed"
+msgstr "台股現在休市，台股的單要等開盤後的第一輪才會成交。"
 
 msgid "tr.pick.noTxf"
 msgstr "還沒有台指期策略。"

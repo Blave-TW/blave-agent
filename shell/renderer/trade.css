@@ -807,7 +807,7 @@ html.ws-sc .side-gate { display: none; }
 .po-bridge { font-size: 12px; }
 .pf-tbl td.note.po-det { padding-top: 0; font: 11px var(--font-sans); color: var(--ink-3); }
 /* 啟動確認框「照策略組合 N 支策略,合計 ≈ X 下單」:句子裡的半形空格在 CJK 字旁只剩一條縫,補 4 讓「合計 ≈」跟表底一樣分得開 */
-.del-body .plan-tot { margin-left: var(--space-4); }
+.del-body .plan-tot.approx { margin-left: var(--space-4); }
 /* 「另有手動 N」:帳本模式下同標的的手動部位,虛線底線提示可以停上去看(對帳不會動它) */
 .po-det .po-manual { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
 /* 跑優化／回測前等更新績效:鈕下方一行「等「X」更新績效… 先用目前數字跑」(不等時不出現) */

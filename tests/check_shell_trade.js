@@ -217,7 +217,13 @@ ok("§9.3 帳戶幣那一區(排序用):加密所 = 帳戶幣;OKX 回 USD、表�
     near(trEquityMult({ lot: 2, u1: 500 }, zone, ref, "capital", "TWD", 1000, FX), 0.2) && near(trEquityMult({ lot: 3 }, zone, ref, "president", "TWD", 100, FX), 3)
     && trEquityMult({ lot: 2 }, zone, () => null, "capital", "TWD", 1000, FX) === null && trEquityMult({ lot: 2 }, zone, ref, "capital", "USDT", 1000, FX) === null);
   ok("沒綁 / 帳戶幣未知 / 加密帳戶讀成 TWD = null", trEquityMult({ u1: 500 }, zone, ref, null, "USDT", 1000, FX) === null && trEquityMult({ u1: 500 }, zone, ref, "binance", null, 1000, FX) === null
-    && trEquityMult({ u1: 500 }, zone, ref, "binance", "TWD", 1000, FX) === null); }
+    && trEquityMult({ u1: 500 }, zone, ref, "binance", "TWD", 1000, FX) === null);
+  // 實機 integ2 10-18:模擬交易 100,000 USDT、台股 Type C 1,000,000 TWD 寫成「淨值 0.00×」——TWD 列整列被跳過、0 ÷ 淨值
+  ok("模擬交易會下台股(paperTw):台股列換帳戶幣算進去(1,000,000 ÷ 32 ÷ 100,000 ≈ 0.31);缺 TWD 匯率 = null;機器不會下台股時照舊不算",
+    near(trEquityMult({ tw: 1000000 }, zone, ref, "paper", "USDT", 100000, FX, true), 0.3125) && trEquityMult({ tw: 1000000 }, zone, ref, "paper", "USDT", 100000, { USD: 1, USDT: 1 }, true) === null
+    && near(trEquityMult({ tw: 1000000, u1: 10000 }, zone, ref, "paper", "USDT", 100000, FX, false), 0.1));
+  ok("一列都沒算進去(加密所只掛台股、模擬交易不下台股)= null,不寫 0.00×", trEquityMult({ tw: 1000000 }, zone, ref, "binance", "USDT", 100000, FX, true) === null
+    && trEquityMult({ tw: 1000000 }, zone, ref, "paper", "USDT", 100000, FX, false) === null && near(trEquityMult({ u1: 0 }, zone, ref, "binance", "USDT", 1000, FX), 0)); }
 ok("§3.3 台指期目標口數取整 = 機器對帳器 sign(x)·floor(|x|+0.5):0.5 → 1、−0.5 → −1(Math.round 會給 −0)、1.49 → 1、−2.5 → −3",
   trRoundLots(0.5) === 1 && trRoundLots(-0.5) === -1 && trRoundLots(1.49) === 1 && trRoundLots(-2.5) === -3 && trRoundLots(2.5) === 3 && Object.is(trRoundLots(0) + 0, 0) && trRoundLots(-0.4) === 0);
 ok("§9.1 交不交易:加密所不交易台股與台指期;台灣券商只交易台指期;認不得的交易所(null)一律當有交易",
@@ -257,7 +263,7 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
     && SJ(crypto) === SJ({ 2330: -20000, 2454: 5000, 2317: -5000, BTCUSDT: -6000 }) && SJ(old) === SJ(crypto)); }
 { const pr = trTypeC({ weights: { BTCUSDT: 0.5, ETHUSDT: -0.3, SOLUSDT: 0 }, market: "swap" });
   ok("units §8.2/§8.3 投資組合那一列:檔數只數持有的(w' ≠ 0,universe 裡的 0 權重不算);多、空各自加總", pr && pr.n === 2 && Math.abs(pr.long - 0.5) < 1e-9 && Math.abs(pr.short - 0.3) < 1e-9 && J(pr.keys) === J(["BTCUSDT", "ETHUSDT", "SOLUSDT"]));
-  ok("…現貨的負權重壓 0(同 trClientTargets)、壞權重當 0、都不算持有;單一標的策略回 null", J(trTypeC({ weights: { A: -0.5, B: 0.5, C: "x" }, market: "spot" })) === J({ n: 1, long: 0.5, short: 0, keys: ["A", "B", "C"] })
+  ok("…現貨的負權重壓 0(同 trClientTargets)、壞權重當 0、都不算持有;單一標的策略回 null", J(trTypeC({ weights: { A: -0.5, B: 0.5, C: "x" }, market: "spot" })) === J({ n: 1, long: 0.5, short: 0, keys: ["A", "B", "C"], held: ["B"] })
     && trTypeC({ symbol: "BTCUSDT", position: 1 }) === null && trTypeC(null) === null && trTypeC({ weights: [0.5] }) === null);
   // 0.1.26 用戶回報:權重全 0 的 Type C(GOOGL 順勢＋AMZN 逆勢)回報的 weights 是 {},標的寫「0 檔」、分到「幣別未定」。
   // runtime 另帶 universe(含 0 權重):keys 用它,n 照舊只數持有的;舊 runtime 沒這欄 = 現行行為
@@ -270,27 +276,33 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
     ok("…舊 runtime(沒有 universe):照現行行為,keys 空、分區未定;universe 不是陣列當沒有", old && old.n === 0 && J(old.keys) === "[]" && trRowZone("g", null, old, true, { g: null }) === TR_ZONE_UNKNOWN
       && J(trTypeC({ weights: {}, universe: "GOOGLUSDT", market: "swap" }).keys) === "[]");
     ok("…keys 空時退回清單的標的推幣別(同還沒算過權重)", trRowZone("g", "GOOGLUSDT,AMZNUSDT", old, true, null) === "USDT");
-    // Wei 10-16:標的格直接列代號(去計價尾碼),超過 3 檔寫「前 3 檔 等 N 檔」;持有中與空手同寫法,hover 列全部、空手加一句
+    // Wei 10-16:標的格直接列代號(去計價尾碼),超過 3 檔寫「前 3 檔 等 N 檔」。實機 10-18(283／30／112 檔):有持股數持股,空手數 UNIVERSE
     const tf = (k, v) => k + (v ? JSON.stringify(v) : "");
-    const L = (st) => trTypeCLabel(trTypeC(st), tf);
+    const L = (st, u) => trTypeCLabel(trTypeC(st), tf, undefined, u);
     const big = { weights: { TSLAUSDT: 0.3 }, universe: ["GOOGLUSDT", "AMZNUSDT", "TSLAUSDT", "NVDAUSDT", "BTCUSDC"], market: "swap" };
-    ok("…標的格:3 檔以內列代號、去掉 USDT 尾碼;空手與持有中同一種寫法,hover 分「成分」與「成分(目前空手)」", J(L(flat)) === J({ text: "GOOGL" + "ak.sep" + "AMZN", tip: "tr.typecMembersFlat" + J({ list: "GOOGL" + "ak.sep" + "AMZN" }) })
-      && L({ weights: { GOOGLUSDT: 0.5 }, universe: ["GOOGLUSDT", "AMZNUSDT"], market: "swap" }).text === L(flat).text && /^tr\.typecMembers\{/.test(L({ weights: { GOOGLUSDT: 0.5 }, universe: ["GOOGLUSDT", "AMZNUSDT"], market: "swap" }).tip));
-    ok("…超過 3 檔:前 3 檔(持有的排前面)+ 總數;hover 列全部 5 檔", L(big).text === "tr.typecSymsMore" + J({ list: ["TSLA", "GOOGL", "AMZN"].join("ak.sep"), n: 5, k: 2 })
-      && L(big).tip === "tr.typecMembers" + J({ list: ["TSLA", "GOOGL", "AMZN", "NVDA", "BTC"].join("ak.sep") }) && trShortSym("ETHUSDT@spot") === "ETH" && trShortSym("USDT") === "USDT");
+    ok("…空手:列成分代號、去掉 USDT 尾碼,hover「成分(目前空手)」", J(L(flat)) === J({ text: "GOOGL" + "ak.sep" + "AMZN", tip: "tr.typecMembersFlat" + J({ list: "GOOGL" + "ak.sep" + "AMZN" }) }));
+    ok("…有持股:只列持有的、數字是持股數(不是回報成分的檔數),hover「持有：」", J(L(big)) === J({ text: "TSLA", tip: "tr.typecHeld" + J({ list: "TSLA" }) })
+      && L({ weights: { GOOGLUSDT: 0.5 }, universe: ["GOOGLUSDT", "AMZNUSDT"], market: "swap" }).text === "GOOGL" && trShortSym("ETHUSDT@spot") === "ETH" && trShortSym("USDT") === "USDT");
+    { const U = Array.from({ length: 283 }, (_, i) => String(1101 + i)), held = {}; U.slice(10, 40).forEach((k) => { held[k] = 1 / 30; });
+      const w112 = Object.assign({}, held); U.slice(100, 182).forEach((k) => { w112[k] = 0; });
+      const fresh = trTypeCLabel({ n: 0, long: 0, short: 0, keys: U.slice() }, tf, undefined, U), saved = L({ weights: held, universe: Object.keys(held), market: "spot" }, U), rebound = L({ weights: held, universe: Object.keys(w112), market: "spot" }, U);
+      const flatU = L({ weights: {}, universe: Object.keys(w112), market: "spot" }, U), flatNoU = L({ weights: {}, universe: Object.keys(w112), market: "spot" }, []);
+      ok("…實機 283／30／112:還沒跑 = UNIVERSE 283;持有 30 檔時存檔後與重綁後(回報成分 112)都是 30;空手回到 UNIVERSE 283,讀不到 UNIVERSE 才退回回報的 112",
+        /"n":283/.test(fresh.text) && /"n":30,/.test(saved.text) && rebound.text === saved.text && /"n":283/.test(flatU.text) && /"n":112/.test(flatNoU.text), J([fresh.text, saved.text, rebound.text, flatU.text, flatNoU.text])); }
     // Wei 0.1.26:台股成分寫名字(nameOf = trTwName,查不到退代號),hover 寫「名字（代號）」;加密照舊
     { const NM = { 1303: "南亞", 2603: "長榮", 2801: "彰銀" }, nameOf = (k) => NM[k] || "";
-      const tw = { weights: { 1303: 0.01, 2603: 0.01 }, universe: ["1303", "2603", "2801", "9999", "2330"], market: "spot" };
-      const LN = trTypeCLabel(trTypeC(tw), tf, nameOf), pair = (n, c) => "tr.twNameCode" + J({ name: n, code: c });
+      const tw = { weights: { 1303: 0.01, 2603: 0.01 }, universe: ["1303", "2603", "2801", "9999", "2330"], market: "spot" }, twFlat = { weights: {}, universe: tw.universe, market: "spot" };
+      const LN = trTypeCLabel(trTypeC(twFlat), tf, nameOf), pair = (n, c) => "tr.twNameCode" + J({ name: n, code: c });
       ok("…台股成分寫名字、查不到的退回代號;hover 台股寫「名字（代號）」、查不到的只寫代號", LN.text === "tr.typecSymsMore" + J({ list: ["南亞", "長榮", "彰銀"].join("ak.sep"), n: 5, k: 2 })
-        && LN.tip === "tr.typecMembers" + J({ list: [pair("南亞", "1303"), pair("長榮", "2603"), pair("彰銀", "2801"), "9999", "2330"].join("ak.sep") }));
-      ok("…加密成分不查名字:同一個 nameOf 下照舊寫 BTC、ETH;沒給 nameOf 也照舊寫代號", J(trTypeCLabel(trTypeC({ weights: { BTCUSDT: 0.5, ETHUSDT: 0.5 }, market: "swap" }), tf, nameOf)) === J({ text: "BTC" + "ak.sep" + "ETH", tip: "tr.typecMembers" + J({ list: "BTC" + "ak.sep" + "ETH" }) })
-        && trTypeCLabel(trTypeC(tw), tf).text === "tr.typecSymsMore" + J({ list: ["1303", "2603", "2801"].join("ak.sep"), n: 5, k: 2 }));
+        && LN.tip === "tr.typecMembersFlat" + J({ list: [pair("南亞", "1303"), pair("長榮", "2603"), pair("彰銀", "2801"), "9999", "2330"].join("ak.sep") })
+        && trTypeCLabel(trTypeC(tw), tf, nameOf).text === ["南亞", "長榮"].join("ak.sep"));
+      ok("…加密成分不查名字:同一個 nameOf 下照舊寫 BTC、ETH;沒給 nameOf 也照舊寫代號", J(trTypeCLabel(trTypeC({ weights: { BTCUSDT: 0.5, ETHUSDT: 0.5 }, market: "swap" }), tf, nameOf)) === J({ text: "BTC" + "ak.sep" + "ETH", tip: "tr.typecHeld" + J({ list: "BTC" + "ak.sep" + "ETH" }) })
+        && trTypeCLabel(trTypeC(twFlat), tf).text === "tr.typecSymsMore" + J({ list: ["1303", "2603", "2801"].join("ak.sep"), n: 5, k: 2 }));
       const STR = (() => { const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"); return (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); })();
       ok("…「等 N 檔」「and N more」數字兩邊是不間斷空格(檔／more 不會單獨掉到下一行);名字（代號）兩語都有", STR.zh["tr.typecSymsMore"] === "{list} 等\u00a0{n}\u00a0檔" && STR.en["tr.typecSymsMore"] === "{list} and\u00a0{k}\u00a0more"
         && STR.zh["tr.twNameCode"] === "{name}（{code}）" && STR.en["tr.twNameCode"] === "{name} ({code})"); }
     ok("…舊 runtime 的空手列(keys 空)照舊寫 0 檔、不掛 hover;金額表那一格用 trTypeCLabel", J(L({ weights: {}, market: "swap" })) === J({ text: "tr.nSyms" + J({ n: 0 }), tip: "" })
-      && /const tcl = isC && \(tc \|\| draftTc\) \? trTypeCLabel\(tc \|\| draftTc, t, trTwName\) : null;/.test(src) && /const symTip = isC && !tcl \? t\("tr\.typecPending"\) : tcl \? tcl\.tip : "";/.test(src)
+      && /const tcl = isC && \(tc \|\| draftTc\) \? trTypeCLabel\(tc \|\| draftTc, t, trTwName, x\.universe\) : null;/.test(src) && /const symTip = isC && !tcl \? t\("tr\.typecPending"\) : tcl \? tcl\.tip : "";/.test(src)
       && /universe: x\.remote \? \[\] : trUniverse\(d && d\.code\)/.test(src)); }
   ok("§8.3 上下兩表同一個篩選:0 權重的成分不進部位表(trContribs / trClientTargets)", !("SOLUSDT" in trContribs({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))
     && !("SOLUSDT" in trClientTargets({ c: 1000 }, { c: { weights: { BTCUSDT: 0.5, SOLUSDT: 0 }, market: "swap" } }))); }
