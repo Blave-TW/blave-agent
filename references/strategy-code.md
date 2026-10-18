@@ -2,6 +2,18 @@
 
 NOTE: This guide covers **Type A (Signal Strategy)** and **Type C (Portfolio Strategy)**. For Type B (everything else), write from scratch — no template, no backtest.
 
+## Start here
+
+This file is ~80 KB: read it with `Read` and an `offset` / `limit` around the section you need — never `cat … | head -400` (a Bash result over its size limit is cut to a preview, and the read is wasted). Every rule below still applies; this only says what to read first.
+
+**Taiwan stock picking / rotation (Type C, 台股選股)** — read exactly these, then write:
+1. `strategies/TEMPLATE_C.py` — the `hdrs` lines for a probe script and the industry-sampled UNIVERSE (`lib.strategy.twstock_universe_by_sector`) are in it.
+2. `examples/twstock_momentum/strategy.py` — a complete Taiwan Type C.
+3. Here: *Naming & description*, *`align_feed` — any feed, any market* (月營收, 外資持股 and every other non-price feed), *Type C — Portfolio Strategy*; and *Steps* › 4 before you launch the backtest.
+4. `references/twstock.md`: *Batch 資料函式* and the section of each dataset you use.
+
+Other sections only when the strategy needs them (exits, scaling in, editing a live strategy, versions).
+
 CRITICAL: Every Type A strategy MUST be based on `strategies/TEMPLATE_A.py`. Copy the template and fill in the marked sections. Do NOT write a standalone backtest script from scratch.
 
 ## Steps
@@ -937,4 +949,4 @@ Runner handles everything else: backtest, chart, stats, notify, live execution.
 
 ## Type C — Additional Rules
 
-**Taiwan stock universe** must be sampled by sector — never take `[:N]` from the raw list (codes are ordered by sector, a head-slice concentrates in cement/food/textile). Use the sector-stratified sampling helper in `references/twstock.md`.
+**Taiwan stock universe** must be sampled by sector — never take `[:N]` from the raw list (codes are ordered by sector, a head-slice concentrates in cement/food/textile). Draw it with `lib.strategy.twstock_universe_by_sector(fetch_twstock_list(hdrs), total=N)` (`references/twstock.md` › 股票池（Universe）建立).

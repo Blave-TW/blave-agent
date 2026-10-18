@@ -32,34 +32,15 @@ tech = df[df['industry_code'].isin(['24', '25'])].index.tolist()
 台股代碼按產業群組排列（1xxx 水泥/食品、2xxx 紡織/化工/電子、9xxx 其他），直接取前 N 支會集中在少數產業。**回測 universe 必須依產業抽樣**，不得直接用 `[:100]` 截斷：
 
 ```python
-import random, collections
+from lib.data import fetch_twstock_list
+from lib.strategy import twstock_universe_by_sector
 
 df = fetch_twstock_list(headers)
-stocks = df[df['industry_code'].notna()]  # 排除 ETF 等無產業別的證券
-
-# 依產業別分組
-by_sector = collections.defaultdict(list)
-for stock_id, row in stocks.iterrows():
-    by_sector[row['industry_code']].append(stock_id)
-
-# 每個產業等比例抽樣，合計 N 支
-def sample_by_sector(by_sector, total=100, seed=42):
-    rng = random.Random(seed)
-    n_sectors = len(by_sector)
-    per_sector = max(1, total // n_sectors)
-    result = []
-    for sids in by_sector.values():
-        result.extend(rng.sample(sids, min(per_sector, len(sids))))
-    # 若不足 total，從各產業再補
-    all_ids = [s for sids in by_sector.values() for s in sids if s not in result]
-    rng.shuffle(all_ids)
-    result.extend(all_ids[:total - len(result)])
-    return result[:total]
-
-universe = sample_by_sector(by_sector, total=100)
+universe = twstock_universe_by_sector(df, total=100)                      # every industry, ETFs out
+tech = twstock_universe_by_sector(df, total=60, industries=['24', '25'])  # the user named industries
 ```
 
-固定 `seed` 確保回測可重現。若用戶有指定產業，改用產業篩選後再抽樣。
+Equal draw per industry, the shortfall topped up at random; a fixed `seed` (default 42) gives the same ids from the same list. Run it once in a probe and paste the printed ids into `UNIVERSE` — the universe is a fixed list at backtest start, never drawn at import.
 
 單支股票基本資料查詢用 `fetch_twstock_info(stock_id, headers)` —— 回傳
 `{stock_id, name, close, industry_code, listing_date}` 或 `None`（查無此股）；內部直接查

@@ -63,7 +63,7 @@ CRITICAL: Read `references/deployment.md` before deploying any strategy live or 
 
 ## Strategy Types
 
-Classify BEFORE writing any code, then read `references/strategy-code.md`.
+Classify BEFORE writing any code, then read `references/strategy-code.md` from its *Start here* (the shortest read per type).
 
 - ONE fixed symbol on a fixed interval → **Type A** (`lib/runner.py` + `TEMPLATE_A.py`) — backtest REQUIRED
 - Weights across MULTIPLE symbols, rebalanced on a schedule → **Type C** (`TEMPLATE_C.py`; `compute_signals` returns `(weights_mat, price_df)`; rows sum ≤ 1 unless the user asked for leverage — then say the gross exposure first) — backtest REQUIRED

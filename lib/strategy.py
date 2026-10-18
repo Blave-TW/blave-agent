@@ -257,6 +257,46 @@ def ladder_sizing(amount, devs, mult=1.0, min_order=None, lots=False, lot=None, 
     return {'orders': [amount * c / total for c in costs], 'targets': targets, 'trades': trades,
             'skipped': [k for k, x in enumerate(trades) if not x], 'base_frac': costs[0] / total,
             'min_amount': min_amount}
+
+
+def twstock_universe_by_sector(stock_list, total=100, seed=42, industries=None):
+    """A Taiwan stock universe drawn evenly across industries (references/twstock.md › Universe):
+    codes are grouped by industry, so a head slice of the list is a few sectors only.
+    `stock_list` is lib.data.fetch_twstock_list(hdrs) — taken, not fetched, so importing
+    lib.strategy never makes a strategy need Blave data (quality_check.blave_data_need).
+    Common stocks only (ETFs carry no industry_code); `industries` keeps those codes (['24', '25']).
+    Equal draw per industry, the shortfall topped up at random from the rest; fewer slots than
+    industries → `total` industries drawn, one stock each. Same seed + same list → same ids.
+    Returns sorted ids: print them once and paste them into UNIVERSE (frozen at backtest start)."""
+    import random
+
+    def code(c):
+        c = str(c).strip()
+        return c.zfill(2) if c.isdigit() else c
+
+    if stock_list is None or stock_list.empty:
+        raise RuntimeError("stock_list is empty — pass fetch_twstock_list(hdrs)")
+    codes = stock_list['industry_code'][stock_list['industry_code'].notna()].map(code)
+    if industries is not None:
+        codes = codes[codes.isin({code(c) for c in industries})]
+    groups = {}
+    for sid, c in sorted(codes.items(), key=lambda kv: str(kv[0])):
+        groups.setdefault(c, []).append(str(sid))
+    if not groups:
+        raise RuntimeError(f"no common stocks in industries {industries}")
+    rng = random.Random(seed)
+    keys = sorted(groups)
+    if total < len(keys):
+        keys, per = sorted(rng.sample(keys, total)), 1
+    else:
+        per = total // len(keys)
+    picked = [s for k in keys for s in rng.sample(groups[k], min(per, len(groups[k])))]
+    taken = set(picked)
+    rest = [s for k in keys for s in groups[k] if s not in taken]
+    rng.shuffle(rest)
+    return sorted(picked + rest[:max(0, total - len(picked))])
+
+
 # ── Strategy versions (.claude/docs/strategy-versions.md) ─────────────────────
 # One version = one BACKTEST of one STRATEGY_NAME. lib/runner.py mints them into
 # strategies/<name>/versions/; the functions below read them back for the agent

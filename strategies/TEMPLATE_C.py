@@ -31,10 +31,20 @@ PARAM2         = ...             # secondary parameter (e.g. top-N, threshold)
 REBALANCE_FREQ = 'W'             # 'D' = every bar, 'W' = weekly, 'M' = monthly
 WARMUP         = PARAM1          # bars to trim from backtest start (= longest rolling window)
 
+# Taiwan stocks: draw the pool by industry once, then paste the printed ids here
+# (never call it at import — the universe stays a fixed list):
+#   from lib.data import fetch_twstock_list
+#   from lib.strategy import twstock_universe_by_sector
+#   print(twstock_universe_by_sector(fetch_twstock_list(hdrs), total=200))  # industries=['24', '25'] narrows
 UNIVERSE = [
     # list all stock/asset IDs here — must be fixed at backtest start, NO lookahead bias
     # '2330', '2317', ...
 ]
+
+# hdrs outside run() (a probe script; the runner builds it for fetch_data):
+#   from dotenv import load_dotenv; load_dotenv()
+#   import os
+#   hdrs = {'api-key': os.environ['blave_api_key'], 'secret-key': os.environ['blave_secret_key']}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
