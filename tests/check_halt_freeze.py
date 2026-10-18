@@ -259,7 +259,7 @@ def _refuse():
     raise guard.Halted("state/HALT is set — order refused")
 
 
-def _halt_chase(place, market, timeout):
+def _halt_chase(place, market, timeout, filled_qty=0.0):
     del notes[:], errors[:]
     c = {"place": 0, "cancel": 0, "market": 0, "bbo": 0}
 
@@ -276,7 +276,7 @@ def _halt_chase(place, market, timeout):
         return market()
 
     t = {"bbo": bbo, "venue": "binance", "place": _place,
-         "status": lambda oid: {"status": "new", "executed_qty": 0.0, "avg_price": 0.0},
+         "status": lambda oid: {"status": "new", "executed_qty": filled_qty, "avg_price": 100.0},
          "cancel": lambda oid: c.__setitem__("cancel", c["cancel"] + 1) or {"status": "canceled"}}
     execute._CHASE_TIMEOUT_S = timeout
     _vw.auto_place_order = _market
@@ -297,6 +297,11 @@ c = _halt_chase(lambda n: {"order_id": "o1", "status": "new"}, _refuse, 0.1)
 check(c["market"] == 1 and c["cancel"] >= 1 and not errors
       and not any("error" in m.lower() or "crashed" in m for m in notes),
       f"E5 HALT before the market remainder: stopped, no error notice, no order error ({c}, {notes}, {errors})")
+c = _halt_chase(lambda n: {"order_id": "o1", "status": "new"} if n == 1 else _refuse(),
+                lambda: {"avg_price": 1.0, "executed_qty": 1.0}, 2.0, filled_qty=0.3)
+check(not errors and any(m.startswith("Chase done: SELL $30.00/$100.00") and "state/HALT set" in m for m in notes)
+      and not any("error" in m.lower() or "crashed" in m for m in notes),
+      f"E6 part filled before the pause: the user gets what did fill, still no error ({notes}, {errors})")
 execute._notify_fn, portfolio._record_order_error = _real_notify, _real_err
 execute._CHASE_TIMEOUT_S = 2.0
 

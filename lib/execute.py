@@ -1411,10 +1411,18 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         stop.set()
         reason = "state/HALT set"
         logging.info(f"[execute] {key} chase stopped by state/HALT ({e})")
-        if active_oid is not None and not _retire(active_oid):
-            cancel_uncertain = True
-            notify(f"⚠️ {symbol}: chase could not confirm its resting order "
-                   f"was cancelled — restart the reconciler to sweep it if it lingers")
+        if active_oid is not None:
+            if _retire(active_oid):
+                _account(active_oid)
+            else:
+                cancel_uncertain = True
+                notify(f"⚠️ {symbol}: chase could not confirm its resting order "
+                       f"was cancelled — restart the reconciler to sweep it if it lingers")
+        filled = sum(f["fill_qty"] for f in fills)
+        if filled > 0:
+            vwap = round(sum(f["fill_price"] * f["fill_qty"] for f in fills) / filled, 8)
+            notify(f"Chase done: {'BUY' if buy else 'SELL'} "
+                   f"${filled:,.2f}/${total:,.2f} {symbol} | VWAP={vwap} ({reason})")
     except Exception as e:
         crashed = True
         logging.error(f"[execute] {key} chase crashed: {e}")
