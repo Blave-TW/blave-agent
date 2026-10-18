@@ -592,6 +592,43 @@ r = v.round()
 check(r == [("TXF", -1, True)] and v.held == {"TXF": 2},
       f"H12 …not halted: a's lot closes for the rollover, o's 2 wait for d ({r}, {v.held})")
 
+
+# H13 (571a664 audit P3): the old contract's row is diff_absent (nobody on TXF any more, nothing
+# held for d — o's last contribution was 0, its close refused) — HALT still holds TXF as is:
+# _halt_rollover_targets reads the window from full_target, not the diff's target
+def rolled_beside_absent():
+    setup({"a": ("TXF", 1, 1, "TXF", "capital"), "o": ("TXF", 0, 2, "TXF", "capital")})
+    v = Venue({"TXF": 3}, close="raise")
+    try:
+        v.round()
+    except Exception:
+        pass
+    v.close = None
+    os.makedirs("strategies/d")
+    with open("strategies/d/strategy.py", "w") as f:
+        f.write('SYMBOL = "TXF"\nINTERVAL = "1h"\n')
+    cfg = json.load(open("manager/portfolio_config.json"))
+    cfg["amounts"].update(a=20, o=0, d=2)
+    cfg["exchanges"]["d"] = "capital"
+    cfg["contracts"] = {"a": "TMF"}
+    cfg["asset_specs"].update(a=spec("TMF"), d=spec("TXF"))
+    json.dump(cfg, open("manager/portfolio_config.json", "w"))
+    with open(portfolio._ROLLOVER_PATH, "w") as f:
+        json.dump({"a": {"from": "TXF", "to": "TMF", "at": "t0"}}, f)
+    return v
+
+
+v = rolled_beside_absent()
+guard.trip_halt("test", "test")
+r = v.round()
+snap = json.load(open("manager/last_reconcile.json"))
+guard.clear_halt("test")
+guard._halt_flag = False
+row = (snap.get("target") or {}).get("TXF") or {}
+check(r == [] and v.held == {"TXF": 3} and row.get("diff_absent") and row.get("awaiting")
+      and not [o for o in snap.get("orders") or [] if o.get("symbol") == "TXF"],
+      f"H13 HALT, a rolls off a diff_absent TXF: no TXF order computed, TXF held as is ({r}, {v.held}, {snap.get('orders')}, {row})")
+
 # ── P: paper prices the switched contract ───────────────────────────────────
 for d in ("strategies",):
     shutil.rmtree(d, ignore_errors=True)

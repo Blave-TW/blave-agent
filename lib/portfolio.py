@@ -3691,7 +3691,17 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         target = {k: v for k, v in target.items() if k not in deferred}
     gated_symbols = {k for k, v in target.items() if v.get('gated')}
     full_target = target  # snapshot keeps gated rows (flagged 'gated': True)
-    target = {k: v for k, v in target.items() if not v.get('diff_absent')}
+    absent = [k for k, v in target.items() if v.get('diff_absent')]
+    if absent:
+        target = {k: v for k, v in target.items() if k not in absent}
+        # the spec backfill above ran while these keys were still targets: a close-on-removal
+        # leg needs the same spec the round without the wait gives it
+        late = [k for k in absent if k in diff_actual and not diff_actual[k].get('asset_spec')]
+        if late:
+            specs = removed_asset_specs(config, target)
+            for k in late:
+                if k in specs:
+                    diff_actual[k]['asset_spec'] = specs[k]
     if gated_symbols:
         logging.info(f"[reconcile] signal-gated (waiting for a new signal): "
                      f"{sorted(gated_symbols)}")

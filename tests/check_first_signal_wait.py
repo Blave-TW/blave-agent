@@ -898,6 +898,43 @@ check(got == [[], []] and v.held == {"TXF": 2.0},
       f"G5 halted, r rolling TXF → MXF, l1 → d1 waiting on TXF: not one lot sold ({got}, {v.held})")
 os.remove(guard.HALT_PATH)
 
+# 571a664 audit P3: a key nobody holds anything on (diff_absent) closes like the round without the
+# wait — with the removed member's spec (removed_asset_specs), also when only the ledger has it
+class SpecLots(Lots):
+    def __init__(self, held):
+        super().__init__(held)
+        self.specs, self.refuse = [], False
+
+    def place(self, symbol, signed_diff, asset_spec, reduce_only=False):
+        if self.refuse:
+            raise RuntimeError("refused")
+        self.specs.append((symbol, (asset_spec or {}).get("type")))
+        return super().place(symbol, signed_diff, asset_spec, reduce_only)
+
+
+fresh()
+strat("l1", "MXF", state={"symbol": "MXF", "position": 1})
+strat("d1", "MXF")
+cfg = lambda amounts: json.dump({"self_ledger": True, "amounts": amounts, "exchanges": {"l1": "paper", "d1": "paper"},
+                                 "asset_specs": {"l1": MXF, "d1": MXF}}, open("manager/portfolio_config.json", "w"))
+cfg({"l1": 1})
+v = SpecLots({})
+for _ in range(4):
+    v.round()
+held0 = dict(v.held)
+v.held = {}                                    # closed by hand on the account: the ledger still has it
+strat("l1", "MXF", state={"symbol": "MXF", "position": 0})
+v.refuse = True
+try:
+    v.round()                                  # its close is refused: the snapshot has l1 at 0, the ledger 1
+except Exception:
+    pass
+v.refuse, v.specs = False, []
+cfg({"d1": 1})                                 # l1 → d1, d1 not computed yet: nothing to hold on MXF
+got = v.round()
+check(held0 == {"MXF": 1.0} and got == [("MXF", -1.0)] and v.specs == [("MXF", "futures_contracts")],
+      f"diff_absent key closes the ledger-only lot with the removed member's spec, like the round without the wait ({held0}, {got}, {v.specs})")
+
 # paper-routed TW stocks are held as cash shares whatever MARKET says (_paper_tw_market): a
 # newcomer known only by its UNIVERSE / preview waits on the same SYM@spot key the book holds
 fresh()
