@@ -51,6 +51,8 @@ PRICE (the whole model, Wei 2026-08-21):
     PaperMarketClosed), quantities are whole shares floored (0 → no order;
     a full close takes a legacy fractional row whole), and nothing goes
     short: a sell past the long closes it, a short from flat is refused.
+    A row booked before TW stocks moved to the unadjusted close is restated
+    once (_rebase_tw_rows), so the switch moves neither equity nor PnL.
 
 Contract rules are permissive (fetch_data gives OHLC, not an instrument spec):
 no min-qty / min-notional / step gating — the reconciler's own slice threshold
@@ -98,6 +100,11 @@ except ImportError:  # half-updated workspace (lib/paper_data.py without FX): co
         if str(ccy or "USD").upper() in ("USD", "USDT", "USDC"):
             return 1.0
         raise PaperNoFx(f"lib/paper_data.py has no FX — update the workspace")
+
+try:
+    from lib.paper_data import legacy_tw_price
+except ImportError:  # half-updated workspace (lib/paper_data.py before the rebase): rows left as they are
+    legacy_tw_price = None
 
 try:
     from lib.paper_data import is_tw_stock, tw_session_open
@@ -572,6 +579,9 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
         new_positions.pop(sym, None)
     else:
         new_positions[sym] = {"qty": q1, "entry": entry}
+        if is_tw_stock(sym) and (q0 == 0 or pos.get("px_basis") == TW_RAW
+                                 or (q0 > 0) != (q1 > 0)):
+            new_positions[sym]["px_basis"] = TW_RAW
         if contract_value is None and ccy != "USD":
             new_positions[sym].update(quote_ccy=ccy, fx=rate)
         if contract_value is not None:
@@ -613,6 +623,8 @@ def _fill_spot(led, o, base_qty, price, fee_rate, env=None):
             raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash for {o['symbol']} buy "
                              f"({led['cash']:.2f} < {cost + fee:.2f})"))
         led["cash"] -= cost + fee
+        if is_tw_stock(base) and led["spot"].get(base, 0.0) <= 1e-12:
+            led.setdefault("spot_px_basis", {})[base] = TW_RAW
         led["spot"][base] = led["spot"].get(base, 0.0) + base_qty
     else:
         held = led["spot"].get(base, 0.0)
@@ -625,6 +637,7 @@ def _fill_spot(led, o, base_qty, price, fee_rate, env=None):
         if left <= 1e-12:
             led["spot"].pop(base, None)
             led.get("spot_fx", {}).pop(base, None)
+            led.get("spot_px_basis", {}).pop(base, None)
         else:
             led["spot"][base] = left
     _record_fill(led, o, base_qty, price, fee)
@@ -676,6 +689,103 @@ def _stamp_pre_fx_rows(env, led, marks):
             upnl_native=round(upnl, 2), equity_change_usd=round(upnl / rate - upnl, 2))))
 
 
+TW_RAW = "raw"  # a TW stock row booked at the unadjusted close (px_basis / spot_px_basis)
+TW_REBASE_RETRY_S = 3600
+
+
+def _rebase_tw_rows(env, led, marks):
+    """TW stock rows booked while paper valued them at the strategy's dividend-adjusted close
+    (no px_basis) are restated once at the unadjusted close they are valued at now, so the
+    switch is not a ~12% equity drop (2330: adjusted 1.1388× raw) nor, at the close, a
+    realized loss. Factor f = raw ÷ the adjusted close (paper_data.legacy_tw_price): a swap
+    row's entry × f (its open PnL scales by f, the only equity move); a spot holding, whose
+    cost already left the cash, gets qty × (adjusted − raw) back in cash, equity unchanged.
+    The symbol's SL / TP and open limit prices were set on the adjusted scale too and are
+    × f in the same pass — left alone they would fire in this very settle. No fill and no
+    realized PnL is written; each restatement is audited (paper_tw_rebase).
+    A price that cannot be read leaves the row for a later read (at most hourly — the owner's
+    fetch_data is a backtest loader); shares added meanwhile are restated with it, a little off.
+    Known limit: a row a test build booked after the switch (already at the raw close) has no
+    marker either, and is restated too — its entry drops by f, an unearned gain."""
+    if legacy_tw_price is None:
+        return
+    now = time.time()
+    wait = led.get("tw_rebase_wait") or {}
+    scaled = {}
+
+    def restate(sym, rate_fn):
+        if now - float(wait.get(sym) or 0) < TW_REBASE_RETRY_S:
+            return False, None
+        try:
+            old = legacy_tw_price(sym, env)
+            if old is None:
+                return True, None
+            old = float(old)
+            if not (old > 0 and math.isfinite(old)):
+                raise PaperError(f"adjusted close {old} unusable")
+            raw = _price(env, sym, marks)
+            rate = rate_fn()
+        except (PaperNoPrice, PaperError) as e:
+            log.info(f"paper {sym}: rebase to the unadjusted close waits ({e})")
+            led.setdefault("tw_rebase_wait", {})[sym] = int(now)
+            return False, None
+        led.get("tw_rebase_wait", {}).pop(sym, None)
+        f = raw / old
+        if sym not in scaled:
+            scaled[sym] = _rescale_tw_triggers(led, sym, f)
+        return True, (f, old, raw, rate, scaled[sym])
+
+    for sym, p in led["positions"].items():
+        if p.get("px_basis") or not is_tw_stock(sym):
+            continue
+        done, got = restate(sym, lambda: _row_fx(env, sym, p))
+        if not done:
+            continue
+        p["px_basis"] = TW_RAW
+        if got is None:
+            continue
+        f, old, raw, rate, trig = got
+        e0 = float(p["entry"])
+        p["entry"] = e0 * f
+        upnl = (old - e0) * p["qty"] * _cv(p)
+        led.setdefault("_after_save", []).append(("paper_tw_rebase", dict(
+            venue=VENUE, symbol=sym, market="swap", adjusted=old, raw=raw, factor=round(f, 6),
+            entry_old=e0, entry_new=p["entry"], qty=p["qty"], triggers=trig,
+            equity_change_usd=round((f - 1) * upnl / rate, 2))))
+    for asset, amt in led["spot"].items():
+        if (led.get("spot_px_basis") or {}).get(asset) or not is_tw_stock(asset) or amt <= 0:
+            continue
+        done, got = restate(asset, lambda: _spot_fx(env, asset, fallback=led.get("spot_fx", {}).get(asset)))
+        if not done:
+            continue
+        led.setdefault("spot_px_basis", {})[asset] = TW_RAW
+        if got is None:
+            continue
+        f, old, raw, rate, trig = got
+        refund = amt * (old - raw) / rate
+        led["cash"] += refund
+        led.setdefault("_after_save", []).append(("paper_tw_rebase", dict(
+            venue=VENUE, symbol=asset, market="spot", adjusted=old, raw=raw, factor=round(f, 6),
+            qty=amt, triggers=trig, cash_change_usd=round(refund, 2), equity_change_usd=0.0)))
+    if not led.get("tw_rebase_wait"):
+        led.pop("tw_rebase_wait", None)
+
+
+def _rescale_tw_triggers(led, sym, f):
+    """SL / TP and open limit prices on `sym` × f; returns [[what, old, new]] for the audit."""
+    out = []
+    trig = led["protective"].get(sym)
+    for k in ("sl", "tp"):
+        if trig and trig.get(k):
+            out.append([k, trig[k], trig[k] * f])
+            trig[k] = trig[k] * f
+    for o in led["orders"].values():
+        if o["status"] == "open" and o["symbol"] == sym:
+            out.append([o["order_id"], o["price"], float(o["price"]) * f])
+            o["price"] = float(o["price"]) * f
+    return out
+
+
 def _settle(env, led):
     """Fill resting limits the mark has reached; fire protective triggers the
     mark has crossed. Called at the top of every ledger transaction, so a read
@@ -683,6 +793,7 @@ def _settle(env, led):
     _prune(led)
     marks = {}
     _stamp_pre_fx_rows(env, led, marks)
+    _rebase_tw_rows(env, led, marks)
     for o in list(led["orders"].values()):
         if o["status"] != "open":
             continue

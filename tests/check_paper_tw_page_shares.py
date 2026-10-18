@@ -186,5 +186,27 @@ round_()
 check(len([f for f in order_paper.snapshot(ENV)["fills"] if f.get("symbol") in RAW]) == before,
       "the next round on the same target sends nothing")
 
+print("== upgrade: the same shares booked at the ADJUSTED close by an older lib are restated once, no order")
+led = json.load(open(order_paper.LEDGER_PATH))
+for code in RAW:
+    led.get("spot_px_basis", {}).pop(code, None)
+    led["cash"] -= led["spot"].get(code, 0.0) * RAW[code] * (ADJ - 1) / 32.0
+json.dump(led, open(order_paper.LEDGER_PATH, "w"))
+old_equity = led["cash"] + sum(led["spot"].get(c, 0.0) * RAW[c] * ADJ / 32.0 for c in RAW)
+seen = []
+real_audit = guard.audit
+guard.audit = lambda ev, **f: (seen.append((ev, f)), real_audit(ev, **f))
+n_fills = len(order_paper.snapshot(ENV)["fills"])
+for _ in range(2):
+    round_()
+paper_data._price_cache.clear()
+snap = order_paper.snapshot(ENV)
+guard.audit = real_audit
+check(len(snap["fills"]) == n_fills and held() == book, f"no order and the same shares after the rebase ({held()})")
+check(abs(float(snap["equity"]) - old_equity) < 0.01,
+      f"equity carried over the switch ({old_equity:.2f} → {float(snap['equity']):.2f})")
+check(sorted(f["symbol"] for ev, f in seen if ev == "paper_tw_rebase") == ["2317", "2330", "2454"],
+      "one paper_tw_rebase per holding")
+
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

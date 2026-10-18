@@ -253,6 +253,51 @@ def _tw_stock_price(symbol, hdrs):
     raise PaperNoPrice(f"no daily close for TW stock {code} in {_TW_PRICE_WINDOWS_D[-1]} days: {empty}")
 
 
+_START_RE = re.compile(r'^\s*START\s*=\s*["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']', re.M)
+
+
+def legacy_tw_price(symbol, env):
+    """The close a TW stock row was valued at before every TW stock moved to the unadjusted
+    close — for the one-time rebase of rows booked then (order_paper._rebase_tw_rows). A Type
+    A owner: its fetch_data's latest Close (0.1.26 and earlier); a Type C whose live weights
+    hold it: the adjusted close from its START (the 0.1.27 test builds before the switch).
+    None = no such owner: the row was valued at the unadjusted close or at its entry, nothing
+    to rebase. Raises PaperNoPrice when the owner's price cannot be read (retried later).
+    Approximate on the desktop: the CDN's adjusted series no longer depends on the window."""
+    name = _resolve_strategy(symbol)
+    hdrs = _hdrs(env)
+    if name:
+        try:
+            return _last_close(_load_strategy(name).fetch_data(hdrs))
+        except PaperNoPrice:
+            raise
+        except Exception as e:
+            raise PaperNoPrice(f"{name}.fetch_data failed for {symbol}: {type(e).__name__}: {e}")
+    want = _norm(symbol)
+    for path in sorted(glob.glob("strategies/*/state.json")):
+        try:
+            with open(path) as f:
+                w = json.load(f).get("weights")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not isinstance(w, dict) or want not in {_norm(k) for k in w}:
+            continue
+        try:
+            with open(os.path.join(os.path.dirname(path), "strategy.py")) as f:
+                m = _START_RE.search(f.read())
+        except OSError:
+            m = None
+        from lib import data
+        code = re.sub(r"\.TWO?$", "", want)
+        try:
+            return _last_close(data.fetch_twstock_price_adj(code, m.group(1) if m else "2015-01-01", None, hdrs))
+        except PaperNoPrice:
+            raise
+        except Exception as e:
+            raise PaperNoPrice(f"no adjusted close for TW stock {code}: {type(e).__name__}: {e}")
+    return None
+
+
 _TW_OPEN_MIN, _TW_CLOSE_MIN = 9 * 60, 13 * 60 + 30
 TW_DAY_PATH = "state/paper_tw_day.json"
 # The account reader is a fresh process every minute and asks inside the ledger
