@@ -2336,7 +2336,11 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
     """[(name, key)] for every `amounts` member whose routing is blank: the keys its state
     trades (Type C: every weight; else its symbol, routed by its contract), or, with no
     readable state, the key stats.json / SYMBOL name. A member whose key cannot be told at all
-    is left out (logged) — it has never traded anything to protect."""
+    is left out (logged) — it has never traded anything to protect.
+
+    A TW stock key outside spot also holds its `@spot` twin: routed to paper it was
+    bought as cash shares (_paper_tw_market), and a blank route no longer says whether
+    it was paper — holding only `2330` let the reconciler sell the `2330@spot` it owns."""
     out = []
     for name in amounts:
         if (exchanges or {}).get(name):
@@ -2355,7 +2359,9 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
                 keys = [k]
             else:
                 logging.warning(f"[portfolio] {name}: no exchange routed and no symbol to hold")
-        out.extend((name, k) for k in keys)
+        twins = [market_key(split_key(k)[0], 'spot') for k in keys
+                 if split_key(k)[1] != 'spot' and _tw_stock(split_key(k)[0])]
+        out.extend((name, k) for k in dict.fromkeys(keys + twins))
     return out
 
 
@@ -2545,6 +2551,7 @@ def aggregate_portfolio():
     # as they are on the account (flagged gated + unrouted, so reconcile leaves both sides alone
     # and the snapshot shows why) — no close-on-removal, no entry. A name not in `amounts` is
     # removed and closes as ever.
+    held_unrouted = {}
     for name, key in _unrouted_member_keys(amounts, exchanges, states, config):
         row = result.get(key)
         if row is None:
@@ -2552,7 +2559,17 @@ def aggregate_portfolio():
                                  'market': split_key(key)[1], 'contributors': [], 'gated': True}
         row['gated'] = True
         row['unrouted'] = sorted(set(row.get('unrouted') or []) | {name})
-        logging.info(f"[portfolio] {name}: no exchange routed — {key} held as is (save 下單設定 to route)")
+        held_unrouted.setdefault(name, []).append(key)
+    book = None
+    for name, keys in held_unrouted.items():
+        if len(keys) > 1 and book is None:
+            # both twins are held; the line names the one the book actually has
+            try:
+                book = set(ledger_book())
+            except Exception:
+                book = set()
+        named = [k for k in keys if k in (book or ())] or keys
+        logging.info(f"[portfolio] {name}: no exchange routed — {', '.join(named)} held as is (save 下單設定 to route)")
     if lifted:
         # merge-on-save (audit #7): re-load the file and remove ONLY the lifted
         # names — dumping our stale in-memory copy would clobber a gate that

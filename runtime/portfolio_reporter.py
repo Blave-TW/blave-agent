@@ -2026,7 +2026,9 @@ def downtime_pause_view(cfg, last):
         symbol = state.get("symbol")
         key = symbol.replace("-", "").upper() if isinstance(symbol, str) and symbol else None
         key = execution_contract(name, key, cfg, mirror)
-        if key and _strategy_market(name) == "spot":
+        paper = ((cfg or {}).get("exchanges") or {}).get(name) == "paper" if isinstance(cfg, dict) else False
+        # a TW stock on paper is held as cash shares whatever MARKET says (lib/portfolio._paper_tw_market)
+        if key and (_strategy_market(name) == "spot" or (paper and _TW_STOCK_RE.match(key))):
             key += "@spot"
         try:
             position = float(state.get("position", 0))
