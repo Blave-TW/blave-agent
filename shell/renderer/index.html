@@ -151,7 +151,7 @@
       <!-- 策略組合頁(配置／優化;同網頁 #mg_panel 的兩個分頁)。跟自動下單頁同一份狀態(TR 那一袋的 view 決定哪一頁看得見);
            配置由 trade.js 畫(金額表 + 各商品的總訊號部位),優化由 portfolio.js 畫 -->
       <div class="trv" id="po" hidden>
-        <div class="main-head"><div class="txt"><h5 class="main-head-name" id="po-h" tabindex="-1" data-i18n="po.nav"></h5></div></div>
+        <div class="main-head"><div class="txt"><div class="po-title"><h5 class="main-head-name" id="po-h" tabindex="-1" data-i18n="po.nav"></h5><span class="mode" id="po-live" hidden></span></div></div></div>
         <div class="main-tabs" role="tablist" id="po-tabs" data-i18n-aria="po.nav" hidden>
           <div class="main-tabs-scroll">
             <button class="main-tab" type="button" role="tab" id="po-tab-cfg" data-tab="cfg" aria-controls="po-cfg" data-i18n="po.tab.cfg"></button>

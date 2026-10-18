@@ -644,7 +644,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .rp-head { flex: none; min-width: 0; padding: var(--space-16) var(--space-24) var(--space-12); display: flex; align-items: flex-start; gap: var(--space-16); }
 .rp-head .txt { flex: 1; min-width: 0; }
-.rp-head .act { flex: none; }
+.rp-head .act { flex: none; display: flex; gap: var(--space-8); }   /* 「送上雲端」與「加到策略組合」 */
 .rp-head .act[hidden] { display: none; }
 /* 「送上雲端 / 拉回」(renderer/handoff.js)。icon + 字的描邊鈕:左 8、右 12——icon 自帶留白,視覺才對稱 */
 .btn-out.has-ic { display: inline-flex; align-items: center; gap: var(--space-6); padding-left: var(--space-8); }
@@ -1053,6 +1053,7 @@ body.resizing * { cursor: col-resize !important; }
 .cf-row dt .side { margin-left: var(--space-8); font-family: var(--font-sans); font-size: 12px; }
 .cf-row dt .side.buy { color: var(--color-greenText); }
 .cf-row dt .side.sell { color: var(--color-redText); }
+.cf-row dt .side:first-child { margin: 0 var(--space-8) 0 0; }   /* 存金額框「買進／賣出 標的」:記號在標的前面 */
 .del-body.lines p.cf-removed { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .del-body.lines p.cf-block { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--color-redText); }
 .del-body.lines p.cf-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }

@@ -114,7 +114,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const fn = (name) => { const i = code.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = code.indexOf("\nfunction ", i + 1), k = code.indexOf("\nasync function ", i + 1); return code.slice(i, Math.min(j < 0 ? 1e9 : j, k < 0 ? 1e9 : k)); };
   // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
   // psApply 不在這裡:0.1.26 起 picker 的勾選是草稿,儲存才走 trSaveAmounts 送出;trExecSend:下單方式(0.1.26)
-  const entries = ["trSend", "trSaveAmounts", "trExecSend", "trUnbind", "cxRetest", "cdelRun"];
+  // trPvRequest:存金額框請機器重算草稿的預覽(stats_refresh,0.1.27;同 perf.js 不帶 request_id,重送 = 機器回 BUSY)
+  const entries = ["trSend", "trSaveAmounts", "trPvRequest", "trExecSend", "trUnbind", "cxRetest", "cdelRun"];
   const users = code.split(/\n(?:async )?function /).filter((b) => /S\.api\.tradeSend\(/.test(b)).map((b) => b.slice(0, b.indexOf("(")));
   ok("用 S.api 送指令的函式就是這幾個(多一個就要有人看過它的 request_id 有沒有沿用):" + users.join(), users.length === entries.length && users.every((n) => entries.indexOf(n) >= 0));
   // 會改變執行狀態的那三個指令一律經過 trSend(冪等:重試沿用同一顆 request_id);直接叫 S.api.tradeSend 會繞過它

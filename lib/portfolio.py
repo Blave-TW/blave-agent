@@ -58,7 +58,7 @@ def _notify_best_effort(msg):
         logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
-RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze', 'halt_freeze')
+RECONCILE_CAPS = ('contract_override', 'rollover_halt_freeze', 'halt_freeze', 'first_signal_wait')
 
 
 def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False,
@@ -1152,10 +1152,9 @@ def _strategy_key(name):
         pass
     if not sym:
         try:
-            with open(f'strategies/{name}/strategy.py') as f:
-                m = _SYMBOL_RE.search(f.read())
+            m = _SYMBOL_RE.search(_strategy_source(name))
             sym = m.group(1) if m else None
-        except OSError:
+        except (OSError, ValueError):
             sym = None
     if not sym or not isinstance(sym, str):
         return None
@@ -1983,13 +1982,26 @@ _MARKET_RE = re.compile(r'^\s*MARKET\s*=\s*["\']([a-z]+)["\']', re.M)
 SPOT_SUFFIX = '@spot'
 
 
+def _strategy_source(name):
+    """strategy.py as text for the constant regexes. Decoded as Python would (a PEP 263 coding
+    line, else UTF-8); a file in neither (a Big5 save) is read with replacement characters
+    rather than raising — the constants are ASCII, and a decode error here used to take the
+    whole reconcile round down with it. OSError is the caller's."""
+    import tokenize
+    try:
+        with tokenize.open(f'strategies/{name}/strategy.py') as f:
+            return f.read()
+    except (SyntaxError, ValueError):
+        with open(f'strategies/{name}/strategy.py', 'rb') as f:
+            return f.read().decode('utf-8', 'replace')
+
+
 def strategy_market(name):
     """'spot' | 'swap' from the strategy.py MARKET constant (default swap)."""
     try:
-        with open(f'strategies/{name}/strategy.py') as f:
-            m = _MARKET_RE.search(f.read())
+        m = _MARKET_RE.search(_strategy_source(name))
         return m.group(1) if m else 'swap'
-    except OSError:
+    except (OSError, ValueError):
         return 'swap'
 
 
@@ -2406,6 +2418,350 @@ def _unrouted_member_keys(amounts, exchanges, states, config, book=None):
     return out
 
 
+# A funded member that has not written its first state.json yet (just joined — runtime
+# _retire_prejoin_signals moved an old one away — or never computed) leaves what it replaces on
+# the book until it does. Without it, swapping a strategy for a new version on the same coin closed
+# the position one round (the newcomer contributes nothing yet) and bought it back the next.
+# What it replaces is fixed at its first trusted round from the previous round's snapshot: the
+# shares of the members that no longer contribute (left `amounts`, set to 0, waiting again), each
+# bounded by what the book holds beyond the others' share — a target that never reached the book
+# (HALT, a rejected order, a hand close, a signal gate) is nothing to keep. In account-read mode the
+# book also moves by hand and with the mark: each round the hold shrinks (never grows) to what the
+# book has beyond the others' share as of the previous round, so a neighbour's stop after a hand
+# close is not absorbed by a hold the book no longer has. Inside the window the key's target is the
+# others' target now plus that hold, clamped into [book now, others now] and into [book now, this
+# same round's target without the wait] — the second bound is the guarantee: no round sends more
+# than, or the other way from, what it would send without the wait. Two newcomers on one key swap
+# together (the first to compute waits for the other) only where that bound allows. A newcomer
+# routed to another exchange than the book's / the leavers' holds nothing: the old position is on an
+# account the newcomer's exits never reach. A member that has had a share of the key is never a
+# newcomer: waiting again it is a departure whose own next signal trades. One bar of the newcomer's
+# INTERVAL at most, never longer than FIRST_SIGNAL_WAIT_MAX_S: past that it is reconciled as before
+# (no state = no contribution), so a member that never computes can never park an exit.
+FIRST_SIGNAL_WAIT_MAX_S = 7200
+_FIRST_SIGNAL_WAIT_PATH = 'state/first_signal_wait.json'
+_FIRST_SIGNAL_CLOCK_SKEW_S = 300
+_INTERVAL_RE = re.compile(r'^\s*INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
+# same rule as the shell's trUniverse (# comments stripped first): what the save dialog can see
+# is what is held
+_UNIVERSE_RE = re.compile(r'^UNIVERSE\s*=\s*\[([^\]]*)\]', re.M)
+# the book a failed write could not persist: newer than the file, so the next round reads it —
+# a full disk must not restart every window each round
+_first_signal_unsaved = None
+_first_signal_errors = set()
+
+
+def _strip_py_comments(src):
+    """src without its # comments; a # inside a '…' / "…" literal on that line is kept."""
+    out = []
+    for line in src.split('\n'):
+        quote, esc, cut = None, False, len(line)
+        for i, ch in enumerate(line):
+            if esc:
+                esc = False
+            elif quote:
+                if ch == '\\':
+                    esc = True
+                elif ch == quote:
+                    quote = None
+            elif ch in '"\'':
+                quote = ch
+            elif ch == '#':
+                cut = i
+                break
+        out.append(line[:cut])
+    return '\n'.join(out)
+
+
+def _first_signal_window_s(name):
+    try:
+        m = _INTERVAL_RE.search(_strategy_source(name))
+        from lib.bar_ready import interval_to_timedelta
+        bar = interval_to_timedelta(m.group(1)).total_seconds() if m else None
+    except (OSError, ValueError, OverflowError):
+        bar = None
+    return min(bar, FIRST_SIGNAL_WAIT_MAX_S) if bar and bar > 0 else FIRST_SIGNAL_WAIT_MAX_S
+
+
+def _first_signal_keys(name):
+    """Book keys a not-yet-computed member will trade: its SYMBOL (_strategy_key), else a
+    portfolio's literal UNIVERSE, else its last backtest preview's assets. [] = cannot tell."""
+    k = _strategy_key(name)
+    if k:
+        return [k]
+    config = load_portfolio_config()
+    exchange, market = (config.get('exchanges') or {}).get(name), strategy_market(name)
+    key = lambda s: market_key(s, _paper_tw_market(exchange, s, market))
+    syms = []
+    try:
+        m = _UNIVERSE_RE.search(_strip_py_comments(_strategy_source(name)))
+        syms = [x[1:-1] for x in re.findall(r'["\'][^"\']{1,32}["\']', m.group(1))] if m else []
+    except (OSError, ValueError):
+        pass
+    if not syms:
+        pv = _read_json_state(f'strategies/{name}/backtest_state.json') or {}
+        if isinstance(pv.get('weights'), dict):
+            syms = list(pv['weights'])
+        elif isinstance(pv.get('symbol'), str) and pv['symbol']:
+            return [key(execution_symbol(name, pv['symbol'].replace('-', '').upper(), config))]
+    return sorted({key(str(s).replace('-', '').upper()) for s in syms if s})
+
+
+def _finite(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _first_signal_book():
+    """{'members': {name: {since[, expired]}}, 'anchors': {key: {frozen, seen, departed, cohort}}}."""
+    if _first_signal_unsaved is not None:
+        return json.loads(json.dumps(_first_signal_unsaved))
+    try:
+        with open(_FIRST_SIGNAL_WAIT_PATH) as f:
+            book = json.load(f)
+    except (OSError, ValueError):
+        book = {}
+    book = book if isinstance(book, dict) else {}
+    return {part: book[part] if isinstance(book.get(part), dict) else {}
+            for part in ('members', 'anchors')}
+
+
+def _first_signal_save(book):
+    global _first_signal_unsaved
+    try:
+        os.makedirs(os.path.dirname(_FIRST_SIGNAL_WAIT_PATH), exist_ok=True)
+        tmp = _FIRST_SIGNAL_WAIT_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(book, f, indent=2)
+        atomic_replace(tmp, _FIRST_SIGNAL_WAIT_PATH)
+        _first_signal_unsaved = None
+    except OSError as e:
+        _first_signal_unsaved = book
+        logging.warning(f'first_signal_wait persist failed (kept in memory): {e}')
+
+
+def _first_signal_holds(amounts, exchanges, now=None):
+    """{name: (keys, until)} for the members waiting this round. A member's window starts at the
+    first round that saw it funded and routed without a state (a re-save does not restart it);
+    it leaves the record once it has a state.json or is no longer funded and routed. A start
+    that is not a finite time at or before now (a corrupt file, a clock set back) counts from
+    now — still one window at most."""
+    now = time.time() if now is None else now
+    book = _first_signal_book()
+    members = book['members']
+    want = [n for n, a in amounts.items()
+            if a and (exchanges or {}).get(n) and not os.path.exists(f'strategies/{n}/state.json')]
+    out, changed = {}, False
+    for name in [n for n in members if n not in want]:
+        del members[name]
+        changed = True
+    for name in want:
+        rec = members.get(name)
+        if not (isinstance(rec, dict) and _finite(rec.get('since'))
+                and rec['since'] <= now + _FIRST_SIGNAL_CLOCK_SKEW_S):
+            if isinstance(rec, dict):
+                logging.warning(f"[portfolio] {name}: first-signal wait start {rec.get('since')!r} "
+                                f"is unusable — counted from now")
+            keys = _first_signal_keys(name)
+            rec = members[name] = {'since': now}
+            changed = True
+            if keys:
+                guard.audit('first_signal_wait', strategy=name, keys=keys,
+                            until=round(now + _first_signal_window_s(name)))
+            else:
+                rec['expired'] = True
+                guard.audit('first_signal_wait_no_keys', strategy=name)
+                logging.warning(f"[portfolio] {name}: no state.json yet and no SYMBOL / UNIVERSE / "
+                                f"preview to tell its keys — nothing held for it")
+        if rec.get('expired'):
+            continue
+        until = rec['since'] + _first_signal_window_s(name)
+        keys = _first_signal_keys(name)
+        if now >= until or not keys:
+            rec['expired'] = True
+            changed = True
+            guard.audit('first_signal_wait_expired', strategy=name, keys=keys,
+                        waited_s=round(now - rec['since']))
+            logging.warning(f"[portfolio] {name}: still no state.json after "
+                            f"{round(now - rec['since'])}s — {keys} reconciled without it")
+            continue
+        out[name] = (keys, until)
+    held = {k for keys, _ in out.values() for k in keys}
+    for key in [k for k in book['anchors'] if k not in held]:
+        del book['anchors'][key]
+        changed = True
+    if changed:
+        _first_signal_save(book)
+    return out
+
+
+def _first_signal_anchor_ok(a):
+    return (isinstance(a, dict) and _finite(a.get('frozen'))
+            and all(isinstance(a.get(p), dict) and all(_finite(v) for v in a[p].values())
+                    for p in ('seen', 'departed'))
+            and isinstance(a.get('cohort', []), list) and isinstance(a.get('venues', []), list)
+            and all(isinstance(x, str) for x in a.get('venues', [])))
+
+
+def _last_snapshot_target():
+    """The previous round's snapshot target (reconcile writes this round's after the diff)."""
+    try:
+        with open('manager/last_reconcile.json') as f:
+            tg = json.load(f).get('target')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return tg if isinstance(tg, dict) else None
+
+
+def _contribs(row):
+    out = {}
+    for c in (row or {}).get('contributors') or []:
+        if isinstance(c, dict) and c.get('strategy') is not None:
+            v = c.get('contribution')
+            out[str(c['strategy'])] = float(v) if _finite(v) else 0.0
+    return out
+
+
+def _book_signed(row):
+    try:
+        v = _signed_row(row if isinstance(row, dict) else None)
+    except (TypeError, ValueError):
+        return 0.0
+    return v if math.isfinite(v) else 0.0
+
+
+def _within(v, room):
+    """The part of v the book can still be holding: same sign as room and no larger, else 0."""
+    if v * room <= 0:
+        return 0.0
+    return v if abs(v) <= abs(room) else room
+
+
+def _settled(row, s):
+    if row.get('market') == 'spot' and s < 0:
+        s = 0.0
+    if native_units(row.get('asset_spec'), row.get('exchange')):
+        s = math.copysign(math.floor(abs(s) + 0.5 + 1e-9), s) if s else 0.0
+    return s
+
+
+def _first_signal_targets(target, trusted, funded, skip=(), book=None, account=False, exchanges=None):
+    """reconcile's half of the first-signal wait (see the comment above FIRST_SIGNAL_WAIT_MAX_S).
+    Every key a waiting member trades is anchored on its first trusted round, even one another
+    gate holds that round — the snapshot it anchors on is the save round's only then. Only a key
+    aggregate_portfolio flagged first_signal_hold (held for a first signal and by nothing else)
+    gets its window target. `book` is what this round diffs against. While the book cannot be
+    trusted (a baseline wait) or the key waits on a pending baseline, nothing is anchored: the
+    baseline decides from this round's target what is the bot's. `account` = the book is the
+    account read (not self_ledger); `exchanges` = the config's routing."""
+    rows = [k for k, v in target.items() if v.get('awaiting')]
+    if not rows:
+        return target
+    target, flagged, book = dict(target), set(), book or {}
+    for k in rows:
+        if target[k].get('first_signal_hold'):
+            flagged.add(k)
+            target[k] = {f: v for f, v in target[k].items() if f != 'first_signal_hold'}
+    funded = set(funded)
+    data = _first_signal_book()
+    anchors, changed, last = data['anchors'], False, None
+    for k in rows:
+        row = target[k]
+        if not trusted or k in skip:
+            continue
+        cur = _contribs(row)
+        waiting = set(row.get('awaiting') or {})
+        a = anchors.get(k)
+        if not _first_signal_anchor_ok(a):
+            if a is not None:
+                logging.warning(f"[portfolio] {k}: first-signal anchor {a!r} is unusable — re-anchored")
+            if last is None:
+                last = _last_snapshot_target() or {}
+            prev = last.get(k) if isinstance(last.get(k), dict) else {}
+            fresh = set(prev.get('awaiting') if isinstance(prev.get('awaiting'), dict) else ())
+            fresh |= {str(n) for n in prev.get('cohort') or [] if isinstance(prev.get('cohort'), list)}
+            nb = {n: v for n, v in _contribs(prev).items() if n not in fresh}
+            gated = {str(c.get('strategy')) for c in prev.get('contributors') or []
+                     if isinstance(c, dict) and c.get('gated')}
+            removed = [n for n in nb if n not in cur and n not in funded and n not in waiting]
+            back = sorted(n for n in nb if n in waiting)
+            room = _book_signed(book.get(k)) - sum(v for n, v in nb.items()
+                                                   if n not in removed and n not in back)
+            # the key was already in a window whose anchor is lost
+            prior = prev['frozen'] if prev.get('awaiting') and _finite(prev.get('frozen')) else 0.0
+            frozen = _within(prior + sum(nb[n] for n in removed if n not in gated), room)
+            room -= frozen
+            departed = {}
+            for n in [n for n in back if n not in gated]:
+                departed[n] = _within(nb[n], room)
+                room -= departed[n]
+            for n in sorted(n for n in removed + back if n in gated):
+                if n in back:
+                    departed[n] = room
+                else:
+                    frozen += room
+                room = 0.0
+            cohort = sorted((waiting - set(nb)) | {n for n in cur if n in fresh})
+            seen = {n: v for n, v in cur.items() if n not in cohort}
+            venues = sorted({str(x) for x in (prev.get('exchange'), (book.get(k) or {}).get('exchange'))
+                             if x})
+            a = anchors[k] = {'frozen': frozen, 'seen': seen, 'departed': departed, 'cohort': cohort,
+                              'venues': venues}
+            changed = True
+        else:
+            if account:
+                room = _book_signed(book.get(k)) - sum(a['seen'].values())
+                frozen = _within(a['frozen'], room)
+                room -= frozen
+                departed = {}
+                for n, c in sorted(a['departed'].items()):
+                    departed[n] = _within(c, room)
+                    room -= departed[n]
+                if frozen != a['frozen'] or departed != a['departed']:
+                    a = anchors[k] = dict(a, frozen=frozen, departed=departed)
+                    changed = True
+            # a neighbour waiting again is a departure, not a newcomer: its next signal trades
+            cohort = sorted(set(a.get('cohort') or []) | (waiting - set(a['seen']) - set(a['departed'])))
+            seen = {n: v for n, v in cur.items() if n not in cohort}
+            departed = dict(a['departed'])
+            room = (_book_signed(book.get(k)) - sum(a['seen'].values()) - a['frozen']
+                    - sum(departed.values()))
+            for n, c in sorted(a['seen'].items()):
+                if n not in seen and (n not in funded or n in waiting):
+                    room += c
+                    departed[n] = _within(c, room)
+                    room -= departed[n]
+            departed = {n: c for n, c in departed.items() if n not in seen}
+            if departed != a['departed'] or seen != a['seen'] or cohort != a.get('cohort'):
+                a = anchors[k] = dict(a, seen=seen, departed=departed, cohort=cohort)
+                changed = True
+        here = (book.get(k) or {}).get('exchange')
+        venues = set(a.get('venues') or []) | ({str(here)} if here else set())
+        routes = {str((exchanges or {}).get(n)) for n in waiting if (exchanges or {}).get(n)}
+        if venues and routes and venues != routes:
+            row = {f: v for f, v in target[k].items() if f not in ('awaiting', 'cohort', 'frozen')}
+            if k in flagged and not row.get('contributors'):
+                del target[k]
+            else:
+                target[k] = dict(row, gated=False) if k in flagged else row
+            continue
+        hold = a['frozen'] + sum(a['departed'].values())
+        if k in flagged:
+            others = _settled(row, sum(a['seen'].values()))
+            held = _book_signed(book.get(k))
+            s = _settled(row, sum(a['seen'].values()) + hold)
+            s = min(max(s, min(others, held)), max(others, held))
+            full = _signed_row(row)
+            s = min(max(s, min(full, held)), max(full, held))
+            target[k] = dict(_signed_target_row(row, s), gated=False)
+        target[k] = dict(target[k], frozen=round(hold, 8))
+        done = [n for n in a['cohort'] if n in cur]
+        if done:
+            target[k]['cohort'] = done
+    if changed:
+        _first_signal_save(data)
+    return target
+
+
 def aggregate_portfolio():
     """
     Aggregate all strategy states into net target positions using portfolio config.
@@ -2486,7 +2842,8 @@ def aggregate_portfolio():
                 key = market_key(str(sym).replace('-', '').upper(), m)
                 _add(key, m, exchange, asset_spec, amount * w,
                      {'strategy': name, 'position': w, 'amount': amount,
-                      'contribution': round(amount * w, 4), 'portfolio': True}, gated)
+                      'contribution': round(amount * w, 4), 'portfolio': True,
+                      **({'gated': True} if gated else {})}, gated)
             continue
 
         symbol     = state.get('symbol')
@@ -2558,6 +2915,8 @@ def aggregate_portfolio():
             'position':          position,
             'amount':            amount,
             'contribution': round(contribution, 4),
+            # only when set: a gated key places no order, so orders.jsonl rows never carry it
+            **({'gated': True} if gated else {}),
         })
 
     result = {}
@@ -2611,6 +2970,30 @@ def aggregate_portfolio():
         # both twins held: the line names the one the book actually has
         named = [k for k in keys if k in (book or ())] or keys
         logging.info(f"[portfolio] {name}: no exchange routed — {', '.join(named)} held as is (save 下單設定 to route)")
+    # only an optimisation against a close-and-buy-back: no bug in it may stop this round's exits
+    try:
+        holds = _first_signal_holds(amounts, exchanges)
+    except Exception as e:
+        holds = {}
+        err = f'{type(e).__name__}: {e}'[:200]
+        logging.error(f"[portfolio] first-signal wait failed ({err}) — nothing held for it this round")
+        if err not in _first_signal_errors:
+            _first_signal_errors.add(err)
+            guard.audit('first_signal_wait_error', error=err)
+    for name, (keys, until) in holds.items():
+        for key in keys:
+            row = result.get(key)
+            if row is None:
+                row = result[key] = {'side': None, 'size': 0.0, 'exchange': exchanges.get(name),
+                                     'asset_spec': asset_specs.get(name), 'market': split_key(key)[1],
+                                     'contributors': [], 'gated': False}
+            if not row['gated'] or row.get('first_signal_hold'):
+                # reconcile turns it into the window target (_first_signal_targets); any other
+                # gate on the key keeps it held as is
+                row['gated'] = row['first_signal_hold'] = True
+            row['awaiting'] = dict(row.get('awaiting') or {}, **{name: round(until)})
+        logging.info(f"[portfolio] {name}: no first signal yet — what it replaces on {keys} is "
+                     f"held (at most {round(until - time.time())}s more)")
     if lifted:
         # merge-on-save (audit #7): re-load the file and remove ONLY the lifted
         # names — dumping our stale in-memory copy would clobber a gate that
@@ -3277,6 +3660,17 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         target, diff_actual, trusted=needs_baseline is None and portfolio_configured(),
         config=config, waiting_keys=pending_keys)
     halt_targets = _halt_rollover_targets(rolls, target, diff_actual)
+    try:
+        target = _first_signal_targets(target, trusted=needs_baseline is None,
+                                       skip=pending_keys, book=diff_actual,
+                                       funded={n for n, a in strategy_amounts(config).items() if a},
+                                       account=not own_only, exchanges=config.get('exchanges'))
+    except Exception as e:
+        # never a reason to hold more: the flagged keys reconcile as if nobody waited
+        logging.error(f"[reconcile] first-signal window target failed ({type(e).__name__}: {e}) "
+                      f"— those keys reconcile without it this round")
+        target = {k: (dict({f: x for f, x in v.items() if f != 'first_signal_hold'}, gated=False)
+                      if v.get('first_signal_hold') else v) for k, v in target.items()}
 
     # signal gate (resume_wait): a gated symbol is excluded from BOTH sides of
     # the diff — no catch-up entry (absent target would be wrong: it exists,
@@ -3318,6 +3712,11 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         for k, signed in halt_targets.items():
             if k in gated_symbols or k in pending_keys:
                 continue  # held as is anyway
+            if (target.get(k) or {}).get('awaiting'):
+                # a first-signal window target leaves the rolling strategy's lots out: held as is
+                target = {x: v for x, v in target.items() if x != k}
+                diff_actual = {x: v for x, v in diff_actual.items() if x != k}
+                continue
             base = target.get(k) or {'exchange': (diff_actual.get(k) or {}).get('exchange'),
                                      'asset_spec': (diff_actual.get(k) or {}).get('asset_spec'),
                                      'market': 'swap', 'contributors': [], 'gated': False}

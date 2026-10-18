@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.134 — 2026-10-18(desktop 0.1.27)
+
+- **存金額確認框的預覽(0.1.27 加到策略組合;`portfolio_reporter.backtest_previews`)**:報告多一個頂層 `backtest_previews: {name: …}`,給電腦版存金額框把還沒有實盤訊號的策略(策略頁「加到策略組合」建的草稿、勾了還沒跑第一輪的)換算成「下一輪要送的單／目標有變的標的」。來源同 `typec_previews` 的 `strategies/<name>/backtest_state.json`(`code_hash` 要等於目前 `strategy.py`、用到美股價格的不送),但:①名單 = `amounts` 裡還沒有實盤訊號的(Type C 沒權重、Type A 沒 state.json)＋**不在 `amounts` 的**最近寫過預覽、而且過得了下面的檢查的前 `PREVIEW_EXTRA_MAX`(5)支(草稿就是剛回測的那支;報告有大小上限,不全送;程式碼已改過的舊檔不佔名額);②過時的也送,帶 `latest`(= `_preview_is_latest`)讓頁面自己挑——框照用、表頭寫是哪一根,配置表照舊只用最新的;③Type A 也有:`{type: signal, symbol, market, position, close, bar_at, bar_date, latest, daily_tw}`;Type C 多 `closes`(持有標的那一根的收盤價,換算股數用)。`daily_tw` = 台股／台指期日線(框寫「依 MM-DD 收盤算」)。這個 key 在不在 = 這台主機算不算得出草稿的預覽(外殼沒看到就講「要等主機更新」,不等)。workspace lib 那邊 `lib/runner` 的 Type A 回測／績效刷新也寫 `backtest_state.json`(最後一根的部位,在 `clamp_spot` 之前,同排程寫的那個值)、Type C 加 `closes`;新鮮度規則跟 0.1.26 的 Type C 同一條(`_preview_row_is_live`);但這一輪算不出最新那根時(例如台股日線盤中重跑,`computes_now` 為假),**同一份程式碼的舊預覽留著不刪**(之前會刪,框就只剩「計算中」),別的程式碼的照舊刪——reporter 會標它 `latest: false`,配置表照舊只用最新的(`typec_previews` 沒動)。舊的 `previews` 不變(舊外殼讀它)。只給頁面看:對帳器與排程都不讀。測試 `tests/check_backtest_preview_a1.py`。
+
 ## 1.1.133 — 2026-10-18(desktop 0.1.27)
 
 - **`source.json` 讀檔收緊、沒有 id 的策略 marker 不變(稽核 0127-docs-chase P3-S1／P3-B2;`strategy_reporter._read_source_id`、`_content_marker`)**:先確認是一般檔(FIFO 會讓 reporter 卡在 open)、只讀前 4096 bytes、任何例外(含 Py3.10 深層巢狀 JSON 的 `RecursionError`)都當沒有這個檔——之前只接三種例外,一個壞檔會讓 `_scan_sources`／`signature()` 每輪崩、回報整個停掉。`_content_marker` 只在有 `source_marketplace_id` 時才把它加進 blob:沒有 source.json 的策略 marker 跟加欄位前一樣,升級後不會全機隊每支策略各重送一次 `/one`;只有真的寫了 id 的那支會送。測試 `tests/check_source_marketplace_id.py`。

@@ -194,6 +194,59 @@ async function poOpen(tab, focus) {
   if (focus) $("po-h").focus();
   trPollSoon(0);
 }
+/* 策略頁首「加到策略組合」(spec tw-holdings-a1 §1-1、F1;handoff.js hoPaint 畫在「送上雲端」右邊):回測過的 Type A／C 才有(同選擇策略的清單)。
+   已在組合裡(已存或草稿)換描邊「到策略組合」,只是跳過去。兩個視角一樣 */
+function poAddBtn(cloud) {
+  const S = TR_BAGS[cloud ? "cloud" : "local"], B = cloud ? RPC : RP;
+  // 回測過 = 這一頁讀到 stats(策略清單只在開過策略組合／自動下單後才載入,不能靠它判;同 rpTab)
+  if (!B || !B.name || !B.data || B.data.pending || !B.data.stats || (typeof xpIsTypeB === "function" && xpIsTypeB(B.data))) return null;
+  const name = B.name, inPo = trWith(S, () => trNames().indexOf(name) >= 0);
+  const b = document.createElement("button"); b.type = "button"; b.id = "rp-po"; b.className = inPo ? "btn-out" : "btn-fill";
+  b.textContent = t(inPo ? "po.addGo" : "po.add");
+  b.addEventListener("click", () => poAdd(S, name, inPo));
+  return b;
+}
+/* 按「加到策略組合」:只建草稿(同選擇策略框按確定,psApply)——這支勾進表、金額空著、游標在金額格,**不送任何指令寫設定**;
+   不存就離開 = 組合沒變。唯一副作用:這支沒有最新那一根的預覽就請機器背景重算(stats_refresh,F2;同碼不定版),儲存框要它換算股數。
+   選擇策略框會鎖住的(模擬交易的台股、只下台指期的券商、機器 lib 太舊的投資組合)不偷渡:跳過去打開選擇策略框,原因在那一列 */
+// 策略頁開著時,鈕的樣子跟著清單載入／存進組合換(trPoll 每輪叫;只有變了才重畫頁首那一排)
+let PO_ADD_SIG = null;
+function poAddSync() {
+  if ($("rp").hidden) { PO_ADD_SIG = null; return; }
+  const cloud = ENV.cur === "cloud", S = TR_BAGS[cloud ? "cloud" : "local"], B = cloud ? RPC : RP;
+  const sig = JSON.stringify([cloud, B && B.name, S.listLoaded, B && B.name ? trWith(S, () => trNames().indexOf(B.name) >= 0) : null]);
+  if (sig === PO_ADD_SIG) return;
+  const first = PO_ADD_SIG === null; PO_ADD_SIG = sig;
+  if (!first && typeof hoPaint === "function") hoPaint();
+}
+async function poAdd(S, name, inPo) {
+  if (S !== TR_BAGS[ENV.cur]) return;
+  trackFeature(inPo ? "po_add_go" : "po_add");
+  // 這台電腦的清單只在開過策略組合後才載入:建草稿前先讀一次(鎖不鎖、標的與幣別都看它)
+  if (!S.listLoaded && S.env === "local") { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
+  if (S !== TR_BAGS[ENV.cur]) return;
+  let locked = false;
+  if (!inPo) trWith(S, () => {
+    if (trPickOff()) return;
+    const r = trReport() || {}, names = trNames();
+    const row = trPickRows(S.list, names, r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}).find((y) => y.name === name);
+    if (!row || row.locked) { locked = true; return; }
+    const sel = new Set(names); sel.add(name);
+    S.picked = trSetEq(sel, trNamesOf(null)) ? null : sel;
+    if (S.save === "saved") { clearTimeout(S.saveTimer); S.save = null; }
+    (S.a1 = S.a1 || new Set()).add(name);   // 存成功時記 po_add_saved
+    if (S.raw && S.edits[name] == null) S.raw[name] = "";   // 金額空著(§1-2):等用戶填,存成 0 也照框走
+    if (S.flash) S.flash[name] = Date.now();
+    const pv = trPvOf(r, name);
+    if (trPvHost(r) && !(pv && pv.latest)) trPvRequest(S, name);
+  });
+  await poOpen("cfg");
+  if (TR !== S || S.view !== "po") return;
+  S.sig.cfg = null; poPaintCfg();
+  if (locked) { const pk = $("tr-pick"); if (pk && !pk.disabled) { psOpen(pk); return; } }
+  const inp = [...$("po-cfg").querySelectorAll(".amt-in")].find((y) => y.dataset.amt === name);
+  if (inp && !inp.disabled && inp.offsetParent) inp.focus(); else $("po-h").focus();
+}
 function poSetTab(tab, focus) {
   if (PO_TABS.indexOf(tab) < 0) return;
   TR.poTab = tab; TR.sig.cfg = null; TR.sig.opt = null;
@@ -214,6 +267,10 @@ function poWire() {
 // trade.js trPaint 在 TR.view === "po" 時叫:分頁列等報告到了才出(載入態沒有分頁可看);兩個分頁各自畫
 function poPaint() {
   if (!PO.wired) { PO.wired = true; poWire(); }
+  // 頁首常駐「自動下單中・模擬／真錢」:存金額會送單的時候(同存金額框的判準 trCfFiring;spec F4)
+  const lv = $("po-live"), fire = trCfFiring(TR.st, TR.pending) && trHasAccount(trReport());
+  lv.hidden = !fire;
+  if (fire) { const paper = trIsPaper(); lv.className = "mode " + (paper ? "paper" : "real"); lv.textContent = t("po.live", { mode: t(paper ? "tr.mode.paper" : "tr.mode.real") }); }
   if (!TR.poTab) TR.poTab = "cfg";
   const loaded = !!trReport() && TR.listLoaded;
   $("po-tabs").hidden = !loaded;
@@ -404,47 +461,6 @@ function ctMenuClose(refocus) {
   if (!ctOpen) return;
   const o = ctOpen; ctOpen = null; ctMenu.hidden = true; o.trig.setAttribute("aria-expanded", "false");
   if (refocus) { if (document.body.contains(o.trig)) o.trig.focus(); else ctFocus(o.tab, o.name); }
-}
-
-/* ── 套用金額的確認表(策略｜目前｜目標｜差額,依計價分區;同網頁 pfApplyTable)──
-   換了合約的列:兩邊口數不同單位,差額寫「—」,合約寫在策略名下「大台 → 微台」 */
-function poApplyTable(amounts, stored, mayFire) {
-  const names = Object.keys(amounts), zoneOf = {}; names.forEach((n) => { zoneOf[n] = trZoneOf(n); });
-  const zones = trZoneOrder(names.map((n) => zoneOf[n]), trVenueId(), trMultZone(trVenueId(), trUnit(), names.map((n) => zoneOf[n])));
-  const multi = zones.length > 1, hu = multi ? null : trZoneUnit(zones[0]);
-  const tbl = trEl("table", "pf-tbl zoned cf-apply");
-  tbl.appendChild(trHead([[t("tr.col.strategy"), ""], [t("mg.colCur"), "n", hu], [t("tr.col.target"), "n", hu], [t("tr.col.diff"), "n"]]));
-  const num = (n, v, signed) => (trRowTxfNew(n) || trRowTxf(n) ? trLotsFmt(v, signed) : trFmt(v, signed));
-  zones.forEach((z) => {
-    const tb = document.createElement("tbody");
-    if (multi) { const g = trEl("tr", "grp"), c = trEl("td", "grp-l" + (z === TR_ZONE_LOTS || z === TR_ZONE_UNKNOWN ? " cjk" : ""), trZoneLabel(z)); c.colSpan = 4; g.appendChild(c); tb.appendChild(g); }
-    names.filter((n) => zoneOf[n] === z).forEach((n) => {
-      const cur = stored[n] || 0, nx = amounts[n] || 0, d = nx - cur, from = trCtStored(n), swapped = !!from && from !== trCt(n);
-      const row = trEl("tr", d === 0 && !swapped ? "same" : ""), key = trEl("td", "key"), nm = trEl("span", "key-name", trDisplay(n));
-      nm.title = trDisplay(n); key.appendChild(nm);
-      // 策略名下的副行:換合約「大台 → 微台」與「{舊合約}平倉」、金額歸 0 的「平倉」,有才畫(同配置的確認框,共用 trCloseTag / trCtCloseTag)
-      const close = trCloseTag(cur, nx, mayFire, trStratHeld(n)), ctClose = swapped ? trCtCloseTag(n, amounts, stored) : null;
-      if (swapped || close) {
-        const sub = trEl("span", "ct-sub");
-        if (swapped) sub.append(trEl("span", "", t(TR_TXF_SPECS[from].prod)), trEl("span", "arr", "→"), trEl("span", "now", t(TR_TXF_SPECS[trCt(n)].prod)));
-        if (ctClose) sub.appendChild(trEl("span", "tag", ctClose));
-        if (close) sub.appendChild(trEl("span", "tag", close));
-        key.appendChild(sub);
-      }
-      row.append(key, trEl("td", "n", num(n, cur, false)), trEl("td", "n", num(n, nx, false)),
-        swapped ? trEl("td", "n na", "—") : trEl("td", "n " + (d > 0 ? "buy" : d < 0 ? "sell" : "na"), num(n, d, true)));
-      tb.appendChild(row);
-    });
-    tbl.appendChild(tb);
-  });
-  // 表底合計:目前 → 目標(同金額表的合計口徑;兩區以上折顯示幣別)
-  const eq = trEquity(), now = trZoneSum(amounts, eq).total, was = trZoneSum(Object.fromEntries(names.map((n) => [n, stored[n] || 0])), eq, trRowMoneyStored).total;
-  const tbT = document.createElement("tbody"), rT = trEl("tr", "total"), l = trEl("td", "", t("tr.total"));
-  if (multi && now.ccy) l.appendChild(trEl("span", "ccy", now.ccy));
-  rT.append(l, trEl("td", "n", trTotalText(was)), trEl("td", "n", trTotalText(now)), trEl("td", "n"));
-  tbT.appendChild(rT); tbl.appendChild(tbT);
-  const wrap = trEl("div", "cf-apply-wrap"); wrap.appendChild(tbl);
-  return wrap;
 }
 
 /* ── 優化分頁 ─────────────────────────────────────────────

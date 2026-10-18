@@ -1,0 +1,5 @@
+{
+  "_": "One UNIVERSE fixture for lib/portfolio _first_signal_keys and the shell's trUniverse: a # comment is not code (a quoted symbol or a ] in it neither adds nor cuts), a # inside a string is kept.",
+  "code": "# UNIVERSE = [\"DOGEUSDT\"]\nUNIVERSE = [\"ETHUSDT\",  # majors ] first\n            \"SOLUSDT\", \"A#B\"]  # \"XRPUSDT\" later\nINTERVAL = \"1h\"\n",
+  "universe": ["ETHUSDT", "SOLUSDT", "A#B"]
+}

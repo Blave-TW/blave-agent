@@ -72,16 +72,21 @@ function hoPaint() {
   const cloud = ENV.cur === "cloud";
   const B = cloud ? RPC : RP, dir = cloud ? "down" : "up";
   const show = HO.on && !!B.name && HO_ID_RE.test(B.name) && hoHasCode(B.data) && (!cloud || hoCloudLive());
+  // 「加到策略組合」(renderer/portfolio.js poAddBtn)跟這顆同一排、不受 cloudHandoff 旗標管
+  const po = typeof poAddBtn === "function" ? poAddBtn(cloud) : null;
   // 時光機裡、還原後重跑中不畫:作用在現在那份檔,不是正在看的那一版 / 還沒跑完的那一版(renderer/versions.js)
   const verHide = typeof verHidesAct === "function" && verHidesAct();
-  act.hidden = !show || verHide; act.textContent = "";
-  if (!show || verHide) return;
-  const b = document.createElement("button"); b.type = "button"; b.className = "btn-out has-ic"; b.id = "rp-ho"; b.dataset.dir = dir;
-  const l = document.createElement("span"); l.textContent = cloud ? t("ho.down.btn") : t("ho.up.btn"); b.append(hoIcon(dir), l);
-  if (cloud) { const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + B.name; b.title = full; b.setAttribute("aria-label", full); }
-  const id = B.name;
-  b.addEventListener("click", () => hoAsk(dir, id, b));
-  act.appendChild(b); hoBusy();
+  act.hidden = !(show || po) || verHide; act.textContent = "";
+  if (act.hidden) return;
+  if (show) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "btn-out has-ic"; b.id = "rp-ho"; b.dataset.dir = dir;
+    const l = document.createElement("span"); l.textContent = cloud ? t("ho.down.btn") : t("ho.up.btn"); b.append(hoIcon(dir), l);
+    if (cloud) { const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + B.name; b.title = full; b.setAttribute("aria-label", full); }
+    const id = B.name;
+    b.addEventListener("click", () => hoAsk(dir, id, b));
+    act.appendChild(b); hoBusy();
+  }
+  if (po) act.appendChild(po);
 }
 
 /* 還在等著送上雲端的那一支(雲端中欄的「準備好了」卡與它的 gate 都要它)。回 id 或 null。

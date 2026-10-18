@@ -1956,9 +1956,6 @@ msgstr "Saving…"
 msgid "tr.saved"
 msgstr "Saved"
 
-msgid "tr.saveTitle"
-msgstr "Confirm amounts"
-
 msgid "tr.saveBlankLots"
 msgstr "{names}: a blank lot count is saved as 0 — this strategy won’t place orders."
 
@@ -1971,9 +1968,6 @@ msgstr "remove"
 
 msgid "tr.cfTagAdd"
 msgstr "add"
-
-msgid "tr.saveWarn"
-msgstr "Orders may fire right after saving."
 
 msgid "tr.gateFootEntry"
 msgstr "{sym} difference under {m}"
@@ -7731,9 +7725,6 @@ msgstr "Top: managed cumulative return versus the random-portfolio p5–p95 band
 msgid "mg.chartCap"
 msgstr "Cumulative Return"
 
-msgid "mg.colCur"
-msgstr "Current"
-
 msgid "mg.colWeight"
 msgstr "Weight"
 
@@ -8115,6 +8106,85 @@ msgstr "Paused: no new positions, but reductions and closes run as soon as you s
 
 msgid "tr.saveWarnFreeze"
 msgstr "Paused. Orders follow the new amounts once you press Start trading."
+
+# 存金額確認框(0.1.27 加到策略組合;canon design-system › 確認 modal):標題就是動作,會送單=儲存並下單;表頭時間只講一次
+msgid "tr.cf.title"
+msgstr "Save amounts"
+
+msgid "tr.cf.titleFire"
+msgstr "Save and place orders"
+
+msgid "tr.cf.capOrders"
+msgstr "Orders for the next round ({n})"
+
+msgid "tr.cf.capChanges"
+msgstr "{n} targets change ({ccy})"
+
+msgid "tr.cf.capChangesOne"
+msgstr "1 target changes ({ccy})"
+
+msgid "tr.cf.capAmounts"
+msgstr "Amount changes for {n} strategies"
+
+msgid "tr.cf.capAmountsOne"
+msgstr "Amount changes for 1 strategy"
+
+msgid "tr.cf.asofClose"
+msgstr "priced at the {d} close"
+
+msgid "tr.cf.asofBar"
+msgstr "priced at the {d} bar"
+
+msgid "tr.cf.buy"
+msgstr "Buy"
+
+msgid "tr.cf.sell"
+msgstr "Sell"
+
+msgid "tr.cf.unitShares"
+msgstr "shares"
+
+msgid "tr.cf.unitCoins"
+msgstr "units"
+
+msgid "tr.cf.codeChanged"
+msgstr "{names}: the code changed after the last backtest, so it isn't listed. Once saved, the schedule runs the latest code."
+
+msgid "tr.cf.hostOldCloud"
+msgstr "{names}: listed once the cloud machine is updated."
+
+msgid "tr.cf.hostOld"
+msgstr "{names}: listed once Blave on this computer is updated."
+
+msgid "tr.cf.late"
+msgstr "{names} hasn't finished computing. Once saved, the schedule fills in its signal."
+
+msgid "tr.cf.firstRead"
+msgstr "Your account hasn't been read yet. The next round places orders to reach these targets."
+
+msgid "tr.cf.oldPv"
+msgstr "{names} isn't computed on the latest bar yet. The next round computes on the latest bar and places any orders it needs."
+
+msgid "tr.cf.held"
+msgstr "The part being replaced in {syms} stays as it is until the first signal from {names}, one bar at most."
+
+msgid "tr.cf.gated"
+msgstr "No orders this round for {syms}: waiting for a new signal."
+
+msgid "po.unsaved"
+msgstr "Unsaved"
+
+msgid "po.willOrder"
+msgstr "Orders go out when you save"
+
+msgid "po.live"
+msgstr "Auto-trading · {mode}"
+
+msgid "po.add"
+msgstr "Add to Portfolio"
+
+msgid "po.addGo"
+msgstr "Go to Portfolio"
 
 msgid "tr.rejNameSep"
 msgstr "”, “"

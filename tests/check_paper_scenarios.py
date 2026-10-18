@@ -958,7 +958,9 @@ def am08(w):
 def am09(w):
     w.fresh(signals={})
     w.eq(w.settle(), [], "funded but no state.json yet: nothing")
-    w.check(B not in w.snap().get("target", {}), "no target row")
+    row = w.snap().get("target", {}).get(B) or {}
+    w.check(not row.get("size") and not row.get("gated") and row.get("frozen") == 0 and "a1" in (row.get("awaiting") or {}),
+            f"its key waits for its first signal: a size-0 window target, nothing frozen, awaiting a1 (lib first_signal_wait) ({row})")
     w.check("needs_baseline" not in w.snap(), "not a baseline wait either")
 
 
