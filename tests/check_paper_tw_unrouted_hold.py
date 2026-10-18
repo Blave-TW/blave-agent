@@ -28,7 +28,7 @@ for d in ("state", "manager", "strategies/tw_a", "strategies/tw_c"):
 (WS / ".env").write_text("PAPER_API_KEY=paper\nPAPER_SECRET_KEY=paper\nPAPER_BOUND_TS=1\n"
                          "PAPER_INITIAL_EQUITY=200000\n")
 json.dump({"rates": {"TWD": 32.0}, "ts": int(time.time())}, open("state/paper_fx.json", "w"))
-(WS / "strategies/tw_a/strategy.py").write_text('SYMBOL = "2330"\nMARKET = "swap"\n')
+(WS / "strategies/tw_a/strategy.py").write_text('SYMBOL = "2330"\nMARKET = "swap"\nINTERVAL = "1d"\n')
 (WS / "strategies/tw_c/strategy.py").write_text('MARKET = "spot"\n')
 json.dump({"symbol": "2330", "position": 1.0}, open("strategies/tw_a/state.json", "w"))
 json.dump({"type": "portfolio", "market": "spot", "weights": {"2330": 0.4}}, open("strategies/tw_c/state.json", "w"))
@@ -81,6 +81,16 @@ def fills():
     return [f for f in order_paper.snapshot(ENV)["fills"] if f.get("symbol") == "2330"]
 
 
+print("== nothing on paper yet: a blank-routed swap Type A does not freeze 2330@spot for tw_c")
+config("")
+t = portfolio.aggregate_portfolio()
+check(not t.get("2330@spot", {}).get("gated") and t.get("2330", {}).get("gated") is True,
+      f"the book has no 2330@spot: only tw_a's own key is held ({t.get('2330@spot')}, {t.get('2330')})")
+for _ in range(3):
+    round_()
+check(shares() == 165, f"tw_c enters on its own: 400,000 at 2420 = 165 shares ({shares()})")
+
+print("== on paper: the twin is held")
 config("paper")
 for _ in range(3):
     round_()

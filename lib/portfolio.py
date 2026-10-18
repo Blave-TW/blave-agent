@@ -2369,7 +2369,7 @@ def strategy_amounts(config=None):
     return {k: account_value * leverage * float(w) for k, w in weights.items()}
 
 
-def _unrouted_member_keys(amounts, exchanges, states, config):
+def _unrouted_member_keys(amounts, exchanges, states, config, book=None):
     """[(name, key)] for every `amounts` member whose routing is blank: the keys its state
     trades (Type C: every weight; else its symbol, routed by its contract), or, with no
     readable state, the key stats.json / SYMBOL name. A member whose key cannot be told at all
@@ -2377,7 +2377,10 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
 
     A TW stock key outside spot also holds its `@spot` twin: routed to paper it was
     bought as cash shares (_paper_tw_market), and a blank route no longer says whether
-    it was paper — holding only `2330` let the reconciler sell the `2330@spot` it owns."""
+    it was paper — holding only `2330` let the reconciler sell the `2330@spot` it owns.
+    `book` (the own-positions book's keys) narrows that to a twin the book really holds,
+    so a strategy that never bought on paper does not freeze another one's entry on
+    `2330@spot`; None (account-read mode, or the book unreadable) holds the twin."""
     out = []
     for name in amounts:
         if (exchanges or {}).get(name):
@@ -2398,6 +2401,7 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
                 logging.warning(f"[portfolio] {name}: no exchange routed and no symbol to hold")
         twins = [market_key(split_key(k)[0], 'spot') for k in keys
                  if split_key(k)[1] != 'spot' and _tw_stock(split_key(k)[0])]
+        twins = [t for t in twins if book is None or t in book]
         out.extend((name, k) for k in dict.fromkeys(keys + twins))
     return out
 
@@ -2589,7 +2593,13 @@ def aggregate_portfolio():
     # and the snapshot shows why) — no close-on-removal, no entry. A name not in `amounts` is
     # removed and closes as ever.
     held_unrouted = {}
-    for name, key in _unrouted_member_keys(amounts, exchanges, states, config):
+    book = None
+    if any(not (exchanges or {}).get(n) for n in amounts) and own_positions_only(config):
+        try:
+            book = set(ledger_book())
+        except Exception:
+            book = None
+    for name, key in _unrouted_member_keys(amounts, exchanges, states, config, book):
         row = result.get(key)
         if row is None:
             row = result[key] = {'side': None, 'size': 0.0, 'exchange': '', 'asset_spec': asset_specs.get(name),
@@ -2597,14 +2607,8 @@ def aggregate_portfolio():
         row['gated'] = True
         row['unrouted'] = sorted(set(row.get('unrouted') or []) | {name})
         held_unrouted.setdefault(name, []).append(key)
-    book = None
     for name, keys in held_unrouted.items():
-        if len(keys) > 1 and book is None:
-            # both twins are held; the line names the one the book actually has
-            try:
-                book = set(ledger_book())
-            except Exception:
-                book = set()
+        # both twins held: the line names the one the book actually has
         named = [k for k in keys if k in (book or ())] or keys
         logging.info(f"[portfolio] {name}: no exchange routed — {', '.join(named)} held as is (save 下單設定 to route)")
     if lifted:
