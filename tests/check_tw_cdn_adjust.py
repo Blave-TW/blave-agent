@@ -6,6 +6,9 @@ tests/fixtures/tw_cdn/blave_price_adj_halts.json (the endpoint's price_adj, 2026
   - halted ex-date: an event on a day the stock did not trade (6242 2015-05-26 復牌 / 2016-08-31 除權,
     1805 2011-09-08 減資, 2540 2014-09-23 除權) takes effect on the next traded day, as on Blave — no
     fake jump on the event day; every daily return equals Blave's within the 2-decimal rounding
+  - start-independent: the factors accumulate from the stock's first CDN day, so 6242 from 2014 and
+    from 2020 (per stock), and 2603 from 2022-08-01 and from 2022-10-03 across its 2022-09-19 減資
+    (per stock and whole-market files), are the same prices on the days both cover
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_tw_cdn_adjust.py
 """
@@ -24,7 +27,7 @@ import check_tw_cdn_daily as H
 import lib.data as D
 
 BLAVE = json.loads((H.CDN / "blave_price_adj_halts.json").read_text())
-HALTS = {"6242": ("2014-06-02", "2017-06-30"), "1805": ("2011-07-01", "2011-10-31"),
+HALTS = {"6242": ("2014-06-02", "2026-10-16"), "1805": ("2011-07-01", "2011-10-31"),
          "2540": ("2014-08-01", "2014-10-31")}
 fails = 0
 
@@ -53,9 +56,10 @@ def rounding_gap(cdn, blave):
 def t_halted_ex_date():
     cdn = H.fresh(manifest=manifest())
     H.pin_now(cdn.manifest["asof"])
-    for sid, (a, b) in HALTS.items():
-        got = D.fetch_twstock_price_adj(sid, a, b, {})["Close"]
+    for sid in HALTS:
         ref = pd.Series(BLAVE[sid]).rename(index=pd.Timestamp).sort_index()
+        a, b = (str(d.date()) for d in ref.index[[0, -1]])
+        got = D.fetch_twstock_price_adj(sid, a, b, {})["Close"]
         common = got.index.intersection(ref.index)
         bad = rounding_gap(got[common], ref[common])
         check(len(common) >= 0.95 * len(ref) and bad.empty,
@@ -68,8 +72,28 @@ def t_halted_ex_date():
           "6242 除權 2016-08-31 inside a halt: flat through the halt, the factor lands on the 2016-09-19 resumption")
 
 
+def t_start_independent():
+    cdn = H.fresh(manifest=manifest())
+    H.pin_now(cdn.manifest["asof"])
+    early = D.fetch_twstock_price_adj("6242", "2014-01-02", None, {})
+    late = D.fetch_twstock_price_adj("6242", "2020-01-02", None, {})
+    check(len(late) > 1000 and early.loc[late.index].equals(late),
+          f"6242: start 2014 and start 2020 give the same adjusted prices on all {len(late)} shared days")
+    a = D.fetch_twstock_price_adj_batch(["2603"], "2022-08-01", "2022-11-30", {})["2603"]
+    b = D.fetch_twstock_price_adj_batch(["2603"], "2022-10-03", "2022-11-30", {})["2603"]
+    D._TW_CDN_WHOLE_MARKET_IDS = 0
+    try:
+        wa = D.fetch_twstock_price_adj_batch(["2603"], "2022-08-01", "2022-11-30", {})["2603"]
+        wb = D.fetch_twstock_price_adj_batch(["2603"], "2022-10-03", "2022-11-30", {})["2603"]
+    finally:
+        D._TW_CDN_WHOLE_MARKET_IDS = 40
+    check(len(b) > 30 and a.loc[b.index].equals(b) and wa.equals(a) and wb.equals(b),
+          "2603 across its 2022-09-19 減資: start 08-01 and 10-03 agree on shared days, per stock == whole-market")
+
+
 def main():
     t_halted_ex_date()
+    t_start_independent()
     D._tw_official_expected_day = H._real_expected
     D._tw_cdn_expected_asof = H._real_cdn_expected
     print(f"\n{'ALL PASS' if not fails else f'{fails} FAIL'}")

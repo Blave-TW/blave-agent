@@ -2301,7 +2301,7 @@ def _tw_exright_for(stock_id, market, start, end):
     return events[events['stock_id'] == stock_id]
 
 
-def _tw_forward_adjust(df, events):
+def _tw_forward_adjust(df, events, first_bar=None):
     """後復權 by the api's forward_adjust rule (api/tw/twstock/adjuster.py): rows before an
     ex-date keep their price, rows from the ex-date on are multiplied by 除權息前收盤價 ÷
     除權息參考價. For cash and stock dividends that is prev_close × (1 + stock_ratio) ÷
@@ -2309,11 +2309,13 @@ def _tw_forward_adjust(df, events):
     agree except where the api falls back to its dividend formula on a bar no exchange event
     reaches (mostly pre-2010 and 興櫃-era history), and on an event day before the CDN's
     17:55 publish, when the api already has the morning-listed event and this frame does not.
-    An event with no bar before it in the frame is skipped and OHLC is rounded to 2, both as
-    there."""
+    An event with no bar before it is skipped and OHLC is rounded to 2, both as there; "before"
+    is the frame's first row, or `first_bar` (the stock's first day on the CDN) for a frame that
+    starts later — events from then to the frame's start still scale the whole frame."""
     factor = pd.Series(1.0, index=df.index)
+    first = pd.Timestamp(first_bar) if first_bar else df.index[0]
     for ex_date, prev_close, ref in events[['prev_close', 'ref_price']].sort_index().itertuples():
-        if not (prev_close > 0 and ref > 0) or ex_date <= df.index[0]:
+        if not (prev_close > 0 and ref > 0) or ex_date <= first:
             continue
         factor[df.index >= ex_date] *= prev_close / ref
     out = df.copy()
@@ -2563,13 +2565,14 @@ def _tw_cdn_stock_file(stock_id, manifest):
     return table.to_pandas(), events, _tw_cdn_meta(path).get('last', '')
 
 
-def _tw_cdn_events_frame(events, start, end):
-    """[[date, prev_close, ref_price, kind], …] → the frame _tw_forward_adjust takes."""
+def _tw_cdn_events_frame(events, end):
+    """[[date, prev_close, ref_price, kind], …] → the frame _tw_forward_adjust takes. Every
+    event up to `end`, not from the window's start: see _tw_cdn_adjust_fill."""
     ev = pd.DataFrame([(pd.Timestamp(d), float(p), float(r)) for d, p, r, *_ in events],
                       columns=['date', 'prev_close', 'ref_price']).set_index('date')
     ev.insert(0, 'stock_id', '')
     end_ts = pd.Timestamp(end) if end else pd.Timestamp.max
-    return ev[(ev.index >= pd.Timestamp(start)) & (ev.index <= end_ts)]
+    return ev[ev.index <= end_ts]
 
 
 def _tw_cdn_bars(raw, fill=True):
@@ -2585,14 +2588,22 @@ def _tw_cdn_bars(raw, fill=True):
     return df.ffill() if fill else df
 
 
-def _tw_cdn_adjust_fill(df, events, adjust):
-    """Unfilled CDN bars → adjusted (when asked), then forward-filled. Adjusting first is what
+def _tw_cdn_adjust_fill(df, events, adjust, first_bar):
+    """Unfilled CDN bars → adjusted (when asked), then forward-filled.
+
+    The factors accumulate from the stock's first CDN day (`first_bar`, 2010-01-04 at the
+    earliest), whatever the window: a stock gets one adjusted series, so two backtests with
+    different starts see the same prices on the days they share. It is still not the Blave
+    endpoint's level — that one accumulates from before 2010 (and through 興櫃 days the CDN does
+    not carry) — but it differs from it by one constant ratio per stock, so returns agree.
+
+    Adjusting first is what
     the Blave endpoint does: a halted day has no price there, so an ex-date that falls inside a
     halt (6242 2016-08-31, 1805 2011-09-08 減資) shows the last traded adjusted price until the
     stock trades again. Filling first would carry the pre-event price into the event day and
     put a fake jump there, undone on the resumption day."""
     if adjust and not df.empty:
-        df = _tw_forward_adjust(df, events)
+        df = _tw_forward_adjust(df, events, first_bar)
     return df.ffill()
 
 
@@ -2621,7 +2632,7 @@ def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
     df = _tw_cdn_bars(raw, fill=False)
     # an edge copy older than the manifest says: its own last day is what we have
     asof = min(manifest['asof'], file_last) if file_last < entry[2] else manifest['asof']
-    ev = _tw_cdn_events_frame(events, start, end)
+    ev = _tw_cdn_events_frame(events, end)
     want_to = end or datetime.now(_TPE).strftime('%Y-%m-%d')
     complete = asof
     final = _tw_official_expected_day()
@@ -2640,7 +2651,7 @@ def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
         except Exception as e:
             print(f"  ⚠️  {stock_id} daily bars: days after the CDN's {asof} not available from the exchange "
                   f"({type(e).__name__}: {str(e)[:120]}) — serving through {asof}")
-    df = _tw_slice(_tw_cdn_adjust_fill(df, ev, adjust), start, end)
+    df = _tw_slice(_tw_cdn_adjust_fill(df, ev, adjust, entry[1]), start, end)
     df.attrs['source'] = 'TWSE' if market == 'twse' else 'TPEx'
     df.attrs['via'] = 'Blave CDN'
     df.attrs['asof'] = complete
@@ -2793,8 +2804,8 @@ def _twstock_cdn_batch(stock_ids, start, end, adjust):
         for sid, g in rows.groupby('stock_id'):
             e = ev[ev['stock_id'] == sid]
             e = e.assign(date=pd.to_datetime(e['date'])).set_index('date')[['stock_id', 'prev_close', 'ref_price']]
-            df = _tw_slice(_tw_cdn_adjust_fill(_tw_cdn_bars(g, fill=False), e[(e.index >= pd.Timestamp(start))],
-                                               adjust), start, end)
+            df = _tw_slice(_tw_cdn_adjust_fill(_tw_cdn_bars(g, fill=False), e, adjust,
+                                               manifest['stocks'][sid][1]), start, end)
             df.attrs['source'] = 'TWSE' if manifest['stocks'][sid][0] == 'twse' else 'TPEx'
             df.attrs['via'] = 'Blave CDN'
             df.attrs['asof'] = complete

@@ -185,7 +185,10 @@ def t_parity():
     check(a[D._TW_DAILY_COLS].equals(b[D._TW_DAILY_COLS]),
           "CDN 2330 2024-01 OHLCV == the exchange path, value for value (MI_INDEX vs STOCK_DAY)")
     aa = D.fetch_twstock_price_adj("2330", "2024-01-01", "2024-01-31", {})
-    check(aa.equals(ba), "adjusted too (no event in the window: identical)")
+    ratio = aa / ba
+    check(aa.index.equals(ba.index) and float((ratio.max() / ratio.min() - 1).max()) < 1e-4,
+          "adjusted: the same moves, one constant ratio (the CDN accumulates factors from 2010, "
+          "the exchange path from the window start)")
 
 
 def t_smooth():
