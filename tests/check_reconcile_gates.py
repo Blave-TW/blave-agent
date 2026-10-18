@@ -68,7 +68,7 @@ fake = _FakeOrder()
 sys.modules["lib.order_binance"] = fake
 venue_wiring.read_env = lambda path=".env": {"BINANCE_API_KEY": "k"}
 venue_wiring.detect_venue = lambda env: "binance"
-portfolio._record_order_error = lambda s, x, e: None
+portfolio._record_order_error = lambda s, x, e, extra=None, repeat=False: None
 
 placed = {}
 

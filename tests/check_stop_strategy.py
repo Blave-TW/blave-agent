@@ -197,7 +197,7 @@ check(cs.validate("bingx", "xrp-usdt-swap", "short") == "XRPUSDT", "validate str
 calls = []
 portfolio._append_reconciler_log = lambda o: calls.append(("log", o["symbol"]))
 portfolio.zero_ledger_symbols = lambda s: calls.append(("zero", sorted(s)))
-portfolio._record_order_error = lambda *a: calls.append(("err",))
+portfolio._record_order_error = lambda s, x, e, extra=None, repeat=False: calls.append(("err",))
 cs.wait_inflight = lambda sym: calls.append(("inflight", sym))
 
 

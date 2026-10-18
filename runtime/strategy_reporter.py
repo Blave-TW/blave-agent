@@ -277,6 +277,7 @@ _PRICE_FETCHERS = {
     "fetch_twstock_price_batch": "tw_stock", "fetch_twstock_price_adj_batch": "tw_stock",
     "fetch_twstock_ohlcv": "tw_stock",
     "fetch_twfutures_ohlcv": _TW_FUTURES, "fetch_twfutures_ohlcv_batch": _TW_FUTURES,
+    "fetch_txf_daily_public": _TW_FUTURES,
     "fetch_stock_futures_batch_daily": "tw_stock_futures",
     "fetch_usstock_price": "us_stock",
     "fetch_db_kline": "global_futures",

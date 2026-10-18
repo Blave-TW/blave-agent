@@ -852,7 +852,8 @@ _PRICE_FETCHERS = frozenset((
     "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline",
     "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch",
     "fetch_twstock_price_adj_batch", "fetch_twstock_ohlcv",
-    "fetch_twfutures_ohlcv", "fetch_twfutures_ohlcv_batch", "fetch_stock_futures_batch_daily",
+    "fetch_twfutures_ohlcv", "fetch_twfutures_ohlcv_batch", "fetch_txf_daily_public",
+    "fetch_stock_futures_batch_daily",
     "fetch_usstock_price", "fetch_db_kline"))
 # UTC-midnight trading-date labels. fetch_twstock_ohlcv is labelled at Taipei midnight and
 # stays on the calendar floor.

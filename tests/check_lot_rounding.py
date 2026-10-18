@@ -140,7 +140,7 @@ check(abs(min_slice - LOT_USD * 1.05) < 0.01,
 # ── execute._finish ────────────────────────────────────────────────────────
 logged, errors = [], []
 portfolio._append_reconciler_log = lambda e: logged.append(e)
-portfolio._record_order_error = lambda s, x, e: errors.append((s, str(e)))
+portfolio._record_order_error = lambda s, x, e, extra=None, repeat=False: errors.append((s, str(e)))
 
 
 def finish(**kw):

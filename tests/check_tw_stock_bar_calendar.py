@@ -58,6 +58,10 @@ SOURCES = {
     "cryc": template_c + "\nfrom lib.data import fetch_kline_batch\n",
     "mixc": 'INTERVAL = "1d"\nfrom lib.data import fetch_kline_batch, fetch_twstock_price_adj_batch\n',
     "ohlc": 'SYMBOL = "2330"\nINTERVAL = "1d"\nfrom lib.data import fetch_twstock_ohlcv\n',
+    # fetch_kline only in a comment: still TW stock daily (red if detection reads plain text)
+    "twk": 'INTERVAL = "1d"\n# like fetch_kline(sym, "1d", START, END, hdrs) for crypto\n'
+           'from lib.data import fetch_twstock_price_batch\n',
+    "txp": 'SYMBOL = "TXF"\nINTERVAL = "1d"\nfrom lib.data import fetch_txf_daily_public, fetch_twstock_price\n',
 }
 CRYPTO_BARS = {"btc", "cryc"}   # a bar every calendar day
 for n, src in SOURCES.items():
@@ -129,7 +133,8 @@ os.chdir(BASE)
 try:
     is_tw = getattr(wfb, "_tw_stock_daily", lambda n: False)
     check(is_tw("tws") and is_tw("twc"), "TW stock Type A and Type C universe detected")
-    for n in ("btc", "txf", "cryc", "mixc", "ohlc"):
+    check(is_tw("twk"), "TW stock strategy naming fetch_kline only in a comment: detected")
+    for n in ("btc", "txf", "cryc", "mixc", "ohlc", "txp"):
         check(not is_tw(n), f"{n}: not TW stock daily")
 
     # ── 1. a week: Fri 10-16 08:00 TPE → Fri 10-23 09:00 TPE ──────────────────────

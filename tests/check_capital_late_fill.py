@@ -110,7 +110,7 @@ check('"late": true' in audit, "a late fill is audited as order_filled (late)")
 from manager import reconciler  # noqa: E402
 import lib.portfolio as portfolio  # noqa: E402
 rec = []
-portfolio._record_order_error = lambda sym, venue, err, extra=None: rec.append((sym, venue, str(err)))
+portfolio._record_order_error = lambda sym, venue, err, extra=None, repeat=False: rec.append((sym, venue, str(err)))
 # place_futures_market_order is replaced below, so no Read-Your-Writes mark is written here; the
 # mark belongs to the order lib (lib.capital_vault.mark_order_sent), not the reconciler
 check(not hasattr(reconciler, "_capital_mark_order_sent") and callable(oc.capital_vault.mark_order_sent),
