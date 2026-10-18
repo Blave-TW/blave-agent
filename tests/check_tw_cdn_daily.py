@@ -6,22 +6,26 @@ tests/fixtures/tw_free_daily/, and Blave is a stub.
   - parity: 2330 2024-01 from the CDN equals the exchange path (STOCK_DAY), raw and adjusted
   - 減資 / split smooth: 2603 2022-09-19 (raw +109%) and 0050 2025-06-18 (raw −74.8%) move less
     than the 10% limit adjusted; the factor comes from the file's footer events
-  - chain: desktop default CDN first (no Blave / exchange request when it serves); CDN down →
-    Blave → exchange; manifest enabled=false, an id it lacks, a start before 2010-01-04 → next
-    source; cloud default never asks the CDN
+  - chain: CDN first on the desktop and on a cloud machine (no Blave / exchange request when it
+    serves); CDN down → Blave → exchange (desktop only; the cloud raises Blave's access error);
+    manifest enabled=false, an id it lacks, a start before 2010-01-04 → next source
   - cache: a fresh manifest is not re-asked; a stock file is downloaded once and again only when
     the manifest lists a later last day (with If-None-Match)
   - tail: days after the CDN's asof that the exchange already published come from the exchange
     for those days only
-  - batch: without Blave access (403) served from the CDN, per stock and from the whole-market
-    files (same frames); with access the Blave batch alone; an id on no source → BatchIncomplete;
+  - batch: served from the CDN, per stock and from the whole-market files (same frames), with or
+    without Blave access; with access one Blave /batch for an id the CDN does not list or a start
+    before 2010-01-04; an id on no source → BatchIncomplete;
     an id the CDN lists but with no rows in the window → empty frame, no exchange crawl;
     a cloud machine's Blave batch with a column-less empty frame for an id → no KeyError
   - stale edge: a stock / recent file older than the manifest says is used once and asked again
   - hot cache: a current-month exchange file written after the last 17:35 final is not re-fetched
   - CDN behind the latest final: a per-stock batch fills the days from the exchange (final days only,
-    single stock too); still short → attrs['asof'] + ⚠️, FeedNotPublished in a live scope; the
-    whole-market path probes the exchange to tell a late CDN from a holiday
+    single stock too); still short → Blave when it answers, else attrs['asof'] + ⚠️ and
+    FeedNotPublished in a live scope; the whole-market path probes the exchange to tell a late CDN
+    from a holiday
+  - cloud lag: no exchange tail or probe; the holiday table tells a closed day (CDN frame, complete)
+    from an open one (Blave for the lagging id; no access + live → FeedNotPublished)
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_tw_cdn_daily.py
 """
