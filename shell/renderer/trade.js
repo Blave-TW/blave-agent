@@ -2590,7 +2590,8 @@ function trCatchWill(r) {
   if (!trHasAccount(r) || trFirstReadPending(r)) return null;
   const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), target = trClientTargets(stored, st2, trContracts()), bk = trBook(r, target);
   const vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {}, contribs = trContribs(stored, st2, trContracts());
-  const out = [];
+  // 列在前三筆的是現在就會成交的:休市中的台股要等開盤(lib/order_paper._check_session),排最後,不把唯一現在會下的那筆藏進「另外 N 檔」
+  const out = [], later = [], twShut = !trTwSessionOpen(Date.now(), r.tw_trading_day);
   let anyTw = false;
   Object.keys(target).concat(Object.keys(bk.mine).filter((k) => !(k in target))).sort().forEach((sym) => {
     if (!trTradesSym(vk, sym) || (contribs[sym] || []).some((c) => c.notYet)) return;   // 訊號還沒算出來:會下什麼單不知道,不講
@@ -2605,11 +2606,12 @@ function trCatchWill(r) {
       : sh != null ? t(sh === 1 ? "po.twShare" : "po.twShares", { n: trFmt(sh) }) : trFmt(Math.round(Math.abs(d))) + (u ? " " + u : "");
     const twn = twStock ? trTwName(sym0) : "", lab = spec ? t(spec.prod) : twn ? sym0 + " " + twn : sym0;
     if (twStock) anyTw = true;
-    out.push(t("tr.opt.catchWill", { side: t(d > 0 ? "tr.opt.buy" : "tr.opt.sell"), sym: (LANG === "zh" && /^[\x21-\x7e]/.test(lab) ? " " : "") + lab, n }));
+    (twStock && twShut ? later : out).push(t("tr.opt.catchWill", { side: t(d > 0 ? "tr.opt.buy" : "tr.opt.sell"), sym: (LANG === "zh" && /^[\x21-\x7e]/.test(lab) ? " " : "") + lab, n }));
   });
+  out.push(...later);
   if (!out.length) return null;
   // 模擬盤休市不收台股的單(lib/order_paper._check_session),對帳器留到開盤:「現在就下單」對台股那幾筆不成立
-  const closed = anyTw && !trTwSessionOpen(Date.now(), r.tw_trading_day) ? " " + t("tr.opt.catchTwClosed") : "";
+  const closed = anyTw && twShut ? " " + t("tr.opt.catchTwClosed") : "";
   return out.slice(0, 3).join(LANG === "zh" ? "、" : "; ") + (out.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: out.length - 3 }) : "") + (LANG === "zh" ? "。" : ".") + closed;
 }
 

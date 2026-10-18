@@ -402,7 +402,16 @@ ok("必改 3:兩個確認框共用 trCloseTag / trCtCloseTag(「平倉」「{舊
       vm.runInContext("TR_TWN.names = null;", ctx);
       ok("補齊說明(模擬交易台股):「買進 2330 台積電 97 股」(100,000 ÷ 1,030 捨去,同部位表);週六與 14:00 補休市句,週一 10:00 不補",
         sat.includes(J({ side: "tr.opt.buy", sym: " 2330 台積電", n: "po.twShares " + J({ n: "97" }) })) && /"sym":" BTCUSDT","n":"500 USDT"/.test(sat)
-        && /tr\.opt\.catchTwClosed$/.test(sat) && /tr\.opt\.catchTwClosed$/.test(monLate) && !/catchTwClosed/.test(mon), J([sat, mon, monLate])); }
+        && /tr\.opt\.catchTwClosed$/.test(sat) && /tr\.opt\.catchTwClosed$/.test(monLate) && !/catchTwClosed/.test(mon), J([sat, mon, monLate]));
+      // F8:休市時前三筆先列現在就會成交的(BTCUSDT),等開盤的台股排最後;開盤中照代號排
+      rp.states.tw = { type: "portfolio", market: "spot", weights: { 1101: 0.25, 2317: 0.25, 2330: 0.25, 2454: 0.25 },
+        raw_closes: { 1101: 30, 2317: 200, 2330: 1030, 2454: 1200 }, raw_close_dates: { 1101: "2026-10-16", 2317: "2026-10-16", 2330: "2026-10-16", 2454: "2026-10-16" } };
+      ctx.TR.list[1] = { name: "tw", displayName: "TW", hasBacktest: true, portfolio: true, universe: ["1101", "2317", "2330", "2454"] };
+      const sat4 = at(Date.UTC(2026, 9, 17, 3, 0)), mon4 = at(Date.UTC(2026, 9, 19, 2, 0));
+      const firstSym = (w) => (/"sym":"([^"]*)"/.exec(w) || [])[1];
+      ok("F8 補齊說明:休市時 BTCUSDT(現在會成交)排第一、四檔台股在後(第四檔進「另外 N 檔」);開盤中照代號排,1101 第一",
+        firstSym(sat4) === " BTCUSDT" && /tr\.opt\.catchMore \{"n":2\}/.test(sat4) && firstSym(mon4) === " 1101" && /BTCUSDT/.test(mon4) === false,
+        J([sat4, mon4])); }
     ok("台股時段(台北):週一到週五 09:00–13:30;週末、08:59、13:30 都算休市", vm.runInContext("[trTwSessionOpen(Date.UTC(2026,9,19,1,0)), trTwSessionOpen(Date.UTC(2026,9,19,5,29)), trTwSessionOpen(Date.UTC(2026,9,19,5,30)), trTwSessionOpen(Date.UTC(2026,9,19,0,59)), trTwSessionOpen(Date.UTC(2026,9,17,2,0)), trTwSessionOpen(Date.UTC(2026,9,18,2,0))].join()", ctx) === "true,true,false,false,false,false");
     ok("台股時段:機器回報今天休市(tw_trading_day.trading false,國定假日)→ 休市;別天的、true、沒有這欄 → 照時鐘", vm.runInContext("[trTwSessionOpen(Date.UTC(2026,9,19,2,0), { date: '2026-10-19', trading: false }), trTwSessionOpen(Date.UTC(2026,9,19,2,0), { date: '2026-10-18', trading: false }), trTwSessionOpen(Date.UTC(2026,9,19,2,0), { date: '2026-10-19', trading: true }), trTwSessionOpen(Date.UTC(2026,9,19,2,0), null)].join()", ctx) === "false,true,true,true");
     ok("模擬盤台股股數:差額 ÷ 價格捨去到整股;不是整股成交(整張／舊 lib 沒價格)= null", vm.runInContext("[trCatchShares(100000, { unit: 'shares', price: 1030 }), trCatchShares(-500, { unit: 'shares', price: 1030 }), trCatchShares(100000, { unit: 'lots', price: 1030 }), trCatchShares(1, null)].join()", ctx) === "97,0,,");
