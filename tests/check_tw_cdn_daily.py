@@ -236,8 +236,17 @@ def t_chain():
     del os.environ["BLAVE_AGENT_LOCAL"]
     try:
         cdn = fresh(blave=blave_ok)
+        pin_now(cdn.manifest["asof"])
         df = D.fetch_twstock_price("2330", "2024-01-01", "2024-01-31", {"api-key": "x"})
-        check(df.attrs.get("source") == "Blave" and cdn.calls == [], "cloud default: Blave only, the CDN is never asked")
+        check(df.attrs.get("via") == "Blave CDN" and blave_calls == [] and D._TW_PUBLIC_SESSION.calls == [],
+              "cloud default: the CDN first too, no Blave / exchange request when it serves")
+        fresh(down=True, blave=blave_no_access)
+        try:
+            quiet(D.fetch_twstock_price, "2330", "2024-01-01", "2024-01-31", {})
+            check(False, "cloud, CDN down, no Blave access: the access error, never the exchange")
+        except requests.HTTPError:
+            check(D._TW_PUBLIC_SESSION.calls == [] and len(blave_calls) == 1,
+                  "cloud, CDN down, no Blave access: the access error, never the exchange")
     finally:
         os.environ["BLAVE_AGENT_LOCAL"] = "1"
 
@@ -290,7 +299,8 @@ def t_batch():
     ids = ["2330", "2603"]
     per = D.fetch_twstock_price_adj_batch(ids, "2022-08-01", "2022-10-31", {})
     check(set(per) == set(ids) and all(list(f.columns) == ["Open", "Close"] for f in per.values())
-          and blave_calls and "/batch/" in blave_calls[0], "no Blave access (403) → the batch is served from the CDN")
+          and blave_calls == [] and all(f.attrs.get("via") == "Blave CDN" for f in per.values()),
+          "batch: the CDN serves every id it lists, Blave is not asked")
     fresh()
     D._TW_CDN_WHOLE_MARKET_IDS = 1
     try:
@@ -301,8 +311,15 @@ def t_batch():
     check(all(whole[i].equals(per[i]) for i in ids), "whole-market year files give the same frames as per-stock files")
     check(set(whole_raw) == set(ids) and list(whole_raw["2603"].columns) == D._TW_DAILY_COLS, "raw batch: OHLCV")
     cdn = fresh(blave=blave_ok)
-    got = D.fetch_twstock_price_adj_batch(["2330"], "2024-01-01", "2024-01-31", {"api-key": "x"})
-    check(cdn.calls == [] and list(got) == ["2330"], "with Blave access the Blave batch alone (unchanged semantics)")
+    pin_now(cdn.manifest["asof"])
+    got = D.fetch_twstock_price_adj_batch(["2330", "9998"], "2024-01-01", "2024-01-31", {"api-key": "x"})
+    asked = [u for u in blave_calls if "/batch/" in u]
+    check(got["2330"].attrs.get("via") == "Blave CDN" and "via" not in got["9998"].attrs and len(asked) == 1,
+          "with Blave access: CDN for 2330, one Blave /batch for the id the CDN does not list")
+    fresh(blave=blave_ok)
+    pin_now(cdn.manifest["asof"])
+    got = D.fetch_twstock_price_adj_batch(["2330"], "2009-06-01", "2024-01-31", {"api-key": "x"})
+    check("via" not in got["2330"].attrs and len(blave_calls) == 1, "a start before 2010-01-04 → the Blave batch")
     fresh()
     D._TW_CDN_WHOLE_MARKET_IDS = 1
     try:
@@ -564,8 +581,9 @@ def t_stale_more():
         setup(m, "2024-02-29", final)
         D._fetch_twstock_daily_public = down
         got, err, _ = run(lambda: D.fetch_twstock_price("2330", "2024-01-01", None, {}))
-        check(err is not None and str(err.need) == final and blave_calls == [],
-              "R1 single stock, CDN behind and exchange down, live: FeedNotPublished, not handed on to Blave / the free chain")
+        check(err is not None and str(err.need) == final and len(blave_calls) == 1,
+              "R1 single stock, CDN behind and exchange down, live: Blave asked (403 here), then FeedNotPublished — "
+              "not the free chain")
         got, err, _ = run(lambda: D.fetch_twstock_price("2330", "2024-01-01", None, {}), live=False)
         check(err is None and got.attrs.get("asof") == "2024-02-29" and got.attrs.get("via") == "Blave CDN",
               "R1 single stock, same, backtest: served through the CDN's day, attrs['asof'] names it")
@@ -612,6 +630,56 @@ def t_stale_more():
         D._TW_CDN_WHOLE_MARKET_IDS = 40
 
 
+def t_cloud_lag():
+    """A cloud machine (no BLAVE_AGENT_LOCAL) whose CDN is a day short of the latest final: never
+    the exchange; the holiday table decides — a closed day is no gap, an open one goes to Blave
+    (single stock and batch), and without Blave access a live tick still refuses."""
+    m = json.loads((CDN / "manifest.json").read_text())
+    m["asof"] = "2024-02-29"
+    final = "2024-03-01"
+    closed = []
+
+    def blave(url, **kw):
+        if url.endswith("/twmarket/holidays"):
+            return FakeResponse({"published": True, "year": 2024,
+                                 "data": [{"date": d, "name": "test", "type": "holiday"} for d in closed]})
+        return blave_ok(url, **kw)
+
+    def setup(blave_fn):
+        cdn = fresh(manifest=m, blave=blave_fn)
+        pin_now(m["asof"])
+        D._tw_official_expected_day = lambda now=None: final
+        D._HOLIDAY_MEMO.clear()
+        return cdn
+
+    del os.environ["BLAVE_AGENT_LOCAL"]
+    try:
+        closed[:] = [final]
+        setup(blave)
+        df = D.fetch_twstock_price("2330", "2024-01-01", None, {"api-key": "x"})
+        bat = D.fetch_twstock_price_adj_batch(["2330"], "2024-01-01", None, {"api-key": "x"})["2330"]
+        check(df.attrs.get("via") == "Blave CDN" and df.attrs.get("asof") == final
+              and bat.attrs.get("via") == "Blave CDN" and D._TW_PUBLIC_SESSION.calls == []
+              and all(u.endswith("/holidays") for u in blave_calls),
+              "cloud, CDN a day short, the day closed in the holiday table: the CDN frame, complete through it")
+        closed[:] = ["2024-02-28"]
+        setup(blave)
+        df = D.fetch_twstock_price("2330", "2024-01-01", None, {"api-key": "x"})
+        bat = D.fetch_twstock_price_adj_batch(["2330", "2603"], "2024-01-01", None, {"api-key": "x"})
+        check(df.attrs.get("source") == "Blave" and "via" not in bat["2330"].attrs
+              and bat["2603"].attrs.get("via") == "Blave CDN" and D._TW_PUBLIC_SESSION.calls == [],
+              "cloud, CDN a day short of an open session: Blave for the lagging id (2603 delisted: CDN), never the exchange")
+        setup(lambda url, **kw: blave(url, **kw) if url.endswith("/holidays") else blave_no_access(url, **kw))
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), D.live_feeds():
+                D.fetch_twstock_price("2330", "2024-01-01", None, {})
+            check(False, "cloud, CDN short, no Blave access, live: FeedNotPublished")
+        except D.FeedNotPublished:
+            check(D._TW_PUBLIC_SESSION.calls == [], "cloud, CDN short, no Blave access, live: FeedNotPublished")
+    finally:
+        os.environ["BLAVE_AGENT_LOCAL"] = "1"
+
+
 def main():
     t_parity()
     t_smooth()
@@ -625,6 +693,7 @@ def main():
     t_hot_cache()
     t_stale_manifest()
     t_stale_more()
+    t_cloud_lag()
     D._tw_official_expected_day = _real_expected
     D._tw_cdn_expected_asof = _real_cdn_expected
     print(f"\n{'ALL PASS' if not fails else f'{fails} FAIL'}")

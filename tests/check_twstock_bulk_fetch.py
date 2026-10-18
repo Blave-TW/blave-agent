@@ -30,6 +30,7 @@ TMP = Path(tempfile.mkdtemp(prefix="twbulk-"))
 d._CACHE_DIR = TMP / "cache"
 REAL_RETRY_GET = d._retry_get
 os.environ.pop("BLAVE_FETCH_FRESH_SINCE", None)
+os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"] = "blave"   # the Blave transport; the CDN chain is check_tw_cdn_daily
 
 fails = 0
 def check(cond, msg):

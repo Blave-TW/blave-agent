@@ -2007,15 +2007,18 @@ def _twstock_daily_source():
     """'cdn' (Blave CDN → Blave → exchange → FinMind free), 'public' (exchange → FinMind free →
     Blave) or 'blave' (the Blave endpoint only).
 
-    The CDN and the free sources run only on the user's own computer: the desktop build marks
-    itself with BLAVE_AGENT_LOCAL=1 (shell/daemon.js, runtime/agent_turn.py — the same flag
-    lib/venue.py reads), and there 'cdn' is the default; a cloud fleet machine (flag absent)
-    stays on Blave exactly as before, so no Blave server ever hits twse.com.tw, tpex.org.tw or
-    FinMind. BLAVE_TWSTOCK_DAILY_SOURCE=cdn|public|blave overrides either way."""
+    'cdn' is the default on every machine, single stock and batch alike: download.blave.org is
+    Blave's own copy, faster than the endpoint and the same numbers. The free sources behind it
+    (twse.com.tw, tpex.org.tw, FinMind) run only on the user's own computer — the desktop build
+    marks itself with BLAVE_AGENT_LOCAL=1 (shell/daemon.js, runtime/agent_turn.py, the flag
+    tw_market_public_allowed reads) — so on a cloud fleet machine the chain is CDN → Blave and
+    no Blave server ever hits the exchanges or FinMind: no exchange tail while the CDN is late,
+    the holiday table instead of an exchange probe. BLAVE_TWSTOCK_DAILY_SOURCE=cdn|public|blave
+    overrides either way."""
     forced = os.environ.get('BLAVE_TWSTOCK_DAILY_SOURCE', '').strip().lower()
     if forced in ('cdn', 'public', 'blave'):
         return forced
-    return 'cdn' if os.environ.get('BLAVE_AGENT_LOCAL') == '1' else 'blave'
+    return 'cdn'
 
 
 def _tw_public_session():
@@ -2615,7 +2618,9 @@ def _tw_slice(df, start, end):
 def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
     """Daily OHLCV for one stock from the Blave CDN (the exchanges' numbers, see the block
     comment). Final days the CDN has not published yet (17:35–18:05 on a trading day, or a late
-    publication) are filled from the exchange path for those days only. attrs['asof'] = the day
+    publication) are filled from the exchange path for those days only — on the desktop; a
+    cloud machine never asks the exchange and leaves that to its caller (_tw_cdn_lagging).
+    attrs['asof'] = the day
     the frame is complete through (the CDN's asof, or the latest 17:35 final once the exchange
     answered for the days after it). Raises TwCdnUnavailable when the CDN cannot serve the
     request; the caller falls back."""
@@ -2636,7 +2641,7 @@ def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
     want_to = end or datetime.now(_TPE).strftime('%Y-%m-%d')
     complete = asof
     final = _tw_official_expected_day()
-    if want_to > asof and final > asof:
+    if want_to > asof and final > asof and tw_market_public_allowed():
         tail_start = (pd.Timestamp(asof) + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
         try:
             extra = _fetch_twstock_daily_public(stock_id, tail_start, end, adjust=False)
@@ -2713,13 +2718,7 @@ def _tw_cdn_refuse_behind(frames, end, manifest, due_hm, label):
     CDN the exchange could not fill in): FeedNotPublished in a live scope — a live tick (incl.
     wait_for_bar's priming) must not compute on the older day while Blave-access machines have
     the final one — else a ⚠️ line; attrs['asof'] names the day either way."""
-    if not manifest:
-        return
-    need = min(end or datetime.now(_TPE).strftime('%Y-%m-%d'), _tw_official_expected_day())
-    # an id that did not trade on the CDN's last day (suspended, delisted) says nothing about lag
-    behind = sorted(sid for sid, df in frames.items()
-                    if sid in manifest['stocks'] and manifest['stocks'][sid][2] >= manifest['asof']
-                    and df.attrs.get('asof', need) < need)
+    behind, need = _tw_cdn_behind(frames, end, manifest)
     if not behind:
         return
     asof = min(frames[sid].attrs['asof'] for sid in behind)
@@ -2732,6 +2731,35 @@ def _tw_cdn_refuse_behind(frames, end, manifest, due_hm, label):
         raise err
     print(f"  ⚠️  {label}: Blave CDN data ends {asof}, the latest exchange final is {need} — "
           f"{len(behind)} of {len(frames)} id(s) served through {asof} (df.attrs['asof'])")
+
+
+def _tw_cdn_behind(frames, end, manifest):
+    """→ (ids whose CDN frame stops before the latest 17:35 final the window asks for, that day)."""
+    need = min(end or datetime.now(_TPE).strftime('%Y-%m-%d'), _tw_official_expected_day())
+    if not manifest:
+        return [], need
+    # an id that did not trade on the CDN's last day (suspended, delisted) says nothing about lag
+    return sorted(sid for sid, df in frames.items()
+                  if sid in manifest['stocks'] and manifest['stocks'][sid][2] >= manifest['asof']
+                  and df.attrs.get('via') == 'Blave CDN' and df.attrs.get('asof', need) < need), need
+
+
+def _tw_cdn_lagging(frames, end, manifest, headers):
+    """Ids whose CDN frame is short of the latest final — the caller asks Blave for them, which
+    has the final from 17:35, before the CDN publishes. On a cloud machine (no exchange to fill
+    or probe with) a gap whose weekdays are all closed in the holiday table is no gap: those
+    frames' attrs['asof'] move up to the final day and nothing lags. An unknown table counts as
+    a session, so the worst case is a Blave call, never a short frame taken as complete."""
+    behind, need = _tw_cdn_behind(frames, end, manifest)
+    if not behind or tw_market_public_allowed():
+        return behind
+    since = min(frames[sid].attrs['asof'] for sid in behind)
+    days = pd.bdate_range(pd.Timestamp(since) + pd.Timedelta(days=1), pd.Timestamp(need))
+    if any(is_tw_trading_day(d, headers) is not False for d in days):
+        return behind
+    for sid in behind:
+        frames[sid].attrs['asof'] = need
+    return []
 
 
 def _tw_final_only(df):
@@ -2750,6 +2778,8 @@ def _tw_cdn_whole_complete(ids, end, manifest):
         return recent_last   # an edge copy from before the publication: its own last day
     if (end or datetime.now(_TPE).strftime('%Y-%m-%d')) <= asof or final <= asof:
         return asof
+    if not tw_market_public_allowed():
+        return asof   # cloud: no exchange probe; _tw_cdn_lagging reads the holiday table instead
     after = (pd.Timestamp(asof) + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
     for sid in [i for i in ids if manifest['stocks'][i][2] == asof][:3]:
         try:
@@ -2762,29 +2792,12 @@ def _tw_cdn_whole_complete(ids, end, manifest):
     return final
 
 
-def _twstock_cdn_batch(stock_ids, start, end, adjust):
-    """{id: frame} for a batch without Blave access: the CDN (per stock, or the whole-market
-    files above _TW_CDN_WHOLE_MARKET_IDS ids), then the key-free single-stock chain for an id
-    the CDN does not list. For an id it lists the CDN is authoritative: no rows in the window
-    (listed later, delisted before) is an empty frame, not a month-by-month exchange crawl.
-    Ids still missing → BatchIncomplete (no partial result is returned silently). Frames that
-    stop before the latest 17:35 final the window asks for (a late CDN the exchange could not
-    fill in) → FeedNotPublished in a live scope, else a ⚠️ line; attrs['asof'] names the day."""
-    ids = list(dict.fromkeys(stock_ids))
-    results, failed = {}, []
-    try:
-        manifest = _tw_cdn_manifest()
-        on_cdn = [i for i in ids if i in manifest['stocks']] if start >= manifest.get('first_day', _TW_CDN_FIRST_DAY) else []
-    except TwCdnUnavailable as e:
-        print(f"  ⚠️  台股 batch: Blave CDN unavailable ({e}) — fetching each id from the exchange")
-        manifest, on_cdn = None, []
-    first_day = (manifest or {}).get('first_day', _TW_CDN_FIRST_DAY)
-    if start < first_day and len(ids) > _TW_CDN_WHOLE_MARKET_IDS:
-        # the exchange path is ~200 throttled requests per listed stock: hours for a universe
-        raise BatchIncomplete(
-            f'台股 daily batch without Blave access starts {first_day} on the Blave CDN (asked from {start}); '
-            f'ask from {first_day}, or for at most {_TW_CDN_WHOLE_MARKET_IDS} ids, or with Blave data access.',
-            {}, ids)
+def _twstock_cdn_frames(on_cdn, start, end, adjust, manifest):
+    """The CDN's part of a batch: {id: frame} for ids the manifest lists (per stock, or the
+    whole-market files above _TW_CDN_WHOLE_MARKET_IDS ids) → (frames, whole). For an id it lists
+    the CDN is authoritative: no rows in the window (listed later, delisted before) is an empty
+    frame, not a crawl elsewhere. An id it could not serve is left out for the next source."""
+    results = {}
     whole = len(on_cdn) > _TW_CDN_WHOLE_MARKET_IDS
     if whole:
         try:
@@ -2820,7 +2833,8 @@ def _twstock_cdn_batch(stock_ids, start, end, adjust):
         lagging = (end or datetime.now(_TPE).strftime('%Y-%m-%d')) > asof and _tw_official_expected_day() > asof
         # a late CDN sends every id to the exchange for its tail: one id per market first warms
         # the market list and that market's year tables, so the pool does not fetch them N times
-        first = list({manifest['stocks'][sid][0]: sid for sid in reversed(on_cdn)}.values()) if lagging else []
+        first = list({manifest['stocks'][sid][0]: sid for sid in reversed(on_cdn)}.values()) \
+            if lagging and tw_market_public_allowed() else []
         for sid in first:
             _, df = _one(sid)
             if df is not None:
@@ -2830,28 +2844,85 @@ def _twstock_cdn_batch(stock_ids, start, end, adjust):
                 sid, df = fut.result()
                 if df is not None:
                     results[sid] = df
-    for sid in ids:
-        if sid in results:
-            continue
+    return results, whole
+
+
+def _twstock_batch(blave_call, stock_ids, start, end, adjust, headers=None):
+    """Batch daily bars. 'cdn' (the default, see _twstock_daily_source): the Blave CDN for every
+    id it lists from its first day on, then `blave_call(ids)` for the rest — ids the CDN does not
+    list (興櫃, a listing newer than the manifest), a start before 2010-01-04, a CDN that is down,
+    and ids whose CDN frame stops before the latest final (_tw_cdn_lagging). Without Blave access
+    (DataAccessError, 401/403) the desktop goes on to the key-free single-stock chain for what is
+    still missing; a cloud machine raises the access error. Ids still missing → BatchIncomplete.
+    A CDN frame still short of the latest final → FeedNotPublished in a live scope, else a ⚠️
+    line; attrs['asof'] names the day. 'blave' / 'public': `blave_call` alone, as before."""
+    if _twstock_daily_source() != 'cdn':
+        return blave_call(list(stock_ids))
+    ids = list(dict.fromkeys(stock_ids))
+    free = tw_market_public_allowed()
+    try:
+        manifest = _tw_cdn_manifest()
+    except TwCdnUnavailable as e:
+        print(f"  ⚠️  台股 batch: Blave CDN unavailable ({e}) — asking Blave"
+              + (", then the exchange" if free else ""))
+        manifest = None
+    first_day = (manifest or {}).get('first_day', _TW_CDN_FIRST_DAY)
+    on_cdn = [i for i in ids if i in manifest['stocks']] if manifest and start >= first_day else []
+    results, whole = _twstock_cdn_frames(on_cdn, start, end, adjust, manifest) if on_cdn else ({}, False)
+    lagging = _tw_cdn_lagging(results, end, manifest, headers)
+    rest = [i for i in ids if i not in results or i in lagging]
+    no_access = None
+    if rest:
         try:
-            results[sid] = _tw_final_only(_fetch_twstock_daily_free(sid, start, end, adjust))
-        except Exception as e:
-            print(f"  ⚠️  {sid} daily bars: no key-free source could serve it ({type(e).__name__}: {str(e)[:100]})")
-            failed.append(sid)
-    if failed:
-        raise BatchIncomplete(
-            f'台股 daily batch without Blave access: {len(failed)} of {len(ids)} ids could not be fetched '
-            f'from the Blave CDN or the key-free sources: {failed[:20]}', results, failed)
+            got = blave_call(rest)
+        except BatchIncomplete as e:
+            raise BatchIncomplete(str(e), {**results, **e.partial}, e.failed) from e
+        except DataAccessError as e:
+            got, no_access = None, e
+        except requests.HTTPError as e:
+            if getattr(e.response, 'status_code', None) not in (401, 403):
+                raise
+            got, no_access = None, e
+        if got is not None:
+            results.update(got)
+    missing = [i for i in rest if i not in results]
+    if missing and no_access is not None:
+        if not free:
+            raise no_access
+        if start < first_day and len(missing) > _TW_CDN_WHOLE_MARKET_IDS:
+            # the exchange path is ~200 throttled requests per listed stock: hours for a universe
+            raise BatchIncomplete(
+                f'台股 daily batch without Blave access starts {first_day} on the Blave CDN (asked from {start}); '
+                f'ask from {first_day}, or for at most {_TW_CDN_WHOLE_MARKET_IDS} ids, or with Blave data access.',
+                results, missing)
+        failed = []
+        for sid in missing:
+            try:
+                results[sid] = _tw_final_only(_fetch_twstock_daily_free(sid, start, end, adjust))
+            except Exception as e:
+                print(f"  ⚠️  {sid} daily bars: no key-free source could serve it ({type(e).__name__}: {str(e)[:100]})")
+                failed.append(sid)
+        if failed:
+            raise BatchIncomplete(
+                f'台股 daily batch without Blave access: {len(failed)} of {len(ids)} ids could not be fetched '
+                f'from the Blave CDN or the key-free sources: {failed[:20]}', results, failed)
     _tw_cdn_refuse_behind(results, end, manifest, (17, 35) if not whole else _TW_CDN_PUBLISHED, '台股 batch')
-    return {sid: results[sid] for sid in ids}
+    # Blave leaves out an id it has no rows for; so does this
+    return {sid: results[sid] for sid in ids if sid in results}
+
+
+def _no_blave_access(e):
+    return isinstance(e, DataAccessError) or (
+        isinstance(e, requests.HTTPError) and getattr(e.response, 'status_code', None) in (401, 403))
 
 
 def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
     """Source chain for the two daily entries, logging which one served:
-    'cdn' (desktop default) Blave CDN → Blave (`blave_fn`; a desktop without data access
-    falls straight through) → exchange → FinMind free; 'public' exchange → FinMind free →
-    Blave; 'blave' the Blave endpoint only — and so does a malformed `start`, whose Blave 400
-    names the expected format."""
+    'cdn' (the default) Blave CDN → Blave (`blave_fn`; a desktop without data access falls
+    straight through) → exchange → FinMind free, the last two on the desktop only; a CDN frame
+    short of the latest final (_tw_cdn_lagging) is replaced by Blave's when Blave answers.
+    'public' exchange → FinMind free → Blave; 'blave' the Blave endpoint only — and so does a
+    malformed `start`, whose Blave 400 names the expected format."""
     try:
         datetime.strptime(start, '%Y-%m-%d')
         well_formed = True
@@ -2874,17 +2945,25 @@ def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
             errors.append(e)
             print(f"  ⚠️  {stock_id} daily bars: Blave CDN failed ({type(e).__name__}: {str(e)[:120]}) — trying Blave")
         if not errors:
+            if _tw_cdn_lagging({stock_id: df}, end, manifest, headers):
+                try:
+                    return _blave()
+                except Exception as e:
+                    if not _no_blave_access(e):
+                        print(f"  ⚠️  {stock_id} daily bars: Blave failed ({type(e).__name__}: {str(e)[:120]}) "
+                              f"— serving the CDN through {df.attrs['asof']}")
             # outside the try: a refusal must not send the chain on to the next source
             _tw_cdn_refuse_behind({stock_id: df}, end, manifest, (17, 35), f'{stock_id} daily bars')
             logging.info('%s daily bars served by the Blave CDN (%s)', stock_id, df.attrs['source'])
             return df
+        free = tw_market_public_allowed()
         try:
             return _blave()
         except Exception as e:
             errors.append(e)
-            no_access = isinstance(e, DataAccessError) or (
-                isinstance(e, requests.HTTPError) and getattr(e.response, 'status_code', None) in (401, 403))
-            if not no_access:
+            if not free:
+                raise e from errors[0]
+            if not _no_blave_access(e):
                 print(f"  ⚠️  {stock_id} daily bars: Blave failed ({type(e).__name__}: {str(e)[:120]}) — trying the exchange")
         try:
             df = _tw_final_only(_fetch_twstock_daily_free(stock_id, start, end, adjust))
@@ -2915,21 +2994,6 @@ def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
         if free_err is not None:
             raise e from free_err
         raise
-
-
-def _twstock_batch(blave_call, stock_ids, start, end, adjust):
-    """Batch daily bars: Blave first, unchanged; on the desktop ('cdn' source) a call refused
-    for lack of data access (DataAccessError, 401/403) is served from the CDN instead."""
-    if _twstock_daily_source() != 'cdn':
-        return blave_call()
-    try:
-        return blave_call()
-    except DataAccessError:
-        pass
-    except requests.HTTPError as e:
-        if getattr(e.response, 'status_code', None) not in (401, 403):
-            raise
-    return _twstock_cdn_batch(stock_ids, start, end, adjust)
 
 
 def _fetch_twstock_price_raw(stock_id, start, end, headers):
@@ -4310,6 +4374,10 @@ class BatchIncomplete(RuntimeError):
         self.partial, self.failed = partial, failed
 
 
+class _NeedsBatchRange(RuntimeError):
+    """A batch id whose cached range does not reach back to `start` (see _make_fetch_fn)."""
+
+
 def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids, start, end, headers,
                          chunk_size=50, mark_empty_months=True, start_param='start', end_param='end',
                          date_chunk_days=None, bulk_endpoint=None):
@@ -4327,7 +4395,8 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
     Phase 2: ids with no local cache yet are fetched the same way, chunk_size ids per
              request, full requested range.
 
-    raw_fn(id, start, end, headers) -> DataFrame   single-id fallback (missing past months)
+    raw_fn(id, start, end, headers) -> DataFrame   not called: a span before the cache goes to
+                                                   phase 2 (see _make_fetch_fn); kept for callers
     parse_fn(records) -> DataFrame                 one id's batch records -> cached frame
     bulk_endpoint                                  台股 /bulk name: phase 1's delta comes from one
                                                    whole-market request when to_extend is large
@@ -4498,9 +4567,12 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
                 if df is None:
                     return pd.DataFrame()
                 return df[(df.index >= s) & (df.index < e)]
-            # Deeper past-month holes (rare — a partially-cached id) fall back to
-            # the single-id fetch; not worth batching for an edge case.
-            return raw_fn(_id, s, e, headers)
+            # A span before the pre-fetched window (an earlier start than the cache, a
+            # common edit while iterating on a backtest): not one single-id request per id —
+            # 300 ids that way blew Blave's 500 requests / 5 min and sat in 429 backoff.
+            # Raising demotes the id to the phase-2 batch over the whole range, which
+            # _save_monthly / _save_single merge with what is already cached.
+            raise _NeedsBatchRange(_id)
         return _fetch
 
     def _extend_one(_id):
@@ -4616,9 +4688,9 @@ def fetch_twstock_price_adj_batch(stock_ids, start, end, headers):
         df = df.set_index('date').sort_index()[['open', 'close']].rename(
             columns={'open': 'Open', 'close': 'Close'}).astype(float)
         return df.replace(0, float('nan')).ffill()
-    results = _twstock_batch(lambda: _fetch_twstock_cached_batch(
+    results = _twstock_batch(lambda ids: _fetch_twstock_cached_batch(
         'twstock_price3', 'price_adj', _fetch_twstock_price_raw, _parse,
-        stock_ids, start, end, headers), stock_ids, start, end, True)
+        ids, start, end, headers), stock_ids, start, end, True, headers)
     return {sid: df[['Open', 'Close']] if {'Open', 'Close'} <= set(df.columns) else df
             for sid, df in results.items()}
 
@@ -4636,9 +4708,9 @@ def fetch_twstock_price_batch(stock_ids, start, end, headers):
             columns={'open': 'Open', 'high': 'High', 'low': 'Low',
                      'close': 'Close', 'volume': 'Volume'}).astype(float)
         return df.replace(0, float('nan')).ffill()
-    results = _twstock_batch(lambda: _fetch_twstock_cached_batch(
+    results = _twstock_batch(lambda ids: _fetch_twstock_cached_batch(
         'twstock_price_nonadj', 'price', _fetch_twstock_price_nonadj_raw, _parse,
-        stock_ids, start, end, headers), stock_ids, start, end, False)
+        ids, start, end, headers), stock_ids, start, end, False, headers)
     return {sid: _sanity_check_ohlc(df, f'{sid} twstock price')
             for sid, df in results.items()}
 
