@@ -133,7 +133,7 @@ fake.rules = _rules
 
 # ── whole rounds: what actually reaches place_order_fn ─────────────────────
 placed, errors = [], []
-portfolio._record_order_error = lambda s, x, e: errors.append((s, str(e)))
+portfolio._record_order_error = lambda s, x, e, extra=None, repeat=False: errors.append((s, str(e)))
 
 
 def run(target_usd, held_usd, asset_spec=None, exchange=None, threshold=None,

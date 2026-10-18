@@ -73,7 +73,7 @@ class _FakeOrder:
 sys.modules["lib.order_binance"] = _FakeOrder()
 venue_wiring.read_env = lambda path=".env": {"BINANCE_API_KEY": "k"}
 venue_wiring.detect_venue = lambda env: "binance"
-portfolio._record_order_error = lambda s, x, e: None
+portfolio._record_order_error = lambda s, x, e, extra=None, repeat=False: None
 
 sigma_calls = []
 sigma_value = [None]
@@ -319,7 +319,7 @@ venue_wiring.detect_venue = lambda env: "paper"
 TXF_SPEC = {"type": "futures_contracts", "contract_value": 200, "currency": "TWD", "lot_size": 1,
             "margin": 701000}
 order_errors = []
-portfolio._record_order_error = lambda s, x, e: order_errors.append(str(e))
+portfolio._record_order_error = lambda s, x, e, extra=None, repeat=False: order_errors.append(str(e))
 
 
 def set_mark(px):
@@ -483,7 +483,7 @@ os.remove("manager/ledger_seed.json")
 json.dump({"self_ledger": False}, open("manager/portfolio_config.json", "w"))
 venue_wiring.detect_venue = lambda env: "binance"
 venue_wiring.read_env = lambda path=".env": {"BINANCE_API_KEY": "k"}
-portfolio._record_order_error = lambda s, x, e: None
+portfolio._record_order_error = lambda s, x, e, extra=None, repeat=False: None
 
 # ── (B2) the book has no band: a same-side signal change trades ───────────
 print("== (B2) self_ledger on: a +3% same-side signal change is an order")
