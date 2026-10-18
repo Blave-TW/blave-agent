@@ -46,7 +46,7 @@ const pv5 = (ov, extra) => Object.assign({ type: "portfolio", market: "spot", we
 function bag(o) {
   o = o || {};
   const venues = o.firing || o.halted ? (o.paper ? { paper: V } : { binance: V }) : {};
-  const r = { venues, config: { amounts: Object.assign({ btc: 500, tw: 100000 }, o.amounts || {}) }, quote_ccy: { btc: "USDT", tw: "TWD", n5: "TWD" }, last_reconcile: o.firing || o.halted ? { ts: new Date().toISOString().slice(0, 19), actual: {}, target: {}, gates: {} } : null,
+  const r = { venues, config: { amounts: Object.assign({ btc: 500, tw: 100000 }, o.amounts || {}) }, quote_ccy: { btc: "USDT", tw: "TWD", n5: "TWD" }, last_reconcile: o.firing || o.halted ? { ts: new Date(now * 1000).toISOString().slice(0, 19), actual: {}, target: {}, gates: {} } : null,
     states: Object.assign({ btc: { symbol: "BTCUSDT", position: 1 }, tw: { symbol: "2330", position: 1, market: "spot" } }, o.states || {}),
     account: { read_at: now, venues: o.firing || o.halted ? { [o.paper ? "paper" : "binance"]: { ok: true, equity: 10000, currency: "USDT", positions: { BTCUSDT: { side: "long", size: 500, mark_price: 50000 } } } } : {} },
     reconciler: { alive: true }, can_trade_portfolio: true, can_paper_twstock: true, backtest_previews: o.oldHost ? undefined : Object.assign(o.noPv ? {} : { n5: pv5(o.ov !== false, o.pv) }, o.pvs || {}) };
@@ -250,7 +250,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
   // ② F3「{舊合約}平倉」有帳的情境:群益帳上有舊合約(大台)部位、換到小台後沒人撐 → 策略列標 ct.tagClose
   { const S = bag({ edits: {}, list: [{ name: "fut", displayName: "FUT", hasBacktest: true, symbol: "TXF" }], amounts: { fut: 2 }, states: { fut: { symbol: "TXF", position: 1 } },
       rep: { venues: { capital: V }, config: { amounts: { btc: 500, tw: 100000, fut: 2 }, contracts: { fut: "TXF" } }, can_switch_contract: true,
-        last_reconcile: { ts: new Date().toISOString().slice(0, 19), actual: {}, target: {}, gates: {} },
+        last_reconcile: { ts: new Date(now * 1000).toISOString().slice(0, 19), actual: {}, target: {}, gates: {} },
         account: { read_at: now, venues: { capital: { ok: true, equity: 2000000, currency: "TWD", positions: { TX2611: { side: "long", size: 2 } } } } } } });
     S.ct.edits.fut = "MXF"; S.edits.fut = 8;
     const f = open();
@@ -258,7 +258,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     S.st.report.account.venues.capital.positions = {}; const g = open();
     ok("② …帳上沒有舊合約部位:不標", !g.rows.some((x) => /ct\.tagClose/.test(x)), J(g.rows)); }
   // S1:換策略。對帳器(快照 caps 帶 first_signal_wait)對還沒算出第一個訊號的成員,它的標的這一輪先不動;框照它列
-  const LR = (target, old) => ({ ts: new Date().toISOString().slice(0, 19), actual: {}, target: target || {}, gates: {}, caps: old ? ["contract_override"] : ["contract_override", "rollover_halt_freeze", "first_signal_wait"] });
+  const LR = (target, old) => ({ ts: new Date(now * 1000).toISOString().slice(0, 19), actual: {}, target: target || {}, gates: {}, caps: old ? ["contract_override"] : ["contract_override", "rollover_halt_freeze", "first_signal_wait"] });
   const DB = { name: "db", displayName: "DB", hasBacktest: true, symbol: "BTCUSDT", market: "swap" };
   const DC = { name: "dc", displayName: "DC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: ["BTCUSDT", "SOLUSDT"] };
   const pvC = { type: "portfolio", market: "swap", weights: { BTCUSDT: 0.5, SOLUSDT: 0.5 }, closes: { BTCUSDT: 50000, SOLUSDT: 150 }, bar_at: BAR, bar_date: "2026-10-16", latest: true, daily_tw: false };

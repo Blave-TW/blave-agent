@@ -3,8 +3,9 @@ _retire_prejoin_signals, or never computed) leaves what it replaces on the book 
 first state — at most one bar of its INTERVAL, never longer than FIRST_SIGNAL_WAIT_MAX_S. What it
 replaces is fixed at its first trusted round: the previous round's snapshot shares of the members that
 no longer contribute (left / 0 / waiting again), bounded by what the book holds beyond the others'
-share; inside the window the key's target is the others' target now + that, never outside [book now,
-the others' target now] — a neighbour's reduction (a stop included, even one between the save and the
+share (in account-read mode shrinking with the book); inside the window the key's target is the
+others' target now + that, never outside [book now, the others' target now] nor [book now, the same
+round's target without the wait] — a neighbour's reduction (a stop included, even one between the save and the
 first round) trades at once, its add is netted against the hold until the window closes. Swapping a
 strategy for a new version on the same coin used to close the position one round and buy it back the
 next. The invariant itself is fuzzed in tests/check_first_signal_fuzz.py.
@@ -24,7 +25,9 @@ Through the real aggregate_portfolio → reconcile with a fake venue:
   contributor flag; HALT; a leaver's target that never reached the book (HALT, rejected, closed by
   hand), a save right after an entry round, a signal-gated leaver, another gate in the first round
   after the save, a neighbour whose state vanishes and comes back, no snapshot, a newcomer computing
-  past its window, the anchor lost with one newcomer computed.
+  past its window, the anchor lost with one newcomer computed; a neighbour's stop after a hand close /
+  a mark drop (account-read), a newcomer on another exchange, HALT + a rollover + a newcomer on
+  the old contract.
 
 Run: cd blave-agent && .venv/bin/python tests/check_first_signal_wait.py
 """
@@ -797,6 +800,103 @@ check(v.round() == [], f"c1 closed by hand, then taken out inside the window: no
 json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/n2/state.json", "w"))
 check(v.round() == [("BTCUSDT", -300)] and v.held["BTCUSDT"] == 500,
       f"…n2 stops: its 300 is sold, nothing kept for c1's 200 that is no longer there ({v.calls})")
+
+# G2 account-read mode: the hold shrinks with the book, so a neighbour's stop after a hand close /
+# a mark drop sends what the same history without the wait sends (f81ca0b: -300 both times)
+def g2(venue):
+    fresh()
+    strat("n1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("l1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+    strat("d1", "BTCUSDT")
+    config({"n1": 300, "l1": 500})
+    v = venue
+    v.round()
+    config({"n1": 300, "d1": 500})
+    check(v.round() == [], f"G2 setup: l1 → d1, BTC 800 held ({v.calls})")
+    return v
+
+
+v = g2(Rejecting({"BTCUSDT": 800}))
+v.held["BTCUSDT"] = 400
+check(v.round() == [] and snap_row("BTCUSDT").get("frozen") == 100,
+      f"G2 half closed by hand: the hold shrinks to the 100 left beyond n1's 300 ({v.calls}, {snap_row('BTCUSDT').get('frozen')})")
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/n1/state.json", "w"))
+v.reject = True
+v.round()
+v.reject = False
+got = [v.round(), v.round()]
+check(got == [[("BTCUSDT", -300)], []] and v.held["BTCUSDT"] == 100,
+      f"G2 …n1 stops (first order rejected): its 300 is sold the next round, once; the 100 stays ({got})")
+
+v = g2(MarkVenue({"BTCUSDT": 800}, 1.0))
+v.mark = 0.8
+check(v.round() == [], f"G2 mark −20%: nothing ({v.calls})")
+json.dump({"symbol": "BTCUSDT", "position": 0}, open("strategies/n1/state.json", "w"))
+check(v.round() == [("BTCUSDT", -300)], f"G2 …n1 stops: its 300 is sold, not absorbed by the old 500 ({v.calls})")
+
+# G3 a newcomer routed to another exchange holds nothing: the old position closes as f81ca0b does
+class TwoVenues(Venue):
+    def place(self, symbol, signed_diff, asset_spec, reduce_only=False, exchange=None):
+        if exchange == "okx":
+            self.calls.append((symbol, round(signed_diff, 4), "okx"))
+            return False
+        return Venue.place(self, symbol, signed_diff, asset_spec, reduce_only)
+
+
+fresh()
+strat("l1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("d1", "BTCUSDT")
+config({"l1": 500})
+v = TwoVenues({"BTCUSDT": 500})
+v.round()
+json.dump({"self_ledger": False, "amounts": {"d1": 500}, "exchanges": {"d1": "okx"}, "asset_specs": {}},
+          open("manager/portfolio_config.json", "w"))
+got = v.round()
+row = snap_row("BTCUSDT")
+check(got == [("BTCUSDT", -500)] and v.held["BTCUSDT"] == 0 and not row.get("awaiting"),
+      f"G3 binance l1 → okx d1: the save round closes the binance 500, nothing held ({got}, {row})")
+
+fresh()
+strat("c1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("l1", "BTCUSDT", state={"symbol": "BTCUSDT", "position": 1})
+strat("d1", "BTCUSDT")
+config({"c1": 200, "l1": 500})
+v = TwoVenues({"BTCUSDT": 700})
+v.round()
+json.dump({"self_ledger": False, "amounts": {"c1": 200, "d1": 500}, "exchanges": {"c1": "binance", "d1": "okx"},
+           "asset_specs": {}}, open("manager/portfolio_config.json", "w"))
+got = v.round()
+check(got == [("BTCUSDT", -500)] and v.held["BTCUSDT"] == 200,
+      f"G3 with a binance neighbour: l1's 500 closes, c1's 200 stays ({got})")
+
+
+# G5 HALT + an open TXF → MXF rollover + a newcomer waiting on the old TXF key: not one lot sold
+class Lots(Venue):
+    def positions(self):
+        return {k: {"side": "long" if q > 0 else "short", "size": abs(q), "unit": "contracts", "exchange": "paper"}
+                for k, q in self.held.items() if q}
+
+
+fresh()
+TXF = {"type": "futures_contracts", "contract_value": 200, "currency": "TWD", "lot_size": 1}
+MXF = {"type": "futures_contracts", "contract_value": 50, "currency": "TWD", "lot_size": 1}
+strat("r", "TXF", state={"symbol": "TXF", "position": 1})
+strat("l1", "TXF", state={"symbol": "TXF", "position": 1})
+strat("d1", "TXF")
+ex = {n: "paper" for n in ("r", "l1", "d1")}
+json.dump({"self_ledger": False, "amounts": {"r": 1, "l1": 1}, "exchanges": ex, "asset_specs": {"r": TXF, "l1": TXF}},
+          open("manager/portfolio_config.json", "w"))
+v = Lots({})
+got = [v.round(), v.round()]
+check(got == [[("TXF", 2.0)], []], f"G5 setup: r and l1 hold 2 TXF ({got})")
+open(guard.HALT_PATH, "w").write("test")
+json.dump({"r": {"from": "TXF", "to": "MXF", "at": time.time()}}, open("state/contract_rollover.json", "w"))
+json.dump({"self_ledger": False, "amounts": {"r": 4, "d1": 1}, "exchanges": ex, "contracts": {"r": "MXF"},
+           "asset_specs": {"r": MXF, "d1": TXF}}, open("manager/portfolio_config.json", "w"))
+got = [v.round(), v.round()]
+check(got == [[], []] and v.held == {"TXF": 2.0},
+      f"G5 halted, r rolling TXF → MXF, l1 → d1 waiting on TXF: not one lot sold ({got}, {v.held})")
+os.remove(guard.HALT_PATH)
 
 print(f"\n{fails} FAILED" if fails else "\nall ok")
 sys.exit(1 if fails else 0)

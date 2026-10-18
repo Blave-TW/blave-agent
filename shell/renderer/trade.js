@@ -3318,12 +3318,14 @@ function trCfQty(sym, money, px) {
 function trCfRows(o) {
   /* 被換掉、帳上還撐著的那段(同 lib/portfolio _first_signal_targets):離開的成員(沒金額、或自己又在等)只算帳上 as 扣掉留下成員那份之後
      還有的,同號且不超過;閘中的離開成員自己的目標沒到帳,取剩下的全部。快照已在窗內(an.inWin)就從它的 frozen 接著扣這次才離開的 */
-  function trCfHold(an, sending, ws, as) {
+  function trCfHold(an, sending, ws, as, acct) {
     const within = (v, room) => (v * room <= 0 ? 0 : Math.abs(v) <= Math.abs(room) ? v : room), val = (c) => (isFinite(Number(c.contribution)) ? Number(c.contribution) : 0);
     const cs = an.contributors.filter((c) => c && c.strategy != null && an.cohort.indexOf(c.strategy) < 0).sort((a, b) => (String(a.strategy) < String(b.strategy) ? -1 : 1));
     const back = (c) => ws.indexOf(c.strategy) >= 0, leaving = (c) => !(Number(sending[c.strategy]) > 0) || back(c);
     if (an.inWin) {
-      let room = as - cs.reduce((a, c) => a + val(c), 0) - an.frozen, hold = an.frozen;
+      // 讀帳模式:帳上少了(手動平倉、標記價)那段跟著縮,只縮不長(同 lib 每輪以上一輪其他成員那份夾)
+      const f0 = acct ? within(an.frozen, as - cs.reduce((a, c) => a + val(c), 0)) : an.frozen;
+      let room = as - cs.reduce((a, c) => a + val(c), 0) - f0, hold = f0;
       cs.filter(leaving).forEach((c) => { room += val(c); const x = within(val(c), room); room -= x; hold += x; });
       return hold;
     }
@@ -3354,11 +3356,12 @@ function trCfRows(o) {
       // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)
       const an0 = holds.wait[sym] ? holds.anchor[sym] : null, an = blind.has(sym) ? an0 : null, ws = holds.wait[sym] || [], lot = o.lot(sym);
       if (blind.has(sym) && !an) { if (o.mine[sym] || after[sym]) { hit(held.wait, sym); ws.forEach((n) => hit(held.names, n)); } if (Math.round(before[sym] || 0) !== Math.round(after[sym] || 0)) held.unknown = true; return; }
-      const as = o.mine[sym] || 0, frozen = an0 ? trCfHold(an0, o.sending, ws, as) : 0, froze = lot ? Math.round(Math.abs(frozen)) > 0 : Math.abs(frozen) >= 1;
+      const as = o.mine[sym] || 0, frozen = an0 ? trCfHold(an0, o.sending, ws, as, !(o.r && o.r.self_ledger === true)) : 0, froze = lot ? Math.round(Math.abs(frozen)) > 0 : Math.abs(frozen) >= 1;
       const others = an ? (cs1[sym] || []).filter((c) => ws.indexOf(c.name) < 0 && an.cohort.indexOf(c.name) < 0).reduce((a, c) => a + c.v, 0) : 0;
-      // 窗內目標永遠落在 [帳上, 其他成員要的] 之間:等待只會少動,不會比沒有它時多買或反向
+      // 窗內目標夾在 [帳上, 其他成員要的] 與 [帳上, 同一輪沒有等待時的目標(after)] 之間:不會比沒有它時多買或反向
       const settle = (x) => { const y = /@spot$/.test(sym) ? Math.max(0, x) : x; return lot ? trLotsTarget(y).lots : y; }, base = an ? settle(others) : 0;
-      const raw = an ? Math.min(Math.max(settle(others + frozen), Math.min(base, as)), Math.max(base, as)) : after[sym] || 0;
+      const full = after[sym] || 0, clamp = (x, lo, hi) => Math.min(Math.max(x, Math.min(lo, hi)), Math.max(lo, hi));
+      const raw = an ? clamp(clamp(settle(others + frozen), base, as), full, as) : full;
       const ts = lot ? trLotsTarget(raw).lots : raw, d = ts - as;
       const gs = lot ? null : trGateSide(o.gates[sym], ts, as), acts = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
       if (acts && gated.has(sym)) { hit(held.gate, sym); return; }

@@ -2353,14 +2353,19 @@ def _unrouted_member_keys(amounts, exchanges, states, config):
 # What it replaces is fixed at its first trusted round from the previous round's snapshot: the
 # shares of the members that no longer contribute (left `amounts`, set to 0, waiting again), each
 # bounded by what the book holds beyond the others' share — a target that never reached the book
-# (HALT, a rejected order, a hand close, a signal gate) is nothing to keep. Inside the window the
-# key's target is the others' target now plus that hold, and it never leaves [book now, the others'
-# target now]: the wait only ever sends less than the same round without it. A neighbour's
-# reduction (a stop) trades at once; its add is netted against the hold until the window closes.
-# A member that has had a share of the key is never a newcomer: waiting again it is a departure
-# whose own next signal trades. One bar of the newcomer's INTERVAL at most, never longer than
-# FIRST_SIGNAL_WAIT_MAX_S: past that it is reconciled as before (no state = no contribution), so a
-# member that never computes can never park an exit.
+# (HALT, a rejected order, a hand close, a signal gate) is nothing to keep. In account-read mode the
+# book also moves by hand and with the mark: each round the hold shrinks (never grows) to what the
+# book has beyond the others' share as of the previous round, so a neighbour's stop after a hand
+# close is not absorbed by a hold the book no longer has. Inside the window the key's target is the
+# others' target now plus that hold, clamped into [book now, others now] and into [book now, this
+# same round's target without the wait] — the second bound is the guarantee: no round sends more
+# than, or the other way from, what it would send without the wait. Two newcomers on one key swap
+# together (the first to compute waits for the other) only where that bound allows. A newcomer
+# routed to another exchange than the book's / the leavers' holds nothing: the old position is on an
+# account the newcomer's exits never reach. A member that has had a share of the key is never a
+# newcomer: waiting again it is a departure whose own next signal trades. One bar of the newcomer's
+# INTERVAL at most, never longer than FIRST_SIGNAL_WAIT_MAX_S: past that it is reconciled as before
+# (no state = no contribution), so a member that never computes can never park an exit.
 FIRST_SIGNAL_WAIT_MAX_S = 7200
 _FIRST_SIGNAL_WAIT_PATH = 'state/first_signal_wait.json'
 _FIRST_SIGNAL_CLOCK_SKEW_S = 300
@@ -2520,7 +2525,8 @@ def _first_signal_anchor_ok(a):
     return (isinstance(a, dict) and _finite(a.get('frozen'))
             and all(isinstance(a.get(p), dict) and all(_finite(v) for v in a[p].values())
                     for p in ('seen', 'departed'))
-            and isinstance(a.get('cohort', []), list))
+            and isinstance(a.get('cohort', []), list) and isinstance(a.get('venues', []), list)
+            and all(isinstance(x, str) for x in a.get('venues', [])))
 
 
 def _last_snapshot_target():
@@ -2565,14 +2571,15 @@ def _settled(row, s):
     return s
 
 
-def _first_signal_targets(target, trusted, funded, skip=(), book=None):
+def _first_signal_targets(target, trusted, funded, skip=(), book=None, account=False, exchanges=None):
     """reconcile's half of the first-signal wait (see the comment above FIRST_SIGNAL_WAIT_MAX_S).
     Every key a waiting member trades is anchored on its first trusted round, even one another
     gate holds that round — the snapshot it anchors on is the save round's only then. Only a key
     aggregate_portfolio flagged first_signal_hold (held for a first signal and by nothing else)
     gets its window target. `book` is what this round diffs against. While the book cannot be
     trusted (a baseline wait) or the key waits on a pending baseline, nothing is anchored: the
-    baseline decides from this round's target what is the bot's."""
+    baseline decides from this round's target what is the bot's. `account` = the book is the
+    account read (not self_ledger); `exchanges` = the config's routing."""
     rows = [k for k, v in target.items() if v.get('awaiting')]
     if not rows:
         return target
@@ -2622,9 +2629,23 @@ def _first_signal_targets(target, trusted, funded, skip=(), book=None):
                 room = 0.0
             cohort = sorted((waiting - set(nb)) | {n for n in cur if n in fresh})
             seen = {n: v for n, v in cur.items() if n not in cohort}
-            a = anchors[k] = {'frozen': frozen, 'seen': seen, 'departed': departed, 'cohort': cohort}
+            venues = sorted({str(x) for x in (prev.get('exchange'), (book.get(k) or {}).get('exchange'))
+                             if x})
+            a = anchors[k] = {'frozen': frozen, 'seen': seen, 'departed': departed, 'cohort': cohort,
+                              'venues': venues}
             changed = True
         else:
+            if account:
+                room = _book_signed(book.get(k)) - sum(a['seen'].values())
+                frozen = _within(a['frozen'], room)
+                room -= frozen
+                departed = {}
+                for n, c in sorted(a['departed'].items()):
+                    departed[n] = _within(c, room)
+                    room -= departed[n]
+                if frozen != a['frozen'] or departed != a['departed']:
+                    a = anchors[k] = dict(a, frozen=frozen, departed=departed)
+                    changed = True
             # a neighbour waiting again is a departure, not a newcomer: its next signal trades
             cohort = sorted(set(a.get('cohort') or []) | (waiting - set(a['seen']) - set(a['departed'])))
             seen = {n: v for n, v in cur.items() if n not in cohort}
@@ -2638,15 +2659,26 @@ def _first_signal_targets(target, trusted, funded, skip=(), book=None):
                     room -= departed[n]
             departed = {n: c for n, c in departed.items() if n not in seen}
             if departed != a['departed'] or seen != a['seen'] or cohort != a.get('cohort'):
-                a = anchors[k] = {'frozen': a['frozen'], 'seen': seen, 'departed': departed,
-                                  'cohort': cohort}
+                a = anchors[k] = dict(a, seen=seen, departed=departed, cohort=cohort)
                 changed = True
+        here = (book.get(k) or {}).get('exchange')
+        venues = set(a.get('venues') or []) | ({str(here)} if here else set())
+        routes = {str((exchanges or {}).get(n)) for n in waiting if (exchanges or {}).get(n)}
+        if venues and routes and venues != routes:
+            row = {f: v for f, v in target[k].items() if f not in ('awaiting', 'cohort', 'frozen')}
+            if k in flagged and not row.get('contributors'):
+                del target[k]
+            else:
+                target[k] = dict(row, gated=False) if k in flagged else row
+            continue
         hold = a['frozen'] + sum(a['departed'].values())
         if k in flagged:
             others = _settled(row, sum(a['seen'].values()))
             held = _book_signed(book.get(k))
             s = _settled(row, sum(a['seen'].values()) + hold)
             s = min(max(s, min(others, held)), max(others, held))
+            full = _signed_row(row)
+            s = min(max(s, min(full, held)), max(full, held))
             target[k] = dict(_signed_target_row(row, s), gated=False)
         target[k] = dict(target[k], frozen=round(hold, 8))
         done = [n for n in a['cohort'] if n in cur]
@@ -3546,7 +3578,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     try:
         target = _first_signal_targets(target, trusted=needs_baseline is None,
                                        skip=pending_keys, book=diff_actual,
-                                       funded={n for n, a in strategy_amounts(config).items() if a})
+                                       funded={n for n, a in strategy_amounts(config).items() if a},
+                                       account=not own_only, exchanges=config.get('exchanges'))
     except Exception as e:
         # never a reason to hold more: the flagged keys reconcile as if nobody waited
         logging.error(f"[reconcile] first-signal window target failed ({type(e).__name__}: {e}) "

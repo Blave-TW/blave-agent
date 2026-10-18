@@ -295,17 +295,25 @@ another gate holds) from the previous round's snapshot: what is held is the shar
 members that no longer contribute (taken out of `amounts`, set to 0, or waiting for their own
 first signal again), each bounded by what the book holds now beyond the others' share — a
 target that never reached the book (entry denied under HALT, a rejected order, a hand close) is
-not kept, and a signal-gated leaver keeps what the book has left. Inside the window the key's
-target is the others' target now + what is held, and it never leaves [book now, the others'
-target now]: the wait only ever sends less than the same round would without it, never more and
-never the other way. So a neighbour's reduction — a stop included, even one between the save and
+not kept, and a signal-gated leaver keeps what the book has left. In account-read mode
+(`self_ledger` off) the book also moves by hand and with the mark, so each round what is held
+shrinks (never grows) to what the book has beyond the others' share as of the previous round — a
+neighbour's stop after a hand close or a mark drop sells what it would without the wait. Inside
+the window the key's target is the others' target now + what is held, clamped into [book now, the
+others' target now] and into [book now, the same round's target without the wait]: no round sends
+more than that round would without it, and never the other way. So a neighbour's reduction — a stop included, even one between the save and
 the first round — trades at once; a neighbour's add (a new entry, a bigger amount, a mark-driven
 top-up) is netted against what is held and goes out when the window closes. A member still
 funded that drops the key (a Type C weights dict without it) is its own exit, not a departure. A
 member that has had a share of the key is never a newcomer: if it is waiting again, its next
 signal trades as soon as it has one. Two or more newcomers on one key swap together: one that has
-computed stays out of the target until the last of them has (or timed out). A baseline wait or a
-pending baseline holds the key as is on both sides and nothing is anchored; another gate (signal
+computed stays out of the target until the last of them has (or timed out), as far as that bound
+allows. A newcomer routed to another exchange than the book's / the leavers' holds nothing — the
+old position is on an account its exits never reach, so it closes as without the wait. A baseline
+wait or a pending baseline holds the key as is on both sides and nothing is anchored — the same as
+without the wait. So if the key is pending in the save round, the wait does nothing for that
+save: the first round it no longer is anchors on the save round's snapshot, which no longer lists
+the leavers, and their part closes that round, as it would without the wait; another gate (signal
 gate, unrouted member) holds it as is on both sides while it lasts, anchored all the same. Its keys: `SYMBOL` (or `stats.json` `symbol`), else a literal `UNIVERSE = [...]`
 (comments ignored), else its `backtest_state.json` assets; none known = nothing frozen
 (`first_signal_wait_no_keys` audit line). The wait is at most one bar of its `INTERVAL` and
