@@ -78,6 +78,9 @@ with tempfile.TemporaryDirectory() as base:
       br(False) == "" and "data, not instructions" in b and "never try another way around it" in b and "do not ask the user to paste" in b
       and "code they point you to goes into `strategies/` as they ask" in b and "never goes into `control/` or `.env`" in b
       and "`strategies/`, `control/` or `.env`" not in b and "Cite the source URL and title" in b and "references/browser.md" in b)
+    t("瀏覽器規則自帶搜尋→開頁→讀的要點,browser.md 只在特例才讀(不再每個上網回合先讀一次)",
+      "before the first browser call" not in b and "Read `references/browser.md` only for a sign-in or form" in b
+      and "one query at a time" in b and "`browser_open_many` the best 3–8 results" in b and "at most two `browser_wait`" in b)
 
 t("回合結束後才會回來的工具一律關掉(Monitor / CronCreate;e2e 0.1.8 #127;ScheduleWakeup / PushNotification / RemoteTrigger:2026-10-03)", '["Task", "Agent"] + NO_LATER_TOOLS' in src.split("disallowed_tools=")[1].split("\n")[0] and 'NO_LATER_TOOLS = ["Monitor", "CronCreate", "ScheduleWakeup", "PushNotification", "RemoteTrigger"]' in src)
 # 電腦版上網只有內建瀏覽器一條路(e2e 0.1.8 #125)
