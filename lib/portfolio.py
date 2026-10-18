@@ -2745,11 +2745,6 @@ def _first_signal_targets(target, trusted, funded, skip=(), book=None, account=F
                 target[k] = dict(row, gated=False) if k in flagged else row
             continue
         hold = a['frozen'] + sum(a['departed'].values())
-        if k in flagged and not row.get('contributors') and abs(hold) < 1e-9:
-            # nothing held and nobody else on it: the round without the wait has no row here,
-            # and its close-on-removal (not a target of 0) decides
-            del target[k]
-            continue
         if k in flagged:
             others = _settled(row, sum(a['seen'].values()))
             held = _book_signed(book.get(k))
@@ -2758,6 +2753,11 @@ def _first_signal_targets(target, trusted, funded, skip=(), book=None, account=F
             full = _signed_row(row)
             s = min(max(s, min(full, held)), max(full, held))
             target[k] = dict(_signed_target_row(row, s), gated=False)
+            if not row.get('contributors') and abs(hold) < 1e-9:
+                # nothing held and nobody else on it: the round without the wait has no row
+                # here, so its close-on-removal decides, not a target of 0 (reconcile drops it
+                # from the diff; the snapshot keeps it for the page)
+                target[k]['diff_absent'] = True
         target[k] = dict(target[k], frozen=round(hold, 8))
         done = [n for n in a['cohort'] if n in cur]
         if done:
@@ -3691,6 +3691,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         target = {k: v for k, v in target.items() if k not in deferred}
     gated_symbols = {k for k, v in target.items() if v.get('gated')}
     full_target = target  # snapshot keeps gated rows (flagged 'gated': True)
+    target = {k: v for k, v in target.items() if not v.get('diff_absent')}
     if gated_symbols:
         logging.info(f"[reconcile] signal-gated (waiting for a new signal): "
                      f"{sorted(gated_symbols)}")
@@ -3717,7 +3718,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         for k, signed in halt_targets.items():
             if k in gated_symbols or k in pending_keys:
                 continue  # held as is anyway
-            if (target.get(k) or {}).get('awaiting'):
+            if (full_target.get(k) or {}).get('awaiting'):
                 # a first-signal window target leaves the rolling strategy's lots out: held as is
                 target = {x: v for x, v in target.items() if x != k}
                 diff_actual = {x: v for x, v in diff_actual.items() if x != k}
