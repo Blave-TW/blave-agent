@@ -206,12 +206,14 @@ function wcPaint() {
   cards.textContent = "";
   if (!LIB.data && LIB.skel) {
     for (let i = 0; i < 3; i++) { const c = wdEl("div", "wc-card is-skel"); [70, 40, 100, 55].forEach((w) => { const k = wdEl("div", "sk"); k.style.width = w + "%"; c.appendChild(k); }); cards.appendChild(c); }
-    $("wc-more").hidden = true; box.hidden = false; return;
+    $("wc-more").hidden = true; cards.hidden = false; box.hidden = false; return;
   }
-  box.hidden = !picks.length;   // 讀不到、或挑出來是 0 支:整塊不見,不顯示錯誤字
-  if (!picks.length) return;
+  const n = LIB.data ? LIB.data.strategies.length : 0;
+  box.hidden = !n;   // 讀不到、或策略庫是空的:整塊不見,不顯示錯誤字
+  cards.hidden = !picks.length;   // 能推的都裝了:留「看全部」那一行,策略庫入口不跟著消失
+  if (!n) return;
   picks.forEach((s) => cards.appendChild(wcCard(s)));
-  $("wc-more").hidden = false; $("wc-more").textContent = t("workspace_wel_more", { n: LIB.data.strategies.length });
+  $("wc-more").hidden = false; $("wc-more").textContent = t("workspace_wel_more", { n });
   requestAnimationFrame(() => cards.querySelectorAll(".wc-curve").forEach((h) => wcCurve(h, (LIB.data.strategies.find((x) => String(x.id) === h.dataset.id) || {}).report)));
 }
 // libInstalledName 會把「名字不在本機清單」的對照刪掉:清單還沒讀到(3 秒保底那條路)時只看對照表,不能拿空清單去刪

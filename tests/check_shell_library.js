@@ -138,13 +138,13 @@ if (!process.versions.electron) {
   const pubComm = S({ id: 130, title: "comm", is_official: false, verified: false, blave_data: "none" }), pubPaid = S({ id: 131, title: "paid", price: 500, blave_data: "none" });
   ok("① libAnonOk(§1.1b):官方 × 免費 × none 三個缺一不可;未標不算", P.libAnonOk(pubOff) && !P.libAnonOk(reqOff) && !P.libAnonOk(nullOff) && !P.libAnonOk(pubComm) && !P.libAnonOk(pubPaid)
     && !P.libAnonOk(Object.assign({}, pubOff, { is_official: "true" })) && !P.libAnonOk(null));
-  { // 歡迎頁三張卡 wcReco(spec-starters §1.6):候選 = 免費 × 官方 × 沒買過沒裝過;libVisible 順序;不能用 Blave 資料(沒登入時改免登入)的排前面;每市場先一支再補滿 3
+  { // 歡迎頁三張卡 wcReco(spec-starters §1.6):候選 = 免費 × 官方 × 這台沒裝過 × 不是自己的(免費的 purchased 不算數);libVisible 順序;不能用 Blave 資料(沒登入時改免登入)的排前面;每市場先一支再補滿 3
     const c1 = S({ id: 201, market: "crypto", blave_data: "none" }), c2 = S({ id: 202, market: "crypto", blave_data: "required" }), c3 = S({ id: 203, market: "crypto", blave_data: "required" });
     const t1 = S({ id: 211, market: "txf", blave_data: "required" }), w1 = S({ id: 221, market: "twstock", verified: false, blave_data: "none" });
-    const junk = [S({ id: 231, market: "txf", price: 500, blave_data: "none" }), S({ id: 232, market: "usstock", is_official: false, verified: false, blave_data: "none" }), S({ id: 233, market: "usstock", purchased: true, blave_data: "none" }), S({ id: 234, market: "usstock", is_owner: true })];
+    const junk = [S({ id: 231, market: "txf", price: 500, blave_data: "none" }), S({ id: 232, market: "usstock", is_official: false, verified: false, blave_data: "none" }), S({ id: 233, market: "usstock", price: 500, purchased: true, blave_data: "none" }), S({ id: 234, market: "usstock", is_owner: true })];
     const ids = (list, c) => P.wcReco(list, c).map((x) => x.id).join();
     const all = [w1, t1, c2, c1, ...junk];
-    ok("① wcReco:有資料(included)→ 已驗證在前、一個市場一支;付費、社群、買過、自己的都不進",
+    ok("① wcReco:有資料(included)→ 已驗證在前、一個市場一支;付費(買過的也是)、社群、自己的都不進",
       ids(all, { dataAccess: "included", signedIn: true }) === "211,202,221" || ids(all, { dataAccess: "included", signedIn: true }) === "202,211,221", ids(all, { dataAccess: "included", signedIn: true }));
     ok("① wcReco:不能用 Blave 資料(none / billed / null)→ 免資料的排最前;沒登入 → 免登入(libAnonOk)的排最前",
       ["none", "billed", null].every((da) => ids(all, { dataAccess: da, signedIn: true }) === "201,221,211") && ids(all, { dataAccess: "included", signedIn: false }) === "201,221,211",
@@ -159,6 +159,14 @@ if (!process.versions.electron) {
       ids([c1, c2, c3], { dataAccess: "included", signedIn: true }).split(",").length === 3 && ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }) === "221,211,202"
       && P.wcReco([], {}).length === 0 && P.wcReco(null, {}).length === 0 && ids([c1], { dataAccess: "included", signedIn: true }) === "201",
       ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }));
+    { // Wei 實機:帳號領過全部免費官方策略(/code 抓過就記 0 元購買)、這台一支都沒裝 → 照常三張、每市場一支;這台裝了的才扣掉
+      const bought = [w1, t1, c2, c1].map((x) => Object.assign({}, x, { purchased: true }));
+      ok("① wcReco:免費官方全部 purchased、這台沒裝 → 照常 3 張、每市場一支;裝了的不出現;全裝了 → 0 張",
+        ids(bought, { dataAccess: "included", signedIn: true }) === ids([w1, t1, c2, c1], { dataAccess: "included", signedIn: true })
+        && new Set(P.wcReco(bought, { dataAccess: "included", signedIn: true }).map((x) => x.market)).size === 3
+        && ids(bought, { dataAccess: "included", signedIn: true, installed: (x) => x.id === 202 || x.id === 201 }) === "211,221"
+        && P.wcReco(bought, { dataAccess: "included", signedIn: true, installed: () => true }).length === 0,
+        [ids(bought, { dataAccess: "included", signedIn: true }), ids(bought, { dataAccess: "included", signedIn: true, installed: (x) => x.id === 202 || x.id === 201 })].join(" | ")); }
   }
   ok("① libPickData(§8):none / required / 未標 → unknown", P.libPickData(pubOff) === "none" && P.libPickData(reqOff) === "required" && P.libPickData(nullOff) === "unknown" && P.libPickData({ blave_data: "x" }) === "unknown");
   const G = (c) => P.libGrouping(Object.assign({ env: "local", signedIn: true, dataAccess: "included", why: null }, c));

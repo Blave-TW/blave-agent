@@ -454,7 +454,14 @@ app.whenReady().then(async () => {
       !c1.hidden && c1.n === 3 && c1.ids === "301,302,303" && new Set(c1.tops).size === 1 && new Set(c1.lefts).size === 3 && c1.more === Z["workspace_wel_more"].replace("{n}", "5") && c1.charts >= 3 && c1.over <= 0
       && c1.btn === [1, 2, 3].map(() => Z["lib.use"] + "|" + Z["workspace_lib_detail"]).join("|") && c1.verified === 0 && c1.clamp === "2,2,2" && c1.metaWrap && c1.stats1, JSON.stringify(c1));
     w.setSize(1000, 900); await wait(400); const c2 = await cards(); w.setSize(1600, 900); await wait(400);
-    ok("③ 1000 寬(中欄 < 640):三張卡上下疊、不橫向溢出", c2.n === 3 && new Set(c2.lefts).size === 1 && new Set(c2.tops).size === 3 && c2.over <= 0, JSON.stringify(c2)); }
+    ok("③ 1000 寬(中欄 < 640):三張卡上下疊、不橫向溢出", c2.n === 3 && new Set(c2.lefts).size === 1 && new Set(c2.tops).size === 3 && c2.over <= 0, JSON.stringify(c2));
+    // 挑出 0 支(免費的都是自己的 / 這台都裝了,剩付費):整塊照樣在、沒有卡,只留「看策略庫全部 N 支 →」;策略庫空的才整塊不見
+    const zero = await js(`(() => { const keep = LIB.data.strategies; const one = (list) => { LIB.data.strategies = list; WC.key = null; wcPaint();
+        return { box: $("wc-reco").hidden, cards: $("wc-cards").hidden, n: $("wc-cards").querySelectorAll(".wc-card").length, or: $("wc-reco").querySelector(".wel-or").hidden, more: $("wc-more").hidden, txt: $("wc-more").textContent }; };
+      const r = { zero: one(keep.map((x) => Object.assign({}, x, x.price ? {} : { is_owner: true }))), empty: one([]), back: one(keep) }; return r; })()`);
+    ok("③ 三張卡挑出 0 支:#wc-reco 照樣在、沒有卡(#wc-cards 藏)、「看策略庫全部 5 支 →」在;策略庫空的 → 整塊藏;換回有候選 → 卡回來",
+      !zero.zero.box && zero.zero.cards && zero.zero.n === 0 && !zero.zero.or && !zero.zero.more && zero.zero.txt === Z["workspace_wel_more"].replace("{n}", "5")
+      && zero.empty.box && !zero.back.box && !zero.back.cards && zero.back.n === 3, JSON.stringify(zero)); }
   { // hover:底換 --surface-muted、小字從 --ink-3 換 --ink-2(ink-3 壓在 hover 底上不到 4.5:1)、› 換色
     const tgt = `$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row")`, look = () => js(`(() => { const b = ${tgt}; return { on: b.matches(":hover"), mt: getComputedStyle(b.querySelector(".wd-mt")).color, bg: getComputedStyle(b).backgroundColor, go: getComputedStyle(b, "::after").color }; })()`);
     const pt = await js(`(() => { const b = ${tgt}; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);

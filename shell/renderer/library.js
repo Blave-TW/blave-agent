@@ -177,11 +177,12 @@ function libCurve(spark, from, to) {
 }
 // 這一語言的成功筆記 id / 標題(spec-0.1.12-library-notes §2.2):缺就是缺,不拿另一個語言頂
 function libNoteId(s, lang) { const m = s && s.success_note_ids; const v = m && typeof m === "object" ? m[lang] : null; return Number.isInteger(v) && v > 0 ? v : null; }
-/* 歡迎頁的三張卡(spec-starters §1.6):免費、官方、沒裝過也沒買過 → libVisible 的順序 → 不能用 Blave 資料的人(沒登入時是免登入的)
+/* 歡迎頁的三張卡(spec-starters §1.6):免費、官方、這台沒裝過、不是自己的 → libVisible 的順序 → 不能用 Blave 資料的人(沒登入時是免登入的)
    排最前、而且這組先挑完 → 每個市場先挑一支、挑滿 3 支,不滿再照順序補。回傳照推薦排序(能用的在前)。c = { dataAccess, signedIn, installed(s) } */
 function wcReco(list, c) {
   const seen = c && typeof c.installed === "function" ? c.installed : () => false;
-  let cands = libVisible((Array.isArray(list) ? list : []).filter((s) => s && libIsFree(s) && s.is_official === true && !s.purchased && !s.is_owner && !seen(s)), "all");
+  // 不看 purchased:官方策略 /code 抓過一次 api 就記一筆 0 元購買(任何一台、網頁也算),免費的 purchased 只代表「抓過」,不代表這台有
+  let cands = libVisible((Array.isArray(list) ? list : []).filter((s) => s && libIsFree(s) && s.is_official === true && !s.is_owner && !seen(s)), "all");
   const first = c && c.signedIn === false ? libAnonOk : c && c.dataAccess !== "included" ? (s) => libNeeds(s) === "none" : null;
   // 現在就能用的那組先挑完(每市場一支 → 補滿),才輪到要登入／要資料的:不然「每市場先一支」會讓別的市場的那支擠掉第二支能用的
   const groups = first ? [cands.filter(first), cands.filter((s) => !first(s))] : [cands], picked = [];
