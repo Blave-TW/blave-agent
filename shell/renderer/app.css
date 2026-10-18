@@ -1060,7 +1060,7 @@ body.resizing * { cursor: col-resize !important; }
 /* 下單確認框(confirmBox 的 choices / keep / details;Wei 0928 第 3 點 A 案,數值照設計師 mockup):
    最上面的狀態句(主墨)→ 選項(radio,各帶後果)→ 常駐安全句 → 「細節」。兩顆鈕,框 480 */
 .del-modal.has-choices { width: min(480px, 92vw); }
-.del-modal.has-choices .del-body { min-height: 0; overflow-y: auto; }   /* 真錢第一次細節攤開、視窗又矮時:內文自己捲,兩顆鈕留在框裡 */
+.del-modal .del-body { min-height: 0; overflow-y: auto; }   /* 外框 overflow:hidden 捲不回:列一多、焦點停在取消,瀏覽器會把外框捲到取消,標題與模擬／真錢記號被推出去。只讓內文捲 */
 .del-body.has-choices > p { margin: 0 0 var(--space-16); font-size: 13px; line-height: 1.6; color: var(--ink); }
 .cf-opts { margin: 0; padding: 0; border: 0; display: grid; gap: var(--space-8); min-width: 0; }
 .cf-opts legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

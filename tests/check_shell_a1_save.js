@@ -324,8 +324,19 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     const btc = f.rows.findIndex((x) => /^tr\.cf\.buyBTCUSDT/.test(x)), tw = f.rows.findIndex((x) => /^tr\.cf\.buy2330/.test(x));
     ok("F15 休市中:台股那列標 po.twClosedHold、排在 BTC 後面;表頭只算 BTC 那 1 筆;表下 tr.opt.catchTwClosed",
       btc === 0 && tw === 1 && /po\.twClosedHold$/.test(f.rows[tw]) && !/twClosedHold/.test(f.rows[btc]) && /^tr\.cf\.capOrders \{"n":"1"\}/.test(f.cap) && f.notes.includes("cf-note:tr.opt.catchTwClosed"), J(f));
+    const dds = flat(f.box.extra).filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.kids[1]);
+    ok("F15 送單列的數量包成 span.n(.cf-amt .n + .tag 的 --space-8 才對得上,「188 股」與「休市中」不黏)",
+      dds.length === 2 && dds.every((d) => d.kids[0] && d.kids[0].className === "n") && dds[tw].kids[1] && dds[tw].kids[1].className === "tag", J(dds.map((d) => d.kids.map((k) => (typeof k === "string" ? "#text" : k.className)))));
     bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { btc: 1000 }, noPv: true, states: { tw: TWC } }); const g = open();
     ok("F15 開盤中:照舊兩筆、不標休市", /^tr\.cf\.capOrders \{"n":"2"\}/.test(g.cap) && !g.rows.some((x) => /twClosedHold/.test(x)) && !g.notes.includes("cf-note:tr.opt.catchTwClosed"), J(g)); }
+  // 稽核 0.1.27 P1:列一多、焦點停在取消,overflow:hidden 的外框被捲走、標題與模擬／真錢記號推出框外。所有確認框只讓內文捲(不再只限啟動框)
+  { const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), html = fs.readFileSync(path.join(R, "index.html"), "utf8");
+    const shell = (css.match(/\.set-modal \{([^}]*)\}/) || [, ""])[1], box = html.slice(html.indexOf('id="del-modal"'), html.indexOf("</div>\n</div>", html.indexOf('id="del-modal"')));
+    const ih = box.indexOf('class="modal-head"'), ib = box.indexOf('id="del-body"'), iff = box.indexOf('class="modal-foot"');
+    ok("P1 確認框:.del-modal .del-body 一律 min-height 0 + overflow-y auto(沒有 .has-choices 限定);外框照舊 max-height + overflow hidden + flex column;頭 → 內文 → 腳、取消在腳裡",
+      /^\.del-modal \.del-body \{ min-height: 0; overflow-y: auto; \}/m.test(css) && !/\.has-choices \.del-body/.test(css)
+      && /max-height: calc\(100vh - var\(--space-48\)\);/.test(shell) && /overflow: hidden;/.test(shell) && /display: flex; flex-direction: column;/.test(shell)
+      && ih > 0 && ih < ib && ib < iff && box.indexOf('id="del-cancel"') > iff); }
   // S3:等新訊號(訊號閘)擋下的標的不列單;閘中那支自己移出,閘跟著走,照列
   { const gt = { BTCUSDT: { side: "long", size: 500, gated: true, contributors: [{ strategy: "btc", position: 1, amount: 500, contribution: 500, gated: true }] } };
     bag({ firing: true, edits: { btc: 1000 }, rep: { last_reconcile: LR(gt) } }); const f = open();

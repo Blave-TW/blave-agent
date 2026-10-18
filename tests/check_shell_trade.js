@@ -131,7 +131,10 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
     && /venue === BINANCE \? \(LANG === "zh" \? "" : " "\) \+ t\("tr\.lev\.binance5"\) : ""/.test(cxp) && cxp.indexOf("cx-sub") < cxp.indexOf('"cx.note.one"')); }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
   ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause trading」(0.1.27);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause trading")
-    && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"));
+    && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「暫停並關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"));
+  ok("0.1.27 稽核 s18 暫停框:四句引號裡寫的是鈕上的字「暫停並關閉部位」(tr.stopFlat);重建句寫「下單程式會」不寫「下單機會」",
+    has("tr.stopFlat", "暫停並關閉部位") && ["tr.stopChoice", "tr.stopChoiceFreeze", "tr.stopChoiceSelf", "tr.stopChoiceSelfFreeze"].every((k) => new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*「暫停並關閉部位」').test(S3))
+    && !S3.includes("「關閉部位」") && !S3.includes("下單機會") && ["tr.closeAllWarn2", "tr.cloud.closeAllWarn2Unconfirmed"].every((k) => new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*下單程式會照現有金額').test(S3)));
   ok("0.1.27 完全凍結:暫停框照 halt.freeze 換句(Freeze 那組講什麼單都不送);freeze 那兩句不提照常執行",
     /lines: \[t\(\(r\.self_ledger === true \? "tr\.stopChoiceSelf" : "tr\.stopChoice"\) \+ \(trHaltFreeze\(r\) \? "Freeze" : ""\)\)/.test(src)
     && ["tr.stopChoiceFreeze", "tr.stopChoiceSelfFreeze", "tr.haltReasonFreeze", "tr.haltUnboundFreeze", "tr.acct.doneSameFreeze"].every((k) => S3.includes(J(k) + ": ") && !new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*照常執行').test(S3))); }

@@ -3690,9 +3690,7 @@ function trSaveAmounts(names, stored, opener, o) {
           label.append(symText + (tw ? " " + tw : ""));
           const unit = (k, n) => " " + t(k === "lots" ? trLotsKey(n, "tr.lotsUnit", "tr.lotUnit") : k);
           if (m.kind === "orders") {
-            if (x.lots != null) dd.append(trFmt(x.lots) + unit("lots", x.lots));
-            else if (x.qty) dd.append(x.qty.text + unit(x.qty.unit));
-            else dd.append(trFmt(Math.round(x.money)) + (x.z && x.z !== TR_ZONE_UNKNOWN ? " " + x.z : ""));
+            dd.append(trEl("span", "n", x.lots != null ? trFmt(x.lots) + unit("lots", x.lots) : x.qty ? x.qty.text + unit(x.qty.unit) : trFmt(Math.round(x.money)) + (x.z && x.z !== TR_ZONE_UNKNOWN ? " " + x.z : "")));
             if (x.closed) dd.appendChild(trEl("span", "tag", t("po.twClosedHold")));
           } else {
             const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
