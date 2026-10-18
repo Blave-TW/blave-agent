@@ -3627,10 +3627,10 @@ function trSaveAmounts(names, stored, opener, o) {
   const blocked = badStored.length > 0 || paperTw.length > 0;   // 存不進去(模擬帳戶超過 10 倍不再擋,#13)
   // 換算用的是 7 天以上前存下的台幣匯率(登入失效／讀不到雲端):確認框講是哪一天的(稽核 r4 P2)
   { const fv = trFxView(); if (fv.cached && Date.now() - fv.cached > 7 * 86400000) extra.appendChild(trEl("p", "cf-note", t("tr.fxOld", { d: new Date(fv.cached).toISOString().slice(0, 10) }))); }
-  // 暫停中(HALT,下單程式在跑):不開新倉,但減碼與平倉存了就會執行(§7-2)。凍結(halt.freeze)時減碼平倉也不送,改講凍結版;
-  // 凍結時 holds_all 一律 true、mayFire 為假,所以另開條件。剛按啟動(HALT 馬上要解除)兩種暫停句都不對,不出
+  // 暫停中(HALT,下單程式在跑):不開新倉,但減碼與平倉存了就會執行(§7-2),標題「儲存金額」藏住這件事,要講。
+  // 凍結(halt.freeze)時什麼都不送,標題已經講完,不出句(稽核 0.1.27 batch2);那句減碼平倉照走在凍結時是假話。剛按啟動也不出
   const pausedNow = trExecState(S.st) === "halted" && !trStartPending(S.pending), frozen = pausedNow && trHaltFreeze(S.st && S.st.report);
-  if (!blocked && ((mayFire && pausedNow) || frozen)) extra.appendChild(trEl("p", "cf-note", t(frozen ? "tr.saveWarnFreeze" : "tr.saveWarnHalted")));
+  if (!blocked && mayFire && pausedNow && !frozen) extra.appendChild(trEl("p", "cf-note", t("tr.saveWarnHalted")));
 
   /* 會隨報告變的那一段:標的表。草稿沒有預覽時先寫「計算中…」、主鈕停用,報告帶來預覽就換上表(trCfTick);逾時講一句、主鈕恢復 */
   const body = trEl("div", "cf-live"), cf = { S, sending, stored, body, blocked, sig: null, until: 0 };
@@ -3680,7 +3680,8 @@ function trSaveAmounts(names, stored, opener, o) {
       const asof = !pvAt ? "" : pvAt.dailyTw && pvAt.date ? t("tr.cf.asofClose", { d: pvAt.date.slice(5).replace("-", "/") }) : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
       if (m.rows.length) {
         const nOpen = m.rows.filter((x) => !x.closed).length, asofTail = asof ? (LANG === "zh" ? "，" : ", ") + asof : "";
-        sub.textContent = m.kind === "orders" && !nOpen ? asof : (m.kind === "orders" ? t("tr.cf.capOrders", { n: String(nOpen) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys })) + asofTail;
+        // 全部台股都留到開盤(這一輪一筆都不送):表頭講開盤後要送,逐列不再標休市(稽核 0.1.27 batch2 P2-2)
+        sub.textContent = (m.kind === "orders" ? t(nOpen ? "tr.cf.capOrders" : "tr.cf.capOrdersOpen", { n: String(nOpen || m.rows.length) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys })) + asofTail;
         if (sub.textContent) body.appendChild(sub);
         const dl = trEl("dl", "cf-rows cf-amt");
         m.rows.forEach((x) => {
@@ -3691,7 +3692,7 @@ function trSaveAmounts(names, stored, opener, o) {
           const unit = (k, n) => " " + t(k === "lots" ? trLotsKey(n, "tr.lotsUnit", "tr.lotUnit") : k);
           if (m.kind === "orders") {
             dd.append(trEl("span", "n", x.lots != null ? trFmt(x.lots) + unit("lots", x.lots) : x.qty ? x.qty.text + unit(x.qty.unit) : trFmt(Math.round(x.money)) + (x.z && x.z !== TR_ZONE_UNKNOWN ? " " + x.z : "")));
-            if (x.closed) dd.appendChild(trEl("span", "tag", t("po.twClosedHold")));
+            if (x.closed && nOpen) dd.appendChild(trEl("span", "tag", t("po.twClosedHold")));
           } else {
             const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
             if (x.was) arrow(dd, f(x.was));
@@ -3705,7 +3706,6 @@ function trSaveAmounts(names, stored, opener, o) {
           const row = trEl("div", "cf-row"); row.append(label, dd); dl.appendChild(row);
         });
         body.appendChild(dl);
-        if (m.kind === "orders" && nOpen < m.rows.length) body.appendChild(trEl("p", "cf-note", t("tr.opt.catchTwClosed")));
       } else if (amtOnly.length) {
         // 金額改了、但這一刻沒有一個標的的目標跟著變(訊號 0、或改的那支算不出):表上改列金額的「原 → 新」,不出一個空框
         sub.textContent = t(amtOnly.length === 1 ? "tr.cf.capAmountsOne" : "tr.cf.capAmounts", { n: String(amtOnly.length) }); body.appendChild(sub);

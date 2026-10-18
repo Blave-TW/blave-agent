@@ -8119,10 +8119,6 @@ msgstr "解除綁定時自動暫停，下單程式也沒在跑：什麼單都不
 msgid "tr.saveWarnHalted"
 msgstr "目前已暫停：不開新倉，但減碼與平倉儲存後就會執行。"
 
-# 暫停＝完全凍結(halt.freeze)時存金額框那句:舊句「減碼與平倉照走」在凍結後是假話
-msgid "tr.saveWarnFreeze"
-msgstr "已暫停，按「啟動下單」才照新金額下單。"
-
 # 存金額確認框(0.1.27 加到策略組合;canon design-system › 確認 modal):標題就是動作,會送單=儲存並下單;表頭時間只講一次
 msgid "tr.cf.title"
 msgstr "儲存金額"
@@ -8132,6 +8128,10 @@ msgstr "儲存並下單"
 
 msgid "tr.cf.capOrders"
 msgstr "下一輪要送的單（{n} 筆）"
+
+# 全部是台股、這一輪都留到開盤時的表頭;後面接 asof 那段
+msgid "tr.cf.capOrdersOpen"
+msgstr "開盤後要送的單（{n} 筆）"
 
 msgid "tr.cf.capChanges"
 msgstr "目標有變的 {n} 檔（{ccy}）"

@@ -8104,9 +8104,6 @@ msgstr "Paused automatically when the exchange was unbound, and the order progra
 msgid "tr.saveWarnHalted"
 msgstr "Paused: no new positions, but reductions and closes run as soon as you save."
 
-msgid "tr.saveWarnFreeze"
-msgstr "Paused. Orders follow the new amounts once you press Start trading."
-
 # 存金額確認框(0.1.27 加到策略組合;canon design-system › 確認 modal):標題就是動作,會送單=儲存並下單;表頭時間只講一次
 msgid "tr.cf.title"
 msgstr "Save amounts"
@@ -8116,6 +8113,10 @@ msgstr "Save and place orders"
 
 msgid "tr.cf.capOrders"
 msgstr "Orders for the next round ({n})"
+
+# 全部是台股、這一輪都留到開盤時的表頭;後面接 asof 那段
+msgid "tr.cf.capOrdersOpen"
+msgstr "Orders to send at the open ({n})"
 
 msgid "tr.cf.capChanges"
 msgstr "{n} targets change ({ccy})"

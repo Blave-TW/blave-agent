@@ -254,12 +254,12 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       { const rs = cf({ reconciler: { alive: true } });
         ok("在跑:每列「買進／賣出 標的」= 新目標 − 帳上(帳上空的 BTC／ETH 買、移出的 SOL 賣掉帳上 200);沒有價格的加密列照錢寫(不湊數量);賣出排在買進後面",
           J(rs.filter((r) => /^tr\.cf\./.test(r[0]))) === J([["tr.cf.buyBTCUSDT", "1,000 USDT"], ["tr.cf.buyETHUSDT", "800 USDT"], ["tr.cf.sellSOLUSDT", "200 USDT"]]), J(rs)); }
-      // 凍結(halt.freeze,新 runtime 帶 holds_all: true):減碼平倉也不送,寫 tr.saveWarnFreeze、照「儲存金額」框;剛按啟動不出暫停句;舊 runtime(沒 freeze)照舊
+      // 凍結(halt.freeze,新 runtime 帶 holds_all: true):什麼都不送,照「儲存金額」框、不出暫停句(標題已經講完,稽核 0.1.27 batch2);剛按啟動不出暫停句;舊 runtime(沒 freeze)照舊 tr.saveWarnHalted
       const fz = { reconciler: { alive: true }, halt: { halted: true, holds_all: true, freeze: true, source: "desktop" } };
       const fzK = [kindOf(fz), kindOf({ reconciler: { alive: true }, halt: { halted: true, holds_all: false, freeze: false } }), kindOf(fz, { pending: { want: "running" } }),
         kindOf({ reconciler: { alive: false, stopped: { reason: "machine_restart" } }, halt: { halted: true, holds_all: true, freeze: true } })];
-      ok("凍結中存金額:「儲存金額」框、不列單、寫 tr.saveWarnFreeze(不講減碼平倉照走);freeze false 照舊 tr.saveWarnHalted;剛按啟動「儲存並下單」不出暫停句;重開停住加凍結也寫凍結版",
-        J(fzK.map((k) => k.warn)) === J(["tr.saveWarnFreeze", "tr.saveWarnHalted", null, "tr.saveWarnFreeze"]) && [0, 1, 3].every((i) => fzK[i].title === "tr.cf.title" && !fzK[i].mark && !fzK[i].orders)
+      ok("凍結中存金額:「儲存金額」框、不列單、不出暫停句(也不講減碼平倉照走);freeze false 照舊 tr.saveWarnHalted;剛按啟動「儲存並下單」不出暫停句;重開停住加凍結也不出",
+        J(fzK.map((k) => k.warn)) === J([null, "tr.saveWarnHalted", null, null]) && [0, 1, 3].every((i) => fzK[i].title === "tr.cf.title" && !fzK[i].mark && !fzK[i].orders)
           && fzK[2].title === "tr.cf.titleFire", J(fzK));
       /* 一律出框(Wei 10-17,推翻 10-13 的「沒連交易所直接存」):沒綁也開;什麼都沒變才直接存;存不進去(雲端壞值)開框講原因 */
       ctx.DIRECT = 0; cf({ venues: {} });

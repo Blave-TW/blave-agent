@@ -316,17 +316,23 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { tw: 200000 }, noPv: true, states: { tw: { weights: w, market: "spot" } }, rep: { last_reconcile: LR(gt) } }); const f = open();
     const n = f.notes.find((x) => /^cf-note:tr\.cf\.gated /.test(x)), syms = n ? JSON.parse(n.slice("cf-note:tr.cf.gated ".length)).syms : "";
     ok("F14 五檔等新訊號:句子點名前三檔、其餘「和另外 2 檔」", syms === '2303、2317、2330tr.opt.catchMore {"n":2}', J(f)); }
-  // F15:休市中(對帳器把台股留到開盤):台股的單標「休市中，開盤後下單」、排最後、不算進「下一輪要送的 N 筆」,表下講休市那句
+  // F15:休市中(對帳器把台股留到開盤):有現在要送的單時,台股的單標「休市中，開盤後下單」、排最後、不算進「下一輪要送的 N 筆」,表下不再講休市(逐列已經講了)
   { const TWC = { weights: { "2330": 1 }, market: "spot", raw_closes: { "2330": 1000 } };
     vm.runInContext("TW_OPEN = false", ctx);
     bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { btc: 1000 }, noPv: true, states: { tw: TWC } }); const f = open();
     vm.runInContext("TW_OPEN = true", ctx);
     const btc = f.rows.findIndex((x) => /^tr\.cf\.buyBTCUSDT/.test(x)), tw = f.rows.findIndex((x) => /^tr\.cf\.buy2330/.test(x));
-    ok("F15 休市中:台股那列標 po.twClosedHold、排在 BTC 後面;表頭只算 BTC 那 1 筆;表下 tr.opt.catchTwClosed",
-      btc === 0 && tw === 1 && /po\.twClosedHold$/.test(f.rows[tw]) && !/twClosedHold/.test(f.rows[btc]) && /^tr\.cf\.capOrders \{"n":"1"\}/.test(f.cap) && f.notes.includes("cf-note:tr.opt.catchTwClosed"), J(f));
+    ok("F15 休市中:台股那列標 po.twClosedHold、排在 BTC 後面;表頭只算 BTC 那 1 筆;表下不出 tr.opt.catchTwClosed",
+      btc === 0 && tw === 1 && /po\.twClosedHold$/.test(f.rows[tw]) && !/twClosedHold/.test(f.rows[btc]) && /^tr\.cf\.capOrders \{"n":"1"\}/.test(f.cap) && !f.notes.includes("cf-note:tr.opt.catchTwClosed"), J(f));
     const dds = flat(f.box.extra).filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.kids[1]);
     ok("F15 送單列的數量包成 span.n(.cf-amt .n + .tag 的 --space-8 才對得上,「188 股」與「休市中」不黏)",
       dds.length === 2 && dds.every((d) => d.kids[0] && d.kids[0].className === "n") && dds[tw].kids[1] && dds[tw].kids[1].className === "tag", J(dds.map((d) => d.kids.map((k) => (typeof k === "string" ? "#text" : k.className)))));
+    // 全部都是留到開盤的台股(這一輪一筆都不送,稽核 0.1.27 batch2 P2-2):表頭「開盤後要送的單（N 筆）」,逐列不標、表下不講休市,主鈕照舊「儲存並下單」
+    vm.runInContext("TW_OPEN = false", ctx);
+    bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { tw: 150000 }, noPv: true, states: { tw: TWC } }); const a = open();
+    vm.runInContext("TW_OPEN = true", ctx);
+    ok("F15 全部休市:表頭 tr.cf.capOrdersOpen、逐列不標 po.twClosedHold、表下不出 tr.opt.catchTwClosed、標題 tr.cf.titleFire",
+      a.title === "tr.cf.titleFire" && /^tr\.cf\.capOrdersOpen \{"n":"1"\}/.test(a.cap) && a.rows.length === 1 && /^tr\.cf\.buy2330/.test(a.rows[0]) && !a.rows.some((x) => /twClosedHold/.test(x)) && !a.notes.includes("cf-note:tr.opt.catchTwClosed"), J(a));
     bag({ firing: true, paper: true, picked: ["btc", "tw"], edits: { btc: 1000 }, noPv: true, states: { tw: TWC } }); const g = open();
     ok("F15 開盤中:照舊兩筆、不標休市", /^tr\.cf\.capOrders \{"n":"2"\}/.test(g.cap) && !g.rows.some((x) => /twClosedHold/.test(x)) && !g.notes.includes("cf-note:tr.opt.catchTwClosed"), J(g)); }
   // 稽核 0.1.27 P1:列一多、焦點停在取消,overflow:hidden 的外框被捲走、標題與模擬／真錢記號推出框外。所有確認框只讓內文捲(不再只限啟動框)
@@ -460,7 +466,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("④ 描邊那顆:只跳過去(不改草稿),記 po_add_go", S.picked === null && feats.includes("po_add_go"), J(feats)); }
 
   // ── 字串:兩語都有、中文全形
-  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
+  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capOrdersOpen", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
     ok("字串:新 key 兩語都有;標題與主鈕同字(儲存並下單)", keys.every((k) => S0.en[k] && S0.zh[k]) && S0.zh["tr.cf.titleFire"] === "儲存並下單" && S0.zh["tr.cf.title"] === "儲存金額" && S0.zh["po.add"] === "加到策略組合",
       J(keys.filter((k) => !S0.en[k] || !S0.zh[k]))); }
   console.log(red ? `\n${red} FAILED` : "\nall checks passed");
