@@ -65,6 +65,8 @@ State: state/bar_wait/<name>.json
                          member's own newest bar) and the newest of those bars
   prime_tried_fp      : fingerprint of the last prime attempt, success or failure — the
                          same data is primed at most once
+  tw_bar_map          : TWSE stock daily strategies only: [calendar bar, trading day it maps to]
+                         for the last closed day found on the holiday table (_tw_skip_holidays)
 
 Priming (Wei: a signal is always computed on the newest data there is): while the expected bar
 is not in, a strategy whose data moved since it last computed — any member's newest closed bar
@@ -95,6 +97,11 @@ wall-clock time has moved): once alerted for a given `last_seen_bar`, further
 checks throttle down to once every STALL_POLL_MINUTES instead of every
 minute — and resume at full speed the moment the data moves. This needs no
 trading-calendar knowledge; it reacts to observed data behavior only.
+
+TWSE/TPEx stock daily strategies (fetch_twstock_price*, _tw_stock_daily) do use the calendar:
+their bars exist on trading days only, so the expected bar is the latest weekday not on the
+TWSE holiday table. Otherwise every Sunday, Monday morning and day after a holiday waited on a
+bar that never comes, alerted, and ran Monday's bar twice (once for "Sunday", once for itself).
 
 Repeat alerting during a stall: the FIRST alert for a given `last_seen_bar`
 fires at STALE_TIMEOUT_MINUTES; after that, as long as it's still the SAME
@@ -647,6 +654,9 @@ def _tick(name):
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     expected = _expected_closed_bar_open(interval, now)
+    tw_stock = interval == "1d" and _tw_stock_daily(name)
+    if tw_stock:
+        expected = _tw_skip_weekend(expected)
     expected_iso = expected.isoformat()
 
     state = _load_state(name)
@@ -669,6 +679,15 @@ def _tick(name):
     if state.get("stall_alert_at") is not None:
         if now.minute % STALL_POLL_MINUTES not in (0, PRIME_GRACE_SECONDS // 60):
             return
+
+    # After the fast path and the throttle: the holiday table is a request, and this runs every minute.
+    if tw_stock:
+        mapped = _tw_skip_holidays(expected, state)
+        if mapped != expected:
+            expected, expected_iso = mapped, mapped.isoformat()
+            if state.get("last_processed_bar") == expected_iso:
+                _save_state(name, state)
+                return
 
     lock_path = _acquire_lock(name)
     if lock_path is None:
@@ -820,6 +839,45 @@ def _tw_futures_closed(name, now):
     else:
         return True
     return _tw_holiday(session_day)
+
+
+_TW_STOCK_FETCH_RE = re.compile(r"\bfetch_twstock_price")
+
+
+def _tw_stock_daily(name):
+    """A TWSE/TPEx stock strategy on fetch_twstock_price* (Type A or a Type C universe): its daily
+    bars are labelled at UTC midnight of trading days only. TAIFEX strategies keep their own
+    handling. Text and config only, like _tw_futures_kind."""
+    try:
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return False
+    return bool(_TW_STOCK_FETCH_RE.search(text)) and _tw_futures_kind(name) is None
+
+
+def _tw_skip_weekend(day):
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day
+
+
+def _tw_skip_holidays(expected, state):
+    """`expected` (a weekday) → the latest TWSE trading day at or before it, stopping at
+    last_processed_bar. A day found closed is kept in state["tw_bar_map"] so the table is
+    asked once per closed day, not every minute; an unknown table counts as open (the stall
+    alert then fires as before)."""
+    memo = state.get("tw_bar_map")
+    if memo and memo[0] == expected.isoformat():
+        return datetime.fromisoformat(memo[1])
+    day = expected
+    for _ in range(31):   # bounded: a bad table must not spin the tick
+        if day.isoformat() == state.get("last_processed_bar") or not _tw_holiday(day.date()):
+            break
+        day = _tw_skip_weekend(day - timedelta(days=1))
+    if day != expected:
+        state["tw_bar_map"] = [expected.isoformat(), day.isoformat()]
+    return day
 
 
 def _maybe_prime(name, state, now, expected, td, latest, straggler_symbol):
