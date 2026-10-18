@@ -139,25 +139,29 @@ def _reject_front(error):
 
 
 # A rejection that will not clear by itself (paper cash short, margin, min size) comes back
-# every round: one notice per symbol and reason per cooldown (paper e2e 10-18: five "Order
-# failed" in 2m16s). The numbers in the text move with the mark, so they are not the reason.
-# order_errors.json still gets every round — the pages read its newest row as "failing now".
+# every round: one notice per symbol, leg (entry / reduce) and reason per cooldown (paper e2e
+# 10-18: five "Order failed" in 2m16s). The numbers in the text move with the mark, so they
+# are not the reason. A repeat inside the cooldown does not add an order_errors.json row: it
+# bumps the row it repeats (last_at, count), leaving ts and the text alone — the platform turns
+# every new row into a P1 (api openclaw/agent_overview._error_events keys on ts + text), and
+# the pages read the newest row per symbol as "failing now".
 ORDER_ERROR_NOTIFY_COOLDOWN_S = 3600
-_order_error_notified = {}  # symbol -> (reason, notified_at); process-level, like the reconciler's own
+_order_error_notified = {}  # (symbol, leg) -> (reason, notified_at); process-level, like the reconciler's own
 
 
 def _order_error_reason(error):
     return re.sub(r'\d[\d.,]*', '#', _reject_plain(error))
 
 
-def _order_error_fresh(symbol, error, now=None):
-    """True = notify this failure; a repeat of the same symbol + reason inside the cooldown is False."""
+def _order_error_fresh(symbol, error, leg='entry', now=None):
+    """True = notify this failure; a repeat of the same symbol + leg + reason inside the cooldown
+    is False. An exit failing for the text an entry already failed with is still news."""
     now = time.time() if now is None else now
     reason = _order_error_reason(error)
-    hit = _order_error_notified.get(symbol)
+    hit = _order_error_notified.get((symbol, leg))
     if hit and hit[0] == reason and now - hit[1] < ORDER_ERROR_NOTIFY_COOLDOWN_S:
         return False
-    _order_error_notified[symbol] = (reason, now)
+    _order_error_notified[(symbol, leg)] = (reason, now)
     return True
 
 
@@ -170,11 +174,13 @@ def _reject_plain(error):
     return reject_token.plain(error)
 
 
-def _record_order_error(symbol, exchange, error, extra=None):
+def _record_order_error(symbol, exchange, error, extra=None, repeat=False):
     """Last few order failures, for the workspace page — a reconciler that
     fails silently in a tmux log is indistinguishable from one that never
     tried (measured UX complaint). Best-effort; keeps the newest 5.
-    `extra` adds fields (e.g. kind/symbols for the platform to route on)."""
+    `extra` adds fields (e.g. kind/symbols for the platform to route on).
+    repeat=True (a throttled repeat, _order_error_fresh): the newest row of this
+    symbol + exchange + reason gets last_at and count instead of a new row; none → a new row."""
     try:
         path = 'manager/order_errors.json'
         try:
@@ -182,8 +188,16 @@ def _record_order_error(symbol, exchange, error, extra=None):
                 rows = json.load(f)
         except (OSError, ValueError):
             rows = []
-        rows.append({**(extra or {}), 'ts': datetime.utcnow().isoformat(), 'symbol': symbol,
-                     'exchange': exchange, 'error': _reject_front(error)[:200]})
+        now = datetime.utcnow().isoformat()
+        text = _reject_front(error)[:200]
+        same = [r for r in rows if isinstance(r, dict) and r.get('symbol') == symbol
+                and r.get('exchange') == exchange
+                and _order_error_reason(r.get('error', '')) == _order_error_reason(text)] if repeat else []
+        if same:
+            same[-1]['last_at'] = now
+            same[-1]['count'] = int(same[-1].get('count') or 1) + 1
+        else:
+            rows.append({**(extra or {}), 'ts': now, 'symbol': symbol, 'exchange': exchange, 'error': text})
         with open(path, 'w') as f:
             json.dump(rows[-5:], f, indent=2)
     except Exception as e:
@@ -3588,8 +3602,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                          exchange=order.get('exchange'),
                                          contributors=order.get('contributors'))
             except Exception as e:
-                _record_order_error(symbol, order.get('exchange'), e)
-                if _order_error_fresh(symbol, e):
+                fresh = _order_error_fresh(symbol, e, 'reduce' if reduce_only else 'entry')
+                _record_order_error(symbol, order.get('exchange'), e, repeat=not fresh)
+                if fresh:
                     logging.error(f"order error {symbol}: {e}")
                     notices.append(('order_error', '⚠️ Order failed {symbol}: {error}',
                                     {'symbol': symbol, 'error': _reject_plain(e)}))
@@ -3605,7 +3620,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                 logging.info(f"[reconcile] {symbol} skipped by place_order — "
                              f"below minimum or async execution in flight")
                 continue
-            _order_error_notified.pop(symbol, None)   # it went through: a later failure is news again
+            _order_error_notified.pop((symbol, 'reduce' if reduce_only else 'entry'), None)   # it went through: a later failure is news again
 
             # self_ledger: the wiring closed the bot's whole book on this side
             # and says what is left can never be sold (see

@@ -1,9 +1,11 @@
 """A rejection that comes back every round (paper cash short — paper e2e batch 2, 10-18: five
 "⚠️ Order failed" in 2m16s) is notified once per symbol and reason per cooldown, on the
 Telegram sender and the log-only one alike (both are send_telegram_fn here); the error log
-line likewise. order_errors.json still records every round (the pages read its newest row as
-"failing now"). A fill on that symbol, or a different reason, makes the next failure news
-again. Real rounds on paper: reconcile → manager/reconciler.place_order → order_paper.
+line likewise. order_errors.json does not grow a row per round: the repeat bumps the row it
+repeats (last_at, count) with ts and text untouched, so the platform's P1 (api
+agent_overview._error_events, one per new (ts, symbol, exchange, text) row) is sent once too.
+A fill on that symbol and leg, a different reason, or an exit failing after an entry makes the
+next failure news again. Real rounds on paper: reconcile → manager/reconciler.place_order → order_paper.
 
 Run: cd blave-agent && .venv/bin/python tests/check_order_error_throttle.py
 """
@@ -92,8 +94,19 @@ fails_sent = [x for x in sent if "Order failed" in x]
 check(len(fails_sent) == 1 and "insufficient paper cash" in fails_sent[0],
       f"same symbol, same reason, 5+ rounds: one notice ({len(fails_sent)}: {fails_sent[:2]})")
 check(sum(len(x) for x in logs) <= 1, f"…and one error log line at most ({logs})")
-n_err = len([e for e in errors() if e.get("symbol") == "2330@spot"])
-check(n_err >= 5, f"order_errors.json still gets every round ({n_err} rows, capped at 5)")
+import hashlib  # noqa: E402
+
+
+def platform_keys():
+    # the dedup basis of api openclaw/agent_overview._error_events (origin/main c1f62401)
+    return {(e.get("ts"), e.get("symbol"), e.get("exchange"),
+             hashlib.sha256(str(e.get("error")).encode()).hexdigest()[:16]) for e in errors()}
+
+
+rows = [e for e in errors() if e.get("symbol") == "2330@spot"]
+check(len(rows) == 1 and rows[0].get("count", 1) >= 5 and rows[0].get("last_at", "") > rows[0]["ts"],
+      f"order_errors.json: one row, its count and last_at bumped each round ({rows})")
+check(len(platform_keys()) == 1, f"so the platform derives one P1, not one per round ({len(platform_keys())})")
 check(not order_paper.get_spot_balances(ENV).get("2330"),
       "nothing bought (the venue refused it)")
 
@@ -101,15 +114,22 @@ portfolio.ORDER_ERROR_NOTIFY_COOLDOWN_S, keep = 0, portfolio.ORDER_ERROR_NOTIFY_
 round_()
 portfolio.ORDER_ERROR_NOTIFY_COOLDOWN_S = keep
 check(len([x for x in sent if "Order failed" in x]) == 2, "after the cooldown: notified again")
+check(len(platform_keys()) == 2, "…with a new row, so the platform's P1 goes again too")
 
 check(portfolio._order_error_fresh("X", RuntimeError("insufficient paper cash (60908 < 103336)"))
       and not portfolio._order_error_fresh("X", RuntimeError("insufficient paper cash (60911 < 103402)"))
       and portfolio._order_error_fresh("X", RuntimeError("below minimum size")),
       "the reason ignores the moving numbers; a different reason is news at once")
+check(portfolio._order_error_fresh("Y", RuntimeError("key expired"), "entry")
+      and portfolio._order_error_fresh("Y", RuntimeError("key expired"), "reduce")
+      and not portfolio._order_error_fresh("Y", RuntimeError("key expired"), "reduce"),
+      "an exit failing for the text an entry failed with is still news (the leg is in the key)")
+check(portfolio._order_error_fresh("Z", RuntimeError("insufficient margin")),
+      "a first failure of a kind (margin, key) is always notified")
 
 config(20_000)   # within cash: fills
 round_()
-check(order_paper.get_spot_balances(ENV).get("2330", 0) > 0 and "2330@spot" not in portfolio._order_error_notified,
+check(order_paper.get_spot_balances(ENV).get("2330", 0) > 0 and ("2330@spot", "entry") not in portfolio._order_error_notified,
       "a fill on the symbol clears it")
 config(2_000_000)
 n = len(sent)
