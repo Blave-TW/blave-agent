@@ -424,10 +424,13 @@ SOURCE_FILE = "source.json"
 def _read_source_id(name):
     """strategies/<name>/source.json's `marketplace_id` as a positive int, else None.
     Strict int: the web compares it with `===` against the listing id."""
+    path = os.path.join(STRATEGIES_DIR, name, SOURCE_FILE)
     try:
-        with open(os.path.join(STRATEGIES_DIR, name, SOURCE_FILE), encoding="utf-8") as f:
-            v = json.load(f).get("marketplace_id")
-    except (OSError, ValueError, AttributeError):
+        if not os.path.isfile(path):   # a FIFO would block the reporter on open
+            return None
+        with open(path, encoding="utf-8") as f:
+            v = json.loads(f.read(4096)).get("marketplace_id")
+    except Exception:   # agent-written: a bad file is no file (incl. RecursionError on deep JSON, py3.10)
         return None
     if type(v) is int and 0 < v < 10 ** 10:
         return v
@@ -686,9 +689,12 @@ def _content_marker(s):
     """The parts of a reported strategy that no mtime marker watches: the source itself
     and the version ledger. Hashed rather than embedded — a 20-entry `versions` summary
     is ~4KB, and the manifest carries one marker per strategy."""
-    blob = json.dumps([s.get("code"), s.get("display_name"), s.get("description"),
-                       s.get("versions"), s.get("source_marketplace_id")],
-                      sort_keys=True, ensure_ascii=False)
+    parts = [s.get("code"), s.get("display_name"), s.get("description"), s.get("versions")]
+    if s.get("source_marketplace_id") is not None:
+        # only when present: a strategy without source.json keeps the marker it had, so the
+        # update does not resend every strategy of the fleet once
+        parts.append(s["source_marketplace_id"])
+    blob = json.dumps(parts, sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 

@@ -302,6 +302,37 @@ c = _halt_chase(lambda n: {"order_id": "o1", "status": "new"} if n == 1 else _re
 check(not errors and any(m.startswith("Chase done: SELL $30.00/$100.00") and "state/HALT set" in m for m in notes)
       and not any("error" in m.lower() or "crashed" in m for m in notes),
       f"E6 part filled before the pause: the user gets what did fill, still no error ({notes}, {errors})")
+# E7/E8 (audit 0127-docs-chase P3-B1): the same race with a machine-restart stop or an account
+# hold — Halted too — names that stop, not state/HALT, and is no order error either
+_real_rs, _real_held = guard.restart_stopped, execute._account_held
+for which, want in (("restart", "machine restarted"), ("hold", "exchange account unconfirmed")):
+    flag = [False]
+
+    def _refuse_other():
+        flag[0] = True
+        raise guard.Halted("refused")
+
+    if which == "restart":
+        guard.restart_stopped = lambda: flag[0]
+    else:
+        execute._account_held = lambda ex: flag[0]
+    logs = []
+    _h = __import__("logging").Handler()
+    _h.emit = lambda r: logs.append(r.getMessage())
+    _root = __import__("logging").getLogger()
+    _lvl = _root.level
+    _root.addHandler(_h)
+    _root.setLevel(20)
+    try:
+        _halt_chase(lambda n: {"order_id": "o1", "status": "new"} if n == 1 else _refuse_other(),
+                    lambda: {"avg_price": 1.0, "executed_qty": 1.0}, 2.0, filled_qty=0.3)
+    finally:
+        _root.removeHandler(_h)
+        _root.setLevel(_lvl)
+        guard.restart_stopped, execute._account_held = _real_rs, _real_held
+    check(not errors and any(m.startswith("Chase done: SELL $30.00/$100.00") and f"({want})" in m for m in notes)
+          and not any("state/HALT" in m for m in notes) and any(f"chase stopped: {want}" in m for m in logs),
+          f"E{7 if which == 'restart' else 8} {which} between the check and the re-post: named '{want}', no order error ({notes}, {errors})")
 execute._notify_fn, portfolio._record_order_error = _real_notify, _real_err
 execute._CHASE_TIMEOUT_S = 2.0
 

@@ -82,5 +82,41 @@ after = next(s for s in sr.scan(include_newborn=True) if s["name"] == "late")
 check(sr.strategy_marker(before) != sr.strategy_marker(after), "strategy_marker changes when source.json appears")
 check(before_sig != after_sig, "signature changes when source.json appears")
 
+# audit 0127-docs-chase P3-B2: no source.json → the marker it had before the field existed (the
+# 4-part blob), so the runtime update does not resend every strategy of the fleet once
+import hashlib  # noqa: E402
+old_blob = json.dumps([before.get("code"), before.get("display_name"), before.get("description"),
+                       before.get("versions")], sort_keys=True, ensure_ascii=False)
+check(sr._content_marker(before) == hashlib.sha1(old_blob.encode("utf-8")).hexdigest()[:16],
+      "no source.json: the content marker is the pre-field one")
+
+# P3-S1: an oversize, deeply nested or non-regular source.json is no file, never an exception
+strat("big", raw='{"marketplace_id": 5, "pad": "' + "x" * 5000 + '"}')
+strat("deep", raw="[" * 100000 + "]" * 100000)
+os.makedirs(os.path.join(SD, "dirsrc"), exist_ok=True)
+with open(os.path.join(SD, "dirsrc", "strategy.py"), "w") as f:
+    f.write('STRATEGY_NAME = "dirsrc"\n')
+os.makedirs(os.path.join(SD, "dirsrc", "source.json"), exist_ok=True)
+real_loads = sr.json.loads
+
+
+def recursing(*a, **k):
+    raise RecursionError("maximum recursion depth exceeded")
+
+
+ok_rows = True
+try:
+    got = {s["name"]: s for s in sr.scan(include_newborn=True)}
+    sr.json.loads = recursing
+    rec = sr._read_source_id("lib_ok")
+    sr.signature(include_newborn=True)
+except Exception as e:
+    ok_rows, rec = False, e
+finally:
+    sr.json.loads = real_loads
+check(ok_rows and rec is None, f"RecursionError (py3.10 deep JSON) → None, scan and signature carry on ({rec})")
+check(all("source_marketplace_id" not in got[n] for n in ("big", "deep", "dirsrc")),
+      "past 4096 bytes / too deep / a directory → field absent")
+
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)

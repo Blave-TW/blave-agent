@@ -930,6 +930,10 @@ def _sold_kw(venue_seen):
     return {"sold": venue_seen.get("base", 0.0)} if venue_seen.get("book") else {}
 
 
+# the reasons a chase stops on without an order error: 暫停, machine-restart stop, account hold
+_CHASE_STOPS = ("state/HALT set", "machine restarted", "exchange account unconfirmed")
+
+
 def _account_held(exchange):
     """lib.guard.account_held for the venue this order goes to (the auto-wired
     one when the leg names none) — checked before each child order, closes
@@ -1035,7 +1039,8 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
     here, AFTER the fill is logged (the zero row is a cutoff). Off, neither
     argument is read.
 
-    halted=True: the user's 暫停 stopped it; a zero fill then is the pause, not an order error."""
+    halted=True (or the stop's reason, _CHASE_STOPS): the user's 暫停, a machine-restart stop or
+    an account hold stopped it; a zero fill then is that stop, not an order error."""
     from lib.portfolio import _append_reconciler_log, _record_order_error
     # files reach a machine one at a time: beside a lib.portfolio from before
     # the quantity book this must still log the fill exactly as it used to
@@ -1052,8 +1057,8 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
             logging.info(f"[execute] {symbol} {style}: nothing the venue would "
                          f"accept at this size — skipped")
         elif halted:
-            logging.info(f"[execute] {symbol} {style}: stopped by state/HALT "
-                         f"before any fill")
+            logging.info(f"[execute] {symbol} {style}: stopped "
+                         f"({halted if isinstance(halted, str) else 'state/HALT set'}) before any fill")
         elif already_reported:
             # The caller's crash path already recorded the venue's OWN message,
             # which is the one worth reading. Adding "no slices filled" on top
@@ -1409,8 +1414,14 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         # remainder: the guard refused the order, which is the pause working —
         # stop like the halted() branches do, no error notice, no order error.
         stop.set()
-        reason = "state/HALT set"
-        logging.info(f"[execute] {key} chase stopped by state/HALT ({e})")
+        # which stop it was, read in the loop's own order (lib/guard raises Halted for all three)
+        if guard.restart_stopped():
+            reason = "machine restarted"
+        elif not guard.halted() and _account_held(tools.get("venue") or exchange):
+            reason = "exchange account unconfirmed"
+        else:
+            reason = "state/HALT set"
+        logging.info(f"[execute] {key} chase stopped: {reason} ({e})")
         if active_oid is not None:
             if _retire(active_oid):
                 _account(active_oid)
@@ -1461,7 +1472,7 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             _finish(symbol, signed_diff, asset_spec, reduce_only, tools.get("venue"),
                     contributors, "chase", filled, vwap, aborted or crashed,
                     below_min=below_min, already_reported=crashed,
-                    halted=reason == "state/HALT set",
+                    halted=reason if reason in _CHASE_STOPS else False,
                     filled_base=sum(f.get("book", f["base"]) for f in fills),
                     writeoff=seen.get("writeoff"),
                     netted_qty=min(room, sum(f["base"] for f in fills)))
