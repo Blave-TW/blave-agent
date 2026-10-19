@@ -1735,16 +1735,16 @@ msgid "set.awake"
 msgstr "自動下單時不讓電腦睡"
 
 msgid "set.awake.lead"
-msgstr "自動下單在跑時，電腦不會閒置睡眠，螢幕照常會關。闔蓋、沒電、手動睡眠照樣會停。"
+msgstr "只擋閒置睡眠（螢幕照常會關）。闔蓋、沒電、手動睡眠時，自動下單照樣停。"
 
 msgid "set.awake.leadWin"
-msgstr "自動下單在跑時，電腦不會閒置睡眠，螢幕照常會關；筆電要接著電源。闔蓋、沒電、手動睡眠照樣會停。"
+msgstr "只擋閒置睡眠（螢幕照常會關），筆電要接著電源。闔蓋、沒電、手動睡眠時，自動下單照樣停。"
 
 msgid "set.awake.leadOff"
-msgstr "電腦照系統設定睡眠；睡著時自動下單停止。"
+msgstr "電腦睡著時，自動下單停止。"
 
 msgid "set.awake.leadOffWin"
-msgstr "電腦照系統設定睡眠；睡著時自動下單停止。統一期貨有部位時，接著電源的電腦仍會保持清醒。"
+msgstr "電腦睡著時，自動下單停止。統一期貨有部位時，接著電源的電腦仍會保持清醒。"
 
 msgid "tr.quote.pres"
 msgstr "實盤行情：統一期貨"

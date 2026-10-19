@@ -1727,16 +1727,16 @@ msgid "set.awake"
 msgstr "Keep the computer awake while auto-trading"
 
 msgid "set.awake.lead"
-msgstr "While auto-trading runs, the computer won’t idle-sleep; the screen still turns off. A closed lid, a dead battery or manual sleep still stops it."
+msgstr "Only blocks idle sleep (the screen still turns off). A closed lid, a dead battery or manual sleep still stops auto-trading."
 
 msgid "set.awake.leadWin"
-msgstr "While auto-trading runs, the computer won’t idle-sleep; the screen still turns off. A laptop must stay plugged in. A closed lid, a dead battery or manual sleep still stops it."
+msgstr "Only blocks idle sleep (the screen still turns off); a laptop must stay plugged in. A closed lid, a dead battery or manual sleep still stops auto-trading."
 
 msgid "set.awake.leadOff"
-msgstr "The computer sleeps as your system settings say; auto-trading stops while it sleeps."
+msgstr "Auto-trading stops while the computer sleeps."
 
 msgid "set.awake.leadOffWin"
-msgstr "The computer sleeps as your system settings say; auto-trading stops while it sleeps. With President Futures positions open, it still stays awake while plugged in."
+msgstr "Auto-trading stops while the computer sleeps. With President Futures positions open, it still stays awake while plugged in."
 
 msgid "tr.quote.pres"
 msgstr "Live quotes: President Futures"
