@@ -328,15 +328,22 @@ no state, no contribution — so an exit is never parked behind a strategy that 
 Under HALT nothing is sent, inside or past the window — only a close the user asks for
 (全部平倉 / 平倉) goes out; once HALT is cleared, a key past its window reconciles as above.
 
-**A stale target holds entries, never exits.** A funded Type A/C member whose scheduled run keeps
-failing (`state/bar_wait/<name>.json` `last_attempt_failed_at` newer than its `state.json`, and
-that file older than `TARGET_STALE_BARS` bars of its `INTERVAL`, at least
-`TARGET_STALE_FLOOR_S`) gets no new entry, top-up or flip's open leg on its keys; reduces and
-closes still go, so nobody is locked into a position. A weekend, a holiday or a late bar records
-no failure and is never stale; Type B is not judged. The snapshot row carries
-`stale_target: [strategy]`; audit lines `target_stale` / `target_fresh` / `entry_held_stale_target`.
-It lifts by itself on the first successful run. Fix the failing run (its `strategy_failed`
-alert carries the error) — never hand-write a `state.json` to make it trade.
+**A stale target's share can only shrink.** A funded Type A/C member is stale when its scheduled
+run keeps failing: `state/bar_wait/<name>.json` `last_attempt_failed_at` is newer than its
+`state.json` and at most `TARGET_STALE_RECENT_S` (45 min) old, and that `state.json` is older than
+`TARGET_STALE_BARS` bars of its `INTERVAL` (at least `TARGET_STALE_FLOOR_S`, plus
+`TARGET_STALE_WEEKEND_S` for daily and longer bars). One error at the start of a closed market or
+a late bar stops counting after the recency window; the one case left by design is a single error
+while the next bar is still missing on a target already past the age limit (after a long
+holiday), held for at most that window. Type B is not judged. Its share of each key is held to
+what the book has beyond the other members' share: it may shrink toward 0 (reduce, close, a
+flip's close half), never grow or open the other side; the other members on the key trade as
+computed, so nobody is locked into a position. A contract rollover in progress is left as
+computed (holding the share on the new contract would close it). The snapshot row carries
+`stale_target: [strategy]` and, when held, `stale_held` (the share kept); audit lines
+`target_stale` / `target_fresh` / `stale_share_held`. It lifts by itself on the first successful
+run. Fix the failing run (its `strategy_failed` alert carries the error) — never hand-write a
+`state.json` to make it trade.
 
 **A spot row without a quantity** (a seed from before quantities, a fill with
 no `executed_qty`) is written off the first time the reconciler builds the

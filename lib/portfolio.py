@@ -2491,16 +2491,23 @@ def _first_signal_window_s(name):
 
 # A scheduled Type A/C tick that keeps failing leaves state.json at its last good target, and the
 # reconciler would keep trading toward it (a US strategy hand-run once, then refused every tick).
-# Stale = wait_for_bar's latest attempt failed after state.json was written AND that file is older
-# than TARGET_STALE_BARS bars (at least TARGET_STALE_FLOOR_S). No calendar here on purpose:
-# wait_for_bar records a failure only when it tried and failed — a weekend, a TWSE holiday or a
-# TXF session gap is a fast-path exit or a not-ready wait, never a failure — and one transient
-# error is cleared by the next success (retry after 300s) before the floor. Type B (no INTERVAL,
-# no bar_wait contract) is not judged. A stale target is a ceiling, not a floor: reconcile holds
-# the key's entries and lets every reduce / close through, so nobody is locked into a position.
+# Stale = wait_for_bar's last failure is newer than state.json AND recent (a failing strategy
+# fails again every few minutes: 300s backoff, a 15-min stall throttle, a 20-min run timeout — so
+# TARGET_STALE_RECENT_S covers the slowest repeat) AND state.json is older than TARGET_STALE_BARS
+# bars, at least TARGET_STALE_FLOOR_S, plus TARGET_STALE_WEEKEND_S for daily-and-longer bars.
+# Recency matters because only a successful run clears the failure: one transient error at the
+# start of a data gap (a TAIFEX night-to-day gap, a weekend, a holiday) would otherwise read as
+# stale for the whole gap. Left by design: a single failure while the next bar has not landed, on
+# a target already past the age limit (after a long holiday), holds for at most
+# TARGET_STALE_RECENT_S. Type B (no INTERVAL, no bar_wait contract) is not judged.
+# What it holds: only the stale member's own share of the key, and only from growing — see
+# _stale_share_targets. The other members on the key trade normally.
 TARGET_STALE_BARS = 2
 TARGET_STALE_FLOOR_S = 1800
+TARGET_STALE_RECENT_S = 2700
+TARGET_STALE_WEEKEND_S = 2 * 86400
 _stale_targets_logged = set()
+_stale_shares_logged = {}
 
 
 def _stale_target_age(name, now=None):
@@ -2514,10 +2521,52 @@ def _stale_target_age(name, now=None):
         written = os.path.getmtime(f'strategies/{name}/state.json')
     except (OSError, ValueError, AttributeError):
         return None
-    if not _finite(failed) or failed < written:
+    now = time.time() if now is None else now
+    if not _finite(failed) or failed < written or now - failed > TARGET_STALE_RECENT_S:
         return None
-    age = (time.time() if now is None else now) - written
-    return age if age > max(TARGET_STALE_BARS * bar, TARGET_STALE_FLOOR_S) else None
+    limit = (max(TARGET_STALE_BARS * bar, TARGET_STALE_FLOOR_S)
+             + (TARGET_STALE_WEEKEND_S if bar >= 86400 else 0))
+    age = now - written
+    return age if age > limit else None
+
+
+def _stale_share_targets(target, book, skip_roots=()):
+    """target with each stale member's share held to what the book has beyond the others' share:
+    it may shrink toward 0, never grow and never open the other side; the fresh members' share is
+    theirs as computed. A contract rollover in progress (skip_roots) is left as computed: the
+    user's own switch moves the share to the new contract, and holding it there would close it."""
+    out = dict(target)
+    for key, row in target.items():
+        names = set(row.get('stale_target') or ())
+        if not names or row.get('gated') or row.get('awaiting'):
+            continue
+        sym, market = split_key(key)
+        if market != 'spot' and txf_root(sym) in skip_roots:
+            continue
+        contribs = [c for c in row.get('contributors') or [] if isinstance(c, dict)]
+        stale = sum(float(c.get('contribution') or 0) for c in contribs if c.get('strategy') in names)
+        others = sum(float(c.get('contribution') or 0) for c in contribs if c.get('strategy') not in names)
+        held = _row_signed(book.get(key)) - others
+        share = min(max(stale, min(0.0, held)), max(0.0, held))
+        signed = others + share
+        if native_units(row.get('asset_spec'), row.get('exchange'), actual=book.get(key)):
+            signed = math.copysign(math.floor(abs(signed) + 0.5 + 1e-9), signed) if signed else 0.0
+        if market == 'spot' and signed < 0:
+            signed = 0.0
+        note = (round(stale, 4), round(share, 4))
+        if abs(share - stale) > 1e-9:
+            out[key] = dict(_signed_target_row(row, signed), stale_held=round(share, 4))
+            if _stale_shares_logged.get(key) != note:
+                logging.warning(f"[reconcile] {key}: {', '.join(sorted(names))} not refreshed — "
+                                f"its share held at {share:g} (wants {stale:g}); the others trade")
+                guard.audit('stale_share_held', symbol=key, strategies=sorted(names),
+                            wants=round(stale, 4), held=round(share, 4))
+                _stale_shares_logged[key] = note
+        else:
+            _stale_shares_logged.pop(key, None)
+    for key in [k for k in _stale_shares_logged if not (target.get(k) or {}).get('stale_target')]:
+        del _stale_shares_logged[key]
+    return out
 
 
 def _first_signal_keys(name):
@@ -3004,12 +3053,13 @@ def aggregate_portfolio():
     for name in set(stale) - _stale_targets_logged:
         keys = sorted(k for k, row in result.items() if name in row.get('stale_target', ()))
         logging.warning(f"[portfolio] {name}: target not refreshed for {round(stale[name])}s while "
-                        f"its scheduled run keeps failing — no new entries on {keys}, "
-                        f"reduces and closes still go")
+                        f"its scheduled run keeps failing — its share of {keys} can only shrink")
         guard.audit('target_stale', strategy=name, keys=keys, age_s=round(stale[name]))
+    traded = {c['strategy'] for row in result.values() for c in row['contributors']}
     for name in _stale_targets_logged - set(stale):
-        logging.info(f"[portfolio] {name}: target refreshed — entries trade again")
-        guard.audit('target_fresh', strategy=name)
+        why = 'refreshed' if name in traded else 'no longer traded'
+        logging.info(f"[portfolio] {name}: target {why} — its share is no longer held")
+        guard.audit('target_fresh', strategy=name, why=why)
     _stale_targets_logged.clear()
     _stale_targets_logged.update(stale)
     # A member with no venue (still a key of `amounts`, its routing blank — an unbind keeps the
@@ -3630,7 +3680,6 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
     halted_at_start = guard.halted()
 
     target = aggregate_portfolio()
-    stale_keys = {k: v['stale_target'] for k, v in target.items() if v.get('stale_target')}
     actual = get_positions_fn()
     # Defense in depth: target keys are canonical (dashless uppercase) since
     # aggregate; an account lib / hand-written get_positions returning venue
@@ -3800,6 +3849,17 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                      'market': 'swap', 'contributors': [], 'gated': False}
             target = dict(target)
             target[k] = _signed_target_row(base, signed)
+    if any(v.get('stale_target') for v in target.values()):
+        skip = ({r.get(e) for r in rolls for e in ('from', 'to')}
+                | set(hold_roots) | {x for v in hold_roots.values() for x in v}) - {None}
+        try:
+            target = _stale_share_targets(target, diff_actual, skip)
+        except Exception as e:  # never a reason to skip this round's exits
+            logging.error(f"[reconcile] stale-share hold failed ({type(e).__name__}: {e}) "
+                          f"— those keys reconcile as computed this round")
+        else:
+            full_target = dict(full_target, **{k: v for k, v in target.items()
+                                               if v.get('stale_held') is not None})
     entry_gates = {}
     orders = compute_diff(target, diff_actual, threshold, gates=entry_gates,
                           drift_band=None if own_only else drift_band)
@@ -4013,14 +4073,6 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                             waiting_on=waiting)
                 logging.warning(f"[reconcile] {symbol} entry {sub_diff:+g} held — contract "
                                 f"rollover, {waiting} not closed yet")
-                failed = True
-                break
-
-            if is_entry and symbol in stale_keys:
-                guard.audit('entry_held_stale_target', symbol=symbol, signed_diff=sub_diff,
-                            strategies=stale_keys[symbol])
-                logging.warning(f"[reconcile] {symbol} entry {sub_diff:+g} held — target not "
-                                f"refreshed ({', '.join(stale_keys[symbol])}), reduces only")
                 failed = True
                 break
 
