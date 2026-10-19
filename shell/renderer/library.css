@@ -14,7 +14,7 @@
 .lib-seg button::before { content: ""; position: absolute; inset: -7px 0; }
 .lib-seg button + button { border-left: 1px solid var(--border-frame); }
 .lib-seg button:hover { color: var(--ink); }
-.lib-seg button[aria-pressed="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
+.lib-seg button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; }
 .lib-seg button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
 .lib-seg button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .lib-seg button:focus-visible { outline-offset: -2px; }

@@ -44,7 +44,7 @@
 .cn-lang button::before { content: ""; position: absolute; inset: -7px 0; }
 .cn-lang button + button { border-left: 1px solid var(--border-frame); }
 .cn-lang button:hover { color: var(--ink); }
-.cn-lang button[aria-checked="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
+.cn-lang button[aria-checked="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; }
 .cn-lang button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
 .cn-lang button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .cn-lang button:focus-visible { outline-offset: -2px; }
@@ -562,8 +562,6 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-row[aria-checked="true"] { color: var(--ink); font-weight: 600; }
 .mp-def { font-size: 12px; font-weight: 400; color: var(--ink-3); }
 .mp-div { height: 1px; margin: var(--space-6) 0; background: var(--border-hairline); }
-/* effort 軌:軌道本身不填色——canon 登記過「dark 下 segment 選中格與軌道同色」是
-   未解的債,不填軌道就踩不到。 */
 .mp-rail {
   display: flex; margin: 0 10px;
   border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
@@ -577,7 +575,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 }
 .mp-seg + .mp-seg { border-left: 1px solid var(--border-frame); }
 .mp-seg:hover { color: var(--ink); }
-.mp-seg[aria-checked="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
+.mp-seg[aria-checked="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; }
 /* 軌不裁切(同 .cn-lang):格子內距只有 4,ring 往內畫會碰到字(spec-0.1.19 §2.4 必修)。圓角改由首末格自己畫;
    ring 走全域的外擴,聚焦時浮上一層才不被鄰格的分隔線蓋住。外擴的 4px 落在軌兩側的 10px margin 裡 */
 .mp-seg:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }

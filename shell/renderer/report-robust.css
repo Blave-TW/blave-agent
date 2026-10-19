@@ -125,7 +125,7 @@
 .rob-seg button + button { border-left: 1px solid var(--border-frame); }
 .rob-seg button:hover { color: var(--ink); }
 .rob-seg button[aria-pressed="true"] {
-  background: var(--surface-control-on);
+  background: var(--surface-segment-on);
   color: var(--ink);
   font-weight: 600;
 }

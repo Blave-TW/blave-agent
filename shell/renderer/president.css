@@ -25,7 +25,7 @@
 .pres-seg button::before { content: ""; position: absolute; inset: -6px 0; }   /* 熱區 32→44,同 .lib-seg */
 .pres-seg button + button { border-left: 1px solid var(--border-frame); }
 .pres-seg button:hover { color: var(--ink); }
-.pres-seg button[aria-pressed="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
+.pres-seg button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; }
 .pres-seg button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
 .pres-seg button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .pres-seg button:focus-visible { outline-offset: -2px; }
