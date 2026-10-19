@@ -28,6 +28,21 @@
   background: var(--surface-card);
 }
 .tr-chart { flex: 1 1 0; min-height: 0; width: 100%; }
+/* 往左補的那一行(載入中/更早的沒留/分線先載到這):疊在圖左上,不擋操作。同網頁 .exec-more */
+.tr-card { position: relative; }
+.tr-more {
+  position: absolute;
+  z-index: 3;
+  top: var(--space-8);
+  left: var(--space-8);
+  padding: var(--space-2) var(--space-8);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-3);
+  background: var(--surface-card);
+  border-radius: var(--radius-xs);
+  pointer-events: none;
+}
 /* 游標落在箭頭上:點下去會跳到那段部位 */
 .tr-chart.is-onmark { cursor: pointer; }
 /* 圖建不起來時同一塊面放一行字,不是壞掉的空框 */

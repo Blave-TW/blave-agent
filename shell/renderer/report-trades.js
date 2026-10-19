@@ -3,7 +3,7 @@
  * 從雲端工作頁(web/app/main/templates/agent/workspace.html 的 renderExecChart /
  * buildPositionTracks / buildExecMarkers / buildExecList)移植,資料轉換的規則
  * 一條不改,兩邊看同一支策略才會是同一張圖。差別只有三個:
- *   1. 資料整包在 stats.json 裡,沒有分塊載入/往前補抓/自動更新那一整層。
+ *   1. 先畫 stats.json 的尾端,往左拉再從完整歷史分塊補(同網頁);沒有「舊策略改從 K 線源補」與自動更新那兩層。
  *   2. 顏色在建圖當下從 tokens.css 讀(LWC 吃顏色字串,讀不到 CSS 變數)。
  *   3. 沒有全螢幕鈕、blave.org 浮水印(這一版的核准範圍沒有)。
  *
@@ -491,6 +491,124 @@
     return best;
   }
 
+  // ───────────────────────── 往左補(同網頁 execWatchEarlier / execArmChunkLoader / execMergeChunks)
+  // stats.json 的 candles 只有尾端 ≤ 20,000 根(5 分線約 69 天);完整歷史是 runner 的 chart/ 分塊(manifest + chunk-<id>,
+  // 每塊 20,000 根、id 0 最早)。拉到離最早已載那根 EARLIER_NEAR 根以內、視窗停住 EARLIER_SETTLE_MS 才補,
+  // 一次由近到遠最多 EARLIER_BATCH 塊;失敗冷卻、連續失敗到上限就停。分線(K 棒 < 5 分)最多載到 SUB5_MAX_BARS 根
+  // (網頁實測 50 萬根還順,再往上筆電會卡)。數字全照網頁
+  const EARLIER_NEAR = 200;
+  const EARLIER_SETTLE_MS = 250;
+  const EARLIER_BATCH = 6;
+  const EARLIER_RETRY_MS = 5000;
+  const EARLIER_MAX_FAILS = 3;
+  const SUB5_MAX_BARS = 500000;
+
+  // manifest 逐欄防禦(機器端寫的):chunk 缺 id/t0/t1 或非數字就丟;一塊都不剩 = 當沒有 manifest
+  function sanitizeManifest(raw) {
+    if (!raw || typeof raw !== "object" || !Array.isArray(raw.chunks)) return null;
+    const chunks = [];
+    raw.chunks.forEach(function (c) {
+      if (!c || typeof c !== "object") return;
+      if (!Number.isInteger(c.id) || c.id < 0) return;
+      if (typeof c.t0 !== "number" || !isFinite(c.t0)) return;
+      if (typeof c.t1 !== "number" || !isFinite(c.t1)) return;
+      chunks.push({ id: c.id, t0: c.t0, t1: c.t1, bars: Number.isInteger(c.bars) && c.bars > 0 ? c.bars : 0 });
+    });
+    if (!chunks.length) return null;
+    return { hash: typeof raw.hash === "string" ? raw.hash : "", chunks: chunks, truncated: raw.truncated === true };
+  }
+
+  // 還沒載、且含有最早已載那根之前資料的塊,由近到遠挑到根數 ≥ needBars 或到批次上限;分線另受 SUB5_MAX_BARS 限
+  function pendingChunks(manifest, loaded, firstTime) {
+    return manifest.chunks.filter(function (c) {
+      return !loaded.has(c.id) && c.t0 < firstTime;
+    });
+  }
+  function nextChunks(manifest, loaded, firstTime, needBars, total, sub5) {
+    const cands = pendingChunks(manifest, loaded, firstTime).sort(function (a, b) {
+      return b.id - a.id;
+    });
+    const picked = [];
+    let bars = 0;
+    for (let i = 0; i < cands.length && picked.length < EARLIER_BATCH; i++) {
+      if (picked.length && bars >= needBars) break;
+      if (picked.length && sub5 && total >= SUB5_MAX_BARS) break;
+      picked.push(cands[i]);
+      bars += cands[i].bars;
+      total += cands[i].bars;
+    }
+    return picked;
+  }
+
+  // 可視左緣離最早已載那根(logical 索引 firstIdx)夠近 → 該補了
+  function nearLeftEdge(rangeFrom, firstIdx) {
+    return rangeFrom - firstIdx <= EARLIER_NEAR;
+  }
+
+  function sortUniqByTime(points) {
+    points.sort(function (a, b) {
+      return a.time - b.time;
+    });
+    return points.filter(function (p, i) {
+      return i === 0 || p.time !== points[i - 1].time;
+    });
+  }
+
+  // 一批塊 → 要接到前面的東西:candles 只取最早已載那根之前的(塊彼此不該重疊,跨塊仍排序去重);
+  // panes 依 name+pane 對齊既有的線、只取那條線首點之前的點(對不上的略過,子面板結構不動);
+  // trades 只收 ts 沒出現過的——同一批裡同一個 ts 的多筆照收(同一根 K 棒可以有好幾筆)
+  function mergeOlder(firstTime, panes, knownTs, datas) {
+    let older = [];
+    const paneOlder = panes.map(function () {
+      return [];
+    });
+    const fresh = [];
+    datas.forEach(function (data) {
+      older = older.concat(
+        sanitizeCandles(data && data.candles).filter(function (c) {
+          return c.time < firstTime;
+        })
+      );
+      sanitizePanes(data && data.panes).forEach(function (p) {
+        panes.forEach(function (mine, i) {
+          if (mine.name !== p.name || mine.pane !== p.pane) return;
+          const cut = mine.points[0].time;
+          paneOlder[i] = paneOlder[i].concat(
+            p.points.filter(function (pt) {
+              return pt.time < cut;
+            })
+          );
+        });
+      });
+      sanitizeTrades(data && data.trades).forEach(function (tr) {
+        if (!knownTs.has(tr.ts)) fresh.push(tr);
+      });
+    });
+    return {
+      older: sortUniqByTime(older),
+      paneOlder: paneOlder.map(function (pts) {
+        return pts.length ? sortUniqByTime(pts) : pts;
+      }),
+      trades: fresh,
+    };
+  }
+
+  // 全部成交 = 補來的 ∪ stats.json 尾端(尾端為準)。起點部位:沒補到更早成交 → stats 的 trades_start_position;
+  // 補到且已載到最早一塊(歷史沒被截掉)→ 從 0 起算;補了但還沒到頭 → 未知(第一筆推不定 → 調倉,同截斷語意)
+  function mergedTrades(tail, tailStart, extra, fromStart) {
+    if (!extra.length) return { trades: tail, start: tailStart };
+    const all = extra.concat(tail).sort(function (a, b) {
+      return a.ts - b.ts;
+    });
+    return { trades: all, start: { value: 0, known: !!fromStart } };
+  }
+
+  // 縮到一根 K 棒不到 1px:上千顆箭頭疊成一片白,看不出任何一筆 → 收起來,倉位連線照畫(網頁沒有這條,電腦版先提)
+  const MARK_MIN_SPACING = 1;
+  function marksShown(barSpacing) {
+    return !(barSpacing < MARK_MIN_SPACING);
+  }
+
   // ───────────────────────── 格式
 
   function pad2(n) {
@@ -516,9 +634,13 @@
   }
   // 回測的 INTERVAL(stats.interval)一根 ≥ 1 天 → 進出場時間只印日期。認得 m / min / h / d / w / M(月);認不得就照舊印到分鐘
   const IVL_SEC = { m: 60, min: 60, h: 3600, d: 86400, w: 604800, M: 2592000 };
-  function isDailyOrAbove(interval) {
+  function intervalSec(interval) {
     const m = /^(\d{1,4})\s*(min|m|h|d|w|M)$/.exec(String(interval || "").trim().replace(/[HDW]$/, (c) => c.toLowerCase()));
-    return !!m && Number(m[1]) * IVL_SEC[m[2]] >= 86400;
+    return m ? Number(m[1]) * IVL_SEC[m[2]] : null;
+  }
+  function isDailyOrAbove(interval) {
+    const sec = intervalSec(interval);
+    return sec !== null && sec >= 86400;
   }
   function needsYear(trades, nowMs) {
     const y = new Date(nowMs).getFullYear();
@@ -554,6 +676,7 @@
     if (!live) return;
     if (live.cancelSized) live.cancelSized();
     if (live.cancelMap) live.cancelMap();
+    if (live.cancelEarlier) live.cancelEarlier();
     try {
       live.chart.remove();
     } catch (e) {
@@ -654,6 +777,10 @@
   };
   SegmentsPrimitive.prototype.paneViews = function () {
     return [this._bandView, this._view];
+  };
+  SegmentsPrimitive.prototype.setSegs = function (segs) {
+    this._segs = segs;
+    if (this._requestUpdate) this._requestUpdate();
   };
   SegmentsPrimitive.prototype.setBand = function (band) {
     this._band = band;
@@ -780,6 +907,7 @@
       const priceLines = []; // 換主題時改色(retheme)
       const watermarks = [];
       const members = new Map(); // 子面板 index → [{name, color}],畫面板標籤用
+      const paneLines = [];
       panes.forEach(function (p, i) {
         const paneIndex = assign.index[i];
         const color = lineColor(i);
@@ -789,6 +917,7 @@
           paneIndex
         );
         line.setData(p.points);
+        paneLines.push(line);
         // 門檻水平線(如 RSI 30/70):中性虛線+右軸數值,不做進/出語意配色
         p.levels.forEach(function (value) {
           priceLines.push(line.createPriceLine({
@@ -860,7 +989,8 @@
       };
       // 縮放下限放寬到整段歷史裝得進一屏(預設 0.5px/根,幾千根就卡住;要在套初始範圍之前,
       // 不然「整段」會被夾回預設下限);enableConflation:縮到每根不到 1px 時自動合併著畫
-      chart.timeScale().applyOptions({ minBarSpacing: 0.002, enableConflation: true });
+      // fixLeftEdge:不讓圖拖出第一根左邊的空白(還有更早的分塊時,拉到這裡就是往左補的時機)
+      chart.timeScale().applyOptions({ minBarSpacing: 0.002, enableConflation: true, fixLeftEdge: true });
       applyInitialView();
       // 換主題:只改色、不重建(視野、選取、地圖位置都留著)。紅綠與類別色亮暗同值,不用動
       const retheme = function () {
@@ -879,11 +1009,6 @@
         watermarks.forEach(function (w) {
           w.wm.applyOptions({ lines: w.linesOf(muted) });
         });
-        const ink = token("--ink");
-        markers.forEach(function (m) {
-          m.color = ink;
-        });
-        markersApi.setMarkers(markers);
         segments._colors.halo = card;
         segments._colors.band = token("--surface-muted");
         if (segments._requestUpdate) segments._requestUpdate();
@@ -894,6 +1019,9 @@
         series: series,
         segments: segments,
         markers: markers,
+        markersApi: markersApi,
+        panes: panes,
+        paneLines: paneLines,
         base: base,
         setRange: setRange,
         getRange: getRange,
@@ -931,7 +1059,7 @@
 
   // 交易地圖:圖正下方一條整段回測的縮圖(設計稿 trades-tab-range 方案三)。每段部位一條
   // (賺綠賠紅、推不出損益的灰),外框是圖現在看的範圍;拖外框平移、點空白處移過去、
-  // ←/→ 每次半個範圍。candles 整包都在,不必像雲端版那樣等視窗停住才補抓
+  // ←/→ 每次半個範圍。範圍只到已載的 K 棒;拖到最左就觸發往左補(renderTrades 的 checkEarlier),補完地圖跟著變長
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -941,8 +1069,11 @@
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
-  function buildMap(wrap, built, candles, bars, dateOnly) {
-    const last = candles.length - 1;
+  // S.candles 往左補時原地變長、S.bars 整批換:這裡每次都現讀,不在建的當下抓死
+  function buildMap(wrap, built, S, dateOnly) {
+    const lastOf = function () {
+      return S.candles.length - 1;
+    };
     const palette = function () {
       return {
         rail: token("--surface-muted"),
@@ -959,9 +1090,8 @@
     wrap.setAttribute("role", "slider");
     wrap.setAttribute("aria-label", t("tr.mapAria"));
     wrap.setAttribute("aria-valuemin", "0");
-    wrap.setAttribute("aria-valuemax", String(last));
     const at = function (i) {
-      return candles[Math.max(0, Math.min(last, Math.round(i)))].time;
+      return S.candles[Math.max(0, Math.min(lastOf(), Math.round(i)))].time;
     };
     let raf = 0;
     function draw() {
@@ -977,6 +1107,9 @@
       const ctx = cv.getContext("2d");
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
+      const last = lastOf();
+      const bars = S.bars;
+      wrap.setAttribute("aria-valuemax", String(last));
       const x = function (i) {
         return (i / last) * w;
       };
@@ -1008,7 +1141,7 @@
     }
     function barAt(e) {
       const rc = cv.getBoundingClientRect();
-      return rc.width ? ((e.clientX - rc.left) / rc.width) * last : 0;
+      return rc.width ? ((e.clientX - rc.left) / rc.width) * lastOf() : 0;
     }
     let drag = null;
     wrap.addEventListener("pointerdown", function (e) {
@@ -1019,7 +1152,7 @@
       const b = barAt(e);
       let from = r.from;
       if (b < r.from || b > r.to) {
-        const c = clampRange(b - span / 2, span, last);
+        const c = clampRange(b - span / 2, span, lastOf());
         built.setRange(c);
         from = c.from;
       }
@@ -1033,7 +1166,7 @@
     });
     wrap.addEventListener("pointermove", function (e) {
       if (!drag) return;
-      const next = clampRange(barAt(e) - drag.off, drag.span, last);
+      const next = clampRange(barAt(e) - drag.off, drag.span, lastOf());
       built.setRange(next);
       if (!drag.sent && next.from !== drag.from) {
         drag.sent = true;
@@ -1052,7 +1185,7 @@
       e.preventDefault();
       const span = r.to - r.from;
       const step = (e.key === "ArrowLeft" ? -0.5 : 0.5) * span;
-      built.setRange(clampRange(r.from + step, span, last));
+      built.setRange(clampRange(r.from + step, span, lastOf()));
       trackFeature("trades_map_move");
     });
     built.chart.timeScale().subscribeVisibleLogicalRangeChange(schedule);
@@ -1067,10 +1200,13 @@
     };
     window.addEventListener("blave:theme", onTheme);
     schedule();
-    return function () {
-      if (raf) cancelAnimationFrame(raf);
-      if (ro) ro.disconnect();
-      window.removeEventListener("blave:theme", onTheme);
+    return {
+      redraw: schedule,
+      cancel: function () {
+        if (raf) cancelAnimationFrame(raf);
+        if (ro) ro.disconnect();
+        window.removeEventListener("blave:theme", onTheme);
+      },
     };
   }
 
@@ -1176,50 +1312,102 @@
     };
   }
 
-  function renderTrades(container, stats) {
+  // opts.chart(選填)= 完整歷史分塊的來源:{ manifest() → Promise<{ code, manifest }>, chunk(id, hash) → Promise<{ code, data }> }。
+  // 這台電腦讀 strategies/<name>/chart/、雲端打 /cloud/chart_data,由 app.js 依視角給;沒給就只畫 stats.json 那一段
+  function renderTrades(container, stats, opts) {
     dispose();
     container.textContent = "";
-    const trades = sanitizeTrades(stats && stats.trades);
-    if (!trades.length) {
+    const tailTrades = sanitizeTrades(stats && stats.trades);
+    if (!tailTrades.length) {
       // 組合策略(Type C)的回測只有成交次數、沒有逐筆紀錄(lib/runner.py:它調的是一籃子的權重):講這件事,不要講成「沒有進出場」——
       // 回測數據那一頁明明寫著 182 筆。認法同轉出選單:stats 帶隨機投組基準 benchmark_n
       container.appendChild(el("div", "pf-state", t(stats && typeof stats.benchmark_n === "number" ? "tr.emptyPf" : "tr.empty")));
       return;
     }
     const candles = sanitizeCandles(stats.candles);
-    const tracks = buildTracks(trades, startPosition(stats));
-    const lastClose = candles.length ? candles[candles.length - 1].close : null;
-    tracks.forEach(function (track) {
-      track.pnl = trackPnl(track, lastClose);
-    });
-    const withYear = needsYear(trades, Date.now());
     const dateOnly = isDailyOrAbove(stats.interval);
+    const ivl = intervalSec(stats.interval);
+    const sub5 = ivl !== null && ivl < 300;
+    // 往左補時會變的東西都在這裡:candles 原地往前長(各處 closure 抓的是同一個陣列),成交、tracks、箭頭、地圖條整批重算;
+    // 圖、地圖、清單一律現讀
+    const S = {
+      candles: candles,
+      tailTrades: tailTrades,
+      tailStart: startPosition(stats),
+      extraTrades: [],
+      manifest: null,
+      loaded: new Set(),
+      trades: tailTrades,
+      tracks: [],
+      markers: [],
+      byId: new Map(),
+      bars: [],
+      marksOn: true,
+      list: null,
+    };
+    function retrack() {
+      const fromStart = !!S.manifest && !S.manifest.truncated && S.loaded.has(0);
+      const m = mergedTrades(S.tailTrades, S.tailStart, S.extraTrades, fromStart);
+      const lastClose = candles.length ? candles[candles.length - 1].close : null;
+      S.trades = m.trades;
+      S.tracks = buildTracks(m.trades, m.start);
+      S.tracks.forEach(function (track) {
+        track.pnl = trackPnl(track, lastClose);
+      });
+      S.bars = mapBars(S.tracks, candles);
+    }
+    function indexMarkers() {
+      S.byId = new Map();
+      S.markers.forEach(function (m) {
+        S.byId.set(m.id, m);
+      });
+    }
+    retrack();
 
     const root = el("div", "tr-root");
     container.appendChild(root);
 
     let built = null;
     let host = null;
+    let map = null;
+    let moreEl = null;
+    // 箭頭陣列往左補時整批換、收起時不上圖:改色要對 S.markers 做,不是 buildChart 當下那份
+    function retheme() {
+      if (!built) return;
+      built.retheme();
+      const ink = token("--ink");
+      S.markers.forEach(function (m) {
+        m.color = ink;
+      });
+      built.markersApi.setMarkers(S.marksOn ? S.markers : []);
+    }
     if (candles.length) {
       // 圖與交易地圖同一張卡;LWC 的 autoSize 量的是 host,地圖不能塞進 host 裡
       const card = el("div", "tr-card");
       host = el("div", "tr-chart");
       card.appendChild(host);
+      moreEl = el("div", "tr-more");
+      moreEl.hidden = true;
+      card.appendChild(moreEl);
       root.appendChild(card);
       try {
         if (typeof LightweightCharts === "undefined") throw new Error("LWC_MISSING");
-        built = buildChart(host, candles, tracks, sanitizePanes(stats.panes), dateOnly);
-        live = { chart: built.chart, retheme: built.retheme, cancelSized: whenSized(host, built.applyInitialView) };
+        built = buildChart(host, candles, S.tracks, sanitizePanes(stats.panes), dateOnly);
+        S.markers = built.markers;
+        indexMarkers();
+        live = { chart: built.chart, retheme: retheme, cancelSized: whenSized(host, built.applyInitialView) };
         if (candles.length > 1) {
           const wrap = el("div", "tr-map");
           card.appendChild(wrap);
-          live.cancelMap = buildMap(wrap, built, candles, mapBars(tracks, candles), dateOnly);
+          map = buildMap(wrap, built, S, dateOnly);
+          live.cancelMap = map.cancel;
         }
       } catch (e) {
         // 圖壞了清單還是有用:不讓一個 LWC 例外把整個分頁變成空白
         console.error("[report-trades]", e);
         dispose();
         built = null;
+        map = null;
         card.textContent = "";
         card.classList.add("is-error");
         card.appendChild(el("div", "pf-state", t("tr.chartError")));
@@ -1228,55 +1416,273 @@
 
     const head = el("div", "tr-head");
     head.appendChild(el("span", "tr-label", t("tr.list")));
-    head.appendChild(el("span", "tr-count", t("tr.count", { n: trades.length })));
+    const countEl = el("span", "tr-count", t("tr.count", { n: S.trades.length }));
+    head.appendChild(countEl);
     root.appendChild(head);
 
-    const listEl = el("div", "tr-list");
+    let listEl = el("div", "tr-list");
     root.appendChild(listEl);
     let selected = null;
     // 點列與點箭頭同一件事:圖框住那段部位(太長就只看這一筆附近,pickView)、墊灰帶、亮列;再點同一段(長段是同一筆)就取消(範圍不動)
-    const list = buildList(listEl, buildRows(tracks), withYear, dateOnly, function pick(trackIdx, id, fromChart) {
-      const track = tracks[trackIdx];
+    function pick(trackIdx, id, fromChart) {
+      const track = S.tracks[trackIdx];
+      if (!track) return;
       const pi = Number(/_(\d+)$/.exec(id)[1]);
       const cur = built ? built.getRange() : null;
       const v = candles.length ? pickView(track, candles, track.points[pi].ts, cur ? cur.to - cur.from : 0) : { whole: true };
       const key = v.whole ? "t" + trackIdx : id;
       if (key === selected) {
         selected = null;
-        list.select(-1);
+        S.list.select(-1);
         if (built) built.segments.setBand(null);
         return;
       }
       selected = key;
-      list.select(trackIdx, id, !v.whole);
-      if (fromChart) list.reveal(id);
+      S.list.select(trackIdx, id, !v.whole);
+      if (fromChart) S.list.reveal(id);
       trackFeature(fromChart ? "trades_mark_pick" : "trades_row_pick");
       if (!built) return;
       built.segments.setBand({ t0: candles[v.band.from].time, t1: candles[v.band.to].time });
       built.setRange(v.range);
+    }
+    // 清單換到全新容器再重建:buildList 的分批捲動 listener 掛在容器上,重用舊節點會讓上一輪的 listener 把過期的列補回來
+    function mountList() {
+      if (S.list) {
+        const fresh = el("div", "tr-list");
+        listEl.replaceWith(fresh);
+        listEl = fresh;
+      }
+      S.list = buildList(listEl, buildRows(S.tracks), needsYear(S.trades, Date.now()), dateOnly, pick);
+    }
+    mountList();
+    if (!built) return;
+    wireChartToList(built, host, S);
+
+    const ts = built.chart.timeScale();
+    function applyMarks() {
+      const on = marksShown(ts.options().barSpacing);
+      if (on === S.marksOn) return;
+      S.marksOn = on;
+      built.markersApi.setMarkers(on ? S.markers : []);
+      if (!on) {
+        S.list.hot(null);
+        host.classList.remove("is-onmark");
+      }
+    }
+    applyMarks();
+
+    const src = opts && opts.chart;
+    const mine = live;
+    const E = { user: false, busy: false, done: !src, fails: 0, coolUntil: 0, timer: 0 };
+    live.cancelEarlier = function () {
+      clearTimeout(E.timer);
+    };
+    const stale = function () {
+      return live !== mine;
+    };
+    ts.subscribeVisibleLogicalRangeChange(function () {
+      applyMarks();
+      if (!E.done) scheduleEarlier();
     });
-    if (built) wireChartToList(built, host, candles, list);
+    if (!src) return;
+
+    function setMore(text) {
+      moreEl.textContent = text || "";
+      moreEl.hidden = !text;
+    }
+    function exhaust() {
+      E.done = true;
+      if (sub5 && candles.length >= SUB5_MAX_BARS && S.manifest && pendingChunks(S.manifest, S.loaded, candles[0].time).length) {
+        setMore(t("tr.historyCapped"));
+      } else if (S.manifest && S.manifest.truncated) setMore(t("tr.historyTruncated"));
+    }
+    function failedOnce() {
+      E.fails += 1;
+      if (E.fails >= EARLIER_MAX_FAILS) exhaust();
+      else E.coolUntil = Date.now() + EARLIER_RETRY_MS;
+    }
+    function scheduleEarlier() {
+      clearTimeout(E.timer);
+      E.timer = setTimeout(checkEarlier, EARLIER_SETTLE_MS);
+    }
+    function checkEarlier() {
+      if (!E.user || E.busy || E.done || !S.manifest || stale() || Date.now() < E.coolUntil) return;
+      const range = ts.getVisibleLogicalRange();
+      if (!range) return;
+      // panes 的 warmup 點可能早於第一根 K 棒,logical 0 不一定是 candles[0]
+      let first = ts.timeToIndex(candles[0].time, true);
+      if (first === null || first === undefined) first = 0;
+      if (!nearLeftEdge(range.from, first)) return;
+      if (sub5 && candles.length >= SUB5_MAX_BARS) {
+        exhaust();
+        return;
+      }
+      loadEarlier(Math.max(1, first - range.from + EARLIER_NEAR));
+    }
+    // LWC 沒有 prepend:setData 整串,再用 timeToIndex 量出原第一根的位移,把原本看著的範圍移回去(畫面不跳)。
+    // enableConflation 開著時對既有 series 再 setData 會丟 "Value is null"(LWC 5.2.1,網頁 execReplaceData 的實測):換資料前先關
+    function prepend(older, paneOlder) {
+      const firstTime = candles[0].time;
+      const range = ts.getVisibleLogicalRange();
+      const before = ts.timeToIndex(firstTime, true);
+      ts.applyOptions({ enableConflation: false });
+      try {
+        if (older.length) {
+          const merged = older.concat(candles);
+          for (let i = 0; i < merged.length; i++) candles[i] = merged[i];
+          built.series.setData(candles);
+        }
+        paneOlder.forEach(function (pts, i) {
+          if (!pts.length) return;
+          built.panes[i].points = pts.concat(built.panes[i].points);
+          built.paneLines[i].setData(built.panes[i].points);
+        });
+      } finally {
+        ts.applyOptions({ enableConflation: true });
+      }
+      const after = ts.timeToIndex(firstTime, true);
+      if (range) {
+        const shift = before !== null && before !== undefined && after !== null && after !== undefined ? after - before : older.length;
+        ts.setVisibleLogicalRange({ from: range.from + shift, to: range.to + shift });
+      }
+    }
+    // 這一批合進來:K 線與指標線往前接、成交併進來,tracks / 箭頭 / 連線 / 地圖 / 清單 / 筆數整批重算。
+    // 就算沒帶新成交也重算:第一根 K 棒之前「不上圖」的事件要以新的第一根重判。清單重建,選取一併清掉
+    function mergeChunks(chunks, datas) {
+      const known = new Set();
+      S.tailTrades.concat(S.extraTrades).forEach(function (tr) {
+        known.add(tr.ts);
+      });
+      const m = mergeOlder(candles[0].time, built.panes, known, datas);
+      if (mine.cancelSized) mine.cancelSized(); // 晚到的初始視野不能蓋掉剛移回去的範圍
+      prepend(m.older, m.paneOlder);
+      if (m.trades.length) {
+        S.extraTrades = S.extraTrades.concat(m.trades).sort(function (a, b) {
+          return a.ts - b.ts;
+        });
+      }
+      chunks.forEach(function (c) {
+        S.loaded.add(c.id);
+      });
+      retrack();
+      S.markers = buildMarkers(S.tracks, candles, token("--ink"));
+      indexMarkers();
+      built.markersApi.setMarkers(S.marksOn ? S.markers : []);
+      built.segments.setSegs(buildSegments(S.tracks, candles));
+      built.segments.setBand(null);
+      selected = null;
+      mountList();
+      countEl.textContent = t("tr.count", { n: S.trades.length });
+      if (map) map.redraw();
+    }
+    // 塊必須相接著合:某塊失敗,比它更遠的成功塊也先丟(不然中間留洞,之後那塊全部早於新的第一根、永遠合不進去)
+    function loadEarlier(needBars) {
+      const chunks = nextChunks(S.manifest, S.loaded, candles[0].time, needBars, candles.length, sub5);
+      if (!chunks.length) {
+        exhaust();
+        return;
+      }
+      E.busy = true;
+      setMore(t("tr.loadEarlier"));
+      const hash = S.manifest.hash;
+      Promise.all(
+        chunks.map(function (c) {
+          return Promise.resolve()
+            .then(function () {
+              return src.chunk(c.id, hash);
+            })
+            .then(
+              function (r) {
+                if (r && r.code === "STALE") return "stale";
+                return r && r.code === "OK" && r.data && typeof r.data === "object" ? r.data : null;
+              },
+              function () {
+                return null;
+              }
+            );
+        })
+      ).then(function (results) {
+        if (stale()) return;
+        E.busy = false;
+        setMore("");
+        // 回測重跑把整包分塊換掉了:手上的接不上現在的尾端,停在這裡(重新打開這支就是新的一包)
+        if (results.indexOf("stale") >= 0) {
+          exhaust();
+          return;
+        }
+        const okChunks = [];
+        const datas = [];
+        let bad = false;
+        results.forEach(function (r, i) {
+          if (bad || !r) {
+            bad = true;
+            return;
+          }
+          okChunks.push(chunks[i]);
+          datas.push(r);
+        });
+        let merged = false;
+        if (datas.length) {
+          try {
+            mergeChunks(okChunks, datas);
+            merged = true;
+            E.fails = 0;
+          } catch (e) {
+            console.error("[report-trades] earlier", e);
+            bad = true;
+          }
+        }
+        if (bad) failedOnce();
+        if (merged) scheduleEarlier();
+      });
+    }
+
+    // 一打開的範圍(左緣可能正好在第一根)不觸發:補完畫面會位移一次,等於一打開就跳一下。在圖、地圖或清單上動過才開始判
+    function arm() {
+      if (E.user) return;
+      E.user = true;
+      scheduleEarlier();
+    }
+    ["pointerdown", "wheel", "touchstart", "keydown"].forEach(function (ev) {
+      root.addEventListener(ev, arm, { capture: true, passive: true });
+    });
+    Promise.resolve()
+      .then(function () {
+        return src.manifest();
+      })
+      .then(
+        function (r) {
+          if (stale()) return;
+          const m = r && r.code === "OK" ? sanitizeManifest(r.manifest) : null;
+          if (!m) {
+            E.done = true;
+            return;
+          }
+          S.manifest = m;
+          checkEarlier(); // 等回應時可能已經拉到左緣,不必等他再拉一次
+        },
+        function () {
+          E.done = true;
+        }
+      );
   }
 
   // 圖 → 表:hover 箭頭亮對應的列,點箭頭等於點那一列。先認 LWC 的 hoveredObjectId(箭頭本體);
-  // 沒中再找游標水平 6px 內、垂直落在箭頭那一側的最近一個
+  // 沒中再找游標水平 6px 內、垂直落在箭頭那一側的最近一個。箭頭收起來(marksShown)時兩件事都不做——畫面上沒有可指的東西
   const HIT_PX = 6;
   const HIT_Y = 30;
-  function wireChartToList(built, host, candles, list) {
-    const byId = new Map();
-    built.markers.forEach(function (m) {
-      byId.set(m.id, m);
-    });
+  function wireChartToList(built, host, S) {
     const ts = built.chart.timeScale();
     function markerAt(param) {
-      if (!param.point || param.paneIndex !== 0) return null;
-      if (param.hoveredObjectId && byId.has(param.hoveredObjectId)) return byId.get(param.hoveredObjectId);
+      if (!S.marksOn || !param.point || param.paneIndex !== 0) return null;
+      if (param.hoveredObjectId && S.byId.has(param.hoveredObjectId)) return S.byId.get(param.hoveredObjectId);
       if (typeof param.logical !== "number") return null;
+      const candles = S.candles;
       const idx = Math.max(0, Math.min(candles.length - 1, Math.round(param.logical - built.base())));
       const px = param.point.x;
       const py = param.point.y;
       return nearestMarker(
-        built.markers,
+        S.markers,
         candles[idx].time,
         function (m) {
           const x = ts.timeToCoordinate(m.time);
@@ -1293,14 +1699,14 @@
     }
     built.chart.subscribeCrosshairMove(function (param) {
       const m = markerAt(param);
-      list.hot(m ? m.id : null);
+      S.list.hot(m ? m.id : null);
       host.classList.toggle("is-onmark", !!m);
     });
     built.chart.subscribeClick(function (param) {
       const m = markerAt(param);
       if (!m) return;
       const parts = /^p(\d+)_\d+$/.exec(m.id);
-      if (parts) list.pick(Number(parts[1]), m.id, true);
+      if (parts) S.list.pick(Number(parts[1]), m.id, true);
     });
   }
 
@@ -1325,6 +1731,14 @@
     clampRange: clampRange,
     mapBars: mapBars,
     nearestMarker: nearestMarker,
+    sanitizeManifest: sanitizeManifest,
+    pendingChunks: pendingChunks,
+    nextChunks: nextChunks,
+    nearLeftEdge: nearLeftEdge,
+    mergeOlder: mergeOlder,
+    mergedTrades: mergedTrades,
+    marksShown: marksShown,
+    intervalSec: intervalSec,
     fmtAmount: fmtAmount,
     fmtTime: fmtTime,
     isDailyOrAbove: isDailyOrAbove,

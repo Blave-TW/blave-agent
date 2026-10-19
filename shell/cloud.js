@@ -24,6 +24,9 @@ const REPORTS_ENDPOINT = "/oauth/desktop/cloud/reports";
 const REPORT_ENDPOINT = "/oauth/desktop/cloud/report";
 const IMAGE_ENDPOINT = "/oauth/desktop/cloud/strategy_image";
 const VERSION_ENDPOINT = "/oauth/desktop/cloud/version";
+// 完整歷史的回測圖表(進出場分頁往左補):回應是網頁 /openclaw/agent/chart_data/<name>/… 的原樣,沒有 machine_state 外層
+const CHART_ENDPOINT = "/oauth/desktop/cloud/chart_data";
+const CHART_MAX_CHUNKS = 50;   // = api agent_chart_data.MAX_CHUNKS
 const VERSION_NAME_RE = /^[A-Za-z0-9_-]{1,128}$/;   // canon strategy-versions §9b(api agent_strategy_versions._NAME_RE 同一條)
 const EVENTS_MAX = 500;
 const REPORTS_MAX = 200, REPORT_TITLE_MAX = 200, REPORT_TYPE_MAX = 32;
@@ -134,6 +137,14 @@ function interpretVersion(res) {
   if (res && res.status === 404) return { code: "SYNCING" };
   const b = res && res.status === 200 ? res.body : null;
   return b && typeof b === "object" && !Array.isArray(b) ? { code: "OK", blob: b } : { code: "UNREACH" };
+}
+/* 圖表分塊:manifest 404 = 這支沒有上傳分塊(舊策略、Type B)→ OK + null,畫面就不往左補;chunk 只驗到「是物件」,
+   逐欄在 report-trades.js 的 sanitizer(同 stats.json 那一套)。其餘一律 UNREACH */
+function interpretChart(res, part) {
+  if (part === "manifest" && res && res.status === 404) return { code: "OK", manifest: null };
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || Array.isArray(b)) return { code: "UNREACH" };
+  return part === "manifest" ? { code: "OK", manifest: b } : { code: "OK", data: b };
 }
 function interpretVersionCompare(res) {
   if (res && res.status === 404) {
@@ -423,6 +434,15 @@ function createCloudHost(opts) {
       if (op === "compare" && int(q.a) && int(q.b)) return readOnce(VERSION_ENDPOINT, "cmp|" + name + "|" + q.a + "|" + q.b, { name, op, a: q.a, b: q.b }, interpretVersionCompare, () => ({ code: "UNREACH" }));
       return Promise.resolve({ code: "UNREACH" });
     },
+    // 圖表分塊:q = { name, part: "manifest" } | { name, part: "chunk", cid }。名字同版本的閘門、cid 只收 0..49,其餘不打 api
+    chart(q) {
+      const name = q && q.name, part = q && q.part, cid = q && q.cid;
+      if (typeof name !== "string" || !VERSION_NAME_RE.test(name)) return Promise.resolve({ code: "UNREACH" });
+      if (part === "manifest") return readOnce(CHART_ENDPOINT, "m|" + name, { name, part }, (res) => interpretChart(res, part), () => ({ code: "UNREACH" }));
+      if (part === "chunk" && Number.isInteger(cid) && cid >= 0 && cid < CHART_MAX_CHUNKS)
+        return readOnce(CHART_ENDPOINT, "c|" + name + "|" + cid, { name, part, cid }, (res) => interpretChart(res, part), () => ({ code: "UNREACH" }));
+      return Promise.resolve({ code: "UNREACH" });
+    },
     // 報告(renderer/reports.js;spec-desktop-0.1.6 §1.1):清單 / 本體 / 圖各一支,回 { code: "OK" | "UNREACH", … }
     reports() { return readOnce(REPORTS_ENDPOINT, "", {}, interpretReports, REPORTS_UNREACHABLE); },
     report(id) {
@@ -459,5 +479,5 @@ function createCloudHost(opts) {
 }
 
 module.exports = { PREFS_ENDPOINT, createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, interpretReports, interpretReport, interpretImage,
-  interpretVersion, interpretVersionCompare, VERSION_ENDPOINT,
+  interpretVersion, interpretVersionCompare, VERSION_ENDPOINT, interpretChart, CHART_ENDPOINT,
   ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, REPORTS_ENDPOINT, REPORT_ENDPOINT, IMAGE_ENDPOINT, REPORTS_MAX, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };

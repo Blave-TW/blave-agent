@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld("blave", {
   loadVersion: (name, n) => ipcRenderer.invoke("load-version", name, n),
   compareVersions: (name, a, b) => ipcRenderer.invoke("compare-versions", name, a, b),
   cloudVersion: (q) => ipcRenderer.invoke("cloud-version", { name: q && q.name, op: q && q.op, n: q && q.n, a: q && q.a, b: q && q.b }),
+  // 完整歷史回測圖表(renderer/report-trades.js 往左補):這台電腦讀 strategies/<name>/chart/;雲端走 /cloud/chart_data
+  loadChart: (q) => ipcRenderer.invoke("load-chart", { name: q && q.name, part: q && q.part, cid: q && q.cid, hash: q && q.hash }),
+  cloudChart: (q) => ipcRenderer.invoke("cloud-chart", { name: q && q.name, part: q && q.part, cid: q && q.cid }),
   accountStatus: () => ipcRenderer.invoke("account-status"),
   authState: () => ipcRenderer.invoke("auth-state"),   // 登入狀態的單一來源:out / in / revoked
   balance: () => ipcRenderer.invoke("balance"),   // Blave 餘額:{ balance, trial } 或 null(讀不到);憑證在主行程

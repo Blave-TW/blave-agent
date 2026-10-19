@@ -173,8 +173,8 @@ function box(extra) {
     const tw = Date.UTC(2026, 3, 23, 16) / 1000, twd = ["Asia/Taipei", "America/Los_Angeles", "UTC", "Europe/London"].map((z) => at(z, () => TP.fmtTime(tw, true, true)));
     ok("J 台股日線 2026-04-24(台北午夜):台北 / 洛杉磯 / UTC / 倫敦都印 2026/04/24", twd.every((x) => x === "2026/04/24"), J(twd));
     ok("J 接線:renderTrades 用 stats.interval 算 dateOnly,清單列與十字線(localization.timeFormatter)都帶它", /const dateOnly = isDailyOrAbove\(stats\.interval\);/.test(trJs)
-      && /buildList\(listEl, buildRows\(tracks\), withYear, dateOnly, function/.test(trJs) && /fmtTime\(p\.ts, withYear, dateOnly\)/.test(trJs)
-      && /buildChart\(host, candles, tracks, sanitizePanes\(stats\.panes\), dateOnly\)/.test(trJs) && /fmtTime\(time, true, dateOnly\)/.test(trJs));
+      && /buildList\(listEl, buildRows\(S\.tracks\), needsYear\(S\.trades, Date\.now\(\)\), dateOnly, pick\)/.test(trJs) && /fmtTime\(p\.ts, withYear, dateOnly\)/.test(trJs)
+      && /buildChart\(host, candles, S\.tracks, sanitizePanes\(stats\.panes\), dateOnly\)/.test(trJs) && /fmtTime\(time, true, dateOnly\)/.test(trJs));
     // spec-0.1.13 #7:窄框每一列固定折成同樣兩行(方向+數量+種類 / 價格 … 部位),寬框一行;斷點同網頁 560,量清單本身的寬
     const css = read("report-trades.css"), nar = (/@container tr-list \(max-width: 560px\) \{([\s\S]*?)\n\}/.exec(css) || [])[1] || "";
     ok("#7 進出場紀錄列:兩組 .tr-l1(方向+數量、種類)/ .tr-l2(價格、部位),寬框 display: contents 攤平成一行",

@@ -1700,11 +1700,20 @@ function rpShowTab(tab) {
   const R = window.BlaveReport || {};
   if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), B.data.stats);
   if (tab === "bt" && typeof perfPaint === "function") perfPaint(B);   // 上線中策略的「更新績效」掛在 meta 列尾(renderer/perf.js)
-  if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats);
+  if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats, { chart: rpChartSource(B) });
   // 參數掃描(report-robust.js 不碰桌面版全域:i18n、掃描鈕的送出、回合狀態、meta 那一行都從這裡交進去)
   if (tab === "rob" && R.renderRobust) R.renderRobust($("rp-rob"), { stats: B.data.stats, scan: B.data.scan || null, code: B.data.code, name: B.name }, rpRobOpts());
   // 樣本外驗證(report-wf.js 同樣不碰桌面版全域;閘門、送出、回合狀態都從這裡交進去)
   if (tab === "wf" && R.renderWf) R.renderWf($("rp-wf"), rpWfData(B.data, B.name), rpWfOpts());
+}
+/* 進出場分頁往左補的分塊來源:這台電腦讀 strategies/<name>/chart/,雲端打 /cloud/chart_data(都在主行程,renderer 只給名字與塊號) */
+function rpChartSource(B) {
+  const name = B.name, cloud = B === RPC;
+  if (!name || !window.blave || !(cloud ? window.blave.cloudChart : window.blave.loadChart)) return null;
+  return {
+    manifest: () => (cloud ? window.blave.cloudChart({ name, part: "manifest" }) : window.blave.loadChart({ name, part: "manifest" })),
+    chunk: (cid, hash) => (cloud ? window.blave.cloudChart({ name, part: "chunk", cid }) : window.blave.loadChart({ name, part: "chunk", cid, hash })),
+  };
 }
 /* 分頁列正下方那一格(#rp-nobt),三態互斥:缺金鑰 > Type B 沒有回測 > 沒有回測。
    缺金鑰只在這台電腦的視角講(missingSources 是主行程拿這台的資料來源清單比出來的),有沒有回測都講:舊數字還在,但下一次跑不起來。

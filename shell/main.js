@@ -355,7 +355,7 @@ function isOurPageUrl(u) {
 }
 function cloudHost() {
   if (!_cloud) _cloud = require("./cloud").createCloudHost({
-    apiBase: API_BASE, post: (u, b) => postJSON(u, b),
+    apiBase: API_BASE, post: (u, b) => postJSON(u, b, u.endsWith(require("./cloud").CHART_ENDPOINT) ? { gzip: true, timeout: 60000 } : undefined),
     getCreds: blaveCreds,
     // 送的是部位與權益:只送給載入自家 index.html 的視窗(今天全 app 只有一個視窗;哪天多了第二個,也不會漏過去)
     onChange: (snap) => {
@@ -715,17 +715,23 @@ async function signOutBlave() {
 function postJSON(url, body, extra) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
+    // gzip:回應可能是存好的 gzip 直送(/cloud/chart_data 的分塊,解開最多 32MB),要了就自己解
+    const gzip = !!(extra && extra.gzip);
     const req = require("https").request(url, {
       timeout: 20000,
       ...(extra || {}),   // my_ip:{ family: 4 } 強制走 IPv4;報告分享的上傳:{ timeout } 放長
       method: "POST",
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data), ...(gzip ? { "Accept-Encoding": "gzip" } : {}) },
     }, (res) => {
+      const status = res.statusCode;
+      const src = gzip && res.headers["content-encoding"] === "gzip" ? res.pipe(require("zlib").createGunzip()) : res;
+      if (src !== res) src.on("error", reject);   // 壞掉的 gzip
       let buf = "";
-      res.on("data", (d) => { buf += d; });
-      res.on("end", () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(buf || "{}") }); }
-        catch (_) { resolve({ status: res.statusCode, body: {} }); }
+      src.setEncoding("utf8");
+      src.on("data", (d) => { buf += d; });
+      src.on("end", () => {
+        try { resolve({ status, body: JSON.parse(buf || "{}") }); }
+        catch (_) { resolve({ status, body: {} }); }
       });
     });
     req.on("timeout", () => req.destroy(new Error("timeout")));
@@ -1441,6 +1447,50 @@ function loadVersion(name, n) {
   try {
     const b = JSON.parse(fs.readFileSync(path.join(STRAT_DIR(), name, "versions", `v${v}.json`), "utf8"));
     return b && typeof b === "object" && !Array.isArray(b) ? { code: "OK", blob: b } : { code: "ERROR" };
+  } catch (_) { return { code: "ERROR" }; }
+}
+/* 完整歷史的回測圖表(lib/runner.py _write_chart_dir 寫的 strategies/<資料夾>/chart/{manifest.json, chunk-<id>.json}):
+   進出場分頁往左拉時一塊一塊補(report-trades.js)。part = "manifest" | "chunk"。名字只認 stratNames 列得出來的資料夾、
+   cid 只收 0..CHART_MAX_CHUNKS-1、檔名由這裡拼——renderer 給不出任何路徑。chart/ 本身是 symlink 不收,檔案開檔不跟 symlink。
+   chunk 要帶手上那份 manifest 的 hash:回測重跑會整包換掉 chart/,舊 manifest 的塊接不上新尾端 → STALE;
+   每塊再比 manifest 記的 sha1,讀到換到一半的那一刻也不會收錯塊。
+   回 { code: "OK", manifest | data } | { code: "OK", manifest: null }(沒有分塊)| { code: "STALE" | "ERROR" } */
+const CHART_MAX_CHUNKS = 50;   // = runner CHART_MAX_CHUNKS = api agent_chart_data.MAX_CHUNKS
+const CHART_MANIFEST_MAX = 64 * 1024, CHART_CHUNK_MAX = 32 * 1024 * 1024;   // = api MANIFEST_MAX_BYTES / CHUNK_RAW_MAX_BYTES
+async function readChartFile(p, max) {
+  const C = fs.constants;
+  let fh = null;
+  try {
+    if (C.O_NOFOLLOW === undefined && !fs.lstatSync(p).isFile()) return null;
+    fh = await fs.promises.open(p, C.O_RDONLY | (C.O_NOFOLLOW || 0) | (C.O_NONBLOCK || 0));
+    const st = await fh.stat();
+    if (!st.isFile() || st.size > max) return null;
+    const buf = Buffer.alloc(st.size + 1);
+    let n = 0, r = 0;
+    while (n < buf.length && (r = (await fh.read(buf, n, buf.length - n, null)).bytesRead) > 0) n += r;
+    return n >= buf.length ? null : buf.subarray(0, n);
+  } catch (_) { return null; }
+  finally { if (fh) await fh.close().catch(() => {}); }
+}
+async function loadChart(name, part, cid, hash) {
+  if (!stratNames().includes(name) || (part !== "manifest" && part !== "chunk")) return { code: "ERROR" };
+  const dir = path.join(STRAT_DIR(), name, "chart");
+  const none = part === "manifest" ? { code: "OK", manifest: null } : { code: "ERROR" };
+  try { if (!fs.lstatSync(dir).isDirectory()) return none; } catch (_) { return none; }
+  const raw = await readChartFile(path.join(dir, "manifest.json"), CHART_MANIFEST_MAX);
+  let m = null; try { m = raw ? JSON.parse(raw.toString("utf8")) : null; } catch (_) { m = null; }
+  if (!m || typeof m !== "object" || !Array.isArray(m.chunks)) return none;
+  if (part === "manifest") return { code: "OK", manifest: m };
+  if (!Number.isInteger(cid) || cid < 0 || cid >= CHART_MAX_CHUNKS) return { code: "ERROR" };
+  if (typeof hash !== "string" || hash !== m.hash) return { code: "STALE" };
+  const entry = m.chunks.find((c) => c && c.id === cid);
+  if (!entry || typeof entry.sha1 !== "string") return { code: "ERROR" };
+  const body = await readChartFile(path.join(dir, `chunk-${cid}.json`), CHART_CHUNK_MAX);
+  if (!body) return { code: "ERROR" };
+  if (crypto.createHash("sha1").update(body).digest("hex") !== entry.sha1) return { code: "STALE" };
+  try {
+    const d = JSON.parse(body.toString("utf8"));
+    return d && typeof d === "object" && !Array.isArray(d) ? { code: "OK", data: d } : { code: "ERROR" };
   } catch (_) { return { code: "ERROR" }; }
 }
 /* 兩版的程式碼差異:跑 Python 的 difflib,跟 api 的 compare 端點(agent_strategy_versions._code_lines / _hunks)同演算法、
@@ -3143,6 +3193,7 @@ app.whenReady().then(() => {
   handle("reveal-export", (_e, token) => { const p = savedExports.get(String(token || "")); if (!p || !fs.existsSync(p)) return false; shell.showItemInFolder(p); return true; }, false);
   handle("load-version", (_e, name, n) => loadVersion(String(name || ""), n), { code: "ERROR" });
   handle("compare-versions", (_e, name, a, b) => compareVersions(String(name || ""), a, b), { code: "ERROR" });
+  handle("load-chart", (_e, q) => loadChart(String((q && q.name) || ""), q && q.part, q && q.cid, q && q.hash), { code: "ERROR" });
   handle("model-options", (_e, kind) => modelOptions(kind));
   handle("account-status", () => accountStatus());
   handle("auth-state", () => authState(), "out");   // 登入狀態的單一來源:out／in／revoked(帳號與方案、公開連結、雲端分頁都讀它)
@@ -3195,6 +3246,8 @@ app.whenReady().then(() => {
   handle("cloud-strategy", (_e, q) => cloudHost().strategy(q && q.name), { code: "UNREACH", strategy: null });
   // 雲端策略版本的單版 / 比較(/cloud/version):同單支策略,不留在主行程、不落地。回 { code: "OK" | "SYNCING" | "UNREACH", … }
   handle("cloud-version", (_e, q) => cloudHost().version(q), { code: "UNREACH" });
+  // 雲端的完整歷史回測圖表(/cloud/chart_data;進出場分頁往左補):同策略版本,不留在主行程、不落地
+  handle("cloud-chart", (_e, q) => cloudHost().chart(q), { code: "UNREACH" });
   // 雲端的報告清單與本體(renderer/reports.js;同單支策略:不啟動輪詢、憑證只在主行程)。OK + report: null = 平台現在沒有這一份
   handle("cloud-reports", (_e, force) => cloudReports(force === true), { code: "UNREACH", reports: [] });
   handle("cloud-report", (_e, id, ver) => cloudReport(id, ver), { code: "UNREACH", report: null, images: {} });
