@@ -4678,10 +4678,14 @@ function trOvCurve(z) {
   let cut = 0;
   all.forEach((p, i) => { if (i && p.b !== all[i - 1].b) cut = i; });
   const isPnl = TR.ov.mode === "pnl", srv = isPnl ? trPnlServerPoints() : null;   // 平台那條優先;沒有才本機推算
-  const pts = srv ? srv.pts : isPnl ? all.slice(cut) : all;
+  /* 資金異動(換綁一個所)前後常差好幾個數量級,擠同一個 Y 軸後段會被壓成平線(Wei 0.1.28):雲端權益也只畫最後一段。
+     這台電腦的口徑換過照舊兩段並畫(basisNote 講的就是前後兩段) */
+  const flow = Array.isArray(TR.ov.curve.anomalies) && cut > 0;
+  const pts = srv ? srv.pts : isPnl || flow ? all.slice(cut) : all;
   if (z && pts.length < 2 && all.length < 2 && ((trPnlServerPoints() || {}).pts || []).length < 2) return document.createDocumentFragment();   // 另一個模式畫得出來就照舊(切換鈕要留著)
   if (pts.length < 2) {
     frag.appendChild(trEl("div", "pf-state", pts.length ? t("tr.ov.emptyBaseline") : t("tr.ov.empty")));
+    if (flow && !isPnl) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.flowNote")));   // 剛換綁、新段只有一筆:講清楚前面的線為什麼不見了
     return frag;
   }
   const series = srv ? pts : isPnl ? pts.map((p) => ({ t: p.t, v: p.v - pts[0].v })) : pts;
@@ -4715,7 +4719,7 @@ function trOvCurve(z) {
     tipD.textContent = trStamp(p.t); tipV.textContent = trWithUnit(trFmt2(p.v, isPnl));
     // 權益模式第三行:相對「同一個 basis 段」的起點(跨過斷點相減等於把入金算成獲利;沒有斷點時就是區間起點)
     let s = bi; while (s > 0 && series[s - 1].b === p.b) s--;
-    tipS.hidden = isPnl; tipS.textContent = isPnl ? "" : trWithUnit(trFmt2(p.v - series[s].v, true)) + " " + t(s > 0 ? "tr.ov.vsSeg" : "tr.ov.vsStart");   // 有斷點:字也說是「這一段」
+    tipS.hidden = isPnl; tipS.textContent = isPnl ? "" : trWithUnit(trFmt2(p.v - series[s].v, true)) + " " + t(s > 0 || flow ? "tr.ov.vsSeg" : "tr.ov.vsStart");   // 有斷點:字也說是「這一段」
     const right = g.W - g.padR;
     tip.style.maxWidth = (right - g.padL) + "px";   // 卡不得比繪圖區寬(288 欄:貼 padL 後右緣仍會探進右軸欄)
     tip.hidden = false;   // 先顯示才量得到寬

@@ -1728,10 +1728,17 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const dayCell = (all) => { const c = cls(all, "stat"); return c.length === 2 ? cls(flat(c[1]), "sv")[0] : null; };
     { const all = paint(bag("cloud", { curve: CLOUD }));
       const cv = canvasOf(all), day = dayCell(all);
-      ok("雲端:畫得出曲線(canvas + 讀屏 label 5 筆)與當日損益格(+12.50、+1.25%),資金異動那一句在圖下、不講口徑那一句",
-        !!cv && cv.attrs.role === "img" && /"n":5/.test(cv.attrs["aria-label"]) && /^tr\.ov\.curveAria\|/.test(cv.attrs["aria-label"])
+      ok("雲端:資金異動之後只畫最後一段(讀屏 label 3 筆、從 2010.00 起)與當日損益格(+12.50、+1.25%),資金異動那一句在圖下、不講口徑那一句",
+        !!cv && cv.attrs.role === "img" && /"n":3/.test(cv.attrs["aria-label"]) && /"a":"2,?010\.00 USDT"/.test(cv.attrs["aria-label"]) && /^tr\.ov\.curveAria\|/.test(cv.attrs["aria-label"])
         && !!day && day.textContent.startsWith("+12.50") && day.className.includes("pos") && cls(all, "sub").some((n) => n.textContent === "+1.25%")
         && foots(all).includes("tr.ov.flowNote") && !foots(all).includes("tr.ov.basisNote") && states(all).length === 0); }
+    { const flat1 = CLOUD.curve.map((p) => ({ ...p, basis: "flow1" }));
+      const one = canvasOf(paint(bag("cloud", { curve: { ...CLOUD, anomalies: [] , curve: CLOUD.curve.map((p) => ({ ...p, basis: "flow0" })) } })));
+      const before = paint(bag("cloud", { curve: { ...CLOUD, curve: flat1 } }));
+      ok("雲端:沒有資金異動 / 異動在所選區間之前(區間內只有一段)→ 照舊全畫 5 筆、不出資金異動那一句",
+        !!one && /"n":5/.test(one.attrs["aria-label"]) && !!canvasOf(before) && /"n":5/.test(canvasOf(before).attrs["aria-label"]) && !foots(before).includes("tr.ov.flowNote"));
+      const fresh = paint(bag("cloud", { curve: { ...CLOUD, curve: CLOUD.curve.slice(0, 2).concat([{ ts: now - H, equity: 146.74, basis: "flow1" }]), anomalies: [{ ts: now - H, note: "venue_change" }] } }));
+      ok("雲端:剛換綁、最後一段只有一筆 → 不畫前一段,印「紀錄還不夠」並講資金異動那一句", !canvasOf(fresh) && states(fresh).join() === "tr.ov.emptyBaseline" && foots(fresh).includes("tr.ov.flowNote")); }
     { const all = paint(bag("cloud", { curve: CLOUD, mode: "pnl" })), cv = canvasOf(all);
       ok("雲端:累積損益只從資金異動之後那一段起算(3 筆,不把入金算成獲利);損益 mode 不出資金異動那一句", !!cv && /^tr\.ov\.curveAriaPnl\|/.test(cv.attrs["aria-label"]) && /"n":3/.test(cv.attrs["aria-label"]) && /"a":"0\.00 USDT"/.test(cv.attrs["aria-label"]) && foots(all).length === 0); }
     { const all = paint(bag("local", { curve: LOCAL })), cv = canvasOf(all), day = dayCell(all);
@@ -1795,7 +1802,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /box\.appendChild\(trOvStats\(\)\);\n\s*box\.appendChild\(trOvPerf\(\)\);[^\n]*\n\s*box\.appendChild\(trOvCurve\(z\)\);\n\s*box\.appendChild\(trOvEvents\(r, z\)\);/.test(cutF("trPaintOver")) && /TR\.ov\.curveErr,/.test(cutF("trPaintOver")));
     { const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
       const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
-      ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句講斷開與只從最後一段起算(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
+      ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句講曲線與累積損益只從最後一段起算(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
         && /資金異動/.test(get("zh", "tr.ov.flowNote")) && /最後一段/.test(get("zh", "tr.ov.flowNote")) && /Funds moved/.test(get("en", "tr.ov.flowNote")) && /last part/.test(get("en", "tr.ov.flowNote"))); }
     ok("登出:curve 與 curveErr、perf 與 perfErr 一起清", /C\.ov\.curve = null; C\.ov\.ui = \[\]; C\.ov\.uiErr = false; C\.ov\.curveErr = false; C\.ov\.perf = null; C\.ov\.perfErr = false;/.test(src) && /curve: null, curveErr: false, perf: null, perfErr: false,/.test(src));
     { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
