@@ -525,8 +525,9 @@ html.ws-sc .side-gate { display: none; }
 .f-input:disabled { color: var(--ink-3); border-color: var(--border-hairline); cursor: not-allowed; opacity: 1; }   /* 蓋掉 Chromium 內建 select:disabled 的 .7 */
 .f-selw:has(.f-input:disabled)::after { border-color: var(--border-hairline); }
 .cx-manual-note { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.cx-row { display: flex; align-items: center; gap: var(--space-12); margin-top: var(--space-12); }
-.cx-row .n { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.cx-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-12); row-gap: var(--space-8); margin-top: var(--space-12); }
+.cx-row .n { flex: 0 1 auto; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx-row .pf-act { white-space: nowrap; }   /* 放不下時整組鈕換到第二行，不是鈕自己折字長高 */
 /* 設定 › 下單方式:選單 + TWAP 時長格(+ 單位)一列;沿用 .f-selw / .f-input,這裡只有排列 */
 .tr-exec { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-12); }
 .tr-exec .f-selw { flex: 0 0 200px; }

@@ -4313,7 +4313,7 @@ function trPaintSet() {
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
   // 一列:交易所名 + 錢記號 + 連線狀態;右邊兩顆動作。雲端第一刀唯讀:兩顆都不能按(說明在標題下那一行)
   const row = trEl("div", "cx-row");
-  row.appendChild(trEl("span", "n", trVenueLabel(id, true)));
+  const nm = trEl("span", "n", trVenueLabel(id, true)); nm.title = nm.textContent; row.appendChild(nm);
   if (id && id !== PAPER) row.appendChild(trEl("span", "mode real", t("tr.mode.real")));   // 模擬以外都是真錢
   // 三態:讀得到帳戶 = 綠點;讀過而失敗 = 紅記號;還沒讀過(剛綁上那幾秒)= 圓環 + 「串接中…」(.cx-wait 那組,spec-desktop-006 §1.3 D)
   // 群益在雲端開通中(spec w-row-pending):讀帳失敗是預期的,不畫紅;靜態實心點 +「開通中」+「繼續」回到清單
