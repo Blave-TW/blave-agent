@@ -1582,7 +1582,8 @@ def fetch_long_short_ratio_coin(symbol, headers):
       symbol, token_id, updated_at (the newest source; it says nothing about the others —
         judge a single source by its own `last_at` / `stale`)
     `symbol` accepts BTC / BTCUSDT / btc. Returns None for a coin no source collects (the
-    API's 404); 503 (a listed source unreadable) propagates as requests.HTTPError."""
+    API's 404); 503 (a listed source unreadable) propagates as requests.HTTPError.
+    Capped at 200 calls/hour per API key (429) — for many coins' latest values call fetch_long_short_ratio_table once."""
     return _raw_snapshot('long_short_ratio/get_coin', headers,
                          {'symbol': symbol}, allow_404=True)
 
@@ -1628,6 +1629,7 @@ def fetch_open_interest_coin(symbol, headers):
         provisional_from
       symbol, token_id, updated_at
     `symbol` accepts BTC / BTCUSDT / btc. 404 → None; 503 propagates.
+    Capped at 200 calls/hour per API key (429) — for many coins' latest values call fetch_open_interest_table once.
     This is the last 7 days only; for a backtest-length series use
     fetch_open_interest_history (one exchange, coin units — a different basis)."""
     return _raw_snapshot('oi_imbalance/get_coin', headers,

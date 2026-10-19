@@ -61,10 +61,12 @@ Every one of them: no local cache; a coin no source collects → `None` on the c
 Only coins that resolve to a CoinMarketCap crypto are listed; an API key sees every row (`full: true`), an anonymous caller 30. Granularity is 5-minute buckets, but the two table jobs are rebuilt on a schedule (≈ every 15 min, Gate / OKX land ≈ 10 min late) — never tell the user it updates every 5 minutes.
 Field-by-field shapes are in each function's docstring.
 - `fetch_long_short_ratio_table(headers)` / `fetch_long_short_ratio_coin(symbol, headers)` — 多空比 (`/long_short_ratio/get_table` / `get_coin`).
+  - `fetch_long_short_ratio_coin` is capped at 200 calls/hour per API key (429) — never loop it over coins; one `fetch_long_short_ratio_table` call has every coin's latest value.
   - **10 sources**: Binance / OKX / Gate × (account, top account, top position) + Bybit account; read `sources[]`, never a hard-coded key list.
   - Values are longs ÷ shorts (long share = `r / (1 + r)`, computed by the caller); the coin endpoint adds a 7-day hourly `series` per source plus `latest` 5-min points and `price`.
   - **The three venues' "top trader" is three different populations** — Binance = top 20 % of users by margin balance, OKX = top 5 % of traders by open-position value, Gate has never published its rule — so `binance_top_account` vs `okx_top_account` is not a like-for-like comparison of levels; compare each source against its own history
 - `fetch_open_interest_table(headers)` / `fetch_open_interest_coin(symbol, headers)` — 未平倉量, 5 venues (Binance / OKX / BingX / Bybit / Gate).
+  - `fetch_open_interest_coin` is capped at 200 calls/hour per API key (429) — never loop it over coins; one `fetch_open_interest_table` call has every coin's latest value.
   - Basis: USDT-margined perps only, USD notional, one-sided (a venue that reports both sides is halved — `side_factor`), so venues add up directly even for 1000× contracts.
   - **`oi_total` / `oi_mcap` here are NOT the OI 失衡 indicator** (`/oi_imbalance/get_overview_data`, Binance + OKX + BingX only — no lib wrapper, it is what screener conditions and alerts hold thresholds on): different numbers, so a threshold tuned on one does not transfer.
   - Each window counts only the venues that have a baseline at its start (`windows.<w>.exchanges` names them), and a venue with less than 7 days of history (`full_7d: false`) is left out of the 7-day total and of `series.total`.
