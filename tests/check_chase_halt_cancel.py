@@ -18,6 +18,7 @@ rests, and the existing retire path cancels it.
       booked, exactly once
   H9  Bybit: the order never reads terminal after the accepted cancel → uncertain path:
       one notice, nothing booked, no kick, no re-post
+  H10/H11  the same two on Bybit spot (cancel_spot_order / get_spot_order)
 
 No network. Run:
     .venv/bin/python tests/check_chase_halt_cancel.py
@@ -289,10 +290,13 @@ class BybitWire:
     """order_bybit._request stand-in. Resting reads New; after the cancel is accepted the
     reads walk `after` (orderStatus, cumExecQty), repeating its last row."""
 
-    def __init__(self, after):
+    def __init__(self, after, category="linear"):
         self.after, self.cancelled, self.reads_after, self.placed = after, False, 0, threading.Event()
+        self.category = category
 
     def __call__(self, env, method, path, params=None, body=None, retries=3):
+        got = (body or params or {}).get("category")
+        assert got == self.category, f"{path}: category {got!r}, want {self.category!r}"
         if path == "/v5/order/cancel":
             self.cancelled = True
             return {"orderId": "b1"}
@@ -306,8 +310,9 @@ class BybitWire:
         raise AssertionError(f"unexpected Bybit request {method} {path}")
 
 
-def bybit_chase(wire):
-    """A chase on the real order_bybit cancel/get_order; HALT 0.2 s after the order rests."""
+def bybit_chase(wire, spot=False, symbol="BTCUSDT"):
+    """A chase on the real order_bybit cancel/get_order (spot: the spot twins); HALT 0.2 s
+    after the order rests."""
     market = []
     venue_wiring.auto_place_order = lambda *a, **k: market.append(a) or False
     real = order_bybit._request
@@ -317,9 +322,12 @@ def bybit_chase(wire):
         wire.placed.set()
         return {"order_id": "b1", "status": "open"}
 
+    get, cancel = ((order_bybit.get_spot_order, lambda oid: order_bybit.cancel_spot_order({}, "BTCUSDT", oid))
+                   if spot else
+                   (order_bybit.get_order, lambda oid: order_bybit.cancel_order({}, "BTCUSDT", order_id=oid)))
     tools = {"venue": "bybit", "bbo": lambda: (100.0, 100.1), "place": _place,
-             "status": lambda oid: venue_wiring._norm_order(order_bybit.get_order({}, "BTCUSDT", oid)),
-             "cancel": lambda oid: order_bybit.cancel_order({}, "BTCUSDT", order_id=oid)}
+             "status": lambda oid: venue_wiring._norm_order(get({}, "BTCUSDT", oid)),
+             "cancel": cancel}
 
     def _tripper():
         wire.placed.wait(5)
@@ -329,7 +337,7 @@ def bybit_chase(wire):
     th = threading.Thread(target=_tripper, daemon=True)
     th.start()
     try:
-        execute._chase_thread("BTCUSDT", 100.0, None, False, "bybit", None, tools, threading.Event())
+        execute._chase_thread(symbol, 100.0, None, False, "bybit", None, tools, threading.Event())
     finally:
         order_bybit._request = real
         venue_wiring.auto_place_order = _real_auto
@@ -357,6 +365,23 @@ market = bybit_chase(w)
 check(orders() == [] and not market and not os.path.exists("state/execution/kick")
       and sum("could not confirm" in n for n in notes) == 1,
       f"H9 Bybit cancel accepted but never terminal: uncertain — one notice, nothing booked, no kick ({orders()}, {notes})")
+
+# H10/H11 — spot
+config(True)
+reset()
+w = BybitWire([("PartiallyFilled", "0.3"), ("PartiallyFilledCanceled", "0.5")], category="spot")
+market = bybit_chase(w, spot=True, symbol="BTCUSDT@spot")
+rows = orders()
+check(len(rows) == 1 and rows[0]["legs"][0].get("signed_qty") == 0.5 and not market
+      and w.reads_after >= 2,
+      f"H10 Bybit spot async cancel: the end state's 0.5 is booked once, not the 0.3 ({rows})")
+config(True)
+reset()
+w = BybitWire([("New", "0")], category="spot")
+market = bybit_chase(w, spot=True, symbol="BTCUSDT@spot")
+check(orders() == [] and not market and not os.path.exists("state/execution/kick")
+      and sum("could not confirm" in n for n in notes) == 1,
+      f"H11 Bybit spot cancel accepted but never terminal: uncertain, nothing booked ({orders()}, {notes})")
 reset()
 
 print("ALL OK" if not red else f"{red} FAILED")
