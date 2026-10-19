@@ -2473,14 +2473,51 @@ def _strip_py_comments(src):
     return '\n'.join(out)
 
 
-def _first_signal_window_s(name):
+def _bar_seconds(name):
+    """The strategy's INTERVAL in seconds, None without a readable one (Type B)."""
     try:
         m = _INTERVAL_RE.search(_strategy_source(name))
         from lib.bar_ready import interval_to_timedelta
         bar = interval_to_timedelta(m.group(1)).total_seconds() if m else None
     except (OSError, ValueError, OverflowError):
         bar = None
-    return min(bar, FIRST_SIGNAL_WAIT_MAX_S) if bar and bar > 0 else FIRST_SIGNAL_WAIT_MAX_S
+    return bar if bar and bar > 0 else None
+
+
+def _first_signal_window_s(name):
+    bar = _bar_seconds(name)
+    return min(bar, FIRST_SIGNAL_WAIT_MAX_S) if bar else FIRST_SIGNAL_WAIT_MAX_S
+
+
+# A scheduled Type A/C tick that keeps failing leaves state.json at its last good target, and the
+# reconciler would keep trading toward it (a US strategy hand-run once, then refused every tick).
+# Stale = wait_for_bar's latest attempt failed after state.json was written AND that file is older
+# than TARGET_STALE_BARS bars (at least TARGET_STALE_FLOOR_S). No calendar here on purpose:
+# wait_for_bar records a failure only when it tried and failed — a weekend, a TWSE holiday or a
+# TXF session gap is a fast-path exit or a not-ready wait, never a failure — and one transient
+# error is cleared by the next success (retry after 300s) before the floor. Type B (no INTERVAL,
+# no bar_wait contract) is not judged. A stale target is a ceiling, not a floor: reconcile holds
+# the key's entries and lets every reduce / close through, so nobody is locked into a position.
+TARGET_STALE_BARS = 2
+TARGET_STALE_FLOOR_S = 1800
+_stale_targets_logged = set()
+
+
+def _stale_target_age(name, now=None):
+    """Seconds since `name`'s state.json was written when that target is stale, else None."""
+    bar = _bar_seconds(name)
+    if not bar:
+        return None
+    try:
+        with open(f'state/bar_wait/{name}.json') as f:
+            failed = json.load(f).get('last_attempt_failed_at')
+        written = os.path.getmtime(f'strategies/{name}/state.json')
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not _finite(failed) or failed < written:
+        return None
+    age = (time.time() if now is None else now) - written
+    return age if age > max(TARGET_STALE_BARS * bar, TARGET_STALE_FLOOR_S) else None
 
 
 def _first_signal_keys(name):
@@ -2951,6 +2988,30 @@ def aggregate_portfolio():
             'contributors': data['contributors'],
             'gated':        data['gated'],
         }
+    stale = {}
+    for name in {c['strategy'] for row in result.values() for c in row['contributors']}:
+        try:
+            age = _stale_target_age(name)
+        except Exception as e:  # never a reason to skip this round's exits
+            logging.error(f"[portfolio] {name}: stale-target check failed ({e}) — not held")
+            age = None
+        if age is not None:
+            stale[name] = age
+    for key, row in result.items():
+        names = sorted(c['strategy'] for c in row['contributors'] if c['strategy'] in stale)
+        if names:
+            row['stale_target'] = names
+    for name in set(stale) - _stale_targets_logged:
+        keys = sorted(k for k, row in result.items() if name in row.get('stale_target', ()))
+        logging.warning(f"[portfolio] {name}: target not refreshed for {round(stale[name])}s while "
+                        f"its scheduled run keeps failing — no new entries on {keys}, "
+                        f"reduces and closes still go")
+        guard.audit('target_stale', strategy=name, keys=keys, age_s=round(stale[name]))
+    for name in _stale_targets_logged - set(stale):
+        logging.info(f"[portfolio] {name}: target refreshed — entries trade again")
+        guard.audit('target_fresh', strategy=name)
+    _stale_targets_logged.clear()
+    _stale_targets_logged.update(stale)
     # A member with no venue (still a key of `amounts`, its routing blank — an unbind keeps the
     # portfolio, Wei 10-14) is "no exchange for now", not "removed": the keys it trades are held
     # as they are on the account (flagged gated + unrouted, so reconcile leaves both sides alone
@@ -3569,6 +3630,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
     halted_at_start = guard.halted()
 
     target = aggregate_portfolio()
+    stale_keys = {k: v['stale_target'] for k, v in target.items() if v.get('stale_target')}
     actual = get_positions_fn()
     # Defense in depth: target keys are canonical (dashless uppercase) since
     # aggregate; an account lib / hand-written get_positions returning venue
@@ -3951,6 +4013,14 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                             waiting_on=waiting)
                 logging.warning(f"[reconcile] {symbol} entry {sub_diff:+g} held — contract "
                                 f"rollover, {waiting} not closed yet")
+                failed = True
+                break
+
+            if is_entry and symbol in stale_keys:
+                guard.audit('entry_held_stale_target', symbol=symbol, signed_diff=sub_diff,
+                            strategies=stale_keys[symbol])
+                logging.warning(f"[reconcile] {symbol} entry {sub_diff:+g} held — target not "
+                                f"refreshed ({', '.join(stale_keys[symbol])}), reduces only")
                 failed = True
                 break
 

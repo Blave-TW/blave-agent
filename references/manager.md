@@ -328,6 +328,16 @@ no state, no contribution — so an exit is never parked behind a strategy that 
 Under HALT nothing is sent, inside or past the window — only a close the user asks for
 (全部平倉 / 平倉) goes out; once HALT is cleared, a key past its window reconciles as above.
 
+**A stale target holds entries, never exits.** A funded Type A/C member whose scheduled run keeps
+failing (`state/bar_wait/<name>.json` `last_attempt_failed_at` newer than its `state.json`, and
+that file older than `TARGET_STALE_BARS` bars of its `INTERVAL`, at least
+`TARGET_STALE_FLOOR_S`) gets no new entry, top-up or flip's open leg on its keys; reduces and
+closes still go, so nobody is locked into a position. A weekend, a holiday or a late bar records
+no failure and is never stale; Type B is not judged. The snapshot row carries
+`stale_target: [strategy]`; audit lines `target_stale` / `target_fresh` / `entry_held_stale_target`.
+It lifts by itself on the first successful run. Fix the failing run (its `strategy_failed`
+alert carries the error) — never hand-write a `state.json` to make it trade.
+
 **A spot row without a quantity** (a seed from before quantities, a fill with
 no `executed_qty`) is written off the first time the reconciler builds the
 book: one order error saying so, one `ledger_writeoff` audit line, the coins
