@@ -2074,6 +2074,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         const mixK = zt([C({ name: "mx2", twd: true })], { strategy_kinds: { mx2: { type: "C", market: "mixed" } } });
         const held = zt([C({ name: "h", twd: true })], {}, { h: { weights: { BTCUSDT: 0.5, 2330: 0.5 }, market: "spot" } });
         ok("台股＋加密混的不當台股:strategy_kinds 說 mixed 就不看 twd(twd 只是「有一檔台股」);已經有成分還推不出的不退回市場", mixK.ths.includes(amt("tr.grpUnknown")) && held.ths.includes(amt("tr.grpUnknown")), J([mixK, held]));
+        // 美股:quote_ccy 是 null(舊 runtime／判不出),市場是 us_stock → USD;有成分(AMZN 沒尾碼)也一樣;mixed 照舊未定
+        const usA = zt([{ name: "us_a", hasBacktest: true, symbol: "AMZN", market: "swap" }], { strategy_kinds: { us_a: { type: "A", market: "us_stock" } } });
+        const usC = zt([C({ name: "us_c", twd: false })], { strategy_kinds: { us_c: { type: "C", market: "us_stock" } } }, { us_c: { weights: { AMZN: 0.5, GOOGL: 0.5 }, market: "spot" } });
+        const usCl = zt([C({ name: "us_cl", twd: false, srcMarket: "us_stock" })]);
+        const usMx = zt([{ name: "us_mx", hasBacktest: true, symbol: "AMZN", market: "swap" }], { strategy_kinds: { us_mx: { type: "A", market: "mixed" } } });
+        ok("美股列 quote_ccy 沒值:strategy_kinds／雲端清單說 us_stock → USD(Type A、有成分的 Type C 都是);mixed 照舊幣別未定",
+          [usA, usC, usCl].every((x) => x.ths.includes(amt("USD"))) && usMx.ths.includes(amt("tr.grpUnknown")), J([usA, usC, usCl, usMx]));
         const two = zt([C({ name: "c_new", twd: false }), { name: "btc", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }]);
         ok("兩區時未定區的區標題掛原因(title)", two.grp.some((g) => g[0] === "tr.grpUnknown" && g[1] === "tr.ccyAfterRun"), J(two)); }
       /* 查證報告 #1:群益台指期(雲端視角)——這一格是口數不是錢。對齊網頁 TXF_SPECS / txfRefMoney / paintTotal */

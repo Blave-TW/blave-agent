@@ -2949,8 +2949,11 @@ function trNoSignalYet(n) { const f = (trReport() || {}).signals_frozen; return 
 function trZoneOf(n) {
   const r = trReport() || {}, st = (r.states || {})[n] || {}, x = TR.list.find((y) => y.name === n) || {}, tc = trTypeC(st, n);
   const z = trRowZone(n, st.symbol || x.symbol, tc, x.portfolio === true, trQuoteMap());
-  if (z !== TR_ZONE_UNKNOWN || (tc && tc.keys.length)) return z;
-  const k = r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds[n] : null, mk = x.srcMarket || (k && k.market);
+  if (z !== TR_ZONE_UNKNOWN) return z;
+  const mk = trSrcMarket(r, n);
+  // 美股(同 trSymZone):成分是 AMZN 這種沒有尾碼的代號,有成分也推不出,市場說 us_stock 就是 USD
+  if (mk === "us_stock") return "USD";
+  if (tc && tc.keys.length) return z;
   return (mk ? mk === "tw_stock" : x.twdAll === true) ? TR_TXF_CCY : z;
 }
 // 幣別未定的原因:全是還沒回報的投資組合 = 跑過一次、算出成分就知道;單一標的(BTCUSD 這種)或跑過還未定 = 混了幣別或看不出計價,再跑也不會變
