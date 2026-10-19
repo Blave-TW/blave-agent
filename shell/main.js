@@ -355,7 +355,7 @@ function isOurPageUrl(u) {
 }
 function cloudHost() {
   if (!_cloud) _cloud = require("./cloud").createCloudHost({
-    apiBase: API_BASE, post: (u, b) => postJSON(u, b, u.endsWith(require("./cloud").CHART_ENDPOINT) ? { gzip: true, timeout: 60000 } : undefined),
+    apiBase: API_BASE, post: (u, b) => postJSON(u, b, u.endsWith(require("./cloud").CHART_ENDPOINT) ? { timeout: 60000 } : undefined),
     getCreds: blaveCreds,
     // 送的是部位與權益:只送給載入自家 index.html 的視窗(今天全 app 只有一個視窗;哪天多了第二個,也不會漏過去)
     onChange: (snap) => {
@@ -712,28 +712,31 @@ async function signOutBlave() {
   return { revoked };
 }
 
+/* api 回應一律要 gzip(nginx 對 JSON 有開;雲端策略明細 2.4 MB → 640 KB)。Node 不會自己解,這裡解。
+   整包收成 Buffer 再解碼:逐塊字串相加會把跨塊的多位元組字切壞。壞掉的 gzip 走 reject,跟連線錯誤同一條路 */
+function readJSONResponse(res, resolve, reject) {
+  const parts = [];
+  res.on("data", (d) => { parts.push(d); });
+  res.on("end", () => {
+    const raw = Buffer.concat(parts);
+    const done = (buf) => {
+      try { resolve({ status: res.statusCode, body: JSON.parse(buf.toString("utf8") || "{}") }); }
+      catch (_) { resolve({ status: res.statusCode, body: {} }); }
+    };
+    if (!raw.length || String(res.headers["content-encoding"] || "").trim().toLowerCase() !== "gzip") return done(raw);
+    require("zlib").gunzip(raw, (err, out) => (err ? reject(err) : done(out)));
+  });
+}
+
 function postJSON(url, body, extra) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
-    // gzip:回應可能是存好的 gzip 直送(/cloud/chart_data 的分塊,解開最多 32MB),要了就自己解
-    const gzip = !!(extra && extra.gzip);
     const req = require("https").request(url, {
       timeout: 20000,
       ...(extra || {}),   // my_ip:{ family: 4 } 強制走 IPv4;報告分享的上傳:{ timeout } 放長
       method: "POST",
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data), ...(gzip ? { "Accept-Encoding": "gzip" } : {}) },
-    }, (res) => {
-      const status = res.statusCode;
-      const src = gzip && res.headers["content-encoding"] === "gzip" ? res.pipe(require("zlib").createGunzip()) : res;
-      if (src !== res) src.on("error", reject);   // 壞掉的 gzip
-      let buf = "";
-      src.setEncoding("utf8");
-      src.on("data", (d) => { buf += d; });
-      src.on("end", () => {
-        try { resolve({ status, body: JSON.parse(buf || "{}") }); }
-        catch (_) { resolve({ status, body: {} }); }
-      });
-    });
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data), "Accept-Encoding": "gzip" },
+    }, (res) => readJSONResponse(res, resolve, reject));
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", reject);
     req.end(data);
@@ -757,14 +760,7 @@ function cancelOAuth() {
 
 function getJSON(url, headers) {
   return new Promise((resolve, reject) => {
-    const req = require("https").request(url, { method: "GET", headers: headers || {}, timeout: 15000 }, (res) => {
-      let buf = "";
-      res.on("data", (d) => { buf += d; });
-      res.on("end", () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(buf || "{}") }); }
-        catch (_) { resolve({ status: res.statusCode, body: {} }); }
-      });
-    });
+    const req = require("https").request(url, { method: "GET", headers: { ...(headers || {}), "Accept-Encoding": "gzip" }, timeout: 15000 }, (res) => readJSONResponse(res, resolve, reject));
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", reject);
     req.end();

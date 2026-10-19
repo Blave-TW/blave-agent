@@ -2,9 +2,8 @@
 //   ① 純函式:manifest 清洗、挑塊(由近到遠、批次上限、根數夠就停、分線上限)、左緣判定、合併(只接更早的、排序去重、指標線對齊、成交去重)、
 //      起點部位語意、箭頭收起門檻
 //   ② 主行程 loadChart:只認列得出來的策略資料夾、塊號範圍、chart/ 與檔案不跟 symlink、manifest hash 與 sha1 對不上 → STALE
-//   ③ 雲端 chart():名字與塊號的閘門、manifest 404 = 沒有分塊;postJSON 要 gzip 時自己解
-const fs = require("fs"), path = require("path"), os = require("os"), vm = require("vm"), crypto = require("crypto"), zlib = require("zlib");
-const { PassThrough } = require("stream");
+//   ③ 雲端 chart():名字與塊號的閘門、manifest 404 = 沒有分塊(postJSON 的 gzip 由 check_shell_gzip.js 管)
+const fs = require("fs"), path = require("path"), os = require("os"), vm = require("vm"), crypto = require("crypto");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 1500))); if (!c) red++; };
 const J = JSON.stringify;
@@ -121,22 +120,6 @@ function fnSrc(src, name) {
   const rej = await Promise.all([{ name: "../x", part: "manifest" }, { name: "momo", part: "chunk", cid: 50 }, { name: "momo", part: "chunk", cid: "1" }, { name: "momo", part: "overview" }, null].map((q) => host.chart(q)));
   ok("③ 名字 / 塊號 / part 不對 → UNREACH、不打 api", rej.every((r) => r.code === "UNREACH") && sent.length === n0);
 
-  // postJSON 要 gzip:帶 Accept-Encoding、回應是 gzip 就解;沒要的照舊
-  const postSrc = fnSrc(mainSrc, "postJSON");
-  const fakeReq = (gz, payload) => {
-    const seen = {};
-    const https = { request: (url, o, cb) => { seen.headers = o.headers; seen.timeout = o.timeout; const req = new PassThrough(); req.end = () => {
-      const res = new PassThrough(); res.statusCode = 200; res.headers = gz ? { "content-encoding": "gzip" } : {};
-      cb(res); res.end(gz ? zlib.gzipSync(Buffer.from(payload)) : Buffer.from(payload)); }; return req; } };
-    const post = new Function("require", postSrc + "\nreturn postJSON;")((m) => (m === "https" ? https : require(m)));
-    return { post, seen };
-  };
-  const big = J({ candles: Array.from({ length: 20000 }, (_, i) => [i, 1, 2, 0.5, 1.5, 1]), note: "中文跨塊" });
-  { const f = fakeReq(true, big); const r = await f.post("https://x/y", {}, { gzip: true, timeout: 60000 });
-    ok("③ postJSON gzip:帶 Accept-Encoding、解開、timeout 照給", r.status === 200 && r.body.candles.length === 20000 && r.body.note === "中文跨塊" && f.seen.headers["Accept-Encoding"] === "gzip" && f.seen.timeout === 60000); }
-  { const f = fakeReq(false, big); const r = await f.post("https://x/y", {});
-    ok("③ postJSON 沒要 gzip:不帶 Accept-Encoding、照舊解 JSON(多位元組字跨塊不壞)", r.body.note === "中文跨塊" && !("Accept-Encoding" in f.seen.headers)); }
-  ok("③ 雲端宿主只有 chart_data 那支要 gzip", /u\.endsWith\(require\("\.\/cloud"\)\.CHART_ENDPOINT\) \? \{ gzip: true/.test(mainSrc));
 
   // app.js:兩個視角都把來源交給 renderTrades
   const app = fs.readFileSync(path.join(R, "app.js"), "utf8");
