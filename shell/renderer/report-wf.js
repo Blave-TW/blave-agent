@@ -381,7 +381,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.font = "11px " + token("--font-mono");   // canvas 不吃 CSS 變數,字族從 tokens.css 讀;11px = canon 最小字階
-    const cLine = token("--color-data-1"), cGrid = token("--border-hairline"), cText = token("--ink-3"), cMark = token("--color-greyDark");
+    const cLine = token("--color-data-1"), cGrid = token("--border-hairline"), cText = token("--ink-3"), cMark = token("--border-frame");
 
     const cum = w.oos.cum, n = cum.length;
     let lo = Math.min.apply(null, cum), hi = Math.max.apply(null, cum);
@@ -815,6 +815,9 @@
   // ---------------------------------------------------------------- 入口
 
   const observers = new WeakMap();
+  // 換主題:canvas 不吃 CSS 變數,每個 container 最近一次的 redraw 再跑一次(同 report-backtest.js)
+  const redraws = new Map();
+  if (window.addEventListener) window.addEventListener("blave:theme", () => { redraws.forEach((fn, c) => { if (c.isConnected) fn(); else redraws.delete(c); }); });
   /* 整片重畫會把焦點所在的節點拿掉(送出後鈕變「已送出」、回合結束舊結果回來):原本焦點在分頁裡的,交給呼叫端放到樣本外驗證那顆分頁鈕,
      不讓它掉到 <body>(設計稽核 S2) */
   function renderWf(container, data, opts) {
@@ -829,6 +832,7 @@
     hideTip();
     const prev = observers.get(container);
     if (prev) { prev.disconnect(); observers.delete(container); }
+    redraws.delete(container);
     container.textContent = "";
     const stats = data.stats && typeof data.stats === "object" ? data.stats : null;
     const st = { data, sent: isSent(data, opts), gate: opts.gate, knobs: null };
@@ -868,6 +872,7 @@
         ro.observe(container);
         observers.set(container, ro);
       }
+      redraws.set(container, redraw);
       redraw();
     }
   }

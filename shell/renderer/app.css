@@ -109,7 +109,7 @@
 .btn-quiet:hover { color: var(--ink); }
 /* 停用:同 .ws-update / .rp-tab 的灰階退場(會停用的文字鈕:關於的「檢查更新」「重新啟動以完成更新」;
    資料來源的 ✕ 有自己的 .src-rm:disabled,權重較高、不受影響) */
-.btn-quiet:disabled, .btn-quiet:disabled:hover { color: var(--color-greyDark); cursor: not-allowed; text-decoration: none; }
+.btn-quiet:disabled, .btn-quiet:disabled:hover { color: var(--ink-disabled); cursor: not-allowed; text-decoration: none; }
 .cn-rows { margin-top: var(--space-12); }
 .cn-row {
   display: flex; align-items: center; gap: var(--space-12);
@@ -247,7 +247,7 @@
 .ta-wait:empty { display: none; }
 .ws-update:hover { color: var(--ink); }
 .ws-update:hover span { text-decoration: underline; }   /* flex item 不吃容器的 text-decoration 傳播:畫在 span 上 */
-.ws-update:disabled, .ws-update:disabled:hover { color: var(--color-greyDark); cursor: not-allowed; }
+.ws-update:disabled, .ws-update:disabled:hover { color: var(--ink-disabled); cursor: not-allowed; }
 .ws-update:disabled:hover span { text-decoration: none; }
 /* 「更新中…」(雲端主機正在換檔):不可點的狀態字,沒有時鐘、沒有百分比。不是停用,不退成停用灰 */
 .ws-update.is-status { cursor: default; }
@@ -530,7 +530,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-trigger:hover:not(:disabled), .mp.is-open .mp-trigger { background: var(--surface-muted); }
 .mp-trigger:hover:not(:disabled) .mp-t-model, .mp.is-open .mp-t-model { color: var(--ink); }
 .mp-trigger:disabled { cursor: not-allowed; }
-.mp-trigger:disabled .mp-t-model, .mp-trigger:disabled .mp-t-effort { color: var(--color-greyDark); }
+.mp-trigger:disabled .mp-t-model, .mp-trigger:disabled .mp-t-effort { color: var(--ink-disabled); }
 .mp-chev {
   flex: none; width: 5px; height: 5px; margin: 0 2px 2px;
   border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3);
@@ -601,8 +601,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   position: absolute; left: 10px; bottom: calc(100% + 6px); z-index: 20;
   display: none; max-width: 260px; padding: 6px 10px;
   border-radius: var(--radius-sm);
-  background: var(--surface-muted); color: var(--ink-2);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);   /* canon sanctioned:transient overlay 的浮層陰影 */
+  background: var(--surface-overlay); color: var(--ink-2);
+  box-shadow: var(--shadow-overlay);
   font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left;
   white-space: normal;   /* 觸發點常掛在截斷用的 nowrap、600 的標籤裡(.ov-stats .sl),不宣告就繼承成一行粗字、字跑出底色 */
   animation: mp-in var(--motion-fast) var(--ease-standard);
@@ -696,7 +696,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 @media (prefers-reduced-motion: reduce) { .tabs-more, .tabs-more-cv { transition: none; } }
 .rp-tab:hover:not(:disabled) { color: var(--ink); }
 .rp-tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
-.rp-tab:disabled { color: var(--color-greyDark); cursor: not-allowed; }
+.rp-tab:disabled { color: var(--ink-disabled); cursor: not-allowed; }
 .rp-nobt { margin: 0; padding: var(--space-12) var(--space-24) 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .rp-nobt[hidden] { display: none; }
 /* 缺金鑰(app.js rpNobtPaint):同一格換成「文字＋去資料來源」一列。必須被讀到的暗底次要字升 ink-2;:not([hidden]) 讓雲端載入中收起時不被 flex 撐回來 */
@@ -767,7 +767,7 @@ body.resizing .pane-strategies, body.resizing .pane-chat { transition: none; }
   transform: translateX(-50%); background: transparent;
   transition: background var(--motion-fast) var(--ease-standard);
 }
-.pane-div:hover::after, .pane-div:focus-visible::after { background: var(--color-greyDark); }
+.pane-div:hover::after, .pane-div:focus-visible::after { background: var(--border-frame); }
 .pane-div.active::after { background: var(--color-greyMedium); }
 .pane-div:focus-visible { outline: none; }
 
@@ -841,7 +841,7 @@ body.resizing * { cursor: col-resize !important; }
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .ws-more:hover:not(:disabled), .ws-more[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
-.ws-more:disabled { cursor: not-allowed; color: var(--color-greyDark); }
+.ws-more:disabled { cursor: not-allowed; color: var(--ink-disabled); }
 .ws-more:focus-visible { outline-offset: -2px; }
 .ws-more-ic {
   flex: none; width: 16px; height: 16px;
@@ -881,7 +881,7 @@ body.resizing * { cursor: col-resize !important; }
 .modal-head h6 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--ink); }
 /* 標題一律貼左:head 是 space-between,前面多一個「雲端」記號時 h6 會被推到正中間(連接框、雲端刪除框) */
 .modal-head > h6 { margin-right: auto; }
-.modal-close:disabled, .modal-close:disabled:hover { color: var(--color-greyDark); background: transparent; cursor: default; }   /* 購買扣款在路上時 ✕ 停用(library.js) */
+.modal-close:disabled, .modal-close:disabled:hover { color: var(--ink-disabled); background: transparent; cursor: default; }   /* 購買扣款在路上時 ✕ 停用(library.js) */
 .modal-close {
   flex: 0 0 32px; width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
@@ -1010,7 +1010,7 @@ body.resizing * { cursor: col-resize !important; }
    「使用中」= 整列灰填 + 名稱加粗 + 列尾三個字(canon 的 Active:同左欄分類、側欄策略)。不畫線 */
 #set-model{display:flex;flex-direction:column;gap:var(--space-24)}
 .cn-grp-h{display:flex;align-items:center;gap:var(--space-8);min-height:24px;font-size:12px;font-weight:400;color:var(--ink-3)}
-.cn-grp-h .sep{color:var(--color-greyDark)}
+.cn-grp-h .sep{color:var(--ink-disabled)}
 .cn-more{margin:var(--space-8) 0 0}
 .cn-opts{margin-top:var(--space-4);display:flex;flex-direction:column;gap:var(--space-4)}
 .cn-grp>.cn-opts:first-child{margin-top:0}   /* 沒有小標的那一組(Blave AI):不必讓 4px 給小標 */
@@ -1028,7 +1028,7 @@ body.resizing * { cursor: col-resize !important; }
 /* 這一頁的小框鈕比別處亮一階:它是這一列的主要動作 */
 #set-model .pf-act{min-width:52px;text-align:center;color:var(--ink-2);border-color:var(--border-frame)}
 /* 上面那條帶 id,會蓋掉 trade.css 的 .pf-act:disabled——等待登入時被鎖住的鈕要照樣變灰 */
-#set-model .pf-act:disabled{color:var(--color-greyDark);border-color:var(--border-hairline)}
+#set-model .pf-act:disabled{color:var(--ink-disabled);border-color:var(--border-hairline)}
 #set-model .cn-hint{margin:0}
 /* 連結畫面尾註下那一句 */
 /* 確認框:三句各自一段 */
@@ -1106,6 +1106,9 @@ body.resizing * { cursor: col-resize !important; }
 
 .set-gl { flex: none; margin: 0; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--ink); }
 .set-selw { position: relative; display: inline-flex; flex: 0 1 160px; margin-left: auto; min-width: 0; }
+/* 外觀 segment(.cn-lang 配方):靠右、至少跟下拉欄一樣寬 */
+.set-seg { margin-left: auto; min-width: 160px; }
+.set-seg button { flex: 1 1 auto; }
 .set-selw::after {                 /* canon 的 CSS chevron */
   content: ""; position: absolute; right: 9px; top: 50%;
   width: 6px; height: 6px; margin-top: -4px;
@@ -1118,7 +1121,7 @@ body.resizing * { cursor: col-resize !important; }
   border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
   background: transparent; color: var(--ink);
   font: inherit; font-size: 13px;
-  appearance: none; cursor: pointer; color-scheme: dark;
+  appearance: none; cursor: pointer; color-scheme: light dark;
   transition: background var(--motion-fast) var(--ease-standard);
 }
 .set-sel:hover { background: var(--surface-muted); }
@@ -1148,7 +1151,7 @@ body.resizing * { cursor: col-resize !important; }
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .cs-btn:hover:not(:disabled) { background: var(--surface-muted); color: var(--ink); }
-.cs-btn:disabled { cursor: not-allowed; color: var(--color-greyDark); }
+.cs-btn:disabled { cursor: not-allowed; color: var(--ink-disabled); }
 .cs-new { margin-left: auto; }
 .cs-ico-back, .chat-head.is-list .cs-ico-list { display: none; }
 .chat-head.is-list .cs-ico-back { display: block; }
@@ -1203,16 +1206,16 @@ body.resizing * { cursor: col-resize !important; }
 .cs-del.is-armed, .cs-del.is-armed:hover { color: var(--color-red); background: var(--bg-body); padding: 0 var(--space-6); }
 /* 回合中的鎖(busy.js):鈕照畫、aria-disabled(可聚焦、可點),灰階同 :disabled;點了在 .busy-why 講原因＋一顆 .btn-quiet 補救 */
 .cs-btn[aria-disabled="true"], .cs-btn[aria-disabled="true"]:hover, .cs-newrow[aria-disabled="true"], .cs-newrow[aria-disabled="true"]:hover,
-.cs-del[aria-disabled="true"], .cs-del[aria-disabled="true"]:hover { background: none; color: var(--color-greyDark); cursor: not-allowed; }
+.cs-del[aria-disabled="true"], .cs-del[aria-disabled="true"]:hover { background: none; color: var(--ink-disabled); cursor: not-allowed; }
 .cs-item[aria-disabled="true"] { cursor: not-allowed; }
-.cs-item[aria-disabled="true"] .cs-name { color: var(--color-greyDark); }
-.btn-quiet[aria-disabled="true"], .btn-quiet[aria-disabled="true"]:hover { color: var(--color-greyDark); cursor: not-allowed; text-decoration: none; }
-.ws-update[aria-disabled="true"]:not(.is-status), .ws-update[aria-disabled="true"]:not(.is-status):hover { color: var(--color-greyDark); cursor: not-allowed; }
+.cs-item[aria-disabled="true"] .cs-name { color: var(--ink-disabled); }
+.btn-quiet[aria-disabled="true"], .btn-quiet[aria-disabled="true"]:hover { color: var(--ink-disabled); cursor: not-allowed; text-decoration: none; }
+.ws-update[aria-disabled="true"]:not(.is-status), .ws-update[aria-disabled="true"]:not(.is-status):hover { color: var(--ink-disabled); cursor: not-allowed; }
 .ws-update[aria-disabled="true"]:hover span { text-decoration: none; }
 .busy-why { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .busy-why[hidden] { display: none; }
 /* 補救連結(停止／查看):主墨＋greyDark 底線(同 mockup .lk、網頁同一顆),跟灰色的原因句分得開;借用別人原因行(版本、轉出、掃描)時同一個樣子 */
-.busy-fix, .busy-fix:hover { margin-left: var(--space-4); color: var(--ink); text-decoration-color: var(--color-greyDark); }
+.busy-fix, .busy-fix:hover { margin-left: var(--space-4); color: var(--ink); text-decoration-color: var(--ink-disabled); }
 /* 補救鈕熱區 44×44(全域 .btn-quiet 的 -6 只到約 30×36):置中固定 44 高、寬至少 44,不看字的行盒。只動這一顆,不改視覺(同網頁 .busy-fix::before) */
 .busy-fix::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }
 /* 熱區要落在原因句自己的盒子裡,不伸進上下鄰列(稽核 0127b1 P1-4:轉出的原因句〔停止〕壓到「進出場紀錄」分頁下緣;側欄的被鄰列擋掉 5px)。

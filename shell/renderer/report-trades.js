@@ -547,6 +547,9 @@
   // 上一次建的圖。換策略時 container 被清空重用,但 LWC 的 canvas、它內建的
   // ResizeObserver、我們等尺寸用的那顆都還活著——不先釋放就是漏
   let live = null;
+  if (window.addEventListener) window.addEventListener("blave:theme", function () {
+    if (live && live.retheme) live.retheme();
+  });
   function dispose() {
     if (!live) return;
     if (live.cancelSized) live.cancelSized();
@@ -774,6 +777,8 @@
       series.setData(candles);
 
       const assign = assignPanes(panes);
+      const priceLines = []; // 換主題時改色(retheme)
+      const watermarks = [];
       const members = new Map(); // 子面板 index → [{name, color}],畫面板標籤用
       panes.forEach(function (p, i) {
         const paneIndex = assign.index[i];
@@ -786,14 +791,14 @@
         line.setData(p.points);
         // 門檻水平線(如 RSI 30/70):中性虛線+右軸數值,不做進/出語意配色
         p.levels.forEach(function (value) {
-          line.createPriceLine({
+          priceLines.push(line.createPriceLine({
             price: value,
             color: inkMuted,
             lineWidth: 1,
             lineStyle: LWC.LineStyle.Dashed,
             axisLabelVisible: true,
             title: "",
-          });
+          }));
         });
         if (!p.overlay) {
           if (!members.has(paneIndex)) members.set(paneIndex, []);
@@ -803,11 +808,15 @@
       // 子面板標籤:LWC 的 pane 沒有原生標題,用 canvas 文字浮水印——未信任的
       // name 不進 HTML。首行空白是頂部間距(text watermark 沒有 padding 選項)
       members.forEach(function (list, paneIndex) {
-        const lines = [{ text: " ", color: "transparent", fontSize: LABEL_SIZE, lineHeight: LABEL_TOP_GAP }];
-        list.forEach(function (m) {
-          lines.push({ text: m.name, color: list.length > 1 ? m.color : inkMuted, fontSize: LABEL_SIZE });
-        });
-        LWC.createTextWatermark(chart.panes()[paneIndex], { horzAlign: "left", vertAlign: "top", lines: lines });
+        const linesOf = function (muted) {
+          const lines = [{ text: " ", color: "transparent", fontSize: LABEL_SIZE, lineHeight: LABEL_TOP_GAP }];
+          list.forEach(function (m) {
+            lines.push({ text: m.name, color: list.length > 1 ? m.color : muted, fontSize: LABEL_SIZE });
+          });
+          return lines;
+        };
+        const wm = LWC.createTextWatermark(chart.panes()[paneIndex], { horzAlign: "left", vertAlign: "top", lines: linesOf(inkMuted) });
+        watermarks.push({ wm: wm, linesOf: linesOf });
       });
       if (assign.subCount) {
         const all = chart.panes();
@@ -816,7 +825,7 @@
       }
 
       const markers = buildMarkers(tracks, candles, token("--ink"));
-      LWC.createSeriesMarkers(series, markers);
+      const markersApi = LWC.createSeriesMarkers(series, markers);
       // 賺綠賠紅(箭頭刻意不上紅綠,賺賠由這條線承擔)
       const segments = new SegmentsPrimitive(buildSegments(tracks, candles), {
         halo: token("--surface-card"),
@@ -853,7 +862,34 @@
       // 不然「整段」會被夾回預設下限);enableConflation:縮到每根不到 1px 時自動合併著畫
       chart.timeScale().applyOptions({ minBarSpacing: 0.002, enableConflation: true });
       applyInitialView();
+      // 換主題:只改色、不重建(視野、選取、地圖位置都留著)。紅綠與類別色亮暗同值,不用動
+      const retheme = function () {
+        const muted = token("--ink-3");
+        const card = token("--surface-card");
+        chart.applyOptions({
+          layout: {
+            textColor: muted,
+            background: { type: "solid", color: card },
+            panes: { separatorColor: token("--border-hairline"), separatorHoverColor: token("--surface-muted") },
+          },
+        });
+        priceLines.forEach(function (pl) {
+          pl.applyOptions({ color: muted });
+        });
+        watermarks.forEach(function (w) {
+          w.wm.applyOptions({ lines: w.linesOf(muted) });
+        });
+        const ink = token("--ink");
+        markers.forEach(function (m) {
+          m.color = ink;
+        });
+        markersApi.setMarkers(markers);
+        segments._colors.halo = card;
+        segments._colors.band = token("--surface-muted");
+        if (segments._requestUpdate) segments._requestUpdate();
+      };
       return {
+        retheme: retheme,
         chart: chart,
         series: series,
         segments: segments,
@@ -907,13 +943,16 @@
   }
   function buildMap(wrap, built, candles, bars, dateOnly) {
     const last = candles.length - 1;
-    const colors = {
-      rail: token("--surface-muted"),
-      frame: token("--ink"),
-      win: token("--color-green"),
-      loss: token("--color-red"),
-      none: token("--ink-3"),
+    const palette = function () {
+      return {
+        rail: token("--surface-muted"),
+        frame: token("--ink"),
+        win: token("--color-green"),
+        loss: token("--color-red"),
+        none: token("--ink-3"),
+      };
     };
+    const colors = palette();
     const cv = document.createElement("canvas");
     wrap.appendChild(cv);
     wrap.tabIndex = 0;
@@ -1022,10 +1061,16 @@
       ro = new ResizeObserver(schedule);
       ro.observe(cv);
     }
+    const onTheme = function () {
+      Object.assign(colors, palette());
+      schedule();
+    };
+    window.addEventListener("blave:theme", onTheme);
     schedule();
     return function () {
       if (raf) cancelAnimationFrame(raf);
       if (ro) ro.disconnect();
+      window.removeEventListener("blave:theme", onTheme);
     };
   }
 
@@ -1164,7 +1209,7 @@
       try {
         if (typeof LightweightCharts === "undefined") throw new Error("LWC_MISSING");
         built = buildChart(host, candles, tracks, sanitizePanes(stats.panes), dateOnly);
-        live = { chart: built.chart, cancelSized: whenSized(host, built.applyInitialView) };
+        live = { chart: built.chart, retheme: built.retheme, cancelSized: whenSized(host, built.applyInitialView) };
         if (candles.length > 1) {
           const wrap = el("div", "tr-map");
           card.appendChild(wrap);

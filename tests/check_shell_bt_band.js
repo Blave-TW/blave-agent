@@ -9,7 +9,7 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
 const STR = vm.runInNewContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
 
 const TOK = { "--color-primary": "#ff8a00", "--color-red": "#e5484d", "--border-hairline": "#2a3138", "--ink-3": "#818f97",
-  "--color-greyDark": "#546168", "--color-greyMedium": "#818f97", "--surface-muted": "#1c2228", "--color-green": "#30a46c" };
+  "--chart-band": "#546168", "--color-greyMedium": "#818f97", "--surface-muted": "#1c2228", "--color-green": "#30a46c" };
 const BAND_FILL = "rgba(84,97,104,0.55)";
 
 class Node {
@@ -124,7 +124,7 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   const med = ev.filter((e) => e.op === "stroke" && e.stroke === TOK["--color-greyMedium"] && e.lw === 1.2 && e.dash === "[4,4]");
   const eq = ev.filter((e) => e.op === "stroke" && e.stroke === TOK["--color-primary"] && e.lw === 2);
   const grid = ev.filter((e) => e.op === "stroke" && e.stroke === TOK["--border-hairline"]);
-  ok("寬帶:帶填一次(greyDark @ 0.55)、中位數虛線 [4,4] 1.2px greyMedium 一條、策略線一條", fills.length === 1 && med.length === 1 && eq.length === 1, JSON.stringify([fills.length, med.length, eq.length]));
+  ok("寬帶:帶填一次(--chart-band @ 0.55)、中位數虛線 [4,4] 1.2px greyMedium 一條、策略線一條", fills.length === 1 && med.length === 1 && eq.length === 1, JSON.stringify([fills.length, med.length, eq.length]));
   ok("圖層:權益區格線 → 帶 → 中位數 → 策略線", fills.length && med.length && eq.length && grid.length && grid[0].i < fills[0].i && fills[0].i < med[0].i && med[0].i < eq[0].i);
   // 帶那條 path:fill 之前、上一個 beginPath 之後的所有 lineTo
   const fi = fills[0] ? fills[0].i : 0;
@@ -183,8 +183,8 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
 // ── CSS 色票與字串 ──
 {
   const css = fs.readFileSync(path.join(R, "report-backtest.css"), "utf8");
-  ok("CSS:帶色票 10×10 radius-micro、greyDark 55%(與圖同);中位數色票 14px 2px 虛線 greyMedium;圖例可折行",
-    /\.bt-legend\.band::before \{[^}]*width: 10px;[^}]*height: 10px;[^}]*var\(--radius-micro\)[^}]*color-mix\(in srgb, var\(--color-greyDark\) 55%, transparent\)/.test(css)
+  ok("CSS:帶色票 10×10 radius-micro、--chart-band 55%(與圖同);中位數色票 14px 2px 虛線 greyMedium;圖例可折行",
+    /\.bt-legend\.band::before \{[^}]*width: 10px;[^}]*height: 10px;[^}]*var\(--radius-micro\)[^}]*color-mix\(in srgb, var\(--chart-band\) 55%, transparent\)/.test(css)
     && /\.bt-legend\.med::before \{[^}]*width: 14px;[^}]*border-top: 2px dashed var\(--color-greyMedium\)/.test(css)
     && /\.bt-label \{[^}]*flex-wrap: wrap;/.test(css) && /\.bt-legend \{ position: relative;/.test(css));
   const keys = ["bt.legendBand", "bt.legendMedian", "bt.tip.band", "bt.tip.bandNarrow", "bt.chartAriaBand"];

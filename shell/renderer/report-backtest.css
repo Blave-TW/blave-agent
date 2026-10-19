@@ -36,7 +36,7 @@
   right: 100%;
   width: var(--space-24);
   text-align: center;
-  color: var(--color-greyDark);
+  color: var(--ink-disabled);
 }
 
 /* ---- 1b. 更新績效(renderer/perf.js 掛進 .bt-meta 列尾;spec stats-manual-refresh §10)----
@@ -45,7 +45,7 @@
 .bt-meta > .upd { display: inline-flex; align-items: center; gap: var(--space-8); margin-left: auto; white-space: nowrap; }
 .bt-meta > .upd .ts[title] { cursor: help; }
 .bt-meta > .upd .busy { display: inline-flex; align-items: center; gap: var(--space-6); }
-.bt-meta > .upd .btn-quiet[aria-disabled="true"] { color: var(--color-greyDark); text-decoration: none; cursor: not-allowed; }
+.bt-meta > .upd .btn-quiet[aria-disabled="true"] { color: var(--ink-disabled); text-decoration: none; cursor: not-allowed; }
 .bt-meta > .upd .btn-quiet::before { inset: -15px -6px; }   /* 熱區補到 44 高(視覺 14 + 15×2;設計稽核量到 42.25,只動這一顆,全域 .btn-quiet 仍是 24 最小) */
 .bt > .bt-meta + .upd-fail { margin-top: var(--space-8); }
 .bt > .upd-fail + * { margin-top: var(--space-16); }
@@ -117,7 +117,7 @@
 .bt-mv.hero { font-size: 18px; font-weight: 600; }
 .bt-mv.pos { color: var(--color-green); }
 .bt-mv.neg { color: var(--color-red); }
-.bt-mv.na { color: var(--color-greyDark); }
+.bt-mv.na { color: var(--ink-disabled); }
 /* Type C 的基準是一句話不是數字:不進 mono、可以換行 */
 .bt-mv.prose { font-size: 12px; white-space: normal; text-align: right; }
 
@@ -150,7 +150,7 @@
   width: 10px;
   height: 10px;
   border-radius: var(--radius-micro);
-  background: color-mix(in srgb, var(--color-greyDark) 55%, transparent);
+  background: color-mix(in srgb, var(--chart-band) 55%, transparent);
 }
 .bt-legend.med::before {
   width: 14px;

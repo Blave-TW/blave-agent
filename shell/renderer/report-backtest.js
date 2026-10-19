@@ -440,7 +440,7 @@
         for (let i = 0; i < n; i++) ctx.lineTo(xAt(i), yEq(band.p95[i]));
         for (let i = n - 1; i >= 0; i--) ctx.lineTo(xAt(i), yEq(band.p5[i]));
         ctx.closePath();
-        ctx.fillStyle = rgbaToken("--color-greyDark", 0.55);
+        ctx.fillStyle = rgbaToken("--chart-band", 0.55);
         ctx.fill();
       }
       ctx.save();
@@ -549,7 +549,7 @@
    * 共用一個 cap 會把整片月格洗成同一個淡色。 */
   function heatBg(v, cap) {
     const a = cap > 0 ? Math.min(Math.abs(v) / cap, 1) : 0;
-    if (a < 0.06) return token("--surface-muted"); // 接近 0:中性,不硬分紅綠
+    if (a < 0.06) return "var(--surface-muted)"; // 接近 0:中性,不硬分紅綠;留成變數,換主題時格子自己跟著換
     return rgbaToken(v >= 0 ? "--color-green" : "--color-red", +(0.1 + a * 0.45).toFixed(2));
   }
   // 格子只有 ~40px 寬,印整數;要兩位小數的人看 title
@@ -745,10 +745,16 @@
   /* 上一次的 observer 綁在 container 上帶著走:換策略重畫時舊的要斷掉,
    * 不然每看一支策略就多一個 observer 在重畫已經不在畫面上的 canvas。 */
   const observers = new WeakMap();
+  // 換主題:canvas 不吃 CSS 變數,每個 container 最近一次的 redraw 再跑一次(container 是固定的分頁節點,不會越積越多)
+  const redraws = new Map();
+  if (window.addEventListener) window.addEventListener("blave:theme", function () {
+    redraws.forEach(function (fn, c) { if (c.isConnected) fn(); else redraws.delete(c); });
+  });
 
   function renderBacktest(container, stats) {
     const prev = observers.get(container);
     if (prev) { prev.disconnect(); observers.delete(container); }
+    redraws.delete(container);
     container.textContent = "";
     if (!stats || typeof stats !== "object") {
       container.appendChild(el("div", "bt-empty", t("bt.empty")));
@@ -803,6 +809,7 @@
         ro.observe(container);
         observers.set(container, ro);
       }
+      redraws.set(container, redraw);
       redraw();
     }
   }

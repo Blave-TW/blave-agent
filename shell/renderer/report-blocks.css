@@ -373,7 +373,7 @@
    色階常數只此一份。同特異度下靠 source order 蓋過上面的 darkCard 底 */
 /* 未到月份 / 對角線自相關 / 沒交易的參數格 = 無資訊 */
 .rb-heat td.is-na {
-  color: var(--color-greyDark);
+  color: var(--ink-disabled);
   background: transparent;
 }
 /* 端點=token（green/red ↔ darkCard），|值| 四階 12/23/34/45%——上限 45%

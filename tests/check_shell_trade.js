@@ -721,8 +721,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("0.1.26 稽核 M1:中欄 ≤700 投資組合多空並列拆兩行、中點收掉、標的格可換行(不再只等 ≤520,預設 1280 寬會橫捲)",
         /\.pf-tbl td\.pos \.pos-main\.split \{ display: inline-grid; justify-items: end; \}/.test(c700) && /\.pf-tbl td\.pos \.pos-main\.split \.sep \{ display: none; \}/.test(c700)
         && /\.pf-tbl td\.c-sym \{ white-space: normal; \}/.test(c700) && !/pos-main\.split/.test(c520) && /\.pf-tbl \.c-sym \{ display: none; \}/.test(c520), J([c700.length, c520.length]));
-      ok("0.1.26 稽核 M4:「主機版本較舊」那句(td.na.pending)用 --ink-3,排在 td.na 的 greyDark 之後才蓋得過;「—」(td.na)維持 greyDark(套用金額表 cf-apply 0.1.27 退場)",
-        iCf < 0 && iPend > css.indexOf(".pf-tbl td.na { color: var(--color-greyDark); }") && /\.pf-tbl td\.na \{ color: var\(--color-greyDark\); \}/.test(css));
+      ok("0.1.26 稽核 M4:「主機版本較舊」那句(td.na.pending)用 --ink-3,排在 td.na 的 greyDark 之後才蓋得過;「—」(td.na)維持停用灰 --ink-disabled(套用金額表 cf-apply 0.1.27 退場)",
+        iCf < 0 && iPend > css.indexOf(".pf-tbl td.na { color: var(--ink-disabled); }") && /\.pf-tbl td\.na \{ color: var\(--ink-disabled\); \}/.test(css));
       ok("0.1.26 稽核 M3:投資組合列標的格不是 td.sym(mono),跟台指期一樣走 sname(sans);單一代號列照舊 sym",
         /\.pf-tbl td\.sym, [^{]*\{ font-family: var\(--font-mono\)/.test(css) && !/\.sname[^{]*\{[^}]*font-family: var\(--font-mono\)/.test(css)
         && /trEl\("td", \(txf \|\| isC \? "sname" : "sym"\) \+ " c-sym"\)/.test(fnOf("trAmountTable"))); }
@@ -1001,7 +1001,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && !/\.up-dot/.test(acss));
     ok("設計稽核(版面):框標題一律貼左、確認框與連接框的腳都換行(目的地那一行獨占一列)、文字鈕停用灰階退場、關於那顆本機鈕對齊、.app 不重複宣告字型",
       /\.modal-head > h6 \{ margin-right: auto; \}/.test(acss) && /\.del-modal \.modal-foot, \.cx-modal \.modal-foot \{ flex-wrap: wrap; \}/.test(acss)
-      && /\.btn-quiet:disabled, \.btn-quiet:disabled:hover \{ color: var\(--color-greyDark\); cursor: not-allowed; text-decoration: none; \}/.test(acss)
+      && /\.btn-quiet:disabled, \.btn-quiet:disabled:hover \{ color: var\(--ink-disabled\); cursor: not-allowed; text-decoration: none; \}/.test(acss)
       && /\.btn-quiet \{\n  flex: none; padding: 0;/.test(acss) && !/\.app \{[^}]*font-family/.test(acss) && !/\.set-about \.st\.bad|\.up-cf/.test(acss)
       && /#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right: calc\(var\(--space-32\) \+ var\(--space-8\)\); \}/.test(css));
     { const en = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8");
@@ -1930,7 +1930,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /cloud \? t\("up\.cloud\.go"\) : t\("minv\.btn"\)/.test(cutF("psOpen")) && /const o = psOpener; psClose\(\); if \(cloud\) upCloudUpdate\(o\); else setOpen\(\)\.then\(\(\) => \{ setCat\("display"\); const u = \$\("set-up-btn"\); if \(u && !u\.hidden\) u\.focus\(\); \}\);/.test(cutF("psOpen")));
     { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8"), tok = fs.readFileSync(path.join(R, "tokens.css"), "utf8");
       ok("CSS:.ps-gone 用 --ink-2 不用紅(§13-2);.pf-act:disabled 灰階不用 opacity;checkbox 勾選 = 墨色(--control-fill / --control-fill-text,不用橘)、勾號只引 tokens.css 的變數、trade.css 不寫 hex;modal 440",
-        /\.ps-gone \{[^}]*color: var\(--ink-2\)/.test(css) && !/\.ps-gone \{[^}]*--color-red/.test(css) && /\.pf-act:disabled \{ color: var\(--color-greyDark\); border-color: var\(--border-hairline\); cursor: not-allowed; \}/.test(css)
+        /\.ps-gone \{[^}]*color: var\(--ink-2\)/.test(css) && !/\.ps-gone \{[^}]*--color-red/.test(css) && /\.pf-act:disabled \{ color: var\(--ink-disabled\); border-color: var\(--border-hairline\); cursor: not-allowed; \}/.test(css)
         && /\.ps-cb:checked \{ background-color: var\(--control-fill\); border-color: var\(--control-fill\); \}/.test(css) && /\.ps-cb:checked::after \{[^}]*background: var\(--control-fill-text\);[^}]*mask: var\(--check-indicator\)/.test(css) && /\.ps-cb:disabled:checked::after \{ content: none; \}/.test(css) && !/\.ps-cb[^{]*\{[^}]*--color-primary/.test(css) && /\.ps-cb:disabled:checked \{[^}]*var\(--check-indicator-disabled\)/.test(css) && !/#[0-9a-f]{3,6}\b/i.test(css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/#[a-z][\w-]*/g, ""))
         && /--check-indicator: url\(/.test(tok) && (tok.match(/--check-indicator-disabled: url\(/g) || []).length === 2 && /\.ps-modal \{ width: min\(440px, 92vw\); \}/.test(css) && /\.ps-row \{[^}]*min-height: 44px/.test(css)); }
     { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), block = (n) => S.split(`  ${n}: {`)[1].split("\n  },")[0];

@@ -23,7 +23,7 @@
 .lib-mkt-trig { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 30px; padding: 0 var(--space-12); border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
   font-size: 12px; white-space: nowrap; transition: background var(--motion-fast) var(--ease-standard); }
 .lib-mkt-trig::before { content: ""; position: absolute; inset: -7px 0; }
-.lib-mkt-trig:hover, .lib-mkt-trig[aria-expanded="true"] { background: var(--color-darkBorder); }
+.lib-mkt-trig:hover, .lib-mkt-trig[aria-expanded="true"] { background: var(--surface-muted); }
 .lib-mkt-trig .k { color: var(--ink-3); }
 .lib-mkt-trig .v { color: var(--ink); font-weight: 600; }
 .lib-mkt-trig[aria-expanded="true"] .ct-cv { transform: translateY(2.5px) rotate(-135deg); }

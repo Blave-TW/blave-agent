@@ -65,7 +65,7 @@
 }
 .wf-cmp-tbl td:first-child .mp-tip { font-size: 12px; }
 .wf-cmp-tbl td.num { color: var(--ink); }
-.wf-cmp-tbl td.num.na { color: var(--color-greyDark); }
+.wf-cmp-tbl td.num.na { color: var(--ink-disabled); }
 /* 通過條件(樣本外效率):沿用回測分頁的指標列元件,只補一條上緣髮絲 */
 .wf-facts {
   margin-top: var(--space-16);
@@ -73,7 +73,7 @@
   border-top: 1px solid var(--border-hairline);
 }
 /* 「0.99 · 高於門檻」:數字 mono、判斷字用內文字體;只有「遠低於門檻」上風險色(文字用 *Text,分隔點不上色) */
-.wf-facts .bt-mv .na { color: var(--color-greyDark); }
+.wf-facts .bt-mv .na { color: var(--ink-disabled); }
 .wf-facts .wf-band.is-risk { color: var(--color-redText); }
 
 /* 色塊:樣本外那列 = 圖上那條線(data-1);訓練窗 = ink-3;樣本內給同寬透明位,兩個列名才對齊 */
@@ -114,14 +114,14 @@
   display: inline-block;
   width: 12px;
   height: 0;
-  border-top: 1px dashed var(--color-greyDark);
+  border-top: 1px dashed var(--border-frame);
   flex: none;
 }
 .wf-legend .tickmark {
   display: inline-block;
   width: 0;
   height: 4px;
-  border-left: 1px solid var(--color-greyDark);
+  border-left: 1px solid var(--border-frame);
   flex: none;
 }
 
@@ -175,7 +175,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--color-greyDark);
+  color: var(--ink-disabled);
   background: var(--surface-card);
 }
 .wf-grid td.is-hit {
@@ -291,7 +291,7 @@
 }
 .wf-knob input:disabled {
   border-color: var(--border-hairline);
-  color: var(--color-greyDark);
+  color: var(--ink-disabled);
   cursor: not-allowed;
 }
 .wf-knob .pre {

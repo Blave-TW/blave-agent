@@ -207,7 +207,7 @@ html.ws-sc .side-gate { display: none; }
 }
 .pf-act:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
 /* 停用:真 disabled、灰階、不用 opacity(canon › Components › Disabled);hover 由上面的 :not(:disabled) 擋掉 */
-.pf-act:disabled { color: var(--color-greyDark); border-color: var(--border-hairline); cursor: not-allowed; }
+.pf-act:disabled { color: var(--ink-disabled); border-color: var(--border-hairline); cursor: not-allowed; }
 /* 區段標籤上的 tooltip:觸發點是一顆鈕(鍵盤到得了),氣泡沿用 app.css 的 .tip;
    這一頁的標籤都在捲動容器頂端,往上彈會被裁掉,所以改往下 */
 .tr-tipb { padding: 0; font-size: 12px; color: var(--ink-3); cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -224,7 +224,7 @@ html.ws-sc .side-gate { display: none; }
 .pf-help::before { content: ""; position: absolute; inset: -10px -14px -10px -6px; }
 /* 往下開:面板頂端往上開會被分頁列裁掉。延遲只掛在出現那一側(hover 規則裡),移開時 visibility 0s 立刻收 */
 .pf-help-tip { position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; padding: 6px 10px; border-radius: var(--radius-sm);
-  background: var(--surface-muted); color: var(--ink-2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  background: var(--surface-overlay); color: var(--ink-2); box-shadow: var(--shadow-overlay);
   font-size: 12px; font-weight: 400; line-height: 1.45; white-space: nowrap; pointer-events: none;
   visibility: hidden; opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard), visibility 0s; }
 @media (hover: hover) {
@@ -239,7 +239,7 @@ html.ws-sc .side-gate { display: none; }
 /* 四邊留 4px 給 focus 框(2px 線＋2px offset)再用等量負 margin 抵銷:第一欄 padding-left 0,策略名的框會被捲動容器裁掉(canon › 捲動列的留白) */
 .pf-scroll { overflow-x: auto; padding: var(--space-4); margin: calc(-1 * var(--space-4)); }
 .pf-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.pf-tbl th { font-weight: 600; font-size: 11px; color: var(--ink-3); text-align: left; white-space: nowrap; padding: 0 var(--space-12) var(--space-8); border-bottom: 1px solid var(--color-greyDark); }
+.pf-tbl th { font-weight: 600; font-size: 11px; color: var(--ink-3); text-align: left; white-space: nowrap; padding: 0 var(--space-12) var(--space-8); border-bottom: 1px solid var(--border-frame); }
 .pf-tbl td { padding: var(--space-8) var(--space-12); color: var(--ink-2); border-bottom: 1px solid var(--border-hairline); vertical-align: middle; white-space: nowrap; }
 .pf-tbl tr:last-child td { border-bottom: none; }
 .pf-tbl tr.has-note td { border-bottom: none; }
@@ -258,7 +258,7 @@ html.ws-sc .side-gate { display: none; }
 .sub-sym[title] { position: relative; z-index: 1; width: fit-content; }
 .trv .buy { color: var(--color-greenText); }
 .trv .sell { color: var(--color-redText); }
-.pf-tbl td.na { color: var(--color-greyDark); }
+.pf-tbl td.na { color: var(--ink-disabled); }
 .pf-tbl td.hold { color: var(--ink-3); }
 .pf-tbl td.unmanaged { font-family: var(--font-sans); font-size: 12px; }   /* 「不歸 Blave 管」是字不是數:Han 不進 mono */
 .trv .ccy, .del-body .ccy { margin-left: var(--space-4); font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
@@ -267,7 +267,7 @@ html.ws-sc .side-gate { display: none; }
 .amt-inw { display: inline-flex; align-items: center; gap: var(--space-6); }
 /* 九位數(300,000,000)放得下;格子只放數字,單位在區標題(units spec §9.6) */
 .amt-in {
-  width: calc(11ch + 2 * var(--space-8) + 2px); height: 30px; padding: 0 var(--space-8); border: 1px solid var(--color-greyDark); border-radius: var(--radius-xs);
+  width: calc(11ch + 2 * var(--space-8) + 2px); height: 30px; padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
   background: transparent; color: var(--ink); font: 13px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right;
 }
 .amt-in:focus { border-color: var(--ink); outline: none; }
@@ -281,7 +281,7 @@ html.ws-sc .side-gate { display: none; }
 .amt-dash.off { visibility: hidden; }
 .pf-tbl .pend-col, .pf-tbl .pend-col .ccy, .trv .pf-tbl .pend-col.buy, .trv .pf-tbl .pend-col.sell { color: var(--ink-3); }
 /* 表底合計是整張表唯一較重的線(units spec §9:區之間靠間距、區標題不加框) */
-.pf-total { display: flex; align-items: baseline; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-12); margin-top: var(--space-8); padding-top: var(--space-8); border-top: 1px solid var(--color-greyDark); font-size: 12px; color: var(--ink-3); }
+.pf-total { display: flex; align-items: baseline; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-12); margin-top: var(--space-8); padding-top: var(--space-8); border-top: 1px solid var(--border-frame); font-size: 12px; color: var(--ink-3); }
 .pf-total .n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
 .pf-total .n.mult { font-family: var(--font-sans); }
 /* 依計價分區的區標題列(§9.4):單位寫在這、跟欄頭同一級;不加底色與框線,組間距 24 > 組內列距。小計對齊金額欄,倍數接在後面 */
@@ -292,7 +292,7 @@ html.ws-sc .side-gate { display: none; }
 /* 線(units spec §9.12):金額表與部位表只留表頭下一條最淡的線,金額表另有表底合計那條較重的;區內列線拿掉,列與區靠間距分開 */
 .pf-tbl.zoned th { border-bottom-color: var(--border-hairline); }
 .pf-tbl.zoned td { border-bottom: none; }
-.cf-amt .cf-row.total { border-top-color: var(--color-greyDark); }
+.cf-amt .cf-row.total { border-top-color: var(--border-frame); }
 .cf-row.grp { padding: var(--space-16) 0 0; }
 .cf-rows .cf-row.grp:first-child { padding-top: var(--space-4); }
 .cf-row.grp dt { font: 600 11px/1.4 var(--font-mono); color: var(--ink-3); }
@@ -334,7 +334,7 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl td.pos :is(.dir, .pos-word) { font-size: 12px; }
 .pf-tbl td.pos .pos-word, .pf-tbl td.pos .pos-sub { color: var(--ink-3); }
 .pf-tbl td.pos .pos-sub { font-size: 11px; }
-.pf-tbl td.pos .sep { margin: 0 var(--space-4); color: var(--color-greyDark); }
+.pf-tbl td.pos .sep { margin: 0 var(--space-4); color: var(--ink-disabled); }
 .pf-tbl td.pos.pend-col :is(.dir, .num) { color: var(--ink-3); }
 .pf-foot { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
 .pf-foot.err { color: var(--color-redText); }
@@ -397,7 +397,7 @@ html.ws-sc .side-gate { display: none; }
 .ov-stats .stat.hero .sv { font-size: 28px; }
 .ov-stats .sv.pos { color: var(--color-greenText); }
 .ov-stats .sv.neg { color: var(--color-redText); }
-.ov-stats .sv.na { color: var(--color-greyDark); }
+.ov-stats .sv.na { color: var(--ink-disabled); }
 .ov-stats .sv .unit { margin-left: var(--space-6); font-size: 11px; font-weight: 400; color: var(--ink-3); font-family: var(--font-sans); }
 .ov-stats .sub { margin-top: var(--space-4); font-size: 11px; color: var(--ink-3); }
 /* 組合績效六格(照網頁 .perf-stats):3 欄兩列,角落由 cell 自己收;gating = 小一號 muted sans「資料累積中」(不是壞值),
@@ -525,7 +525,7 @@ html.ws-sc .side-gate { display: none; }
 .f-input {
   display: block; width: 100%; height: 34px; padding: 0 var(--space-24) 0 var(--space-8);
   border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
-  background: var(--surface-field); color: var(--ink); font: inherit; font-size: 13px; color-scheme: dark;
+  background: var(--surface-field); color: var(--ink); font: inherit; font-size: 13px; color-scheme: light dark;
   -webkit-appearance: none; appearance: none;
 }
 .f-input:focus { outline: none; border-color: var(--ink); }
@@ -565,7 +565,7 @@ html.ws-sc .side-gate { display: none; }
 .ps-flag { flex: none; width: 2px; height: 16px; border-radius: var(--radius-pill); }
 .ps-row[data-flag] .ps-flag { background: var(--flag); }
 .ps-name { min-width: 0; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; transform: translateY(-1px); }
-.ps-cb:disabled ~ .ps-name { color: var(--color-greyDark); cursor: not-allowed; }
+.ps-cb:disabled ~ .ps-name { color: var(--ink-disabled); cursor: not-allowed; }
 /* 「已不存在」是資訊不是錯誤(用戶沒做錯事):--ink-2,不用 11px 紅字(darkCard 上 4.0:1 過不了小字 AA;§13-2) */
 /* inline-block:長名填滿一行時整段註記一起換行,不會第一個字掛在名字尾(設計稽核 should-fix) */
 .ps-gone { display: inline-block; margin-left: var(--space-8); font-size: 11px; color: var(--ink-2); }
@@ -664,7 +664,7 @@ html.ws-sc .side-gate { display: none; }
 .fog-tab.on { color: var(--ink); font-weight: 600; }
 .fog-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-16); margin-bottom: var(--space-24); }
 .fog-stat { display: flex; flex-direction: column; gap: var(--space-8); }
-.fog-bar { width: 48px; height: 8px; border-radius: var(--radius-micro); background: var(--color-darkBorder); }
+.fog-bar { width: 48px; height: 8px; border-radius: var(--radius-micro); background: var(--surface-muted); }
 .fog-num { font: 600 20px var(--font-mono); color: var(--ink); }
 .fog-curve { display: block; width: 100%; height: 160px; margin-bottom: var(--space-24); color: var(--ink-3); }
 .fog-ev { display: flex; gap: var(--space-16); padding: var(--space-8) 0; font-size: 13px; color: var(--ink-2); }
@@ -675,7 +675,7 @@ html.ws-sc .side-gate { display: none; }
   border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--ink); font: 400 13px/1 var(--font-sans); white-space: nowrap; cursor: pointer;
   transition: background var(--motion-fast) var(--ease-standard); }
 .ct-trig::before { content: ""; position: absolute; inset: calc(-1 * var(--space-4)) 0; }
-.ct-trig:hover, .ct-trig[aria-expanded="true"] { background: var(--color-darkBorder); }
+.ct-trig:hover, .ct-trig[aria-expanded="true"] { background: var(--surface-muted); }
 .ct-trig:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .ct-cv { flex: none; width: 5px; height: 5px; border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3); transform: translateY(-1px) rotate(45deg); transition: transform var(--motion-fast) var(--ease-standard); }   /* 墨跡重心對齊字:設計師 10-14 實量 */
 .ct-trig[aria-expanded="true"] .ct-cv { transform: translateY(2.5px) rotate(-135deg); }
@@ -688,7 +688,7 @@ html.ws-sc .side-gate { display: none; }
 .ct-menu[hidden] { display: none; }
 .ct-mi { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-16); width: 100%; padding: var(--space-6) 10px; border: 0; border-radius: var(--radius-xs);
   background: transparent; color: var(--ink-2); font: 400 13px var(--font-sans); text-align: left; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
-.ct-mi:hover, .ct-mi:focus-visible { background: var(--color-darkBorder); color: var(--ink); outline: none; }
+.ct-mi:hover, .ct-mi:focus-visible { background: var(--surface-muted); color: var(--ink); outline: none; }
 .ct-mi[aria-checked="true"] { font-weight: 600; color: var(--ink); }
 .ct-mv { font: 400 12px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-3); }
 .ct-mv .ccy { margin-left: var(--space-4); }
@@ -699,13 +699,13 @@ html.ws-sc .side-gate { display: none; }
 .mg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); }
 .tb-set, .tb-actions { display: flex; align-items: center; gap: var(--space-8); }
 .tb-actions { margin-left: auto; }
-.tb-fld { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 30px; padding: 0 26px 0 var(--space-12); border: 1px solid var(--color-greyDark);
+.tb-fld { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 30px; padding: 0 26px 0 var(--space-12); border: 1px solid var(--border-frame);
   border-radius: var(--radius-xs); font-size: 12px; color: var(--ink-3); white-space: nowrap; transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .tb-fld::after { content: ""; position: absolute; right: 11px; top: 50%; width: 5px; height: 5px; border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3); transform: translateY(-70%) rotate(45deg); }
 .tb-fld .v { color: var(--ink); font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.tb-fld > .dot { color: var(--color-greyDark); }
+.tb-fld > .dot { color: var(--ink-disabled); }
 .tb-fld:hover:not(:disabled) { border-color: var(--ink-3); color: var(--ink-2); }
-.tb-fld:disabled { border-color: var(--color-darkBorder); color: var(--color-greyDark); cursor: not-allowed; }
+.tb-fld:disabled { border-color: var(--border-hairline); color: var(--ink-disabled); cursor: not-allowed; }
 .tb-fld:disabled .v { color: var(--ink-3); }
 .tb-actions .btn-fill, .tb-actions .btn-out { height: 30px; display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
 .mg-size-btn { margin-left: var(--space-4); }
@@ -716,7 +716,7 @@ html.ws-sc .side-gate { display: none; }
 .mg-warn .btn-quiet { font-size: 12px; }
 .mg-apply-why { font-size: 12px; color: var(--ink-3); }
 .mg-tbl td.key .key-name { display: inline; }
-.mg-tbl tr.total td { padding-top: var(--space-8); border-top: 1px solid var(--color-greyDark); color: var(--ink); }
+.mg-tbl tr.total td { padding-top: var(--space-8); border-top: 1px solid var(--border-frame); color: var(--ink); }
 .mg-stat { position: relative; }   /* 各格「贏過」氣泡的定位祖先 */
 .mg-stat-beat { margin-top: var(--space-4); }
 .mg-beats { font-size: 12px; color: var(--ink-3); }
@@ -729,7 +729,7 @@ html.ws-sc .side-gate { display: none; }
 .mg-stat:first-child .sv { font-size: 28px; }   /* 主指標 28,同網頁 .bt-stats.cols3 的 hero */
 /* 分開的 grid cell 做不到真 baseline:18px 兩格補到 28px 那格的行盒高再底對齊,值與「贏過」各自同一條線(同網頁 .bt-stats.cols3) */
 .mg-stat:not(:first-child) .sv { min-height: calc(28px * 1.1); display: flex; align-items: flex-end; }
-.mg-stat .sv.na { color: var(--color-greyDark); }
+.mg-stat .sv.na { color: var(--ink-disabled); }
 /* 三欄只在中欄夠寬時成立:28px 的主指標(例如 +1234.56%)要約 150px,中欄 ≤600 時每格就逼近這個寬,字會擠出格子。
    折法照網頁 cols3 ≤1300:主指標整列在上、兩格在下,撤掉補高(兩格同為 18 自然對齊)。
    量的是中欄(.pane-main 的 container),不是視窗;要排在上面三條之後,同特異度靠 source order 蓋過 */
@@ -745,7 +745,7 @@ html.ws-sc .side-gate { display: none; }
 .mg-legend { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-16); margin-top: var(--space-6); font-size: 11px; color: var(--ink-3); }
 .mg-legend i { display: inline-block; width: 10px; height: 10px; border-radius: var(--radius-micro); margin-right: var(--space-6); vertical-align: -1px; }
 .mg-legend .lg-managed { background: var(--color-data-1); }
-.mg-legend .lg-band { background: var(--color-greyDark); opacity: .55; }
+.mg-legend .lg-band { background: var(--chart-band); opacity: .55; }
 .mg-legend .lg-median { background: var(--color-greyMedium); }
 .mg-legend.lg-weights { margin-top: var(--space-8); }
 .mg-legend.lg-weights i { opacity: .85; }
@@ -755,14 +755,14 @@ html.ws-sc .side-gate { display: none; }
 .run-row { display: flex; align-items: center; gap: var(--space-12); }
 .run-row .st { font-size: 13px; font-weight: 600; color: var(--ink); }
 .run-row .pf-act { margin-left: auto; }
-.prog { margin-top: var(--space-12); height: 4px; border-radius: var(--radius-pill); background: var(--color-darkBorder); overflow: hidden; }
+.prog { margin-top: var(--space-12); height: 4px; border-radius: var(--radius-pill); background: var(--surface-muted); overflow: hidden; }
 .prog i { display: block; height: 100%; background: var(--ink-2); border-radius: var(--radius-pill); }
 .run-meta { margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
 /* 方法框與部位大小框 */
 .mg-fld { display: flex; flex-direction: column; gap: var(--space-6); margin-top: var(--space-12); }
 .mg-fld-l { font-size: 12px; color: var(--ink-3); }
-.mg-sel { height: 32px; padding: 0 var(--space-8); border: 1px solid var(--color-greyDark); border-radius: var(--radius-xs); background: var(--bg-body); color: var(--ink); font: 13px var(--font-sans); }
-.mg-params { margin-top: var(--space-12); border-top: 1px solid var(--color-darkBorder); padding-top: var(--space-12); }
+.mg-sel { height: 32px; padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: var(--bg-body); color: var(--ink); font: 13px var(--font-sans); }
+.mg-params { margin-top: var(--space-12); border-top: 1px solid var(--border-hairline); padding-top: var(--space-12); }
 .mg-params[hidden] { display: none; }
 .mg-ph { font: 600 11px var(--font-sans); color: var(--ink-3); margin-bottom: var(--space-8); }
 .mg-pfld { display: flex; align-items: center; gap: var(--space-12); padding: var(--space-4) 0; font-size: 12px; color: var(--ink-2); }
@@ -772,12 +772,12 @@ html.ws-sc .side-gate { display: none; }
 .mg-more .btn-quiet { font-size: 12px; }
 .mg-unitw { display: inline-flex; align-items: center; gap: var(--space-8); }
 .mg-unitw .amt-in { width: calc(14ch + 2 * var(--space-8) + 2px); }
-.mg-size-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--color-greyDark); border-radius: var(--radius-md); }
+.mg-size-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--border-frame); border-radius: var(--radius-md); }
 .mg-size-seg button { position: relative; min-width: 0; min-height: 36px; padding: var(--space-4); border-radius: var(--radius-sm); font-size: 13px; line-height: 1.2; color: var(--ink-2);
   white-space: normal; word-break: keep-all; transition: background var(--motion-fast) var(--ease-standard); }
-.mg-size-seg button:hover { background: var(--color-darkBorder); }
-.mg-size-seg button[aria-checked="true"] { background: var(--color-greyDark); color: var(--ink); font-weight: 600; }
-.mg-size-seg button[aria-disabled="true"] { color: var(--color-greyDark); background: transparent; cursor: help; }
+.mg-size-seg button:hover { background: var(--surface-muted); }
+.mg-size-seg button[aria-checked="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; }
+.mg-size-seg button[aria-disabled="true"] { color: var(--ink-disabled); background: transparent; cursor: help; }
 .mg-size-old[hidden] { display: none; }
 .mg-size-pv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-12); margin-top: var(--space-16); padding: var(--space-12); border-radius: var(--radius-sm); background: var(--bg-body); }
 .mg-size-pv > div { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }

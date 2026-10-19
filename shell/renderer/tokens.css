@@ -2,8 +2,9 @@
    Blave 桌面版 — design token(canon 的落地值)
    值抄自 web/app/static/css/main.css(那裡才是 source of truth),規則來源
    .claude/docs/design-system.md。**只有這個檔可以寫 hex**,其餘一律引變數。
-   App 只跑 dark:`<html data-theme="dark">` 是寫死的,light 值留著是為了跟
-   canon 對得起來、以及之後真的要做 light mode 時不必重查。
+   主題:light 值放 :root、dark 只在 [data-theme="dark"] 重映射。屬性由 theme-boot.js 依
+   prefers-color-scheme 寫(主行程的 nativeTheme.themeSource 決定它:跟隨系統／淺色／深色);
+   report-print.html 不載 theme-boot.js,沒有屬性 = 永遠淺色(PDF)。
    ========================================================================= */
 
 /* ---- 字體:堆疊只存在這一份(canon › Type › 字體家族),其餘 css 一律 var(--font-sans / --font-mono) ----
@@ -58,20 +59,20 @@
   --color-code-string: #3d6188;
   --color-code-number: #8a6414;
   --color-code-comment: #5d6979;
-  /* 旗標三色(canon › Color › Flag colors;= web main.css 的 --color-flag-*)——側欄策略列的左軌色條與旗標面板色塊。
-     canon 只定了 dark 值、light 未定:放 :root 不另寫 dark 重映射(app 寫死 dark) */
-  --color-flag-1: #c79a3e;
-  --color-flag-2: #8ad2e2;
-  --color-flag-3: #8d68d4;
+  /* 旗標三色(canon › Color › Flag colors)——側欄策略列的左軌色條與旗標面板色塊。light 同色相壓明度,dark 在下面重映射 */
+  --color-flag-1: #ad7e1f;
+  --color-flag-2: #1f93ad;
+  --color-flag-3: #7f4eda;
   /* dark(黑潮墨) */
   --color-darkBody: #0f161a;
   --color-darkCard: #1a2328;
   --color-darkBorder: #2d383e;
   --color-darkText: #eaeff0;
 
-  /* Setup fog(canon › Components › Setup fog、Color › Surfaces):示意底的模糊與實心遮罩(= darkBody 55%);app 寫死 dark,只有這一組值 */
+  /* Setup fog(canon › Components › Setup fog、Color › Surfaces):示意底的模糊與實心遮罩,往頁面地色洗一階
+     (light = surface 55%,dark 在下面重映射成 darkBody 55%) */
   --fog-blur: 6px;
-  --fog-mask: rgba(15, 22, 26, .55);
+  --fog-mask: rgba(248, 250, 251, .55);
 
   /* radii */
   --radius-micro: 4px;
@@ -104,6 +105,7 @@
   --shadow-md: 0 0 0 1px rgba(26,34,44,.06), 0 2px 3px -2px rgba(26,34,44,.08),
                0 3px 12px -4px rgba(26,34,44,.06), 0 4px 16px -8px rgba(26,34,44,.06);
   --shadow-overlay: 0 8px 24px rgba(0,0,0,.14);   /* 暫時浮層(小卡、modal)的 light 值 = canon Tooltip light 陰影;dark 在下面蓋掉 */
+  --scrim: rgba(26,34,44,.4);                      /* canon --color-scrim light */
 
   /* ---- 語意角色變數(canon › Color › 語意角色變數):雙態表面一律引這層 ---- */
   --bg-body: var(--color-white);
@@ -118,6 +120,12 @@
   --ink: var(--color-black);
   --ink-2: var(--color-greyDark);
   --ink-3: var(--color-greyMedium);
+  /* 停用字、缺值「—」、行內分隔「·」:同一個 greyDark 在 light 是次要字(8:1)、dark 才是停用,所以不按 token 名翻 */
+  --ink-disabled: var(--color-greyLightMedium);
+  /* 以下三個是設計師提案、canon 未核准(light-mode-2026-10 phase1-review P1/P2):名字照提案,dark 值 = 改名前的值 */
+  --surface-overlay: var(--color-surface);       /* tooltip 這類暫態浮層的實心底;light 跟卡同值、靠 --shadow-overlay 分開 */
+  --chart-band: #818f97;                         /* 隨機帶與它的色票;alpha 由消費端給(.55) */
+  --chart-rest: #aab4bf;                         /* 堆疊圖合併的「其他 N 支」;.85 下對卡面 1.79:1,低於 data-3 */
   --tag-neutral-bg: var(--surface-muted);      /* Mini tag 中性款(canon 語意角色變數);同在 :root,dark 隨這兩個角色重映射 */
   --tag-neutral-text: var(--ink-2);
   /* in-app 功能動作鈕(canon › Interaction states › 橘的邊界):中性反白,不用橘 */
@@ -145,6 +153,10 @@
   --color-code-string: #8cb2de;
   --color-code-number: #c79a3e;
   --color-code-comment: #8a9296;
+  --color-flag-1: #c79a3e;
+  --color-flag-2: #8ad2e2;
+  --color-flag-3: #8d68d4;
+  --fog-mask: rgba(15, 22, 26, .55);
 
   --bg-body: var(--color-darkBody);
   --surface-card: var(--color-darkCard);
@@ -158,6 +170,10 @@
   --ink: var(--color-darkText);
   --ink-2: var(--color-greyLightMedium);
   --ink-3: var(--color-greyMedium);
+  --ink-disabled: var(--color-greyDark);
+  --surface-overlay: var(--color-darkBorder);
+  --chart-band: var(--color-greyDark);
+  --chart-rest: var(--color-greyDark);
   --control-fill: var(--color-darkText);
   --control-fill-text: var(--color-darkBody);
   --focus-ring: var(--color-darkText);
@@ -168,7 +184,7 @@
   --shadow-md: 0 0 0 1px rgba(255,255,255,.08), 0 4px 16px -8px rgba(0,0,0,.5);
   /* modal 這類暫時浮層(= web main.css dark 的 --glass-shadow)與它底下的遮罩 */
   --shadow-overlay: 0 8px 24px rgba(0,0,0,.5);
-  --scrim: rgba(0,0,0,.6);
+  --scrim: rgba(0,0,0,.6);   /* canon dark 是 rgba(5,9,11,.5);這版只上淺色,深色維持原值(待 Wei 拍板) */
 }
 
 *, *::before, *::after { box-sizing: border-box; }

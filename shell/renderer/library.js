@@ -991,9 +991,14 @@ function libChartDraw(host, r) {
   try {
     const series = chart.addSeries(LWC.LineSeries, { color: tok("--color-green"), lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
     series.setData(data);
-    series.createPriceLine({ price: 1, color: tok("--ink-3"), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+    const one = series.createPriceLine({ price: 1, color: tok("--ink-3"), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
     chart.timeScale().fitContent();
     LIB.chart = chart;
+    // 換主題只改色(線是綠,亮暗同值)
+    chart.blaveRetheme = () => {
+      chart.applyOptions({ layout: { textColor: tok("--ink-3"), background: { type: "solid", color: tok("--surface-card") } }, grid: { horzLines: { color: tok("--border-hairline") } } });
+      one.applyOptions({ color: tok("--ink-3") });
+    };
   } catch (_) { chart.remove(); host.replaceWith(libEl("p", "chart-none", t("lib.noCurve"))); }
 }
 
@@ -1013,7 +1018,8 @@ function libChartDraw(host, r) {
   });
   document.addEventListener("pointerdown", (e) => { if (!g("lib-mkt-menu").hidden && !g("lib-mkt").contains(e.target)) libMktClose(false); }, true);
   g("lib-body").addEventListener("scroll", () => { const B = libBag(); if (!B.detail) B.scroll = g("lib-body").scrollTop; });
-  window.addEventListener("focus", () => { libRefresh(); libIdeaSync(); });   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
+  window.addEventListener("focus", () => { libRefresh(); libIdeaSync(); });
+  window.addEventListener("blave:theme", () => { if (LIB.chart && LIB.chart.blaveRetheme) try { LIB.chart.blaveRetheme(); } catch (_) { } });   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
   g("chat-idea").addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(g("chat-idea"), "welcome", "any"); });   // 歡迎頁籤:開找點子框,市場不限
   libIdeaSync();
   window.blave.libraryInstalled().then((m) => { if (m && typeof m === "object") { LIB.installed = m; if (typeof wcPaint === "function") wcPaint(); } }).catch(() => {});

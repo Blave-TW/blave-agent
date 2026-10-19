@@ -9,7 +9,7 @@
 .rp-sub .rp-desc { margin: 0 var(--space-4) 0 0; flex: 0 1 auto; min-width: 0; min-height: 0; }   /* 不撐滿:「策略邏輯」要貼在說明尾端(app.css .lg-tog);右 4 + 列距 8 = 說明到那顆字 12 */
 .rp-sub .rp-desc:empty { display: none; }   /* 沒說明時不佔位:沒有版本鈕的話「策略邏輯」對齊標題左緣 */
 .vwrap:not([hidden]) ~ .rp-desc:empty + .lg-tog { margin-left: var(--space-4); }   /* 有版本鈕、沒說明:版本鈕到那顆字同樣 12 */
-.rp-sub-sep { flex: none; font-size: 12px; line-height: 1; color: var(--color-greyDark); }
+.rp-sub-sep { flex: none; font-size: 12px; line-height: 1; color: var(--ink-disabled); }
 .rp-sub-sep[hidden], .vwrap[hidden] { display: none; }
 .vwrap { position: relative; flex: none; display: inline-flex; }
 .vtrig {

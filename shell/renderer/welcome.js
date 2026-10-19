@@ -259,6 +259,11 @@ function wcCurve(host, r) {
   } catch (_) { chart.remove(); host.classList.add("is-empty"); }
 }
 $("wc-more").addEventListener("click", () => libOpen());
+// 換主題:小曲線只有底與字跟著換(線是綠,亮暗同值)
+window.addEventListener("blave:theme", () => {
+  const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  WC.charts.forEach((c) => { try { c.applyOptions({ layout: { textColor: tok("--ink-3"), background: { type: "solid", color: tok("--surface-card") } } }); } catch (_) { } });
+});
 /* 補畫第一次:app.js 開場的 applyStatic 用 typeof wdPaint 判斷,它若在這支載入前就跑過(設定裡選過語言時是同步跑的;
    沒選過則看語系的 IPC 多快回來),那一次會跳過,沒登入的人清單就空到換語言或登入為止。
    只在 applyStatic 已經跑過時補(#wl-seg 的 aria-label 是它填的):還沒跑的話它等一下自己會畫,這裡搶先畫會閃一下英文 */

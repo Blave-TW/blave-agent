@@ -262,7 +262,9 @@ function poWire() {
     e.preventDefault(); poSetTab(PO_TABS[j], true);
   });
   mgWire();
-  window.addEventListener("resize", () => { const m = TR.mg; if (m && TR.view === "po" && TR.poTab === "opt") { m.chartSig = null; mgDrawChart(); } });
+  const mgRedraw = () => { const m = TR.mg; if (m && TR.view === "po" && TR.poTab === "opt") { m.chartSig = null; mgDrawChart(); } };
+  window.addEventListener("resize", mgRedraw);
+  window.addEventListener("blave:theme", mgRedraw);
 }
 // trade.js trPaint 在 TR.view === "po" 時叫:分頁列等報告到了才出(載入態沒有分頁可看);兩個分頁各自畫
 function poPaint() {
@@ -961,7 +963,7 @@ function mgWeightSeries(bt) {
   const mean = new Map(names.map((k) => [k, wh[k].reduce((a, v) => a + v, 0) / n]));
   const top = names.slice().sort((a, b) => mean.get(b) - mean.get(a)).slice(0, 3), rest = names.filter((k) => top.indexOf(k) < 0);
   const out = names.filter((k) => top.indexOf(k) >= 0).map((k, i) => ({ label: trDisplay(k), colorVar: "--color-data-" + (i + 2), values: wh[k] }));
-  if (rest.length) out.push({ label: t("mg.legendRest", { n: rest.length }), colorVar: "--color-greyDark", values: Array.from({ length: n }, (_, i) => rest.reduce((a, k) => a + wh[k][i], 0)) });
+  if (rest.length) out.push({ label: t("mg.legendRest", { n: rest.length }), colorVar: "--chart-rest", values: Array.from({ length: n }, (_, i) => rest.reduce((a, k) => a + wh[k][i], 0)) });
   return out;
 }
 function mgRgba(name, a) { const h = trToken(name), m = /^#([0-9a-f]{6})$/i.exec(h); if (!m) return h; const v = parseInt(m[1], 16); return "rgba(" + (v >> 16) + "," + ((v >> 8) & 255) + "," + (v & 255) + "," + a + ")"; }
@@ -993,23 +995,23 @@ function mgDrawChart() {
   const step = (max - min) / 3, dec = step >= 10 ? 0 : step >= 1 ? 1 : 2;
   for (let g = 0; g <= 3; g++) {
     const gv = min + ((max - min) * g) / 3, gy = Math.round(Y(gv)) + 0.5;
-    ctx.strokeStyle = trToken("--color-darkBorder"); ctx.beginPath(); ctx.moveTo(padL, gy); ctx.lineTo(padL + iw, gy); ctx.stroke();
+    ctx.strokeStyle = trToken("--border-hairline"); ctx.beginPath(); ctx.moveTo(padL, gy); ctx.lineTo(padL + iw, gy); ctx.stroke();
     ctx.fillStyle = trToken("--color-greyMedium"); ctx.fillText((gv < 0 ? "−" : gv > 0 ? "+" : "") + Math.abs(gv).toFixed(dec) + "%", padL + iw + 6, gy);
   }
   if (p5 && p95) {
-    ctx.fillStyle = mgRgba("--color-greyDark", 0.55); ctx.beginPath();
+    ctx.fillStyle = mgRgba("--chart-band", 0.55); ctx.beginPath();
     for (let i = 0; i < p5.length; i++) ctx.lineTo(X(bandOff + i), Y(p95[i]));
     for (let i = p5.length - 1; i >= 0; i--) ctx.lineTo(X(bandOff + i), Y(p5[i]));
     ctx.closePath(); ctx.fill();
-    if (bandOff > 0) { const bx = Math.round(X(bandOff)) + 0.5; ctx.save(); ctx.setLineDash([2, 3]); ctx.strokeStyle = trToken("--color-greyDark"); ctx.beginPath(); ctx.moveTo(bx, padT); ctx.lineTo(bx, padT + ih); ctx.stroke(); ctx.restore(); }
+    if (bandOff > 0) { const bx = Math.round(X(bandOff)) + 0.5; ctx.save(); ctx.setLineDash([2, 3]); ctx.strokeStyle = trToken("--border-frame"); ctx.beginPath(); ctx.moveTo(bx, padT); ctx.lineTo(bx, padT + ih); ctx.stroke(); ctx.restore(); }
   }
-  const zy = Math.round(Y(0)) + 0.5; ctx.strokeStyle = trToken("--color-greyDark"); ctx.beginPath(); ctx.moveTo(padL, zy); ctx.lineTo(padL + iw, zy); ctx.stroke();
+  const zy = Math.round(Y(0)) + 0.5; ctx.strokeStyle = trToken("--border-frame"); ctx.beginPath(); ctx.moveTo(padL, zy); ctx.lineTo(padL + iw, zy); ctx.stroke();
   if (p50) { ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = trToken("--color-greyMedium"); ctx.lineWidth = 1.2; ctx.beginPath(); for (let i = 0; i < p50.length; i++) ctx.lineTo(X(bandOff + i), Y(p50[i])); ctx.stroke(); ctx.restore(); }
   ctx.strokeStyle = trToken("--color-data-1"); ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.beginPath(); for (let i = 0; i < n; i++) ctx.lineTo(X(i), Y(managed[i])); ctx.stroke();
   if (series) {
     const wTop = padT + ih + gap, WY = (v) => wTop + (1 - Math.max(0, Math.min(1, v))) * h2;
     ctx.lineWidth = 1;
-    [0, 0.5, 1].forEach((g) => { const gy = Math.round(WY(g)) + 0.5; ctx.strokeStyle = trToken(g === 0 ? "--color-greyDark" : "--color-darkBorder"); ctx.beginPath(); ctx.moveTo(padL, gy); ctx.lineTo(padL + iw, gy); ctx.stroke();
+    [0, 0.5, 1].forEach((g) => { const gy = Math.round(WY(g)) + 0.5; ctx.strokeStyle = trToken(g === 0 ? "--border-frame" : "--border-hairline"); ctx.beginPath(); ctx.moveTo(padL, gy); ctx.lineTo(padL + iw, gy); ctx.stroke();
       ctx.fillStyle = trToken("--color-greyMedium"); ctx.fillText(Math.round(g * 100) + "%", padL + iw + 6, gy); });
     const base = new Array(n).fill(0);
     ctx.save(); ctx.globalAlpha = 0.85;

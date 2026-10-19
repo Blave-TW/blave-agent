@@ -4696,6 +4696,8 @@ function trOvCurve(z) {
   if (cut > 0 && !isPnl) frag.appendChild(trEl("div", "pf-foot", t(Array.isArray(TR.ov.curve.anomalies) ? "tr.ov.flowNote" : "tr.ov.basisNote")));
   if (srv && srv.anom) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.pnlAnom")));   // 平台那條:異動點的跳變已剔除,講一句
   requestAnimationFrame(() => trDrawCurve(canvas, series, isPnl));
+  const onTheme = () => { if (!canvas.isConnected) { window.removeEventListener("blave:theme", onTheme); return; } trDrawCurve(canvas, series, isPnl); };
+  if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("blave:theme", onTheme);
   /* hover(設計師 spec-desktop-ov-curve-hover-2026-09-25,照網頁 ovHover):重畫底圖再疊垂直指示線 + 線上圓點;小卡跟著點水平走、
      垂直釘在圖框頂(不跟 y 走才不抖),只落在繪圖區 [padL, W−padR](不進右軸欄、chips 在框外碰不到),右邊放不下翻左、都放不下貼 padL */
   canvas.addEventListener("mousemove", (e) => {
@@ -4706,7 +4708,7 @@ function trOvCurve(z) {
     if (bi < 0) return;
     const p = series[bi], px = g.xAt(p.t), py = g.yAt(p.v);
     const ctx = canvas.getContext("2d");
-    ctx.strokeStyle = trToken("--color-greyDark"); ctx.lineWidth = 1;
+    ctx.strokeStyle = trToken("--border-frame"); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(Math.round(px) + 0.5, g.padT); ctx.lineTo(Math.round(px) + 0.5, g.padT + g.ih); ctx.stroke();
     ctx.fillStyle = trToken(isPnl ? (p.v >= 0 ? "--color-greenText" : "--color-redText") : "--color-data-1");   // 點色跟線段同色
     ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill();
