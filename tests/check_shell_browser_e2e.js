@@ -260,7 +260,10 @@ app.whenReady().then(async () => {
   t("B2 主視窗縮放 1.5 倍 → 原生 view 的 bounds 也乘 1.5", vb && vb.x === 15 && vb.y === 30 && vb.width === 450 && vb.height === 300);
   B.collapse(); win.webContents.setZoomFactor(1);
   const before = sent.filter((e) => e.type === "report_write").length;
-  fs.writeFileSync(path.join(reportsDir, "morning.json"), "{}"); await new Promise((res) => setTimeout(res, 600));
+  // fs.watch(macOS FSEvents)在機器忙時晚 1 秒以上才送到:等到第一筆再寫第二份,固定睡 600ms 會間歇紅
+  const reportN = () => sent.filter((e) => e.type === "report_write").length;
+  fs.writeFileSync(path.join(reportsDir, "morning.json"), "{}");
+  for (let i = 0; i < 100 && reportN() === before; i++) await new Promise((res) => setTimeout(res, 100));
   fs.writeFileSync(path.join(reportsDir, "second.json"), "{}"); await new Promise((res) => setTimeout(res, 600));
   t("匯整成報告:這一輪真的有報告寫進 reports/ 才發 report_write,一輪只發一次", sent.filter((e) => e.type === "report_write").length === before + 1);
   // ── A 版可視化(定案「跟著走」)──
