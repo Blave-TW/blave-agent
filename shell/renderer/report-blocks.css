@@ -932,11 +932,11 @@
 .rb-report td.rb-up,
 .rb-report .rb-kpi-value.rb-up,
 .rb-report .rb-metric-value.rb-up {
-  color: var(--color-green);
+  color: var(--color-greenText);
 }
 .rb-report .rb-dn,
 .rb-report td.rb-dn,
 .rb-report .rb-kpi-value.rb-dn,
 .rb-report .rb-metric-value.rb-dn {
-  color: var(--color-red);
+  color: var(--color-redText);
 }

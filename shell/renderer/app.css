@@ -1211,7 +1211,7 @@ body.resizing * { cursor: col-resize !important; }
 .cs-del::before { content: ""; position: absolute; top: calc(50% - 17px); height: 34px; right: -10px; width: 44px; }
 .cs-del:hover { background: var(--bg-body); color: var(--ink); }
 /* 紅字在灰填上 3.0:1 不過 AA,墊 bg-body 才有 4.5:1;有了底色也才讀得出是一顆鈕 */
-.cs-del.is-armed, .cs-del.is-armed:hover { color: var(--color-red); background: var(--bg-body); padding: 0 var(--space-6); }
+.cs-del.is-armed, .cs-del.is-armed:hover { color: var(--color-redText); background: var(--bg-body); padding: 0 var(--space-6); }
 /* 回合中的鎖(busy.js):鈕照畫、aria-disabled(可聚焦、可點),灰階同 :disabled;點了在 .busy-why 講原因＋一顆 .btn-quiet 補救 */
 .cs-btn[aria-disabled="true"], .cs-btn[aria-disabled="true"]:hover, .cs-newrow[aria-disabled="true"], .cs-newrow[aria-disabled="true"]:hover,
 .cs-del[aria-disabled="true"], .cs-del[aria-disabled="true"]:hover { background: none; color: var(--ink-disabled); cursor: not-allowed; }

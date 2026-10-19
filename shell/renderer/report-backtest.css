@@ -115,8 +115,8 @@
   white-space: nowrap;
 }
 .bt-mv.hero { font-size: 18px; font-weight: 600; }
-.bt-mv.pos { color: var(--color-green); }
-.bt-mv.neg { color: var(--color-red); }
+.bt-mv.pos { color: var(--color-greenText); }
+.bt-mv.neg { color: var(--color-redText); }
 .bt-mv.na { color: var(--ink-disabled); }
 /* Type C 的基準是一句話不是數字:不進 mono、可以換行 */
 .bt-mv.prose { font-size: 12px; white-space: normal; text-align: right; }
