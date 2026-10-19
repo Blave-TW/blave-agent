@@ -2742,8 +2742,30 @@ def _tw_cdn_behind(frames, end, manifest):
         return [], need
     # an id that did not trade on the CDN's last day (suspended, delisted) says nothing about lag
     return sorted(sid for sid, df in frames.items()
-                  if sid in manifest['stocks'] and manifest['stocks'][sid][2] >= manifest['asof']
+                  if sid in manifest['stocks'] and _tw_cdn_traded_last_day(sid, manifest)
                   and df.attrs.get('via') == 'Blave CDN' and df.attrs.get('asof', need) < need), need
+
+
+def _tw_cdn_traded_last_day(sid, manifest):
+    return manifest['stocks'][sid][2] >= manifest['asof']
+
+
+def tw_not_trading(ids, day=None):
+    """Of `ids`, the stocks the cached CDN manifest lists that did not trade on `day` (default:
+    its last day) — delisted, suspended: no bar is coming for them. Empty while the manifest
+    does not reach `day` yet: a stock suspended the day before may trade on it, and its bar then
+    comes with the CDN's next file. Reads the cached file only, never the network; empty
+    without one. lib.bar_ready's `inactive` for a Taiwan Type C universe."""
+    try:
+        manifest = json.loads((_tw_cdn_dir() / 'manifest.json').read_text())
+        if day is not None and manifest['asof'] < day:
+            return set()
+        if day is None:
+            return {str(i) for i in ids if str(i) in manifest['stocks']
+                    and not _tw_cdn_traded_last_day(str(i), manifest)}
+        return {str(i) for i in ids if str(i) in manifest['stocks'] and manifest['stocks'][str(i)][2] < day}
+    except Exception:
+        return set()
 
 
 def _tw_cdn_lagging(frames, end, manifest, headers):

@@ -67,6 +67,8 @@ State: state/bar_wait/<name>.json
                          same data is primed at most once
   tw_bar_map          : TWSE stock daily strategies only: [calendar bar, trading day it maps to]
                          for the last closed day found on the holiday table (_tw_skip_holidays)
+  not_waited / dead_noticed : Type C members readiness does not wait for (lib.bar_ready.dead_members),
+                         and those of them already notified as long dead (_note_dead)
 
 Priming (Wei: a signal is always computed on the newest data there is): while the expected bar
 is not in, a strategy whose data moved since it last computed — any member's newest closed bar
@@ -106,15 +108,9 @@ bar that never comes, alerted, and ran Monday's bar twice (once for "Sunday", on
 Repeat alerting during a stall: the FIRST alert for a given `last_seen_bar`
 fires at STALE_TIMEOUT_MINUTES; after that, as long as it's still the SAME
 `last_seen_bar` (no progress at all), a repeat fires every
-STALL_REALERT_SECONDS instead of never again. This matters because
-`last_seen_bar` for a genuinely delisted/permanently-halted Type C universe
-member never changes — without a repeat, the very first alert would be the
-LAST one ever sent, and the strategy (the whole universe, not just that one
-symbol — Type C only runs once ALL columns are ready) would silently stop
-rebalancing forever with no further signal that anything is wrong. The
-straggler's identity (Type C: which column; Type A: n/a) is named in the
-alert text specifically so this is actionable — "check if this symbol is
-delisted and belongs out of UNIVERSE" — not just a timestamp to puzzle over.
+STALL_REALERT_SECONDS instead of never again — a feed stuck for good would
+otherwise get exactly one alert, then silence. The straggler's identity (Type C:
+which column; Type A: n/a) is named in the alert text so it is actionable.
 
 Cost note: the freshness check is NOT free — it calls the strategy's real
 fetch_data(), the same call the actual run makes (multiple HTTP/cache-backed
@@ -125,13 +121,16 @@ handling above for what happens once one is detected.
 Type A strategies (fetch_data → single DataFrame): ready when its last row's
 timestamp reaches the expected bar.
 Type C strategies (fetch_data → (close_df, open_df[, ...])): ready when
-EVERY column in close_df has a valid (non-NaN) observation at/after the
-expected bar — wait for the whole universe, not just the first symbol to
-update. Caveat (by design, not a bug to silently work around): a UNIVERSE
-that includes a symbol with no data going forward at all (delisted, halted
-indefinitely) will never satisfy this — the whole strategy stops rebalancing
-until that symbol is removed from UNIVERSE. See "Repeat alerting" above for
-why this still gets a periodic nudge instead of going silent.
+every column in close_df that is still trading has a valid (non-NaN)
+observation at/after the expected bar — wait for the whole universe, not just
+the first symbol to update. Not waited for (lib.bar_ready.dead_members): a
+Taiwan stock the CDN manifest says did not trade on its last day, and any
+member more than DEAD_AFTER_BARS bars / 30 days behind the newest member
+(delisted, halted indefinitely). Waiting on those held last_processed_bar
+empty forever: every signal then came from a prime, which is tried once per
+data, so one failed prime lost that day's rebalance, and bar_stale re-fired
+daily. A long-dead member is notified once (_note_dead) so it can be taken
+out of UNIVERSE. A column that never had any data still blocks.
 
 Timeout: if the bar hasn't landed within STALE_TIMEOUT_MINUTES of when this
 script first noticed it pending, send one Telegram alert (not a repeat every
@@ -165,6 +164,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # main() could alert. Used only then. tests/check_bar_ready_fallback.py keeps both copies giving
 # the same answers — change them together.
 _FB_PRIME_GRACE_SECONDS = 300
+_FB_DEAD_AFTER_BARS = 20
+_FB_DEAD_AFTER_FLOOR = timedelta(days=30)
 _FB_INTERVAL_RE = re.compile(r"^(\d+)(min|m|h|d|w)$")
 _FB_UNIT_TO_KW = {"min": "minutes", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
@@ -192,7 +193,13 @@ def _fb_naive_utc(ts):
     return ts.to_pydatetime()
 
 
-def _fb_judge(data, expected):
+def _fb_dead_members(latest, inactive=(), td=None):
+    newest = max(latest.values())
+    limit = max(_FB_DEAD_AFTER_FLOOR, _FB_DEAD_AFTER_BARS * td) if td else _FB_DEAD_AFTER_FLOOR
+    return sorted(k for k, v in latest.items() if v < newest and (k in inactive or newest - v > limit))
+
+
+def _fb_judge(data, expected, inactive=(), td=None):
     if isinstance(data, tuple):
         close_df = data[0]
         if close_df.empty:
@@ -200,10 +207,11 @@ def _fb_judge(data, expected):
         last_valid = close_df.apply(lambda col: col.last_valid_index())
         if last_valid.isna().any():
             return None, False, last_valid[last_valid.isna()].index[0], None
-        straggler_symbol = last_valid.idxmin()
-        straggler_ts = _fb_naive_utc(last_valid[straggler_symbol])
-        ready = all(_fb_naive_utc(ts) >= expected for ts in last_valid)
-        return straggler_ts, ready, straggler_symbol, {str(k): _fb_naive_utc(v) for k, v in last_valid.items()}
+        latest = {str(k): _fb_naive_utc(v) for k, v in last_valid.items()}
+        dead = set(_fb_dead_members(latest, inactive, td))
+        live = {k: v for k, v in latest.items() if k not in dead}
+        straggler_symbol = min(live, key=live.get)
+        return live[straggler_symbol], all(v >= expected for v in live.values()), straggler_symbol, latest
     if data.empty:
         return None, False, None, None
     last_ts = _fb_naive_utc(data.index[-1])
@@ -216,13 +224,15 @@ def _fb_member_in_grace(latest, expected, now, td):
 
 
 try:
-    from lib.bar_ready import (PRIME_GRACE_SECONDS, expected_closed_bar_open as _expected_closed_bar_open,  # noqa: E402
+    from lib.bar_ready import (PRIME_GRACE_SECONDS, dead_members as _dead_members,  # noqa: E402
+                               expected_closed_bar_open as _expected_closed_bar_open,
                                interval_to_timedelta as _interval_to_timedelta, judge as _judge,
                                member_in_grace, naive_utc as _naive_utc)
-except ImportError:   # half-updated workspace: lib without bar_ready
+except ImportError:   # half-updated workspace: lib without bar_ready (or an older one)
     PRIME_GRACE_SECONDS = _FB_PRIME_GRACE_SECONDS
     _expected_closed_bar_open, _interval_to_timedelta = _fb_expected_closed_bar_open, _fb_interval_to_timedelta
     _judge, member_in_grace, _naive_utc = _fb_judge, _fb_member_in_grace, _fb_naive_utc
+    _dead_members = _fb_dead_members
 
 STALE_TIMEOUT_MINUTES = 15
 STALL_POLL_MINUTES = 15            # once a stall is confirmed (alerted, data still hasn't moved),
@@ -297,6 +307,8 @@ def _default_state():
         "computed_fp": None,
         "computed_bar": None,
         "prime_tried_fp": None,
+        "not_waited": [],
+        "dead_noticed": [],
     }
 
 
@@ -475,14 +487,13 @@ def _check_freshness(mod, expected):
                     behind, since that's what determines whether the universe
                     made any forward progress at all.
       ready       : True if that's enough to run — Type A: observed_ts is
-                    at/after `expected`. Type C: EVERY universe column has a
-                    valid observation at/after `expected` (wait for ALL
-                    symbols — see module docstring caveat about symbols with
-                    no data going forward at all).
+                    at/after `expected`. Type C: every column still trading has a
+                    valid observation at/after `expected` (lib.bar_ready.dead_members
+                    are not waited for: a Taiwan stock the CDN manifest says did not
+                    trade on its last day, any member far behind the newest one).
       straggler   : Type A: always None (no per-symbol concept). Type C: the
-                    column name furthest behind — named explicitly so an alert
-                    can point at the actual symbol to investigate, not just a
-                    bucket timestamp.
+                    column still trading that is furthest behind — named so an alert
+                    can point at the actual symbol to investigate.
 
       latest      : {member: its newest bar} — Type C every column, Type A {"": observed_ts};
                     None without data. Priming's fingerprint (_fingerprint).
@@ -492,6 +503,7 @@ def _check_freshness(mod, expected):
     check) — the caller is responsible for treating that as a failed attempt,
     not a "not ready yet".
     """
+    global _dead
     from dotenv import dotenv_values
     env = dotenv_values()
     hdrs = {"api-key": env.get("blave_api_key", ""), "secret-key": env.get("blave_secret_key", "")}
@@ -508,7 +520,21 @@ def _check_freshness(mod, expected):
         from contextlib import nullcontext as live_feeds
     with closed_bars_only(), live_feeds():
         data = mod.fetch_data(hdrs)
-    return _judge(data, expected)
+    inactive = set()
+    if isinstance(data, tuple):
+        try:
+            from lib.data import tw_not_trading
+            inactive = tw_not_trading(data[0].columns, expected.strftime("%Y-%m-%d"))
+        except ImportError:
+            pass
+    try:
+        td = _interval_to_timedelta(getattr(mod, "INTERVAL", ""))
+    except ValueError:
+        td = None
+    verdict = _judge(data, expected, inactive, td)
+    if verdict[3] and len(verdict[3]) > 1:
+        _dead = (_dead_members(verdict[3], inactive, td), _dead_members(verdict[3], (), td))
+    return verdict
 
 
 def _fingerprint(latest):
@@ -521,6 +547,7 @@ def _fingerprint(latest):
 
 
 _fetched_since = None   # naive UTC: when this tick's _check_freshness began fetching
+_dead = ([], [])        # _check_freshness: (members not waited for, those of them long dead)
 
 
 def _run_strategy_protected(name):
@@ -608,6 +635,25 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
         logging.warning(f"[wait_for_bar] stale-bar notification dropped ({e})")
 
 
+def _note_dead(name, state, dead, long_dead):
+    """Members readiness stopped waiting for: logged when the set changes; one long dead
+    (delisted, most likely) is notified once — again only if it trades and stops once more."""
+    if dead != state.get("not_waited", []):
+        print(f"[wait_for_bar] {name}: not waiting for {', '.join(dead) or 'none'} "
+              f"(no bar coming: not trading, or far behind the rest)")
+    new = [m for m in long_dead if m not in state.get("dead_noticed", [])]
+    state["not_waited"], state["dead_noticed"] = dead, long_dead
+    if not new:
+        return
+    shown = "、".join(new[:10]) + (f" 等 {len(new)} 檔" if len(new) > 10 else "")
+    try:
+        from lib.notify import send_text
+        send_text(f"ℹ️ {name}：{shown} 已經一個月以上沒有新資料（多半是已下市），排程不再等它，"
+                  f"訊號照其他標的準時算。若已下市，請從 UNIVERSE 移除，以免策略還配權重給它。")
+    except Exception as e:  # best-effort, like _alert_stale
+        logging.warning(f"[wait_for_bar] dead-member notification dropped ({e})")
+
+
 def _alert_wrapper_error(name, exc):
     """wait_for_bar.py's OWN failure (bad INTERVAL, fetch_data raising, import
     error, etc.) — this happens BEFORE run_strategy's protection ever
@@ -645,7 +691,7 @@ def _alert_wrapper_error(name, exc):
 
 
 def _tick(name):
-    global _fetched_since
+    global _fetched_since, _dead
     mod = _load_strategy_module(name)
     interval = getattr(mod, "INTERVAL", None)
     if not interval:
@@ -698,7 +744,9 @@ def _tick(name):
     try:
         try:
             _fetched_since = datetime.now(timezone.utc).replace(tzinfo=None)
+            _dead = ([], [])
             observed_ts, ready, straggler_symbol, latest = _check_freshness(mod, expected)
+            _note_dead(name, state, *_dead)
         except Exception as e:
             if not _is_feed_wait(e):
                 # fetch_data() itself raised — network error, or a strategy's own

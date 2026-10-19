@@ -216,8 +216,12 @@ def _preview_row_is_live(config, src0, fetch_trims, data):
     days is no reason: live computes without it too, and both rows carry it as NaN."""
     if src0 is None or fetch_trims is None or fetch_trims:
         return False
-    from lib.bar_ready import computes_now
-    return bool(computes_now(data, config.get('INTERVAL', '1h'), _utcnow()))
+    from lib.bar_ready import computes_now, expected_closed_bar_open
+    from lib.data import tw_not_trading
+    interval, now = config.get('INTERVAL', '1h'), _utcnow()
+    inactive = (tw_not_trading(data[0].columns, expected_closed_bar_open(interval, now).strftime('%Y-%m-%d'))
+                if isinstance(data, tuple) else ())
+    return bool(computes_now(data, interval, now, inactive))
 
 
 def _typec_preview(weights, price_df, config, src0, fetch_trims, data):
@@ -1554,6 +1558,34 @@ def _weight_row_warnings(weights, index):
     return out
 
 
+def _dead_member_warnings(close_df, interval):
+    """UNIVERSE members that stopped trading before the data ends (lib.bar_ready.dead_members,
+    the rule the scheduler stops waiting by). Warned, not refused: their last price is held flat
+    from then on, so compute_signals can still give them weight — live, an order for a delisted id."""
+    from lib.bar_ready import dead_members, interval_to_timedelta, naive_utc
+    from lib.data import tw_not_trading
+    try:
+        last = close_df.apply(lambda col: col.last_valid_index()).dropna()
+        if len(last) < 2:
+            return []
+        try:
+            td = interval_to_timedelta(interval or '')
+        except ValueError:
+            td = None
+        latest = {str(k): naive_utc(v) for k, v in last.items()}
+        dead = dead_members(latest, tw_not_trading(latest), td)
+    except Exception as e:  # a warning must never take the backtest down
+        logging.info("delisted-member check skipped: %s", e)
+        return []
+    if not dead:
+        return []
+    shown = ', '.join(f"{k} (last {latest[k]:%Y-%m-%d})" for k in dead[:10]) + (' …' if len(dead) > 10 else '')
+    return [f"{len(dead)} UNIVERSE symbol(s) stopped trading before the data ends (delisted or suspended): "
+            f"{shown} — their last price is held flat after that, so they can still be ranked and weighted, "
+            f"and live that weight becomes an order for a symbol that no longer trades. Remove the "
+            f"delisted ones from UNIVERSE."]
+
+
 def typec_live_state(weights, price_df, now=None, market='swap'):
     """The state.json a Type C live tick writes (lib.portfolio.aggregate_portfolio
     reads it): {'type': 'portfolio', 'weights': {SYMBOL: w}, 'rebalance_at',
@@ -2461,7 +2493,8 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         # ── Performance: backtest, or a refresh of a live strategy ─────────────
         backtest_state = _preview_raw_closes(_typec_preview(weights_orig, price_df, config, src0, fetch_trims, data), hdrs)
         if mode == 'backtest':
-            for msg in _weight_row_warnings(weights_orig, price_df.index):
+            for msg in _weight_row_warnings(weights_orig, price_df.index) + _dead_member_warnings(
+                    price_df['close'], config.get('INTERVAL')):
                 logging.warning(msg)
                 print(f"  ⚠️ WARNING: {msg}")
 

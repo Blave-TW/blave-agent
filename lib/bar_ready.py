@@ -9,6 +9,13 @@ import re
 from datetime import datetime, timedelta
 
 PRIME_GRACE_SECONDS = 300   # see Priming in wait_for_bar's module docstring
+# A Type C member this far behind the frame's newest member is not waited for: it is no longer
+# trading (a delisted coin, a symbol its source dropped). Counted against the newest member, not
+# the expected bar, so a whole-frame lag is never "dead". The 30-day floor clears every gap a
+# live member shows: a weekend (TXF 55 bars behind BTC on 1h), Lunar New Year (TWSE ~12 days);
+# 20 bars widens it for weekly bars. Taiwan stocks are known sooner, by the CDN (`inactive`).
+DEAD_AFTER_BARS = 20
+DEAD_AFTER_FLOOR = timedelta(days=30)
 
 # Unit spellings actually in use across strategies/examples: '1h', '5min',
 # '1d', but also the bare-'m' form ('60m', '1m') — both must resolve to the
@@ -48,9 +55,19 @@ def naive_utc(ts):
     return ts.to_pydatetime()
 
 
-def judge(data, expected):
+def dead_members(latest, inactive=(), td=None):
+    """Members of `latest` ({member: its newest bar}) whose next bar is not coming, sorted: named
+    in `inactive` (Taiwan: lib.data.tw_not_trading) or behind the newest member by more than
+    DEAD_AFTER_BARS bars of `td` / DEAD_AFTER_FLOOR. The newest member is never one."""
+    newest = max(latest.values())
+    limit = max(DEAD_AFTER_FLOOR, DEAD_AFTER_BARS * td) if td else DEAD_AFTER_FLOOR
+    return sorted(k for k, v in latest.items() if v < newest and (k in inactive or newest - v > limit))
+
+
+def judge(data, expected, inactive=(), td=None):
     """fetch_data()'s result against `expected` → (observed_ts, ready, straggler, latest); the
-    fields are documented on wait_for_bar._check_freshness."""
+    fields are documented on wait_for_bar._check_freshness. Type C: dead_members are left out
+    of ready, straggler and observed_ts, kept in latest."""
     if isinstance(data, tuple):
         close_df = data[0]
         if close_df.empty:
@@ -59,10 +76,11 @@ def judge(data, expected):
         if last_valid.isna().any():
             # at least one symbol has literally never had a data point
             return None, False, last_valid[last_valid.isna()].index[0], None
-        straggler_symbol = last_valid.idxmin()
-        straggler_ts = naive_utc(last_valid[straggler_symbol])
-        ready = all(naive_utc(ts) >= expected for ts in last_valid)
-        return straggler_ts, ready, straggler_symbol, {str(k): naive_utc(v) for k, v in last_valid.items()}
+        latest = {str(k): naive_utc(v) for k, v in last_valid.items()}
+        dead = set(dead_members(latest, inactive, td))
+        live = {k: v for k, v in latest.items() if k not in dead}
+        straggler_symbol = min(live, key=live.get)
+        return live[straggler_symbol], all(v >= expected for v in live.values()), straggler_symbol, latest
     else:
         if data.empty:
             return None, False, None, None
@@ -78,7 +96,7 @@ def member_in_grace(latest, expected, now, td):
     return any(m < expected and now < m + 2 * td + grace for m in latest.values())
 
 
-def computes_now(data, interval, now):
+def computes_now(data, interval, now, inactive=()):
     """Would a tick at `now` (naive UTC) compute on `data`: the expected bar is in for every
     member, or it is not but priming would run (every member has data, none inside its grace).
     Not covered here, each handled by its caller: an align_feed row not yet published (the
@@ -86,5 +104,5 @@ def computes_now(data, interval, now):
     prime runs at the next session on the same data), the once-per-data prime dedupe."""
     td = interval_to_timedelta(interval)
     expected = expected_closed_bar_open(interval, now)
-    _, ready, _, latest = judge(data, expected)
+    _, ready, _, latest = judge(data, expected, inactive, td)
     return ready or (latest is not None and not member_in_grace(latest, expected, now, td))

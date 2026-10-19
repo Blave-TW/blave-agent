@@ -610,7 +610,7 @@ _DESKTOP_PUBLIC_DATA = frozenset({
     # 台股日K:電腦版沒有資料權限時改走公開 CDN(lib/data.py _twstock_daily / _twstock_batch,2010 起),不需要 Blave 資料 key
     "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
     "align_feed", "feed_available_at", "join_tw_flow", "normalize_symbol",
-    "settlement_signals_from_db", "twstock_industry_name", "txf_settlement_mask",
+    "settlement_signals_from_db", "tw_not_trading", "twstock_industry_name", "txf_settlement_mask",
 })
 _BLAVE_DATA = frozenset({
     "fetch_capital_shortage", "fetch_cme_cot", "fetch_cvd_coin", "fetch_cvd_table", "fetch_db_kline",

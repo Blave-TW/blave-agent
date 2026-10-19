@@ -72,6 +72,9 @@ full = pd.DataFrame(np.arange(30.0).reshape(10, 3), index=idx, columns=["A", "B"
 lag = full.copy(); lag.iloc[-1, 1] = np.nan
 lag3 = full.copy(); lag3.iloc[-3:, 2] = np.nan
 never = full.copy(); never["C"] = np.nan
+long_idx = pd.date_range(end="2026-10-15", periods=400, freq="D")
+dead = pd.DataFrame(1.0, index=long_idx, columns=["A", "B", "C"]); dead.iloc[-100:, 2] = np.nan
+halted = dead.copy(); halted.iloc[:, 2] = 1.0; halted.iloc[-12:, 2] = np.nan   # inside the floor
 CASES = {
     "A naive": pd.DataFrame({"Close": 1.0}, index=idx),
     "A taipei": pd.DataFrame({"Close": 1.0}, index=tpe),
@@ -82,13 +85,19 @@ CASES = {
     "C never": (never, never),
     "C empty": (full.iloc[:0], full.iloc[:0]),
     "C taipei": (full.set_axis(tpe), full.set_axis(tpe)),
+    "C dead member": (dead, dead),
+    "C halted 12 bars": (halted, halted),
 }
+DEAD_ARGS = [((), None), ({"B"}, None), ((), timedelta(days=1)), ((), timedelta(weeks=1)), ({"C"}, timedelta(hours=1))]
 for name, data in CASES.items():
     for exp in (datetime(2026, 10, 14), datetime(2026, 10, 15), datetime(2026, 10, 16)):
-        a, b = wfb._fb_judge(data, exp), br.judge(data, exp)
-        if a != b:
-            bad.append((name, exp, a, b))
-check(not bad, f"judge: identical on {len(CASES)} frames × 3 expected bars {bad[:2]}")
+        for inactive, step in DEAD_ARGS:
+            a, b = wfb._fb_judge(data, exp, inactive, step), br.judge(data, exp, inactive, step)
+            if a != b:
+                bad.append((name, exp, inactive, step, a, b))
+check(not bad, f"judge: identical on {len(CASES)} frames × 3 expected bars × {len(DEAD_ARGS)} dead-member inputs {bad[:2]}")
+check(wfb._fb_judge(CASES["C dead member"], datetime(2026, 10, 15))[1],
+      "…and the dead-member frame is one where the rule decides (ready only without C)")
 
 td = timedelta(days=1)
 latest_sets = [{"A": datetime(2026, 10, 15), "B": datetime(2026, 10, 14)},
