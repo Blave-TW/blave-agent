@@ -37,6 +37,8 @@ StockCoin facts:
 - clientOrderId is mandatory; a reused one answers -1141 DUPLICATED_ORDER.
 - signature = HMAC-SHA256 over the alphabetically sorted query string followed
   directly (no separator) by the sorted form body; POST bodies are form-data.
+  Measured: the venue does not check it (a wrong secret is accepted, a wrong
+  key is -1002) — see lib/account_stockcoin.
 - errors are HTTP 400 + {"code": <negative>, "msg"} — an unauthorized key is
   400 / -1002, not 401.
 """

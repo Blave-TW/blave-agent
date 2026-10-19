@@ -1,7 +1,8 @@
 """lib/order_stockcoin.py + lib/account_stockcoin.py against the venue doc — no network.
 
-Every reply below is the venue's own OpenAPI doc example (CONTRACT_OPENAPI.md
-§2.2 / §4.1–§4.6 / §6) or a public-endpoint shape read 2026-10-15; values ours.
+Replies are the venue's OpenAPI doc examples (CONTRACT_OPENAPI.md §2.2 /
+§4.2–§4.6 / §6), public-endpoint shapes read 2026-10-15, and /futures/balance
+as a live key answered it 2026-10-16; values ours.
 requests is replaced for the whole run and any unmocked call fails the test.
 
 Asserts: the signature string is the doc's §2.2 example 2 byte for byte (query
@@ -157,6 +158,7 @@ check(order.get_mark_price(ENV, "NVDAUSDT") == 218.29, "mark price = ticker last
 check(order.get_position_mode(ENV) == "hedge", "position mode is hedge")
 
 # ── errors ───────────────────────────────────────────────────────────────────
+# a wrong key answers this live; a wrong secret is accepted (the venue checks no signature)
 route("GET", "/futures/balance", lambda p: Resp({"code": -1002, "msg": "You are not authorized to execute this request"}, 400))
 try:
     acct.get_equity(ENV)
@@ -210,8 +212,13 @@ POS = [
 ]
 route("GET", "/futures/positions", lambda p: Resp([x for x in POS if (not p.get("symbol") or x["symbol"] == p["symbol"])
                                                     and (not p.get("side") or x["side"] == p["side"])]))
-route("GET", "/futures/balance", lambda p: Resp({"balance": "100", "availableBalance": "80", "positionMargin": "18.3",
-                                                 "orderMargin": "0", "asset": "USDT", "crossUnRealizedPnl": "5.0"}))
+# /futures/balance as a live key answered it 2026-10-16 (flat account, 50 USDT moved in);
+# the uPnL fields are set non-zero here to exercise the sum
+BAL_ROW = {"tokenId": "USDT", "tokenName": "USDT", "futureAssetTotal": "100", "total": "100",
+           "availableMargin": "80", "positionMargin": "18.3", "orderMargin": "0",
+           "totalUnRealizedPnl": "5.35", "crossUnRealizedPnl": "5.35", "isolatedUnRealizedPnl": "0",
+           "crossRealizedPnl": "0", "isolatedRealizedPnl": "0", "availableTransfer": "80", "riskRate": "0"}
+route("GET", "/futures/balance", lambda p: Resp([BAL_ROW]))
 pos = acct.get_positions(ENV)
 check(len(pos) == 2 and pos[0]["symbol"] == "NVDAUSDT" and pos[0]["side"] == "long"
       and abs(pos[0]["size"] - 1.0) < 1e-12 and pos[0]["mark_price"] == 188.25
@@ -221,7 +228,24 @@ check(pos[1]["side"] == "short" and pos[1]["leverage"] is None and pos[1]["margi
       "both hedge legs listed; blank details are None, not 0", pos[1])
 eq = acct.get_equity(ENV)
 check(eq["currency"] == "USDT" and abs(eq["equity"] - 105.35) < 1e-9 and eq["accounts"] == {"futures": 105.35},
-      "equity = balance + every open leg's unrealized PnL (a zero-size row ignored)", eq)
+      "equity = USDT row total + totalUnRealizedPnl (live list shape)", eq)
+route("GET", "/futures/balance", lambda p: Resp([{**BAL_ROW, "tokenId": "BTC", "tokenName": "BTC"}, BAL_ROW]))
+check(acct.get_equity(ENV)["equity"] == 105.35, "equity reads the USDT row, not the first row")
+route("GET", "/futures/balance", lambda p: Resp([]))
+check(acct.get_equity(ENV)["equity"] == 0.0, "an empty futures account answers [] — equity 0, not an error")
+route("GET", "/futures/balance", lambda p: Resp([{**BAL_ROW, "total": ""}]))
+try:
+    acct.get_equity(ENV)
+    check(False, "a USDT row without total raises")
+except Exception:
+    check(True, "a USDT row without total raises (never a made-up 0)")
+route("GET", "/futures/balance", lambda p: Resp({"balance": "100"}))
+try:
+    acct.get_equity(ENV)
+    check(False, "a non-list balance reply raises")
+except Exception:
+    check(True, "a non-list balance reply raises")
+route("GET", "/futures/balance", lambda p: Resp([BAL_ROW]))
 POS_BAD = [{"symbol": "NVDA-PERP-USDT", "side": "LONG", "position": "5", "lastPrice": "0"}]
 route("GET", "/futures/positions", lambda p: Resp(POS_BAD))
 try:

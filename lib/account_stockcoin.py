@@ -5,8 +5,13 @@ Discovered by filename (lib.account_stockcoin.get_equity / get_positions).
 Credentials: STOCKCOIN_API_KEY / STOCKCOIN_SECRET_KEY in .env. The key must be
 a FUTURES-type key (account_type 3); any other type answers -1005.
 
-UNVERIFIED AGAINST A LIVE ACCOUNT — shapes and formulas follow the venue's
-OpenAPI doc; tests/live_stockcoin_verify.py measures them (venue-onboarding §3).
+Read replies measured on a live key (tests/live_stockcoin_verify.py R1–R10);
+the equity formula with an open position is not measured yet (see get_equity).
+
+Measured: the venue authorizes on X-BH-APIKEY alone — a wrong secret (wrong
+HMAC) is accepted on reads, DELETE and POST alike, while a wrong key answers
+-1002. So a bad secret is undetectable here and the key itself is the whole
+credential. Requests are still signed per the doc in case it starts checking.
 
 Wallet model: a FUTURES key sees the futures account ONLY. Deposits land in the
 main account and must be moved to futures in the StockCoin app first; there is
@@ -163,17 +168,22 @@ def get_positions(env: dict) -> list:
 
 
 def get_equity(env: dict) -> dict:
-    """Equity = wallet `balance` + the unrealized PnL of every open leg.
-    crossUnRealizedPnl covers cross-margin legs only, so isolated legs would be
-    missed if it were used; summing the position rows covers both modes.
-    Assumption to confirm live: `balance` excludes unrealized PnL."""
+    """Equity = the USDT row's `total` + `totalUnRealizedPnl` (cross + isolated).
+    The reply is a list of per-token rows; a futures account holding nothing
+    answers [] — that is equity 0, not an error.
+    Assumption to confirm with the first open position: `total` is the wallet
+    balance (the doc's `balance`) and excludes unrealized PnL."""
     bal = _get(env, "/futures/balance")
-    row = bal[0] if isinstance(bal, list) and bal else bal
-    if not isinstance(row, dict) or _num(row.get("balance")) is None:
-        raise Exception(f"stockcoin /futures/balance: no balance field ({str(bal)[:120]})")
-    upnl = sum(_num(p.get("unrealizedPnL")) or 0.0 for p in _position_rows(env)
-               if Decimal(str(p.get("position") or 0)) != 0)
-    equity = _num(row.get("balance")) + upnl
+    if not isinstance(bal, list):
+        raise Exception(f"stockcoin /futures/balance: expected a list, got {str(bal)[:120]}")
+    row = next((r for r in bal if isinstance(r, dict) and r.get("tokenId") == "USDT"), None)
+    if row is None:
+        equity = 0.0
+    else:
+        total = _num(row.get("total"))
+        if total is None:
+            raise Exception(f"stockcoin /futures/balance: USDT row has no total ({str(row)[:160]})")
+        equity = total + (_num(row.get("totalUnRealizedPnl")) or 0.0)
     return {
         "equity": equity,
         "currency": "USDT",
