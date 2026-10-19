@@ -4371,8 +4371,8 @@ function trPaintSet() {
     else box.appendChild(errLine(ae.stage === "—" ? ae.msg.slice(0, 200) : t("cx.fail", { stage: ae.stage, msg: ae.msg.slice(0, 200) })));
   }
   if (TR.cx.err) box.appendChild(errLine(TR.cx.err));
-  // 解除綁定的後果只在確認框講(同畫面不講兩次);模擬帳戶那句是「之後可以改綁真實交易所」、雲端那句是唯讀視角的說明,照留
-  if (id === PAPER || ro) box.appendChild(trEl("div", "pf-foot", id === PAPER ? t("tr.unbindDescPaper") : t("tr.cloud.unbindDesc")));
+  // 解除綁定的後果只在確認框講(同畫面不講兩次,雲端視角也一樣);模擬帳戶那句是模擬→真實唯一的路標,確認框沒講,照留
+  if (id === PAPER) box.appendChild(trEl("div", "pf-foot", t("tr.unbindDescPaper")));
   trExecSection(box, r, id);
   const back = hadFocus && $(hadFocus); if (back && !back.disabled) back.focus(); else if (hadFocus) $("tr-tab-set").focus();
 }
@@ -4429,7 +4429,7 @@ function trExecSection(box, r, id) {
   if (S.exec.edit != null && S.exec.edit === stored) S.exec.edit = null;   // 報告對上了
   const tw = trTwBroker(id), cur = trExecCurrent(r, id);
   const isTwap = cur.indexOf("twap:") === 0, busy = !!S.sending.execution;
-  // TWAP／限價追價的原理收進區段標籤的 tooltip(稽核 W3),畫面上只留一句「每一筆單都用這個方式下」
+  // TWAP／限價追價的原理收進區段標籤的 tooltip(稽核 W3)
   const how = tw ? null : isTwap ? t("tr.exec.noteTwap") : cur === "chase" ? t("tr.exec.noteChase") : null;
   box.appendChild(trSec(how ? trTipLabel("label", t("tr.exec"), how) : trEl("span", "label", t("tr.exec"))));
   const row = trEl("div", "tr-exec"), w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "tr-exec-sel";
@@ -4463,7 +4463,8 @@ function trExecSection(box, r, id) {
   if (S.exec.err && S.exec.raw != null) { const p = trEl("p", "pf-note err", S.exec.err); p.id = "tr-exec-err"; box.appendChild(p); }
   else if (S.exec.err) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", S.exec.err)); box.appendChild(p); }
   else if (S.env === "cloud" && S.exec.edit != null) box.appendChild(trEl("p", "pf-note", t("tr.cloud.pendRow")));
-  box.appendChild(trEl("div", "pf-foot tr-exec-note", tw ? t("tr.exec.tw") : t("tr.exec.all")));
+  // 選單停用要講原因;其餘不掛說明行(設定分頁本身就是組合層級)
+  if (tw) box.appendChild(trEl("div", "pf-foot tr-exec-note", t("tr.exec.tw")));
 }
 /* 同網頁 chatAskCustomExec:框是空的才放那一句,已有草稿就不覆蓋、只聚焦;**不送出**。
    雲端視角也填本機聊天框(本機 agent 經 blave 工具去改雲端主機),絕不送進雲端——同 trErrAsk */

@@ -508,11 +508,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   // Wei 0.0.6:「重新測試」只在讀帳失敗 / 金鑰重查出事(紅記號)時畫;已連接(綠點)與串接中都沒有——模擬與真實交易所同一條
   const b1 = bad((c) => c.r.retest || !c.r.unbind);
   ok("帳戶列:已連接時沒有「重新測試」(模擬 / 真實交易所都沒有);兩者都有「解除綁定」(本機 / 雲端 × zh / en)" + (b1.length ? " ✗ " + b1 : ""), b1.length === 0);
-  // 設計稽核 desktop-10-08 #6:這台電腦的真實交易所不再常駐「移除金鑰…」那一句(它是解除綁定的後果,家在確認框);模擬與雲端那兩句照留
-  const want = (c) => c.venue === "paper" ? "tr.unbindDescPaper" : c.env === "cloud" ? "tr.cloud.unbindDesc" : null;
+  // 解除綁定的後果只在確認框講(本機、雲端都一樣,tr.unbindDesc / tr.cloud.unbindDesc 退役);只有模擬帳戶留「可以改綁真實交易所」
+  const want = (c) => c.venue === "paper" ? "tr.unbindDescPaper" : null;
   const b2 = bad((c) => (want(c) ? !c.r.T(want(c)) || c.r.foots[0] !== c.r.T(want(c)) : c.r.foots.length !== 0));
-  ok("帳戶列說明:模擬帳戶是「解除後可以改綁真實交易所」、雲端是唯讀那句;這台電腦的真實交易所沒有說明行、tr.unbindDesc 退役" + (b2.length ? " ✗ " + b2 : ""), b2.length === 0
-    && !/tr\.unbindDesc"/.test(src) && !vm.runInContext("'tr.unbindDesc' in STRINGS.zh || 'tr.unbindDesc' in STRINGS.en", ctx)
+  ok("帳戶列說明:模擬帳戶(本機/雲端)是「解除後可以改綁真實交易所」;真實交易所(本機/雲端)沒有說明行、tr.unbindDesc / tr.cloud.unbindDesc 退役" + (b2.length ? " ✗ " + b2 : ""), b2.length === 0
+    && !/tr\.(cloud\.)?unbindDesc"/.test(src) && !vm.runInContext("['tr.unbindDesc', 'tr.cloud.unbindDesc'].some((k) => k in STRINGS.zh || k in STRINGS.en)", ctx)
     && cases.find((c) => c.lang === "zh" && c.venue === "paper").r.foots[0] === "解除後可以改綁真實交易所。"
     && cases.find((c) => c.lang === "en" && c.venue === "paper").r.foots[0] === "Unbind to connect a real exchange instead."
     && cases.filter((c) => c.venue === "paper").every((c) => !/金鑰|keys/.test(c.r.foots[0])));

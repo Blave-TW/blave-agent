@@ -83,21 +83,21 @@ const paint = (rep, id) => { ctx.REP = rep; const box = mk("div"); vm.runInConte
 const rep = (eff, cfg) => ({ config: Object.assign({ amounts: { a: 100, b: 0 } }, cfg || {}), execution_effective: eff });
 
 let box = paint(rep({ type: "market" }), "okx"), sel = find(box, "tr-exec-sel");
-ok("③ 市價:三個選項 + 常駐的「自訂——跟 agent 說」入口、選中市價、沒有時長格、說明只有「組合裡每一筆單都用這個方式下」",
+ok("③ 市價:三個選項 + 常駐的「自訂——跟 agent 說」入口、選中市價、沒有時長格、沒有說明行(tr.exec.all 退役)",
   !!sel && J(sel.children.map((o) => o.value)) === J(["market", "twap", "chase", "custom-ask"]) && sel.children[3].textContent === "tr.exec.customAsk" && sel.value === "market" && !sel.disabled
-  && !find(box, "tr-exec-min") && note(box) === "tr.exec.all" && !all(box).some((n) => n.className === "tip") && !/noteTwap|noteChase|tr\.exec\.tw\b/.test(text(box)));
+  && !find(box, "tr-exec-min") && note(box) === undefined && !all(box).some((n) => n.className === "tip") && !/noteTwap|noteChase|tr\.exec\.tw\b/.test(text(box)));
 box = paint(rep({ type: "twap", duration_min: 45 }), "binance"); sel = find(box, "tr-exec-sel");
 let min = find(box, "tr-exec-min");
-ok("③ TWAP 45 分:選單停在 TWAP、時長格是 45;原理收進區段標籤的 tooltip(稽核 W3),說明行只剩「每一筆單都用這個方式下」", sel.value === "twap" && !!min && min.value === "45" && howTip(box) === "tr.exec.noteTwap" && note(box) === "tr.exec.all");
+ok("③ TWAP 45 分:選單停在 TWAP、時長格是 45;原理收進區段標籤的 tooltip(稽核 W3),沒有說明行", sel.value === "twap" && !!min && min.value === "45" && howTip(box) === "tr.exec.noteTwap" && note(box) === undefined);
 box = paint(rep({ type: "chase" }), "okx");
-ok("③ 限價追價:原理收進區段標籤的 tooltip,說明行只剩「每一筆單都用這個方式下」", howTip(box) === "tr.exec.noteChase" && note(box) === "tr.exec.all");
+ok("③ 限價追價:原理收進區段標籤的 tooltip,沒有說明行", howTip(box) === "tr.exec.noteChase" && note(box) === undefined);
 box = paint(rep({ type: "custom", module: "my_exec" }), "okx"); sel = find(box, "tr-exec-sel");
 ok("③ custom 是現值:列成第四個選項並選中(只能跟 agent 建,這裡不新增),入口項排最後", sel.children.length === 5 && sel.value === "custom:my_exec" && sel.children[4].value === "custom-ask");
 for (const tw of ["president", "capital"]) {
   box = paint(rep({ type: "twap", duration_min: 30 }), tw); sel = find(box, "tr-exec-sel");
   ok(`③ ${tw}:選單停用、顯示市價、沒有時長格、不列「自訂——跟 agent 說」(同網頁)、那一行講統一／群益一律市價`, sel.disabled && sel.value === "market" && !find(box, "tr-exec-min")
     && J(sel.children.map((o) => o.value)) === J(["market", "twap", "chase"])
-    && /tr\.exec\.tw\b/.test(text(box)) && !/tr\.exec\.all/.test(text(box)));
+    && note(box) === "tr.exec.tw");
 }
 box = paint({ config: null }, "okx");
 ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel") && /tr\.exec\.unread/.test(text(box)));
@@ -168,9 +168,10 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
   const zh = S.slice(S.indexOf("\n  zh: {"));
   const en = S.slice(0, S.indexOf("\n  zh: {"));
   const KEYS = ["tr.exec", "tr.exec.market", "tr.exec.twap", "tr.exec.chase", "tr.exec.custom", "tr.exec.customAsk", "tr.exec.customPrefill", "tr.exec.customPrefillCloud", "tr.exec.minLabel", "tr.exec.minUnit", "tr.exec.badMin",
-    "tr.exec.all", "tr.exec.noteTwap", "tr.exec.noteChase", "tr.exec.tw", "tr.exec.unread"];
+    "tr.exec.noteTwap", "tr.exec.noteChase", "tr.exec.tw", "tr.exec.unread"];
   ok("⑤ tr.exec.* 中英兩份都有,而且來源是 .po(strings.js 是產生的)", KEYS.every((k) => en.indexOf(`"${k}":`) >= 0 && zh.indexOf(`"${k}":`) >= 0)
     && ["en", "zh"].every((l) => { const po = read(path.join(SHELL, "i18n", l + ".po")); return KEYS.every((k) => po.indexOf(`msgid "${k}"\n`) >= 0) && !/onlyWebExec/.test(po); }));
+  ok("⑤ tr.exec.all 退役:.po、strings.js、trade.js 都沒有", !/tr\.exec\.all\b/.test(S + trade) && ["en", "zh"].every((l) => !/msgid "tr\.exec\.all"/.test(read(path.join(SHELL, "i18n", l + ".po")))));
   ok("⑤ 入口那一句照網頁的字(workspace_pf_exec_custom_ask / _prefill)", /"tr\.exec\.customAsk": "自訂——跟 agent 說"/.test(zh) && /"tr\.exec\.customPrefill": "我想自訂下單方式："/.test(zh)
     && /"tr\.exec\.customAsk": "Custom — tell the agent"/.test(en) && /"tr\.exec\.customPrefill": "I want a custom execution style: "/.test(en));
   ok("⑤「每支策略的下單方式在網頁」那兩句不在了(tr.cloud.onlyWebExec 拿掉、pv.inc.web 改寫)",

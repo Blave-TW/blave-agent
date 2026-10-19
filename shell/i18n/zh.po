@@ -2027,9 +2027,6 @@ msgstr "分鐘"
 msgid "tr.exec.badMin"
 msgstr "時長請填 1 到 1440 的整數分鐘。"
 
-msgid "tr.exec.all"
-msgstr "組合裡每一筆單都用這個方式下。"
-
 msgid "tr.exec.noteTwap"
 msgstr "TWAP 會把單拆成小份，在時間窗內分批市價執行——單量大時比較不會推動價格、滑價較小。"
 
@@ -2577,9 +2574,6 @@ msgstr "餘額低於 {m} TWD，主機已停機。下單已停止，部位留在�
 
 msgid "tr.cloud.stoppedBody0"
 msgstr "餘額不足，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。停機期間仍會扣主機費；餘額歸零時主機會刪除，主機上的策略、資料與金鑰一併清除。"
-
-msgid "tr.cloud.unbindDesc"
-msgstr "移除雲端主機上的交易所金鑰，下單機不再能用這個帳戶交易。"
 
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"

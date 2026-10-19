@@ -2017,9 +2017,6 @@ msgstr "min"
 msgid "tr.exec.badMin"
 msgstr "Enter a whole number of minutes from 1 to 1440."
 
-msgid "tr.exec.all"
-msgstr "Every order in the portfolio uses this."
-
 msgid "tr.exec.noteTwap"
 msgstr "TWAP splits an order into small slices executed at market over the window, so larger orders move the price less."
 
@@ -2567,9 +2564,6 @@ msgstr "The balance fell under {m} TWD and the machine stopped. Trading has halt
 
 msgid "tr.cloud.stoppedBody0"
 msgstr "The balance ran low and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. A stopped machine is still billed. At a balance of 0 the machine is deleted, along with the strategies, data and keys on it."
-
-msgid "tr.cloud.unbindDesc"
-msgstr "Removes the exchange keys from the cloud machine — the order engine can no longer trade this account."
 
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"
