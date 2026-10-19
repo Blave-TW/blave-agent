@@ -1196,8 +1196,23 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
 
 
 _CHASE_POLL_S = 1.0        # status/BBO re-check cadence while a limit rests
+# 暫停 / restart-stop re-check while a limit rests: a stat() per tick, so a paused
+# order is pulled within this, not at the next status poll (OKX demo filled one
+# inside that second, testnet 0.1.27 F6)
+_HALT_POLL_S = 0.05
 _CHASE_TIMEOUT_S = 45.0    # total chase window; the remainder then goes market
 _CHASE_MAX_REPLACES = 20   # cancel-replace budget (thin books re-quote fast)
+
+
+def _rest_wait(stop, seconds):
+    """stop.wait(seconds) that returns as soon as HALT or the restart stop lands."""
+    from lib import guard
+    end = time.monotonic() + seconds
+    while not stop.is_set() and not guard.halted() and not guard.restart_stopped():
+        left = end - time.monotonic()
+        if left <= 0:
+            return
+        stop.wait(min(_HALT_POLL_S, left))
 
 
 def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
@@ -1330,13 +1345,13 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             active_oid = oid
 
             while not stop.is_set() and time.time() < deadline:
-                stop.wait(_CHASE_POLL_S)
+                _rest_wait(stop, _CHASE_POLL_S)
                 if guard.restart_stopped():
                     stop.set()  # the resting order is cancelled right below
                     reason = "machine restarted"
                     break
                 if guard.halted():
-                    stop.set()  # cancelled right below: a fill after the freeze is a trade the user paused
+                    stop.set()  # cancelled right below; a fill before the cancel lands is booked like any fill
                     reason = "state/HALT set"
                     break
                 if _account_held(tools.get("venue") or exchange):
