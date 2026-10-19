@@ -3659,7 +3659,8 @@ function trSaveAmounts(names, stored, opener, o) {
     const unread = !orders && firstRead && Object.keys(sending).concat(Object.keys(stored)).some((n) => relevant(n) && willOrder(n));
     const fire = orders || unread || oldPv.length > 0;
     const amtOnly = Object.keys(sending).filter((n) => (n in stored) && Number(sending[n]) !== old(n));
-    const host = trPvHost(r), now = Date.now(), miss = m.st.missing.filter(relevant);
+    // 只等存了還有金額的:移出／歸 0 的成員存了就沒有貢獻,它的預覽可能永遠不來(沒回測過、fetch 壞掉)
+    const host = trPvHost(r), now = Date.now(), miss = m.st.missing.filter((n) => relevant(n) && Number(sending[n]) > 0);
     const codeChanged = miss.filter((n) => pvReq[n] && pvReq[n].code === "CODE_CHANGED"), hostOld = host ? [] : miss;
     const waiting = host ? miss.filter((n) => codeChanged.indexOf(n) < 0) : [];
     if (waiting.length && !cf.until) cf.until = now + (waiting.every((n) => { const x = TR.list.find((y) => y.name === n) || {}; return x.twdAll === true && !trTxfSpec(x.symbol); }) ? TR_CF_WAIT_TW_MS : TR_CF_WAIT_MS);

@@ -239,6 +239,12 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     const f = open();
     ok("R1 沒 state.json、沒預覽的投資組合在,移出帳上有 ETH 的 EX:「儲存並下單」+ 記號、列賣 ETH;策略列「移出 · 平倉」",
       f.title === "tr.cf.titleFire" && f.mark === "tr.mode.real" && f.rows.includes("tr.cf.sellETHUSDT0.1 tr.cf.unitCoins") && f.rows.includes("EX300→tr.cfTagRemove · tr.cfTagClose"), J(f)); }
+  // B4(paper e2e 0.1.27 batch3):移出一支沒有 state.json、也沒有預覽的策略——存了它就沒有貢獻,不用等它的預覽;框不卡「計算中」
+  { const BC = { name: "bc", displayName: "BC", hasBacktest: true, symbol: "BTCUSDT", market: "swap" };
+    bag({ firing: true, picked: ["btc", "tw"], amounts: { bc: 3000 }, list: [BC], noPv: true }); const f = open();
+    ok("B4 移出沒 state、沒預覽的策略:不寫計算中、主鈕可按;策略列「移出」", !f.wait && !f.okDisabled && f.rows.some((x) => /^BC3,000→tr\.cfTagRemove/.test(x)), J(f));
+    bag({ firing: true, picked: ["btc", "tw", "n5"], edits: { n5: 200000 }, amounts: { bc: 3000 }, list: [BC], noPv: true }); const g = open();
+    ok("B4 …同時加入一支預覽還沒到的草稿:照等那支(計算中、主鈕停用)", g.wait && g.okDisabled, J(g)); }
   // R2:已經有別的單(買 BTC)時,舊預覽那一句照出、表頭照寫那一根
   { bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { btc: 1000, ec: 300 }, list: [EC], noPv: true, pvs: { ec: pvA("ETHUSDT", { position: 0, close: 3000, latest: false }) } });
     const f = open();
