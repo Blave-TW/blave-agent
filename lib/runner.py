@@ -1974,7 +1974,7 @@ def _fill_invalid_cells(close_v, open_v):
     return new_close, new_open
 
 
-def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
+def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     """
     Unified runner for Type A and Type C strategies.
 
@@ -2002,6 +2002,10 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     _env_mode      = os.environ.get('BLAVE_MODE') or None   # '' counts as unset
     _inferred_live = not _env_mode and _picked_for_trading(config['STRATEGY_NAME'])
     mode           = _env_mode or ('live' if _inferred_live else 'backtest')
+    if _inferred_live:
+        # lib.data's gates read BLAVE_MODE, not this local: without it a hand-run of a picked
+        # US strategy reaches Yahoo and writes a state.json every scheduled tick then refuses
+        os.environ['BLAVE_MODE'] = 'live'
     refresh        = mode != 'backtest' and os.environ.get(STATS_REFRESH_ENV) == '1'
     quiet          = (_env_mode not in (None, 'backtest')) or _inferred_live
     # BLAVE_QUIET=1: a restore's background re-run (runtime command_listener). Still a full
@@ -2581,3 +2585,19 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
 
     else:
         raise TypeError(f"compute_fn must return pd.Series (Type A) or tuple (Type C), got {type(result)}")
+
+
+def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
+    # _run() may set BLAVE_MODE=live for an inferred-live run; put it back so a second run() in
+    # the same process (param scans, tests) infers its own mode instead of inheriting live
+    prior = os.environ.get('BLAVE_MODE')
+    try:
+        return _run(config, fetch_data_fn, compute_fn, send_telegram_fn)
+    finally:
+        if prior is None:
+            os.environ.pop('BLAVE_MODE', None)
+        else:
+            os.environ['BLAVE_MODE'] = prior
+
+
+run.__doc__ = _run.__doc__
