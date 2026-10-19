@@ -729,13 +729,13 @@ function trMultZone(venueId, acct, keys) {
   if (!venueId) return null;
   if (venueId === "capital" || venueId === "president") return acct === TR_TXF_CCY ? TR_ZONE_LOTS : null;
   if (!acct || acct === TR_TXF_CCY) return null;
-  return acct === "USD" && keys.indexOf("USD") < 0 && keys.indexOf("USDT") >= 0 ? "USDT" : acct;
+  return acct === "USD" && keys.indexOf("USDT") >= 0 ? "USDT" : acct;
 }
 /* 區的順序(§9.3):固定 USDT → USDC → 其他(字母序)→ TWD → 台指期(口)→ 幣別未定;綁定的交易所交易的區移到最前面,
    帳戶幣那一區第一。台灣期貨券商只交易口數區;加密所交易台幣以外的已知區 */
 function trZoneOrder(keys, venueId, acctZone) {
   const tw = venueId === "capital" || venueId === "president";
-  const bound = (k) => !!venueId && (tw ? k === TR_ZONE_LOTS : k !== TR_TXF_CCY && k !== TR_ZONE_LOTS && k !== TR_ZONE_UNKNOWN);
+  const bound = (k) => !!venueId && (tw ? k === TR_ZONE_LOTS : k !== TR_TXF_CCY && k !== TR_ZONE_LOTS && k !== TR_ZONE_UNKNOWN && k !== "USD");
   const rank = (k) => (k === "USDT" ? 0 : k === "USDC" ? 1 : k === TR_TXF_CCY ? 3 : k === TR_ZONE_LOTS ? 4 : k === TR_ZONE_UNKNOWN ? 5 : 2);
   const head = (k) => (!bound(k) ? 2 : k === acctZone ? 0 : 1);
   return [...new Set(keys)].sort((a, b) => head(a) - head(b) || rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
@@ -2667,7 +2667,7 @@ function trCatchWill(r) {
   const out = [], later = [], twShut = !trTwSessionOpen(Date.now(), r.tw_trading_day);
   let anyTw = false;
   Object.keys(target).concat(Object.keys(bk.mine).filter((k) => !(k in target))).sort().forEach((sym) => {
-    if (!trTradesSym(vk, sym) || (contribs[sym] || []).some((c) => c.notYet)) return;   // 訊號還沒算出來:會下什麼單不知道,不講
+    if (!trTradesSym(vk, sym) || trUsNoAuto(r, sym, (contribs[sym] || []).map((c) => c.name)) || (contribs[sym] || []).some((c) => c.notYet)) return;   // 訊號還沒算出來:會下什麼單不知道,不講
     const spec = trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))), raw = target[sym] || 0, ts = spec ? trLotsTarget(raw).lots : raw, as = bk.mine[sym] || 0, d = ts - as;
     const gs = spec ? null : trGateSide(gates[sym], ts, as);
     if (spec ? !Math.round(Math.abs(d)) : Math.abs(d) < (gs ? gs.usd : 10)) return;
@@ -2695,19 +2695,19 @@ function trWaitStranded(r) {
   if (!trHasAccount(r) || trFirstReadPending(r)) return 0;
   const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), contracts = trContracts();
   const target = trClientTargets(stored, st2, contracts), bk = trBook(r, target), vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {};
-  const keys = new Set(), notYet = new Set();
+  const keys = new Set(), notYet = new Set(), names = {}, add = (k, n) => { keys.add(k); (names[k] = names[k] || []).push(n); };
   Object.keys(stored).forEach((n) => {
     const s = st2[n], paperTw = trPaperOf(n);
     if (!(Number(stored[n]) > 0) || !s) return;
-    if (s.weights && typeof s.weights === "object") { Object.keys(s.weights).forEach((sym) => keys.add(trCanonSym(sym) + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : ""))); return; }
+    if (s.weights && typeof s.weights === "object") { Object.keys(s.weights).forEach((sym) => add(trCanonSym(sym) + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : ""), n)); return; }
     if (!s.symbol) return;
     const sym = trCanonSym(trEffSym(n, s.symbol, contracts)), k = sym + (s.market === "spot" || trTwCash(sym, paperTw) ? "@spot" : "");
-    keys.add(k); if (s.notYet === true) notYet.add(k);
+    add(k, n); if (s.notYet === true) notYet.add(k);
   });
   let n = 0;
   keys.forEach((sym) => {
     const as = bk.mine[sym] || 0;
-    if (!as || notYet.has(sym) || !trTradesSym(vk, sym)) return;
+    if (!as || notYet.has(sym) || !trTradesSym(vk, sym) || trUsNoAuto(r, sym, names[sym])) return;
     const spec = trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))), raw = target[sym] || 0, ts = spec ? trLotsTarget(raw).lots : raw, d = ts - as;
     if (!(ts * as < 0 || Math.abs(ts) < Math.abs(as))) return;
     const gs = spec ? null : trGateSide(gates[sym], ts, as);

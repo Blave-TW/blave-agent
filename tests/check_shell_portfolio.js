@@ -430,6 +430,14 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
       ws(500, 0, 400) === 1 && ws(200, 1, 400) === 1 && ws(500, -1, 400) === 1, J([ws(500, 0, 400), ws(200, 1, 400), ws(500, -1, 400)]));
     ok("等新訊號提醒:要加碼(目標 500、帳上 400)、帳上沒部位、差額沒過門檻(目標 395)、策略沒金額 → 0",
       ws(500, 1, 400) === 0 && ws(500, 0, null) === 0 && ws(395, 1, 400) === 0 && ws(0, 0, 400) === 0, J([ws(500, 1, 400), ws(500, 0, null), ws(395, 1, 400), ws(0, 0, 400)]));
+    // 0.1.28 美股純代號(trUsNoAuto,同網頁 pfWaitStranded／pfCatchWill):不會自動下單,不算會開著的部位、補齊說明不列
+    { const us = (mk, fn, pos, held) => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; r.config.amounts.btc = 500; r.states.btc = { symbol: "AMZN", position: pos };
+        r.strategy_kinds = { btc: { type: "A", market: mk } }; r.account.venues.binance.positions = { AMZN: { side: "long", size: held, entry_price: 200 } };
+        return vm.runInContext("TR = this.TR; " + fn + "(TR.st.report)", ctx); };
+      ok("美股:等新訊號提醒不算(us_stock 0、mixed 1);補齊說明不列(us_stock null、mixed 有)",
+        us("us_stock", "trWaitStranded", 0, 400) === 0 && us("mixed", "trWaitStranded", 0, 400) === 1
+        && us("us_stock", "trCatchWill", 1, 100) === null && /AMZN/.test(us("mixed", "trCatchWill", 1, 100) || ""),
+        J([us("us_stock", "trWaitStranded", 0, 400), us("mixed", "trWaitStranded", 0, 400), us("us_stock", "trCatchWill", 1, 100), us("mixed", "trCatchWill", 1, 100)])); }
     ok("等新訊號提醒:還沒算出訊號(states 沒有這支)→ 不算", (() => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; delete r.states.btc; return vm.runInContext("TR = this.TR; trWaitStranded(TR.st.report)", ctx); })() === 0);
     ok("等新訊號提醒掛在 wait 選項的 warn,只在 > 0 時", /warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null/.test(src) && /const stranded = trWaitStranded\(r\);/.test(src));
     ok("補齊說明接在 catch 選項的 desc 後面;舊 lib 單一鈕那條接在 lines 最後", /desc: t\("tr\.opt\.catchDesc" \+ money, \{ how: trCatchHow\(r, real\) \}\) \+ \(will \? " " \+ will : ""\)/.test(src) && /\.concat\(\[t\("tr\.startWarn1"\)\]\)\.concat\(will \? \[will\] : \[\]\)/.test(src)); }

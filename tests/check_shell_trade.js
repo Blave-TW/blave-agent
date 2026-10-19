@@ -203,6 +203,10 @@ ok("§9.3 帳戶幣那一區(排序用):加密所 = 帳戶幣;OKX 回 USD、表�
   trMultZone("binance", "USDT", ["USDT"]) === "USDT" && trMultZone("okx", "USD", ["USDT", "TWD"]) === "USDT" && trMultZone("okx", "USD", ["USD"]) === "USD"
   && trMultZone("capital", "TWD", []) === TR_ZONE_LOTS && trMultZone("president", "USDT", []) === null && trMultZone(null, "USDT", ["USDT"]) === null && trMultZone("myex", null, ["USDT"]) === null
   && trMultZone("binance", "TWD", ["TWD", "USDT"]) === null && trZoneOrder(["TWD", "USDT"], "binance", "TWD")[0] === "USDT");
+// 0.1.28 USD 區只會是美股(runtime quote_ccy 只有 us_stock 回 USD):不是加密所交易的區——OKX 帳戶幣 USD 有 USDT 區就掛 USDT,USD 區不往前排
+ok("§9.3 USD 區不當帳戶區:OKX USD 帳戶、表上 USD＋USDT → USDT 區;綁定時 USD 區排在加密區後面(同網頁 pfAcctGroup／pfGroups.traded)",
+  trMultZone("okx", "USD", ["USD", "USDT"]) === "USDT" && J(trZoneOrder(["USDT", "USD"], "okx", "USD")) === J(["USDT", "USD"])
+  && J(trZoneOrder(["USD", "USDC", "TWD"], "okx", "USDC")) === J(["USDC", "USD", "TWD"]));
 /* 淨值倍數(稽核 integ-0124 P1-1;Wei 10-13 安全檢查拿掉、只留表底一個倍數):綁定交易所會下單的列全部換成帳戶幣 ÷ 淨值。
    FX 故意沒有 USDC(平台匯率表常見情況):缺匯率當 1:1,不能把那一列丟掉 */
 { const FX = { USD: 1, USDT: 1, TWD: 32, BUSD: 2 }, ref = (n, v) => (n === "lot" ? v * 100 : v);
