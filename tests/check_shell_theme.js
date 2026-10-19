@@ -21,7 +21,7 @@ for (const k of ["--ink-disabled", "--surface-overlay", "--chart-band", "--chart
   ok("① " + k + " 淺色有值、深色重映射成不同的值", val(LIGHT, k) !== "UNDEF" && k in block('[data-theme="dark"]') && val(LIGHT, k) !== val(DARK, k), val(LIGHT, k) + " / " + val(DARK, k));
 ok("① 旗標三色 = canon(light 壓明度、dark 照舊)", ["#ad7e1f", "#1f93ad", "#7f4eda"].every((h, i) => val(LIGHT, "--color-flag-" + (i + 1)) === h)
   && ["#c79a3e", "#8ad2e2", "#8d68d4"].every((h, i) => val(DARK, "--color-flag-" + (i + 1)) === h));
-ok("① --ink-disabled:淺色 greyLightMedium、深色 greyDark 的重上值(停用字不按 token 名翻)", val(LIGHT, "--ink-disabled") === "#c4cdd6" && val(DARK, "--ink-disabled") === "#546168");
+ok("① --ink-disabled:淺色 #818f97(對 body 2.94:1,同 dark 重量)、深色 greyDark 的重上值(停用字不按 token 名翻)", val(LIGHT, "--ink-disabled") === "#818f97" && val(DARK, "--ink-disabled") === "#546168");
 // 舊 → 新:深色下必須一字不差(深色零差異的靜態那一半;另一半是逐像素比對,見 0.1.28 交付紀錄)
 const SWAPS = [["--color-greyDark", "--ink-disabled"], ["--color-greyDark", "--border-frame"], ["--color-greyDark", "--surface-segment-on"],
   ["--color-greyDark", "--chart-band"], ["--color-greyDark", "--chart-rest"], ["--color-darkBorder", "--surface-muted"], ["--color-darkBorder", "--border-hairline"],

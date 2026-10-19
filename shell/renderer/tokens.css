@@ -120,9 +120,10 @@
   --ink: var(--color-black);
   --ink-2: var(--color-greyDark);
   --ink-3: var(--color-greyMedium);
-  /* 停用字、缺值「—」、行內分隔「·」:同一個 greyDark 在 light 是次要字(8:1)、dark 才是停用,所以不按 token 名翻 */
-  --ink-disabled: var(--color-greyLightMedium);
-  /* 以下三個是設計師提案、canon 未核准(light-mode-2026-10 phase1-review P1/P2):名字照提案,dark 值 = 改名前的值 */
+  /* 停用字、缺值「—」、行內分隔「·」:同一個 greyDark 在 light 是次要字(8:1)、dark 才是停用,所以不按 token 名翻。
+     light 不用 greyLightMedium:對 body 只有 1.42:1,缺值「—」看不見;#818f97 對 body 2.94:1,跟 dark 的 2.86:1 同一個重量 */
+  --ink-disabled: #818f97;
+  /* 以下三個 canon 語意角色;dark 值 = 改名前的值 */
   --surface-overlay: var(--color-surface);       /* tooltip 這類暫態浮層的實心底;light 跟卡同值、靠 --shadow-overlay 分開 */
   --chart-band: #818f97;                         /* 隨機帶與它的色票;alpha 由消費端給(.55) */
   --chart-rest: #aab4bf;                         /* 堆疊圖合併的「其他 N 支」;.85 下對卡面 1.79:1,低於 data-3 */
