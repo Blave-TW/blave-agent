@@ -44,9 +44,10 @@ ok("app.js:tabsMoreWire(box, more, tabSel) 一個函式,報告分頁與 #tr-tabs
 ok("trade.js 的分頁接線不用改:點 / 鍵盤仍掛在 #tr-tabs(事件冒泡)、trSetTab 用 querySelectorAll 找 .main-tab", /\$\("tr-tabs"\)\.addEventListener\("click"/.test(read("trade.js")) && /\$\("tr-tabs"\)\.querySelectorAll\("\.main-tab"\)/.test(read("trade.js")));
 
 // 5. .mp-seg
-{ const rail = rule(css, ".mp-rail"), seg = rule(css, ".mp-seg:focus-visible");
+{ const rail = rule(css, ".mp-rail");
   ok(".mp-rail 不再裁切(格子內距只有 4,往內畫會碰字;軌最窄 236 放不下 8)", !!rail && !/overflow: hidden/.test(rail), rail);
-  ok(".mp-seg:focus-visible 不往內畫,聚焦時 position relative + z-index 1(不被鄰格分隔線蓋住)", !!seg && !/outline-offset/.test(seg) && /position: relative; z-index: 1/.test(seg), seg);
+  // 0.1.28 設計覆核第 7 點:segment 焦點框統一 offset 0(落在軌道 2px 內距裡、不壓字),浮上一層;由共用配方給,不再各寫各的
+  ok("segment 焦點框走共用配方:offset 0 + z-index 1(.mp-rail 在清單裡),.mp-seg 沒有自己的 focus 規則", /:is\([^)]*\.mp-rail[^)]*\) > button:focus-visible \{ outline-offset: 0; z-index: 1; \}/.test(css) && !/\.mp-seg:focus-visible/.test(css));
   // 0.1.28 換灰軌配方:每格自己是 radius sm,由共用配方的 `:is(...) > button`(比全域 ring 的 :where 具體)給,聚焦時不會被收成 xs
   ok("格子圓角吃共用 segment 配方的 sm(.mp-rail 在清單裡),不再有首末格／中間格的圓角補丁", /:is\([^)]*\.mp-rail[^)]*\) > button \{[^}]*border-radius: var\(--radius-sm\)/.test(css)
     && !/\.mp-seg:(first|last)-child|\.mp-seg:focus-visible:not/.test(css)); }

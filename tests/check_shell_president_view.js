@@ -169,12 +169,12 @@ ok("中文字串用全形標點", zhHalf.length === 0, zhHalf);
     /\[\["new", "pres\.none\.new"\], \["have", "pres\.none\.have"\]\]\.forEach/.test(prep) && /b\.setAttribute\("aria-pressed", PRES\.choice === c \? "true" : "false"\)/.test(prep) && /if \(!PRES\.choice\) return f;/.test(prep)
     && /li\("pres\.none\.s1", sub\("pres\.none\.s1sub", "tel", PRES_HOTLINE\)\); li\("pres\.none\.s2", sub\("pres\.none\.s2sub"\)\);/.test(prep)
     && /li\("pres\.none\.h1", null\); li\("pres\.none\.h2", sub\("pres\.none\.h2sub", "path", presPfxPath\(\)\)\);/.test(have) && !/tcem|Tcem/i.test(have.replace(/\/\/.*$/gm, "")));
-  // 設計稽核 0.1.23:.sub 維持 sans,只有 {path}／{tel} 那段包 .pres-mono;.pres-seg 補 44 熱區與 aria-label;連接框上緣固定只往下長
+  // 設計稽核 0.1.23:.sub 維持 sans,只有 {path}／{tel} 那段包 .pres-mono;.pres-seg 補 44 熱區(0.1.28 起走共用 segment 配方,格 28＋軌 = 32 同 .btn-out)與 aria-label;連接框上緣固定只往下長
   const pcss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "president.css"), "utf8");
   ok("mono 只包路徑與電話(.sub 本身不掛 .pres-mono);.pres-seg 熱區＋aria-label;.scrim:has(.cx-modal) 不置中",
     !/"sub" \+ \(mono/.test(prep) && /t\(k, \{ \[name\]: "\\u0000" \}\)\.split\("\\u0000"\)/.test(prep) && /trEl\("span", "pres-mono", val\)/.test(prep)
     && /seg\.setAttribute\("aria-label", t\("pres\.none\.lead"\)\)/.test(prep)
-    && /\.pres-seg button \{ position: relative;/.test(pcss) && /\.pres-seg button::before \{ content: ""; position: absolute; inset: -6px 0; \}/.test(pcss)
+    && /\.pres-seg button \{ height: 28px;/.test(pcss) && /:is\([^)]*\.pres-seg[^)]*\) > button::before \{[^}]*top: min\(0px, calc\(\(100% - 44px\) \/ 2\)\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8"))
     && /\.scrim:has\(\.cx-modal\) \{ align-items: flex-start; padding-top: max\(var\(--space-48\), 12vh\); \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")));
   ok("主鈕跟著選的路(new → 開啟憑證e總管、have → 選擇憑證檔案、沒選沒有主鈕);presPick 在 prep 選到檔直接進 form、停輪詢;選到不是 .pfx 畫在清單下",
     /view === "d-prep-none" \? \(PRES\.choice === "new" \? t\("pres\.tcem\.open"\) : PRES\.choice === "have" \? t\("pres\.none\.pick"\) : null\)/.test(src)

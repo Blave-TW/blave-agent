@@ -105,17 +105,25 @@ ok("⑤ 圖表跟著換:K 線 / 交易地圖就地改色,回測 / 樣本外 / �
 // ── ⑥ segment 一種長相 ──
 const segCss = Object.fromEntries(fs.readdirSync(R).filter((n) => n.endsWith(".css") && n !== "tokens.css").map((n) => [n, read(path.join(R, n))]));
 const railM = segCss["app.css"].match(/:is\(([^)]+)\) \{\s*display: inline-flex; padding: var\(--space-2\); border-radius: var\(--radius-md\); background: var\(--surface-muted\);/);
+const CELLS = ["mp-seg"];   // 格子自己帶 class 的(在 .mp-rail 裡)
 const rails = railM ? railM[1].split(",").map((x) => x.trim().slice(1)) : [];
-ok("⑥ 共用配方:灰軌 + 格 sm + 選中 segment-on／ink 600／shadow-sm(pressed 與 checked 都認)", rails.length >= 10
-  && /> button:is\(\[aria-pressed="true"\], \[aria-checked="true"\]\) \{\s*background: var\(--surface-segment-on\); color: var\(--ink\); font-weight: 600; box-shadow: var\(--shadow-sm\);/.test(segCss["app.css"]), rails.join());
+ok("⑥ 共用配方:灰軌 + 格 sm(平時 1px 透明框)+ 選中 segment-on／--border-frame 框／ink 600,不用陰影(pressed 與 checked 都認)", rails.length >= 10
+  && /:is\([^)]+\) > button \{\s*position: relative; border: 1px solid transparent;/.test(segCss["app.css"])
+  && /> button:is\(\[aria-pressed="true"\], \[aria-checked="true"\]\) \{\s*background: var\(--surface-segment-on\); border-color: var\(--border-frame\); color: var\(--ink\); font-weight: 600;\s*\}/.test(segCss["app.css"])
+  && !rails.concat(CELLS).some((r) => Object.values(segCss).some((c) => new RegExp("\\." + r + "[^{]*\\{[^}]*box-shadow: var\\(--shadow").test(c))), rails.join());
 const owners = [];
 for (const [f, c] of Object.entries(segCss)) for (const m of c.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{[^}]*background: var\(--surface-segment-on\)/g))
   for (const sel of m[1].split(",")) { const cls = (sel.trim().match(/^(?:html\[[^\]]+\] )?\.([\w-]+)/) || [])[1]; if (cls) owners.push([f, cls]); }
-const CELLS = ["mp-seg"];   // 格子自己帶 class 的(在 .mp-rail 裡)
 const offList = owners.filter(([, c]) => !rails.includes(c) && !CELLS.includes(c));
 ok("⑥ 每個畫選中格的控件都在配方清單裡(列舉所有 css)", owners.length > 0 && offList.length === 0, offList.map((x) => x.join(":")).join(" "));
 const outlined = rails.filter((r) => Object.values(segCss).map((c) => c.replace(/\/\*[\s\S]*?\*\//g, "")).some((c) => new RegExp("\\." + r + " button \\+ button|\\." + r + "[^{]*\\{[^}]*border: 1px solid var\\(--border-frame\\)").test(c)));
 ok("⑥ 沒有 segment 還畫外框或格間分隔", outlined.length === 0, outlined.join());
+ok("⑥ 未選字 --ink-2(--ink-3 在灰軌上淺 4.06／深 3.61,12px 不到 AA);焦點框 offset 0;熱區共用一條補到 44",
+  /:is\([^)]+\) > button \{\s*position: relative; border: 1px solid transparent; border-radius: var\(--radius-sm\); color: var\(--ink-2\);/.test(segCss["app.css"])
+  && /:is\([^)]+\) > button:focus-visible \{ outline-offset: 0; z-index: 1; \}/.test(segCss["app.css"])
+  && /:is\([^)]+\) > button::before \{\s*content: ""; position: absolute; left: 0; right: 0;\s*top: min\(0px, calc\(\(100% - 44px\) \/ 2\)\); bottom: min\(0px, calc\(\(100% - 44px\) \/ 2\)\);/.test(segCss["app.css"]));
+const ownFx = rails.concat(CELLS).filter((r) => Object.values(segCss).map((c) => c.replace(/\/\*[\s\S]*?\*\//g, "")).some((c) => new RegExp("\\." + r + "(?: button)?(?::focus-visible|::before)[^{]*\\{").test(c)));
+ok("⑥ 各 segment 不再自己寫焦點框或熱區(列舉)", ownFx.length === 0, ownFx.join());
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);

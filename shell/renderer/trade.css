@@ -53,10 +53,8 @@ html[data-env="cloud"] .envsw { --envsw-rail: var(--bg-body); }
   display: flex; align-items: center; justify-content: center; width: 40px; height: 28px;
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-.envsw button::before { content: ""; position: absolute; inset: -8px 0; }
-.envsw button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; z-index: 1; }
 /* 安靜分段(canon segment):選中 = 墊一階底色 + 圖示變深,不反白——「現在在哪一邊」已經有灰頂列、側欄、視窗標題三個通道 */
-.envsw button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); box-shadow: var(--shadow-sm); }
+.envsw button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); }
 /* 格內唯一的記號:掛在圖示右上角,不佔寬;底下墊一圈格子的底色,跟圖示線條分開 */
 .envsw .run-dot, .envsw .dot { position: absolute; top: 5px; right: 7px; margin: 0; box-shadow: 0 0 0 2px var(--envsw-rail); }
 .envsw button[aria-pressed="true"] .run-dot, .envsw button[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px var(--surface-segment-on); }
@@ -411,7 +409,7 @@ html.ws-sc .side-gate { display: none; }
 .ov-stats .sv.est { color: var(--color-greyMedium); }
 /* 曲線模式與區間:兩排 segment(配方在 app.css) */
 .ov-modes, .ov-ranges { display: inline-flex; align-items: center; gap: 0; }
-.rng { padding: 4px var(--space-8); font: 12px var(--font-mono); }
+.rng { display: inline-flex; align-items: center; height: 28px; padding: 0 var(--space-8); font: 12px var(--font-mono); }   /* 格 28 + 軌 4 = 32,同桌面鈕 */
 .ov-modes .rng { font-family: inherit; }
 .ov-frame { position: relative; }
 .ov-canvas { display: block; width: 100%; height: 240px; }
@@ -767,8 +765,7 @@ html.ws-sc .side-gate { display: none; }
 .mg-unitw { display: inline-flex; align-items: center; gap: var(--space-8); }
 .mg-unitw .amt-in { width: calc(14ch + 2 * var(--space-8) + 2px); }
 .mg-size-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
-/* 標籤會折行、13px,維持 --ink-2(配方的 --ink-3 壓在灰軌上不到 4.5:1) */
-.mg-size-seg button { min-width: 0; min-height: 36px; padding: var(--space-4); font-size: 13px; line-height: 1.2; color: var(--ink-2); white-space: normal; word-break: keep-all; }
+.mg-size-seg button { min-width: 0; min-height: 36px; padding: var(--space-4); font-size: 13px; line-height: 1.2; white-space: normal; word-break: keep-all; }
 .mg-size-seg button[aria-disabled="true"] { color: var(--ink-disabled); background: transparent; cursor: help; }
 .mg-size-old[hidden] { display: none; }
 .mg-size-pv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-12); margin-top: var(--space-16); padding: var(--space-12); border-radius: var(--radius-sm); background: var(--bg-body); }

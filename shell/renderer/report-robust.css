@@ -112,7 +112,6 @@
   font-weight: 400;
   transition: none;
 }
-.rob-seg button:focus-visible { outline-offset: -2px; }
 /* frame 同 .bt-frame(內距 16、hairline、radius lg),多一個橫捲:欄數 >7 的掃描靠它捲,不縮字 */
 .rob-frame {
   padding: var(--space-16);

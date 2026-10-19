@@ -31,24 +31,30 @@
 /* 52px 拖曳條:只放燈號,不畫任何 chrome(底色 = 頁面地色)。高度跟 .ws-bar 一起宣告在下面,不重複寫 */
 .cn-bar { flex: none; display: flex; align-items: center; padding: 0 var(--space-16); }
 /* 全 app 的 segment 共用一份配方(canon › Interaction states 的 segment／tab pill;細節照設定 › 外觀那顆):
-   --surface-muted 灰軌、內距 2、軌 md／格 sm,選中格 --surface-segment-on + --ink 600 + shadow-sm 浮起,不畫外框與格間分隔。
+   --surface-muted 灰軌、內距 2、軌 md／格 sm,未選字 --ink-2(--ink-3 壓在灰軌上不到 AA),選中格 --surface-segment-on + --ink 600 + 1px --border-frame 框
+   (不用陰影:canon 按鈕一律無陰影;每格平時就有 1px 透明框,選中時尺寸不跳),不畫外框與格間分隔。
    outlined 那種在淺色卡上選中格是白壓白、只剩粗體。各處只寫自己的尺寸;新的 segment 加進這兩個清單 */
 :is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) {
   display: inline-flex; padding: var(--space-2); border-radius: var(--radius-md); background: var(--surface-muted);
 }
 :is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button {
-  position: relative; border-radius: var(--radius-sm); color: var(--ink-3); white-space: nowrap;
+  position: relative; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--ink-2); white-space: nowrap;
   transition: color var(--motion-fast) var(--ease-standard);
 }
 :is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button:hover { color: var(--ink); }
-:is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button:is([aria-pressed="true"], [aria-checked="true"]) {
-  background: var(--surface-segment-on); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-sm);
+/* 焦點框 offset 0:2px 的框剛好落在軌道 2px 的內距裡,不跑出軌外、不吃進選中格;浮上一層才不被鄰格蓋住 */
+:is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button:focus-visible { outline-offset: 0; z-index: 1; }
+/* 熱區照 Fitts 補到 44,只往上下溢出;格子本身超過 44(標籤折行)時不往內縮 */
+:is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button::before {
+  content: ""; position: absolute; left: 0; right: 0;
+  top: min(0px, calc((100% - 44px) / 2)); bottom: min(0px, calc((100% - 44px) / 2));
 }
-/* 語言 segment:每格靠 ::before 把熱區補到 44,上溢的 7px 落在跟卡之間的 16 裡,不蓋卡 */
+:is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button:is([aria-pressed="true"], [aria-checked="true"]) {
+  background: var(--surface-segment-on); border-color: var(--border-frame); color: var(--ink); font-weight: 600;
+}
+/* 語言 segment:熱區上溢的 7px 落在跟卡之間的 16 裡,不蓋卡 */
 .cn-lang { display: flex; }
 .cn-lang button { height: 30px; padding: 0 var(--space-8); font-size: 12px; }
-.cn-lang button::before { content: ""; position: absolute; inset: -7px 0; }
-.cn-lang button:focus-visible { outline-offset: -2px; }
 .cn-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 52px; }
 .cn-mid h4 {
   margin: 0 0 var(--space-24);
@@ -567,9 +573,6 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 內距 4 不是 8:聊天欄最窄時軌只有約 236px,五格(含 Extra High)用 8 會超出去,
    最右邊的 Max 被軌的 overflow 切掉。寬的時候多的空間由 flex-grow 平分回去 */
 .mp-seg { flex: 1 1 auto; min-width: 0; height: 30px; padding: 0 var(--space-4); font-size: 12px; }
-/* 軌不裁切:格子內距只有 4,ring 往內畫會碰到字(spec-0.1.19 §2.4 必修)。ring 走全域的外擴,聚焦時浮上一層才不被鄰格蓋住;
-   外擴的 4px 落在軌兩側的 10px margin 裡。圓角吃配方的 sm(比全域 ring 的 xs 具體),選中格不會露出軌道底 */
-.mp-seg:focus-visible { position: relative; z-index: 1; }
 .mp-note { margin: 0; padding: var(--space-8) 10px 6px; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 
 /* ── Tooltip(canon › Components › Tooltip)──────────────
@@ -1096,8 +1099,6 @@ body.resizing * { cursor: col-resize !important; }
 /* 外觀 segment:靠右、至少跟下拉欄一樣寬,總高 34 = 下拉 */
 .set-seg { display: flex; margin-left: auto; min-width: 160px; }
 .set-seg button { flex: 1 1 auto; height: 30px; padding: 0 var(--space-12); font-size: 12px; }
-.set-seg button::before { content: ""; position: absolute; inset: -7px 0; }   /* 熱區補到 44 */
-.set-seg button:focus-visible { outline-offset: -2px; }
 .set-selw::after {                 /* canon 的 CSS chevron */
   content: ""; position: absolute; right: 9px; top: 50%;
   width: 6px; height: 6px; margin-top: -4px;

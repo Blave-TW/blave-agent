@@ -10,8 +10,6 @@
 .lib-tools { display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; margin-top: var(--space-12); }
 /* segment(配方在 app.css;匯出檔案切換、歡迎頁資料清單、找點子框共用) */
 .lib-seg button { height: 30px; padding: 0 var(--space-12); font-size: 12px; }
-.lib-seg button::before { content: ""; position: absolute; inset: -7px 0; }
-.lib-seg button:focus-visible { outline-offset: -2px; }
 /* 市場選單(同網頁 .lib-mkt-*):觸發器 = Outlined control(框與高同 .lib-seg)＋箭頭 .ct-cv;面板借換合約選單的 .ct-menu / .ct-mi,改掛觸發器下 */
 .lib-mkt { position: relative; }
 .lib-mkt-trig { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 30px; padding: 0 var(--space-12); border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
