@@ -22,7 +22,8 @@ a temp workspace carrying a copy of this repo's lib/.
      for a deleted strategy; INDEX_BROKEN (unreadable index / entry without code_hash) is not
      CODE_CHANGED; an unreadable portfolio_config.json → the whole batch CONFIG_UNREADABLE, a
      missing one = nobody deployed; the runner's "already running" tail classifies as BUSY.
-  4. a failed run → perf.refresh {status: failed, err: DATA}; a listener restart settles a stale
+  4. a failed run → perf.refresh {status: failed, err: DATA}; a DataAccessError also writes `why`
+     (the child's BLAVE_DATA_ACCESS_WHY, else unknown) for the desktop; a listener restart settles a stale
      `running` record as failed EXIT.
   5. the pre-report sweep (_start_report_job): refreshes stale deployed Type A/C members in front
      of the report, skips Type B and undeployed strategies, skips a stats.json younger than an
@@ -260,6 +261,7 @@ d = perf_doc()
 check(d is not None and d.get("status") == "failed" and d.get("err") == "DATA",
       f"a data failure → perf_refresh.json failed DATA ({d})")
 check(os.stat(os.path.join(SDIR, "stats.json")).st_mtime == mt, "stats.json untouched by the failed run")
+check(d.get("why") == "unknown", f"DataAccessError with no shell flag → why unknown ({d})")
 p = perf_of(NAME)
 check(isinstance(p, dict) and p.get("refresh") == {"status": "failed", "at": d["at"], "err": "DATA"},
       f"report: perf.refresh carries the failure ({p})")
@@ -275,6 +277,14 @@ m_running = rep.strategy_marker(strat)
 os.replace(os.path.join(BASE, "perf.bak"), os.path.join(SDIR, cl.PERF_REFRESH_FILE))
 check(len({m_failed, m_idle, m_running}) == 3,
       "strategy_marker differs across idle / running / failed with the same stats.json (the strategy is re-sent)")
+with open(os.path.join(WS, "state", "data_access.json"), "w") as f:
+    json.dump({"BLAVE_DATA_ACCESS": "0", "BLAVE_DATA_ACCESS_WHY": "signed_out"}, f)
+send([NAME])
+check(wait_idle(), "the signed-out refresh finished")
+d_so = perf_doc()
+os.remove(os.path.join(WS, "state", "data_access.json"))
+check(d_so and d_so.get("err") == "DATA" and d_so.get("why") == "signed_out",
+      f"DataAccessError under the shell's signed_out flag → why signed_out ({d_so})")
 flags(n=360)
 send([NAME])
 check(wait_idle() and perf_doc() is None, "a later success clears the failed record")

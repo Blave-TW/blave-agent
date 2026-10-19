@@ -62,6 +62,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     ok("perf_refresh.json running → { status, at },pid 不往上交", JSON.stringify(rr({ status: "running", at: 1760000000, pid: 42 })) === '{"status":"running","at":1760000000}');
     ok("failed 帶認得的 err;不認得的 → EXIT", rr({ status: "failed", at: 5, err: "DATA" }).err === "DATA" && rr({ status: "failed", at: 5, err: "WHAT" }).err === "EXIT" && rr({ status: "failed", at: 5 }).err === "EXIT");
     ok("main.js RERUN_ERRS 也認 SUPERSEDED / BUSY(= runtime _RERUN_ERRS,本機讀檔這一層不能先降成 EXIT)", rr({ status: "failed", at: 5, err: "SUPERSEDED" }).err === "SUPERSEDED" && rr({ status: "failed", at: 5, err: "BUSY" }).err === "BUSY");
+    ok("why 只跟 DATA 往上交(值的白名單在 renderer);EXIT 帶 why、why 不是短小寫字 → 不帶", rr({ status: "failed", at: 5, err: "DATA", why: "signed_out" }).why === "signed_out"
+      && rr({ status: "failed", at: 5, err: "EXIT", why: "signed_out" }).why === undefined && rr({ status: "failed", at: 5, err: "DATA", why: "<b>" }).why === undefined && rr({ status: "failed", at: 5, err: "DATA", why: 1 }).why === undefined);
     ok("壞形狀(status 不認得、at 不是整數、陣列、檔壞)→ 不帶 refresh", [{ status: "done", at: 5 }, { status: "running", at: "5" }, [1], "{half"].every((d) => rr(d) === undefined));
     ok("loadStrategy 交出 perf: stratPerf(dir)", /versions: stratVersions\(dir\), perf: stratPerf\(dir\),/.test(fnSrc(mainSrc, "loadStrategy")));
     fs.rmSync(ws, { recursive: true, force: true });
@@ -91,7 +93,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   }
   const doc = { createElement: (tag) => new El(tag) };
   const names = ["pfEl", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
-  const body = ["PF", "PFL", "PFP", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_WHY", "pfSide"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
+  const body = ["PF", "PFL", "PFP", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
   class FakeDate extends Date { static now() { return clock.now; } }
@@ -194,6 +196,40 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     ok("en:Update failed; figures unchanged. / it hit an error;失敗不輪詢", e.fail().kids[1].textContent === "Update failed; figures unchanged." && e.fail().title === "it hit an error" && e.timers.length === 0);
     ok("報告帶回 SUPERSEDED(跑完但 runner 丟棄:檔案在途中被改)/ BUSY(等 runner 的回測鎖等到逾時)各有自己一句", why("SUPERSEDED") === "策略在更新途中被改過，數字沒換；再按一次" && why("BUSY") === "這支策略正在回測中，等它跑完再按一次"
       && why("SUPERSEDED", "en") === "The strategy was edited while updating; figures unchanged. Press again." && why("BUSY", "en") === "This strategy is being backtested right now; press again when it finishes.");
+  }
+  // 沒有資料權限(runtime 寫的 why):看得到的那一行講原因,title 照舊;why 只認 DATA 與白名單
+  {
+    const line = (lang, refresh) => { const q = rig(lang, { perf: { at: nowS() - 100, refresh: Object.assign({ status: "failed", at: nowS() - 60 }, refresh) } }); q.F.perfPaint(q.B); return q.fail(); };
+    const so = line("zh", { err: "DATA", why: "signed_out" });
+    ok("DATA + why signed_out:「沒登入 Blave，抓不到資料，數字是舊的」,title 仍是「沒取到資料」", so.textContent === "沒登入 Blave，抓不到資料，數字是舊的" && so.title === "沒取到資料");
+    ok("六個 why 各自一句(zh / en 都有、不是 key 本身)", ["signed_out", "no_card", "no_balance", "no_plan", "plan_failed", "unknown"].every((w) => ["zh", "en"].every((l) => { const x = line(l, { err: "DATA", why: w }).textContent; return x && !/perf\./.test(x) && x !== STR[l]["perf.fail"]; })));
+    ok("why 不認得、或碼不是 DATA → 照舊「沒更新成功，數字是舊的」", line("zh", { err: "DATA", why: "constructor" }).textContent === "沒更新成功，數字是舊的" && line("zh", { err: "EXIT", why: "signed_out" }).textContent === "沒更新成功，數字是舊的" && line("zh", { err: "DATA" }).textContent === "沒更新成功，數字是舊的");
+  }
+  // 上次失敗後再按(10-19 Wei Mac):按下前就在的 failed 紀錄不算報告跟上——要畫更新中、要輪詢、跑完換新數字
+  {
+    let next = null;
+    const old = { status: "failed", at: nowS() - 600, err: "DATA" };
+    const r = rig("zh", { perf: { at: nowS() - 2 * 86400, refresh: old }, reload: () => next }); r.F.perfPaint(r.B);
+    ok("(前提)上次失敗:失敗行 + 鈕", r.fail() && r.btn());
+    r.btn().click(); await flush();
+    ok("先有 failed 再按:當下就是更新中(失敗行收掉)、疊層留著、開始輪詢", r.upd().attrs.role === "status" && !r.fail() && r.F.PF.local.size === 1 && r.timers.length === 1 && r.F.PFP.local && r.F.PFP.local.name === "momo");
+    r.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
+    next = { stats: { symbol: "BTCUSDT" }, perf: { at: nowS() - 2 * 86400, refresh: old } };
+    await r.timers[0][0]();
+    ok("輪詢讀到的還是那筆舊 failed:維持更新中、繼續輪詢", r.upd().attrs.role === "status" && !r.fail() && r.timers.length === 2 && r.F.PFP.local !== null);
+    next = { stats: { symbol: "BTCUSDT" }, perf: { at: nowS() - 2 * 86400, refresh: { status: "running", at: nowS() } } };
+    await r.timers[1][0](); r.F.perfPaint(r.B);
+    ok("報告寫了新的 running:疊層交棒給報告、仍是更新中、繼續輪詢", r.F.PF.local.size === 0 && r.upd().attrs.role === "status" && r.F.PFP.local !== null);
+    clock.now += 40 * 1000;
+    next = { stats: { symbol: "BTCUSDT" }, perf: { at: nowS() } };
+    await r.timers[r.timers.length - 1][0](); r.F.perfPaint(r.B);
+    ok("成功:換新時間、回閒置、沒有失敗行、唸「績效已更新」、輪詢停", r.B.data === next && r.btn() && r.btn().title === tipZh(nowS()) && !r.fail() && r.said.join() === "績效已更新" && r.F.PFP.local === null);
+    clock.now -= 40 * 1000;
+    const f = rig("zh", { perf: { at: nowS() - 100, refresh: old } }); f.F.perfPaint(f.B); f.btn().click(); await flush(); f.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
+    f.B.data = { stats: {}, perf: { at: nowS() - 100, refresh: { status: "failed", at: nowS(), err: "TIMEOUT" } } }; f.F.perfPaint(f.B);
+    ok("再按又失敗(新紀錄):疊層拿掉、照新的那筆畫失敗行", f.F.PF.local.size === 0 && f.fail() && f.fail().title === "跑太久，已停下" && f.F.PFP.local === null);
+    const c = rig("zh", { cloud: true, perf: { at: nowS() - 100, refresh: old } }); c.F.perfPaint(c.B); c.btn().click(); await flush();
+    ok("雲端同一個函式:先有 failed 再按也是更新中、5 秒輪詢", c.upd().attrs.role === "status" && c.timers.length === 1 && c.timers[0][1] === 5000);
   }
   // 按下:當下換成更新中、送 stats_refresh {names:[name]};ack started 才記埋點;報告跟上(at 前進、refresh 消失)= 完成,唸一句
   {

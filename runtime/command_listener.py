@@ -6450,7 +6450,7 @@ def _perf_path(name):
     return os.path.join(WORKSPACE, "strategies", name, PERF_REFRESH_FILE)
 
 
-def _mark_perf(name, status, err=None):
+def _mark_perf(name, status, err=None, why=None):
     # the strategy was deleted while its refresh ran: a record now would recreate the folder as a ghost
     if not os.path.isdir(os.path.join(WORKSPACE, "strategies", name)):
         return
@@ -6459,6 +6459,8 @@ def _mark_perf(name, status, err=None):
         doc["pid"] = os.getpid()   # whose run: a record from a process that is gone is settled at start
     if err:
         doc["err"] = err
+    if why:
+        doc["why"] = why
     _write_json_atomic(_perf_path(name), doc)
 
 
@@ -6533,7 +6535,12 @@ def _refresh_stats(name, timeout, backtest_hash=None):
     if rc != 0:
         refresh_capacity.write_cost(sdir, peak, None)
         tail = _tail(err) or _tail(out)
-        raise RuntimeError(f"{_classify_rerun(tail)}: {tail or f'exited {rc}'}")
+        exc = RuntimeError(f"{_classify_rerun(tail)}: {tail or f'exited {rc}'}")
+        # DATA also covers network errors; DataAccessError alone means the shell withheld the key, and
+        # its reason lets the desktop page say why (perf_refresh.json `why`; the reporter drops it)
+        if "DataAccessError" in tail:
+            exc.data_why = env.get("BLAVE_DATA_ACCESS_WHY") or "unknown"
+        raise exc
     refresh_capacity.write_cost(sdir, peak, seconds)
     after = _stats_sig(name)
     if after is None:
@@ -6629,7 +6636,7 @@ def _refresh_one(name, deadline, what, backtest_hash=None, shared=False):
         _refresh_stats(name, timeout, backtest_hash)
     except Exception as e:
         code = str(e).split(":", 1)[0]
-        _mark_perf(name, "failed", code if code in _RERUN_ERRS else "EXIT")
+        _mark_perf(name, "failed", code if code in _RERUN_ERRS else "EXIT", getattr(e, "data_why", None))
         _log(f"{what}: {name} not refreshed: {str(e)[:300]}")
         return False
     finally:

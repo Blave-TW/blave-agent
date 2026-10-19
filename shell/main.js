@@ -1317,7 +1317,7 @@ function loadStrategy(name) {
 }
 /* 績效的新鮮度(renderer/perf.js 的「更新績效」),形狀同 runtime strategy_reporter._read_perf:{ at, refresh? },沒有 stats.json = null。
    at = stats.json 的 mtime(秒)——最後一次寫績效的時間(回測、還原的重跑、更新績效;live tick 不寫這個檔),不是 Generated At(只有明確回測會動)。
-   refresh = strategies/<name>/perf_refresh.json(command_listener 寫):{ status: running|failed, at, err? },err 認得的是 RERUN_ERRS、其餘當 EXIT;壞形狀就當沒有 */
+   refresh = strategies/<name>/perf_refresh.json(command_listener 寫):{ status: running|failed, at, err?, why? },err 認得的是 RERUN_ERRS、其餘當 EXIT(why 只跟 DATA,白名單在 renderer perfOf);壞形狀就當沒有 */
 function stratPerf(dir) {
   let at = 0; try { at = Math.floor(fs.statSync(path.join(dir, "stats.json")).mtimeMs / 1000); } catch (_) { return null; }
   const out = { at };
@@ -1325,6 +1325,7 @@ function stratPerf(dir) {
   if (!d || typeof d !== "object" || Array.isArray(d) || (d.status !== "running" && d.status !== "failed") || !Number.isInteger(d.at)) return out;
   out.refresh = { status: d.status, at: d.at };
   if (d.status === "failed") out.refresh.err = RERUN_ERRS.indexOf(d.err) >= 0 ? d.err : "EXIT";
+  if (out.refresh.err === "DATA" && typeof d.why === "string" && /^[a-z_]{1,20}$/.test(d.why)) out.refresh.why = d.why;
   return out;
 }
 /* 轉出檔(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 存的三個固定檔名)。

@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.137 — 2026-10-21(desktop 0.1.28)
+
+- **更新績效失敗時寫出沒有資料權限的原因(`command_listener._refresh_stats`／`_mark_perf`)**:子行程的 log tail 有 `DataAccessError`(外殼沒給 Blave key)時,`perf_refresh.json` 的 failed 紀錄多一個選填 `why` = 子行程拿到的 `BLAVE_DATA_ACCESS_WHY`(`signed_out`／`no_card`／`no_balance`／`no_plan`／`plan_failed`;沒有旗標就 `unknown`)。`err` 照舊是 `DATA`,`_RERUN_ERRS` 三層契約不動;網路錯誤等其他 DATA 不帶。只給電腦版讀(`shell/main.js` `stratPerf`),`strategy_reporter._read_perf` 不轉送,api 不受影響。測試 `tests/check_stats_refresh_command.py`。
+
 ## 1.1.135 — 2026-10-20(runtime 單獨發，先於 0.1.28;電腦版隨 0.1.28 安裝包)
 
 - **按停止殺得掉 Claude 引擎正在跑的工具(`turn_stop.kill_tree`)**:引擎 CLI 的命令列帶 `--disallowedTools …Edit(/lib/president_worker.py)…`(保護規則 `PROTECTED_EDIT_RULES`),`MONEY_ARGV` 比對整條命令列,CLI 本身被當成動錢的行程放過,它底下的工具(長回測)也一起放過——回覆寫「president_worker 沒有中斷」、工具照跑到完。電腦版 Claude／Blave AI、雲端網頁停止、排程逾時(`report_runner` 先建停止旗標)都中;Codex 的命令列沒有這些字、Windows 只殺引擎不比對,都不受影響。現在 agent_turn 的直接子行程(引擎)不比對命令列,只認 money_pids 標記;它底下的工具照舊逐支比對,動錢的照舊放過。測試 `tests/check_turn_stop.py`(假引擎改帶 SDK 同一組 `--disallowedTools`,加 `lib/president_worker.py` 一例)。

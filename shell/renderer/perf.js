@@ -12,7 +12,7 @@
    數字原地換(回測分頁重畫)、讀屏另唸一句;refresh failed = 失敗。ack 後 2 分鐘報告都沒跟上就拿掉疊層回閒置(不知道有沒有跑,不假稱失敗)。
    用到 app.js 的 $ / t / RP / RPC / RPC_CACHE / rpBag / rpPaintHead / rpShowTab / rpTab / running / trackFeature / srSay、
    trade.js 的 TR_BAGS、versions.js 的 verPicked / verPendingOf / VS / RERUN_WHY、export.js 的 xpIsTypeB、report-sharelist.js 的 shlFmtTime——都在呼叫時才取。 */
-const PF = { local: new Map(), cloud: new Map() };     // side → name → { at0, ackAt, failed }:按下之後、報告跟上之前的疊層
+const PF = { local: new Map(), cloud: new Map() };     // side → name → { at0, ref0, ackAt, failed }:按下之後、報告跟上之前的疊層
 const PFL = { local: null, cloud: null };              // 上一次畫的 { name, kind, at }:更新中 → 閒置且時間前進 = 完成,唸一句
 const PFP = { local: null, cloud: null };              // 每邊一支輪詢
 const PF_POLL_MS = { local: 2000, cloud: 5000 }, PF_GRACE_MS = 120000;
@@ -20,6 +20,8 @@ const PF_POLL_MS = { local: 2000, cloud: 5000 }, PF_GRACE_MS = 120000;
 const PF_POLL_MAX_MS = (900 + 900 + 120) * 1000;
 const PF_ERRS = ["REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY"];   // = runtime _RERUN_ERRS(報告帶回的 perf.refresh.err)
 // 失敗行 title 的專屬句:報告帶回的兩個 + ack 的 skip 碼(機器端沒跑);不在這裡的走 ver.rerunWhy.*
+// DATA 失敗而且是沒有資料權限(runtime 寫的 why = 外殼給子行程的 BLAVE_DATA_ACCESS_WHY):看得到的那一行直接講原因;雲端報告不帶 why
+const PF_NO_DATA = { signed_out: "perf.noData.signedOut", no_card: "perf.noData.noCard", no_balance: "perf.noData.noBalance", no_plan: "perf.noData.noPlan", plan_failed: "perf.noData.planFailed", unknown: "perf.noData.unknown" };
 const PF_WHY = { SUPERSEDED: "perf.superseded", BUSY: "perf.lockBusy", CODE_CHANGED: "perf.codeChanged", INDEX_BROKEN: "perf.indexBroken", NOT_RUNNABLE: "perf.notRunnable", CONFIG_UNREADABLE: "perf.configUnreadable" };
 const pfSide = (B) => (B === RPC ? "cloud" : "local");
 function pfEl(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -31,6 +33,7 @@ function perfOf(B) {
   if (r && typeof r === "object" && !Array.isArray(r) && (r.status === "running" || r.status === "failed") && typeof r.at === "number") {
     out.refresh = { status: r.status, at: r.at };
     if (r.status === "failed") out.refresh.err = PF_ERRS.indexOf(r.err) >= 0 ? r.err : "EXIT";
+    if (out.refresh.err === "DATA" && Object.prototype.hasOwnProperty.call(PF_NO_DATA, r.why)) out.refresh.why = r.why;
   }
   return out;
 }
@@ -44,16 +47,18 @@ function perfShown(side, B) {
 }
 // 上線中 = 在下單設定裡(verPicked:amounts 有這個 key,金額 0 也算,同 runtime _deployed_names):機器端走 live 刷新、每天報告前自動更新;其餘只在按下時重跑回測
 function perfLive(side, B) { return typeof verPicked === "function" && verPicked(side, B) === true; }
-/* 三態:{ kind: idle|running|failed, at, err? }。疊層只撐到報告跟上(refresh 出現、或 at 前進)或 ack 後 2 分鐘;之後以報告為準 */
+/* 三態:{ kind: idle|running|failed, at, err?, why? }。疊層只撐到報告跟上(出現按下之後才寫的 refresh、或 at 前進)或 ack 後 2 分鐘;之後以報告為準。
+   按下前就在的那筆(上次失敗)不算跟上:拿它當跟上,疊層一建就被刪、不輪詢,跑完畫面也不換 */
+const pfRefKey = (r) => (r ? r.status + "@" + r.at : null);
 function perfState(side, B, now) {
   const p = perfOf(B); if (!p) return null;
   const o = PF[side].get(B.name);
   if (o) {
-    if (p.refresh || p.at > o.at0 || (o.ackAt && now - o.ackAt > PF_GRACE_MS)) PF[side].delete(B.name);
+    if ((p.refresh && pfRefKey(p.refresh) !== o.ref0) || p.at > o.at0 || (o.ackAt && now - o.ackAt > PF_GRACE_MS)) PF[side].delete(B.name);
     else return o.failed ? { kind: "failed", at: p.at, err: o.failed } : { kind: "running", at: p.at };
   }
   if (p.refresh && p.refresh.status === "running") return { kind: "running", at: p.at };
-  if (p.refresh && p.refresh.status === "failed") return { kind: "failed", at: p.at, err: p.refresh.err };
+  if (p.refresh && p.refresh.status === "failed") return { kind: "failed", at: p.at, err: p.refresh.err, why: p.refresh.why };
   return { kind: "idle", at: p.at };
 }
 /* app.js rpShowTab 畫完回測分頁就叫:把 .upd 掛進 .bt-meta 列尾、失敗那一行插在 meta 下面。每次重建(狀態換了才會被叫到) */
@@ -85,7 +90,7 @@ function perfPaint(B) {
     const why = PF_WHY[st.err] || "ver.rerunWhy." + (RERUN_WHY[st.err] || "exit");   // 四個分類碼沿用版本重跑的字串,不另造一組
     line.title = t(why);
     const m = pfEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
-    line.append(m, pfEl("span", "", t("perf.fail")));
+    line.append(m, pfEl("span", "", t(PF_NO_DATA[st.why] || "perf.fail")));
     meta.parentNode.insertBefore(line, meta.nextSibling);
   }
   perfBusy();
@@ -105,7 +110,7 @@ async function perfClick(B) {
   if (b && b.getAttribute("aria-disabled") === "true") { busyTell(busySlot("perf-why", $("rp-bt").querySelector(".bt-meta") || b), "perf"); return; }   // 回合進行中:觸控看不到 title
   const side = pfSide(B), name = B.name, p = perfOf(B);
   if (!p || !name) return;
-  const o = { at0: p.at, ackAt: 0, failed: null };
+  const o = { at0: p.at, ref0: pfRefKey(p.refresh), ackAt: 0, failed: null };
   PF[side].set(name, o);
   perfPollStop(side);   // 上一輪封頂留下的佔位讓開,這一輪重新輪詢
   if (rpBag() === B && !$("rp").hidden) perfPaint(B);
