@@ -126,7 +126,8 @@ observation at/after the expected bar — wait for the whole universe, not just
 the first symbol to update. Not waited for (lib.bar_ready.dead_members): a
 Taiwan stock the CDN manifest says did not trade on its last day, and any
 member more than DEAD_AFTER_BARS bars / 30 days behind the newest member
-(delisted, halted indefinitely). Waiting on those held last_processed_bar
+(delisted, halted indefinitely) — only ever a minority: when half the universe
+or more looks dead, its shared source stopped and the strategy waits as before. Waiting on those held last_processed_bar
 empty forever: every signal then came from a prime, which is tried once per
 data, so one failed prime lost that day's rebalance, and bar_stale re-fired
 daily. A long-dead member is notified once (_note_dead) so it can be taken
@@ -193,10 +194,13 @@ def _fb_naive_utc(ts):
     return ts.to_pydatetime()
 
 
-def _fb_dead_members(latest, inactive=(), td=None):
-    newest = max(latest.values())
+def _fb_dead_members(latest, inactive=(), td=None, expected=None):
+    anchor = max(latest.values())
+    if expected is not None:
+        anchor = min(anchor, expected)
     limit = max(_FB_DEAD_AFTER_FLOOR, _FB_DEAD_AFTER_BARS * td) if td else _FB_DEAD_AFTER_FLOOR
-    return sorted(k for k, v in latest.items() if v < newest and (k in inactive or newest - v > limit))
+    dead = sorted(k for k, v in latest.items() if v < anchor and (k in inactive or anchor - v > limit))
+    return dead if 2 * len(dead) < len(latest) else []
 
 
 def _fb_judge(data, expected, inactive=(), td=None):
@@ -208,7 +212,7 @@ def _fb_judge(data, expected, inactive=(), td=None):
         if last_valid.isna().any():
             return None, False, last_valid[last_valid.isna()].index[0], None
         latest = {str(k): _fb_naive_utc(v) for k, v in last_valid.items()}
-        dead = set(_fb_dead_members(latest, inactive, td))
+        dead = set(_fb_dead_members(latest, inactive, td, expected))
         live = {k: v for k, v in latest.items() if k not in dead}
         straggler_symbol = min(live, key=live.get)
         return live[straggler_symbol], all(v >= expected for v in live.values()), straggler_symbol, latest
@@ -533,7 +537,8 @@ def _check_freshness(mod, expected):
         td = None
     verdict = _judge(data, expected, inactive, td)
     if verdict[3] and len(verdict[3]) > 1:
-        _dead = (_dead_members(verdict[3], inactive, td), _dead_members(verdict[3], (), td))
+        _dead = (_dead_members(verdict[3], inactive, td, expected),
+                 _dead_members(verdict[3], (), td, expected))
     return verdict
 
 
@@ -547,7 +552,7 @@ def _fingerprint(latest):
 
 
 _fetched_since = None   # naive UTC: when this tick's _check_freshness began fetching
-_dead = ([], [])        # _check_freshness: (members not waited for, those of them long dead)
+_dead = None            # _check_freshness: (members not waited for, those of them long dead); None = not judged
 
 
 def _run_strategy_protected(name):
@@ -744,9 +749,10 @@ def _tick(name):
     try:
         try:
             _fetched_since = datetime.now(timezone.utc).replace(tzinfo=None)
-            _dead = ([], [])
+            _dead = None
             observed_ts, ready, straggler_symbol, latest = _check_freshness(mod, expected)
-            _note_dead(name, state, *_dead)
+            if _dead is not None:   # a frame without data says nothing about who is dead
+                _note_dead(name, state, *_dead)
         except Exception as e:
             if not _is_feed_wait(e):
                 # fetch_data() itself raised — network error, or a strategy's own

@@ -5,8 +5,11 @@ behind still does, and the scheduler records the bar and names the dead member o
   2. a Taiwan stock the CDN manifest says did not trade on the expected day: ready; not
      decided while the manifest does not reach that day
   3. a live member one bar behind: not ready, straggler is that member
-  4. the whole frame behind (weekend, CDN late): no member is dead
-  5. a tick on (1): last_processed_bar is set, the notice is sent once, not on the next bar
+  4. the whole frame behind (weekend, CDN late), most columns frozen together (their source
+     stopped), one bar stamped in the future: no live member is dead
+  5. a tick on (1): last_processed_bar is set, the notice is sent once — not again after a
+     tick whose frame had a column without data, nor on the next bar; a TWSE daily tick on a
+     Sunday asks the manifest about Friday
   6. the backtest warns, naming the dead member
 
 Run: cd blave-agent && .venv/bin/python tests/check_bar_ready_dead_member.py
@@ -82,6 +85,16 @@ behind = close.iloc[:-5]
 _, ready, who, latest = br.judge((behind, behind), expected, (), td)
 check(not ready and br.dead_members(latest, (), td) == ["2361"],
       f"(4) the whole frame behind: not ready, only the long-dead member dead ({ready}, {who})")
+frozen = {"A": datetime(2026, 9, 1), "B": datetime(2026, 9, 1), "C": datetime(2026, 9, 1),
+          "D": datetime(2026, 10, 18)}
+fz = pd.DataFrame({k: pd.Series(1.0, index=pd.date_range(end=v, periods=3, freq="h")) for k, v in frozen.items()})
+_, ready, who, _ = br.judge((fz, fz), datetime(2026, 10, 18), (), timedelta(hours=1))
+check(not ready and who in "ABC" and br.dead_members(frozen, (), timedelta(hours=1)) == [],
+      f"(4) three of four columns frozen 47 days (their source stopped): not ready, none dead ({ready}, {who})")
+future = {"X": datetime(2027, 1, 1), "Y": datetime(2027, 1, 1), "Z": datetime(2027, 1, 1),
+          "A": datetime(2026, 10, 16), "B": datetime(2026, 10, 16)}
+check(br.dead_members(future, (), td, datetime(2026, 10, 16)) == [],
+      "(4) bars stamped months ahead do not condemn the rest (anchor capped at expected)")
 hourly = {"BTC": datetime(2026, 10, 19, 0), "TXF": datetime(2026, 10, 16, 17)}
 check(br.dead_members(hourly, (), timedelta(hours=1)) == [],
       "(4) TXF over a weekend on 1h (55 bars behind BTC): not dead")
@@ -118,13 +131,34 @@ check(ran == ["demo"] and st["last_processed_bar"] == "2026-10-16T00:00:00",
       f"(5) the tick runs and records the bar ({ran}, {st['last_processed_bar']})")
 check(len(sent) == 1 and "2361" in sent[0] and "UNIVERSE" in sent[0] and st["dead_noticed"] == ["2361"],
       f"(5) the dead member is named once ({sent})")
-frame["df"] = pd.concat([close, pd.DataFrame({"2330": [1.0], "2317": [1.0]}, index=[pd.Timestamp("2026-10-19")])])
+nxt = pd.concat([close, pd.DataFrame({"2330": [1.0], "2317": [1.0]}, index=[pd.Timestamp("2026-10-19")])])
+frame["df"] = nxt.assign(**{"9999": np.nan})   # a fetch with a column that has no data: latest None
 clock["now"] = datetime(2026, 10, 20, 9, 0)
+with contextlib.redirect_stdout(io.StringIO()):
+    wfb._tick("demo")
+st = json.load(open("state/bar_wait/demo.json"))
+check(st["last_processed_bar"] == "2026-10-16T00:00:00" and st["dead_noticed"] == ["2361"],
+      f"(5) a tick without a verdict on members leaves dead_noticed alone ({st['dead_noticed']})")
+frame["df"] = nxt
+clock["now"] = datetime(2026, 10, 20, 9, 1)
 with contextlib.redirect_stdout(io.StringIO()):
     wfb._tick("demo")
 st = json.load(open("state/bar_wait/demo.json"))
 check(st["last_processed_bar"] == "2026-10-19T00:00:00" and len(sent) == 1,
       f"(5) next bar: recorded, no second notice ({st['last_processed_bar']}, {len(sent)})")
+
+# ── (5b) a TWSE daily strategy: the manifest is asked about the mapped trading day ─────────
+wfb._tw_stock_daily = lambda n: True
+wfb._tw_holiday = lambda d: False
+os.makedirs("strategies/tw")
+frame["df"] = susp
+ran.clear()
+clock["now"] = datetime(2026, 10, 18, 9, 0)   # Sunday: the expected bar maps to Friday 10-16
+with contextlib.redirect_stdout(io.StringIO()):
+    wfb._tick("tw")
+st = json.load(open("state/bar_wait/tw.json"))
+check(ran == ["tw"] and st["last_processed_bar"] == "2026-10-16T00:00:00" and st["not_waited"] == ["2409"],
+      f"(5b) Sunday tick: Friday's manifest says 2409 did not trade, the bar runs ({ran}, {st['not_waited']})")
 
 # ── (6) the backtest warning ─────────────────────────────────────────────────
 w = runner._dead_member_warnings(close, "1d")

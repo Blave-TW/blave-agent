@@ -55,13 +55,19 @@ def naive_utc(ts):
     return ts.to_pydatetime()
 
 
-def dead_members(latest, inactive=(), td=None):
+def dead_members(latest, inactive=(), td=None, expected=None):
     """Members of `latest` ({member: its newest bar}) whose next bar is not coming, sorted: named
-    in `inactive` (Taiwan: lib.data.tw_not_trading) or behind the newest member by more than
-    DEAD_AFTER_BARS bars of `td` / DEAD_AFTER_FLOOR. The newest member is never one."""
-    newest = max(latest.values())
+    in `inactive` (Taiwan: lib.data.tw_not_trading) or behind the anchor — the newest member, at
+    most `expected` (one bar stamped in the future must not condemn the rest) — by more than
+    DEAD_AFTER_BARS bars of `td` / DEAD_AFTER_FLOOR. Only ever a minority: when half the members
+    or more look dead it is their shared source that stopped, not a delisting, and nothing is
+    excluded — the strategy waits and bar_stale alerts, as before."""
+    anchor = max(latest.values())
+    if expected is not None:
+        anchor = min(anchor, expected)
     limit = max(DEAD_AFTER_FLOOR, DEAD_AFTER_BARS * td) if td else DEAD_AFTER_FLOOR
-    return sorted(k for k, v in latest.items() if v < newest and (k in inactive or newest - v > limit))
+    dead = sorted(k for k, v in latest.items() if v < anchor and (k in inactive or anchor - v > limit))
+    return dead if 2 * len(dead) < len(latest) else []
 
 
 def judge(data, expected, inactive=(), td=None):
@@ -77,7 +83,7 @@ def judge(data, expected, inactive=(), td=None):
             # at least one symbol has literally never had a data point
             return None, False, last_valid[last_valid.isna()].index[0], None
         latest = {str(k): naive_utc(v) for k, v in last_valid.items()}
-        dead = set(dead_members(latest, inactive, td))
+        dead = set(dead_members(latest, inactive, td, expected))
         live = {k: v for k, v in latest.items() if k not in dead}
         straggler_symbol = min(live, key=live.get)
         return live[straggler_symbol], all(v >= expected for v in live.values()), straggler_symbol, latest

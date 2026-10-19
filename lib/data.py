@@ -2751,11 +2751,13 @@ def _tw_cdn_traded_last_day(sid, manifest):
 
 
 def tw_not_trading(ids, day=None):
-    """Of `ids`, the stocks the cached CDN manifest lists that did not trade on `day` (default:
-    its last day) — delisted, suspended: no bar is coming for them. Empty while the manifest
-    does not reach `day` yet: a stock suspended the day before may trade on it, and its bar then
-    comes with the CDN's next file. Reads the cached file only, never the network; empty
-    without one. lib.bar_ready's `inactive` for a Taiwan Type C universe."""
+    """Of `ids`, the stocks the cached CDN manifest lists that are absent from `day`'s exchange
+    daily table (default: its last day) — delisted, or halted the whole day: no bar is coming for
+    them. A listed stock with no trades that day keeps its table row (close null), so it counts
+    as trading here; only lib.bar_ready's 30-day rule catches one that stays untraded. Empty
+    while the manifest does not reach `day` yet: a stock halted the day before may trade on it,
+    and its bar then comes with the CDN's next file. Reads the cached file only, never the
+    network; empty without one. lib.bar_ready's `inactive` for a Taiwan Type C universe."""
     try:
         manifest = json.loads((_tw_cdn_dir() / 'manifest.json').read_text())
         if day is not None and manifest['asof'] < day:

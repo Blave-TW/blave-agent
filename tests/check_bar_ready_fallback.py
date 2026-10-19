@@ -96,6 +96,12 @@ for name, data in CASES.items():
             if a != b:
                 bad.append((name, exp, inactive, step, a, b))
 check(not bad, f"judge: identical on {len(CASES)} frames × 3 expected bars × {len(DEAD_ARGS)} dead-member inputs {bad[:2]}")
+LATEST = [{"A": datetime(2026, 10, 15), "B": datetime(2026, 10, 14), "C": datetime(2026, 6, 1)},
+          {"A": datetime(2026, 10, 15), "B": datetime(2026, 6, 1), "C": datetime(2026, 6, 1)},
+          {"X": datetime(2027, 1, 1), "A": datetime(2026, 10, 15), "B": datetime(2026, 10, 15)}]
+dm = [(l, i, st, e) for l in LATEST for i, st in DEAD_ARGS for e in (None, datetime(2026, 10, 15))
+      if wfb._fb_dead_members(l, i, st, e) != br.dead_members(l, i, st, e)]
+check(not dm, f"dead_members: the same list from both copies (the notice names it) {dm[:2]}")
 check(wfb._fb_judge(CASES["C dead member"], datetime(2026, 10, 15))[1],
       "…and the dead-member frame is one where the rule decides (ready only without C)")
 
