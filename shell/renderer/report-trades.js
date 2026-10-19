@@ -603,10 +603,34 @@
     return { trades: all, start: { value: 0, known: !!fromStart } };
   }
 
-  // 縮到一根 K 棒不到 1px:上千顆箭頭疊成一片白,看不出任何一筆 → 收起來,倉位連線照畫(網頁沒有這條,電腦版先提)
-  const MARK_MIN_SPACING = 1;
-  function marksShown(barSpacing) {
-    return !(barSpacing < MARK_MIN_SPACING);
+  // 箭頭疊成一片時收起來,倉位連線照畫。量的是「可見箭頭的平均間距」(繪圖區寬 ÷ 可見箭頭數),不是 K 棒間距:
+  // 多年小時線全縮時 K 棒遠不到 1px,但整段只有幾十筆的話箭頭其實分得開,那正是用戶想看全貌的時候。
+  // < 4px 收、≥ 6px 才再出,中間維持原狀——卡在邊界上縮放不會一直閃
+  const MARK_HIDE_GAP = 4;
+  const MARK_SHOW_GAP = 6;
+  function marksShown(wasOn, plotWidth, visibleCount) {
+    const gap = visibleCount > 0 ? plotWidth / visibleCount : Infinity;
+    return wasOn ? gap >= MARK_HIDE_GAP : gap >= MARK_SHOW_GAP;
+  }
+  // markers 依時間排序(buildMarkers):落在 [t0, t1] 的筆數,兩次二分
+  function countMarkersIn(markers, t0, t1) {
+    const lower = function (t, strict) {
+      let lo = 0;
+      let hi = markers.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (strict ? markers[mid].time <= t : markers[mid].time < t) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
+    return t1 < t0 ? 0 : lower(t1, true) - lower(t0, false);
+  }
+  // 分線上限給人看的數字:系統的精簡記數(zh 50萬、en 500K),zh 的數字與單位之間補空格(canon 中英數混排)
+  function fmtBarCap(n, lang) {
+    const zh = /^zh/.test(lang || "");
+    const s = new Intl.NumberFormat(zh ? "zh-Hant" : "en-US", { notation: "compact" }).format(n);
+    return zh ? s.replace(/(\d)(?=[^\d.,\s])/, "$1 ") : s;
   }
 
   // ───────────────────────── 格式
@@ -1387,6 +1411,7 @@
       host = el("div", "tr-chart");
       card.appendChild(host);
       moreEl = el("div", "tr-more");
+      moreEl.setAttribute("role", "status");
       moreEl.hidden = true;
       card.appendChild(moreEl);
       root.appendChild(card);
@@ -1459,8 +1484,18 @@
     wireChartToList(built, host, S);
 
     const ts = built.chart.timeScale();
+    function visibleMarkers() {
+      const r = built.getRange();
+      if (!r || !candles.length) return 0;
+      const last = candles.length - 1;
+      const a = Math.max(0, Math.min(last, Math.ceil(r.from)));
+      const b = Math.max(0, Math.min(last, Math.floor(r.to)));
+      return countMarkersIn(S.markers, candles[a].time, candles[b].time);
+    }
     function applyMarks() {
-      const on = marksShown(ts.options().barSpacing);
+      const w = ts.width();
+      if (!(w > 0)) return; // 還沒量到寬度:不判,等第一次真的有範圍
+      const on = marksShown(S.marksOn, w, visibleMarkers());
       if (on === S.marksOn) return;
       S.marksOn = on;
       built.markersApi.setMarkers(on ? S.markers : []);
@@ -1474,6 +1509,11 @@
     const src = opts && opts.chart;
     const mine = live;
     const E = { user: false, busy: false, done: !src, fails: 0, coolUntil: 0, timer: 0 };
+    // fixLeftEdge 只在還能往左補時開(拉到最左就是補的時機);補不了或補完就關,第一根可以拖到空白處、它的箭頭不被圖邊切掉
+    const releaseLeftEdge = function () {
+      ts.applyOptions({ fixLeftEdge: false });
+    };
+    if (!src) releaseLeftEdge();
     live.cancelEarlier = function () {
       clearTimeout(E.timer);
     };
@@ -1492,8 +1532,9 @@
     }
     function exhaust() {
       E.done = true;
+      releaseLeftEdge();
       if (sub5 && candles.length >= SUB5_MAX_BARS && S.manifest && pendingChunks(S.manifest, S.loaded, candles[0].time).length) {
-        setMore(t("tr.historyCapped"));
+        setMore(t("tr.historyCapped", { n: fmtBarCap(SUB5_MAX_BARS, document.documentElement.lang) }));
       } else if (S.manifest && S.manifest.truncated) setMore(t("tr.historyTruncated"));
     }
     function failedOnce() {
@@ -1656,6 +1697,7 @@
           const m = r && r.code === "OK" ? sanitizeManifest(r.manifest) : null;
           if (!m) {
             E.done = true;
+            releaseLeftEdge();
             return;
           }
           S.manifest = m;
@@ -1663,6 +1705,7 @@
         },
         function () {
           E.done = true;
+          releaseLeftEdge();
         }
       );
   }
@@ -1738,6 +1781,9 @@
     mergeOlder: mergeOlder,
     mergedTrades: mergedTrades,
     marksShown: marksShown,
+    countMarkersIn: countMarkersIn,
+    fmtBarCap: fmtBarCap,
+    SUB5_MAX_BARS: SUB5_MAX_BARS,
     intervalSec: intervalSec,
     fmtAmount: fmtAmount,
     fmtTime: fmtTime,

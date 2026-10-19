@@ -50,7 +50,17 @@ function fnSrc(src, name) {
   ok("① 起點部位:沒補到更早成交 → 照 stats 的 trades_start_position", TP.mergedTrades(tail, st0, [], true).start === st0);
   ok("① 起點部位:補到且載到最早一塊 → 從 0 起算;還沒到頭 → 未知;成交依時間排", J(TP.mergedTrades(tail, st0, [{ ts: 5 }], true)) === J({ trades: [{ ts: 5 }, { ts: 200 }], start: { value: 0, known: true } })
     && TP.mergedTrades(tail, st0, [{ ts: 5 }], false).start.known === false);
-  ok("① 箭頭:K 棒間距 < 1px 收起來,≥ 1px 照畫", !TP.marksShown(0.99) && TP.marksShown(1) && TP.marksShown(6));
+  ok("① 箭頭:可見箭頭平均間距 < 4px 收、≥ 6px 才再出,4–6 之間維持原狀;沒有可見箭頭 = 照畫",
+    !TP.marksShown(true, 399, 100) && TP.marksShown(true, 400, 100) && TP.marksShown(true, 500, 100) && !TP.marksShown(false, 500, 100)
+    && !TP.marksShown(false, 599, 100) && TP.marksShown(false, 600, 100) && TP.marksShown(false, 1000, 0) && TP.marksShown(true, 1000, 0));
+  { const mk = [1, 2, 2, 5, 9].map((time) => ({ time }));
+    ok("① 可見箭頭數:落在 [t0, t1](含兩端、同一根多筆都算)", TP.countMarkersIn(mk, 2, 5) === 3 && TP.countMarkersIn(mk, 0, 100) === 5 && TP.countMarkersIn(mk, 3, 4) === 0 && TP.countMarkersIn(mk, 9, 9) === 1 && TP.countMarkersIn(mk, 6, 2) === 0 && TP.countMarkersIn([], 0, 9) === 0); }
+  ok("① 分線上限字:n 從 SUB5_MAX_BARS 帶,zh「50 萬」、en「500K」", TP.SUB5_MAX_BARS === 500000 && TP.fmtBarCap(TP.SUB5_MAX_BARS, "zh-Hant") === "50 萬" && TP.fmtBarCap(TP.SUB5_MAX_BARS, "en") === "500K");
+  { const trJs = fs.readFileSync(path.join(R, "report-trades.js"), "utf8"), strs = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+    ok("① historyCapped 帶 {n}(兩語)、狀態字有 role=status、exhaust 與沒有來源時關 fixLeftEdge",
+      /"tr\.historyCapped": "Loads up to \{n\} minute bars"/.test(strs) && /"tr\.historyCapped": "分線最多載入 \{n\} 根"/.test(strs)
+      && /t\("tr\.historyCapped", \{ n: fmtBarCap\(SUB5_MAX_BARS,/.test(trJs) && /moreEl\.setAttribute\("role", "status"\)/.test(trJs)
+      && /function exhaust\(\) \{\s*E\.done = true;\s*releaseLeftEdge\(\);/.test(trJs) && /if \(!src\) releaseLeftEdge\(\);/.test(trJs)); }
   ok("① interval 秒數:5m = 300、1min = 60、認不得 = null", TP.intervalSec("5m") === 300 && TP.intervalSec("1min") === 60 && TP.intervalSec("1H") === 3600 && TP.intervalSec("abc") === null);
 
   // ── ② 主行程 loadChart ──
