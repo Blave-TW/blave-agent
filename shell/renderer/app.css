@@ -1106,9 +1106,17 @@ body.resizing * { cursor: col-resize !important; }
 
 .set-gl { flex: none; margin: 0; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--ink); }
 .set-selw { position: relative; display: inline-flex; flex: 0 1 160px; margin-left: auto; min-width: 0; }
-/* 外觀 segment(.cn-lang 配方):靠右、至少跟下拉欄一樣寬 */
-.set-seg { margin-left: auto; min-width: 160px; }
-.set-seg button { flex: 1 1 auto; }
+/* 外觀 segment(設計師 light-mode mockup 的配方):灰軌 + 選中格浮起;outlined 那種(.cn-lang)在淺色卡上選中格是白壓白、只剩粗體。
+   靠右、至少跟下拉欄一樣寬,總高 34 = 下拉 */
+.set-seg { display: flex; margin-left: auto; min-width: 160px; padding: var(--space-2); border-radius: var(--radius-md); background: var(--surface-muted); }
+.set-seg button {
+  position: relative; flex: 1 1 auto; height: 30px; padding: 0 var(--space-12); border-radius: var(--radius-sm);
+  font-size: 12px; color: var(--ink-3); white-space: nowrap; transition: color var(--motion-fast) var(--ease-standard);
+}
+.set-seg button::before { content: ""; position: absolute; inset: -7px 0; }   /* 熱區補到 44 */
+.set-seg button:hover { color: var(--ink); }
+.set-seg button[aria-checked="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-sm); }
+.set-seg button:focus-visible { outline-offset: -2px; }
 .set-selw::after {                 /* canon 的 CSS chevron */
   content: ""; position: absolute; right: 9px; top: 50%;
   width: 6px; height: 6px; margin-top: -4px;
