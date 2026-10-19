@@ -325,6 +325,8 @@ def _instrument(env, inst_id, inst_type):
             "min_sz": float(r.get("minSz") or 0),   # min sz, same unit as lotSz
             "tick_sz": str(r.get("tickSz") or "0.01"),
             "active": r.get("state") == "live",
+            # instCategory 3 = stocks; None when the reply has no category
+            "equity": None if r.get("instCategory") is None else str(r["instCategory"]) == "3",
         }
     return _rules_cache[inst_id]
 
@@ -341,6 +343,7 @@ def get_contract_rules(env, symbol):
         "contract_value": r["ct_val"],
         "price_tick": r["tick_sz"],
         "active": r["active"],
+        "equity": r.get("equity"),
     }
 
 

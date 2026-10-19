@@ -163,6 +163,12 @@ do not assume casing or invent names.
    WITHOUT official libs, replace the two function bodies in the same session
    as the order lib (order library → reconciler is one atomic task —
    AGENTS.md); their docstrings carry the contract.
+   The wiring refuses an ENTRY into a venue's stock swap when Binance (where
+   `fetch_kline` candles come from) lists the same ticker as a coin — OKX
+   `BB-USDT-SWAP` and Bybit `ONUSDT` are stocks. The order error says so in
+   Chinese; tell the user that venue's contract under this ticker is a stock,
+   not the coin the strategy was backtested on, and never place it by hand.
+   Closes are never refused.
 
 8. **Done = the two files exist and rule 5 passed.** The machine's portfolio
    reporter detects the files and the web page flips the venue to ready on its

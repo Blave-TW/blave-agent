@@ -317,6 +317,7 @@ def _futures_rules(env, symbol):
             "min_ct": int(r.get("order_size_min") or 1),           # contracts
             "tick": str(r.get("order_price_round") or "0.01"),
             "active": not r.get("in_delisting", False),
+            "equity": None if r.get("contract_type") is None else r["contract_type"] == "stocks",
         }
     return _rules_cache[key]
 
@@ -334,6 +335,7 @@ def get_contract_rules(env, symbol):
         "contract_value": float(r["multiplier"]),
         "price_tick": r["tick"],
         "active": r["active"],
+        "equity": r.get("equity"),
     }
 
 

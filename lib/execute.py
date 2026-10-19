@@ -755,7 +755,7 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     real failure. Async executions report their own fills to Telegram,
     manager/twap/*.jsonl and manager/orders.jsonl on completion.
     """
-    from lib.venue_wiring import auto_place_order
+    from lib.venue_wiring import auto_place_order, instrument_gate
 
     key = str(symbol)
     new_sign = 1 if signed_diff > 0 else -1
@@ -830,6 +830,9 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     if reduce_only and guard.halted() and guard.halt_closes_allowed():
         return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
 
+    # before any style launches a thread: refused here, the failure reaches reconcile's
+    # order-error notice (one per cooldown), not a per-round executor crash
+    instrument_gate(symbol, reduce_only)
     spec = resolve_execution(contributors)
     if spec is None:  # config mid-write — skip, the next round re-reads
         return False

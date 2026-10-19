@@ -222,6 +222,68 @@ def _cid():
     return "rc" + datetime.now(timezone.utc).strftime("%y%m%d%H%M%S%f")
 
 
+# fetch_kline's candles are Binance USDⓈ-M (lib/data.py _BINANCE_KLINES), so Binance's
+# class of a symbol is what the strategy was backtested on. The same ticker can be a
+# coin there and a stock swap elsewhere (OKX BB/QNT/ON-USDT-SWAP, Bybit ONUSDT).
+_BINANCE_INFO = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+_BINANCE_EQUITY_TYPES = frozenset({"EQUITY", "HK_EQUITY", "KR_EQUITY", "CN_EQUITY", "PREMARKET"})
+_BINANCE_INFO_TTL_S = 6 * 3600
+_BINANCE_INFO_RETRY_S = 300
+_binance_equity = {"rows": None, "at": 0.0, "failed_at": 0.0}
+_VENUE_LABELS = {"okx": "OKX", "bybit": "Bybit", "gateio": "Gate.io", "bingx": "BingX"}
+
+
+def _binance_is_equity(sym):
+    """True / False = Binance lists `sym` as a stock-type / coin contract; None =
+    unreadable or not listed there."""
+    now = time.time()
+    c = _binance_equity
+    if (c["rows"] is None or now - c["at"] > _BINANCE_INFO_TTL_S) \
+            and now - c["failed_at"] > _BINANCE_INFO_RETRY_S:
+        try:
+            import requests
+            r = requests.get(_BINANCE_INFO, timeout=10)
+            r.raise_for_status()
+            c["rows"] = {s["symbol"]: s.get("underlyingType") in _BINANCE_EQUITY_TYPES
+                         for s in r.json()["symbols"]}
+            c["at"] = now
+        except Exception as e:
+            c["failed_at"] = now
+            logging.warning(f"[venue_wiring] Binance exchangeInfo unreadable ({e})")
+    return (c["rows"] or {}).get(sym)
+
+
+def instrument_gate(symbol, reduce_only=False):
+    """Refuse an ENTRY into a stock swap when Binance — the strategy's data — has the
+    same symbol as a coin. Closes always pass (a position bought before this gate must
+    still be able to leave). Either side unreadable → allowed and logged: a public
+    endpoint blinking must not stop every entry."""
+    sym, market = split_key(symbol)
+    if reduce_only or market == "spot":
+        return
+    env = read_env()
+    vid = detect_venue(env)
+    if vid not in _VENUE_LABELS:
+        return  # binance is the data source itself; paper / brokers have no such clash
+    try:
+        equity = importlib.import_module(f"lib.order_{vid}").get_contract_rules(
+            env, sym).get("equity")
+    except Exception as e:
+        logging.warning(f"[venue_wiring] {symbol}: instrument class unchecked on {vid} ({e})")
+        return
+    if not equity:
+        if equity is None:
+            logging.warning(f"[venue_wiring] {symbol}: {vid} gave no instrument class — allowed")
+        return
+    on_binance = _binance_is_equity(sym)
+    if on_binance is None:
+        logging.warning(f"[venue_wiring] {symbol}: stock swap on {vid}, Binance class "
+                        f"unknown — allowed")
+        return
+    if on_binance is False:
+        raise RuntimeError(f"交易所上的 {sym}({_VENUE_LABELS[vid]})是股票合約，不是加密幣，已擋下")
+
+
 def auto_get_positions():
     """Reconciler get_positions: swap positions (plain keys, USD value) +
     spot inventory for spot-scoped symbols ("SYMBOL@spot" keys) when the
@@ -1138,6 +1200,7 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
             direction = "long" if signed_diff < 0 else "short"
             qty = _reduce_qty(env, vid, order, sym, direction, qty)
         else:
+            instrument_gate(symbol)
             direction = "long" if signed_diff > 0 else "short"
             qty = _entry_qty(order, env, sym, qty)
             # how much of this entry will net into an opposite position already

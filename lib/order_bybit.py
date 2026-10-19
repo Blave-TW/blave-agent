@@ -344,6 +344,8 @@ def get_contract_rules(env: dict, symbol: str) -> dict:
             "min_notional": float(lot.get("minNotionalValue") or 0),
             "contract_value": 1.0,
             "tick": str(price["tickSize"]),
+            "equity": (None if rows[0].get("symbolType") is None
+                       else rows[0]["symbolType"] in ("stock", "ETF")),
         }
     return _RULES_CACHE[key]
 
