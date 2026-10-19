@@ -3,8 +3,9 @@
 
   crypto pair suffix USDT / USDC / FDUSD / BUSD → that; bare USD (BTCUSD) → null (no
   coin-margined path exists to say it is BTC); Type C → its weights' common suffix, mixed →
-  null; Taiwan stock / index futures / stock futures → TWD; US stock → USD; user data,
-  global futures, mixed markets → null. Picked strategies with no state.json are in the map.
+  null; Taiwan stock / index futures / stock futures → TWD; US stock → USD, and so is US +
+  crypto prices trading only bare tickers (AMZN, BRK.B); user data, global futures, other
+  mixed markets → null. Picked strategies with no state.json are in the map.
 
 Run: cd blave-agent && .venv/bin/python tests/check_report_quote_ccy.py
 """
@@ -43,6 +44,22 @@ STRATS = {
     "global":  ("from lib.data import fetch_db_kline\nSYMBOL = 'CL'\n", None, None),
     "mixed":   ("from lib.data import fetch_kline, fetch_twstock_price\nSYMBOL = 'BTCUSDT'\n",
                 None, None),
+    # US prices + a crypto filter (strategy_market = mixed): bare tickers are the US leg
+    "mix_us_a": ("from lib.data import fetch_usstock_price, fetch_kline\nSYMBOL = 'AMZN'\n",
+                 None, "USD"),
+    "mix_us_c": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n",
+                 {"type": "portfolio", "weights": {"AMZN": 0.5, "BRK.B": 0.3}}, "USD"),
+    "mix_us_pair": ("from lib.data import fetch_usstock_price, fetch_kline\nSYMBOL = 'BTCUSDT'\n",
+                    None, None),
+    "mix_us_cpair": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n",
+                     {"type": "portfolio", "weights": {"AMZN": 0.5, "BTCUSDT": 0.3}}, None),
+    "mix_us_tw": ("from lib.data import fetch_usstock_price, fetch_twstock_price\nSYMBOL = 'AAPL'\n",
+                  None, None),
+    "mix_us_txf": ("from lib.data import fetch_usstock_price, fetch_twfutures_ohlcv\nSYMBOL = 'TXF'\n",
+                   None, None),
+    "mix_us_btcusd": ("from lib.data import fetch_usstock_price, fetch_kline\nSYMBOL = 'BTCUSD'\n",
+                      None, None),
+    "mix_us_nosym": ("from lib.data import fetch_usstock_price, fetch_kline\n", None, None),
     "own_data": ("import pandas as pd\nSYMBOL = 'BTCUSDT'\n", None, None),
     "broken":  ("def (:\n", None, None),
 }

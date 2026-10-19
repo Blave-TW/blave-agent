@@ -235,6 +235,11 @@ ok("§9.1 交不交易:加密所不交易台股與台指期;台灣券商只交�
 ok("§9.2 部位表一個標的的區:台指期口數、台股 TWD、貢獻策略的 quote_ccy 全同才用,不同或沒有就退尾碼",
   trSymZone("TXF", ["TWD"]) === TR_ZONE_LOTS && trSymZone("2330@spot", ["USDT"]) === "TWD" && trSymZone("BTCUSDT", ["USDC"]) === "USDC" && trSymZone("BTCUSDT", ["USDC", "USDT"]) === "USDT"
   && trSymZone("SOLUSDC", [null]) === "USDC" && trSymZone("BTCUSD", []) === TR_ZONE_UNKNOWN);
+ok("§9.2 沒有尾碼的美股代號(AMZN):quote_ccy 是 null 時,貢獻策略全是 us_stock 才退 USD;有 mixed／沒有市場就照舊未定;quote_ccy 有值照用",
+  trSymZone("AMZN", [null], ["us_stock"]) === "USD" && trSymZone("AMZN", [null, null], ["us_stock", "us_stock"]) === "USD"
+  && trSymZone("AMZN", [null, null], ["us_stock", "mixed"]) === TR_ZONE_UNKNOWN && trSymZone("AMZN", [null], [null]) === TR_ZONE_UNKNOWN
+  && trSymZone("AMZN", [null]) === TR_ZONE_UNKNOWN && trSymZone("AMZN", [], []) === TR_ZONE_UNKNOWN && trSymZone("AMZN", ["USDT"], ["us_stock"]) === "USDT"
+  && trSymZone("AMZNUSDT", [null], ["us_stock"]) === "USDT");
 // 0.1.25 Windows 實測:台股、台指期的市場小標寫成 Perp／合約(runtime 對沒宣告 MARKET 的策略一律回 swap)
 { const K = (sym, spot, fut) => trMktKey(sym, spot, fut);
   ok("市場小標:台指期家族與券商合約代碼 = 期貨(就算 market 寫 swap)",

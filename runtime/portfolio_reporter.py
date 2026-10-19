@@ -707,6 +707,8 @@ QUOTE_SUFFIXES = ("FDUSD", "USDT", "USDC", "BUSD")
 _MARKET_QUOTE = {"tw_stock": "TWD", "tw_index_futures": "TWD", "tw_stock_futures": "TWD",
                  "us_stock": "USD"}
 _quote_cache = {}  # strategy.py path -> ((mtime, size), market) — ast.parse once per edit
+# A bare US ticker (AMZN, BRK.B): no quote suffix, so not a crypto pair
+_US_TICKER_RE = re.compile(r"[A-Z][A-Z.\-]{0,9}")
 
 
 def _pair_quote(sym):
@@ -721,7 +723,8 @@ def strategy_quote_ccy(name, state):
     """The currency `name`'s amount is in, or None when it cannot be told for sure.
     Market from the strategy file (strategy_reporter.strategy_market: its lib.data price
     fetchers); crypto symbols from state.json (Type A `symbol`, Type C every `weights`
-    key — all must agree), else the file's literal SYMBOL. Mixed markets, mixed quotes,
+    key — all must agree), else the file's literal SYMBOL. US-stock prices next to crypto
+    ones, trading only bare tickers (no quote suffix) → USD. Other mixed markets, mixed quotes,
     global futures, user data → None."""
     path = os.path.join(WORKSPACE, "strategies", name, "strategy.py")
     try:
@@ -729,22 +732,33 @@ def strategy_quote_ccy(name, state):
         sig = (st.st_mtime, st.st_size)
         hit = _quote_cache.get(path)
         if hit and hit[0] == sig:
-            market, file_symbol = hit[1]
+            market, file_symbol, uses_us = hit[1]
         else:
             import strategy_reporter
             with open(path, encoding="utf-8", errors="replace") as f:
                 src = f.read()
             market = strategy_reporter.strategy_market(src)
-            file_symbol = strategy_reporter._referenced_fetchers(src)[1]
-            _quote_cache[path] = (sig, (market, file_symbol))
+            fetchers, file_symbol = strategy_reporter._referenced_fetchers(src)
+            # US prices next to crypto filters only: a TW or global-futures leg could be the
+            # bare-letter symbol traded (TXF, CDF, CL), so that mix stays unknown
+            kinds = {strategy_reporter._PRICE_FETCHERS[n] for n in fetchers}
+            uses_us = "us_stock" in kinds and kinds <= {"us_stock", "crypto"}
+            _quote_cache[path] = (sig, (market, file_symbol, uses_us))
     except Exception:
         return None
     if market in _MARKET_QUOTE:
         return _MARKET_QUOTE[market]
-    if market != "crypto":
-        return None
     state = state if isinstance(state, dict) else {}
     weights = state.get("weights")
+    if market == "mixed" and uses_us:
+        syms = list(weights) if isinstance(weights, dict) and weights \
+            else [state.get("symbol") or file_symbol]
+        # BTCUSD is a crypto pair read as unknown above, not a ticker
+        bare = all(isinstance(x, str) and _US_TICKER_RE.fullmatch(x.upper()) and not _pair_quote(x)
+                   and not x.upper().endswith("USD") for x in syms)
+        return "USD" if bare else None
+    if market != "crypto":
+        return None
     if isinstance(weights, dict) and weights:
         quotes = {_pair_quote(k) for k in weights}
         return quotes.pop() if len(quotes) == 1 else None

@@ -695,15 +695,24 @@ function trRowZone(n, sym, tc, portfolio, qmap) {
   const zs = new Set(syms.map((x) => (trTxfSpec(trCanonSym(x)) ? null : trSuffixZone(x))));
   return zs.size === 1 && !zs.has(null) ? [...zs][0] : TR_ZONE_UNKNOWN;
 }
-/* 部位表一個標的的區:台指期 → 口數區;台股代號 → TWD;其餘看貢獻這一檔的策略的 quote_ccy(全部同一個才算),再退尾碼。
-   quotes = 貢獻策略各自的 quote_ccy 值(沒有就空陣列) */
-function trSymZone(sym, quotes) {
+/* 部位表一個標的的區:台指期 → 口數區;台股代號 → TWD;其餘看貢獻這一檔的策略的 quote_ccy(全部同一個才算),再退尾碼,
+   最後退策略市場:貢獻策略全是 us_stock → USD(quote_ccy 是 null 的舊 runtime、或 runtime 判不出的,AMZN 沒有尾碼可推)。
+   quotes = 貢獻策略各自的 quote_ccy 值(沒有就空陣列);markets = 各自的 trSrcMarket */
+function trSymZone(sym, quotes, markets) {
   const s = trCanonSym(String(sym || "").replace(/@spot$/i, ""));
   if (trTxfSpec(s)) return TR_ZONE_LOTS;
   if (TR_TWSTOCK_RE.test(s)) return TR_TXF_CCY;
   const q = new Set((quotes || []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().toUpperCase()));
   if (q.size === 1) return [...q][0];
-  return trSuffixZone(s) || TR_ZONE_UNKNOWN;
+  const z = trSuffixZone(s);
+  if (z) return z;
+  return Array.isArray(markets) && markets.length && markets.every((m) => m === "us_stock") ? "USD" : TR_ZONE_UNKNOWN;
+}
+// 策略的市場:雲端讀清單的 srcMarket,本機讀回報 r 的 strategy_kinds(同 trZoneOf)
+function trSrcMarket(r, n) {
+  const list = typeof TR !== "undefined" && TR && Array.isArray(TR.list) ? TR.list : [], x = list.find((y) => y.name === n) || {};
+  const k = r && r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds[n] : null;
+  return x.srcMarket || (k && k.market) || null;
 }
 /* 帳戶幣那一區(§9.3 排序用):台灣期貨券商 → 口數區;加密所 → 帳戶幣那一區。
    OKX 回的帳戶幣是 USD(totalEq 以美元計)而交易對是 USDT:平台匯率表 USDT 與 USD 同為 1,USD 帳戶當 USDT 區。
@@ -3519,7 +3528,7 @@ function trCfRows(o) {
   const held = { wait: [], names: [], gate: [] }, hit = (a, k) => { if (a.indexOf(k) < 0) a.push(k); };
   // 區(單位)跟部位表同一個判法:只看撐這個標的的那幾支策略的計價(trContribs)
   const qmap = trQuoteMap() || {}, cs0 = trContribs(known(o.stored), st.states, o.contractsBefore), cs1 = trContribs(known(o.sending), st.states, o.contractsAfter);
-  const zoneOf = (sym) => trSymZone(sym, (cs1[sym] || []).concat(cs0[sym] || []).map((c) => qmap[c.name]));
+  const zoneOf = (sym) => { const cs = (cs1[sym] || []).concat(cs0[sym] || []); return trSymZone(sym, cs.map((c) => qmap[c.name]), cs.map((c) => trSrcMarket(o.r, c.name))); };
   // 每列的貢獻策略(移出的只在 cs0):表頭時間只看這幾支用的預覽
   const by = (sym) => (cs1[sym] || []).concat(cs0[sym] || []).map((c) => c.name);
   const marks = trMarks(o.r || {}), priceOf = (sym) => { const k = trCanonSym(sym.replace(/@spot$/i, "")); return st.px[k] || marks[k] || marks[trCanonSym(sym)] || null; };
@@ -3965,7 +3974,7 @@ function poSigTable(r, stored, states, mode) {
     frag.appendChild(sec);
   } else frag.appendChild(trSec(trTipLabel("label", t("po.sigTargets"), t("po.sigTargetsTip"))));
   const qmap = trQuoteMap() || {};
-  const zoneOfSym = {}; syms.concat(outside).forEach((sym) => { zoneOfSym[sym] = trSymZone(sym, (contribs[sym] || []).map((c) => qmap[c.name])); });
+  const zoneOfSym = {}; syms.concat(outside).forEach((sym) => { const cs = contribs[sym] || []; zoneOfSym[sym] = trSymZone(sym, cs.map((c) => qmap[c.name]), cs.map((c) => trSrcMarket(r, c.name))); });
   const items = (showPlan ? syms.map((sym) => ({ sym, z: zoneOfSym[sym] })).concat(waiting.map((n) => ({ wait: n, z: trZoneOf(n) }))) : extra.map((sym) => ({ sym, z: zoneOfSym[sym] })))
     .concat(outside.map((sym) => ({ out: sym, z: zoneOfSym[sym] })));
   const zoneKeys = items.map((it) => it.z), zones = trZoneOrder(zoneKeys, vid, trMultZone(vid, trUnit(), zoneKeys));
