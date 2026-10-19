@@ -661,7 +661,8 @@ def cancel_order(env: dict, symbol: str, order_id: str = None,
                  client_order_id: str = None):
     """Cancel by id. An already-filled / already-cancelled / never-existed order
     returns a status instead of raising (Bybit reports all three as retCode
-    110001) — the chase engine treats that as confirmation the order is dead."""
+    110001) — the chase engine treats that as confirmation the order is dead.
+    An accepted cancel returns 'cancel_accepted', not 'canceled'."""
     body = {"category": "linear", "symbol": symbol}
     if order_id:
         body["orderId"] = order_id
@@ -675,7 +676,10 @@ def cancel_order(env: dict, symbol: str, order_id: str = None,
         if f"retCode={_CANCEL_GONE_CODE}" in str(e):
             return {"status": "order_not_found", "order_id": order_id}
         raise
-    return {"status": "canceled", "order_id": res.get("orderId") or order_id}
+    # Bybit's cancel is asynchronous — the ack is not the order's end state (a fill can
+    # still land), so this is not a status lib.execute's chase trusts as terminal: it
+    # confirms through get_order
+    return {"status": "cancel_accepted", "order_id": res.get("orderId") or order_id}
 
 
 def cancel_all_orders(env: dict, symbol: str):
@@ -892,4 +896,4 @@ def cancel_spot_order(env: dict, symbol: str, order_id: str = None,
         if f"retCode={_CANCEL_GONE_CODE}" in str(e):
             return {"status": "order_not_found", "order_id": order_id}
         raise
-    return {"status": "canceled", "order_id": res.get("orderId") or order_id}
+    return {"status": "cancel_accepted", "order_id": res.get("orderId") or order_id}

@@ -13,6 +13,11 @@ rests, and the existing retire path cancels it.
   H5  restart stop lands while a limit rests: same prompt cancel
   H6  paper: the real lib/order_paper resting limit is cancelled on HALT, no fill
   H7  stop set from outside (a flip / overdue run, no HALT): same prompt cancel, one placement
+  H8  Bybit (real lib/order_bybit, transport stubbed): its cancel is asynchronous — accepted,
+      first read still PartiallyFilled, the end state has more filled → the final qty is
+      booked, exactly once
+  H9  Bybit: the order never reads terminal after the accepted cancel → uncertain path:
+      one notice, nothing booked, no kick, no re-post
 
 No network. Run:
     .venv/bin/python tests/check_chase_halt_cancel.py
@@ -29,7 +34,7 @@ sys.path.insert(0, ROOT)
 os.chdir(tempfile.mkdtemp(prefix="chase-halt-cancel-"))
 os.makedirs("manager", exist_ok=True)
 
-from lib import execute, guard, order_paper, venue_wiring  # noqa: E402
+from lib import execute, guard, order_bybit, order_paper, venue_wiring  # noqa: E402
 
 red = 0
 
@@ -276,6 +281,82 @@ v, ev = Venue(), threading.Event()
 lag, market = run(v, trip=ev.set, stop=ev)
 check(lag is not None and lag < 0.5 and v.count("place") == 1 and not market and not guard.halted(),
       f"H7 stop set from outside while a limit rests: cancelled promptly ({lag}), one placement, no market")
+reset()
+
+
+
+class BybitWire:
+    """order_bybit._request stand-in. Resting reads New; after the cancel is accepted the
+    reads walk `after` (orderStatus, cumExecQty), repeating its last row."""
+
+    def __init__(self, after):
+        self.after, self.cancelled, self.reads_after, self.placed = after, False, 0, threading.Event()
+
+    def __call__(self, env, method, path, params=None, body=None, retries=3):
+        if path == "/v5/order/cancel":
+            self.cancelled = True
+            return {"orderId": "b1"}
+        if path in ("/v5/order/realtime", "/v5/order/history"):
+            if not self.cancelled:
+                st, q = "New", "0"
+            else:
+                st, q = self.after[min(self.reads_after, len(self.after) - 1)]
+                self.reads_after += 1
+            return {"list": [{"orderStatus": st, "cumExecQty": q, "qty": "1", "avgPrice": "100"}]}
+        raise AssertionError(f"unexpected Bybit request {method} {path}")
+
+
+def bybit_chase(wire):
+    """A chase on the real order_bybit cancel/get_order; HALT 0.2 s after the order rests."""
+    market = []
+    venue_wiring.auto_place_order = lambda *a, **k: market.append(a) or False
+    real = order_bybit._request
+    order_bybit._request = wire
+
+    def _place(*a, **k):
+        wire.placed.set()
+        return {"order_id": "b1", "status": "open"}
+
+    tools = {"venue": "bybit", "bbo": lambda: (100.0, 100.1), "place": _place,
+             "status": lambda oid: venue_wiring._norm_order(order_bybit.get_order({}, "BTCUSDT", oid)),
+             "cancel": lambda oid: order_bybit.cancel_order({}, "BTCUSDT", order_id=oid)}
+
+    def _tripper():
+        wire.placed.wait(5)
+        time.sleep(0.2)
+        guard.trip_halt("user request", "web")
+
+    th = threading.Thread(target=_tripper, daemon=True)
+    th.start()
+    try:
+        execute._chase_thread("BTCUSDT", 100.0, None, False, "bybit", None, tools, threading.Event())
+    finally:
+        order_bybit._request = real
+        venue_wiring.auto_place_order = _real_auto
+    th.join(5)
+    return market
+
+
+# H8
+config(True)
+reset()
+w = BybitWire([("PartiallyFilled", "0.3"), ("PartiallyFilledCanceled", "0.5")])
+market = bybit_chase(w)
+rows = orders()
+check(len(rows) == 1 and rows[0]["legs"][0].get("signed_qty") == 0.5
+      and rows[0]["legs"][0].get("signed_diff") == 50.0 and not market,
+      f"H8 Bybit async cancel: the end state's 0.5 is booked once, not the 0.3 read right after the ack ({rows})")
+check(any("$50.00/$100.00" in n for n in notes) and not any("could not confirm" in n for n in notes),
+      f"H8 done notice names the final fill ({notes})")
+
+# H9
+config(True)
+reset()
+w = BybitWire([("New", "0")])
+market = bybit_chase(w)
+check(orders() == [] and not market and not os.path.exists("state/execution/kick")
+      and sum("could not confirm" in n for n in notes) == 1,
+      f"H9 Bybit cancel accepted but never terminal: uncertain — one notice, nothing booked, no kick ({orders()}, {notes})")
 reset()
 
 print("ALL OK" if not red else f"{red} FAILED")

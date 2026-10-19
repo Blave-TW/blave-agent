@@ -135,7 +135,9 @@ do not assume casing or invent names.
      formats `price` to the instrument's tick itself (callers pass a raw float).
    - `cancel_order(env, symbol, order_id)` — cancel by order_id; idempotent-safe:
      "already filled / not found" returns a status instead of raising, the caller
-     always re-reads fills afterwards.
+     always re-reads fills afterwards. Return `'canceled'` only when the response itself
+     is the order's final state; a venue whose cancel is asynchronous (Bybit) returns
+     another status (`'cancel_accepted'`) so the chase confirms it through `get_order`.
    - `get_order(env, symbol, order_id)` — MUST include `orig_qty` alongside
      `executed_qty` / `avg_price` / `status` (partial-fill accounting needs the
      original size, not just the filled part).
