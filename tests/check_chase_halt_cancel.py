@@ -12,6 +12,7 @@ rests, and the existing retire path cancels it.
   H4  cancel never confirms: no crash, one notice, no kick, no re-post
   H5  restart stop lands while a limit rests: same prompt cancel
   H6  paper: the real lib/order_paper resting limit is cancelled on HALT, no fill
+  H7  stop set from outside (a flip / overdue run, no HALT): same prompt cancel, one placement
 
 No network. Run:
     .venv/bin/python tests/check_chase_halt_cancel.py
@@ -118,7 +119,8 @@ class Venue:
         return sum(1 for _, n in self.calls if n == name)
 
 
-def run(v, signed_diff=100.0, reduce_only=False, trip=lambda: guard.trip_halt("user request", "web")):
+def run(v, signed_diff=100.0, reduce_only=False, trip=lambda: guard.trip_halt("user request", "web"),
+        stop=None):
     """Chase with v's toolkit; trip() 0.2 s after the order rests. Returns
     (seconds from trip to first cancel, market orders sent)."""
     market = []
@@ -135,7 +137,7 @@ def run(v, signed_diff=100.0, reduce_only=False, trip=lambda: guard.trip_halt("u
     th.start()
     try:
         execute._chase_thread("BTCUSDT", signed_diff, None, reduce_only, "binance", None,
-                              v.tools(), threading.Event())
+                              v.tools(), stop or threading.Event())
     finally:
         venue_wiring.auto_place_order = _real_auto
     th.join(5)
@@ -265,6 +267,15 @@ check(len(rows) == 1 and rows[0]["status"] == "canceled"
 check(done - t_trip["t"] < 1.0, f"H6 chase returned {done - t_trip['t']:.2f}s after the trip (< 1)")
 check(pos == 0 and not led.get("fills") and orders() == [] and not market,
       f"H6 no paper fill, nothing booked (pos {pos}, fills {len(led.get('fills') or [])})")
+reset()
+
+# H7
+config(False)
+reset()
+v, ev = Venue(), threading.Event()
+lag, market = run(v, trip=ev.set, stop=ev)
+check(lag is not None and lag < 0.5 and v.count("place") == 1 and not market and not guard.halted(),
+      f"H7 stop set from outside while a limit rests: cancelled promptly ({lag}), one placement, no market")
 reset()
 
 print("ALL OK" if not red else f"{red} FAILED")
