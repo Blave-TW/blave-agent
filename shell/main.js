@@ -329,6 +329,7 @@ const loadConnection = () => connStore().load();
 
 // ── 使用追蹤(telemetry.js:十八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
+let _deviceKind = null;   // device_type:啟動時偵測一次(devicetype.js),之後心跳那一輪補跨日那一則都用這個值
 const telemetryLive = () => app.isPackaged || process.env.BLAVE_TELEMETRY === "1";
 function tm() {
   if (!_tm) _tm = require("./telemetry").createTelemetry({
@@ -336,6 +337,7 @@ function tm() {
     appVersion: app.getVersion(), osVersion: process.getSystemVersion(), lang: app.getLocale(),   // 契約:系統語系原值;不吃 BLAVE_LANG(任意字串會原樣離開電腦)
     getToken: () => loadToken(),
     heartbeat: () => ({ live: tradeMaybeLive() ? "on" : "off" }),   // 每日在線心跳;live 同 updater 的 isTrading 判準
+    deviceType: () => _deviceKind,
     // 策略三步(strat_*):daemon 寫在狀態檔的 strategy_kinds(runtime/local_daemon.strategy_kinds);daemon 還沒起 / 舊版狀態檔沒有 → 這輪跳過
     strategies: () => (_tradeHost ? ((_tradeHost.status().report || {}).strategy_kinds || null) : null),
     // 開發版(npm start、測試用的 BLAVE_HOME)不送:不然每次開發重啟都在灌正式的漏斗。要實測送出設 BLAVE_TELEMETRY=1
@@ -3440,6 +3442,7 @@ app.whenReady().then(() => {
   startStep("tray", trayStart);
   startStep("inbound prune", () => require("./attach").prune(WS));   // 聊天附件放超過七天的(雲端由 runtime/prune_job.py 清)
   startStep("telemetry", () => tm().start());
+  startStep("device type", () => require("./devicetype").detectDeviceType().then((kind) => { _deviceKind = kind; tm().track("device_type", { kind }); }));
   // 帳號 token 輪替:開 app 就檢查一次(0.1.15 以前沒有期限的那顆在這裡第一次換掉),之後每 10 分鐘看一次。
   // 回合進行中不換:那顆在 agent 的環境裡,換了它 10 分鐘後就失效。第二份 app 不碰(兩份同時換,先回來的那顆會作廢)
   if (app.hasSingleInstanceLock()) startStep("token rotate", () => {

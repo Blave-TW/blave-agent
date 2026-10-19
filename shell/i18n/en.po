@@ -2801,7 +2801,7 @@ msgid "priv.collect.2"
 msgstr "When it happened"
 
 msgid "priv.collect.3"
-msgstr "The app version, operating system and version, and system language"
+msgstr "The app version, operating system and version, system language, and computer type (laptop or desktop)"
 
 msgid "priv.collect.4"
 msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"

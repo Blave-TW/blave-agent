@@ -1,6 +1,6 @@
 // Blave 電腦版 — 使用追蹤(主行程用)。契約:blave-canon output/backend/2026-09-21-desktop-telemetry-contract.md
 //
-// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十六個事件、每個事件的屬性都是列舉——
+// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十七個事件、每個事件的屬性都是列舉——
 // 這個檔**沒有任何自由文字的入口**:對話、策略碼、策略名、標的、金額、部位、金鑰、路徑進不來,
 // 不是靠呼叫端自律,是 track() 只認下面這張表(api 端還有同一張白名單再擋一次)。
 //
@@ -61,6 +61,8 @@ const EVENTS = {
   strat_created: { kind: STRAT_KINDS },
   strat_backtested: { kind: STRAT_KINDS },
   strat_deployed: { kind: STRAT_KINDS },
+  // 這台是筆電或桌機(0.1.28;主行程送,判法在 devicetype.js)。每天送:某次偵測失敗記成 unknown,隔天自己更正
+  device_type: { kind: ["laptop", "desktop", "unknown"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -204,7 +206,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
-  "strat_created", "strat_backtested", "strat_deployed"];
+  "strat_created", "strat_backtested", "strat_deployed", "device_type"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -232,8 +234,9 @@ const META = {
 // api 的 OS_NAMES 只收這三個;別的平台(freebsd…)整則不送——api 反正會 400
 const OS = { darwin: "macos", win32: "windows", linux: "linux" }[process.platform] || null;
 
-/* opts:{ dir, endpoint, appVersion, osVersion, lang, getToken?, post, now?, heartbeat?, heartbeatMs? }   now() 只給測試換日用
+/* opts:{ dir, endpoint, appVersion, osVersion, lang, getToken?, post, now?, heartbeat?, heartbeatMs?, deviceType? }   now() 只給測試換日用
    heartbeat() → 心跳的屬性({ live });給了才排心跳。heartbeatMs 只給測試用
+   deviceType() → 啟動時偵測好的 laptop／desktop／unknown,還沒好是 null;心跳那一輪拿它補跨日那一則(不重新偵測)
    post(url, body) → Promise;由 main.js 傳它自己的 postJSON(帶逾時)。 */
 function createTelemetry(opts) {
   const file = path.join(opts.dir, "telemetry.json");
@@ -371,6 +374,7 @@ function createTelemetry(opts) {
     // 先看關了沒、今天送過沒:heartbeat() 要同步讀下單狀態檔,一天 144 輪只有一輪會出門
     beat = setInterval(() => {
       try { if (load().enabled && dailyKeys().indexOf("heartbeat") < 0 && !inflight.has("heartbeat")) track("heartbeat", opts.heartbeat()); } catch (_) { /* 追蹤永遠不能炸 */ }
+      try { const k = typeof opts.deviceType === "function" ? opts.deviceType() : null; if (k) track("device_type", { kind: k }); } catch (_) { /* 追蹤永遠不能炸 */ }
     }, opts.heartbeatMs || HEARTBEAT_MS);
     if (beat.unref) beat.unref();
   }

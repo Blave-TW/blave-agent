@@ -2811,7 +2811,7 @@ msgid "priv.collect.2"
 msgstr "發生的時間"
 
 msgid "priv.collect.3"
-msgstr "app 版本、作業系統與版本、系統語言"
+msgstr "app 版本、作業系統與版本、系統語言、電腦類型（筆電或桌機）"
 
 msgid "priv.collect.4"
 msgstr "安裝識別碼（這份安裝隨機產生的編號）；登入後會跟你的帳號對上"

@@ -1,4 +1,4 @@
-// shell/telemetry.js:二十六個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
+// shell/telemetry.js:二十七個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
 // 跑法:node tests/check_shell_telemetry.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const { createTelemetry, EVENTS, FROM_RENDERER } = require("../shell/telemetry.js");
@@ -28,7 +28,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 26 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed;0.1.28 +device_type)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 27 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -289,7 +289,8 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     else { const api = fs.readFileSync(apiPy9, "utf8"), got = {};
       for (const m of api.matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
       t("api desktop_telemetry.EVENTS 的九個新事件 = 外殼這份(屬性名、值、順序、once)", Object.keys(NEW).every((ev) => got[ev] && got[ev].key === NEW[ev][0] && JSON.stringify(got[ev].vals) === JSON.stringify(NEW[ev][1]) && got[ev].once === (ev === "first_reply_done")));
-      t("api 的 heartbeat = 外殼這份(live: on / off、不是 once)", !!got.heartbeat && got.heartbeat.key === "live" && JSON.stringify(got.heartbeat.vals) === '["on","off"]' && got.heartbeat.once === false); }
+      t("api 的 heartbeat = 外殼這份(live: on / off、不是 once)", !!got.heartbeat && got.heartbeat.key === "live" && JSON.stringify(got.heartbeat.vals) === '["on","off"]' && got.heartbeat.once === false);
+      t("api 的 device_type = 外殼這份(kind 三個值逐序、不是 once)", !!got.device_type && got.device_type.key === "kind" && JSON.stringify(got.device_type.vals) === JSON.stringify(EVENTS.device_type.kind) && got.device_type.once === false); }
     // 畫面的送出點:每個 trackEvent("…") 的事件都在 FROM_RENDERER、屬性名對、字面值都在列舉;名單上每個事件都有送出點
     // 當成「值」送出去的字面:整格就是字面、三元的兩支、|| 的預設;比較用的(=== "codex")不算
     const valLits = (expr) => [...expr.matchAll(/(?:^|\? |: |\|\| )"([^"]+)"/g)].map((v) => v[1]);
@@ -392,6 +393,22 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       const plain = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { heartbeatMs: 5 }); plain.tm.start(); await new Promise((r) => setTimeout(r, 30));
       t("沒給 heartbeat 選項:不排心跳", !plain.sent.some((b) => b.event === "heartbeat")); }
     t("main.js:tm() 帶 heartbeat,live 用 tradeMaybeLive(同 updater 的 isTrading)", /heartbeat: \(\) => \(\{ live: tradeMaybeLive\(\) \? "on" : "off" \}\),/.test(main9));
+    // ── 0.1.28 device_type:筆電／桌機,主行程送、每日一列;跨日不重開的人在心跳那一輪用記憶體裡的值補 ──
+    t("device_type:一個屬性 kind: laptop / desktop / unknown、名字 ≤16 字、DAILY、畫面送不了",
+      JSON.stringify(EVENTS.device_type) === '{"kind":["laptop","desktop","unknown"]}' && /const DAILY = \[[^\]]*"device_type"/.test(tmSrc9) && !/const DAILY_ONE = \[[^\]]*"device_type"/.test(tmSrc9) && !FROM_RENDERER.includes("device_type"));
+    { let clock = Date.UTC(2026, 9, 19, 23, 59, 0), kind = null, asks = 0;
+      const d = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { now: () => clock, heartbeatMs: 5, heartbeat: () => ({ live: "off" }), deviceType: () => { asks++; return kind; } });
+      const dev = () => d.sent.filter((b) => b.event === "device_type");
+      d.tm.start(); await new Promise((r) => setTimeout(r, 30));
+      t("start() 不送 device_type;偵測還沒好(null)心跳那一輪也不送", d.sent.map((b) => b.event).slice(0, 2).join() === "app_first_open,app_open" && dev().length === 0 && asks > 0);
+      kind = "laptop"; t("偵測好之後 track 照送", d.tm.track("device_type", { kind }) === true); await new Promise((r) => setTimeout(r, 30));
+      t("…同日心跳那一輪不重送(DAILY),props 只有 kind", dev().length === 1 && JSON.stringify(dev()[0].props) === '{"kind":"laptop"}');
+      clock += 2 * 60 * 1000; await new Promise((r) => setTimeout(r, 30));
+      t("跨日不重開:心跳那一輪用記憶體裡的值補一則", dev().length === 2 && dev()[1].props.kind === "laptop");
+      t("表外的值不送", ["tablet", "Laptop", "", null].every((v) => d.tm.track("device_type", { kind: v }) === false) && d.tm.track("device_type") === false); }
+    t("main.js:啟動偵測一次、結果放記憶體、偵測完 track;tm() 帶 deviceType 給心跳補送",
+      /startStep\("device type", \(\) => require\("\.\/devicetype"\)\.detectDeviceType\(\)\.then\(\(kind\) => \{ _deviceKind = kind; tm\(\)\.track\("device_type", \{ kind \}\); \}\)\);/.test(main9)
+      && /deviceType: \(\) => _deviceKind,/.test(main9));
   }
 
   // ── 0.1.12 引擎安裝(shell/enginesetup.js,主行程送):一個 prop、值是列舉、16 字以內、每日去重、畫面送不了 ──

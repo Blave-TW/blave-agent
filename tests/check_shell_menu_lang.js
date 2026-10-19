@@ -31,7 +31,7 @@ function run(throwing) {
     engineKick: () => { if (throwing.has("engine")) throw new Error("engine"); },   // 0.1.12 開 app 就在背景裝引擎
     trayStart: () => { if (throwing.has("traystart")) throw new Error("traystart"); },
     accountStatus: () => { if (throwing.has("state")) throw new Error("state"); },
-    tm: () => ({ start: () => { if (throwing.has("tm")) throw new Error("tm"); } }),
+    tm: () => ({ start: () => { if (throwing.has("tm")) throw new Error("tm"); }, track: (ev, p) => log.push("track:" + ev + ":" + p.kind) }),
     updater: () => ({ start: () => { if (throwing.has("updater")) throw new Error("updater"); } }),
     minGate: () => ({ start: () => { if (throwing.has("gate")) throw new Error("gate"); } }),
     // 0.1.16 帳號 token 輪替:開 app 檢查一次、之後定期;回合狀態是 main.js 既有那一對
@@ -39,7 +39,10 @@ function run(throwing) {
     rotator: () => { if (throwing.has("rotate")) throw new Error("rotate"); return { ensure: () => Promise.resolve() }; },
     moveChecked: false, askMoveToApps: () => Promise.resolve(false),   // 0.1.10 搬到「應用程式」那一問(tests/check_shell_update_restart.js 另外測)
     // 0.1.17 聊天附件的七天清掃(shell/attach.js prune):啟動時清一次
-    WS: "/ws", require: (m) => { if (m !== "./attach") throw new Error("unexpected require " + m); return { prune: (ws) => { if (throwing.has("prune")) throw new Error("prune"); log.push("prune:" + ws); } }; },
+    // 0.1.28 筆電／桌機偵測(shell/devicetype.js;tests/check_shell_devicetype.js 另外測):啟動時偵測一次、偵測完 track
+    WS: "/ws", require: (m) => {
+      if (m === "./devicetype") return { detectDeviceType: () => { if (throwing.has("device")) throw new Error("device"); return Promise.resolve("laptop"); } };
+      if (m !== "./attach") throw new Error("unexpected require " + m); return { prune: (ws) => { if (throwing.has("prune")) throw new Error("prune"); log.push("prune:" + ws); } }; },
     console: { error: (m) => errors.push(m) },
   };
   const f = new Function("env", `with (env) { ${stepFn}\n${block}\n }`);
@@ -48,12 +51,15 @@ function run(throwing) {
   if (h) h({}, { menuFile: "檔案", lang: "zh" });
   return { log, errors, registered: !!h, uiLang: env.uiLang };
 }
+(async () => {
 let r = run(new Set());
-ok("正常啟動:畫面交字後選單重建成中文;沒有任何一步記錯;附件清掃清的是 workspace", r.registered && r.log.includes("menu:檔案") && r.errors.length === 0 && r.log.includes("prune:/ws"), r);
-r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state", "rotate", "prune"]));
-ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / 版本閘 / app 現況回報 / token 輪替 / 附件清掃都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
-  r.registered && r.log.includes("menu:檔案") && r.errors.length === 10 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
+await new Promise((res) => setImmediate(res));
+ok("正常啟動:畫面交字後選單重建成中文;沒有任何一步記錯;附件清掃清的是 workspace;偵測完送 device_type", r.registered && r.log.includes("menu:檔案") && r.errors.length === 0 && r.log.includes("prune:/ws") && r.log.includes("track:device_type:laptop"), r);
+r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state", "rotate", "prune", "device"]));
+ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / 版本閘 / app 現況回報 / token 輪替 / 附件清掃 / 機型偵測都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
+  r.registered && r.log.includes("menu:檔案") && r.errors.length === 11 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
 r = run(new Set(["tray"]));
 ok("選單列(traySync)拋例外:選單照樣先重建成中文", r.log.includes("menu:檔案") && r.errors.some((e) => /tray failed/.test(e)), r);
 console.log(red ? `\n${red} FAILED` : "\nALL PASS");
 process.exit(red ? 1 : 0);
+})();
