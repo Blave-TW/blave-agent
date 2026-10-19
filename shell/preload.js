@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld("blave", {
   cloudOverview: (q) => ipcRenderer.invoke("cloud-overview", q),
   cloudPerformance: (q) => ipcRenderer.invoke("cloud-performance", q),
   cloudStrategy: (name) => ipcRenderer.invoke("cloud-strategy", { name }),
+  cloudStrategyLite: (name) => ipcRenderer.invoke("cloud-strategy-lite", { name }),
   // 雲端的報告清單 / 本體(renderer/reports.js):主行程打 api、圖換成 data URI 才交過來;force = 送出「新增報告」後的輪詢,跳過 5 分鐘快取
   cloudReports: (force) => ipcRenderer.invoke("cloud-reports", force),
   cloudReport: (id, ver) => ipcRenderer.invoke("cloud-report", id, ver),   // ver = 清單的 stored_at(同 id 覆寫後換一份)

@@ -1,7 +1,7 @@
 // shell/cloud.js:讀雲端主機狀態(唯讀)。不打真的 api(post 是假的)。
 // 跑法:node tests/check_shell_cloud.js
 const fs = require("fs"), path = require("path");
-const { createCloudHost, interpret, interpretStrategy, interpretVersion, interpretVersionCompare, VERSION_ENDPOINT, interpretOverview, interpretPerformance, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, EVENTS_MIN_GAP_MS, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
+const { createCloudHost, interpret, interpretStrategy, interpretStrategyLite, interpretVersion, interpretVersionCompare, VERSION_ENDPOINT, interpretOverview, interpretPerformance, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, EVENTS_MIN_GAP_MS, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", public_ip: "1.2.3.4" }, portfolio: { reported_at: 100, halt: { halted: false }, reconciler: { alive: true }, venues: {} },
   portfolio_reported_at: 100, portfolio_stale: false, server_time: 130, fx_rates: { USD: 1 }, currency: "USDT",
@@ -225,6 +225,22 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
     t("版本:名字過不了閘門 / 版號不是正整數 / op 不認得 → 不發請求、UNREACH", outs.every((c) => c === "UNREACH") && vCalls.length === 0);
     const rc = await hv.version({ name: "momo", op: "compare", a: 1, b: 2 });
     t("版本:比較 POST 到契約的路徑,body = 兩顆憑證 + name / op / a / b", vCalls.length === 1 && vCalls[0].u === "https://x" + VERSION_ENDPOINT && JSON.stringify(Object.keys(vCalls[0].b).sort()) === '["a","app_secret","b","name","op","token"]' && rc.code === "SYNCING" && rc.missing[0] === 2); }
+  /* 輕量版(lite: 1,等更新績效的輪詢):只往上交 { name, perf };api 還沒上 lite 回整份也是同一個結果 */
+  { const perf = { at: 5, refresh: { status: "running", at: 6 } };
+    const liteBody = { strategy: { name: "momo", display_name: "M", status: "draft", sig: null, updated_at: null, perf } };
+    const fullBody = stBody({ strategy: Object.assign({}, stBody().strategy, { perf }) });
+    const a = interpretStrategyLite({ status: 200, body: liteBody }, "momo"), b = interpretStrategyLite({ status: 200, body: fullBody }, "momo");
+    t("lite:只交 { name, perf };api 忽略 lite 回整份時結果一模一樣(不帶 stats / code)", JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(a) === JSON.stringify({ code: "OK", strategy: { name: "momo", perf } }));
+    t("lite:200 + null = OK + null;名字不對 / 429 / 500 / 連不上 = UNREACH;perf 是陣列 → null",
+      JSON.stringify(interpretStrategyLite({ status: 200, body: { strategy: null } }, "momo")) === '{"code":"OK","strategy":null}'
+      && [{ status: 200, body: { strategy: { name: "x" } } }, { status: 429, body: {} }, { status: 500, body: {} }, { status: 200, body: {} }, null].every((r) => interpretStrategyLite(r, "momo").code === "UNREACH")
+      && interpretStrategyLite({ status: 200, body: { strategy: { name: "momo", perf: [1] } } }, "momo").strategy.perf === null);
+    const calls = []; let gate = null;
+    const hl = createCloudHost({ apiBase: "https://x", getCreds: () => ({ token: "acct-L", appSecret: "appsec-L" }), post: async (u, bd) => { calls.push({ u, b: bd }); if (gate) await gate; return { status: 200, body: liteBody }; }, now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+    let open; gate = new Promise((r) => { open = r; });
+    const p1 = hl.strategyLite("momo"), p2 = hl.strategyLite("momo"), p3 = hl.strategyLite("other"); open(); const [r1, r2] = await Promise.all([p1, p2, p3]);
+    t("lite:POST 同一條路徑、body 帶 lite: 1(數字,api 只認 1);同一支在途共用、不同支各打一次", calls.length === 2 && calls[0].u === "https://x" + STRATEGY_ENDPOINT && calls[0].b.lite === 1 && calls[0].b.name === "momo" && r1 === r2 && r1.strategy.perf.at === 5);
+    t("lite:名字不合法不打 api、UNREACH", (await hl.strategyLite("")).code === "UNREACH" && calls.length === 2); }
   { const stCalls = []; let stCreds = { token: "acct-S", appSecret: "appsec-S" }, stReply = { status: 200, body: stBody() };
     const h = createCloudHost({ apiBase: "https://x", getCreds: () => stCreds, post: async (u, b) => { stCalls.push({ u, b }); if (stReply instanceof Error) throw stReply; return stReply; }, now: () => clock, setTimer: () => 0, clearTimer: () => {} });
     const r0 = await h.strategy("momo");
@@ -250,6 +266,9 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   t("main.js:cloud-strategy 走 handle()(只收自家頁面),拒絕時回 { code: UNREACH, strategy: null };preload 只多暴露 cloudStrategy 一支",
     /\n  handle\("cloud-strategy", \(_e, q\) => cloudHost\(\)\.strategy\(q && q\.name\), \{ code: "UNREACH", strategy: null \}\);/.test(mainSrc)
     && /cloudStrategy: \(name\) => ipcRenderer\.invoke\("cloud-strategy", \{ name \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
+  t("main.js:cloud-strategy-lite 同樣走 handle()、拒絕時回 UNREACH;preload 暴露 cloudStrategyLite",
+    /\n  handle\("cloud-strategy-lite", \(_e, q\) => cloudHost\(\)\.strategyLite\(q && q\.name\), \{ code: "UNREACH", strategy: null \}\);/.test(mainSrc)
+    && /cloudStrategyLite: \(name\) => ipcRenderer\.invoke\("cloud-strategy-lite", \{ name \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
 
   /* ── 權益曲線與當日損益(總覽分頁的第三支端點)────────────────────────
      api 回的是網頁 GET /openclaw/agent/overview 那一份(包在 overview 底下);這裡對成這台電腦那一份的形狀,trade.js 換來源就能畫 */

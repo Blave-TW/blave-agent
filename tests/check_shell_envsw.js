@@ -98,8 +98,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("這台電腦:宿主拋出來的讀取錯誤原樣往上拋(讓畫面畫成讀不到),不在這一層吞掉", rejected); }
   evReply = { code: "OK", events: [{ ts: 1, type: "halt", data: {} }] };
   const cloudHalf = noComments(env).slice(noComments(env).indexOf("let last = null;"), noComments(env).indexOf("function envCloudList("));
-  // 雲端那份 api 碰得到的主行程 api 就這六支:五支讀 + 一支寫。多一支就是多一條雲端視角碰得到的路
-  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus / cloudStrategy / cloudOverview / cloudPerformance / cloudEvents / cloudSend", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus,host.cloudStrategy,host.cloudOverview,host.cloudPerformance,host.cloudEvents,host.cloudSend");
+  // 雲端那份 api 碰得到的主行程 api 就這七支:六支讀 + 一支寫。多一支就是多一條雲端視角碰得到的路
+  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus / cloudStrategy / cloudStrategyLite / cloudOverview / cloudPerformance / cloudEvents / cloudSend", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus,host.cloudStrategy,host.cloudStrategyLite,host.cloudOverview,host.cloudPerformance,host.cloudEvents,host.cloudSend");
   const L = envApi("local", host); await L.tradeSend("halt", {}); await L.tradeStatus();
   ok("這台電腦:原樣轉給主行程", touched.join() === "tradeSend,tradeStatus" && L.env === "local" && C.env === "cloud");
   ok("兩份 api 介面相同(自動下單頁換一個來源就能畫;tradePerformance 不在 ENV_API 裡——主行程沒有本機那一支,本機那份自己回 null)", ENV_API.concat(["tradePerformance"]).every((k) => typeof C[k] === "function" && typeof L[k] === "function"));

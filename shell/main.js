@@ -3240,6 +3240,8 @@ app.whenReady().then(() => {
   handle("cloud-performance", (_e, q) => cloudHost().performance(q && q.days, q && q.currency), { code: "UNREACH", perf: null });
   // 雲端單支策略的報告(側欄點一支打一次;同事件清單:不留在主行程、不落地)。回 { code: "OK" | "UNREACH", strategy }——OK + null = 雲端現在沒有這一份
   handle("cloud-strategy", (_e, q) => cloudHost().strategy(q && q.name), { code: "UNREACH", strategy: null });
+  // 同一支的輕量版:只回 { name, perf }(portfolio.js 等更新績效的輪詢用)
+  handle("cloud-strategy-lite", (_e, q) => cloudHost().strategyLite(q && q.name), { code: "UNREACH", strategy: null });
   // 雲端策略版本的單版 / 比較(/cloud/version):同單支策略,不留在主行程、不落地。回 { code: "OK" | "SYNCING" | "UNREACH", … }
   handle("cloud-version", (_e, q) => cloudHost().version(q), { code: "UNREACH" });
   // 雲端的完整歷史回測圖表(/cloud/chart_data;進出場分頁往左補):同策略版本,不留在主行程、不落地

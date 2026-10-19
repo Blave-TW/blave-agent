@@ -753,6 +753,26 @@ const orderTest = (async () => {
   const nobase = await go({ base: null, timeline: () => null, waitMs: 120 });
   ok("送出前拿不到 perf.at:不等推送,照舊沒看到更新中就跑", nobase.runAt !== null && nobase.runAt < 60, J(nobase));
 })();
+// 稽核 web-mgrefresh P1-2:雲端輪詢走 loadStrategyLite(只拿 perf);讀不到(429／斷線)= 繼續等,不是結束;不在了(null)= 結束
+const liteTest = (async () => {
+  const go = async (lite, waitMs) => {
+    const sent = [], full = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
+      mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    let t0 = 0, runAt = null;
+    ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
+      tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); return { ok: true, result: { started: a.names, skipped: {} } }; } runAt = Date.now() - t0; return { ok: true, result: {} }; },
+      tradeStatus: async () => ({}), loadStrategy: async (n) => { full.push(n); return null; },
+      loadStrategyLite: async (n) => lite(t0 ? Date.now() - t0 : -1, n) } };
+    vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, waitMs || 200));
+    return { sent, full, runAt };
+  };
+  const OLD = 1700000000;
+  const unreach = await go((ms, n) => { if (ms < 0) return { name: n, perf: { at: OLD } }; if (ms < 80) throw new Error("UNREACH"); return { name: n, perf: { at: OLD + 99 } }; });
+  ok("雲端輪詢讀不到(429)那段繼續等,讀到 at 換新才送 manage_backtest;基準與輪詢都走 lite,不抓整份", unreach.runAt !== null && unreach.runAt >= 75 && unreach.full.length === 0, J(unreach));
+  const gone = await go((ms, n) => (ms < 0 ? { name: n, perf: { at: OLD } } : null), 120);
+  ok("讀得到但這支已經不在了(null):當結束,直接跑", gone.runAt !== null && gone.runAt < 60, J(gone));
+})();
 // 稽核 audit-prerun-refresh:BUSY 要等、skip 不等、ack 失敗直接跑、超過 50 支分批且每批的 started 都收齊、剛好 6 小時不更新
 const refreshEdgeTest = (async () => {
   const NOWMS = Date.parse("2026-10-14T06:00:00Z"), NOWS = NOWMS / 1000;
@@ -975,4 +995,4 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     && run({ before: OLD, job: OLD, later: 120001 }) === false && run({ before: OLD, job: OLD, later: 120001, acked: false }) === true);
   ok("…按下去就記住當下的 job(等更新績效之前),不再拿 finished_at 比",
     /G\.btSending = true; G\.btSentAt = 0; G\.btBaseJob = mgJobKey\(mgJobAny\(\)\);[\s\S]*G\.btWaiting = true;/.test(cutF(psrc, "mgRunBacktest")) && !/finished_at/.test(cutF(psrc, "mgBtSendingSync"))); }
-Promise.all([btCancelTest, freshTest, pollTest, orderTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
+Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

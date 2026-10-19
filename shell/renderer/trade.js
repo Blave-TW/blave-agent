@@ -1276,6 +1276,8 @@ function envApi(env, host) {
     listStrategies: async () => envCloudList(last),
     // 形狀同主行程 loadStrategy({ name, displayName, description, stats, code });讀不到 / 雲端沒有這一份都是 null——報告頁沒有「讀不到」這一態,由呼叫端收掉選取
     loadStrategy: async (name) => { const r = await host.cloudStrategy(name); return r && r.code === "OK" && r.strategy ? r.strategy : null; },
+    // 只有 { name, perf }(雲端沒有這一份 = null);讀不到就拋出——等更新績效的輪詢要分得出「讀不到」與「不在了」。不能拿去畫報告
+    loadStrategyLite: async (name) => { const r = await host.cloudStrategyLite(name); if (r && r.code === "OK") return r.strategy || null; throw new Error("UNREACH"); },
     // 讀不到(同下)就說讀不到,**不可以**當成「還沒有權益紀錄」;主行程已把 api 的形狀對成這台電腦那一份
     tradeEquity: async (q) => { const cv = await host.cloudOverview(q);
       return cv && cv.code === "OK" && cv.curve && Array.isArray(cv.curve.curve) ? { code: "OK", ...cv.curve } : { code: "UNREACH", curve: [] }; },

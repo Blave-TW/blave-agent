@@ -1038,7 +1038,7 @@ async function mgPerfAt(S, n, load, base) {
 async function mgRefreshThen(S, run, cancelled, which) {   // which:"opt"／"bt"——兩條各自一個在等旗標,一條等完不能把另一條的清掉(稽核)
   // 20 分鐘與「前 1 分鐘每 3 秒」都從按下那一刻起算(同網頁:含問更新時間、等 ack)
   const t0 = Date.now(), until = t0 + MG_REFRESH_MAX_MS, nowSec = Math.floor(t0 / 1000);
-  const load = S.env === "cloud" ? (n) => S.api.loadStrategy(n) : (n) => window.blave.loadStrategy(n);
+  const load = S.env === "cloud" ? (S.api.loadStrategyLite ? (n) => S.api.loadStrategyLite(n) : (n) => S.api.loadStrategy(n)) : (n) => window.blave.loadStrategy(n);   // 雲端只拿 perf,不抓 2.4MB 的整份
   const base = {}, members = mgMembers(), ats = await Promise.all(members.map((n) => mgPerfAt(S, n, load, base)));   // 並行抓(稽核 P2:雲端每支一次 detail,串行會多等好幾秒)
   const names = members.filter((n, i) => ats[i] === null || nowSec - ats[i] > 6 * 3600);   // 剛好 6 小時不算舊(整數秒比)
   if (!names.length) { run(); return; }
@@ -1051,14 +1051,15 @@ async function mgRefreshThen(S, run, cancelled, which) {   // which:"opt"／"bt"
     if (res && Array.isArray(res.started)) started.push(...res.started);
     if (res && res.skipped) Object.keys(res.skipped).forEach((n) => { if (res.skipped[n] === "BUSY") started.push(n); });   // 已經在跑的那支也等它
   }
-  /* 抓 detail 失敗(雲端 api 一時讀不到)當成「這支結束了」:最壞是用現有數字跑——跟 skip／更新失敗同一個後果;
-     當成還在跑則會因為一支讀不到而卡滿 20 分鐘(網頁是沿用舊快取,快取多半沒有 running,實際效果相同) */
+  /* 讀不到(雲端 429／斷線)= 還在等,不是結束:等待有 20 分鐘上限與「先用目前數字跑」可以退出(同網頁沿用快取)。
+     讀得到但這支已經不在了(null)= 結束 */
   /* runtime 1.1.136 起回條先到、「更新中」晚幾秒才推上來:perf(at 與 refresh)跟送出前一模一樣 = 機器還沒回報,繼續等——
      成功一定換 at(stats.json 重寫)、失敗寫新的 refresh(at 不同),上一次留下的 failed 不算這一次的結果。
      送出前沒拿到 perf.at 的照舊只看 running,不然 perf 不出現就要卡滿 20 分鐘 */
   const busy = async (n) => {
-    let d = null; try { d = await load(n); } catch (_) { d = null; }
-    const p = d && d.perf, x = p && p.refresh;
+    let d = null; try { d = await load(n); } catch (_) { return true; }
+    if (!d) return false;
+    const p = d.perf, x = p && p.refresh;
     if (x && x.status === "running") return true;
     return !!p && base[n] !== undefined && JSON.stringify([p.at, p.refresh || null]) === base[n];   // 同 mgPerfAt 記的那份
   };

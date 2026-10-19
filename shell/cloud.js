@@ -120,6 +120,18 @@ function interpretStrategy(res, name) {
   const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
   return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions), perf: obj(s.perf), logic: logicOf(s.logic) } };
 }
+/* 績效輪詢用的輕量版(body `lite: 1`,api 只回 name/display_name/status/sig/updated_at/perf):只取 perf。
+   api 還沒有 lite 時會忽略這個欄位、回整份,這裡一樣只挑 perf,兩種回應結果相同。回 { code: "OK", strategy: { name, perf } | null } / UNREACH;
+   形狀刻意不是報告那一份(沒有 stats / code),不能拿去畫報告或蓋掉手上的整份 */
+function interpretStrategyLite(res, name) {
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || !("strategy" in b)) return STRATEGY_UNREACHABLE();
+  const s = b.strategy;
+  if (s === null) return { code: "OK", strategy: null };
+  if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
+  const p = s.perf;
+  return { code: "OK", strategy: { name, perf: p && typeof p === "object" && !Array.isArray(p) ? p : null } };
+}
 /* 策略邏輯(runtime strategy_reporter.strategy_logic 的輸出;api 原樣存):{ entry, exit, stop } 或 { text },其餘 null。
    舊快取沒有這欄 = null(頁首跟沒有邏輯一樣)。上限同機器端,這裡再切一次:api 不驗這欄 */
 function logicOf(v) {   // 判法與順序同網頁 workspace.html mhLogicNorm
@@ -425,6 +437,11 @@ function createCloudHost(opts) {
       })().finally(() => { stInflight = null; stName = null; });
       return stInflight;
     },
+    // 只要 perf 的那一份(優化／回測前等更新績效的輪詢):每支各自在途共用,不跟 strategy() 那一格搶
+    strategyLite(name) {
+      if (typeof name !== "string" || !name || name.length > 200) return Promise.resolve(STRATEGY_UNREACHABLE());
+      return readOnce(STRATEGY_ENDPOINT, "lite|" + name, { name, lite: 1 }, (res) => interpretStrategyLite(res, name), STRATEGY_UNREACHABLE);
+    },
     /* 策略版本:q = { name, op: "get", n } | { name, op: "compare", a, b }。名字過 canon §9b 的閘門、版號只收正整數,
        其餘直接回讀不到(不打 api)。list 不開:摘要清單已經跟著 /cloud/strategy 的 versions 來了 */
     version(q) {
@@ -478,6 +495,6 @@ function createCloudHost(opts) {
   };
 }
 
-module.exports = { PREFS_ENDPOINT, createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, interpretReports, interpretReport, interpretImage,
+module.exports = { PREFS_ENDPOINT, createCloudHost, interpret, interpretEvents, interpretStrategy, interpretStrategyLite, interpretOverview, interpretPerformance, interpretReports, interpretReport, interpretImage,
   interpretVersion, interpretVersionCompare, VERSION_ENDPOINT, interpretChart, CHART_ENDPOINT,
   ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, REPORTS_ENDPOINT, REPORT_ENDPOINT, IMAGE_ENDPOINT, REPORTS_MAX, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };
