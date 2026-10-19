@@ -73,6 +73,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   const STR = new Function(read(path.join(R, "strings.js")) + "\nreturn STRINGS;")();
   const shlFmtTime = new Function(fnSrc(read(path.join(R, "report-sharelist.js")), "shlFmtTime") + "\nreturn shlFmtTime;")();
   const xpIsTypeB = new Function(fnSrc(read(path.join(R, "export.js")), "xpIsTypeB") + "\nreturn xpIsTypeB;")();   // Type B 的判法只有一份(程式碼分頁同一支)
+  const libGrouping = new Function(fnSrc(read(path.join(R, "library.js")), "libGrouping") + "\nreturn libGrouping;")();   // 現在的原因只有一份(策略庫那支)
   const verPickedSrc = fnSrc(read(path.join(R, "versions.js")), "verPicked");   // 上線中的判法只有一份(versions.js;真的那支餵進 rig)
   class El {
     constructor(tag) { this.tagName = tag; this.kids = []; this.attrs = {}; this.on = {}; this.className = ""; this.hidden = false; this.id = ""; this.dataset = {}; this.parentNode = null; this.title = undefined; }
@@ -92,7 +93,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     querySelectorAll(sel) { const cls = sel.split(",").map((x) => x.trim().replace(/^\./, "")); return this.all((k) => cls.some((c) => k.has(c))); }
   }
   const doc = { createElement: (tag) => new El(tag) };
-  const names = ["pfEl", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
   const body = ["PF", "PFL", "PFP", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
@@ -122,6 +123,9 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       verPicked: null,
       xpIsTypeB, verPendingOf: () => opt.pending || null, VS, RERUN_WHY: { DATA: "data", REFUSED: "refused", TIMEOUT: "timeout" }, shlFmtTime,
       window: { blave: { loadStrategy: async () => (opt.reload ? opt.reload() : null) } }, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {}, Date: FakeDate,
+      // 這台現在的帳號狀態(策略庫 libCtx 那份;libCtx 的 env 是目前的分頁,pfNowWhy 自己蓋成 local)
+      LIB: { data: opt.acct === undefined ? null : opt.acct && { dataAccess: opt.acct.dataAccess || null, why: opt.acct.why || null }, stale: !!(opt.acct && opt.acct.stale) },
+      libCtx: () => ({ env: "local", signedIn: !(opt.acct && opt.acct.signedIn === false), dataAccess: opt.acct && opt.acct.dataAccess || null, why: opt.acct && opt.acct.why || null }), libGrouping,
       told: [], busySlot: (id, anchor) => ({ id, anchor }), busyTell: (slot, kind) => env.told.push([slot.id, kind, slot.anchor]) };
     env.verPicked = new Function("TR_BAGS", verPickedSrc + "\nreturn verPicked;")(env.TR_BAGS);
     const F = new Function(...Object.keys(env), body)(...Object.values(env));
@@ -197,13 +201,23 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     ok("報告帶回 SUPERSEDED(跑完但 runner 丟棄:檔案在途中被改)/ BUSY(等 runner 的回測鎖等到逾時)各有自己一句", why("SUPERSEDED") === "策略在更新途中被改過，數字沒換；再按一次" && why("BUSY") === "這支策略正在回測中，等它跑完再按一次"
       && why("SUPERSEDED", "en") === "The strategy was edited while updating; figures unchanged. Press again." && why("BUSY", "en") === "This strategy is being backtested right now; press again when it finishes.");
   }
-  // 沒有資料權限(runtime 寫的 why):看得到的那一行講原因,title 照舊;why 只認 DATA 與白名單
+  // 沒有資料權限(runtime 寫的 why):現在的原因還是同一個才講原因(灰記號、不掛 title);過期、查不到、雲端 → 通用句(紅記號、title 照舊)
   {
-    const line = (lang, refresh) => { const q = rig(lang, { perf: { at: nowS() - 100, refresh: Object.assign({ status: "failed", at: nowS() - 60 }, refresh) } }); q.F.perfPaint(q.B); return q.fail(); };
-    const so = line("zh", { err: "DATA", why: "signed_out" });
-    ok("DATA + why signed_out:「沒登入 Blave，抓不到資料，數字是舊的」,title 仍是「沒取到資料」", so.textContent === "沒登入 Blave，抓不到資料，數字是舊的" && so.title === "沒取到資料");
-    ok("六個 why 各自一句(zh / en 都有、不是 key 本身)", ["signed_out", "no_card", "no_balance", "no_plan", "plan_failed", "unknown"].every((w) => ["zh", "en"].every((l) => { const x = line(l, { err: "DATA", why: w }).textContent; return x && !/perf\./.test(x) && x !== STR[l]["perf.fail"]; })));
-    ok("why 不認得、或碼不是 DATA → 照舊「沒更新成功，數字是舊的」", line("zh", { err: "DATA", why: "constructor" }).textContent === "沒更新成功，數字是舊的" && line("zh", { err: "EXIT", why: "signed_out" }).textContent === "沒更新成功，數字是舊的" && line("zh", { err: "DATA" }).textContent === "沒更新成功，數字是舊的");
+    const NOW = { signed_out: { signedIn: false }, no_card: { dataAccess: "plan_required", why: "no_card" }, no_balance: { dataAccess: "none", why: "no_balance" },
+      no_plan: { dataAccess: "plan_required", why: "no_plan" }, plan_failed: { dataAccess: "payment_failed", why: "plan_failed" }, unknown: { dataAccess: null } };
+    const line = (lang, refresh, acct, cloud) => { const q = rig(lang, { cloud, acct, perf: { at: nowS() - 100, refresh: Object.assign({ status: "failed", at: nowS() - 60 }, refresh) } }); q.F.perfPaint(q.B); return q.fail(); };
+    const calm = (f) => f.has("is-calm") && f.title === undefined, loud = (f) => !f.has("is-calm") && f.title === "沒取到資料" && f.textContent === "沒更新成功，數字是舊的";
+    const so = line("zh", { err: "DATA", why: "signed_out" }, NOW.signed_out);
+    ok("DATA + why signed_out,現在也沒登入:「沒登入 Blave，數字是舊的」、is-calm、不掛 title", so.textContent === "沒登入 Blave，數字是舊的" && calm(so));
+    const ZH = { signed_out: "沒登入 Blave，數字是舊的", no_card: "還沒綁卡，抓不到 Blave 資料，數字是舊的", no_balance: "這一小時付不出資料費，數字是舊的", no_plan: "還沒開通方案，抓不到 Blave 資料，數字是舊的", plan_failed: "方案扣款沒成功，數字是舊的", unknown: "這台電腦現在抓不到 Blave 資料，數字是舊的" };
+    const EN = { signed_out: "Not signed in to Blave; figures unchanged.", no_card: "No card on file, so no Blave data; figures unchanged.", no_balance: "This hour's data fee couldn't be charged; figures unchanged.", no_plan: "No plan yet, so no Blave data; figures unchanged.", plan_failed: "The plan payment didn't go through; figures unchanged.", unknown: "Blave data isn't reachable on this computer; figures unchanged." };
+    ok("六個 why 逐字 = 設計規格(zh / en),現在同一個原因時才出、都是 is-calm", Object.keys(NOW).every((w) => { const z = line("zh", { err: "DATA", why: w }, NOW[w]), e = line("en", { err: "DATA", why: w }, NOW[w]); return z.textContent === ZH[w] && e.textContent === EN[w] && calm(z) && calm(e); }));
+    ok("原因過期(紀錄說沒登入、現在登入著有資料)→ 通用句、紅記號、title 照舊", loud(line("zh", { err: "DATA", why: "signed_out" }, { dataAccess: "included" })));
+    ok("原因換了(紀錄 no_card、現在 no_balance)→ 通用句", loud(line("zh", { err: "DATA", why: "no_card" }, NOW.no_balance)));
+    ok("查不到現在的(策略庫還沒拿到帳號狀態 / 已作廢)→ 通用句;沒登入不用等它", loud(line("zh", { err: "DATA", why: "no_card" })) && loud(line("zh", { err: "DATA", why: "no_card" }, Object.assign({ stale: true }, NOW.no_card)))
+      && calm(line("zh", { err: "DATA", why: "signed_out" }, { signedIn: false, stale: true })));
+    ok("雲端一律通用句(就算帶了 why)", loud(line("zh", { err: "DATA", why: "signed_out" }, NOW.signed_out, true)));
+    ok("why 不認得、或碼不是 DATA → 照舊「沒更新成功，數字是舊的」", loud(line("zh", { err: "DATA", why: "constructor" }, NOW.signed_out)) && line("zh", { err: "EXIT", why: "signed_out" }, NOW.signed_out).textContent === "沒更新成功，數字是舊的" && loud(line("zh", { err: "DATA" }, NOW.signed_out)));
   }
   // 上次失敗後再按(10-19 Wei Mac):按下前就在的 failed 紀錄不算報告跟上——要畫更新中、要輪詢、跑完換新數字
   {
@@ -317,6 +331,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     && /\.bt-meta > \.upd \.btn-quiet\[aria-disabled="true"\] \{ color: var\(--ink-disabled\); text-decoration: none; cursor: not-allowed; \}/.test(css)
     && /\.bt-meta > \.upd \.btn-quiet::before \{ inset: -15px -6px; \}/.test(css)
     && /\.bt > \.bt-meta \+ \.upd-fail \{ margin-top: var\(--space-8\); \}/.test(css) && /\.bt > \.upd-fail \+ \* \{ margin-top: var\(--space-16\); \}/.test(css) && !/#[0-9a-fA-F]{3,6}\b/.test(css.split("1b. 更新績效")[1].split("---- 2.")[0]));
+  ok("CSS:沒資料權限那句的記號退灰(.upd-fail.is-calm,同 app.css 兩處 is-calm 前例)", /\.upd-fail\.is-calm \.fault-mark \{ background: var\(--ink-3\); \}/.test(css));
   const keys = ["perf.btn", "perf.ago", "perf.agoOne", "perf.tip", "perf.busy", "perf.doneSr", "perf.fail"];
   ok("字串:七個 key zh / en 都有,逐字 = spec §10", keys.every((k) => STR.zh[k] && STR.en[k]) && STR.zh["perf.btn"] === "更新績效" && STR.zh["perf.busy"] === "更新中" && STR.zh["perf.fail"] === "沒更新成功，數字是舊的" && STR.zh["perf.doneSr"] === "績效已更新"
     && STR.en["perf.btn"] === "Update Performance" && STR.en["perf.busy"] === "Updating" && STR.en["perf.fail"] === "Update failed; figures unchanged." && STR.en["perf.doneSr"] === "Performance updated");

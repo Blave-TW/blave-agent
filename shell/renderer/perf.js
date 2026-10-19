@@ -20,9 +20,19 @@ const PF_POLL_MS = { local: 2000, cloud: 5000 }, PF_GRACE_MS = 120000;
 const PF_POLL_MAX_MS = (900 + 900 + 120) * 1000;
 const PF_ERRS = ["REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY"];   // = runtime _RERUN_ERRS(報告帶回的 perf.refresh.err)
 // 失敗行 title 的專屬句:報告帶回的兩個 + ack 的 skip 碼(機器端沒跑);不在這裡的走 ver.rerunWhy.*
-// DATA 失敗而且是沒有資料權限(runtime 寫的 why = 外殼給子行程的 BLAVE_DATA_ACCESS_WHY):看得到的那一行直接講原因;雲端報告不帶 why
+// DATA 失敗而且是沒有資料權限(runtime 寫的 why = 外殼給子行程的 BLAVE_DATA_ACCESS_WHY):看得到的那一行直接講原因(灰記號、不掛 title);
+// 只在現在的原因還是同一個時才講(登入後還寫「沒登入」會叫人去找不存在的問題),否則退回通用句。雲端報告不帶 why
 const PF_NO_DATA = { signed_out: "perf.noData.signedOut", no_card: "perf.noData.noCard", no_balance: "perf.noData.noBalance", no_plan: "perf.noData.noPlan", plan_failed: "perf.noData.planFailed", unknown: "perf.noData.unknown" };
 const PF_WHY = { SUPERSEDED: "perf.superseded", BUSY: "perf.lockBusy", CODE_CHANGED: "perf.codeChanged", INDEX_BROKEN: "perf.indexBroken", NOT_RUNNABLE: "perf.notRunnable", CONFIG_UNREADABLE: "perf.configUnreadable" };
+/* 這台現在沒資料的原因,同策略庫那份(library.js libCtx / libGrouping,源頭是 main.js dataAccessWhy);有資料或查不到 = null */
+function pfNowWhy() {
+  if (typeof libCtx !== "function" || typeof libGrouping !== "function") return null;
+  const c = libCtx();
+  if (c.signedIn === false) return "signed_out";
+  if (typeof LIB === "undefined" || !LIB.data || LIB.stale) return null;
+  const g = libGrouping(Object.assign(c, { env: "local" }));
+  return g === "signedOut" ? "signed_out" : g;
+}
 const pfSide = (B) => (B === RPC ? "cloud" : "local");
 function pfEl(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 // 報告帶的 perf,逐欄驗型別(雲端那份是機器上的 reporter 寫的):壞形狀 = null(不出這一組)
@@ -86,11 +96,11 @@ function perfPaint(B) {
   }
   meta.appendChild(upd);
   if (st.kind === "failed") {
-    const line = pfEl("p", "upd-fail"); line.setAttribute("role", "status");
-    const why = PF_WHY[st.err] || "ver.rerunWhy." + (RERUN_WHY[st.err] || "exit");   // 四個分類碼沿用版本重跑的字串,不另造一組
-    line.title = t(why);
+    const calm = side === "local" && PF_NO_DATA[st.why] && pfNowWhy() === st.why ? PF_NO_DATA[st.why] : null;
+    const line = pfEl("p", calm ? "upd-fail is-calm" : "upd-fail"); line.setAttribute("role", "status");
+    if (!calm) line.title = t(PF_WHY[st.err] || "ver.rerunWhy." + (RERUN_WHY[st.err] || "exit"));   // 四個分類碼沿用版本重跑的字串,不另造一組
     const m = pfEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
-    line.append(m, pfEl("span", "", t(PF_NO_DATA[st.why] || "perf.fail")));
+    line.append(m, pfEl("span", "", t(calm || "perf.fail")));
     meta.parentNode.insertBefore(line, meta.nextSibling);
   }
   perfBusy();

@@ -51,6 +51,7 @@
 .bt > .upd-fail + * { margin-top: var(--space-16); }
 .upd-fail { display: flex; align-items: flex-start; gap: var(--space-6); margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .upd-fail .fault-mark { margin-top: 8px; }   /* 12px × 1.5 首行的中線(同 versions.css .vr-t) */
+.upd-fail.is-calm .fault-mark { background: var(--ink-3); }   /* 沒資料權限是帳號狀態,不是這次跑壞了 */
 
 /* ---- 2. 三組條列(tearsheet 慣例,雲端 .bt-cols / .bt-mrow 同構) ----
    平面、無卡片:組與組之間是 24px 溝 + 一條直 hairline,列與列之間是 8+8 的節奏
