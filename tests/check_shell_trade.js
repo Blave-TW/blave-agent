@@ -1802,8 +1802,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /box\.appendChild\(trOvStats\(\)\);\n\s*box\.appendChild\(trOvPerf\(\)\);[^\n]*\n\s*box\.appendChild\(trOvCurve\(z\)\);\n\s*box\.appendChild\(trOvEvents\(r, z\)\);/.test(cutF("trPaintOver")) && /TR\.ov\.curveErr,/.test(cutF("trPaintOver")));
     { const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
       const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
-      ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句講曲線與累積損益只從最後一段起算(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
-        && /資金異動/.test(get("zh", "tr.ov.flowNote")) && /最後一段/.test(get("zh", "tr.ov.flowNote")) && /Funds moved/.test(get("en", "tr.ov.flowNote")) && /last part/.test(get("en", "tr.ov.flowNote"))); }
+      ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句講權益曲線只畫最後一段、累積損益扣掉異動金額(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
+        && /資金異動/.test(get("zh", "tr.ov.flowNote")) && /最後一段/.test(get("zh", "tr.ov.flowNote")) && /扣掉資金異動的金額/.test(get("zh", "tr.ov.flowNote")) && /Funds moved/.test(get("en", "tr.ov.flowNote")) && /last part/.test(get("en", "tr.ov.flowNote")) && /leaves out the amount moved/.test(get("en", "tr.ov.flowNote"))); }
     ok("登出:curve 與 curveErr、perf 與 perfErr 一起清", /C\.ov\.curve = null; C\.ov\.ui = \[\]; C\.ov\.uiErr = false; C\.ov\.curveErr = false; C\.ov\.perf = null; C\.ov\.perfErr = false;/.test(src) && /curve: null, curveErr: false, perf: null, perfErr: false,/.test(src));
     { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
       const block = (n) => S.split(`  ${n}: {`)[1].split("\n  },")[0], keysOf = (b) => new Set([...b.matchAll(/^\s*"([^"]+)":/gm)].map((m) => m[1]));

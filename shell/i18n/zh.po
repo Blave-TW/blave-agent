@@ -2190,7 +2190,7 @@ msgid "tr.ov.basisNote"
 msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"
 
 msgid "tr.ov.flowNote"
-msgstr "偵測到資金異動（出入金或綁定、解除一個交易所）；權益曲線與累積損益都只從最後一段起算。"
+msgstr "偵測到資金異動（出入金或綁定、解除一個交易所）；權益曲線只畫最後一段，累積損益已扣掉資金異動的金額。"
 
 msgid "tr.ov.vsStart"
 msgstr "相對區間起點"

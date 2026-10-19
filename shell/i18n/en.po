@@ -2180,7 +2180,7 @@ msgid "tr.ov.basisNote"
 msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
 
 msgid "tr.ov.flowNote"
-msgstr "Funds moved in or out (a deposit, withdrawal, or an exchange connected or removed); the equity curve and cumulative PnL start from the last part only."
+msgstr "Funds moved in or out (a deposit, withdrawal, or an exchange connected or removed); the equity curve shows only the last part, and cumulative PnL leaves out the amount moved."
 
 msgid "tr.ov.vsStart"
 msgstr "vs range start"
