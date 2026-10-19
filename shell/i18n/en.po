@@ -1427,7 +1427,7 @@ msgid "cx.down"
 msgstr "The order engine on this computer isn't running. Try again in a few seconds; if it stays this way, restart Blave."
 
 msgid "tr.mode.paper"
-msgstr "Paper"
+msgstr "Paper trading"
 
 msgid "tr.tbAria"
 msgstr "Auto trading: {state}"
@@ -2521,7 +2521,7 @@ msgid "env.winTitle0"
 msgstr "Blave — {where}"
 
 msgid "tr.mode.real"
-msgstr "Real"
+msgstr "Real money"
 
 msgid "side.cloud.starting"
 msgstr "Machine starting"
