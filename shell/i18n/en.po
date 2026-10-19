@@ -2180,13 +2180,22 @@ msgid "tr.ov.basisNote"
 msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
 
 msgid "tr.ov.flowNote"
-msgstr "Funds moved in or out (a deposit, withdrawal, or an exchange connected or removed); the equity curve shows only the last part, and cumulative PnL leaves out the amount moved."
+msgstr "The curve starts at the latest funds movement; cumulative PnL excludes the amount moved."
+
+msgid "tr.ov.flowTip"
+msgstr "A funds movement is a deposit, a withdrawal, or an exchange connected or removed."
+
+msgid "tr.ov.flowWait"
+msgstr "Not enough records since the latest funds movement to draw the curve — it takes two."
 
 msgid "tr.ov.vsStart"
 msgstr "vs range start"
 
 msgid "tr.ov.vsSeg"
-msgstr "vs start of this stretch (after funds moved)"
+msgstr "vs start after funds moved"
+
+msgid "tr.ov.vsBasis"
+msgstr "vs start of this stretch"
 
 msgid "tr.ov.curveUnreach"
 msgstr "Can’t read the cloud’s equity records right now; this will retry shortly. It does not mean there are none."

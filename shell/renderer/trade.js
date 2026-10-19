@@ -4684,8 +4684,9 @@ function trOvCurve(z) {
   const pts = srv ? srv.pts : isPnl || flow ? all.slice(cut) : all;
   if (z && pts.length < 2 && all.length < 2 && ((trPnlServerPoints() || {}).pts || []).length < 2) return document.createDocumentFragment();   // 另一個模式畫得出來就照舊(切換鈕要留著)
   if (pts.length < 2) {
+    // 剛換綁、新段只有一筆:一行講清楚前面的線為什麼不見了(不疊 emptyBaseline + flowNote 兩行)
+    if (flow && !isPnl) { const st = trEl("div", "pf-state"); st.appendChild(trTipLabel("", t("tr.ov.flowWait"), t("tr.ov.flowTip"))); frag.appendChild(st); return frag; }
     frag.appendChild(trEl("div", "pf-state", pts.length ? t("tr.ov.emptyBaseline") : t("tr.ov.empty")));
-    if (flow && !isPnl) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.flowNote")));   // 剛換綁、新段只有一筆:講清楚前面的線為什麼不見了
     return frag;
   }
   const series = srv ? pts : isPnl ? pts.map((p) => ({ t: p.t, v: p.v - pts[0].v })) : pts;
@@ -4697,7 +4698,8 @@ function trOvCurve(z) {
   canvas.setAttribute("aria-label", t(isPnl ? "tr.ov.curveAriaPnl" : "tr.ov.curveAria", { a: trWithUnit(trFmt2(first.v, isPnl)), b: trWithUnit(trFmt2(last.v, isPnl)), n: series.length }));
   frame.append(canvas, tip); frag.appendChild(frame);
   // 斷在哪一種:資料自己帶 anomalies 的是平台標的資金異動,否則是這台電腦的口徑換過
-  if (cut > 0 && !isPnl) frag.appendChild(trEl("div", "pf-foot", t(Array.isArray(TR.ov.curve.anomalies) ? "tr.ov.flowNote" : "tr.ov.basisNote")));
+  if (flow && !isPnl) { const ft = trEl("div", "pf-foot"); ft.appendChild(trTipLabel("", t("tr.ov.flowNote"), t("tr.ov.flowTip"))); frag.appendChild(ft); }
+  else if (cut > 0 && !isPnl) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.basisNote")));
   if (srv && srv.anom) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.pnlAnom")));   // 平台那條:異動點的跳變已剔除,講一句
   requestAnimationFrame(() => trDrawCurve(canvas, series, isPnl));
   const onTheme = () => { if (!canvas.isConnected) { window.removeEventListener("blave:theme", onTheme); return; } trDrawCurve(canvas, series, isPnl); };
@@ -4719,7 +4721,7 @@ function trOvCurve(z) {
     tipD.textContent = trStamp(p.t); tipV.textContent = trWithUnit(trFmt2(p.v, isPnl));
     // 權益模式第三行:相對「同一個 basis 段」的起點(跨過斷點相減等於把入金算成獲利;沒有斷點時就是區間起點)
     let s = bi; while (s > 0 && series[s - 1].b === p.b) s--;
-    tipS.hidden = isPnl; tipS.textContent = isPnl ? "" : trWithUnit(trFmt2(p.v - series[s].v, true)) + " " + t(s > 0 || flow ? "tr.ov.vsSeg" : "tr.ov.vsStart");   // 有斷點:字也說是「這一段」
+    tipS.hidden = isPnl; tipS.textContent = isPnl ? "" : trWithUnit(trFmt2(p.v - series[s].v, true)) + " " + t(flow ? "tr.ov.vsSeg" : s > 0 ? "tr.ov.vsBasis" : "tr.ov.vsStart");   // 資金異動 / 這台電腦口徑換過 / 沒斷點
     const right = g.W - g.padR;
     tip.style.maxWidth = (right - g.padL) + "px";   // 卡不得比繪圖區寬(288 欄:貼 padL 後右緣仍會探進右軸欄)
     tip.hidden = false;   // 先顯示才量得到寬

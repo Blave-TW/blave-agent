@@ -2190,13 +2190,22 @@ msgid "tr.ov.basisNote"
 msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"
 
 msgid "tr.ov.flowNote"
-msgstr "偵測到資金異動（出入金或綁定、解除一個交易所）；權益曲線只畫最後一段，累積損益已扣掉資金異動的金額。"
+msgstr "曲線從最近一次資金異動畫起；累積損益不含異動金額。"
+
+msgid "tr.ov.flowTip"
+msgstr "資金異動：出入金，或綁定、解除一個交易所。"
+
+msgid "tr.ov.flowWait"
+msgstr "最近一次資金異動之後的紀錄還不夠畫曲線，要兩筆。"
 
 msgid "tr.ov.vsStart"
 msgstr "相對區間起點"
 
 msgid "tr.ov.vsSeg"
-msgstr "相對這一段起點（資金異動後）"
+msgstr "相對資金異動後起點"
+
+msgid "tr.ov.vsBasis"
+msgstr "相對這一段起點"
 
 msgid "tr.ov.curveUnreach"
 msgstr "現在讀不到雲端的權益紀錄，稍後會再試；這不代表沒有紀錄。"

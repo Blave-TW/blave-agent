@@ -1731,18 +1731,18 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("雲端:資金異動之後只畫最後一段(讀屏 label 3 筆、從 2010.00 起)與當日損益格(+12.50、+1.25%),資金異動那一句在圖下、不講口徑那一句",
         !!cv && cv.attrs.role === "img" && /"n":3/.test(cv.attrs["aria-label"]) && /"a":"2,?010\.00 USDT"/.test(cv.attrs["aria-label"]) && /^tr\.ov\.curveAria\|/.test(cv.attrs["aria-label"])
         && !!day && day.textContent.startsWith("+12.50") && day.className.includes("pos") && cls(all, "sub").some((n) => n.textContent === "+1.25%")
-        && foots(all).includes("tr.ov.flowNote") && !foots(all).includes("tr.ov.basisNote") && states(all).length === 0); }
+        && foots(all).includes("tr.ov.flowNotetr.ov.flowTip") && !foots(all).includes("tr.ov.basisNote") && states(all).length === 0); }
     { const flat1 = CLOUD.curve.map((p) => ({ ...p, basis: "flow1" }));
       const one = canvasOf(paint(bag("cloud", { curve: { ...CLOUD, anomalies: [] , curve: CLOUD.curve.map((p) => ({ ...p, basis: "flow0" })) } })));
       const before = paint(bag("cloud", { curve: { ...CLOUD, curve: flat1 } }));
       ok("雲端:沒有資金異動 / 異動在所選區間之前(區間內只有一段)→ 照舊全畫 5 筆、不出資金異動那一句",
-        !!one && /"n":5/.test(one.attrs["aria-label"]) && !!canvasOf(before) && /"n":5/.test(canvasOf(before).attrs["aria-label"]) && !foots(before).includes("tr.ov.flowNote"));
+        !!one && /"n":5/.test(one.attrs["aria-label"]) && !!canvasOf(before) && /"n":5/.test(canvasOf(before).attrs["aria-label"]) && !foots(before).some((x) => x.startsWith("tr.ov.flowNote")));
       const fresh = paint(bag("cloud", { curve: { ...CLOUD, curve: CLOUD.curve.slice(0, 2).concat([{ ts: now - H, equity: 146.74, basis: "flow1" }]), anomalies: [{ ts: now - H, note: "venue_change" }] } }));
-      ok("雲端:剛換綁、最後一段只有一筆 → 不畫前一段,印「紀錄還不夠」並講資金異動那一句", !canvasOf(fresh) && states(fresh).join() === "tr.ov.emptyBaseline" && foots(fresh).includes("tr.ov.flowNote")); }
+      ok("雲端:剛換綁、最後一段只有一筆 → 不畫前一段,只出一行 flowWait(tooltip 講什麼算資金異動),不疊 emptyBaseline 與圖下那句", !canvasOf(fresh) && states(fresh).join() === "tr.ov.flowWaittr.ov.flowTip" && foots(fresh).length === 0); }
     { const all = paint(bag("cloud", { curve: CLOUD, mode: "pnl" })), cv = canvasOf(all);
       ok("雲端:累積損益只從資金異動之後那一段起算(3 筆,不把入金算成獲利);損益 mode 不出資金異動那一句", !!cv && /^tr\.ov\.curveAriaPnl\|/.test(cv.attrs["aria-label"]) && /"n":3/.test(cv.attrs["aria-label"]) && /"a":"0\.00 USDT"/.test(cv.attrs["aria-label"]) && foots(all).length === 0); }
     { const all = paint(bag("local", { curve: LOCAL })), cv = canvasOf(all), day = dayCell(all);
-      ok("這台電腦不變:同一條路畫,口徑換過那一句照舊(不是資金異動)、當日損益照算", !!cv && /"n":5/.test(cv.attrs["aria-label"]) && !!day && day.textContent.startsWith("+12.50") && foots(all).includes("tr.ov.basisNote") && !foots(all).includes("tr.ov.flowNote")); }
+      ok("這台電腦不變:同一條路畫,口徑換過那一句照舊(不是資金異動)、當日損益照算", !!cv && /"n":5/.test(cv.attrs["aria-label"]) && !!day && day.textContent.startsWith("+12.50") && foots(all).includes("tr.ov.basisNote") && !foots(all).some((x) => x.startsWith("tr.ov.flowNote"))); }
     { // 設計稽核 desktop-10-08 #1:TWD 帳戶(統一)總權益與當日損益整數、負值 U+2212(同資產分頁的淨值 trTwd);USDT 照舊兩位
       const TWD = { venues: { president: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { president: { ok: true, equity: 12145031.5, currency: "TWD" } } } };
       const twd = (pnl) => { const bg = bag("local", { curve: { ...LOCAL, currency: "TWD", today: { pnl, start_equity: 12141581.5 } } }); bg.st = { report: TWD }; const all = paint(bg), c = cls(all, "stat"); return { eq: cls(flat(c[0]), "sv")[0], day: cls(flat(c[1]), "sv")[0] }; };
@@ -1802,8 +1802,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /box\.appendChild\(trOvStats\(\)\);\n\s*box\.appendChild\(trOvPerf\(\)\);[^\n]*\n\s*box\.appendChild\(trOvCurve\(z\)\);\n\s*box\.appendChild\(trOvEvents\(r, z\)\);/.test(cutF("trPaintOver")) && /TR\.ov\.curveErr,/.test(cutF("trPaintOver")));
     { const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
       const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
-      ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句講權益曲線只畫最後一段、累積損益扣掉異動金額(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
-        && /資金異動/.test(get("zh", "tr.ov.flowNote")) && /最後一段/.test(get("zh", "tr.ov.flowNote")) && /扣掉資金異動的金額/.test(get("zh", "tr.ov.flowNote")) && /Funds moved/.test(get("en", "tr.ov.flowNote")) && /last part/.test(get("en", "tr.ov.flowNote")) && /leaves out the amount moved/.test(get("en", "tr.ov.flowNote"))); }
+      ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句(設計師 0.1.28 #3 定稿,網頁逐字同)、tooltip、flowWait、vsBasis 不提資金異動(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
+        && get("zh", "tr.ov.flowNote") === "曲線從最近一次資金異動畫起；累積損益不含異動金額。" && get("en", "tr.ov.flowNote") === "The curve starts at the latest funds movement; cumulative PnL excludes the amount moved."
+        && /出入金/.test(get("zh", "tr.ov.flowTip")) && /deposit/.test(get("en", "tr.ov.flowTip")) && /要兩筆/.test(get("zh", "tr.ov.flowWait")) && /takes two/.test(get("en", "tr.ov.flowWait"))
+        && !/資金異動/.test(get("zh", "tr.ov.vsBasis")) && !/funds/.test(get("en", "tr.ov.vsBasis")) && /資金異動/.test(get("zh", "tr.ov.vsSeg"))); }
+    ok("hover 第三行:資金異動用 vsSeg、這台電腦口徑換過用 vsBasis(不寫資金異動)、沒斷點用 vsStart", /t\(flow \? "tr\.ov\.vsSeg" : s > 0 \? "tr\.ov\.vsBasis" : "tr\.ov\.vsStart"\)/.test(cutF("trOvCurve")));
     ok("登出:curve 與 curveErr、perf 與 perfErr 一起清", /C\.ov\.curve = null; C\.ov\.ui = \[\]; C\.ov\.uiErr = false; C\.ov\.curveErr = false; C\.ov\.perf = null; C\.ov\.perfErr = false;/.test(src) && /curve: null, curveErr: false, perf: null, perfErr: false,/.test(src));
     { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
       const block = (n) => S.split(`  ${n}: {`)[1].split("\n  },")[0], keysOf = (b) => new Set([...b.matchAll(/^\s*"([^"]+)":/gm)].map((m) => m[1]));
