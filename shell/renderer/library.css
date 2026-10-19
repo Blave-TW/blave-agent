@@ -8,15 +8,9 @@
 .lib-head-list[hidden] { display: none; }
 .lib-desc { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); min-height: 18px; }
 .lib-tools { display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; margin-top: var(--space-12); }
-/* Outlined control segment(.cn-lang 同配方;匯出檔案切換、歡迎頁資料清單、找點子框共用) */
-.lib-seg { display: inline-flex; border: 1px solid var(--border-frame); border-radius: var(--radius-xs); }
-.lib-seg button { position: relative; height: 30px; padding: 0 var(--space-12); font-size: 12px; color: var(--ink-3); white-space: nowrap; transition: color var(--motion-fast) var(--ease-standard); }
+/* segment(配方在 app.css;匯出檔案切換、歡迎頁資料清單、找點子框共用) */
+.lib-seg button { height: 30px; padding: 0 var(--space-12); font-size: 12px; }
 .lib-seg button::before { content: ""; position: absolute; inset: -7px 0; }
-.lib-seg button + button { border-left: 1px solid var(--border-frame); }
-.lib-seg button:hover { color: var(--ink); }
-.lib-seg button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; }
-.lib-seg button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
-.lib-seg button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .lib-seg button:focus-visible { outline-offset: -2px; }
 /* 市場選單(同網頁 .lib-mkt-*):觸發器 = Outlined control(框與高同 .lib-seg)＋箭頭 .ct-cv;面板借換合約選單的 .ct-menu / .ct-mi,改掛觸發器下 */
 .lib-mkt { position: relative; }

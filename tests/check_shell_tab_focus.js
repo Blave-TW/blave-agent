@@ -3,7 +3,7 @@
  *   2. trade.css 沒有 .main-tab:focus-visible { outline-offset: -2px };ring 走全域的 2px + offset 2 + radius xs
  *   3. 1024 寬那一階的 .main-tabs 內距還留著底下 1px(hairline 的位子)
  *   4. 捲動捷徑(.tabs-more)與報告分頁同一套接線(app.js tabsMoreWire)
- *   5. .mp-seg(effort 軌格子)改軌不裁切 + ring 外擴 + 聚焦浮上一層(§2.4 必修)
+ *   5. .mp-seg(effort 軌格子)軌不裁切 + ring 外擴 + 聚焦浮上一層(§2.4 必修);圓角走共用 segment 配方
  * 跑法:node tests/check_shell_tab_focus.js
  */
 const fs = require("fs"), path = require("path");
@@ -47,8 +47,8 @@ ok("trade.js 的分頁接線不用改:點 / 鍵盤仍掛在 #tr-tabs(事件冒�
 { const rail = rule(css, ".mp-rail"), seg = rule(css, ".mp-seg:focus-visible");
   ok(".mp-rail 不再裁切(格子內距只有 4,往內畫會碰字;軌最窄 236 放不下 8)", !!rail && !/overflow: hidden/.test(rail), rail);
   ok(".mp-seg:focus-visible 不往內畫,聚焦時 position relative + z-index 1(不被鄰格分隔線蓋住)", !!seg && !/outline-offset/.test(seg) && /position: relative; z-index: 1/.test(seg), seg);
-  ok("中間格聚焦時 border-radius 0(不吃全域 radius-xs,選中格填色才不露軌道底)", /\.mp-seg:focus-visible:not\(:first-child\):not\(:last-child\) \{ border-radius: 0; \}/.test(css));
-  ok("圓角改由首末格自己畫(同 .cn-lang)", /\.mp-seg:first-child \{ border-radius: calc\(var\(--radius-xs\) - 1px\) 0 0 calc\(var\(--radius-xs\) - 1px\); \}/.test(css)
-    && /\.mp-seg:last-child \{ border-radius: 0 calc\(var\(--radius-xs\) - 1px\) calc\(var\(--radius-xs\) - 1px\) 0; \}/.test(css)); }
+  // 0.1.28 換灰軌配方:每格自己是 radius sm,由共用配方的 `:is(...) > button`(比全域 ring 的 :where 具體)給,聚焦時不會被收成 xs
+  ok("格子圓角吃共用 segment 配方的 sm(.mp-rail 在清單裡),不再有首末格／中間格的圓角補丁", /:is\([^)]*\.mp-rail[^)]*\) > button \{[^}]*border-radius: var\(--radius-sm\)/.test(css)
+    && !/\.mp-seg:(first|last)-child|\.mp-seg:focus-visible:not/.test(css)); }
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -103,31 +103,14 @@
 }
 .rob-heat-head .rob-heat-label { display: block; margin: 0; }
 .rob-heat-label .mono { color: var(--ink-2); }
-/* Segment 切換(Outlined control 的並排版):active 一律灰階填色 + 加粗,不用橘;高頻切換,不加動畫 */
-.rob-seg {
-  display: inline-flex;
-  border: 1px solid var(--border-frame);
-  border-radius: var(--radius-xs);
-  overflow: hidden;
-}
+/* Segment 切換(配方在 app.css):高頻切換,不加動畫 */
 .rob-seg button {
   appearance: none;
-  background: none;
-  border: none;
   height: 28px;
   padding: 0 var(--space-12);
   font-size: 12px;
   font-weight: 400;
-  color: var(--ink-3);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.rob-seg button + button { border-left: 1px solid var(--border-frame); }
-.rob-seg button:hover { color: var(--ink); }
-.rob-seg button[aria-pressed="true"] {
-  background: var(--surface-segment-on);
-  color: var(--ink);
-  font-weight: 600;
+  transition: none;
 }
 .rob-seg button:focus-visible { outline-offset: -2px; }
 /* frame 同 .bt-frame(內距 16、hairline、radius lg),多一個橫捲:欄數 >7 的掃描靠它捲,不縮字 */

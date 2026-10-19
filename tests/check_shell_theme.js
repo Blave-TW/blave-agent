@@ -4,6 +4,7 @@
 //   ③ 首繪:index.html 沒有寫死 data-theme、theme-boot.js 是 <head> 第一支 script、在所有樣式表之前;列印頁不載它(PDF 永遠淺色)
 //   ④ 主行程:ui-prefs theme 只認三個值、開窗前設 themeSource、開窗底色跟主題且鏡射 tokens.css、系統一換就改底色;IPC 兩支
 //   ⑤ 設定 › 一般第一列是外觀 segment(三格順序固定)、字串兩語都有、改值才送 theme_* 、顯示淺色才送 theme_light_seen
+//   ⑥ 全 app 的 segment 共用一份灰軌配方(app.css):每個畫 --surface-segment-on 選中格的控件都在配方清單裡,沒有誰還畫外框或格間分隔
 // 跑法:node tests/check_shell_theme.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
@@ -100,6 +101,21 @@ ok("⑤ 改值才送 theme_*(主行程回的值 = 要的值、而且真的變了
 ok("⑤ 圖表跟著換:K 線 / 交易地圖就地改色,回測 / 樣本外 / 策略組合 / 總覽曲線重畫,策略庫與歡迎頁小曲線改色",
   ["report-trades.js", "report-backtest.js", "report-wf.js", "portfolio.js", "trade.js", "library.js", "welcome.js"].every((f) => /addEventListener\("blave:theme"/.test(read(path.join(R, f))))
   && /const retheme = function \(\)/.test(read(path.join(R, "report-trades.js"))));
+
+// ── ⑥ segment 一種長相 ──
+const segCss = Object.fromEntries(fs.readdirSync(R).filter((n) => n.endsWith(".css") && n !== "tokens.css").map((n) => [n, read(path.join(R, n))]));
+const railM = segCss["app.css"].match(/:is\(([^)]+)\) \{\s*display: inline-flex; padding: var\(--space-2\); border-radius: var\(--radius-md\); background: var\(--surface-muted\);/);
+const rails = railM ? railM[1].split(",").map((x) => x.trim().slice(1)) : [];
+ok("⑥ 共用配方:灰軌 + 格 sm + 選中 segment-on／ink 600／shadow-sm(pressed 與 checked 都認)", rails.length >= 10
+  && /> button:is\(\[aria-pressed="true"\], \[aria-checked="true"\]\) \{\s*background: var\(--surface-segment-on\); color: var\(--ink\); font-weight: 600; box-shadow: var\(--shadow-sm\);/.test(segCss["app.css"]), rails.join());
+const owners = [];
+for (const [f, c] of Object.entries(segCss)) for (const m of c.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{[^}]*background: var\(--surface-segment-on\)/g))
+  for (const sel of m[1].split(",")) { const cls = (sel.trim().match(/^(?:html\[[^\]]+\] )?\.([\w-]+)/) || [])[1]; if (cls) owners.push([f, cls]); }
+const CELLS = ["mp-seg"];   // 格子自己帶 class 的(在 .mp-rail 裡)
+const offList = owners.filter(([, c]) => !rails.includes(c) && !CELLS.includes(c));
+ok("⑥ 每個畫選中格的控件都在配方清單裡(列舉所有 css)", owners.length > 0 && offList.length === 0, offList.map((x) => x.join(":")).join(" "));
+const outlined = rails.filter((r) => Object.values(segCss).map((c) => c.replace(/\/\*[\s\S]*?\*\//g, "")).some((c) => new RegExp("\\." + r + " button \\+ button|\\." + r + "[^{]*\\{[^}]*border: 1px solid var\\(--border-frame\\)").test(c)));
+ok("⑥ 沒有 segment 還畫外框或格間分隔", outlined.length === 0, outlined.join());
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);

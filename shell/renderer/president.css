@@ -19,14 +19,9 @@
 .pres-big { margin-top: var(--space-12); }
 .pres-big .l { font-size: 12px; color: var(--ink-3); }
 .pres-big .v { font-size: 24px; line-height: 1.3; color: var(--ink); font-variant-numeric: tabular-nums; }
-/* 找不到憑證那一頁的「申請新憑證／已經有憑證」:兩顆並列的 Outlined control segment(同 .lib-seg 配方;高度與字級照 .btn-out,這是分路不是篩選) */
-.pres-seg { display: inline-flex; margin-top: var(--space-12); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); }
-.pres-seg button { position: relative; height: 32px; padding: 0 var(--space-12); font-size: 13px; font-weight: 500; color: var(--ink-3); white-space: nowrap; transition: color var(--motion-fast) var(--ease-standard); }
+/* 找不到憑證那一頁的「申請新憑證／已經有憑證」:兩顆並列的 segment(配方在 app.css;高度與字級照 .btn-out,這是分路不是篩選) */
+.pres-seg { margin-top: var(--space-12); }
+.pres-seg button { position: relative; height: 32px; padding: 0 var(--space-12); font-size: 13px; font-weight: 500; }
 .pres-seg button::before { content: ""; position: absolute; inset: -6px 0; }   /* 熱區 32→44,同 .lib-seg */
-.pres-seg button + button { border-left: 1px solid var(--border-frame); }
-.pres-seg button:hover { color: var(--ink); }
-.pres-seg button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); font-weight: 600; }
-.pres-seg button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
-.pres-seg button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .pres-seg button:focus-visible { outline-offset: -2px; }
 .pres-seg + .cx-hint { margin-top: var(--space-12); }
