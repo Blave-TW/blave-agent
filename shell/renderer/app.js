@@ -439,7 +439,7 @@ function setCat(cat) {
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "rules") rulesOpen(); else rulesClear();   // Agent 規則(renderer/rules.js):離開這一類就丟掉沒存的編輯
   if (cat === "display") aboutIdLoad();
-  if (cat === "display" && typeof awakeLoad === "function") awakeLoad();   // 設定 › 一般的防睡開關
+  if (cat === "display" && typeof awakeLoad === "function") { themeLoad(); awakeLoad(); }   // 設定 › 一般的外觀與防睡開關
   if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
@@ -951,6 +951,35 @@ $("set-awake-sw").addEventListener("click", async () => {
   if (AWAKE && !r) trackFeature("awake_off");
   AWAKE = r; awakePaint(); srSay($("set-awake-lead").textContent);
 });
+/* 設定 › 一般 › 外觀:主行程存 ui-prefs、改 nativeTheme.themeSource;明暗本身由 theme-boot.js 跟著 prefers-color-scheme 換 */
+const THEME_FEATURE = { system: "theme_system", light: "theme_light", dark: "theme_dark" };
+var THEME = "system";
+function themePaint() {
+  $("set-theme").querySelectorAll("button").forEach((b) => {
+    const on = b.dataset.themeV === THEME;
+    b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+  });
+}
+// 讀不到:當跟隨系統
+async function themeLoad() { try { const v = await window.blave.theme(); if (THEME_FEATURE[v]) THEME = v; } catch (_) { THEME = "system"; } themePaint(); }
+async function themePick(v) {
+  if (!THEME_FEATURE[v] || v === THEME) return;
+  let r = null;
+  try { r = await window.blave.themeSet(v); } catch (_) { r = null; }
+  if (r !== v) return;   // 沒存成:畫面維持原狀
+  THEME = v; themePaint(); trackFeature(THEME_FEATURE[v]);
+}
+$("set-theme").addEventListener("click", (e) => { const b = e.target.closest("button[data-theme-v]"); if (b) themePick(b.dataset.themeV); });
+$("set-theme").addEventListener("keydown", (e) => {   // radiogroup 的鍵盤慣例(同 #cn-lang):左右鍵換格並套用
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const bs = [...$("set-theme").querySelectorAll("button")], i = bs.findIndex((b) => b.dataset.themeV === THEME) + (e.key === "ArrowRight" ? 1 : -1);
+  if (i < 0 || i >= bs.length) return;
+  themePick(bs[i].dataset.themeV).then(() => bs[i].focus());
+});
+// 實際顯示成淺色才送(預設跟隨系統,多數人不會去改設定);主行程每安裝每日只送一次
+function themeShown() { if (document.documentElement.getAttribute("data-theme") === "light") trackFeature("theme_light_seen"); }
+window.addEventListener("blave:theme", themeShown);
 $("set-terms").addEventListener("click", () => window.blave.openExternal(legalUrl("terms_of_service")));   // 服務條款:跟版本資訊同一塊(設定 › 一般 › 關於)
 $("set-privacy").addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
 $("btn-send").addEventListener("click", () => (running ? stopTurn() : sendDraft()));
@@ -4230,6 +4259,7 @@ function applyStatic() {
   applyStatic();
   hasToken = await window.blave.hasBlaveToken();
   awakeLoad();                     // 防睡開關:啟動確認框要同步讀到它
+  themeLoad(); themeShown();
   hoInit();                        // 「送上雲端 / 拉回」的功能開關(renderer/handoff.js;預設關 = 兩顆鈕都不畫)
   pubLoad().then(() => { acctPaintAcct(); cnFreePaint(); });   // 連結畫面尾註那句要的天數、綁卡前額度的數字;拿不到就不出
   const prev = await window.blave.loadConnection();

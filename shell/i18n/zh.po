@@ -772,6 +772,18 @@ msgstr "一般"
 msgid "set.cat.model"
 msgstr "模型接入"
 
+msgid "set.theme"
+msgstr "外觀"
+
+msgid "set.theme.system"
+msgstr "跟隨系統"
+
+msgid "set.theme.light"
+msgstr "淺色"
+
+msgid "set.theme.dark"
+msgstr "深色"
+
 msgid "set.lang"
 msgstr "語言"
 

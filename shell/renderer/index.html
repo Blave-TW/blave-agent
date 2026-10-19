@@ -1,9 +1,11 @@
 <!doctype html>
-<html lang="en" data-theme="dark"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <!-- CSP:這個畫面會渲染 LLM 產生的文字,而且能觸發「啟動雲端方案」(花錢)。程式只從本機檔案載,
      不准 inline script / eval / 任何外連;圖是主行程給的 data: URI;inline style 屬性有一處(拖曳區) -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Blave</title>
+<!-- 主題:比所有樣式表早、同步跑,第一幀就是對的明暗 -->
+<script src="theme-boot.js"></script>
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="suggest.css">
@@ -461,6 +463,15 @@
       </nav>
       <div class="set-content">
         <div class="set-pane" data-set-cat="display">
+          <!-- 外觀:跟隨系統／淺色／深色,按下即換(ui-prefs theme,缺 = 跟隨系統;只管這台電腦)。選中格由 app.js 的 themePaint 畫 -->
+          <div class="set-row">
+            <span class="set-gl" id="set-theme-l" data-i18n="set.theme"></span>
+            <div class="cn-lang set-seg" id="set-theme" role="radiogroup" aria-labelledby="set-theme-l">
+              <button type="button" role="radio" data-theme-v="system" data-i18n="set.theme.system"></button>
+              <button type="button" role="radio" data-theme-v="light" data-i18n="set.theme.light"></button>
+              <button type="button" role="radio" data-theme-v="dark" data-i18n="set.theme.dark"></button>
+            </div>
+          </div>
           <div class="set-row">
             <label class="set-gl" for="set-lang" data-i18n="set.lang"></label>
             <span class="set-selw">

@@ -194,7 +194,10 @@ const EVENTS = {
     // po_add_saved = 從那顆進來的草稿存成功(trSaveAmounts);po_save_orders = 存金額框按的是「儲存並下單」且存成功。不帶策略名與金額
     "po_add", "po_add_go", "po_add_saved", "po_save_orders",
     // 防睡(spec desktop-keep-awake):awake_cloud_go = 啟動確認框細節裡「改用雲端主機」;awake_off = 設定 › 一般的防睡開關切成關
-    "awake_cloud_go", "awake_off"] },
+    "awake_cloud_go", "awake_off",
+    // 外觀(0.1.28;renderer/app.js):theme_system / _light / _dark = 設定 › 一般改了外觀、值真的變了;
+    // theme_light_seen = 畫面實際顯示成淺色(開 app 或當天切過去;每安裝每日一次,回答「多少人實際在用淺色」)
+    "theme_system", "theme_light", "theme_dark", "theme_light_seen"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

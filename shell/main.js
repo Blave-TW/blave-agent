@@ -1,7 +1,7 @@
 // Blave 電腦版 — Electron 主行程(v1 骨架)
 // 只做三件事:開視窗、偵測本機 agent(IPC)、記住使用者的連結選擇。
 // 引擎 spawn 在第 4 步接,不在這裡。
-const { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, Notification, dialog, nativeImage, powerSaveBlocker } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, Notification, dialog, nativeImage, powerSaveBlocker, nativeTheme } = require("electron");
 const http = require("http");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
@@ -2679,6 +2679,18 @@ function awakeApply(want, cur, pb) {
   if (!want && cur !== null) { pb.stop(cur); return null; }
   return cur;
 }
+/* 外觀(設定 › 一般):ui-prefs theme,缺或認不得 = system。themeSource 是全行程的,畫面靠 prefers-color-scheme 跟上
+   (renderer/theme-boot.js);開窗前就設好,第一幀的底色才對 */
+const THEMES = ["system", "light", "dark"];
+const themeGet = () => { try { const v = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).theme; return THEMES.includes(v) ? v : "system"; } catch (_) { return "system"; } };
+// Electron 讀不到 CSS 變數:鏡射 tokens.css 的 --bg-body(dark = --color-darkBody、light = --color-white),改那兩顆要改這裡
+const themeBg = () => (nativeTheme.shouldUseDarkColors ? "#0f161a" : "#eef1f4");
+function themeSet(v) {
+  if (!THEMES.includes(v)) return themeGet();
+  try { uiPrefsPatch({ theme: v }); } catch (_) { return themeGet(); }   // 寫不進去:照舊值,畫面不換
+  nativeTheme.themeSource = v;
+  return v;
+}
 let awakeBlocker = null, awakeStartAt = 0;
 const keepAwakeGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).keepAwake !== false; } catch (_) { return true; } };
 function keepAwakeSet(on) {
@@ -3058,10 +3070,8 @@ function createWindow() {
     titleBarStyle: "hiddenInset",
     // 燈的中心對到 52px 標題帶的中線(= 對話列中心 y=26);帶子長 8,中線只移 4,所以燈是 +4 不是 +8
     trafficLightPosition: { x: 12, y: 19 },
-    // Electron 讀不到 CSS 變數,所以這裡鏡射 `--color-darkBody`(tokens.css)。
-    // 改那顆就要改這裡。原本寫 #10151c —— H≈215,正是 canon › 色溫 點名要避開的
-    // Tailwind slate 地帶,開窗與 resize 的瞬間看得到。
-    backgroundColor: "#0f161a",
+    // 開窗與 resize 的瞬間看得到的底:跟主題走(themeBg)
+    backgroundColor: themeBg(),
     ...(HEADLESS ? { show: false, paintWhenInitiallyHidden: true } : {}),
     webPreferences: {
       ...(HEADLESS ? { backgroundThrottling: false } : {}),   // 看不見的視窗預設會被節流:計時器變慢、畫面停更,截到的是舊的
@@ -3080,6 +3090,8 @@ function createWindow() {
 
 app.whenReady().then(() => {
   quitOnSignals(process, () => app.quit());
+  nativeTheme.themeSource = themeGet();   // 要在 createWindow 之前
+  nativeTheme.on("updated", () => { const bg = themeBg(); for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.setBackgroundColor(bg); });
   startImageServer();
   // 上一次回合中途 crash 留下的 MCP 設定檔(裡面是一顆可能還沒過期的接入碼):開 app 就清。
   // 只有拿到單一實例鎖的那一份做(稽核 S1,同 :syncOfficialOnUpdate):第二份 app 在結束前也會走到這裡,
@@ -3355,6 +3367,8 @@ app.whenReady().then(() => {
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
   handle("keep-awake", () => keepAwakeGet(), true);
   handle("keep-awake-set", (_e, on) => keepAwakeSet(on === true), null);
+  handle("theme", () => themeGet(), "system");
+  handle("theme-set", (_e, v) => themeSet(v), null);
   handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
   handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);

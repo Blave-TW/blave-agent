@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("blave", {
   // 側欄偏好(renderer/stratflags.js):這台電腦的策略順序與旗標,存 userData 的 ui-prefs.json(主行程清洗);set 只動有帶的鍵,回清洗後的整份
   keepAwake: () => ipcRenderer.invoke("keep-awake"),
   keepAwakeSet: (on) => ipcRenderer.invoke("keep-awake-set", on === true),
+  theme: () => ipcRenderer.invoke("theme"),
+  themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
   stratPrefs: () => ipcRenderer.invoke("strat-prefs"),
   stratPrefsSet: (p) => ipcRenderer.invoke("strat-prefs-set", { stratOrder: p && p.stratOrder, stratFlags: p && p.stratFlags }),
   // 雲端那一袋的部位大小(renderer/portfolio.js):存 ui-prefs.json、主行程綁這次登入;換人讀回 null

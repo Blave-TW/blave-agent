@@ -766,6 +766,18 @@ msgstr "General"
 msgid "set.cat.model"
 msgstr "Model access"
 
+msgid "set.theme"
+msgstr "Appearance"
+
+msgid "set.theme.system"
+msgstr "System"
+
+msgid "set.theme.light"
+msgstr "Light"
+
+msgid "set.theme.dark"
+msgstr "Dark"
+
 msgid "set.lang"
 msgstr "Language"
 
