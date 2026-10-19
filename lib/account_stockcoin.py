@@ -8,10 +8,8 @@ a FUTURES-type key (account_type 3); any other type answers -1005.
 Read replies measured on a live key (tests/live_stockcoin_verify.py R1–R10);
 the equity formula with an open position is not measured yet (see get_equity).
 
-Measured: the venue authorizes on X-BH-APIKEY alone — a wrong secret (wrong
-HMAC) is accepted on reads, DELETE and POST alike, while a wrong key answers
--1002. So a bad secret is undetectable here and the key itself is the whole
-credential. Requests are still signed per the doc in case it starts checking.
+Measured: a wrong key answers -1002, a wrong secret -1022 (reads and order
+placement) — both CREDENTIAL below.
 
 Wallet model: a FUTURES key sees the futures account ONLY. Deposits land in the
 main account and must be moved to futures in the StockCoin app first; there is

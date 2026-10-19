@@ -213,6 +213,15 @@ v = Venue({})
 code, rep = run(v, answer="Y ")
 check(code == 1 and not v.posts(), "the prompt needs exactly y", code)
 
+# 6b: --symbols narrows the run; a symbol the venue does not list refuses before any order
+v = Venue({"SAMSUNG-PERP-USDT": "-1157"})
+code, rep = run(v, extra=("--symbols", "samsungusdt,XAUUSDT"))
+check(code == 0 and {r["symbol"] for r in rep["results"]} == {"SAMSUNGUSDT", "XAUUSDT"}
+      and ("NVDA-PERP-USDT", "BUY_OPEN") not in v.posts(), "--symbols orders only the named contracts", v.posts())
+v = Venue({})
+code, rep = run(v, extra=("--symbols", "XAUUSDT,NOPEUSDT"))
+check(code == 1 and not v.posts(), "--symbols with an unlisted symbol is refused before any order", code)
+
 # 7: --probe-all without --trade is refused
 v = Venue({})
 requests.request = v

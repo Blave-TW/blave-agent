@@ -13,11 +13,12 @@ place_limit_order (post-only dialect unknown, so chase / TWAP fall back to a
 market order with a Telegram notice), SL/TP (STOP orders unverified), spot (the
 venue has no spot API).
 
-UNVERIFIED AGAINST A LIVE ACCOUNT. Every venue fact below comes from the
-venue's own OpenAPI doc (CONTRACT_OPENAPI.md) or a PUBLIC endpoint read; the
-private-endpoint behaviour is not measured yet. venue-onboarding.md §3: this
-file does not ship until tests/live_stockcoin_verify.py has run against a real
-key and the "measured" notes replace the "doc says" ones.
+Measured on a live key (tests/live_stockcoin_verify.py --probe-all): a
+one-contract market open + close fills on 31 of the 36 listed contracts; the
+other five (BTC, ETH, XRP, SAMSUNG, SKHYNIX) answer -1157 "not available for
+api trading" and are refused with the symbol_unavailable token below. Which
+contracts are open is the venue's call, so it is read off the reply, not a
+list kept here. Not measured: STOP orders, limit / post-only.
 
 No broker attribution: StockCoin has no broker / referral id (Wei 2026-10-14),
 so no attribution field is sent.
@@ -37,8 +38,7 @@ StockCoin facts:
 - clientOrderId is mandatory; a reused one answers -1141 DUPLICATED_ORDER.
 - signature = HMAC-SHA256 over the alphabetically sorted query string followed
   directly (no separator) by the sorted form body; POST bodies are form-data.
-  Measured: the venue does not check it (a wrong secret is accepted, a wrong
-  key is -1002) — see lib/account_stockcoin.
+  Measured: a wrong secret answers -1022, a wrong key -1002.
 - errors are HTTP 400 + {"code": <negative>, "msg"} — an unauthorized key is
   400 / -1002, not 401.
 """
@@ -101,11 +101,13 @@ class StockcoinError(Exception):
         self.http_status = http_status
 
 
-# lib/reject_token kinds, from the venue doc §6.3. -1149 CREATE_ORDER_FAILED
-# ("check balance, position limits") is left unclassified until a live reply
-# shows which of the two it is.
+# lib/reject_token kinds, from the venue doc §6.3 and -1157 (not in the doc,
+# measured on every refused contract of the live probe). -1149
+# CREATE_ORDER_FAILED ("check balance, position limits") is left unclassified
+# until a live reply shows which of the two it is.
+API_CLOSED = "-1157"
 _REJECT_CODES = {"-1136": reject_token.BELOW_MIN_SIZE, "-1200": reject_token.BELOW_MIN_SIZE,
-                 "-1121": reject_token.SYMBOL_UNAVAILABLE}
+                 "-1121": reject_token.SYMBOL_UNAVAILABLE, API_CLOSED: reject_token.SYMBOL_UNAVAILABLE}
 
 
 class OrderNotConfirmed(Exception):
@@ -273,8 +275,14 @@ def _send(method, path, env, params=None, retries=3):
         code, msg = str(err[0]), err[1]
         if api_key in msg:
             msg = msg.replace(api_key, "***")
-        e = StockcoinError(f"stockcoin {path} code={code}: {msg}", code=code,
-                           http_status=r.status_code)
+        text = f"stockcoin {path} code={code}: {msg}"
+        if code == API_CLOSED:
+            # the reply is English and names no symbol; the notice and the
+            # order_errors row (200 chars) are read by the user
+            text = (f"StockCoin 不開放 {canonical_symbol(params.get('symbol'))} 用 API 下單，只能在 "
+                    f"StockCoin App 手動交易；請把策略換到別的交易所，或換成 StockCoin 開放 API 的商品"
+                    f"（{text}）")
+        e = StockcoinError(text, code=code, http_status=r.status_code)
         if code == TIMESTAMP_ERROR and not resynced and attempt < retries - 1:
             # refused at authentication — resending cannot double anything
             resynced = True
@@ -361,7 +369,7 @@ def get_contract_rules(env, symbol):
     _check_multiplier(vsym, mult, _ticker(vsym))
     rules = {
         "step": "1",
-        "min_qty": float(mult),        # one contract — to be confirmed live
+        "min_qty": float(mult),        # one contract (filled live)
         "min_notional": 0.0,
         "contract_value": float(mult),
     }
@@ -468,17 +476,24 @@ def _norm(symbol, o, mult):
     }
 
 
-def _commission(env, vsym, order_id, since_ms):
-    """Fees live on the trade rows, not the order. Best-effort: None when the
-    trades cannot be read (never a made-up 0)."""
-    try:
-        rows = _request("GET", "/futures/trades", env,
-                        {"symbol": vsym, "startTime": since_ms, "limit": 500})
-    except Exception:
-        return None
-    fees = [abs(float(t.get("fee") or 0)) for t in rows or []
-            if str(t.get("orderId")) == str(order_id)]
-    return sum(fees) if fees else None
+def _commission(env, vsym, order_id, since_ms, attempts=3):
+    """Fees live on the trade rows, not the order. They may land after the
+    order reads FILLED (the live probe's HYUNDAI close found none on its one
+    read), so a miss is re-read briefly. Best-effort: None when they still
+    cannot be read (never a made-up 0)."""
+    for i in range(attempts):
+        if i:
+            time.sleep(0.5 * i)
+        try:
+            rows = _request("GET", "/futures/trades", env,
+                            {"symbol": vsym, "startTime": since_ms, "limit": 500})
+        except Exception:
+            continue
+        fees = [abs(float(t.get("fee") or 0)) for t in rows or []
+                if str(t.get("orderId")) == str(order_id)]
+        if fees:
+            return sum(fees)
+    return None
 
 
 def get_order(env, symbol, order_id=None, client_order_id=None):
@@ -556,7 +571,8 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
 
 
 def close_position_partial(env, symbol, direction, qty, client_order_id=None):
-    """Reduce the `direction` leg by a BASE qty. Works under HALT."""
+    """Reduce the `direction` leg by a BASE qty. Under HALT only as the
+    user's explicit close (lib.guard halt close pass)."""
     return place_market_order(env, symbol, direction, qty,
                               client_order_id=client_order_id, reduce_only=True)
 

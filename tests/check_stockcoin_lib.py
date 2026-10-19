@@ -9,7 +9,10 @@ Asserts: the signature string is the doc's §2.2 example 2 byte for byte (query
 then body, no separator) and what is signed is what is sent; GET puts every
 param in the query, POST puts only timestamp there; HTTP 400 / -1002 is
 CREDENTIAL, -1003 TRANSIENT, -1021 resyncs and retries once; the four sides;
-HALT refuses BUY_OPEN before the transport and lets SELL_CLOSE through; base qty
+HALT refuses BUY_OPEN and a bare SELL_CLOSE before the transport, the user's
+explicit close (guard.halt_close_pass) lets SELL_CLOSE through; -1157 (contract
+not open for API trading) is symbol_unavailable with a Chinese reason naming the
+canonical symbol; trade rows that lag the fill are re-read for the fee; base qty
 → contracts (including float noise at whole contracts), below one contract is
 False / ValueError; a reduce is capped at the leg's available contracts; a
 cancelled-with-fill market order reports the fill; -1141 resolves to the
@@ -362,7 +365,7 @@ except ValueError:
 check(re.search(r"rc\d{12,}", order._cid()) is not None,
       "a generated client order id matches the orphan sweep's rc pattern")
 
-# HALT: entry refused before the transport, close passes
+# HALT freeze: entry and a bare close refused before the transport; the explicit close passes
 route("POST", "/futures/order", post_order)
 guard.trip_halt("test", "user")
 del CALLS[:]
@@ -372,9 +375,49 @@ try:
 except guard.Halted:
     check(not any(c["method"] == "POST" for c in CALLS), "HALT refuses BUY_OPEN before the transport")
 del CALLS[:]
-order.close_position_partial(ENV, "NVDAUSDT", "long", 0.0003)
-check(any(c["method"] == "POST" and c["body"]["side"] == "SELL_CLOSE" for c in CALLS), "HALT lets SELL_CLOSE through")
-os.remove(guard.HALT_PATH)
+try:
+    order.close_position_partial(ENV, "NVDAUSDT", "long", 0.0003)
+    check(False, "HALT refuses a bare SELL_CLOSE")
+except guard.Halted:
+    check(not any(c["method"] == "POST" for c in CALLS), "HALT refuses a bare SELL_CLOSE before the transport")
+del CALLS[:]
+with guard.halt_close_pass("NVDAUSDT", "test"):
+    order.close_position_partial(ENV, "NVDAUSDT", "long", 0.0003)
+check(any(c["method"] == "POST" and c["body"]["side"] == "SELL_CLOSE" for c in CALLS),
+      "HALT lets the user's explicit close (halt_close_pass) through")
+guard.clear_halt("test")
+
+# -1157: the contract is listed but not open for API trading (BTC in the live probe)
+route("POST", "/futures/order", lambda p: Resp({"code": -1157, "msg": "The trading pair is not available for api trading"}, 400))
+del CALLS[:]
+try:
+    order.place_market_order(ENV, "BTCUSDT", "long", 0.0001)
+    check(False, "-1157 raises")
+except order.StockcoinError as e:
+    msg = str(e)
+    check(e.code == "-1157" and msg.startswith("[order_reject:symbol_unavailable] ")
+          and "StockCoin 不開放 BTCUSDT 用 API 下單" in msg and "code=-1157" in msg[:200],
+          "-1157 is symbol_unavailable, says why in Chinese with the canonical symbol, code inside 200 chars", msg)
+    check(sum(c["method"] == "POST" for c in CALLS) == 1, "-1157 is not retried")
+route("POST", "/futures/order", post_order)
+
+# trade rows that lag the FILLED status (HYUNDAI close in the live probe) are re-read
+reads = []
+
+
+def lagging_trades(p):
+    reads.append(1)
+    return Resp([] if len(reads) == 1 else [{"orderId": "9001", "fee": "0.0001"}])
+
+
+route("GET", "/futures/trades", lagging_trades)
+res = order.place_market_order(ENV, "NVDAUSDT", "long", 0.0001)
+check(res["commission"] == 0.0001 and len(reads) == 2, "a fee row missing on the first read is read again", res)
+del reads[:]
+route("GET", "/futures/trades", lambda p: (reads.append(1), Resp([]))[1])
+res = order.place_market_order(ENV, "NVDAUSDT", "long", 0.0001)
+check(res["commission"] is None and len(reads) == 3, "no fee row after the re-reads → None, never 0", res)
+route("GET", "/futures/trades", lambda p: Resp([{"orderId": "9001", "fee": "0.05"}, {"orderId": "1", "fee": "9"}]))
 check(order._order_intent("POST", "/futures/order", {"side": "SELL_CLOSE", "orderType": "STOP"}) == "protective"
       and order._order_intent("POST", "/futures/order", {"side": "BUY_OPEN", "orderType": "STOP"}) == "entry"
       and order._order_intent("DELETE", "/futures/order", {}) == "cancel"

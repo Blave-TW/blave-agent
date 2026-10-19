@@ -8,6 +8,7 @@ YYYY-MM-DD>, and only run after Wei says so in the conversation.
     .venv/bin/python tests/live_stockcoin_verify.py --env /path/to/stockcoin.env
     .venv/bin/python tests/live_stockcoin_verify.py --env ... --trade --confirm 2026-10-16 [--only T1,T2]
     .venv/bin/python tests/live_stockcoin_verify.py --env ... --trade --confirm 2026-10-16 --probe-all [--only R2]
+        [--symbols BTCUSDT,HYUNDAIUSDT]
 
 The env file holds STOCKCOIN_API_KEY / STOCKCOIN_SECRET_KEY (FUTURES key, withdrawal
 off) and must be mode 0600. Runs in a scratch directory (guard's state/ and audit
@@ -22,10 +23,10 @@ READ steps (no money moves)
   R5  open LIMIT + STOP orders, last orders (accountId field), last trades
   R6  get_account_id
   R7  multiplier cross-check + USDT notional of one contract, every listed contract (public)
-  R8  bad-secret and bad-key replies: code, HTTP status, classify() (a bad secret is accepted)
+  R8  bad-secret and bad-key replies: code, HTTP status, classify() (a bad secret is -1022)
   R9  DELETE of a nonexistent order: proves the DELETE signature before cancel_order is trusted
   R10 (--noop-write) set BTC leverage to its current value: proves the form-body POST
-      path before any order is sent (not the signature — the venue checks none)
+      path before any order is sent
 ORDER steps (each one contract, ≈$0.02–$8; everything is closed at the end)
   T1  BTC: open 1 contract long through place_market_order → raw reply
       (contractMultiplier, status of a market order, avgPrice), fee from trades
@@ -43,6 +44,7 @@ PROBE (--probe-all, replaces T1–T6; R steps still run, narrow them with --only
       is recorded and the next contract tried; a global error (key, signature,
       clock, rate limit, balance wording, unreadable state, a non-venue exception) stops
   CLEANUP  closes any leg it opened, then reads every contract: no leg, no open order
+  --symbols narrows P1 to those canonical symbols; one not listed refuses before any order.
   Writes a table to the console and JSON (--out, default the scratch dir).
 If a contract's real multiplier is not the table's, place_market_order raises AFTER the
 fill (contractMultiplier mismatch — fail-loud by design); CLEANUP still closes that leg.
@@ -116,6 +118,7 @@ def main():
     ap.add_argument("--noop-write", action="store_true")
     ap.add_argument("--probe-all", action="store_true")
     ap.add_argument("--out", default="")
+    ap.add_argument("--symbols", default="")
     a = ap.parse_args()
     env = load_env(os.path.abspath(a.env))
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -123,6 +126,9 @@ def main():
         sys.exit(f"--trade needs --confirm {today} (today, UTC) — and Wei's go-ahead in the conversation")
     if a.probe_all and not a.trade:
         sys.exit(f"--probe-all places orders: it needs --trade --confirm {today}")
+    symbols = {s.strip().upper() for s in a.symbols.split(",") if s.strip()}
+    if symbols and not a.probe_all:
+        sys.exit("--symbols only narrows --probe-all")
     out_path = os.path.abspath(a.out) if a.out else ""
     only = {s.strip().upper() for s in a.only.split(",") if s.strip()}
     secrets = (env["STOCKCOIN_API_KEY"], env["STOCKCOIN_SECRET_KEY"])
@@ -234,7 +240,7 @@ def main():
         return [p for p in rows if float(p.get("position") or 0) != 0]
 
     if a.probe_all:
-        sys.exit(probe_all(env, order, acct, requests, say, legs, one, out_path))
+        sys.exit(probe_all(env, order, acct, requests, say, legs, one, out_path, symbols))
 
     try:
         if want("T1") or want("T2") or want("T3") or want("T4"):
@@ -322,7 +328,7 @@ def _is_global(e, order):
     return e.code in GLOBAL_CODES or any(w in str(e).lower() for w in GLOBAL_WORDS)
 
 
-def probe_all(env, order, acct, requests, say, legs, one, out_path):
+def probe_all(env, order, acct, requests, say, legs, one, out_path, symbols=frozenset()):
     """--probe-all. Returns the exit code: 0 clean, 1 refused before any order,
     2 not flat / open orders left at the end."""
     open_legs = legs()
@@ -333,6 +339,12 @@ def probe_all(env, order, acct, requests, say, legs, one, out_path):
         return 1
 
     rows = requests.get(f"https://{ALLOWED_HOST}/openapi/v1/getContracts", timeout=10).json()
+    if symbols:
+        rows = [r for r in rows if order.canonical_symbol(r["symbol"]) in symbols]
+        missing = symbols - {order.canonical_symbol(r["symbol"]) for r in rows}
+        if missing:
+            say("P0 REFUSED — not listed by getContracts", sorted(missing))
+            return 1
     plan, rates = [], {}
     for r in rows:
         vsym = r["symbol"]
