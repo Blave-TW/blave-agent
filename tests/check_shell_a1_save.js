@@ -227,6 +227,16 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("B5 …啟動在途(trCfFiring 為真)但還沒綁帳:不會", vm.runInContext("trCfFiring(TR.st, TR.pending)", ctx) === true && w("ec") === false);
     ok("B5 草稿列那一句走 trCfWillOrder(不是只看 trCfFiring)", /if \(trCfWillOrder\(n, .*?\)\) first\.appendChild\(trEl\("span", "pf-note live", t\("po\.willOrder"\)\)\)/.test(src)
       && !/trCfFiring\(TR\.st, TR\.pending\)\) first\.appendChild/.test(src)); }
+  // 0.1.28 美股純代號(設計師 desktop-0128-misc-review §1):不分交易所都不會自動下單——草稿列不出「存了就會下單」,框不列它的單
+  { const w = (n) => vm.runInContext(`trCfWillOrder(${J(n)}, trPvOf(trReport(), ${J(n)}), trContracts())`, ctx);
+    const US = { name: "us", displayName: "US", hasBacktest: true, symbol: "AMZN", market: "swap", srcMarket: "us_stock" };
+    bag(draft({ firing: true, list: [US, EC], pvs: { us: pvA("AMZN"), ec: pvA("ETHUSDT") } }));
+    ok("美股 trCfWillOrder:Binance 在跑——美股草稿(AMZN、us_stock)不會下單,加密草稿照會", w("us") === false && w("ec") === true);
+    bag(draft({ firing: true, paper: true, list: [US], pvs: { us: pvA("AMZN") } }));
+    ok("美股 …模擬交易也不會", w("us") === false);
+    bag({ firing: true, picked: ["btc", "tw", "us", "ec"], edits: { us: 300, ec: 300 }, list: [US, EC], noPv: true, pvs: { us: pvA("AMZN"), ec: pvA("ETHUSDT") } });
+    const f = open();
+    ok("美股 存金額框:AMZN 不列進會送單,ETHUSDT 照列", !f.rows.some((x) => /^tr\.cf\.(buy|sell)AMZN/.test(x)) && f.rows.some((x) => /^tr\.cf\.buyETHUSDT300/.test(x)), J(f)); }
   // B6／R1:已存的投資組合這一刻算不出(沒有 state.json、沒有預覽):對帳器只算有 state.json 的,它沒有貢獻,帳上的成分下一輪照樣賣——要列成賣單
   const PC = (u) => ({ name: "pc", displayName: "PC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: u });
   const eth = (S) => { S.st.report.account.venues.binance.positions.ETHUSDT = { side: "long", size: 300, mark_price: 3000 }; return S; };

@@ -714,6 +714,14 @@ function trSrcMarket(r, n) {
   const k = r && r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds[n] : null;
   return x.srcMarket || (k && k.market) || null;
 }
+/* 美股純代號(AMZN):沒有交易所尾碼、不是台指期／台股,貢獻的策略全是 us_stock。不分交易所(模擬交易也是)都不會自動下單——
+   lib/data._us_require_desktop 擋掉實盤 tick。sym 沒有(草稿還沒有標的)只看市場。標籤、帳上／差額、會送單共用這一條 */
+function trUsNoAuto(r, sym, names) {
+  if (!Array.isArray(names) || !names.length || !names.every((n) => trSrcMarket(r, n) === "us_stock")) return false;
+  if (sym == null || sym === "") return true;
+  const s = trCanonSym(String(sym).replace(/@spot$/i, ""));
+  return !trTxfSpec(s) && !TR_TWSTOCK_RE.test(s) && !trSuffixZone(s);
+}
 /* 帳戶幣那一區(§9.3 排序用):台灣期貨券商 → 口數區;加密所 → 帳戶幣那一區。
    OKX 回的帳戶幣是 USD(totalEq 以美元計)而交易對是 USDT:平台匯率表 USDT 與 USD 同為 1,USD 帳戶當 USDT 區。
    沒綁、帳戶幣未知 = null;加密帳戶的幣是 TWD(讀帳退路錯了)也 null——TWD 區是台股,不在這個帳戶上 */
@@ -1210,8 +1218,9 @@ function trCfSymsOf(n, s, contracts) {
    草稿列「存了就會下單」與存金額框的保守判斷(第一次讀帳前、預覽不是最新那根)共用這一條 */
 function trCfWillOrder(n, s, contracts) {
   if (!trCfFiring(TR.st, TR.pending) || !trHasAccount(trReport() || {})) return false;
-  const syms = trCfSymsOf(n, s, contracts), vk = trVenueKind(trVenueId());
-  return !syms || syms.some((k) => trTradesSym(vk, k));
+  const syms = trCfSymsOf(n, s, contracts), vk = trVenueKind(trVenueId()), r = trReport() || {};
+  if (!syms) return !trUsNoAuto(r, null, [n]);
+  return syms.some((k) => trTradesSym(vk, k) && !trUsNoAuto(r, k, [n]));
 }
 // 這台主機會回報所有回測過的策略的預覽嗎(runtime 1.1.134 起帶 backtest_previews):沒有 = 舊主機,草稿永遠等不到,不等
 function trPvHost(r) { return !!r && !!r.backtest_previews && typeof r.backtest_previews === "object" && !Array.isArray(r.backtest_previews); }
@@ -3233,11 +3242,15 @@ function trAmountTable(names, stored, states) {
       const tcl = isC && (tc || draftTc) ? trTypeCLabel(tc || draftTc, t, trTwName, x.universe) : null;
       const symText = isC ? (tcl ? tcl.text : "—") : txf ? t(txf.prod) : sym || "—";
       const symTip = isC && !tcl ? t("tr.typecPending") : tcl ? tcl.tip : "";
+      // 美股純代號(trUsNoAuto):A 型取代市場標籤,投資組合在「投資組合」後面再接一個
+      const usNo = isC ? trUsNoAuto(trReport(), null, [n]) && (!(tc || draftTc) || (tc || draftTc).keys.every((k) => trUsNoAuto(trReport(), k, [n])))
+        : !txf && trUsNoAuto(trReport(), sym || null, [n]);
       const row = document.createElement("tr");
       const first = trEl("td", "key");
       first.appendChild(trStratName(n));
       // 市場標籤:剛選進、還沒回報、清單也沒寫市場的不猜(不先標「合約」)
-      if (isC || market) first.appendChild(trEl("span", "mkt-tag", isC ? t("po.mktPortfolio") : t(trMktKey(sym, market === "spot", !!txf))));
+      if (isC || market) first.appendChild(trEl("span", "mkt-tag", isC ? t("po.mktPortfolio") : usNo ? t("tr.mkt.noAuto") : t(trMktKey(sym, market === "spot", !!txf))));
+      if (usNo && isC) first.appendChild(trEl("span", "mkt-tag", t("tr.mkt.noAuto")));
       // 草稿列(選擇策略框或策略頁「加到策略組合」勾進來、還沒存):標「未儲存」;存了會送單時下面再一句(spec F4)
       if (!(n in stored)) { first.appendChild(trEl("span", "mkt-tag unsaved", t("po.unsaved"))); if (trCfWillOrder(n, trPvOf(trReport(), n) || st, trContracts())) first.appendChild(trEl("span", "pf-note live", t("po.willOrder"))); }
       // 標的格:台指期列可以換合約(安靜觸發器,canon › Dropdown menu);換倉中掛小標。窄欄時同一份在策略名下那行
@@ -3541,7 +3554,7 @@ function trCfRows(o) {
        照列但標 closed、排最後,不算進「下一輪要送的 N 筆」 */
     const r0 = o.r || {}, twShut = !trTwSessionOpen(Date.now(), r0.tw_trading_day), twHeld = trTwClosedKeys(r0.last_reconcile);
     const twClosed = (sym) => TR_TWSTOCK_RE.test(trCanonSym(sym.replace(/@spot$/i, ""))) && (twShut || twHeld.has(sym));
-    const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && o.covered(k));
+    const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && o.covered(k) && !trUsNoAuto(o.r, k, by(k)));
     syms.forEach((sym) => {
       // 新成員算不出(沒預覽):下一輪 = 其他成員這次存的 + 被換掉的那段,照算。基準未寫／pending 時對帳器整檔不動(沒有 anchor),
       // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)
@@ -3967,7 +3980,8 @@ function poSigTable(r, stored, states, mode) {
   const showPlan = trade ? picked : true;
   const namesOf = {};
   Object.keys(stored).forEach((n) => { const s = st2[n]; if (!s || !s.symbol || s.weights) return; const sym = trCanonSym(trEffSym(n, s.symbol, trContracts())), k = sym + (s.market === "spot" || trTwCash(sym, trPaperOf(n)) ? "@spot" : ""); (namesOf[k] = namesOf[k] || []).push(n); });
-  const vid = trVenueId(), vk = trVenueKind(vid), covered = (sym) => recon && trTradesSym(vk, sym);
+  const usNo = (sym) => trUsNoAuto(r, sym, (contribs[sym] || []).map((c) => c.name));
+  const vid = trVenueId(), vk = trVenueKind(vid), covered = (sym) => recon && trTradesSym(vk, sym) && !usNo(sym);
   const hs = envHeadState(TR.st, Date.now()), running = hs === "running" || hs === "unconfirmed";
   const det = recon ? trPosDetail(r) : {}, detRows = [];   // 持倉細節(均價、未實現、保證金、槓桿):帳上不是 0 的列底下一行小字
   if (trade) {
@@ -3996,7 +4010,8 @@ function poSigTable(r, stored, states, mode) {
     const tw = sp ? null : trTwNameEl(sym); if (tw) c.appendChild(tw);
     // 這個標的只有剛選進、還沒回報、清單也沒寫市場的策略:不猜「合約」
     const guess = !/@spot$/.test(sym) && (namesOf[sym] || []).length > 0 && namesOf[sym].every((n) => st2[n] && st2[n].notYet === true && !st2[n].market);
-    if (!guess) c.appendChild(trEl("span", "mkt-tag", t(trMktKey(sym, false, !!sp)))); return c; };
+    if (!sp && usNo(sym)) c.appendChild(trEl("span", "mkt-tag", t("tr.mkt.noAuto")));
+    else if (!guess) c.appendChild(trEl("span", "mkt-tag", t(trMktKey(sym, false, !!sp)))); return c; };
   const dash = (tip) => { const c = trEl("td", "n na", "—"); if (tip) c.title = t("po.notTradedTip", { venue: venueName }); return c; };
   const pending = new Set(), rowOf = {};
   zones.forEach((z) => {
@@ -4048,7 +4063,7 @@ function poSigTable(r, stored, states, mode) {
       tc.title = [lt.raw !== null ? t("po.lotsRawTip", { n: trLotsTgtFmt(lt.raw) }) : "", m != null ? t("tr.lotsNotionalTip", { amt: trFmt(Math.round(m)) }) : ""].filter(Boolean).join("\n"); }
     row.append(sc, tc);
     if (trade) {
-      if (!covered(sym)) row.append(dash(true), dash(true));
+      if (!covered(sym)) { const tip = !usNo(sym); row.append(dash(tip), dash(tip)); }
       else if (firstRead) row.append(dash(false), dash(false));
       else if (notYet) { row.append(trEl("td", "n", numText(lot, mine[sym] || 0))); const dd = row.appendChild(trEl("td", "n na", "—")); dd.title = t("tr.sigNotYet"); }
       else {

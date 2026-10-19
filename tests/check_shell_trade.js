@@ -2081,6 +2081,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         const usMx = zt([{ name: "us_mx", hasBacktest: true, symbol: "AMZN", market: "swap" }], { strategy_kinds: { us_mx: { type: "A", market: "mixed" } } });
         ok("美股列 quote_ccy 沒值:strategy_kinds／雲端清單說 us_stock → USD(Type A、有成分的 Type C 都是);mixed 照舊幣別未定",
           [usA, usC, usCl].every((x) => x.ths.includes(amt("USD"))) && usMx.ths.includes(amt("tr.grpUnknown")), J([usA, usC, usCl, usMx]));
+        // 0.1.28 美股純代號的市場標籤(設計師 desktop-0128-misc-review §1):A 型取代「合約」,投資組合「投資組合」後面接
+        { const keyOf = (list, report, states, n) => { ctx.TR = bag("okx", {}, { list, picked: new Set(list.map((x) => x.name)) }); Object.assign(ctx.TR.st.report, { quote_ccy: {}, states: states || {} }, report || {});
+            const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
+            const k = all.filter((x) => x.tag === "td" && /(^| )key( |$)/.test(x.className || x.cls || "")); return k.length === 1 ? k[0].kids.filter((c) => /(^| )mkt-tag$/.test(c.className || c.cls || "")).map((c) => c.textContent) : null; };
+          const a = keyOf([{ name: "us_a", hasBacktest: true, symbol: "AMZN", market: "swap" }], { strategy_kinds: { us_a: { type: "A", market: "us_stock" } } }, null, "us_a");
+          const c = keyOf([C({ name: "us_c", twd: false, srcMarket: "us_stock" })], {}, { us_c: { weights: { AMZN: 0.5, GOOGL: 0.5 }, market: "spot" } }, "us_c");
+          const b = keyOf([{ name: "c_a", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }], { strategy_kinds: { c_a: { type: "A", market: "crypto" } } }, null, "c_a");
+          ok("配置列市場標籤:美股 A 型只出 tr.mkt.noAuto;美股投資組合 po.mktPortfolio 後接 tr.mkt.noAuto;加密照舊合約",
+            J(a) === J(["tr.mkt.noAuto"]) && J(c) === J(["po.mktPortfolio", "tr.mkt.noAuto"]) && J(b) === J(["tr.mkt.swap"]), J([a, c, b])); }
         const two = zt([C({ name: "c_new", twd: false }), { name: "btc", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }]);
         ok("兩區時未定區的區標題掛原因(title)", two.grp.some((g) => g[0] === "tr.grpUnknown" && g[1] === "tr.ccyAfterRun"), J(two)); }
       /* 查證報告 #1:群益台指期(雲端視角)——這一格是口數不是錢。對齊網頁 TXF_SPECS / txfRefMoney / paintTotal */
@@ -2361,6 +2370,16 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("trLotsTgtFmt:最多兩位、U+2212、帶號 / 不帶號、0 不帶號、不是數字 null", vm.runInContext("[trLotsTgtFmt(0.5, true), trLotsTgtFmt(-0.5, true), trLotsTgtFmt(2, true), trLotsTgtFmt(1.234), trLotsTgtFmt(0, true), trLotsTgtFmt(NaN)]", ctx).join("|") === "+0.5|−0.5|+2|1.23|0|"); }
     { const all = paintP(BTCREP), rows = rowsOf(all), btc = rows.find((x) => x[0].startsWith("BTCUSDT"));
       ok("units §9.2 加密列:單位看標的自己的計價(USDT 在欄頭),不看帳戶幣(這組的 trUnit 是 TWD)", !!btc && btc[1] === "+300" && btc[3] === "+200" && thsOf(all)[1] === "tr.colUnit|" + JSON.stringify({ label: "tr.col.target", unit: "USDT" }), J([rows, thsOf(all)])); }
+    // 0.1.28 美股純代號(設計師 desktop-0128-misc-review §1):標籤「不能自動下單」、帳上與差額「—」且不掛「{venue} 不交易」;mixed 照舊
+    { const us = (mk) => { const r = JSON.parse(J(BTCREP)); r.config.amounts.us = 100; r.states.us = { symbol: "AMZN", market: "swap", position: 1 };
+        r.strategy_kinds = { us: { type: "A", market: mk } }; const all = paintP(r);
+        const row = all.find((n) => n.tag === "tr" && n.kids.length === 4 && n.kids[0].tag === "td" && n.kids[0].textContent.startsWith("AMZN"));
+        return { row, btc: rowsOf(all).find((x) => x[0].startsWith("BTCUSDT")) }; };
+      const u = us("us_stock"), m = us("mixed"), cells = u.row ? u.row.kids.map((c) => c.textContent) : null;
+      ok("美股列:標籤 tr.mkt.noAuto(不出合約)、帳上與差額「—」沒有 title;同表 BTCUSDT 照常", !!cells && cells[0] === "AMZNtr.mkt.noAuto" && cells[2] === "—" && cells[3] === "—"
+        && !u.row.kids[2].title && !u.row.kids[3].title && !!u.btc && u.btc[3] === "+200", J([cells, u.btc]));
+      const mc = m.row ? m.row.kids.map((c) => c.textContent) : null;
+      ok("…策略市場是 mixed:照舊標合約、帳上寫 0(Binance 當有交易)", !!mc && mc[0] === "AMZNtr.mkt.swap" && mc[2] !== "—", J(mc)); }
     // 0.1.27 稽核 P2-3:休市中對帳器兩邊都不動的模擬盤台股鍵(last_reconcile.market_closed,同網頁 pfTwClosedKeys):差額灰、title 講休市;快照過舊不採用
     { const TWREP = { venues: { paper: V }, self_ledger: false, halt: { halted: false }, reconciler: { alive: true, heartbeat_at: now }, can_paper_twstock: true,
         account: { read_at: now - 60, venues: { paper: { ok: true, equity: 100000, positions: {} } } },
