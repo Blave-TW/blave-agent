@@ -300,8 +300,6 @@ def get_contract_rules(env, symbol):
                 "min_qty": float(r["tradeMinQuantity"]),
                 "min_notional": float(r.get("tradeMinUSDT", 2)),
                 "active": str(r.get("apiStateOpen", "")).lower() == "true",
-                # stock swaps are named NCSK<ticker>2USD-USDT
-                "equity": sym.startswith("NCSK"),
             }
     if symbol not in _rules_cache:
         raise BingXError("N/A", f"symbol {symbol} not found in /quote/contracts", "contracts", kind=reject_token.SYMBOL_UNAVAILABLE)

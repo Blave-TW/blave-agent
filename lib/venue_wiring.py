@@ -226,25 +226,25 @@ def _cid():
 # class of a symbol is what the strategy was backtested on. The same ticker can be a
 # coin there and a stock swap elsewhere (OKX BB/QNT/ON-USDT-SWAP, Bybit ONUSDT).
 _BINANCE_INFO = "https://fapi.binance.com/fapi/v1/exchangeInfo"
-_BINANCE_EQUITY_TYPES = frozenset({"EQUITY", "HK_EQUITY", "KR_EQUITY", "CN_EQUITY", "PREMARKET"})
 _BINANCE_INFO_TTL_S = 6 * 3600
 _BINANCE_INFO_RETRY_S = 300
-_binance_equity = {"rows": None, "at": 0.0, "failed_at": 0.0}
-_VENUE_LABELS = {"okx": "OKX", "bybit": "Bybit", "gateio": "Gate.io", "bingx": "BingX"}
+_binance_coin = {"rows": None, "at": 0.0, "failed_at": 0.0}
+# BingX is absent: its stock swaps are NCSK…2USD-USDT, a name the lib's symbol mapping never builds
+_VENUE_LABELS = {"okx": "OKX", "bybit": "Bybit", "gateio": "Gate.io"}
 
 
-def _binance_is_equity(sym):
-    """True / False = Binance lists `sym` as a stock-type / coin contract; None =
-    unreadable or not listed there."""
+def _binance_is_coin(sym):
+    """True = Binance lists `sym` as a coin (underlyingType COIN); False = any other
+    class (stock, index, commodity, FX, one added later); None = unreadable or not listed."""
     now = time.time()
-    c = _binance_equity
+    c = _binance_coin
     if (c["rows"] is None or now - c["at"] > _BINANCE_INFO_TTL_S) \
             and now - c["failed_at"] > _BINANCE_INFO_RETRY_S:
         try:
             import requests
             r = requests.get(_BINANCE_INFO, timeout=10)
             r.raise_for_status()
-            c["rows"] = {s["symbol"]: s.get("underlyingType") in _BINANCE_EQUITY_TYPES
+            c["rows"] = {s["symbol"]: s.get("underlyingType") == "COIN"
                          for s in r.json()["symbols"]}
             c["at"] = now
         except Exception as e:
@@ -275,13 +275,13 @@ def instrument_gate(symbol, reduce_only=False):
         if equity is None:
             logging.warning(f"[venue_wiring] {symbol}: {vid} gave no instrument class — allowed")
         return
-    on_binance = _binance_is_equity(sym)
-    if on_binance is None:
+    coin = _binance_is_coin(sym)
+    if coin is None:
         logging.warning(f"[venue_wiring] {symbol}: stock swap on {vid}, Binance class "
                         f"unknown — allowed")
         return
-    if on_binance is False:
-        raise RuntimeError(f"交易所上的 {sym}({_VENUE_LABELS[vid]})是股票合約，不是加密幣，已擋下")
+    if coin:
+        raise RuntimeError(f"交易所上的 {sym}（{_VENUE_LABELS[vid]}）是股票合約，不是加密幣，已擋下")
 
 
 def auto_get_positions():
