@@ -175,6 +175,9 @@ function mgLotsOver(rows, eff, toF) {
   const f = up.length ? toF(net) : null;
   return f !== null && f / eff > MG_LOTS_OVER_WARN ? up : [];
 }
+/* 認 job 本身、不比時間(同網頁):finished_at 是主機的時鐘,連雲端主機時跟這台電腦差幾分鐘,主機快會把上一次的結果當成這次跑完、
+   主機慢會把這次跑完的卡在跑中面板到逾時。started_at 是整數秒,同一秒起兩個 job 靠 pid 分;沒有 job = null */
+function mgJobKey(j) { return j ? JSON.stringify([j.started_at === undefined ? null : j.started_at, j.pid === undefined ? null : j.pid]) : null; }
 /* ── 純邏輯到此 ─────────────────────────────────────────────── */
 
 /* ── 頁面殼:開／關、分頁、霧 ───────────────────────────────── */
@@ -479,7 +482,7 @@ function mgBag(S) {
       try { sizing = mpsSizingClean(JSON.parse(localStorage.getItem(MG_SIZE_KEY) || "null")); } catch (_) { sizing = mpsSizingClean(null); }
     }
     B.mg = { inited: false, alloc: null, params: null, err: null, shortDays: null, shortDismissed: false, optBusy: false,
-      btSending: false, btSentAt: 0, btAskedAt: 0, sel, dropped: null, sizing, sizingSet: false, ctEdits: {}, chartSig: null, refreshing: { opt: false, bt: false }, wait: { opt: null, bt: null } };
+      btSending: false, btSentAt: 0, btBaseJob: null, sel, dropped: null, sizing, sizingSet: false, ctEdits: {}, chartSig: null, refreshing: { opt: false, bt: false }, wait: { opt: null, bt: null } };
     if (B.env === "cloud") mgSizingCloudLoad(B);
   }
   return B.mg;
@@ -599,11 +602,11 @@ function mgBtBlockReason() {
 }
 // 機器裁定資料不足 → 轉成警示條(N 給「改跑」);只在警示條真的畫得出來時才吞掉錯誤(exit 3 永遠至少看得到一行)
 function mgShortFromError(G, e) { const d = mgShortDaysOf(e); if (d === null) return false; G.shortDays = d; G.shortDismissed = false; return !!mgShort(); }
-// 回測送出後:報表看到 running、或那次送出的 job 已收尾(finished_at 不早於按下去的時間)、或等太久 → 送出中結束
+// 回測送出後:報表出現按下去之後才有的 job(跑中或已收尾——短回測從沒出現過 running)、看到 running、或等太久 → 送出中結束。等更新績效期間還沒送出,不會有這次的 job
 function mgBtSendingSync(G) {
   if (!G.btSending) return;
-  const j = mgJobAny(), finished = !!j && j.status !== "running" && typeof j.finished_at === "number" && G.btAskedAt > 0 && j.finished_at * 1000 >= G.btAskedAt;
-  if (finished || (G.btSentAt && (mgRunning() || Date.now() - G.btSentAt > MG_BT_SENT_MAX_MS))) { G.btSending = false; G.btSentAt = 0; G.btAskedAt = 0; }
+  const k = mgJobKey(mgJobAny()), ours = !G.btWaiting && k !== null && k !== G.btBaseJob;
+  if (ours || (G.btSentAt && (mgRunning() || Date.now() - G.btSentAt > MG_BT_SENT_MAX_MS))) { G.btSending = false; G.btSentAt = 0; }
 }
 
 /* 部位大小(Wei 10-13 A 版):權重(怎麼分)是工具列的「方法」;這裡只管總量(放多大)。設定只改頁面上的金額,寫進主機一律走「套用金額」 */
@@ -1094,7 +1097,7 @@ async function mgSendOptimize(S) {
 function mgRunBacktest() {
   const S = TR, G = mgBag(S);
   if (G.btSending || mgRunning() || mgBlocked() || mgBtBlockReason()) return;
-  G.btSending = true; G.btSentAt = 0; G.btAskedAt = Date.now(); G.err = null;
+  G.btSending = true; G.btSentAt = 0; G.btBaseJob = mgJobKey(mgJobAny()); G.err = null;
   /* 每按一次換一個號碼(同網頁 042538da):取消等待中的那一次也換號——舊的那一輪等完看到號碼不是自己的就不送。
      只用一個布林會錯兩種:取消後馬上重按(重設成 false,舊那一輪也送出);已送出、ack 還沒回時按取消(誤當成還在等、不送 manage_cancel) */
   const gen = G.btGen = (G.btGen || 0) + 1, gone = () => gen !== G.btGen;
@@ -1108,7 +1111,7 @@ async function mgSendBacktest(S) {
   const late = sig !== trWith(S, () => JSON.stringify(mgArgs()));
   // ack 回來只代表機器收到:成功就維持「送出中」直到報表看到 running(mgBtSendingSync),不然第二下會撞 backtest already running
   if (r && r.ok) { G.btSentAt = Date.now(); if (G.dropped) G.dropped.job = null; trackFeature("mg_bt_run"); }
-  else { G.btSending = false; G.btSentAt = 0; G.btAskedAt = 0; if (!late) { const e = r && r.error ? r.error : ""; if (!trWith(S, () => mgShortFromError(G, e))) G.err = /no backtest stats/i.test(e) ? t("mg.errNoStats") : t("mg.btError", { e: mgErrLine(trRejectText(e)) || t("tr.cmdFailed") }); } }
+  else { G.btSending = false; G.btSentAt = 0; if (!late) { const e = r && r.error ? r.error : ""; if (!trWith(S, () => mgShortFromError(G, e))) G.err = /no backtest stats/i.test(e) ? t("mg.errNoStats") : t("mg.btError", { e: mgErrLine(trRejectText(e)) || t("tr.cmdFailed") }); } }
   S.sig.opt = null;
   try { S.st = await S.api.tradeStatus(); } catch (_) { }
   if (TR === S && S.view === "po" && S.poTab === "opt") mgPaint();
@@ -1119,7 +1122,7 @@ async function mgCancelBacktest() {
   // 還在等更新績效、回測還沒送出(btWaiting):機器上沒有 job 可取消——作廢這一次(換號,等待迴圈提早結束、不送 manage_backtest),鈕放開;
   // 已經送出(ack 還沒回也算)就照常送 manage_cancel
   if (G.btSending && G.btWaiting) { const W = G.wait.bt; G.wait.bt = null; if (W && W.wake) W.wake();   // 等待那一行收掉、迴圈馬上醒來看到換號
-    G.btGen = (G.btGen || 0) + 1; G.btWaiting = false; G.btSending = false; G.btSentAt = 0; G.btAskedAt = 0; S.sig.opt = null; if (TR === S) mgPaint(); return; }
+    G.btGen = (G.btGen || 0) + 1; G.btWaiting = false; G.btSending = false; G.btSentAt = 0; S.sig.opt = null; if (TR === S) mgPaint(); return; }
   let r = null; try { r = await S.api.tradeSend("manage_cancel", {}); } catch (_) { r = null; }
   if (!(r && r.ok)) G.err = t("tr.cmdFailed");
   S.sig.opt = null; if (TR === S) mgPaint(); trPollSoon(500);

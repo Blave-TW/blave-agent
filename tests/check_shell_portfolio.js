@@ -679,7 +679,7 @@ ok("P2-4 TXFR1 不認成口數列(同網頁 pfCtStored;runtime 沒覆寫時 TXFR
 // P1-2:更新績效等待期間按取消,真的取消——等完不送 manage_backtest、也不送 manage_cancel(機器上還沒有 job)
 const btCancelTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-    mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+    mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
   vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 15, slow: 15, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   let done = false;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
@@ -697,7 +697,7 @@ const freshTest = (async () => {
   const NOW = Math.floor(Date.now() / 1000), H = 3600;
   const runOnce = async (members, perfAt, ranAt) => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-      mgMembers: () => members, mgStrategies: () => Object.keys(ranAt).map((n) => ({ name: n, ran_at: ranAt[n] })), mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
+      mgMembers: () => members, mgStrategies: () => Object.keys(ranAt).map((n) => ({ name: n, ran_at: ranAt[n] })), mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     let loads = 0;
@@ -716,7 +716,7 @@ const freshTest = (async () => {
 // 輪詢:每一輪當場抓新的 detail 再判斷——更新一完成,下一輪就放行(不多等一輪);前 1 分鐘每 3 秒、之後 15 秒
 const pollTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-    mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+    mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
   vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 40, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   let refreshed = false, t0 = 0, tRun = 0;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); setTimeout(() => { refreshed = true; }, 10); return { ok: true, result: { started: ["a"], skipped: {} } }; } tRun = Date.now(); return { ok: true, result: {} }; },
@@ -731,7 +731,7 @@ const refreshEdgeTest = (async () => {
   class FixedDate extends Date { static now() { return NOWMS; } }
   const go = async ({ members, perfAt, ack, running, waitMs }) => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date: FixedDate, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-      mgMembers: () => members, mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
+      mgMembers: () => members, mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     const T0 = Date.now(); let runAt = null;
@@ -765,7 +765,7 @@ const refreshEdgeTest = (async () => {
 // 網頁 042538da 抓到的兩種:取消後馬上重按,舊的那一輪不能也送;已送出、ack 還沒回時按取消要送 manage_cancel
 const cancelGenTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-    mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+    mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
   vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   let done = false, ackDelay = 0;
@@ -786,7 +786,7 @@ const cancelGenTest = (async () => {
 // Wei 10-14:等更新績效時鈕下方一行「等「X」更新績效…」+「先用目前數字跑」——按了停止等待、立刻送一次;正在跑的更新不取消
 const runNowTest = (async () => {
   const mk = () => { const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature(n) { sent.push("feature:" + n); }, mgPaint() {}, trPollSoon() {},
-      mgMembers: () => ["a", "b", "c"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a", "b", "c"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+      mgMembers: () => ["a", "b", "c"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a", "b", "c"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 2000, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunOptimize", "mgSendOptimize", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: { at: 1, refresh: { status: "running" } } }) } };
@@ -811,7 +811,7 @@ const runNowTest = (async () => {
 // 稽核第三輪:取消後馬上重按——舊那一輪結束時不能把新那一輪的轉圈旗標(G.refreshing.bt)清掉
 const refreshFlagTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-    mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+    mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
   vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
@@ -927,4 +927,24 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
   ok("…霧開著時工具列的「跑優化」藏起來、霧上 CTA 是 mg.optRun 接 mgRunOptimize;兩語都有 mg.fogOpt 帶 {n}、只有一句(canon 一句話＋一顆鈕,不講工具列已有的跑回測)",
     /if \(fog\) box\.appendChild\(poFog\("opt"\)\);/.test(psrc) && /opt\.hidden = !!fog;/.test(psrc) && /kind === "opt"\) \{ b\.id = "mg-fog-opt"; b\.dataset\.fk = "mg-fog-opt"; b\.addEventListener\("click", mgRunOptimize\); \}/.test(psrc)
     && (() => { const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"), S2 = (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); return /\{n\}/.test(S2.zh["mg.fogOpt"]) && /\{n\}/.test(S2.en["mg.fogOpt"]) && !/跑回測|。.+/.test(S2.zh["mg.fogOpt"]) && !/Backtest|\.\s\S/.test(S2.en["mg.fogOpt"]); })()); }
+// 回測「送出中」何時結束(同網頁 check_mg_bt_sending):認 job 的 started_at＋pid,不拿主機的 finished_at 比這台電腦的時鐘。
+// 主機快 300 秒＋畫面上有舊結果:舊 job 不能當成這次跑完;主機慢 60 秒＋短回測直接 done:當場結束,不卡 120 秒
+{ const T = 1800000000000, S0 = T / 1000, env = { now: T, job: null };
+  const ctx = vm.createContext({ JSON, Object, Date: { now: () => env.now }, mgManager: () => ({ backtest_job: env.job }) });
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\n" + ["mgJobAny", "mgRunning", "mgBtSendingSync"].map((n) => cutF(psrc, n)).join("\n"), ctx);
+  const run = (o) => { env.now = T; env.job = o.before || null;
+    const G = { btSending: true, btSentAt: o.acked === false ? 0 : T, btBaseJob: vm.runInContext("mgJobKey(mgJobAny())", ctx), btWaiting: !!o.waiting };
+    env.job = o.job || null; env.now = T + (o.later || 5000); ctx.G = G; vm.runInContext("mgBtSendingSync(G)", ctx); return G.btSending; };
+  const OLD = { status: "done", pid: 41, started_at: S0 - 60, finished_at: S0 - 50 }, FAST_OLD = { status: "done", pid: 41, started_at: S0 + 240, finished_at: S0 + 250 };
+  const job = (skew, status) => ({ status, pid: 77, started_at: S0 + 1 + skew, finished_at: status === "running" ? null : S0 + 3 + skew });
+  ok("送出中:主機時鐘快＋舊結果 → 報表還是舊 job 時仍算送出中(跑中面板出現、鈕鎖住);這次的 running／done 一出現就結束",
+    run({ before: FAST_OLD, job: FAST_OLD }) === true && run({ before: FAST_OLD, job: FAST_OLD, acked: false }) === true && run({ before: FAST_OLD, job: job(300, "running") }) === false && run({ before: FAST_OLD, job: job(300, "done") }) === false);
+  ok("送出中:主機時鐘慢＋短回測直接收尾 → 當場結束(含 ack 還沒回、原本沒 job、失敗收尾)",
+    run({ before: OLD, job: job(-60, "done") }) === false && run({ before: null, job: job(-60, "done"), acked: false }) === false && run({ before: OLD, job: job(-60, "error") }) === false);
+  ok("送出中:同一秒起的新 job 靠 pid 分;舊 job 原樣回來、沒有 job、還在等更新績效 → 仍算送出中;沒 started_at/pid 的舊 runtime 照舊等 running;120 秒逾時(ack 後才起算)",
+    run({ before: OLD, job: Object.assign({}, OLD, { pid: 42 }) }) === false && run({ before: OLD, job: Object.assign({}, OLD) }) === true && run({ before: null, job: null }) === true
+    && run({ before: OLD, job: job(0, "done"), acked: false, waiting: true }) === true && run({ before: { status: "done" }, job: { status: "done" } }) === true && run({ before: { status: "done" }, job: { status: "running" } }) === false
+    && run({ before: OLD, job: OLD, later: 120001 }) === false && run({ before: OLD, job: OLD, later: 120001, acked: false }) === true);
+  ok("…按下去就記住當下的 job(等更新績效之前),不再拿 finished_at 比",
+    /G\.btSending = true; G\.btSentAt = 0; G\.btBaseJob = mgJobKey\(mgJobAny\(\)\);[\s\S]*G\.btWaiting = true;/.test(cutF(psrc, "mgRunBacktest")) && !/finished_at/.test(cutF(psrc, "mgBtSendingSync"))); }
 Promise.all([btCancelTest, freshTest, pollTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
