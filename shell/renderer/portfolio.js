@@ -1029,9 +1029,9 @@ function mgDrawChart() {
    跑優化／移動窗格回測前,只把上次更新超過 6 小時(或拿不到時間)的成員送 stats_refresh(Wei 10-14,同網頁 951af7ac);全部都新就不送、不等,直接跑。
    送了的等每一支結束——完成、失敗、被 skip 都算——再跑;被 skip 或失敗的照舊數字跑,不擋、不提示。一次最多 50 支,超過分批;等待有上限,逾時用現有數字跑 */
 // 成員的「上次更新」:detail 的 perf.at,沒有就用機器回報的 ran_at(同一個 stats.json mtime,epoch 秒);都沒有 = null
-async function mgPerfAt(S, n, load) {
+async function mgPerfAt(S, n, load, base) {
   let d = null; try { d = await load(n); } catch (_) { d = null; }
-  const p = d && d.perf; if (p && typeof p.at === "number" && isFinite(p.at)) return p.at;
+  const p = d && d.perf; if (p && typeof p.at === "number" && isFinite(p.at)) { if (base) base[n] = JSON.stringify([p.at, p.refresh || null]); return p.at; }
   const m = mgStrategies().find((x) => x.name === n);
   return m && typeof m.ran_at === "number" && isFinite(m.ran_at) ? m.ran_at : null;
 }
@@ -1039,7 +1039,7 @@ async function mgRefreshThen(S, run, cancelled, which) {   // which:"opt"／"bt"
   // 20 分鐘與「前 1 分鐘每 3 秒」都從按下那一刻起算(同網頁:含問更新時間、等 ack)
   const t0 = Date.now(), until = t0 + MG_REFRESH_MAX_MS, nowSec = Math.floor(t0 / 1000);
   const load = S.env === "cloud" ? (n) => S.api.loadStrategy(n) : (n) => window.blave.loadStrategy(n);
-  const members = mgMembers(), ats = await Promise.all(members.map((n) => mgPerfAt(S, n, load)));   // 並行抓(稽核 P2:雲端每支一次 detail,串行會多等好幾秒)
+  const base = {}, members = mgMembers(), ats = await Promise.all(members.map((n) => mgPerfAt(S, n, load, base)));   // 並行抓(稽核 P2:雲端每支一次 detail,串行會多等好幾秒)
   const names = members.filter((n, i) => ats[i] === null || nowSec - ats[i] > 6 * 3600);   // 剛好 6 小時不算舊(整數秒比)
   if (!names.length) { run(); return; }
   const G = mgBag(S), w = which === "bt" ? "bt" : "opt"; G.refreshing[w] = true;
@@ -1053,7 +1053,15 @@ async function mgRefreshThen(S, run, cancelled, which) {   // which:"opt"／"bt"
   }
   /* 抓 detail 失敗(雲端 api 一時讀不到)當成「這支結束了」:最壞是用現有數字跑——跟 skip／更新失敗同一個後果;
      當成還在跑則會因為一支讀不到而卡滿 20 分鐘(網頁是沿用舊快取,快取多半沒有 running,實際效果相同) */
-  const busy = async (n) => { let d = null; try { d = await load(n); } catch (_) { d = null; } const p = d && d.perf, x = p && p.refresh; return !!(x && x.status === "running"); };
+  /* runtime 1.1.136 起回條先到、「更新中」晚幾秒才推上來:perf(at 與 refresh)跟送出前一模一樣 = 機器還沒回報,繼續等——
+     成功一定換 at(stats.json 重寫)、失敗寫新的 refresh(at 不同),上一次留下的 failed 不算這一次的結果。
+     送出前沒拿到 perf.at 的照舊只看 running,不然 perf 不出現就要卡滿 20 分鐘 */
+  const busy = async (n) => {
+    let d = null; try { d = await load(n); } catch (_) { d = null; }
+    const p = d && d.perf, x = p && p.refresh;
+    if (x && x.status === "running") return true;
+    return !!p && base[n] !== undefined && JSON.stringify([p.at, p.refresh || null]) === base[n];   // 同 mgPerfAt 記的那份
+  };
   // G.wait[w]:鈕下方那一行(在等哪幾支)與「先用目前數字跑」(mgRunNow 設 now、叫醒等待);正在跑的更新不取消,照樣跑完
   const W = G.wait[w] = { left: started.slice(), now: false, wake: null }, repaint = () => { S.sig.opt = null; if (TR === S && S.view === "po" && S.poTab === "opt") mgPaint(); };
   if (W.left.length) repaint();

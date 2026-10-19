@@ -700,9 +700,9 @@ const freshTest = (async () => {
       mgMembers: () => members, mgStrategies: () => Object.keys(ranAt).map((n) => ({ name: n, ran_at: ranAt[n] })), mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
-    let loads = 0;
-    ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.slice() : null]); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
-      tradeStatus: async () => ({}), loadStrategy: async (n) => { loads++; return n in perfAt ? { perf: { at: perfAt[n] } } : {}; } } };
+    let loads = 0; const redone = new Set();
+    ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.slice() : null]); if (cmd === "stats_refresh") a.names.forEach((n) => redone.add(n)); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
+      tradeStatus: async () => ({}), loadStrategy: async (n) => { loads++; return redone.has(n) ? { perf: { at: NOW } } : n in perfAt ? { perf: { at: perfAt[n] } } : {}; } } };
     vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, 120));
     return sent;
   };
@@ -725,6 +725,34 @@ const pollTest = (async () => {
   ok("輪詢:更新 10ms 就完成 → 第一輪(40ms)抓完當場判斷就放行,不多等一輪;間隔前 1 分鐘 3 秒、之後 15 秒、上限 20 分鐘",
     sent.indexOf("manage_backtest") > 0 && tRun - t0 < 150 && /const MG_REFRESH_POLL_MS = \{ fast: 3000, slow: 15000, fastFor: 60000 \};/.test(psrc) && /const MG_REFRESH_MAX_MS = 20 \* 60000;/.test(psrc), J({ sent, dt: tRun - t0 }));
 })();
+// runtime 1.1.136 回條先到、「更新中」晚到;舊 runtime 先推後回條。兩種順序都要等到這一次真的結束才跑
+const orderTest = (async () => {
+  const go = async ({ base, timeline, waitMs }) => {
+    const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
+      mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    let t0 = 0, runAt = null;
+    ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
+      tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); return { ok: true, result: { started: a.names, skipped: {} } }; } runAt = Date.now() - t0; return { ok: true, result: {} }; },
+      tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: t0 ? timeline(Date.now() - t0) : base }) } };
+    vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, waitMs || 200));
+    return { sent, runAt };
+  };
+  const OLD = 1700000000, RUN = { status: "running", at: OLD + 50 };
+  // 1.1.136:前 60ms 機器還沒推(detail 跟送出前一樣)→ 60–100ms 更新中 → 之後 at 換新
+  const late = await go({ base: { at: OLD }, timeline: (ms) => ms < 60 ? { at: OLD } : ms < 100 ? { at: OLD, refresh: RUN } : { at: OLD + 99 } });
+  ok("回條先到、推送晚到:detail 還跟送出前一樣時繼續等,更新完(at 換新)才送 manage_backtest", late.runAt !== null && late.runAt >= 95, J(late));
+  // 舊 runtime:回條時已經是更新中
+  const early = await go({ base: { at: OLD }, timeline: (ms) => ms < 60 ? { at: OLD, refresh: RUN } : { at: OLD + 99 } });
+  ok("先推後回條(舊 runtime):更新中 → at 換新就送,不多等", early.runAt !== null && early.runAt >= 55 && early.runAt < 120, J(early));
+  // 上一次留下的 failed:沒回報前不算這一次的結果;這一次失敗(新的 refresh.at)才放行
+  const prevFail = { status: "failed", at: OLD + 5, err: "DATA" };
+  const failed = await go({ base: { at: OLD, refresh: prevFail }, timeline: (ms) => ms < 60 ? { at: OLD, refresh: prevFail } : { at: OLD, refresh: { status: "failed", at: OLD + 60, err: "DATA" } } });
+  ok("送出前就掛著上一次的 failed:推送前不放行,這一次的 failed 回來才送", failed.runAt !== null && failed.runAt >= 55, J(failed));
+  // 送出前 detail 沒有 perf(拿不到基準):照舊只看 running,不卡滿 20 分鐘
+  const nobase = await go({ base: null, timeline: () => null, waitMs: 120 });
+  ok("送出前拿不到 perf.at:不等推送,照舊沒看到更新中就跑", nobase.runAt !== null && nobase.runAt < 60, J(nobase));
+})();
 // 稽核 audit-prerun-refresh:BUSY 要等、skip 不等、ack 失敗直接跑、超過 50 支分批且每批的 started 都收齊、剛好 6 小時不更新
 const refreshEdgeTest = (async () => {
   const NOWMS = Date.parse("2026-10-14T06:00:00Z"), NOWS = NOWMS / 1000;
@@ -734,11 +762,11 @@ const refreshEdgeTest = (async () => {
       mgMembers: () => members, mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
-    const T0 = Date.now(); let runAt = null;
+    const T0 = Date.now(); let runAt = null; const asked = new Set();
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
-      tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.length : null]); if (cmd !== "stats_refresh") { runAt = Date.now() - T0; return { ok: true, result: {} }; } return ack(a.names); },
+      tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.length : null]); if (cmd !== "stats_refresh") { runAt = Date.now() - T0; return { ok: true, result: {} }; } a.names.forEach((n) => asked.add(n)); return ack(a.names); },
       tradeStatus: async () => ({}),
-      loadStrategy: async (n) => ({ perf: Object.assign({ at: perfAt(n) }, running(n, Date.now() - T0) ? { refresh: { status: "running" } } : {}) }) } };
+      loadStrategy: async (n) => { const on = running(n, Date.now() - T0); return { perf: Object.assign({ at: asked.has(n) && !on ? perfAt(n) + 100 : perfAt(n) }, on ? { refresh: { status: "running" } } : {}) }; } } };
     vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, waitMs || 150));
     return { sent, runAt };
   };
@@ -768,10 +796,10 @@ const cancelGenTest = (async () => {
     mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
   vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  let done = false, ackDelay = 0;
+  let done = false, ackDelay = 0, runs = 0;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
-    tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") return { ok: true, result: { started: a.names, skipped: {} } }; if (cmd === "manage_backtest" && ackDelay) await wait(ackDelay); return { ok: true, result: {} }; },
-    tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: done ? { at: 1 } : { at: 1, refresh: { status: "running" } } }) } };
+    tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { runs++; return { ok: true, result: { started: a.names, skipped: {} } }; } if (cmd === "manage_backtest" && ackDelay) await wait(ackDelay); return { ok: true, result: {} }; },
+    tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: done ? { at: 1 + runs } : { at: 1, refresh: { status: "running" } } }) } };
   // 1. 等更新中按取消、馬上重按:更新結束後只送一次 manage_backtest(新的那一輪),舊的那一輪不送;取消不送 manage_cancel
   vm.runInContext("mgRunBacktest()", ctx); await wait(30); vm.runInContext("mgCancelBacktest()", ctx); vm.runInContext("mgRunBacktest()", ctx); await wait(30); done = true; await wait(80);
   ok("取消等待中的那一次後馬上重按:更新完只送一次 manage_backtest(舊那一輪換了號碼不送),也不送 manage_cancel",
@@ -947,4 +975,4 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     && run({ before: OLD, job: OLD, later: 120001 }) === false && run({ before: OLD, job: OLD, later: 120001, acked: false }) === true);
   ok("…按下去就記住當下的 job(等更新績效之前),不再拿 finished_at 比",
     /G\.btSending = true; G\.btSentAt = 0; G\.btBaseJob = mgJobKey\(mgJobAny\(\)\);[\s\S]*G\.btWaiting = true;/.test(cutF(psrc, "mgRunBacktest")) && !/finished_at/.test(cutF(psrc, "mgBtSendingSync"))); }
-Promise.all([btCancelTest, freshTest, pollTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
+Promise.all([btCancelTest, freshTest, pollTest, orderTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
