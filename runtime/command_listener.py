@@ -49,6 +49,7 @@ import atomic_file
 import capital_connect
 import exec_style
 import president_connect
+import capital_local
 import telegram_pairing
 import refresh_capacity
 import turn_slots
@@ -1311,6 +1312,9 @@ def _cmd_credentials(args):
                 # no account read to gate on: for 統一 that read IS a login (three
                 # wrong ones lock the account) — the certificate opening locally is
                 president_connect.local_bind_gate(env)
+            elif vid == "CAPITAL":
+                # same reason as 統一: an account read is a login; only the app's bind step writes it
+                capital_local.local_bind_gate(env)
             else:
                 _local_real_key_gate(vid, env)  # raises = nothing written
     # cloud box (and so the web connect flow): no venue call before the write —
@@ -4308,6 +4312,10 @@ def _cmd_credentials_remove(args):
         president_connect.drop_vault(names)
     except Exception as e:
         _log(f"president vault drop failed: {type(e).__name__}")
+    try:
+        capital_local.drop_local(names)
+    except Exception as e:
+        _log(f"capital local drop failed: {type(e).__name__}")
     # P1-2: unbind must shrink the bind manifest too, or an agent hand-writing
     # the SAME venue's keys back into .env after the unbind would still be in
     # the allowed list and route again without any UI bind.
@@ -7012,6 +7020,9 @@ HANDLERS.update({
 # (local_daemon.LOCAL_ONLY — never in the api's list); refused off the desktop
 HANDLERS["president_local"] = lambda args: president_connect.local_dispatch(
     args, Deferred, lambda: _push(_ON_PROGRESS, "president connect"))
+# 群益 on the desktop app (runtime/capital_local.py): same shape as president_local
+HANDLERS["capital_local"] = lambda args: capital_local.local_dispatch(
+    args, Deferred, lambda: _push(_ON_PROGRESS, "capital local"))
 
 
 def dispatch(command):

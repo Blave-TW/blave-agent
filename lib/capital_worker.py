@@ -291,6 +291,7 @@ def _refuse_if_blocked(login_id, password, consume_retry=False):
                                   "re-enter the trading password", blocked)
 
 
+LOGIN_STOPPED_EXIT = 3  # = runtime/capital_local.LOGIN_STOPPED_EXIT (desktop only)
 BACKOFF_PATH = os.path.join(WORKSPACE, "state", "capital_worker_backoff.json")
 BACKOFF_MAX_S = 1800
 
@@ -446,6 +447,11 @@ def main():
         _refuse_if_blocked(login_id, password)
         _center, order, tf, ts, _handles = _connect(login_id, password)
     except ProbeError as e:
+        if os.environ.get("BLAVE_AGENT_LOCAL") == "1" and e.code in capital_vault.BLOCK_CODES:
+            # desktop (runtime/capital_local._LocalWorker): stay stopped instead of a backoff
+            # restart; the app shows why and only the user's press logs in again
+            _write_snapshot({"ok": False, "error": str(e)})
+            sys.exit(LOGIN_STOPPED_EXIT)
         _fail_and_exit({"ok": False, "error": str(e)})
     try:
         os.remove(BACKOFF_PATH)

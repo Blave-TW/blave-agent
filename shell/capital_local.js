@@ -72,6 +72,31 @@ const PS_IMPORT = PS_HEAD + "$ErrorActionPreference = 'Stop'; " +
   "try { [void]$rsa.SignData($d, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) } " +
   "catch { [void]$rsa.SignData($d, [System.Security.Cryptography.HashAlgorithmName]::SHA1, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) } } catch { Done 'NO_KEY' $exp }; " +
   "Done 'OK' $exp";
+/* 刪舊證(設計 l-old-confirm;照 runtime/capital_connect.plan_removals):留下有私鑰、沒過期、到期最晚的那張;刪過期的,
+   以及同一個身分證、到期不晚於它的(展延／重發會撤銷舊證,SKCOM 挑到它就 604)。別的身分證的有效證不動。身分證只在這支腳本裡比,
+   輸出只有張數與留下那張的到期。$env:CAPL_DO=1 才真的刪(確認框按了之後),刪之前照同一套重算一次 */
+const PS_OLD = PS_HEAD + "$now = Get-Date; " +
+  "$all = @(Get-ChildItem Cert:\\CurrentUser\\My | Where-Object { $_.Subject -like '*OU=The Capital Group*' -and $_.Issuer -like '*TaiCA*' }); " +
+  "$keep = @($all | Where-Object { $_.HasPrivateKey -and $_.NotAfter -ge $now } | Sort-Object NotAfter -Descending)[0]; " +
+  "if (-not $keep) { ConvertTo-Json -Compress -InputObject @{ n = 0; keep = 0 }; exit 0 }; " +
+  "$cn = $keep.GetNameInfo('SimpleName', $false); " +
+  "$rm = @($all | Where-Object { $_.Thumbprint -ne $keep.Thumbprint -and ($_.NotAfter -lt $now -or ($_.GetNameInfo('SimpleName', $false) -eq $cn -and $_.NotAfter -le $keep.NotAfter)) }); " +
+  "if ($env:CAPL_DO -eq '1') { foreach ($x in $rm) { Remove-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $x.Thumbprint) -ErrorAction SilentlyContinue }; " +
+  "$rm = @(Get-ChildItem Cert:\\CurrentUser\\My | Where-Object { $rm.Thumbprint -contains $_.Thumbprint }) }; " +
+  "ConvertTo-Json -Compress -InputObject @{ n = $rm.Count; keep = ([DateTimeOffset]$keep.NotAfter).ToUnixTimeSeconds() }";
+// 帳密的封裝:同 president_local.sealFor 的形狀,另一組 info／AAD(= runtime/capital_local._SEAL_INFO / _SEAL_AAD)
+const SEAL_INFO = "capital-local-seal-v1", SEAL_AAD = "capital-local-v1";
+function sealFor(secret, obj) {
+  const key = crypto.createHmac("sha256", Buffer.from(String(secret), "utf8")).update(SEAL_INFO).digest();
+  const iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", key, iv);
+  c.setAAD(Buffer.from(SEAL_AAD, "utf8"));
+  const ct = Buffer.concat([c.update(JSON.stringify(obj), "utf8"), c.final()]);
+  return Buffer.concat([iv, ct, c.getAuthTag()]).toString("base64");
+}
+// = shell/cloud_capital.js ID_RE / PW_RE(網頁同一條);密碼不 trim
+const ID_RE = /^[A-Z][1289A-D]\d{8}$/, PW_RE = /^[^\r\n]{1,64}$/;
+const OPS = ["setup", "probe", "start", "stop"];   // 畫面按得到的;bind / secrets 只走 connect / resync
+const RESEND_EVERY_MS = 30000;
 const PFX_CODES = ["OK", "PFX_PASSWORD", "PFX_INVALID", "PFX_NOT_CAPITAL", "PFX_EXPIRED", "PFX_OLDER", "READ_FAILED", "IMPORT_FAILED", "NO_KEY"];
 
 // unix 秒 → 本機日期 YYYY/MM/DD(同 renderer capDate)
@@ -108,8 +133,8 @@ function defaultRun(spawnFn) {
   });
 }
 
-function createCapitalLocal({ userData, platform = process.platform, pickFile, fetchBuffer = defaultFetch,
-  spawnFn = require("child_process").spawn, run, openExternal = () => {}, uiLang = () => "", log = () => {}, launchWaitMs = LAUNCH_WAIT_MS }) {
+function createCapitalLocal({ userData, platform = process.platform, pickFile, fetchBuffer = defaultFetch, seal, host = () => null,
+  spawnFn = require("child_process").spawn, run, openExternal = () => {}, uiLang = () => "", log = () => {}, launchWaitMs = LAUNCH_WAIT_MS, now = () => Date.now() }) {
   const exec = run || defaultRun(spawnFn);
   const ps = (script, o) => exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], o);
   const wizDir = path.join(userData, "capital"), wizPath = path.join(wizDir, "RAWinApp.exe");
@@ -239,7 +264,77 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
   }
   // 關框:選好的檔與快照丟掉;精靈不管(detached,用戶可能還在裡面)
   function forget() { picked = null; snapshot = null; return true; }
-  return { scan, openWizard, locale, openRegion, pickPfx, importPfx, forget };
+
+  /* 刪舊證:plan 只數、remove 真的刪(確認框按了之後)。回給畫面的只有張數與留下那張的到期日 */
+  async function oldCerts(remove) {
+    if (!win()) return { code: "NOT_WINDOWS" };
+    const r = await ps(PS_OLD, remove ? { env: { CAPL_DO: "1" } } : undefined);
+    let j = null; try { j = JSON.parse(String(r.out).trim()); } catch (_) { }
+    if (r.rc !== 0 || !j || !Number.isInteger(j.n)) return { code: "FAILED" };
+    return { code: "OK", n: j.n, keep: j.keep ? ymd(j.keep) : null };
+  }
+
+  /* 身分證字號與交易密碼:safeStorage(Windows = DPAPI)存在 userData 的 capital.bin,只有這個行程解得開;要用時用 daemon 的
+     secret 封裝成 capital_local 指令。renderer 送進來一次、拿不回去(info 只講存了沒有;身分證不出這個行程)。不 log、不進埋點 */
+  const storePath = path.join(userData, "capital.bin");
+  let lastResend = 0;
+  function load() {
+    try {
+      if (!seal || !seal.available()) return null;
+      const d = JSON.parse(seal.decrypt(fs.readFileSync(storePath)));
+      return d && d.kind === "capital" && ID_RE.test(d.id) && PW_RE.test(d.pw) ? d : null;
+    } catch (_) { return null; }
+  }
+  function write(d) {
+    fs.mkdirSync(userData, { recursive: true });
+    const tmp = storePath + "." + crypto.randomBytes(6).toString("hex") + ".tmp";
+    fs.writeFileSync(tmp, seal.encrypt(JSON.stringify({ kind: "capital", id: d.id, pw: d.pw })), { mode: 0o600 });
+    fs.renameSync(tmp, storePath);
+  }
+  function info() { return { saved: !!load(), windows: win() }; }
+  function forgetCreds() { try { fs.unlinkSync(storePath); } catch (_) { } return true; }
+  const codeOf = (err) => { const m = /^(?:\w+: )?([A-Z][A-Z_]+)(?::|$)/.exec(String(err || "")); return m ? m[1] : "FAILED"; };
+  async function send(op, extra, timeoutMs) {
+    const h = host();
+    if (!h) return { code: "DAEMON_DOWN" };
+    const r = await h.send("capital_local", Object.assign({ op }, extra || {}), { trusted: true, timeoutMs });
+    if (r && r.ok) return { code: "OK", result: r.result };
+    if (r && r.error === "UNKNOWN_RESULT") return { code: "SENT" };   // 長步驟:daemon 收走了,結果看狀態檔
+    return { code: codeOf(r && r.error) };
+  }
+  function sealed(d) { const h = host(); return h && typeof h.sealCapital === "function" ? h.sealCapital({ id: d.id, pw: d.pw }) : null; }
+  /* 表單「開始開通」/ 改交易密碼:存起來 → bind(.env 只寫 sentinel,真的值留在 daemon 記憶體)。格式不對不存 */
+  async function connect(a) {
+    if (!win()) return { code: "NOT_WINDOWS" };
+    // id null = 改交易密碼:身分證用存著的那個(畫面沒有,也拿不回去)
+    const keep = a && a.id === null ? load() : null;
+    const id = keep ? keep.id : a && typeof a.id === "string" ? a.id.trim().toUpperCase() : "", pw = a && typeof a.pw === "string" ? a.pw : "";
+    if (!ID_RE.test(id)) return { code: "BAD_ID" };
+    if (!PW_RE.test(pw)) return { code: "BAD_PW" };
+    if (!seal || !seal.available()) return { code: "NO_SEAL" };
+    const blob = sealed({ id, pw });
+    if (!blob) return { code: "DAEMON_DOWN" };
+    const r = await send("bind", { sealed: blob }, 20000);
+    if (r.code === "OK" || r.code === "SENT") { write({ id, pw }); lastResend = now(); }
+    return { code: r.code };
+  }
+  async function step(name, opts) {
+    if (!win()) return { code: "NOT_WINDOWS" };
+    if (OPS.indexOf(name) < 0) return { code: "BAD_ARGS" };
+    const extra = name === "probe" && opts && opts.afterUnlock === true ? { after_unlock: true } : {};
+    return send(name, extra, name === "stop" ? 10000 : 4000);
+  }
+  /* daemon 每次起來都是空手:.env 綁著群益、daemon 說還沒拿到 → 存著的那組再交一次(主行程 5 秒那一輪叫) */
+  async function resync(report) {
+    const cl = report && report.capital_local, v = report && report.venues && report.venues.capital;
+    if (!cl || cl.secrets || !(v && v.credentials)) return null;
+    if (now() - lastResend < RESEND_EVERY_MS) return null;
+    const d = load(); if (!d) return null;
+    const blob = sealed(d); if (!blob) return null;
+    lastResend = now();
+    return send("secrets", { sealed: blob }, 10000);
+  }
+  return { scan, openWizard, locale, openRegion, pickPfx, importPfx, forget, oldCerts, info, connect, step, resync, forgetCreds, _load: load };
 }
-module.exports = { createCapitalLocal, parseList, parseAcp, winNames, ymd, PS_LIST, PS_KEYSIGN, PS_SIG, PS_IMPORT,
+module.exports = { createCapitalLocal, sealFor, parseList, parseAcp, winNames, ymd, PS_LIST, PS_KEYSIGN, PS_SIG, PS_IMPORT, PS_OLD, ID_RE, PW_RE,
   WIZ_URL, WIZ_HEADERS, WIZ_SHA256, WIZ_SIGNER, CERT_ZONE_URL };

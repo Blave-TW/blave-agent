@@ -201,6 +201,9 @@ const EVENTS = {
     // capl_have_cert = 按「已經有憑證」;capl_wiz_open = 精靈真的打開了;capl_wiz_anyway = 系統地區不是繁中、按「還是要開」而且打開了;
     // capl_cert_new = 這次開框裡偵測到開精靈前沒有的那張、私鑰用得了。每開一次框每個名字最多一次、失敗不埋、不帶到期日或任何值
     "capl_have_cert", "capl_wiz_open", "capl_wiz_anyway", "capl_cert_new",
+    // 群益本機帳密之後(同統一 pres_* 的對應):capl_form_saved = 帳密存好並綁上;capl_setup_done = 這次開框看到元件裝好;capl_probe_ok = 這次開框確認帳密過了;
+    // capl_sign_open = 按「開啟簽署頁」;capl_ready = 完成那一態按「完成」
+    "capl_form_saved", "capl_setup_done", "capl_probe_ok", "capl_sign_open", "capl_ready",
     // 外觀(0.1.28;renderer/app.js):theme_system / _light / _dark = 設定 › 一般改了外觀、值真的變了;
     // theme_light_seen = 畫面實際顯示成淺色(開 app 或當天切過去;每安裝每日一次,回答「多少人實際在用淺色」)
     "theme_system", "theme_light", "theme_dark", "theme_light_seen",

@@ -162,6 +162,41 @@ def clear_block(login_id, password):
             pass
 
 
+# Desktop app (runtime/capital_local.py): no vault file — the daemon holds the
+# real values and hands each child ONE stdin line ({capital_api_key,
+# capital_password}); the reconciler gets the same keys inside its combined line
+# (runtime/local_daemon.run_reconciler → use_local_secrets).
+STDIN_FLAG = "BLAVE_CAPITAL_STDIN"
+_LOCAL = None
+
+
+def use_local_secrets(d):
+    global _LOCAL
+    _LOCAL = {k: d[k] for k in ("capital_api_key", "capital_password") if isinstance(d, dict) and isinstance(d.get(k), str)}
+
+
+def _read_stdin_line(fd=0, limit=8192):
+    """One line off the raw fd, byte by byte: nothing may stay buffered for a later reader."""
+    out = bytearray()
+    while len(out) < limit:
+        b = os.read(fd, 1)
+        if not b or b == b"\n":
+            break
+        out += b
+    return out.decode("utf-8", "replace").strip()
+
+
+def _local_secrets():
+    if _LOCAL is None and os.environ.get(STDIN_FLAG) == "1":
+        os.environ.pop(STDIN_FLAG, None)  # read once; a child of ours must not wait on it
+        try:
+            d = json.loads(_read_stdin_line() or "{}")
+        except (OSError, ValueError):
+            d = {}
+        use_local_secrets(d)
+    return _LOCAL
+
+
 def resolve(env):
     """(login_id, password) for SKCOM login from a parsed .env mapping; the
     vault when .env holds the sentinel. (None, None) when nothing is bound."""
@@ -170,6 +205,16 @@ def resolve(env):
     password = env.get("capital_password")
     if not (password or "").startswith(PW_PREFIX):
         return login_id, password
+    local = _local_secrets()
+    if local is not None or os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        local = local or {}
+        lid, lpw = local.get("capital_api_key"), local.get("capital_password")
+        if not lid or not lpw:
+            raise RuntimeError("群益 credentials were not handed over by the Blave app — open the app (自動下單) and try again")
+        # a line from an older bind must never log in: three wrong passwords lock the account
+        if PW_PREFIX + fingerprint(lid, lpw) != password:
+            raise RuntimeError("群益 credentials handed over do not match this computer's binding — reconnect 群益 in the app")
+        return lid, lpw
     try:
         with open(VAULT, encoding="utf-8") as f:
             v = json.load(f)

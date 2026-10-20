@@ -99,6 +99,11 @@ contextBridge.exposeInMainWorld("blave", {
   caplPick: () => ipcRenderer.invoke("capl-pick"),
   caplImport: (pw) => ipcRenderer.invoke("capl-import", pw),
   caplForget: () => ipcRenderer.invoke("capl-forget"),
+  caplInfo: () => ipcRenderer.invoke("capl-info"),
+  caplConnect: (id, pw) => ipcRenderer.invoke("capl-connect", { id, pw }),
+  caplStep: (name, o) => ipcRenderer.invoke("capl-step", name, o || {}),
+  caplOld: (remove) => ipcRenderer.invoke("capl-old", remove === true),
+  caplUnbind: () => ipcRenderer.invoke("capl-unbind"),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),
   onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),

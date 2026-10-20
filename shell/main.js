@@ -2717,6 +2717,8 @@ let _capitalLocal = null;
 function capitalLocal() {
   if (!_capitalLocal) _capitalLocal = require("./capital_local").createCapitalLocal({
     userData: app.getPath("userData"),
+    seal: { available: () => safeStorage.isEncryptionAvailable(), encrypt: (v) => safeStorage.encryptString(v), decrypt: (b) => safeStorage.decryptString(b) },
+    host: () => _tradeHost,
     pickFile: async () => { const w = BrowserWindow.getAllWindows()[0]; const r = await dialog.showOpenDialog(w, { properties: ["openFile"], filters: [{ name: "PFX", extensions: ["pfx", "p12"] }] }); return r.canceled ? null : r.filePaths[0]; },
     openExternal: (u) => shell.openExternal(u),
     uiLang: () => { try { return (app.getPreferredSystemLanguages() || [])[0] || ""; } catch (_) { return ""; } },
@@ -2729,6 +2731,7 @@ function presSync() {
   if (!_tradeHost || !WIN) return;
   const r = _tradeHost.status().report; if (!r) return;
   president().resync(r).catch(() => {});
+  capitalLocal().resync(r).catch(() => {});   // 群益本機:同一輪,daemon 重起後補交身分證與交易密碼
 }
 /* 不讓電腦閒置睡眠(spec desktop-keep-awake K1):A = 自動下單在跑或可能在跑,且設定 › 一般的開關開著(ui-prefs keepAwake,缺 = 開);
    B = Windows 上有統一期貨部位(Wei 10-07),不看開關。A 的判斷順序照 renderer trExecState——重開沒停住(unconfirmed)要排在 alive 之前:
@@ -3386,6 +3389,17 @@ app.whenReady().then(() => {
   handle("capl-pick", () => capitalLocal().pickPfx(), presDenied);
   handle("capl-import", (_e, pw) => capitalLocal().importPfx(typeof pw === "string" ? pw : ""), presDenied);
   handle("capl-forget", () => { if (_capitalLocal) _capitalLocal.forget(); return true; }, false);
+  handle("capl-info", () => capitalLocal().info(), presDenied);
+  handle("capl-connect", (_e, a) => capitalLocal().connect({ id: a && (a.id === null || typeof a.id === "string") ? a.id : "", pw: a && a.pw }), presDenied);
+  handle("capl-step", (_e, name, o) => capitalLocal().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true) }), presDenied);
+  handle("capl-old", (_e, remove) => capitalLocal().oldCerts(remove === true), presDenied);
+  // 解除綁定:.env 那兩行先拿掉(runtime 同時停 worker、丟掉記憶體裡的那組),成功了才丟這裡存的帳密
+  handle("capl-unbind", async () => {
+    const h = tradeHost(), CE = require("./daemon").CAPITAL_ENV;
+    const r = await h.send("credentials_remove", { env: CE.map((k) => k.toLowerCase()) });
+    if (r && r.ok) capitalLocal().forgetCreds();
+    return r;
+  }, { ok: false, error: "NOT_ALLOWED" });
   // 解除綁定:機器上那五行 + 憑證檔(runtime drop_vault)先走,成功了才丟這裡存的帳密
   handle("president-unbind", async () => {
     const h = tradeHost(), PE = require("./daemon").PRESIDENT_ENV;

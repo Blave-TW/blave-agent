@@ -22,8 +22,10 @@ const CMD_TIMEOUT_MS = { manage_optimize: 150000 };
 // api 的雲端白名單(CLOUD_COMMANDS = UI_COMMANDS + …,api/tests/check_desktop_cloud_command.py 釘住)也就不跟著變。
 // president_local(統一本機開通,shell/president_local.js)也只有主行程送:帳密在這裡封裝,renderer 碰不到密文以外的東西;
 // 它不在 api 的任何清單(runtime local_daemon.LOCAL_ONLY)
-const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local"]);
+// capital_local(群益本機開通,shell/capital_local.js)同一套:身分證與交易密碼在主行程封裝
+const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local", "capital_local"]);
 const PRESIDENT_OPS = ["setup", "cert", "secrets", "probe", "host", "test_order", "start", "stop"];   // = runtime president_connect.LOCAL_OPS
+const CAPITAL_OPS = ["setup", "bind", "secrets", "probe", "start", "stop"];   // = runtime capital_local.LOCAL_OPS
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
@@ -57,7 +59,9 @@ const TRUSTED_CRED_KEYS = Object.assign({}, ...TRUSTED_SETS);
 // 統一的五行由 president_local 的 cert 步寫(runtime local_bind_gate);解除綁定是安全方向,renderer 可以拿掉
 // = runtime president_connect._bound_env 寫的六行(稽核 S4:少一行解綁後會留 PRESIDENT_TEST_URL)
 const PRESIDENT_ENV = ["PRESIDENT_ACCOUNT", "PRESIDENT_PASSWORD", "PRESIDENT_CA_PASSWORD", "PRESIDENT_CA_PATH", "PRESIDENT_URL", "PRESIDENT_TEST_URL"];
-const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS), ...PRESIDENT_ENV]);
+// 群益本機的兩行(runtime capital_local._bound_env 寫的 sentinel)
+const CAPITAL_ENV = ["CAPITAL_API_KEY", "CAPITAL_PASSWORD"];
+const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS), ...PRESIDENT_ENV, ...CAPITAL_ENV]);
 const sameKeys = (o, set) => { const a = Object.keys(o), b = Object.keys(set); return a.length === b.length && a.every((k) => Object.prototype.hasOwnProperty.call(set, k)); };
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;
 const CONTRACT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/, CONTRACT_ROOTS = ["TXF", "MXF", "TMF"];
@@ -136,6 +140,12 @@ function argsOk(cmd, a, trusted) {
     if (a.op === "probe") return keys.every((k) => k === "op" || k === "after_unlock") && (a.after_unlock === undefined || a.after_unlock === true);
     // 主機只收兩種形狀;網址是不是統一那兩台由 runtime normalize_host 決定
     if (a.op === "host") return keys.length === 2 && ((a.env === "test" || a.env === "live") || (typeof a.url === "string" && a.url.length > 0 && a.url.length <= 200 && !/[\r\n]/.test(a.url)));
+    return keys.length === 1;
+  }
+  if (cmd === "capital_local") {
+    if (CAPITAL_OPS.indexOf(a.op) < 0) return false;
+    if (a.op === "bind" || a.op === "secrets") return keys.length === 2 && typeof a.sealed === "string" && a.sealed.length > 0 && a.sealed.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(a.sealed);
+    if (a.op === "probe") return keys.every((k) => k === "op" || k === "after_unlock") && (a.after_unlock === undefined || a.after_unlock === true);
     return keys.length === 1;
   }
   /* 優化與移動窗格回測:剛好 members / allocator / params(= runtime _validate_manage_args 的形狀;語意由 handler 再驗)。
@@ -385,10 +395,12 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
 
   // 統一本機開通的封裝(shell/president_local.sealFor):金鑰由這次啟動的 secret 衍生,daemon 沒在跑就沒有
   function sealPresident(obj) { return child && secret ? require("./president_local").sealFor(secret, obj) : null; }
+  // 群益本機的封裝(shell/capital_local.sealFor):同一把 secret、另一組 info／AAD,統一的密文在群益那邊打不開
+  function sealCapital(obj) { return child && secret ? require("./capital_local").sealFor(secret, obj) : null; }
 
   // 統一還有幾口在倉(結束攔截、防睡眠用;帳戶讀取器讀不到 = 0)
   function presidentLots() { return require("./president_local").heldLots(status().report); }
 
-  return { start, stop, send, status, equity, events, noteQuit, sealPresident, presidentLots, _eqTick: eqTick, isRunning: () => !!child };
+  return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, presidentLots, _eqTick: eqTick, isRunning: () => !!child };
 }
-module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, argsOk };
+module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, argsOk };

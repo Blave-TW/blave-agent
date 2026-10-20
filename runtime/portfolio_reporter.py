@@ -2112,6 +2112,10 @@ def build_report():
     cap = _read_json(os.path.join(WORKSPACE_STATE, "capital_connect.json"))
     if isinstance(cap, dict):
         report["capital_connect"] = cap
+    # 群益 on the desktop app (runtime/capital_local.py): the app's connect modal reads this one
+    capl = _read_json(os.path.join(WORKSPACE_STATE, "capital_local_connect.json"))
+    if isinstance(capl, dict):
+        report["capital_local_connect"] = capl
     pres = _read_json(os.path.join(WORKSPACE_STATE, "president_connect.json"))
     if isinstance(pres, dict):
         # a failed 統一 login stopped logins (lib/president_vault STOP): {kind, at} — the
