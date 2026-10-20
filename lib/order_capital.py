@@ -94,7 +94,6 @@ def _request_snapshot_refresh():
 # TX03 auto-roll surprisingly (see capital-broker.md) and stay unsupported.
 FUTURES_ALIASES = {"TX00", "MTX00", "TM0000"}
 
-SKCOM_DLL = r"C:\skcom\x64\SKCOM.dll"
 
 # COM is Windows-only; deferred so the module still imports for structure
 # checks on non-Windows machines (comtypes fails to import there).
@@ -118,7 +117,7 @@ def _init_com():
     import comtypes.client
     import pythoncom as _pythoncom
 
-    _comtypes.client.GetModule(SKCOM_DLL)
+    _comtypes.client.GetModule(capital_vault.skcom_dll())
     import comtypes.gen.SKCOMLib as _sk
 
     comtypes, pythoncom, sk = _comtypes, _pythoncom, _sk
@@ -196,6 +195,7 @@ def _get_session(env):
         conns = [comtypes.client.GetEvents(reply, events),
                  comtypes.client.GetEvents(order, events)]
 
+        capital_vault.set_log_path(center)
         code = center.SKCenterLib_Login(login_id, password)
         capital_vault.record_login(login_id, password, code)
         if code not in (0, 2003):

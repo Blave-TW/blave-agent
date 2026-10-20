@@ -45,6 +45,7 @@ const CASES = [
   ["l-err-dl", { scan: NONE, choice: "new", err: "dl" }],
   ["l-err-sig", { scan: NONE, choice: "new", err: "sig" }],
   ["l-err-launch", { scan: NONE, choice: "new", err: "launch" }],
+  ["l-err-list", { scan: NONE, choice: "new", err: "list" }],
   ["l-cert-expired", { scan: EXP, err: "dl" }],   // 過期頁的錯行疊在同一頁
   ["l-locale", { scan: NONE, choice: "new", loc: LOC_BAD, err: "launch" }],   // 「還是要開」之後失敗:錯行疊在系統地區頁
   ["l-nokey", { scan: NONE, choice: "new", nokey: true, wiz: false }],
@@ -54,13 +55,13 @@ const CASES = [
 ];
 for (const [want, o, x] of CASES) ok(`${want} ← ${JSON.stringify(o)}`, v(o, x) === want, v(o, x));
 const SEGMENT = ["m-mac", "l-cert-load", "l-cert-none", "l-cert-new", "l-cloud-warn", "l-cert-have", "l-cert-picked", "l-cert-picked-err", "l-cert-expired",
-  "l-cert-expired-have", "l-cert-expired-cloud", "l-cert-expired-locale", "l-locale", "l-wiz", "l-wiz-busy", "l-err-dl", "l-err-sig", "l-err-launch", "l-nokey", "l-form"];
+  "l-cert-expired-have", "l-cert-expired-cloud", "l-cert-expired-locale", "l-locale", "l-wiz", "l-wiz-busy", "l-err-dl", "l-err-sig", "l-err-launch", "l-err-list", "l-nokey", "l-form"];
 ok("這一段的每一態都列舉到了", SEGMENT.every((s) => CASES.some((c) => c[0] === s)));
 
 // 全組合:每一種都落在這一段的態名裡(沒有 undefined、沒有半成品名字)
 { const seen = new Set(); let stray = null;
   for (const win of [true, false]) for (const scan of [null, NONE, EXP]) for (const choice of [null, "new", "renew", "have"]) for (const loc of [null, LOC_OK, LOC_BAD, LOC_UNK])
-    for (const cloud of [false, true]) for (const wiz of [false, true]) for (const err of [null, "dl", "sig", "launch", "busy"]) for (const picked of [false, true])
+    for (const cloud of [false, true]) for (const wiz of [false, true]) for (const err of [null, "dl", "sig", "launch", "busy", "list"]) for (const picked of [false, true])
       for (const pfxErr of [null, "PFX_PASSWORD", "PFX_OLDER"]) for (const nokey of [false, true]) for (const done of [null, "2027/10/20"]) {
         const s = caplView(ui({ scan, choice, loc, cloud, wiz, err, picked, pfxErr, nokey, done }), { win }); seen.add(s);
         if (SEGMENT.indexOf(s) < 0) stray = s;
@@ -77,7 +78,7 @@ ok("l-cert-none:沒有主鈕、只有稍後再來", F("l-cert-none") === JSON.st
 ok("l-cert-new:撤銷提醒 + 稍後再來 + 開啟憑證精靈", F("l-cert-new") === JSON.stringify({ msg: "revoke", anyway: false, go: "capl.open", cancel: "pres.later" }));
 ok("l-cloud-warn:同一格換雲端那句,主鈕照常可按(不擋)", F("l-cloud-warn", true) === JSON.stringify({ msg: "cloud", anyway: false, go: "capl.open", cancel: "pres.later" }));
 ok("過期頁:一樣的腳(展延走同一個精靈、一樣會撤銷);雲端已連也換那句", F("l-cert-expired") === F("l-cert-new") && F("l-cert-expired-cloud", true) === F("l-cloud-warn", true));
-ok("錯行那三態:腳不變(主鈕就是再試一次)", ["l-err-dl", "l-err-sig", "l-err-launch"].every((s) => F(s) === F("l-cert-new")));
+ok("錯行那四態:腳不變(主鈕就是再試一次)", ["l-err-dl", "l-err-sig", "l-err-launch", "l-err-list"].every((s) => F(s) === F("l-cert-new")));
 ok("系統地區頁:沒有主鈕;提醒那一格還在;腳左側「還是要開」", F("l-locale") === JSON.stringify({ msg: "revoke", anyway: true, go: null, cancel: "pres.later" })
   && F("l-cert-expired-locale", true) === JSON.stringify({ msg: "cloud", anyway: true, go: null, cancel: "pres.later" }));
 ok("已經有憑證:主鈕選擇憑證檔案;選好檔:主鈕匯入;都沒有撤銷提醒(匯入不撤銷)", JSON.parse(F("l-cert-have")).go === "capl.pick" && JSON.parse(F("l-cert-expired-have")).go === "capl.pick"
@@ -147,6 +148,7 @@ ok("埋點四個名字都在 feature_used 白名單、都 ≤16 字", Object.val
   ok("新證而且私鑰用得了才記 capl_cert_new;用不了 → nokey(不記)", /if \(r\.keyOk\) \{ CAPL\.done = r\.expiry \|\| "—"; caplTrack\("fresh"\); \} else CAPL\.nokey = true;/.test(sc));
   ok("精靈關了、這次沒認出新證(快照丟過),但庫裡有能用的 → 到帳密(不讓他再申請一次)", /CAPL\.wiz = false; CAPL\.err = null; caplWatch\(false\);\n[^\n]*\n\s+if \(ok && r\.usable > 0\) CAPL\.done = r\.expiry \|\| "—";/.test(sc));
   ok("找到能用的憑證就直接到帳密、停止輪詢(不用「我完成了」鈕)", /else if \(!CAPL\.wiz && ok && r\.usable > 0\) \{ CAPL\.done = r\.expiry \|\| "—"; caplWatch\(false\); \}/.test(sc)); }
+ok("主行程列不出憑證庫(LIST_FAILED)→ 畫面講那一句、不當成別的失敗", /LIST_FAILED: "list"/.test(src) && /list: "capl\.errList"/.test(src));
 ok("輪詢:框關了或換交易所 / 換視角就停", /if \(\$\("cx-scrim"\)\.hidden \|\| CXF\.venue !== CAPITAL \|\| CXF\.env !== "local"\) return caplWatch\(false\);/.test(src));
 ok("畫面這層碰不到 thumbprint / 身分證 / 檔名(沒有那些欄位)", !/thumb|\.cn\b|subject|filePath|\.name\b/i.test(src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")));
 ok("匯出密碼送出後就清掉", /if \(code === "OK"\) \{ CAPL\.ppw = "";/.test(src) && /else if \(code === "NO_KEY"\) \{ CAPL\.ppw = "";/.test(src));

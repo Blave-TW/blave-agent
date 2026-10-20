@@ -32,7 +32,7 @@ TW_IDS = ("capital", "sinopac", "president")
 TABLES = {"lib/venue_traits.py", "runtime/venue_traits.py"}
 OWN = {
     "capital": {"lib/order_capital.py", "lib/account_capital.py", "lib/capital_worker.py",
-                "lib/capital_vault.py", "runtime/capital_connect.py"},
+                "lib/capital_vault.py", "runtime/capital_connect.py", "runtime/capital_local.py"},
     "sinopac": {"lib/order_sinopac.py"},
     "president": {"lib/order_president.py", "lib/account_president.py", "lib/president_worker.py",
                   "lib/president_vault.py"},

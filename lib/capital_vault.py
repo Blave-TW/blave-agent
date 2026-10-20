@@ -162,6 +162,37 @@ def clear_block(login_id, password):
             pass
 
 
+# Where SKCOM lives and logs. Cloud boxes: C:\skcom\x64 (capital_setup.ps1, unchanged), SKCOM's own
+# default log location. Desktop (BLAVE_AGENT_LOCAL=1): under the signed-in user's %LOCALAPPDATA% —
+# C:\ root is writable by every local account (a planted or swapped DLL would run inside the
+# processes holding the credentials), and SKCOM's own log carries the national ID in plain text.
+# = runtime/capital_local.local_dir (tests/check_capital_local.py pins the two equal).
+CLOUD_SKCOM_DIR = r"C:\skcom\x64"
+
+
+def local_dir():
+    """<%LOCALAPPDATA%>\Blave\capital on the desktop, None on a cloud box."""
+    if os.environ.get("BLAVE_AGENT_LOCAL") != "1" or not os.environ.get("LOCALAPPDATA"):
+        return None
+    return os.path.join(os.environ["LOCALAPPDATA"], "Blave", "capital")
+
+
+def skcom_dll():
+    d = local_dir()
+    return os.path.join(d, "skcom", "x64", "SKCOM.dll") if d else CLOUD_SKCOM_DIR + "\\SKCOM.dll"
+
+
+def set_log_path(center):
+    """Before the login: SKCOM's log (it has the national ID) goes to the user's own folder on the
+    desktop — deleted with the binding (runtime/capital_local.drop_local). Cloud: left as it was."""
+    d = local_dir()
+    if not d:
+        return
+    log = os.path.join(d, "log")
+    os.makedirs(log, exist_ok=True)
+    center.SKCenterLib_SetLogPath(log)
+
+
 # Desktop app (runtime/capital_local.py): no vault file — the daemon holds the
 # real values and hands each child ONE stdin line ({capital_api_key,
 # capital_password}); the reconciler gets the same keys inside its combined line

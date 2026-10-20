@@ -27,8 +27,8 @@ const CAPL_FEATURE = { have: "capl_have_cert", wiz: "capl_wiz_open", anyway: "ca
 const CAPL_MSG = { BUSY: "capl.busyStep", DAEMON_DOWN: "side.stopped", TIMEOUT: "side.stopped", NO_SECRETS: "capl.noCreds", REBOUND: "capl.noCreds",
   NO_SEAL: "pres.err.noSeal", LIB_OUTDATED: "capl.libOutdated", BAD_ID: "cap.err.idFormat", BAD_PW: "cap.err.pw" };
 // 主行程開精靈失敗的代號 → 畫面的 err
-const CAPL_WIZ_ERR = { DOWNLOAD: "dl", SIG: "sig", START: "launch", BUSY: "busy" };
-const CAPL_ERR_KEY = { dl: "capl.errDl", sig: "capl.errSig", launch: "capl.errLaunch", busy: "capl.busy" };
+const CAPL_WIZ_ERR = { DOWNLOAD: "dl", SIG: "sig", START: "launch", BUSY: "busy", LIST_FAILED: "list" };
+const CAPL_ERR_KEY = { dl: "capl.errDl", sig: "capl.errSig", launch: "capl.errLaunch", busy: "capl.busy", list: "capl.errList" };
 const CAPL_PFX_ERR = { PFX_PASSWORD: "cap.pfx.errPw", PFX_INVALID: "cap.pfx.errFile", PFX_TOO_LARGE: "cap.pfx.errFile", PFX_NOT_CAPITAL: "cap.pfx.errIssuer",
   PFX_EXPIRED: "cap.pfx.errExpired", PFX_OLDER: "capl.errOlder", READ_FAILED: "cap.pfx.errRead", IMPORT_FAILED: "cap.pfx.errImport" };
 
@@ -45,7 +45,7 @@ let CAPL = caplBlank();
 let caplTimer = null;
 
 /* ── 純邏輯(tests/check_shell_capital_local_view.js 從原文切出來跑;這一段不准碰 DOM)── */
-const CAPL_ERR_VIEW = { dl: "l-err-dl", sig: "l-err-sig", launch: "l-err-launch" };
+const CAPL_ERR_VIEW = { dl: "l-err-dl", sig: "l-err-sig", launch: "l-err-launch", list: "l-err-list" };
 // (畫面自己的狀態, { win }) → 態的名字(設計 mockup 的 l-* 家族)。順序有意義:結果先、在等的再來、最後是選路
 function caplView(ui, ctx) {
   if (!ctx.win) return "m-mac";
@@ -63,7 +63,7 @@ function caplView(ui, ctx) {
   return ui.cloud ? "l-cloud-warn" : "l-cert-new";
 }
 // 態 → 腳:msg = #cx-where 那一句(revoke / cloud)、anyway = 腳左側 quiet「還是要開」、go = 主鈕的字 key、cancel = 取消鈕的字 key
-const CAPL_APPLY = ["l-cert-new", "l-cloud-warn", "l-err-dl", "l-err-sig", "l-err-launch", "l-cert-expired", "l-cert-expired-cloud"];
+const CAPL_APPLY = ["l-cert-new", "l-cloud-warn", "l-err-dl", "l-err-sig", "l-err-launch", "l-err-list", "l-cert-expired", "l-cert-expired-cloud"];
 const CAPL_LOCALE = ["l-locale", "l-cert-expired-locale"];
 // 開通清單的態(caplFlowView 回的):腳只有「關閉」;完成那一態是「完成」+ 鈕正上方那句「Blave 開著才下單」
 const CAPL_FLOW = ["l-setup", "l-setup-fail", "l-probe", "l-probe-idle", "l-pw", "l-pw-err", "l-pw-change", "l-pw-locked", "l-verify", "l-sign", "l-sign-wait",

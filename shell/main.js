@@ -2648,6 +2648,8 @@ function president() {
 }
 /* 群益本機開通的憑證那一段(capital_local.js;畫面 renderer/capital_local.js):回給畫面的只有代號、張數、到期日;
    憑證檔路徑與匯出密碼只在這個行程。只有 Windows 走得到 */
+// = renderer/trade.js CAPL_LOCAL_ON(tests/check_shell_capital_local.js 釘兩處相同)
+const CAPL_LOCAL_ON = false;
 let _capitalLocal = null;
 function capitalLocal() {
   if (!_capitalLocal) _capitalLocal = require("./capital_local").createCapitalLocal({
@@ -2666,7 +2668,7 @@ function presSync() {
   if (!_tradeHost || !WIN) return;
   const r = _tradeHost.status().report; if (!r) return;
   president().resync(r).catch(() => {});
-  capitalLocal().resync(r).catch(() => {});   // 群益本機:同一輪,daemon 重起後補交身分證與交易密碼
+  if (CAPL_LOCAL_ON) capitalLocal().resync(r).catch(() => {});   // 群益本機:同一輪,daemon 重起後補交身分證與交易密碼
 }
 /* 不讓電腦閒置睡眠(spec desktop-keep-awake K1):A = 自動下單在跑或可能在跑,且設定 › 一般的開關開著(ui-prefs keepAwake,缺 = 開);
    B = Windows 上有統一期貨部位(Wei 10-07),不看開關。A 的判斷順序照 renderer trExecState——重開沒停住(unconfirmed)要排在 alive 之前:
@@ -3249,6 +3251,29 @@ app.whenReady().then(() => {
     if (out.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
     return out;
   }, cxDenied);
+  // 群益本機(capital_local.js)只在 CAPL_LOCAL_ON 開著時註冊:旗標關 = 主行程這一層也到不了(renderer 被注入腳本也叫不動)
+  if (CAPL_LOCAL_ON) {
+    const caplDenied = { code: "NOT_ALLOWED" };
+    // 群益本機的憑證那一段(capital_local.js):匯出密碼送進來一次、拿不回去
+    handle("capl-scan", () => capitalLocal().scan(), caplDenied);
+    handle("capl-locale", () => capitalLocal().locale(), caplDenied);
+    handle("capl-wizard", () => capitalLocal().openWizard(), caplDenied);
+    handle("capl-region", () => capitalLocal().openRegion(), caplDenied);
+    handle("capl-pick", () => capitalLocal().pickPfx(), caplDenied);
+    handle("capl-import", (_e, pw) => capitalLocal().importPfx(typeof pw === "string" ? pw : ""), caplDenied);
+    handle("capl-forget", () => { if (_capitalLocal) _capitalLocal.forget(); return true; }, false);
+    handle("capl-info", () => capitalLocal().info(), caplDenied);
+    handle("capl-connect", (_e, a) => capitalLocal().connect({ id: a && (a.id === null || typeof a.id === "string") ? a.id : "", pw: a && a.pw }), caplDenied);
+    handle("capl-step", (_e, name, o) => capitalLocal().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true) }), caplDenied);
+    handle("capl-old", (_e, remove) => capitalLocal().oldCerts(remove === true), caplDenied);
+    // 解除綁定:.env 那兩行先拿掉(runtime 同時停 worker、丟掉記憶體裡的那組),成功了才丟這裡存的帳密
+    handle("capl-unbind", async () => {
+      const h = tradeHost(), CE = require("./daemon").CAPITAL_ENV;
+      const r = await h.send("credentials_remove", { env: CE.map((k) => k.toLowerCase()) });
+      if (r && r.ok) capitalLocal().unbound();
+      return r;
+    }, { ok: false, error: "NOT_ALLOWED" });
+  }
   /* OKX / BingX / Gate.io / Bybit 綁在這台電腦:金鑰只在這裡經過一次(形狀與 env 名同雲端那條:cloudcmd.connectSecrets),
      不回傳、不 log。寫入前 runtime(_local_real_key_gate)用那一家的 lib/account_* 讀一次帳戶,讀不到就不寫;
      回覆怎麼對到畫面的代號、怎麼遮金鑰,在 cloudcmd.interpretVenueBind */
@@ -3285,25 +3310,6 @@ app.whenReady().then(() => {
   handle("president-cert", (_e, a) => president().certUse({ caPassword: a && typeof a.caPassword === "string" ? a.caPassword : null, source: a && a.source === "picked" ? "picked" : "found" }), presDenied);
   handle("president-step", (_e, name, o) => president().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true),
     env: o && (o.env === "test" || o.env === "live") ? o.env : undefined, url: o && typeof o.url === "string" ? o.url : undefined }), presDenied);
-  // 群益本機的憑證那一段(capital_local.js):匯出密碼送進來一次、拿不回去
-  handle("capl-scan", () => capitalLocal().scan(), presDenied);
-  handle("capl-locale", () => capitalLocal().locale(), presDenied);
-  handle("capl-wizard", () => capitalLocal().openWizard(), presDenied);
-  handle("capl-region", () => capitalLocal().openRegion(), presDenied);
-  handle("capl-pick", () => capitalLocal().pickPfx(), presDenied);
-  handle("capl-import", (_e, pw) => capitalLocal().importPfx(typeof pw === "string" ? pw : ""), presDenied);
-  handle("capl-forget", () => { if (_capitalLocal) _capitalLocal.forget(); return true; }, false);
-  handle("capl-info", () => capitalLocal().info(), presDenied);
-  handle("capl-connect", (_e, a) => capitalLocal().connect({ id: a && (a.id === null || typeof a.id === "string") ? a.id : "", pw: a && a.pw }), presDenied);
-  handle("capl-step", (_e, name, o) => capitalLocal().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true) }), presDenied);
-  handle("capl-old", (_e, remove) => capitalLocal().oldCerts(remove === true), presDenied);
-  // 解除綁定:.env 那兩行先拿掉(runtime 同時停 worker、丟掉記憶體裡的那組),成功了才丟這裡存的帳密
-  handle("capl-unbind", async () => {
-    const h = tradeHost(), CE = require("./daemon").CAPITAL_ENV;
-    const r = await h.send("credentials_remove", { env: CE.map((k) => k.toLowerCase()) });
-    if (r && r.ok) capitalLocal().forgetCreds();
-    return r;
-  }, { ok: false, error: "NOT_ALLOWED" });
   // 解除綁定:機器上那五行 + 憑證檔(runtime drop_vault)先走,成功了才丟這裡存的帳密
   handle("president-unbind", async () => {
     const h = tradeHost(), PE = require("./daemon").PRESIDENT_ENV;
