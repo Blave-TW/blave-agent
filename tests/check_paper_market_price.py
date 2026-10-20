@@ -55,7 +55,27 @@ strategy("btc", "BTCUSDT", px=BTC_OWN)
 strategy("nvda", "NVDAUSDT", px=210.0)
 strategy("okxonly", "OKXONLYUSDT")
 strategy("cat", "CATUSDT", px=0.00001)
+strategy("kcat", "KCATUSDT", px=0.00002)
 strategy("btc5", "BTC5USDT", px=81882.7 * 1.005)
+for name, sym, px in (("pepe", "PEPEUSDT", 0.0101), ("meme", "MEMEUSDT", 0.002),
+                      ("nanc", "NANCUSDT", "float('nan')"), ("zero", "ZEROUSDT", 0.0)):
+    strategy(name, sym)
+    open(f"strategies/{name}/strategy.py", "a").write(f"""
+
+def fetch_data(hdrs):
+    import pandas as pd
+    open("calls_{name}", "a").write("x")
+    return pd.DataFrame({{"Close": [{px}]}}, index=[pd.Timestamp("2026-01-01")])
+""")
+
+
+def cache_day():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def own_calls(name):
+    return len(open(f"calls_{name}").read()) if os.path.exists(f"calls_{name}") else 0
 strategy("eth", "ETHUSDT")
 open("strategies/eth/strategy.py", "a").write("\n\ndef fetch_data(hdrs):\n    raise RuntimeError('own data down')\n")
 strategy("tmf", "TMF")
@@ -97,9 +117,9 @@ def send(adapter, req, **kw):
 
 
 requests.adapters.HTTPAdapter.send = send
-kline_calls = []
+kline_calls, KLINE = [], {"BTCUSDT": 81000.0, "NVDAUSDT": 215.0}  # the latest closed 1m bar
 data.fetch_kline = lambda sym, *a, **k: kline_calls.append(sym) or pd.DataFrame(
-    {"Close": [77.0]}, index=[pd.Timestamp.now().floor("min")])
+    {"Close": [KLINE[sym]]}, index=[pd.Timestamp.now().floor("min")])
 
 
 KEY = {"blave_api_key": "k", "blave_secret_key": "s"}
@@ -138,11 +158,64 @@ check(price("CATUSDT") == (0.00001, "cat"),
 check(any("CATUSDT" in m and "same ticker" in m for m in last_resort), f"…and the log says why ({last_resort})")
 check(price("BTC5USDT") == (81882.7, None), "0.5% off its strategy's own close: Binance's price")
 check(price("ETHUSDT") == (4000.0, None), "the strategy's own close cannot be read: Binance's price")
+BINANCE.update(PEPEUSDT=0.01, MEMEUSDT=3.5)
+check(price("PEPEUSDT") == (0.01, None) and own_calls("pepe") == 1, "PEPE: judged once against its own close")
+check(price("PEPEUSDT") == (0.01, None) and own_calls("pepe") == 1,
+      f"…the same UTC day again: Binance, the strategy's fetch_data not run ({own_calls('pepe')} runs)")
+check(price("MEMEUSDT") == (0.002, "meme") and price("MEMEUSDT") == (0.002, "meme"),
+      "a same-day collision verdict holds: the strategy's own close (its fetch_data is the price)")
+cache = json.load(open(paper_data.COLLISION_PATH))
+cache["date"] = "2000-01-01"
+json.dump(cache, open(paper_data.COLLISION_PATH, "w"))
+check(price("PEPEUSDT") == (0.01, None) and own_calls("pepe") == 2, "a new UTC day: judged again")
+open(paper_data.COLLISION_PATH, "w").write("{not json")
+check(price("PEPEUSDT") == (0.01, None) and own_calls("pepe") == 3, "a broken cache file: no cache, judged again")
+check(json.load(open(paper_data.COLLISION_PATH))["verdicts"].get("PEPEUSDT|pepe", {}).get("collision") is False,
+      "…and the file is rewritten whole")
+json.dump({"date": cache_day(), "verdicts": {"PEPEUSDT|pepe": {"collision": False, "at": "soon"}}},
+          open(paper_data.COLLISION_PATH, "w"))
+r = price("PEPEUSDT")
+check(r == (0.01, None) and own_calls("pepe") == 4, f"a well-formed file with a bad field: no cache, judged again ({r!r})")
+BINANCE.update(NANCUSDT=1.5, ZEROUSDT=2.5)
+for name, sym, binance in (("nanc", "NANCUSDT", 1.5), ("zero", "ZEROUSDT", 2.5)):
+    r = price(sym)
+    v = json.load(open(paper_data.COLLISION_PATH))["verdicts"].get(f"{sym}|{name}", {})
+    check(r == (binance, None) and v.get("collision") is None,
+          f"{sym}: its own close is NaN/0 — unreadable, not a collision: Binance, nothing judged ({r!r}, {v})")
+    check(price(sym) == (binance, None) and own_calls(name) == 1, f"…not asked again inside 10 minutes")
+    cache = json.load(open(paper_data.COLLISION_PATH))
+    cache["verdicts"][f"{sym}|{name}"]["at"] -= paper_data._COLLISION_RETRY_S + 1
+    json.dump(cache, open(paper_data.COLLISION_PATH, "w"))
+    check(price(sym) == (binance, None) and own_calls(name) == 2, "…asked again after 10 minutes")
+check(price("MEMEUSDT") == (0.002, "meme"), "MEMEUSDT judged a collision (again, the file was replaced above)")
+open("strategies/meme/strategy.py", "a").write("\n\ndef fetch_data(hdrs):\n    raise RuntimeError('okx timeout')\n")
+paper_data._mod_cache.clear()
+r = price("MEMEUSDT")
+check(isinstance(r, paper_data.PaperNoPrice),
+      f"judged a collision today, its own close unreadable: no price — never Binance's other instrument ({r!r})")
+paper_data._price_cache.clear()
+try:
+    mark = order_paper._pos_mark({}, {"positions": {"MEMEUSDT": {"qty": 1000.0, "entry": 0.0021}}}, "MEMEUSDT", {})
+except Exception as e:
+    mark = e
+check(mark == (0.0021, False), f"…a held MEMEUSDT marks at its entry ({mark!r})")
+check(price("CATUSDT") == (0.00001, "cat"), "CATUSDT judged a collision today")
 BINANCE_DOWN[0] = True
-check(price("BTCUSDT") == (77.0, None) and kline_calls == ["BTCUSDT"],
+check(price("BTCUSDT") == (81000.0, None) and kline_calls == ["BTCUSDT"],
       "Binance unreachable: the same market's latest 1m bar via Blave")
-check(price("NVDAUSDT") == (77.0, None) and not hits,
+check(price("NVDAUSDT") == (215.0, None) and not hits,
       f"…and the next symbol does not wait on Binance again ({hits})")
+KLINE.update(CATUSDT=725.68, KCATUSDT=725.68)
+r = price("CATUSDT")
+check(r == (0.00001, "cat"), f"judged a collision, Binance down: Blave's 1m bar (Caterpillar) is not used either ({r!r})")
+r = price("KCATUSDT")
+v = json.load(open(paper_data.COLLISION_PATH))["verdicts"].get("KCATUSDT|kcat", {})
+check(r == (0.00002, "kcat") and v.get("collision") is True,
+      f"not judged yet, Binance down: Blave's 1m bar is judged the same way ({r!r}, {v})")
+open("strategies/cat/strategy.py", "a").write("\n\ndef fetch_data(hdrs):\n    raise RuntimeError('okx timeout')\n")
+paper_data._mod_cache.clear()
+r = price("CATUSDT")
+check(isinstance(r, paper_data.PaperNoPrice), f"…and its own close unreadable: no price, not Blave's bar ({r!r})")
 del kline_calls[:]
 check(price("BTCUSDT", {}) == (BTC_OWN, "btc") and not kline_calls,
       "Binance blocked and no Blave key (desktop): the strategy's own close, Blave not asked")

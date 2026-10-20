@@ -27,8 +27,9 @@ level nobody ever quoted.
     so the shares on the page are the shares the paper account buys. A symbol
     an intraday Type A trades takes its latest unadjusted bar (_tw_stock_price).
   * US stocks (a symbol a strategy fetches with fetch_usstock_price): Yahoo's
-    unadjusted daily close. lib.data refuses Yahoo on every live tick, so today
-    a US paper order is refused (PaperNoPrice) until US strategies may go live.
+    latest final unadjusted daily close — on the desktop a hand-placed paper
+    order fills at it; lib.data refuses Yahoo on every live tick and on a cloud
+    machine, so an automatic US paper order is refused (PaperNoPrice).
   * anything else (fetch_db_kline CME/ICE futures): the owning strategy's
     fetch_data, latest Close — that series is the front contract's own price.
 Nothing priced → PaperNoPrice: an entry is refused, a close falls back to the
@@ -286,16 +287,19 @@ def _crypto_last(sym, hdrs):
             tried.append(f"Binance {type(e).__name__}: {e}")
             _binance_down_at[0] = time.time()
         else:
-            return _binance_unless_collision(sym, px, hdrs)
+            return _unless_collision(sym, px, hdrs, "Binance")
     # Blave /kline is Binance's own bars: nothing there for a coin Binance does not list
     if hdrs.get("api-key") and not tried[0].startswith("not listed"):
         try:
             from datetime import datetime, timedelta, timezone
             from lib.data import fetch_kline
             start = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
-            return _last_close(fetch_kline(sym, "1m", start, None, hdrs, max_retries=2)), None
+            px = _last_close(fetch_kline(sym, "1m", start, None, hdrs, max_retries=2))
         except Exception as e:
             tried.append(f"Blave 1m kline {type(e).__name__}: {e}")
+        else:
+            # the same Binance instrument's bars: a collision there is one here too
+            return _unless_collision(sym, px, hdrs, "Blave 1m kline")
     try:
         px, name = _owner_price(sym, hdrs)
     except PaperNoPrice as e:
@@ -307,21 +311,80 @@ def _crypto_last(sym, hdrs):
 # Binance's own price off its owner's close by more than this factor is another
 # instrument under the same ticker (CATUSDT there is Caterpillar, not the CAT memecoin)
 _COLLISION_X = 10.0
+# One verdict per (symbol, owner) per UTC day on disk: the account reader is a fresh
+# process every minute and must not run every owner's fetch_data to compare. An owner
+# close that cannot be read is asked again after _COLLISION_RETRY_S, Binance meanwhile.
+COLLISION_PATH = "state/paper_crypto_collision.json"
+_COLLISION_RETRY_S = 600
 
 
-def _binance_unless_collision(sym, px, hdrs):
-    """(price, owner or None). An owner whose close cannot be read keeps Binance's price."""
-    if not _resolve_strategy(sym):
+def _collision_table(day):
+    try:
+        with open(COLLISION_PATH) as f:
+            d = json.load(f)
+        if d.get("date") == day and isinstance(d.get("verdicts"), dict):
+            return d["verdicts"]
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return {}
+
+
+def _collision_save(day, key, verdict):
+    table = _collision_table(day)
+    table[key] = {"collision": verdict, "at": int(time.time())}
+    try:
+        os.makedirs(os.path.dirname(COLLISION_PATH), exist_ok=True)
+        tmp = COLLISION_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"date": day, "verdicts": table}, f)
+        atomic_replace(tmp, COLLISION_PATH)
+    except OSError as e:
+        log.warning(f"[paper_data] collision cache write failed: {e}")
+
+
+def _collision_hit(table, key):
+    """(verdict, at) of a well-formed cache entry, else None (a hand-edited file is no cache)."""
+    hit = table.get(key)
+    if not isinstance(hit, dict):
+        return None
+    verdict, at = hit.get("collision"), hit.get("at")
+    if verdict not in (True, False, None) or isinstance(at, bool) or not isinstance(at, (int, float)):
+        return None
+    return verdict, at
+
+
+def _unless_collision(sym, px, hdrs, src):
+    """(price, owner or None) for a Binance-market price `px` read from `src`. Not
+    judged yet and the owner's close unreadable → px; judged a collision today →
+    the owner's close or PaperNoPrice, never px (that is the other instrument)."""
+    name = _resolve_strategy(sym)
+    if not name:
+        return px, None
+    from datetime import datetime, timezone
+    day, key = datetime.now(timezone.utc).date().isoformat(), f"{sym}|{name}"
+    verdict, at = _collision_hit(_collision_table(day), key) or (None, None)
+    if verdict is False:
+        return px, None
+    if verdict is None and at is not None and time.time() - at < _COLLISION_RETRY_S:
         return px, None
     try:
         own, name = _owner_price(sym, hdrs)
-    except PaperNoPrice:
+        if not (math.isfinite(own) and own > 0):
+            raise PaperNoPrice(f"strategy {name}'s own close for {sym} is {own!r}")
+    except PaperNoPrice as e:
+        if verdict:
+            raise PaperNoPrice(f"{sym}: {src} carries another instrument under this ticker and "
+                               f"the strategy's own close is unreadable: {e}")
+        _collision_save(day, key, None)
         return px, None
-    if own > 0 and 1 / _COLLISION_X <= px / own <= _COLLISION_X:
-        return px, None
-    log.warning(f"[paper_data] {sym}: Binance {px} vs strategy {name}'s own close {own} — "
-                f"a different instrument under the same ticker; priced at the strategy's own close")
-    return own, name
+    if verdict is None:
+        verdict = not (1 / _COLLISION_X <= px / own <= _COLLISION_X)
+        _collision_save(day, key, verdict)
+        if verdict:
+            log.warning(f"[paper_data] {sym}: {src} {px} vs strategy {name}'s own close {own} — "
+                        f"a different instrument under the same ticker; priced at the strategy's "
+                        f"own close for the rest of the UTC day")
+    return (own, name) if verdict else (px, None)
 
 
 # Widening windows so a closed market (weekend, Lunar New Year) still answers its last minute
