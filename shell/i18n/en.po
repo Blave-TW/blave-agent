@@ -8606,7 +8606,7 @@ msgid "cx.paper.q"
 msgstr "How do paper fills work?"
 
 msgid "cx.paper.fill"
-msgstr "Fills at your strategy's own market data in real time, with fees (no slippage). Taiwan stocks fill at the unadjusted close, intraday strategies at the latest unadjusted bar; dividends not credited."
+msgstr "Fills at the latest real market price, with fees (no slippage): crypto at Binance's last trade (if Binance is unreachable, Blave's latest 1-minute bar, then your strategy's own close); TAIEX futures at the near-month's latest 1-minute price; Taiwan and US stocks at the unadjusted close (intraday strategies at the latest unadjusted bar); dividends not credited."
 
 # Futures brokers (President / Capital): first fact line — brokers use certificates, not API keys
 msgid "cx.fact.cert"

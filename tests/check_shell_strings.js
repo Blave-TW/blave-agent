@@ -194,11 +194,13 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
   if (dead.length) fail(`S0–S7 那一套的字還在表裡:[${dead}]`); else pass("S0–S7 那一套的字(tm.cloudUpdate* / up.chat / up.update / up.c.*)兩語都刪了");
 }
 
-// ---- 9. 綁模擬帳戶說明講台股成交價的出處 ----
-// 模擬盤台股照未還原收盤價成交、股利不入帳(lib/paper_data;網頁 workspace_cx_paper_note 同句),只寫「照策略的行情資料成交」台股不成立
+// ---- 9. 綁模擬帳戶說明講各市場成交價的出處 ----
+// 模擬盤用市場上實際的最新價(lib/paper_data;網頁 workspace_cx_paper_how_p 同句):加密 Binance 最新成交、台指期近月 1m、
+// 台股照未還原收盤價、股利不入帳。舊句「用策略的行情即時成交」已不成立
 { const note = (lang) => (block(lang).match(/"cx\.paper\.fill": "([^"]*)"/) || [])[1] || "";
-  const MUST = { zh: ["未還原收盤價", "分 K 策略用最新一根", "股利不入帳"],
-    en: ["unadjusted close", "intraday strategies at the latest unadjusted bar", "dividends not credited"] };
+  const MUST = { zh: ["Binance 最新成交價", "近月最新一分鐘價", "未還原收盤價", "分 K 策略用最新一根", "股利不入帳"],
+    en: ["Binance's last trade", "near-month's latest 1-minute price", "unadjusted close", "intraday strategies at the latest unadjusted bar", "dividends not credited"] };
+  if (["zh", "en"].some((l) => /策略的行情即時|own market data in real time/.test(note(l)))) fail("cx.paper.fill 還寫著舊的「用策略的行情即時成交」");
   const miss = Object.entries(MUST).filter(([l, ws]) => !ws.every((w) => note(l).includes(w))).map(([l]) => l);
   if (miss.length) fail(`cx.paper.fill(「模擬怎麼成交？」展開內容)沒寫台股照未還原收盤價成交、股利不入帳:[${miss}]`);
   else pass("cx.paper.fill(「模擬怎麼成交？」展開內容)兩語都寫台股照未還原收盤價成交、股利不入帳");
