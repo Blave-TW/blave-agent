@@ -2342,7 +2342,7 @@ msgid "tr.ov.evHaltNote"
 msgstr "exits and stops still run; new entries paused"
 
 msgid "tr.ov.evDowntimeNote"
-msgstr "Everything is frozen — no reducing or closing either. To resume, press “Start trading” and choose whether to sync positions."
+msgstr "everything is frozen, including closes; press Start trading to resume"
 
 msgid "tr.ov.evErr"
 msgstr "Order failed"
@@ -2353,29 +2353,116 @@ msgstr "Bar has not arrived"
 msgid "tr.ov.evBarStaleNote"
 msgstr "waited {minutes} min and still retrying; the signal will be late"
 
-msgid "tr.ov.evBarStaleComputedNote"
-msgstr "waited {minutes} min and still retrying; the signal was already computed on the latest data, using that symbol's last bar"
+msgid "tr.ov.evMarketCheckOffNote"
+msgstr "held strategies stay held, but a newly added symbol may only be stopped at the next report; ask your agent to look at it"
+
+msgid "tr.ov.evMarketCheckOff"
+msgstr "Pre-order market check not fully running"
+
+msgid "tr.ov.evSettingsRollbackFailedNote"
+msgstr "trading still uses your last saved amounts; save your settings again"
+
+msgid "tr.ov.evSettingsRollbackFailed"
+msgstr "Settings not saved — partly not undone"
+
+msgid "tr.ov.evSettingsUnsafeNote"
+msgstr "save your position sizes again"
+
+msgid "tr.ov.evSettingsUnsafe"
+msgstr "Settings not saved — trading paused"
+
+msgid "tr.ov.evMarketHoldNote"
+msgstr "positions unchanged; ask your agent to rerun the backtest"
+
+msgid "tr.ov.evMarketHold"
+msgstr "Market mismatch — orders held"
+
+msgid "tr.ov.evReportDegradedNoteNoCount"
+msgstr "the AI write-up did not finish; the numbers are still there"
+
+msgid "tr.ov.evReportDegradedNote"
+msgstr "the AI write-up did not finish {count} times in a row; the numbers are still there"
+
+msgid "tr.ov.evReportDegraded"
+msgstr "Scheduled report “{title}” came out data-only"
+
+msgid "tr.ov.evReportRejectedNote"
+msgstr "it failed the format check at {field}; ask the agent in chat to fix that field and rerun the report"
+
+msgid "tr.ov.evReportRejected"
+msgstr "Report “{title}” failed to upload"
+
+msgid "tr.ov.evMemLowNote"
+msgstr "{mem_avail} free of {mem_total}; the OS may kill processes"
+
+msgid "tr.ov.evMemLow"
+msgstr "Server nearly out of memory"
+
+msgid "tr.ov.evDiskFullNote"
+msgstr "{disk_pct} used; logs and trade records will soon fail to write"
+
+msgid "tr.ov.evDiskFull"
+msgstr "Server disk nearly full"
+
+msgid "tr.ov.evMachineBack"
+msgstr "Server reporting again"
+
+msgid "tr.ov.evMachineSilentNote"
+msgstr "nothing for {minutes} min; strategies on it are probably not running"
+
+msgid "tr.ov.evMachineSilent"
+msgstr "Server stopped reporting"
+
+msgid "tr.ov.evUiOverrideNote"
+msgstr "the amounts and venues actually in effect are the ones on the Portfolio page"
+
+msgid "tr.ov.evUiOverride"
+msgstr "Workspace settings override the config file"
+
+msgid "tr.ov.evVenueUnboundNote"
+msgstr "keys are on the machine but it is not bound on the Portfolio page, so no order is routed to it"
+
+msgid "tr.ov.evVenueUnbound"
+msgstr "{venue} is not bound"
+
+msgid "tr.ov.evRecBack"
+msgstr "Order engine back"
+
+msgid "tr.ov.evRecDead"
+msgstr "Order engine stopped reporting"
+
+msgid "tr.ov.evExecAbandonedNote"
+msgstr "so the close order waiting behind it can go through"
+
+msgid "tr.ov.evExecAbandoned"
+msgstr "Wedged execution abandoned"
+
+msgid "tr.ov.evExecOverdue"
+msgstr "Execution overdue"
+
+msgid "tr.ov.evExUnreachTip"
+msgstr "A temporary exchange fault usually needs nothing from you; if it drags on, check the exchange's announcements"
 
 msgid "tr.ov.evTargetStale"
-msgstr "Scheduled runs keep failing"
+msgstr "Target position stale"
 
 msgid "tr.ov.evTargetStaleNote"
-msgstr "target position not updated for too long; no new opens or adds for it, reducing and closing still run"
+msgstr "not updated for a while; can reduce but not add. Ask your agent why its runs fail"
 
 msgid "tr.ov.evTargetStaleMin"
-msgstr "target position not updated for {n} min; no new opens or adds for it, reducing and closing still run"
+msgstr "not updated for {n} min; can reduce but not add. Ask your agent why its runs fail"
 
 msgid "tr.ov.evTargetStaleHour"
-msgstr "target position not updated for {n} hours; no new opens or adds for it, reducing and closing still run"
+msgstr "not updated for {n} hours; can reduce but not add. Ask your agent why its runs fail"
 
 msgid "tr.ov.evTargetStaleDay"
-msgstr "target position not updated for {n} days; no new opens or adds for it, reducing and closing still run"
+msgstr "not updated for {n} days; can reduce but not add. Ask your agent why its runs fail"
 
 msgid "tr.ov.evDeadMembers"
-msgstr "No new data for over a month"
+msgstr "Members stopped updating"
 
 msgid "tr.ov.evDeadMembersNote"
-msgstr "most likely delisted; the schedule no longer waits for them and signals run on time with the rest; if delisted, ask your agent to remove them so they get no weight"
+msgstr "no data for over a month, likely delisted; ask your agent to remove them"
 
 msgid "tr.ov.evDeadMore"
 msgstr "and {more} more"
@@ -2384,7 +2471,7 @@ msgid "tr.ov.evExUnreach"
 msgstr "{venue} unreachable for {minutes} min"
 
 msgid "tr.ov.evExUnreachNote"
-msgstr "no orders go out meanwhile and trading resumes by itself once it is back; a temporary exchange fault usually needs nothing from you, but if it drags on, check the exchange's announcements"
+msgstr "no orders meanwhile; resumes on its own"
 
 msgid "tr.ov.evExBack"
 msgstr "{venue} reachable again"
@@ -2421,36 +2508,6 @@ msgstr "the schedule keeps firing, but this run produced no signal"
 
 msgid "tr.ov.evUnreach"
 msgstr "Can’t read the cloud’s event log right now; this will retry shortly. It does not mean nothing happened."
-
-msgid "tr.ov.evDtHalt"
-msgstr "Sent from Blave Desktop: pause trading"
-
-msgid "tr.ov.evDtResume"
-msgstr "Sent from Blave Desktop: resume trading"
-
-msgid "tr.ov.evDtCloseAll"
-msgstr "Sent from Blave Desktop: pause and close all positions"
-
-msgid "tr.ov.evDtAmounts"
-msgstr "Sent from Blave Desktop: change position sizes"
-
-msgid "tr.ov.evDtCredentials"
-msgstr "Sent from Blave Desktop: connect exchange"
-
-msgid "tr.ov.evDtCredentialsRemove"
-msgstr "Sent from Blave Desktop: disconnect exchange"
-
-msgid "tr.ov.evDtRestartReconciler"
-msgstr "Sent from Blave Desktop: restart reconciler"
-
-msgid "tr.ov.evDtRetestAccounts"
-msgstr "Sent from Blave Desktop: retest connection"
-
-msgid "tr.ov.evDtOther"
-msgstr "Command sent from Blave Desktop"
-
-msgid "tr.ov.evDtDevice"
-msgstr "device: {device}"
 
 # ── trade:end ──
 
@@ -3496,12 +3553,6 @@ msgstr "This computer’s amount settings couldn’t be read, so saving now coul
 msgid "src.delCfgUnread"
 msgstr "This computer’s trading settings couldn’t be read, so it isn’t clear whether the strategies using this source are trading. Nothing was deleted; try again in a moment."
 
-msgid "tr.ov.evDtUpdate"
-msgstr "Update to the latest version"
-
-msgid "tr.ov.evDtDeleteStrategy"
-msgstr "Sent from Blave Desktop: delete a strategy"
-
 msgid "tr.ov.evManualClose"
 msgstr "Capital positions still open"
 
@@ -3581,7 +3632,7 @@ msgid "tr.ov.evRestartStopFailed"
 msgstr "Machine restarted — trading may not have stopped"
 
 msgid "tr.ov.evRestartStopFailedNote"
-msgstr "press Pause trading first, then Update cloud machine; the workspace is out of date"
+msgstr "press Pause trading first, then Update cloud machine; the machine is out of date"
 
 msgid "tr.haltReasonAll"
 msgstr "No orders are going out — exits and stops won’t run either. Once the problem is fixed, press Start trading; if you’re not sure what caused it, ask the agent in chat."
@@ -6137,7 +6188,7 @@ msgid "ver.guardS3"
 msgstr "After you confirm, save once in Auto-trading: fund the new strategy and set the original's amount to 0 (keep it selected so you can roll back)"
 
 msgid "ver.guardNote"
-msgstr "Same symbol and direction: the reconciler swaps old for new in one round, with little or no trading. Opposite direction: a full close and re-entry."
+msgstr "Same symbol and direction: the order engine swaps old for new in one round, with little or no trading. Opposite direction: a full close and re-entry."
 
 msgid "ver.guardOk"
 msgstr "Create a new strategy from {v}"

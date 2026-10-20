@@ -988,12 +988,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && trErrLoud({ ts: "2026-09-21T14:26:00" }, "unconfirmed", 0, { ts: "2026-09-21T14:25:59" }) === true && trErrLoud({ ts: "2026-09-21T14:26:00" }, "halted", 0, null) === false);
     ok("不亮綠點:切換器那一格只在 running 才亮(unconfirmed 不借用 running)", /out\.run = state === "running" && /.test(src) && trExecState(C0({ gated: false })) !== "running"); }
   { // 事件清單補兩種
-    const ev = src.slice(src.indexOf("const TR_DT_ACTION"), src.indexOf("function trOvEvents("));
+    const ev = src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents("));
     var trVenueLabel = (x) => x, t = (k, v) => k + (v ? JSON.stringify(v) : "");
-    eval(ev.replace("const TR_DT_ACTION", "var TR_DT_ACTION"));
-    ok("S4 machine_restart_stop_failed 事件:同網頁那一列(可能沒停住;先暫停、再更新)", J(trEventText("machine_restart_stop_failed", {})) === J(["tr.ov.evRestartStopFailed", "tr.ov.evRestartStopFailedNote"]));
-    ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {})) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
-    ok("desktop_action update / delete_strategy 有自己的一句", trEventText("desktop_action", { action: "update" })[0] === "tr.ov.evDtUpdate" && trEventText("desktop_action", { action: "delete_strategy" })[0] === "tr.ov.evDtDeleteStrategy");
+    eval(ev.replace(/^const /gm, "var "));
+    ok("S4 machine_restart_stop_failed 事件:同網頁那一列(可能沒停住;先暫停、再更新)", J(trEventText("machine_restart_stop_failed", {}).slice(0, 2)) === J(["tr.ov.evRestartStopFailed", "tr.ov.evRestartStopFailedNote"]));
+    ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {}).slice(0, 2)) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
+    ok("desktop_action 不畫", trEventText("desktop_action", { action: "update" }) === null);
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
     ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose · TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose"); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明
@@ -2238,7 +2238,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const hist = node("div");
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
       $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD", trSetTab: (tab, focus) => { ctx.tabbed = [tab, focus]; } });
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_DT_ACTION"), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
       + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trWithUnit", "trPaintHist", "trTwNamesWant", "trTwName", "trTwNameEl", "trOvFills", "trOvEvents"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const CAP = { ts: now - 60, action: "BUY", symbol: "TX2610", exchange: "capital", signed_diff: 2, legs: [{ executed_qty: 2, fill_price: 23000 }] };

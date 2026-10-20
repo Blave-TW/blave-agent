@@ -4823,58 +4823,97 @@ function trOrderErrText(sym, err) {
   if (p && Object.prototype.hasOwnProperty.call(TR_REJECT_TEXT, p.kind)) return t(TR_REJECT_TEXT[p.kind], { sym });
   return t("tr.orderFailed", { sym, err: String(err == null ? "" : err).slice(0, 200) });
 }
-/* 從電腦版送出的指令(平台的事件流才有,`{action, device}`,不帶任何值——契約 write-contract §7)。
-   記的是「平台收下了指令」不是「機器已套用」,所以文案講「送出」;真的生效由後面的 halt / resume / venue_* 那幾列表達。
-   認不得的 action(這一版的白名單比 api 舊)照樣留一列:稽核列消失比講得籠統更糟。 */
-const TR_DT_ACTION = { halt: "tr.ov.evDtHalt", close_all: "tr.ov.evDtCloseAll", resume: "tr.ov.evDtResume", resume_wait: "tr.ov.evDtResume",
-  amounts: "tr.ov.evDtAmounts", credentials: "tr.ov.evDtCredentials", credentials_remove: "tr.ov.evDtCredentialsRemove",
-  restart_reconciler: "tr.ov.evDtRestartReconciler", retest_accounts: "tr.ov.evDtRetestAccounts",
-  update: "tr.ov.evDtUpdate", delete_strategy: "tr.ov.evDtDeleteStrategy" };
+/* 事件級別,鏡射 api agent_events.SPECS + level_for(halt 看 source、主機重開看 trigger),同網頁 ovEvLevel;
+   不在表裡的當 P3。之後 api 每筆帶級別時改讀那個欄位。標題顏色只看它:1 紅、2 強調、3 一般字 */
+const TR_EV_P1 = ["order_error", "manual_close_required", "execution_interrupted", "execution_fallback_market", "execution_stuck",
+  "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused"];
+const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
+  "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
+  "machine_silent", "disk_full", "memory_low", "report_rejected"];
+function trEvLevel(type, d) {
+  d = d || {};
+  if (type === "halt" || type === "halt_close") return d.source === "reconciler" || d.source === "portfolio" ? 1 : 3;
+  if (type === "machine_restart_stopped") return d.trigger === "resume" ? 2 : d.trigger === "upgrade" ? 3 : 1;
+  return TR_EV_P1.includes(type) ? 1 : TR_EV_P2.includes(type) ? 2 : 3;
+}
+const trEvClass = (lv) => (lv === 1 ? "err" : lv === 2 ? "hl" : "");
+// 說明要帶的值缺一個就整句不出(同網頁 evNote):半句「已經 分鐘沒有回報」比沒有更糟
+function trEvNote(key, vars) {
+  const s = t(key), need = s.match(/\{[a-z_]+\}/g) || [];
+  if (need.some((p) => { const x = (vars || {})[p.slice(1, -1)]; return x == null || x === ""; })) return null;
+  return t(key, vars);
+}
+const trEvNum = (x) => (typeof x === "number" && isFinite(x) ? String(Math.round(x * 100) / 100) : null);
+/* 機器／平台事件 → [標題, 後果註解, 級別, 註解的 tooltip]。白名單:不認得的型別回 null 不畫。desktop_action(用戶自己按的指令回音)
+   整類不畫(Wei 10-20,designer events-list-audit-2026-10-20);bar_stale 帶 computed=true 時訊號已準時算出,不畫 */
 function trEventText(type, d) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
-  if (type === "desktop_action") {
-    const act = typeof d.action === "string" ? d.action : "";
-    const dev = typeof d.device === "string" ? d.device.trim() : "";   // 裝置名是用戶自己取的:代進句子(t() 用 split/join,不吃正規式的 $)
-    return [Object.prototype.hasOwnProperty.call(TR_DT_ACTION, act) ? t(TR_DT_ACTION[act]) : t("tr.ov.evDtOther"),
-      dev ? t("tr.ov.evDtDevice", { device: dev }) : null];
-  }
-  if (type === "exchange_unreachable") return [t("tr.ov.evExUnreach", v), t("tr.ov.evExUnreachNote")];
-  if (type === "exchange_recovered") return [t("tr.ov.evExBack", v), null];
-  // computed:機器已先用現有資料算出訊號、那檔沿用最後一筆 → 換句,並帶出是哪一檔(同網頁 workspace_ov_ev_bar_stale_computed_note)
-  if (type === "bar_stale") {
-    const comp = d.computed === true, sym = comp && typeof d.symbol === "string" ? d.symbol.replace(/@spot$/, "") : "";
-    return [t("tr.ov.evBarStale") + (sym ? " · " + sym : ""), d.minutes == null ? null : t(comp ? "tr.ov.evBarStaleComputedNote" : "tr.ov.evBarStaleNote", v)];
-  }
-  // 目標部位太久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句,後果不能跟著消失
+  const lv = trEvLevel(type, d), str = (x) => (typeof x === "string" ? x : "");
+  const out = (head, note, tip) => [head, note == null ? null : note, lv, tip || null];
+  if (type === "exchange_unreachable") return out(t("tr.ov.evExUnreach", v), t("tr.ov.evExUnreachNote"), t("tr.ov.evExUnreachTip"));
+  if (type === "exchange_recovered") return out(t("tr.ov.evExBack", v), null);
+  if (type === "bar_stale") return d.computed === true ? null : out(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
+  // 目標部位過久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句
   if (type === "target_stale") {
     const s = d.age_s, m = typeof s === "number" && isFinite(s) && s >= 0 ? Math.floor(s / 60) : null, h = m == null ? 0 : Math.floor(m / 60);
-    const name = typeof d.strategy === "string" ? d.strategy : "";
-    return [t("tr.ov.evTargetStale") + (name ? " · " + name : ""),
-      m == null ? t("tr.ov.evTargetStaleNote") : m < 120 ? t("tr.ov.evTargetStaleMin", { n: m }) : h < 48 ? t("tr.ov.evTargetStaleHour", { n: h }) : t("tr.ov.evTargetStaleDay", { n: Math.floor(h / 24) })];
+    const name = str(d.strategy);
+    return out(t("tr.ov.evTargetStale") + (name ? " · " + name : ""),
+      m == null ? t("tr.ov.evTargetStaleNote") : m < 120 ? t("tr.ov.evTargetStaleMin", { n: m }) : h < 48 ? t("tr.ov.evTargetStaleHour", { n: h }) : t("tr.ov.evTargetStaleDay", { n: Math.floor(h / 24) }));
   }
-  // 成分一個月以上沒新資料(同網頁 workspace_ov_ev_dead_members):列前 10 檔,其餘「等 N 檔」——{total}/{more} 兩個都給,語系自己挑
+  // 成分股停止更新:列前 10 檔,其餘「等 N 檔」——{total}/{more} 兩個都給,語系自己挑
   if (type === "dead_members") {
     const syms = (Array.isArray(d.symbols) ? d.symbols : []).filter((x) => typeof x === "string" && x).map((x) => x.replace(/@spot$/, ""));
     const list = syms.slice(0, 10).join(", ") + (syms.length > 10 ? " " + t("tr.ov.evDeadMore", { total: syms.length, more: syms.length - 10 }) : "");
-    const name = typeof d.strategy === "string" ? d.strategy : "";
-    return [t("tr.ov.evDeadMembers") + [name, list].filter(Boolean).map((x) => " · " + x).join(""), t("tr.ov.evDeadMembersNote")];
+    return out(t("tr.ov.evDeadMembers") + (list ? " · " + list : ""), t("tr.ov.evDeadMembersNote"));
   }
-  if (type === "execution_fallback_market") return [t("tr.ov.evExecFallback"), t("tr.ov.evExecFallbackNote")];
-  if (type === "execution_interrupted") return [t("tr.ov.evExecInterrupted"), t("tr.ov.evExecInterruptedNote")];
-  if (type === "execution_stuck") return [t("tr.ov.evExecStuck"), t("tr.ov.evExecStuckNote")];
-  if (type === "scheduler_error") return [t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote")];
-  if (type === "strategy_failed") return [t("tr.ov.evStrategyFailed"), t("tr.ov.evStrategyFailedNote")];
-  // 主機重開、對帳器停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來
-  if (type === "machine_restart_stopped") return [t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote")];
-  // 主機重開、自動下單可能沒停住(舊對帳器沒有重開閘門):同網頁事件列那一句(先暫停、再更新);歷史不上紅
-  if (type === "machine_restart_stop_failed") return [t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote")];
-  // 群益部位要人手動平(同網頁 workspace_ov_ev_manual_close):symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的
+  if (type === "execution_fallback_market") return out(t("tr.ov.evExecFallback"), t("tr.ov.evExecFallbackNote"));
+  if (type === "execution_interrupted") return out(t("tr.ov.evExecInterrupted"), t("tr.ov.evExecInterruptedNote"));
+  // kind 只有 overdue/abandoned;認不得的照樣是通用句(同網頁)
+  if (type === "execution_stuck") return d.kind === "abandoned" ? out(t("tr.ov.evExecAbandoned"), t("tr.ov.evExecAbandonedNote"))
+    : out(t(d.kind === "overdue" ? "tr.ov.evExecOverdue" : "tr.ov.evExecStuck"), t("tr.ov.evExecStuckNote"));
+  if (type === "scheduler_error") return out(t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote"));
+  if (type === "strategy_failed") return out(t("tr.ov.evStrategyFailed"), t("tr.ov.evStrategyFailedNote"));
+  // 主機重開、對帳那支程式停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來;顏色跟 trigger
+  if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote"));
+  if (type === "machine_restart_stop_failed") return out(t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote"));
+  // 群益部位要人手動平:symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的
   if (type === "manual_close_required") {
     const syms = String(d.symbols || "").split(",").map((x) => x.trim()).filter(Boolean).join(", ");
-    return [t("tr.ov.evManualClose") + (syms ? " · " + syms : ""), t("tr.ov.evManualCloseNote")];
+    return out(t("tr.ov.evManualClose") + (syms ? " · " + syms : ""), t("tr.ov.evManualCloseNote"));
   }
-  if (type === "downtime_paused") return [t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote")];   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
+  if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
+  // 以下同網頁 ovEventRow(網頁原本就有、電腦版補上的 8 種,加稽核補畫的 5 種)
+  if (type === "reconciler_dead") return out(t("tr.ov.evRecDead"), null);
+  if (type === "reconciler_recovered") return out(t("tr.ov.evRecBack"), null);
+  if (type === "venue_unbound") return out(t("tr.ov.evVenueUnbound", v), t("tr.ov.evVenueUnboundNote"));
+  if (type === "ui_override") return out(t("tr.ov.evUiOverride"), t("tr.ov.evUiOverrideNote"));
+  if (type === "machine_silent") return out(t("tr.ov.evMachineSilent"), trEvNote("tr.ov.evMachineSilentNote", { minutes: trEvNum(d.minutes) }));
+  if (type === "machine_recovered") return out(t("tr.ov.evMachineBack"), null);
+  if (type === "disk_full") { const p = trEvNum(d.disk_pct); return out(t("tr.ov.evDiskFull"), trEvNote("tr.ov.evDiskFullNote", { disk_pct: p && p + "%" })); }
+  if (type === "memory_low") {
+    const a = trEvNum(d.mem_avail_mb), tot = trEvNum(d.mem_total_mb);
+    return out(t("tr.ov.evMemLow"), trEvNote("tr.ov.evMemLowNote", { mem_avail: a && a + "MB", mem_total: tot && tot + "MB" }));
+  }
+  if (type === "report_rejected" || type === "report_degraded") {
+    const rej = type === "report_rejected", full = str(d.title) || (rej ? str(d.report_id) : ""), chars = Array.from(full);
+    const title = chars.length > 40 ? chars.slice(0, 40).join("") + "…" : full;
+    const key = rej ? "tr.ov.evReportRejected" : "tr.ov.evReportDegraded";
+    const head = full ? t(key, { title }) : t(key).replace(/\s?[「“]\{title\}[」”]/, "");   // 標題全空時連引號一起拿掉
+    if (rej) return out(head, trEvNote("tr.ov.evReportRejectedNote", { field: str(d.field) || null }));
+    const n = typeof d.count === "number" && isFinite(d.count) && d.count >= 1 ? Math.floor(d.count) : null;
+    return out(head, n == null ? t("tr.ov.evReportDegradedNoteNoCount") : t("tr.ov.evReportDegradedNote", { count: n }));
+  }
+  if (type === "market_hold") { const name = str(d.strategy); return out(t("tr.ov.evMarketHold") + (name ? " · " + name : ""), t("tr.ov.evMarketHoldNote")); }
+  if (type === "settings_unsafe") return out(t("tr.ov.evSettingsUnsafe"), t("tr.ov.evSettingsUnsafeNote"));
+  if (type === "settings_rollback_failed") return out(t("tr.ov.evSettingsRollbackFailed"), t("tr.ov.evSettingsRollbackFailedNote"));
+  if (type === "market_check_off") return out(t("tr.ov.evMarketCheckOff"), t("tr.ov.evMarketCheckOffNote"));
   return null;
+}
+// 一列事件的內容:標題(級別色)→ api 合併同因時的 ×N → 「— 說明」(說明的 tooltip 掛 title)
+function trEvBody(body, head, note, lv, tip, count) {
+  body.appendChild(trEl("span", trEvClass(lv), head));
+  if (typeof count === "number" && isFinite(count) && count >= 2) body.append(" ", trEl("span", "mono", "×" + Math.floor(count)));
+  if (note) { const n = trEl("span", "dim", "— " + note); if (tip) n.title = tip; body.append(" ", n); }
 }
 /* 事件 = 狀態改變或要人看的事;成交不是事件(spec-0.1.19 §1.1)——買進／賣出列只在交易歷史分頁,
    這裡標題列右側數同一區間的成交筆數帶路過去。0 筆整行不出 */
@@ -4907,28 +4946,30 @@ function trOvEvents(r, z) {
     if (!ev || typeof ev.ts !== "number" || typeof ev.type !== "string") return;
     const d = ev.data && typeof ev.data === "object" ? ev.data : ev;   // 平台格式的欄位在 data;這台電腦那一份直接放最外層
     const venue = trVenueLabel(String(d.venue || ""), true);
-    let head = null, note = null;
+    let head = null, note = null, lv = 3, tip = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
-    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); head = t(lv === 1 ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = t("tr.ov.evConnected", { venue });
-    else if (ev.type === "machine_restart_stopped") { const txt = trEventText(ev.type, d); if (txt) { head = txt[0]; note = txt[1]; } lastRun = "halt"; }
-    else if (ev.type === "venue_disconnected" && venue) head = t("tr.ov.evDisconnected", { venue });
-    else { const txt = trEventText(ev.type, d); if (txt) { head = txt[0]; note = txt[1]; } }   // 雲端才有的型別(desktop_action、交易所連不上…)
+    else if (ev.type === "machine_restart_stopped") { const txt = trEventText(ev.type, d); if (txt) [head, note, lv, tip] = txt; lastRun = "halt"; }
+    // 雲端格式(欄位在 data)才是平台記的「被解除」(P2);這台電腦記的那筆是用戶自己按的,一般字
+    else if (ev.type === "venue_disconnected" && venue) { head = t("tr.ov.evDisconnected", { venue }); lv = d !== ev ? 2 : 3; }
+    else { const txt = trEventText(ev.type, d); if (txt) [head, note, lv, tip] = txt; }   // 雲端才有的型別(交易所連不上…);desktop_action 回 null 不畫
     if (!head) return;
-    push(ev.ts * 1000, (body) => { body.appendChild(trEl("span", "hl", head)); if (note) body.append(" ", trEl("span", "dim", "— " + note)); });
+    push(ev.ts * 1000, (body) => trEvBody(body, head, note, lv, tip, ev.count));
   });
   // 目前的 HALT(狀態檔的現況):畫面上按的那一次已經在上面了,兩分鐘內的同一件事不重複列;自動暫停、聊天裡的暫停只有這裡看得到
   const halt = r.halt || {}, haltMs = trMs(halt.at);
   if (halt.halted && !uiHalts.some((x) => haltMs != null && Math.abs(x - haltMs) < 120000)) push(haltMs, (body) => {
-    body.appendChild(trEl("span", "hl", halt.source && halt.source !== "web" ? t("tr.ov.evHaltAuto") : t("tr.ov.evHalt")));
+    const auto = !!halt.source && halt.source !== "web";
+    body.appendChild(trEl("span", auto ? "err" : "", auto ? t("tr.ov.evHaltAuto") : t("tr.ov.evHalt")));
     body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
   });
   (Array.isArray(r.order_errors) ? r.order_errors : []).forEach((e) => {
     if (!e || typeof e !== "object") return;
     push(trMs(e.ts), (body) => {
-      body.appendChild(trEl("span", "sell", t("tr.ov.evErr")));
+      body.appendChild(trEl("span", "err", t("tr.ov.evErr")));
       const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || ""), twn = trTwName(sym), tw = trTwNameEl(sym);
       if (trOrderErrParse(raw)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(twn ? sym + " " + twn : sym, raw)));   // 認得的原因:整句在地化(句子自己帶標的;台股帶名字)
       else { body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw); body.append(" ", trEl("span", "dim", "— " + raw.slice(0, 160))); }
@@ -4939,7 +4980,7 @@ function trOvEvents(r, z) {
     const evd = ev.payload && typeof ev.payload === "object" ? ev.payload : ev.data && typeof ev.data === "object" ? ev.data : ev;   // 機器事件的欄位叫 payload(runtime/events.py);data 是平台格式
     const txt = trEventText(ev.type, evd);
     if (!txt) return;
-    push(trMs(ev.ts), (body) => { body.appendChild(trEl("span", "hl", txt[0])); if (txt[1]) body.append(" ", trEl("span", "dim", "— " + txt[1])); });
+    push(trMs(ev.ts), (body) => trEvBody(body, txt[0], txt[1], txt[2], txt[3], ev.count));
   });
   /* 讀不到就說讀不到:絕不可以把「這一輪沒讀到」畫成「這段期間沒有事件」(同權益曲線的先例——讀不到就不畫,不斷言)。
      報告裡的那幾種(下單、現在的 HALT、下單失敗)是另一個來源,讀得到就照列,所以這一句是加在清單上面、不取代清單。 */
