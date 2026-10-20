@@ -166,7 +166,10 @@ app.whenReady().then(async () => {
     && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(presOn || caplOn ? `[t("cx.group.crypto"), t("cap.group.tw")]` : `[t("cx.group.crypto")]`)));
   if (!presOn) { await pick("president"); ok("③ 旗標關著硬選 president(選單裡沒有那一項):退回模擬", (await js(`CXF.venue`)) === "paper"); }
   await pick("capital");
-  ok("③ 這台電腦硬選 capital(選單裡沒有那一項):退回模擬、主鈕照在", (await js(`CXF.venue`)) === "paper" && (await js(`!$("cx-go").hidden`)));
+  // 群益本機受 CAPL_LOCAL_ON 管:關著時選單裡沒有、硬選退回模擬;開著(測試包)時整個框交給 capital_local.js(Mac 上是 m-mac)
+  if (caplOn) ok("③ CAPL_LOCAL_ON 開著:這台電腦選 capital → 群益本機的框(標題「連接群益」、這台電腦)", (await js(`CXF.venue`)) === "capital"
+    && (await js(`$("cx-title").textContent === t("cap.title") && !$("cx-env").hidden`)));
+  else ok("③ 這台電腦硬選 capital(選單裡沒有那一項):退回模擬、主鈕照在", (await js(`CXF.venue`)) === "paper" && (await js(`!$("cx-go").hidden`)));
   await pick("okx");
   ok("③ 換到 OKX:主鈕在", await js(`!$("cx-go").hidden`));
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
