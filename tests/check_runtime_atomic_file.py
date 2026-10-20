@@ -643,6 +643,7 @@ REVIEWED = {
     ("local_daemon.py", "_link_current"): "os.symlink(tmp) never follows an existing name (EEXIST)",
     ("local_daemon.py", "_spawn_locked"): "reconciler.log rotation: renames the log, writes nothing",
     ("president_connect.py", "_spawn"): "president_worker.log rotation (desktop): renames the log, writes nothing",
+    ("capital_local.py", "_spawn"): "capital_worker.log rotation (desktop): renames the log, writes nothing",
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
     ("sdk_pin.py", "_mark_bad"): ".ready → .bad inside $BASE/sdk/<pin> (rename of our own marker); $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
@@ -684,6 +685,7 @@ CREATE_REVIEWED = {
 }
 # plain writes: open / os.fdopen with "w" / "x" / "+" (not "a": the list above), write_text / write_bytes
 WRITE_REVIEWED = {
+    ("capital_local.py", "_download"): "setup downloads (vcredist, the 群益 component zip) into a mkdtemp dir of its own, SHA256-checked where pinned, deleted after setup",
     ("command_listener.py", "_save_amounts_all_or_nothing"): "state/execution/hold: a pid marker the reconciler only checks for existence (same as local_daemon / update_workspace)",
     ("refresh_capacity.py", "demote_oom"): "/proc/<pid>/oom_score_adj of our own refresh child: a kernel knob, not a file to replace",
     ("local_daemon.py", "_run"): "state/execution/hold: a pid marker the reconciler only checks for existence (same as manager/update_workspace.py)",

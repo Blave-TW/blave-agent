@@ -118,7 +118,7 @@ CLOUD_ONLY = frozenset({
 # Not in the api's list at all: the desktop's own 統一期貨 connect flow
 # (runtime/president_connect.local_dispatch). Only the app's main process sends
 # it (shell/daemon.js MAIN_ONLY_COMMANDS); its secrets arrive sealed.
-LOCAL_ONLY = frozenset({"president_local"})
+LOCAL_ONLY = frozenset({"president_local", "capital_local"})   # 群益: runtime/capital_local.py, same shape
 UNSIGNED_OK = frozenset({"halt"})
 
 MAX_BYTES = 16 * 1024      # = the api's MAX_BYTES on the way in
@@ -518,6 +518,18 @@ def _pid_cwd(pid):
     return ""
 
 
+def secret_line_all():
+    """The reconciler's one stdin line: 統一's keys and 群益's in one JSON object
+    (each lib vault picks only its own); "" when neither has been handed over."""
+    import capital_local
+    import president_connect
+    d = {}
+    for line in (president_connect.secret_line(), capital_local.secret_line()):
+        if line:
+            d.update(json.loads(line))
+    return json.dumps(d) if d else ""
+
+
 def _take_president_line():
     """`--president-stdin`: the daemon's first line on our stdin → lib.president_vault,
     before the parent watch starts draining that pipe."""
@@ -528,6 +540,11 @@ def _take_president_line():
         president_vault.use_local_secrets(d if isinstance(d, dict) else {})
     except Exception as e:  # an older lib, a garbled line: 統一 orders fail closed, others go on
         _log(f"president credentials not taken ({type(e).__name__})")
+    try:  # the same line carries 群益's two keys (secret_line_all); each vault picks its own
+        from lib import capital_vault
+        capital_vault.use_local_secrets(d if isinstance(d, dict) else {})
+    except Exception as e:
+        _log(f"capital credentials not taken ({type(e).__name__})")
 
 
 def run_reconciler(script, president_stdin=False):
@@ -1072,9 +1089,10 @@ class Daemon:
         import portfolio_reporter
         self.cl, self.events, self.reporter = cl, events, portfolio_reporter
         import president_connect
-        self.pc = president_connect
+        import capital_local
+        self.pc, self.capl = president_connect, capital_local
         self.sup = ReconcilerSupervisor(workspace, cl._local_child_env, cl._pid_cmdline,
-                                        cl._child_kw, secret_line=president_connect.secret_line)
+                                        cl._child_kw, secret_line=secret_line_all)
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
                 self.version = f.read().strip()
@@ -1227,6 +1245,7 @@ class Daemon:
                 "signed": bool(self.secret), "reconciler": self.sup.info(),
             }
             doc["president_local"] = self.pc.local_info()
+            doc["capital_local"] = self.capl.local_info()
             try:
                 _write_json_atomic(self.status_path, doc)
             except (OSError, TypeError, ValueError) as e:
@@ -1298,6 +1317,10 @@ class Daemon:
                 self.pc.local_tick()
             except Exception as e:
                 _log(f"president tick failed: {type(e).__name__}")
+            try:
+                self.capl.local_tick()
+            except Exception as e:
+                _log(f"capital tick failed: {type(e).__name__}")
             self._reconcile_watch()
             self.stop.wait(1)
 
@@ -1348,10 +1371,14 @@ class Daemon:
         # 統一期貨: only through president_local's cert step
         # (president_connect.local_bind_gate) — the chat bind still cannot.
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
-                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT"})
+                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT", "CAPITAL"})
         self.pc.set_seal_key(self.secret)
         self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("統一期貨 credentials handed over")
         self.pc._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
+        # 群益: only through capital_local's bind step (capital_local.local_bind_gate)
+        self.capl.set_seal_key(self.secret)
+        self.capl._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("群益 credentials handed over")
+        self.capl._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
         cl._resume_mgmt_watch()
@@ -1382,6 +1409,10 @@ class Daemon:
             self.pc.local_shutdown()
         except Exception as e:
             _log(f"president worker not stopped ({type(e).__name__})")
+        try:
+            self.capl.local_shutdown()
+        except Exception as e:
+            _log(f"capital worker not stopped ({type(e).__name__})")
         if not self.sup.stop_reconciler(
                 f"the daemon is shutting down ({self.stop_why or 'SIGTERM / SIGINT'})"):
             _log("reconciler not confirmed stopped")

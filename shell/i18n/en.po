@@ -8497,3 +8497,73 @@ msgstr "Found a Capital certificate on this computer, expiring {date}. Next, ent
 
 msgid "capl.mac"
 msgstr "Capital needs Windows."
+
+# 群益本機帳密表單之後(0.1.28;renderer/capital_local.js)。帳密存在哪(主行程 safeStorage)
+msgid "capl.store"
+msgstr "Your national ID number and trading password are encrypted by Windows on this computer, used only by the Capital order program, never uploaded, and not readable by the agent."
+
+# 裝元件那一列在跑時的灰字:缺 VC++ 2010 時會跳一次 UAC(微軟的 redist,簽章先驗)
+msgid "capl.setupUac"
+msgstr "On the first install, Windows may ask whether Microsoft's Visual C++ installer can make changes. Choose Yes."
+
+msgid "capl.s.cert"
+msgstr "Capital certificate"
+
+# 登入回 600／604、而且庫裡有舊證(照 runtime capital_connect.plan_removals)
+msgid "capl.old"
+msgstr "There's an older Capital certificate on this computer that makes sign-in fail."
+
+msgid "capl.oldRm"
+msgstr "Delete the Older One"
+
+msgid "capl.oldTitle"
+msgstr "Delete Older Capital Certificate"
+
+msgid "capl.oldBody"
+msgstr "This deletes {n} older Capital certificate(s) on this computer."
+
+msgid "capl.oldKeep"
+msgstr "The one expiring {date} stays."
+
+msgid "capl.oldOk"
+msgstr "Delete"
+
+msgid "capl.oldFail"
+msgstr "The older certificate wasn't deleted. Try again."
+
+# 600／604 但沒有舊的可以刪(只剩這張):回到找憑證那一段
+msgid "capl.certBad"
+msgstr "The Capital certificate on this computer has expired or been revoked. Get a new one."
+
+msgid "capl.certAgain"
+msgstr "Find a Certificate Again"
+
+# 321(第一次用 API)
+msgid "capl.verifyDo"
+msgstr "Capital requires a one-time connection check. Download the check tool and open it, sign in, press 模擬國內證券下單 and 模擬國內期貨下單, then 查詢是否已驗證."
+
+# 確認帳密／讀取帳戶失敗(這台電腦的版本;雲端那組寫的是「主機」)
+msgid "capl.vehicle"
+msgstr "The Capital sign-in program on this computer didn't start."
+
+msgid "capl.apiVersion"
+msgstr "The Capital component on this computer is too old and needs reinstalling."
+
+msgid "capl.reinstall"
+msgstr "Reinstall"
+
+msgid "capl.noCreds"
+msgstr "This computer doesn't have your national ID number and trading password yet. Enter the trading password again."
+
+msgid "capl.busyStep"
+msgstr "Another step is still running on this computer. Wait for it to finish."
+
+msgid "capl.generic"
+msgstr "This computer didn't accept this step."
+
+msgid "capl.libOutdated"
+msgstr "This computer's strategy workspace is too old for Capital. Update Blave and try again."
+
+# 完成那一態,鈕正上方(spec v2 cap.localOnly):憑證綁在這個 Windows 帳號
+msgid "capl.localOnly"
+msgstr "Capital orders go out only while Blave is open and this Windows account is signed in."

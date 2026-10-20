@@ -8514,3 +8514,73 @@ msgstr "這台電腦找到群益憑證，到期 {date}。接著填身分證字�
 
 msgid "capl.mac"
 msgstr "群益需要 Windows。"
+
+# 群益本機帳密表單之後(0.1.28;renderer/capital_local.js)。帳密存在哪(主行程 safeStorage)
+msgid "capl.store"
+msgstr "身分證字號和交易密碼用 Windows 的加密存在這台電腦，只交給群益下單程式，不會上傳，agent 讀不到。"
+
+# 裝元件那一列在跑時的灰字:缺 VC++ 2010 時會跳一次 UAC(微軟的 redist,簽章先驗)
+msgid "capl.setupUac"
+msgstr "第一次裝的話，Windows 可能會問要不要讓微軟的 Visual C++ 安裝程式變更裝置，按「是」。"
+
+msgid "capl.s.cert"
+msgstr "群益憑證"
+
+# 登入回 600／604、而且庫裡有舊證(照 runtime capital_connect.plan_removals)
+msgid "capl.old"
+msgstr "這台電腦上還有一張舊的群益憑證，會讓登入失敗。"
+
+msgid "capl.oldRm"
+msgstr "刪掉舊的那張"
+
+msgid "capl.oldTitle"
+msgstr "刪掉舊的群益憑證"
+
+msgid "capl.oldBody"
+msgstr "會刪掉這台電腦上 {n} 張比較舊的群益憑證。"
+
+msgid "capl.oldKeep"
+msgstr "到期 {date} 的那張留著。"
+
+msgid "capl.oldOk"
+msgstr "刪掉"
+
+msgid "capl.oldFail"
+msgstr "舊的憑證沒有刪成，再試一次。"
+
+# 600／604 但沒有舊的可以刪(只剩這張):回到找憑證那一段
+msgid "capl.certBad"
+msgstr "這台電腦的群益憑證已經過期或被撤銷，要換一張。"
+
+msgid "capl.certAgain"
+msgstr "重新找憑證"
+
+# 321(第一次用 API)
+msgid "capl.verifyDo"
+msgstr "群益規定第一次要跑一次連線檢核。下載檢核工具並打開，登入後按「模擬國內證券下單」「模擬國內期貨下單」，最後按「查詢是否已驗證」。"
+
+# 確認帳密／讀取帳戶失敗(這台電腦的版本;雲端那組寫的是「主機」)
+msgid "capl.vehicle"
+msgstr "這台電腦上的群益登入程式沒有起來。"
+
+msgid "capl.apiVersion"
+msgstr "這台電腦上的群益元件太舊，要重裝。"
+
+msgid "capl.reinstall"
+msgstr "重新安裝"
+
+msgid "capl.noCreds"
+msgstr "這台電腦還沒拿到身分證字號和交易密碼，重填一次交易密碼。"
+
+msgid "capl.busyStep"
+msgstr "這台電腦上還有一步在跑，等它跑完再按。"
+
+msgid "capl.generic"
+msgstr "這台電腦沒有接受這一步。"
+
+msgid "capl.libOutdated"
+msgstr "這台電腦的策略工作區太舊，還不支援群益。更新 Blave 後再試一次。"
+
+# 完成那一態,鈕正上方(spec v2 cap.localOnly):憑證綁在這個 Windows 帳號
+msgid "capl.localOnly"
+msgstr "Blave 開著、這個 Windows 帳號登入時，群益才會下單。"

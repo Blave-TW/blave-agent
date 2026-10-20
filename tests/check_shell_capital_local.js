@@ -241,8 +241,70 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
   const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8"), pre = fs.readFileSync(path.join(SHELL, "preload.js"), "utf8");
   const CH = ["capl-scan", "capl-locale", "capl-wizard", "capl-region", "capl-pick", "capl-import", "capl-forget"];
   ok("6 七條 IPC 都過 handle(fromOurPage)", CH.every((c) => new RegExp(`handle\\("${c}", `).test(main)) && !/ipcMain\.handle\("capl-/.test(main));
-  ok("6 preload 只暴露這七支", ["caplScan", "caplLocale", "caplWizard", "caplRegion", "caplPick", "caplImport", "caplForget"].every((n) => pre.includes(n + ": ")) && (pre.match(/capl[A-Z]\w+: /g) || []).length === 7);
+  ok("6 preload 只暴露這十二支", ["caplScan", "caplLocale", "caplWizard", "caplRegion", "caplPick", "caplImport", "caplForget", "caplInfo", "caplConnect", "caplStep", "caplOld", "caplUnbind"].every((n) => pre.includes(n + ": ")) && (pre.match(/capl[A-Z]\w+: /g) || []).length === 12);
+  ok("6 帳密那幾條也過 handle(fromOurPage)", ["capl-info", "capl-connect", "capl-step", "capl-old", "capl-unbind"].every((c) => new RegExp(`handle\\("${c}", `).test(main)));
   ok("6 主行程把顯示語言交給 capital_local(地區設定的選單名)", /uiLang: \(\) => \{ try \{ return \(app\.getPreferredSystemLanguages\(\)/.test(main));
+
+  // 7. 帳密(主行程):safeStorage、封裝、bind 成功才存、改密碼用存著的身分證、補交、刪舊證
+  { const SECRET = "c".repeat(64), D = require("../shell/daemon"), P = require("../shell/president_local");
+    const fakeSeal = { available: () => true, encrypt: (v) => Buffer.from("SEALED:" + Buffer.from(v).toString("base64")), decrypt: (b) => Buffer.from(String(b).slice(7), "base64").toString() };
+    const sent = []; let reply = { ok: true, result: { bind: "ok" } };
+    const host = { send: async (cmd, args, o) => { sent.push({ cmd, args, o }); return reply; }, sealCapital: (obj) => L.sealFor(SECRET, obj) };
+    const ud7 = path.join(tmp, "ud7"), c7 = mk({ userData: ud7, seal: fakeSeal, host: () => host });
+    const openC = (blob, info, aad) => { const raw = Buffer.from(blob, "base64"), key = crypto.createHmac("sha256", SECRET).update(info).digest();
+      const d = crypto.createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12)); d.setAAD(Buffer.from(aad)); d.setAuthTag(raw.subarray(raw.length - 16));
+      return JSON.parse(Buffer.concat([d.update(raw.subarray(12, raw.length - 16)), d.final()]).toString("utf8")); };
+    ok("7 身分證格式不對 / 密碼有換行 → 不送、不存", (await c7.connect({ id: "A12345", pw: "x" })).code === "BAD_ID" && (await c7.connect({ id: "A123456789", pw: "a\nb" })).code === "BAD_PW"
+      && sent.length === 0 && !fs.existsSync(path.join(ud7, "capital.bin")));
+    const r7 = await c7.connect({ id: "a123456789", pw: "trade-pw" });
+    const b7 = sent[sent.length - 1];
+    ok("7 bind:主行程限定(trusted)、封包打得開、身分證轉大寫", r7.code === "OK" && b7.cmd === "capital_local" && b7.args.op === "bind" && b7.o.trusted === true
+      && JSON.stringify(openC(b7.args.sealed, "capital-local-seal-v1", "capital-local-v1")) === JSON.stringify({ id: "A123456789", pw: "trade-pw" }));
+    let cross = "opened"; try { openC(b7.args.sealed, "president-local-seal-v1", "president-local-v1"); } catch (_) { cross = "refused"; }
+    ok("7 群益的密文用統一的金鑰打不開(反過來也一樣)", cross === "refused" && (() => { try { openC(P.sealFor(SECRET, { a: 1 }), "capital-local-seal-v1", "capital-local-v1"); return false; } catch (_) { return true; } })());
+    ok("7 指令與存檔裡都沒有明文;畫面拿得到的只有存了沒有", !JSON.stringify(b7.args).includes("A123456789") && !JSON.stringify(b7.args).includes("trade-pw")
+      && !fs.readFileSync(path.join(ud7, "capital.bin"), "utf8").includes("trade-pw") && JSON.stringify(c7.info()) === JSON.stringify({ saved: true, windows: true }));
+    reply = { ok: false, error: "ValueError: LIB_OUTDATED: update" };
+    ok("7 bind 被拒 → 代號原樣、存著的那組不變", (await c7.connect({ id: "B223456789", pw: "other" })).code === "LIB_OUTDATED" && c7._load().id === "A123456789");
+    reply = { ok: true, result: {} };
+    await c7.connect({ id: null, pw: "new-pw" });
+    ok("7 改交易密碼(id null)→ 用存著的身分證", JSON.stringify(openC(sent[sent.length - 1].args.sealed, "capital-local-seal-v1", "capital-local-v1")) === JSON.stringify({ id: "A123456789", pw: "new-pw" }));
+    await c7.step("probe", { afterUnlock: true }); await c7.step("start");
+    ok("7 step:probe 只多 after_unlock:true;start 只有 op;亂的名字 / bind 不收", JSON.stringify(sent[sent.length - 2].args) === JSON.stringify({ op: "probe", after_unlock: true })
+      && JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "start" }) && (await c7.step("bind")).code === "BAD_ARGS" && (await c7.step("rm")).code === "BAD_ARGS");
+    reply = { ok: false, error: "UNKNOWN_RESULT" };
+    ok("7 長步驟回條等不到 → SENT", (await c7.step("setup")).code === "SENT");
+    reply = { ok: true, result: {} };
+    let clock = Date.now() + 60000;
+    const c7b = mk({ userData: ud7, seal: fakeSeal, host: () => host, now: () => clock }), n7 = sent.length;
+    await c7b.resync({ capital_local: { secrets: true }, venues: { capital: { credentials: true } } });
+    await c7b.resync({ capital_local: { secrets: false }, venues: {} });
+    ok("7 補交:已經有了 / .env 沒綁群益 → 不送", sent.length === n7);
+    await c7b.resync({ capital_local: { secrets: false }, venues: { capital: { credentials: true } } });
+    await c7b.resync({ capital_local: { secrets: false }, venues: { capital: { credentials: true } } });
+    ok("7 daemon 空手 → 補交 secrets 一次、30 秒內不重送", sent.length === n7 + 1 && sent[n7].args.op === "secrets" && openC(sent[n7].args.sealed, "capital-local-seal-v1", "capital-local-v1").pw === "new-pw");
+    ok("7 daemon.js:capital_local 只有主行程送得出、形狀(bind／secrets 帶密文、probe 只多 after_unlock、其他只有 op)",
+      D.MAIN_ONLY_COMMANDS.has("capital_local") && !D.UI_COMMANDS.has("capital_local") && D.argsOk("capital_local", { op: "bind", sealed: "QUJD" }, true)
+      && !D.argsOk("capital_local", { op: "bind" }, true) && !D.argsOk("capital_local", { op: "bind", sealed: "not base64!" }, true) && D.argsOk("capital_local", { op: "probe", after_unlock: true }, true)
+      && !D.argsOk("capital_local", { op: "probe", after_unlock: false }, true) && D.argsOk("capital_local", { op: "start" }, true) && !D.argsOk("capital_local", { op: "start", x: 1 }, true)
+      && !D.argsOk("capital_local", { op: "cert" }, true));
+    ok("7 解除綁定拿得掉群益那兩行(安全方向);renderer 寫不了群益", D.argsOk("credentials_remove", { env: ["capital_api_key", "capital_password"] }, false)
+      && !D.argsOk("credentials", { env: { CAPITAL_API_KEY: "", CAPITAL_PASSWORD: "x" } }, false) && !D.argsOk("credentials", { env: { CAPITAL_API_KEY: "", CAPITAL_PASSWORD: "x" } }, true));
+    ok("7 forgetCreds 刪掉存檔", c7.forgetCreds() && !fs.existsSync(path.join(ud7, "capital.bin")) && c7.info().saved === false);
+    // 刪舊證
+    let oldOut = { n: 2, keep: NOW + Y };
+    const runOld = async (exe, argv, o) => { if (argv[argv.length - 1] === L.PS_OLD) { calls.push({ exe, argv, o: o || {} }); return { rc: 0, out: JSON.stringify(o && o.env && o.env.CAPL_DO === "1" ? { n: 0, keep: NOW + Y } : oldOut) }; } return run(exe, argv, o); };
+    const c8 = mk({ run: runOld });
+    const plan = await c8.oldCerts(false);
+    ok("7 刪舊證:先只數(不刪)→ 張數與留下那張的到期日", JSON.stringify(plan) === JSON.stringify({ code: "OK", n: 2, keep: L.ymd(NOW + Y) }) && !(calls[calls.length - 1].o.env && calls[calls.length - 1].o.env.CAPL_DO));
+    ok("7 …確認後才帶 CAPL_DO=1 真的刪", (await c8.oldCerts(true)).n === 0 && calls[calls.length - 1].o.env.CAPL_DO === "1");
+    ok("7 刪舊證的腳本:身分證只在腳本裡比、輸出只有 n / keep;篩選同 OU + TaiCA;留下的那張要有私鑰、沒過期", /\$cn = \$keep\.GetNameInfo\('SimpleName', \$false\)/.test(L.PS_OLD)
+      && /ConvertTo-Json -Compress -InputObject @\{ n = \$rm\.Count; keep = /.test(L.PS_OLD) && (L.PS_OLD.match(/ConvertTo-Json/g) || []).length === 2
+      && L.PS_OLD.includes("$_.Subject -like '*OU=The Capital Group*' -and $_.Issuer -like '*TaiCA*'") && /\$_\.HasPrivateKey -and \$_\.NotAfter -ge \$now/.test(L.PS_OLD)
+      && /-eq '1'\) \{ foreach/.test(L.PS_OLD));
+    oldOut = { n: "x" };
+    ok("7 腳本回的不像樣 → FAILED", (await c8.oldCerts(false)).code === "FAILED");
+    ok("7 身分證／密碼規則 = 雲端 cloud_capital.js 那條", (() => { const cs = fs.readFileSync(path.join(SHELL, "cloud_capital.js"), "utf8"); return cs.includes("const ID_RE = " + String(L.ID_RE) + ";") && cs.includes("const PW_RE = " + String(L.PW_RE) + ";"); })()); }
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(red ? `\n${red} FAILED` : "\nall passed");

@@ -252,8 +252,8 @@ try:
 finally:
     requests.get, requests.post, requests.request = real_wire
 daemon_src = open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()
-check('{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT"}' in daemon_src,
-      "local_daemon.py opens exactly Binance + the four checked venues + 統一 on the desktop")
+check('{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT", "CAPITAL"}' in daemon_src,
+      "local_daemon.py opens exactly Binance + the four checked venues + 統一 + 群益 on the desktop")
 # 統一 has no account read to gate on (that read is a login): its gate is the app's cert step
 cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"PRESIDENT"})
 msg = refused({"president_account": "70000011234", "president_password": "vault:x",

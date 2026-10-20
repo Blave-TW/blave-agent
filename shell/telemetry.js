@@ -198,7 +198,10 @@ const EVENTS = {
     // 群益本機開通的憑證那一段(0.1.28;renderer/capital_local.js,spec desktop-capital-new-cert §5;雲端視角的 cap_* 已用掉,本機一律 capl_):
     // capl_have_cert = 按「已經有憑證」;capl_wiz_open = 精靈真的打開了;capl_wiz_anyway = 系統地區不是繁中、按「還是要開」而且打開了;
     // capl_cert_new = 這次開框裡偵測到開精靈前沒有的那張、私鑰用得了。每開一次框每個名字最多一次、失敗不埋、不帶到期日或任何值
-    "capl_have_cert", "capl_wiz_open", "capl_wiz_anyway", "capl_cert_new"] },
+    "capl_have_cert", "capl_wiz_open", "capl_wiz_anyway", "capl_cert_new",
+    // 群益本機帳密之後(同統一 pres_* 的對應):capl_form_saved = 帳密存好並綁上;capl_setup_done = 這次開框看到元件裝好;capl_probe_ok = 這次開框確認帳密過了;
+    // capl_sign_open = 按「開啟簽署頁」;capl_ready = 完成那一態按「完成」
+    "capl_form_saved", "capl_setup_done", "capl_probe_ok", "capl_sign_open", "capl_ready"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

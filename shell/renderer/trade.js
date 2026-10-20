@@ -110,7 +110,15 @@ function trHoldingRows(r, ids) {
 // 讀過而且失敗的 = 串接失敗;還沒讀過的不算失敗
 // 群益在雲端開通中(主機回報有 capital_connect、下單程式還沒起來):帳密一存就算綁定,但讀帳要等下單程式寫出第一份快照——
 // 那段期間的讀帳失敗是預期的,不算串接失敗(設定 › 帳戶 那一列講「開通中」,標頭不能同時講「串接失敗」)
-function trCapWip(r, id) { const c = id === "capital" && r && r.capital_connect; return !!c && typeof c === "object" && !(c.worker && c.worker.status === "ok"); }
+function trCapWip(r, id) {
+  const c = id === "capital" && r && r.capital_connect;
+  if (c && typeof c === "object") return !(c.worker && c.worker.status === "ok");
+  // 群益在這台電腦開通中(runtime capital_local 的狀態檔;ok_at = 開通過,同統一 trPresWip)
+  const l = id === "capital" && r && r.capital_local_connect;
+  return !!l && typeof l === "object" && !(l.worker && (l.worker.status === "ok" || l.worker.ok_at));
+}
+// 群益本機開通過、之後下單程式停掉(登入被拒 / 沒寫出快照):設定 › 帳戶 那一列給「繼續」回框(同 trPresStopped)
+function trCaplStopped(r, id) { const l = id === "capital" && r && r.capital_local_connect; return !!l && typeof l === "object" && !!l.worker && l.worker.status === "failed" && !trCapWip(r, id); }
 /* 統一在這台電腦開通中(狀態檔有 president_connect、worker 從來沒 ok 過;同 president.js presWip、traytext.localLine):讀帳失敗同樣是預期的。
    worker.ok_at = 開通過(runtime 在 worker 第一次 ok 寫、之後登入失敗不清):開通過又停掉的(機器重開落在維護時段、改了密碼)
    只看 status 會被當成開通中,暫停鈕與「部位沒人管」的紅字整個被吞(稽核 integ-0118 B-1) */
@@ -4311,7 +4319,7 @@ function trPaintSet() {
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;
-  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), trExecStored(r), TR.exec, !!TR.sending.execution, !ro && id === "president" && [presWip(r), trPresStopped(r, id)]])) return;
+  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), trExecStored(r), TR.exec, !!TR.sending.execution, !ro && id === "president" && [presWip(r), trPresStopped(r, id)], !ro && id === CAPITAL && [trCapWip(r, id), trCaplStopped(r, id)]])) return;
   const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
@@ -4325,7 +4333,8 @@ function trPaintSet() {
   const presW = !ro && id === "president" && presWip(r);
   // 開通過又停掉的(稽核 integ-0118 B-1):畫紅記號「串接失敗」,但「繼續」照給——「確認登入」只在開通框裡
   const presIn = presW || (!ro && trPresStopped(r, id));
-  const capWip = (ro && trCapWip(r, id)) || presW;
+  const caplW = !ro && id === CAPITAL && trCapWip(r, id), caplStop = !ro && trCaplStopped(r, id);
+  const capWip = (ro && trCapWip(r, id)) || presW || caplW;
   const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict)), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
   if (capWip) st.appendChild(trEl("span", "cap-dot"));
   else if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));
@@ -4334,7 +4343,7 @@ function trPaintSet() {
   st.appendChild(trEl("span", "", capWip ? t("cap.pending") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
-  if (capWip && !presW) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
+  if ((capWip && !presW) || caplStop) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
   // 統一:「繼續」回到清單當下那一步(開通中、或開通過又停掉 → 那一類登入失敗的列與「確認登入」)
   if (presIn) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
@@ -4496,7 +4505,7 @@ async function trExecSend(key) {
 // 解除綁定要移掉的環境變數名。宿主(daemon.js argsOk 的 REMOVABLE)只放行這一版認得的 key,多送一個就整包 BAD_ARGS。
 function trEnvNames(id) {
   if (id === PAPER) return ["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"];
-  if (id === CAPITAL) return ["capital_api_key", "capital_password"];   // 只有雲端解得了(capUnbindSend;名字由主行程決定)
+  if (id === CAPITAL) return ["capital_api_key", "capital_password"];   // 雲端 capUnbindSend、這台電腦 caplUnbind(名字由主行程決定)
   if (id === "president") return ["president_account", "president_password", "president_ca_password", "president_ca_path", "president_url", "president_test_url"];   // = daemon.js PRESIDENT_ENV
   const v = Object.prototype.hasOwnProperty.call(CX_VENUES, id) ? CX_VENUES[id] : null;
   return v ? [v.env + "_API_KEY", v.env + "_SECRET_KEY"].concat(v.pass ? [v.env + "_PASSPHRASE"] : []) : [];
@@ -4510,7 +4519,8 @@ function trUnbind(opener) {
       S.unbinding = true; if (mine()) trPaintSet();
       // 統一(這台電腦):機器上的五行與憑證先拿掉,成功了主行程才丟掉它存的帳密(presidentUnbind)
       const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) })
-        : id === "president" ? await window.blave.presidentUnbind() : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
+        : id === "president" ? await window.blave.presidentUnbind() : id === CAPITAL ? await window.blave.caplUnbind()
+        : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
       S.unbinding = false; S.sig = {};
       // 失敗文案帶 S.env:跨 await 之後 TR 可能已經是另一邊,不帶會拿本機那組「這台電腦」的句子
       if (!res || !res.ok) { trAlert(trSendError(res, "unbind", S.env), "noaccount", S); if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }
@@ -4938,8 +4948,8 @@ function cxModalOpen(opener, venue) {   // venue:設定分頁群益「繼續」�
   if (env === "cloud" && envCloudKind(TR_BAGS.cloud.st) !== "running") return;
   CXF.env = env;
   const L = cxBag(); L.cx = { busy: false, err: null, retest: false };
-  cxOpener = opener || null; cxForget(); CXF.venue = venue === CAPITAL && env === "cloud" ? CAPITAL : venue === "president" && env === "local" ? venue : PAPER; CXF.storeOpen = false;
-  if (CXF.venue === CAPITAL && typeof capResume === "function") capResume();
+  cxOpener = opener || null; cxForget(); CXF.venue = venue === CAPITAL ? CAPITAL : venue === "president" && env === "local" ? venue : PAPER;   // 群益:雲端 capital.js / 這台電腦 capital_local.js CXF.storeOpen = false;
+  if (CXF.venue === CAPITAL && env === "cloud" && typeof capResume === "function") capResume();
   $("view-ws").inert = true;
   const sc = $("cx-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
