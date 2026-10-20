@@ -34,6 +34,7 @@ function run(throwing) {
     tm: () => ({ start: () => { if (throwing.has("tm")) throw new Error("tm"); }, track: (ev, p) => log.push("track:" + ev + ":" + p.kind) }),
     updater: () => ({ start: () => { if (throwing.has("updater")) throw new Error("updater"); } }),
     minGate: () => ({ start: () => { if (throwing.has("gate")) throw new Error("gate"); } }),
+    mobileView: () => ({ start: () => { if (throwing.has("mv")) throw new Error("mv"); } }),   // 0.1.28 手機查看部位
     // 0.1.16 帳號 token 輪替:開 app 檢查一次、之後定期;回合狀態是 main.js 既有那一對
     activeTurn: null, turnStarting: false, ROTATE_MIN_LEFT_MS: 0, ROTATE_CHECK_MS: 1e9, setInterval: () => ({ unref() {} }),
     rotator: () => { if (throwing.has("rotate")) throw new Error("rotate"); return { ensure: () => Promise.resolve() }; },
@@ -55,9 +56,9 @@ function run(throwing) {
 let r = run(new Set());
 await new Promise((res) => setImmediate(res));
 ok("正常啟動:畫面交字後選單重建成中文;沒有任何一步記錯;附件清掃清的是 workspace;偵測完送 device_type", r.registered && r.log.includes("menu:檔案") && r.errors.length === 0 && r.log.includes("prune:/ws") && r.log.includes("track:device_type:laptop"), r);
-r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state", "rotate", "prune", "device"]));
-ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / 版本閘 / app 現況回報 / token 輪替 / 附件清掃 / 機型偵測都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
-  r.registered && r.log.includes("menu:檔案") && r.errors.length === 11 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
+r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state", "rotate", "prune", "device", "mv"]));
+ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / 版本閘 / app 現況回報 / token 輪替 / 附件清掃 / 機型偵測 / 手機查看部位都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
+  r.registered && r.log.includes("menu:檔案") && r.errors.length === 12 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
 r = run(new Set(["tray"]));
 ok("選單列(traySync)拋例外:選單照樣先重建成中文", r.log.includes("menu:檔案") && r.errors.some((e) => /tray failed/.test(e)), r);
 console.log(red ? `\n${red} FAILED` : "\nALL PASS");

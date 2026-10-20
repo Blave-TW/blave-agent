@@ -114,11 +114,13 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   // 列舉:app_secret 讀出來的地方就這幾個(多一個就要有人看過它交給了誰)
   // loadAppSecret( 四處 = 定義、blaveCreds()、planStart、策略庫購買 libraryPurchase
   // loadSecret: loadAppSecret 一處 = rotator() 交給 tokenrotate.js,只拿去打 /oauth/desktop/rotate(tests/check_shell_token_rotate.js)
-  // blaveCreds 只交給五個 getCreds:cloudHost / cloudCmd(tests/check_shell_cloud_cmd.js)/ balanceHost(tests/check_shell_balance.js)/
-  //   shareClient(tests/check_shell_report_share.js)/ mcpCode(tests/check_shell_mcp_code.js);另一處是 currentWho(只回 who,不帶憑證)
-  t("main.js:app_secret 的去向沒有變多(loadAppSecret 四處、交給輪替一處、blaveCreds 只進五個 getCreds 與 currentWho)",
+  // blaveCreds 只交給六個 getCreds:cloudHost / cloudCmd(tests/check_shell_cloud_cmd.js)/ balanceHost(tests/check_shell_balance.js)/
+  //   shareClient(tests/check_shell_report_share.js)/ mcpCode(tests/check_shell_mcp_code.js)/ mobileView(tests/check_shell_mobileview.js);
+  //   另一處是 currentWho(只回 who,不帶憑證)
+  t("main.js:app_secret 的去向沒有變多(loadAppSecret 四處、交給輪替一處、blaveCreds 只進六個 getCreds 與 currentWho)",
     (mainSrc.match(/loadAppSecret\(/g) || []).length === 4 && (mainSrc.match(/\bloadAppSecret\b/g) || []).length === 5 && (mainSrc.match(/loadSecret: loadAppSecret,/g) || []).length === 1
-    && (mainSrc.match(/\bblaveCreds\b/g) || []).length === 7 && (mainSrc.match(/getCreds: blaveCreds\b/g) || []).length === 5
+    && (mainSrc.match(/\bblaveCreds\b/g) || []).length === 8 && (mainSrc.match(/getCreds: blaveCreds\b/g) || []).length === 6
+    && /createMobileView\(\{\n    dir: app\.getPath\("userData"\), apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\), get: \(u\) => getJSON\(u\),\n    getCreds: blaveCreds,/.test(mainSrc)
     && /const currentWho = \(\) => \{ const c = blaveCreds\(\); return c \? c\.who : null; \};/.test(mainSrc)
     && /createShareClient\(\{\n    apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b, [^\n]*\{ timeout: SHARE_UPLOAD_TIMEOUT_MS \} : undefined\), readLocal: reportForShare,\n    logError: rptLogError, log: \(m\) => console\.error\("\[share\] " \+ m\), store: RS\.createShareStore\(path\.join\(BASE, "state", "report-shares\.json"\)\),\n    getCreds: blaveCreds,\n  \}\);/.test(mainSrc)
     && /createMcpCode\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\s*getCreds: blaveCreds \}\);/.test(mainSrc));

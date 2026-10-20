@@ -319,9 +319,11 @@ $("btn-redetect").addEventListener("click", detect);
    (Wei 2026-09-28:登出要過確認框)。 */
 function acctOutAsk(opener) {
   if (!hasToken || oauthPending || planLoginBusy) return;
+  // 手機那一句只在開關開著(而且平台已開放)時出:登出也會刪平台上這台的快照。MV 在打開「帳號與方案」時就讀好了
+  const mvOn = typeof mvShown === "function" && mvShown() && MV.on === true;
   // 第 1 句只在用 Blave AI 時出(登出後會被送回選 AI 的畫面);主機那一句只在帳號有主機時出
   const hasMachine = !!acct && ["starting", "running", "stopped"].includes(planState());
-  const lines = (busyOn() ? [t("busy.cut.out")] : []).concat(cur === "blave" ? [t("acct.out.3")] : [], [t("acct.out.1")], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
+  const lines = (busyOn() ? [t("busy.cut.out")] : []).concat(cur === "blave" ? [t("acct.out.3")] : [], [t("acct.out.1")], mvOn ? [t("acct.out.5")] : [], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
   // 回合中登出:token 撤掉後那條回覆的下一個請求會失敗、斷在半路,所以先停再登出(busyStopThen)
   confirmBox({ title: t("acct.cf.title"), lines, ok: t("acct.cf.ok"), opener, onOk: () => busyStopThen(acctSignOut) });
 }
@@ -442,6 +444,7 @@ function setCat(cat) {
   if (cat === "display" && typeof awakeLoad === "function") { themeLoad(); awakeLoad(); }   // 設定 › 一般的外觀與防睡開關
   if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
   if (cat === "priv") privLoad();
+  if (cat === "plan" && typeof mvLoad === "function") mvLoad();   // 登出確認框要知道手機查看開著沒
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
   if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
@@ -580,7 +583,41 @@ function trackEvent(ev, props) { try { window.blave.trackEvent(ev, props); } cat
 const PRIV_NEVER = ["priv.never.1", "priv.never.2", "priv.never.3", "priv.never.4", "priv.never.5", "priv.never.6"];
 async function privLoad() {
   try { PRIV = (await window.blave.telemetryGet()) === true; } catch (_) { PRIV = null; }
+  await mvLoad();
   privPaint();
+}
+/* 在手機 App 上查看這台電腦的部位(mockup-desktop-mobile-view-toggle A 版:隱私頁最上面)。真值在主行程(mobileview.js);
+   平台還沒開放(visible false)時這一區整個不出。MV = {visible, on, pending, signedIn, name},null = 讀不到 = 不出 */
+let MV = null, MV_BUSY = false;
+async function mvLoad() { try { MV = await window.blave.mobileViewState(); } catch (_) { MV = null; } return MV; }
+const mvShown = () => !!(MV && MV.visible === true);
+async function mvToggle() {
+  if (!mvShown() || !MV.signedIn || MV_BUSY) return;
+  MV_BUSY = true;
+  // 沒切成:畫面維持原狀
+  try { MV = await window.blave.mobileViewSet(!MV.on); } catch (_) { /* noop */ } finally { MV_BUSY = false; }
+  privPaint(); const sw = $("mv-sw"); if (sw) sw.focus();
+  const lead = document.querySelector(".mv .priv-lead"); if (lead) srSay(lead.textContent);
+}
+function mvBlock(mk) {
+  if (!mvShown()) return null;
+  const wrap = mk("div", "mv"), row = mk("div", "sw-row"); row.append(mk("span", "sw-l", t("mv.switch")));
+  const out = !MV.signedIn, on = !out && MV.on === true;
+  const sw = mk("button", "sw" + (on ? "" : " off")); sw.type = "button"; sw.id = "mv-sw";
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", on ? "true" : "false"); sw.setAttribute("aria-label", t("mv.switch"));
+  sw.disabled = out; sw.addEventListener("click", mvToggle);
+  row.append(sw); wrap.append(row);
+  const lead = mk("p", "priv-lead");
+  if (out) {
+    lead.append(t("mv.leadOut"));
+    const go = mk("button", "btn-quiet", t("mv.goLogin")); go.type = "button"; go.addEventListener("click", () => setCat("plan")); lead.append(go);
+  } else if (!on) lead.textContent = t(MV.pending ? "mv.leadPending" : "mv.leadOff");
+  else if (MV.name) {
+    const [a, b] = t("mv.lead").split("{name}");
+    lead.append(a || ""); lead.append(mk("span", "dn", MV.name)); lead.append(b || "");
+  } else lead.textContent = t("mv.leadNoName");
+  wrap.append(lead);
+  return wrap;
 }
 // 連點:前一次還沒回來就不再送(不用 disabled:按鈕一停用焦點就掉到 body)
 let PRIV_BUSY = false;
@@ -597,6 +634,7 @@ function privPaint() {
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const had = box.contains(document.activeElement);
   box.textContent = "";
+  const mv = typeof mvBlock === "function" ? mvBlock(mk) : null; if (mv) box.append(mv);
   const row = mk("div", "sw-row"); row.append(mk("span", "sw-l", t("priv.switch")));
   const sw = mk("button", "sw" + (PRIV ? "" : " off")); sw.type = "button"; sw.id = "priv-sw";
   sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", PRIV ? "true" : "false"); sw.setAttribute("aria-label", t("priv.switch"));

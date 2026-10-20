@@ -255,13 +255,13 @@ process.exitCode = 1;   // 哪個 await 掛住、事件迴圈空了就會靜靜�
   t("回合開始前先確保剩 12 小時,才讀要進環境的那顆", rt.indexOf("rotator().ensure(ROTATE_MIN_LEFT_MS)") >= 0
     && rt.indexOf("rotator().ensure(ROTATE_MIN_LEFT_MS)") < rt.indexOf("const acct = plan.proxyToken ? loadToken() : null"));
   t("定期檢查回合進行中不換、只在拿到單一實例鎖的那份跑", /if \(app\.hasSingleInstanceLock\(\)\) startStep\("token rotate"/.test(main) && /if \(!\(activeTurn \|\| turnStarting\)\) rotator\(\)\.ensure\(ROTATE_MIN_LEFT_MS\)/.test(main));
-  t("getCreds 一律走 blaveCreds(帶 who);沒有殘留只帶 token 的寫法", !/getCreds: \(\) => \{ const token = loadToken\(\)/.test(main) && (main.match(/getCreds: blaveCreds/g) || []).length === 5);
+  t("getCreds 一律走 blaveCreds(帶 who);沒有殘留只帶 token 的寫法", !/getCreds: \(\) => \{ const token = loadToken\(\)/.test(main) && (main.match(/getCreds: blaveCreds/g) || []).length === 6);
   t("account_status 被拒(403 ACCOUNT_TOKEN_INVALID)→ recover 一次再問", /ACCOUNT_TOKEN_INVALID" && await rotator\(\)\.recover\(acct\)\) return accountStatus\(true\)/.test(body("accountStatus")));
   t("換檔掛勾:先 load 連結紀錄、換完 reseal", /beforeSave: \(\) => connStore\(\)\.load\(\), afterSave: \(\) => connStore\(\)\.reseal\(\)/.test(main));
 
   { const m = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
     t("結束時 token 輪替在途:等它落地(最多 5 秒)再走——伺服器換了、回應沒存下來的話,寬限過後重開就被登出",
-      /const rotating = typeof _rot !== "undefined" && !!\(_rot && _rot\.state\(\)\.inflight\);/.test(m) && /if \(quitting \|\| \(!daemon && !installing && !rotating\)\) return;/.test(m)
+      /const rotating = typeof _rot !== "undefined" && !!\(_rot && _rot\.state\(\)\.inflight\);/.test(m) && /if \(quitting \|\| \(!daemon && !installing && !rotating && !closingMv\)\) return;/.test(m)
       && /rotating \? Promise\.race\(\[_rot\.settle\(\), new Promise\(\(r\) => setTimeout\(r, 5000\)\)\]\) : null/.test(m)); }
   process.exit(red ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -152,6 +152,8 @@ contextBridge.exposeInMainWorld("blave", {
   cancelAgentLogin: () => ipcRenderer.invoke("cancel-agent-login"),
   agentLogin: (kind) => ipcRenderer.invoke("agent-login", kind),
   signOutBlave: () => ipcRenderer.invoke("sign-out-blave"),
+  mobileViewState: () => ipcRenderer.invoke("mobile-view-state"),
+  mobileViewSet: (on) => ipcRenderer.invoke("mobile-view-set", on === true),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
   stopTurn: () => ipcRenderer.invoke("stop-turn"),   // true = 停止旗標寫下了;結果照樣等 turn-end

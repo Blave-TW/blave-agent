@@ -1362,6 +1362,9 @@ msgstr "登出"
 msgid "acct.out.4"
 msgstr "登出不會停用雲端主機，主機費照扣。"
 
+msgid "acct.out.5"
+msgstr "手機 App 也看不到這台電腦的部位了。"
+
 msgid "acct.lbl"
 msgstr "Blave 帳號"
 
@@ -2910,6 +2913,27 @@ msgstr "去更新"
 msgid "set.cat.priv"
 msgstr "隱私"
 
+msgid "mv.switch"
+msgstr "在手機 App 上查看這台電腦的部位"
+
+msgid "mv.lead"
+msgstr "每 2 分鐘把策略、部位與權益傳上 Blave，只有你的帳號看得到；手機上這台叫 {name}。關掉就停止上傳，並刪掉平台上這台的資料。"
+
+msgid "mv.leadNoName"
+msgstr "每 2 分鐘把策略、部位與權益傳上 Blave，只有你的帳號看得到；手機上會顯示這台電腦的名稱。關掉就停止上傳，並刪掉平台上這台的資料。"
+
+msgid "mv.leadOff"
+msgstr "已關閉：這台電腦不上傳，平台上這台的資料已刪除。"
+
+msgid "mv.leadPending"
+msgstr "已關閉，但平台上這台的資料還沒刪成；連上網路後會自動再刪。"
+
+msgid "mv.leadOut"
+msgstr "登入 Blave 帳號後才能用。"
+
+msgid "mv.goLogin"
+msgstr "前往登入"
+
 msgid "priv.switch"
 msgstr "傳送使用資料"
 
@@ -2953,7 +2977,7 @@ msgid "priv.collect.8"
 msgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"
 
 msgid "priv.never.h"
-msgstr "不收"
+msgstr "使用資料不收"
 
 msgid "priv.never.1"
 msgstr "對話內容"

@@ -201,7 +201,9 @@ const EVENTS = {
     // theme_light_seen = 畫面實際顯示成淺色(開 app 或當天切過去;每安裝每日一次,回答「多少人實際在用淺色」)
     "theme_system", "theme_light", "theme_dark", "theme_light_seen",
     // 沒綁卡的預檢卡與 402 卡上的「用加密貨幣轉帳儲值」(0.1.28;renderer/app.js acctCrypto):按下就記,不分哪張卡
-    "crypto_topup"] },
+    "crypto_topup",
+    // 0.1.28 設定 › 隱私「在手機 App 上查看這台電腦的部位」開關切成開 / 關(主行程 mobile-view-set 送,真的切換了才送)
+    "mobile_view_on", "mobile_view_off"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

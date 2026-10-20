@@ -1355,6 +1355,9 @@ msgstr "Sign Out"
 msgid "acct.out.4"
 msgstr "Signing out doesn’t turn off your cloud machine. It keeps billing."
 
+msgid "acct.out.5"
+msgstr "The mobile app won’t show this computer’s positions anymore."
+
 msgid "acct.lbl"
 msgstr "Blave account"
 
@@ -2900,6 +2903,27 @@ msgstr "Go to Update"
 msgid "set.cat.priv"
 msgstr "Privacy"
 
+msgid "mv.switch"
+msgstr "See this computer’s positions in the mobile app"
+
+msgid "mv.lead"
+msgstr "Every 2 minutes, your strategies, positions and equity go to Blave, where only your account can see them. On your phone this computer is called {name}. Turn it off and uploads stop, and this computer’s data on Blave is deleted."
+
+msgid "mv.leadNoName"
+msgstr "Every 2 minutes, your strategies, positions and equity go to Blave, where only your account can see them. Your phone shows this computer by its name. Turn it off and uploads stop, and this computer’s data on Blave is deleted."
+
+msgid "mv.leadOff"
+msgstr "Off. This computer doesn’t upload, and its data on Blave has been deleted."
+
+msgid "mv.leadPending"
+msgstr "Off, but this computer’s data on Blave hasn’t been deleted yet. It’s deleted automatically once you’re back online."
+
+msgid "mv.leadOut"
+msgstr "Sign in to your Blave account to use this. "
+
+msgid "mv.goLogin"
+msgstr "Sign in"
+
 msgid "priv.switch"
 msgstr "Send usage data"
 
@@ -2943,7 +2967,7 @@ msgid "priv.collect.8"
 msgstr "When you download a no-sign-in library strategy: which one (its library number) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"
 
 msgid "priv.never.h"
-msgstr "Never collected"
+msgstr "Not in usage data"
 
 msgid "priv.never.1"
 msgstr "Chat content"

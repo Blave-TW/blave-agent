@@ -485,6 +485,8 @@ function rotator() {
 function acctWho(token, secret) {
   return token ? crypto.createHash("sha256").update(secret ? "s:" + secret : "t:" + token).digest("hex").slice(0, 32) : null;
 }
+/* 這台電腦的名稱:登入時交給授權頁(api 記成 device_label),手機 App 也用這個名字分辨是哪一台。設定頁要顯示同一個字串 */
+function deviceLabel() { try { return os.hostname().replace(/\.local$/, "").slice(0, 64) || null; } catch (_) { return null; } }
 function blaveCreds() {
   const token = loadToken();
   if (!token) return null;
@@ -492,6 +494,18 @@ function blaveCreds() {
   return { token, appSecret, who: acctWho(token, appSecret) };
 }
 const currentWho = () => { const c = blaveCreds(); return c ? c.who : null; };
+/* 在手機 App 上查看這台電腦的部位(mobileview.js):憑證只在這裡用,狀態檔只有三個布林;平台旗標關著時什麼都不送(契約 §14) */
+let _mv = null;
+function mobileView() {
+  if (!_mv) _mv = require("./mobileview").createMobileView({
+    dir: app.getPath("userData"), apiBase: API_BASE, post: (u, b) => postJSON(u, b), get: (u) => getJSON(u),
+    getCreds: blaveCreds, status: () => (_tradeHost ? _tradeHost.status() : null),
+    line: (st) => (st ? TT.localLine(st, lastVenue) : null), installId: () => tm().installId(), home: os.homedir(),
+    log: (m) => console.error("[mobile]", m),
+  });
+  return _mv;
+}
+const mobileViewState = () => ({ ...mobileView().state(), name: deviceLabel() });
 /* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
 let _balance = null;
 function balanceHost() {
@@ -696,6 +710,8 @@ function syncDataAccess(want, signedIn = !!loadToken()) {
 async function signOutBlave() {
   await rotator().settle();   // 在途的輪替先落地:要撤的是換完之後那顆,撤舊值伺服器回 200 卻沒撤到
   rotator().pause();          // 撤銷要等網路(最長 20 秒),這段期間定期檢查不許再換:換了就撤不到、伺服器留一列沒人持有的
+  // 平台上這台的部位快照要在撤銷之前刪:撤銷之後這組憑證就刪不了(刪不成也照樣登出,api 讀取時會濾掉已撤銷的那台)
+  try { await mobileView().signOut(); } catch (_) { /* 不擋登出 */ }
   const tok = loadToken();
   let revoked = false;
   if (tok) {
@@ -816,7 +832,7 @@ async function startOAuth(lang, forBlaveAi) {
     const q = new URLSearchParams({
       client_id: CLIENT_ID, redirect_uri: redirectUri,
       code_challenge: challenge, code_challenge_method: "S256", state,
-      device_label: os.hostname().replace(/\.local$/, "").slice(0, 64),
+      device_label: deviceLabel(),
       // 註冊來源(api clean_signup_source 只收 [A-Za-z0-9_]):授權頁要把它寫進 localStorage.blave_src,註冊頁才讀得到
       src: "desktop_app",
     });
@@ -2472,7 +2488,7 @@ async function libraryDownload(strategyId) {
   const anon = async () => {
     if (!libAnonOk(strategyId)) return null;
     // 埋點的 install_id 讓 api 記「N 人安裝」的匿名那份(策略 × install_id 去重);用戶關掉使用事件就不帶,只是不計數。
-    // 開發版 / e2e(每次新的 BLAVE_HOME 就是新的 install_id)同 tm 的 post 那道閘:不帶,不然每跑一次就灌一個正式的安裝數
+    // 開發版 / e2e 同 tm 的 post 那道閘:不帶,不然每跑一次就灌一個正式的安裝數(install_id 存在 userData,BLAVE_HOME 搬不動它;換新的要換 userData)
     let h = {};
     try { if (telemetryLive() && tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
     try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, h); } catch (_) { return { status: 0, body: null }; }
@@ -3360,6 +3376,15 @@ app.whenReady().then(() => {
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
   // 安裝識別碼(設定 › 一般 › 關於):回報問題、來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
   handle("telemetry-install-id", () => tm().installId());
+  // 設定 › 隱私「在手機 App 上查看這台電腦的部位」:只回 {visible, on, pending, signedIn, name},沒有憑證。旗標關(visible false)時不收切換
+  handle("mobile-view-state", () => mobileViewState(), null);
+  handle("mobile-view-set", async (e, on) => {
+    if (typeof on !== "boolean" || !mobileView().isVisible()) return mobileViewState();
+    const was = mobileView().state().on;
+    await mobileView().setOn(on);
+    if (was !== on) tm().track("feature_used", { name: on ? "mobile_view_on" : "mobile_view_off" });
+    return mobileViewState();
+  }, null);
   // 切換的當下打一次 account_status:它帶著開關狀態,api 的提醒信立刻知道(沒登入就不打)
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); accountStatus(); return tm().isEnabled(); });
   // 功能被使用(renderer 的 trackFeature):name 由 telemetry.js 對 feature_used 白名單驗,renderer 給的字不可信、不在表上就整則不送
@@ -3495,6 +3520,7 @@ app.whenReady().then(() => {
   startStep("inbound prune", () => require("./attach").prune(WS));   // 聊天附件放超過七天的(雲端由 runtime/prune_job.py 清)
   startStep("telemetry", () => tm().start());
   startStep("device type", () => require("./devicetype").detectDeviceType().then((kind) => { _deviceKind = kind; tm().track("device_type", { kind }); }));
+  if (app.hasSingleInstanceLock()) startStep("mobile view", () => mobileView().start());   // 第二份 app 不送:兩份會搶同一個裝置代號
   // 帳號 token 輪替:開 app 就檢查一次(0.1.15 以前沒有期限的那顆在這裡第一次換掉),之後每 10 分鐘看一次。
   // 回合進行中不換:那顆在 agent 的環境裡,換了它 10 分鐘後就失效。第二份 app 不碰(兩份同時換,先回來的那顆會作廢)
   if (app.hasSingleInstanceLock()) startStep("token rotate", () => {
@@ -4043,7 +4069,9 @@ app.on("before-quit", (e) => {
   /* token 輪替在途:伺服器那邊可能已經換了、回應還沒回來——這時結束,新值就丟了,檔裡那顆只再活 10 分鐘(寬限),
      超過才重開就被登出(Mac e2e 10-14 查登入失效)。等它落地再走,最多 5 秒 */
   const rotating = typeof _rot !== "undefined" && !!(_rot && _rot.state().inflight);
-  if (quitting || (!daemon && !installing && !rotating)) return;
+  // 手機 App 那邊要看得到「已正常關閉」:最後一筆 closing(mobileview.js 自己限時 3 秒,送不出去也照樣結束)
+  const closingMv = !quitting && typeof _mv !== "undefined" && !!_mv && _mv.wantsClosing();
+  if (quitting || (!daemon && !installing && !rotating && !closingMv)) return;
   e.preventDefault(); quitting = true;
-  Promise.all([daemon ? _tradeHost.stop() : null, engineAbort(), rotating ? Promise.race([_rot.settle(), new Promise((r) => setTimeout(r, 5000))]) : null]).finally(() => app.quit());
+  Promise.all([closingMv ? _mv.closing().catch(() => false) : null, daemon ? _tradeHost.stop() : null, engineAbort(), rotating ? Promise.race([_rot.settle(), new Promise((r) => setTimeout(r, 5000))]) : null]).finally(() => app.quit());
 });
