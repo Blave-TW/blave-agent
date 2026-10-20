@@ -160,7 +160,13 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
     ok("8 twHeld:讀到 2 口;讀不到 / 狀態檔壞 / 沒報告 → 沿用 2 口、不確定;解綁 → 0 且確定;之後狀態檔壞也不再當綁著;綁了從沒讀到 → 0 口不確定;讀到空 → 0 確定;ok:false 帶著半份 positions 也不算讀到",
       J(a) === J({ lots: 2, known: true }) && J(b) === J({ lots: 2, known: false }) && J(c) === J({ lots: 2, known: false }) && J(d) === J({ lots: 2, known: false })
       && J(e) === J({ lots: 0, known: true }) && J(f) === J({ lots: 0, known: true }) && J(g) === J({ lots: 0, known: false }) && J(h) === J({ lots: 0, known: true })
-      && J(i) === J({ lots: 1, known: false })); }
+      && J(i) === J({ lots: 1, known: false }));
+    const never = rep({ ok: false, positions: null, error: "no snapshot", ever_ok: false });
+    ok("8 twHeld:從沒讀成功過(ever_ok:false)且沒記過口數 → 0 口確定(開通放棄 / 300、307 擋住不防睡眠、不攔);記過口數照保守;ever_ok:true 或沒這欄照保守",
+      J(P.twHeld(never, "capital", {})) === J({ lots: 0, known: true })
+      && J(P.twHeld(never, "capital", { bound: true, lots: 2 })) === J({ lots: 2, known: false })
+      && J(P.twHeld(rep({ ok: false, positions: null, ever_ok: true }), "capital", {})) === J({ lots: 0, known: false })
+      && J(P.twHeld(rep({ ok: false, positions: null }), "capital", {})) === J({ lots: 0, known: false })); }
   reply = { ok: false, error: "UNKNOWN_RESULT" };
   await pres.step("host", { url: "test167.pfctrade.com" });
   ok("8 測試主機:信上的網址原樣交給 daemon(它判是不是那兩台),記住在測試環境", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "host", url: "test167.pfctrade.com" }) && pres._load().live === false);

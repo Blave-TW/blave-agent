@@ -44,7 +44,10 @@ function heldLots(report, venue = "president") {
 }
 /* 結束攔截與防睡眠問的是「這家還有沒有部位」:讀到 → 這一輪的口數(記進 memo 當最後一次讀成功的值);
    綁著這家、這一輪讀不到(帳戶讀取器 ok:false、還沒讀過、狀態檔 build 失敗)→ known:false、lots = 最後一次讀成功的值,
-   呼叫端保守當成有部位——群益的 worker 停住或睡醒快照過期時,讀不到比統一常見。沒綁 = 0。 */
+   呼叫端保守當成有部位——群益的 worker 停住或睡醒快照過期時,讀不到比統一常見。沒綁 = 0。
+   例外:這家從來沒讀成功過(帳戶讀取器的 ever_ok 明確是 false)、這次啟動也沒記過口數 → 0 口、確定。
+   對帳器下單前要先讀到部位,從沒讀到帳的帳戶不可能是策略開的倉;不這樣做,開通放棄或被 300/307 擋住的機器
+   會一直防睡眠(B 條不看開關)、每次結束都跳框。沒有 ever_ok 欄位(舊 runtime)照保守。 */
 const venueBound = (v) => !!(v && typeof v === "object" && v.credentials && v.pair && v.order && v.account);
 function twHeld(report, venue, memo) {
   const r = report && typeof report === "object" ? report : null;
@@ -53,6 +56,7 @@ function twHeld(report, venue, memo) {
     memo.bound = true;
     const a = r.account && r.account.venues && r.account.venues[venue];
     if (a && a.ok === true && a.positions && typeof a.positions === "object") { memo.lots = heldLots(r, venue); return { lots: memo.lots, known: true }; }
+    if (a && a.ever_ok === false && !memo.lots) return { lots: 0, known: true };
     return { lots: memo.lots || 0, known: false };
   }
   return memo.bound ? { lots: memo.lots || 0, known: false } : { lots: 0, known: true };

@@ -174,70 +174,97 @@ def _pump_until(cond, timeout):
 
 def _get_session(env):
     """Process-wide singleton: one login + report connection, reused. Fails
-    loudly at connect time so the 602 identity trap is hit before any order."""
+    loudly at connect time so the 602 identity trap is hit before any order.
+    After a lost login (SESSION_LOST_CODES) a failed re-login backs off."""
     global _session
     with _lock:
         if _session is not None:
             return _session
-
-        _init_com()
-        login_id, password = capital_vault.resolve(env)
-        if not login_id or not password:
-            raise ValueError("capital_api_key / capital_password missing from .env")
-        if (blocked := capital_vault.login_blocked(login_id, password)):
-            raise CapitalError(f"login not attempted: 群益 answered code={blocked} to these "
-                               "credentials — re-enter the trading password first")
-
-        center = comtypes.client.CreateObject(sk.SKCenterLib, interface=sk.ISKCenterLib)
-        reply = comtypes.client.CreateObject(sk.SKReplyLib, interface=sk.ISKReplyLib)
-        order = comtypes.client.CreateObject(sk.SKOrderLib, interface=sk.ISKOrderLib)
-        events = _Events()
-        conns = [comtypes.client.GetEvents(reply, events),
-                 comtypes.client.GetEvents(order, events)]
-
-        capital_vault.set_log_path(center)
-        code = center.SKCenterLib_Login(login_id, password)
-        capital_vault.record_login(login_id, password, code)
-        if code not in (0, 2003):
-            msg = center.SKCenterLib_GetReturnCodeMessage(code)
-            raise CapitalError(
-                f"login failed code={code} {msg}"
-                + (" — 602 means this process is NOT under a password-logon Administrator "
-                   "session (NSSM ObjectName / schtasks); see capital-broker.md Step 2"
-                   if code == 602 else ""))
-
-        if (rc := order.SKOrderLib_Initialize()) != 0:
-            raise CapitalError(f"SKOrderLib_Initialize code={rc}")
-        if (rc := order.ReadCertByID(login_id)) != 0:
-            raise CapitalError(f"ReadCertByID code={rc} (cert/identity — see 602 notes)")
-
-        if (rc := order.GetUserAccount()) != 0:
-            raise CapitalError(f"GetUserAccount code={rc}")
-        # One OnAccount per account; pump a grace window after the first so a
-        # late TS/TF row isn't dropped for the process lifetime.
-        _pump_until(lambda: bool(events.futures_accounts or events.stock_accounts), 10)
-        grace = time.time() + 2
-        while time.time() < grace:
-            pythoncom.PumpWaitingMessages()
-            time.sleep(0.05)
-        if not events.futures_accounts and not events.stock_accounts:
-            raise CapitalError("GetUserAccount returned no TF/TS accounts — declaration "
-                               "not signed, or no account of that market exists")
-
-        # Order/fill reports; connect replays the whole session day (deduped
-        # in _Events). 0 = success.
-        if (rc := reply.SKReplyLib_ConnectByID(login_id)) != 0:
-            raise CapitalError(f"SKReplyLib_ConnectByID code={rc}")
-
-        s = _Session()
-        s.center, s.reply, s.order, s.events = center, reply, order, events
-        s.login_id = login_id
-        s.futures_account = events.futures_accounts[0] if events.futures_accounts else None
-        s.stock_account = events.stock_accounts[0] if events.stock_accounts else None
-        s._conns = conns
-        logging.info(f"capital login OK: TF={s.futures_account} TS={s.stock_account}")
+        wait = _relogin["until"] - time.time()
+        if wait > 0:
+            raise CapitalError(f"群益 login not retried yet: the connection was lost, next try in {int(wait) + 1}s")
+        try:
+            s = _new_session(env)
+        except Exception:
+            if _relogin["n"]:
+                _arm_relogin_backoff()
+            raise
+        _relogin.update(n=0, until=0.0)
         _session = s
         return _session
+
+
+# Desktop app, after a lost login: while the network is down every round with an order would run a
+# full Login (CreateObject + up to 12 s of OnAccount pumping) — wait 60 s, doubling to 10 min,
+# between attempts; a good login clears it. Armed only by a lost-login code, so a first login and
+# the wake reset retry at once as before.
+RELOGIN_BACKOFF_S, RELOGIN_BACKOFF_MAX_S = 60, 600
+_relogin = {"n": 0, "until": 0.0}
+
+
+def _arm_relogin_backoff():
+    _relogin["until"] = time.time() + min(RELOGIN_BACKOFF_S * 2 ** _relogin["n"], RELOGIN_BACKOFF_MAX_S)
+    _relogin["n"] += 1
+
+
+def _new_session(env):
+    _init_com()
+    login_id, password = capital_vault.resolve(env)
+    if not login_id or not password:
+        raise ValueError("capital_api_key / capital_password missing from .env")
+    if (blocked := capital_vault.login_blocked(login_id, password)):
+        raise CapitalError(f"login not attempted: 群益 answered code={blocked} to these "
+                           "credentials — re-enter the trading password first")
+
+    center = comtypes.client.CreateObject(sk.SKCenterLib, interface=sk.ISKCenterLib)
+    reply = comtypes.client.CreateObject(sk.SKReplyLib, interface=sk.ISKReplyLib)
+    order = comtypes.client.CreateObject(sk.SKOrderLib, interface=sk.ISKOrderLib)
+    events = _Events()
+    conns = [comtypes.client.GetEvents(reply, events),
+             comtypes.client.GetEvents(order, events)]
+
+    capital_vault.set_log_path(center)
+    code = center.SKCenterLib_Login(login_id, password)
+    capital_vault.record_login(login_id, password, code)
+    if code not in (0, 2003):
+        msg = center.SKCenterLib_GetReturnCodeMessage(code)
+        raise CapitalError(
+            f"login failed code={code} {msg}"
+            + (" — 602 means this process is NOT under a password-logon Administrator "
+               "session (NSSM ObjectName / schtasks); see capital-broker.md Step 2"
+               if code == 602 else ""))
+
+    if (rc := order.SKOrderLib_Initialize()) != 0:
+        raise CapitalError(f"SKOrderLib_Initialize code={rc}")
+    if (rc := order.ReadCertByID(login_id)) != 0:
+        raise CapitalError(f"ReadCertByID code={rc} (cert/identity — see 602 notes)")
+
+    if (rc := order.GetUserAccount()) != 0:
+        raise CapitalError(f"GetUserAccount code={rc}")
+    # One OnAccount per account; pump a grace window after the first so a
+    # late TS/TF row isn't dropped for the process lifetime.
+    _pump_until(lambda: bool(events.futures_accounts or events.stock_accounts), 10)
+    grace = time.time() + 2
+    while time.time() < grace:
+        pythoncom.PumpWaitingMessages()
+        time.sleep(0.05)
+    if not events.futures_accounts and not events.stock_accounts:
+        raise CapitalError("GetUserAccount returned no TF/TS accounts — declaration "
+                           "not signed, or no account of that market exists")
+
+    # Order/fill reports; connect replays the whole session day (deduped
+    # in _Events). 0 = success.
+    if (rc := reply.SKReplyLib_ConnectByID(login_id)) != 0:
+        raise CapitalError(f"SKReplyLib_ConnectByID code={rc}")
+
+    s = _Session()
+    s.center, s.reply, s.order, s.events = center, reply, order, events
+    s.login_id = login_id
+    s.futures_account = events.futures_accounts[0] if events.futures_accounts else None
+    s.stock_account = events.stock_accounts[0] if events.stock_accounts else None
+    s._conns = conns
+    logging.info(f"capital login OK: TF={s.futures_account} TS={s.stock_account}")
+    return s
 
 
 def reset_session():
@@ -273,7 +300,10 @@ def _send(sess, send_fn, fields):
         # the next order logs in again instead of sending through the dead login every round
         if ncode in SESSION_LOST_CODES and os.environ.get("BLAVE_AGENT_LOCAL") == "1":
             reset_session()
-            logging.info(f"capital session dropped after code={ncode}: the next order logs in again")
+            with _lock:
+                _arm_relogin_backoff()
+            logging.info(f"capital session dropped after code={ncode}: logging in again in "
+                         f"{int(_relogin['until'] - time.time()) + 1}s")
         raise CapitalError(f"order rejected code={ncode}: {err} (msg={msg!r})")
     seq_no = str(msg).strip()
     guard.audit("order_sent", seq_no=seq_no, **fields)
