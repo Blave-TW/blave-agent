@@ -38,7 +38,7 @@ def check(cond, msg):
 OWNER_PX = 1.0  # what every strategy's own fetch_data says — never the paper price here
 
 
-def strategy(name, symbol, extra=""):
+def strategy(name, symbol, extra="", px=OWNER_PX):
     os.makedirs(f"strategies/{name}", exist_ok=True)
     open(f"strategies/{name}/strategy.py", "w").write(f'''SYMBOL = {symbol!r}
 INTERVAL = "4h"
@@ -46,16 +46,22 @@ INTERVAL = "4h"
 
 def fetch_data(hdrs):
     import pandas as pd
-    return pd.DataFrame({{"Close": [{OWNER_PX}]}}, index=[pd.Timestamp("2026-01-01")])
+    return pd.DataFrame({{"Close": [{px}]}}, index=[pd.Timestamp("2026-01-01")])
 ''')
 
 
-strategy("btc", "BTCUSDT")
-strategy("nvda", "NVDAUSDT")
+BTC_OWN = 80000.0  # the 4h bar's close: same market, an older price
+strategy("btc", "BTCUSDT", px=BTC_OWN)
+strategy("nvda", "NVDAUSDT", px=210.0)
 strategy("okxonly", "OKXONLYUSDT")
+strategy("cat", "CATUSDT", px=0.00001)
+strategy("btc5", "BTC5USDT", px=81882.7 * 1.005)
+strategy("eth", "ETHUSDT")
+open("strategies/eth/strategy.py", "a").write("\n\ndef fetch_data(hdrs):\n    raise RuntimeError('own data down')\n")
 strategy("tmf", "TMF")
 strategy("cl", "CLFUT")
 strategy("aapl", "AAPL", "from lib.data import fetch_usstock_price")
+strategy("xlf", "XLF", "from lib.data import fetch_usstock_price")
 
 hits, BINANCE, TAIFEX = [], {}, {}  # symbol → price (None = not listed / empty series)
 BINANCE_DOWN = [False]
@@ -81,7 +87,9 @@ def send(adapter, req, **kw):
         return answer(req, 200, {"symbol": sym, "price": str(BINANCE[sym]), "time": 0})
     if u.path.startswith("/studio/market/twfutures/ohlcv/"):
         code, schema = u.path.split("/")[-2:]
-        px = TAIFEX.get((code, schema))
+        if (code, schema) not in TAIFEX:  # api: a symbol off its allowed list → 400
+            return answer(req, 400, {"error": f"unsupported symbol {code}"})
+        px = TAIFEX[(code, schema)]
         rows = [] if px is None else [{"ts": "2026-10-20T05:00:00Z", "open": px, "high": px, "low": px,
                                        "close": px, "volume": 1}]
         return answer(req, 200, {"data": rows})
@@ -123,16 +131,23 @@ check(price("OKXONLYUSDT") == (OWNER_PX, "okxonly") and not kline_calls,
       "an OKX/BingX-only coin: its strategy's own close, Blave not asked (it only carries Binance)")
 check(any("OKXONLYUSDT" in m and "own latest close" in m for m in last_resort),
       f"…and the last resort says so in the log ({last_resort})")
+BINANCE.update(CATUSDT=725.68, BTC5USDT=81882.7, ETHUSDT=4000.0)
+del last_resort[:]
+check(price("CATUSDT") == (0.00001, "cat"),
+      "CATUSDT: Binance's 725.68 is Caterpillar (>10× off its strategy's own close): the strategy's own close")
+check(any("CATUSDT" in m and "same ticker" in m for m in last_resort), f"…and the log says why ({last_resort})")
+check(price("BTC5USDT") == (81882.7, None), "0.5% off its strategy's own close: Binance's price")
+check(price("ETHUSDT") == (4000.0, None), "the strategy's own close cannot be read: Binance's price")
 BINANCE_DOWN[0] = True
 check(price("BTCUSDT") == (77.0, None) and kline_calls == ["BTCUSDT"],
       "Binance unreachable: the same market's latest 1m bar via Blave")
 check(price("NVDAUSDT") == (77.0, None) and not hits,
       f"…and the next symbol does not wait on Binance again ({hits})")
 del kline_calls[:]
-check(price("BTCUSDT", {}) == (OWNER_PX, "btc") and not kline_calls,
+check(price("BTCUSDT", {}) == (BTC_OWN, "btc") and not kline_calls,
       "Binance blocked and no Blave key (desktop): the strategy's own close, Blave not asked")
 data.fetch_kline = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("blave down"))
-check(price("BTCUSDT") == (OWNER_PX, "btc"), "Binance and Blave both down: the strategy's own close")
+check(price("BTCUSDT") == (BTC_OWN, "btc"), "Binance and Blave both down: the strategy's own close")
 r = price("SOLUSDT")
 check(isinstance(r, paper_data.PaperNoPrice), f"…no strategy trades it either: no price ({r!r})")
 BINANCE_DOWN[0] = False
@@ -143,9 +158,10 @@ TAIFEX[("TXF", "1m")] = 23456.0
 for sym in ("TXF", "TMF", "MXFR1"):
     check(price(sym) == (23456.0, None), f"{sym} fills at the TXF series' latest minute")
 check(hits[-1] == ("api.blave.org", "/studio/market/twfutures/ohlcv/TXF/1m"), f"asked TXF 1m ({hits})")
-TAIFEX[("CDF", "1d")] = 1100.0
-check(price("CDF") == (1100.0, None), "a stock future without a minute series: its latest daily close")
-del TAIFEX[("TXF", "1m")]
+r = price("CDF")
+check(isinstance(r, paper_data.PaperNoPrice) and len(hits) == 1,
+      f"a stock future without a minute series (api 400): no price, one ask ({r!r}, {hits})")
+TAIFEX[("TXF", "1m")] = None
 r = price("TXF")
 check(isinstance(r, paper_data.PaperNoPrice) and len(hits) == len(paper_data._TAIFEX_WINDOWS_D),
       f"an empty series over every window: no price, never the strategy's ({r!r}, {len(hits)} asks)")
@@ -158,6 +174,17 @@ check(price("TMF") == (23000.0, None) and public == ["TMF"],
       "no Blave data access on the desktop: TAIFEX's own daily close")
 r = price("CDF")
 check(isinstance(r, paper_data.PaperNoPrice), f"…a stock future has no such fallback ({r!r})")
+for exc in (requests.exceptions.ConnectionError("[canned] taifex down"), RuntimeError("bad ohlc")):
+    data.fetch_txf_daily_public = lambda start, end, symbol, exc=exc: (_ for _ in ()).throw(exc)
+    r = price("TXF")
+    check(isinstance(r, paper_data.PaperNoPrice), f"TAIFEX's daily close down ({type(exc).__name__}): no price ({r!r})")
+    led = {"positions": {"TXF": {"qty": 1.0, "entry": 22000.0}}}
+    paper_data._price_cache.clear()
+    try:
+        mark = order_paper._pos_mark({}, led, "TXF", {})
+    except Exception as e:
+        mark = e
+    check(mark == (22000.0, False), f"…a held TXF marks at its entry, the account read stands ({mark!r})")
 del os.environ["BLAVE_DATA_ACCESS"]
 
 print("== US stocks: Yahoo's unadjusted close, only for a symbol a US strategy reads")
@@ -166,8 +193,12 @@ real_us_daily = data._usstock_daily
 data._usstock_daily = lambda sym, end: us_calls.append(sym) or pd.DataFrame(
     {"Close": [250.0], "AdjClose": [240.0]}, index=[pd.Timestamp("2026-10-19")])
 check(price("AAPL") == (250.0, None), "AAPL fills at the unadjusted close (250), not AdjClose (240)")
+check(price("XLF") == (250.0, None) and not any("twfutures" in p for _, p in hits),
+      f"XLF (a TAIFEX-shaped ticker) a US strategy reads is a US stock, not TAIFEX ({hits})")
+check(paper_data.quote_ccy("XLF") == "USD" and paper_data.quote_ccy("CDF") == "TWD",
+      "…its money is USD; a stock future's stays TWD")
 r = price("MSFT")
-check(isinstance(r, paper_data.PaperNoPrice) and us_calls == ["AAPL"],
+check(isinstance(r, paper_data.PaperNoPrice) and us_calls == ["AAPL", "XLF"],
       f"a ticker no US strategy reads is not asked from Yahoo ({r!r})")
 data._usstock_daily = real_us_daily
 os.environ.update(BLAVE_AGENT_LOCAL="1", BLAVE_MODE="live")

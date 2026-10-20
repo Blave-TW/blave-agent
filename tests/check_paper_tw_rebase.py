@@ -219,7 +219,7 @@ print("== crypto rows are untouched")
 L = led()
 L["positions"]["BTCUSDT"] = {"qty": 1.0, "entry": 50000.0}
 put(L)
-data.fetch_kline = lambda *a, **k: pd.DataFrame({"Close": [50000.0]}, index=[pd.Timestamp.now()])
+paper_data._binance_last = lambda sym: 50000.0
 equity()
 check("px_basis" not in led()["positions"]["BTCUSDT"], "no marker on a crypto row")
 

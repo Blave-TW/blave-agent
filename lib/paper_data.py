@@ -215,12 +215,15 @@ def _resolve_price(symbol, env):
     sym = _norm(symbol)
     if is_tw_stock(sym):
         return _tw_stock_price(symbol, hdrs), None
-    if _txf_root(sym) or _TAIFEX_RE.match(sym):
+    if _txf_root(sym):
         return _taifex_last(sym, hdrs), None
     if sym.endswith(_CRYPTO_QUOTES):
         return _crypto_last(sym, hdrs)
+    # before the TAIFEX pattern: XLF/IWF/GEF/KOF fit it too
     if _us_owned(sym):
         return _us_last(symbol), None
+    if _TAIFEX_RE.match(sym):
+        return _taifex_last(sym, hdrs), None
     return _owner_price(symbol, hdrs)
 
 
@@ -276,12 +279,14 @@ def _crypto_last(sym, hdrs):
         tried.append("Binance skipped: unreachable moments ago")
     else:
         try:
-            return _binance_last(sym), None
+            px = _binance_last(sym)
         except _NotListed:
             tried.append("not listed on Binance USDT-M")
         except Exception as e:
             tried.append(f"Binance {type(e).__name__}: {e}")
             _binance_down_at[0] = time.time()
+        else:
+            return _binance_unless_collision(sym, px, hdrs)
     # Blave /kline is Binance's own bars: nothing there for a coin Binance does not list
     if hdrs.get("api-key") and not tried[0].startswith("not listed"):
         try:
@@ -299,6 +304,26 @@ def _crypto_last(sym, hdrs):
     return px, name
 
 
+# Binance's own price off its owner's close by more than this factor is another
+# instrument under the same ticker (CATUSDT there is Caterpillar, not the CAT memecoin)
+_COLLISION_X = 10.0
+
+
+def _binance_unless_collision(sym, px, hdrs):
+    """(price, owner or None). An owner whose close cannot be read keeps Binance's price."""
+    if not _resolve_strategy(sym):
+        return px, None
+    try:
+        own, name = _owner_price(sym, hdrs)
+    except PaperNoPrice:
+        return px, None
+    if own > 0 and 1 / _COLLISION_X <= px / own <= _COLLISION_X:
+        return px, None
+    log.warning(f"[paper_data] {sym}: Binance {px} vs strategy {name}'s own close {own} — "
+                f"a different instrument under the same ticker; priced at the strategy's own close")
+    return own, name
+
+
 # Widening windows so a closed market (weekend, Lunar New Year) still answers its last minute
 _TAIFEX_WINDOWS_D = (1, 4, 14)
 
@@ -312,22 +337,33 @@ def _taifex_last(sym, hdrs):
     code = sym[:-2] if sym.endswith("R1") and len(sym) > 2 else sym
     root = _txf_root(code)
     series = "TXF" if root else code
-    for schema in ("1m",) if root else ("1m", "1d"):
-        for days in _TAIFEX_WINDOWS_D:
-            start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
-            try:
-                df = data._fetch_twfutures_raw(series, schema, start, None, hdrs)
-            except data.DataAccessError:
-                if root and data.tw_market_public_allowed():
-                    return _last_close(data.fetch_txf_daily_public(
-                        (datetime.now(timezone.utc) - timedelta(days=_TAIFEX_WINDOWS_D[-1])).strftime("%Y-%m-%d"),
-                        None, root))
-                raise PaperNoPrice(f"no TAIFEX price for {sym}: no Blave data access")
-            except Exception as e:
-                raise PaperNoPrice(f"no TAIFEX price for {sym}: {type(e).__name__}: {e}")
-            if df is not None and len(df):
-                return _last_close(df)
+    for days in _TAIFEX_WINDOWS_D:
+        start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        try:
+            df = data._fetch_twfutures_raw(series, "1m", start, None, hdrs)
+        except data.DataAccessError:
+            if root and data.tw_market_public_allowed():
+                return _taifex_public_last(sym, root)
+            raise PaperNoPrice(f"no TAIFEX price for {sym}: no Blave data access")
+        except Exception as e:
+            raise PaperNoPrice(f"no TAIFEX price for {sym}: {type(e).__name__}: {e}")
+        if df is not None and len(df):
+            return _last_close(df)
     raise PaperNoPrice(f"no TAIFEX price for {sym} in {_TAIFEX_WINDOWS_D[-1]} days")
+
+
+def _taifex_public_last(sym, root):
+    """TAIFEX's own daily close (key-less desktop). Outside _taifex_last's try: an
+    error raised from its except block would escape as is and brick the account read."""
+    from datetime import datetime, timedelta, timezone
+    from lib import data
+    start = (datetime.now(timezone.utc) - timedelta(days=_TAIFEX_WINDOWS_D[-1])).strftime("%Y-%m-%d")
+    try:
+        return _last_close(data.fetch_txf_daily_public(start, None, root))
+    except PaperNoPrice:
+        raise
+    except Exception as e:
+        raise PaperNoPrice(f"no TAIFEX daily close for {sym}: {type(e).__name__}: {e}")
 
 
 def _us_owned(sym):
@@ -598,7 +634,9 @@ def quote_ccy(symbol, declared=None):
         c = declared.strip().upper()
         return "USD" if c in _USD_LIKE else c
     s = _norm(symbol)
-    if _txf_root(s) or _TAIFEX_RE.match(s) or _TW_STOCK_RE.match(s):
+    if _txf_root(s) or _TW_STOCK_RE.match(s):
+        return "TWD"
+    if _TAIFEX_RE.match(s) and not _us_owned(s):
         return "TWD"
     return "USD"
 
