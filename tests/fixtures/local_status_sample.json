@@ -1,0 +1,2060 @@
+[
+ {
+  "config": {
+   "self_ledger": true,
+   "execution_default": {
+    "type": "market"
+   },
+   "execution": {},
+   "execution_fanned_from": {
+    "type": "market"
+   },
+   "amounts": {
+    "tw_a": 2100000.0,
+    "tw_c": 1000000.0,
+    "btc_a": 3000.0,
+    "cx_c": 500.0
+   },
+   "exchanges": {
+    "tw_a": "paper",
+    "tw_c": "paper",
+    "btc_a": "paper",
+    "cx_c": "paper"
+   },
+   "asset_specs": {},
+   "contracts": {}
+  },
+  "states": {
+   "btc_a": {
+    "symbol": "BTCUSDT",
+    "position": -1.0,
+    "market": "swap",
+    "updated_at": 1792288168
+   },
+   "cx_c": {
+    "symbol": null,
+    "position": 0,
+    "market": "swap",
+    "updated_at": 1792288168,
+    "type": "portfolio",
+    "weights": {
+     "ETHUSDT": 1.0
+    },
+    "universe": [
+     "BTCUSDT",
+     "ETHUSDT"
+    ],
+    "rebalance_at": 1792287840
+   },
+   "tw_a": {
+    "symbol": "2330",
+    "position": 1.0,
+    "market": "swap",
+    "updated_at": 1792288168,
+    "raw_closes": {
+     "2330": 2420.0
+    },
+    "raw_close_dates": {
+     "2330": "2026-10-16"
+    },
+    "raw_closes_est": [
+     "2330"
+    ]
+   },
+   "tw_c": {
+    "symbol": null,
+    "position": 0,
+    "market": "spot",
+    "updated_at": 1792288168,
+    "type": "portfolio",
+    "weights": {
+     "2330": 0.5,
+     "0050": 0.3,
+     "2317": 0.2
+    },
+    "universe": [
+     "2330",
+     "2317",
+     "0050"
+    ],
+    "rebalance_at": 1792287840,
+    "raw_closes": {
+     "2330": 2420.0,
+     "2317": 244.0,
+     "0050": 109.0
+    },
+    "raw_close_dates": {
+     "2330": "2026-10-16",
+     "2317": "2026-10-16",
+     "0050": "2026-10-16"
+    },
+    "raw_closes_est": [
+     "0050",
+     "2317",
+     "2330"
+    ]
+   }
+  },
+  "previews": {},
+  "tw_lots": {
+   "2330@spot": {
+    "lots": 1,
+    "shares": 1074,
+    "unit": "shares",
+    "twd": 2600000.0,
+    "price": 2420.0,
+    "price_date": "2026-10-16",
+    "est": true
+   },
+   "0050@spot": {
+    "lots": 2,
+    "shares": 2752,
+    "unit": "shares",
+    "twd": 300000.0,
+    "price": 109.0,
+    "price_date": "2026-10-16",
+    "est": true
+   },
+   "2317@spot": {
+    "lots": 0,
+    "shares": 819,
+    "unit": "shares",
+    "twd": 200000.0,
+    "price": 244.0,
+    "price_date": "2026-10-16",
+    "est": true
+   }
+  },
+  "signals_frozen": null,
+  "quote_ccy": {
+   "btc_a": "USDT",
+   "cx_c": "USDT",
+   "tw_a": "TWD",
+   "tw_c": "TWD"
+  },
+  "scheduled": [
+   "btc_a",
+   "cx_c",
+   "tw_a",
+   "tw_c"
+  ],
+  "last_reconcile": {
+   "ts": "2026-10-18T01:49:30.635435",
+   "target": {
+    "2330@spot": {
+     "side": "long",
+     "size": 2600000.0,
+     "exchange": "paper",
+     "asset_spec": null,
+     "market": "spot",
+     "contributors": [
+      {
+       "strategy": "tw_c",
+       "position": 0.5,
+       "amount": 1000000.0,
+       "contribution": 500000.0,
+       "portfolio": true
+      },
+      {
+       "strategy": "tw_a",
+       "position": 1.0,
+       "amount": 2100000.0,
+       "contribution": 2100000.0
+      }
+     ],
+     "gated": false
+    },
+    "2317@spot": {
+     "side": "long",
+     "size": 200000.0,
+     "exchange": "paper",
+     "asset_spec": null,
+     "market": "spot",
+     "contributors": [
+      {
+       "strategy": "tw_c",
+       "position": 0.2,
+       "amount": 1000000.0,
+       "contribution": 200000.0,
+       "portfolio": true
+      }
+     ],
+     "gated": false
+    },
+    "0050@spot": {
+     "side": "long",
+     "size": 300000.0,
+     "exchange": "paper",
+     "asset_spec": null,
+     "market": "spot",
+     "contributors": [
+      {
+       "strategy": "tw_c",
+       "position": 0.3,
+       "amount": 1000000.0,
+       "contribution": 300000.0,
+       "portfolio": true
+      }
+     ],
+     "gated": false
+    },
+    "BTCUSDT": {
+     "side": "short",
+     "size": 3000.0,
+     "exchange": "paper",
+     "asset_spec": null,
+     "market": "swap",
+     "contributors": [
+      {
+       "strategy": "cx_c",
+       "position": 0.0,
+       "amount": 500.0,
+       "contribution": 0.0,
+       "portfolio": true
+      },
+      {
+       "strategy": "btc_a",
+       "position": -1.0,
+       "amount": 3000.0,
+       "contribution": -3000.0
+      }
+     ],
+     "gated": false
+    },
+    "ETHUSDT": {
+     "side": "long",
+     "size": 500.0,
+     "exchange": "paper",
+     "asset_spec": null,
+     "market": "swap",
+     "contributors": [
+      {
+       "strategy": "cx_c",
+       "position": 1.0,
+       "amount": 500.0,
+       "contribution": 500.0,
+       "portfolio": true
+      }
+     ],
+     "gated": false
+    }
+   },
+   "actual": {
+    "ETHUSDT": {
+     "side": "long",
+     "size": 499.87987224
+    },
+    "BTCUSDT": {
+     "side": "short",
+     "size": 3000.0
+    },
+    "2330@spot": {
+     "side": "long",
+     "size": 2599080.0
+    }
+   },
+   "orders": [],
+   "caps": [
+    "contract_override",
+    "rollover_halt_freeze",
+    "halt_freeze"
+   ],
+   "ledger": {
+    "0050@spot": {
+     "side": "long",
+     "size": 300077.0,
+     "qty": 2753.0,
+     "netted": 0.0
+    },
+    "2330@spot": {
+     "side": "long",
+     "size": 2599080.0,
+     "qty": 1074.0,
+     "netted": 0.0
+    },
+    "ETHUSDT": {
+     "side": "long",
+     "size": 500.0,
+     "qty": 0.20711824,
+     "netted": 0.0
+    },
+    "2317@spot": {
+     "side": "long",
+     "size": 200080.0,
+     "qty": 820.0,
+     "netted": 0.0
+    },
+    "BTCUSDT": {
+     "side": "short",
+     "size": 3000.0,
+     "qty": 0.05,
+     "netted": 0.0
+    }
+   },
+   "gates": {
+    "2317@spot": {
+     "usd": 324.44080999999994,
+     "diff": -80.0,
+     "entry_usd": 324.44080999999994,
+     "reduce_usd": 324.44080999999994,
+     "close_usd": 10,
+     "side": "reduce"
+    },
+    "0050@spot": {
+     "usd": 324.44080999999994,
+     "diff": -77.0,
+     "entry_usd": 324.44080999999994,
+     "reduce_usd": 324.44080999999994,
+     "close_usd": 10,
+     "side": "reduce"
+    },
+    "2330@spot": {
+     "usd": 2541.0,
+     "diff": 920.0,
+     "entry_usd": 2541.0,
+     "reduce_usd": 2541.0,
+     "close_usd": 10
+    }
+   },
+   "own_only": true
+  },
+  "account": {
+   "read_at": 1792288146,
+   "venues": {
+    "paper": {
+     "ok": true,
+     "equity": 99325.04125558237,
+     "currency": "USDT",
+     "accounts": null,
+     "positions": {
+      "ETHUSDT": {
+       "side": "long",
+       "size": 500.0124,
+       "mark_price": 2414.14,
+       "entry_price": 2414.08,
+       "unrealized_pnl": 0.012427094399988698
+      },
+      "BTCUSDT": {
+       "side": "short",
+       "size": 3000.0,
+       "mark_price": 60000.0,
+       "entry_price": 60000.0,
+       "unrealized_pnl": -0.0
+      }
+     },
+     "holdings": [
+      {
+       "asset": "2330",
+       "amount": 1074.0,
+       "usdt_value": 80109.52752830324,
+       "wallet": "spot"
+      },
+      {
+       "asset": "0050",
+       "amount": 2753.0,
+       "usdt_value": 9249.05223852696,
+       "wallet": "spot"
+      },
+      {
+       "asset": "2317",
+       "amount": 820.0,
+       "usdt_value": 6166.918397226293,
+       "wallet": "spot"
+      },
+      {
+       "asset": "USDT",
+       "amount": 3799.530664431476,
+       "usdt_value": 3799.530664431476,
+       "wallet": "cash"
+      }
+     ],
+     "error": null,
+     "flows": [],
+     "ever_ok": true
+    }
+   }
+  },
+  "order_errors": [
+   {
+    "ts": "2026-10-18T01:44:49.499093",
+    "symbol": "2330@spot",
+    "exchange": "paper",
+    "error": "[order_reject:insufficient_margin] insufficient paper cash for 2330 buy (60908.25 < 103335.62)"
+   },
+   {
+    "kind": "market_closed_deferred",
+    "ts": "2026-10-18T01:47:57.571913",
+    "symbol": "0050@spot",
+    "exchange": "paper",
+    "error": "close-all: 台股休市中,開盤後第一輪平倉"
+   },
+   {
+    "kind": "market_closed_deferred",
+    "ts": "2026-10-18T01:47:57.572442",
+    "symbol": "2330@spot",
+    "exchange": "paper",
+    "error": "close-all: 台股休市中,開盤後第一輪平倉"
+   },
+   {
+    "kind": "market_closed_deferred",
+    "ts": "2026-10-18T01:47:57.573084",
+    "symbol": "2317@spot",
+    "exchange": "paper",
+    "error": "close-all: 台股休市中,開盤後第一輪平倉"
+   },
+   {
+    "ts": "2026-10-18T01:48:05.272414",
+    "symbol": "0050@spot,2317@spot,2330@spot",
+    "exchange": "paper",
+    "error": "close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單"
+   }
+  ],
+  "orders": [
+   {
+    "ts": "2026-10-18T01:33:31.730920",
+    "action": "BUY",
+    "symbol": "ETHUSDT",
+    "signed_diff": 500.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "cx_c",
+      "position": 1.0,
+      "amount": 500.0,
+      "contribution": 500.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 500.0,
+      "reduce_only": false,
+      "fill_price": 2406.19,
+      "executed_qty": 0.20779739,
+      "exchange": "paper",
+      "signed_qty": 0.20779739
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:33:31.733691",
+    "action": "BUY",
+    "symbol": "0050@spot",
+    "signed_diff": 350000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.35,
+      "amount": 1000000.0,
+      "contribution": 350000.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 349999.0,
+      "reduce_only": false,
+      "fill_price": 109.0,
+      "executed_qty": 3211.0,
+      "exchange": "paper",
+      "signed_qty": 3211.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:33:31.736290",
+    "action": "BUY",
+    "symbol": "2330@spot",
+    "signed_diff": 2550000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.45,
+      "amount": 1000000.0,
+      "contribution": 450000.0,
+      "portfolio": true
+     },
+     {
+      "strategy": "tw_a",
+      "position": 1.0,
+      "amount": 2100000.0,
+      "contribution": 2100000.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 2548260.0,
+      "reduce_only": false,
+      "fill_price": 2420.0,
+      "executed_qty": 1053.0,
+      "exchange": "paper",
+      "signed_qty": 1053.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:35:27.089227",
+    "action": "SELL",
+    "symbol": "2317@spot",
+    "signed_diff": -199836.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.0,
+      "amount": 1000000.0,
+      "contribution": 0.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -199836.0,
+      "reduce_only": true,
+      "fill_price": 244.0,
+      "executed_qty": 819.0,
+      "exchange": "paper",
+      "signed_qty": -819.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:35:27.093384",
+    "action": "SELL",
+    "symbol": "2330@spot",
+    "signed_diff": -2098260.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.45,
+      "amount": 1000000.0,
+      "contribution": 450000.0,
+      "portfolio": true
+     },
+     {
+      "strategy": "tw_a",
+      "position": -1.0,
+      "amount": 2100000.0,
+      "contribution": 0.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -2098140.0,
+      "reduce_only": true,
+      "fill_price": 2420.0,
+      "executed_qty": 867.0,
+      "exchange": "paper",
+      "signed_qty": -867.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:38:20.677916",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "signed_diff": 3000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": 3000.0,
+      "reduce_only": true,
+      "exchange": "paper",
+      "fill_price": 60000.0,
+      "executed_qty": 0.05,
+      "signed_qty": 0.05
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:38:20.678777",
+    "action": "SELL",
+    "symbol": "ETHUSDT",
+    "signed_diff": -500.39,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -500.39,
+      "reduce_only": true,
+      "exchange": "paper",
+      "fill_price": 2408.08,
+      "executed_qty": 0.20779739,
+      "signed_qty": -0.20779739
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:40:53.105566",
+    "action": "SELL",
+    "symbol": "0050@spot",
+    "signed_diff": -349999.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -349999.0,
+      "reduce_only": true,
+      "fill_price": 109.0,
+      "executed_qty": 3211.0,
+      "exchange": "paper",
+      "signed_qty": -3211.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:40:53.109056",
+    "action": "SELL",
+    "symbol": "2330@spot",
+    "signed_diff": -450120.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -450120.0,
+      "reduce_only": true,
+      "fill_price": 2420.0,
+      "executed_qty": 186.0,
+      "exchange": "paper",
+      "signed_qty": -186.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:42:33.417041",
+    "action": "BUY",
+    "symbol": "2317@spot",
+    "signed_diff": 500000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.2,
+      "amount": 2500000.0,
+      "contribution": 500000.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 499956.0,
+      "reduce_only": false,
+      "fill_price": 244.0,
+      "executed_qty": 2049.0,
+      "exchange": "paper",
+      "signed_qty": 2049.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:42:33.419942",
+    "action": "SELL",
+    "symbol": "BTCUSDT",
+    "signed_diff": -3000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "cx_c",
+      "position": 0.0,
+      "amount": 500.0,
+      "contribution": 0.0,
+      "portfolio": true
+     },
+     {
+      "strategy": "btc_a",
+      "position": -1.0,
+      "amount": 3000.0,
+      "contribution": -3000.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -3000.0,
+      "reduce_only": false,
+      "fill_price": 60000.0,
+      "executed_qty": 0.05,
+      "exchange": "paper",
+      "signed_qty": -0.05
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:42:33.507372",
+    "action": "BUY",
+    "symbol": "ETHUSDT",
+    "signed_diff": 500.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "cx_c",
+      "position": 1.0,
+      "amount": 500.0,
+      "contribution": 500.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 500.0,
+      "reduce_only": false,
+      "fill_price": 2416.56,
+      "executed_qty": 0.20690568,
+      "exchange": "paper",
+      "signed_qty": 0.20690568
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:42:33.515317",
+    "action": "BUY",
+    "symbol": "0050@spot",
+    "signed_diff": 750000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.3,
+      "amount": 2500000.0,
+      "contribution": 750000.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 749920.0,
+      "reduce_only": false,
+      "fill_price": 109.0,
+      "executed_qty": 6880.0,
+      "exchange": "paper",
+      "signed_qty": 6880.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:45:29.640858",
+    "action": "SELL",
+    "symbol": "2317@spot",
+    "signed_diff": -299956.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.2,
+      "amount": 1000000.0,
+      "contribution": 200000.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -299876.0,
+      "reduce_only": true,
+      "fill_price": 244.0,
+      "executed_qty": 1229.0,
+      "exchange": "paper",
+      "signed_qty": -1229.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:45:29.643896",
+    "action": "SELL",
+    "symbol": "0050@spot",
+    "signed_diff": -449920.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.3,
+      "amount": 1000000.0,
+      "contribution": 300000.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -449843.0,
+      "reduce_only": true,
+      "fill_price": 109.0,
+      "executed_qty": 4127.0,
+      "exchange": "paper",
+      "signed_qty": -4127.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:45:29.645108",
+    "action": "BUY",
+    "symbol": "2330@spot",
+    "signed_diff": 2600000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "tw_c",
+      "position": 0.5,
+      "amount": 1000000.0,
+      "contribution": 500000.0,
+      "portfolio": true
+     },
+     {
+      "strategy": "tw_a",
+      "position": 1.0,
+      "amount": 2100000.0,
+      "contribution": 2100000.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 2599080.0,
+      "reduce_only": false,
+      "fill_price": 2420.0,
+      "executed_qty": 1074.0,
+      "exchange": "paper",
+      "signed_qty": 1074.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:47:57.574166",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "signed_diff": 3000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": 3000.0,
+      "reduce_only": true,
+      "exchange": "paper",
+      "fill_price": 60000.0,
+      "executed_qty": 0.05,
+      "signed_qty": 0.05
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:47:57.575134",
+    "action": "SELL",
+    "symbol": "ETHUSDT",
+    "signed_diff": -499.49,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -499.49,
+      "reduce_only": true,
+      "exchange": "paper",
+      "fill_price": 2414.08,
+      "executed_qty": 0.20690568,
+      "signed_qty": -0.20690568
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:48:05.274816",
+    "action": "BUY",
+    "symbol": "ETHUSDT",
+    "signed_diff": 500.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "cx_c",
+      "position": 1.0,
+      "amount": 500.0,
+      "contribution": 500.0,
+      "portfolio": true
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 500.0,
+      "reduce_only": false,
+      "fill_price": 2414.08,
+      "executed_qty": 0.20711824,
+      "exchange": "paper",
+      "signed_qty": 0.20711824
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-18T01:48:05.276756",
+    "action": "SELL",
+    "symbol": "BTCUSDT",
+    "signed_diff": -3000.0,
+    "exchange": "paper",
+    "asset_spec": null,
+    "contributors": [
+     {
+      "strategy": "cx_c",
+      "position": 0.0,
+      "amount": 500.0,
+      "contribution": 0.0,
+      "portfolio": true
+     },
+     {
+      "strategy": "btc_a",
+      "position": -1.0,
+      "amount": 3000.0,
+      "contribution": -3000.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -3000.0,
+      "reduce_only": false,
+      "fill_price": 60000.0,
+      "executed_qty": 0.05,
+      "exchange": "paper",
+      "signed_qty": -0.05
+     }
+    ]
+   }
+  ],
+  "reconciler": {
+   "heartbeat_at": 1792288180,
+   "alive": true,
+   "stopped": null
+  },
+  "command_listener": {
+   "alive": true
+  },
+  "halt": {
+   "halted": false,
+   "freeze": true
+  },
+  "account_guard": {
+   "venue": "paper",
+   "account_id_seeded": true,
+   "account_id_supported": true,
+   "last_read_error": null,
+   "last_read_at": 1792287011,
+   "pending": false,
+   "book_hold": null
+  },
+  "venues": {
+   "paper": {
+    "credentials": true,
+    "pair": true,
+    "order": true,
+    "account": true
+   }
+  },
+  "self_ledger": true,
+  "downtime_pause": null,
+  "portfolio_configured": true,
+  "reported_at": 1792288182,
+  "daemon": {
+   "pid": 3192,
+   "started_at": 1792285931,
+   "heartbeat_at": 1792288182,
+   "version": "1.1.133",
+   "signed": true,
+   "reconciler": {
+    "wanted": false,
+    "running": false,
+    "orphan": false,
+    "pid": null,
+    "restarts": 0,
+    "last_exit_code": null,
+    "last_exit_at": null
+   }
+  }
+ },
+ {
+  "config": {
+   "self_ledger": true,
+   "amounts": {
+    "cs_a": 0.0,
+    "cs_b": 0.0,
+    "txf_sma_1m_v23": 1,
+    "txf_sma_60m_v23": 1,
+    "mock_mxf_flip_5m": 1,
+    "t3_txf_15m": 1,
+    "t3_txf_1d": 1,
+    "t3_btc_1m": 100,
+    "t3_btc_1h": 100,
+    "t3_btc_1d": 100,
+    "t3_c_mom_5min": 100,
+    "t3_c_mom_1h": 100,
+    "t3_c_mom_1d": 100,
+    "t3_pandas_top_eth_5min": 100,
+    "t3_legacy_eth_1h": 100,
+    "t3_scn_slow_txf_1m": 1,
+    "t3_scn_late_btc_5min": 100,
+    "t3_scn_fail_eth_5min": 100
+   },
+   "exchanges": {
+    "cs_a": "paper",
+    "cs_b": "paper",
+    "txf_sma_1m_v23": "paper",
+    "txf_sma_60m_v23": "paper",
+    "mock_mxf_flip_5m": "paper",
+    "t3_txf_15m": "paper",
+    "t3_txf_1d": "paper",
+    "t3_btc_1m": "paper",
+    "t3_btc_1h": "paper",
+    "t3_btc_1d": "paper",
+    "t3_c_mom_5min": "paper",
+    "t3_c_mom_1h": "paper",
+    "t3_c_mom_1d": "paper",
+    "t3_pandas_top_eth_5min": "paper",
+    "t3_legacy_eth_1h": "paper",
+    "t3_scn_slow_txf_1m": "paper",
+    "t3_scn_late_btc_5min": "paper",
+    "t3_scn_fail_eth_5min": "paper"
+   },
+   "asset_specs": {
+    "cs_a": {
+     "type": "futures_contracts",
+     "contract_value": 10,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 35050
+    },
+    "cs_b": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "txf_sma_1m_v23": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "txf_sma_60m_v23": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "mock_mxf_flip_5m": {
+     "type": "futures_contracts",
+     "contract_value": 50,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 175250
+    },
+    "t3_txf_15m": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "t3_txf_1d": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "t3_scn_slow_txf_1m": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    }
+   },
+   "contracts": {}
+  },
+  "states": {
+   "mock_mxf_flip_5m": {
+    "symbol": "MXF",
+    "position": -1.0,
+    "market": "swap",
+    "updated_at": 1792460716
+   },
+   "t3_btc_1d": {
+    "symbol": "BTCUSDT",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792454427
+   },
+   "t3_btc_1h": {
+    "symbol": "BTCUSDT",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792458058
+   },
+   "t3_btc_1m": {
+    "symbol": "BTCUSDT",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792460831
+   },
+   "t3_c_mom_1d": {
+    "symbol": null,
+    "position": 0,
+    "market": "swap",
+    "updated_at": 1792454428,
+    "type": "portfolio",
+    "weights": {
+     "SOLUSDT": 1.0
+    },
+    "rebalance_at": 1792368000
+   },
+   "t3_c_mom_1h": {
+    "symbol": null,
+    "position": 0,
+    "market": "swap",
+    "updated_at": 1792458066,
+    "type": "portfolio",
+    "weights": {
+     "SOLUSDT": 1.0
+    },
+    "rebalance_at": 1792436400
+   },
+   "t3_c_mom_5min": {
+    "symbol": null,
+    "position": 0,
+    "market": "swap",
+    "updated_at": 1792460718,
+    "type": "portfolio",
+    "weights": {
+     "BTCUSDT": 1.0
+    },
+    "rebalance_at": 1792458000
+   },
+   "t3_legacy_eth_1h": {
+    "symbol": "ETHUSDT",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792458068
+   },
+   "t3_pandas_top_eth_5min": {
+    "symbol": "ETHUSDT",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792460714
+   },
+   "t3_scn_fail_eth_5min": {
+    "symbol": "ETHUSDT",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792460718
+   },
+   "t3_scn_late_btc_5min": {
+    "symbol": "BTCUSDT",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792460716
+   },
+   "t3_scn_slow_txf_1m": {
+    "symbol": "TXF",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792460833
+   },
+   "t3_txf_15m": {
+    "symbol": "TXF",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792460717
+   },
+   "t3_txf_1d": {
+    "symbol": "TXF",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792388768
+   },
+   "txf_sma_1m_v23": {
+    "symbol": "TXF",
+    "position": 0.0,
+    "market": "swap",
+    "updated_at": 1792460833
+   },
+   "txf_sma_60m_v23": {
+    "symbol": "TXF",
+    "position": 1.3880085768123385,
+    "market": "swap",
+    "updated_at": 1792458065
+   }
+  },
+  "signals_frozen": null,
+  "quote_ccy": {
+   "cs_a": null,
+   "cs_b": null,
+   "mock_mxf_flip_5m": "TWD",
+   "t3_btc_1d": "USDT",
+   "t3_btc_1h": "USDT",
+   "t3_btc_1m": "USDT",
+   "t3_c_mom_1d": "USDT",
+   "t3_c_mom_1h": "USDT",
+   "t3_c_mom_5min": "USDT",
+   "t3_legacy_eth_1h": "USDT",
+   "t3_pandas_top_eth_5min": "USDT",
+   "t3_scn_fail_eth_5min": "USDT",
+   "t3_scn_late_btc_5min": "USDT",
+   "t3_scn_slow_txf_1m": "TWD",
+   "t3_txf_15m": "TWD",
+   "t3_txf_1d": "TWD",
+   "txf_sma_1m_v23": "TWD",
+   "txf_sma_60m_v23": "TWD"
+  },
+  "scheduled": [
+   "mock_mxf_flip_5m",
+   "t3_btc_1d",
+   "t3_btc_1h",
+   "t3_btc_1m",
+   "t3_c_mom_1d",
+   "t3_c_mom_1h",
+   "t3_c_mom_5min",
+   "t3_legacy_eth_1h",
+   "t3_pandas_top_eth_5min",
+   "t3_scn_fail_eth_5min",
+   "t3_scn_late_btc_5min",
+   "t3_scn_slow_txf_1m",
+   "t3_txf_15m",
+   "t3_txf_1d",
+   "txf_sma_1m_v23",
+   "txf_sma_60m_v23"
+  ],
+  "last_reconcile": {
+   "ts": "2026-10-14T05:07:59.394067",
+   "target": {},
+   "actual": {},
+   "orders": [],
+   "caps": [
+    "contract_override",
+    "rollover_halt_freeze"
+   ],
+   "ledger": {},
+   "gates": {},
+   "own_only": true
+  },
+  "account": {
+   "read_at": 1792460845,
+   "venues": {
+    "president": {
+     "ok": false,
+     "equity": null,
+     "currency": null,
+     "accounts": null,
+     "positions": null,
+     "holdings": null,
+     "error": {
+      "stage": "get_equity",
+      "type": "RuntimeError",
+      "msg": "president snapshot missing — is the 統一期貨 worker (lib/president_worker.py) running?"
+     },
+     "ever_ok": false
+    }
+   }
+  },
+  "order_errors": [],
+  "orders": [
+   {
+    "ts": "2026-10-14T01:58:54.185940",
+    "action": "BUY",
+    "symbol": "TXF",
+    "signed_diff": 1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 1.0,
+      "reduce_only": false,
+      "fill_price": 49008.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": 1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T01:59:30.136909",
+    "action": "BUY",
+    "symbol": "TXF",
+    "signed_diff": 1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     },
+     {
+      "strategy": "cs_b",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 1.0,
+      "reduce_only": false,
+      "fill_price": 49006.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": 1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:05:12.343598",
+    "action": "SELL",
+    "symbol": "TXF",
+    "signed_diff": -1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_b",
+      "position": 0.0,
+      "amount": 1.0,
+      "contribution": 0.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -1.0,
+      "reduce_only": true,
+      "fill_price": 49084.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": -1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:06:28.267700",
+    "action": "SELL",
+    "symbol": "TXF",
+    "signed_diff": -1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_b",
+      "position": 0.0,
+      "amount": 1.0,
+      "contribution": 0.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -1.0,
+      "reduce_only": true,
+      "fill_price": 49102.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": -1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:06:34.117868",
+    "action": "BUY",
+    "symbol": "TMF",
+    "signed_diff": 20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 10,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 35050
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 20.0,
+      "contribution": 20.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 20.0,
+      "reduce_only": false,
+      "fill_price": 49102.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": 20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:06:59.240197",
+    "action": "SELL",
+    "symbol": "TMF",
+    "signed_diff": -20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "currency": "TWD",
+     "lot_size": 1,
+     "contract_value": 10
+    },
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -20.0,
+      "reduce_only": true,
+      "fill_price": 49102.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": -20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:07:05.330964",
+    "action": "BUY",
+    "symbol": "TXF",
+    "signed_diff": 1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     },
+     {
+      "strategy": "cs_b",
+      "position": 0.0,
+      "amount": 1.0,
+      "contribution": 0.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 1.0,
+      "reduce_only": false,
+      "fill_price": 49135.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": 1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:08:06.205791",
+    "action": "BUY",
+    "symbol": "TXF",
+    "signed_diff": 1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     },
+     {
+      "strategy": "cs_b",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 1.0,
+      "reduce_only": false,
+      "fill_price": 49149.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": 1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:08:53.233773",
+    "action": "SELL",
+    "symbol": "TXF",
+    "signed_diff": -1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_b",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -1.0,
+      "reduce_only": true,
+      "fill_price": 49149.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": -1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:08:59.036824",
+    "action": "BUY",
+    "symbol": "TMF",
+    "signed_diff": 20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 10,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 35050
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 20.0,
+      "contribution": 20.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 20.0,
+      "reduce_only": false,
+      "fill_price": 49149.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": 20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:09:31.730766",
+    "action": "SELL",
+    "symbol": "TMF",
+    "signed_diff": -20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "currency": "TWD",
+     "lot_size": 1,
+     "contract_value": 10
+    },
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -20.0,
+      "reduce_only": true,
+      "fill_price": 49139.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": -20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:09:36.830888",
+    "action": "BUY",
+    "symbol": "TXF",
+    "signed_diff": 1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     },
+     {
+      "strategy": "cs_b",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 1.0,
+      "reduce_only": false,
+      "fill_price": 49139.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": 1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:11:27.611198",
+    "action": "SELL",
+    "symbol": "TXF",
+    "signed_diff": -1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_b",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -1.0,
+      "reduce_only": true,
+      "fill_price": 49121.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": -1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:11:33.440425",
+    "action": "BUY",
+    "symbol": "TMF",
+    "signed_diff": 20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 10,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 35050
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 20.0,
+      "contribution": 20.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 20.0,
+      "reduce_only": false,
+      "fill_price": 49121.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": 20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:11:50.572230",
+    "action": "SELL",
+    "symbol": "TMF",
+    "signed_diff": -20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "currency": "TWD",
+     "lot_size": 1,
+     "contract_value": 10
+    },
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -20.0,
+      "reduce_only": true,
+      "fill_price": 49121.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": -20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T02:11:55.657590",
+    "action": "BUY",
+    "symbol": "TXF",
+    "signed_diff": 1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     },
+     {
+      "strategy": "cs_b",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 1.0,
+      "reduce_only": false,
+      "fill_price": 49121.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": 1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T03:22:37.084396",
+    "action": "SELL",
+    "symbol": "TXF",
+    "signed_diff": -1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 200,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 701000
+    },
+    "contributors": [
+     {
+      "strategy": "cs_b",
+      "position": 1.0,
+      "amount": 1.0,
+      "contribution": 1.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": -1.0,
+      "reduce_only": true,
+      "fill_price": 49132.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": -1.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T03:22:42.992800",
+    "action": "BUY",
+    "symbol": "TMF",
+    "signed_diff": 20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "contract_value": 10,
+     "currency": "TWD",
+     "lot_size": 1,
+     "margin": 35050
+    },
+    "contributors": [
+     {
+      "strategy": "cs_a",
+      "position": 1.0,
+      "amount": 20.0,
+      "contribution": 20.0
+     }
+    ],
+    "legs": [
+     {
+      "signed_diff": 20.0,
+      "reduce_only": false,
+      "fill_price": 49132.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": 20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T04:09:13.534518",
+    "action": "SELL",
+    "symbol": "TMF",
+    "signed_diff": -20.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "currency": "TWD",
+     "lot_size": 1,
+     "contract_value": 10
+    },
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -20.0,
+      "reduce_only": true,
+      "fill_price": 49054.0,
+      "executed_qty": 20.0,
+      "exchange": "paper",
+      "signed_qty": -20.0
+     }
+    ]
+   },
+   {
+    "ts": "2026-10-14T04:09:22.900085",
+    "action": "SELL",
+    "symbol": "TXF",
+    "signed_diff": -1.0,
+    "exchange": "paper",
+    "asset_spec": {
+     "type": "futures_contracts",
+     "currency": "TWD",
+     "lot_size": 1,
+     "contract_value": 200
+    },
+    "contributors": [],
+    "legs": [
+     {
+      "signed_diff": -1.0,
+      "reduce_only": true,
+      "fill_price": 49055.0,
+      "executed_qty": 1.0,
+      "exchange": "paper",
+      "signed_qty": -1.0
+     }
+    ]
+   }
+  ],
+  "reconciler": {
+   "heartbeat_at": 1791954500,
+   "alive": false,
+   "stopped": null
+  },
+  "command_listener": {
+   "alive": true
+  },
+  "halt": {
+   "halted": true,
+   "at": "2026-10-14T05:08:15.382728+00:00",
+   "reason": "exchange unbound (paper)",
+   "source": "web",
+   "blocked": 0,
+   "holds_all": false
+  },
+  "account_guard": {
+   "venue": "paper",
+   "account_id_seeded": true,
+   "account_id_supported": true,
+   "last_read_error": null,
+   "last_read_at": 1791950937,
+   "pending": false,
+   "book_hold": null
+  },
+  "venues": {
+   "president": {
+    "credentials": true,
+    "pair": true,
+    "order": true,
+    "account": true
+   }
+  },
+  "self_ledger": true,
+  "downtime_pause": null,
+  "portfolio_configured": true,
+  "reported_at": 1792460876,
+  "daemon": {
+   "pid": 8600,
+   "started_at": 1792376196,
+   "heartbeat_at": 1792460876,
+   "version": "1.1.122",
+   "signed": true,
+   "reconciler": {
+    "wanted": false,
+    "running": false,
+    "orphan": false,
+    "pid": null,
+    "restarts": 0,
+    "last_exit_code": null,
+    "last_exit_at": null
+   }
+  }
+ },
+ {
+  "config": {},
+  "states": {},
+  "previews": {},
+  "backtest_previews": {
+   "bf_demo": {
+    "bar_at": 1757833200,
+    "bar_date": "2025-09-14",
+    "latest": false,
+    "daily_tw": false,
+    "market": "swap",
+    "type": "signal",
+    "symbol": "BTCUSDT",
+    "position": 0.0,
+    "close": 1938.9039586472352
+   }
+  },
+  "tw_lots": {},
+  "deferred_close": [],
+  "tw_trading_day": null,
+  "signals_frozen": null,
+  "quote_ccy": {},
+  "scheduled": [],
+  "last_reconcile": null,
+  "account": {
+   "read_at": 1792477752,
+   "venues": {
+    "paper": {
+     "ok": true,
+     "equity": 100000.0,
+     "currency": "USDT",
+     "accounts": null,
+     "positions": {},
+     "holdings": [
+      {
+       "asset": "USDT",
+       "amount": 100000.0,
+       "usdt_value": 100000.0,
+       "wallet": "cash"
+      }
+     ],
+     "error": null,
+     "flows": [],
+     "ever_ok": true
+    }
+   }
+  },
+  "order_errors": [
+   {
+    "ts": "2026-10-20T05:37:51.971190",
+    "last_at": "2026-10-20T06:22:51.971190",
+    "symbol": "ETHUSDT",
+    "exchange": "paper",
+    "error": "Insufficient margin",
+    "count": 3
+   }
+  ],
+  "orders": [],
+  "reconciler": {
+   "heartbeat_at": null,
+   "alive": false,
+   "stopped": null
+  },
+  "command_listener": {
+   "alive": true
+  },
+  "halt": {
+   "halted": false,
+   "freeze": true
+  },
+  "account_guard": null,
+  "venues": {
+   "paper": {
+    "credentials": true,
+    "pair": true,
+    "order": true,
+    "account": true
+   }
+  },
+  "self_ledger": true,
+  "downtime_pause": null,
+  "portfolio_configured": false,
+  "reported_at": 1792477809,
+  "daemon": {
+   "pid": 62583,
+   "started_at": 1792477682,
+   "heartbeat_at": 1792477809,
+   "version": "1.1.137",
+   "signed": true,
+   "reconciler": {
+    "wanted": false,
+    "running": false,
+    "orphan": false,
+    "pid": null,
+    "restarts": 0,
+    "last_exit_code": null,
+    "last_exit_at": null
+   }
+  }
+ }
+]

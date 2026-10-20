@@ -20,7 +20,7 @@ const REPORT_ENDPOINT = "/oauth/desktop/local/report";
 const DELETE_ENDPOINT = "/oauth/desktop/local/report/delete";
 const TICK_MS = 2 * 60 * 1000;
 const EARLY_MIN_GAP_MS = 20 * 1000;
-const REQUEST_TIMEOUT_MS = 10 * 1000, DELETE_TIMEOUT_MS = 5 * 1000, CLOSING_TIMEOUT_MS = 3 * 1000;
+const REQUEST_TIMEOUT_MS = 10 * 1000, DELETE_TIMEOUT_MS = 5 * 1000, CLOSING_TIMEOUT_MS = 3 * 1000, CLOSING_SETTLE_MS = 1500;
 const MAX_BYTES = 512 * 1024;   // = api desktop_portfolio.MAX_BYTES(整個 body)
 const REPORT_MAX_BYTES = 64 * 1024;   // = api desktop_portfolio.STORED_MAX_BYTES(清過之後那一份;超過 api 回 413 不存)
 // = api desktop_portfolio.ALLOWED_KEYS(tests/check_shell_mobileview.js 逐項比對兩端)
@@ -31,6 +31,8 @@ const ALLOWED_KEYS = ["config", "states", "previews", "backtest_previews", "tw_l
 const FREE_TEXT_KEYS = ["error", "msg", "reason", "last_read_error"];
 const HOME_RE = /(\/Users\/|\/home\/|[A-Za-z]:[\\/]+Users[\\/]+)[^/\\\s"']+/gi;
 const URL_QUERY_RE = /(https?:\/\/[^\s"'?]*)\?[^\s"']*/g;
+// 沒有 scheme 的網址(requests 的 ConnectionError 寫成 `with url: /fapi/v1/order?…&signature=…`)
+const PATH_QUERY_RE = /(^|[\s"'(=:])(\/[^\s"'?]*)\?[^\s"']*/g;
 const LONG_TOKEN_RE = /[A-Za-z0-9+/=_-]{32,}/g;
 
 // 裝置代號:install_id 的衍生值,跟 install_id 一樣穩定,但不能拿去串回使用追蹤事件(契約 §2)
@@ -41,11 +43,13 @@ function deviceOf(installId) {
 function scrubStr(s, freeText, home) {
   let out = s;
   if (home) out = out.split(home).join("~").split(home.replace(/\\/g, "/")).join("~");
-  out = out.replace(HOME_RE, "~").replace(URL_QUERY_RE, "$1?…");
+  out = out.replace(HOME_RE, "~").replace(URL_QUERY_RE, "$1?…").replace(PATH_QUERY_RE, "$1$2?…");
   return freeText ? out.replace(LONG_TOKEN_RE, "…") : out;
 }
+/* 自由文字 = 已知的錯誤／原因鍵,或任何帶空白的字串(句子)。不只認鍵名:reporter 以後在允許清單底下新增
+   detail / last_error 這類鍵,裡面的例外原文照樣會被遮。代號、策略名、時間這些不帶空白的值不動 */
 function scrub(v, key, home) {
-  if (typeof v === "string") return scrubStr(v, FREE_TEXT_KEYS.indexOf(key) >= 0, home);
+  if (typeof v === "string") return scrubStr(v, FREE_TEXT_KEYS.indexOf(key) >= 0 || /\s/.test(v), home);
   if (Array.isArray(v)) return v.map((x) => scrub(x, key, home));   // 清單元素繼承父鍵
   if (v && typeof v === "object") { const o = {}; for (const k of Object.keys(v)) o[k] = scrub(v[k], k, home); return o; }
   return v;
@@ -80,6 +84,9 @@ function createMobileView(opts) {
   const clock = opts.now || (() => Date.now());
   const log = opts.log || (() => {});
   let st = null, flag = false, lastSentAt = 0, lastSig = null, inflight = null, timer = null, kickTimer = null;
+  // confirmed:這次啟動有一筆上傳拿到 200(決定結束時要不要送 closing);closed:closing 送出之後閂住,一般上傳一律不再送
+  let confirmed = false, closed = false;
+  const settle = (ms) => (inflight ? withTimeout(inflight.catch(() => false), ms) : Promise.resolve());
   function load() {
     if (st) return st;
     let raw = null;
@@ -122,7 +129,7 @@ function createMobileView(opts) {
   }
   async function upload(closing) {
     const s = load(), c = creds(), dev = device();
-    if (!flag || !s.on || s.pending || !c || !dev) return false;
+    if (!flag || !s.on || s.pending || !c || !dev || (closed && !closing)) return false;
     const status = closing ? null : opts.status();
     const report = closing ? null : cleanReport(status && status.report, opts.home);
     if (!closing && !report) return false;
@@ -131,17 +138,21 @@ function createMobileView(opts) {
     const body = { token: c.token, app_secret: c.appSecret, device: dev, closing: !!closing, report };
     if (line) body.local_line = line;
     if (Buffer.byteLength(JSON.stringify(body)) > MAX_BYTES) { log("mobile view: report over 512 KB, not sent"); return false; }
+    // 送出之前就記「可能傳過」:送到了但回應逾時,之後關開關也要送刪除
+    if (!s.uploaded) { s.uploaded = true; save(); }
     let r = null;
     try { r = await withTimeout(opts.post(opts.apiBase + REPORT_ENDPOINT, body), closing ? CLOSING_TIMEOUT_MS : REQUEST_TIMEOUT_MS); } catch (_) { r = null; }
     if (whoOf(opts.getCreds()) !== whoOf(c)) return false;   // 在途時登出 / 換了帳號
     if (r && r.status === 403 && r.body && r.body.error_code === "MOBILE_VIEW_OFF") { flag = false; return false; }
     if (!r || r.status !== 200) { log("mobile view: upload failed (" + (r ? r.status : "offline") + ")"); return false; }
-    lastSentAt = clock(); lastSig = closing ? null : signature(line, report);
-    if (!s.uploaded) { s.uploaded = true; save(); }
+    // 在途時用戶關掉了開關:這一筆可能比刪除晚到、把快照寫回去 → 記待刪,下一輪重送刪除
+    if (!s.on) { s.pending = true; save(); return false; }
+    lastSentAt = clock(); lastSig = closing ? null : signature(line, report); confirmed = true;
     return true;
   }
   // 一輪:先讀旗標,再刪待刪的,最後才上傳。同一時間只跑一輪
   function tick() {
+    if (closed) return Promise.resolve(false);
     if (inflight) return inflight;
     inflight = (async () => {
       try {
@@ -156,10 +167,10 @@ function createMobileView(opts) {
   // 狀態有值得講的變動時提早送(每台最快 20 秒一次);旗標只靠 tick 刷新
   function kick() {
     const s = load();
-    if (inflight || !flag || !s.on || s.pending || clock() - lastSentAt < EARLY_MIN_GAP_MS) return false;
+    if (closed || inflight || !flag || !s.on || s.pending || clock() - lastSentAt < EARLY_MIN_GAP_MS) return false;
     const status = opts.status(), report = status && status.report;
     if (!report || signature(opts.line(status), cleanReport(report, opts.home)) === lastSig) return false;
-    inflight = upload(false).finally(() => { inflight = null; });
+    const q = upload(false).finally(() => { if (inflight === q) inflight = null; }); inflight = q;
     return true;
   }
   async function setOn(on) {
@@ -168,6 +179,7 @@ function createMobileView(opts) {
     s.on = want;
     if (!want) {
       lastSig = null;
+      await settle(REQUEST_TIMEOUT_MS);   // 在途的上傳先落地,刪除才會是最後一筆
       // 曾經傳過(或旗標開著、可能傳過)才需要刪;刪不成就記待刪,下一輪重送
       if (creds() && (s.uploaded || flag)) s.pending = (await sendDelete(REQUEST_TIMEOUT_MS)) === "failed";
       if (!s.pending) s.uploaded = false;
@@ -175,18 +187,29 @@ function createMobileView(opts) {
       return state();
     }
     save();
-    if (await flushPending()) { await refreshFlag(); await upload(false); }   // 打開時立刻傳一份,不等下一個 2 分鐘
+    await settle(REQUEST_TIMEOUT_MS);
+    if (await flushPending()) {   // 打開時立刻傳一份,不等下一個 2 分鐘
+      await refreshFlag();
+      const q = upload(false).finally(() => { if (inflight === q) inflight = null; }); inflight = q; await q;
+    }
     return state();
   }
   /* 登出:撤銷 token 之前呼叫(撤銷之後這對憑證就刪不了)。刪不成也照樣登出:token 撤銷後平台讀取會把這台藏起來 */
   async function signOut() {
     const s = load();
+    await settle(DELETE_TIMEOUT_MS);
     if (s.uploaded || s.pending || flag) await sendDelete(DELETE_TIMEOUT_MS);
     s.pending = false; s.uploaded = false; lastSig = null; lastSentAt = 0; save();
   }
   /* app 正常結束:最後一筆 closing。旗標關、開關關、待刪中、沒傳過都不送;最多等 3 秒,不卡結束流程 */
-  function wantsClosing() { const s = load(); return flag && s.on && !s.pending && s.uploaded && !!creds(); }
-  async function closing() { if (!wantsClosing()) return false; try { return await upload(true); } catch (_) { return false; } }
+  function wantsClosing() { const s = load(); return !closed && flag && s.on && !s.pending && confirmed && !!creds(); }
+  /* 先停計時器、上閂(之後的一般上傳都不送),等在途那一筆(最多 1.5 秒),才送 closing:不然收工那幾秒的一輪會把「已關閉」蓋回「回報中」 */
+  async function closing() {
+    if (!wantsClosing()) return false;
+    closed = true; stop();
+    await settle(CLOSING_SETTLE_MS);
+    try { return await upload(true); } catch (_) { return false; }
+  }
   function state() {
     const s = load();
     return { visible: flag, on: s.on, pending: s.pending, signedIn: !!creds() };
@@ -202,4 +225,4 @@ function createMobileView(opts) {
 }
 
 module.exports = { createMobileView, cleanReport, deviceOf, signature, ALLOWED_KEYS, MAX_BYTES, REPORT_MAX_BYTES, TICK_MS, EARLY_MIN_GAP_MS,
-  FLAG_ENDPOINT, REPORT_ENDPOINT, DELETE_ENDPOINT, CLOSING_TIMEOUT_MS, DELETE_TIMEOUT_MS };
+  FLAG_ENDPOINT, REPORT_ENDPOINT, DELETE_ENDPOINT, CLOSING_TIMEOUT_MS, CLOSING_SETTLE_MS, DELETE_TIMEOUT_MS, FREE_TEXT_KEYS };

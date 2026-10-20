@@ -172,6 +172,70 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     && app.includes('const mvOn = typeof mvShown === "function" && mvShown() && MV.on === true;') && app.includes('mvOn ? [t("acct.out.5")] : []'));
   ok("第二份 app 不上傳(同一個裝置代號)", /if \(app\.hasSingleInstanceLock\(\)\) startStep\("mobile view", \(\) => mobileView\(\)\.start\(\)\);/.test(mainSrc));
 
+  // ---- 9. 稽核 2026-10-20(e02b827c／2921be4)
+  { // P2-1:關開關時有一筆上傳在路上 → 等它落地,最後一個送到 api 的是刪除
+    const order = []; let release;
+    const m = mk({ post: (u) => (u.endsWith("/delete") ? (order.push("delete"), { status: 200, body: {} })
+      : new Promise((r) => { order.push("upload-sent"); release = () => { order.push("upload-landed"); r({ status: 200, body: { ok: true } }); }; })) });
+    const tk = m.h.tick(); await new Promise((r) => setTimeout(r, 20));
+    const off = m.h.setOn(false); await new Promise((r) => setTimeout(r, 20));
+    ok("P2-1 上傳還在路上:刪除先不送", order.join() === "upload-sent", order);
+    release(); await tk; const s = await off;
+    ok("P2-1 上傳落地之後才送刪除(最後一個是刪除)、不留待刪", order.join() === "upload-sent,upload-landed,delete" && s.pending === false, order);
+    await m.h.tick(); ok("P2-1 之後不再上傳", m.posts().filter(isReport).length === 1); }
+  { // P2-1:上傳拿到 200 時開關已經關了(刪除送不出去)→ 記待刪、下一輪重送刪除
+    let release; const m = mk({ post: (u) => (u.endsWith("/delete") ? { status: 503, body: {} }
+      : new Promise((r) => { release = () => r({ status: 200, body: { ok: true } }); })) });
+    const tk = m.h.tick(); await new Promise((r) => setTimeout(r, 20));
+    const off = m.h.setOn(false); await new Promise((r) => setTimeout(r, 20)); release(); await tk; const s = await off;
+    ok("P2-1 刪除送不出去:記待刪", s.pending === true && m.file().pending === true);
+    m.setPost(() => ({ status: 200, body: {} })); await m.h.tick();
+    ok("P2-1 下一輪重送刪除成功、沒有上傳", m.h.state().pending === false && isDelete(m.posts()[m.posts().length - 1])
+      && m.posts().filter(isReport).length === 1); }
+  { // P3-2:closing 先停計時器、上閂、等在途上傳;之後的一般上傳一律不送
+    const order = []; let release;
+    const m = mk({ post: (u, b) => (b.closing ? (order.push("closing"), { status: 200, body: {} })
+      : new Promise((r) => { order.push("upload-sent"); release = () => { order.push("upload-landed"); r({ status: 200, body: {} }); }; })) });
+    m.setPost((u, b) => (b.closing ? (order.push("closing"), { status: 200, body: {} }) : { status: 200, body: {} }));
+    await m.h.tick();   // 先傳成功一次,才會想送 closing
+    m.setPost((u, b) => (b.closing ? (order.push("closing"), { status: 200, body: {} })
+      : new Promise((r) => { order.push("upload-sent"); release = () => { order.push("upload-landed"); r({ status: 200, body: {} }); }; })));
+    m.tick(60000); m.setReport(Object.assign(REPORT(), { halt: { halted: true } })); m.h.kick();
+    await new Promise((r) => setTimeout(r, 20));
+    const c = m.h.closing(); await new Promise((r) => setTimeout(r, 50));
+    ok("P3-2 closing 等在途那一筆", order.join() === "upload-sent", order);
+    release(); const sent = await c;
+    ok("P3-2 在途那一筆落地之後才送 closing", sent === true && order.join() === "upload-sent,upload-landed,closing", order);
+    const n = m.posts().length; await m.h.tick(); m.tick(60000); m.setReport(REPORT()); const k = m.h.kick();
+    ok("P3-2 closing 之後:tick / kick 都不再上傳,也不再想送 closing", m.posts().length === n && k === false && m.h.wantsClosing() === false); }
+  { // P3-4:送出之後回應逾時(沒拿到 200)也算「可能傳過」:之後關開關照樣送刪除
+    const m = mk({ post: (u) => (u.endsWith("/delete") ? { status: 200, body: {} } : null) });
+    await m.h.tick();
+    ok("P3-4 送出後沒有回應:記「可能傳過」", m.file().uploaded === true);
+    ok("P3-4 …但這次啟動沒有一筆確定成功:結束時不送 closing", m.h.wantsClosing() === false);
+    m.setFlag({ status: 200, body: { enabled: false } }); await m.h.tick(); await m.h.setOn(false);
+    ok("P3-4 旗標後來關了、再關開關:照樣送刪除", m.posts().filter(isDelete).length === 1); }
+  { // P3-1:長亂碼遮蔽不只認鍵名;沒有 scheme 的網址也遮
+    const r = MV.cleanReport({ halt: { detail: "binance said: invalid key AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" },
+      order_errors: [{ note: "ConnectionError with url: /fapi/v1/order?symbol=BTCUSDT&signature=" + "a".repeat(64) }],
+      config: { amounts: { ["s".repeat(40)]: 1 } }, states: { x: { sig: "z".repeat(40) } } });
+    ok("P3-1 不認得的鍵、帶空白的句子:長亂碼照樣遮", !JSON.stringify(r).includes("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789") && r.halt.detail.includes("…"));
+    ok("P3-1 `with url: /path?…`(沒有 scheme)的 query 遮掉", !JSON.stringify(r).includes("signature=") && r.order_errors[0].note.includes("/fapi/v1/order?…"));
+    ok("P3-1 不帶空白的代號 / 策略名不動", r.config.amounts["s".repeat(40)] === 1 && r.states.x.sig === "z".repeat(40)); }
+  { // P3-1 列舉:真實形狀的狀態檔(tests/fixtures/local_status_sample.json,開發版三份)清過之後,每一個字串葉節點都不帶 32 字以上的亂碼。
+    // reporter 新增了帶長代號的欄位會在這裡紅:看過它是不是祕密,再決定遮或不遮
+    const sample = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "local_status_sample.json"), "utf8")), hits = [];
+    const walk = (v, p) => { if (typeof v === "string") { if (/[A-Za-z0-9+/=_-]{32,}/.test(v)) hits.push(p); return; }
+      if (Array.isArray(v)) { v.forEach((x) => walk(x, p + "[]")); return; } if (v && typeof v === "object") for (const k of Object.keys(v)) walk(v[k], p + "." + k); };
+    sample.forEach((rep) => walk(MV.cleanReport(rep, HOME), ""));
+    ok("P3-1 列舉:fixture 三份、每個字串葉節點清過之後都沒有長亂碼", sample.length === 3 && hits.length === 0, hits.slice(0, 5));
+    // 每個字串葉節點換成一句帶金鑰片段的例外原文,不管鍵名是什麼都要被遮
+    const leaks = [];
+    const poison = (v) => (typeof v === "string" ? "boom key AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 at /Users/wei/x" : Array.isArray(v) ? v.map(poison)
+      : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, poison(x)])) : v);
+    sample.forEach((rep) => { const s = JSON.stringify(MV.cleanReport(poison(rep), HOME)); if (s.includes("AbCdEfGhIjKl") || s.includes("/Users/wei")) leaks.push(1); });
+    ok("P3-1 列舉:每一個字串葉節點都換成例外原文,清過之後一個都沒漏", leaks.length === 0); }
+
   // ---- 8. 兩端允許清單
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_portfolio.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 允許清單比對(需要 monorepo 版面:../api/openclaw/desktop_portfolio.py)");
