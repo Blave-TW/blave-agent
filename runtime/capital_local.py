@@ -423,6 +423,7 @@ def local_tick():
         code = cc.pw_blocked()
         _update("worker", status="failed", error=f"LOGIN_FAILED:{cc.CODE_STATES.get(code, 'unknown')}", wanted=False)
     w.tick()
+    _retry_purge(time.time())
 
 
 def local_info():
@@ -456,11 +457,89 @@ def drop_local(names):
             os.remove(f)
         except OSError:
             pass
-    base = local_dir()
-    if base:
-        shutil.rmtree(os.path.join(base, "log"), ignore_errors=True)
+    if not purge_logs():
+        _mark_purge()
     _update("worker", create=False, reset=True, status="idle")
     _update("probe", create=False, reset=True, status="idle")
+
+
+# SKCOM's own log carries the national ID. A reconciler that still has a session open (it is respawned on
+# its own thread, after its round) can hold those files locked on Windows, so a purge that leaves anything
+# behind is marked and retried from local_tick until it goes — and once at every daemon start while
+# 群益 is not bound. Only our own per-user folder: <base>\log and CapitalLog* next to the DLL (SKCOM's
+# default before SetLogPath). Never C:\skcom.
+PURGE_RETRY_S = 30
+_PURGE = {"next": 0.0}
+
+
+def _purge_flag():
+    return os.path.join(WORKSPACE, "state", "capital_log_purge")
+
+
+def _mark_purge():
+    try:
+        with atomic_file.replacing(_purge_flag()) as f:
+            f.write(str(int(time.time())))
+    except OSError:
+        pass
+
+
+def _log_targets():
+    base = local_dir()
+    if not base:
+        return []
+    out = [os.path.join(base, "log")]
+    sk = os.path.join(base, "skcom", "x64")
+    try:
+        out += [os.path.join(sk, n) for n in os.listdir(sk) if n.lower().startswith("capitallog")]
+    except OSError:
+        pass
+    return out
+
+
+def purge_logs():
+    """→ True when nothing of SKCOM's log is left in our folder."""
+    left = False
+    for t in _log_targets():
+        if os.path.isdir(t) and not os.path.islink(t):
+            shutil.rmtree(t, ignore_errors=True)
+        else:
+            try:
+                os.remove(t)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+        left = left or os.path.lexists(t)
+    return not left
+
+
+def _bound():
+    return _LOCAL["secrets"] is not None or (_env_values().get(_PW_KEY) or "").startswith("vault:")
+
+
+def startup_sweep():
+    """local_daemon at start: 群益 not bound here → SKCOM's log must not be on disk (an unbind whose purge was
+    blocked, an app that quit mid-retry)."""
+    if not _bound() and not purge_logs():
+        _mark_purge()
+
+
+def _retry_purge(now):
+    if now < _PURGE["next"] or not os.path.exists(_purge_flag()):
+        return
+    _PURGE["next"] = now + PURGE_RETRY_S
+    if _bound():   # bound again since: its log is in use, not leftover
+        try:
+            os.remove(_purge_flag())
+        except OSError:
+            pass
+        return
+    if purge_logs():
+        try:
+            os.remove(_purge_flag())
+        except OSError:
+            pass
 
 
 # ── setup ────────────────────────────────────────────────────────────────────

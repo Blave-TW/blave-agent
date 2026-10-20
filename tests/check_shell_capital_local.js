@@ -254,8 +254,9 @@ let store = [], sigOut = REAL_SIG, keyOut = "ok", acp = "    ACP    REG_SZ    95
   ok("6 帳密那幾條也過 handle(fromOurPage)", ["capl-info", "capl-connect", "capl-step", "capl-old", "capl-unbind"].every((c) => new RegExp(`handle\\("${c}", `).test(main)));
   { const flagMain = /^const CAPL_LOCAL_ON = (true|false);$/m.exec(main), flagUi = /^const CAPL_LOCAL_ON = (true|false);$/m.exec(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"));
     const blk = main.slice(main.indexOf("  if (CAPL_LOCAL_ON) {"), main.indexOf("\n  }\n", main.indexOf("  if (CAPL_LOCAL_ON) {")));
-    ok("6 主行程的 CAPL_LOCAL_ON = renderer 那一個;capl-* 全部只在旗標開時註冊、補交也只在開時跑", !!flagMain && !!flagUi && flagMain[1] === flagUi[1]
-      && CH.concat(["capl-info", "capl-connect", "capl-step", "capl-old", "capl-unbind"]).every((c) => blk.includes(`handle("${c}", `)) && (main.match(/handle\("capl-/g) || []).length === 12
+    ok("6 主行程的 CAPL_LOCAL_ON = renderer 那一個;capl-* 只在旗標開時註冊(解除綁定例外:旗標關的版本也要解得掉測試包留下的綁定)、補交也只在開時跑", !!flagMain && !!flagUi && flagMain[1] === flagUi[1]
+      && CH.concat(["capl-info", "capl-connect", "capl-step", "capl-old"]).every((c) => blk.includes(`handle("${c}", `)) && !blk.includes('handle("capl-unbind"')
+      && (main.match(/handle\("capl-unbind", /g) || []).length === 1 && (main.match(/handle\("capl-/g) || []).length === 12
       && /if \(CAPL_LOCAL_ON\) capitalLocal\(\)\.resync\(r\)/.test(main)); }
   ok("6 主行程把顯示語言交給 capital_local(地區設定的選單名)", /uiLang: \(\) => \{ try \{ return \(app\.getPreferredSystemLanguages\(\)/.test(main));
 

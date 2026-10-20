@@ -3266,14 +3266,14 @@ app.whenReady().then(() => {
     handle("capl-connect", (_e, a) => capitalLocal().connect({ id: a && (a.id === null || typeof a.id === "string") ? a.id : "", pw: a && a.pw }), caplDenied);
     handle("capl-step", (_e, name, o) => capitalLocal().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true) }), caplDenied);
     handle("capl-old", (_e, remove) => capitalLocal().oldCerts(remove === true), caplDenied);
-    // 解除綁定:.env 那兩行先拿掉(runtime 同時停 worker、丟掉記憶體裡的那組),成功了才丟這裡存的帳密
-    handle("capl-unbind", async () => {
-      const h = tradeHost(), CE = require("./daemon").CAPITAL_ENV;
-      const r = await h.send("credentials_remove", { env: CE.map((k) => k.toLowerCase()) });
-      if (r && r.ok) capitalLocal().unbound();
-      return r;
-    }, { ok: false, error: "NOT_ALLOWED" });
   }
+  // 解除綁定在旗標外:旗標關的版本也要解得掉之前(測試包)留下的綁定(安全方向)。.env 那兩行先拿掉(runtime 同時停 worker、丟掉記憶體裡的那組),成功了才丟這裡存的帳密
+  handle("capl-unbind", async () => {
+    const h = tradeHost(), CE = require("./daemon").CAPITAL_ENV;
+    const r = await h.send("credentials_remove", { env: CE.map((k) => k.toLowerCase()) });
+    if (r && r.ok) capitalLocal().unbound();
+    return r;
+  }, { ok: false, error: "NOT_ALLOWED" });
   /* OKX / BingX / Gate.io / Bybit 綁在這台電腦:金鑰只在這裡經過一次(形狀與 env 名同雲端那條:cloudcmd.connectSecrets),
      不回傳、不 log。寫入前 runtime(_local_real_key_gate)用那一家的 lib/account_* 讀一次帳戶,讀不到就不寫;
      回覆怎麼對到畫面的代號、怎麼遮金鑰,在 cloudcmd.interpretVenueBind */

@@ -28,6 +28,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import unittest.mock as um
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -312,6 +314,50 @@ check("8 …對帳器重起(它記憶體裡那一行要丟)、群益 log(含身�
       and not os.path.exists(logd) and not any(os.path.exists(f) for f in leftovers))
 check("8 …錯密碼的封鎖留著(同一組錯密碼重綁不能多換一次機會)", os.path.exists(blockf))
 os.remove(blockf)
+# 對帳器還握著 SKCOM 時 log 刪不掉(Windows 檔案鎖):記下來,local_tick 之後再刪;DLL 旁的 CapitalLog* 也算;C:\skcom 不碰
+skx = os.path.join(LAD, "Blave", "capital", "skcom", "x64")
+os.makedirs(skx, exist_ok=True)
+for n in ("CapitalLog_20261020.txt", "SKCOM.dll"):
+    open(os.path.join(skx, n), "w").write("x")
+os.makedirs(logd, exist_ok=True)
+open(os.path.join(logd, "CapitalLog_y.txt"), "w").write("A123456789")
+locked = {os.path.join(skx, "CapitalLog_20261020.txt")}
+real_remove = os.remove
+
+
+def remove_locked(path, *a, **k):
+    if path in locked:
+        raise PermissionError(13, "in use")
+    return real_remove(path, *a, **k)
+
+
+flagf = os.path.join(WS, "state", "capital_log_purge")
+with um.patch.object(capl.os, "remove", remove_locked):
+    capl.drop_local(["capital_password"])
+check("8 刪不掉(對帳器還開著)→ 記下來;刪得掉的照刪;DLL 不動", os.path.exists(flagf) and not os.path.exists(logd)
+      and os.path.exists(os.path.join(skx, "CapitalLog_20261020.txt")) and os.path.exists(os.path.join(skx, "SKCOM.dll")))
+capl._PURGE["next"] = 0
+with um.patch.object(capl.os, "remove", remove_locked):
+    capl.local_tick()
+check("8 …還鎖著:下一輪照樣留著記號、30 秒後再試", os.path.exists(flagf) and capl._PURGE["next"] > time.time() + 20)
+locked.clear()
+capl._PURGE["next"] = 0
+capl.local_tick()
+check("8 …對帳器退出之後:local_tick 刪掉、記號拿掉", not os.path.exists(os.path.join(skx, "CapitalLog_20261020.txt")) and not os.path.exists(flagf)
+      and os.path.exists(os.path.join(skx, "SKCOM.dll")))
+os.makedirs(logd, exist_ok=True)
+open(os.path.join(logd, "CapitalLog_z.txt"), "w").write("A123456789")
+capl.startup_sweep()
+check("8 daemon 啟動時沒綁群益 → 補掃一次", not os.path.exists(logd))
+os.makedirs(logd, exist_ok=True)
+with open(envp, "a") as f:
+    f.write("capital_password=vault:0123456789abcdef\n")
+capl.startup_sweep()
+check("8 …綁著群益時不掃(那份 log 在用)", os.path.exists(logd))
+lines = [l for l in open(envp).read().splitlines() if not l.startswith("capital_password=")]
+open(envp, "w").write("\n".join(lines) + "\n")
+shutil.rmtree(logd)
+check("8 local_daemon 啟動時叫 startup_sweep", "self.capl.startup_sweep()" in open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read())
 
 # 9. dispatch
 os.environ.pop("BLAVE_AGENT_LOCAL")
@@ -330,7 +376,6 @@ check("9 command_listener 有 capital_local handler、本機群益綁定走 bind
 
 # 10. setup: SKCOM per-user, every file compared with the pinned zip
 import hashlib  # noqa: E402
-import unittest.mock as um  # noqa: E402
 
 
 def mkzip(path, members):

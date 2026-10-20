@@ -4333,7 +4333,8 @@ function trPaintSet() {
   const presW = !ro && id === "president" && presWip(r);
   // 開通過又停掉的(稽核 integ-0118 B-1):畫紅記號「串接失敗」,但「繼續」照給——「確認登入」只在開通框裡
   const presIn = presW || (!ro && trPresStopped(r, id));
-  const caplW = !ro && id === CAPITAL && trCapWip(r, id), caplStop = !ro && trCaplStopped(r, id);
+  // 旗標關的版本(本機群益入口還沒對外)遇到測試包留下的綁定:不給「繼續」(框裡的步驟這一版不在),只留解除綁定
+  const caplW = !ro && id === CAPITAL && trCapWip(r, id), caplStop = !ro && trCaplStopped(r, id) && CAPL_LOCAL_ON;
   const capWip = (ro && trCapWip(r, id)) || presW || caplW;
   const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict)), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
   if (capWip) st.appendChild(trEl("span", "cap-dot"));
@@ -4343,7 +4344,7 @@ function trPaintSet() {
   st.appendChild(trEl("span", "", capWip ? t("cap.pending") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
-  if ((capWip && !presW) || caplStop) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
+  if ((capWip && !presW && (ro || CAPL_LOCAL_ON)) || caplStop) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
   // 統一:「繼續」回到清單當下那一步(開通中、或開通過又停掉 → 那一類登入失敗的列與「確認登入」)
   if (presIn) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
