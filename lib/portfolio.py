@@ -2545,23 +2545,30 @@ def _stale_target_age(name, now=None):
 
 _STALE_SHARE_PATH = 'state/stale_share.json'
 _stale_share_unsaved = None
+_stale_share_last = {}  # the last book this process read or wrote: stands in for a corrupt file
 
 
 def _stale_share_book():
     """{key: {'names': [...], 'share': signed}} — the share each key's stale members hold."""
+    global _stale_share_last
     if _stale_share_unsaved is not None:
         return json.loads(json.dumps(_stale_share_unsaved))
     try:
         with open(_STALE_SHARE_PATH) as f:
             book = json.load(f)
-    except (OSError, ValueError):
+    except OSError:
         return {}
-    return {k: v for k, v in book.items() if isinstance(v, dict) and _finite(v.get('share'))
+    except ValueError:
+        logging.warning(f"[reconcile] {_STALE_SHARE_PATH} unreadable — last known shares kept")
+        return json.loads(json.dumps(_stale_share_last))
+    book = {k: v for k, v in book.items() if isinstance(v, dict) and _finite(v.get('share'))
             and isinstance(v.get('names'), list)} if isinstance(book, dict) else {}
+    _stale_share_last = book
+    return json.loads(json.dumps(book))
 
 
 def _stale_share_save(book):
-    global _stale_share_unsaved
+    global _stale_share_unsaved, _stale_share_last
     try:
         os.makedirs(os.path.dirname(_STALE_SHARE_PATH), exist_ok=True)
         tmp = _STALE_SHARE_PATH + '.tmp'
@@ -2569,6 +2576,7 @@ def _stale_share_save(book):
             json.dump(book, f, indent=2)
         atomic_replace(tmp, _STALE_SHARE_PATH)
         _stale_share_unsaved = None
+        _stale_share_last = book
     except OSError as e:
         _stale_share_unsaved = book
         logging.warning(f'stale_share persist failed (kept in memory): {e}')
@@ -2614,6 +2622,13 @@ def _stale_share_targets(target, book, skip_roots=(), stale_keys=None):
             before = (sum(v for n, v in _contribs(prow).items() if n not in names)
                       if isinstance(prow, dict) else others)
             share = _toward_zero(stale, held_book - before)
+            if rec is not None:
+                # the members that joined bring their own previous share, the ones that left take
+                # theirs: a residual on the book (a failed exit) never becomes the stale share
+                pc = _contribs(prow) if isinstance(prow, dict) else {}
+                joined = sum(pc.get(n, 0.0) for n in names if n not in rec['names'])
+                left = sum(pc.get(n, 0.0) for n in rec['names'] if n not in names)
+                share = _toward_zero(share, float(rec['share']) + joined - left)
             guard.audit('stale_share_held', symbol=key, strategies=names, wants=round(stale, 4),
                         held=round(share, 4), first=True)
         else:
@@ -3126,6 +3141,11 @@ def aggregate_portfolio():
         logging.warning(f"[portfolio] {name}: target not refreshed for {round(stale[name])}s while "
                         f"its scheduled run keeps failing — its share of {keys} can only shrink")
         guard.audit('target_stale', strategy=name, keys=keys, age_s=round(stale[name]))
+        try:
+            from lib.events import emit_target_stale
+            emit_target_stale(name, keys, stale[name])
+        except Exception as e:  # a half-updated workspace's lib/events has no helper yet
+            logging.warning(f"[portfolio] target_stale event not written ({e})")
     traded = {c['strategy'] for row in result.values() for c in row['contributors']}
     for name in _stale_targets_logged - set(stale):
         why = 'refreshed' if name in traded else 'no longer traded'
@@ -3920,7 +3940,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                      'market': 'swap', 'contributors': [], 'gated': False}
             target = dict(target)
             target[k] = _signed_target_row(base, signed)
-    if any(v.get('stale_target') for v in full_target.values()) or os.path.exists(_STALE_SHARE_PATH):
+    if (any(v.get('stale_target') for v in full_target.values()) or os.path.exists(_STALE_SHARE_PATH)
+            or _stale_share_unsaved is not None):
         skip = ({r.get(e) for r in rolls for e in ('from', 'to')}
                 | set(hold_roots) | {x for v in hold_roots.values() for x in v}) - {None}
         try:

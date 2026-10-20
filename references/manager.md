@@ -340,12 +340,21 @@ not judged. In the round a key's member goes stale, its share is fixed at what t
 beyond the other members' targets of the PREVIOUS round (`state/stale_share.json`, kept across
 restarts); after that the share only shrinks — toward the member's own target, and toward the
 whole key's book when that is smaller (a hand close, a partial fill, a mark drop) — and never
-grows back or opens the other side. The other members on the key trade their targets as computed,
-so nobody is locked into a position. The record is cleared once no member on the key is stale. A
+grows back or opens the other side. When the stale set on a key changes (a second member goes
+stale, one recovers), the share is fixed again but never above the old share plus the joiners'
+previous-round targets minus the leavers', so a leftover on the book (a failed exit) is not
+handed to it. With no previous snapshot (the first round after install, an unreadable
+`manager/last_reconcile.json`) this round's other targets stand in, so a member changing its
+target in that same round moves the share by that change (never past the stale member's own
+target). An unreadable `state/stale_share.json` keeps the shares this
+reconciler last knew (none after a restart: fixed again as above). In account-read mode
+(`self_ledger: false`) a mark drop shrinks the share with the book and it is not bought back —
+accepted: the direction is less exposure. The other members on the key trade their targets as
+computed, so nobody is locked into a position. The record is cleared once no member on the key is stale. A
 contract rollover in progress is left as computed (holding the share on the new contract would
 close it). The snapshot row carries `stale_target: [strategy]` and `stale_held` (the share kept);
 audit lines `target_stale` / `target_fresh` / `stale_share_held` (when the share is fixed or
-shrinks). It lifts by itself on the first successful run. Fix the failing run (its
+shrinks); a `target_stale` event (P2) goes to the platform once when a member goes stale. It lifts by itself on the first successful run. Fix the failing run (its
 `strategy_failed` alert carries the error) — never hand-write a `state.json` to make it trade.
 
 **A spot row without a quantity** (a seed from before quantities, a fill with

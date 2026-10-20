@@ -79,3 +79,15 @@ def emit(ev_type, **payload):
     except Exception as e:
         logging.warning(f"[events] emit {ev_type} failed: {e}")
         return None
+
+
+def emit_target_stale(strategy, keys, age_s):
+    """lib/portfolio: `strategy`'s target went stale — once per transition, not per round.
+
+    Capped here, not left to the platform: a payload over its 4KB limit is dropped whole."""
+    try:
+        return emit("target_stale", strategy=str(strategy)[:64],
+                    keys=[str(k)[:64] for k in keys][:20], age_s=int(round(float(age_s))))
+    except Exception as e:
+        logging.warning(f"[events] emit target_stale failed: {e}")
+        return None

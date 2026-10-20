@@ -68,13 +68,15 @@ def put_state(name, state, age, failed_ago):
 
 class Venue:
     def __init__(self, held, fill=1.0):
-        self.held, self.calls, self.fill = dict(held), [], fill
+        self.held, self.calls, self.fill, self.down = dict(held), [], fill, False
 
     def positions(self):
         return {k: {"side": "long" if v > 0 else "short", "size": abs(v)} for k, v in self.held.items() if v}
 
     def place(self, symbol, signed_diff, asset_spec, reduce_only=False):
         self.calls.append((symbol, signed_diff, reduce_only))
+        if self.down:
+            raise RuntimeError("venue rejected the order")
         done = signed_diff * self.fill
         self.held[symbol] = self.held.get(symbol, 0) + done
         return {"executed_qty": abs(done), "avg_price": 1.0}
@@ -196,6 +198,54 @@ for self_ledger in (False, True):
     portfolio.reconcile(v.positions, v.place)
     check(v.calls[-1:] == [("BTCUSDT", 70, False)] and "BTCUSDT" not in json.load(open("state/stale_share.json")),
           f"{tag} fresh again: the anchor is cleared and s trades its target ({v.calls})")
+    # lowering the stale member's amount shrinks its share; raising it back does not regrow it
+    v, r = rounds([(LONG, False, FLAT), (LONG, True, FLAT)], {"BTCUSDT": 100})
+    cfg = json.load(open("manager/portfolio_config.json"))
+    for amount, want in ((50, [("BTCUSDT", -50, True)]), (100, [])):
+        cfg["amounts"]["s"] = amount
+        json.dump(cfg, open("manager/portfolio_config.json", "w"))
+        del v.calls[:]
+        portfolio.reconcile(v.positions, v.place)
+        check(v.calls == want, f"{tag} stale, amount set to {amount}: {want} ({v.calls})")
+    # a round where another hold takes the key out of the target keeps the recorded share
+    v, r = rounds([(LONG, False, FLAT), (LONG, True, FLAT)], {"BTCUSDT": 100})
+    v.held["BTCUSDT"] = 50  # a hand close: the share shrinks to 50
+    portfolio.reconcile(v.positions, v.place)
+    json.dump({"s": 1.0}, open("state/signal_gate.json", "w"))
+    portfolio.reconcile(v.positions, v.place)
+    v.held["BTCUSDT"] = 100  # bought by hand while the key was held
+    os.remove("state/signal_gate.json")
+    del v.calls[:]
+    portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [("BTCUSDT", -50, True)],
+          f"{tag} a gated round keeps the share at 50 (not re-fixed at 100) ({v.calls})")
+    # a second member going stale on the key: a residual of a failed exit is not added to the share
+    setup({"s": (LONG, "1h", *FAILING), "s2": (FLAT, "1h", 60, None), "f": (LONG, "1h", 60, None)},
+          self_ledger)
+    json.dump({"target": {"BTCUSDT": {"contributors": [
+        {"strategy": "s", "contribution": 100}, {"strategy": "s2", "contribution": 0},
+        {"strategy": "f", "contribution": 100}]}}}, open("manager/last_reconcile.json", "w"))
+    v = Venue({"BTCUSDT": 150})
+    mode(v, self_ledger)
+    portfolio.reconcile(v.positions, v.place)
+    put_state("f", FLAT, 60, None)
+    v.down = True
+    portfolio.reconcile(v.positions, v.place)  # f's exit is rejected: 100 left on the book
+    v.down = False
+    put_state("s2", FLAT, *FAILING)
+    del v.calls[:]
+    portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [("BTCUSDT", -100, True)] and v.held["BTCUSDT"] == 50,
+          f"{tag} s2 goes stale too: the share stays 50, f's leftover 100 is sold ({v.calls})")
+    # an unreadable record keeps the last shares this process knew
+    v, r = rounds([(LONG, False, FLAT), (LONG, True, FLAT)], {"BTCUSDT": 100})
+    v.held["BTCUSDT"] = 50
+    portfolio.reconcile(v.positions, v.place)
+    v.held["BTCUSDT"] = 100
+    open("state/stale_share.json", "w").write("{broken")
+    del v.calls[:]
+    portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [("BTCUSDT", -50, True)], f"{tag} corrupt record: the last known share 50 holds ({v.calls})")
     # whole lots and spot
     lots = {"type": "futures_contracts", "contract_value": 1, "currency": "USD", "lot_size": 1}
     v = run({"s": (LONG, "1h", *FAILING, {"amount": 1, "spec": lots}),
@@ -244,6 +294,10 @@ for self_ledger in (False, True):
             self_ledger)
     check(v.calls == [], f"{tag} crypto daily trades 7 days: no weekend allowance, 2.5 days failing "
           f"is stale ({v.calls})")
+    mixed = {"src": "from lib.data import fetch_kline, fetch_twstock_price\n"}
+    v = run({"mx": (LONG, "1d", 2.5 * D, 300, mixed)}, {}, self_ledger)
+    check(v.calls == [("BTCUSDT", 100, False)],
+          f"{tag} a daily strategy that also reads a TW price keeps the weekend allowance ({v.calls})")
     tc = {"type": "portfolio", "weights": {"BTCUSDT": 0.5, "ETHUSDT": 0.5}, "rebalance_at": 0}
     v = run({"c": (tc, "1h", *FAILING)}, {"ETHUSDT": 80}, self_ledger)
     check(v.calls == [("ETHUSDT", -30, True)],
@@ -269,6 +323,28 @@ for self_ledger in (False, True):
           f"{tag} under HALT nothing goes and the fresh entry is counted as a HALT denial ({denied})")
     portfolio.guard.clear_halt("test")
     portfolio.guard._halt_flag = False
+
+# the target_stale event: once when a member goes stale, not every round
+from lib import events  # noqa: E402
+sent = []
+events.emit = lambda ev_type, **payload: sent.append((ev_type, payload))
+portfolio._stale_targets_logged.clear()
+setup({"s": (LONG, "1h", *FAILING)}, False)
+v = Venue({})
+mode(v, False)
+for _ in range(3):
+    portfolio.reconcile(v.positions, v.place)
+ev = [p for t, p in sent if t == "target_stale"]
+check(len(ev) == 1 and ev[0]["strategy"] == "s" and ev[0]["keys"] == ["BTCUSDT"]
+      and isinstance(ev[0]["age_s"], int), f"target_stale emitted once with list keys ({ev})")
+
+# a record the disk refused is still cleared once nothing is stale
+if os.path.exists("state/stale_share.json"):
+    os.remove("state/stale_share.json")
+portfolio._stale_share_unsaved = {"BTCUSDT": {"names": ["s"], "share": 50.0}}
+put_state("s", LONG, 60, None)
+portfolio.reconcile(v.positions, v.place)
+check(portfolio._stale_share_book() == {}, f"unsaved record cleared on recovery ({portfolio._stale_share_book()})")
 
 # a contract rollover in progress is left as computed (holding the share on the new contract
 # would close it)
