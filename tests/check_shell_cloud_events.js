@@ -98,7 +98,12 @@ ok("其他型別不受影響(機器事件照舊)", trEventText("exchange_recover
   ok("ui:時間仍然是秒(平台與這台電腦同一個單位)", /uiHalts\.push\(ev\.ts \* 1000\)/.test(loop) && /push\(ev\.ts \* 1000,/.test(loop));
   ok("ui:雲端記的 venue_disconnected P2、這台電腦自己按的一般字", /lv = d !== ev \? 2 : 3;/.test(loop));
   ok("現在的 HALT 那列顏色照級別(execute/settings 暫停不再紅,P1 由對應事件那列承擔)", /trEl\("span", trEvClass\(trEvLevel\("halt", halt\)\),/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)")));
-  ok("ui 與機器事件兩段都走 trEvBody(帶 ev.count)", (src.match(/trEvBody\(body, [^)]*ev\.count\)/g) || []).length === 2); }
+  ok("ui 與機器事件兩段都走 trEvBody(帶 ev.count)", (src.match(/trEvBody\(body, .*?, ev\.count\)\);/g) || []).length === 2);
+  ok("兩段的顏色都先讀 api 的 level、缺才用自己算的", /trEvBody\(body, head, note, trEvApiLevel\(ev\) \|\| lv, tip, ev\.count\)/.test(src)
+    && /trEvBody\(body, txt\[0\], txt\[1\], trEvApiLevel\(ev\) \|\| txt\[2\], txt\[3\], ev\.count\)/.test(src)); }
+ok("trEvApiLevel:P1/P2/P3 → 1/2/3;缺、小寫、P4、數字、非物件 → null",
+  JSON.stringify([trEvApiLevel({ level: "P1" }), trEvApiLevel({ level: "P2" }), trEvApiLevel({ level: "P3" }), trEvApiLevel({}), trEvApiLevel({ level: "p1" }),
+    trEvApiLevel({ level: "P4" }), trEvApiLevel({ level: 1 }), trEvApiLevel({ level: " P1" }), trEvApiLevel(null)]) === JSON.stringify([1, 2, 3, null, null, null, null, null, null]));
 
 // trEvBody:標題級別色 → ×N(≥2 才出、取整)→ 說明;tooltip 掛在說明
 { function N(tag, cls, text) { this.cls = cls || ""; this.text = text == null ? "" : String(text); this.kids = []; this.title = ""; }

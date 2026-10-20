@@ -4823,13 +4823,15 @@ function trOrderErrText(sym, err) {
   if (p && Object.prototype.hasOwnProperty.call(TR_REJECT_TEXT, p.kind)) return t(TR_REJECT_TEXT[p.kind], { sym });
   return t("tr.orderFailed", { sym, err: String(err == null ? "" : err).slice(0, 200) });
 }
-/* 事件級別,鏡射 api agent_events.SPECS + level_for(halt 看 source、主機重開看 trigger),同網頁 ovEvLevel;
-   不在表裡的當 P3。之後 api 每筆帶級別時改讀那個欄位。標題顏色只看它:1 紅、2 強調、3 一般字 */
+/* 事件級別:先讀 api 帶的 level(trEvApiLevel),缺欄位才用這張表——鏡射 api agent_events.SPECS + level_for
+   (halt 看 source、主機重開看 trigger),同網頁 ovEvLevel;不在表裡的當 P3。標題顏色只看它:1 紅、2 強調、3 一般字 */
 const TR_EV_P1 = ["order_error", "manual_close_required", "execution_interrupted", "execution_fallback_market", "execution_stuck",
   "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused"];
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
   "machine_silent", "disk_full", "memory_low", "report_rejected"];
+// api(/cloud/events)每筆帶的級別 "P1"/"P2"/"P3";沒帶或認不得(舊 api、這台電腦記的那份)回 null,交給 trEvLevel
+function trEvApiLevel(ev) { const m = /^P([123])$/.exec(ev && typeof ev.level === "string" ? ev.level : ""); return m ? Number(m[1]) : null; }
 function trEvLevel(type, d) {
   d = d || {};
   if (type === "halt" || type === "halt_close") return d.source === "reconciler" || d.source === "portfolio" ? 1 : 3;
@@ -4909,7 +4911,7 @@ function trEventText(type, d) {
   if (type === "market_check_off") return out(t("tr.ov.evMarketCheckOff"), t("tr.ov.evMarketCheckOffNote"));
   return null;
 }
-// 一列事件的內容:標題(級別色)→ api 合併同因時的 ×N → 「— 說明」(說明的 tooltip 掛 title)
+// 一列事件的內容:標題(級別色)→ api 合併同因時的 ×N(count 未合併為 1,>1 才出)→ 「— 說明」(說明的 tooltip 掛 title)
 function trEvBody(body, head, note, lv, tip, count) {
   body.appendChild(trEl("span", trEvClass(lv), head));
   if (typeof count === "number" && isFinite(count) && count >= 2) body.append(" ", trEl("span", "mono", "×" + Math.floor(count)));
@@ -4948,6 +4950,7 @@ function trOvEvents(r, z) {
     const venue = trVenueLabel(String(d.venue || ""), true);
     let head = null, note = null, lv = 3, tip = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
+    // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
     if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); head = t(lv === 1 ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
@@ -4957,7 +4960,7 @@ function trOvEvents(r, z) {
     else if (ev.type === "venue_disconnected" && venue) { head = t("tr.ov.evDisconnected", { venue }); lv = d !== ev ? 2 : 3; }
     else { const txt = trEventText(ev.type, d); if (txt) [head, note, lv, tip] = txt; }   // 雲端才有的型別(交易所連不上…);desktop_action 回 null 不畫
     if (!head) return;
-    push(ev.ts * 1000, (body) => trEvBody(body, head, note, lv, tip, ev.count));
+    push(ev.ts * 1000, (body) => trEvBody(body, head, note, trEvApiLevel(ev) || lv, tip, ev.count));
   });
   // 目前的 HALT(狀態檔的現況):畫面上按的那一次已經在上面了,兩分鐘內的同一件事不重複列;自動暫停、聊天裡的暫停只有這裡看得到
   const halt = r.halt || {}, haltMs = trMs(halt.at);
@@ -4981,7 +4984,7 @@ function trOvEvents(r, z) {
     const evd = ev.payload && typeof ev.payload === "object" ? ev.payload : ev.data && typeof ev.data === "object" ? ev.data : ev;   // 機器事件的欄位叫 payload(runtime/events.py);data 是平台格式
     const txt = trEventText(ev.type, evd);
     if (!txt) return;
-    push(trMs(ev.ts), (body) => trEvBody(body, txt[0], txt[1], txt[2], txt[3], ev.count));
+    push(trMs(ev.ts), (body) => trEvBody(body, txt[0], txt[1], trEvApiLevel(ev) || txt[2], txt[3], ev.count));
   });
   /* 讀不到就說讀不到:絕不可以把「這一輪沒讀到」畫成「這段期間沒有事件」(同權益曲線的先例——讀不到就不畫,不斷言)。
      報告裡的那幾種(下單、現在的 HALT、下單失敗)是另一個來源,讀得到就照列,所以這一句是加在清單上面、不取代清單。 */
