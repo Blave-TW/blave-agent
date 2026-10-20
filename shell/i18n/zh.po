@@ -8632,3 +8632,10 @@ msgstr "憑證只存在你的雲端主機"
 # 已綁定時框裡兩個大選項與選單鎖住,下面這一句
 msgid "cx.bound"
 msgstr "要換帳戶，先在設定解除綁定。"
+
+# 歡迎頁步驟③「看回測」與④「模擬交易」的鈕(EN 照 canon Casing 用 Title Case,所以不借 res.open.bt / cx.paperShort)
+msgid "onb.viewBt"
+msgstr "看回測"
+
+msgid "onb.paper"
+msgstr "模擬交易"

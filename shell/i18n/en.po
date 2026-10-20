@@ -1407,7 +1407,7 @@ msgid "cx.paperShort"
 msgstr "Paper trading"
 
 msgid "cx.connect"
-msgstr "Connect an exchange"
+msgstr "Connect an Exchange"
 
 msgid "cx.connecting"
 msgstr "Connecting…"
@@ -8548,7 +8548,7 @@ msgstr "Add it to your portfolio"
 
 # TAIEX futures step 4 outline button (crypto uses cx.connect)
 msgid "onb.realFut"
-msgstr "Connect a futures broker"
+msgstr "Connect a Futures Broker"
 
 # Account connected, not started: step 4 shows only this button; opens Auto trading
 msgid "onb.goTr"
@@ -8567,7 +8567,7 @@ msgid "set.onb"
 msgstr "Getting started"
 
 msgid "set.onb.replay"
-msgstr "Show again"
+msgstr "Show Again"
 
 # Connect dialog (spec §7-4, 7-5): the title and the fog button use the same phrase; two big options, paper preselected
 msgid "cx.title"
@@ -8615,3 +8615,10 @@ msgstr "Certificates stay on your cloud machine"
 # Shown when an account is already bound: the two options and the list are locked
 msgid "cx.bound"
 msgstr "To switch accounts, unbind in Settings first."
+
+# Step 3 / step 4 buttons on the welcome steps (button Title Case per canon Casing; the shared res.open.bt / cx.paperShort stay as they are elsewhere)
+msgid "onb.viewBt"
+msgstr "View Backtest"
+
+msgid "onb.paper"
+msgstr "Paper Trading"

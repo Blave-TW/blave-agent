@@ -1130,9 +1130,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && get("zh", "up.c.needsUpdate") === null);   // v4:那一句退場(雲端更新走「檢查更新」,沒有第四個狀態)
     const en = po("en").split("\n").filter((l) => l.startsWith("msgstr ")).join("\n");
     // Title Case 撤回(web 已回 sentence case,兩邊要一致;Title Case 另開一批)。原本唯一留著的 tr.cloud.means.2 隨啟動框改版退役(Wei 0928 第 3 點)
-    ok("EN 鈕名維持 sentence case(同網頁):鈕字是小寫那一版,新句子引用鈕名也是", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
-      && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating" && get("en", "cx.connect") === "Connect an exchange"
-      && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals", "Connect an Exchange"].every((x) => en.indexOf(x) < 0)
+    ok("EN 鈕名:下單那幾顆維持 sentence case(舊字串,另批處理);0.1.28 onboarding 與連接框這次新增／改動的鈕依 canon design-system.md Casing(按鈕 Title Case)", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
+      && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating"
+      && get("en", "cx.connect") === "Connect an Exchange" && get("en", "onb.realFut") === "Connect a Futures Broker" && get("en", "cx.goPaper") === "Start Paper Trading" && get("en", "onb.goTr") === "Go to Auto Trading"
+      && get("en", "onb.paper") === "Paper Trading" && get("en", "onb.viewBt") === "View Backtest" && get("en", "set.onb.replay") === "Show Again" && get("en", "cx.title") === "Choose a Trading Account"
+      && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals"].every((x) => en.indexOf(x) < 0)
       && (en.match(/Pause Trading/g) || []).length === 0
       && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
     // v4 §7 驗收:「立即更新到最新版本」那顆鈕已經不在,全 app 可見字串(兩語 .po、產出的 strings.js、renderer 與主行程的 js)都不能再叫人去按它
