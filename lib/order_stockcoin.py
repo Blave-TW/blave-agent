@@ -9,9 +9,10 @@ STOCKCOIN_SECRET_KEY in .env. The key must be a FUTURES-type key
 LAYER SHIPPED HERE: the reconciler's four fixed names, get_mark_price,
 get_position_mode, order query / cancel / open-order listing. NOT here, on
 purpose — lib/venue_wiring checks with hasattr and falls back loudly:
-place_limit_order (post-only dialect unknown, so chase / TWAP fall back to a
-market order with a Telegram notice), SL/TP (STOP orders unverified), spot (the
-venue has no spot API).
+place_limit_order / get_bbo (the doc lists GTC / IOC / FOK only — no post-only
+— and no tick size anywhere, so chase and TWAP go out as market orders with a
+notice), SL/TP (STOP orders unverified; tests/live_stockcoin_verify.py T7 / T8
+measure both layers), spot (the venue has no spot API).
 
 Measured on a live key (tests/live_stockcoin_verify.py --probe-all): a
 one-contract market open + close fills on 31 of the 36 listed contracts; the

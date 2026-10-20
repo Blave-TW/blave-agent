@@ -97,7 +97,7 @@ Asked for strategy ideas from the web (incl. the app prompt 「上網幫我找 3
 
 ## Exchange API Keys
 
-A key pasted in chat is bound with `lib.venue.bind` (`references/lib.md`; binance/bingx/okx/gateio/bybit only — TW brokers → their own doc, others → the 自動下單 page), then continue per `references/exchange-connect.md` rule 2. Never echo the key; tell them to bind on the 自動下單 page next time, with a trade-only key (no withdrawal).
+A key pasted in chat is bound with `lib.venue.bind` (`references/lib.md`; binance/bingx/okx/gateio/bybit/stockcoin only — TW brokers → their own doc, others → the 自動下單 page), then continue per `references/exchange-connect.md` rule 2. Never echo the key; tell them to bind on the 自動下單 page next time, with a trade-only key (no withdrawal).
 
 **Never change the Administrator/RDP password** — the dashboard serves the platform-stored copy; read it from the local credentials file (`references/capital-broker.md`).
 

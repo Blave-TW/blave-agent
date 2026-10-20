@@ -35,7 +35,16 @@ ORDER steps (each one contract, ≈$0.02–$8; everything is closed at the end)
   T4  close through close_position_partial → flat
   T5  NVDA, XAU, SAMSUNG, OPENAI: open + close 1 contract each (multiplier per class)
   T6  a 36-character clientOrderId on NVDA: accepted or rejected, then closed
-  CLEANUP  every leg touched above is closed through the lib (runs even after a failure)
+  T7  limit layer facts on NVDA (nothing fills unless LIMIT_MAKER is ignored): a resting GTC
+      buy 10% under the bid → open list → cancel_order → status → cancel again; a price with
+      7 decimals (tick?); timeInForce=LIMIT_MAKER far from the book (post-only dialect?); if
+      accepted, a crossing LIMIT_MAKER (rejected, auto-cancelled, or filled — then closed)
+  T8  STOP + equity with a position on NVDA: open 1 long → balance raw / get_equity /
+      positions; STOP SELL_CLOSE trigger 20% under (stop-loss) and 20% over (does a
+      take-profit rest or fire at once?) → open STOP list → cancel both (orderType=STOP) →
+      list again → close
+  CLEANUP  every open LIMIT / STOP order and every leg touched above is cancelled / closed
+           (runs even after a failure)
 PROBE (--probe-all, replaces T1–T6; R steps still run, narrow them with --only)
   P0  refuses unless the account is flat with no open LIMIT / STOP order (so every leg
       found at the end is ours), prints the cost bound, waits for "y" on the terminal
@@ -277,6 +286,64 @@ def main():
                 say(f"T5 {sym} raw last order", raw("GET", "/futures/orders/history",
                                                     {"symbol": order.venue_symbol(sym), "limit": 1}))
                 say(f"T5 {sym} close", order.close_position_partial(env, sym, "long", one(sym)))
+        if want("T7"):
+            touched.add("NVDAUSDT")
+            vs = "NVDA-PERP-USDT"
+            t = requests.get(f"https://{ALLOWED_HOST}/openapi/quote/v1/contract/ticker/24hr",
+                             params={"symbol": vs}, timeout=10).json()
+            t = t[0] if isinstance(t, list) else t
+            bid, ask = float(t["bestBidPrice"]), float(t["bestAskPrice"])
+            say("T7 book", {"bid": bid, "ask": ask, "last": t.get("lastPrice")})
+
+            def limit(tag, price, tif="GTC"):
+                r = raw("POST", "/futures/order", {
+                    "symbol": vs, "side": "BUY_OPEN", "orderType": "LIMIT", "priceType": "INPUT",
+                    "price": price, "quantity": "1", "timeInForce": tif,
+                    "clientOrderId": "rc" + uuid.uuid4().hex[:16]})
+                say(f"T7 {tag} place", r)
+                return r.get("orderId") if isinstance(r, dict) else None
+
+            oid = limit("a GTC 10% under bid", f"{bid * 0.9:.2f}")
+            say("T7 a open LIMIT", raw("GET", "/futures/orders/open", {"symbol": vs, "orderType": "LIMIT"}))
+            if oid:
+                say("T7 a cancel_order", order.cancel_order(env, "NVDAUSDT", oid))
+                say("T7 a status after cancel", raw("GET", "/futures/order", {"symbol": vs, "orderId": oid}))
+                say("T7 a cancel again (gone code?)", raw("DELETE", "/futures/order", {"symbol": vs, "orderId": oid}))
+            oid = limit("b 7 decimals", f"{bid * 0.9:.7f}")
+            if oid:
+                say("T7 b cancel", raw("DELETE", "/futures/order", {"symbol": vs, "orderId": oid}))
+            oid = limit("c LIMIT_MAKER far", f"{bid * 0.9:.2f}", "LIMIT_MAKER")
+            if oid:
+                say("T7 c cancel", raw("DELETE", "/futures/order", {"symbol": vs, "orderId": oid}))
+                oid = limit("d LIMIT_MAKER crossing", f"{ask * 1.02:.2f}", "LIMIT_MAKER")
+                time.sleep(2)
+                if oid:
+                    say("T7 d status", raw("GET", "/futures/order", {"symbol": vs, "orderId": oid}))
+                say("T7 d legs (a leg = LIMIT_MAKER is not post-only)", legs("NVDAUSDT"))
+        if want("T8"):
+            touched.add("NVDAUSDT")
+            vs = "NVDA-PERP-USDT"
+            say("T8 open", order.place_market_order(env, "NVDAUSDT", "long", one("NVDAUSDT")))
+            say("T8 balance raw (with a position)", raw("GET", "/futures/balance"))
+            say("T8 get_equity", acct.get_equity(env))
+            say("T8 positions raw", raw("GET", "/futures/positions", {"symbol": vs}))
+            say("T8 get_positions", acct.get_positions(env))
+            last = order.get_mark_price(env, "NVDAUSDT")
+            for tag, trig in (("SL 20% under", last * 0.8), ("TP 20% over", last * 1.2)):
+                say(f"T8 STOP {tag}", raw("POST", "/futures/order", {
+                    "symbol": vs, "side": "SELL_CLOSE", "orderType": "STOP", "priceType": "MARKET",
+                    "price": "0", "triggerPrice": f"{trig:.2f}", "quantity": "1",
+                    "clientOrderId": "rc" + uuid.uuid4().hex[:16]}))
+                time.sleep(2)
+                say(f"T8 legs after {tag} (gone = it fired)", legs("NVDAUSDT"))
+            stops = raw("GET", "/futures/orders/open", {"symbol": vs, "orderType": "STOP"})
+            say("T8 open STOP", stops)
+            say("T8 get_open_algo_orders", order.get_open_algo_orders(env, "NVDAUSDT"))
+            for o in stops if isinstance(stops, list) else []:
+                say("T8 cancel STOP", raw("DELETE", "/futures/order",
+                                          {"symbol": vs, "orderId": o.get("orderId"), "orderType": "STOP"}))
+            say("T8 open STOP after cancel (want [])",
+                raw("GET", "/futures/orders/open", {"symbol": vs, "orderType": "STOP"}))
         if want("T6"):
             touched.add("NVDAUSDT")
             long_cid = "rc" + uuid.uuid4().hex + "ab"  # 36 characters
@@ -287,6 +354,11 @@ def main():
         unclean = []
         for sym in sorted(touched):
             try:
+                for ot in ("LIMIT", "STOP"):
+                    rows = raw("GET", "/futures/orders/open", {"symbol": order.venue_symbol(sym), "orderType": ot})
+                    for o in rows if isinstance(rows, list) else []:
+                        say(f"CLEANUP {sym} cancel {ot}", raw("DELETE", "/futures/order", {
+                            "symbol": order.venue_symbol(sym), "orderId": o.get("orderId"), "orderType": ot}))
                 for p in legs(sym):
                     d = "long" if p["side"] == "LONG" else "short"
                     say(f"CLEANUP {sym} {d}", order.close_position_partial(

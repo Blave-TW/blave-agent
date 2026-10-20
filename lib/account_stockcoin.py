@@ -12,11 +12,14 @@ Measured: a wrong key answers -1002, a wrong secret -1022 (reads and order
 placement) — both CREDENTIAL below.
 
 Wallet model: a FUTURES key sees the futures account ONLY. Deposits land in the
-main account and must be moved to futures in the StockCoin app first; there is
-no transfer endpoint and no deposit / withdrawal history for this key, so this
-lib has no get_flows, no get_holdings and no withdraw_enabled — the platform
-falls back to marking equity jumps as fund movements, and the user is told to
-turn withdrawal off on the key themselves.
+main account and must be moved to futures in the StockCoin app first. No get_flows,
+no get_holdings, no withdraw_enabled, on purpose: measured on a live key, /account
+answers -1005 and every flow / transfer / deposit / withdrawal / sub-account read
+the engine (BHEX) used to have — balance_flow, depositOrders, withdrawalOrders,
+transfer history, futures income — answers -1008 Not Found. A deposit or
+withdrawal therefore shows up as an equity jump the platform marks as a fund
+movement (資金異動), never as profit or loss; the user turns withdrawal off on the
+key themselves.
 
 Sizes: positions come back in CONTRACTS; size here is base units (contracts ×
 MULTIPLIERS below — the order lib imports the same table, so a read and an

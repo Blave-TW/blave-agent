@@ -504,6 +504,8 @@ Companion to `lib/security_check.py` (malicious-code scan for downloaded strateg
   - A futures account that was never funded raises `USER_NOT_FOUND` — handled as equity 0 (working link), not an error.
   - Position sizes are quanto_multiplier-exact (signed contracts × multiplier from the public contract detail, cached — the OKX ctVal lesson); dual (hedge) mode rows carry `mode=dual_long/dual_short`.
   - Accepts `GATEIO_*` (web 下單設定) or `GATE_*` (skill convention) key names
+- `lib/account_stockcoin.py` already ships implemented — the FUTURES account only (USDT row `total` + `totalUnRealizedPnl`; an empty account answers `[]` = equity 0). The key must be a FUTURES-type key (any other type: -1005). Money deposited lands in the main account and must be moved to futures in the StockCoin app before it shows here.
+  - **No `get_flows`, no `get_holdings`**: the venue has no flow, transfer, deposit or withdrawal endpoint for this key (all measured 404 / -1005). A deposit or withdrawal shows up as an equity jump the platform marks as 資金異動 (fund movement) — never explain it as profit or loss.
 - `lib/account_bybit.py` already ships implemented — **Unified Trading Account (UTA) only**; a classic account raises a readable "upgrade and rebind" error rather than half-reading it.
   - A UTA has exactly TWO wallets read through TWO different endpoints: UNIFIED via `/v5/account/wallet-balance` (the only accountType it accepts) and FUND via `/v5/asset/transfer/query-account-coins-balance`.
   - Equity = UNIFIED `totalEquity`; FUND cannot trade and is NOT in it, so it appears in the breakdown only — omit it and the user's money looks like it vanished.
@@ -643,6 +645,15 @@ A key without an IP whitelist still binds.
 - **Spot layer**: BUYs sized in QUOTE (`marketUnit:"quoteCoin"`, USD straight in), SELLs in base floored to `basePrecision` (spot filters are a different shape from linear — `basePrecision` not `qtyStep`, `minOrderAmt` not `minNotionalValue`). **The buy fee is charged in the BASE coin** (a 6 USDT buy reporting `cumExecQty` 66.3 credits 66.2337), so size sells from the WALLET, not from the buy's `cumExecQty`. Both sides gate on `minOrderAmt` (retCode 170140 below it). Guard: buy = entry, sell = reduce — under HALT both are refused (the freeze: no order of any kind); a sell goes out only inside the user's explicit close (`manager/flatten.py` / `manager/close_symbol.py`)
 - Symbols are already canonical (`BTCUSDT`), qty is base units, `contract_value` is 1 — no ctVal conversion anywhere
 - `BYBIT_DEMO=true` routes to Bybit Demo Trading — see *Demo / testnet flags* below
+
+`lib/order_stockcoin.py` — **StockCoin order execution (USDT perps on US / KR stocks, ETFs, commodities, pre-IPO names, a few coins). Ships implemented — NEVER hand-write StockCoin order calls; import from here.** Market layer only. Facts measured on a live key:
+- Symbols: the venue's `NVDA-PERP-USDT` ↔ canonical `NVDAUSDT` (`lib.data.normalize_symbol` takes the `-PERP-` form). Size is CONTRACTS of 0.0001 base each; the lib converts base qty itself and refuses a symbol whose 24h turnover contradicts that multiplier. One contract is the minimum.
+- **Not every listed contract is open to the API**: a one-contract open + close filled on 31 of 36; BTC, ETH, XRP, SAMSUNG and SKHYNIX answer -1157, raised as `symbol_unavailable` with a Chinese reason. Which ones are open is the venue's call — read it off the reply, don't keep a list.
+- Hedge mode only: the side names the leg (`BUY_OPEN` / `SELL_CLOSE` long, `SELL_OPEN` / `BUY_CLOSE` short), so a close can never open the other side; a close is capped at the leg's `available` contracts.
+- Market order = `orderType LIMIT` + `priceType MARKET` + `price "0"`; `clientOrderId` is mandatory and a reused one answers -1141 (resolved back to the original order).
+- Fees live on `/futures/trades`, not the order; rows can lag the fill (re-read briefly, else `commission` is None — never 0).
+- **No limit layer, no SL/TP, no spot**: the doc has no post-only and no tick size, so chase and TWAP fall back to market orders (loud notice); stop-loss / take-profit are not placed by this lib.
+- No broker attribution exists for this venue.
 
 `lib/order_gateio.py` — **Gate.io order execution (USDT perp futures + spot). Ships implemented — NEVER hand-write Gate.io order calls; import from here.** Same contract and surface as the other order libs (four reconciler names + protective/cancel helpers, `lib/guard` built in). Gate.io facts, all measured live 2026-08-05 (single AND dual mode, futures + spot):
 - Broker attribution is the header `X-Gate-Channel-Id: blave` — injected by the transport on EVERY request; verified landing: fills carry `biz_info "ch:blave"`, price orders `broker "blave"`
@@ -812,7 +823,7 @@ One line per trap, collected from the sections above (the section named in *Wher
 | `get_holdings` | Holdings fed to the reconciler | Display-only — never positions |
 | `get_flows` (BingX) | `transferType != 0` used as a filter | On BingX it is a direction flag; status alone selects completed external flows |
 | `lib/account_bybit.py` | A classic account bound; FUND wallet left out of the breakdown | UTA only (readable "upgrade and rebind" error); FUND is breakdown-only, never in equity |
-| `lib/venue.py` | `.env` written by hand; a Binance bind retried in a loop | `bind(venue_id, env)` for binance / bingx / okx / gateio / bybit; `RATE_LIMITED` → back off |
+| `lib/venue.py` | `.env` written by hand; a Binance bind retried in a loop | `bind(venue_id, env)` for binance / bingx / okx / gateio / bybit / stockcoin; `RATE_LIMITED` → back off |
 | `lib/guard.py` | A halt cleared on your own; the reconciler expected to read `HALT_<strategy>` | Clear only on explicit user instruction; call `halted_for` yourself before opening exposure |
 | `lib/order_*.py` | Exchange order calls hand-written in a strategy; the intent reported instead of the fill | Import the venue lib; report `avg_price` / `executed_qty` / `commission` |
 | `OrderNotConfirmed` | A blind resubmit | Re-query first: Gate.io `text` never dedups, Binance / OKX only while unfilled, Bybit `orderLinkId` forever |
