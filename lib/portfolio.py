@@ -2494,7 +2494,8 @@ def _first_signal_window_s(name):
 # Stale = wait_for_bar's last failure is newer than state.json AND recent (a failing strategy
 # fails again every few minutes: 300s backoff, a 15-min stall throttle, a 20-min run timeout — so
 # TARGET_STALE_RECENT_S covers the slowest repeat) AND state.json is older than TARGET_STALE_BARS
-# bars, at least TARGET_STALE_FLOOR_S, plus TARGET_STALE_WEEKEND_S for daily-and-longer bars.
+# bars, at least TARGET_STALE_FLOOR_S, plus TARGET_STALE_WEEKEND_S for daily-and-longer bars of
+# a market that closes on weekends (not a crypto-only strategy).
 # Recency matters because only a successful run clears the failure: one transient error at the
 # start of a data gap (a TAIFEX night-to-day gap, a weekend, a holiday) would otherwise read as
 # stale for the whole gap. Left by design: a single failure while the next bar has not landed, on
@@ -2507,7 +2508,19 @@ TARGET_STALE_FLOOR_S = 1800
 TARGET_STALE_RECENT_S = 2700
 TARGET_STALE_WEEKEND_S = 2 * 86400
 _stale_targets_logged = set()
-_stale_shares_logged = {}
+
+
+_CRYPTO_FETCHERS = frozenset(('fetch_kline', 'fetch_kline_batch', 'fetch_bingx_kline'))
+_FETCHER_RE = re.compile(r'\bfetch_[a-z0-9_]+\b')
+
+
+def _crypto_only(name):
+    """Every lib.data fetcher the strategy names is a crypto kline (trades 7 days a week)."""
+    try:
+        found = set(_FETCHER_RE.findall(_strip_py_comments(_strategy_source(name))))
+    except (OSError, ValueError):
+        return False
+    return bool(found) and found <= _CRYPTO_FETCHERS
 
 
 def _stale_target_age(name, now=None):
@@ -2525,19 +2538,65 @@ def _stale_target_age(name, now=None):
     if not _finite(failed) or failed < written or now - failed > TARGET_STALE_RECENT_S:
         return None
     limit = (max(TARGET_STALE_BARS * bar, TARGET_STALE_FLOOR_S)
-             + (TARGET_STALE_WEEKEND_S if bar >= 86400 else 0))
+             + (TARGET_STALE_WEEKEND_S if bar >= 86400 and not _crypto_only(name) else 0))
     age = now - written
     return age if age > limit else None
 
 
-def _stale_share_targets(target, book, skip_roots=()):
-    """target with each stale member's share held to what the book has beyond the others' share:
-    it may shrink toward 0, never grow and never open the other side; the fresh members' share is
-    theirs as computed. A contract rollover in progress (skip_roots) is left as computed: the
-    user's own switch moves the share to the new contract, and holding it there would close it."""
-    out = dict(target)
+_STALE_SHARE_PATH = 'state/stale_share.json'
+_stale_share_unsaved = None
+
+
+def _stale_share_book():
+    """{key: {'names': [...], 'share': signed}} — the share each key's stale members hold."""
+    if _stale_share_unsaved is not None:
+        return json.loads(json.dumps(_stale_share_unsaved))
+    try:
+        with open(_STALE_SHARE_PATH) as f:
+            book = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in book.items() if isinstance(v, dict) and _finite(v.get('share'))
+            and isinstance(v.get('names'), list)} if isinstance(book, dict) else {}
+
+
+def _stale_share_save(book):
+    global _stale_share_unsaved
+    try:
+        os.makedirs(os.path.dirname(_STALE_SHARE_PATH), exist_ok=True)
+        tmp = _STALE_SHARE_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(book, f, indent=2)
+        atomic_replace(tmp, _STALE_SHARE_PATH)
+        _stale_share_unsaved = None
+    except OSError as e:
+        _stale_share_unsaved = book
+        logging.warning(f'stale_share persist failed (kept in memory): {e}')
+
+
+def _toward_zero(x, bound):
+    """x moved toward 0 so it never passes `bound` and never sits on the other side of it."""
+    return min(max(x, min(0.0, bound)), max(0.0, bound))
+
+
+def _stale_share_targets(target, book, skip_roots=(), stale_keys=None):
+    """target with each key's stale members held to the share they had when they went stale.
+    The share is fixed in the first stale round from the book and the OTHER members' targets of
+    the previous round (what the book held for them — this round's may not be bought yet), kept
+    on disk, and from then on only shrinks: toward the stale members' own target, and toward the
+    whole key's book when that is smaller (a hand close, a partial fill, a mark drop). The other
+    members trade their target as computed. Cleared once no member on the key is stale. A
+    contract rollover in progress (skip_roots) is left as computed: the user's own switch moves
+    the share to the new contract, and holding it there would close it. stale_keys = every key
+    still stale this round, including those another hold takes out of `target`: their share
+    stays as recorded."""
+    anchors = _stale_share_book()
+    if stale_keys is None:
+        stale_keys = {k for k, v in target.items() if v.get('stale_target')}
+    prev = None
+    out, changed = dict(target), False
     for key, row in target.items():
-        names = set(row.get('stale_target') or ())
+        names = sorted(set(row.get('stale_target') or ()))
         if not names or row.get('gated') or row.get('awaiting'):
             continue
         sym, market = split_key(key)
@@ -2546,26 +2605,38 @@ def _stale_share_targets(target, book, skip_roots=()):
         contribs = [c for c in row.get('contributors') or [] if isinstance(c, dict)]
         stale = sum(float(c.get('contribution') or 0) for c in contribs if c.get('strategy') in names)
         others = sum(float(c.get('contribution') or 0) for c in contribs if c.get('strategy') not in names)
-        held = _row_signed(book.get(key)) - others
-        share = min(max(stale, min(0.0, held)), max(0.0, held))
+        held_book = _row_signed(book.get(key))
+        rec = anchors.get(key)
+        if rec is None or rec['names'] != names:
+            if prev is None:
+                prev = _last_snapshot_target() or {}
+            prow = prev.get(key)
+            before = (sum(v for n, v in _contribs(prow).items() if n not in names)
+                      if isinstance(prow, dict) else others)
+            share = _toward_zero(stale, held_book - before)
+            guard.audit('stale_share_held', symbol=key, strategies=names, wants=round(stale, 4),
+                        held=round(share, 4), first=True)
+        else:
+            share = _toward_zero(_toward_zero(float(rec['share']), stale), held_book)
+            if abs(share - rec['share']) > 1e-9:
+                guard.audit('stale_share_held', symbol=key, strategies=names,
+                            wants=round(stale, 4), held=round(share, 4))
+        if rec is None or rec['names'] != names or abs(share - rec['share']) > 1e-9:
+            logging.warning(f"[reconcile] {key}: {', '.join(names)} not refreshed — its share held "
+                            f"at {share:g} (wants {stale:g}); the others trade")
+            anchors[key] = {'names': names, 'share': share}
+            changed = True
         signed = others + share
         if native_units(row.get('asset_spec'), row.get('exchange'), actual=book.get(key)):
             signed = math.copysign(math.floor(abs(signed) + 0.5 + 1e-9), signed) if signed else 0.0
         if market == 'spot' and signed < 0:
             signed = 0.0
-        note = (round(stale, 4), round(share, 4))
-        if abs(share - stale) > 1e-9:
-            out[key] = dict(_signed_target_row(row, signed), stale_held=round(share, 4))
-            if _stale_shares_logged.get(key) != note:
-                logging.warning(f"[reconcile] {key}: {', '.join(sorted(names))} not refreshed — "
-                                f"its share held at {share:g} (wants {stale:g}); the others trade")
-                guard.audit('stale_share_held', symbol=key, strategies=sorted(names),
-                            wants=round(stale, 4), held=round(share, 4))
-                _stale_shares_logged[key] = note
-        else:
-            _stale_shares_logged.pop(key, None)
-    for key in [k for k in _stale_shares_logged if not (target.get(k) or {}).get('stale_target')]:
-        del _stale_shares_logged[key]
+        out[key] = dict(_signed_target_row(row, signed), stale_held=round(share, 4))
+    for key in [k for k in anchors if k not in stale_keys]:
+        del anchors[key]
+        changed = True
+    if changed:
+        _stale_share_save(anchors)
     return out
 
 
@@ -3849,11 +3920,12 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                      'market': 'swap', 'contributors': [], 'gated': False}
             target = dict(target)
             target[k] = _signed_target_row(base, signed)
-    if any(v.get('stale_target') for v in target.values()):
+    if any(v.get('stale_target') for v in full_target.values()) or os.path.exists(_STALE_SHARE_PATH):
         skip = ({r.get(e) for r in rolls for e in ('from', 'to')}
                 | set(hold_roots) | {x for v in hold_roots.values() for x in v}) - {None}
         try:
-            target = _stale_share_targets(target, diff_actual, skip)
+            target = _stale_share_targets(target, diff_actual, skip,
+                                          {k for k, v in full_target.items() if v.get('stale_target')})
         except Exception as e:  # never a reason to skip this round's exits
             logging.error(f"[reconcile] stale-share hold failed ({type(e).__name__}: {e}) "
                           f"— those keys reconcile as computed this round")

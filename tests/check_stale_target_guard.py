@@ -4,8 +4,10 @@ close, a flip's close half), never grow or open the other side; the other member
 as computed. Stale = state/bar_wait/<name>.json last_attempt_failed_at newer than state.json and
 at most TARGET_STALE_RECENT_S old (a failing strategy fails again every few minutes; one failure
 at the start of a data gap must not cover the whole gap), and state.json older than
-max(TARGET_STALE_BARS × INTERVAL, TARGET_STALE_FLOOR_S), + TARGET_STALE_WEEKEND_S for daily bars.
-Type B (no INTERVAL) is not judged.
+max(TARGET_STALE_BARS × INTERVAL, TARGET_STALE_FLOOR_S), + TARGET_STALE_WEEKEND_S for daily bars
+of a market that closes (not a crypto-only strategy). The held share is fixed when the member goes
+stale (state/stale_share.json, from the previous round's other targets) and only shrinks after
+that. Type B (no INTERVAL) is not judged.
 
 Run: cd blave-agent && .venv/bin/python tests/check_stale_target_guard.py
 """
@@ -34,38 +36,48 @@ def check(cond, msg):
 
 
 def setup(members, self_ledger):
-    """members: {name: (state, interval|None, state_age_s, failed_ago_s|None)}"""
+    """members: {name: (state, interval|None, state_age_s, failed_ago_s|None[, opts])};
+    opts: src (extra strategy.py lines), amount, spec."""
     for d in ("manager", "strategies", "state"):
         shutil.rmtree(d, ignore_errors=True)
     os.makedirs("manager")
     os.makedirs("state/bar_wait")
     cfg = {"self_ledger": self_ledger, "amounts": {}, "exchanges": {}, "asset_specs": {}}
-    for name, (state, interval, age, failed_ago) in members.items():
+    for name, (state, interval, age, failed_ago, *opts) in members.items():
+        opts = opts[0] if opts else {}
         os.makedirs(f"strategies/{name}")
         with open(f"strategies/{name}/strategy.py", "w") as f:
-            f.write(f'INTERVAL = "{interval}"\n' if interval else "# Type:     B (screener)\n")
-        path = f"strategies/{name}/state.json"
-        json.dump(state, open(path, "w"))
-        os.utime(path, (NOW - age, NOW - age))
-        json.dump({"last_processed_bar": None,
-                   "last_attempt_failed_at": None if failed_ago is None else NOW - failed_ago},
-                  open(f"state/bar_wait/{name}.json", "w"))
-        cfg["amounts"][name] = 100
+            f.write((f'INTERVAL = "{interval}"\n' if interval else "# Type:     B (screener)\n")
+                    + opts.get("src", ""))
+        put_state(name, state, age, failed_ago)
+        cfg["amounts"][name] = opts.get("amount", 100)
         cfg["exchanges"][name] = "paper"
+        if opts.get("spec"):
+            cfg["asset_specs"][name] = opts["spec"]
     json.dump(cfg, open("manager/portfolio_config.json", "w"))
 
 
+def put_state(name, state, age, failed_ago):
+    path = f"strategies/{name}/state.json"
+    json.dump(state, open(path, "w"))
+    os.utime(path, (time.time() - age, time.time() - age))
+    json.dump({"last_processed_bar": None,
+               "last_attempt_failed_at": None if failed_ago is None else time.time() - failed_ago},
+              open(f"state/bar_wait/{name}.json", "w"))
+
+
 class Venue:
-    def __init__(self, held):
-        self.held, self.calls = dict(held), []
+    def __init__(self, held, fill=1.0):
+        self.held, self.calls, self.fill = dict(held), [], fill
 
     def positions(self):
         return {k: {"side": "long" if v > 0 else "short", "size": abs(v)} for k, v in self.held.items() if v}
 
     def place(self, symbol, signed_diff, asset_spec, reduce_only=False):
         self.calls.append((symbol, signed_diff, reduce_only))
-        self.held[symbol] = self.held.get(symbol, 0) + signed_diff
-        return {"executed_qty": abs(signed_diff), "avg_price": 1.0}
+        done = signed_diff * self.fill
+        self.held[symbol] = self.held.get(symbol, 0) + done
+        return {"executed_qty": abs(done), "avg_price": 1.0}
 
 
 _real = {n: getattr(portfolio, n) for n in ("book_ready", "claim_unvenued_rows", "resolve_pending",
@@ -140,6 +152,59 @@ for self_ledger in (False, True):
           f"{tag} shared key, book above the stale share: it trims to the stale 100 ({v.calls})")
     v = run({"s": (LONG, "1h", *FAILING), "g": (ETH, "1h", 60, None)}, {}, self_ledger)
     check(v.calls == [("ETHUSDT", 100, False)], f"{tag} another key is untouched ({v.calls})")
+    # the share is fixed when the member goes stale (the previous round's other targets); the
+    # other members' changes after that are theirs (audit 0f48172 A / B / three rounds)
+    def rounds(steps, held, fill=1.0):
+        """steps: [(s_state, s_stale, f_state)] — one reconcile each; returns per-round calls."""
+        setup({"s": (LONG, "1h", 60, None), "f": (FLAT, "1h", 60, None)}, self_ledger)
+        v = Venue(held, fill)
+        mode(v, self_ledger)
+        out = []
+        for s_state, s_stale, f_state in steps:
+            put_state("s", s_state, *(FAILING if s_stale else (60, None)))
+            put_state("f", f_state, 60, None)
+            del v.calls[:]
+            portfolio.reconcile(v.positions, v.place)
+            out.append(list(v.calls))
+        return v, out
+
+    v, r = rounds([(LONG, False, FLAT), (LONG, True, LONG)], {"BTCUSDT": 100})
+    check(r == [[], [("BTCUSDT", 100, False)]] and v.held["BTCUSDT"] == 200,
+          f"{tag} A: s held 100 then went stale, f enters 100: f's 100 is bought ({r})")
+    v, r = rounds([(LONG, False, FLAT), (LONG, True, LONG), (LONG, True, LONG)], {"BTCUSDT": 100}, 0.5)
+    check(r[1] == [("BTCUSDT", 100, False)] and r[2] == [("BTCUSDT", 50, False)],
+          f"{tag} B: f's entry half-filled: the rest is bought next round ({r})")
+    v, r = rounds([(LONG, False, FLAT), (LONG, True, FLAT), (LONG, True, LONG), (LONG, True, FLAT)],
+                  {"BTCUSDT": 50})
+    check(r[0] == [("BTCUSDT", 50, False)], f"{tag} three rounds: s fresh tops up to 100 ({r[0]})")
+    v, r = rounds([(LONG, True, FLAT), (LONG, True, LONG), (LONG, True, FLAT)], {"BTCUSDT": 50})
+    check(r == [[], [("BTCUSDT", 100, False)], [("BTCUSDT", -100, True)]] and v.held["BTCUSDT"] == 50,
+          f"{tag} three rounds: s stale holding 50 (wants 100), f in then out: f buys 100, sells "
+          f"100, s stays at 50 ({r}, held {v.held})")
+    v, r = rounds([(LONG, False, FLAT), (LONG, True, FLAT), (LONG, True, FLAT)], {"BTCUSDT": 100})
+    v.held["BTCUSDT"] = 30  # a hand close of most of it
+    for _ in range(2):
+        portfolio.reconcile(v.positions, v.place)
+    check(v.held["BTCUSDT"] == 30 and v.calls == [],
+          f"{tag} a hand close shrinks the held share and it never comes back ({v.calls})")
+    anchors = json.load(open("state/stale_share.json"))
+    check(anchors.get("BTCUSDT", {}).get("share") == 30,
+          f"{tag} the shrunk share is on disk ({anchors})")
+    lines = [x for x in open("state/audit.jsonl") if '"stale_share_held"' in x]
+    check(len(lines) == 2, f"{tag} stale_share_held written only when the share changes ({len(lines)} lines)")
+    put_state("s", LONG, 60, None)
+    portfolio.reconcile(v.positions, v.place)
+    check(v.calls[-1:] == [("BTCUSDT", 70, False)] and "BTCUSDT" not in json.load(open("state/stale_share.json")),
+          f"{tag} fresh again: the anchor is cleared and s trades its target ({v.calls})")
+    # whole lots and spot
+    lots = {"type": "futures_contracts", "contract_value": 1, "currency": "USD", "lot_size": 1}
+    v = run({"s": (LONG, "1h", *FAILING, {"amount": 1, "spec": lots}),
+             "f": ({"symbol": "BTCUSDT", "position": 0.6}, "1h", 60, None, {"amount": 1, "spec": lots})},
+            {}, self_ledger)
+    check(v.calls == [("BTCUSDT", 1, False)], f"{tag} lots: the target is rounded to whole lots ({v.calls})")
+    spot = {"src": 'MARKET = "spot"\n'}
+    v = run({"s": (FLAT, "1h", *FAILING, spot), "f": (SHORT, "1h", 60, None, spot)}, {}, self_ledger)
+    check(v.calls == [], f"{tag} spot: a net short target is flat, nothing sold ({v.calls})")
     # not stale
     v = run({"s": (LONG, "1h", 30 * 60, None)}, {}, self_ledger)
     check(v.calls == [("BTCUSDT", 100, False)], f"{tag} fresh target, no failure: entry ({v.calls})")
@@ -169,11 +234,16 @@ for self_ledger in (False, True):
     v = run({"b": (LONG, None, 3 * D, 60)}, {}, self_ledger)
     check(v.calls == [("BTCUSDT", 100, False)], f"{tag} Type B (no INTERVAL) is not judged ({v.calls})")
     us = {"symbol": "SPY", "position": 1}
-    v = run({"us": (us, "1d", 2.5 * D, 300)}, {}, self_ledger)
+    us_src = {"src": "from lib.data import fetch_usstock_price\n"}
+    v = run({"us": (us, "1d", 2.5 * D, 300, us_src)}, {}, self_ledger)
     check(v.calls == [("SPY", 100, False)],
           f"{tag} US daily on Monday (Friday's bar, 2.5 days), one error 5 min ago: entry ({v.calls})")
-    v = run({"us": (us, "1d", 5 * D, 300)}, {}, self_ledger)
+    v = run({"us": (us, "1d", 5 * D, 300, us_src)}, {}, self_ledger)
     check(v.calls == [], f"{tag} US daily failing for 5 days: its share is held ({v.calls})")
+    v = run({"cd": (LONG, "1d", 2.5 * D, 300, {"src": "from lib.data import fetch_kline\n"})}, {},
+            self_ledger)
+    check(v.calls == [], f"{tag} crypto daily trades 7 days: no weekend allowance, 2.5 days failing "
+          f"is stale ({v.calls})")
     tc = {"type": "portfolio", "weights": {"BTCUSDT": 0.5, "ETHUSDT": 0.5}, "rebalance_at": 0}
     v = run({"c": (tc, "1h", *FAILING)}, {"ETHUSDT": 80}, self_ledger)
     check(v.calls == [("ETHUSDT", -30, True)],
