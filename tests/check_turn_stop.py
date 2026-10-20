@@ -23,6 +23,11 @@ What it protects:
      Codex's pipe, so Codex is held until the script exits). A hand-written script is
      kept by the marker lib/order_* writes at import; every lib/order_*.py writes it.
      The reply and the history say what was left running; the history keeps the receipts.
+  8. Windows (Toolhelp / taskkill swapped for POSIX stand-ins): under Codex a marked money
+     script holds Codex until it is done; markers are checked against the table, never
+     with os.kill(pid, 0) (TerminateProcess there); no money script = Codex killed at once.
+  9. agent_turn and the runtime modules it imports spawn nothing but the engine and its
+     probes (static): kill_tree does not match a direct child's argv.
 
 claude_agent_sdk is stubbed. POSIX only (the Windows kill path is taskkill /T).
 Run: cd blave-agent && python3 tests/check_turn_stop.py
@@ -505,6 +510,74 @@ check("piggyback stop: CLI and the plain tool are dead when the turn returns",
       not alive(procs["engine"]) and not alive(procs["job"]), procs)
 check("piggyback stop: the money script still finishes", ledger_wait(led_pb, ["cancelled", "closed", "ledger"], 5), open(led_pb).read())
 
+# ── 8. Windows: Codex is held for a money script too (nt_plan) ──────────────
+# Toolhelp has no command lines: only the lib/guard markers count, checked against the table
+# (os.kill(pid, 0) is TerminateProcess there). Engine 201 → shell 202 → script 203; 301 elsewhere.
+WPAIRS = [(201, 200), (202, 201), (203, 202), (301, 1)]
+check("Windows + Codex: a marked script under the engine → nothing killed, labelled",
+      turn_stop.nt_plan(WPAIRS, 200, {203}, True) == ([], ["order script"]))
+check("Windows + Codex: a marker outside this turn (or left by a dead pid) does not hold",
+      turn_stop.nt_plan(WPAIRS, 200, {301, 999}, True) == ([201], []))
+check("Windows + Claude: the engine goes even with a marked tool (its tools write to files)",
+      turn_stop.nt_plan(WPAIRS, 200, {203}, False) == ([201], []))
+
+_real = (turn_stop._NT, turn_stop._windows_pairs, turn_stop._taskkill, turn_stop._money_pids)
+turn_stop._NT = True
+turn_stop._windows_pairs = lambda: turn_stop._posix_table()[0]
+turn_stop._taskkill = lambda pid: os.kill(pid, signal.SIGKILL)   # taskkill /F /PID, no /T
+
+
+def _no_kill0():
+    raise AssertionError("_money_pids (os.kill(pid, 0)) called on Windows")
+
+
+turn_stop._money_pids = _no_kill0
+led_w = os.path.join(_tmp, "ledger-win")
+fake_codex_w = os.path.join(_tmp, "codex-win")
+with open(fake_codex_w, "w") as f:
+    f.write(f"#!{sys.executable}\n" + textwrap.dedent(f"""
+        import json, subprocess, sys
+        sys.stdin.read()
+        print(json.dumps({{"type": "item.started", "item": {{"id": "i1", "type": "command_execution",
+              "command": "python tmp/adhoc.py", "status": "in_progress"}}}}), flush=True)
+        p = subprocess.Popen([sys.executable, {os.path.join(WS, "tmp", "adhoc.py")!r}, {led_w!r}],
+                             stdout=subprocess.PIPE, text=True)
+        for line in p.stdout:
+            print(json.dumps({{"type": "item.updated", "item": {{"id": "i1", "type": "command_execution",
+                  "aggregated_output": line, "status": "in_progress"}}}}), flush=True)
+        p.wait()
+        import time; time.sleep(60)
+    """))
+os.chmod(fake_codex_w, 0o755)
+flag = os.path.join(_tmp, f"stop-{time.monotonic_ns()}")
+os.environ[turn_stop.ENV] = flag
+def stopper_w():
+    while not os.path.exists(led_w):
+        time.sleep(0.02)
+    open(flag, "w").close()
+threading.Thread(target=stopper_w, daemon=True).start()
+out, err = io.StringIO(), io.StringIO()
+t0 = time.monotonic()
+with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+    asyncio.run(at.run_turn("s8", "把 XRP 平掉", "sonnet", at.LocalSink("s8"), engine="codex", codex_bin=fake_codex_w, ui_lang="zh"))
+took = time.monotonic() - t0
+chunks = [json.loads(l[len("@@BLAVE@@"):]) for l in out.getvalue().splitlines() if l.startswith("@@BLAVE@@")]
+check("Windows + Codex + marked script: stopped after 'cancelled', it still closes and writes the ledger",
+      ledger_wait(led_w, ["cancelled", "closed", "ledger"], 1), open(led_w).read())
+check(f"Windows + Codex: the turn ends once the script is done, not 60s later ({took:.1f}s)", took < 6, took)
+check("Windows + Codex: pings while holding", any(c["type"] == "ping" for c in chunks))
+check("Windows: os.kill(pid, 0) never used", "_money_pids (os.kill" not in err.getvalue(), err.getvalue()[-300:])
+
+codex_pid.clear()
+codex_engine.asyncio.create_subprocess_exec = spy_exec
+reply, elapsed, chunks, err = run_turn_with_stop(at.LocalSink("s9"), 1.5, engine="codex", codex_bin=fake_codex)
+codex_engine.asyncio.create_subprocess_exec = real_popen
+check("Windows + Codex, no money script: Codex is killed and the turn ends < 2s", elapsed < 2.0
+      and codex_pid.get("codex") and not alive(codex_pid["codex"]), (elapsed, codex_pid))
+with contextlib.suppress(OSError, TypeError):
+    os.kill(codex_pid.get("tool"), signal.SIGKILL)   # Windows leaves the tools to finish; by pid
+turn_stop._NT, turn_stop._windows_pairs, turn_stop._taskkill, turn_stop._money_pids = _real
+
 # Codex hold is capped: a money script that outlives HOLD_MAX_S no longer holds the turn
 turn_stop.HOLD_MAX_S = 1.0
 long_codex = os.path.join(_tmp, "codex3")
@@ -542,6 +615,44 @@ _by_name = [n for n in sorted(os.listdir(os.path.join(ROOT, "tests"))) if n.ends
             and re.search(r"""["'](?:pkill|killall)["']""", open(os.path.join(ROOT, "tests", n), encoding="utf-8").read())]
 check("no test ends processes by name", _by_name == [], _by_name)
 turn_stop.HOLD_MAX_S = 120
+
+# ── 9. agent_turn spawns nothing in-process but the engine ──────────────────
+# kill_tree treats every direct child of agent_turn as the engine and does not match its argv
+# (the CLI's --disallowedTools names president_worker). A money script started straight from
+# agent_turn — or any runtime module it imports — would be spared by nothing. Known spawns:
+# codex_engine (codex exec and its --version / features probes), turn_stop (ps, taskkill).
+# A new one fails here: check it is the engine or a short probe, then update the count.
+import ast as _ast
+_RT = os.path.join(ROOT, "runtime")
+_local = {f[:-3] for f in os.listdir(_RT) if f.endswith(".py")}
+_SPAWN_MODS = {"subprocess", "multiprocessing", "pty", "concurrent.futures"}
+_seen, _todo, _spawns = set(), ["agent_turn"], {}
+while _todo:
+    _m = _todo.pop()
+    if _m in _seen:
+        continue
+    _seen.add(_m)
+    for _n in _ast.walk(_ast.parse(open(os.path.join(_RT, _m + ".py"), encoding="utf-8").read())):
+        if isinstance(_n, _ast.Import):
+            _todo += [a.name for a in _n.names if a.name in _local]
+            _spawns.setdefault(_m, []).extend("import " + a.name for a in _n.names
+                                              if a.name in _SPAWN_MODS - {"subprocess"})
+        elif isinstance(_n, _ast.ImportFrom):
+            if _n.module in _local:
+                _todo.append(_n.module)
+            if _n.module in _SPAWN_MODS:
+                _spawns.setdefault(_m, []).append("from " + _n.module)
+        elif isinstance(_n, _ast.Call) and isinstance(_n.func, _ast.Attribute):
+            _b, _a = _n.func.value, _n.func.attr
+            _o = _b.id if isinstance(_b, _ast.Name) else getattr(_b, "attr", None)
+            if (_o == "subprocess" or _a.startswith("create_subprocess") or (_o == "os" and (
+                    _a in ("system", "popen", "fork", "forkpty", "posix_spawn", "posix_spawnp", "startfile")
+                    or _a.startswith(("spawn", "exec"))))):
+                _spawns.setdefault(_m, []).append(f"{_o}.{_a}:{_n.lineno}")
+_counts = {m: len(v) for m, v in _spawns.items() if v}
+check("agent_turn's in-process modules spawn only the engine and its probes (codex_engine 3, turn_stop 2)",
+      _counts == {"codex_engine": 3, "turn_stop": 2} and "agent_turn" in _seen and "turn_stop" in _seen,
+      {m: v for m, v in _spawns.items() if v})
 
 print("\n" + ("ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

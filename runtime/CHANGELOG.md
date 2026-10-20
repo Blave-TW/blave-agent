@@ -8,8 +8,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.135 — 2026-10-20(runtime 單獨發，先於 0.1.28;電腦版隨 0.1.28 安裝包)
+
 - **按停止殺得掉 Claude 引擎正在跑的工具(`turn_stop.kill_tree`)**:引擎 CLI 的命令列帶 `--disallowedTools …Edit(/lib/president_worker.py)…`(保護規則 `PROTECTED_EDIT_RULES`),`MONEY_ARGV` 比對整條命令列,CLI 本身被當成動錢的行程放過,它底下的工具(長回測)也一起放過——回覆寫「president_worker 沒有中斷」、工具照跑到完。電腦版 Claude／Blave AI、雲端網頁停止、排程逾時(`report_runner` 先建停止旗標)都中;Codex 的命令列沒有這些字、Windows 只殺引擎不比對,都不受影響。現在 agent_turn 的直接子行程(引擎)不比對命令列,只認 money_pids 標記;它底下的工具照舊逐支比對,動錢的照舊放過。測試 `tests/check_turn_stop.py`(假引擎改帶 SDK 同一組 `--disallowedTools`,加 `lib/president_worker.py` 一例)。
 - **全新安裝兩條回合同時開跑不再報 `database is locked`(`session_store._set_wal`)**:session.db 還不存在時,切 WAL 要的鎖不吃 busy timeout,輸的那條整輪失敗。改成只對 locked／busy 重試(最多 `WAL_TRIES`=20 次、50 ms 起倍增到 500 ms、帶抖動),沒報錯但讀回不是 `wal` 最多再試到第 3 次(`WAL_MODE_TRIES`),之後照舊用原模式(拿不到 WAL 的檔案系統不會每次開檔都卡幾秒)。測試 `tests/check_session_store_wal.py`(四個行程同時開新檔,十輪)。
+- **Windows＋Codex 按停止不再直接殺 Codex、弄斷動錢腳本(`turn_stop.nt_plan`;稽核 stopfix-e233863 S2)**:nt 分支原本不看 `hold_engine`,一律 taskkill agent_turn 的直接子行程。Codex 把工具輸出接進自己的 pipe,close_symbol 在「已取消停損、尚未平倉」之間會在下一個 print 斷掉。現在 Codex 底下(Toolhelp 父子表)有 lib/guard 標記的行程時一支都不殺、照 POSIX 那套 ping＋`HOLD_MAX_S` 等;標記跟 Toolhelp 表比對存活,**不用 `os.kill(pid, 0)`**(Windows 上那是 TerminateProcess)。Toolhelp 沒有命令列,只認標記:沒 import 下單模組的 `update_workspace` 在 Windows＋Codex 仍不受保護。Claude 路徑不變(只殺引擎、工具留著跑完)。未在 Windows 實機驗過。測試 `tests/check_turn_stop.py` §8(在 POSIX 上換掉 Toolhelp／taskkill 跑真行程)。
+- **鎖住「agent_turn 除引擎外不起子行程」**:上面的修法把 agent_turn 的直接子行程都當引擎、不比對命令列;`tests/check_turn_stop.py` §9 靜態掃 agent_turn 與它 import 的 runtime 模組,只准 codex_engine(codex exec 與 --version／features 探測)與 turn_stop(ps、taskkill)起行程,多一處就紅。
 
 ## 1.1.134 — 2026-10-18(desktop 0.1.27)
 

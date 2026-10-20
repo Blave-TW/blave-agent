@@ -57,6 +57,8 @@ MONEY_PID_DIR = os.path.join(WORKSPACE, "state", "execution", "money_pids")
 # the script may not have finished.
 HOLD_MAX_S = 120
 
+_NT = os.name == "nt"
+
 # Set while this turn has a watcher: codex_engine then never breaks or kills Codex on
 # its own after a Stop — it keeps draining (without forwarding) and turn_stop decides.
 # Breaking in the gap between "interrupted" and the first sweep cut a money script's
@@ -99,17 +101,20 @@ def _posix_table():
     return pairs, cmds
 
 
-def _money_pids():
-    """pids with a live marker; markers of dead processes are removed on the way."""
-    out = set()
+def _marker_pids():
     try:
-        names = os.listdir(MONEY_PID_DIR)
+        return {int(n) for n in os.listdir(MONEY_PID_DIR) if n.isdigit()}
     except OSError:
-        return out
-    for name in names:
-        if not name.isdigit():
-            continue
-        pid = int(name)
+        return set()
+
+
+def _money_pids():
+    """pids with a live marker; markers of dead processes are removed on the way. POSIX only:
+    on Windows os.kill(pid, 0) is TerminateProcess — nt_plan checks markers against the
+    Toolhelp table instead."""
+    out = set()
+    for pid in _marker_pids():
+        name = str(pid)
         try:
             os.kill(pid, 0)
             out.add(pid)
@@ -229,24 +234,47 @@ def _windows_pairs():
     return pairs
 
 
+def _taskkill(pid):
+    subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True,
+                   timeout=10, stdin=subprocess.DEVNULL,
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def nt_plan(pairs, root, marked, hold_engine):
+    """(kill, labels) on Windows, where only the engine — `root`'s direct children — is ever
+    killed, without /T: a Toolhelp ppid can be stale (pid reuse), and /T could reach a flatten
+    that had detached through powershell. With hold_engine (Codex pipes its tools' output),
+    nothing is killed while a marked money process sits under `root`: killing Codex there makes
+    close_symbol's next print raise between "stop-loss cancelled" and "closed". Toolhelp gives
+    no command lines, so only the lib/guard markers count (every lib/order_*, lib/portfolio and
+    lib/venue import writes one before a request goes out); a stale ppid can only add a
+    process to the hold, which _watch caps at HOLD_MAX_S."""
+    direct = [pid for pid, ppid in pairs if ppid == root and pid != root]
+    # `marked` is every marker file: one left by a dead process is not in the table
+    if hold_engine and marked & set(descendants(pairs, root)):
+        return [], ["order script"]
+    return direct, []
+
+
 def kill_tree(root=None, hold_engine=False):
     """Kill the turn's engine and tools (never `root` itself), sparing money processes.
     Returns (killed pids, labels of the money processes left running).
 
-    Windows (not yet verified on a real box): only the engine — `root`'s direct
-    children — is killed, without /T. The tools are left to finish: a Toolhelp ppid can
-    be stale (pid reuse), and /T could reach a flatten that had detached through
-    powershell. Follow-up: trust a ppid only when the child was created after the
-    parent (GetProcessTimes) and kill pid by pid, then extend the money rule here."""
+    Windows (not yet verified on a real box): see nt_plan. The tools are left to finish.
+    Follow-up: trust a ppid only when the child was created after the parent
+    (GetProcessTimes) and kill pid by pid, then extend the money rule here.
+
+    "The engine" is every direct child of `root`: agent_turn spawns nothing else in-process
+    but the engine's own short probes (codex --version, ps, taskkill) — pinned by
+    tests/check_turn_stop.py, because a money script started there would escape MONEY_ARGV."""
     root = os.getpid() if root is None else root
     try:
-        if os.name == "nt":
-            direct = [pid for pid, ppid in _windows_pairs() if ppid == root and pid != root]
-            for pid in direct:
-                subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True,
-                               timeout=10, stdin=subprocess.DEVNULL,
-                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            return direct, []
+        if _NT:
+            pairs = _windows_pairs()
+            kill, labels = nt_plan(pairs, root, _marker_pids(), hold_engine)
+            for pid in kill:
+                _taskkill(pid)
+            return kill, labels
         pairs, cmds = _posix_table()
         tree = posix_targets(pairs, root, _sid)
         marked = _money_pids()
