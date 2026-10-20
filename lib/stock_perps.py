@@ -41,7 +41,7 @@ def binance_rows():
     c = _binance
     if (c["rows"] is None or now - c["at"] > INFO_TTL_S) and now - c["failed_at"] > INFO_RETRY_S:
         try:
-            r = requests.get(BINANCE_INFO, timeout=10)
+            r = requests.get(BINANCE_INFO, timeout=(3, 10))
             r.raise_for_status()
             c["rows"] = {s["symbol"]: (s.get("underlyingType"), s.get("baseAsset"))
                          for s in r.json()["symbols"]}
