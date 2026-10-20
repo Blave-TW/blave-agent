@@ -76,8 +76,7 @@ def fake_daily(adjusted):
 
 data.fetch_twstock_price_adj = fake_daily(True)
 data.fetch_twstock_price = fake_daily(False)
-data.fetch_kline = lambda sym, *a, **k: pd.DataFrame(
-    {"Close": [50000.0]}, index=[pd.Timestamp.now().floor("min")])
+paper_data._binance_last = lambda sym: 50000.0
 ENV = {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper", "PAPER_BOUND_TS": "1",
        "PAPER_INITIAL_EQUITY": "100000"}
 R = 32.0

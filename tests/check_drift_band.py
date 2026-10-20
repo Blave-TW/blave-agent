@@ -292,6 +292,9 @@ check(refused, "the crypto auto-wire refuses to size a shares row")
 print("== (f) paper venue books a futures_contracts row in whole lots")
 import time  # noqa: E402
 from lib import order_paper, paper_data  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "tests"))
+import paper_market  # noqa: E402
+paper_market.install()
 os.makedirs("strategies/txf_hold", exist_ok=True)
 os.makedirs("state", exist_ok=True)
 open("strategies/txf_hold/strategy.py", "w").write('''MODE = "live"

@@ -70,6 +70,8 @@ def child(case):
     spec.loader.exec_module(rec)
     logging.getLogger().setLevel(logging.ERROR)
     from lib import execute, order_paper, paper_data, portfolio, venue_wiring
+    import paper_market
+    paper_market.install()
 
     env = venue_wiring.read_env()
 

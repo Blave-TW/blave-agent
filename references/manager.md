@@ -910,7 +910,7 @@ three is ignored. Rules:
   until the old book row is gone.
 - The close of the contract switched away from is valued with that contract's own
   `contract_value` (`TXF_FAMILY_CONTRACT_VALUE`), not the strategy's new spec — paper refuses a
-  fill whose value differs from the held one. Paper prices TMF/MXF off any family strategy.
+  fill whose value differs from the held one. Paper prices TMF/MXF off the TXF 1m series.
 - A switch keeps the exposure: the new lots must be what some exposure behind the old lots
   converts to (half-up, at least 1 lot) — else `CONTRACT_EXPOSURE_MISMATCH`. Switching and resizing
   are two saves.

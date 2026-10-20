@@ -23,6 +23,11 @@ def fetch_data(hdrs):
 
 from lib import order_paper, paper_data  # noqa: E402
 
+sys.path.insert(0, os.path.join(ROOT, "tests"))
+import paper_market  # noqa: E402
+
+paper_market.install()
+
 fails = 0
 
 
@@ -204,6 +209,9 @@ import json, os, sys, time
 sys.path.insert(0, os.getcwd())
 os.makedirs("state", exist_ok=True)
 from lib import order_paper, paper_data, venue_wiring
+sys.path.insert(0, sys.argv[1])
+import paper_market
+paper_market.install()
 paper_data._price_cache.clear()
 env = {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper", "PAPER_BOUND_TS": "1"}
 open("state/mark.txt", "w").write("20000")
@@ -235,7 +243,7 @@ for old_mod in ("paper_data", "order_paper"):
     os.makedirs(os.path.join(ws, "strategies", "btc_px"))
     open(os.path.join(ws, "strategies", "btc_px", "strategy.py"), "w").write(
         open("strategies/txf_px/strategy.py").read().replace('"TXF"', '"BTCUSDT"'))
-    p = subprocess.run([sys.executable, "-c", CHILD], cwd=ws, capture_output=True, text=True, timeout=120)
+    p = subprocess.run([sys.executable, "-c", CHILD, os.path.join(ROOT, "tests")], cwd=ws, capture_output=True, text=True, timeout=120)
     check(p.returncode == 0 and "CHILD OK" in p.stdout,
           f"old lib/{old_mod}.py + the rest new: crypto and TXF lots orders go through "
           f"(exit {p.returncode}) {p.stderr.strip()[-300:]}")

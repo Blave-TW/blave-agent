@@ -89,6 +89,20 @@ ENV.update(BLAVE_AGENT_BASE=BASE, BLAVE_AGENT_WORKSPACE=WS, BLAVE_AGENT_HOME=BAS
 # this machine instead of reaching Binance. (Not a hook in the product — just the
 # proxy variables every urllib honours.)
 ENV.update(https_proxy="http://127.0.0.1:9", HTTPS_PROXY="http://127.0.0.1:9", no_proxy="", NO_PROXY="")
+# Paper fills at Binance's last trade; the daemon's children get an allowlisted env (no
+# PYTHONPATH), so the canned answer (tests/paper_market.py: the strategy's Close = 100) rides
+# in the interpreter itself — a venv over this one whose site-packages carries it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paper_market  # noqa: E402
+import sysconfig  # noqa: E402
+import venv  # noqa: E402
+venv.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(os.path.join(BASE, "venv"))
+PY = os.path.join(BASE, "venv", "bin", "python")
+_site = subprocess.run([PY, "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+                       capture_output=True, text=True, check=True).stdout.strip()
+open(os.path.join(_site, "paper_market_canned.py"), "w").write(paper_market.SRC)
+# a .pth, not sitecustomize.py: the base interpreter may ship its own, earlier on the path
+open(os.path.join(_site, "parent.pth"), "w").write(sysconfig.get_paths()["purelib"] + "\nimport paper_market_canned\n")
 IN = os.path.join(WS, "state", "local_cmd", "in")
 ACK = os.path.join(WS, "state", "local_cmd", "ack")
 fails = 0
@@ -102,7 +116,7 @@ def check(cond, msg):
 
 
 def start_daemon():
-    p = subprocess.Popen([sys.executable, os.path.join(RUNTIME, "local_daemon.py"),
+    p = subprocess.Popen([PY, os.path.join(RUNTIME, "local_daemon.py"),
                           "--secret-stdin"], env=ENV, stdin=subprocess.PIPE,
                          stderr=open(os.path.join(BASE, "daemon.log"), "ab"))
     p.stdin.write((SECRET + "\n").encode())
@@ -313,7 +327,7 @@ try:
           "reconciler.log: left because the parent is gone")
 
     # one that outlived its daemon anyway (holds stdin open, so it never sees EOF)
-    orphan = hold_lock_and_spawn([sys.executable, os.path.join(RUNTIME, "local_daemon.py"),
+    orphan = hold_lock_and_spawn([PY, os.path.join(RUNTIME, "local_daemon.py"),
                                   "--run-reconciler", os.path.join("manager", "reconciler.py")], WS)
     time.sleep(3)
     check(orphan.poll() is None, "stand-in orphan is up and holds the lock")

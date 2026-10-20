@@ -8,13 +8,12 @@ flatten, the web portfolio page and the equity curve run unchanged, only the
 fills are simulated. Same surface as the other order libs (four reconciler
 names + limit/spot/protective helpers, lib/guard built in).
 
-PRICE (the whole model, Wei 2026-08-21):
-  Fills use the price the STRATEGY sees, from the STRATEGY's own data source —
-  resolved via lib/paper_data.current_price (see that module for why: adjusted
-  vs raw prices, per-strategy endpoints). NOT an independent public feed. TW
-  stocks are the exception: the unadjusted daily close the portfolio page sizes
-  shares with; dividends are not booked (lib/paper_data).
-  * one price per symbol (latest bar Close) — NO bid/ask, NO spread, NO
+PRICE (the whole model, Wei 2026-10-20):
+  Fills use the market's latest real price, never an adjusted one —
+  lib/paper_data.current_price: crypto Binance USDT-M's last trade, TAIFEX the
+  near-month 1m series, TW / US stocks the unadjusted daily close (TW: the one
+  the portfolio page sizes shares with); dividends are not booked.
+  * one price per symbol — NO bid/ask, NO spread, NO
     slippage. Beginner-tier fidelity (Webull/TradingView do the same); fees are
     the one realism kept.
   * fills are IMMEDIATE at that price — no wait for the next bar (the live-paper
@@ -54,7 +53,7 @@ PRICE (the whole model, Wei 2026-08-21):
     A row booked before TW stocks moved to the unadjusted close is restated
     once (_rebase_tw_rows), so the switch moves neither equity nor PnL.
 
-Contract rules are permissive (fetch_data gives OHLC, not an instrument spec):
+Contract rules are permissive (a price feed is not an instrument spec):
 no min-qty / min-notional / step gating — the reconciler's own slice threshold
 is the floor. Positions are tracked as base-qty + entry (qty is USD÷price, a
 notional-derived number; never floored to a crypto step).
@@ -146,10 +145,10 @@ class PaperError(Exception):
     """Simulated-venue refusal with a readable reason."""
 
 
-# ── price (from the strategy's own data source) ──────────────────────────────
+# ── price (the market's latest, lib/paper_data) ──────────────────────────────
 
 def _price(env, symbol, cache=None):
-    """Current price for symbol via lib/paper_data (the strategy's fetch_data).
+    """Current price for symbol via lib/paper_data.
     Optional per-operation cache dict avoids re-fetching one symbol twice in a
     single fill/mark. Raises PaperError (not a silent 0) when unpriceable."""
     if cache is not None and symbol in cache:
@@ -187,7 +186,7 @@ def get_spot_bbo(env, symbol):
     return {"bid": p, "ask": p}
 
 
-# Permissive rules — fetch_data is OHLC only, there is no instrument spec, and
+# Permissive rules — a price feed is not an instrument spec, and
 # a notional-derived qty must never be floored to a crypto step. The
 # reconciler's own USD slice threshold is the real floor.
 _OPEN_RULES = {"step": "0.00000001", "min_qty": 0.0, "min_notional": 0.0,

@@ -116,7 +116,7 @@ Windows 在 PowerShell 裡改跑 `npm.cmd install` 與 `npm.cmd start`。
 
 其他有 API 的交易所或券商，agent 可以照 `lib/account_TEMPLATE.py` 與 `lib/order_TEMPLATE.py` 現場寫一份；那份程式沒有經過 Blave 實測。
 
-**模擬交易**不需要金鑰，內建 `lib/account_paper.py` + `lib/order_paper.py`，成交價取策略自己資料來源的最新收盤價（`lib/paper_data.py`）。
+**模擬交易**不需要金鑰，內建 `lib/account_paper.py` + `lib/order_paper.py`，成交價用市場上實際的最新價，不用還原價：加密取 Binance 最新成交、台指期取最新一分鐘、股票取未還原日收盤（`lib/paper_data.py`）。
 
 **資料。**
 

@@ -115,7 +115,7 @@ How a venue gets connected depends on where the agent runs:
 
 For any other exchange or broker with an API, the agent can write a helper from `lib/account_TEMPLATE.py` and `lib/order_TEMPLATE.py`. That code has not been tested by Blave.
 
-**Paper trading** needs no keys. It ships as `lib/account_paper.py` + `lib/order_paper.py` and fills at the latest close from the strategy's own data source (`lib/paper_data.py`).
+**Paper trading** needs no keys. It ships as `lib/account_paper.py` + `lib/order_paper.py` and fills at the market's latest real price, never an adjusted one: crypto at Binance's last trade, TAIFEX futures at the latest minute, stocks at the unadjusted daily close (`lib/paper_data.py`).
 
 **Data.**
 

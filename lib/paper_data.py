@@ -1,24 +1,43 @@
 """
 Paper price resolver — the fill/mark price for the simulated `paper` venue.
 
-The rule (Wei 2026-08-21): a paper order fills at the price the STRATEGY itself
-sees, from the STRATEGY's own data source — never an independent public feed.
-Two strategies on the same symbol can pull it from different endpoints and even
-different adjustments (crypto `fetch_kline`, futures `fetch_db_kline`). So we resolve the
-symbol back to the strategy trading it and call that strategy's `fetch_data`,
-taking the latest bar's Close as "the current price".
+The rule (Wei 2026-10-20): a paper order fills at the latest price actually
+quoted on the market, never a dividend/split-adjusted one. It replaces the
+08-21 rule (the trading strategy's own fetch_data), under which a 4h strategy
+filled at a close up to four hours old and an adjusted series filled at a
+level nobody ever quoted.
+  * crypto (…USDT / …USDC — stock perps like NVDAUSDT included): Binance USDT-M
+    `/fapi/v1/ticker/price`, the last trade. Keyless, one weight per call, and
+    the market lib.data's klines come from (fetch_kline is fapi), so a backtest
+    and its paper fills read one market. Spot rows price off the perp too (a
+    few bp of basis). Binance unreachable (a blocked region, an outage) → the
+    latest closed 1m bar of the same market via Blave /kline; a symbol Binance
+    does not list (-1121) has no price — not even a strategy's own exchange.
+  * TAIFEX futures (TXF/MXF/TMF, stock futures CDF…): the latest 1m Close of
+    the continuous near-month series (Blave, uncached: the latest minute the
+    server has). That series is what the strategies read,
+    so the roll is the one they see: settlement day is the expiring month all
+    day, the next month from the 15:00 session. MXF/TMF price off TXF (one
+    index). A closed market answers its last minute. No Blave data access on
+    the desktop → TAIFEX's own daily close (TXF family only).
+  * TW stocks (Wei 2026-10-18): the UNADJUSTED daily close (a TW stock has no
+    live price paper could trade on) — the price a broker app shows and the one
+    the portfolio page turns TWD into shares with (lib/runner.tw_fetch_closes),
+    so the shares on the page are the shares the paper account buys. A symbol
+    an intraday Type A trades takes its latest unadjusted bar (_tw_stock_price).
+  * US stocks (a symbol a strategy fetches with fetch_usstock_price): Yahoo's
+    unadjusted daily close. lib.data refuses Yahoo on every live tick, so today
+    a US paper order is refused (PaperNoPrice) until US strategies may go live.
+  * anything else (fetch_db_kline CME/ICE futures): the owning strategy's
+    fetch_data, latest Close — that series is the front contract's own price.
+Nothing priced → PaperNoPrice: an entry is refused, a close falls back to the
+row's entry (order_paper._pos_mark) so a position never becomes unflattenable.
 
-TW stocks are the exception (Wei 2026-10-18): every TW stock fills and marks at
-the UNADJUSTED daily close — the price a broker app shows and the one the
-portfolio page turns TWD into shares with (lib/runner.tw_fetch_closes), so the
-shares on the page are the shares the paper account buys. A dividend-adjusted
-close is anchored at its fetch window's start (2330 on 2026-10-16: 2420 from a
-10-day window, 2755.89 from 2020) and sized ~12% fewer shares than the page.
 Dividends are not booked: on an ex-date the unadjusted close drops and the
 paper equity drops with it, never paid back (no cash dividend credited, no
 stock-dividend shares added), so paper trails a dividend-adjusted backtest by
-the yield. The own-positions book diffs fill-time cost, not the mark, so an
-ex-date drop sends no order.
+the yield (TW and US alike). The own-positions book diffs fill-time cost, not
+the mark, so an ex-date drop sends no order.
 
 One USD account, any asset (product decision B). A NOTIONAL position needs no
 FX: the reconciler sizes qty = USD ÷ price, so PnL = USD_notional × (mark/entry
@@ -55,15 +74,13 @@ _SYMBOL_RE = re.compile(r'^\s*SYMBOL\s*=\s*["\']([^"\']+)["\']', re.M)
 # reloading on every fill/mark would re-exec module-level code needlessly.
 _mod_cache = {}
 
-# Price cache: fetch_data is a BACKTEST loader — one call can pull full history
-# since 2018 plus several auxiliary datasets, just to read the last Close. The
-# account reader marks every position and calls get_equity/get_positions/
-# get_holdings each minute (3× snapshot→settle→equity), and a fill's leverage
-# check re-prices every held symbol — without a cache that is dozens of
-# full-history pulls a minute per venue, which blows account_reader's 60s/venue
-# SIGALRM budget and hammers data-api. A short process-level TTL collapses all
-# of that to one pull per symbol per window. Stale-by-≤TTL is fine: the price
-# IS a bar Close (1m+), not a live tick, and paper never claims tick precision.
+# Price cache: the account reader marks every position and calls get_equity/
+# get_positions/get_holdings each minute (3× snapshot→settle→equity), and a
+# fill's leverage check re-prices every held symbol — without a cache that is
+# dozens of requests a minute per venue (and a full-history pull for an owner
+# fetch_data), which blows account_reader's 60s/venue SIGALRM budget. A short
+# process-level TTL collapses it to one read per symbol per window; paper never
+# claims tick precision.
 _PRICE_TTL_S = 30
 _price_cache = {}  # symbol -> (fetched_at, price, strategy_name)
 
@@ -162,7 +179,7 @@ def _last_close(df):
     """Latest bar Close as a float, tolerant of column casing (backtest uses
     'Close'; be lenient in case a source returns 'close')."""
     if df is None or len(df) == 0:
-        raise PaperNoPrice("strategy fetch_data returned no rows")
+        raise PaperNoPrice("the price source returned no rows")
     row = df.iloc[-1]
     for col in ("Close", "close", "Open", "open"):
         if col in df.columns:
@@ -176,17 +193,11 @@ class PaperNoPrice(Exception):
 
 
 def current_price(symbol, env, max_age=_PRICE_TTL_S):
-    """Current price for `symbol` from the trading strategy's own data source,
-    served from a short process-level cache (see _price_cache). Returns
-    (price, strategy_name).
-
-    TW stocks: the unadjusted daily close (module docstring), name None.
-    Type A/C: the strategy's fetch_data, latest Close. Fallback when no bar
-    strategy claims the symbol (Type B / manual / not-yet-run): a generic
-    1m crypto kline via the same Blave API — best-effort, and it RAISES
-    (PaperNoPrice) rather than guessing when even that has no data, so a paper
-    fill never books against a made-up price. `max_age=0` forces a fresh pull.
-    """
+    """Latest market price for `symbol` (module docstring: which market, which
+    feed), served from a short process-level cache (see _price_cache). Returns
+    (price, strategy_name) — the name only when an owner's fetch_data priced
+    it. RAISES PaperNoPrice rather than guessing, so a paper fill never books
+    against a made-up price. `max_age=0` forces a fresh read."""
     hit = _price_cache.get(symbol)
     if hit and max_age and (time.time() - hit[0]) < max_age:
         return hit[1], hit[2]
@@ -195,33 +206,148 @@ def current_price(symbol, env, max_age=_PRICE_TTL_S):
     return price, name
 
 
+_CRYPTO_QUOTES = ("USDT", "USDC")
+
+
 def _resolve_price(symbol, env):
     hdrs = _hdrs(env)
-    if is_tw_stock(symbol):
+    sym = _norm(symbol)
+    if is_tw_stock(sym):
         return _tw_stock_price(symbol, hdrs), None
+    if _txf_root(sym) or _TAIFEX_RE.match(sym):
+        return _taifex_last(sym, hdrs), None
+    if sym.endswith(_CRYPTO_QUOTES):
+        return _crypto_last(sym, hdrs), None
+    if _us_owned(sym):
+        return _us_last(symbol), None
     name = _resolve_strategy(symbol)
-    if name:
-        mod = _load_strategy(name)
+    if not name:
+        raise PaperNoPrice(f"no market price for {symbol}: not crypto, TAIFEX, a TW stock, "
+                           f"or a symbol a strategy trades")
+    try:
+        return _last_close(_load_strategy(name).fetch_data(hdrs)), name
+    except PaperNoPrice:
+        raise
+    except Exception as e:
+        raise PaperNoPrice(f"{name}.fetch_data failed for {symbol}: {type(e).__name__}: {e}")
+
+
+_BINANCE_PRICE = "https://fapi.binance.com/fapi/v1/ticker/price"
+
+
+class _NotListed(Exception):
+    pass
+
+
+def _binance_last(sym):
+    """Binance USDT-M last trade. Two tries and no long Retry-After wait: a
+    blocked region must not eat the account reader's 60s budget."""
+    import requests
+    from lib.data import _binance_get
+    try:
+        r = _binance_get(_BINANCE_PRICE, {"symbol": sym}, max_retries=2, timeout=10, max_wait=5)
+    except requests.HTTPError as e:
+        if '"code":-1121' in str(e).replace(" ", ""):
+            raise _NotListed(sym)
+        raise
+    px = float(r.json()["price"])
+    if not (math.isfinite(px) and px > 0):
+        raise ValueError(f"Binance price {px!r}")
+    return px
+
+
+# Binance unreachable once → the rest of this process skips it for a while: a timing-out
+# host times every held symbol out in turn, past the account reader's budget
+_BINANCE_SKIP_S = 60
+_binance_down_at = [0.0]
+
+
+def _crypto_last(sym, hdrs):
+    first = "skipped: unreachable moments ago"
+    if time.time() - _binance_down_at[0] >= _BINANCE_SKIP_S:
         try:
-            df = mod.fetch_data(hdrs)
-            return _last_close(df), name
-        except PaperNoPrice:
-            raise
+            return _binance_last(sym)
+        except _NotListed:
+            raise PaperNoPrice(f"{sym} is not listed on Binance USDT-M futures — no market price")
         except Exception as e:
-            raise PaperNoPrice(f"{name}.fetch_data failed for {symbol}: "
-                               f"{type(e).__name__}: {e}")
-    # No bar strategy owns this symbol (Type B crypto / manual, a Type C
-    # component): best-effort generic 1m crypto kline over a short recent
-    # window. Anything with no such feed RAISES rather than guessing.
+            first = f"{type(e).__name__}: {e}"
+            _binance_down_at[0] = time.time()
+    log.warning(f"[paper_data] Binance price for {sym} unavailable ({first}) — Blave 1m kline")
     try:
         from datetime import datetime, timedelta, timezone
         from lib.data import fetch_kline
         start = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
-        df = fetch_kline(_norm(symbol), "1m", start, None, hdrs)
-        return _last_close(df), None
+        return _last_close(fetch_kline(sym, "1m", start, None, hdrs, max_retries=2))
     except Exception as e:
-        raise PaperNoPrice(f"no strategy trades {symbol} and generic price "
-                           f"lookup failed: {type(e).__name__}: {e}")
+        raise PaperNoPrice(f"no market price for {sym}: Binance {first}; "
+                           f"Blave 1m kline {type(e).__name__}: {e}")
+
+
+# Widening windows so a closed market (weekend, Lunar New Year) still answers its last minute
+_TAIFEX_WINDOWS_D = (1, 4, 14)
+
+
+def _taifex_last(sym, hdrs):
+    """Latest 1m Close of a TAIFEX code's continuous near-month series (the
+    uncached server read: a mark must not wait on the monthly cache's tail)."""
+    from datetime import datetime, timedelta, timezone
+    from lib import data
+    # R1 is the near-month alias; R2 (next month) is not this series and is asked as is (400 → no price)
+    code = sym[:-2] if sym.endswith("R1") and len(sym) > 2 else sym
+    root = _txf_root(code)
+    series = "TXF" if root else code
+    for schema in ("1m",) if root else ("1m", "1d"):
+        for days in _TAIFEX_WINDOWS_D:
+            start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+            try:
+                df = data._fetch_twfutures_raw(series, schema, start, None, hdrs)
+            except data.DataAccessError:
+                if root and data.tw_market_public_allowed():
+                    return _last_close(data.fetch_txf_daily_public(
+                        (datetime.now(timezone.utc) - timedelta(days=_TAIFEX_WINDOWS_D[-1])).strftime("%Y-%m-%d"),
+                        None, root))
+                raise PaperNoPrice(f"no TAIFEX price for {sym}: no Blave data access")
+            except Exception as e:
+                raise PaperNoPrice(f"no TAIFEX price for {sym}: {type(e).__name__}: {e}")
+            if df is not None and len(df):
+                return _last_close(df)
+    raise PaperNoPrice(f"no TAIFEX price for {sym} in {_TAIFEX_WINDOWS_D[-1]} days")
+
+
+def _us_owned(sym):
+    """A strategy reads `sym` with fetch_usstock_price (its SYMBOL, or a Type C
+    weight). The ticker alone is not enough: 'BTC' is also a US ETF."""
+    for path in sorted(glob.glob("strategies/*/strategy.py")):
+        try:
+            with open(path) as f:
+                src = f.read()
+        except OSError:
+            continue
+        if "fetch_usstock_price" not in src:
+            continue
+        name = os.path.basename(os.path.dirname(path))
+        if _strategy_symbol(name) == sym:
+            return True
+        try:
+            with open(os.path.join(os.path.dirname(path), "state.json")) as f:
+                w = json.load(f).get("weights")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(w, dict) and sym in {_norm(k) for k in w}:
+            return True
+    return False
+
+
+def _us_last(symbol):
+    """Yahoo's latest final UNADJUSTED daily close (fetch_usstock_price's Close is the
+    adjusted one). lib.data refuses every live tick → PaperNoPrice."""
+    from lib import data
+    try:
+        return _last_close(data._usstock_daily(data._us_symbol(symbol), None))
+    except PaperNoPrice:
+        raise
+    except Exception as e:
+        raise PaperNoPrice(f"no US close for {symbol}: {type(e).__name__}: {e}")
 
 
 # ── TW stocks: price, session ────────────────────────────────────────────────

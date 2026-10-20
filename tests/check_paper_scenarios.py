@@ -48,6 +48,8 @@ import tempfile
 import time
 import traceback
 
+import paper_market
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 MATRIX = os.path.join(os.path.dirname(ROOT), ".claude", "output", "specs",
@@ -536,8 +538,12 @@ class World:
                 return err(req, 401, "50113", "Invalid signature.")
             return None
 
+        market = requests.adapters.HTTPAdapter.send  # paper's market answers (tests/paper_market.py)
+
         def send(adapter, req, **kw):
             url = req.url.split("?")[0]
+            if url == "https://fapi.binance.com/fapi/v1/ticker/price" or "/studio/market/twfutures/ohlcv/" in url:
+                return market(adapter, req, **kw)
             hits.append((req.method, url))
             if down or not url.startswith("https://www.okx.com/"):
                 raise requests.exceptions.ConnectionError(f"[canned] {url} cannot be reached")
@@ -2615,7 +2621,7 @@ def _paper_harness_hook(event, args):
             if p == b or p.startswith(b + os.sep):
                 raise PermissionError("paper harness: %s must never be read" % p)
 sys.addaudithook(_paper_harness_hook)
-'''
+''' + paper_market.SRC
 
 HARNESS_RE = re.compile(r"^- \*\*Harness:\*\*\s*(.+)$")
 HEAD_RE = re.compile(r"^### ([A-Z]{1,2}-\d{2}[a-z]?)\b")
