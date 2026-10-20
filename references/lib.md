@@ -664,7 +664,7 @@ A key without an IP whitelist still binds.
 - `GATEIO_DEMO=true` → `api-testnet.gateapi.io` for futures and spot (keys: APIv4 key with account type TestNet; the old `fx-api-testnet.gateio.ws` is dead). Spot and wallet endpoints on the TestNet are not verified with real keys
 - `BINGX_DEMO=true` is the odd one out: VST paper trading on BingX's own host **with the live keys** — no separate demo key
 
-**Order rejection token** — an order lib that recognises a rejection puts `[order_reject:<kind>]` at the very front of the error message (`lib/reject_token.py`; kinds: `insufficient_margin`, `below_min_size`, `symbol_unavailable`, `key_permission`, `reduce_only_rejected`, `paper_margin`).
+**Order rejection token** — an order lib that recognises a rejection puts `[order_reject:<kind>]` at the very front of the error message (`lib/reject_token.py`; kinds: `insufficient_margin`, `below_min_size`, `symbol_unavailable`, `key_permission`, `reduce_only_rejected`, `paper_margin`, `stock_agreement`).
 The desktop app and the web page translate only that token into a plain sentence; `lib/portfolio._record_order_error` keeps it in front of the 200-character cut even when a caller prefixed the message.
 When writing a new venue lib, classify only codes the venue documents (or a measured live reply) — an unverified code stays untagged and the user sees the raw message.
 Never parse the token yourself to decide what to trade.

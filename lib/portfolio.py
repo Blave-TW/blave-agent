@@ -403,6 +403,23 @@ def _paper_tw_closed_keys(target, diff_actual):
     return set() if tw_session_open(env) else keys
 
 
+def _venue_paused_keys(target, diff_actual):
+    """Keys on the auto-wired venue that it pauses right now (lib.venue_wiring.paused_symbols):
+    held on both sides like a closed TW session — an order would only come back refused
+    every round. Paper, TW brokers and an older lib: none."""
+    try:
+        from lib.venue_wiring import hand_wired_venue, paused_symbols
+        if hand_wired_venue():
+            return set()
+        keys = {k for k in set(target) | set(diff_actual)
+                if ((target.get(k) or {}).get('exchange') or (diff_actual.get(k) or {}).get('exchange')
+                    or book_venue()) != 'paper'}
+        return paused_symbols(keys) if keys else set()
+    except Exception as e:
+        logging.warning(f"[reconcile] venue pause check skipped ({e})")
+        return set()
+
+
 def book_venue():
     """The venue the bot's book is read and written for: the one the reconciler
     trades on (the bound TW broker, else the auto-wired venue). None when no
@@ -3919,6 +3936,11 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
     closed_keys = _paper_tw_closed_keys(target, diff_actual)
     if closed_keys:
         logging.info(f"[reconcile] TW market closed — paper holds {sorted(closed_keys)} until the session")
+    paused = _venue_paused_keys(target, diff_actual)
+    if paused:
+        logging.info(f"[reconcile] venue paused trading — holds {sorted(paused)} until it reopens")
+        closed_keys |= paused
+    if closed_keys:
         target = {k: v for k, v in target.items() if k not in closed_keys}
         diff_actual = {k: v for k, v in diff_actual.items() if k not in closed_keys}
 

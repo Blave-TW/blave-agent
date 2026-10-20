@@ -41,6 +41,11 @@ except ImportError:  # half-updated workspace (lib/reject_token.py not landed): 
                        **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
                                                  "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
+try:
+    from lib import stock_perps
+except ImportError:  # half-updated workspace: plain symbols, as before
+    stock_perps = None
+
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
 LIVE_HOST = "https://api.bybit.com"
@@ -103,6 +108,8 @@ class BybitError(Exception):
 
     def __init__(self, *args, code=None, http_status=None, kind=None):
         kind = kind or reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("bybit"))
+        if kind == _STOCK_AGREEMENT and args:
+            args = (f"要先到 Bybit 簽股票合約協議（{args[0]}）",) + args[1:]
         super().__init__(*((reject_token.tag(kind, args[0]),) + args[1:] if args and kind else args))
         self.code = code
         self.http_status = http_status
@@ -111,7 +118,11 @@ class BybitError(Exception):
 # lib/reject_token kinds, from Bybit's v5 error page: 110004 / 110045 wallet balance and 110007 /
 # 110012 available balance insufficient; 110017 "orderQty will be truncated to zero" (a reduce-only
 # order larger than what is left). Rejected keys: account_bybit._CREDENTIAL.
-_REJECT_CODES = {"110004": reject_token.INSUFFICIENT_MARGIN, "110007": reject_token.INSUFFICIENT_MARGIN,
+# 110126 "You must sign the required agreement before trading this contract": measured on the demo
+# account 2026-10-19/20 placing AMZNUSDT (a stock perp). Only the user signs it (in the app).
+_STOCK_AGREEMENT = getattr(reject_token, "STOCK_AGREEMENT", "stock_agreement")
+_REJECT_CODES = {"110126": _STOCK_AGREEMENT,
+                 "110004": reject_token.INSUFFICIENT_MARGIN, "110007": reject_token.INSUFFICIENT_MARGIN,
                  "110012": reject_token.INSUFFICIENT_MARGIN, "110045": reject_token.INSUFFICIENT_MARGIN,
                  "110017": reject_token.REDUCE_ONLY_REJECTED}
 
@@ -327,10 +338,46 @@ def _floor_to(value, step):
 # Reconciler's four fixed names
 # --------------------------------------------------------------------------
 
+_LINEAR_TTL_S = 6 * 3600
+_linear_list = {"rows": None, "at": 0.0}
+
+
+def _linear_rows(env):
+    """Every linear instrument (one page today: 906 rows, limit 1000), for the stock names."""
+    if _linear_list["rows"] is None or time.time() - _linear_list["at"] > _LINEAR_TTL_S:
+        rows, cursor = [], None
+        while True:
+            res = _public(env, "/v5/market/instruments-info",
+                          {"category": "linear", "limit": 1000, **({"cursor": cursor} if cursor else {})})
+            rows += res.get("list") or []
+            cursor = res.get("nextPageCursor")
+            if not cursor:
+                break
+        _linear_list.update(rows=rows, at=time.time())
+    return _linear_list["rows"]
+
+
+def _linear(env, symbol):
+    """The Bybit name for a canonical symbol: itself, except a Binance US stock perp whose
+    bare name a coin owns here (AMDUSDT → AMDSTOCKUSDT; lib/stock_perps)."""
+    if stock_perps is None or stock_perps.binance_class(symbol) != stock_perps.STOCK:
+        return symbol
+    return stock_perps.venue_name("bybit", symbol, _linear_rows(env)) or symbol
+
+
+def _canonical_symbol(env, venue_sym):
+    """Bybit's linear name → the strategy's (AMDSTOCKUSDT → AMDUSDT). A Binance coin name
+    is taken as is without reading Bybit's list."""
+    if stock_perps is None or not venue_sym or stock_perps.binance_class(venue_sym) == "COIN":
+        return venue_sym
+    return stock_perps.canonical("bybit", venue_sym, _linear_rows(env))
+
+
 def get_contract_rules(env: dict, symbol: str) -> dict:
     """Linear-perp rules for a CANONICAL symbol. Bybit symbols are already
     canonical ('BTCUSDT'), so there is no conversion. contract_value is 1:
     Bybit linear qty IS base units, never a contract count."""
+    symbol = _linear(env, symbol)
     key = ("linear", symbol)
     if key not in _RULES_CACHE:
         rows = _public(env, "/v5/market/instruments-info",
@@ -372,7 +419,7 @@ def _position_rows(env: dict, symbol: str) -> list:
     is either a 10001 hard reject or, worse, an order that opens the OPPOSITE
     leg (the hedge-mode bug this contract exists to prevent)."""
     return _request(env, "GET", "/v5/position/list",
-                    {"category": "linear", "symbol": symbol}).get("list") or []
+                    {"category": "linear", "symbol": _linear(env, symbol)}).get("list") or []
 
 
 def _position_mode(rows) -> int:
@@ -459,7 +506,7 @@ def place_market_order(env: dict, symbol: str, direction: str, qty: float,
         if sized * px < rules["min_notional"]:
             return False
     body = {
-        "category": "linear", "symbol": symbol,
+        "category": "linear", "symbol": _linear(env, symbol),
         "side": _order_side(direction, reduce_only),
         "orderType": "Market", "qty": _floor_str(sized, step),
         "positionIdx": _position_idx(rows, direction),
@@ -497,7 +544,7 @@ def place_protective_orders(env: dict, symbol: str, direction: str,
     if sl_price is None and tp_price is None:
         raise ValueError("place_protective_orders needs sl_price and/or tp_price")
     tick = get_contract_rules(env, symbol)["tick"]
-    body = {"category": "linear", "symbol": symbol, "tpslMode": "Full",
+    body = {"category": "linear", "symbol": _linear(env, symbol), "tpslMode": "Full",
             "positionIdx": _position_idx(_position_rows(env, symbol), direction)}
     if sl_price is not None:
         body["stopLoss"] = _floor_str(sl_price, tick)
@@ -529,7 +576,7 @@ def open_position(env: dict, symbol: str, direction: str, qty: float,
     if sized < rules["min_qty"]:
         return False
     body = {
-        "category": "linear", "symbol": symbol,
+        "category": "linear", "symbol": _linear(env, symbol),
         "side": _order_side(direction, False), "orderType": "Market",
         "qty": _floor_str(sized, step), "tpslMode": "Full",
         "positionIdx": _position_idx(_position_rows(env, symbol), direction),
@@ -569,7 +616,7 @@ def get_bbo(env: dict, symbol: str) -> dict:
     """True best bid/ask — the ticker carries them directly; never substitute
     mark or last price."""
     t = (_public(env, "/v5/market/tickers",
-                 {"category": "linear", "symbol": symbol}).get("list") or [{}])[0]
+                 {"category": "linear", "symbol": _linear(env, symbol)}).get("list") or [{}])[0]
     return {"bid": float(t["bid1Price"]), "ask": float(t["ask1Price"])}
 
 
@@ -580,7 +627,7 @@ def get_mark_price(env: dict, symbol: str) -> float:
     markPrice must not read as 0, which would collapse the min-slice gate to
     the flat floor and re-open the abort/re-dispatch loop it exists to stop."""
     t = (_public(env, "/v5/market/tickers",
-                 {"category": "linear", "symbol": symbol}).get("list") or [{}])[0]
+                 {"category": "linear", "symbol": _linear(env, symbol)}).get("list") or [{}])[0]
     return float(t.get("markPrice") or t.get("lastPrice"))
 
 
@@ -611,7 +658,7 @@ def place_limit_order(env: dict, symbol: str, direction: str, qty: float,
     if rules["min_notional"] and sized * float(price) < rules["min_notional"]:
         return False
     body = {
-        "category": "linear", "symbol": symbol,
+        "category": "linear", "symbol": _linear(env, symbol),
         "side": _order_side(direction, reduce_only), "orderType": "Limit",
         "qty": _floor_str(sized, step), "price": _floor_str(price, tick),
         "timeInForce": "PostOnly" if post_only else time_in_force,
@@ -665,7 +712,7 @@ def cancel_order(env: dict, symbol: str, order_id: str = None,
     returns a status instead of raising (Bybit reports all three as retCode
     110001) — the chase engine treats that as confirmation the order is dead.
     An accepted cancel returns 'cancel_accepted', not 'canceled'."""
-    body = {"category": "linear", "symbol": symbol}
+    body = {"category": "linear", "symbol": _linear(env, symbol)}
     if order_id:
         body["orderId"] = order_id
     elif client_order_id:
@@ -689,18 +736,18 @@ def cancel_all_orders(env: dict, symbol: str):
     TP/SL and trailing stop (no orderFilter: Bybit's cancel-all then covers
     all kinds). Strips the position's protection: only when also closing it."""
     return _request(env, "POST", "/v5/order/cancel-all",
-                    body={"category": "linear", "symbol": symbol})
+                    body={"category": "linear", "symbol": _linear(env, symbol)})
 
 
 def get_open_algo_orders(env: dict, symbol: str) -> list:
     """The conditional rows get_open_orders deliberately hides (stopOrderType
     set: position TP/SL, stop, trailing) — for close/cleanup checks, never the
     orphan sweep. One page of 50; a symbol with more is not a real case."""
-    params = {"category": "linear", "symbol": symbol, "limit": 50}
+    params = {"category": "linear", "symbol": _linear(env, symbol), "limit": 50}
     rows = _request(env, "GET", "/v5/order/realtime", params).get("list") or []
     return [{
         "order_id": r.get("orderId"),
-        "symbol": r.get("symbol"),
+        "symbol": _canonical_symbol(env, r.get("symbol")),
         "side": r.get("side"),
         "stop_order_type": r.get("stopOrderType"),
         "trigger_price": float(r.get("triggerPrice") or 0),
@@ -720,14 +767,14 @@ def get_open_orders(env: dict, symbol: str = None) -> list:
     swapping the category and calling it done."""
     params = {"category": "linear"}
     if symbol:
-        params["symbol"] = symbol
+        params["symbol"] = _linear(env, symbol)
     else:
         params["settleCoin"] = "USDT"
     rows = _request(env, "GET", "/v5/order/realtime", params).get("list") or []
     return [{
         "order_id": r.get("orderId"),
         "client_order_id": r.get("orderLinkId"),
-        "symbol": r.get("symbol"),
+        "symbol": _canonical_symbol(env, r.get("symbol")),
         "side": r.get("side"),
         "qty": float(r.get("qty") or 0),
         "price": float(r.get("price") or 0),

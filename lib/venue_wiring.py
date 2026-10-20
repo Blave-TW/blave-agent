@@ -225,37 +225,28 @@ def _cid():
 # fetch_kline's candles are Binance USDⓈ-M (lib/data.py _BINANCE_KLINES), so Binance's
 # class of a symbol is what the strategy was backtested on. The same ticker can be a
 # coin there and a stock swap elsewhere (OKX BB/QNT/ON-USDT-SWAP, Bybit ONUSDT).
-_BINANCE_INFO = "https://fapi.binance.com/fapi/v1/exchangeInfo"
-_BINANCE_INFO_TTL_S = 6 * 3600
-_BINANCE_INFO_RETRY_S = 300
-_binance_coin = {"rows": None, "at": 0.0, "failed_at": 0.0}
-# BingX is absent: its stock swaps are NCSK…2USD-USDT, a name the lib's symbol mapping never builds
+# BingX is absent: its stock swaps are NCSK…, a name only lib/stock_perps maps to, never a coin's
 _VENUE_LABELS = {"okx": "OKX", "bybit": "Bybit", "gateio": "Gate.io"}
+
+
+def _binance_class(sym):
+    try:
+        from lib import stock_perps
+    except ImportError:
+        return None
+    return stock_perps.binance_class(sym)
 
 
 def _binance_is_coin(sym):
     """True = Binance lists `sym` as a coin (underlyingType COIN); False = any other
     class (stock, index, commodity, FX, one added later); None = unreadable or not listed."""
-    now = time.time()
-    c = _binance_coin
-    if (c["rows"] is None or now - c["at"] > _BINANCE_INFO_TTL_S) \
-            and now - c["failed_at"] > _BINANCE_INFO_RETRY_S:
-        try:
-            import requests
-            r = requests.get(_BINANCE_INFO, timeout=10)
-            r.raise_for_status()
-            c["rows"] = {s["symbol"]: s.get("underlyingType") == "COIN"
-                         for s in r.json()["symbols"]}
-            c["at"] = now
-        except Exception as e:
-            c["failed_at"] = now
-            logging.warning(f"[venue_wiring] Binance exchangeInfo unreadable ({e})")
-    return (c["rows"] or {}).get(sym)
+    t = _binance_class(sym)
+    return None if t is None else t == "COIN"
 
 
 def instrument_gate(symbol, reduce_only=False):
     """Refuse an ENTRY into a stock swap when Binance — the strategy's data — has the
-    same symbol as a coin. Closes always pass (a position bought before this gate must
+    same symbol as a coin, and into a coin when Binance has it as a US stock. Closes always pass (a position bought before this gate must
     still be able to leave). Either side unreadable → allowed and logged: a public
     endpoint blinking must not stop every entry."""
     sym, market = split_key(symbol)
@@ -274,6 +265,8 @@ def instrument_gate(symbol, reduce_only=False):
     if not equity:
         if equity is None:
             logging.warning(f"[venue_wiring] {symbol}: {vid} gave no instrument class — allowed")
+        elif _binance_class(sym) == "EQUITY":
+            raise RuntimeError(f"交易所上的 {sym}（{_VENUE_LABELS[vid]}）是加密幣，不是股票合約，已擋下")
         return
     coin = _binance_is_coin(sym)
     if coin is None:
@@ -282,6 +275,28 @@ def instrument_gate(symbol, reduce_only=False):
         return
     if coin:
         raise RuntimeError(f"交易所上的 {sym}（{_VENUE_LABELS[vid]}）是股票合約，不是加密幣，已擋下")
+
+
+def paused_symbols(keys):
+    """Keys the auto-wired venue pauses right now (order_<vid>.session_open → False; only
+    BingX has one: status 25). Measured 2026-10-19/20: Binance, Bybit, OKX, Gate.io and BingX
+    stock perps all trade 24/7 — Binance's /fapi/v1/tradingSchedule NO_TRADING is the
+    underlying market's calendar (NVDAUSDT printed 4h bars all weekend inside it), so no venue
+    gets a weekend hold: the strategy's own candles have those bars. Unreadable → not held."""
+    env = read_env()
+    vid = detect_venue(env)
+    fn = getattr(importlib.import_module(f"lib.order_{vid}"), "session_open", None) if vid else None
+    out = set()
+    for k in keys if fn else ():
+        sym, market = split_key(k)
+        if market == "spot":
+            continue
+        try:
+            if not fn(env, sym):
+                out.add(k)
+        except Exception as e:
+            logging.warning(f"[venue_wiring] {k}: {vid} session unreadable ({e}) — not held")
+    return out
 
 
 def auto_get_positions():

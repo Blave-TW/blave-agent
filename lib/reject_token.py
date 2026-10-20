@@ -18,8 +18,9 @@ SYMBOL_UNAVAILABLE = "symbol_unavailable"
 KEY_PERMISSION = "key_permission"
 REDUCE_ONLY_REJECTED = "reduce_only_rejected"
 PAPER_MARGIN = "paper_margin"
+STOCK_AGREEMENT = "stock_agreement"  # the account has not signed the venue's stock-perp agreement
 KINDS = (INSUFFICIENT_MARGIN, BELOW_MIN_SIZE, SYMBOL_UNAVAILABLE, KEY_PERMISSION,
-         REDUCE_ONLY_REJECTED, PAPER_MARGIN)
+         REDUCE_ONLY_REJECTED, PAPER_MARGIN, STOCK_AGREEMENT)
 
 _TOKEN_RE = re.compile(r"\[order_reject:([a-z_]+)\] ?")
 

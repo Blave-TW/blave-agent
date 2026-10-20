@@ -25,6 +25,12 @@ except ImportError:  # a file-by-file update that skipped lib/venue_errors.py mu
     venue_errors = None
 
 
+try:
+    from lib import stock_perps
+except ImportError:  # half-updated workspace: stock swaps read under BingX's own names, as before
+    stock_perps = None
+
+
 def _tag(exc, code=None, http_status=None):
     return venue_errors.tag(exc, code, http_status) if venue_errors else exc
 
@@ -461,10 +467,17 @@ def get_positions(env: dict) -> list:
         # the row and the reconciler treats actual as 0 → doubles the position.
         return "short" if float(p.get("positionAmt", 0)) < 0 else "long"
 
+    names = {}
+    if stock_perps and any(str(p.get("symbol", "")).startswith("NC") for p in rows):
+        contracts = _public_get("/openApi/swap/v2/quote/contracts") or []
+        names = {p.get("symbol"): stock_perps.canonical("bingx", p.get("symbol") or "", contracts)
+                 for p in rows if str(p.get("symbol", "")).startswith("NC")}
+
     return [{
-        # canonical dashless uppercase (BingX reports 'BTC-USDT') — the
-        # reconciler keys target/actual on this format
-        "symbol": (p.get("symbol") or "").replace("-", "").upper(),
+        # canonical dashless uppercase (BingX reports 'BTC-USDT'; a stock swap
+        # NCSKNVDA2USD-USDT is the strategy's NVDAUSDT) — the reconciler keys
+        # target/actual on this format
+        "symbol": names.get(p.get("symbol")) or (p.get("symbol") or "").replace("-", "").upper(),
         "side": _side(p),
         "size": abs(float(p.get("positionAmt", 0))),
         "mark_price": _mark_price(p),

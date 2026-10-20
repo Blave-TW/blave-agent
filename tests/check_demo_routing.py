@@ -120,7 +120,15 @@ BUDGET = {"n": 0}
 _BODY = {"retCode": 0, "retMsg": "OK", "result": {}, "code": "0", "data": [], "msg": ""}
 
 
+# lib/stock_perps reads Binance's public exchangeInfo (the strategy's data source) to tell a US
+# stock perp from a coin, whatever venue is bound — keyless, so it is checked apart below
+BINANCE_INFO_READS = []
+
+
 def _fake(method, url, params=None, headers=None, data=None):
+    if url == "https://fapi.binance.com/fapi/v1/exchangeInfo":
+        BINANCE_INFO_READS.append({"method": method.upper(), "headers": dict(headers or {}), "data": data})
+        raise requests.exceptions.ConnectionError("fake: exchangeInfo unread")
     BUDGET["n"] += 1
     if BUDGET["n"] > 40:
         raise _Stop()
@@ -333,6 +341,9 @@ for vid in ("binance", "bybit", "gateio"):
               and (a.get("symbol") == "BTCUSDT" or a.get("contract") == "BTC_USDT"
                    or a.get("currency_pair") == "BTC_USDT")),
           f"audit order_attempt carries demo=True ({vid})")
+
+check(all(r["method"] == "GET" and not r["headers"] and not r["data"] for r in BINANCE_INFO_READS),
+      f"Binance exchangeInfo (lib/stock_perps): {len(BINANCE_INFO_READS)} reads, keyless GETs only")
 
 print("\nALL OK" if not fails else f"\n{fails} FAILED")
 sys.exit(1 if fails else 0)

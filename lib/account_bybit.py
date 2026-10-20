@@ -30,6 +30,10 @@ import time
 import requests
 
 try:
+    from lib import stock_perps
+except ImportError:  # half-updated workspace: stock swaps read under Bybit's own names, as before
+    stock_perps = None
+try:
     from lib import venue_errors
 except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
     venue_errors = None
@@ -237,6 +241,27 @@ def _opt(v, positive=False):
     return f
 
 
+_linear_list = {"rows": None, "at": 0.0}
+
+
+def _public_list(env):
+    if _linear_list["rows"] is not None and time.time() - _linear_list["at"] < 6 * 3600:
+        return _linear_list["rows"]
+    rows, cursor = [], None
+    while True:
+        r = requests.get(f"{_host(env)}/v5/market/instruments-info", headers={"referer": BROKER_REFERER},
+                         params={"category": "linear", "limit": 1000, **({"cursor": cursor} if cursor else {})},
+                         timeout=10)
+        r.raise_for_status()
+        res = r.json().get("result") or {}
+        rows += res.get("list") or []
+        cursor = res.get("nextPageCursor")
+        if not cursor:
+            break
+    _linear_list.update(rows=rows, at=time.time())
+    return rows
+
+
 def get_positions(env: dict) -> list:
     """Open USDT-perp positions. Symbols are already canonical on Bybit
     ('BTCUSDT'), so no mapping is needed. Rows carry entry_price /
@@ -246,11 +271,17 @@ def get_positions(env: dict) -> list:
     rows = _request(env, "GET", "/v5/position/list",
                     {"category": "linear", "settleCoin": "USDT"}).get("list") or []
     positions = []
+    linear = None
     for p in rows:
         size = float(p.get("size") or 0)
         if size == 0:
             continue
         symbol = p.get("symbol", "")
+        if stock_perps and stock_perps.binance_class(symbol) != "COIN":
+            # AMDSTOCKUSDT is the strategy's AMDUSDT (lib/stock_perps)
+            if linear is None:
+                linear = _public_list(env)
+            symbol = stock_perps.canonical("bybit", symbol, linear)
         mark_px = float(p.get("markPrice") or 0)
         # A non-zero position we cannot value must RAISE, never be skipped: a
         # dropped row reads as flat and the reconciler re-buys on top of it.

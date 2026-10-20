@@ -94,7 +94,10 @@ class BinanceError(Exception):
         self.code = code
         self.msg = msg
         kind = kind or _reject_kind(code, msg)
-        super().__init__(reject_token.tag(kind, f"Binance error {code}: {msg or '(empty msg)'} | {path}"))
+        text = f"Binance error {code}: {msg or '(empty msg)'} | {path}"
+        if kind == _STOCK_AGREEMENT:
+            text = f"要先到 Binance 簽股票合約協議（{text}）"
+        super().__init__(reject_token.tag(kind, text))
 
 
 # lib/reject_token kinds, from Binance's official error pages: USDⓈ-M futures
@@ -102,8 +105,11 @@ class BinanceError(Exception):
 # REDUCE_ONLY_MARGIN_CHECK_FAILED) and spot (-2010 NEW_ORDER_REJECTED is shared by
 # many rejections — only its documented "Account has insufficient balance for
 # requested action." message counts). Rejected keys: account_binance._CREDENTIAL.
+# -4411 "Please sign TradFi-Perps agreement contract" is not on the error page; measured on the
+# demo account 2026-10-19/20 placing NVDAUSDT / AMZNUSDT. Only the user signs it (in the app).
+_STOCK_AGREEMENT = getattr(reject_token, "STOCK_AGREEMENT", "stock_agreement")
 _REJECT_CODES = {"-2019": reject_token.INSUFFICIENT_MARGIN, "-2022": reject_token.REDUCE_ONLY_REJECTED,
-                 "-4118": reject_token.REDUCE_ONLY_REJECTED}
+                 "-4118": reject_token.REDUCE_ONLY_REJECTED, "-4411": _STOCK_AGREEMENT}
 
 
 def _reject_kind(code, msg):

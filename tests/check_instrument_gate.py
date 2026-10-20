@@ -4,7 +4,8 @@ has the same symbol as a coin — no network.
 The libs' real get_contract_rules run with only their HTTP read stubbed, so a lib that stops
 reading its venue's class field fails here. Real rows are the venues' public replies as read
 2026-10-19 (OKX BB-USDT-SWAP instCategory 3, Bybit ONUSDT symbolType stock, Gate PAXG_USDT
-contract_type metals); XYZ / ETFX / USO / SOFTBANK are synthetic, one per branch. Unreadable on
+contract_type metals); XYZ / ETFX / USO / SOFTBANK are synthetic, one per branch. The mirror (Binance US
+stock, venue coin) is refused too. Unreadable on
 either side must allow, and a close must always pass — at the gate and through dispatch_order.
 Run: cd blave-agent && .venv/bin/python tests/check_instrument_gate.py
 """
@@ -27,7 +28,7 @@ def check(cond, msg):
 
 BINANCE = {"BTCUSDT": "COIN", "BBUSDT": "COIN", "ONUSDT": "COIN", "PAXGUSDT": "COIN",
            "XYZUSDT": "COIN", "ETFXUSDT": "COIN", "NVDAUSDT": "EQUITY",
-           "USOUSDT": "COMMODITY", "SOFTBANKUSDT": "JP_EQUITY"}
+           "USOUSDT": "COMMODITY", "SOFTBANKUSDT": "JP_EQUITY", "MIRRUSDT": "EQUITY"}
 binance_up = [True]
 
 
@@ -49,7 +50,7 @@ import requests  # noqa: E402
 requests.get = _get
 
 OKX = {"BTC-USDT-SWAP": "1", "BB-USDT-SWAP": "3", "NVDA-USDT-SWAP": "3", "QNT-USDT-SWAP": None,
-       "USO-USDT-SWAP": "3", "SOFTBANK-USDT-SWAP": "3"}
+       "USO-USDT-SWAP": "3", "SOFTBANK-USDT-SWAP": "3", "MIRR-USDT-SWAP": "1"}
 order_okx._send = lambda m, p, env, body=None, params=None, retries=3: [dict(
     {"ctVal": "1", "lotSz": "0.01", "minSz": "0.01", "tickSz": "0.01", "state": "live",
      "last": "8.0"},
@@ -83,6 +84,10 @@ check(refused("NVDAUSDT") is None, "OKX NVDA stock, Binance NVDAUSDT stock too: 
 check(refused("USOUSDT") is None, "OKX stock vs Binance COMMODITY: allowed (only COIN counts)")
 check(refused("SOFTBANKUSDT") is None, "OKX stock vs a Binance class added later: allowed")
 check(refused("QNTUSDT") is None, "OKX row without instCategory: allowed")
+msg = refused("MIRRUSDT")
+check(msg == "交易所上的 MIRRUSDT（OKX）是加密幣，不是股票合約，已擋下",
+      f"OKX coin vs Binance US stock (the mirror): refused ({msg})")
+check(refused("MIRRUSDT", reduce_only=True) is None, "close of the mirror: allowed")
 check(refused("BBUSDT", reduce_only=True) is None, "close of a stock swap: allowed")
 check(refused("BBUSDT@spot") is None, "spot key: not gated")
 
@@ -129,7 +134,8 @@ check(refused("NVDAUSDT") is None, "Binance itself: never gated")
 
 venue[0] = "okx"
 binance_up[0] = False
-vw._binance_coin.update(rows=None, at=0.0, failed_at=0.0)
+from lib import stock_perps  # noqa: E402
+stock_perps._binance.update(rows=None, at=0.0, failed_at=0.0)
 check(refused("BBUSDT") is None, "Binance exchangeInfo unreadable: allowed (fail open)")
 
 print("FAILED" if fails else "all ok")

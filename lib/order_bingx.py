@@ -54,6 +54,11 @@ except ImportError:  # half-updated workspace (lib/reject_token.py not landed): 
                        **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
                                                  "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
+try:
+    from lib import stock_perps
+except ImportError:  # half-updated workspace: plain symbol mapping, as before
+    stock_perps = None
+
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
 LIVE_URL = "https://open-api.bingx.com"
@@ -283,14 +288,52 @@ def _bingx_symbol(sym):
     return sym
 
 
+_CONTRACTS_TTL_S = 600
+_contracts = {"rows": None, "at": 0.0}  # the whole /quote/contracts list; status changes intraday
+_PAUSED = 25  # measured 2026-10-19: status 25 rows answer 109415 "…is pause currently"
+
+
+def _contract_rows(env):
+    now = time.time()
+    if _contracts["rows"] is None or now - _contracts["at"] > _CONTRACTS_TTL_S:
+        _contracts["rows"] = _request("GET", "/openApi/swap/v2/quote/contracts", env, signed=False) or []
+        _contracts["at"] = now
+    return _contracts["rows"]
+
+
+def _swap_symbol(env, sym):
+    """_bingx_symbol, except a Binance US stock perp goes to BingX's own NCSK… name
+    (lib/stock_perps); one with no BingX listing raises symbol_unavailable."""
+    if "-" in sym or stock_perps is None or stock_perps.binance_class(sym.upper()) != stock_perps.STOCK:
+        return _bingx_symbol(sym)  # a coin never reads the contract list here
+    return stock_perps.venue_name("bingx", sym.upper(), _contract_rows(env)) or _bingx_symbol(sym)
+
+
+def _canonical_symbol(env, venue_sym):
+    """BingX's swap name → the strategy's (NCSKNVDA2USD-USDT → NVDAUSDT, BTC-USDT → BTCUSDT)."""
+    plain = str(venue_sym or "").replace("-", "").upper()
+    if stock_perps is None or not plain.startswith("NC"):
+        return plain
+    return stock_perps.canonical("bingx", plain, _contract_rows(env))
+
+
+def session_open(env, symbol):
+    """False while BingX pauses this contract (status 25) — the reconciler holds it like a
+    closed session instead of sending an order that comes back 109415 every round."""
+    sym = _swap_symbol(env, symbol)
+    if not sym.startswith("NC"):
+        return True  # coins: no pause read, as before
+    row = next((r for r in _contract_rows(env) if r.get("symbol") == sym), None)
+    return not (row and str(row.get("status")) == str(_PAUSED))
+
+
 def get_contract_rules(env, symbol):
     """Rules for one symbol. {'qty_precision', 'price_precision', 'min_qty',
     'min_notional', 'active'} — precisions are DECIMAL PLACES (BingX swap gives
     digit counts, not tick sizes). Cached per process."""
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     if symbol not in _rules_cache:
-        rows = _request("GET", "/openApi/swap/v2/quote/contracts", env, signed=False) or []
-        for r in rows:
+        for r in _contract_rows(env):
             sym = r.get("symbol")
             if not sym:
                 continue
@@ -317,7 +360,7 @@ def format_qty(env, symbol, qty, price=None):
     floored qty is below min_qty, or below min_notional when price is given."""
     rules = get_contract_rules(env, symbol)
     if not rules["active"]:
-        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for API trading"))
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"BingX 不開放這檔 API 下單（{symbol} is not open for API trading）"))
     q = _floor_to_precision(qty, rules["qty_precision"])
     if float(q) < rules["min_qty"]:
         raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
@@ -391,7 +434,7 @@ def _is_order_gone(err, codes):
             or "already cancel" in msg)
 
 
-def _normalize_open_rows(orders):
+def _normalize_open_rows(orders, canon=None):
     """In-place: give each open-order row the reconciler contract's trio —
     symbol (canonical dashless uppercase), order_id, client_order_id (BingX
     responses spell it clientOrderId; accept every spelling) — while keeping
@@ -400,7 +443,7 @@ def _normalize_open_rows(orders):
         if "orderId" in o:
             o["orderId"] = str(o["orderId"])
         o["order_id"] = str(o.get("orderId", ""))
-        o["symbol"] = str(o.get("symbol", "")).replace("-", "").upper()
+        o["symbol"] = (canon or (lambda v: str(v).replace("-", "").upper()))(o.get("symbol", ""))
         o["client_order_id"] = (o.get("clientOrderId") or o.get("clientOrderID")
                                 or o.get("newClientOrderId") or "")
     return orders
@@ -437,7 +480,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     capital ID is what ccxt ships in production), while query RESPONSES come
     back as clientOrderId."""
     guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     mode = get_position_mode(env)
     if reduce_only:
         side = "SELL" if direction == "long" else "BUY"
@@ -477,7 +520,7 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
     the order surfaces as CANCELED via get_order and the chase executor
     accounts it the same way. price is floored to the symbol's tick here
     (callers pass a raw float)."""
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     mode = get_position_mode(env)
     if reduce_only:
         side = "SELL" if direction == "long" else "BUY"
@@ -518,7 +561,7 @@ def get_order(env, symbol, order_id):
     """Order details by orderId. Normalized: status, avg_price, executed_qty,
     orig_qty, commission (abs — BingX returns it negative), client_order_id,
     plus the raw dict under 'raw'."""
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     data = _request("GET", "/openApi/swap/v2/trade/order", env,
                     {"symbol": symbol, "orderId": str(order_id)})
     o = _unwrap_order(data)
@@ -566,11 +609,11 @@ def get_open_orders(env, symbol=None):
     """All open orders (entry + conditional). Returns a list of raw order
     dicts, each augmented with the reconciler contract's symbol (canonical
     dashless) / order_id / client_order_id trio (see _normalize_open_rows)."""
-    symbol = _bingx_symbol(symbol) if symbol else symbol
+    symbol = _swap_symbol(env, symbol) if symbol else symbol
     params = {"symbol": symbol} if symbol else {}
     data = _request("GET", "/openApi/swap/v2/trade/openOrders", env, params) or {}
     orders = data.get("orders", []) if isinstance(data, dict) else data
-    return _normalize_open_rows(orders)
+    return _normalize_open_rows(orders, lambda v: _canonical_symbol(env, v))
 
 
 def get_bbo(env, symbol):
@@ -580,7 +623,7 @@ def get_bbo(env, symbol):
     best-first): best bid = max, best ask = min over the returned levels.
     Fails loud on an empty book."""
     data = _request("GET", "/openApi/swap/v2/quote/depth", env,
-                    {"symbol": _bingx_symbol(symbol), "limit": "5"},
+                    {"symbol": _swap_symbol(env, symbol), "limit": "5"},
                     signed=False) or {}
     bids, asks = data.get("bids") or [], data.get("asks") or []
     if not bids or not asks:
@@ -595,7 +638,7 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
     already filled / cancelled / unknown (109421, legacy 80016/80017) returns
     {'status': 'already_gone', ...} instead of raising — the caller always
     re-reads fills afterwards. Other refusals still raise BingXError."""
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     params = {"symbol": symbol}
     if order_id:
         params["orderId"] = str(order_id)
@@ -618,7 +661,7 @@ def cancel_all_orders(env, symbol):
     """Cancel ALL open orders for a symbol (including protective orders —
     only do this when also closing the position)."""
     return _request("DELETE", "/openApi/swap/v2/trade/allOpenOrders", env,
-                    {"symbol": _bingx_symbol(symbol)})
+                    {"symbol": _swap_symbol(env, symbol)})
 
 
 # ── protective orders (standalone) ───────────────────────────────────────────
@@ -640,7 +683,7 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
     VST quirk: the demo environment rejects closePosition=true with 109400
     ("parameter quantity or stopPrice is must") — on BINGX_DEMO=true, pass an
     explicit qty instead."""
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     mode = get_position_mode(env)
     close_side = "SELL" if direction == "long" else "BUY"
     placed = {}
@@ -704,7 +747,7 @@ def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
     Returns {'entry': confirmed order dict, 'protection': [raw conditional
     orders found on the exchange]}. Raises ProtectionFailed if sl/tp was
     requested but no conditional order is visible after the fill."""
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     entry = place_market_order(
         env, symbol, direction, qty,
         client_order_id=client_order_id,
@@ -735,7 +778,7 @@ def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
 def close_position(env, symbol, direction, qty, client_order_id=None):
     """Market-close (part of) an existing position, confirmed. direction is the
     POSITION being closed ('long'|'short')."""
-    symbol = _bingx_symbol(symbol)
+    symbol = _swap_symbol(env, symbol)
     return place_market_order(
         env, symbol, direction, qty,
         client_order_id=client_order_id, reduce_only=True,
@@ -750,7 +793,7 @@ def get_fills(env, symbol, start_ms, end_ms):
     (snake_case), filledTime is an ISO-8601 STRING (not ms). tradingUnit=COIN
     is sent so `volume` is already coin quantity (CONT would mean contracts)."""
     data = _request("GET", "/openApi/swap/v2/trade/allFillOrders", env, {
-        "symbol": _bingx_symbol(symbol),
+        "symbol": _swap_symbol(env, symbol),
         "startTs": str(int(start_ms)),
         "endTs": str(int(end_ms)),
         "tradingUnit": "COIN",
@@ -768,7 +811,7 @@ def get_mark_price(env, symbol):
     """Live mark price (public premiumIndex) — the cross-venue wiring contract
     for USD→qty conversion (lib/venue_wiring.py)."""
     data = _request("GET", "/openApi/swap/v2/quote/premiumIndex", env,
-                    {"symbol": _bingx_symbol(symbol)}, signed=False)
+                    {"symbol": _swap_symbol(env, symbol)}, signed=False)
     row = data[0] if isinstance(data, list) else data
     return float(row["markPrice"])
 
@@ -778,13 +821,13 @@ def set_leverage(env, symbol, leverage, side="LONG"):
     both sides for symmetry. Never silently inherit: query first, set only on
     user instruction (see references/manager.md confirmation rules)."""
     return _request("POST", "/openApi/swap/v2/trade/leverage", env, {
-        "symbol": _bingx_symbol(symbol), "side": side, "leverage": str(int(leverage)),
+        "symbol": _swap_symbol(env, symbol), "side": side, "leverage": str(int(leverage)),
     })
 
 
 def get_leverage(env, symbol):
     data = _request("GET", "/openApi/swap/v2/trade/leverage", env,
-                    {"symbol": _bingx_symbol(symbol)}) or {}
+                    {"symbol": _swap_symbol(env, symbol)}) or {}
     return {
         "long": int(data.get("longLeverage") or data.get("leverage") or 0),
         "short": int(data.get("shortLeverage") or data.get("leverage") or 0),

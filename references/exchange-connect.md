@@ -168,7 +168,20 @@ do not assume casing or invent names.
    `BB-USDT-SWAP` and Bybit `ONUSDT` are stocks. The order error says so in
    Chinese; tell the user that venue's contract under this ticker is a stock,
    not the coin the strategy was backtested on, and never place it by hand.
-   Closes are never refused.
+   The mirror case is refused too: Binance has the ticker as a US stock, the
+   venue as a coin. Closes are never refused.
+   US stock perps (`fetch_kline("NVDAUSDT")`, Binance `underlyingType`
+   EQUITY) trade under the venue's own name where it differs — BingX
+   `NCSKNVDA2USD-USDT`, Bybit `AMDSTOCKUSDT` — mapped from each venue's public
+   contract list by `lib/stock_perps.py`, positions read back under the
+   strategy's name. Keep using `NVDAUSDT` everywhere; never type the venue
+   name. No listing on the bound venue → `symbol_unavailable` ("BingX 沒有這檔
+   股票永續"). `[order_reject:stock_agreement]` (Binance -4411, Bybit 110126)
+   means the account has not signed the venue's stock-perp agreement: tell the
+   user to sign it in the exchange app — never sign it for them via the API.
+   All five venues trade stock perps 24/7 (weekends included); a BingX
+   contract it pauses (status 25) is held until it reopens, like a closed
+   session, and shows under `market_closed` in `manager/last_reconcile.json`.
 
 8. **Done = the two files exist and rule 5 passed.** The machine's portfolio
    reporter detects the files and the web page flips the venue to ready on its
