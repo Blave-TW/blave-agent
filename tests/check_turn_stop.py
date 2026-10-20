@@ -23,13 +23,15 @@ What it protects:
      Codex's pipe, so Codex is held until the script exits). A hand-written script is
      kept by the marker lib/order_* writes at import; every lib/order_*.py writes it.
      The reply and the history say what was left running; the history keeps the receipts.
-  8. Windows (Toolhelp / taskkill swapped for POSIX stand-ins): under Codex a marked money
-     script holds Codex until it is done; markers are checked against the table, never
+  8. Windows (Toolhelp / TerminateProcess swapped for POSIX stand-ins): under Codex a marked
+     money script holds Codex until it is done; markers are checked against the table, never
      with os.kill(pid, 0) (TerminateProcess there); no money script = Codex killed at once.
+     Fail-closed: an unreadable table (Windows or ps) holds Codex; a marker that appears while
+     the handles are opened cancels the kill; a dead pid's marker is cleared.
   9. agent_turn and the runtime modules it imports spawn nothing but the engine and its
      probes (static): kill_tree does not match a direct child's argv.
 
-claude_agent_sdk is stubbed. POSIX only (the Windows kill path is taskkill /T).
+claude_agent_sdk is stubbed. POSIX only (the Windows path runs with Toolhelp / TerminateProcess stubbed).
 Run: cd blave-agent && python3 tests/check_turn_stop.py
 """
 import asyncio, contextlib, io, json, os, re, signal, subprocess, sys, tempfile, textwrap, threading, time, types
@@ -521,10 +523,23 @@ check("Windows + Codex: a marker outside this turn (or left by a dead pid) does 
 check("Windows + Claude: the engine goes even with a marked tool (its tools write to files)",
       turn_stop.nt_plan(WPAIRS, 200, {203}, False) == ([201], []))
 
-_real = (turn_stop._NT, turn_stop._windows_pairs, turn_stop._taskkill, turn_stop._money_pids)
+_NT_NAMES = ("_NT", "_windows_pairs", "_taskkill", "_nt_open", "_nt_terminate", "_nt_close", "_money_pids")
+_real = {n: getattr(turn_stop, n, None) for n in _NT_NAMES}
+_terminated = []
 turn_stop._NT = True
 turn_stop._windows_pairs = lambda: turn_stop._posix_table()[0]
-turn_stop._taskkill = lambda pid: os.kill(pid, signal.SIGKILL)   # taskkill /F /PID, no /T
+# TerminateProcess on one pid, never the tree (/T); _taskkill is what the older code called
+def _sigkill(pid):
+    _terminated.append(pid)
+    with contextlib.suppress(OSError):
+        os.kill(pid, signal.SIGKILL)
+    return True
+
+
+turn_stop._taskkill = _sigkill
+turn_stop._nt_open = lambda pid: pid
+turn_stop._nt_terminate = _sigkill
+turn_stop._nt_close = lambda h: None
 
 
 def _no_kill0():
@@ -549,6 +564,7 @@ with open(fake_codex_w, "w") as f:
         import time; time.sleep(60)
     """))
 os.chmod(fake_codex_w, 0o755)
+_codex_w_src = open(fake_codex_w).read()
 flag = os.path.join(_tmp, f"stop-{time.monotonic_ns()}")
 os.environ[turn_stop.ENV] = flag
 def stopper_w():
@@ -576,7 +592,88 @@ check("Windows + Codex, no money script: Codex is killed and the turn ends < 2s"
       and codex_pid.get("codex") and not alive(codex_pid["codex"]), (elapsed, codex_pid))
 with contextlib.suppress(OSError, TypeError):
     os.kill(codex_pid.get("tool"), signal.SIGKILL)   # Windows leaves the tools to finish; by pid
-turn_stop._NT, turn_stop._windows_pairs, turn_stop._taskkill, turn_stop._money_pids = _real
+
+# Fail-closed (re-audit c30009c B1): an unreadable process table under Codex holds, never frees
+def _no_table():
+    raise OSError("CreateToolhelp32Snapshot failed")
+
+
+_terminated.clear()
+turn_stop._windows_pairs = _no_table
+check("Windows + Codex, table unreadable: nothing killed, held like a money script",
+      turn_stop.kill_tree(200, True) == ([], ["order script"]) and not _terminated, _terminated)
+turn_stop._windows_pairs = lambda: []
+check("Windows + Codex, empty table: held", turn_stop.kill_tree(200, True) == ([], ["order script"]) and not _terminated)
+check("Windows + Claude, table unreadable: nothing to hold for", turn_stop.kill_tree(200, False) == ([], []))
+turn_stop._NT = False
+_real_ps = turn_stop._posix_table
+turn_stop._posix_table = _no_table
+check("POSIX + Codex, ps failed: held", turn_stop.kill_tree(None, True) == ([], ["order script"]))
+turn_stop._posix_table = lambda: ([], {})
+check("POSIX + Codex, ps gave nothing: held", turn_stop.kill_tree(None, True) == ([], ["order script"]))
+turn_stop._posix_table = _real_ps
+turn_stop._NT = True
+
+# …end to end: Codex pipes a marked script's output and the table never reads — it still finishes
+turn_stop._windows_pairs = _no_table
+turn_stop.HOLD_MAX_S = 10
+led_w2 = os.path.join(_tmp, "ledger-win-blind")
+fake_codex_w2 = os.path.join(_tmp, "codex-win-blind")
+with open(fake_codex_w2, "w") as f:
+    f.write(_codex_w_src.replace(repr(led_w), repr(led_w2)))
+os.chmod(fake_codex_w2, 0o755)
+flag = os.path.join(_tmp, f"stop-{time.monotonic_ns()}")
+os.environ[turn_stop.ENV] = flag
+def stopper_w2():
+    while not os.path.exists(led_w2):
+        time.sleep(0.02)
+    open(flag, "w").close()
+threading.Thread(target=stopper_w2, daemon=True).start()
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    asyncio.run(at.run_turn("s10", "把 XRP 平掉", "sonnet", at.LocalSink("s10"), engine="codex", codex_bin=fake_codex_w2, ui_lang="zh"))
+check("Windows + Codex, table unreadable: stopped after 'cancelled', the script still closes and writes the ledger",
+      ledger_wait(led_w2, ["cancelled", "closed", "ledger"], 1), open(led_w2).read())
+turn_stop.HOLD_MAX_S = 120
+
+# From here the pids are made up: record, never signal (201 may be a real process on this box)
+turn_stop._nt_terminate = lambda h: _terminated.append(h) or True
+turn_stop._taskkill = lambda pid: _terminated.append(pid)
+
+# Marker written between the snapshot and the kill (B2): the handles are opened, the table and the
+# markers read again, and nothing is terminated. Engine 201 → shell 202 → script 203.
+_marks = set()
+turn_stop._windows_pairs = lambda: [(201, 200), (202, 201), (203, 202)]
+turn_stop._marker_pids, _real_marker = (lambda: set(_marks)), turn_stop._marker_pids
+turn_stop._nt_open = lambda pid: _marks.add(203) or pid     # the script imports lib/order_* right now
+_terminated.clear()
+got = turn_stop.kill_tree(200, True)
+check("Windows + Codex: a marker that appears just before the kill → Codex is not killed",
+      got == ([], ["order script"]) and not _terminated, (got, _terminated))
+_marks.clear()
+turn_stop._nt_open = lambda pid: pid
+check("…and with no marker the engine is terminated, by handle", turn_stop.kill_tree(200, True) == ([201], [])
+      and _terminated == [201], _terminated)
+turn_stop._marker_pids = _real_marker
+
+# Leftover markers on Windows (B3): one whose pid is not in a readable table goes; a live one stays;
+# an unreadable table removes nothing.
+os.makedirs(turn_stop.MONEY_PID_DIR, exist_ok=True)
+for _p in ("203", "999991"):
+    open(os.path.join(turn_stop.MONEY_PID_DIR, _p), "w").close()
+turn_stop._windows_pairs = _no_table
+turn_stop.kill_tree(200, False)
+check("Windows: an unreadable table removes no marker",
+      {"203", "999991"} <= set(os.listdir(turn_stop.MONEY_PID_DIR)))
+turn_stop._windows_pairs = lambda: [(201, 200), (202, 201), (203, 202)]
+turn_stop.kill_tree(200, False)
+_left = set(os.listdir(turn_stop.MONEY_PID_DIR))
+check("Windows: a dead pid's marker is removed, a live one kept", "999991" not in _left and "203" in _left, _left)
+with contextlib.suppress(OSError):
+    os.remove(os.path.join(turn_stop.MONEY_PID_DIR, "203"))
+
+for _n, _v in _real.items():
+    if _v is not None:
+        setattr(turn_stop, _n, _v)
 
 # Codex hold is capped: a money script that outlives HOLD_MAX_S no longer holds the turn
 turn_stop.HOLD_MAX_S = 1.0
@@ -620,7 +717,7 @@ turn_stop.HOLD_MAX_S = 120
 # kill_tree treats every direct child of agent_turn as the engine and does not match its argv
 # (the CLI's --disallowedTools names president_worker). A money script started straight from
 # agent_turn — or any runtime module it imports — would be spared by nothing. Known spawns:
-# codex_engine (codex exec and its --version / features probes), turn_stop (ps, taskkill).
+# codex_engine (codex exec and its --version / features probes), turn_stop (ps).
 # A new one fails here: check it is the engine or a short probe, then update the count.
 import ast as _ast
 _RT = os.path.join(ROOT, "runtime")
@@ -650,8 +747,8 @@ while _todo:
                     or _a.startswith(("spawn", "exec"))))):
                 _spawns.setdefault(_m, []).append(f"{_o}.{_a}:{_n.lineno}")
 _counts = {m: len(v) for m, v in _spawns.items() if v}
-check("agent_turn's in-process modules spawn only the engine and its probes (codex_engine 3, turn_stop 2)",
-      _counts == {"codex_engine": 3, "turn_stop": 2} and "agent_turn" in _seen and "turn_stop" in _seen,
+check("agent_turn's in-process modules spawn only the engine and its probes (codex_engine 3, turn_stop 1: ps)",
+      _counts == {"codex_engine": 3, "turn_stop": 1} and "agent_turn" in _seen and "turn_stop" in _seen,
       {m: v for m, v in _spawns.items() if v})
 
 print("\n" + ("ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}"))

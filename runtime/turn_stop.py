@@ -234,10 +234,75 @@ def _windows_pairs():
     return pairs
 
 
-def _taskkill(pid):
-    subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True,
-                   timeout=10, stdin=subprocess.DEVNULL,
-                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+# The label a Stop reports when it cannot see the process table: under Codex, a money script
+# may be in there, so the engine is held (to HOLD_MAX_S) exactly as if one were.
+UNSEEN = "order script"
+
+
+def _nt_open(pid):
+    """A handle that may terminate `pid`, or None. Held across the re-check in _nt_kill, so
+    the process killed is the one checked (no pid reuse in between)."""
+    import ctypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.OpenProcess.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_uint]
+    k32.OpenProcess.restype = ctypes.c_void_p
+    return k32.OpenProcess(0x0001, False, pid) or None  # PROCESS_TERMINATE
+
+
+def _nt_terminate(handle):
+    import ctypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    return bool(k32.TerminateProcess(handle, 1))
+
+
+def _nt_close(handle):
+    import ctypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    k32.CloseHandle(handle)
+
+
+def _nt_pairs():
+    """Toolhelp table, or [] when it cannot be read."""
+    try:
+        return _windows_pairs()
+    except Exception as e:
+        print(f"[turn_stop] process table unreadable: {e}", file=sys.stderr)
+        return []
+
+
+def _clear_dead_markers(pairs):
+    """Windows has no os.kill(pid, 0) to tell a dead marker (it is TerminateProcess there): a
+    marker whose pid is not in a readable Toolhelp table is left by a process that is gone."""
+    live = {pid for pid, _ in pairs}
+    for pid in _marker_pids() - live:
+        try:
+            os.remove(os.path.join(MONEY_PID_DIR, str(pid)))
+        except OSError:
+            pass
+
+
+def _nt_kill(root, hold_engine):
+    pairs = _nt_pairs()
+    if not pairs:
+        return [], ([UNSEEN] if hold_engine else [])
+    _clear_dead_markers(pairs)
+    kill, labels = nt_plan(pairs, root, _marker_pids(), hold_engine)
+    handles = {pid: _nt_open(pid) for pid in kill}
+    try:
+        if hold_engine and kill:
+            # A script that imported lib/order_* after the snapshot marked itself in between:
+            # look again with the handles already open, then terminate without spawning anything.
+            again = _nt_pairs()
+            _, labels = nt_plan(again, root, _marker_pids(), True) if again else ([], [UNSEEN])
+            if labels:
+                return [], labels
+        return [pid for pid, h in handles.items() if h and _nt_terminate(h)], labels
+    finally:
+        for h in handles.values():
+            if h:
+                _nt_close(h)
 
 
 def nt_plan(pairs, root, marked, hold_engine):
@@ -260,22 +325,21 @@ def kill_tree(root=None, hold_engine=False):
     """Kill the turn's engine and tools (never `root` itself), sparing money processes.
     Returns (killed pids, labels of the money processes left running).
 
-    Windows (not yet verified on a real box): see nt_plan. The tools are left to finish.
+    Windows (not yet verified on a real box): see nt_plan and _nt_kill. The tools are left
+    to finish. Under Codex an unreadable process table holds the engine, never frees it.
     Follow-up: trust a ppid only when the child was created after the parent
     (GetProcessTimes) and kill pid by pid, then extend the money rule here.
 
     "The engine" is every direct child of `root`: agent_turn spawns nothing else in-process
-    but the engine's own short probes (codex --version, ps, taskkill) — pinned by
+    but the engine's own short probes (codex --version, ps) — pinned by
     tests/check_turn_stop.py, because a money script started there would escape MONEY_ARGV."""
     root = os.getpid() if root is None else root
     try:
         if _NT:
-            pairs = _windows_pairs()
-            kill, labels = nt_plan(pairs, root, _marker_pids(), hold_engine)
-            for pid in kill:
-                _taskkill(pid)
-            return kill, labels
+            return _nt_kill(root, hold_engine)
         pairs, cmds = _posix_table()
+        if not pairs:  # ps gave nothing: it failed, the table is never really empty
+            return [], ([UNSEEN] if hold_engine else [])
         tree = posix_targets(pairs, root, _sid)
         marked = _money_pids()
         # The engine's own argv is its configuration, not a tool's command: Claude's carries
@@ -294,7 +358,7 @@ def kill_tree(root=None, hold_engine=False):
         return kill, labels
     except Exception as e:  # a failed kill must not take the turn's own wrap-up with it
         print(f"[turn_stop] kill_tree failed: {e}", file=sys.stderr)
-        return [], []
+        return [], ([UNSEEN] if hold_engine else [])
 
 
 def requested(path):
