@@ -172,7 +172,10 @@ t("字本身帶控制字元(renderer 交來的也過一次 clean)", statusLine("
   const TT = require("../shell/traytext.js"), tmLabels = { paperVenue: "模擬交易" };
   const venueName = eval("(" + mainSrc.match(/const venueName = (\([^\n]*?);\s*$/m)[1] + ")");
   t("main.js venueName:paper → 模擬交易;okx → OKX;kraken → Kraken;「my venue」→ My venue(不是空字串);空 → 空", venueName("paper") === "模擬交易" && venueName("okx") === "OKX" && venueName("kraken") === "Kraken"
-    && venueName("my venue") === "My venue" && venueName("") === "" && venueName(null) === ""); }
+    && venueName("my venue") === "My venue" && venueName("") === "" && venueName(null) === "");
+  tmLabels.venueCapital = "群益"; tmLabels.venuePresident = "統一期貨";
+  t("main.js venueName:台灣券商用 renderer 交的中文名(群益 / 統一期貨);還沒交退回 id 那條", venueName("capital") === "群益" && venueName("president") === "統一期貨"
+    && (delete tmLabels.venueCapital, venueName("capital") === "Capital")); }
 t("通知標題的前綴:有才加;結束框的那一句:有才加、隔一行", notifTitle("這台電腦：", "下單失敗") === "這台電腦：下單失敗" && notifTitle("", "下單失敗") === "下單失敗" && quitDetail("A", "B") === "A\n\nB" && quitDetail("A", "") === "A");
 
 // 接線(main.js 原文)

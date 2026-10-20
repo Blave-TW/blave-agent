@@ -143,7 +143,8 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
 
   // 8.
   ok("8 部位口數:size > 0 才算", P.heldLots({ account: { venues: { president: { positions: { TMF: { size: 1 }, TXF: { size: 2 }, MXF: { size: 0 } } } } } }) === 3
-    && P.heldLots({}) === 0 && P.heldLots(null) === 0);
+    && P.heldLots({}) === 0 && P.heldLots(null) === 0
+    && P.heldLots({ account: { venues: { president: { positions: { TMF: { size: 1 } } }, capital: { positions: { TMF: { size: 2 }, MXF: { size: 0 } } } } } }, "capital") === 2);
   reply = { ok: false, error: "UNKNOWN_RESULT" };
   await pres.step("host", { url: "test167.pfctrade.com" });
   ok("8 測試主機:信上的網址原樣交給 daemon(它判是不是那兩台),記住在測試環境", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "host", url: "test167.pfctrade.com" }) && pres._load().live === false);

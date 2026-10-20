@@ -2736,7 +2736,7 @@ function presSync() {
   if (CAPL_LOCAL_ON) capitalLocal().resync(r).catch(() => {});   // 群益本機:同一輪,daemon 重起後補交身分證與交易密碼
 }
 /* 不讓電腦閒置睡眠(spec desktop-keep-awake K1):A = 自動下單在跑或可能在跑,且設定 › 一般的開關開著(ui-prefs keepAwake,缺 = 開);
-   B = Windows 上有統一期貨部位(Wei 10-07),不看開關。A 的判斷順序照 renderer trExecState——重開沒停住(unconfirmed)要排在 alive 之前:
+   B = Windows 上有台灣券商(統一／群益本機)部位(Wei 10-07),不看開關。A 的判斷順序照 renderer trExecState——重開沒停住(unconfirmed)要排在 alive 之前:
    那段 alive 一律 false,先看 alive 會把最該擋的那一態放掉;tradeLive 也不認它與「剛按啟動」。
    o = { st, startAt, now, keepAwake, win, presLots, prev }(prev = 上一輪有沒有持有)。純函式(tests/check_shell_keep_awake.js 切出來跑) */
 const AWAKE_START_MS = 60000;   // 剛按啟動、報告還沒收斂的那一段;同 renderer TR_CONFIRM_MS
@@ -2789,6 +2789,11 @@ function onbPrefsSet(patch) {
   return onbPrefsGet();
 }
 let awakeBlocker = null, awakeStartAt = 0;
+// 這台電腦在台灣券商的口數:兩家都是帳戶讀取器的 positions(讀不到 = 0);舊宿主沒有 capitalLots 就當 0
+function twLots() {
+  const h = _tradeHost, pres = h && h.presidentLots ? h.presidentLots() : 0, cap = h && h.capitalLots ? h.capitalLots() : 0;
+  return { pres, cap, total: pres + cap };
+}
 const keepAwakeGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).keepAwake !== false; } catch (_) { return true; } };
 function keepAwakeSet(on) {
   try { uiPrefsPatch({ keepAwake: on === true }); } catch (_) { /* 寫不進去:照舊值 */ }
@@ -2797,7 +2802,7 @@ function keepAwakeSet(on) {
 }
 function awakeSync() {
   const st = _tradeHost ? _tradeHost.status() : null;
-  const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, presLots: WIN && _tradeHost ? _tradeHost.presidentLots() : 0, prev: awakeBlocker !== null });
+  const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, presLots: WIN ? twLots().total : 0, prev: awakeBlocker !== null });
   awakeBlocker = awakeApply(want, awakeBlocker, powerSaveBlocker);
 }
 const awakeRelease = () => { awakeBlocker = awakeApply(false, awakeBlocker, powerSaveBlocker); };
@@ -3633,6 +3638,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
   // 統一有部位時結束 Blave(Wei 10-07:擋一下、講白不會平倉)
   presQuitTitle: "Quit Blave?", presQuitBody: "{lots} lot(s) are still open at 統一期貨 (President Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 統一 app.",
+  caplQuitBody: "{lots} lot(s) are still open at 群益 (Capital). After you quit, strategies place no more orders and these positions are not closed — handle them in the 群益 app.",
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   unsavedTitle: "Leave without saving?", unsavedBody: "Your Portfolio changes will be lost.", unsavedGo: "Leave",
   unsavedNote: "Unsaved Portfolio changes will be lost.",
@@ -3732,7 +3738,8 @@ function tradeMaybeLive(st = _tradeHost ? _tradeHost.status() : null) {
   return { venue: lastVenue };
 }
 // 結束確認框的 {venue};選單列那一行已經寫交易所名,不再另列一行。id 長得不像 id 時退回首字大寫的原字,不能讓那句變成「部位留在。」
-const venueName = (id) => (!id ? "" : id === "paper" ? tmLabels.paperVenue : TT.venueLabel(id) || String(id).charAt(0).toUpperCase() + String(id).slice(1));
+// 台灣券商的名字要翻(renderer 交的 cap.venue / pres.venue;還沒交就退回 id 那條)
+const venueName = (id) => (!id ? "" : id === "capital" && tmLabels.venueCapital ? tmLabels.venueCapital : id === "president" && tmLabels.venuePresident ? tmLabels.venuePresident : id === "paper" ? tmLabels.paperVenue : TT.venueLabel(id) || String(id).charAt(0).toUpperCase() + String(id).slice(1));
 function showMain() {
   const w = BrowserWindow.getAllWindows()[0];
   if (!w) { createWindow(); return; }
@@ -4086,7 +4093,7 @@ app.on("before-quit", (e) => {
     quitAsking = true;
     draftDirty(null).then((dirty) => {
       quitAsking = false;
-      const more = !!tradeMaybeLive() || !!(activeTurn || turnStarting) || (_tradeHost && _tradeHost.presidentLots ? _tradeHost.presidentLots() : 0) > 0;
+      const more = !!tradeMaybeLive() || !!(activeTurn || turnStarting) || twLots().total > 0;
       if (!dirty || more) { draftOk = true; draftNote = dirty; app.quit(); return; }
       draftGate(null, true).then((go) => { if (go) { draftOk = true; app.quit(); } });
     });
@@ -4094,8 +4101,10 @@ app.on("before-quit", (e) => {
   }
   // 自動下單還在跑:結束 = 停止下單、部位留著不平——先問一次(從選單列「結束 Blave…」、Cmd+Q、Dock 結束都走這裡)
   const live = !quitting && !quitConfirmed && tradeMaybeLive();
-  // 統一還有部位(不論在不在下單):同一道框改講「這幾口不會平倉」(設計稿 d-quit;不替用戶平倉、不給第三顆鈕)
-  const presLots = !quitting && !quitConfirmed && _tradeHost && _tradeHost.presidentLots ? _tradeHost.presidentLots() : 0;
+  // 統一／群益還有部位(不論在不在下單):同一道框改講「這幾口不會平倉」(設計稿 d-quit;不替用戶平倉、不給第三顆鈕)
+  const tw = !quitting && !quitConfirmed ? twLots() : { pres: 0, cap: 0, total: 0 }, presLots = tw.total;
+  const twBody = () => [tw.pres > 0 && tmLabels.presQuitBody.replace("{lots}", () => String(tw.pres)),
+    tw.cap > 0 && tmLabels.caplQuitBody.replace("{lots}", () => String(tw.cap))].filter(Boolean).join("\n\n");
   if (live || presLots > 0) {
     e.preventDefault();
     if (quitAsking || moveAsking) return;   // 框還開著(結束確認或搬移框)又按 Cmd+Q:不疊第二個(稽核 M2、integ-0124 P2-2)
@@ -4104,7 +4113,7 @@ app.on("before-quit", (e) => {
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: presLots > 0 ? tmLabels.presQuitTitle : tmLabels.quitTitle,
       // 雲端也「確定在下單」時多一句:結束這個 app 不影響雲端。不確定就不說(那一句是在替雲端做保證)
-      detail: draftNoted(presLots > 0 ? tmLabels.presQuitBody.replace("{lots}", () => String(presLots))
+      detail: draftNoted(presLots > 0 ? twBody()
         : TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : "")), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
       .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; if (_tradeHost && live) _tradeHost.noteQuit(); app.quit(); } else { draftOk = false; draftNote = false; } }, () => { quitAsking = false; draftOk = false; draftNote = false; });
     return;

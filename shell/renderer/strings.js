@@ -2877,6 +2877,7 @@ const STRINGS = {
     "capl.libOutdated": "This computer's strategy workspace is too old for Capital. Update Blave and try again.",
     "capl.localOnly": "Capital orders go out only while Blave is open and this Windows account is signed in.",
     "capl.errList": "Couldn't read this computer's certificate store, so the wizard wasn't opened (the new certificate couldn't be told apart). Try again.",
+    "capl.quit.body": "{lots} lot(s) are still open at Capital. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the Capital app.",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -5750,5 +5751,6 @@ const STRINGS = {
     "capl.libOutdated": "這台電腦的策略工作區太舊，還不支援群益。更新 Blave 後再試一次。",
     "capl.localOnly": "Blave 開著、這個 Windows 帳號登入時，群益才會下單。",
     "capl.errList": "讀不到這台電腦的憑證庫，先不開精靈（申請完會分不出哪張是新的）。再按一次試試。",
+    "capl.quit.body": "群益還有 {lots} 口在倉。結束後策略不會再下單，這些部位也不會自動平倉，要自己在群益 app 處理。",
   },
 };

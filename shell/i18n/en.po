@@ -8813,3 +8813,6 @@ msgstr "Capital orders go out only while Blave is open and this Windows account 
 
 msgid "capl.errList"
 msgstr "Couldn't read this computer's certificate store, so the wizard wasn't opened (the new certificate couldn't be told apart). Try again."
+
+msgid "capl.quit.body"
+msgstr "{lots} lot(s) are still open at Capital. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the Capital app."

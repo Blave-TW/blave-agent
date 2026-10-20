@@ -400,7 +400,8 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
 
   // 統一還有幾口在倉(結束攔截、防睡眠用;帳戶讀取器讀不到 = 0)
   function presidentLots() { return require("./president_local").heldLots(status().report); }
+  function capitalLots() { return require("./president_local").heldLots(status().report, "capital"); }
 
-  return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, presidentLots, _eqTick: eqTick, isRunning: () => !!child };
+  return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, presidentLots, capitalLots, _eqTick: eqTick, isRunning: () => !!child };
 }
 module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, argsOk };

@@ -118,6 +118,8 @@ function trCapWip(r, id) {
   return !!l && typeof l === "object" && !(l.worker && (l.worker.status === "ok" || l.worker.ok_at));
 }
 // 群益本機開通過、之後下單程式停掉(登入被拒 / 沒寫出快照):設定 › 帳戶 那一列給「繼續」回框(同 trPresStopped)
+// 群益在這台電腦開通中:只看本機那份(capital_local_connect);trSetupOnly 用它——雲端的 capital_connect 不是這台電腦的開通
+function trCaplWip(r, id) { const l = id === "capital" && r && r.capital_local_connect; return !!l && typeof l === "object" && !(l.worker && (l.worker.status === "ok" || l.worker.ok_at)); }
 function trCaplStopped(r, id) { const l = id === "capital" && r && r.capital_local_connect; return !!l && typeof l === "object" && !!l.worker && l.worker.status === "failed" && !trCapWip(r, id); }
 /* 統一在這台電腦開通中(狀態檔有 president_connect、worker 從來沒 ok 過;同 president.js presWip、traytext.localLine):讀帳失敗同樣是預期的。
    worker.ok_at = 開通過(runtime 在 worker 第一次 ok 寫、之後登入失敗不清):開通過又停掉的(機器重開落在維護時段、改了密碼)
@@ -169,7 +171,7 @@ function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLive
    機器重開相關的兩態(停著 / 沒停住)一律優先於 setup:那是真錢警示,開通中也不能藏。
    只有這台電腦視角(st.cloud = 雲端那份):雲端主機的回報也帶 president_connect,但「繼續」開的框只接這台電腦的統一
    (cxModalOpen 在雲端退成模擬),雲端照一般狀態機、開通交給網頁(稽核 integ-0118 B-2) */
-function trSetupOnly(st) { const r = st && st.report, ids = trVenueIds(r); return ids.length > 0 && !(st && st.cloud) && ids.every((id) => trPresWip(r, id)) && !trRecRunning(st) && !trRestartStopped(r) && !trRestartUnconfirmed(r); }
+function trSetupOnly(st) { const r = st && st.report, ids = trVenueIds(r); return ids.length > 0 && !(st && st.cloud) && ids.every((id) => trPresWip(r, id) || trCaplWip(r, id)) && !trRecRunning(st) && !trRestartStopped(r) && !trRestartUnconfirmed(r); }
 // 有沒有帳戶 = 有沒有綁定,不看這一輪讀帳成不成功(稽核 S5):交易所讀帳 API 暫時失敗時對帳器可能還在下單,
 // 這時把整頁換成 onboard、把「暫停下單」拿掉,等於在最需要出口的時候拿走出口。讀帳失敗另外標在狀態行上。
 function trHasAccount(r) { return trVenueIds(r).length > 0; }
@@ -1689,7 +1691,7 @@ function trPushLabels() {
     quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), ok: t("tm.ok"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
     quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
     unsavedTitle: t("tm.unsavedTitle"), unsavedBody: t("tm.unsavedBody"), unsavedGo: t("tm.unsavedGo"), unsavedNote: t("tm.unsavedNote"),   // 結束 / 關窗攔截:策略組合有還沒儲存的變更
-    presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }),   // 結束攔截:統一還有部位(主行程填口數)
+    presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }), caplQuitBody: t("capl.quit.body", { lots: "{lots}" }),   // 結束攔截:統一還有部位(主行程填口數)
     updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
     moveAuthExists: t("tm.move.authExists"), moveAuthApps: t("tm.move.authApps"), gotIt: t("src.gotIt"),   // 搬移要系統授權時的提示框(只有「知道了」)
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
@@ -1987,7 +1989,7 @@ function trStateText(state) {
   // 第一份報告還在路上:通用的「載入中…」只有在「不知道在等誰、多久、會不會自己好」時才該用,這裡三件事都知道(spec §1 規則 5)
   if (state === "loading") return TR.env === "cloud" ? t("tr.cloud.hdFetching") : trLoadingText();
   if (state === "unknown") return t("tr.unknown");
-  if (state === "setup") return trVenueLabel("president", true) + " · " + t("cap.pending");   // 開通中:不接「串接失敗」前綴、不講已暫停
+  if (state === "setup") return trVenueLabel(trVenueIds(r)[0], true) + " · " + t("cap.pending");   // 開通中(統一／群益本機):不接「串接失敗」前綴、不講已暫停
   // 雲端剛存了金鑰 / 模擬帳戶、主機還沒回報(S5):標頭不跟內文打架——「連接中…」,過了上限「沒有收到主機確認」(v2 §5)
   if (state === "noaccount" && TR.env === "cloud" && TR.cxSaved) return trCxSavedStale(TR.cxSaved, Date.now()) ? t("tr.cloud.hdNoConfirm")
     : trCxAssumed(TR.cxSaved, Date.now()) ? t("tr.cloud.hdFetching") : t("tr.cloud.hdConnecting");
@@ -2275,13 +2277,16 @@ function trPaintHead() {
   const pend = trAmountsEdited() ? null : trPendKey(TR, Date.now(), zv.off && !zv.noStart);
   // 雲端而且不知道現況:不放主鈕——「暫停下單」「啟動下單」哪一個字都是在替它下結論(這一刀的鈕本來就不能按,說明行還在)
   // 沒有交易所、但主機重開停著(B0):一定是 Z,不出「啟動下單」,只出「解除暫停」(v2 §9-1;紀錄檔只有 resume 清得掉)
-  // 統一開通中(setup,只有這台電腦視角):主鈕換成「繼續」回到開通清單(同設定 › 帳戶那一列);啟動 / 暫停都不出
+  // 統一／群益本機開通中(setup,只有這台電腦視角):主鈕換成「繼續」回到那家的開通清單(同設定 › 帳戶那一列);啟動 / 暫停都不出。
+  // 群益本機入口旗標關著的版本沒有那份清單:不給「繼續」(同設定 › 帳戶那一列),只留標頭
   const pcBtn = $("tr-pres-continue");
   if (state === "setup" && !stopped && TR.env === "local") {
     if (b) { if (document.activeElement === b) $("tr-h").focus(); b.remove(); }
     trPaintGoStop(false); trPaintNoAmt(null); trPaintGoRel(false, false);
-    const go = pcBtn || trEl("button", "btn-fill"); go.textContent = t("cap.continue");
-    if (!pcBtn) { go.type = "button"; go.id = "tr-pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); act.appendChild(go); }
+    const sv = trVenueIds(trReport())[0];
+    if (sv !== "president" && !CAPL_LOCAL_ON) { if (pcBtn) pcBtn.remove(); return; }
+    const go = pcBtn || trEl("button", "btn-fill"); go.textContent = t("cap.continue"); go.dataset.venue = sv;
+    if (!pcBtn) { go.type = "button"; go.id = "tr-pres-continue"; go.addEventListener("click", () => cxModalOpen(go, go.dataset.venue)); act.appendChild(go); }
     return;
   }
   if (pcBtn) pcBtn.remove();

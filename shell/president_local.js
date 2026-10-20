@@ -36,9 +36,9 @@ function expiryFromName(name) {
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3] ? `${m[1]}/${m[2]}/${m[3]}` : null;
 }
-// 這台電腦在統一的部位口數(帳戶讀取器的 positions;讀不到 = 0,不猜)
-function heldLots(report) {
-  const a = report && report.account && report.account.venues && report.account.venues.president;
+// 這台電腦在統一(或同形狀的群益:venue "capital")的部位口數(帳戶讀取器的 positions;讀不到 = 0,不猜)
+function heldLots(report, venue = "president") {
+  const a = report && report.account && report.account.venues && report.account.venues[venue];
   const p = a && a.positions && typeof a.positions === "object" ? a.positions : {};
   return Object.keys(p).reduce((n, k) => { const s = p[k] && Number(p[k].size); return n + (isFinite(s) && s > 0 ? Math.round(s) : 0); }, 0);
 }

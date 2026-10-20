@@ -8832,3 +8832,7 @@ msgstr "Blave 開著、這個 Windows 帳號登入時，群益才會下單。"
 # 開精靈前列不出憑證庫(PowerShell 被擋、逾時):不開,免得把庫裡原本那張當成新證
 msgid "capl.errList"
 msgstr "讀不到這台電腦的憑證庫，先不開精靈（申請完會分不出哪張是新的）。再按一次試試。"
+
+# 結束攔截:群益本機還有部位(主行程填口數;同 pres.quit.body,統一也有部位時兩句接在同一道框)
+msgid "capl.quit.body"
+msgstr "群益還有 {lots} 口在倉。結束後策略不會再下單，這些部位也不會自動平倉，要自己在群益 app 處理。"

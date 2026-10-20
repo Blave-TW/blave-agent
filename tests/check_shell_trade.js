@@ -61,9 +61,26 @@ ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", t
       && trExecState(st(cloudSt.report)) === "setup" && /if \(state === "setup" && !stopped && TR\.env === "local"\) \{/.test(src)); }
   ok("沒有 president_connect(不是統一、或舊狀態檔)照舊", trExecState(st({ venues: VP, account: accP, halt: {}, reconciler: { alive: false } })) === "dead");
   ok("接線:setup 的標頭句「統一期貨 · 開通中」、頂列短詞「開通中」、切換器詞 cap.pending、主鈕換「繼續」回開通清單、別的態把它拿掉",
-    /if \(state === "setup"\) return trVenueLabel\("president", true\) \+ " · " \+ t\("cap\.pending"\);/.test(src)
+    /if \(state === "setup"\) return trVenueLabel\(trVenueIds\(r\)\[0\], true\) \+ " · " \+ t\("cap\.pending"\);/.test(src)
     && /state === "setup" \? t\("cap\.pending"\) : state === "running"/.test(src) && /if \(state === "setup"\) \{ out\.word = "cap\.pending"; return out; \}/.test(src)
-    && /go\.id = "tr-pres-continue"; go\.addEventListener\("click", \(\) => cxModalOpen\(go, "president"\)\);/.test(src) && /if \(pcBtn\) pcBtn\.remove\(\);/.test(src)); }
+    && /go\.dataset\.venue = sv;/.test(src) && /go\.id = "tr-pres-continue"; go\.addEventListener\("click", \(\) => cxModalOpen\(go, go\.dataset\.venue\)\);/.test(src)
+    && /if \(sv !== "president" && !CAPL_LOCAL_ON\) \{ if \(pcBtn\) pcBtn\.remove\(\); return; \}/.test(src) && /if \(pcBtn\) pcBtn\.remove\(\);/.test(src)); }
+// 0.1.28:群益在這台電腦開通中(capital_local_connect)同一條 setup;雲端那份 capital_connect 不算這台電腦的開通
+{ const VC = { capital: { credentials: true, pair: true, order: true, account: true } }, accC = { venues: { capital: { ok: false, error: "no snapshot yet" } } };
+  const w = { worker: { status: "idle" } }, appRestart = { reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false, wanted: false } } };
+  const mr = { reconciler: { alive: false, stopped: { reason: "machine_restart", at: 7 } }, daemon: { reconciler: { running: false, wanted: false } } };
+  ok("群益本機開通中 = setup(HALT、app 重開過那組欄位在也一樣);開通過(ok_at)/ ok 之後照一般狀態機",
+    trExecState(st({ venues: VC, account: accC, capital_local_connect: w, halt: { halted: true }, ...appRestart })) === "setup"
+    && trExecState(st({ venues: VC, account: accC, capital_local_connect: { worker: { status: "failed", ok_at: 5 } }, halt: { halted: true }, ...appRestart })) === "halted"
+    && trExecState(st({ venues: VC, account: accC, capital_local_connect: { worker: { status: "ok" } }, halt: { halted: true }, ...appRestart })) === "halted");
+  ok("…機器重開過 / 對帳器在跑 / 還綁別家 / 雲端視角 / 只有雲端的 capital_connect:都不是 setup",
+    trExecState(st({ venues: VC, account: accC, capital_local_connect: w, halt: {}, ...mr })) === "halted"
+    && trExecState(st({ venues: VC, account: accC, capital_local_connect: w, halt: {}, reconciler: { alive: true }, daemon: { reconciler: { running: true } } })) === "running"
+    && trExecState(st({ venues: { ...VC, ...V }, account: accC, capital_local_connect: w, halt: {}, reconciler: { alive: false } })) === "dead"
+    && !trSetupOnly({ alive: true, cloud: { code: "OK" }, report: { venues: VC, capital_local_connect: w, halt: {}, reconciler: { alive: false } } })
+    && trExecState(st({ venues: VC, account: accC, capital_connect: w, halt: {}, reconciler: { alive: false } })) === "dead");
+  ok("…統一與群益都在開通中 = setup;群益本機開通中不算串接失敗", trExecState(st({ venues: { ...VC, president: VC.capital }, capital_local_connect: w, president_connect: w, halt: {}, reconciler: { alive: false } })) === "setup"
+    && J(trFailedIds({ venues: VC, account: accC, capital_local_connect: w })) === "[]"); }
 ok("S5 狀態檔 build 失敗(只有 error、沒有 venues)= unknown,不是 noaccount", trExecState(st({ error: "boom" })) === "unknown" && trExecState(st({ daemon: {} })) === "unknown" && trExecState(st({ error: "x", venues: V })) === "unknown");
 // 心跳檔新鮮期 300 秒:app 重開後 5 分鐘內上一次的心跳還算 alive,但監督者說對帳器沒在跑 → 不能畫「執行中」
 ok("重開後舊心跳還新鮮、監督者說沒在跑 = dead", trExecState(st({ venues: V, halt: {}, reconciler: { alive: true }, daemon: { reconciler: { running: false } } })) === "dead"

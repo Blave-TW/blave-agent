@@ -74,6 +74,14 @@ ok("啟動指令(START_CMDS 非 release、restart_reconciler)記下啟動時間;
   && /cmd === "halt"\) \{ awakeStartAt = 0;/.test(main));
 ok("awakeSync 把上一輪有沒有持有交進去(prev,報告錯誤時沿用)", /function awakeSync\(\)[\s\S]*?prev: awakeBlocker !== null \}\)/.test(main));
 ok("結束 app 放掉", /app\.on\("will-quit", \(\) => startStep\("awake", awakeRelease\)\)/.test(main));
+{ // 0.1.28:B 的口數是台灣券商兩家加起來(統一 + 群益本機);舊宿主沒有 capitalLots 就當 0
+  const tw = (host) => new Function("_tradeHost", fn(main, "twLots") + "\nreturn twLots();")(host);
+  const dsrc = fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8");
+  ok("B 的口數:統一 1 + 群益 2 = 3;沒有宿主 / 舊宿主照算;awakeSync 交的是合計;daemon 宿主有 capitalLots(讀 capital 那一格)",
+    tw({ presidentLots: () => 1, capitalLots: () => 2 }).total === 3 && tw(null).total === 0 && tw({ presidentLots: () => 4 }).total === 4
+    && /presLots: WIN \? twLots\(\)\.total : 0/.test(main) && !/_tradeHost\.presidentLots\(\)/.test(main.replace(fn(main, "twLots"), ""))
+    && /function capitalLots\(\) \{ return require\("\.\/president_local"\)\.heldLots\(status\(\)\.report, "capital"\); \}/.test(dsrc) && /presidentLots, capitalLots,/.test(dsrc)
+    && M.awakeWanted({ st: st({ halt: { halted: true, holds_all: true } }), startAt: 0, now: NOW, keepAwake: false, win: true, presLots: tw({ capitalLots: () => 2 }).total }) === true); }
 ok("main.js 只有 awakeApply 一處開 blocker", (main.match(/powerSaveBlocker\.start\(|\.start\("prevent-app-suspension"\)/g) || []).length === 1 && main.indexOf("presBlocker") < 0);
 ok("開關缺鍵 = 開(只有明寫 false 才關)", /\.keepAwake !== false; \} catch \(_\) \{ return true; \}/.test(main));
 
