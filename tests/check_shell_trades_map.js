@@ -220,7 +220,7 @@ app.whenReady().then(async () => {
     win.destroy(); }
 
   const { win, ev } = await open(BIG);
-  const s0 = await ev(`({ vt: ${VT}, role: document.querySelector(".tr-map").getAttribute("role"), tab: document.querySelector(".tr-map").tabIndex, inCard: !!document.querySelector(".tr-card > .tr-chart + .tr-map"),
+  const s0 = await ev(`({ vt: ${VT}, role: document.querySelector(".tr-map").getAttribute("role"), tab: document.querySelector(".tr-map").tabIndex, inCard: !!document.querySelector(".tr-card > .tr-chart + .tr-map, .tr-card > .tr-chart + .tr-more + .tr-map"),
     lit: (() => { const c = document.querySelector(".tr-map canvas"), x = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < x.length; i += 4) if (x[i]) n++; return n; })() })`);
   const from0 = s0.vt.split(" – ")[0];
   ok("② 筆數多 → 不是整段、也不是只有 130 根(左緣在第一根之後、最後 130 根之前)", from0 > day(0) && from0 < day(1900 - 130) && s0.vt.endsWith(day(1899)), s0.vt);
