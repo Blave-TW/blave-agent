@@ -622,7 +622,10 @@ def cancel_algo_order(env, symbol, order_id):
         if e.code in _CANCEL_GONE:
             return {"status": "order_not_found", "order_id": str(order_id)}
         raise
-    return {"status": str((res or {}).get("status") or "").lower(), "order_id": str(order_id)}
+    # like cancel_order: the reply is the order before the cancel (ORDER_NEW)
+    raw = str((res or {}).get("status") or "").upper()
+    return {"status": "canceled" if raw == "ORDER_CANCELED" else "cancel_accepted",
+            "order_id": str(order_id)}
 
 
 def cancel_protective_orders(env, symbol):

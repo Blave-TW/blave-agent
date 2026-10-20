@@ -545,8 +545,13 @@ check(sl["side"] == tp["side"] == "SELL_CLOSE" and sl["orderType"] == "STOP" and
       "SL and TP = STOP SELL_CLOSE at market, the long leg's available contracts, trigger at the book's decimals",
       (sl, tp))
 check(set(prot) == {"sl", "tp"}, "both placed and verified in the open STOP list")
-order.cancel_protective_orders(ENV, "NVDAUSDT")
+cancelled = order.cancel_protective_orders(ENV, "NVDAUSDT")
 check(not STOPS and all(d.get("orderType") == "STOP" for d in DELETED), "cancel_protective_orders cancels with orderType=STOP")
+check([c["status"] for c in cancelled] == ["canceled", "canceled"], "a STOP cancel replied ORDER_CANCELED is canceled", cancelled)
+route("DELETE", "/futures/order", lambda p: Resp({"orderId": p.get("orderId"), "status": "ORDER_NEW"}))
+check(order.cancel_algo_order(ENV, "NVDAUSDT", "1")["status"] == "cancel_accepted",
+      "a STOP cancel replied with the pre-cancel ORDER_NEW is cancel_accepted, not canceled")
+route("DELETE", "/futures/order", delete_order)
 prot = order.place_protective_orders(ENV, "NVDAUSDT", "short", sl_price=200.0)
 check(STOPS[prot["sl"]["algoId"]]["side"] == "BUY_CLOSE"
       and STOPS[prot["sl"]["algoId"]]["quantity"] == str(order._available(ENV, "NVDA-PERP-USDT", "short")),

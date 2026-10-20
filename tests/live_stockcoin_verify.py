@@ -43,6 +43,15 @@ ORDER steps (each one contract, ≈$0.02–$8; everything is closed at the end)
       positions; STOP SELL_CLOSE trigger 20% under (stop-loss) and 20% over (does a
       take-profit rest or fire at once?) → open STOP list → cancel both (orderType=STOP) →
       list again → close
+  T9  the real executors on NVDA, one contract each leg, through lib.execute in a scratch
+      workspace (.env written 0600 there, removed at the end; residual gate lowered to
+      $0.001 for this one-contract run — production keeps $10): chase open → chase close
+      (post-only at the touch for 45 s, then the rest at market) → TWAP open → TWAP close,
+      one 1-contract slice each (a slice under one contract rounds up to one — the
+      reconciler's slice floor keeps that out of production, this harness has no floor).
+      Prints each orders.jsonl row and the manager/twap summary.
+  T10 a position's STOP when the position goes away: open 1 → place_protective_orders SL →
+      close → STOP list 3 s later (does the venue drop it?) → cancel what is left → [].
   CLEANUP  every open LIMIT / STOP order and every leg touched above is cancelled / closed
            (runs even after a failure)
 PROBE (--probe-all, replaces T1–T6; R steps still run, narrow them with --only)
@@ -344,6 +353,54 @@ def main():
                                           {"symbol": vs, "orderId": o.get("orderId"), "orderType": "STOP"}))
             say("T8 open STOP after cancel (want [])",
                 raw("GET", "/futures/orders/open", {"symbol": vs, "orderType": "STOP"}))
+        if want("T9"):
+            touched.add("NVDAUSDT")
+            import threading
+            from lib import execute as ex, venue_wiring as vw
+            ws_lib = os.path.join(ROOT, "lib")
+            if not os.path.exists("lib"):
+                os.symlink(ws_lib, "lib")  # venue discovery checks lib/account_<id>.py under cwd
+            fd = os.open(".env", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(f"STOCKCOIN_API_KEY={env['STOCKCOIN_API_KEY']}\n"
+                         f"STOCKCOIN_SECRET_KEY={env['STOCKCOIN_SECRET_KEY']}\n")
+            ex._RESIDUAL_USD = 0.001
+            ex._own_only = vw._own_only = lambda: False
+            ex._notify_fn = lambda m: say("T9 notify", m)
+            say("T9 venue", vw.detect_venue(vw.read_env()))
+            usd = one("NVDAUSDT") * order.get_mark_price(env, "NVDAUSDT")
+
+            def jsonl_tail(path):
+                try:
+                    return open(path).read().splitlines()[-1]
+                except (OSError, IndexError):
+                    return None
+
+            for tag, signed, reduce_only in (("chase open", usd, False), ("chase close", -usd, True)):
+                ex._chase_thread("NVDAUSDT", signed, None, reduce_only, "stockcoin", [],
+                                 vw.auto_limit_toolkit("NVDAUSDT", reduce_only), threading.Event())
+                say(f"T9 {tag} orders.jsonl", jsonl_tail("manager/orders.jsonl"))
+                say(f"T9 {tag} legs", legs("NVDAUSDT"))
+                say(f"T9 {tag} open LIMIT (want [])", order.get_open_orders(env, "NVDAUSDT"))
+            for tag, signed, reduce_only, n in (("twap open", usd, False, 1), ("twap close", -usd, True, 1)):
+                ex._twap_thread("NVDAUSDT", signed, None, reduce_only, "stockcoin", [], 1, n, threading.Event())
+                say(f"T9 {tag} orders.jsonl", jsonl_tail("manager/orders.jsonl"))
+                twap = sorted(os.listdir("manager/twap")) if os.path.isdir("manager/twap") else []
+                say(f"T9 {tag} twap summary", [jsonl_tail(os.path.join("manager/twap", f)) for f in twap])
+                say(f"T9 {tag} legs", legs("NVDAUSDT"))
+        if want("T10"):
+            touched.add("NVDAUSDT")
+            say("T10 open", order.place_market_order(env, "NVDAUSDT", "long", one("NVDAUSDT")))
+            last = order.get_mark_price(env, "NVDAUSDT")
+            say("T10 SL 20% under", order.place_protective_orders(env, "NVDAUSDT", "long", sl_price=last * 0.8))
+            say("T10 STOP list with the position", order.get_open_algo_orders(env, "NVDAUSDT"))
+            say("T10 close", order.close_position_partial(env, "NVDAUSDT", "long", one("NVDAUSDT")))
+            time.sleep(3)
+            left = order.get_open_algo_orders(env, "NVDAUSDT")
+            say("T10 STOP list 3 s after the close ([] = the venue drops it)", left)
+            if left:
+                say("T10 cancel_protective_orders", order.cancel_protective_orders(env, "NVDAUSDT"))
+            say("T10 STOP list at the end (want [])", order.get_open_algo_orders(env, "NVDAUSDT"))
         if want("T6"):
             touched.add("NVDAUSDT")
             long_cid = "rc" + uuid.uuid4().hex + "ab"  # 36 characters
@@ -370,6 +427,8 @@ def main():
             except Exception as e:
                 say(f"CLEANUP {sym} FAILED — check and close it in the app", str(e))
                 unclean.append(sym)
+        if os.path.exists(".env"):
+            os.remove(".env")
         say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")
         if unclean:
             print(f"NOT FLAT: {', '.join(unclean)} — close in the StockCoin app now", flush=True)
