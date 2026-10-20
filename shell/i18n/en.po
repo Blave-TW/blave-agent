@@ -1392,7 +1392,7 @@ msgstr "We suggest a sub-account just for Blave, with the key created there. On 
 
 # 連接框選 StockCoin 時說明區多一句(其他家不出;同網頁 workspace_cx_note_stockcoin)
 msgid "cx.note.stockcoin"
-msgstr "For StockCoin, only the futures account balance can be read for now."
+msgstr "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance."
 
 msgid "cx.store.q"
 msgstr "Where are my keys stored?"

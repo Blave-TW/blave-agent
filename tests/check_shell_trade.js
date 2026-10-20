@@ -134,7 +134,7 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
     /\n    if \(venue === "stockcoin"\) note\.appendChild\(trEl\("p", "", t\("cx\.note\.stockcoin"\)\)\);\n/.test(cxp)
     && cxp.indexOf('"cx.note.subAcct"') < cxp.indexOf('"cx.note.stockcoin"') && cxp.indexOf('"cx.note.stockcoin"') < cxp.indexOf('t("cx.note.one")')
     && src.indexOf('if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));\n  else {') < src.indexOf('"cx.note.stockcoin"')
-    && STR.zh["cx.note.stockcoin"] === "StockCoin 目前只抓得到合約帳戶的資金。" && STR.en["cx.note.stockcoin"] === "For StockCoin, only the futures account balance can be read for now.");
+    && STR.zh["cx.note.stockcoin"] === "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。" && STR.en["cx.note.stockcoin"] === "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance.");
   ok("CX_SUB_ACCT = 網頁那五家,StockCoin 不在(待 Wei)", /^const CX_SUB_ACCT = \["binance", "okx", "bybit", "gateio", "bingx"\];/m.test(src)); }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
   ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause trading」(0.1.27);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause trading")
