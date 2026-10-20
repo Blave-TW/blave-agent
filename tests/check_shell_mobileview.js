@@ -166,7 +166,7 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     && preload.includes('mobileViewState: () => ipcRenderer.invoke("mobile-view-state")'));
   ok("電腦名稱跟登入時送給授權頁的同一個字串(同一支 deviceLabel)", mainSrc.includes("device_label: deviceLabel(),") && /function deviceLabel\(\) \{ try \{ return os\.hostname\(\)\.replace\(\/\\\.local\$\/, ""\)\.slice\(0, 64\)/.test(mainSrc));
   ok("埋點:真的切換了才送 mobile_view_on / off(白名單裡有)", /if \(was !== on\) tm\(\)\.track\("feature_used", \{ name: on \? "mobile_view_on" : "mobile_view_off" \}\);/.test(mainSrc)
-    && /"mobile_view_on", "mobile_view_off"\] \}/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
+    && /"mobile_view_on", "mobile_view_off"[,\]]/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
   ok("設定頁:旗標關(visible 不是 true)整區不出;登出確認框那一句也只在開著時出",
     app.includes("const mvShown = () => !!(MV && MV.visible === true);") && /if \(!mvShown\(\)\) return null;/.test(app)
     && app.includes('const mvOn = typeof mvShown === "function" && mvShown() && MV.on === true;') && app.includes('mvOn ? [t("acct.out.5")] : []'));

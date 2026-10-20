@@ -989,6 +989,18 @@ $("set-awake-sw").addEventListener("click", async () => {
   if (AWAKE && !r) trackFeature("awake_off");
   AWAKE = r; awakePaint(); srSay($("set-awake-lead").textContent);
 });
+/* 設定 › 一般 › 入門步驟〔重看〕:關掉設定、回到這台電腦的歡迎頁(雲端視角沒有歡迎頁,只清旗標,切回來就是步驟) */
+$("set-onb").addEventListener("click", async () => {
+  trackFeature("onb_replay");
+  if (typeof onbReplay === "function") onbReplay();
+  setClose();
+  if (ENV.cur !== "local") return;
+  if (typeof trLeave === "function") trLeave();
+  if (typeof libLeave === "function") libLeave("local");
+  if (typeof rptLeave === "function") rptLeave("local");
+  await stratSelect(null);
+  envShowMain();
+});
 /* 設定 › 一般 › 外觀:主行程存 ui-prefs、改 nativeTheme.themeSource;明暗本身由 theme-boot.js 跟著 prefers-color-scheme 換 */
 const THEME_FEATURE = { system: "theme_system", light: "theme_light", dark: "theme_dark" };
 var THEME = "system";

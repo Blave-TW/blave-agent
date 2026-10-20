@@ -1397,9 +1397,6 @@ msgstr "Create a futures-type key, and move your funds into the futures account 
 msgid "cx.store.q"
 msgstr "Where are my keys stored?"
 
-msgid "cx.acct.meta"
-msgstr "Used only to place orders and read the account. One exchange at a time."
-
 msgid "cx.venue"
 msgstr "Exchange / broker"
 
@@ -8449,9 +8446,6 @@ msgstr " ({x}×)"
 
 # Welcome page starters (0.1.26; renderer/welcome.js; spec-starters §1.7 / §5.1). Key names borrowed from the web workspace.
 # Row text shows the rule only; the _send sentence is what gets sent. Rows use U+2011 (non-breaking hyphen) in "N‑day" so it never breaks at the hyphen; _send keeps a plain hyphen. Never add a return figure or a comparison with the market / 0050.
-msgid "workspace_wel_h"
-msgstr "Turn Your Trading Idea Into a Strategy That Runs Itself"
-
 msgid "starter_crypto_row"
 msgstr "BTC daily: buy on a close above the 200‑day MA, sell on a close below"
 
@@ -8477,24 +8471,6 @@ msgstr "From {y}"
 # Data rows the user can actually use (single list; the free column of the two-column version); {name} = wd.r.<id>.an. Filled in, not sent
 msgid "wd.ask.build"
 msgstr "Build and backtest a strategy with {name}"
-
-msgid "workspace_wel_or"
-msgstr "No idea yet? Run a ready-made one first"
-
-# {n} = number of strategies in the library
-msgid "workspace_wel_more"
-msgstr "See all {n} in the library →"
-
-# Card meta: {span} = "2020–2025" or a single year
-msgid "workspace_lib_bt_span"
-msgstr "Backtest {span}"
-
-msgid "workspace_lib_detail"
-msgstr "Details"
-
-# Welcome-page card stat label (short; the library panel keeps lib.annLabel)
-msgid "wc.annLabel"
-msgstr "Annual"
 
 # First sentence of the "free AI credit used up" pre-check card; {n} = strategies in the sidebar. Not shown when 0
 msgid "acct.built1"
@@ -8559,3 +8535,68 @@ msgstr "The reply in progress will be stopped first."
 # 刪對話沒刪成(主行程回 false):對話清單上方那一行,不無聲關框
 msgid "cs.delFail"
 msgstr "Couldn't delete it. Try again."
+
+# Welcome-page getting-started steps (0.1.28; renderer/welcome.js; spec agent-onboarding-e-f §2–3). Market question: optional, no default
+msgid "onb.q"
+msgstr "Which market?"
+
+msgid "onb.s1"
+msgstr "Find an idea"
+
+msgid "onb.s2"
+msgstr "Build and backtest a strategy"
+
+msgid "onb.s3"
+msgstr "Add it to your portfolio"
+
+# TAIEX futures step 4 outline button (crypto uses cx.connect)
+msgid "onb.realFut"
+msgstr "Connect a futures broker"
+
+# Account connected, not started: step 4 shows only this button; opens Auto trading
+msgid "onb.goTr"
+msgstr "Go to Auto Trading"
+
+# Screen reader: a completed step row; {step} = step name
+msgid "onb.doneSr"
+msgstr "{step}, done"
+
+# Shown in place the moment the last step is done (stays while the app is open)
+msgid "onb.fin"
+msgstr "All set"
+
+# Settings › General: clears the after-onboarding flag and shows the steps again. The row name is also the steps list's accessible name
+msgid "set.onb"
+msgstr "Getting started"
+
+msgid "set.onb.replay"
+msgstr "Show again"
+
+# Connect dialog (spec §7-4, 7-5): the title and the fog button use the same phrase; two big options, paper preselected
+msgid "cx.title"
+msgstr "Choose a Trading Account"
+
+msgid "cx.goPaper"
+msgstr "Start Paper Trading"
+
+msgid "cx.mode.paperSub"
+msgstr "No keys. Starts with 100,000 USDT. No real money."
+
+msgid "cx.mode.real"
+msgstr "Real account"
+
+msgid "cx.mode.realSub"
+msgstr "Your own exchange or futures broker"
+
+# Real account: three facts; the cloud view swaps the first for keyCloud
+msgid "cx.fact.key"
+msgstr "Keys stay on this computer"
+
+msgid "cx.fact.keyCloud"
+msgstr "Keys stay on your cloud machine"
+
+msgid "cx.fact.perm"
+msgstr "Allow read and trade only, not withdrawals"
+
+msgid "cx.fact.ai"
+msgstr "Orders follow your strategy's code, not the AI"

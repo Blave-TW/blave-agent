@@ -127,8 +127,8 @@ ok("⑤ 改值才送 theme_*(主行程回的值 = 要的值、而且真的變了
   && /if \(!THEME_FEATURE\[v\] \|\| v === THEME\) return;/.test(app) && /if \(r !== v\) return;[^\n]*\n\s*THEME = v; themePaint\(\); trackFeature\(THEME_FEATURE\[v\]\);/.test(app)
   && /function themeShown\(\) \{ if \(document\.documentElement\.getAttribute\("data-theme"\) === "light"\) trackFeature\("theme_light_seen"\); \}/.test(app)
   && /window\.addEventListener\("blave:theme", themeShown\);/.test(app));
-ok("⑤ 圖表跟著換:K 線 / 交易地圖就地改色,回測 / 樣本外 / 策略組合 / 總覽曲線重畫,策略庫與歡迎頁小曲線改色",
-  ["report-trades.js", "report-backtest.js", "report-wf.js", "portfolio.js", "trade.js", "library.js", "welcome.js"].every((f) => /addEventListener\("blave:theme"/.test(read(path.join(R, f))))
+ok("⑤ 圖表跟著換:K 線 / 交易地圖就地改色,回測 / 樣本外 / 策略組合 / 總覽曲線重畫,策略庫小曲線改色(歡迎頁的卡片與小曲線隨 onboarding E 退役)",
+  ["report-trades.js", "report-backtest.js", "report-wf.js", "portfolio.js", "trade.js", "library.js"].every((f) => /addEventListener\("blave:theme"/.test(read(path.join(R, f))))
   && /const retheme = function \(\)/.test(read(path.join(R, "report-trades.js"))));
 
 // ── ⑥ segment 一種長相 ──

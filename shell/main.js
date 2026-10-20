@@ -2756,6 +2756,20 @@ function themeSet(v) {
   nativeTheme.themeSource = v;
   return v;
 }
+/* 入門步驟(歡迎頁 onboarding;renderer/welcome.js;IPC welcome-prefs):市場題的選擇與「已進完成後首頁」旗標,只存這台電腦的 ui-prefs、不上傳。
+   形狀不對當沒設:mkt 只收 crypto / tw / txf,done 只收 true */
+const ONB_MKTS = ["crypto", "tw", "txf"];
+function onbPrefsGet() {
+  let o = {}; try { o = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")) || {}; } catch (_) { o = {}; }
+  return { mkt: ONB_MKTS.includes(o.onbMkt) ? o.onbMkt : null, done: o.onbDone === true };
+}
+function onbPrefsSet(patch) {
+  const p = patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {}, w = {};
+  if ("mkt" in p) w.onbMkt = ONB_MKTS.includes(p.mkt) ? p.mkt : null;
+  if ("done" in p) w.onbDone = p.done === true;
+  if (Object.keys(w).length) try { uiPrefsPatch(w); } catch (_) { /* 寫不進去:這一次只在畫面上 */ }
+  return onbPrefsGet();
+}
 let awakeBlocker = null, awakeStartAt = 0;
 const keepAwakeGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).keepAwake !== false; } catch (_) { return true; } };
 function keepAwakeSet(on) {
@@ -3448,6 +3462,8 @@ app.whenReady().then(() => {
   handle("keep-awake-set", (_e, on) => keepAwakeSet(on === true), null);
   handle("theme", () => themeGet(), "system");
   handle("theme-set", (_e, v) => themeSet(v), null);
+  handle("welcome-prefs", () => onbPrefsGet(), { mkt: null, done: false });
+  handle("welcome-prefs-set", (_e, p) => onbPrefsSet(p), { mkt: null, done: false });
   handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
   handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);

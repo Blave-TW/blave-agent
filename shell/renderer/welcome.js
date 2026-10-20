@@ -1,8 +1,13 @@
-/* 歡迎頁(0.1.26 起手句;設計 output/designer/strategy-creation-2026-10-15/spec-starters.md,mockup C):沒選策略就是這一頁,不分有沒有策略(Wei 10-17)。
-   記號＋標題 → 三句起手句(加密｜台股｜台指期;點了就把 starter_<mk>_send 送給現在連的 AI,只有 stFill 判定跑不了才填進輸入框)
-   → 入口籤 → 「可以回測的資料 ›」(預設收起、不記住)→ 還沒想法？＋三張策略庫卡(library.js wcReco 挑)。
-   整頁等 app.js stratRefresh 第一次讀完清單(RP.loaded)才顯示:卡要扣掉已經裝過的,先畫一版再換會閃。
-   接線:app.js stratRefresh → wcSync;送出／解鎖那三排 → stSync;回合結束 libTurnEnd 旁 → stTurnEnd;library.js libLoad → wcPaint。
+/* 歡迎頁(只有「這台電腦」視角;spec .claude/output/specs/agent-onboarding-e-f-spec-2026-10-19.md,mockup e-simple / f-watermark)。
+   onboarding 期間(E,#wc):記號 → 可跳過的市場題 → 步驟清單 ①找靈感 ②做策略並回測 ③加到策略組合 ④自動下單(台股沒有④)。
+   ①② 全新時同時展開;③④ 輪到才露鈕;完成的一步收成一行(打勾＋名字＋meta),點了重新展開。完成判定全從現有狀態推:
+   ② = 本機清單有一支回測過(RP.list hasBacktest)、③ = 存著的金額有一支 > 0(trStored,同 strat_deployed 的判準)、④ = trExecState running。
+   做完最後一步的當下原地一行「都設好了」(這次開著期間留著),之後就是完成後的首頁(F,#wf):淡化記號＋一列籤。
+   「已進 F」與市場題的選擇存主行程 ui-prefs(IPC welcome-prefs),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不顯示「都設好了」、不送 onb_done_*——
+   所以那一次判斷要等到狀態檔真的讀到(報告還沒來時③④一律當沒輪到,不下結論)。
+   起手句(spec-starters):三句並列、點了就把 starter_<mk>_send 送給現在連的 AI,只有 stFill 判定跑不了才填進輸入框;市場題選了只留那一句。
+   整頁等 app.js stratRefresh 第一次讀完清單(RP.loaded)與入門偏好讀到才顯示。
+   接線:app.js stratRefresh → wcSync;trade.js trPoll → onbPaint;送出／解鎖那三排 → stSync;回合結束 → stTurnEnd;設定 › 一般〔重看〕→ onbReplay。
 
    歡迎頁的資料清單(0.1.17;設計:.claude/output/designer/data-scope-2026-10/mockup-data-scope.html §1 歡迎頁)。
    工作頁沒選策略時的空狀態,籤下面列「可以回測的資料」:依市場分段,每一列一行 = 資料名 + 緊跟在後的小字(頻率・起始年),
@@ -39,6 +44,31 @@ function wdAsk(tpl, name) {
 /* 起手句要不要改成只填不送(spec-starters §2.2):確定跑不了才擋——還沒連 AI,或連 Blave AI、已登入而帳號不能跑。
    查不到 / 還在查(canRun null)當作能跑;沒登入照樣送,proxy 403 之後由登入卡接手(只填不送的話畫面上沒有下一步) */
 function stFill(c) { return c.engine == null || (c.engine === "blave" && c.signedIn === true && c.canRun === false); }
+/* 入門步驟(spec §2.3–2.4、§3.1)。市場:題目選了照選的;沒選照第一支回測完的策略(runtime strategy_market 的長碼,或 telemetry 的短碼);
+   判斷不出來 = null(畫四步) */
+function onbMkt(choice, first) {
+  if (choice === "crypto" || choice === "tw" || choice === "txf") return choice;
+  return first === "tw_stock" ? "tw" : first === "crypto" ? "crypto" : first === "tw_index_futures" || first === "tw_idx_fut" ? "txf" : null;
+}
+/* o = { mkt, bt, funded, live, known, open[4] }:known = 狀態檔讀到了(還沒讀到時③④不下結論,一律沒輪到)。
+   ①跟②同時算完成(有想法的人跳過①直接打字)。cur = 還沒做、而且前面都做完(①② 永遠是 cur);open = 這一步的鈕露出來 */
+function onbSteps(o) {
+  const n = o.mkt === "tw" ? 3 : 4, done = [!!o.bt, !!o.bt, !!o.known && !!o.funded, !!o.known && !!o.live].slice(0, n);
+  const steps = done.map((d, i) => {
+    const state = d ? "done" : i < 2 || (o.known && done.slice(0, i).every(Boolean)) ? "cur" : "todo";
+    return { state, open: state === "cur" || (state === "done" && !!(o.open && o.open[i])) };
+  });
+  return { n, steps, complete: !!o.known && done.every(Boolean) };
+}
+/* E／F 切換。o = { flag(已進 F), complete, base(第一次讀到狀態檔那一刻完成了沒;null = 還沒讀到), fin(這次開著時已經顯示過「都設好了」), replay(設定裡按了重看) }。
+   回 { view: E | fin | F, setFlag, event }:當下完成才慶祝、才送 onb_done_*;上線那天就已經完成的直接進 F */
+function onbPhase(o) {
+  if (o.fin) return { view: "fin", setFlag: false, event: false };
+  if (o.replay) return { view: "E", setFlag: false, event: false };
+  if (o.flag) return { view: "F", setFlag: false, event: false };
+  if (o.base === null || o.base === undefined || !o.complete) return { view: "E", setFlag: false, event: false };
+  return o.base === false ? { view: "fin", setFlag: true, event: true } : { view: "F", setFlag: true, event: false };
+}
 /* ── 純邏輯到此 ── */
 
 const WD_P = "p", WD_B = "b";
@@ -98,10 +128,11 @@ function wdDocs() {
    沒登入時那句要的試用天數來自公開價目(app.js pubLoad,一次,拿不到就用不帶數字的句子) */
 function wdPaint() {
   const box = $("wl"); if (!box) return;
-  stPaint(); wcLoad();   // 換語言、帳號狀態變了都走這裡:起手句換字、卡的資料要重問
+  stPaint(); onbApplyMkt();   // 換語言、帳號狀態變了都走這裡:起手句換字;市場題選了 → 資料清單只列那個市場
   const s = hasToken ? acct : null, v = planVars(), m = wdMode(hasToken, s, dataAccessOf(s), v.n);
   if (!hasToken && !pub && !WD.pubAsked) { WD.pubAsked = true; pubLoad().then(() => wdPaint()); }
   const key = JSON.stringify([LANG, m.k, m.cmp, WD.mk, v.t, v.r, v.d, planMo()]);
+  onbPaint();
   if (key === WD.key) return;
   WD.key = key;
   $("wl-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === WD.mk)));
@@ -172,98 +203,151 @@ $("wl-fold").addEventListener("click", () => {
   if (open) trackFeature("wd_fold_open");
 });
 
-/* ── 還沒想法？三張策略庫卡(§1.6;長相照網頁 libCard)── */
-const WC = { key: null, charts: [], shown: false, armed: false, retried: null };
+/* ── 入門步驟(E)與完成後的首頁(F)── */
+const WC = { shown: false, armed: false };
+// prefs:null = 還在讀(讀到之前不畫,不然已進 F 的人會先閃一下步驟清單)
+const ONB = { prefs: null, base: null, fin: false, replay: false, open: [false, false, false, false], key: null, target: null };
+const ONB_MKT_FEATURE = { crypto: "onb_mkt_crypto", tw: "onb_mkt_tw", txf: "onb_mkt_txf" };   // 送出點的名字要是字面(tests/check_shell_telemetry.js 掃這張表)
+const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3", "tr.nav"];
 // 第一次清單讀完才顯示整頁
 function wcSync() {
-  if (!WC.shown) { WC.shown = true; $("wc").hidden = false; }
-  wcLoad(); wcPaint();
+  if (!WC.shown) WC.shown = true;
+  onbPaint();
 }
 // 讀清單一直失敗(RP.loaded 不會變)也不能讓歡迎頁永遠空白:進工作頁(app.js enterWorkspace)起算 3 秒照樣出。
-// 從 script 載入起算的話,停在連線頁超過 3 秒的人會在還沒連 AI 時就打策略庫、進來後卡片再換一輪(稽核 B1)
+// 從 script 載入起算的話,停在連線頁超過 3 秒的人會在還沒連 AI 時就看到歡迎頁(稽核 B1)
 function wcArm() {
   if (WC.armed) return;
   WC.armed = true; setTimeout(() => { if (!WC.shown) wcSync(); }, 3000);
 }
+const onbSave = (patch) => { Promise.resolve().then(() => window.blave.welcomePrefsSet(patch)).catch(() => {}); };
+const onbChoice = () => (ONB.prefs && ONB.prefs.mkt) || null;
+// 找點子框的市場:題目選了帶那個,沒選「不限」(同 libIdeaMkt 的值域)
+function onbIdeaMkt() { return onbChoice() || "any"; }
+// 市場題選了:資料清單跟著那個市場、分段鈕藏起來(wdPaint 的第一步)
+function onbApplyMkt() {
+  const c = onbChoice(), seg = $("wl-seg"); if (!seg) return;
+  if (c) WD.mk = c;
+  seg.hidden = !!c;
+}
+/* 從現有狀態推每一步(spec §2.3)。本機視角才有歡迎頁,只看 TR_BAGS.local */
+function onbData() {
+  const L = typeof TR_BAGS !== "undefined" ? TR_BAGS.local : null, st = L && L.st, r = st && st.report;
+  const kinds = r && r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds : {};
+  const known = !!r && typeof trExecState === "function" && trExecState(st) !== "loading";
+  const stored = known ? trWith(L, () => trStored()) || {} : {};
+  // 第一支回測完的 = 回測時間最早的那支(RP.list 是最近動過在上)
+  const bts = RP.list.filter((x) => x.hasBacktest).sort((a, b) => (a.generatedAt || 0) - (b.generatedAt || 0));
+  const first = bts[0] || null, funded = Object.keys(stored).some((n) => Number(stored[n]) > 0);
+  // ③的那支:第一支回測完、還沒存金額的;Type B 不能加進組合(同 portfolio.js poAddBtn)
+  const target = bts.find((x) => !(Number(stored[x.name]) > 0) && !(kinds[x.name] && kinds[x.name].type === "B")) || null;
+  let total = null;
+  if (funded) { const p = trWith(L, () => trPlanTotal(stored)); if (p && p.ok) total = p.text + (p.ccy ? " " + p.ccy : ""); }
+  return { known, bt: !!first, funded, live: known && trExecState(st) === "running", acct: known && trHasAccount(r),
+    firstMkt: first && kinds[first.name] ? kinds[first.name].market : null, firstName: first ? first.displayName || first.name : null, target: target ? target.name : null, total };
+}
+// 標題列:完成的那一步是按鈕(重新展開／收起),其餘是灰或亮的字
+function onbHead(i, s, meta) {
+  const host = $("onb-h" + (i + 1)), label = t(ONB_STEP_KEYS[i]);
+  host.textContent = "";
+  const done = s.state === "done", h = wdEl(done ? "button" : "div", "onb-h is-" + s.state);
+  if (done) {
+    h.type = "button"; h.setAttribute("aria-expanded", String(s.open)); h.setAttribute("aria-controls", "onb-b" + (i + 1));
+    h.addEventListener("click", () => onbToggle(i));
+  }
+  const num = wdEl("span", "num", done ? "✓" : String(i + 1)); num.setAttribute("aria-hidden", "true");
+  h.append(num, wdEl("span", done ? "sr-only" : "lb", done ? t("onb.doneSr", { step: label }) : label));
+  if (done) { const lb = wdEl("span", "lb", label); lb.setAttribute("aria-hidden", "true"); h.appendChild(lb); }
+  if (done && meta) h.appendChild(wdEl("span", "meta", meta));
+  if (done) { const ch = wdEl("span", "chev", "›"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch); }
+  host.appendChild(h);
+}
+function onbToggle(i) {
+  ONB.open[i] = !ONB.open[i];
+  if (ONB.open[i]) trackFeature("onb_reopen");
+  ONB.key = null; onbPaint();
+  const b = $("onb-h" + (i + 1)).querySelector("button"); if (b) b.focus();
+}
+/* 重畫。指紋沒變就不碰 DOM(trPoll 每輪都叫:hover 與焦點不能被洗掉) */
+function onbPaint() {
+  const wc = $("wc"), wf = $("wf"); if (!wc || !wf || !WC.shown || !ONB.prefs) return;
+  const d = onbData(), choice = onbChoice(), mkt = onbMkt(choice, d.firstMkt);
+  const S = onbSteps({ mkt, bt: d.bt, funded: d.funded, live: d.live, known: d.known, open: ONB.open });
+  if (d.known && ONB.base === null) ONB.base = S.complete;
+  const ph = onbPhase({ flag: ONB.prefs.done, complete: S.complete, base: ONB.base, fin: ONB.fin, replay: ONB.replay });
+  if (ph.setFlag) { ONB.prefs.done = true; onbSave({ done: true }); }
+  if (ph.view === "fin") ONB.fin = true;
+  if (ph.event) trackFeature(mkt === "tw" ? "onb_done_tw" : "onb_done_trade");
+  ONB.target = d.target;
+  const key = JSON.stringify([LANG, ph.view, mkt, choice, S.steps, d.firstName, d.total, d.acct, d.target]);
+  if (key === ONB.key) return;
+  ONB.key = key;
+  wf.hidden = ph.view !== "F"; wc.hidden = ph.view === "F";
+  $("onb-fin").hidden = ph.view !== "fin";
+  wc.querySelector(".onb-mq").hidden = ph.view !== "E"; $("onb-steps").hidden = ph.view !== "E";
+  if (ph.view !== "E") return;
+  $("onb-mkt").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === choice)));
+  const metas = [null, d.firstName, d.total, null];
+  [1, 2, 3, 4].forEach((n) => { $("onb-h" + n).closest("li").hidden = n > S.n; });
+  S.steps.forEach((s, i) => { onbHead(i, s, metas[i]); $("onb-b" + (i + 1)).hidden = !s.open; });
+  // ②:選了市場只留那一句起手句(tag 欄一起收)
+  const rows = $("st-rows");
+  rows.querySelectorAll(".st-row").forEach((b) => { b.hidden = !!choice && b.dataset.starter !== choice; });
+  rows.classList.toggle("one", !!choice);
+  // ③:沒有能加的那支(都存過金額、只剩 Type B)就不出鈕
+  $("onb-po").hidden = !d.target; $("onb-bt").hidden = !d.target;
+  // ④:連好帳戶、還沒啟動 → 只剩「到自動下單」;台指期的描邊鈕叫「連接期貨商」
+  $("onb-paper").hidden = d.acct; $("onb-real").hidden = d.acct; $("onb-tr").hidden = !d.acct;
+  $("onb-real").textContent = t(mkt === "txf" ? "onb.realFut" : "cx.connect");
+}
+// 設定 › 一般〔重看〕(app.js):清掉旗標、這次開著期間停在步驟清單(下次開 app 再照完成條件判)
+function onbReplay() {
+  if (!ONB.prefs) return;
+  ONB.prefs.done = false; ONB.fin = false; ONB.replay = true; ONB.open = [false, false, false, false]; ONB.key = null;
+  onbSave({ done: false });
+  onbPaint();
+}
+// 市場題:選了不同的才送;選了可以再換,不能清掉
+$("onb-mkt").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-mk]"); if (!b || !ONB.prefs || b.dataset.mk === ONB.prefs.mkt) return;
+  ONB.prefs.mkt = b.dataset.mk; onbSave({ mkt: b.dataset.mk }); trackFeature(ONB_MKT_FEATURE[b.dataset.mk]);
+  wdPaint();
+});
+// ①〔策略庫〕:開之前把本機那一袋的市場篩選設成市場題的值(不經 libMktPick,那裡會送 lib_mkt_pick)
+$("onb-lib").addEventListener("click", () => {
+  const c = onbChoice();
+  if (c) libBag("local").mkt = c === "tw" ? "twstock" : c;
+  libOpen();
+});
+// ③ 加到策略組合(A1 同一個動作,po_add 由 poAdd 送)/ 看回測
+$("onb-po").addEventListener("click", () => {
+  const name = ONB.target, S = TR_BAGS.local; if (!name) return;
+  trackFeature("onb_go_po");
+  poAdd(S, name, trWith(S, () => trNames().indexOf(name) >= 0));
+});
+$("onb-bt").addEventListener("click", () => { if (ONB.target) stratSelect(ONB.target); });
+/* ④ 先到自動下單頁、再開連接框:綁好之後「啟動下單」就在那一頁(模擬預選;連接交易所／期貨商開在真實帳戶)。
+   台指期在這台電腦只有統一(群益是雲端那條),統一沒上架的時候落在真實帳戶的預設那一家 */
+async function onbCx(paper) {
+  await trOpen();
+  if (ENV.cur !== "local" || !$("cx-scrim").hidden) return;
+  const fut = onbMkt(onbChoice(), onbData().firstMkt) === "txf" && typeof cxPresListed === "function" && cxPresListed();
+  cxModalOpen($("tr-connect") || $("tr-nav"), paper ? PAPER : fut ? "president" : null, paper ? "paper" : "real");
+}
+$("onb-paper").addEventListener("click", () => { trackFeature("onb_go_paper"); onbCx(true); });
+$("onb-real").addEventListener("click", () => { trackFeature("onb_go_trade"); onbCx(false); });
+$("onb-tr").addEventListener("click", () => trOpen());
+// F 的三顆籤:不帶市場(spec §3.2)
+$("wf-idea").addEventListener("click", () => ideaOpen($("wf-idea"), "welcome", "any"));
+$("wf-lib").addEventListener("click", () => libOpen());
+$("wf-ns").addEventListener("click", () => nsOpen($("wf-ns")));
+Promise.resolve().then(() => window.blave.welcomePrefs()).then((p) => p, () => null).then((p) => {
+  ONB.prefs = { mkt: p && ["crypto", "tw", "txf"].includes(p.mkt) ? p.mkt : null, done: !!(p && p.done === true) };
+  if ($("wl-seg").hasAttribute("aria-label")) wdPaint(); else onbPaint();   // applyStatic 還沒跑就先別畫資料清單(同檔尾那一條)
+});
 // 開機那次 stratRefresh / enterWorkspace 可能在這支載入前就跑完(script 之間會先跑掉 microtask,typeof 那時還是 undefined):補叫一次
 if (RP.loaded) wcSync();
 if (!$("view-ws").hidden) wcArm();
-// 手上沒有、作廢了、換了語言才問(主行程有 5 分鐘快取)。不從 wcPaint 叫:libLoad 結束會叫 wcPaint,讀不到時會一直重打。
-// 讀不到(主行程不快取失敗)只再試一次:之後要等登入翻轉(libInvalidate 標 stale)或換語言,不跟著每次帳號刷新、回合結束重打(稽核 B2)
-function wcLoad() {
-  if (!WC.shown || LIB.loading) return;
-  if (LIB.data && !LIB.stale && LIB.data.lang === LANG) return;
-  if (!LIB.data && LIB.failed && !LIB.stale) { if (WC.retried === LANG) return; WC.retried = LANG; }
-  libLoad(false);
-}
-function wcPaint() {
-  const box = $("wc-reco"), cards = $("wc-cards"); if (!box || !WC.shown) return;
-  const picks = LIB.data ? wcReco(LIB.data.strategies, { dataAccess: LIB.data.dataAccess, signedIn: !!hasToken, installed: wcInstalled }) : [];
-  const key = JSON.stringify([LANG, LIB.data ? "d" : LIB.skel ? "skel" : "none", LIB.data ? LIB.data.strategies.length : 0, picks]);
-  if (key === WC.key) return;
-  WC.key = key;
-  WC.charts.forEach((c) => { try { c.remove(); } catch (_) { } }); WC.charts = [];
-  cards.textContent = "";
-  if (!LIB.data && LIB.skel) {
-    for (let i = 0; i < 3; i++) { const c = wdEl("div", "wc-card is-skel"); [70, 40, 100, 55].forEach((w) => { const k = wdEl("div", "sk"); k.style.width = w + "%"; c.appendChild(k); }); cards.appendChild(c); }
-    $("wc-more").hidden = true; cards.hidden = false; box.hidden = false; return;
-  }
-  const n = LIB.data ? LIB.data.strategies.length : 0;
-  box.hidden = !n;   // 讀不到、或策略庫是空的:整塊不見,不顯示錯誤字
-  cards.hidden = !picks.length;   // 能推的都裝了:留「看全部」那一行,策略庫入口不跟著消失
-  if (!n) return;
-  picks.forEach((s) => cards.appendChild(wcCard(s)));
-  $("wc-more").hidden = false; $("wc-more").textContent = t("workspace_wel_more", { n });
-  requestAnimationFrame(() => cards.querySelectorAll(".wc-curve").forEach((h) => wcCurve(h, (LIB.data.strategies.find((x) => String(x.id) === h.dataset.id) || {}).report)));
-}
-// libInstalledName 會把「名字不在本機清單」的對照刪掉:清單還沒讀到(3 秒保底那條路)時只看對照表,不能拿空清單去刪
-function wcInstalled(s) { return RP.loaded ? !!libInstalledName(s) : !!LIB.installed[String(s.id)]; }
-function wcCard(s) {
-  const c = wdEl("article", "wc-card"), head = wdEl("div", "wc-card-h"), r = s.report || {};
-  head.appendChild(wdEl("span", "t", s.title));   // 不放「已驗證」:三張都是官方、全部已驗證,同一個字印三次不能比較(Wei 10-17;策略庫面板照舊)
-  const meta = wdEl("div", "wc-card-m"), y1 = String(r.equity_from || "").slice(0, 4), y2 = String(r.equity_to || "").slice(0, 4);
-  meta.append(...libSymbolNodes(s));
-  if (y1 && y2) meta.append(" · ", wdEl("span", "nw", t("workspace_lib_bt_span", { span: y1 === y2 ? y1 : y1 + "–" + y2 })));
-  const curve = wdEl("div", "wc-curve"); curve.dataset.id = String(s.id);
-  const stats = wdEl("div", "wc-stats"), mdd = typeof r.max_drawdown === "number" ? -Math.abs(r.max_drawdown) : null;
-  [[t("wc.annLabel"), libPct(r.annual_return), r.annual_return > 0 ? " up" : r.annual_return < 0 ? " down" : ""], [t("lib.kv.sharpe"), libFixed(r.sharpe, 2), ""], [t("lib.kv.mdd"), libPct(mdd), mdd < 0 ? " down" : ""]]
-    .forEach(([k, v, cls]) => { const d = wdEl("div", "wc-stat"); d.append(wdEl("span", "k", k), wdEl("span", "v mono" + cls, v)); stats.appendChild(d); });
-  const act = wdEl("div", "wc-card-a"), use = wdEl("button", "btn-out", t("lib.use")), more = wdEl("button", "btn-quiet", t("workspace_lib_detail"));
-  use.type = "button"; more.type = "button";
-  // 〔用這支〕= 打開這支的詳情、焦點放在詳情主鈕(spec §1.6 的替代做法):下載失敗、沒送出、被擋都只畫在詳情裡,
-  // 從歡迎頁直接 libAsk 的話那些錯誤畫在藏著的 #lib,畫面上什麼都沒有(稽核 M1)。閘門、library_use、lib_pick、lib_installed 照舊由詳情那條路送
-  use.addEventListener("click", () => wcDetail(s, true));
-  more.addEventListener("click", () => wcDetail(s, false));
-  act.append(use, more);
-  c.append(head, meta, curve, stats, act);
-  return c;
-}
-async function wcDetail(s, cta) {
-  await libOpen(); libShowDetail(s.id);
-  const b = cta ? libCtaMain() : null; if (b) b.focus();
-}
-// 小曲線(lightweight-charts,同 library.js libChartDraw 的接法;沒有軸、不能捲)。畫不出來就留空,卡的數字照樣在
-function wcCurve(host, r) {
-  const data = r ? libCurve(r.spark, r.equity_from, r.equity_to) : null;
-  if (!data || typeof LightweightCharts === "undefined") { host.classList.add("is-empty"); return; }
-  const LWC = LightweightCharts, tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const chart = LWC.createChart(host, {
-    autoSize: true, layout: { textColor: tok("--ink-3"), background: { type: "solid", color: tok("--surface-card") }, attributionLogo: false },
-    leftPriceScale: { visible: false }, rightPriceScale: { visible: false, mode: LWC.PriceScaleMode.Logarithmic, scaleMargins: { top: 0.08, bottom: 0.08 } },
-    timeScale: { visible: false, borderVisible: false, fixLeftEdge: true, fixRightEdge: true },
-    grid: { vertLines: { visible: false }, horzLines: { visible: false } }, crosshair: { mode: LWC.CrosshairMode.Hidden }, handleScroll: false, handleScale: false,
-  });
-  try {
-    const series = chart.addSeries(LWC.LineSeries, { color: tok("--color-green"), lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-    series.setData(data); chart.timeScale().fitContent(); WC.charts.push(chart);
-  } catch (_) { chart.remove(); host.classList.add("is-empty"); }
-}
-$("wc-more").addEventListener("click", () => libOpen());
-// 換主題:小曲線只有底與字跟著換(線是綠,亮暗同值)
-window.addEventListener("blave:theme", () => {
-  const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  WC.charts.forEach((c) => { try { c.applyOptions({ layout: { textColor: tok("--ink-3"), background: { type: "solid", color: tok("--surface-card") } } }); } catch (_) { } });
-});
 /* 補畫第一次:app.js 開場的 applyStatic 用 typeof wdPaint 判斷,它若在這支載入前就跑過(設定裡選過語言時是同步跑的;
    沒選過則看語系的 IPC 多快回來),那一次會跳過,沒登入的人清單就空到換語言或登入為止。
    只在 applyStatic 已經跑過時補(#wl-seg 的 aria-label 是它填的):還沒跑的話它等一下自己會畫,這裡搶先畫會閃一下英文 */

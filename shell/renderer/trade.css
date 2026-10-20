@@ -507,6 +507,9 @@ html.ws-sc .side-gate { display: none; }
 .cx-modal { width: min(480px, 92vw); }
 .cx-body { padding: var(--space-4) var(--space-16) var(--space-16); }   /* 左右同 .del-body */
 .cx-body .plan-err, #tr-set .plan-err { margin: var(--space-12) 0 0; }
+/* 框頂兩個大選項(模擬／真實;.cf-opt 是確認框那一套)與真實帳戶的三行事實 */
+.cx-pick { margin-top: var(--space-12); }
+.cx-pick .cx-facts { margin: var(--space-12) 0 0; }
 .cx-row .cn-st .fault-mark { margin-top: 0; }
 .fld { display: block; margin-top: var(--space-12); }
 .fld-l { display: block; margin-bottom: var(--space-6); font-size: 12px; color: var(--ink-3); }

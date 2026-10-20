@@ -463,7 +463,7 @@ function capSyncGo(view) {
 // 換回別的交易所:把群益改過的標題與腳還回去(trade.js 的 cxModalPaint 每次先叫)
 function capFootRestore() {
   const msg = $("cap-foot-msg"); if (msg) msg.remove();
-  $("cx-title").textContent = t("cx.connect");
+  $("cx-title").textContent = t("cx.title");
   $("cx-go").hidden = false; $("cx-cancel").hidden = false; $("cx-cancel").textContent = t("del.cancel");
   $("cx-body").removeAttribute("aria-busy");
 }
@@ -486,7 +486,7 @@ function capPaint() {
   CAP.view = view;
   if ((view === "c-done" || view === "c-done-ts") && CAP.base && (CAP.base.worker !== "ok" || CAP.finishSent)) capTrack("ready");
   const box = $("cx-body"), down = capDown();
-  $("cx-title").textContent = view === "c-form" || view === "c-win" ? t("cx.connect") : t("cap.title");
+  $("cx-title").textContent = view === "c-form" || view === "c-win" ? t("cx.title") : t("cap.title");
   capFoot(view);
   box.setAttribute("aria-busy", CAP.busy || view === "c-finish" || view === "c-probe" || view === "c-importing" ? "true" : "false");
   const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.busy, CAP.msg, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,

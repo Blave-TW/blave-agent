@@ -1085,7 +1085,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("B0 狀態行(v2 §9-1:一定是 Z):已暫停 · 按「解除暫停」那一句;一般 noaccount 照舊", b0t === "tr.halted · tr.cloud.restartNoAccountZ" && n0 === "tr.noAccount");
     const head = fnS("trPaintHead"), start = fnS("trAskStart"), pc = fnS("trPendingCheck");
     ok("B0(§12 / §13-1):不出「啟動下單」,只出**實心**的「解除暫停」;沒有原因行(出口寫在狀態句裡);onboard 照留", /const b0 = state === "noaccount" && trNoAccountStopped\(trReport\(\)\);\n\s*if \(!stopped && \(b0 \|\| state === "noaccount"[^\n]*\{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(head)
-      && /trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.connect"\)\)/.test(src));
+      && /trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.title"\)\)/.test(src));
     ok("B0 啟動框與 b0Done 退場(沒有啟動鈕了);解除暫停一律 X0", !/restartNoAccountStart|b0Done/.test(src) && trReleaseKind({ ...B0({}).report, config: { amounts: {} }, self_ledger: true }).kind === "x0"
       && J(trZView("noaccount", B0({}).report)) === J({ off: true, release: true, reason: null, noStart: true }) && trZView("noaccount", { ...B0({}).report, config: { amounts: { a: 5 } } }).release); }
   { // 1-4 撤回(後端:Type A/C 重開停止期間照跑):啟動框的第二句不分 B
@@ -2150,12 +2150,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           ctx.document.createElement = mk0; }
         ctx.trEquity = () => null; }
     }
-    ok("接線:連接框「台股」一組雲端只列群益、這台電腦只列統一且受 PRES_LOCAL_ON 管(0.1.18 Wei 拿掉這台電腦的群益、統一先藏;那兩句說明與 cx.cap.local* 一起刪);cx.acct.meta 換成不再說抓資料的那句",
+    ok("接線:連接框「台股」一組雲端只列群益、這台電腦只列統一且受 PRES_LOCAL_ON 管(0.1.18 Wei 拿掉這台電腦的群益、統一先藏;那兩句說明與 cx.cap.local* 一起刪);交易所選單只在「真實帳戶」出、換到不認得的值退回第一家;框頂那句 cx.acct.meta 換成真實帳戶的三行事實(onboarding E/F §7-4)",
       /if \(CXF\.env !== "local" \|\| cxPresListed\(\)\) \{ const g2 = document\.createElement\("optgroup"\); g2\.label = t\("cap\.group\.tw"\);/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
       && !/cx\.cap\.local/.test(src) && !/cx\.cap\.local/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
-      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| \(sel\.value === CAPITAL && CXF\.env === "cloud"\) \|\| \(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\) \? sel\.value : PAPER;/.test(src)
+      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| \(sel\.value === CAPITAL && CXF\.env === "cloud"\) \|\| \(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(src)
       && /o2\.value = CXF\.env === "local" \? "president" : CAPITAL;/.test(src)
-      && /"cx\.acct\.meta": "只用來下單和讀帳戶。一次只能連一個。"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8")));
+      && !/cx\.acct\.meta/.test(src + fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
+      && /\[CXF\.env === "cloud" \? t\("cx\.fact\.keyCloud"\) : t\("cx\.fact\.key"\), t\("cx\.fact\.perm"\), t\("cx\.fact\.ai"\)\]/.test(src));
     ok("接線:選擇策略框沒有 #ps-next、psOpen 不送 pick_gate_lock、外殼不讀 market_gate",
       !/ps-next/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8")) && !/pick_gate_lock/.test(src) && !/market_gate/.test(src)); }
   /* ── 部位表策略名 → 那支的進出場紀錄(spec-0.1.12-pf-strategy-link):落點、不可點的條件、埋點、點下去才發現不在 ── */

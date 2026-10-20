@@ -9,7 +9,7 @@
 //      「看全部資料」= 用瀏覽器開網站的資料文件頁(wdDocs 原文在純 node 跑:三個市場 × 兩語六個網址),app 內的完整目錄退役(程式、樣式、字串都不留)
 //   ③ Electron(offscreen、show:false,不會出現在螢幕上):對比版兩欄且免費在前、右欄不上鎖不變灰、單一清單一欄且無 TWD 字樣、
 //      點列 → 那一句落進輸入框、不送出、自己打的草稿留著;列高與熱區實測 ≥ 44、窄欄小字折到名字下面;
-//      A2 版面:記號與標題同一行(記號在左、圖形對標題中線)、記號／籤／小標／卡／頁尾同一條左軸、清單是一張卡(列有底色、頭尾收圓角,兩欄各一張)、小字靠右成欄、hover 換色、狀態句在頁尾同一行;
+//      A2 版面:步驟內容(籤／起手句／小標／卡／頁尾)同一條左軸、比記號內縮 32、清單是一張卡(列有底色、頭尾收圓角,兩欄各一張)、小字靠右成欄、hover 換色、狀態句在頁尾同一行;
 //      中欄 <760 上下疊;點「看全部資料」→ 外開文件頁(六個網址)、清單畫面一個節點都不變、記 welcome_data_all
 // 跑法:node tests/check_shell_welcome_data.js(③ 要 BLAVE_TEST_WINDOW=1,①② 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
@@ -51,18 +51,19 @@ if (!process.versions.electron) {
   // ── ② 原文鎖 ──
   const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl-fold"'));
   const wcBox = html.slice(html.indexOf('id="main-empty"'), html.indexOf("</section>", html.indexOf('id="main-empty"')));
-  ok("② index.html(0.1.26 起手句版,mockup C;不分有沒有策略只有一頁):#main-empty 裡只有一個 .wc-inner#wc(預設 hidden,等第一次策略清單讀完);由上到下 .wc-head → #st-rows → 籤(#chat-ns、#chat-idea;#chat-lib 與起手籤 #chat-eg 退役)→ #wl-fold → #wl → #wc-reco",
-    /<div class="wc-inner" id="wc" hidden>/.test(wcBox) && wcBox.split('class="wc-inner"').length === 2 && /id="chat-ns"[\s\S]*id="chat-idea"/.test(chips) && !html.includes('id="chat-lib"') && !html.includes('id="chat-eg"') && !/ws\.chatExample/.test(html + appSrc)
-    && ['class="wc-head"', 'id="st-rows"', 'class="wc-chips"', 'id="wl-fold"', 'id="wl"', 'id="wc-reco"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
+  ok("② index.html(onboarding E/F):#main-empty 裡是 .wc-inner#wc(步驟清單,預設 hidden)與 .wf#wf(完成後首頁,預設 hidden);#wc 由上到下 記號 → 市場題 → ①(#chat-idea、#onb-lib)→ ②(#st-rows、#chat-ns、#wl-fold、#wl)→ ③ → ④ → #onb-fin;#chat-lib、起手籤 #chat-eg、三張卡 #wc-reco 退役",
+    /<div class="wc-inner" id="wc" hidden>/.test(wcBox) && /<div class="wf" id="wf" hidden>/.test(wcBox) && wcBox.split('class="wc-inner"').length === 2 && !html.includes('id="chat-lib"') && !html.includes('id="chat-eg"') && !html.includes('id="wc-reco"') && !/ws\.chatExample/.test(html + appSrc)
+    && ['class="wc-mark"', 'class="onb-mq"', 'id="chat-idea"', 'id="onb-lib"', 'id="st-rows"', 'id="chat-ns"', 'id="wl-fold"', 'id="wl"', 'id="onb-po"', 'id="onb-paper"', 'id="onb-fin"', 'id="wf"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
   { const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]), dup = ids.filter((x, i) => ids.indexOf(x) !== i);
     ok("② 入口籤的 id 不重複:index.html 每一個 id 都只出現一次(列舉全部 " + ids.length + " 個)", ids.length > 100 && dup.length === 0, dup.join(", ")); }
-  ok("② 標題:.wc-head 裡依序是記號 svg.wc-mark 與 h4.wc-h#wc-h(workspace_wel_h,借網頁的 key),整行在起手句之前;起手句容器 role=group、aria-labelledby 指到標題;兩語照 spec 定稿;整份 index.html 只有一個",
-    /<div class="wc-head">\s*<svg class="wc-mark"[^>]*>\s*<path [^>]*\/>\s*<\/svg>\s*<h4 class="wc-h" id="wc-h" data-i18n="workspace_wel_h"><\/h4>\s*<\/div>\s*<div class="st-rows" id="st-rows" role="group" aria-labelledby="wc-h"><\/div>/.test(wcBox) && html.split('class="wc-h"').length === 2 && html.split('class="wc-mark"').length === 2
-    && STR.zh["workspace_wel_h"] === "把你的交易想法，變成自動跑的策略" && STR.en["workspace_wel_h"] === "Turn Your Trading Idea Into a Strategy That Runs Itself" && !("wd.start" in STR.zh) && !("wd.start" in STR.en) && !("lib.chip" in STR.zh) && !("lib.chip" in STR.en));
+  ok("② 標題拿掉(Wei 10-19):沒有 .wc-head / h4.wc-h,兩語字串表與 .po 都沒有 workspace_wel_h;記號 svg.wc-mark 直接在 #wc 第一個;起手句容器 role=group、aria-labelledby 指到步驟②的標題列",
+    !/wc-head|class="wc-h"/.test(html) && /<div class="wc-inner" id="wc" hidden>\s*<svg class="wc-mark"/.test(wcBox) && html.split('class="wc-mark"').length === 2
+    && !("workspace_wel_h" in STR.zh) && !("workspace_wel_h" in STR.en) && !/workspace_wel_h/.test(read(path.join(SHELL, "i18n", "zh.po")) + read(path.join(SHELL, "i18n", "en.po")))
+    && /<div class="st-rows" id="st-rows" role="group" aria-labelledby="onb-h2"><\/div>/.test(html) && !("wd.start" in STR.zh) && !("lib.chip" in STR.en));
   ok("② 資料摺疊(§1.5):#wl-fold 是 button、aria-expanded=false、aria-controls=wl、字 = wd.title、行尾是共用的 .mp-chev(canon Trigger + caret;不再用 ›,Wei)、收起朝下展開翻上只綁 aria-expanded;#wl 預設 hidden(每次開 app 都收起來,不讀不寫任何偏好)",
     /<button class="wl-fold" id="wl-fold" type="button" aria-expanded="false" aria-controls="wl"><span data-i18n="wd\.title"><\/span><span class="mp-chev" aria-hidden="true"><\/span><\/button>/.test(html)
     && /\.wl-fold \{[^}]*display: inline-flex; align-items: center;/.test(css) && /\.wl-fold\[aria-expanded="true"\] \.mp-chev \{ transform: rotate\(-135deg\); margin-bottom: -2px; \}/.test(css) && !/›/.test(html.slice(html.indexOf('id="wl-fold"'), html.indexOf("</button>", html.indexOf('id="wl-fold"')))) && /<div class="wl" id="wl" hidden>/.test(html)
-    && !/localStorage|Prefs|prefs/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
+    && !/localStorage|Prefs|prefs/.test(src.slice(src.indexOf('$("wl-fold").addEventListener'), src.indexOf("/* ── 入門步驟(E)"))));
   ok("② #wl 骨架:頂端小標拿掉(摺疊鈕已經寫了 wd.title)、市場分段 #wl-seg(.lib-seg 配方、三格 crypto / tw / txf、加密預設選中)、#wl-body、頁尾 .wl-foot 裡依序是 #wl-all(.btn-quiet、字固定 = data-i18n wd.all,同設定頁條款那兩顆外開鈕的做法)與 #wl-state(aria-live);狀態句不在清單上面",
     /<div class="wl-top">\s*<span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html)
     && (html.slice(html.indexOf('id="wl-seg"'), html.indexOf("</span>", html.indexOf('id="wl-seg"'))).match(/data-mk="(crypto|tw|txf)" aria-pressed="(true|false)" data-i18n="wd\.mk\.\1"/g) || []).length === 3
@@ -143,12 +144,10 @@ if (!process.versions.electron) {
     ok("② welcome.css:列高下限 44、只剩一行時垂直置中(.wd-row 是 grid,align-content: center)、內距 8/16(卡內距);小字靠右成欄(.wd-l1 space-between、間距 12、baseline、放不下整段折行)",
       /\.wd-row \{\s*display: grid; align-content: center; width: 100%; min-height: 44px; padding: var\(--space-8\) var\(--space-16\);/.test(css)
       && /\.wd-l1 \{ display: flex; align-items: baseline; justify-content: space-between; gap: var\(--space-2\) var\(--space-12\); flex-wrap: wrap; \}/.test(css));
-    ok("② welcome.css(mockup C):.wc-inner 子項靠左撐滿;記號與標題並排一行、上緣對齊(.wc-head:flex、flex-start、隔 12);記號的寬與色各自一行(只改值),寬 32、上移 6;標題 20/600、不留上距、text-wrap: balance;起手句離標題 12;籤靠左、離起手句 16;小標列與頁尾不內縮(同一條左軸)",
-      /\.wc-head \{ display: flex; align-items: flex-start; gap: var\(--space-12\); \}/.test(css)
-      && /\.wc-mark \{\n  width: var\(--space-32\);\n  color: var\(--ink\);\n  margin-top: calc\(-1 \* var\(--space-6\)\);\n\}/.test(css)
-      && /\.wc-h \{ margin: 0; font-size: 20px; font-weight: 600; line-height: 1\.4; color: var\(--ink\); text-wrap: balance; word-break: auto-phrase; \}/.test(css)
-      && /\.st-rows \{ margin: var\(--space-12\) calc\(-1 \* var\(--space-12\)\) 0;/.test(css)
-      && /\.wc-chips \{ margin-top: var\(--space-16\); justify-content: flex-start; \}/.test(css)
+    ok("② welcome.css(onboarding E/F):.wc-inner 子項靠左撐滿、最寬 760;記號 32 靠左;步驟內容內縮 32;起手句不留上距;F 的記號 104、實色 --color-watermark、不用 opacity;小標列與頁尾不內縮(同一條左軸)",
+      /\.wc-mark \{ width: var\(--space-32\); color: var\(--ink\); align-self: flex-start; \}/.test(css) && !/\.wc-head|\.wc-h \{/.test(css)
+      && /\.st-rows \{ margin: 0 calc\(-1 \* var\(--space-12\)\);/.test(css) && /\.onb-body \{ padding-left: var\(--space-32\);/.test(css)
+      && /\.wf-mark \{ width: 104px; height: auto; flex: none; color: var\(--color-watermark\); \}/.test(css) && !/opacity/.test(css.replace(/\/\*[\s\S]*?\*\//g, ""))
       && /\.wl-top \{[^}]*padding: 0; \}/.test(css) && /\.wl-colh \{[^}]*padding: 0 0 var\(--space-8\); border-bottom: 0; margin-bottom: 0; \}/.test(css)
       && /\.wl-foot \{ display: flex; align-items: center; justify-content: space-between; gap: var\(--space-4\) var\(--space-16\); flex-wrap: wrap; margin-top: var\(--space-4\); padding: 0; \}/.test(css)
       && /\.wl-state \{ margin: 0; padding: 0; /.test(css) && /\.wl-foot > \.btn-quiet \{ display: inline-flex; align-items: center; min-height: 44px; color: var\(--ink-2\); \}/.test(css));
@@ -158,11 +157,11 @@ if (!process.versions.electron) {
       && /\.wd-row:first-child, \.wl-colh \+ \.wd-row \{ border-top-left-radius: var\(--radius-lg\); border-top-right-radius: var\(--radius-lg\); \}/.test(css)
       && /\.wd-row:last-child \{ border-bottom: 0; border-bottom-left-radius: var\(--radius-lg\); border-bottom-right-radius: var\(--radius-lg\); \}/.test(css)
       && /\.wd-row:hover \{ background: var\(--surface-muted\); \}/.test(css) && /\.wd-row:hover \.wd-mt \{ color: var\(--ink-2\); \}/.test(css) && /\.wd-row:hover::after \{ color: var\(--ink\); \}/.test(css)
-      && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after, \.st-row, \.wl-fold, \.wl-fold \.mp-chev \{ transition: none; \} \}/.test(css)
+      && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after, \.st-row, \.wl-fold, \.wl-fold \.mp-chev, button\.onb-h \{ transition: none; \} \}/.test(css)
       && !/wd-go|"go"/.test(src));
-    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有三條:兩欄清單 760、起手句窄版 480、卡片三欄 640",
+    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有兩條:兩欄清單 760、起手句窄版 480(卡片三欄 640 隨三張卡退役)",
       !/wdCatalog|WD\.all|\ball:\s*(true|false)|WD_NT|wd-cat|wd-foot|wd-tag|wd\.less|wd\.h\.|wd\.src\.|wd\.foot\.|txfo|<table|"table"/.test(src + css + html.slice(html.indexOf('id="wl"'), html.indexOf("</section>", html.indexOf('id="wl"'))))
-      && !/1040px|859\.98|max-width: (?!479px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (max-width: 479px)", "@container (min-width: 640px)"].sort().join()
+      && !/1040px|859\.98|max-width: (?!479px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (max-width: 479px)"].sort().join()
       && !/msgid "wd\.(less|h\.|src\.|foot\.|mk\.txfo)/.test(po) && !/msgid "wd\.r\.[a-z0-9]+\.(nt|sn|us|wnm)"/.test(po));
     // 「看全部資料」:wdDocs 原文 + app.js 的 docsUrl 原文在純 node 跑;外開與埋點換成記錄器
     { const dl = /^const docsUrl = \(page\) => "https:\/\/blave\.org\/docs\/" \+ LANG \+ "\/" \+ page;$/m.exec(appSrc);
@@ -263,9 +262,9 @@ if (!process.versions.electron) {
       if (/%|0050|大盤|報酬|return|benchmark|outperform|beat/i.test(row + send)) badS.push(L + ":" + mk + " 寫了報酬或比較");
       if (/\(\d{4}\)|（\d{4}）/.test(row)) badS.push(L + ":" + mk + " 列上帶了代號");
     }
-    ok("② en 列上的「N‑day」用不斷行連字號 U+2011(spec §10;1440 寬時不會斷成「10-」/「day」),送出那句維持一般連字號;歡迎頁卡片的年化標籤另開 wc.annLabel = 年化 / Annual(spec §10-4),策略庫面板的 lib.annLabel 不動",
+    ok("② en 列上的「N‑day」用不斷行連字號 U+2011(spec §10;1440 寬時不會斷成「10-」/「day」),送出那句維持一般連字號;歡迎頁卡片退役,卡片專用的字(wc.annLabel、workspace_wel_or / _more、workspace_lib_bt_span / _detail)一起刪,策略庫面板的 lib.annLabel 不動",
       ["crypto", "txf"].every((mk) => /\d\u2011day/.test(STR.en["starter_" + mk + "_row"]) && !/\d-day/.test(STR.en["starter_" + mk + "_row"]) && /\d-day/.test(STR.en["starter_" + mk + "_send"]) && !/\u2011/.test(STR.en["starter_" + mk + "_send"]))
-      && STR.zh["wc.annLabel"] === "年化" && STR.en["wc.annLabel"] === "Annual" && STR.en["lib.annLabel"] === "Annualized · backtest" && STR.zh["lib.annLabel"] === "年化・回測" && /\[\[t\("wc\.annLabel"\), libPct\(r\.annual_return\)/.test(cutFn(src, "wcCard")));
+      && ["wc.annLabel", "workspace_wel_or", "workspace_wel_more", "workspace_lib_bt_span", "workspace_lib_detail"].every((k) => !(k in STR.zh) && !(k in STR.en)) && STR.en["lib.annLabel"] === "Annualized · backtest" && STR.zh["lib.annLabel"] === "年化・回測" && !/wcCard|wcCurve|wcDetail|wcLoad/.test(src));
     ok("② 起手句六句 × 兩語逐字是 spec §5.1 定稿;沒有報酬率、%、0050、大盤或任何比較字;台股只在送出那句帶代號;起始年 {y} 起 / From {y}", badS.length === 0
       && STR.zh["starter_since"] === "{y} 起" && STR.en["starter_since"] === "From {y}", badS.join("、"));
     ok("② 三列的順序固定 加密｜台股｜台指期、年份同送出句;tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
@@ -279,13 +278,11 @@ if (!process.versions.electron) {
       vm.createContext(C); vm.runInContext(cutFn(src, "stTurnEnd") + "\nstTurnEnd(); stTurnEnd();", C); return tf.join(); };
     ok("② stTurnEnd:起手句那一輪結束、清單多了一支 → starter_new;沒多(含停止、出錯、只是改名以外的動)→ starter_no_new;只算一次;沒送過起手句不記",
       turn(["a"], ["a", "b"], true) === "starter_new" && turn(["a"], ["a"], true) === "starter_no_new" && turn([], [], true) === "starter_no_new" && turn(["a", "b"], ["a"], true) === "starter_no_new" && turn([], ["x"], false) === "");
-    ok("② app.js 接線:stratRefresh 畫完清單設 RP.loaded 再叫 wcSync(不閃:#wc 在那之前一直 hidden);送出／unlock／回合結束三排都叫 stSync;回合結束在 libTurnEnd 那條 then 裡、排在最前面叫 stTurnEnd(清單重讀完才比;後面任一支拋例外 pending 也不會漏到下一輪,稽核 B3);enterWorkspace 叫 wcArm(3 秒保底從進工作頁起算,稽核 B1)",
+    ok("② app.js 接線:stratRefresh 畫完清單設 RP.loaded 再叫 wcSync(不閃:#wc / #wf 在那之前一直 hidden,由 onbPaint 決定出哪一個);送出／unlock／回合結束三排都叫 stSync;回合結束在 libTurnEnd 那條 then 裡、排在最前面叫 stTurnEnd(清單重讀完才比;後面任一支拋例外 pending 也不會漏到下一輪,稽核 B3);enterWorkspace 叫 wcArm(3 秒保底從進工作頁起算,稽核 B1)",
       /RP\.loaded = true; if \(typeof wcSync === "function"\) wcSync\(\);/.test(cutFn(appSrc, "stratRefresh")) && (appSrc.match(/if \(typeof nsSync === "function"\) nsSync\(\); if \(typeof stSync === "function"\) stSync\(\);/g) || []).length === 3
       && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof stTurnEnd === "function"\) stTurnEnd\(\); if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc)
       && /stratRefresh\(false\);\n\s*if \(typeof wcArm === "function"\) wcArm\(\);/.test(cutFn(appSrc, "enterWorkspace")) && !/\nsetTimeout\(/.test(src) && /WC\.armed = true; setTimeout\(\(\) => \{ if \(!WC\.shown\) wcSync\(\); \}, 3000\);/.test(cutFn(src, "wcArm"))
-      && /function wcSync\(\) \{\n  if \(!WC\.shown\) \{ WC\.shown = true; \$\("wc"\)\.hidden = false; \}/.test(src));
-    ok("② 卡上〔用這支〕一律開詳情、焦點放詳情主鈕(wcDetail(s, true);稽核 M1:直接 libAsk 的失敗只畫在藏著的 #lib);welcome.js 不直接叫 libAsk / libSend",
-      /use\.addEventListener\("click", \(\) => wcDetail\(s, true\)\);/.test(cutFn(src, "wcCard")) && !/libAsk\(|libSend\(/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && /libCtaMain\(\)/.test(cutFn(src, "wcDetail")));
+      && /function wcSync\(\) \{\n  if \(!WC\.shown\) WC\.shown = true;\n  onbPaint\(\);\n\}/.test(src));
     // 新策略開新對話(Wei):這條對話講過話(csTitle)就先 csStartNew,送出與只填不送兩條都一樣;聊天欄收著先展開;只填不送時補回預檢卡
     { const run = (title, fill) => { const log = [], C = { csTitle: title, sessionId: "old", RP: { list: [] }, WD: {}, ST: {}, ST_FEATURE: { crypto: "starter_crypto" }, hasToken: true, cur: "blave", acct: { can_run: !fill },
           paneSt: { chat: { off: true } }, paneToggle: () => log.push("pane"), runningNow: () => false, wdPaint: () => {}, t: (k) => k, stFill: (c) => c.canRun === false,
@@ -295,17 +292,6 @@ if (!process.versions.electron) {
       const a = run("舊對話", false), b = run("", false), c = run("舊對話", true), d = run("", true);
       ok("起手句:有舊對話時先開新對話再送(sessionId 換掉);新對話不重開;只填不送也先開新對話再填、補回預檢卡;聊天欄收著先展開",
         a.sid === "new" && a.log === "pane,new,send:new" && b.sid === "old" && b.log === "pane,send:old" && c.log === "pane,new,fill:new,precheck" && d.log === "pane,fill:old", JSON.stringify([a, b, c, d])); }
-    ok("② 卡片(spec §10-5):內距 12、三格欄距 8、標籤列靠上;市場行的「回測 年–年」包成不換行的一段;標題 word-break: auto-phrase(§9-3)",
-      /\.wc-card \{[^}]*padding: var\(--space-12\);/.test(css) && /\.wc-stats \{[^}]*gap: var\(--space-2\) var\(--space-8\);/.test(css) && /\.wc-stat \.k \{ align-self: start;/.test(css)
-      && /\.wc-card-m \.nw \{ white-space: nowrap; \}/.test(css) && /meta\.append\(" · ", wdEl\("span", "nw", t\("workspace_lib_bt_span"/.test(cutFn(src, "wcCard")) && /word-break: auto-phrase;/.test(css));
-    // wcLoad(稽核 B2):原文接假的 LIB / libLoad 跑——讀不到只再試一次,之後要 stale(登入翻轉)或換語言才再問
-    { const C = { WC: { shown: true, retried: null }, LIB: { data: null, failed: false, stale: false, loading: false }, LANG: "zh", calls: 0 }; C.libLoad = () => { C.calls++; };
-      vm.createContext(C); vm.runInContext(cutFn(src, "wcLoad"), C);
-      const go = () => { C.wcLoad(); return C.calls; };
-      const first = go(); C.LIB.failed = true; const retry = go(), again = go() + go(); C.LIB.stale = true; const stale = go(); C.LIB.stale = false; C.LANG = "en"; const lang = go(); const lang2 = go();
-      C.LIB.data = { lang: "en" }; C.LIB.failed = false; const have = go(); C.LIB.loading = true; C.LIB.stale = true; const busy = go(); C.LIB.loading = false; C.WC.shown = false; const hidden = go();
-      ok("② wcLoad:還沒資料 → 問;讀不到 → 只再試一次,之後帳號刷新 / 回合結束都不再打;登入翻轉(stale)或換語言才再問;手上有同語言的資料、正在讀、頁還沒出來都不打",
-        first === 1 && retry === 2 && again === 4 && stale === 3 && lang === 4 && lang2 === 4 && have === 4 && busy === 4 && hidden === 4, JSON.stringify({ first, retry, again, stale, lang, lang2, have, busy, hidden })); }
     const F = require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name, i = F.indexOf("lib_mkt_pick");
     ok("② telemetry 白名單:七個起手句名字接在 lib_mkt_pick 後面、順序同 spec §4.1、≤16 字(總數由 check_shell_telemetry 鎖;之後的版本可以再接在後面);welcome.js 送的 feature 名字都在白名單裡",
       F.slice(i + 1, i + 8).join() === "starter_crypto,starter_tw,starter_txf,starter_fill,starter_new,starter_no_new,wd_fold_open" && F.length >= 158 && F.slice(i + 1).every((n) => n.length <= 16)
@@ -347,11 +333,11 @@ app.whenReady().then(async () => {
   const Z = STR.zh, DAY = 86400000;
   const askB = (L, id) => String(STR[L]["wd.ask.build"]).replace("{name}", STR[L]["wd.r." + id + ".an"]);
   // 起手句版:整頁等第一次清單讀完才出現(stub 的 listStrategies 回空陣列);三列起手句;資料摺疊預設收起,點了才展開並記 wd_fold_open
-  { const f0 = await js(`({ wc: $("wc").hidden, wl: $("wl").hidden, exp: $("wl-fold").getAttribute("aria-expanded"), loaded: RP.loaded === true, rows: [...$("st-rows").querySelectorAll(".st-row")].map((b) => b.dataset.starter).join(), reco: $("wc-reco").hidden, tf: window.__tf.slice() })`);
+  { const f0 = await js(`({ wc: $("wc").hidden, wl: $("wl").hidden, exp: $("wl-fold").getAttribute("aria-expanded"), loaded: RP.loaded === true, rows: [...$("st-rows").querySelectorAll(".st-row")].map((b) => b.dataset.starter).join(), tf: window.__tf.slice() })`);
     await js(`$("wl-fold").click(); true`); await wait(50);
     await wait(300); const f1 = await js(`({ wl: $("wl").hidden, exp: $("wl-fold").getAttribute("aria-expanded"), tf: window.__tf.slice(), rot: getComputedStyle($("wl-fold").querySelector(".mp-chev")).transform, mid: (() => { const t = $("wl-fold").querySelector("span").getBoundingClientRect(), c = $("wl-fold").querySelector(".mp-chev").getBoundingClientRect(); return Math.abs((t.top + t.bottom) / 2 - (c.top + c.bottom) / 2); })() })`);
-    ok("③ 開 app:清單讀完才顯示 #wc(RP.loaded)、三列起手句 crypto / tw / txf;#wl 收起、aria-expanded=false;策略庫讀不到 → 整塊卡片不見;點摺疊 → 展開、aria-expanded=true、箭頭翻上、箭頭跟字垂直置中(差 ≤ 2px;盒子轉 45° 後的外框量)、記 wd_fold_open 一次",
-      !f0.wc && f0.loaded && f0.rows === "crypto,tw,txf" && f0.wl && f0.exp === "false" && f0.reco && !f0.tf.includes("wd_fold_open") && !f1.wl && f1.exp === "true" && f1.rot !== "none" && f1.mid <= 2 && f1.tf.filter((n) => n === "wd_fold_open").length === 1, JSON.stringify([f0, f1])); }
+    ok("③ 開 app:清單讀完才顯示 #wc(RP.loaded)、三列起手句 crypto / tw / txf;#wl 收起、aria-expanded=false;點摺疊 → 展開、aria-expanded=true、箭頭翻上、箭頭跟字垂直置中(差 ≤ 2px;盒子轉 45° 後的外框量)、記 wd_fold_open 一次",
+      !f0.wc && f0.loaded && f0.rows === "crypto,tw,txf" && f0.wl && f0.exp === "false" && !f0.tf.includes("wd_fold_open") && !f1.wl && f1.exp === "true" && f1.rot !== "none" && f1.mid <= 2 && f1.tf.filter((n) => n === "wd_fold_open").length === 1, JSON.stringify([f0, f1])); }
 
   // 沒登入:對比版
   await paint(`hasToken = false; acct = null; pub = null; WD.mk = "crypto"`);
@@ -401,10 +387,10 @@ app.whenReady().then(async () => {
     const tx = (e) => { const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect(); }, q = (s) => document.querySelector(s), foot = q(".wl-foot").getBoundingClientRect(), st = $("wl-state"), all = tx($("wl-all"));
     return { tok, cols: [...$("wl-body").querySelectorAll(".wl-col")].map((c) => [...c.querySelectorAll(".wd-row")].map((b) => { const s = getComputedStyle(b), r = b.getBoundingClientRect();
         return { bg: s.backgroundColor, rad: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].join(" "), bb: s.borderBottomWidth, go: getComputedStyle(b, "::after").content, kids: b.children.length, l: r.left, r: r.right, t: r.top, b: r.bottom }; })),
-      axis: { mark: q(".wc-mark").getBoundingClientRect().left, chip: q(".wc-chip:not([hidden])").getBoundingClientRect().left, st: tx(q(".st-row .g")).left, fold: tx(q(".wl-fold > span")).left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
-      order: [q(".wc-head").getBoundingClientRect().bottom, q("#st-rows").getBoundingClientRect().top, q("#st-rows").getBoundingClientRect().bottom, q(".wc-chips").getBoundingClientRect().top, q(".wc-chips").getBoundingClientRect().bottom, q("#wl-fold").getBoundingClientRect().top, q("#wl-fold").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
-      head: (() => { const sh = q(".wc-mark path").getBoundingClientRect(), h = q(".wc-h").getBoundingClientRect(), t = tx(q(".wc-h")); return { gap: t.left - sh.right, mid: (sh.top + sh.bottom) / 2 - (h.top + h.bottom) / 2, shH: sh.height, lineH: h.height, toRows: q("#st-rows").getBoundingClientRect().top - q(".wc-head").getBoundingClientRect().bottom, toChips: q(".wc-chips").getBoundingClientRect().top - q("#st-rows").getBoundingClientRect().bottom }; })(),
-      h: q(".wc-h").textContent, hTag: q(".wc-h").tagName, stIn: st.parentElement === q(".wl-foot") && st.previousElementSibling === $("wl-all"), stMid: st.textContent ? (tx(st).top + tx(st).bottom) / 2 - (all.top + all.bottom) / 2 : null, stRight: st.textContent ? foot.right - tx(st).right : null, footRight: foot.right - Math.max(...[...document.querySelectorAll(".wd-row")].map((b) => b.getBoundingClientRect().right)),
+      axis: { chip: q("#onb-b1 .wc-chip:not([hidden])").getBoundingClientRect().left, st: tx(q(".st-row .g")).left, ns: $("chat-ns").getBoundingClientRect().left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
+      order: [q(".onb-mq").getBoundingClientRect().bottom, q("#st-rows").getBoundingClientRect().top, q("#st-rows").getBoundingClientRect().bottom, q("#onb-b2 .onb-opts").getBoundingClientRect().top, q("#onb-b2 .onb-opts").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
+      head: { toOpts: q("#onb-b2 .onb-opts").getBoundingClientRect().top - q("#st-rows").getBoundingClientRect().bottom, indent: tx(q(".st-row .g")).left - q(".wc-mark").getBoundingClientRect().left },
+      stIn: st.parentElement === q(".wl-foot") && st.previousElementSibling === $("wl-all"), stMid: st.textContent ? (tx(st).top + tx(st).bottom) / 2 - (all.top + all.bottom) / 2 : null, stRight: st.textContent ? foot.right - tx(st).right : null, footRight: foot.right - Math.max(...[...document.querySelectorAll(".wd-row")].map((b) => b.getBoundingClientRect().right)),
       over: $("main-empty").scrollWidth - $("main-empty").clientWidth }; })()`);
   const cardOk = (k) => k.tok.lg !== "0px" && !/rgba\(0, 0, 0, 0\)|transparent/.test(k.tok.bg) && k.cols.every((rows) => rows.length > 0 && rows.every((x, i) => { const first = i === 0, last = i === rows.length - 1, lg = k.tok.lg, z = "0px";
     return x.bg === k.tok.bg && x.rad === [first ? lg : z, first ? lg : z, last ? lg : z, last ? lg : z].join(" ") && x.bb === (last ? "0px" : "1px") && /›/.test(x.go) && /\/ ""$/.test(x.go) && x.kids === 1 && (first || Math.abs(x.t - rows[i - 1].b) < 0.6); }));
@@ -412,10 +398,8 @@ app.whenReady().then(async () => {
   let k = await card();
   ok("③ A2 兩欄:兩欄各自是一張完整的卡(列 = --surface-card;各欄第一列上兩角、最後一列下兩角 = --radius-lg,中間的列直角;列間 1px 線、最後一列沒有;列緊貼;行尾 › 是 ::after、列裡沒有多的節點),兩張卡之間有欄距 16、等寬",
     k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
-  ok("③ 同一條左軸:記號、起手句的 ↳、第一顆籤、摺疊鈕的字、欄小標、卡、「看全部資料」的左緣同一條 x;由上到下 記號與標題那一行 →(隔 12)起手句 →(隔 16)籤 → 摺疊鈕 → 清單",
-    axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toRows - 12) < 0.6 && Math.abs(k.head.toChips - 16) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
-  ok("③ 記號與標題並排:同一行、記號在左(圖形右緣到標題的字隔 12)、圖形的垂直中線對到標題第一行字的中線(差 ≤ 1)、圖形不比那行字高;標題是 h4 workspace_wel_h",
-    Math.abs(k.head.gap - 12) < 0.6 && Math.abs(k.head.mid) <= 1 && k.head.shH <= k.head.lineH && k.head.shH >= 16 && k.h === Z["workspace_wel_h"] && k.hTag === "H4", JSON.stringify([k.head, k.h, k.hTag]));
+  ok("③ 步驟內容同一條左軸:①的第一顆籤、起手句的 ↳、新增策略、欄小標、卡、「看全部資料」的左緣同一條 x,比記號內縮 32;由上到下 市場題 → 起手句 →(隔 8)新增策略那一列 → 清單",
+    axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toOpts - 8) < 0.6 && Math.abs(k.head.indent - 32) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
   { // 起手句的列(§1.4):tag 欄三列等寬(subgrid)、句子不溢出、↳ 不進讀屏名字;只填不送 / 回合中 disabled
     const geoSt = () => js(`[...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tg = b.querySelector(".tag"), tx = b.querySelector(".txt"), sn = b.querySelector(".since"), r = (e) => e.getBoundingClientRect();
       return { mk: b.dataset.starter, tagW: r(tg).width, tagL: r(tg).left, tagOn: getComputedStyle(tg).display !== "none", txtL: r(tx).left, txtT: r(tx).top, sinceT: r(sn).top, sinceL: r(sn).left, over: tx.scrollWidth - tx.clientWidth, rowOver: b.scrollWidth - b.clientWidth, h: r(b).height, txt: tx.textContent, since: sn.textContent }; })`);
@@ -439,29 +423,6 @@ app.whenReady().then(async () => {
       const n0 = $("chat-scroll").querySelectorAll(".msg").length; b[0].click(); r.told = $("ta-wait").textContent === t("turn.busy") && $("chat-scroll").querySelectorAll(".msg").length === n0;
       running = false; stSync(); r.back = b.every((x) => !x.hasAttribute("aria-disabled")); taWaitShow(false); cur = "claude"; hasToken = false; acct = null; $("ta").value = ""; WD.filled = ""; WD.pre = ""; WD.mk = "crypto"; WD.key = ""; wdPaint(); return r; })()`);
     ok("③ 回合進行中三列是鎖(aria-disabled、cursor not-allowed、不用 opacity);點了不送、輸入框上方講原因;回合結束解除", dis.dis && dis.cur === "not-allowed" && dis.op === "1" && dis.told && dis.back, JSON.stringify(dis)); }
-  { // 三張卡(§1.6):讀到策略庫 → 挑三支、容器 ≥ 640 三欄並排、看全部 {n} 支
-    await js(`(() => { const R = (sym, iv) => ({ annual_return: 18.2, sharpe: 1.31, max_drawdown: -22.5, symbol: sym, interval: iv, spark: Array.from({ length: 64 }, (_, i) => 1 + i * 0.02), equity_from: "2020-01-01", equity_to: "2026-06-30" });
-      const S = (id, market, sym, iv, o) => Object.assign({ id, title: "S" + id, price: 0, market, is_official: true, verified: true, blave_data: "none", created_at: "2026-06-10 00:00:00", purchase_count: 0, report: R(sym, iv) }, o || {});
-      LIB.data = { strategies: [S(301, "crypto", "BTCUSDT", "1d"), S(302, "txf", "TXF", "1d"), S(303, "twstock", "2330", "1d"), S(304, "crypto", "ETHUSDT", "1h"), S(305, "crypto", "SOLUSDT", "1h", { price: 900 })], signedIn: false, dataAccess: null, why: null, lang: LANG };
-      LIB.failed = false; WC.key = null; wcPaint(); return true; })()`); await wait(400);
-    const cards = () => js(`({ hidden: $("wc-reco").hidden, n: $("wc-cards").querySelectorAll(".wc-card").length, ids: [...$("wc-cards").querySelectorAll(".wc-curve")].map((h) => h.dataset.id).join(), tops: [...$("wc-cards").querySelectorAll(".wc-card")].map((c) => Math.round(c.getBoundingClientRect().top)),
-      lefts: [...$("wc-cards").querySelectorAll(".wc-card")].map((c) => Math.round(c.getBoundingClientRect().left)), more: $("wc-more").textContent, charts: $("wc-cards").querySelectorAll(".wc-curve canvas").length, over: $("main-empty").scrollWidth - $("main-empty").clientWidth,
-      btn: [...$("wc-cards").querySelectorAll(".wc-card-a button")].map((b) => b.textContent).join("|"), verified: $("wc-cards").querySelectorAll(".tag").length,
-      clamp: [...$("wc-cards").querySelectorAll(".wc-card-h .t")].map((e) => getComputedStyle(e).webkitLineClamp).join(), metaWrap: [...$("wc-cards").querySelectorAll(".wc-card-m")].every((e) => getComputedStyle(e).whiteSpace === "normal" && e.scrollWidth <= e.clientWidth),
-      stats1: [...$("wc-cards").querySelectorAll(".wc-stats")].every((st) => new Set([...st.querySelectorAll(".v")].map((c) => Math.round(c.getBoundingClientRect().top))).size === 1 && st.scrollWidth <= st.clientWidth) })`);
-    const c1 = await cards();
-    ok("③ 三張卡:免費官方、一個市場一支(付費那支不進)、三欄同一排、每張有曲線與〔用這支〕〔看詳情〕、「看策略庫全部 5 支 →」、不橫向溢出;沒有「已驗證」(Wei 10-17)、標題最多兩行、市場行折行不截、三格數字同一排(spec §10-3)",
-      !c1.hidden && c1.n === 3 && c1.ids === "301,302,303" && new Set(c1.tops).size === 1 && new Set(c1.lefts).size === 3 && c1.more === Z["workspace_wel_more"].replace("{n}", "5") && c1.charts >= 3 && c1.over <= 0
-      && c1.btn === [1, 2, 3].map(() => Z["lib.use"] + "|" + Z["workspace_lib_detail"]).join("|") && c1.verified === 0 && c1.clamp === "2,2,2" && c1.metaWrap && c1.stats1, JSON.stringify(c1));
-    w.setSize(1000, 900); await wait(400); const c2 = await cards(); w.setSize(1600, 900); await wait(400);
-    ok("③ 1000 寬(中欄 < 640):三張卡上下疊、不橫向溢出", c2.n === 3 && new Set(c2.lefts).size === 1 && new Set(c2.tops).size === 3 && c2.over <= 0, JSON.stringify(c2));
-    // 挑出 0 支(免費的都是自己的 / 這台都裝了,剩付費):整塊照樣在、沒有卡,只留「看策略庫全部 N 支 →」;策略庫空的才整塊不見
-    const zero = await js(`(() => { const keep = LIB.data.strategies; const one = (list) => { LIB.data.strategies = list; WC.key = null; wcPaint();
-        return { box: $("wc-reco").hidden, cards: $("wc-cards").hidden, n: $("wc-cards").querySelectorAll(".wc-card").length, or: $("wc-reco").querySelector(".wel-or").hidden, more: $("wc-more").hidden, txt: $("wc-more").textContent }; };
-      const r = { zero: one(keep.map((x) => Object.assign({}, x, x.price ? {} : { is_owner: true }))), empty: one([]), back: one(keep) }; return r; })()`);
-    ok("③ 三張卡挑出 0 支:#wc-reco 照樣在、沒有卡(#wc-cards 藏)、「看策略庫全部 5 支 →」在;策略庫空的 → 整塊藏;換回有候選 → 卡回來",
-      !zero.zero.box && zero.zero.cards && zero.zero.n === 0 && !zero.zero.or && !zero.zero.more && zero.zero.txt === Z["workspace_wel_more"].replace("{n}", "5")
-      && zero.empty.box && !zero.back.box && !zero.back.cards && zero.back.n === 3, JSON.stringify(zero)); }
   { // hover:底換 --surface-muted、小字從 --ink-3 換 --ink-2(ink-3 壓在 hover 底上不到 4.5:1)、› 換色
     const tgt = `$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row")`, look = () => js(`(() => { const b = ${tgt}; return { on: b.matches(":hover"), mt: getComputedStyle(b.querySelector(".wd-mt")).color, bg: getComputedStyle(b).backgroundColor, go: getComputedStyle(b, "::after").color }; })()`);
     const pt = await js(`(() => { const b = ${tgt}; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);

@@ -1404,9 +1404,6 @@ msgstr "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合
 msgid "cx.store.q"
 msgstr "金鑰存在哪？"
 
-msgid "cx.acct.meta"
-msgstr "只用來下單和讀帳戶。一次只能連一個。"
-
 msgid "cx.venue"
 msgstr "交易所／券商"
 
@@ -8466,9 +8463,6 @@ msgstr "（{x}×）"
 
 # 歡迎頁起手句(0.1.26;renderer/welcome.js;spec-starters §1.7 / §5.1)。key 名借網頁工作頁的。
 # 列上只寫規則,送出的是 _send 那一整句。任何地方都不准寫報酬率,也不准跟大盤或 0050 比較
-msgid "workspace_wel_h"
-msgstr "把你的交易想法，變成自動跑的策略"
-
 msgid "starter_crypto_row"
 msgstr "BTC 日線：收盤站上 200 日均線買進，跌破賣出"
 
@@ -8494,24 +8488,6 @@ msgstr "{y} 起"
 # 用戶拿得到的資料列(單一清單、對比版的免費欄);{name} = wd.r.<id>.an。只填不送
 msgid "wd.ask.build"
 msgstr "用{name}幫我建一支策略並回測"
-
-msgid "workspace_wel_or"
-msgstr "還沒想法？先跑一支現成的"
-
-# {n} = 策略庫總支數
-msgid "workspace_wel_more"
-msgstr "看策略庫全部 {n} 支 →"
-
-# 卡上的回測期間;{span} =「2020–2025」或單一年
-msgid "workspace_lib_bt_span"
-msgstr "回測 {span}"
-
-msgid "workspace_lib_detail"
-msgstr "看詳情"
-
-# 歡迎頁卡片的年化標籤(短;策略庫面板照舊用 lib.annLabel)
-msgid "wc.annLabel"
-msgstr "年化"
 
 # 額度用完預檢卡的第一句;{n} = 側欄的策略數,0 支不出。中文 1 跟 N 同一句
 msgid "acct.built1"
@@ -8576,3 +8552,68 @@ msgstr "正在回覆的這條會先停止。"
 # 刪對話沒刪成(主行程回 false):對話清單上方那一行,不無聲關框
 msgid "cs.delFail"
 msgstr "沒有刪成，再試一次。"
+
+# 歡迎頁入門步驟(0.1.28;renderer/welcome.js;spec agent-onboarding-e-f §2–3)。市場題:可以不點、沒有預設值
+msgid "onb.q"
+msgstr "想做哪個市場？"
+
+msgid "onb.s1"
+msgstr "找靈感"
+
+msgid "onb.s2"
+msgstr "做策略並回測"
+
+msgid "onb.s3"
+msgstr "加到策略組合"
+
+# 台指期第④步的描邊鈕(加密叫 cx.connect)
+msgid "onb.realFut"
+msgstr "連接期貨商"
+
+# 已連好帳戶、還沒啟動:第④步只剩這一顆,開自動下單頁
+msgid "onb.goTr"
+msgstr "到自動下單"
+
+# 讀屏:完成的步驟那一行;{step} = 步驟名
+msgid "onb.doneSr"
+msgstr "{step}，已完成"
+
+# 做完最後一步的當下,原地一行(這次開著期間留著)
+msgid "onb.fin"
+msgstr "都設好了"
+
+# 設定 › 一般:清掉「已進完成後首頁」,回歡迎頁看步驟。列名也是步驟清單的讀屏名
+msgid "set.onb"
+msgstr "入門步驟"
+
+msgid "set.onb.replay"
+msgstr "重看"
+
+# 連接框(spec §7-4、7-5):標題與霧上的鈕同一句;兩個大選項預設模擬
+msgid "cx.title"
+msgstr "選擇下單帳戶"
+
+msgid "cx.goPaper"
+msgstr "開始模擬交易"
+
+msgid "cx.mode.paperSub"
+msgstr "不用金鑰，起始 100,000 USDT，不動真錢。"
+
+msgid "cx.mode.real"
+msgstr "真實帳戶"
+
+msgid "cx.mode.realSub"
+msgstr "接你自己的交易所或期貨商"
+
+# 真實帳戶的三行事實;雲端視角第一行換 keyCloud
+msgid "cx.fact.key"
+msgstr "金鑰只存在這台電腦"
+
+msgid "cx.fact.keyCloud"
+msgstr "金鑰只存在你的雲端主機"
+
+msgid "cx.fact.perm"
+msgstr "建議只開讀取和交易，不開提領"
+
+msgid "cx.fact.ai"
+msgstr "下單照策略的程式跑，不經過 AI"

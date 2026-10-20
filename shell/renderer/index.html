@@ -296,43 +296,89 @@
           <div class="rpt-read" id="rpt-read" hidden></div>
         </div>
       </div>
-      <!-- 歡迎頁(renderer/welcome.js;設計 output/designer/strategy-creation-2026-10-15 spec-starters,mockup C):沒選策略就是這一頁,
-           不分有沒有策略(Wei 10-17)。記號＋標題 → 三句起手句(點了就送出)→ 入口籤 → 「可以回測的資料 ›」(預設收起)→ 三張策略庫卡。
-           整頁等第一次策略清單讀完才顯示(app.js stratRefresh 設 RP.loaded):卡要扣掉已經裝過的,不能先畫一版再換 -->
+      <!-- 歡迎頁(renderer/welcome.js;spec agent-onboarding-e-f):只有「這台電腦」視角有。onboarding 期間是步驟清單(#wc,E),
+           做完之後是淡化記號＋一列籤(#wf,F)。兩個都等第一次策略清單讀完(app.js stratRefresh 設 RP.loaded)與入門偏好讀到才出,不閃錯的步驟。
+           步驟的標題列由 welcome.js onbPaint 畫(完成的那一步是可以重新展開的按鈕);每一步下面的鈕是靜態的,只切 hidden -->
       <div class="main-empty" id="main-empty">
         <div class="wc-inner" id="wc" hidden>
-          <div class="wc-head">
-            <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
-              <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
-            </svg>
-            <h4 class="wc-h" id="wc-h" data-i18n="workspace_wel_h"></h4>
+          <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
+            <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
+          </svg>
+          <div class="onb-mq">
+            <span class="onb-q" id="onb-q" data-i18n="onb.q"></span>
+            <span class="lib-seg" id="onb-mkt" role="group" aria-labelledby="onb-q">
+              <button type="button" data-mk="crypto" aria-pressed="false" data-i18n="wd.mk.crypto"></button>
+              <button type="button" data-mk="tw" aria-pressed="false" data-i18n="wd.mk.tw"></button>
+              <button type="button" data-mk="txf" aria-pressed="false" data-i18n="wd.mk.txf"></button>
+            </span>
           </div>
-          <div class="st-rows" id="st-rows" role="group" aria-labelledby="wc-h"></div>
-          <div class="wc-chips">
-            <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁那顆) -->
-            <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
-            <!-- 「上網找點子」開找點子框(spec-0.1.13 §5.1;只在這台電腦視角、內建瀏覽器開著、引擎跑得動時出,library.js libIdeaPaint 切 hidden) -->
-            <button class="wc-chip" id="chat-idea" type="button" data-i18n="idea.chip" hidden></button>
-          </div>
-          <button class="wl-fold" id="wl-fold" type="button" aria-expanded="false" aria-controls="wl"><span data-i18n="wd.title"></span><span class="mp-chev" aria-hidden="true"></span></button>
-          <!-- 可以回測的資料(welcome.js wdPaint;mockup data-scope §1):依市場分段;帳號狀態決定兩欄對比(免費 vs Blave 資料)或單一清單;
-               整列可點 → 那一句落進輸入框不送出;「看全部資料」用瀏覽器開網站的資料文件頁。每次開 app 都是收起來的 -->
-          <div class="wl" id="wl" hidden>
-            <div class="wl-top">
-              <span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd.title">
-                <button type="button" data-mk="crypto" aria-pressed="true" data-i18n="wd.mk.crypto"></button>
-                <button type="button" data-mk="tw" aria-pressed="false" data-i18n="wd.mk.tw"></button>
-                <button type="button" data-mk="txf" aria-pressed="false" data-i18n="wd.mk.txf"></button>
-              </span>
-            </div>
-            <div class="wl-body" id="wl-body"></div>
-            <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd.all"></button><p class="wl-state" id="wl-state" aria-live="polite"></p></div>
-          </div>
-          <!-- 還沒想法？先跑一支現成的:三張策略庫卡(library.js wcReco 挑、welcome.js wcPaint 畫);讀不到或策略庫空的整塊藏起來;挑出 0 支只留看全部 -->
-          <div class="wc-reco" id="wc-reco" hidden>
-            <p class="wel-or" data-i18n="workspace_wel_or"></p>
-            <div class="wc-cards" id="wc-cards"></div>
-            <button class="btn-quiet wel-more" id="wc-more" type="button"></button>
+          <ol class="onb-steps" id="onb-steps" data-i18n-aria="set.onb">
+            <li class="onb-step" data-step="1">
+              <div class="onb-hw" id="onb-h1"></div>
+              <div class="onb-body" id="onb-b1">
+                <div class="onb-opts">
+                  <!-- 「上網找點子」:只在這台電腦視角、內建瀏覽器開著、引擎跑得動時出(library.js libIdeaPaint 切 hidden) -->
+                  <button class="wc-chip" id="chat-idea" type="button" data-i18n="idea.chip" hidden></button>
+                  <button class="wc-chip" id="onb-lib" type="button" data-i18n="lib.nav"></button>
+                </div>
+              </div>
+            </li>
+            <li class="onb-step" data-step="2">
+              <div class="onb-hw" id="onb-h2"></div>
+              <div class="onb-body" id="onb-b2">
+                <div class="st-rows" id="st-rows" role="group" aria-labelledby="onb-h2"></div>
+                <div class="onb-opts">
+                  <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁那顆) -->
+                  <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
+                  <button class="wl-fold" id="wl-fold" type="button" aria-expanded="false" aria-controls="wl"><span data-i18n="wd.title"></span><span class="mp-chev" aria-hidden="true"></span></button>
+                </div>
+                <!-- 可以回測的資料(welcome.js wdPaint;mockup data-scope §1):依市場分段(市場題選了就只列那個市場、分段藏起來);
+                     帳號狀態決定兩欄對比(免費 vs Blave 資料)或單一清單;整列可點 → 那一句落進輸入框不送出。每次開 app 都是收起來的 -->
+                <div class="wl" id="wl" hidden>
+                  <div class="wl-top">
+                    <span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd.title">
+                      <button type="button" data-mk="crypto" aria-pressed="true" data-i18n="wd.mk.crypto"></button>
+                      <button type="button" data-mk="tw" aria-pressed="false" data-i18n="wd.mk.tw"></button>
+                      <button type="button" data-mk="txf" aria-pressed="false" data-i18n="wd.mk.txf"></button>
+                    </span>
+                  </div>
+                  <div class="wl-body" id="wl-body"></div>
+                  <div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd.all"></button><p class="wl-state" id="wl-state" aria-live="polite"></p></div>
+                </div>
+              </div>
+            </li>
+            <li class="onb-step" data-step="3">
+              <div class="onb-hw" id="onb-h3"></div>
+              <div class="onb-body" id="onb-b3">
+                <div class="onb-opts">
+                  <button class="btn-fill" id="onb-po" type="button" data-i18n="po.add"></button>
+                  <button class="btn-quiet" id="onb-bt" type="button" data-i18n="res.open.bt"></button>
+                </div>
+              </div>
+            </li>
+            <!-- 台股沒有這一步(Wei 10-19) -->
+            <li class="onb-step" data-step="4">
+              <div class="onb-hw" id="onb-h4"></div>
+              <div class="onb-body" id="onb-b4">
+                <div class="onb-opts">
+                  <button class="btn-fill" id="onb-paper" type="button" data-i18n="cx.paperShort"></button>
+                  <button class="wc-chip" id="onb-real" type="button"></button>
+                  <button class="btn-fill" id="onb-tr" type="button" data-i18n="onb.goTr" hidden></button>
+                </div>
+              </div>
+            </li>
+          </ol>
+          <p class="onb-fin" id="onb-fin" role="status" hidden><span class="num" aria-hidden="true">✓</span><span data-i18n="onb.fin"></span></p>
+        </div>
+        <!-- 完成後的首頁(F):實色 --color-watermark 的記號(canon 具名例外,不用 opacity)＋一列不分主次的籤;不帶市場 -->
+        <div class="wf" id="wf" hidden>
+          <svg class="wf-mark" viewBox="0 0 180 180" aria-hidden="true">
+            <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
+          </svg>
+          <div class="wf-acts">
+            <button class="wc-chip" id="wf-idea" type="button" data-i18n="idea.chip" hidden></button>
+            <button class="wc-chip" id="wf-lib" type="button" data-i18n="lib.nav"></button>
+            <button class="wc-chip" id="wf-ns" type="button" data-i18n="ns.chip"></button>
           </div>
         </div>
       </div>
@@ -493,6 +539,11 @@
             <div class="sw-row"><span class="sw-l" id="set-awake-l" data-i18n="set.awake"></span><button type="button" class="sw" id="set-awake-sw" role="switch" aria-checked="true" aria-labelledby="set-awake-l"></button></div>
             <p class="priv-lead" id="set-awake-lead"></p>
           </div>
+          <!-- 入門步驟:清掉「已進完成後首頁」、回歡迎頁看步驟(welcome.js onbReplay;spec agent-onboarding-e-f §3.3) -->
+          <div class="set-row set-onb">
+            <span class="set-gl" id="set-onb-l" data-i18n="set.onb"></span>
+            <button type="button" class="btn-quiet" id="set-onb" aria-describedby="set-onb-l" data-i18n="set.onb.replay"></button>
+          </div>
           <!-- 關於(這一頁最下面;版本唯一出現處):第一行「Blave {app} · 已是最新版」+ 文字連結(檢查更新 / 重新啟動以完成更新),只管電腦版;
                第二行「雲端主機 {ws} · 有新版 {lv}」+「更新雲端主機」,只在主機在跑或停機時出現。字與連結由 app.js 的 upPaint 依 upPlan 畫 -->
           <div class="set-about" id="set-up">
@@ -546,7 +597,7 @@
     <div class="modal-head">
       <!-- 雲端視角才出:目的地記號(標題列同時灰底,同雲端確認框) -->
       <span class="envm" id="cx-env" hidden></span>
-      <h6 id="cx-title" data-i18n="cx.connect"></h6>
+      <h6 id="cx-title" data-i18n="cx.title"></h6>
       <button type="button" class="modal-close" id="cx-close" data-i18n-aria="set.close">✕</button>
     </div>
     <div class="cx-body" id="cx-body"></div>

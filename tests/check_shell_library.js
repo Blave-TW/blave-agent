@@ -138,36 +138,7 @@ if (!process.versions.electron) {
   const pubComm = S({ id: 130, title: "comm", is_official: false, verified: false, blave_data: "none" }), pubPaid = S({ id: 131, title: "paid", price: 500, blave_data: "none" });
   ok("① libAnonOk(§1.1b):官方 × 免費 × none 三個缺一不可;未標不算", P.libAnonOk(pubOff) && !P.libAnonOk(reqOff) && !P.libAnonOk(nullOff) && !P.libAnonOk(pubComm) && !P.libAnonOk(pubPaid)
     && !P.libAnonOk(Object.assign({}, pubOff, { is_official: "true" })) && !P.libAnonOk(null));
-  { // 歡迎頁三張卡 wcReco(spec-starters §1.6):候選 = 免費 × 官方 × 這台沒裝過 × 不是自己的(免費的 purchased 不算數);libVisible 順序;不能用 Blave 資料(沒登入時改免登入)的排前面;每市場先一支再補滿 3
-    const c1 = S({ id: 201, market: "crypto", blave_data: "none" }), c2 = S({ id: 202, market: "crypto", blave_data: "required" }), c3 = S({ id: 203, market: "crypto", blave_data: "required" });
-    const t1 = S({ id: 211, market: "txf", blave_data: "required" }), w1 = S({ id: 221, market: "twstock", verified: false, blave_data: "none" });
-    const junk = [S({ id: 231, market: "txf", price: 500, blave_data: "none" }), S({ id: 232, market: "usstock", is_official: false, verified: false, blave_data: "none" }), S({ id: 233, market: "usstock", price: 500, purchased: true, blave_data: "none" }), S({ id: 234, market: "usstock", is_owner: true })];
-    const ids = (list, c) => P.wcReco(list, c).map((x) => x.id).join();
-    const all = [w1, t1, c2, c1, ...junk];
-    ok("① wcReco:有資料(included)→ 已驗證在前、一個市場一支;付費(買過的也是)、社群、自己的都不進",
-      ids(all, { dataAccess: "included", signedIn: true }) === "211,202,221" || ids(all, { dataAccess: "included", signedIn: true }) === "202,211,221", ids(all, { dataAccess: "included", signedIn: true }));
-    ok("① wcReco:不能用 Blave 資料(none / billed / null)→ 免資料的排最前;沒登入 → 免登入(libAnonOk)的排最前",
-      ["none", "billed", null].every((da) => ids(all, { dataAccess: da, signedIn: true }) === "201,221,211") && ids(all, { dataAccess: "included", signedIn: false }) === "201,221,211",
-      [ids(all, { dataAccess: "none", signedIn: true }), ids(all, { dataAccess: "included", signedIn: false })].join(" | "));
-    { const a1 = S({ id: 241, market: "crypto", blave_data: "none" }), a2 = S({ id: 242, market: "crypto", blave_data: "none" }), r1 = S({ id: 243, market: "txf", blave_data: "required" }), r2 = S({ id: 244, market: "twstock", blave_data: "required" });
-      ok("① wcReco:現在就能用的那組先挑完再輪到要登入的——沒登入、免登入的兩支都是加密:兩支都進,第三張才是要登入的;不會被「每市場一支」擠掉",
-        ids([r1, r2, a1, a2], { dataAccess: null, signedIn: false }) === "241,242,243", ids([r1, r2, a1, a2], { dataAccess: null, signedIn: false })); }
-    { const k1 = S({ id: 251, market: "crypto", blave_data: "none", created_at: "2026-06-12 00:00:00" }), k2 = S({ id: 252, market: "crypto", blave_data: "none", created_at: "2026-06-11 00:00:00" }), k3 = S({ id: 253, market: "txf", blave_data: "none", created_at: "2026-06-10 00:00:00" });
-      ok("① wcReco:三支都能用、市場依序 加密、加密、台指期 → 三支照推薦排序回傳(加密、加密、台指期),不是挑的順序(加密、台指期、加密)",
-        ids([k3, k2, k1], { dataAccess: "included", signedIn: true }) === "251,252,253", ids([k3, k2, k1], { dataAccess: "included", signedIn: true })); }
-    ok("① wcReco:不滿三個市場就照順序補滿 3;裝過的(installed 回呼)扣掉;空清單 / 壞輸入回空陣列",
-      ids([c1, c2, c3], { dataAccess: "included", signedIn: true }).split(",").length === 3 && ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }) === "221,211,202"
-      && P.wcReco([], {}).length === 0 && P.wcReco(null, {}).length === 0 && ids([c1], { dataAccess: "included", signedIn: true }) === "201",
-      ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }));
-    { // Wei 實機:帳號領過全部免費官方策略(/code 抓過就記 0 元購買)、這台一支都沒裝 → 照常三張、每市場一支;這台裝了的才扣掉
-      const bought = [w1, t1, c2, c1].map((x) => Object.assign({}, x, { purchased: true }));
-      ok("① wcReco:免費官方全部 purchased、這台沒裝 → 照常 3 張、每市場一支;裝了的不出現;全裝了 → 0 張",
-        ids(bought, { dataAccess: "included", signedIn: true }) === ids([w1, t1, c2, c1], { dataAccess: "included", signedIn: true })
-        && new Set(P.wcReco(bought, { dataAccess: "included", signedIn: true }).map((x) => x.market)).size === 3
-        && ids(bought, { dataAccess: "included", signedIn: true, installed: (x) => x.id === 202 || x.id === 201 }) === "211,221"
-        && P.wcReco(bought, { dataAccess: "included", signedIn: true, installed: () => true }).length === 0,
-        [ids(bought, { dataAccess: "included", signedIn: true }), ids(bought, { dataAccess: "included", signedIn: true, installed: (x) => x.id === 202 || x.id === 201 })].join(" | ")); }
-  }
+  ok("① 歡迎頁三張卡 wcReco 退役(onboarding E:策略庫是①的一顆鈕)", typeof P.wcReco === "undefined" && !/wcReco|wcPaint/.test(src));
   ok("① libPickData(§8):none / required / 未標 → unknown", P.libPickData(pubOff) === "none" && P.libPickData(reqOff) === "required" && P.libPickData(nullOff) === "unknown" && P.libPickData({ blave_data: "x" }) === "unknown");
   const G = (c) => P.libGrouping(Object.assign({ env: "local", signedIn: true, dataAccess: "included", why: null }, c));
   ok("① libGrouping(§1.2):雲端 null > 沒登入 signedOut > 有卡(included / billed)null > none 照 why(壞值 unknown)> 登入但查不到 unknown",
@@ -424,8 +395,8 @@ if (!process.versions.electron) {
       && STR.zh["lib.note.back"] === "回到策略" && STR.en["lib.note.back"] === "Back to Strategy" && STR.zh["lib.note.err"] === "讀不到這篇筆記。" && STR.en["lib.note.err"] === "Couldn't load this note."); }
 
   // ── ③ 接線 ──
-  ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁的「看現成策略」#chat-lib 退役(0.1.26 起手句版:策略庫入口是三張卡＋看全部 #wc-more＋側欄),籤在三張卡 #wc-reco 之前;#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後(中間只許 export.js)、app.js 前",
-    html.indexOf('id="lib-nav"') > html.indexOf('id="tr-nav"') && html.indexOf('id="lib-nav"') < html.indexOf("</nav>") && !html.includes('id="chat-lib"') && !/chat-lib/.test(src) && !html.includes('id="chat-eg"') && html.indexOf('class="wc-chips"') < html.indexOf('id="wc-reco"')
+  ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁的「看現成策略」#chat-lib 退役(onboarding E:策略庫入口是①的 #onb-lib、完成後首頁的 #wf-lib＋側欄);#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後(中間只許 export.js)、app.js 前",
+    html.indexOf('id="lib-nav"') > html.indexOf('id="tr-nav"') && html.indexOf('id="lib-nav"') < html.indexOf("</nav>") && !html.includes('id="chat-lib"') && !/chat-lib/.test(src) && !html.includes('id="chat-eg"') && !html.includes('id="wc-reco"') && html.indexOf('id="onb-lib"') > html.indexOf('id="chat-idea"') && html.indexOf('id="wf-lib"') > html.indexOf('id="wf-idea"')
     && html.indexOf('id="lib"') > html.indexOf('id="rp"') && html.indexOf('id="lib"') < html.indexOf('id="main-empty"') && /<link rel="stylesheet" href="library\.css">/.test(html) && /<script src="handoff\.js"><\/script>\s*(?:<script src="export\.js"><\/script>\s*)?<script src="library\.js"><\/script>\s*<script src="app\.js">/.test(html));
   { const i = html.indexOf('id="lib-mkt-menu"'), menu = html.slice(html.lastIndexOf("<div", i), html.indexOf("</div>", i)), btns = menu.match(/<button[^>]*>/g) || [];
     const trig = (html.match(/<button[^>]*id="lib-mkt-trig"[^>]*>/) || [""])[0];
@@ -453,8 +424,9 @@ if (!process.versions.electron) {
     /t\(typeof planMo === "function" && planMo\(\) \? "lib\.gate\.bindCard\.m" : "lib\.gate\.bindCard", \{ t: tDays \}\)/.test(src) && STR.zh["lib.gate.bindCard.m"] === "綁卡，免費試用 {t} 天資料" && STR.en["lib.gate.bindCard.m"] === "Add a Card, Start a {t}\u2011Day Free Trial"
     && ["lib.gate.bindCard", "lib.gate.bindCard.m"].every((k) => /\{t\}/.test(STR.zh[k]) && /\{t\}/.test(STR.en[k])));
   { const brSrc = read(path.join(R, "browser.js"));
-    ok("③ 找點子入口(spec-0.1.13 §1.4 / §5.1):歡迎頁 #chat-idea 是第二顆籤(新增策略之後;mockup C)、預設 hidden;頁首說明句 #lib-desc 沒有 data-i18n(由 libPaintDesc 畫,換語言才不會洗掉文字鈕)",
-      html.indexOf('id="chat-idea"') > html.indexOf('id="chat-ns"') && html.indexOf('id="chat-idea"') < html.indexOf('id="wl-fold"') && /<button class="wc-chip" id="chat-idea" type="button" data-i18n="idea\.chip" hidden><\/button>/.test(html)
+    ok("③ 找點子入口(spec-0.1.13 §1.4 / §5.1):歡迎頁 #chat-idea 在①(策略庫前、②的新增策略與資料摺疊之前;onboarding E)、完成後首頁 #wf-idea 第一顆,都預設 hidden、libIdeaPaint 兩顆一起切;頁首說明句 #lib-desc 沒有 data-i18n(由 libPaintDesc 畫,換語言才不會洗掉文字鈕)",
+      html.indexOf('id="chat-idea"') < html.indexOf('id="onb-lib"') && html.indexOf('id="chat-idea"') < html.indexOf('id="chat-ns"') && html.indexOf('id="chat-ns"') < html.indexOf('id="wl-fold"') && /<button class="wc-chip" id="chat-idea" type="button" data-i18n="idea\.chip" hidden><\/button>/.test(html)
+      && /<button class="wc-chip" id="wf-idea" type="button" data-i18n="idea\.chip" hidden><\/button>/.test(html) && /\["chat-idea", "wf-idea"\]\.forEach/.test(src)
       && /<p class="lib-desc" id="lib-desc"><\/p>/.test(html) && !/data-i18n="lib\.desc"/.test(html));
     ok("③ 四個入口共用 libIdeaNow;開關在開機、libOpen、回前景、設定裡切內建瀏覽器時重問(libIdeaSync),切視角 / 帳號狀態變了重畫(libIdeaPaint),換引擎(enterWorkspace)重問",
       /\n  libIdeaSync\(\);\n/.test(src.slice(src.indexOf("(function libWire()"))) && /envShowMain\(\);\n\s*libIdeaSync\(\);/.test(cutFn(src, "libOpen")) && /libIdeaPaint\(\);/.test(cutFn(src, "libShowMain"))

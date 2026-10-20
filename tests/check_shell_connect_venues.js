@@ -15,7 +15,7 @@ const J = JSON.stringify;
 if (!process.versions.electron) (async () => {
   ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,下拉的「台股」組與 change 都看它(cxPresListed)", !!presFlag
     && /if \(CXF\.env !== "local" \|\| cxPresListed\(\)\) \{ const g2 = document\.createElement\("optgroup"\)/.test(tradeSrc)
-    && /\(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\) \? sel\.value : PAPER;/.test(tradeSrc));
+    && /\(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(tradeSrc));
   // ── ① daemon 白名單 ──
   const { argsOk } = require(path.join(SHELL, "daemon.js"));
   const CC = require(path.join(SHELL, "cloudcmd.js"));
@@ -109,11 +109,11 @@ app.whenReady().then(async () => {
   // 雲端視角
   await js(`(() => { trPollSoon = () => {}; trPoll = async () => {};
     TR_BAGS.cloud.st = { alive: true, cloud: { code: "OK", machine: { state: "running", public_ip: "203.0.113.9" }, strategies: [] }, report: {} };
-    if (ENV.cur !== "cloud") envSwitch("cloud"); cxModalOpen(null); })()`);
+    if (ENV.cur !== "cloud") envSwitch("cloud"); cxModalOpen(null, null, "real"); })()`);
   await wait(150);
   const cloudOpts = await js(`[...$("cx-venue").options].map((o) => o.value)`);
-  ok("③ 雲端視角:模擬 + 六家(Binance / OKX / BingX / Gate.io / Bybit / StockCoin)+ 台股那一組的群益(renderer/capital.js)", J(cloudOpts) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "capital"]));
-  const labels = await js(`[...$("cx-venue").options].slice(1).map((o) => o.textContent)`);
+  ok("③ 雲端視角(「真實帳戶」;模擬是框頂的大選項、不在選單裡):六家(Binance / OKX / BingX / Gate.io / Bybit / StockCoin)+ 台股那一組的群益(renderer/capital.js)", J(cloudOpts) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "capital"]));
+  const labels = await js(`[...$("cx-venue").options].map((o) => o.textContent)`);
   const groups = await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`);
   const capL = await js(`[t("cap.venue"), t("cap.group.tw")]`);
   ok("③ 選單上是交易所的正式名字;群益(字串表的名字)在自己那一組", J(labels) === J(["Binance", "OKX", "BingX", "Gate.io", "Bybit", "StockCoin", capL[0]]) && groups.length === 2 && groups[1] === capL[1] && capL[0] !== "cap.venue");
@@ -142,7 +142,7 @@ app.whenReady().then(async () => {
 
   // 雲端被拒 = 主機拒絕這個指令(設計稽核 005 第 2 條):講主機、帶 detail.error;不是「OKX 沒有接受這把金鑰：—」
   const errOf = () => js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`);
-  await js(`cxModalOpen(null)`); await wait(100); await pick("okx");
+  await js(`cxModalOpen(null, null, "real")`); await wait(100); await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__over.cloudConnect = async () => ({ ok: false, code: "REJECTED", detail: { error: "unsupported venue: okx" } })`);
   await js(`$("cx-go").click()`); await wait(300);
@@ -154,16 +154,16 @@ app.whenReady().then(async () => {
   await js(`cxModalClose(false)`); await wait(100);
 
   // 這台電腦
-  await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null); })()`);
+  await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null, null, "real"); })()`);
   await wait(150);
   // 群益只在雲端(Wei 0.1.18 拿掉這台電腦那條:電腦版不接群益);統一只在這台電腦視角,而且受 trade.js PRES_LOCAL_ON 管
   // (0.1.18 關著只藏入口、0.1.19 開):關著時「台股」那一組整個不出;開著時那一組只有統一
-  ok("③ 這台電腦:模擬 + 六家" + (presOn ? " + 「台股」組只有統一(沒有群益)" : ";PRES_LOCAL_ON 關著 → 沒有「台股」組、沒有統一"),
-    J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "stockcoin"].concat(presOn ? ["president"] : []))
+  ok("③ 這台電腦(「真實帳戶」):六家" + (presOn ? " + 「台股」組只有統一(沒有群益)" : ";PRES_LOCAL_ON 關著 → 沒有「台股」組、沒有統一"),
+    J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin"].concat(presOn ? ["president"] : []))
     && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(presOn ? `[t("cx.group.crypto"), t("cap.group.tw")]` : `[t("cx.group.crypto")]`)));
-  if (!presOn) { await pick("president"); ok("③ 旗標關著硬選 president(選單裡沒有那一項):退回模擬", (await js(`CXF.venue`)) === "paper"); }
+  if (!presOn) { await pick("president"); ok("③ 旗標關著硬選 president(選單裡沒有那一項):退回第一家", (await js(`CXF.venue`)) === "binance"); }
   await pick("capital");
-  ok("③ 這台電腦硬選 capital(選單裡沒有那一項):退回模擬、主鈕照在", (await js(`CXF.venue`)) === "paper" && (await js(`!$("cx-go").hidden`)));
+  ok("③ 這台電腦硬選 capital(選單裡沒有那一項):退回第一家、主鈕照在", (await js(`CXF.venue`)) === "binance" && (await js(`!$("cx-go").hidden`)));
   await pick("okx");
   ok("③ 換到 OKX:主鈕在", await js(`!$("cx-go").hidden`));
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
@@ -177,7 +177,7 @@ app.whenReady().then(async () => {
   ok("③ 成功:講「串接成功:讀得到帳戶,交易權限在第一筆下單時確認」、框關掉、金鑰清空", await js(`$("cx-scrim").hidden && CXF.apiKey === "" && CXF.passphrase === ""`)
     && (await js(`$("sr-live").textContent`)) === (await js(`t("cx.linkOk")`)) && /交易權限/.test(await js(`STRINGS.zh["cx.linkOk"]`)));
   // 那一家拒絕:講原因,框留著、欄位照舊(沒有儲存,讓人改完再按)
-  await js(`(() => { cxModalOpen(null); })()`); await wait(100); await pick("okx");
+  await js(`(() => { cxModalOpen(null, null, "real"); })()`); await wait(100); await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__over.venueConnect = async () => ({ ok: false, code: "REJECTED", detail: { reason: "RuntimeError: 50113 Invalid Sign" } })`);
   await js(`$("cx-go").click()`); await wait(300);

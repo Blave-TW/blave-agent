@@ -429,7 +429,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       /cloud \? t\("tr\.onboard\.cloud"\) \+ \(LANG === "zh" \? "" : " "\) \+ t\("tr\.cloud\.onboardExtra"\) : t\("tr\.onboard"\)/.test(ob)
       && /"tr\.onboard\.cloud": "下單金額是從交易所的淨值算出來的，這台雲端主機還沒接交易所。"/.test(S) && /"tr\.onboard\.cloud": "Order sizes are derived from your exchange equity, and this cloud machine has no exchange connected yet\."/.test(S)
       && /"tr\.cloud\.onboardExtra": "[^"]*不會帶過來/.test(S) && /"tr\.cloud\.onboardExtra": "[^"]*doesn’t carry over/.test(S) && !/"tr\.onboard\.cloud": "[^"]*(只能看|can only view)/.test(S));
-    ok("這台電腦 noaccount 不變:填色的「連接交易所」直接開連接框", /else \{\s*const b = trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"; b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\); ob\.appendChild\(b\); \}/.test(ob));
+    ok("這台電腦 noaccount 不變:填色的「選擇下單帳戶」(cx.title,同連接框標題)直接開連接框", /else \{\s*const b = trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.title"\)\); b\.type = "button"; b\.id = "tr-connect"; b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\); ob\.appendChild\(b\); \}/.test(ob));
     // 批次 ②:整頁級的「只能看」退場(啟動 / 暫停按得動之後那一句就是假話);#tr-ro-note 這個槽留著給停機態的 .verdict 用
     ok("整頁級的唯讀說明不再畫;tr.ro.note / tr.ro.noteEmpty 都沒有人叫",
       /trPaintRoNote\(null\);/.test(src) && !/"tr\.ro\.note"|tr\.ro\.noteEmpty/.test(src)); }
