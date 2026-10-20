@@ -278,8 +278,9 @@ def instrument_gate(symbol, reduce_only=False):
 
 
 def paused_symbols(keys):
-    """Keys the auto-wired venue pauses right now (order_<vid>.session_open → False; only
-    BingX has one: status 25). Measured 2026-10-19/20: Binance, Bybit, OKX, Gate.io and BingX
+    """Keys the auto-wired venue forbids opening right now (order_<vid>.session_open → False;
+    only BingX has one: status 25, FORBIDDEN_TO_OPEN — reduces and closes still go out).
+    Measured 2026-10-19/20: Binance, Bybit, OKX, Gate.io and BingX
     stock perps all trade 24/7 — Binance's /fapi/v1/tradingSchedule NO_TRADING is the
     underlying market's calendar (NVDAUSDT printed 4h bars all weekend inside it), so no venue
     gets a weekend hold: the strategy's own candles have those bars. Unreadable → not held."""

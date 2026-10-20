@@ -340,23 +340,9 @@ def _floor_to(value, step):
 # Reconciler's four fixed names
 # --------------------------------------------------------------------------
 
-_LINEAR_TTL_S = 6 * 3600
-_linear_list = {"rows": None, "at": 0.0}
-
-
 def _linear_rows(env):
-    """Every linear instrument (one page today: 906 rows, limit 1000), for the stock names."""
-    if _linear_list["rows"] is None or time.time() - _linear_list["at"] > _LINEAR_TTL_S:
-        rows, cursor = [], None
-        while True:
-            res = _public(env, "/v5/market/instruments-info",
-                          {"category": "linear", "limit": 1000, **({"cursor": cursor} if cursor else {})})
-            rows += res.get("list") or []
-            cursor = res.get("nextPageCursor")
-            if not cursor:
-                break
-        _linear_list.update(rows=rows, at=time.time())
-    return _linear_list["rows"]
+    from lib import account_bybit  # one fetch and one cache for both libs (retCode-checked)
+    return account_bybit.linear_rows(env)
 
 
 def _linear(env, symbol):

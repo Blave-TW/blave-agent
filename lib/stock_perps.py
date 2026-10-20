@@ -15,6 +15,7 @@ venue_name() is the forward map (orders); canonical() is the inverse (positions 
 open orders). The inverse is the half that costs money: a position read back as
 NCSKNVDA2USDUSDT looks flat to the reconciler, which buys again every round.
 """
+import re
 import time
 
 import requests
@@ -58,33 +59,42 @@ def binance_class(sym):
 
 
 _BINGX_STOCK = ("NCSK", "NCSI")  # BingX files EWJ / EWY (ETFs) as NCSI, indices
+_BINGX_ASSET = re.compile(r"^NC(?:SK|SI)(.+)2USD$")
 
 
-def _bingx_match(base, rows):
-    stocks = [r for r in rows if str(r.get("symbol", "")).startswith(_BINGX_STOCK)]
-    exact = [r["symbol"] for r in stocks if r.get("asset") in (f"NCSK{base}2USD", f"NCSI{base}2USD")]
-    if exact:
-        return exact
-    for name in (f"{base}-USDT", f"{base}US-USDT"):
-        hit = [r["symbol"] for r in stocks if r.get("displayName") == name]
-        if hit:
-            return hit
-    return []
+def _is_stock_row(vid, r):
+    if vid == "bingx":
+        return str(r.get("symbol", "")).startswith(_BINGX_STOCK)
+    return r.get("symbolType") in ("stock", "ETF")
 
 
-def _bybit_match(sym, base, rows):
-    stocks = [r for r in rows if r.get("symbolType") in ("stock", "ETF")]
-    hit = [r["symbol"] for r in stocks
-           if r.get("underlyingTicker") == base and r.get("marketRegion") == "US"]
-    if len(hit) > 1 and sym in hit:
-        return [sym]
-    if hit:
-        return hit
-    return [r["symbol"] for r in stocks if r["symbol"] == sym and not r.get("underlyingTicker")]
+def _tickers(vid, r):
+    """The ticker(s) a venue's stock row names — what both directions key on, so a row reads
+    back to exactly the strategy symbol that orders it. BingX: the asset NCSK<T>2USD and the
+    displayName <T>-USDT (NCSKCISCO2USD shows CSCO-USDT). Bybit: underlyingTicker (US only); a
+    row without one is its bare symbol."""
+    if vid == "bingx":
+        m = _BINGX_ASSET.match(str(r.get("asset") or ""))
+        out = {m.group(1)} if m else set()
+        d = str(r.get("displayName") or "")
+        if d.endswith("-USDT"):
+            out.add(d[:-5].strip())
+        return out
+    t = r.get("underlyingTicker")
+    if t:
+        return {t} if r.get("marketRegion") == "US" else set()
+    sym = str(r.get("symbol", ""))
+    return {sym[:-4]} if sym.endswith("USDT") else set()
 
 
-def _match(vid, sym, base, rows):
-    return _bingx_match(base, rows) if vid == "bingx" else _bybit_match(sym, base, rows)
+def _hits(vid, base, rows):
+    return [r["symbol"] for r in rows if _is_stock_row(vid, r) and base in _tickers(vid, r)]
+
+
+def _need_rows(vid, rows, what):
+    if not rows:  # an empty list is a failed read, never "nothing renamed"
+        raise requests.exceptions.ConnectionError(
+            f"{_LABELS.get(vid, vid)} contract list empty — cannot name {what}")
 
 
 def venue_name(vid, sym, rows):
@@ -94,7 +104,8 @@ def venue_name(vid, sym, rows):
     t = (binance_rows() or {}).get(sym)
     if not t or t[0] != STOCK or not sym.endswith("USDT"):
         return None  # SPCXUSD1 is USD1-margined; these venues list the USDT one only
-    hit = _match(vid, sym, t[1] or sym, rows)
+    _need_rows(vid, rows, sym)
+    hit = _hits(vid, t[1] or sym[:-4], rows)
     if len(hit) == 1:
         return hit[0]
     label = _LABELS.get(vid, vid)
@@ -103,28 +114,47 @@ def venue_name(vid, sym, rows):
                                       f"{label} {why}（{sym}）"))
 
 
+_by_base = {"src": None, "map": {}}
+
+
+def _equity_by_base(b):
+    if _by_base["src"] is not b:
+        m = {}
+        for s, (t, base) in b.items():
+            if t == STOCK and s.endswith("USDT"):
+                m.setdefault(base or s[:-4], []).append(s)
+        _by_base.update(src=b, map=m)
+    return _by_base["map"]
+
+
 def canonical(vid, venue_sym, rows):
     """The strategy's name for a position / order row the venue reported as `venue_sym`
-    (BingX already dashless: NCSKNVDA2USDUSDT). Unchanged when it is not a renamed stock.
-    A renamed-looking row with Binance unreadable raises ConnectionError — reading it as
-    some other symbol would show the strategy's holding as flat."""
+    (BingX already dashless: NCSKNVDA2USDUSDT), read off the row's own ticker. Unchanged when
+    the row is not a stock or names no Binance US stock. Raises ConnectionError (transient:
+    the round is skipped) when the name cannot be told — empty list, Binance unreadable, a
+    ticker naming two Binance symbols, or a second venue row on the same ticker — because
+    returning the venue's own name would read the strategy's holding as flat."""
     key = venue_sym.replace("-", "").upper()
-    renamed = {r["symbol"].replace("-", "").upper() for r in rows
-               if (vid == "bingx" and str(r.get("symbol", "")).startswith(_BINGX_STOCK))
-               or (vid == "bybit" and r.get("symbolType") in ("stock", "ETF"))}
-    if key not in renamed:
+    _need_rows(vid, rows, venue_sym)
+    row = next((r for r in rows if str(r.get("symbol", "")).replace("-", "").upper() == key), None)
+    if row is None or not _is_stock_row(vid, row):
         return key
+    tickers = _tickers(vid, row)
     b = binance_rows()
     if b is None:
-        if vid == "bybit" and key in {f"{r.get('underlyingTicker')}USDT" for r in rows
-                                      if r["symbol"] == key}:
+        if vid == "bybit" and tickers == {key[:-4]}:
             return key
         raise requests.exceptions.ConnectionError(
             f"Binance exchangeInfo unreadable — cannot name {_LABELS.get(vid, vid)} position {venue_sym}")
-    inv = {}
-    for s, (t, base) in b.items():
-        if t == STOCK and s.endswith("USDT"):
-            hit = _match(vid, s, base or s, rows)
-            if len(hit) == 1:
-                inv.setdefault(hit[0].replace("-", "").upper(), s)
-    return inv.get(key, key)
+    eq = _equity_by_base(b)
+    named = {s for t in tickers for s in eq.get(t, ())}
+    if not named:
+        return key
+    if len(named) == 1:
+        sym = next(iter(named))
+        base = (b.get(sym) or (None, None))[1] or sym[:-4]
+        if len(_hits(vid, base, rows)) == 1:
+            return sym
+    raise requests.exceptions.ConnectionError(
+        f"{_LABELS.get(vid, vid)} position {venue_sym}: ticker {sorted(tickers)} names "
+        f"{sorted(named)} on Binance / more than one {_LABELS.get(vid, vid)} row — not read as flat")

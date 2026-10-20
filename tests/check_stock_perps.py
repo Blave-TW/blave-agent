@@ -61,7 +61,7 @@ def resolve(vid, sym, rows):
 
 # ── the whole list, both directions ─────────────────────────────────────────
 for vid, rows, want_miss in (
-        ("bingx", BX, {"BBXUSDT", "QNTXUSDT", "USDEXUSDT"}),
+        ("bingx", BX, {"BBXUSDT", "QNTXUSDT", "RAMUSDT", "USDEXUSDT"}),
         ("bybit", BY, {"AGPUUSDT", "AKAMUSDT", "BBXUSDT", "BRKBUSDT", "CRMLUSDT", "DISUSDT", "PAYPUSDT",
                        "QNTXUSDT", "STRCUSDT", "STXXUSDT", "USDEXUSDT"})):
     names, misses, bad = {}, set(), []
@@ -105,8 +105,36 @@ for vid, rows, sym, want in (("bingx", BX, "NVDAUSDT", "NCSKNVDA2USD-USDT"),
 miss = resolve("bingx", "BBXUSDT", BX)
 check(isinstance(miss, ValueError) and "BingX 沒有這檔股票永續（BBXUSDT）" in str(miss),
       f"no BingX listing: Chinese reason ({miss})")
+def raises_conn(fn):
+    try:
+        got = fn()
+    except requests.exceptions.ConnectionError:
+        return True
+    return got
+
+
+# audit P1-2: a second row on a ticker, a rename, a displayName twin — orders refuse, and the old
+# position never reads back under the venue's own name (that is "flat" to the reconciler)
 two = BX + [{"symbol": "NCSKZZZQ2USD-USDT", "asset": "NCSKZZZQ2USD", "displayName": "NVDA-USDT"}]
-check(resolve("bingx", "NVDAUSDT", two) == "NCSKNVDA2USD-USDT", "BingX asset name wins over a displayName twin")
+check(isinstance(resolve("bingx", "NVDAUSDT", two), ValueError), "BingX displayName twin: the order is refused")
+check(raises_conn(lambda: sp.canonical("bingx", "NCSKNVDA2USDUSDT", two)) is True,
+      "BingX displayName twin: the NVDA position raises, not read as flat")
+renamed = BX + [{"symbol": "NCSKCSCO2USD-USDT", "asset": "NCSKCSCO2USD", "displayName": "CSCO-USDT"}]
+check(isinstance(resolve("bingx", "CSCOUSDT", renamed), ValueError),
+      "BingX lists NCSKCSCO2USD next to NCSKCISCO2USD: the order is refused, not switched")
+check(raises_conn(lambda: sp.canonical("bingx", "NCSKCISCO2USDUSDT", renamed)) is True,
+      "BingX rename: the old CISCO position raises, not read as flat")
+second = BY + [{"symbol": "AMDXUSDT", "symbolType": "stock", "underlyingTicker": "AMD", "marketRegion": "US"}]
+check(isinstance(resolve("bybit", "AMDUSDT", second), ValueError), "Bybit second AMD row: the order is refused")
+check(raises_conn(lambda: sp.canonical("bybit", "AMDSTOCKUSDT", second)) is True,
+      "Bybit second AMD row: the AMDSTOCKUSDT position raises, not read as flat")
+check(sp.canonical("bybit", "CVXSTOCKUSDT", BY) == "CVXSTOCKUSDT",
+      "a stock row naming no Binance stock reads as itself (a manual position)")
+# audit P1-1: an empty list is a failed read
+for vid in ("bingx", "bybit"):
+    check(raises_conn(lambda: sp.canonical(vid, "NCSKNVDA2USDUSDT" if vid == "bingx" else "AMDSTOCKUSDT", []))
+          is True, f"{vid}: empty contract list -> canonical raises (transient)")
+    check(raises_conn(lambda: sp.venue_name(vid, "NVDAUSDT", [])) is True, f"{vid}: empty list -> venue_name raises")
 dup = [r for r in BX if r["symbol"] != "NCSKCISCO2USD-USDT"] + [
     {"symbol": "NCSKCSA2USD-USDT", "asset": "NCSKCSA2USD", "displayName": "CSCO-USDT"},
     {"symbol": "NCSKCSB2USD-USDT", "asset": "NCSKCSB2USD", "displayName": "CSCO-USDT"}]
@@ -162,6 +190,7 @@ account_bingx._signed_get = lambda path, env, params=None: [
     {"symbol": "NCSKNVDA2USD-USDT", "positionAmt": "0.5", "positionSide": "LONG", "markPrice": "180"},
     {"symbol": "BTC-USDT", "positionAmt": "-0.01", "positionSide": "SHORT", "markPrice": "60000"}]
 account_bingx._public_get = lambda path, params=None: BX
+account_bingx._contracts.update(rows=None, at=0.0)
 check([p["symbol"] for p in account_bingx.get_positions({})] == ["NVDAUSDT", "BTCUSDT"],
       "account_bingx: NCSKNVDA2USD-USDT position reads as NVDAUSDT")
 
@@ -178,6 +207,7 @@ def by_public(env, path, params):
 
 
 order_bybit._public = by_public
+account_bybit._linear_list.update(rows=BY, at=time.time())
 order_bybit.get_contract_rules({}, "AMDUSDT")
 check(pub[-1].get("symbol") == "AMDSTOCKUSDT", f"order_bybit: AMDUSDT rules read from AMDSTOCKUSDT ({pub[-1]})")
 pub.clear()
@@ -207,6 +237,64 @@ check(portfolio._venue_paused_keys({"STXXUSDT": {"exchange": "paper"}}, {}) == s
 vw.detect_venue = lambda env: "okx"
 check(vw.paused_symbols({"STXXUSDT"}) == set(), "a venue without session_open: nothing held")
 
+# ── list fetches (audit P1-1) ───────────────────────────────────────────────
+class _J:
+    status_code = 200
+    def __init__(self, body): self.body = body
+    def raise_for_status(self): pass
+    def json(self): return self.body
+
+
+pages = []
+requests.get = lambda url, headers=None, params=None, timeout=None: _J(pages.pop(0))
+account_bybit._linear_list.update(rows=None, at=0.0)
+pages[:] = [{"retCode": 10006, "retMsg": "busy", "result": {"list": BY[:3], "nextPageCursor": ""}}]
+try:
+    account_bybit.linear_rows({}); raised = False
+except Exception:
+    raised = True
+check(raised and account_bybit._linear_list["rows"] is None, "Bybit list retCode != 0 -> raises, nothing cached")
+pages[:] = [{"retCode": 0, "result": {"list": [], "nextPageCursor": ""}}]
+check(raises_conn(lambda: account_bybit.linear_rows({})) is True and account_bybit._linear_list["rows"] is None,
+      "Bybit empty list -> raises, nothing cached")
+pages[:] = [{"retCode": 0, "result": {"list": BY[:500], "nextPageCursor": "c2"}},
+            {"retCode": 0, "result": {"list": BY[500:], "nextPageCursor": ""}}]
+check(len(account_bybit.linear_rows({})) == len(BY), "Bybit list: both pages kept")
+pages[:] = [{"retCode": 0, "result": {"list": [], "nextPageCursor": ""}}]
+check(len(order_bybit._linear_rows({})) == len(BY) and len(pages) == 1, "order_bybit reads the same cached list")
+requests.get = _no_net
+order_bingx._contracts.update(rows=None, at=0.0)
+order_bingx._request = lambda method, path, env, params=None, signed=True, retries=3: []
+try:
+    order_bingx._contract_rows({}); raised = False
+except order_bingx.BingXError:
+    raised = True
+check(raised and order_bingx._contracts["rows"] is None, "BingX empty contracts -> raises, nothing cached")
+
+# ── status 25 forbids opening only (audit P1-3) ──────────────────────────────
+L = lambda n: {"side": "long", "size": n}
+S = lambda n: {"side": "short", "size": n}
+hold, close_only = portfolio._paused_split(
+    {"ENTRY", "ADD", "REDUCE", "CLOSE", "GONE", "FLIP"},
+    {"ENTRY": L(100), "ADD": L(300), "REDUCE": L(50), "CLOSE": L(0), "FLIP": S(100)},
+    {"ADD": L(100), "REDUCE": L(100), "CLOSE": L(100), "GONE": L(100), "FLIP": L(100)})
+check(hold == {"ENTRY", "ADD"} and close_only == {"FLIP"},
+      f"paused: entry/add held, reduce/close/removed go out, a flip only closes ({hold}, {close_only})")
+
+# ── sign_stock_agreement is only ever called by the agent, after the user said yes ──
+import re as _re  # noqa: E402
+callers = []
+for top in ("lib", "manager", "runtime"):
+    for dirpath, _, files in os.walk(os.path.join(ROOT, top)):
+        for f in files:
+            if f.endswith((".py", ".sh", ".ps1", ".js")):
+                path = os.path.join(dirpath, f)
+                for i, line in enumerate(open(path, errors="replace"), 1):
+                    if _re.search(r"sign_stock_agreement\s*\(", line) and not line.lstrip().startswith("def "):
+                        callers.append(f"{os.path.relpath(path, ROOT)}:{i}")
+check(not callers, f"nothing under lib/ manager/ runtime/ calls sign_stock_agreement ({callers})")
+
+
 # ── the agreement wall ──────────────────────────────────────────────────────
 e = str(order_binance.BinanceError(-4411, "Please sign TradFi-Perps agreement contract", "/fapi/v1/order"))
 check(e.startswith("[order_reject:stock_agreement] 要先簽 Binance 股票永續（TradFi-Perps）協議：") and "幫我簽 Binance 股票合約協議" in e,
@@ -232,7 +320,13 @@ _env = {"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s"}
 def _post_ok(url, data=None, headers=None, timeout=None):
     _posts.append((url, data)); return _R(200, "SUCCESS")
 requests.post = _post_ok
-check(order_binance.sign_stock_agreement(_env) is True, "plain-text SUCCESS -> signed")
+for bad in ({}, {"user_consented": False}, {"user_consented": "yes"}):
+    try:
+        order_binance.sign_stock_agreement(_env, **bad); raised = False
+    except (TypeError, PermissionError):
+        raised = True
+    check(raised and not _posts, f"no user_consented=True ({bad}) -> raises before any request")
+check(order_binance.sign_stock_agreement(_env, user_consented=True) is True, "plain-text SUCCESS -> signed")
 check(len(_posts) == 1 and _posts[0][0].endswith("/fapi/v1/stock/contract"), "one POST to /fapi/v1/stock/contract")
 _keys = sorted(kv.split("=")[0] for kv in _posts[0][1].split("&"))
 check(_keys == ["recvWindow", "signature", "timestamp"], f"no parameters besides the signature ({_keys})")
@@ -241,7 +335,7 @@ for status, body, what in ((400, '{"code":-2015,"msg":"Invalid API-key"}', "a JS
                            (200, "FAILED", "any other text")):
     requests.post = lambda url, data=None, headers=None, timeout=None, _s=status, _b=body: _R(_s, _b)
     try:
-        order_binance.sign_stock_agreement(_env); raised = False
+        order_binance.sign_stock_agreement(_env, user_consented=True); raised = False
     except order_binance.BinanceError:
         raised = True
     check(raised, f"{what} -> raises, not signed")

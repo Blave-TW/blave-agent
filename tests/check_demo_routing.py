@@ -184,7 +184,7 @@ LIVE_ON_DEMO = {"account_bybit.withdraw_enabled"}
 _ARGS = {"symbol": "BTCUSDT", "direction": "long", "side": "buy", "qty": 0.01,
          "base_qty": 0.01, "price": 50000.0, "order_id": "1", "ord_id": "1",
          "algo_id": "1", "leverage": 5, "since": int(time.time()) - 3600,
-         "sl_price": 40000.0}
+         "sl_price": 40000.0, "user_consented": True}  # sign_stock_agreement: fake HTTP only
 
 
 def _call(fn, env):

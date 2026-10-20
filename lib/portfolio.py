@@ -420,6 +420,29 @@ def _venue_paused_keys(target, diff_actual):
         return set()
 
 
+def _signed_size(row):
+    if not row:
+        return 0.0
+    size = float(row.get('size') or 0)
+    return -size if row.get('side') == 'short' else size
+
+
+def _paused_split(paused, target, diff_actual):
+    """BingX status 25 forbids OPENING only (FORBIDDEN_TO_OPEN): a reduce or a close of a paused
+    key goes out as usual (a venue refusal is reported as any refusal); an entry or an add is
+    held; a flip keeps only its close leg. Returns (keys held as is, keys that only close)."""
+    hold, close_only = set(), set()
+    for k in paused:
+        t, a = _signed_size(target.get(k)), _signed_size(diff_actual.get(k))
+        if t == 0 or (a != 0 and (t > 0) == (a > 0) and abs(t) <= abs(a)):
+            continue
+        if a != 0 and (t > 0) != (a > 0):
+            close_only.add(k)
+        else:
+            hold.add(k)
+    return hold, close_only
+
+
 def book_venue():
     """The venue the bot's book is read and written for: the one the reconciler
     trades on (the bound TW broker, else the auto-wired venue). None when no
@@ -3938,8 +3961,13 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         logging.info(f"[reconcile] TW market closed — paper holds {sorted(closed_keys)} until the session")
     paused = _venue_paused_keys(target, diff_actual)
     if paused:
-        logging.info(f"[reconcile] venue paused trading — holds {sorted(paused)} until it reopens")
-        closed_keys |= paused
+        hold, close_only = _paused_split(paused, target, diff_actual)
+        if hold:
+            logging.info(f"[reconcile] venue forbids opening — holds {sorted(hold)} until it reopens")
+            closed_keys |= hold
+        for k in close_only:
+            logging.info(f"[reconcile] venue forbids opening — {k} only closes (no new side)")
+            target[k] = {**target[k], 'size': 0.0}
     if closed_keys:
         target = {k: v for k, v in target.items() if k not in closed_keys}
         diff_actual = {k: v for k, v in diff_actual.items() if k not in closed_keys}

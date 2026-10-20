@@ -429,6 +429,17 @@ def _opt(v, positive=False):
     return f
 
 
+_contracts = {"rows": None, "at": 0.0}
+
+
+def _contracts_list():
+    """/quote/contracts for the stock names (lib/stock_perps), cached 10 min; empty is never
+    cached (stock_perps.canonical raises on it rather than reading a position as flat)."""
+    if not _contracts["rows"] or time.time() - _contracts["at"] > 600:
+        _contracts.update(rows=_public_get("/openApi/swap/v2/quote/contracts") or [], at=time.time())
+    return _contracts["rows"]
+
+
 def get_positions(env: dict) -> list:
     """Open swap positions. Returns [{'symbol', 'side', 'size', 'mark_price',
     'entry_price', 'unrealized_pnl', 'margin', 'leverage'}, ...], [] if flat
@@ -469,7 +480,7 @@ def get_positions(env: dict) -> list:
 
     names = {}
     if stock_perps and any(str(p.get("symbol", "")).startswith("NC") for p in rows):
-        contracts = _public_get("/openApi/swap/v2/quote/contracts") or []
+        contracts = _contracts_list()
         names = {p.get("symbol"): stock_perps.canonical("bingx", p.get("symbol") or "", contracts)
                  for p in rows if str(p.get("symbol", "")).startswith("NC")}
 

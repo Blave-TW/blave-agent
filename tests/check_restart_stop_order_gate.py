@@ -55,6 +55,7 @@ HTTP = {"binance", "bingx", "bybit", "gateio", "okx"}
 # non-GET _send calls outside _request, each with the reason it is not an order
 SEND_OUTSIDE_REQUEST_OK = {
     ("gateio", "set_leverage"): "leverage change — neither opens nor closes anything",
+    ("binance", "sign_stock_agreement"): "signs the TradFi-Perps agreement (user-consented) — no order",
 }
 # paper: the ledger's own SL/TP firing = the venue-held stop the spec leaves alone
 PAPER_UNGATED_OK = {"_settle"}

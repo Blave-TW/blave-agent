@@ -1141,7 +1141,7 @@ def get_spot_open_orders(env, symbol=None):
             (_request("GET", "/api/v3/openOrders", env, params, spot=True) or [])]
 
 
-def sign_stock_agreement(env):
+def sign_stock_agreement(env, *, user_consented):
     """Sign Binance's TradFi-Perps (stock perpetual) agreement for this account:
     signed POST /fapi/v1/stock/contract, no parameters; a success answers the bare
     text "SUCCESS" (measured 2026-10-20 on a live key). Neither the app nor the
@@ -1150,7 +1150,11 @@ def sign_stock_agreement(env):
 
     This is the user's consent to an exchange agreement. Call it ONLY after the
     user said yes in the conversation — never on your own, and never as an
-    automatic retry of a refused order."""
+    automatic retry of a refused order. `user_consented=True` is that yes, said by the user;
+    anything else raises before any request (tests/check_stock_perps: nothing under lib/,
+    manager/ or runtime/ calls this)."""
+    if user_consented is not True:
+        raise PermissionError("sign_stock_agreement needs user_consented=True — ask the user first")
     got = _send("POST", "/fapi/v1/stock/contract", env, plain_text=True)
     if got != "SUCCESS":
         raise BinanceError("N/A", f"unexpected reply {str(got)[:120]!r}", "/fapi/v1/stock/contract")

@@ -244,8 +244,11 @@ def _opt(v, positive=False):
 _linear_list = {"rows": None, "at": 0.0}
 
 
-def _public_list(env):
-    if _linear_list["rows"] is not None and time.time() - _linear_list["at"] < 6 * 3600:
+def linear_rows(env):
+    """Every linear instrument (one page today: 906 rows, limit 1000) — the stock names for
+    lib/stock_perps, shared with lib/order_bybit. A retCode error or an empty list raises and
+    is never cached: an empty list would read every renamed stock position as flat."""
+    if _linear_list["rows"] and time.time() - _linear_list["at"] < 6 * 3600:
         return _linear_list["rows"]
     rows, cursor = [], None
     while True:
@@ -253,11 +256,17 @@ def _public_list(env):
                          params={"category": "linear", "limit": 1000, **({"cursor": cursor} if cursor else {})},
                          timeout=10)
         r.raise_for_status()
-        res = r.json().get("result") or {}
+        body = r.json()
+        if body.get("retCode") != 0:
+            raise _tag(Exception(f"bybit instruments-info retCode={body.get('retCode')}: {body.get('retMsg')}"),
+                       body.get("retCode"), r.status_code)
+        res = body.get("result") or {}
         rows += res.get("list") or []
         cursor = res.get("nextPageCursor")
         if not cursor:
             break
+    if not rows:
+        raise requests.exceptions.ConnectionError("bybit instruments-info: empty list")
     _linear_list.update(rows=rows, at=time.time())
     return rows
 
@@ -280,7 +289,7 @@ def get_positions(env: dict) -> list:
         if stock_perps and stock_perps.binance_class(symbol) != "COIN":
             # AMDSTOCKUSDT is the strategy's AMDUSDT (lib/stock_perps)
             if linear is None:
-                linear = _public_list(env)
+                linear = linear_rows(env)
             symbol = stock_perps.canonical("bybit", symbol, linear)
         mark_px = float(p.get("markPrice") or 0)
         # A non-zero position we cannot value must RAISE, never be skipped: a

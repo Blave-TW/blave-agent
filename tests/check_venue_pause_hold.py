@@ -1,6 +1,6 @@
-"""A contract the bound venue pauses (BingX status 25) is held on both sides, not ordered and not a
-failure: no place_order call, listed under market_closed in manager/last_reconcile.json. Control:
-the same round with the venue open places the order. No network.
+"""A contract the bound venue forbids opening (BingX status 25, FORBIDDEN_TO_OPEN): an entry or an
+add is held — no place_order call, listed under market_closed in manager/last_reconcile.json — while
+a reduce goes out and a flip only closes. Control: the venue open again places the entry. No network.
 Run: cd blave-agent && .venv/bin/python tests/check_venue_pause_hold.py
 """
 import json, os, sys, tempfile
@@ -40,29 +40,38 @@ venue_wiring.hand_wired_venue = lambda: None
 portfolio._record_order_error = lambda *a, **k: None
 
 
-def run(held):
+def run(held, side="long"):
     placed = []
-    target = {"STXXUSDT": {"side": "long", "size": 100.0, "exchange": None, "asset_spec": None,
+    target = {"STXXUSDT": {"side": side, "size": 100.0, "exchange": None, "asset_spec": None,
                            "contributors": []},
               "BTCUSDT": {"side": "long", "size": 100.0, "exchange": None, "asset_spec": None,
                           "contributors": []}}
     portfolio.aggregate_portfolio = lambda: target
     portfolio.reconcile(get_positions_fn=lambda: held,
-                        place_order_fn=lambda symbol, signed_diff, spec, **kw: placed.append(symbol) or
+                        place_order_fn=lambda symbol, signed_diff, spec, **kw: placed.append((symbol, signed_diff)) or
                         {"executed_qty": 1, "avg_price": 50.0},
                         threshold=10, send_telegram_fn=lambda text: None)
     snap = json.load(open("manager/last_reconcile.json"))
     return placed, snap.get("market_closed") or []
 
 
+def stxx(placed):
+    return [round(d) for s, d in placed if s == "STXXUSDT"]
+
+
 placed, closed = run({})
-check("STXXUSDT" not in placed and "BTCUSDT" in placed, f"paused entry not sent, the open one is ({placed})")
+check(stxx(placed) == [] and any(s == "BTCUSDT" for s, _ in placed),
+      f"paused entry not sent, the open one is ({placed})")
 check(closed == ["STXXUSDT"], f"listed under market_closed ({closed})")
+placed, closed = run({"STXXUSDT": {"side": "long", "size": 50.0}})
+check(stxx(placed) == [] and closed == ["STXXUSDT"], f"paused add not sent ({placed}, {closed})")
 placed, closed = run({"STXXUSDT": {"side": "long", "size": 300.0}})
-check("STXXUSDT" not in placed, f"paused reduce not sent either ({placed})")
+check(stxx(placed) == [-200] and closed == [], f"paused reduce goes out ({placed}, {closed})")
+placed, closed = run({"STXXUSDT": {"side": "long", "size": 300.0}}, side="short")
+check(stxx(placed) == [-300] and closed == [], f"paused flip only closes the long ({placed}, {closed})")
 _FakeBingX.paused = set()
 placed, closed = run({})
-check("STXXUSDT" in placed and closed == [], f"control: open again → ordered ({placed}, {closed})")
+check(stxx(placed) == [100] and closed == [], f"control: open again → ordered ({placed}, {closed})")
 
 print(f"\n{fails} failed")
 sys.exit(1 if fails else 0)

@@ -295,9 +295,11 @@ _PAUSED = 25  # measured 2026-10-19: status 25 rows answer 109415 "…is pause c
 
 def _contract_rows(env):
     now = time.time()
-    if _contracts["rows"] is None or now - _contracts["at"] > _CONTRACTS_TTL_S:
-        _contracts["rows"] = _request("GET", "/openApi/swap/v2/quote/contracts", env, signed=False) or []
-        _contracts["at"] = now
+    if not _contracts["rows"] or now - _contracts["at"] > _CONTRACTS_TTL_S:
+        rows = _request("GET", "/openApi/swap/v2/quote/contracts", env, signed=False) or []
+        if not rows:  # never cached: an empty list reads every stock position as flat
+            raise BingXError("N/A", "empty /quote/contracts list", "contracts")
+        _contracts.update(rows=rows, at=now)
     return _contracts["rows"]
 
 
@@ -318,8 +320,9 @@ def _canonical_symbol(env, venue_sym):
 
 
 def session_open(env, symbol):
-    """False while BingX pauses this contract (status 25) — the reconciler holds it like a
-    closed session instead of sending an order that comes back 109415 every round."""
+    """False while BingX forbids opening this contract (status 25, FORBIDDEN_TO_OPEN in
+    bingx-py) — the reconciler holds entries and adds instead of sending an order that comes
+    back 109415 every round; reduces and closes still go out."""
     sym = _swap_symbol(env, symbol)
     if not sym.startswith("NC"):
         return True  # coins: no pause read, as before

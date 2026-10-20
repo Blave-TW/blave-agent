@@ -180,14 +180,25 @@ do not assume casing or invent names.
    means the account has not signed the venue's stock-perp agreement. Binance:
    neither its app nor its website has a place to sign — ask the user whether
    to sign it; only after they say yes call
-   `order_binance.sign_stock_agreement(env)` (never on your own, never as an
-   automatic retry), then let the next round re-send. Bybit: the user signs it
+   `order_binance.sign_stock_agreement(env, user_consented=True)` (never on
+   your own, never as an automatic retry; without that argument it raises),
+   then let the next round re-send. Bybit: the user signs it
    on the Bybit website or app with the MAIN account by opening that contract's
    trade page (sub-accounts cannot sign; the API route needs a transfer or
    withdrawal permission Blave keys don't have).
-   All five venues trade stock perps 24/7 (weekends included); a BingX
-   contract it pauses (status 25) is held until it reopens, like a closed
-   session, and shows under `market_closed` in `manager/last_reconcile.json`.
+   All five venues trade stock perps 24/7 (weekends included). BingX status 25
+   forbids OPENING only: entries and adds on it wait (shown under
+   `market_closed` in `manager/last_reconcile.json`), reduces and closes still
+   go out, and a flip only closes.
+   The stock names need Binance's public exchangeInfo (the strategy's data
+   source). A machine that never read it falls back to the plain name
+   (`NVDA-USDT`, `AMDUSDT`), which today exists on neither venue, so the order
+   is refused; were a venue ever to list a coin under that plain name, the
+   order would buy the coin — if stock orders on BingX / Bybit say
+   `symbol_unavailable` while Binance is unreachable, fix the network first.
+   A stock position whose name cannot be read back (empty contract list,
+   Binance unreadable, two venue rows on one ticker) makes the position read
+   fail for that round instead of showing it as flat.
 
 8. **Done = the two files exist and rule 5 passed.** The machine's portfolio
    reporter detects the files and the web page flips the venue to ready on its
