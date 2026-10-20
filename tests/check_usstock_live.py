@@ -22,9 +22,11 @@
   - the freshness probe runs fetch_data inside us_live_strategy(<folder name>, SYMBOL)
   - Yahoo down during the probe → the strategy_failed alert ends with 「美股日線這輪抓不到…部位
     維持原樣」 (the event keeps the last 500 characters), the run is not started, state.json untouched
-  paper: the fill price of NVDAUSDT is the strategy's own latest Yahoo close (lib.paper_data, in
-    the reconciler's env — desktop flag, no BLAVE_MODE — so no scope is needed there)
-No network: the raw Yahoo / yfinance fetchers and lib.stock_perps.binance_rows are stubbed.
+  paper: NVDAUSDT fills at Binance's last trade (lib.paper_data); its once-a-day collision check
+    reads the strategy's own Yahoo close in the reconciler's env (desktop flag, no BLAVE_MODE), so
+    no live scope is needed there
+No network: the raw Yahoo / yfinance fetchers, lib.stock_perps.binance_rows and
+lib.paper_data._binance_last are stubbed.
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_usstock_live.py
 """
@@ -330,16 +332,23 @@ check(scopes == [((NAME, "NVDAUSDT"), "NVDA")] and ready and ts == _dt(2026, 10,
       f"the real probe fetches inside us_live_strategy('{NAME}', 'NVDAUSDT') and sees Friday's bar ({scopes}, {ts})")
 
 # ── paper fill price (the reconciler's env: desktop flag, no BLAVE_MODE) ────────
+# lib.paper_data: a perp (stock perps included) fills at Binance's last trade, checked once a day
+# against the owning strategy's own close for a ticker collision — that close is the Yahoo NVDA
+# bar, read here without a live scope
 import lib.paper_data as paper_data  # noqa: E402
 env(mode=None)
 for p in D._CACHE_DIR.glob("usstock_daily_*"):
     p.unlink()
+asked = []
+paper_data._binance_last = lambda sym: asked.append(sym) or 181.5
+calls.clear()
 try:
     price, owner = paper_data.current_price("NVDAUSDT", {}, max_age=0)
 except Exception as e:
     price, owner = e, None
-check(owner == NAME and price == float(RAW["Close"].iloc[-1]),
-      f"paper prices NVDAUSDT at the strategy's own latest Yahoo close (unadjusted on its last bar) ({price!r}, {owner})")
+check(price == 181.5 and owner is None and asked == ["NVDAUSDT"] and calls == [("yahoo", "NVDA")],
+      f"paper prices NVDAUSDT at Binance's last trade; the collision check reads the strategy's own "
+      f"Yahoo close without a live scope ({price!r}, {owner}, {asked}, {calls})")
 
 print("FAIL" if fails else "OK", f"({fails} failed)")
 sys.exit(1 if fails else 0)
