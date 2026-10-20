@@ -2397,6 +2397,7 @@ const STRINGS = {
     "pres.first.ok": "Continue",
     "pres.quit.title": "Quit Blave?",
     "pres.quit.body": "{lots} lot(s) are still open at President. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the President app.",
+    "pres.quit.unknown": "President positions can’t be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the President app.",
     "pres.err.stopNote": "If President has locked the account, ask your broker rep to unlock it.",
     "pres.err.retryNote": "Try again once the network or President is back.",
     "pres.err.confirm": "Confirm login",
@@ -2878,6 +2879,7 @@ const STRINGS = {
     "capl.localOnly": "Capital orders go out only while Blave is open and this Windows account is signed in.",
     "capl.errList": "Couldn't read this computer's certificate store, so the wizard wasn't opened (the new certificate couldn't be told apart). Try again.",
     "capl.quit.body": "{lots} lot(s) are still open at Capital. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the Capital app.",
+    "capl.quit.unknown": "Capital positions can’t be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the Capital app.",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -5271,6 +5273,7 @@ const STRINGS = {
     "pres.first.ok": "繼續",
     "pres.quit.title": "結束 Blave？",
     "pres.quit.body": "統一還有 {lots} 口在倉。結束後策略不會再下單，這些部位也不會自動平倉，要自己在統一 app 處理。",
+    "pres.quit.unknown": "統一的部位現在讀不到，可能還有在倉。結束後策略不會再下單，也不會自動平倉，請到統一 app 確認。",
     "pres.err.stopNote": "如果被統一鎖住，請聯絡營業員解鎖。",
     "pres.err.retryNote": "網路或統一恢復後再試一次。",
     "pres.err.confirm": "確認登入",
@@ -5752,5 +5755,6 @@ const STRINGS = {
     "capl.localOnly": "Blave 開著、這個 Windows 帳號登入時，群益才會下單。",
     "capl.errList": "讀不到這台電腦的憑證庫，先不開精靈（申請完會分不出哪張是新的）。再按一次試試。",
     "capl.quit.body": "群益還有 {lots} 口在倉。結束後策略不會再下單，這些部位也不會自動平倉，要自己在群益 app 處理。",
+    "capl.quit.unknown": "群益的部位現在讀不到，可能還有在倉。結束後策略不會再下單，也不會自動平倉，請到群益 app 確認。",
   },
 };

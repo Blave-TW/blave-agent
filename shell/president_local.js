@@ -42,6 +42,21 @@ function heldLots(report, venue = "president") {
   const p = a && a.positions && typeof a.positions === "object" ? a.positions : {};
   return Object.keys(p).reduce((n, k) => { const s = p[k] && Number(p[k].size); return n + (isFinite(s) && s > 0 ? Math.round(s) : 0); }, 0);
 }
+/* 結束攔截與防睡眠問的是「這家還有沒有部位」:讀到 → 這一輪的口數(記進 memo 當最後一次讀成功的值);
+   綁著這家、這一輪讀不到(帳戶讀取器 ok:false、還沒讀過、狀態檔 build 失敗)→ known:false、lots = 最後一次讀成功的值,
+   呼叫端保守當成有部位——群益的 worker 停住或睡醒快照過期時,讀不到比統一常見。沒綁 = 0。 */
+const venueBound = (v) => !!(v && typeof v === "object" && v.credentials && v.pair && v.order && v.account);
+function twHeld(report, venue, memo) {
+  const r = report && typeof report === "object" ? report : null;
+  if (r && !r.error && r.venues && typeof r.venues === "object") {
+    if (!venueBound(r.venues[venue])) { memo.bound = false; memo.lots = 0; return { lots: 0, known: true }; }
+    memo.bound = true;
+    const a = r.account && r.account.venues && r.account.venues[venue];
+    if (a && a.ok === true && a.positions && typeof a.positions === "object") { memo.lots = heldLots(r, venue); return { lots: memo.lots, known: true }; }
+    return { lots: memo.lots || 0, known: false };
+  }
+  return memo.bound ? { lots: memo.lots || 0, known: false } : { lots: 0, known: true };
+}
 const defaultFetch = (url, max) => require("./fetchbuf").fetchBuffer(url, max);
 
 function createPresident({ userData, home, platform = process.platform, seal, host, pickFile, fetchBuffer = defaultFetch,
@@ -194,4 +209,4 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
   }
   return { info, saveCreds, forget, scan, pickOther, openTcem, certUse, step, resync, heldLots, _load: load };
 }
-module.exports = { createPresident, sealFor, expiryFromName, heldLots, TCEM_SHA256, CERT_CENTER_URL };
+module.exports = { createPresident, sealFor, expiryFromName, heldLots, twHeld, TCEM_SHA256, CERT_CENTER_URL };

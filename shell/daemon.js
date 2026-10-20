@@ -398,10 +398,13 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   // 群益本機的封裝(shell/capital_local.sealFor):同一把 secret、另一組 info／AAD,統一的密文在群益那邊打不開
   function sealCapital(obj) { return child && secret ? require("./capital_local").sealFor(secret, obj) : null; }
 
-  // 統一還有幾口在倉(結束攔截、防睡眠用;帳戶讀取器讀不到 = 0)
-  function presidentLots() { return require("./president_local").heldLots(status().report); }
-  function capitalLots() { return require("./president_local").heldLots(status().report, "capital"); }
+  // 統一／群益本機還有沒有部位(結束攔截、防睡眠用):讀不到時沿用最後一次讀成功的口數、並標成不確定(president_local.twHeld)
+  const twMemo = { president: {}, capital: {} };
+  function twHeld() {
+    const P = require("./president_local"), r = status().report;
+    return { president: P.twHeld(r, "president", twMemo.president), capital: P.twHeld(r, "capital", twMemo.capital) };
+  }
 
-  return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, presidentLots, capitalLots, _eqTick: eqTick, isRunning: () => !!child };
+  return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, twHeld, _eqTick: eqTick, isRunning: () => !!child };
 }
 module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, argsOk };

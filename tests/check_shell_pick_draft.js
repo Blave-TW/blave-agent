@@ -162,10 +162,10 @@ const save = async (f) => { ctx.BOX = null; btn(f, "save").on.click(); if (ctx.B
       const win = { url: o.url || OURS, destroyed: false, isDestroyed() { return this.destroyed; }, isMinimized: () => false, restore() {}, show() {}, focus() {}, hide() { log.push("hide"); }, close() { log.push("close"); if (ctx.closeHandler) { const e = { p: false, preventDefault() { this.p = true; } }; ctx.closeHandler(e); if (!e.p) log.push("closed"); } },
         webContents: { getURL: () => win.url, executeJavaScript: (code) => { log.push("ask"); return o.dirty === "hang" ? new Promise(() => {}) : Promise.resolve(o.dirty === true && /trUnsavedAny\(\) === true/.test(code)); } } };
       const ctx = { quitting: false, quitConfirmed: false, quitAsking: false, moveAsking: false, draftOk: false, draftNote: false, restarting: null, hiddenSaid: true, HEADLESS: true, activeTurn: o.turn ? {} : null, turnStarting: false,
-        tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), _tradeHost: null, _engineSetup: { busy: () => false }, twLots: () => o.tw || { pres: 0, cap: 0, total: 0 }, boxes: [], Notification: { isSupported: () => false },
+        tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), _tradeHost: null, _engineSetup: { busy: () => false }, twLots: () => { const z = { lots: 0, known: true }, t = o.tw || {}, pres = t.pres || z, cap = t.cap || z; return { pres, cap, held: [pres, cap].some((x) => !x.known || x.lots > 0) }; }, boxes: [], Notification: { isSupported: () => false },
         isOurPageUrl: (u) => u === OURS, BrowserWindow: { getAllWindows: () => [win] }, TT, process: { platform: "darwin" },
         setTimeout: (f) => setTimeout(f, 5), Promise, showMain() { log.push("showMain"); }, venueName: () => "Binance", cloudSt: () => null,
-        tmLabels: { quitStay: "取消", unsavedGo: "離開", unsavedTitle: "還沒儲存，要離開嗎？", unsavedBody: "b", unsavedNote: "NOTE", quitGo: "結束 Blave", quitTitle: "t", quitBody: "q {venue}", quitTurnTitle: "tt", quitTurnBody: "tb", hidden: "", presQuitTitle: "pt", presQuitBody: "統一 {lots} 口", caplQuitBody: "群益 {lots} 口" },
+        tmLabels: { quitStay: "取消", unsavedGo: "離開", unsavedTitle: "還沒儲存，要離開嗎？", unsavedBody: "b", unsavedNote: "NOTE", quitGo: "結束 Blave", quitTitle: "t", quitBody: "q {venue}", quitTurnTitle: "tt", quitTurnBody: "tb", hidden: "", presQuitTitle: "pt", presQuitBody: "統一 {lots} 口", caplQuitBody: "群益 {lots} 口", presQuitUnknown: "統一讀不到", caplQuitUnknown: "群益讀不到" },
         dialog: { showMessageBox: (_w, opts) => { ctx.boxes.push(opts); log.push("dialog:" + opts.message + (/NOTE$/.test(opts.detail || "") ? "+NOTE" : "")); const sg = TT.stayGo("darwin", "", ""), go = opts.message === "還沒儲存，要離開嗎？" ? o.leave : false; return Promise.resolve({ response: go ? sg.goIndex : sg.cancelId }); } },
         app: { on: (ev, f) => { if (ev === "browser-window-created") f(null, Object.assign(win, { on: (e2, h) => { if (e2 === "close") ctx.closeHandler = h; } })); else ctx.quitHandler = f; }, quit: () => log.push("app.quit") } };
       new Function("ctx", "with (ctx) { " + NOTED.replace("const ", "var ") + "\n" + MAINWIN + "\n" + GATE + "\nctx.draftGate = draftGate;\n" + CLOSE + ");\n" + BQ + "); }")(ctx);
@@ -200,12 +200,18 @@ const save = async (f) => { ctx.BOX = null; btn(f, "save").on.click(); if (ctx.B
     { const r = rig({ dirty: true, live: true }); r.ctx.draftOk = true; r.closeEv();
       ok("⑩ 改成收起來(下單中關窗):收回 draftOk,之後結束照樣會問(稽核 B1)", r.ctx.draftOk === false && r.log.join() === "hide", r.log); }
     // 台灣券商還有部位(不論在不在下單):同一道框講「這幾口不會平倉」——群益本機的口數也算(0.1.28)
-    { const r = rig({ dirty: false, tw: { pres: 0, cap: 2, total: 2 } }); r.quitEv(); await tick(); r.quitEv(); await tick();
+    { const r = rig({ dirty: false, tw: { cap: { lots: 2, known: true } } }); r.quitEv(); await tick(); r.quitEv(); await tick();
       const b = r.ctx.boxes.filter((x) => x.message === "pt");
       ok("⑩ 只有群益本機有 2 口:擋下、跳部位那道框,內文是群益那一句(不是統一的)", b.length === 1 && b[0].detail === "群益 2 口" && r.log[r.log.length - 1] === "dialog:pt", r.log); }
-    { const r = rig({ dirty: false, tw: { pres: 1, cap: 3, total: 4 } }); r.quitEv(); await tick(); r.quitEv(); await tick();
+    { const r = rig({ dirty: false, tw: { pres: { lots: 1, known: true }, cap: { lots: 3, known: true } } }); r.quitEv(); await tick(); r.quitEv(); await tick();
       const b = r.ctx.boxes.filter((x) => x.message === "pt");
       ok("⑩ 兩家都有部位:同一道框兩句各講自己的口數", b.length === 1 && b[0].detail === "統一 1 口\n\n群益 3 口", r.ctx.boxes); }
+    { const r = rig({ dirty: false, tw: { cap: { lots: 0, known: false } } }); r.quitEv(); await tick(); r.quitEv(); await tick();
+      const b = r.ctx.boxes.filter((x) => x.message === "pt");
+      ok("⑩ 群益綁著、讀不到、之前也沒讀到過部位:保守當有部位,照樣攔、講讀不到", b.length === 1 && b[0].detail === "群益讀不到", r.ctx.boxes); }
+    { const r = rig({ dirty: false, tw: { cap: { lots: 2, known: false } } }); r.quitEv(); await tick(); r.quitEv(); await tick();
+      const b = r.ctx.boxes.filter((x) => x.message === "pt");
+      ok("⑩ 讀不到、但最後一次讀成功是 2 口:講那個口數", b.length === 1 && b[0].detail === "群益 2 口", r.ctx.boxes); }
     { const r = rig({ dirty: false }); r.quitEv(); await tick();
       ok("⑩ 都沒部位、沒在下單:不攔", r.log.includes("app.quit") && !r.ctx.boxes.length, r.log); }
     ok("⑩ 開新的主視窗就收回 draftOk", /function createWindow\(\) \{\n  draftOk = false;/.test(msrc)); }

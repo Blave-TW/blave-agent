@@ -155,8 +155,10 @@ def _capital_order_identity_ok():
     Administrator under a password-derived logon can (lib/order_capital.py › error 602):
     RDP/console (INTERACTIVE), schtasks /rp (BATCH), NSSM ObjectName (SERVICE).
     The web 全部平倉 runs us under the bridge's LocalSystem, a key-auth SSH
-    session is a NETWORK/S4U logon — both 602. Read from the process token,
-    not env vars (the listener hands us a copied env). Can't tell → False:
+    session is a NETWORK/S4U logon — both 602. The identity is read from the
+    process token, not env vars (the listener hands us a copied env); only
+    which rule applies comes from BLAVE_AGENT_LOCAL, which the desktop daemon
+    sets and the cloud listener strips (every BLAVE_*). Can't tell → False:
     a skipped 群益 close is recorded; a 602 attempt is not an honest answer.
     Known false positive: schtasks /ru Administrator WITHOUT /rp (/np, S4U)
     also carries BATCH but cannot unlock the cert — that case falls back to

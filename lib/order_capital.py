@@ -247,6 +247,19 @@ def reset_session():
         _session = None
 
 
+# Return codes that mean THIS login is gone and only a new one helps — SKCOM manual V2.13.59
+# (CapitalAPI_2.13.59.zip) return-code table, by its own wording:
+#   1000 SK_ERROR_LOGIN_FIRST          請先由Center 進行登入動作
+#   1041 SK_ERROR_SERVER_NOT_CONNECTED 與主機尚未連線
+#   1108 SK_ERROR_TELNET_SERVER_FAIL   因網路異常，無法連線
+#   1109 SK_ERROR_THERE_IS_NO_TOKEN    因登入未取得時效token，請重新登入
+# Left out on purpose: 1020 SK_ERROR_LOGIN_INVALID (the table gives no meaning), the 3xxx
+# SK_SUBJECT_CONNECTION_* (connection-event subjects, not order return codes), 5xxx (proxy orders,
+# unused here). Desktop app only, same reason as the reconciler's wake reset: the in-process
+# re-login has not been run on a cloud machine, which keeps its old behaviour.
+SESSION_LOST_CODES = frozenset({1000, 1041, 1108, 1109})
+
+
 # ── order send + confirmation ────────────────────────────────────────────────
 
 def _send(sess, send_fn, fields):
@@ -256,6 +269,11 @@ def _send(sess, send_fn, fields):
     if ncode != 0:
         err = sess.center.SKCenterLib_GetReturnCodeMessage(ncode)
         guard.audit("order_error", code=ncode, error=err, **fields)
+        # these codes refuse the order on this side (no sequence number), so nothing is in flight:
+        # the next order logs in again instead of sending through the dead login every round
+        if ncode in SESSION_LOST_CODES and os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+            reset_session()
+            logging.info(f"capital session dropped after code={ncode}: the next order logs in again")
         raise CapitalError(f"order rejected code={ncode}: {err} (msg={msg!r})")
     seq_no = str(msg).strip()
     guard.audit("order_sent", seq_no=seq_no, **fields)

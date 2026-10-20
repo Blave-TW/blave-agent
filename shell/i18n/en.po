@@ -7312,6 +7312,9 @@ msgstr "Quit Blave?"
 msgid "pres.quit.body"
 msgstr "{lots} lot(s) are still open at President. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the President app."
 
+msgid "pres.quit.unknown"
+msgstr "President positions can’t be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the President app."
+
 
 
 
@@ -8816,3 +8819,6 @@ msgstr "Couldn't read this computer's certificate store, so the wizard wasn't op
 
 msgid "capl.quit.body"
 msgstr "{lots} lot(s) are still open at Capital. After you quit, strategies place no more orders and these positions aren’t closed — handle them in the Capital app."
+
+msgid "capl.quit.unknown"
+msgstr "Capital positions can’t be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the Capital app."

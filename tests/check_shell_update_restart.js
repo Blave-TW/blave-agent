@@ -303,7 +303,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   { const BQ = cut(src, 'app.on("before-quit", (e) => {');
     const quitRig = (o) => {
       const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, draftOk: true, draftNote: false, draftNoted: (d) => d, moveAsking: !!o.moveAsking, activeTurn: o.turn ? {} : null, turnStarting: false,
-        tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), showMain: () => log.push("showMain"), BrowserWindow: { getAllWindows: () => [] }, tmLabels: { ...L, quitBody: "q {venue}", quitTitle: "t", quitTurnTitle: "tt", quitTurnBody: "tb" }, venueName: () => "Binance", cloudSt: () => null, twLots: () => ({ pres: 0, cap: 0, total: 0 }),
+        tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), showMain: () => log.push("showMain"), BrowserWindow: { getAllWindows: () => [] }, tmLabels: { ...L, quitBody: "q {venue}", quitTitle: "t", quitTurnTitle: "tt", quitTurnBody: "tb" }, venueName: () => "Binance", cloudSt: () => null, twLots: () => ({ pres: { lots: 0, known: true }, cap: { lots: 0, known: true }, held: false }),
         TT: { quitDetail: TT.quitDetail, cloudTrading: () => false, stayGo: TT.stayGo }, process: { platform: "darwin" }, dialog: { showMessageBox: () => { log.push("dialog"); return new Promise(() => {}); } },
         _tradeHost: o.daemon ? { isRunning: () => true, stop: () => new Promise((ok) => setTimeout(() => { log.push("daemon:stopped"); ok(); }, 10)) } : null,
         _engineSetup: { busy: () => !!o.installing }, engineAbort: () => new Promise((ok) => setTimeout(() => { log.push("engineAbort"); ok(true); }, 5)),

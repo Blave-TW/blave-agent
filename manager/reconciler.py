@@ -1552,8 +1552,10 @@ ROUND_MARKER_PATH = Path('state/execution/round')
 
 # A poll sleep that returns far later than asked = this computer was asleep (a closed laptop on the
 # desktop app). 群益's COM session is not trusted across that: drop it so the next order logs in
-# again instead of sending through a dead connection every round. Only an already-loaded order lib:
-# never import SKCOM on a machine that has not traded 群益.
+# again instead of sending through a dead connection every round. Desktop app only: a cloud box does
+# not sleep, and a wall-clock step there (time sync) must not send it down an in-process re-login
+# nobody has run on a cloud machine. Only an already-loaded order lib: never import SKCOM on a
+# machine that has not traded 群益.
 WAKE_GAP_S = 60
 
 
@@ -1563,7 +1565,7 @@ def _poll_sleep():
     if time.time() - t0 <= POLL_INTERVAL + WAKE_GAP_S:
         return False
     oc = sys.modules.get("lib.order_capital")
-    if oc is not None:
+    if oc is not None and os.environ.get("BLAVE_AGENT_LOCAL") == "1":
         oc.reset_session()
         logging.info("[reconciler] woke from sleep — 群益 session dropped, the next order logs in again")
     return True

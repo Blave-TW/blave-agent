@@ -30,10 +30,14 @@ check("Either way stop here" in desk and "touch neither" in desk, "both cases st
 win_i, mac_i = local.find("**Windows PC**"), local.find("**Mac**")
 check(0 < win_i < mac_i, "this-computer case splits Windows PC, then Mac")
 win, mac = local[win_i:mac_i], local[mac_i:]
-check("自動下單 › 連接交易所 › 群益" in win and "Auto trading › Connect an exchange › Capital" in win
+check("app 的 自動下單 › 連接交易所 選單裡有群益" in win and "Auto trading › Connect an\n      exchange in the app lists Capital" in win
       and "the app connects it, not you" in win and "never ask for the ID or the\n  trading password" in desk,
-      "Windows PC: the app's connect flow (zh + en); the agent asks for no credentials")
-check("this build has not opened it yet" in win, "Windows PC: a build whose menu has no 群益 is named as such")
+      "Windows PC: if the menu lists 群益, the app's connect flow (zh + en); the agent asks for no credentials")
+check("沒有的話是這一版還沒開放" in win and "在網頁開雲端主機時選 Windows" in win and "this\n      build has not opened it yet" in win
+      and "choose Windows" in win and "say both\n      ways in one reply" in win,
+      "Windows PC: one reply covers a build without it too — the Windows cloud machine as before (zh + en)")
+check("no switching to the Administrator\n      account" in win and "one Windows permission\n      prompt" in win and "no\n      Administrator" not in win,
+      "Windows PC: no Administrator account switch, but a missing VC++ 2010 runtime brings one UAC prompt")
 check("Mac 不能連群益" in mac and "在網頁開雲端主機時選 Windows" in mac and "choose Windows" in mac,
       "Mac: refused, a Windows PC or a Windows cloud machine instead (zh + en)")
 check("blave.org 的雲端工作頁" in cloud and "cloud workspace on\n    blave.org" in cloud and "開雲端主機時選 Windows" not in cloud
@@ -41,7 +45,8 @@ check("blave.org 的雲端工作頁" in cloud and "cloud workspace on\n    blave
       "cloud-view case: go to the blave.org cloud workspace (zh + en), never 'launch a Windows machine'")
 check("Capital setup box" in cloud and "雲端主機 view" in cloud, "cloud-view case names how it is recognized")
 line = next((l for l in AGENTS.split("\n") if "**Capital Futures (群益期貨):**" in l), "")
-check("connect flow does it, not you" in line and "not on a Mac" in line and "cloud view" in line
+check("connect menu lists 群益 the app's own flow does it, not you" in line and "otherwise a Windows cloud machine as before" in line
+      and "not on a Mac" in line and "cloud view" in line
       and "blave.org cloud workspace" in line,
       "AGENTS.md Capital line routes both cases to Step 0")
 

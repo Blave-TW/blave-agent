@@ -145,6 +145,22 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   ok("8 部位口數:size > 0 才算", P.heldLots({ account: { venues: { president: { positions: { TMF: { size: 1 }, TXF: { size: 2 }, MXF: { size: 0 } } } } } }) === 3
     && P.heldLots({}) === 0 && P.heldLots(null) === 0
     && P.heldLots({ account: { venues: { president: { positions: { TMF: { size: 1 } } }, capital: { positions: { TMF: { size: 2 }, MXF: { size: 0 } } } } } }, "capital") === 2);
+  { // 結束攔截 / 防睡眠:讀不到時用最後一次讀成功的口數、標成不確定;沒綁 = 0
+    const B = { credentials: true, pair: true, order: true, account: true }, memo = {}, J = JSON.stringify;
+    const rep = (acc) => ({ venues: { capital: B }, account: { venues: { capital: acc } } });
+    const a = P.twHeld(rep({ ok: true, positions: { TMF: { size: 2 } } }), "capital", memo);
+    const b = P.twHeld(rep({ ok: false, positions: null, error: "stale" }), "capital", memo);
+    const c = P.twHeld({ error: "build failed" }, "capital", memo);
+    const d = P.twHeld(null, "capital", memo);
+    const e = P.twHeld({ venues: {}, account: null }, "capital", memo);
+    const f = P.twHeld({ error: "x" }, "capital", memo);
+    const m2 = {}, g = P.twHeld({ venues: { capital: B }, account: null }, "capital", m2);
+    const h = P.twHeld(rep({ ok: true, positions: {} }), "capital", {});
+    const i = P.twHeld(rep({ ok: false, positions: { TMF: { size: 9 } }, error: "later step" }), "capital", { bound: true, lots: 1 });
+    ok("8 twHeld:讀到 2 口;讀不到 / 狀態檔壞 / 沒報告 → 沿用 2 口、不確定;解綁 → 0 且確定;之後狀態檔壞也不再當綁著;綁了從沒讀到 → 0 口不確定;讀到空 → 0 確定;ok:false 帶著半份 positions 也不算讀到",
+      J(a) === J({ lots: 2, known: true }) && J(b) === J({ lots: 2, known: false }) && J(c) === J({ lots: 2, known: false }) && J(d) === J({ lots: 2, known: false })
+      && J(e) === J({ lots: 0, known: true }) && J(f) === J({ lots: 0, known: true }) && J(g) === J({ lots: 0, known: false }) && J(h) === J({ lots: 0, known: true })
+      && J(i) === J({ lots: 1, known: false })); }
   reply = { ok: false, error: "UNKNOWN_RESULT" };
   await pres.step("host", { url: "test167.pfctrade.com" });
   ok("8 測試主機:信上的網址原樣交給 daemon(它判是不是那兩台),記住在測試環境", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "host", url: "test167.pfctrade.com" }) && pres._load().live === false);

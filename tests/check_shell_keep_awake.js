@@ -14,7 +14,7 @@ const NOW = 1_800_000_000_000;
 const venue = { credentials: true, pair: true, order: true, account: true };
 const base = () => ({ venues: { binance: venue }, reconciler: { alive: true }, daemon: { reconciler: { running: true } } });
 const st = (patch, top) => ({ alive: true, running: true, ...(top || {}), report: patch === null ? null : Object.assign(base(), patch) });
-const want = (s, o) => M.awakeWanted({ st: s, startAt: 0, now: NOW, keepAwake: true, win: false, presLots: 0, ...(o || {}) });
+const want = (s, o) => M.awakeWanted({ st: s, startAt: 0, now: NOW, keepAwake: true, win: false, twHeld: false, ...(o || {}) });
 
 const rows = [
   ["running(模擬盤也一樣)", st({ venues: { paper: venue } }), {}, true],
@@ -39,10 +39,10 @@ const rows = [
   ["剛按啟動但已經過了收斂上限", st({ halt: { halted: true, holds_all: true } }), { startAt: NOW - M.AWAKE_START_MS }, false],
   ["開關關掉:running 也放掉", st({}), { keepAwake: false }, false],
   ["開關關掉:unconfirmed 也放掉", st({ reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } }, { alive: false }), { keepAwake: false }, false],
-  ["Windows 統一有部位、開關關、已暫停:照樣持有(B)", st({ halt: { halted: true } }), { keepAwake: false, win: true, presLots: 2 }, true],
-  ["Windows 沒回報:統一部位數出來是 0(接線 heldLots(null)),B 不成立、放掉", st(null), { win: true, presLots: require("../shell/president_local").heldLots(null) }, false],
-  ["Mac 不走 B(就算數到部位)", st({ halt: { halted: true } }), { keepAwake: false, win: false, presLots: 2 }, false],
-  ["Windows 統一沒部位、開關關", st({}), { keepAwake: false, win: true, presLots: 0 }, false],
+  ["Windows 統一有部位、開關關、已暫停:照樣持有(B)", st({ halt: { halted: true } }), { keepAwake: false, win: true, twHeld: true }, true],
+  ["Windows 沒回報、也從沒綁過台灣券商:B 不成立、放掉", st(null), { win: true, twHeld: false }, false],
+  ["Mac 不走 B(就算數到部位)", st({ halt: { halted: true } }), { keepAwake: false, win: false, twHeld: true }, false],
+  ["Windows 統一沒部位、開關關", st({}), { keepAwake: false, win: true, twHeld: false }, false],
 ];
 for (const [name, s, o, exp] of rows) ok(`${exp ? "持有" : "放掉"}:${name}`, want(s, o) === exp, { got: want(s, o) });
 
@@ -74,14 +74,16 @@ ok("啟動指令(START_CMDS 非 release、restart_reconciler)記下啟動時間;
   && /cmd === "halt"\) \{ awakeStartAt = 0;/.test(main));
 ok("awakeSync 把上一輪有沒有持有交進去(prev,報告錯誤時沿用)", /function awakeSync\(\)[\s\S]*?prev: awakeBlocker !== null \}\)/.test(main));
 ok("結束 app 放掉", /app\.on\("will-quit", \(\) => startStep\("awake", awakeRelease\)\)/.test(main));
-{ // 0.1.28:B 的口數是台灣券商兩家加起來(統一 + 群益本機);舊宿主沒有 capitalLots 就當 0
+{ // 0.1.28:B = 台灣券商(統一 + 群益本機)有部位,或綁著卻讀不到(保守當有);舊宿主沒有 twHeld 就當沒有
   const tw = (host) => new Function("_tradeHost", fn(main, "twLots") + "\nreturn twLots();")(host);
   const dsrc = fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8");
-  ok("B 的口數:統一 1 + 群益 2 = 3;沒有宿主 / 舊宿主照算;awakeSync 交的是合計;daemon 宿主有 capitalLots(讀 capital 那一格)",
-    tw({ presidentLots: () => 1, capitalLots: () => 2 }).total === 3 && tw(null).total === 0 && tw({ presidentLots: () => 4 }).total === 4
-    && /presLots: WIN \? twLots\(\)\.total : 0/.test(main) && !/_tradeHost\.presidentLots\(\)/.test(main.replace(fn(main, "twLots"), ""))
-    && /function capitalLots\(\) \{ return require\("\.\/president_local"\)\.heldLots\(status\(\)\.report, "capital"\); \}/.test(dsrc) && /presidentLots, capitalLots,/.test(dsrc)
-    && M.awakeWanted({ st: st({ halt: { halted: true, holds_all: true } }), startAt: 0, now: NOW, keepAwake: false, win: true, presLots: tw({ capitalLots: () => 2 }).total }) === true); }
+  const k = (lots, known = true) => ({ lots, known });
+  ok("B:群益 2 口 → 持有;統一讀不到(known:false、0 口)→ 持有;兩家都讀到 0 → 不持有;沒有宿主 / 舊宿主 → 不持有;awakeSync 交 twLots().held;daemon 宿主有 twHeld(兩家各一份 memo)",
+    tw({ twHeld: () => ({ president: k(0), capital: k(2) }) }).held === true && tw({ twHeld: () => ({ president: k(0, false), capital: k(0) }) }).held === true
+    && tw({ twHeld: () => ({ president: k(0), capital: k(0) }) }).held === false && tw(null).held === false && tw({}).held === false
+    && /twHeld: WIN \? twLots\(\)\.held : false/.test(main) && !/presidentLots|capitalLots/.test(main)
+    && /P\.twHeld\(r, "president", twMemo\.president\), capital: P\.twHeld\(r, "capital", twMemo\.capital\)/.test(dsrc) && /sealCapital, twHeld,/.test(dsrc)
+    && M.awakeWanted({ st: st({ halt: { halted: true, holds_all: true } }), startAt: 0, now: NOW, keepAwake: false, win: true, twHeld: tw({ twHeld: () => ({ capital: k(0, false) }) }).held }) === true); }
 ok("main.js 只有 awakeApply 一處開 blocker", (main.match(/powerSaveBlocker\.start\(|\.start\("prevent-app-suspension"\)/g) || []).length === 1 && main.indexOf("presBlocker") < 0);
 ok("開關缺鍵 = 開(只有明寫 false 才關)", /\.keepAwake !== false; \} catch \(_\) \{ return true; \}/.test(main));
 
