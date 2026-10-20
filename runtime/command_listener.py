@@ -1462,7 +1462,8 @@ def _route_first_bind():
     try:
         _cmd_amounts({"amounts": amounts})
     except Exception as e:
-        _log(f"first-bind routing left to the next 下單設定 save: {type(e).__name__}: {str(e)[:200]}")
+        # a refusal writes nothing; a raise after the save (crons, kickoff) leaves it written
+        _log(f"first-bind save raised: {type(e).__name__}: {str(e)[:200]}")
 
 
 # ── strategy signal-refresh scheduling(選到就跑,2026-08-03 拍板)────────────

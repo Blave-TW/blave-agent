@@ -190,6 +190,41 @@ try:
     bind(PAPER)
     check(routes() == ({"c1": ""},) * 2, "a stop mark (only an unbind writes one): not a first bind")
 
+    # ── each first-bind guard on its own (no other marker present) ──────────────
+    fresh({"c1": CRYPTO})
+    save({"c1": 1000})
+    json.dump({"ids": [], "saved_at": "x"}, open(os.path.join(WS, "manager", "credentials.ui.json"), "w"))
+    bind(PAPER)
+    check(routes() == ({"c1": ""},) * 2, "only a manifest (an earlier bind / unbind wrote it): not a first bind")
+    fresh({"c1": CRYPTO})
+    save({"c1": 1000})
+    open(cl.PARKED_ACCOUNT_STATE, "w").write("{}")
+    bind(PAPER)
+    check(routes() == ({"c1": ""},) * 2, "only a parked account (only an unbind parks one): not a first bind")
+    fresh({"c1": CRYPTO})
+    save({"c1": 1000})
+    open(os.path.join(WS, ".env"), "a").write("PAPER_API_KEY=paper\nPAPER_SECRET_KEY=paper\n")
+    bind(PAPER)
+    check(routes() == ({"c1": ""},) * 2,
+          "the same venue's keys already in .env, no manifest (nothing evicted): not a first bind")
+    fresh({"c1": CRYPTO})
+    save({"c1": 1000})
+    mir = json.load(open(MIRROR))
+    mir["exchanges"] = {"c1": "okx"}
+    json.dump(mir, open(MIRROR, "w"))
+    before = {p: open(p, "rb").read() for p in (CFG, MIRROR)}
+    bind(PAPER)
+    check({p: open(p, "rb").read() for p in (CFG, MIRROR)} == before,
+          "a member already routed in the mirror: the first bind saves nothing")
+
+    # ── a refusal is byte-for-byte nothing ──────────────────────────────────────
+    fresh({"c1": CRYPTO, "t1": TWSTOCK})
+    save({"c1": 1000, "t1": 1000})
+    before = {p: open(p, "rb").read() for p in (CFG, MIRROR)}
+    bind(OKX)
+    check({p: open(p, "rb").read() for p in (CFG, MIRROR)} == before,
+          "MARKET_VENUE on the first bind: config and mirror byte-identical")
+
     # ── no mirror (no UI save yet): nothing to route ────────────────────────────
     fresh({"c1": CRYPTO})
     json.dump({"amounts": {"c1": 1000}, "exchanges": {"c1": ""}}, open(CFG, "w"))
