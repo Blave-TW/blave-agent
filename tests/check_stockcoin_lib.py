@@ -437,9 +437,141 @@ oo, algo = order.get_open_orders(ENV, "NVDAUSDT"), order.get_open_algo_orders(EN
 check(oo[0]["symbol"] == "NVDAUSDT" and oo[0]["client_order_id"] == "rc261015000000999" and oo[0]["reduce_only"]
       and algo[0]["stop_order_type"] == "STOP" and algo[0]["trigger_price"] == 150.0,
       "open LIMIT and STOP orders listed with canonical symbols")
-check(not any(hasattr(order, n) for n in ("place_limit_order", "open_position", "place_protective_orders",
-                                           "place_spot_market_order")),
-      "no limit / SL-TP / spot entry points yet — venue_wiring falls back loudly instead of calling a stub")
+check(not hasattr(order, "place_spot_market_order"), "no spot entry point (the venue has no spot API)")
+
+# cancel: the reply is the order BEFORE the cancel (live T7) — only a terminal status counts
+for raw_status, want in (("NEW", "cancel_accepted"), ("CANCELED", "canceled"), ("FILLED", "order_finished")):
+    route("DELETE", "/futures/order", lambda p, st=raw_status: Resp({**order_row({"orderId": "5", "symbol": "NVDA-PERP-USDT"}),
+                                                                      "status": st}))
+    got = order.cancel_order(ENV, "NVDAUSDT", order_id="5")["status"]
+    check(got == want, f"cancel reply {raw_status} → {want}", got)
+
+# ── limit layer (live T7 facts) ──────────────────────────────────────────────
+BOOK = {"bids": [["216.87", "1"], ["216.8", "2"], ["216.79", "3"]], "asks": [["216.91", "1"], ["216.95", "2"]]}
+route("GET", "/contract/depth", lambda p: Resp(BOOK))
+order._price_decimals.clear()
+check(order.get_bbo(ENV, "NVDAUSDT") == {"bid": 216.87, "ask": 216.91}, "get_bbo = best bid / ask off the depth")
+check(order.format_price(ENV, "NVDAUSDT", 216.8789, "BUY_OPEN") == "216.87"
+      and order.format_price(ENV, "NVDAUSDT", 216.8711, "SELL_CLOSE") == "216.88",
+      "price at the book's decimals: buys round down, sells up")
+LIMITS = []
+
+
+def post_limit(p):
+    LIMITS.append(dict(p))
+    if p.get("timeInForce") == "LIMIT_MAKER" and float(p["price"]) >= 216.91 and p["side"].startswith("BUY"):
+        return Resp({"code": -1158, "msg": "create limit maker order failed"}, 400)
+    if len(p["price"].split(".")[-1]) > DEC_OK[0]:
+        return Resp({"code": -1134, "msg": "Order price decimal too long."}, 400)
+    return Resp({**order_row(p, status="NEW", executed="0"), "orderId": "8100", "orderType": "LIMIT_MAKER"})
+
+
+DEC_OK = [2]
+route("POST", "/futures/order", post_limit)
+res = order.place_limit_order(ENV, "NVDAUSDT", "long", 0.0002, 216.80, client_order_id="rc261020000000001",
+                              post_only=True)
+check(res.get("order_id") == "8100" and LIMITS[-1]["timeInForce"] == "LIMIT_MAKER" and LIMITS[-1]["orderType"] == "LIMIT"
+      and LIMITS[-1]["priceType"] == "INPUT" and LIMITS[-1]["price"] == "216.80" and LIMITS[-1]["quantity"] == "2"
+      and LIMITS[-1]["side"] == "BUY_OPEN", "post-only limit = LIMIT + INPUT + timeInForce LIMIT_MAKER, order_id returned",
+      LIMITS[-1])
+check(order.place_limit_order(ENV, "NVDAUSDT", "long", 0.0001, 216.95, post_only=True) == {"status": "post_only_rejected"},
+      "a crossing LIMIT_MAKER (-1158) is post_only_rejected, not an error")
+try:
+    order.place_limit_order(ENV, "NVDAUSDT", "long", 0.0001, 216.95, time_in_force="LIMIT_MAKER")
+    check(False, "-1158 without post_only raises")
+except order.StockcoinError as e:
+    check(e.code == "-1158", "-1158 without post_only=True raises")
+check(order.place_limit_order(ENV, "NVDAUSDT", "long", 0.00009, 216.80) is False, "below one contract → False")
+del LIMITS[:]
+order.place_limit_order(ENV, "NVDAUSDT", "long", 2.0, 216.95, reduce_only=True)
+avail = order._available(ENV, "NVDA-PERP-USDT", "long")
+check(LIMITS[-1]["side"] == "SELL_CLOSE" and avail == 10000 and LIMITS[-1]["quantity"] == "10000"
+      and LIMITS[-1]["price"] == "216.95",
+      "a reduce limit closes the leg, capped at its available contracts", LIMITS[-1])
+# -1134: one decimal fewer, once
+BOOK["bids"][0] = ["216.875", "1"]
+order._price_decimals.clear()
+del LIMITS[:]
+order.place_limit_order(ENV, "NVDAUSDT", "long", 0.0001, 216.875)
+check([x["price"] for x in LIMITS] == ["216.875", "216.87"], "-1134 retries once with one decimal fewer",
+      [x["price"] for x in LIMITS])
+DEC_OK[0] = 0
+del LIMITS[:]
+try:
+    order.place_limit_order(ENV, "NVDAUSDT", "long", 0.0001, 216.875)
+    check(False, "a second -1134 raises")
+except order.StockcoinError as e:
+    check(e.code == "-1134" and len(LIMITS) == 2, "a second -1134 raises (never a third try)")
+BOOK["bids"][0] = ["216.87", "1"]
+DEC_OK[0] = 2
+order._price_decimals.clear()
+
+# ── STOP stop-loss / take-profit (live T8 facts) ─────────────────────────────
+STOPS = {}
+
+
+def post_stop(p):
+    if p.get("orderType") != "STOP":
+        return post_order(p) if p.get("priceType") == "MARKET" else post_limit(p)
+    oid = str(9500 + len(STOPS))
+    STOPS[oid] = dict(p)
+    return Resp({"orderId": oid, "clientOrderId": p["clientOrderId"], "symbol": p["symbol"], "orderType": "STOP",
+                 "side": p["side"], "status": "ORDER_NEW", "triggerPrice": p["triggerPrice"], "origQty": p["quantity"]})
+
+
+def open_rows(p):
+    if p.get("orderType") == "STOP":
+        return Resp([{"orderId": k, "symbol": v["symbol"], "side": v["side"], "orderType": "STOP",
+                      "status": "ORDER_NEW", "triggerPrice": v["triggerPrice"]} for k, v in STOPS.items()])
+    return Resp([])
+
+
+DELETED = []
+
+
+def delete_order(p):
+    DELETED.append(dict(p))
+    v = STOPS.pop(str(p.get("orderId")), None)
+    return Resp({"orderId": p.get("orderId"), "status": "ORDER_CANCELED" if v else "CANCELED"})
+
+
+route("POST", "/futures/order", post_stop)
+route("GET", "/futures/orders/open", open_rows)
+route("DELETE", "/futures/order", delete_order)
+prot = order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=173.541, tp_price=260.329)
+sl, tp = STOPS[prot["sl"]["algoId"]], STOPS[prot["tp"]["algoId"]]
+check(sl["side"] == tp["side"] == "SELL_CLOSE" and sl["orderType"] == "STOP" and sl["priceType"] == "MARKET"
+      and sl["quantity"] == tp["quantity"] == str(avail) and sl["triggerPrice"] == "173.55" and tp["triggerPrice"] == "260.33",
+      "SL and TP = STOP SELL_CLOSE at market, the long leg's available contracts, trigger at the book's decimals",
+      (sl, tp))
+check(set(prot) == {"sl", "tp"}, "both placed and verified in the open STOP list")
+order.cancel_protective_orders(ENV, "NVDAUSDT")
+check(not STOPS and all(d.get("orderType") == "STOP" for d in DELETED), "cancel_protective_orders cancels with orderType=STOP")
+prot = order.place_protective_orders(ENV, "NVDAUSDT", "short", sl_price=200.0)
+check(STOPS[prot["sl"]["algoId"]]["side"] == "BUY_CLOSE"
+      and STOPS[prot["sl"]["algoId"]]["quantity"] == str(order._available(ENV, "NVDA-PERP-USDT", "short")),
+      "a short's stop is BUY_CLOSE for its available contracts")
+STOPS.clear()
+route("GET", "/futures/orders/open", lambda p: Resp([]))
+try:
+    order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=173.5)
+    check(False, "a STOP missing from the open list raises")
+except order.ProtectionFailed as e:
+    check("NOT in the open STOP list" in str(e), "a STOP accepted but not listed is ProtectionFailed")
+route("GET", "/futures/orders/open", open_rows)
+STOPS.clear()
+guard.trip_halt("test", "user")
+n_before = len(STOPS)
+try:
+    order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=173.5, tp_price=260.3)
+    check(False, "HALT refuses SL/TP")
+except order.ProtectionFailed as e:
+    check(isinstance(e.__cause__, guard.Halted) and len(STOPS) == n_before and "place_protective_orders" in str(e),
+          "HALT: ProtectionFailed caused by Halted, nothing sent")
+guard.clear_halt("test")
+STOPS.clear()
+res = order.open_position(ENV, "NVDAUSDT", "long", 0.0001, sl_price=170.0)
+check(res["entry"]["order_id"] and set(res["protection"]) == {"sl"}, "open_position: confirmed entry, then its stop", res)
 
 print("\n" + ("all checks passed" if not fails else f"FAILED: {fails}"))
 sys.exit(1 if fails else 0)

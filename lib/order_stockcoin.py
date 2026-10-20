@@ -6,13 +6,11 @@ Companion to lib/account_stockcoin.py. Credentials: STOCKCOIN_API_KEY /
 STOCKCOIN_SECRET_KEY in .env. The key must be a FUTURES-type key
 (account_type 3) — any other type answers -1005 NO_PERMISSION on every call.
 
-LAYER SHIPPED HERE: the reconciler's four fixed names, get_mark_price,
-get_position_mode, order query / cancel / open-order listing. NOT here, on
-purpose — lib/venue_wiring checks with hasattr and falls back loudly:
-place_limit_order / get_bbo (the doc lists GTC / IOC / FOK only — no post-only
-— and no tick size anywhere, so chase and TWAP go out as market orders with a
-notice), SL/TP (STOP orders unverified; tests/live_stockcoin_verify.py T7 / T8
-measure both layers), spot (the venue has no spot API).
+LAYERS SHIPPED HERE: the reconciler's four fixed names, get_mark_price,
+get_position_mode; the limit layer (place_limit_order / get_bbo / get_order /
+cancel_order / get_open_orders); SL/TP as STOP orders (place_protective_orders /
+open_position / cancel_protective_orders). Not here: spot (the venue has no
+spot API).
 
 Measured on a live key (tests/live_stockcoin_verify.py --probe-all): a
 one-contract market open + close fills on 31 of the 36 listed contracts; the
@@ -42,13 +40,24 @@ StockCoin facts:
   Measured: a wrong secret answers -1022, a wrong key -1002.
 - errors are HTTP 400 + {"code": <negative>, "msg"} — an unauthorized key is
   400 / -1002, not 401.
+- limit layer, measured (live T7): post-only = timeInForce LIMIT_MAKER (the
+  doc lists GTC / IOC / FOK only); a LIMIT_MAKER that would cross answers -1158
+  "create limit maker order failed". No tick size is published: too many price
+  decimals answers -1134 "Order price decimal too long" — the decimals are read
+  off the public depth and stepped down once on -1134. A cancel's reply is the
+  order as it was BEFORE the cancel (NEW), and cancelling a cancelled order
+  answers that order again (CANCELED), not an error.
+- STOP orders, measured (live T8): orderType STOP + triggerPrice + priceType
+  MARKET + a *_CLOSE side; one under and one over the price both rest (the
+  venue picks the direction), they do not lock `available`, their status words
+  are ORDER_NEW / ORDER_CANCELED, they list and cancel with orderType=STOP.
 """
 
 import hashlib
 import hmac
 import re
 import time
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 from urllib.parse import urlencode
 
 import requests
@@ -80,6 +89,8 @@ RATE_LIMITED = "-1003"
 DUPLICATED_ORDER = "-1141"
 # cancel of an order that is gone (filled / cancelled) or never existed
 _CANCEL_GONE = {"-2013", "-1142", "-1150"}
+POST_ONLY_CROSS = "-1158"
+PRICE_DECIMALS = "-1134"
 
 _time_offset = {"ms": 0}
 _rules_cache = {}
@@ -579,8 +590,10 @@ def close_position_partial(env, symbol, direction, qty, client_order_id=None):
 
 
 def cancel_order(env, symbol, order_id=None, client_order_id=None):
-    """Cancel one LIMIT order. Filled / cancelled / unknown → a status, not
-    an exception."""
+    """Cancel one LIMIT order. The reply is the order as it stood before the
+    cancel, so only a terminal status in it is 'canceled' / 'order_finished';
+    anything else is 'cancel_accepted' and the caller confirms with get_order.
+    Unknown → 'order_not_found', never an exception."""
     q = {"symbol": venue_symbol(symbol)}
     if order_id:
         q["orderId"] = order_id
@@ -594,7 +607,190 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
         if e.code in _CANCEL_GONE:
             return {"status": "order_not_found", "order_id": order_id}
         raise
-    return {"status": "canceled", "order_id": str((res or {}).get("orderId") or order_id)}
+    raw = str((res or {}).get("status") or "").upper()
+    status = ("canceled" if raw in _GONE else "order_finished" if raw in _FILLED
+              else "cancel_accepted")
+    return {"status": status, "order_id": str((res or {}).get("orderId") or order_id)}
+
+
+def cancel_algo_order(env, symbol, order_id):
+    """Cancel one STOP order (its own list: orderType=STOP)."""
+    try:
+        res = _request("DELETE", "/futures/order", env,
+                       {"symbol": venue_symbol(symbol), "orderId": order_id, "orderType": "STOP"})
+    except StockcoinError as e:
+        if e.code in _CANCEL_GONE:
+            return {"status": "order_not_found", "order_id": str(order_id)}
+        raise
+    return {"status": str((res or {}).get("status") or "").lower(), "order_id": str(order_id)}
+
+
+def cancel_protective_orders(env, symbol):
+    """Cancel every STOP order on the symbol. Returns the cancel results."""
+    return [cancel_algo_order(env, symbol, o["order_id"])
+            for o in get_open_algo_orders(env, symbol)]
+
+
+def cancel_all_orders(env, symbol):
+    """Cancel every LIMIT and STOP order on the symbol (close_symbol: only
+    when the position is being closed too)."""
+    return {"orders": [cancel_order(env, symbol, order_id=o["order_id"])
+                       for o in get_open_orders(env, symbol)],
+            "algo_orders": cancel_protective_orders(env, symbol)}
+
+
+# ── limit layer ──────────────────────────────────────────────────────────────
+
+_PRICE_DECIMALS_TTL_S = 3600
+_price_decimals = {}
+
+
+def _decimals_of(px):
+    s = str(px)
+    return len(s.split(".", 1)[1].rstrip("0")) if "." in s else 0
+
+
+def _book(vsym):
+    rows = _public("/openapi/quote/v1/contract/depth", {"symbol": vsym, "limit": 20})
+    bids, asks = (rows or {}).get("bids") or [], (rows or {}).get("asks") or []
+    if not bids or not asks:
+        raise StockcoinError(f"stockcoin {vsym}: empty depth ({str(rows)[:120]})")
+    return bids, asks
+
+
+def _decimals(vsym):
+    """Price decimals the venue accepts: the most any of 40 book levels uses
+    (no endpoint publishes a tick). Cached; _place_limit steps it down on -1134."""
+    hit = _price_decimals.get(vsym)
+    if hit and time.time() - hit[0] < _PRICE_DECIMALS_TTL_S:
+        return hit[1]
+    bids, asks = _book(vsym)
+    n = max(_decimals_of(r[0]) for r in bids + asks)
+    _price_decimals[vsym] = (time.time(), n)
+    return n
+
+
+def format_price(env, symbol, price, side="BUY"):
+    """Price string at the venue's decimals. Buys round down and sells up, so
+    a passive price never rounds into the book."""
+    q = Decimal(1).scaleb(-_decimals(venue_symbol(symbol)))
+    rounding = ROUND_DOWN if str(side).upper().startswith("BUY") else ROUND_UP
+    out = Decimal(str(price)).quantize(q, rounding=rounding)
+    if out <= 0:
+        raise ValueError(f"{symbol}: price {price} formats to {out}")
+    return format(out, "f")
+
+
+def get_bbo(env, symbol):
+    """Top of the real book {'bid', 'ask'} off the public depth — never last."""
+    bids, asks = _book(venue_symbol(symbol))
+    return {"bid": max(float(r[0]) for r in bids), "ask": min(float(r[0]) for r in asks)}
+
+
+def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
+                      reduce_only=False, time_in_force="GTC", post_only=False):
+    """Limit order, UNCONFIRMED (it may rest): the venue's order row plus
+    order_id. qty is BASE units; direction is the position's ('long'|'short'),
+    with reduce_only the leg being closed (capped at its available contracts).
+    post_only=True → timeInForce LIMIT_MAKER; one that would cross returns
+    {'status': 'post_only_rejected'}. Below one contract → False."""
+    if direction not in ("long", "short"):
+        raise ValueError(f"direction must be 'long' or 'short', got {direction!r}")
+    vsym = venue_symbol(symbol)
+    mult = Decimal(str(get_contract_rules(env, symbol)["contract_value"]))
+    n = _to_contracts(qty, mult)
+    if reduce_only and n >= 1:
+        n = min(n, _available(env, vsym, direction))
+    if n < 1:
+        return False
+    side = _side(direction, reduce_only)
+    params = {
+        "symbol": vsym, "side": side, "orderType": "LIMIT", "priceType": "INPUT",
+        "price": format_price(env, symbol, price, side), "quantity": str(n),
+        "timeInForce": "LIMIT_MAKER" if post_only else time_in_force,
+        "clientOrderId": _cid(client_order_id),
+    }
+    for attempt in range(2):
+        try:
+            placed = _request("POST", "/futures/order", env, params)
+            break
+        except StockcoinError as e:
+            if post_only and e.code == POST_ONLY_CROSS:
+                return {"status": "post_only_rejected"}
+            if e.code != PRICE_DECIMALS or attempt:
+                raise
+            # refused at validation, nothing rests: one decimal fewer, once
+            d = max(_decimals(vsym) - 1, 0)
+            _price_decimals[vsym] = (time.time(), d)
+            params["price"] = format_price(env, symbol, price, side)
+    if not (placed or {}).get("orderId"):
+        raise StockcoinError(f"stockcoin {vsym}: limit order reply has no orderId ({str(placed)[:160]})")
+    return {**placed, "order_id": str(placed["orderId"])}
+
+
+# ── protective orders (STOP) ─────────────────────────────────────────────────
+
+class ProtectionFailed(Exception):
+    """The position is OPEN but a stop-loss / take-profit could not be placed
+    or verified — it may be NAKED. Alert the user."""
+
+
+def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
+                            tp_price=None, verify=True, _after_entry=False):
+    """Stop-loss / take-profit for an EXISTING position: one STOP order each,
+    *_CLOSE side, market execution at the trigger. qty=None = the leg's
+    contracts NOW (the venue has no close-the-whole-position flag, so a later
+    size change does not follow — re-place after one). Verified in the open
+    STOP list; raises ProtectionFailed otherwise. Returns {'sl'|'tp':
+    {'algoId', 'raw'}}; cancel with cancel_algo_order / cancel_protective_orders."""
+    vsym = venue_symbol(symbol)
+    placed = {}
+    try:
+        if qty is None:
+            n = _available(env, vsym, direction)
+        else:
+            n = _to_contracts(qty, Decimal(str(get_contract_rules(env, symbol)["contract_value"])))
+        if n < 1:
+            raise StockcoinError(f"stockcoin {vsym}: no {direction} contracts to protect")
+        side = _side(direction, True)
+        for kind, trigger in (("sl", sl_price), ("tp", tp_price)):
+            if trigger is None:
+                continue
+            o = _request("POST", "/futures/order", env, {
+                "symbol": vsym, "side": side, "orderType": "STOP", "priceType": "MARKET",
+                "price": "0", "triggerPrice": format_price(env, symbol, trigger, side),
+                "quantity": str(n), "clientOrderId": _cid()})
+            if not (o or {}).get("orderId"):
+                raise StockcoinError(f"stockcoin {vsym}: {kind} reply has no orderId ({str(o)[:160]})")
+            placed[kind] = {"algoId": str(o["orderId"]), "raw": o}
+    except guard.Halted as e:
+        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
+        raise ProtectionFailed(
+            guard.protection_halted_text(symbol, direction, wanted, placed, _after_entry) + f" {e}") from e
+    except Exception as e:
+        raise ProtectionFailed(f"{symbol} {direction} position may be NAKED — placing protective "
+                               f"orders failed after {list(placed)} succeeded: {e}") from e
+    if verify and placed:
+        open_ids = {o["order_id"] for o in get_open_algo_orders(env, symbol)}
+        missing = [k for k, o in placed.items() if o["algoId"] not in open_ids]
+        if missing:
+            raise ProtectionFailed(f"{symbol} {direction}: protective order(s) {missing} accepted "
+                                   f"but NOT in the open STOP list — position may be naked")
+    return placed
+
+
+def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
+                  client_order_id=None):
+    """Confirmed market entry, then its stop-loss / take-profit (two steps: a
+    naked window of one round trip; ProtectionFailed if they don't verify)."""
+    entry = place_market_order(env, symbol, direction, qty, client_order_id=client_order_id)
+    if entry is False:
+        return False
+    protection = {}
+    if sl_price is not None or tp_price is not None:
+        protection = place_protective_orders(env, symbol, direction, sl_price=sl_price,
+                                             tp_price=tp_price, _after_entry=True)
+    return {"entry": entry, "protection": protection}
 
 
 def _open_rows(env, symbol, order_type):
@@ -619,8 +815,8 @@ def get_open_orders(env, symbol=None):
 
 
 def get_open_algo_orders(env, symbol=None):
-    """Open STOP (conditional) orders — listed so close_symbol can see them;
-    this lib places none."""
+    """Open STOP (conditional) orders: this lib's stop-loss / take-profit and
+    any the user placed."""
     return [{
         "order_id": str(o.get("orderId") or ""),
         "symbol": canonical_symbol(o.get("symbol")),
