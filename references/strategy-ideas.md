@@ -7,7 +7,7 @@ Applies when the user wants strategy ideas from the web: the app's 「上網找�
 1. Pick **3–6 sites** from *Sources* that fit the type (A / C) and market asked for — never the whole list (12 full reads use up the 120k read budget).
 2. `browser_open_many` those list pages → `browser_read(part="links")` on each (cheap) → pick candidates.
 3. Open only the single pages you will read, and read every page you open (`browser.md` › *Standard flow*).
-4. `browser_search` only for a topic none of the lists covers — one at a time. Aim for zero searches, one at most.
+4. A topic none of the listed sites covers (e.g. funding rate): skip the generic blogs and search once right away, then open the best results. Otherwise no search. One search per turn at most.
 
 ## Sources
 
@@ -51,12 +51,13 @@ Applies when the user wants strategy ideas from the web: the app's 「上網找�
 - Use the `/scripts/` URLs above — **never the chart's Indicators dialog** (its community rows have no refs; you cannot click them).
 - The list is already recent-popular and open-source. More: `https://www.tradingview.com/scripts/page-2/?script_type=strategies`, `page-3` … — never scroll the page. Past page 42 it sends you back to page 1. There is no all-time ranking on the web; do not look for one.
 - For idea hunting you may read an open-source script's Source code to state its rules exactly; the output is still rules + URL only — no code, nothing in `strategies/` until the user picks one (`strategy-code.md` › *Building from code the user points to*).
+- **When a TradingView list has a script that fits, at least one delivered idea comes from it** (not only from sources that are cheaper to read).
 - The code sits behind the script page's `tab "Source code"`: snapshot, click it, then read. One script is ~28k characters — choose from the list and the description first, open Source code only for the ones you will deliver.
 - Protected / invite-only: say the code is not readable and work from the description (`strategy-code.md`).
 
 ## Output
 
-What the request asks (the app's message: 3 ideas, explicit entry and exit rules, whether Blave data is needed, the source URL). An idea found on several sites cites the original one.
+What the request asks (the app's message: 3 ideas, explicit entry and exit rules, whether Blave data is needed, the source URL). **Each idea ends with its source URL on a line of its own** — a site name alone is not a source. An idea found on several sites cites the original one.
 
 ## Fit check
 
