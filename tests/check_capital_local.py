@@ -565,6 +565,39 @@ for libname in ("capital_worker.py", "order_capital.py"):
           "GetModule(capital_vault.skcom_dll())" in src and "skcom\\x64" not in src
           and src.index("capital_vault.set_log_path(center)") < src.index("SKCenterLib_Login(login_id, password)"))
 
+# 12. 9997 → the reconciler exits 76 between rounds; the supervisor starts a fresh one RESTART_DELAY_S
+#     later, the credentials line included (that it writes the line: check_president_local 7)
+stub = os.path.join(WS, "exit76.py")
+with open(stub, "w") as f:
+    f.write("import sys\nsys.exit(76)\n")
+p76 = subprocess.Popen([sys.executable, os.path.join(ROOT, "runtime", "local_daemon.py"), "--run-reconciler", "exit76.py"],
+                       cwd=WS, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+try:
+    rc76 = p76.wait(60)
+finally:
+    p76.stdin.close()
+src_rec = open(os.path.join(ROOT, "manager", "reconciler.py"), encoding="utf-8").read()
+check("12 run_reconciler 把對帳器的結束碼原樣交出(76 = 群益 9997 要換新行程)", rc76 == 76 and "CAPITAL_RESTART_EXIT = 76" in src_rec, rc76)
+
+
+class _Exited:
+    pid, returncode = 4242, 76
+
+    def poll(self):
+        return 76
+
+
+sup = ld.ReconcilerSupervisor(WS, cl._local_child_env, lambda pid: "", lambda **kw: kw, secret_line=ld.secret_line_all)
+spawns = []
+sup._spawn_locked = lambda confirm=False: spawns.append(confirm)   # None = started, no lock probe
+sup._wanted, sup._proc = True, _Exited()
+sup.tick()
+waiting = sup._respawn_at is not None and not spawns and sup.last_exit_code == 76
+sup._respawn_at = time.time() - 1
+sup.tick()
+check(f"12 監督者:結束碼 76 照樣重起,等 RESTART_DELAY_S({ld.RESTART_DELAY_S}s)不連環重起;重起時帶 secret_line_all",
+      waiting and spawns == [False] and sup.restarts == 1 and ld.RESTART_DELAY_S >= 10 and sup._secret_line is ld.secret_line_all)
+
 shutil.rmtree(BASE, ignore_errors=True)
 print(f"\n{len(fails)} FAILED" if fails else "\nall ok")
 sys.exit(1 if fails else 0)

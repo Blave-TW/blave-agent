@@ -1264,8 +1264,10 @@ from lib import order_capital  # noqa: E402
 import inspect  # noqa: E402
 cap = {n for n, f in inspect.getmembers(order_capital, inspect.isfunction)
        if not n.startswith("_") and f.__module__ == "lib.order_capital"}
-# securities are out of scope; reset_session drops capital's process-wide login — president has none
-NOT_FUTURES = {"place_stock_order", "place_odd_lot_order", "place_after_hours_odd_lot_order", "reset_session"}
+# securities are out of scope; reset_session / restart_needed are about capital's process-wide
+# SKCOM login (and its 9997 limit) — president has none
+NOT_FUTURES = {"place_stock_order", "place_odd_lot_order", "place_after_hours_odd_lot_order", "reset_session",
+               "restart_needed"}
 check(cap - NOT_FUTURES <= set(dir(op)), "order_president has order_capital's futures interface",
       sorted(cap - NOT_FUTURES - set(dir(op))))
 

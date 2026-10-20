@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import types
 
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -72,6 +73,7 @@ check("time.sleep(" not in main and main.count("_poll_sleep()") >= 5,
 # ── the order lib: a send refused with a lost-login code drops the session ──
 import importlib  # noqa: E402
 oc = importlib.import_module("lib.order_capital")
+oc._RELOGIN_PATH = os.path.join(TMP, "capital_relogin.json")   # never the repo's state/
 oc.guard = types.SimpleNamespace(check_restart_stop=lambda *a: None, audit=lambda *a, **k: None)
 oc._request_snapshot_refresh = lambda: None
 sess = types.SimpleNamespace(center=types.SimpleNamespace(SKCenterLib_GetReturnCodeMessage=lambda c: "msg"))
@@ -105,7 +107,7 @@ clock = [5000.0]
 logins = []
 real_time = oc.time
 oc.time = types.SimpleNamespace(time=lambda: clock[0], sleep=lambda s: None)
-oc._relogin.update(n=0, until=0.0)
+oc._relogin.update(n=0, until=0.0, loaded=True)
 
 
 def fake_login(env):
@@ -151,7 +153,8 @@ except oc.CapitalError as e:
 check(refused and len(logins) == n0, "inside the backoff a reduce order is refused too, no extra login")
 fake_login.fail = False
 clock[0] = oc._relogin["until"] + 0.1
-check(get() is True and oc._relogin == {"n": 0, "until": 0.0}, "a good login clears the backoff")
+check(get() is True and (oc._relogin["n"], oc._relogin["until"]) == (0, 0.0) and not os.path.exists(oc._RELOGIN_PATH),
+      "a good login clears the backoff (and its file)")
 oc._session = None
 logins.clear()
 fake_login.fail = True
@@ -159,7 +162,64 @@ check(get() is False and get() is False and len(logins) == 2,
       "a first login that fails (no lost-login code before it) retries at once as before")
 oc._session = None
 oc._new_session, oc.time = real_new, real_time
-oc._relogin.update(n=0, until=0.0)
+oc._relogin.update(n=0, until=0.0, loaded=True)
+
+# ── 9997 (five failed logins, "restart the API"): desktop flags a fresh process, backoff carries over ──
+center = types.SimpleNamespace(SKCenterLib_Login=lambda i, p: login_calls.append(1) or 9997,
+                               SKCenterLib_GetReturnCodeMessage=lambda c: "limit")
+login_calls = []
+saved = (oc._init_com, oc.capital_vault, getattr(oc, "comtypes", None), getattr(oc, "sk", None))
+oc._init_com = lambda: None
+oc.capital_vault = types.SimpleNamespace(resolve=lambda env: ("A123456789", "pw"), login_blocked=lambda *a: None,
+                                         set_log_path=lambda c: None, record_login=lambda *a: None)
+oc.comtypes = types.SimpleNamespace(client=types.SimpleNamespace(CreateObject=lambda cls, interface=None: center,
+                                                                 GetEvents=lambda o, e: None))
+oc.sk = types.SimpleNamespace(SKCenterLib=1, ISKCenterLib=1, SKReplyLib=1, ISKReplyLib=1, SKOrderLib=1, ISKOrderLib=1)
+
+
+def fresh_process():
+    oc._session = None
+    oc._relogin.update(n=0, until=0.0, loaded=False)
+    oc._restart["needed"] = False
+
+
+fresh_process()
+check(get() is False and oc.restart_needed() is True and oc._relogin["n"] == 1 and os.path.exists(oc._RELOGIN_PATH),
+      "desktop: a 9997 login → restart_needed, backoff armed and written to disk")
+fresh_process()
+login_calls.clear()
+check(get() is False and login_calls == [] and oc._relogin["n"] == 1,
+      "the fresh reconciler reads the backoff: no login at start, so a 9997 that survives restarts is no storm")
+oc._relogin["until"] = time.time() - 1
+check(get() is False and login_calls == [1] and oc._relogin["n"] == 2, "…after it, one attempt; another 9997 doubles the wait")
+os.environ.pop("BLAVE_AGENT_LOCAL")
+os.remove(oc._RELOGIN_PATH)
+fresh_process()
+check(get() is False and oc.restart_needed() is False and not os.path.exists(oc._RELOGIN_PATH),
+      "cloud: a 9997 changes nothing (no restart flag, no file)")
+oc._init_com, oc.capital_vault, oc.comtypes, oc.sk = saved
+fresh_process()
+
+# ── the reconciler leaves between rounds when the order lib asks for it ──
+flag = [True]
+sys.modules["lib.order_capital"] = types.SimpleNamespace(restart_needed=lambda: flag[0])
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+due = rec._capital_restart_due()
+flag[0] = False
+not_due = rec._capital_restart_due()
+flag[0] = True
+os.environ.pop("BLAVE_AGENT_LOCAL")
+cloud_due = rec._capital_restart_due()
+sys.modules["lib.order_capital"] = types.SimpleNamespace()
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+old_lib = rec._capital_restart_due()
+sys.modules["lib.order_capital"] = oc
+check(due is True and not_due is False and cloud_due is False and old_lib is False,
+      "restart due only on the desktop, only when the lib says so (an older lib without the hook: never)")
+loop = main.split("while True:", 1)[1]
+first = loop.strip().split("\n", 1)[0]
+check(first == "if _capital_restart_due():" and loop.index("sys.exit(CAPITAL_RESTART_EXIT)") < loop.index("_round_marker(True)"),
+      "the exit is the first thing a loop pass does — between rounds, never with a leg in flight")
 os.environ.pop("BLAVE_AGENT_LOCAL", None)
 
 shutil.rmtree(TMP, ignore_errors=True)

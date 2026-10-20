@@ -1571,6 +1571,20 @@ def _poll_sleep():
     return True
 
 
+# 群益 answered 9997 (five failed logins — the manual says restart the API): no login in this
+# process can succeed again, stops included. Desktop app only: leave at the top of the loop —
+# between rounds, so no order leg is in flight — and the daemon's supervisor starts a fresh
+# reconciler RESTART_DELAY_S later with the same credentials line. Its first login still waits
+# out the backoff order_capital persisted, so a 9997 that survives the restart is not a login storm.
+CAPITAL_RESTART_EXIT = 76
+
+
+def _capital_restart_due():
+    oc = sys.modules.get("lib.order_capital")
+    fn = getattr(oc, "restart_needed", None)
+    return os.environ.get("BLAVE_AGENT_LOCAL") == "1" and callable(fn) and fn() is True
+
+
 def _round_marker(on):
     try:
         if on:
@@ -1723,6 +1737,10 @@ if __name__ == '__main__':
                         # 不然「實際/差額」會停在下單前的狀態直到下次訊號變動
 
     while True:
+        if _capital_restart_due():
+            logging.warning("[reconciler] 群益 refused further logins in this process (9997) — "
+                            "exiting for a fresh reconciler")
+            sys.exit(CAPITAL_RESTART_EXIT)
         # heartbeat for manager/healthcheck.py — a stale file means this daemon died.
         # Touched BEFORE the idle gate below on purpose: an idling daemon is alive
         # and healthy, and must not look dead to the healthcheck.

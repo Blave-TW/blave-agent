@@ -60,6 +60,7 @@ COM runs single-threaded apartment: keep every call on the thread that made
 the first one (the hand-wired TW reconciler is single-threaded — fine).
 """
 
+import json
 import logging
 import os
 import re
@@ -180,16 +181,18 @@ def _get_session(env):
     with _lock:
         if _session is not None:
             return _session
+        _load_relogin()
         wait = _relogin["until"] - time.time()
         if wait > 0:
             raise CapitalError(f"群益 login not retried yet: the connection was lost, next try in {int(wait) + 1}s")
         try:
             s = _new_session(env)
         except Exception:
-            if _relogin["n"]:
+            if _relogin["n"] or _restart["needed"]:
                 _arm_relogin_backoff()
             raise
         _relogin.update(n=0, until=0.0)
+        _save_relogin()
         _session = s
         return _session
 
@@ -204,12 +207,65 @@ def _get_session(env):
 # anything, stops included, until it restarts — more attempts during an outage only bring that
 # closer, to save at most 2 min.
 RELOGIN_BACKOFF_S, RELOGIN_BACKOFF_MAX_S = 30, 120
-_relogin = {"n": 0, "until": 0.0}
+_relogin = {"n": 0, "until": 0.0, "loaded": False}
+# The backoff outlives the process on the desktop: after 9997 the reconciler exits for a fresh one
+# (restart_needed), and that one must not log in again the moment it starts. Same __file__-derived
+# state dir as _REFRESH_FLAG.
+_RELOGIN_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "state", "capital_relogin.json")
+
+
+def _desktop():
+    return os.environ.get("BLAVE_AGENT_LOCAL") == "1"
+
+
+def _load_relogin():
+    if _relogin["loaded"]:
+        return
+    _relogin["loaded"] = True
+    if not _desktop():
+        return
+    try:
+        with open(_RELOGIN_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+        _relogin["n"], _relogin["until"] = int(d["n"]), float(d["until"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+
+
+def _save_relogin():
+    if not _desktop():
+        return
+    try:
+        if not _relogin["n"]:
+            if os.path.exists(_RELOGIN_PATH):
+                os.remove(_RELOGIN_PATH)
+            return
+        tmp = _RELOGIN_PATH + ".tmp"
+        os.makedirs(os.path.dirname(_RELOGIN_PATH), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"n": _relogin["n"], "until": _relogin["until"]}, f)
+        os.replace(tmp, _RELOGIN_PATH)
+    except OSError:
+        pass  # the in-memory backoff still holds for this process
 
 
 def _arm_relogin_backoff():
     _relogin["until"] = time.time() + min(RELOGIN_BACKOFF_S * 2 ** _relogin["n"], RELOGIN_BACKOFF_MAX_S)
     _relogin["n"] += 1
+    _save_relogin()
+
+
+# SKCOM manual V2.13.59: 9997 SK_ERROR_LOGIN_FAIL_LIMIT 登入失敗已達五次，請重啟API — no login in
+# this process can succeed any more. Desktop app: flag it; the reconciler exits between rounds and
+# the daemon starts a fresh one (a new process's login is the path verified on test-4). Cloud
+# boxes keep their old behaviour.
+LOGIN_LIMIT_CODE = 9997
+_restart = {"needed": False}
+
+
+def restart_needed():
+    return _restart["needed"]
 
 
 def _new_session(env):
@@ -231,6 +287,8 @@ def _new_session(env):
     capital_vault.set_log_path(center)
     code = center.SKCenterLib_Login(login_id, password)
     capital_vault.record_login(login_id, password, code)
+    if code == LOGIN_LIMIT_CODE and _desktop():
+        _restart["needed"] = True
     if code not in (0, 2003):
         msg = center.SKCenterLib_GetReturnCodeMessage(code)
         raise CapitalError(
@@ -303,7 +361,7 @@ def _send(sess, send_fn, fields):
         guard.audit("order_error", code=ncode, error=err, **fields)
         # these codes refuse the order on this side (no sequence number), so nothing is in flight:
         # the next order logs in again instead of sending through the dead login every round
-        if ncode in SESSION_LOST_CODES and os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        if ncode in SESSION_LOST_CODES and _desktop():
             reset_session()
             with _lock:
                 _arm_relogin_backoff()
