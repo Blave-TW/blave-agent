@@ -22,6 +22,11 @@ from datetime import datetime, timedelta, timezone, date as _date
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
+    from lib import winreplace as _winreplace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace, no retry
+    import types
+    _winreplace = types.SimpleNamespace(REPLACE_RETRY_DELAYS=(), atomic_replace=os.replace)
+try:
     from lib.progress import Progress
 except ImportError:  # half-updated workspace (lib/progress.py not copied yet) — fail open, no progress lines
     class Progress:
@@ -312,19 +317,12 @@ def _tmp_path(path):
     return path.with_name(f'{path.name}.{os.getpid()}.{threading.get_ident()}.tmp')
 
 
-# Windows only: os.replace fails with WinError 5 while another process (a second strategy on the
-# same symbol) has the target month open for reading — CPython and pyarrow open without
-# FILE_SHARE_DELETE. Those reads last milliseconds, so wait them out (same idea as
-# lib/strategy.py _replace_bytes). POSIX replace never conflicts with readers: no retry there.
-_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.5) if os.name == 'nt' else ()
-
-
 def _retry_read(read, *args, **kwargs):
     """Cache-file read that waits out the same Windows window from the reader's side: opening the
     month while a writer's os.replace swaps it (or Defender scans it) raises PermissionError
     (Errno 13). Uncaught it failed fetch_data and parked a 1m strategy for RETRY_BACKOFF_SECONDS.
-    No retry on POSIX (empty delays)."""
-    for delay in _REPLACE_RETRY_DELAYS:
+    Same delays as the writer side (lib/winreplace); none on POSIX."""
+    for delay in _winreplace.REPLACE_RETRY_DELAYS:
         try:
             return read(*args, **kwargs)
         except PermissionError:
@@ -368,14 +366,7 @@ def _atomic_to_parquet(df, path, footer_meta=None):
             pq.write_table(table, tmp)
         else:
             df.to_parquet(tmp)
-        for delay in _REPLACE_RETRY_DELAYS:
-            try:
-                os.replace(tmp, path)
-                break
-            except PermissionError:
-                time.sleep(delay)
-        else:
-            os.replace(tmp, path)
+        _winreplace.atomic_replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -634,7 +625,7 @@ def _write_single(prefix, params, df, meta):
     tmp = _tmp_path(path)
     try:
         pq.write_table(table, tmp)
-        os.replace(tmp, path)
+        _winreplace.atomic_replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -2204,8 +2195,11 @@ def _write_market_file(data):
     path = _tw_market_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = _tmp_path(path)
-    tmp.write_text(json.dumps(data, ensure_ascii=False))
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False))
+        _winreplace.atomic_replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _tw_public_probe_market(stock_id, ym):
@@ -2489,14 +2483,14 @@ def _tw_cdn_write(path, body, meta):
     tmp = _tmp_path(path)
     try:
         tmp.write_bytes(body)
-        os.replace(tmp, path)
+        _winreplace.atomic_replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
     side = path.with_name(path.name + '.meta.json')
     tmp = _tmp_path(side)
     try:
         tmp.write_text(json.dumps(meta))
-        os.replace(tmp, side)
+        _winreplace.atomic_replace(tmp, side)
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -4910,7 +4904,7 @@ def _drop_twmarket_inst_off_total():
         return                            # nothing cached yet, or an old monthly dir not migrated
     drops = path.with_name(f'{path.name}.dealer_sum_drops')
     try:
-        days = drops.read_text().split()
+        days = _read_text(drops).split()
     except OSError:
         days = []
     today = datetime.utcnow().strftime('%Y-%m-%d')
@@ -5333,7 +5327,7 @@ def _with_president_tail(hist, traded, schema):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = _tmp_path(path)
         tmp.write_text(json.dumps(status, ensure_ascii=False))
-        os.replace(tmp, path)
+        _winreplace.atomic_replace(tmp, path)
     except OSError:
         pass
     if source == 'blave' and reason != 'paused':

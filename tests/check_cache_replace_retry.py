@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import pandas as pd  # noqa: E402
-from lib import data  # noqa: E402
+from lib import data, winreplace  # noqa: E402
 
 fails = []
 
@@ -27,7 +27,7 @@ def t(name, ok, got=None):
         fails.append(name)
 
 
-real_replace, real_sleep, real_delays = os.replace, data.time.sleep, data._REPLACE_RETRY_DELAYS
+real_replace, real_sleep, real_delays = os.replace, data.time.sleep, winreplace.REPLACE_RETRY_DELAYS
 WIN_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.5)
 d = Path(tempfile.mkdtemp(prefix="check-replace-retry-"))
 old = pd.DataFrame({"close": [1.0]}, index=pd.DatetimeIndex(["2026-10-01"], name="ts"))
@@ -45,7 +45,7 @@ def run(fail_with, fail_times, delays):
             raise fail_with(5, "Access is denied")
         real_replace(src, dst)
 
-    data._REPLACE_RETRY_DELAYS = delays
+    winreplace.REPLACE_RETRY_DELAYS = delays
     os.replace = fake_replace
     data.time.sleep = sleeps.append
     err = None
@@ -54,7 +54,7 @@ def run(fail_with, fail_times, delays):
     except OSError as e:
         err = e
     finally:
-        os.replace, data.time.sleep, data._REPLACE_RETRY_DELAYS = real_replace, real_sleep, real_delays
+        os.replace, data.time.sleep, winreplace.REPLACE_RETRY_DELAYS = real_replace, real_sleep, real_delays
     return err, len(calls), sleeps, pd.read_parquet(path), list(d.glob("*.tmp"))
 
 

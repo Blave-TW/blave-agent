@@ -2,7 +2,7 @@
 Defender scans it) gets PermissionError Errno 13 (third interpreter round:
 cache\\twfutures3_1m_TXF\\2026-10.parquet via fetch_twfutures_ohlcv → _extend_cache_monthly).
 fetch_data then failed and the manager parked the 1m strategy for 300 s. The cache reads now
-wait it out with the writer's _REPLACE_RETRY_DELAYS; POSIX keeps a single read.
+wait it out with the writer's lib/winreplace delays; POSIX keeps a single read.
 
 Simulates the PermissionError by patching pd.read_parquet / pq.read_schema, so it runs anywhere:
   ① current-month read: PermissionError once, then data comes back through _extend_cache_monthly;
@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import pandas as pd  # noqa: E402
-from lib import data  # noqa: E402
+from lib import data, winreplace  # noqa: E402
 
 fails = []
 
@@ -33,7 +33,7 @@ def t(name, ok, got=None):
 
 WIN_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.5)
 real = dict(read_parquet=data.pd.read_parquet, read_schema=data.pq.read_schema,
-            sleep=data.time.sleep, delays=data._REPLACE_RETRY_DELAYS, cache=data._CACHE_DIR)
+            sleep=data.time.sleep, delays=winreplace.REPLACE_RETRY_DELAYS, cache=data._CACHE_DIR)
 d = Path(tempfile.mkdtemp(prefix="check-read-retry-"))
 data._CACHE_DIR = d
 cur = datetime.utcnow().strftime("%Y-%m")
@@ -52,7 +52,7 @@ def flaky(fn, fail_with, fail_times, calls):
 
 def run(target, fail_with, fail_times, delays, call):
     calls, sleeps = [], []
-    data._REPLACE_RETRY_DELAYS = delays
+    winreplace.REPLACE_RETRY_DELAYS = delays
     data.time.sleep = sleeps.append
     if target == "parquet":
         data.pd.read_parquet = flaky(real["read_parquet"], fail_with, fail_times, calls)
@@ -65,7 +65,7 @@ def run(target, fail_with, fail_times, delays, call):
         err = e
     finally:
         data.pd.read_parquet, data.pq.read_schema = real["read_parquet"], real["read_schema"]
-        data.time.sleep, data._REPLACE_RETRY_DELAYS = real["sleep"], real["delays"]
+        data.time.sleep, winreplace.REPLACE_RETRY_DELAYS = real["sleep"], real["delays"]
     return out, err, len(calls), sleeps
 
 
