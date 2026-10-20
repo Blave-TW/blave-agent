@@ -50,6 +50,14 @@ ORDER steps (each one contract, ≈$0.02–$8; everything is closed at the end)
       one 1-contract slice each (a slice under one contract rounds up to one — the
       reconciler's slice floor keeps that out of production, this harness has no floor).
       Prints each orders.jsonl row and the manager/twap summary.
+  T11 audit round (NVDA): a short leg open → SL/TP → close through the lib (want stops_cancel
+      and an empty STOP list); 100 contracts (≈ $2 notional, ≈ $0.22 margin at 10×) held up to
+      90 s, balance / get_equity / uPnL printed every 15 s to compare with the app, then a
+      partial close of 50; a stop-loss 0.05% under the price and a take-profit 20% over —
+      waits up to 180 s for the venue to fire the stop-loss (else closes with a raw order the
+      lib does not see, the same blind spot), then sweep_orphan_stops must cancel the orphan
+      take-profit; one order sized at 5× the account's margin, expected refused (-1149 or
+      other) to read the margin-refusal wording.
   T10 a position's STOP when the position goes away: open 1 → place_protective_orders SL →
       close → STOP list 3 s later (does the venue drop it?) → cancel what is left → [].
   CLEANUP  every open LIMIT / STOP order and every leg touched above is cancelled / closed
@@ -67,9 +75,8 @@ PROBE (--probe-all, replaces T1–T6; R steps still run, narrow them with --only
 If a contract's real multiplier is not the table's, place_market_order raises AFTER the
 fill (contractMultiplier mismatch — fail-loud by design); CLEANUP still closes that leg.
 Run order: read steps (+ --noop-write) first, compare R2 with the app, then --trade.
-Not covered yet (later round, needs its own go-ahead): post-only (LIMIT_MAKER), a
-resting limit order + cancel + orphan scan, STOP stop-loss / take-profit, chase /
-TWAP, the full reconciler round, user-data WebSocket.
+Not covered yet: a resting limit killed with its process and swept at restart, the full
+web → reconciler round, user-data WebSocket.
 """
 import argparse
 import json
@@ -401,6 +408,70 @@ def main():
             if left:
                 say("T10 cancel_protective_orders", order.cancel_protective_orders(env, "NVDAUSDT"))
             say("T10 STOP list at the end (want [])", order.get_open_algo_orders(env, "NVDAUSDT"))
+        if want("T11"):
+            touched.add("NVDAUSDT")
+            vs = "NVDA-PERP-USDT"
+            one_c = one("NVDAUSDT")
+            stops = lambda: order.get_open_algo_orders(env, "NVDAUSDT")
+            say("T11a short open", order.place_market_order(env, "NVDAUSDT", "short", one_c))
+            say("T11a short leg", legs("NVDAUSDT"))
+            last = order.get_mark_price(env, "NVDAUSDT")
+            say("T11a short SL +20% / TP -20%", order.place_protective_orders(
+                env, "NVDAUSDT", "short", sl_price=last * 1.2, tp_price=last * 0.8))
+            say("T11a STOP list (want two BUY_CLOSE)", stops())
+            res = order.close_position_partial(env, "NVDAUSDT", "short", one_c)
+            say("T11a short close (want stops_cancel with two canceled)", res)
+            say("T11a STOP list after the close (want [])", stops())
+            say("T11a legs (want [])", legs("NVDAUSDT"))
+
+            say("T11b open 100 contracts", order.place_market_order(env, "NVDAUSDT", "long", 100 * one_c))
+            say("T11b raw last order", raw("GET", "/futures/orders/history", {"symbol": vs, "limit": 1}))
+            for i in range(7):
+                if i:
+                    time.sleep(15)
+                pos = raw("GET", "/futures/positions", {"symbol": vs})
+                upnl = [p.get("unrealizedPnL") for p in pos] if isinstance(pos, list) else pos
+                say(f"T11b {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC compare with the app",
+                    {"get_equity": acct.get_equity(env)["equity"], "uPnL": upnl,
+                     "balance_raw": raw("GET", "/futures/balance")})
+            say("T11b partial close 50", order.close_position_partial(env, "NVDAUSDT", "long", 50 * one_c))
+            say("T11b legs (want 50)", legs("NVDAUSDT"))
+            say("T11b close the other 50", order.close_position_partial(env, "NVDAUSDT", "long", 50 * one_c))
+            say("T11b legs (want [])", legs("NVDAUSDT"))
+
+            say("T11c open 1", order.place_market_order(env, "NVDAUSDT", "long", one_c))
+            last = order.get_mark_price(env, "NVDAUSDT")
+            say("T11c SL 0.05% under / TP 20% over", order.place_protective_orders(
+                env, "NVDAUSDT", "long", sl_price=last * 0.9995, tp_price=last * 1.2))
+            fired = False
+            for _ in range(36):
+                time.sleep(5)
+                if not legs("NVDAUSDT"):
+                    fired = True
+                    break
+            if not fired:
+                say("T11c SL did not fire in 180 s — closing with a raw order the lib does not see",
+                    raw("POST", "/futures/order", {
+                        "symbol": vs, "side": "SELL_CLOSE", "orderType": "LIMIT", "priceType": "MARKET",
+                        "price": "0", "quantity": "1", "clientOrderId": "rc" + uuid.uuid4().hex[:16]}))
+                time.sleep(2)
+            say("T11c fired on the venue" if fired else "T11c simulated", {"legs": legs("NVDAUSDT")})
+            say("T11c STOP list before the sweep (want the orphan TP)", stops())
+            say("T11c sweep_orphan_stops", order.sweep_orphan_stops(env, acct.get_positions(env)))
+            say("T11c STOP list after the sweep (want [])", stops())
+
+            bal = acct.get_equity(env)["equity"]
+            lev = raw("GET", "/futures/accountLeverage", {"symbol": vs})
+            lev = float((lev[0] if isinstance(lev, list) and lev else {}).get("leverage") or 0) or 10.0
+            px = order.get_mark_price(env, "NVDAUSDT")
+            n_big = int(5 * bal * lev / (px * one_c)) + 1
+            say("T11d order sized at 5x the margin", {"equity": bal, "leverage": lev, "contracts": n_big,
+                                                       "notional_usdt": round(n_big * one_c * px, 2)})
+            say("T11d reply (want an error)", raw("POST", "/futures/order", {
+                "symbol": vs, "side": "BUY_OPEN", "orderType": "LIMIT", "priceType": "MARKET",
+                "price": "0", "quantity": str(n_big), "clientOrderId": "rc" + uuid.uuid4().hex[:16]}))
+            time.sleep(2)
+            say("T11d legs (want [])", legs("NVDAUSDT"))
         if want("T6"):
             touched.add("NVDAUSDT")
             long_cid = "rc" + uuid.uuid4().hex + "ab"  # 36 characters

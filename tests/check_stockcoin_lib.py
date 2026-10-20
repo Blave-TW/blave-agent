@@ -26,6 +26,7 @@ Run: cd blave-agent && .venv/bin/python tests/check_stockcoin_lib.py
 import hashlib
 import hmac
 import json
+from decimal import Decimal
 import os
 import re
 import sys
@@ -617,19 +618,52 @@ del DELETED[:]
 res = order.close_position_partial(ENV, "NVDAUSDT", "short", 0.0001)
 check(LEG["SHORT"] == 2 and set(STOPS) == {"s3"} and not DELETED and "stops_cancel" not in res,
       "a partial close leaves the stops as they are")
-n_get = len(ORDER_GETS)
+# the position read can lag the fill: a held leg is re-checked on the next poll of the same order
 oid = res["order_id"]
-order.get_order(ENV, "NVDAUSDT", oid)
 LEG["SHORT"] = 0
+del DELETED[:]
+st = order.get_order(ENV, "NVDAUSDT", oid)
+check(set(STOPS) == set() and {d["orderId"] for d in DELETED} == {"s3"} and isinstance(st.get("stops_cancel"), list),
+      "a close whose leg read non-zero is checked again on the next poll, and cancels once it reads zero", (STOPS, DELETED))
+del DELETED[:]
+STOPS["s6"] = {"symbol": "NVDA-PERP-USDT", "side": "BUY_CLOSE", "triggerPrice": "250"}
 order.get_order(ENV, "NVDAUSDT", oid)
-check(len(ORDER_GETS) == n_get + 2 and set(STOPS) == {"s3"} and not DELETED,
-      "a closing order is checked once — a later poll of the same order sends no cancel")
+check(not DELETED and "s6" in STOPS, "once its leg was found flat, a closing order is never checked again")
+STOPS.pop("s6")
+# an order whose leg stays open is checked at most STOPS_CHECK_TRIES times
+LEG["SHORT"] = 5
+res = order.close_position_partial(ENV, "NVDAUSDT", "short", 0.0001)
+reads = []
+_held = order._leg_held
+order._leg_held = lambda *a: (reads.append(1), _held(*a))[1]
+for _ in range(6):
+    order.get_order(ENV, "NVDAUSDT", res["order_id"])
+order._leg_held = _held
+check(len(reads) == order.STOPS_CHECK_TRIES - 1, "a closing order whose leg stays open stops being re-checked after the cap",
+      len(reads))
+# a position read that blinks to zero once must not strip a live leg's stops (zero is read twice)
 LEG["SHORT"] = 2
+STOPS["s7"] = {"symbol": "NVDA-PERP-USDT", "side": "BUY_CLOSE", "triggerPrice": "250"}
+seq = [Decimal(0), Decimal(2)]
+order._leg_held = lambda *a: seq.pop(0)
+check(order._cancel_stops_if_flat(ENV, "NVDAUSDT", "short") == "held" and "s7" in STOPS,
+      "zero on the first read but held on the confirming read → nothing cancelled")
+order._leg_held = _held
+# a failed stop cancel: logged, audited, told to the user (order_errors + notifier), the close stands
+SENT = []
+from lib import notify as _notify  # noqa: E402
+_notify.send_text = lambda m: SENT.append(m)
+os.makedirs("manager", exist_ok=True)
 route("DELETE", "/futures/order", lambda p: Resp({"code": -1001, "msg": "Internal error"}, 400))
 res = order.close_position_partial(ENV, "NVDAUSDT", "short", 0.0002)
 audit = open(guard.AUDIT_PATH).read()
-check(LEG["SHORT"] == 0 and res["executed_qty"] == 0.0002 and "could not be cancelled" in res["stops_cancel"]["error"]
-      and "stops_cancel_failed" in audit, "a failed stop cancel is logged, audited and returned — the close stands", res)
+rows = json.load(open("manager/order_errors.json"))
+check(LEG["SHORT"] == 0 and res["executed_qty"] == 0.0002 and "撤不掉" in res["stops_cancel"]["error"]
+      and "stops_cancel_failed" in audit and rows[-1]["symbol"] == "NVDAUSDT" and "撤不掉" in rows[-1]["error"]
+      and len(SENT) == 1 and "撤不掉" in SENT[0],
+      "a failed stop cancel is logged, audited, recorded as an order error and sent once — the close stands", (res, SENT))
+order._cancel_stops_if_flat(ENV, "NVDAUSDT", "short")
+check(len(SENT) == 1, "the same failure again inside the cooldown is not sent twice", SENT)
 route("DELETE", "/futures/order", delete_order)
 # limit (chase) close: the fill is seen through get_order, same cleanup
 LEG.update({"LONG": 1, "SHORT": 0})
@@ -647,6 +681,133 @@ sys.path.insert(0, os.path.join(ROOT, "manager"))
 import close_symbol  # noqa: E402
 check(not STOPS and "order_stockcoin" in close_symbol._CANCEL_ALL_COVERS_CONDITIONAL,
       "close_symbol: cancel_all_orders clears STOP orders and is listed as covering conditionals")
+
+# ── -1150 CANCEL_ORDER_FAILED: the order may still rest — never "gone" ──
+route("DELETE", "/futures/order", lambda p: Resp({"code": -1150, "msg": "cancel order failed"}, 400))
+check(order.cancel_order(ENV, "NVDAUSDT", order_id="77")["status"] == "cancel_accepted"
+      and order.cancel_algo_order(ENV, "NVDAUSDT", "78")["status"] == "cancel_accepted",
+      "-1150 is cancel_accepted on both cancel paths (the caller re-reads), not order_not_found")
+# the chase: a cancel answered -1150 is confirmed through the order's status, and while the
+# old order still rests nothing is re-posted (two orders on the book = an over-fill)
+import threading  # noqa: E402
+from lib import execute as _ex  # noqa: E402
+_ex._RESIDUAL_USD, _ex._CHASE_POLL_S, _ex._CHASE_TIMEOUT_S = 0.001, 0.0, 5.0
+_ex._notify_fn = lambda m: None
+_ex._own_only = lambda: False
+book = iter([(199.0, 201.0)] + [(198.0, 200.0)] * 50)
+placed_n, status_reads = [], []
+tools = {"venue": "stockcoin", "bbo": lambda: next(book),
+         "place": lambda usd, px, cid, buy, **kw: (placed_n.append(px), {"order_id": "c1"})[1],
+         "status": lambda oid: (status_reads.append(oid), {"status": "open", "executed_qty": 0.0, "avg_price": 0.0,
+                                                          "orig_qty": 0.0001})[1],
+         "cancel": lambda oid: order.cancel_order(ENV, "NVDAUSDT", order_id=oid)}
+_ex._chase_thread("NVDAUSDT", 0.02, None, False, "stockcoin", [], tools, threading.Event())
+check(len(placed_n) == 1 and len(status_reads) >= 2,
+      "chase: -1150 on the cancel → status re-read, the still-resting order is not re-posted", (placed_n, len(status_reads)))
+route("DELETE", "/futures/order", delete_order)
+
+# ── -1149: tagged insufficient_margin only when the message names margin / balance ──
+for msg, want in (("Insufficient balance", "[order_reject:insufficient_margin]"), ("position limit exceeded", None)):
+    route("POST", "/futures/order", lambda p, m=msg: Resp({"code": -1149, "msg": m}, 400))
+    try:
+        order.place_market_order(ENV, "NVDAUSDT", "long", 0.0001)
+        check(False, "-1149 raises")
+    except order.StockcoinError as e:
+        check(str(e).startswith(want) if want else not str(e).startswith("[order_reject:"),
+              f"-1149 '{msg}' → {want or 'untagged'}", str(e))
+
+# ── POST 5xx: the order may have landed — looked up by clientOrderId, never resent ──
+POSTS = []
+
+
+def post_5xx(p):
+    POSTS.append(dict(p))
+    if p.get("orderType") == "STOP":
+        STOPS[p["clientOrderId"]] = {"symbol": p["symbol"], "side": p["side"], "triggerPrice": p["triggerPrice"],
+                                      "clientOrderId": p["clientOrderId"]}
+    else:
+        FILLED[p["clientOrderId"]] = {**order_row(p), "orderId": p["clientOrderId"]}
+    return Resp({"code": -1001, "msg": "Internal error"}, 502)
+
+
+LOOKUPS = []
+
+
+def get_by_cid(p):
+    LOOKUPS.append(dict(p))
+    key = p.get("clientOrderId") or str(p.get("orderId"))
+    if p.get("orderType") == "STOP":
+        v = STOPS.get(key)
+        return Resp({**v, "orderId": key, "orderType": "STOP", "status": "ORDER_NEW"} if v else
+                    {"code": -2013, "msg": "no"}, 200 if v else 400)
+    v = FILLED.get(key)
+    return Resp(v if v else {"code": -2013, "msg": "no"}, 200 if v else 400)
+
+
+route("POST", "/futures/order", post_5xx)
+route("GET", "/futures/order", get_by_cid)
+LEG.update({"LONG": 0, "SHORT": 0})
+res = order.place_market_order(ENV, "NVDAUSDT", "long", 0.0001)
+check(len(POSTS) == 1 and res["order_id"] == POSTS[0]["clientOrderId"],
+      "a market POST answered 5xx is found by its clientOrderId and confirmed — one POST, no resend", (POSTS, res))
+STOPS.clear()
+del POSTS[:], LOOKUPS[:]
+LEG["LONG"] = 1
+route("GET", "/futures/orders/open", open_rows)
+prot = order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=170.0)
+check(len(POSTS) == 1 and any(q.get("orderType") == "STOP" for q in LOOKUPS) and prot["sl"]["algoId"] == POSTS[0]["clientOrderId"],
+      "a STOP POST answered 5xx is looked up in the STOP list (orderType=STOP), not re-placed", (POSTS, LOOKUPS))
+STOPS.clear()
+
+# ── every reconcile round: a leg holding nothing gets its stops cancelled (SL fired → orphan TP) ──
+route("POST", "/futures/order", close_post)
+route("GET", "/futures/order", lambda p: Resp(FILLED[str(p["orderId"])]))
+route("DELETE", "/futures/order", delete_order)
+LEG.update({"LONG": 0, "SHORT": 4})
+STOPS.update({"tp_long": {"symbol": "NVDA-PERP-USDT", "side": "SELL_CLOSE", "triggerPrice": "260"},
+              "sl_short": {"symbol": "NVDA-PERP-USDT", "side": "BUY_CLOSE", "triggerPrice": "250"},
+              "entry_stop": {"symbol": "NVDA-PERP-USDT", "side": "BUY_OPEN", "triggerPrice": "230"}})
+del DELETED[:]
+swept = order.sweep_orphan_stops(ENV, acct.get_positions(ENV))
+check(swept == [("NVDAUSDT", "long")] and set(STOPS) == {"sl_short", "entry_stop"},
+      "sweep: the flat long leg's orphan take-profit cancelled; the held short leg's stop and an entry STOP kept",
+      (swept, STOPS))
+del DELETED[:]
+check(order.sweep_orphan_stops(ENV, acct.get_positions(ENV)) == [] and not DELETED, "sweep with nothing orphaned sends nothing")
+# an entry STOP (BUY_OPEN) is never a protective order, even with both legs flat
+LEG.update({"LONG": 0, "SHORT": 0})
+STOPS.pop("sl_short")
+order.sweep_orphan_stops(ENV, [])
+check("entry_stop" in STOPS, "sweep never cancels an entry STOP", STOPS)
+STOPS.pop("entry_stop")
+LEG["SHORT"] = 4
+STOPS["sl_short"] = {"symbol": "NVDA-PERP-USDT", "side": "BUY_CLOSE", "triggerPrice": "250"}
+# a leg the round read shows held is not re-read at all
+reads = []
+_held = order._leg_held
+order._leg_held = lambda *a: (reads.append(a), _held(*a))[1]
+order.sweep_orphan_stops(ENV, acct.get_positions(ENV))
+order._leg_held = _held
+check(not reads and "sl_short" in STOPS, "sweep: a leg the round shows held costs no extra position read", reads)
+# a stale round read (says flat) is re-checked against the venue before cancelling
+check(order.sweep_orphan_stops(ENV, []) == [] and "sl_short" in STOPS,
+      "a round read that misses a held leg does not cancel its stops — the leg is re-read first")
+route("GET", "/futures/orders/open", lambda p: Resp({"code": -1001, "msg": "x"}, 400))
+check(order.sweep_orphan_stops(ENV, []) == [], "an unreadable STOP list skips the sweep, never raises")
+route("GET", "/futures/orders/open", open_rows)
+
+# venue_wiring runs the sweep inside auto_get_positions, and a sweep failure never breaks the read
+from lib import venue_wiring as vw  # noqa: E402
+calls = []
+_vw_env, _vw_detect = vw.read_env, vw.detect_venue
+vw.read_env, vw.detect_venue = (lambda path=".env": ENV), (lambda env: "stockcoin")
+_sweep = order.sweep_orphan_stops
+order.sweep_orphan_stops = lambda env, pos: calls.append(pos)
+out = vw.auto_get_positions()
+check(len(calls) == 1 and out.get("NVDAUSDT", {}).get("side") == "short", "auto_get_positions runs the stop sweep each round", out)
+order.sweep_orphan_stops = lambda env, pos: 1 / 0
+check(vw.auto_get_positions().get("NVDAUSDT", {}).get("side") == "short", "a sweep that raises leaves the position read intact")
+order.sweep_orphan_stops, vw.read_env, vw.detect_venue = _sweep, _vw_env, _vw_detect
 
 print("\n" + ("all checks passed" if not fails else f"FAILED: {fails}"))
 sys.exit(1 if fails else 0)

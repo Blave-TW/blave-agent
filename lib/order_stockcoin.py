@@ -17,7 +17,7 @@ one-contract market open + close fills on 31 of the 36 listed contracts; the
 other five (BTC, ETH, XRP, SAMSUNG, SKHYNIX) answer -1157 "not available for
 api trading" and are refused with the symbol_unavailable token below. Which
 contracts are open is the venue's call, so it is read off the reply, not a
-list kept here. Not measured: STOP orders, limit / post-only.
+list kept here.
 
 No broker attribution: StockCoin has no broker / referral id (Wei 2026-10-14),
 so no attribution field is sent.
@@ -51,10 +51,12 @@ StockCoin facts:
   MARKET + a *_CLOSE side; one under and one over the price both rest (the
   venue picks the direction), they do not lock `available`, their status words
   are ORDER_NEW / ORDER_CANCELED, they list and cancel with orderType=STOP.
-  They are NOT cancelled when the position closes (live T10): a leftover stop
-  would open a fresh position when it triggers, so a close that leaves the leg
-  at zero cancels that leg's stops here (get_order, on the first terminal read
-  of the closing order). A partial close leaves them at their placed size.
+  They are NOT cancelled when the position closes (live T10) — a leftover
+  stop would close the next position on that leg. This lib cancels them: a
+  close that leaves the leg at zero (get_order on the closing order), and every
+  reconcile round for a leg holding nothing (sweep_orphan_stops — also a
+  take-profit left behind after its stop-loss fired). A partial close leaves
+  them at their placed size.
 """
 
 import hashlib
@@ -92,8 +94,11 @@ RULES_TTL_S = 3600
 TIMESTAMP_ERROR = "-1021"
 RATE_LIMITED = "-1003"
 DUPLICATED_ORDER = "-1141"
-# cancel of an order that is gone (filled / cancelled) or never existed
-_CANCEL_GONE = {"-2013", "-1142", "-1150"}
+# cancel of an order that is gone (filled / cancelled) or never existed. -1150
+# CANCEL_ORDER_FAILED is not in it: the order may still rest, so the caller
+# re-reads it (cancel_accepted) instead of treating it as dead
+_CANCEL_GONE = {"-2013", "-1142"}
+CANCEL_FAILED = "-1150"
 POST_ONLY_CROSS = "-1158"
 PRICE_DECIMALS = "-1134"
 
@@ -119,12 +124,22 @@ class StockcoinError(Exception):
 
 
 # lib/reject_token kinds, from the venue doc §6.3 and -1157 (not in the doc,
-# measured on every refused contract of the live probe). -1149
-# CREATE_ORDER_FAILED ("check balance, position limits") is left unclassified
-# until a live reply shows which of the two it is.
+# measured on every refused contract of the live probe).
 API_CLOSED = "-1157"
 _REJECT_CODES = {"-1136": reject_token.BELOW_MIN_SIZE, "-1200": reject_token.BELOW_MIN_SIZE,
                  "-1121": reject_token.SYMBOL_UNAVAILABLE, API_CLOSED: reject_token.SYMBOL_UNAVAILABLE}
+# -1149 CREATE_ORDER_FAILED covers both "balance" and "position limits" (doc
+# §6.3), so the code alone says nothing: only a message that names margin /
+# balance is tagged insufficient_margin, anything else under -1149 stays untagged
+CREATE_FAILED = "-1149"
+_MARGIN_WORDS = ("insufficient", "balance", "margin")
+
+
+def _kind_of(code, msg):
+    if str(code) == CREATE_FAILED:
+        return (reject_token.INSUFFICIENT_MARGIN
+                if any(w in str(msg).lower() for w in _MARGIN_WORDS) else None)
+    return None
 
 
 class OrderNotConfirmed(Exception):
@@ -299,7 +314,7 @@ def _send(method, path, env, params=None, retries=3):
             text = (f"StockCoin 不開放 {canonical_symbol(params.get('symbol'))} 用 API 下單，只能在 "
                     f"StockCoin App 手動交易；請把策略換到別的交易所，或換成 StockCoin 開放 API 的商品"
                     f"（{text}）")
-        e = StockcoinError(text, code=code, http_status=r.status_code)
+        e = StockcoinError(text, code=code, http_status=r.status_code, kind=_kind_of(code, msg))
         if code == TIMESTAMP_ERROR and not resynced and attempt < retries - 1:
             # refused at authentication — resending cannot double anything
             resynced = True
@@ -311,7 +326,8 @@ def _send(method, path, env, params=None, retries=3):
             time.sleep(1 + attempt * 2)
             last_err = e
             continue
-        if code == DUPLICATED_ORDER and path == ORDER_PATH and method == "POST":
+        if path == ORDER_PATH and method == "POST" and (code == DUPLICATED_ORDER or r.status_code >= 500):
+            # 5xx: the order may have landed anyway — find it by its id, never resend
             found = _lookup_cid(env, params)
             if found:
                 return found
@@ -325,7 +341,10 @@ def _lookup_cid(env, params):
     if not cid or not sym:
         return None
     try:
-        row = _send("GET", ORDER_PATH, env, {"symbol": sym, "clientOrderId": cid}, retries=1)
+        q = {"symbol": sym, "clientOrderId": cid}
+        if str((params or {}).get("orderType") or "").upper() == "STOP":
+            q["orderType"] = "STOP"  # STOP orders live in their own list
+        row = _send("GET", ORDER_PATH, env, q, retries=1)
     except Exception:
         return None
     return row if isinstance(row, dict) and row.get("orderId") else None
@@ -528,47 +547,127 @@ def get_order(env, symbol, order_id=None, client_order_id=None):
     raw = _request("GET", "/futures/order", env, q)
     o = _norm(symbol, raw, mult)
     side = str((raw or {}).get("side") or "").upper()
-    if (side.endswith("_CLOSE") and o["status"] != "open" and o["executed_qty"] > 0
-            and o["order_id"] not in _stops_checked):
-        _stops_checked.add(o["order_id"])
-        o["stops_cancel"] = _cancel_stops_if_flat(env, symbol, "long" if side == "SELL_CLOSE" else "short")
+    if side.endswith("_CLOSE") and o["status"] != "open" and o["executed_qty"] > 0:
+        res = _stops_after_close(env, symbol, o["order_id"], "long" if side == "SELL_CLOSE" else "short")
+        if res is not None:
+            o["stops_cancel"] = res
     return o
 
 
-_stops_checked = set()  # closing orders whose leg was already checked (get_order is polled)
+# closing order id → reads so far. get_order is polled, and the position read
+# can lag the fill: an order is retried until its leg reads zero (or still
+# open after STOPS_CHECK_TRIES reads); the reconciler's per-round
+# sweep_orphan_stops catches anything left after that.
+STOPS_CHECK_TRIES = 3
+_STOPS_CHECKED_MAX = 500
+_stops_checked = {}
 
 
-def _cancel_stops_if_flat(env, symbol, direction):
-    """After a close fill: when the `direction` leg is now zero, cancel the
-    STOP orders that close that leg (the venue keeps them). Never raises — a
-    failure is logged + audited and returned, the close itself stands.
-    Returns None (leg still open / nothing to cancel), the list of cancel
-    results, or {'error': text}."""
+def _stops_after_close(env, symbol, order_id, direction):
+    n = _stops_checked.get(order_id, 0)
+    if n < 0 or n >= STOPS_CHECK_TRIES:
+        return None
+    res = _cancel_stops_if_flat(env, symbol, direction)
+    done = res != "held" and not (isinstance(res, dict) and res.get("error"))
+    _stops_checked[order_id] = -1 if done else n + 1
+    while len(_stops_checked) > _STOPS_CHECKED_MAX:
+        del _stops_checked[next(iter(_stops_checked))]
+    return None if res == "held" else res
+
+
+def _leg_held(env, vsym, direction):
+    want = "LONG" if direction == "long" else "SHORT"
+    rows = _request("GET", "/futures/positions", env, {"symbol": vsym, "side": want})
+    if not isinstance(rows, list):
+        raise StockcoinError(f"stockcoin {vsym}: positions unreadable ({str(rows)[:120]})")
+    return sum(abs(Decimal(str(p.get("position") or 0))) for p in rows
+               if p.get("symbol") == vsym and str(p.get("side", "")).upper() == want)
+
+
+def _report_stops_failure(symbol, direction, err):
+    """A leg is closed but its stops are still on the venue: they would close
+    the next position on that leg. Logged + audited always; the user is told
+    through the order-failure path (order_errors row, platform P1) and the
+    machine's notifier, once per cooldown for the same reason."""
+    vsym = venue_symbol(symbol)
+    sym = canonical_symbol(vsym)
+    msg = (f"{sym} {direction} 已平倉，但 StockCoin 上這一腿的止損／止盈單撤不掉，請到 StockCoin App "
+           f"手動撤掉，否則之後同一腿再開倉時可能被它平掉（stockcoin {vsym}: {err}）")
+    logging.error(msg)
+    try:
+        guard.audit("stops_cancel_failed", symbol=vsym, direction=direction, error=str(err)[:200])
+    except Exception:
+        pass
+    try:
+        from lib import portfolio
+        fresh = portfolio._order_error_fresh(sym, msg, "protective")
+        portfolio._record_order_error(sym, "stockcoin", msg, repeat=not fresh)
+        if fresh:
+            from lib import notify
+            notify.send_text(f"⚠️ {msg}")
+    except Exception as e:
+        logging.error(f"stockcoin {vsym}: stop-cancel failure could not be reported ({e})")
+    return {"error": msg}
+
+
+def _cancel_stops_if_flat(env, symbol, direction, stops=None):
+    """When the `direction` leg reads zero twice, cancel the STOP orders that
+    close it (the venue keeps them after the position is gone). Never raises.
+    Returns 'held' (leg still open), None (nothing to cancel), the cancel
+    results, or {'error': text} (reported via _report_stops_failure)."""
     vsym = venue_symbol(symbol)
     try:
-        want = "LONG" if direction == "long" else "SHORT"
-        rows = _request("GET", "/futures/positions", env, {"symbol": vsym, "side": want})
-        held = sum(abs(Decimal(str(p.get("position") or 0))) for p in rows or []
-                   if p.get("symbol") == vsym and str(p.get("side", "")).upper() == want)
-        if held > 0:
-            return None
+        if _leg_held(env, vsym, direction) > 0:
+            return "held"
         side = _side(direction, True)
-        stops = [x for x in get_open_algo_orders(env, symbol) if str(x.get("side")).upper() == side]
+        if stops is None:
+            stops = get_open_algo_orders(env, symbol)
+        stops = [x for x in stops if x.get("symbol") == canonical_symbol(vsym)
+                 and str(x.get("side")).upper() == side]
         if not stops:
             return None
+        # a position read that blinked to [] must not strip a live leg's stops
+        if _leg_held(env, vsym, direction) > 0:
+            return "held"
         out = [cancel_algo_order(env, symbol, x["order_id"]) for x in stops]
+        left = [x for x, r in zip(stops, out) if r.get("status") not in ("canceled", "order_not_found")]
         guard.audit("stops_cancelled_on_flat", symbol=vsym, direction=direction,
                     order_ids=[x["order_id"] for x in stops])
+        if left:
+            open_ids = {x["order_id"] for x in get_open_algo_orders(env, symbol)}
+            still = [x["order_id"] for x in left if x["order_id"] in open_ids]
+            if still:
+                return _report_stops_failure(symbol, direction, f"STOP {still} still open after cancel")
         return out
     except Exception as e:
-        msg = (f"stockcoin {vsym}: the {direction} leg is closed but its stop-loss / take-profit "
-               f"could not be cancelled ({e}) — cancel it in the StockCoin app")
-        logging.error(msg)
-        try:
-            guard.audit("stops_cancel_failed", symbol=vsym, direction=direction, error=str(e)[:200])
-        except Exception:
-            pass
-        return {"error": msg}
+        return _report_stops_failure(symbol, direction, e)
+
+
+def sweep_orphan_stops(env, positions=None):
+    """Every reconcile round (lib.venue_wiring.auto_get_positions): cancel the
+    STOP orders of any leg that holds nothing — the venue keeps a leg's stops
+    when the position goes away, including when one of a stop-loss /
+    take-profit pair fires and the other is left behind. `positions` = the
+    round's account_stockcoin.get_positions rows; each candidate leg is
+    re-read before anything is cancelled. Never raises. Returns the legs swept."""
+    try:
+        stops = get_open_algo_orders(env)
+    except Exception as e:
+        logging.warning(f"stockcoin: open STOP list unreadable, orphan sweep skipped ({e})")
+        return []
+    held = {(p.get("symbol"), p.get("side")) for p in positions or [] if float(p.get("size") or 0) > 0}
+    legs = set()
+    for x in stops:
+        side = str(x.get("side") or "").upper()
+        d = "long" if side in ("SELL_CLOSE", "BUY_OPEN") else "short"
+        if (x.get("symbol"), d) not in held:
+            legs.add((x.get("symbol"), d))
+    swept = []
+    for sym, d in sorted(legs):
+        res = _cancel_stops_if_flat(env, sym, d, stops)
+        if isinstance(res, list):
+            swept.append((sym, d))
+    return swept
 
 
 def _confirm(env, symbol, order_id, timeout=20):
@@ -658,6 +757,8 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
     except StockcoinError as e:
         if e.code in _CANCEL_GONE:
             return {"status": "order_not_found", "order_id": order_id}
+        if e.code == CANCEL_FAILED:
+            return {"status": "cancel_accepted", "order_id": order_id}
         raise
     raw = str((res or {}).get("status") or "").upper()
     status = ("canceled" if raw in _GONE else "order_finished" if raw in _FILLED
@@ -673,6 +774,8 @@ def cancel_algo_order(env, symbol, order_id):
     except StockcoinError as e:
         if e.code in _CANCEL_GONE:
             return {"status": "order_not_found", "order_id": str(order_id)}
+        if e.code == CANCEL_FAILED:
+            return {"status": "cancel_accepted", "order_id": str(order_id)}
         raise
     # like cancel_order: the reply is the order before the cancel (ORDER_NEW)
     raw = str((res or {}).get("status") or "").upper()

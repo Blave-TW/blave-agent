@@ -319,6 +319,13 @@ def auto_get_positions():
     # orders never create dual-side positions, but user-opened ones exist.
     net, contracts = {}, set()
     positions = acct.get_positions(env)
+    if hasattr(order, "sweep_orphan_stops"):
+        # a venue that keeps a leg's stops after the position is gone (StockCoin):
+        # cancel them every round, before they close the next position on that leg
+        try:
+            order.sweep_orphan_stops(env, positions)
+        except Exception as e:
+            logging.warning(f"[venue_wiring] {vid}: orphan stop sweep failed ({e})")
     rows = (positions.items() if isinstance(positions, dict)
             else ((p["symbol"], p) for p in positions))
     for sym, p in rows:
