@@ -183,7 +183,8 @@ do not assume casing or invent names.
    neither its app nor its website has a place to sign — ask the user whether
    to sign it; only after they say yes call
    `order_binance.sign_stock_agreement(env, user_consented=True)` (never on
-   your own, never as an automatic retry; without that argument it raises),
+   your own, never as an automatic retry; without that argument it raises;
+   strategy code never calls it — the install scan refuses any that does),
    then let the next round re-send. Bybit: the user signs it
    on the Bybit website or app with the MAIN account by opening that contract's
    trade page (sub-accounts cannot sign; the API route needs a transfer or

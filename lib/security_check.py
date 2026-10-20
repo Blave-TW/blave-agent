@@ -38,6 +38,12 @@ _INJECTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Signing an exchange agreement is the user's own consent, given in the conversation; strategy code
+# never does it. Endpoint fragments too, so a direct signed POST past the helper is caught as well.
+_CONSENT_ONLY = ("sign_stock_agreement", "stock/contract")
+_CONSENT_MSG = ("signs the Binance stock-perps agreement — only the user's own yes in the "
+                "conversation may do that, never strategy code")
+
 # Obfuscation: decode-then-exec pattern within a 3-line window
 _DECODE_RE = re.compile(r"(base64\.b64decode|bytes\.fromhex|codecs\.decode|\.decode\(['\"]utf)")
 _EXEC_RE = re.compile(r"\b(eval|exec|compile)\s*\(")
@@ -65,7 +71,11 @@ def check(filepath: str) -> list[dict]:
 
 def _ast_checks(tree: ast.AST) -> list[dict]:
     findings = []
+    consent_lines = set()
     for node in ast.walk(tree):
+        if _consent_only(node) and node.lineno not in consent_lines:
+            consent_lines.add(node.lineno)
+            findings.append(_c(node.lineno, _CONSENT_MSG))
         if isinstance(node, ast.Call):
             name = _call_name(node)
             if name in ("eval", "exec", "compile", "__import__"):
@@ -103,6 +113,37 @@ def _ast_checks(tree: ast.AST) -> list[dict]:
     # attach parent refs so the environ check above can inspect context
     _attach_parents(tree)
     return findings
+
+
+def _consent_only(node: ast.AST) -> bool:
+    if isinstance(node, ast.ImportFrom):
+        return any(a.name == _CONSENT_ONLY[0] for a in node.names)
+    if isinstance(node, ast.Attribute):
+        return node.attr == _CONSENT_ONLY[0]
+    if isinstance(node, ast.Name):
+        return node.id == _CONSENT_ONLY[0]
+    text = _const_str(node) if isinstance(node, (ast.Constant, ast.BinOp, ast.JoinedStr, ast.Call)) else None
+    return text is not None and any(k in text for k in _CONSENT_ONLY)
+
+
+def _const_str(node: ast.AST) -> Optional[str]:
+    """The string a literal expression always evaluates to — "a" + "b", f"{'a'}b", "".join(["a", "b"])
+    — so splitting a forbidden name across literals does not hide it; None when it is not literal."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _const_str(node.left), _const_str(node.right)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.JoinedStr):
+        parts = [_const_str(v.value if isinstance(v, ast.FormattedValue) else v) for v in node.values]
+        return None if None in parts else "".join(parts)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "join"
+            and len(node.args) == 1 and not node.keywords
+            and isinstance(node.args[0], (ast.List, ast.Tuple))):
+        sep = _const_str(node.func.value)
+        parts = [_const_str(e) for e in node.args[0].elts]
+        return None if sep is None or None in parts else sep.join(parts)
+    return None
 
 
 def _check_open(node: ast.Call, findings: list) -> None:
