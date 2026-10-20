@@ -4,9 +4,9 @@
      thumbprint 只留在這個行程做新舊比對;回給畫面的只有張數、到期日、有沒有新的一張、私鑰能不能用。
    - 憑證精靈(RAWinApp.exe):固定官方網址 + Referer 下載到 userData;執行閘門是 Authenticode Valid 且簽署者是程信科技,
      雜湊只記錄(Wei 10-20:群益改版不必等我們發版)。以一般權限 detached 打開,**只負責打開**——身分證、密碼、簡訊碼都在群益自己的視窗。
-   - 匯入 pfx:檔案路徑與匯出密碼只在這個行程;驗證在 PowerShell 裡做(cn 不出那支腳本),匯入照雲端已驗的
-     `certutil -user -p <pw> -importpfx My <file> NoRoot`。已知限制同 runtime capital_connect 開頭那段:匯出密碼在 certutil 的
-     命令列上一秒左右;錯誤、日誌、回傳值一律不帶命令列。
+   - 匯入 pfx:檔案路徑與匯出密碼只在這個行程,經 stdin 交給 PowerShell;驗證與匯入都在那支腳本裡(cn 不出腳本),
+     匯入用 .NET X509Store(葉憑證進 CurrentUser\My、中繼進 CA、根不裝 = certutil 的 NoRoot),匯出密碼不上任何命令列。
+     待 test-4 驗:SKCOM 認不認這樣匯入的私鑰(雲端已驗的是 certutil;不認就回到 certutil、並擋含 " 的密碼)。
    不依賴 electron(tests/check_shell_capital_local.js 直接 require)。 */
 const fs = require("fs"), path = require("path"), crypto = require("crypto");
 const { fetchBuffer: defaultFetch } = require("./fetchbuf");
@@ -39,9 +39,12 @@ const PS_KEYSIGN = PS_HEAD + "try { $c = Get-Item -LiteralPath ('Cert:\\CurrentU
   "if (-not $rsa) { 'nokey'; exit 0 }; $d = [byte[]](1..32); " +
   "try { [void]$rsa.SignData($d, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) } " +
   "catch { [void]$rsa.SignData($d, [System.Security.Cryptography.HashAlgorithmName]::SHA1, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) }; 'ok' } catch { 'fail' }";
-const PS_SIG = PS_HEAD + "$s = Get-AuthenticodeSignature -LiteralPath $env:CAPL_P; $n = ''; " +
-  "if ($s.SignerCertificate) { $n = $s.SignerCertificate.GetNameInfo('SimpleName', $false) }; " +
-  "ConvertTo-Json -Compress -InputObject @{ status = [string]$s.Status; signer = [string]$n }";
+const PS_SIG = PS_HEAD + "$s = Get-AuthenticodeSignature -LiteralPath $env:CAPL_P; $n = ''; $sub = ''; $iss = ''; " +
+  "if ($s.SignerCertificate) { $n = $s.SignerCertificate.GetNameInfo('SimpleName', $false); $sub = $s.SignerCertificate.Subject; $iss = $s.SignerCertificate.Issuer }; " +
+  "ConvertTo-Json -Compress -InputObject @{ status = [string]$s.Status; signer = [string]$n; subject = [string]$sub; issuer = [string]$iss }";
+// 簽署者不只看 CN:EV 憑證的組織、公司統編(SERIALNUMBER,換發也不變)與發行的 CA(10-20 在 test-4 讀過;不釘 thumbprint——憑證到期會換)
+const WIZ_SUBJECT_RES = [/(^|, )CN=Changing Information Technology Inc\.(,|$)/, /(^|, )O=Changing Information Technology Inc\.(,|$)/, /(^|, )SERIALNUMBER=16325089(,|$)/];
+const WIZ_ISSUER_RE = /(^|, )O=GlobalSign nv-sa(,|$)/;
 /* 匯入:stdin 一行 base64(UTF-8 JSON {p, pw})。輸出只有 {code, exp}。順序同 runtime vehicle_import:先驗檔(密碼、群益發的、沒過期)、
    這台已經有同一個 ID 更晚到期的 → PFX_OLDER(plan_before_import 的 refuse);同一張已經在而且有私鑰 → 不重匯;
    同一張但沒私鑰的那份先刪(它的壞鍵連結會跟著重匯留下來,602)。匯入後確認那張在、有私鑰、私鑰用得了 */
@@ -64,7 +67,12 @@ const PS_IMPORT = PS_HEAD + "$ErrorActionPreference = 'Stop'; " +
   "$same = @($store | Where-Object { $_.Thumbprint -eq $th }); " +
   "if (-not ($same.Count -and $same[0].HasPrivateKey)) { " +
   "foreach ($x in $same) { Remove-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $x.Thumbprint) }; " +
-  "$ErrorActionPreference = 'Continue'; $null = & certutil.exe -user -p $a.pw -importpfx My $a.p NoRoot 2>&1; $ErrorActionPreference = 'Stop' }; " +
+  "$imp = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection; " +
+  "$imp.Import($bytes, $a.pw, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]'PersistKeySet,UserKeySet'); " +
+  "$my = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', 'CurrentUser'); $my.Open('ReadWrite'); " +
+  "$ca = New-Object System.Security.Cryptography.X509Certificates.X509Store('CA', 'CurrentUser'); $ca.Open('ReadWrite'); " +
+  "foreach ($x in $imp) { if ($x.Thumbprint -eq $th) { $my.Add($x) } elseif ($x.Subject -ne $x.Issuer) { $ca.Add($x) } }; " +
+  "$my.Close(); $ca.Close() }; " +
   "$a = $null; " +
   "$got = Get-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $th) -ErrorAction SilentlyContinue; " +
   "if (-not $got -or -not $got.HasPrivateKey) { Done 'IMPORT_FAILED' 0 }; " +
@@ -79,6 +87,11 @@ const PS_OLD = PS_HEAD + "$now = Get-Date; " +
   "$all = @(Get-ChildItem Cert:\\CurrentUser\\My | Where-Object { $_.Subject -like '*OU=The Capital Group*' -and $_.Issuer -like '*TaiCA*' }); " +
   "$keep = @($all | Where-Object { $_.HasPrivateKey -and $_.NotAfter -ge $now } | Sort-Object NotAfter -Descending)[0]; " +
   "if (-not $keep) { ConvertTo-Json -Compress -InputObject @{ n = 0; keep = 0 }; exit 0 }; " +
+  // 留下的那張要真的用得了私鑰(F10 那種證不能當成留下的、把同一個身分證的舊證刪掉)
+  "try { $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($keep); $d = [byte[]](1..32); " +
+  "try { [void]$rsa.SignData($d, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) } " +
+  "catch { [void]$rsa.SignData($d, [System.Security.Cryptography.HashAlgorithmName]::SHA1, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) } } " +
+  "catch { ConvertTo-Json -Compress -InputObject @{ n = 0; keep = 0 }; exit 0 }; " +
   "$cn = $keep.GetNameInfo('SimpleName', $false); " +
   "$rm = @($all | Where-Object { $_.Thumbprint -ne $keep.Thumbprint -and ($_.NotAfter -lt $now -or ($_.GetNameInfo('SimpleName', $false) -eq $cn -and $_.NotAfter -le $keep.NotAfter)) }); " +
   "if ($env:CAPL_DO -eq '1') { foreach ($x in $rm) { Remove-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $x.Thumbprint) -ErrorAction SilentlyContinue }; " +
@@ -177,7 +190,8 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
     const r = await ps(PS_SIG, { env: { CAPL_P: p } });
     let j = null; try { j = JSON.parse(String(r.out).trim()); } catch (_) { }
     const signer = j && typeof j.signer === "string" ? j.signer.slice(0, 200) : "";
-    return { ok: r.rc === 0 && !!j && j.status === "Valid" && signer === WIZ_SIGNER, signer };
+    const sub = j && typeof j.subject === "string" ? j.subject : "", iss = j && typeof j.issuer === "string" ? j.issuer : "";
+    return { ok: r.rc === 0 && !!j && j.status === "Valid" && signer === WIZ_SIGNER && WIZ_SUBJECT_RES.every((re) => re.test(sub)) && WIZ_ISSUER_RE.test(iss), signer };
   }
   // 下載(或用已下載、驗過的那份)→ 驗簽章 → 回可執行的路徑;回 code 字串 = 失敗(畫面講哪一種)
   async function readyWizard() {
@@ -204,12 +218,14 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
     if (!win()) return { code: "NOT_WINDOWS" };
     if (child || opening) {
       // 關框又重開(F12)時快照已丟:精靈還在跑、新證還沒落庫(落庫了開框那次就到帳密了),這時補拍才認得出它做完的那張
-      if (!snapshot && child) { try { snapshot = (await listCerts()).map((c) => c.t); } catch (_) { snapshot = []; } }
+      // 補拍失敗就不拍(維持 null):分不出新舊時照 F13 只看有沒有能用的,不把庫裡原本那張當新證
+      if (!snapshot && child) { try { snapshot = (await listCerts()).map((c) => c.t); } catch (_) { } }
       return { code: "BUSY" };
     }
     opening = true;
     try {
-      if (!snapshot) { try { snapshot = (await listCerts()).map((c) => c.t); } catch (_) { snapshot = []; } }
+      // 列不出憑證庫就不開精靈:之後分不出哪張是新的,庫裡原本那張會被當成剛申請好的
+      if (!snapshot) { try { snapshot = (await listCerts()).map((c) => c.t); } catch (_) { return { code: "LIST_FAILED" }; } }
       const exe = await readyWizard();
       if (exe !== wizPath) return { code: exe };
       let c;
@@ -293,6 +309,8 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
   }
   function info() { return { saved: !!load(), windows: win() }; }
   function forgetCreds() { try { fs.unlinkSync(storePath); } catch (_) { } return true; }
+  // 解除綁定:帳密檔、留在 userData 的精靈(spec §2.2:沒有敏感資料,收乾淨)、這次開框選的檔與快照
+  function unbound() { forgetCreds(); forget(); sigOk = null; try { fs.unlinkSync(wizPath); } catch (_) { } return true; }
   const codeOf = (err) => { const m = /^(?:\w+: )?([A-Z][A-Z_]+)(?::|$)/.exec(String(err || "")); return m ? m[1] : "FAILED"; };
   async function send(op, extra, timeoutMs) {
     const h = host();
@@ -334,7 +352,7 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
     lastResend = now();
     return send("secrets", { sealed: blob }, 10000);
   }
-  return { scan, openWizard, locale, openRegion, pickPfx, importPfx, forget, oldCerts, info, connect, step, resync, forgetCreds, _load: load };
+  return { scan, openWizard, locale, openRegion, pickPfx, importPfx, forget, oldCerts, info, connect, step, resync, forgetCreds, unbound, _load: load };
 }
 module.exports = { createCapitalLocal, sealFor, parseList, parseAcp, winNames, ymd, PS_LIST, PS_KEYSIGN, PS_SIG, PS_IMPORT, PS_OLD, ID_RE, PW_RE,
   WIZ_URL, WIZ_HEADERS, WIZ_SHA256, WIZ_SIGNER, CERT_ZONE_URL };

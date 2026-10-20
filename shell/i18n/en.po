@@ -8810,3 +8810,6 @@ msgstr "This computer's strategy workspace is too old for Capital. Update Blave 
 # 完成那一態,鈕正上方(spec v2 cap.localOnly):憑證綁在這個 Windows 帳號
 msgid "capl.localOnly"
 msgstr "Capital orders go out only while Blave is open and this Windows account is signed in."
+
+msgid "capl.errList"
+msgstr "Couldn't read this computer's certificate store, so the wizard wasn't opened (the new certificate couldn't be told apart). Try again."

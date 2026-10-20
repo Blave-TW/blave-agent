@@ -16,8 +16,9 @@ certificate in it).
 
   setup    the 群益 component, per-user: VC++ 2010 (Microsoft's redist, one UAC
            prompt, only when mfc100/msvcr100 are missing), comtypes into this
-           venv, SKCOM.dll (pinned zip, SHA256) at C:\\skcom\\x64 — the path
-           lib/capital_worker.py and lib/order_capital.py load — registered with
+           venv (pinned), SKCOM from the pinned zip (SHA256) under %LOCALAPPDATA%\\Blave\\capital (ACL:
+           this user only; every file compared with the zip each setup) — the path lib/capital_vault
+           .skcom_dll hands the worker and the order lib on the desktop — registered with
            `regsvr32 /s /n /i:user` (HKCU, no UAC), then CreateObject checked.
            Same steps the M0 kit ran on desktop-win-test-4 (2026-10-19).
   bind     {sealed: {id, pw}}: .env gets the sentinels (capital_api_key empty,
@@ -77,7 +78,16 @@ SETUP_TIMEOUT_S = 1200
 START_TIMEOUT_S = 150
 
 # M0 kit m0_setup.ps1 (2026-10-19, run on desktop-win-test-4): the component and Microsoft's runtime
-SKCOM_DIR = r"C:\skcom\x64"
+# per-user (%LOCALAPPDATA%\Blave\capital, ACL narrowed to this user + SYSTEM + Administrators): C:\ root
+# is writable by every local account, and SKCOM runs inside the processes that hold the credentials.
+# = lib/capital_vault.local_dir (the worker, the probe and the order lib load from there)
+def local_dir():
+    if not os.environ.get("LOCALAPPDATA"):
+        return None
+    return os.path.join(os.environ["LOCALAPPDATA"], "Blave", "capital")
+
+
+COMTYPES_PIN = "comtypes==1.4.17"   # the M0 kit's, run against this SKCOM on desktop-win-test-4 (2026-10-19)
 CAP_ZIP_URL = "https://www.capital.com.tw/Service2/download/api_zip/CapitalAPI_2.13.59.zip"
 CAP_ZIP_SHA256 = "e2b5894c148a847f051535c3700f00c2adc88beef4c471701b80d7b68b3470a9"
 CAP_ZIP_MAX = 200 * 1024 * 1024
@@ -431,6 +441,24 @@ def drop_local(names):
         return
     _LOCAL["worker"].stop("unbound")
     _LOCAL["secrets"] = None
+    cb = _LOCAL["on_secrets"]
+    if cb:
+        try:  # the reconciler still holds the old line in memory: a new one gets none
+            cb()
+        except Exception as e:
+            print(f"[capital_local] reconciler respawn failed ({type(e).__name__})", file=sys.stderr)
+    # what this binding left on disk: SKCOM's own log (it carries the national ID), the probe / account
+    # snapshots and the worker log (account numbers). The wrong-password block stays: it is keyed on the
+    # credentials, and re-binding the same wrong password must not buy another try toward 307
+    p = _paths()
+    for f in (p["probe"], p["snapshot"], p["log"], p["log"] + ".1"):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    base = local_dir()
+    if base:
+        shutil.rmtree(os.path.join(base, "log"), ignore_errors=True)
     _update("worker", create=False, reset=True, status="idle")
     _update("probe", create=False, reset=True, status="idle")
 
@@ -479,33 +507,87 @@ def _ensure_vc(tmp):
         raise RuntimeError("vc++ 2010 runtime missing after install")
 
 
-def _ensure_skcom(tmp):
-    dll = os.path.join(SKCOM_DIR, "SKCOM.dll")
-    if not os.path.isfile(dll):  # an existing install (another tool, the M0 kit) is reused, never overwritten
-        z = os.path.join(tmp, "capitalapi.zip")
-        _download(CAP_ZIP_URL, z, CAP_ZIP_MAX, CAP_ZIP_SHA256)
-        ex = os.path.join(tmp, "cap")
-        with zipfile.ZipFile(z) as zf:
-            for m in zf.namelist():  # a member must stay inside the extraction dir
-                if os.path.isabs(m) or ".." in m.replace("\\", "/").split("/"):
-                    raise RuntimeError("unsafe zip member")
-            zf.extractall(ex)
-        hit = None
-        for root, _dirs, files in os.walk(ex):
-            if "SKCOM.dll" in files and re.search(r"[\\/]x64$", root):
-                hit = root
-                break
-        if not hit:
-            raise RuntimeError("SKCOM.dll not under an x64 folder in the zip")
-        shutil.copytree(hit, SKCOM_DIR, dirs_exist_ok=True)
-    r = subprocess.run(["regsvr32.exe", "/s", "/n", "/i:user", dll], capture_output=True, timeout=120,
+def _x64_members(zf):
+    """The component's own files: everything directly under a …/x64/ folder that holds SKCOM.dll."""
+    files = [i for i in zf.infolist() if not i.is_dir()]
+    dirs = {i.filename.rsplit("/", 1)[0] for i in files if i.filename.endswith("/SKCOM.dll")
+            and i.filename.rsplit("/", 1)[0].rsplit("/", 1)[-1] == "x64"}
+    if len(dirs) != 1:
+        raise RuntimeError("SKCOM.dll not under exactly one x64 folder in the zip")
+    d = dirs.pop()
+    out = [i for i in files if i.filename.rsplit("/", 1)[0] == d]
+    for i in out:
+        name = i.filename.rsplit("/", 1)[1]
+        if not name or name in (".", "..") or "\\" in name or ":" in name:
+            raise RuntimeError("unsafe zip member")
+    return out
+
+
+def _restrict_dir(path):
+    """This user + SYSTEM + Administrators, no inheritance (a shared PC's other accounts cannot plant
+    or swap the DLL, nor read SKCOM's log)."""
+    os.makedirs(path, exist_ok=True)
+    if not IS_WINDOWS:
+        return
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                        "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
+                       capture_output=True, timeout=60, **_cl()._child_kw())
+    sid = r.stdout.decode("ascii", "replace").strip()
+    if r.returncode != 0 or not re.fullmatch(r"S-1-[0-9-]+", sid):
+        raise RuntimeError("current user SID unreadable")
+    r = subprocess.run(["icacls", path, "/inheritance:r", "/grant:r", f"*{sid}:(OI)(CI)F",
+                        "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"], capture_output=True, timeout=60,
                        **_cl()._child_kw())
+    if r.returncode != 0:
+        raise RuntimeError(f"icacls exit {r.returncode}")
+
+
+def _sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _ensure_skcom(tmp):
+    """Every setup: the pinned zip (SHA256) is the source of truth — each installed file is compared
+    with its copy in the zip and rewritten when it differs or is missing (a swapped DLL is replaced,
+    never reused), then the per-user COM registration is pointed at it again."""
+    base = local_dir()
+    if not base:
+        raise RuntimeError("LOCALAPPDATA missing")
+    _restrict_dir(base)
+    cache, skdir = os.path.join(base, "dl"), os.path.join(base, "skcom", "x64")
+    os.makedirs(cache, exist_ok=True)
+    z = os.path.join(cache, "CapitalAPI_2.13.59.zip")
+    try:
+        with open(z, "rb") as f:
+            ok = _sha(f.read()) == CAP_ZIP_SHA256
+    except OSError:
+        ok = False
+    if not ok:
+        part = os.path.join(tmp, "capitalapi.zip")
+        _download(CAP_ZIP_URL, part, CAP_ZIP_MAX, CAP_ZIP_SHA256)
+        shutil.copyfile(part, z)
+    os.makedirs(skdir, exist_ok=True)
+    with zipfile.ZipFile(z) as zf:
+        for m in _x64_members(zf):
+            data = zf.read(m)
+            dst = os.path.join(skdir, m.filename.rsplit("/", 1)[1])
+            try:
+                with open(dst, "rb") as f:
+                    same = _sha(f.read()) == _sha(data)
+            except OSError:
+                same = False
+            if not same:
+                with atomic_file.replacing(dst, "wb") as f:   # a loaded DLL cannot be replaced: setup fails, Blave restarts
+                    f.write(data)
+    r = subprocess.run(["regsvr32.exe", "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")],
+                       capture_output=True, timeout=120, **_cl()._child_kw())
     if r.returncode != 0:
         raise RuntimeError(f"regsvr32 exit {r.returncode}")
 
 
-_CHECK_COM = ("import comtypes.client as c\n"
-              f"c.GetModule(r\"{SKCOM_DIR}\\SKCOM.dll\")\n"
+# the DLL path comes in through the environment (no user text in the script)
+_CHECK_COM = ("import os, comtypes.client as c\n"
+              "c.GetModule(os.environ['CAPL_SKCOM'])\n"
               "import comtypes.gen.SKCOMLib as sk\n"
               "c.CreateObject(sk.SKCenterLib, interface=sk.ISKCenterLib)\n")
 
@@ -541,16 +623,23 @@ def run_setup(push=None):
     return {"setup": "ok"}
 
 
+_COMTYPES_OK = ("import comtypes, comtypes.client, pythoncom, sys; "
+                f"sys.exit(0 if comtypes.__version__ == '{COMTYPES_PIN.split('==')[1]}' else 3)")
+
+
 def _ensure_comtypes():
-    if cc._run_quiet([sys.executable, "-c", "import comtypes.client, pythoncom"], 120, "import").returncode == 0:
+    if cc._run_quiet([sys.executable, "-c", _COMTYPES_OK], 120, "import").returncode == 0:
         return
-    cc._run_quiet([sys.executable, "-m", "pip", "install", "--quiet", "comtypes"], SETUP_TIMEOUT_S, "pip")
-    if cc._run_quiet([sys.executable, "-c", "import comtypes.client, pythoncom"], 120, "import").returncode != 0:
-        raise RuntimeError("comtypes / pythoncom not importable")
+    cc._run_quiet([sys.executable, "-m", "pip", "install", "--quiet", COMTYPES_PIN], SETUP_TIMEOUT_S, "pip")
+    if cc._run_quiet([sys.executable, "-c", _COMTYPES_OK], 120, "import").returncode != 0:
+        raise RuntimeError("comtypes (pinned) / pythoncom not importable")
 
 
 def _check_com():
-    if cc._run_quiet([sys.executable, "-c", _CHECK_COM], 120, "createobject").returncode != 0:
+    dll = os.path.join(local_dir() or "", "skcom", "x64", "SKCOM.dll")
+    r = subprocess.run([sys.executable, "-c", _CHECK_COM], capture_output=True, timeout=120,
+                       env=dict(os.environ, CAPL_SKCOM=dll), **_cl()._child_kw())
+    if r.returncode != 0:
         raise RuntimeError("CreateObject(SKCenterLib) failed")
 
 

@@ -75,7 +75,7 @@ def _init_com():
     import comtypes.client
     import pythoncom as _pythoncom
 
-    _comtypes.client.GetModule(r"C:\skcom\x64\SKCOM.dll")
+    _comtypes.client.GetModule(capital_vault.skcom_dll())
     import comtypes.gen.SKCOMLib as _sk
 
     comtypes, pythoncom, sk = _comtypes, _pythoncom, _sk
@@ -332,6 +332,7 @@ def _connect(login_id, password):
     reply_h = comtypes.client.GetEvents(reply, handler)
     order_h = comtypes.client.GetEvents(order, handler)
 
+    capital_vault.set_log_path(center)
     code = center.SKCenterLib_Login(login_id, password)
     capital_vault.record_login(login_id, password, code)
     if code not in (0, 2003):

@@ -45,7 +45,9 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capl-")), ud = path.join(tmp, "ud");
   const T1 = "A".repeat(40), T2 = "B".repeat(40), T3 = "C".repeat(40);
   const NOW = Math.floor(Date.now() / 1000), Y = 365 * 86400;
-  let store = [], sigOut = { status: "Valid", signer: L.WIZ_SIGNER }, keyOut = "ok", acp = "    ACP    REG_SZ    950", importOut = { code: "OK", exp: NOW + Y };
+  // 10-20 在 test-4 讀到的那份(subject / issuer 原樣)
+const REAL_SIG = { status: "Valid", signer: L.WIZ_SIGNER, subject: "E=guw@changingtec.com, CN=Changing Information Technology Inc., OU=MIS Dept., O=Changing Information Technology Inc., STREET=\"2F, 48 Park Ave.2, Hsinchu Science Park\", L=Hsinchu, S=Taiwan, C=TW, SERIALNUMBER=16325089", issuer: "CN=GlobalSign GCC R45 EV CodeSigning CA 2020, O=GlobalSign nv-sa, C=BE" };
+let store = [], sigOut = REAL_SIG, keyOut = "ok", acp = "    ACP    REG_SZ    950", importOut = { code: "OK", exp: NOW + Y };
   const calls = [], logs = [], opened = [], spawned = [];
   const run = async (exe, argv, o) => {
     const script = argv[argv.length - 1];
@@ -94,13 +96,16 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
   spawned[spawned.length - 1].c.emit("exit", 0);
   // 簽章不對的三種
   for (const [name, so] of [["不是 Valid", { status: "HashMismatch", signer: L.WIZ_SIGNER }], ["簽署者不是程信", { status: "Valid", signer: "Evil Corp" }],
-    ["簽署者只是開頭一樣", { status: "Valid", signer: L.WIZ_SIGNER + " Ltd" }], ["沒有簽章", { status: "NotSigned", signer: "" }]]) {
+    ["簽署者只是開頭一樣", { status: "Valid", signer: L.WIZ_SIGNER + " Ltd" }], ["沒有簽章", { status: "NotSigned", signer: "" }],
+    ["CN 對、但統編不對(另一家同名公司)", Object.assign({}, REAL_SIG, { subject: REAL_SIG.subject.replace("16325089", "99999999") })],
+    ["CN 對、但組織不對", Object.assign({}, REAL_SIG, { subject: REAL_SIG.subject.replace("O=Changing Information Technology Inc.", "O=Evil Inc.") })],
+    ["CN 對、但發行的 CA 不是 GlobalSign", Object.assign({}, REAL_SIG, { issuer: "CN=Some CA, O=Other CA Ltd, C=US" })]]) {
     fs.rmSync(path.join(ud, "capital"), { recursive: true, force: true }); sigOut = so; opened.length = 0;
     const c2 = mk(), n = spawned.length, r = await c2.openWizard();
     ok("2 " + name + " → SIG,不執行、開憑證專區、不留檔", r.code === "SIG" && spawned.length === n && opened[0] === L.CERT_ZONE_URL
       && (!fs.existsSync(path.join(ud, "capital")) || fs.readdirSync(path.join(ud, "capital")).length === 0), r);
   }
-  sigOut = { status: "Valid", signer: L.WIZ_SIGNER };
+  sigOut = REAL_SIG;
   // 已下載的那份後來驗不過(被換掉):刪掉、重新下載
   fs.mkdirSync(path.join(ud, "capital"), { recursive: true }); fs.writeFileSync(wizPath, "tampered");
   let flip = 0; const runFlip = async (exe, argv, o) => (argv[argv.length - 1] === L.PS_SIG && flip++ === 0 ? { rc: 0, out: JSON.stringify({ status: "HashMismatch", signer: "" }) } : run(exe, argv, o));
@@ -128,7 +133,7 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
     const m = new mod(file); m.filename = file; m.paths = mod._nodeModulePaths(SHELL); m._compile(src, m.id);
     const n = spawned.length, c6 = m.exports.createCapitalLocal({ userData: ud, platform: "win32", run, spawnFn, launchWaitMs: 30, fetchBuffer: async () => wizBytes, pickFile: async () => null });
     ok("2 雜湊 = 已知值但簽章不對 → 一樣不執行(閘門是簽章)", (await c6.openWizard()).code === "SIG" && spawned.length === n);
-    sigOut = { status: "Valid", signer: L.WIZ_SIGNER }; }
+    sigOut = REAL_SIG; }
 
   // 3. 找憑證
   { const rt = fs.readFileSync(path.join(ROOT, "runtime", "capital_connect.py"), "utf8");
@@ -181,6 +186,8 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
   logs.length = 0;
   const sb = await bad.scan();
   ok("3 讀不到憑證庫 → LIST_FAILED,日誌一句、沒有輸出原文", sb.code === "LIST_FAILED" && logs.length === 1 && !/A123456789/.test(logs[0]), [sb, logs]);
+  { const n = spawned.length, failing = mk({ run: async () => ({ rc: 1, out: "" }) });
+    ok("3 開精靈前列不出憑證庫 → LIST_FAILED、不開精靈(分不出新舊就別讓庫裡那張被當成新證)", (await failing.openWizard()).code === "LIST_FAILED" && spawned.length === n); }
   const mac = L.createCapitalLocal({ userData: ud, platform: "darwin", run, spawnFn, pickFile: async () => null });
   ok("3 不是 Windows → NOT_WINDOWS(全部)", (await mac.scan()).code === "NOT_WINDOWS" && (await mac.openWizard()).code === "NOT_WINDOWS" && (await mac.locale()).code === "NOT_WINDOWS"
     && (await mac.pickPfx()).code === "NOT_WINDOWS" && (await mac.importPfx("x")).code === "NOT_WINDOWS" && mac.openRegion().code === "NOT_WINDOWS");
@@ -228,12 +235,14 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
   importOut = { code: "OK", exp: NOW + Y };
   const okr = await ci.importPfx("right-pw");
   ok("5 成功 → 只有代號與到期日;選好的檔丟掉", JSON.stringify(okr) === JSON.stringify({ code: "OK", expiry: L.ymd(NOW + Y) }) && (await ci.importPfx("right-pw")).code === "READ_FAILED");
-  ok("5 匯入器 = 雲端已驗那一行(certutil -user -p … -importpfx My … NoRoot),錯誤時不吐命令列", /& certutil\.exe -user -p \$a\.pw -importpfx My \$a\.p NoRoot 2>&1/.test(L.PS_IMPORT)
-    && /\$null = & certutil/.test(L.PS_IMPORT));
+  ok("5 匯入不經任何命令列(沒有 certutil、匯出密碼不上 argv):.NET X509Store,葉憑證進 My、中繼進 CA、根不裝(= NoRoot)", !/certutil/i.test(L.PS_IMPORT)
+    && /X509Store\('My', 'CurrentUser'\)/.test(L.PS_IMPORT) && /X509Store\('CA', 'CurrentUser'\)/.test(L.PS_IMPORT)
+    && /if \(\$x\.Thumbprint -eq \$th\) \{ \$my\.Add\(\$x\) \} elseif \(\$x\.Subject -ne \$x\.Issuer\) \{ \$ca\.Add\(\$x\) \}/.test(L.PS_IMPORT)
+    && /'PersistKeySet,UserKeySet'/.test(L.PS_IMPORT));
   ok("5 匯入腳本只輸出 code / exp(cn 只拿來跟庫裡的比)", [...L.PS_IMPORT.matchAll(/Done '([A-Z_]+)' (\$exp|0)/g)].length >= 10 && /ConvertTo-Json -Compress -InputObject @\{ code = \$c; exp = \$e \}/.test(L.PS_IMPORT)
     && [...L.PS_IMPORT.matchAll(/ConvertTo-Json/g)].length === 1 && !/Write-(Host|Output)/.test(L.PS_IMPORT));
   ok("5 檔案與密碼從 stdin 讀、匯入前先驗(密碼、群益發的、沒過期、比這台的舊)", /\[Console\]::In\.ReadLine\(\)/.test(L.PS_IMPORT)
-    && L.PS_IMPORT.indexOf("PFX_NOT_CAPITAL") < L.PS_IMPORT.indexOf("certutil") && L.PS_IMPORT.indexOf("PFX_EXPIRED") < L.PS_IMPORT.indexOf("certutil") && L.PS_IMPORT.indexOf("PFX_OLDER") < L.PS_IMPORT.indexOf("certutil"));
+    && ["PFX_NOT_CAPITAL", "PFX_EXPIRED", "PFX_OLDER"].every((c) => L.PS_IMPORT.indexOf(c) > 0 && L.PS_IMPORT.indexOf(c) < L.PS_IMPORT.indexOf("X509Store('My'")));
   ok("5 匯入的篩選也是 OU + TaiCA", (L.PS_IMPORT.match(/-like '\*OU=The Capital Group\*' -and \$_?\w*\.?Issuer -like '\*TaiCA\*'/g) || []).length >= 1 && L.PS_IMPORT.includes("$leaf.Subject -like '*OU=The Capital Group*' -and $leaf.Issuer -like '*TaiCA*'"));
   ok("5 所有日誌都沒有密碼、路徑、身分證、thumbprint", !logs.concat().some((m) => /right-pw|wrong-pw|A123456789|Desktop|AAAA|BBBB/.test(m)));
 
@@ -243,6 +252,11 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
   ok("6 七條 IPC 都過 handle(fromOurPage)", CH.every((c) => new RegExp(`handle\\("${c}", `).test(main)) && !/ipcMain\.handle\("capl-/.test(main));
   ok("6 preload 只暴露這十二支", ["caplScan", "caplLocale", "caplWizard", "caplRegion", "caplPick", "caplImport", "caplForget", "caplInfo", "caplConnect", "caplStep", "caplOld", "caplUnbind"].every((n) => pre.includes(n + ": ")) && (pre.match(/capl[A-Z]\w+: /g) || []).length === 12);
   ok("6 帳密那幾條也過 handle(fromOurPage)", ["capl-info", "capl-connect", "capl-step", "capl-old", "capl-unbind"].every((c) => new RegExp(`handle\\("${c}", `).test(main)));
+  { const flagMain = /^const CAPL_LOCAL_ON = (true|false);$/m.exec(main), flagUi = /^const CAPL_LOCAL_ON = (true|false);$/m.exec(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"));
+    const blk = main.slice(main.indexOf("  if (CAPL_LOCAL_ON) {"), main.indexOf("\n  }\n", main.indexOf("  if (CAPL_LOCAL_ON) {")));
+    ok("6 主行程的 CAPL_LOCAL_ON = renderer 那一個;capl-* 全部只在旗標開時註冊、補交也只在開時跑", !!flagMain && !!flagUi && flagMain[1] === flagUi[1]
+      && CH.concat(["capl-info", "capl-connect", "capl-step", "capl-old", "capl-unbind"]).every((c) => blk.includes(`handle("${c}", `)) && (main.match(/handle\("capl-/g) || []).length === 12
+      && /if \(CAPL_LOCAL_ON\) capitalLocal\(\)\.resync\(r\)/.test(main)); }
   ok("6 主行程把顯示語言交給 capital_local(地區設定的選單名)", /uiLang: \(\) => \{ try \{ return \(app\.getPreferredSystemLanguages\(\)/.test(main));
 
   // 7. 帳密(主行程):safeStorage、封裝、bind 成功才存、改密碼用存著的身分證、補交、刪舊證
@@ -290,7 +304,9 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
       && !D.argsOk("capital_local", { op: "cert" }, true));
     ok("7 解除綁定拿得掉群益那兩行(安全方向);renderer 寫不了群益", D.argsOk("credentials_remove", { env: ["capital_api_key", "capital_password"] }, false)
       && !D.argsOk("credentials", { env: { CAPITAL_API_KEY: "", CAPITAL_PASSWORD: "x" } }, false) && !D.argsOk("credentials", { env: { CAPITAL_API_KEY: "", CAPITAL_PASSWORD: "x" } }, true));
-    ok("7 forgetCreds 刪掉存檔", c7.forgetCreds() && !fs.existsSync(path.join(ud7, "capital.bin")) && c7.info().saved === false);
+    fs.mkdirSync(path.join(ud7, "capital"), { recursive: true }); fs.writeFileSync(path.join(ud7, "capital", "RAWinApp.exe"), "x");
+    ok("7 解除綁定(unbound)刪掉帳密檔與留在 userData 的精靈(spec §2.2)", c7.unbound() && !fs.existsSync(path.join(ud7, "capital.bin")) && c7.info().saved === false
+      && !fs.existsSync(path.join(ud7, "capital", "RAWinApp.exe")));
     // 刪舊證
     let oldOut = { n: 2, keep: NOW + Y };
     const runOld = async (exe, argv, o) => { if (argv[argv.length - 1] === L.PS_OLD) { calls.push({ exe, argv, o: o || {} }); return { rc: 0, out: JSON.stringify(o && o.env && o.env.CAPL_DO === "1" ? { n: 0, keep: NOW + Y } : oldOut) }; } return run(exe, argv, o); };
@@ -299,7 +315,8 @@ const ROOT = path.join(__dirname, ".."), SHELL = path.join(ROOT, "shell");
     ok("7 刪舊證:先只數(不刪)→ 張數與留下那張的到期日", JSON.stringify(plan) === JSON.stringify({ code: "OK", n: 2, keep: L.ymd(NOW + Y) }) && !(calls[calls.length - 1].o.env && calls[calls.length - 1].o.env.CAPL_DO));
     ok("7 …確認後才帶 CAPL_DO=1 真的刪", (await c8.oldCerts(true)).n === 0 && calls[calls.length - 1].o.env.CAPL_DO === "1");
     ok("7 刪舊證的腳本:身分證只在腳本裡比、輸出只有 n / keep;篩選同 OU + TaiCA;留下的那張要有私鑰、沒過期", /\$cn = \$keep\.GetNameInfo\('SimpleName', \$false\)/.test(L.PS_OLD)
-      && /ConvertTo-Json -Compress -InputObject @\{ n = \$rm\.Count; keep = /.test(L.PS_OLD) && (L.PS_OLD.match(/ConvertTo-Json/g) || []).length === 2
+      && /ConvertTo-Json -Compress -InputObject @\{ n = \$rm\.Count; keep = /.test(L.PS_OLD) && (L.PS_OLD.match(/ConvertTo-Json/g) || []).length === 3
+      && L.PS_OLD.indexOf("GetRSAPrivateKey($keep)") > 0 && L.PS_OLD.indexOf("GetRSAPrivateKey($keep)") < L.PS_OLD.indexOf("$cn = $keep")
       && L.PS_OLD.includes("$_.Subject -like '*OU=The Capital Group*' -and $_.Issuer -like '*TaiCA*'") && /\$_\.HasPrivateKey -and \$_\.NotAfter -ge \$now/.test(L.PS_OLD)
       && /-eq '1'\) \{ foreach/.test(L.PS_OLD));
     oldOut = { n: "x" };

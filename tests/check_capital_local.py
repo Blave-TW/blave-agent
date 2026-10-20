@@ -291,9 +291,27 @@ check("7 capital_worker:exit 3 只在本機(BLAVE_AGENT_LOCAL=1)、雲端照舊 
 
 # 8. unbind
 w.proc = None
+LAD = os.path.join(BASE, "LocalAppData")
+os.environ["LOCALAPPDATA"] = LAD
+logd = os.path.join(LAD, "Blave", "capital", "log")
+os.makedirs(logd)
+with open(os.path.join(logd, "CapitalLog_x.txt"), "w") as f:
+    f.write("A123456789")
+leftovers = [os.path.join(WS, "state", n) for n in ("capital_probe.json", "capital_account.json", "capital_worker.log", "capital_worker.log.1")]
+for f in leftovers:
+    open(f, "w").write("{}")
+cc.block_login(300)
+blockf = os.path.join(WS, "state", "capital_login_block.json")
+respawned = []
+capl._LOCAL["on_secrets"] = lambda: respawned.append("unbind")
 cl._cmd_credentials_remove({"env": ["capital_api_key", "capital_password"]})
+capl._LOCAL["on_secrets"] = None
 check("8 解除綁定 → 秘密丟掉、worker 停、probe 歸 idle、.env 兩行拿掉", capl._LOCAL["secrets"] is None and w.wanted is False
       and capl.read_status()["probe"]["status"] == "idle" and "capital_password" not in open(envp).read())
+check("8 …對帳器重起(它記憶體裡那一行要丟)、群益 log(含身分證)與 probe／快照／worker log 刪掉", respawned == ["unbind"]
+      and not os.path.exists(logd) and not any(os.path.exists(f) for f in leftovers))
+check("8 …錯密碼的封鎖留著(同一組錯密碼重綁不能多換一次機會)", os.path.exists(blockf))
+os.remove(blockf)
 
 # 9. dispatch
 os.environ.pop("BLAVE_AGENT_LOCAL")
@@ -310,20 +328,86 @@ capl.IS_WINDOWS = True
 check("9 command_listener 有 capital_local handler、本機群益綁定走 bind gate", "capital_local" in cl.HANDLERS
       and 'elif vid == "CAPITAL":\n                # same reason as 統一' in open(os.path.join(ROOT, "runtime", "command_listener.py"), encoding="utf-8").read())
 
-# 10. setup: a zip that climbs out
-bad = os.path.join(BASE, "bad.zip")
-with zipfile.ZipFile(bad, "w") as zf:
-    zf.writestr("../evil/SKCOM.dll", b"x")
-capl.SKCOM_DIR = os.path.join(BASE, "skcom")
-capl._download = lambda url, dest, max_bytes, sha256=None: shutil.copy(bad, dest)
-err = None
-try:
+# 10. setup: SKCOM per-user, every file compared with the pinned zip
+import hashlib  # noqa: E402
+import unittest.mock as um  # noqa: E402
+
+
+def mkzip(path, members):
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+
+good_zip = os.path.join(BASE, "good.zip")
+X = "CapitalAPI_2.13.59/\u5143\u4ef6/x64/"
+good_sha = mkzip(good_zip, {X + "SKCOM.dll": b"skcom-v1", X + "SKProxyLIB.dll": b"proxy-v1", "CapitalAPI_2.13.59/x86/SKCOM.dll": b"x86", "readme.txt": b"r"})
+capl.CAP_ZIP_SHA256 = good_sha
+downloads, restricted, regs = [], [], []
+capl._download = lambda url, dest, max_bytes, sha256=None: (downloads.append(url), shutil.copy(good_zip, dest))
+capl._restrict_dir = lambda p: (restricted.append(p), os.makedirs(p, exist_ok=True))
+real_run = subprocess.run
+fake_run = lambda argv, **kw: (regs.append(argv), subprocess.CompletedProcess(argv, 0, b"", b""))[1]
+skdir = os.path.join(LAD, "Blave", "capital", "skcom", "x64")
+with um.patch.object(capl.subprocess, "run", fake_run):
     capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
-except RuntimeError as e:
-    err = str(e)
-check("10 zip 成員跳出解壓目錄 → 拒絕,什麼都沒寫", err == "unsafe zip member" and not os.path.exists(os.path.join(BASE, "evil")))
+check("10 裝在 %LOCALAPPDATA%\\Blave\\capital(權限收窄)、只有 x64 那一層、per-user 註冊指到那裡",
+      sorted(os.listdir(skdir)) == ["SKCOM.dll", "SKProxyLIB.dll"] and restricted == [os.path.join(LAD, "Blave", "capital")]
+      and regs[-1] == ["regsvr32.exe", "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")] and len(downloads) == 1)
+with open(os.path.join(skdir, "SKCOM.dll"), "wb") as f:
+    f.write(b"planted")
+os.remove(os.path.join(skdir, "SKProxyLIB.dll"))
+with um.patch.object(capl.subprocess, "run", fake_run):
+    capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
+check("10 下一次 setup:被換掉的 DLL 照 zip 重寫、少的補回,快取的 zip 雜湊對就不再下載",
+      open(os.path.join(skdir, "SKCOM.dll"), "rb").read() == b"skcom-v1" and open(os.path.join(skdir, "SKProxyLIB.dll"), "rb").read() == b"proxy-v1"
+      and len(downloads) == 1)
+with open(os.path.join(LAD, "Blave", "capital", "dl", "CapitalAPI_2.13.59.zip"), "ab") as f:
+    f.write(b"tamper")
+with um.patch.object(capl.subprocess, "run", fake_run):
+    capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
+check("10 快取的 zip 被改過(雜湊不對)→ 重新下載", len(downloads) == 2)
+for bad_members, what in (({X + "SKCOM.dll": b"x", X + "..": b"x"}, "成員名是 .."), ({X + "SKCOM.dll": b"x", X + "a\\b.dll": b"x"}, "成員名帶反斜線"),
+                          ({X + "SKCOM.dll": b"x", "other/x64/SKCOM.dll": b"y"}, "兩個 x64 資料夾都有 SKCOM.dll")):
+    bz = os.path.join(BASE, "bad.zip")
+    capl.CAP_ZIP_SHA256 = mkzip(bz, bad_members)
+    shutil.rmtree(os.path.join(LAD, "Blave", "capital", "dl"), ignore_errors=True)
+    capl._download = lambda url, dest, max_bytes, sha256=None: shutil.copy(bz, dest)
+    with um.patch.object(capl.subprocess, "run", fake_run):
+        check("10 zip 不像樣(" + what + ")→ 拒絕", code_of(lambda: capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))) is not None)
 check("10 setup 只在缺 VC++ 2010 時才下載微軟的安裝程式、先驗簽章是 Microsoft", "if _vc_present():\n        return" in open(os.path.join(ROOT, "runtime", "capital_local.py"), encoding="utf-8").read()
       and "-ne 'Microsoft Corporation'" in capl._PS_VC)
+check("10 comtypes 釘版本(M0 在 test-4 跑過的 1.4.17),已裝的版本不同也重裝", capl.COMTYPES_PIN == "comtypes==1.4.17" and "comtypes.__version__ == '1.4.17'" in capl._COMTYPES_OK)
+
+# 11. the lib loads SKCOM from the same per-user folder and points SKCOM's log there
+importlib.reload(cv)
+check("11 本機:lib 的 SKCOM 路徑 = runtime 裝的那裡;雲端(沒有本機旗標)照舊 C:\\skcom\\x64", cv.skcom_dll() == os.path.join(skdir, "SKCOM.dll")
+      and cv.local_dir() == capl.local_dir())
+os.environ.pop("BLAVE_AGENT_LOCAL")
+check("11 …雲端", cv.skcom_dll() == r"C:\skcom\x64\SKCOM.dll" and cv.local_dir() is None)
+
+
+class Center:
+    def __init__(self):
+        self.calls = []
+
+    def SKCenterLib_SetLogPath(self, p):
+        self.calls.append(p)
+
+
+c0 = Center()
+cv.set_log_path(c0)
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+c1 = Center()
+cv.set_log_path(c1)
+check("11 群益 log:本機指到 %LOCALAPPDATA%\\Blave\\capital\\log(解綁時刪),雲端不動", c0.calls == [] and c1.calls == [os.path.join(LAD, "Blave", "capital", "log")]
+      and os.path.isdir(c1.calls[0]))
+for libname in ("capital_worker.py", "order_capital.py"):
+    src = open(os.path.join(ROOT, "lib", libname), encoding="utf-8").read()
+    check(f"11 {libname}:從 capital_vault.skcom_dll() 載入、登入前先 set_log_path、不再寫死 C:\\skcom",
+          "GetModule(capital_vault.skcom_dll())" in src and "skcom\\x64" not in src
+          and src.index("capital_vault.set_log_path(center)") < src.index("SKCenterLib_Login(login_id, password)"))
 
 shutil.rmtree(BASE, ignore_errors=True)
 print(f"\n{len(fails)} FAILED" if fails else "\nall ok")
