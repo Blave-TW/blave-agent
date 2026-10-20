@@ -28,7 +28,7 @@ import lib.events as ev
 ALLOWED = {
     "execution_interrupted", "execution_fallback_market", "execution_stuck",
     "strategy_failed", "bar_stale", "scheduler_error", "venue_unbound",
-    "ui_override", "exchange_unreachable", "exchange_recovered",
+    "ui_override", "exchange_unreachable", "exchange_recovered", "dead_members",
 }
 # 平台自己 diff payload 產生的，config 寫了就是同一件事落兩筆
 FORBIDDEN = {"halt", "order_error"}

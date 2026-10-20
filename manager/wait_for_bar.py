@@ -619,7 +619,7 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
     try:
         from lib.events import emit
         emit("bar_stale", strategy=name, symbol=straggler_symbol,
-             minutes=minutes_waited)
+             minutes=minutes_waited, computed=bool(computed))
     except Exception:
         pass
     who = f"（卡住的是 {straggler_symbol}，若已下市/長期停牌請從 UNIVERSE 移除）" if straggler_symbol is not None else ""
@@ -640,9 +640,10 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
         logging.warning(f"[wait_for_bar] stale-bar notification dropped ({e})")
 
 
-def _note_dead(name, state, dead, long_dead):
+def _note_dead(name, state, dead, long_dead, latest=None):
     """Members readiness stopped waiting for: logged when the set changes; one long dead
-    (delisted, most likely) is notified once — again only if it trades and stops once more."""
+    (delisted, most likely) is notified once — again only if it trades and stops once more.
+    latest: {member: its newest bar}, for the event's last_trade."""
     if dead != state.get("not_waited", []):
         print(f"[wait_for_bar] {name}: not waiting for {', '.join(dead) or 'none'} "
               f"(no bar coming: not trading, or far behind the rest)")
@@ -650,6 +651,14 @@ def _note_dead(name, state, dead, long_dead):
     state["not_waited"], state["dead_noticed"] = dead, long_dead
     if not new:
         return
+    try:
+        from lib.events import emit
+        last = [latest[m] for m in new if latest and latest.get(m) is not None]
+        # Capped here, not left to the platform: a payload over its 4KB limit is dropped whole
+        emit("dead_members", strategy=name, symbols=[str(m)[:40] for m in new[:50]],
+             last_trade=max(last).date().isoformat() if last else None)
+    except Exception:
+        pass
     shown = "、".join(new[:10]) + (f" 等 {len(new)} 檔" if len(new) > 10 else "")
     try:
         from lib.notify import send_text
@@ -752,7 +761,7 @@ def _tick(name):
             _dead = None
             observed_ts, ready, straggler_symbol, latest = _check_freshness(mod, expected)
             if _dead is not None:   # a frame without data says nothing about who is dead
-                _note_dead(name, state, *_dead)
+                _note_dead(name, state, *_dead, latest=latest)
         except Exception as e:
             if not _is_feed_wait(e):
                 # fetch_data() itself raised — network error, or a strategy's own
