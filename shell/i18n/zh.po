@@ -8643,3 +8643,7 @@ msgstr "看回測"
 
 msgid "cx.mode.paper"
 msgstr "模擬交易"
+
+# 已綁定時連接框的主鈕(兩語逐字同網頁 workspace_pf_change_key;EN 是按鈕用 Title Case)
+msgid "cx.changeKey"
+msgstr "換金鑰"

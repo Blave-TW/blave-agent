@@ -8625,3 +8625,7 @@ msgstr "View Backtest"
 
 msgid "cx.mode.paper"
 msgstr "Paper Trading"
+
+# Connect dialog primary button when an account is already bound (same words as web workspace_pf_change_key; Title Case as a button)
+msgid "cx.changeKey"
+msgstr "Replace Key"

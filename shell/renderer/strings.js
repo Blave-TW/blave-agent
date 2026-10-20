@@ -2821,6 +2821,7 @@ const STRINGS = {
     "cx.bound": "To switch accounts, unbind in Settings first.",
     "onb.viewBt": "View Backtest",
     "cx.mode.paper": "Paper Trading",
+    "cx.changeKey": "Replace Key",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -5638,5 +5639,6 @@ const STRINGS = {
     "cx.bound": "要換帳戶，先在設定解除綁定。",
     "onb.viewBt": "看回測",
     "cx.mode.paper": "模擬交易",
+    "cx.changeKey": "換金鑰",
   },
 };

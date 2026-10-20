@@ -1086,6 +1086,8 @@ body.resizing * { cursor: col-resize !important; }
 .cf-opt.off:hover { background: var(--surface-field); }
 .cf-opt.off .cf-opt-t, .cf-opt.off .cf-opt-d { color: var(--ink-3); }
 .cf-opt.off input { border-color: var(--border-hairline); background: var(--surface-card); }
+/* 鎖住、已選:底退成卡面色,中間的點要換成看得到的灰(亮色下 --control-fill-text 是白點配白底;同網頁鎖住態) */
+.cf-opt.off input:checked::after { background: var(--color-greyMedium); }
 .cf-keep { margin: var(--space-16) 0 0; padding: 0; list-style: none; }
 .cf-keep li, .cf-more-in li { position: relative; padding-left: var(--space-16); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
 .cf-keep li::before, .cf-more-in li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }

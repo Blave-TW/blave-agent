@@ -5163,21 +5163,27 @@ function cxChkTextCloud(r) {
 const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACKOFF");
 /* 框頂:模擬交易／真實帳戶兩個大選項(預設模擬;canon Radio,沿用確認框的 .cf-opt),選真實帳戶才出交易所選單。
    兩個視角共用;群益那條 capital.js、統一那條 president.js 也用,所以選項在那兩條裡照樣看得到、切得回模擬 */
+// 句子裡的數字(100,000)用 mono(canon:數字一律 mono);其餘照原字
+function cxMonoNums(el, text) {
+  String(text).split(/(\d[\d,.]*\d|\d)/).forEach((x, i) => { if (!x) return; if (i % 2) el.appendChild(trEl("span", "mono", x)); else el.append(x); });
+  return el;
+}
 function cxVenueField(L) {
   const w = trEl("div", "cx-pick"), fs = trEl("fieldset", "cf-opts");
   const lg = trEl("legend", "", t("cx.title")); fs.appendChild(lg);
   const off = !!L.cx.busy || CXF.bound || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
   const fut = CXF.venue === CAPITAL || CXF.venue === "president";
   [["paper", t("cx.mode.paper"), t("cx.mode.paperSub")], ["real", t("cx.mode.real"), t("cx.mode.realSub")]].forEach(([m, ti, de]) => {
-    const on = CXF.mode === m, lab = trEl("label", on && m === "real" ? "cf-lab" : "cf-opt" + (off ? " off" : "")), r = trEl("input");
+    // 選了真實帳戶、還沒綁定:卡裡要放事實,label 退成卡內的一列;鎖住(已綁定)時事實收起來,只留選項本身(mockup account-dialog 格 4)
+    const on = CXF.mode === m, wrap = on && m === "real" && !CXF.bound, lab = trEl("label", wrap ? "cf-lab" : "cf-opt" + (off ? " off" : "")), r = trEl("input");
     r.type = "radio"; r.name = "cx-mode"; r.id = "cx-mode-" + m; r.value = m; r.checked = on; r.disabled = off;
     r.addEventListener("change", () => {
       if (!r.checked || CXF.mode === m) return;
       CXF.mode = m; CXF.venue = m === "paper" ? PAPER : cxVenuesFor(CXF.env)[0];
       cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (m === "real" && CXF.ip === undefined) cxIpLookup();
     });
-    lab.append(r, trEl("span", "cf-opt-t", ti), trEl("span", "cf-opt-d", de));
-    if (!(on && m === "real")) { fs.appendChild(lab); return; }
+    lab.append(r, trEl("span", "cf-opt-t", ti), cxMonoNums(trEl("span", "cf-opt-d"), de));
+    if (!wrap) { fs.appendChild(lab); return; }
     /* 選了真實帳戶:事實長在卡裡。卡是 div,label 與 ul 是兄弟、ul 用 aria-describedby 掛在圓鈕上(不進選項的可及名稱)。
        期貨商沒有「只開讀取和交易」的權限設定:只留兩行、「金鑰」改「憑證」 */
     const card = trEl("div", "cf-opt cf-wrap" + (off ? " off" : "")), ul = trEl("ul", "cx-facts");
@@ -5188,7 +5194,8 @@ function cxVenueField(L) {
     card.append(lab, ul); fs.appendChild(card);
   });
   w.appendChild(fs);
-  if (CXF.mode !== "real") return w;
+  // 已綁定:模擬綁著時這一句之外沒有別的(主鈕藏起來,重按會用新的 PAPER_BOUND_TS 把模擬帳戶從頭建一次)
+  if (CXF.mode !== "real") { if (CXF.bound) w.appendChild(trEl("p", "cx-hint", t("cx.bound"))); return w; }
   const fl = trEl("label", "fld"); fl.appendChild(trEl("span", "fld-l", t("cx.venue")));
   const sw = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "cx-venue";
   const g = document.createElement("optgroup"); g.label = t("cx.group.crypto");
@@ -5232,7 +5239,9 @@ function cxModalPaint() {
   const cip = cloud ? cxCloudIp() : null;
   const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail], locked, down]);
   // 等的時候圓環在字前(同 app.js 更新鈕);只在字換了才重組——輪詢重畫不能重啟圓環的動畫
-  const goLabel = L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : t("cx.connect");
+  // 已綁定的真實帳戶:主鈕跟入口同一個字「換金鑰」(一次只綁一家,「連接交易所」會被讀成再接一家);已綁模擬沒有主鈕
+  const goLabel = L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : CXF.bound ? t("cx.changeKey") : t("cx.connect");
+  go.hidden = CXF.bound && venue === PAPER;
   if (go.textContent.trim() !== goLabel || !!go.querySelector(".spin16") !== !!L.cx.busy) {
     go.textContent = "";
     if (L.cx.busy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); go.append(sp, " "); }
@@ -5377,6 +5386,7 @@ async function cxConnectCloud() {
   if (f) f.focus();
 }
 async function cxConnect() {
+  if (CXF.bound && CXF.venue === PAPER) return;   // 已綁模擬:沒有主鈕,Enter 也不重綁
   if (CXF.venue === CAPITAL) { if (CXF.env === "cloud" && ENV.cur === "cloud" && !$("cx-scrim").hidden) return capPrimary(); return; }
   if (CXF.venue === "president") { if (CXF.env === "local" && ENV.cur === "local" && !$("cx-scrim").hidden) return presPrimary(); return; }
   if (CXF.env === "cloud") { if (!TR_BAGS.cloud.cx.busy && !$("cx-scrim").hidden && ENV.cur === "cloud") return cxConnectCloud(); return; }

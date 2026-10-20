@@ -66,6 +66,15 @@ ok("② 市場題只在選了不同的值時送 onb_mkt_*(名字是字面表);�
   ok("③ 真實帳戶的事實長在卡裡:div.cf-wrap 裡 label 與 ul 是兄弟、ul 掛 aria-describedby;期貨商只留兩行、講憑證",
     /card\.append\(lab, ul\)/.test(cutFn(trade, "cxVenueField")) && /r\.setAttribute\("aria-describedby", ul\.id\)/.test(cutFn(trade, "cxVenueField"))
     && /fut \? \[CXF\.env === "cloud" \? t\("cx\.fact\.certCloud"\) : t\("cx\.fact\.cert"\), t\("cx\.fact\.ai"\)\]/.test(cutFn(trade, "cxVenueField")));
+  { const vf = cutFn(trade, "cxVenueField"), paint = cutFn(trade, "cxModalPaint"), conn = cutFn(trade, "cxConnect");
+    ok("③ 已綁模擬:沒有主鈕(防重綁把模擬帳戶從頭建一次)、Enter 也不送,框裡講「要換帳戶，先在設定解除綁定。」;已綁真實帳戶主鈕寫「換金鑰」、事實收起",
+      /go\.hidden = CXF\.bound && venue === PAPER;/.test(paint) && /^function cxConnect\(\) \{\n  if \(CXF\.bound && CXF\.venue === PAPER\) return;/.test(conn)
+      && /if \(CXF\.mode !== "real"\) \{ if \(CXF\.bound\) w\.appendChild\(trEl\("p", "cx-hint", t\("cx\.bound"\)\)\); return w; \}/.test(vf)
+      && /CXF\.bound \? t\("cx\.changeKey"\) : t\("cx\.connect"\)/.test(paint) && /wrap = on && m === "real" && !CXF\.bound/.test(vf) && /if \(!wrap\) \{ fs\.appendChild\(lab\); return; \}/.test(vf)); }
+  { const C = { out: [], trEl: (tag, cls, txt) => ({ tag, cls, txt }) }, el = { kids: [], appendChild(x) { this.kids.push(x); }, append(x) { this.kids.push(x); } };
+    vm.createContext(C); vm.runInContext(cutFn(trade, "cxMonoNums"), C); C.cxMonoNums(el, "不用金鑰，起始 100,000 USDT，不動真錢。");
+    ok("③ 選項小字的數字包 mono(100,000),其餘照原字", JSON.stringify(el.kids) === JSON.stringify(["不用金鑰，起始 ", { tag: "span", cls: "mono", txt: "100,000" }, " USDT，不動真錢。"]), JSON.stringify(el.kids)); }
+  ok("③ 鎖住、已選的圓鈕:中間的點換 --color-greyMedium(亮色不再白點配白底)", /\.cf-opt\.off input:checked::after \{ background: var\(--color-greyMedium\); \}/.test(read(path.join(R, "app.css"))));
   ok("③ 綁定成功的埋點:本機 cxConnected 與雲端成功那一條都分模擬／真實;框標題與霧上的鈕同一句 cx.title",
     /trackFeature\(CXF\.venue === PAPER \? "cx_paper_ok" : "cx_real_ok"\);/.test(cutFn(trade, "cxConnected")) && /trackFeature\(venue === PAPER \? "cx_paper_ok" : "cx_real_ok"\);/.test(cutFn(trade, "cxConnectCloud"))
     && /<h6 id="cx-title" data-i18n="cx\.title"><\/h6>/.test(read(path.join(R, "index.html"))) && !/t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"/.test(trade)); }
