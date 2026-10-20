@@ -10,6 +10,7 @@ the session.
 """
 import json
 import os
+import random
 import re
 import secrets
 import sqlite3
@@ -77,6 +78,30 @@ SUMMARY_GUARD_PRIOR_MIN = 2000
 SUMMARY_GUARD_OUT_MIN = 500
 
 
+WAL_TRIES = 20
+WAL_MODE_TRIES = 3  # read back another mode without an error: NFS/SMB never take WAL, don't stall every open
+
+
+def _set_wal(conn):
+    """Switching a fresh file to WAL takes an exclusive lock that the busy timeout does not
+    wait for: two turns opening a db that does not exist yet (fresh install, both started at
+    once) made the loser raise "database is locked" and fail the turn. SQLite may also leave
+    the mode unchanged without raising, so retry until it reads back "wal"; a file system
+    that never takes WAL keeps working in its old mode, as before."""
+    for attempt in range(WAL_TRIES):
+        try:
+            if conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal":
+                return
+            if attempt >= WAL_MODE_TRIES - 1:
+                return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e) and "busy" not in str(e):
+                raise
+            if attempt == WAL_TRIES - 1:
+                raise
+        time.sleep(min(0.5, 0.05 * 2 ** attempt) * random.uniform(0.5, 1.0))
+
+
 def _conn():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     # The transcript is confidential (strategy logic, anything the user pasted).
@@ -91,7 +116,7 @@ def _conn():
     # queues a second writer instead of raising "database is locked" mid-turn. The
     # pragma is persistent but costs nothing to repeat.
     conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
+    _set_wal(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS turns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

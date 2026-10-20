@@ -250,15 +250,19 @@ def kill_tree(root=None, hold_engine=False):
         pairs, cmds = _posix_table()
         tree = posix_targets(pairs, root, _sid)
         marked = _money_pids()
-        kill, keep = split_tree(tree, pairs, lambda p: p in marked or bool(money_label(cmds.get(p))),
-                                hold_engine, _sid, _sid(root))
+        # The engine's own argv is its configuration, not a tool's command: Claude's carries
+        # --disallowedTools Edit(/lib/president_worker.py)…, which MONEY_ARGV matched — the CLI
+        # and every tool under it were kept, so Stop killed nothing. Markers still count.
+        engines = {pid for pid, ppid in pairs if ppid == root}
+        kill, keep = split_tree(tree, pairs, lambda p: p in marked or (
+            p not in engines and bool(money_label(cmds.get(p)))), hold_engine, _sid, _sid(root))
         for pid in kill:
             try:
                 os.kill(pid, signal.SIGKILL)
             except OSError:
                 pass
-        labels = sorted({money_label(cmds.get(p)) or ("order script" if p in marked else None)
-                         for p in keep} - {None})
+        labels = sorted({(None if p in engines else money_label(cmds.get(p)))
+                         or ("order script" if p in marked else None) for p in keep} - {None})
         return kill, labels
     except Exception as e:  # a failed kill must not take the turn's own wrap-up with it
         print(f"[turn_stop] kill_tree failed: {e}", file=sys.stderr)

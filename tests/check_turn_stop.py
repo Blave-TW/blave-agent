@@ -8,7 +8,9 @@ What it protects:
   2. Claude path, real processes: a stub SDK spawns an "engine" whose tool shell runs a
      60s job plus a detached child. Creating the flag file ends the turn in < 2s, the
      engine and the job are dead, the detached child is alive, the sink sends `done`
-     and no `error`, and the turn is written to history.
+     and no `error`, and the turn is written to history. Every fake engine carries the
+     real CLI's `--disallowedTools` (it names lib/president_worker.py): the engine's own
+     command line must not make it a money process.
   3. A stream that never ends even with its engine gone: the cancel fallback still ends
      the turn in < 2s, as a stop and not a fault.
   4. Codex path: the real codex_engine.run against a fake `codex` that sits in a tool.
@@ -167,11 +169,19 @@ def run_turn_with_stop(sink, stop_after, **kw):
 procs = {}
 
 
+def cli_argv(options):
+    """The flags the SDK puts on the real CLI's command line (subprocess_cli: --disallowedTools
+    joined by commas). They name lib/president_worker.py etc., so a fake engine without them
+    hid that Stop spared the CLI and every tool under it."""
+    return ["--disallowedTools", ",".join(options.disallowed_tools)]
+
+
 async def engine_query(prompt, options):
     """Stands in for sdk.query: the CLI is our child in our session; its stdout ends when it dies."""
     yield sdk.AssistantMessage(content=[sdk.ToolUseBlock(id="t1", name="Bash",
                                                          input={"command": "python lib/runner.py x"})])
-    proc = await asyncio.create_subprocess_exec(sys.executable, "-c", ENGINE,
+    procs["argv"] = cli_argv(options)
+    proc = await asyncio.create_subprocess_exec(sys.executable, "-c", ENGINE, *procs["argv"],
                                                 stdout=asyncio.subprocess.PIPE)
     line = (await proc.stdout.readline()).decode().split()
     procs.update(engine=proc.pid, shell=int(line[0]), job=int(line[1]), detached=int(line[2]))
@@ -183,6 +193,8 @@ async def engine_query(prompt, options):
 sdk.query = engine_query
 reply, elapsed, chunks, err = run_turn_with_stop(at.LocalSink("s1"), 1.5)
 types_sent = [c["type"] for c in chunks]
+check("Claude: the engine's argv carries the protected-file rules (MONEY_ARGV matches it)",
+      bool(turn_stop.money_label(" ".join(procs.get("argv", [])))), procs.get("argv"))
 check("Claude: turn ends < 2s after the flag", elapsed < 2.0, f"{elapsed:.2f}s")
 check("Claude: engine, tool shell and job are dead",
       procs and not any(alive(procs[k]) for k in ("engine", "shell", "job")), procs)
@@ -332,6 +344,7 @@ CLOSE = textwrap.dedent("""
     step("ledger")
 """)
 open(os.path.join(WS, "manager", "close_symbol.py"), "w").write(CLOSE.format(mark=""))
+open(os.path.join(WS, "lib", "president_worker.py"), "w").write(CLOSE.format(mark=""))
 open(os.path.join(WS, "tmp", "adhoc.py"), "w").write(
     CLOSE.format(mark="sys.path.insert(0, %r); from lib import guard; guard.mark_money_process()" % WS))
 
@@ -357,14 +370,15 @@ def claude_money_query(script):
             p = subprocess.Popen([sys.executable, os.environ["FAKE_TOOL"], {ledger!r}],
                                  start_new_session=True, stdout=open({out.name!r}, "w"), stdin=subprocess.DEVNULL)
             print(p.pid, flush=True); p.wait()
-        """), stdout=asyncio.subprocess.PIPE, env={**os.environ, "FAKE_TOOL": os.path.join(WS, script)})
+        """), *cli_argv(options), stdout=asyncio.subprocess.PIPE, env={**os.environ, "FAKE_TOOL": os.path.join(WS, script)})
         procs["engine"], procs["script"] = engine.pid, int((await engine.stdout.readline()).decode())
         await engine.stdout.read()
         raise RuntimeError(f"Command failed with exit code {await engine.wait()}")
     return q
 
 
-for script, label in (("manager/close_symbol.py", "close_symbol"), ("tmp/adhoc.py", "下單腳本")):
+for script, label in (("manager/close_symbol.py", "close_symbol"), ("lib/president_worker.py", "president_worker"),
+                      ("tmp/adhoc.py", "下單腳本")):
     procs.clear()
     sdk.query = claude_money_query(script)
     # Stop right after "cancelled" is on disk
@@ -438,7 +452,7 @@ async def tail_query(prompt, options):
         p = subprocess.Popen(["/bin/sh", "-c", os.environ["FAKE_CMD"]], start_new_session=True,
                              stdout=open({os.path.join(_tmp, "tail.out")!r}, "w"), stdin=subprocess.DEVNULL)
         print(p.pid, flush=True); p.wait()
-    """), stdout=asyncio.subprocess.PIPE,
+    """), *cli_argv(options), stdout=asyncio.subprocess.PIPE,
         env={**os.environ, "FAKE_CMD": f"{sys.executable} {os.path.join(WS, 'tmp', 'adhoc.py')} {led_tail} | tail -3"})
     procs["engine"] = engine.pid
     await engine.stdout.readline()
@@ -477,7 +491,7 @@ async def piggy_query(prompt, options):
         m = subprocess.Popen([sys.executable, os.environ["FAKE_TOOL"], {led_pb!r}], start_new_session=True,
                              stdout=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
         print(job.pid, flush=True); m.wait(); job.wait()
-    """), stdout=asyncio.subprocess.PIPE, env={**os.environ, "FAKE_TOOL": os.path.join(WS, "tmp", "adhoc.py")})
+    """), *cli_argv(options), stdout=asyncio.subprocess.PIPE, env={**os.environ, "FAKE_TOOL": os.path.join(WS, "tmp", "adhoc.py")})
     procs["engine"], procs["job"] = engine.pid, int((await engine.stdout.readline()).decode())
     while not os.path.exists(led_pb):
         await asyncio.sleep(0.02)
