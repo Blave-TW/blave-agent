@@ -704,6 +704,15 @@ msgstr "此段倉位在回測結束時仍持有。"
 msgid "tr.mapAria"
 msgstr "圖的範圍（整段回測）"
 
+msgid "tr.loadEarlier"
+msgstr "載入更早資料…"
+
+msgid "tr.historyTruncated"
+msgstr "更早歷史未保留"
+
+msgid "tr.historyCapped"
+msgstr "分線最多載入 {n} 根"
+
 msgid "bt.grpReturns"
 msgstr "報酬"
 
@@ -1898,6 +1907,9 @@ msgstr "合約"
 
 msgid "tr.mkt.fut"
 msgstr "期貨"
+
+msgid "tr.mkt.noAuto"
+msgstr "不能自動下單"
 
 msgid "tr.amountAria"
 msgstr "金額（{ccy}）"
@@ -7530,6 +7542,24 @@ msgstr "這類策略不能更新績效"
 
 msgid "perf.configUnreadable"
 msgstr "下單設定讀不到，沒有更新"
+
+msgid "perf.noData.signedOut"
+msgstr "沒登入 Blave，數字是舊的"
+
+msgid "perf.noData.noCard"
+msgstr "還沒綁卡，抓不到 Blave 資料，數字是舊的"
+
+msgid "perf.noData.noBalance"
+msgstr "這一小時付不出資料費，數字是舊的"
+
+msgid "perf.noData.noPlan"
+msgstr "還沒開通方案，抓不到 Blave 資料，數字是舊的"
+
+msgid "perf.noData.planFailed"
+msgstr "方案扣款沒成功，數字是舊的"
+
+msgid "perf.noData.unknown"
+msgstr "這台電腦現在抓不到 Blave 資料，數字是舊的"
 
 msgid "plan.st.runningTrial"
 msgstr "試用中 · 剩 {n} 天 · 主機運行中"

@@ -698,6 +698,15 @@ msgstr "Still open at the end of the backtest window."
 msgid "tr.mapAria"
 msgstr "Chart range (whole backtest)"
 
+msgid "tr.loadEarlier"
+msgstr "Loading earlier data…"
+
+msgid "tr.historyTruncated"
+msgstr "Earlier history not retained"
+
+msgid "tr.historyCapped"
+msgstr "Loads up to {n} minute bars"
+
 msgid "bt.grpReturns"
 msgstr "Returns"
 
@@ -1889,6 +1898,9 @@ msgstr "Perp"
 
 msgid "tr.mkt.fut"
 msgstr "Futures"
+
+msgid "tr.mkt.noAuto"
+msgstr "No auto-trading"
 
 msgid "tr.amountAria"
 msgstr "Amount ({ccy})"
@@ -7516,6 +7528,24 @@ msgstr "This kind of strategy can't update its performance."
 
 msgid "perf.configUnreadable"
 msgstr "The trading settings can't be read; nothing was updated."
+
+msgid "perf.noData.signedOut"
+msgstr "Not signed in to Blave; figures unchanged."
+
+msgid "perf.noData.noCard"
+msgstr "No card on file, so no Blave data; figures unchanged."
+
+msgid "perf.noData.noBalance"
+msgstr "This hour's data fee couldn't be charged; figures unchanged."
+
+msgid "perf.noData.noPlan"
+msgstr "No plan yet, so no Blave data; figures unchanged."
+
+msgid "perf.noData.planFailed"
+msgstr "The plan payment didn't go through; figures unchanged."
+
+msgid "perf.noData.unknown"
+msgstr "Blave data isn't reachable on this computer; figures unchanged."
 
 msgid "plan.st.runningTrial"
 msgstr "Trial · {n} days left · machine running"
