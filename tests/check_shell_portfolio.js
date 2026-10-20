@@ -729,7 +729,7 @@ const pollTest = (async () => {
 const orderTest = (async () => {
   const go = async ({ base, timeline, waitMs }) => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-      mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+      mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     let t0 = 0, runAt = null;
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
@@ -757,7 +757,7 @@ const orderTest = (async () => {
 const liteTest = (async () => {
   const go = async (lite, waitMs) => {
     const sent = [], full = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
-      mgMembers: () => ["a"], mgStrategies: () => [], mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
+      mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     let t0 = 0, runAt = null;
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
