@@ -399,7 +399,7 @@ with um.patch.object(capl.subprocess, "run", fake_run):
     capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
 check("10 裝在 %LOCALAPPDATA%\\Blave\\capital(權限收窄)、只有 x64 那一層、per-user 註冊指到那裡",
       sorted(os.listdir(skdir)) == ["SKCOM.dll", "SKProxyLIB.dll"] and restricted == [os.path.join(LAD, "Blave", "capital")]
-      and regs[-1] == ["regsvr32.exe", "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")] and len(downloads) == 1)
+      and regs[-1] == ["C:\\Windows\\System32\\regsvr32.exe", "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")] and len(downloads) == 1)
 with open(os.path.join(skdir, "SKCOM.dll"), "wb") as f:
     f.write(b"planted")
 os.remove(os.path.join(skdir, "SKProxyLIB.dll"))
@@ -424,6 +424,45 @@ for bad_members, what in (({X + "SKCOM.dll": b"x", X + "..": b"x"}, "成員名�
 check("10 setup 只在缺 VC++ 2010 時才下載微軟的安裝程式、先驗簽章是 Microsoft", "if _vc_present():\n        return" in open(os.path.join(ROOT, "runtime", "capital_local.py"), encoding="utf-8").read()
       and "-ne 'Microsoft Corporation'" in capl._PS_VC)
 check("10 comtypes 釘版本(M0 在 test-4 跑過的 1.4.17),已裝的版本不同也重裝", capl.COMTYPES_PIN == "comtypes==1.4.17" and "comtypes.__version__ == '1.4.17'" in capl._COMTYPES_OK)
+
+# 10b. 系統程式都走 System32 絕對路徑;pip 只裝釘死 hash 的 comtypes、不讀用戶的 pip 設定
+import ast  # noqa: E402
+src_cl = open(os.path.join(ROOT, "runtime", "capital_local.py"), encoding="utf-8").read()
+firsts = []
+for node in ast.walk(ast.parse(src_cl)):
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("run", "Popen", "call", "check_call", "check_output", "_run_quiet") \
+            and node.args:
+        a0 = node.args[0]
+        first = a0.elts[0] if isinstance(a0, ast.List) and a0.elts else (a0.left.elts[0] if isinstance(a0, ast.BinOp) and isinstance(a0.left, ast.List) else a0)
+        firsts.append(ast.unparse(first))
+bad = [f for f in firsts if not (f == "sys.executable" or f.startswith("_sys32(") or f == "_powershell()")]
+check("10b capital_local.py 每個子行程的程式都是 sys.executable 或 System32 絕對路徑(_sys32 / _powershell)", len(firsts) >= 9 and not bad, [firsts, bad])
+for v, want in (("C:\\Windows", "C:\\Windows"), ("D:\\WinNT", "D:\\WinNT"), ("C:\\Windows\\..\\x", "C:\\Windows"), ("\\\\srv\\s", "C:\\Windows"), ("", "C:\\Windows"), ("rel", "C:\\Windows")):
+    os.environ["SystemRoot"] = v
+    with um.patch.object(capl.os.path, "isdir", lambda p: True):   # 這台是 Mac:System32 存在與否另測
+        check(f"10b SystemRoot={v!r} → {want}\\System32", capl._sys32("icacls.exe") == want + "\\System32\\icacls.exe"
+              and capl._powershell() == want + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+os.environ["SystemRoot"] = "D:\\WinNT"
+check("10b …X:\\<一層> 但底下沒有 System32 → 一樣退回 C:\\Windows", capl._sys32("icacls.exe") == "C:\\Windows\\System32\\icacls.exe")
+os.environ.pop("SystemRoot", None)
+os.environ.pop("SystemRoot", None)
+pips = []
+
+
+def fake_pip(argv, **kw):
+    pips.append((argv, kw.get("env") or {}, open(argv[argv.index("-r") + 1]).read() if "-r" in argv else ""))
+    return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+
+os.environ["PIP_INDEX_URL"] = "https://evil.example/simple"
+with um.patch.object(capl.subprocess, "run", fake_pip), um.patch.object(capl.cc, "_run_quiet", lambda argv, t, w: subprocess.CompletedProcess(argv, 3, b"", b"")):
+    code_of(capl._ensure_comtypes)
+os.environ.pop("PIP_INDEX_URL")
+argv, env, req = pips[-1]
+check("10b comtypes:--require-hashes、--isolated、只收 wheel、不裝相依;需求檔帶 PyPI 那份 wheel 的 sha256",
+      all(x in argv for x in ("--require-hashes", "--isolated", "--no-deps", "--only-binary")) and argv[0] == sys.executable
+      and req.strip() == "comtypes==1.4.17 --hash=sha256:4e0a221dde2c589b82977bed802efd71cd5eb67a380347b732e02735e597f586")
+check("10b …PIP_* 環境變數不帶進去、PIP_CONFIG_FILE 指到 devnull", env.get("PIP_CONFIG_FILE") == os.devnull and not any(k.upper().startswith("PIP_") and k != "PIP_CONFIG_FILE" for k in env))
 
 # 11. the lib loads SKCOM from the same per-user folder and points SKCOM's log there
 importlib.reload(cv)

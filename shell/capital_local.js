@@ -131,6 +131,14 @@ function parseAcp(out) { const m = /\bACP\s+REG_SZ\s+(\d+)/.exec(String(out || "
 // Windows 顯示語言 → 地區設定那幾個選單名用哪一組(只有繁中介面用中文那組)
 function winNames(lang) { return /^zh-(hant|tw|hk|mo)\b/i.test(String(lang || "")) ? "zh" : "en"; }
 
+// 系統程式一律走 System32 絕對路徑(同 winsandbox.js):不帶路徑時 Windows 先找程式所在目錄與目前目錄,
+// 同名的 powershell.exe(它從 stdin 拿 pfx 路徑與匯出密碼)／reg.exe／control.exe 會被換掉。SystemRoot 不像 `X:\<一層>` 就用 C:\Windows
+const ROOT_RE = /^[A-Za-z]:\\[^\\/:*?"<>|\r\n]+$/;
+function sys32(systemRoot, ...parts) {
+  const root = typeof systemRoot === "string" && ROOT_RE.test(systemRoot) ? systemRoot : "C:\\Windows";
+  return path.win32.join(root, "System32", ...parts);
+}
+
 function defaultRun(spawnFn) {
   return (exe, argv, o) => new Promise((resolve) => {
     let out = "", done = false;
@@ -147,9 +155,11 @@ function defaultRun(spawnFn) {
 }
 
 function createCapitalLocal({ userData, platform = process.platform, pickFile, fetchBuffer = defaultFetch, seal, host = () => null,
-  spawnFn = require("child_process").spawn, run, openExternal = () => {}, uiLang = () => "", log = () => {}, launchWaitMs = LAUNCH_WAIT_MS, now = () => Date.now() }) {
+  spawnFn = require("child_process").spawn, run, openExternal = () => {}, uiLang = () => "", log = () => {}, launchWaitMs = LAUNCH_WAIT_MS, now = () => Date.now(),
+  systemRoot = process.env.SystemRoot }) {
   const exec = run || defaultRun(spawnFn);
-  const ps = (script, o) => exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], o);
+  const PS_EXE = sys32(systemRoot, "WindowsPowerShell", "v1.0", "powershell.exe");
+  const ps = (script, o) => exec(PS_EXE, ["-NoProfile", "-NonInteractive", "-Command", script], o);
   const wizDir = path.join(userData, "capital"), wizPath = path.join(wizDir, "RAWinApp.exe");
   let child = null, opening = false, snapshot = null, sigOk = null, picked = null;
   const keyOf = {};   // thumbprint → key-sign 結果(每張只測一次)
@@ -246,7 +256,7 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
   // 系統地區:只有 ACP 950 算通過;讀不到 = 不擋(事實句講不出口),記日誌
   async function locale() {
     if (!win()) return { code: "NOT_WINDOWS" };
-    const r = await exec("reg.exe", ["query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage", "/v", "ACP"], { timeoutMs: 10000 });
+    const r = await exec(sys32(systemRoot, "reg.exe"), ["query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage", "/v", "ACP"], { timeoutMs: 10000 });
     const acp = r.rc === 0 ? parseAcp(r.out) : null;
     if (!acp) log("[capital_local] system code page unreadable");
     return { code: "OK", ok: acp ? acp === "950" : null, names: winNames(uiLang()) };
@@ -254,7 +264,7 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
   // 10-20 在 test-4 驗過:直接開到「地區」視窗(app 只開視窗,不改設定)
   function openRegion() {
     if (!win()) return { code: "NOT_WINDOWS" };
-    try { const c = spawnFn("control.exe", ["intl.cpl"], { detached: true, stdio: "ignore" }); if (c && c.on) c.on("error", () => { }); if (c && c.unref) c.unref(); return { code: "OK" }; } catch (_) { return { code: "START" }; }
+    try { const c = spawnFn(sys32(systemRoot, "control.exe"), ["intl.cpl"], { detached: true, stdio: "ignore" }); if (c && c.on) c.on("error", () => { }); if (c && c.unref) c.unref(); return { code: "OK" }; } catch (_) { return { code: "START" }; }
   }
   async function pickPfx() {
     if (!win()) return { code: "NOT_WINDOWS" };
@@ -354,5 +364,5 @@ function createCapitalLocal({ userData, platform = process.platform, pickFile, f
   }
   return { scan, openWizard, locale, openRegion, pickPfx, importPfx, forget, oldCerts, info, connect, step, resync, forgetCreds, unbound, _load: load };
 }
-module.exports = { createCapitalLocal, sealFor, parseList, parseAcp, winNames, ymd, PS_LIST, PS_KEYSIGN, PS_SIG, PS_IMPORT, PS_OLD, ID_RE, PW_RE,
+module.exports = { createCapitalLocal, sys32, sealFor, parseList, parseAcp, winNames, ymd, PS_LIST, PS_KEYSIGN, PS_SIG, PS_IMPORT, PS_OLD, ID_RE, PW_RE,
   WIZ_URL, WIZ_HEADERS, WIZ_SHA256, WIZ_SIGNER, CERT_ZONE_URL };

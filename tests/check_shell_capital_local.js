@@ -52,7 +52,7 @@ let store = [], sigOut = REAL_SIG, keyOut = "ok", acp = "    ACP    REG_SZ    95
   const run = async (exe, argv, o) => {
     const script = argv[argv.length - 1];
     calls.push({ exe, argv, o: o || {} });
-    if (exe === "reg.exe") return acp === null ? { rc: 1, out: "" } : { rc: 0, out: "HKEY_LOCAL_MACHINE\\...\\CodePage\r\n" + acp + "\r\n" };
+    if (exe === "C:\\Windows\\System32\\reg.exe") return acp === null ? { rc: 1, out: "" } : { rc: 0, out: "HKEY_LOCAL_MACHINE\\...\\CodePage\r\n" + acp + "\r\n" };
     if (script === L.PS_LIST) return { rc: 0, out: JSON.stringify(store) };
     if (script === L.PS_SIG) return { rc: 0, out: JSON.stringify(sigOut) };
     if (script === L.PS_KEYSIGN) return { rc: 0, out: keyOut + "\r\n" };
@@ -199,12 +199,12 @@ let store = [], sigOut = REAL_SIG, keyOut = "ok", acp = "    ACP    REG_SZ    95
     && (await loc("    ACP    REG_SZ    932")).ok === false && (await loc("    ACP    REG_SZ    65001")).ok === false);
   logs.length = 0;
   ok("4 讀不到 → null(不擋)、記日誌", (await loc(null)).ok === null && logs.length === 1);
-  ok("4 讀登錄用 reg.exe query HKLM ...\\Nls\\CodePage /v ACP", calls.some((c) => c.exe === "reg.exe" && c.argv.join(" ") === "query HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage /v ACP"));
+  ok("4 讀登錄用 reg.exe query HKLM ...\\Nls\\CodePage /v ACP", calls.some((c) => c.exe === "C:\\Windows\\System32\\reg.exe" && c.argv.join(" ") === "query HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage /v ACP"));
   ok("4 選單名:繁中介面用中文那組,其他(含簡中)用英文", L.winNames("zh-TW") === "zh" && L.winNames("zh-Hant-TW") === "zh" && L.winNames("zh-HK") === "zh"
     && L.winNames("zh-CN") === "en" && L.winNames("zh-Hans-CN") === "en" && L.winNames("en-US") === "en" && L.winNames("") === "en" && (await loc("    ACP    REG_SZ    950", "zh-TW")).names === "zh");
   acp = "    ACP    REG_SZ    950";
   const nr = spawned.length; mk().openRegion();
-  ok("4 開地區設定 = control.exe intl.cpl(只開視窗)", spawned.length === nr + 1 && spawned[nr].exe === "control.exe" && spawned[nr].argv.join() === "intl.cpl");
+  ok("4 開地區設定 = control.exe intl.cpl(只開視窗)", spawned.length === nr + 1 && spawned[nr].exe === "C:\\Windows\\System32\\control.exe" && spawned[nr].argv.join() === "intl.cpl");
 
   // 5. 匯入 pfx
   const pfxDir = path.join(tmp, "Desktop"); fs.mkdirSync(pfxDir);
@@ -323,6 +323,18 @@ let store = [], sigOut = REAL_SIG, keyOut = "ok", acp = "    ACP    REG_SZ    95
     oldOut = { n: "x" };
     ok("7 腳本回的不像樣 → FAILED", (await c8.oldCerts(false)).code === "FAILED");
     ok("7 身分證／密碼規則 = 雲端 cloud_capital.js 那條", (() => { const cs = fs.readFileSync(path.join(SHELL, "cloud_capital.js"), "utf8"); return cs.includes("const ID_RE = " + String(L.ID_RE) + ";") && cs.includes("const PW_RE = " + String(L.PW_RE) + ";"); })()); }
+
+  // 8. 系統程式都走 System32 絕對路徑(不讓 cwd 裡同名 exe 被執行);SystemRoot 怪就退回 C:\Windows
+  { const seen = calls.concat(spawned.map((x) => ({ exe: x.exe }))).map((c) => c.exe);
+    ok("8 這一輪叫到的每個程式都是絕對路徑(System32 底下、或 userData 裡的精靈)", seen.length > 10 && seen.every((e) => /^C:\\Windows\\System32\\/.test(e) || path.isAbsolute(e)), [...new Set(seen)].filter((e) => !/^C:\\Windows\\System32\\/.test(e)));
+    ok("8 PowerShell 是 System32 那一支", calls.some((c) => c.exe === "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"));
+    const src = fs.readFileSync(path.join(SHELL, "capital_local.js"), "utf8");
+    const bare = [...src.matchAll(/\b(?:exec|spawnFn)\(\s*("[^"]*"|'[^']*'|`[^`]*`)/g)].map((m) => m[1]);
+    ok("8 原文沒有用字串常數直接叫程式(exec / spawnFn 的第一個參數)", bare.length === 0, bare);
+    ok("8 SystemRoot 驗證:X:\\<一層> 才收,其他(含 ..、UNC、空)退回 C:\\Windows", L.sys32("D:\\WinNT", "reg.exe") === "D:\\WinNT\\System32\\reg.exe"
+      && ["C:\\Windows\\..\\x", "\\\\srv\\s", "", undefined, "relative", "C:\\"].every((v) => L.sys32(v, "reg.exe") === "C:\\Windows\\System32\\reg.exe"));
+    const custom = mk({ systemRoot: "D:\\WinNT" }); const n0 = calls.length; acp = "    ACP    REG_SZ    950"; await custom.locale(); await custom.scan();
+    ok("8 主行程給的 SystemRoot 有用到(reg / powershell 都在 D:\\WinNT\\System32)", calls.slice(n0).every((c) => c.exe.indexOf("D:\\WinNT\\System32\\") === 0) && calls.length > n0); }
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(red ? `\n${red} FAILED` : "\nall passed");
