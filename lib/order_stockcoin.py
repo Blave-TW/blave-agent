@@ -51,10 +51,15 @@ StockCoin facts:
   MARKET + a *_CLOSE side; one under and one over the price both rest (the
   venue picks the direction), they do not lock `available`, their status words
   are ORDER_NEW / ORDER_CANCELED, they list and cancel with orderType=STOP.
+  They are NOT cancelled when the position closes (live T10): a leftover stop
+  would open a fresh position when it triggers, so a close that leaves the leg
+  at zero cancels that leg's stops here (get_order, on the first terminal read
+  of the closing order). A partial close leaves them at their placed size.
 """
 
 import hashlib
 import hmac
+import logging
 import re
 import time
 from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
@@ -520,7 +525,50 @@ def get_order(env, symbol, order_id=None, client_order_id=None):
     else:
         raise ValueError("get_order needs order_id or client_order_id")
     mult = Decimal(str(get_contract_rules(env, symbol)["contract_value"]))
-    return _norm(symbol, _request("GET", "/futures/order", env, q), mult)
+    raw = _request("GET", "/futures/order", env, q)
+    o = _norm(symbol, raw, mult)
+    side = str((raw or {}).get("side") or "").upper()
+    if (side.endswith("_CLOSE") and o["status"] != "open" and o["executed_qty"] > 0
+            and o["order_id"] not in _stops_checked):
+        _stops_checked.add(o["order_id"])
+        o["stops_cancel"] = _cancel_stops_if_flat(env, symbol, "long" if side == "SELL_CLOSE" else "short")
+    return o
+
+
+_stops_checked = set()  # closing orders whose leg was already checked (get_order is polled)
+
+
+def _cancel_stops_if_flat(env, symbol, direction):
+    """After a close fill: when the `direction` leg is now zero, cancel the
+    STOP orders that close that leg (the venue keeps them). Never raises — a
+    failure is logged + audited and returned, the close itself stands.
+    Returns None (leg still open / nothing to cancel), the list of cancel
+    results, or {'error': text}."""
+    vsym = venue_symbol(symbol)
+    try:
+        want = "LONG" if direction == "long" else "SHORT"
+        rows = _request("GET", "/futures/positions", env, {"symbol": vsym, "side": want})
+        held = sum(abs(Decimal(str(p.get("position") or 0))) for p in rows or []
+                   if p.get("symbol") == vsym and str(p.get("side", "")).upper() == want)
+        if held > 0:
+            return None
+        side = _side(direction, True)
+        stops = [x for x in get_open_algo_orders(env, symbol) if str(x.get("side")).upper() == side]
+        if not stops:
+            return None
+        out = [cancel_algo_order(env, symbol, x["order_id"]) for x in stops]
+        guard.audit("stops_cancelled_on_flat", symbol=vsym, direction=direction,
+                    order_ids=[x["order_id"] for x in stops])
+        return out
+    except Exception as e:
+        msg = (f"stockcoin {vsym}: the {direction} leg is closed but its stop-loss / take-profit "
+               f"could not be cancelled ({e}) — cancel it in the StockCoin app")
+        logging.error(msg)
+        try:
+            guard.audit("stops_cancel_failed", symbol=vsym, direction=direction, error=str(e)[:200])
+        except Exception:
+            pass
+        return {"error": msg}
 
 
 def _confirm(env, symbol, order_id, timeout=20):
@@ -574,17 +622,21 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     if o["status"] != "filled":
         raise StockcoinError(f"stockcoin {vsym} market order {oid} ended {o['raw_status']} "
                              f"with nothing filled")
-    return {
+    out = {
         "avg_price": o["avg_price"],
         "executed_qty": o["executed_qty"],
         "commission": _commission(env, vsym, oid, started),
         "order_id": o["order_id"],
     }
+    if o.get("stops_cancel") is not None:
+        out["stops_cancel"] = o["stops_cancel"]
+    return out
 
 
 def close_position_partial(env, symbol, direction, qty, client_order_id=None):
     """Reduce the `direction` leg by a BASE qty. Under HALT only as the
-    user's explicit close (lib.guard halt close pass)."""
+    user's explicit close (lib.guard halt close pass). A close that leaves
+    the leg at zero also cancels its STOP orders (reported as stops_cancel)."""
     return place_market_order(env, symbol, direction, qty,
                               client_order_id=client_order_id, reduce_only=True)
 

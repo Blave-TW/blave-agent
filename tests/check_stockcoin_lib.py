@@ -578,5 +578,75 @@ STOPS.clear()
 res = order.open_position(ENV, "NVDAUSDT", "long", 0.0001, sl_price=170.0)
 check(res["entry"]["order_id"] and set(res["protection"]) == {"sl"}, "open_position: confirmed entry, then its stop", res)
 
+# ── a close that leaves the leg at zero cancels that leg's STOPs (live T10: the venue keeps them) ──
+LEG = {"LONG": 1, "SHORT": 3}
+STOPS.clear()
+STOPS.update({"s1": {"symbol": "NVDA-PERP-USDT", "side": "SELL_CLOSE", "triggerPrice": "170"},
+              "s2": {"symbol": "NVDA-PERP-USDT", "side": "SELL_CLOSE", "triggerPrice": "260"},
+              "s3": {"symbol": "NVDA-PERP-USDT", "side": "BUY_CLOSE", "triggerPrice": "250"}})
+FILLED = {}
+
+
+def leg_rows(p):
+    return Resp([{"symbol": "NVDA-PERP-USDT", "side": sd, "position": str(n), "available": str(n), "lastPrice": "200"}
+                 for sd, n in LEG.items() if n and (not p.get("side") or p["side"] == sd)])
+
+
+def close_post(p):
+    if p.get("orderType") == "STOP":
+        return post_stop(p)
+    leg = "LONG" if p["side"] in ("BUY_OPEN", "SELL_CLOSE") else "SHORT"
+    LEG[leg] += int(p["quantity"]) * (1 if p["side"].endswith("_OPEN") else -1)
+    oid = str(9700 + len(FILLED))
+    FILLED[oid] = {**order_row(p), "orderId": oid}
+    del FILLED[oid]["isClose"]  # live rows carry no isClose: the side says it
+    return Resp(FILLED[oid])
+
+
+ORDER_GETS = []
+route("GET", "/futures/positions", leg_rows)
+route("POST", "/futures/order", close_post)
+route("GET", "/futures/order", lambda p: (ORDER_GETS.append(p.get("orderId")), Resp(FILLED[str(p["orderId"])]))[1])
+route("GET", "/futures/orders/open", open_rows)
+del DELETED[:]
+res = order.close_position_partial(ENV, "NVDAUSDT", "long", 0.0001)
+check(LEG["LONG"] == 0 and set(STOPS) == {"s3"} and {d["orderId"] for d in DELETED} == {"s1", "s2"}
+      and all(d.get("orderType") == "STOP" for d in DELETED) and len(res["stops_cancel"]) == 2,
+      "the long leg closed to zero: its two SELL_CLOSE stops cancelled, the short leg's stop kept", (STOPS, DELETED, res))
+del DELETED[:]
+res = order.close_position_partial(ENV, "NVDAUSDT", "short", 0.0001)
+check(LEG["SHORT"] == 2 and set(STOPS) == {"s3"} and not DELETED and "stops_cancel" not in res,
+      "a partial close leaves the stops as they are")
+n_get = len(ORDER_GETS)
+oid = res["order_id"]
+order.get_order(ENV, "NVDAUSDT", oid)
+LEG["SHORT"] = 0
+order.get_order(ENV, "NVDAUSDT", oid)
+check(len(ORDER_GETS) == n_get + 2 and set(STOPS) == {"s3"} and not DELETED,
+      "a closing order is checked once — a later poll of the same order sends no cancel")
+LEG["SHORT"] = 2
+route("DELETE", "/futures/order", lambda p: Resp({"code": -1001, "msg": "Internal error"}, 400))
+res = order.close_position_partial(ENV, "NVDAUSDT", "short", 0.0002)
+audit = open(guard.AUDIT_PATH).read()
+check(LEG["SHORT"] == 0 and res["executed_qty"] == 0.0002 and "could not be cancelled" in res["stops_cancel"]["error"]
+      and "stops_cancel_failed" in audit, "a failed stop cancel is logged, audited and returned — the close stands", res)
+route("DELETE", "/futures/order", delete_order)
+# limit (chase) close: the fill is seen through get_order, same cleanup
+LEG.update({"LONG": 1, "SHORT": 0})
+STOPS.update({"s4": {"symbol": "NVDA-PERP-USDT", "side": "SELL_CLOSE", "triggerPrice": "170"}})
+FILLED["9799"] = {**order_row({"orderId": "9799", "symbol": "NVDA-PERP-USDT", "side": "SELL_CLOSE", "quantity": "1"}),
+                  "orderType": "LIMIT_MAKER"}
+LEG["LONG"] = 0
+st = order.get_order(ENV, "NVDAUSDT", "9799")
+check(st["status"] == "filled" and "s4" not in STOPS, "a filled limit close (chase) to zero cancels the leg's stops too")
+# close_symbol: cancel_all covers STOPs on this venue
+STOPS.update({"s5": {"symbol": "NVDA-PERP-USDT", "side": "SELL_CLOSE", "triggerPrice": "170"}})
+route("GET", "/futures/orders/open", open_rows)
+order.cancel_all_orders(ENV, "NVDAUSDT")
+sys.path.insert(0, os.path.join(ROOT, "manager"))
+import close_symbol  # noqa: E402
+check(not STOPS and "order_stockcoin" in close_symbol._CANCEL_ALL_COVERS_CONDITIONAL,
+      "close_symbol: cancel_all_orders clears STOP orders and is listed as covering conditionals")
+
 print("\n" + ("all checks passed" if not fails else f"FAILED: {fails}"))
 sys.exit(1 if fails else 0)
