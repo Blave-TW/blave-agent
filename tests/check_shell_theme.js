@@ -1,7 +1,8 @@
 // 電腦版外觀(0.1.28,設計師 light-mode-2026-10 盤點):跟隨系統／淺色／深色。純 node,不起 Electron。
 //   ① tokens.css:light 放 :root、dark 只重映射;新角色兩邊都有值;每個被換掉的舊 token 在深色下解析成同一個值(深色零差異)
 //   ② 寫死的暗色假設清掉:renderer 的 css / js 不再直接引 --color-dark* / --color-greyDark(豁免:tokens.css、report-print.css、分享 OG 圖)
-//   ③ 首繪:index.html 沒有寫死 data-theme、theme-boot.js 是 <head> 第一支 script、在所有樣式表之前;列印頁不載它(PDF 永遠淺色)
+//   ③ 首繪:index.html 沒有寫死 data-theme、theme-boot.js 是 <head> 第一支 script、在所有樣式表之前;列印頁不載它(PDF 永遠淺色);
+//      之後每次換:整頁交叉淡化(減少動態／藏住／不支援就一幀換完、回呼裡同步發 blave:theme、過渡中按下=跳終態保焦點)
 //   ④ 主行程:ui-prefs theme 只認三個值、開窗前設 themeSource、開窗底色跟主題且鏡射 tokens.css、系統一換就改底色;IPC 兩支
 //   ⑤ 設定 › 一般第一列是外觀 segment(三格順序固定)、字串兩語都有、改值才送 theme_* 、顯示淺色才送 theme_light_seen
 //   ⑥ 全 app 的 segment 共用一份灰軌配方(app.css):每個畫 --surface-segment-on 選中格的控件都在配方清單裡,沒有誰還畫外框或格間分隔
@@ -53,13 +54,41 @@ ok("③ theme-boot.js 是 <head> 第一支 script、在 CSP 之後、所有樣�
   head.indexOf('<script src="theme-boot.js"></script>') > head.indexOf("Content-Security-Policy") && head.indexOf('<script src="theme-boot.js"></script>') < head.indexOf("<link rel=\"stylesheet\"")
   && head.indexOf("<script") === head.indexOf('<script src="theme-boot.js"></script>'));
 ok("③ 列印頁不載 theme-boot.js(沒有屬性 = 淺色)", !/theme-boot/.test(read(path.join(R, "report-print.html"))));
-{ // theme-boot 本身:依 prefers-color-scheme 寫屬性、換的時候發 blave:theme
-  const attrs = {}, evs = []; let onChange = null, dark = true;
-  const sb = { window: { matchMedia: () => ({ get matches() { return dark; }, addEventListener: (_, f) => { onChange = f; } }), dispatchEvent: (e) => evs.push(e.type) },
-    document: { documentElement: { setAttribute: (k, v) => { attrs[k] = v; } } }, Event: function (t) { this.type = t; } };
-  vm.runInNewContext(read(path.join(R, "theme-boot.js")), sb);
-  const first = attrs["data-theme"]; dark = false; onChange();
-  ok("③ theme-boot:系統深色 → dark;換成淺色 → light 並發 blave:theme", first === "dark" && attrs["data-theme"] === "light" && evs.join() === "blave:theme", JSON.stringify([first, attrs, evs]));
+{ // theme-boot 本身:依 prefers-color-scheme 寫屬性;換的時候整頁淡化一次(減少動態／藏住／不支援 → 一幀換完)
+  const run = (o) => {
+    const attrs = {}, cls = new Set(), evs = [], ls = [], log = []; let onChange = null, dark = true, rafs = [];
+    const vt = o.vt ? { skipped: 0, skipTransition() { this.skipped++; }, finished: new Promise((r) => { o.finish = r; }) } : null;
+    const sb = { window: { matchMedia: (q) => ({ get matches() { return /reduced-motion/.test(q) ? !!o.reduce : dark; }, addEventListener: (_, f) => { onChange = f; } }),
+        dispatchEvent: (e) => { evs.push(e.type); log.push("ev:" + attrs["data-theme"]); } },
+      document: { hidden: !!o.hidden, documentElement: { setAttribute: (k, v) => { attrs[k] = v; }, classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c) },
+        addEventListener: (t, f, c) => ls.push([t, f, c]), removeEventListener: (t, f, c) => { const i = ls.findIndex((x) => x[0] === t && x[1] === f && x[2] === c); if (i >= 0) ls.splice(i, 1); } } },
+      requestAnimationFrame: (f) => rafs.push(f), Event: function (t) { this.type = t; } };
+    if (vt) sb.document.startViewTransition = (cb) => { log.push("vt:" + cls.has("theme-flip")); cb(); log.push("vt-cb-done"); return vt; };
+    vm.runInNewContext(read(path.join(R, "theme-boot.js")), sb);
+    const first = attrs["data-theme"]; dark = false; onChange();
+    return { first, attrs, cls, evs, ls, log, vt, finish: () => o.finish(), flushRaf: () => { for (let i = 0; i < 2; i++) { const q = rafs; rafs = []; q.forEach((f) => f()); } } };
+  };
+  const plain = run({});
+  const flipBefore = plain.cls.has("theme-flip"); plain.flushRaf();
+  ok("③ theme-boot:系統深色 → dark;不支援過渡 → 一幀換成 light 並發 blave:theme,theme-flip 兩個 rAF 後才拿掉",
+    plain.first === "dark" && plain.attrs["data-theme"] === "light" && plain.evs.join() === "blave:theme" && flipBefore && !plain.cls.has("theme-flip"), JSON.stringify([plain.first, plain.attrs, plain.evs]));
+  const rm = run({ reduce: true, vt: true }), hid = run({ hidden: true, vt: true });
+  ok("③ theme-boot:減少動態、視窗藏住時不開過渡(即使支援),照樣一幀換完", [rm, hid].every((x) => !x.log.some((l) => l.startsWith("vt:")) && x.attrs["data-theme"] === "light" && x.evs.join() === "blave:theme"));
+  const v = run({ vt: true });
+  ok("③ theme-boot:支援時先停元件過渡再開過渡,換屬性與 blave:theme 在回呼裡同步發(新畫面那一幀圖表就是新色)",
+    v.log.join() === "vt:true,ev:light,vt-cb-done", v.log.join());
+  const guards = v.ls.filter((x) => x[2] === true).map((x) => x[0]).sort().join();
+  let prevented = 0; v.ls[0][1]({ preventDefault: () => prevented++ });
+  ok("③ theme-boot:過渡中 pointerdown／mousedown 捕獲守門 → preventDefault(保住焦點)＋跳到終態", guards === "mousedown,pointerdown" && prevented === 1 && v.vt.skipped === 1, guards);
+  const flipMid = v.cls.has("theme-flip"); v.finish();
+  setTimeout(() => ok("③ theme-boot:過渡結束才拿掉 theme-flip 與兩個守門", flipMid && !v.cls.has("theme-flip") && v.ls.length === 0, v.ls.length + ""), 0);
+}
+// 淡化本身:時長走 token、曲線對稱;group 漏寫的話瀏覽器預設 0.25s 會撐住過渡與守門
+{ const appCss = read(path.join(R, "app.css"));
+  ok("③ app.css:theme-flip 期間所有元件與偽元素 transition: none !important", /html\.theme-flip \*, html\.theme-flip \*::before, html\.theme-flip \*::after \{ transition: none !important; \}/.test(appCss));
+  ok("③ app.css:::view-transition-group/old/new(root) 三個都走 var(--motion-theme) ease-in-out",
+    /::view-transition-group\(root\), ::view-transition-old\(root\), ::view-transition-new\(root\) \{\s*animation-duration: var\(--motion-theme\); animation-timing-function: ease-in-out;\s*\}/.test(appCss));
+  ok("③ tokens.css:--motion-theme 0.3s", val(LIGHT, "--motion-theme") === "0.3s" && val(DARK, "--motion-theme") === "0.3s");
 }
 
 // ── ④ 主行程 ──
@@ -125,5 +154,4 @@ ok("⑥ 未選字 --ink-2(--ink-3 在灰軌上淺 4.06／深 3.61,12px 不到 AA
 const ownFx = rails.concat(CELLS).filter((r) => Object.values(segCss).map((c) => c.replace(/\/\*[\s\S]*?\*\//g, "")).some((c) => new RegExp("\\." + r + "(?: button)?(?::focus-visible|::before)[^{]*\\{").test(c)));
 ok("⑥ 各 segment 不再自己寫焦點框或熱區(列舉)", ownFx.length === 0, ownFx.join());
 
-console.log(red ? `\n${red} 紅` : "\nALL PASS");
-process.exit(red ? 1 : 0);
+setTimeout(() => { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }, 10);

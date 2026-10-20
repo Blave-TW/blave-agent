@@ -283,6 +283,12 @@
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+/* 明暗切換(theme-boot.js):淡化期間元件的 transition 停掉;group 也要寫,瀏覽器預設在 group 上掛 0.25s,
+   只改 old/new 的話過渡(和點擊守門)會撐到那時才結束 */
+html.theme-flip *, html.theme-flip *::before, html.theme-flip *::after { transition: none !important; }
+::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) {
+  animation-duration: var(--motion-theme); animation-timing-function: ease-in-out;
+}
 
 /* 字型也要掛在這裡:設定窗與確認框在 .app 外面,不然英文系統的 Mac 會拿到 Chromium 預設的襯線字 */
 html, body { margin: 0; height: 100%; background: var(--bg-body); font-family: var(--font-sans); }
