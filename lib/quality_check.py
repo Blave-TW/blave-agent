@@ -611,6 +611,7 @@ _DESKTOP_PUBLIC_DATA = frozenset({
     "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
     "align_feed", "feed_available_at", "join_tw_flow", "normalize_symbol",
     "settlement_signals_from_db", "tw_not_trading", "twstock_industry_name", "txf_settlement_mask",
+    "us_market_closed",
 })
 _BLAVE_DATA = frozenset({
     "fetch_capital_shortage", "fetch_cme_cot", "fetch_cvd_coin", "fetch_cvd_table", "fetch_db_kline",
@@ -651,6 +652,7 @@ _TW_CDN_FIRST_DAY = "2010-01-04"   # = lib/data.py _TW_CDN_FIRST_DAY
 _DATA_INERT = frozenset({
     "DataAccessError", "BatchIncomplete", "UnknownFetcher", "TwPublicUnavailable", "TwCdnUnavailable",
     "UsStockUnavailable", "UsStockNotHere", "UsStockNotFound", "FeedNotPublished", "closed_bars_only", "live_feeds",
+    "us_live_strategy",
     "FEED_TIMING", "TW_FLOWS", "TWSE_INDUSTRY_NAMES", "PUBLIC_SOURCE_EN",
 })
 # Shipped lib modules that call Blave themselves (the report builders; paper_data's

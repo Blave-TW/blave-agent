@@ -4,7 +4,7 @@ recorded 2026-10-01 (tests/fixtures/usstock_daily/, trimmed); yfinance is a stub
 real yfinance 1.7.0 output recorded the same day.
 
   - cloud machine (BLAVE_AGENT_LOCAL unset / '0'): UsStockUnavailable with the sentence to relay,
-    before any request and without serving a cached snapshot; a live tick says it cannot go live yet
+    before any request and without serving a cached snapshot; a desktop live tick naming no strategy is refused
   - caliber: the direct path equals real yfinance history(auto_adjust=True) on the same dates
     (OHLC within 1e-5, Volume exact); the yfinance fallback gives the same numbers again
   - AAPL 2020-08-31 4:1 split reads +3.4 %, not −75 %; Volume is never dividend-scaled
@@ -17,7 +17,7 @@ real yfinance 1.7.0 output recorded the same day.
   - Yahoo gets its own session / UA / throttle; the Taiwan sources' UA is untouched
   - _sanity_check_ohlc widens a bar whose open / close lies outside high-low, ignores float noise
   - off the desktop even the private fetchers (_yahoo_session, _yahoo_get, both raw fetchers) refuse before a request;
-    a cloud scheduled report gets the desktop-only sentence, a live tick the "cannot go live" one
+    a cloud scheduled report and a cloud live tick get the desktop-only sentence
   - no adjclose (Yahoo) / Adj Close filled with Close (yfinance, a dividend in range) and a 200 with no
     bars are failures: never cached; a 429 that outlasts the retries stops both sources for the process
   - a US holiday turning crypto bars NaN in align_feed is announced (day, count, likely cause)
@@ -200,19 +200,20 @@ def t_cloud_fail_closed():
         D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
         check(False, "a live tick is refused")
     except D.UsStockUnavailable as e:
-        check("美股策略目前還不能上線" in str(e), "a live tick (no desktop flag, BLAVE_MODE=live): says US strategies cannot go live yet")
+        check("美股資料目前只在電腦版可用" in str(e),
+              "a live tick on a cloud machine (no desktop flag, BLAVE_MODE=live): the desktop-only sentence")
     finally:
         os.environ.pop("BLAVE_MODE", None)
     # the desktop daemon's ticks carry BLAVE_AGENT_LOCAL=1 (command_listener._local_child_env, for the key-free
-    # TAIFEX / TWSE paths) — the refusal must hold there too, or a US signal would reach the order layer
+    # TAIFEX / TWSE paths) — a tick that names no strategy (tests/check_usstock_live.py: one that does) is refused
     os.environ["BLAVE_AGENT_LOCAL"] = "1"
     os.environ["BLAVE_MODE"] = "live"
     try:
         D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
         check(False, "a desktop live tick is refused")
     except D.UsStockUnavailable as e:
-        check("美股策略目前還不能上線" in str(e) and len(s.calls) == n and yf.calls == [],
-              "a desktop live tick (BLAVE_AGENT_LOCAL=1 + BLAVE_MODE=live): refused by mode, no request")
+        check("這支美股策略不能自動下單" in str(e) and len(s.calls) == n and yf.calls == [],
+              "a desktop live tick naming no strategy (BLAVE_AGENT_LOCAL=1 + BLAVE_MODE=live): refused, no request")
     finally:
         os.environ.pop("BLAVE_MODE", None)
         os.environ.pop("BLAVE_AGENT_LOCAL", None)

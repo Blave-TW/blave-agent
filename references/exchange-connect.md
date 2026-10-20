@@ -178,7 +178,10 @@ do not assume casing or invent names.
    contract list by `lib/stock_perps.py`, positions read back under the
    strategy's name. Keep using `NVDAUSDT` everywhere; never type the venue
    name. No listing on the bound venue → `symbol_unavailable` ("BingX 沒有這檔
-   股票永續"). `[order_reject:stock_agreement]` (Binance -4411, Bybit 110126)
+   股票永續"). A strategy may also take its signal from the stock's own US
+   daily bars (`fetch_usstock_price('NVDA')`) and trade `NVDAUSDT` — desktop
+   app only, one ticker matching `SYMBOL`; saving it on a venue without that
+   perp is refused (`US_VENUE`). Rules: `references/lib.md` › *US stocks / ETFs*. `[order_reject:stock_agreement]` (Binance -4411, Bybit 110126)
    means the account has not signed the venue's stock-perp agreement. Binance:
    neither its app nor its website has a place to sign — ask the user whether
    to sign it; only after they say yes call

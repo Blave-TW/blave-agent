@@ -158,3 +158,35 @@ def canonical(vid, venue_sym, rows):
     raise requests.exceptions.ConnectionError(
         f"{_LABELS.get(vid, vid)} position {venue_sym}: ticker {sorted(tickers)} names "
         f"{sorted(named)} on Binance / more than one {_LABELS.get(vid, vid)} row — not read as flat")
+
+
+def us_signal_refusal(symbol, tickers):
+    """Why a strategy whose signal comes from US daily bars of `tickers` (Yahoo spelling,
+    lib.data._us_symbol) cannot trade `symbol` as that stock's perp — a sentence for the user
+    — or None. The pairing is by name only, NVDA ↔ NVDAUSDT (BRK-B ↔ BRKBUSDT), and only for
+    a symbol Binance lists as EQUITY: a ticker beside it that is not the traded stock is
+    refused rather than read as a filter. Raises ConnectionError when Binance exchangeInfo is
+    unreadable (the caller decides: a live tick skips the round, a save is not judged)."""
+    sym = str(symbol or "").strip().upper()
+    tickers = sorted({str(t).strip().upper() for t in tickers or ()})
+    if not sym:
+        return "沒有 SYMBOL,看不出要在哪一檔股票永續下單(例如 NVDA 的訊號要寫 SYMBOL = 'NVDAUSDT')"
+    if not sym.endswith("USDT") or len(sym) <= 4:
+        return f"SYMBOL 是 {sym},要寫成 Binance 股票永續的名稱(例如 NVDA → NVDAUSDT)"
+    if not tickers:
+        return "看不出訊號用的是哪一檔美股(fetch_usstock_price 的代號要直接寫在程式裡)"
+    base = sym[:-4]
+    off = [t for t in tickers if t.replace("-", "") != base]
+    if off:
+        return (f"訊號用的美股 {'、'.join(off)} 跟下單標的 {sym} 對不上"
+                f"(只能用 {base} 自己的日線出訊號、下 {sym})")
+    rows = binance_rows()
+    if rows is None:
+        raise requests.exceptions.ConnectionError(
+            f"Binance exchangeInfo unreadable — cannot tell whether {sym} is a stock perp")
+    t = rows.get(sym)
+    if not t or t[0] != STOCK:
+        return f"{sym} 不是 Binance 的股票永續,美股訊號只能下股票永續"
+    if t[1] and t[1].upper() != base:
+        return f"{sym} 在 Binance 對應的是 {t[1]},不是 {base}"
+    return None

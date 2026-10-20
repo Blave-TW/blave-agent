@@ -276,7 +276,7 @@ check(isinstance(r, paper_data.PaperNoPrice) and us_calls == ["AAPL", "XLF"],
 data._usstock_daily = real_us_daily
 os.environ.update(BLAVE_AGENT_LOCAL="1", BLAVE_MODE="live")
 r = price("AAPL")
-check(isinstance(r, paper_data.PaperNoPrice) and "go live" in str(r),
+check(isinstance(r, paper_data.PaperNoPrice) and "UsStockNotHere" in str(r),
       f"a live tick: lib.data refuses Yahoo, so no price and no request ({r!r})")
 del os.environ["BLAVE_AGENT_LOCAL"], os.environ["BLAVE_MODE"]
 

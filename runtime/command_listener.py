@@ -3478,6 +3478,71 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
 
 
 _TW_MARKETS = {"tw_index_futures": "台指期", "tw_stock_futures": "個股期貨", "tw_stock": "台股"}
+_VENUE_NAMES = {"binance": "Binance", "bingx": "BingX", "okx": "OKX", "bybit": "Bybit",
+                "gateio": "Gate.io", "stockcoin": "StockCoin"}
+
+
+def _strategy_source(name):
+    for path in (os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                 os.path.join(WORKSPACE, "strategies", name + ".py")):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError:
+            continue
+    return None
+
+
+def _us_signal_refusal(name, venue):
+    """The save's half of the US-stock rule (lib.data._us_live_gate is the tick's): a strategy
+    whose prices include fetch_usstock_price trades only on the desktop, as a Type A whose SYMBOL
+    is the ticker's Binance stock perp (lib.stock_perps.us_signal_refusal), and — routed to a
+    crypto exchange — only where that exchange lists the perp. The refusal sentence, or None.
+    Binance's list or the exchange's contract list unreadable → that part is not judged (the
+    order is refused later as symbol_unavailable), like the TW checks' fail-open."""
+    import importlib
+    import strategy_reporter  # same runtime dir; reads the file, never runs it
+    src = _strategy_source(name)
+    if src is None:
+        return None
+    fetchers, symbol = strategy_reporter._referenced_fetchers(src)
+    if "fetch_usstock_price" not in fetchers:
+        return None
+    if not _local_mode():
+        return (f"US_CLOUD: 「{name}」用美股資料出訊號,美股資料只在電腦版抓得到——"
+                "請在電腦版上線,或取消勾選後再儲存")
+    if _strategy_is_portfolio(name) or strategy_reporter.strategy_type(src) == "C":
+        return (f"US_SYMBOL: 「{name}」是投資組合(Type C)策略,美股訊號目前只能用單一標的策略下單"
+                "——請取消勾選後再儲存")
+    tickers = strategy_reporter.usstock_tickers(src)
+    try:
+        why = _in_workspace(lambda: importlib.import_module("lib.stock_perps").us_signal_refusal(
+            symbol, tickers or ()))
+    except Exception as e:
+        _log(f"amounts: US mapping of {name} not judged ({type(e).__name__}: {str(e)[:120]})")
+        why = None
+    if why:
+        return f"US_SYMBOL: 「{name}」{why}——請改好後再儲存,或取消勾選"
+    if not venue or venue == "paper" or not venue_traits.get(venue, "perp"):
+        return None
+    sym = str(symbol).strip().upper()
+
+    def rules():
+        lib = importlib.import_module(f"lib.order_{venue}")
+        return lib.get_contract_rules(importlib.import_module("lib.venue_wiring").read_env(), sym)
+    label = _VENUE_NAMES.get(venue, venue)
+    try:
+        r = _in_workspace(rules)
+    except Exception as e:
+        if "[order_reject:symbol_unavailable]" in str(e):
+            return (f"US_VENUE: 「{name}」的下單標的 {sym} 在 {label} 沒有對應的股票永續——"
+                    "請改綁有這檔的交易所,或取消勾選後再儲存")
+        _log(f"amounts: {sym} on {venue} not judged ({type(e).__name__}: {str(e)[:120]})")
+        return None
+    if isinstance(r, dict) and r.get("equity") is False:
+        return (f"US_VENUE: 「{name}」的下單標的 {sym} 在 {label} 是加密幣、不是股票永續——"
+                "請改綁有這檔股票永續的交易所,或取消勾選後再儲存")
+    return None
 
 
 def _strategy_market_of(name):
@@ -3931,6 +3996,10 @@ def _cmd_amounts(args):
                 raise ValueError(
                     f"MARKET_VENUE: 「{k}」是{_TW_MARKETS[market]}策略,{venue} 是加密貨幣交易所、下不了"
                     "——請改綁台灣期貨商,或取消勾選後再儲存")
+    for k in clean:
+        why = _us_signal_refusal(k, cfg["exchanges"].get(k))
+        if why:
+            raise ValueError(why)
     prev_contracts = _saved_contracts(cfg)
     contracts = _contracts_for_save(args, clean, prev_amounts, cfg)
     if not isinstance(cfg.get("asset_specs"), dict):

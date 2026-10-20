@@ -2170,6 +2170,10 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         from lib.data import live_feeds
     except ImportError:
         live_feeds = contextlib.nullcontext
+    try:  # live: the US-stock gate reads which strategy (SYMBOL, venue) is fetching
+        from lib.data import us_live_strategy
+    except ImportError:
+        us_live_strategy = lambda *a: contextlib.nullcontext()
     recorder = _FetchRecorder(config) if mode == 'backtest' else None
     # the bars align_feed cut off this fetch's tail (a live tick would wait for them instead):
     # a backtest whose tail was cut cannot stand in for the live target (_typec_preview)
@@ -2180,6 +2184,8 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         _data = None
     try:
         with closed_bars_only(), (live_feeds() if mode != 'backtest' else contextlib.nullcontext()), \
+                (us_live_strategy(strategy_name, config.get('SYMBOL'))
+                 if mode != 'backtest' else contextlib.nullcontext()), \
                 (recorder.recording() if recorder else contextlib.nullcontext()):
             data = fetch_data_fn(hdrs)
     finally:

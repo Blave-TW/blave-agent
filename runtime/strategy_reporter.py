@@ -319,6 +319,43 @@ def _referenced_fetchers(src):
     return found & set(_PRICE_FETCHERS), symbol
 
 
+def usstock_tickers(src):
+    """The tickers the source's fetch_usstock_price calls name — a string literal, or a
+    module-level name bound once to one — spelled as lib.data._us_symbol does ('brk.b' →
+    'BRK-B'); None when the file does not parse or any call's ticker is something else (a
+    loop variable, a list), i.e. cannot be told without running the code. Empty set: no call."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return None
+    consts, seen = {}, set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name):
+            n = node.targets[0].id
+            ok = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+            consts[n] = node.value.value if ok and n not in seen else None
+            seen.add(n)
+    out = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        if (f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None) \
+                != "fetch_usstock_price":
+            continue
+        arg = node.args[0] if node.args else next(
+            (k.value for k in node.keywords if k.arg == "symbol"), None)
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            t = arg.value
+        elif isinstance(arg, ast.Name) and consts.get(arg.id):
+            t = consts[arg.id]
+        else:
+            return None
+        out.add(t.strip().upper().replace(".", "-"))
+    return out
+
+
 def strategy_market(src):
     """Which market the strategy's prices come from: crypto / tw_index_futures /
     tw_stock_futures / tw_stock / us_stock / global_futures / mixed (two or more), or None

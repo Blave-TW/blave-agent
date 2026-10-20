@@ -1,10 +1,10 @@
-"""The 0.1.12 market ↔ exchange check was dropped before release (Wei): saving amounts no longer
-looks at what market a strategy's data came from. Known cost, accepted: a US-stock strategy can be
-picked and funded — its live ticks fail (lib.data fetch_usstock_price only runs in desktop chat
-turns and backtests).
+"""The 0.1.12 market ↔ exchange check was dropped before release (Wei): saving amounts reads no
+market_hold.json and runs no market check of its own. What a save does judge by market is the TW
+gate (MARKET_VENUE, tests/check_amounts_president_symbol.py) and the US-stock one (US_CLOUD /
+US_SYMBOL / US_VENUE, tests/check_usstock_save_gate.py).
 
-  - a US strategy saves at any amount, alone or next to a crypto one, on the desktop and on a cloud
-    box; config, UI mirror and schedules are written as for any other strategy
+  - a crypto strategy saves at any amount on the desktop and on a cloud box; config, UI mirror and
+    schedules are written as for any other strategy
   - strategy code that mentions BLAVE_AGENT_LOCAL saves too (no MARKET_FLAG)
   - a stale state/market_hold.json left by a 0.1.12 dev build changes nothing: the reconciler no
     longer reads it, the report no longer writes it
@@ -82,8 +82,7 @@ for mode in ("1", None):
     else:
         os.environ.pop("BLAVE_AGENT_LOCAL", None)
     where = "desktop" if mode else "cloud"
-    for amounts, label in (({"us_spy_sma": 100}, "funded"), ({"us_spy_sma": 0}, "picked at 0"),
-                           ({"btc_sma": 100, "us_spy_sma": 0}, "next to a crypto strategy"),
+    for amounts, label in (({"btc_sma": 100}, "funded"), ({"btc_sma": 0}, "picked at 0"),
                            ({"flag_env": 50}, "mentioning BLAVE_AGENT_LOCAL")):
         reset()
         msg = save(amounts)

@@ -522,7 +522,13 @@ def _check_freshness(mod, expected):
         from lib.data import live_feeds
     except ImportError:
         from contextlib import nullcontext as live_feeds
-    with closed_bars_only(), live_feeds():
+    try:  # and the US-stock gate reads which strategy is fetching
+        from lib.data import us_live_strategy
+    except ImportError:
+        from contextlib import nullcontext
+        us_live_strategy = lambda *a: nullcontext()
+    with closed_bars_only(), live_feeds(), \
+            us_live_strategy(_name_of(mod), getattr(mod, "SYMBOL", None)):
         data = mod.fetch_data(hdrs)
     inactive = set()
     if isinstance(data, tuple):
@@ -540,6 +546,12 @@ def _check_freshness(mod, expected):
         _dead = (_dead_members(verdict[3], inactive, td, expected),
                  _dead_members(verdict[3], (), td, expected))
     return verdict
+
+
+def _name_of(mod):
+    """The strategy folder _load_strategy_module loaded `mod` from — the key the 下單設定 routes."""
+    n = getattr(mod, "__name__", "")
+    return n[len("strategy_wait_"):] if n.startswith("strategy_wait_") else getattr(mod, "STRATEGY_NAME", None)
 
 
 def _fingerprint(latest):
@@ -716,15 +728,18 @@ def _tick(name):
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     expected = _expected_closed_bar_open(interval, now)
     tw_stock = interval == "1d" and _tw_stock_daily(name)
+    us_stock = interval == "1d" and not tw_stock and _us_stock_daily(name)
     if tw_stock:
         expected = _tw_skip_weekend(expected)
+    elif us_stock:
+        expected = _us_expected(now)
     expected_iso = expected.isoformat()
 
     state = _load_state(name)
 
     # Fast path: this bar's already been run — stay quiet, no fetch, no log, no lock.
     if state.get("last_processed_bar") == expected_iso:
-        if tw_stock and (state.get("pending_since") or state.get("stall_alert_at")):
+        if (tw_stock or us_stock) and (state.get("pending_since") or state.get("stall_alert_at")):
             _clear_wait(name, state)   # a wait left by an older wait_for_bar on a closed day
         return
 
@@ -771,6 +786,8 @@ def _tick(name):
                 # not main()'s "wrapper itself is broken" alert — and back off
                 # like any other failed attempt instead of retrying every minute.
                 output = f"fetch_data() raised while checking freshness: {e}\n" + traceback.format_exc()
+                if _is_us_unavailable(e):   # last: alert() keeps the tail of the output
+                    output += "\n美股日線這輪抓不到,沒有算訊號,部位維持原樣不動,稍後自動重試。"
                 _alert_failure().alert(name, "fetch_error", output)
                 state["last_attempt_failed_at"] = time.time()
                 _save_state(name, state)
@@ -957,6 +974,55 @@ def _tw_stock_daily(name):
     except OSError:
         return False
     return bool(fetchers) and fetchers <= _TW_STOCK_DAILY_FETCHERS and not _sized_in_lots(name)
+
+
+def _us_stock_daily(name):
+    """Every price the strategy reads is a US daily bar (fetch_usstock_price): bars exist on NYSE
+    trading days only. Text only, like _tw_stock_daily."""
+    try:
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
+            fetchers = _price_fetchers(f.read())
+    except OSError:
+        return False
+    return fetchers == {"fetch_usstock_price"}
+
+
+_US_FINAL_HOUR = 17   # New York; = lib.data FEED_TIMING['usstock_price'] (tests/check_usstock_live pins it)
+
+
+def _us_expected(now):
+    """`now` (naive UTC) → the latest NYSE session whose bar is final, as a naive midnight — the
+    label fetch_usstock_price gives it. The bar is final at 17:00 New York, so the signal runs
+    then, not at the next UTC midnight the plain floor would wait for."""
+    import pandas as pd
+    ny = pd.Timestamp(now).tz_localize("UTC").tz_convert("America/New_York")
+    day = datetime(ny.year, ny.month, ny.day)
+    if ny.hour < _US_FINAL_HOUR:
+        day -= timedelta(days=1)
+    return _us_last_session(day)
+
+
+def _us_last_session(day):
+    """`day` (naive midnight) → the latest NYSE trading day at or before it (lib.data
+    us_market_closed; weekends only when that lib is older). A holiday is skipped, never waited
+    on: its bar does not exist, the position stays as the last session left it."""
+    try:
+        from lib.data import us_market_closed
+    except ImportError:
+        us_market_closed = lambda d: d.weekday() >= 5
+    for _ in range(10):   # bounded: no NYSE closure runs this long
+        if not us_market_closed(day):
+            break
+        day -= timedelta(days=1)
+    return day
+
+
+def _is_us_unavailable(exc):
+    try:
+        from lib.data import UsStockUnavailable
+    except ImportError:
+        return False
+    return isinstance(exc, UsStockUnavailable)
 
 
 def _clear_wait(name, state):

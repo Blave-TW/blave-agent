@@ -6616,11 +6616,9 @@ _US_DESKTOP_ONLY = (
     "available only in the desktop app.")
 
 
-_US_NOT_LIVE = (
-    "US stock data is fetched only in the desktop app's chat turns, backtests and scheduled reports; "
-    "a live trading tick (desktop or cloud) cannot fetch it, so a US strategy cannot go live yet. "
-    "Stop here and tell the user in one sentence: 美股策略目前還不能上線,美股資料只能在電腦版回測與對話裡用 / "
-    "US stock strategies cannot go live yet; US data works only for backtests and chat in the desktop app.")
+def _us_not_live(reason):
+    return (f"This live tick may not fetch US stock data: {reason}. The position is left as it is. "
+            f"Stop here and tell the user in one sentence: 這支美股策略不能自動下單:{reason}")
 
 
 class UsStockUnavailable(RuntimeError):
@@ -6641,18 +6639,92 @@ def _usstock_allowed():
     return os.environ.get('BLAVE_AGENT_LOCAL') == '1'
 
 
+def _us_live_tick():
+    return os.environ.get('BLAVE_MODE') == 'live' and os.environ.get('BLAVE_SCHEDULED_RUN') != '1'
+
+
+_US_LIVE = None    # (strategy name, SYMBOL) while a live tick fetches under us_live_strategy()
+_us_live_pass = 0  # >0 inside fetch_usstock_price once _us_live_gate let this live tick through
+
+
+class us_live_strategy:
+    """Scope naming the strategy a live tick fetches for (lib.runner, manager/wait_for_bar):
+    the US gate (_us_live_gate) needs its SYMBOL and the venue it is routed to."""
+    def __init__(self, name, symbol):
+        self.scope = (name, symbol)
+
+    def __enter__(self):
+        global _US_LIVE
+        self.prior, _US_LIVE = _US_LIVE, self.scope
+        return self
+
+    def __exit__(self, *exc):
+        global _US_LIVE
+        _US_LIVE = self.prior
+        return False
+
+
 def _us_require_desktop():
     """Every function that sends a request to Yahoo calls this first, so no path — public or
-    private — reaches Yahoo off the desktop, and no live trading tick reaches it anywhere: the
-    desktop daemon's ticks carry BLAVE_AGENT_LOCAL=1 too (the key-free TAIFEX / TWSE paths need
-    it), and there is no venue a US signal could be sent to, so the refusal is by BLAVE_MODE, not
-    by the flag happening to be absent. A live tick gets the "cannot go live yet" sentence; a
-    cloud machine (scheduled report included, which also runs with BLAVE_MODE=live) gets the
-    desktop-only one."""
-    live_tick = os.environ.get('BLAVE_MODE') == 'live' and os.environ.get('BLAVE_SCHEDULED_RUN') != '1'
-    if _usstock_allowed() and not live_tick:
+    private — reaches Yahoo off the desktop. A live trading tick (desktop or cloud; a cloud
+    scheduled report also runs with BLAVE_MODE=live and gets the desktop-only sentence) passes
+    only from inside fetch_usstock_price after _us_live_gate found it trading the stock's own
+    perp; the refusal is by BLAVE_MODE, not by the flag happening to be absent."""
+    if _usstock_allowed() and (not _us_live_tick() or _us_live_pass):
         return
-    raise UsStockNotHere(_US_NOT_LIVE if live_tick else _US_DESKTOP_ONLY)
+    raise UsStockNotHere(_US_DESKTOP_ONLY if not _usstock_allowed() else
+                         _us_not_live("美股資料只在對話、回測、報告,與綁在加密交易所的股票永續策略上用得到"))
+
+
+def _us_routed_venue(name):
+    """The venue the 下單設定 routes `name` to — the UI mirror when it is valid, as
+    lib.portfolio.load_portfolio_config reads it (not imported: lib.data stays out of the
+    order-placing import closure, tests/check_sched_bash_guard.py); None when unrouted."""
+    try:
+        with open('manager/amounts.ui.json', encoding='utf-8') as f:
+            ui = json.load(f)
+        if isinstance(ui.get('amounts'), dict) and isinstance(ui.get('exchanges'), dict):
+            return ui['exchanges'].get(name) or None
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        with open('manager/portfolio_config.json', encoding='utf-8') as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        return None
+    return (cfg.get('exchanges') or {}).get(name) or None
+
+
+def _us_live_gate(sym):
+    """A live tick may fetch `sym` only on the desktop, for a Type A strategy routed to a crypto
+    exchange or paper whose SYMBOL is `sym`'s Binance stock perp (lib.stock_perps
+    us_signal_refusal). UsStockNotHere with the reason otherwise; UsStockUnavailable when the
+    routing or Binance's contract list cannot be read this round (the tick fails, the position
+    stays). Whether the bound exchange lists that perp is the order's check
+    (symbol_unavailable) and the save's, not this one's."""
+    if not _usstock_allowed():
+        raise UsStockNotHere(_US_DESKTOP_ONLY)
+    if _US_LIVE is None:
+        raise UsStockNotHere(_us_not_live("這次執行沒有標明是哪一支策略,請更新 blave agent"))
+    name, symbol = _US_LIVE
+    try:
+        venue = _us_routed_venue(name)
+    except (OSError, ValueError, AttributeError) as e:
+        raise UsStockUnavailable(f"{name}: the 下單設定 is unreadable this round ({type(e).__name__}) — "
+                                 f"US bars not fetched, the position is left as it is") from e
+    from lib import stock_perps, venue_traits
+    if not venue:
+        raise UsStockNotHere(_us_not_live(f"「{name}」還沒綁交易所"))
+    if venue != 'paper' and not venue_traits.get(venue, 'perp'):
+        raise UsStockNotHere(_us_not_live(f"「{name}」綁的是台灣期貨商,美股訊號只能下加密交易所的股票永續"))
+    if symbol is None:
+        raise UsStockNotHere(_us_not_live(f"「{name}」沒有單一 SYMBOL,投資組合(Type C)策略還不能用美股訊號下單"))
+    try:
+        why = stock_perps.us_signal_refusal(symbol, {sym})
+    except requests.exceptions.ConnectionError as e:
+        raise UsStockUnavailable(f"{name}: {e} — US bars not fetched, the position is left as it is") from e
+    if why:
+        raise UsStockNotHere(_us_not_live(f"「{name}」{why}"))
 
 
 def _us_check_block(src):
@@ -6669,8 +6741,8 @@ def _us_symbol(symbol):
         raise ValueError(f"fetch_usstock_price: {symbol!r} looks like a Taiwan stock id — "
                          f"use fetch_twstock_price")
     if s.endswith(('USDT', 'USDC')):
-        raise ValueError(f"fetch_usstock_price: {symbol!r} is a Binance perp symbol (tokenized US "
-                         f"stocks included) — use fetch_kline")
+        raise ValueError(f"fetch_usstock_price: {symbol!r} is a Binance perp symbol — its own candles "
+                         f"come from fetch_kline; for US daily bars pass the ticker ('NVDA')")
     s = s.replace('.', '-')
     if not re.fullmatch(r'[A-Z]{1,5}(-[A-Z]{1,2})?', s):
         raise ValueError(f"fetch_usstock_price: expects a US ticker as Yahoo spells it ('AAPL', "
@@ -6813,6 +6885,39 @@ def _us_final_at(days):
     return FEED_TIMING['usstock_price']['available'](pd.DatetimeIndex(days).tz_localize(_US_TZ))
 
 
+# NYSE full-day closures outside the rule table below (national days of mourning, storms).
+_NYSE_SPECIAL_CLOSED = ('2001-09-11', '2001-09-12', '2001-09-13', '2001-09-14', '2004-06-11',
+                        '2007-01-02', '2012-10-29', '2012-10-30', '2018-12-05', '2025-01-09')
+
+
+def us_market_closed(day):
+    """True when NYSE does not trade on `day` (a date): weekends, its holiday rules (NYSE Rule
+    7.2: New Year's Day — not moved back to a Friday — MLK Day, Washington's Birthday, Good
+    Friday, Memorial Day, Juneteenth from 2022, Independence Day, Labor Day, Thanksgiving,
+    Christmas; a Saturday holiday closes the Friday before, a Sunday one the Monday after) and
+    _NYSE_SPECIAL_CLOSED. Not the federal calendar (_us_fed_closed_days): Columbus and Veterans
+    Day trade. A closure announced later (a new day of mourning) reads as open."""
+    d = pd.Timestamp(day).normalize()
+    if d.dayofweek >= 5:
+        return True
+    if d.strftime('%Y-%m-%d') in _NYSE_SPECIAL_CLOSED:
+        return True
+    from pandas.tseries.holiday import (AbstractHolidayCalendar, GoodFriday, Holiday,
+                                        USLaborDay, USMartinLutherKingJr, USMemorialDay,
+                                        USPresidentsDay, USThanksgivingDay, nearest_workday,
+                                        sunday_to_monday)
+
+    class _Nyse(AbstractHolidayCalendar):
+        rules = [Holiday('NewYear', month=1, day=1, observance=sunday_to_monday),
+                 USMartinLutherKingJr, USPresidentsDay, GoodFriday, USMemorialDay,
+                 Holiday('Juneteenth', month=6, day=19, start_date='2022-01-01',
+                         observance=nearest_workday),
+                 Holiday('Independence', month=7, day=4, observance=nearest_workday),
+                 USLaborDay, USThanksgivingDay,
+                 Holiday('Christmas', month=12, day=25, observance=nearest_workday)]
+    return d in _Nyse().holidays(d - pd.Timedelta(days=3), d + pd.Timedelta(days=3))
+
+
 def _us_published(df, now):
     """Rows whose bar is final by `now`: Yahoo hands today's bar back while the session is still
     open, and a half session must reach neither the cache nor a backtest."""
@@ -6884,7 +6989,9 @@ def fetch_usstock_price(symbol, start, end, headers=None):
 
     Desktop app only (BLAVE_AGENT_LOCAL=1): fetched on the user's own computer from Yahoo
     Finance's public chart endpoint, then the yfinance package; elsewhere raises
-    UsStockUnavailable with a sentence to relay. `headers` is accepted for a uniform fetch_data
+    UsStockUnavailable with a sentence to relay. A live tick fetches it only for a Type A
+    strategy routed to a crypto exchange (or paper) whose SYMBOL is this ticker's Binance stock
+    perp, NVDA → 'NVDAUSDT' (_us_live_gate). `headers` is accepted for a uniform fetch_data
     signature and never sent. A day's bar appears from 17:00 New York time
     (FEED_TIMING['usstock_price']). df.attrs['source'] = 'Yahoo' or 'yfinance'; a report or
     reply that shows these numbers carries _US_SOURCE_ZH (personal use only, may be wrong).
@@ -6893,7 +7000,16 @@ def fetch_usstock_price(symbol, start, end, headers=None):
     datetime.strptime(start, '%Y-%m-%d')
     if end:
         datetime.strptime(end, '%Y-%m-%d')
-    raw = _usstock_daily(sym, end)
+    global _us_live_pass
+    if _us_live_tick():
+        _us_live_gate(sym)
+        _us_live_pass += 1
+        try:
+            raw = _usstock_daily(sym, end)
+        finally:
+            _us_live_pass -= 1
+    else:
+        raw = _usstock_daily(sym, end)
     df = _us_adjust(raw)
     keep = df.index >= pd.Timestamp(start)
     if end:
@@ -7377,7 +7493,7 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
             days = pd.DatetimeIndex(local.floor('D').unique())
             cand = days[days.dayofweek < 5]
         elif spec['calendar'] == 'us_trading_days':
-            # New York weekdays the bars span; an exchange holiday is not known here, so on one
+            # New York weekdays the bars span; the NYSE calendar (us_market_closed) is not applied, so on a holiday
             # a live tick waits for a row that never comes (as a TW holiday does for the TW feeds)
             days = pd.DatetimeIndex(local.floor('D').unique())
             cand = days[days.dayofweek < 5]
@@ -7405,7 +7521,7 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
                 names = ', '.join(str(d.date()) for d in days[:5]) + ('' if len(days) <= 5 else f' (+{len(days) - 5} more)')
                 print(f"  ⚠️  {source}: {int(mid.sum())} bar(s) set to NaN, {index[mid][0]} → "
                       f"{index[mid][-1]} — no US row for weekday(s) {names}: most likely a US market "
-                      f"holiday (the lib has no holiday table), else a day missing from the data")
+                      f"holiday (align_feed does not apply the NYSE calendar), else a day missing from the data")
         if len(stale) and stale[-1]:
             k = int(np.flatnonzero(c_s == need_ns[-1])[0])
             need, due = cand[k], c_avail[k]

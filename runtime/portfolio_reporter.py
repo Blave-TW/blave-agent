@@ -539,7 +539,7 @@ def typec_previews(cfg, states, now=None):
         except OSError:
             continue
         markets = _price_markets(src)
-        # a live tick refuses US-stock prices (lib.data UsStockNotHere): no orders would ever come
+        # US-stock prices: no live portfolio (Type C) on them, so no preview of one
         if _code_hash(src) != data["code_hash"] or "us_stock" in markets:
             continue
         weights = _portfolio_weights(data.get("weights"))
@@ -623,6 +623,7 @@ def backtest_previews(cfg, states, now=None):
         except OSError:
             continue
         markets = _price_markets(src)
+        # US-stock prices: no preview — _preview_is_latest knows no NYSE calendar
         if _code_hash(src) != data["code_hash"] or "us_stock" in markets:
             continue
         try:
