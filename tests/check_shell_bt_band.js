@@ -9,12 +9,12 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
 const STR = vm.runInNewContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
 
 const TOK = { "--color-primary": "#ff8a00", "--color-red": "#e5484d", "--border-hairline": "#2a3138", "--ink-3": "#818f97",
-  "--chart-band": "#546168", "--color-greyMedium": "#818f97", "--surface-muted": "#1c2228", "--color-green": "#30a46c" };
+  "--color-greyDark": "#546168", "--chart-band": "#546168", "--color-greyMedium": "#818f97", "--surface-muted": "#1c2228", "--color-green": "#30a46c" };
 const BAND_FILL = "rgba(84,97,104,0.55)";
 
 class Node {
   constructor(tag) { this.tag = tag; this.className = ""; this.children = []; this.text = ""; this.attrs = {}; this.id = ""; this.type = ""; this.style = {}; }
-  appendChild(n) { this.children.push(n); return n; }
+  appendChild(n) { if (n.tag === "#frag") this.children.push(...n.children); else this.children.push(n); return n; }   // fragment 跟真 DOM 一樣攤平
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   get textContent() { return this.text + this.children.map((c) => c.textContent).join(""); }
@@ -35,6 +35,8 @@ function harness(size) {
     console, window: { devicePixelRatio: 1 },
     document: {
       documentElement: {},
+      createDocumentFragment: () => new Node("#frag"),
+      createTextNode: (s) => { const n = new Node("#text"); n.text = String(s); return n; },
       createElement(tag) {
         const n = new Node(tag);
         if (tag === "canvas") {
@@ -183,14 +185,81 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
 // ── CSS 色票與字串 ──
 {
   const css = fs.readFileSync(path.join(R, "report-backtest.css"), "utf8");
-  ok("CSS:帶色票 10×10 radius-micro、--chart-band 55%(與圖同);中位數色票 14px 2px 虛線 greyMedium;圖例可折行",
+  ok("CSS:帶色票 10×10 radius-micro、--chart-band 55%(與圖同);中位數與 0050 共用一條色票規則 14px 2px 虛線 greyMedium;圖例可折行",
     /\.bt-legend\.band::before \{[^}]*width: 10px;[^}]*height: 10px;[^}]*var\(--radius-micro\)[^}]*color-mix\(in srgb, var\(--chart-band\) 55%, transparent\)/.test(css)
-    && /\.bt-legend\.med::before \{[^}]*width: 14px;[^}]*border-top: 2px dashed var\(--color-greyMedium\)/.test(css)
+    && /\.bt-legend\.med::before,\n\.bt-legend\.bh::before \{[^}]*width: 14px;[^}]*border-top: 2px dashed var\(--color-greyMedium\)/.test(css)
     && /\.bt-label \{[^}]*flex-wrap: wrap;/.test(css) && /\.bt-legend \{ position: relative;/.test(css));
   const keys = ["bt.legendBand", "bt.legendMedian", "bt.tip.band", "bt.tip.bandNarrow", "bt.chartAriaBand"];
   ok("五個新字串兩語都有;舊的 bt.legendMedianNarrow 兩語都不在", keys.every((k) => STR.zh[k] && STR.en[k]) && !("bt.legendMedianNarrow" in STR.zh) && !("bt.legendMedianNarrow" in STR.en));
   ok("圖例字照 spec 逐字", STR.zh["bt.legendBand"] === "隨機 p5–p95" && STR.zh["bt.legendMedian"] === "隨機中位數" && STR.zh["bt.tip.bandNarrow"] === "隨機投組的範圍太窄，只畫中位數。"
     && STR.en["bt.legendBand"] === "Random p5–p95" && STR.en["bt.legendMedian"] === "Random median" );
+}
+
+// ── 台股 Type C:0050 買進持有(designer typec-0050-benchmark-2026-10-20 A 版)──
+{
+  const SER = dates.map((_, i) => 1 + 0.9 * (i / (N - 1)));   // 終點 1.9×,比策略高
+  const bhOf = (extra) => ({ kind: "0050_bh", symbol: "0050", adjusted: true, fee_pct: 0, ret_pct: 61.75, cagr_pct: 9, mdd_pct: -20, series: SER, ...(extra || {}) });
+  const tw = (bh, extra) => ({ "Total Return [%]": 50, daily_dates: dates, daily_returns: rets, benchmark_bh: bh, ...(extra || {}) });
+  const { R: RR } = harness();
+  const rbh = RR._bt.readBh;
+  ok("readBh:合法 → ×100", (() => { const v = rbh(tw(bhOf())); return !!v && v.length === N && v[0] === 100 && Math.abs(v[N - 1] - 190) < 1e-9; })());
+  const noSer = bhOf(); delete noSer.series;
+  const badBh = [["null", tw(null)], ["沒有 series", tw(noSer)], ["series 少一點", tw(bhOf({ series: SER.slice(1) }))], ["series 多一點", tw(bhOf({ series: SER.concat([2]) }))],
+    ["有 NaN", tw(bhOf({ series: SER.map((v, i) => (i === 5 ? NaN : v)) }))], ["有 0", tw(bhOf({ series: SER.map((v, i) => (i === 5 ? 0 : v)) }))],
+    ["有字串", tw(bhOf({ series: SER.map((v, i) => (i === 5 ? "1" : v)) }))], ["沒有鍵", { daily_dates: dates, daily_returns: rets }]];
+  const leak = badBh.filter(([, st]) => rbh(st) !== null).map(([n]) => n);
+  ok("readBh:" + badBh.length + " 種壞輸入一律 null(不畫線)", leak.length === 0, leak.join("、"));
+  ok("有 benchmark_bh 鍵(含 null)就不讀隨機帶", RR._bt.readBand(tw(bhOf(), { benchmark_band: WIDE })) === null && RR._bt.readBand(tw(null, { benchmark_band: WIDE })) === null);
+  const d2 = dates.map((d, i) => (i === 3 ? null : d));
+  const s2 = RR._bt.buildSeries(tw(bhOf(), { daily_dates: d2 }));
+  ok("buildSeries:跳過非字串日期時 0050 也跳過同一天", !!s2.bh && s2.bh.length === s2.equity.length && s2.bh[3] === SER[4] * 100);
+
+  const mrow = (box) => byCls(box, "bt-mrow").find((r) => /0050|基準報酬/.test(r.children[0].textContent));
+  const r = render(tw(bhOf()));
+  const ev = scan(r.h.calls);
+  const dash = ev.filter((e) => e.op === "stroke" && e.stroke === TOK["--color-greyMedium"] && e.lw === 1.2 && e.dash === "[4,4]");
+  const eq = ev.filter((e) => e.op === "stroke" && e.stroke === TOK["--color-primary"] && e.lw === 2);
+  const grid = ev.filter((e) => e.op === "stroke" && e.stroke === TOK["--border-hairline"]);
+  ok("0050:一條 greyMedium 1.2px [4,4] 虛線、不填色,圖層 格線 → 0050 → 策略線",
+    dash.length === 1 && !ev.some((e) => e.op === "fill" && e.fill === BAND_FILL) && grid[0].i < dash[0].i && dash[0].i < eq[0].i, JSON.stringify([dash.length, eq.length]));
+  let bp = dash[0] ? dash[0].i : 0; while (bp > 0 && r.h.calls[bp][0] !== "beginPath") bp--;
+  const ys = r.h.calls.slice(bp, dash[0] ? dash[0].i : 0).filter((c) => c[0] === "lineTo" || c[0] === "moveTo").map((c) => c[2]);
+  ok("0050:y 範圍含它(1.9× 也在權益區內)", ys.length === N && ys.every((y) => y >= EQ_TOP - 1e-6 && y <= EQ_TOP + EQ_H + 1e-6), ys.length + " 點");
+  ok("0050 圖例:權益 → 0050 持有(不掛 tooltip)→ 回撤", JSON.stringify(r.legend()) === JSON.stringify([["bt-legend", "權益"], ["bt-legend bh", "0050 持有"], ["bt-legend dd", "回撤"]]), JSON.stringify(r.legend()));
+  ok("0050:canvas aria 用 0050 那句", r.chart.getAttribute("aria-label") === STR.zh["bt.chartAria0050"]);
+  const row = mrow(r.box), btn = row && row.children[0].children[0];
+  ok("統計列:標籤 0050 持有、0050 包 .mono、值 +61.75% 中性色",
+    !!btn && btn.children[0].className === "mono" && btn.children[0].textContent === "0050" && btn.textContent === "0050 持有"
+    && row.children[1].textContent === "+61.75%" && !/pos|neg/.test(row.children[1].className), row && JSON.stringify([btn && btn.textContent, btn && btn.children.map((c) => c.className + ":" + c.textContent), row.children[1].textContent, row.children[1].className]));
+  ok("統計列 tooltip:正常句", row && row.children[0].children[1].textContent === STR.zh["bt.tip.benchmark0050"]);
+  r.h.fireResize();
+  ok("resize 之後圖例照樣三項", r.head.children.length === 3);
+
+  const rn = render(tw(null));
+  const rowN = mrow(rn.box);
+  ok("benchmark_bh = null:標籤照寫、值「—」(na)、tooltip 換原因句、不畫線、圖例兩項",
+    rowN && rowN.children[0].children[0].textContent === "0050 持有" && rowN.children[1].textContent === "—" && / na/.test(rowN.children[1].className)
+    && rowN.children[0].children[1].textContent === STR.zh["bt.tip.benchmark0050Na"]
+    && !scan(rn.h.calls).some((e) => e.dash === "[4,4]") && rn.head.children.length === 2 && rn.chart.getAttribute("aria-label") === STR.zh["bt.chartAria"]);
+  const rs = render(tw(noSer));
+  const rowS = mrow(rs.box);
+  ok("沒有 series:數字照出、正常 tooltip、不畫線、圖例兩項",
+    rowS && rowS.children[1].textContent === "+61.75%" && rowS.children[0].children[1].textContent === STR.zh["bt.tip.benchmark0050"]
+    && !scan(rs.h.calls).some((e) => e.dash === "[4,4]") && rs.head.children.length === 2);
+  const ro = render({ ...base, benchmark_band: WIDE });
+  const rowO = mrow(ro.box);
+  ok("舊台股 / 加密 Type C(只有隨機帶):基準報酬 + 隨機投組句、照畫帶",
+    rowO && rowO.children[0].children[0].textContent === "基準報酬" && rowO.children[1].textContent === "贏過 95% 隨機投組"
+    && rowO.children[0].children[1].textContent === STR.zh["bt.tip.benchmarkRank"] && scan(ro.h.calls).some((e) => e.op === "fill" && e.fill === BAND_FILL));
+  const ra = render({ "Benchmark Return [%]": 12.3, "Total Return [%]": 50, daily_dates: dates, daily_returns: rets });
+  const rowA = mrow(ra.box);
+  ok("Type A 照舊:基準報酬 +12.30%、Type A 的 tooltip", rowA && rowA.children[1].textContent === "+12.30%" && rowA.children[0].children[1].textContent === STR.zh["bt.tip.benchmark"]);
+  const k4 = ["bt.benchmark0050", "bt.tip.benchmark0050", "bt.tip.benchmark0050Na", "bt.chartAria0050"];
+  ok("四個新字串兩語都有,0050 不翻", k4.every((k) => STR.zh[k] && STR.en[k] && (k === "bt.tip.benchmark0050Na" || STR.en[k].includes("0050")) && STR.zh[k].includes("0050")));
+  ok("字串照 spec 逐字", STR.zh["bt.benchmark0050"] === "0050 持有" && STR.en["bt.benchmark0050"] === "0050 buy & hold"
+    && STR.zh["bt.tip.benchmark0050Na"] === "這次回測沒有 0050 的價格可比。" && STR.en["bt.chartAria0050"] === "Equity curve, 0050 buy & hold and drawdown over the backtest period");
+  const tok = fs.readFileSync(path.join(R, "tokens.css"), "utf8");
+  ok("tokens.css:--chart-band 亮 #818f97、暗 greyDark", /:root \{[\s\S]*--chart-band: #818f97;[\s\S]*\[data-theme="dark"\] \{[\s\S]*--chart-band: var\(--color-greyDark\);/.test(tok));
 }
 
 console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");

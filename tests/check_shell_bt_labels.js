@@ -22,7 +22,7 @@ ok("640 那段裡是三欄並排與最右欄泡泡往左", /@container \(min-wid
 const row = rule(".bt-mrow"), tip = rule(".bt-mk .mp-tip");
 ok("列:align-items 是 first baseline(數字對標籤第一行)", !!row && /align-items: first baseline;/.test(row), row);
 ok("標籤鈕:display block + text-align left(折行時靠左;block 才讓 first baseline 取到第一行)", !!tip && /display: block;/.test(tip) && /text-align: left;/.test(tip), tip);
-ok("標籤仍是 .bt-mk 裡的 button.mp-tip(tooltip 相鄰選擇器與定位基準不變)", /const btn = el\("button", "mp-tip", r\[0\]\);/.test(bt) && /\.bt-mk \{ position: relative;/.test(css));
+ok("標籤仍是 .bt-mk 裡的 button.mp-tip(tooltip 相鄰選擇器與定位基準不變)", /const btn = el\("button", "mp-tip", typeof r\[0\] === "string" \? r\[0\] : null\);/.test(bt) && /\.bt-mk \{ position: relative;/.test(css));
 
 console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
 process.exit(red ? 1 : 0);

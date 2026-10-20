@@ -1,5 +1,5 @@
-// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):階段表 PHASE_OF / PHASE_NONE,
-// 以及讀帳失敗時的帳戶幣別對照表(九個帳戶,統一期貨 president 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
+// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):階段表 PHASE_OF / PHASE_NONE、
+// 回測台股 Type C 的 0050 基準字串,以及讀帳失敗時的帳戶幣別對照表(九個帳戶,統一期貨 president 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
 // (倍數提醒門檻 LEV_T* 已隨電腦版安全檢查拿掉,Wei 10-13;不再比對)
 //   電腦版:shell/renderer/trade.js 的 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
 //   網頁:web/app/main/templates/agent/workspace.html 的 CX_VENUES[].ccy
@@ -102,5 +102,15 @@ for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const diff = Object.entries(EV_PAIRS).filter(([d, w]) => !dp["tr.ov." + d] || dp["tr.ov." + d] !== wp["workspace_ov_ev_" + w]).map(([d]) => d);
   ok(`事件文案 ${lang} 兩邊逐字一致(${Object.keys(EV_PAIRS).length} 句)`, diff.length === 0, diff.join(", "));
+}
+// 台股 Type C 的 0050 基準(designer typec-0050-benchmark-2026-10-20):統計列標籤／圖例、兩句 tooltip、圖的 aria——zh / en 兩邊逐字同一份
+const poRaw = (file) => { const o = {}; if (fs.existsSync(file)) for (const m of fs.readFileSync(file, "utf8").matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"$/gm)) o[m[1]] = m[2]; return o; };
+const BH_KEYS = { workspace_bt_benchmark_0050: "bt.benchmark0050", workspace_bt_benchmark_0050_tip: "bt.tip.benchmark0050",
+  workspace_bt_benchmark_0050_na: "bt.tip.benchmark0050Na", workspace_bt_chart_aria_0050: "bt.chartAria0050" };
+for (const lang of ["zh", "en"]) {
+  const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+  const off = Object.keys(BH_KEYS).filter((k) => !w[k] || w[k] !== d[BH_KEYS[k]]);
+  ok("0050 基準四個字串兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w[k] + " vs " + d[BH_KEYS[k]]).join(";"));
 }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

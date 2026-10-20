@@ -20,6 +20,9 @@ ok("台股 2330 / 台指 TXF / 讀不到 SYMBOL → XQ 照常給選", X.xpAvail(
 // e2e 0.1.8 #26:組合策略(Type C)三個平台都可點——轉出只做單一標的
 const typeC = { stats: { benchmark_n: 1000, "Sharpe Ratio": 1.1 }, code: "# Strategy: x\nUNIVERSE = ['BTCUSDT']\n" };
 ok("組合策略(stats 帶 benchmark_n):三個平台都不能選,原因是 portfolio", X.XP_ORDER.every((k) => !X.xpAvail(k, typeC) && X.xpOff(k, typeC) === "portfolio"));
+ok("台股組合策略(stats 帶 benchmark_bh,值是 null 也算、沒有 benchmark_n):三個平台都不能選",
+  [{ ret_pct: 61.75, series: [1, 1.1] }, null].every((bh) => { const d = { stats: { benchmark_bh: bh, "Sharpe Ratio": 1 }, code: "UNIVERSE = ['2330', '2317']\n" };
+    return X.xpIsPortfolio(d) && X.XP_ORDER.every((k) => X.xpOff(k, d) === "portfolio"); }));
 ok("還沒回測的組合策略:認檔頭 # Type: C", X.xpIsPortfolio({ stats: null, code: "# Strategy: 輪動\n# Type:     C (multi-asset, weight-based)\nUNIVERSE = []\n" }) && X.xpOff("pine", { stats: null, code: "# Type: C\n" }) === "portfolio");
 ok("Type A / 判不出來:照常給選(加密的 XQ 仍是 crypto 那條)", !X.xpIsPortfolio({ stats: { "Sharpe Ratio": 1 }, code: "# Type:     A (single symbol)\nSYMBOL = \"2330\"\n" }) && !X.xpIsPortfolio({}) && !X.xpIsPortfolio(null)
   && !X.xpIsPortfolio({ code: "x = 1  # Type: C\n" }) && X.xpOff("xq", { symbol: "BTCUSDT" }) === "crypto" && X.xpOff("pine", { symbol: "BTCUSDT" }) === null && X.xpOff("xq", { symbol: "2330" }) === null);

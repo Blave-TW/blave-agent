@@ -30,10 +30,12 @@
     const dates = Array.isArray(stats && stats.daily_dates) ? stats.daily_dates : [];
     const rets = Array.isArray(stats && stats.daily_returns) ? stats.daily_returns : [];
     const n = Math.min(dates.length, rets.length);
-    const out = { dates: [], equity: [], drawdown: [], band: null };
-    // 帶跟權益走同一組索引:跳過的日期帶也跳過,第 i 點才會是同一天
+    const out = { dates: [], equity: [], drawdown: [], band: null, bh: null };
+    // 帶與 0050 線跟權益走同一組索引:跳過的日期它們也跳過,第 i 點才會是同一天
     const raw = readBand(stats);
     const band = raw ? { p5: [], p50: [], p95: [] } : null;
+    const rawBh = readBh(stats);
+    const bh = rawBh ? [] : null;
     let cum = 1;
     let peak = 1;
     for (let i = 0; i < n; i++) {
@@ -44,8 +46,10 @@
       out.equity.push(100 * cum);
       out.drawdown.push(100 * (cum / peak - 1));
       if (band) { band.p5.push(raw.p5[i]); band.p50.push(raw.p50[i]); band.p95.push(raw.p95[i]); }
+      if (bh) bh.push(rawBh[i]);
     }
     out.band = band;
+    out.bh = bh;
     return out;
   }
 
@@ -172,6 +176,7 @@
    * 回傳的仍以 daily_dates 為索引;對到圖上的哪一天由 buildSeries 決定。 */
   const BAND_KEYS = ["p5", "p25", "p50", "p75", "p95"];
   function readBand(stats) {
+    if (hasBh(stats)) return null; // 台股 Type C 改比 0050,有這個鍵就不讀隨機帶
     const b = stats && stats.benchmark_band;
     const dates = stats && stats.daily_dates;
     if (!b || typeof b !== "object" || !Array.isArray(dates)) return null;
@@ -183,6 +188,21 @@
       out[BAND_KEYS[k]] = a.map(function (v) { return v * 100; });
     }
     return out;
+  }
+
+  /* 台股 Type C 的基準是 0050 買進持有:只看鍵在不在——值是 null(抓不到 0050)也是新版,
+   * 不能退回隨機投組那套。series 同 readBand 的契約(倍數、與 daily_dates 等長、全為正),
+   * 不合就不畫線,統計列的數字照出。 */
+  function hasBh(stats) {
+    return !!stats && typeof stats === "object" && "benchmark_bh" in stats;
+  }
+  function readBh(stats) {
+    const b = hasBh(stats) ? stats.benchmark_bh : null;
+    const dates = stats && stats.daily_dates;
+    if (!b || typeof b !== "object" || !Array.isArray(b.series) || !Array.isArray(dates)) return null;
+    if (b.series.length !== dates.length) return null;
+    for (let i = 0; i < b.series.length; i++) if (!isNum(b.series[i]) || b.series[i] <= 0) return null;
+    return b.series.map(function (v) { return v * 100; });
   }
 
   // 軸刻度:1/2/5 × 10^k 的步距,目標 ~target 格
@@ -208,6 +228,16 @@
     if (!isNum(v)) return null;
     const s = Math.abs(v).toFixed(dp === undefined ? 2 : dp);
     return (v < 0 && Number(s) !== 0 ? MINUS : "") + s;
+  }
+
+  // 譯文裡不翻的代號包 .mono,其餘留 sans
+  function monoToken(text, tok) {
+    const frag = document.createDocumentFragment();
+    text.split(tok).forEach(function (part, i) {
+      if (i) frag.appendChild(el("span", "mono", tok));
+      if (part) frag.appendChild(document.createTextNode(part));
+    });
+    return frag;
   }
 
   function el(tag, cls, text) {
@@ -275,9 +305,13 @@
      * 「策略也賺了這麼多」。Type C 沒有單一標的可比,改用隨機投組的百分位。 */
     const br = stats["Benchmark Return [%]"];
     const rank = stats["benchmark_strategy_ret_pct"];
-    const bench = !isNum(br) && isNum(rank)
-      ? { text: t("bt.benchmarkRank", { n: String(Math.round(rank)) }), tone: "", prose: true }
-      : plain(fmtSignedPct(br));
+    const bhRet = hasBh(stats) && stats.benchmark_bh && typeof stats.benchmark_bh === "object" ? stats.benchmark_bh.ret_pct : null;
+    const bench = hasBh(stats) ? tip(plain(fmtSignedPct(bhRet)), isNum(bhRet) ? "bt.tip.benchmark0050" : "bt.tip.benchmark0050Na")
+      : !isNum(br) && isNum(rank)
+        ? tip({ text: t("bt.benchmarkRank", { n: String(Math.round(rank)) }), tone: "", prose: true }, "bt.tip.benchmarkRank")
+        : tip(plain(fmtSignedPct(br)), "bt.tip.benchmark");
+    // 投組的 meta 列沒有單一標的,比較對象直接寫在標籤上;代號包 .mono(canon › Type)
+    const benchLabel = hasBh(stats) ? monoToken(t("bt.benchmark0050"), "0050") : t("bt.benchmark");
 
     const fees = fmtFixed(stats["Total Fees Paid [%]"]);
     const n = stats["Trades"];
@@ -285,7 +319,7 @@
       [t("bt.grpReturns"), [
         [t("bt.totalReturn"), tip(Object.assign(signed(stats["Total Return [%]"]), { hero: true }), "bt.tip.totalReturn")],
         [t("bt.annReturn"), tip(signed(annualReturn(stats)), "bt.tip.annReturn")],
-        [t("bt.benchmark"), tip(bench, bench.prose ? "bt.tip.benchmarkRank" : "bt.tip.benchmark")],
+        [benchLabel, bench],
         [t("bt.annVol"), tip(plain(pct1(annualVol(rets))), "bt.tip.annVol")],
       ]],
       [t("bt.grpRisk"), [
@@ -328,7 +362,8 @@
         if (v.tip) {
           // 觸發點與泡泡直接用 app.css 現成的 .mp-tip / .tip(相鄰兄弟選擇器帶顯示),不另寫一份
           const id = "bt-tip-" + ++tipSeq;
-          const btn = el("button", "mp-tip", r[0]);
+          const btn = el("button", "mp-tip", typeof r[0] === "string" ? r[0] : null);
+          if (typeof r[0] !== "string") btn.appendChild(r[0]);
           btn.type = "button";
           btn.setAttribute("aria-describedby", id);
           const bubble = el("span", "tip", v.tip);
@@ -336,8 +371,10 @@
           bubble.setAttribute("role", "tooltip");
           mk.appendChild(btn);
           mk.appendChild(bubble);
-        } else {
+        } else if (typeof r[0] === "string") {
           mk.textContent = r[0];
+        } else {
+          mk.appendChild(r[0]);
         }
         const cls = v.text === null ? " na" : (v.tone ? " " + v.tone : "") + (v.hero ? " hero" : "") + (v.prose ? " prose" : " mono");
         row.appendChild(mk);
@@ -412,12 +449,15 @@
 
     // ---- 權益(對數軸:+100% 與 −50% 在圖上等距,才不會把後段的波動誇大)----
     const band = series.band;
+    const bh = series.bh;
     let min = 100, max = 100; // 100 = 損益兩平,永遠留在視野內
     for (let i = 0; i < n; i++) {
       if (series.equity[i] < min) min = series.equity[i];
       if (series.equity[i] > max) max = series.equity[i];
       // p5 / p95 也要進視野,不然寬帶被裁掉看起來像 bug
       if (band) { if (band.p5[i] < min) min = band.p5[i]; if (band.p95[i] > max) max = band.p95[i]; }
+      // 0050 是第二條權益曲線,不是水平參考線:被裁掉會像 bug
+      if (bh) { if (bh[i] < min) min = bh[i]; if (bh[i] > max) max = bh[i]; }
     }
     if (!(min > 0) || min === max) { min = Math.max(min * 0.9, 1e-6); max = max * 1.1 || 1; }
     let lo = Math.log(min), hi = Math.log(max);
@@ -448,6 +488,16 @@
       ctx.strokeStyle = token("--color-greyMedium");
       ctx.lineWidth = 1.2;
       path(band.p50, yEq);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 0050 跟隨機中位數同一套「比較基準 = 灰虛線」(兩者不會同圖);策略線照樣最後畫
+    if (bh) {
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = token("--color-greyMedium");
+      ctx.lineWidth = 1.2;
+      path(bh, yEq);
       ctx.stroke();
       ctx.restore();
     }
@@ -517,7 +567,7 @@
 
   /* 收不收合要畫過才知道(看像素厚度),所以隨機那幾項由 redraw 依 drawChart 的結果換;
    * 沒有帶就永遠是「權益 / 回撤」兩項,跟加帶之前一樣。 */
-  function setLegend(head, band, narrow) {
+  function setLegend(head, band, narrow, bh) {
     head.textContent = "";
     head.appendChild(legendItem("", t("bt.equity")));
     if (band && narrow) {
@@ -526,18 +576,19 @@
       head.appendChild(legendItem("band", t("bt.legendBand"), t("bt.tip.band")));
       head.appendChild(legendItem("med", t("bt.legendMedian")));
     }
+    if (bh) head.appendChild(legendItem("bh", t("bt.benchmark0050"))); // 說明只放統計列,這裡不掛 tooltip
     head.appendChild(legendItem("dd", t("bt.drawdown")));
   }
 
   function buildChart(series) {
     const wrap = el("div", "bt-block");
     const head = el("div", "bt-label");
-    setLegend(head, null, false);
+    setLegend(head, null, false, series.bh);
     wrap.appendChild(head);
     const frame = el("div", "bt-frame");
     const canvas = el("canvas", "bt-canvas");
     canvas.setAttribute("role", "img");
-    canvas.setAttribute("aria-label", t(series.band ? "bt.chartAriaBand" : "bt.chartAria"));
+    canvas.setAttribute("aria-label", t(series.bh ? "bt.chartAria0050" : series.band ? "bt.chartAriaBand" : "bt.chartAria"));
     frame.appendChild(canvas);
     wrap.appendChild(frame);
     return { node: wrap, canvas: canvas, head: head, narrow: null };
@@ -797,7 +848,7 @@
           // ResizeObserver 每一下都會進來;圖例只在收合狀態真的變了才重建
           if (g && series.band && g.narrow !== chart.narrow) {
             chart.narrow = g.narrow;
-            setLegend(chart.head, series.band, g.narrow);
+            setLegend(chart.head, series.band, g.narrow, series.bh);
           }
         } catch (e) { console.warn("[backtest]", e); }
         if (mcptChart) try { drawMcpt(mcptChart.canvas, mcptChart.dist, mcptChart.labels); } catch (e) { console.warn("[backtest]", e); }
@@ -823,6 +874,6 @@
   window.BlaveReport._bt = {
     buildSeries: buildSeries, buildMonthly: buildMonthly, buildYearly: buildYearly,
     readMcpt: readMcpt, fmtSignedPct: fmtSignedPct,
-    readMcptDist: readMcptDist, readBand: readBand, annualReturn: annualReturn, annualVol: annualVol, dailyWinRate: dailyWinRate,
+    readMcptDist: readMcptDist, readBand: readBand, readBh: readBh, annualReturn: annualReturn, annualVol: annualVol, dailyWinRate: dailyWinRate,
   };
 })();

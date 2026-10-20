@@ -623,6 +623,12 @@ msgstr "Equity curve and drawdown over the backtest period"
 msgid "bt.chartAriaBand"
 msgstr "Equity curve, random portfolio range and drawdown over the backtest period"
 
+msgid "bt.benchmark0050"
+msgstr "0050 buy & hold"
+
+msgid "bt.chartAria0050"
+msgstr "Equity curve, 0050 buy & hold and drawdown over the backtest period"
+
 msgid "bt.legendBand"
 msgstr "Random p5–p95"
 
@@ -847,6 +853,12 @@ msgstr "What buying and holding this symbol over the same period would have retu
 
 msgid "bt.tip.benchmarkRank"
 msgstr "Share of 1,000 random-weight portfolios (same assets, about as many holdings as this strategy, rebalanced daily to their weights, no fees) that this strategy’s total return beats."
+
+msgid "bt.tip.benchmark0050"
+msgstr "What buying and holding 0050 over the same period would have returned (adjusted for dividends, no fees). The strategy has to beat it to be better than just owning 0050."
+
+msgid "bt.tip.benchmark0050Na"
+msgstr "No 0050 prices were available to compare for this backtest."
 
 msgid "bt.tip.annVol"
 msgstr "Standard deviation of daily returns, scaled to a year. Higher means a bumpier equity curve."

@@ -146,14 +146,15 @@
 }
 .bt-legend.dd::before { background: var(--color-red); }
 /* 隨機投組:帶 = 方塊(與圖上同色同 0.55)、中位數 = 虛線段(與圖上同色);
-   畫法跟策略組合頁同一個概念,全站一種長相 */
+   畫法跟策略組合頁同一個概念,全站一種長相。台股 Type C 的 0050 線跟中位數同一套虛線 */
 .bt-legend.band::before {
   width: 10px;
   height: 10px;
   border-radius: var(--radius-micro);
   background: color-mix(in srgb, var(--chart-band) 55%, transparent);
 }
-.bt-legend.med::before {
+.bt-legend.med::before,
+.bt-legend.bh::before {
   width: 14px;
   height: 0;
   border-radius: 0;
