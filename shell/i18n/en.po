@@ -967,6 +967,10 @@ msgstr "Blave AI isn’t ready yet: the balance is 0."
 msgid "acct.addCard"
 msgstr "Add a Card"
 
+# 沒綁卡的預檢卡與 402 卡第三顆(文字鈕):外開網站用量頁的加密貨幣轉帳分頁
+msgid "acct.cryptoTopup"
+msgstr "Top Up with Crypto Transfer"
+
 msgid "acct.sub"
 msgstr "A first-time card gets {q} TWD of AI credit and Blave data in the desktop app, both for {t} days."
 
@@ -977,7 +981,7 @@ msgid "acct.creditIn"
 msgstr "Credit is in. You can send again."
 
 msgid "fault.needCard"
-msgstr "Blave AI needs a card on file, so this turn didn’t run."
+msgstr "Blave AI needs a card on file or a top-up, so this turn didn’t run."
 
 msgid "acct.freeUp"
 msgstr "Your {q} TWD of AI credit is used up."

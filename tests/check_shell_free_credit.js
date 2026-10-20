@@ -84,7 +84,7 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
     // 卡片的字:切 acctPaint 出來跑,只看 text
     const cards = [];
     const P = new Function("t", "acct", "acctCard", "creditCards", "cnFreeQ", "RP", "LANG", `let acctGone = null, dataCardSync = () => {}, mpBillPaint = undefined, planWatch = () => {}, libIdeaPaint = undefined, wdPaint = undefined, $ = () => null;
-      const acctSub = () => null, acctAction = () => ({}), resendSecond = () => null, resendState = (c, x) => ({ text: x }), acctShown = () => {}, acctBackTrack = () => {};
+      const acctSub = () => null, acctAction = () => ({}), acctCrypto = () => null, resendSecond = () => null, resendState = (c, x) => ({ text: x }), acctShown = () => {}, acctBackTrack = () => {};
       ${fn("acctCardKind")}\n${fn("acctFreeUpText")}\n${fn("acctBuiltText")}\n${fn("acctPaint")}\nacctPaint();`);
     const mk = () => { const c = {}; c.set = (s) => { c.last = s; }; return c; };
     const run = (acct, q, n, lang) => { const pre = mk(), turn = mk(); P((k, v) => k + (v && v.q ? "{" + v.q + "}" : "") + (v && v.n ? "{" + v.n + "}" : ""), acct, pre, [turn], () => q, { list: Array(n || 0).fill({}) }, lang || "zh"); return [pre.last.text, turn.last.text].join(" / "); };

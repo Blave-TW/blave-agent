@@ -3174,18 +3174,20 @@ function faultCard() {
   const act = document.createElement("div"); act.className = "fault-act";
   const b1 = document.createElement("button"); b1.type = "button";
   const b2 = document.createElement("button"); b2.type = "button"; b2.className = "btn-out"; b2.hidden = true;
+  const b3 = document.createElement("button"); b3.type = "button"; b3.className = "btn-quiet"; b3.hidden = true;
   const sub = document.createElement("div"); sub.className = "fault-sub"; sub.hidden = true;
-  let h1 = null, h2 = null, shown = null;
+  let h1 = null, h2 = null, h3 = null, shown = null;
   b1.addEventListener("click", () => h1 && h1());
   b2.addEventListener("click", () => h2 && h2());
-  act.append(b1, b2); body.append(text, act, sub); el.append(mark, body);
+  b3.addEventListener("click", () => h3 && h3());
+  act.append(b1, b2, b3); body.append(text, act, sub); el.append(mark, body);
   $("chat-scroll").appendChild(el); busyPin(); scrollChat();
   return {
     el, b1, b2,
-    // s = { calm, text, label, out, quiet, disabled, on, sub(Node|string|null), second:{label,on}|null }
+    // s = { calm, text, label, out, quiet, disabled, on, sub(Node|string|null), second:{label,on}|null, third:{label,on}|null(文字鈕) }
     set(s) {
       // 回前景、每 5 秒重查會拿一模一樣的內容重畫(acctPaint):內容沒變就不再念、不再拉到底(同 dataCardSync 的 key;稽核 S1)
-      const key = JSON.stringify([!!s.calm, s.text, s.label || null, !!s.disabled, s.second ? s.second.label : null, s.sub ? (typeof s.sub === "string" ? s.sub : s.sub.textContent) : null]);
+      const key = JSON.stringify([!!s.calm, s.text, s.label || null, !!s.disabled, s.second ? s.second.label : null, s.third ? s.third.label : null, s.sub ? (typeof s.sub === "string" ? s.sub : s.sub.textContent) : null]);
       const changed = key !== shown; shown = key;
       el.classList.toggle("is-calm", !!s.calm);
       text.textContent = s.text; if (changed) srSay(s.text);
@@ -3193,6 +3195,7 @@ function faultCard() {
       b1.textContent = s.label || ""; b1.className = s.quiet ? "btn-quiet" : s.out ? "btn-out" : "btn-fill";
       b1.disabled = !!s.disabled; h1 = s.on || null;
       b2.hidden = !s.second; if (s.second) { b2.textContent = s.second.label; b2.disabled = false; h2 = s.second.on; }
+      b3.hidden = !s.third; if (s.third) { b3.textContent = s.third.label; h3 = s.third.on; }
       sub.hidden = !s.sub; sub.textContent = "";
       if (s.sub) sub.append(s.sub);
       if (changed) scrollChat(!s.calm);   // 出錯要讓人看到(同網頁):往上捲著也拉到底;calm 的(「可以開始了。」)照黏底規則
@@ -3306,6 +3309,9 @@ async function balLoad() {
 const creditCards = [];                     // 402 那張(可能不只一張:他連送了兩句)
 const acctVars = (s) => ({ q: s.trial_ai_credit, t: s.trial_days, lo: s.auto_topup_min, a: s.auto_topup_amount, m: s.min_topup });
 const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#topup";
+/* 沒綁卡的另一條路:加密貨幣轉帳儲值。pay=crypto 讓網站儲值卡停在加密分頁;from=desktop 要留著——
+   網站靠它記「從電腦版來」(回站入帳多接回電腦版那一行、GA from_desktop) */
+const cryptoTopupUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop&pay=crypto#topup";
 // 方案頁(web /agent/<lang>/usage#plan;api 通知連結也指這裡):重新付款、換卡、取消、升級、月繳↔年繳都在那邊
 const planPayUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#plan";
 const usageUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop";
@@ -3348,6 +3354,8 @@ function dataReadyText(s) {
 const legalUrl = (page) => "https://blave.org/disclaimer/" + LANG + "/" + page;
 /* 網站的資料文件頁(web 的路由是 /docs/<lang>/…);歡迎頁「看全部資料」外開用(renderer/welcome.js wdDocs) */
 const docsUrl = (page) => "https://blave.org/docs/" + LANG + "/" + page;
+// 不記 acct_card_click:那條漏斗量的是綁卡
+function acctCrypto(s) { return s && s.reason === "NO_CARD" ? { label: t("acct.cryptoTopup"), on: () => { trackFeature("crypto_topup"); window.blave.openExternal(cryptoTopupUrl()); } } : null; }
 function acctSub(s) { return s && s.trial_eligible ? t("acct.sub", acctVars(s)) : null; }
 // 不能跑時的鈕與句子(預檢卡與 402 卡共用的那半);where = "pre"(預檢卡)| "turn"(402 卡),埋點分卡用
 function acctAction(s, where) {
@@ -3385,11 +3393,11 @@ function acctPaint() {
   if (acctGone && !acctGone.back) acctBackTrack(false);
   if (acctCard) {
     if (s.can_run) acctCard.set({ calm: true, text: t("acct.ready") });
-    else acctCard.set({ calm: true, text: acctCardKind("pre", s) === "pre_free" ? acctBuiltText(RP.list.length) + acctFreeUpText("pre") : t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s, "pre") });
+    else acctCard.set({ calm: true, text: acctCardKind("pre", s) === "pre_free" ? acctBuiltText(RP.list.length) + acctFreeUpText("pre") : t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s, "pre"), third: acctCrypto(s) });
   }
   creditCards.forEach((card) => {
     if (s.can_run) card.set(resendState(card, t("acct.creditIn")));
-    else if (s.reason === "NO_CARD") card.set({ text: acctCardKind("turn", s) === "turn_free" ? acctFreeUpText("turn") : t("fault.needCard"), sub: acctSub(s), ...acctAction(s, "turn"), second: resendSecond() });
+    else if (s.reason === "NO_CARD") card.set({ text: acctCardKind("turn", s) === "turn_free" ? acctFreeUpText("turn") : t("fault.needCard"), sub: acctSub(s), ...acctAction(s, "turn"), second: resendSecond(), third: acctCrypto(s) });
     else card.set({ text: t("fault.noCredit"), ...acctAction(s, "turn"), second: resendSecond() });
     if (!s.can_run) acctShown(card, "turn", s);
   });

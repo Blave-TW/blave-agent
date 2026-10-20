@@ -947,7 +947,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   let V = { t: 14, p: "1,440", r: "2" };
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};
   const acctUrl = () => "topup", faultCard = () => mkCard(), submitMessage = async () => true, $ = () => ({ focus() {} });
-  const acctSub = () => null, acctAction = () => ({}), resendSecond = () => null, planRepay = () => {}, apiPlanGo = () => {}, trackFeature = () => {};
+  const acctSub = () => null, acctAction = () => ({}), acctCrypto = () => null, resendSecond = () => null, planRepay = () => {}, apiPlanGo = () => {}, trackFeature = () => {};
   let pub = null; eval(fnSrc("planMo"));
   eval(fnSrc("dataAccessOf")); eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
   eval(fnSrc("dataReadyText")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
