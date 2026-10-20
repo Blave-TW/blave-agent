@@ -40,6 +40,7 @@ Never put a secret, the national ID, a certificate subject or a broker message
 into a return value, an exception, the status or a log.
 """
 import base64
+import ntpath
 import hashlib
 import hmac
 import json
@@ -87,7 +88,26 @@ def local_dir():
     return os.path.join(os.environ["LOCALAPPDATA"], "Blave", "capital")
 
 
-COMTYPES_PIN = "comtypes==1.4.17"   # the M0 kit's, run against this SKCOM on desktop-win-test-4 (2026-10-19)
+COMTYPES_PIN = "comtypes==1.4.17"
+# PyPI 的 comtypes-1.4.17-py3-none-any.whl(10-20 下載核過);pip 只裝得到這一份,索引被換掉就裝不起來
+COMTYPES_SHA256 = "4e0a221dde2c589b82977bed802efd71cd5eb67a380347b732e02735e597f586"
+
+
+# 系統程式一律走 System32 絕對路徑:CreateProcess 沒給路徑時會先找直譯器目錄與目前目錄(daemon 的 cwd 是
+# agent 寫得到的 workspace),同名 exe 會以用戶本人身分被執行(含 UAC 那一步)。= shell/winsandbox.js 的做法;
+# SystemRoot 不像 `X:\<一層>` 就用 C:\Windows
+_ROOT_RE = re.compile(r"[A-Za-z]:\\[^\\/:*?\"<>|\r\n]+")
+
+
+def _sys32(*parts):
+    root = os.environ.get("SystemRoot") or ""
+    if not _ROOT_RE.fullmatch(root) or (IS_WINDOWS and not os.path.isdir(ntpath.join(root, "System32"))):
+        root = "C:\\Windows"
+    return ntpath.join(root, "System32", *parts)
+
+
+def _powershell():
+    return _sys32("WindowsPowerShell", "v1.0", "powershell.exe")   # the M0 kit's, run against this SKCOM on desktop-win-test-4 (2026-10-19)
 CAP_ZIP_URL = "https://www.capital.com.tw/Service2/download/api_zip/CapitalAPI_2.13.59.zip"
 CAP_ZIP_SHA256 = "e2b5894c148a847f051535c3700f00c2adc88beef4c471701b80d7b68b3470a9"
 CAP_ZIP_MAX = 200 * 1024 * 1024
@@ -256,7 +276,7 @@ def _kill_tree(pid):
     credentials line is its child — kill the tree (president_connect learned this)."""
     try:
         if os.name == "nt":
-            rc = subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
+            rc = subprocess.run([_sys32("taskkill.exe"), "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30,
                                 **_cl()._child_kw()).returncode
             return rc == 0
         try:
@@ -580,7 +600,7 @@ def _ensure_vc(tmp):
     exe = os.path.join(tmp, "vcredist_x64_2010.exe")
     _download(VC_URL, exe, VC_MAX)
     # one UAC prompt (Microsoft's installer, signature checked first); the only system-wide thing here
-    subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_VC],
+    subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-Command", _PS_VC],
                    capture_output=True, timeout=900, env=dict(os.environ, CAPL_VC=exe), **_cl()._child_kw())
     if not _vc_present():
         raise RuntimeError("vc++ 2010 runtime missing after install")
@@ -608,13 +628,13 @@ def _restrict_dir(path):
     os.makedirs(path, exist_ok=True)
     if not IS_WINDOWS:
         return
-    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+    r = subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-Command",
                         "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
                        capture_output=True, timeout=60, **_cl()._child_kw())
     sid = r.stdout.decode("ascii", "replace").strip()
     if r.returncode != 0 or not re.fullmatch(r"S-1-[0-9-]+", sid):
         raise RuntimeError("current user SID unreadable")
-    r = subprocess.run(["icacls", path, "/inheritance:r", "/grant:r", f"*{sid}:(OI)(CI)F",
+    r = subprocess.run([_sys32("icacls.exe"), path, "/inheritance:r", "/grant:r", f"*{sid}:(OI)(CI)F",
                         "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"], capture_output=True, timeout=60,
                        **_cl()._child_kw())
     if r.returncode != 0:
@@ -658,7 +678,7 @@ def _ensure_skcom(tmp):
             if not same:
                 with atomic_file.replacing(dst, "wb") as f:   # a loaded DLL cannot be replaced: setup fails, Blave restarts
                     f.write(data)
-    r = subprocess.run(["regsvr32.exe", "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")],
+    r = subprocess.run([_sys32("regsvr32.exe"), "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")],
                        capture_output=True, timeout=120, **_cl()._child_kw())
     if r.returncode != 0:
         raise RuntimeError(f"regsvr32 exit {r.returncode}")
@@ -709,7 +729,20 @@ _COMTYPES_OK = ("import comtypes, comtypes.client, pythoncom, sys; "
 def _ensure_comtypes():
     if cc._run_quiet([sys.executable, "-c", _COMTYPES_OK], 120, "import").returncode == 0:
         return
-    cc._run_quiet([sys.executable, "-m", "pip", "install", "--quiet", COMTYPES_PIN], SETUP_TIMEOUT_S, "pip")
+    # 只裝釘死 hash 的那一份,不讀用戶／環境的 pip 設定(%APPDATA%\\pip\\pip.ini、PIP_*:換索引就是換程式碼)
+    req = os.path.join(tempfile.mkdtemp(prefix="blave-comtypes-"), "req.txt")
+    try:
+        with open(req, "w", encoding="ascii") as f:
+            f.write(f"{COMTYPES_PIN} --hash=sha256:{COMTYPES_SHA256}\n")
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("PIP_")}
+        env["PIP_CONFIG_FILE"] = os.devnull
+        subprocess.run([sys.executable, "-m", "pip", "install", "--isolated", "--quiet", "--disable-pip-version-check",
+                        "--no-deps", "--only-binary", ":all:", "--require-hashes", "-r", req],
+                       capture_output=True, timeout=SETUP_TIMEOUT_S, env=env, **_cl()._child_kw())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    finally:
+        shutil.rmtree(os.path.dirname(req), ignore_errors=True)
     if cc._run_quiet([sys.executable, "-c", _COMTYPES_OK], 120, "import").returncode != 0:
         raise RuntimeError("comtypes (pinned) / pythoncom not importable")
 

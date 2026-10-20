@@ -685,6 +685,7 @@ CREATE_REVIEWED = {
 }
 # plain writes: open / os.fdopen with "w" / "x" / "+" (not "a": the list above), write_text / write_bytes
 WRITE_REVIEWED = {
+    ("capital_local.py", "_ensure_comtypes"): "pip requirements file (pinned name + sha256, no secret) in a mkdtemp dir of its own, deleted right after",
     ("capital_local.py", "_download"): "setup downloads (vcredist, the 群益 component zip) into a mkdtemp dir of its own, SHA256-checked where pinned, deleted after setup",
     ("command_listener.py", "_save_amounts_all_or_nothing"): "state/execution/hold: a pid marker the reconciler only checks for existence (same as local_daemon / update_workspace)",
     ("refresh_capacity.py", "demote_oom"): "/proc/<pid>/oom_score_adj of our own refresh child: a kernel knob, not a file to replace",
