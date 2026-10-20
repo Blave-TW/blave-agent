@@ -96,7 +96,7 @@ class BinanceError(Exception):
         kind = kind or _reject_kind(code, msg)
         text = f"Binance error {code}: {msg or '(empty msg)'} | {path}"
         if kind == _STOCK_AGREEMENT:
-            text = f"要先到 Binance 簽股票合約協議（{text}）"
+            text = f"要先簽 Binance 股票永續（TradFi-Perps）協議：App 和網頁都沒有簽署處，跟 agent 說「幫我簽 Binance 股票合約協議」，它會在你同意後代簽；簽完下一輪自動再下（{text}）"
         super().__init__(reject_token.tag(kind, text))
 
 
@@ -237,7 +237,7 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
     return data
 
 
-def _send(method, path, env, params=None, signed=True, retries=3, spot=False):
+def _send(method, path, env, params=None, signed=True, retries=3, spot=False, plain_text=False):
     api_key = env.get("BINANCE_API_KEY")
     secret_key = env.get("BINANCE_SECRET_KEY")
     if signed and (not api_key or not secret_key):
@@ -276,6 +276,9 @@ def _send(method, path, env, params=None, signed=True, retries=3, spot=False):
         try:
             data = r.json()
         except ValueError:
+            # plain_text: endpoints that answer a bare word on success (sign_stock_agreement → "SUCCESS")
+            if plain_text and 200 <= r.status_code < 300:
+                return r.text.strip()
             raise BinanceError(r.status_code, f"non-JSON response ({r.text[:120]})", path)
         # Errors are {"code": <negative int>, "msg": "..."} with a 4xx status.
         if isinstance(data, dict) and isinstance(data.get("code"), int) \
@@ -1136,3 +1139,20 @@ def get_spot_open_orders(env, symbol=None):
     params = {"symbol": _canonical(symbol)} if symbol else {}
     return [_norm_open_row(o) for o in
             (_request("GET", "/api/v3/openOrders", env, params, spot=True) or [])]
+
+
+def sign_stock_agreement(env):
+    """Sign Binance's TradFi-Perps (stock perpetual) agreement for this account:
+    signed POST /fapi/v1/stock/contract, no parameters; a success answers the bare
+    text "SUCCESS" (measured 2026-10-20 on a live key). Neither the app nor the
+    website shows a place to sign it, which is why a refused order (-4411,
+    `stock_agreement`) points the user to the agent.
+
+    This is the user's consent to an exchange agreement. Call it ONLY after the
+    user said yes in the conversation — never on your own, and never as an
+    automatic retry of a refused order."""
+    got = _send("POST", "/fapi/v1/stock/contract", env, plain_text=True)
+    if got != "SUCCESS":
+        raise BinanceError("N/A", f"unexpected reply {str(got)[:120]!r}", "/fapi/v1/stock/contract")
+    guard.audit("stock_agreement_signed", venue="binance", host=_base(env))
+    return True

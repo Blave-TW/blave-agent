@@ -109,7 +109,9 @@ class BybitError(Exception):
     def __init__(self, *args, code=None, http_status=None, kind=None):
         kind = kind or reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("bybit"))
         if kind == _STOCK_AGREEMENT and args:
-            args = (f"要先到 Bybit 簽股票合約協議（{args[0]}）",) + args[1:]
+            # POST /v5/user/agreement (categoryV2 1) needs a transfer/withdraw-permission key and a
+            # main account — Blave keys are trade-only, so no signing on the user's behalf here.
+            args = (f"要先簽 Bybit 股票永續協議：請用主帳戶在 Bybit 網頁或 App 開這檔合約交易頁簽署（子帳戶不能簽），簽完下一輪自動再下（{args[0]}）",) + args[1:]
         super().__init__(*((reject_token.tag(kind, args[0]),) + args[1:] if args and kind else args))
         self.code = code
         self.http_status = http_status

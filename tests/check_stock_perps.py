@@ -209,17 +209,50 @@ check(vw.paused_symbols({"STXXUSDT"}) == set(), "a venue without session_open: n
 
 # ── the agreement wall ──────────────────────────────────────────────────────
 e = str(order_binance.BinanceError(-4411, "Please sign TradFi-Perps agreement contract", "/fapi/v1/order"))
-check(e.startswith("[order_reject:stock_agreement] 要先到 Binance 簽股票合約協議（Binance error -4411"),
+check(e.startswith("[order_reject:stock_agreement] 要先簽 Binance 股票永續（TradFi-Perps）協議：") and "幫我簽 Binance 股票合約協議" in e,
       f"Binance -4411 -> stock_agreement, Chinese first ({e[:80]})")
 e = str(order_bybit.BybitError("bybit /v5/order/create retCode=110126: You must sign the required "
                                "agreement before trading this contract", code=110126))
-check(e.startswith("[order_reject:stock_agreement] 要先到 Bybit 簽股票合約協議（bybit"),
+check(e.startswith("[order_reject:stock_agreement] 要先簽 Bybit 股票永續協議：請用主帳戶"),
       f"Bybit 110126 -> stock_agreement, Chinese first ({e[:80]})")
-check(reject_token.plain(e).startswith("要先到 Bybit"), "the notice text drops the token")
+check(reject_token.plain(e).startswith("要先簽 Bybit"), "the notice text drops the token")
 check(reject_token.STOCK_AGREEMENT in reject_token.KINDS, "stock_agreement is a known kind")
 check(portfolio._order_error_fresh("AMDUSDT", e, now=1000.0) is True
       and portfolio._order_error_fresh("AMDUSDT", e, now=1060.0) is False,
       "the next round's same refusal sits inside the existing notice cooldown")
+
+# ── signing the Binance agreement (user-consented; stubbed, no network) ─────
+class _R:
+    def __init__(self, status, text): self.status_code, self.text = status, text
+    def json(self): return json.loads(self.text)
+_posts, _audits = [], []
+_orig_audit = order_binance.guard.audit
+order_binance.guard.audit = lambda ev, **kw: _audits.append(ev)
+_env = {"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s"}
+def _post_ok(url, data=None, headers=None, timeout=None):
+    _posts.append((url, data)); return _R(200, "SUCCESS")
+requests.post = _post_ok
+check(order_binance.sign_stock_agreement(_env) is True, "plain-text SUCCESS -> signed")
+check(len(_posts) == 1 and _posts[0][0].endswith("/fapi/v1/stock/contract"), "one POST to /fapi/v1/stock/contract")
+_keys = sorted(kv.split("=")[0] for kv in _posts[0][1].split("&"))
+check(_keys == ["recvWindow", "signature", "timestamp"], f"no parameters besides the signature ({_keys})")
+check(_audits == ["stock_agreement_signed"], "the signing is audited")
+for status, body, what in ((400, '{"code":-2015,"msg":"Invalid API-key"}', "a JSON error"),
+                           (200, "FAILED", "any other text")):
+    requests.post = lambda url, data=None, headers=None, timeout=None, _s=status, _b=body: _R(_s, _b)
+    try:
+        order_binance.sign_stock_agreement(_env); raised = False
+    except order_binance.BinanceError:
+        raised = True
+    check(raised, f"{what} -> raises, not signed")
+requests.post = lambda url, data=None, headers=None, timeout=None: _R(200, "SUCCESS")
+try:
+    order_binance._send("POST", "/fapi/v1/order", _env); raised = False
+except order_binance.BinanceError:
+    raised = True
+check(raised, "without plain_text a non-JSON reply is still an error")
+requests.post = _no_net
+order_binance.guard.audit = _orig_audit
 
 print(f"\n{fails} failed")
 sys.exit(1 if fails else 0)
