@@ -131,7 +131,7 @@ ok("精靈開著 / 找憑證中 / Mac:只有取消;私鑰用不了:只有關閉(
     && !tctx.w(L({ status: "failed", ok_at: 1 }), "capital") && tctx.s(L({ status: "failed", ok_at: 1 }), "capital") && !tctx.s(L({ status: "ok", ok_at: 1 }), "capital")
     && !tctx.w(L({ status: "idle" }), "president") && tctx.w({ capital_connect: { worker: { status: "running" } } }, "capital") && !tctx.w({ capital_connect: { worker: { status: "ok" } } }, "capital"));
   ok("trade.js:本機解除綁定走 caplUnbind(主行程先拿掉 .env 兩行,成功了才丟帳密)、「繼續」帶群益進這台電腦的框", /id === CAPITAL \? await window\.blave\.caplUnbind\(\)/.test(tsrc)
-    && /CXF\.venue = venue === CAPITAL \? CAPITAL :/.test(tsrc) && /if \(\(capWip && !presW && \(ro \|\| CAPL_LOCAL_ON\)\) \|\| caplStop\)/.test(tsrc) && /caplStop = !ro && trCaplStopped\(r, id\) && CAPL_LOCAL_ON;/.test(tsrc)); }
+    && /CXF\.venue = CXF\.bound \? bid : venue === CAPITAL \? CAPITAL :/.test(tsrc) && /if \(\(capWip && !presW && \(ro \|\| CAPL_LOCAL_ON\)\) \|\| caplStop\)/.test(tsrc) && /caplStop = !ro && trCaplStopped\(r, id\) && CAPL_LOCAL_ON;/.test(tsrc)); }
 
 // 雲端已連群益
 ok("雲端:帳密綁著、或下單程式起來過 → 已連;讀不到 → 沒有", caplCloudOn({ venues: { capital: { credentials: true } } }) === true && caplCloudOn({ capital_connect: { worker: { status: "ok" } } }) === true
