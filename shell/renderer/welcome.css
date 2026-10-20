@@ -36,6 +36,7 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .onb-opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
 .onb-body .st-rows + .onb-opts { margin-top: var(--space-8); }
 .onb-opts .wl-fold { margin: 0 0 0 var(--space-8); }
+.onb-note { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .onb-fin { margin: var(--space-24) 0 0; display: flex; align-items: center; gap: var(--space-12); min-height: 36px; font-size: 14px; color: var(--ink-2); }
 /* 完成後的首頁(F;§3.2,mockup f-watermark):中欄垂直、水平置中;記號實色 --color-watermark(canon Brand logo 誤用的具名例外,不用 opacity) */
 .wf { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-24); padding-bottom: var(--space-48); }

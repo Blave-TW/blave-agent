@@ -6926,10 +6926,7 @@ msgid "pres.noMove"
 msgstr "這台電腦一直沒有回報進度。再按一次；正在跑的話不會跑兩次。"
 
 msgid "pres.mac.lead"
-msgstr "統一期貨需要 Windows。"
-
-msgid "pres.mac.hint"
-msgstr "電腦版 Mac 不支援統一。改用 Windows 雲端主機的話，可以從 Mac 用遠端桌面連進主機申請憑證。"
+msgstr "統一期貨要用 Windows 電腦。Mac 上可以先用模擬交易，或改用 Windows 雲端主機。"
 
 
 
@@ -8264,10 +8261,10 @@ msgid "tr.venueCapitalFull"
 msgstr "群益期貨"
 
 msgid "tr.startOffNoRoute"
-msgstr "重新綁定後，先到策略組合存一次下單設定。"
+msgstr "先到策略組合存一次下單設定，策略才會下到目前綁定的帳戶。"
 
 msgid "tr.routeSave"
-msgstr "綁定的交易所換了：按儲存，策略就改下到目前這一家。"
+msgstr "按儲存，策略就下到目前綁定的帳戶。"
 
 msgid "tr.needsRouting.rejected"
 msgstr "「{name}」{more}還沒有對應的交易所：先到策略組合存一次下單設定，再啟動下單。"
@@ -8574,6 +8571,10 @@ msgstr "自動下單"
 # 台指期第④步的描邊鈕(加密叫 cx.connect)
 msgid "onb.realFut"
 msgstr "連接期貨商"
+
+# 台指期第④步、這台是 Mac:統一與群益本機都要 Windows,〔連接期貨商〕收起來,只留模擬交易＋這一句
+msgid "onb.futMac"
+msgstr "台指期自動下單要用 Windows 電腦或雲端主機；這台 Mac 可以先用模擬交易。"
 
 # 已連好帳戶、還沒啟動:第④步只剩這一顆,開自動下單頁
 msgid "onb.goTr"

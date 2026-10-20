@@ -480,7 +480,7 @@ function presFoot(view) {
   go.hidden = !label;
   if (label && go.textContent.trim() !== label) go.textContent = label;
   cancel.hidden = view === "d-done";
-  cancel.textContent = prep || view === "d-form" || view === "d-mac" ? (view === "d-prep-none" ? t("pres.later") : t("del.cancel")) : t("set.close");
+  cancel.textContent = prep || view === "d-form" ? (view === "d-prep-none" ? t("pres.later") : t("del.cancel")) : t("set.close");
   go.classList.toggle("is-busy", view === "d-form" && PRES.busy);
   presSyncGo(view);
 }
@@ -508,9 +508,11 @@ function presPaint() {
   PRES.view = view;
   if (view === "d-done" && !PRES.seen.ready && presSec(pc, "worker").status === "ok" && PRES.startSent) presTrack("ready");
   const box = $("cx-body");
-  $("cx-title").textContent = t("pres.title");
+  // Mac 開不了統一:還是「選擇下單帳戶」那個框(選單照樣能換回別家),不換成統一的標題與「這台電腦」記號
+  const mac = view === "d-mac";
+  $("cx-title").textContent = t(mac ? "cx.title" : "pres.title");
   $("cx-modal").querySelector(".modal-head").classList.remove("cloud");
-  $("cx-env").hidden = false; $("cx-env").textContent = t("env.local");
+  $("cx-env").hidden = mac; $("cx-env").textContent = mac ? "" : t("env.local");
   presFoot(view);
   box.setAttribute("aria-busy", PRES.busy || ["d-finish", "d-probe", "d-cert-run", "d-setup", "d-t-probe", "d-t-order-run"].indexOf(view) >= 0 ? "true" : "false");
   const sig = LANG + "|" + JSON.stringify([view, pc, PRES.scan, PRES.busy, PRES.msg, PRES.source, PRES.tcemMsg, PRES.choice, PRES.test, PRES.info,
@@ -519,7 +521,7 @@ function presPaint() {
   PRES.sig = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
-  if (view === "d-mac") { box.appendChild(cxVenueField(TR_BAGS.local)); box.append(presP("cap-lead", t("pres.mac.lead")), presP("cx-hint", t("pres.mac.hint"))); }
+  if (view === "d-mac") { box.appendChild(cxVenueField(TR_BAGS.local)); box.append(presP("cx-hint", t("pres.mac.lead"))); }
   else if (view.indexOf("d-prep") === 0) { box.appendChild(cxVenueField(TR_BAGS.local)); box.appendChild(presPrepBody(view)); }
   else if (view === "d-form") box.appendChild(presFormBody());
   else if (view === "d-done") box.appendChild(presDoneBody(pc));

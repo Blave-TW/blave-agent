@@ -307,7 +307,10 @@ function onbPaint() {
   // ③:沒有能加的那支(都存過金額、只剩 Type B)就不出鈕
   $("onb-po").hidden = !d.target; $("onb-bt").hidden = !d.target;
   // ④:連好帳戶、還沒啟動 → 只剩「到自動下單」;台指期的描邊鈕叫「連接期貨商」
-  $("onb-paper").hidden = d.acct; $("onb-real").hidden = d.acct; $("onb-tr").hidden = !d.acct;
+  // 台指期在 Mac:統一與群益本機都要 Windows,〔連接期貨商〕只會開到一個講「要 Windows」的框——收起來,只留模擬交易＋一句說明
+  const futMac = mkt === "txf" && window.blave.platform !== "win32";
+  $("onb-paper").hidden = d.acct; $("onb-real").hidden = d.acct || futMac; $("onb-tr").hidden = !d.acct;
+  $("onb-futmac").hidden = d.acct || !futMac;
   $("onb-real").textContent = t(mkt === "txf" ? "onb.realFut" : "cx.connect");
 }
 // 設定 › 一般〔重看〕(app.js):清掉旗標、這次開著期間停在步驟清單(下次開 app 再照完成條件判)

@@ -1735,12 +1735,16 @@ function rpShowTab(tab) {
   if (typeof verShowTab === "function" && verShowTab(tab)) return;   // 正在看舊版:四個分頁由 versions.js 畫
   const B = rpBag();
   B.tab = tab;
-  $("rp-wait").hidden = true; $("rp-tabs").hidden = false;   // 等待 / 讀不到那一行(rpBodyPaint)收起
   const has = !!(B.data && B.data.stats);
+  // 回測沒有逐筆紀錄(組合策略 Type C 調的是一籃子權重;0 筆的也算):不出進出場分頁,同網頁(has_trades)
+  const noTr = has && !(Array.isArray(B.data.stats.trades) && B.data.stats.trades.length);
+  if (noTr && tab === "tr") B.tab = tab = "bt";
+  $("rp-wait").hidden = true; $("rp-tabs").hidden = false;   // 等待 / 讀不到那一行(rpBodyPaint)收起
   $("rp-tabs").querySelectorAll(".rp-tab").forEach((b) => {
     const on = b.dataset.tab === tab;
     b.setAttribute("aria-selected", on ? "true" : "false");
     b.disabled = !has && b.dataset.tab !== "code";
+    if (b.dataset.tab === "tr") b.hidden = noTr;
   });
   if (typeof rpTabRevealSelected === "function") rpTabRevealSelected();   // 測試會單獨切出 rpShowTab 來跑,守一下
   rpNobtPaint(B, has);

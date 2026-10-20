@@ -6913,10 +6913,7 @@ msgid "pres.noMove"
 msgstr "This computer hasn’t reported progress. Press again; a step that’s still running won’t run twice."
 
 msgid "pres.mac.lead"
-msgstr "President Futures needs Windows."
-
-msgid "pres.mac.hint"
-msgstr "The Mac desktop app can’t connect to President Futures. With a Windows cloud machine, you can use Remote Desktop from your Mac to apply for the certificate on it."
+msgstr "President Futures needs a Windows computer. On a Mac, start with paper trading, or use a Windows cloud machine."
 
 
 
@@ -8248,10 +8245,10 @@ msgid "tr.venueCapitalFull"
 msgstr "Capital Futures"
 
 msgid "tr.startOffNoRoute"
-msgstr "After rebinding, save your order settings once in Portfolio first."
+msgstr "Save your order settings once in Portfolio first, so your strategies trade on the linked account."
 
 msgid "tr.routeSave"
-msgstr "The linked exchange changed: save to route your strategies to the current one."
+msgstr "Save to route your strategies to the linked account."
 
 msgid "tr.needsRouting.rejected"
 msgstr "“{name}”{more} has no exchange yet. Save the order settings once in Portfolio, then start trading."
@@ -8555,6 +8552,9 @@ msgstr "Auto Trading"
 # TAIEX futures step 4 outline button (crypto uses cx.connect)
 msgid "onb.realFut"
 msgstr "Connect a Futures Broker"
+
+msgid "onb.futMac"
+msgstr "Auto-trading TAIEX futures needs a Windows computer or a cloud machine; on this Mac, start with paper trading."
 
 # Account connected, not started: step 4 shows only this button; opens Auto trading
 msgid "onb.goTr"

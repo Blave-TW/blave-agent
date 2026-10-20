@@ -1067,10 +1067,12 @@ body.resizing * { cursor: col-resize !important; }
 /* 選項列:視覺圓鈕 18;熱區整列(最矮 44) */
 .cf-opt {
   position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: var(--space-12);
-  padding: var(--space-12); min-height: 44px; border-radius: var(--radius-sm); background: var(--surface-field); cursor: pointer;
+  padding: var(--space-12); min-height: 44px; border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--bg-body); cursor: pointer;
   transition: background var(--motion-fast) var(--ease-standard);
 }
-.cf-opt:hover, .cf-opt:has(input:checked) { background: var(--surface-muted); }
+/* 同網頁 .cf-opt(canon › Active 亮色白格):未選灰底、hover 白、選中白加框——亮色的白對卡只有 1.05:1,hover 與選中要靠框分開 */
+.cf-opt:hover, .cf-opt:has(input:checked) { background: var(--surface-control-on); }
+.cf-opt:has(input:checked) { border-color: var(--border-frame); }
 .cf-opt input {
   grid-row: 1 / 4; margin: 1px 0 0; width: 18px; height: 18px; appearance: none; -webkit-appearance: none;
   border-radius: var(--radius-pill); border: 1px solid var(--border-frame); background: transparent; position: relative; cursor: pointer;
@@ -1083,7 +1085,7 @@ body.resizing * { cursor: col-resize !important; }
 .cf-opt-d { font-size: 12px; line-height: 1.6; color: var(--ink-2); }
 .cf-opt-w { margin-top: var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink); }   /* 情境句:主墨,不用紅 */
 .cf-opt.off, .cf-opt.off input { cursor: not-allowed; }
-.cf-opt.off:hover { background: var(--surface-field); }
+.cf-opt.off, .cf-opt.off:hover, .cf-opt.off:has(input:checked) { background: var(--bg-body); }   /* 鎖住:底一律灰(選中的留框),同網頁 .is-off */
 .cf-opt.off .cf-opt-t, .cf-opt.off .cf-opt-d { color: var(--ink-3); }
 .cf-opt.off input { border-color: var(--border-hairline); background: var(--surface-card); }
 /* 鎖住、已選:底退成卡面色,中間的點要換成看得到的灰(亮色下 --control-fill-text 是白點配白底;同網頁鎖住態) */

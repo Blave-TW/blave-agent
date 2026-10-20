@@ -454,9 +454,9 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
       J(rebound.un) === J(["btc", "tw"]) && rebound.z === true && rebound.rd === true && rebound.f === 0
       && bar.some((n) => n.dataset && n.dataset.fk === "save") && bar.some((n) => n.text === "tr.routeSave")
       && saved.z === false && saved.un.length === 0 && saved.rd === false && saved.f === 1 && unbound.un.length === 0, J({ unbound, rebound, saved }));
-    ok("舊 runtime(config 沒有 exchanges)不判;NEEDS_ROUTING 翻成句子;原因行的 Z 句在路由空的時候講「重新綁定後，先到策略組合存一次下單設定。」",
+    ok("舊 runtime(config 沒有 exchanges)不判;NEEDS_ROUTING 翻成句子;原因行的 Z 句在路由空的時候講「先到策略組合存一次下單設定，策略才會下到目前綁定的帳戶。」——第一次綁被拒時也會出,不寫「重新綁定」",
       run({ venues: P, config: { amounts: { btc: 500 } }, states: {} }).z === false && /if \(rc\.code === "NEEDS_ROUTING"\) return t\("tr\.needsRouting\.rejected", \{ name, more \}\);/.test(src)
-      && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"tr.startOffNoRoute": "重新綁定後，先到策略組合存一次下單設定。"')); }
+      && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"tr.startOffNoRoute": "先到策略組合存一次下單設定，策略才會下到目前綁定的帳戶。"')); }
   // 必改 2:綁了但第一次讀帳還沒回來(沒有對帳快照、帳戶也沒讀到)→ 實際與差額寫「—」,不畫 0、差額不上色
   ctx.TR = bag({ binance: V }); ctx.TR.st.report.account = { venues: {} }; ctx.TR.st.report.last_reconcile = null;
   const fr = flat(vm.runInContext("TR = this.TR; poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx));
