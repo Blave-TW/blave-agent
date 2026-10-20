@@ -2006,6 +2006,36 @@ def _fill_invalid_cells(close_v, open_v):
     return new_close, new_open
 
 
+TW_BENCHMARK = '0050'
+
+
+def _is_tw_universe(columns):
+    """A Type C whose every column is a Taiwan stock / ETF code: benchmarked against 0050
+    buy-and-hold instead of random portfolios. A mixed or crypto universe keeps the random one."""
+    return len(columns) > 0 and all(isinstance(c, str) and _TW_STOCK_RE.match(c) for c in columns)
+
+
+def _tw_bh_benchmark(close_df, hdrs):
+    """(stats['benchmark_bh'], its per-bar equity for pnl.png) for a Taiwan Type C; None when 0050 cannot be fetched — the key
+    stays, since strategy_reporter.is_portfolio_stats tells Type C apart by a benchmark_* key."""
+    from lib.analysis import bh_benchmark
+    from lib.data import fetch_twstock_price_adj
+    try:
+        start = (close_df.index[0] - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+        end = close_df.index[-1].strftime('%Y-%m-%d')
+        df = fetch_twstock_price_adj(TW_BENCHMARK, start, end, hdrs)
+        out, line = bh_benchmark(df['Close'], close_df, f'{TW_BENCHMARK}_bh', TW_BENCHMARK)
+    except Exception as e:
+        logging.warning("0050 benchmark skipped: %s", e)
+        out, line = None, None
+    if out is None:
+        print("  ⚠️ WARNING: 0050 buy-and-hold benchmark unavailable for this period")
+    else:
+        print(f"  Benchmark 0050 buy & hold: {out['ret_pct']:.1f}%  "
+              f"(CAGR {out['cagr_pct']}%, MDD {out['mdd_pct']}%)")
+    return out, line
+
+
 def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     """
     Unified runner for Type A and Type C strategies.
@@ -2541,12 +2571,17 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             print("  ⚠️ WARNING: 0 trades — the weight vector never changed; "
                   "all stats are meaningless. Check thresholds against the data's actual range.")
 
-        from lib.analysis import random_bh_benchmark, held_count
-        # bands only feed pnl.png, which a quiet run (live refresh) never draws;
-        # stats['benchmark_band'] comes out of both paths
-        bench_stats, bench_pct = random_bh_benchmark(close_df, total_ret * 100, sharpe,
-                                                     bands=not quiet,
-                                                     n_held=held_count(delta_w, w_curr))
+        if _is_tw_universe(close_df.columns):
+            bh, bench_line = _tw_bh_benchmark(close_df, hdrs)
+            bench_stats, bench_pct = {'benchmark_bh': bh}, None
+        else:
+            bench_line = None
+            from lib.analysis import random_bh_benchmark, held_count
+            # bands only feed pnl.png, which a quiet run (live refresh) never draws;
+            # stats['benchmark_band'] comes out of both paths
+            bench_stats, bench_pct = random_bh_benchmark(close_df, total_ret * 100, sharpe,
+                                                         bands=not quiet,
+                                                         n_held=held_count(delta_w, w_curr))
 
         def _v(x):
             if x is None: return None
@@ -2558,6 +2593,9 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         band = bench_stats.get('benchmark_band')
         if band and any(len(v) != len(d_dates) for v in band.values()):
             del bench_stats['benchmark_band']   # misaligned points would plot on the wrong days
+        bh = bench_stats.get('benchmark_bh')
+        if bh and len(bh['series']) != len(d_dates):
+            del bh['series']
 
         # No automatic MCPT for Type C — see _auto_mcpt's docstring (mcpt() is single-series).
         carried = _carry_over(out_dir, mode)  # refresh keeps MCPT + Generated At; backtest drops/restamps
@@ -2599,7 +2637,8 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         if not quiet:
             plot_pnl_portfolio(pf_series, close_df, title=strategy_name,
                                output_path=str(out_dir / 'pnl.png'),
-                               bench_pct=bench_pct)
+                               bench_pct=bench_pct, bench_line=bench_line,
+                               bench_label=f'{TW_BENCHMARK} buy & hold')
             if not muted:
                 # Mirror into the web workspace chat (no-op off web), regardless of the
                 # Telegram gate below.

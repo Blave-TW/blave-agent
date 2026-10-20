@@ -394,9 +394,40 @@ def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42
 
 
 
+def bh_benchmark(bench_close, close_df, kind, symbol):
+    """Buy-and-hold of one benchmark series over the strategy's own bars: bought at the first
+    bar's close, held to the last, no fees (the stats say so). bench_close is the benchmark's
+    adjusted Close; it is carried forward onto close_df.index, so a day the benchmark did not
+    trade (a split halt) is flat. series is the day-end equity multiple (1.0 at the start) per
+    calendar day, the days of lib.pnl.daily_returns_typeC — the benchmark_band contract.
+    Returns (stats, per-bar equity Series for pnl.png); (None, None) when the benchmark has no
+    price on or before the first bar."""
+    s = pd.Series(bench_close, dtype=float)
+    s = s[np.isfinite(s) & (s > 0)].sort_index()
+    idx = close_df.index
+    if idx.tz is not None and s.index.tz is None:
+        s.index = s.index.tz_localize(idx.tz)
+    if s.empty or s.index[0] > idx[0]:
+        return None, None
+    px = s.reindex(s.index.union(idx)).ffill().reindex(idx).values
+    ret = np.zeros(len(px))
+    ret[1:] = px[1:] / px[:-1] - 1
+    _, _, _, mdd, ann = compute_stats(ret, idx)
+    equity = px / px[0]
+    day_end = (pd.Series(np.arange(len(idx)), index=idx)
+               .resample('1D').last().ffill().astype(int).values)
+    stats = {'kind': kind, 'symbol': symbol, 'adjusted': True, 'fee_pct': 0,
+            'ret_pct':  round(float(equity[-1] - 1) * 100, 2),
+            'cagr_pct': round(float(ann) * 100, 2) if math.isfinite(ann) else None,
+            'mdd_pct':  round(float(mdd) * 100, 2),
+            'series':   np.round(equity[day_end], 4).tolist()}
+    return stats, pd.Series(equity, index=idx)
+
+
 def plot_pnl_portfolio(pf_ret, close_df, title='Portfolio PnL', output_path=os.path.join(tempfile.gettempdir(), 'pnl.png'),
-                       bench_pct=None):
-    """2-panel PnL chart for Type C strategies. bench_pct: DataFrame with p5/p50/p95 columns."""
+                       bench_pct=None, bench_line=None, bench_label=None):
+    """2-panel PnL chart for Type C strategies. bench_pct: DataFrame with p5/p50/p95 columns;
+    bench_line: a buy-and-hold equity Series over the same bars."""
     pf_equity = np.cumprod(1 + pf_ret.values)
     dd  = pf_equity / np.maximum.accumulate(pf_equity) - 1
     idx = close_df.index
@@ -409,6 +440,9 @@ def plot_pnl_portfolio(pf_ret, close_df, title='Portfolio PnL', output_path=os.p
         ax1.fill_between(idx, b['p5'], b['p95'], color='#9E9E9E', alpha=0.2, label='Random p5–p95')
         ax1.plot(idx, b['p50'], color='#9E9E9E', linewidth=1, linestyle='--', label='Random median')
 
+    if bench_line is not None:
+        ax1.plot(idx, bench_line.reindex(idx).values, color='#9E9E9E', linewidth=1.2,
+                 linestyle='--', label=bench_label)
     ax1.plot(idx, pf_equity, color='#2196F3', linewidth=2, label=title)
     ax1.set_ylabel('Portfolio Value')
     ax1.legend(fontsize=9)

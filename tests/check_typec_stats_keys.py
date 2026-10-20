@@ -41,7 +41,7 @@ def check(cond, msg):
 REPORT_KEYS = ["start", "end", "interval", "fee [%]", "Total Return [%]", "Ann. Return [%]",
                "Max Drawdown [%]", "Sharpe Ratio", "Sortino Ratio", "Omega Ratio", "Trades",
                "Total Fees Paid [%]", "daily_dates", "daily_returns", "Generated At"]
-BENCHMARK_KEYS = ("Benchmark Return [%]", "benchmark_strategy_ret_pct")   # Type A / Type C shape
+BENCHMARK_KEYS = ("Benchmark Return [%]", "benchmark_strategy_ret_pct")   # Type A / Type C random shape; Taiwan Type C (benchmark_bh): check_typec_tw_benchmark
 
 WS = Path(tempfile.mkdtemp(prefix="typec-keys-", dir=os.environ.get("SCRATCHPAD") or None))
 os.chdir(WS)
