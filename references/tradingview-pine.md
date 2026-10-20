@@ -101,7 +101,7 @@ Applies when the user wants to see the exported script running in TradingView's 
 Flow, verified live:
 
 1. `browser_open(url="https://www.tradingview.com/chart/")`, `browser_wait`. The anonymous chart works.
-2. `browser_snapshot(interactive_only=true)` → click the **"Pine"** button (right-edge panel toolbar). The editor opens with TradingView's default script.
+2. `browser_snapshot(interactive_only=true)` → click the **"Pine Editor"** button (right-edge panel toolbar; zh UI 「Pine編輯器」/「Pine编辑器」, older UI just "Pine"). The editor opens with TradingView's default script, as an overlay covering the chart. If the snapshot then has **"Move overlay to split-view"** (zh 「將覆蓋層移動到分割視圖」/「移动叠加层到分割视图」; only on wide pages, about 1280 px+), click it so chart and editor sit side by side — otherwise the user cannot see the strategy or the Strategy Tester after adding it. Never click the reverse "Move split-view to overlay".
 3. Snapshot again → the editor is the `textbox "Editor content…"` ref. `browser_fill(ref=…, text=<the whole pine.pine>)` — one call: it clears the editor (real select-all) and delivers the script as a paste, so Pine's indentation survives exactly. Never type it line by line and never retype fragments to "fix" indentation; if content looks wrong, clear and fill again.
 4. Verify before adding: the snapshot's textbox `value` and `browser_get(what="text")` show the editor content — check line 1 is `//@version=6` and the last line matches the file.
 5. Click **"Add to chart"**. **Anonymous boundary:** TradingView asks to sign in at this point. Signing in is the user's action (`needs_user` rules): tell them the script is in the editor and ready, and wait. Never fill credentials.

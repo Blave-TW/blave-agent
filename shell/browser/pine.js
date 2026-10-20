@@ -4,6 +4,7 @@
 // (「檢查結果」「回傳回測結果」兩個入口與它們讀頁面的程式都拿掉了,Wei 2026-09-28)。
 // 元素定位走無障礙樹的 role + name(真站 2026-09-28 匿名實測:www / tw / cn 三種語言的名字;
 // 「Update on chart」匿名看不到,英文名來自登入態實測的診斷 log,繁簡中文名取自 TradingView 自己的翻譯檔)。
+// 2026-10-20 TradingView 把「Pine」改名「Pine Editor」(繁中 Pine編輯器、簡中 Pine编辑器),並多了「把覆蓋層移到分割視圖」:同法匿名實測三種語言。
 // 每次結果(成功或失敗)由 index.js 寫一行到本機 log(d.log):卡在哪一步、當時看到的候選元素 role / name——不含頁面內容、編輯器文字與網址路徑。
 "use strict";
 const IP = require("./inpage");
@@ -35,7 +36,7 @@ function chartUrl(job) {
 const onTv = (url) => { try { const u = new URL(String(url)); return u.protocol === "https:" && /(^|\.)tradingview\.com$/i.test(u.hostname); } catch (_) { return false; } };
 
 const NAMES = {
-  pine: /^Pine$/,
+  pine: /^Pine( Editor|編輯器|编辑器)?$/,   // 舊名「Pine」也留著:改版可能分批上線
   add: /^(Add to chart|新增到圖表|添加到图表)$/,
   update: /^(Update on chart|圖表更新|图表更新)$/,   // 腳本已經在圖上時,「加到圖表」那一格是這顆(圖上已是這一版就 disabled)
   save: /^(Save script|儲存腳本|保存脚本)$/,          // 只當位置的錨,不按
@@ -43,6 +44,8 @@ const NAMES = {
   strategy: /^(Strategy|策略)$/,
   untitled: /^(Untitled|未命名|无标题)/,   // 只認開頭:窄面板會把名字截短
   editor: /^Editor content/,
+  // 編輯器預設以覆蓋層蓋住圖表;只有頁面夠寬(實測 1280 有、1240 以下沒有)才有這顆。反方向那顆(分割視圖移回覆蓋層)不能比對到
+  split: /^(Move overlay to split-view|將覆蓋層移動到分割視圖|移动叠加层到分割视图)$/,
 };
 const SNAP_LINE = /^\s*- (\S+)(?: ("(?:[^"\\]|\\.)*"))? \[(@e\d+)\](.*)$/;
 function parseSnap(text) {
@@ -64,7 +67,7 @@ function locate(nodes) {
   let title = null;
   for (let k = i - 1; k >= 0 && k >= i - 3 && !title; k--) if (nodes[k].role === "button" && STATE_RE.test(nodes[k].rest)) title = nodes[k];
   return {
-    pine: by("button", NAMES.pine), add, save, editor: by("textbox", NAMES.editor), title,
+    pine: by("button", NAMES.pine), add, save, editor: by("textbox", NAMES.editor), title, split: by("button", NAMES.split),
     createNew: by("menuitem", NAMES.createNew), strategy: by("menuitem", NAMES.strategy),
   };
 }
@@ -83,7 +86,7 @@ function clean(s, max) {
 /* 失敗時記下來的候選元素:只有 role、名字前 80 字、狀態。欄位的值(編輯器文字)與連結網址不記 */
 function candidates(nodes) {
   const list = Array.isArray(nodes) ? nodes : [], i = list.findIndex((n) => n.role === "button" && (NAMES.add.test(n.name) || NAMES.update.test(n.name) || NAMES.save.test(n.name)));
-  return list.filter((n, k) => n.role === "menuitem" || n.role === "textbox" || (n.role === "button" && (STATE_RE.test(n.rest) || NAMES.pine.test(n.name)))
+  return list.filter((n, k) => n.role === "menuitem" || n.role === "textbox" || (n.role === "button" && (STATE_RE.test(n.rest) || /^Pine/.test(n.name)))
     || (i >= 0 && Math.abs(k - i) <= 4) || (n.role === "button" && k >= list.length - 6))
     .slice(0, 30).map((n) => { const st = /\b(collapsed|expanded|disabled)\b/.exec(n.rest); return { role: n.role, name: clean(n.name, 80), state: st ? st[1] : "" }; });
 }
@@ -230,6 +233,9 @@ function createPine(d) {
     const head = await value(v, loc.editor);
     if (!pasteOk(job.content, head, tail)) return { state: "nf", why: "readback" };
 
+    // 圖與編輯器並排,用戶按了「加到圖表」才看得到圖上的策略與策略測試器。放在讀回之後、已還原成真實寬度:寬版面時按了會帶進窄版面
+    const sp = locate(await snap(v).catch(() => [])).split;
+    if (sp && !t.userControl && await click(t, v, sp).catch(() => false)) await sleep(600);   // 按不到就照原樣交接:已經貼好了
     // 交接:「加到圖表」掛「由你按」,外殼到此為止
     await mark(v, ["clear"]);
     if (t.visible) {

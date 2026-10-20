@@ -35,7 +35,8 @@ async function main() {
   ok("只認 https 的 tradingview.com", P.onTv("https://www.tradingview.com/chart/") && P.onTv("https://tw.tradingview.com/x") && !P.onTv("https://tradingview.com.evil.io/") && !P.onTv("http://www.tradingview.com/") && !P.onTv("https://eviltradingview.com/"));
 
   const SNAP = (o) => [
-    '- button "BTCUSDT.P" [@e2]', '- button "Pine" [@e58]',
+    '- button "BTCUSDT.P" [@e2]', `- button "${o.pineName || "Pine"}" [@e58]`,
+    ...(o.editor && o.split ? [`- button "${o.split === "split" ? "Move split-view to overlay" : "Move overlay to split-view"}" [@e59]`] : []),
     ...(o.tester ? ['- button "Open context menu" [@e60] collapsed', '- button "Jan 1, 2026 — Sep 28, 2026" [@e61] collapsed', '- button "Column setup" [@e62] collapsed'] : []),
     ...(o.editor ? ['- button "Close" [@e66]', `- button ${JSON.stringify(o.title)} [@e67] ${o.menu ? "expanded" : "collapsed"}`, ...(o.extra ? ['- button "Version 3" [@e69]'] : []), `- button "${o.add || "Add to chart"}" [@e68]${o.addOff ? " disabled" : ""}`, `- button "${o.save || "Save script"}" [@e82]`,
       '- button "More" [@e70] collapsed', ...(o.noEd ? [] : [`- textbox "Editor content;Press Alt+F1 for Accessibility Options." [@e${o.ed}] value="secret line of the user's script"`])] : []),
@@ -47,6 +48,13 @@ async function main() {
   ok("定位:role + name;腳本名稱鈕認位置(加到圖表前一顆、帶展開狀態),名字有引號也讀得對",
     L.pine.ref === "@e58" && L.add.ref === "@e68" && L.title.ref === "@e67" && L.title.name === 'My "old" script' && L.editor.ref === "@e79" && L.createNew.ref === "@e89" && L.strategy.ref === "@e91", L);
   ok("定位:繁中 / 簡中的名字也認", ["新增到圖表", "添加到图表"].every((n) => P.NAMES.add.test(n)) && ["建立新的", "创建新的"].every((n) => P.NAMES.createNew.test(n)) && P.NAMES.strategy.test("策略") && ["未命名腳本", "无标题脚本"].every((n) => P.NAMES.untitled.test(n)));
+  ok("定位:Pine 鈕的新名字(2026-10-20 真站:Pine Editor / Pine編輯器 / Pine编辑器)與舊名都認;別的 Pine 開頭的字不認",
+    ["Pine", "Pine Editor", "Pine編輯器", "Pine编辑器"].every((n) => P.NAMES.pine.test(n)) && !["Pine Script", "Pine Script® v6", "Pine Editor 2", "Open Pine"].some((n) => P.NAMES.pine.test(n))
+    && P.locate(P.parseSnap(SNAP({ pineName: "Pine Editor" }))).pine.ref === "@e58" && P.locate(P.parseSnap(SNAP({ pineName: "Pine編輯器" }))).pine.ref === "@e58");
+  ok("定位:「移到分割視圖」三種語言都認;反方向那顆(移回覆蓋層)不認",
+    ["Move overlay to split-view", "將覆蓋層移動到分割視圖", "移动叠加层到分割视图"].every((n) => P.NAMES.split.test(n)) && !["Move split-view to overlay", "移動分割視圖到疊加層", "移动分割视图到叠加层"].some((n) => P.NAMES.split.test(n))
+    && P.locate(P.parseSnap(SNAP({ editor: true, title: "Untitled script", ed: 79, split: "overlay" }))).split.ref === "@e59" && P.locate(P.parseSnap(SNAP({ editor: true, title: "Untitled script", ed: 79, split: "split" }))).split === null);
+  ok("診斷的候選元素:Pine 開頭的鈕都記(改名了也看得出來)", ["Pine Editor", "Pine Script v7"].every((nm) => P.candidates(P.parseSnap(SNAP({ pineName: nm }))).some((n) => n.name === nm)));
   ok("定位:編輯器沒開時找不到「加到圖表」與腳本名稱鈕", (() => { const l = P.locate(P.parseSnap(SNAP({}))); return l.pine && !l.add && !l.title && !l.editor; })());
   // 登入態實測(2026-09-28,診斷 log 的 seen 原樣):腳本已經在圖上,那一格是 disabled 的「Update on chart」,下方開著策略測試器
   const ON_CHART = ['- button "Pine" [@e58]', '- button "Open context menu" [@e60] collapsed', '- button "Jan 1, 2026 — Sep 28, 2026" [@e61] collapsed', '- button "Column setup" [@e62] collapsed',
@@ -69,12 +77,13 @@ async function main() {
   ok("讀回:第一行不是我們的、讀不到、縮排被重排 → 不算", !P.pasteOk(PINE, "// other\n" + PINE, lastPage) && !P.pasteOk(PINE, "", lastPage) && !P.pasteOk(PINE, PINE, "") && !P.pasteOk(PINE, PINE, "    plot(fast)\n"));
   ok("網頁來的字:剝控制字元、零寬、bidi 覆寫、換行,壓空白、截長", P.clean("a\u200b\u202eb\u0007c\u2028d\n e" + "x".repeat(300), 20) === "ab c d e" + "x".repeat(12));
   // ── ② 流程(假頁面)──
-  const REF = { pine: "@e58", title: "@e67", add: "@e68", create: "@e89", strat: "@e91" };
+  const REF = { pine: "@e58", split: "@e59", title: "@e67", add: "@e68", create: "@e89", strat: "@e91" };
   function rig(o) {
     // selfOpen:n = 第 n 次看頁面時面板自己開回來(登入態的版面還原);edLate:n = 面板在了,但編輯器本體第 n 次看才出現;
     // dirty = 目前的腳本有未存的變更(按「策略」跳確認框、腳本不換);leaveAfter = 按了那一顆之後頁面被導到別的站
     o = Object.assign({ visible: true, hoverOnly: false, newScript: true, paste: "ok", enabled: true, editorOpen: false, names: {}, selfOpen: 0, edLate: 0, dirty: false, menuOpen: false, onChart: false }, o || {});
-    const st = { editor: o.editorOpen, menu: o.menuOpen, sub: false, ed: 79, title: o.title || "Old strategy", doc: "// old script\nplot(close)\n", cursor: "end", dialog: false, looks: 0, url: o.url || "https://www.tradingview.com/chart/w1EWngqG/?symbol=BINANCE%3ABTCUSDT.P&interval=60" };
+    // split:"overlay" = 編輯器以覆蓋層開(頁面 1280 寬以上才有「移到分割視圖」那顆,真站實測);"split" = 已經並排
+    const st = { split: o.split || null, editor: o.editorOpen, menu: o.menuOpen, sub: false, ed: 79, title: o.title || "Old strategy", doc: "// old script\nplot(close)\n", cursor: "end", dialog: false, looks: 0, url: o.url || "https://www.tradingview.com/chart/w1EWngqG/?symbol=BINANCE%3ABTCUSDT.P&interval=60" };
     const log = { clicks: [], marks: [], emits: [], arms: 0, disarms: 0, fills: 0, keys: [], lines: [], layout: [], direct: [] };
     st.layout = o.visible ? o.width || 1280 : 1280;   // 頁面排版的寬度:600 以下 TradingView 不畫 Pine 那顆鈕(真站實測);停在視窗外的分頁固定 1280
     const t = { id: "p1", status: "loading", visible: o.visible, userControl: false };
@@ -84,7 +93,7 @@ async function main() {
         st.looks++; if (o.selfOpen && st.looks >= o.selfOpen) st.editor = true;
         // onChart:目前那支已經在圖上 →「Update on chart」(disabled);開了新腳本才變回「Add to chart」
         const held = o.onChart && (st.ed === 79 || o.stuck) ? { add: "Update on chart", addOff: true, tester: true } : { tester: o.onChart };
-        const text = SNAP(Object.assign({ editor: st.editor && !(o.narrowLosesEditor && st.layout <= 600), title: st.title, ed: st.ed, menu: st.menu, sub: st.sub, dialog: st.dialog, noEd: st.looks < o.edLate, extra: o.extra }, held, o.names));
+        const text = SNAP(Object.assign({ editor: st.editor && !(o.narrowLosesEditor && st.layout <= 600), title: st.title, ed: st.ed, menu: st.menu, sub: st.sub, dialog: st.dialog, noEd: st.looks < o.edLate, extra: o.extra, pineName: o.pineName, split: st.split && (st.split === "split" || st.layout >= 1280) ? st.split : null }, held, o.names));
         return { text: st.layout <= 600 ? text.split("\n").filter((l) => !/^- button "Pine" /.test(l)).join("\n") : text };
       },
       node: (ref) => nodeOf(ref),
@@ -94,6 +103,7 @@ async function main() {
         const ref = "@e" + b; log.clicks.push(ref);
         if (ref === REF.pine) { if (!o.pineDead) st.editor = !st.editor; }
         else if (ref === REF.title) st.menu = !st.menu;
+        else if (ref === REF.split) st.split = st.split === "split" ? "overlay" : "split";
         else if (ref === REF.create) { if (!o.hoverOnly) st.sub = true; }
         else if (ref === REF.strat) { st.menu = false; st.sub = false; if (o.dirty) st.dialog = true; else if (o.newScript) { st.ed = 94; st.title = "Untitled script"; st.doc = "// template\nstrategy(\"My strategy\")\n"; } }
         if (o.takeoverAfter === ref) t.userControl = true;
@@ -157,6 +167,17 @@ async function main() {
     ok("流程:每次動手前開導覽守門,交接時收掉(之後用戶自己按的送出不會被當成程式觸發)", r.log.arms >= 5 && r.log.disarms >= 1);
     ok("流程:交接時「加到圖表」掛「由你按」;全程不畫 agent 游標(沒有 move)", r.log.marks.includes("need") && !r.log.marks.includes("move") && r.log.marks.includes("click"), r.log.marks);
     ok("流程:讀回前把游標移到文件開頭(mac Cmd+↑、其餘 Ctrl+Home)", r.log.keys.length === 1 && r.log.keys[0][1] === true && (process.platform === "darwin" ? r.log.keys[0][0] === "ArrowUp" && r.log.keys[0][2] === 4 : r.log.keys[0][0] === "Home" && r.log.keys[0][2] === 2), r.log.keys);
+  }
+  {
+    const r = rig({ pineName: "Pine Editor", split: "overlay" }), res = await r.pine.install(JOB);
+    ok("新版面(Pine Editor、編輯器以覆蓋層開):貼好讀回之後才按「移到分割視圖」,圖與編輯器並排;仍然沒按「加到圖表」、照樣交接", res.state === "handover" && r.st.split === "split" && r.st.doc === PINE
+      && r.log.clicks.join() === [REF.pine, REF.title, REF.create, REF.strat, REF.split].join() && !r.log.clicks.includes(REF.add) && r.log.marks.includes("need"), [res, r.log.clicks]);
+    const a = rig({ pineName: "Pine Editor", split: "split" }), ra = await a.pine.install(JOB);
+    ok("已經並排(只有反方向那顆):不按,維持並排", ra.state === "handover" && a.st.split === "split" && !a.log.clicks.includes(REF.split), a.log.clicks);
+    const n = rig({ pineName: "Pine Editor", split: "overlay", width: 512 }), rn = await n.pine.install(JOB);
+    ok("中欄太窄:1280 排版時那顆雖然在也不按(按了會帶進窄版面);還原真實寬度後沒有那顆 → 不按、照樣交接", rn.state === "handover" && n.st.split === "overlay" && !n.log.clicks.includes(REF.split) && n.log.layout.join() === "wide 1280,narrow@4/0", [rn, n.log.clicks, n.log.layout]);
+    const b = rig({ pineName: "Pine Editor", split: "overlay", width: 1000 }), rb = await b.pine.install(JOB);
+    ok("1000 寬(真站沒有那顆):不按,照樣交接", rb.state === "handover" && !b.log.clicks.includes(REF.split), b.log.clicks);
   }
   { const r = rig({ editorOpen: true }), res = await r.pine.install(JOB); ok("編輯器本來就開著:不按 Pine(那顆是開合)", res.state === "handover" && !r.log.clicks.includes(REF.pine), r.log.clicks); }
   { const r = rig({ editorOpen: true, edLate: 4 }), res = await r.pine.install(JOB); ok("面板開著、編輯器本體還在載:只等、不按 Pine(按了會把面板關掉)", res.state === "handover" && !r.log.clicks.includes(REF.pine) && r.st.editor === true, [res, r.log.clicks]); }
@@ -239,8 +260,8 @@ async function main() {
     ok("press:白名單外的組合、不在畫面上 → invalid_args,一個按鍵事件都不送", bad.error === "invalid_args" && off.error === "invalid_args" && n0 === 0 && !good.error && sent.length === 2, [bad, off, sent]);
   }
   ok("agent 工具那條路不帶修飾鍵", (idxSrc.match(/page\.press\(/g) || []).length === 1 && /v\.page\.press\(key, onScreenK\)\)/.test(idxSrc) && /!modsOk\(key, mods, process\.platform\)/.test(cdpSrc));
-  ok("pine.js 沒有任何一處去點「存檔」、碰「登入」「警報」:定位表只有那八個名字(存檔只當位置的錨)", Object.keys(P.NAMES).join() === "pine,add,update,save,createNew,strategy,untitled,editor" && !/alert|webhook|publish/i.test(pineSrc.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
-  ok("「加到圖表」/「Update on chart」/「存檔」只拿來定位與掛「由你按」:click() 的呼叫點沒有 add、save", (pineSrc.match(/await click\(t, v, [^)]*\)/g) || []).every((c) => !/\.(add|save|update)\b/.test(c)) && (pineSrc.match(/await click\(/g) || []).length === 4);
+  ok("pine.js 沒有任何一處去點「存檔」、碰「登入」「警報」:定位表只有那九個名字(存檔只當位置的錨)", Object.keys(P.NAMES).join() === "pine,add,update,save,createNew,strategy,untitled,editor,split" && !/alert|webhook|publish/i.test(pineSrc.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
+  ok("「加到圖表」/「Update on chart」/「存檔」只拿來定位與掛「由你按」:click() 的呼叫點沒有 add、save(五處:Pine、名稱鈕、建立新的、策略、移到分割視圖)", (pineSrc.match(/await click\(t, v, [^)]*\)/g) || []).every((c) => !/\.(add|save|update)\b/.test(c)) && (pineSrc.match(/await click\(/g) || []).length === 5);
 
   // ── ③ renderer 純邏輯 ──
   const src = read("renderer", "pine-install.js");
