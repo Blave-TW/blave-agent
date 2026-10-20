@@ -995,7 +995,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {}).slice(0, 2)) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
     ok("desktop_action 不畫", trEventText("desktop_action", { action: "update" }) === null);
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
-    ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose · TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose"); }
+    ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明
     ok("order-copy #12 沒撥過款的投資組合策略:金額表那一列講「要先更新」(雲端 tr.typeCHost、本機 tr.typeC),tr.cloud.typeC 退役", /if \(locked\) first\.appendChild\(trEl\("span", "pf-note", cloud \? t\("tr\.typeCHost"\) : t\("tr\.typeC"\)\)\);/.test(src) && !/tr\.cloud\.typeC/.test(src));
     const save = src.slice(src.indexOf("function trSaveAmounts("), src.indexOf("\nfunction ", src.indexOf("function trSaveAmounts(") + 1));

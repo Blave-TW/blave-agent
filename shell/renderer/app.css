@@ -617,8 +617,9 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   font-size: 13px; line-height: 1.4; text-align: left; color: var(--ink-2);
   transition: background var(--motion-fast) var(--ease-standard);
 }
-.strat-row:hover { background: var(--surface-muted); color: var(--ink); }
-.strat-row[aria-current="true"], .strat-row[aria-current="page"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }   /* 側欄入口(自動下單 / 策略庫 / 報告)用 page:nav 的正確語意 */
+/* canon › Studio 側欄目前項:hover 卡面、目前項 control-on——muted 在亮色比目前項的白底還重,暗色又跟目前項同值 */
+.strat-row:hover { background: var(--surface-card); color: var(--ink); }
+.strat-row[aria-current="true"], .strat-row[aria-current="page"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }   /* 側欄入口(自動下單 / 策略庫 / 報告)用 page:nav 的正確語意 */
 /* 名字是識別字(snake_case),過長截尾;數字靠右、等寬,上下列才對得齊 */
 .strat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 名字尾端的辨識記號(「（2）」、v2、_4h)不跟著截掉:前段截尾、尾段固定(只差記號的兩支才分得出來)。
@@ -1224,12 +1225,13 @@ body.resizing * { cursor: col-resize !important; }
    色條與填色永不相碰;策略列因此比上方導覽項內縮 12,web 已接受的巢狀縮排)。整列即拖拉把手:touch-action none 才不會變成捲動 */
 .strat-wrap { padding-left: var(--space-12); }
 #strat-list .strat-wrap { touch-action: none; }   /* 只有這台電腦的清單綁拖拉;雲端清單(只讀)照樣能用觸控捲 */
-.strat-wrap:is(:hover, :has(:focus-visible)) .strat-row { background: var(--surface-muted); color: var(--ink); }
+.strat-wrap:is(:hover, :has(:focus-visible)) .strat-row { background: var(--surface-card); color: var(--ink); }
 /* 沒有旗標鈕的列(雲端 tab,只讀):hover 時名字讓出 ✕ 的位置——只在真的有 ✕ 時讓(回合中 ✕ 收起,不留空白截名字)。
    條件包在 :where 裡不加權重,下面武裝那條才蓋得過它 */
 .strat-wrap:is(:hover, :has(:focus-visible)):where(:has(.cs-del:not(:disabled))) .strat-row { padding-right: 72px; }
 /* .flag-open = 該列的旗標面板開著(焦點已進面板,:has(:focus-visible) 不再成立),靠它撐住填色與雙鈕 */
-.strat-wrap.flag-open .strat-row { background: var(--surface-muted); color: var(--ink); }
+.strat-wrap.flag-open .strat-row { background: var(--surface-card); color: var(--ink); }
+.strat-wrap .strat-row[aria-current] { background: var(--surface-control-on); }   /* 目前項滑過也維持目前項的底:權重同上兩條,靠 source order 蓋過 */
 /* 有旗標鈕的列(這台電腦):resting 列尾零保留(名字吃滿);hover 時依列尾有幾顆鈕回流——只有旗標鈕 40、雙鈕 64(= 6+24+4+24+6)。
    不加 transition(名字 ellipsis 逐字重排的動畫比瞬跳更糟)。權重同上面 72 那條,靠 source order 蓋過 */
 .strat-wrap:is(:hover, :has(:focus-visible), .flag-open):where(:has(.strat-flagbtn)) .strat-row { padding-right: 40px; }

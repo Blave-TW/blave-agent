@@ -437,8 +437,8 @@ html.ws-sc .side-gate { display: none; }
 .ev-row:last-child { border-bottom: none; }
 .ev-row .ts { flex: none; width: 44px; color: var(--ink-3); }
 .ev-row .body { min-width: 0; overflow-wrap: anywhere; }
-.ev-row .hl { color: var(--ink); }
-.ev-row .err { color: var(--color-redText); }   /* P1:要你處理(同網頁 .ev-row .err) */
+.ev-row .hl { color: var(--ink); font-weight: 600; }
+.ev-row .err { color: var(--color-redText); font-weight: 600; }   /* P1:要你處理(同網頁 .ev-row .err) */
 .ev-row .dim { color: var(--ink-3); }
 
 /* ---- 中欄可窄到 288(視窗 1024):同一張表收欄,不改骨架。<520 標的併到策略名下 ---- */

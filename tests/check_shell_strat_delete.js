@@ -147,7 +147,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
     ok("資料夾不在了:最後一列 → 上一列;清單空了 → 新增鈕", prev && boxes[0] && boxes[0].opener === $("strat-add"));
     { const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), tcss = fs.readFileSync(path.join(R, "trade.css"), "utf8");
       ok("滑過列只在真的有 ✕ 時讓位(回合中 ✕ 收起不留 72px 空白,兩邊清單都是);條件包 :where,武裝那條仍蓋得過",
-        /\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{ background: var\(--surface-muted\); color: var\(--ink\); \}/.test(css)
+        /\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{ background: var\(--surface-card\); color: var\(--ink\); \}/.test(css)
         && /\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right: 72px; \}/.test(css)
         && !/\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{[^}]*padding-right/.test(css)
         && /#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right/.test(tcss)

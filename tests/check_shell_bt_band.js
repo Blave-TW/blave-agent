@@ -226,6 +226,7 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   const ys = r.h.calls.slice(bp, dash[0] ? dash[0].i : 0).filter((c) => c[0] === "lineTo" || c[0] === "moveTo").map((c) => c[2]);
   ok("0050:y 範圍含它(1.9× 也在權益區內)", ys.length === N && ys.every((y) => y >= EQ_TOP - 1e-6 && y <= EQ_TOP + EQ_H + 1e-6), ys.length + " 點");
   ok("0050 圖例:權益 → 0050 持有(不掛 tooltip)→ 回撤", JSON.stringify(r.legend()) === JSON.stringify([["bt-legend", "權益"], ["bt-legend bh", "0050 持有"], ["bt-legend dd", "回撤"]]), JSON.stringify(r.legend()));
+  ok("0050 圖例:代號 0050 包 .mono(同統計列)", byCls(r.head, "bt-legend").filter((c) => / bh$/.test(c.className)).some((c) => byCls(c, "mono").some((m) => m.textContent === "0050")));
   ok("0050:canvas aria 用 0050 那句", r.chart.getAttribute("aria-label") === STR.zh["bt.chartAria0050"]);
   const row = mrow(r.box), btn = row && row.children[0].children[0];
   ok("統計列:標籤 0050 持有、0050 包 .mono、值 +61.75% 中性色",

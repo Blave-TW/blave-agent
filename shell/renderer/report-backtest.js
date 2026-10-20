@@ -552,7 +552,7 @@
   // 圖例項帶說明:沿用指標標籤的 .mp-tip / .tip(hover 與鍵盤 focus 都會出)
   function legendItem(cls, text, tip) {
     const item = el("span", "bt-legend" + (cls ? " " + cls : ""));
-    if (!tip) { item.textContent = text; return item; }
+    if (!tip) { if (typeof text === "string") item.textContent = text; else item.appendChild(text); return item; }
     const id = "bt-tip-" + ++tipSeq;
     const btn = el("button", "mp-tip", text);
     btn.type = "button";
@@ -576,7 +576,7 @@
       head.appendChild(legendItem("band", t("bt.legendBand"), t("bt.tip.band")));
       head.appendChild(legendItem("med", t("bt.legendMedian")));
     }
-    if (bh) head.appendChild(legendItem("bh", t("bt.benchmark0050"))); // 說明只放統計列,這裡不掛 tooltip
+    if (bh) head.appendChild(legendItem("bh", monoToken(t("bt.benchmark0050"), "0050"))); // 說明只放統計列,這裡不掛 tooltip
     head.appendChild(legendItem("dd", t("bt.drawdown")));
   }
 
