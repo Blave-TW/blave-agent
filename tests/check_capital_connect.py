@@ -702,7 +702,8 @@ wk7.capital_vault = cv
 # the order lib refuses up front while a block matches (it never takes the retry), so its own
 # after-login recording is exercised with that pre-check stubbed open
 oc7.capital_vault = type("cvp", (), {"resolve": staticmethod(cv.resolve), "record_login": staticmethod(cv.record_login),
-                                     "login_blocked": staticmethod(lambda i, p, c=False: None)})
+                                     "login_blocked": staticmethod(lambda i, p, c=False: None),
+                                     "skcom_dll": staticmethod(cv.skcom_dll), "set_log_path": staticmethod(cv.set_log_path)})
 oc7._init_com = lambda: None
 for label, code, fail in (("321", 321, None), ("602", 602, None), ("600", 600, None),
                           ("login 0, then reading the cert fails", 0, "cert"),

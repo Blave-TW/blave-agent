@@ -1379,6 +1379,10 @@ class Daemon:
         self.capl.set_seal_key(self.secret)
         self.capl._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("群益 credentials handed over")
         self.capl._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
+        try:
+            self.capl.startup_sweep()
+        except Exception as e:
+            _log(f"capital log sweep failed: {type(e).__name__}")
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
         cl._resume_mgmt_watch()
