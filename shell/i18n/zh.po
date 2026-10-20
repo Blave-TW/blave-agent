@@ -8647,3 +8647,114 @@ msgstr "模擬交易"
 # 已綁定時連接框的主鈕(兩語逐字同網頁 workspace_pf_change_key;EN 是按鈕用 Title Case)
 msgid "cx.changeKey"
 msgstr "換金鑰"
+
+# 群益本機開通的憑證那一段(0.1.28;renderer/capital_local.js,設計 capital-new-cert-2026-10 §4)。開框讀憑證庫那一下
+msgid "capl.looking"
+msgstr "正在找這台電腦的群益憑證…"
+
+msgid "capl.none"
+msgstr "這台電腦還沒有群益憑證。"
+
+# 申請新憑證那兩步:只講用戶在群益視窗裡會遇到、會猶豫的事
+msgid "capl.s1"
+msgstr "在群益的視窗用身分證字號登入、輸入手機收到的驗證碼、設一組憑證密碼"
+
+msgid "capl.s2"
+msgstr "Windows 跳出「安全性警告」問要不要安裝根憑證時，按「是」"
+
+# 腳那一格(主鈕正上方)。精靈會撤銷舊證是已驗;被撤銷的在別台還能不能登入沒驗,所以「可能」
+msgid "capl.revoke"
+msgstr "在這台電腦申請新憑證，你在其他電腦上的群益憑證可能會失效。"
+
+# 雲端主機已連群益時取代上面那句(Wei 10-20 拍 A:不擋、字色升一階)
+msgid "capl.cloudWarn"
+msgstr "申請新憑證會撤銷你現在的群益憑證：雲端主機上的群益會斷線，之後要在雲端重新連接群益。"
+
+msgid "capl.open"
+msgstr "開啟憑證精靈"
+
+# 全部過期那一頁的分段鈕第一格(預設選這格)
+msgid "capl.renew"
+msgstr "展延憑證"
+
+# 已經有憑證那兩步(匯出位置沒驗過,不寫路徑)
+msgid "capl.h1"
+msgstr "在申請憑證的那台電腦打開群益憑證精靈，按「匯出憑證」"
+
+msgid "capl.h2"
+msgstr "把匯出的檔案複製到這台電腦，按「選擇憑證檔案」"
+
+msgid "capl.pick"
+msgstr "選擇憑證檔案"
+
+# 選好檔那張卡的副標:不顯示檔名(群益備份檔名含身分證)
+msgid "capl.pickedD"
+msgstr "在這台電腦匯入，不上傳"
+
+msgid "capl.import"
+msgstr "匯入"
+
+# 匯入:這台已有同一個身分證、到期更晚的那張(照 runtime plan_before_import 不匯)
+msgid "capl.errOlder"
+msgstr "這台電腦已經有一張比較新的群益憑證，這個檔是舊的。"
+
+msgid "capl.expired"
+msgstr "這台電腦的群益憑證 {date} 已過期。"
+
+msgid "capl.renewDo"
+msgstr "在群益的視窗登入、輸入手機收到的驗證碼。"
+
+# 系統地區(ACP)不是 950。{cp}…{tw} 是 Windows 的選單名,跟著 Windows 的顯示語言、不進 .po
+msgid "capl.locale"
+msgstr "這台電腦的系統地區不是繁體中文，群益的憑證精靈會變成亂碼。"
+
+msgid "capl.loc1"
+msgstr "打開「{cp}」›「{cr}」›「{rg}」"
+
+msgid "capl.loc2"
+msgstr "在「{adm}」分頁按「{chg}」，選「{tw}」"
+
+msgid "capl.loc2sub"
+msgstr "要系統管理員權限。有些舊程式的字也會跟著變。"
+
+msgid "capl.loc3"
+msgstr "重新開機，再回來這裡"
+
+msgid "capl.anyway"
+msgstr "還是要開"
+
+msgid "capl.openRegion"
+msgstr "開啟地區設定"
+
+# 精靈開著(每 3 秒查憑證庫)
+msgid "capl.wait"
+msgstr "在群益的視窗完成申請，這裡會自動接著做。"
+
+msgid "capl.waitHint"
+msgstr "不要另外用「以系統管理員身分執行」開精靈，憑證可能會放到別的 Windows 帳號。"
+
+msgid "capl.again"
+msgstr "再開一次憑證精靈"
+
+msgid "capl.busy"
+msgstr "憑證精靈已經開著，在工作列找「群益金融集團憑證精靈」。"
+
+# 開精靈失敗:下載不到/簽章不是程信科技(不執行)/沒打開
+msgid "capl.errDl"
+msgstr "下載不到群益的憑證精靈。已經幫你開群益憑證專區，從那裡下載。"
+
+msgid "capl.errSig"
+msgstr "下載到的憑證精靈不是群益官方簽署的版本，Blave 沒有打開它。已經幫你開群益憑證專區，從那裡下載。"
+
+msgid "capl.errLaunch"
+msgstr "憑證精靈沒有打開。公司電腦的話，可能被安全政策擋下。"
+
+# 新證進庫但私鑰用不了(DPAPI;M0 ①):刻意不給再申請——再申請會再撤銷一次
+msgid "capl.noKey"
+msgstr "憑證裝好了，但這個 Windows 帳號用不了它的私鑰。"
+
+msgid "capl.found"
+msgstr "這台電腦找到群益憑證，到期 {date}。接著填身分證字號和交易密碼。"
+
+msgid "capl.mac"
+msgstr "群益需要 Windows。"

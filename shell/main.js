@@ -2711,6 +2711,19 @@ function president() {
   });
   return _president;
 }
+/* 群益本機開通的憑證那一段(capital_local.js;畫面 renderer/capital_local.js):回給畫面的只有代號、張數、到期日;
+   憑證檔路徑與匯出密碼只在這個行程。只有 Windows 走得到 */
+let _capitalLocal = null;
+function capitalLocal() {
+  if (!_capitalLocal) _capitalLocal = require("./capital_local").createCapitalLocal({
+    userData: app.getPath("userData"),
+    pickFile: async () => { const w = BrowserWindow.getAllWindows()[0]; const r = await dialog.showOpenDialog(w, { properties: ["openFile"], filters: [{ name: "PFX", extensions: ["pfx", "p12"] }] }); return r.canceled ? null : r.filePaths[0]; },
+    openExternal: (u) => shell.openExternal(u),
+    uiLang: () => { try { return (app.getPreferredSystemLanguages() || [])[0] || ""; } catch (_) { return ""; } },
+    log: (m) => console.error(m),
+  });
+  return _capitalLocal;
+}
 /* daemon 每次起來都是空手:存著的帳密再交一次 */
 function presSync() {
   if (!_tradeHost || !WIN) return;
@@ -3365,6 +3378,14 @@ app.whenReady().then(() => {
   handle("president-cert", (_e, a) => president().certUse({ caPassword: a && typeof a.caPassword === "string" ? a.caPassword : null, source: a && a.source === "picked" ? "picked" : "found" }), presDenied);
   handle("president-step", (_e, name, o) => president().step(String(name || ""), { afterUnlock: !!(o && o.afterUnlock === true),
     env: o && (o.env === "test" || o.env === "live") ? o.env : undefined, url: o && typeof o.url === "string" ? o.url : undefined }), presDenied);
+  // 群益本機的憑證那一段(capital_local.js):匯出密碼送進來一次、拿不回去
+  handle("capl-scan", () => capitalLocal().scan(), presDenied);
+  handle("capl-locale", () => capitalLocal().locale(), presDenied);
+  handle("capl-wizard", () => capitalLocal().openWizard(), presDenied);
+  handle("capl-region", () => capitalLocal().openRegion(), presDenied);
+  handle("capl-pick", () => capitalLocal().pickPfx(), presDenied);
+  handle("capl-import", (_e, pw) => capitalLocal().importPfx(typeof pw === "string" ? pw : ""), presDenied);
+  handle("capl-forget", () => { if (_capitalLocal) _capitalLocal.forget(); return true; }, false);
   // 解除綁定:機器上那五行 + 憑證檔(runtime drop_vault)先走,成功了才丟這裡存的帳密
   handle("president-unbind", async () => {
     const h = tradeHost(), PE = require("./daemon").PRESIDENT_ENV;

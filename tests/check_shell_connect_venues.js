@@ -13,9 +13,10 @@ let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); 
 const J = JSON.stringify;
 
 if (!process.versions.electron) (async () => {
-  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,下拉的「台股」組與 change 都看它(cxPresListed)", !!presFlag
-    && /if \(CXF\.env !== "local" \|\| cxPresListed\(\)\) \{ const g2 = document\.createElement\("optgroup"\)/.test(tradeSrc)
-    && /\(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(tradeSrc));
+  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,下拉的「台股」組與 change 都看它(cxPresListed);群益本機另受 CAPL_LOCAL_ON 管(0.1.28 預設關)", !!presFlag
+    && /const tw = CXF\.env !== "local" \? \[\[CAPITAL, "cap\.venue"\]\] : \[cxPresListed\(\) \? \["president", "pres\.venue"\] : null, cxCaplListed\(\) \? \[CAPITAL, "cap\.venue"\] : null\]\.filter\(Boolean\);/.test(tradeSrc)
+    && /\(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\)/.test(tradeSrc) && /^const CAPL_LOCAL_ON = false;$/m.test(tradeSrc)
+    && /\(sel\.value === CAPITAL && CXF\.env === "local" && cxCaplListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(tradeSrc));
   // ── ① daemon 白名單 ──
   const { argsOk } = require(path.join(SHELL, "daemon.js"));
   const CC = require(path.join(SHELL, "cloudcmd.js"));

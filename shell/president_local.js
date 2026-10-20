@@ -7,7 +7,7 @@
    - 憑證e總管:統一官方的單一執行檔(TWCA TCEM.exe,免安裝),下載到 userData、SHA256 對上才以一般權限打開。**只負責打開**:
      不填、不點、不讀它的畫面,簡訊碼由用戶在統一自己的視窗輸入。
    不依賴 electron(tests/check_shell_president_local.js 直接 require)。 */
-const fs = require("fs"), path = require("path"), crypto = require("crypto"), https = require("https");
+const fs = require("fs"), path = require("path"), crypto = require("crypto");
 
 const SEAL_INFO = "president-local-seal-v1", SEAL_AAD = "president-local-v1";   // = runtime/president_connect._SEAL_INFO / _SEAL_AAD
 // research/president-mac-cert-experiment-2026-10-02.md §1:官方下載免登入、單一執行檔、asInvoker;檔名不能含 setup / install(會被要求提權)
@@ -42,25 +42,7 @@ function heldLots(report) {
   const p = a && a.positions && typeof a.positions === "object" ? a.positions : {};
   return Object.keys(p).reduce((n, k) => { const s = p[k] && Number(p[k].size); return n + (isFinite(s) && s > 0 ? Math.round(s) : 0); }, 0);
 }
-function defaultFetch(url, max, hops = 3) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { timeout: 30000 }, (res) => {
-      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops > 0) {
-        res.resume();
-        const next = new URL(res.headers.location, url).toString();
-        if (!next.startsWith("https://")) { reject(new Error("REDIRECT")); return; }
-        defaultFetch(next, max, hops - 1).then(resolve, reject); return;
-      }
-      if (res.statusCode !== 200) { res.resume(); reject(new Error("HTTP_" + res.statusCode)); return; }
-      const parts = []; let n = 0;
-      res.on("data", (d) => { n += d.length; if (n > max) { req.destroy(new Error("TOO_LARGE")); return; } parts.push(d); });
-      res.on("end", () => resolve(Buffer.concat(parts)));
-      res.on("error", reject);
-    });
-    req.on("timeout", () => req.destroy(new Error("TIMEOUT")));
-    req.on("error", reject);
-  });
-}
+const defaultFetch = (url, max) => require("./fetchbuf").fetchBuffer(url, max);
 
 function createPresident({ userData, home, platform = process.platform, seal, host, pickFile, fetchBuffer = defaultFetch,
   spawnFn = require("child_process").spawn, openExternal = () => {}, now = () => Date.now() }) {

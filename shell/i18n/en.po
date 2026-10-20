@@ -6927,10 +6927,10 @@ msgid "pres.none.lead"
 msgstr "This computer doesn’t have a President certificate yet."
 
 msgid "pres.none.new"
-msgstr "Apply for a new certificate"
+msgstr "Apply for a New Certificate"
 
 msgid "pres.none.have"
-msgstr "I already have one"
+msgstr "I Already Have One"
 
 msgid "pres.none.newLead"
 msgstr "Follow these steps; your progress is kept."
@@ -7125,7 +7125,7 @@ msgid "pres.cert.use"
 msgstr "Use this certificate"
 
 msgid "pres.cert.other"
-msgstr "Choose another file"
+msgstr "Choose Another File"
 
 msgid "pres.cert.local"
 msgstr "Checked on this computer; nothing is uploaded."
@@ -8629,3 +8629,114 @@ msgstr "Paper Trading"
 # Connect dialog primary button when an account is already bound (same words as web workspace_pf_change_key; Title Case as a button)
 msgid "cx.changeKey"
 msgstr "Replace Key"
+
+# 群益本機開通的憑證那一段(0.1.28;renderer/capital_local.js,設計 capital-new-cert-2026-10 §4)。開框讀憑證庫那一下
+msgid "capl.looking"
+msgstr "Looking for a Capital certificate on this computer…"
+
+msgid "capl.none"
+msgstr "This computer doesn't have a Capital certificate yet."
+
+# 申請新憑證那兩步:只講用戶在群益視窗裡會遇到、會猶豫的事
+msgid "capl.s1"
+msgstr "In Capital's window, sign in with your national ID number, enter the code texted to your phone, and set a certificate password"
+
+msgid "capl.s2"
+msgstr "If Windows shows a Security Warning about installing a root certificate, choose Yes"
+
+# 腳那一格(主鈕正上方)。精靈會撤銷舊證是已驗;被撤銷的在別台還能不能登入沒驗,所以「可能」
+msgid "capl.revoke"
+msgstr "Applying on this computer may invalidate your Capital certificate on other computers."
+
+# 雲端主機已連群益時取代上面那句(Wei 10-20 拍 A:不擋、字色升一階)
+msgid "capl.cloudWarn"
+msgstr "Applying revokes your current Capital certificate. Capital on your cloud machine will disconnect, and you'll need to reconnect it there."
+
+msgid "capl.open"
+msgstr "Open Certificate Wizard"
+
+# 全部過期那一頁的分段鈕第一格(預設選這格)
+msgid "capl.renew"
+msgstr "Renew Certificate"
+
+# 已經有憑證那兩步(匯出位置沒驗過,不寫路徑)
+msgid "capl.h1"
+msgstr "On the computer you applied from, open Capital's certificate wizard and choose 匯出憑證 (Export certificate)"
+
+msgid "capl.h2"
+msgstr "Copy the exported file to this computer, then press Choose Certificate File"
+
+msgid "capl.pick"
+msgstr "Choose Certificate File"
+
+# 選好檔那張卡的副標:不顯示檔名(群益備份檔名含身分證)
+msgid "capl.pickedD"
+msgstr "Imported on this computer, never uploaded"
+
+msgid "capl.import"
+msgstr "Import"
+
+# 匯入:這台已有同一個身分證、到期更晚的那張(照 runtime plan_before_import 不匯)
+msgid "capl.errOlder"
+msgstr "This computer already has a newer Capital certificate; this file is older."
+
+msgid "capl.expired"
+msgstr "The Capital certificate on this computer expired on {date}."
+
+msgid "capl.renewDo"
+msgstr "Sign in in Capital's window and enter the code texted to your phone."
+
+# 系統地區(ACP)不是 950。{cp}…{tw} 是 Windows 的選單名,跟著 Windows 的顯示語言、不進 .po
+msgid "capl.locale"
+msgstr "This computer's system locale isn't Traditional Chinese, so Capital's wizard will show garbled text."
+
+msgid "capl.loc1"
+msgstr "Open {cp} › {cr} › {rg}"
+
+msgid "capl.loc2"
+msgstr "On the {adm} tab, choose {chg} and pick {tw}"
+
+msgid "capl.loc2sub"
+msgstr "Needs administrator rights. Text in some older programs may change too."
+
+msgid "capl.loc3"
+msgstr "Restart, then come back here"
+
+msgid "capl.anyway"
+msgstr "Open Anyway"
+
+msgid "capl.openRegion"
+msgstr "Open Region Settings"
+
+# 精靈開著(每 3 秒查憑證庫)
+msgid "capl.wait"
+msgstr "Finish applying in Capital's window; this continues automatically."
+
+msgid "capl.waitHint"
+msgstr "Don't open the wizard with Run as administrator — the certificate may go to a different Windows account."
+
+msgid "capl.again"
+msgstr "Open the Wizard Again"
+
+msgid "capl.busy"
+msgstr "The wizard is already open. Look for 群益金融集團憑證精靈 in the taskbar."
+
+# 開精靈失敗:下載不到/簽章不是程信科技(不執行)/沒打開
+msgid "capl.errDl"
+msgstr "Couldn't download Capital's certificate wizard. Capital's certificate page is open in your browser — download it there."
+
+msgid "capl.errSig"
+msgstr "The downloaded wizard isn't signed by Capital, so Blave didn't open it. Capital's certificate page is open in your browser — download it there."
+
+msgid "capl.errLaunch"
+msgstr "The wizard didn't open. On a work computer, a security policy may have blocked it."
+
+# 新證進庫但私鑰用不了(DPAPI;M0 ①):刻意不給再申請——再申請會再撤銷一次
+msgid "capl.noKey"
+msgstr "The certificate is installed, but this Windows account can't use its private key."
+
+msgid "capl.found"
+msgstr "Found a Capital certificate on this computer, expiring {date}. Next, enter your national ID number and trading password."
+
+msgid "capl.mac"
+msgstr "Capital needs Windows."

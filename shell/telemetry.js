@@ -197,6 +197,10 @@ const EVENTS = {
     "po_add", "po_add_go", "po_add_saved", "po_save_orders",
     // 防睡(spec desktop-keep-awake):awake_cloud_go = 啟動確認框細節裡「改用雲端主機」;awake_off = 設定 › 一般的防睡開關切成關
     "awake_cloud_go", "awake_off",
+    // 群益本機開通的憑證那一段(0.1.28;renderer/capital_local.js,spec desktop-capital-new-cert §5;雲端視角的 cap_* 已用掉,本機一律 capl_):
+    // capl_have_cert = 按「已經有憑證」;capl_wiz_open = 精靈真的打開了;capl_wiz_anyway = 系統地區不是繁中、按「還是要開」而且打開了;
+    // capl_cert_new = 這次開框裡偵測到開精靈前沒有的那張、私鑰用得了。每開一次框每個名字最多一次、失敗不埋、不帶到期日或任何值
+    "capl_have_cert", "capl_wiz_open", "capl_wiz_anyway", "capl_cert_new",
     // 外觀(0.1.28;renderer/app.js):theme_system / _light / _dark = 設定 › 一般改了外觀、值真的變了;
     // theme_light_seen = 畫面實際顯示成淺色(開 app 或當天切過去;每安裝每日一次,回答「多少人實際在用淺色」)
     "theme_system", "theme_light", "theme_dark", "theme_light_seen",
