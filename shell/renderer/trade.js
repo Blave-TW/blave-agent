@@ -1520,7 +1520,7 @@ const PRES_LOCAL_ON = true;
 const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
 /* 群益本機入口(renderer/capital_local.js):0.1.28 先出憑證那一段(找憑證／申請新憑證／匯入 pfx),帳密與開通清單是下一段——
    整段做完之前不列在這台電腦的下拉裡 */
-const CAPL_LOCAL_ON = false;
+const CAPL_LOCAL_ON = true;
 const cxCaplListed = () => CAPL_LOCAL_ON || CXF.venue === CAPITAL;
 // 不在連接框那五家裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py、account_stockcoin.py)
 const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD", stockcoin: "USDT" };
