@@ -1510,6 +1510,10 @@ const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "clou
 const PRES_LOCAL_ON = true;
 // 這台電腦的下拉列不列統一:旗標開、或這個框是「繼續」帶著 president 進來的(少了那一項 select 會變空白)
 const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
+/* 群益本機入口(renderer/capital_local.js):0.1.28 先出憑證那一段(找憑證／申請新憑證／匯入 pfx),帳密與開通清單是下一段——
+   整段做完之前不列在這台電腦的下拉裡 */
+const CAPL_LOCAL_ON = false;
+const cxCaplListed = () => CAPL_LOCAL_ON || CXF.venue === CAPITAL;
 // 不在連接框那五家裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py、account_stockcoin.py)
 const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD", stockcoin: "USDT" };
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)
@@ -4926,7 +4930,7 @@ const CXF = { env: "local", venue: PAPER, apiKey: "", secret: "", passphrase: ""
 const cxBag = () => TR_BAGS[CXF.env === "cloud" ? "cloud" : "local"];
 // 雲端主機現在的對外 IP(cloud.js 只在 running 時交出來;停機的主機沒有固定 IP)
 function cxCloudIp() { const c = TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud; const ip = c && c.machine && c.machine.public_ip; return typeof ip === "string" && ip ? ip : null; }
-function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; if (typeof capForget === "function") capForget(); if (typeof presForget === "function") presForget(); }
+function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; if (typeof capForget === "function") capForget(); if (typeof presForget === "function") presForget(); if (typeof caplForget === "function") caplForget(); }
 /* 兩個視角共用這個框(spec-desktop-cloud-s5 §2:只差五處)。雲端只在主機 running 時開得起來。 */
 function cxModalOpen(opener, venue) {   // venue:設定分頁群益「繼續」直接帶進群益那條(只有雲端);統一「繼續」只有這台電腦
   const env = ENV.cur;
@@ -5039,12 +5043,15 @@ function cxVenueField(L) {
   sel.appendChild(g);
   // 群益只在雲端(交給 capital.js;電腦版不接群益,這台電腦那條 Wei 0.1.18 拿掉)。統一期貨只在這台電腦視角
   // (雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。Mac 也列統一,選了講一句(d-mac)。統一那一項受 PRES_LOCAL_ON 管
-  if (CXF.env !== "local" || cxPresListed()) { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw");
-    const o2 = trEl("option", "", CXF.env === "local" ? t("pres.venue") : t("cap.venue")); o2.value = CXF.env === "local" ? "president" : CAPITAL; g2.appendChild(o2);
+  // 群益本機受 CAPL_LOCAL_ON 管(憑證那一段先出,帳密與清單還沒做)
+  const tw = CXF.env !== "local" ? [[CAPITAL, "cap.venue"]] : [cxPresListed() ? ["president", "pres.venue"] : null, cxCaplListed() ? [CAPITAL, "cap.venue"] : null].filter(Boolean);
+  if (tw.length) { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw");
+    tw.forEach(([v, k]) => { const o2 = trEl("option", "", t(k)); o2.value = v; g2.appendChild(o2); });
     sel.appendChild(g2); }
   sel.value = CXF.venue; sel.disabled = !!L.cx.busy || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
   sel.addEventListener("change", () => {
-    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") || (sel.value === "president" && CXF.env === "local" && cxPresListed()) ? sel.value : PAPER;
+    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") || (sel.value === "president" && CXF.env === "local" && cxPresListed())
+      || (sel.value === CAPITAL && CXF.env === "local" && cxCaplListed()) ? sel.value : PAPER;
     cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== PAPER && CXF.venue !== CAPITAL && CXF.venue !== "president" && CXF.ip === undefined) cxIpLookup();
   });
   w.appendChild(sel); lab.appendChild(w);
@@ -5053,6 +5060,11 @@ function cxVenueField(L) {
 function cxModalPaint() {
   if (CXF.venue === CAPITAL && CXF.env === "cloud") return capPaint();   // 群益整個框交給 capital.js
   if (typeof capFootRestore === "function") capFootRestore();
+  if (CXF.venue === CAPITAL && CXF.env === "local") {   // 群益本機整個框交給 capital_local.js;第一次進來先找憑證、讀系統地區
+    if (!CAPL.started) caplStart();
+    return caplPaint();
+  }
+  if (typeof caplFootRestore === "function") caplFootRestore();
   if (CXF.venue === "president" && CXF.env === "local") {   // 統一整個框交給 president.js;第一次進來先問主行程存了什麼、看 PSCCA
     if (!PRES.started) { PRES.started = true; presResume(); }
     return presPaint();
@@ -5207,7 +5219,11 @@ async function cxConnectCloud() {
   if (f) f.focus();
 }
 async function cxConnect() {
-  if (CXF.venue === CAPITAL) { if (CXF.env === "cloud" && ENV.cur === "cloud" && !$("cx-scrim").hidden) return capPrimary(); return; }
+  if (CXF.venue === CAPITAL) {
+    if (CXF.env === "cloud" && ENV.cur === "cloud" && !$("cx-scrim").hidden) return capPrimary();
+    if (CXF.env === "local" && ENV.cur === "local" && !$("cx-scrim").hidden) return caplPrimary();
+    return;
+  }
   if (CXF.venue === "president") { if (CXF.env === "local" && ENV.cur === "local" && !$("cx-scrim").hidden) return presPrimary(); return; }
   if (CXF.env === "cloud") { if (!TR_BAGS.cloud.cx.busy && !$("cx-scrim").hidden && ENV.cur === "cloud") return cxConnectCloud(); return; }
   const L = TR_BAGS.local;

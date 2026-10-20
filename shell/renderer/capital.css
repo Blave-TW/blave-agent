@@ -48,3 +48,9 @@
 .cn-st .cap-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink); }
 .cap-e2e { color: var(--ink-2); }   /* 誠實句(spec §2.4):比說明字重一級 */
 .cap-idf { font-family: var(--font-mono); }   /* 身分證字號明碼(設計稽核 C-3) */
+/* 群益本機的憑證那一段(renderer/capital_local.js;設計 capital-new-cert-2026-10)。其餘沿用 president.css 的 .pres-seg / .pres-todo / .pres-wait / .pres-found */
+.cx-modal .del-where.is-strong { color: var(--ink); }   /* 雲端已連群益的提醒(Wei 拍 A):同一格、字色升一階,不用紅 */
+.cx-modal .modal-foot .btn-quiet.lead { margin-right: auto; }   /* 系統地區頁的「還是要開」:腳左側的次要動作(同 .plan-act .btn-quiet) */
+.pres-found .capl-tx { flex: 1; min-width: 0; }
+.pres-todo .capl-region { margin: var(--space-2) 0 var(--space-4); }
+.pres-seg + .pres-found { margin-top: var(--space-12); }

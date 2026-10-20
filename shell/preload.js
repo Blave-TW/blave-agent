@@ -83,6 +83,14 @@ contextBridge.exposeInMainWorld("blave", {
   presidentCert: (caPassword, source) => ipcRenderer.invoke("president-cert", { caPassword, source }),
   presidentStep: (name, o) => ipcRenderer.invoke("president-step", name, o || {}),
   presidentUnbind: () => ipcRenderer.invoke("president-unbind"),
+  // 群益本機的憑證那一段(capital_local.js):拿得回來的只有代號、張數、到期日
+  caplScan: () => ipcRenderer.invoke("capl-scan"),
+  caplLocale: () => ipcRenderer.invoke("capl-locale"),
+  caplWizard: () => ipcRenderer.invoke("capl-wizard"),
+  caplRegion: () => ipcRenderer.invoke("capl-region"),
+  caplPick: () => ipcRenderer.invoke("capl-pick"),
+  caplImport: (pw) => ipcRenderer.invoke("capl-import", pw),
+  caplForget: () => ipcRenderer.invoke("capl-forget"),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),
   onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),
