@@ -153,6 +153,17 @@ st = run("tw_late", TW, lambda *a, **k: pd.DataFrame({"Open": late, "Close": lat
 check("benchmark_bh" in st and st["benchmark_bh"] is None,
       "0050 starting after the first bar: benchmark_bh null")
 
+# ── a whole-market universe holds preferred shares (2887Z1) and ETFs (00631L, 00679B) ──
+calls.clear()
+st = run("tw_pref", ["2330", "2887Z1", "00631L", "00679B", "6488.TWO"], fake_0050)
+check(isinstance(st.get("benchmark_bh"), dict) and calls and calls[-1][0] == "0050"
+      and not [k for k in RANDOM_KEYS if k in st],
+      "2887Z1 / 00631L / 00679B in the universe: still 0050, no random portfolios")
+check(not runner._is_tw_universe(["2330", "2887Z1", "BTCUSDT"])
+      and not runner._is_tw_universe(["2330", "TXFR1"]) and not runner._is_tw_universe(["1000PEPEUSDT"])
+      and not runner._is_tw_universe(["2330", "1234567"]) and not runner._is_tw_universe([]),
+      "a crypto / futures / non-code column still means not a Taiwan universe")
+
 # ── crypto and mixed universes: the random benchmark, unchanged ──
 for name, cols in (("crypto", ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]),
                    ("mixed", ["2330", "2317", "2454", "6488.TWO", "BTCUSDT"])):

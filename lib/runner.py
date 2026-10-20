@@ -2007,12 +2007,15 @@ def _fill_invalid_cells(close_v, open_v):
 
 
 TW_BENCHMARK = '0050'
+# every listed TWSE/TPEx code, incl. preferred shares like 2887Z1 that _TW_STOCK_RE (the paper /
+# sizing route) leaves out: one such column in a whole-market universe must not drop 0050
+_TW_LISTED_RE = re.compile(r"^\d{4,6}(?:[A-Z]\d?)?(?:\.TWO?)?$")
 
 
 def _is_tw_universe(columns):
     """A Type C whose every column is a Taiwan stock / ETF code: benchmarked against 0050
     buy-and-hold instead of random portfolios. A mixed or crypto universe keeps the random one."""
-    return len(columns) > 0 and all(isinstance(c, str) and _TW_STOCK_RE.match(c) for c in columns)
+    return len(columns) > 0 and all(isinstance(c, str) and _TW_LISTED_RE.match(c) for c in columns)
 
 
 def _tw_bh_benchmark(close_df, hdrs):
