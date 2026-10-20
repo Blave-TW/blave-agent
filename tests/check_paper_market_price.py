@@ -52,6 +52,7 @@ def fetch_data(hdrs):
 
 strategy("btc", "BTCUSDT")
 strategy("nvda", "NVDAUSDT")
+strategy("okxonly", "OKXONLYUSDT")
 strategy("tmf", "TMF")
 strategy("cl", "CLFUT")
 strategy("aapl", "AAPL", "from lib.data import fetch_usstock_price")
@@ -93,11 +94,14 @@ data.fetch_kline = lambda sym, *a, **k: kline_calls.append(sym) or pd.DataFrame(
     {"Close": [77.0]}, index=[pd.Timestamp.now().floor("min")])
 
 
-def price(sym):
+KEY = {"blave_api_key": "k", "blave_secret_key": "s"}
+
+
+def price(sym, env=KEY):
     paper_data._price_cache.clear()
     del hits[:]
     try:
-        return paper_data.current_price(sym, {})
+        return paper_data.current_price(sym, env)
     except paper_data.PaperNoPrice as e:
         return e
 
@@ -108,17 +112,29 @@ check(price("BTCUSDT") == (81882.7, None), "BTCUSDT fills at Binance's last trad
 check(hits == [("fapi.binance.com", "/fapi/v1/ticker/price")], f"one ticker request ({hits})")
 check(price("NVDAUSDT") == (218.1, None), "a stock perp is crypto: Binance's last trade")
 check(price("btc_usdt")[0] == 81882.7, "a venue spelling is normalised before asking")
+import logging  # noqa: E402
+last_resort = []
+paper_data.log.addHandler(type("H", (logging.Handler,), {"emit": lambda self, r: last_resort.append(r.getMessage())})())
 r = price("NEWUSDT")
 check(isinstance(r, paper_data.PaperNoPrice) and not kline_calls,
-      f"not listed on Binance (-1121): no price, no fallback ({r!r}, {kline_calls})")
+      f"not on Binance (-1121), no strategy trades it: no price, Blave not asked ({r!r}, {kline_calls})")
+del last_resort[:]
+check(price("OKXONLYUSDT") == (OWNER_PX, "okxonly") and not kline_calls,
+      "an OKX/BingX-only coin: its strategy's own close, Blave not asked (it only carries Binance)")
+check(any("OKXONLYUSDT" in m and "own latest close" in m for m in last_resort),
+      f"…and the last resort says so in the log ({last_resort})")
 BINANCE_DOWN[0] = True
 check(price("BTCUSDT") == (77.0, None) and kline_calls == ["BTCUSDT"],
       "Binance unreachable: the same market's latest 1m bar via Blave")
 check(price("NVDAUSDT") == (77.0, None) and not hits,
       f"…and the next symbol does not wait on Binance again ({hits})")
+del kline_calls[:]
+check(price("BTCUSDT", {}) == (OWNER_PX, "btc") and not kline_calls,
+      "Binance blocked and no Blave key (desktop): the strategy's own close, Blave not asked")
 data.fetch_kline = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("blave down"))
-r = price("BTCUSDT")
-check(isinstance(r, paper_data.PaperNoPrice), f"both down: no price ({r!r})")
+check(price("BTCUSDT") == (OWNER_PX, "btc"), "Binance and Blave both down: the strategy's own close")
+r = price("SOLUSDT")
+check(isinstance(r, paper_data.PaperNoPrice), f"…no strategy trades it either: no price ({r!r})")
 BINANCE_DOWN[0] = False
 paper_data._binance_down_at[0] = 0.0
 

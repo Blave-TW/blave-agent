@@ -11,8 +11,9 @@ level nobody ever quoted.
     the market lib.data's klines come from (fetch_kline is fapi), so a backtest
     and its paper fills read one market. Spot rows price off the perp too (a
     few bp of basis). Binance unreachable (a blocked region, an outage) → the
-    latest closed 1m bar of the same market via Blave /kline; a symbol Binance
-    does not list (-1121) has no price — not even a strategy's own exchange.
+    latest closed 1m bar of the same market via Blave /kline (with a key). Last
+    resort — a coin Binance does not list (OKX/BingX-only), a key-less desktop
+    where Binance is blocked — the owning strategy's own latest close (logged).
   * TAIFEX futures (TXF/MXF/TMF, stock futures CDF…): the latest 1m Close of
     the continuous near-month series (Blave, uncached: the latest minute the
     server has). That series is what the strategies read,
@@ -217,13 +218,17 @@ def _resolve_price(symbol, env):
     if _txf_root(sym) or _TAIFEX_RE.match(sym):
         return _taifex_last(sym, hdrs), None
     if sym.endswith(_CRYPTO_QUOTES):
-        return _crypto_last(sym, hdrs), None
+        return _crypto_last(sym, hdrs)
     if _us_owned(sym):
         return _us_last(symbol), None
+    return _owner_price(symbol, hdrs)
+
+
+def _owner_price(symbol, hdrs):
+    """The 08-21 rule: the latest Close of the strategy trading `symbol`."""
     name = _resolve_strategy(symbol)
     if not name:
-        raise PaperNoPrice(f"no market price for {symbol}: not crypto, TAIFEX, a TW stock, "
-                           f"or a symbol a strategy trades")
+        raise PaperNoPrice(f"no market feed answered and no strategy trades {symbol}")
     try:
         return _last_close(_load_strategy(name).fetch_data(hdrs)), name
     except PaperNoPrice:
@@ -263,24 +268,35 @@ _binance_down_at = [0.0]
 
 
 def _crypto_last(sym, hdrs):
-    first = "skipped: unreachable moments ago"
-    if time.time() - _binance_down_at[0] >= _BINANCE_SKIP_S:
+    """(price, owner name or None). Binance → Blave 1m (with a key) → the owning
+    strategy's own close, the last resort for a coin Binance does not list
+    (OKX/BingX-only) and a key-less desktop where Binance is blocked."""
+    tried = []
+    if time.time() - _binance_down_at[0] < _BINANCE_SKIP_S:
+        tried.append("Binance skipped: unreachable moments ago")
+    else:
         try:
-            return _binance_last(sym)
+            return _binance_last(sym), None
         except _NotListed:
-            raise PaperNoPrice(f"{sym} is not listed on Binance USDT-M futures — no market price")
+            tried.append("not listed on Binance USDT-M")
         except Exception as e:
-            first = f"{type(e).__name__}: {e}"
+            tried.append(f"Binance {type(e).__name__}: {e}")
             _binance_down_at[0] = time.time()
-    log.warning(f"[paper_data] Binance price for {sym} unavailable ({first}) — Blave 1m kline")
+    # Blave /kline is Binance's own bars: nothing there for a coin Binance does not list
+    if hdrs.get("api-key") and not tried[0].startswith("not listed"):
+        try:
+            from datetime import datetime, timedelta, timezone
+            from lib.data import fetch_kline
+            start = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
+            return _last_close(fetch_kline(sym, "1m", start, None, hdrs, max_retries=2)), None
+        except Exception as e:
+            tried.append(f"Blave 1m kline {type(e).__name__}: {e}")
     try:
-        from datetime import datetime, timedelta, timezone
-        from lib.data import fetch_kline
-        start = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
-        return _last_close(fetch_kline(sym, "1m", start, None, hdrs, max_retries=2))
-    except Exception as e:
-        raise PaperNoPrice(f"no market price for {sym}: Binance {first}; "
-                           f"Blave 1m kline {type(e).__name__}: {e}")
+        px, name = _owner_price(sym, hdrs)
+    except PaperNoPrice as e:
+        raise PaperNoPrice(f"no market price for {sym}: {'; '.join(tried)}; {e}")
+    log.warning(f"[paper_data] {sym}: {'; '.join(tried)} — priced at strategy {name}'s own latest close")
+    return px, name
 
 
 # Widening windows so a closed market (weekend, Lunar New Year) still answers its last minute
