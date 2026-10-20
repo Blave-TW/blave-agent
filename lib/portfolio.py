@@ -339,7 +339,7 @@ def defer_paper_tw_close(keys):
     tmp = _PAPER_TW_CLOSE_PATH + '.tmp'
     with open(tmp, 'w') as f:
         json.dump({'keys': sorted(set(have) | set(keys)), 'ts': int(time.time())}, f)
-    os.replace(tmp, _PAPER_TW_CLOSE_PATH)
+    atomic_replace(tmp, _PAPER_TW_CLOSE_PATH)
 
 
 _PAPER_TW_CANCEL = 'close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單'
@@ -372,7 +372,7 @@ def _paper_tw_deferred(diff_actual, halted):
         tmp = _PAPER_TW_CLOSE_PATH + '.tmp'
         with open(tmp, 'w') as f:
             json.dump({**rec, 'keys': sorted(held), 'ts': int(time.time())}, f)
-        os.replace(tmp, _PAPER_TW_CLOSE_PATH)
+        atomic_replace(tmp, _PAPER_TW_CLOSE_PATH)
     return held
 
 
