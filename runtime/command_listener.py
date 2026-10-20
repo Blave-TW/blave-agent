@@ -1343,6 +1343,12 @@ def _cmd_credentials(args):
             # fail-closed like _cmd_amounts: rebuilding from just this payload
             # would silently drop the BLAVE data-API keys. A retry costs nothing.
             raise RuntimeError(f".env unreadable ({type(e).__name__}) — try again")
+        # nothing was ever bound here: every UI bind / unbind writes the manifest, and only an
+        # unbind leaves a stop mark or a parked account — a blank routing then is the 下單設定
+        # saved before any account existed (onboarding ③ before ④), never an unbind's
+        first_bind = not (os.path.exists(os.path.join(WORKSPACE, "manager", "credentials.ui.json"))
+                          or os.path.exists(RECONCILER_STOP_MARK)
+                          or os.path.exists(PARKED_ACCOUNT_STATE) or _venue_cred_ids(lines))
         # casefold: an agent-hand-written lowercase twin of the same key must be
         # replaced, not left to coexist with the new line
         keys_cf = {k.casefold() for k in env}
@@ -1427,11 +1433,36 @@ def _cmd_credentials(args):
             _sync_strategy_crons(set(amounts))
     except (OSError, ValueError, AttributeError):
         pass
+    if first_bind and len(binding) == 1 and not evicted_ids:
+        _route_first_bind()
     # count only — never the keys or values
     out = {"credentials": len(env), "binance": binance}
     if book_account:
         out["book_account"] = book_account
     return out
+
+
+def _route_first_bind():
+    """The first bind routes what the user saved before it, by making the 下單設定 save they
+    would otherwise be sent back to make: same amounts (from the mirror, never the config —
+    P1-3), same inheritance of the one bound venue, every refusal of that save (MARKET_VENUE,
+    NOT_TXF, TYPE_B…). A refused save writes nothing and leaves the page asking for it. Rebinds
+    never get here (see first_bind): an unbind's blank routing waits for the user's save.
+    Not with a reconciler alive — routing would let it trade before 啟動下單."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json"), encoding="utf-8") as f:
+            mirror = json.load(f)
+        amounts, exchanges = mirror.get("amounts"), mirror.get("exchanges")
+    except (OSError, ValueError, AttributeError):
+        return
+    if not isinstance(amounts, dict) or not amounts or not isinstance(exchanges, dict):
+        return
+    if any(exchanges.get(n) for n in amounts) or not reconciler_absent():
+        return
+    try:
+        _cmd_amounts({"amounts": amounts})
+    except Exception as e:
+        _log(f"first-bind routing left to the next 下單設定 save: {type(e).__name__}: {str(e)[:200]}")
 
 
 # ── strategy signal-refresh scheduling(選到就跑,2026-08-03 拍板)────────────

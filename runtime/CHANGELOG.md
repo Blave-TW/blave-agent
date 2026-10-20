@@ -10,6 +10,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## 1.1.137 — 2026-10-21(desktop 0.1.28)
 
+- **第一次綁帳戶時,把之前存的下單設定路由到這一家(0.1.28 稽核 P1-1;`_cmd_credentials`、`_route_first_bind`)**:入門步驟的順序是先存金額(③,還沒綁帳戶,路由存成 `""`)再綁帳戶(④),舊規則「重新綁定不會自動路由」讓每個新手綁完後「啟動下單」都是灰的、要回策略組合再存一次。現在這台機器從來沒綁過帳戶時(綁定前沒有 `manager/credentials.ui.json`、沒有對帳器停止標記、沒有停放的帳戶狀態、.env 沒有任何交易所金鑰),綁上的那一家會用 UI 鏡像裡的金額替用戶做一次下單設定存檔(`_cmd_amounts`,繼承唯一綁著的那家、所有拒絕照舊:MARKET_VENUE／NOT_TXF／TYPE_B／美股訊號);被拒就什麼都不寫,照舊要用戶自己存。只在鏡像裡沒有任何成員有路由、對帳器確定不在時做(路由不能讓活著的對帳器在按「啟動下單」之前就下單)。解綁後重綁、換交易所(擠掉舊的那家)、模擬換真實帳戶照舊:路由空著,等用戶存。啟動照舊要按「啟動下單」。測試 `tests/check_first_bind_routing.py`。
 電腦版 0.1.28 整合版一起發的那一版:包含已經單獨發過的 1.1.135(停止修正,見下一節,內容不重列),再加下面這些(更新績效原因、美股＋加密幣別、benchmark 推送、StockCoin、群益本機、停止複核 nt2、美股日線上線)。1.1.136 留給 rt-async。
 
 - **更新績效失敗時寫出沒有資料權限的原因(`command_listener._refresh_stats`／`_mark_perf`)**:子行程的 log tail 有 `DataAccessError`(外殼沒給 Blave key)時,`perf_refresh.json` 的 failed 紀錄多一個選填 `why` = 子行程拿到的 `BLAVE_DATA_ACCESS_WHY`(`signed_out`／`no_card`／`no_balance`／`no_plan`／`plan_failed`;沒有旗標就 `unknown`)。`err` 照舊是 `DATA`,`_RERUN_ERRS` 三層契約不動;網路錯誤等其他 DATA 不帶。只給電腦版讀(`shell/main.js` `stratPerf`),`strategy_reporter._read_perf` 不轉送,api 不受影響。測試 `tests/check_stats_refresh_command.py`。
