@@ -3586,7 +3586,9 @@ function trCfRows(o) {
     const same = lot ? trRoundLots(was) === trRoundLots(now) : Math.round(was) === Math.round(now);
     if (same) return;
     const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym] };
-    if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym)) : null;
+    // 不會自動下單的美股列只寫金額:不換數量、也不算預覽撐的列(表頭不寫依哪一根),同網頁 pfUsNoAuto
+    if (trUsNoAuto(o.r, sym, by(sym))) row.noAuto = true;
+    else if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym)) : null;
     rows.push(row);
   });
   rows.sort((a, b) => ((b.was ? 1 : 0) - (a.was ? 1 : 0)) || (a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0));
@@ -3701,7 +3703,7 @@ function trSaveAmounts(names, stored, opener, o) {
       const zones = m.rows.map((x) => x.z).filter((z, i, a) => a.indexOf(z) === i), multi = zones.length > 1;
       const ccys = zones.map((z) => (z === TR_ZONE_LOTS ? t("tr.lotsUnit") : z === TR_ZONE_UNKNOWN ? t("tr.grpUnknown") : z)).join(LANG === "zh" ? "、" : ", ");
       // 時間只講一次(canon):框裡任何一列(口數列、照金額寫的列、只改金額的列都算)是預覽撐的、或表下點名了舊預覽(oldPv),表頭寫是哪一根;台股日線寫「收盤」
-      const pvAt0 = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => x.by || []), oldPv) : amtOnly);
+      const pvAt0 = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => (x.noAuto ? [] : x.by || [])), oldPv) : amtOnly);
       // 「依 MM/DD 收盤算」讀起來像列上有價格:列出的標的一個都沒有數量(股、口)時不寫。不是台股日線的「依那根算」照寫(B2)
       const pvAt = pvAt0 && pvAt0.dailyTw && m.rows.length && !m.rows.some((x) => x.lots || (x.qty && x.qty.n > 0)) ? null : pvAt0;
       // 台股日線照機器給的交易日(bar_date,UTC+8 換好的),不拿本機時區換 bar_at

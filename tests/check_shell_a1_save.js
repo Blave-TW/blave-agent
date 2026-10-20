@@ -237,6 +237,15 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     bag({ firing: true, picked: ["btc", "tw", "us", "ec"], edits: { us: 300, ec: 300 }, list: [US, EC], noPv: true, pvs: { us: pvA("AMZN"), ec: pvA("ETHUSDT") } });
     const f = open();
     ok("美股 存金額框:AMZN 不列進會送單,ETHUSDT 照列", !f.rows.some((x) => /^tr\.cf\.(buy|sell)AMZN/.test(x)) && f.rows.some((x) => /^tr\.cf\.buyETHUSDT300/.test(x)), J(f)); }
+  // 不會送單時(列目標「原 → 新」):美股列只寫金額,不換數量、表頭不寫依哪一根;加密對照組照寫(B2;同網頁 8ebba9e22)
+  { const US = { name: "us", displayName: "US", hasBacktest: true, symbol: "AMZN", market: "swap", srcMarket: "us_stock" };
+    bag({ picked: ["btc", "tw", "us"], edits: { us: 300 }, list: [US], noPv: true, pvs: { us: pvA("AMZN", { close: 200 }) } });
+    const f = open();
+    ok("美股新列(原 → 新):只寫金額、不換成數量(qty 不算)", f.title === "tr.cf.title" && J(f.rows) === J(["AMZN300"]), J(f));
+    ok("美股新列:表頭不寫「依那根算」", !/asof/.test(f.cap), J(f.cap));
+    bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: pvA("ETHUSDT", { close: 3000 }) } });
+    const g = open();
+    ok("對照:加密新列照寫顆數與「依那根算」", J(g.rows) === J(["ETHUSDT3000.1 tr.cf.unitCoins"]) && /tr\.cf\.asofBar/.test(g.cap), J(g)); }
   // B6／R1:已存的投資組合這一刻算不出(沒有 state.json、沒有預覽):對帳器只算有 state.json 的,它沒有貢獻,帳上的成分下一輪照樣賣——要列成賣單
   const PC = (u) => ({ name: "pc", displayName: "PC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: u });
   const eth = (S) => { S.st.report.account.venues.binance.positions.ETHUSDT = { side: "long", size: 300, mark_price: 3000 }; return S; };
