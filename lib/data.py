@@ -247,10 +247,10 @@ def _head_short_unverified(path, ym):
     Footer-only schema read first (cheap), index read only when unflagged.
     """
     try:
-        schema = pq.read_schema(path)
+        schema = _read_schema(path)
         if not schema.names or (schema.metadata or {}).get(b'blave_head_verified'):
             return False                  # empty marker, or already verified
-        idx = pd.to_datetime(pd.read_parquet(path, columns=[]).index)
+        idx = pd.to_datetime(_read_parquet(path, columns=[]).index)
         if getattr(idx, 'tz', None) is not None:
             idx = idx.tz_convert('UTC').tz_localize(None)
         month_start = datetime(int(ym[:4]), int(ym[5:7]), 1)
@@ -283,7 +283,7 @@ def _stale_incomplete_month(path, ttl_hours, ym, edge_days=15):
     try:
         if time.time() - path.stat().st_mtime <= ttl_hours * 3600:
             return False
-        idx = pd.read_parquet(path, columns=[]).index   # index only, no data pages
+        idx = _read_parquet(path, columns=[]).index   # index only, no data pages
         if len(idx) == 0:
             return True
         month_start = datetime(int(ym[:4]), int(ym[5:7]), 1)
@@ -317,6 +317,39 @@ def _tmp_path(path):
 # FILE_SHARE_DELETE. Those reads last milliseconds, so wait them out (same idea as
 # lib/strategy.py _replace_bytes). POSIX replace never conflicts with readers: no retry there.
 _REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.5) if os.name == 'nt' else ()
+
+
+def _retry_read(read, *args, **kwargs):
+    """Cache-file read that waits out the same Windows window from the reader's side: opening the
+    month while a writer's os.replace swaps it (or Defender scans it) raises PermissionError
+    (Errno 13). Uncaught it failed fetch_data and parked a 1m strategy for RETRY_BACKOFF_SECONDS.
+    No retry on POSIX (empty delays)."""
+    for delay in _REPLACE_RETRY_DELAYS:
+        try:
+            return read(*args, **kwargs)
+        except PermissionError:
+            time.sleep(delay)
+    return read(*args, **kwargs)
+
+
+def _read_parquet(*args, **kwargs):
+    return _retry_read(pd.read_parquet, *args, **kwargs)
+
+
+def _read_schema(path):
+    return _retry_read(pq.read_schema, path)
+
+
+def _read_table(*args, **kwargs):
+    return _retry_read(pq.read_table, *args, **kwargs)
+
+
+def _read_text(path, **kwargs):
+    return _retry_read(Path.read_text, path, **kwargs)
+
+
+def _read_bytes(path):
+    return _retry_read(Path.read_bytes, path)
 
 
 def _atomic_to_parquet(df, path, footer_meta=None):
@@ -441,7 +474,7 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
             path = cache_dir / f'{ym}.parquet'
             if path.exists():
                 try:
-                    existing = _normalise_index(pd.read_parquet(path))
+                    existing = _normalise_index(_read_parquet(path))
                 except Exception:
                     existing = pd.DataFrame()
                 if not existing.empty:
@@ -462,7 +495,7 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
     non_empty, names0, uniform = [], None, True
     for ym in past_months:
         path = cache_dir / f'{ym}.parquet'
-        names = pq.read_schema(path).names
+        names = _read_schema(path).names
         if not names:
             continue                      # empty-month marker
         if names0 is None:
@@ -472,14 +505,14 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
         non_empty.append(path)
     if non_empty and uniform:
         try:
-            cached = pd.read_parquet(non_empty)
+            cached = _read_parquet(non_empty)
             if not cached.empty:
                 frames.append(cached)
         except Exception:                 # e.g. same names, clashing dtypes
             uniform = False
     if non_empty and not uniform:
         for path in non_empty:
-            cached = pd.read_parquet(path)
+            cached = _read_parquet(path)
             if not cached.empty:
                 frames.append(cached)
 
@@ -489,12 +522,12 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
         ym_start = f'{ym}-01'
         if path.exists() and present_fresh_after is not None and \
                 datetime.utcfromtimestamp(path.stat().st_mtime) >= present_fresh_after:
-            cached = pd.read_parquet(path)
+            cached = _read_parquet(path)
             if not cached.empty:
                 frames.append(_normalise_index(cached))
             continue
         if path.exists():
-            cached = _normalise_index(pd.read_parquet(path))
+            cached = _normalise_index(_read_parquet(path))
             last_ts = cached.index[-1].strftime('%Y-%m-%d')
             delta = fetch_raw_fn(last_ts, tomorrow)
             if not delta.empty:
@@ -537,7 +570,7 @@ def _save_monthly(prefix, params, df):
     for ym, grp in df.groupby(df.index.strftime('%Y-%m')):
         path = cache_dir / f'{ym}.parquet'
         if path.exists():
-            existing = _normalise_index(pd.read_parquet(path))
+            existing = _normalise_index(_read_parquet(path))
             grp = pd.concat([existing, grp])
             grp = grp[~grp.index.duplicated(keep='last')].sort_index()
         grp.to_parquet(path, compression='snappy')
@@ -610,7 +643,7 @@ def _read_single_meta(prefix, params):
     """Footer-only read of the coverage meta (no data pages). None if absent/unreadable."""
     path = _single_path(prefix, params)
     try:
-        raw = (pq.read_schema(path).metadata or {}).get(_META_KEY)
+        raw = (_read_schema(path).metadata or {}).get(_META_KEY)
         meta = json.loads(raw) if raw else None
         if meta and all(k in meta for k in ('from', 'to', 'tail_fetched_at')):
             return meta
@@ -631,7 +664,7 @@ def _read_monthly_dir_all(cache_dir):
         if not (len(ym) == 7 and ym[4] == '-'):
             continue                      # not a month file (e.g. a stray tmp)
         try:
-            names = pq.read_schema(path).names
+            names = _read_schema(path).names
         except Exception:
             bad.append(ym)
             continue
@@ -648,14 +681,14 @@ def _read_monthly_dir_all(cache_dir):
     df = None
     if uniform:
         try:
-            df = pd.read_parquet(paths)
+            df = _read_parquet(paths)
         except Exception:
             df = None
     if df is None:
         frames = []
         for p in paths:
             try:
-                f = pd.read_parquet(p)
+                f = _read_parquet(p)
             except Exception:
                 bad.append(p.stem); ok.remove(p.stem)
                 continue
@@ -739,7 +772,7 @@ def _read_single(prefix, params):
         meta = _read_single_meta(prefix, params)
         if meta is not None:
             try:
-                df = pd.read_parquet(path)
+                df = _read_parquet(path)
             except Exception:
                 df = None                 # unreadable: fall through, treat as uncached
             if df is not None:
@@ -2147,7 +2180,7 @@ def _tw_public_market(stock_id):
     so the two files are re-fetched only on a miss, at most once a day."""
     path = _tw_market_file()
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(_read_text(path))
     except Exception:
         data = {}
 
@@ -2183,7 +2216,7 @@ def _tw_public_probe_market(stock_id, ym):
             continue
         if not fetch(stock_id, ym).empty:
             try:
-                data = json.loads(_tw_market_file().read_text())
+                data = json.loads(_read_text(_tw_market_file()))
             except Exception:
                 data = {}
             data.setdefault('resolved', {})[stock_id] = market
@@ -2296,7 +2329,7 @@ def _tw_exright_events(market, start, end):
         df.index = pd.DatetimeIndex(df.pop('date'), name='date')
         for ym in _iter_months(f'{year}-01', min(f'{year}-12', current_ym)):
             _atomic_to_parquet(df[df.index.strftime('%Y-%m') == ym], cache_dir / f'{ym}.parquet')
-    frames = [pd.read_parquet(cache_dir / f'{ym}.parquet') for ym in months]
+    frames = [_read_parquet(cache_dir / f'{ym}.parquet') for ym in months]
     out = pd.concat(frames) if frames else pd.DataFrame(columns=_TW_EXRIGHT_COLS)
     return out[(out.index >= pd.Timestamp(start)) & (out.index <= pd.Timestamp(end_str))]
 
@@ -2470,7 +2503,7 @@ def _tw_cdn_write(path, body, meta):
 
 def _tw_cdn_meta(path):
     try:
-        return json.loads(path.with_name(path.name + '.meta.json').read_text())
+        return json.loads(_read_text(path.with_name(path.name + '.meta.json')))
     except Exception:
         return {}
 
@@ -2502,7 +2535,7 @@ def _tw_cdn_manifest():
     path = _tw_cdn_dir() / 'manifest.json'
     meta = _tw_cdn_meta(path)
     try:
-        cached = json.loads(path.read_text())
+        cached = json.loads(_read_text(path))
     except Exception:
         cached = None
     age = time.time() - meta.get('checked_at', 0)
@@ -2521,7 +2554,7 @@ def _tw_cdn_manifest():
                 cached = fresh
                 _tw_cdn_write(path, body, {'etag': etag, 'checked_at': time.time()})
             else:
-                _tw_cdn_write(path, path.read_bytes(), {'etag': etag, 'checked_at': time.time()})
+                _tw_cdn_write(path, _read_bytes(path), {'etag': etag, 'checked_at': time.time()})
         except TwCdnUnavailable:
             # remember the miss too, or every stock call of a backtest re-asks a dead CDN
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -2564,7 +2597,7 @@ def _tw_cdn_stock_file(stock_id, manifest):
             last = str(pd.Timestamp(dates.max()).date()) if len(dates) else ''
             _tw_cdn_write(path, body, {'etag': etag, 'last': last})
     try:
-        table = pq.read_table(path)
+        table = _read_table(path)
     except Exception as e:
         raise TwCdnUnavailable(f'{key}: unreadable cached file ({type(e).__name__})') from e
     events = json.loads((table.schema.metadata or {}).get(b'blave.events', b'[]'))
@@ -2704,14 +2737,14 @@ def _tw_cdn_whole_market(ids, start, end, manifest):
         info = manifest['years'][y]
         path = _tw_cdn_hashed(f'year/{y}.parquet', manifest,
                               None if info.get('immutable') else manifest.get('recent_from'))
-        frames.append(pq.read_table(path, filters=[('stock_id', 'in', list(ids))]).to_pandas())
+        frames.append(_read_table(path, filters=[('stock_id', 'in', list(ids))]).to_pandas())
     recent = _tw_cdn_hashed('recent.parquet', manifest)
     events = _tw_cdn_hashed('events.parquet', manifest)
-    frames.append(pq.read_table(recent, filters=[('stock_id', 'in', list(ids))]).to_pandas())
+    frames.append(_read_table(recent, filters=[('stock_id', 'in', list(ids))]).to_pandas())
     rows = pd.concat(frames, ignore_index=True)
     rows['date'] = pd.to_datetime(rows['date'])
     rows = rows.drop_duplicates(['stock_id', 'date'], keep='last')
-    ev = pd.read_parquet(events)
+    ev = _read_parquet(events)
     ev = ev[ev['stock_id'].isin(ids)]
     return rows, ev
 
@@ -2760,7 +2793,7 @@ def tw_not_trading(ids, day=None):
     and its bar then comes with the CDN's next file. Reads the cached file only, never the
     network; empty without one. lib.bar_ready's `inactive` for a Taiwan Type C universe."""
     try:
-        manifest = json.loads((_tw_cdn_dir() / 'manifest.json').read_text())
+        manifest = json.loads(_read_text(_tw_cdn_dir() / 'manifest.json'))
         if day is not None and manifest['asof'] < day:
             return set()
         if day is None:
@@ -3698,7 +3731,7 @@ def fetch_twstock_broker_net(stock_id, broker_id, start, end, headers,
         path = _broker_day_cache_path(stock_id, d.isoformat())
         if not path.exists():
             continue
-        df_day = pd.read_parquet(path)
+        df_day = _read_parquet(path)
         row = df_day[df_day['broker_id'] == broker_id]
         if not row.empty:
             net = float(row['buy'].sum() - row['sell'].sum())
@@ -3736,7 +3769,7 @@ def fetch_twstock_all_broker_net(stock_id, start, end, headers,
         path = _broker_day_cache_path(stock_id, d.isoformat())
         if not path.exists():
             continue
-        df_day = pd.read_parquet(path)
+        df_day = _read_parquet(path)
         net = float(df_day['buy'].sum() - df_day['sell'].sum()) if not df_day.empty else 0.0
         frames.append({'date': d.isoformat(), 'net': net})
 
@@ -3773,7 +3806,7 @@ def fetch_twstock_branch_daily_net(stock_id, start, end, headers,
         path = _broker_day_cache_path(stock_id, d.isoformat())
         if not path.exists():
             continue
-        df_day = pd.read_parquet(path)
+        df_day = _read_parquet(path)
         if df_day.empty:
             frames.append(pd.Series(dtype=float, name=d.isoformat()))
             continue
@@ -3837,7 +3870,7 @@ def _full_fetched_at(path):
     recent rows and keeps the stamp, so the 30-day full re-read still happens; files
     without it (every full write) are as old as their mtime."""
     try:
-        raw = (pq.read_schema(path).metadata or {}).get(_FULL_AT_KEY)
+        raw = (_read_schema(path).metadata or {}).get(_FULL_AT_KEY)
         if raw:
             return float(raw)
     except Exception:
@@ -3852,7 +3885,7 @@ def _load_fundamental_cache(path, max_age_days=30, prefix=None):
         return None
     if prefix and _filing_due_since(prefix, path.stat().st_mtime):
         return None
-    return pd.read_parquet(path)
+    return _read_parquet(path)
 
 
 def _filing_due_since(prefix, written_epoch):
@@ -3937,7 +3970,7 @@ def _bulk_refresh_fundamental(prefix, endpoint, pending, headers):
         if sid not in covered or sid in failed:
             continue
         try:
-            cached = pd.read_parquet(path)
+            cached = _read_parquet(path)
         except Exception:
             continue   # unreadable: a full /batch fetch replaces it
         older = _frame_records(cached[cached.index < pd.Timestamp(start)]) if not cached.empty else []
@@ -4872,7 +4905,7 @@ def _drop_twmarket_inst_off_total():
     if good.exists():
         return
     try:
-        df = pd.read_parquet(path, columns=_TWMARKET_INST_COLUMNS)
+        df = _read_parquet(path, columns=_TWMARKET_INST_COLUMNS)
     except Exception:
         return                            # nothing cached yet, or an old monthly dir not migrated
     drops = path.with_name(f'{path.name}.dealer_sum_drops')
@@ -5219,7 +5252,7 @@ def _president_feed_live():
 def _read_president_bars(root, now):
     """(1m DataFrame in the cache convention, None, written_at) or (None, reason, written_at)."""
     try:
-        snap = json.loads((_STATE_DIR / f'president_bars_{root}_1m.json').read_text(encoding='utf-8'))
+        snap = json.loads(_read_text(_STATE_DIR / f'president_bars_{root}_1m.json', encoding='utf-8'))
     except (OSError, ValueError):
         return None, 'no_file', None
     if not isinstance(snap, dict):
@@ -5725,9 +5758,9 @@ def _drop_bfi82u_stale_months():
         return
     for path in d.glob('*.parquet'):
         try:
-            if not set(_TWMARKET_INST_COLUMNS) <= set(pq.read_schema(path).names):
+            if not set(_TWMARKET_INST_COLUMNS) <= set(_read_schema(path).names):
                 continue                      # empty-month marker
-            if _inst_off_total(pd.read_parquet(path, columns=_TWMARKET_INST_COLUMNS)).any():
+            if _inst_off_total(_read_parquet(path, columns=_TWMARKET_INST_COLUMNS)).any():
                 path.unlink(missing_ok=True)
         except Exception:
             path.unlink(missing_ok=True)      # unreadable → re-fetch, as _extend_cache_monthly would
@@ -6074,7 +6107,7 @@ def fetch_stock_futures_batch_daily(futures_ids, start, end, headers):
     for fid in futures_ids:
         path = cache_dir / f'{fid}__{start}__{end_str}.parquet'
         if path.exists():
-            results[fid] = pd.read_parquet(path)
+            results[fid] = _read_parquet(path)
         else:
             to_fetch.append(fid)
 
@@ -6240,7 +6273,7 @@ def fetch_twstock_trader_flows(trader_id, start, end, headers,
         path = _trader_day_cache_path(trader_id, d.isoformat())
         if not path.exists():
             continue
-        df_day = pd.read_parquet(path)
+        df_day = _read_parquet(path)
         if df_day.empty or 'stock_id' not in df_day.columns:
             continue
         df_day = df_day.copy()
@@ -6813,8 +6846,8 @@ def _us_stale(fetched_at, end, now):
 def _us_cache_read(sym, src):
     path = _single_path(_US_PREFIX, {'symbol': sym, 'src': src})
     try:
-        meta = json.loads((pq.read_schema(path).metadata or {})[_META_KEY])
-        return pd.read_parquet(path), pd.Timestamp(meta['fetched_at'], tz='UTC')
+        meta = json.loads((_read_schema(path).metadata or {})[_META_KEY])
+        return _read_parquet(path), pd.Timestamp(meta['fetched_at'], tz='UTC')
     except Exception:
         return None, None
 
