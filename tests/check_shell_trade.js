@@ -133,7 +133,7 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
   ok("StockCoin 說明句:只在選 StockCoin 時接在子帳戶建議那段之後(模擬不畫說明區;本機與雲端同一段 code);zh / en 都有",
     /\n    if \(venue === "stockcoin"\) note\.appendChild\(trEl\("p", "", t\("cx\.note\.stockcoin"\)\)\);\n/.test(cxp)
     && cxp.indexOf('"cx.note.subAcct"') < cxp.indexOf('"cx.note.stockcoin"') && cxp.indexOf('"cx.note.stockcoin"') < cxp.indexOf('t("cx.note.one")')
-    && src.indexOf('if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));\n  else {') < src.indexOf('"cx.note.stockcoin"')
+    && src.indexOf('if (venue === PAPER) box.appendChild(cxPaperNote());\n  else {') < src.indexOf('"cx.note.stockcoin"')
     && STR.zh["cx.note.stockcoin"] === "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。" && STR.en["cx.note.stockcoin"] === "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance.");
   ok("CX_SUB_ACCT = 網頁那五家,StockCoin 不在(待 Wei)", /^const CX_SUB_ACCT = \["binance", "okx", "bybit", "gateio", "bingx"\];/m.test(src)); }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
@@ -1046,11 +1046,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("本機 LIB_BROKEN → cx.chk.libBrokenV(帶 venue 與原因,截 200);UNKNOWN 照舊 unknownV;WITHDRAW_ENABLED 沒有專屬句了",
       TV("LIB_BROKEN", { reason: "lib/account_okx.py could not load (SyntaxError)" }) === 'cx.chk.libBrokenV{"venue":"OKX","reason":"lib/account_okx.py could not load (SyntaxError)"}'
       && TV("LIB_BROKEN", { reason: "q".repeat(300) }) === 'cx.chk.libBrokenV{"venue":"OKX","reason":"' + "q".repeat(200) + '"}' && TV("UNKNOWN") === 'cx.chk.unknownV{"venue":"OKX"}' && TV("WITHDRAW_ENABLED") === null);
-    ok("cx.chk.libBrokenV 兩語都有 {venue}{reason}、講這台電腦、叫人回報;提領那幾句已從字串表移除、note.one 改建議語氣",
+    ok("cx.chk.libBrokenV 兩語都有 {venue}{reason}、講這台電腦、叫人回報;提領那幾句已從字串表移除、note.one 只講 IP 白名單(權限建議搬到真實帳戶的事實 cx.fact.perm)",
       ["zh", "en"].every((l) => /\{venue\}/.test(ST[l]["cx.chk.libBrokenV"]) && /\{reason\}/.test(ST[l]["cx.chk.libBrokenV"]))
       && /這台電腦/.test(ST.zh["cx.chk.libBrokenV"]) && /回報/.test(ST.zh["cx.chk.libBrokenV"]) && /this computer/.test(ST.en["cx.chk.libBrokenV"]) && /report/i.test(ST.en["cx.chk.libBrokenV"])
       && ["cx.chk.withdraw", "cx.chk.withdrawV", "cx.note.wdUnchecked"].every((k) => !(k in ST.zh) && !(k in ST.en))
-      && ["cx.note.one", "cx.note.oneV"].every((k) => /建議/.test(ST.zh[k]) && !/拒絕|務必/.test(ST.zh[k]) && /suggest/.test(ST.en[k]) && !/refuse|reject/i.test(ST.en[k]))); }
+      && ["cx.note.one", "cx.note.oneV"].every((k) => /白名單/.test(ST.zh[k]) && !/建議|拒絕|務必/.test(ST.zh[k]) && /whitelist/.test(ST.en[k]) && !/suggest|refuse|reject/i.test(ST.en[k])) && /建議只開讀取和交易/.test(ST.zh["cx.fact.perm"])); }
   var fnS = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
   { // audit-trading-ux 1-2(A′):HALT 依 source 分支,規則同 api agent_event_copy
     ok("A′ 來源:portfolio / web / user / flatten / desktop 與缺欄位 = A;reconciler 與認不得的來源 = A′",

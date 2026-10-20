@@ -5046,7 +5046,7 @@ function trEvListFocus(box) {
 let cxOpener = null;
 /* 表單自己的狀態(不放進袋子的 sig:金鑰不該變成一個到處被複製的字串)。ip:undefined = 還沒查 / null = 查不到 / 字串 = IPv4。
    bn = 主行程 binance_link 的 state(重查結果),設定分頁的帳戶那一列用。 */
-const CXF = { env: "local", mode: "paper", venue: PAPER, apiKey: "", secret: "", passphrase: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null, storeOpen: false };
+const CXF = { env: "local", mode: "paper", venue: PAPER, apiKey: "", secret: "", passphrase: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null, storeOpen: false, paperOpen: false, bound: false };
 const cxBag = () => TR_BAGS[CXF.env === "cloud" ? "cloud" : "local"];
 // 雲端主機現在的對外 IP(cloud.js 只在 running 時交出來;停機的主機沒有固定 IP)
 function cxCloudIp() { const c = TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud; const ip = c && c.machine && c.machine.public_ip; return typeof ip === "string" && ip ? ip : null; }
@@ -5060,8 +5060,11 @@ function cxModalOpen(opener, venue, mode) {
   if (env === "cloud" && envCloudKind(TR_BAGS.cloud.st) !== "running") return;
   CXF.env = env;
   const L = cxBag(); L.cx = { busy: false, err: null, retest: false };
-  cxOpener = opener || null; cxForget(); CXF.storeOpen = false;
-  CXF.venue = venue === CAPITAL && env === "cloud" ? CAPITAL : venue === "president" && env === "local" ? venue : mode === "real" ? cxVenuesFor(env)[0] : PAPER;
+  cxOpener = opener || null; cxForget(); CXF.storeOpen = false; CXF.paperOpen = false;
+  // 已綁定(開通中的統一／群益不算):兩個大選項與選單鎖住、停在綁著的那一家(mockup account-dialog 格 4)
+  const st = TR_BAGS[env].st, bid = trVenueIds(st && st.report)[0] || null;
+  CXF.bound = !!bid && !trSetupOnly(st);
+  CXF.venue = CXF.bound ? bid : venue === CAPITAL && env === "cloud" ? CAPITAL : venue === "president" && env === "local" ? venue : mode === "real" ? cxVenuesFor(env)[0] : PAPER;
   CXF.mode = CXF.venue === PAPER ? "paper" : "real";
   trackFeature("cx_open");
   if (CXF.venue === CAPITAL && typeof capResume === "function") capResume();
@@ -5163,21 +5166,30 @@ const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACK
 function cxVenueField(L) {
   const w = trEl("div", "cx-pick"), fs = trEl("fieldset", "cf-opts");
   const lg = trEl("legend", "", t("cx.title")); fs.appendChild(lg);
-  const off = !!L.cx.busy || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
+  const off = !!L.cx.busy || CXF.bound || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
+  const fut = CXF.venue === CAPITAL || CXF.venue === "president";
   [["paper", t("cx.paperShort"), t("cx.mode.paperSub")], ["real", t("cx.mode.real"), t("cx.mode.realSub")]].forEach(([m, ti, de]) => {
-    const row = trEl("label", "cf-opt" + (off ? " off" : "")), r = trEl("input");
-    r.type = "radio"; r.name = "cx-mode"; r.id = "cx-mode-" + m; r.value = m; r.checked = CXF.mode === m; r.disabled = off;
+    const on = CXF.mode === m, lab = trEl("label", on && m === "real" ? "cf-lab" : "cf-opt" + (off ? " off" : "")), r = trEl("input");
+    r.type = "radio"; r.name = "cx-mode"; r.id = "cx-mode-" + m; r.value = m; r.checked = on; r.disabled = off;
     r.addEventListener("change", () => {
       if (!r.checked || CXF.mode === m) return;
       CXF.mode = m; CXF.venue = m === "paper" ? PAPER : cxVenuesFor(CXF.env)[0];
       cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (m === "real" && CXF.ip === undefined) cxIpLookup();
     });
-    row.append(r, trEl("span", "cf-opt-t", ti), trEl("span", "cf-opt-d", de));
-    fs.appendChild(row);
+    lab.append(r, trEl("span", "cf-opt-t", ti), trEl("span", "cf-opt-d", de));
+    if (!(on && m === "real")) { fs.appendChild(lab); return; }
+    /* 選了真實帳戶:事實長在卡裡。卡是 div,label 與 ul 是兄弟、ul 用 aria-describedby 掛在圓鈕上(不進選項的可及名稱)。
+       期貨商沒有「只開讀取和交易」的權限設定:只留兩行、「金鑰」改「憑證」 */
+    const card = trEl("div", "cf-opt cf-wrap" + (off ? " off" : "")), ul = trEl("ul", "cx-facts");
+    ul.id = "cx-facts"; r.setAttribute("aria-describedby", ul.id);
+    const facts = fut ? [CXF.env === "cloud" ? t("cx.fact.certCloud") : t("cx.fact.cert"), t("cx.fact.ai")]
+      : [CXF.env === "cloud" ? t("cx.fact.keyCloud") : t("cx.fact.key"), t("cx.fact.perm"), t("cx.fact.ai")];
+    facts.forEach((x) => ul.appendChild(trEl("li", "", x)));
+    card.append(lab, ul); fs.appendChild(card);
   });
   w.appendChild(fs);
   if (CXF.mode !== "real") return w;
-  const lab = trEl("label", "fld"); lab.appendChild(trEl("span", "fld-l", t("cx.venue")));
+  const fl = trEl("label", "fld"); fl.appendChild(trEl("span", "fld-l", t("cx.venue")));
   const sw = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "cx-venue";
   const g = document.createElement("optgroup"); g.label = t("cx.group.crypto");
   cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
@@ -5192,12 +5204,18 @@ function cxVenueField(L) {
     CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") || (sel.value === "president" && CXF.env === "local" && cxPresListed()) ? sel.value : cxVenuesFor(CXF.env)[0];
     cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== CAPITAL && CXF.venue !== "president" && CXF.ip === undefined) cxIpLookup();
   });
-  sw.appendChild(sel); lab.appendChild(sw); w.appendChild(lab);
-  // 真實帳戶的三行事實(取代原本框頂那段說明;細節照舊收在下面的「金鑰存在哪？」)
-  const ul = trEl("ul", "cf-keep cx-facts");
-  [CXF.env === "cloud" ? t("cx.fact.keyCloud") : t("cx.fact.key"), t("cx.fact.perm"), t("cx.fact.ai")].forEach((x) => ul.appendChild(trEl("li", "", x)));
-  w.appendChild(ul);
+  sw.appendChild(sel); fl.appendChild(sw); w.appendChild(fl);
+  if (CXF.bound) w.appendChild(trEl("p", "cx-hint", t("cx.bound")));
   return w;
+}
+// 模擬的成交方式:收進「模擬怎麼成交？」展開列(選項小字已經講了不用金鑰、起始金額、不動真錢)
+function cxPaperNote() {
+  const note = trEl("div", "cx-note"), disc = trEl("button", "cx-disc", t("cx.paper.q")), p = trEl("p", "cx-disc-p", t("cx.paper.fill"));
+  disc.type = "button"; disc.id = "cx-paper-q"; p.id = "cx-paper-fill"; disc.setAttribute("aria-controls", p.id);
+  disc.setAttribute("aria-expanded", CXF.paperOpen ? "true" : "false"); p.hidden = !CXF.paperOpen;
+  disc.addEventListener("click", () => { CXF.paperOpen = !CXF.paperOpen; disc.setAttribute("aria-expanded", CXF.paperOpen ? "true" : "false"); p.hidden = !CXF.paperOpen; });
+  note.append(disc, p);
+  return note;
 }
 function cxModalPaint() {
   if (CXF.venue === CAPITAL && CXF.env === "cloud") return capPaint();   // 群益整個框交給 capital.js
@@ -5212,7 +5230,7 @@ function cxModalPaint() {
   const down = cloud && envCloudKind(TR_BAGS.cloud.st) !== "running";
   const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, off = L.cx.busy || (venue === BINANCE && locked) || down;
   const cip = cloud ? cxCloudIp() : null;
-  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail], locked, down]);
+  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail], locked, down]);
   // 等的時候圓環在字前(同 app.js 更新鈕);只在字換了才重組——輪詢重畫不能重啟圓環的動畫
   const goLabel = L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : t("cx.connect");
   if (go.textContent.trim() !== goLabel || !!go.querySelector(".spin16") !== !!L.cx.busy) {
@@ -5232,7 +5250,7 @@ function cxModalPaint() {
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   box.appendChild(cxVenueField(L));
-  if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));
+  if (venue === PAPER) box.appendChild(cxPaperNote());
   else {
     const fld = (id, label, key, hint) => {
       const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", label));

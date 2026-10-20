@@ -209,6 +209,8 @@ const WC = { shown: false, armed: false };
 const ONB = { prefs: null, base: null, fin: false, replay: false, open: [false, false, false, false], key: null, target: null };
 const ONB_MKT_FEATURE = { crypto: "onb_mkt_crypto", tw: "onb_mkt_tw", txf: "onb_mkt_txf" };   // 送出點的名字要是字面(tests/check_shell_telemetry.js 掃這張表)
 const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3", "tr.nav"];
+// ③ 合計單位的後備:加密的金額是報價幣(預設 USDT),台股與台指期換算成台幣
+const ONB_MKT_CCY = { crypto: "USDT", tw_stock: "TWD", tw_index_futures: "TWD" };
 // 第一次清單讀完才顯示整頁
 function wcSync() {
   if (!WC.shown) WC.shown = true;
@@ -242,8 +244,15 @@ function onbData() {
   // ③的那支:第一支回測完、還沒存金額的;Type B 不能加進組合(同 portfolio.js poAddBtn)
   const target = bts.find((x) => !(Number(stored[x.name]) > 0) && !(kinds[x.name] && kinds[x.name].type === "B")) || null;
   let total = null;
-  if (funded) { const p = trWith(L, () => trPlanTotal(stored)); if (p && p.ok) total = p.text + (p.ccy ? " " + p.ccy : ""); }
-  return { known, bt: !!first, funded, live: known && trExecState(st) === "running", acct: known && trHasAccount(r),
+  if (funded) {
+    const p = trWith(L, () => trPlanTotal(stored));
+    // 合計的幣別推不出來(報告還沒帶標的、清單沒載入):照存了金額那幾支的市場補單位,市場不一致就不補
+    const mks = [...new Set(Object.keys(stored).filter((n) => Number(stored[n]) > 0).map((n) => ONB_MKT_CCY[(kinds[n] || {}).market] || null))];
+    const ccy = (p && p.ccy) || (mks.length === 1 ? mks[0] : null);
+    if (p && p.ok) total = p.text + (ccy ? " " + ccy : "");
+  }
+  const vid = known ? trVenueIds(r)[0] : null;
+  return { known, bt: !!first, funded, live: known && trExecState(st) === "running", acct: !!vid, acctName: vid ? trVenueLabel(vid, true) : null,
     firstMkt: first && kinds[first.name] ? kinds[first.name].market : null, firstName: first ? first.displayName || first.name : null, target: target ? target.name : null, total };
 }
 // 標題列:完成的那一步是按鈕(重新展開／收起),其餘是灰或亮的字
@@ -258,7 +267,7 @@ function onbHead(i, s, meta) {
   const num = wdEl("span", "num", done ? "✓" : String(i + 1)); num.setAttribute("aria-hidden", "true");
   h.append(num, wdEl("span", done ? "sr-only" : "lb", done ? t("onb.doneSr", { step: label }) : label));
   if (done) { const lb = wdEl("span", "lb", label); lb.setAttribute("aria-hidden", "true"); h.appendChild(lb); }
-  if (done && meta) h.appendChild(wdEl("span", "meta", meta));
+  if (meta && s.state !== "todo") h.appendChild(wdEl("span", "meta", meta));
   if (done) { const ch = wdEl("span", "chev", "›"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch); }
   host.appendChild(h);
 }
@@ -279,7 +288,7 @@ function onbPaint() {
   if (ph.view === "fin") ONB.fin = true;
   if (ph.event) trackFeature(mkt === "tw" ? "onb_done_tw" : "onb_done_trade");
   ONB.target = d.target;
-  const key = JSON.stringify([LANG, ph.view, mkt, choice, S.steps, d.firstName, d.total, d.acct, d.target]);
+  const key = JSON.stringify([LANG, ph.view, mkt, choice, S.steps, d.firstName, d.total, d.acctName, d.target]);
   if (key === ONB.key) return;
   ONB.key = key;
   wf.hidden = ph.view !== "F"; wc.hidden = ph.view === "F";
@@ -287,7 +296,8 @@ function onbPaint() {
   wc.querySelector(".onb-mq").hidden = ph.view !== "E"; $("onb-steps").hidden = ph.view !== "E";
   if (ph.view !== "E") return;
   $("onb-mkt").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === choice)));
-  const metas = [null, d.firstName, d.total, null];
+  // ②③ 的 meta 只在完成時出;④ 綁了帳戶就帶帳戶名(還沒啟動的那一行也帶,mockup account-dialog ④)
+  const metas = [null, S.steps[1].state === "done" ? d.firstName : null, S.steps[2] && S.steps[2].state === "done" ? d.total : null, d.acctName];
   [1, 2, 3, 4].forEach((n) => { $("onb-h" + n).closest("li").hidden = n > S.n; });
   S.steps.forEach((s, i) => { onbHead(i, s, metas[i]); $("onb-b" + (i + 1)).hidden = !s.open; });
   // ②:選了市場只留那一句起手句(tag 欄一起收)
@@ -326,12 +336,12 @@ $("onb-po").addEventListener("click", () => {
   poAdd(S, name, trWith(S, () => trNames().indexOf(name) >= 0));
 });
 $("onb-bt").addEventListener("click", () => { if (ONB.target) stratSelect(ONB.target); });
-/* ④ 先到自動下單頁、再開連接框:綁好之後「啟動下單」就在那一頁(模擬預選;連接交易所／期貨商開在真實帳戶)。
-   台指期在這台電腦只有統一(群益是雲端那條),統一沒上架的時候落在真實帳戶的預設那一家 */
+/* ④ 先到自動下單頁、再開連接框:綁好之後「啟動下單」就在那一頁(模擬預選;連接交易所／期貨商一定開在真實帳戶)。
+   台指期在這台電腦只能連統一(群益是雲端那條):〔連接期貨商〕一律預選統一(Mac 由統一那條講一句) */
 async function onbCx(paper) {
   await trOpen();
   if (ENV.cur !== "local" || !$("cx-scrim").hidden) return;
-  const fut = onbMkt(onbChoice(), onbData().firstMkt) === "txf" && typeof cxPresListed === "function" && cxPresListed();
+  const fut = onbMkt(onbChoice(), onbData().firstMkt) === "txf";
   cxModalOpen($("tr-connect") || $("tr-nav"), paper ? PAPER : fut ? "president" : null, paper ? "paper" : "real");
 }
 $("onb-paper").addEventListener("click", () => { trackFeature("onb_go_paper"); onbCx(true); });

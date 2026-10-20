@@ -504,12 +504,20 @@ html.ws-sc .side-gate { display: none; }
 .del-modal.has-alt { width: min(520px, 92vw); }
 
 /* ---- 連接交易所的框(#cx-modal,寬 480)+ 設定分頁的帳戶列 ---- */
-.cx-modal { width: min(480px, 92vw); }
-.cx-body { padding: var(--space-4) var(--space-16) var(--space-16); }   /* 左右同 .del-body */
+/* 框靠上(app.css .scrim:has(.cx-modal) 上緣留 max(48, 12vh)):高度上限扣掉那一段與下緣 24,內容區自己捲、標題列與腳固定(1024×768 選真實帳戶時高過視窗) */
+.cx-modal { width: min(480px, 92vw); max-height: calc(100vh - max(var(--space-48), 12vh) - var(--space-24)); }
+.cx-body { padding: var(--space-4) var(--space-16) var(--space-16); flex: 1 1 auto; min-height: 0; overflow-y: auto; }   /* 左右同 .del-body */
 .cx-body .plan-err, #tr-set .plan-err { margin: var(--space-12) 0 0; }
 /* 框頂兩個大選項(模擬／真實;.cf-opt 是確認框那一套)與真實帳戶的三行事實 */
 .cx-pick { margin-top: var(--space-12); }
-.cx-pick .cx-facts { margin: var(--space-12) 0 0; }
+/* 選中的「真實帳戶」:卡是 div,裡面 label(圓鈕＋標題＋小字,排法同 .cf-opt)與事實 ul 是兄弟;ul 對齊標題的左緣(圓鈕 18 + 欄距 12) */
+.cf-opt.cf-wrap { display: block; cursor: default; }
+.cf-lab { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: var(--space-12); cursor: pointer; }
+.cf-wrap.off .cf-lab { cursor: not-allowed; }
+.cx-facts { margin: var(--space-8) 0 0 calc(18px + var(--space-12)); padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+.cx-facts li { position: relative; padding-left: var(--space-12); font-size: 12px; line-height: 1.6; color: var(--ink); }
+.cx-facts li::before { content: ""; position: absolute; left: 2px; top: .75em; width: 4px; height: 4px; border-radius: var(--radius-pill); background: currentColor; }
+.cf-wrap.off .cx-facts li { color: var(--ink-3); }
 .cx-row .cn-st .fault-mark { margin-top: 0; }
 .fld { display: block; margin-top: var(--space-12); }
 .fld-l { display: block; margin-bottom: var(--space-6); font-size: 12px; color: var(--ink-3); }
@@ -593,7 +601,7 @@ html.ws-sc .side-gate { display: none; }
 #cx-go .spin16 { vertical-align: -3px; }   /* 串接中那顆鈕裡的圓環(同 #set-up-btn) */
 .cx-manual-note .btn-quiet { font-size: inherit; }
 /* 連接 Binance:欄位下面那塊說明(spec §5.2):上邊線,權限句 / 白名單+IP+複製 / 這個 IP 是什麼 */
-.cx-note { margin: var(--space-16) 0 0; padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cx-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cx-note p { margin: 0; }
 .cx-note p.cx-sub { color: var(--ink-2); }   /* 子帳戶建議:比下一段亮一階 */
 .cx-note p + p { margin-top: var(--space-4); }

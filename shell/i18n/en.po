@@ -1379,10 +1379,10 @@ msgid "cx.lead"
 msgstr "Only in this computer’s workspace (~/Blave/workspace/.env). Blave does not upload them. The agent and your strategy code can read them; that is how they place orders and read your account for you."
 
 msgid "cx.note.one"
-msgstr "When you create the key on Binance: we suggest allowing read and trade only, not withdrawals, and whitelisting this IP."
+msgstr "When you create the key on Binance, whitelist this IP."
 
 msgid "cx.note.oneV"
-msgstr "When you create the key on {venue}: we suggest allowing read and trade only, not withdrawals. If you set an IP whitelist, add this IP."
+msgstr "When you create the key on {venue}: if you set an IP whitelist, add this IP."
 
 msgid "cx.note.subAcct"
 msgstr "We suggest a sub-account just for Blave, with the key created there. Blave manages every position on this account, so trades you open by hand may get closed."
@@ -1405,9 +1405,6 @@ msgstr "Paper trading (no keys)"
 
 msgid "cx.paperShort"
 msgstr "Paper trading"
-
-msgid "cx.paperNote"
-msgstr "No API keys needed. The simulated account starts with 100,000 USDT, fills at your strategy's own market data (Taiwan stocks at the unadjusted close, intraday strategies at the latest unadjusted bar, dividends not credited) with fees (no slippage), and never touches real money; strategies, order settings, positions and the performance page all work exactly as with a real account. To switch to a real exchange later, unbind first, then connect."
 
 msgid "cx.connect"
 msgstr "Connect an exchange"
@@ -8600,3 +8597,21 @@ msgstr "Allow read and trade only, not withdrawals"
 
 msgid "cx.fact.ai"
 msgstr "Orders follow your strategy's code, not the AI"
+
+# Paper-trading fills: tucked under the "How do paper fills work?" disclosure (cx.paperNote retired)
+msgid "cx.paper.q"
+msgstr "How do paper fills work?"
+
+msgid "cx.paper.fill"
+msgstr "Fills at your strategy's own market data in real time, with fees (no slippage). Taiwan stocks fill at the unadjusted close, intraday strategies at the latest unadjusted bar; dividends not credited."
+
+# Futures brokers (President / Capital): first fact line — brokers use certificates, not API keys
+msgid "cx.fact.cert"
+msgstr "Certificates stay on this computer"
+
+msgid "cx.fact.certCloud"
+msgstr "Certificates stay on your cloud machine"
+
+# Shown when an account is already bound: the two options and the list are locked
+msgid "cx.bound"
+msgstr "To switch accounts, unbind in Settings first."

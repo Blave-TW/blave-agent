@@ -48,18 +48,24 @@ ok("② 市場題只在選了不同的值時送 onb_mkt_*(名字是字面表);�
   && /libBag\("local"\)\.mkt = c === "tw" \? "twstock" : c;/.test(src) && !/libMktPick/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
 
 // ── ② 連接框 ──
-{ const open = (venue, mode) => {
+{ const open = (venue, mode, bound) => {
     const log = [], el = () => ({ hidden: true, classList: { add() {}, remove() {}, toggle() {} }, focus() { log.push("focus"); }, querySelector: () => null });
     const els = { "cx-scrim": el(), "view-ws": el(), "cx-body": el(), "cx-close": el(), "cx-mode-paper": el(), "cx-mode-real": el() };
     const C = { ENV: { cur: "local" }, TR: { env: "local" }, TR_BAGS: { local: { sig: {} }, cloud: {} }, PAPER: "paper", CAPITAL: "capital",
-      CXF: { env: "local", mode: "paper", venue: "paper" }, cxVenuesFor: () => ["binance", "okx"], cxForget() {}, cxBag: () => C.TR_BAGS.local, envCloudKind: () => "running",
+      CXF: { env: "local", mode: "paper", venue: "paper" }, cxVenuesFor: () => ["binance", "okx"], cxForget() {}, cxBag: () => C.TR_BAGS.local, trVenueIds: () => (bound ? [bound] : []), trSetupOnly: () => false, envCloudKind: () => "running",
       trackFeature: (n) => log.push(n), $: (id) => els[id] || null, requestAnimationFrame: (f) => f(), cxModalPaint() {}, capResume() {}, cxOpener: null };
     vm.createContext(C); vm.runInContext(cutFn(trade, "cxModalOpen").replace("function cxModalOpen", "var cxModalOpen = function"), C);
-    C.cxModalOpen(null, venue, mode); return { venue: C.CXF.venue, mode: C.CXF.mode, log: log.join() }; };
+    C.cxModalOpen(null, venue, mode); return { venue: C.CXF.venue, mode: C.CXF.mode, bound: C.CXF.bound, log: log.join() }; };
   const a = open(), b = open("paper", "paper"), c = open(null, "real"), d = open("president", "real");
   ok("③ 連接框預設模擬:不帶參數 / 帶模擬 → venue = paper、mode = paper;每次打開記一次 cx_open",
     a.venue === "paper" && a.mode === "paper" && b.venue === "paper" && b.mode === "paper" && a.log.split(",").filter((x) => x === "cx_open").length === 1, JSON.stringify([a, b]));
   ok("③ 歡迎頁④〔連接交易所〕開在「真實帳戶」第一家;〔連接期貨商〕帶統一照舊", c.venue === "binance" && c.mode === "real" && d.venue === "president" && d.mode === "real", JSON.stringify([c, d]));
+  { const e = open(null, "real", "okx"), f = open("paper", "paper", "paper");
+    ok("③ 已綁定:停在綁著的那一家、bound 為真(兩個大選項與選單由 cxVenueField 鎖住);模擬綁著就停在模擬",
+      e.venue === "okx" && e.mode === "real" && e.bound === true && f.venue === "paper" && f.mode === "paper" && f.bound === true && /CXF\.bound \|\|/.test(cutFn(trade, "cxVenueField")), JSON.stringify([e, f])); }
+  ok("③ 真實帳戶的事實長在卡裡:div.cf-wrap 裡 label 與 ul 是兄弟、ul 掛 aria-describedby;期貨商只留兩行、講憑證",
+    /card\.append\(lab, ul\)/.test(cutFn(trade, "cxVenueField")) && /r\.setAttribute\("aria-describedby", ul\.id\)/.test(cutFn(trade, "cxVenueField"))
+    && /fut \? \[CXF\.env === "cloud" \? t\("cx\.fact\.certCloud"\) : t\("cx\.fact\.cert"\), t\("cx\.fact\.ai"\)\]/.test(cutFn(trade, "cxVenueField")));
   ok("③ 綁定成功的埋點:本機 cxConnected 與雲端成功那一條都分模擬／真實;框標題與霧上的鈕同一句 cx.title",
     /trackFeature\(CXF\.venue === PAPER \? "cx_paper_ok" : "cx_real_ok"\);/.test(cutFn(trade, "cxConnected")) && /trackFeature\(venue === PAPER \? "cx_paper_ok" : "cx_real_ok"\);/.test(cutFn(trade, "cxConnectCloud"))
     && /<h6 id="cx-title" data-i18n="cx\.title"><\/h6>/.test(read(path.join(R, "index.html"))) && !/t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"/.test(trade)); }

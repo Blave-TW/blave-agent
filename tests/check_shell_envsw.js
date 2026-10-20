@@ -435,7 +435,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       /trPaintRoNote\(null\);/.test(src) && !/"tr\.ro\.note"|tr\.ro\.noteEmpty/.test(src)); }
   ok("設定 › 連線分類清乾淨:DOM、程式、字串都沒有", !/set-conn|data-set-cat="conn"/.test(html) && !/cxPaint\(|cxOpen\(|set-conn|"conn"/.test(code + app) && !/"(set\.cat\.conn|cx\.unbindHint|cx\.unbindLink|cx\.acct\.title)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
   // 設計師規格 v2 方案 C:存放說明收進「金鑰存在哪?」展開列——仍然只在不是模擬交易時出現,而且誠實揭露那句原文要在
-  ok("金鑰存放說明(cx.lead)在框裡的展開列,只在不是模擬交易時出現;展開狀態重畫時保住", (() => { const i = src.indexOf('if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));'), j = src.indexOf('box.appendChild(note);', i), body = src.slice(i, j);
+  ok("金鑰存放說明(cx.lead)在框裡的展開列,只在不是模擬交易時出現;展開狀態重畫時保住", (() => { const i = src.indexOf('if (venue === PAPER) box.appendChild(cxPaperNote());'), j = src.indexOf('box.appendChild(note);', i), body = src.slice(i, j);
     return i > 0 && j > i && /\n\s*else \{/.test(body) && /trEl\("button", "cx-disc", t\("cx\.store\.q"\)\), store = trEl\("p", "cx-disc-p", cloud \? t\("cx\.leadCloud"\) : t\("cx\.lead"\)\)/.test(body) && /aria-expanded", CXF\.storeOpen \? "true" : "false"\); store\.hidden = !CXF\.storeOpen;/.test(body)
       && (src.match(/t\("cx\.lead"\)/g) || []).length === 1; })());
   { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");

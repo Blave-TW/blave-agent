@@ -196,12 +196,12 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
 
 // ---- 9. 綁模擬帳戶說明講台股成交價的出處 ----
 // 模擬盤台股照未還原收盤價成交、股利不入帳(lib/paper_data;網頁 workspace_cx_paper_note 同句),只寫「照策略的行情資料成交」台股不成立
-{ const note = (lang) => (block(lang).match(/"cx\.paperNote": "([^"]*)"/) || [])[1] || "";
-  const MUST = { zh: ["未還原收盤價", "分 K 策略以盤中最新一根", "股利不入帳"],
+{ const note = (lang) => (block(lang).match(/"cx\.paper\.fill": "([^"]*)"/) || [])[1] || "";
+  const MUST = { zh: ["未還原收盤價", "分 K 策略用最新一根", "股利不入帳"],
     en: ["unadjusted close", "intraday strategies at the latest unadjusted bar", "dividends not credited"] };
   const miss = Object.entries(MUST).filter(([l, ws]) => !ws.every((w) => note(l).includes(w))).map(([l]) => l);
-  if (miss.length) fail(`cx.paperNote 沒寫台股照未還原收盤價成交、股利不入帳:[${miss}]`);
-  else pass("cx.paperNote 兩語都寫台股照未還原收盤價成交、股利不入帳");
+  if (miss.length) fail(`cx.paper.fill(「模擬怎麼成交？」展開內容)沒寫台股照未還原收盤價成交、股利不入帳:[${miss}]`);
+  else pass("cx.paper.fill(「模擬怎麼成交？」展開內容)兩語都寫台股照未還原收盤價成交、股利不入帳");
 }
 
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");

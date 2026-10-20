@@ -129,8 +129,8 @@ app.whenReady().then(async () => {
   ok("③ 沒有 Passphrase 的交易所:沒有那一行", await js(`!document.querySelector("#cx-body .cx-hint[id$='-hint']")`));
   // 提領不再檢查:每一家的說明都是「建議只開讀取和交易」那句,沒有「會被拒絕」
   const noteHas = async (key, label) => (await js(`[...document.querySelectorAll("#cx-body .cx-note p")].map((p) => p.textContent)`)).indexOf(await js(label ? `t(${J(key)}, { venue: ${J(label)} })` : `t(${J(key)})`)) >= 0;
-  ok("③ 雲端:Gate.io / OKX 講 cx.note.oneV、Binance 講 cx.note.one(建議語氣)", (await pick("gateio"), await noteHas("cx.note.oneV", "Gate.io")) && (await pick("okx"), await noteHas("cx.note.oneV", "OKX")) && (await pick("binance"), await noteHas("cx.note.one"))
-    && /建議/.test(await js(`STRINGS.zh["cx.note.one"]`)) && /建議/.test(await js(`STRINGS.zh["cx.note.oneV"]`)) && !/拒絕/.test(await js(`STRINGS.zh["cx.note.one"] + STRINGS.zh["cx.note.oneV"]`)));
+  ok("③ 雲端:Gate.io / OKX 講 cx.note.oneV、Binance 講 cx.note.one(只講 IP 白名單;權限建議在真實帳戶卡裡的事實第 2 行)", (await pick("gateio"), await noteHas("cx.note.oneV", "Gate.io")) && (await pick("okx"), await noteHas("cx.note.oneV", "OKX")) && (await pick("binance"), await noteHas("cx.note.one"))
+    && !/建議|讀取/.test(await js(`STRINGS.zh["cx.note.one"]`)) && !/建議|讀取/.test(await js(`STRINGS.zh["cx.note.oneV"]`)) && /白名單/.test(await js(`STRINGS.zh["cx.note.one"]`)) && !/拒絕/.test(await js(`STRINGS.zh["cx.note.one"] + STRINGS.zh["cx.note.oneV"]`)));
   ok("③ 三格都是密碼欄、不自動完成", await js(`[...document.querySelectorAll("#cx-body input")].length > 0 && [...document.querySelectorAll("#cx-body input")].every((i) => i.type === "password" && i.autocomplete === "off")`));
   await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });

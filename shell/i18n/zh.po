@@ -1386,10 +1386,10 @@ msgid "cx.lead"
 msgstr "只存在這台電腦的工作區（~/Blave/workspace/.env），Blave 不會上傳。agent 和你的策略程式讀得到，才能替你下單、讀帳戶。"
 
 msgid "cx.note.one"
-msgstr "在 Binance 建金鑰時：建議只開讀取和交易權限、不開提領，並把這個 IP 加進白名單。"
+msgstr "在 Binance 建金鑰時，把這個 IP 加進白名單。"
 
 msgid "cx.note.oneV"
-msgstr "在 {venue} 建金鑰時：建議只開讀取和交易權限、不開提領。有設 IP 白名單的話，把這個 IP 加進去。"
+msgstr "在 {venue} 建金鑰時，有設 IP 白名單的話，把這個 IP 加進去。"
 
 msgid "cx.note.subAcct"
 msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。Blave 會管這個帳戶上的所有部位，你手動開的單也可能被平掉。"
@@ -1412,9 +1412,6 @@ msgstr "模擬交易（免金鑰）"
 
 msgid "cx.paperShort"
 msgstr "模擬交易"
-
-msgid "cx.paperNote"
-msgstr "不用任何 API 金鑰。模擬帳戶起始 100,000 USDT，用你策略的行情資料即時成交（台股以未還原收盤價成交、分 K 策略以盤中最新一根未還原價成交，股利不入帳）、計手續費（不含滑價），不動真錢；策略、下單設定、部位與績效頁全部照真實帳戶的方式運作。要改用真實交易所時，先解除綁定再連接即可。"
 
 msgid "cx.connect"
 msgstr "連接交易所"
@@ -8617,3 +8614,21 @@ msgstr "建議只開讀取和交易，不開提領"
 
 msgid "cx.fact.ai"
 msgstr "下單照策略的程式跑，不經過 AI"
+
+# 模擬交易的成交方式:收進「模擬怎麼成交？」展開列(cx.paperNote 退役)
+msgid "cx.paper.q"
+msgstr "模擬怎麼成交？"
+
+msgid "cx.paper.fill"
+msgstr "用策略的行情即時成交、計手續費（不含滑價）。台股用未還原收盤價、分 K 策略用最新一根未還原價成交，股利不入帳。"
+
+# 期貨商(統一／群益)的第一行事實:期貨商用的是憑證、不是 API 金鑰
+msgid "cx.fact.cert"
+msgstr "憑證只存在這台電腦"
+
+msgid "cx.fact.certCloud"
+msgstr "憑證只存在你的雲端主機"
+
+# 已綁定時框裡兩個大選項與選單鎖住,下面這一句
+msgid "cx.bound"
+msgstr "要換帳戶，先在設定解除綁定。"
