@@ -18,6 +18,12 @@ t("交易所名照表(OKX / Gate.io / BingX 不是首字大寫);表外 id 首字
   statusLine(TPL, { money: "real", venue: "okx", state: "on" }, L) === "雲端：OKX · 執行中" && statusLine(TPL, { money: "real", venue: "gateio", state: "on" }, L) === "雲端：Gate.io · 執行中"
   && statusLine(TPL, { money: "real", venue: "bingx", state: "on" }, L) === "雲端：BingX · 執行中" && statusLine(TPL, { money: "real", venue: "kraken", state: "on" }, L) === "雲端：Kraken · 執行中"
   && venueLabel("<b>") === "" && venueLabel("A B") === "" && venueLabel(5) === "" && statusLine(TPL, { money: "real", state: "on" }, L) === "雲端：真錢 · 執行中");
+{ const LT = { ...L, venueCapital: "群益", venuePresident: "統一期貨" };
+  t("台灣券商寫翻好的名字(群益 / 統一期貨),不是 id 首字大寫;字還沒交 → 整行不出",
+    statusLine(TPL, { money: "real", venue: "capital", state: "on" }, LT) === "雲端：群益 · 執行中"
+    && statusLine(TPL, { money: "real", venue: "president", state: "paused" }, LT) === "雲端：統一期貨 · 已暫停"
+    && statusLine(TPL, { money: "real", venue: "capital", state: "on" }, L) === null && statusLine(TPL, { money: "real", venue: "president", state: "on" }, L) === null
+    && statusLine(TPL, cloudLine(st({ report: { venues: { capital: V }, reconciler: { alive: true } } })), LT) === "雲端：群益 · 執行中"); }
 t("已暫停", cloudLine(st({ report: { venues: { binance: V }, halt: { halted: true }, reconciler: { alive: true } } })).state === "paused");
 t("讀不到新狀態(alive=false:連不上 / 回報過舊)→ 不講執行中也不講已暫停", cloudLine(st({ alive: false })).state === "unknown" && cloudLine(st({ alive: false, report: { venues: { binance: V }, halt: { halted: true } } })).state === "unknown");
 t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)→ 已暫停(同畫面),不是不明",

@@ -3649,7 +3649,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
   key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "",
-  stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", stNotStarted: "", moneyPaper: "", moneyReal: "",
+  stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", stNotStarted: "", moneyPaper: "", moneyReal: "", venueCapital: "", venuePresident: "",
   stLocalOnly: "", noAccount: "", runningZ: "",   // 選單列這台電腦那一行沒在下單也講(0.1.9):「這台電腦：還沒連接交易所」、沒設金額的那一態
   br_captchaTitle: "", br_captcha: "",   // 內建瀏覽器:搜尋要用戶過驗證(browserNotify);空的 = 還沒交字 = 不發
   moveTitle: "", moveBody: "", moveGo: "", moveNo: "",   // 搬到「應用程式」那一問(askMoveToApps):空的 = 還沒交字 = 不問

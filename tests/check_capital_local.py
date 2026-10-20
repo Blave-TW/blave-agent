@@ -8,7 +8,8 @@ local_daemon / command_listener wiring) — no network, no broker, no Windows, n
      in memory only (no vault file); a 群益 write that did not come from this step is refused
   4. the lib: a child with the line resolves id + password from it; a line from another binding
      (fingerprint mismatch) or none at all never logs in; the cloud vault path is unchanged
-  5. the reconciler's one line carries both venues' keys; each vault picks only its own
+  5. the reconciler's one line carries both venues' keys; each vault picks only its own; a 全部平倉
+     child gets one such line per vault that has secrets, whichever vault reads first
   6. probe: the worker's --once result → the status' probe section; 300 blocks these credentials,
      the next probe is refused (PW_RECHECK_NEEDED) until a new password is bound; 307 + after_unlock
      grants the one retry
@@ -205,6 +206,77 @@ capl_secrets = capl._LOCAL["secrets"]
 capl._LOCAL["secrets"] = None
 check("5 兩家都沒有 → 空字串(不帶 stdin 行)", ld.secret_line_all() == "")
 capl._LOCAL["secrets"] = capl_secrets
+
+
+# 5b. 全部平倉 on this computer: the flatten child gets 群益's line too, and each vault reads its own
+class _FlatProc:
+    def __init__(self, argv, **kw):
+        self.argv, self.kw, self.written = argv, kw, b""
+        self.stdin = self
+        _flat.append(self)
+
+    def write(self, b):
+        self.written += b
+
+    def close(self):
+        pass
+
+
+def _flatten_child():
+    _flat.clear()
+    real, kick = cl.subprocess.Popen, cl._kick_when_flatten_exits
+    cl.subprocess.Popen, cl._kick_when_flatten_exits = _FlatProc, lambda proc: None
+    try:
+        out = cl._launch_flatten("")
+    finally:
+        cl.subprocess.Popen, cl._kick_when_flatten_exits = real, kick
+    return out, _flat[-1]
+
+
+def _child_reads(written, readers):
+    """Feed what the child got on stdin to fd 0 and let the vaults read it in this order."""
+    r, w = os.pipe()
+    os.write(w, written)
+    os.close(w)
+    saved = os.dup(0)
+    os.dup2(r, 0)
+    try:
+        return [fn() for fn in readers]
+    finally:
+        os.dup2(saved, 0)
+        os.close(r)
+
+
+_flat = []
+out, fp_ = _flatten_child()
+fenv = fp_.kw["env"]
+check("5b 只綁群益:平倉子行程帶群益那一行(stdin)、旗標 BLAVE_CAPITAL_STDIN,環境裡沒有密碼",
+      out == "started" and fp_.kw.get("stdin") == subprocess.PIPE and fenv.get("BLAVE_CAPITAL_STDIN") == "1"
+      and "BLAVE_PRESIDENT_STDIN" not in fenv and fenv.get("BLAVE_AGENT_LOCAL") == "1"
+      and PW not in json.dumps(fenv) and fp_.written.count(b"\n") == 1, sorted(fenv))
+cv._LOCAL = None
+os.environ[cv.STDIN_FLAG] = "1"
+got = _child_reads(fp_.written, [lambda: cv.resolve(env)])
+check("5b …子行程的群益 vault 讀得到、登得進去(指紋對得上)", got == [(ID, PW)])
+pc._LOCAL["secrets"] = {"account": "70000011234", "password": "ppw", "ca_password": "", "live": True}
+out, fp_ = _flatten_child()
+fenv = fp_.kw["env"]
+check("5b 兩家都綁:兩個旗標、兩行", fenv.get("BLAVE_CAPITAL_STDIN") == "1" and fenv.get("BLAVE_PRESIDENT_STDIN") == "1"
+      and fp_.written.count(b"\n") == 2)
+for order in ("pv_first", "cv_first"):
+    cv._LOCAL, pv._LOCAL = None, None
+    os.environ[cv.STDIN_FLAG] = os.environ[pv.STDIN_FLAG] = "1"
+    rd = [lambda: _msg(lambda: cv.resolve(env)) or cv.resolve(env), lambda: pv._local_secrets().get("president_password")]
+    got = _child_reads(fp_.written, rd if order == "cv_first" else rd[::-1])
+    got = got if order == "cv_first" else got[::-1]
+    check(f"5b …哪家先讀都各拿到自己的({order})", got == [(ID, PW), "ppw"], got)
+pc._LOCAL["secrets"] = None
+capl._LOCAL["secrets"] = None
+out, fp_ = _flatten_child()
+check("5b 兩家都沒交 → stdin 是 devnull、不帶旗標", fp_.kw.get("stdin") == subprocess.DEVNULL and not fp_.written and "BLAVE_CAPITAL_STDIN" not in fp_.kw["env"]
+      and "BLAVE_PRESIDENT_STDIN" not in fp_.kw["env"])
+capl._LOCAL["secrets"] = capl_secrets
+cv._LOCAL = None
 check("5 local_daemon:capital_local 只在本機、不在 api 清單", "capital_local" in ld.LOCAL_ONLY and "capital_local" not in ld.ALLOWED)
 src_ld = open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()
 check("5 local_daemon 六處接線(封裝金鑰、補交後重起對帳器、孤兒回收、每秒 tick、狀態、關機停)",

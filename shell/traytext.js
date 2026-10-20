@@ -52,6 +52,8 @@ function cloudLine(st) {
    state:none 還沒連接交易所 / notStarted / paused / mayTrade / unknown / on / onZ(下單程式在跑、沒有策略設金額)。沒有 money = 樣板不帶交易所名。
    判定照 renderer trExecState 的順序;on / onZ 的條件跟 main.js tradeLive() 同一組欄位。
    lastVenue:狀態檔這一輪 build 失敗(沒有 venues)時,上一次看到的場所。 */
+// 這台電腦開通的券商 → 回報裡它的開通狀態欄(runtime president_connect / capital_local)
+const LOCAL_CONNECT = { president: "president_connect", capital: "capital_local_connect" };
 function localLine(st, lastVenue) {
   if (!st) return { state: "none" };
   const r = st.report;
@@ -66,10 +68,10 @@ function localLine(st, lastVenue) {
   const venue = money === "paper" ? "paper" : ids.filter((k) => k !== "paper")[0];
   const line = (state) => ({ money, venue, state });
   const rec = r.reconciler || {}, sup = r.daemon && r.daemon.reconciler;
-  // 統一在這台電腦開通中(只綁了它、worker 從來沒 ok 過(ok_at)、對帳器沒在跑、機器沒重開過;同 trade.js trSetupOnly):不是已暫停,講「尚未啟動下單」
-  const pc = r.president_connect, recRun = sup && typeof sup.running === "boolean" ? sup.running : !!rec.alive;
-  const wip = pc && typeof pc === "object" && !(pc.worker && (pc.worker.status === "ok" || pc.worker.ok_at));
-  if (ids.every((k) => k === "president") && wip && !(st.alive && recRun) && !(rec.stopped && rec.stopped.reason === "machine_restart")) return line("notStarted");
+  // 統一／群益在這台電腦開通中(只綁了開通中的券商、worker 從來沒 ok 過(ok_at)、對帳器沒在跑、機器沒重開過;同 trade.js trSetupOnly):不是已暫停,講「尚未啟動下單」
+  const recRun = sup && typeof sup.running === "boolean" ? sup.running : !!rec.alive;
+  const wip = (k) => { const c = r[LOCAL_CONNECT[k]]; return !!c && typeof c === "object" && !(c.worker && (c.worker.status === "ok" || c.worker.ok_at)); };
+  if (ids.every((k) => LOCAL_CONNECT[k] && wip(k)) && !(st.alive && recRun) && !(rec.stopped && rec.stopped.reason === "machine_restart")) return line("notStarted");
   if (r.halt && r.halt.halted) return line("paused");
   if (rec.stopped && rec.stopped.reason === "machine_restart") return line(rec.stopped.gated === false ? "mayTrade" : "paused");
   // app 重開後對帳器等人按「啟動下單」(trRestartKind "app"):已暫停
@@ -88,7 +90,9 @@ const cloudTrading = (st) => { const l = cloudLine(st); return !!(l && l.state =
 function statusLine(tpl, line, labels) {
   if (!tpl || !line || !labels) return null;
   // {money} 槽:模擬寫「模擬」記號,真的交易所寫它的名字(沒帶 venue 的舊呼叫端退回「真錢」)。沒有 money 的那幾態(還沒連接交易所…)樣板本來就不帶這一槽
-  const money = !line.money ? "" : line.money === "paper" ? labels.moneyPaper : venueLabel(line.venue) || labels.moneyReal;
+  // 台灣券商的名字要翻(群益 / Capital):字由 renderer 交過來,還沒交就整行不出,不拿 id 首字大寫頂
+  const money = !line.money ? "" : line.money === "paper" ? labels.moneyPaper : line.venue === "capital" ? labels.venueCapital
+    : line.venue === "president" ? labels.venuePresident : venueLabel(line.venue) || labels.moneyReal;
   const state = line.state === "on" ? labels.stOn : line.state === "onZ" ? labels.runningZ : line.state === "paused" ? labels.stPaused
     : line.state === "mayTrade" ? labels.stMayTrade : line.state === "notStarted" ? labels.stNotStarted : line.state === "none" ? labels.noAccount : labels.stUnknown;
   if ((line.money && !money) || !state) return null;

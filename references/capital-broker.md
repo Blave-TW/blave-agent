@@ -3,9 +3,10 @@
 Use this document when a user asks to connect their **Capital Securities (群益證券)** and/or
 **Capital Futures (群益期貨)** account to Blave Agent — same corporate group, same underlying API,
 one certificate covers both markets. The integration uses the official **Capital API**
-(`SKCOM.dll`, a Windows COM component) — **Windows-only**, so this broker requires a
-**Windows cloud machine**. The desktop app (`BLAVE_AGENT_LOCAL=1`) cannot connect to Capital on
-any OS, Windows PC included — see Step 0. There is no cross-platform package (unlike SinoPac/President).
+(`SKCOM.dll`, a Windows COM component) — **Windows-only**: a **Windows cloud machine** (Steps 1–8
+below, walked by the agent), or the **desktop app on a Windows PC**, where the app's own connect
+flow does the whole setup and the agent does none of it — see Step 0. Not on a Mac, not on a Linux
+cloud machine. There is no cross-platform package (unlike SinoPac/President).
 
 Steps 1–6 (verification test + agreement, certificate, component install, login, accounts) are
 **shared** by both markets. Order placement diverges — see Step 7a (Futures) / Step 7b (Securities).
@@ -59,15 +60,24 @@ prefer the near-month aliases, or the V2.13.54+ `bstrCIDTandem`(`FITX`) + `bstrS
 
 ## Step 0 — Determine Platform, then Scope
 
-**First, before asking anything**, confirm the workspace is a **Windows x64 cloud machine**:
+**First, before asking anything**, confirm where this workspace runs:
 
-- **Desktop app** (`BLAVE_AGENT_LOCAL=1`, Mac or Windows PC) — two cases, told apart by the runtime's
-  view line. Either way stop here: ask nothing more, install nothing, download nothing, touch neither
-  this computer nor the cloud machine.
-  - **Connecting Capital on this computer** (no cloud-view line this turn): tell the user
-    「電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」
-    / "The desktop app can't connect to Capital yet. Capital needs a Windows cloud machine: choose Windows
-    when you launch one on the web (it can't be changed afterward)."
+- **Desktop app** (`BLAVE_AGENT_LOCAL=1`) — two cases, told apart by the runtime's view line.
+  Either way stop here: ask nothing more, install nothing, download nothing, never ask for the ID or the
+  trading password, touch neither this computer nor the cloud machine.
+  - **Connecting Capital on this computer** (no cloud-view line this turn):
+    - **Windows PC**: the app connects it, not you — 自動下單 › 連接交易所 › 群益 installs the component for
+      this Windows account, finds, imports or issues the certificate, takes the ID and trading password,
+      runs the login check and keeps the account reader running (`runtime/capital_local.py`; no
+      Administrator, no NSSM, no schtasks — everything runs as the signed-in user). Tell the user
+      「群益要在 app 裡連：自動下單 › 連接交易所 › 群益，照畫面一步步做。」/ "Connect Capital in the app:
+      Auto trading › Connect an exchange › Capital, and follow the steps on screen." If they say the menu has no
+      群益, this build has not opened it yet: say so, and that a Windows cloud machine (chosen when it
+      is launched on the web) is the other way. Orders go out only while Blave is open and this Windows
+      account is signed in; a sleeping or shut-down PC sends nothing, stops included.
+    - **Mac**: 「Mac 不能連群益（群益的元件只有 Windows 版）。可以在 Windows 電腦上用電腦版，或在網頁開雲端主機時選 Windows（開好之後不能換）。」
+      / "Capital can't be connected on a Mac (its component is Windows-only). Use the desktop app on a
+      Windows PC, or choose Windows when you launch a cloud machine on the web (it can't be changed afterward)."
   - **Setting up Capital on the user's existing Windows cloud machine from the cloud view** (the runtime
     says this turn was sent in the 雲端主機 view — e.g. the desktop app's Capital setup box handed it to
     you): the setup has to be walked by the agent on that machine. Do not tell them to launch a Windows

@@ -885,11 +885,15 @@ def _capital_order_identity_ok():
         import ctypes
         from ctypes import wintypes
         adv = ctypes.windll.advapi32
+        # desktop app: SKCOM logs in as the signed-in user (the certificate is in their store) — any
+        # account name, but only an INTERACTIVE logon; never the cloud's Administrator-only rule
+        local = os.environ.get("BLAVE_AGENT_LOCAL") == "1"
         buf = ctypes.create_unicode_buffer(257)
         n = wintypes.DWORD(257)
-        if not adv.GetUserNameW(buf, ctypes.byref(n)) or buf.value.lower() != "administrator":
+        if not adv.GetUserNameW(buf, ctypes.byref(n)) or (not local and buf.value.lower() != "administrator"):
             return False
-        for sddl in ("S-1-5-4", "S-1-5-3", "S-1-5-6"):  # INTERACTIVE, BATCH, SERVICE
+        # INTERACTIVE, BATCH, SERVICE
+        for sddl in ("S-1-5-4",) if local else ("S-1-5-4", "S-1-5-3", "S-1-5-6"):
             sid = ctypes.c_void_p()
             if not adv.ConvertStringSidToSidW(sddl, ctypes.byref(sid)):
                 return False

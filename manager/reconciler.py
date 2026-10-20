@@ -1550,6 +1550,25 @@ DUPLICATE_EXIT = 75
 ROUND_MARKER_PATH = Path('state/execution/round')
 
 
+# A poll sleep that returns far later than asked = this computer was asleep (a closed laptop on the
+# desktop app). 群益's COM session is not trusted across that: drop it so the next order logs in
+# again instead of sending through a dead connection every round. Only an already-loaded order lib:
+# never import SKCOM on a machine that has not traded 群益.
+WAKE_GAP_S = 60
+
+
+def _poll_sleep():
+    t0 = time.time()
+    time.sleep(POLL_INTERVAL)
+    if time.time() - t0 <= POLL_INTERVAL + WAKE_GAP_S:
+        return False
+    oc = sys.modules.get("lib.order_capital")
+    if oc is not None:
+        oc.reset_session()
+        logging.info("[reconciler] woke from sleep — 群益 session dropped, the next order logs in again")
+    return True
+
+
 def _round_marker(on):
     try:
         if on:
@@ -1710,7 +1729,7 @@ if __name__ == '__main__':
         GATED_MARKER_PATH.touch()
 
         if _update_hold():
-            time.sleep(POLL_INTERVAL)
+            _poll_sleep()
             continue
 
         if RESTART_STOP_PATH.exists():
@@ -1718,7 +1737,7 @@ if __name__ == '__main__':
                 logging.info("[reconciler] machine restarted — no orders of any kind "
                              "(closes included) until the user presses 啟動下單")
                 _restart_stop_logged = True
-            time.sleep(POLL_INTERVAL)
+            _poll_sleep()
             continue
         if _restart_stop_logged:
             logging.info("[reconciler] 啟動下單 pressed — resuming reconciliation")
@@ -1733,7 +1752,7 @@ if __name__ == '__main__':
                 logging.info("[reconciler] no venue bound — idling (no positions "
                              "read, no orders, no notifications) until one is bound")
                 _idle_logged = True
-            time.sleep(POLL_INTERVAL)
+            _poll_sleep()
             continue
         if _idle_logged:
             logging.info("[reconciler] venue bound again — resuming reconciliation")
@@ -1746,7 +1765,7 @@ if __name__ == '__main__':
             current_mtimes = _active_state_mtimes()
         except Exception as e:
             logging.error(f"[reconciler] state scan failed: {e}")
-            time.sleep(POLL_INTERVAL)
+            _poll_sleep()
             continue
         _sync_halt_flag(current_mtimes.get('__halt__', 0))
         changed = [k for k in current_mtimes if current_mtimes[k] != last_mtimes.get(k)]
@@ -1817,4 +1836,4 @@ if __name__ == '__main__':
             finally:
                 _round_marker(False)
 
-        time.sleep(POLL_INTERVAL)
+        _poll_sleep()

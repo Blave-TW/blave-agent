@@ -5268,15 +5268,19 @@ def _launch_flatten(prefix):
     child_env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
     if _local_mode():
         # own session: the flatten must outlive a daemon that is shutting down
-        line = president_connect.secret_line()  # 統一's close logs in: hand it the line
+        # 統一's and 群益's closes log in. Each flagged vault reads exactly one line off stdin and
+        # keeps only its own keys: the merged line once per vault that has secrets
+        held = [json.loads(x) for x in (president_connect.secret_line(), capital_local.secret_line()) if x]
+        line = "".join(json.dumps({k: v for d in held for k, v in d.items()}) + "\n" for _ in held)
+        flags = {**president_connect.child_flags(), **capital_local.child_flags()}
         with atomic_file.open_append(log_path) as logf:
             proc = subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
-                                    env=_local_child_env(**president_connect.child_flags()),
+                                    env=_local_child_env(**flags),
                                     stdout=logf, stderr=logf, start_new_session=True,
                                     **_child_kw(**({"stdin": subprocess.PIPE} if line else {})))
         if line:
             try:
-                proc.stdin.write((line + "\n").encode("utf-8"))
+                proc.stdin.write(line.encode("utf-8"))
                 proc.stdin.close()
             except OSError:
                 pass

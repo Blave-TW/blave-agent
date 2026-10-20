@@ -259,6 +259,10 @@ def secret_line():
     return json.dumps(s) if s else ""
 
 
+def child_flags():
+    return dict(_CHILD_FLAGS) if _LOCAL["secrets"] else {}
+
+
 def _set_secrets(b):
     _LOCAL["secrets"] = {"id": b["id"], "pw": b["pw"]}
     cb = _LOCAL["on_secrets"]

@@ -1,5 +1,6 @@
 """capital-broker.md Step 0 on the desktop app splits two cases (Wei, 0.1.16 audit P1-1):
-connecting Capital on this computer is blocked with "launch a Windows cloud machine"; a cloud-view
+connecting Capital on this computer goes to the app's own connect flow on a Windows PC (0.1.28,
+runtime/capital_local.py — the agent does none of it) and is refused on a Mac; a cloud-view
 handoff from the desktop's Capital setup box (shell/renderer/capital.js capHandoff, viewing env=cloud)
 is sent to the blave.org cloud workspace instead — never told to launch a machine it already has.
 Both stop before asking scope. AGENTS.md's Capital routing line points at the same split.
@@ -26,14 +27,22 @@ local_i, cloud_i = desk.find("**Connecting Capital on this computer**"), desk.fi
 check(local_i > 0 and cloud_i > local_i, "desktop branch has both cases: this computer, then the cloud view")
 local, cloud = desk[local_i:cloud_i], desk[cloud_i:]
 check("Either way stop here" in desk and "touch neither" in desk, "both cases stop before scope and touch no machine")
-check("在網頁開雲端主機時選 Windows" in local and "choose Windows" in local,
-      "this-computer case: launch a Windows cloud machine (zh + en)")
+win_i, mac_i = local.find("**Windows PC**"), local.find("**Mac**")
+check(0 < win_i < mac_i, "this-computer case splits Windows PC, then Mac")
+win, mac = local[win_i:mac_i], local[mac_i:]
+check("自動下單 › 連接交易所 › 群益" in win and "Auto trading › Connect an exchange › Capital" in win
+      and "the app connects it, not you" in win and "never ask for the ID or the\n  trading password" in desk,
+      "Windows PC: the app's connect flow (zh + en); the agent asks for no credentials")
+check("this build has not opened it yet" in win, "Windows PC: a build whose menu has no 群益 is named as such")
+check("Mac 不能連群益" in mac and "在網頁開雲端主機時選 Windows" in mac and "choose Windows" in mac,
+      "Mac: refused, a Windows PC or a Windows cloud machine instead (zh + en)")
 check("blave.org 的雲端工作頁" in cloud and "cloud workspace on\n    blave.org" in cloud and "開雲端主機時選 Windows" not in cloud
       and "Do not tell them to launch a Windows" in cloud,
       "cloud-view case: go to the blave.org cloud workspace (zh + en), never 'launch a Windows machine'")
 check("Capital setup box" in cloud and "雲端主機 view" in cloud, "cloud-view case names how it is recognized")
 line = next((l for l in AGENTS.split("\n") if "**Capital Futures (群益期貨):**" in l), "")
-check("desktop app never connects it" in line and "cloud view" in line and "blave.org cloud workspace" in line,
+check("connect flow does it, not you" in line and "not on a Mac" in line and "cloud view" in line
+      and "blave.org cloud workspace" in line,
       "AGENTS.md Capital line routes both cases to Step 0")
 
 print("FAILED" if fails else "all ok")

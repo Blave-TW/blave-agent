@@ -159,6 +159,21 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
       && S0([{ running: true, alive: true, report: { venues: VP, president_connect: failed, halt: {}, ...mr } }]) === "paused"
       && S0([{ running: true, alive: true, report: { venues: VP, president_connect: failed, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } } }]) === "mayTrade"
       && S0([{ running: true, alive: true, report: { venues: VP, president_connect: wip, halt: {}, ...mr } }]) === "paused"); }
+  // 0.1.28:群益在這台電腦開通中(capital_local_connect)同一條;雲端那份 capital_connect 不算這台電腦的開通
+  { const VC = { capital: { credentials: true, pair: true, order: true, account: true } }, wip = { worker: { status: "idle" } };
+    const rs = { halt: { halted: true }, reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false, wanted: false } } };
+    const mr = { reconciler: { alive: false, stopped: { reason: "machine_restart", at: 7 } }, daemon: { reconciler: { running: false, wanted: false } } };
+    const C = (extra) => S0([{ running: true, alive: true, report: { venues: VC, ...extra } }]);
+    t("群益本機開通中:notStarted 而不是 paused;worker ok／開通過(ok_at)照舊 paused;對帳器在跑、機器重開過都不算開通中;沒有本機開通欄(雲端 capital_connect)照一般狀態機",
+      C({ capital_local_connect: wip, ...rs }) === "notStarted"
+      && C({ capital_local_connect: { worker: { status: "ok" } }, ...rs }) === "paused"
+      && C({ capital_local_connect: { worker: { status: "failed", ok_at: 5 } }, ...rs }) === "paused"
+      && C({ capital_local_connect: wip, halt: { halted: true }, reconciler: { alive: true }, daemon: { reconciler: { running: true } } }) === "paused"
+      && C({ capital_local_connect: wip, halt: {}, ...mr }) === "paused"
+      && C({ capital_connect: wip, ...rs }) === "paused");
+    t("…群益開通中、旁邊還綁著開通好的交易所:不是只綁開通中的券商 → 照一般狀態機",
+      S0([{ running: true, alive: true, report: { venues: { ...VC, binance: VC.capital }, capital_local_connect: wip, ...rs } }]) === "paused");
+    t("…統一與群益都在開通中 → notStarted", S0([{ running: true, alive: true, report: { venues: { ...VC, president: VC.capital }, capital_local_connect: wip, president_connect: wip, ...rs } }]) === "notStarted"); }
   t("…讀不到時沒有上次的場所 / 場所長得不像 id:不帶交易所名(用「這台電腦：{state}」那個樣板)", !TT.localLine({ running: true, alive: true, report: { error: "x" } }, "<b>").money && !TT.localLine({ running: true, alive: true, report: { error: "x" } }, null).money);
   t("statusLine:沒有 money 的那幾態走不帶 {money} 的樣板;字沒交就整行不出", TT.statusLine(L.stLocalOnly, { state: "none" }, L) === locOnly(zh("tr.noAccount")) && TT.statusLine(L.stLocalOnly, { state: "none" }, { ...L, noAccount: "" }) === null
     && TT.statusLine(L.stLocal, { money: "real", venue: "okx", state: "onZ" }, L) === loc("OKX · " + zh("tr.runningZ")));

@@ -290,6 +290,62 @@ if os.name != "nt":
     check(verdict == (False, False), f"identity lookup raising → False ({verdict})")
 
 
+# The token lookup itself, on a stand-in advapi32 (any OS): the account name and the logon SIDs
+# this process's token carries are the inputs; both copies must answer the same.
+class _FakeAdvapi:
+    SIDS = {"S-1-5-4": 4, "S-1-5-3": 3, "S-1-5-6": 6}
+
+    def __init__(self, name, member):
+        self.name, self.member = name, set(member)
+
+    def GetUserNameW(self, buf, n):
+        buf.value = self.name
+        return 1
+
+    def ConvertStringSidToSidW(self, sddl, ref):
+        ref._obj.value = self.SIDS[sddl]
+        return 1
+
+    def CheckTokenMembership(self, _tok, sid, ref):
+        ref._obj.value = any(self.SIDS[k] == sid.value for k in self.member)
+        return 1
+
+
+def _verdict(name, member, local):
+    import ctypes
+    saved_name, had = os.name, hasattr(ctypes, "windll")
+    saved_windll = getattr(ctypes, "windll", None)
+    ctypes.windll = types.SimpleNamespace(advapi32=_FakeAdvapi(name, member),
+                                          kernel32=types.SimpleNamespace(LocalFree=lambda p: None))
+    if local:
+        os.environ["BLAVE_AGENT_LOCAL"] = "1"
+    os.name = "nt"
+    try:
+        got = (REAL_FLATTEN_ID(), REAL_REPORTER_ID())
+    finally:
+        os.name = saved_name
+        os.environ.pop("BLAVE_AGENT_LOCAL", None)
+        if had:
+            ctypes.windll = saved_windll
+        else:
+            del ctypes.windll
+    return got[0] if got[0] == got[1] else ("differ", got)
+
+
+INTER, BATCH, SERVICE = ["S-1-5-4"], ["S-1-5-3"], ["S-1-5-6"]
+check(_verdict("Administrator", INTER, False) is True and _verdict("Administrator", BATCH, False) is True
+      and _verdict("Administrator", SERVICE, False) is True,
+      "cloud: Administrator under INTERACTIVE / BATCH / SERVICE → can log in")
+check(_verdict("wei", INTER, False) is False and _verdict("SYSTEM", SERVICE, False) is False
+      and _verdict("Administrator", [], False) is False,
+      "cloud: any other account, or Administrator without a password logon → no")
+check(_verdict("wei", INTER, True) is True and _verdict("Administrator", INTER, True) is True,
+      "desktop: the signed-in user's INTERACTIVE logon, whatever the name → can log in (全部平倉 includes 群益)")
+check(_verdict("wei", BATCH, True) is False and _verdict("wei", SERVICE, True) is False
+      and _verdict("Administrator", SERVICE, True) is False and _verdict("wei", [], True) is False,
+      "desktop: a scheduled task / service / no interactive logon → no")
+
+
 def _identity_body(path):
     tree = ast.parse(open(path, encoding="utf-8").read())
     fn = next(n for n in tree.body
