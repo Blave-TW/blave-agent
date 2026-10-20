@@ -127,6 +127,16 @@ line = plots.get("tw")
 check(line is not None and abs((line.iloc[-1] - 1) * 100 - bh["ret_pct"]) <= 0.01,
       "pnl.png draws the 0050 buy-and-hold line")
 
+# ── an over-budget live chunk drops benchmark_bh.series only; ret_pct still reaches the row ──
+big = {"name": "tw", "backtest": dict(st, daily_returns=[0.0] * 2_000_000)}
+small = {"name": "other", "backtest": {"benchmark_bh": None, "Total Return [%]": 1.0}}
+ch = sr.live_chunk([big, small])["strategies"]
+cb = ch[0]["backtest"]
+check("daily_returns" not in cb and isinstance(cb.get("benchmark_bh"), dict)
+      and "series" not in cb["benchmark_bh"] and cb["benchmark_bh"].get("ret_pct") == bh["ret_pct"]
+      and ch[1]["backtest"]["benchmark_bh"] is None and "series" in big["backtest"]["benchmark_bh"],
+      "live chunk tier 2: benchmark_bh keeps ret_pct, loses series; null stays null; input untouched")
+
 # ── 0050 fetch fails → null, backtest still written ──
 def boom(*a, **k):
     raise RuntimeError("network down")

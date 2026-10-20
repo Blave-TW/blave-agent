@@ -880,8 +880,10 @@ _LIVE_CHUNK_BUDGET = int(1.5 * 1024 * 1024)
 # Stripped tier by tier until the chunk fits. The web redraws the open strategy from
 # every live chunk: tier 1 loses the 進出場紀錄 K 線/trades (back after the turn-end
 # cache refetch), tier 2 also the equity curve — the list/status/metrics always arrive.
+# A (key, subkey) pair drops only the subkey: benchmark_bh's ret_pct is a metric row.
 _LIVE_STRIP_TIERS = (("candles", "panes", "trades"),
-                     ("daily_dates", "daily_returns", "benchmark_band", "benchmark_bh"))  # band / bh series ride on daily_dates
+                     ("daily_dates", "daily_returns", "benchmark_band",
+                      ("benchmark_bh", "series")))  # band / bh series ride on daily_dates
 
 
 def live_chunk(strategies, touched=None):
@@ -903,7 +905,11 @@ def live_chunk(strategies, touched=None):
         for s in out:
             bt = s.get("backtest")
             if isinstance(bt, dict):
-                s["backtest"] = {k: v for k, v in bt.items() if k not in tier}
+                bt = {k: v for k, v in bt.items() if k not in tier}
+                for key, sub in (t for t in tier if isinstance(t, tuple)):
+                    if isinstance(bt.get(key), dict):
+                        bt[key] = {k: v for k, v in bt[key].items() if k != sub}
+                s["backtest"] = bt
     return chunk
 
 
