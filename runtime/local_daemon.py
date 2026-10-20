@@ -130,6 +130,7 @@ STATUS_EVERY_S = 15
 ACCOUNT_EVERY_S = 60       # the cloud's account timer cadence
 ACCOUNT_TIMEOUT_S = 180
 RESTART_DELAY_S = 10       # = manager/start_reconciler.sh's `sleep 10`
+CAPITAL_RESTART_EXIT = 76  # = manager/reconciler.py: 群益 9997, a fresh process logs in again
 # Shutdown has to fit between an app's SIGTERM and the SIGKILL that follows it:
 # the runner gets SWEEP_BUDGET_S to cancel its own resting orders, the daemon
 # waits STOP_GRACE_S for it, then kills.
@@ -829,7 +830,9 @@ class ReconcilerSupervisor:
                 self.last_exit_at = int(time.time())
                 self._note(f"reconciler (pid {self._proc.pid}) exited (code "
                            f"{self.last_exit_code}) without this daemon stopping it — "
-                           f"restarting in {RESTART_DELAY_S}s")
+                           f"restarting in {RESTART_DELAY_S}s"
+                           + (" (76 = 群益 asked for an API restart after five failed logins, 9997)"
+                              if self.last_exit_code == CAPITAL_RESTART_EXIT else ""))
                 return
             if time.time() < self._respawn_at:
                 return

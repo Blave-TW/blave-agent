@@ -597,6 +597,18 @@ sup._respawn_at = time.time() - 1
 sup.tick()
 check(f"12 監督者:結束碼 76 照樣重起,等 RESTART_DELAY_S({ld.RESTART_DELAY_S}s)不連環重起;重起時帶 secret_line_all",
       waiting and spawns == [False] and sup.restarts == 1 and ld.RESTART_DELAY_S >= 10 and sup._secret_line is ld.secret_line_all)
+rlog = open(os.path.join(WS, "state", "reconciler.log"), encoding="utf-8").read()
+check("12 reconciler.log 講明 76 是群益要求重啟 API(9997)", "(76 = 群益 asked for an API restart after five failed logins, 9997)" in rlog
+      and ld.CAPITAL_RESTART_EXIT == 76 and "CAPITAL_RESTART_EXIT = 76" in src_rec)
+relogin = os.path.join(WS, "state", "capital_relogin.json")
+with open(relogin, "w") as f:
+    f.write('{"n": 3, "until": 0}')
+w_saved, s_saved = capl._LOCAL["worker"], capl._LOCAL["secrets"]
+capl._LOCAL["worker"] = um.Mock()
+capl.drop_local(["CAPITAL_PASSWORD"])
+capl._LOCAL["worker"], capl._LOCAL["secrets"] = w_saved, s_saved
+check("12 解綁:重登退避檔一起刪(重新綁定不接著舊的 n 算)", not os.path.exists(relogin)
+      and capl._paths()["relogin"].endswith(os.path.join("state", "capital_relogin.json")))
 
 shutil.rmtree(BASE, ignore_errors=True)
 print(f"\n{len(fails)} FAILED" if fails else "\nall ok")

@@ -637,4 +637,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # the user's close: 群益 logs in now, not after the reconciler's re-login backoff (lib/order_capital)
+    os.environ["BLAVE_CAPITAL_OWN_BACKOFF"] = "1"
     sys.exit(main())

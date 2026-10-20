@@ -200,6 +200,56 @@ check(get() is False and oc.restart_needed() is False and not os.path.exists(oc.
 oc._init_com, oc.capital_vault, oc.comtypes, oc.sk = saved
 fresh_process()
 
+# ── the file is input, not truth: a broken value or a clock set back never holds orders past one wait ──
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+
+
+def loaded(content):
+    with open(oc._RELOGIN_PATH, "w") as f:
+        f.write(content)
+    fresh_process()
+    oc._load_relogin()
+    return oc._relogin["n"], oc._relogin["until"]
+
+
+now = time.time()
+bad = [loaded('{"n": 2, "until": Infinity}'), loaded('{"n": 2, "until": NaN}'), loaded('{"n": -1, "until": %f}' % (now + 50)),
+       loaded("not json"), loaded('{"n": "x", "until": 1}'), loaded('{"until": 1}')]
+check(all(b == (0, 0.0) for b in bad), f"Infinity / NaN / negative n / garbage / missing keys → ignored ({bad})")
+n_, until_ = loaded('{"n": 3, "until": %f}' % (now + 86400))
+check(n_ == 3 and until_ <= time.time() + oc.RELOGIN_BACKOFF_MAX_S + 1, "a clock set back a day → the wait is cut to RELOGIN_BACKOFF_MAX_S")
+check(loaded('{"n": 999999999, "until": %f}' % (now + 10))[0] <= 16, "a huge n is capped (no 2**n blow-up)")
+
+# ── the user's close (flatten / close_symbol) neither waits out nor stretches the reconciler's backoff ──
+saved = (oc._init_com, oc.capital_vault, oc.comtypes, oc.sk)
+oc._init_com = lambda: None
+oc.capital_vault = types.SimpleNamespace(resolve=lambda env: ("A123456789", "pw"), login_blocked=lambda *a: None,
+                                         set_log_path=lambda c: None, record_login=lambda *a: None)
+oc.comtypes = types.SimpleNamespace(client=types.SimpleNamespace(CreateObject=lambda cls, interface=None: center,
+                                                                 GetEvents=lambda o, e: None))
+oc.sk = types.SimpleNamespace(SKCenterLib=1, ISKCenterLib=1, SKReplyLib=1, ISKReplyLib=1, SKOrderLib=1, ISKOrderLib=1)
+shared = '{"n": 2, "until": %f}' % (time.time() + 100)
+with open(oc._RELOGIN_PATH, "w") as f:
+    f.write(shared)
+os.environ[oc.OWN_BACKOFF_ENV] = "1"
+fresh_process()
+login_calls.clear()
+get()
+check(login_calls == [1] and open(oc._RELOGIN_PATH).read() == shared,
+      "close process: logs in at once despite the reconciler's backoff, and leaves its file untouched (9997 counts per process)")
+os.environ.pop(oc.OWN_BACKOFF_ENV)
+fresh_process()
+login_calls.clear()
+check(get() is False and login_calls == [], "…the reconciler (no OWN_BACKOFF) still waits it out")
+for script in ("flatten.py", "close_symbol.py"):
+    msrc = open(os.path.join(SRC, "manager", script), encoding="utf-8").read().split('if __name__ == "__main__":', 1)[1]
+    check(msrc.strip().splitlines()[1].strip() == 'os.environ["BLAVE_CAPITAL_OWN_BACKOFF"] = "1"' and oc.OWN_BACKOFF_ENV == "BLAVE_CAPITAL_OWN_BACKOFF",
+          f"manager/{script} sets OWN_BACKOFF before it does anything")
+oc._init_com, oc.capital_vault, oc.comtypes, oc.sk = saved
+os.remove(oc._RELOGIN_PATH)
+os.environ.pop("BLAVE_AGENT_LOCAL", None)
+fresh_process()
+
 # ── the reconciler leaves between rounds when the order lib asks for it ──
 flag = [True]
 sys.modules["lib.order_capital"] = types.SimpleNamespace(restart_needed=lambda: flag[0])

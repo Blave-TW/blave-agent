@@ -62,6 +62,7 @@ the first one (the hand-wired TW reconciler is single-threaded — fine).
 
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -219,22 +220,37 @@ def _desktop():
     return os.environ.get("BLAVE_AGENT_LOCAL") == "1"
 
 
+# A close the user pressed (manager/flatten.py, manager/close_symbol.py) sets OWN_BACKOFF_ENV in its
+# own process: 9997 counts per process, so its login must not wait out the reconciler's backoff, and
+# its failures must not stretch it. It keeps an in-memory backoff of its own as before.
+OWN_BACKOFF_ENV = "BLAVE_CAPITAL_OWN_BACKOFF"
+
+
+def _shared_backoff():
+    return _desktop() and os.environ.get(OWN_BACKOFF_ENV) != "1"
+
+
 def _load_relogin():
     if _relogin["loaded"]:
         return
     _relogin["loaded"] = True
-    if not _desktop():
+    if not _shared_backoff():
         return
     try:
         with open(_RELOGIN_PATH, encoding="utf-8") as f:
             d = json.load(f)
-        _relogin["n"], _relogin["until"] = int(d["n"]), float(d["until"])
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
+        n, until = int(d["n"]), float(d["until"])
+    except (OSError, ValueError, KeyError, TypeError, OverflowError):
+        return
+    # a broken file (inf / nan) or a clock set back must not hold every order, stops included,
+    # for longer than one ordinary wait
+    if not math.isfinite(until) or n < 0:
+        return
+    _relogin["n"], _relogin["until"] = min(n, 16), min(until, time.time() + RELOGIN_BACKOFF_MAX_S)
 
 
 def _save_relogin():
-    if not _desktop():
+    if not _shared_backoff():
         return
     try:
         if not _relogin["n"]:

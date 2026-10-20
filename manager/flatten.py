@@ -879,5 +879,7 @@ def flatten():
 
 
 if __name__ == "__main__":
+    # the user's close: 群益 logs in now, not after the reconciler's re-login backoff (lib/order_capital)
+    os.environ["BLAVE_CAPITAL_OWN_BACKOFF"] = "1"
     _result = flatten()
     sys.exit(EXIT_ALREADY_RUNNING if _result == ALREADY_RUNNING else (0 if _result else 1))
