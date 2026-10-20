@@ -1,5 +1,5 @@
 // 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):階段表 PHASE_OF / PHASE_NONE,
-// 以及讀帳失敗時的帳戶幣別對照表(八個帳戶,統一期貨 president 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
+// 以及讀帳失敗時的帳戶幣別對照表(九個帳戶,統一期貨 president 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
 // (倍數提醒門檻 LEV_T* 已隨電腦版安全檢查拿掉,Wei 10-13;不再比對)
 //   電腦版:shell/renderer/trade.js 的 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
 //   網頁:web/app/main/templates/agent/workspace.html 的 CX_VENUES[].ccy
@@ -20,7 +20,7 @@ if (other) for (const m of other[1].matchAll(/(\w+): "(\w+)"/g)) dt[m[1]] = m[2]
 const wa = web.indexOf("const CX_VENUES = ["), wb = web.indexOf("\n        ];\n", wa), wt = {};
 if (wa >= 0 && wb > wa) for (const m of web.slice(wa, wb).matchAll(/\{\s*id: "(\w+)"[^{}]*?ccy: "(\w+)"/g)) wt[m[1]] = m[2];
 const sorted = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
-ok("幣別對照表兩邊同一份(八個帳戶)", Object.keys(dt).length === 8 && sorted(dt) === sorted(wt), sorted(dt) + " vs " + sorted(wt));
+ok("幣別對照表兩邊同一份(九個帳戶)", Object.keys(dt).length === 9 && sorted(dt) === sorted(wt), sorted(dt) + " vs " + sorted(wt));
 // 階段表(canon › 回合狀態列 9):電腦版 app.js 與網頁 workspace.html 的 PHASE_OF / PHASE_NONE 同一份——網頁稽核改了表,這裡就紅
 const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
 const phaseOf = (src) => { const m = /const PHASE_OF = \{([\s\S]*?)\};/.exec(src); const o = {}; if (m) for (const x of m[1].matchAll(/(\w+): "(\w+)"/g)) o[x[1]] = x[2]; return o; };
