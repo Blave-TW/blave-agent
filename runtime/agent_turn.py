@@ -3813,7 +3813,9 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     已斷,可能沒跑完),以及停下時還在跑的步驟。都沒有也要有「已停止。」:停在兩個工具之間時
     沒有這一句,finalize 會拿最後一句過場旁白補位,看起來像正式回答(0.1.8 e2e #87)。
     in_flight = 停下時還沒回來的工具的 kind;講得出人話的才列,其餘只算「有步驟被停」。"""
-    left_running = [x for x in left_running if x not in gave_up]
+    unseen = turn_stop.UNSEEN in left_running or turn_stop.UNSEEN in gave_up
+    gave_up = [x for x in gave_up if x != turn_stop.UNSEEN]
+    left_running = [x for x in left_running if x not in gave_up and x != turn_stop.UNSEEN]
     zh = lang in ("zh", "cn") or (not lang and _is_zh(message))
     col = (1 if lang == "cn" else 0) if zh else 2
     steps = list(dict.fromkeys(_STOP_STEP_TEXT[k][col] for k in in_flight if k in _STOP_STEP_TEXT))
@@ -3829,6 +3831,9 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
         if gave_up:
             parts.append((f"{gone} 停止后两分钟仍未结束，已不再等它；它的输出已中断，可能没有跑完——请确认仓位与账本。" if simp else
                           f"{gone} 停止後兩分鐘仍未結束，已不再等它；它的輸出已中斷，可能沒有跑完——請確認部位與帳本。"))
+        if unseen:
+            parts.append("无法确认是否还有下单脚本在跑——请稍后确认仓位与账本。" if simp else
+                         "無法確認是否還有下單腳本在跑——請稍後確認部位與帳本。")
         if steps:
             parts.append((f"中断的步骤：{cut}。" if simp else f"中斷的步驟：{cut}。"))
         return "".join(parts)
@@ -3839,6 +3844,9 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     if gave_up:
         parts.append(f" {gone} was still running two minutes after the stop, so it is no longer waited on; "
                      "its output was cut and it may not have finished — check positions and the ledger.")
+    if unseen:
+        parts.append(" Could not confirm whether an order script is still running — check positions "
+                     "and the ledger shortly.")
     if steps:
         parts.append(f" Interrupted: {cut}.")
     return "".join(parts)

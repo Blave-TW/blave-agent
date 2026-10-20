@@ -601,16 +601,16 @@ def _no_table():
 _terminated.clear()
 turn_stop._windows_pairs = _no_table
 check("Windows + Codex, table unreadable: nothing killed, held like a money script",
-      turn_stop.kill_tree(200, True) == ([], ["order script"]) and not _terminated, _terminated)
+      turn_stop.kill_tree(200, True) == ([], [turn_stop.UNSEEN]) and not _terminated, _terminated)
 turn_stop._windows_pairs = lambda: []
-check("Windows + Codex, empty table: held", turn_stop.kill_tree(200, True) == ([], ["order script"]) and not _terminated)
+check("Windows + Codex, empty table: held", turn_stop.kill_tree(200, True) == ([], [turn_stop.UNSEEN]) and not _terminated)
 check("Windows + Claude, table unreadable: nothing to hold for", turn_stop.kill_tree(200, False) == ([], []))
 turn_stop._NT = False
 _real_ps = turn_stop._posix_table
 turn_stop._posix_table = _no_table
-check("POSIX + Codex, ps failed: held", turn_stop.kill_tree(None, True) == ([], ["order script"]))
+check("POSIX + Codex, ps failed: held", turn_stop.kill_tree(None, True) == ([], [turn_stop.UNSEEN]))
 turn_stop._posix_table = lambda: ([], {})
-check("POSIX + Codex, ps gave nothing: held", turn_stop.kill_tree(None, True) == ([], ["order script"]))
+check("POSIX + Codex, ps gave nothing: held", turn_stop.kill_tree(None, True) == ([], [turn_stop.UNSEEN]))
 turn_stop._posix_table = _real_ps
 turn_stop._NT = True
 
@@ -654,6 +654,21 @@ turn_stop._nt_open = lambda pid: pid
 check("…and with no marker the engine is terminated, by handle", turn_stop.kill_tree(200, True) == ([201], [])
       and _terminated == [201], _terminated)
 turn_stop._marker_pids = _real_marker
+
+# An _nt_open that raises after another handle was opened: that handle is still closed
+_closed, _opened = [], iter([7001])
+def _open_then_raise(pid):
+    h = next(_opened, None)
+    if h is None:
+        raise OSError("OpenProcess blew up")
+    return h
+turn_stop._windows_pairs = lambda: [(201, 200), (202, 200)]
+turn_stop._nt_open, turn_stop._nt_close = _open_then_raise, _closed.append
+_terminated.clear()
+got = turn_stop.kill_tree(200, False)
+check("Windows: a handle opened before OpenProcess raised is still closed, nothing terminated",
+      _closed == [7001] and not _terminated, (got, _closed, _terminated))
+turn_stop._nt_open, turn_stop._nt_close = (lambda pid: pid), (lambda h: None)
 
 # Leftover markers on Windows (B3): one whose pid is not in a readable table goes; a live one stays;
 # an unreadable table removes nothing.
@@ -712,6 +727,55 @@ _by_name = [n for n in sorted(os.listdir(os.path.join(ROOT, "tests"))) if n.ends
             and re.search(r"""["'](?:pkill|killall)["']""", open(os.path.join(ROOT, "tests", n), encoding="utf-8").read())]
 check("no test ends processes by name", _by_name == [], _by_name)
 turn_stop.HOLD_MAX_S = 120
+
+# ── 8b. the hold runs on the clock (re-audit cc37d71 N1) ────────────────────
+# A sweep that takes 2 s (ps hitting its timeout) every time: pings still come about every second
+# — the desktop shell kills agent_turn after 5 s of silence — and HOLD_MAX_S is seconds, not
+# loop turns (counting turns, a 3 s hold lasted 12 sweeps ≈ 27 s).
+class _ClockSink:
+    interrupted = True
+    def __init__(self):
+        self.pings = []
+    def _send(self, chunk):
+        if chunk["type"] == "ping":
+            self.pings.append(time.monotonic())
+
+
+_real_kt, _calls = turn_stop.kill_tree, []
+def _slow_kill_tree(root=None, hold_engine=False):
+    _calls.append((time.monotonic(), hold_engine))
+    if not hold_engine:
+        return [], []
+    time.sleep(2.0)
+    return [], [turn_stop.UNSEEN]
+turn_stop.kill_tree, turn_stop.HOLD_MAX_S = _slow_kill_tree, 3.0
+_cs = _ClockSink()
+
+
+async def _clock_run():
+    turn = asyncio.ensure_future(asyncio.sleep(60))
+    t0 = time.monotonic()
+    w = asyncio.ensure_future(turn_stop._watch(_cs, turn, None, True))
+    while not any(not h for _, h in _calls) and time.monotonic() - t0 < 40:
+        await asyncio.sleep(0.1)
+    w.cancel()
+    turn.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await w
+    with contextlib.suppress(asyncio.CancelledError):
+        await turn
+    return t0
+
+
+with contextlib.redirect_stderr(io.StringIO()):
+    _t0 = asyncio.run(_clock_run())
+turn_stop.kill_tree, turn_stop.HOLD_MAX_S = _real_kt, 120
+_release = next((t for t, h in _calls if not h), None)
+_gaps = [b - a for a, b in zip([_t0] + _cs.pings, _cs.pings)]
+check("hold on the clock: a 3 s hold with 2 s sweeps lets go within ~6 s",
+      _release is not None and _release - _t0 < 7.0, None if _release is None else round(_release - _t0, 1))
+check("pings keep coming during slow sweeps (every gap < 2 s, the shell waits 5)",
+      _cs.pings and max(_gaps) < 2.0, [round(g, 1) for g in _gaps])
 
 # ── 9. agent_turn spawns nothing in-process but the engine ──────────────────
 # kill_tree treats every direct child of agent_turn as the engine and does not match its argv

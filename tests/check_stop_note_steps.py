@@ -42,6 +42,16 @@ t("沒有在跑的步驟 → 仍有「已停止。」(#87)", at._stop_note([], [
 n = [at._stop_note([], ["order"], ZH), at._stop_note([], ["order"], ZH, "cn"), at._stop_note([], ["order"], EN)]
 t("order 這一種涵蓋撤單 / 平倉 / 改槓桿:寫「執行下單指令」,不寫「下單 / placing an order」",
   n == ["已停止。中斷的步驟：執行下單指令。", "已停止。中断的步骤：执行下单指令。", "Stopped. Interrupted: running an order command."], n)
+import turn_stop  # noqa: E402
+n = [at._stop_note([turn_stop.UNSEEN], [], ZH), at._stop_note([turn_stop.UNSEEN], [], ZH, "cn"),
+     at._stop_note([turn_stop.UNSEEN], [], EN), at._stop_note([], [], ZH, gave_up=[turn_stop.UNSEEN])]
+t("讀不到行程表:說「無法確認」,不說有下單腳本在跑", n == [
+    "已停止。無法確認是否還有下單腳本在跑——請稍後確認部位與帳本。",
+    "已停止。无法确认是否还有下单脚本在跑——请稍后确认仓位与账本。",
+    "Stopped. Could not confirm whether an order script is still running — check positions and the ledger shortly.",
+    "已停止。無法確認是否還有下單腳本在跑——請稍後確認部位與帳本。"], n)
+n = at._stop_note([turn_stop.UNSEEN, "close_symbol"], [], ZH)
+t("…真的看到的腳本照舊列名", n.startswith("已停止。close_symbol 會動到部位或帳本") and "無法確認" in n, n)
 _zh_po = open(os.path.join(ROOT, "shell", "i18n", "zh.po"), encoding="utf-8").read()
 _en_po = open(os.path.join(ROOT, "shell", "i18n", "en.po"), encoding="utf-8").read()
 _act = [re.search(r'msgid "act\.order"\nmsgstr "([^"]+)"', x).group(1) for x in (_zh_po, _en_po)]

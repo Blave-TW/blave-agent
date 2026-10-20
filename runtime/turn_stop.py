@@ -27,6 +27,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 
 ENV = "BLAVE_TURN_INTERRUPT_FILE"
 POLL_S = 0.25
@@ -235,8 +236,9 @@ def _windows_pairs():
 
 
 # The label a Stop reports when it cannot see the process table: under Codex, a money script
-# may be in there, so the engine is held (to HOLD_MAX_S) exactly as if one were.
-UNSEEN = "order script"
+# may be in there, so the engine is held (to HOLD_MAX_S) exactly as if one were. The reply
+# says it could not tell (agent_turn._stop_note), not that one is running.
+UNSEEN = "unconfirmed"
 
 
 def _nt_open(pid):
@@ -289,8 +291,10 @@ def _nt_kill(root, hold_engine):
         return [], ([UNSEEN] if hold_engine else [])
     _clear_dead_markers(pairs)
     kill, labels = nt_plan(pairs, root, _marker_pids(), hold_engine)
-    handles = {pid: _nt_open(pid) for pid in kill}
+    handles = {}
     try:
+        for pid in kill:
+            handles[pid] = _nt_open(pid)
         if hold_engine and kill:
             # A script that imported lib/order_* after the snapshot marked itself in between:
             # look again with the handles already open, then terminate without spawning anything.
@@ -374,24 +378,37 @@ async def _watch(sink, task, path, hold_engine):
         left = sink.stop_left_running = set()
     print("[turn_stop] stop requested — killing the turn's tools", file=sys.stderr)
     loop = asyncio.get_running_loop()
-    waited, beat, held = 0.0, 0.0, 0.0
+    waited, held_since, last_ping = 0.0, None, time.monotonic()
+
+    def ping_due():
+        # the desktop shell kills agent_turn after 5 s of silence: ping by the clock, also while
+        # a sweep is slow (ps can take up to its 5 s timeout)
+        nonlocal last_ping
+        if time.monotonic() - last_ping >= 1.0:
+            last_ping = time.monotonic()
+            sink._send({"type": "ping"})
+
     # Keep sweeping until run_turn's finally cancels us: a tool the CLI starts between
     # two sweeps (or a CLI that was still spawning when Stop landed) is caught next tick.
+    held_labels, gave_up = [], False
     while True:
-        hold = hold_engine and held < HOLD_MAX_S
-        _, labels = await loop.run_in_executor(None, kill_tree, None, hold)
+        if held_since is not None and not gave_up and time.monotonic() - held_since >= HOLD_MAX_S:
+            gave_up = True
+            sink.stop_gave_up = sorted(held_labels)
+            print(f"[turn_stop] {held_labels} still running after {HOLD_MAX_S}s — no longer "
+                  "holding the engine", file=sys.stderr)
+        hold = hold_engine and not gave_up
+        sweep = loop.run_in_executor(None, kill_tree, None, hold)
+        while hold and not (await asyncio.wait({sweep}, timeout=1.0))[0]:
+            ping_due()
+        _, labels = await sweep
         left.update(labels)
         if hold and labels:
-            held += POLL_S
+            if held_since is None:
+                held_since = time.monotonic()
+            held_labels = labels
             waited = 0.0  # the cancel fallback counts from the end of the hold
-            beat += POLL_S
-            if beat >= 1.0:  # the desktop shell's fallback kill waits for silence
-                beat = 0.0
-                sink._send({"type": "ping"})
-            if held >= HOLD_MAX_S:
-                sink.stop_gave_up = sorted(labels)
-                print(f"[turn_stop] {labels} still running after {HOLD_MAX_S}s — no longer "
-                      "holding the engine", file=sys.stderr)
+            ping_due()
         elif waited >= CANCEL_AFTER_S and not task.done():
             task.cancel()
             waited = float("-inf")  # once
