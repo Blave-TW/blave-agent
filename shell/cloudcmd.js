@@ -189,7 +189,7 @@ function cloudArgsOk(cmd, a) {
 /* 電腦版連得了的真實交易所(env 名同網頁 CX_VENUES、同 lib/order_* / account_*;群益在 Mac 上跑不起來,不在這裡)。
    pass = 要第三個欄位 <ENV>_PASSPHRASE(OKX)。Binance 的形狀由 binance_link.keyShapeOk 驗;其餘四家金鑰長相各不同
    (OKX 是帶連字號的 UUID),只擋明顯不是金鑰的:4–256 個可見 ASCII、不含空白;passphrase 是用戶自訂的字,只擋換行與長度 */
-const CONNECT_VENUES = { binance: { env: "BINANCE" }, okx: { env: "OKX", pass: true }, bingx: { env: "BINGX" }, gateio: { env: "GATEIO" }, bybit: { env: "BYBIT" } };
+const CONNECT_VENUES = { binance: { env: "BINANCE" }, okx: { env: "OKX", pass: true }, bingx: { env: "BINGX" }, gateio: { env: "GATEIO" }, bybit: { env: "BYBIT" }, stockcoin: { env: "STOCKCOIN" } };
 const KEY_SHAPE = /^[\x21-\x7e]{4,256}$/, PASS_SHAPE = /^[^\r\n]{1,256}$/;
 // 一家的憑證 env 名(送出、解除綁定、daemon 白名單共用這一份)
 function venueEnvNames(venue) {

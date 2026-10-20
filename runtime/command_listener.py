@@ -293,6 +293,7 @@ _LOCAL_KEY_CHECKS = {
     "BINGX": ("BINGX_API_KEY", "BINGX_SECRET_KEY"),
     "GATEIO": ("GATEIO_API_KEY", "GATEIO_SECRET_KEY"),
     "BYBIT": ("BYBIT_API_KEY", "BYBIT_SECRET_KEY"),
+    "STOCKCOIN": ("STOCKCOIN_API_KEY", "STOCKCOIN_SECRET_KEY"),
 }
 
 
@@ -1253,9 +1254,10 @@ def _cmd_credentials(args):
     wrote whatever it was handed: a key with no trading permission is now
     refused, and a bind fails when Binance cannot be reached from the machine
     (fail-closed — the user retries). Everything that is not Binance (paper,
-    OKX, Gate.io, Bybit, BingX, the TW brokers, data-source keys) is untouched:
-    no call, same behaviour as before — except the desktop, where OKX, BingX,
-    Bybit and Gate.io first pass _local_real_key_gate (an account read).
+    OKX, Gate.io, Bybit, BingX, StockCoin, the TW brokers, data-source keys) is
+    untouched: no call, same behaviour as before — except the desktop, where OKX,
+    BingX, Bybit, Gate.io and StockCoin first pass _local_real_key_gate (an
+    account read).
     Withdrawal permission is not gated anywhere (Wei 2026-10-15).
 
     Ack shape (`_send_ack`). Success: `result` = {"credentials": N, "binance":

@@ -20,7 +20,7 @@ const venueReady = (v) => !!(v && typeof v === "object" && v.credentials && v.pa
 const VENUE_ID = /^[a-z][a-z0-9_]{0,31}$/;   // 回報裡的場所 id 是小寫的 env 前綴;長得不像的不拿來顯示
 /* 給人看的交易所名(同 renderer trade.js CX_VENUES 的 label:首字大寫會把 OKX / Gate.io / BingX 寫錯)。
    選單列與結束確認框從 0.0.7 起寫交易所名、不寫「真錢」(Wei 0.0.6 實測);不在表上的 id 首字大寫 */
-const VENUE_LABELS = { binance: "Binance", okx: "OKX", bingx: "BingX", gateio: "Gate.io", bybit: "Bybit" };
+const VENUE_LABELS = { binance: "Binance", okx: "OKX", bingx: "BingX", gateio: "Gate.io", bybit: "Bybit", stockcoin: "StockCoin" };
 function venueLabel(id) {
   if (typeof id !== "string" || !VENUE_ID.test(id)) return "";
   return Object.prototype.hasOwnProperty.call(VENUE_LABELS, id) ? VENUE_LABELS[id] : id.charAt(0).toUpperCase() + id.slice(1);

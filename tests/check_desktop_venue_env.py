@@ -44,7 +44,7 @@ def check(cond, msg):
 JS = """
 const M = require(process.argv[1]);
 const out = {};
-for (const v of ["okx", "bingx", "gateio", "bybit"]) {
+for (const v of ["okx", "bingx", "gateio", "bybit", "stockcoin"]) {
   const b = M.connectSecrets({ venue: v, apiKey: "not-a-real-key-" + v, secret: "not-a-real-secret-" + v, passphrase: "not a real passphrase" }, () => false, 1);
   out[v] = { secrets: b.secrets, remove: M.venueEnvNames(v) };
 }
@@ -58,6 +58,7 @@ LIB_NAMES = {  # 下單 / 帳戶 lib 讀的名字(lib/account_*.py 的 env.get)
     "bingx": {"BINGX_API_KEY", "BINGX_SECRET_KEY"},
     "gateio": {"GATEIO_API_KEY", "GATEIO_SECRET_KEY"},
     "bybit": {"BYBIT_API_KEY", "BYBIT_SECRET_KEY"},
+    "stockcoin": {"STOCKCOIN_API_KEY", "STOCKCOIN_SECRET_KEY"},
 }
 
 
@@ -93,12 +94,12 @@ cl._cmd_credentials({"env": dict(shell["okx"]["secrets"])})
 cl._cmd_credentials_remove({"env": shell["okx"]["remove"]})
 check(not any(k in env_lines() for k in LIB_NAMES["okx"]), "OKX 解除綁定連 PASSPHRASE 一起拿掉(不留半組)")
 
-# 電腦版(local 模式):daemon 放行這四家(local_daemon 的 LOCAL_OPEN_VENUES),寫入前由 _local_real_key_gate 用那一家的
+# 電腦版(local 模式):daemon 放行這幾家(local_daemon 的 LOCAL_OPEN_VENUES),寫入前由 _local_real_key_gate 用那一家的
 # lib/account_* 讀一次帳戶。這裡把 lib 換成假的(不連網):讀得到 → 寫;讀不到 / 回的不是權益 → 不寫、.env 一個字不動
 import types  # noqa: E402
 
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
-cl.LOCAL_OPEN_VENUES = frozenset({"PAPER", "BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT"})
+cl.LOCAL_OPEN_VENUES = frozenset({"PAPER", "BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "STOCKCOIN"})
 check(all(set(cl._LOCAL_KEY_CHECKS[v.upper()]) == LIB_NAMES[v] for v in LIB_NAMES),
       "local:runtime 檢查要的欄位(_LOCAL_KEY_CHECKS)= 外殼送的那一組")
 READ = {}

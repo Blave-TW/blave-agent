@@ -110,8 +110,8 @@ cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"KUCOIN"})
 msg = refused({"KUCOIN_API_KEY": "not-a-real-kucoin-key", "KUCOIN_SECRET_KEY": "not-a-real-kucoin-secret"})
 check(bool(msg) and "no permission check" in msg and not os.path.exists(ENV_PATH),
       "a widened switch without a checker still writes nothing")
-check(sorted(cl._LOCAL_KEY_CHECKS) == ["BINGX", "BYBIT", "GATEIO", "OKX"],
-      "the venues with a desktop checker are exactly OKX, BingX, Gate.io, Bybit (a new one is a decision)")
+check(sorted(cl._LOCAL_KEY_CHECKS) == ["BINGX", "BYBIT", "GATEIO", "OKX", "STOCKCOIN"],
+      "the venues with a desktop checker are exactly OKX, BingX, Gate.io, Bybit, StockCoin (a new one is a decision)")
 check(not hasattr(cl, "_WITHDRAW_CHECKED") and not hasattr(cl, "_withdraw_gate"),
       "no venue's key is refused for withdrawal permission (Wei 2026-10-15)")
 
@@ -129,7 +129,7 @@ for name, value in (("spot only", dict(GOOD, enableFutures=False)), ("futures on
     answer(value)
     check(refused() is None and os.path.exists(ENV_PATH), f"{name} trading enabled → written")
 
-# 4c. OKX / BingX / Gate.io / Bybit: the venue's own signed account read decides, before any write
+# 4c. OKX / BingX / Gate.io / Bybit / StockCoin: the venue's own signed account read decides, before any write
 import requests  # noqa: E402
 import importlib  # noqa: E402
 
@@ -139,6 +139,7 @@ VENUE_ENV = {
     "BINGX": {"BINGX_API_KEY": "not-a-real-bingx-key", "BINGX_SECRET_KEY": "not-a-real-bingx-secret"},
     "GATEIO": {"GATEIO_API_KEY": "not-a-real-gate-key", "GATEIO_SECRET_KEY": "not-a-real-gate-secret"},
     "BYBIT": {"BYBIT_API_KEY": "not-a-real-bybit-key", "BYBIT_SECRET_KEY": "not-a-real-bybit-secret"},
+    "STOCKCOIN": {"STOCKCOIN_API_KEY": "not-a-real-stockcoin-key", "STOCKCOIN_SECRET_KEY": "not-a-real-stockcoin-secret"},
 }
 wire, echo = [], []
 
@@ -252,8 +253,8 @@ try:
 finally:
     requests.get, requests.post, requests.request = real_wire
 daemon_src = open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()
-check('{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT"}' in daemon_src,
-      "local_daemon.py opens exactly Binance + the four checked venues + 統一 on the desktop")
+check('{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "STOCKCOIN", "PRESIDENT"}' in daemon_src,
+      "local_daemon.py opens exactly Binance + the five checked venues + 統一 on the desktop")
 # 統一 has no account read to gate on (that read is a login): its gate is the app's cert step
 cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"PRESIDENT"})
 msg = refused({"president_account": "70000011234", "president_password": "vault:x",

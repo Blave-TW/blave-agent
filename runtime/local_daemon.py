@@ -1342,13 +1342,13 @@ class Daemon:
         # and this daemon imports it, so a desktop user pressing 連接 again is
         # held off the wire by the same window the cloud path uses — on top of
         # binance_link.js's own lock in the app process.
-        # OKX / BingX / Gate.io / Bybit: command_listener._local_real_key_gate
+        # OKX / BingX / Gate.io / Bybit / StockCoin: command_listener._local_real_key_gate
         # (the venue's own signed account read, plus the key's withdrawal
         # permission where the venue exposes it) decides, before any write.
         # 統一期貨: only through president_local's cert step
         # (president_connect.local_bind_gate) — the chat bind still cannot.
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
-                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "PRESIDENT"})
+                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "STOCKCOIN", "PRESIDENT"})
         self.pc.set_seal_key(self.secret)
         self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("統一期貨 credentials handed over")
         self.pc._LOCAL["worker"].reap_orphan(cl._pid_cmdline)

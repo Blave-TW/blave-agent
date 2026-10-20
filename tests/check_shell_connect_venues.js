@@ -1,7 +1,7 @@
-// 「連接交易所」多開 OKX / BingX / Gate.io / Bybit(Wei 09-23,0.0.5)。三層各驗一次:
+// 「連接交易所」多開 OKX / BingX / Gate.io / Bybit(Wei 09-23,0.0.5)、StockCoin(0.1.28)。三層各驗一次:
 //   ① daemon.js 的 trusted 白名單:每一家剛好一整組才收(OKX 三個、其他兩個),半組 / 混兩家 / renderer 那條路都不收;解除綁定拿得掉
 //   ② renderer 的名字表(trade.js CX_VENUES / trEnvNames / trVenueLabel)跟主行程那份(cloudcmd.venueEnvNames)同一組
-//   ③ 真的開連接框(隨包 Electron + 真的 index.html,window.blave 換成假的):兩個視角都列五家;OKX 多一格 Passphrase;
+//   ③ 真的開連接框(隨包 Electron + 真的 index.html,window.blave 換成假的):兩個視角都列六家;OKX 多一格 Passphrase;
 //      送出去的形狀;送完 / 關框後畫面不留金鑰;本機成功 = 「串接成功:讀得到帳戶」(不說交易權限已確認),失敗講那一家的原因
 // 金鑰全是 not-a-real-*。跑法:node tests/check_shell_connect_venues.js(找不到 shell/node_modules 的 Electron,③ 就 SKIP)
 const path = require("path"), fs = require("fs");
@@ -21,15 +21,15 @@ if (!process.versions.electron) (async () => {
   const CC = require(path.join(SHELL, "cloudcmd.js"));
   const K = "not-a-real-key-0001", S = "not-a-real-secret-0001", P = "not a real passphrase";
   const set = (v) => Object.fromEntries(CC.venueEnvNames(v).map((n) => [n, /PASSPHRASE$/.test(n) ? P : /SECRET/.test(n) ? S : K]));
-  ok("① trusted:OKX / BingX / Gate.io / Bybit 各自剛好一整組 → 收", ["okx", "bingx", "gateio", "bybit"].every((v) => argsOk("credentials", { env: set(v) }, true) === true));
+  ok("① trusted:OKX / BingX / Gate.io / Bybit / StockCoin 各自剛好一整組 → 收", ["okx", "bingx", "gateio", "bybit", "stockcoin"].every((v) => argsOk("credentials", { env: set(v) }, true) === true));
   ok("① OKX 少了 PASSPHRASE(半組)→ 不收;混兩家 → 不收;多一個 BLAVE_* → 不收",
     argsOk("credentials", { env: { OKX_API_KEY: K, OKX_SECRET_KEY: S } }, true) === false
     && argsOk("credentials", { env: { OKX_API_KEY: K, BYBIT_SECRET_KEY: S } }, true) === false
     && argsOk("credentials", { env: { ...set("bybit"), BLAVE_API_KEY: K } }, true) === false);
   ok("① 值帶換行 / 空白金鑰 → 不收(passphrase 可以有空白)", argsOk("credentials", { env: { ...set("okx"), OKX_API_KEY: K + "\nX=1" } }, true) === false
     && argsOk("credentials", { env: { ...set("bingx"), BINGX_API_KEY: "has space" } }, true) === false && argsOk("credentials", { env: set("okx") }, true) === true);
-  ok("① renderer 那條路(沒有 trusted)→ 這四家一律不收", ["okx", "bingx", "gateio", "bybit"].every((v) => argsOk("credentials", { env: set(v) }) === false && argsOk("credentials", { env: set(v) }, "true") === false));
-  ok("① 解除綁定:四家的名字(含 OKX_PASSPHRASE)都拿得掉", ["okx", "bingx", "gateio", "bybit"].every((v) => argsOk("credentials_remove", { env: CC.venueEnvNames(v) }) === true));
+  ok("① renderer 那條路(沒有 trusted)→ 這五家一律不收", ["okx", "bingx", "gateio", "bybit", "stockcoin"].every((v) => argsOk("credentials", { env: set(v) }) === false && argsOk("credentials", { env: set(v) }, "true") === false));
+  ok("① 解除綁定:五家的名字(含 OKX_PASSPHRASE)都拿得掉", ["okx", "bingx", "gateio", "bybit", "stockcoin"].every((v) => argsOk("credentials_remove", { env: CC.venueEnvNames(v) }) === true));
   ok("① Binance 照舊:一整對才收", argsOk("credentials", { env: { BINANCE_API_KEY: "A".repeat(64), BINANCE_SECRET_KEY: "b".repeat(64) } }, true) === true
     && argsOk("credentials", { env: { BINANCE_API_KEY: "A".repeat(64) } }, true) === false);
 
@@ -67,12 +67,12 @@ if (!process.versions.electron) (async () => {
   const t = (k) => k;
   eval(src.slice(src.indexOf("const PAPER = "), src.indexOf("\nfunction trEl(")).replace(/^const /gm, "var "));
   eval(cut("trEnvNames")); eval(cut("trVenueLabel"));
-  ok("② trEnvNames 與主行程 cloudcmd.venueEnvNames 同一組(解除綁定送的就是機器寫的)", ["binance", "okx", "bingx", "gateio", "bybit"].every((v) => J(trEnvNames(v)) === J(CC.venueEnvNames(v)))
+  ok("② trEnvNames 與主行程 cloudcmd.venueEnvNames 同一組(解除綁定送的就是機器寫的)", ["binance", "okx", "bingx", "gateio", "bybit", "stockcoin"].every((v) => J(trEnvNames(v)) === J(CC.venueEnvNames(v)))
     && J(trEnvNames("paper")) === J(["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"]));
   ok("② 名字表與主行程那份同一組交易所", J(Object.keys(CX_VENUES).sort()) === J(Object.keys(CC.CONNECT_VENUES).sort()) && CX_VENUES.okx.pass === true && !CX_VENUES.bybit.pass);
   ok("② 提領不再檢查(Wei 2026-10-15):沒有任何一家帶 noWdCheck,renderer 也不再提 cx.note.wdUnchecked", Object.keys(CX_VENUES).every((v) => !("noWdCheck" in CX_VENUES[v])) && !/noWdCheck|wdUnchecked|WITHDRAW_ENABLED/.test(src));
-  ok("② 顯示名:Gate.io / OKX / BingX(首字大寫會寫錯)", trVenueLabel("gateio") === "Gate.io" && trVenueLabel("okx") === "OKX" && trVenueLabel("bingx") === "BingX" && trVenueLabel("paper", true) === "cx.paperShort");
-  ok("② 兩個視角都列五家(runtime 已在電腦版開放這四家,寫入前讀一次帳戶)", J(cxVenuesFor("local")) === J(["binance", "okx", "bingx", "gateio", "bybit"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
+  ok("② 顯示名:Gate.io / OKX / BingX / StockCoin(首字大寫會寫錯)", trVenueLabel("gateio") === "Gate.io" && trVenueLabel("okx") === "OKX" && trVenueLabel("bingx") === "BingX" && trVenueLabel("stockcoin") === "StockCoin" && trVenueLabel("paper", true) === "cx.paperShort");
+  ok("② 兩個視角都列六家(runtime 已在電腦版開放 Binance 以外這五家,寫入前讀一次帳戶)", J(cxVenuesFor("local")) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
 
   // ── ③ 交給 Electron ──
   const bin = GATE.bin(SHELL, "③");
@@ -112,15 +112,15 @@ app.whenReady().then(async () => {
     if (ENV.cur !== "cloud") envSwitch("cloud"); cxModalOpen(null); })()`);
   await wait(150);
   const cloudOpts = await js(`[...$("cx-venue").options].map((o) => o.value)`);
-  ok("③ 雲端視角:模擬 + 五家(Binance / OKX / BingX / Gate.io / Bybit)+ 台股那一組的群益(renderer/capital.js)", J(cloudOpts) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "capital"]));
+  ok("③ 雲端視角:模擬 + 六家(Binance / OKX / BingX / Gate.io / Bybit / StockCoin)+ 台股那一組的群益(renderer/capital.js)", J(cloudOpts) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "capital"]));
   const labels = await js(`[...$("cx-venue").options].slice(1).map((o) => o.textContent)`);
   const groups = await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`);
   const capL = await js(`[t("cap.venue"), t("cap.group.tw")]`);
-  ok("③ 選單上是交易所的正式名字;群益(字串表的名字)在自己那一組", J(labels) === J(["Binance", "OKX", "BingX", "Gate.io", "Bybit", capL[0]]) && groups.length === 2 && groups[1] === capL[1] && capL[0] !== "cap.venue");
+  ok("③ 選單上是交易所的正式名字;群益(字串表的名字)在自己那一組", J(labels) === J(["Binance", "OKX", "BingX", "Gate.io", "Bybit", "StockCoin", capL[0]]) && groups.length === 2 && groups[1] === capL[1] && capL[0] !== "cap.venue");
   const byVenue = {};
-  for (const v of ["okx", "bingx", "gateio", "bybit"]) { await pick(v); byVenue[v] = await fields(); }
-  ok("③ OKX 三格(API Key / Secret Key / Passphrase);BingX / Gate.io / Bybit 兩格", J(byVenue.okx) === J(["cx-api", "cx-secret", "cx-pass"])
-    && ["bingx", "gateio", "bybit"].every((v) => J(byVenue[v]) === J(["cx-api", "cx-secret"])));
+  for (const v of ["okx", "bingx", "gateio", "bybit", "stockcoin"]) { await pick(v); byVenue[v] = await fields(); }
+  ok("③ OKX 三格(API Key / Secret Key / Passphrase);BingX / Gate.io / Bybit / StockCoin 兩格", J(byVenue.okx) === J(["cx-api", "cx-secret", "cx-pass"])
+    && ["bingx", "gateio", "bybit", "stockcoin"].every((v) => J(byVenue[v]) === J(["cx-api", "cx-secret"])));
   await pick("okx");
   const ph = await js(`(() => { const h = $("cx-pass-hint"); return h ? [h.textContent, $("cx-pass").getAttribute("aria-describedby"), h.closest("label") === $("cx-pass").closest("label")] : null; })()`);
   ok("③ OKX 的 Passphrase 欄下面一行說明(不是登入密碼),欄位用 aria-describedby 指到它(設計稽核 005 第 10 條)",
@@ -158,8 +158,8 @@ app.whenReady().then(async () => {
   await wait(150);
   // 群益只在雲端(Wei 0.1.18 拿掉這台電腦那條:電腦版不接群益);統一只在這台電腦視角,而且受 trade.js PRES_LOCAL_ON 管
   // (0.1.18 關著只藏入口、0.1.19 開):關著時「台股」那一組整個不出;開著時那一組只有統一
-  ok("③ 這台電腦:模擬 + 五家" + (presOn ? " + 「台股」組只有統一(沒有群益)" : ";PRES_LOCAL_ON 關著 → 沒有「台股」組、沒有統一"),
-    J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit"].concat(presOn ? ["president"] : []))
+  ok("③ 這台電腦:模擬 + 六家" + (presOn ? " + 「台股」組只有統一(沒有群益)" : ";PRES_LOCAL_ON 關著 → 沒有「台股」組、沒有統一"),
+    J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "stockcoin"].concat(presOn ? ["president"] : []))
     && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(presOn ? `[t("cx.group.crypto"), t("cap.group.tw")]` : `[t("cx.group.crypto")]`)));
   if (!presOn) { await pick("president"); ok("③ 旗標關著硬選 president(選單裡沒有那一項):退回模擬", (await js(`CXF.venue`)) === "paper"); }
   await pick("capital");

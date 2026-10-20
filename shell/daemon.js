@@ -51,6 +51,7 @@ const TRUSTED_SETS = [
   { BINGX_API_KEY: ANY_KEY, BINGX_SECRET_KEY: ANY_KEY },
   { GATEIO_API_KEY: ANY_KEY, GATEIO_SECRET_KEY: ANY_KEY },
   { BYBIT_API_KEY: ANY_KEY, BYBIT_SECRET_KEY: ANY_KEY },
+  { STOCKCOIN_API_KEY: ANY_KEY, STOCKCOIN_SECRET_KEY: ANY_KEY },
 ];
 const TRUSTED_CRED_KEYS = Object.assign({}, ...TRUSTED_SETS);
 // 統一的五行由 president_local 的 cert 步寫(runtime local_bind_gate);解除綁定是安全方向,renderer 可以拿掉

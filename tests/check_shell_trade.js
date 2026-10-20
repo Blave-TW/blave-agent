@@ -126,9 +126,10 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
   && [0, 0.5, 1.2, 2, -2, NaN, null, "1"].every((n) => trLotsKey(n, "m", "o") === "m"));
 { const TXF = TR_TXF_SPECS.TXF, MXF = TR_TXF_SPECS.MXF, TMF = TR_TXF_SPECS.TMF;
   { const cxp = src.slice(src.indexOf('const note = trEl("div", "cx-note");'), src.indexOf("if (cloud) {   // 雲端的五處差異之 2"));
-  ok("ux §3.4 子帳戶建議:連接框說明區第一段、只給 CX_VENUES 那五家(模擬、群益不出);self_ledger 開換 subAcctOwn;Binance 接 tr.lev.binance5",
-    /if \(CX_VENUES\[venue\]\) note\.appendChild\(trEl\("p", "cx-sub", t\(\(trReport\(\) \|\| \{\}\)\.self_ledger === true \? "cx\.note\.subAcctOwn" : "cx\.note\.subAcct"\)/.test(cxp)
-    && /venue === BINANCE \? \(LANG === "zh" \? "" : " "\) \+ t\("tr\.lev\.binance5"\) : ""/.test(cxp) && cxp.indexOf("cx-sub") < cxp.indexOf('"cx.note.one"')); }
+  ok("ux §3.4 子帳戶建議:連接框說明區第一段、只給 CX_SUB_ACCT 那五家(模擬、群益、StockCoin 不出;同網頁);self_ledger 開換 subAcctOwn;Binance 接 tr.lev.binance5",
+    /if \(CX_SUB_ACCT\.indexOf\(venue\) >= 0\) note\.appendChild\(trEl\("p", "cx-sub", t\(\(trReport\(\) \|\| \{\}\)\.self_ledger === true \? "cx\.note\.subAcctOwn" : "cx\.note\.subAcct"\)/.test(cxp)
+    && /venue === BINANCE \? \(LANG === "zh" \? "" : " "\) \+ t\("tr\.lev\.binance5"\) : ""/.test(cxp) && cxp.indexOf("cx-sub") < cxp.indexOf('"cx.note.one"'));
+  ok("CX_SUB_ACCT = 網頁那五家,StockCoin 不在(待 Wei)", /^const CX_SUB_ACCT = \["binance", "okx", "bybit", "gateio", "bingx"\];/m.test(src)); }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
   ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause trading」(0.1.27);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause trading")
     && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「暫停並關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"));

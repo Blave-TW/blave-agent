@@ -1517,21 +1517,23 @@ const TR_TABS = ["over", "pos", "assets", "hist", "set"];
 const TR_TAB_FEATURE = { over: "trade_overview", pos: "trade_positions", assets: "trade_assets", hist: "trade_history", set: "trade_settings" };   // 使用追蹤的名字(feature_used)
 const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益只在雲端視角(renderer/capital.js)
 /* 連接框列得出來的真實交易所(env 名同 cloudcmd.CONNECT_VENUES、網頁 CX_VENUES;群益在 Mac 上跑不起來,不列)。
-   pass = 多一格 <ENV>_PASSPHRASE。CX_LOCAL_REAL = 這台電腦綁得了的(runtime local_daemon 放行的那幾家;另外四家的金鑰
+   pass = 多一格 <ENV>_PASSPHRASE。CX_LOCAL_REAL = 這台電腦綁得了的(runtime local_daemon 放行的那幾家;Binance 以外的金鑰
    由 command_listener._local_real_key_gate 在寫入前讀一次帳戶)。 */
 /* ccy = 那家 lib/account_*.py get_equity 回的幣別(字面值;BingX 是動態 row.asset,這裡是它的預設值)。
    讀帳失敗時 runtime 寫 currency: null,畫面靠它推幣別(tests/check_venue_ccy.py 逐支對 lib) */
 const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, okx: { label: "OKX", env: "OKX", pass: true, ccy: "USD" },
-  bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" } };
-const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit"];
+  bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" },
+  stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" } };
+const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit", "stockcoin"];
+const CX_SUB_ACCT = ["binance", "okx", "bybit", "gateio", "bingx"];   // 子帳戶建議只給這幾家(同網頁 CX_SUB_ACCT;StockCoin 待 Wei)
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
 /* 統一期貨入口:0.1.18 藏、統一行情(lib/president_quote 實盤 tick)驗過後開。關著時只藏連接框的下拉那一項,其餘(帳戶列、
    部位頁、狀態句、開通中／開通過的「繼續」鈕)對已綁定的機器照舊。tests/check_shell_connect_venues 讀這個值決定期望清單 */
 const PRES_LOCAL_ON = true;
 // 這台電腦的下拉列不列統一:旗標開、或這個框是「繼續」帶著 president 進來的(少了那一項 select 會變空白)
 const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
-// 不在連接框那五家裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py、account_stockcoin.py)
-const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD", stockcoin: "USDT" };
+// 不在 CX_VENUES 裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py)
+const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD" };
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)
 function trVenueCcy(id) {
   if (Object.prototype.hasOwnProperty.call(TR_VENUE_CCY_OTHER, id)) return TR_VENUE_CCY_OTHER[id];
@@ -5221,8 +5223,8 @@ function cxModalPaint() {
     // OKX 的 Passphrase 是建立 API 金鑰時自己設的那組:最常見的錯是填成登入密碼(設計稽核 005 第 10 條)
     if (CX_VENUES[venue] && CX_VENUES[venue].pass) fld("cx-pass", t("cx.passphrase"), "passphrase", t("cx.passHint"));
     const note = trEl("div", "cx-note");
-    // 子帳戶建議排第一段(ux-order-1-4-5 §3.4):只給加密交易所;機器只管自己的部位(self_ledger)時換成單向持倉那句
-    if (CX_VENUES[venue]) note.appendChild(trEl("p", "cx-sub", t((trReport() || {}).self_ledger === true ? "cx.note.subAcctOwn" : "cx.note.subAcct")
+    // 子帳戶建議排第一段(ux-order-1-4-5 §3.4):只給 CX_SUB_ACCT 那幾家;機器只管自己的部位(self_ledger)時換成單向持倉那句
+    if (CX_SUB_ACCT.indexOf(venue) >= 0) note.appendChild(trEl("p", "cx-sub", t((trReport() || {}).self_ledger === true ? "cx.note.subAcctOwn" : "cx.note.subAcct")
       + (venue === BINANCE ? (LANG === "zh" ? "" : " ") + t("tr.lev.binance5") : "")));
     note.appendChild(trEl("p", "", venue === BINANCE ? t("cx.note.one") : t("cx.note.oneV", { venue: trVenueLabel(venue, true) })));
     if (cloud) {   // 雲端的五處差異之 2:主機的 IP,不查、沒有「再查一次」;拿不到不擋(白名單本來就不強制)
