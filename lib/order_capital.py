@@ -195,10 +195,15 @@ def _get_session(env):
 
 
 # Desktop app, after a lost login: while the network is down every round with an order would run a
-# full Login (CreateObject + up to 12 s of OnAccount pumping) — wait 60 s, doubling to 10 min,
-# between attempts; a good login clears it. Armed only by a lost-login code, so a first login and
-# the wake reset retry at once as before.
-RELOGIN_BACKOFF_S, RELOGIN_BACKOFF_MAX_S = 60, 600
+# full Login (CreateObject + up to 12 s of OnAccount pumping) — wait 30 s, doubling to 2 min,
+# between attempts; a good login clears it. The cap is short because a stop waits it out once the
+# network is back. Armed only by a lost-login code, so a first login and the wake reset retry at
+# once as before.
+# No shortcut for reduce / close orders: every attempt is a full Login, and the manual's code 9997
+# SK_ERROR_LOGIN_FAIL_LIMIT (登入失敗已達五次，請重啟API) would leave this process unable to send
+# anything, stops included, until it restarts — more attempts during an outage only bring that
+# closer, to save at most 2 min.
+RELOGIN_BACKOFF_S, RELOGIN_BACKOFF_MAX_S = 30, 120
 _relogin = {"n": 0, "until": 0.0}
 
 

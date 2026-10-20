@@ -6,7 +6,8 @@ lib/order_capital keeps one login for the life of the process. On the desktop ap
     next order logs in again; a machine that never loaded the order lib imports nothing;
   - an order refused with a "this login is gone" code (SESSION_LOST_CODES, from the SKCOM manual)
     resets it too — the sleep may have fallen inside a round, where the poll sleep cannot see it —
-    and the re-login after it backs off (60 s doubling to 10 min) while the network stays down.
+    and the re-login after it backs off (30 s doubling to 2 min, no shortcut for closes) while the
+    network stays down.
 A cloud machine (no BLAVE_AGENT_LOCAL) keeps its old behaviour on both counts.
 
 Run: cd blave-agent && .venv/bin/python tests/check_capital_wake_reset.py  (or /usr/bin/python3)
@@ -134,8 +135,20 @@ for _ in range(7):
     clock[0] = oc._relogin["until"] + 0.1
     get()
     gaps.append(round(clock[0] - t0))
-check(gaps == [60, 120, 240, 480, 600, 600, 600] and len(logins) == 7,
-      f"lost login → re-login waits 60 s, doubling to 600 s, one attempt each ({gaps}, {len(logins)} logins)")
+check(gaps == [30, 60, 120, 120, 120, 120, 120] and len(logins) == 7,
+      f"lost login → re-login waits 30 s, doubling to 120 s, one attempt each ({gaps}, {len(logins)} logins)")
+# a stop / close inside the backoff gets no shortcut (each attempt is a full Login; 9997 = five
+# failed logins and the process can send nothing until it restarts)
+oc.guard = types.SimpleNamespace(check_restart_stop=lambda *a: None, audit=lambda *a, **k: None)
+oc._check_halt = lambda fields: None
+clock[0] = oc._relogin["until"] - 10
+n0 = len(logins)
+try:
+    oc.place_futures_market_order({}, "TM0000", "sell", 1, intent="reduce")
+    refused = False
+except oc.CapitalError as e:
+    refused = "not retried yet" in str(e)
+check(refused and len(logins) == n0, "inside the backoff a reduce order is refused too, no extra login")
 fake_login.fail = False
 clock[0] = oc._relogin["until"] + 0.1
 check(get() is True and oc._relogin == {"n": 0, "until": 0.0}, "a good login clears the backoff")
