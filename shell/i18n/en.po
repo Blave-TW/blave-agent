@@ -8535,16 +8535,19 @@ msgstr "Couldn't delete it. Try again."
 
 # Welcome-page getting-started steps (0.1.28; renderer/welcome.js; spec agent-onboarding-e-f §2–3). Market question: optional, no default
 msgid "onb.q"
-msgstr "Which market?"
+msgstr "Which Market Do You Want to Trade?"
 
 msgid "onb.s1"
-msgstr "Find an idea"
+msgstr "Find an Idea"
 
 msgid "onb.s2"
-msgstr "Build and backtest a strategy"
+msgstr "Build and Backtest a Strategy"
 
 msgid "onb.s3"
-msgstr "Add it to your portfolio"
+msgstr "Add to Portfolio"
+
+msgid "onb.s4"
+msgstr "Auto Trading"
 
 # TAIEX futures step 4 outline button (crypto uses cx.connect)
 msgid "onb.realFut"
@@ -8560,7 +8563,7 @@ msgstr "{step}, done"
 
 # Shown in place the moment the last step is done (stays while the app is open)
 msgid "onb.fin"
-msgstr "All set"
+msgstr "You're All Set"
 
 # Settings › General: clears the after-onboarding flag and shows the steps again. The row name is also the steps list's accessible name
 msgid "set.onb"
@@ -8580,7 +8583,7 @@ msgid "cx.mode.paperSub"
 msgstr "No keys. Starts with 100,000 USDT. No real money."
 
 msgid "cx.mode.real"
-msgstr "Real account"
+msgstr "Real Account"
 
 msgid "cx.mode.realSub"
 msgstr "Your own exchange or futures broker"
@@ -8616,9 +8619,9 @@ msgstr "Certificates stay on your cloud machine"
 msgid "cx.bound"
 msgstr "To switch accounts, unbind in Settings first."
 
-# Step 3 / step 4 buttons on the welcome steps (button Title Case per canon Casing; the shared res.open.bt / cx.paperShort stay as they are elsewhere)
+# Step 3 button on the welcome steps, and "Paper Trading": the connect dialog's paper option title and the step 4 button (Title Case per canon Casing; same as web workspace_cx_* ; the shared res.open.bt / cx.paperShort stay as they are elsewhere)
 msgid "onb.viewBt"
 msgstr "View Backtest"
 
-msgid "onb.paper"
+msgid "cx.mode.paper"
 msgstr "Paper Trading"

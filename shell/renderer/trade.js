@@ -5168,7 +5168,7 @@ function cxVenueField(L) {
   const lg = trEl("legend", "", t("cx.title")); fs.appendChild(lg);
   const off = !!L.cx.busy || CXF.bound || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
   const fut = CXF.venue === CAPITAL || CXF.venue === "president";
-  [["paper", t("cx.paperShort"), t("cx.mode.paperSub")], ["real", t("cx.mode.real"), t("cx.mode.realSub")]].forEach(([m, ti, de]) => {
+  [["paper", t("cx.mode.paper"), t("cx.mode.paperSub")], ["real", t("cx.mode.real"), t("cx.mode.realSub")]].forEach(([m, ti, de]) => {
     const on = CXF.mode === m, lab = trEl("label", on && m === "real" ? "cf-lab" : "cf-opt" + (off ? " off" : "")), r = trEl("input");
     r.type = "radio"; r.name = "cx-mode"; r.id = "cx-mode-" + m; r.value = m; r.checked = on; r.disabled = off;
     r.addEventListener("change", () => {

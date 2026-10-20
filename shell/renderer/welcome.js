@@ -208,7 +208,7 @@ const WC = { shown: false, armed: false };
 // prefs:null = 還在讀(讀到之前不畫,不然已進 F 的人會先閃一下步驟清單)
 const ONB = { prefs: null, base: null, fin: false, replay: false, open: [false, false, false, false], key: null, target: null };
 const ONB_MKT_FEATURE = { crypto: "onb_mkt_crypto", tw: "onb_mkt_tw", txf: "onb_mkt_txf" };   // 送出點的名字要是字面(tests/check_shell_telemetry.js 掃這張表)
-const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3", "tr.nav"];
+const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3", "onb.s4"];   // 字逐字同網頁 workspace_onb_s1–s4(兩語)
 // ③ 合計單位的後備:加密的金額是報價幣(預設 USDT),台股與台指期換算成台幣
 const ONB_MKT_CCY = { crypto: "USDT", tw_stock: "TWD", tw_index_futures: "TWD" };
 // 第一次清單讀完才顯示整頁

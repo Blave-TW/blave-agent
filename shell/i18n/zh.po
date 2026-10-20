@@ -8563,6 +8563,10 @@ msgstr "做策略並回測"
 msgid "onb.s3"
 msgstr "加到策略組合"
 
+# 步驟④的名字(EN 同網頁 workspace_onb_s4 用 Title Case,所以不借側欄的 tr.nav)
+msgid "onb.s4"
+msgstr "自動下單"
+
 # 台指期第④步的描邊鈕(加密叫 cx.connect)
 msgid "onb.realFut"
 msgstr "連接期貨商"
@@ -8633,9 +8637,9 @@ msgstr "憑證只存在你的雲端主機"
 msgid "cx.bound"
 msgstr "要換帳戶，先在設定解除綁定。"
 
-# 歡迎頁步驟③「看回測」與④「模擬交易」的鈕(EN 照 canon Casing 用 Title Case,所以不借 res.open.bt / cx.paperShort)
+# 歡迎頁步驟③「看回測」的鈕;「模擬交易」= 連接框模擬那個大選項的標題與步驟④的鈕(EN 照 canon Casing 用 Title Case、同網頁,所以不借 res.open.bt / cx.paperShort)
 msgid "onb.viewBt"
 msgstr "看回測"
 
-msgid "onb.paper"
+msgid "cx.mode.paper"
 msgstr "模擬交易"

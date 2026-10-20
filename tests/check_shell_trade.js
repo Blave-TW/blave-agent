@@ -1133,7 +1133,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("EN 鈕名:下單那幾顆維持 sentence case(舊字串,另批處理);0.1.28 onboarding 與連接框這次新增／改動的鈕依 canon design-system.md Casing(按鈕 Title Case)", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
       && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating"
       && get("en", "cx.connect") === "Connect an Exchange" && get("en", "onb.realFut") === "Connect a Futures Broker" && get("en", "cx.goPaper") === "Start Paper Trading" && get("en", "onb.goTr") === "Go to Auto Trading"
-      && get("en", "onb.paper") === "Paper Trading" && get("en", "onb.viewBt") === "View Backtest" && get("en", "set.onb.replay") === "Show Again" && get("en", "cx.title") === "Choose a Trading Account"
+      && get("en", "cx.mode.paper") === "Paper Trading" && get("en", "cx.mode.real") === "Real Account" && get("en", "onb.viewBt") === "View Backtest" && get("en", "set.onb.replay") === "Show Again" && get("en", "cx.title") === "Choose a Trading Account"
       && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals"].every((x) => en.indexOf(x) < 0)
       && (en.match(/Pause Trading/g) || []).length === 0
       && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
