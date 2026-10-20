@@ -4840,7 +4840,25 @@ function trEventText(type, d) {
   }
   if (type === "exchange_unreachable") return [t("tr.ov.evExUnreach", v), t("tr.ov.evExUnreachNote")];
   if (type === "exchange_recovered") return [t("tr.ov.evExBack", v), null];
-  if (type === "bar_stale") return [t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v)];
+  // computed:機器已先用現有資料算出訊號、那檔沿用最後一筆 → 換句,並帶出是哪一檔(同網頁 workspace_ov_ev_bar_stale_computed_note)
+  if (type === "bar_stale") {
+    const comp = d.computed === true, sym = comp && typeof d.symbol === "string" ? d.symbol.replace(/@spot$/, "") : "";
+    return [t("tr.ov.evBarStale") + (sym ? " · " + sym : ""), d.minutes == null ? null : t(comp ? "tr.ov.evBarStaleComputedNote" : "tr.ov.evBarStaleNote", v)];
+  }
+  // 目標部位太久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句,後果不能跟著消失
+  if (type === "target_stale") {
+    const s = d.age_s, m = typeof s === "number" && isFinite(s) && s >= 0 ? Math.floor(s / 60) : null, h = m == null ? 0 : Math.floor(m / 60);
+    const name = typeof d.strategy === "string" ? d.strategy : "";
+    return [t("tr.ov.evTargetStale") + (name ? " · " + name : ""),
+      m == null ? t("tr.ov.evTargetStaleNote") : m < 120 ? t("tr.ov.evTargetStaleMin", { n: m }) : h < 48 ? t("tr.ov.evTargetStaleHour", { n: h }) : t("tr.ov.evTargetStaleDay", { n: Math.floor(h / 24) })];
+  }
+  // 成分一個月以上沒新資料(同網頁 workspace_ov_ev_dead_members):列前 10 檔,其餘「等 N 檔」——{total}/{more} 兩個都給,語系自己挑
+  if (type === "dead_members") {
+    const syms = (Array.isArray(d.symbols) ? d.symbols : []).filter((x) => typeof x === "string" && x).map((x) => x.replace(/@spot$/, ""));
+    const list = syms.slice(0, 10).join(", ") + (syms.length > 10 ? " " + t("tr.ov.evDeadMore", { total: syms.length, more: syms.length - 10 }) : "");
+    const name = typeof d.strategy === "string" ? d.strategy : "";
+    return [t("tr.ov.evDeadMembers") + [name, list].filter(Boolean).map((x) => " · " + x).join(""), t("tr.ov.evDeadMembersNote")];
+  }
   if (type === "execution_fallback_market") return [t("tr.ov.evExecFallback"), t("tr.ov.evExecFallbackNote")];
   if (type === "execution_interrupted") return [t("tr.ov.evExecInterrupted"), t("tr.ov.evExecInterruptedNote")];
   if (type === "execution_stuck") return [t("tr.ov.evExecStuck"), t("tr.ov.evExecStuckNote")];

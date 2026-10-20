@@ -35,12 +35,34 @@ ok("desktop_action:payload 只有 action / device 兩欄(契約 §7 不帶值),�
   JSON.stringify(ev({ action: "amounts", device: "Mac", amounts: { a: 999 }, reason: "SECRET" })) === '["tr.ov.evDtAmounts","tr.ov.evDtDevice|{\\"device\\":\\"Mac\\"}"]');
 ok("其他型別不受影響(機器事件照舊)", trEventText("exchange_recovered", { venue: "binance" })[0] === 'tr.ov.evExBack|{"venue":"binance"}' && trEventText("nope", {}) === null);
 
+// 0.1.28 機器事件(api agent_events 白名單;句子同網頁 ovEventRow,兩邊門檻一致)
+{ const J = JSON.stringify, E = (ty, d) => trEventText(ty, d);
+  ok("bar_stale computed=true:換「已先算出」那句,標題帶出那一檔(去 @spot)",
+    J(E("bar_stale", { strategy: "s1", symbol: "ETHUSDT@spot", minutes: 7, computed: true })) === J(["tr.ov.evBarStale · ETHUSDT", 'tr.ov.evBarStaleComputedNote|{"venue":"","minutes":7}']));
+  ok("bar_stale computed 不是 true(false / 缺 / 字串 / 1)→ 舊那句、標題不變",
+    [false, undefined, "true", 1].every((c) => J(E("bar_stale", { symbol: "X", minutes: 3, computed: c })) === J(["tr.ov.evBarStale", 'tr.ov.evBarStaleNote|{"venue":"","minutes":3}'])));
+  ok("bar_stale 沒 minutes → 仍不出註解(computed 也一樣)", E("bar_stale", { symbol: "X", computed: true })[1] === null);
+  const ts = (age) => E("target_stale", { strategy: "s2", keys: ["BTC"], age_s: age })[1];
+  ok("target_stale 時間換算同 api _age_text(<120 分、<48 小時、其餘天,取整)",
+    J([0, 59, 60, 7199, 7200, 172799, 172800, 259199].map(ts)) === J(['tr.ov.evTargetStaleMin|{"n":0}', 'tr.ov.evTargetStaleMin|{"n":0}', 'tr.ov.evTargetStaleMin|{"n":1}', 'tr.ov.evTargetStaleMin|{"n":119}',
+      'tr.ov.evTargetStaleHour|{"n":2}', 'tr.ov.evTargetStaleHour|{"n":47}', 'tr.ov.evTargetStaleDay|{"n":2}', 'tr.ov.evTargetStaleDay|{"n":2}']));
+  ok("target_stale 沒 / 壞 age_s → 不帶時間那句(後果不消失)", [undefined, null, -5, "3600", NaN, Infinity].every((a) => ts(a) === "tr.ov.evTargetStaleNote"));
+  ok("target_stale 標題帶策略名;沒有就只有標題", E("target_stale", { strategy: "s2" })[0] === "tr.ov.evTargetStale · s2" && E("target_stale", {})[0] === "tr.ov.evTargetStale");
+  const syms = (n) => Array.from({ length: n }, (_x, i) => "S" + i), dm = (list) => E("dead_members", { strategy: "s3", symbols: list });
+  ok("dead_members ≤10 檔全列", J(dm(syms(10))) === J(["tr.ov.evDeadMembers · s3 · " + syms(10).join(", "), "tr.ov.evDeadMembersNote"]));
+  ok("dead_members 11 檔 → 前 10 + 等 1(total/more 兩個都給)", dm(syms(11))[0] === "tr.ov.evDeadMembers · s3 · " + syms(10).join(", ") + ' tr.ov.evDeadMore|{"total":11,"more":1}');
+  ok("dead_members 去 @spot、濾掉空與非字串;沒 symbols 只剩策略", dm(["A@spot", "", null, 5, "B"])[0] === "tr.ov.evDeadMembers · s3 · A, B" && E("dead_members", { strategy: "s3" })[0] === "tr.ov.evDeadMembers · s3");
+  ok("不認得的型別照舊不顯示", E("target_stale_v2", {}) === null); }
+
 // 兩語齊:缺一邊就會在那個語系露出英文或 key
 { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   const block = (n) => S.split(`  ${n}: {`)[1].split("\n  },")[0];
   const keysOf = (b) => new Set([...b.matchAll(/^\s*"([^"]+)":/gm)].map((m) => m[1]));
   const en = keysOf(block("en")), zh = keysOf(block("zh"));
   const need = [...new Set([...Object.values(TR_DT_ACTION), "tr.ov.evDtOther", "tr.ov.evDtDevice"])];
+  const need28 = ["tr.ov.evBarStaleComputedNote", "tr.ov.evTargetStale", "tr.ov.evTargetStaleNote", "tr.ov.evTargetStaleMin", "tr.ov.evTargetStaleHour", "tr.ov.evTargetStaleDay", "tr.ov.evDeadMembers", "tr.ov.evDeadMembersNote", "tr.ov.evDeadMore"];
+  const miss28 = need28.filter((k) => !en.has(k) || !zh.has(k));
+  ok("0.1.28 事件的 " + need28.length + " 個 key 兩語都在:" + (miss28.join() || "無缺"), miss28.length === 0);
   const miss = need.filter((k) => !en.has(k) || !zh.has(k));
   ok("desktop_action 的 " + need.length + " 個 key 兩語都在:" + (miss.join() || "無缺"), miss.length === 0);
   const valsOf = (b) => Object.fromEntries([...b.matchAll(/^\s*("(?:[^"\\]|\\.)*"): ("(?:[^"\\]|\\.)*"),?$/gm)].map((m) => [JSON.parse(m[1]), JSON.parse(m[2])]));

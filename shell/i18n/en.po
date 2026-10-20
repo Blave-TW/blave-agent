@@ -2353,6 +2353,33 @@ msgstr "Bar has not arrived"
 msgid "tr.ov.evBarStaleNote"
 msgstr "waited {minutes} min and still retrying; the signal will be late"
 
+msgid "tr.ov.evBarStaleComputedNote"
+msgstr "waited {minutes} min and still retrying; the signal was already computed on the latest data, using that symbol's last bar"
+
+msgid "tr.ov.evTargetStale"
+msgstr "Scheduled runs keep failing"
+
+msgid "tr.ov.evTargetStaleNote"
+msgstr "target position not updated for too long; no new opens or adds for it, reducing and closing still run"
+
+msgid "tr.ov.evTargetStaleMin"
+msgstr "target position not updated for {n} min; no new opens or adds for it, reducing and closing still run"
+
+msgid "tr.ov.evTargetStaleHour"
+msgstr "target position not updated for {n} hours; no new opens or adds for it, reducing and closing still run"
+
+msgid "tr.ov.evTargetStaleDay"
+msgstr "target position not updated for {n} days; no new opens or adds for it, reducing and closing still run"
+
+msgid "tr.ov.evDeadMembers"
+msgstr "No new data for over a month"
+
+msgid "tr.ov.evDeadMembersNote"
+msgstr "most likely delisted; the schedule no longer waits for them and signals run on time with the rest; if delisted, ask your agent to remove them so they get no weight"
+
+msgid "tr.ov.evDeadMore"
+msgstr "and {more} more"
+
 msgid "tr.ov.evExUnreach"
 msgstr "{venue} unreachable for {minutes} min"
 

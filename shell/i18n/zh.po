@@ -2363,6 +2363,33 @@ msgstr "K 棒沒到位"
 msgid "tr.ov.evBarStaleNote"
 msgstr "等了 {minutes} 分鐘，仍在重試，訊號會晚發"
 
+msgid "tr.ov.evBarStaleComputedNote"
+msgstr "等了 {minutes} 分鐘，仍在重試；訊號已先用現有最新資料算出，那檔沿用最後一筆"
+
+msgid "tr.ov.evTargetStale"
+msgstr "排程一直沒跑成"
+
+msgid "tr.ov.evTargetStaleNote"
+msgstr "目標部位太久沒更新，已停止替它開倉或加碼，減碼與平倉照常"
+
+msgid "tr.ov.evTargetStaleMin"
+msgstr "目標部位已 {n} 分鐘沒更新，已停止替它開倉或加碼，減碼與平倉照常"
+
+msgid "tr.ov.evTargetStaleHour"
+msgstr "目標部位已 {n} 小時沒更新，已停止替它開倉或加碼，減碼與平倉照常"
+
+msgid "tr.ov.evTargetStaleDay"
+msgstr "目標部位已 {n} 天沒更新，已停止替它開倉或加碼，減碼與平倉照常"
+
+msgid "tr.ov.evDeadMembers"
+msgstr "一個月以上沒有新資料"
+
+msgid "tr.ov.evDeadMembersNote"
+msgstr "多半是已下市，排程不再等它，訊號照其他標的準時算；已下市就請 agent 從策略移除，免得還配權重給它"
+
+msgid "tr.ov.evDeadMore"
+msgstr "等 {total} 檔"
+
 msgid "tr.ov.evExUnreach"
 msgstr "{venue} 已連續 {minutes} 分鐘連不上"
 
