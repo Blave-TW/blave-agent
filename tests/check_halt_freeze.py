@@ -33,6 +33,9 @@ os.makedirs("manager", exist_ok=True)
 open("manager/portfolio_config.json", "w").write('{"self_ledger": false}')
 
 from lib import execute, guard, order_paper, portfolio  # noqa: E402
+from lib import stock_perps  # noqa: E402
+# every symbol here is a coin; the real binance_class GETs Binance exchangeInfo
+stock_perps.binance_class = lambda sym: "COIN"
 
 red = 0
 

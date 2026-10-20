@@ -36,6 +36,9 @@ os.chdir(tempfile.mkdtemp(prefix="chase-halt-cancel-"))
 os.makedirs("manager", exist_ok=True)
 
 from lib import execute, guard, order_bybit, order_paper, venue_wiring  # noqa: E402
+from lib import stock_perps  # noqa: E402
+# every symbol here is a coin; the real binance_class GETs Binance exchangeInfo
+stock_perps.binance_class = lambda sym: "COIN"
 
 red = 0
 

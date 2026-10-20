@@ -35,6 +35,10 @@ os.chdir(tempfile.mkdtemp(prefix="pos-detail-"))  # guard's state/ lands here
 from lib import (account_binance, account_bingx, account_bybit, account_capital,  # noqa: E402
                  account_gateio, account_okx, account_paper, account_president)
 import account_reader  # noqa: E402
+from lib import stock_perps  # noqa: E402
+# every symbol here is a coin; the real binance_class GETs Binance exchangeInfo (and then
+# Bybit's instrument list) for each Bybit position
+stock_perps.binance_class = lambda sym: "COIN"
 
 DETAILS = ("entry_price", "unrealized_pnl", "margin", "leverage")
 fails = 0

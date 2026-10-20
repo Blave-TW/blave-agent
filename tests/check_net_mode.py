@@ -22,6 +22,9 @@ import lib.order_okx as ox  # noqa: E402
 import lib.order_gateio as gx  # noqa: E402
 import lib.order_bybit as bx  # noqa: E402
 import lib.order_paper as px  # noqa: E402
+from lib import stock_perps  # noqa: E402
+# every symbol here is a coin; the real binance_class GETs Binance exchangeInfo
+stock_perps.binance_class = lambda sym: "COIN"
 
 fails = 0
 
