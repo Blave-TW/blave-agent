@@ -5226,6 +5226,8 @@ function cxModalPaint() {
     // 子帳戶建議排第一段(ux-order-1-4-5 §3.4):只給 CX_SUB_ACCT 那幾家;機器只管自己的部位(self_ledger)時換成單向持倉那句
     if (CX_SUB_ACCT.indexOf(venue) >= 0) note.appendChild(trEl("p", "cx-sub", t((trReport() || {}).self_ledger === true ? "cx.note.subAcctOwn" : "cx.note.subAcct")
       + (venue === BINANCE ? (LANG === "zh" ? "" : " ") + t("tr.lev.binance5") : "")));
+    // StockCoin 目前只讀得到合約帳戶,這句只對它講(同網頁 cx_note_stockcoin)
+    if (venue === "stockcoin") note.appendChild(trEl("p", "", t("cx.note.stockcoin")));
     note.appendChild(trEl("p", "", venue === BINANCE ? t("cx.note.one") : t("cx.note.oneV", { venue: trVenueLabel(venue, true) })));
     if (cloud) {   // 雲端的五處差異之 2:主機的 IP,不查、沒有「再查一次」;拿不到不擋(白名單本來就不強制)
       if (cip) note.appendChild(cxIpChip(cip));

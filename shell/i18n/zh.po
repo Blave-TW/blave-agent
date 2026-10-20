@@ -1394,6 +1394,10 @@ msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。Bl
 msgid "cx.note.subAcctOwn"
 msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
 
+# 連接框選 StockCoin 時說明區多一句(其他家不出;同網頁 workspace_cx_note_stockcoin)
+msgid "cx.note.stockcoin"
+msgstr "StockCoin 目前只抓得到合約帳戶的資金。"
+
 msgid "cx.store.q"
 msgstr "金鑰存在哪？"
 

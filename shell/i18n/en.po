@@ -1387,6 +1387,10 @@ msgstr "We suggest a sub-account just for Blave, with the key created there. Bla
 msgid "cx.note.subAcctOwn"
 msgstr "We suggest a sub-account just for Blave, with the key created there. On a one-way account the exchange nets Blave's orders against your own position in the same coin."
 
+# 連接框選 StockCoin 時說明區多一句(其他家不出;同網頁 workspace_cx_note_stockcoin)
+msgid "cx.note.stockcoin"
+msgstr "For StockCoin, only the futures account balance can be read for now."
+
 msgid "cx.store.q"
 msgstr "Where are my keys stored?"
 
