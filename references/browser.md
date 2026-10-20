@@ -11,7 +11,7 @@ The desktop app has a browser the user can see. When a turn has it, a `blave_bro
 
 ## When to use it
 
-- The request needs the web: news, exchange announcements, economic calendars, documentation, a page the user named.
+- The request needs the web: news, exchange announcements, economic calendars, documentation, a page the user named; strategy ideas: `strategy-ideas.md`.
 - Market data (prices, klines, funding, OI, Blave indicators) still comes from `lib/data.py` — it has the permissions, the definitions and the history. Do not scrape a chart page for numbers `lib/data.py` has.
 
 ## Standard flow

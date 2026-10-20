@@ -87,6 +87,10 @@ Always set `DISPLAY_NAME`, `DESCRIPTION` and `LOGIC` (one `entry:` / `exit:` / `
 
 Asked for an XQ, MultiCharts or Pine version (incl. the web prompt 「把策略「…」(…)轉成 … 版,存成 workspace 檔案」) → read `references/xq-xs.md` / `multicharts-powerlanguage.md` / `tradingview-pine.md` first and follow its fixed flow. Nothing here compiles them: always tell the user to compile and backtest in the target platform. Running an exported Pine in TradingView's Strategy Tester via the built-in browser → `tradingview-pine.md` › *Cross-checking the backtest on TradingView*.
 
+## Strategy ideas from the web
+
+Asked for strategy ideas from the web (incl. the app prompt 「上網幫我找 3 個…可以回測的策略點子」) → read `references/strategy-ideas.md` first: start from its site list, not from a search.
+
 ## Blave API Headers
 
 `lib/data.py` functions take a `headers` dict (the runner builds it; otherwise `references/strategy-code.md`). **NEVER use** `X-API-KEY`, `X-SECRET-KEY`, or `Authorization: Bearer ...` (403). **The base URL is ALWAYS `https://api.blave.org`** — copy it from `lib/data.py`, never from memory (`api.blave.ai` does not exist).
