@@ -123,23 +123,14 @@ class StockcoinError(Exception):
         self.http_status = http_status
 
 
-# lib/reject_token kinds, from the venue doc §6.3 and -1157 (not in the doc,
-# measured on every refused contract of the live probe).
+# lib/reject_token kinds, from the venue doc §6.3 plus two codes the doc does
+# not list, both measured live: -1157 on every refused contract of the probe,
+# -1131 "Balance insufficient" on an order sized past the margin (T11). -1149
+# CREATE_ORDER_FAILED stays untagged: no live reply has shown what it means.
 API_CLOSED = "-1157"
 _REJECT_CODES = {"-1136": reject_token.BELOW_MIN_SIZE, "-1200": reject_token.BELOW_MIN_SIZE,
-                 "-1121": reject_token.SYMBOL_UNAVAILABLE, API_CLOSED: reject_token.SYMBOL_UNAVAILABLE}
-# -1149 CREATE_ORDER_FAILED covers both "balance" and "position limits" (doc
-# §6.3), so the code alone says nothing: only a message that names margin /
-# balance is tagged insufficient_margin, anything else under -1149 stays untagged
-CREATE_FAILED = "-1149"
-_MARGIN_WORDS = ("insufficient", "balance", "margin")
-
-
-def _kind_of(code, msg):
-    if str(code) == CREATE_FAILED:
-        return (reject_token.INSUFFICIENT_MARGIN
-                if any(w in str(msg).lower() for w in _MARGIN_WORDS) else None)
-    return None
+                 "-1121": reject_token.SYMBOL_UNAVAILABLE, API_CLOSED: reject_token.SYMBOL_UNAVAILABLE,
+                 "-1131": reject_token.INSUFFICIENT_MARGIN}
 
 
 class OrderNotConfirmed(Exception):
@@ -314,7 +305,7 @@ def _send(method, path, env, params=None, retries=3):
             text = (f"StockCoin 不開放 {canonical_symbol(params.get('symbol'))} 用 API 下單，只能在 "
                     f"StockCoin App 手動交易；請把策略換到別的交易所，或換成 StockCoin 開放 API 的商品"
                     f"（{text}）")
-        e = StockcoinError(text, code=code, http_status=r.status_code, kind=_kind_of(code, msg))
+        e = StockcoinError(text, code=code, http_status=r.status_code)
         if code == TIMESTAMP_ERROR and not resynced and attempt < retries - 1:
             # refused at authentication — resending cannot double anything
             resynced = True

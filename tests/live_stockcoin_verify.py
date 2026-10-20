@@ -56,7 +56,7 @@ ORDER steps (each one contract, ≈$0.02–$8; everything is closed at the end)
       partial close of 50; a stop-loss 0.05% under the price and a take-profit 20% over —
       waits up to 180 s for the venue to fire the stop-loss (else closes with a raw order the
       lib does not see, the same blind spot), then sweep_orphan_stops must cancel the orphan
-      take-profit; one order sized at 5× the account's margin, expected refused (-1149 or
+      take-profit; one order sized at 5× the account's margin, expected refused (measured -1131 or
       other) to read the margin-refusal wording.
   T10 a position's STOP when the position goes away: open 1 → place_protective_orders SL →
       close → STOP list 3 s later (does the venue drop it?) → cancel what is left → [].

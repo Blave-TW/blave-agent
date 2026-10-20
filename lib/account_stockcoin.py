@@ -5,8 +5,8 @@ Discovered by filename (lib.account_stockcoin.get_equity / get_positions).
 Credentials: STOCKCOIN_API_KEY / STOCKCOIN_SECRET_KEY in .env. The key must be
 a FUTURES-type key (account_type 3); any other type answers -1005.
 
-Read replies measured on a live key (tests/live_stockcoin_verify.py R1–R10);
-the equity formula with an open position is not measured yet (see get_equity).
+Read replies measured on a live key (tests/live_stockcoin_verify.py R1–R10, T8,
+T11 — equity with 100 contracts open and unrealized PnL moving).
 
 Measured: a wrong key answers -1002, a wrong secret -1022 (reads and order
 placement) — both CREDENTIAL below.
@@ -172,8 +172,9 @@ def get_equity(env: dict) -> dict:
     """Equity = the USDT row's `total` + `totalUnRealizedPnl` (cross + isolated).
     The reply is a list of per-token rows; a futures account holding nothing
     answers [] — that is equity 0, not an error.
-    Assumption to confirm with the first open position: `total` is the wallet
-    balance (the doc's `balance`) and excludes unrealized PnL."""
+    Measured with a position open (T11): `total` is the wallet balance and stays
+    put while the price moves; `futureAssetTotal` = total + totalUnRealizedPnl
+    (49.99626933 + (-0.0004) = 49.99586933), so this counts uPnL exactly once."""
     bal = _get(env, "/futures/balance")
     if not isinstance(bal, list):
         raise Exception(f"stockcoin /futures/balance: expected a list, got {str(bal)[:120]}")

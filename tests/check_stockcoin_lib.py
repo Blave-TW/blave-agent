@@ -706,15 +706,16 @@ check(len(placed_n) == 1 and len(status_reads) >= 2,
       "chase: -1150 on the cancel → status re-read, the still-resting order is not re-posted", (placed_n, len(status_reads)))
 route("DELETE", "/futures/order", delete_order)
 
-# ── -1149: tagged insufficient_margin only when the message names margin / balance ──
-for msg, want in (("Insufficient balance", "[order_reject:insufficient_margin]"), ("position limit exceeded", None)):
-    route("POST", "/futures/order", lambda p, m=msg: Resp({"code": -1149, "msg": m}, 400))
+# ── margin refusal: -1131 "Balance insufficient" (live T11) is insufficient_margin; -1149 stays untagged ──
+for code, msg, want in ((-1131, "Balance insufficient ", "[order_reject:insufficient_margin]"),
+                        (-1149, "create order failed", None)):
+    route("POST", "/futures/order", lambda p, c=code, m=msg: Resp({"code": c, "msg": m}, 400))
     try:
         order.place_market_order(ENV, "NVDAUSDT", "long", 0.0001)
-        check(False, "-1149 raises")
+        check(False, f"{code} raises")
     except order.StockcoinError as e:
         check(str(e).startswith(want) if want else not str(e).startswith("[order_reject:"),
-              f"-1149 '{msg}' → {want or 'untagged'}", str(e))
+              f"{code} → {want or 'untagged'}", str(e))
 
 # ── POST 5xx: the order may have landed — looked up by clientOrderId, never resent ──
 POSTS = []
