@@ -497,6 +497,23 @@ check(president_worker.position_row(Resp(product="TXO", call_put="C", productid=
       "option rows are not futures positions")
 check(raises(RuntimeError, lambda: president_worker.position_row(
     Resp(product="TXF", call_put="", productid="TXF202610"))) is not None, "unreadable TXF code fails")
+_slept, _saved = [], (president_worker.time.sleep, president_worker.BACKOFF_PATH,
+                      president_worker._write_snapshot)
+president_worker.time.sleep = _slept.append
+president_worker._write_snapshot = lambda snap: None
+president_worker.BACKOFF_PATH = os.path.join(TMP, "president_worker_backoff_check.json")
+try:
+    for _n in (0, 1, 2, 3, 4, 20):
+        with open(president_worker.BACKOFF_PATH, "w", encoding="utf-8") as _f:
+            json.dump({"failures": _n}, _f)
+        try:
+            president_worker._backoff_and_exit("down")
+        except SystemExit:
+            pass
+finally:
+    president_worker.time.sleep, president_worker.BACKOFF_PATH, president_worker._write_snapshot = _saved
+check(_slept == [30, 60, 120, 240, 300, 300],
+      "worker backoff: 30s, 60s, … capped at 5 min (not a re-login every 30s, not a 30-min wait)", _slept)
 check(president_worker.maintenance(T(2026, 10, 1, 5, 40)) == "login"
       and president_worker.maintenance(T(2026, 10, 1, 7, 29)) == "account"
       and president_worker.maintenance(T(2026, 10, 1, 7, 30)) is None

@@ -63,7 +63,7 @@ SDK_LOG_DIR = president_vault.SDK_LOG_DIR
 POLL_S = 60
 REFRESH_CHECK_S = 2
 MIN_TICK_SPACING_S = 10
-BACKOFF_MAX_S = 1800
+BACKOFF_MAX_S = 300  # 30s, 60s, 120s, 240s, then 5 min: not a 30-min wait after the network is back
 TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")  # no ZoneInfo: Windows has no tz database
 ROOTS = ("TXF", "MXF", "TMF")
 MAINTENANCE = (
