@@ -1787,7 +1787,7 @@ async function trPoll() {
     envPaintLocalDots();
     trCfTick();   // 存金額的框開著:草稿的預覽到了／數字變了就換上
     if (typeof poAddSync === "function") poAddSync();   // 策略頁首「加到策略組合」↔「到策略組合」
-    if (typeof onbPaint === "function") onbPaint();   // 歡迎頁的步驟③④跟著狀態檔(renderer/welcome.js;自己有指紋)
+    if (typeof onbPaint === "function") onbPaint();   // 歡迎頁的步驟③跟著狀態檔(renderer/welcome.js;自己有指紋)
     if (typeof upPaint === "function") upPaint();   // 設定 › 關於 的雲端那一行與聊天的更新入口:讀的是這一份雲端狀態
     cxGateSlowSync();
     if (!$("cx-scrim").hidden) cxModalPaint();
@@ -2391,7 +2391,7 @@ async function trZGo(kind, from) {
   if (TR.view !== "po") return;
   if (kind === "amt" || kind === "draft") { trFocusFirstAmt(); return; }
   const b = $("tr-pick");
-  if (b && b.isConnected && !b.disabled) { psToAmt = true; psOpen(b); if ($("ps-scrim").hidden) psToAmt = false; } else $("po-h").focus();
+  if (b && b.isConnected && !b.disabled) { psToAmt = true; await psOpen(b); if ($("ps-scrim").hidden) psToAmt = false; } else $("po-h").focus();
 }
 function trFocusFirstAmt() { const i = $("po-cfg").querySelector(".amt-in:not(:disabled)"); if (i && i.offsetParent) i.focus(); else psRefocus(); }
 /* 鈕旁的原因行(Z 時常駐,--ink-3 12px,在狀態行下面自己一行)。句子裡的「部位」做成連結,點了切到部位分頁。
@@ -5101,8 +5101,8 @@ function cxCloudIp() { const c = TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud; con
 function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; if (typeof capForget === "function") capForget(); if (typeof presForget === "function") presForget(); if (typeof caplForget === "function") caplForget(); }
 /* 兩個視角共用這個框(spec-desktop-cloud-s5 §2:只差五處)。雲端只在主機 running 時開得起來。 */
 /* venue:設定分頁群益「繼續」直接帶進群益那條(只有雲端);統一「繼續」只有這台電腦。
-   mode:"real" = 開在「真實帳戶」(歡迎頁④〔連接交易所／期貨商〕);其餘一律預選模擬交易(spec agent-onboarding-e-f §7-4) */
-function cxModalOpen(opener, venue, mode) {
+   沒指定 venue 一律預選模擬交易(spec agent-onboarding-e-f §7-4) */
+function cxModalOpen(opener, venue) {
   const env = ENV.cur;
   if (TR.env !== env || !$("cx-scrim").hidden) return;
   if (env === "cloud" && envCloudKind(TR_BAGS.cloud.st) !== "running") return;
@@ -5112,7 +5112,7 @@ function cxModalOpen(opener, venue, mode) {
   // 已綁定(開通中的統一／群益不算):兩個大選項與選單鎖住、停在綁著的那一家(mockup account-dialog 格 4)
   const st = TR_BAGS[env].st, bid = trVenueIds(st && st.report)[0] || null;
   CXF.bound = !!bid && !trSetupOnly(st);
-  CXF.venue = CXF.bound ? bid : venue === CAPITAL ? CAPITAL : venue === "president" && env === "local" ? venue : mode === "real" ? cxVenuesFor(env)[0] : PAPER;   // 群益:雲端 capital.js / 這台電腦 capital_local.js
+  CXF.venue = CXF.bound ? bid : venue === CAPITAL ? CAPITAL : venue === "president" && env === "local" ? venue : PAPER;   // 群益:雲端 capital.js / 這台電腦 capital_local.js
   CXF.mode = CXF.venue === PAPER ? "paper" : "real";
   trackFeature("cx_open");
   if (CXF.venue === CAPITAL && env === "cloud" && typeof capResume === "function") capResume();
@@ -5542,9 +5542,17 @@ function psRow(r, cloud, i) {
   if (note) { note.id = "ps-why-" + i; note.setAttribute("aria-hidden", "true"); cb.setAttribute("aria-describedby", note.id); }
   row.append(cb, fg, nm); return row;
 }
-function psOpen(opener, mode) {
-  const S = TR, mg = mode === "mg";
-  if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || (!mg && trPickOff())) return;
+let psLoading = false;
+/* fresh = 呼叫端剛重讀過清單(poAdd 鎖住那條),不再讀一次 */
+async function psOpen(opener, mode, fresh) {
+  const S = TR, mg = mode === "mg", view = S.view;
+  // psLoading:重讀還沒回來時再按一次不重讀、不開第二個框
+  if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || psLoading) return;
+  // 這台電腦的清單只在策略組合／自動下單頁開著時跟著輪詢重讀:在別頁剛裝好、剛回測完的那支,開框前不重讀就列不出來(0.1.28 Wei 實機)。
+  // 讀失敗照舊用手上那份開框
+  if (S.env === "local" && !fresh) { psLoading = true; try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } finally { psLoading = false; } }
+  // 重讀那一下用戶切走了(到聊天、策略頁、另一個視角):不把框開在別頁上
+  if (S !== TR_BAGS[ENV.cur] || !S.open || S.view !== view || !$("ps-scrim").hidden || (!mg && trPickOff())) return;
   psMode = mg ? "mg" : "amounts";
   if (!mg) trackFeature("strategy_picker");
   const cloud = S.env === "cloud", names = mg ? mgMembers() : trNames(), prefs = trPickPrefs(S, typeof SF !== "undefined" ? SF : null);

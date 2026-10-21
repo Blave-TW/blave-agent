@@ -1,16 +1,14 @@
 /* 歡迎頁(renderer/welcome.js;mockup welcome-directions A2)。
-   全部靠左、同一條軸:記號、市場題、步驟編號圈貼這條線;每一步的內容(起手句、籤、資料清單)內縮 32。
+   全部靠左、同一條軸:記號、步驟編號圈貼這條線;每一步的內容(起手句、籤、資料清單)內縮 32。
    整份清單是一張卡(--surface-card、--radius-lg),沒有包裝元素:列自己上底色、頭尾兩列收圓角、列之間 hairline(welcome.js 的 DOM 不必動)。
    一列一行:名字靠左、小字靠右成欄、行尾 ›;放不下時小字整段折到名字下面;整列可點、列與列緊貼,所以列高下限 44 就是熱區(單行時字在 44 裡垂直置中);
    市場分段沿用 .lib-seg(Outlined control segment);小標同 .sug-cap(13/600 --ink-3);文字鈕沿用 .btn-quiet。
    兩欄 vs 上下疊看中欄寬、不看視窗寬:.main-empty 是容器,內容寬 ≥ 760 才並排(700 時每欄 344、列內可用 294,最長的英文列要 314 會折行——設計稽核);免費欄永遠在前(窄時在上)。 */
 .main-empty { container-type: inline-size; }
 /* 步驟清單(E;spec agent-onboarding-e-f §2.1,mockup e-simple):內容最寬 760、上對齊、頂部留 32(視窗上面已經有 52 的標題帶)。
-   沒有框、沒有分隔線,分組全靠間距:記號 24 市場題 24 清單;每一步內縮 32(= 編號圈 20 + 字距 12),一步的鈕與下一步之間 24 */
+   沒有框、沒有分隔線,分組全靠間距:記號 24 清單;每一步內縮 32(= 編號圈 20 + 字距 12),一步的鈕與下一步之間 24 */
 .wc-inner { width: 100%; max-width: 760px; margin: 0 0 auto; padding-top: var(--space-32); align-items: stretch; }
 .wc-mark { width: var(--space-32); color: var(--ink); align-self: flex-start; }
-.onb-mq { margin-top: var(--space-24); display: flex; align-items: center; gap: var(--space-8) var(--space-12); flex-wrap: wrap; }
-.onb-q { font-size: 13px; color: var(--ink-3); }
 .onb-steps { margin: var(--space-24) 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-4); }
 /* 標題列左右 -12 抵掉內距,編號圈的左緣對齊記號;完成的那一步是整列按鈕(hover 上底色,同起手句) */
 .onb-h {
@@ -35,41 +33,33 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .onb-opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
 .onb-body .st-rows + .onb-opts { margin-top: var(--space-8); }
 .onb-opts .wl-fold { margin: 0 0 0 var(--space-8); }
-.onb-note { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .onb-fin { margin: var(--space-24) 0 0; display: flex; align-items: center; gap: var(--space-12); min-height: 36px; font-size: 14px; color: var(--ink-2); }
 /* 完成後的首頁(F;§3.2,mockup f-watermark):中欄垂直、水平置中;記號實色 --color-watermark(canon Brand logo 誤用的具名例外,不用 opacity) */
 .wf { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-24); padding-bottom: var(--space-48); }
 .wf-mark { width: 104px; height: auto; flex: none; color: var(--color-watermark); }
 .wf-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-8); }
-/* 起手句(§1.4):照「建議下一步」的列(suggest.css .sug-item)多兩格,市場 tag 與起始年。subgrid 讓三列的 tag 欄等寬,
-   欄寬跟著這個語言最長的 tag(不寫死寬度)。左右 -12 抵掉列的內距,字的左緣對齊標題 */
-.st-rows { margin: 0 calc(-1 * var(--space-12)); display: grid; grid-template-columns: auto max-content minmax(0, 1fr) auto; }
-/* 市場題選了只剩一句:句子本身講了市場,tag 欄拿掉 */
-.st-rows.one { grid-template-columns: auto minmax(0, 1fr) auto; }
-.st-rows.one .tag { display: none; }
+/* 起手句(§1.4):照「建議下一步」的列(suggest.css .sug-item)多一格起始年;不帶市場 tag(0.1.29 設計稽核:句子開頭就講了市場)。
+   subgrid 讓三列的起始年欄對齊。左右 -12 抵掉列的內距,字的左緣對齊標題 */
+.st-rows { margin: 0 calc(-1 * var(--space-12)); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
 .st-row {
   display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: var(--space-12); align-items: baseline;
   min-height: 36px; padding: var(--space-8) var(--space-12); border-radius: var(--radius-sm);
   font-size: 13px; line-height: 1.6; color: var(--ink-2); text-align: left;
   transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
-/* Mini tag(同 library.css .lib .tag 的配方;win32 字重 400 那條在 app.css):起手句的市場 tag */
-.main-empty .tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; background: var(--tag-neutral-bg); color: var(--tag-neutral-text); }
 .st-row .g { align-self: start; display: flex; align-items: center; height: calc(13px * 1.6); color: var(--ink-3); }   /* 同 suggest.css .sug-glyph:icon 留在第一行 */
-.st-row .tag { justify-self: start; align-self: start; margin-top: var(--space-2); }   /* 欄等寬、tag 本身靠左照字寬(spec §9) */
 .st-row .txt { min-width: 0; overflow-wrap: anywhere; }
 .st-row .since { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* hover 底色照策略庫列(library.css .lib-row:hover):--surface-muted 跟市場 tag 同色,tag 會不見(spec §10-1)。
+/* hover 底色照策略庫列(library.css .lib-row:hover,spec §10-1)。
    列裡的灰字一起提亮(canon);disabled 沒有 hover、字取 --ink-3、不用 opacity */
 .st-row:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-card); color: var(--ink); }
 .st-row:hover:not(:disabled):not([aria-disabled="true"]) .g { color: var(--ink); }
 .st-row:hover:not(:disabled):not([aria-disabled="true"]) .since { color: var(--ink-2); }
 .st-row:disabled, .st-row[aria-disabled="true"] { cursor: not-allowed; color: var(--ink-3); }
 .st-row:focus-visible { outline-offset: -2px; }
-/* 窄(容器 < 480;1024 視窗的中欄約 336):tag 欄拿掉(句子本身講了市場),起始年移到句子下一行 */
+/* 窄(容器 < 480;1024 視窗的中欄約 336):起始年移到句子下一行 */
 @container (max-width: 479px) {
   .st-rows { grid-template-columns: auto minmax(0, 1fr); }
-  .st-row .tag { display: none; }
   .st-row .since { grid-column: 2; }
 }
 /* 「可以回測的資料」:disclosure 文字鈕。箭頭共用 .mp-chev(canon Dropdown › Trigger + caret 的安靜觸發器版;同策略頁「策略邏輯」.lg-tog):

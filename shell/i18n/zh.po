@@ -8559,10 +8559,7 @@ msgstr "正在回覆的這條會先停止。"
 msgid "cs.delFail"
 msgstr "沒有刪成，再試一次。"
 
-# 歡迎頁入門步驟(0.1.28;renderer/welcome.js;spec agent-onboarding-e-f §2–3)。市場題:可以不點、沒有預設值
-msgid "onb.q"
-msgstr "想做哪個市場？"
-
+# 歡迎頁入門步驟(0.1.28;renderer/welcome.js;spec agent-onboarding-e-f §2–3;0.1.29 起不分市場、三步)
 msgid "onb.s1"
 msgstr "找靈感"
 
@@ -8571,22 +8568,6 @@ msgstr "做策略並回測"
 
 msgid "onb.s3"
 msgstr "加到策略組合"
-
-# 步驟④的名字(EN 同網頁 workspace_onb_s4 用 Title Case,所以不借側欄的 tr.nav)
-msgid "onb.s4"
-msgstr "自動下單"
-
-# 台指期第④步的描邊鈕(加密叫 cx.connect)
-msgid "onb.realFut"
-msgstr "連接期貨商"
-
-# 台指期第④步、這台是 Mac:統一與群益本機都要 Windows,〔連接期貨商〕收起來,只留模擬交易＋這一句
-msgid "onb.futMac"
-msgstr "台指期自動下單要用 Windows 電腦或雲端主機；這台 Mac 可以先用模擬交易。"
-
-# 已連好帳戶、還沒啟動:第④步只剩這一顆,開自動下單頁
-msgid "onb.goTr"
-msgstr "到自動下單"
 
 # 讀屏:完成的步驟那一行;{step} = 步驟名
 msgid "onb.doneSr"
@@ -8646,10 +8627,6 @@ msgstr "憑證只存在你的雲端主機"
 # 已綁定時框裡兩個大選項與選單鎖住,下面這一句
 msgid "cx.bound"
 msgstr "要換帳戶，先在設定解除綁定。"
-
-# 歡迎頁步驟③「看回測」的鈕;「模擬交易」= 連接框模擬那個大選項的標題與步驟④的鈕(EN 照 canon Casing 用 Title Case、同網頁,所以不借 res.open.bt / cx.paperShort)
-msgid "onb.viewBt"
-msgstr "看回測"
 
 msgid "cx.mode.paper"
 msgstr "模擬交易"

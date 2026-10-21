@@ -1940,10 +1940,10 @@ msgid "tr.pick.txfKeep"
 msgstr "{venue} only trades Taiwan index futures (TXF / MXF / TMF); once unchecked, it can’t be added back"
 
 msgid "tr.typeB.rejected"
-msgstr "“{name}”{more}: No fixed run interval, so for now it runs automatically only in the cloud. Uncheck it in Pick strategies, then save."
+msgstr "“{name}”{more}: No fixed run interval, so for now it runs automatically only in the cloud. Uncheck it in Pick Strategies, then save."
 
 msgid "tr.notTxf.rejected"
-msgstr "“{name}”{more}: not a Taiwan index futures strategy (TXF / MXF / TMF), and {venue} trades nothing else. Uncheck it in Pick strategies, then save."
+msgstr "“{name}”{more}: not a Taiwan index futures strategy (TXF / MXF / TMF), and {venue} trades nothing else. Uncheck it in Pick Strategies, then save."
 
 msgid "tr.gateHint"
 msgstr "Below the {m} {c} minimum entry — no position will open"
@@ -3962,10 +3962,10 @@ msgid "up.done.viewMsg"
 msgstr "List the files in {dir} on the cloud machine"
 
 msgid "tr.pick"
-msgstr "Pick strategies"
+msgstr "Pick Strategies"
 
 msgid "tr.pick.title"
-msgstr "Pick strategies"
+msgstr "Pick Strategies"
 
 msgid "tr.pick.ok"
 msgstr "Done"
@@ -3977,7 +3977,7 @@ msgid "tr.pick.gone"
 msgstr "no longer on this computer — uncheck to remove"
 
 msgid "tr.pick.noneChosen"
-msgstr "No strategies picked yet. Use Pick strategies to add the ones you want to trade."
+msgstr "No strategies picked yet. Use Pick Strategies to add the ones you want to trade."
 
 msgid "rob.metaScan"
 msgstr "scan"
@@ -8170,7 +8170,7 @@ msgid "tr.fogPosNew"
 msgstr "Ask the agent for a strategy. Once it’s backtested, it can trade."
 
 msgid "po.goAmounts"
-msgstr "Set amounts"
+msgstr "Set Amounts"
 
 msgid "tr.runningZPick"
 msgstr "Order program running · no strategies picked yet"
@@ -8231,7 +8231,7 @@ msgid "mg.fxCached"
 msgstr "TWD conversions use the {d} rate (≈); signing in updates it"
 
 msgid "tr.marketVenue.rejected"
-msgstr "“{name}”{more}: this exchange can’t trade its market. Taiwan index futures need {president} or {capital}; crypto needs a crypto exchange. Uncheck it in Pick strategies, then save."
+msgstr "“{name}”{more}: this exchange can’t trade its market. Taiwan index futures need {president} or {capital}; crypto needs a crypto exchange. Uncheck it in Pick Strategies, then save."
 
 msgid "tr.startOffNoRoute"
 msgstr "Save your order settings once in Portfolio first, so your strategies trade on the linked account."
@@ -8355,14 +8355,14 @@ msgid "tr.rejMore"
 msgstr " and {n} more"
 
 msgid "tr.marketVenue.crypto"
-msgstr "“{name}”{more} is a {market} strategy, which a crypto exchange can’t trade. Bind a Taiwan futures broker, or uncheck it in Pick strategies, then save."
+msgstr "“{name}”{more} is a {market} strategy, which a crypto exchange can’t trade. Bind a Taiwan futures broker, or uncheck it in Pick Strategies, then save."
 
 # 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句;字同網頁 workspace_pf_rej_us_symbol／us_venue
 msgid "tr.usSymbol.rejected"
-msgstr "“{name}”{more} uses a US-stock signal: it can only trade as a Type A single-symbol strategy, with SYMBOL set to that stock’s perpetual (e.g. NVDA → NVDAUSDT). Fix it and save again, or uncheck it in Pick strategies."
+msgstr "“{name}”{more} uses a US-stock signal: it can only trade as a Type A single-symbol strategy, with SYMBOL set to that stock’s perpetual (e.g. NVDA → NVDAUSDT). Fix it and save again, or uncheck it in Pick Strategies."
 
 msgid "tr.usVenue.rejected"
-msgstr "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick strategies, then save."
+msgstr "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick Strategies, then save."
 
 msgid "tr.mktName.txf"
 msgstr "TAIEX futures"
@@ -8540,10 +8540,7 @@ msgstr "The reply in progress will be stopped first."
 msgid "cs.delFail"
 msgstr "Couldn't delete it. Try again."
 
-# Welcome-page getting-started steps (0.1.28; renderer/welcome.js; spec agent-onboarding-e-f §2–3). Market question: optional, no default
-msgid "onb.q"
-msgstr "Which Market Do You Want to Trade?"
-
+# Welcome-page getting-started steps (0.1.28; renderer/welcome.js; spec agent-onboarding-e-f §2–3; 0.1.29: no market split, three steps)
 msgid "onb.s1"
 msgstr "Find an Idea"
 
@@ -8552,20 +8549,6 @@ msgstr "Build and Backtest a Strategy"
 
 msgid "onb.s3"
 msgstr "Add to Portfolio"
-
-msgid "onb.s4"
-msgstr "Auto Trading"
-
-# TAIEX futures step 4 outline button (crypto uses cx.connect)
-msgid "onb.realFut"
-msgstr "Connect a Futures Broker"
-
-msgid "onb.futMac"
-msgstr "Auto-trading TAIEX futures needs a Windows computer or a cloud machine; on this Mac, start with paper trading."
-
-# Account connected, not started: step 4 shows only this button; opens Auto trading
-msgid "onb.goTr"
-msgstr "Go to Auto Trading"
 
 # Screen reader: a completed step row; {step} = step name
 msgid "onb.doneSr"
@@ -8625,10 +8608,6 @@ msgstr "Certificates stay on your cloud machine"
 # Shown when an account is already bound: the two options and the list are locked
 msgid "cx.bound"
 msgstr "To switch accounts, unbind in Settings first."
-
-# Step 3 button on the welcome steps, and "Paper Trading": the connect dialog's paper option title and the step 4 button (Title Case per canon Casing; same as web workspace_cx_* ; the shared res.open.bt / cx.paperShort stay as they are elsewhere)
-msgid "onb.viewBt"
-msgstr "View Backtest"
 
 msgid "cx.mode.paper"
 msgstr "Paper Trading"
