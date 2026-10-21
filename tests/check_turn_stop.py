@@ -23,9 +23,12 @@ What it protects:
      Codex's pipe, so Codex is held until the script exits). A hand-written script is
      kept by the marker lib/order_* writes at import; every lib/order_*.py writes it.
      The reply and the history say what was left running; the history keeps the receipts.
-  8. Windows (Toolhelp / TerminateProcess swapped for POSIX stand-ins): under Codex a marked
-     money script holds Codex until it is done; markers are checked against the table, never
-     with os.kill(pid, 0) (TerminateProcess there); no money script = Codex killed at once.
+  8. Windows (Toolhelp / TerminateProcess swapped for POSIX stand-ins): the whole tool tree
+     is killed pid by pid (the canary's Git bash → powershell chain survived claude.exe
+     before), a reused ppid is not followed (creation times), a money tool call (marker or
+     command line, e.g. president_worker) stays whole under Claude; under Codex a money
+     script holds Codex until it is done; markers are checked against the table, never with
+     os.kill(pid, 0) (TerminateProcess there); no money script = Codex and its tools killed.
      Fail-closed: an unreadable table (Windows or ps) holds Codex; a marker that appears while
      the handles are opened cancels the kill; a dead pid's marker is cleared.
   9. agent_turn and the runtime modules it imports spawn nothing but the engine and its
@@ -130,7 +133,11 @@ LBL = {"python manager/close_symbol.py XRPUSDT": "close_symbol", "python3 manage
        "python lib/runner.py strategies/a/strategy.py": None, "python -c 'x.flatten()'": None, "python3 -c 'import time; time.sleep(60)'": None,
        "python3 -c 'from lib import venue; venue.bind(\"okx\", e)'": "from lib import venue",
        "python3 -c 'from lib.portfolio import zero_ledger_symbols'": "lib/portfolio",
-       "python3 -c 'from lib import data, portfolio'": "from lib import data, portfolio"}
+       "python3 -c 'from lib import data, portfolio'": "from lib import data, portfolio",
+       # Windows: PowerShell / absolute paths with backslashes, any case
+       r"python C:\blave\workspace\manager\flatten.py": "manager/flatten", r"python manager\flatten.py": "manager/flatten",
+       r"python lib\execute.py": "lib/execute", r"python LIB\Venue.py": "lib/venue", r"python lib\portfolio.py": "lib/portfolio",
+       "python Manager/Close_Symbol.py XRPUSDT": "close_symbol", r"python lib\runner.py x": None}
 check("money rule on the command line (one place: turn_stop.MONEY_ARGV)", all(turn_stop.money_label(c) == v for c, v in LBL.items()),
       {c: turn_stop.money_label(c) for c in LBL})
 import glob as _glob, re as _re
@@ -512,22 +519,105 @@ check("piggyback stop: CLI and the plain tool are dead when the turn returns",
       not alive(procs["engine"]) and not alive(procs["job"]), procs)
 check("piggyback stop: the money script still finishes", ledger_wait(led_pb, ["cancelled", "closed", "ledger"], 5), open(led_pb).read())
 
-# ── 8. Windows: Codex is held for a money script too (nt_plan) ──────────────
-# Toolhelp has no command lines: only the lib/guard markers count, checked against the table
-# (os.kill(pid, 0) is TerminateProcess there). Engine 201 → shell 202 → script 203; 301 elsewhere.
+# ── 8. Windows: the whole tool tree, pid by pid; money processes kept (nt_plan) ──
+# Markers are checked against the table (os.kill(pid, 0) is TerminateProcess there); command
+# lines come from the handle. Engine 201 → shell 202 → script 203; 301 elsewhere.
 WPAIRS = [(201, 200), (202, 201), (203, 202), (301, 1)]
 check("Windows + Codex: a marked script under the engine → nothing killed, labelled",
       turn_stop.nt_plan(WPAIRS, 200, {203}, True) == ([], ["order script"]))
 check("Windows + Codex: a marker outside this turn (or left by a dead pid) does not hold",
-      turn_stop.nt_plan(WPAIRS, 200, {301, 999}, True) == ([201], []))
-check("Windows + Claude: the engine goes even with a marked tool (its tools write to files)",
-      turn_stop.nt_plan(WPAIRS, 200, {203}, False) == ([201], []))
+      turn_stop.nt_plan(WPAIRS, 200, {301, 999}, True) == ([201, 202, 203], []))
+check("Windows + Claude: the engine goes, a marked tool call stays (shell and script)",
+      turn_stop.nt_plan(WPAIRS, 200, {203}, False) == ([201], ["order script"]))
 
-_NT_NAMES = ("_NT", "_windows_pairs", "_taskkill", "_nt_open", "_nt_terminate", "_nt_close", "_money_pids")
+# The canary's tree (uid 1, 1.1.135, 2026-10-21): Stop killed claude.exe and left the Git bash
+# chain and its powershell sleep running for four minutes. 900 = web_bridge (agent_turn's
+# launcher 524, a reconciler, another turn) must never be reached.
+CANARY = [(524, 900), (1372, 524), (1376, 1372), (764, 1376), (3848, 764), (4980, 3848), (736, 4980),
+          (950, 900), (1500, 900), (1501, 1500)]
+CANARY_CMD = {
+    524: r"C:\blave\venv\Scripts\python.exe runtime\agent_turn.py s1",
+    1372: r"C:\Python312\python.exe runtime\agent_turn.py s1",
+    1376: r"claude.exe --disallowedTools Edit(/lib/president_worker.py) --output-format stream-json",
+    764: r"C:\Program Files\Git\bin\bash.exe -c source .claude/shell-snapshots/snapshot-bash-1.sh && eval 'python lib/runner.py'",
+    3848: r"C:\Program Files\Git\usr\bin\bash.exe", 4980: r"C:\Program Files\Git\usr\bin\bash.exe",
+    736: "powershell.exe -c Start-Sleep 240", 950: "python manager/reconciler.py",
+    1500: "python runtime/agent_turn.py s2", 1501: "claude.exe", 900: "python runtime/web_bridge.py"}
+CANARY_T = {p: i * 10 for i, p in enumerate([900, 524, 1372, 1376, 764, 3848, 4980, 736, 950, 1500, 1501])}
+
+
+def winfo(pairs, cmds=CANARY_CMD, times=CANARY_T, drop=(), denied=(), unkillable=()):
+    out = {p: (times.get(p, 0), cmds.get(p, ""), p not in unkillable) for pair in pairs for p in pair if p not in drop}
+    out.update({p: (None, None, False) for p in denied})
+    return out
+
+
+TOOL = [1376, 764, 3848, 4980, 736]
+check("Windows + Claude, canary tree: the engine and the whole tool chain, nothing outside the turn",
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY)) == (TOOL, []),
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY)))
+check("Windows + Codex, canary tree, no money: the same",
+      turn_stop.nt_plan(CANARY, 1372, set(), True, winfo(CANARY)) == (TOOL, []))
+_reuse = CANARY + [(777, 4980), (778, 777)]
+_t = {**CANARY_T, **{777: 55, 778: 100}}   # 777 was created before 4980: its ppid is a reused pid
+check("Windows: a ppid whose pid was reused (child older than the parent) is not followed",
+      turn_stop.nt_plan(_reuse, 1372, set(), False, winfo(_reuse, times=_t)) == (TOOL, []))
+check("Windows: a pid that cannot be opened is not killed, nor what is under it",
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, drop={3848})) == ([1376, 764], []))
+_two = CANARY + [(765, 764), (800, 1376), (801, 800)]
+_cmd = {**CANARY_CMD, 765: "python lib/president_worker.py --once", 800: "bash.exe -c 'python bt.py'",
+        801: "python bt.py"}
+_t2 = {**CANARY_T, **{765: 75, 800: 90, 801: 95}}
+check("Windows + Claude: a president_worker tool call stays whole (by command line, no marker), "
+      "the other tool call and the engine go",
+      turn_stop.nt_plan(_two, 1372, set(), False, winfo(_two, _cmd, _t2)) == ([1376, 800, 801], ["president_worker"]),
+      turn_stop.nt_plan(_two, 1372, set(), False, winfo(_two, _cmd, _t2)))
+check("Windows + Codex: a president_worker command line holds the engine",
+      turn_stop.nt_plan(_two, 1372, set(), True, winfo(_two, _cmd, _t2)) == ([], ["president_worker"]))
+_pipe = CANARY + [(765, 764), (766, 764)]
+_cmd = {**CANARY_CMD, **{765: "python manager/close_symbol.py XRPUSDT", 766: "tail -5"}}
+check("Windows + Claude: `close_symbol | tail` keeps its tail (the whole tool call)",
+      turn_stop.nt_plan(_pipe, 1372, set(), False, winfo(_pipe, _cmd, {**CANARY_T, **{765: 75, 766: 76}}))
+      == ([1376], ["close_symbol"]))
+check("Windows: the engine's own argv (--disallowedTools …president_worker) is not money",
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY))[0][:1] == [1376])
+_cmd = {**CANARY_CMD, **{3848: None}}
+check("Windows + Claude: an unreadable command line keeps its tool call, labelled unconfirmed",
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, _cmd)) == ([1376], [turn_stop.UNSEEN]))
+check("Windows + Codex: an unreadable command line holds",
+      turn_stop.nt_plan(CANARY, 1372, set(), True, winfo(CANARY, _cmd)) == ([], [turn_stop.UNSEEN]))
+check("Windows + Claude: a marked engine keeps everything under it",
+      turn_stop.nt_plan(CANARY, 1372, {1376}, False, winfo(CANARY)) == ([], ["order script"]))
+# Alive but not ours to open (audit P1-2): unconfirmed, never a silent "not money"
+_pipe = CANARY + [(765, 764), (766, 764)]
+_cmd = {**CANARY_CMD, 765: "python manager/close_symbol.py XRPUSDT", 766: "tail -5"}
+_tp = {**CANARY_T, 765: 75, 766: 76}
+check("Windows + Codex: a tool that cannot be opened holds (unconfirmed)",
+      turn_stop.nt_plan(_pipe, 1372, set(), True, winfo(_pipe, _cmd, _tp, denied={765})) == ([], [turn_stop.UNSEEN]))
+check("Windows + Claude: `x | tail` with x unopenable keeps the tail (the whole tool call), the engine goes",
+      turn_stop.nt_plan(_pipe, 1372, set(), False, winfo(_pipe, _cmd, _tp, denied={765})) == ([1376], [turn_stop.UNSEEN]))
+check("Windows: a process whose creation time cannot be read is not killed, nor what is under it",
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, times={**CANARY_T, 3848: None})) == ([1376, 764], []),
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, times={**CANARY_T, 3848: None})))
+check("Windows + Codex: the same",
+      turn_stop.nt_plan(CANARY, 1372, set(), True, winfo(CANARY, times={**CANARY_T, 3848: None})) == ([1376, 764], []))
+check("Windows: a process that can be queried but not terminated is skipped, its tool call is not kept for it",
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, unkillable={3848})) == ([1376, 764, 4980, 736], []))
+
+_NT_NAMES = ("_NT", "_windows_pairs", "_taskkill", "_nt_open", "_nt_terminate", "_nt_close", "_money_pids",
+             "_nt_created", "_nt_cmdline", "_marker_pids", "_nt_open_query", "_nt_ppid", "_nt_image")
 _real = {n: getattr(turn_stop, n, None) for n in _NT_NAMES}
 _terminated = []
 turn_stop._NT = True
-turn_stop._windows_pairs = lambda: turn_stop._posix_table()[0]
+_ps_cmds = {}
+def _ps_pairs():
+    pairs, cmds = turn_stop._posix_table()
+    _ps_cmds.clear()
+    _ps_cmds.update(cmds)
+    return pairs
+
+
+turn_stop._windows_pairs = _ps_pairs
 # TerminateProcess on one pid, never the tree (/T); _taskkill is what the older code called
 def _sigkill(pid):
     _terminated.append(pid)
@@ -540,6 +630,12 @@ turn_stop._taskkill = _sigkill
 turn_stop._nt_open = lambda pid: pid
 turn_stop._nt_terminate = _sigkill
 turn_stop._nt_close = lambda h: None
+turn_stop._nt_created = lambda h: 0
+turn_stop._nt_open_query = lambda pid: None
+turn_stop._nt_ppid = lambda h: None
+turn_stop._nt_image = lambda h: ""
+# _nt_cmdline gives "" for a process that has exited (only a live one can move money)
+turn_stop._nt_cmdline = lambda h: _ps_cmds[h] if h in _ps_cmds else ("" if not alive(h) else None)
 
 
 def _no_kill0():
@@ -590,8 +686,10 @@ reply, elapsed, chunks, err = run_turn_with_stop(at.LocalSink("s9"), 1.5, engine
 codex_engine.asyncio.create_subprocess_exec = real_popen
 check("Windows + Codex, no money script: Codex is killed and the turn ends < 2s", elapsed < 2.0
       and codex_pid.get("codex") and not alive(codex_pid["codex"]), (elapsed, codex_pid))
+check("Windows + Codex, no money script: the tool under Codex is killed too (canary 10-21: it ran on)",
+      codex_pid.get("tool") and not alive(codex_pid["tool"]), codex_pid)
 with contextlib.suppress(OSError, TypeError):
-    os.kill(codex_pid.get("tool"), signal.SIGKILL)   # Windows leaves the tools to finish; by pid
+    os.kill(codex_pid.get("tool"), signal.SIGKILL)   # our own child, by pid, if the check above failed
 
 # Fail-closed (re-audit c30009c B1): an unreadable process table under Codex holds, never frees
 def _no_table():
@@ -636,6 +734,7 @@ check("Windows + Codex, table unreadable: stopped after 'cancelled', the script 
 turn_stop.HOLD_MAX_S = 120
 
 # From here the pids are made up: record, never signal (201 may be a real process on this box)
+turn_stop._nt_cmdline = lambda h: ""
 turn_stop._nt_terminate = lambda h: _terminated.append(h) or True
 turn_stop._taskkill = lambda pid: _terminated.append(pid)
 
@@ -651,9 +750,129 @@ check("Windows + Codex: a marker that appears just before the kill → Codex is 
       got == ([], ["order script"]) and not _terminated, (got, _terminated))
 _marks.clear()
 turn_stop._nt_open = lambda pid: pid
-check("…and with no marker the engine is terminated, by handle", turn_stop.kill_tree(200, True) == ([201], [])
-      and _terminated == [201], _terminated)
+check("…and with no marker the engine and its tools are terminated, by handle",
+      turn_stop.kill_tree(200, True) == ([201, 202, 203], []) and _terminated == [201, 202, 203], _terminated)
+
+# kill_tree end to end on the canary's table (Toolhelp, GetProcessTimes, command line stubbed)
+_tables = []
+def _canary_table():
+    _tables.append(1)
+    return list(CANARY)
+turn_stop._windows_pairs = _canary_table
+turn_stop._nt_created = lambda h: CANARY_T.get(h, 0)
+turn_stop._nt_cmdline = lambda h: CANARY_CMD.get(h, "")
+_terminated.clear()
+got = turn_stop.kill_tree(1372, False)
+check("Windows + Claude, canary: claude.exe, the three bash and the powershell sleep are terminated; "
+      "web_bridge, agent_turn's launcher, the reconciler and the other turn are not",
+      got == (TOOL, []) and _terminated == TOOL, (got, _terminated))
+# Claude path, a script marks itself while the handles are opened: its tool call is spared
+def _marks_on_second():
+    if _tables:
+        _marks.add(736)
+    _tables.append(1)
+    return list(CANARY)
+_tables.clear()
+turn_stop._windows_pairs = _marks_on_second
+_terminated.clear()
+got = turn_stop.kill_tree(1372, False)
+check("Windows + Claude: a marker that appears just before the kill keeps that tool call, the engine goes",
+      got == ([1376], ["order script"]) and _terminated == [1376], (got, _terminated))
+_marks.clear()
+# A child started between the snapshot and the kill is reached too (an orphan is never reparented)
+_tables.clear()
+def _grows():
+    _tables.append(1)
+    return list(CANARY) + ([(737, 736)] if len(_tables) > 1 else [])
+turn_stop._windows_pairs = _grows
+turn_stop._nt_created = lambda h: {**CANARY_T, **{737: 200}}.get(h, 0)
+turn_stop._nt_ppid = lambda h: dict(CANARY + [(737, 736)]).get(h)
+_terminated.clear()
+got = turn_stop.kill_tree(1372, False)
+check("Windows: a child that appeared while the handles were opened is terminated with the rest",
+      got == (TOOL + [737], []) and _terminated == TOOL + [737], (got, _terminated))
+# …but not when its pid went to another process before it was opened (audit P2-1): the parent read
+# through the handle is someone else's, and on the second look an unreadable parent waits a sweep
+for _pp, _why in ((4242, "the handle says another parent"), (None, "the parent cannot be read on the second look")):
+    _tables.clear()
+    turn_stop._nt_ppid = lambda h, _pp=_pp: _pp if h == 737 else dict(CANARY).get(h)
+    _terminated.clear()
+    got = turn_stop.kill_tree(1372, False)
+    check(f"Windows: a pid that appeared on the second look is not terminated when {_why}",
+          got == (TOOL, []) and _terminated == TOOL, (got, _terminated))
+# …and a pid reused between the first table and OpenProcess is not followed either
+turn_stop._windows_pairs = lambda: list(CANARY)
+turn_stop._nt_ppid = lambda h: 9999 if h == 3848 else dict(CANARY).get(h)
+_terminated.clear()
+got = turn_stop.kill_tree(1372, False)
+check("Windows: a pid whose handle names another parent than the table is not terminated, nor what is under it",
+      got == ([1376, 764], []) and _terminated == [1376, 764], (got, _terminated))
+# …and the handle opened for it is closed, also when the second look opens that pid again
+_opens, _closes = [], []
+turn_stop._nt_open = lambda pid: _opens.append(pid) or pid
+turn_stop._nt_close = _closes.append
+turn_stop.kill_tree(1372, False)
+check("Windows: every handle opened is closed, a pid rejected twice included",
+      sorted(_opens) == sorted(_closes) and _opens.count(3848) == 2, (sorted(_opens), sorted(_closes)))
+turn_stop._nt_open, turn_stop._nt_close = (lambda pid: pid), (lambda h: None)
+turn_stop._nt_ppid = lambda h: dict(CANARY).get(h)
+# Alive but not ours to open, end to end: OpenProcess(TERMINATE) and the query-only open both refused
+turn_stop._nt_open = lambda pid: None if pid == 3848 else pid
+turn_stop._nt_open_query = lambda pid: turn_stop.DENIED if pid == 3848 else None
+_terminated.clear()
+got = turn_stop.kill_tree(1372, False)
+check("Windows + Claude: an unopenable shell keeps its tool call, labelled unconfirmed; the engine goes",
+      got == ([1376], [turn_stop.UNSEEN]) and _terminated == [1376], (got, _terminated))
+_terminated.clear()
+got = turn_stop.kill_tree(1372, True)
+check("Windows + Codex: an unopenable tool holds Codex", got == ([], [turn_stop.UNSEEN]) and not _terminated, (got, _terminated))
+turn_stop._nt_open, turn_stop._nt_open_query = (lambda pid: pid), (lambda pid: None)
+# conhost.exe (the console agent_turn opened; the engine and a kept money tool share it): never killed
+_con = CANARY + [(1380, 1372)]
+turn_stop._windows_pairs = lambda: list(_con)
+turn_stop._nt_ppid = lambda h: dict(_con).get(h)
+turn_stop._nt_created = lambda h: {**CANARY_T, 1380: 25}.get(h, 0)
+turn_stop._nt_image = lambda h: "conhost.exe" if h == 1380 else "python.exe"
+_terminated.clear()
+got = turn_stop.kill_tree(1372, False)
+check("Windows: conhost.exe under agent_turn is not terminated", got == (TOOL, []) and 1380 not in _terminated, (got, _terminated))
+turn_stop._nt_image = lambda h: ""
+turn_stop._nt_created = lambda h: CANARY_T.get(h, 0)
+turn_stop._windows_pairs = lambda: list(CANARY)
+turn_stop._nt_ppid = lambda h: dict(CANARY).get(h)
 turn_stop._marker_pids = _real_marker
+
+# Markers on disk (real files in the test workspace)
+os.makedirs(turn_stop.MONEY_PID_DIR, exist_ok=True)
+def _marker(pid, text=""):
+    with open(os.path.join(turn_stop.MONEY_PID_DIR, str(pid)), "w") as f:
+        f.write(text)
+# A marker written after the table by a process the table does not show yet survives (audit P2-2)
+_tables.clear()
+def _table_then_mark():
+    if not _tables:   # first table only: the second look must not re-create it
+        _marker(424242)
+    _tables.append(1)
+    return list(CANARY)
+turn_stop._windows_pairs = _table_then_mark
+turn_stop.kill_tree(1372, False)
+check("Windows: a marker written while the table was taken is not cleared as dead",
+      "424242" in os.listdir(turn_stop.MONEY_PID_DIR), os.listdir(turn_stop.MONEY_PID_DIR))
+os.remove(os.path.join(turn_stop.MONEY_PID_DIR, "424242"))
+turn_stop._windows_pairs = lambda: list(CANARY)
+# A marker records its process's creation time; one left by a hard-killed process whose pid this
+# turn's engine now has does not count (audit P2-3). Old markers (empty) still count.
+for _text, _want, _why in (("999", (TOOL, []), "a stale marker on the engine's pid is ignored"),
+                           (str(CANARY_T[1376]), ([], ["order script"]), "a marker with the engine's own creation time counts"),
+                           ("", ([], ["order script"]), "an old marker without a time counts")):
+    _marker(1376, _text)
+    _terminated.clear()
+    got = turn_stop.kill_tree(1372, False)
+    check(f"Windows: {_why}", got == _want, (got, _terminated))
+os.remove(os.path.join(turn_stop.MONEY_PID_DIR, "1376"))
+turn_stop._nt_created = lambda h: 0
+turn_stop._nt_cmdline = lambda h: ""
+turn_stop._nt_ppid = lambda h: None
 
 # An _nt_open that raises after another handle was opened: that handle is still closed
 _closed, _opened = [], iter([7001])
