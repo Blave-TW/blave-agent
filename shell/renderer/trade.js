@@ -1239,7 +1239,7 @@ function trPvOf(r, n) {
   const src = trPvHost(r) ? r.backtest_previews : r && r.previews && typeof r.previews === "object" ? r.previews : {};
   const p = Object.prototype.hasOwnProperty.call(src, n) ? src[n] : null;
   if (!p || typeof p !== "object") return null;
-  const at = typeof p.bar_at === "number" && isFinite(p.bar_at) ? p.bar_at : null, base = { raw_closes: p.raw_closes && typeof p.raw_closes === "object" && !Array.isArray(p.raw_closes) ? p.raw_closes : null, market: p.market, bar_at: at, bar_date: typeof p.bar_date === "string" && /^\d{4}-\d\d-\d\d$/.test(p.bar_date) ? p.bar_date : null, daily_tw: p.daily_tw === true, latest: trPvHost(r) ? p.latest === true : true };   // 舊主機的 previews 本來就只送最新那根;新主機沒寫 latest = 判不出,當不是最新
+  const at = typeof p.bar_at === "number" && isFinite(p.bar_at) ? p.bar_at : null, base = { raw_closes: p.raw_closes && typeof p.raw_closes === "object" && !Array.isArray(p.raw_closes) ? p.raw_closes : null, market: p.market, bar_at: at, bar_date: typeof p.bar_date === "string" && /^\d{4}-\d\d-\d\d$/.test(p.bar_date) ? p.bar_date : null, daily_close: p.daily_tw === true || p.daily_us === true, latest: trPvHost(r) ? p.latest === true : true };   // 舊主機的 previews 本來就只送最新那根;新主機沒寫 latest = 判不出,當不是最新
   if (p.weights && typeof p.weights === "object" && !Array.isArray(p.weights)) {
     const closes = p.closes && typeof p.closes === "object" && !Array.isArray(p.closes) ? p.closes : {};
     return Object.assign(base, { type: "portfolio", weights: p.weights, closes });
@@ -3448,7 +3448,7 @@ function trCtCloseTag(n, sending, stored) {
   const bk = trBook(r, trClientTargets(stored, poPartStates(stored, st), trContracts()));
   return bk.mine[from] ? t("ct.tagClose", { prod: t(TR_TXF_SPECS[from].prod) }) : null;
 }
-/* 框用的訊號。stored = 已存;sending = 要存的。回 { states, px: {標的: 收盤價}, pv: {用預覽的策略: { at, date, dailyTw }}, missing: [算不出的策略],
+/* 框用的訊號。stored = 已存;sending = 要存的。回 { states, px: {標的: 收盤價}, pv: {用預覽的策略: { at, date, dailyClose }}, missing: [算不出的策略],
    stale: [預覽不是最新那根的草稿](背景重算它), old: [用到的預覽不是最新那根的,含已存的](框判會不會送單用) }。
    草稿(不在 stored)一律用預覽:它手上的 state.json 是以前上線時留下的,排程現在沒在算它 */
 function trCfStates(r, stored, sending, contracts) {
@@ -3459,7 +3459,7 @@ function trCfStates(r, stored, sending, contracts) {
     if (hasLive && !draft && !trNoSignalYet(n)) { states[n] = s; return; }
     const pv = trPvOf(r, n);
     if (!pv) { missing.push(n); return; }
-    states[n] = pv; pvs[n] = { at: pv.bar_at, date: pv.bar_date, dailyTw: pv.daily_tw };
+    states[n] = pv; pvs[n] = { at: pv.bar_at, date: pv.bar_date, dailyClose: pv.daily_close };
     if (!pv.latest) { old.push(n); if (draft) stale.push(n); }
     if (pv.weights) Object.keys(pv.closes || {}).forEach((k) => { const v = Number(pv.closes[k]); if (v > 0) px[trCanonSym(k)] = v; });
     else if (pv.close) px[trCanonSym(trEffSym(n, pv.symbol, contracts))] = pv.close;
@@ -3508,11 +3508,12 @@ function trCfHolds(r, stored, sending, contracts, st) {
     if (cs.some((c) => c && funded(c.strategy) && (newLib ? c.gated === true : !row.unrouted))) gate.push(trCanonKey(k)); });
   return { wait, gate, anchor };
 }
-/* 表頭的「依哪一根算」:只看真的撐到框裡某一列的預覽(names = 那幾列的貢獻策略)。回 { at, date, dailyTw } 取最舊那根;沒有一列用到預覽回 null */
+/* 表頭的「依哪一根算」:只看真的撐到框裡某一列的預覽(names = 那幾列的貢獻策略)。回 { at, date, dailyClose } 取最舊那根;沒有一列用到預覽回 null。
+   dailyClose = 全是台股／美股日線:寫「依 MM/DD 收盤」,日期用機器給的當地交易日(bar_date);美股那根標在 UTC 午夜,換本機時區會寫成前一天或 08:00 */
 function trCfAsof(st, names) {
   let out = null, daily = true;
-  names.forEach((n) => { const p = st.pv[n]; if (!p) return; if (!p.dailyTw) daily = false; if (p.at != null && (!out || p.at < out.at)) out = { at: p.at, date: p.date }; });
-  return out ? Object.assign(out, { dailyTw: daily }) : null;
+  names.forEach((n) => { const p = st.pv[n]; if (!p) return; if (!p.dailyClose) daily = false; if (p.at != null && (!out || p.at < out.at)) out = { at: p.at, date: p.date }; });
+  return out ? Object.assign(out, { dailyClose: daily }) : null;
 }
 // 帳上各標的的現價(交易所回報的 mark_price):只有 live 策略持有、沒有預覽收盤價的標的,用它換算數量
 function trMarks(r) {
@@ -3723,12 +3724,12 @@ function trSaveAmounts(names, stored, opener, o) {
     else {
       const zones = m.rows.map((x) => x.z).filter((z, i, a) => a.indexOf(z) === i), multi = zones.length > 1;
       const ccys = zones.map((z) => (z === TR_ZONE_LOTS ? t("tr.lotsUnit") : z === TR_ZONE_UNKNOWN ? t("tr.grpUnknown") : z)).join(LANG === "zh" ? "、" : ", ");
-      // 時間只講一次(canon):框裡任何一列(口數列、照金額寫的列、只改金額的列都算)是預覽撐的、或表下點名了舊預覽(oldPv),表頭寫是哪一根;台股日線寫「收盤」
+      // 時間只講一次(canon):框裡任何一列(口數列、照金額寫的列、只改金額的列都算)是預覽撐的、或表下點名了舊預覽(oldPv),表頭寫是哪一根;台股／美股日線寫「收盤」
       const pvAt0 = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => (x.noAuto ? [] : x.by || [])), oldPv) : amtOnly);
-      // 「依 MM/DD 收盤算」讀起來像列上有價格:列出的標的一個都沒有數量(股、口)時不寫。不是台股日線的「依那根算」照寫(B2)
-      const pvAt = pvAt0 && pvAt0.dailyTw && m.rows.length && !m.rows.some((x) => x.lots || (x.qty && x.qty.n > 0)) ? null : pvAt0;
-      // 台股日線照機器給的交易日(bar_date,UTC+8 換好的),不拿本機時區換 bar_at
-      const asof = !pvAt ? "" : pvAt.dailyTw && pvAt.date ? t("tr.cf.asofClose", { d: pvAt.date.slice(5).replace("-", "/") }) : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
+      // 「依 MM/DD 收盤算」讀起來像列上有價格:列出的標的一個都沒有數量(股、口)時不寫。不是日線收盤的「依那根算」照寫(B2)
+      const pvAt = pvAt0 && pvAt0.dailyClose && m.rows.length && !m.rows.some((x) => x.lots || (x.qty && x.qty.n > 0)) ? null : pvAt0;
+      // 台股／美股日線照機器給的交易日(bar_date,台北／紐約的那一天),不拿本機時區換 bar_at
+      const asof = !pvAt ? "" : pvAt.dailyClose && pvAt.date ? t("tr.cf.asofClose", { d: pvAt.date.slice(5).replace("-", "/") }) : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
       if (m.rows.length) {
         const nOpen = m.rows.filter((x) => !x.closed).length, asofTail = asof ? (LANG === "zh" ? "，" : ", ") + asof : "";
         // 全部台股都留到開盤(這一輪一筆都不送):表頭講開盤後要送,逐列不再標休市(稽核 0.1.27 batch2 P2-2)

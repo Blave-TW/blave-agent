@@ -196,6 +196,17 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
   { bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: pvA("ETHUSDT") } });
     const f = open();
     ok("B2 沒有價格、只能照金額寫的單(ETHUSDT 300):表頭照樣寫依哪一根", f.title === "tr.cf.titleFire" && f.rows.some((x) => /^tr\.cf\.buyETHUSDT300/.test(x)) && /tr\.cf\.asofBar \{"d":"\d\d\/\d\d \d\d:\d\d"\}/.test(f.cap), J(f)); }
+  // 美股日線(NVDA 價格、下 NVDAUSDT):表頭照台股寫「依 MM/DD 收盤算」,日期是機器給的紐約交易日,不拿 UTC 午夜換本機時區
+  { const NV = { name: "nv", displayName: "NV", hasBacktest: true, symbol: "NVDAUSDT", market: "swap" };
+    const nvAt = Date.UTC(2026, 9, 20) / 1000;
+    bag({ firing: true, picked: ["btc", "tw", "nv"], edits: { nv: 1000 }, list: [NV], noPv: true,
+      pvs: { nv: pvA("NVDAUSDT", { close: 216.47, bar_at: nvAt, bar_date: "2026-10-20", daily_us: true }) } });
+    const f = open();
+    ok("美股日線預覽:表頭寫「依 10/20 收盤算」(紐約交易日),不寫那根的本機時間", f.rows.some((x) => /NVDAUSDT/.test(x)) && /tr\.cf\.asofClose \{"d":"10\/20"\}$/.test(f.cap), J(f));
+    bag({ firing: true, picked: ["btc", "tw", "nv"], edits: { nv: 1000 }, list: [NV], noPv: true,
+      pvs: { nv: pvA("NVDAUSDT", { close: 216.47, bar_at: nvAt, bar_date: "2026-10-20" }) } });
+    const g = open();
+    ok("…舊 runtime 沒帶 daily_us:照舊寫依哪一根(時間)", /tr\.cf\.asofBar \{"d":"\d\d\/\d\d \d\d:\d\d"\}/.test(g.cap), J(g)); }
   { bag({ firing: true, picked: ["btc", "tw", "n5"], edits: { btc: 1000, n5: 200000 } });
     const f = open();
     ok("B2 列全是 live 撐的(BTC 照帳上現價換算),組合裡另有一份不相干的預覽(Binance 不交易的台股草稿):表頭不寫時間",

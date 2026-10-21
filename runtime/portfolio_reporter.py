@@ -504,13 +504,37 @@ def _tw_latest_closed_date(now):
     return day.strftime("%Y-%m-%d")
 
 
+# = workspace manager/wait_for_bar._US_FINAL_HOUR: a US daily bar is final at 17:00 New York
+_US_FINAL_HOUR = 17
+
+
+def _us_latest_closed_date(now):
+    """= workspace wait_for_bar._us_expected without its NYSE holiday table (lib.data, not
+    importable here): the newest New York weekday whose daily bar is final at `now` (naive UTC).
+    On a holiday this names the holiday, newer than any bar, so `latest` is false — a miss on the
+    safe side, as _tw_latest_closed_date. None when the zone is unknown (no tzdata)."""
+    try:
+        from zoneinfo import ZoneInfo
+        ny = now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        return None
+    day = ny.date() if ny.hour >= _US_FINAL_HOUR else ny.date() - timedelta(days=1)
+    while day.weekday() > 4:
+        day -= timedelta(days=1)
+    return day.strftime("%Y-%m-%d")
+
+
 def _preview_is_latest(bar_at, markets, td, now):
     """Is the preview's bar the newest closed one at `now` (naive UTC)? Taiwan daily: its trading
     date (_bar_date) is _tw_latest_closed_date — a backtest run during the session or before
     today's close stays a day behind; Taiwan intraday: never (labels not told apart here).
-    Everything else: its label is the bar wait_for_bar expects now (_expected_closed_bar_open)."""
+    US daily (fetch_usstock_price only, labelled at UTC midnight of the New York date): that date
+    is _us_latest_closed_date. Everything else: its label is the bar wait_for_bar expects now
+    (_expected_closed_bar_open)."""
     if markets and markets <= _TAIPEI_MARKETS:
         return td == timedelta(days=1) and _bar_date(bar_at, markets) == _tw_latest_closed_date(now)
+    if markets == {"us_stock"}:
+        return td == timedelta(days=1) and _bar_date(bar_at, markets) == _us_latest_closed_date(now)
     return datetime(1970, 1, 1) + timedelta(seconds=bar_at) == _expected_closed_bar_open(td, now)
 
 
@@ -574,16 +598,18 @@ def _finite_pos(v):
 def backtest_previews(cfg, states, now=None):
     """{name: preview} for the save dialog (and, `latest` only, the amounts table): every
     strategy's backtest_state.json (lib/runner._typec_preview / _typea_preview) whose code_hash is
-    the current strategy.py's, never on US-stock prices. Names: the picked ones with no live
+    the current strategy.py's. Names: the picked ones with no live
     signal yet (Type C: no live weights; Type A: no state.json) plus the PREVIEW_EXTRA_MAX most
     recently written files of strategies not picked that pass the checks below (a file whose code
     no longer matches must not take a draft's slot) — those are drafts, and a stale state.json of
-    an unpicked one is not what a save would compute. `latest` = its bar is still the newest
-    closed one (_preview_is_latest); the dialog uses either and names the bar.
+    an unpicked one is not what a save would compute. US-stock prices: a daily Type A on US
+    prices alone whose symbol is a pair (what the save gate lets go live). `latest` = its bar is still the newest closed one
+    (_preview_is_latest); the dialog uses either and names the bar.
       Type C: {type: portfolio, market, weights, closes, rebalance_at, bar_at, bar_date, latest}
       Type A: {type: signal, symbol, market, position, close, bar_at, bar_date, latest}
     Both may carry raw_closes {SYM: unadjusted close} for Taiwan stocks (the dialog's share count).
-    `daily_tw` = a Taiwan daily bar (the dialog says "close" instead of a time). Display only."""
+    `daily_tw` / `daily_us` = a Taiwan / US daily bar (the dialog says "close" on bar_date instead
+    of a time). Display only."""
     amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
     amounts = amounts if isinstance(amounts, dict) else {}
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
@@ -623,8 +649,7 @@ def backtest_previews(cfg, states, now=None):
         except OSError:
             continue
         markets = _price_markets(src)
-        # US-stock prices: no preview — _preview_is_latest knows no NYSE calendar
-        if _code_hash(src) != data["code_hash"] or "us_stock" in markets:
+        if _code_hash(src) != data["code_hash"]:
             continue
         try:
             bar_at = int(data.get("bar_at"))
@@ -633,9 +658,16 @@ def backtest_previews(cfg, states, now=None):
         td = _ac_interval(name)
         if td is None:
             continue
+        # US prices: only what the save gate lets go live (command_listener._us_signal_refusal's
+        # first checks) — a daily Type A on US prices alone, trading a pair (the stock perp)
+        if "us_stock" in markets and (markets != {"us_stock"} or td != timedelta(days=1)
+                                      or data.get("type") != "signal" or not _pair_quote(data.get("symbol"))):
+            continue
         row = {"bar_at": bar_at, "bar_date": _bar_date(bar_at, markets),
                "latest": _preview_is_latest(bar_at, markets, td, now),
                "daily_tw": bool(markets) and markets <= _TAIPEI_MARKETS and td == timedelta(days=1),
+               # US daily (the only US preview sent): bar_date is the New York trading date
+               "daily_us": markets == {"us_stock"},
                "market": _strategy_market(name)}
         if data.get("type") == "signal":
             sym, close = data.get("symbol"), _finite_pos(data.get("close"))
@@ -701,12 +733,12 @@ def signals_frozen(cfg):
 
 # Settlement currency of a strategy's amount, for the amounts table's unit (designer spec
 # 0124-review/units-research-and-spec.md §3.1 layer 2). Only what is known for sure: a
-# crypto pair's quote suffix from this list, TWD for every Taiwan market, USD for US
-# stocks. A bare "USD" suffix (BTCUSD) is NOT read as coin-margined BTC: no lib in this
-# workspace trades a coin-margined contract, so that would be a guess — null instead.
+# crypto pair's quote suffix from this list, TWD for every Taiwan market, USD for bare US
+# tickers (strategy_quote_ccy). A bare "USD" suffix (BTCUSD) is NOT read as coin-margined
+# BTC: no lib in this workspace trades a coin-margined contract, so that would be a guess —
+# null instead.
 QUOTE_SUFFIXES = ("FDUSD", "USDT", "USDC", "BUSD")
-_MARKET_QUOTE = {"tw_stock": "TWD", "tw_index_futures": "TWD", "tw_stock_futures": "TWD",
-                 "us_stock": "USD"}
+_MARKET_QUOTE = {"tw_stock": "TWD", "tw_index_futures": "TWD", "tw_stock_futures": "TWD"}
 _quote_cache = {}  # strategy.py path -> ((mtime, size), market) — ast.parse once per edit
 # A bare US ticker (AMZN, BRK.B): no quote suffix, so not a crypto pair
 _US_TICKER_RE = re.compile(r"[A-Z][A-Z.\-]{0,9}")
@@ -724,7 +756,8 @@ def strategy_quote_ccy(name, state):
     """The currency `name`'s amount is in, or None when it cannot be told for sure.
     Market from the strategy file (strategy_reporter.strategy_market: its lib.data price
     fetchers); crypto symbols from state.json (Type A `symbol`, Type C every `weights`
-    key — all must agree), else the file's literal SYMBOL. US-stock prices next to crypto
+    key — all must agree), else the file's literal SYMBOL. US-stock prices: the traded symbols'
+    common quote suffix (NVDAUSDT → USDT), bare tickers → USD; next to crypto
     ones, trading only bare tickers (no quote suffix) → USD. Other mixed markets, mixed quotes,
     global futures, user data → None."""
     path = os.path.join(WORKSPACE, "strategies", name, "strategy.py")
@@ -751,6 +784,15 @@ def strategy_quote_ccy(name, state):
         return _MARKET_QUOTE[market]
     state = state if isinstance(state, dict) else {}
     weights = state.get("weights")
+    if market == "us_stock":
+        # US prices as the signal, an exchange's stock perp traded (NVDA → NVDAUSDT): the amount
+        # is in what is traded. Bare tickers (AAPL) → USD; a mix of the two → None
+        syms = list(weights) if isinstance(weights, dict) and weights \
+            else [state.get("symbol") or file_symbol]
+        quotes = {_pair_quote(x) for x in syms}
+        if quotes == {None}:
+            return "USD"
+        return quotes.pop() if len(quotes) == 1 else None
     if market == "mixed" and uses_us:
         syms = list(weights) if isinstance(weights, dict) and weights \
             else [state.get("symbol") or file_symbol]
