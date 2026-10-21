@@ -293,12 +293,13 @@ def _refuse_if_blocked(login_id, password, consume_retry=False):
 
 LOGIN_STOPPED_EXIT = 3  # = runtime/capital_local.LOGIN_STOPPED_EXIT (desktop only)
 BACKOFF_PATH = os.path.join(WORKSPACE, "state", "capital_worker_backoff.json")
-BACKOFF_MAX_S = 1800
+BACKOFF_MAX_S = 300
 
 
 def _backoff_s(failed_before):
-    """30s, 60s, 120s … capped at 30 min: a broker outage must not become a
-    re-login every 30s for hours."""
+    """30s, 60s, 120s, 240s, then 300s: a broker outage must not become a
+    re-login every 30s for hours, nor a 30-min wait after the network is back
+    (no snapshot → the reconciler sends no 群益 order)."""
     return min(30 * 2 ** max(failed_before, 0), BACKOFF_MAX_S)
 
 

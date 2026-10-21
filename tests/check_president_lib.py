@@ -497,6 +497,23 @@ check(president_worker.position_row(Resp(product="TXO", call_put="C", productid=
       "option rows are not futures positions")
 check(raises(RuntimeError, lambda: president_worker.position_row(
     Resp(product="TXF", call_put="", productid="TXF202610"))) is not None, "unreadable TXF code fails")
+_slept, _saved = [], (president_worker.time.sleep, president_worker.BACKOFF_PATH,
+                      president_worker._write_snapshot)
+president_worker.time.sleep = _slept.append
+president_worker._write_snapshot = lambda snap: None
+president_worker.BACKOFF_PATH = os.path.join(TMP, "president_worker_backoff_check.json")
+try:
+    for _n in (0, 1, 2, 3, 4, 20):
+        with open(president_worker.BACKOFF_PATH, "w", encoding="utf-8") as _f:
+            json.dump({"failures": _n}, _f)
+        try:
+            president_worker._backoff_and_exit("down")
+        except SystemExit:
+            pass
+finally:
+    president_worker.time.sleep, president_worker.BACKOFF_PATH, president_worker._write_snapshot = _saved
+check(_slept == [30, 60, 120, 240, 300, 300],
+      "worker backoff: 30s, 60s, … capped at 5 min (not a re-login every 30s, not a 30-min wait)", _slept)
 check(president_worker.maintenance(T(2026, 10, 1, 5, 40)) == "login"
       and president_worker.maintenance(T(2026, 10, 1, 7, 29)) == "account"
       and president_worker.maintenance(T(2026, 10, 1, 7, 30)) is None
@@ -591,7 +608,10 @@ op.LAST_ORDER_PATH = real_path
 
 # ── 9. two processes closing at once: only one passes ────────────────────────
 import subprocess  # noqa: E402
-snapshot([{"root": "MXF", "productid": "MXFJ6", "net": 1, "net_current": 1}])
+# today's near month: a fixed month code goes past its settlement and the close is refused
+# (ListUnknown, this snapshot has no broker list) before the lock is ever contested
+MXF_NOW = op.near_month("MXF", [f"MXF{c}{d}" for c in op.MONTH_CODES for d in "0123456789"])
+snapshot([{"root": "MXF", "productid": MXF_NOW, "net": 1, "net_current": 1}])
 open(op.LAST_ORDER_PATH, "w").write("{}")
 GO = os.path.join(TMP, "go")
 child = f"""
@@ -615,12 +635,14 @@ try:
 except op.PresidentError:
     print("REFUSED")
 """
-procs = [subprocess.Popen([sys.executable, "-c", child], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+procs = [subprocess.Popen([sys.executable, "-c", child], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           text=True) for _ in range(2)]
 _t.sleep(1.0)
 open(GO, "w").close()
-outs = sorted(p.communicate(timeout=60)[0].strip() for p in procs)
-check(outs == ["PASS", "REFUSED"], "two processes closing the same position at once: exactly one passes", outs)
+res = [p.communicate(timeout=60) for p in procs]
+outs = sorted(o.strip() for o, _e in res)
+check(outs == ["PASS", "REFUSED"], "two processes closing the same position at once: exactly one passes",
+      [outs] + [e.strip().splitlines()[-1] for _o, e in res if e.strip()])
 
 # ── 10. P1-C: a slow login does not eat the settle margin ─────────────────────
 saved_settle = president_vault.ORDER_SETTLE_S
@@ -740,6 +762,114 @@ LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
 api2 = president_vault.login(president_vault.resolve(), president_worker.SDK_LOG_DIR, explicit=True)
 check(FakeUnitrade.logins == n + 2 and not os.path.exists(STOP), "a confirmed login that passes clears the stop")
 api2.logout()
+
+# the daemon: a login that passes on an ID with no futures account backs off twice and stops on the
+# third within an hour (counted across restarts in the backoff file; one empty list can be an SDK hiccup,
+# a timer retry forever is a real login every few minutes); any login that finds the account resets it;
+# a read that fails after a good login is an outage and backs off, climbing until a read succeeds
+_wsaved = (president_worker.time.sleep, president_worker._write_snapshot, president_worker._quote_api,
+           president_worker.read_account, president_worker.BACKOFF_PATH, FakeUnitrade.get_accounts,
+           president_worker.HEARTBEAT_PATH, president_worker._sleep_until_refresh)
+_wslept, _wsnaps = [], []
+president_worker.HEARTBEAT_PATH = os.path.join(TMP, "state", "heartbeat", "president_worker")
+president_worker.time.sleep = _wslept.append
+president_worker._write_snapshot = _wsnaps.append
+president_worker._quote_api = lambda api: None
+president_worker.BACKOFF_PATH = os.path.join(TMP, "president_worker_backoff_main.json")
+
+
+def _main_exit():
+    try:
+        president_worker.main()
+    except SystemExit as e:
+        return e.code
+
+
+class _Ticked(Exception):
+    pass
+
+
+def _ticked():
+    raise _Ticked  # the first good snapshot is written: stop the daemon loop there
+
+
+def _main_run(accounts, read_fails=False, login_raises=None):
+    def get_accounts(self):
+        if login_raises:
+            raise login_raises
+        return list(accounts)
+    FakeUnitrade.get_accounts = get_accounts
+    president_worker.read_account = _read_fails if read_fails else (lambda api, actno: {"ok": True, "equity": 1.0,
+                                                                                        "positions": []})
+    LOGIN_SCRIPT[:] = [Resp(ok=True, error=""), Resp(ok=True, error="")]
+    n, _wslept[:], _wsnaps[:] = FakeUnitrade.logins, [], []
+    try:
+        code = _main_exit()
+    except _Ticked:
+        code = "tick"
+    try:
+        stored = json.load(open(president_worker.BACKOFF_PATH, encoding="utf-8"))
+    except OSError:
+        stored = None
+    return (code, FakeUnitrade.logins - n, list(_wslept), bool(_wsnaps and _wsnaps[-1].get("login_stopped")),
+            stored and stored.get("no_account"))
+
+
+def _read_fails(api, actno):
+    raise RuntimeError("account query down")
+
+
+def _backoff_file(**d):
+    json.dump(d, open(president_worker.BACKOFF_PATH, "w", encoding="utf-8"))
+
+
+president_worker._sleep_until_refresh = _ticked
+try:
+    os.path.exists(president_worker.BACKOFF_PATH) and os.remove(president_worker.BACKOFF_PATH)
+    runs = [_main_run([]), _main_run([]), _main_run([])]
+    check(runs == [(1, 1, [30], False, 1), (1, 1, [60], False, 2),
+                   (president_worker.LOGIN_STOPPED_EXIT, 1, [], True, None)],
+          "no futures account: 1st and 2nd back off (30s, 60s), the 3rd in a row stops (LOGIN_STOPPED_EXIT)", runs)
+    runs = [_main_run([]), _main_run([]), _main_run(["7000001"], read_fails=True), _main_run([]),
+            _main_run([])]
+    check(runs == [(1, 1, [30], False, 1), (1, 1, [60], False, 2), (1, 2, [120], False, 0),
+                   (1, 1, [240], False, 1), (1, 1, [300], False, 2)],
+          "a login that finds the futures account resets the count (two more back off, no stop)", runs)
+    check(_main_run([])[0] == president_worker.LOGIN_STOPPED_EXIT,
+          "…and the third in a row after the reset stops")
+    runs = [_main_run(["7000001"], read_fails=True) for _ in range(5)]
+    check([r[:4] for r in runs] == [(1, 2, [30], False), (1, 2, [60], False), (1, 2, [120], False),
+                                    (1, 2, [240], False), (1, 2, [300], False)],
+          "login passes, account read keeps failing → the backoff climbs 30→60→…→300 (a good login does not reset it)",
+          runs)
+    check(_main_run(["7000001"]) == ("tick", 1, [], False, None),
+          "the first account read that succeeds clears the backoff file")
+    check(_main_run(["7000001"], read_fails=True)[2] == [30], "…so the next outage starts again at 30s")
+
+    _old = _t.time() - president_worker.NO_ACCOUNT_WINDOW_S - 5
+    _backoff_file(failures=2, no_account=2, first_at=_old)
+    r = _main_run([])
+    stored = json.load(open(president_worker.BACKOFF_PATH, encoding="utf-8"))
+    check(r[:5] == (1, 1, [120], False, 1) and stored["first_at"] > _old + president_worker.NO_ACCOUNT_WINDOW_S,
+          "two strikes over an hour old: the next empty list counts as the 1st again (fresh first_at), no stop",
+          (r, stored))
+    _backoff_file(failures=2, no_account=2, first_at=_t.time() - president_worker.NO_ACCOUNT_WINDOW_S + 60)
+    check(_main_run([])[0] == president_worker.LOGIN_STOPPED_EXIT, "two strikes inside the hour + a third → stops")
+    _backoff_file(failures=0, no_account=2, first_at=_old)
+    r = _main_run([], login_raises=RuntimeError("network down"))
+    check(r[0] == 1 and r[4] == 0, "a network error keeps strikes only inside the hour (an hour-old run is dropped)", r)
+    _backoff_file(failures=0, no_account=2, first_at=_t.time() - 60)
+    r = _main_run([], login_raises=RuntimeError("network down"))
+    check(r[0] == 1 and r[4] == 2, "a network error inside the hour keeps the strikes", r)
+    _backoff_file(failures=0, no_account=2, first_at=_old)
+    _main_run([], login_raises=RuntimeError("network down"))
+    check(_main_run([])[:5] == (1, 1, [60], False, 1),
+          "…and the empty list after hour-old strikes kept through a network error is the 1st, not the 3rd")
+finally:
+    (president_worker.time.sleep, president_worker._write_snapshot, president_worker._quote_api,
+     president_worker.read_account, president_worker.BACKOFF_PATH, FakeUnitrade.get_accounts,
+     president_worker.HEARTBEAT_PATH, president_worker._sleep_until_refresh) = _wsaved
+    LOGIN_SCRIPT[:] = []
 creds2 = president_vault.resolve()
 # every failure stops, whatever its class (display only)
 for script, kind in (([Resp(ok=False, error="[APGW]something unexpected")], "UNKNOWN"),
