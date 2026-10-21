@@ -8,6 +8,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.136 — 2026-10-21(runtime 單獨發)
+
+- **排程報告回合:Edit/Write 多凍 manager/、state/、AGENTS.md、references/、allocators/ 五處;Bash 擋寫 manager/ 四類(有副檔名的檔、executors/、amounts.ui.json、整個目錄 rm/mv/cp)＋AGENTS.md＋preferences.md(稽核 10-21 N1 P1;`SCHEDULED_EDIT_RULES`、`sched_frozen_write_denied`)**:排程回合會讀任意新聞頁,原本 Edit/Write 只凍 strategies/ control/ report_jobs/ lib/ .env,投毒網頁可叫它改資金鏡像 `manager/amounts.ui.json`(lib/portfolio 以它為準)、把 `portfolio_config.json` 的 `execution_default` 換成 custom 並寫 `manager/executors/<x>.py`(對帳器那個持有券商密碼的行程 `spec_from_file_location` 載入)、改 `state/preferences.md` / `AGENTS.md` 持久注入。Bash 只擋上面那幾類(重導、tee、cp/mv/rm、sed -i、python open(…,'w')/write_text/shutil/os.replace、PowerShell),讀與執行照放行;Bash 寫 state/notes/、references/、allocators/ 不擋(那三處只有 Edit/Write 凍);cd 進去再寫、變數拼路徑、`shutil.rmtree('manager')`、`find manager -delete` 擋不到(KNOWN_GAPS)。排程回合自己的寫入(reports/、<base>/state/report_packs/、report_jobs/<id>/.published)都在 lib Python 裡,不經 Edit/Write,不受影響。
+- **任何回合不准寫 `manager/amounts.ui.json`(稽核 10-21 N2 P2;`PROTECTED_EDIT_RULES` + `mirror_bash_denied`)**:這檔是最後一次 UI 確認的金額,只有 daemon 寫(command_listener 的 L2 紅線陳述現在與實作一致);Bash 寫它走券商密碼程式檔那道 hook、自己的理由。`portfolio_config.json` 與 `manager/executors/**` 聊天回合照舊可寫(AGENTS.md › Custom executors、`manager.py --apply`)。
+- **`_WRITE_MARK_RE` 的 `open(…)` 要有真的寫入 mode 才算寫**:原本 `open('lib/capital_vault.py')` 會把路徑裡的 `a` 當成 mode、把讀當寫擋掉;現在 mode 要是一個被引號收尾的字串、開頭 w/a/x 或 r…+(`'w'`、`'rb+'`、`mode='wb'` 都算;`'r'`/`'rb'` 與沒有 mode 的 `open('AGENTS.md')` 是讀),路徑可含 `os.path.join(…)` 一層括號。測試 `tests/check_sched_bash_guard.py` ⑥、`tests/check_secret_code_guard.py` ④。
+
 ## 1.1.135 — 2026-10-20(runtime 單獨發，先於 0.1.28;電腦版隨 0.1.28 安裝包)
 
 - **按停止殺得掉 Claude 引擎正在跑的工具(`turn_stop.kill_tree`)**:引擎 CLI 的命令列帶 `--disallowedTools …Edit(/lib/president_worker.py)…`(保護規則 `PROTECTED_EDIT_RULES`),`MONEY_ARGV` 比對整條命令列,CLI 本身被當成動錢的行程放過,它底下的工具(長回測)也一起放過——回覆寫「president_worker 沒有中斷」、工具照跑到完。電腦版 Claude／Blave AI、雲端網頁停止、排程逾時(`report_runner` 先建停止旗標)都中;Codex 的命令列沒有這些字、Windows 只殺引擎不比對,都不受影響。現在 agent_turn 的直接子行程(引擎)不比對命令列,只認 money_pids 標記;它底下的工具照舊逐支比對,動錢的照舊放過。測試 `tests/check_turn_stop.py`(假引擎改帶 SDK 同一組 `--disallowedTools`,加 `lib/president_worker.py` 一例)。
