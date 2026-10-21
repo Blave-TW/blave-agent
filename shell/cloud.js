@@ -48,6 +48,11 @@ const MACHINE_STATES = ["none", "starting", "running", "stopped"];
 
 /* 回應 → 畫面用的狀態(純函式)。code:
      OK | NO_LOGIN(沒登入 Blave)| NO_APP_SECRET(舊登入,要重新登入)| REVOKED(憑證被撤銷)| RATE_LIMITED | OFFLINE | BAD_RESPONSE */
+// 側欄偏好的清法(狀態信封讀進來、寫回後補進 snapshot 共用):名字非空字串、旗標 1–6 的整數、各 ≤200
+const prefOrder = (v) => (Array.isArray(v) ? v.filter((n) => typeof n === "string" && n).slice(0, 200) : []);
+const prefFlags = (v) => (v && typeof v === "object" && !Array.isArray(v)
+  ? Object.fromEntries(Object.entries(v).filter(([, x]) => Number.isInteger(x) && x >= 1 && x <= 6).slice(0, 200)) : {});
+
 function interpret(res) {
   if (!res || !res.status) return { code: "OFFLINE" };
   if (res.status === 401) return { code: res.body && res.body.error_code === "APP_SECRET_REQUIRED" ? "NO_APP_SECRET" : "REVOKED" };
@@ -83,10 +88,9 @@ function interpret(res) {
     // 主機的 lib 有沒有 walk_forward(api 同 web 的三態):false = 確定太舊,樣本外驗證擋下送出;null = 不知道(舊 api / 沒回報),不擋
     config_supports_wf: typeof b.config_supports_wf === "boolean" ? b.config_supports_wf : null,
     data_sources: Array.isArray(b.data_sources) ? b.data_sources.filter((n) => typeof n === "string") : [],
-    // 側欄偏好(web 工作頁設的順序與旗標,agent_user_prefs 同一份):api 還沒回這兩個 key 時 = 空,行為零變化。電腦版雲端 tab 只讀不寫
-    strat_order: Array.isArray(b.strat_order) ? b.strat_order.filter((n) => typeof n === "string" && n).slice(0, 200) : [],
-    strat_flags: b.strat_flags && typeof b.strat_flags === "object" && !Array.isArray(b.strat_flags)
-      ? Object.fromEntries(Object.entries(b.strat_flags).filter(([, v]) => Number.isInteger(v) && v >= 1 && v <= 6).slice(0, 200)) : {},
+    // 側欄偏好(web 工作頁設的順序與旗標,agent_user_prefs 同一份):api 還沒回這兩個 key 時 = 空,行為零變化。寫回走 setStratPrefs
+    strat_order: prefOrder(b.strat_order),
+    strat_flags: prefFlags(b.strat_flags),
   };
 }
 
@@ -270,7 +274,7 @@ function createCloudHost(opts) {
   const setT = opts.setTimer || ((fn, ms) => { const t = setTimeout(fn, ms); if (t.unref) t.unref(); return t; });
   const clearT = opts.clearTimer || clearTimeout;
   const EMPTY = () => ({ code: "NO_LOGIN" });
-  let snap = EMPTY(), owner = null, gen = 0, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
+  let snap = EMPTY(), owner = null, gen = 0, stratPrefsOff = null, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
   let epoch = 0;   // 換人 / 登出一次 +1:畫面拿它判斷「手上那些雲端的在途狀態是不是上一個人的」
   let evInflight = null, evLastTryAt = 0;   // 事件那一支自己的節流(它不共用上面那組:兩支走不同的速率桶)
   /* 總覽那兩支(權益曲線、組合績效)共用的讀法,各自一份在途 / 節流狀態。
@@ -322,6 +326,36 @@ function createCloudHost(opts) {
     return p;
   }
 
+  let prefsChain = Promise.resolve();
+  async function sendStratPrefs(p) {
+    const body = {};
+    if (p && Array.isArray(p.strat_order) && p.strat_order.length <= 200 && p.strat_order.every((n) => typeof n === "string" && n && n.length <= 200)) body.strat_order = p.strat_order;
+    const f = p && p.strat_flags;
+    if (f && typeof f === "object" && !Array.isArray(f) && Object.keys(f).length <= 200
+      && Object.entries(f).every(([k, v]) => k && k.length <= 200 && Number.isInteger(v) && v >= 1 && v <= 6)) body.strat_flags = f;
+    if (!Object.keys(body).length) return { ok: false, code: "BAD" };
+    let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
+    const tok = c && c.token ? c.token : null;
+    if (!tok || !c.appSecret) return { ok: false, code: "NO_LOGIN" };
+    if (p.epoch !== epoch || (owner !== null && owner !== whoOf(c))) return { ok: false, code: "NO_LOGIN" };
+    if (stratPrefsOff === whoOf(c)) return { ok: false, code: "UNSUPPORTED" };
+    let res = null;
+    try { res = await opts.post(opts.apiBase + PREFS_ENDPOINT, { token: tok, app_secret: c.appSecret, ...body }); } catch (_) { /* 連不上 */ }
+    let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
+    if (whoOf(cur) !== whoOf(c)) return { ok: false, code: "NO_LOGIN" };
+    if (res && res.status === 400 && res.body && res.body.error_code === "BAD_CURRENCY") { stratPrefsOff = whoOf(c); return { ok: false, code: "UNSUPPORTED" }; }
+    if (!res || res.status !== 200) return { ok: false, code: res && res.status === 429 ? "RATE_LIMITED" : "FAIL" };
+    const got = res.body && typeof res.body === "object" ? res.body : {};
+    gen++;   // 在途的狀態請求帶的是寫之前的偏好:回來時對不上世代、整份丟掉
+    if (snap && snap.code === "OK") {
+      snap = { ...snap };
+      if (body.strat_order) snap.strat_order = prefOrder(Array.isArray(got.strat_order) ? got.strat_order : body.strat_order);
+      if (body.strat_flags) snap.strat_flags = prefFlags(got.strat_flags && typeof got.strat_flags === "object" ? got.strat_flags : body.strat_flags);
+      emit();
+    }
+    return { ok: true, code: "OK" };
+  }
+
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length,
     // 版本也要推:看這台電腦時畫面 60 秒才問一次,「關於」那一行要跟上主機回報的版本
@@ -332,7 +366,7 @@ function createCloudHost(opts) {
     s.currency, JSON.stringify(s.base_currency_options || null)].join("|");
   const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt, epoch });
   function emit() { const key = summaryKey(snap); if (key === lastKey) return; lastKey = key; if (opts.onChange) try { opts.onChange(publicSnapshot()); } catch (_) { /* 畫面壞掉不影響輪詢 */ } }
-  function drop(next) { gen++; epoch++; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
+  function drop(next) { gen++; epoch++; stratPrefsOff = null; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
 
   async function refresh(force) {
     // 在途時又被要求「現在就要」(登入成功那一刻):等在途那份回來;它若因為換了人被丟掉(owner 被清空),馬上替現在這個人再打一次
@@ -488,6 +522,18 @@ function createCloudHost(opts) {
       if (inflight) await inflight.catch(() => {});
       await refresh(true).catch(() => {});
       return { ok: true, code: "OK" };
+    },
+    /* 雲端 tab 側欄的順序 / 旗標(帳號上的 strat_order / strat_flags,同網頁工作頁拖過、掛過的那一份)。
+       p 只帶有改的那一鍵、整份送,外加 renderer 手上那份信封的 epoch;形狀同 interpret 的清法(名字不套本機資料夾規則:雲端的名字是機器回報的)。
+       一次只送一包(prefsChain):兩包是獨立的 POST,後送的先落地會讓伺服器留下舊的那包。
+       epoch 對不上(renderer 的值是上一個人的)、或鑰匙圈已換人但信封還沒換(輪詢還沒 drop)→ NO_LOGIN,不把 A 的順序寫進 B。
+       成功:作廢在途的狀態請求(它帶的是舊偏好)、把 api 回的清過值補進 snapshot 並推一次,畫面不必等下一輪輪詢。
+       舊 api(還沒部署收這兩欄的版本)只收 base_currency,回 400 BAD_CURRENCY:記住、這個帳號之後不再送
+       (舊 api 的這支跟 /cloud/command 共用限速桶,不白燒;新 api 已分開)。回 { ok, code: "OK" | "BAD" | "NO_LOGIN" | "UNSUPPORTED" | "RATE_LIMITED" | "FAIL" } */
+    setStratPrefs(p) {
+      const run = prefsChain.then(() => sendStratPrefs(p));
+      prefsChain = run.catch(() => {});
+      return run;
     },
     // 登出:立刻把手上的東西丟掉、通知畫面清掉,而且作廢還在路上的請求
     reset() { drop(); },

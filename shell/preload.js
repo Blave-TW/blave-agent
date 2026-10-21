@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("blave", {
   cloudStatus: () => ipcRenderer.invoke("cloud-status"),
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
   cloudSetCcy: (code) => ipcRenderer.invoke("cloud-set-ccy", code),   // 設定 › 顯示幣別:寫帳號的 base_currency 偏好
+  cloudStratPrefsSet: (p) => ipcRenderer.invoke("cloud-strat-prefs", { strat_order: p && p.strat_order, strat_flags: p && p.strat_flags, epoch: p && p.epoch }),   // 雲端 tab 側欄的順序 / 旗標
   onCloudState: (fn) => ipcRenderer.on("cloud-state", (_e, s) => fn(s)),
   cloudEvents: (q) => ipcRenderer.invoke("cloud-events", q),
   cloudOverview: (q) => ipcRenderer.invoke("cloud-overview", q),

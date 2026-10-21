@@ -3299,6 +3299,7 @@ app.whenReady().then(() => {
   // 回 { code: "OK" | "UNREACH", events }——讀不到與「真的沒有事件」是兩件事,畫面要講得出是哪一種
   handle("cloud-events", (_e, q) => cloudHost().events(q && q.days), { code: "UNREACH", events: [] });
   handle("cloud-set-ccy", (_e, code) => { cloudHost().start(); return cloudHost().setBaseCurrency(code); }, { ok: false, code: "FAIL" });   // 設定 › 顯示幣別(帳號偏好)
+  handle("cloud-strat-prefs", (_e, p) => { cloudHost().start(); return cloudHost().setStratPrefs(p); }, { ok: false, code: "FAIL" });   // 雲端 tab 側欄的順序 / 旗標(帳號偏好)
   // 雲端的權益曲線與當日損益(總覽分頁;同事件清單:另一個速率桶、不留在主行程、不落地)。回 { code: "OK" | "UNREACH", curve }
   handle("cloud-overview", (_e, q) => cloudHost().overview(q && q.days, q && q.currency), { code: "UNREACH", curve: null });
   handle("cloud-performance", (_e, q) => cloudHost().performance(q && q.days, q && q.currency), { code: "UNREACH", perf: null });
