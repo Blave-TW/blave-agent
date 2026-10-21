@@ -114,7 +114,7 @@ for (const [ok, what] of [[/files:\s*\[[^\]]*"cloud\.js"/.test(cfg) && /files:\s
 // 編原始碼(maturin 會自己抓一套 Rust 下來編,幾分鐘)、venv 半套。引擎的每一條 pip 都只收 wheel(--only-binary=:all:,
 // 沒 wheel 就兩秒內大聲失敗)且 --isolated(不吃用戶 pip.conf / PIP_*),cryptography 釘 48.0.1(最後一版 universal2 wheel),
 // 記號檔比整串釘法才會在既有 venv 上重跑。失敗要留痕、進畫面的字要說得出原因、不帶用戶路徑。
-// 0.1.12 起 pip 在 shell/enginesetup.js(逐行讀進度、一個一個裝);它自己的行為在 tests/check_shell_engine_setup.js,這裡只釘「唯一一條」與釘法
+// 0.1.12 起 pip 在 shell/enginesetup.js(逐行讀進度、0.1.28 起每組一條);它自己的行為在 tests/check_shell_engine_setup.js,這裡只釘「唯一一條」與釘法
 (async () => {
   const mainSrc = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   const appSrc = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
@@ -142,9 +142,9 @@ for (const [ok, what] of [[/files:\s*\[[^\]]*"cloud\.js"/.test(cfg) && /files:\s
   for (const [ok, what] of [
     [mainSrc.includes(`const AGENT_SDK = "claude-agent-sdk==${fs.readFileSync(path.join(__dirname, "..", "runtime", "SDK_VERSION"), "utf8").trim()}";`), "電腦版 AGENT_SDK 等於 runtime/SDK_VERSION(雲端機隊與 provision 讀的同一個 pin)"],
     [/const SDK_PINS = `\$\{AGENT_SDK\} cryptography==48\.0\.1`;/.test(mainSrc), "SDK 與 cryptography==48.0.1 一起釘(最後一版 universal2 wheel)"],
-    [/const PIP_INSTALL = \["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--only-binary=:all:", "--progress-bar=raw"\];/.test(engSrc), "PIP_INSTALL 帶 --isolated 與 --only-binary=:all:(不帶 -q:會關掉進度)"],
+    [/const PIP_INSTALL = \["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--only-binary=:all:", "--progress-bar=raw", "--no-compile"\];/.test(engSrc), "PIP_INSTALL 帶 --isolated 與 --only-binary=:all:(不帶 -q:會關掉進度)、--no-compile(.pyc 在背景編)"],
     [(code(engSrc).match(/\.\.\.PIP_INSTALL/g) || []).length === 1 && /await run\(o\.venvPy, \[\.\.\.PIP_INSTALL, \.\.\.args\]/.test(engSrc) && !/-m", "pip/.test(code(engSrc).replace(/const PIP_INSTALL = [^\n]*/, "")) && !/-m pip|"pip"/.test(code(mainSrc)), "引擎唯一一條 pip 指令在 enginesetup 的 pip() 裡走 PIP_INSTALL,main.js 沒有另起的 -m pip"],
-    [seen && seen.bin === venvPy && seen.args.slice(0, 7).join(" ") === E.PIP_INSTALL.join(" ") && seen.shell === false && seen.hide === true, "pip 用 venv 的 python、argv 陣列直接交給 spawn、不開 shell、帶 windowsHide"],
+    [seen && seen.bin === venvPy && seen.args.slice(0, E.PIP_INSTALL.length).join(" ") === E.PIP_INSTALL.join(" ") && seen.shell === false && seen.hide === true, "pip 用 venv 的 python、argv 陣列直接交給 spawn、不開 shell、帶 windowsHide"],
     [plain === "ERROR: boom", "一般失敗丟修剪過的 ERROR 行(→ " + plain + ")"],
     [/sdkPins: SDK_PINS, deps: WORKSPACE_DEPS/.test(mainSrc) && /read\(sdkMark\) !== o\.sdkPins/.test(engSrc) && /fs\.writeFileSync\(sdkMark, o\.sdkPins\)/.test(engSrc), ".blave-sdk 記號檔比、寫整串 SDK_PINS"],
     [/o\.log\("\[engine\] pip install failed: "/.test(engSrc), "pip 失敗先把完整 stderr 留在主行程的 log,再丟修剪過的"],

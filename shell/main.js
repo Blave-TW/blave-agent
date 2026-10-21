@@ -1044,7 +1044,7 @@ const AGENT_SDK = "claude-agent-sdk==0.2.159";
 // 兩種架構釘同一版。記號檔比的是整串,所以既有 venv 在下一則訊息(ensure-engine 每次送訊息前都跑)會重跑一次
 // SDK 那條:把 50.0.1 換成 48.0.1,下載約 8 MB。
 const SDK_PINS = `${AGENT_SDK} cryptography==48.0.1`;
-/* 引擎安裝與它的進度快照在 enginesetup.js(建 workspace → venv + SDK → 策略套件一個一個裝)。冪等:裝過就跳過。
+/* 引擎安裝與它的進度快照在 enginesetup.js(建 workspace → venv + SDK → 策略套件每組一條 pip → 背景編 .pyc)。冪等:裝過就跳過。
    開 app 就在背景跑(engineKick);送出每一句之前 ensure-engine 再確認一次,跑到一半就接上同一份 */
 // 第一次要下載的量(SDK 那條 + WORKSPACE_DEPS 17 個,兩條共用的檔只算一次;pip dry-run / download 實測,SDK 的 wheel 帶 Claude CLI 就占 93–104 MB)。
 // 依平台不同:macOS 13 以下拿到的 scipy / numpy 是 OpenBLAS 版、比較大。實測 macOS 14+ Apple 晶片 209、Intel 217、macOS 12/13 Apple 晶片 224、
@@ -1094,7 +1094,7 @@ function sandboxAcl() {
   return _sandboxAcl.ensure();
 }
 function ensureEngine() { return engineSetup().ensure().then((r) => { try { sandboxAcl(); } catch (e) { console.error("[engine] codex sandbox acl not started: " + ((e && e.message) || e)); } return r; }); }
-// 結束 app / 為了更新重開之前收掉正在跑的 pip(最多等 5 秒);沒在裝就立刻回來,永遠不拋
+// 結束 app / 為了更新重開之前收掉正在跑的 pip 與背景編譯(最多等 5 秒);沒在裝就立刻回來,永遠不拋
 function engineAbort() { return _engineSetup ? _engineSetup.abort().catch(() => false) : Promise.resolve(false); }
 
 // 這份清單是**列舉出來的**,不是憑印象:用 AST 掃 lib/ manager/ examples/ 與兩支策略
@@ -1103,10 +1103,11 @@ function engineAbort() { return _engineSetup ? _engineSetup.abort().catch(() => 
 // 刻意不裝:shioaji(永豐下單 SDK,有綁該券商的人才需要)、comtypes / pythoncom
 // (群益的 COM 介面,只有 Windows 有)。
 // 釘版本:打包版在實機裝到、並跑過一輪回測的那組(隨包 CPython 3.12;arm64 與 x64/Rosetta 都只靠 wheel 裝得起來)。升版要重跑那輪驗證。
-// yfinance(lib/data.py 美股日線的備援)連同它拉進來的九個一起釘,yfinance 排最後:一個一個裝時它那一步才不會把後面的全裝走。
+// yfinance(lib/data.py 美股日線的備援)連同它拉進來的九個一起釘,排在最後(選用那組要連續排在最後,測試會抓)。
 // 2026-10-01 驗過:這 17 個加上依賴(34 個)在 mac arm64、mac x86_64、win amd64 都有 cp312 / abi3 / 純 Python wheel
 // (pip download --only-binary=:all:),arm64 與 x64 隨包 CPython 3.12 一次全裝與一個一個 -c 裝的 pip freeze 相同。
-// cffi、pycparser(curl_cffi 的)與 soupsieve、typing_extensions(bs4 的)不在清單上(不直接裝),跟 matplotlib 自己的依賴一樣由 pip 解,版本照下面的 WORKSPACE_LOCK
+// cffi、pycparser(curl_cffi 的)與 soupsieve、typing_extensions(bs4 的)不在清單上(不直接裝),跟 matplotlib 自己的依賴一樣由 pip 解,版本照下面的 WORKSPACE_LOCK。
+// 0.1.28 起每組一條 pip(SDK / 核心 / 美股):spike 2026-10-21 重驗三種裝法的 pip freeze 相同
 const WORKSPACE_DEPS = [
   "pandas==3.0.6", "numpy==2.5.3", "matplotlib==3.11.2", "pyarrow==25.0.1",
   "requests==2.34.2", "python-dotenv==1.2.3", "scipy==1.18.1",
@@ -1119,7 +1120,7 @@ const WORKSPACE_DEPS = [
 // 只用在第一次安裝(enginesetup.js:更新 / 補裝時帶鎖會把既有 venv 的間接相依降回鎖定版)。
 // 不是手寫的:SDK_PINS 或 WORKSPACE_DEPS 一換就跑 node tools/lock-deps.js <venv python>(五個平台解出同一組版本才印),整段貼回來。
 // WORKSPACE_LOCK_FOR 對不上現在的 SDK_PINS + WORKSPACE_DEPS 時不帶鎖(退回只釘直接相依,免得舊鎖跟新版衝突裝不起來),閘門測試同時變紅。
-// 沒有 hash:pip 的 hash 模式不吃 -c 裡的 hash,要整串改成 -r 才行,跟一個一個裝的流程衝突(另案)
+// 沒有 hash:pip 的 hash 模式不吃 -c 裡的 hash,要整串改成 -r 才行(另案)
 const WORKSPACE_LOCK_FOR = "68ee11a232d1";
 const WORKSPACE_LOCK = [
   "annotated-types==0.8.0", "anyio==4.15.1", "attrs==26.1.0", "certifi==2026.7.22", "cffi==2.1.1", "charset-normalizer==3.5.2",
@@ -4136,8 +4137,8 @@ app.on("before-quit", (e) => {
       .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } else { draftOk = false; draftNote = false; } }, () => { quitAsking = false; draftOk = false; draftNote = false; });
     return;
   }
-  // 常駐程式在跑、或背景安裝的 pip 還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)
-  const daemon = !!(_tradeHost && _tradeHost.isRunning()), installing = !!(_engineSetup && _engineSetup.busy());
+  // 常駐程式在跑、或背景安裝的 pip / 背景編 .pyc 還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)
+  const daemon = !!(_tradeHost && _tradeHost.isRunning()), installing = !!(_engineSetup && (_engineSetup.busy() || _engineSetup.compiling()));
   /* token 輪替在途:伺服器那邊可能已經換了、回應還沒回來——這時結束,新值就丟了,檔裡那顆只再活 10 分鐘(寬限),
      超過才重開就被登出(Mac e2e 10-14 查登入失效)。等它落地再走,最多 5 秒 */
   const rotating = typeof _rot !== "undefined" && !!(_rot && _rot.state().inflight);

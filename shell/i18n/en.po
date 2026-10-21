@@ -419,8 +419,11 @@ msgstr "Install strategy packages"
 msgid "eng.venv"
 msgstr "Create Python environment"
 
-msgid "eng.nth"
-msgstr "{i} of {n}: {name}"
+msgid "eng.batch"
+msgstr "{k} packages, now: {name}"
+
+msgid "eng.batchOne"
+msgstr "Now: {name}"
 
 msgid "eng.bytes"
 msgstr "{a} / {b} MB"

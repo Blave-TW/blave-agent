@@ -426,8 +426,11 @@ msgstr "安裝策略套件"
 msgid "eng.venv"
 msgstr "建立 Python 環境"
 
-msgid "eng.nth"
-msgstr "第 {i} / {n} 個：{name}"
+msgid "eng.batch"
+msgstr "共 {k} 個套件，目前：{name}"
+
+msgid "eng.batchOne"
+msgstr "目前：{name}"
 
 msgid "eng.bytes"
 msgstr "{a} / {b} MB"

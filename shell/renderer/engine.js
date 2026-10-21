@@ -1,5 +1,5 @@
 /* ── 安裝進度卡(mockup-desktop-first-run-progress;Wei 選 B+C)──────────────────
-   B:步驟清單+分段條「第 n / N 個」,正在跑的那一列下面多一行「這個檔案 a / b MB · 已下載 x MB」;不寫總百分比、不寫預估時間,
+   B:步驟清單+分段條(套件那段照已裝好的個數填),正在跑的那一列下面多一行「這個檔案 a / b MB · 已下載 x MB」;不寫總百分比、不寫預估時間,
    唯一的時間是經過時間。C:開 app 就在背景裝(main.js 的 engine 啟動步驟),所以卡要能在任何時候出現——工作頁一打開就跟快照對一次。
    畫面不自己猜進度:數字全來自主行程的快照(shell/enginesetup.js)。卡的去留只看快照(run / fail 在、done 收),
    所以停止、換對話都不會把它收掉;安裝跑完或失敗才換。 */
@@ -21,7 +21,8 @@ function engView(s, now, tr, held) {
     const row = { k: st.k, st: st.st, label: label(st.k), time: st.st === "wait" ? "" : dur(st.ms + (live ? end - st.t0 : 0)), dt: null, meta: null };
     const here = cur.step === st.k || (s.phase === "fail" && s.err && s.err.step === st.k);
     if (st.k === "pkgs" && (st.st === "run" || st.st === "err") && here && cur.i) {
-      const [pre, post] = t("eng.nth", { i: cur.i, n: cur.n, name: "\u0000" }).split("\u0000");
+      // 一組一條 pip(enginesetup.js):k = 這一條一次裝幾個、name = 現在解析 / 下載到的那一個
+      const [pre, post] = t(cur.k > 1 ? "eng.batch" : "eng.batchOne", { k: cur.k, name: "\u0000" }).split("\u0000");
       row.dt = { pre, mono: cur.name, post: post || "" };
     } else if (st.k === "engine" && st.st === "run" && cur.sub === "venv") row.dt = { pre: label("venv"), mono: null, post: "" };
     if (st.st === "run" && cur.name && (file || dl.installing || dl.done > 0)) {
@@ -31,7 +32,7 @@ function engView(s, now, tr, held) {
     }
     return row;
   });
-  // 分段條:一段 = 一個步驟(結構,不是時間);套件那一段照「第 n / N 個」填(前面裝完的 n-1 個)。
+  // 分段條:一段 = 一個步驟(結構,不是時間);套件那一段照整份清單裡已經裝好的個數填(i - 1 / n)。
   // 只有一步時:只補引擎那種不畫(一段從 0 跳到滿,沒有資訊);只補套件那種(更新後清單多了幾個)要畫,前面裝過的那幾個本來就是滿的
   const segs = s.steps.length < 2 && !(s.steps.length === 1 && s.steps[0].k === "pkgs") ? null : s.steps.map((st) => (st.st === "done" ? 1 : st.k === "pkgs" && cur.step === "pkgs" && cur.n ? Math.max(0, cur.i - 1) / cur.n : 0));
   let slot = null;
@@ -54,9 +55,10 @@ function engView(s, now, tr, held) {
   const title = s.phase === "fail" ? t("eng.headFail") : s.kind !== "update" ? t("eng.head")
     : s.steps.some((st) => st.k === "engine") ? t("eng.headUpd") : t("eng.headUpdPkgs");
   const sub = s.phase === "fail" || s.kind !== "first" || !s.sizeMB ? null : t("eng.size", { size: s.sizeMB + " MB" });
-  // 讀屏:卡本身不設 live region(每秒都在變);只在步驟換了、第 n 個換了、失敗時念一次
+  // 讀屏:卡本身不設 live region(每秒都在變);只在步驟換了、失敗時念一次。套件那一列不念名字:一組一條 pip 時名字跟著
+  // Collecting / Downloading 換,解析那幾秒就換幾十次
   const runRow = rows.find((r) => r.st === "run");
-  const say = s.phase === "fail" ? slot.head : runRow ? runRow.label + (runRow.dt ? " " + runRow.dt.pre + (runRow.dt.mono || "") + runRow.dt.post : "") : "";
+  const say = s.phase === "fail" ? slot.head : runRow ? runRow.label + (runRow.dt && runRow.k !== "pkgs" ? " " + runRow.dt.pre + (runRow.dt.mono || "") + runRow.dt.post : "") : "";
   return { phase: s.phase, title, time: dur(s.acc + (end - s.t0)), sub, segs, rows, slot, say };
 }
 /* 完成後留下的那一行 */
