@@ -916,9 +916,9 @@ app.whenReady().then(async () => {
   r = await js(`(async () => { await trOpen("over"); const a = { lib: document.getElementById("lib").hidden, tr: document.getElementById("tr").hidden, cur: document.getElementById("lib-nav").getAttribute("aria-current"), open: libBag().open };
     await libOpen(); const b = { lib: document.getElementById("lib").hidden, tr: document.getElementById("tr").hidden, trOpen: TR_BAGS.local.open }; return { a, b }; })()`);
   ok("④ 互斥:開自動下單 → 策略庫收(入口 aria-current 拿掉);再開策略庫 → 自動下單收", r.a.lib && !r.a.tr && r.a.cur === null && r.a.open === false && !r.b.lib && r.b.tr && r.b.trOpen === false, JSON.stringify(r));
-  r = await js(`(() => { document.getElementById("wc-more").click(); return { sent: window.__lib.sent.length, opened: window.__lib.opened, tools: [...document.querySelectorAll("#lib-head-list .lib-tools > *")].map((x) => x.id || x.className).join() }; })()`);
+  r = await js(`(() => { document.getElementById("wf-lib").click(); return { sent: window.__lib.sent.length, opened: window.__lib.opened, tools: [...document.querySelectorAll("#lib-head-list .lib-tools > *")].map((x) => x.id || x.className).join() }; })()`);
   await wait(30);
-  ok("④ 歡迎頁「看策略庫全部」只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場選單", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-mkt", JSON.stringify(r));
+  ok("④ 完成後首頁〔策略庫〕(#wf-lib)只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場選單", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-mkt", JSON.stringify(r));
 
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
   app.exit(red ? 1 : 0);
