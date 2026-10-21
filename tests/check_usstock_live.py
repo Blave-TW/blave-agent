@@ -355,7 +355,8 @@ import lib.notify as _notify  # noqa: E402
 from manager import alert_failure as _af  # noqa: E402
 sent, _cwd, _send, _emit = [], os.getcwd(), _notify.send_text, _events.emit
 _notify.send_text = lambda m, *a, **k: sent.append(m)
-_events.emit = lambda *a, **k: None   # no event file outside the temp workspace
+emitted = []
+_events.emit = lambda ev, **k: emitted.append((ev, k))   # no event file outside the temp workspace
 os.chdir(WS)
 try:
     for flag in (True, False):
@@ -370,6 +371,8 @@ finally:
 check(len(sent) == 2 and "likely repeat" not in sent[0] and "tries again automatically" in sent[0]
       and "likely repeat" in sent[1] and "tries again" not in sent[1],
       f"alert_failure: transient → 'tries again automatically', never 'will likely repeat'; default unchanged ({sent})")
+check([(e, k.get("transient")) for e, k in emitted] == [("strategy_failed", True), ("strategy_failed", False)],
+      f"the strategy_failed event carries transient, so the platform's push says the same as Telegram ({emitted})")
 
 wfb._check_freshness = real_probe
 scopes = []

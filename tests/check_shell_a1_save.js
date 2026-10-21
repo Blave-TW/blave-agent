@@ -501,21 +501,34 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     await vm.runInContext("poAdd(TR, 'tw', true)", ctx);
     ok("④ 描邊那顆:只跳過去(不改草稿),記 po_add_go", S.picked === null && feats.includes("po_add_go"), J(feats)); }
 
-  // 0.1.28 排練:剛加入的策略訊號空手 → 框不能只剩標題與兩顆鈕(s9_save_dialog)
+  // 0.1.28 排練:剛加入的策略訊號空手 → 框不能只剩標題與兩顆鈕(s9_save_dialog);「才會進場」只在真的會進場時講(稽核 usfix2 P2-1)
   { const flat0 = (extra) => pvA("ETHUSDT", Object.assign({ position: 0, close: 3000 }, extra || {}));
-    bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
-    let f = open();
-    ok("空手新策略(合約,沒在跑):框裡有一句「訊號出現時才會進場」、沒有列", f.title === "tr.cf.title" && f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flat"]), J(f));
-    bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
-    f = open();
-    ok("…在跑也一樣:「儲存金額」+ 同一句", f.title === "tr.cf.title" && f.rows.length === 0 && f.notes.includes("cf-note:tr.cf.flat"), J(f));
     const SP = { name: "sp", displayName: "SP", hasBacktest: true, symbol: "ETHUSDT", market: "spot" };
-    bag({ picked: ["btc", "tw", "sp"], edits: { sp: 300 }, list: [SP], noPv: true, pvs: { sp: flat0({ market: "spot" }) } });
+    bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
+    let f = open();
+    ok("空手新策略(合約,在跑):「儲存金額」+「訊號出現時才會進場」、沒有列", f.title === "tr.cf.title" && f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flat"]), J(f));
+    bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
+    f = open();
+    ok("…沒在跑(沒綁帳戶):不說「才會進場」", !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    bag({ halted: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
+    f = open();
+    ok("…暫停中:不說", !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    bag(draft({ firing: true, pv: { weights: { "2330": 0, "2454": 0 } } })); f = open();
+    ok("…這家下不了(Binance 在跑、空手的台股組合):不說", f.rows.length === 0 && !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    bag({ firing: true, picked: ["btc", "tw", "sp"], edits: { sp: 300 }, list: [SP], noPv: true, pvs: { sp: flat0({ market: "spot" }) } });
     f = open();
     ok("空手新策略(現貨,只能做多):寫「訊號翻多時才會進場」", J(f.notes) === J(["cf-note:tr.cf.flatLong"]) && f.rows.length === 0, J(f));
-    bag(draft({ pv: { weights: { "2330": 0, "2454": 0 } } })); f = open();
-    ok("空手新投資組合(台股現貨權重全 0):翻多那句", f.title === "tr.cf.title" && f.rows.length === 0 && f.notes.includes("cf-note:tr.cf.flatLong"), J(f));
-    bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0({ position: 1 }) } });
+    bag({ firing: true, picked: ["btc", "tw", "sp"], edits: { sp: 300 }, list: [SP], noPv: true, pvs: { sp: flat0({ market: "spot", position: -1 }) } });
+    f = open();
+    ok("現貨訊號是空單(壓成 0)也算空手:翻多那句(稽核 usfix2 P2-2)", f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flatLong"]), J(f));
+    bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0({ position: -1 }) } });
+    f = open();
+    ok("對照:合約空單照列賣單、不出空手那句", f.rows.some((x) => /^tr\.cf\.sellETHUSDT/.test(x)) && !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    const PS = { name: "ps", displayName: "PS", hasBacktest: true, symbol: null, portfolio: true, market: "spot", universe: ["ETHUSDT", "SOLUSDT"] };
+    bag({ firing: true, picked: ["btc", "tw", "ps"], edits: { ps: 300 }, list: [PS], noPv: true,
+      pvs: { ps: { type: "portfolio", market: "spot", weights: { ETHUSDT: 0, SOLUSDT: -0.5 }, closes: { ETHUSDT: 3000, SOLUSDT: 90 }, bar_at: BAR, bar_date: "2026-10-16", latest: true } } }); f = open();
+    ok("空手新投資組合(現貨,權重 0 與負權重壓 0):翻多那句", f.title === "tr.cf.title" && f.rows.length === 0 && f.notes.includes("cf-note:tr.cf.flatLong"), J(f));
+    bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0({ position: 1 }) } });
     f = open();
     ok("對照:新策略有部位 → 照列、不出空手那句", f.rows.length === 1 && !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
     bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0({ latest: false }) }, firing: true });

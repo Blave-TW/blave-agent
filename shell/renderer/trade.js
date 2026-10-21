@@ -3538,11 +3538,12 @@ function trCfQty(sym, money, px, stock) {
   if (TR_TWSTOCK_RE.test(k)) { const sh = Math.floor(q + 1e-9); return { n: sh, text: trFmt(sh), unit: "tr.cf.unitShares" }; }
   return { n: q, text: trQtyFmt(q), unit: stock ? "tr.cf.unitShares" : "tr.cf.unitCoins" };
 }
-/* 框裡的一支策略這一刻空手:Type A 部位 0、投資組合沒有一檔持有(trTypeC 的 n,現貨負權重已壓 0) */
+/* 框裡的一支策略這一刻空手:Type A 部位 0(只能做多的負部位同 trClientTargets 壓成 0)、投資組合沒有一檔持有(trTypeC 的 n,現貨負權重已壓 0) */
 function trCfFlat(s, n) {
   const tc = trTypeC(s, n);
   if (tc) return tc.n === 0;
-  return !!s && typeof s.position === "number" && s.position === 0;
+  if (!s || typeof s.position !== "number") return false;
+  return s.position === 0 || (s.position < 0 && trCfLongOnly(s, n));
 }
 // 只能做多:現貨,或路由到模擬交易的台股現股(trTwCash)。合約判不出能不能做空,算不是
 function trCfLongOnly(s, n) {
@@ -3735,7 +3736,9 @@ function trSaveAmounts(names, stored, opener, o) {
     const waiting = host ? miss.filter((n) => codeChanged.indexOf(n) < 0) : [];
     if (waiting.length && !cf.until) cf.until = now + (waiting.every((n) => { const x = TR.list.find((y) => y.name === n) || {}; return x.twdAll === true && !trTxfSpec(x.symbol); }) ? TR_CF_WAIT_TW_MS : TR_CF_WAIT_MS);
     const late = waiting.length > 0 && now >= cf.until, wait = waiting.length > 0 && !late;
-    const flatNew = fire || miss.length ? [] : Object.keys(sending).filter((n) => !(n in stored) && Number(sending[n]) > 0 && !!m.st.states[n] && trCfFlat(m.st.states[n], n));
+    // 「才會進場」只在真的會進場時講:下單程式在跑(不是暫停)、有連帳戶、這家下得了這個標的(trCfWillOrder)
+    const flatNew = fire || miss.length ? [] : Object.keys(sending).filter((n) => !(n in stored) && Number(sending[n]) > 0 && !!m.st.states[n]
+      && trCfFlat(m.st.states[n], n) && trCfWillOrder(n, m.st.states[n], ctAfter));
     const sig = JSON.stringify([fire, m, held, waiting, late, codeChanged, hostOld, unread, oldPv, flatNew, TR_TWN.v, trTxfPrice()]);
     if (sig === cf.sig) return; cf.sig = sig;
     body.textContent = "";

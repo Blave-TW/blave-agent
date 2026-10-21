@@ -231,7 +231,7 @@ spec2 = importlib.util.spec_from_file_location("wfb2", os.path.join(ROOT, "manag
 wfb2 = importlib.util.module_from_spec(spec2)
 spec2.loader.exec_module(wfb2)
 alerts = []
-wfb2._alert_failure = lambda: types.SimpleNamespace(alert=lambda *a: alerts.append(a))
+wfb2._alert_failure = lambda: types.SimpleNamespace(alert=lambda *a, **k: alerts.append(a))
 wfb2._STARTED = time.monotonic() - (wfb2.TICK_BUDGET_SECONDS - 30)
 check(wfb2._run_strategy_protected("pf") is False and alerts and "not started" in alerts[0][2],
       "a probe that used the tick budget: the run is not started (alerted), never SIGKILLed mid-run")

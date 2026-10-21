@@ -35,7 +35,7 @@ def alert(strategy_name, exit_code, output, transient=False):
         except (TypeError, ValueError):
             _code = None
         emit("strategy_failed", strategy=strategy_name, exit_code=_code,
-             error=str(output)[-500:])
+             error=str(output)[-500:], transient=bool(transient))
     except Exception:
         pass
 
