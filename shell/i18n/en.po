@@ -59,10 +59,6 @@ msgstr "Signed in"
 msgid "st.notFound"
 msgstr "Not found"
 
-# Codex 那一列「未偵測到」底下的一行(0.1.23):Windows 的 Codex 桌面版已併進 Microsoft Store 的「ChatGPT」(Store 搜 Codex 第一頁是仿冒品),Mac 在 ChatGPT.app 裡;只有 Codex 列、只在沒偵測到時出
-msgid "cn.codex.install"
-msgstr "Windows: install OpenAI’s “ChatGPT” from the Microsoft Store (Codex is inside it; don’t search for Codex). Mac: install ChatGPT.app."
-
 msgid "oauth.waiting"
 msgstr "Waiting for the browser…"
 

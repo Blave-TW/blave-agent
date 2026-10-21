@@ -61,9 +61,6 @@ msgstr "已登入"
 msgid "st.notFound"
 msgstr "未偵測到"
 
-msgid "cn.codex.install"
-msgstr "Windows：到 Microsoft Store 裝 OpenAI 的「ChatGPT」（Codex 在裡面，別搜 Codex）。Mac：裝 ChatGPT.app。"
-
 msgid "oauth.waiting"
 msgstr "等待瀏覽器授權…"
 

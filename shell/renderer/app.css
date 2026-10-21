@@ -1020,8 +1020,6 @@ body.resizing * { cursor: col-resize !important; }
 .cn-opt .t{flex:1;min-width:0}
 .cn-opt .n{margin:0;font-size:13px;font-weight:400;line-height:1.5;color:var(--ink)}
 .cn-opt .m{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* 說明固定一行(同 apikey.css 的 .cn-row .n small) */
-/* 「未偵測到」列底下的裝法那句比卡還寬:這兩處(連結畫面 .off 列 / 設定頁有狀態字的列)放行換行,其他說明照舊一行省略 */
-.cn-row.off .n small,.cn-opt:has(.st) .m{white-space:normal}
 .cn-opt .st{flex:none;display:flex;align-items:center;gap:var(--space-6);font-size:12px;color:var(--ink-3)}
 .cn-opt.is-cur{background:var(--surface-muted)}
 .cn-opt.is-cur .n{font-weight:600}
@@ -1271,7 +1269,7 @@ body.resizing * { cursor: col-resize !important; }
 .strat-flagbtn::before { content: ""; position: absolute; top: calc(50% - 17px); left: calc(50% - 17px); width: 34px; height: 34px; }
 .strat-wrap:is(:hover, :has(:focus-visible), .flag-open) .strat-flagbtn { opacity: 1; pointer-events: auto; }
 .strat-flagbtn:hover { background: var(--bg-body); color: var(--ink); }
-.strat-wrap .cs-del .ic, .strat-flagbtn .ic { stroke-width: 1.5; }   /* 列內動作 icon 跟著列的文字走(16px、1.5);✕ 跟旗標同一個重量 */
+.strat-wrap .cs-del .ic, .strat-flagbtn .ic, .sug-glyph .ic, .st-row .g .ic { stroke-width: 1.5; }   /* 列內動作 icon 跟著列的文字走(16px、1.5);✕ 跟旗標同一個重量 */
 /* 沒有 ✕ 的列(回合中、雲端機器停著)旗標鈕移到 ✕ 的位置 */
 .strat-wrap:not(:has(.cs-del:not(:disabled))) .strat-flagbtn { right: var(--space-6); }
 /* 旗標色 → 區域變數(canon › Color › Flag colors;面板色塊同吃);色條 = 2×16 pill 置中在軌內:列緣 5 / 條 2 / 淨空 5 */

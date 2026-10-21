@@ -46,6 +46,8 @@ function sugEsc(e) {
 $("sug-close").addEventListener("click", sugDismiss);
 $("sug-wrap").addEventListener("keydown", sugEsc);
 $("ta").addEventListener("keydown", sugEsc);
+// 兩處「點了 = 送成一句話」的列共用(這裡與 welcome.js 起手句):lucide corner-down-right
+const SEND_ROW_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg>';
 function sugRender(items) {
   const list = $("sug-rows");
   list.textContent = "";
@@ -53,7 +55,7 @@ function sugRender(items) {
     const b = document.createElement("button");
     b.type = "button"; b.className = "sug-item";
     const g = document.createElement("span");
-    g.className = "sug-glyph"; g.setAttribute("aria-hidden", "true"); g.textContent = "↳";
+    g.className = "sug-glyph"; g.setAttribute("aria-hidden", "true"); g.innerHTML = SEND_ROW_IC;
     const s = document.createElement("span");
     s.className = "txt"; s.textContent = text;
     b.append(g, s);

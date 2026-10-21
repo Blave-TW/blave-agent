@@ -270,8 +270,8 @@ if (!process.versions.electron) {
     ok("② 三列的順序固定 加密｜台股｜台指期、年份同送出句;tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
       /const ST_ROWS = \[\["crypto", 2020\], \["tw", 2022\], \["txf", 2015\]\];/.test(src) && STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股"
       && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");
-    ok("② 起手句的列:button.st-row[data-starter]、↳ aria-hidden、tag + 句子 + 起始年;送出照 suggest 的寫法(submitMessage 回 true 才記 starter_<mk> 與 pending);回合中是鎖(aria-disabled,點了在輸入框上方講原因;busy-lock spec)",
-      /wdEl\("button", "st-row"\); b\.type = "button"; b\.dataset\.starter = mk; busyLock\(b, runningNow\(\)\);/.test(cutFn(src, "stPaint")) && /if \(runningNow\(\)\) \{ busySendTell\(\); return; \}/.test(cutFn(src, "stGo")) && /g\.setAttribute\("aria-hidden", "true"\)/.test(cutFn(src, "stPaint"))
+    ok("② 起手句的列:button.st-row[data-starter]、送出 icon(SEND_ROW_IC)aria-hidden、tag + 句子 + 起始年;送出照 suggest 的寫法(submitMessage 回 true 才記 starter_<mk> 與 pending);回合中是鎖(aria-disabled,點了在輸入框上方講原因;busy-lock spec)",
+      /wdEl\("button", "st-row"\); b\.type = "button"; b\.dataset\.starter = mk; busyLock\(b, runningNow\(\)\);/.test(cutFn(src, "stPaint")) && /if \(runningNow\(\)\) \{ busySendTell\(\); return; \}/.test(cutFn(src, "stGo")) && /g\.setAttribute\("aria-hidden", "true"\); g\.innerHTML = SEND_ROW_IC;/.test(cutFn(src, "stPaint"))
       && /submitMessage\(text\)\.then\(\(ok\) => \{ if \(ok\) \{ trackFeature\(ST_FEATURE\[mk\]\); ST\.pending = \{ before \}; \} \}\);/.test(cutFn(src, "stGo")) && /busyLock\(b, runningNow\(\)\)/.test(cutFn(src, "stSync")));
     // stTurnEnd:原文接假的 RP / trackFeature 跑
     const turn = (before, after, pending) => { const tf = [], C = { RP: { list: after.map((name) => ({ name })) }, trackFeature: (n) => tf.push(n), ST: { pending: pending ? { before: new Set(before) } : null } };
@@ -398,9 +398,9 @@ app.whenReady().then(async () => {
   let k = await card();
   ok("③ A2 兩欄:兩欄各自是一張完整的卡(列 = --surface-card;各欄第一列上兩角、最後一列下兩角 = --radius-lg,中間的列直角;列間 1px 線、最後一列沒有;列緊貼;行尾 › 是 ::after、列裡沒有多的節點),兩張卡之間有欄距 16、等寬",
     k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
-  ok("③ 步驟內容同一條左軸:①的第一顆籤、起手句的 ↳、新增策略、欄小標、卡、「看全部資料」的左緣同一條 x,比記號內縮 32;由上到下 市場題 → 起手句 →(隔 8)新增策略那一列 → 清單",
+  ok("③ 步驟內容同一條左軸:①的第一顆籤、起手句的送出 icon、新增策略、欄小標、卡、「看全部資料」的左緣同一條 x,比記號內縮 32;由上到下 市場題 → 起手句 →(隔 8)新增策略那一列 → 清單",
     axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toOpts - 8) < 0.6 && Math.abs(k.head.indent - 32) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
-  { // 起手句的列(§1.4):tag 欄三列等寬(subgrid)、句子不溢出、↳ 不進讀屏名字;只填不送 / 回合中 disabled
+  { // 起手句的列(§1.4):tag 欄三列等寬(subgrid)、句子不溢出、送出 icon 不進讀屏名字;只填不送 / 回合中 disabled
     const geoSt = () => js(`[...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tg = b.querySelector(".tag"), tx = b.querySelector(".txt"), sn = b.querySelector(".since"), r = (e) => e.getBoundingClientRect();
       return { mk: b.dataset.starter, tagW: r(tg).width, tagL: r(tg).left, tagOn: getComputedStyle(tg).display !== "none", txtL: r(tx).left, txtT: r(tx).top, sinceT: r(sn).top, sinceL: r(sn).left, over: tx.scrollWidth - tx.clientWidth, rowOver: b.scrollWidth - b.clientWidth, h: r(b).height, txt: tx.textContent, since: sn.textContent }; })`);
     const g1 = await geoSt();
@@ -412,8 +412,8 @@ app.whenReady().then(async () => {
       const look = () => js(`(() => { const b = $("st-rows").querySelector(".st-row"), pr = document.createElement("i"); pr.style.cssText = "position:absolute;background:var(--surface-card)"; document.body.appendChild(pr); const card = getComputedStyle(pr).backgroundColor; pr.remove();
         return { on: b.matches(":hover"), bg: getComputedStyle(b).backgroundColor, tag: getComputedStyle(b.querySelector(".tag")).backgroundColor, card, name: b.textContent }; })()`);
       w.webContents.sendInputEvent({ type: "mouseMove", x: pt.x, y: pt.y }); await wait(400); const h = await look(); w.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 }); await wait(300);
-      ok("③ 起手句 hover:底色 = --surface-card(spec §10-1),跟市場 tag 不同色、tag 看得到;按鈕名字裡 tag、句子、起始年之間有空白(讀屏不黏在一起)",
-        h.on && h.bg === h.card && h.bg !== h.tag && h.name === "↳" + Z["wd.mk.crypto"] + " " + Z["starter_crypto_row"] + " " + Z["starter_since"].replace("{y}", "2020"), JSON.stringify(h)); }
+      ok("③ 起手句 hover:底色 = --surface-card(spec §10-1),跟市場 tag 不同色、tag 看得到;按鈕名字裡 tag、句子、起始年之間有空白(讀屏不黏在一起)、名字前面沒有 icon 的字",
+        h.on && h.bg === h.card && h.bg !== h.tag && h.name === Z["wd.mk.crypto"] + " " + Z["starter_crypto_row"] + " " + Z["starter_since"].replace("{y}", "2020"), JSON.stringify(h)); }
     const fill = await js(`(() => { window.__tf.length = 0; cur = "blave"; hasToken = true; acct = { can_run: false, reason: "NO_CARD" }; $("ta").value = "my idea"; WD.filled = ""; WD.pre = "";
       $("st-rows").querySelector('[data-starter="txf"]').click(); const r = { ta: $("ta").value, tf: window.__tf.slice(), msgs: $("chat-scroll").querySelectorAll(".msg").length, running, seg: $("wl-seg").querySelector('[aria-pressed="true"]').dataset.mk };
       $("st-rows").querySelector('[data-starter="crypto"]').click(); r.ta2 = $("ta").value; r.tf2 = window.__tf.slice(); return r; })()`);

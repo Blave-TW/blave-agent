@@ -66,7 +66,7 @@ ok("sugItems:items 不是陣列 → 空", ctx.sugItems({ items: "a" }).length ==
   ok("收到 chunk 先收著,回合還沒結束不長出", !open() && W["sug-rows"].children.length === 0);
   ctx.sugTurnEnd(true); await wait();
   ok("回合結束停一拍才長出,最多 3 行、inert 拿掉、is-closed 拿掉", open() && JSON.stringify(rows()) === JSON.stringify(["一", "二", "三"]), rows());
-  ok("行是 button、行首 ↳ 對讀屏隱藏、句子走 textContent", W["sug-rows"].children.every((b) => b.type === "button" && b.children[0].attrs["aria-hidden"] === "true" && b.children[0].textContent === "↳"));
+  ok("行是 button、行首送出 icon(svg.ic)對讀屏隱藏、不帶字;句子走 textContent", W["sug-rows"].children.every((b) => b.type === "button" && b.children[0].attrs["aria-hidden"] === "true" && /^<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">/.test(b.children[0].innerHTML) && b.children[0].textContent === ""));
   ok("長出時記 suggest_shown(只送名字)", JSON.stringify(ctx.tracked) === JSON.stringify(["suggest_shown"]));
   W["sug-rows"].children[1].focus();
   W["sug-rows"].children[1].listeners.click(); await wait();

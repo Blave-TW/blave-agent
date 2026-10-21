@@ -162,7 +162,7 @@ function stPaint() {
   ST.lang = LANG; box.textContent = "";
   ST_ROWS.forEach(([mk, y]) => {
     const b = wdEl("button", "st-row"); b.type = "button"; b.dataset.starter = mk; busyLock(b, runningNow());
-    const g = wdEl("span", "g", "↳"); g.setAttribute("aria-hidden", "true");
+    const g = wdEl("span", "g"); g.setAttribute("aria-hidden", "true"); g.innerHTML = SEND_ROW_IC;
     const mkKey = "wd.mk." + mk, rowKey = "starter_" + mk + "_row";   // key 先組好再查(同 wdK;各市場兩語齊不齊由 tests/check_shell_welcome_data.js 列舉)
     // 中間的空白文字節點給讀屏斷詞(grid 裡看不出來):不然按鈕名字是「加密BTC 日線…2020 起」
     b.append(g, wdEl("span", "tag", t(mkKey)), " ", wdEl("span", "txt", t(rowKey)), " ", wdEl("span", "since", t("starter_since", { y })));
