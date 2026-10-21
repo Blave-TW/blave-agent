@@ -1,13 +1,14 @@
-"""US daily signals live on the desktop, traded on the stock's crypto perp (NVDA → NVDAUSDT).
+"""US daily signals live on the desktop and the cloud, traded on the stock's crypto perp (NVDA → NVDAUSDT).
 
   lib.data gate (fetch_usstock_price on a live tick, BLAVE_MODE=live):
-  - passes only on the desktop, inside us_live_strategy(name, SYMBOL), for a strategy routed to a
-    crypto exchange or paper whose SYMBOL is the ticker's Binance EQUITY perp
-  - refused (UsStockNotHere, the reason in Chinese, no request to Yahoo): cloud; no scope (an
+  - passes, desktop and cloud alike, only inside us_live_strategy(name, SYMBOL), for a strategy routed
+    to a crypto exchange or paper whose SYMBOL is the ticker's Binance EQUITY perp
+  - refused (UsStockNotHere, the reason in Chinese, no request to Yahoo): no scope (an
     older runner); no venue; a TW broker; Type C (no SYMBOL); bare 'NVDA'; another stock's perp;
     a coin; SPY beside NVDAUSDT
   - Binance's list or the 下單設定 unreadable → UsStockUnavailable (a failed round), no request
-  - backtests, chat and scheduled reports need no scope, as before; the pass does not outlive the
+  - backtests, chat and scheduled reports (desktop and cloud) need no scope, as before — but a live
+    scope inside a scheduled report (its run.py calling lib.runner.run) is gated; the pass does not outlive the
     call (a private Yahoo fetcher on the same live tick is refused afterwards)
   runner (lib.runner.run, live):
   - a NVDAUSDT strategy on Binance writes state.json {symbol: NVDAUSDT} from the Yahoo bars
@@ -124,11 +125,18 @@ for venue in ("binance", "bingx", "okx", "gateio", "bybit", "paper"):
     df, err = fetch()
     check(err is None and df is not None and len(df) and calls == [("yahoo", "NVDA")],
           f"desktop live tick, NVDA → NVDAUSDT routed to {venue}: fetched ({err!r})")
+env(local=False)
+for venue in ("binance", "bingx", "paper"):
+    route("us_nvda", venue)
+    df, err = fetch()
+    check(err is None and df is not None and len(df) and calls == [("yahoo", "NVDA")],
+          f"cloud live tick (no BLAVE_AGENT_LOCAL), NVDA → NVDAUSDT routed to {venue}: fetched ({err!r})")
 
 route("us_nvda", "binance")
 cases = (
-    ("cloud", dict(local=False), "NVDA", ("us_nvda", "NVDAUSDT"), "電腦版"),
     ("no scope (older runner)", {}, "NVDA", None, "沒有標明"),
+    ("cloud, no scope", dict(local=False), "NVDA", None, "沒有標明"),
+    ("cloud, bare SYMBOL 'NVDA'", dict(local=False), "NVDA", ("us_nvda", "NVDA"), "NVDAUSDT"),
     ("bare SYMBOL 'NVDA'", {}, "NVDA", ("us_nvda", "NVDA"), "NVDAUSDT"),
     ("another stock's perp (AAPLUSDT)", {}, "NVDA", ("us_nvda", "AAPLUSDT"), "對不上"),
     ("a coin (BTCUSDT)", {}, "BTC", ("us_nvda", "BTCUSDT"), "不是 Binance 的股票永續"),
@@ -165,10 +173,21 @@ check(isinstance(err, D.UsStockNotHere) and "台灣期貨商" in str(err),
 MIRROR.unlink()
 
 for label, kw in (("chat / backtest (no BLAVE_MODE)", dict(mode=None)), ("BLAVE_MODE=backtest", dict(mode="backtest")),
-                  ("desktop scheduled report", dict(scheduled=True))):
+                  ("desktop scheduled report", dict(scheduled=True)),
+                  ("cloud chat / backtest", dict(local=False, mode=None)),
+                  ("cloud scheduled report", dict(local=False, scheduled=True))):
     env(**kw)
     df, err = fetch(scope=None)
     check(err is None and calls == [("yahoo", "NVDA")], f"{label}: fetched without a scope ({err!r})")
+for local in (True, False):  # a report's run.py running a picked strategy live is a tick
+    where = "desktop" if local else "cloud"
+    env(local=local, scheduled=True)
+    df, err = fetch(scope=("us_nvda", "NVDA"))
+    check(isinstance(err, D.UsStockNotHere) and "NVDAUSDT" in str(err) and calls == [],
+          f"{where} scheduled report, live scope, bare SYMBOL 'NVDA': refused, no request ({err!r})")
+    df, err = fetch()
+    check(err is None and calls == [("yahoo", "NVDA")],
+          f"{where} scheduled report, live scope, NVDAUSDT on binance: fetched ({err!r})")
 
 env()
 fetch()

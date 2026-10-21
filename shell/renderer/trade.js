@@ -725,7 +725,7 @@ function trSrcMarket(r, n) {
   return x.srcMarket || (k && k.market) || null;
 }
 /* 美股純代號(AMZN):沒有交易所尾碼、不是台指期／台股,貢獻的策略全是 us_stock。不分交易所(模擬交易也是)都不會自動下單——
-   lib/data._us_require_desktop 擋掉實盤 tick。sym 沒有(草稿還沒有標的)只看市場。標籤、帳上／差額、會送單共用這一條 */
+   lib/data._us_live_gate 擋掉實盤 tick、存檔時是 US_SYMBOL。sym 沒有(草稿還沒有標的)只看市場。標籤、帳上／差額、會送單共用這一條 */
 function trUsNoAuto(r, sym, names) {
   if (!Array.isArray(names) || !names.length || !names.every((n) => trSrcMarket(r, n) === "us_stock")) return false;
   if (sym == null || sym === "") return true;

@@ -1601,6 +1601,18 @@ job's id. Nobody is watching it:
   fallback of a failed agent turn, `BLAVE_REPORT_DEGRADED` carries the reason, and only a template
   `publish(pack)` turns it into the footnote line. A report reaches the platform only by landing in `reports/` —
   `write_report(...)` or a template `publish(pack)` (§1b), with pictures in the sidecar (§5).
+- Never call `lib.runner.run` in it. `run.py` runs with `BLAVE_MODE=live`, so that is a live run:
+  it writes the strategy's `state.json` (the target the reconciler trades), and a US-stock
+  strategy that is not deployed on its perp is refused (`UsStockNotHere`). Switching it to
+  backtest is no way out either: that mints a version when the code changed, runs MCPT and the
+  chart export, and eats the 600 s. To show a strategy's current signal, call its own functions:
+  swap `lib.runner.run` for a no-op first (`import lib.runner; lib.runner.run = lambda *a, **k: None`
+  — the file's last line calls `run(...)` at import), load `strategies/<name>/strategy.py`
+  (`importlib.util.spec_from_file_location`), then
+  `with closed_bars_only(): df = mod.fetch_data(headers_from_env())` (`closed_bars_only` from
+  `lib.data`, `headers_from_env` from `lib.report_templates`; the last row is then a closed bar)
+  and read the last row of `mod.compute_signals(df)` (its first element when it returns a tuple).
+  A direct `fetch_usstock_price` here is not a live tick, so it is not refused.
 - Write nothing when there is nothing to report. Exit 0 with no new `reports/*.json` is
   recorded as `skipped`, which is the correct outcome for a signal-only job; a non-zero
   exit or a run over 600 s is `failed` (the tail of `run.log` shows in the web, and the

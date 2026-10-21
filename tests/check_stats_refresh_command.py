@@ -40,6 +40,7 @@ import sys
 import tempfile
 import time
 import types
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME = os.path.join(ROOT, "runtime")
@@ -378,8 +379,14 @@ check(cl._RERUN_ERRS == rep.RERUN_ERRS and {"SUPERSEDED", "BUSY"} <= set(cl._RER
 # live path: the file edited mid-run → the runner discards the run (rc 0, stats.json untouched) → SUPERSEDED
 flags(n=360, sleep=4)
 mt = os.stat(os.path.join(SDIR, "stats.json")).st_mtime_ns
+Path(SDIR, "env.json").unlink(missing_ok=True)
 send([NAME])
-time.sleep(1.5)
+# env.json is written in fetch_data, after run() has read the source it compares against;
+# a fixed sleep raced a slow import under load and the edit landed before that read.
+t0 = time.time()
+while not os.path.exists(os.path.join(SDIR, "env.json")) and time.time() - t0 < 60:
+    time.sleep(0.05)
+check(os.path.exists(os.path.join(SDIR, "env.json")), "the live refresh reached fetch_data within 60 s")
 with open(os.path.join(SDIR, "strategy.py"), "a", encoding="utf-8") as f:
     f.write("# edited mid-run\n")
 check(wait_idle(), "the superseded live refresh finished")
@@ -401,7 +408,7 @@ os.remove(cold(cl.PERF_REFRESH_FILE))
 # the sweep while a button refresh holds the machine: skipped, no failed record on any member
 old = time.time() - 2 * cl.STATS_REFRESH_MIN_AGE_S
 os.utime(os.path.join(SDIR, "stats.json"), (old, old))
-os.remove(os.path.join(SDIR, cl.PERF_REFRESH_FILE))
+Path(SDIR, cl.PERF_REFRESH_FILE).unlink(missing_ok=True)
 cl._bound_venue = lambda: True
 cl._STATS_REFRESH_LOCK.acquire()
 cl._refresh_live_stats("locked")

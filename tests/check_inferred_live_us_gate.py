@@ -7,8 +7,11 @@ state.json the scheduled ticks (refused) could never update; the reconciler kept
   - picked, BLAVE_MODE=backtest      → the escape hatch still fetches
   - not picked, no BLAVE_MODE        → a backtest, fetches
   - BLAVE_MODE is unset again after every run() (a second in-process run infers its own mode)
+  - the same on a cloud machine (no BLAVE_AGENT_LOCAL)
+  - a scheduled report's run.py (BLAVE_MODE=live, BLAVE_SCHEDULED_RUN=1) running the picked strategy
+    → UsStockNotHere, no state.json, desktop and cloud
 
-No network: fetch_data_fn calls the real gate (lib.data._us_require_desktop) and returns a frame.
+No network: fetch_data_fn calls the real gate (lib.data._us_request_gate) and returns a frame.
 
 Run: cd blave-agent && .venv/bin/python tests/check_inferred_live_us_gate.py
 """
@@ -56,13 +59,14 @@ fetched = []
 
 
 def fetch(hdrs):
-    data._us_require_desktop()
+    data._us_request_gate()
     fetched.append(1)
     return DF
 
 
 def go(env_mode):
     fetched.clear()
+    STATE.unlink(missing_ok=True)
     os.environ.pop("BLAVE_MODE", None)
     if env_mode:
         os.environ["BLAVE_MODE"] = env_mode
@@ -78,15 +82,27 @@ def go(env_mode):
     return err, after
 
 
-os.environ["BLAVE_AGENT_LOCAL"] = "1"
 os.environ.pop("BLAVE_SCHEDULED_RUN", None)
 
-CFG.write_text(json.dumps({"amounts": {NAME: 100}, "exchanges": {NAME: "paper"}}))
-err, after = go(None)
-check(isinstance(err, data.UsStockNotHere), f"picked + no BLAVE_MODE → UsStockNotHere (got {err!r})")
-check(not fetched, "picked + no BLAVE_MODE → Yahoo never reached")
-check(not STATE.exists(), "picked + no BLAVE_MODE → no state.json written")
-check(after is None, f"BLAVE_MODE restored after the inferred-live run (got {after!r})")
+for where in ("desktop", "cloud"):
+    if where == "desktop":
+        os.environ["BLAVE_AGENT_LOCAL"] = "1"
+    else:
+        os.environ.pop("BLAVE_AGENT_LOCAL", None)
+    CFG.write_text(json.dumps({"amounts": {NAME: 100}, "exchanges": {NAME: "paper"}}))
+    err, after = go(None)
+    check(isinstance(err, data.UsStockNotHere), f"{where}: picked + no BLAVE_MODE → UsStockNotHere (got {err!r})")
+    check(not fetched, f"{where}: picked + no BLAVE_MODE → Yahoo never reached")
+    check(not STATE.exists(), f"{where}: picked + no BLAVE_MODE → no state.json written")
+    check(after is None, f"{where}: BLAVE_MODE restored after the inferred-live run (got {after!r})")
+
+    os.environ["BLAVE_SCHEDULED_RUN"] = "1"
+    err, after = go("live")
+    os.environ.pop("BLAVE_SCHEDULED_RUN", None)
+    check(isinstance(err, data.UsStockNotHere) and not fetched and not STATE.exists(),
+          f"{where}: scheduled report runs the picked strategy live → UsStockNotHere, no state.json (got {err!r})")
+
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
 
 err, after = go("backtest")
 check(err is None and fetched, f"picked + BLAVE_MODE=backtest → fetches (err {err!r})")

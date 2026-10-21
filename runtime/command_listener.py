@@ -397,7 +397,7 @@ def _local_child_env(**extra):
     """Env for every workspace subprocess in local mode. Allowlist like the
     Linux one, plus the path variables that have no /opt/blave-agent default to
     fall back on here, BLAVE_AGENT_LOCAL=1 (a child of the desktop daemon IS on
-    the user's own computer — lib.data's key-free TAIFEX / TWSE / Yahoo paths
+    the user's own computer — lib.data's key-free TAIFEX / TWSE paths
     open on that flag, and a live tick must see the same data its backtest did)
     and the data-access flags (_data_access_flags). Any other BLAVE_* stays out
     of strategy code.
@@ -3527,7 +3527,7 @@ def _strategy_source(name):
 
 def _us_signal_refusal(name, venue):
     """The save's half of the US-stock rule (lib.data._us_live_gate is the tick's): a strategy
-    whose prices include fetch_usstock_price trades only on the desktop, as a Type A whose SYMBOL
+    whose prices include fetch_usstock_price trades (desktop or cloud) only as a Type A whose SYMBOL
     is the ticker's Binance stock perp (lib.stock_perps.us_signal_refusal), and — routed to a
     crypto exchange — only where that exchange lists the perp. The refusal sentence, or None.
     Binance's list or the exchange's contract list unreadable → that part is not judged (the
@@ -3540,11 +3540,13 @@ def _us_signal_refusal(name, venue):
     fetchers, symbol = strategy_reporter._referenced_fetchers(src)
     if "fetch_usstock_price" not in fetchers:
         return None
-    if not _local_mode():
-        return (f"US_CLOUD: 「{name}」用美股資料出訊號,美股資料只在電腦版抓得到——"
-                "請在電腦版上線,或取消勾選後再儲存")
     if _strategy_is_portfolio(name) or strategy_reporter.strategy_type(src) == "C":
         return (f"US_SYMBOL: 「{name}」是投資組合(Type C)策略,美股訊號目前只能用單一標的策略下單"
+                "——請取消勾選後再儲存")
+    if not _strategy_has_interval(name):
+        # Type B runs from cron without lib.runner's us_live_strategy scope: every tick would be
+        # UsStockNotHere while the page shows it live
+        return (f"US_SYMBOL: 「{name}」是 Type B 策略,美股訊號只能用 Type A 單一標的策略下單"
                 "——請取消勾選後再儲存")
     tickers = strategy_reporter.usstock_tickers(src)
     try:

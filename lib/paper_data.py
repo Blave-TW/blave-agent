@@ -27,9 +27,9 @@ level nobody ever quoted.
     so the shares on the page are the shares the paper account buys. A symbol
     an intraday Type A trades takes its latest unadjusted bar (_tw_stock_price).
   * US stocks (a symbol a strategy fetches with fetch_usstock_price): Yahoo's
-    latest final unadjusted daily close — on the desktop a hand-placed paper
-    order fills at it; lib.data refuses Yahoo on every live tick and on a cloud
-    machine, so an automatic US paper order is refused (PaperNoPrice).
+    latest final unadjusted daily close — a hand-placed paper order fills at
+    it; lib.data refuses Yahoo on every live tick, so an automatic US paper
+    order is refused (PaperNoPrice).
   * anything else (fetch_db_kline CME/ICE futures): the owning strategy's
     fetch_data, latest Close — that series is the front contract's own price.
 Nothing priced → PaperNoPrice: an entry is refused, a close falls back to the

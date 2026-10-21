@@ -1,12 +1,14 @@
 """Saving the 下單設定 (command_listener._cmd_amounts) with a strategy whose prices include
-fetch_usstock_price: it trades only on the desktop, as a Type A whose SYMBOL is the ticker's
-Binance stock perp, and only on an exchange that lists that perp. Each refusal names the
+fetch_usstock_price: it trades — on the desktop and on a cloud machine alike — only as a Type A
+whose SYMBOL is the ticker's Binance stock perp, and only on an exchange that lists that perp. Each refusal names the
 strategy (`CODE: 「name」…`) and writes nothing.
 
   - desktop, NVDA signal, SYMBOL NVDAUSDT: saves on Binance, on paper, with no venue bound
-  - US_CLOUD: any US strategy on a cloud machine, picked at any amount, whatever its SYMBOL
+  - cloud: the same rules — NVDA on NVDAUSDT saves (Binance, paper, no venue); bare SYMBOL, Type C
+    and Type B (cron, no live scope: every tick would refuse) are US_SYMBOL; there is no US_CLOUD
   - US_SYMBOL: bare SYMBOL 'NVDA', no SYMBOL, a ticker that is not the traded stock (SPY beside
     NVDAUSDT), a ticker the code does not spell out, a coin (BTCUSDT), a Type C — paper too
+  - desktop Type B: TYPE_B (the desktop runs no Type B at all), checked before any US rule
   - US_VENUE: the bound exchange has no such perp (symbol_unavailable), or lists it as a coin
   - fail-open: Binance's list or the exchange's contract list unreadable → saves (the order is
     refused later), as the TW checks do
@@ -58,7 +60,7 @@ def strat(name, body, typ="A", stats=None):
     d = os.path.join(WS, "strategies", name)
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "strategy.py"), "w") as f:
-        f.write(f'# Type:     {typ}\nSTRATEGY_NAME = "{name}"\nINTERVAL = "1d"\n{body}')
+        f.write(body if typ is None else f'# Type:     {typ}\nSTRATEGY_NAME = "{name}"\nINTERVAL = "1d"\n{body}')
     if stats is not None:
         with open(os.path.join(d, "stats.json"), "w") as f:
             json.dump(stats, f)
@@ -74,6 +76,8 @@ strat("us_filter", US + "SYMBOL = 'NVDAUSDT'\n\ndef fetch_data(h):\n    a = fetc
 strat("us_loop", US + "SYMBOL = 'NVDAUSDT'\n\ndef fetch_data(h):\n    for t in ['NVDA']:\n"
       "        return fetch_usstock_price(t, '2020-01-01', None)\n")
 strat("us_coin", US + "SYMBOL = 'BTCUSDT'\n\ndef fetch_data(h):\n    return fetch_usstock_price('BTC', '2020-01-01', None)\n")
+strat("us_typeb", "# Type:     B\nSTRATEGY_NAME = \"us_typeb\"\n" + US + "SYMBOL = 'NVDAUSDT'\n"
+      "fetch_usstock_price('NVDA', '2020-01-01', None)\n", typ=None)
 strat("us_basket", US + "UNIVERSE = ['NVDA', 'SPY']\n", typ="C", stats={"benchmark_return": 1.0})
 strat("btc_sma", "from lib.data import fetch_kline\nSYMBOL = 'BTCUSDT'\n")
 strat("tw_2330", "from lib.data import fetch_twstock_price_adj\nSYMBOL = '2330'\n")
@@ -111,13 +115,39 @@ BINANCE = "BINANCE_API_KEY=a\nBINANCE_SECRET_KEY=b\n"
 BINGX = "BINGX_API_KEY=a\nBINGX_SECRET_KEY=b\n"
 PAPER = "PAPER_API_KEY=paper\nPAPER_SECRET_KEY=paper\n"
 
+def unlisted(env, sym):
+    raise obx.BingXError("N/A", f"symbol {sym} not found in /quote/contracts", "contracts",
+                         kind="symbol_unavailable")
+
+
 # ── cloud ──────────────────────────────────────────────────────────────────
-bind(BINANCE)
-for name in ("us_nvda", "us_bare", "us_basket"):
+for lines, venue in ((BINANCE, "binance"), (PAPER, "paper"), ("", "")):
     for amt in (100, 0):
-        ok, err = refused("US_CLOUD", name, {name: amt}, "電腦版")
-        check(ok, f"cloud: {name} at {amt} is refused US_CLOUD, nothing written ({err})")
+        bind(lines)
+        err = save({"us_nvda": amt})
+        cfg = json.load(open(CONFIG)) if os.path.exists(CONFIG) else {}
+        check(err is None and cfg.get("amounts") == {"us_nvda": float(amt)}
+              and cfg.get("exchanges", {}).get("us_nvda", "") == venue,
+              f"cloud, {venue or 'no venue'}: NVDA signal on NVDAUSDT saves at {amt} ({err})")
+bind(BINANCE)
+for name, words in (("us_bare", ("NVDAUSDT",)), ("us_basket", ("Type C",)), ("us_typeb", ("Type B", "Type A"))):
+    ok, err = refused("US_SYMBOL", name, {name: 100}, *words)
+    check(ok and "電腦版" not in (err or ""), f"cloud: {name} is refused US_SYMBOL ({err})")
+for lines in (PAPER, ""):
+    bind(lines)
+    ok, err = refused("US_SYMBOL", "us_typeb", {"us_typeb": 100}, "Type B")
+    check(ok, f"cloud, {'paper' if lines else 'no venue'}: a US Type B is refused US_SYMBOL ({err})")
+bind(BINANCE)
+RULES["bingx"] = unlisted
+bind(BINGX)
+ok, err = refused("US_VENUE", "us_nvda", {"us_nvda": 100}, "BingX")
+check(ok, f"cloud, BingX without the perp: US_VENUE, as on the desktop ({err})")
+RULES["bingx"] = lambda env, sym: {"equity": True}
+bind(BINANCE)
 check(save({"btc_sma": 100}) is None, "cloud: a crypto strategy still saves")
+check("US_CLOUD" not in open(
+      os.path.join(ROOT, "runtime", "command_listener.py"), encoding="utf-8").read(),
+      "command_listener has no US_CLOUD refusal left")
 
 # ── desktop ────────────────────────────────────────────────────────────────
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
@@ -137,11 +167,10 @@ for lines, venue in ((BINANCE, "binance"), (PAPER, "paper")):
     bind(lines)
     ok, err = refused("US_SYMBOL", "us_basket", {"us_basket": 100}, "Type C")
     check(ok, f"desktop, {venue}: a US Type C is refused US_SYMBOL ({err})")
-
-
-def unlisted(env, sym):
-    raise obx.BingXError("N/A", f"symbol {sym} not found in /quote/contracts", "contracts",
-                         kind="symbol_unavailable")
+for lines, venue in ((BINANCE, "binance"), (PAPER, "paper"), ("", "")):
+    bind(lines)
+    ok, err = refused("TYPE_B", "us_typeb", {"us_typeb": 100}, "Type B")
+    check(ok, f"desktop, {venue or 'no venue'}: a US Type B is refused TYPE_B, not US_SYMBOL ({err})")
 
 
 bind(BINGX)
