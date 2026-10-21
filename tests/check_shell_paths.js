@@ -49,7 +49,7 @@ function consts(platform, arch, resourcesPath) {
   t("darwin: 隨包 Python 照 process.arch 挑(x64 → python-x64)", consts("darwin", "x64", "/R").BUNDLED_PY === "/R/python-x64/bin/python3");
   // 0.1.12 起 venv 與 pip 在 shell/enginesetup.js(spawn 逐行讀進度);main.js 傳 BASE / VENV_BIN / WIN 進去
   const eng = fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8");
-  t("venv 建立與 pip 都走 spawn 陣列,沒有 /bin/sh -c 字串", /await run\(o\.basePython\(\), \["-m", "venv", venvDir\], envPath, o\.venvMs\)/.test(eng) && /const venvDir = path\.join\(o\.base, "venv"\);/.test(eng) && !/shell: true/.test(eng) && !/"\/bin\/sh"/.test(src + eng));
+  t("venv 建立與 pip 都走 spawn 陣列,沒有 /bin/sh -c 字串", /await run\(my, o\.basePython\(\), \["-m", "venv", venvDir\], envPath, o\.venvMs\)/.test(eng) && /const venvDir = path\.join\(o\.base, "venv"\);/.test(eng) && !/shell: true/.test(eng) && !/"\/bin\/sh"/.test(src + eng));
   t("venv 斷掉的 symlink 修復只在非 Windows 做(Scripts\\ 沒有連結)", /for \(const n of !o\.win && fs\.existsSync\(vbin\)/.test(eng) && /const vbin = path\.join\(venvDir, o\.venvBin\)/.test(eng) && /venvBin: VENV_BIN, win: WIN,/.test(src));
   t("選單列圖示:win32 用 assets/tray.ico、darwin 仍是 trayTemplate.png;Windows 有 setAppUserModelId(不然通知不出 toast)",
     /WIN \? nativeImage\.createFromPath\(path\.join\(__dirname, "assets", "tray\.ico"\)\)/.test(src) && fs.existsSync(path.join(SHELL, "assets", "tray.ico"))

@@ -419,9 +419,6 @@ msgstr "Install strategy packages"
 msgid "eng.venv"
 msgstr "Create Python environment"
 
-msgid "eng.nth"
-msgstr "{i} of {n}: {name}"
-
 msgid "eng.bytes"
 msgstr "{a} / {b} MB"
 
@@ -448,14 +445,20 @@ msgid "eng.failOther"
 msgstr "Setup didn’t finish."
 
 msgid "eng.failSub"
-msgstr "Retry picks up at {name}; finished packages are kept. The message above sends once setup finishes."
+msgstr "Files that finished downloading won’t download again. The message above sends once setup finishes."
 
 # 背景安裝失敗、沒有一句話在等時:eng.failSub 截掉最後一句(那句講的是要送出的訊息)
 msgid "eng.failSubIdle"
-msgstr "Retry picks up at {name}; finished packages are kept."
+msgstr "Files that finished downloading won’t download again."
 
 msgid "eng.toHead"
 msgstr "{name} didn’t finish installing within {limit} and was stopped."
+
+msgid "eng.waitPyc"
+msgstr "Waiting for a background task from last time to finish. Setup continues after {limit} at most."
+
+msgid "eng.toHeadPkgs"
+msgstr "Installing strategy packages didn’t finish within {limit} and was stopped."
 
 msgid "eng.toHeadVenv"
 msgstr "Creating the Python environment didn’t finish within {limit} and was stopped."
@@ -467,7 +470,7 @@ msgid "eng.venvSubHeld"
 msgstr "This step runs on this computer and doesn’t use the network. Retry picks up at this step; the message above sends once setup finishes."
 
 msgid "eng.toSub"
-msgstr "The connection may be too slow, or a company network or VPN may be blocking the download. Retry picks up at {name}."
+msgstr "The connection may be too slow, or a company network or VPN may be blocking the download. Files that finished downloading won’t download again."
 
 msgid "eng.details"
 msgstr "Error Details"

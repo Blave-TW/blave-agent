@@ -306,7 +306,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), showMain: () => log.push("showMain"), BrowserWindow: { getAllWindows: () => [] }, tmLabels: { ...L, quitBody: "q {venue}", quitTitle: "t", quitTurnTitle: "tt", quitTurnBody: "tb" }, venueName: () => "Binance", cloudSt: () => null, twLots: () => ({ pres: { lots: 0, known: true }, cap: { lots: 0, known: true }, held: false }),
         TT: { quitDetail: TT.quitDetail, cloudTrading: () => false, stayGo: TT.stayGo }, process: { platform: "darwin" }, dialog: { showMessageBox: () => { log.push("dialog"); return new Promise(() => {}); } },
         _tradeHost: o.daemon ? { isRunning: () => true, stop: () => new Promise((ok) => setTimeout(() => { log.push("daemon:stopped"); ok(); }, 10)) } : null,
-        _engineSetup: { busy: () => !!o.installing }, engineAbort: () => new Promise((ok) => setTimeout(() => { log.push("engineAbort"); ok(true); }, 5)),
+        _engineSetup: { busy: () => !!o.installing, compiling: () => !!o.compiling }, engineAbort: () => new Promise((ok) => setTimeout(() => { log.push("engineAbort"); ok(true); }, 5)),
         app: { on: (ev, fn) => { ctx.handler = fn; }, quit: () => log.push("app.quit") } };
       new Function("ctx", "with (ctx) { " + BQ + "); }")(ctx);
       return { fire: async () => { const e = { prevented: false, preventDefault() { this.prevented = true; } }; ctx.handler(e); await sleep(40); return e.prevented; }, log, ctx };
@@ -315,6 +315,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       t("結束 app、pip 在跑:先攔下、收掉 pip、再 app.quit()", prevented && q.log.join() === "engineAbort,app.quit" && q.ctx.quitting === true, q.log); }
     { const q = quitRig({ installing: true, daemon: true }); await q.fire();
       t("…常駐程式也在跑:兩個都收完才 app.quit()", q.log.includes("engineAbort") && q.log.includes("daemon:stopped") && q.log[q.log.length - 1] === "app.quit", q.log); }
+    { const q = quitRig({ compiling: true }); const prevented = await q.fire();
+      t("…只有背景編 .pyc 在跑(0.1.28):同樣先攔下、收掉(engineAbort 連它一起收)、再 app.quit(),不留孤兒 python", prevented && q.log.join() === "engineAbort,app.quit", q.log); }
     { const q = quitRig({}); const prevented = await q.fire();
       t("…都沒在跑:不攔、不收", !prevented && q.log.length === 0, q.log); }
     { const a = quitRig({ live: true, moveAsking: true }), b = quitRig({ turn: true, moveAsking: true }), c = quitRig({ live: true });
