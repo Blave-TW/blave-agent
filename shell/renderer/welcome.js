@@ -1,6 +1,6 @@
 /* 歡迎頁(只有「這台電腦」視角;spec .claude/output/specs/agent-onboarding-e-f-spec-2026-10-19.md,mockup e-simple / f-watermark)。
    onboarding 期間(E,#wc):記號 → 可跳過的市場題 → 步驟清單 ①找靈感 ②做策略並回測 ③加到策略組合 ④自動下單(台股沒有④)。
-   ①② 全新時同時展開;③④ 輪到才露鈕;完成的一步收成一行(打勾＋名字＋meta),點了重新展開。完成判定全從現有狀態推:
+   ①② 全新時同時展開;③④ 輪到才露鈕;完成的一步收成一行(打勾＋名字,不帶 meta);①② 點了重新展開,③④ 點了直接到策略組合／自動下單頁。完成判定全從現有狀態推:
    ② = 本機清單有一支回測過(RP.list hasBacktest)、③ = 存著的金額有一支 > 0(trStored,同 strat_deployed 的判準)、④ = trExecState running。
    做完最後一步的當下原地一行「都設好了」(這次開著期間留著),之後就是完成後的首頁(F,#wf):淡化記號＋一列籤。
    「已進 F」與市場題的選擇存主行程 ui-prefs(IPC welcome-prefs),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不顯示「都設好了」、不送 onb_done_*——
@@ -209,8 +209,6 @@ const WC = { shown: false, armed: false };
 const ONB = { prefs: null, base: null, fin: false, replay: false, open: [false, false, false, false], key: null, target: null };
 const ONB_MKT_FEATURE = { crypto: "onb_mkt_crypto", tw: "onb_mkt_tw", txf: "onb_mkt_txf" };   // 送出點的名字要是字面(tests/check_shell_telemetry.js 掃這張表)
 const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3", "onb.s4"];   // 字逐字同網頁 workspace_onb_s1–s4(兩語)
-// ③ 合計單位的後備:加密的金額是報價幣(預設 USDT),台股與台指期換算成台幣
-const ONB_MKT_CCY = { crypto: "USDT", tw_stock: "TWD", tw_index_futures: "TWD" };
 // 第一次清單讀完才顯示整頁
 function wcSync() {
   if (!WC.shown) WC.shown = true;
@@ -243,31 +241,24 @@ function onbData() {
   const first = bts[0] || null, funded = Object.keys(stored).some((n) => Number(stored[n]) > 0);
   // ③的那支:第一支回測完、還沒存金額的;Type B 不能加進組合(同 portfolio.js poAddBtn)
   const target = bts.find((x) => !(Number(stored[x.name]) > 0) && !(kinds[x.name] && kinds[x.name].type === "B")) || null;
-  let total = null;
-  if (funded) {
-    const p = trWith(L, () => trPlanTotal(stored));
-    // 合計的幣別推不出來(報告還沒帶標的、清單沒載入):照存了金額那幾支的市場補單位,市場不一致就不補
-    const mks = [...new Set(Object.keys(stored).filter((n) => Number(stored[n]) > 0).map((n) => ONB_MKT_CCY[(kinds[n] || {}).market] || null))];
-    const ccy = (p && p.ccy) || (mks.length === 1 ? mks[0] : null);
-    if (p && p.ok) total = p.text + (ccy ? " " + ccy : "");
-  }
   const vid = known ? trVenueIds(r)[0] : null;
-  return { known, bt: !!first, funded, live: known && trExecState(st) === "running", acct: !!vid, acctName: vid ? trVenueLabel(vid, true) : null,
-    firstMkt: first && kinds[first.name] ? kinds[first.name].market : null, firstName: first ? first.displayName || first.name : null, target: target ? target.name : null, total };
+  return { known, bt: !!first, funded, live: known && trExecState(st) === "running", acct: !!vid,
+    firstMkt: first && kinds[first.name] ? kinds[first.name].market : null, target: target ? target.name : null };
 }
-// 標題列:完成的那一步是按鈕(重新展開／收起),其餘是灰或亮的字
-function onbHead(i, s, meta) {
+/* 標題列:完成的那一步是按鈕,其餘是灰或亮的字。完成列不帶 meta(Wei 10-21:策略名、金額、帳戶名都不放)。
+   ①② 點了就地展開／收起;③ 直接到策略組合頁、④ 直接到自動下單頁(做完之後要看的就是那兩頁,展開只會露出用過的鈕) */
+function onbHead(i, s) {
   const host = $("onb-h" + (i + 1)), label = t(ONB_STEP_KEYS[i]);
   host.textContent = "";
   const done = s.state === "done", h = wdEl(done ? "button" : "div", "onb-h is-" + s.state);
   if (done) {
-    h.type = "button"; h.setAttribute("aria-expanded", String(s.open)); h.setAttribute("aria-controls", "onb-b" + (i + 1));
-    h.addEventListener("click", () => onbToggle(i));
+    h.type = "button";
+    if (i < 2) { h.setAttribute("aria-expanded", String(s.open)); h.setAttribute("aria-controls", "onb-b" + (i + 1)); }
+    h.addEventListener("click", () => (i === 2 ? poOpen("cfg", true) : i === 3 ? trOpen() : onbToggle(i)));
   }
   const num = wdEl("span", "num", done ? "✓" : String(i + 1)); num.setAttribute("aria-hidden", "true");
   h.append(num, wdEl("span", done ? "sr-only" : "lb", done ? t("onb.doneSr", { step: label }) : label));
   if (done) { const lb = wdEl("span", "lb", label); lb.setAttribute("aria-hidden", "true"); h.appendChild(lb); }
-  if (meta && s.state !== "todo") h.appendChild(wdEl("span", "meta", meta));
   if (done) { const ch = wdEl("span", "chev", "›"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch); }
   host.appendChild(h);
 }
@@ -288,7 +279,7 @@ function onbPaint() {
   if (ph.view === "fin") ONB.fin = true;
   if (ph.event) trackFeature(mkt === "tw" ? "onb_done_tw" : "onb_done_trade");
   ONB.target = d.target;
-  const key = JSON.stringify([LANG, ph.view, mkt, choice, S.steps, d.firstName, d.total, d.acctName, d.target]);
+  const key = JSON.stringify([LANG, ph.view, mkt, choice, S.steps, d.acct, d.target]);
   if (key === ONB.key) return;
   ONB.key = key;
   wf.hidden = ph.view !== "F"; wc.hidden = ph.view === "F";
@@ -296,10 +287,8 @@ function onbPaint() {
   wc.querySelector(".onb-mq").hidden = ph.view !== "E"; $("onb-steps").hidden = ph.view !== "E";
   if (ph.view !== "E") return;
   $("onb-mkt").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === choice)));
-  // ②③ 的 meta 只在完成時出;④ 綁了帳戶就帶帳戶名(還沒啟動的那一行也帶,mockup account-dialog ④)
-  const metas = [null, S.steps[1].state === "done" ? d.firstName : null, S.steps[2] && S.steps[2].state === "done" ? d.total : null, d.acctName];
   [1, 2, 3, 4].forEach((n) => { $("onb-h" + n).closest("li").hidden = n > S.n; });
-  S.steps.forEach((s, i) => { onbHead(i, s, metas[i]); $("onb-b" + (i + 1)).hidden = !s.open; });
+  S.steps.forEach((s, i) => { onbHead(i, s); $("onb-b" + (i + 1)).hidden = !s.open; });
   // ②:選了市場只留那一句起手句(tag 欄一起收)
   const rows = $("st-rows");
   rows.querySelectorAll(".st-row").forEach((b) => { b.hidden = !!choice && b.dataset.starter !== choice; });

@@ -41,6 +41,9 @@ ok("① 已進 F 的旗標在 → 一律 F(之後停掉下單、刪了策略也�
 const paint = cutFn(src, "onbPaint");
 ok("② 先記基準再判:base 只在狀態檔讀到(d.known)之後記一次;完成那一刻送 onb_done_tw / onb_done_trade(台股走 tw)",
   /if \(d\.known && ONB\.base === null\) ONB\.base = S\.complete;/.test(paint) && /if \(ph\.event\) trackFeature\(mkt === "tw" \? "onb_done_tw" : "onb_done_trade"\);/.test(paint) && /onbSave\(\{ done: true \}\)/.test(paint));
+ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded),③ 點了到策略組合頁、④ 點了到自動下單頁(不展開、不掛 aria-expanded)",
+  !/metas|"meta"|acctName|d\.total|ONB_MKT_CCY/.test(src) && /^function onbHead\(i, s\) \{/.test(cutFn(src, "onbHead"))
+  && /if \(i < 2\) \{ h\.setAttribute\("aria-expanded"/.test(cutFn(src, "onbHead")) && /i === 2 \? poOpen\("cfg", true\) : i === 3 \? trOpen\(\) : onbToggle\(i\)/.test(cutFn(src, "onbHead")));
 ok("② 選了市場只留那一句起手句;沒選三句並列(不預設市場)", /b\.hidden = !!choice && b\.dataset\.starter !== choice;/.test(paint) && /rows\.classList\.toggle\("one", !!choice\);/.test(paint));
 ok("② 台股不畫第四步:li 照 S.n 藏;台指期的描邊鈕叫「連接期貨商」", /\$\("onb-h" \+ n\)\.closest\("li"\)\.hidden = n > S\.n;/.test(paint) && /t\(mkt === "txf" \? "onb\.realFut" : "cx\.connect"\)/.test(paint));
 ok("② 市場題只在選了不同的值時送 onb_mkt_*(名字是字面表);策略庫鈕直接設本機那一袋的 mkt、不經 libMktPick",

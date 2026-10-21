@@ -26,7 +26,6 @@ button.onb-h:focus-visible { outline-offset: -2px; }
   border: 1px solid var(--border-frame); font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums;
 }
 .onb-h .lb { white-space: nowrap; }
-.onb-h .meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-3); }
 .onb-h .chev { margin-left: auto; color: var(--ink-3); }
 .onb-h.is-cur { color: var(--ink); font-weight: 600; }
 .onb-h.is-cur .num { border-color: var(--ink); }
