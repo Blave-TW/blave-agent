@@ -23,7 +23,9 @@ and a planned outage never reads as a dead worker.
 
 A failed login stops it for good (exit LOGIN_STOPPED_EXIT, which its supervisor —
 NSSM's AppExit, the desktop daemon — does not restart) and every later login on
-this machine refuses until the user confirms one (lib/president_vault STOP).
+this machine refuses until the user confirms one (lib/president_vault STOP). A login
+that passes on an ID with no futures account exits the same way (no STOP file: the
+login itself was good); only a failed read after a good login backs off and retries.
 
 Run: python lib/president_worker.py              (daemon)
      python lib/president_worker.py --once       (the user's 「確認登入」: one real login + read → state/president_probe.json)
@@ -280,13 +282,18 @@ def _quote_api(api):
         t.start()
 
 
+class NoFuturesAccount(RuntimeError):
+    """The login passed but the ID has no futures account: a setup problem, not an
+    outage — stopped like a failed login, never retried on a timer."""
+
+
 def _login(explicit=False):
     creds = president_vault.resolve()
     api = president_vault.login(creds, SDK_LOG_DIR, explicit=explicit)
     accounts = api.get_accounts() or []
     if not accounts:
         api.logout()
-        raise RuntimeError("login returned no futures account")
+        raise NoFuturesAccount("login returned no futures account")
     return api, accounts[0]
 
 
@@ -365,6 +372,8 @@ def main():
                     _sleep_until_refresh()
                     continue
                 _login_stopped(president_vault.sanitize(str(e)))
+            except NoFuturesAccount as e:
+                _login_stopped(president_vault.sanitize(str(e)))
             except Exception as e:
                 if api is None:
                     err = president_vault.sanitize(f"{type(e).__name__}: {e}")
@@ -378,7 +387,7 @@ def main():
                     api, actno = _login()
                     _quote_api(api)
                     snap = read_account(api, actno)
-                except president_vault.LoginError as e2:
+                except (president_vault.LoginError, NoFuturesAccount) as e2:
                     _login_stopped(president_vault.sanitize(str(e2)))
                 except Exception as e2:
                     err = president_vault.sanitize(f"{type(e2).__name__}: {e2}")

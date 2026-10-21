@@ -608,7 +608,10 @@ op.LAST_ORDER_PATH = real_path
 
 # ── 9. two processes closing at once: only one passes ────────────────────────
 import subprocess  # noqa: E402
-snapshot([{"root": "MXF", "productid": "MXFJ6", "net": 1, "net_current": 1}])
+# today's near month: a fixed month code goes past its settlement and the close is refused
+# (ListUnknown, this snapshot has no broker list) before the lock is ever contested
+MXF_NOW = op.near_month("MXF", [f"MXF{c}{d}" for c in op.MONTH_CODES for d in "0123456789"])
+snapshot([{"root": "MXF", "productid": MXF_NOW, "net": 1, "net_current": 1}])
 open(op.LAST_ORDER_PATH, "w").write("{}")
 GO = os.path.join(TMP, "go")
 child = f"""
@@ -632,12 +635,14 @@ try:
 except op.PresidentError:
     print("REFUSED")
 """
-procs = [subprocess.Popen([sys.executable, "-c", child], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+procs = [subprocess.Popen([sys.executable, "-c", child], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           text=True) for _ in range(2)]
 _t.sleep(1.0)
 open(GO, "w").close()
-outs = sorted(p.communicate(timeout=60)[0].strip() for p in procs)
-check(outs == ["PASS", "REFUSED"], "two processes closing the same position at once: exactly one passes", outs)
+res = [p.communicate(timeout=60) for p in procs]
+outs = sorted(o.strip() for o, _e in res)
+check(outs == ["PASS", "REFUSED"], "two processes closing the same position at once: exactly one passes",
+      [outs] + [e.strip().splitlines()[-1] for _o, e in res if e.strip()])
 
 # ── 10. P1-C: a slow login does not eat the settle margin ─────────────────────
 saved_settle = president_vault.ORDER_SETTLE_S
@@ -757,6 +762,55 @@ LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
 api2 = president_vault.login(president_vault.resolve(), president_worker.SDK_LOG_DIR, explicit=True)
 check(FakeUnitrade.logins == n + 2 and not os.path.exists(STOP), "a confirmed login that passes clears the stop")
 api2.logout()
+
+# the daemon: a login that passes on an ID with no futures account stops like a failed login (a
+# setup problem — a timer retry is a real login every few minutes); a read that fails after a good
+# login is an outage and still backs off
+_wsaved = (president_worker.time.sleep, president_worker._write_snapshot, president_worker._quote_api,
+           president_worker.read_account, president_worker.BACKOFF_PATH, FakeUnitrade.get_accounts,
+           president_worker.HEARTBEAT_PATH)
+_wslept, _wsnaps = [], []
+president_worker.HEARTBEAT_PATH = os.path.join(TMP, "state", "heartbeat", "president_worker")
+president_worker.time.sleep = _wslept.append
+president_worker._write_snapshot = _wsnaps.append
+president_worker._quote_api = lambda api: None
+president_worker.BACKOFF_PATH = os.path.join(TMP, "president_worker_backoff_main.json")
+
+
+def _main_exit():
+    try:
+        president_worker.main()
+    except SystemExit as e:
+        return e.code
+
+
+try:
+    FakeUnitrade.get_accounts = lambda self: []
+    LOGIN_SCRIPT[:] = [Resp(ok=True, error=""), Resp(ok=True, error="")]
+    n = FakeUnitrade.logins
+    code = _main_exit()
+    check(code == president_worker.LOGIN_STOPPED_EXIT and FakeUnitrade.logins == n + 1 and not _wslept
+          and _wsnaps and _wsnaps[-1].get("login_stopped") is True
+          and "no futures account" in _wsnaps[-1].get("error", ""),
+          "no futures account → the worker stops (LOGIN_STOPPED_EXIT), one login, no backoff sleep",
+          (code, FakeUnitrade.logins - n, _wslept, _wsnaps[-1:]))
+    FakeUnitrade.get_accounts = lambda self: ["7000001"]
+
+    def _read_fails(api, actno):
+        raise RuntimeError("account query down")
+
+    president_worker.read_account = _read_fails
+    LOGIN_SCRIPT[:] = [Resp(ok=True, error=""), Resp(ok=True, error="")]
+    n, _wslept[:], _wsnaps[:] = FakeUnitrade.logins, [], []
+    code = _main_exit()
+    check(code == 1 and FakeUnitrade.logins == n + 2 and _wslept == [30] and not _wsnaps[-1].get("login_stopped"),
+          "login passes, account read fails → still the backoff (one fresh login, sleep, exit 1)",
+          (code, FakeUnitrade.logins - n, _wslept, _wsnaps[-1:]))
+finally:
+    (president_worker.time.sleep, president_worker._write_snapshot, president_worker._quote_api,
+     president_worker.read_account, president_worker.BACKOFF_PATH, FakeUnitrade.get_accounts,
+     president_worker.HEARTBEAT_PATH) = _wsaved
+    LOGIN_SCRIPT[:] = []
 creds2 = president_vault.resolve()
 # every failure stops, whatever its class (display only)
 for script, kind in (([Resp(ok=False, error="[APGW]something unexpected")], "UNKNOWN"),
