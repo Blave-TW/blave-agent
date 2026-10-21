@@ -8345,6 +8345,13 @@ msgstr " and {n} more"
 msgid "tr.marketVenue.crypto"
 msgstr "“{name}”{more} is a {market} strategy, which a crypto exchange can’t trade. Bind a Taiwan futures broker, or uncheck it in Pick strategies, then save."
 
+# 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句;字同網頁 workspace_pf_rej_us_symbol／us_venue
+msgid "tr.usSymbol.rejected"
+msgstr "“{name}”{more} uses a US-stock signal: it can only trade as a Type A single-symbol strategy, with SYMBOL set to that stock’s perpetual (e.g. NVDA → NVDAUSDT). Fix it and save again, or uncheck it in Pick strategies."
+
+msgid "tr.usVenue.rejected"
+msgstr "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick strategies, then save."
+
 msgid "tr.mktName.txf"
 msgstr "TAIEX futures"
 

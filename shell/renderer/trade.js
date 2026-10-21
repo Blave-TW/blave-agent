@@ -2063,6 +2063,8 @@ function trRejectSentence(rc) {
   if (rc.code === "SAVE_FAILED") return t("tr.saveFailed.rejected");   // runtime:存設定時檔案被占用,這次什麼都沒改   // runtime 拒絕啟動:解綁後重新綁定、還沒存過下單設定
   // 台指期／個股期貨／台股策略綁到加密交易所:講到它是哪個市場(稽核 r4 P2:原句只講台指期)
   if (rc.code === "MARKET_VENUE" && rc.crypto && rc.market) return t("tr.marketVenue.crypto", { name, more, market: t({ "\u53f0\u6307\u671f": "tr.mktName.txf", "\u500b\u80a1\u671f\u8ca8": "tr.mktName.stockFut", "\u53f0\u80a1": "tr.mktName.twStock" }[rc.market]) });
+  if (rc.code === "US_SYMBOL") return t("tr.usSymbol.rejected", { name, more });   // 美股訊號策略(runtime _us_signal_refusal),同網頁一碼一句
+  if (rc.code === "US_VENUE") return t("tr.usVenue.rejected", { name, more });
   if (rc.code === "MARKET_VENUE") return t("tr.marketVenue.rejected", { name, more, president: trTwVenueName("president"), capital: trTwVenueName("capital") });
   return null;
 }

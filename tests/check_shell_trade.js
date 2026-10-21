@@ -2016,6 +2016,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok(`被拒(${env}):TYPE_B → tr.typeB.rejected;NOT_TXF → tr.notTxf.rejected 帶顯示名與交易所名(pres.venue,不寫死);MARKET_VENUE → tr.marketVenue.rejected 帶統一／群益在地名;其他代碼走一般那句、去掉例外名與代碼`,
           b === 'tr.typeB.rejected {"name":"grid","more":""}' && x === 'tr.notTxf.rejected {"name":"grid","more":"","venue":"pres.venue"}'
           && mv === 'tr.marketVenue.rejected {"name":"grid","more":"","president":"pres.venue","capital":"cap.venue"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, x, mv, u]));
+        // 美股訊號策略(runtime _us_signal_refusal 的五種原句):一碼一句、名字換顯示名,不落成中文原句(同網頁 pfRejectText)
+        const us = ["ValueError: US_SYMBOL: 「grid」是投資組合(Type C)策略,美股訊號目前只能用單一標的策略下單——請取消勾選後再儲存",
+          "ValueError: US_SYMBOL: 「grid」是 Type B 策略,美股訊號只能用 Type A 單一標的策略下單——請取消勾選後再儲存",
+          "ValueError: US_SYMBOL: 「grid」SYMBOL 是 NVDA,要寫成 Binance 股票永續的名稱(例如 NVDA → NVDAUSDT)——請改好後再儲存,或取消勾選",
+          "ValueError: US_VENUE: 「grid」的下單標的 NVDAUSDT 在 OKX 沒有對應的股票永續——請改綁有這檔的交易所,或取消勾選後再儲存",
+          "ValueError: US_VENUE: 「grid」的下單標的 NVDAUSDT 在 Gate.io 是加密幣、不是股票永續——請改綁有這檔股票永續的交易所,或取消勾選後再儲存"].map((e) => se(e, "save", env));
+        ok(`被拒(${env}):US_SYMBOL → tr.usSymbol.rejected、US_VENUE → tr.usVenue.rejected,帶顯示名`, J(us) === J(Array(3).fill('tr.usSymbol.rejected {"name":"grid","more":""}').concat(Array(2).fill('tr.usVenue.rejected {"name":"grid","more":""}'))), J(us));
         // 稽核 r4 P2:好幾支被點名 → 最多列三支、其餘「等 N 支」;台股綁到加密交易所 → 講到台股
         const many = se("RuntimeError: NEEDS_ROUTING: 「a」、「b」、「c」、「d」、「e」 還沒有對應的交易所——請先到策略組合存一次下單設定,再啟動下單", "save", env);
         const tw = se("ValueError: MARKET_VENUE: 「grid」是台股策略,binance 是加密貨幣交易所、下不了——請改綁台灣期貨商,或取消勾選後再儲存", "save", env);
@@ -2024,8 +2031,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok(`被拒(${env}):五支點名 → 列前三支 + 「和另外 2 支」;台股策略綁加密 → tr.marketVenue.crypto 帶市場名(台股)`,
           many === 'tr.needsRouting.rejected {"name":"atr.rejNameSepbtr.rejNameSepc","more":"tr.rejMore {\\"n\\":2}"}' && tw === 'tr.marketVenue.crypto {"name":"grid","more":"","market":"tr.mktName.twStock"}', J([many, tw])); } }
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
-      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」(跟選單同一個 cap.venue)",
+      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」(跟選單同一個 cap.venue);美股 US_SYMBOL／US_VENUE 兩句同網頁原文",
         /"tr\.notTxf\.rejected": "[^"]*\{venue\}只能下台指期。到「選擇策略」取消勾選後再儲存。"/.test(S) && /"tr\.pick\.txf": "\{venue\}只能下台指期/.test(S) && !/"tr\.(notTxf\.rejected|pick\.txf|pick\.txfKeep)": "[^"]*統一期貨/.test(S)
+        && S.includes('"tr.usSymbol.rejected": "「{name}」{more}用的是美股訊號：只能用 Type A 單一標的策略下單，SYMBOL 要寫成該檔的股票永續（例如 NVDA → NVDAUSDT）。改好後再儲存，或到「選擇策略」取消勾選。"')
+        && S.includes('"tr.usVenue.rejected": "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick strategies, then save."')
         && S.includes('"cap.venue": "群益期貨"') && S.includes('"cap.venue": "Capital Futures"') && !S.includes("tr.venueCapitalFull") && /"tr\.marketVenue\.rejected": "[^"]*\{president\}或\{capital\}/.test(S)); }
     // 列(psRow):原因句 = 勾選框的 aria-describedby
     { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, dataset: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });

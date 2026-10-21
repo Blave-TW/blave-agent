@@ -8361,6 +8361,13 @@ msgstr "和另外 {n} 支"
 msgid "tr.marketVenue.crypto"
 msgstr "「{name}」{more}是{market}策略，加密貨幣交易所下不了。改綁台灣期貨商，或到「選擇策略」取消勾選後再儲存。"
 
+# 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句;字同網頁 workspace_pf_rej_us_symbol／us_venue
+msgid "tr.usSymbol.rejected"
+msgstr "「{name}」{more}用的是美股訊號：只能用 Type A 單一標的策略下單，SYMBOL 要寫成該檔的股票永續（例如 NVDA → NVDAUSDT）。改好後再儲存，或到「選擇策略」取消勾選。"
+
+msgid "tr.usVenue.rejected"
+msgstr "「{name}」{more}的下單標的在這家交易所沒有對應的股票永續。改綁有這檔股票永續的交易所，或到「選擇策略」取消勾選後再儲存。"
+
 msgid "tr.mktName.txf"
 msgstr "台指期"
 
