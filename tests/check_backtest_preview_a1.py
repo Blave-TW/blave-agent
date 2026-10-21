@@ -6,7 +6,8 @@ code_hash — and removes an older one when the scheduler would not compute that
 Type C preview carries `closes` (the last row's close per held symbol).
 runtime/portfolio_reporter.backtest_previews: unpicked strategies (drafts) are included, a
 picked one with a state.json is not, code_hash must match, `latest` says whether the bar is
-still the newest closed one, and at most PREVIEW_EXTRA_MAX drafts ride along.
+still the newest closed one (US daily on the New York close), and at most PREVIEW_EXTRA_MAX
+drafts ride along.
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_backtest_preview_a1.py
 """
@@ -186,6 +187,50 @@ check(sorted(drafts) == sorted(f"x{i}" for i in range(2, pr.PREVIEW_EXTRA_MAX + 
 drafts = [n for n in pr.backtest_previews({"amounts": {}}, pr.strategy_states(), now=NOW) if n.startswith("x")]
 check(sorted(drafts) == sorted(f"x{i}" for i in range(1, pr.PREVIEW_EXTRA_MAX + 1)),
       f"a file with a changed code_hash does not use up a draft slot ({sorted(drafts)})")
+
+# ── US daily signal on a stock perp (NVDA prices, NVDAUSDT traded): previewed, `latest` on the
+# New York calendar (final at 17:00 NY), so the save dialog stops waiting for one
+US_SRC = ('SYMBOL = "NVDAUSDT"\nMARKET = "swap"\nINTERVAL = "1d"\n\n\ndef fetch_data(hdrs):\n'
+          '    from lib.data import fetch_usstock_price\n'
+          '    return fetch_usstock_price("NVDA", "2024-01-01", None, hdrs)\n')
+
+
+def us_draft(name, src, bar_day):
+    d = WS / "strategies" / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "strategy.py").write_text(src)
+    (d / runner.BACKTEST_STATE_FILE).write_text(json.dumps({
+        "type": "signal", "symbol": "NVDAUSDT", "market": "swap", "position": 1.0, "close": 216.47,
+        "bar_at": int(pd.Timestamp(bar_day).timestamp()), "code_hash": code_hash(src.encode())}))
+
+
+def us_pv(name, now):
+    return pr.backtest_previews({"amounts": {name: 1000.0}}, pr.strategy_states(), now=now).get(name)
+
+
+us_draft("us_tue", US_SRC, "2026-10-20")
+for now, want, why in ((datetime(2026, 10, 20, 22, 30), True, "Tue 18:30 NY: Tue's bar is final"),
+                       (datetime(2026, 10, 21, 20, 0), True, "Wed 16:00 NY: Wed's not final yet, Tue's is latest"),
+                       (datetime(2026, 10, 21, 21, 30), False, "Wed 17:30 NY: Wed's is final, Tue's stale")):
+    got = us_pv("us_tue", now)
+    check(got is not None and got["latest"] is want and got["symbol"] == "NVDAUSDT" and got["close"] == 216.47
+          and got["daily_tw"] is False, f"US daily preview, {why} ({got and got.get('latest')})")
+us_draft("us_fri", US_SRC, "2026-11-06")
+for now, why in ((datetime(2026, 11, 8, 12, 0), "Sunday"), (datetime(2026, 11, 9, 15, 0), "Monday before the close"),
+                 (datetime(2026, 11, 9, 21, 30), "Mon 16:30 EST (21:30 UTC is past 17:00 only in summer)")):
+    got = us_pv("us_fri", now)
+    check(got is not None and got["latest"] is True, f"Friday's bar still latest: {why} ({got and got.get('latest')})")
+# the copy agrees with the scheduler's bar on non-holiday days (summer, winter, either side of 17:00 NY)
+from manager import wait_for_bar as wfb  # noqa: E402
+nows = [datetime(2026, 10, 19, 0, 0) + timedelta(minutes=37 * k) for k in range(400)] + \
+       [datetime(2026, 11, 2, 0, 0) + timedelta(minutes=37 * k) for k in range(400)]
+bad = [n for n in nows if pr._us_latest_closed_date(n) != wfb._us_expected(n).strftime("%Y-%m-%d")]
+check(not bad, f"_us_latest_closed_date = wait_for_bar._us_expected off holidays ({bad[:3]})")
+us_draft("us_mix", US_SRC.replace("from lib.data import fetch_usstock_price",
+                                  "from lib.data import fetch_usstock_price, fetch_kline"), "2026-10-20")
+check(us_pv("us_mix", datetime(2026, 10, 20, 22, 30)) is None, "US prices next to crypto ones: no preview (no live path)")
+us_draft("us_4h", US_SRC.replace('INTERVAL = "1d"', 'INTERVAL = "4h"'), "2026-10-20")
+check(us_pv("us_4h", datetime(2026, 10, 20, 22, 30)) is None, "US prices, not daily: no preview")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

@@ -3,7 +3,8 @@
 
   crypto pair suffix USDT / USDC / FDUSD / BUSD → that; bare USD (BTCUSD) → null (no
   coin-margined path exists to say it is BTC); Type C → its weights' common suffix, mixed →
-  null; Taiwan stock / index futures / stock futures → TWD; US stock → USD, and so is US +
+  null; Taiwan stock / index futures / stock futures → TWD; US stock → USD on a bare ticker,
+  the traded pair's suffix on a stock perp (NVDA prices, NVDAUSDT → USDT); so is US +
   crypto prices trading only bare tickers (AMZN, BRK.B); user data, global futures, other
   mixed markets → null. Picked strategies with no state.json are in the map.
 
@@ -23,6 +24,9 @@ sys.path.insert(0, os.path.join(ROOT, "runtime"))
 import portfolio_reporter as pr  # noqa: E402
 
 CRYPTO = "from lib.data import fetch_kline\nSYMBOL = {s!r}\nINTERVAL = '1h'\n"
+US_PERP = ("SYMBOL = 'NVDAUSDT'\nINTERVAL = '1d'\n\n\ndef fetch_data(hdrs):\n"
+           "    from lib.data import fetch_usstock_price\n"
+           "    return fetch_usstock_price('NVDA', '2024-01-01', None, hdrs)\n")
 STRATS = {
     # name: (source, state.json or None, expected)
     "a_usdt":  (CRYPTO.format(s="BTCUSDT"), {"symbol": "BTCUSDT", "position": 1}, "USDT"),
@@ -41,6 +45,14 @@ STRATS = {
     "txf":     ("from lib.data import fetch_twfutures_ohlcv\nSYMBOL = 'TXF'\n", None, "TWD"),
     "stockfut": ("from lib.data import fetch_twfutures_ohlcv\nSYMBOL = 'CDF'\n", None, "TWD"),
     "us":      ("from lib.data import fetch_usstock_price\nSYMBOL = 'AAPL'\n", None, "USD"),
+    # US daily signal, the Binance stock perp traded (the shape lib/runner live-gates): the
+    # amount is in what is traded, as the draft row's suffix says before the save
+    "us_perp": (US_PERP, None, "USDT"),
+    "us_perp_st": (US_PERP, {"symbol": "NVDAUSDT", "position": 1.0}, "USDT"),
+    "us_perp_c": ("from lib.data import fetch_usstock_price\n# Type: C\n",
+                  {"type": "portfolio", "weights": {"NVDAUSDT": 0.5, "AAPLUSDT": 0.5}}, "USDT"),
+    "us_perp_mix": ("from lib.data import fetch_usstock_price\n# Type: C\n",
+                    {"type": "portfolio", "weights": {"NVDAUSDT": 0.5, "AAPL": 0.5}}, None),
     "global":  ("from lib.data import fetch_db_kline\nSYMBOL = 'CL'\n", None, None),
     "mixed":   ("from lib.data import fetch_kline, fetch_twstock_price\nSYMBOL = 'BTCUSDT'\n",
                 None, None),
