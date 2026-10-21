@@ -1,10 +1,11 @@
 """Minimal check: lib.data.fetch_usstock_price — US daily bars from Yahoo's chart endpoint, yfinance
-as the fallback, desktop app only. No network: the Yahoo session is stubbed and replays answers
+as the fallback, desktop app and cloud machine. No network: the Yahoo session is stubbed and replays answers
 recorded 2026-10-01 (tests/fixtures/usstock_daily/, trimmed); yfinance is a stub module fed by the
 real yfinance 1.7.0 output recorded the same day.
 
-  - cloud machine (BLAVE_AGENT_LOCAL unset / '0'): UsStockUnavailable with the sentence to relay,
-    before any request and without serving a cached snapshot; a desktop live tick naming no strategy is refused
+  - cloud machine (BLAVE_AGENT_LOCAL unset / '0'): fetched like the desktop, Yahoo without yfinance installed;
+    Yahoo down with no yfinance → UsStockUnavailable naming it; a cloud scheduled report fetches
+  - a live tick naming no strategy (desktop or cloud) is refused before any request, cache not served
   - caliber: the direct path equals real yfinance history(auto_adjust=True) on the same dates
     (OHLC within 1e-5, Volume exact); the yfinance fallback gives the same numbers again
   - AAPL 2020-08-31 4:1 split reads +3.4 %, not −75 %; Volume is never dividend-scaled
@@ -16,8 +17,7 @@ real yfinance 1.7.0 output recorded the same day.
     crypto bars sees the day's row from 17:00 NY and refuses live until it lands
   - Yahoo gets its own session / UA / throttle; the Taiwan sources' UA is untouched
   - _sanity_check_ohlc widens a bar whose open / close lies outside high-low, ignores float noise
-  - off the desktop even the private fetchers (_yahoo_session, _yahoo_get, both raw fetchers) refuse before a request;
-    a cloud scheduled report and a cloud live tick get the desktop-only sentence
+  - on such a tick even the private fetchers (_yahoo_session, _yahoo_get, both raw fetchers) refuse before a request
   - no adjclose (Yahoo) / Adj Close filled with Close (yfinance, a dividend in range) and a 200 with no
     bars are failures: never cached; a 429 that outlasts the retries stops both sources for the process
   - a US holiday turning crypto bars NaN in align_feed is announced (day, count, likely cause)
@@ -176,68 +176,64 @@ def t_symbols():
             check(hint in str(e), f"{bad!r} is refused, pointing at {hint}")
 
 
-def t_cloud_fail_closed():
-    s, yf = fresh()
-    capture(D.fetch_usstock_price, "AAPL", "2020-08-03", "2020-09-04")   # a snapshot now exists
-    n = len(s.calls)
+def t_cloud_open():
     for val in (None, "0", "true"):
+        s, yf = fresh(yf_missing=True)
         if val is None:
             os.environ.pop("BLAVE_AGENT_LOCAL", None)
         else:
             os.environ["BLAVE_AGENT_LOCAL"] = val
-        os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"] = "public"      # the TW override opens nothing here
-        try:
-            D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
-            check(False, f"BLAVE_AGENT_LOCAL={val!r}: refused")
-        except D.UsStockUnavailable as e:
-            check("美股資料目前只在電腦版可用" in str(e) and "cloud machine" in str(e) and "上線" not in str(e),
-                  f"BLAVE_AGENT_LOCAL={val!r}: UsStockUnavailable with the sentence to relay")
-        finally:
-            os.environ.pop("BLAVE_TWSTOCK_DAILY_SOURCE", None)
+        df, _ = capture(D.fetch_usstock_price, "AAPL", "2020-08-03", "2020-09-04")
+        check(df.attrs.get("source") == "Yahoo" and len(df) == 25 and len(s.calls) == 1,
+              f"cloud (BLAVE_AGENT_LOCAL={val!r}), no yfinance installed: Yahoo serves the bars ({len(s.calls)} request)")
+    s, yf = fresh(down=True, yf_missing=True)
     os.environ.pop("BLAVE_AGENT_LOCAL", None)
-    os.environ["BLAVE_MODE"] = "live"
     try:
-        D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
-        check(False, "a live tick is refused")
+        capture(D.fetch_usstock_price, "AAPL", "2020-08-03", "2020-09-04")
+        check(False, "cloud, Yahoo down, no yfinance: refused")
     except D.UsStockUnavailable as e:
-        check("美股資料目前只在電腦版可用" in str(e),
-              "a live tick on a cloud machine (no desktop flag, BLAVE_MODE=live): the desktop-only sentence")
-    finally:
-        os.environ.pop("BLAVE_MODE", None)
-    # the desktop daemon's ticks carry BLAVE_AGENT_LOCAL=1 (command_listener._local_child_env, for the key-free
-    # TAIFEX / TWSE paths) — a tick that names no strategy (tests/check_usstock_live.py: one that does) is refused
-    os.environ["BLAVE_AGENT_LOCAL"] = "1"
-    os.environ["BLAVE_MODE"] = "live"
-    try:
-        D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
-        check(False, "a desktop live tick is refused")
-    except D.UsStockUnavailable as e:
-        check("這支美股策略不能自動下單" in str(e) and len(s.calls) == n and yf.calls == [],
-              "a desktop live tick naming no strategy (BLAVE_AGENT_LOCAL=1 + BLAVE_MODE=live): refused, no request")
-    finally:
-        os.environ.pop("BLAVE_MODE", None)
-        os.environ.pop("BLAVE_AGENT_LOCAL", None)
+        check("not installed" in str(e) and not isinstance(e, D.UsStockNotHere),
+              "cloud, Yahoo down and no yfinance: UsStockUnavailable naming the missing fallback")
+    s, yf = fresh()
+    os.environ.pop("BLAVE_AGENT_LOCAL", None)
     os.environ["BLAVE_MODE"] = "live"
     os.environ["BLAVE_SCHEDULED_RUN"] = "1"
     try:
-        D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
-        check(False, "a cloud scheduled report is refused")
+        df, _ = capture(D.fetch_usstock_price, "AAPL", "2020-08-03", "2020-09-04")
+        check(len(df) == 25, "a cloud scheduled report (BLAVE_MODE=live + BLAVE_SCHEDULED_RUN=1) fetches")
     except D.UsStockUnavailable as e:
-        check("美股資料目前只在電腦版可用" in str(e) and "上線" not in str(e),
-              "a cloud scheduled report (BLAVE_MODE=live + BLAVE_SCHEDULED_RUN=1): the desktop-only sentence, not 'cannot go live'")
+        check(False, f"a cloud scheduled report fetches ({e})")
     finally:
         os.environ.pop("BLAVE_MODE", None)
         os.environ.pop("BLAVE_SCHEDULED_RUN", None)
-    for fn, args in ((D._fetch_usstock_yahoo_raw, ("AAPL",)), (D._fetch_usstock_yfinance_raw, ("AAPL",)),
-                     (D._yahoo_get, (D._YAHOO_CHART + "AAPL", {})), (D._usstock_daily, ("AAPL", None)),
-                     (D._yahoo_session, ())):
+    n = len(s.calls)
+    # a live tick that names no strategy (tests/check_usstock_live.py: one that does) is refused before any
+    # request, desktop and cloud alike — the cached snapshot is not served either
+    for val in ("1", None):
+        if val:
+            os.environ["BLAVE_AGENT_LOCAL"] = val
+        else:
+            os.environ.pop("BLAVE_AGENT_LOCAL", None)
+        where = "desktop" if val else "cloud"
+        os.environ["BLAVE_MODE"] = "live"
         try:
-            fn(*args)
-            check(False, f"{fn.__name__} off the desktop is refused")
+            D.fetch_usstock_price("AAPL", "2020-08-03", "2020-09-04")
+            check(False, f"a {where} live tick naming no strategy is refused")
         except D.UsStockNotHere as e:
-            check("美股資料目前只在電腦版可用" in str(e), f"{fn.__name__} called directly off the desktop: refused before any request")
+            check("這支美股策略不能自動下單" in str(e) and len(s.calls) == n and yf.calls == [],
+                  f"a {where} live tick naming no strategy: refused, no request")
+        for fn, args in ((D._fetch_usstock_yahoo_raw, ("AAPL",)), (D._fetch_usstock_yfinance_raw, ("AAPL",)),
+                         (D._yahoo_get, (D._YAHOO_CHART + "AAPL", {})), (D._usstock_daily, ("AAPL", None)),
+                         (D._yahoo_session, ())):
+            try:
+                fn(*args)
+                check(False, f"{fn.__name__} on a {where} live tick is refused")
+            except D.UsStockNotHere as e:
+                check("這支美股策略不能自動下單" in str(e),
+                      f"{fn.__name__} called directly on a {where} live tick: refused before any request")
+        os.environ.pop("BLAVE_MODE", None)
     check(len(s.calls) == n and yf.calls == [],
-          "off the desktop: no request to Yahoo or yfinance, and the cached snapshot is not served either")
+          "live ticks outside fetch_usstock_price's gate: no request to Yahoo or yfinance")
     os.environ["BLAVE_AGENT_LOCAL"] = "1"
 
 
@@ -511,7 +507,7 @@ def t_workspace_deps():
 
 def main():
     t_symbols()
-    t_cloud_fail_closed()
+    t_cloud_open()
     t_parse_and_caliber()
     t_fallback()
     t_adjclose_missing()

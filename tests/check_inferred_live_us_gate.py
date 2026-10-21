@@ -8,7 +8,7 @@ state.json the scheduled ticks (refused) could never update; the reconciler kept
   - not picked, no BLAVE_MODE        → a backtest, fetches
   - BLAVE_MODE is unset again after every run() (a second in-process run infers its own mode)
 
-No network: fetch_data_fn calls the real gate (lib.data._us_require_desktop) and returns a frame.
+No network: fetch_data_fn calls the real gate (lib.data._us_request_gate) and returns a frame.
 
 Run: cd blave-agent && .venv/bin/python tests/check_inferred_live_us_gate.py
 """
@@ -56,7 +56,7 @@ fetched = []
 
 
 def fetch(hdrs):
-    data._us_require_desktop()
+    data._us_request_gate()
     fetched.append(1)
     return DF
 

@@ -6576,10 +6576,10 @@ def fetch_fear_greed(start=None, end=None):
     return df
 
 
-# ── US stock daily bars: Yahoo Finance, desktop only ──────────────────────────
-# Fetched only by the desktop app, on the user's own computer for the user's own use
-# (data-onboarding canon §9, gate BLAVE_AGENT_LOCAL=1); anywhere else the fetcher raises.
-# Yahoo's public v8 chart endpoint first, the yfinance package as the fallback.
+# ── US stock daily bars: Yahoo Finance ──────────────────────────
+# Fetched on the user's own machine — the desktop app or their cloud machine — for the user's own
+# use (data-onboarding canon §9). Yahoo's public v8 chart endpoint first, the yfinance package as
+# the fallback where it is installed (the desktop installs it; without it a Yahoo failure ends the chain).
 #
 # Caliber, both sources: Yahoo's quote series is split-adjusted but not dividend-adjusted.
 # Open/High/Low are scaled by adjclose / close and Close becomes adjclose; Volume stays as
@@ -6609,34 +6609,23 @@ _YF_CACHE_SET  = False
 _US_BLOCK_S    = 900
 _US_BLOCKED    = {'yahoo': 0.0, 'yfinance': 0.0}
 
-_US_DESKTOP_ONLY = (
-    "US stock data is fetched only by the desktop app, on the user's own computer — in its chat "
-    "turns, backtests and scheduled reports — never on a cloud machine. Stop here (no other source, no web page) and "
-    "tell the user in one sentence: 美股資料目前只在電腦版可用 / US stock data is currently "
-    "available only in the desktop app.")
-
-
 def _us_not_live(reason):
     return (f"This live tick may not fetch US stock data: {reason}. The position is left as it is. "
             f"Stop here and tell the user in one sentence: 這支美股策略不能自動下單:{reason}")
 
 
 class UsStockUnavailable(RuntimeError):
-    """US daily bars cannot be served here: not the desktop app, or neither Yahoo nor yfinance
-    answered. The message is written to be relayed to the user, not debugged."""
+    """US daily bars cannot be served here: a live tick that may not fetch them, or neither Yahoo
+    nor yfinance answered. The message is written to be relayed to the user, not debugged."""
 
 
 class UsStockNotHere(UsStockUnavailable):
-    """This process may not fetch US data at all (no desktop flag) — raised before any request."""
+    """This process may not fetch US data (a live tick the US rule refuses) — raised before any request."""
 
 
 class UsStockNotFound(LookupError):
     """Yahoo has no such ticker (its 404 "No data found, symbol may be delisted") — yfinance
     asks the same Yahoo, so the chain stops here."""
-
-
-def _usstock_allowed():
-    return os.environ.get('BLAVE_AGENT_LOCAL') == '1'
 
 
 def _us_live_tick():
@@ -6664,16 +6653,14 @@ class us_live_strategy:
         return False
 
 
-def _us_require_desktop():
+def _us_request_gate():
     """Every function that sends a request to Yahoo calls this first, so no path — public or
-    private — reaches Yahoo off the desktop. A live trading tick (desktop or cloud; a cloud
-    scheduled report also runs with BLAVE_MODE=live and gets the desktop-only sentence) passes
-    only from inside fetch_usstock_price after _us_live_gate found it trading the stock's own
-    perp; the refusal is by BLAVE_MODE, not by the flag happening to be absent."""
-    if _usstock_allowed() and (not _us_live_tick() or _us_live_pass):
+    private — reaches Yahoo from a live trading tick unless fetch_usstock_price's _us_live_gate
+    found it trading the stock's own perp. Desktop and cloud alike: a scheduled report runs with
+    BLAVE_MODE=live but BLAVE_SCHEDULED_RUN=1, so it is not a tick."""
+    if not _us_live_tick() or _us_live_pass:
         return
-    raise UsStockNotHere(_US_DESKTOP_ONLY if not _usstock_allowed() else
-                         _us_not_live("美股資料只在對話、回測、報告,與綁在加密交易所的股票永續策略上用得到"))
+    raise UsStockNotHere(_us_not_live("美股資料只在對話、回測、報告,與綁在加密交易所的股票永續策略上用得到"))
 
 
 def _us_routed_venue(name):
@@ -6696,14 +6683,12 @@ def _us_routed_venue(name):
 
 
 def _us_live_gate(sym):
-    """A live tick may fetch `sym` only on the desktop, for a Type A strategy routed to a crypto
+    """A live tick (desktop or cloud) may fetch `sym` only for a Type A strategy routed to a crypto
     exchange or paper whose SYMBOL is `sym`'s Binance stock perp (lib.stock_perps
     us_signal_refusal). UsStockNotHere with the reason otherwise; UsStockUnavailable when the
     routing or Binance's contract list cannot be read this round (the tick fails, the position
     stays). Whether the bound exchange lists that perp is the order's check
     (symbol_unavailable) and the save's, not this one's."""
-    if not _usstock_allowed():
-        raise UsStockNotHere(_US_DESKTOP_ONLY)
     if _US_LIVE is None:
         raise UsStockNotHere(_us_not_live("這次執行沒有標明是哪一支策略,請更新 blave agent"))
     name, symbol = _US_LIVE
@@ -6751,9 +6736,9 @@ def _us_symbol(symbol):
 
 
 def _yahoo_session():
-    """Yahoo's own session — and the desktop gate every direct Yahoo request passes."""
+    """Yahoo's own session — and the live-tick gate every direct Yahoo request passes."""
     global _YAHOO_SESSION
-    _us_require_desktop()
+    _us_request_gate()
     if _YAHOO_SESSION is None:
         _YAHOO_SESSION = requests.Session()
     return _YAHOO_SESSION
@@ -6764,7 +6749,7 @@ def _yahoo_get(url, params, tries=3):
     sources' (_tw_public_get), whose requests stay exactly as they are. Timeouts, connection
     errors, 429 and 5xx are retried twice; the answer comes back unraised so a 404 can be read.
     A 429 that outlasts the retries opens the circuit breaker for the rest of the process. The
-    desktop gate is in _yahoo_session, which every request here goes through."""
+    live-tick gate is in _yahoo_session, which every request here goes through."""
     _us_check_block('yahoo')
     for attempt in range(tries):
         _YAHOO_LIMITER.acquire()
@@ -6835,7 +6820,7 @@ def _fetch_usstock_yfinance_raw(sym):
     """Same frame from yfinance (Chrome-impersonating TLS via curl_cffi), auto_adjust=False so
     the one adjustment below applies to both sources."""
     global _YF_CACHE_SET
-    _us_require_desktop()
+    _us_request_gate()
     _us_check_block('yfinance')
     try:
         import yfinance as yf
@@ -6954,7 +6939,7 @@ def _us_cache_read(sym, src):
 def _usstock_daily(sym, end):
     """Raw snapshot for `sym` from the first source that can serve it, cached or fetched, with
     attrs['source'] naming it. Each call answers from ONE source's snapshot."""
-    _us_require_desktop()
+    _us_request_gate()
     now = pd.Timestamp.now(tz='UTC')
     failed = []
     for src, label, fetch in (('yahoo', 'Yahoo', _fetch_usstock_yahoo_raw),
@@ -6987,9 +6972,8 @@ def fetch_usstock_price(symbol, start, end, headers=None):
     returns across splits and dividends are real; the level of old bars is NOT what was quoted
     then. Volume is Yahoo's (split-adjusted, never dividend-scaled).
 
-    Desktop app only (BLAVE_AGENT_LOCAL=1): fetched on the user's own computer from Yahoo
-    Finance's public chart endpoint, then the yfinance package; elsewhere raises
-    UsStockUnavailable with a sentence to relay. A live tick fetches it only for a Type A
+    Desktop app and cloud machine alike: fetched from Yahoo Finance's public chart endpoint, then
+    the yfinance package where it is installed. A live tick fetches it only for a Type A
     strategy routed to a crypto exchange (or paper) whose SYMBOL is this ticker's Binance stock
     perp, NVDA → 'NVDAUSDT' (_us_live_gate). `headers` is accepted for a uniform fetch_data
     signature and never sent. A day's bar appears from 17:00 New York time

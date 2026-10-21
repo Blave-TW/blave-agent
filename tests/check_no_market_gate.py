@@ -3,7 +3,8 @@ market_hold.json and runs no market check of its own. What a save does judge by 
 gate (MARKET_VENUE, tests/check_amounts_president_symbol.py) and the US-stock one (US_CLOUD /
 US_SYMBOL / US_VENUE, tests/check_usstock_save_gate.py).
 
-  - a crypto strategy saves at any amount on the desktop and on a cloud box; config, UI mirror and
+  - a crypto strategy, and a US one trading its own stock perp (SPY signal, SYMBOL SPYUSDT), save at
+    any amount, alone or side by side, on the desktop and on a cloud box; config, UI mirror and
     schedules are written as for any other strategy
   - strategy code that mentions BLAVE_AGENT_LOCAL saves too (no MARKET_FLAG)
   - a stale state/market_hold.json left by a 0.1.12 dev build changes nothing: the reconciler no
@@ -30,6 +31,9 @@ sys.path.insert(0, os.path.join(ROOT, "runtime"))
 sys.path.insert(0, ROOT)
 os.chdir(WS)
 import command_listener as cl  # noqa: E402
+import lib.stock_perps as sp  # noqa: E402
+
+sp.binance_rows = lambda: {"SPYUSDT": ("EQUITY", "SPY")}
 
 fails = 0
 CONFIG = os.path.join(WS, "manager", "portfolio_config.json")
@@ -49,7 +53,8 @@ def write(rel, text):
         f.write(text)
 
 
-write("strategies/us_spy_sma/strategy.py", STRAT.format(n="us_spy_sma", f="fetch_usstock_price", s="SPY", h=""))
+write("strategies/us_spy_sma/strategy.py", STRAT.format(n="us_spy_sma", f="fetch_usstock_price", s="SPY", h="")
+      + "SYMBOL = 'SPYUSDT'\n")
 write("strategies/btc_sma/strategy.py", STRAT.format(n="btc_sma", f="fetch_kline", s="BTCUSDT", h=", headers"))
 write("strategies/flag_env/strategy.py", STRAT.format(n="flag_env", f="fetch_kline", s="BTCUSDT", h=", headers")
       + "import os\nos.environ['BLAVE_AGENT_LOCAL'] = '1'\n")
@@ -83,6 +88,9 @@ for mode in ("1", None):
         os.environ.pop("BLAVE_AGENT_LOCAL", None)
     where = "desktop" if mode else "cloud"
     for amounts, label in (({"btc_sma": 100}, "funded"), ({"btc_sma": 0}, "picked at 0"),
+                           ({"us_spy_sma": 100}, "a US strategy on its stock perp, funded"),
+                           ({"us_spy_sma": 0}, "a US strategy picked at 0"),
+                           ({"btc_sma": 100, "us_spy_sma": 0}, "a US strategy next to a crypto one"),
                            ({"flag_env": 50}, "mentioning BLAVE_AGENT_LOCAL")):
         reset()
         msg = save(amounts)
