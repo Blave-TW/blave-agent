@@ -3736,9 +3736,7 @@ function trSaveAmounts(names, stored, opener, o) {
     const waiting = host ? miss.filter((n) => codeChanged.indexOf(n) < 0) : [];
     if (waiting.length && !cf.until) cf.until = now + (waiting.every((n) => { const x = TR.list.find((y) => y.name === n) || {}; return x.twdAll === true && !trTxfSpec(x.symbol); }) ? TR_CF_WAIT_TW_MS : TR_CF_WAIT_MS);
     const late = waiting.length > 0 && now >= cf.until, wait = waiting.length > 0 && !late;
-    // 「才會進場」只在真的會進場時講:下單程式在跑(不是暫停)、有連帳戶、這家下得了這個標的(trCfWillOrder)
-    const flatNew = fire || miss.length ? [] : Object.keys(sending).filter((n) => !(n in stored) && Number(sending[n]) > 0 && !!m.st.states[n]
-      && trCfFlat(m.st.states[n], n) && trCfWillOrder(n, m.st.states[n], ctAfter));
+    const flatNew = fire || miss.length ? [] : Object.keys(sending).filter((n) => !(n in stored) && Number(sending[n]) > 0 && !!m.st.states[n] && trCfFlat(m.st.states[n], n));
     const sig = JSON.stringify([fire, m, held, waiting, late, codeChanged, hostOld, unread, oldPv, flatNew, TR_TWN.v, trTxfPrice()]);
     if (sig === cf.sig) return; cf.sig = sig;
     body.textContent = "";
@@ -3791,7 +3789,9 @@ function trSaveAmounts(names, stored, opener, o) {
         body.appendChild(dl);
       } else if (flatNew.length) {
         // 剛加入的策略算出來是空手:沒有單、沒有目標變動,框只剩標題與兩顆鈕——講一句為什麼
-        body.appendChild(trEl("p", "cf-note", flatNew.every((n) => trCfLongOnly(m.st.states[n], n)) ? t("tr.cf.flatLong") : t("tr.cf.flat")));
+        // 「才會進場」只在真的會進場時講:下單程式在跑(不是暫停)、有連帳戶、這家下得了(trCfWillOrder);其餘只講前半句
+        const enters = flatNew.every((n) => trCfWillOrder(n, m.st.states[n], ctAfter)), long = flatNew.every((n) => trCfLongOnly(m.st.states[n], n));
+        body.appendChild(trEl("p", "cf-note", !enters ? t("tr.cf.flatNoOrder") : long ? t("tr.cf.flatLong") : t("tr.cf.flat")));
       }
     }
     // 例外才有說明句(canon:不寫否定句、框底不放常駐的後果句)

@@ -509,12 +509,12 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("空手新策略(合約,在跑):「儲存金額」+「訊號出現時才會進場」、沒有列", f.title === "tr.cf.title" && f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flat"]), J(f));
     bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
     f = open();
-    ok("…沒在跑(沒綁帳戶):不說「才會進場」", !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    ok("…沒在跑(s9:尚未啟動、沒綁帳戶):只講前半句,不說「才會進場」", f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flatNoOrder"]), J(f));
     bag({ halted: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
     f = open();
-    ok("…暫停中:不說", !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    ok("…暫停中:只講前半句(暫停那句照出)", f.notes.includes("cf-note:tr.cf.flatNoOrder") && !f.notes.some((x) => x === "cf-note:tr.cf.flat" || x === "cf-note:tr.cf.flatLong"), J(f));
     bag(draft({ firing: true, pv: { weights: { "2330": 0, "2454": 0 } } })); f = open();
-    ok("…這家下不了(Binance 在跑、空手的台股組合):不說", f.rows.length === 0 && !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    ok("…這家下不了(Binance 在跑、空手的台股組合):只講前半句", f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flatNoOrder"]), J(f));
     bag({ firing: true, picked: ["btc", "tw", "sp"], edits: { sp: 300 }, list: [SP], noPv: true, pvs: { sp: flat0({ market: "spot" }) } });
     f = open();
     ok("空手新策略(現貨,只能做多):寫「訊號翻多時才會進場」", J(f.notes) === J(["cf-note:tr.cf.flatLong"]) && f.rows.length === 0, J(f));
@@ -551,7 +551,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("對照:不是 us_stock 的策略(加密市場)照寫顆", J(f.rows) === J(["tr.cf.buyNVDAUSDT0.9082 tr.cf.unitCoins"]), J(f)); }
 
   // ── 字串:兩語都有、中文全形
-  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capOrdersOpen", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.flat", "tr.cf.flatLong", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
+  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capOrdersOpen", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.flat", "tr.cf.flatLong", "tr.cf.flatNoOrder", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
     ok("字串:新 key 兩語都有;標題與主鈕同字(儲存並下單)", keys.every((k) => S0.en[k] && S0.zh[k]) && S0.zh["tr.cf.titleFire"] === "儲存並下單" && S0.zh["tr.cf.title"] === "儲存金額" && S0.zh["po.add"] === "加到策略組合",
       J(keys.filter((k) => !S0.en[k] || !S0.zh[k]))); }
   console.log(red ? `\n${red} FAILED` : "\nall checks passed");

@@ -8319,6 +8319,10 @@ msgstr "目前訊號空手，存檔後不會下單；訊號翻多時才會進場
 msgid "tr.cf.flat"
 msgstr "目前訊號空手，存檔後不會下單；訊號出現時才會進場。"
 
+# 同上,但下單程式沒在跑、暫停中、沒綁帳戶或這家下不了:訊號翻了也不會進場,只講前半句
+msgid "tr.cf.flatNoOrder"
+msgstr "目前訊號空手，存檔後不會下單。"
+
 msgid "tr.cf.codeChanged"
 msgstr "{names} 改過程式還沒回測，沒列進來；存了之後排程照最新的程式算。"
 

@@ -8302,6 +8302,10 @@ msgstr "The signal is flat right now, so saving places no order. It enters when 
 msgid "tr.cf.flat"
 msgstr "The signal is flat right now, so saving places no order. It enters when a signal appears."
 
+# 同上,但下單程式沒在跑、暫停中、沒綁帳戶或這家下不了:訊號翻了也不會進場,只講前半句
+msgid "tr.cf.flatNoOrder"
+msgstr "The signal is flat right now, so saving places no order."
+
 msgid "tr.cf.codeChanged"
 msgstr "{names}: the code changed after the last backtest, so it isn't listed. Once saved, the schedule runs the latest code."
 
