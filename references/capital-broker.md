@@ -738,8 +738,8 @@ nssm start blave-agent-capital
 Resolve `<python.exe>` to the machine's actual interpreter (`where python`) and adjust the
 workspace path if `BLAVE_AGENT_WORKSPACE` differs; read the password from
 `C:\blave-agent\credentials\rdp_password.txt` — never reset it (Step 2). On any tick failure the
-worker writes an error snapshot, backs off 30 s, and exits so NSSM restarts it with a fresh COM
-session — a stale/error snapshot therefore means the service is down or the venue is failing,
+worker writes an error snapshot, backs off (30 s, doubling per consecutive failure, capped at
+5 min), and exits so NSSM restarts it with a fresh COM session — a stale/error snapshot therefore means the service is down or the venue is failing,
 never a silently-wrong number.
 
 Each snapshot carries `query_started_at` (when that read began). Every 群益 futures order on the

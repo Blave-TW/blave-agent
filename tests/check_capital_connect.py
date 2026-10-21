@@ -436,8 +436,8 @@ except nwk.ProbeError as e:
     blocked_err = e
 check("5c worker refuses too, and says which code (so the snapshot maps to pw_locked)",
       blocked_err is not None and blocked_err.code == 307 and "code=307" in str(blocked_err))
-check("5c worker backoff: 30s, 60s, … capped at 30 min (not a re-login every 30s)",
-      [nwk._backoff_s(n) for n in (0, 1, 2, 5, 6, 20)] == [30, 60, 120, 960, 1800, 1800])
+check("5c worker backoff: 30s, 60s, … capped at 5 min (not a re-login every 30s, not a 30-min wait)",
+      [nwk._backoff_s(n) for n in (0, 1, 2, 3, 4, 20)] == [30, 60, 120, 240, 300, 300])
 os.remove(cc._paths()["block"])
 
 # ── 6. dispatch ──
