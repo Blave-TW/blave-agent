@@ -755,6 +755,12 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       && view({ ...MO, data_access: "plan_required", can_run: false, reason: "NO_CARD", has_card: false, trial_eligible: true }) === "offer"
       && view({ ...MO, data_access: "plan_required", has_card: true, trial_eligible: true }) === "plan" && view({ ...MO, data_access: "plan_required", has_card: true, reason: "NO_CARD", trial_eligible: true }) === "plan"
       && view({ ...MO, data_access: "plan_required", has_card: false, trial_eligible: false }) === "plan" && view({ ...MO, data_access: "plan_required", reason: null, trial_eligible: true }) === "plan");
+    ok("方案制、有方案沒卡又有試用資格(加密貨幣付款、Studio API 方案):照他現有的方案顯示,不出綁卡試用;沒方案才 offer",
+      view({ ...MO, data_access: "included", has_card: false, trial_eligible: true, plan: { state: "none", tier: "linux_starter", paid_until: AHEAD } }) === "planOn"
+      && view({ ...MO, data_access: "included", has_card: false, trial_eligible: true }) === "included"
+      && view({ ...MO, data_access: "included", reason: "NO_CARD", trial_eligible: true }) === "included"
+      && view({ ...MO, data_access: "payment_failed", has_card: false, trial_eligible: true }) === "payFail"
+      && view({ ...MO, data_access: "plan_required", has_card: false, trial_eligible: true }) === "offer");
     ok("方案制、方案有效但沒有主機(只開了方案,或期內刪了主機):不分階都是 planOn;已取消且到期 → 照一般 plan(要付新一期)",
       view({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", paid_until: AHEAD } }) === "planOn"
       && view({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_premium", label: "Premium", paid_until: AHEAD } }) === "planOn"
