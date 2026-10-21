@@ -603,7 +603,6 @@ html.ws-sc .side-gate { display: none; }
 /* 連接 Binance:欄位下面那塊說明(spec §5.2):上邊線,權限句 / 白名單+IP+複製 / 這個 IP 是什麼 */
 .cx-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cx-note p { margin: 0; }
-.cx-note p.cx-sub { color: var(--ink-2); }   /* 子帳戶建議:比下一段亮一階 */
 .cx-note p + p { margin-top: var(--space-4); }
 /* IP chip + icon 複製鈕、「金鑰存在哪?」展開列(設計師規格 v2 方案 C) */
 .cx-chipw { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-8); }

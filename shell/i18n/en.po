@@ -1384,12 +1384,6 @@ msgstr "When you create the key on Binance, whitelist this IP."
 msgid "cx.note.oneV"
 msgstr "When you create the key on {venue}: if you set an IP whitelist, add this IP."
 
-msgid "cx.note.subAcct"
-msgstr "We suggest a sub-account just for Blave, with the key created there. Blave manages every position on this account, so trades you open by hand may get closed."
-
-msgid "cx.note.subAcctOwn"
-msgstr "We suggest a sub-account just for Blave, with the key created there. On a one-way account the exchange nets Blave's orders against your own position in the same coin."
-
 # 連接框選 StockCoin 時說明區多一句(其他家不出;同網頁 workspace_cx_note_stockcoin)
 msgid "cx.note.stockcoin"
 msgstr "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance."
@@ -1553,9 +1547,6 @@ msgstr "Enter a whole number of lots, e.g. 3"
 
 msgid "tr.badLotsOld"
 msgstr "This is an older setting with a fractional lot count. Enter a whole number, e.g. 3"
-
-msgid "tr.lev.binance5"
-msgstr "Binance sub-accounts are capped at 5× futures leverage."
 
 msgid "tr.err.paperLev"
 msgstr "{sym} order not placed: the position would reach {gross} {c}, over the paper account limit of {cap} {c} ({x}× equity). Lower the amount."
@@ -5578,13 +5569,13 @@ msgid "br.pressing"
 msgstr "Pressing {key}"
 
 msgid "cap.venue"
-msgstr "Capital"
+msgstr "Capital Futures"
 
 msgid "cap.group.tw"
 msgstr "Taiwan stocks"
 
 msgid "cap.title"
-msgstr "Connect Capital"
+msgstr "Connect Capital Futures"
 
 msgid "cap.meta"
 msgstr "Can place orders and read your account. Connects one at a time."
@@ -5753,9 +5744,6 @@ msgstr "Reading…"
 
 msgid "cap.s.certExp"
 msgstr "Expires {date}"
-
-msgid "cap.acct.ts"
-msgstr "Securities"
 
 msgid "cap.acct.tf"
 msgstr "Futures"
@@ -8241,9 +8229,6 @@ msgstr "TWD conversions use the {d} rate (≈); signing in updates it"
 msgid "tr.marketVenue.rejected"
 msgstr "“{name}”{more}: this exchange can’t trade its market. Taiwan index futures need {president} or {capital}; crypto needs a crypto exchange. Uncheck it in Pick strategies, then save."
 
-msgid "tr.venueCapitalFull"
-msgstr "Capital Futures"
-
 msgid "tr.startOffNoRoute"
 msgstr "Save your order settings once in Portfolio first, so your strategies trade on the linked account."
 
@@ -8356,6 +8341,13 @@ msgstr " and {n} more"
 
 msgid "tr.marketVenue.crypto"
 msgstr "“{name}”{more} is a {market} strategy, which a crypto exchange can’t trade. Bind a Taiwan futures broker, or uncheck it in Pick strategies, then save."
+
+# 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句;字同網頁 workspace_pf_rej_us_symbol／us_venue
+msgid "tr.usSymbol.rejected"
+msgstr "“{name}”{more} uses a US-stock signal: it can only trade as a Type A single-symbol strategy, with SYMBOL set to that stock’s perpetual (e.g. NVDA → NVDAUSDT). Fix it and save again, or uncheck it in Pick strategies."
+
+msgid "tr.usVenue.rejected"
+msgstr "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick strategies, then save."
 
 msgid "tr.mktName.txf"
 msgstr "TAIEX futures"
@@ -8600,9 +8592,6 @@ msgstr "Keys stay on your cloud machine"
 
 msgid "cx.fact.perm"
 msgstr "Allow read and trade only, not withdrawals"
-
-msgid "cx.fact.ai"
-msgstr "Orders follow your strategy's code, not the AI"
 
 # Paper-trading fills: tucked under the "How do paper fills work?" disclosure (cx.paperNote retired)
 msgid "cx.paper.q"

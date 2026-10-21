@@ -144,15 +144,12 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
 { const TXF = TR_TXF_SPECS.TXF, MXF = TR_TXF_SPECS.MXF, TMF = TR_TXF_SPECS.TMF;
   { const cxp = src.slice(src.indexOf('const note = trEl("div", "cx-note");'), src.indexOf("if (cloud) {   // 雲端的五處差異之 2"));
   const STR = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
-  ok("ux §3.4 子帳戶建議:連接框說明區第一段、只給 CX_SUB_ACCT 那五家(模擬、群益、StockCoin 不出;同網頁);self_ledger 開換 subAcctOwn;Binance 接 tr.lev.binance5",
-    /if \(CX_SUB_ACCT\.indexOf\(venue\) >= 0\) note\.appendChild\(trEl\("p", "cx-sub", t\(\(trReport\(\) \|\| \{\}\)\.self_ledger === true \? "cx\.note\.subAcctOwn" : "cx\.note\.subAcct"\)/.test(cxp)
-    && /venue === BINANCE \? \(LANG === "zh" \? "" : " "\) \+ t\("tr\.lev\.binance5"\) : ""/.test(cxp) && cxp.indexOf("cx-sub") < cxp.indexOf('"cx.note.one"'));
-  ok("StockCoin 說明句:只在選 StockCoin 時接在子帳戶建議那段之後(模擬不畫說明區;本機與雲端同一段 code);zh / en 都有",
+  ok("StockCoin 說明句:只在選 StockCoin 時出、排在 IP 白名單那句之前(模擬不畫說明區;本機與雲端同一段 code);zh / en 都有",
     /\n    if \(venue === "stockcoin"\) note\.appendChild\(trEl\("p", "", t\("cx\.note\.stockcoin"\)\)\);\n/.test(cxp)
-    && cxp.indexOf('"cx.note.subAcct"') < cxp.indexOf('"cx.note.stockcoin"') && cxp.indexOf('"cx.note.stockcoin"') < cxp.indexOf('t("cx.note.one")')
+    && cxp.indexOf('"cx.note.stockcoin"') < cxp.indexOf('t("cx.note.one")')
     && src.indexOf('if (venue === PAPER) box.appendChild(cxPaperNote());\n  else {') < src.indexOf('"cx.note.stockcoin"')
     && STR.zh["cx.note.stockcoin"] === "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。" && STR.en["cx.note.stockcoin"] === "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance.");
-  ok("CX_SUB_ACCT = 網頁那五家,StockCoin 不在(待 Wei)", /^const CX_SUB_ACCT = \["binance", "okx", "bybit", "gateio", "bingx"\];/m.test(src)); }
+}
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
   ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause trading」(0.1.27);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause trading")
     && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「暫停並關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"));
@@ -2018,7 +2015,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         const gen = env === "cloud" ? "tr.cloud.cmdRejected" : "tr.cmdRejected";
         ok(`被拒(${env}):TYPE_B → tr.typeB.rejected;NOT_TXF → tr.notTxf.rejected 帶顯示名與交易所名(pres.venue,不寫死);MARKET_VENUE → tr.marketVenue.rejected 帶統一／群益在地名;其他代碼走一般那句、去掉例外名與代碼`,
           b === 'tr.typeB.rejected {"name":"grid","more":""}' && x === 'tr.notTxf.rejected {"name":"grid","more":"","venue":"pres.venue"}'
-          && mv === 'tr.marketVenue.rejected {"name":"grid","more":"","president":"pres.venue","capital":"tr.venueCapitalFull"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, x, mv, u]));
+          && mv === 'tr.marketVenue.rejected {"name":"grid","more":"","president":"pres.venue","capital":"cap.venue"}' && u === gen + ' {"err":"「spy」用到美股資料"}', J([b, x, mv, u]));
+        // 美股訊號策略(runtime _us_signal_refusal 的五種原句):一碼一句、名字換顯示名,不落成中文原句(同網頁 pfRejectText)
+        const us = ["ValueError: US_SYMBOL: 「grid」是投資組合(Type C)策略,美股訊號目前只能用單一標的策略下單——請取消勾選後再儲存",
+          "ValueError: US_SYMBOL: 「grid」是 Type B 策略,美股訊號只能用 Type A 單一標的策略下單——請取消勾選後再儲存",
+          "ValueError: US_SYMBOL: 「grid」SYMBOL 是 NVDA,要寫成 Binance 股票永續的名稱(例如 NVDA → NVDAUSDT)——請改好後再儲存,或取消勾選",
+          "ValueError: US_VENUE: 「grid」的下單標的 NVDAUSDT 在 OKX 沒有對應的股票永續——請改綁有這檔的交易所,或取消勾選後再儲存",
+          "ValueError: US_VENUE: 「grid」的下單標的 NVDAUSDT 在 Gate.io 是加密幣、不是股票永續——請改綁有這檔股票永續的交易所,或取消勾選後再儲存"].map((e) => se(e, "save", env));
+        ok(`被拒(${env}):US_SYMBOL → tr.usSymbol.rejected、US_VENUE → tr.usVenue.rejected,帶顯示名`, J(us) === J(Array(3).fill('tr.usSymbol.rejected {"name":"grid","more":""}').concat(Array(2).fill('tr.usVenue.rejected {"name":"grid","more":""}'))), J(us));
         // 稽核 r4 P2:好幾支被點名 → 最多列三支、其餘「等 N 支」;台股綁到加密交易所 → 講到台股
         const many = se("RuntimeError: NEEDS_ROUTING: 「a」、「b」、「c」、「d」、「e」 還沒有對應的交易所——請先到策略組合存一次下單設定,再啟動下單", "save", env);
         const tw = se("ValueError: MARKET_VENUE: 「grid」是台股策略,binance 是加密貨幣交易所、下不了——請改綁台灣期貨商,或取消勾選後再儲存", "save", env);
@@ -2027,9 +2031,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok(`被拒(${env}):五支點名 → 列前三支 + 「和另外 2 支」;台股策略綁加密 → tr.marketVenue.crypto 帶市場名(台股)`,
           many === 'tr.needsRouting.rejected {"name":"atr.rejNameSepbtr.rejNameSepc","more":"tr.rejMore {\\"n\\":2}"}' && tw === 'tr.marketVenue.crypto {"name":"grid","more":"","market":"tr.mktName.twStock"}', J([many, tw])); } }
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
-      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」",
+      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」(跟選單同一個 cap.venue);美股 US_SYMBOL／US_VENUE 兩句同網頁原文",
         /"tr\.notTxf\.rejected": "[^"]*\{venue\}只能下台指期。到「選擇策略」取消勾選後再儲存。"/.test(S) && /"tr\.pick\.txf": "\{venue\}只能下台指期/.test(S) && !/"tr\.(notTxf\.rejected|pick\.txf|pick\.txfKeep)": "[^"]*統一期貨/.test(S)
-        && S.includes('"tr.venueCapitalFull": "群益期貨"') && S.includes('"tr.venueCapitalFull": "Capital Futures"') && /"tr\.marketVenue\.rejected": "[^"]*\{president\}或\{capital\}/.test(S)); }
+        && S.includes('"tr.usSymbol.rejected": "「{name}」{more}用的是美股訊號：只能用 Type A 單一標的策略下單，SYMBOL 要寫成該檔的股票永續（例如 NVDA → NVDAUSDT）。改好後再儲存，或到「選擇策略」取消勾選。"')
+        && S.includes('"tr.usVenue.rejected": "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick strategies, then save."')
+        && S.includes('"cap.venue": "群益期貨"') && S.includes('"cap.venue": "Capital Futures"') && !S.includes("tr.venueCapitalFull") && /"tr\.marketVenue\.rejected": "[^"]*\{president\}或\{capital\}/.test(S)); }
     // 列(psRow):原因句 = 勾選框的 aria-describedby
     { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, dataset: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });
       const pctx = vm.createContext({ LANG: "zh", document: { createElement: mk }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : "") });
@@ -2169,12 +2175,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           ctx.document.createElement = mk0; }
         ctx.trEquity = () => null; }
     }
-    ok("接線:連接框「台股」一組雲端只列群益、這台電腦列統一(PRES_LOCAL_ON)與群益本機(CAPL_LOCAL_ON,0.1.28 先關);那兩句說明與 cx.cap.local* 一起刪;交易所選單只在「真實帳戶」出、換到不認得的值退回第一家;框頂那句 cx.acct.meta 換成真實帳戶的三行事實(onboarding E/F §7-4)",
+    ok("接線:連接框「台股」一組雲端只列群益、這台電腦列統一(PRES_LOCAL_ON)與群益本機(CAPL_LOCAL_ON,0.1.28 先關);那兩句說明與 cx.cap.local* 一起刪;交易所選單只在「真實帳戶」出、換到不認得的值退回第一家;框頂那句 cx.acct.meta 換成真實帳戶的兩行事實(onboarding E/F §7-4;「不經過 AI」那行 Wei 10-21 拿掉)",
       /const tw = CXF\.env !== "local" \? \[\[CAPITAL, "cap\.venue"\]\] : \[cxPresListed\(\) \? \["president", "pres\.venue"\] : null, cxCaplListed\(\) \? \[CAPITAL, "cap\.venue"\] : null\]\.filter\(Boolean\);/.test(src) && /g2\.label = t\("cap\.group\.tw"\);/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
       && !/cx\.cap\.local/.test(src) && !/cx\.cap\.local/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
       && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| \(sel\.value === CAPITAL && CXF\.env === "cloud"\) \|\| \(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\)\n\s+\|\| \(sel\.value === CAPITAL && CXF\.env === "local" && cxCaplListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(src)
       && !/cx\.acct\.meta/.test(src + fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
-      && /\[CXF\.env === "cloud" \? t\("cx\.fact\.keyCloud"\) : t\("cx\.fact\.key"\), t\("cx\.fact\.perm"\), t\("cx\.fact\.ai"\)\]/.test(src));
+      && /\[CXF\.env === "cloud" \? t\("cx\.fact\.keyCloud"\) : t\("cx\.fact\.key"\), t\("cx\.fact\.perm"\)\];/.test(src) && !/cx\.fact\.ai/.test(src));
     ok("接線:選擇策略框沒有 #ps-next、psOpen 不送 pick_gate_lock、外殼不讀 market_gate",
       !/ps-next/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8")) && !/pick_gate_lock/.test(src) && !/market_gate/.test(src)); }
   /* ── 部位表策略名 → 那支的進出場紀錄(spec-0.1.12-pf-strategy-link):落點、不可點的條件、埋點、點下去才發現不在 ── */
