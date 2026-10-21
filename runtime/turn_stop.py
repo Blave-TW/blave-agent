@@ -43,10 +43,11 @@ CANCEL_AFTER_S = 1.0
 # any direct lib/order_* / lib/execute / lib/venue (.env) / lib/portfolio (ledger) call.
 # Matched on the whole command line; what is kept around a match is split_tree's job.
 MONEY_ARGV = re.compile(
-    r"close_symbol|stop_strategy|manager[./]flatten|close_all|update_workspace|seed_ledger|reconciler\.py"
-    r"|capital_worker|president_worker|lib[./](?:order_|execute|venue|portfolio)"
+    r"close_symbol|stop_strategy|manager[./\\]flatten|close_all|update_workspace|seed_ledger|reconciler\.py"
+    r"|capital_worker|president_worker|lib[./\\](?:order_|execute|venue|portfolio)"
     r"|from\s+lib\s+import\s[^;\n]*\b(?:order_\w+|execute|venue|portfolio)\b"
-    r"|\border_(?:binance|bingx|bybit|okx|gateio|paper|capital|sinopac|president|stockcoin)\b")
+    r"|\border_(?:binance|bingx|bybit|okx|gateio|paper|capital|sinopac|president|stockcoin)\b",
+    re.I)  # Windows: PowerShell paths use \, and the file system ignores case
 # Hand-written scripts (`python tmp/close.py`) don't show it in argv: every lib/order_*
 # marks its process here at import (lib/guard.mark_money_process), until it exits.
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
@@ -109,6 +110,20 @@ def _marker_pids():
         return set()
 
 
+def _marker_stamps():
+    """{pid: creation time the process wrote into its marker (lib/guard, Windows), or None for
+    a marker without one (POSIX, older lib)}."""
+    out = {}
+    for pid in _marker_pids():
+        try:
+            with open(os.path.join(MONEY_PID_DIR, str(pid))) as f:
+                text = f.read().strip()
+            out[pid] = int(text) if text.isdigit() else None
+        except (OSError, ValueError):
+            out[pid] = None
+    return out
+
+
 def _money_pids():
     """pids with a live marker; markers of dead processes are removed on the way. POSIX only:
     on Windows os.kill(pid, 0) is TerminateProcess — _clear_dead_markers checks them against
@@ -133,7 +148,7 @@ def money_label(cmd):
     m = MONEY_ARGV.search(cmd or "")
     if not m:
         return None
-    g = m.group(0)
+    g = m.group(0).lower().replace("\\", "/")
     return ("lib/" + g[4:]).rstrip("_") if g[:4] in ("lib/", "lib.") else g
 
 
@@ -241,14 +256,71 @@ def _windows_pairs():
 UNSEEN = "unconfirmed"
 
 
+DENIED = "denied"
+
+
+def _k32():
+    import ctypes
+    return ctypes.WinDLL("kernel32", use_last_error=True)
+
+
 def _nt_open(pid):
     """A handle that may terminate and query `pid`, or None. Held from the creation-time check
     to TerminateProcess, so the process killed is the one checked (no pid reuse in between)."""
     import ctypes
-    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32 = _k32()
     k32.OpenProcess.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_uint]
     k32.OpenProcess.restype = ctypes.c_void_p
     return k32.OpenProcess(0x1001, False, pid) or None  # TERMINATE | QUERY_LIMITED_INFORMATION
+
+
+def _nt_open_query(pid):
+    """For a pid _nt_open could not get: a query-only handle, DENIED when the process is there
+    but not ours to open, None when it is gone."""
+    import ctypes
+    k32 = _k32()
+    k32.OpenProcess.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_uint]
+    k32.OpenProcess.restype = ctypes.c_void_p
+    h = k32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+    if h:
+        return h
+    return DENIED if ctypes.get_last_error() == 5 else None  # ERROR_ACCESS_DENIED
+
+
+def _nt_ppid(handle):
+    """Parent pid as recorded in the process behind `handle` (ProcessBasicInformation), or None.
+    Read through the handle, it belongs to the process that is open — not to whoever held the
+    pid when the table was taken."""
+    import ctypes
+
+    class PROCESS_BASIC_INFORMATION(ctypes.Structure):
+        _fields_ = [("ExitStatus", ctypes.c_long), ("PebBaseAddress", ctypes.c_void_p),
+                    ("AffinityMask", ctypes.c_size_t), ("BasePriority", ctypes.c_long),
+                    ("UniqueProcessId", ctypes.c_size_t),
+                    ("InheritedFromUniqueProcessId", ctypes.c_size_t)]
+
+    q = ctypes.WinDLL("ntdll").NtQueryInformationProcess
+    q.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong,
+                  ctypes.POINTER(ctypes.c_ulong)]
+    q.restype = ctypes.c_long
+    pbi = PROCESS_BASIC_INFORMATION()
+    if q(handle, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), None) < 0:
+        return None
+    return int(pbi.InheritedFromUniqueProcessId)
+
+
+def _nt_image(handle):
+    """Lower-case executable name (conhost.exe), or "" when it cannot be read."""
+    import ctypes
+    from ctypes import wintypes
+    k32 = _k32()
+    k32.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, wintypes.DWORD, wintypes.LPWSTR,
+                                               ctypes.POINTER(wintypes.DWORD)]
+    k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    buf, size = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
+    if not k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+        return ""
+    return buf.value.replace("/", "\\").rsplit("\\", 1)[-1].lower()
 
 
 def _nt_created(handle):
@@ -314,39 +386,75 @@ def _nt_pairs():
         return []
 
 
-def _clear_dead_markers(pairs):
+def _clear_dead_markers(pairs, markers):
     """Windows has no os.kill(pid, 0) to tell a dead marker (it is TerminateProcess there): a
-    marker whose pid is not in a readable Toolhelp table is left by a process that is gone."""
+    marker whose pid is not in a readable Toolhelp table is left by a process that is gone.
+    `markers` is listed BEFORE the table is taken: one written after the table by a process
+    the table does not show yet must not be removed (that process never marks itself again)."""
     live = {pid for pid, _ in pairs}
-    for pid in _marker_pids() - live:
+    for pid in markers - live:
         try:
             os.remove(os.path.join(MONEY_PID_DIR, str(pid)))
         except OSError:
             pass
 
 
-def _nt_probe(pairs, root, handles, info):
+def _live_marks(info):
+    """Markers that count: no creation time recorded (POSIX, older lib), or one that matches the
+    process now holding the pid. A marker left by a hard-killed process whose pid went to this
+    turn's engine would otherwise keep the whole turn alive."""
+    out = set()
+    for pid, stamp in _marker_stamps().items():
+        now = info.get(pid, (None,))[0]
+        if stamp is None or now is None or now == stamp:
+            out.add(pid)
+    return out
+
+
+def _nt_probe(pairs, root, handles, info, strict):
     """Open root and every pid listed under it that is not open yet: handles[pid], and
-    info[pid] = (creation time, command line). A pid that cannot be opened stays out of info."""
+    info[pid] = (creation time, command line, killable). Gone, or its pid reused since the
+    table (the parent read through the handle differs), stays out of info. strict: a parent
+    that cannot be read through the handle stays out too — on the second look there is no
+    later table to catch a reuse, the next sweep takes it. There but not ours to open:
+    (None, None, False), which nt_plan counts as unconfirmed. conhost.exe is never killed
+    (the console the engine and a kept money tool share)."""
+    listed = dict(pairs)
     for pid in [root] + descendants(pairs, root):
         if pid in info:
             continue
         h = _nt_open(pid)
+        killable = bool(h)
         if not h:
-            continue
+            h = _nt_open_query(pid)
+            if h == DENIED:
+                info[pid] = (None, None, False)
+                continue
+            if not h:
+                continue
         handles[pid] = h
-        info[pid] = (_nt_created(h), "" if pid == root else _nt_cmdline(h))
+        if pid == root:
+            info[pid] = (_nt_created(h), "", False)
+            continue
+        ppid = _nt_ppid(h)
+        if ppid != listed.get(pid) and (strict or ppid is not None):
+            continue
+        if _nt_image(h) == "conhost.exe":
+            info[pid] = (_nt_created(h), "", False)
+            continue
+        info[pid] = (_nt_created(h), _nt_cmdline(h), killable)
 
 
 def _nt_kill(root, hold_engine):
+    markers = _marker_pids()
     pairs = _nt_pairs()
     if not pairs:
         return [], ([UNSEEN] if hold_engine else [])
-    _clear_dead_markers(pairs)
+    _clear_dead_markers(pairs, markers)
     handles, info = {}, {}
     try:
-        _nt_probe(pairs, root, handles, info)
-        kill, labels = nt_plan(pairs, root, _marker_pids(), hold_engine, info)
+        _nt_probe(pairs, root, handles, info, False)
+        kill, labels = nt_plan(pairs, root, _live_marks(info), hold_engine, info)
         if kill:
             # With the handles open, look again: a script that imported lib/order_* after the
             # snapshot has marked itself, and a child started meanwhile would be orphaned (never
@@ -354,8 +462,8 @@ def _nt_kill(root, hold_engine):
             again = _nt_pairs()
             if not again:
                 return [], ([UNSEEN] if hold_engine else labels)
-            _nt_probe(again, root, handles, info)
-            kill, labels = nt_plan(again, root, _marker_pids(), hold_engine, info)
+            _nt_probe(again, root, handles, info, True)
+            kill, labels = nt_plan(again, root, _live_marks(info), hold_engine, info)
         return [pid for pid in kill if _nt_terminate(handles[pid])], labels
     finally:
         for h in handles.values():
@@ -364,20 +472,21 @@ def _nt_kill(root, hold_engine):
 
 def nt_plan(pairs, root, marked, hold_engine, info=None):
     """(kill, labels) on Windows: the whole tree under `root`, pid by pid, but money processes.
-    info = {pid: (creation time, command line or None if unreadable)} for every pid that could
-    be opened (None: every pid in `pairs`, no command lines). A Toolhelp ppid can be stale — the
-    parent died and its pid went to a newer process — so a link is trusted only when the child
-    was not created before its parent; an untrusted or unopenable pid is not killed, nor
-    anything under it. Money = a lib/guard marker or MONEY_ARGV on the command line (not for
-    the engine, `root`'s direct children: Claude's argv names president_worker); an unreadable
-    command line counts as money (UNSEEN). Kept, as split_tree does on POSIX: a money process,
-    everything under it, and its whole tool call — the subtree of the engine's child it sits
-    in, Windows having no sessions — so `python close.py | tail` keeps its tail. With
+    info = {pid: (creation time, command line or None if unreadable, killable)} for every pid
+    that could be looked at (None: every pid in `pairs`, killable, no command lines). A Toolhelp
+    ppid can be stale — the parent died and its pid went to a newer process — so a link is
+    trusted only when the child was not created before its parent; an untrusted pid is not
+    killed, nor anything under it. Money = a lib/guard marker or MONEY_ARGV on the command line
+    (not for the engine, `root`'s direct children: Claude's argv names president_worker); an
+    unreadable command line, or a live process directly under a trusted one that cannot be
+    opened at all, counts as money (UNSEEN). Kept, as split_tree does on POSIX: a money
+    process, everything under it, and its whole tool call — the subtree of the engine's child
+    it sits in, Windows having no sessions — so `python close.py | tail` keeps its tail. With
     hold_engine (Codex pipes its tools' output), nothing is killed while a money process sits
-    under `root`; there the unchecked links count too, a stale ppid can only add a process to
-    the hold, which _watch caps at HOLD_MAX_S."""
+    under `root`; there a marker counts even through an untrusted link (a stale ppid can only
+    add a process to the hold, which _watch caps at HOLD_MAX_S)."""
     if info is None:
-        info = {pid: (0, "") for pair in pairs for pid in pair}
+        info = {pid: (0, "", True) for pair in pairs for pid in pair}
     kids = {}
     for pid, ppid in pairs:
         if pid != ppid:
@@ -388,16 +497,19 @@ def nt_plan(pairs, root, marked, hold_engine, info=None):
     while todo:
         up = todo.pop(0)
         up_t = info[up][0] if up in info else None
+        if up_t is None:
+            continue
         for child in kids.get(up, ()):
             if child == root or child in parent or child not in info:
                 continue
             t = info[child][0]
-            if up_t is None or t is None or t < up_t:
+            if t is not None and t < up_t:
                 continue
             parent[child] = up
             unit[child] = child if up == root or up in engines else unit[up]
             tree.append(child)
-            todo.append(child)
+            if t is not None:  # a pid that could not be opened: nothing under it is trusted
+                todo.append(child)
 
     def label(pid):
         if pid in marked:
@@ -414,13 +526,14 @@ def nt_plan(pairs, root, marked, hold_engine, info=None):
             labels.add("order script")
         if labels:
             return [], sorted(labels)
-        return tree, []
+        return [pid for pid in tree if info[pid][2]], []
     money_units = {unit[pid] for pid in tree if money[pid] and pid not in engines}
     keep = set()
     for pid in tree:
         if parent[pid] in keep or money[pid] or unit[pid] in money_units:
             keep.add(pid)
-    return [pid for pid in tree if pid not in keep], sorted({money[p] for p in keep} - {None})
+    return ([pid for pid in tree if pid not in keep and info[pid][2]],
+            sorted({money[p] for p in keep} - {None}))
 
 
 def kill_tree(root=None, hold_engine=False):

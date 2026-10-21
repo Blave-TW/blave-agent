@@ -469,10 +469,32 @@ def mark_money_process():
     path = os.path.join(MONEY_PID_DIR, str(os.getpid()))
     try:
         os.makedirs(MONEY_PID_DIR, exist_ok=True)
-        open(path, "w").close()
+        with open(path, "w") as f:
+            f.write(_own_created())
         atexit.register(_unmark_money_process, path)
     except OSError as e:
         logging.warning(f"guard: money-process marker write failed: {e}")
+
+
+def _own_created():
+    """Windows: this process's creation time (FILETIME ticks), so turn_stop can tell this marker
+    from one left by a hard-killed process whose pid was reused. "" elsewhere or on failure
+    (turn_stop then counts the marker as it always did)."""
+    if os.name != "nt":
+        return ""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetCurrentProcess.restype = ctypes.c_void_p
+        k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        k32.GetProcessTimes.restype = wintypes.BOOL
+        t = [wintypes.FILETIME() for _ in range(4)]
+        if not k32.GetProcessTimes(k32.GetCurrentProcess(), *(ctypes.byref(x) for x in t)):
+            return ""
+        return str((t[0].dwHighDateTime << 32) | t[0].dwLowDateTime)
+    except Exception:
+        return ""
 
 
 def _unmark_money_process(path):
