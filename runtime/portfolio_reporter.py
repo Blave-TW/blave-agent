@@ -608,7 +608,8 @@ def backtest_previews(cfg, states, now=None):
       Type C: {type: portfolio, market, weights, closes, rebalance_at, bar_at, bar_date, latest}
       Type A: {type: signal, symbol, market, position, close, bar_at, bar_date, latest}
     Both may carry raw_closes {SYM: unadjusted close} for Taiwan stocks (the dialog's share count).
-    `daily_tw` = a Taiwan daily bar (the dialog says "close" instead of a time). Display only."""
+    `daily_tw` / `daily_us` = a Taiwan / US daily bar (the dialog says "close" on bar_date instead
+    of a time). Display only."""
     amounts = cfg.get("amounts") if isinstance(cfg, dict) else None
     amounts = amounts if isinstance(amounts, dict) else {}
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
@@ -661,6 +662,8 @@ def backtest_previews(cfg, states, now=None):
         row = {"bar_at": bar_at, "bar_date": _bar_date(bar_at, markets),
                "latest": _preview_is_latest(bar_at, markets, td, now),
                "daily_tw": bool(markets) and markets <= _TAIPEI_MARKETS and td == timedelta(days=1),
+               # US daily (the only US preview sent): bar_date is the New York trading date
+               "daily_us": markets == {"us_stock"},
                "market": _strategy_market(name)}
         if data.get("type") == "signal":
             sym, close = data.get("symbol"), _finite_pos(data.get("close"))

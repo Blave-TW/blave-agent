@@ -135,7 +135,8 @@ check(a is not None and a["type"] == "signal" and a["position"] == -0.5 and a["c
       f"unpicked (draft) Type A previewed, latest ({a})")
 check(c is not None and c["weights"] == {"AAAUSDT": 0.5, "BBBUSDT": 0.5} and set(c["closes"]) == {"AAAUSDT", "BBBUSDT"},
       f"unpicked Type C previewed with closes ({c and c.get('closes')})")
-check(a is not None and a["daily_tw"] is False and "code_hash" not in a, "crypto daily: daily_tw false; code_hash not forwarded")
+check(a is not None and a["daily_tw"] is False and a["daily_us"] is False and "code_hash" not in a,
+      "crypto daily: daily_tw / daily_us false; code_hash not forwarded")
 later = pr.backtest_previews({"amounts": {}}, pr.strategy_states(), now=NOW + timedelta(days=3)).get("ta")
 check(later is not None and later["latest"] is False, "a newer bar has closed since: still forwarded, latest false")
 
@@ -214,7 +215,8 @@ for now, want, why in ((datetime(2026, 10, 20, 22, 30), True, "Tue 18:30 NY: Tue
                        (datetime(2026, 10, 21, 21, 30), False, "Wed 17:30 NY: Wed's is final, Tue's stale")):
     got = us_pv("us_tue", now)
     check(got is not None and got["latest"] is want and got["symbol"] == "NVDAUSDT" and got["close"] == 216.47
-          and got["daily_tw"] is False, f"US daily preview, {why} ({got and got.get('latest')})")
+          and got["daily_tw"] is False and got["daily_us"] is True and got["bar_date"] == "2026-10-20",
+          f"US daily preview, {why} ({got and got.get('latest')})")
 us_draft("us_fri", US_SRC, "2026-11-06")
 for now, why in ((datetime(2026, 11, 8, 12, 0), "Sunday"), (datetime(2026, 11, 9, 15, 0), "Monday before the close"),
                  (datetime(2026, 11, 9, 21, 30), "Mon 16:30 EST (21:30 UTC is past 17:00 only in summer)")):
