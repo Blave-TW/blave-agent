@@ -8312,6 +8312,13 @@ msgstr "股"
 msgid "tr.cf.unitCoins"
 msgstr "顆"
 
+# 存金額框:剛加入的策略算出來空手(沒有單、沒有目標變動),框裡唯一的一句。只能做多的(現貨、模擬盤台股現股)寫翻多,其餘寫訊號出現
+msgid "tr.cf.flatLong"
+msgstr "目前訊號空手，存檔後不會下單；訊號翻多時才會進場。"
+
+msgid "tr.cf.flat"
+msgstr "目前訊號空手，存檔後不會下單；訊號出現時才會進場。"
+
 msgid "tr.cf.codeChanged"
 msgstr "{names} 改過程式還沒回測，沒列進來；存了之後排程照最新的程式算。"
 

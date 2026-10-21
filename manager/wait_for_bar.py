@@ -786,9 +786,10 @@ def _tick(name):
                 # not main()'s "wrapper itself is broken" alert — and back off
                 # like any other failed attempt instead of retrying every minute.
                 output = f"fetch_data() raised while checking freshness: {e}\n" + traceback.format_exc()
-                if _is_us_unavailable(e):   # last: alert() keeps the tail of the output
+                transient = _is_us_unavailable(e)
+                if transient:   # last: alert() keeps the tail of the output
                     output += "\n美股日線這輪抓不到,沒有算訊號,部位維持原樣不動,稍後自動重試。"
-                _alert_failure().alert(name, "fetch_error", output)
+                _alert_failure().alert(name, "fetch_error", output, transient=transient)
                 state["last_attempt_failed_at"] = time.time()
                 _save_state(name, state)
                 return
@@ -1018,11 +1019,13 @@ def _us_last_session(day):
 
 
 def _is_us_unavailable(exc):
+    """Yahoo / yfinance did not answer this round — retrying can succeed. UsStockNotHere (a
+    routing refusal) subclasses it but repeats every run until the setup changes."""
     try:
-        from lib.data import UsStockUnavailable
+        from lib.data import UsStockNotHere, UsStockUnavailable
     except ImportError:
         return False
-    return isinstance(exc, UsStockUnavailable)
+    return isinstance(exc, UsStockUnavailable) and not isinstance(exc, UsStockNotHere)
 
 
 def _clear_wait(name, state):

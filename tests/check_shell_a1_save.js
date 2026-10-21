@@ -35,7 +35,7 @@ vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSe
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
   "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper",
-  "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
+  "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
   + "\n" + ["poAddBtn", "poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
 // 台股時段照牆上時鐘會讓結果隨星期幾變:預設開盤,休市那組(F15)自己切 TW_OPEN = false
@@ -501,8 +501,44 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     await vm.runInContext("poAdd(TR, 'tw', true)", ctx);
     ok("④ 描邊那顆:只跳過去(不改草稿),記 po_add_go", S.picked === null && feats.includes("po_add_go"), J(feats)); }
 
+  // 0.1.28 排練:剛加入的策略訊號空手 → 框不能只剩標題與兩顆鈕(s9_save_dialog)
+  { const flat0 = (extra) => pvA("ETHUSDT", Object.assign({ position: 0, close: 3000 }, extra || {}));
+    bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
+    let f = open();
+    ok("空手新策略(合約,沒在跑):框裡有一句「訊號出現時才會進場」、沒有列", f.title === "tr.cf.title" && f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flat"]), J(f));
+    bag({ firing: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
+    f = open();
+    ok("…在跑也一樣:「儲存金額」+ 同一句", f.title === "tr.cf.title" && f.rows.length === 0 && f.notes.includes("cf-note:tr.cf.flat"), J(f));
+    const SP = { name: "sp", displayName: "SP", hasBacktest: true, symbol: "ETHUSDT", market: "spot" };
+    bag({ picked: ["btc", "tw", "sp"], edits: { sp: 300 }, list: [SP], noPv: true, pvs: { sp: flat0({ market: "spot" }) } });
+    f = open();
+    ok("空手新策略(現貨,只能做多):寫「訊號翻多時才會進場」", J(f.notes) === J(["cf-note:tr.cf.flatLong"]) && f.rows.length === 0, J(f));
+    bag(draft({ pv: { weights: { "2330": 0, "2454": 0 } } })); f = open();
+    ok("空手新投資組合(台股現貨權重全 0):翻多那句", f.title === "tr.cf.title" && f.rows.length === 0 && f.notes.includes("cf-note:tr.cf.flatLong"), J(f));
+    bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0({ position: 1 }) } });
+    f = open();
+    ok("對照:新策略有部位 → 照列、不出空手那句", f.rows.length === 1 && !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f));
+    bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0({ latest: false }) }, firing: true });
+    f = open();
+    ok("對照:預覽不是最新那根(框保守寫儲存並下單)→ 不說「不會下單」", f.title === "tr.cf.titleFire" && !f.notes.some((x) => /tr\.cf\.flat/.test(x)), J(f)); }
+  // 0.1.28 排練:股票永續(us_stock 策略下 NVDAUSDT)數量寫「股」、照交易所小數(s17_save_dialog_long);加密照「顆」
+  { const NV = { name: "nv", displayName: "NV", hasBacktest: true, symbol: "NVDAUSDT", market: "swap" }, kinds = { strategy_kinds: { nv: { market: "us_stock" } } };
+    const pvN = pvA("NVDAUSDT", { close: 220.21, daily_us: true });
+    bag({ firing: true, picked: ["btc", "tw", "nv"], edits: { nv: 200 }, list: [NV], noPv: true, pvs: { nv: pvN }, rep: kinds });
+    let f = open();
+    ok("股票永續會送單:買進 NVDAUSDT 0.9082 股(不捨去成整股)", J(f.rows) === J(["tr.cf.buyNVDAUSDT0.9082 tr.cf.unitShares"]), J(f));
+    bag({ picked: ["btc", "tw", "nv"], edits: { nv: 200 }, list: [NV], noPv: true, pvs: { nv: pvN }, rep: kinds });
+    f = open();
+    ok("股票永續原 → 新:小字也寫股", J(f.rows) === J(["NVDAUSDT2000.9082 tr.cf.unitShares"]), J(f));
+    bag({ env: "cloud", firing: true, picked: ["btc", "tw", "nv"], edits: { nv: 200 }, list: [Object.assign({ srcMarket: "us_stock" }, NV)], noPv: true, pvs: { nv: pvN } });
+    f = open();
+    ok("雲端(市場讀清單 srcMarket):同樣寫股", f.rows.some((x) => /NVDAUSDT0\.9082 tr\.cf\.unitShares$/.test(x)), J(f));
+    bag({ firing: true, picked: ["btc", "tw", "nv"], edits: { nv: 200 }, list: [NV], noPv: true, pvs: { nv: pvN } });
+    f = open();
+    ok("對照:不是 us_stock 的策略(加密市場)照寫顆", J(f.rows) === J(["tr.cf.buyNVDAUSDT0.9082 tr.cf.unitCoins"]), J(f)); }
+
   // ── 字串:兩語都有、中文全形
-  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capOrdersOpen", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
+  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capOrdersOpen", "tr.cf.capChanges", "tr.cf.asofClose", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.flat", "tr.cf.flatLong", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
     ok("字串:新 key 兩語都有;標題與主鈕同字(儲存並下單)", keys.every((k) => S0.en[k] && S0.zh[k]) && S0.zh["tr.cf.titleFire"] === "儲存並下單" && S0.zh["tr.cf.title"] === "儲存金額" && S0.zh["po.add"] === "加到策略組合",
       J(keys.filter((k) => !S0.en[k] || !S0.zh[k]))); }
   console.log(red ? `\n${red} FAILED` : "\nall checks passed");
