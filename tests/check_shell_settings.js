@@ -576,7 +576,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const PLAN_SLOW_MS = 1e9, srSay = () => {}, planAsk = () => {}, planLogin = () => {}, acctCheck = () => {}, acctUrl = () => "acct", planWebUrl = () => "https://blave.org/agent/zh", apiPlanUrl = () => "https://blave.org/landing/zh/pricing", planState = () => (acct && acct.plan && acct.plan.state) || "none";   // 同 app.js(未登入 acct 為 null 也會走到展開區)
   let PV_P = "", PV_R = "", PV_N = 0, PV_H = "", PV_PR = null, PV_U = "", PV_GU = "", PV_X = "", PV_PD = "", PV_T = "", PV_Q = "", PV_D = "", PV_TIER = "", PV_A = "", PV_TOP = "", PV_YD = "", pub = null;
   const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: PV_A, b: "", v: "", t: PV_T, q: PV_Q, top: PV_TOP, d: PV_D, n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: PV_YD, g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD, tier: PV_TIER });
-  eval(fnSrc("dataAccessOf")); eval(fnSrc("planMo")); eval(src.match(/^const planPriceOk = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planFailing = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planPaidAhead = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planEnded = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTierLabel = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("planStopKind"));
+  eval(fnSrc("dataAccessOf")); for (const n of ["acctNoCard", "acctOffer"]) { const m = src.match(new RegExp("^const " + n + " = [^\\n]*$", "m")); if (m) eval(m[0].replace(/^const /, "var ")); } eval(fnSrc("planMo")); eval(src.match(/^const planPriceOk = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planFailing = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planPaidAhead = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planEnded = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTierLabel = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("planStopKind"));
   eval(src.match(/^const planTrialOn = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTrialCx = [^\n]*$/m)[0].replace(/^const /, "var "));
   eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var ")); const usageUrl = () => "usage", planWebGo = () => { seen.push("ext:" + planPayUrl()); };
   eval(src.match(/^function cloudWebGo\(\) \{[^\n]*\}$/m)[0]); eval(fnSrc("planRunRule")); eval(fnSrc("planPriceEl"));
@@ -750,6 +750,11 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       && view({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }) === "offer" && view({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: false }) === "plan"
       && (PV_N = 5, view({ ...MO, data_access: "included" }) === "trial") && ((PV_N = 0), true)
       && (acct = { ...MO, plan: { state: "stopped", tier: "linux_starter" } }, planView()) === "stopped");
+    ok("§5.1 方案制、沒卡看 has_card:綁卡前額度還有剩(can_run=true、reason 空、has_card:false)、有試用資格 → offer(舊碼看 reason 會是「沒有方案」);有卡 → plan;試用資格用掉 → plan;舊 api 沒有 has_card 退回 reason",
+      view({ ...MO, data_access: "plan_required", can_run: true, reason: null, has_card: false, trial_eligible: true }) === "offer"
+      && view({ ...MO, data_access: "plan_required", can_run: false, reason: "NO_CARD", has_card: false, trial_eligible: true }) === "offer"
+      && view({ ...MO, data_access: "plan_required", has_card: true, trial_eligible: true }) === "plan" && view({ ...MO, data_access: "plan_required", has_card: true, reason: "NO_CARD", trial_eligible: true }) === "plan"
+      && view({ ...MO, data_access: "plan_required", has_card: false, trial_eligible: false }) === "plan" && view({ ...MO, data_access: "plan_required", reason: null, trial_eligible: true }) === "plan");
     ok("方案制、方案有效但沒有主機(只開了方案,或期內刪了主機):不分階都是 planOn;已取消且到期 → 照一般 plan(要付新一期)",
       view({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", paid_until: AHEAD } }) === "planOn"
       && view({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_premium", label: "Premium", paid_until: AHEAD } }) === "planOn"
@@ -893,7 +898,9 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         PV_A = "50";
         const hasShort = (a) => (paintOf(a), walk(dom["set-plan"]).some((n) => /^plan\.topupShort\{/.test(n.textContent)));
         ok("…沒卡的人(acct.reason = NO_CARD:綁卡拿試用／沒試用兩格)不出那一行(沒有卡可刷,那格底列在講綁卡時開啟自動儲值);有卡照出", !hasShort({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }) && !hasShort({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: false })
-          && hasShort({ ...MO, data_access: "plan_required" }) && hasShort({ ...MO, data_access: "included", reason: "NO_CREDIT", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } })); }
+          && hasShort({ ...MO, data_access: "plan_required" }) && hasShort({ ...MO, data_access: "included", reason: "NO_CREDIT", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } }));
+        ok("…沒卡看 has_card(paywall-redesign §2.2):綁卡前額度還有剩(reason 空、has_card:false)也不出;has_card:true 就出(就算 reason 還是 NO_CARD)", !hasShort({ ...MO, data_access: "plan_required", can_run: true, reason: null, has_card: false, trial_eligible: true })
+          && hasShort({ ...MO, data_access: "included", has_card: true, reason: "NO_CARD", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } })); }
       PV_A = ""; PV_TOP = "";
       PV_D = ""; PV_P = ""; PV_U = ""; PV_X = ""; PV_GU = ""; PV_N = 0; }
     PV_N = 5;
@@ -947,9 +954,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   let V = { t: 14, p: "1,440", r: "2" };
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};
   const acctUrl = () => "topup", faultCard = () => mkCard(), submitMessage = async () => true, $ = () => ({ focus() {} });
-  const acctSub = () => null, acctAction = () => ({}), acctCrypto = () => null, resendSecond = () => null, planRepay = () => {}, apiPlanGo = () => {}, trackFeature = () => {};
+  const acctSub = () => null, acctAction = () => ({}), acctCrypto = () => null, resendSecond = () => null, planRepay = () => {}, apiPlanGo = () => {};
+  const went = [], trackFeature = (n) => went.push("track:" + n), bindGo = (n) => went.push("bind:" + n);
   let pub = null; eval(fnSrc("planMo"));
-  eval(fnSrc("dataAccessOf")); eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
+  eval(fnSrc("dataAccessOf")); for (const n of ["acctNoCard", "acctOffer"]) { const m = src.match(new RegExp("^const " + n + " = [^\\n]*$", "m")); if (m) eval(m[0].replace(/^const /, "var ")); } eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
   eval(fnSrc("dataReadyText")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
   const A = (o) => ({ can_run: true, plan: { state: "none" }, ...o });
   acct = A({ data_access: "none", reason: "NO_CREDIT", data_hourly: 2 });
@@ -968,8 +976,22 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   c = dataCardState();
   ok("方案制沒有方案:講清楚「開雲端方案或 API 方案」;主鈕〔看方案〕開設定 › 帳號與方案、第二顆〔API 方案〕",
     c.text === "data.noPlan" && c.label === "data.seePlan" && !c.out && c.second && c.second.label === "pv.apiPlan" && !/noCreditBtn|addCard/.test(JSON.stringify(c)));
-  acct = A({ data_access: "plan_required", reason: "NO_CARD", trial_eligible: true });
-  ok("方案制、有試用資格又沒卡:先講綁卡(綁卡就有試用資料)", dataCardState().text === (cur === "blave" ? "pv.e.card" : "pv.e.card.cli") + JSON.stringify(V));
+  /* paywall-redesign-2026-10-21 §2.2 A 版:方案制、有試用資格又沒卡 → 只放動作:灰記號、填色〔綁卡，免費試用 {t} 天〕直開綁卡頁(bind_data)、
+     文字鈕〔看方案〕(plan_data);沒有句子、沒有收費小字、沒有〔API 方案〕。沒卡看 has_card(跟 can_run 脫鉤),舊 api 退回 reason */
+  { const trialCard = (a) => { acct = A(a); const c = dataCardState(); went.length = 0; if (c.on) c.on(); const main = went.join(); went.length = 0; if (c.second) c.second.on(); return { c, main, side: went.join() }; };
+    const isA = (r) => r.c.calm === true && !r.c.text && !r.c.sub && !r.c.out && r.c.label === "lib.gate.trial" + JSON.stringify(V) && r.main === "bind:bind_data"
+      && r.c.second && r.c.second.label === "data.seePlan" && r.c.second.quiet === true && r.side === "track:plan_data" && !r.c.third && !/apiPlan|pv\.e/.test(JSON.stringify(r.c));
+    let r = trialCard({ data_access: "plan_required", can_run: true, reason: null, has_card: false, trial_eligible: true });
+    ok("§5.1 方案制、沒卡、有試用資格、綁卡前額度還有剩(can_run=true、reason 空):A 版卡(舊碼看 reason,會講「開通方案」)", isA(r), JSON.stringify(r));
+    r = trialCard({ data_access: "plan_required", can_run: false, reason: "NO_CARD", has_card: false, trial_eligible: true });
+    ok("§5.1 方案制、沒卡、有試用資格、額度用完:同一張 A 版卡(真的出不出來由 maybeDataCard 的讓位規則管)", isA(r), JSON.stringify(r));
+    r = trialCard({ data_access: "plan_required", reason: "NO_CARD", trial_eligible: true });
+    ok("§5.1 新外殼接舊 api(沒有 has_card):退回 reason 判斷,NO_CARD+有試用一樣是試用那張", isA(r), JSON.stringify(r));
+    V = { t: "", p: "1,440", r: "2" }; r = trialCard({ data_access: "plan_required", has_card: false, trial_eligible: true }); V = { t: 14, p: "1,440", r: "2" };
+    ok("§5.1 試用天數拿不到:主鈕退回不帶數字的「前往綁卡」(不寫死 14),一樣直開綁卡頁", r.c.label === "plan.addCard" && r.main === "bind:bind_data", JSON.stringify(r));
+    for (const [why, a] of [["有卡", { has_card: true, trial_eligible: true }], ["has_card:true 但 reason 還是 NO_CARD", { has_card: true, reason: "NO_CARD", trial_eligible: true }], ["沒卡但試用資格用掉", { has_card: false, trial_eligible: false }], ["舊 api、reason 空", { reason: null, trial_eligible: true }]]) {
+      const c = (acct = A({ data_access: "plan_required", ...a }), dataCardState());
+      ok("§5.1 方案制、" + why + " → 照現況「開通方案」那張(〔看方案〕〔API 方案〕)", c.text === "data.noPlan" && c.label === "data.seePlan" && c.second && c.second.label === "pv.apiPlan", JSON.stringify(c)); } }
   acct = A({ data_access: "payment_failed" });
   ok("方案扣款失敗:〔重新付款〕,不出儲值", dataCardState().text === "data.payFail" && dataCardState().label === "plan.repay");
   acct = A({ data_included: false });

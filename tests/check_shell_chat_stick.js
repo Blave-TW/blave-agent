@@ -38,7 +38,7 @@ class Scroller extends El {
   flush() { if (!this._pending) return; this._pending = false; (this._on.scroll || []).forEach((f) => f({ type: "scroll" })); }
 }
 const box = new Scroller();
-const env = { now: 0, timers: [], seq: 0, tick: null };
+const env = { now: 0, timers: [], seq: 0, tick: null }, said = [];
 const ctx = {
   document: { createElement: (t) => new El(t) }, $: (id) => (id === "chat-scroll" ? box : new El("div")),
   t: (k) => k,
@@ -49,7 +49,7 @@ const ctx = {
   clearTimeout: (id) => { env.timers = env.timers.filter((x) => x.id !== id); },
   requestAnimationFrame: () => {}, getComputedStyle: () => ({ getPropertyValue: () => "180ms" }), window: {},
   chatEdge: () => {}, TICK_WINDOW: 24, TICK_PITCH: 4, brNeedsUser: () => false, brHost: () => "", brReg: (h) => h,
-  whereTag: () => new El("span"), stepWhere: () => "local", srSay: () => {},
+  whereTag: () => new El("span"), stepWhere: () => "local", srSay: (x) => { said.push(x); }, LANG: "zh",
 };
 const body = cut("function scrollChat", "/* ── agent 回覆的顯示") + cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function faultCard()", "/* 「再送一次」");
 // 舊程式沒有黏底那段(只有一行 scrollChat):照樣切得出來跑,這條測試對舊程式要紅
@@ -161,5 +161,17 @@ ok("…之後恢復跟著捲", box.scrollTop === bottom(), [box.scrollTop, botto
   ok("錯誤卡內容變了:拉到底", box.scrollTop === bottom(), [box.scrollTop, bottom()]); }
 ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走強制捲",
   /else \{ addMsg\("sys", line\); scrollChat\(true\); \}/.test(src) && /if \(exitLine\) addMsg\("sys", exitLine\); if \(pendingErr\.length \|\| exitLine\) scrollChat\(true\);/.test(src));
+
+// 只有鈕、沒有句子的卡(資料卡試用態,paywall-redesign-2026-10-21 §2.2):第二顆可以是文字鈕、記號對鈕中線(act-only)、讀屏念鈕字;給了句子就照舊
+{ const card = M.faultCard(), el = card.el; said.length = 0;
+  card.set({ calm: true, text: "", label: "lib.gate.trial", on: () => {}, second: { label: "data.seePlan", quiet: true, on: () => {} } });
+  const [text] = el.children[1].children;
+  ok("只有鈕:卡掛 act-only、灰記號、句子那格藏起來;第二顆是 .btn-quiet;讀屏念兩顆鈕的字",
+    el.classList.contains("act-only") && el.classList.contains("is-calm") && text.hidden === true && card.b1.className === "btn-fill" && card.b2.className === "btn-quiet" && card.b2.hidden === false
+    && said.join("|") === "lib.gate.trial，data.seePlan", { cls: el.className, b2: card.b2.className, said });
+  card.set({ text: "data.noPlan", label: "data.seePlan", on: () => {}, second: { label: "pv.apiPlan", on: () => {} } });
+  ok("同一張卡換回有句子的那態:act-only 拿掉、句子露出、第二顆回到 .btn-out(沒給 quiet)", !el.classList.contains("act-only") && text.hidden === false && card.b2.className === "btn-out" && said[said.length - 1] === "data.noPlan", { cls: el.className, b2: card.b2.className });
+  const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8");
+  ok("act-only 的樣式:記號 margin-top 15px(32 高的鈕中線)、鈕列不留上距、文字鈕拉開 space-16", /\.msg\.fault\.act-only \.fault-mark \{ margin-top: 15px; \}/.test(css) && /\.msg\.fault\.act-only \.fault-act \{ margin-top: 0; column-gap: var\(--space-16\); \}/.test(css)); }
 
 process.exit(red ? 1 : 0);

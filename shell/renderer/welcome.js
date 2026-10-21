@@ -23,14 +23,15 @@
 /* 帳號狀態 → 清單模式 { cmp, k }:cmp = 兩欄對比;k = 右欄那句:out 沒登入 / unknown 查不到或舊 api / none 沒綁卡 /
    nobal 餘額不夠 / billed 有卡沒主機按小時(切換前)/ noplan 方案制沒有方案 / payfail 方案扣款失敗 / trial 綁卡試用中 / incl 名下有主機或 API 方案。
    da = app.js dataAccessOf(s)(included / billed / none / null);trialLeft = 試用剩幾天(planVars().n)。
+   有沒有卡用 app.js acctOffer(新 api 看 has_card、舊 api 退回 reason;測試把那兩行一起切出來跑)。
    試用那句只在名下沒有主機時講:有主機的人試用到期後資料照樣含在主機費裡,「免費到 X」會是假話 */
 function wdMode(signedIn, s, da, trialLeft) {
   if (!signedIn) return { cmp: true, k: "out" };
   if (da === "included") return { cmp: false, k: s && s.plan && s.plan.state === "none" && trialLeft > 0 ? "trial" : "incl" };
   if (da === "billed") return { cmp: true, k: "billed" };
   if (da === "none") return { cmp: true, k: s && s.reason === "NO_CARD" ? "none" : "nobal" };
-  // 方案制:沒有方案 → noplan(有試用資格又沒卡 → none,綁卡拿試用);方案扣款失敗 → payfail
-  if (da === "plan_required") return { cmp: true, k: s && s.reason === "NO_CARD" && s.trial_eligible ? "none" : "noplan" };
+  // 方案制:沒有方案 → noplan(有試用資格又沒卡 → none,綁卡拿試用;手上還有綁卡前額度的新人也算);方案扣款失敗 → payfail
+  if (da === "plan_required") return { cmp: true, k: acctOffer(s) ? "none" : "noplan" };
   if (da === "payment_failed") return { cmp: true, k: "payfail" };
   return { cmp: true, k: "unknown" };
 }
@@ -85,14 +86,16 @@ const WD = { mk: "crypto", key: "", pre: "", filled: "", pubAsked: false };
 const wdEl = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 /* 列的字:key 先組好再查(check_shell_strings 的閘門只認字面 key;每一列每個欄位兩語齊不齊由 tests/check_shell_welcome_data.js 列舉) */
 const wdK = (id, f) => { const k = "wd.r." + id + "." + f; return t(k); };
-/* 右欄那句(對比版)。沒登入是一顆文字鈕,直接開瀏覽器登入(app.js planSignIn);沒綁卡是一顆文字鈕,開設定 › 帳號與方案(那一頁自己有綁卡鈕、自己的埋點);
+/* 右欄那句(對比版)。沒登入是一顆文字鈕,直接開瀏覽器登入(app.js planSignIn);沒綁卡是一顆文字鈕——方案制直接開瀏覽器綁卡頁(bindGo,記 bind_welcome;
+   欄名已經寫了「Blave 資料」,鈕字不再重複),切換前開設定 › 帳號與方案(那一頁自己有綁卡鈕、自己的埋點);
    餘額不夠是一句 + 「儲值」鈕;按小時付只有一句(整個歡迎頁唯一出現價格的地方);查不到不講 */
 function wdNote(k, v, into) {
-  const link = (txt, signIn) => { const b = wdEl("button", "btn-quiet", txt); b.type = "button"; if (signIn) signInLabel(b, txt); b.addEventListener("click", () => (signIn ? planSignIn(b) : planOpen())); return b; };
+  const link = (txt, signIn, on) => { const b = wdEl("button", "btn-quiet", txt); b.type = "button"; if (signIn) signInLabel(b, txt); b.addEventListener("click", () => (on ? on() : signIn ? planSignIn(b) : planOpen())); return b; };
   // 方案制(planMo):試用結束自動開始扣方案費,帶天數那句講「免費試用」不講「送」(同 app.js pv.h.offer.m);切換前照舊
   const mo = planMo();
   if (k === "out") into.appendChild(link(t(v.t ? (mo ? "wd.note.out.m" : "wd.note.out") : "wd.note.outNoNum", v), true));
-  else if (k === "none") into.appendChild(link(t(v.t ? (mo ? "wd.note.none.m" : "wd.note.none") : "wd.note.noneNoNum", v)));
+  else if (k === "none" && mo) into.appendChild(link(t(v.t ? "wd.note.trial" : "wd.note.noneNoNum", v), false, () => bindGo("bind_welcome")));
+  else if (k === "none") into.appendChild(link(t(v.t ? "wd.note.none" : "wd.note.noneNoNum", v)));
   else if (k === "billed") into.append(t(v.r ? "wd.note.billed" : "wd.note.billedNoNum", v));
   else if (k === "noplan") into.appendChild(link(t("wd.note.noplan")));
   else if (k === "payfail") { into.append(t("wd.note.payfail"), "　"); into.appendChild(link(t("pv.e.btn"))); }

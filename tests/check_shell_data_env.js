@@ -131,6 +131,7 @@ t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份
       && /if \(!acct\) \{ syncDataAccess\(false, false\); return null; \}/.test(src));
     t("runtime 那頭讀同一個檔:command_listener._local_child_env 每次 spawn 讀 state/data_access.json", (() => { const cl = fs.readFileSync(path.join(__dirname, "..", "runtime", "command_listener.py"), "utf8");
       return /_DATA_ACCESS_FILE = os\.path\.join\("state", "data_access\.json"\)/.test(cl) && /env\.update\(_data_access_flags\(\)\)/.test(cl) && /env\["BLAVE_AGENT_LOCAL"\] = "1"/.test(cl); })());
+    { const m = src.match(/^const acctNoCard = [^\n]*$/m); if (m) eval(m[0].replace(/^const /, "var ")); }   // 改版前沒有這支:照樣跑,讓下面的斷言在舊碼上紅在語意、不是丟例外
     eval(cut("dataAccessWhy").replace(/^function dataAccessWhy/, "var dataAccessWhy = function"));
     const whyOf = (signedIn, b) => { lastAcct = b ? { at: Date.now(), body: b } : null; return dataAccessWhy(signedIn); };
     t("WHY:沒登入 → signed_out(不看 account_status)", whyOf(false, S({ data_access: "none", reason: "NO_CREDIT" })) === "signed_out");
@@ -142,6 +143,13 @@ t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份
     t("WHY:登入、答案太舊不沿用 → unknown", (() => { lastAcct = { at: Date.now() - ACCT_FRESH_MS - 1, body: S({ data_access: "none", reason: "NO_CARD" }) }; return dataAccessWhy(true) === "unknown"; })());
     t("WHY:方案制 plan_required → no_plan;有試用資格又沒卡 → no_card(綁卡就有試用資料)", whyOf(true, S({ data_access: "plan_required", reason: "NO_CARD" })) === "no_plan"
       && whyOf(true, S({ data_access: "plan_required", reason: "NO_CARD", trial_eligible: true })) === "no_card" && whyOf(true, S({ data_access: "plan_required", reason: null })) === "no_plan");
+    // paywall-redesign-2026-10-21 §2.2:沒卡看 has_card(跟 can_run 脫鉤);舊 api 沒這欄退回 reason
+    t("WHY:方案制、has_card:false、還有綁卡前額度(can_run=true、reason 空)、有試用資格 → no_card(舊碼看 reason,這裡會講成 no_plan)",
+      whyOf(true, S({ can_run: true, data_access: "plan_required", reason: null, has_card: false, trial_eligible: true })) === "no_card");
+    t("WHY:方案制、has_card:false 但試用資格用掉 → no_plan;has_card:true(就算 reason 還是 NO_CARD)→ no_plan", whyOf(true, S({ data_access: "plan_required", has_card: false, trial_eligible: false })) === "no_plan"
+      && whyOf(true, S({ data_access: "plan_required", has_card: true, trial_eligible: true })) === "no_plan" && whyOf(true, S({ can_run: false, data_access: "plan_required", has_card: true, reason: "NO_CARD", trial_eligible: true })) === "no_plan");
+    t("WHY:方案制、額度用完(can_run=false、reason NO_CARD、has_card:false)、有試用資格 → no_card", whyOf(true, S({ can_run: false, data_access: "plan_required", reason: "NO_CARD", has_card: false, trial_eligible: true })) === "no_card");
+    t("WHY:切換前(data_access none)不看 has_card:照舊只看 reason", whyOf(true, S({ data_access: "none", reason: null, has_card: false })) === "no_balance");
     t("WHY:方案制 payment_failed → plan_failed", whyOf(true, S({ data_access: "payment_failed", reason: null })) === "plan_failed");
     t("WHY:帳號有資料、本機卻沒 key 檔 → unknown(不是錢的問題)", whyOf(true, S({ data_access: "billed", reason: null })) === "unknown");
     fs.rmSync(WS, { recursive: true, force: true });

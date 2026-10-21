@@ -216,7 +216,9 @@ const EVENTS = {
     // onb_done_trade / _tw = 當下做完最後一步(既有用戶上線那天直接進完成後首頁的不送)。不帶市場以外的任何內容
     "onb_mkt_crypto", "onb_mkt_tw", "onb_mkt_txf", "onb_go_po", "onb_go_paper", "onb_go_trade", "onb_reopen", "onb_replay", "onb_done_trade", "onb_done_tw",
     // 連接框(0.1.28;renderer/trade.js):cx_open = 打開(不分從哪裡開);cx_paper_ok / cx_real_ok = 模擬／真實帳戶綁定成功(群益、統一走各自的 cap_* / pres_*)
-    "cx_open", "cx_paper_ok", "cx_real_ok"] },
+    "cx_open", "cx_paper_ok", "cx_real_ok",
+    // 歡迎頁右欄的試用文字鈕(0.1.28;renderer/welcome.js wdNote,方案制、有試用資格又沒卡):按下直接開瀏覽器綁卡頁(bindGo)
+    "bind_welcome"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

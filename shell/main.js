@@ -2281,6 +2281,7 @@ function dataAccessOf(b) {
   if (!b) return null;
   return ["included", "billed", "none", "plan_required", "payment_failed"].includes(b.data_access) ? b.data_access : b.data_included === true ? "included" : null;
 }
+const acctNoCard = (b) => !!b && (b.has_card === false || (b.has_card == null && b.reason === "NO_CARD"));
 /* 這個帳號現在拿不拿得到 Blave 資料:免費含在裡面、或按小時付得起,都算。畫面的預檢與回前景重查
    都會打 account_status,這裡吃它最後一次的結果;太舊(或還沒打過)才自己補打一次——這支跟
    LLM 共用每分鐘 30 次的桶,不能每一輪都打。查不到就當沒有:寧可這一輪少資料,也不要把 key
@@ -2297,14 +2298,15 @@ async function hasBlaveData() {
    no_plan / plan_failed / unknown。runtime 那段規則只知道「沒資料」時,agent 會對登入著、只是沒錢或沒方案的人說「要先登入」
    (09-24 真機)——外殼明明知道原因。no_card / no_balance 是切換前(按小時)的兩種;no_plan / plan_failed 是方案制的兩種。
    account_status 的 reason 只在 can_run=false 時有值(NO_CARD / NO_CREDIT);data_access=none 而 reason 空的組合(api 沒禁)當餘額不夠。
+   方案制的「有沒有卡」看 has_card(跟 can_run 脫鉤:手上還有綁卡前額度的新人 reason 是空的);舊 api 沒這欄才退回 reason——同 renderer acctNoCard。
    查不到(沒打到 / 太舊)就 unknown,不沿用舊答案,同 hasBlaveData。舊 api 只有 data_included:false、沒有 data_access:也 unknown。 */
 function dataAccessWhy(signedIn) {
   if (!signedIn) return "signed_out";
   const b = lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS ? lastAcct.body : null;
   if (!b) return "unknown";
   const a = dataAccessOf(b);
-  // 有試用資格又沒綁卡:綁卡就有 14 天試用資料——講沒綁卡,不講沒方案(畫面的資料卡、歡迎頁同一個判法)
-  if (a === "plan_required") return b.reason === "NO_CARD" && b.trial_eligible ? "no_card" : "no_plan";
+  // 有試用資格又沒綁卡:綁卡就有試用資料——講沒綁卡,不講沒方案(畫面的資料卡、歡迎頁同一個判法)
+  if (a === "plan_required") return acctNoCard(b) && b.trial_eligible === true ? "no_card" : "no_plan";
   if (a === "payment_failed") return "plan_failed";
   // 帳號有資料、本機卻沒有 key 檔(syncDataEnv 回 none):不是錢的問題,也講不出是什麼,只能說讀不到
   if (a !== "none") return "unknown";

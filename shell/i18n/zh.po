@@ -5204,9 +5204,9 @@ msgstr "邏輯"
 msgid "lib.gate.bindCard"
 msgstr "綁卡，送 {t} 天資料"
 
-# 方案制(planMo)的同一顆鈕:試用結束自動轉方案費,不是「送」
-msgid "lib.gate.bindCard.m"
-msgstr "綁卡，免費試用 {t} 天資料"
+# 方案制(planMo)、有試用資格又沒卡的那一組:填色鈕,直接開瀏覽器綁卡頁;聊天資料卡同一顆(spec paywall-redesign-2026-10-21 §2.2)
+msgid "lib.gate.trial"
+msgstr "綁卡，免費試用 {t} 天"
 
 msgid "lib.gate.topup"
 msgstr "儲值"
@@ -5214,6 +5214,10 @@ msgstr "儲值"
 # ── 0.1.13 策略庫轉換(spec-0.1.13-library-conversion §7):沒權限時分組、詳情鈕下第一句看資料需求 ──
 msgid "lib.grp.now"
 msgstr "現在就能用"
+
+# 方案制、有試用資格又沒卡:組名講缺什麼(鈕字已經講綁卡,不重複)
+msgid "lib.grp.data"
+msgstr "要 Blave 資料"
 
 msgid "lib.grp.card"
 msgstr "綁卡後能用"
@@ -6664,12 +6668,13 @@ msgstr "綁卡，送 {t} 天 Blave 資料"
 msgid "wd.note.noneNoNum"
 msgstr "綁卡後就能用"
 
-# 方案制(planMo):試用結束會自動開始扣方案費,不是「送」——帶天數那兩句換 .m,同 pv.h.offer.m
+# 方案制(planMo):試用結束會自動開始扣方案費,不是「送」——沒登入那句換 .m,同 pv.h.offer.m(沒卡那句是 wd.note.trial)
 msgid "wd.note.out.m"
 msgstr "登入並綁卡，免費試用 {t} 天 Blave 資料"
 
-msgid "wd.note.none.m"
-msgstr "綁卡，免費試用 {t} 天 Blave 資料"
+# 方案制、有試用資格又沒卡:欄名已經寫了「Blave 資料」,鈕字不再重複;按下直接開瀏覽器綁卡頁
+msgid "wd.note.trial"
+msgstr "綁卡，免費試用 {t} 天"
 
 msgid "wd.note.billed"
 msgstr "有用到的那個小時收 {r} TWD，同一小時只收一次"
