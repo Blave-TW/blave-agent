@@ -35,11 +35,11 @@ function pipLine(p, line, now) {
 }
 function fileDone(p) { if (p.file) { p.done += Math.max(p.file.total, p.file.bytes); p.file = null; } }
 /* 一組一條 pip 時「現在在弄哪一個」:解析中看 Collecting(沒有那一版就死在這裡,名字要對),下載中看 Downloading 的 wheel 檔名。
-   wheel 檔名的第一段就是套件名(檔名規格把名字裡的 - 換成 _) */
+   wheel 檔名的第一段就是套件名(檔名規格把名字裡的 - 換成 _);回傳一律照 PEP 503 正規化(小寫、連字號),兩種來源才寫得一樣 */
 function pipCurName(line) {
   let m;
-  if ((m = /^\s*Collecting ([A-Za-z0-9][A-Za-z0-9._-]*)/.exec(line))) return m[1];
-  if ((m = /^\s*Downloading (\S+) \([\d.]+ (?:bytes|kB|MB|GB)\)\s*$/.exec(line)) && !/\.metadata$/.test(m[1])) return m[1].split("/").pop().split("-")[0];
+  if ((m = /^\s*Collecting ([A-Za-z0-9][A-Za-z0-9._-]*)/.exec(line))) return pipName(m[1]);
+  if ((m = /^\s*Downloading (\S+) \([\d.]+ (?:bytes|kB|MB|GB)\)\s*$/.exec(line)) && !/\.metadata$/.test(m[1])) return pipName(m[1].split("/").pop().split("-")[0]);
   return null;
 }
 
@@ -335,7 +335,7 @@ function createEngineSetup(o) {
         for (const g of groups) {
           if (!g.todo.length) continue;
           try {
-            Object.assign(S.cur, { i: installed + 1, n: o.deps.length, k: g.todo.length, name: g.todo[0].split("==")[0], t0: now(), limitMs: o.pkgMs, idleMs: o.idleMs || null }); emit();
+            Object.assign(S.cur, { i: installed + 1, n: o.deps.length, k: g.todo.length, name: pipName(g.todo[0]), t0: now(), limitMs: o.pkgMs, idleMs: o.idleMs || null }); emit();
             await pip(["-c", pinsFile, ...g.todo], envPath, o.pkgMs, true);
             installed += g.todo.length;
             fs.writeFileSync(g.mark, g.pins.join("\n"));

@@ -1058,10 +1058,11 @@ function firstRunMB(platform = process.platform, arch = process.arch, darwinMajo
 // 每一條 pip 兩道停:
 //   PIP_IDLE_MS(2 分鐘):下載中多久沒有新的資料就停——斷線、被擋都會落在這裡,以網路失敗呈現。慢但一直有在動的不會被它停掉:
 //   以前的固定 10 分鐘上限在 SDK 那一條(單一 wheel 93–104 MB)要約 172 KB/s 才裝得完,網速再慢就永遠失敗,重試又從 0 開始。
-//   PIP_TOTAL_MS(45 分鐘):只防真的卡死。最大的一條(Windows 的 SDK wheel 103.5 MB)在 40 KB/s 下約 43 分鐘;比這更慢的網路,
+//   總上限只防真的卡死。ENGINE_PIP_MS(45 分鐘):SDK 那條(Windows 的 SDK wheel 103.5 MB)在 40 KB/s 下約 43 分鐘。
+//   PKG_PIP_MS(90 分鐘):0.1.28 起一組一條 pip,核心那組約 110 MB 一起算,40 KB/s 下約 46 分鐘,45 分鐘會撞到;比這更慢的網路,
 //   210 MB 的第一次安裝本來就要一個半小時以上,停下來讓人知道比讓它無聲地跑更好。
 // 建 venv 不用網路,只有總上限
-const ENGINE_PIP_MS = 2700000, PKG_PIP_MS = 2700000, PIP_IDLE_MS = 120000, VENV_MS = 300000;
+const ENGINE_PIP_MS = 2700000, PKG_PIP_MS = 5400000, PIP_IDLE_MS = 120000, VENV_MS = 300000;
 // 選用的套件組:裝不起來不擋引擎(只記 log、那個功能暫時不能用,下次開 app 再試)。點名用套件名,版本照 WORKSPACE_DEPS;
 // 清單裡沒被點名的一律是核心(裝不起來就擋聊天)。美股資料(yfinance 與它的相依)只有美股功能用得到,lib 要在用到時才 import
 const OPTIONAL_DEPS = [{ id: "us", names: ["yfinance", "curl_cffi", "lxml", "peewee", "protobuf", "websockets", "beautifulsoup4", "multitasking", "platformdirs", "pytz"] }];

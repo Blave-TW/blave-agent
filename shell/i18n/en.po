@@ -451,11 +451,11 @@ msgid "eng.failOther"
 msgstr "Setup didn’t finish."
 
 msgid "eng.failSub"
-msgstr "Retry picks up at {name}; finished packages are kept. The message above sends once setup finishes."
+msgstr "Retry reinstalls the whole set; files already downloaded aren’t downloaded again. The message above sends once setup finishes."
 
 # 背景安裝失敗、沒有一句話在等時:eng.failSub 截掉最後一句(那句講的是要送出的訊息)
 msgid "eng.failSubIdle"
-msgstr "Retry picks up at {name}; finished packages are kept."
+msgstr "Retry reinstalls the whole set; files already downloaded aren’t downloaded again."
 
 msgid "eng.toHead"
 msgstr "{name} didn’t finish installing within {limit} and was stopped."
@@ -470,7 +470,7 @@ msgid "eng.venvSubHeld"
 msgstr "This step runs on this computer and doesn’t use the network. Retry picks up at this step; the message above sends once setup finishes."
 
 msgid "eng.toSub"
-msgstr "The connection may be too slow, or a company network or VPN may be blocking the download. Retry picks up at {name}."
+msgstr "The connection may be too slow, or a company network or VPN may be blocking the download. Retry reinstalls the whole set; files already downloaded aren’t downloaded again."
 
 msgid "eng.details"
 msgstr "Error Details"

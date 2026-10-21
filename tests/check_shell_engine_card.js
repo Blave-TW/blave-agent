@@ -31,7 +31,7 @@ const MOCK = {
     details: "Error Details", retry: "Retry", ready: "This computer is ready · {t}", limit10: "10 min" },
 };
 const KEYMAP = { head: "eng.head", headUpd: "eng.headUpd", headFail: "eng.headFail", size: "eng.size", ws: "eng.ws", engine: "eng.engine", pkgs: "eng.pkgs", venv: "eng.venv",
-  slowA: "eng.slow", bytes: "eng.bytes", dlTotal: "eng.dlTotal", stallB: "eng.stall", failHead: "eng.failNet", failSub: "eng.failSub", toSub: "eng.toSub",
+  slowA: "eng.slow", bytes: "eng.bytes", dlTotal: "eng.dlTotal", stallB: "eng.stall", failHead: "eng.failNet",
   details: "eng.details", retry: "eng.retry", ready: "eng.ready" };
 // mockup 檔在(monorepo 裡跑)就從原檔再讀一次,抄錯的話這裡會紅
 const MOCKUP = [process.env.BLAVE_MOCKUP, path.join(__dirname, "..", "..", ".claude", "output", "designer", "mockup-desktop-first-run-progress.html")].find((f) => f && fs.existsSync(f));
@@ -78,8 +78,20 @@ for (const lg of ["zh", "en"]) {
   ok("① " + lg + ":每一句跟 mockup 逐字相同", bad.length === 0, bad.map((k) => k + " → " + ctx.STRINGS[lg][KEYMAP[k]]));
   ok("① " + lg + ":{limit} = 實際上限(10 分鐘)照 mockup 的寫法,空格換成不換行空格", ctx.STRINGS[lg]["eng.min"].replace("{m}", "10") === MOCK[lg].limit10.replace(" ", NB));
 }
+// 0.1.28 一組一條 pip:重試是整組重裝(已下載完的檔在 pip 快取裡),mockup 的「從 {name} 接著裝,已裝好的不重裝」不再成立(Wei 定稿)
+const RETRY = {
+  zh: { "eng.failSub": "重試會整組重裝，已下載的不會重下；裝好後送出上面那句。", "eng.failSubIdle": "重試會整組重裝，已下載的不會重下。",
+    "eng.toSub": "可能是網路太慢，或公司網路、VPN 擋住了下載。重試會整組重裝，已下載的不會重下。" },
+  en: { "eng.failSub": "Retry reinstalls the whole set; files already downloaded aren’t downloaded again. The message above sends once setup finishes.",
+    "eng.failSubIdle": "Retry reinstalls the whole set; files already downloaded aren’t downloaded again.",
+    "eng.toSub": "The connection may be too slow, or a company network or VPN may be blocking the download. Retry reinstalls the whole set; files already downloaded aren’t downloaded again." },
+};
+for (const lg of ["zh", "en"]) {
+  const bad = Object.entries(RETRY[lg]).filter(([k, v]) => ctx.STRINGS[lg][k] !== v).map(([k]) => k + " → " + ctx.STRINGS[lg][k]);
+  ok("① " + lg + ":失敗卡的重試說明照實(整組重裝、已下載的不重下)、不再寫「從 {name} 接著裝」", bad.length === 0 && !Object.keys(RETRY[lg]).some((k) => /\{name\}/.test(ctx.STRINGS[lg][k])), bad);
+}
 ok("① 截短的兩句只截不改:failSubIdle = failSub 的第一句;failOther = failHead 的最後一句",
-  ctx.STRINGS.zh["eng.failSubIdle"] === MOCK.zh.failSub.split("；")[0] + "。" && ctx.STRINGS.en["eng.failSubIdle"] === MOCK.en.failSub.split(" The message")[0]
+  ctx.STRINGS.zh["eng.failSubIdle"] === ctx.STRINGS.zh["eng.failSub"].split("；")[0] + "。" && ctx.STRINGS.en["eng.failSubIdle"] === ctx.STRINGS.en["eng.failSub"].split(" The message")[0]
   && MOCK.zh.failHead.endsWith(ctx.STRINGS.zh["eng.failOther"]) && MOCK.en.failHead.endsWith(ctx.STRINGS.en["eng.failOther"]));
 ok("① 舊的三行灰字與「約一分鐘」那句都拿掉了", !["engine.workspace", "engine.deps", "engine.preparing"].some((k) => k in ctx.STRINGS.zh || k in ctx.STRINGS.en)
   && !Object.values(ctx.STRINGS.zh).some((v) => /準備引擎/.test(v)) && !Object.values(ctx.STRINGS.en).some((v) => /Preparing the engine/.test(v)));
@@ -140,7 +152,7 @@ for (const lg of ["zh", "en"]) {
   const fv = V(Object.assign({}, failS, { steps: [{ k: "ws", st: "done", ms: 1, t0: null }, { k: "engine", st: "err", ms: 9, t0: null }, { k: "pkgs", st: "wait", ms: 0, t0: null }], cur: { step: "engine", sub: "venv", i: 0, n: 0, name: null }, err: { kind: "other", msg: "x", step: "engine", name: null } }), T0, false);
   ok("② " + lg + " 建 venv 就失敗(引擎那步、沒有套件名):副句換成 venvSub(不講網路、不講從哪個套件接)", fv.slot.sub === t("eng.venvSub") && fv.slot.head === t("eng.failOther"), fv.slot);
   ok("② " + lg + " …有一句在等時用 venvSubHeld", V(Object.assign({}, failS, { steps: [{ k: "engine", st: "err", ms: 9, t0: null }], cur: { step: "engine", sub: "venv", i: 0, n: 0, name: null }, err: { kind: "other", msg: "x", step: "engine", name: null } }), T0, true).slot.sub === t("eng.venvSubHeld"));
-  ok("② " + lg + " 引擎那步但有名字(SDK 斷線):照舊講從 claude-agent-sdk 接著裝", V(Object.assign({}, failS, { steps: [{ k: "engine", st: "err", ms: 9, t0: null }], cur: { step: "engine", sub: null, i: 0, n: 0, name: "claude-agent-sdk" }, err: { kind: "net", msg: "x", step: "engine", name: "claude-agent-sdk" } }), T0, false).slot.sub === t("eng.failSubIdle", { name: "claude-agent-sdk" }));
+  ok("② " + lg + " 引擎那步但有名字(SDK 斷線):副標照樣是 failSubIdle", V(Object.assign({}, failS, { steps: [{ k: "engine", st: "err", ms: 9, t0: null }], cur: { step: "engine", sub: null, i: 0, n: 0, name: "claude-agent-sdk" }, err: { kind: "net", msg: "x", step: "engine", name: "claude-agent-sdk" } }), T0, false).slot.sub === t("eng.failSubIdle", { name: "claude-agent-sdk" }));
   const up = V(snap({ kind: "update", sizeMB: null, steps: [{ k: "engine", st: "run", ms: 0, t0: T0 }], cur: { step: "engine", sub: null, i: 0, n: 0, name: "claude-agent-sdk", t0: T0, limitMs: 600000 }, dl: { done: 0, file: { bytes: 3e6, total: 92.9e6 }, installing: false, lastByteAt: T0 + 2000 } }), T0 + 3000);
   ok("② " + lg + " 更新後補裝(步驟有引擎):標題「更新了引擎」、不寫大小、只有一步就不畫分段條、引擎那列也有下載量", up.title === t("eng.headUpd") && up.sub === null && up.segs === null && up.rows.length === 1 && up.rows[0].meta.left === t("eng.bytes", { a: "3.0", b: "92.9" }), up);
   const up17 = V(snap({ kind: "update", sizeMB: null, steps: [{ k: "pkgs", st: "run", ms: 0, t0: T0 }], cur: { step: "pkgs", sub: null, i: 8, n: 17, k: 10, name: "curl_cffi", t0: T0, limitMs: 600000 }, dl: { done: 0, file: { bytes: 1.1e6, total: 3.2e6 }, installing: false, lastByteAt: T0 + 2000 } }), T0 + 3000);

@@ -458,11 +458,11 @@ msgid "eng.failOther"
 msgstr "沒有裝完。"
 
 msgid "eng.failSub"
-msgstr "重試會從 {name} 接著裝，已裝好的不重裝；裝好後送出上面那句。"
+msgstr "重試會整組重裝，已下載的不會重下；裝好後送出上面那句。"
 
 # 背景安裝失敗、沒有一句話在等時:eng.failSub 截掉最後一句(那句講的是要送出的訊息)
 msgid "eng.failSubIdle"
-msgstr "重試會從 {name} 接著裝，已裝好的不重裝。"
+msgstr "重試會整組重裝，已下載的不會重下。"
 
 msgid "eng.toHead"
 msgstr "{name} 超過 {limit}還沒完成，已經停下。"
@@ -477,7 +477,7 @@ msgid "eng.venvSubHeld"
 msgstr "這一步在這台電腦上做，不用網路。重試會從這一步接著做，裝好後送出上面那句。"
 
 msgid "eng.toSub"
-msgstr "可能是網路太慢，或公司網路、VPN 擋住了下載。重試會從 {name} 接著裝。"
+msgstr "可能是網路太慢，或公司網路、VPN 擋住了下載。重試會整組重裝，已下載的不會重下。"
 
 msgid "eng.details"
 msgstr "錯誤訊息"

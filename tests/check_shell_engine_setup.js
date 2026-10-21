@@ -29,9 +29,9 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
   const q = { done: 0, file: null, installing: false, lastByteAt: 0 };
   ok("Windows 的 \\r 已在逐行讀時去掉;Downloading 前面縮排的(解析中整顆抓)也算", E.pipLine(q, "  Downloading foo-1.0-py3-none-any.whl (1.2 MB)", 1) && q.file.total === 1200000);
   const N = E.pipCurName;
-  ok("現在在弄哪一個:Collecting 取套件名(帶 from 的相依也算)、Downloading 取 wheel 檔名第一段;metadata / Using cached / Progress 不算",
-    N("Collecting pandas==3.0.6") === "pandas" && N("Collecting numpy>=1.26.0 (from pandas==3.0.6)") === "numpy" && N("Collecting curl_cffi==0.16.3") === "curl_cffi"
-    && N("Downloading curl_cffi-0.16.3-cp310-abi3-macosx_11_0_arm64.whl (3.2 MB)") === "curl_cffi" && N("  Downloading scipy-1.18.1-cp312-cp312-macosx_14_0_arm64.whl (20.5 MB)") === "scipy"
+  ok("現在在弄哪一個:Collecting 取套件名(帶 from 的相依也算)、Downloading 取 wheel 檔名第一段,都照 PEP 503 正規化(小寫、_ → -);metadata / Using cached / Progress 不算",
+    N("Collecting pandas==3.0.6") === "pandas" && N("Collecting numpy>=1.26.0 (from pandas==3.0.6)") === "numpy" && N("Collecting curl_cffi==0.16.3") === "curl-cffi" && N("Collecting Python_Dotenv==1.2.3") === "python-dotenv"
+    && N("Downloading curl_cffi-0.16.3-cp310-abi3-macosx_11_0_arm64.whl (3.2 MB)") === "curl-cffi" && N("Downloading python_dotenv-1.2.3-py3-none-any.whl (21 kB)") === "python-dotenv" && N("  Downloading scipy-1.18.1-cp312-cp312-macosx_14_0_arm64.whl (20.5 MB)") === "scipy"
     && N("  Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl.metadata (79 kB)") === null && N("Using cached pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl (10.1 MB)") === null
     && N("Progress 1 of 2") === null && N("Installing collected packages: numpy") === null);
 }
@@ -78,6 +78,8 @@ const US_IN_MAIN = MAIN_DEPS.filter((p) => !DEPS.includes(p));
 const US = US_IN_MAIN.length ? US_IN_MAIN : OPT[0].names.map((n) => n + "==0.0.1");
 const DEPS17 = [...DEPS, ...US], N = DEPS17.length, NC = DEPS.length, NU = US.length;
 const nm = (p) => p.split("==")[0];
+// 快照裡的名字照 PEP 503 正規化(小寫、連字號):curl_cffi → curl-cffi
+const nn = (p) => nm(p).toLowerCase().replace(/[-_.]+/g, "-");
 const pin = (name) => { const p = DEPS17.find((x) => nm(x) === name); if (!p) throw new Error("清單裡沒有 " + name); return p; };
 const bump = (p) => nm(p) + "==999.0";
 const SDK2 = SDK.replace(/^(\S+?==)\S+/, "$1999.0");
@@ -232,7 +234,7 @@ const venvDir = (r) => path.join(r.base, "venv");
     const u0 = up.snaps[0], ul = up.snaps[up.snaps.length - 1];
     ok("7 → 17 升級:只補新加的 10 個、kind=update、只有套件那一步、不寫大小", pinsOf(up).join() === US.join() && u0.kind === "update" && u0.steps.map((x) => x.k).join() === "pkgs" && u0.sizeMB === null, { pins: pinsOf(up), u0 });
     ok("7 → 17 升級:從 8 / 17 開始數(前 7 個本來就在)、一條裝 10 個", nthOf(up).join() === (NC + 1) + "/" + N + "x" + NU, nthOf(up));
-    ok("7 → 17 升級:名字跟著 Downloading 換(yfinance → curl_cffi)", up.snaps.filter((s) => s.cur && s.cur.step === "pkgs" && s.cur.name).map((s) => s.cur.name).filter((v, i, a) => v !== a[i - 1]).join() === [nm(US[0]), "yfinance", "curl_cffi"].join());
+    ok("7 → 17 升級:名字跟著 Downloading 換(yfinance → curl-cffi,正規化過)", up.snaps.filter((s) => s.cur && s.cur.step === "pkgs" && s.cur.name).map((s) => s.cur.name).filter((v, i, a) => v !== a[i - 1]).join() === [nn(US[0]), "yfinance", "curl-cffi"].join());
     ok("7 → 17 升級:已下載量只算這次真的下載的", ul.phase === "done" && ul.dl.done === 131000 + 3200000, ul.dl);
     ok("7 → 17 升級:兩組各一個記號檔——核心那份(7 個)沒被動到、美股那份是 10 個的整串", fs.readFileSync(path.join(venvDir(up), ".blave-deps-1"), "utf8") === DEPS.join("\n") && fs.readFileSync(path.join(venvDir(up), ".blave-deps-us"), "utf8") === US.join("\n"));
     await up.settle();
@@ -296,8 +298,8 @@ const venvDir = (r) => path.join(r.base, "venv");
     ok("firstRunMB:macOS 14+ Apple 晶片 210、Intel 220;macOS 12/13(Darwin < 23)Apple 晶片 230、Intel 240;Windows 230",
       f("darwin", "arm64", 24) === 210 && f("darwin", "x64", 23) === 220 && f("darwin", "arm64", 22) === 230 && f("darwin", "x64", 21) === 240 && f("win32", "x64", 0) === 230 && f("darwin", "arm64") === 210,
       [f("darwin", "arm64", 24), f("darwin", "x64", 23), f("darwin", "arm64", 22), f("darwin", "x64", 21), f("win32", "x64", 0)]);
-    ok("main.js 把 firstRunMB() 交給 enginesetup、兩道停的上限照稽核:總上限 45 分鐘、2 分鐘沒資料就停", /firstRunMB: firstRunMB\(\)/.test(MAIN_SRC) && /idleMs: PIP_IDLE_MS/.test(MAIN_SRC)
-      && /const ENGINE_PIP_MS = 2700000, PKG_PIP_MS = 2700000, PIP_IDLE_MS = 120000, VENV_MS = 300000;/.test(MAIN_SRC) && !/105 KB\/s/.test(MAIN_SRC)); }
+    ok("main.js 把 firstRunMB() 交給 enginesetup、兩道停的上限:SDK 那條 45 分鐘、套件一組一條 90 分鐘(0.1.28)、2 分鐘沒資料就停", /firstRunMB: firstRunMB\(\)/.test(MAIN_SRC) && /idleMs: PIP_IDLE_MS/.test(MAIN_SRC)
+      && /const ENGINE_PIP_MS = 2700000, PKG_PIP_MS = 5400000, PIP_IDLE_MS = 120000, VENV_MS = 300000;/.test(MAIN_SRC) && !/105 KB\/s/.test(MAIN_SRC)); }
 
   // ── 關 app / 為了更新重開:收掉正在跑的 pip(稽核 0.1.12 P1-1)──
   { const a = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: ["Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl (10.1 MB)"] } : { code: 0 }) });
@@ -313,7 +315,7 @@ const venvDir = (r) => path.join(r.base, "venv");
     // 裝到美股那組時關 app(稽核 0.1.12 複驗 P2):不能被記成「美股那組失敗」,ensure 也不能當成裝好了
     const o2 = rig({ deps: DEPS17, behave: (bin, args) => (args.includes(US[0]) ? { hang: true } : { code: 0 }) });
     const p2 = o2.S.ensure().then(() => "resolved", (x) => x); await atArg(o2, US[0]);
-    const busyUs = o2.S.busy() && o2.S.snapshot().cur.name === nm(US[0]);
+    const busyUs = o2.S.busy() && o2.S.snapshot().cur.name === nn(US[0]);
     await o2.S.abort(); const r2 = await p2, s2 = o2.S.snapshot();
     ok("裝美股那組時被收掉:ensure 拋出(aborted)、沒有 warn、不送 engine_opt_fail 也不送 engine_setup、美股那組記號沒寫", busyUs && r2 !== "resolved" && r2.aborted === true && !s2.warn && o2.tracked.length === 0
       && !fs.existsSync(path.join(venvDir(o2), ".blave-deps-us")), { busyUs, r2: r2 && (r2.message || r2), warn: s2.warn, tracked: o2.tracked }); }
