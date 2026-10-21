@@ -3543,6 +3543,11 @@ def _us_signal_refusal(name, venue):
     if _strategy_is_portfolio(name) or strategy_reporter.strategy_type(src) == "C":
         return (f"US_SYMBOL: 「{name}」是投資組合(Type C)策略,美股訊號目前只能用單一標的策略下單"
                 "——請取消勾選後再儲存")
+    if not _strategy_has_interval(name):
+        # Type B runs from cron without lib.runner's us_live_strategy scope: every tick would be
+        # UsStockNotHere while the page shows it live
+        return (f"US_SYMBOL: 「{name}」是 Type B 策略,美股訊號只能用 Type A 單一標的策略下單"
+                "——請取消勾選後再儲存")
     tickers = strategy_reporter.usstock_tickers(src)
     try:
         why = _in_workspace(lambda: importlib.import_module("lib.stock_perps").us_signal_refusal(

@@ -7,7 +7,8 @@
     older runner); no venue; a TW broker; Type C (no SYMBOL); bare 'NVDA'; another stock's perp;
     a coin; SPY beside NVDAUSDT
   - Binance's list or the 下單設定 unreadable → UsStockUnavailable (a failed round), no request
-  - backtests, chat and scheduled reports (desktop and cloud) need no scope, as before; the pass does not outlive the
+  - backtests, chat and scheduled reports (desktop and cloud) need no scope, as before — but a live
+    scope inside a scheduled report (its run.py calling lib.runner.run) is gated; the pass does not outlive the
     call (a private Yahoo fetcher on the same live tick is refused afterwards)
   runner (lib.runner.run, live):
   - a NVDAUSDT strategy on Binance writes state.json {symbol: NVDAUSDT} from the Yahoo bars
@@ -178,6 +179,15 @@ for label, kw in (("chat / backtest (no BLAVE_MODE)", dict(mode=None)), ("BLAVE_
     env(**kw)
     df, err = fetch(scope=None)
     check(err is None and calls == [("yahoo", "NVDA")], f"{label}: fetched without a scope ({err!r})")
+for local in (True, False):  # a report's run.py running a picked strategy live is a tick
+    where = "desktop" if local else "cloud"
+    env(local=local, scheduled=True)
+    df, err = fetch(scope=("us_nvda", "NVDA"))
+    check(isinstance(err, D.UsStockNotHere) and "NVDAUSDT" in str(err) and calls == [],
+          f"{where} scheduled report, live scope, bare SYMBOL 'NVDA': refused, no request ({err!r})")
+    df, err = fetch()
+    check(err is None and calls == [("yahoo", "NVDA")],
+          f"{where} scheduled report, live scope, NVDAUSDT on binance: fetched ({err!r})")
 
 env()
 fetch()

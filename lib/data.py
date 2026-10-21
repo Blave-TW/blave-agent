@@ -6629,6 +6629,11 @@ class UsStockNotFound(LookupError):
 
 
 def _us_live_tick():
+    """A live tick, or a live lib.runner / wait_for_bar fetch under us_live_strategy — even inside
+    a scheduled report (BLAVE_SCHEDULED_RUN=1): its run.py can call lib.runner.run on a picked
+    strategy, and that run writes the state.json the reconciler trades."""
+    if _US_LIVE is not None:
+        return True
     return os.environ.get('BLAVE_MODE') == 'live' and os.environ.get('BLAVE_SCHEDULED_RUN') != '1'
 
 
@@ -6657,7 +6662,7 @@ def _us_request_gate():
     """Every function that sends a request to Yahoo calls this first, so no path — public or
     private — reaches Yahoo from a live trading tick unless fetch_usstock_price's _us_live_gate
     found it trading the stock's own perp. Desktop and cloud alike: a scheduled report runs with
-    BLAVE_MODE=live but BLAVE_SCHEDULED_RUN=1, so it is not a tick."""
+    BLAVE_MODE=live but BLAVE_SCHEDULED_RUN=1, so it is not a tick unless it runs a strategy live."""
     if not _us_live_tick() or _us_live_pass:
         return
     raise UsStockNotHere(_us_not_live("美股資料只在對話、回測、報告,與綁在加密交易所的股票永續策略上用得到"))

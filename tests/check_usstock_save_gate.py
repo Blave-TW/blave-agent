@@ -4,8 +4,8 @@ whose SYMBOL is the ticker's Binance stock perp, and only on an exchange that li
 strategy (`CODE: 「name」…`) and writes nothing.
 
   - desktop, NVDA signal, SYMBOL NVDAUSDT: saves on Binance, on paper, with no venue bound
-  - cloud: the same rules — NVDA on NVDAUSDT saves (Binance, paper, no venue); bare SYMBOL and Type C
-    are US_SYMBOL; there is no US_CLOUD
+  - cloud: the same rules — NVDA on NVDAUSDT saves (Binance, paper, no venue); bare SYMBOL, Type C
+    and Type B (cron, no live scope: every tick would refuse) are US_SYMBOL; there is no US_CLOUD
   - US_SYMBOL: bare SYMBOL 'NVDA', no SYMBOL, a ticker that is not the traded stock (SPY beside
     NVDAUSDT), a ticker the code does not spell out, a coin (BTCUSDT), a Type C — paper too
   - US_VENUE: the bound exchange has no such perp (symbol_unavailable), or lists it as a coin
@@ -59,7 +59,7 @@ def strat(name, body, typ="A", stats=None):
     d = os.path.join(WS, "strategies", name)
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "strategy.py"), "w") as f:
-        f.write(f'# Type:     {typ}\nSTRATEGY_NAME = "{name}"\nINTERVAL = "1d"\n{body}')
+        f.write(body if typ is None else f'# Type:     {typ}\nSTRATEGY_NAME = "{name}"\nINTERVAL = "1d"\n{body}')
     if stats is not None:
         with open(os.path.join(d, "stats.json"), "w") as f:
             json.dump(stats, f)
@@ -75,6 +75,8 @@ strat("us_filter", US + "SYMBOL = 'NVDAUSDT'\n\ndef fetch_data(h):\n    a = fetc
 strat("us_loop", US + "SYMBOL = 'NVDAUSDT'\n\ndef fetch_data(h):\n    for t in ['NVDA']:\n"
       "        return fetch_usstock_price(t, '2020-01-01', None)\n")
 strat("us_coin", US + "SYMBOL = 'BTCUSDT'\n\ndef fetch_data(h):\n    return fetch_usstock_price('BTC', '2020-01-01', None)\n")
+strat("us_typeb", "# Type:     B\nSTRATEGY_NAME = \"us_typeb\"\n" + US + "SYMBOL = 'NVDAUSDT'\n"
+      "fetch_usstock_price('NVDA', '2020-01-01', None)\n", typ=None)
 strat("us_basket", US + "UNIVERSE = ['NVDA', 'SPY']\n", typ="C", stats={"benchmark_return": 1.0})
 strat("btc_sma", "from lib.data import fetch_kline\nSYMBOL = 'BTCUSDT'\n")
 strat("tw_2330", "from lib.data import fetch_twstock_price_adj\nSYMBOL = '2330'\n")
@@ -127,9 +129,14 @@ for lines, venue in ((BINANCE, "binance"), (PAPER, "paper"), ("", "")):
               and cfg.get("exchanges", {}).get("us_nvda", "") == venue,
               f"cloud, {venue or 'no venue'}: NVDA signal on NVDAUSDT saves at {amt} ({err})")
 bind(BINANCE)
-for name, words in (("us_bare", ("NVDAUSDT",)), ("us_basket", ("Type C",))):
+for name, words in (("us_bare", ("NVDAUSDT",)), ("us_basket", ("Type C",)), ("us_typeb", ("Type B", "Type A"))):
     ok, err = refused("US_SYMBOL", name, {name: 100}, *words)
-    check(ok and "電腦版" not in (err or ""), f"cloud: {name} is refused US_SYMBOL, as on the desktop ({err})")
+    check(ok and "電腦版" not in (err or ""), f"cloud: {name} is refused US_SYMBOL ({err})")
+for lines in (PAPER, ""):
+    bind(lines)
+    ok, err = refused("US_SYMBOL", "us_typeb", {"us_typeb": 100}, "Type B")
+    check(ok, f"cloud, {'paper' if lines else 'no venue'}: a US Type B is refused US_SYMBOL ({err})")
+bind(BINANCE)
 RULES["bingx"] = unlisted
 bind(BINGX)
 ok, err = refused("US_VENUE", "us_nvda", {"us_nvda": 100}, "BingX")
