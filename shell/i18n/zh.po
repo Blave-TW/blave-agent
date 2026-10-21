@@ -5758,9 +5758,6 @@ msgstr "讀取中…"
 msgid "cap.s.certExp"
 msgstr "到期 {date}"
 
-msgid "cap.acct.ts"
-msgstr "證券"
-
 msgid "cap.acct.tf"
 msgstr "期貨"
 

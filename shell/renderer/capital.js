@@ -412,7 +412,6 @@ function capDoneBody(cc, view) {
   row.append(trEl("span", "n", t("cap.venue")), trEl("span", "mode real", t("tr.mode.real")), st);
   f.appendChild(row);
   const dl = trEl("dl", "cap-acct"), kv = (k, v, cls) => { const d = trEl("div", ""); d.append(trEl("dt", "", k), trEl("dd", cls || "", v)); dl.appendChild(d); };
-  kv(t("cap.acct.ts"), probe.securities ? t("cap.acct.read") : "—", probe.securities ? "" : "none");
   kv(t("cap.acct.tf"), probe.futures ? t("cap.acct.read") : "—", probe.futures ? "" : "none");
   if (exp) kv(t("cap.acct.exp"), exp, "mono");
   f.appendChild(dl);

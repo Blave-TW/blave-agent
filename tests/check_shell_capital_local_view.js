@@ -163,5 +163,20 @@ ok("地區設定的選單名不進 .po(兩組常數)、繁中介面那組是中�
 ok("trade.js:群益本機受 CAPL_LOCAL_ON 管(main 關著、測試包分支開);雲端那條不動", /^const CAPL_LOCAL_ON = (true|false);$/m.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"))
   && /if \(CXF\.venue === CAPITAL && CXF\.env === "cloud"\) return capPaint\(\);/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8")));
 
+// 開通結果框(Wei 10-21):只列「期貨」一列,證券那列拿掉;期貨沒讀到、證券有 → cap.tfMissing 提示照留
+const doneRows = (fsrc, fname, extra, probe, arg) => {
+  const i = fsrc.indexOf("function " + fname + "("); let d = 0, j = fsrc.indexOf("{", i);
+  for (; j < fsrc.length; j++) { if (fsrc[j] === "{") d++; else if (fsrc[j] === "}" && --d === 0) break; }
+  const el = (tag, cls, txt) => ({ tag, cls, text: txt || "", kids: [], append(...k) { this.kids.push(...k); }, appendChild(k) { this.kids.push(k); } });
+  const dctx = Object.assign({ trEl: el, t: (k) => k, document: { createDocumentFragment: () => el("frag") }, capBtn: () => el("button"), capSign: null, caplSign: null }, extra(probe));
+  vm.createContext(dctx); vm.runInContext(fsrc.slice(i, j + 1) + "\nthis.fn = " + fname + ";", dctx);
+  const flat = (n) => [n].concat(...(n.kids || []).map(flat)), all = flat(dctx.fn({}, arg));
+  return { dt: all.filter((n) => n.tag === "dt").map((n) => n.text), miss: all.some((n) => /^cap\.tfMissing/.test(n.text)) };
+};
+{ const sec = (pr) => ({ caplSec: (c, k) => (k === "probe" ? pr : {}), CAPL: { done: "2027/09/26" } });
+  const both = doneRows(src, "caplDoneBody", sec, { futures: true, securities: true }), ts = doneRows(src, "caplDoneBody", sec, { futures: false, securities: true });
+  ok("本機開通結果框:只列期貨與憑證到期兩列、沒有證券列;期貨沒讀到、證券有 → 照講 cap.tfMissing",
+    JSON.stringify(both.dt) === JSON.stringify(["cap.acct.tf", "cap.acct.exp"]) && !both.miss && JSON.stringify(ts.dt) === JSON.stringify(["cap.acct.tf", "cap.acct.exp"]) && ts.miss, JSON.stringify([both, ts])); }
+
 console.log(red ? `\n${red} FAILED` : "\nall passed");
 process.exit(red ? 1 : 0);

@@ -79,5 +79,21 @@ ok("重查掛在上一次結果那一列:簽署 / 檢核 / 帳密 / 憑證", cap
 // 日期
 ok("到期日 ISO → YYYY/MM/DD;壞的 → null", /^2027\/09\/2[67]$/.test(capDate("2027-09-26T15:59:59Z")) && capDate("nope") === null && capDate(null) === null);
 
+// 開通結果框(Wei 10-21):只列「期貨」一列,證券那列拿掉;期貨沒讀到、證券有 → cap.tfMissing 提示照留
+const doneRows = (fsrc, fname, extra, probe, arg) => {
+  const i = fsrc.indexOf("function " + fname + "("); let d = 0, j = fsrc.indexOf("{", i);
+  for (; j < fsrc.length; j++) { if (fsrc[j] === "{") d++; else if (fsrc[j] === "}" && --d === 0) break; }
+  const el = (tag, cls, txt) => ({ tag, cls, text: txt || "", kids: [], append(...k) { this.kids.push(...k); }, appendChild(k) { this.kids.push(k); } });
+  const dctx = Object.assign({ trEl: el, t: (k) => k, document: { createDocumentFragment: () => el("frag") }, capBtn: () => el("button"), capSign: null, caplSign: null }, extra(probe));
+  vm.createContext(dctx); vm.runInContext(fsrc.slice(i, j + 1) + "\nthis.fn = " + fname + ";", dctx);
+  const flat = (n) => [n].concat(...(n.kids || []).map(flat)), all = flat(dctx.fn({}, arg));
+  return { dt: all.filter((n) => n.tag === "dt").map((n) => n.text), miss: all.some((n) => /^cap\.tfMissing/.test(n.text)) };
+};
+{ const sec = (pr) => ({ capSec: (c, k) => (k === "probe" ? pr : { not_after: "2027-09-26T15:59:59Z" }), capDate: () => "2027/09/26" });
+  const both = doneRows(src, "capDoneBody", sec, { futures: true, securities: true }, "c-done"), ts = doneRows(src, "capDoneBody", sec, { futures: false, securities: true }, "c-done-ts");
+  const S2 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+  ok("雲端開通結果框:只列期貨與憑證到期兩列、沒有證券列;期貨沒讀到(c-done-ts)照講 cap.tfMissing;cap.acct.ts 從字串表清掉",
+    JSON.stringify(both.dt) === JSON.stringify(["cap.acct.tf", "cap.acct.exp"]) && !both.miss && JSON.stringify(ts.dt) === JSON.stringify(["cap.acct.tf", "cap.acct.exp"]) && ts.miss
+    && !S2.includes('"cap.acct.ts"'), [both, ts]); }
 console.log(red ? `${red} FAIL` : "ALL PASS");
 process.exit(red ? 1 : 0);

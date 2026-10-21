@@ -5745,9 +5745,6 @@ msgstr "Reading…"
 msgid "cap.s.certExp"
 msgstr "Expires {date}"
 
-msgid "cap.acct.ts"
-msgstr "Securities"
-
 msgid "cap.acct.tf"
 msgstr "Futures"
 
