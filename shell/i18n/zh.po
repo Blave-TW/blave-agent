@@ -462,7 +462,7 @@ msgid "eng.toHead"
 msgstr "{name} 超過 {limit}還沒完成，已經停下。"
 
 msgid "eng.waitPyc"
-msgstr "上一次的安裝還在收尾，最多等 15 秒。"
+msgstr "等上一次留下的背景程式結束，最多 {limit}，之後照常安裝。"
 
 msgid "eng.toHeadPkgs"
 msgstr "安裝策略套件超過 {limit}還沒完成，已經停下。"

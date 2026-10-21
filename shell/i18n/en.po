@@ -455,7 +455,7 @@ msgid "eng.toHead"
 msgstr "{name} didn’t finish installing within {limit} and was stopped."
 
 msgid "eng.waitPyc"
-msgstr "Finishing up from last time. This takes up to 15 seconds."
+msgstr "Waiting for a background task from last time to finish. Setup continues after {limit} at most."
 
 msgid "eng.toHeadPkgs"
 msgstr "Installing strategy packages didn’t finish within {limit} and was stopped."

@@ -43,6 +43,14 @@ function pipCurName(line) {
   if ((m = /^\s*Downloading (\S+) \([\d.]+ (?:bytes|kB|MB|GB)\)\s*$/.exec(line)) && !/\.metadata$/.test(m[1])) return pipName(m[1].split("/").pop().split("-")[0]);
   return null;
 }
+/* Downloading / Using cached 那一行的 wheel → { name(PEP 503 正規化), version };不是 wheel(metadata、其他行)回 null。
+   wheel 檔名規格:<名字>-<版本>-…whl,名字裡的 - 已換成 _,所以照 - 切的第一、二段就是名字與版本 */
+function pipWheel(line) {
+  const m = /^\s*(?:Downloading|Using cached) (\S+\.whl)(?:\s|$)/.exec(line);
+  if (!m) return null;
+  const parts = m[1].split("/").pop().split("-");
+  return parts.length >= 5 ? { name: pipName(parts[0]), version: parts[1] } : null;
+}
 
 // pip 失敗的 stderr 常是整段 build / resolver log:只留 pip 自己的 ERROR 行(沒有就留最後三行)給失敗卡的「錯誤訊息」。
 // 下載到一半斷掉時 ERROR 行只有「ERROR: Exception:」,原因在 traceback 最後一行:那種也留最後三行
@@ -180,7 +188,7 @@ function createEngineSetup(o) {
           try { killPid(lk.pid); } catch (_) { /* 剛好結束了 */ }
         } else {
           o.log(`[engine] bytecode compile lock pid ${lk.pid} is alive, start time unknown; waiting up to 15s`);
-          S.cur = { step: null, sub: "waitPyc", i: 0, n: 0, name: null, t0: now(), limitMs: null }; emit();
+          S.cur = { step: null, sub: "waitPyc", i: 0, n: 0, name: null, t0: now(), limitMs: o.pycWaitMs || 15000 }; emit();
         }
         const until = now() + (o.pycWaitMs || 15000);
         while (alive(lk.pid) && now() < until) await sleep(500);
@@ -284,12 +292,15 @@ function createEngineSetup(o) {
     p.file = null; p.installing = false; p.lastByteAt = now();
     // 沒有新資料:最近一次有輸出(解析、Downloading、Progress)起算;進了安裝階段就不算(那時 pip 不出聲是正常的)
     const idle = { ms: o.idleMs, quiet: () => (p.installing ? 0 : now() - Math.max(lastLine, p.lastByteAt)) };
+    const seen = new Map();   // 這一條 pip 下載 / 從快取拿的 wheel:名字 → 版本(給半裝保護釘版本)
     try {
       await run(my, o.venvPy, [...PIP_INSTALL, ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, timeoutMs, (l) => {
         lastLine = now();
         const n = onName ? pipCurName(l) : null, renamed = !!n && n !== S.cur.name, moved = pipLine(p, l, now());
+        const wh = onInstall && pipWheel(l);
+        if (wh) seen.set(wh.name, wh.version);
         const ins = onInstall && /^Installing collected packages: (.+)$/.exec(l);
-        if (ins) onInstall(ins[1].split(",").map((x) => x.trim()).filter(Boolean));
+        if (ins) onInstall(ins[1].split(",").map((x) => x.trim()).filter(Boolean), seen);
         if (renamed) S.cur.name = n;
         if (moved || renamed) emit();
       }, o.idleMs ? idle : null);
@@ -301,6 +312,31 @@ function createEngineSetup(o) {
       x.kind = failKind(e); x.limitMs = timeoutMs; x.aborted = !!e.aborted;
       throw x;
     }
+  }
+
+  /* 半裝保護(稽核 P2-3 / 複核 P2-5、P2-8、P2-9):pip 在安裝階段被停掉、或 app 當掉時,某個套件的 dist-info 可能已經寫了、檔案還沒寫完,
+     下一次會被當成 already satisfied 跳過。一看到「Installing collected packages: …」就把那一行的名字(含間接相依)釘成 name==version
+     寫進 <mark>.force——版本取自同一條 pip 的 Downloading / Using cached 檔名(補裝時 -c 沒有間接相依的鎖,不釘會裝到最新版、
+     又因為 --no-deps 不檢查上限);取不到版本的那個不 force、記 log。成功才刪;我們自己 abort 時回到這一輪開始前的樣子。
+     下一次這一條就 --force-reinstall --no-deps,裝原本的 pin + 那份 name==version */
+  const FORCE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*==[0-9][0-9A-Za-z.+!-]*$/;
+  function halfGuard(mark, pins) {
+    const file = mark + ".force";
+    const prev = markLines(read(file)).filter((x) => FORCE_RE.test(x));
+    const mine = new Set(pins.map(pipName));
+    const save = (lines) => { try { if (lines.length) fs.writeFileSync(file, lines.join("\n")); else fs.unlinkSync(file); } catch (_) { /* 寫不了就照一般重試 */ } };
+    return {
+      args: prev.length ? ["--force-reinstall", "--no-deps"] : [],
+      extra: prev.filter((x) => !mine.has(pipName(x))),
+      onInstall: (names, seen) => {
+        const by = new Map(prev.map((x) => [pipName(x), x])), miss = [];
+        for (const n of names) { const v = seen.get(pipName(n)); if (v) by.set(pipName(n), n + "==" + v); else miss.push(n); }
+        if (miss.length) o.log(`[engine] half-install guard: no wheel version seen for ${miss.join(", ")}; not forcing those on retry`);
+        save([...by.values()]);
+      },
+      done: () => save([]),
+      aborted: () => save(prev),
+    };
   }
 
   function begin(keys, kind) {
@@ -387,8 +423,10 @@ function createEngineSetup(o) {
         if (needSdk) {
           // 記號檔而不是「venv 在就當裝好了」:pip 中途失敗(斷網)時 venv 已經在,下次要重試
           Object.assign(S.cur, { sub: null, name: sdkName, t0: now(), limitMs: o.engineMs, idleMs: o.idleMs || null }); emit();
-          await pip(my, ["-c", pinsFile, ...o.sdkPins.split(" ")], envPath, o.engineMs);
+          const hg = halfGuard(sdkMark, o.sdkPins.split(" "));
+          try { await pip(my, [...hg.args, "-c", pinsFile, ...o.sdkPins.split(" "), ...hg.extra], envPath, o.engineMs, false, hg.onInstall); } catch (e) { if (e.aborted) hg.aborted(); throw e; }
           fs.writeFileSync(sdkMark, o.sdkPins);
+          hg.done();
         }
       });
       if (todo.length) await step("pkgs", async () => {
@@ -405,25 +443,18 @@ function createEngineSetup(o) {
         for (const g of groups) {
           if (!g.todo.length) continue;
           const span = (1 - p0) * est(g) / estAll;
-          // 半裝(稽核 P2-3 / 複核 P2-5):pip 在安裝階段被停掉、或 app 當掉時,某個套件的 dist-info 可能已經寫了、檔案還沒寫完,
-          // 下一次會被當成 already satisfied 跳過。所以一看到「Installing collected packages: …」就把那一行的名字(含間接相依)
-          // 寫進 <mark>.force;成功才刪,我們自己 abort 時回到這一輪開始前的樣子。下一次這一條就 --force-reinstall --no-deps,裝這一組的 pin + 那份名字(版本照 -c)
-          const forced = markLines(read(g.mark + ".force")).filter((x) => /[A-Za-z]/.test(x) && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(x));
-          const mine = new Set(g.todo.map(pipName)), extra = forced.filter((x) => !mine.has(pipName(x)));
-          const writeForce = (names) => { try { fs.writeFileSync(g.mark + ".force", [...new Set([...forced, ...names])].join("\n")); } catch (_) { /* 寫不了就照一般重試 */ } };
+          const hg = halfGuard(g.mark, g.todo);   // 半裝保護,見 halfGuard
           try {
             Object.assign(S.cur, { i: installed + 1, n: o.deps.length, k: g.todo.length, name: pipName(g.todo[0]), t0: now(), limitMs: o.pkgMs, idleMs: o.idleMs || null,
               bar: { from, span, est: est(g), dl0: S.dl.done } }); emit();
-            await pip(my, [...(forced.length ? ["--force-reinstall", "--no-deps"] : []), "-c", pinsFile, ...g.todo, ...extra], envPath, o.pkgMs, true, writeForce);
+            await pip(my, [...hg.args, "-c", pinsFile, ...g.todo, ...hg.extra], envPath, o.pkgMs, true, hg.onInstall);
             installed += g.todo.length; from += span;
             fs.writeFileSync(g.mark, g.pins.join("\n"));
-            for (const x of [".part", ".force"]) { try { fs.unlinkSync(g.mark + x); } catch (_) { /* 沒有就算了 */ } }
+            try { fs.unlinkSync(g.mark + ".part"); } catch (_) { /* 沒有就算了 */ }
+            hg.done();
           } catch (e) {
             // 我們自己收掉的不算(Wei 拍板):.force 回到這一輪開始前的樣子(上一次真的半裝的那份留著)
-            if (e.aborted) {
-              try { if (forced.length) fs.writeFileSync(g.mark + ".force", forced.join("\n")); else fs.unlinkSync(g.mark + ".force"); } catch (_) { /* 沒有就算了 */ }
-              throw e;
-            }   // 關 app / 更新重開時我們自己收掉的:不是這組裝不起來,不記 warn、不送 engine_opt_fail
+            if (e.aborted) { hg.aborted(); throw e; }   // 關 app / 更新重開時我們自己收掉的:不是這組裝不起來,不記 warn、不送 engine_opt_fail
             if (!g.optional) throw e;
             // 選用的那組(美股資料):不擋引擎、不往外丟。完整 stderr 已經由 pip() 記了;下次開 app 再試
             skipped.add(g.id);
@@ -452,4 +483,4 @@ function createEngineSetup(o) {
   return { ensure, snapshot, abort, busy, compiling };
 }
 
-module.exports = { createEngineSetup, procStartOf, pipLine, pipCurName, pipError, failKind, depsTodo, depGroups, lockKey, PIP_INSTALL };
+module.exports = { createEngineSetup, procStartOf, pipLine, pipCurName, pipWheel, pipError, failKind, depsTodo, depGroups, lockKey, PIP_INSTALL };

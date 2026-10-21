@@ -56,7 +56,8 @@ function engView(s, now, tr, held) {
     slot = { kind: "fault", head, sub, err: e.msg || "" };
   } else if (cur.sub === "waitPyc") {
     // 上一次 app 當掉時留下的背景編譯還在跑、查不到是不是我們那支:enginesetup 最多等 15 秒才往下裝
-    slot = { kind: "slow", text: t("eng.waitPyc") };
+    // 上限是秒級,跟「{s} 沒有收到資料」一樣用經過時間的寫法(limit() 是分鐘)
+    slot = { kind: "slow", text: t("eng.waitPyc", { limit: dur(cur.limitMs || 0) }) };
   } else if (cur.name) {
     const quiet = now - (dl.lastByteAt || now);
     if (file && !dl.installing && quiet >= ENG_STALL_MS) slot = { kind: "stall", text: t("eng.stall", { s: dur(quiet), limit: limit(cur.idleMs || cur.limitMs) }) };

@@ -28,6 +28,11 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
   ok("Installing collected packages:最後一個檔收尾、進安裝階段", feed("Installing collected packages: scipy, requests, pandas", 10) === true && p.installing && p.file === null && p.done === 10051279 + 73000 + 20475078);
   const q = { done: 0, file: null, installing: false, lastByteAt: 0 };
   ok("Windows 的 \\r 已在逐行讀時去掉;Downloading 前面縮排的(解析中整顆抓)也算", E.pipLine(q, "  Downloading foo-1.0-py3-none-any.whl (1.2 MB)", 1) && q.file.total === 1200000);
+  const W = E.pipWheel;
+  ok("pipWheel:Downloading / Using cached 的 wheel 取名字(正規化)與版本;metadata、Collecting、不是 wheel 的回 null",
+    JSON.stringify(W("Downloading curl_cffi-0.16.3-cp310-abi3-macosx_11_0_arm64.whl (3.2 MB)")) === JSON.stringify({ name: "curl-cffi", version: "0.16.3" })
+    && JSON.stringify(W("Using cached python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)")) === JSON.stringify({ name: "python-dateutil", version: "2.9.0.post0" })
+    && W("  Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl.metadata (79 kB)") === null && W("Collecting pandas==3.0.6") === null && W("Progress 1 of 2") === null);
   const N = E.pipCurName;
   ok("現在在弄哪一個:Collecting 取套件名(帶 from 的相依也算)、Downloading 取 wheel 檔名第一段,都照 PEP 503 正規化(小寫、_ → -);metadata / Using cached / Progress 不算",
     N("Collecting pandas==3.0.6") === "pandas" && N("Collecting numpy>=1.26.0 (from pandas==3.0.6)") === "numpy" && N("Collecting curl_cffi==0.16.3") === "curl-cffi" && N("Collecting Python_Dotenv==1.2.3") === "python-dotenv"
@@ -471,7 +476,7 @@ const venvDir = (r) => path.join(r.base, "venv");
       await r3.S.ensure(); await r3.settle();
       const w = r3.snaps.find((x) => x.cur && x.cur.sub === "waitPyc");
       ok("查不到建立時間:不殺、最多等 15 秒(500ms × 30 輪)才往下裝、鎖檔清掉", k3.length === 0 && waits === 30 && pipCalls(r3).length === 2 && !fs.existsSync(lockOf(r3)), { k3, waits });
-      ok("…等的那段安裝卡已經出來(phase run、show)、cur.sub = waitPyc", !!w && w.phase === "run" && w.show === true, w); }
+      ok("…等的那段安裝卡已經出來(phase run、show)、cur.sub = waitPyc、limitMs = 等的上限(15 秒,給畫面填 {limit})", !!w && w.phase === "run" && w.show === true && w.cur.limitMs === 15000, w); }
     // 複核 P1-1:鎖檔記的是我們這次自己正在跑的編譯 → 之後每一次 ensure 都不能把它當孤兒殺(alive 真的回 true、建立時間也對得上)
     { const kp = [];
       const me = rig({ alive: () => true, procStart: async (pid) => { try { return JSON.parse(fs.readFileSync(lockOf(me), "utf8")).at; } catch (_) { return null; } }, killPid: (pid) => kp.push(pid),
@@ -525,24 +530,53 @@ const venvDir = (r) => path.join(r.base, "venv");
     await a.S.abort(); await pa;
     ok("安裝階段被我們 abort(關 app):照拍板不寫 .force", !fs.existsSync(forceOf(a)));
     // 複核 P2-5:一看到 Installing 那一行就寫(app 當掉也蓋得到),名字含間接相依;重試對那些名字 force
-    const INST2 = ["Downloading numpy-2.5.3-cp312-cp312-macosx_14_0_arm64.whl (5.4 MB)", "Installing collected packages: pytz, kiwisolver, numpy, pandas"];
+    const INST2 = ["Downloading numpy-2.5.3-cp312-cp312-macosx_14_0_arm64.whl (5.4 MB)", "Using cached pytz-2026.4-py2.py3-none-any.whl (509 kB)", "Downloading kiwisolver-1.5.1-cp312-cp312-macosx_11_0_arm64.whl (64 kB)",
+      "Downloading pandas-3.0.6-cp312-cp312-macosx_11_0_arm64.whl (10.1 MB)", "Installing collected packages: pytz, kiwisolver, numpy, pandas"];
     const cr = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: INST2 } : { code: 0 }) });
     cr.S.ensure().catch(() => {});
     for (let k = 0; k < 2000 && !(cr.S.busy() && cr.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
     const during = fs.existsSync(forceOf(cr)) ? fs.readFileSync(forceOf(cr), "utf8").split("\n") : null;
-    ok("安裝階段一開始(還沒失敗、也還沒結束)就寫 .force,內容 = Installing 那一行的名字(含間接相依)", during && during.join() === "pytz,kiwisolver,numpy,pandas", during);
+    ok("安裝階段一開始(還沒失敗、也還沒結束)就寫 .force,內容 = Installing 那一行的名字(含間接相依)、版本取自同條 pip 的 Downloading / Using cached 檔名",
+      during && during.join() === "pytz==2026.4,kiwisolver==1.5.1,numpy==2.5.3,pandas==3.0.6", during);
     // 這時 app 當掉(不走 abort):下一次開 app 那一條帶 --force-reinstall --no-deps,裝這一組的 pin + 間接相依的名字
     const cr2 = rig({ base: cr.base }); await cr2.S.ensure(); await cr2.settle();
     const la = pipCalls(cr2)[pipCalls(cr2).length - 1].args, bt = batchOf({ args: la });
-    ok("當掉之後重開:--force-reinstall --no-deps,這一組的 pin 全在、加上間接相依 pytz / kiwisolver(不重複 numpy / pandas)、成功後 .force 收掉",
-      la.includes("--force-reinstall") && la.includes("--no-deps") && DEPS.every((x) => bt.includes(x)) && bt.includes("pytz") && bt.includes("kiwisolver") && bt.length === DEPS.length + 2 && !fs.existsSync(forceOf(cr2)), bt);
+    ok("當掉之後重開:--force-reinstall --no-deps,這一組的 pin 全在、加上釘了版本的間接相依 pytz / kiwisolver(不重複 numpy / pandas)、成功後 .force 收掉",
+      la.includes("--force-reinstall") && la.includes("--no-deps") && DEPS.every((x) => bt.includes(x)) && bt.includes("pytz==2026.4") && bt.includes("kiwisolver==1.5.1") && bt.length === DEPS.length + 2 && !fs.existsSync(forceOf(cr2)), bt);
     // 上一次真的半裝(.force 在)、這一次又被我們 abort:.force 回到上一次那份,不被這次 abort 抹掉
-    fs.unlinkSync(path.join(venvDir(cr2), ".blave-deps-1")); fs.writeFileSync(forceOf(cr2), "kiwisolver");
+    fs.unlinkSync(path.join(venvDir(cr2), ".blave-deps-1")); fs.writeFileSync(forceOf(cr2), "kiwisolver==1.5.1");
     const ab2 = rig({ base: cr.base, behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: ["Installing collected packages: six, numpy"] } : { code: 0 }) });
     const pab = ab2.S.ensure().catch((e) => e);
     for (let k = 0; k < 2000 && !(ab2.S.busy() && ab2.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
     await ab2.S.abort(); await pab;
-    ok("上一次半裝留下的 .force、這次被 abort:回到上一次那份(kiwisolver)", fs.existsSync(forceOf(ab2)) && fs.readFileSync(forceOf(ab2), "utf8") === "kiwisolver"); }
+    ok("上一次半裝留下的 .force、這次被 abort:回到上一次那份(kiwisolver==1.5.1)", fs.existsSync(forceOf(ab2)) && fs.readFileSync(forceOf(ab2), "utf8") === "kiwisolver==1.5.1");
+    // 複核 P2-8:取不到版本的那個不 force、記 log;沒釘版本的舊格式行不帶進重試
+    const nv = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: ["Downloading numpy-2.5.3-cp312-cp312-macosx_14_0_arm64.whl (5.4 MB)", "Installing collected packages: six, numpy"] } : { code: 0 }) });
+    nv.S.ensure().catch(() => {});
+    for (let k = 0; k < 2000 && !(nv.S.busy() && nv.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
+    ok("Installing 那一行有名字但這條 pip 沒看到它的 wheel(six):不 force 它、記 log;看得到的(numpy)照釘", fs.readFileSync(forceOf(nv), "utf8") === "numpy==2.5.3" && nv.logs.some((l) => /no wheel version seen for six/.test(l)), nv.logs);
+    fs.writeFileSync(forceOf(nv), "kiwisolver\nnumpy==2.5.3");
+    const nv2 = rig({ base: nv.base }); await nv2.S.ensure(); await nv2.settle();
+    const lb = batchOf({ args: pipCalls(nv2)[pipCalls(nv2).length - 1].args });
+    ok("….force 裡沒釘版本的行(舊格式 kiwisolver)不帶進重試,只帶 name==version 的", !lb.includes("kiwisolver") && !lb.some((x) => /^kiwisolver/.test(x)) && lb.length === DEPS.length, lb); }
+  // 複核 P2-9:SDK 那條也有半裝保護(.blave-sdk.force)
+  { const sdkForce = (r) => path.join(venvDir(r), ".blave-sdk.force");
+    const SINST = ["Downloading anyio-4.15.1-py3-none-any.whl (113 kB)", "Downloading claude_agent_sdk-0.2.159-py3-none-macosx_11_0_arm64.whl (93.1 MB)", "Using cached cryptography-48.0.1-cp39-abi3-macosx_10_9_universal2.whl (7.1 MB)",
+      "Installing collected packages: anyio, cryptography, claude-agent-sdk"];
+    const sc = rig({ behave: (bin, args) => (args.includes("pip") && args.includes(SDKP[0]) ? { hang: true, out: SINST } : { code: 0 }) });
+    sc.S.ensure().catch(() => {});
+    for (let k = 0; k < 2000 && !(sc.S.busy() && sc.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
+    const sd = fs.existsSync(sdkForce(sc)) ? fs.readFileSync(sdkForce(sc), "utf8") : null;
+    ok("SDK 那條進了安裝階段就寫 .blave-sdk.force(名字釘版本)", sd === "anyio==4.15.1\ncryptography==48.0.1\nclaude-agent-sdk==0.2.159", sd);
+    const sc2 = rig({ base: sc.base }); await sc2.S.ensure(); await sc2.settle();
+    const sa = pipCalls(sc2)[0].args, sb = batchOf({ args: sa });
+    ok("SDK 那條當掉之後重開:--force-reinstall --no-deps、SDK_PINS 照帶、加上 anyio==4.15.1(SDK 與 cryptography 不重複)、成功後 .force 收掉",
+      sa.includes("--force-reinstall") && sa.includes("--no-deps") && sa.indexOf("--force-reinstall") < sa.indexOf("-c") && SDKP.every((x) => sb.includes(x)) && sb.includes("anyio==4.15.1") && sb.length === SDKP.length + 1 && !fs.existsSync(sdkForce(sc2)), sb);
+    const sabt = rig({ behave: (bin, args) => (args.includes("pip") && args.includes(SDKP[0]) ? { hang: true, out: SINST } : { code: 0 }) });
+    const psab = sabt.S.ensure().catch((e) => e);
+    for (let k = 0; k < 2000 && !(sabt.S.busy() && sabt.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
+    await sabt.S.abort(); await psab;
+    ok("SDK 那條在安裝階段被我們 abort:不留 .blave-sdk.force", !fs.existsSync(sdkForce(sabt))); }
   // 複核 P2-7:查建立時間是非同步的(不卡主行程)
   { const SRC = fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8");
     const pr = E.procStartOf(process.pid), t = await pr, bad = await E.procStartOf(-1);
