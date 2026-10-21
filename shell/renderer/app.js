@@ -3654,13 +3654,15 @@ function planView() {
   if (st !== "none") return st;                                   // starting / running / stopped
   const da = dataAccessOf(acct);
   if (planMo()) {
-    // 方案制:有試用資格又沒卡 → 綁卡拿試用;試用中 → 試用;否則看資料:API 方案含資料、扣款失敗、沒有方案
-    if (acctOffer(acct)) return "offer";
+    // 方案制:試用中 → 試用;否則看資料:方案有效、API 方案含資料、扣款失敗、沒有方案
     if (planVars().n > 0) return "trial";
     // 方案有效、名下沒有主機(電腦版只開方案,或期內刪了主機):資料已含,要雲端主機到網站開
     const pl = acct.plan || {};
     if (pl.tier && planPaidAhead() && !planEnded()) return "planOn";
     if (da === "included") return "included";
+    /* has_card 跟 can_run 脫鉤後,付了方案沒綁卡(加密貨幣付款)、Studio API 方案的人也是 has_card=false 又有試用資格:
+       綁卡試用只給沒有方案的人,跟資料卡／策略庫／歡迎頁同一個守門 */
+    if (da === "plan_required" && acctOffer(acct)) return "offer";
     return da === "payment_failed" ? "payFail" : "plan";
   }
   if (da === "billed") return "billed";                           // 沒綁卡但有餘額也付得起:不叫他去綁卡

@@ -13,7 +13,7 @@ const btn = () => ({ textContent: "", isConnected: true, dataset: {}, h: null, a
 /* 1. 列舉:renderer 裡每一個開「帳號與方案」的呼叫點都要在這張表裡,而且沒有一個是登入鈕。
    新增一個 planOpen / setCat("plan") 就得來這裡說它為什麼不是登入(登入一律走 planSignIn) */
 const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查不到狀態 / 舊 api、看方案、綁卡 / 儲值、看完整方案
-  "app.js": ["acctSignOut", "setCat", "dataCardState", "planOpen"],
+  "app.js": ["acctSignOut", "setCat", "dataCardState", "planOpen", "mvBlock"],   // mvBlock:設定 › 隱私「前往登入」切到同一個設定裡的帳號與方案(mockup-desktop-mobile-view-toggle A 版 mv.leadOut;登入失效同一句)
   "library.js": ["libGateBtn", "libBuyBox", "libPaintList"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21)
   "welcome.js": ["wdNote"],
   "trade.js": ["envPaintEmpty"],
@@ -42,7 +42,7 @@ ok("report-share / report-sharelist 不再開帳號與方案", !/setCat\("plan"\
   ok("授權網址帶 src=desktop_app(註冊來源)", /device_label: [^\n]*\n(?:\s*\/\/[^\n]*\n)?\s*src: "desktop_app",\n\s*\}\);\n\s*const authUrl = /.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")));
 }
 
-/* 2. planSignIn 本身:等待中鈕字換「取消等待」、結束還原;等待中再按 = planLogin 的取消;回合在跑不動;呼叫端已換掉字就不蓋回去 */
+/* 2. planSignIn 本身:等待中鈕字換「取消等待」、結束還原;等待中再按 = planLogin 的取消;回合在跑照樣登入(回合中鎖減量放開登入);呼叫端已換掉字就不蓋回去 */
 function harness() {
   const C = { planLoginBusy: false, planLoginOut: false, oauthPending: false, running: false, calls: 0, resolve: null, t: (k) => k };
   C.planLogin = () => { C.calls++; if (C.planLoginBusy) { C.resolve(); return Promise.resolve(); } C.planLoginBusy = C.oauthPending = true; return new Promise((r) => { C.resolve = () => { C.planLoginBusy = C.oauthPending = false; r(); }; }); };
@@ -66,8 +66,9 @@ function harness() {
   ok("登入成功後呼叫端已經換掉鈕字(資料卡換〔再送一次〕):不蓋回去", b.textContent === "fault.resend");
 
   C = harness(); C.running = true; b = btn(); b.textContent = "cn.blave.btn";
-  await C.planSignIn(b);
-  ok("回合在跑:不登入、鈕字不動", C.calls === 0 && b.textContent === "cn.blave.btn");
+  const pRun = C.planSignIn(b);
+  ok("回合在跑:照樣登入(回合中鎖減量第一期放開登入,check_shell_busy_lock ②)", C.calls === 1 && b.textContent === "oauth.cancel");
+  C.resolve(); await pRun;
   C = harness(); C.oauthPending = true; await C.planSignIn(null);
   ok("別的登入在等(模型接入那條):不另開一次", C.calls === 0);
   C = harness(); const p3 = C.planSignIn(null); C.resolve(); await p3;
@@ -119,6 +120,9 @@ function harness() {
   hit.length = 0; into.kids.length = 0;
   W.wdNote("none", { t: 14 }, into); W.wdNote("noplan", {}, into); into.kids.filter((k) => k.click).forEach((k) => k.click());
   ok("已登入那幾句(綁卡 / 看方案)照舊開帳號與方案", hit.length === 2 && hit.every((h) => h[0] === "planOpen"), JSON.stringify(hit));
+  hit.length = 0; into.kids.length = 0; W.planMo = () => true; W.bindGo = (src) => hit.push(["bind", src]);
+  W.wdNote("none", { t: 14 }, into); W.wdNote("noplan", {}, into); into.kids.filter((k) => k.click).forEach((k) => k.click());
+  ok("方案制:沒綁卡那句直開綁卡頁(bind_welcome),沒方案那句照舊開帳號與方案", JSON.stringify(hit) === JSON.stringify([["bind", "bind_welcome"], ["planOpen"]]), JSON.stringify(hit));
 
   hit.length = 0;
   let box = null;
@@ -152,3 +156,4 @@ function harness() {
   console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + e.stack); process.exit(1); });
+process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到結尾"); process.exit(1); });
