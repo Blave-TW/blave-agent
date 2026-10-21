@@ -8,6 +8,7 @@ strategy (`CODE: 「name」…`) and writes nothing.
     and Type B (cron, no live scope: every tick would refuse) are US_SYMBOL; there is no US_CLOUD
   - US_SYMBOL: bare SYMBOL 'NVDA', no SYMBOL, a ticker that is not the traded stock (SPY beside
     NVDAUSDT), a ticker the code does not spell out, a coin (BTCUSDT), a Type C — paper too
+  - desktop Type B: TYPE_B (the desktop runs no Type B at all), checked before any US rule
   - US_VENUE: the bound exchange has no such perp (symbol_unavailable), or lists it as a coin
   - fail-open: Binance's list or the exchange's contract list unreadable → saves (the order is
     refused later), as the TW checks do
@@ -166,6 +167,10 @@ for lines, venue in ((BINANCE, "binance"), (PAPER, "paper")):
     bind(lines)
     ok, err = refused("US_SYMBOL", "us_basket", {"us_basket": 100}, "Type C")
     check(ok, f"desktop, {venue}: a US Type C is refused US_SYMBOL ({err})")
+for lines, venue in ((BINANCE, "binance"), (PAPER, "paper"), ("", "")):
+    bind(lines)
+    ok, err = refused("TYPE_B", "us_typeb", {"us_typeb": 100}, "Type B")
+    check(ok, f"desktop, {venue or 'no venue'}: a US Type B is refused TYPE_B, not US_SYMBOL ({err})")
 
 
 bind(BINGX)
