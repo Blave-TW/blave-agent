@@ -104,7 +104,7 @@ app.whenReady().then(async () => {
   await wait(1200);
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const run = (s) => w.webContents.executeJavaScript("(() => { " + s + "; return 0; })()", true);   // 賦值成函式的那幾行:回傳值不能跨 IPC
-  const fields = () => js(`[...document.querySelectorAll("#cx-body input")].map((i) => i.id)`);
+  const fields = () => js(`[...document.querySelectorAll("#cx-body input.f-input")].map((i) => i.id)`);   // 框頂模擬／真實帳戶兩顆 radio 也在 #cx-body 裡,不算金鑰欄
   const pick = (v) => js(`(() => { const s = $("cx-venue"); s.value = ${J(v)}; s.dispatchEvent(new Event("change")); })()`);
   const fill = (o) => js(`(() => { for (const [id, v] of Object.entries(${J(o)})) { const i = $(id); i.value = v; i.dispatchEvent(new Event("input")); } })()`);
 
@@ -133,7 +133,7 @@ app.whenReady().then(async () => {
   const noteHas = async (key, label) => (await js(`[...document.querySelectorAll("#cx-body .cx-note p")].map((p) => p.textContent)`)).indexOf(await js(label ? `t(${J(key)}, { venue: ${J(label)} })` : `t(${J(key)})`)) >= 0;
   ok("③ 雲端:Gate.io / OKX 講 cx.note.oneV、Binance 講 cx.note.one(只講 IP 白名單;權限建議在真實帳戶卡裡的事實第 2 行)", (await pick("gateio"), await noteHas("cx.note.oneV", "Gate.io")) && (await pick("okx"), await noteHas("cx.note.oneV", "OKX")) && (await pick("binance"), await noteHas("cx.note.one"))
     && !/建議|讀取/.test(await js(`STRINGS.zh["cx.note.one"]`)) && !/建議|讀取/.test(await js(`STRINGS.zh["cx.note.oneV"]`)) && /白名單/.test(await js(`STRINGS.zh["cx.note.one"]`)) && !/拒絕/.test(await js(`STRINGS.zh["cx.note.one"] + STRINGS.zh["cx.note.oneV"]`)));
-  ok("③ 三格都是密碼欄、不自動完成", await js(`[...document.querySelectorAll("#cx-body input")].length > 0 && [...document.querySelectorAll("#cx-body input")].every((i) => i.type === "password" && i.autocomplete === "off")`));
+  ok("③ 三格都是密碼欄、不自動完成", await js(`[...document.querySelectorAll("#cx-body input.f-input")].length > 0 && [...document.querySelectorAll("#cx-body input.f-input")].every((i) => i.type === "password" && i.autocomplete === "off")`));
   await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__over.cloudConnect = async (a) => ({ ok: true, code: "OK", detail: {} })`);
@@ -236,7 +236,9 @@ app.whenReady().then(async () => {
     && (await js(`$("sr-live").textContent`)) === (await js(`t("cx.linkOk")`)));
   ok("③ trPoll 每一輪都叫 cxGateSlowSync(源碼)", /cxGateSlowSync\(\);\s*\n\s*if \(!\$\("cx-scrim"\)\.hidden\) cxModalPaint\(\);/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
   // 模擬交易那條路:鈕短暫變灰(圓環照放)即關框,**不**出現 cx.gate.checking(本機寫 .env,次秒完成)
-  await js(`cxModalOpen(null)`); await wait(100);
+  // 上一段的報告留著 OKX 帳戶 → 框會鎖在已綁定的那一家;模擬那條要的是還沒綁任何帳戶的第一次
+  await run(`TR_BAGS.local.st = { alive: true, report: { venues: {} } }`);
+  await js(`cxModalOpen(null, null, "paper")`); await wait(100);
   await run(`window.__over.tradeSend = () => new Promise((r) => { window.__release = r; })`);
   await js(`$("cx-go").click()`); await wait(200);
   ok("③ 模擬交易 pending:鈕有圓環、狀態槽空的(沒有 cx.gate.checking)", (await js(`!!$("cx-go").querySelector(".spin16")`)) && (await slotOf()) === "");

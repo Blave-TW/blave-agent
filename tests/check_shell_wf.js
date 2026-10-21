@@ -648,7 +648,8 @@ app.whenReady().then(async () => {
     await w2.loadFile(path.join(SHELL, "renderer", "index.html")); await wait(900);
     const wf = { ...SAMPLE, n_runs: runs, runs: Array.from({ length: runs }, (_, i) => ({ ...SAMPLE.runs[i % 11], k: i + 1 })) };
     const m = await w2.webContents.executeJavaScript(`(async () => {
-      RP.name = "s1"; RP.data = { stats: { symbol: "BTCUSDT", start: "2023-01-01", end: "2024-11-30", "Generated At": 5 }, wf: ${JSON.stringify(wf)}, code: "ENTRY_TH = 0.002\\nEXIT_TH = -0.002\\n", name: "s1", displayName: "s1", description: "" }; RP.drawn = {}; RP.tab = "wf";
+      // 帶一筆 trades:沒有逐筆紀錄時進出場分頁收起(同網頁 has_trades),這裡量的是五顆分頁都在的版面
+      RP.name = "s1"; RP.data = { stats: { symbol: "BTCUSDT", start: "2023-01-01", end: "2024-11-30", "Generated At": 5, trades: [{ t: 1 }] }, wf: ${JSON.stringify(wf)}, code: "ENTRY_TH = 0.002\\nEXIT_TH = -0.002\\n", name: "s1", displayName: "s1", description: "" }; RP.drawn = {}; RP.tab = "wf";
       document.getElementById("rp").hidden = false; rpPaintHead(RP); rpShowTab("wf"); await new Promise((r) => setTimeout(r, 400));
       const R = (el) => el.getBoundingClientRect(), main = document.getElementById("rp"), sc = document.getElementById("rp-tabs-scroll"), more = document.getElementById("rp-tabs-more"), xp = document.getElementById("xp-dd");
       const box = document.querySelector(".wf-scroll"), tb = box.querySelector("table"), rows = [...tb.querySelectorAll("tbody tr")].map((r) => R(r).height);
