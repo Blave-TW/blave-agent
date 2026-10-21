@@ -22,7 +22,9 @@
   - a crypto daily strategy keeps the plain calendar floor
   - the freshness probe runs fetch_data inside us_live_strategy(<folder name>, SYMBOL)
   - Yahoo down during the probe → the strategy_failed alert ends with 「美股日線這輪抓不到…部位
-    維持原樣」 (the event keeps the last 500 characters), the run is not started, state.json untouched
+    維持原樣」 (the event keeps the last 500 characters), the run is not started, state.json untouched;
+    it is flagged transient, so the alert says the next run retries instead of "will likely repeat"
+    (a UsStockNotHere refusal is not transient)
   paper: NVDAUSDT fills at Binance's last trade (lib.paper_data); its once-a-day collision check
     reads the strategy's own Yahoo close in the reconciler's env (desktop flag, no BLAVE_MODE), so
     no live scope is needed there
@@ -278,8 +280,8 @@ class _Now(_dt):
 
 class _Alerts:
     @staticmethod
-    def alert(name, code, output):
-        alerts.append((name, code, output))
+    def alert(name, code, output, **kw):
+        alerts.append((name, code, output, kw))
 
 
 wfb.datetime = _Now
@@ -335,6 +337,42 @@ check(len(alerts) == 1 and alerts[0][1] == "fetch_error" and "美股日線這輪
       and "部位維持原樣" in alerts[0][2][-500:] and runs == [] and st["last_attempt_failed_at"]
       and st["last_processed_bar"] == "2026-10-19T00:00:00" and st_file.read_bytes() == before,
       f"Yahoo down at the probe: one fetch_error alert whose last 500 chars say the position is held, no run, state.json untouched ({alerts[:1]})")
+check(alerts[0][3] == {"transient": True}, f"…flagged transient: the alert must not also say the error repeats every run ({alerts[0][3]})")
+
+
+def probe_refused(mod, expected):
+    raise D.UsStockNotHere(D._us_not_live("「us_nvda」還沒綁交易所"))
+
+
+wfb._check_freshness = probe_refused
+st = tick(NAME, "2026-10-21T00:30", last="2026-10-19T00:00:00")
+check(len(alerts) == 1 and alerts[0][3] == {"transient": False} and "稍後自動重試" not in alerts[0][2],
+      f"a routing refusal (UsStockNotHere) repeats every run: not transient, no 'retries later' line ({alerts[:1]})")
+
+# the real alert text: transient says the next run retries; the default keeps "will likely repeat"
+import lib.events as _events  # noqa: E402
+import lib.notify as _notify  # noqa: E402
+from manager import alert_failure as _af  # noqa: E402
+sent, _cwd, _send, _emit = [], os.getcwd(), _notify.send_text, _events.emit
+_notify.send_text = lambda m, *a, **k: sent.append(m)
+emitted = []
+_events.emit = lambda ev, **k: emitted.append((ev, k))   # no event file outside the temp workspace
+os.chdir(WS)
+try:
+    for flag in (True, False):
+        state_file = WS / "strategies" / NAME / "failure_alert_state.json"
+        if state_file.exists():
+            state_file.unlink()
+        _af.alert(NAME, "fetch_error", "boom", transient=flag)
+finally:
+    os.chdir(_cwd)
+    _notify.send_text = _send
+    _events.emit = _emit
+check(len(sent) == 2 and "likely repeat" not in sent[0] and "tries again automatically" in sent[0]
+      and "likely repeat" in sent[1] and "tries again" not in sent[1],
+      f"alert_failure: transient → 'tries again automatically', never 'will likely repeat'; default unchanged ({sent})")
+check([(e, k.get("transient")) for e, k in emitted] == [("strategy_failed", True), ("strategy_failed", False)],
+      f"the strategy_failed event carries transient, so the platform's push says the same as Telegram ({emitted})")
 
 wfb._check_freshness = real_probe
 scopes = []

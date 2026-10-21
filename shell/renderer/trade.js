@@ -732,6 +732,12 @@ function trUsNoAuto(r, sym, names) {
   const s = trCanonSym(String(sym).replace(/@spot$/i, ""));
   return !trTxfSpec(s) && !TR_TWSTOCK_RE.test(s) && !trSuffixZone(s);
 }
+/* 股票永續(美股訊號下在加密所的 NVDAUSDT 之類):貢獻的策略全是 us_stock、標的是交易對。lib/data._us_live_gate 只放 SYMBOL 是 Binance 股票永續的
+   us_stock 策略上線,所以這兩個條件就夠;加密市場的策略直接下股票永續(fetch_kline NVDAUSDT)外殼分不出,照「顆」 */
+function trUsPerp(r, sym, names) {
+  if (!Array.isArray(names) || !names.length || !names.every((n) => trSrcMarket(r, n) === "us_stock")) return false;
+  return !!trSuffixZone(sym);
+}
 /* 帳戶幣那一區(§9.3 排序用):台灣期貨券商 → 口數區;加密所 → 帳戶幣那一區。
    OKX 回的帳戶幣是 USD(totalEq 以美元計)而交易對是 USDT:平台匯率表 USDT 與 USD 同為 1,USD 帳戶當 USDT 區。
    沒綁、帳戶幣未知 = null;加密帳戶的幣是 TWD(讀帳退路錯了)也 null——TWD 區是台股,不在這個帳戶上 */
@@ -3523,14 +3529,28 @@ function trMarks(r) {
       if (typeof p.mark_price === "number" && isFinite(p.mark_price) && p.mark_price > 0) out[k] = p.mark_price; }); });
   return out;
 }
-/* 一個標的的錢 → 下單單位:台指期列本來就是口;台股以「股」、不足 1 股捨去(買不起的那一股不算);其餘以顆。
-   沒有價格 = null(呼叫端照錢寫,不湊一個像數量的數) */
-function trCfQty(sym, money, px) {
+/* 一個標的的錢 → 下單單位:台指期列本來就是口;台股以「股」、不足 1 股捨去(買不起的那一股不算);股票永續(stock = trUsPerp)
+   也寫「股」但照交易所的小數股、不捨去;其餘以顆。沒有價格 = null(呼叫端照錢寫,不湊一個像數量的數) */
+function trCfQty(sym, money, px, stock) {
   const k = trCanonSym(String(sym).replace(/@spot$/i, ""));
   if (!(px > 0)) return null;
   const q = Math.abs(money) / px;
   if (TR_TWSTOCK_RE.test(k)) { const sh = Math.floor(q + 1e-9); return { n: sh, text: trFmt(sh), unit: "tr.cf.unitShares" }; }
-  return { n: q, text: trQtyFmt(q), unit: "tr.cf.unitCoins" };
+  return { n: q, text: trQtyFmt(q), unit: stock ? "tr.cf.unitShares" : "tr.cf.unitCoins" };
+}
+/* 框裡的一支策略這一刻空手:Type A 部位 0(只能做多的負部位同 trClientTargets 壓成 0)、投資組合沒有一檔持有(trTypeC 的 n,現貨負權重已壓 0) */
+function trCfFlat(s, n) {
+  const tc = trTypeC(s, n);
+  if (tc) return tc.n === 0;
+  if (!s || typeof s.position !== "number") return false;
+  return s.position === 0 || (s.position < 0 && trCfLongOnly(s, n));
+}
+// 只能做多:現貨,或路由到模擬交易的台股現股(trTwCash)。合約判不出能不能做空,算不是
+function trCfLongOnly(s, n) {
+  const x = TR.list.find((y) => y.name === n) || {};
+  if (((s && s.market) || x.market) === "spot") return true;
+  const tc = trTypeC(s, n), paper = trPaperOf(n), keys = tc ? tc.keys : s && s.symbol ? [s.symbol] : [];
+  return keys.length > 0 && keys.every((k) => trTwCash(k, paper));
 }
 /* 框的內容(純計算,畫面在 trSaveAmounts)。o = { r, stored, sending, firing, contractsBefore, contractsAfter, mine, gates, covered(sym), lot(sym), lastAt }
    回 { kind: "orders" | "changes", rows: [...], zones: [...], st }:
@@ -3596,7 +3616,7 @@ function trCfRows(o) {
       if (!acts) { if (ws.length && o.mine[sym] && (froze || !an0)) { hit(held.wait, sym); ws.forEach((n) => hit(held.names, n)); } return; }
       const row = { sym, side: d > 0 ? "buy" : "sell", money: Math.abs(d), z: zoneOf(sym), by: by(sym) };
       if (lot) row.lots = Math.round(Math.abs(d));
-      else { const q = trCfQty(sym, d, priceOf(sym)); if (q && q.n === 0) return; row.qty = q; }
+      else { const q = trCfQty(sym, d, priceOf(sym), trUsPerp(o.r, sym, by(sym))); if (q && q.n === 0) return; row.qty = q; }
       if (twClosed(sym)) row.closed = true;
       rows.push(row);
     });
@@ -3610,7 +3630,7 @@ function trCfRows(o) {
     const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym] };
     // 不會自動下單的美股列只寫金額:不換數量、也不算預覽撐的列(表頭不寫依哪一根),同網頁 pfUsNoAuto
     if (trUsNoAuto(o.r, sym, by(sym))) row.noAuto = true;
-    else if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym)) : null;
+    else if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym), trUsPerp(o.r, sym, by(sym))) : null;
     rows.push(row);
   });
   rows.sort((a, b) => ((b.was ? 1 : 0) - (a.was ? 1 : 0)) || (a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0));
@@ -3716,7 +3736,8 @@ function trSaveAmounts(names, stored, opener, o) {
     const waiting = host ? miss.filter((n) => codeChanged.indexOf(n) < 0) : [];
     if (waiting.length && !cf.until) cf.until = now + (waiting.every((n) => { const x = TR.list.find((y) => y.name === n) || {}; return x.twdAll === true && !trTxfSpec(x.symbol); }) ? TR_CF_WAIT_TW_MS : TR_CF_WAIT_MS);
     const late = waiting.length > 0 && now >= cf.until, wait = waiting.length > 0 && !late;
-    const sig = JSON.stringify([fire, m, held, waiting, late, codeChanged, hostOld, unread, oldPv, TR_TWN.v, trTxfPrice()]);
+    const flatNew = fire || miss.length ? [] : Object.keys(sending).filter((n) => !(n in stored) && Number(sending[n]) > 0 && !!m.st.states[n] && trCfFlat(m.st.states[n], n));
+    const sig = JSON.stringify([fire, m, held, waiting, late, codeChanged, hostOld, unread, oldPv, flatNew, TR_TWN.v, trTxfPrice()]);
     if (sig === cf.sig) return; cf.sig = sig;
     body.textContent = "";
     const sub = trEl("p", "cf-sub");
@@ -3766,6 +3787,11 @@ function trSaveAmounts(names, stored, opener, o) {
           arrow(dd, trFmt(old(n))); dd.append(trEl("span", "n", trFmt(now))); if (sp) dd.appendChild(lotsRef(sp, now, null));
           dl.appendChild(cfRow("", trDisplay(n), dd)); });
         body.appendChild(dl);
+      } else if (flatNew.length) {
+        // 剛加入的策略算出來是空手:沒有單、沒有目標變動,框只剩標題與兩顆鈕——講一句為什麼
+        // 「才會進場」只在真的會進場時講:下單程式在跑(不是暫停)、有連帳戶、這家下得了(trCfWillOrder);其餘只講前半句
+        const enters = flatNew.every((n) => trCfWillOrder(n, m.st.states[n], ctAfter)), long = flatNew.every((n) => trCfLongOnly(m.st.states[n], n));
+        body.appendChild(trEl("p", "cf-note", !enters ? t("tr.cf.flatNoOrder") : long ? t("tr.cf.flatLong") : t("tr.cf.flat")));
       }
     }
     // 例外才有說明句(canon:不寫否定句、框底不放常駐的後果句)
@@ -3784,7 +3810,7 @@ function trSaveAmounts(names, stored, opener, o) {
       $("del-title").textContent = title; $("del-ok").textContent = t(fire ? "tr.cf.titleFire" : "tr.save"); $("del-ok").disabled = blocked || wait;
       const mk = $("del-mark"), paper = trIsPaper(); mk.hidden = !fire; mk.className = "mode " + (paper ? "paper" : "real"); mk.textContent = fire ? t(paper ? "tr.mode.paper" : "tr.mode.real") : "";
     }
-    cf.title = title; cf.firing = fire; cf.wait = wait; cf.rows = m.rows.length + amtOnly.length; cf.notes = codeChanged.length + hostOld.length + (late ? 1 : 0) + (wait ? 1 : 0) + (unread ? 1 : 0) + (oldPv.length ? 1 : 0) + (held.wait.length ? 1 : 0) + (held.gate.length ? 1 : 0);
+    cf.title = title; cf.firing = fire; cf.wait = wait; cf.rows = m.rows.length + amtOnly.length; cf.notes = (!wait && !m.rows.length && !amtOnly.length && flatNew.length ? 1 : 0) + codeChanged.length + hostOld.length + (late ? 1 : 0) + (wait ? 1 : 0) + (unread ? 1 : 0) + (oldPv.length ? 1 : 0) + (held.wait.length ? 1 : 0) + (held.gate.length ? 1 : 0);
     if (wait && cf.timer == null) cf.timer = setTimeout(() => { cf.timer = null; trCfTick(); }, Math.max(0, cf.until - Date.now()) + 50);
   });
   // 草稿的預覽不是最新那一根(按 A1 之後過了一根 K 棒或收盤):背景再算一次,框不等它;完全沒有預覽的也在這裡請(§3-2、§3-3)

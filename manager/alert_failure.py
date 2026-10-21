@@ -22,7 +22,9 @@ COOLDOWN_HOURS = 24
 MAX_OUTPUT_CHARS = 1500
 
 
-def alert(strategy_name, exit_code, output):
+def alert(strategy_name, exit_code, output, transient=False):
+    # transient = the caller knows this failure is a source that did not answer this round
+    # (wait_for_bar: UsStockUnavailable) — the "will repeat until fixed" line would be false.
     # 事件落檔在冷卻檢查「之前」——冷卻(24h)是給 Telegram 那一半用的,平台會自己
     # 依級別去重(P2 同因 6 小時)。機器先壓過一輪,平台就永遠看不到那些事實。
     # exit_code 從 argv 進來是字串,平台的欄位白名單要數值,轉不動就不送那一格。
@@ -33,7 +35,7 @@ def alert(strategy_name, exit_code, output):
         except (TypeError, ValueError):
             _code = None
         emit("strategy_failed", strategy=strategy_name, exit_code=_code,
-             error=str(output)[-500:])
+             error=str(output)[-500:], transient=bool(transient))
     except Exception:
         pass
 
@@ -48,11 +50,13 @@ def alert(strategy_name, exit_code, output):
             return
 
     tail = str(output)[-MAX_OUTPUT_CHARS:]
+    outlook = ("The data source did not answer this time; the position is left as it is and "
+               "the next run tries again automatically." if transient else
+               "The same error will likely repeat on every run until it is fixed.")
     msg = (
         f"⚠️ Strategy {strategy_name} failed (exit={exit_code})\n"
         f"The schedule will keep firing, but this run did not complete — no orders "
-        f"or signals were produced. The same error will likely repeat on every run "
-        f"until it is fixed.\n\n{tail}"
+        f"or signals were produced. {outlook}\n\n{tail}"
     )
 
     try:

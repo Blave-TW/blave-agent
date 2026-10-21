@@ -56,7 +56,7 @@ runner._REPO_ROOT = WS
 spec = importlib.util.spec_from_file_location("wfb", os.path.join(ROOT, "manager", "wait_for_bar.py"))
 wfb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wfb)
-wfb._alert_failure = lambda: types.SimpleNamespace(alert=lambda *a: None)
+wfb._alert_failure = lambda: types.SimpleNamespace(alert=lambda *a, **k: None)
 wfb._alert_stale = lambda *a, **k: None
 
 CLOCK = {"now": None}

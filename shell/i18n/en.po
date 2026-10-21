@@ -8298,6 +8298,17 @@ msgstr "shares"
 msgid "tr.cf.unitCoins"
 msgstr "units"
 
+# 存金額框:剛加入的策略算出來空手(沒有單、沒有目標變動),框裡唯一的一句。只能做多的(現貨、模擬盤台股現股)寫翻多,其餘寫訊號出現
+msgid "tr.cf.flatLong"
+msgstr "The signal is flat right now, so saving places no order. It enters when the signal turns long."
+
+msgid "tr.cf.flat"
+msgstr "The signal is flat right now, so saving places no order. It enters when a signal appears."
+
+# 同上,但下單程式沒在跑、暫停中、沒綁帳戶或這家下不了:訊號翻了也不會進場,只講前半句
+msgid "tr.cf.flatNoOrder"
+msgstr "The signal is flat right now, so saving places no order."
+
 msgid "tr.cf.codeChanged"
 msgstr "{names}: the code changed after the last backtest, so it isn't listed. Once saved, the schedule runs the latest code."
 
