@@ -25,8 +25,9 @@ A failed login stops it for good (exit LOGIN_STOPPED_EXIT, which its supervisor 
 NSSM's AppExit, the desktop daemon — does not restart) and every later login on
 this machine refuses until the user confirms one (lib/president_vault STOP). A login
 that passes on an ID with no futures account backs off, and exits the same way on the
-third in a row (counted across restarts, reset by any login that finds the account; no
-STOP file: the login itself was good). A failed read after a good login backs off.
+third within an hour (counted across restarts, reset by any login that finds the account;
+no STOP file: the login itself was good). A failed read after a good login backs off, and
+the backoff only resets once an account read succeeds.
 
 Run: python lib/president_worker.py              (daemon)
      python lib/president_worker.py --once       (the user's 「確認登入」: one real login + read → state/president_probe.json)
@@ -244,21 +245,30 @@ def read_account(api, actno):
 
 
 def _backoff_state():
+    """(failures, no_account, first_at). A no-account run whose first strike is over
+    NO_ACCOUNT_WINDOW_S old counts as none: strikes kept across days of network errors
+    must not stop the worker on the next empty list."""
     try:
         with open(BACKOFF_PATH, encoding="utf-8") as f:
             d = json.load(f)
-        return int(d.get("failures", 0)), int(d.get("no_account", 0))
-    except (OSError, ValueError, AttributeError, TypeError):
-        return 0, 0
+        failures, strikes = int(d.get("failures", 0)), int(d.get("no_account", 0))
+        first_at = float(d["first_at"]) if strikes and d.get("first_at") is not None else None
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
+        return 0, 0, None
+    if strikes and (first_at is None or time.time() - first_at > NO_ACCOUNT_WINDOW_S):
+        return failures, 0, None
+    return failures, strikes, first_at
 
 
-def _backoff_and_exit(error, no_account=None):
-    """no_account: the run of logins in a row that found no futures account (None = keep
-    the stored one: a login that failed outright saw no account list either way)."""
-    n, stored = _backoff_state()
+def _backoff_and_exit(error, no_account=None, first_at=None):
+    """no_account / first_at: the run of logins that found no futures account (None = keep
+    the stored run: a login that failed outright saw no account list either way)."""
+    n, stored, stored_at = _backoff_state()
+    if no_account is None:
+        no_account, first_at = stored, stored_at
     try:
-        _atomic_write(BACKOFF_PATH, {"failures": n + 1,
-                                     "no_account": stored if no_account is None else no_account})
+        _atomic_write(BACKOFF_PATH, {"failures": n + 1, "no_account": no_account,
+                                     "first_at": first_at if no_account else None})
     except OSError:
         pass
     _write_snapshot({"ok": False, "error": president_vault.sanitize(error)})
@@ -268,6 +278,7 @@ def _backoff_and_exit(error, no_account=None):
 
 LOGIN_STOPPED_EXIT = 3
 NO_ACCOUNT_STOP_AFTER = 3  # one empty account list can be an SDK hiccup; three in a row is the setup
+NO_ACCOUNT_WINDOW_S = 3600  # …within an hour of the first; an older run starts over at 1
 
 
 def _login_stopped(err):
@@ -296,9 +307,12 @@ class NoFuturesAccount(RuntimeError):
     """The login passed but the ID has no futures account."""
 
 
-def _no_account(err, before):
-    """`before` logins in a row already found no futures account: back off, or stop
-    for good on the NO_ACCOUNT_STOP_AFTER-th (a timer retry is a real login each time)."""
+def _no_account(err, before, first_at=None):
+    """`before` logins in a row (the first at `first_at`) already found no futures account:
+    back off, or stop for good on the NO_ACCOUNT_STOP_AFTER-th (a timer retry is a real
+    login each time)."""
+    if not before:
+        first_at = time.time()
     if before + 1 >= NO_ACCOUNT_STOP_AFTER:
         try:
             os.remove(BACKOFF_PATH)
@@ -306,7 +320,7 @@ def _no_account(err, before):
             pass
         _login_stopped(err)
     _log(f"login ok but {err} ({before + 1}/{NO_ACCOUNT_STOP_AFTER})")
-    _backoff_and_exit(err, no_account=before + 1)
+    _backoff_and_exit(err, no_account=before + 1, first_at=first_at)
 
 
 def _login(explicit=False):
@@ -380,10 +394,6 @@ def main():
                 if api is None:
                     api, actno = _login()
                     _quote_api(api)
-                    try:
-                        os.remove(BACKOFF_PATH)
-                    except OSError:
-                        pass
                 snap = read_account(api, actno)
             except RateLimited as e:
                 _log(f"tick skipped: {president_vault.sanitize(str(e))}")
@@ -395,7 +405,7 @@ def main():
                     continue
                 _login_stopped(president_vault.sanitize(str(e)))
             except NoFuturesAccount as e:
-                _no_account(president_vault.sanitize(str(e)), _backoff_state()[1])
+                _no_account(president_vault.sanitize(str(e)), *_backoff_state()[1:])
             except Exception as e:
                 if api is None:
                     err = president_vault.sanitize(f"{type(e).__name__}: {e}")
@@ -421,6 +431,13 @@ def main():
                         api.logout()
                         api = None
                     _backoff_and_exit(err, no_account=0)
+            if last_good is None:
+                # only a read clears the backoff: a login that passes while the account query
+                # keeps failing would otherwise reset the ladder to 30 s every restart
+                try:
+                    os.remove(BACKOFF_PATH)
+                except OSError:
+                    pass
             _write_snapshot(snap)
             last_good = snap
             _log(f"snapshot ok equity={snap['equity']} positions={len(snap['positions'])}")
