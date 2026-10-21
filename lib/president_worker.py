@@ -24,8 +24,9 @@ and a planned outage never reads as a dead worker.
 A failed login stops it for good (exit LOGIN_STOPPED_EXIT, which its supervisor —
 NSSM's AppExit, the desktop daemon — does not restart) and every later login on
 this machine refuses until the user confirms one (lib/president_vault STOP). A login
-that passes on an ID with no futures account exits the same way (no STOP file: the
-login itself was good); only a failed read after a good login backs off and retries.
+that passes on an ID with no futures account backs off, and exits the same way on the
+third in a row (counted across restarts, reset by any login that finds the account; no
+STOP file: the login itself was good). A failed read after a good login backs off.
 
 Run: python lib/president_worker.py              (daemon)
      python lib/president_worker.py --once       (the user's 「確認登入」: one real login + read → state/president_probe.json)
@@ -242,14 +243,22 @@ def read_account(api, actno):
     return snap
 
 
-def _backoff_and_exit(error):
+def _backoff_state():
     try:
         with open(BACKOFF_PATH, encoding="utf-8") as f:
-            n = int(json.load(f).get("failures", 0))
+            d = json.load(f)
+        return int(d.get("failures", 0)), int(d.get("no_account", 0))
     except (OSError, ValueError, AttributeError, TypeError):
-        n = 0
+        return 0, 0
+
+
+def _backoff_and_exit(error, no_account=None):
+    """no_account: the run of logins in a row that found no futures account (None = keep
+    the stored one: a login that failed outright saw no account list either way)."""
+    n, stored = _backoff_state()
     try:
-        _atomic_write(BACKOFF_PATH, {"failures": n + 1})
+        _atomic_write(BACKOFF_PATH, {"failures": n + 1,
+                                     "no_account": stored if no_account is None else no_account})
     except OSError:
         pass
     _write_snapshot({"ok": False, "error": president_vault.sanitize(error)})
@@ -258,6 +267,7 @@ def _backoff_and_exit(error):
 
 
 LOGIN_STOPPED_EXIT = 3
+NO_ACCOUNT_STOP_AFTER = 3  # one empty account list can be an SDK hiccup; three in a row is the setup
 
 
 def _login_stopped(err):
@@ -283,8 +293,20 @@ def _quote_api(api):
 
 
 class NoFuturesAccount(RuntimeError):
-    """The login passed but the ID has no futures account: a setup problem, not an
-    outage — stopped like a failed login, never retried on a timer."""
+    """The login passed but the ID has no futures account."""
+
+
+def _no_account(err, before):
+    """`before` logins in a row already found no futures account: back off, or stop
+    for good on the NO_ACCOUNT_STOP_AFTER-th (a timer retry is a real login each time)."""
+    if before + 1 >= NO_ACCOUNT_STOP_AFTER:
+        try:
+            os.remove(BACKOFF_PATH)
+        except OSError:
+            pass
+        _login_stopped(err)
+    _log(f"login ok but {err} ({before + 1}/{NO_ACCOUNT_STOP_AFTER})")
+    _backoff_and_exit(err, no_account=before + 1)
 
 
 def _login(explicit=False):
@@ -373,7 +395,7 @@ def main():
                     continue
                 _login_stopped(president_vault.sanitize(str(e)))
             except NoFuturesAccount as e:
-                _login_stopped(president_vault.sanitize(str(e)))
+                _no_account(president_vault.sanitize(str(e)), _backoff_state()[1])
             except Exception as e:
                 if api is None:
                     err = president_vault.sanitize(f"{type(e).__name__}: {e}")
@@ -387,8 +409,10 @@ def main():
                     api, actno = _login()
                     _quote_api(api)
                     snap = read_account(api, actno)
-                except (president_vault.LoginError, NoFuturesAccount) as e2:
+                except president_vault.LoginError as e2:
                     _login_stopped(president_vault.sanitize(str(e2)))
+                except NoFuturesAccount as e2:
+                    _no_account(president_vault.sanitize(str(e2)), 0)  # this process's first login found one
                 except Exception as e2:
                     err = president_vault.sanitize(f"{type(e2).__name__}: {e2}")
                     _log(f"tick failed: {president_vault.sanitize(f'{type(e).__name__}: {e}')} / retry: {err}")
@@ -396,7 +420,7 @@ def main():
                         _quote_api(None)
                         api.logout()
                         api = None
-                    _backoff_and_exit(err)
+                    _backoff_and_exit(err, no_account=0)
             _write_snapshot(snap)
             last_good = snap
             _log(f"snapshot ok equity={snap['equity']} positions={len(snap['positions'])}")

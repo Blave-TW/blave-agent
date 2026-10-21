@@ -763,9 +763,10 @@ api2 = president_vault.login(president_vault.resolve(), president_worker.SDK_LOG
 check(FakeUnitrade.logins == n + 2 and not os.path.exists(STOP), "a confirmed login that passes clears the stop")
 api2.logout()
 
-# the daemon: a login that passes on an ID with no futures account stops like a failed login (a
-# setup problem — a timer retry is a real login every few minutes); a read that fails after a good
-# login is an outage and still backs off
+# the daemon: a login that passes on an ID with no futures account backs off twice and stops on the
+# third in a row (counted across restarts in the backoff file; one empty list can be an SDK hiccup, a
+# timer retry forever is a real login every few minutes); any login that finds the account resets it;
+# a read that fails after a good login is an outage and always backs off
 _wsaved = (president_worker.time.sleep, president_worker._write_snapshot, president_worker._quote_api,
            president_worker.read_account, president_worker.BACKOFF_PATH, FakeUnitrade.get_accounts,
            president_worker.HEARTBEAT_PATH)
@@ -784,28 +785,39 @@ def _main_exit():
         return e.code
 
 
-try:
-    FakeUnitrade.get_accounts = lambda self: []
-    LOGIN_SCRIPT[:] = [Resp(ok=True, error=""), Resp(ok=True, error="")]
-    n = FakeUnitrade.logins
-    code = _main_exit()
-    check(code == president_worker.LOGIN_STOPPED_EXIT and FakeUnitrade.logins == n + 1 and not _wslept
-          and _wsnaps and _wsnaps[-1].get("login_stopped") is True
-          and "no futures account" in _wsnaps[-1].get("error", ""),
-          "no futures account → the worker stops (LOGIN_STOPPED_EXIT), one login, no backoff sleep",
-          (code, FakeUnitrade.logins - n, _wslept, _wsnaps[-1:]))
-    FakeUnitrade.get_accounts = lambda self: ["7000001"]
-
-    def _read_fails(api, actno):
-        raise RuntimeError("account query down")
-
-    president_worker.read_account = _read_fails
+def _main_run(accounts, read_fails=False):
+    FakeUnitrade.get_accounts = lambda self: list(accounts)
+    president_worker.read_account = _read_fails if read_fails else _wsaved[3]
     LOGIN_SCRIPT[:] = [Resp(ok=True, error=""), Resp(ok=True, error="")]
     n, _wslept[:], _wsnaps[:] = FakeUnitrade.logins, [], []
     code = _main_exit()
-    check(code == 1 and FakeUnitrade.logins == n + 2 and _wslept == [30] and not _wsnaps[-1].get("login_stopped"),
-          "login passes, account read fails → still the backoff (one fresh login, sleep, exit 1)",
-          (code, FakeUnitrade.logins - n, _wslept, _wsnaps[-1:]))
+    try:
+        stored = json.load(open(president_worker.BACKOFF_PATH, encoding="utf-8"))
+    except OSError:
+        stored = None
+    return (code, FakeUnitrade.logins - n, list(_wslept), bool(_wsnaps and _wsnaps[-1].get("login_stopped")),
+            stored and stored.get("no_account"))
+
+
+def _read_fails(api, actno):
+    raise RuntimeError("account query down")
+
+
+try:
+    os.path.exists(president_worker.BACKOFF_PATH) and os.remove(president_worker.BACKOFF_PATH)
+    runs = [_main_run([]), _main_run([]), _main_run([])]
+    check(runs == [(1, 1, [30], False, 1), (1, 1, [60], False, 2),
+                   (president_worker.LOGIN_STOPPED_EXIT, 1, [], True, None)],
+          "no futures account: 1st and 2nd back off (30s, 60s), the 3rd in a row stops (LOGIN_STOPPED_EXIT)", runs)
+    runs = [_main_run([]), _main_run([]), _main_run(["7000001"], read_fails=True), _main_run([]),
+            _main_run([])]
+    check(runs == [(1, 1, [30], False, 1), (1, 1, [60], False, 2), (1, 2, [30], False, 0),
+                   (1, 1, [60], False, 1), (1, 1, [120], False, 2)],
+          "a login that finds the futures account resets the count (two more back off, no stop)", runs)
+    check(_main_run([])[0] == president_worker.LOGIN_STOPPED_EXIT,
+          "…and the third in a row after the reset stops")
+    check(_main_run(["7000001"], read_fails=True)[:4] == (1, 2, [30], False),
+          "login passes, account read fails → always the backoff (one fresh login, sleep, exit 1)")
 finally:
     (president_worker.time.sleep, president_worker._write_snapshot, president_worker._quote_api,
      president_worker.read_account, president_worker.BACKOFF_PATH, FakeUnitrade.get_accounts,
