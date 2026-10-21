@@ -8,7 +8,8 @@
 // 不能帶 -q:-q 會連這一行一起關掉。小於 512 KB 的檔 pip 不印 Progress,只有 Downloading 那一行的大小。
 // --isolated:不吃用戶的 pip.conf 與 PIP_* 環境變數(PIP_INDEX_URL / PIP_NO_BINARY 都會讓引擎裝到別的東西)。
 // --only-binary=:all::這個架構沒有 wheel 就兩秒內大聲失敗,不退到編原始碼(那條路在用戶機上跑幾分鐘然後死在看不到的地方)。
-// --no-compile:pip 邊裝邊編 .pyc 在 test-4(Windows)占首次安裝約 90 秒(B1 139s → B1nc 52s);改成 ready 之後在背景編(compileStart)
+// --no-compile:pip 邊裝邊編 .pyc 在 test-4(Windows)占首次安裝約 90 秒(冷快取兩輪 B1 140 / 139s → B1nc 51 / 54s,現況 192 / 178s;
+// 原始數字 .claude/output/backend/engine-install-speed-spike-test4-results-2026-10-21.txt);改成 ready 之後在背景編(compileStart)
 const PIP_INSTALL = ["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--only-binary=:all:", "--progress-bar=raw", "--no-compile"];
 
 const SIZE_UNIT = { bytes: 1, kB: 1e3, MB: 1e6, GB: 1e9 };
@@ -92,6 +93,19 @@ function depGroups(deps, optional) {
    沒重解間接相依,舊的鎖可能跟新版衝突 → main.js 就不帶鎖(退回只釘直接相依),閘門測試同時變紅 */
 const lockKey = (sdkPins, deps) => require("crypto").createHash("sha256").update(String(sdkPins) + "\n" + deps.join("\n")).digest("hex").slice(0, 12);
 
+/* 行程建立時間(ms;查不到 = null),比對背景編譯的鎖是不是我們自己起的那支。pid 是鎖檔裡的,先確認是整數才放進指令 */
+function procStartOf(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  const cp = require("child_process");
+  try {
+    const out = process.platform === "win32"
+      ? cp.execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().ToString('o')`], { windowsHide: true, timeout: 10000, stdio: ["ignore", "pipe", "ignore"] })
+      : cp.execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { windowsHide: true, timeout: 5000, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C" } });
+    const t = Date.parse(String(out).trim());
+    return Number.isNaN(t) ? null : t;
+  } catch (_) { return null; }
+}
+
 const STEP_ORDER = ["ws", "engine", "pkgs"];
 function createEngineSetup(o) {
   const { fs, path, spawn } = o;
@@ -135,8 +149,33 @@ function createEngineSetup(o) {
     }
     try { fs.unlinkSync(lockFile); } catch (_) { /* 已經沒了 */ }
   }
+  /* 背景編譯的鎖(稽核 enginefast P2-1):app 當掉 / 被強制結束時留下的孤兒 compileall,下次開 app 在任何 pip 之前先處理——
+     不然它還在讀 site-packages,新的 pip 同時在寫,讀到寫一半的 .py 會留下帶著完整檔 mtime 的壞 .pyc。
+     跟 pip 的鎖不同,這支可以收:先比對 pid 與行程建立時間(差 3 秒內 = 我們當時起的那支),對得上才殺;
+     對不上(pid 被別的程式重用)或查不到建立時間,就照 pip 的做法只等、不殺 */
+  const pycLock = path.join(venvDir, ".blave-pyc.lock");
+  const procStart = o.procStart || procStartOf;
+  const killPid = o.killPid || ((pid) => process.kill(pid));
+  async function reapCompile() {
+    let lk = null; try { lk = JSON.parse(fs.readFileSync(pycLock, "utf8")); } catch (_) { return; }
+    if (lk && Number.isInteger(lk.pid) && lk.pid !== process.pid && alive(lk.pid)) {
+      const t = procStart(lk.pid);
+      if (t != null && Math.abs(t - lk.at) <= 3000) {
+        o.log(`[engine] stopping leftover bytecode compile (pid ${lk.pid})`);
+        try { killPid(lk.pid); } catch (_) { /* 剛好結束了 */ }
+      } else o.log(`[engine] bytecode compile lock pid ${lk.pid} is alive but not ours (or start time unknown); waiting`);
+      const until = now() + (o.lockWaitMs || 180000);
+      while (alive(lk.pid) && now() < until) await sleep(500);
+    }
+    try { fs.unlinkSync(pycLock); } catch (_) { /* 已經沒了 */ }
+  }
+  /* abort 之後,還在途中的那一輪 ensure 不能再起任何子行程(稽核 P2-1:before-quit 為了收常駐程式等別的事 preventDefault 時,
+     ensure 可能在 abort 之後才走到 spawn,留下孤兒)。用代數不用一次性旗標:更新裝不起來、app 繼續跑時,下一次 ensure 照常 */
+  let gen = 0, runGen = 0;
+  const stale = () => runGen !== gen;
   // 回 true = 收掉了正在跑的 pip(背景編譯也一起收,但不算進回傳值)
   function abort() {
+    gen++;
     const pyc = compileStop();
     if (!child) return pyc.then(() => false);
     const c = child, done = childDone;
@@ -156,20 +195,22 @@ function createEngineSetup(o) {
   let pyc = null, pycDone = null;
   const setPriority = o.setPriority || ((pid) => require("os").setPriority(pid, require("os").constants.priority.PRIORITY_LOW));
   function compileStart(envPath) {
-    if (pyc || read(pycMark) === pycKey || !fs.existsSync(o.venvPy)) return;
+    if (stale() || pyc || read(pycMark) === pycKey || !fs.existsSync(o.venvPy)) return;
     let c, out = "";
     try {
       c = spawn(o.basePython(), ["-m", "compileall", "-q", venvDir], { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath } });
     } catch (e) { o.log("[engine] bytecode compile not started: " + ((e && e.message) || e)); return; }
     pyc = c; pycDone = new Promise((r) => c.once("close", r));
+    try { fs.writeFileSync(pycLock, JSON.stringify({ pid: c.pid, at: now() })); } catch (_) { /* 鎖檔寫不了照樣編 */ }
+    const unlock = () => { try { fs.unlinkSync(pycLock); } catch (_) { /* 沒有就算了 */ } };
     try { setPriority(c.pid); } catch (_) { /* 調不了優先權照樣編 */ }
     const keep = (d) => { out = (out + d).slice(-4000); };
     if (c.stdout) c.stdout.on("data", keep);
     if (c.stderr) c.stderr.on("data", keep);
     const t0 = now();
-    c.on("error", (e) => { if (pyc === c) pyc = null; o.log("[engine] bytecode compile failed: " + ((e && e.code) || e)); });
+    c.on("error", (e) => { if (pyc === c) { pyc = null; unlock(); } o.log("[engine] bytecode compile failed: " + ((e && e.code) || e)); });
     c.on("close", (code) => {
-      if (pyc === c) pyc = null;
+      if (pyc === c) { pyc = null; unlock(); }
       if (c.aborted || (code !== 0 && code !== 1)) { o.log(`[engine] bytecode compile stopped (${c.aborted ? "aborted" : "exit " + code})` + (out ? "\n" + out : "")); return; }
       if (code === 1) o.log("[engine] bytecode compile: some files did not compile\n" + out);
       try { fs.writeFileSync(pycMark, pycKey); } catch (_) { /* 下次開 app 再編一次 */ }
@@ -191,6 +232,7 @@ function createEngineSetup(o) {
   function run(bin, args, envPath, timeoutMs, onLine, idle) {
     return new Promise((resolve, reject) => {
       let out = "", err = "", timedOut = false, idled = false, c;
+      if (stale()) { reject(Object.assign(new Error("stopped (app closing)"), { stderr: "", aborted: true })); return; }
       try {
         c = spawn(bin, args, { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath, PYTHONUNBUFFERED: "1" } });
       } catch (e) { reject(Object.assign(new Error(String((e && e.message) || e)), { stderr: "" })); return; }
@@ -224,7 +266,7 @@ function createEngineSetup(o) {
     // 沒有新資料:最近一次有輸出(解析、Downloading、Progress)起算;進了安裝階段就不算(那時 pip 不出聲是正常的)
     const idle = { ms: o.idleMs, quiet: () => (p.installing ? 0 : now() - Math.max(lastLine, p.lastByteAt)) };
     try {
-      await run(o.venvPy, [...PIP_INSTALL, ...args], envPath, timeoutMs, (l) => {
+      await run(o.venvPy, [...PIP_INSTALL, ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, timeoutMs, (l) => {
         lastLine = now();
         const n = onName ? pipCurName(l) : null, renamed = !!n && n !== S.cur.name, moved = pipLine(p, l, now());
         if (renamed) S.cur.name = n;
@@ -235,7 +277,7 @@ function createEngineSetup(o) {
       p.file = null;
       o.log("[engine] pip install failed: " + args.join(" ") + "\n" + String((e && e.stderr) || (e && e.message) || e));
       const x = new Error(e.timedOut || e.idle || e.aborted ? e.message : pipError(e.stderr || e.message));
-      x.kind = failKind(e); x.limitMs = timeoutMs; x.aborted = !!e.aborted;
+      x.kind = failKind(e); x.limitMs = timeoutMs; x.aborted = !!e.aborted; x.midInstall = !!p.installing;
       throw x;
     }
   }
@@ -264,8 +306,10 @@ function createEngineSetup(o) {
   }
 
   async function ensure() {
+    runGen = gen;
     const envPath = await o.envPath();
     await waitLock();
+    await reapCompile();
     const fresh = !fs.existsSync(o.ws);
     const needVenv = !fs.existsSync(o.venvPy);
     const needSdk = read(sdkMark) !== o.sdkPins;
@@ -316,7 +360,7 @@ function createEngineSetup(o) {
           }
           try { await run(o.basePython(), ["-m", "venv", venvDir], envPath, o.venvMs); } catch (e) {
             o.log("[engine] venv failed\n" + String(e.stderr || e.message));
-            throw Object.assign(new Error(e.timedOut ? e.message : pipError(e.stderr || e.message)), { kind: e.timedOut ? "timeout" : "other", limitMs: o.venvMs });
+            throw Object.assign(new Error(e.timedOut ? e.message : pipError(e.stderr || e.message)), { kind: e.timedOut ? "timeout" : "other", limitMs: o.venvMs, aborted: !!e.aborted });
           }
         }
         if (needSdk) {
@@ -331,16 +375,28 @@ function createEngineSetup(o) {
         // 失敗就整組沒裝,重試整組再跑一次(已下載完的檔在 pip 的快取裡,不重下)。
         // 快照的 i / n 照舊是「整份清單裡已經裝好的個數 + 1 / 整份清單」(分段條照這個填,更新後只補幾個時前面那些本來就是滿的);
         // k = 這一條 pip 一次裝幾個;name = 現在解析 / 下載到哪一個(Collecting / Downloading 那一行)
+        // bar = 分段條套件那一段怎麼填(畫面照 dl 算):前面裝好的那幾個是滿的,剩下的照各組預估下載量分;這一組從 from 起、佔 span,
+        // 組內照「這一組已下載 ÷ 這一組預估」走、最多 90%,進了安裝階段停在 90% 等這一條結束。預估 = groupMB × 這次要裝的比例
         let installed = o.deps.length - todo.length;
+        const est = (g) => Math.max(1e6, ((o.groupMB && o.groupMB[g.id]) || 10) * 1e6 * g.todo.length / g.pins.length);
+        const live = groups.filter((g) => g.todo.length), estAll = live.reduce((a, g) => a + est(g), 0), p0 = installed / o.deps.length;
+        let from = p0;
         for (const g of groups) {
           if (!g.todo.length) continue;
+          const span = (1 - p0) * est(g) / estAll;
           try {
-            Object.assign(S.cur, { i: installed + 1, n: o.deps.length, k: g.todo.length, name: pipName(g.todo[0]), t0: now(), limitMs: o.pkgMs, idleMs: o.idleMs || null }); emit();
-            await pip(["-c", pinsFile, ...g.todo], envPath, o.pkgMs, true);
-            installed += g.todo.length;
+            Object.assign(S.cur, { i: installed + 1, n: o.deps.length, k: g.todo.length, name: pipName(g.todo[0]), t0: now(), limitMs: o.pkgMs, idleMs: o.idleMs || null,
+              bar: { from, span, est: est(g), dl0: S.dl.done } }); emit();
+            // 上一次死在安裝階段(稽核 P2-3):pip 被停掉時某個套件的 dist-info 可能已經寫了、檔案還沒寫完,下一次會被當成 already
+            // satisfied 跳過。記號 <mark>.force 在,這一條就 --force-reinstall --no-deps 把這一組照 pin 重裝一次(相依不動)
+            const force = fs.existsSync(g.mark + ".force");
+            await pip([...(force ? ["--force-reinstall", "--no-deps"] : []), "-c", pinsFile, ...g.todo], envPath, o.pkgMs, true);
+            installed += g.todo.length; from += span;
             fs.writeFileSync(g.mark, g.pins.join("\n"));
-            try { fs.unlinkSync(g.mark + ".part"); } catch (_) { /* 沒有就算了 */ }
+            for (const x of [".part", ".force"]) { try { fs.unlinkSync(g.mark + x); } catch (_) { /* 沒有就算了 */ } }
           } catch (e) {
+            // 只記我們沒有主動收掉、又已經進了安裝階段的(abort 依 Wei 拍板不算;下載中斷的那種 pip 還沒動 site-packages)
+            if (!e.aborted && e.midInstall) { try { fs.writeFileSync(g.mark + ".force", "1"); } catch (_) { /* 寫不了就照一般重試 */ } }
             if (e.aborted) throw e;   // 關 app / 更新重開時我們自己收掉的:不是這組裝不起來,不記 warn、不送 engine_opt_fail
             if (!g.optional) throw e;
             // 選用的那組(美股資料):不擋引擎、不往外丟。完整 stderr 已經由 pip() 記了;下次開 app 再試
@@ -370,4 +426,4 @@ function createEngineSetup(o) {
   return { ensure, snapshot, abort, busy, compiling };
 }
 
-module.exports = { createEngineSetup, pipLine, pipCurName, pipError, failKind, depsTodo, depGroups, lockKey, PIP_INSTALL };
+module.exports = { createEngineSetup, procStartOf, pipLine, pipCurName, pipError, failKind, depsTodo, depGroups, lockKey, PIP_INSTALL };

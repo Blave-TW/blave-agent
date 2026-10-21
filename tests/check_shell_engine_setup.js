@@ -113,6 +113,7 @@ function rig(o = {}) {
     pyEnv: { PYTHONUTF8: "1" }, copyOfficial: () => { fs.mkdirSync(path.join(ws, "lib"), { recursive: true }); }, isPackaged: true,
     sdkPins: o.sdk || SDK, deps: o.deps || DEPS, lock: o.lock, optional: o.optional || OPT, firstRunMB: 200, venvMs: 300000, engineMs: 600000, pkgMs: o.pkgMs || 600000,
     idleMs: o.idleMs, watchMs: 5, alive: o.alive, sleep: o.sleep, lockWaitMs: o.lockWaitMs, setPriority: (pid) => prio.push(pid),
+    groupMB: o.groupMB === undefined ? { core: 100, us: 10 } : o.groupMB, pipCacheDir: o.pipCacheDir, procStart: o.procStart, killPid: o.killPid,
     now: o.realNow ? Date.now : () => clock, onChange: (s) => snaps.push(s), log: (m) => logs.push(m), track: (ev, p) => tracked.push(ev + ":" + p.result),
   });
   // settle:等背景編譯(假的,下一輪事件迴圈就結束)收尾;同一個 base 開下一個 rig 之前要等,不然記號檔還沒寫
@@ -227,6 +228,10 @@ const venvDir = (r) => path.join(r.base, "venv");
     const f17 = rig({ deps: DEPS17 }); await f17.S.ensure();
     ok("17 個:第一次恰好三條 pip——SDK、核心(7 個)、美股(10 個),每條都帶 --no-compile", batches(f17).join("|") === [SDK, DEPS.join(" "), US.join(" ")].join("|") && pipCalls(f17).every((c) => c.args.includes("--no-compile")), batches(f17));
     ok("17 個:i / n 跟著組前進(1 / 17 一次 7 個 → 8 / 17 一次 10 個),分段條照這個填", nthOf(f17).join() === ["1/" + N + "x" + NC, (NC + 1) + "/" + N + "x" + NU].join(), nthOf(f17));
+    { const bars = f17.snaps.filter((s) => s.cur && s.cur.step === "pkgs" && s.cur.bar).map((s) => JSON.stringify(s.cur.bar)).filter((v, i, a) => v !== a[i - 1]).map((x) => JSON.parse(x));
+      ok("17 個:分段條照兩組預估下載量分(核心 100 MB : 美股 10 MB)、核心從 0 起、美股接在核心後面、各組 est = 預估 MB、dl0 = 那一組開始時的累計下載量",
+        bars.length === 2 && bars[0].from === 0 && Math.abs(bars[0].span - 100 / 110) < 1e-9 && bars[0].est === 100e6 && Math.abs(bars[1].from - 100 / 110) < 1e-9 && Math.abs(bars[1].from + bars[1].span - 1) < 1e-9 && bars[1].est === 10e6
+        && bars.every((b) => typeof b.dl0 === "number"), bars); }
     ok("17 個:兩組都裝完才編一次", pycCalls(f17).length === 1 && f17.calls.indexOf(pycCalls(f17)[0]) === f17.calls.length - 1);
     const old = rig(); await old.S.ensure(); await old.settle();
     const up = rig({ base: old.base, deps: DEPS17, behave: (bin, args) => (args.includes(US[NU - 1]) ? { out: ["Downloading yfinance-1.7.0-py3-none-any.whl (131 kB)", "Downloading curl_cffi-0.16.3-cp310-abi3-macosx_11_0_arm64.whl (3.2 MB)", "Progress 3200000 of 3200000"] } : { code: 0 }) });
@@ -240,6 +245,8 @@ const venvDir = (r) => path.join(r.base, "venv");
     await up.settle();
     const bmp = rig({ base: old.base, deps: [bump(DEPS17[0]), ...DEPS17.slice(1)] }); fs.writeFileSync(path.join(venvDir(old), ".blave-deps-1"), DEPS.join("\n")); fs.unlinkSync(path.join(venvDir(old), ".blave-deps-us"));
     await bmp.S.ensure();
+    { const b = bmp.snaps.find((s) => s.cur && s.cur.step === "pkgs" && s.cur.bar).cur.bar;
+      ok("只補一部分:前面裝好的那幾個先算滿(6 / 17),核心那組只裝 1 / 7 → 預估只算那個比例", Math.abs(b.from - (N - NC - NU + NC - 1) / N) < 1e-9 && Math.abs(b.est - 100e6 / NC) < 1, b); }
     ok("清單同時換掉一個版本又多 10 個:i 從已經裝好的個數 +1 起算(7 / 17 一次 1 個 → 8 / 17 一次 10 個)", nthOf(bmp).join() === [NC + "/" + N + "x1", (NC + 1) + "/" + N + "x" + NU].join() && batches(bmp).join("|") === [bump(DEPS17[0]), US.join(" ")].join("|"), nthOf(bmp)); }
   // ── 選用的那組(美股資料):裝不起來不擋引擎 ──
   { const G = E.depGroups(DEPS17, OPT);
@@ -327,7 +334,7 @@ const venvDir = (r) => path.join(r.base, "venv");
     ok("鎖檔裡的 pip 還活著:等它結束(這裡等了 3 輪)才開始裝;不殺它", waited === 3 && pinsOf(l).length === SDKP.length + DEPS.length && l.logs.some((x) => /another installer \(pid 4242\)/.test(x)), { waited, logs: l.logs });
     let w2 = 0; const base2 = tmpDir();
     fs.mkdirSync(path.join(base2, "venv"), { recursive: true }); fs.writeFileSync(path.join(base2, "venv", ".blave-install.lock"), JSON.stringify({ pid: 4242, at: 1 }));
-    const l2 = rig({ base: base2, alive: () => true, lockWaitMs: 1, realNow: true, sleep: async () => { w2++; await new Promise((r) => setTimeout(r, 3)); } });
+    const l2 = rig({ base: base2, alive: () => true, lockWaitMs: 30, realNow: true, sleep: async () => { w2++; await new Promise((r) => setTimeout(r, 3)); } });
     await l2.S.ensure();
     ok("…一直活著(pid 可能被別的程式重用了):等滿上限就往下走,不卡死", w2 >= 1 && pinsOf(l2).length === SDKP.length + DEPS.length, w2);
     const l3 = rig({ alive: () => { throw new Error("不該問"); } }); await l3.S.ensure();
@@ -426,7 +433,7 @@ const venvDir = (r) => path.join(r.base, "venv");
     // 調優先權失敗(例:權限)不擋編譯
     const pr = rig(); const S4 = E.createEngineSetup({ fs, path, spawn: (bin, args) => { const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => {}; setImmediate(() => c.emit("close", 0)); return c; },
       base: pr.base, ws: pr.ws, venvPy: pr.venvPy, venvBin: "bin", win: false, basePython: () => "x", envPath: async () => "", pyEnv: {}, copyOfficial: () => {}, isPackaged: true,
-      sdkPins: SDK, deps: DEPS, optional: OPT, firstRunMB: 200, venvMs: 1, engineMs: 1, pkgMs: 1, onChange: () => {}, log: () => {}, setPriority: () => { throw new Error("EPERM"); } });
+      sdkPins: SDK, deps: DEPS, optional: OPT, firstRunMB: 200, venvMs: 60000, engineMs: 60000, pkgMs: 60000, onChange: () => {}, log: () => {}, setPriority: () => { throw new Error("EPERM"); } });
     fs.mkdirSync(path.dirname(pr.venvPy), { recursive: true }); fs.writeFileSync(pr.venvPy, "");
     let pe = null; try { await S4.ensure(); } catch (e) { pe = e; }
     ok("調不了優先權:照樣編、不往外丟", pe === null && S4.compiling(), pe && pe.message);
@@ -435,6 +442,71 @@ const venvDir = (r) => path.join(r.base, "venv");
     const SRC = fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8");
     ok("接線:before-quit 把「編譯中」也算進要先收掉的;預設優先權 = os.constants.priority.PRIORITY_LOW",
       /installing = !!\(_engineSetup && \(_engineSetup\.busy\(\) \|\| _engineSetup\.compiling\(\)\)\)/.test(MAIN_SRC) && /require\("os"\)\.constants\.priority\.PRIORITY_LOW/.test(SRC)); }
+
+  // ── 稽核 enginefast P2-1:背景編譯的鎖、孤兒 compileall、abort 之後不再起子行程 ──
+  { const lockOf = (r) => path.join(venvDir(r), ".blave-pyc.lock");
+    const h = rig({ behave: (bin, args) => (args.includes("compileall") ? { hang: true } : { code: 0 }) });
+    await h.S.ensure();
+    const pc = pycCalls(h)[0]; let lk = null; try { lk = JSON.parse(fs.readFileSync(lockOf(h), "utf8")); } catch (_) { /* 沒有 */ }
+    ok("背景編譯起來時寫 .blave-pyc.lock(那支的 pid + 起的時間)", lk && lk.pid === pc.child.pid && typeof lk.at === "number", lk);
+    await h.S.abort();
+    ok("…收掉之後鎖檔也收掉", !fs.existsSync(lockOf(h)));
+    // 上一次留下的孤兒:pid 活著、建立時間對得上 → 在任何 pip 之前收掉它、等它結束、再裝
+    const mk = (pid, at) => { const b = tmpDir(); fs.mkdirSync(path.join(b, "venv"), { recursive: true }); fs.writeFileSync(path.join(b, "venv", ".blave-pyc.lock"), JSON.stringify({ pid, at })); return b; };
+    let up = true; const killed = [];
+    const o1 = rig({ base: mk(4343, 1000), alive: (pid) => pid === 4343 && up, procStart: (pid) => (pid === 4343 ? 1000 + 1500 : null), killPid: (pid) => { killed.push(pid); setTimeout(() => { up = false; }, 3); }, sleep: (ms) => new Promise((r) => setTimeout(r, 2)) });
+    let killedBeforePip = null;
+    const o1p = o1.S.ensure(); const iv = setInterval(() => { if (killed.length && killedBeforePip === null) killedBeforePip = pipCalls(o1).length; }, 0);
+    await o1p; clearInterval(iv); await o1.settle();
+    ok("孤兒 compileall(pid 活著、建立時間差 1.5 秒):先收掉、等它結束、鎖檔清掉,之後才起 pip", killed.join() === "4343" && killedBeforePip === 0 && pipCalls(o1).length === 2 && !fs.existsSync(lockOf(o1)) && o1.logs.some((l) => /stopping leftover bytecode compile \(pid 4343\)/.test(l)), { killed, killedBeforePip, logs: o1.logs });
+    // pid 被別的程式重用(建立時間對不上)/ 查不到建立時間:不殺,只等它結束或等滿
+    for (const [label, ps] of [["建立時間差 1 小時", () => 1000 + 3600e3], ["查不到建立時間", () => null]]) {
+      let alive2 = true, waits = 0; const k2 = [];
+      const o2 = rig({ base: mk(5151, 1000), alive: (pid) => pid === 5151 && alive2, procStart: ps, killPid: (pid) => k2.push(pid), sleep: async () => { waits++; if (waits === 3) alive2 = false; } });
+      await o2.S.ensure(); await o2.settle();
+      ok("鎖檔的 pid 不是我們那支(" + label + "):不殺、等它結束(3 輪)才裝、鎖檔清掉", k2.length === 0 && waits === 3 && pipCalls(o2).length === 2 && !fs.existsSync(lockOf(o2)), { k2, waits });
+    }
+    // abort 之後還在途中的那一輪 ensure:不再起任何子行程;下一輪照常
+    const g1 = rig();
+    const p1 = g1.S.ensure().then(() => "resolved", (e) => e);
+    const ab = await g1.S.abort(); const r1 = await p1;
+    ok("abort 之後在途的 ensure 不再起子行程(venv / pip / 編譯都沒有)、以 aborted 結束、不送埋點", ab === false && r1 !== "resolved" && r1.aborted === true && g1.calls.length === 0 && g1.tracked.length === 0, { calls: g1.calls.length, r1: r1 && r1.message, tracked: g1.tracked });
+    await g1.S.ensure(); await g1.settle();
+    ok("…下一次 ensure(例:更新裝不起來、app 繼續跑)照常裝完並編譯", g1.S.snapshot().phase === "done" && pipCalls(g1).length === 2 && pycCalls(g1).length === 1);
+    fs.unlinkSync(path.join(venvDir(g1), ".blave-pyc"));
+    const p2 = g1.S.ensure(); await g1.S.abort(); await p2;
+    ok("沒事可做、只差編譯的那一輪被 abort:不起 compileall", pycCalls(g1).length === 1 && !g1.S.compiling()); }
+
+  // ── 稽核 enginefast P2-3:死在安裝階段(不是我們 abort 的)→ 下一次那一組 --force-reinstall --no-deps ──
+  { const forceOf = (r) => path.join(venvDir(r), ".blave-deps-1.force");
+    const INST = ["Downloading numpy-2.5.3-cp312-cp312-macosx_14_0_arm64.whl (5.4 MB)", "Progress 5445405 of 5445405", "Installing collected packages: numpy, pandas"];
+    let bad = true;
+    const f = rig({ behave: (bin, args) => (bad && args.includes(pin("pandas")) ? { code: 1, out: INST, err: "ERROR: Could not install packages due to an OSError: [Errno 28] No space left on device" } : { code: 0 }) });
+    try { await f.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("安裝階段失敗(非 abort):寫 .blave-deps-1.force", fs.existsSync(forceOf(f)));
+    bad = false; await f.S.ensure();
+    const last = pipCalls(f)[pipCalls(f).length - 1].args;
+    ok("重試那一條:--force-reinstall --no-deps 只帶這一組的 pin(在 -c 之前)、裝完 .force 收掉", last.indexOf("--force-reinstall") >= 0 && last.indexOf("--no-deps") >= 0 && last.indexOf("--force-reinstall") < last.indexOf("-c")
+      && batchOf({ args: last }).join(" ") === DEPS.join(" ") && !fs.existsSync(forceOf(f)) && f.S.snapshot().phase === "done", last);
+    fs.unlinkSync(path.join(venvDir(f), ".blave-deps-1")); await f.settle(); await f.S.ensure();
+    ok("…之後一般的重裝不再帶 --force-reinstall", !pipCalls(f)[pipCalls(f).length - 1].args.includes("--force-reinstall"));
+    const d = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { code: 1, out: INST.slice(0, 2), err: "ERROR: Exception:\nReadTimeoutError: HTTPSConnectionPool(host='files.pythonhosted.org', port=443): Read timed out." } : { code: 0 }) });
+    try { await d.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("下載中斷(還沒進安裝階段,site-packages 沒被動):不寫 .force", !fs.existsSync(forceOf(d)));
+    const a = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: INST } : { code: 0 }) });
+    const pa = a.S.ensure().catch((e) => e);
+    for (let k = 0; k < 2000 && !(a.S.busy() && a.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
+    await a.S.abort(); await pa;
+    ok("安裝階段被我們 abort(關 app):照拍板不寫 .force", !fs.existsSync(forceOf(a))); }
+
+  // 開發版量冷快取:pip 帶 --isolated 不吃 PIP_CACHE_DIR,改由 BLAVE_PIP_CACHE_DIR 給 --cache-dir;沒給就不帶(用 pip 預設快取),打包版不認
+  { const cd = rig({ pipCacheDir: "/tmp/blave-pipcache" }); await cd.S.ensure(); await cd.settle();
+    const plain = rig(); await plain.S.ensure(); await plain.settle();
+    ok("pipCacheDir:有給時每一條 pip 都帶 --cache-dir <它>(在 -c 之前);沒給時不帶", pipCalls(cd).every((c) => { const i = c.args.indexOf("--cache-dir"); return i > 0 && c.args[i + 1] === "/tmp/blave-pipcache" && i < c.args.indexOf("-c"); })
+      && pipCalls(plain).every((c) => !c.args.includes("--cache-dir")) && batches(cd).join("|") === batches(plain).join("|"));
+    ok("接線:main.js 只在開發版、絕對路徑時把 BLAVE_PIP_CACHE_DIR 交給 enginesetup;分段條的每組預估 MB(PKG_MB)也交進去",
+      /pipCacheDir: !app\.isPackaged && path\.isAbsolute\(process\.env\.BLAVE_PIP_CACHE_DIR \|\| ""\) \? process\.env\.BLAVE_PIP_CACHE_DIR : null,/.test(MAIN_SRC)
+      && /groupMB: PKG_MB,/.test(MAIN_SRC) && /const PKG_MB = \{ core: firstRunMB\(\) - 105, us: 13 \};/.test(MAIN_SRC)); }
 
   // 開發版:每次都重拷官方檔(改了 lib/ 重啟就生效)
   { let copies = 0; const d = rig(); await d.S.ensure();

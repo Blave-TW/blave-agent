@@ -66,11 +66,12 @@ for (const lg of ["zh", "en"]) {
   const bad = Object.entries(AUDIT[lg]).filter(([k, v]) => ctx.STRINGS[lg][k] !== v).map(([k]) => k + " → " + ctx.STRINGS[lg][k]);
   ok("① " + lg + ":稽核改過 / 新增的句子逐字照定稿(數字與單位之間是不換行空格)", bad.length === 0, bad);
 }
-// 0.1.28 改成每組一條 pip(enginesetup.js):mockup 的「第 i / N 個」數不出來了,換成「這一條裝幾個 + 現在在弄哪一個」;k = 1 時不講個數(英文不寫 1 packages)
-const BATCH = { zh: { "eng.batch": "共 {k} 個套件，目前：{name}", "eng.batchOne": "目前：{name}" }, en: { "eng.batch": "{k} packages, now: {name}", "eng.batchOne": "Now: {name}" } };
+// 0.1.28 每組一條 pip(設計定稿 engine-card-copy-2026-10-21):進度行只印套件名(mono、不呼叫 t),eng.nth / eng.batch / eng.batchOne 退役;
+// 套件那一步超時的主詞是這一步(整組一起計時),SDK 那條照舊是名字(eng.toHead)
+const PKGS28 = { zh: { "eng.toHeadPkgs": "安裝策略套件超過 {limit}還沒完成，已經停下。" }, en: { "eng.toHeadPkgs": "Installing strategy packages didn’t finish within {limit} and was stopped." } };
 for (const lg of ["zh", "en"]) {
-  const bad = Object.entries(BATCH[lg]).filter(([k, v]) => ctx.STRINGS[lg][k] !== v).map(([k]) => k + " → " + ctx.STRINGS[lg][k]);
-  ok("① " + lg + ":分組安裝那一行逐字;「第 i / N 個」(eng.nth)兩語都刪了、engine.js 不再用", bad.length === 0 && !("eng.nth" in ctx.STRINGS[lg]) && !/eng\.nth/.test(src), bad);
+  const bad = Object.entries(PKGS28[lg]).filter(([k, v]) => ctx.STRINGS[lg][k] !== v).map(([k]) => k + " → " + ctx.STRINGS[lg][k]);
+  ok("① " + lg + ":toHeadPkgs 逐字;eng.nth / eng.batch / eng.batchOne 兩語都刪了、engine.js 不再用", bad.length === 0 && ["eng.nth", "eng.batch", "eng.batchOne"].every((k) => !(k in ctx.STRINGS[lg]) && src.indexOf('"' + k + '"') < 0), bad);
 }
 ok("① 舊的「下載完成」那格拿掉了(左格改講正在安裝)", !("eng.dlDone" in ctx.STRINGS.zh) && !("eng.dlDone" in ctx.STRINGS.en) && !/eng\.dlDone/.test(src));
 for (const lg of ["zh", "en"]) {
@@ -78,20 +79,21 @@ for (const lg of ["zh", "en"]) {
   ok("① " + lg + ":每一句跟 mockup 逐字相同", bad.length === 0, bad.map((k) => k + " → " + ctx.STRINGS[lg][KEYMAP[k]]));
   ok("① " + lg + ":{limit} = 實際上限(10 分鐘)照 mockup 的寫法,空格換成不換行空格", ctx.STRINGS[lg]["eng.min"].replace("{m}", "10") === MOCK[lg].limit10.replace(" ", NB));
 }
-// 0.1.28 一組一條 pip:重試是整組重裝(已下載完的檔在 pip 快取裡),mockup 的「從 {name} 接著裝,已裝好的不重裝」不再成立(Wei 定稿)
+// 0.1.28 一組一條 pip:mockup 的「從 {name} 接著裝,已裝好的不重裝」不再成立。設計定稿 engine-card-copy-2026-10-21:只講下載完的不用再下載
+// (pip 快取只留下載完的 wheel;mac 實測斷線重試時下載完的印 Using cached、斷在一半的那個從頭下)
 const RETRY = {
-  zh: { "eng.failSub": "重試會整組重裝，已下載的不會重下；裝好後送出上面那句。", "eng.failSubIdle": "重試會整組重裝，已下載的不會重下。",
-    "eng.toSub": "可能是網路太慢，或公司網路、VPN 擋住了下載。重試會整組重裝，已下載的不會重下。" },
-  en: { "eng.failSub": "Retry reinstalls the whole set; files already downloaded aren’t downloaded again. The message above sends once setup finishes.",
-    "eng.failSubIdle": "Retry reinstalls the whole set; files already downloaded aren’t downloaded again.",
-    "eng.toSub": "The connection may be too slow, or a company network or VPN may be blocking the download. Retry reinstalls the whole set; files already downloaded aren’t downloaded again." },
+  zh: { "eng.failSub": "已經下載完的檔案不用再下載。裝好後送出上面那句。", "eng.failSubIdle": "已經下載完的檔案不用再下載。",
+    "eng.toSub": "可能是網路太慢，或公司網路、VPN 擋住了下載。已經下載完的檔案不用再下載。" },
+  en: { "eng.failSub": "Files that finished downloading won’t download again. The message above sends once setup finishes.",
+    "eng.failSubIdle": "Files that finished downloading won’t download again.",
+    "eng.toSub": "The connection may be too slow, or a company network or VPN may be blocking the download. Files that finished downloading won’t download again." },
 };
 for (const lg of ["zh", "en"]) {
   const bad = Object.entries(RETRY[lg]).filter(([k, v]) => ctx.STRINGS[lg][k] !== v).map(([k]) => k + " → " + ctx.STRINGS[lg][k]);
-  ok("① " + lg + ":失敗卡的重試說明照實(整組重裝、已下載的不重下)、不再寫「從 {name} 接著裝」", bad.length === 0 && !Object.keys(RETRY[lg]).some((k) => /\{name\}/.test(ctx.STRINGS[lg][k])), bad);
+  ok("① " + lg + ":失敗卡的重試說明照定稿(下載完的不用再下載)、不以「重試」開頭、不寫「從 {name} 接著裝」", bad.length === 0 && !Object.keys(RETRY[lg]).some((k) => /\{name\}|^(重試|Retry)/.test(ctx.STRINGS[lg][k])), bad);
 }
 ok("① 截短的兩句只截不改:failSubIdle = failSub 的第一句;failOther = failHead 的最後一句",
-  ctx.STRINGS.zh["eng.failSubIdle"] === ctx.STRINGS.zh["eng.failSub"].split("；")[0] + "。" && ctx.STRINGS.en["eng.failSubIdle"] === ctx.STRINGS.en["eng.failSub"].split(" The message")[0]
+  ctx.STRINGS.zh["eng.failSubIdle"] === ctx.STRINGS.zh["eng.failSub"].split("。")[0] + "。" && ctx.STRINGS.en["eng.failSubIdle"] === ctx.STRINGS.en["eng.failSub"].split(" The message")[0]
   && MOCK.zh.failHead.endsWith(ctx.STRINGS.zh["eng.failOther"]) && MOCK.en.failHead.endsWith(ctx.STRINGS.en["eng.failOther"]));
 ok("① 舊的三行灰字與「約一分鐘」那句都拿掉了", !["engine.workspace", "engine.deps", "engine.preparing"].some((k) => k in ctx.STRINGS.zh || k in ctx.STRINGS.en)
   && !Object.values(ctx.STRINGS.zh).some((v) => /準備引擎/.test(v)) && !Object.values(ctx.STRINGS.en).some((v) => /Preparing the engine/.test(v)));
@@ -109,7 +111,7 @@ const TR = { t: (k, v) => ctx.t(k, v), dur: fmtDur };
 const T0 = 1000000;
 const snap = (o) => Object.assign({ phase: "run", kind: "first", show: true, sizeMB: 200, acc: 0, t0: T0, tEnd: null, err: null,
   steps: [{ k: "ws", st: "done", ms: 400, t0: null }, { k: "engine", st: "done", ms: 70000, t0: null }, { k: "pkgs", st: "run", ms: 0, t0: T0 + 70400 }],
-  cur: { step: "pkgs", sub: null, i: 3, n: 7, k: 5, name: "matplotlib", t0: T0 + 90000, limitMs: 2700000, idleMs: 120000 },
+  cur: { step: "pkgs", sub: null, i: 3, n: 7, k: 5, name: "matplotlib", t0: T0 + 90000, limitMs: 2700000, idleMs: 120000, bar: { from: 2 / 7, span: 5 / 7, est: 90e6, dl0: 100e6 } },
   dl: { done: 120e6, file: { bytes: 4.2e6, total: 9.3e6 }, installing: false, lastByteAt: T0 + 95000 } }, o || {});
 const V = (s, now, held) => P.engView(s, now, TR, held);
 for (const lg of ["zh", "en"]) {
@@ -117,12 +119,18 @@ for (const lg of ["zh", "en"]) {
   const v = V(snap(), T0 + 96000);
   ok("② " + lg + " 進行中:標題、經過時間(只有這一個時間)、大小那句帶實測值", v.title === t("eng.head") && v.time === "1m 36s" && v.sub === t("eng.size", { size: "200 MB" }), v);
   ok("② " + lg + " 三列:做完的兩列有時間、正在跑的那列在跑", v.rows.map((r) => r.k + ":" + r.st + ":" + r.time).join() === "ws:done:0s,engine:done:1m 10s,pkgs:run:25s", v.rows);
-  ok("② " + lg + " 一條裝 5 個、現在在 matplotlib:名字分開給(畫成等寬字)", v.rows[2].dt.pre + v.rows[2].dt.mono + v.rows[2].dt.post === t("eng.batch", { k: 5, name: "matplotlib" }) && v.rows[2].dt.mono === "matplotlib");
-  { const one = V(snap({ cur: Object.assign({}, snap().cur, { k: 1 }) }), T0 + 96000);
-    ok("② " + lg + " 一條只裝 1 個(更新換一個版本):不講個數", one.rows[2].dt.pre + one.rows[2].dt.mono + one.rows[2].dt.post === t("eng.batchOne", { name: "matplotlib" }), one.rows[2].dt); }
+  ok("② " + lg + " 進度行只印套件名(mono),沒有前後字、不講個數", v.rows[2].dt.pre === "" && v.rows[2].dt.mono === "matplotlib" && v.rows[2].dt.post === "", v.rows[2].dt);
+  { const ins = V(snap({ dl: { done: 120e6, file: null, installing: true, lastByteAt: T0 + 95000 } }), T0 + 96000);
+    ok("② " + lg + " 安裝階段(整批一起裝)不印名字,左格照舊寫「正在安裝」", ins.rows[2].dt === null && ins.rows[2].meta.left === t("eng.installing"), ins.rows[2]); }
   ok("② " + lg + " 下載量那一行:這個檔 a / b MB、已下載總量;沒有總百分比、沒有速度、沒有預估時間",
     v.rows[2].meta.left === t("eng.bytes", { a: "4.2", b: "9.3" }) && v.rows[2].meta.right === t("eng.dlTotal", { x: "124.2" }) && !/%|MB\/s|剩|\bleft\b|ETA|預估/i.test(JSON.stringify([v.title, v.sub, v.time, v.rows.map((r) => [r.time, r.meta && r.meta.left, r.meta && r.meta.right])])), v.rows[2].meta);
-  ok("② " + lg + " 分段條一段一步;套件那段 = 前面裝完的 2 / 7", v.segs.length === 3 && v.segs[0] === 1 && v.segs[1] === 1 && Math.abs(v.segs[2] - 2 / 7) < 1e-9, v.segs);
+  ok("② " + lg + " 分段條一段一步;套件那段 = 這一組的起點 + 佔的寬 × 這一組已下載 ÷ 預估(24.2 / 90 MB)", v.segs.length === 3 && v.segs[0] === 1 && v.segs[1] === 1 && Math.abs(v.segs[2] - (2 / 7 + 5 / 7 * 24.2 / 90)) < 1e-9, v.segs);
+  { const seg = (dl, bar) => V(snap(Object.assign({ dl }, bar === undefined ? {} : { cur: Object.assign({}, snap().cur, { bar }) })), T0 + 96000).segs[2];
+    const a = seg({ done: 100e6, file: { bytes: 0, total: 9e6 }, installing: false, lastByteAt: T0 }), b = seg({ done: 140e6, file: { bytes: 4e6, total: 9e6 }, installing: false, lastByteAt: T0 });
+    ok("② " + lg + " 套件那段在組內跟著下載往前走(一組一條 pip 時不再整段停在 0)", Math.abs(a - 2 / 7) < 1e-9 && b > a, [a, b]);
+    ok("② " + lg + " 組內最多走到 90%(預估偏小也不會先滿)、安裝階段停在 90% 等這一條結束", Math.abs(seg({ done: 400e6, file: null, installing: false, lastByteAt: T0 }) - (2 / 7 + 5 / 7 * 0.9)) < 1e-9
+      && Math.abs(seg({ done: 101e6, file: null, installing: true, lastByteAt: T0 }) - (2 / 7 + 5 / 7 * 0.9)) < 1e-9);
+    ok("② " + lg + " 沒有 bar(舊快照)→ 套件那段 0,不用 (i-1)/n", seg({ done: 0, file: null, installing: false, lastByteAt: T0 }, null) === 0); }
   ok("② " + lg + " 讀屏句 = 套件那一步只念步驟名(名字在解析時一秒換好幾次,不跟著念)", v.say === t("eng.pkgs") && V(snap({ cur: Object.assign({}, snap().cur, { name: "numpy" }) }), T0 + 96000).say === v.say);
   ok("② " + lg + " 平常沒有訊息槽", v.slot === null);
   const st = V(snap(), T0 + 95000 + 15000);
@@ -146,7 +154,9 @@ for (const lg of ["zh", "en"]) {
   const fo = V(Object.assign({}, failS, { err: { kind: "other", msg: "ERROR: No matching distribution found for pyarrow==25.0.1", step: "pkgs", name: "pyarrow", limitMs: 600000 } }), T0, false);
   ok("② " + lg + " 失敗(說不出原因):只寫「沒有裝完。」", fo.slot.head === t("eng.failOther"));
   const to = V(Object.assign({}, failS, { err: { kind: "timeout", msg: "timed out after 600s", step: "pkgs", name: "pyarrow", limitMs: 600000 } }), T0, true);
-  ok("② " + lg + " 超時:主詞是卡住的那一個(每條 pip 各自計時)、{limit} = 實際上限、重試從那個套件接", to.slot.head === t("eng.toHead", { name: "pyarrow", limit: t("eng.min", { m: 10 }) }) && to.slot.sub === t("eng.toSub", { name: "pyarrow" }), to.slot);
+  ok("② " + lg + " 套件那步超時:主詞是這一步(整組一起計時)、{limit} = 實際上限", to.slot.head === t("eng.toHeadPkgs", { limit: t("eng.min", { m: 10 }) }) && to.slot.sub === t("eng.toSub"), to.slot);
+  { const toS = V(Object.assign({}, failS, { steps: [{ k: "engine", st: "err", ms: 9, t0: null }], cur: { step: "engine", sub: null, i: 0, n: 0, name: "claude-agent-sdk" }, err: { kind: "timeout", msg: "timed out after 2700s", step: "engine", name: "claude-agent-sdk", limitMs: 2700000 } }), T0, false);
+    ok("② " + lg + " SDK 那條超時:主詞照舊是名字(自己一條 pip)", toS.slot.head === t("eng.toHead", { name: "claude-agent-sdk", limit: t("eng.min", { m: 45 }) }), toS.slot); }
   const toV = V(Object.assign({}, failS, { steps: [{ k: "engine", st: "err", ms: 300000, t0: null }], cur: { step: "engine", sub: "venv", i: 0, n: 0, name: null }, err: { kind: "timeout", msg: "timed out after 300s", step: "engine", name: null, limitMs: 300000 } }), T0, false);
   ok("② " + lg + " 卡在建 venv 超時:用 toHeadVenv、5 分鐘;副句是 venvSub(不是「可能是網路太慢」)", toV.slot.head === t("eng.toHeadVenv", { limit: t("eng.min", { m: 5 }) }) && toV.slot.sub === t("eng.venvSub"), toV.slot);
   const fv = V(Object.assign({}, failS, { steps: [{ k: "ws", st: "done", ms: 1, t0: null }, { k: "engine", st: "err", ms: 9, t0: null }, { k: "pkgs", st: "wait", ms: 0, t0: null }], cur: { step: "engine", sub: "venv", i: 0, n: 0, name: null }, err: { kind: "other", msg: "x", step: "engine", name: null } }), T0, false);
@@ -155,9 +165,9 @@ for (const lg of ["zh", "en"]) {
   ok("② " + lg + " 引擎那步但有名字(SDK 斷線):副標照樣是 failSubIdle", V(Object.assign({}, failS, { steps: [{ k: "engine", st: "err", ms: 9, t0: null }], cur: { step: "engine", sub: null, i: 0, n: 0, name: "claude-agent-sdk" }, err: { kind: "net", msg: "x", step: "engine", name: "claude-agent-sdk" } }), T0, false).slot.sub === t("eng.failSubIdle", { name: "claude-agent-sdk" }));
   const up = V(snap({ kind: "update", sizeMB: null, steps: [{ k: "engine", st: "run", ms: 0, t0: T0 }], cur: { step: "engine", sub: null, i: 0, n: 0, name: "claude-agent-sdk", t0: T0, limitMs: 600000 }, dl: { done: 0, file: { bytes: 3e6, total: 92.9e6 }, installing: false, lastByteAt: T0 + 2000 } }), T0 + 3000);
   ok("② " + lg + " 更新後補裝(步驟有引擎):標題「更新了引擎」、不寫大小、只有一步就不畫分段條、引擎那列也有下載量", up.title === t("eng.headUpd") && up.sub === null && up.segs === null && up.rows.length === 1 && up.rows[0].meta.left === t("eng.bytes", { a: "3.0", b: "92.9" }), up);
-  const up17 = V(snap({ kind: "update", sizeMB: null, steps: [{ k: "pkgs", st: "run", ms: 0, t0: T0 }], cur: { step: "pkgs", sub: null, i: 8, n: 17, k: 10, name: "curl_cffi", t0: T0, limitMs: 600000 }, dl: { done: 0, file: { bytes: 1.1e6, total: 3.2e6 }, installing: false, lastByteAt: T0 + 2000 } }), T0 + 3000);
-  ok("② " + lg + " 更新後只補套件(7 → 17):標題是「更新了策略套件」、這一條 10 個、分段條一段且前 7 個是滿的、下載量只算這次的", up17.title === t("eng.headUpdPkgs") && up17.sub === null && up17.rows[0].dt.pre + up17.rows[0].dt.mono + up17.rows[0].dt.post === t("eng.batch", { k: 10, name: "curl_cffi" })
-    && up17.segs && up17.segs.length === 1 && Math.abs(up17.segs[0] - 7 / 17) < 1e-9 && up17.rows[0].meta.left === t("eng.bytes", { a: "1.1", b: "3.2" }) && up17.rows[0].meta.right === t("eng.dlTotal", { x: "1.1" }), up17);
+  const up17 = V(snap({ kind: "update", sizeMB: null, steps: [{ k: "pkgs", st: "run", ms: 0, t0: T0 }], cur: { step: "pkgs", sub: null, i: 8, n: 17, k: 10, name: "curl-cffi", t0: T0, limitMs: 600000, bar: { from: 7 / 17, span: 10 / 17, est: 13e6, dl0: 0 } }, dl: { done: 0, file: { bytes: 1.1e6, total: 3.2e6 }, installing: false, lastByteAt: T0 + 2000 } }), T0 + 3000);
+  ok("② " + lg + " 更新後只補套件(7 → 17):標題是「更新了策略套件」、只印名字、分段條一段且前 7 個是滿的再跟著下載走、下載量只算這次的", up17.title === t("eng.headUpdPkgs") && up17.sub === null && up17.rows[0].dt.mono === "curl-cffi" && up17.rows[0].dt.pre === ""
+    && up17.segs && up17.segs.length === 1 && Math.abs(up17.segs[0] - (7 / 17 + 10 / 17 * 1.1 / 13)) < 1e-9 && up17.rows[0].meta.left === t("eng.bytes", { a: "1.1", b: "3.2" }) && up17.rows[0].meta.right === t("eng.dlTotal", { x: "1.1" }), up17);
   ok("② " + lg + " 完成:不出卡;完成那一行帶總時間(含重試前的)", V(snap({ phase: "done", tEnd: T0 + 252000 }), T0) === null && P.engReadyText({ acc: 60000, t0: T0, tEnd: T0 + 192000 }, TR) === t("eng.ready", { t: "4m 12s" }));
   ok("② " + lg + " 只修 venv 連結(show=false)/ idle:不出卡", V(snap({ show: false }), T0) === null && V({ phase: "idle" }, T0) === null);
   ok("② " + lg + " 重試後經過時間接著算(acc)", V(snap({ acc: 200000 }), T0 + 1000).time === "3m 21s");
@@ -165,6 +175,17 @@ for (const lg of ["zh", "en"]) {
 
 // ── ③ 接線 ──
 const cut = (s, head) => { const i = s.indexOf(head); if (i < 0) throw new Error("no " + head); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return s.slice(i, k + 1); } throw new Error("unbalanced " + head); };
+// 名字節流(設計定稿):同一步裡的快照(名字、MB 變了)不當場重畫,等每秒那一次;步驟 / 階段換了、或還沒有計時器才當場畫
+{ const ctx2 = { ENG: { snap: null, timer: null, key: "" }, painted: [] };
+  vm.createContext(ctx2);
+  vm.runInContext(cut(src, "function engKey(") + "\n" + cut(src, "function engOnState(") + "\nfunction engPaint() { painted.push(ENG.snap.cur && ENG.snap.cur.name); }", ctx2);
+  const S0 = (name, st, phase) => ({ phase: phase || "run", steps: [{ k: "engine", st: "done" }, { k: "pkgs", st: st || "run" }], cur: { step: "pkgs", sub: null, name } });
+  ctx2.engOnState(S0("pandas")); ctx2.ENG.timer = 1;
+  ctx2.engOnState(S0("numpy")); ctx2.engOnState(S0("scipy"));
+  const mid = ctx2.painted.join(), latest = ctx2.ENG.snap.cur.name;
+  ctx2.engOnState(S0("scipy", "done", "done"));
+  ok("② 名字節流:沒有計時器時當場畫;計時器在跑、同一步的快照只記下不畫(每秒那一次讀最新的,名字與 MB 同一份);階段換了當場畫",
+    mid === "pandas" && latest === "scipy" && ctx2.painted.join() === "pandas,scipy", { mid, painted: ctx2.painted }); }
 const submit = cut(appSrc, "async function submitMessage("), stop = cut(appSrc, "async function stopTurn(");
 ok("③ preload:拉快照 + 聽快照;舊的 engine-progress 字串 key 不在了", /engineState: \(\) => ipcRenderer\.invoke\("engine-state"\)/.test(pre) && /onEngineState: \(fn\) => ipcRenderer\.on\("engine-state", \(_e, s\) => fn\(s\)\)/.test(pre) && !/engine-progress/.test(pre + mainSrc + appSrc));
 ok("③ main:快照整份推給我們的頁、也可以拉", /handle\("engine-state", \(\) => engineSetup\(\)\.snapshot\(\)\)/.test(mainSrc) && /webContents\.send\("engine-state", s\)/.test(mainSrc));

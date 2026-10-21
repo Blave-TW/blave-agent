@@ -1065,13 +1065,18 @@ function firstRunMB(platform = process.platform, arch = process.arch, darwinMajo
 const ENGINE_PIP_MS = 2700000, PKG_PIP_MS = 5400000, PIP_IDLE_MS = 120000, VENV_MS = 300000;
 // 選用的套件組:裝不起來不擋引擎(只記 log、那個功能暫時不能用,下次開 app 再試)。點名用套件名,版本照 WORKSPACE_DEPS;
 // 清單裡沒被點名的一律是核心(裝不起來就擋聊天)。美股資料(yfinance 與它的相依)只有美股功能用得到,lib 要在用到時才 import
+// 每組大約要下載多少(MB,只算前面的組沒帶到的檔;pip download 實測 mac arm64:SDK 那條 102、核心 91、美股 13)。只拿來填分段條,
+// 不上畫面:核心那組用 firstRunMB() 扣掉 SDK 那條推,跟著平台變(Windows / 舊 macOS 的 scipy、numpy 比較大)
+const PKG_MB = { core: firstRunMB() - 105, us: 13 };
 const OPTIONAL_DEPS = [{ id: "us", names: ["yfinance", "curl_cffi", "lxml", "peewee", "protobuf", "websockets", "beautifulsoup4", "multitasking", "platformdirs", "pytz"] }];
 let _engineSetup = null;
 function engineSetup() {
   if (!_engineSetup) _engineSetup = require("./enginesetup").createEngineSetup({
     fs, path, spawn: require("child_process").spawn, base: BASE, ws: WS, venvPy: VENV_PY, venvBin: VENV_BIN, win: WIN,
     basePython, envPath: loginShellPath, pyEnv: { ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}) }, copyOfficial, isPackaged: app.isPackaged,
-    sdkPins: SDK_PINS, deps: WORKSPACE_DEPS, lock: WORKSPACE_LOCK_FOR === require("./enginesetup").lockKey(SDK_PINS, WORKSPACE_DEPS) ? WORKSPACE_LOCK : [], optional: OPTIONAL_DEPS, firstRunMB: firstRunMB(), venvMs: VENV_MS, engineMs: ENGINE_PIP_MS, pkgMs: PKG_PIP_MS, idleMs: PIP_IDLE_MS,
+    sdkPins: SDK_PINS, deps: WORKSPACE_DEPS, lock: WORKSPACE_LOCK_FOR === require("./enginesetup").lockKey(SDK_PINS, WORKSPACE_DEPS) ? WORKSPACE_LOCK : [], optional: OPTIONAL_DEPS, firstRunMB: firstRunMB(), groupMB: PKG_MB, venvMs: VENV_MS, engineMs: ENGINE_PIP_MS, pkgMs: PKG_PIP_MS, idleMs: PIP_IDLE_MS,
+    // 開發版量冷快取用:pip 帶 --isolated 不吃 PIP_CACHE_DIR,改由這個變數給 --cache-dir;打包版不認
+    pipCacheDir: !app.isPackaged && path.isAbsolute(process.env.BLAVE_PIP_CACHE_DIR || "") ? process.env.BLAVE_PIP_CACHE_DIR : null,
     onChange: (s) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("engine-state", s); },
     log: (m) => console.error(m),
     // 結果類事件由主行程送:背景安裝可能在畫面開始聽之前就跑完了
@@ -1108,7 +1113,8 @@ function engineAbort() { return _engineSetup ? _engineSetup.abort().catch(() => 
 // 2026-10-01 驗過:這 17 個加上依賴(34 個)在 mac arm64、mac x86_64、win amd64 都有 cp312 / abi3 / 純 Python wheel
 // (pip download --only-binary=:all:),arm64 與 x64 隨包 CPython 3.12 一次全裝與一個一個 -c 裝的 pip freeze 相同。
 // cffi、pycparser(curl_cffi 的)與 soupsieve、typing_extensions(bs4 的)不在清單上(不直接裝),跟 matplotlib 自己的依賴一樣由 pip 解,版本照下面的 WORKSPACE_LOCK。
-// 0.1.28 起每組一條 pip(SDK / 核心 / 美股):spike 2026-10-21 重驗三種裝法的 pip freeze 相同
+// 0.1.28 起每組一條 pip(SDK / 核心 / 美股):spike 2026-10-21 在 mac arm64 重驗三種裝法的 pip freeze 相同;Windows 只量了秒數
+// (.claude/output/backend/engine-install-speed-spike-test4-results-2026-10-21.txt),freeze 待打包版在 test-4 驗
 const WORKSPACE_DEPS = [
   "pandas==3.0.6", "numpy==2.5.3", "matplotlib==3.11.2", "pyarrow==25.0.1",
   "requests==2.34.2", "python-dotenv==1.2.3", "scipy==1.18.1",

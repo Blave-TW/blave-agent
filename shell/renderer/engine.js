@@ -20,10 +20,10 @@ function engView(s, now, tr, held) {
     const live = st.st === "run" && st.t0 != null;
     const row = { k: st.k, st: st.st, label: label(st.k), time: st.st === "wait" ? "" : dur(st.ms + (live ? end - st.t0 : 0)), dt: null, meta: null };
     const here = cur.step === st.k || (s.phase === "fail" && s.err && s.err.step === st.k);
-    if (st.k === "pkgs" && (st.st === "run" || st.st === "err") && here && cur.i) {
-      // 一組一條 pip(enginesetup.js):k = 這一條一次裝幾個、name = 現在解析 / 下載到的那一個
-      const [pre, post] = t(cur.k > 1 ? "eng.batch" : "eng.batchOne", { k: cur.k, name: "\u0000" }).split("\u0000");
-      row.dt = { pre, mono: cur.name, post: post || "" };
+    if (st.k === "pkgs" && (st.st === "run" || st.st === "err") && here && cur.name && !dl.installing) {
+      // 一組一條 pip(enginesetup.js):只印現在解析 / 下載到的那一個(設計定稿 engine-card-copy-2026-10-21)。
+      // 安裝階段 pip 整批一起裝,名字會停在最後下載的那一個,不印
+      row.dt = { pre: "", mono: cur.name, post: "" };
     } else if (st.k === "engine" && st.st === "run" && cur.sub === "venv") row.dt = { pre: label("venv"), mono: null, post: "" };
     if (st.st === "run" && cur.name && (file || dl.installing || dl.done > 0)) {
       // 左格講現在在做什麼(下載中的檔案量 / 正在安裝),右格講累計下載量:兩格不重複「已下載」
@@ -32,15 +32,23 @@ function engView(s, now, tr, held) {
     }
     return row;
   });
-  // 分段條:一段 = 一個步驟(結構,不是時間);套件那一段照整份清單裡已經裝好的個數填(i - 1 / n)。
+  // 分段條:一段 = 一個步驟(結構,不是時間)。套件那一段照 cur.bar 填:這一組從 from 起、佔 span,組內照已下載 ÷ 預估走、最多 90%,
+  // 安裝階段停在 90%(一組一條 pip,照個數填的話核心那組整段都停在 0)。
   // 只有一步時:只補引擎那種不畫(一段從 0 跳到滿,沒有資訊);只補套件那種(更新後清單多了幾個)要畫,前面裝過的那幾個本來就是滿的
-  const segs = s.steps.length < 2 && !(s.steps.length === 1 && s.steps[0].k === "pkgs") ? null : s.steps.map((st) => (st.st === "done" ? 1 : st.k === "pkgs" && cur.step === "pkgs" && cur.n ? Math.max(0, cur.i - 1) / cur.n : 0));
+  const pkgFill = () => {
+    const b = cur.bar; if (!b) return 0;
+    const got = (dl.done || 0) + (file ? file.bytes : 0) - (b.dl0 || 0);
+    const f = dl.installing ? 0.9 : b.est > 0 ? Math.min(0.9, Math.max(0, got / b.est)) : 0;
+    return Math.min(1, b.from + b.span * f);
+  };
+  const segs = s.steps.length < 2 && !(s.steps.length === 1 && s.steps[0].k === "pkgs") ? null : s.steps.map((st) => (st.st === "done" ? 1 : st.k === "pkgs" && cur.step === "pkgs" ? pkgFill() : 0));
   let slot = null;
   if (s.phase === "fail") {
     const e = s.err || {};
     const name = e.name || (e.step ? label(e.step) : "");
     // 每一條 pip 各自計時:超時的主詞是卡住的那一個(套件或 SDK);卡在建 venv 時沒有名字,用另一句
-    const head = e.kind === "timeout" ? (e.name ? t("eng.toHead", { name: e.name, limit: limit(e.limitMs) }) : t("eng.toHeadVenv", { limit: limit(e.limitMs) }))
+    // 套件那一步整組一條 pip 一起計時:主詞是這一步,不是時間到時剛好在下載的那一個;SDK 那條自己一條,主詞照舊是名字
+    const head = e.kind === "timeout" ? (e.step === "pkgs" ? t("eng.toHeadPkgs", { limit: limit(e.limitMs) }) : e.name ? t("eng.toHead", { name: e.name, limit: limit(e.limitMs) }) : t("eng.toHeadVenv", { limit: limit(e.limitMs) }))
       : e.kind === "net" ? t("eng.failNet", { name }) : t("eng.failOther");
     // 引擎那一步失敗、又沒有套件名(卡在建 venv):不分失敗類別換一句——那一步不用網路,也沒有「從哪個套件接著裝」可講
     const venv = e.step === "engine" && !e.name;
@@ -65,10 +73,18 @@ function engView(s, now, tr, held) {
 function engReadyText(s, tr) { return tr.t("eng.ready", { t: tr.dur((s.acc + (s.tEnd - s.t0)) / 1000) }); }
 /* ── 純邏輯到此 ── */
 
-const ENG = { snap: null, card: null, timer: null, said: "", held: null, warned: false };
+const ENG = { snap: null, card: null, timer: null, said: "", held: null, warned: false, key: "" };
 const ENG_TR = { t: (k, v) => t(k, v), dur: (sec) => fmtDur(sec) };
 
-function engOnState(s) { ENG.snap = s; engPaint(); }
+/* 同一步裡的變動(名字、MB)不當場重畫,等每秒那一次:名字與 MB 從同一份快照取,解析那幾秒名字也不會閃。
+   步驟、階段換了才當場畫 */
+function engKey(s) { return !s ? "" : s.phase + "|" + (s.steps || []).map((x) => x.k + ":" + x.st).join() + "|" + ((s.cur && s.cur.step) || "") + ":" + ((s.cur && s.cur.sub) || ""); }
+function engOnState(s) {
+  ENG.snap = s;
+  const k = engKey(s);
+  if (ENG.timer && k === ENG.key) return;
+  ENG.key = k; engPaint();
+}
 /* 工作頁打開時跟主行程對一次:背景安裝可能早就開始了,那時這一頁還沒有在聽 */
 function engSync() { window.blave.engineState().then((s) => { if (s) engOnState(s); }).catch(() => {}); }
 

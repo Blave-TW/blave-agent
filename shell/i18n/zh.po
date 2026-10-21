@@ -426,12 +426,6 @@ msgstr "安裝策略套件"
 msgid "eng.venv"
 msgstr "建立 Python 環境"
 
-msgid "eng.batch"
-msgstr "共 {k} 個套件，目前：{name}"
-
-msgid "eng.batchOne"
-msgstr "目前：{name}"
-
 msgid "eng.bytes"
 msgstr "{a} / {b} MB"
 
@@ -458,14 +452,17 @@ msgid "eng.failOther"
 msgstr "沒有裝完。"
 
 msgid "eng.failSub"
-msgstr "重試會整組重裝，已下載的不會重下；裝好後送出上面那句。"
+msgstr "已經下載完的檔案不用再下載。裝好後送出上面那句。"
 
 # 背景安裝失敗、沒有一句話在等時:eng.failSub 截掉最後一句(那句講的是要送出的訊息)
 msgid "eng.failSubIdle"
-msgstr "重試會整組重裝，已下載的不會重下。"
+msgstr "已經下載完的檔案不用再下載。"
 
 msgid "eng.toHead"
 msgstr "{name} 超過 {limit}還沒完成，已經停下。"
+
+msgid "eng.toHeadPkgs"
+msgstr "安裝策略套件超過 {limit}還沒完成，已經停下。"
 
 msgid "eng.toHeadVenv"
 msgstr "建立 Python 環境超過 {limit}還沒完成，已經停下。"
@@ -477,7 +474,7 @@ msgid "eng.venvSubHeld"
 msgstr "這一步在這台電腦上做，不用網路。重試會從這一步接著做，裝好後送出上面那句。"
 
 msgid "eng.toSub"
-msgstr "可能是網路太慢，或公司網路、VPN 擋住了下載。重試會整組重裝，已下載的不會重下。"
+msgstr "可能是網路太慢，或公司網路、VPN 擋住了下載。已經下載完的檔案不用再下載。"
 
 msgid "eng.details"
 msgstr "錯誤訊息"
