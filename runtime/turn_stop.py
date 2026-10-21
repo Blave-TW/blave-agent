@@ -438,6 +438,8 @@ def _nt_probe(pairs, root, handles, info, strict):
             continue
         ppid = _nt_ppid(h)
         if ppid != listed.get(pid) and (strict or ppid is not None):
+            del handles[pid]  # the second look may open this pid again
+            _nt_close(h)
             continue
         if _nt_image(h) == "conhost.exe":
             info[pid] = (_nt_created(h), "", False)
@@ -519,6 +521,10 @@ def nt_plan(pairs, root, marked, hold_engine, info=None):
         cmd = info[pid][1]
         return UNSEEN if cmd is None else money_label(cmd)
 
+    def killable(pid):
+        # no creation time = its link to the parent was never checked
+        return info[pid][2] and info[pid][0] is not None
+
     money = {pid: label(pid) for pid in tree}
     if hold_engine:
         labels = {m for m in money.values() if m}
@@ -526,13 +532,13 @@ def nt_plan(pairs, root, marked, hold_engine, info=None):
             labels.add("order script")
         if labels:
             return [], sorted(labels)
-        return [pid for pid in tree if info[pid][2]], []
+        return [pid for pid in tree if killable(pid)], []
     money_units = {unit[pid] for pid in tree if money[pid] and pid not in engines}
     keep = set()
     for pid in tree:
         if parent[pid] in keep or money[pid] or unit[pid] in money_units:
             keep.add(pid)
-    return ([pid for pid in tree if pid not in keep and info[pid][2]],
+    return ([pid for pid in tree if pid not in keep and killable(pid)],
             sorted({money[p] for p in keep} - {None}))
 
 

@@ -596,6 +596,11 @@ check("Windows + Codex: a tool that cannot be opened holds (unconfirmed)",
       turn_stop.nt_plan(_pipe, 1372, set(), True, winfo(_pipe, _cmd, _tp, denied={765})) == ([], [turn_stop.UNSEEN]))
 check("Windows + Claude: `x | tail` with x unopenable keeps the tail (the whole tool call), the engine goes",
       turn_stop.nt_plan(_pipe, 1372, set(), False, winfo(_pipe, _cmd, _tp, denied={765})) == ([1376], [turn_stop.UNSEEN]))
+check("Windows: a process whose creation time cannot be read is not killed, nor what is under it",
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, times={**CANARY_T, 3848: None})) == ([1376, 764], []),
+      turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, times={**CANARY_T, 3848: None})))
+check("Windows + Codex: the same",
+      turn_stop.nt_plan(CANARY, 1372, set(), True, winfo(CANARY, times={**CANARY_T, 3848: None})) == ([1376, 764], []))
 check("Windows: a process that can be queried but not terminated is skipped, its tool call is not kept for it",
       turn_stop.nt_plan(CANARY, 1372, set(), False, winfo(CANARY, unkillable={3848})) == ([1376, 764, 4980, 736], []))
 
@@ -802,6 +807,14 @@ _terminated.clear()
 got = turn_stop.kill_tree(1372, False)
 check("Windows: a pid whose handle names another parent than the table is not terminated, nor what is under it",
       got == ([1376, 764], []) and _terminated == [1376, 764], (got, _terminated))
+# …and the handle opened for it is closed, also when the second look opens that pid again
+_opens, _closes = [], []
+turn_stop._nt_open = lambda pid: _opens.append(pid) or pid
+turn_stop._nt_close = _closes.append
+turn_stop.kill_tree(1372, False)
+check("Windows: every handle opened is closed, a pid rejected twice included",
+      sorted(_opens) == sorted(_closes) and _opens.count(3848) == 2, (sorted(_opens), sorted(_closes)))
+turn_stop._nt_open, turn_stop._nt_close = (lambda pid: pid), (lambda h: None)
 turn_stop._nt_ppid = lambda h: dict(CANARY).get(h)
 # Alive but not ours to open, end to end: OpenProcess(TERMINATE) and the query-only open both refused
 turn_stop._nt_open = lambda pid: None if pid == 3848 else pid
