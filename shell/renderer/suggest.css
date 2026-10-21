@@ -1,6 +1,6 @@
 /* 建議下一步(renderer/suggest.js):逐條照雲端 web/app/static/css/agent/workspace.css 的 .sug-*(mockup v9.2 案 4,
    動畫沿用 v8),dark 值換成這裡的角色變數:行字 greyLightMedium → --ink-2、hover 填 darkBorder → --surface-muted、
-   hover 字 darkText → --ink、↳ 與小標 greyMedium → --ink-3。
+   hover 字 darkText → --ink、送出 icon 與小標 greyMedium → --ink-3。
    .is-closed 是唯一開關:加上 = 向下沉入輸入框收合,拿掉 = 從輸入框往上長出。高度軌 0fr↔1fr(同 .think-reason-wrap);
    align-content:end 把軌釘在容器底緣,過渡中列表底緣全程貼著輸入框。減少動態由 app.css 全域那條收掉。 */
 .sug-wrap {
@@ -50,7 +50,8 @@
 }
 .sug-item:hover { background: var(--surface-muted); color: var(--ink); }
 .sug-item:focus-visible { outline-offset: -2px; }   /* .sug 是 overflow:hidden,外推的 ring 會被裁掉 */
-.sug-glyph { flex: none; color: var(--ink-3); font-size: 13px; transition: color var(--motion-fast) var(--ease-standard); }
+/* 列是 baseline 對齊,svg 沒有 baseline 會掉到行底:包層高 = 一行行高(13px × 1.6),icon 置中在第一行、句子折行不跟著跑 */
+.sug-glyph { flex: none; align-self: start; display: flex; align-items: center; height: calc(13px * 1.6); color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard); }
 .sug-item:hover .sug-glyph { color: var(--ink); }
 .sug-item .txt { flex: 1; overflow-wrap: anywhere; }   /* agent 寫的句子,長 token 也要斷 */
 
