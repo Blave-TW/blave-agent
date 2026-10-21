@@ -11,6 +11,15 @@ import json
 import os
 import re
 import time
+try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
+        from lib.winreplace import load_json
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 _SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "state", "capital_account.json")
@@ -31,8 +40,7 @@ def contract_month(code):
 
 def _read_snapshot():
     try:
-        with open(_SNAPSHOT) as f:
-            snap = json.load(f)
+        snap = load_json(_SNAPSHOT)
     except FileNotFoundError:
         raise RuntimeError(
             "capital snapshot missing — is the blave-agent-capital service running?")

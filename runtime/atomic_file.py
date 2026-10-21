@@ -14,8 +14,11 @@ written through. Only a temp this call created is ever removed.
 On Windows the replace is retried for about 1.25 s on PermissionError (WinError 5): a reader
 that opened the target without FILE_SHARE_DELETE (CPython's open, Defender scanning the file)
 makes it fail for milliseconds, and a lost status write strands whatever flag it was clearing.
+The reader's side of that window (open() while another process's replace swaps the file) raises
+PermissionError too: read_retry / load_json wait it out with the same delays.
 """
 import contextlib
+import json
 import os
 import re
 import secrets
@@ -37,6 +40,52 @@ def replace_retry(src, dst):
         except PermissionError:
             time.sleep(delay)
     os.replace(src, dst)
+
+
+def read_retry(read, *args, **kwargs):
+    """= lib/winreplace.read_retry. Only PermissionError: a missing file stays FileNotFoundError."""
+    for delay in REPLACE_RETRY_DELAYS:
+        try:
+            return read(*args, **kwargs)
+        except PermissionError:
+            time.sleep(delay)
+    return read(*args, **kwargs)
+
+
+def _load_json(path, open_kw):
+    with open(path, **open_kw) as f:
+        return json.load(f)
+
+
+def load_json(path, **open_kw):
+    """json.load(open(path, **open_kw)), the open inside the retry."""
+    return read_retry(_load_json, path, open_kw)
+
+
+def load_json_for_update(path, **open_kw):
+    """The JSON object a read-modify-write starts from: {} when the file does not exist; a file
+    that does not parse or is not an object is set aside as <path>.corrupt and {} returned (it
+    would otherwise block every later write); still locked after the retries → raises, write
+    nothing."""
+    try:
+        doc = load_json(path, **open_kw)
+    except FileNotFoundError:
+        return {}
+    except ValueError:
+        doc = None
+    if isinstance(doc, dict):
+        return doc
+    replace_retry(path, path + ".corrupt")
+    return {}
+
+
+def _read_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def read_bytes(path):
+    return read_retry(_read_bytes, path)
 
 
 @contextlib.contextmanager

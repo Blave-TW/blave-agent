@@ -38,6 +38,12 @@ import time
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from lib.winreplace import load_json  # noqa: E402
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 REGISTRY_PATH = "state/deployments.json"
 HEARTBEAT_DIR = "state/heartbeat"
@@ -51,8 +57,7 @@ def _load_json(path, default):
     if not os.path.exists(path):
         return default
     try:
-        with open(path) as f:
-            return json.load(f)
+        return load_json(path)
     except Exception as e:
         print(f"[healthcheck] failed to read {path}: {e}")
         return default

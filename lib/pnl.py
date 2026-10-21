@@ -1,5 +1,11 @@
 import glob, json, math, os
 import pandas as pd
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 
 def daily_returns_typeA(pf_ret):
@@ -32,8 +38,7 @@ def load_all_stats(only=None):
     for path in glob.glob('strategies/*/stats.json'):
         name = os.path.basename(os.path.dirname(path))
         try:
-            with open(path) as f:
-                data = json.load(f)
+            data = load_json(path)
             if data.get('daily_returns'):
                 result[name] = data
         except Exception:

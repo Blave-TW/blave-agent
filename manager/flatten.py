@@ -215,18 +215,8 @@ def _book_key(vid, sym):
 
 
 def _read_env(path=".env"):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip().strip("'\"")
-    except OSError:
-        pass
-    return env
+    from lib.venue_wiring import read_env
+    return read_env(path)
 
 
 def _venues(env):

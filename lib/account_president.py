@@ -13,6 +13,15 @@ import json
 import logging
 import os
 import time
+try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
+        from lib.winreplace import load_json
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 try:
     from lib import president_contracts as _contracts
@@ -32,8 +41,7 @@ ROOTS = ("TXF", "MXF", "TMF")
 
 def _read_snapshot():
     try:
-        with open(_SNAPSHOT, encoding="utf-8") as f:
-            snap = json.load(f)
+        snap = load_json(_SNAPSHOT, encoding="utf-8")
     except FileNotFoundError:
         raise RuntimeError("president snapshot missing — is the 統一期貨 worker "
                            "(lib/president_worker.py) running?")

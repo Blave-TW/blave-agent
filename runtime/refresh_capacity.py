@@ -113,8 +113,8 @@ def may_start(next_mb, running, free_mb=None, slots=None):
 
 def read_cost(sdir):
     try:
-        with open(os.path.join(sdir, COST_FILE), encoding="utf-8") as f:
-            doc = json.load(f)
+        import atomic_file  # same runtime dir (lazy, as in write_cost)
+        doc = atomic_file.load_json(os.path.join(sdir, COST_FILE), encoding="utf-8")
         return doc if isinstance(doc, dict) else {}
     except (OSError, ValueError):
         return {}

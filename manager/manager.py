@@ -41,6 +41,12 @@ from scipy.optimize import minimize
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.pnl import load_all_stats
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 from lib import allocator as allocator_lib
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -314,8 +320,7 @@ def default_allocator():
     slope. Only a portfolio that has never been applied gets the new default.
     """
     try:
-        with open(CONFIG_PATH) as f:
-            cfg = json.load(f)
+        cfg = load_json(CONFIG_PATH)
     except (OSError, ValueError):
         return DEFAULT_METHOD
     if not isinstance(cfg, dict) or not cfg.get('weights'):
@@ -330,8 +335,7 @@ def default_target_vol():
     and the leverage in the proposal they act on would be computed at someone
     else's target. The workspace page no longer offers this knob at all."""
     try:
-        with open(CONFIG_PATH) as f:
-            cfg = json.load(f)
+        cfg = load_json(CONFIG_PATH)
         pct = float(cfg['target_vol_pct'])
     except (OSError, ValueError, TypeError, KeyError):
         return TARGET_VOL
@@ -487,8 +491,7 @@ def main():
 
     # Load and update portfolio_config.json
     if CONFIG_PATH.exists():
-        with open(CONFIG_PATH) as f:
-            cfg = json.load(f)
+        cfg = load_json(CONFIG_PATH)
     else:
         cfg = {'account_value': 10000}
 

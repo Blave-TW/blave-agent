@@ -95,7 +95,7 @@ try:
         reads.append(os.path.basename(os.path.dirname(path)) + "/" + os.path.basename(path))
         return real_open(path, *a, **kw)
 
-    ld.open = counting_open
+    ld.open = ld.atomic_file.open = counting_open  # stats.json goes through atomic_file.load_json
     try:
         ld.strategy_kinds(SD, cfg, cache)
         check(reads == [], "second round with nothing changed reads no file", reads)
@@ -106,7 +106,7 @@ try:
               and again["btc_trend"]["market"] == "us_stock",
               "an edited strategy is re-read (headered: stats.json not parsed)", reads)
     finally:
-        del ld.open
+        del ld.open, ld.atomic_file.open
     shutil.rmtree(os.path.join(SD, "own_data"))
     ld.strategy_kinds(SD, cfg, cache)
     check("own_data" not in cache, "a deleted strategy leaves the cache")
@@ -120,7 +120,7 @@ try:
     touch(os.path.join(fx, "stats.json"), t0 + 10**9)
     lc = {}
     ld.strategy_kinds(SD, cfg, lc)
-    ld.open = counting_open
+    ld.open = ld.atomic_file.open = counting_open  # stats.json goes through atomic_file.load_json
     try:
         reads.clear()
         for i in range(3):
@@ -147,7 +147,7 @@ try:
         check(got["folder_x"]["type"] == "C" and "folder_x/stats.json" in reads,
               "…the new backtest's stats.json (newer than the code) is read and decides C", reads)
     finally:
-        del ld.open
+        del ld.open, ld.atomic_file.open
 
     # one pathological strategy.py must not take the whole answer down
     import strategy_reporter as srm

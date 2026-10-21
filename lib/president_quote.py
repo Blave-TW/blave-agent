@@ -40,18 +40,27 @@ import os
 import time
 from datetime import datetime, time as dtime, timedelta
 
-try:
-    import president_contracts as pc  # run as a script: lib/ is sys.path[0]
-    import president_vault
-except ImportError:
+if __package__ == "lib":  # never a same-named file elsewhere on sys.path
     from lib import president_contracts as pc, president_vault
+else:  # run as a script: lib/ is sys.path[0]
+    import president_contracts as pc
+    import president_vault
 try:
-    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
-except ImportError:
-    try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
         from lib.winreplace import atomic_replace
-    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
-        atomic_replace = os.replace
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
+        from lib.winreplace import load_json
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 try:
     from unitrade.core.error import Error as _SdkError
@@ -108,8 +117,7 @@ def _atomic_write(path, payload):
 
 def read_snapshot(root):
     try:
-        with open(snapshot_path(root), encoding="utf-8") as f:
-            snap = json.load(f)
+        snap = load_json(snapshot_path(root), encoding="utf-8")
     except (OSError, ValueError):
         return None
     return snap if isinstance(snap, dict) else None

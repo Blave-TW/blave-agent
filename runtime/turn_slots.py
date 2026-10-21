@@ -47,8 +47,7 @@ TOUCH_INTERVAL_S = 4
 
 def read_limits():
     try:
-        with open(LIMITS_PATH, encoding="utf-8") as f:
-            data = json.load(f)
+        data = atomic_file.load_json(LIMITS_PATH, encoding="utf-8")
         n = int(data.get("max_turns"))
         if n < 1:
             raise ValueError(n)

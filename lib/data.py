@@ -6673,15 +6673,16 @@ def _us_routed_venue(name):
     lib.portfolio.load_portfolio_config reads it (not imported: lib.data stays out of the
     order-placing import closure, tests/check_sched_bash_guard.py); None when unrouted."""
     try:
-        with open('manager/amounts.ui.json', encoding='utf-8') as f:
-            ui = json.load(f)
+        ui = json.loads(_read_text(Path('manager/amounts.ui.json'), encoding='utf-8'))
         if isinstance(ui.get('amounts'), dict) and isinstance(ui.get('exchanges'), dict):
             return ui['exchanges'].get(name) or None
-    except (OSError, ValueError, AttributeError):
+    except FileNotFoundError:
         pass
+    except (ValueError, AttributeError):
+        pass  # a malformed mirror is ignored, as load_portfolio_config does
+    # any other OSError (still locked after the retries) raises: the config's routing may differ
     try:
-        with open('manager/portfolio_config.json', encoding='utf-8') as f:
-            cfg = json.load(f)
+        cfg = json.loads(_read_text(Path('manager/portfolio_config.json'), encoding='utf-8'))
     except FileNotFoundError:
         return None
     return (cfg.get('exchanges') or {}).get(name) or None

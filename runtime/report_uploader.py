@@ -133,8 +133,7 @@ _READ_MAX_BYTES = 4 * REPORT_MAX_BYTES
 def _read_json(path, default=None):
     # utf-8 明寫：報告標題與策略名帶中文，cp950 的 Windows 機用 locale 預設會炸
     try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
+        return atomic_file.load_json(path, encoding="utf-8")
     except (OSError,) + _JSON_ERRORS:
         return default
 

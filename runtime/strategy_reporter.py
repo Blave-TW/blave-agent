@@ -447,8 +447,7 @@ def _read_backtest(name):
     full only by report_cache (16MB endpoint); live chunks go through live_chunk()."""
     path = os.path.join(STRATEGIES_DIR, name, "stats.json")
     try:
-        with open(path) as f:
-            data = json.load(f)
+        data = atomic_file.load_json(path)
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
@@ -483,8 +482,7 @@ def _read_scan(name):
     object. Shape validation is the api's job (agent_strategies._clean_scan)."""
     path = os.path.join(STRATEGIES_DIR, name, "scan.json")
     try:
-        with open(path) as f:
-            data = json.load(f)
+        data = atomic_file.load_json(path)
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
@@ -498,8 +496,7 @@ def _read_wf(name):
     Shape validation is the api's job (agent_strategies._clean_wf)."""
     path = os.path.join(STRATEGIES_DIR, name, "wf.json")
     try:
-        with open(path) as f:
-            data = json.load(f)
+        data = atomic_file.load_json(path)
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
@@ -539,8 +536,7 @@ def _read_rerun(vdir):
     {n, status, at, err?} — only the keys the web reads, each type-checked; None when absent,
     unreadable or malformed (no pending state is safer than a wrong one)."""
     try:
-        with open(os.path.join(vdir, "rerun.json"), encoding="utf-8") as f:
-            doc = json.load(f)
+        doc = atomic_file.load_json(os.path.join(vdir, "rerun.json"), encoding="utf-8")
     except (OSError, ValueError):
         return None
     if not isinstance(doc, dict):
@@ -574,8 +570,7 @@ def _read_perf(name):
         return None
     out = {"at": at}
     try:
-        with open(os.path.join(sdir, PERF_REFRESH_FILE), encoding="utf-8") as f:
-            doc = json.load(f)
+        doc = atomic_file.load_json(os.path.join(sdir, PERF_REFRESH_FILE), encoding="utf-8")
     except (OSError, ValueError):
         return out
     if not isinstance(doc, dict):
@@ -609,8 +604,7 @@ def _read_versions(name):
     restore's background re-run is running or has failed (canon §5)."""
     vdir = os.path.join(STRATEGIES_DIR, name, "versions")
     try:
-        with open(os.path.join(vdir, "index.json"), encoding="utf-8") as f:
-            idx = json.load(f)
+        idx = atomic_file.load_json(os.path.join(vdir, "index.json"), encoding="utf-8")
         items = idx["items"]
         if not isinstance(items, list):
             raise ValueError("items is not a list")
@@ -665,8 +659,7 @@ def _deployed_names():
     → empty set (fail-open to current behavior: noisy, not mute); nothing may
     escape — this runs inside every signature() call on the live push path."""
     try:
-        with open(os.path.join(WORKSPACE, "state", "deployments.json")) as f:
-            reg = json.load(f)
+        reg = atomic_file.load_json(os.path.join(WORKSPACE, "state", "deployments.json"))
     except (OSError, ValueError):
         return set()
     if not isinstance(reg, dict):
@@ -1163,8 +1156,7 @@ def _load_state_file(path):
     """An upload-progress file as a dict; {} when absent / unreadable / not an object —
     progress is a cache, and losing it costs a re-upload, never correctness."""
     try:
-        with open(path) as f:
-            state = json.load(f)
+        state = atomic_file.load_json(path)
         return state if isinstance(state, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -1196,8 +1188,7 @@ def _save_chart_state_entry(name, entry):
 def _read_chart_manifest(name):
     path = os.path.join(STRATEGIES_DIR, name, "chart", "manifest.json")
     try:
-        with open(path) as f:
-            m = json.load(f)
+        m = atomic_file.load_json(path)
     except (OSError, ValueError):
         return None
     if not isinstance(m, dict) or not isinstance(m.get("hash"), str):
@@ -1211,8 +1202,7 @@ def _read_chunk(name, c):
     """Raw bytes of strategies/<name>/chart/chunk-<id>.json, or None when its sha1 no
     longer matches the manifest — the runner swapped a new set in under us."""
     path = os.path.join(STRATEGIES_DIR, name, "chart", f"chunk-{c.get('id')}.json")
-    with open(path, "rb") as f:
-        raw = f.read()
+    raw = atomic_file.read_bytes(path)
     return raw if hashlib.sha1(raw).hexdigest() == c.get("sha1") else None
 
 
@@ -1501,8 +1491,7 @@ def report_failures():
     and the uploader cleared it, or someone deleted it by hand) is no longer a failure
     the user needs to see, so the folder — not the fact file — decides membership."""
     try:
-        with open(REPORT_FAILURES_PATH, encoding="utf-8") as f:
-            facts = json.load(f)
+        facts = atomic_file.load_json(REPORT_FAILURES_PATH, encoding="utf-8")
     except FileNotFoundError:
         return []
     if not isinstance(facts, dict):

@@ -8,6 +8,15 @@ try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json, read_retry
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def read_retry(read, *args, **kwargs):
+        return read(*args, **kwargs)
+
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 from lib.portfolio import (reconcile, load_portfolio_config, strategy_amounts,
                            aggregate_portfolio)
 
@@ -583,8 +592,7 @@ class PendingUnreadable(RuntimeError):
 
 def _pending_sent():
     try:
-        with open(PENDING_SENT_PATH, encoding='utf-8') as f:
-            raw = f.read()
+        raw = read_retry(Path(PENDING_SENT_PATH).read_text, encoding='utf-8')
     except FileNotFoundError:
         return {}
     except OSError as e:
@@ -1190,8 +1198,7 @@ def _on_read_success(now):
 
 def _load_account_guard():
     try:
-        with open(ACCOUNT_GUARD_PATH) as f:
-            doc = json.load(f)
+        doc = load_json(ACCOUNT_GUARD_PATH)
         return doc if isinstance(doc, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -1219,8 +1226,7 @@ def _last_actual():
     """The previous round's actual: reconcile() writes it before placing and a
     skipped round never reaches that write, so this is the last GOOD read."""
     try:
-        with open('manager/last_reconcile.json') as f:
-            return json.load(f).get('actual') or {}
+        return load_json('manager/last_reconcile.json').get('actual') or {}
     except (OSError, ValueError, AttributeError):
         return {}
 
@@ -1309,8 +1315,7 @@ def _bind_reset_marked(venue):
     """runtime `bind_reset` for `venue`, read from the file (the runtime writes
     it; this process's copy of the state predates it)."""
     try:
-        with open(ACCOUNT_GUARD_PATH) as f:
-            mark = (json.load(f) or {}).get('bind_reset')
+        mark = (load_json(ACCOUNT_GUARD_PATH) or {}).get('bind_reset')
     except (OSError, ValueError, AttributeError):
         return False
     if not venue or not isinstance(mark, dict) or mark.get('venue') != venue:
@@ -1651,7 +1656,7 @@ def _update_hold():
             continue
         try:
             age = time.time() - path.stat().st_mtime
-            words = path.read_text(encoding="utf-8", errors="replace").split()
+            words = read_retry(path.read_text, encoding="utf-8", errors="replace").split()
         except OSError:
             continue
         pid = int(words[0]) if words and words[0].isdigit() else None

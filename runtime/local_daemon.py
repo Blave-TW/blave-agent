@@ -436,8 +436,9 @@ def strategy_kinds(strat_dir, cfg, cache):
                 portfolio = False
                 if needs_stats and bsig is not None:
                     try:
-                        with open(os.path.join(strat_dir, name, "stats.json"), encoding="utf-8") as f:
-                            portfolio = sr.is_portfolio_stats(json.load(f))
+                        stats = atomic_file.load_json(os.path.join(strat_dir, name, "stats.json"),
+                                                      encoding="utf-8")
+                        portfolio = sr.is_portfolio_stats(stats)
                     except (OSError, ValueError):
                         portfolio = False
                 attrs = sr._type_market({"name": name, "code": src, "is_portfolio": portfolio})

@@ -156,6 +156,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from lib.winreplace import load_json  # noqa: E402
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 
 # ── Fallback copy of lib/bar_ready ───────────────────────────────────────────
@@ -320,7 +326,7 @@ def _load_state(name):
     path = f"{STATE_DIR}/{name}.json"
     if os.path.exists(path):
         try:
-            return {**_default_state(), **json.load(open(path))}
+            return {**_default_state(), **load_json(path)}
         except Exception as e:
             print(f"[wait_for_bar] {name}: state file corrupt ({e}), resetting")
     return _default_state()
@@ -688,7 +694,7 @@ def _alert_wrapper_error(name, exc):
     state_path = f"{STATE_DIR}/{name}.json"
     now = time.time()
     try:
-        state = json.load(open(state_path)) if os.path.exists(state_path) else {}
+        state = load_json(state_path) if os.path.exists(state_path) else {}
     except Exception:
         state = {}
     # 事件在冷卻檢查之前落檔:冷卻(6h)是給 Telegram 那一半的,平台自己會去重。
@@ -882,8 +888,8 @@ def _tw_futures_kind(name):
 
 def _sized_in_lots(name):
     try:
-        with open("manager/portfolio_config.json", encoding="utf-8") as f:
-            spec = (json.load(f).get("asset_specs") or {}).get(name)
+        cfg = load_json("manager/portfolio_config.json", encoding="utf-8")
+        spec = (cfg.get("asset_specs") or {}).get(name)
     except (OSError, ValueError, AttributeError):
         spec = None
     return isinstance(spec, dict) and spec.get("type") == "futures_contracts"

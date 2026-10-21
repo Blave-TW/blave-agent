@@ -390,8 +390,7 @@ def on_term(signum=None, frame=None):
 
 def _load_queue():
     try:
-        with open(QUEUE_PATH, encoding="utf-8") as f:
-            data = json.load(f)
+        data = atomic_file.load_json(QUEUE_PATH, encoding="utf-8")
         queues = data.get("queues") if isinstance(data, dict) else None
         if not isinstance(queues, dict):
             return {}

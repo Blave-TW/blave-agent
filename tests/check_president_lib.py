@@ -603,8 +603,20 @@ op.LAST_ORDER_PATH = os.path.join(TMP, "no-such-dir-file", "x")
 open(os.path.join(TMP, "no-such-dir-file"), "w").close()  # a file where the directory should be
 api = use([ACK])
 e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry"))
-check(e is not None and "marker" in str(e) and not api.sent, "marker write fails → nothing sent", e)
+check(e is not None and not api.sent, "markers unreadable (a file where the directory should be) → nothing sent", e)
 op.LAST_ORDER_PATH = real_path
+real_replace = president_vault.replace_json
+
+
+def _no_write(*a, **k):
+    raise PermissionError(13, "denied")
+
+
+president_vault.replace_json = _no_write
+api = use([ACK])
+e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry"))
+president_vault.replace_json = real_replace
+check(e is not None and "marker" in str(e) and not api.sent, "marker write fails → nothing sent", e)
 
 # ── 9. two processes closing at once: only one passes ────────────────────────
 import subprocess  # noqa: E402

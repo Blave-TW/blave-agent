@@ -20,6 +20,12 @@ try:
     import msvcrt
 except ImportError:  # POSIX
     msvcrt = None
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 _REPO_ROOT = Path(__file__).parent.parent
 
@@ -339,8 +345,7 @@ def load_index(name):
     tick's drift check) must treat a missing or half-written index as "no versions yet"
     rather than fail the run."""
     try:
-        with open(versions_dir(name) / 'index.json', encoding='utf-8') as f:
-            idx = json.load(f)
+        idx = load_json(versions_dir(name) / 'index.json', encoding='utf-8')
     except (OSError, ValueError):
         return None
     return idx if isinstance(idx, dict) else None
@@ -424,8 +429,7 @@ def list_versions(name):
     if not path.exists():
         return []
     try:
-        with open(path, encoding='utf-8') as f:
-            idx = json.load(f)
+        idx = load_json(path, encoding='utf-8')
         items = idx['items']
         if not isinstance(items, list):
             raise ValueError('items is not a list')
@@ -587,8 +591,7 @@ def restore(name, v):
                      'NO_SOURCE')
     with versions_lock(name):
         try:
-            with open(vdir / f'v{v}.json', encoding='utf-8') as f:
-                blob = json.load(f)
+            blob = load_json(vdir / f'v{v}.json', encoding='utf-8')
             code = blob['code']
             if not isinstance(code, str) or not code:
                 raise ValueError('no code stored')
@@ -607,7 +610,12 @@ def restore(name, v):
                 f"{name} is live (amount {amount:g} > 0) — restoring its code in place would "
                 f"flip a real position on the next bar. Build the change as a new strategy "
                 f"instead: references/strategy-code.md › Editing a live strategy."), 'LIVE')
-        idx   = load_index(name) or {}
+        idx   = load_index(name)
+        if idx is None and (vdir / 'index.json').exists():
+            raise _coded(FileNotFoundError(
+                f"{name}: the version list (versions/index.json) cannot be read — run one "
+                f"backtest to rebuild it from the stored versions, then restore v{v}"), 'NO_VERSION')
+        idx   = idx or {}
         items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
         entry = next((i for i in items if i.get('n') == v), None)
         if entry is None:

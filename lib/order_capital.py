@@ -69,6 +69,16 @@ import threading
 import time
 
 from lib import capital_vault, guard
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
@@ -233,14 +243,23 @@ def _shared_backoff():
 def _load_relogin():
     if _relogin["loaded"]:
         return
-    _relogin["loaded"] = True
     if not _shared_backoff():
+        _relogin["loaded"] = True
         return
     try:
-        with open(_RELOGIN_PATH, encoding="utf-8") as f:
-            d = json.load(f)
+        d = load_json(_RELOGIN_PATH, encoding="utf-8")
+    except FileNotFoundError:
+        _relogin["loaded"] = True
+        return
+    except OSError:
+        return  # still locked after the retries: read it again next time, not "no backoff" for good
+    except ValueError:
+        _relogin["loaded"] = True
+        return
+    _relogin["loaded"] = True
+    try:
         n, until = int(d["n"]), float(d["until"])
-    except (OSError, ValueError, KeyError, TypeError, OverflowError):
+    except (ValueError, KeyError, TypeError, OverflowError):
         return
     # a broken file (inf / nan) or a clock set back must not hold every order, stops included,
     # for longer than one ordinary wait
@@ -257,11 +276,11 @@ def _save_relogin():
             if os.path.exists(_RELOGIN_PATH):
                 os.remove(_RELOGIN_PATH)
             return
-        tmp = _RELOGIN_PATH + ".tmp"
+        tmp = f"{_RELOGIN_PATH}.{os.getpid()}.tmp"  # every order process writes this file
         os.makedirs(os.path.dirname(_RELOGIN_PATH), exist_ok=True)
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"n": _relogin["n"], "until": _relogin["until"]}, f)
-        os.replace(tmp, _RELOGIN_PATH)
+        atomic_replace(tmp, _RELOGIN_PATH)
     except OSError:
         pass  # the in-memory backoff still holds for this process
 

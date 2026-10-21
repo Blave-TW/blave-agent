@@ -185,8 +185,7 @@ def load_job(job_id):
     A watchboard job is (None, WATCH_RETIRED) whatever else is in the file."""
     path = os.path.join(job_dir(job_id), "job.json")
     try:
-        with open(path, encoding="utf-8") as f:
-            doc = json.load(f)
+        doc = atomic_file.load_json(path, encoding="utf-8")
     except OSError as e:
         return None, f"bad job.json: {type(e).__name__}"
     except ValueError as e:
@@ -437,8 +436,7 @@ def _agent_attempts_today(jd, now, tz):
     runs.jsonl: that file keeps only the last RUNS_KEEP lines, so a busy cron would push the
     day's attempt out and wake the agent again."""
     try:
-        with open(_agent_day_path(jd), encoding="utf-8") as f:
-            d = json.load(f)
+        d = atomic_file.load_json(_agent_day_path(jd), encoding="utf-8")
         return int(d["n"]) if d.get("date") == _day(now, tz).isoformat() else 0
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return 0
@@ -568,8 +566,7 @@ def current_model():
     """The user's model preference right now (runtime/model_prefs LAST_KEY) — a scheduled run
     follows it, it is not frozen at registration (Wei 09-26). None = the runtime's default."""
     try:
-        with open(MODEL_PREFS_PATH, encoding="utf-8") as f:
-            m = json.load(f).get("_last")
+        m = atomic_file.load_json(MODEL_PREFS_PATH, encoding="utf-8").get("_last")
     except (OSError, ValueError, AttributeError):
         return None
     return m if isinstance(m, str) and re.fullmatch(r"[A-Za-z0-9._/:-]{1,80}", m) else None
@@ -678,8 +675,7 @@ def _agent_turn_cloud(job, model, on_start=lambda: None):
 
 def _read_result(job_id):
     try:
-        with open(sched_result_path(job_id), encoding="utf-8") as f:
-            d = json.load(f)
+        d = atomic_file.load_json(sched_result_path(job_id), encoding="utf-8")
         return d if isinstance(d, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -871,9 +867,8 @@ def _is_close_job(jd):
     """A 台股收盤報告 job (the template, or a custom recipe in close mode): it has nothing to say on
     a day the market is shut."""
     try:
-        with open(os.path.join(jd, "recipe.json"), encoding="utf-8") as f:
-            if json.load(f).get("mode") == "close":
-                return True
+        if atomic_file.load_json(os.path.join(jd, "recipe.json"), encoding="utf-8").get("mode") == "close":
+            return True
     except (OSError, ValueError, AttributeError):
         pass
     try:

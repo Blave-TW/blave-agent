@@ -384,8 +384,7 @@ _DATA_ACCESS_VALUES = {"BLAVE_DATA_ACCESS": ("0", "1"),
 
 def _data_access_flags():
     try:
-        with open(os.path.join(WORKSPACE, _DATA_ACCESS_FILE), encoding="utf-8") as f:
-            doc = json.load(f)
+        doc = atomic_file.load_json(os.path.join(WORKSPACE, _DATA_ACCESS_FILE), encoding="utf-8")
     except (OSError, ValueError):
         return {}
     if not isinstance(doc, dict):
@@ -529,8 +528,7 @@ def _book_hold_asking():
     could not match to the account Blave's positions are on, awaiting the
     user's book_account_confirm."""
     try:
-        with open(_ACCOUNT_GUARD_PATH) as f:
-            hold = (json.load(f) or {}).get("book_hold")
+        hold = (atomic_file.load_json(_ACCOUNT_GUARD_PATH) or {}).get("book_hold")
     except (OSError, ValueError, AttributeError):
         return None
     return hold if isinstance(hold, dict) and hold.get("ask") and hold.get("venue") else None
@@ -551,8 +549,7 @@ def _ack_bind_reset():
     confirmation. The reconciler still owes the notice (it sends it when it
     next takes the marker); the marker no longer holds anything."""
     try:
-        with open(_ACCOUNT_GUARD_PATH) as f:
-            state = json.load(f)
+        state = atomic_file.load_json(_ACCOUNT_GUARD_PATH)
     except (OSError, ValueError):
         return
     mark = state.get("bind_reset") if isinstance(state, dict) else None
@@ -570,15 +567,13 @@ def _routing_block():
     if not _bound_venue():
         return None
     try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
-            cfg = json.load(f)
+        cfg = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"))
     except (OSError, ValueError):
         cfg = {}
     if not isinstance(cfg, dict):
         cfg = {}
     try:
-        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
-            mirror = json.load(f)
+        mirror = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "amounts.ui.json"))
     except (OSError, ValueError):
         mirror = None
     src = mirror if isinstance(mirror, dict) and isinstance(mirror.get("amounts"), dict) else cfg
@@ -693,8 +688,7 @@ def _cmd_resume_wait(args):
         if not os.path.exists(state_path):
             continue  # no state yet = nothing to gate; it trades on first signal
         try:
-            with open(state_path) as f:
-                st = _json.load(f)
+            st = atomic_file.load_json(state_path)
             # a portfolio (Type C, lib/runner.typec_live_state) has no single position:
             # its "new signal" is the next rebalance, so the baseline is the bar it
             # last rebalanced on (lib/portfolio.aggregate_portfolio compares it)
@@ -931,8 +925,8 @@ def _ledger_seeded():
     """ledger_seed.json carries a whole-account cutoff. A file with per-symbol
     rows only (lib zero_ledger_symbols after a flatten) is no baseline."""
     try:
-        with open(os.path.join(WORKSPACE, "manager", "ledger_seed.json")) as f:
-            return bool((json.load(f) or {}).get("seeded_at"))
+        seed = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "ledger_seed.json"))
+        return bool((seed or {}).get("seeded_at"))
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -980,17 +974,24 @@ def _ws_portfolio():
     return mod
 
 
+def _read_account_guard_for_update():
+    """state/venue_account.json for a read-modify-write: {} only when it does not exist yet."""
+    try:
+        state = atomic_file.load_json(_ACCOUNT_GUARD_PATH)
+    except FileNotFoundError:
+        return {}
+    if not isinstance(state, dict):
+        raise ValueError(f"{_ACCOUNT_GUARD_PATH} is not a JSON object")
+    return state
+
+
 def _mark_book_hold(venue, reason):
     """state/venue_account.json `book_hold`, so the report asks the user at once
     even while no reconciler runs; a running one re-derives the same hold on
-    its next round (the key changed) and HALTs once."""
-    try:
-        with open(_ACCOUNT_GUARD_PATH) as f:
-            state = json.load(f)
-    except (OSError, ValueError):
-        state = {}
-    if not isinstance(state, dict):
-        state = {}
+    its next round (the key changed) and HALTs once. Raises (writes nothing) when the file is
+    there but unreadable: writing a fresh dict back would drop every venue's pending /
+    bind_reset / account_id."""
+    state = _read_account_guard_for_update()
     held = state.get("book_hold") if isinstance(state.get("book_hold"), dict) else {}
     since = held.get("since") if held.get("venue") == venue else None
     state["book_hold"] = {"venue": venue, "reason": str(reason or "")[:300],
@@ -1009,13 +1010,7 @@ def _mark_bind_account_change(venue, reason):
     from lib.guard import trip_halt
 
     trip_halt(reason, "reconciler")
-    try:
-        with open(_ACCOUNT_GUARD_PATH) as f:
-            state = json.load(f)
-    except (OSError, ValueError):
-        state = {}
-    if not isinstance(state, dict):
-        state = {}
+    state = _read_account_guard_for_update()
     state["bind_reset"] = {"venue": venue, "at": int(_clock())}
     _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
 
@@ -1114,7 +1109,7 @@ def _bind_book_accounts(venue_ids):
         if verdict == "unreadable":
             try:
                 _mark_book_hold(v, detail)
-            except OSError as e:
+            except (OSError, ValueError) as e:
                 _log(f"book hold not recorded for {v} ({type(e).__name__})")
     return out
 
@@ -1140,8 +1135,7 @@ def _cmd_book_account_confirm(args):
         venue, same, env=read_env(os.path.join(WORKSPACE, ".env")))
     if outcome in ("kept", "reset"):
         try:
-            with open(_ACCOUNT_GUARD_PATH) as f:
-                state = json.load(f)
+            state = atomic_file.load_json(_ACCOUNT_GUARD_PATH)
             hold = state.get("book_hold") if isinstance(state, dict) else None
             if isinstance(hold, dict) and hold.get("venue") == venue:
                 state.pop("book_hold")
@@ -1191,8 +1185,7 @@ def _ui_manifest_ids():
     """Lowercased ids from manager/credentials.ui.json, or None when
     absent/invalid — mirrors lib/venue_wiring's fail-open reader."""
     try:
-        with open(os.path.join(WORKSPACE, "manager", "credentials.ui.json")) as f:
-            ids = json.load(f).get("ids")
+        ids = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "credentials.ui.json")).get("ids")
         if not isinstance(ids, list):
             return None
         return {str(i).lower() for i in ids}
@@ -1210,8 +1203,7 @@ def _clear_evicted_in_ui_mirror(evicted_ids):
     save); unreadable mirror = leave it alone, loudly."""
     path = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
     try:
-        with open(path) as f:
-            mirror = json.load(f)
+        mirror = atomic_file.load_json(path)
     except FileNotFoundError:
         return
     except (OSError, ValueError) as e:
@@ -1409,8 +1401,7 @@ def _cmd_credentials(args):
                 _log(f"president vault drop failed: {type(e).__name__}")
         cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
         try:
-            with open(cpath) as f:
-                cfg = json.load(f)
+            cfg = atomic_file.load_json(cpath)
             if isinstance(cfg, dict) and isinstance(cfg.get("exchanges"), dict):
                 cleared = {k: ("" if v in evicted_ids else v)
                            for k, v in cfg["exchanges"].items()}
@@ -1426,9 +1417,8 @@ def _cmd_credentials(args):
     # Gated on a venue actually being bound now (pair rule): a service-key
     # write on an unbound machine must not wake the schedules back up.
     try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json"),
-                  encoding="utf-8") as f:
-            amounts = json.load(f).get("amounts") or {}
+        amounts = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"),
+                                        encoding="utf-8").get("amounts") or {}
         if amounts and _venue_cred_ids(kept):
             _sync_strategy_crons(set(amounts))
     except (OSError, ValueError, AttributeError):
@@ -1450,8 +1440,8 @@ def _route_first_bind():
     never get here (see first_bind): an unbind's blank routing waits for the user's save.
     Not with a reconciler alive — routing would let it trade before 啟動下單."""
     try:
-        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json"), encoding="utf-8") as f:
-            mirror = json.load(f)
+        mirror = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "amounts.ui.json"),
+                                       encoding="utf-8")
         amounts, exchanges = mirror.get("amounts"), mirror.get("exchanges")
     except (OSError, ValueError, AttributeError):
         return
@@ -2179,8 +2169,7 @@ def _stamp_tw_close_restart(at):
     the reconciler's next round the record is gone, and its cancel line would
     read as if the user had resumed early on purpose."""
     try:
-        with open(PAPER_TW_CLOSE_PATH, encoding="utf-8") as f:
-            rec = json.load(f)
+        rec = atomic_file.load_json(PAPER_TW_CLOSE_PATH, encoding="utf-8")
         if not isinstance(rec, dict) or not rec.get("keys"):
             return
         _write_atomic(PAPER_TW_CLOSE_PATH, json.dumps({**rec, "restart_at": int(at)}))
@@ -2214,8 +2203,7 @@ def _reconciler_gated():
     running: the next start loads the file on disk, so the file decides."""
     hb = _mtime_or_none(RECONCILER_HEARTBEAT)
     try:
-        with open(RESTART_STOP_PATH) as f:
-            rec = json.load(f)
+        rec = atomic_file.load_json(RESTART_STOP_PATH)
         since = rec.get("stopped_at", rec.get("down_to")) if isinstance(rec, dict) else None
     except (OSError, ValueError):
         since = None
@@ -2275,8 +2263,7 @@ def _ensure_demand_start():
         _log(f"start-type correction failed: {type(e).__name__}: {e}")
         ok = False
     try:
-        with open(os.path.join(WORKSPACE, "state", "deployments.json")) as f:
-            known = "reconciler" in json.load(f)
+        known = "reconciler" in atomic_file.load_json(os.path.join(WORKSPACE, "state", "deployments.json"))
     except (OSError, ValueError, TypeError):
         known = False
     if known:  # never register a stopped daemon (healthcheck would call it dead)
@@ -2316,8 +2303,7 @@ def _start_after_restart_stop():
     # restarting it would cut its first round, so the web's follow-up
     # restart_reconciler is swallowed as for a start.
     try:
-        with open(RESTART_STOP_PATH) as f:
-            rec = json.load(f)
+        rec = atomic_file.load_json(RESTART_STOP_PATH)
         since = rec.get("stopped_at", rec.get("down_to"))
         hb = os.path.getmtime(RECONCILER_HEARTBEAT)
         # int(hb): the record holds whole seconds, and a heartbeat in that same
@@ -2416,8 +2402,7 @@ def _contracts_start_block():
     crash respawn)."""
     path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
     try:
-        with open(path) as f:
-            cfg = json.load(f)
+        cfg = atomic_file.load_json(path)
     except (OSError, ValueError):
         cfg = {}
     if not isinstance(cfg, dict):
@@ -2438,8 +2423,7 @@ def _contracts_start_block():
     if not contracts:
         return None
     try:
-        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
-            amounts = json.load(f).get("amounts")
+        amounts = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "amounts.ui.json")).get("amounts")
     except (OSError, ValueError, AttributeError):
         amounts = None
     if not isinstance(amounts, dict):
@@ -2547,6 +2531,11 @@ def _account_identity(lines):
     return h.hexdigest() if any_cred else None
 
 
+def _read_text(path):
+    with open(path) as f:
+        return f.read()
+
+
 def _park_account_state(identity):
     """Full unbind: the old account's last snapshot and account-guard state go
     aside, so a rebind to another account starts fresh instead of tripping the
@@ -2555,8 +2544,7 @@ def _park_account_state(identity):
     parked = {"identity": identity, "files": {}}
     for path in (_SNAPSHOT_PATH, _ACCOUNT_GUARD_PATH):
         try:
-            with open(path) as f:
-                parked["files"][path] = f.read()
+            parked["files"][path] = atomic_file.read_retry(_read_text, path)
         except FileNotFoundError:
             pass
     if not parked["files"]:
@@ -2577,8 +2565,7 @@ def _unpark_account_state(identity):
     """Rebind: the same account gets its parked state back (the guard judges it
     as before the unbind); any other account drops it."""
     try:
-        with open(PARKED_ACCOUNT_STATE) as f:
-            parked = json.load(f)
+        parked = atomic_file.load_json(PARKED_ACCOUNT_STATE)
     except FileNotFoundError:
         return
     except (OSError, ValueError):
@@ -2686,12 +2673,10 @@ def _sync_deployment_registry(ac_names):
     accepted for portfolio_config.json elsewhere in this file."""
     path = os.path.join(WORKSPACE, "state", "deployments.json")
     try:
-        with open(path) as f:
-            deps = json.load(f)
-    except (OSError, ValueError):
-        deps = {}
-    if not isinstance(deps, dict):
-        deps = {}
+        deps = atomic_file.load_json_for_update(path)
+    except OSError as e:  # still locked: never write a fresh dict over entries we could not read
+        _log(f"deployment registry sync skipped: {type(e).__name__}: {e}")
+        return
     changed = False
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     for n in ac_names:
@@ -2729,8 +2714,7 @@ def _prune_deployment_registry(ac_names):
     reconciler's `type: "daemon"` are untouched either way."""
     path = os.path.join(WORKSPACE, "state", "deployments.json")
     try:
-        with open(path) as f:
-            deps = json.load(f)
+        deps = atomic_file.load_json(path)
     except (OSError, ValueError):
         return
     if not isinstance(deps, dict):
@@ -2825,8 +2809,8 @@ def _run_scheduler_cycle():
         _migrate_legacy_ac_crons()
         _ac_migration_done = True
     try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
-            amounts = json.load(f).get("amounts") or {}
+        amounts = atomic_file.load_json(
+            os.path.join(WORKSPACE, "manager", "portfolio_config.json")).get("amounts") or {}
     except (OSError, ValueError):
         return  # no portfolio yet, or manager.py mid-write — next cycle retries
     if not isinstance(amounts, dict):
@@ -3128,8 +3112,7 @@ def _rewrite_report_job(d, mutate):
     file still flips its flag, and the reporter keeps saying why it is broken."""
     path = os.path.join(d, "job.json")
     try:
-        with open(path, encoding="utf-8") as f:
-            doc = json.load(f)
+        doc = atomic_file.load_json(path, encoding="utf-8")
     except (OSError, ValueError) as e:
         raise RuntimeError(f"bad job.json ({type(e).__name__})")
     if not isinstance(doc, dict):
@@ -3236,8 +3219,7 @@ def _strategy_futures_symbol(name):
     for fname in ("stats.json", "state.json"):
         path = os.path.join(WORKSPACE, "strategies", name, fname)
         try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
+            data = atomic_file.load_json(path, encoding="utf-8")
         except (OSError, ValueError):
             continue
         sym = data.get("symbol") if isinstance(data, dict) else None
@@ -3265,8 +3247,7 @@ def _strategy_is_portfolio(name):
 
     path = os.path.join(WORKSPACE, "strategies", name, "stats.json")
     try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+        data = atomic_file.load_json(path, encoding="utf-8")
     except (OSError, ValueError):
         return False
     return strategy_reporter.is_portfolio_stats(data)
@@ -3283,8 +3264,7 @@ def _saved_contracts(cfg):
     """The contracts in force: the UI mirror's when it carries the key (what
     lib/portfolio.load_portfolio_config applies), else the config's."""
     try:
-        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
-            mirror = json.load(f)
+        mirror = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "amounts.ui.json"))
     except (OSError, ValueError):
         mirror = None
     src = mirror if isinstance(mirror, dict) and "contracts" in mirror else cfg
@@ -3296,8 +3276,8 @@ def _pending_sent_roots():
     """Roots with 統一 lots parked unclaimed (manager/reconciler PENDING_SENT_PATH);
     None = the file is there but unreadable."""
     try:
-        with open(os.path.join(WORKSPACE_STATE, "president_pending_sent.json"), encoding="utf-8") as f:
-            rows = json.load(f)
+        rows = atomic_file.load_json(os.path.join(WORKSPACE_STATE, "president_pending_sent.json"),
+                                     encoding="utf-8")
     except FileNotFoundError:
         return set()
     except (OSError, ValueError):
@@ -3350,8 +3330,7 @@ ROLLOVER_DONE_NAME = "contract_rollover_done.json"  # = lib/portfolio._ROLLOVER_
 def _read_state_json(name):
     path = os.path.join(WORKSPACE_STATE, name)
     try:
-        with open(path) as f:
-            raw = json.load(f)
+        raw = atomic_file.load_json(path)
     except FileNotFoundError:
         return {}
     except (OSError, ValueError):
@@ -3485,8 +3464,7 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
         raise ValueError("CONTRACT_HALTED: 下單已停止,這台機器的下單程式還不能在停止中暫緩換倉——"
                          "請先更新 blave agent,或先啟動下單再換")
     try:
-        with open(os.path.join(WORKSPACE_STATE, "signal_gate.json")) as f:
-            gate = json.load(f)
+        gate = atomic_file.load_json(os.path.join(WORKSPACE_STATE, "signal_gate.json"))
     except (OSError, ValueError):
         gate = {}
     def keys_of(name):
@@ -3599,8 +3577,7 @@ def _held_keys():
     """Keys with a non-zero row in the last reconcile snapshot (`actual` and the bot's
     `ledger`), or None when the snapshot cannot be read."""
     try:
-        with open(os.path.join(WORKSPACE, "manager", "last_reconcile.json")) as f:
-            snap = json.load(f)
+        snap = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     except FileNotFoundError:
         return set()
     except (OSError, ValueError):
@@ -3630,8 +3607,9 @@ def _prune_removed_specs(specs, members, contracts):
         sym = None
         for fname in ("state.json", "stats.json"):
             try:
-                with open(os.path.join(WORKSPACE, "strategies", name, fname), encoding="utf-8") as f:
-                    sym = (json.load(f) or {}).get("symbol")
+                doc = atomic_file.load_json(os.path.join(WORKSPACE, "strategies", name, fname),
+                                            encoding="utf-8")
+                sym = (doc or {}).get("symbol")
             except (OSError, ValueError, AttributeError):
                 continue
             if sym:
@@ -3649,8 +3627,7 @@ def _prune_removed_specs(specs, members, contracts):
 
 def _file_snapshot(path):
     try:
-        with open(path, "rb") as f:
-            return f.read()
+        return atomic_file.read_bytes(path)
     except FileNotFoundError:
         return None
 
@@ -3788,8 +3765,7 @@ def _mirror_members():
     nothing, and setting its state aside closes nothing). Absent, corrupt or the wrong shape
     is (False, set()) there and here; a file that cannot be opened refuses the save."""
     try:
-        with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json"), encoding="utf-8") as f:
-            raw = json.load(f)
+        raw = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "amounts.ui.json"), encoding="utf-8")
     except FileNotFoundError:
         return False, set()
     except PermissionError as e:
@@ -3872,9 +3848,8 @@ def _cmd_amounts(args):
         raise ValueError("amounts needs a {strategy: dollars} mapping")
     prev_amounts = {}
     try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
-            a = json.load(f).get("amounts")
-            prev_amounts = a if isinstance(a, dict) else {}
+        a = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json")).get("amounts")
+        prev_amounts = a if isinstance(a, dict) else {}
     except (OSError, ValueError, AttributeError):
         pass  # kickoff/guard detection only — the main read below fail-closes properly
     prev = set(prev_amounts)
@@ -3932,8 +3907,7 @@ def _cmd_amounts(args):
 
     path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
     try:
-        with open(path) as f:
-            cfg = json.load(f)
+        cfg = atomic_file.load_json(path)
     except FileNotFoundError:
         cfg = _fresh_portfolio_config()  # fresh machine — first write creates the file
     except PermissionError as e:
@@ -4094,8 +4068,7 @@ def _cmd_amounts(args):
     # 反過來讓 amounts 儲存 fail。
     try:
         gate_path = os.path.join(WORKSPACE_STATE, "signal_gate.json")
-        with open(gate_path, encoding="utf-8") as f:
-            gate = json.load(f)
+        gate = atomic_file.load_json(gate_path, encoding="utf-8")
         if isinstance(gate, dict):
             kept = {n: v for n, v in gate.items()
                     if clean.get(n, 0) > 0 and n not in newly_funded}
@@ -4210,8 +4183,7 @@ def _cmd_execution(args):
 
     path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
     try:
-        with open(path) as f:
-            cfg = json.load(f)
+        cfg = atomic_file.load_json(path)
     except FileNotFoundError:
         cfg = _fresh_portfolio_config()  # fresh machine — first write creates the file
     except (OSError, ValueError) as e:
@@ -4497,8 +4469,7 @@ def _cmd_credentials_remove(args):
                 # sourced from itself, never from the config (P1-3)
                 mpath = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
                 try:
-                    with open(mpath) as f:
-                        mirror = json.load(f)
+                    mirror = atomic_file.load_json(mpath)
                 except FileNotFoundError:
                     mirror = None
                 except (OSError, ValueError) as e:
@@ -4510,8 +4481,7 @@ def _cmd_credentials_remove(args):
                                              contracts=mirror.get("contracts"))
                 cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
                 try:
-                    with open(cpath) as f:
-                        cfg = json.load(f)
+                    cfg = atomic_file.load_json(cpath)
                     if isinstance(cfg, dict) and isinstance(cfg.get("exchanges"), dict):
                         cfg["exchanges"] = {k: "" for k in cfg["exchanges"]}
                         # atomic: the reconciler mtime-watches + json-loads this
@@ -4541,8 +4511,7 @@ def _purge_deployment_registry(entries):
     the "reconciler" daemon entry too (same alert, same fix)."""
     path = os.path.join(WORKSPACE, "state", "deployments.json")
     try:
-        with open(path) as f:
-            deps = json.load(f)
+        deps = atomic_file.load_json(path)
     except (OSError, ValueError):
         return
     if not isinstance(deps, dict):
@@ -4628,8 +4597,7 @@ def _prune_unrouted_member(name):
     (_cmd_delete_strategy). Raises on a write failure — the files are not deleted then."""
     mpath = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
     try:
-        with open(mpath) as f:
-            mirror = json.load(f)
+        mirror = atomic_file.load_json(mpath)
     except FileNotFoundError:
         mirror = None
     except (OSError, ValueError) as e:
@@ -4640,8 +4608,7 @@ def _prune_unrouted_member(name):
         _write_ui_amounts_mirror(_drop(mirror.get("amounts")), _drop(mirror.get("exchanges")),
                                  contracts=_drop(mirror.get("contracts")) if "contracts" in mirror else None)
     cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
-    with open(cpath) as f:
-        cfg = json.load(f)
+    cfg = atomic_file.load_json(cpath)
     for key in ("amounts", "exchanges", "contracts", "asset_specs", "weights", "execution"):
         if isinstance(cfg.get(key), dict):
             cfg[key].pop(name, None)
@@ -4669,8 +4636,7 @@ def _cmd_delete_strategy(args):
     if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
         raise ValueError("bad strategy name")
     try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
-            cfg = json.load(f)
+        cfg = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"))
     except FileNotFoundError:
         cfg = {}  # fresh machine — no portfolio was ever written, nothing to guard
     except (OSError, ValueError) as e:
@@ -4708,8 +4674,8 @@ def _cmd_delete_strategy(args):
             bound = {"?"}   # unreadable: cannot tell, keep refusing
         routed = (cfg.get("exchanges") or {}).get(name) if isinstance(cfg.get("exchanges"), dict) else None
         try:  # the UI mirror is what the reconciler routes by when it exists
-            with open(os.path.join(WORKSPACE, "manager", "amounts.ui.json")) as f:
-                mex = json.load(f).get("exchanges")
+            mex = atomic_file.load_json(
+                os.path.join(WORKSPACE, "manager", "amounts.ui.json")).get("exchanges")
             routed = routed or (mex.get(name) if isinstance(mex, dict) else None)
         except FileNotFoundError:
             pass
@@ -4877,11 +4843,7 @@ def _register_reconciler_deployment(start_type_ok=None):
     value alone rather than erasing a real prior result with "unknown"."""
     dep_path = os.path.join(WORKSPACE, "state", "deployments.json")
     try:
-        try:
-            with open(dep_path) as f:
-                deps = json.load(f)
-        except (OSError, ValueError):
-            deps = {}
+        deps = atomic_file.load_json_for_update(dep_path)
         entry = deps.setdefault("reconciler", {
             "type": "daemon", "expect_every_minutes": 5,
             "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
@@ -4896,7 +4858,7 @@ def _register_reconciler_deployment(start_type_ok=None):
         # strategy's health registration with it
         with atomic_file.replacing(dep_path) as f:
             json.dump(deps, f, indent=2)
-    except OSError as e:
+    except OSError as e:  # still locked: left as it is, not replaced by this entry alone
         _log(f"deployments.json registration failed: {e}")
 
 
@@ -4948,9 +4910,8 @@ def _restart_reconciler(args):
         return "reconciler restarted"
     if platform.system() == "Windows":
         try:
-            with open(os.path.join(WORKSPACE, "manager",
-                                   "portfolio_config.json")) as f:
-                routed = set((json.load(f).get("exchanges") or {}).values())
+            cfg = atomic_file.load_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"))
+            routed = set((cfg.get("exchanges") or {}).values())
         except (OSError, ValueError):
             routed = set()
         # Resolved once, up front, so the Administrator-identity fix applies
@@ -5247,11 +5208,15 @@ def _record_manual_close_row(symbols):
     from datetime import datetime
     path = os.path.join(WORKSPACE, "manager", "order_errors.json")
     try:
-        with open(path) as f:
-            rows = json.load(f)
-        if not isinstance(rows, list):
-            rows = []
-    except (OSError, ValueError):
+        rows = atomic_file.load_json(path)
+    except FileNotFoundError:
+        rows = []
+    except ValueError:
+        rows = None
+    # = lib/portfolio._order_errors_for_update: an OSError (still locked) raises to the caller;
+    # not JSON / not a list is set aside as .corrupt, not written over
+    if not isinstance(rows, list):
+        atomic_file.replace_retry(path, path + ".corrupt")
         rows = []
     rows.append({"kind": "manual_close_required", "symbols": symbols, "reason": "identity",
                  "ts": datetime.utcnow().isoformat(), "symbol": "*", "exchange": venue_traits.CAPITAL,
@@ -5794,8 +5759,7 @@ def _mgmt_pid_alive(pid):
 
 def _read_mgmt_job():
     try:
-        with open(_manage_paths()["job"]) as f:
-            job = json.load(f)
+        job = atomic_file.load_json(_manage_paths()["job"])
     except (OSError, ValueError):
         return None
     return job if isinstance(job, dict) else None
@@ -5821,8 +5785,7 @@ def _mgmt_result_fresh(job):
     if not out:
         return False
     try:
-        with open(os.path.join(out, "stats.json")) as f:
-            stats = json.load(f)
+        stats = atomic_file.load_json(os.path.join(out, "stats.json"))
         return _mgmt_result_matches(stats, job)
     except (OSError, ValueError, TypeError, AttributeError):
         return False
@@ -6166,8 +6129,7 @@ def _versions_path(name, *parts):
 
 def _read_rerun_doc(name):
     try:
-        with open(_versions_path(name, "rerun.json"), encoding="utf-8") as f:
-            doc = json.load(f)
+        doc = atomic_file.load_json(_versions_path(name, "rerun.json"), encoding="utf-8")
     except (OSError, ValueError):
         return None
     return doc if isinstance(doc, dict) else None
@@ -6230,8 +6192,7 @@ def _classify_rerun(tail):
 def _version_code_hash(name, n):
     """v<n>.json's code_hash (lib.strategy.code_hash: sha256 of the file bytes, 16 hex), or None."""
     try:
-        with open(_versions_path(name, f"v{n}.json"), encoding="utf-8") as f:
-            h = json.load(f).get("code_hash")
+        h = atomic_file.load_json(_versions_path(name, f"v{n}.json"), encoding="utf-8").get("code_hash")
     except (OSError, ValueError, AttributeError):
         return None
     return h if isinstance(h, str) and h else None
@@ -6421,8 +6382,8 @@ def _cmd_version_restore(args):
     def _run():
         with _RESTORE_LOCK:
             try:
-                with open(_versions_path(name, "index.json"), encoding="utf-8") as f:
-                    prev = json.load(f).get("current")
+                prev = atomic_file.load_json(_versions_path(name, "index.json"),
+                                             encoding="utf-8").get("current")
             except (OSError, ValueError, AttributeError):
                 prev = None
             res = _run_restore(name, n)
@@ -6588,8 +6549,8 @@ def _deployed_names():
     the callers must not guess who is live from that (a deployed strategy taken for undeployed
     would get a backtest: Generated At restamped, MCPT re-run)."""
     try:
-        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
-            amounts = json.load(f).get("amounts") or {}
+        amounts = atomic_file.load_json(
+            os.path.join(WORKSPACE, "manager", "portfolio_config.json")).get("amounts") or {}
     except FileNotFoundError:
         return set()
     except (OSError, ValueError, AttributeError):
@@ -6614,8 +6575,7 @@ def _refresh_plan(name):
     except OSError:
         return None, "NOT_RUNNABLE"
     try:
-        with open(_versions_path(name, "index.json"), encoding="utf-8") as f:
-            items = json.load(f).get("items") or []
+        items = atomic_file.load_json(_versions_path(name, "index.json"), encoding="utf-8").get("items") or []
         if not isinstance(items, list):
             raise ValueError("items")
     except OSError:
@@ -6921,8 +6881,7 @@ def _resume_perf_refresh():
         if not _STATS_REFRESH_NAME_RE.fullmatch(name):
             continue
         try:
-            with open(_perf_path(name), encoding="utf-8") as f:
-                doc = json.load(f)
+            doc = atomic_file.load_json(_perf_path(name), encoding="utf-8")
         except (OSError, ValueError):
             continue
         if isinstance(doc, dict) and doc.get("status") == "running":

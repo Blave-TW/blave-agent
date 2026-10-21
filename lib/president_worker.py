@@ -42,18 +42,27 @@ import threading
 import time
 from datetime import datetime, time as dtime, timedelta, timezone
 
-try:
-    import president_vault  # run as a script: lib/ is sys.path[0]
-    import president_quote
-except ImportError:
+if __package__ == "lib":  # never a same-named file elsewhere on sys.path
     from lib import president_vault, president_quote
+else:  # run as a script: lib/ is sys.path[0]
+    import president_vault
+    import president_quote
 try:
-    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
-except ImportError:
-    try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
         from lib.winreplace import atomic_replace
-    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
-        atomic_replace = os.replace
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
+        from lib.winreplace import load_json
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = os.path.join(WORKSPACE, "state")
@@ -463,11 +472,17 @@ def _nssm(*args, timeout=60):
 
 def _deployments(update):
     try:
-        with open(DEPLOYMENTS_PATH, encoding="utf-8") as f:
-            deps = json.load(f)
-    except (OSError, ValueError):
+        deps = load_json(DEPLOYMENTS_PATH, encoding="utf-8")
+    except FileNotFoundError:
         deps = {}
-    if not isinstance(deps, dict):
+    except ValueError:
+        deps = None
+    except OSError as e:  # still locked: skip rather than write the others away
+        _log(f"deployments.json not updated: {type(e).__name__}: {e}")
+        return
+    if not isinstance(deps, dict):  # = runtime atomic_file.load_json_for_update: set aside, start over
+        _log("deployments.json does not parse — set aside as .corrupt")
+        atomic_replace(DEPLOYMENTS_PATH, DEPLOYMENTS_PATH + ".corrupt")
         deps = {}
     update(deps)
     _atomic_write(DEPLOYMENTS_PATH, deps)

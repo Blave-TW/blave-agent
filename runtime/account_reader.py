@@ -78,8 +78,7 @@ def _read_env(path):
 
 def _read_flow_state():
     try:
-        with open(FLOW_STATE_PATH) as f:
-            data = json.load(f)
+        data = atomic_file.load_json(FLOW_STATE_PATH)
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -95,8 +94,7 @@ def _write_flow_state(state):
 
 def _read_ever_ok():
     try:
-        with open(EVER_OK_PATH) as f:
-            data = json.load(f)
+        data = atomic_file.load_json(EVER_OK_PATH)
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}

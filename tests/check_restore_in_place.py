@@ -425,6 +425,19 @@ except FileNotFoundError as e:
     check(getattr(e, "restore_code", None) == "NO_VERSION" and p22.read_bytes() == before,
           "blob without an index entry → NO_VERSION, file untouched (not a misleading inplace:false)")
 
+# ── a broken index: NO_VERSION that says how to get the list back, file untouched ──
+ix = WS / "strategies" / P22 / "versions" / "index.json"
+ix_before = ix.read_bytes()
+ix.write_text("{broken")
+try:
+    strategy.restore(P22, 1)
+    check(False, "broken index → NO_VERSION")
+except FileNotFoundError as e:
+    check(getattr(e, "restore_code", None) == "NO_VERSION" and "backtest" in str(e)
+          and "rebuild" in str(e) and p22.read_bytes() == before,
+          "broken index → NO_VERSION telling the agent to run a backtest to rebuild it, file untouched")
+ix.write_bytes(ix_before)
+
 # ── P2-6: two unbacktested edits restored over in turn are both kept ──────────
 vd = WS / "strategies" / P22 / "versions"
 for f in vd.glob("pre-restore*.py"):

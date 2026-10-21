@@ -66,6 +66,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 from contextlib import contextmanager
@@ -77,6 +78,12 @@ try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 from lib.president_contracts import (MONTH_CODES, PROD_RE, ROOTS, TAIPEI,  # noqa: F401
                                      computed_near, entry_roll_at, front_month, prod_id,
                                      settlement_at)
@@ -228,20 +235,52 @@ def _listed(api, root):
     return [c.prod_id for c in resp.data or []]
 
 
+# = lib/capital_vault.MARKER_UNREADABLE_MAX_S: past this a still-unreadable marker raises.
+MARKER_UNREADABLE_MAX_S = president_vault.ORDER_SETTLE_S * 15
+_marker_unreadable_since = None
+
+
 def _last_orders():
+    return _read_last_orders()[0]
+
+
+def _read_last_orders():
+    """({productid: send time}, floor): `floor` is a send time to assume for EVERY contract when
+    the file cannot be read — now while it is locked (nothing counts as caught up), its mtime
+    when it does not parse (expires one settle window later). Locked past
+    MARKER_UNREADABLE_MAX_S → PresidentError, so the reconciler's failed-read path reports it."""
+    global _marker_unreadable_since
     try:
-        with open(LAST_ORDER_PATH, encoding="utf-8") as f:
-            d = json.load(f)
-        return d if isinstance(d, dict) else {}
-    except (OSError, ValueError):
-        return {}
+        d = load_json(LAST_ORDER_PATH, encoding="utf-8")
+    except FileNotFoundError:
+        d = {}
+    except ValueError:
+        d = None
+    except OSError as e:
+        now = time.time()
+        if _marker_unreadable_since is None:
+            _marker_unreadable_since = now
+        if now - _marker_unreadable_since > MARKER_UNREADABLE_MAX_S:
+            raise PresidentError(
+                f"統一下單紀錄 {LAST_ORDER_PATH} 已 {int(now - _marker_unreadable_since)} 秒讀不到"
+                f"({type(e).__name__}),無法確認部位是否已更新,本輪不下統一單 / the 統一 send "
+                f"marker has been unreadable for {int(now - _marker_unreadable_since)} s; 統一 is "
+                f"not traded until it can be read") from e
+        return {}, now
+    _marker_unreadable_since = None
+    if isinstance(d, dict):
+        return d, 0.0
+    try:
+        return {}, os.path.getmtime(LAST_ORDER_PATH)
+    except OSError:
+        return {}, time.time()
 
 
 def last_order_at(productid=None):
     """Unix time of the last send (for `productid`, or any), 0.0 if none."""
-    d = _last_orders()
+    d, floor = _read_last_orders()
     vals = [d.get(productid)] if productid else list(d.values())
-    return max([float(v) for v in vals if isinstance(v, (int, float))] or [0.0])
+    return max([float(v) for v in vals if isinstance(v, (int, float))] + [floor])
 
 
 def snapshot_caught_up(productid=None):
@@ -278,8 +317,14 @@ def _claim(symbol, action, lots, intent, book_months=None):
 
 def _mark_order_sent(productid):
     """Raises when the marker cannot be written: an order the guards cannot see
-    is an order that may be sent twice, so nothing is sent without it."""
-    d = _last_orders()
+    is an order that may be sent twice, so nothing is sent without it. The same when the
+    markers cannot be read: writing this one alone would drop the other months' markers."""
+    d, floor = _read_last_orders()
+    if floor:
+        if time.time() - floor < president_vault.ORDER_SETTLE_S:
+            raise PresidentError("統一下單紀錄讀不到,這張單沒有送出,下一輪會再試 / the 統一 send "
+                                 "markers could not be read — not sending; retried next round")
+        d = {}  # not JSON, and every send it could have held has settled: start over
     d[productid] = time.time()
     try:
         president_vault.replace_json(LAST_ORDER_PATH, d)
@@ -325,34 +370,93 @@ def _checked_close(symbol, action, lots, book_months=None):
 
 # ── local duplicate guard (rule 3) ───────────────────────────────────────────
 
+_TAGS_BUSY = ("統一期貨的防重複下單紀錄暫時讀不到(被其他程式占用),這張單沒有送出,下一輪會自動再試 / "
+              "the 統一 duplicate-order record is busy (another program holds it): this order was not "
+              "sent and is retried next round")
+_TAGS_BROKEN_TODAY = ("這張統一期貨進場單沒有送出:防重複下單紀錄今天(台北時間)損壞了,今天帶編號的進場單都不送,"
+                      "午夜後自動恢復 / this 統一 entry was not sent: the duplicate-order record broke today "
+                      "(Taipei time), so tagged entries are refused until midnight Taipei, when it clears by itself")
+
+
+def _write_tags(book):
+    tmp = _TAGS_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(book, f)
+    atomic_replace(tmp, _TAGS_PATH)
+
+
 def _tags_today():
+    """(today, today's sent tags, sealed). Locked → PresidentError (clears next round). Not a
+    book, last written before today (mtime, Taipei) → it cannot hold a tag of today's: set aside
+    as .corrupt, empty. Written today → set aside too, and a fresh book is sealed for the day:
+    today's earlier entry tags are lost, so no entry goes out until tomorrow, while closes are
+    still checked against and recorded in the sealed book. The broken file is copied aside and
+    then replaced, never moved first: at every moment the path holds the broken book or its
+    replacement, so a failed or interrupted write still finds the broken one next time (an
+    absent book would read as "no tags", unsealed). Call under the book's lock."""
     today = datetime.now(TAIPEI).strftime("%Y-%m-%d")
     try:
-        with open(_TAGS_PATH, encoding="utf-8") as f:
-            book = json.load(f)
-    except (OSError, ValueError):
+        book = load_json(_TAGS_PATH, encoding="utf-8")
+    except FileNotFoundError:
         book = {}
-    return today, (book.get("tags", []) if book.get("date") == today else [])
+    except ValueError:
+        book = None
+    except OSError as e:
+        raise PresidentError(f"{_TAGS_BUSY} ({type(e).__name__})") from e
+    if not isinstance(book, dict):
+        try:
+            written = datetime.fromtimestamp(os.path.getmtime(_TAGS_PATH), TAIPEI).strftime("%Y-%m-%d")
+        except OSError:
+            written = today
+        sealed = written == today
+        fresh = {"date": today, "tags": [], **({"sealed": True} if sealed else {})}
+        try:
+            shutil.copyfile(_TAGS_PATH, _TAGS_PATH + ".corrupt")
+            _write_tags(fresh)
+        except OSError as e:
+            raise PresidentError(f"{_TAGS_BUSY} ({type(e).__name__})") from e
+        return today, [], sealed
+    if book.get("date") != today:
+        return today, [], False
+    tags = book.get("tags", [])
+    return today, (tags if isinstance(tags, list) else []), book.get("sealed") is True
 
 
 @contextmanager
-def _tag_guard(tag):
+def _tag_guard(tag, intent="entry"):
     """Check `tag` against today's sends, hold a cross-process lock until the
-    caller records it (only once the broker took the order) or gives up."""
+    caller records it (only once the broker took the order) or gives up.
+    A sealed book (broken earlier today) refuses entries until tomorrow."""
     if tag is None:
         yield lambda: None
         return
     with _os_lock(_TAGS_PATH + ".lock", 30, "client_tag book"):
-        today, tags = _tags_today()
+        today, tags, sealed = _tags_today()
+        if sealed and intent != "reduce":
+            raise PresidentError(_TAGS_BROKEN_TODAY)
         if tag in tags:
             raise DuplicateOrder(f"client_tag {tag!r} was already sent today — refused (the broker "
                                  f"has no client order id to deduplicate on)")
 
         def record():
-            tmp = _TAGS_PATH + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"date": today, "tags": tags + [tag]}, f)
-            atomic_replace(tmp, _TAGS_PATH)
+            # the broker already took the order: a book unreadable now still gets this tag,
+            # merged with the ones read at the check, never written down to this tag alone
+            # Nothing raises out of here: the order is already out, and an exception would skip
+            # the caller's wait for the fill report.
+            try:
+                day, now_tags, now_sealed = _tags_today()
+            except (PresidentError, OSError):
+                day, now_tags, now_sealed = today, [], sealed
+            same_day = day == today
+            have = (now_tags if same_day else []) + tags
+            book = {"date": today, "tags": list(dict.fromkeys(have + [tag]))}
+            if sealed or (same_day and now_sealed):
+                book["sealed"] = True
+            try:
+                _write_tags(book)
+            except OSError as e:
+                logging.error(f"president: client_tag {tag!r} sent but not recorded in {_TAGS_PATH} "
+                              f"({type(e).__name__}: {e}) — a retry with this tag today is not caught")
         yield record
 
 
@@ -530,7 +634,7 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
     from unitrade.unitrade import DOrderObject
 
     reports = _Reports()
-    with _tag_guard(client_tag) as record_tag:
+    with _tag_guard(client_tag, intent) as record_tag:
         fields["symbol"] = _claim(sym, action, lots, intent, book_months)
         with _session(env) as api:
             if intent == "entry":
