@@ -231,6 +231,21 @@ check(not bad, f"_us_latest_closed_date = wait_for_bar._us_expected off holidays
 us_draft("us_mix", US_SRC.replace("from lib.data import fetch_usstock_price",
                                   "from lib.data import fetch_usstock_price, fetch_kline"), "2026-10-20")
 check(us_pv("us_mix", datetime(2026, 10, 20, 22, 30)) is None, "US prices next to crypto ones: no preview (no live path)")
+# what the save refuses (US_SYMBOL) gets no preview either: Type C, a bare ticker as SYMBOL
+dc = WS / "strategies" / "us_c"
+dc.mkdir()
+(dc / "strategy.py").write_text(US_SRC.replace('SYMBOL = "NVDAUSDT"\n', "# Type: C\n"))
+(dc / runner.BACKTEST_STATE_FILE).write_text(json.dumps({
+    "type": "portfolio", "market": "swap", "weights": {"NVDAUSDT": 0.5, "AAPLUSDT": 0.5},
+    "closes": {"NVDAUSDT": 216.47, "AAPLUSDT": 250.0}, "rebalance_at": 0,
+    "bar_at": int(pd.Timestamp("2026-10-20").timestamp()),
+    "code_hash": code_hash((dc / "strategy.py").read_bytes())}))
+check(us_pv("us_c", datetime(2026, 10, 20, 22, 30)) is None, "US prices, Type C: no preview (US_SYMBOL at save)")
+bare = US_SRC.replace('SYMBOL = "NVDAUSDT"', 'SYMBOL = "NVDA"')
+us_draft("us_bare", bare, "2026-10-20")
+st = json.loads((WS / "strategies" / "us_bare" / runner.BACKTEST_STATE_FILE).read_text())
+(WS / "strategies" / "us_bare" / runner.BACKTEST_STATE_FILE).write_text(json.dumps(dict(st, symbol="NVDA")))
+check(us_pv("us_bare", datetime(2026, 10, 20, 22, 30)) is None, "US prices, bare ticker SYMBOL: no preview (US_SYMBOL at save)")
 us_draft("us_4h", US_SRC.replace('INTERVAL = "1d"', 'INTERVAL = "4h"'), "2026-10-20")
 check(us_pv("us_4h", datetime(2026, 10, 20, 22, 30)) is None, "US prices, not daily: no preview")
 

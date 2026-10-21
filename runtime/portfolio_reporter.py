@@ -602,8 +602,8 @@ def backtest_previews(cfg, states, now=None):
     signal yet (Type C: no live weights; Type A: no state.json) plus the PREVIEW_EXTRA_MAX most
     recently written files of strategies not picked that pass the checks below (a file whose code
     no longer matches must not take a draft's slot) — those are drafts, and a stale state.json of
-    an unpicked one is not what a save would compute. US-stock prices: daily and US-only (what
-    the save gate lets go live). `latest` = its bar is still the newest closed one
+    an unpicked one is not what a save would compute. US-stock prices: a daily Type A on US
+    prices alone whose symbol is a pair (what the save gate lets go live). `latest` = its bar is still the newest closed one
     (_preview_is_latest); the dialog uses either and names the bar.
       Type C: {type: portfolio, market, weights, closes, rebalance_at, bar_at, bar_date, latest}
       Type A: {type: signal, symbol, market, position, close, bar_at, bar_date, latest}
@@ -656,8 +656,12 @@ def backtest_previews(cfg, states, now=None):
         except (TypeError, ValueError):
             continue
         td = _ac_interval(name)
-        # US prices next to other markets, or not daily: wait_for_bar's bar for it is not known here
-        if td is None or ("us_stock" in markets and (markets != {"us_stock"} or td != timedelta(days=1))):
+        if td is None:
+            continue
+        # US prices: only what the save gate lets go live (command_listener._us_signal_refusal's
+        # first checks) — a daily Type A on US prices alone, trading a pair (the stock perp)
+        if "us_stock" in markets and (markets != {"us_stock"} or td != timedelta(days=1)
+                                      or data.get("type") != "signal" or not _pair_quote(data.get("symbol"))):
             continue
         row = {"bar_at": bar_at, "bar_date": _bar_date(bar_at, markets),
                "latest": _preview_is_latest(bar_at, markets, td, now),
