@@ -1391,12 +1391,6 @@ msgstr "在 Binance 建金鑰時，把這個 IP 加進白名單。"
 msgid "cx.note.oneV"
 msgstr "在 {venue} 建金鑰時，有設 IP 白名單的話，把這個 IP 加進去。"
 
-msgid "cx.note.subAcct"
-msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。Blave 會管這個帳戶上的所有部位，你手動開的單也可能被平掉。"
-
-msgid "cx.note.subAcctOwn"
-msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
-
 # 連接框選 StockCoin 時說明區多一句(其他家不出;同網頁 workspace_cx_note_stockcoin)
 msgid "cx.note.stockcoin"
 msgstr "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。"
@@ -1561,9 +1555,6 @@ msgstr "請輸入整數口數，例如 3"
 
 msgid "tr.badLotsOld"
 msgstr "這一格是舊設定的小數口數，請改成整數，例如 3"
-
-msgid "tr.lev.binance5"
-msgstr "Binance 子帳戶的合約槓桿最多 5 倍。"
 
 msgid "tr.err.paperLev"
 msgstr "{sym} 沒有下單：部位要到 {gross} {c}，超過模擬帳戶上限 {cap} {c}（淨值的 {x} 倍）。請調低金額。"
@@ -5591,13 +5582,13 @@ msgid "br.pressing"
 msgstr "按 {key}"
 
 msgid "cap.venue"
-msgstr "群益"
+msgstr "群益期貨"
 
 msgid "cap.group.tw"
 msgstr "台股"
 
 msgid "cap.title"
-msgstr "連接群益"
+msgstr "連接群益期貨"
 
 msgid "cap.meta"
 msgstr "可以下單、讀帳戶。一次只能連一個。"
@@ -8257,9 +8248,6 @@ msgstr "台幣換算用 {d} 的匯率（≈），登入後會更新"
 msgid "tr.marketVenue.rejected"
 msgstr "「{name}」{more}的市場這家交易所下不了：台指期只能用{president}或{capital}，加密只能用加密交易所。到「選擇策略」取消勾選後再儲存。"
 
-msgid "tr.venueCapitalFull"
-msgstr "群益期貨"
-
 msgid "tr.startOffNoRoute"
 msgstr "先到策略組合存一次下單設定，策略才會下到目前綁定的帳戶。"
 
@@ -8620,9 +8608,6 @@ msgstr "金鑰只存在你的雲端主機"
 
 msgid "cx.fact.perm"
 msgstr "建議只開讀取和交易，不開提領"
-
-msgid "cx.fact.ai"
-msgstr "下單照策略的程式跑，不經過 AI"
 
 # 模擬交易的成交方式:收進「模擬怎麼成交？」展開列(cx.paperNote 退役)
 msgid "cx.paper.q"

@@ -206,12 +206,13 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       // 淨值倍數只剩自動下單 › 部位的合計(trPlanTotal,讀 trZoneSum 的 multText);存金額框 0.1.27 起不列合計與倍數(canon 確認 modal)
       ok("淨值倍數千分位兩位小數(trMultFmt);只此一處 trMultFmt、只有 trZoneSum 組 tr.equityMult", vm.runInContext("trMultFmt(4494.68)", ctx) === "4,494.68"
         && (src.match(/t\("tr\.equityMult", \{ x: trMultFmt\(mult\) \}\)/g) || []).length === 1 && (src.match(/"tr\.equityMult"/g) || []).length === 1 && !/equityMult", \{ x: [^}]*toFixed/.test(src));
-      ok("拿掉的字串與 CSS 不留殘骸;tr.lev.binance5 留著(連接框子帳戶說明還在用)", (() => {
-        const gone = ["tr.lev.margin", "tr.lev.marginShort", "tr.lev.pctLt1", "tr.lev.loss", "tr.lev.lossPaper", "tr.lev.ack", "tr.txfBigNotional", "tr.txfBigNotional1", "tr.txfBigLots"];
+      ok("拿掉的字串與 CSS 不留殘骸(含 Wei 10-21 拿掉的連接框子帳戶建議與「不經過 AI」那句)", (() => {
+        const gone = ["tr.lev.margin", "tr.lev.marginShort", "tr.lev.pctLt1", "tr.lev.loss", "tr.lev.lossPaper", "tr.lev.ack", "tr.txfBigNotional", "tr.txfBigNotional1", "tr.txfBigLots",
+          "tr.lev.binance5", "cx.note.subAcct", "cx.note.subAcctOwn", "cx.fact.ai", "tr.venueCapitalFull"];
         const po = ["zh", "en"].map((l) => fs.readFileSync(path.join(S, "i18n", l + ".po"), "utf8")), strs = fs.readFileSync(path.join(R, "strings.js"), "utf8");
         const css = fs.readFileSync(path.join(R, "app.css"), "utf8") + fs.readFileSync(path.join(R, "trade.css"), "utf8");
         return gone.every((k) => po.every((p) => !p.includes('msgid "' + k + '"')) && !strs.includes(J(k) + ":") && !src.includes('"' + k + '"'))
-          && po.every((p) => p.includes('msgid "tr.lev.binance5"')) && !/\.pf-lev|\.cf-ack|cf-warn|has-warn/.test(css) && !/\b(LEV_T[123]|trLevLevel|trLevPct|trTxfBigWarn)\b/.test(src); })()); }
+          && !/\.pf-lev|\.cf-ack|cf-warn|has-warn|cx-sub/.test(css) && !/\b(LEV_T[123]|trLevLevel|trLevPct|trTxfBigWarn|CX_SUB_ACCT)\b|cx-sub/.test(src); })()); }
     { /* 確認框(0.1.27 canon 確認 modal;推翻 A 版的整份全列):BTC 不變、ETH 500 → 800、ADA 300 → 0、SOL 被取消勾選(移出)。
          標的表只列目標有變的(沒在跑「原 → 新」,在跑列要下的單);策略層只剩移出／加入 0／換合約。「移出 · 平倉」只在存完可能下單時(trMayFire) */
       const st4 = (ex) => ({ symbol: ex, position: 1, market: "swap" });

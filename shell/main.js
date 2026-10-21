@@ -3640,8 +3640,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 統一有部位時結束 Blave(Wei 10-07:擋一下、講白不會平倉)
   presQuitTitle: "Quit Blave?", presQuitBody: "{lots} lot(s) are still open at 統一期貨 (President Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 統一 app.",
   presQuitUnknown: "Positions at 統一期貨 (President Futures) can't be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the 統一 app.",
-  caplQuitUnknown: "Positions at 群益 (Capital) can't be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the 群益 app.",
-  caplQuitBody: "{lots} lot(s) are still open at 群益 (Capital). After you quit, strategies place no more orders and these positions are not closed — handle them in the 群益 app.",
+  caplQuitUnknown: "Positions at 群益期貨 (Capital Futures) can't be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the 群益 app.",
+  caplQuitBody: "{lots} lot(s) are still open at 群益期貨 (Capital Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 群益 app.",
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   unsavedTitle: "Leave without saving?", unsavedBody: "Your Portfolio changes will be lost.", unsavedGo: "Leave",
   unsavedNote: "Unsaved Portfolio changes will be lost.",

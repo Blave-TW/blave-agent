@@ -1535,7 +1535,6 @@ const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, 
   bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" },
   stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" } };
 const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit", "stockcoin"];
-const CX_SUB_ACCT = ["binance", "okx", "bybit", "gateio", "bingx"];   // 子帳戶建議只給這幾家(同網頁 CX_SUB_ACCT;StockCoin 待 Wei)
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
 /* 統一期貨入口:0.1.18 藏、統一行情(lib/president_quote 實盤 tick)驗過後開。關著時只藏連接框的下拉那一項,其餘(帳戶列、
    部位頁、狀態句、開通中／開通過的「繼續」鈕)對已綁定的機器照舊。tests/check_shell_connect_venues 讀這個值決定期望清單 */
@@ -2053,8 +2052,8 @@ function trAlertShow() { const S = TR_BAGS[ENV.cur], a = $("tr-alert"); a.hidden
    env 由呼叫端帶(跨 await 之後 TR 可能已經是另一邊了)。雲端**不可以**沿用本機那組句子:它們寫死了「這台電腦」。 */
 // Type B 的拒絕(TYPE_B: 「名」…)→ 一句完整的話,名字換成顯示名;其他代碼回 null,照原文那句
 /* runtime 存金額時點名拒絕的那支(「CODE: 「名」…」)→ 句子(同網頁 pfRejectText df9f96df)。NOT_TXF = 統一只下台指期(碼是統一的);
-   MARKET_VENUE = 策略的市場跟交易所不符(群益只下台指期、台指期／台股策略綁到加密交易所)。交易所名寫各語言自己的,不用選單的雙語標籤 */
-function trTwVenueName(id) { return id === "capital" ? t("tr.venueCapitalFull") : t("pres.venue"); }
+   MARKET_VENUE = 策略的市場跟交易所不符(群益只下台指期、台指期／台股策略綁到加密交易所) */
+function trTwVenueName(id) { return id === "capital" ? t("cap.venue") : t("pres.venue"); }
 function trRejectSentence(rc) {
   // 點名好幾支時最多列三支,其餘「等 N 支」(句子裡的名字寫顯示名;引號在字串裡,多的那段接在引號外)
   const ns = (rc.names && rc.names.length ? rc.names : [rc.name]).map(trDisplay), name = ns.slice(0, 3).join(t("tr.rejNameSep")), more = ns.length > 3 ? t("tr.rejMore", { n: ns.length - 3 }) : "";
@@ -5205,11 +5204,11 @@ function cxVenueField(L) {
     lab.append(r, trEl("span", "cf-opt-t", ti), cxMonoNums(trEl("span", "cf-opt-d"), de));
     if (!wrap) { fs.appendChild(lab); return; }
     /* 選了真實帳戶:事實長在卡裡。卡是 div,label 與 ul 是兄弟、ul 用 aria-describedby 掛在圓鈕上(不進選項的可及名稱)。
-       期貨商沒有「只開讀取和交易」的權限設定:只留兩行、「金鑰」改「憑證」 */
+       期貨商沒有「只開讀取和交易」的權限設定:只留一行、「金鑰」改「憑證」 */
     const card = trEl("div", "cf-opt cf-wrap" + (off ? " off" : "")), ul = trEl("ul", "cx-facts");
     ul.id = "cx-facts"; r.setAttribute("aria-describedby", ul.id);
-    const facts = fut ? [CXF.env === "cloud" ? t("cx.fact.certCloud") : t("cx.fact.cert"), t("cx.fact.ai")]
-      : [CXF.env === "cloud" ? t("cx.fact.keyCloud") : t("cx.fact.key"), t("cx.fact.perm"), t("cx.fact.ai")];
+    const facts = fut ? [CXF.env === "cloud" ? t("cx.fact.certCloud") : t("cx.fact.cert")]
+      : [CXF.env === "cloud" ? t("cx.fact.keyCloud") : t("cx.fact.key"), t("cx.fact.perm")];
     facts.forEach((x) => ul.appendChild(trEl("li", "", x)));
     card.append(lab, ul); fs.appendChild(card);
   });
@@ -5303,9 +5302,6 @@ function cxModalPaint() {
     // OKX 的 Passphrase 是建立 API 金鑰時自己設的那組:最常見的錯是填成登入密碼(設計稽核 005 第 10 條)
     if (CX_VENUES[venue] && CX_VENUES[venue].pass) fld("cx-pass", t("cx.passphrase"), "passphrase", t("cx.passHint"));
     const note = trEl("div", "cx-note");
-    // 子帳戶建議排第一段(ux-order-1-4-5 §3.4):只給 CX_SUB_ACCT 那幾家;機器只管自己的部位(self_ledger)時換成單向持倉那句
-    if (CX_SUB_ACCT.indexOf(venue) >= 0) note.appendChild(trEl("p", "cx-sub", t((trReport() || {}).self_ledger === true ? "cx.note.subAcctOwn" : "cx.note.subAcct")
-      + (venue === BINANCE ? (LANG === "zh" ? "" : " ") + t("tr.lev.binance5") : "")));
     // StockCoin 目前只讀得到合約帳戶,這句只對它講(同網頁 cx_note_stockcoin)
     if (venue === "stockcoin") note.appendChild(trEl("p", "", t("cx.note.stockcoin")));
     note.appendChild(trEl("p", "", venue === BINANCE ? t("cx.note.one") : t("cx.note.oneV", { venue: trVenueLabel(venue, true) })));
