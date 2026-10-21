@@ -68,7 +68,8 @@ for (const lg of ["zh", "en"]) {
 }
 // 0.1.28 每組一條 pip(設計定稿 engine-card-copy-2026-10-21):進度行只印套件名(mono、不呼叫 t),eng.nth / eng.batch / eng.batchOne 退役;
 // 套件那一步超時的主詞是這一步(整組一起計時),SDK 那條照舊是名字(eng.toHead)
-const PKGS28 = { zh: { "eng.toHeadPkgs": "安裝策略套件超過 {limit}還沒完成，已經停下。" }, en: { "eng.toHeadPkgs": "Installing strategy packages didn’t finish within {limit} and was stopped." } };
+const PKGS28 = { zh: { "eng.toHeadPkgs": "安裝策略套件超過 {limit}還沒完成，已經停下。", "eng.waitPyc": "上一次的安裝還在收尾，最多等 15 秒。" },
+  en: { "eng.toHeadPkgs": "Installing strategy packages didn’t finish within {limit} and was stopped.", "eng.waitPyc": "Finishing up from last time. This takes up to 15 seconds." } };
 for (const lg of ["zh", "en"]) {
   const bad = Object.entries(PKGS28[lg]).filter(([k, v]) => ctx.STRINGS[lg][k] !== v).map(([k]) => k + " → " + ctx.STRINGS[lg][k]);
   ok("① " + lg + ":toHeadPkgs 逐字;eng.nth / eng.batch / eng.batchOne 兩語都刪了、engine.js 不再用", bad.length === 0 && ["eng.nth", "eng.batch", "eng.batchOne"].every((k) => !(k in ctx.STRINGS[lg]) && src.indexOf('"' + k + '"') < 0), bad);
@@ -133,6 +134,8 @@ for (const lg of ["zh", "en"]) {
     ok("② " + lg + " 沒有 bar(舊快照)→ 套件那段 0,不用 (i-1)/n", seg({ done: 0, file: null, installing: false, lastByteAt: T0 }, null) === 0); }
   ok("② " + lg + " 讀屏句 = 套件那一步只念步驟名(名字在解析時一秒換好幾次,不跟著念)", v.say === t("eng.pkgs") && V(snap({ cur: Object.assign({}, snap().cur, { name: "numpy" }) }), T0 + 96000).say === v.say);
   ok("② " + lg + " 平常沒有訊息槽", v.slot === null);
+  { const wv = V(snap({ steps: [{ k: "pkgs", st: "wait", ms: 0, t0: null }], cur: { step: null, sub: "waitPyc", i: 0, n: 0, name: null, t0: T0, limitMs: null }, dl: { done: 0, file: null, installing: false, lastByteAt: T0 } }), T0 + 2000);
+    ok("② " + lg + " 等上一次留下的背景編譯(cur.sub = waitPyc):卡出來、訊息槽寫在等", wv && wv.slot && wv.slot.text === t("eng.waitPyc"), wv && wv.slot); }
   const st = V(snap(), T0 + 95000 + 15000);
   ok("② " + lg + " 15s 沒收到資料:講秒數,{limit} = 多久沒資料就停(2 分鐘,稽核 0.1.12 P1-2)", st.slot && st.slot.kind === "stall" && st.slot.text === t("eng.stall", { s: "15s", limit: t("eng.min", { m: 2 }) }), st.slot);
   ok("② " + lg + " 14s 還不講", V(snap(), T0 + 95000 + 14000).slot === null);

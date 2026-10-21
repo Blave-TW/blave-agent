@@ -109,7 +109,7 @@ function rig(o = {}) {
     return c;
   };
   const S = E.createEngineSetup({
-    fs, path, spawn, base, ws, venvPy, venvBin: "bin", win: false, basePython: () => "/bundled/python3", envPath: async () => "/usr/bin:/bin",
+    fs, path, spawn, base, ws, venvPy, venvBin: "bin", win: false, basePython: () => "/bundled/python3", envPath: o.envPath || (async () => "/usr/bin:/bin"),
     pyEnv: { PYTHONUTF8: "1" }, copyOfficial: () => { fs.mkdirSync(path.join(ws, "lib"), { recursive: true }); }, isPackaged: true,
     sdkPins: o.sdk || SDK, deps: o.deps || DEPS, lock: o.lock, optional: o.optional || OPT, firstRunMB: 200, venvMs: 300000, engineMs: 600000, pkgMs: o.pkgMs || 600000,
     idleMs: o.idleMs, watchMs: 5, alive: o.alive, sleep: o.sleep, lockWaitMs: o.lockWaitMs, setPriority: (pid) => prio.push(pid),
@@ -460,12 +460,38 @@ const venvDir = (r) => path.join(r.base, "venv");
     await o1p; clearInterval(iv); await o1.settle();
     ok("孤兒 compileall(pid 活著、建立時間差 1.5 秒):先收掉、等它結束、鎖檔清掉,之後才起 pip", killed.join() === "4343" && killedBeforePip === 0 && pipCalls(o1).length === 2 && !fs.existsSync(lockOf(o1)) && o1.logs.some((l) => /stopping leftover bytecode compile \(pid 4343\)/.test(l)), { killed, killedBeforePip, logs: o1.logs });
     // pid 被別的程式重用(建立時間對不上)/ 查不到建立時間:不殺,只等它結束或等滿
-    for (const [label, ps] of [["建立時間差 1 小時", () => 1000 + 3600e3], ["查不到建立時間", () => null]]) {
-      let alive2 = true, waits = 0; const k2 = [];
-      const o2 = rig({ base: mk(5151, 1000), alive: (pid) => pid === 5151 && alive2, procStart: ps, killPid: (pid) => k2.push(pid), sleep: async () => { waits++; if (waits === 3) alive2 = false; } });
+    // 複核 P1-2:建立時間確定對不上 = pid 被別的程式重用,當年那支早死了 → 直接刪鎖往下走,不等
+    { const k2 = []; let waits = 0;
+      const o2 = rig({ base: mk(5151, 1000), alive: (pid) => pid === 5151, procStart: () => 1000 + 3600e3, killPid: (pid) => k2.push(pid), sleep: async () => { waits++; } });
       await o2.S.ensure(); await o2.settle();
-      ok("鎖檔的 pid 不是我們那支(" + label + "):不殺、等它結束(3 輪)才裝、鎖檔清掉", k2.length === 0 && waits === 3 && pipCalls(o2).length === 2 && !fs.existsSync(lockOf(o2)), { k2, waits });
-    }
+      ok("鎖檔的 pid 被別的程式重用(建立時間差 1 小時):不殺、不等、刪鎖照裝", k2.length === 0 && waits === 0 && pipCalls(o2).length === 2 && !fs.existsSync(lockOf(o2)) && o2.logs.some((l) => /belongs to another program now/.test(l)), { k2, waits }); }
+    // 查不到建立時間:不殺,最多等 15 秒(以前 180 秒),等的時候安裝卡在(cur.sub = waitPyc)
+    { const k3 = []; let waits = 0, r3 = null;
+      r3 = rig({ base: mk(5252, 1000), alive: (pid) => pid === 5252, procStart: async () => null, killPid: (pid) => k3.push(pid), sleep: async (ms) => { waits++; r3.tick(ms); } });
+      await r3.S.ensure(); await r3.settle();
+      const w = r3.snaps.find((x) => x.cur && x.cur.sub === "waitPyc");
+      ok("查不到建立時間:不殺、最多等 15 秒(500ms × 30 輪)才往下裝、鎖檔清掉", k3.length === 0 && waits === 30 && pipCalls(r3).length === 2 && !fs.existsSync(lockOf(r3)), { k3, waits });
+      ok("…等的那段安裝卡已經出來(phase run、show)、cur.sub = waitPyc", !!w && w.phase === "run" && w.show === true, w); }
+    // 複核 P1-1:鎖檔記的是我們這次自己正在跑的編譯 → 之後每一次 ensure 都不能把它當孤兒殺(alive 真的回 true、建立時間也對得上)
+    { const kp = [];
+      const me = rig({ alive: () => true, procStart: async (pid) => { try { return JSON.parse(fs.readFileSync(lockOf(me), "utf8")).at; } catch (_) { return null; } }, killPid: (pid) => kp.push(pid),
+        behave: (bin, args) => (args.includes("compileall") ? { hang: true } : { code: 0 }) });
+      await me.S.ensure();
+      const first = pycCalls(me)[0];
+      await me.S.ensure(); await me.S.ensure();
+      ok("自己正在跑的背景編譯:之後送幾句話(ensure)都不被當孤兒殺、不重起", kp.length === 0 && pycCalls(me).length === 1 && !first.child.killed && me.S.compiling(), { kp, n: pycCalls(me).length });
+      fs.unlinkSync(path.join(venvDir(me), ".blave-deps-1"));
+      await me.S.ensure();
+      ok("…同一次啟動又要起 pip:編譯走 compileStop 收(不是 killPid)、鎖檔不被當孤兒", kp.length === 0 && first.child.killed && pipCalls(me).length === 3, { kp });
+      await me.S.abort(); }
+    // 複核 P2-6:abort 之後在途那一輪還沒醒、又起了新的一輪:舊那輪照樣不能起子行程
+    { let release; const gate = new Promise((r) => { release = r; });
+      const ov = rig({ envPath: () => gate.then(() => "/usr/bin:/bin") });
+      const pA = ov.S.ensure().then(() => "resolved", (e) => e);
+      await ov.S.abort();
+      const pB = ov.S.ensure().then(() => "resolved", (e) => e);
+      release(); const [rA, rB] = await Promise.all([pA, pB]); await ov.settle();
+      ok("兩輪重疊:abort 前那輪以 aborted 結束、只有新的那輪真的裝(pip 2 條)", rA !== "resolved" && rA.aborted === true && rB === "resolved" && pipCalls(ov).length === 2, { rA: rA && rA.message, rB: rB && rB.message, n: pipCalls(ov).length }); }
     // abort 之後還在途中的那一輪 ensure:不再起任何子行程;下一輪照常
     const g1 = rig();
     const p1 = g1.S.ensure().then(() => "resolved", (e) => e);
@@ -497,7 +523,30 @@ const venvDir = (r) => path.join(r.base, "venv");
     const pa = a.S.ensure().catch((e) => e);
     for (let k = 0; k < 2000 && !(a.S.busy() && a.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
     await a.S.abort(); await pa;
-    ok("安裝階段被我們 abort(關 app):照拍板不寫 .force", !fs.existsSync(forceOf(a))); }
+    ok("安裝階段被我們 abort(關 app):照拍板不寫 .force", !fs.existsSync(forceOf(a)));
+    // 複核 P2-5:一看到 Installing 那一行就寫(app 當掉也蓋得到),名字含間接相依;重試對那些名字 force
+    const INST2 = ["Downloading numpy-2.5.3-cp312-cp312-macosx_14_0_arm64.whl (5.4 MB)", "Installing collected packages: pytz, kiwisolver, numpy, pandas"];
+    const cr = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: INST2 } : { code: 0 }) });
+    cr.S.ensure().catch(() => {});
+    for (let k = 0; k < 2000 && !(cr.S.busy() && cr.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
+    const during = fs.existsSync(forceOf(cr)) ? fs.readFileSync(forceOf(cr), "utf8").split("\n") : null;
+    ok("安裝階段一開始(還沒失敗、也還沒結束)就寫 .force,內容 = Installing 那一行的名字(含間接相依)", during && during.join() === "pytz,kiwisolver,numpy,pandas", during);
+    // 這時 app 當掉(不走 abort):下一次開 app 那一條帶 --force-reinstall --no-deps,裝這一組的 pin + 間接相依的名字
+    const cr2 = rig({ base: cr.base }); await cr2.S.ensure(); await cr2.settle();
+    const la = pipCalls(cr2)[pipCalls(cr2).length - 1].args, bt = batchOf({ args: la });
+    ok("當掉之後重開:--force-reinstall --no-deps,這一組的 pin 全在、加上間接相依 pytz / kiwisolver(不重複 numpy / pandas)、成功後 .force 收掉",
+      la.includes("--force-reinstall") && la.includes("--no-deps") && DEPS.every((x) => bt.includes(x)) && bt.includes("pytz") && bt.includes("kiwisolver") && bt.length === DEPS.length + 2 && !fs.existsSync(forceOf(cr2)), bt);
+    // 上一次真的半裝(.force 在)、這一次又被我們 abort:.force 回到上一次那份,不被這次 abort 抹掉
+    fs.unlinkSync(path.join(venvDir(cr2), ".blave-deps-1")); fs.writeFileSync(forceOf(cr2), "kiwisolver");
+    const ab2 = rig({ base: cr.base, behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true, out: ["Installing collected packages: six, numpy"] } : { code: 0 }) });
+    const pab = ab2.S.ensure().catch((e) => e);
+    for (let k = 0; k < 2000 && !(ab2.S.busy() && ab2.S.snapshot().dl.installing); k++) await new Promise((x) => setTimeout(x, 2));
+    await ab2.S.abort(); await pab;
+    ok("上一次半裝留下的 .force、這次被 abort:回到上一次那份(kiwisolver)", fs.existsSync(forceOf(ab2)) && fs.readFileSync(forceOf(ab2), "utf8") === "kiwisolver"); }
+  // 複核 P2-7:查建立時間是非同步的(不卡主行程)
+  { const SRC = fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8");
+    const pr = E.procStartOf(process.pid), t = await pr, bad = await E.procStartOf(-1);
+    ok("procStartOf 回 Promise、對自己這支查得到(與現在差 1 天內)、壞 pid 回 null;原始碼沒有 execFileSync", pr && typeof pr.then === "function" && t != null && Math.abs(Date.now() - t) < 86400e3 && bad === null && !/execFileSync/.test(SRC), { t }); }
 
   // 開發版量冷快取:pip 帶 --isolated 不吃 PIP_CACHE_DIR,改由 BLAVE_PIP_CACHE_DIR 給 --cache-dir;沒給就不帶(用 pip 預設快取),打包版不認
   { const cd = rig({ pipCacheDir: "/tmp/blave-pipcache" }); await cd.S.ensure(); await cd.settle();

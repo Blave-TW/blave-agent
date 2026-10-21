@@ -93,17 +93,22 @@ function depGroups(deps, optional) {
    沒重解間接相依,舊的鎖可能跟新版衝突 → main.js 就不帶鎖(退回只釘直接相依),閘門測試同時變紅 */
 const lockKey = (sdkPins, deps) => require("crypto").createHash("sha256").update(String(sdkPins) + "\n" + deps.join("\n")).digest("hex").slice(0, 12);
 
-/* 行程建立時間(ms;查不到 = null),比對背景編譯的鎖是不是我們自己起的那支。pid 是鎖檔裡的,先確認是整數才放進指令 */
+/* 行程建立時間(ms;查不到 = null),比對背景編譯的鎖是不是我們自己起的那支。pid 是鎖檔裡的,先確認是整數才放進指令。
+   非同步(稽核 P2-7):Windows 的 PowerShell 要 0.5–2 秒,同步跑會卡住主行程 */
 function procStartOf(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (!Number.isInteger(pid) || pid <= 0) return Promise.resolve(null);
   const cp = require("child_process");
-  try {
-    const out = process.platform === "win32"
-      ? cp.execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().ToString('o')`], { windowsHide: true, timeout: 10000, stdio: ["ignore", "pipe", "ignore"] })
-      : cp.execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { windowsHide: true, timeout: 5000, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C" } });
-    const t = Date.parse(String(out).trim());
-    return Number.isNaN(t) ? null : t;
-  } catch (_) { return null; }
+  const [bin, args, opt] = process.platform === "win32"
+    ? ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().ToString('o')`], { windowsHide: true, timeout: 10000 }]
+    : ["ps", ["-o", "lstart=", "-p", String(pid)], { windowsHide: true, timeout: 5000, env: { ...process.env, LC_ALL: "C" } }];
+  return new Promise((resolve) => {
+    try {
+      cp.execFile(bin, args, { ...opt, windowsHide: true }, (err, out) => {
+        const t = err ? NaN : Date.parse(String(out).trim());
+        resolve(Number.isNaN(t) ? null : t);
+      });
+    } catch (_) { resolve(null); }
+  });
 }
 
 const STEP_ORDER = ["ws", "engine", "pkgs"];
@@ -149,30 +154,44 @@ function createEngineSetup(o) {
     }
     try { fs.unlinkSync(lockFile); } catch (_) { /* 已經沒了 */ }
   }
-  /* 背景編譯的鎖(稽核 enginefast P2-1):app 當掉 / 被強制結束時留下的孤兒 compileall,下次開 app 在任何 pip 之前先處理——
+  /* 背景編譯的鎖(稽核 enginefast P2-1):app 當掉 / 被強制結束時留下的孤兒 compileall,在這次啟動第一次要起 pip 之前處理——
      不然它還在讀 site-packages,新的 pip 同時在寫,讀到寫一半的 .py 會留下帶著完整檔 mtime 的壞 .pyc。
-     跟 pip 的鎖不同,這支可以收:先比對 pid 與行程建立時間(差 3 秒內 = 我們當時起的那支),對得上才殺;
-     對不上(pid 被別的程式重用)或查不到建立時間,就照 pip 的做法只等、不殺 */
+     - 鎖檔記的是 compileall 子行程的 pid:是我們這次啟動自己正在跑的那支就跳過(稽核複核 P1-1;新的 pip 之前已經 compileStop 收掉)
+     - pid 活著、建立時間與鎖檔差 3 秒內 = 當年那支孤兒 → 殺掉、等它結束
+     - 建立時間確定對不上 = pid 已經被別的程式重用,當年那支早就死了 → 直接刪鎖往下走,不等(稽核複核 P1-2)
+     - 查不到建立時間 → 不殺,最多等 15 秒;這段安裝卡寫在等(cur.sub = "waitPyc")
+     一次啟動只處理一次:之後的鎖都是我們自己這次寫的 */
   const pycLock = path.join(venvDir, ".blave-pyc.lock");
   const procStart = o.procStart || procStartOf;
   const killPid = o.killPid || ((pid) => process.kill(pid));
+  let reaped = false;
   async function reapCompile() {
+    if (reaped) return;
+    reaped = true;
     let lk = null; try { lk = JSON.parse(fs.readFileSync(pycLock, "utf8")); } catch (_) { return; }
-    if (lk && Number.isInteger(lk.pid) && lk.pid !== process.pid && alive(lk.pid)) {
-      const t = procStart(lk.pid);
-      if (t != null && Math.abs(t - lk.at) <= 3000) {
-        o.log(`[engine] stopping leftover bytecode compile (pid ${lk.pid})`);
-        try { killPid(lk.pid); } catch (_) { /* 剛好結束了 */ }
-      } else o.log(`[engine] bytecode compile lock pid ${lk.pid} is alive but not ours (or start time unknown); waiting`);
-      const until = now() + (o.lockWaitMs || 180000);
-      while (alive(lk.pid) && now() < until) await sleep(500);
+    const own = pyc && pyc.pid === (lk && lk.pid);
+    if (lk && Number.isInteger(lk.pid) && lk.pid !== process.pid && !own && alive(lk.pid)) {
+      const t = await procStart(lk.pid);
+      if (t != null && Math.abs(t - lk.at) > 3000) {
+        o.log(`[engine] bytecode compile lock pid ${lk.pid} belongs to another program now; ignoring the lock`);
+      } else {
+        if (t != null) {
+          o.log(`[engine] stopping leftover bytecode compile (pid ${lk.pid})`);
+          try { killPid(lk.pid); } catch (_) { /* 剛好結束了 */ }
+        } else {
+          o.log(`[engine] bytecode compile lock pid ${lk.pid} is alive, start time unknown; waiting up to 15s`);
+          S.cur = { step: null, sub: "waitPyc", i: 0, n: 0, name: null, t0: now(), limitMs: null }; emit();
+        }
+        const until = now() + (o.pycWaitMs || 15000);
+        while (alive(lk.pid) && now() < until) await sleep(500);
+      }
     }
-    try { fs.unlinkSync(pycLock); } catch (_) { /* 已經沒了 */ }
+    if (!own) { try { fs.unlinkSync(pycLock); } catch (_) { /* 已經沒了 */ } }
   }
   /* abort 之後,還在途中的那一輪 ensure 不能再起任何子行程(稽核 P2-1:before-quit 為了收常駐程式等別的事 preventDefault 時,
      ensure 可能在 abort 之後才走到 spawn,留下孤兒)。用代數不用一次性旗標:更新裝不起來、app 繼續跑時,下一次 ensure 照常 */
-  let gen = 0, runGen = 0;
-  const stale = () => runGen !== gen;
+  // 每一輪 ensure 自己記開始時的代數(my),往下傳給 run / compileStart;abort 只加 gen(稽核複核 P2-6:不共用一個 runGen)
+  let gen = 0;
   // 回 true = 收掉了正在跑的 pip(背景編譯也一起收,但不算進回傳值)
   function abort() {
     gen++;
@@ -194,8 +213,8 @@ function createEngineSetup(o) {
      spawn 之後才調的優先權調不到那一支 */
   let pyc = null, pycDone = null;
   const setPriority = o.setPriority || ((pid) => require("os").setPriority(pid, require("os").constants.priority.PRIORITY_LOW));
-  function compileStart(envPath) {
-    if (stale() || pyc || read(pycMark) === pycKey || !fs.existsSync(o.venvPy)) return;
+  function compileStart(envPath, my) {
+    if (my !== gen || pyc || read(pycMark) === pycKey || !fs.existsSync(o.venvPy)) return;
     let c, out = "";
     try {
       c = spawn(o.basePython(), ["-m", "compileall", "-q", venvDir], { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath } });
@@ -229,10 +248,10 @@ function createEngineSetup(o) {
   // 子行程:逐行讀 stdout(進度)、stderr 留尾巴(失敗時要)。兩道停:
   //   totalMs = 這一條的總上限(只防真的卡死);idleMs = 多久沒有新的輸出就停(下載中才算;安裝階段 pip 本來就不出聲,不算)
   // 逾時的訊息固定成「timed out after Ns」/「no data for Ns」,不放整條指令(含用戶 home 路徑)
-  function run(bin, args, envPath, timeoutMs, onLine, idle) {
+  function run(my, bin, args, envPath, timeoutMs, onLine, idle) {
     return new Promise((resolve, reject) => {
       let out = "", err = "", timedOut = false, idled = false, c;
-      if (stale()) { reject(Object.assign(new Error("stopped (app closing)"), { stderr: "", aborted: true })); return; }
+      if (my !== gen) { reject(Object.assign(new Error("stopped (app closing)"), { stderr: "", aborted: true })); return; }
       try {
         c = spawn(bin, args, { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath, PYTHONUNBUFFERED: "1" } });
       } catch (e) { reject(Object.assign(new Error(String((e && e.message) || e)), { stderr: "" })); return; }
@@ -259,16 +278,18 @@ function createEngineSetup(o) {
       });
     });
   }
-  async function pip(args, envPath, timeoutMs, onName) {
+  async function pip(my, args, envPath, timeoutMs, onName, onInstall) {
     const p = S.dl;
     let lastLine = now();
     p.file = null; p.installing = false; p.lastByteAt = now();
     // 沒有新資料:最近一次有輸出(解析、Downloading、Progress)起算;進了安裝階段就不算(那時 pip 不出聲是正常的)
     const idle = { ms: o.idleMs, quiet: () => (p.installing ? 0 : now() - Math.max(lastLine, p.lastByteAt)) };
     try {
-      await run(o.venvPy, [...PIP_INSTALL, ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, timeoutMs, (l) => {
+      await run(my, o.venvPy, [...PIP_INSTALL, ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, timeoutMs, (l) => {
         lastLine = now();
         const n = onName ? pipCurName(l) : null, renamed = !!n && n !== S.cur.name, moved = pipLine(p, l, now());
+        const ins = onInstall && /^Installing collected packages: (.+)$/.exec(l);
+        if (ins) onInstall(ins[1].split(",").map((x) => x.trim()).filter(Boolean));
         if (renamed) S.cur.name = n;
         if (moved || renamed) emit();
       }, o.idleMs ? idle : null);
@@ -277,7 +298,7 @@ function createEngineSetup(o) {
       p.file = null;
       o.log("[engine] pip install failed: " + args.join(" ") + "\n" + String((e && e.stderr) || (e && e.message) || e));
       const x = new Error(e.timedOut || e.idle || e.aborted ? e.message : pipError(e.stderr || e.message));
-      x.kind = failKind(e); x.limitMs = timeoutMs; x.aborted = !!e.aborted; x.midInstall = !!p.installing;
+      x.kind = failKind(e); x.limitMs = timeoutMs; x.aborted = !!e.aborted;
       throw x;
     }
   }
@@ -306,10 +327,9 @@ function createEngineSetup(o) {
   }
 
   async function ensure() {
-    runGen = gen;
+    const my = gen;
     const envPath = await o.envPath();
     await waitLock();
-    await reapCompile();
     const fresh = !fs.existsSync(o.ws);
     const needVenv = !fs.existsSync(o.venvPy);
     const needSdk = read(sdkMark) !== o.sdkPins;
@@ -321,7 +341,7 @@ function createEngineSetup(o) {
       for (const d of ["state", "config"]) fs.mkdirSync(path.join(o.base, d), { recursive: true });
       // 上一輪失敗、這一輪卻沒事可做(上次死在寫最後那個記號檔之前,其實都裝好了):卡不能一直停在失敗
       if (S.phase === "fail") { Object.assign(S, { phase: "done", tEnd: now(), cur: null, err: null }); emit(); }
-      compileStart(envPath);
+      compileStart(envPath, my);
       return;
     }
     // 新的 pip 要寫 site-packages:先收掉背景編譯(讀到寫一半的 .py 只會多一堆 SyntaxError log)。只修 venv 連結不必重編
@@ -332,6 +352,7 @@ function createEngineSetup(o) {
     const kind = fresh ? "first" : !needSdk && !todo.length ? "relink" : read(depsMark) !== null ? "update" : "first";
     begin(keys, kind);
     try {
+      if (needSdk || todo.length) await reapCompile();
       if (fresh) await step("ws", () => {
         // 0700:裡面有 session.db(對話)、.env(金鑰)、狀態檔,同一台電腦的其他用戶不該讀得到(稽核 R9)。
         // 只在我們自己建立的時候設;用戶既有的目錄不動他的權限。
@@ -358,7 +379,7 @@ function createEngineSetup(o) {
             const f = path.join(vbin, n);
             if (fs.lstatSync(f).isSymbolicLink() && !fs.existsSync(f)) fs.unlinkSync(f);
           }
-          try { await run(o.basePython(), ["-m", "venv", venvDir], envPath, o.venvMs); } catch (e) {
+          try { await run(my, o.basePython(), ["-m", "venv", venvDir], envPath, o.venvMs); } catch (e) {
             o.log("[engine] venv failed\n" + String(e.stderr || e.message));
             throw Object.assign(new Error(e.timedOut ? e.message : pipError(e.stderr || e.message)), { kind: e.timedOut ? "timeout" : "other", limitMs: o.venvMs, aborted: !!e.aborted });
           }
@@ -366,7 +387,7 @@ function createEngineSetup(o) {
         if (needSdk) {
           // 記號檔而不是「venv 在就當裝好了」:pip 中途失敗(斷網)時 venv 已經在,下次要重試
           Object.assign(S.cur, { sub: null, name: sdkName, t0: now(), limitMs: o.engineMs, idleMs: o.idleMs || null }); emit();
-          await pip(["-c", pinsFile, ...o.sdkPins.split(" ")], envPath, o.engineMs);
+          await pip(my, ["-c", pinsFile, ...o.sdkPins.split(" ")], envPath, o.engineMs);
           fs.writeFileSync(sdkMark, o.sdkPins);
         }
       });
@@ -384,20 +405,25 @@ function createEngineSetup(o) {
         for (const g of groups) {
           if (!g.todo.length) continue;
           const span = (1 - p0) * est(g) / estAll;
+          // 半裝(稽核 P2-3 / 複核 P2-5):pip 在安裝階段被停掉、或 app 當掉時,某個套件的 dist-info 可能已經寫了、檔案還沒寫完,
+          // 下一次會被當成 already satisfied 跳過。所以一看到「Installing collected packages: …」就把那一行的名字(含間接相依)
+          // 寫進 <mark>.force;成功才刪,我們自己 abort 時回到這一輪開始前的樣子。下一次這一條就 --force-reinstall --no-deps,裝這一組的 pin + 那份名字(版本照 -c)
+          const forced = markLines(read(g.mark + ".force")).filter((x) => /[A-Za-z]/.test(x) && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(x));
+          const mine = new Set(g.todo.map(pipName)), extra = forced.filter((x) => !mine.has(pipName(x)));
+          const writeForce = (names) => { try { fs.writeFileSync(g.mark + ".force", [...new Set([...forced, ...names])].join("\n")); } catch (_) { /* 寫不了就照一般重試 */ } };
           try {
             Object.assign(S.cur, { i: installed + 1, n: o.deps.length, k: g.todo.length, name: pipName(g.todo[0]), t0: now(), limitMs: o.pkgMs, idleMs: o.idleMs || null,
               bar: { from, span, est: est(g), dl0: S.dl.done } }); emit();
-            // 上一次死在安裝階段(稽核 P2-3):pip 被停掉時某個套件的 dist-info 可能已經寫了、檔案還沒寫完,下一次會被當成 already
-            // satisfied 跳過。記號 <mark>.force 在,這一條就 --force-reinstall --no-deps 把這一組照 pin 重裝一次(相依不動)
-            const force = fs.existsSync(g.mark + ".force");
-            await pip([...(force ? ["--force-reinstall", "--no-deps"] : []), "-c", pinsFile, ...g.todo], envPath, o.pkgMs, true);
+            await pip(my, [...(forced.length ? ["--force-reinstall", "--no-deps"] : []), "-c", pinsFile, ...g.todo, ...extra], envPath, o.pkgMs, true, writeForce);
             installed += g.todo.length; from += span;
             fs.writeFileSync(g.mark, g.pins.join("\n"));
             for (const x of [".part", ".force"]) { try { fs.unlinkSync(g.mark + x); } catch (_) { /* 沒有就算了 */ } }
           } catch (e) {
-            // 只記我們沒有主動收掉、又已經進了安裝階段的(abort 依 Wei 拍板不算;下載中斷的那種 pip 還沒動 site-packages)
-            if (!e.aborted && e.midInstall) { try { fs.writeFileSync(g.mark + ".force", "1"); } catch (_) { /* 寫不了就照一般重試 */ } }
-            if (e.aborted) throw e;   // 關 app / 更新重開時我們自己收掉的:不是這組裝不起來,不記 warn、不送 engine_opt_fail
+            // 我們自己收掉的不算(Wei 拍板):.force 回到這一輪開始前的樣子(上一次真的半裝的那份留著)
+            if (e.aborted) {
+              try { if (forced.length) fs.writeFileSync(g.mark + ".force", forced.join("\n")); else fs.unlinkSync(g.mark + ".force"); } catch (_) { /* 沒有就算了 */ }
+              throw e;
+            }   // 關 app / 更新重開時我們自己收掉的:不是這組裝不起來,不記 warn、不送 engine_opt_fail
             if (!g.optional) throw e;
             // 選用的那組(美股資料):不擋引擎、不往外丟。完整 stderr 已經由 pip() 記了;下次開 app 再試
             skipped.add(g.id);
@@ -411,7 +437,7 @@ function createEngineSetup(o) {
       Object.assign(S, { phase: "done", tEnd: now(), cur: null });
       emit();
       if (S.kind !== "relink") track("engine_setup", kindTag() + "_done");
-      compileStart(envPath);
+      compileStart(envPath, my);
     } catch (e) {
       const st = S.steps.find((x) => x.st === "run");
       const t = now();

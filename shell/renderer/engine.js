@@ -54,6 +54,9 @@ function engView(s, now, tr, held) {
     const venv = e.step === "engine" && !e.name;
     const sub = venv ? t(held ? "eng.venvSubHeld" : "eng.venvSub") : e.kind === "timeout" ? t("eng.toSub", { name }) : t(held ? "eng.failSub" : "eng.failSubIdle", { name });
     slot = { kind: "fault", head, sub, err: e.msg || "" };
+  } else if (cur.sub === "waitPyc") {
+    // 上一次 app 當掉時留下的背景編譯還在跑、查不到是不是我們那支:enginesetup 最多等 15 秒才往下裝
+    slot = { kind: "slow", text: t("eng.waitPyc") };
   } else if (cur.name) {
     const quiet = now - (dl.lastByteAt || now);
     if (file && !dl.installing && quiet >= ENG_STALL_MS) slot = { kind: "stall", text: t("eng.stall", { s: dur(quiet), limit: limit(cur.idleMs || cur.limitMs) }) };
