@@ -5203,9 +5203,9 @@ msgstr "Logic"
 msgid "lib.gate.bindCard"
 msgstr "Add a Card, Get {t} Days of Data"
 
-# plan era (planMo): same button, trial rolls into the paid plan so not "get"
-msgid "lib.gate.bindCard.m"
-msgstr "Add a Card, Start a {t}‑Day Free Trial"
+# plan era, trial-eligible and no card: filled button that opens the card page in the browser; the chat data card uses the same label (spec paywall-redesign-2026-10-21 §2.2)
+msgid "lib.gate.trial"
+msgstr "Add a Card for a {t}‑Day Free Trial"
 
 msgid "lib.gate.topup"
 msgstr "Top Up"
@@ -5213,6 +5213,10 @@ msgstr "Top Up"
 # ── 0.1.13 策略庫轉換(spec-0.1.13-library-conversion §7):沒權限時分組、詳情鈕下第一句看資料需求 ──
 msgid "lib.grp.now"
 msgstr "Usable Now"
+
+# plan era, trial-eligible and no card: the group name says what is missing (the button already says "add a card")
+msgid "lib.grp.data"
+msgstr "Needs Blave Data"
 
 msgid "lib.grp.card"
 msgstr "After Adding a Card"
@@ -6666,12 +6670,13 @@ msgstr "Add a card: {t} days of Blave data free"
 msgid "wd.note.noneNoNum"
 msgstr "Add a card to use it"
 
-# plan era (planMo): the trial rolls into the paid plan, so "free trial" rather than "N days free" — the two {t} lines switch to .m, same as pv.h.offer.m
+# plan era (planMo): the trial rolls into the paid plan, so "free trial" rather than "N days free" — the signed-out {t} line switches to .m, same as pv.h.offer.m (the no-card line is wd.note.trial)
 msgid "wd.note.out.m"
 msgstr "Sign in and add a card for a {t}‑day free trial of Blave data"
 
-msgid "wd.note.none.m"
-msgstr "Add a card for a {t}‑day free trial of Blave data"
+# plan era, trial-eligible and no card: the column header already says "Blave Data", so the button does not repeat it; opens the card page in the browser
+msgid "wd.note.trial"
+msgstr "Add a card for a {t}‑day free trial"
 
 msgid "wd.note.billed"
 msgstr "{r} TWD for each hour you use it, charged once per hour"

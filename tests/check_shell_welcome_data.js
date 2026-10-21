@@ -36,7 +36,10 @@ if (!process.versions.electron) {
   if (a < 0 || b < 0) throw new Error("找不到純邏輯區塊的標記");
   const block = src.slice(a, b);
   ok("① 純邏輯區塊不碰 DOM / i18n", !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
-  const P = {}; vm.createContext(P); vm.runInContext(block, P);
+  // wdMode 叫 app.js 的 acctOffer(有沒有卡的共用判斷):那兩行原文一起切進來跑
+  // 改版前沒有這兩行:不丟例外,讓下面的斷言在舊碼上紅在語意
+  const offerSrc = ["acctNoCard", "acctOffer"].map((n) => { const m = appSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m")); return m ? m[0].replace(/^const /, "var ") : ""; }).join("\n");
+  const P = {}; vm.createContext(P); vm.runInContext(offerSrc + "\n" + block, P);
   const M = (signed, s, da, left) => JSON.stringify(P.wdMode(signed, s, da, left));
   ok("① 沒登入 → 對比版、out(不管手上有什麼狀態)", M(false, null, null, 0) === '{"cmp":true,"k":"out"}' && M(false, { data_access: "included" }, "included", 5) === '{"cmp":true,"k":"out"}');
   ok("① 登入了但查不到 / 舊 api 沒有 data_access → 對比版、unknown(不斷言價格)", M(true, null, null, 0) === '{"cmp":true,"k":"unknown"}' && M(true, { data_included: false }, null, 0) === '{"cmp":true,"k":"unknown"}');
@@ -45,6 +48,19 @@ if (!process.versions.electron) {
   ok("① 方案制:沒有方案 → 對比版 noplan(有試用資格又沒卡 → none,綁卡拿試用);扣款失敗 → 對比版 payfail",
     M(true, { data_access: "plan_required", reason: null }, "plan_required", 0) === '{"cmp":true,"k":"noplan"}' && M(true, { data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }, "plan_required", 0) === '{"cmp":true,"k":"none"}'
     && M(true, { data_access: "plan_required", reason: "NO_CARD", trial_eligible: false }, "plan_required", 0) === '{"cmp":true,"k":"noplan"}' && M(true, { data_access: "payment_failed" }, "payment_failed", 0) === '{"cmp":true,"k":"payfail"}');
+  /* paywall-redesign-2026-10-21 §5.1 狀態表每一列一案(方案制;沒卡看 has_card,舊 api 沒這欄退回 reason) */
+  { const PR = (o) => M(true, { data_access: "plan_required", ...o }, "plan_required", 0), NONE = '{"cmp":true,"k":"none"}', NOPLAN = '{"cmp":true,"k":"noplan"}';
+    ok("① §5.1 沒卡、有試用資格、綁卡前額度還有剩(can_run=true、reason 空、has_card:false)→ none(綁卡試用那句;舊碼看 reason 會落到 noplan)", PR({ can_run: true, reason: null, has_card: false, trial_eligible: true }) === NONE);
+    ok("① §5.1 沒卡、有試用資格、額度用完(can_run=false、reason NO_CARD、has_card:false)→ none", PR({ can_run: false, reason: "NO_CARD", has_card: false, trial_eligible: true }) === NONE);
+    ok("① §5.1 本機 CLI 登入、沒卡、有試用資格(can_run=false、reason 空——不是 Blave AI 的錢的問題)→ none", PR({ can_run: false, reason: null, has_card: false, trial_eligible: true }) === NONE);
+    ok("① §5.1 有卡、試用中(included、沒主機、試用還有天數)→ 單一清單 trial;has_card:true 而 plan_required(不該出現的組合)也不講試用", M(true, { data_access: "included", has_card: true, plan: { state: "none" } }, "included", 5) === '{"cmp":false,"k":"trial"}'
+      && PR({ can_run: true, has_card: true, trial_eligible: true }) === NOPLAN);
+    ok("① §5.1 試用資格已用掉、沒方案:有卡或沒卡都 noplan", PR({ has_card: true, trial_eligible: false }) === NOPLAN && PR({ has_card: false, trial_eligible: false }) === NOPLAN && PR({ has_card: false, reason: "NO_CARD", trial_eligible: false }) === NOPLAN);
+    ok("① §5.1 has_card 優先於 reason:has_card:true 就算 reason 還是 NO_CARD 也不是沒卡", PR({ can_run: false, has_card: true, reason: "NO_CARD", trial_eligible: true }) === NOPLAN);
+    ok("① §5.1 方案扣款失敗 → payfail(不看 has_card)", M(true, { data_access: "payment_failed", has_card: false, trial_eligible: true }, "payment_failed", 0) === '{"cmp":true,"k":"payfail"}');
+    ok("① §5.1 沒登入 → out(不看 has_card)", M(false, { data_access: "plan_required", has_card: false, trial_eligible: true }, "plan_required", 0) === '{"cmp":true,"k":"out"}');
+    ok("① §5.1 新外殼接舊 api(沒有 has_card):退回 reason——NO_CARD+有試用 → none、reason 空 → noplan(跟改版前同一份分類)",
+      PR({ can_run: false, reason: "NO_CARD", trial_eligible: true }) === NONE && PR({ can_run: true, reason: null, trial_eligible: true }) === NOPLAN && PR({ can_run: true, reason: null, has_card: null, trial_eligible: true }) === NOPLAN); }
   ok("① 綁卡試用中(included、沒主機、試用還有天數)→ 單一清單、trial", M(true, { data_access: "included", plan: { state: "none" } }, "included", 5) === '{"cmp":false,"k":"trial"}');
   ok("① 名下有主機 / API 方案(included)→ 單一清單、incl;有主機的人就算試用日期還在也不講「免費到」", M(true, { data_access: "included", plan: { state: "running" } }, "included", 5) === '{"cmp":false,"k":"incl"}' && M(true, { data_access: "included", plan: { state: "none" } }, "included", 0) === '{"cmp":false,"k":"incl"}' && M(true, { data_included: true }, "included", 0) === '{"cmp":false,"k":"incl"}');
 
@@ -99,7 +115,7 @@ if (!process.versions.electron) {
   ok("② 字串表的 wd.r.* 恰好是 WD_ROWS × 四個欄位:沒有多出來的列(BingX、CME／ICE、公開大盤、公開期貨法人、異常漲跌,與只進目錄的 14 列)、沒有多出來的欄位(.nt / .sn / .us / .wnm)", extra.length === 0, extra.join(", "));
   ok("② 列的順序就是畫面順序(WD_ROWS 沒有順序欄):加密 bnk fng ti conc liq fr、台股 twd inst rev twm br、台指期 txd txk txio fi pcr",
     ["crypto", "tw", "txf"].map((mk) => ROWS.filter((r) => r[1] === mk).map((r) => r[0]).join(" ")).join("|") === "bnk fng ti conc liq fr|twd inst rev twm br|txd txk txio fi pcr" && /const wdWel = \(mk\) => WD_ROWS\.filter\(\(r\) => r\[1\] === mk\);/.test(src));
-  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.out.m", "wd.note.outNoNum", "wd.note.none", "wd.note.none.m", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask", "wd.ask.build"];
+  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.out.m", "wd.note.outNoNum", "wd.note.none", "wd.note.trial", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask", "wd.ask.build"];
   ok("② 固定字 " + fixed.length + " 個 zh / en 都有、wd.* 除了列的字就只有這些;三個市場的歡迎頁兩欄都有列(免費欄空著那句 wd.empty.* 與 .wl-empty 隨台指期免費日線退役)", fixed.every((k) => STR.zh[k] && STR.en[k])
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && !k.startsWith("wd.r.")).sort().join() === fixed.slice().sort().join())
     && ["crypto", "tw", "txf"].every((mk) => [TAB.WD_P, TAB.WD_B].every((sr) => ROWS.some((r) => r[1] === mk && r[2] === sr)))
@@ -107,20 +123,23 @@ if (!process.versions.electron) {
   const wd = (L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.")).map((k) => STR[L][k]);
   ok("② 字裡不出現「付費」/ paid;價格只在 wd.note.billed 一句({r} 由 account_status 下發,不寫死 2 TWD);試用天數也是 {t}", !wd("zh").some((s) => /付費/.test(s)) && !wd("en").some((s) => /\bpaid\b/i.test(s))
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && /\{r\}/.test(STR[L][k])).join() === "wd.note.billed") && !wd("zh").concat(wd("en")).some((s) => /\d\s*TWD/.test(s))
-    && ["zh", "en"].every((L) => ["wd.note.out", "wd.note.out.m", "wd.note.none", "wd.note.none.m"].every((k) => /\{t\}/.test(STR[L][k])) && /\{d\}/.test(STR[L]["wd.state.trial"])));
+    && ["zh", "en"].every((L) => ["wd.note.out", "wd.note.out.m", "wd.note.none", "wd.note.trial"].every((k) => /\{t\}/.test(STR[L][k])) && /\{d\}/.test(STR[L]["wd.state.trial"])));
   // 右欄那句的兩態(wdNote 原文接假 DOM 在純 node 跑):方案制(planMo 真)試用結束會自動扣方案費,講「免費試用」不講「送」;切換前照舊「送」;沒天數兩態都是不帶數字那句
-  { const note = (L, mo, k, v) => {
-      const C = { planMo: () => mo, planOpen() {}, signInLabel: (b, label) => { b.textContent = label; return b; }, document: { createElement: (tag) => ({ tag, kids: [], append(...a) { this.kids.push(...a); }, appendChild(a) { this.kids.push(a); return a; }, addEventListener() {} }) } };
+  { const note = (L, mo, k, v, click) => {
+      const C = { planMo: () => mo, planOpen() { C.went = "plan"; }, bindGo(n) { C.went = "bind:" + n; }, signInLabel: (b, label) => { b.textContent = label; return b; }, document: { createElement: (tag) => ({ tag, kids: [], append(...a) { this.kids.push(...a); }, appendChild(a) { this.kids.push(a); return a; }, addEventListener(ev, fn) { this.click = fn; } }) } };
       vm.createContext(C);
       vm.runInContext(read(path.join(R, "strings.js")) + "\n" + read(path.join(R, "i18n.js")).replace(/^let LANG = "en";$/m, 'var LANG = "' + L + '";') + "\n" + src.slice(src.indexOf("const wdEl ="), src.indexOf("const wdK =")) + "\n" + cutFn(src, "wdNote"), C);
       const into = C.document.createElement("span"); C.wdNote(k, v, into);
+      if (click) { const b = into.kids.find((x) => typeof x !== "string"); C.went = null; if (b && b.click) b.click(); return C.went; }
       return into.kids.map((x) => (typeof x === "string" ? x : x.textContent)).join("|"); };
-    ok("② 右欄那句(zh)兩態:方案制 →「登入並綁卡，免費試用 14 天 Blave 資料」/「綁卡，免費試用 14 天 Blave 資料」;切換前 →「送 14 天」照舊;沒天數兩態都不帶數字、是一顆鈕",
+    ok("② 右欄那句(zh)兩態:方案制 →「登入並綁卡，免費試用 14 天 Blave 資料」/「綁卡，免費試用 14 天」(欄名已寫 Blave 資料,paywall-redesign §2.2);切換前 →「送 14 天」照舊;沒天數兩態都不帶數字、是一顆鈕",
       note("zh", true, "out", { t: "14" }) === "登入並綁卡，免費試用 14 天 Blave 資料" && note("zh", false, "out", { t: "14" }) === "登入並綁卡，送 14 天 Blave 資料"
-      && note("zh", true, "none", { t: "14" }) === "綁卡，免費試用 14 天 Blave 資料" && note("zh", false, "none", { t: "14" }) === "綁卡，送 14 天 Blave 資料"
+      && note("zh", true, "none", { t: "14" }) === "綁卡，免費試用 14 天" && note("zh", true, "none", { t: "7" }) === "綁卡，免費試用 7 天" && note("zh", false, "none", { t: "14" }) === "綁卡，送 14 天 Blave 資料"
       && note("zh", true, "out", { t: "" }) === "登入並綁卡後就能用" && note("zh", false, "none", { t: "" }) === "綁卡後就能用", [note("zh", true, "out", { t: "14" }), note("zh", true, "none", { t: "14" })].join(" / "));
     ok("② 右欄那句(en)兩態:方案制 free trial(連字號 U+2011,同 pv.h.offer.m);切換前 days free", note("en", true, "out", { t: "14" }) === "Sign in and add a card for a 14\u2011day free trial of Blave data"
-      && note("en", true, "none", { t: "14" }) === "Add a card for a 14\u2011day free trial of Blave data" && note("en", false, "out", { t: "14" }) === "Sign in and add a card: 14 days of Blave data free", note("en", true, "out", { t: "14" }));
+      && note("en", true, "none", { t: "14" }) === "Add a card for a 14\u2011day free trial" && note("en", false, "out", { t: "14" }) === "Sign in and add a card: 14 days of Blave data free", note("en", true, "out", { t: "14" }));
+    ok("② 右欄沒卡那顆鈕:方案制直接開瀏覽器綁卡頁(bindGo,記 bind_welcome;沒天數那句也一樣)、切換前照舊開設定 › 帳號與方案;沒登入照舊開瀏覽器登入不開綁卡頁",
+      note("zh", true, "none", { t: "14" }, true) === "bind:bind_welcome" && note("zh", true, "none", { t: "" }, true) === "bind:bind_welcome" && note("zh", false, "none", { t: "14" }, true) === "plan" && note("zh", true, "noplan", {}, true) === "plan");
     ok("② 指紋帶 planMo():公開價目晚到、或登入後 acct 帶方案欄位時那句才會跟著重畫", /JSON\.stringify\(\[LANG, m\.k, m\.cmp, WD\.mk, v\.t, v\.r, v\.d, planMo\(\)\]\)/.test(src)); }
   { const txf = ROWS.filter((r) => r[1] === "txf");
     const listed = /_TAIFEX_INDEX_FUT_LISTED = \{'TXF': '(\d{4}-\d\d-\d\d)', 'MXF': '(\d{4}-\d\d-\d\d)', 'TMF': '(\d{4}-\d\d-\d\d)'\}/.exec(read(path.join(SHELL, "..", "lib", "data.py"))) || [];

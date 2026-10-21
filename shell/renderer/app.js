@@ -3238,17 +3238,20 @@ function faultCard() {
   $("chat-scroll").appendChild(el); busyPin(); scrollChat();
   return {
     el, b1, b2,
-    // s = { calm, text, label, out, quiet, disabled, on, sub(Node|string|null), second:{label,on}|null, third:{label,on}|null(文字鈕) }
+    // s = { calm, text, label, out, quiet, disabled, on, sub(Node|string|null), second:{label,on,quiet}|null, third:{label,on}|null(文字鈕) }
     set(s) {
       // 回前景、每 5 秒重查會拿一模一樣的內容重畫(acctPaint):內容沒變就不再念、不再拉到底(同 dataCardSync 的 key;稽核 S1)
       const key = JSON.stringify([!!s.calm, s.text, s.label || null, !!s.disabled, s.second ? s.second.label : null, s.third ? s.third.label : null, s.sub ? (typeof s.sub === "string" ? s.sub : s.sub.textContent) : null]);
       const changed = key !== shown; shown = key;
       el.classList.toggle("is-calm", !!s.calm);
-      text.textContent = s.text; if (changed) srSay(s.text);
+      // 只有鈕、沒有句子(資料卡的試用態:agent 那一輪已經講了拿不到什麼):記號改對鈕的中線,讀屏念鈕字
+      el.classList.toggle("act-only", !s.text);
+      text.textContent = s.text || ""; text.hidden = !s.text;
+      if (changed) srSay(s.text || [s.label, s.second && s.second.label].filter(Boolean).join(LANG === "zh" ? "，" : ", "));
       b1.hidden = !s.label;                     // 沒有鈕的狀態(例如「可以開始了。」)
       b1.textContent = s.label || ""; b1.className = s.quiet ? "btn-quiet" : s.out ? "btn-out" : "btn-fill";
       b1.disabled = !!s.disabled; h1 = s.on || null;
-      b2.hidden = !s.second; if (s.second) { b2.textContent = s.second.label; b2.disabled = false; h2 = s.second.on; }
+      b2.hidden = !s.second; if (s.second) { b2.textContent = s.second.label; b2.className = s.second.quiet ? "btn-quiet" : "btn-out"; b2.disabled = false; h2 = s.second.on; }
       b3.hidden = !s.third; if (s.third) { b3.textContent = s.third.label; h3 = s.third.on; }
       sub.hidden = !s.sub; sub.textContent = "";
       if (s.sub) sub.append(s.sub);
@@ -3388,6 +3391,10 @@ function dataAccessOf(s) {
   return ["included", "billed", "none", "plan_required", "payment_failed"].includes(s.data_access) ? s.data_access : s.data_included === true ? "included" : null;
 }
 const hasData = (s) => { const a = dataAccessOf(s); return a === "included" || a === "billed"; };
+/* 沒卡:新 api 看 has_card(有沒有 active 綁卡,跟 can_run 脫鉤);舊 api 沒這欄,退回 reason——它只在 can_run=false 時有值,
+   所以舊 api 下手上還有綁卡前額度的新人會被當成有卡。main.js 有同語意的一份(dataAccessWhy) */
+const acctNoCard = (s) => !!s && (s.has_card === false || (s.has_card == null && s.reason === "NO_CARD"));
+const acctOffer = (s) => acctNoCard(s) && s.trial_eligible === true;
 /* 方案制(api 的 MONTHLY_BILLING_FROM 到了):登入後看 account_status——plan.tier 或 data_paths 只在方案制才有;
    沒登入看公開價目的 plan.monthly_billing_active。外殼比 api 切換先出,切換前一律 false,方案頁照舊講時價(那時是真的) */
 function planMo() {
@@ -3502,8 +3509,14 @@ function dataCardState() {
   if (planState() === "starting") return { calm: true, text: t("data.starting") };   // 已經按過啟動:不再叫他去看方案
   if (!acct) return { ...go, text: t("pv.e.unknown") };                              // 狀態查不到:不斷言它在哪個方案裡
   const da = dataAccessOf(acct);
-  // 方案制:沒有含資料的方案 → 兩個出口講清楚(雲端方案 / API 方案);有試用資格又沒卡的人,綁卡就有試用資料,照舊先講綁卡
-  if (da === "plan_required" && !(acct.reason === "NO_CARD" && acct.trial_eligible)) {
+  /* 方案制、有試用資格又沒卡(含手上還有綁卡前額度、can_run=true 的新人):只放動作、不放句子——agent 那一輪已經講了拿不到什麼;
+     缺資料不是錯誤,記號灰。主鈕直接開綁卡頁,收費講在那一頁(spec paywall-redesign-2026-10-21 §2.2) */
+  if (da === "plan_required" && acctOffer(acct)) {
+    return { calm: true, text: "", label: v.t ? t("lib.gate.trial", v) : t("plan.addCard"), on: () => bindGo("bind_data"),
+      second: { label: t("data.seePlan"), quiet: true, on: () => { trackFeature("plan_data"); planOpen(); } } };
+  }
+  // 方案制:沒有含資料的方案 → 兩個出口講清楚(雲端方案 / API 方案)
+  if (da === "plan_required") {
     return { text: t("data.noPlan"), label: t("data.seePlan"), on: () => { trackFeature("plan_data"); planOpen(); },
       second: { label: t("pv.apiPlan"), on: () => apiPlanGo() } };
   }
@@ -3516,7 +3529,7 @@ function dataCardState() {
     return { ...top, text: v.r ? t("data.noBalance", v) : t("data.noBalanceNoNum"), sub: t("data.noBalanceSub") };
   }
   // 以下切換前只有舊 api(沒有 data_access)走得到:那時資料真的只在試用 / 方案裡
-  if (acct && acct.reason === "NO_CARD" && acct.trial_eligible) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: v.p ? t(pvK("pv.e.sub"), v) : null };
+  if (acctOffer(acct)) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: v.p ? t(pvK("pv.e.sub"), v) : null };
   return { ...go, text: t(planMo() ? "pv.e.noTrial.m" : "pv.e.noTrial") };
 }
 function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
@@ -3644,7 +3657,7 @@ function planView() {
   const da = dataAccessOf(acct);
   if (planMo()) {
     // 方案制:有試用資格又沒卡 → 綁卡拿試用;試用中 → 試用;否則看資料:API 方案含資料、扣款失敗、沒有方案
-    if (acct.reason === "NO_CARD" && acct.trial_eligible) return "offer";
+    if (acctOffer(acct)) return "offer";
     if (planVars().n > 0) return "trial";
     // 方案有效、名下沒有主機(電腦版只開方案,或期內刪了主機):資料已含,要雲端主機到網站開
     const pl = acct.plan || {};
@@ -3653,7 +3666,7 @@ function planView() {
     return da === "payment_failed" ? "payFail" : "plan";
   }
   if (da === "billed") return "billed";                           // 沒綁卡但有餘額也付得起:不叫他去綁卡
-  if (acct.reason === "NO_CARD") return acct.trial_eligible ? "offer" : "noTrial";
+  if (acctNoCard(acct)) return acct.trial_eligible ? "offer" : "noTrial";
   if (planVars().n > 0) return "trial";
   if (da === "none") return "none";
   return da === "included" ? "included" : "plan";                 // plan = 舊 api(沒有 data_access)且不含資料
@@ -3690,7 +3703,7 @@ function planPaint() {
       row.append(el("span", "l", t("plan.bal")), val); id.append(row);
     }
     // 餘額列正下方:自動儲值短句(錢包的事,餘額列是它最近的家;account_status 沒有自動儲值開關旗標,金額有就出)。沒卡的人不出:沒有卡可刷,綁卡那格的底列會講
-    if (hasToken && v.a && v.top && !(acct && acct.reason === "NO_CARD")) id.append(el("p", "plan-fine", t("plan.topupShort", { a: v.a, b: v.top })));
+    if (hasToken && v.a && v.top && !acctNoCard(acct)) id.append(el("p", "plan-fine", t("plan.topupShort", { a: v.a, b: v.top })));
     sc.append(id); }
   const ext = (u) => () => window.blave.openExternal(u);
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;

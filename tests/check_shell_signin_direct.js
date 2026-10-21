@@ -14,7 +14,7 @@ const btn = () => ({ textContent: "", isConnected: true, dataset: {}, h: null, a
    新增一個 planOpen / setCat("plan") 就得來這裡說它為什麼不是登入(登入一律走 planSignIn) */
 const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查不到狀態 / 舊 api、看方案、綁卡 / 儲值、看完整方案
   "app.js": ["acctSignOut", "setCat", "dataCardState", "planOpen"],
-  "library.js": ["libGateBtn", "libBuyBox"],
+  "library.js": ["libGateBtn", "libBuyBox", "libPaintList"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21)
   "welcome.js": ["wdNote"],
   "trade.js": ["envPaintEmpty"],
 };
