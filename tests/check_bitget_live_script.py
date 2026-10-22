@@ -544,6 +544,11 @@ code = run_trade()
 log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
 check("[T12 mode after switching back (want the original)]" in log and '"read": "hedge"' in log,
       "--trade runs through T12 on the real modules and reads the original position mode back")
+check(all(f"[T12 one-way {x}" in log for x in ("over-close long", "over-close short", "close long through",
+                                                  "close short through"))
+      and "[T12 one-way legs after the over-close (want []; an opposite leg" in log
+      and not [l for l in log.splitlines() if l.startswith("[T12 one-way legs") and not l.endswith("[]")],
+      "T12 in one-way: reduceOnly over-close and lib close for both directions, flat after each")
 check("[T9 venue] \"bitget\"" in log or "[T9 venue] bitget" in log, "T9 ran (prefix on lib.venue_wiring, not lib.execute)")
 check(code == 0 and not BG.legs and BG.pos_mode == "hedge_mode" and not BG.plans
       and not any(o["state"] == "live" for o in BG.orders.values()),

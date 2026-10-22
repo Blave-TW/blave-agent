@@ -84,7 +84,9 @@ T1, T3, T2, T4.
       with the app, closed in two halves when it can; (c) an SL 0.05% under the mark that
       should fire, then sweep_orphan_stops must cancel the orphan TP; (d) not run on a main
       account (a limit at 5× the margin is far over the cap)
-  T12 position mode: only on a bare account, switch one-way ↔ hedge and read it back, open long + open
+  T12 position mode: only on a bare account, switch one-way ↔ hedge and read it back;
+      in one-way: per direction open → SL/TP (holdSide buy/sell) → over-close held + one step
+      reduceOnly (want flat, never the opposite leg) → reopen → close through the lib; then open long + open
       short + close both through the lib in the other mode (UTA hedge: closes carry
       reduceOnly yes — a refusal here means flip order_bitget.UTA_HEDGE_REDUCE_ONLY),
       SL/TP on each leg in hedge mode, switch back and read the original mode back (not
@@ -998,7 +1000,32 @@ def main():
                     return raw("POST", "/api/v3/account/set-hold-mode", {"holdMode": names[m]})
                 return raw("POST", "/api/v2/mix/account/set-position-mode", {"productType": PRODUCT, "posMode": names[m]})
 
+            def t12_oneway():
+                """One-way: the side table's reduce half (reduceOnly YES) and one-way TP/SL
+                (holdSide buy / sell), for each direction — the leg a reduce must never flip."""
+                q = minimum("NVDAUSDT")
+                step = float(order.get_contract_rules(env, "NVDAUSDT")["step"])
+                for d, sl, tp in (("long", 0.8, 1.2), ("short", 1.2, 0.8)):
+                    say(f"T12 one-way open {d}", order.place_market_order(env, "NVDAUSDT", d, q))
+                    last = order.get_mark_price(env, "NVDAUSDT")
+                    say(f"T12 one-way {d} SL/TP", order.place_protective_orders(
+                        env, "NVDAUSDT", d, sl_price=last * sl, tp_price=last * tp))
+                    say(f"T12 one-way {d} TP/SL list (want two)", raw_plans("NVDAUSDT"))
+                    cancel_own_plans(env, order, "NVDAUSDT", own_ids, say, "T12")
+                    h = held("NVDAUSDT", d)
+                    say(f"T12 one-way over-close {d} (held + one step, reduceOnly YES)", raw_order(
+                        "NVDAUSDT", d, order._floor_str(h + step, order.get_contract_rules(env, "NVDAUSDT")["step"]),
+                        reduce_only=True))
+                    time.sleep(2)
+                    say(f"T12 one-way legs after the over-close (want []; an opposite leg = the side table is "
+                        f"WRONG — stop and report)", legs("NVDAUSDT"))
+                    say(f"T12 one-way open {d} again", order.place_market_order(env, "NVDAUSDT", d, q))
+                    say(f"T12 one-way close {d} through the lib", order.close_position_partial(env, "NVDAUSDT", d, q))
+                    say(f"T12 one-way legs (want [])", legs("NVDAUSDT"))
+
             def t12_body():
+                if mode_of("NVDAUSDT")[1] == "oneway":
+                    t12_oneway()
                 q = minimum("NVDAUSDT")
                 say("T12 open long", order.place_market_order(env, "NVDAUSDT", "long", q))
                 say("T12 open short", order.place_market_order(env, "NVDAUSDT", "short", q))
