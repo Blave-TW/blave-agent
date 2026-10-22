@@ -25,6 +25,7 @@ import numpy as np
 from dotenv import dotenv_values
 from lib.param_scan import nice_grid, nice_step, scan_grid, find_plateau, on_edge, extend_axis, write_scan, plot_heatmap
 import strategy as s
+from lib.costs import fee_of  # the strategy's FEE, else its market default
 
 env  = dotenv_values()
 hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_secret_key', '')}
@@ -62,7 +63,7 @@ def scan1(entry_vals, exit_vals):
     grid = scan_grid(
         base_df, s.compute_signals, entry_vals, exit_vals,
         row_param='entry_z', col_param='exit_z',        # window / zscore_win stay at defaults = file values
-        fee=s.FEE, warmup=s.WARMUP,
+        fee=fee_of(s), warmup=s.WARMUP,
         valid_fn=lambda entry, exit_: entry < exit_,
     )
     print(f"round 1 掃描 {len(entry_vals)}×{len(exit_vals)} 組合,耗時 {time.time()-t1:.1f}s")
@@ -95,7 +96,7 @@ print(f"round 1 穩健參數: ENTRY_Z={best_entry}, EXIT_Z={best_exit}  "
 # current cell. The round-2 result is reported in the conversation instead.
 write_scan(grid1, entry_vals, exit_vals, nbr1, best1,
            output_dir=str(OUT),
-           row_param='ENTRY_Z', col_param='EXIT_Z', fee=s.FEE,
+           row_param='ENTRY_Z', col_param='EXIT_Z', fee=fee_of(s),
            start=s.START, end=base_df.index[-1].strftime('%Y-%m-%d'),
            current=(s.ENTRY_Z, s.EXIT_Z))
 plot_heatmap(grid1, entry_vals, exit_vals, best1,
@@ -119,7 +120,7 @@ t2 = time.time()
 grid2 = scan_grid(
     base_df, round2_fn, window_vals, zwin_vals,
     row_param='window', col_param='zscore_win',
-    fee=s.FEE, warmup=max(window_vals) + max(zwin_vals),   # longest windows in the grid
+    fee=fee_of(s), warmup=max(window_vals) + max(zwin_vals),   # longest windows in the grid
     valid_fn=lambda w, zw: w < zw,
 )
 print(f"round 2 掃描耗時: {time.time()-t2:.1f}s")

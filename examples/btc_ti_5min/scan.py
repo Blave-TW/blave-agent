@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from dotenv import dotenv_values
 from lib.param_scan import percentile_thresholds, scan_grid, find_plateau, on_edge, extend_axis, write_scan, plot_heatmap
 import strategy as s
+from lib.costs import fee_of  # the strategy's FEE, else its market default
 
 env  = dotenv_values()
 hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_secret_key', '')}
@@ -25,7 +26,7 @@ entry_vals, exit_vals = percentile_thresholds(df['TI'], current=(s.ENTRY_TH, s.E
 # ── 參數掃描 ──────────────────────────────────────────────────────────────────
 def scan(entry_vals, exit_vals):
     t1   = time.time()
-    grid = scan_grid(df, s.compute_signals, entry_vals, exit_vals, fee=s.FEE, freq='5min')
+    grid = scan_grid(df, s.compute_signals, entry_vals, exit_vals, fee=fee_of(s), freq='5min')
     total = len(entry_vals) * len(exit_vals)
     print(f"掃描 {len(entry_vals)}×{len(exit_vals)}={total} 組合,耗時 {time.time()-t1:.1f}s  "
           f"(平均 {(time.time()-t1)/total*1000:.0f}ms / 組合)")
@@ -50,7 +51,7 @@ print(f"穩健參數: ENTRY_TH={best_entry}, EXIT_TH={best_exit}  鄰域 Sharpe=
 # scan.json → web 穩健參數分頁(掃完必寫)
 write_scan(grid, entry_vals, exit_vals, nbr_mean, best_idx,
            output_dir=str(Path(__file__).parent),
-           row_param='ENTRY_TH', col_param='EXIT_TH', fee=s.FEE,
+           row_param='ENTRY_TH', col_param='EXIT_TH', fee=fee_of(s),
            start=s.START, end=df.index[-1].strftime('%Y-%m-%d'),
            current=(s.ENTRY_TH, s.EXIT_TH))
 

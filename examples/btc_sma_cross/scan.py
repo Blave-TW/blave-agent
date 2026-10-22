@@ -7,6 +7,7 @@ from dotenv import dotenv_values
 from lib.data import fetch_kline
 from lib.param_scan import nice_grid, scan_grid, find_plateau, on_edge, extend_axis, write_scan, plot_heatmap
 import strategy as s
+from lib.costs import fee_of  # the strategy's FEE, else its market default
 
 env  = dotenv_values()
 hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_secret_key', '')}
@@ -29,7 +30,7 @@ def scan(fast_vals, slow_vals):
     grid = scan_grid(
         base_df, s.compute_signals, fast_vals, slow_vals,
         row_param='fast', col_param='slow',
-        fee=s.FEE, warmup=max(slow_vals),      # 軸延伸後 warmup 跟著最長的窗
+        fee=fee_of(s), warmup=max(slow_vals),      # 軸延伸後 warmup 跟著最長的窗
         valid_fn=lambda f, sl: f < sl,
     )
     print(f"掃描 {len(fast_vals)}×{len(slow_vals)} 組合,耗時 {time.time()-t1:.1f}s")
@@ -55,7 +56,7 @@ print(f"穩健參數: SMA_FAST={best_fast}, SMA_SLOW={best_slow}  鄰域 Sharpe=
 # scan.json → web 穩健參數分頁(掃完必寫)
 write_scan(grid, fast_vals, slow_vals, nbr_mean, best_idx,
            output_dir=str(Path(__file__).parent),
-           row_param='SMA_FAST', col_param='SMA_SLOW', fee=s.FEE,
+           row_param='SMA_FAST', col_param='SMA_SLOW', fee=fee_of(s),
            start=s.START, end=base_df.index[-1].strftime('%Y-%m-%d'),
            current=(s.SMA_FAST, s.SMA_SLOW))
 

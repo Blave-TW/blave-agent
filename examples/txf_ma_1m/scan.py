@@ -8,6 +8,7 @@ from lib.data import fetch_twfutures_ohlcv
 from lib.strategy import add_realized_vol
 from lib.param_scan import scan_grid, find_plateau, plot_heatmap
 import strategy as s
+from lib.costs import fee_of  # the strategy's FEE, else its market default
 
 env  = dotenv_values()
 hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_secret_key', '')}
@@ -28,7 +29,7 @@ t1   = time.time()
 grid = scan_grid(
     base_df, s.compute_signals, fast_vals, slow_vals,
     row_param='fast', col_param='slow',
-    fee=s.FEE, warmup=warmup,
+    fee=fee_of(s), warmup=warmup,
     valid_fn=lambda f, sl: f < sl,
 )
 print(f"掃描耗時: {time.time()-t1:.1f}s")

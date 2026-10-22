@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import numpy as np
 from dotenv import dotenv_values
 import strategy as s
+from lib.costs import fee_of  # the strategy's FEE, else its market default
 from lib.validation import mcpt, plot_mcpt, write_mcpt_to_stats
 
 N_PERM = 5000  # the one thing this script changes vs the automatic run
@@ -26,7 +27,7 @@ print(f"Running MCPT for {s.STRATEGY_NAME} (n={N_PERM}, {len(close)} bars)...")
 actual, p_value, dist = mcpt(
     close, pos,
     n=N_PERM,
-    fee=s.FEE,
+    fee=fee_of(s),
     target_vol=0.30,
     max_lev=1.0,
     vol_window=60,
