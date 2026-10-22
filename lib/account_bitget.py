@@ -80,6 +80,7 @@ VERIFIED_MODES = frozenset(venue_traits.verified_modes("bitget")) if venue_trait
 UNVERIFIED = "unverified"
 
 UTA_MODE = "40085"  # a v2 private endpoint on a UTA account
+ELIGIBILITY = "40092"  # "unavailable due to applicable regulatory requirements or account eligibility"
 MODE_SWITCH = "mode_switch"  # ours: the account type changed or is changing — skip this round
 MODE_UNSUPPORTED = "mode_unsupported"  # ours: an account type this lib does not trade
 TIMESTAMP_CODES = {"40008", "40004", "40005"}
@@ -114,7 +115,12 @@ class BitgetError(Exception):
 REJECT_CODES = {"45110": reject_token.BELOW_MIN_SIZE, "45119": reject_token.SYMBOL_UNAVAILABLE,
                 "40762": reject_token.INSUFFICIENT_MARGIN, "43012": reject_token.INSUFFICIENT_MARGIN,
                 "43027": reject_token.BELOW_MIN_SIZE, "25102": reject_token.SYMBOL_UNAVAILABLE,
-                "25105": reject_token.SYMBOL_UNAVAILABLE, "12001": reject_token.INSUFFICIENT_MARGIN}
+                "25105": reject_token.SYMBOL_UNAVAILABLE, "12001": reject_token.INSUFFICIENT_MARGIN,
+                # measured 2026-10-22 (classic main account, Taiwan, TWTSMUSDT open): Bitget withholds
+                # the product from THIS account (region / eligibility). symbol_unavailable, not a new
+                # kind: to the user "this symbol cannot be traded here" is the answer either way, and
+                # it is the token web and desktop already render
+                ELIGIBILITY: reject_token.SYMBOL_UNAVAILABLE}
 
 
 def _creds(env):
@@ -194,6 +200,10 @@ def error_of(env, r, path):
     if code == UTA_MODE:
         # not the key's fault: the account is (now) a UTA — _get / order_bitget switch over
         return BitgetError(f"bitget {path} code={code}: 這個 Bitget 帳戶是統一帳戶（UTA）（{msg}）",
+                           code=code, http_status=r.status_code)
+    if code == ELIGIBILITY:
+        return BitgetError(f"Bitget 依所在地區或帳戶資格不開放這項交易給這個帳戶（code={code}），跟策略本身無關："
+                           f"換一個能交易的標的，或洽 Bitget 客服確認帳戶資格（{msg[:120]}）",
                            code=code, http_status=r.status_code)
     return BitgetError(f"bitget {path} code={code}: {msg}", code=code, http_status=r.status_code)
 

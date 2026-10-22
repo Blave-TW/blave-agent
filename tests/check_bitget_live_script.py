@@ -433,6 +433,9 @@ class Bitget:
                 return 400, {"code": "40774", "msg": "has position or order", "data": None}
             self.pos_mode = q["posMode"]
             return 200, ok({"posMode": self.pos_mode})
+        if path == "/api/v2/mix/order/place-order" and q.get("symbol") in getattr(self, "withheld", ()):
+            return 400, {"code": "40092", "msg": "This service is currently unavailable due to applicable "
+                         "regulatory requirements or account eligibility conditions.", "data": None}
         if path == "/api/v2/mix/order/place-order" and getattr(self, "broke", False):
             return 400, {"code": "40762", "msg": "The order amount exceeds the balance", "data": None}
         if path == "/api/v2/mix/order/place-order":
@@ -602,6 +605,22 @@ log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
 check(code == 4 and "T1 被拒：保證金不足" in log and "（40762）" in log and "[audit]" in log and not BG.legs,
       "T1 refused with 40762: the cleanup runs, one line names why, exit 4 (no crash)",
       (code, [l for l in log.splitlines() if "被拒" in l]))
+
+# TWTSM withheld from this account (40092, as Wei's run measured): T5 records it and every
+# other step still runs on NVDA / BTC; the account ends flat in its mode, exit 0
+BG.__init__()
+del BG.broke
+BG.withheld = {"TWTSMUSDT"}
+open(os.path.join(envdir, "trade.log"), "w").close()
+code = run_trade()
+log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
+check(code == 0 and "T5 TWTSMUSDT NOT TRADABLE ON THIS ACCOUNT (40092)" in log and "[T12 mode at the very end" not in log
+      and "[T12 mode after switching back (want the original)]" in log and "此帳戶不可交易" in log
+      and not BG.legs and BG.pos_mode == "hedge_mode",
+      "40092 on TWTSM: marked not tradable, T6–T12 still run on NVDA, flat, original mode, exit 0", code)
+check("[order_reject:symbol_unavailable]" in log and "跟策略本身無關" in log,
+      "…the refusal is tagged symbol_unavailable and says it is Bitget's region / eligibility rule, not the strategy")
+del BG.withheld
 
 # R10: a leverage that reads back changed is set back and shouted about
 BG.__init__()

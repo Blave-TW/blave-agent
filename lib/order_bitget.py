@@ -98,8 +98,9 @@ _V3_ORDER_GONE = {"40109", ORDER_ABSENT}
 _PLAN_GONE = {"43025"}
 UNVERIFIED = acct.UNVERIFIED
 # the order may have landed — query by clientOid (UTA Place-Order doc names the first three);
-# 25212 duplicate clientOid (UTA error page): an earlier send of this very order landed
-_UNCERTAIN = {"40725", "45001", "40010", "25212"}
+# duplicate clientOid — 25212 (UTA error page), 40786 (classic, measured T2 2026-10-22): an
+# earlier send of this very order landed
+_UNCERTAIN = {"40725", "45001", "40010", "25212", "40786"}
 
 _FILLED = {"filled", "full_fill"}
 _GONE = {"canceled", "cancelled", "cancel"}

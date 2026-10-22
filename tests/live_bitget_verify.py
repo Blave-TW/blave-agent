@@ -762,6 +762,7 @@ def main():
     t12_retry = None
     cur = {"step": None}
     failed = None
+    not_tradable = {}
     try:
         if any(want(t) for t in ("T1", "T2", "T3", "T4")) and not base:
             say("T1-T4 skipped", "no symbol's minimum + one step fits under the per-order cap")
@@ -800,7 +801,17 @@ def main():
             for sym in ("NVDAUSDT", "TWTSMUSDT"):
                 touched.add(sym)
                 q = minimum(sym)
-                say(f"T5 {sym} open {q}", order.place_market_order(env, sym, "long", q))
+                try:
+                    opened = order.place_market_order(env, sym, "long", q)
+                except acct.BitgetError as e:
+                    if e.code != acct.ELIGIBILITY:
+                        raise
+                    # Bitget withholds this product from this account (region / eligibility): a
+                    # measurement, not a failure — the remaining steps trade NVDA / BTC only
+                    not_tradable[sym] = str(e)
+                    say(f"T5 {sym} NOT TRADABLE ON THIS ACCOUNT (40092) — skipped", str(e))
+                    continue
+                say(f"T5 {sym} open {q}", opened)
                 say(f"T5 {sym} get_positions (canonical name)", [p for p in acct.get_positions(env)
                                                                 if p["symbol"] == sym])
                 say(f"T5 {sym} close", order.close_position_partial(env, sym, "long", q))
@@ -1055,6 +1066,8 @@ def main():
             say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")
         except OSError as e:
             say("audit unreadable", str(e))
+        if not_tradable:
+            emit(f"此帳戶不可交易（Bitget 40092，地區或帳戶資格限制）：{', '.join(sorted(not_tradable))}")
         if failed:
             emit(failed)
         if unclean:

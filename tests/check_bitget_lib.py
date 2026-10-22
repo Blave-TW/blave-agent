@@ -640,6 +640,15 @@ except acct.BitgetError:
     check(True, "both lists empty but the plan still listed open → raises (never read as cancelled)")
 PLANS.pop("still")
 route("POST", "/api/v2/mix/order/cancel-plan-order", cancel_plan)
+route("POST", "/api/v2/mix/order/place-order", lambda p: err("40092", "This service is currently unavailable due to "
+                                                              "applicable regulatory requirements or account eligibility"))
+try:
+    order.place_market_order(ENV, "TWTSMUSDT", "long", 0.08)
+    check(False, "40092 raises")
+except acct.BitgetError as e:
+    check(e.code == "40092" and str(e).startswith("[order_reject:symbol_unavailable]") and "地區或帳戶資格" in str(e),
+          "40092 (measured): symbol_unavailable, in words — Bitget's region / eligibility rule, not the strategy", str(e))
+route("POST", "/api/v2/mix/order/place-order", place)
 route("POST", "/api/v2/mix/order/cancel-order", lambda p: err("43001", "The order does not exist"))
 check(order.cancel_order(ENV, "NVDAUSDT", order_id="404")["status"] == "order_not_found",
       "classic cancel refused with 43001 (measured R9) → order_not_found")
