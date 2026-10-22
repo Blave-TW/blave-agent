@@ -115,6 +115,7 @@ import stat
 import sys
 import tempfile
 import time
+import traceback
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
@@ -355,6 +356,34 @@ def sweep_if_all_own(env, acct, order, own_ids, say, tag):
     out = order.sweep_orphan_stops(env, positions)
     say(f"{tag} sweep_orphan_stops", out)
     return out
+
+
+REJECT_HINT = {
+    "insufficient_margin": "保證金不足，請先在 App 劃轉 USDT 到 USDT-M 合約帳戶",
+    "below_min_size": "低於交易所的最小下單量",
+    "symbol_unavailable": "這個幣種現在不能下單（下架、維護或限制 API）",
+    "key_permission": "金鑰權限不足或金鑰錯誤（要開合約交易權限）",
+}
+
+
+def failure_line(step, e):
+    """One readable line for a step that stopped the run (the venue refused or raised)."""
+    msg = str(e)
+    kind = next((k for k in REJECT_HINT if f"[order_reject:{k}]" in msg), None)
+    code = getattr(e, "code", None)
+    why = REJECT_HINT.get(kind) or msg[:200]
+    verb = "被拒" if kind or code else "中斷"  # a venue answer vs a dropped connection / local error
+    return f"{step or 'order steps'} {verb}：{why}" + (f"（{code}）" if code else "")
+
+
+def futures_available(env, acct, uta):
+    """USDT the trading account can put up as margin now."""
+    if uta:
+        rows = acct._uta_assets(env).get("assets") or []
+        row = next((r for r in rows if r.get("coin") == "USDT"), {})
+    else:
+        row = acct._futures_row(env) or {}
+    return float(row.get("available") or 0)
 
 
 def restore_mode_after_cleanup(t12_retry, bare, say):
@@ -705,6 +734,14 @@ def main():
         fee += qty * px * 2 * TAKER_FALLBACK * n
         spread += qty * (bbo["ask"] - bbo["bid"]) * n
         peak = max(peak, qty * px)
+    need = 2 * peak  # T12 holds a long and a short at once
+    avail = futures_available(env, acct, uta)
+    if avail < need:
+        emit(f"\nOrder steps NOT run — the {'unified' if uta else 'USDT-M futures'} account has {avail:.2f} USDT "
+             f"available, below {need:.2f} (twice the largest order, {peak:.2f}).")
+        emit(f"先在 Bitget App 把至少 {max(20.0, need):.0f} USDT 劃轉到 "
+             f"{'統一帳戶' if uta else 'USDT-M 合約帳戶'}，再重跑。金鑰沒有劃轉權限，腳本做不到這一步。")
+        sys.exit(3)
     emit(f"\n{sum(n for *_, n in plan)} round trips, one position at a time; largest notional "
           f"{peak:.2f} USDT; every single order is capped at {MAX_ORDER_USDT:g} USDT (refused before it is sent).")
     emit(f"T1–T4 trade {base}." if base else "T1–T4 NOT run: neither BTC's nor NVDA's minimum + one step fits the cap.")
@@ -723,19 +760,24 @@ def main():
 
     touched = set()
     t12_retry = None
+    cur = {"step": None}
+    failed = None
     try:
         if any(want(t) for t in ("T1", "T2", "T3", "T4")) and not base:
             say("T1-T4 skipped", "no symbol's minimum + one step fits under the per-order cap")
         if base and any(want(t) for t in ("T1", "T2", "T3", "T4")):
+            cur["step"] = "T1–T4"
             touched.add(base)
             q = minimum(base)
             step = float(order.get_contract_rules(env, base)["step"])
             cid = rc()
             if want("T1"):
+                cur["step"] = "T1"
                 say("T1 place_market_order", order.place_market_order(env, base, "long", q, client_order_id=cid))
                 say("T1 raw detail", raw_detail(base, clientOid=cid))
                 say("T1 legs", legs(base))
             if want("T3"):  # before T2: the over-close is held + one step, under the cap
+                cur["step"] = "T3"
                 h = held(base, "long")
                 say("T3 modes", mode_of(base))
                 say("T3 over-close (held + one step)", raw_order(
@@ -744,14 +786,17 @@ def main():
                 time.sleep(2)
                 say("T3 legs (a short leg = the side table is WRONG — stop and report)", legs(base))
             if want("T2"):
+                cur["step"] = "T2"
                 say("T2 resend the filled clientOid", raw_order(base, "long", format(q, "f"), cid=cid))
                 time.sleep(2)
                 say("T2 legs (one more of T1's size = a filled id is NOT deduplicated)", legs(base))
             if want("T4"):
+                cur["step"] = "T4"
                 for p in legs(base):
                     close_chunked(env, order, base, p["side"], p["total"], max_qty(base), say, "T4", min_qty(base))
                 say("T4 legs (want [])", legs(base))
         if want("T5"):
+            cur["step"] = "T5"
             for sym in ("NVDAUSDT", "TWTSMUSDT"):
                 touched.add(sym)
                 q = minimum(sym)
@@ -761,6 +806,7 @@ def main():
                 say(f"T5 {sym} close", order.close_position_partial(env, sym, "long", q))
                 say(f"T5 {sym} legs (want [])", legs(sym))
         if want("T6") or want("T7"):
+            cur["step"] = "T6/T7"
             touched.add("NVDAUSDT")
             q = minimum("NVDAUSDT")
             bbo = order.get_bbo(env, "NVDAUSDT")
@@ -808,6 +854,7 @@ def main():
                 say("T7d place_limit_order post_only crossing through the lib (want post_only_rejected)",
                     order.place_limit_order(env, "NVDAUSDT", "long", q, cross, post_only=True))
         if want("T8"):
+            cur["step"] = "T8"
             touched.add("NVDAUSDT")
             q = minimum("NVDAUSDT")
             say("T8 open", order.place_market_order(env, "NVDAUSDT", "long", q))
@@ -822,6 +869,7 @@ def main():
             say("T8 plan list after cancel (want [])", order.get_open_algo_orders(env, "NVDAUSDT"))
             say("T8 close", order.close_position_partial(env, "NVDAUSDT", "long", q))
         if want("T9"):
+            cur["step"] = "T9"
             touched.add("NVDAUSDT")
             import threading
             from lib import execute as ex, venue_wiring as vw
@@ -861,6 +909,7 @@ def main():
                 if os.path.exists(".env"):
                     os.remove(".env")
         if want("T10"):
+            cur["step"] = "T10"
             touched.add("NVDAUSDT")
             q = minimum("NVDAUSDT")
             say("T10 open", order.place_market_order(env, "NVDAUSDT", "long", q))
@@ -875,6 +924,7 @@ def main():
                 cancel_own_plans(env, order, "NVDAUSDT", own_ids, say, "T10")
             say("T10 plan list at the end (want [])", order.get_open_algo_orders(env, "NVDAUSDT"))
         if want("T11"):
+            cur["step"] = "T11"
             touched.add("NVDAUSDT")
             q = minimum("NVDAUSDT")
             plans = lambda: order.get_open_algo_orders(env, "NVDAUSDT")
@@ -928,6 +978,7 @@ def main():
 
             say("T11d not run", "a limit sized at 5× the margin is far over the per-order cap on a main account")
         if want("T12"):
+            cur["step"] = "T12"
             touched.add("NVDAUSDT")
             names = {"oneway": "one_way_mode", "hedge": "hedge_mode"}
 
@@ -974,6 +1025,9 @@ def main():
             if switch_and_restore(set_mode, read_pm, lambda: not precheck(env, acct, order),
                                   "hedge" if pm == "oneway" else "oneway", say, t12_body):
                 t12_retry = None
+    except Exception as e:  # a refused or failed order: clean up, then say why, no traceback
+        failed = failure_line(cur["step"], e)
+        say("STOPPED", f"{cur['step']}: {traceback.format_exc()}")
     finally:
         shield_signals()
         emit("cleaning up — do not press Ctrl-C again or close this window; wait for the last line")
@@ -1001,9 +1055,13 @@ def main():
             say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")
         except OSError as e:
             say("audit unreadable", str(e))
+        if failed:
+            emit(failed)
         if unclean:
             emit(f"NOT FLAT: {', '.join(unclean)} — close in the Bitget app now")
             sys.exit(2)
+        if failed:
+            sys.exit(4)
 
 
 def watch_switch(env, acct, order, say, every_s=5, minutes=30):

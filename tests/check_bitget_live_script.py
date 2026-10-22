@@ -414,7 +414,8 @@ class Bitget:
             self.drift = max(drift - 1, 0)
             return 200, ok({"crossMarginLeverage": self.lev})
         if path == "/api/v2/mix/account/accounts":
-            return 200, ok([{"marginCoin": "USDT", "accountEquity": "30", "available": "30", "unrealizedPL": "0"}])
+            a = getattr(self, "avail", "30")
+            return 200, ok([{"marginCoin": "USDT", "accountEquity": a, "available": a, "unrealizedPL": "0"}])
         if path == "/api/v2/account/all-account-balance":
             return 200, ok([{"accountType": "futures", "usdtBalance": "30"}, {"accountType": "spot", "usdtBalance": "70"}])
         if path in ("/api/v2/spot/account/assets", "/api/v2/account/funding-assets"):
@@ -432,6 +433,8 @@ class Bitget:
                 return 400, {"code": "40774", "msg": "has position or order", "data": None}
             self.pos_mode = q["posMode"]
             return 200, ok({"posMode": self.pos_mode})
+        if path == "/api/v2/mix/order/place-order" and getattr(self, "broke", False):
+            return 400, {"code": "40762", "msg": "The order amount exceeds the balance", "data": None}
         if path == "/api/v2/mix/order/place-order":
             if any(o.get("clientOid") == q.get("clientOid") for o in self.orders.values()):
                 return 400, {"code": "25212", "msg": "Duplicate clientOid", "data": None}
@@ -580,6 +583,25 @@ check("[audit]" in log and "NOT FLAT" in log and "NOT BACK IN THE ORIGINAL POSIT
       "…the audit, NOT FLAT and NOT BACK are all printed",
       [l[:80] for l in log.splitlines() if l.startswith(("[audit", "NOT"))])
 Bitget.handle = orig_handle
+
+# the futures account short of margin: stopped before the cost bound, nothing placed
+BG.__init__()
+BG.avail = "5"
+open(os.path.join(envdir, "trade.log"), "w").close()
+code = run_trade()
+log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
+check(code == 3 and not BG.posts and "劃轉" in log and "Estimated cost" not in log,
+      "available under twice the largest order: exit 3 before the cost bound, nothing placed", code)
+# the venue refuses T1 for margin (40762, as Wei's run measured): cleanup, one line why, exit 4, no traceback
+BG.__init__()
+del BG.avail
+BG.broke = True
+open(os.path.join(envdir, "trade.log"), "w").close()
+code = run_trade()
+log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
+check(code == 4 and "T1 被拒：保證金不足" in log and "（40762）" in log and "[audit]" in log and not BG.legs,
+      "T1 refused with 40762: the cleanup runs, one line names why, exit 4 (no crash)",
+      (code, [l for l in log.splitlines() if "被拒" in l]))
 
 # R10: a leverage that reads back changed is set back and shouted about
 BG.__init__()
