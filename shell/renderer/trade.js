@@ -943,7 +943,8 @@ function trSigned(p) {
 function trPaperOf(n) {
   if (typeof PAPER === "undefined" || typeof trPaperTwOk !== "function" || !trPaperTwOk()) return false;
   const r = (typeof trReport === "function" && trReport()) || {}, ex = r.config && typeof r.config.exchanges === "object" ? r.config.exchanges : null;
-  if (ex && Object.prototype.hasOwnProperty.call(ex, n) && !(TR_AS_SAVED && ex[n] === "")) return ex[n] === PAPER;
+  if (TR_AS_SAVED) return trSavedRoute(n, r) === PAPER;
+  if (ex && Object.prototype.hasOwnProperty.call(ex, n)) return ex[n] === PAPER;
   const ids = trVenueIds(r);
   return ids.length === 1 && ids[0] === PAPER;
 }
@@ -952,13 +953,24 @@ function trPaperOf(n) {
 // 那是「只看訊號」,照訊號算目標與張數,不當沒路由
 function trRouteBlank(n) {
   const r = (typeof trReport === "function" && trReport()) || {}, c = r.config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
-  return !TR_AS_SAVED && !!ex && Object.prototype.hasOwnProperty.call(ex, n) && ex[n] === "" && trVenueIds(r).length > 0;
+  if (TR_AS_SAVED) return trVenueIds(r).length > 0 && trSavedRoute(n, r) === "";
+  return !!ex && Object.prototype.hasOwnProperty.call(ex, n) && ex[n] === "" && trVenueIds(r).length > 0;
 }
-/* 存檔後的路由(runtime 存金額時 `old.get(n) or default_venue`:"" 跟沒有路由紀錄一樣,繼承唯一綁著那家)。
+/* 存檔後的路由(同 runtime command_listener._cmd_amounts):路由指著還綁著的那家就留;其餘(""、沒有紀錄、指著已解綁的)繼承 default——
+   各成員還綁著的路由只有一家就是它,否則只綁一家就是那家,都不是 = ""(沒路由,對帳器不下)。 */
+function trSavedRoute(n, r) {
+  const ids = trVenueIds(r), ex = r && r.config && typeof r.config.exchanges === "object" && r.config.exchanges ? r.config.exchanges : {};
+  const keep = (v) => typeof v === "string" && ids.indexOf(v) >= 0;
+  if (Object.prototype.hasOwnProperty.call(ex, n) && keep(ex[n])) return ex[n];
+  const used = Object.keys(ex).map((k) => ex[k]).filter(keep).filter((v, i, a) => a.indexOf(v) === i);
+  return used.length === 1 ? used[0] : ids.length === 1 ? ids[0] : "";
+}
+/* 照存檔後的路由算(trSavedRoute)。
    策略組合 › 配置是存檔前的編輯面,畫的是按下儲存之後會下的:綁好交易所、還沒重存時沒路由的那支照草稿算,不畫成 0(0.1.28 Wei 實測 0 TWD)。
-   自動下單 › 部位、對帳、存檔框的「原」照對帳器現況,不進這裡 */
+   金額表的部位欄、存檔框的「新」那側(列出的單、目標的新值)同一條:綁好之後按儲存,存了會買的台股那一列要列出來(Wei 10-22)。
+   自動下單 › 部位、對帳、存檔框的「原」照對帳器現況(on = false) */
 let TR_AS_SAVED = false;
-function trAsSaved(fn) { const was = TR_AS_SAVED; TR_AS_SAVED = true; try { return fn(); } finally { TR_AS_SAVED = was; } }
+function trAsSaved(fn, on = true) { const was = TR_AS_SAVED; TR_AS_SAVED = on; try { return fn(); } finally { TR_AS_SAVED = was; } }
 function trTwCash(sym, paper) { return !!paper && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
 function trClientTargets(amounts, states, contracts) {
@@ -3164,6 +3176,7 @@ function trPaintPosCell(td, a, pos, tc, f) {
   const box = trEl("span", "cell2"); box.append(main, trEl("span", "pos-sub", sub)); td.appendChild(box);
 }
 function trAmountTable(names, stored, states) {
+  if (!TR_AS_SAVED) return trAsSaved(() => trAmountTable(names, stored, states));   // 配置頁是存檔前的編輯面(trSavedRoute)
   const frag = document.createDocumentFragment();
   frag.appendChild(poCfgSec());
   const total = trEl("div", "pf-total"), bar = trEl("div", "pf-savebar"), cloud = TR.env === "cloud";
@@ -3565,6 +3578,7 @@ function trCfLongOnly(s, n) {
    其他算不出的(過了等待窗、舊 lib)沒有貢獻:對帳器只算有 state.json 的,帳上那些檔下一輪照樣賣,照列。
    回傳另帶 held = {wait: [這一輪不動、沒列單的標的], names: [在等的策略], gate: [被訊號閘擋下的標的], unknown: 目標不知道的那檔這次有動}(框的說明句與標題用) */
 function trCfRows(o) {
+  if (!TR_AS_SAVED) return trAsSaved(() => trCfRows(o));
   /* 被換掉、帳上還撐著的那段(同 lib/portfolio _first_signal_targets):離開的成員(沒金額、或自己又在等)只算帳上 as 扣掉留下成員那份之後
      還有的,同號且不超過;閘中的離開成員自己的目標沒到帳,取剩下的全部。快照已在窗內(an.inWin)就從它的 frozen 接著扣這次才離開的 */
   function trCfHold(an, sending, ws, as, acct) {
@@ -3587,12 +3601,12 @@ function trCfRows(o) {
   }
   const st = trCfStates(o.r, o.stored, o.sending, o.contractsAfter);
   const known = (am) => { const x = {}; Object.keys(am).forEach((n) => { if (st.missing.indexOf(n) < 0) x[n] = am[n]; }); return x; };
-  const before = trClientTargets(known(o.stored), st.states, o.contractsBefore), after = trClientTargets(known(o.sending), st.states, o.contractsAfter);
+  const before = trAsSaved(() => trClientTargets(known(o.stored), st.states, o.contractsBefore), false), after = trClientTargets(known(o.sending), st.states, o.contractsAfter);
   const holds = trCfHolds(o.r, o.stored, o.sending, o.contractsAfter, st), gated = new Set(holds.gate), blind = new Set();
   Object.keys(holds.wait).forEach((k) => { if (holds.wait[k].some((n) => st.missing.indexOf(n) >= 0)) blind.add(k); });
   const held = { wait: [], names: [], gate: [] }, hit = (a, k) => { if (a.indexOf(k) < 0) a.push(k); };
   // 區(單位)跟部位表同一個判法:只看撐這個標的的那幾支策略的計價(trContribs)
-  const qmap = trQuoteMap() || {}, cs0 = trContribs(known(o.stored), st.states, o.contractsBefore), cs1 = trContribs(known(o.sending), st.states, o.contractsAfter);
+  const qmap = trQuoteMap() || {}, cs0 = trAsSaved(() => trContribs(known(o.stored), st.states, o.contractsBefore), false), cs1 = trContribs(known(o.sending), st.states, o.contractsAfter);
   const zoneOf = (sym) => { const cs = (cs1[sym] || []).concat(cs0[sym] || []); return trSymZone(sym, cs.map((c) => qmap[c.name]), cs.map((c) => trSrcMarket(o.r, c.name))); };
   // 每列的貢獻策略(移出的只在 cs0):表頭時間只看這幾支用的預覽
   const by = (sym) => (cs1[sym] || []).concat(cs0[sym] || []).map((c) => c.name);
@@ -3713,7 +3727,7 @@ function trSaveAmounts(names, stored, opener, o) {
   const relevant = (n) => (!(n in stored) && Number(sending[n]) > 0) || ((n in stored) && Number(sending[n]) !== old(n));
   const pvReq = (S.pvReq = S.pvReq || {});
   // 框開著時 trCfTick 可能在另一個視角是 TR 的時候叫進來:那時借 trWith 換過去算
-  const paintBody = () => (TR === S ? (f) => f() : (f) => trWith(S, f))(() => {
+  const paintBody = () => (TR === S ? (f) => f() : (f) => trWith(S, f))(() => trAsSaved(() => {
     const r = trReport() || {}, firing = trCfFiring(S.st, S.pending), recon = trHasAccount(r);
     const ctBefore = trContracts(), ctAfter = Object.assign({}, ctBefore, ctAll || {});
     const tgt0 = trClientTargets(sending, poPartStates(sending, r.states || {}), ctAfter);
@@ -3817,7 +3831,7 @@ function trSaveAmounts(names, stored, opener, o) {
     }
     cf.title = title; cf.firing = fire; cf.wait = wait; cf.rows = m.rows.length + amtOnly.length; cf.notes = (!wait && !m.rows.length && !amtOnly.length && flatNew.length ? 1 : 0) + codeChanged.length + hostOld.length + (late ? 1 : 0) + (wait ? 1 : 0) + (unread ? 1 : 0) + (oldPv.length ? 1 : 0) + (held.wait.length ? 1 : 0) + (held.gate.length ? 1 : 0);
     if (wait && cf.timer == null) cf.timer = setTimeout(() => { cf.timer = null; trCfTick(); }, Math.max(0, cf.until - Date.now()) + 50);
-  });
+  }));
   // 草稿的預覽不是最新那一根(按 A1 之後過了一根 K 棒或收盤):背景再算一次,框不等它;完全沒有預覽的也在這裡請(§3-2、§3-3)
   { const r = trReport() || {}; if (trPvHost(r)) { const m0 = trCfStates(r, stored, sending, Object.assign({}, trContracts(), ctAll || {}));
       m0.stale.concat(m0.missing.filter(relevant)).forEach((n) => trPvRequest(S, n)); } }

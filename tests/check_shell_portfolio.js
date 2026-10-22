@@ -346,7 +346,11 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     const live = vm.runInContext("trClientTargets(__m[0], __m[1], null)", ctx);
     ok("綁模擬交易後、路由還是 \"\"(存檔前):配置頁台股寫 500 股＋小字 500,000 TWD,不是 0 TWD;對帳現況(trClientTargets)照舊 0、離開配置頁後不殘留存檔後的路由",
       cells.some((x) => x === 'po.twShares {"n":"500"}500,000 TWD') && !cells.some((x) => /^0 TWD$/.test(x)) && J(live) === J({ 2330: 0 })
-      && vm.runInContext("trPaperOf('c') === false && trRouteBlank('c') === true", ctx), J([cells.filter((x) => /TWD|tw/.test(x)), live])); }
+      && vm.runInContext("trPaperOf('c') === false && trRouteBlank('c') === true", ctx), J([cells.filter((x) => /TWD|tw/.test(x)), live]));
+    // 金額表「部位」欄同一個口徑:台股投資組合做空 2330(權重 −0.5),存檔後路由模擬交易 = 現股、空頭壓 0(lib aggregate_portfolio)→ 空手;照現況(沒路由)會畫成空 500,000
+    sts.c.weights = { 2330: -0.5 }; ctx.TR.sig = {};
+    const pos = flat(vm.runInContext("trAmountTable(['c'], __m[0], __m[1])", ctx)).filter((n) => n.tag === "td" && /\bpos\b/.test(n.className)).map((n) => n.textContent);
+    ok("綁模擬交易後、路由還是 \"\"(存檔前):配置頁金額表的部位欄照存檔後算(台股現股空頭壓 0 → 空手),不畫成空單", pos.length === 1 && pos[0] === "tr.flat", J(pos)); }
   // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 部位「—」+ tooltip;有這支、position 0 → 空手
   { ctx.TR = bag({}); ctx.TR.st.report.states = { tw: { symbol: "2330", position: 1, market: "spot" } }; ctx.TR.edits = {};
     const am = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
