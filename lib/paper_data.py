@@ -68,6 +68,12 @@ try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 log = logging.getLogger("paper_data")
 
@@ -107,10 +113,9 @@ def _strategy_symbol(name):
     """The symbol a strategy trades — state.json first (what it actually set at
     runtime), else the SYMBOL constant parsed from strategy.py."""
     try:
-        with open(f"strategies/{name}/state.json") as f:
-            s = json.load(f).get("symbol")
-            if s:
-                return _norm(s)
+        s = load_json(f"strategies/{name}/state.json").get("symbol")
+        if s:
+            return _norm(s)
     except (OSError, ValueError):
         pass
     try:
@@ -320,8 +325,7 @@ _COLLISION_RETRY_S = 600
 
 def _collision_table(day):
     try:
-        with open(COLLISION_PATH) as f:
-            d = json.load(f)
+        d = load_json(COLLISION_PATH)
         if d.get("date") == day and isinstance(d.get("verdicts"), dict):
             return d["verdicts"]
     except (OSError, ValueError, TypeError, AttributeError):
@@ -444,8 +448,7 @@ def _us_owned(sym):
         if _strategy_symbol(name) == sym:
             return True
         try:
-            with open(os.path.join(os.path.dirname(path), "state.json")) as f:
-                w = json.load(f).get("weights")
+            w = load_json(os.path.join(os.path.dirname(path), "state.json")).get("weights")
         except (OSError, ValueError, AttributeError):
             continue
         if isinstance(w, dict) and sym in {_norm(k) for k in w}:
@@ -575,8 +578,7 @@ def legacy_tw_price(symbol, env):
     want = _norm(symbol)
     for path in sorted(glob.glob("strategies/*/state.json")):
         try:
-            with open(path) as f:
-                w = json.load(f).get("weights")
+            w = load_json(path).get("weights")
         except (OSError, ValueError, AttributeError):
             continue
         if not isinstance(w, dict) or want not in {_norm(k) for k in w}:
@@ -623,8 +625,7 @@ def _tw_day_verdict(day, env):
     if _tw_day_fresh(hit, now):
         return hit[1]
     try:
-        with open(TW_DAY_PATH) as f:
-            d = json.load(f)
+        d = load_json(TW_DAY_PATH)
         if d.get("date") == day.isoformat():
             hit = (float(d.get("checked_at") or 0), d.get("verdict"))
             if _tw_day_fresh(hit, now):
@@ -715,8 +716,7 @@ def _sane(rate, ccy=None):
 
 def _read_fx_file():
     try:
-        with open(FX_PATH) as f:
-            d = json.load(f)
+        d = load_json(FX_PATH)
         return (d.get("rates") or {}), float(d.get("ts") or 0)
     except (OSError, ValueError, TypeError, AttributeError):
         return {}, 0.0

@@ -344,7 +344,8 @@ def s13(w):
             hit.append(path)
             return io.StringIO("")
         return real(path, *a, **k)
-    with _Patched(w.cl, "open", torn):
+    # the reads go through atomic_file.load_json (its retry) — patch its open too
+    with _Patched(w.cl, "open", torn), _Patched(w.cl.atomic_file, "open", torn):
         r = w.amounts(a1=1000)
     w.check(hit and not isinstance(r, Exception), f"S13: first read torn, save lands ({r})")
     w.eq(w.settle(), [], "S13: still no order on the old long")
@@ -386,7 +387,8 @@ def s15(w):
             raise PermissionError(13, "in use", path)
         return real(path, *a, **k)
     before = open("manager/portfolio_config.json").read()
-    with _Patched(w.cl, "open", locked_mirror):
+    # the reads go through atomic_file.load_json (its retry) — patch its open too
+    with _Patched(w.cl, "open", locked_mirror), _Patched(w.cl.atomic_file, "open", locked_mirror):
         r = w.amounts(a1=1000)
     w.check(str(r).startswith("SAVE_FAILED: "), f"S15: mirror unreadable → SAVE_FAILED ({r!r})")
     real_mtime = os.path.getmtime

@@ -32,6 +32,20 @@ from datetime import datetime
 
 from lib import venue_traits
 from lib.portfolio import load_portfolio_config, market_key, split_key, spot_scope
+try:
+    from lib.winreplace import load_json, read_retry
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def read_retry(read, *args, **kwargs):
+        return read(*args, **kwargs)
+
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
+
+
+def _read_lines(path):
+    with open(path) as f:
+        return f.readlines()
 
 _ENV_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_API_KEY\s*=", re.IGNORECASE)
 _RESERVED_PREFIXES = {"BLAVE"}
@@ -42,15 +56,15 @@ def read_env(path=".env"):
     """Minimal .env parse — the dict shape every lib takes."""
     env = {}
     try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip().strip("'\"")
+        lines = read_retry(_read_lines, path)  # the runtime replaces .env on every bind
     except OSError:
-        pass
+        return env
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env[k.strip()] = v.strip().strip("'\"")
     return env
 
 
@@ -77,8 +91,7 @@ def _ui_bound_ids():
     """Lowercased venue ids from the UI bind manifest, or None when
     absent/invalid (fail-open — see comment above)."""
     try:
-        with open(_CRED_MANIFEST_PATH) as f:
-            ids = json.load(f).get("ids")
+        ids = load_json(_CRED_MANIFEST_PATH).get("ids")
         if not isinstance(ids, list):
             return None
         return {str(i).lower() for i in ids}

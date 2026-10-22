@@ -19,6 +19,12 @@ try:
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
 try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
+try:
     from lib.progress import Progress
 except ImportError:  # half-updated workspace (lib/progress.py not copied yet) — fail open, no progress lines
     class Progress:
@@ -269,8 +275,7 @@ def write_mcpt_to_stats(strategy_name, p_value, n, dist=None, actual=None):
             raise ValueError(f"write_mcpt_to_stats: n={n} but len(dist)={fields[MCPT_N_KEY]}")
     else:
         fields = {MCPT_P_KEY: round(p_value, 4), MCPT_N_KEY: n}
-    with open(path, encoding='utf-8') as f:
-        stats = json.load(f)
+    stats = load_json(path, encoding='utf-8')
     stats.pop(MCPT_DIST_KEY, None)  # never leave a Distribution that belongs to another run
     stats.update(fields)
     tmp = path + '.tmp'

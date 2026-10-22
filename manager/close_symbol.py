@@ -48,6 +48,12 @@ for _p in (ROOT, HERE):
 from lib.data import normalize_symbol  # noqa: E402
 from lib import venue_traits  # noqa: E402
 from lib.venue_wiring import read_env  # noqa: E402
+try:
+    from lib.winreplace import load_json  # noqa: E402
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 # shared with stop_strategy.py: 3 is its "no name matched"
 OK, FAILED, REFUSED, NO_POSITION = 0, 1, 2, 4
@@ -302,8 +308,7 @@ def load_members():
     out = {}
     path = os.path.join("manager", "portfolio_config.json")
     try:
-        with open(path) as f:
-            out.update(portfolio_members(json.load(f)))
+        out.update(portfolio_members(load_json(path)))
     except FileNotFoundError:
         pass
     except (OSError, ValueError) as e:

@@ -10,6 +10,12 @@ try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 
 def _append_reconciler_log(order):
@@ -183,11 +189,9 @@ def _record_order_error(symbol, exchange, error, extra=None, repeat=False):
     symbol + exchange + reason gets last_at and count instead of a new row; none → a new row."""
     try:
         path = 'manager/order_errors.json'
-        try:
-            with open(path) as f:
-                rows = json.load(f)
-        except (OSError, ValueError):
-            rows = []
+        rows = _order_errors_for_update(path)
+        if rows is None:
+            return
         now = datetime.utcnow().isoformat()
         text = _reject_front(error)[:200]
         same = [r for r in rows if isinstance(r, dict) and r.get('symbol') == symbol
@@ -198,10 +202,31 @@ def _record_order_error(symbol, exchange, error, extra=None, repeat=False):
             same[-1]['count'] = int(same[-1].get('count') or 1) + 1
         else:
             rows.append({**(extra or {}), 'ts': now, 'symbol': symbol, 'exchange': exchange, 'error': text})
-        with open(path, 'w') as f:
+        tmp = f'{path}.{os.getpid()}.tmp'
+        with open(tmp, 'w') as f:
             json.dump(rows[-5:], f, indent=2)
+        atomic_replace(tmp, path)
     except Exception as e:
         logging.warning(f'failed to record order error: {e}')
+
+
+def _order_errors_for_update(path):
+    """The rows to append to; None = there but unreadable, write nothing (the platform diffs
+    this file for its P1 notice). Not JSON / not a list: set aside as <path>.corrupt, start
+    over — skipping would silence every later failure."""
+    try:
+        rows = load_json(path)
+    except FileNotFoundError:
+        return []
+    except ValueError:
+        rows = None
+    except OSError as e:
+        logging.warning(f'order error not recorded: {path} unreadable ({type(e).__name__})')
+        return None
+    if isinstance(rows, list):
+        return rows
+    atomic_replace(path, path + '.corrupt')
+    return []
 
 
 # ── self-ledger (bot's own tracked position, decoupled from the exchange's
@@ -259,8 +284,7 @@ def _load_ledger_seed():
     empty = {'seeded_at': '', 'own_only_basis': None, 'symbols': {}, 'pending': {},
              'venue_reset': {}, 'venue_account': {}}
     try:
-        with open(_LEDGER_SEED_PATH) as f:
-            raw = json.load(f)
+        raw = load_json(_LEDGER_SEED_PATH)
         if not isinstance(raw, dict):
             return empty
         rows = {}
@@ -331,8 +355,7 @@ def defer_paper_tw_close(keys):
     if not keys:
         return
     try:
-        with open(_PAPER_TW_CLOSE_PATH) as f:
-            have = json.load(f).get('keys') or []
+        have = load_json(_PAPER_TW_CLOSE_PATH).get('keys') or []
     except (OSError, ValueError, AttributeError):
         have = []
     os.makedirs(os.path.dirname(_PAPER_TW_CLOSE_PATH), exist_ok=True)
@@ -351,8 +374,7 @@ def _paper_tw_deferred(diff_actual, halted):
     """Keys flatten deferred (defer_paper_tw_close) that are still held. Not
     halted any more = the user resumed: the deferral is dropped."""
     try:
-        with open(_PAPER_TW_CLOSE_PATH) as f:
-            rec = json.load(f)
+        rec = load_json(_PAPER_TW_CLOSE_PATH)
         keys = set(rec.get('keys') or [])
     except FileNotFoundError:
         return set()
@@ -604,8 +626,7 @@ def account_changed_reason(venue):
 
 def _account_guard_state():
     try:
-        with open(guard.ACCOUNT_GUARD_PATH) as f:
-            state = json.load(f)
+        state = load_json(guard.ACCOUNT_GUARD_PATH)
     except (OSError, ValueError):
         return {}
     return state if isinstance(state, dict) else {}
@@ -933,8 +954,7 @@ def _funded_states_unreadable(config):
         if not os.path.exists(path):
             continue
         try:
-            with open(path) as f:
-                st = json.load(f)
+            st = load_json(path)
             if not isinstance(st, dict):
                 bad.append(name)
         except (OSError, ValueError):
@@ -1186,8 +1206,7 @@ def _strategy_key(name):
     constant. None when neither says."""
     sym = None
     try:
-        with open(f'strategies/{name}/stats.json') as f:
-            sym = (json.load(f) or {}).get('symbol')
+        sym = (load_json(f'strategies/{name}/stats.json') or {}).get('symbol')
     except (OSError, ValueError, AttributeError):
         pass
     if not sym:
@@ -1651,8 +1670,7 @@ _ACCOUNT_SHORT_MAX_S = 900    # unseen for 3 heartbeat rounds = not consecutive 
 
 def _load_account_short():
     try:
-        with open(_ACCOUNT_SHORT_PATH) as f:
-            raw = json.load(f)
+        raw = load_json(_ACCOUNT_SHORT_PATH)
         return {str(k): {'first': float(v['first']), 'last': float(v['last'])}
                 for k, v in (raw or {}).items()}
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
@@ -1990,8 +2008,7 @@ _SIGNAL_GATE_PATH = 'state/signal_gate.json'
 
 def _load_signal_gate():
     try:
-        with open(_SIGNAL_GATE_PATH) as f:
-            raw = json.load(f)
+        raw = load_json(_SIGNAL_GATE_PATH)
         return {str(k): float(v) for k, v in (raw or {}).items()}
     except (OSError, ValueError, TypeError, AttributeError):
         return {}
@@ -2140,18 +2157,28 @@ def spot_scope(inventory_value_fn, threshold=RECONCILE_THRESHOLD):
     inventory — same error contract as get_positions)."""
     targeted = spot_symbols()
     try:
-        with open(_SPOT_SCOPE_PATH) as f:
-            prev = set(json.load(f))
-    except (OSError, ValueError):
+        prev = set(load_json(_SPOT_SCOPE_PATH))
+    except FileNotFoundError:
         prev = set()
+    except (ValueError, TypeError):
+        # not a list of symbols (a crash mid-write before atomic writes): what it held is gone
+        # either way; set aside so it is not lost for good, start from the targets
+        logging.error(f'{_SPOT_SCOPE_PATH} unreadable — set aside as .corrupt; previously '
+                      f'managed spot symbols outside the targets are no longer in scope')
+        atomic_replace(_SPOT_SCOPE_PATH, _SPOT_SCOPE_PATH + '.corrupt')
+        prev = set()
+    # any other OSError (still locked after the retries) propagates: a scope read without the
+    # persisted symbols would drop them and strand their inventory (the contract above)
     values = {}
     for sym in sorted(targeted | prev):
         values[sym] = float(inventory_value_fn(sym))
     keep = targeted | {s for s, v in values.items() if v >= threshold}
     try:  # best-effort persist — next round recomputes from targets anyway
         os.makedirs('manager', exist_ok=True)
-        with open(_SPOT_SCOPE_PATH, 'w') as f:
+        tmp = f'{_SPOT_SCOPE_PATH}.{os.getpid()}.tmp'  # the reconciler and flatten both write it
+        with open(tmp, 'w') as f:
             json.dump(sorted(keep), f)
+        atomic_replace(tmp, _SPOT_SCOPE_PATH)
     except OSError as e:
         logging.warning(f'spot_scope persist failed: {e}')
     return values
@@ -2198,8 +2225,7 @@ def _load_ui_mirror():
     mirror written by a runtime that predates it must not clear the config's
     overrides (that would trade the saved TMF lots as TXF lots)."""
     try:
-        with open(_UI_MIRROR_PATH) as f:
-            raw = json.load(f)
+        raw = load_json(_UI_MIRROR_PATH)
         amounts = raw.get('amounts')
         exchanges = raw.get('exchanges')
         if not isinstance(amounts, dict) or not isinstance(exchanges, dict):
@@ -2307,8 +2333,7 @@ def load_portfolio_config():
     if not os.path.exists(path):
         config = {'account_value': 0, 'weights': {}, 'exchanges': {}, 'asset_specs': {}}
     else:
-        with open(path) as f:
-            config = json.load(f)
+        config = load_json(path)
     ui = _load_ui_mirror()
     if ui is not None and isinstance(config, dict):
         if config.get('amounts') != ui['amounts'] \
@@ -2355,8 +2380,7 @@ def load_all_states():
     for path in glob.glob('strategies/*/state.json'):
         name = os.path.basename(os.path.dirname(path))
         try:
-            with open(path) as f:
-                states[name] = json.load(f)
+            states[name] = load_json(path)
         except Exception as e:
             logging.warning(f"Failed to load state {path}: {e}")
     return states
@@ -2569,8 +2593,7 @@ def _stale_target_age(name, now=None):
     if not bar:
         return None
     try:
-        with open(f'state/bar_wait/{name}.json') as f:
-            failed = json.load(f).get('last_attempt_failed_at')
+        failed = load_json(f'state/bar_wait/{name}.json').get('last_attempt_failed_at')
         written = os.path.getmtime(f'strategies/{name}/state.json')
     except (OSError, ValueError, AttributeError):
         return None
@@ -2594,8 +2617,7 @@ def _stale_share_book():
     if _stale_share_unsaved is not None:
         return json.loads(json.dumps(_stale_share_unsaved))
     try:
-        with open(_STALE_SHARE_PATH) as f:
-            book = json.load(f)
+        book = load_json(_STALE_SHARE_PATH)
     except OSError:
         return {}
     except ValueError:
@@ -2728,8 +2750,7 @@ def _first_signal_book():
     if _first_signal_unsaved is not None:
         return json.loads(json.dumps(_first_signal_unsaved))
     try:
-        with open(_FIRST_SIGNAL_WAIT_PATH) as f:
-            book = json.load(f)
+        book = load_json(_FIRST_SIGNAL_WAIT_PATH)
     except (OSError, ValueError):
         book = {}
     book = book if isinstance(book, dict) else {}
@@ -2817,8 +2838,7 @@ def _first_signal_anchor_ok(a):
 def _last_snapshot_target():
     """The previous round's snapshot target (reconcile writes this round's after the diff)."""
     try:
-        with open('manager/last_reconcile.json') as f:
-            tg = json.load(f).get('target')
+        tg = load_json('manager/last_reconcile.json').get('target')
     except (OSError, ValueError, AttributeError):
         return None
     return tg if isinstance(tg, dict) else None
@@ -3333,8 +3353,7 @@ def _drift_sigma(symbol):
     """Cached _daily_sigma: one lookup per symbol per _DRIFT_BAND_TTL_S,
     failures cached too (a feed that has no bars today has none in 300s)."""
     try:
-        with open(_DRIFT_BAND_PATH) as f:
-            cache = json.load(f) or {}
+        cache = load_json(_DRIFT_BAND_PATH) or {}
     except (OSError, ValueError):
         cache = {}
     now = time.time()
@@ -3576,8 +3595,7 @@ _ROLLOVER_DONE_PATH = 'state/contract_rollover_done.json'
 def _read_json_state(path):
     """dict, {} when absent, None when there but unreadable."""
     try:
-        with open(path) as f:
-            raw = json.load(f)
+        raw = load_json(path)
     except FileNotFoundError:
         return {}
     except (OSError, ValueError):
@@ -3641,8 +3659,7 @@ def _rollover_strategy_moved(name, rec, config):
     sym = None
     for fname in ('state.json', 'stats.json'):
         try:
-            with open(f'strategies/{name}/{fname}') as f:
-                sym = (json.load(f) or {}).get('symbol')
+            sym = (load_json(f'strategies/{name}/{fname}') or {}).get('symbol')
         except (OSError, ValueError, AttributeError):
             continue
         if sym:

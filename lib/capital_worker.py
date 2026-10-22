@@ -17,17 +17,17 @@ import sys
 import time
 from pathlib import Path
 
-try:
-    import capital_vault  # run as a script (NSSM / --once): lib/ is sys.path[0]
-except ImportError:
+if __package__ == "lib":  # never a same-named file elsewhere on sys.path
     from lib import capital_vault
+else:  # run as a script (NSSM / --once): lib/ is sys.path[0]
+    import capital_vault
 try:
-    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
-except ImportError:
-    try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
         from lib.winreplace import atomic_replace
-    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
-        atomic_replace = os.replace
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", r"C:\blave-agent\workspace")
 OUT_PATH = os.path.join(WORKSPACE, "state", "capital_account.json")

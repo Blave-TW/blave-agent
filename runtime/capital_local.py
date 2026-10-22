@@ -151,8 +151,7 @@ def _blank():
 def read_status():
     """The report's `capital_local_connect`; None = never started on this computer."""
     try:
-        with open(_paths()["status"], encoding="utf-8") as f:
-            st = json.load(f)
+        st = atomic_file.load_json(_paths()["status"], encoding="utf-8")
     except (OSError, ValueError):
         return None
     return st if isinstance(st, dict) else None
@@ -788,8 +787,7 @@ def probe_once(push=None):
         r = _local_run([_paths()["worker"], "--once"], PROBE_TIMEOUT_S, "probe")
         rc = r.returncode
         try:
-            with open(_paths()["probe"], encoding="utf-8") as f:
-                obj = json.load(f)
+            obj = atomic_file.load_json(_paths()["probe"], encoding="utf-8")
         except (OSError, ValueError):
             obj = None
     except RuntimeError as e:
@@ -818,8 +816,7 @@ def _start(push):
         deadline = t0 + START_TIMEOUT_S
         while time.time() < deadline:
             try:
-                with open(out, encoding="utf-8") as f:
-                    s = json.load(f)
+                s = atomic_file.load_json(out, encoding="utf-8")
                 if isinstance(s, dict) and (s.get("read_at") or 0) >= t0:
                     if s.get("ok") is True:
                         # ok_at outlives later failures: "never finished" vs "finished, then failed"

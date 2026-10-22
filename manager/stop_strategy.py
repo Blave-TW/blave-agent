@@ -48,6 +48,12 @@ if HERE not in sys.path:
 
 import close_symbol as cs  # noqa: E402
 from lib import guard  # noqa: E402
+try:
+    from lib.winreplace import load_json  # noqa: E402
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 REGISTRY_PATH = os.path.join("state", "deployments.json")
 _SCOPE_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
@@ -75,8 +81,7 @@ def drop_schedule_lines(text, names):
 
 def read_registry(path):
     try:
-        with open(path) as f:
-            reg = json.load(f)
+        reg = load_json(path)
     except FileNotFoundError:
         return {}
     if not isinstance(reg, dict):

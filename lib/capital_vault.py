@@ -18,12 +18,29 @@ import os
 import time
 
 try:
-    from winreplace import atomic_replace  # run as a script: lib/ is sys.path[0]
-except ImportError:
-    try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
         from lib.winreplace import atomic_replace
-    except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
-        atomic_replace = os.replace
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
+        from lib.winreplace import load_json, read_retry
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import load_json, read_retry
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def read_retry(read, *args, **kwargs):
+        return read(*args, **kwargs)
+
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
+
+
+def _read_text(path):
+    with open(path) as f:
+        return f.read()
 
 VAULT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                      "credentials", "capital_vault.json")
@@ -51,6 +68,16 @@ ORDER_SETTLE_S = 20
 LAST_ORDER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                "state", "capital_last_order_at")
 _last_order_mem = 0.0
+# A marker still unreadable this long after the first failed read is not a replace in flight:
+# 15 settle windows (5 min) is past any Defender hold and one reconciler heartbeat, so from
+# then on the read raises — the reconciler counts it as a failed account read (notified,
+# auto-halt) instead of skipping 群益 silently every round.
+MARKER_UNREADABLE_MAX_S = ORDER_SETTLE_S * 15
+_marker_unreadable_since = None
+
+
+class MarkerUnreadable(RuntimeError):
+    pass
 
 
 def mark_order_sent():
@@ -68,12 +95,31 @@ def mark_order_sent():
 
 
 def last_order_at():
-    """Unix time of the last 群益 futures order sent on this machine, 0.0 if none."""
+    """Unix time of the last 群益 futures order sent on this machine, 0.0 if none. A marker that
+    is there but unreadable counts as an order sent just now: the caller waits a round instead
+    of trusting a position read that may predate another process's fill."""
+    global _marker_unreadable_since
     try:
-        with open(LAST_ORDER_PATH) as f:
-            disk = float(f.read().strip() or 0)
-    except (OSError, ValueError):
+        disk = float(read_retry(_read_text, LAST_ORDER_PATH).strip() or 0)
+    except FileNotFoundError:
         disk = 0.0
+    except ValueError:  # not a number: when it was written still bounds the order, and expires
+        try:
+            disk = os.path.getmtime(LAST_ORDER_PATH)
+        except OSError:
+            disk = time.time()
+    except OSError as e:
+        now = time.time()
+        if _marker_unreadable_since is None:
+            _marker_unreadable_since = now
+        if now - _marker_unreadable_since > MARKER_UNREADABLE_MAX_S:
+            raise MarkerUnreadable(
+                f"群益下單紀錄 {LAST_ORDER_PATH} 已 {int(now - _marker_unreadable_since)} 秒讀不到"
+                f"({type(e).__name__}),群益部位無法確認是否已更新,本輪不下群益單 / the 群益 "
+                f"last-order marker has been unreadable for {int(now - _marker_unreadable_since)} s; "
+                f"群益 is not traded until it can be read") from e
+        return max(now, _last_order_mem)
+    _marker_unreadable_since = None
     return max(disk, _last_order_mem)
 
 
@@ -82,12 +128,21 @@ def fingerprint(login_id, password):
     return hashlib.sha256(f"capital-vault-v1\0{login_id}\0{password}".encode()).hexdigest()[:16]
 
 
+BLOCK_UNREADABLE = 300  # = runtime/capital_connect._UNREADABLE_BLOCK: shown as 「重新輸入交易密碼」
+
+
 def _read_block(login_id, password):
+    """The block on these credentials, None when there is none. A block file that is there but
+    unreadable is a block (code BLOCK_UNREADABLE): another wrong-password login can lock the
+    account."""
     try:
-        with open(BLOCK, encoding="utf-8") as f:
-            block = json.load(f)
-    except (OSError, ValueError):
+        block = load_json(BLOCK, encoding="utf-8")
+    except FileNotFoundError:
         return None
+    except (OSError, ValueError):
+        return {"code": BLOCK_UNREADABLE, "unreadable": True}
+    if not isinstance(block, dict):
+        return {"code": BLOCK_UNREADABLE, "unreadable": True}
     return block if isinstance(block, dict) and block.get("fp") == fingerprint(login_id, password) else None
 
 
@@ -111,6 +166,8 @@ def login_blocked(login_id, password, consume_retry=False):
     block = _read_block(login_id, password)
     if not block:
         return None
+    if block.get("unreadable"):
+        return BLOCK_UNREADABLE
     grant = block.get("grant")
     if consume_retry and block.get("allow_once") and isinstance(grant, str) and grant.isalnum():
         try:
@@ -127,6 +184,8 @@ def block_login(login_id, password, code):
     if code not in BLOCK_CODES:
         return
     prev = _read_block(login_id, password) or {}
+    if prev.get("unreadable"):
+        prev = {"unlock_used": True}  # unknown whether the one post-unlock retry was spent: assume it was
     _write_block({"fp": fingerprint(login_id, password), "code": code, "at": int(time.time()),
                   "unlock_used": bool(prev.get("unlock_used"))})
 

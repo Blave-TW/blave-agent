@@ -83,10 +83,14 @@ def _read_json(path, default=None):
     errors="replace" (unlike _strategy_market's open() below): mojibake in a
     JSON key is worse than a clean parse failure."""
     try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
+        return atomic_file.load_json(path, encoding="utf-8")
     except (OSError, ValueError):
         return default
+
+
+def _read_lines(path):
+    with open(path) as f:
+        return f.readlines()
 
 
 def _mtime(path):
@@ -884,8 +888,7 @@ def venues():
     """
     path = os.path.join(WORKSPACE, ".env")
     try:
-        with open(path) as f:
-            lines = f.readlines()
+        lines = atomic_file.read_retry(_read_lines, path)  # command_listener replaces .env on every bind
     except OSError:
         return {}
     lib_root = os.path.join(WORKSPACE, "lib")

@@ -11,6 +11,12 @@ try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +25,7 @@ except ImportError:  # half-updated workspace (lib/winreplace.py not landed): pl
 
 def load_state(strategy_name):
     path = f'strategies/{strategy_name}/state.json'
-    return json.load(open(path)) if os.path.exists(path) else None
+    return load_json(path) if os.path.exists(path) else None
 
 
 def save_state(strategy_name, state):
@@ -401,8 +407,7 @@ def list_inflight():
         if not name.endswith(".json"):
             continue
         try:
-            with open(os.path.join(_INFLIGHT_DIR, name)) as f:
-                out.append(json.load(f))
+            out.append(load_json(os.path.join(_INFLIGHT_DIR, name)))
         except (OSError, ValueError):
             continue
     return out

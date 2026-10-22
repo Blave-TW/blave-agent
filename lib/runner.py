@@ -16,6 +16,12 @@ try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 from lib.analysis import plot_pnl, plot_pnl_portfolio, precise_pnl, compute_stats, count_trades
 
 _REPO_ROOT = Path(__file__).parent.parent
@@ -167,8 +173,7 @@ def _carry_over(out_dir, mode):
     if mode == 'backtest':
         return {}
     try:
-        with open(Path(out_dir) / 'stats.json', encoding='utf-8') as f:
-            old = json.load(f)
+        old = load_json(Path(out_dir) / 'stats.json', encoding='utf-8')
         return {k: old[k] for k in MCPT_KEYS + (GENERATED_AT_KEY,) if k in old}
     except Exception as e:  # absent on first tick, or a half-written file — carry nothing
         logging.debug("stats.json carry-over skipped: %s", e)
@@ -702,6 +707,67 @@ def _same_code_version(idx, items, digest):
     return max(hits) if hits else None
 
 
+class VersionIndexUnreadable(RuntimeError):
+    pass
+
+
+_BLOB_ONLY_KEYS = ('v', 'strategy', 'code', 'daily_dates', 'daily_returns')
+
+
+def _index_readable_or_raise(name):
+    """Under the results lock, before stats.json is written: an index the mint will not be able
+    to read fails the backtest with nothing written, not new numbers beside the old version's
+    marker (canon §5). Broken or absent is the mint's to rebuild."""
+    from lib.strategy import versions_dir
+    try:
+        load_json(versions_dir(name) / 'index.json', encoding='utf-8')
+    except (FileNotFoundError, ValueError):
+        pass
+    except OSError as e:
+        raise VersionIndexUnreadable(
+            f"{versions_dir(name) / 'index.json'} could not be read ({type(e).__name__}) — nothing "
+            f"written; run the backtest again") from e
+
+
+def _index_for_mint(vdir):
+    """versions/index.json for the mint's read-modify-write. Still locked after the retries →
+    VersionIndexUnreadable (the backtest fails and can be run again). Not JSON / not an object
+    → set aside as index.json.corrupt and rebuilt from the v<N>.json blobs on disk, the counter
+    continuing from the highest N: never a counter back at 1 writing over a stored version."""
+    path = vdir / 'index.json'
+    try:
+        idx = load_json(path, encoding='utf-8')
+    except FileNotFoundError:
+        idx = None
+    except ValueError:
+        idx = False
+    except OSError as e:
+        raise VersionIndexUnreadable(
+            f"{path} could not be read ({type(e).__name__}) — no version minted; run the backtest "
+            f"again") from e
+    if isinstance(idx, dict):
+        return idx
+    if idx is not None:
+        atomic_replace(path, vdir / 'index.json.corrupt')
+    blobs = {}
+    for f in vdir.glob('v*.json'):
+        m = re.fullmatch(r'v(\d+)\.json', f.name)
+        if m:
+            blobs[int(m.group(1))] = f
+    if not blobs:
+        return {}
+    items = []
+    for n in sorted(blobs):
+        try:
+            blob = load_json(blobs[n], encoding='utf-8')
+        except (OSError, ValueError):
+            continue
+        if isinstance(blob, dict) and blob.get('n') == n:
+            items.append({k: v for k, v in blob.items() if k not in _BLOB_ONLY_KEYS})
+    top = max(blobs)
+    return {'v': 1, 'counter': top, 'current': items[-1]['n'] if items else None, 'items': items}
+
+
 def _mint_version(config, stats, mode, src=None):
     """Freeze this backtest as strategies/<name>/versions/v<N>.json and refresh index.json
     (.claude/docs/strategy-versions.md). Returns the version number this run belongs to, or None.
@@ -728,7 +794,7 @@ def _mint_version(config, stats, mode, src=None):
             logging.warning("version not minted: no __file__ in config — call run(locals(), …)")
             return None
         src = Path(src_path).read_bytes()
-    from lib.strategy import VERSIONS_KEEP, code_hash, load_index, versions_dir, versions_lock
+    from lib.strategy import VERSIONS_KEEP, code_hash, versions_dir, versions_lock
     name = config['STRATEGY_NAME']
     vdir = versions_dir(name)
     os.makedirs(vdir, exist_ok=True)
@@ -737,7 +803,7 @@ def _mint_version(config, stats, mode, src=None):
     digest = code_hash(src)
 
     with versions_lock(name):
-        idx   = load_index(name) or {}
+        idx   = _index_for_mint(Path(vdir))
         items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
         same  = _same_code_version(idx, items, digest)
         if same is not None:
@@ -2460,11 +2526,15 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             if _superseded(config, src0):
                 _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
                 return
+            if mode == 'backtest':
+                _index_readable_or_raise(strategy_name)
             _write_stats(out_dir, stats)
             _write_preview(out_dir, backtest_state, src0)
             if mode == 'backtest':
                 try:  # a version is a record of the run, not part of it — never fail the backtest
                     _mint_version(config, stats, mode, src0)
+                except VersionIndexUnreadable:
+                    raise  # except this: minting past an index it cannot read would rewrite history
                 except Exception as e:
                     logging.warning("version mint failed: %s", e)
                 _clear_rerun(strategy_name)
@@ -2634,11 +2704,15 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             if _superseded(config, src0):
                 _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
                 return
+            if mode == 'backtest':
+                _index_readable_or_raise(strategy_name)
             _write_stats(out_dir, stats)
             _write_preview(out_dir, backtest_state, src0)
             if mode == 'backtest':
                 try:  # same as Type A: the record must not be able to fail the run
                     _mint_version(config, stats, mode, src0)
+                except VersionIndexUnreadable:
+                    raise
                 except Exception as e:
                     logging.warning("version mint failed: %s", e)
                 _clear_rerun(strategy_name)

@@ -77,6 +77,12 @@ try:
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
 try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
+try:
     from lib import reject_token
 except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
     from types import SimpleNamespace as _NS
@@ -282,8 +288,7 @@ def _bound_ts(env):
 def _load(env):
     bound_ts = _bound_ts(env)
     try:
-        with open(LEDGER_PATH) as f:
-            led = json.load(f)
+        led = load_json(LEDGER_PATH)
         if isinstance(led, dict) and "cash" in led:
             for k in ("positions", "spot", "orders", "protective"):
                 led.setdefault(k, {})

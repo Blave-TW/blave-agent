@@ -54,6 +54,12 @@ import shutil
 import time
 import unicodedata
 from zoneinfo import ZoneInfo
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 # The uploader scans $BLAVE_AGENT_WORKSPACE/reports, so that env var wins when it
 # is set. It is often absent though: scheduled strategy subprocesses are started
@@ -826,8 +832,7 @@ def register_schedule(id, title, prompt, cron, human, script, enabled=True, tz=N
     now = int(time.time())
     created_at, prev_consent = now, False
     try:
-        with open(os.path.join(job_dir, "job.json"), encoding="utf-8") as f:
-            prev = json.load(f)
+        prev = load_json(os.path.join(job_dir, "job.json"), encoding="utf-8")
         if (isinstance(prev, dict) and isinstance(prev.get("created_at"), int)
                 and not isinstance(prev["created_at"], bool)):
             created_at = prev["created_at"]
@@ -873,8 +878,7 @@ def list_schedules():
         if not os.path.isdir(d):
             continue
         try:
-            with open(os.path.join(d, "job.json"), encoding="utf-8") as f:
-                doc = json.load(f)
+            doc = load_json(os.path.join(d, "job.json"), encoding="utf-8")
             if not isinstance(doc, dict):
                 raise ValueError("not an object")
         except (OSError, ValueError) as e:

@@ -49,6 +49,12 @@ try:
     from lib.winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 from datetime import datetime, timezone
 
 HALT_PATH = "state/HALT"
@@ -314,8 +320,7 @@ def account_held(venue):
     if venue == "paper":
         return False  # the simulated account is never someone else's
     try:
-        with open(ACCOUNT_GUARD_PATH) as f:
-            state = json.load(f)
+        state = load_json(ACCOUNT_GUARD_PATH)
     except FileNotFoundError:
         return False
     except (OSError, ValueError):
@@ -352,8 +357,7 @@ def halt_info():
     if not halted():
         return None
     try:
-        with open(HALT_PATH) as f:
-            return json.load(f)
+        return load_json(HALT_PATH)
     except Exception:
         return {"reason": "HALT file present but unreadable"}
 
@@ -427,8 +431,7 @@ def halt_info_for(strategy):
     if not os.path.exists(halt_path_for(strategy)):
         return None
     try:
-        with open(halt_path_for(strategy)) as f:
-            return json.load(f)
+        return load_json(halt_path_for(strategy))
     except Exception:
         return {"reason": "scoped HALT present but unreadable"}
 

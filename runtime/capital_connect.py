@@ -151,8 +151,7 @@ def _blank():
 def read_status():
     """The report's `capital_connect`; None = never started on this machine."""
     try:
-        with open(_paths()["status"], encoding="utf-8") as f:
-            st = json.load(f)
+        st = atomic_file.load_json(_paths()["status"], encoding="utf-8")
     except (OSError, ValueError):
         return None
     return st if isinstance(st, dict) else None
@@ -274,6 +273,7 @@ def divert_credentials(env, local=False):
     cap = {k: v for k, v in env.items() if k.casefold() in _ID_KEYS + (_PW_KEY,)}
     if not cap:
         return env
+    _set_aside_broken_block()
     login_id = next((v for k, v in cap.items() if k.casefold() in _ID_KEYS), None)
     password = next((v for k, v in cap.items() if k.casefold() == _PW_KEY), None)
     if local or not IS_WINDOWS or not login_id or not password or not lib_supports_vault():
@@ -343,14 +343,38 @@ def _cred_fp():
     return vault_fingerprint(login_id, pw) if login_id and pw else None
 
 
+# = lib/capital_vault: a block file that is there but unreadable is a block. Shown as 300
+# (pw_wrong, 「重新輸入交易密碼」): re-entering the credentials sets a broken file aside.
+_UNREADABLE_BLOCK = {"code": 300, "unreadable": True}
+
+
 def _read_block():
     try:
-        with open(_paths()["block"], encoding="utf-8") as f:
-            block = json.load(f)
-    except (OSError, ValueError):
+        block = atomic_file.load_json(_paths()["block"], encoding="utf-8")
+    except FileNotFoundError:
         return None
+    except (OSError, ValueError):
+        return dict(_UNREADABLE_BLOCK)
+    if not isinstance(block, dict):
+        return dict(_UNREADABLE_BLOCK)
     fp = _cred_fp()
     return block if isinstance(block, dict) and fp and block.get("fp") == fp else None
+
+
+def _set_aside_broken_block():
+    """The user re-entered the credentials: a block file that does not parse (whose credentials
+    nobody can tell) goes to .corrupt, as a 300 block clears on re-entry. A still-locked one stays."""
+    path = _paths()["block"]
+    try:
+        doc = atomic_file.load_json(path, encoding="utf-8")
+    except FileNotFoundError:
+        return
+    except ValueError:
+        doc = None
+    except OSError:
+        return
+    if not isinstance(doc, dict):
+        atomic_file.replace_retry(path, path + ".corrupt")
 
 
 def _write_block(block):
@@ -373,6 +397,8 @@ def block_login(code):
     if not fp:
         return
     prev = _read_block() or {}
+    if prev.get("unreadable"):
+        prev = {"unlock_used": True}  # unknown whether the one post-unlock retry was spent: assume it was
     # the one post-unlock retry is spent for these credentials, whatever it answered
     _write_block({"fp": fp, "code": code, "at": int(time.time()),
                   "unlock_used": bool(prev.get("unlock_used"))})
@@ -647,8 +673,7 @@ def import_via_vehicle(pfx, password, meta, admin_pw):
 
         def done():
             try:
-                with open(result_path, encoding="utf-8") as f:
-                    res = json.load(f)
+                res = atomic_file.load_json(result_path, encoding="utf-8")
             except (OSError, ValueError):
                 return None
             return res if res.get("nonce") == nonce else None
@@ -912,12 +937,9 @@ def _nssm(step, timeout=30):
 def _register_worker_deployment():
     path = _paths()["deployments"]
     try:
-        with open(path, encoding="utf-8") as f:
-            deps = json.load(f)
-    except (OSError, ValueError):
-        deps = {}
-    if not isinstance(deps, dict):
-        deps = {}
+        deps = atomic_file.load_json_for_update(path, encoding="utf-8")
+    except OSError:  # still locked: skip the registration rather than wipe the others
+        return
     deps.setdefault("capital_worker", {"type": "daemon", "expect_every_minutes": 5,
                                        "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())})
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -961,8 +983,7 @@ def run_finish(push=None):
         while time.time() < deadline:
             time.sleep(3)
             try:
-                with open(p["snapshot"], encoding="utf-8") as f:
-                    s = json.load(f)
+                s = atomic_file.load_json(p["snapshot"], encoding="utf-8")
             except (OSError, ValueError):
                 continue
             if isinstance(s, dict) and (s.get("read_at") or 0) >= started:

@@ -135,8 +135,7 @@ def heal(cutoff, after="", limit=None, workspace=WORKSPACE, now=None):
 
 def read_record():
     try:
-        with open(RECORD_PATH, encoding="utf-8") as f:
-            rec = json.load(f)
+        rec = atomic_file.load_json(RECORD_PATH, encoding="utf-8")
     except (OSError, ValueError):
         return None
     return rec if isinstance(rec, dict) else None

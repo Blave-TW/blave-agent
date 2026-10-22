@@ -365,8 +365,7 @@ def unmarked_exports(since, touched, workspace=None):
         for target, ext in _EXPORT_EXT.items():
             rel = f"strategies/{name}/exports/{target}.{ext}"
             try:
-                with open(os.path.join(workspace, rel + ".meta.json"), encoding="utf-8") as f:
-                    meta = json.load(f)
+                meta = atomic_file.load_json(os.path.join(workspace, rel + ".meta.json"), encoding="utf-8")
                 at = calendar.timegm(time.strptime(meta["exported_at"], "%Y-%m-%dT%H:%M:%SZ"))
             except (OSError, ValueError, KeyError, TypeError):
                 continue
@@ -480,9 +479,7 @@ def _deploy_state_line(workspace=None, now=None):
     try:
         reg = {}
         try:
-            with open(os.path.join(ws, "state", "deployments.json"),
-                      encoding="utf-8") as f:
-                reg = json.load(f)
+            reg = atomic_file.load_json(os.path.join(ws, "state", "deployments.json"), encoding="utf-8")
         except (OSError, ValueError):
             pass
         reg = reg if isinstance(reg, dict) else {}
@@ -583,8 +580,7 @@ _QUOTA_LINE_STALE = (
 
 def _read_state_json(path):
     try:
-        with open(path) as f:
-            val = json.load(f)
+        val = atomic_file.load_json(path)
         return val if isinstance(val, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -2848,8 +2844,7 @@ def _trading_amounts(workspace):
 
     def load(name):
         try:
-            with open(os.path.join(workspace, "manager", name), encoding="utf-8") as f:
-                return json.load(f)
+            return atomic_file.load_json(os.path.join(workspace, "manager", name), encoding="utf-8")
         except FileNotFoundError:
             return None
         except (OSError, ValueError):

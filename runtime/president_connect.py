@@ -169,8 +169,7 @@ def _blank():
 def read_status():
     """The report's `president_connect`; None = never started on this machine."""
     try:
-        with open(_paths()["status"], encoding="utf-8") as f:
-            st = json.load(f)
+        st = atomic_file.load_json(_paths()["status"], encoding="utf-8")
     except (OSError, ValueError):
         return None
     return st if isinstance(st, dict) else None
@@ -566,8 +565,7 @@ def run_probe(push=None):
     started = time.time() - 1
     rc = _worker_run("--once", PROBE_TIMEOUT_S, "probe")
     try:
-        with open(p["probe"], encoding="utf-8") as f:
-            obj = json.load(f)
+        obj = atomic_file.load_json(p["probe"], encoding="utf-8")
         if not isinstance(obj, dict) or (obj.get("read_at") or 0) < started:
             obj = None  # a file left by an earlier probe says nothing about this one
     except (OSError, ValueError):
@@ -728,8 +726,7 @@ def run_test_order(push=None):
     started = time.time() - 1
     rc = _worker_run(None, TEST_ORDER_TIMEOUT_S, "test order", argv=[p["test_order_script"], WORKSPACE])
     try:
-        with open(p["test_order"], encoding="utf-8") as f:
-            obj = json.load(f)
+        obj = atomic_file.load_json(p["test_order"], encoding="utf-8")
         if not isinstance(obj, dict) or (obj.get("read_at") or 0) < started:
             obj = None
     except (OSError, ValueError):
@@ -791,8 +788,7 @@ def _end_step(drop_pfx=False, retry=True, only_if_busy=False):
     path = _paths()["status"]
     with _status_lock:
         try:
-            with open(path, encoding="utf-8") as f:
-                st = json.load(f)
+            st = atomic_file.load_json(path, encoding="utf-8")
         except FileNotFoundError:
             return
         if not isinstance(st, dict) or (only_if_busy and not st.get("busy")):
@@ -1405,13 +1401,12 @@ def _local_start(push):
         while time.time() < deadline:
             try:
                 if os.path.getmtime(out) >= t0:
-                    with open(out, encoding="utf-8") as f:
-                        if (json.load(f) or {}).get("ok") is True:
-                            # ok_at outlives every later failure (_update merges; only a new
-                            # certificate resets the section): the pages tell "never finished
-                            # onboarding" from "onboarded, then the login failed" by it
-                            _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
-                            return {"worker": "ok"}
+                    if (atomic_file.load_json(out, encoding="utf-8") or {}).get("ok") is True:
+                        # ok_at outlives every later failure (_update merges; only a new
+                        # certificate resets the section): the pages tell "never finished
+                        # onboarding" from "onboarded, then the login failed" by it
+                        _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
+                        return {"worker": "ok"}
             except (OSError, ValueError, AttributeError):
                 pass
             p = _LOCAL["worker"].proc

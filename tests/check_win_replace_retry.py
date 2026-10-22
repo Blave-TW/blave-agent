@@ -155,7 +155,7 @@ try:
         ("lib/portfolio.py", "_save_ledger_seed"), ("lib/portfolio.py", "_save_account_short"),
         ("lib/portfolio.py", "_report_ledger_adoption"), ("lib/portfolio.py", "_save_signal_gate"),
         ("lib/portfolio.py", "_drift_sigma"),
-        ("lib/order_paper.py", "_save"), ("lib/order_president.py", "record"),
+        ("lib/order_paper.py", "_save"), ("lib/order_president.py", "_write_tags"),
         ("lib/runner.py", "_write_json_atomic"), ("lib/validation.py", "write_mcpt_to_stats"),
         ("lib/president_worker.py", "_atomic_write"), ("lib/president_quote.py", "_atomic_write"),
         ("lib/capital_worker.py", "_write_snapshot"), ("lib/capital_worker.py", "_write_probe"),
@@ -270,10 +270,11 @@ try:
     dd = start_step("president_local:host")
     pc._update("probe", status="running", reset=True, env="test")
     pc.open = deny_status                      # module-level name shadows the builtin for pc only
+    pc.atomic_file.open = deny_status          # _end_step reads through atomic_file.load_json
     dd.cleanup()
     check("⑥ unreadable status at step end: lock released", pc._busy.acquire(blocking=False) and (pc._busy.release() or True))
     check("⑥ …and busy still on disk while the read keeps failing", read().get("busy") == "president_local:host", read())
-    del pc.open
+    del pc.open, pc.atomic_file.open
     check("⑥ readable again → the background sweep clears busy", wait_for(lambda: read().get("busy") is None), read())
     check("⑥ the stuck section → failed INTERRUPTED", read()["probe"]["status"] == "failed", read()["probe"])
 
