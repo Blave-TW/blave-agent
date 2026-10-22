@@ -1295,9 +1295,6 @@ msgstr "可用"
 msgid "pv.st.starting"
 msgstr "啟動中"
 
-msgid "pv.more"
-msgstr "到網站看方案內容與計費"
-
 msgid "pv.more.once"
 msgstr "首次綁卡的試用每人一次、每張卡一次。"
 

@@ -1287,9 +1287,6 @@ msgstr "Available"
 msgid "pv.st.starting"
 msgstr "Starting"
 
-msgid "pv.more"
-msgstr "Plans & Billing on the Web"
-
 msgid "pv.more.once"
 msgstr "The first-card trial is once per person and once per card."
 
