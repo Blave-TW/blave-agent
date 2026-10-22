@@ -22,6 +22,14 @@ function sfApplyOrder(list, order) {
   list.forEach((s) => { if (s && typeof s.name === "string" && byName.has(s.name)) sorted.push(s); });
   return sorted.length === list.length ? sorted : list;
 }
+// 面板從旗標鈕下方長出來:左緣對齊鈕的左緣、鈕下 8;下方不夠翻上;clamp 進視窗。
+// 右緣對齊鈕(舊)時面板往左長、貼到列的左緣,蓋住下一列的名字(0.1.29 e2e 稽核建議 3)
+function sfPopPlace(r, pw, ph, iw, ih) {
+  let left = r.left, top = r.bottom + 8, up = false;
+  if (top + ph > ih - 8) { up = true; top = r.top - 8 - ph; }
+  left = Math.max(8, Math.min(left, iw - 8 - pw)); top = Math.max(8, top);
+  return { left, top, up };
+}
 // 存檔與 api 都寬容收 1–6(六色期留下的),畫面只畫 1–3;其餘當沒有
 function sfFlagId(v) { return Number.isInteger(v) && v >= 1 && v <= 3 ? v : null; }
 
@@ -217,7 +225,8 @@ function sfPopBuild() {
     if (!x.classList.contains("is-armed")) x.click();   // app.js armedDelete:第一下 = 武裝成「移到垃圾桶？」
     x.focus();
   });
-  sfPop.append(sep(), rm, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
+  const d1 = sep(); d1.dataset.rm = "1"; rm.dataset.rm = "1";   // 沒有旗標時「移除旗標」連同它上面那條線一起收
+  sfPop.append(d1, rm, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
   sfPop.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
     if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return;
@@ -249,14 +258,12 @@ function sfPopOpen(wrap, anchor, x, ctx, store) {
   SF.popWrap = wrap; SF.popReturn = anchor; SF.popX = x; SF.popStore = sc;
   anchor.setAttribute("aria-expanded", "true");
   const cur = sfFlagId(sc.flags()[x.name]);
+  sfPop.querySelectorAll("[data-rm]").forEach((n) => { n.hidden = !cur; });
   sfPop.querySelectorAll(".swcell").forEach((c) => { const on = Number(c.dataset.flag) === cur; c.classList.toggle("selected", on); c.setAttribute("aria-checked", on ? "true" : "false"); });
   wrap.classList.add("flag-open");
-  // 先隱形量尺寸再定位:錨旗標鈕下 8px、右緣對齊旗標鈕;下方不夠翻上;clamp 進視窗
+  // 先隱形量尺寸再定位(sfPopPlace)
   sfPop.hidden = false; sfPop.classList.remove("open"); sfPop.style.visibility = "hidden";
-  const pw = sfPop.offsetWidth, ph = sfPop.offsetHeight, r = anchor.getBoundingClientRect();
-  let left = r.right - pw, top = r.bottom + 8, up = false;
-  if (top + ph > window.innerHeight - 8) { up = true; top = r.top - 8 - ph; }
-  left = Math.max(8, Math.min(left, window.innerWidth - 8 - pw)); top = Math.max(8, top);
+  const { left, top, up } = sfPopPlace(anchor.getBoundingClientRect(), sfPop.offsetWidth, sfPop.offsetHeight, window.innerWidth, window.innerHeight);
   sfPop.style.left = left + "px"; sfPop.style.top = top + "px";
   sfPop.classList.toggle("up", up); sfPop.style.visibility = "";
   requestAnimationFrame(() => sfPop.classList.add("open"));

@@ -697,8 +697,17 @@ function mgPaint() {
     if (fog) box.appendChild(poFog("opt"));
     else { box.appendChild(mgSuggest()); box.appendChild(mgBacktestSec()); }
   }
+  mgPrimary(box);
   trPosFocusBack(box, keep, $("po-h"));
   mgDrawChart();
+}
+/* 一個視窗只有一顆實心鈕(canon › Hierarchy):有新權重可以套用時下一步是「套用金額」,「跑優化」退成框線;
+   套用停用(跟目前金額全等、缺報價…)或還沒有建議時,下一步是「跑優化」。套用的停用條件在 mgSuggestTable 才算完,所以畫完才判 */
+function mgPrimary(box) {
+  const opt = box.querySelector(".tb-run"), ap = box.querySelector("#mg-apply");
+  const applyLeads = !!ap && !ap.disabled;
+  if (opt) { opt.classList.toggle("btn-fill", !applyLeads); opt.classList.toggle("btn-out", applyLeads); }
+  if (ap) { ap.classList.toggle("btn-fill", applyLeads); ap.classList.toggle("btn-out", !applyLeads); }
 }
 /* 選了兩檔以上、還沒有權重也沒有回測(沒在跑、沒錯、沒警示):工具列下面原本整片空白(實機 integ2 10-18)→ Setup fog,CTA 是「跑優化」。
    「策略 N 檔」「方法」與「跑回測」留在工具列;同一個動作只出現一次,工具列的「跑優化」在霧開著時藏起來 */

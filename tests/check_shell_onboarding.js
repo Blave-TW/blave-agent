@@ -70,9 +70,9 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
 { const portfolio = read(path.join(R, "portfolio.js"));
   ok("② ③ 的鈕記 onb_go_po、走 poPick(不經 poAdd:不替用戶勾任何一支)", /\$\("onb-po"\)\.addEventListener\("click", \(\) => \{ trackFeature\("onb_go_po"\); poPick\(ONB\.amt\); \}\);/.test(src) && !/poAdd\(/.test(src));
   const run = async (o) => {
-    const log = [], el = (id) => ({ id, hidden: true, isConnected: true, disabled: false, textContent: "", classList: { add() {}, remove() {}, toggle() {} }, focus() { log.push("focus:" + id); },
+    const log = [], el = (id) => ({ id, hidden: true, isConnected: true, disabled: false, textContent: "", dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, focus() { log.push("focus:" + id); },
       kids: [], appendChild(x) { this.kids.push(x); return x; }, querySelector: () => null, querySelectorAll: () => [] });
-    const els = { "ps-scrim": el("ps-scrim"), "ps-modal": Object.assign(el("ps-modal"), { querySelector: () => el("head") }), "ps-env": el("ps-env"), "ps-list": el("ps-list"), "ps-cancel": el("ps-cancel"), "view-ws": el("view-ws"), "tr-pick": el("tr-pick") };
+    const els = { "ps-scrim": el("ps-scrim"), "ps-modal": Object.assign(el("ps-modal"), { querySelector: () => el("head") }), "ps-env": el("ps-env"), "ps-list": el("ps-list"), "ps-cancel": el("ps-cancel"), "ps-ok": el("ps-ok"), "view-ws": el("view-ws"), "tr-pick": el("tr-pick") };
     const L = { env: "local", list: o.list, listLoaded: true, meta: new Map(), st: null, view: "tr",
       api: { listStrategies: async () => { log.push("list"); if (o.onList) o.onList(L); if (o.listFail) throw new Error("x"); return o.fresh; }, loadStrategy: async () => ({ stats: { symbol: "BTCUSDT" }, code: "" }) } };
     const C = { TR: L, TR_BAGS: { local: L, cloud: {} }, ENV: { cur: "local" }, $: (id) => els[id] || null, t: (k) => k, requestAnimationFrame: (f) => f(),
