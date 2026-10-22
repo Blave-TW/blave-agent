@@ -293,7 +293,7 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
   okTw = true; const tcPaper = trTypeC(tw.c, "c"), tcNoName = trTypeC(tw.c);
   vid = "binance"; const tcBn = trTypeC(tw.c, "c"); vid = "paper";
   ok("trTypeC:模擬交易的台股負權重壓 0(不算持有);加密的負權重照舊算空頭;別家交易所、沒給策略名照舊",
-    J(tcPaper) === J({ n: 2, long: 0.5, short: 0.5, keys: ["2317", "2454", "BTCUSDT"], held: ["2454", "BTCUSDT"] })
+    J(tcPaper) === J({ n: 2, long: 0.5, short: 0.5, keys: ["2317", "2454", "BTCUSDT"], held: ["2454", "BTCUSDT"], paperShort: true }) && !("paperShort" in tcBn)
     && tcBn.n === 3 && tcBn.short === 1 && tcNoName.n === 3
     && (src.match(/tc = trTypeC\(st, n\)/g) || []).length === 2 && !/trTypeC\(st\)/.test(src));
   delete globalThis.trReport; delete globalThis.trPaperTwOk; delete globalThis.PAPER;
@@ -761,7 +761,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         /const symText = isC \? \(tcl \? tcl\.text : "—"\) : txf \? t\(txf\.prod\) : sym \|\| "—";/.test(tp)
         && /symInto\(trEl\("span", "sub-sym" \+ \(isC \|\| txf \? "" : " mono"\)\)\); if \(symTip\) sub\.title = symTip;/.test(tp) && /const symTd = symInto\(trEl\("td", \(txf \|\| isC \? "sname" : "sym"\) \+ " c-sym"\)\); if \(symTip\) symTd\.title = symTip;/.test(tp)
         && /else \{ host\.append\(symText\);/.test(tp)
-        && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn \}\);/.test(tp)
+        && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn, paperShort: paperShort \|\| \(!!tc && !!tc\.paperShort\) \}\);/.test(tp)
         && /if \(tc\.long && tc\.short\) \{ main\.classList\.add\("split"\);/.test(fnOf("trPaintPosCell")) && !/tr\.grossTip/.test(tsrc)); }
     const tp = fnOf("trAmountTable");
     ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」(策略列與標的列都是;框裡不再有合計列,canon 確認 modal 只列會變的)",
@@ -1088,7 +1088,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const head = fnS("trPaintHead");
     ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\)\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\);/.test(src)
+    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -2311,7 +2311,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         const rn = evRows([], { halted: true, at: new Date((now - 600) * 1000).toISOString(), source: "web", reason: "close all positions" });
         ok("暫停並關閉部位(0.1.28 Wei 實測只寫已暫停):halt_close 真的開始平倉寫 evHaltClose;只掛了暫停、一般暫停寫 evHalt;沒有畫面紀錄的 close-all HALT 也寫 evHaltClose",
           rc.length === 1 && /tr\.ov\.evHaltClose/.test(rc[0]) && rh.length === 1 && /tr\.ov\.evHalt(?!Close)/.test(rh[0]) && !/evHaltClose/.test(rh[0])
-          && rp.length === 1 && !/evHaltClose/.test(rp[0]) && rn.length === 1 && /tr\.ov\.evHaltClose/.test(rn[0]), J([rc, rh, rp, rn])); }
+          && rp.length === 1 && !/evHaltClose/.test(rp[0]) && rn.length === 1 && /tr\.ov\.evHaltClose/.test(rn[0]), J([rc, rh, rp, rn]));
+        // 設計稽核 S2:平倉那一列標題已經講完,不帶「平倉與停損停利照常執行」;一般暫停照帶
+        ok("暫停並關閉部位那一列不帶 evHaltNote 說明;一般暫停、只掛了暫停照帶", !/evHaltNote/.test(rc[0]) && !/evHaltNote/.test(rn[0]) && /evHaltNote/.test(rp[0]) && /evHaltNote/.test(rh[0]), J([rc, rn, rp, rh]));
+        // 稽核 B-3:HALT 的 closing(runtime 判完才寫)優先於 reason——只掛了暫停(halted_only／群益手動)寫已暫停
+        const rf = evRows([], { halted: true, at: new Date((now - 600) * 1000).toISOString(), source: "web", reason: "close all positions", closing: false });
+        ok("現在的 HALT:closing false(沒開始平倉)即使 reason 是 close all positions 也寫已暫停下單", rf.length === 1 && !/evHaltClose/.test(rf[0]) && /tr\.ov\.evHalt/.test(rf[0]), J(rf)); }
       ok("§1.4 N 照連著的交易所算;0 筆整行不出(事件也空時只剩 label + 空態句)",
         !!paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
         && !paintEv({ orders: [{ ...CAP, exchange: "paper" }], venues: { president: { credentials: true, pair: true, order: true, account: true } } }).some((n) => n.className === "pf-acts ev-fills")

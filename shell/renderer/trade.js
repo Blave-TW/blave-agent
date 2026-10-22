@@ -668,7 +668,8 @@ function trTypeC(st, n) {
   if (!w) return null;
   const out = { n: 0, long: 0, short: 0, keys: Object.keys(w), held: [] }, paperTw = n != null && trPaperOf(n);
   (Array.isArray(st.universe) ? st.universe : []).forEach((k) => { if (typeof k === "string" && k && out.keys.indexOf(k) < 0) out.keys.push(k); });
-  out.keys.forEach((k) => { let x = Number(w[k]); if (!isFinite(x) || (x < 0 && (st.market === "spot" || (paperTw && trTwCash(k, true))))) x = 0;
+  out.keys.forEach((k) => { let x = Number(w[k]); if (x < 0 && st.market !== "spot" && paperTw && trTwCash(k, true)) out.paperShort = true;
+    if (!isFinite(x) || (x < 0 && (st.market === "spot" || (paperTw && trTwCash(k, true))))) x = 0;
     if (!x) return; out.n++; out.held.push(k); if (x > 0) out.long += x; else out.short -= x; });
   return out;
 }
@@ -685,7 +686,8 @@ function trTypeCLabel(tc, tf, nameOf, universe) {
   const sep = tf("ak.sep"), codes = keys.map(trShortSym), names = keys.map((k) => (typeof nameOf === "function" && nameOf(k)) || "");
   const shown = codes.map((c, i) => names[i] || c), list = codes.map((c, i) => (names[i] ? tf("tr.twNameCode", { name: names[i], code: c }) : c)).join(sep);
   const text = shown.length <= 3 ? shown.join(sep) : tf("tr.typecSymsMore", { list: shown.slice(0, 3).join(sep), n: shown.length, k: shown.length - 3 });
-  return { text, tip: held ? tf("tr.typecHeld", { list }) : tc.n ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
+  // 模擬盤把台股空頭壓成 0 的空手:原因寫在部位格,這裡不再說「目前空手」(設計稽核 M1)
+  return { text, tip: held ? tf("tr.typecHeld", { list }) : tc.n || tc.paperShort ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
 }
 // 台指期目標口數取整 = 機器對帳器的規則 sign(x)·floor(|x|+0.5)(−0.5 → −1;Math.round(−0.5) 是 −0,會差一口)
 function trRoundLots(x) { return (x < 0 ? -1 : 1) * Math.floor(Math.abs(x) + 0.5 + 1e-9); }   // 1e-9 = 機器 lib/portfolio 與網頁 pfRoundLots 同一個:浮點加總的 2.4999… 歸到 3
@@ -953,12 +955,20 @@ function trPaperOf(n) {
 // 那是「只看訊號」,照訊號算目標與張數,不當沒路由
 function trRouteBlank(n) {
   const r = (typeof trReport === "function" && trReport()) || {}, c = r.config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
-  if (TR_AS_SAVED) return trVenueIds(r).length > 0 && trSavedRoute(n, r) === "";
+  if (TR_AS_SAVED) { const sr = trSaveRouting(r); return (sr ? sr.bound.length : trVenueIds(r).length) > 0 && trSavedRoute(n, r) === ""; }
   return !!ex && Object.prototype.hasOwnProperty.call(ex, n) && ex[n] === "" && trVenueIds(r).length > 0;
 }
 /* 存檔後的路由(同 runtime command_listener._cmd_amounts):路由指著還綁著的那家就留;其餘(""、沒有紀錄、指著已解綁的)繼承 default——
    各成員還綁著的路由只有一家就是它,否則只綁一家就是那家,都不是 = ""(沒路由,對帳器不下)。 */
+// 報告帶 save_routing(新 runtime;runtime save_routing.report:存檔真的用的那套 .env ∩ 綁定清單,不看 lib):{bound, default, routes}
+function trSaveRouting(r) {
+  const s = r && r.save_routing;
+  return s && typeof s === "object" && Array.isArray(s.bound) && typeof s.default === "string" && s.routes && typeof s.routes === "object" && !Array.isArray(s.routes) ? s : null;
+}
 function trSavedRoute(n, r) {
+  const sr = trSaveRouting(r);
+  if (sr) return Object.prototype.hasOwnProperty.call(sr.routes, n) && typeof sr.routes[n] === "string" ? sr.routes[n] : sr.default;
+  // 舊 runtime:照 _cmd_amounts 自己推(綁定集合用畫面那份,可能跟 runtime 差 manifest／lib)
   const ids = trVenueIds(r), ex = r && r.config && typeof r.config.exchanges === "object" && r.config.exchanges ? r.config.exchanges : {};
   const keep = (v) => typeof v === "string" && ids.indexOf(v) >= 0;
   if (Object.prototype.hasOwnProperty.call(ex, n) && keep(ex[n])) return ex[n];
@@ -3159,6 +3169,10 @@ function trPaintPosCell(td, a, pos, tc, f) {
   const word = (k) => td.appendChild(trEl("span", "pos-word", t(k)));
   if (!a) { word("tr.amtOff"); return; }
   const rawTip = f.txf && raw !== lots ? t("po.lotsRawTip", { n: trLotsTgtFmt(raw) }) : "";
+  if (zero && f.paperShort) {
+    // 模擬盤的台股是現股:策略的空頭壓成 0(lib/portfolio,同總訊號部位表),副行講原因,不讓人以為策略壞了(設計稽核 M1)
+    const box = trEl("span", "cell2"); box.append(trEl("span", "pos-word", t("tr.flat")), trEl("span", "pos-sub", t("tr.paperTwNoShort"))); td.appendChild(box); return;
+  }
   if (zero) { const w = word("tr.flat"); if (rawTip) w.title = rawTip; return; }
   const leg = (v, num) => { const g = trEl("span", "pos-leg"); g.append(trEl("span", "dir " + (v > 0 ? "buy" : "sell"), t(v > 0 ? "tr.rel.long" : "tr.rel.short")), " ", num); return g; };
   const money = (v) => trEl("span", "num", trFmt(Math.abs(v)));
@@ -3339,7 +3353,9 @@ function trAmountTable(names, stored, states) {
       // 投資組合還沒算出成分(沒有權重):一樣是「—」,不是空手(同網頁 3b67fa10)
       const cNotYet = isC && !tc && !noSig;
       const tgt = trEl("td", "n pos");
-      const pos = typeof st.position === "number" ? st.position : 0;
+      const pos0 = typeof st.position === "number" ? st.position : 0;
+      // 單一標的的台股做空、路由模擬交易:對帳器目標是 0(現股不放空,lib 逐支壓 0),部位欄同樣寫空手;加密現貨的空頭會抵別支的多單,不壓
+      const paperShort = !isC && !txf && pos0 < 0 && trTwCash(sym || "", trPaperOf(n)), pos = paperShort ? 0 : pos0;
       // 最小進場額:機器端只在門檻大於平台那顆 10 時才回報;填得比它小就永遠不會進場,而且完全靜音
       const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" || trTwCash(sym, trPaperOf(n)) ? "@spot" : "")] : null;
       const gate = g0 && typeof g0.entry_usd === "number" ? g0.entry_usd : g0 && g0.side !== "reduce" && typeof g0.usd === "number" ? g0.usd : null;
@@ -3352,7 +3368,7 @@ function trAmountTable(names, stored, states) {
       }
       const repaint = () => {
         const a = TR.edits[n] != null ? TR.edits[n] : stored[n] || 0;
-        trPaintPosCell(tgt, a, pos, tc, { noSig, notYet: notYet || cNotYet, txf, sentOn });
+        trPaintPosCell(tgt, a, pos, tc, { noSig, notYet: notYet || cNotYet, txf, sentOn, paperShort: paperShort || (!!tc && !!tc.paperShort) });
         if (gateRow) {
           const show = a > 0 && a < gate;
           if (show && !gateRow.parentNode) row.insertAdjacentElement("afterend", gateRow);
@@ -3646,7 +3662,8 @@ function trCfRows(o) {
     const lot = o.lot(sym), was = before[sym] || 0, now = after[sym] || 0;
     const same = lot ? trRoundLots(was) === trRoundLots(now) : Math.round(was) === Math.round(now);
     if (same) return;
-    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym] };
+    // kept:撐這列的策略原本就存著——現況 0 也畫「0 → 新值」(綁好之後原樣存、暫停中存,設計稽核 S3);新加的策略照舊只寫新值
+    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym], kept: by(sym).some((n) => n in o.stored) };
     // 不會自動下單的美股列只寫金額:不換數量、也不算預覽撐的列(表頭不寫依哪一根),同網頁 pfUsNoAuto
     if (trUsNoAuto(o.r, sym, by(sym))) row.noAuto = true;
     else if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym), trUsPerp(o.r, sym, by(sym))) : null;
@@ -3787,7 +3804,7 @@ function trSaveAmounts(names, stored, opener, o) {
             if (x.closed && nOpen) dd.appendChild(trEl("span", "tag", t("po.twClosedHold")));
           } else {
             const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
-            if (x.was) arrow(dd, f(x.was));
+            if (x.was || x.kept) arrow(dd, f(x.was));
             dd.append(trEl("span", "n", f(x.now)));
             // 讀過帳:只有這家下得了、帳上真的有部位的才標平倉;第一次讀帳前不知道,照標
             const close = trCloseTag(x.was, x.now, fire, recon && !firstRead ? x.held : null); if (close) dd.appendChild(trEl("span", "tag", close));
@@ -4985,7 +5002,11 @@ function trEventText(type, d) {
 /* 這一筆暫停是「暫停並關閉部位」:這台電腦記的 halt_close 帶 closing(daemon 照 close_all 的 ack 判,只掛暫停的是 false;舊紀錄沒有這欄當有);
    雲端事件與現在的 HALT 沒有指令型別,認 runtime command_listener._cmd_close_all 與 manager/flatten.py 寫進 HALT 的固定 reason */
 const TR_CLOSE_ALL_REASON = "close all positions";
-function trHaltCloses(type, d) { return type === "halt_close" ? !d || d.closing !== false : !!d && d.reason === TR_CLOSE_ALL_REASON; }
+function trHaltCloses(type, d) {
+  if (type === "halt_close") return !d || d.closing !== false;
+  // runtime 判完才寫的 closing(command_listener._mark_halt_closing;HALT 與平台 halt 事件都帶);沒有這欄(舊 runtime)才認 reason
+  return !!d && (typeof d.closing === "boolean" ? d.closing : d.reason === TR_CLOSE_ALL_REASON);
+}
 // 標題:字串整段上級別色;[key, vars] 照網頁 evFill,字上級別色、代進去的值(交易所、分鐘)包 .mono。包一層,×N 才接在整句後面
 function trEvHead(head, cls) {
   if (!Array.isArray(head)) return trEl("span", cls, head);
@@ -5045,7 +5066,7 @@ function trOvEvents(r, z) {
     let head = null, note = null, lv = 3, tip = null, code = null, tail = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
-    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); head = t(lv === 1 ? "tr.ov.evHaltAuto" : trHaltCloses(ev.type, d) ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, d); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];
@@ -5061,8 +5082,10 @@ function trOvEvents(r, z) {
   if (halt.halted && !uiHalts.some((x) => haltMs != null && Math.abs(x - haltMs) < 120000)) push(haltMs, (body) => {
     // 顏色照級別(execute / settings 的暫停由 execution_interrupted / settings_unsafe 那列當 P1,這列不再紅一次);字照舊
     const auto = !!halt.source && halt.source !== "web";
-    body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(trHaltCloses("halt", halt) ? "tr.ov.evHaltClose" : "tr.ov.evHalt")));
-    body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
+    const closes = !auto && trHaltCloses("halt", halt);
+    body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt")));
+    // 平倉那一列標題已經講完,不再帶「平倉與停損停利照常執行」(設計稽核 S2);什麼單都不下那句照舊
+    if (trHaltStopsAll(halt) || !closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
   });
   (Array.isArray(r.order_errors) ? r.order_errors : []).forEach((e) => {
     if (!e || typeof e !== "object") return;
