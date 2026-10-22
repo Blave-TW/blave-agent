@@ -83,8 +83,10 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 /* ---- 側欄(雲端視角):沒有主機可看時入口與清單整段收起 ---- */
 .strat-head[hidden], .strat-list[hidden], .side-nav[hidden] { display: none; }
 .side-nav .strat-name { flex: 1; min-width: 0; }
-/* 雲端列尾只有一顆 ✕(按下開框,不在列內武裝成「刪除?」),名字讓出 ✕ 的位置就夠,不必留本機那 72 */
+/* 雲端列尾的 ✕ 按下開框,不在列內武裝成「刪除?」:只有 ✕ = 40;✕ + 旗標鈕 = 68(spec desktop-strat-flags §1);只有旗標鈕(機器停著)照 app.css 的 40 */
 #strat-list-cloud .strat-wrap:is(:hover, :has(:focus-visible)):where(:has(.cs-del:not(:disabled))) .strat-row { padding-right: calc(var(--space-32) + var(--space-8)); }
+#strat-list-cloud .strat-wrap:is(:hover, :has(:focus-visible), .flag-open):where(:has(.strat-flagbtn):has(.cs-del:not(:disabled))) .strat-row { padding-right: 68px; }
+#strat-list-cloud .strat-wrap.dragging .strat-row { padding-right: var(--space-12); }   /* 拖拉中名字吃滿(同 app.css .dragging;上面兩條是 id 權重) */
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
 

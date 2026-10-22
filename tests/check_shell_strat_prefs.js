@@ -3,7 +3,7 @@
 //      set 只動有帶的鍵、不碰 pdfDir、原子寫(沒留暫存檔)、壞 patch 不寫
 //   ② 套序(renderer 純函式):order 內的先、缺的 append、長度對不上維持原序、沒拖過 = 原序
 //   ③ 旗標畫面只畫 1–3(存檔收 1–6)
-//   ④ 接線(原文):武裝時旗標鈕收起、雲端 tab 只讀(envPaintSide 不建旗標鈕、不綁拖拉、不寫偏好)、preload / main 兩支 IPC 只收自家頁面、
+//   ④ 接線(原文):武裝時旗標鈕收起、雲端 tab 同一套旗標鈕 / 拖拉(寫回的行為在 check_shell_cloud_strat_prefs.js)、preload / main 兩支 IPC 只收自家頁面、
 //      stratRefresh 先等 sfBeforeRebuild 再套序、刪除成功清偏好、兩個埋點是字面、字串表兩語都齊、tokens 三色、index.html 載入順序
 // 跑法:node tests/check_shell_strat_prefs.js
 const fs = require("fs"), os = require("os"), path = require("path"), vm = require("vm");
@@ -57,17 +57,24 @@ try {
     /\.strat-wrap:has\(\.cs-del\.is-armed\) \.strat-flagbtn \{ opacity: 0; pointer-events: none; \}/.test(css) && /\.strat-wrap:has\(\.cs-del\.is-armed\) \.cs-del \{ opacity: 1; pointer-events: auto; \}/.test(css)
     && /\.strat-wrap:not\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-flagbtn \{ right: var\(--space-6\); \}/.test(css)
     && /\.strat-wrap:is\(:hover, :has\(:focus-visible\), \.flag-open\):where\(:has\(\.strat-flagbtn\)\) \.strat-row \{ padding-right: 40px; \}/.test(css) && /:where\(:has\(\.strat-flagbtn\):has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right: 64px; \}/.test(css)
-    && /\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right: 72px; \}/.test(css) && /#strat-list \.strat-wrap \{ touch-action: none; \}/.test(css)
+    && /\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right: 72px; \}/.test(css) && /\n\.strat-list \.strat-wrap \{ touch-action: none; \}/.test(css)
     && /\.strat-wrap\[data-flag\]::before \{[^}]*width: 2px; height: 16px;/.test(css) && /\.strat-wrap\.dragging \.strat-row \{[^}]*box-shadow: var\(--shadow-overlay\)/.test(css) && !/rgba\(0, ?0, ?0, ?\.45\)/.test(css));
   ok("④ tokens.css 有旗標三色(只有它可以寫 hex)、app.css 沒有寫死 hex", /--color-flag-1: #c79a3e;\s*\n\s*--color-flag-2: #8ad2e2;\s*\n\s*--color-flag-3: #8d68d4;/.test(tokens) && !/#[0-9a-f]{3,6}\b/i.test(css.split("\n").filter((l) => /flag|swcell|strat-wrap/.test(l)).join("\n")));
   const paint = cutFn(trSrc, "envPaintSide");
-  ok("④ 雲端 tab 只讀:envPaintSide 套 sfApplyOrder / sfFlagMeta 畫,但不建 .strat-flagbtn、不綁拖拉、不寫偏好;stratflags.js 的拖拉只綁 #strat-list",
-    /sfApplyOrder\(shown, prefs\.order\)/.test(paint) && /sfFlagMeta\(wrap, row, nm\.title, prefs\.flags\[x\.name\]\)/.test(paint) && /prefs\.flags, list\.map/.test(paint)
-    && !/strat-flagbtn|sfRowActions|stratPrefsSet|sfBindDrag|contextmenu/.test(paint) && !/stratPrefsSet|sfBindDrag|sfSetFlag|sfMoved/.test(trSrc)
-    && /^sfBindDrag\(\$\("strat-list"\)\);$/m.test(sfSrc) && (sfSrc.match(/sfBindDrag\(/g) || []).length === 2 && !/strat-list-cloud/.test(sfSrc));
+  ok("④ 雲端 tab:envPaintSide 用 sfCloudPrefs 套序、sig 帶旗標;每列 sfRowActions(…, SF_CLOUD) 接在名字與 ✕ 之間;拖拉中 sfCloudHold 先擋重建;列的 click 吞掉拖完那一下;刪除成功 sfCloudForget;兩份清單各綁一次拖拉",
+    /const prefs = typeof sfCloudPrefs === "function" \? sfCloudPrefs\(st && st\.cloud\) : \{ order: \[\], flags: \{\} \};/.test(paint) && /sfApplyOrder\(shown, prefs\.order\)/.test(paint) && /prefs\.flags, list\.map/.test(paint)
+    && /if \(ENV\.sig\.side === sig\) return;\n\s*if \(typeof sfCloudHold === "function" && sfCloudHold\(\(\) => \{ ENV\.sig\.side = null; trPaint\(\); \}\)\) return;[^\n]*\n\s*ENV\.sig\.side = sig;/.test(paint)
+    && /wrap\.appendChild\(row\);\n\s*if \(typeof sfRowActions === "function"\) sfRowActions\(wrap, row, x, SF_CLOUD\);[^\n]*\n\s*if \(canDel/.test(paint) && /if \(typeof SF !== "undefined" && SF\.justDragged\) return;/.test(paint)
+    && /CDEL\.gone\.set\(name, Date\.now\(\)\);\n\s*if \(typeof sfCloudForget === "function"\) sfCloudForget\(name\);/.test(trSrc) && !/window\.blave\.cloudStratPrefsSet/.test(trSrc)
+    && /^sfBindDrag\(\$\("strat-list-cloud"\), SF_CLOUD\);\nsfBindDrag\(\$\("strat-list"\), SF_LOCAL\);$/m.test(sfSrc) && (sfSrc.match(/sfBindDrag\(/g) || []).length === 3
+    && /\$\("strat-list-cloud"\)\.addEventListener\("scroll", \(\) => sfPopClose\(false\)\);/.test(sfSrc));
+  ok("④ 雲端 tab 重建後焦點接回同名那一列的同一顆鈕(名字鈕或旗標鈕;逐列比名字,不拼 selector)",
+    /const ae = document\.activeElement, aw = ae && box\.contains\(ae\) \? ae\.closest\("\.strat-wrap"\) : null;/.test(paint) && paint.indexOf("const keep =") < paint.indexOf('box.textContent = ""')
+    && /if \(keep\) \{ const w = \[\.\.\.box\.querySelectorAll\(":scope > \.strat-wrap"\)\]\.find\(\(r\) => r\.dataset\.name === keep\.name\), b = w && w\.querySelector\(keep\.cls\); if \(b\) b\.focus\(\); \}/.test(paint));
   ok("④ cloud.js:snapshot 帶 strat_order / strat_flags(fail-soft、1–6、≤200),進 summaryKey(偏好改了也推)",
-    /strat_order: Array\.isArray\(b\.strat_order\) \? b\.strat_order\.filter\(\(n\) => typeof n === "string" && n\)\.slice\(0, 200\) : \[\]/.test(read(path.join(SHELL, "cloud.js")))
-    && /Number\.isInteger\(v\) && v >= 1 && v <= 6\)\.slice\(0, 200\)\) : \{\}/.test(read(path.join(SHELL, "cloud.js"))) && /JSON\.stringify\(s\.strat_order \|\| null\), JSON\.stringify\(s\.strat_flags \|\| null\),/.test(read(path.join(SHELL, "cloud.js"))));
+    /strat_order: prefOrder\(b\.strat_order\),\n\s*strat_flags: prefFlags\(b\.strat_flags\),/.test(read(path.join(SHELL, "cloud.js")))
+    && /const prefOrder = \(v\) => \(Array\.isArray\(v\) \? v\.filter\(\(n\) => typeof n === "string" && n\)\.slice\(0, 200\) : \[\]\);/.test(read(path.join(SHELL, "cloud.js")))
+    && /Number\.isInteger\(x\) && x >= 1 && x <= 6\)\.slice\(0, 200\)\) : \{\}\);/.test(read(path.join(SHELL, "cloud.js"))) && /JSON\.stringify\(s\.strat_order \|\| null\), JSON\.stringify\(s\.strat_flags \|\| null\),/.test(read(path.join(SHELL, "cloud.js"))));
   { const { interpret } = require(path.join(SHELL, "cloud.js"));
     const body = (o) => ({ machine: { state: "running" }, portfolio: {}, portfolio_stale: false, strategies_summary: [], ...o });
     const a = interpret({ status: 200, body: body({ strat_order: ["a", 3, "", "b"], strat_flags: { a: 2, b: 9, c: "1" } }) }), b = interpret({ status: 200, body: body({}) });
@@ -84,7 +91,7 @@ try {
   const before2 = cutFn(sfSrc, "sfBeforeRebuild");
   ok("④ sfBeforeRebuild:收面板、等偏好讀好、拖拉中等 waiters;拖完(含 pointercancel)都 resolve", /sfPopClose\(false\)/.test(before2) && /sfReady\(\)/.test(before2) && /SF\.dragActive \? new Promise\(\(r\) => SF\.waiters\.push\(r\)\)/.test(before2)
     && /const finish = \(\) => \{ SF\.dragActive = false;[^\n]*SF\.waiters = \[\]; ws\.forEach\(\(r\) => r\(\)\); \};/.test(sfSrc) && /if \(ev\.pointerId === SF\.dragPointer && cleanup\(\)\) finish\(\);/.test(sfSrc));
-  ok("④ 旗標值沒變不寫不埋;拖回原位不寫;兩個埋點是字面、都在白名單(0.1.20 A 案的 browser_hb_card、0.1.21 的 perf_update、0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在它們後面)", /if \(next === sfFlagId\(SF\.flags\[name\]\)\) return;/.test(cutFn(sfSrc, "sfSetFlag")) && /if \(to !== from\) \{[^\n]*sfMoved\(\); \}/.test(sfSrc)
+  ok("④ 旗標值沒變不寫不埋;拖回原位不寫;兩個埋點是字面、都在白名單(0.1.20 A 案的 browser_hb_card、0.1.21 的 perf_update、0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在它們後面)", /if \(next === sfFlagId\(sc\.flags\(\)\[name\]\)\) return;/.test(cutFn(sfSrc, "sfSetFlag")) && /if \(to !== from\) \{[^\n]*sfMoved\(sc\); \}/.test(sfSrc)
     && /trackFeature\("strat_flag_set"\);/.test(cutFn(sfSrc, "sfSetFlag")) && /trackFeature\("strat_reorder"\);/.test(cutFn(sfSrc, "sfMoved"))
     && (() => { const { EVENTS } = require(path.join(SHELL, "telemetry.js")); const n = EVENTS.feature_used.name; return n.slice(n.indexOf("strat_flag_set"), n.indexOf("contract_switch") + 1).join() === "strat_flag_set,strat_reorder,browser_hb_card,perf_update,pres_have_cert,contract_switch" && n.every((x) => x.length <= 16); })());
   ok("④ 面板:role=menu、色塊 menuitemradio、Esc 不冒泡到 escTop、外點 / resize / 捲動即收、右鍵的刪除那條走 ✕ 的武裝(回合中不給)",
@@ -101,7 +108,7 @@ try {
   ok("④ 面板底不再印按鍵提示(Wei 10-12 拿掉;Alt+↑/↓ 仍可用);移動後 srSay「已移到第 N 位」",
     !/hint\.className = "hint"/.test(sfSrc) && /sfPop\.append\(sep\(\), rm, d2, del\);/.test(sfSrc)
     && !/side\.sortHint/.test(sfSrc)
-    && /if \(e\.key === "ArrowUp"\) sib\.before\(row\); else sib\.after\(row\);\n\s*const b = row\.querySelector\("\.strat-row"\); if \(b\) b\.focus\(\);\n\s*sfMoved\(\);\n\s*srSay\(t\("side\.moved", \{ n: \[\.\.\.box\.querySelectorAll\(":scope > \.strat-wrap"\)\]\.indexOf\(row\) \+ 1 \}\)\);/.test(sfSrc)
+    && /if \(e\.key === "ArrowUp"\) sib\.before\(row\); else sib\.after\(row\);\n\s*const b = row\.querySelector\("\.strat-row"\); if \(b\) b\.focus\(\);\n\s*sfMoved\(sc\);\n\s*srSay\(t\("side\.moved", \{ n: \[\.\.\.box\.querySelectorAll\(":scope > \.strat-wrap"\)\]\.indexOf\(row\) \+ 1 \}\)\);/.test(sfSrc)
     && !/\.flag-pop \.hint/.test(css));
   ok("④ 選中格 = 內圈 box-shadow inset --bg-body,不再用 outline(focus ring 才是外環)", /\.flag-pop \.swcell\.selected \{ box-shadow: inset 0 0 0 2px var\(--bg-body\); \}/.test(css) && !/\.swcell\.selected \{[^}]*outline/.test(css));
   { const strings = read(path.join(R, "strings.js")), sb = {}; vm.runInNewContext(strings + "\nthis.S = STRINGS;", sb);
@@ -109,16 +116,16 @@ try {
   ok("④ index.html:stratflags.js 在 app.js 之後(用它的 $ / t / RP / stratTip / trackFeature)", html.indexOf('src="stratflags.js"') > html.indexOf('src="app.js"') && html.indexOf('src="stratflags.js"') > 0);
   // 0.1.23(Wei 10-13 開發版重載看到):app.js 的開機 IIFE 常在這支載入前就畫過側欄(實測 reload 後 30ms 畫、35ms 這支才到,stratRefresh 的 typeof 守衛靜默跳過 → 照 mtime 排、沒色條)。
   // 載入收尾從原文切出來跑:偏好一到,側欄已經畫過 → stratRefresh(false) 一次;還沒畫過 → 不叫(之後那次自己 await sfBeforeRebuild)
-  { const tail = sfSrc.slice(sfSrc.lastIndexOf('sfBindDrag($("strat-list"));'));
+  { const tail = sfSrc.slice(sfSrc.lastIndexOf('sfBindDrag($("strat-list"), SF_LOCAL);'));
     const run = async (painted) => {
-      const calls = [], c = { window: { blave: { stratPrefs: () => Promise.resolve({ stratOrder: ["b", "a"], stratFlags: { a: 1 } }) } }, $: () => ({ querySelector: () => (painted ? {} : null) }), stratRefresh: (x) => { calls.push(x); return Promise.resolve(); }, sfBindDrag: () => {} };
+      const calls = [], c = { window: { blave: { stratPrefs: () => Promise.resolve({ stratOrder: ["b", "a"], stratFlags: { a: 1 } }) } }, $: () => ({ querySelector: () => (painted ? {} : null) }), stratRefresh: (x) => { calls.push(x); return Promise.resolve(); }, sfBindDrag: () => {}, SF_LOCAL: {} };
       vm.runInNewContext(line(sfSrc, /^const SF = \{[\s\S]*?\};$/m) + "\n" + cutFn(sfSrc, "sfReady") + "\n" + tail + "\nthis.SF = SF;", c);
       await new Promise((r) => setTimeout(r, 0));
       return { calls, order: c.SF.order.join(), flag: c.SF.flags.a };
     };
     const a = await run(true), b = await run(false);
     ok("④ 載入收尾:偏好讀好後,側欄畫過 → stratRefresh(false) 一次;沒畫過 → 不叫;兩邊偏好都進 SF", a.calls.length === 1 && a.calls[0] === false && a.order === "b,a" && a.flag === 1 && b.calls.length === 0 && b.order === "b,a");
-    ok("④ 載入收尾是整支的最後一行、在 sfBindDrag 之後", /sfBindDrag\(\$\("strat-list"\)\);\n(\/\/[^\n]*\n)*sfReady\(\)\.then\(\(\) => \{ if \(\$\("strat-list"\)\.querySelector\("\.strat-wrap"\)\) stratRefresh\(false\); \}\);\n$/.test(tail)); }
+    ok("④ 載入收尾是整支的最後一行、在 sfBindDrag 之後", /sfBindDrag\(\$\("strat-list"\), SF_LOCAL\);\n(\/\/[^\n]*\n)*sfReady\(\)\.then\(\(\) => \{ if \(\$\("strat-list"\)\.querySelector\("\.strat-wrap"\)\) stratRefresh\(false\); \}\);\n$/.test(tail)); }
 } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
 console.log(red ? `\n${red} 紅` : "\n全綠");
 process.exit(red ? 1 : 0);

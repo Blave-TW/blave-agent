@@ -892,9 +892,10 @@ function trPickRows(list, names, canTrade, paper, txfOnly, flags) {
     return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: !inCur && (typeC || twd || txf),
       note: twd ? (inCur ? "twdKeep" : "twd") : txf ? (inCur ? "txfKeep" : "txf") : typeC ? "typeC" : null, flag: Number.isInteger(f) && f >= 1 && f <= 3 ? f : null }; });
 }
-// picker 的側欄偏好:雲端 = api 回的 strat_order / strat_flags(同 envPaintSide);這台電腦 = stratflags.js 的 SF(還沒載入就沒有:原序、無旗標)
+// picker 的側欄偏好:雲端 = api 回的 strat_order / strat_flags 疊上剛改、還沒同步回來的(同 envPaintSide 的 sfCloudPrefs);這台電腦 = stratflags.js 的 SF(還沒載入就沒有:原序、無旗標)
 function trPickPrefs(S, sf) {
   const c = S && S.env === "cloud" ? (S.st && S.st.cloud) || {} : null;
+  if (c && typeof sfCloudPrefs === "function") return sfCloudPrefs(c);
   const o = c ? c.strat_order : sf && sf.order, f = c ? c.strat_flags : sf && sf.flags;
   return { order: Array.isArray(o) ? o : [], flags: f && typeof f === "object" && !Array.isArray(f) ? f : {} };
 }
@@ -5864,6 +5865,7 @@ async function cdelRun(x, opener) {
   }
   if (res && res.ok) {
     delete CDEL.ids[name]; CDEL.busy.delete(name); CDEL.gone.set(name, Date.now());
+    if (typeof sfCloudForget === "function") sfCloudForget(name);   // 側欄順序 / 旗標裡的這個名字順手清掉(stratflags.js)
     const wasHere = !!document.activeElement && !!document.activeElement.closest && !!document.activeElement.closest('.strat-wrap[data-name="' + name + '"]');
     const rows = [...$("strat-list-cloud").querySelectorAll(".strat-wrap")], at = rows.findIndex((w) => w.dataset.name === name);
     const next = at >= 0 ? rows[at + 1] || rows[at - 1] : null;
@@ -5902,8 +5904,8 @@ function envPaintSide(kind, st) {
   const all = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
   cdelPrune(all.map((x) => x.name), Date.now());
   const shown = all.filter((x) => !CDEL.gone.has(x.name));   // 已刪、清單還沒跟上的先不畫
-  // 側欄偏好:web 工作頁設的順序與旗標(api /cloud/state 的 strat_order / strat_flags;cloud.js 清過)。這裡只讀:不給拖、不給掛(renderer/stratflags.js)
-  const prefs = { order: st && st.cloud && Array.isArray(st.cloud.strat_order) ? st.cloud.strat_order : [], flags: st && st.cloud && st.cloud.strat_flags && typeof st.cloud.strat_flags === "object" ? st.cloud.strat_flags : {} };
+  // 側欄偏好:帳號上的順序與旗標(api /cloud/state 的 strat_order / strat_flags,網頁工作頁同一份)疊上這裡剛改、還沒同步回來的(renderer/stratflags.js)
+  const prefs = typeof sfCloudPrefs === "function" ? sfCloudPrefs(st && st.cloud) : { order: [], flags: {} };
   const list = typeof sfApplyOrder === "function" ? sfApplyOrder(shown, prefs.order) : shown;
   const ho = typeof HO !== "undefined" && HO.on && typeof hoCloudLive === "function" && hoCloudLive();
   // 列尾的刪除:機器停著 / 名字不合規 / 刪除中 → 不畫(跟 HO 旗標無關)。agent 回合中照畫、是鎖(busy.js),點了講原因
@@ -5912,32 +5914,39 @@ function envPaintSide(kind, st) {
   const sel = typeof RPC !== "undefined" ? RPC.name : null, dotsUp = envDotsUp("cloud", st);
   const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], prefs.flags, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st), dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)])]);
   if (ENV.sig.side === sig) return;
+  if (typeof sfCloudHold === "function" && sfCloudHold(() => { ENV.sig.side = null; trPaint(); })) return;   // 拖拉中不重建,拖完補畫
   ENV.sig.side = sig;
   // 點一支 → 中欄畫雲端那一份的報告(app.js 的 rpCloudSelect;資料走主行程的 cloudStrategy)。鈕不能包鈕,刪除鈕放在同一個 wrap 裡(同本機清單)
-  const box = $("strat-list-cloud"); box.textContent = ""; box.removeAttribute("role");
+  const box = $("strat-list-cloud");
+  // 拖完 / Alt+↑/↓ / 掛旗標後,順序與旗標進了 sig,下一輪輪詢會整個重建:焦點在清單裡就記住是哪一列的哪顆鈕,建完接回去(不掉到 BODY)
+  const ae = document.activeElement, aw = ae && box.contains(ae) ? ae.closest(".strat-wrap") : null;
+  const keep = aw ? { name: aw.dataset.name, cls: ae.classList.contains("strat-flagbtn") ? ".strat-flagbtn" : ".strat-row" } : null;
+  box.textContent = ""; box.removeAttribute("role");
   if (!list.length) { box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
   list.forEach((x) => {
     const wrap = trEl("div", "strat-wrap cs-row"), row = trEl("button", "strat-row"); row.type = "button"; row.dataset.name = x.name; wrap.dataset.name = x.name;
     if (x.name === sel) row.setAttribute("aria-current", "true");
     const nm = trEl("span", "strat-name"); stratNameFill(nm, x.displayName); nm.title = typeof stratTip === "function" ? stratTip(x.displayName, x.name) : x.name; row.appendChild(nm);
-    if (typeof sfFlagMeta === "function") sfFlagMeta(wrap, row, nm.title, prefs.flags[x.name]);
     if (dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)) envDotInto(nm, true);
     const deleting = CDEL.busy.has(x.name);
     if (deleting) { wrap.classList.add("is-deleting"); row.setAttribute("aria-busy", "true"); row.appendChild(trEl("span", "stx", t("cdel.pending"))); }
     else { const w = envStratWord(x.name, st); if (w) row.appendChild(envRowMark(w)); }
     // 再點一次選中的那支 = 收掉、回雲端自動下單頁。選取一換整張清單就重建,焦點接回同名那一列(不掉到 BODY)
     row.addEventListener("click", () => {
+      if (typeof SF !== "undefined" && SF.justDragged) return;   // 拖完放開那一下的 click 不是點選
       if (x.name === RPC.name) sideReclick(() => rpCloudSelect(null)); else rpCloudSelect(x.name);
       const ae = document.activeElement, r = cdelRowBtn(x.name, null);
       if (r && (!ae || ae === document.body)) r.focus();
     });
     wrap.appendChild(row);
+    if (typeof sfRowActions === "function") sfRowActions(wrap, row, x, SF_CLOUD);   // 旗標鈕 + 右鍵面板,接在名字與 ✕ 之間
     if (canDel && !deleting && /^[A-Za-z0-9_-]{1,64}$/.test(x.name) && typeof armedDelete === "function") {
       const d = armedDelete(wrap, t("cdel.aria", { name: x.displayName || x.name }), (btn) => cdelAsk(x, btn), true);
       busyLock(d, busyOn()); d.onBusy = () => stratDelBusy(wrap); wrap.appendChild(d);
     }
     box.appendChild(wrap);
   });
+  if (keep) { const w = [...box.querySelectorAll(":scope > .strat-wrap")].find((r) => r.dataset.name === keep.name), b = w && w.querySelector(keep.cls); if (b) b.focus(); }   // 名字不一定是合法 selector:逐列比
 }
 /* 開通頁(規格 §3;Wei 選定 A 案):電腦版把人帶進雲端方案的主要入口。主鈕**直接開已上線的那一套**——登入走 planLogin、
    啟動走 planAsk(花錢的確認框 cf.*,一步不少)、綁卡外開瀏覽器;這裡不另寫一條開通流程。價格數字來自方案頁同一個來源
