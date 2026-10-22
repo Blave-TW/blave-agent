@@ -3882,6 +3882,14 @@ def _cmd_amounts(args):
     cfg["amounts"] = clean
     # routing inheritance (still-bound routes kept, the rest inherit one default) lives in
     # save_routing so the report can show the pages the exact routes this save will write
+    # a hand-edited route that is not a venue id (list / dict): refuse, naming the strategy. Never let
+    # plan() read it as "no route" here — the strategy would inherit the default, a real-money venue
+    # the user never picked (稽核 v029-028bugs r3 P1-1); the mirror stays, the reconciler trades as before
+    bad = [k for k, v in (cfg.get("exchanges") or {}).items() if v is not None and not isinstance(v, str)] \
+        if isinstance(cfg.get("exchanges"), dict) else []
+    if bad:
+        raise ValueError("BAD_ROUTE: " + "、".join(f"「{k}」" for k in sorted(map(str, bad)))
+                         + " 的交易所設定壞了(不是交易所代號),沒有儲存;請 agent 修好 manager/portfolio_config.json 的 exchanges")
     bound = save_routing.bound_ids(WORKSPACE)
     old, default_venue = save_routing.plan(cfg.get("exchanges") or {}, bound)
     cfg["exchanges"] = {

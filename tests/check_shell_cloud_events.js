@@ -105,6 +105,29 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
     && /const closes = !auto && trHaltCloses\("halt", halt\);/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)"))
     && /t\(closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)")));
   ok("ui:下單失敗不在這一段(雲端的 portfolio 仍帶 order_errors,兩邊都畫會重複)", !/order_error/.test(loop));
+  // 稽核 r2 P2-2／r3 P3-1、P3-3:雲端 halt 事件對到現在這筆 HALT 的規則(同網頁 ovHaltCloses)——ts 與 halt.at 差 ≤1 秒、reason 相同;
+  // 對到時 closing 先看報告現在的值,對不上照事件自己的(再退回 reason)。這台電腦記的那筆(欄位在最外層)不動
+  { const fnOf = (n) => { const i = src.indexOf("function " + n + "("); let k = src.indexOf("{", i), dep = 0; for (; k < src.length; k++) { if (src[k] === "{") dep++; else if (src[k] === "}" && --dep === 0) break; } return src.slice(i, k + 1); };
+    const H = {}; new Function("H", fnOf("trMs") + "\n" + fnOf("trHaltNow") + "\nH.trMs = trMs; H.trHaltNow = trHaltNow;")(H);
+    const T = 1792600000, at = (x) => new Date(x * 1000).toISOString(), CA = "close all positions";
+    const ev = (ts, data) => ({ ts, type: "halt", data }), cur = (x, closing, reason = CA) => ({ halted: true, at: at(x), reason, source: "web", closing });
+    const decide = (e, r) => trHaltCloses("halt", H.trHaltNow(e, e.data, { halt: r }));
+    const cases = [
+      ["同一秒、同 reason:事件凍住 false、現在 true → 平倉", decide(ev(T, { reason: CA, closing: false }), cur(T, true)), true],
+      ["事件比 halt.at 多 1 秒(MySQL 四捨五入):照樣對到 → 平倉", decide(ev(T + 1, { reason: CA, closing: false }), cur(T + 0.6, true)), true],
+      ["事件比 halt.at 少 1 秒:照樣對到", decide(ev(T - 1, { reason: CA, closing: false }), cur(T, true)), true],
+      ["差 2 秒:不是同一筆,照事件自己的 false", decide(ev(T + 2, { reason: CA, closing: false }), cur(T, true)), false],
+      ["一分鐘前的一般暫停、現在是平倉:不對過去", decide(ev(T - 60, { reason: "user request" }), cur(T, true)), false],
+      ["同一秒、reason 不同:不對過去", decide(ev(T, { reason: "user request" }), cur(T, true)), false],
+      ["現在 closing false、事件凍住 true:報告優先 → 只是暫停", decide(ev(T, { reason: CA, closing: true }), cur(T, false)), false],
+      ["舊 runtime(報告沒有 closing):退回事件自己的值", decide(ev(T, { reason: CA, closing: false }), cur(T, undefined)), false],
+      ["舊 runtime 且事件也沒有 closing:退回 reason", decide(ev(T, { reason: CA }), cur(T, undefined)), true],
+      ["現在沒有 HALT:照事件", decide(ev(T, { reason: CA, closing: false }), { halted: false }), false],
+    ];
+    const bad = cases.filter((c) => c[1] !== c[2]).map((c) => c[0]);
+    const local = { ts: T, type: "halt", reason: CA, closing: false };
+    ok("trHaltNow 行為:" + cases.length + " 種對應全對" + (bad.length ? "(錯:" + bad.join("／") + ")" : "") + ";這台電腦記的那筆(d === ev)原樣",
+      !bad.length && H.trHaltNow(local, local, { halt: cur(T, true) }) === local); }
   ok("ui:時間仍然是秒(平台與這台電腦同一個單位)", /uiHalts\.push\(ev\.ts \* 1000\)/.test(loop) && /push\(ev\.ts \* 1000,/.test(loop));
   ok("ui:雲端記的 venue_disconnected P2、這台電腦自己按的一般字", /lv = d !== ev \? 2 : 3;/.test(loop));
   ok("現在的 HALT 那列顏色照級別(execute/settings 暫停不再紅,P1 由對應事件那列承擔)", /trEl\("span", trEvClass\(trEvLevel\("halt", halt\)\),/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)")));

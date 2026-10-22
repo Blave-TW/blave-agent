@@ -111,8 +111,8 @@ def plan(old_exchanges, bound):
     zombie back in), and the venue every other member inherits: the one venue
     those kept routes use, else the machine's one bound venue, else ""."""
     old = old_exchanges if isinstance(old_exchanges, dict) else {}
-    # a hand-edited route that is not a string (list / dict) is no venue: treat it as "" instead
-    # of raising (unhashable) — the report must not go dark over one bad value
+    # a hand-edited route that is not a string (list / dict) is no venue: "" here so the report can
+    # still be computed — the save itself refuses such a config first (_cmd_amounts BAD_ROUTE)
     kept = {k: (v if isinstance(v, str) and v in bound else "") for k, v in old.items()}
     venues = {v for v in kept.values() if v}
     default = venues.pop() if len(venues) == 1 else ""
@@ -128,6 +128,9 @@ def report(cfg, workspace):
     if not isinstance(cfg, dict):
         return None
     bound = bound_ids(workspace)
-    kept, default = plan(cfg.get("exchanges") or {}, bound)
+    old = cfg.get("exchanges") if isinstance(cfg.get("exchanges"), dict) else {}
+    kept, default = plan(old, bound)
+    # a broken route stays no route here (not the default): the save refuses that config, nothing moves
+    broken = {k for k, v in old.items() if v is not None and not isinstance(v, str)}
     return {"bound": sorted(bound), "default": default,
-            "routes": {str(k): (v or default) for k, v in kept.items()}}
+            "routes": {str(k): ("" if k in broken else v or default) for k, v in kept.items()}}

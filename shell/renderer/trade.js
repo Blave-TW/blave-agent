@@ -5022,13 +5022,13 @@ function trHaltCloses(type, d) {
   return !!d && (typeof d.closing === "boolean" ? d.closing : d.reason === TR_CLOSE_ALL_REASON);
 }
 /* 雲端的 halt 事件是 HALT 剛掛上那一刻凍住的:它就是現在這筆 HALT(事件 ts = halt.at,同一秒;reason 也相同)時,
-   closing 先看報告裡現在的值(runtime 判完平倉才改 true),事件那份只在對不上時用。這台電腦記的那一筆照它自己的(daemon 照 ack 記)。
+   closing 先看報告裡現在的值(runtime 判完平倉才改 true),事件那份只在對不上時用。秒數容許差 1:api 存事件時 MySQL DATETIME(0) 會把小數秒四捨五入(稽核 r3 P3-1)。這台電腦記的那一筆照它自己的(daemon 照 ack 記)。
    同網頁 ovHaltCloses 一條規則(稽核 r2 P2-2:不用「兩分鐘內」,會把一般暫停對到後來的平倉) */
 function trHaltNow(ev, d, r) {
   const h = r && r.halt;
   if (d === ev || ev.type !== "halt" || !h || !h.halted || typeof h.closing !== "boolean" || typeof ev.ts !== "number") return d;
   const ms = trMs(h.at);
-  return ms != null && Math.floor(ms / 1000) === Math.floor(ev.ts) && d.reason === h.reason ? Object.assign({}, d, { closing: h.closing }) : d;
+  return ms != null && Math.abs(Math.floor(ms / 1000) - Math.floor(ev.ts)) <= 1 && d.reason === h.reason ? Object.assign({}, d, { closing: h.closing }) : d;
 }
 // 標題:字串整段上級別色;[key, vars] 照網頁 evFill,字上級別色、代進去的值(交易所、分鐘)包 .mono。包一層,×N 才接在整句後面
 function trEvHead(head, cls) {
