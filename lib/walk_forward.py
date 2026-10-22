@@ -9,7 +9,7 @@ Usage:
     lookback_days, step_days = default_windows(total_days)   # 1095/30, 365/30 or 4:1 by length
     run_walk_forward(df, s.compute_signals, ENTRY_VALS, EXIT_VALS,
                      output_dir='strategies/<name>', row_param='ENTRY_TH',
-                     col_param='EXIT_TH', fee=s.FEE, warmup=s.WARMUP,
+                     col_param='EXIT_TH', fee=fee_of(s), warmup=s.WARMUP,
                      current=(s.ENTRY_TH, s.EXIT_TH))
 
 Writes `strategies/<name>/wf.json` — the web workspace's 樣本外驗證 tab reads it;
@@ -302,7 +302,7 @@ def _stitch(picks, windows, load_pos):
 
 
 def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
-                     row_param, col_param, fee=0.0005,
+                     row_param, col_param, fee=None,
                      row_kw='entry_th', col_kw='exit_th',
                      lookback_days=None, step_days=None,
                      valid_fn=None, warmup=0, window=1, current=None):
@@ -340,6 +340,9 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
     -------
     path of the written wf.json
     """
+    if fee is None:
+        raise ValueError("fee is required: pass fee=lib.costs.fee_of(s) — the strategy's FEE, "
+                         "else its market default (references/trading-costs.md)")
     import warnings
     warnings.filterwarnings('ignore', category=FutureWarning)
     from lib.analysis import compute_stats, count_trades

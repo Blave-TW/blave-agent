@@ -124,12 +124,12 @@ except ImportError:  # half-updated workspace (lib/paper_data.py without TW stoc
 try:
     from lib.paper_data import strategy_fee
 except ImportError:  # half-updated workspace (lib/paper_data.py before FEE overrides)
-    def strategy_fee(symbol):
+    def strategy_fee(symbol, spot=False):
         return None
 try:
     from lib.costs import default_fee
 except ImportError:  # half-updated workspace (lib/costs.py not landed): the fixed rates below
-    def default_fee(symbol=None, market=None, universe=None, fees=None):
+    def default_fee(symbol=None, market=None, universe=None):
         return None
 
 try:
@@ -162,7 +162,7 @@ class PaperError(Exception):
 
 def _fee_rate(sym, fallback, spot=False):
     """Per-side fee a paper fill of `sym` pays — the rate its backtest charged."""
-    rate = strategy_fee(sym)
+    rate = strategy_fee(sym, spot)
     if rate is None:
         rate = default_fee(sym, "spot" if spot else "swap")
     return fallback if rate is None else rate
@@ -1299,16 +1299,18 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
                 guard.audit("order_ok", order_id="", note="zero/again", **fields)
                 return False
             rate = _fee_rate(sym, SPOT_FEE, spot=True)
-            if side == "buy" and rate > SPOT_FEE:
-                # a buy the cash covered at the old 0.1% is trimmed to fit the higher rate
-                # instead of being refused every round
+            if side == "buy":
                 fx = _spot_fx(env, base)
-                if q * price / fx * (1 + SPOT_FEE) <= led["cash"] < q * price / fx * (1 + rate):
-                    q = led["cash"] * fx / (price * (1 + rate)) * (1 - 1e-9)
-                    if is_tw_stock(sym):
-                        q = math.floor(q)
+                cost, cash = q * price / fx, led["cash"]
+                if cost <= cash < cost * (1 + rate):
+                    # only the fee does not fit (a strategy sized at the whole account): buy
+                    # what the cash covers instead of refusing every round
+                    q = cash * fx / (price * (1 + rate)) * (1 - 1e-9)
+                    q = math.floor(q) if is_tw_stock(sym) else q
+                elif cash < cost <= 2 * rate * led["spot"].get(base, 0.0) * price / fx:
+                    q = 0  # the fee-sized gap such a buy leaves: nothing to buy, not an error
                 if q <= 0:
-                    guard.audit("order_ok", order_id="", note="zero/again", **fields)
+                    guard.audit("order_ok", order_id="", note="no paper cash left", **fields)
                     return False
             o = _new_order(led, sym, "spot", side, "market", price, q, client_order_id)
             _fill_spot(led, o, q, price, rate, env=env)

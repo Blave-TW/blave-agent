@@ -177,7 +177,7 @@ def percentile_thresholds(series, n_parts=17, current=None):
 
 def scan_grid(data, compute_signals_fn, row_vals, col_vals,
               row_param='entry_th', col_param='exit_th',
-              fee=0.0005, valid_fn=None, warmup=0, **_):
+              fee=None, valid_fn=None, warmup=0, **_):
     """
     Run a 2D parameter scan and return a Sharpe grid.
     Supports both Type A (single-symbol) and Type C (portfolio) strategies —
@@ -196,7 +196,7 @@ def scan_grid(data, compute_signals_fn, row_vals, col_vals,
     col_vals          : iterable of col parameter values
     row_param         : kwarg name for row values (default 'entry_th')
     col_param         : kwarg name for col values (default 'exit_th')
-    fee               : per-side (one-way) fee rate, charged on every |Δw| (default 0.0005)
+    fee               : per-side (one-way) fee rate, charged on every |Δw| — required: fee=lib.costs.fee_of(s)
     valid_fn          : (row_val, col_val) → bool; skips invalid combos.
                         Type A threshold default: row > col (entry > exit).
                         Type C default: all combos valid (lambda r, c: True).
@@ -209,6 +209,9 @@ def scan_grid(data, compute_signals_fn, row_vals, col_vals,
            combos that never traded — a do-nothing cell's Sharpe 0.0 would otherwise
            beat every losing cell and win the plateau in a bear period)
     """
+    if fee is None:
+        raise ValueError("fee is required: pass fee=lib.costs.fee_of(s) — the strategy's FEE, "
+                         "else its market default (references/trading-costs.md)")
     import warnings
     warnings.filterwarnings('ignore', category=FutureWarning)
     import pandas as pd
@@ -469,7 +472,7 @@ def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
                  (the web builds "把 ENTRY_TH 改成 …" prompts from it — use the
                  module constant name, not the compute_signals kwarg)
     col_param  : the strategy constant name swept along cols, e.g. 'EXIT_TH'
-    fee        : per-side (one-way) fee rate used for the scan (s.FEE)
+    fee        : per-side (one-way) fee rate used for the scan (fee_of(s))
     start, end : scan data range as 'YYYY-MM-DD' strings (end = df.index[-1] date;
                  pass None if unknown)
     current    : (row_val, col_val) — the constants the strategy file holds RIGHT

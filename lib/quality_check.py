@@ -831,7 +831,7 @@ USER_EFFECT = {
 # edit: the user decides whether a warning gets fixed; this is what fixing it would mean.
 EDIT_FIX = {
     "template": "fill in the unfinished template logic",
-    "fee": "use the venue's real fee",
+    "fee": "use the market default FEE (references/trading-costs.md) or the user's own rate",
     "plot_series": "declare PLOT_SERIES",
     "spot_short": "make compute_signals long-only",
     "exit_loop": "use lib.exits.apply_exits",

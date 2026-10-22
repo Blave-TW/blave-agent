@@ -467,6 +467,7 @@ Because each scan turns the **other side OFF**, the long scan and short scan are
 ```python
 import numpy as np
 from lib.param_scan import scan_grid, find_plateau, write_scan, plot_heatmap
+from lib.costs import fee_of   # the strategy's FEE, else its market default
 import strategy as s
 
 # long side: short_th/cover_th pushed to -inf so no short ever triggers
@@ -474,13 +475,13 @@ long_fn  = lambda data, buy_th, sell_th: s.compute_signals(
     data, buy_th=buy_th, sell_th=sell_th, short_th=-1e9, cover_th=-1e9)
 grid_L = scan_grid(df, long_fn, buy_vals, sell_vals,
                    row_param='buy_th', col_param='sell_th',
-                   fee=s.FEE, freq='1d', warmup=s.WARMUP,
+                   fee=fee_of(s), freq='1d', warmup=s.WARMUP,
                    valid_fn=lambda b, sll: b > sll)
 best_L, nbr_L, *_ = find_plateau(grid_L, buy_vals, sell_vals)
 # scan.json holds ONE grid (the 參數掃描 tab (web and desktop) shows one heatmap): write the side you
 # are recommending — here the long side; the short side stays heatmap-only.
 write_scan(grid_L, buy_vals, sell_vals, nbr_L, best_L, 'strategies/<name>',
-           row_param='BUY_TH', col_param='SELL_TH', fee=s.FEE, start=s.START,
+           row_param='BUY_TH', col_param='SELL_TH', fee=fee_of(s), start=s.START,
            end=df.index[-1].strftime('%Y-%m-%d'), current=(s.BUY_TH, s.SELL_TH))
 plot_heatmap(grid_L, buy_vals, sell_vals, best_L, row_label='BUY_TH', col_label='SELL_TH',
              output_path='strategies/<name>/heatmap_long.png')
@@ -490,7 +491,7 @@ short_fn = lambda data, short_th, cover_th: s.compute_signals(
     data, buy_th=1e9, sell_th=1e9, short_th=short_th, cover_th=cover_th)
 grid_S = scan_grid(df, short_fn, short_vals, cover_vals,
                    row_param='short_th', col_param='cover_th',
-                   fee=s.FEE, freq='1d', warmup=s.WARMUP,
+                   fee=fee_of(s), freq='1d', warmup=s.WARMUP,
                    valid_fn=lambda sh, c: sh < c)
 best_S, *_ = find_plateau(grid_S, short_vals, cover_vals)
 plot_heatmap(grid_S, short_vals, cover_vals, best_S, row_label='SHORT_TH', col_label='COVER_TH',
@@ -740,17 +741,7 @@ def compute_signals(df):
 
 The engine charges `|Δw| × FEE` on every position change, in the backtest, scans, walk-forward and MCPT alike — open then close = `2 × FEE`, a long→short flip = `2 × FEE` at once. So `FEE` is the cost of ONE side: commission + that side's tax + slippage. Never put a round-trip total in it. Paper trading charges the same `FEE` on every fill.
 
-Defaults per side (`lib/costs.DEFAULT_FEES`), **already including slippage — conservative; adjust to the user's broker rate or the instrument's liquidity** (`references/trading-costs.md`):
-
-| Market | Default per-side `FEE` |
-|---|---|
-| Taiwan stocks (day trades included) | `0.005` |
-| Taiwan ETFs (bond ETFs included; `lib.costs.is_tw_etf`) | `0.003` |
-| Crypto perps | `0.001` |
-| Crypto spot | `0.0015` |
-| TAIFEX index futures TXF / MXF / TMF | `0.0001` |
-
-Other markets (US stocks, CME) have no default — `references/trading-costs.md` › *Markets without a default*.
+A strategy without `FEE` gets its market default (`lib.costs.fee_of`). The defaults already include slippage and are conservative — adjust them to the user's broker rate or the instrument's liquidity: `references/trading-costs.md` (the table, and markets without a default). Every scan, walk-forward and manual MCPT takes `fee=fee_of(s)` (`from lib.costs import fee_of`) — never a literal, never left out (they refuse a missing `fee`).
 
 ---
 

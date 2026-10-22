@@ -899,17 +899,6 @@ def _drift_flag(config, mode):
                               'at': int(time.time())})
 
 
-def _default_fee(config):
-    """No FEE in the strategy: lib.costs' default for its market (a Type C: its UNIVERSE),
-    0.0005 for a market the table does not cover."""
-    try:
-        from lib.costs import default_fee
-    except ImportError:  # half-updated workspace (lib/costs.py not landed)
-        return 0.0005
-    fee = default_fee(config.get('SYMBOL'), config.get('MARKET'), config.get('UNIVERSE'))
-    return 0.0005 if fee is None else fee
-
-
 def _picked_for_trading(name):
     """Is this strategy in the 下單設定 — i.e. would the platform be scheduling it live?
 
@@ -2096,7 +2085,11 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         src0 = Path(config['__file__']).read_bytes() if config.get('__file__') else None
     except OSError:
         src0 = None
-    fee           = config['FEE'] if 'FEE' in config else _default_fee(config)
+    try:
+        from lib.costs import fee_of
+        fee       = fee_of(config)      # FEE, else the market default (references/trading-costs.md)
+    except ImportError:  # half-updated workspace (lib/costs.py not landed)
+        fee       = config.get('FEE', 0.0005)
     interval      = config.get('INTERVAL', '1h')
 
     # TAIFEX settlement-mask enforcement — an unmasked backtest on the unadjusted
