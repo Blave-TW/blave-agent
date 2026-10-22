@@ -1,8 +1,10 @@
 """Minimal check: a Taiwan Type C (every column a TW stock / ETF code) is benchmarked against
 0050 buy-and-hold on the adjusted close — stats['benchmark_bh'] — and draws no random
-portfolios; a crypto or mixed universe keeps the random benchmark exactly as before; a failed
-0050 fetch leaves benchmark_bh null without failing the backtest; every shape still reads as a
-portfolio to strategy_reporter.is_portfolio_stats.
+portfolios; a crypto-only Type C (lib.portfolio._crypto_only on its strategy.py) is benchmarked
+against BTCUSDT buy-and-hold on its own interval and kline source; a US-only one (every fetcher
+fetch_usstock_price) against SPY buy-and-hold; a mixed universe keeps the random benchmark; a failed or late-starting benchmark leaves benchmark_bh null
+without failing the backtest; every shape still reads as a portfolio to
+strategy_reporter.is_portfolio_stats.
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_typec_tw_benchmark.py
 """
@@ -85,8 +87,11 @@ def compute(data):
     return w.ffill().fillna(0.0).values, pd.concat({"close": c, "open": o}, axis=1)
 
 
-def run(name, cols, fetch):
+def run(name, cols, fetch, src=None):
     D.fetch_twstock_price_adj = fetch
+    if src is not None:   # what lib.portfolio._crypto_only reads the fetchers off
+        (WS / "strategies" / name).mkdir(parents=True, exist_ok=True)
+        (WS / "strategies" / name / "strategy.py").write_text(src)
     c, o = CLOSE.set_axis(cols, axis=1), OPEN.set_axis(cols, axis=1)
     with contextlib.redirect_stdout(io.StringIO()):
         runner.run({"STRATEGY_NAME": name, "INTERVAL": "1d", "START": "2024-01-02", "FEE": 0.003,
@@ -164,14 +169,106 @@ check(not runner._is_tw_universe(["2330", "2887Z1", "BTCUSDT"])
       and not runner._is_tw_universe(["2330", "1234567"]) and not runner._is_tw_universe([]),
       "a crypto / futures / non-code column still means not a Taiwan universe")
 
-# ── crypto and mixed universes: the random benchmark, unchanged ──
-for name, cols in (("crypto", ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]),
-                   ("mixed", ["2330", "2317", "2454", "6488.TWO", "BTCUSDT"])):
+# ── crypto-only Type C → BTCUSDT buy-and-hold on the strategy's interval and kline source ──
+CRYPTO = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+BTC_SRC = "from lib.data import fetch_kline_batch, fetch_kline  # fetch_twstock_price_adj in a comment\n"
+BTC_IDX = pd.date_range("2023-12-01", "2025-03-01", freq="1D")
+BTC_CLOSE = pd.Series(40000 * np.exp(np.cumsum(rng.normal(0.0005, 0.02, len(BTC_IDX)))), index=BTC_IDX)
+kcalls = []
+
+
+def fake_kline(symbol, interval, start, end, headers, max_retries=6):
+    kcalls.append(("binance", symbol, interval, start, end))
+    return pd.DataFrame({"Open": BTC_CLOSE, "Close": BTC_CLOSE})[start:end]
+
+
+def fake_bingx(symbol, interval, start, end):
+    kcalls.append(("bingx", symbol, interval, start, end))
+    return pd.DataFrame({"Open": BTC_CLOSE, "Close": BTC_CLOSE})[start:end]
+
+
+D.fetch_kline, D.fetch_bingx_kline = fake_kline, fake_bingx
+calls.clear()
+st = run("crypto", CRYPTO, fake_0050, BTC_SRC)
+bh = st.get("benchmark_bh") or {}
+first, last = pd.Timestamp(st["start"]), pd.Timestamp(st["end"])
+want = (BTC_CLOSE[last] / BTC_CLOSE[first] - 1) * 100
+check(bh.get("kind") == "BTC_bh" and bh.get("symbol") == "BTCUSDT" and bh.get("fee_pct") == 0
+      and bh.get("adjusted") is False,
+      f"crypto Type C writes benchmark_bh kind BTC_bh, symbol BTCUSDT ({bh.get('kind')}, {bh.get('symbol')})")
+check(abs(bh.get("ret_pct", math.nan) - want) <= 0.0051,
+      f"ret_pct = BTC close at the last bar / at the first bar − 1 ({bh.get('ret_pct')} vs {want:.2f})")
+check(kcalls and kcalls[-1][:3] == ("binance", "BTCUSDT", "1d") and kcalls[-1][3] <= st["start"]
+      and kcalls[-1][4] >= st["end"] and not calls,
+      f"BTC fetched with fetch_kline on the strategy's interval over its window ({kcalls[-1] if kcalls else None})")
+check(not [k for k in RANDOM_KEYS if k in st] and sr.is_portfolio_stats(st),
+      "crypto Type C draws no random portfolios and still reads as a portfolio")
+line = plots.get("crypto")
+check(line is not None and abs((line.iloc[-1] - 1) * 100 - bh["ret_pct"]) <= 0.01,
+      "pnl.png draws the BTC buy-and-hold line")
+
+kcalls.clear()
+st = run("crypto_bingx", CRYPTO, fake_0050, "from lib.data import fetch_bingx_kline\n")
+bh = st.get("benchmark_bh") or {}
+check(bh.get("kind") == "BTC_bh" and kcalls and kcalls[-1][:3] == ("bingx", "BTC-USDT", "1d"),
+      f"a BingX-only Type C takes BTC from BingX ({kcalls[-1] if kcalls else None})")
+
+late_btc = BTC_CLOSE[BTC_CLOSE.index > "2024-03-01"]
+D.fetch_kline = lambda *a, **k: pd.DataFrame({"Open": late_btc, "Close": late_btc})
+out = io.StringIO()
+D.fetch_twstock_price_adj = fake_0050
+with contextlib.redirect_stdout(out):
+    (WS / "strategies" / "crypto_late").mkdir(parents=True, exist_ok=True)
+    (WS / "strategies" / "crypto_late" / "strategy.py").write_text(BTC_SRC)
+    runner.run({"STRATEGY_NAME": "crypto_late", "INTERVAL": "1d", "START": "2024-01-02", "FEE": 0.003,
+                "WARMUP": 20}, lambda h: (CLOSE.set_axis(CRYPTO, axis=1), OPEN.set_axis(CRYPTO, axis=1)),
+               compute)
+st = json.loads((WS / "strategies" / "crypto_late" / "stats.json").read_text())
+check("benchmark_bh" in st and st["benchmark_bh"] is None and "BTCUSDT buy-and-hold benchmark unavailable"
+      in out.getvalue() and not [k for k in RANDOM_KEYS if k in st],
+      "BTC starting after the first bar: benchmark_bh null, a warning, no random fallback")
+D.fetch_kline = fake_kline
+
+# ── US-only Type C → SPY buy-and-hold on fetch_usstock_price ──
+ucalls = []
+
+
+def fake_us(symbol, start, end, headers=None):
+    ucalls.append((symbol, start, end))
+    return pd.DataFrame({"Open": B_CLOSE, "Close": B_CLOSE})[start:end]
+
+
+D.fetch_usstock_price = fake_us
+US = ["AAPL", "MSFT", "NVDA", "BTC", "GOOG"]   # 'BTC' is a US ETF here: the fetcher decides
+st = run("us", US, fake_0050, "from lib.data import fetch_usstock_price\n")
+bh = st.get("benchmark_bh") or {}
+first, last = pd.Timestamp(st["start"]), pd.Timestamp(st["end"])
+want = (px[last] / px[first] - 1) * 100
+check(bh.get("kind") == "SPY_bh" and bh.get("symbol") == "SPY" and abs(bh.get("ret_pct", math.nan) - want) <= 0.0051
+      and ucalls and ucalls[-1][0] == "SPY" and not [k for k in RANDOM_KEYS if k in st],
+      f"US Type C writes benchmark_bh SPY_bh from fetch_usstock_price ({bh.get('kind')}, {bh.get('ret_pct')} vs {want:.2f})")
+D.fetch_usstock_price = boom
+st = run("us_down", US, fake_0050, "from lib.data import fetch_usstock_price\n")
+check("benchmark_bh" in st and st["benchmark_bh"] is None and not [k for k in RANDOM_KEYS if k in st],
+      "SPY unavailable: benchmark_bh null, no random fallback")
+D.fetch_usstock_price = fake_us
+ucalls.clear()
+
+# ── no strategy.py, a mixed universe, a crypto kline beside another dataset: random, unchanged ──
+for name, cols, src in (("crypto_nosrc", CRYPTO, None),
+                        ("mixed", ["2330", "2317", "2454", "6488.TWO", "BTCUSDT"],
+                         "from lib.data import fetch_kline_batch, fetch_twstock_price_adj_batch\n"),
+                        ("crypto_us", ["BTCUSDT", "ETHUSDT", "AAPL", "MSFT", "NVDA"],
+                         "from lib.data import fetch_kline_batch, fetch_usstock_price\n"),
+                        # known limit of _crypto_only: any non-kline fetcher → not crypto-only
+                        ("crypto_funding", CRYPTO,
+                         "from lib.data import fetch_kline_batch, fetch_funding_rate\n")):
     calls.clear()
-    st = run(name, cols, fake_0050)
-    check(all(k in st for k in RANDOM_KEYS) and "benchmark_bh" not in st and not calls,
-          f"{name} Type C keeps the random benchmark, no 0050 fetch")
-    check(plots.get(name, 0) is None, f"{name}: pnl.png draws no 0050 line")
+    kcalls.clear()
+    st = run(name, cols, fake_0050, src)
+    check(all(k in st for k in RANDOM_KEYS) and "benchmark_bh" not in st and not calls and not kcalls
+          and not ucalls, f"{name} Type C keeps the random benchmark, no 0050 / BTC / SPY fetch")
+    check(plots.get(name, 0) is None, f"{name}: pnl.png draws no benchmark line")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)
