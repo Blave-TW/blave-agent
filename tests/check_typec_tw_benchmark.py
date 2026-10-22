@@ -286,6 +286,19 @@ finally:
 check(st.get("Trades") != -1 and isinstance(st.get("benchmark_bh"), dict) and st["benchmark_bh"].get("ret_pct") == prev["ret_pct"]
       and st["benchmark_bh"].get("kind") == "BTC_bh",
       "refresh with BTC unavailable: previous benchmark_bh kept, not nulled")
+check(st["benchmark_bh"].get("as_of") == stale["end"], f"…stamped as_of = the last stats' end ({st['benchmark_bh'].get('as_of')})")
+pdir = Path(tempfile.mkdtemp(dir=os.environ.get("SCRATCHPAD") or None))
+def prev_bh(old, end, kind="BTC_bh"):
+    (pdir / "stats.json").write_text(json.dumps(old))
+    return runner._previous_bh(pdir, kind, end)
+OLD = {"end": "2024-05-01", "benchmark_bh": {"kind": "BTC_bh", "ret_pct": 12.5}}
+check((prev_bh(OLD, "2024-05-08") or {}).get("as_of") == "2024-05-01" and prev_bh(OLD, "2024-05-09") is None,
+      "carried benchmark_bh: kept up to 7 days past as_of, None after")
+CHAIN = {"end": "2024-05-05", "benchmark_bh": {"kind": "BTC_bh", "ret_pct": 12.5, "as_of": "2024-05-01"}}
+check((prev_bh(CHAIN, "2024-05-06") or {}).get("as_of") == "2024-05-01" and prev_bh(CHAIN, "2024-05-10") is None,
+      "a carried one carried again keeps its first as_of (the 7 days do not restart)")
+check(prev_bh(OLD, "2024-05-02", kind="SPY_bh") is None and prev_bh({"benchmark_bh": OLD["benchmark_bh"]}, "2024-05-02") is None,
+      "another benchmark kind, or no end to date it by: not carried")
 
 # ── US-only Type C → SPY buy-and-hold on fetch_usstock_price ──
 ucalls = []

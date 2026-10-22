@@ -866,6 +866,9 @@ msgstr "同一段期間買進後一直持有 {sym} 的報酬（還原價、含�
 msgid "bt.tip.benchmarkBhRaw"
 msgstr "同一段期間買進後一直持有 {sym} 的報酬（永續合約價格、未調整，不計手續費與資金費率）。策略要贏過它，才算比直接抱著 {sym} 好。"
 
+msgid "bt.tip.benchmarkBhAsOf"
+msgstr "基準截至 {date}（這次沒抓到之後的價格，沿用上次的數字）。"
+
 msgid "bt.tip.benchmarkBhNa"
 msgstr "這次回測抓不到買進持有基準的價格可比。"
 

@@ -49,6 +49,7 @@ function harness(size) {
     },
     getComputedStyle: () => ({ getPropertyValue: (k) => TOK[k] || "", fontFamily: "sans-serif" }),
     ResizeObserver: function (cb) { roCb = cb; this.observe = () => {}; this.disconnect = () => {}; },
+    LANG: "zh",
     t: (k, vars) => { let s = STR.zh[k]; if (s === undefined) return "<<" + k + ">>"; Object.keys(vars || {}).forEach((v) => { s = s.split("{" + v + "}").join(vars[v]); }); return s; },
   };
   vm.createContext(sb);
@@ -271,6 +272,15 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   ok("SPY:統計列標籤 SPY 持有、tooltip 還原價那句",
     rowP && rowP.children[0].children[0].textContent === "SPY 持有" && rowP.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "SPY")
     && JSON.stringify(rsp.legend()[1]) === JSON.stringify(["bt-legend bh", "SPY 持有"]), rowP && rowP.children[0].textContent);
+  const rAs = render(tw(bhOf({ kind: "BTC_bh", symbol: "BTCUSDT", adjusted: false, as_of: "2024-04-20" })));
+  const rowAs = mrow(rAs.box);
+  ok("沿用上次的基準(as_of):tooltip 在原句後接「基準截至 2024-04-20」",
+    rowAs && rowAs.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhRaw", "BTC") + STR.zh["bt.tip.benchmarkBhAsOf"].split("{date}").join("2024-04-20"),
+    rowAs && rowAs.children[0].children[1].textContent);
+  const rAsBad = render(tw(bhOf({ as_of: "<b>x</b>" })));
+  ok("as_of 不是 YYYY-MM-DD:不接那句", mrow(rAsBad.box).children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "0050"));
+  ok("as_of 那句兩語都有、{date} 在、zh 開頭是「基準截至」",
+    STR.zh["bt.tip.benchmarkBhAsOf"].startsWith("基準截至 {date}") && STR.en["bt.tip.benchmarkBhAsOf"].startsWith("Benchmark as of {date}"));
   const k5 = ["bt.benchmarkBh", "bt.chartAriaBh", "bt.tip.benchmarkBhAdj", "bt.tip.benchmarkBhRaw", "bt.tip.benchmarkBhNa"];
   ok("五個字串兩語都有,{sym} 在該在的地方", k5.every((k) => STR.zh[k] && STR.en[k] && (k === "bt.tip.benchmarkBhNa" ? !STR.en[k].includes("{sym}") : STR.en[k].includes("{sym}") && STR.zh[k].includes("{sym}"))));
   ok("字串照定稿逐字", STR.zh["bt.benchmarkBh"] === "{sym} 持有" && STR.en["bt.benchmarkBh"] === "{sym} buy & hold"

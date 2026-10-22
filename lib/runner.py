@@ -2090,19 +2090,16 @@ US_BENCHMARK = 'SPY'
 
 def _price_markets(strategy_name):
     """{lib.data fetcher name: market} for the PRICE fetchers strategies/<name>/strategy.py
-    (under _REPO_ROOT) names as code — NAME tokens, so a docstring, a comment or a string that
-    mentions one does not count. None when the file cannot be read. Known blind spot: prices
-    fetched inside a helper module the strategy imports are not seen."""
-    import io
+    (under _REPO_ROOT) names as code (lib.data._price_fetcher_scan — the same reading
+    lib.costs prices a US stock by). None when the file cannot be read."""
     import tokenize
-    from lib.data import _PRICE_FETCHERS
+    from lib.data import _PRICE_FETCHERS, _price_fetcher_scan
     try:
         with tokenize.open(_REPO_ROOT / 'strategies' / strategy_name / 'strategy.py') as f:
-            toks = list(tokenize.generate_tokens(io.StringIO(f.read()).readline))
+            names, _ = _price_fetcher_scan(f.read())
     except (OSError, SyntaxError, ValueError, tokenize.TokenError):
         return None
-    return {t.string: _PRICE_FETCHERS[t.string] for t in toks
-            if t.type == tokenize.NAME and t.string in _PRICE_FETCHERS}
+    return {n: _PRICE_FETCHERS[n] for n in names}
 
 
 def _pick_benchmark(close_df, strategy_name, interval, hdrs):
@@ -2155,14 +2152,26 @@ def _bh_benchmark(close_df, symbol, kind, fetch_close, adjusted):
     return out, line
 
 
-def _previous_bh(out_dir, kind):
-    """The last stats.json's benchmark_bh when it is the same benchmark, else None: a
-    performance refresh whose fetch failed keeps it rather than blanking the row."""
+BH_CARRY_DAYS = 7
+
+
+def _previous_bh(out_dir, kind, end):
+    """The last stats.json's benchmark_bh when it is the same benchmark, stamped `as_of` (the
+    last day its numbers reach — kept from the first carry, so a chain of failed refreshes
+    does not move it), else None: a performance refresh whose fetch failed keeps it rather
+    than blanking the row, for up to BH_CARRY_DAYS past `as_of` (both 'YYYY-MM-DD'); older
+    than that, its return beside the strategy's to `end` misleads more than a blank."""
     try:
-        old = load_json(Path(out_dir) / 'stats.json', encoding='utf-8').get('benchmark_bh')
-    except (OSError, ValueError, AttributeError):
+        old = load_json(Path(out_dir) / 'stats.json', encoding='utf-8')
+        bh = old.get('benchmark_bh')
+        if not (isinstance(bh, dict) and bh.get('kind') == kind):
+            return None
+        as_of = bh.get('as_of') or old.get('end')
+        if not as_of or (pd.Timestamp(end) - pd.Timestamp(as_of)).days > BH_CARRY_DAYS:
+            return None
+    except (OSError, ValueError, TypeError, AttributeError):
         return None
-    return dict(old) if isinstance(old, dict) and old.get('kind') == kind else None
+    return {**bh, 'as_of': str(as_of)}
 
 
 def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
@@ -2719,15 +2728,14 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         except Exception as e:   # the random benchmark, as before
             logging.warning("buy-and-hold benchmark check skipped: %s", e)
             picked = None
-        bench_sym = picked[0] if picked else None
         if picked:
             bench_sym, kind, adjusted, bench_close = picked
             bh, bench_line = _bh_benchmark(close_df, bench_sym, kind, bench_close, adjusted)
             if bh is None and refresh:
-                bh = _previous_bh(out_dir, kind)
+                bh = _previous_bh(out_dir, kind, close_df.index[-1].strftime('%Y-%m-%d'))
             bench_stats, bench_pct = {'benchmark_bh': bh}, None
         else:
-            bench_line = None
+            bench_sym = bench_line = None
             from lib.analysis import random_bh_benchmark, held_count
             # bands only feed pnl.png, which a quiet run (live refresh) never draws;
             # stats['benchmark_band'] comes out of both paths

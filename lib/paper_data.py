@@ -197,7 +197,8 @@ def _owner_fee(name, want, spot):
     """The FEE strategy `name` is backtested with, when it trades `want` on this market
     (spot vs perp — a TW code is held as shares whatever MARKET says): its own FEE, else
     its market default (a Type C: the highest over its universe). None = not an owner."""
-    from lib.costs import default_fee, reads_usstock
+    from lib.costs import default_fee, us_members
+    from lib.data import _price_fetcher_scan
     path = f"strategies/{name}/strategy.py"
     c = _cached(path, _consts) or {}
     state = _cached(f"strategies/{name}/state.json", json.loads)
@@ -214,8 +215,9 @@ def _owner_fee(name, want, spot):
     if isinstance(fee, (int, float)) and not isinstance(fee, bool):
         return float(fee)
     universe = c.get("UNIVERSE") if isinstance(c.get("UNIVERSE"), (list, tuple)) else list(weights)
-    return default_fee(c.get("SYMBOL") or sym, market, universe or None,
-                       bool(_cached(path, reads_usstock)))
+    scan = _cached(path, _price_fetcher_scan)
+    us = bool(scan and us_members(scan, [c.get("SYMBOL") or sym, *(universe or [])]))
+    return default_fee(c.get("SYMBOL") or sym, market, universe or None, us)
 
 
 def strategy_fee(symbol, spot=False):
@@ -541,24 +543,22 @@ def _taifex_public_last(sym, root):
 
 
 def _us_owned(sym):
-    """A strategy reads `sym` with fetch_usstock_price (its SYMBOL, or a Type C
-    weight). The ticker alone is not enough: 'BTC' is also a US ETF."""
+    """A strategy prices `sym` with fetch_usstock_price (its SYMBOL, or a Type C weight,
+    as lib.costs.us_members tells it). The ticker alone is not enough: 'BTC' is also a US
+    ETF, and a TXF strategy may read SPY as a signal. Files go through _cached: this runs
+    on fills and marks, inside the ledger lock."""
+    from lib.costs import us_members
+    from lib.data import _price_fetcher_scan
     for path in sorted(glob.glob("strategies/*/strategy.py")):
-        try:
-            with open(path) as f:
-                src = f.read()
-        except OSError:
+        scan = _cached(path, _price_fetcher_scan)
+        if not scan or "fetch_usstock_price" not in scan[0]:
             continue
-        if "fetch_usstock_price" not in src:
-            continue
-        name = os.path.basename(os.path.dirname(path))
-        if _strategy_symbol(name) == sym:
-            return True
-        try:
-            w = load_json(os.path.join(os.path.dirname(path), "state.json")).get("weights")
-        except (OSError, ValueError, AttributeError):
-            continue
-        if isinstance(w, dict) and sym in {_norm(k) for k in w}:
+        state = _cached(os.path.join(os.path.dirname(path), "state.json"), json.loads)
+        state = state if isinstance(state, dict) else {}
+        w = state.get("weights")
+        owned = {_norm(state.get("symbol") or (_cached(path, _consts) or {}).get("SYMBOL"))}
+        owned |= {_norm(k) for k in w} if isinstance(w, dict) else set()
+        if sym in owned and us_members(scan, [sym]):
             return True
     return False
 

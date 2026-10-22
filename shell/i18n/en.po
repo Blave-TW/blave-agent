@@ -859,6 +859,9 @@ msgstr "What buying and holding {sym} over the same period would have returned (
 msgid "bt.tip.benchmarkBhRaw"
 msgstr "What buying and holding {sym} over the same period would have returned (perpetual price, unadjusted, no fees or funding). The strategy has to beat it to be better than just holding {sym}."
 
+msgid "bt.tip.benchmarkBhAsOf"
+msgstr "Benchmark as of {date} (later prices could not be fetched this time, so the last figures are kept)."
+
 msgid "bt.tip.benchmarkBhNa"
 msgstr "No buy-and-hold benchmark prices were available to compare for this backtest."
 

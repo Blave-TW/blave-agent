@@ -317,7 +317,11 @@
     // 「含配息」只對還原價(adjusted)成立;BTC 是未調整的永續價格,另一句
     const bhTip = !isNum(bhRet) || !sym ? "bt.tip.benchmarkBhNa"
       : stats.benchmark_bh.adjusted === false ? "bt.tip.benchmarkBhRaw" : "bt.tip.benchmarkBhAdj";
-    const bench = hasBh(stats) ? Object.assign(plain(fmtSignedPct(bhRet)), { tip: t(bhTip, { sym: sym || "" }) })
+    // as_of:這次刷新抓不到基準價格、沿用上次的數字(lib/runner._previous_bh),報酬只算到那天
+    const asOf = bhTip !== "bt.tip.benchmarkBhNa" && /^\d{4}-\d{2}-\d{2}$/.test(String(stats.benchmark_bh.as_of)) ? stats.benchmark_bh.as_of : "";
+    const sep = typeof LANG === "string" && LANG === "zh" ? "" : " ";
+    const bhTipText = t(bhTip, { sym: sym || "" }) + (asOf ? sep + t("bt.tip.benchmarkBhAsOf", { date: asOf }) : "");
+    const bench = hasBh(stats) ? Object.assign(plain(fmtSignedPct(bhRet)), { tip: bhTipText })
       : !isNum(br) && isNum(rank)
         ? tip({ text: t("bt.benchmarkRank", { n: String(Math.round(rank)) }), tone: "", prose: true }, "bt.tip.benchmarkRank")
         : tip(plain(fmtSignedPct(br)), "bt.tip.benchmark");

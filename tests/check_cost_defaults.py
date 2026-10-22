@@ -76,6 +76,33 @@ class UsMod:
     __file__ = os.path.abspath("us_strat.py")
 check(fee_of(UsMod) == 0.001, "fee_of: a US strategy without FEE → 0.1%, not 0.0005")
 
+def src_mod(name, src, **consts):
+    open(name + ".py", "w").write(src)
+    return dict(consts, __file__=os.path.abspath(name + ".py"))
+SPY_SIGNAL = ("from lib.data import fetch_usstock_price, fetch_twfutures_ohlcv\n"
+              "def fetch_data(h):\n    a = fetch_twfutures_ohlcv(SYMBOL, '2020-01-01', None, h)\n"
+              "    b = fetch_usstock_price('SPY', '2020-01-01', None)\n    return a, b\n")
+check(fee_of(src_mod("txf_spy", "SYMBOL = 'TXF'\n" + SPY_SIGNAL, SYMBOL="TXF")) == 0.0001,
+      "fee_of: a TXF strategy reading SPY as a signal stays TAIFEX 0.01%, not US 0.1%")
+check(fee_of(src_mod("mxf_note", "SYMBOL = 'MXF'\n# fetch_usstock_price not used here\n"
+                     "x = fetch_twfutures_ohlcv(SYMBOL)\n", SYMBOL="MXF")) == 0.0001,
+      "fee_of: fetch_usstock_price only in a comment does not make it a US strategy")
+seen.clear()
+check(fee_of(src_mod("cdf_spy", "SYMBOL = 'CDF'\n" + SPY_SIGNAL, SYMBOL="CDF")) == 0.0005 and seen
+      and "not in lib.costs.DEFAULT_FEES" in seen[-1] and "unread" not in seen[-1],
+      "fee_of: a TAIFEX stock future (CDF) reading SPY is not a US stock (the uncovered 0.0005)")
+check(fee_of(src_mod("tmf_etf", "SYMBOL = 'TMF'\nfrom lib.data import fetch_usstock_price\n"
+                     "def fetch_data(h):\n    return fetch_usstock_price(SYMBOL, '2020-01-01', None)\n",
+                     SYMBOL="TMF")) == 0.001,
+      "fee_of: TMF priced by fetch_usstock_price(SYMBOL) is the US ETF, 0.1%")
+check(fee_of(src_mod("us_loop", "UNIVERSE = ['AAPL', 'MSFT']\nfrom lib.data import fetch_usstock_price\n"
+                     "def fetch_data(h):\n    return {t: fetch_usstock_price(t, '2020-01-01', None) for t in UNIVERSE}\n",
+                     UNIVERSE=["AAPL", "MSFT"])) == 0.001,
+      "fee_of: a Type C looping fetch_usstock_price over its UNIVERSE (its only price fetcher) is US, 0.1%")
+seen.clear()
+check(fee_of({"SYMBOL": "SPY"}) == 0.0005 and seen and "no __file__" in seen[-1],
+      "fee_of: no __file__ → the warning names the unread source, not only the table")
+
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import lib.runner as R  # noqa: E402
@@ -213,6 +240,8 @@ strat("last", '"""\nFEE = 0.02\n"""\nSYMBOL = "ETHUSDT"\nFEE = 0.001\nFEE = 0.00
 strat("computed", 'SYMBOL = "SOLUSDT"\nFEE = 0.003\nFEE = 0.001 * 2\n')
 strat("us_spy", 'SYMBOL = "SPY"\nfrom lib.data import fetch_usstock_price\n')
 strat("us_qqq", 'SYMBOL = "QQQ"\nfrom lib.data import fetch_usstock_price\n')
+strat("txf_spy", 'SYMBOL = "TXF"\n' + SPY_SIGNAL)
+strat("cdf_spy", 'SYMBOL = "CDF"\n' + SPY_SIGNAL)
 picked("live_tw", "us_spy", "perp", "perp_v2", "spot", "basket", "mixed_nofee", "mxf", "mxf_next", "warrant", "weird", "last", "computed")
 
 check(paper_data.strategy_fee("2330", spot=True) == 0.002, "a draft outside the 下單設定 never counts (0.002, not 0.01)")
@@ -226,6 +255,12 @@ check(paper_data.strategy_fee("DOGEUSDT") == 0.001, "an unhashable last FEE lite
 check(paper_data.strategy_fee("SPY") == 0.001, "a picked US strategy without FEE: paper charges 0.1%")
 check(order_paper._fee_rate("QQQ", order_paper.TAKER_FEE) == 0.001,
       "a US ticker only an unpicked fetch_usstock_price strategy reads: 0.1%, not TAKER_FEE")
+check(not paper_data._us_owned("TXF") and not paper_data._us_owned("CDF"),
+      "paper: TXF / CDF strategies reading SPY as a signal do not make TXF / CDF US tickers")
+check(paper_data._us_owned("SPY") and paper_data._us_owned("QQQ"),
+      "paper: _us_owned (cached) still finds the US strategies")
+check(order_paper._fee_rate("CDF", order_paper.TAKER_FEE) == order_paper.TAKER_FEE,
+      "paper: a CDF fill is not charged the US 0.1% because its strategy reads SPY")
 check(paper_data.strategy_fee("ETHUSDT") == 0.004, "the LAST FEE assignment wins; a docstring FEE line is not code")
 check(paper_data.strategy_fee("SOLUSDT") == 0.001, "a computed last FEE is unknown: the market default, not the earlier literal")
 path = "strategies/live_tw/strategy.py"

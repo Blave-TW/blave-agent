@@ -7641,3 +7641,44 @@ _NON_PRICE_FETCHERS = frozenset({
     'fetch_twstock_shareholding', 'fetch_twstock_shareholding_batch',
     'fetch_twstock_trader_flows',
 })
+
+
+def _price_fetcher_scan(src):
+    """(the _PRICE_FETCHERS names strategy source `src` uses as code, the tickers its
+    fetch_usstock_price calls pass) — NAME tokens, so a docstring, a comment or a string that
+    mentions a fetcher does not count. A ticker is the first argument (or symbol=) when it is
+    a string literal or a module-level name bound once to one; anything else (a loop variable
+    over UNIVERSE) is None in the set. Raises tokenize.TokenError / SyntaxError on a file that
+    does not tokenize. Known blind spot: fetches inside a helper module it imports."""
+    import ast
+    import tokenize
+    toks = [t for t in tokenize.generate_tokens(io.StringIO(src).readline)
+            if t.type not in (tokenize.COMMENT, tokenize.NL)]
+
+    def literal(t):
+        if t.type != tokenize.STRING:
+            return None
+        try:
+            v = ast.literal_eval(t.string)
+        except (ValueError, SyntaxError):   # an f-string before 3.12 is one STRING token
+            return None
+        return v if isinstance(v, str) else None
+
+    consts, args = {}, []
+    for i, t in enumerate(toks):
+        if t.type != tokenize.NAME:
+            continue
+        nxt = toks[i + 1:i + 6]
+        if t.start[1] == 0 and len(nxt) >= 3 and nxt[0].string == "=":
+            once = t.string not in consts
+            consts[t.string] = literal(nxt[1]) if once and nxt[2].type in (
+                tokenize.NEWLINE, tokenize.ENDMARKER) else None
+        elif t.string == "fetch_usstock_price" and nxt and nxt[0].string == "(":
+            a = nxt[1:]
+            if len(a) >= 3 and a[0].string == "symbol" and a[1].string == "=":
+                a = a[2:]
+            args.append(a[0] if len(a) >= 2 and a[1].string in (",", ")") else None)
+    names = {t.string for t in toks if t.type == tokenize.NAME and t.string in _PRICE_FETCHERS}
+    tickers = {None if a is None else literal(a) if a.type == tokenize.STRING
+               else consts.get(a.string) if a.type == tokenize.NAME else None for a in args}
+    return names, tickers

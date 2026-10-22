@@ -13,7 +13,7 @@ One rate per market, per side, **already including commission, tax and slippage 
 | Crypto perps (USDT / USDC, stock perps such as `NVDAUSDT` included) | `0.001` (0.1%) | taker 0.05–0.06% + spread on smaller coins |
 | Crypto spot | `0.0015` (0.15%) | taker ~0.1% + spread |
 | TAIFEX index futures TXF / MXF / TMF | `0.0001` (0.01%) | futures tax 0.002% + commission + slippage (≈ 4.6 index points at 46,293) |
-| US stocks / ETFs (a strategy that prices with `fetch_usstock_price`) | `0.001` (0.1%) | Blave trades US stocks live as a venue's stock perp (`AAPLUSDT`-style), so they take the crypto perp rate — taker + spread. A user backtesting for their own broker (複委託 ≈ 0.12–0.15% a side, a zero-commission US broker ≈ 0.02%) should set `FEE` to that |
+| US stocks / ETFs (the ticker a strategy's `fetch_usstock_price` call names — a literal or a module constant — or every `UNIVERSE` member of a Type C whose only price fetcher it is; a TXF strategy reading `SPY` as a signal keeps the TAIFEX rate) | `0.001` (0.1%) | Blave trades US stocks live as a venue's stock perp (`AAPLUSDT`-style), so they take the crypto perp rate — taker + spread. A user backtesting for their own broker (複委託 ≈ 0.12–0.15% a side, a zero-commission US broker ≈ 0.02%) should set `FEE` to that |
 
 **The default is a starting point: adjust it to the user's own broker rate or the instrument's liquidity, and say which you used.**
 - Lower it only with a real reason: the user's broker commission discount (e.g. 2.8折 → commission ≈ 0.04%), a confirmed VIP tier, a strategy that truly fills by resting limits, BTC/ETH on a top venue (taker 0.05% + almost no spread).
