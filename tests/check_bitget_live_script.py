@@ -3,7 +3,8 @@
 1. precheck: any position, open order or TP/SL — or an unreadable list — stops the order steps.
 2. cleanup: only the script's own orders / TP/SL (clientOid prefix or an id Bitget gave one of
    its POSTs) on the symbols it traded are cancelled; legs closed only on those symbols, in
-   pieces under the cap; anything else is left alone.
+   pieces under the cap and never leaving a tail under the venue minimum; anything else is
+   left alone.
 3. switch_and_restore (T12): never switches on a non-bare account; the original position mode
    is set and READ back at the end, also when the body fails.
 4. install_cap / prefix_cids: an order over the per-order cap or without the prefix is refused
@@ -126,6 +127,27 @@ check(closes == [("close", "NVDAUSDT", "long", 0.05), ("close", "NVDAUSDT", "lon
       "legs close only on the traded symbol, in pieces under the per-order cap", closes)
 check(A.legs == [{"symbol": "BTCUSDT", "side": "long", "total": 0.01}], "the BTC leg it never traded is untouched", A.legs)
 check(unclean == [] and any("NOT OURS" in t for t, _ in said), "clean result; what it left alone is listed", unclean)
+
+# a tail under the venue minimum is never left: 0.08 in pieces of 0.05 with a 0.04 minimum
+MIN = 0.04
+real_close = O.close_position_partial
+O.close_position_partial = lambda env, sym, side, qty: False if qty < MIN - 1e-12 else real_close(env, sym, side, qty)
+A.legs = [{"symbol": "NVDAUSDT", "side": "long", "total": 0.08}]
+del O.log[:]
+done = V.close_chunked({}, O, "NVDAUSDT", "long", 0.08, 0.05, say, "T4", MIN)
+pieces = [x[3] for x in O.log if x[0] == "close"]
+check(done and A.legs == [] and all(q >= MIN for q in pieces) and all(q <= 0.05 for q in pieces),
+      "pieces under the cap, none under the minimum: the leg closes to zero", pieces)
+A.legs = [{"symbol": "NVDAUSDT", "side": "long", "total": 0.07}]
+del O.log[:]
+done = V.close_chunked({}, O, "NVDAUSDT", "long", 0.07, 0.05, say, "T4", 0.04)
+check(len([x for x in O.log if x[0] == "close"]) == 1, "a leg that cannot split above the minimum is one close", O.log)
+O.close_position_partial = lambda env, sym, side, qty: False
+A.legs = [{"symbol": "NVDAUSDT", "side": "long", "total": 0.1}]
+check(V.close_chunked({}, O, "NVDAUSDT", "long", 0.1, 0.05, say, "T4", MIN) is False,
+      "a piece the lib does not send stops the loop and reports it")
+O.close_position_partial = real_close
+A.legs = []
 
 # ── 3. T12: switch, read back, restore ───────────────────────────────────────
 mode = {"m": "oneway"}

@@ -216,16 +216,25 @@ def install_cap(order, mark_of, own_ids, cap=MAX_ORDER_USDT):
     order._send = capped
 
 
-def close_chunked(env, order, sym, side, total, step_qty, say, tag):
-    """Close `total` of one leg in pieces each under the per-order cap."""
+def close_chunked(env, order, sym, side, total, step_qty, say, tag, min_qty=0.0):
+    """Close `total` of one leg in pieces each under the per-order cap, never leaving a
+    tail under the venue minimum (0.08 with pieces of 0.05 and a 0.04 minimum closes as
+    0.04 + 0.04). Stops at the first piece the lib does not send. True = all sent."""
     left = total
     while left > 1e-12:
         q = min(left, step_qty)
-        say(f"{tag} close {side} {q}", order.close_position_partial(env, sym, side, q))
+        if 1e-12 < left - q < min_qty:
+            q = left - min_qty if left - min_qty >= min_qty else left
+        r = order.close_position_partial(env, sym, side, round(q, 12))
+        say(f"{tag} close {side} {q}", r)
+        if r is False:
+            say(f"{tag} close not sent", f"{side} {q} of {left} left — close it in the app")
+            return False
         left -= q
+    return True
 
 
-def cleanup(env, acct, order, touched, own_ids, say, max_qty):
+def cleanup(env, acct, order, touched, own_ids, say, max_qty, min_qty=lambda sym: 0.0):
     """Only what this script made: its own orders / TP/SL (own()) and the legs of the
     symbols it traded — the order steps start only on a bare account (precheck), so
     those legs are its own. Anything else is listed and left alone. Returns the symbols
@@ -246,7 +255,8 @@ def cleanup(env, acct, order, touched, own_ids, say, max_qty):
                     say(f"CLEANUP {sym} NOT OURS, left alone", o)
             for p in [p for p in acct.leg_rows(env) if p["total"] != 0
                       and order.canonical_symbol(p["symbol"]) == sym]:
-                close_chunked(env, order, sym, p["side"], p["total"], max_qty(sym), say, f"CLEANUP {sym}")
+                close_chunked(env, order, sym, p["side"], p["total"], max_qty(sym), say, f"CLEANUP {sym}",
+                              min_qty(sym))
             left = [p for p in acct.leg_rows(env) if p["total"] != 0 and order.canonical_symbol(p["symbol"]) == sym]
             mine = [o for o in order.get_open_algo_orders(env, sym) + order.get_open_orders(env, sym)
                     if own(o, own_ids)]
@@ -481,6 +491,9 @@ def main():
         r = order.get_contract_rules(env, sym)
         return float(order._floor_str(MAX_ORDER_USDT * 0.95 / order.get_mark_price(env, sym), r["step"]))
 
+    def min_qty(sym):
+        return float(order.get_contract_rules(env, sym)["min_qty"])
+
     why = precheck(env, acct, order)
     if why:
         print("\nOrder steps NOT run — this account is not bare (they never touch what is already there):")
@@ -535,12 +548,14 @@ def main():
                    {"productType": PRODUCT, "planType": "profit_loss", "symbol": order.venue_symbol(sym)})
 
     # cost bound: every round trip the selected steps make, at the taker fee + the spread
-    base = "BTCUSDT"
-    r_ = order.get_contract_rules(env, base)
-    if (minimum(base) + float(r_["step"])) * order.get_mark_price(env, base) > MAX_ORDER_USDT:
-        base = "NVDAUSDT"  # BTC's minimum plus one step does not fit under the per-order cap
+    base = None  # T3's over-close (the minimum + one step) must fit under the per-order cap
+    for cand in ("BTCUSDT", "NVDAUSDT"):
+        if (minimum(cand) + float(order.get_contract_rules(env, cand)["step"])) \
+                * order.get_mark_price(env, cand) <= MAX_ORDER_USDT:
+            base = cand
+            break
     plan = []
-    if any(want(t) for t in ("T1", "T2", "T3", "T4")):
+    if base and any(want(t) for t in ("T1", "T2", "T3", "T4")):
         plan += [(base, minimum(base), 2)]  # T2 may fill a second time
     if want("T5"):
         plan += [("NVDAUSDT", minimum("NVDAUSDT"), 1), ("TWTSMUSDT", minimum("TWTSMUSDT"), 1)]
@@ -558,7 +573,8 @@ def main():
         peak = max(peak, qty * px)
     print(f"\n{sum(n for *_, n in plan)} round trips, one position at a time; largest notional "
           f"{peak:.2f} USDT; every single order is capped at {MAX_ORDER_USDT:g} USDT (refused before it is sent).")
-    print(f"T1–T4 trade {base}. Do not trade on this Bitget account until the script ends.")
+    print(f"T1–T4 trade {base}." if base else "T1–T4 NOT run: neither BTC's nor NVDA's minimum + one step fits the cap.")
+    print("Do not trade on this Bitget account until the script ends.")
     print(f"Fees (taker {TAKER_FALLBACK:.2%} each side): <= {fee:.4f} USDT")
     print(f"Spread crossed:                     <= {spread:.4f} USDT")
     print(f"Estimated cost upper bound:         <= {fee + spread:.4f} USDT (+ price moves inside each round trip; "
@@ -572,9 +588,11 @@ def main():
         return
 
     touched = set()
-    t12_not_restored = False
+    t12_retry = None
     try:
-        if any(want(t) for t in ("T1", "T2", "T3", "T4")):
+        if any(want(t) for t in ("T1", "T2", "T3", "T4")) and not base:
+            say("T1-T4 skipped", "no symbol's minimum + one step fits under the per-order cap")
+        if base and any(want(t) for t in ("T1", "T2", "T3", "T4")):
             touched.add(base)
             q = minimum(base)
             step = float(order.get_contract_rules(env, base)["step"])
@@ -597,7 +615,7 @@ def main():
                 say("T2 legs (one more of T1's size = a filled id is NOT deduplicated)", legs(base))
             if want("T4"):
                 for p in legs(base):
-                    close_chunked(env, order, base, p["side"], p["total"], max_qty(base), say, "T4")
+                    close_chunked(env, order, base, p["side"], p["total"], max_qty(base), say, "T4", min_qty(base))
                 say("T4 legs (want [])", legs(base))
         if want("T5"):
             for sym in ("NVDAUSDT", "TWTSMUSDT"):
@@ -803,18 +821,26 @@ def main():
                         finally:
                             order.UTA_HEDGE_REDUCE_ONLY = True
                 for p in legs("NVDAUSDT"):
-                    close_chunked(env, order, "NVDAUSDT", p["side"], p["total"], max_qty("NVDAUSDT"), say, "T12")
+                    close_chunked(env, order, "NVDAUSDT", p["side"], p["total"], max_qty("NVDAUSDT"), say, "T12",
+                                  min_qty("NVDAUSDT"))
                 say("T12 legs (want [])", legs("NVDAUSDT"))
 
             pm = mode_of("NVDAUSDT")[1]
-            ok = switch_and_restore(set_mode, lambda: mode_of("NVDAUSDT")[1], lambda: not precheck(env, acct, order),
-                                    "hedge" if pm == "oneway" else "oneway", say, t12_body)
-            if not ok:
-                t12_not_restored = True
+            read_pm = lambda: mode_of("NVDAUSDT")[1]  # noqa: E731
+            if not switch_and_restore(set_mode, read_pm, lambda: not precheck(env, acct, order),
+                                      "hedge" if pm == "oneway" else "oneway", say, t12_body):
+                t12_retry = (set_mode, read_pm, pm)  # once CLEANUP has made the account bare again
     finally:
-        unclean = cleanup(env, acct, order, touched, own_ids, say, max_qty)
-        if t12_not_restored:
-            unclean.append("position mode")
+        unclean = cleanup(env, acct, order, touched, own_ids, say, max_qty, min_qty)
+        if t12_retry:
+            set_mode_, read_pm_, original = t12_retry
+            if not precheck(env, acct, order):
+                say(f"T12 retry the switch back → {original}", set_mode_(original))
+            back = read_pm_()
+            say("T12 mode at the very end (want the original)", {"want": original, "read": back})
+            if back != original:
+                print(f"NOT BACK IN THE ORIGINAL POSITION MODE ({original}) — set it in the Bitget app", flush=True)
+                unclean.append("position mode")
         if os.path.exists(".env"):
             os.remove(".env")
         say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")
