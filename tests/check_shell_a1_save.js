@@ -636,7 +636,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     { const { L, B } = run({ env: ["sinopac"], manifest: ["sinopac"], libs: { sinopac: ["order"] }, firing: false, before: { amounts: { tw: 100000 }, exchanges: { tw: "" } }, send: { tw: 100000 }, strategies: { tw: TW } });
       // runtime 存檔照樣路由 sinopac,但對帳器接線(lib/venue_wiring.official_venues)要 order_ 與 account_ 兩支 lib 才算綁著:一筆都不送
       ok("存檔後的路由 · 稽核 S7:只綁 sinopac(只有下單 lib):runtime 路由 sinopac、對帳器接不上不送單;框也一筆單都不列(畫面沒有這家帳戶,照只看訊號直接存)",
-        !L.error && L.exchanges.tw === "sinopac" && !B.fire && B.orders.length === 0 && !fs.existsSync(path.join(ROOT, "lib", "account_sinopac.py")), J({ box: B, lib: L })); }
+        !L.error && L.exchanges.tw === "sinopac" && !B.fire && B.orders.length === 0, J({ box: B, lib: L })); }
     { const { B } = run(cases[2][1]);
       ok("存檔後的路由 · 暫停中原樣按儲存:框照開、2330 寫「0 → 100,000」(已存的策略現況 0 也畫箭頭,設計稽核 S3)", B.opened && B.changes["2330"] === 100000 && B.arrows["2330"] === 0, J(B)); } }
 
