@@ -8,6 +8,7 @@
 //   6. 登出:先刪再撤 token;上傳失敗只寫 log,不碰 daemon
 //   7. 憑證不出主行程:IPC 回的沒有憑證、狀態檔只有三個布林
 //   8. 允許清單與 api 那份逐項相同(要 monorepo 版面)
+//   9. strategy_names:只放策略組合裡有、名稱跟代號不同的;截 80 字(按字元);cleanReport 保留;main.js 的 status 有接上
 // 跑法:node tests/check_shell_mobileview.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -236,6 +237,49 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     sample.forEach((rep) => { const s = JSON.stringify(MV.cleanReport(poison(rep), HOME)); if (s.includes("AbCdEfGhIjKl") || s.includes("/Users/wei")) leaks.push(1); });
     ok("P3-1 列舉:每一個字串葉節點都換成例外原文,清過之後一個都沒漏", leaks.length === 0); }
 
+  // ---- 9. strategy_names
+  { const list = [{ name: "momo", displayName: "BTC 唐奇安 4H" }, { name: "same", displayName: "same" }, { name: "none", displayName: null },
+      { name: "blank", displayName: "  " }, { name: "notInPf", displayName: "不在組合裡" }, { name: "long", displayName: "名".repeat(81) },
+      { name: "emoji", displayName: "😀".repeat(81) }];
+    const names = MV.strategyNames({ momo: 1, same: 1, none: 1, blank: 1, long: 1, emoji: 1 }, list);
+    ok("9 只放組合裡有、有名稱、名稱≠代號的", JSON.stringify(Object.keys(names).sort()) === JSON.stringify(["emoji", "long", "momo"]), names);
+    ok("9 名稱照原樣", names.momo === "BTC 唐奇安 4H");
+    ok("9 超過 80 字截到 80(按字元,不切壞代理對)", names.long === "名".repeat(80) && Array.from(names.emoji).length === 80
+      && names.emoji === "😀".repeat(80), [names.long.length, names.emoji.length]);
+    ok("9 amounts 不是物件 / list 不是陣列 → 空物件", JSON.stringify(MV.strategyNames(null, list)) === "{}"
+      && JSON.stringify(MV.strategyNames({ momo: 1 }, null)) === "{}");
+    const r = MV.cleanReport({ ...REPORT(), strategy_names: names }, HOME);
+    ok("9 cleanReport 保留 strategy_names(帶空白的名稱沒被當亂碼遮)", r.strategy_names && r.strategy_names.momo === "BTC 唐奇安 4H"
+      && r.strategy_names.long === "名".repeat(80), r.strategy_names);
+    const m = mk(); m.setReport({ ...REPORT(), strategy_names: { momo: "BTC 唐奇安 4H" } }); await m.h.tick();
+    const b = m.posts()[0] && m.posts()[0][2];
+    ok("9 上傳 body 帶 strategy_names", b && b.report.strategy_names && b.report.strategy_names.momo === "BTC 唐奇安 4H", b && b.report);
+    ok("9 signature 不看 strategy_names(改名不提早送)", MV.signature(null, { ...r, strategy_names: { momo: "x" } }) === MV.signature(null, r));
+    ok("9 main.js:createMobileView 的 status 走 withStrategyNames(host.status(), listStrategies)",
+      /status: \(\) => require\("\.\/mobileview"\)\.withStrategyNames\(_tradeHost \? _tradeHost\.status\(\) : null, listStrategies,/.test(mainSrc)); }
+  { const strip = MV.strategyNames({ rlo: 1, zw: 1, c0: 1, zwj: 1, only: 1, cut: 1, zwsp: 1 }, [
+      { name: "rlo", displayName: "BTC \u202e4H\u202c 多單" }, { name: "zw", displayName: "\u200fETH\u200e\u2066x\u2069\u061c" },
+      { name: "c0", displayName: "a\x00b\tc\x1fd\x7f\x85e" }, { name: "zwj", displayName: "家\u{1F468}\u200d\u{1F469}" },
+      { name: "only", displayName: "\u202e\u200f\x01 " }, { name: "zwsp", displayName: "\ufeffB\u200bT\u2060C" }, { name: "cut", displayName: "\u202e".repeat(5) + "名".repeat(80) }]);
+    ok("9 去掉 bidi 覆寫、零寬字元(ZWSP/WJ/BOM)、零寬方向字元與 C0/C1 控制字元;ZWJ 保留(同 api 測試同一組輸入與結果)", strip.rlo === "BTC 4H 多單" && strip.zw === "ETHx"
+      && strip.c0 === "abcde" && strip.zwj === "家\u{1F468}\u200d\u{1F469}" && strip.zwsp === "BTC", strip);
+    ok("9 去掉之後只剩空白 → 不放;先去再截", !("only" in strip) && strip.cut === "名".repeat(80), strip);
+    const hostReport = { config: { amounts: { momo: 1 } }, states: {} }, host = { running: true, report: hostReport };
+    const got = MV.withStrategyNames(host, () => [{ name: "momo", displayName: "BTC 唐奇安" }]);
+    ok("9 withStrategyNames 補上名稱,host 的 report 沒被改(同一個參照、沒有 strategy_names)", got.report.strategy_names.momo === "BTC 唐奇安"
+      && host.report === hostReport && !("strategy_names" in hostReport) && got.report !== hostReport && got.running === true);
+    const logs = [], fb = MV.withStrategyNames(host, () => { throw new Error("EACCES"); }, (m) => logs.push(m));
+    ok("9 讀名稱出錯 → 回 host 原物件(沒有名稱)、寫一行 log", fb === host && !("strategy_names" in fb.report) && logs.length === 1, logs);
+    ok("9 沒有 amounts / host 沒回 status → 原樣回、不叫 listStrategies", MV.withStrategyNames(null, () => { throw 1; }) === null
+      && MV.withStrategyNames({ report: { config: null } }, () => { throw 1; }).report.config === null);
+    const m = mk(); m.setReport({ ...REPORT() });
+    const mv = MV.createMobileView({ dir: m.dir, apiBase: API, home: HOME, installId: () => INSTALL, now: () => 1e9, log: () => {},
+      get: async () => ({ status: 200, body: { enabled: true } }), post: async (u, b) => { m.calls.push(["POST", u, b]); return { status: 200, body: { ok: true } }; },
+      getCreds: () => ({ token: "acct-A", appSecret: "appsec-A", who: "w-A" }),
+      status: () => MV.withStrategyNames({ report: REPORT() }, () => { throw new Error("boom"); }), line: () => ({ state: "on" }) });
+    await mv.tick(); const p = m.posts().filter(isReport);
+    ok("9 讀名稱出錯時照常上傳(body 沒有 strategy_names)", p.length === 1 && !("strategy_names" in p[0][2].report), m.calls); }
+
   // ---- 8. 兩端允許清單
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_portfolio.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 允許清單比對(需要 monorepo 版面:../api/openclaw/desktop_portfolio.py)");
@@ -245,6 +289,9 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     ok("允許清單 = api desktop_portfolio.ALLOWED_KEYS(逐項、同順序)", JSON.stringify(keys) === JSON.stringify(MV.ALLOWED_KEYS), keys);
     ok("上限 = api desktop_portfolio.MAX_BYTES / STORED_MAX_BYTES", /\nMAX_BYTES = 512 \* 1024/.test(py) && MV.MAX_BYTES === 512 * 1024
       && /\nSTORED_MAX_BYTES = 64 \* 1024/.test(py) && MV.REPORT_MAX_BYTES === 64 * 1024);
+    const pyStrip = /_NAME_STRIP_RE = re\.compile\(r"(\[[^\]]*\])"\)/.exec(py);
+    ok("去除字元類 = api desktop_portfolio._NAME_STRIP_RE(逐字)", pyStrip && pyStrip[1] === MV.NAME_STRIP_RE.source, [pyStrip && pyStrip[1], MV.NAME_STRIP_RE.source]);
+    ok("名稱上限 = api desktop_portfolio.NAME_MAX_CHARS", new RegExp("\\nNAME_MAX_CHARS = " + MV.NAME_MAX_CHARS + "\\n").test(py), MV.NAME_MAX_CHARS);
   }
 
   finished = true; clearInterval(keepAlive);

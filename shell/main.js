@@ -499,7 +499,9 @@ let _mv = null;
 function mobileView() {
   if (!_mv) _mv = require("./mobileview").createMobileView({
     dir: app.getPath("userData"), apiBase: API_BASE, post: (u, b) => postJSON(u, b), get: (u) => getJSON(u),
-    getCreds: blaveCreds, status: () => (_tradeHost ? _tradeHost.status() : null),
+    getCreds: blaveCreds,
+    // 名稱在 strategy.py,不在 runtime 狀態檔:外殼補進快照
+    status: () => require("./mobileview").withStrategyNames(_tradeHost ? _tradeHost.status() : null, listStrategies, (m) => console.error("[mobile]", m)),
     line: (st) => (st ? TT.localLine(st, lastVenue) : null), installId: () => tm().installId(), home: os.homedir(),
     log: (m) => console.error("[mobile]", m),
   });
