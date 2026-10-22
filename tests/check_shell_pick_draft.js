@@ -24,7 +24,7 @@ const sends = [];
 const poCfg = { querySelectorAll: (sel) => (sel === ".amt-in" ? ["a", "z", "new1"].map((n) => ({ dataset: { amt: n }, offsetParent: {}, disabled: false, focus() { ctx.FOCUSED = "amt:" + n; } })) : []) };
 const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, setTimeout, clearTimeout,
   $: (id) => (id === "ps-list" ? psList : id === "po-cfg" ? poCfg : { focus() {}, hidden: false }), t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: { binance: { label: "Binance" } },
-  srSay() {}, trIsPaper: () => false, trackFeature() {}, trPollSoon() {}, envPaintLocalDots() {}, ENV: { sig: {} }, psClose() {}, psRefocus() { ctx.FOCUSED = "pick-btn"; }, mgSetMembers() {},
+  srSay() {}, trIsPaper: () => false, trCfPaperOnly: () => false, trackFeature() {}, trPollSoon() {}, envPaintLocalDots() {}, ENV: { sig: {} }, psClose() {}, psRefocus() { ctx.FOCUSED = "pick-btn"; }, mgSetMembers() {},
   PAINTS: 0, poPaintCfg() { ctx.PAINTS++; }, confirmBox(o) { ctx.BOX = o; }, trCloudBox: (o) => o, trWith: (S, f) => f(), TR_STALE_MS: 600000 });
 ctx.psMode = "amounts";
 vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);

@@ -53,6 +53,7 @@ import atomic_file
 import events
 import exec_style
 import kline_cache_heal
+import save_routing
 import sdk_sync
 import venue_traits
 
@@ -1391,6 +1392,9 @@ def halt_state(hb=None, last=None):
         "at": info.get("ts"),
         "reason": info.get("reason"),
         "source": info.get("source"),
+        # 「暫停並關閉部位」: true only when a flatten really started (command_listener._mark_halt_closing);
+        # absent on every other HALT and on runtimes before it
+        **({"closing": info["closing"]} if isinstance(info.get("closing"), bool) else {}),
         "blocked": _halt_denials(info.get("ts")),
         # true = no Blave order of any kind, closes and exits included: every
         # HALT on a freezing lib (`freeze`), or on an older one an account-guard
@@ -2017,6 +2021,16 @@ def tg_pair_gen():
     return gen if isinstance(gen, str) else None
 
 
+def _save_routing(cfg):
+    """save_routing.report, never fatal: None (the pages then derive routes themselves, as on an
+    older runtime) rather than a report that fails whole over one config the save would refuse."""
+    try:
+        return save_routing.report(cfg, WORKSPACE)
+    except Exception as e:
+        print(f"[portfolio_reporter] save_routing failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
 def build_report():
     # generation BEFORE the chat ids: a reset landing between the two reads then pairs
     # an old generation with the cleared chats (refused / harmless), never an old chat
@@ -2098,6 +2112,9 @@ def build_report():
         # this as venues[id] (web/.../workspace.html cxSupport()) — id present
         # with order/account both false = key saved, modules not built yet.
         "venues": vens,
+        # where each member routes after the next 下單設定 save (save_routing.report, the same
+        # rule _cmd_amounts runs): {bound, default, routes}; the save dialog lists its orders from it
+        "save_routing": _save_routing(cfg),
         # capability signals: the web hides controls the machine can't honor —
         # without this the 「暫停並全部平倉」 button halts only and LOOKS
         # successful. can_flatten keys on the actual artifact (flatten.py in

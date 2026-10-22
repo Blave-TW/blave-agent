@@ -381,6 +381,8 @@ pr._capital_order_identity_ok = lambda: False
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=halted_capital_manual"
       and not popens, "listener: 群益-only → halted_capital_manual, nothing launched")
 check(os.path.isfile(os.path.join(WS, "state", "HALT")), "listener: HALT still tripped")
+check(__import__("json").load(open(os.path.join(WS, "state", "HALT"))).get("closing") is False,
+      "listener: HALT closing false — nothing is being closed, the pages must not say so")
 ERR_PATH = os.path.join(WS, "manager", "order_errors.json")
 
 

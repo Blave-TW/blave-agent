@@ -1,7 +1,7 @@
 // shell/daemon.js(本機常駐程式的宿主)對**真的** runtime/local_daemon.py 跑一輪:啟動、簽章指令、
 // 拒收沒簽的、狀態檔、收工。跑法:node tests/check_shell_daemon.js(需要 python3;不碰 ~/Blave)
 const fs = require("fs"), os = require("os"), path = require("path");
-const { createDaemonHost, UI_COMMANDS, MAIN_ONLY_COMMANDS, argsOk } = require("../shell/daemon.js");
+const { createDaemonHost, UI_COMMANDS, MAIN_ONLY_COMMANDS, argsOk, closeAllStarted } = require("../shell/daemon.js");
 const ROOT = path.join(__dirname, "..");
 const BASE = fs.mkdtempSync(path.join(os.tmpdir(), "blave-dh-")), WS = path.join(BASE, "workspace");
 fs.mkdirSync(path.join(WS, "manager"), { recursive: true });
@@ -97,6 +97,14 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
   t("狀態檔不含 secret 與任何 key 值", !/[0-9a-f]{64}/.test(JSON.stringify(st.report)));
   const h = await host.send("halt", {});
   t("簽章的 halt → ack ok、HALT 檔出現", h.ok === true && fs.existsSync(path.join(WS, "state", "HALT")));
+  // 暫停並關閉部位的事件列要分得出有沒有真的開始平倉:這個 workspace 沒有 manager/flatten.py,runtime 回 halted_only → closing false
+  { const uiFile = path.join(WS, "state", "ui_events.jsonl"), ca = await host.send("close_all", {});
+    const ev = host.events({ days: 1 }).filter((e) => e.type === "halt_close");
+    t("close_all 只掛了暫停(halted_only):事件 halt_close 帶 closing false", ca.ok === true && ca.result === "close_all=halted_only" && ev.length === 1 && ev[0].closing === false);
+    t("closeAllStarted:started / already_running(含重開停止的前綴)才算在平倉", closeAllStarted("close_all=started") && closeAllStarted("close_all=already_running")
+      && closeAllStarted("close_all=restart_stopped:started") && ["close_all=halted_only", "close_all=halted_capital_manual", "close_all=restart_stopped:nothing_closed",
+        "close_all=restart_stopped:capital_manual", "", null, undefined, { x: 1 }].every((r) => !closeAllStarted(r)));
+    try { fs.unlinkSync(uiFile); } catch (_) {} }
   // 模擬 agent 往 in/ 丟一份沒簽的 resume:daemon 要拒收,HALT 還在
   const forged = "forged" + Date.now();
   const inDir = path.join(WS, "state", "local_cmd", "in");

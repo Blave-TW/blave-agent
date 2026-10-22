@@ -332,7 +332,8 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl td.pos :is(.dir, .pos-word, .pos-sub) { font-family: var(--font-sans); }
 .pf-tbl td.pos :is(.dir, .pos-word) { font-size: 12px; }
 .pf-tbl td.pos .pos-word, .pf-tbl td.pos .pos-sub { color: var(--ink-3); }
-.pf-tbl td.pos .pos-sub { font-size: 11px; }
+/* 副行可折行:原因句(模擬盤不放空台股／現貨不放空)的英文在中欄 480 寬不把表撐開(設計稽核 r2 M1′) */
+.pf-tbl td.pos .pos-sub { font-size: 11px; white-space: normal; max-width: 12em; text-align: right; }
 .pf-tbl td.pos .sep { margin: 0 var(--space-4); color: var(--ink-disabled); }
 .pf-tbl td.pos.pend-col :is(.dir, .num) { color: var(--ink-3); }
 .pf-foot { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }

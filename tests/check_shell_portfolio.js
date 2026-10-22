@@ -132,7 +132,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     get nextSibling() { return null; }, get textContent() { return n.text + n.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { n.text = v; n.kids = []; } }; return n; };
   const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
   const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
-    $: () => null, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: { binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false,
+    $: () => null, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: { binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trCfPaperOnly: () => false,
     confirmBox(o) { ctx.BOX = o; }, trCloudBox: (o) => o, trWith: () => { ctx.DIRECT = (ctx.DIRECT || 0) + 1; return true; }, TR_STALE_MS: 600000, ENV_JUST_MS: 300000, trackFeature() {} });
   vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
   vm.runInContext("var delCtx = null;\n" + (src.match(/^const TR_CF = [^\n]*\n/m) || [""])[0].replace(/^const /, "var "), ctx);
@@ -343,6 +343,38 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     const a1 = A.lots("2330"), ac = A.cells().map((n) => n.textContent || n.text || "");
     ok("沒綁交易所、台股 Type A 路由 \"\":目標 5,000,000、2330 寫 2 張(swap 照自己的 MARKET,不併 @spot)",
       J(A.t) === J({ 2330: 5000000 }) && !!a1 && a1.unit === "lots" && a1.lots === 2 && ac.some((x) => /^po\.twLots /.test(x) && x.includes('"n":"2"')), J([A.t, a1, ac.filter((x) => /^po\.tw/.test(x))])); }
+  // 0.1.28 Wei Mac 實測:沒綁交易所時存的台股組合(路由 "")、之後綁模擬交易、還沒重存——配置頁是存檔前的編輯面,照存檔後(runtime 繼承唯一綁著那家)畫股數,
+  // 不是 0 TWD;自動下單 › 部位與對帳那條照對帳器現況(沒路由 = 0)
+  { ctx.TR = bag({ paper: V }, { can_paper_twstock: true }); ctx.TR.edits = {}; const rp = ctx.TR.st.report;
+    const am = { c: 1000000 }, sts = { c: { market: "swap", weights: { 2330: 0.5 }, raw_closes: { 2330: 1000 }, raw_close_dates: { 2330: "2026-10-21" } } };
+    rp.config.amounts = am; rp.config.exchanges = { c: "" }; rp.states = sts; rp.quote_ccy = { c: "TWD" }; rp.last_reconcile = null;
+    vm.runInContext("TR = this.TR;", ctx); ctx.__m = [am, sts];
+    const cells = flat(vm.runInContext("poSigTable(TR.st.report, __m[0], __m[1], 'cfg')", ctx)).map((n) => n.textContent || n.text || "");
+    const live = vm.runInContext("trClientTargets(__m[0], __m[1], null)", ctx);
+    ok("綁模擬交易後、路由還是 \"\"(存檔前):配置頁台股寫 500 股＋小字 500,000 TWD,不是 0 TWD;對帳現況(trClientTargets)照舊 0、離開配置頁後不殘留存檔後的路由",
+      cells.some((x) => x === 'po.twShares {"n":"500"}500,000 TWD') && !cells.some((x) => /^0 TWD$/.test(x)) && J(live) === J({ 2330: 0 })
+      && vm.runInContext("trPaperOf('c') === false && trRouteBlank('c') === true", ctx), J([cells.filter((x) => /TWD|tw/.test(x)), live]));
+    // 金額表「部位」欄同一個口徑:台股投資組合做空 2330(權重 −0.5),存檔後路由模擬交易 = 現股、空頭壓 0(lib aggregate_portfolio)→ 空手;照現況(沒路由)會畫成空 500,000
+    sts.c.weights = { 2330: -0.5 }; ctx.TR.sig = {};
+    const pos = flat(vm.runInContext("trAmountTable(['c'], __m[0], __m[1])", ctx)).filter((n) => n.tag === "td" && /\bpos\b/.test(n.className)).map((n) => n.textContent);
+    ok("綁模擬交易後、路由還是 \"\"(存檔前):配置頁金額表的部位欄照存檔後算(台股現股空頭壓 0 → 空手＋副行 tr.paperTwNoShort),不畫成空單", pos.length === 1 && pos[0] === "tr.flattr.paperTwNoShort", J(pos));
+    const tip = flat(vm.runInContext("trAmountTable(['c'], __m[0], __m[1])", ctx)).filter((n) => n.tag === "td" && /c-sym/.test(n.className)).map((n) => n.title);
+    ok("…代號格 tooltip 不再寫「（目前空手）」(原因在部位格,設計稽核 M1)", tip.length === 1 && !/typecMembersFlat/.test(tip[0]) && /tr\.typecMembers /.test(tip[0]), J(tip));
+    // 單一標的同一條(稽核 B-2):台股做空、存檔後路由模擬交易 → 空手＋副行;加密現貨的空頭會抵別支的多單,不壓
+    const one = (sym, market) => { const am1 = { s: 100000 }, st1 = { s: { symbol: sym, position: -1, market } };
+      rp.config.amounts = am1; rp.config.exchanges = { s: "" }; rp.states = st1; rp.quote_ccy = { s: "TWD" }; ctx.__m = [am1, st1];
+      ctx.TR.list = [{ name: "s", displayName: "S", hasBacktest: true, symbol: sym, market }];
+      return flat(vm.runInContext("trAmountTable(['s'], __m[0], __m[1])", ctx)).filter((n) => n.tag === "td" && /\bpos\b/.test(n.className)).map((n) => n.textContent); };
+    const twA = one("2330", "swap"), btcSpot = one("BTCUSDT", "spot");
+    ok("單一標的台股做空、存檔後路由模擬交易:部位欄空手＋「模擬盤不放空台股」;加密現貨做空照舊寫空", J(twA) === J(["tr.flattr.paperTwNoShort"]) && /^tr\.rel\.short /.test(btcSpot[0] || ""), J([twA, btcSpot]));
+    // 設計稽核 r2 S4:投資組合寫 MARKET = "spot" 被壓成空手 → 副行「現貨不放空」;同時是模擬台股也寫現貨那句
+    const tcPos = (weights, market) => { const am1 = { s: 100000 }, st1 = { s: { market, weights } };
+      rp.config.amounts = am1; rp.config.exchanges = { s: "" }; rp.states = st1; ctx.__m = [am1, st1];
+      ctx.TR.list = [{ name: "s", displayName: "S", hasBacktest: true, symbol: null, portfolio: true, market, universe: Object.keys(weights) }];
+      return flat(vm.runInContext("trAmountTable(['s'], __m[0], __m[1])", ctx)).filter((n) => n.tag === "td" && /\bpos\b/.test(n.className)).map((n) => n.textContent); };
+    const spotC = tcPos({ BTCUSDT: -0.5 }, "spot"), spotTw = tcPos({ 2330: -0.5 }, "spot"), swapTw = tcPos({ 2330: -0.5 }, "swap");
+    ok("投資組合空頭被壓成空手:現貨 → tr.spotNoShort(加密、台股同時是模擬也一樣);合約台股路由模擬 → tr.paperTwNoShort",
+      J(spotC) === J(["tr.flattr.spotNoShort"]) && J(spotTw) === J(["tr.flattr.spotNoShort"]) && J(swapTw) === J(["tr.flattr.paperTwNoShort"]), J([spotC, spotTw, swapTw])); }
   // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 部位「—」+ tooltip;有這支、position 0 → 空手
   { ctx.TR = bag({}); ctx.TR.st.report.states = { tw: { symbol: "2330", position: 1, market: "spot" } }; ctx.TR.edits = {};
     const am = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
@@ -915,7 +947,7 @@ ok("優化表:台指期取整成 0 口而有錢 → mg.lotsUnder、累計少投 
     && psrc.indexOf('t("mg.lotsUnderFoot"') < psrc.indexOf("const over = mgLotsOver(") && cutF(psrc, "mgSuggestTable").indexOf("wrap.appendChild(tbl);") < cutF(psrc, "mgSuggestTable").indexOf('t("mg.lotsUnderFoot"')
     && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.lotsOverFoot": "台指期進位成 {lots} 口，比配置多 {pct}%"')); }
 ok("等待那一行前面寫「優化：」或「回測：」", /t\(w === "opt" \? "mg\.waitPrefixOpt" : "mg\.waitPrefixBt"\) \+ \(n === 1/.test(psrc) && fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.waitPrefixOpt": "優化："'));
-ok("投資組合還沒算出成分(沒有權重):金額表部位寫「—」(tooltip tr.sigNotYet),不是空手", /const cNotYet = isC && !tc && !noSig;/.test(src) && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn \}\);/.test(src));
+ok("投資組合還沒算出成分(沒有權重):金額表部位寫「—」(tooltip tr.sigNotYet),不是空手", /const cNotYet = isC && !tc && !noSig;/.test(src) && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn, clamped: paperShort \? "paper" : \(tc && tc\.clamped\) \|\| null \}\);/.test(src));
 ok("剛選進、還沒回報、清單沒寫市場:金額表與部位表都不先標「合約」", /if \(isC \|\| market\) first\.appendChild\(trEl\("span", "mkt-tag"/.test(src) && /if \(!guess\) c\.appendChild\(trEl\("span", "mkt-tag"/.test(src));
 // runtime NEEDS_ROUTING 閘門改成任何沒路由的成員都擋(金額 0 也算):只有金額 0 的成員沒路由也落 Z
 { const ctx = vm.createContext({ TR: { list: [] } }); const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
