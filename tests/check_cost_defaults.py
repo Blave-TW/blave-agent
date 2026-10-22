@@ -294,5 +294,12 @@ order_paper.reset_account(ENV)
 order_paper.place_market_order(ENV, "BTCUSDT", "long", 0.1)
 check(near(last_fee(), 5000 * 0.0007), f"paper fill charges the picked owner's FEE ({last_fee()})")
 
+# ── listing gates: fee.rate is fee_of(s), never null (api 400s the whole report on a null) ──
+_mk = open(os.path.join(ROOT, "references", "marketplace.md"), encoding="utf-8").read()
+check("`fee.rate` = `lib.costs.fee_of(s)`" in _mk and "`fee.rate` = the strategy's `FEE`," not in _mk
+      and "never `null`" in _mk, "marketplace.md: gates fee.rate is lib.costs.fee_of(s), never null")
+check(all(isinstance(fee_of(x), float) and fee_of(x) > 0 for x in ({}, {"SYMBOL": "CL"}, {"SYMBOL": "BTCUSDT"}, Mod)),
+      "fee_of: a strategy without FEE still gives a positive number to send as fee.rate")
+
 print("all ok" if not fails else "FAILED")
 sys.exit(1 if fails else 0)

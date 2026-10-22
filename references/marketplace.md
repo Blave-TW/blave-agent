@@ -185,7 +185,7 @@ Response: `{"status": "ok", "strategy_id": ..., "pnl_image_url": "https://..." |
 }
 ```
 - `mcpt_p` / `mcpt_n` are required numbers unless `mcpt_status` is `not_applicable` (Type C portfolios), where they are `null`.
-- `robust.ratio` = plateau Sharpe ÷ selected Sharpe (`lib/param_scan.find_plateau`); `fee.rate` = the strategy's `FEE`, `fee.actual` = the venue's per-side taker cost.
+- `robust.ratio` = plateau Sharpe ÷ selected Sharpe (`lib/param_scan.find_plateau`); `fee.rate` = `lib.costs.fee_of(s)` (`from lib.costs import fee_of`) — the strategy's `FEE`, else its market default, i.e. the rate the backtest was charged; never `null` (a strategy without `FEE` still has a rate, and a `null` rejects the whole call with 400). `fee.actual` = the venue's per-side taker cost.
 - The server computes pass/fail and "Verified" itself — do not send a `verified` key (it is ignored).
 - A malformed `gates` rejects the whole call with 400 and nothing is written.
 - **A full-metrics refresh without `gates` clears the stored gates and the badge disappears.** Whenever you re-post numbers, re-run the gates (MCPT + parameter scan) on that backtest and send them in the same call.
