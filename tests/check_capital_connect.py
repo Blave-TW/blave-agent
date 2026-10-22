@@ -427,7 +427,12 @@ except Exception as e:
     err = e
 check("5c order_capital refuses to log in with blocked credentials, before any COM object",
       isinstance(err, noc.CapitalError) and "code=307" in str(err) and not FakeCOM.created, repr(err))
-nwk = load("new_capital_worker", os.path.join(ROOT, "lib", "capital_worker.py"))
+# Loaded by path (not as lib.capital_worker), so it takes its bare-script branch — `import capital_vault` needs lib/ on sys.path, as NSSM gives it.
+sys.path.insert(0, os.path.join(ROOT, "lib"))
+try:
+    nwk = load("new_capital_worker", os.path.join(ROOT, "lib", "capital_worker.py"))
+finally:
+    sys.path.remove(os.path.join(ROOT, "lib"))
 nwk.capital_vault = cv
 try:
     nwk._refuse_if_blocked("Z123456789", "new-pw")
