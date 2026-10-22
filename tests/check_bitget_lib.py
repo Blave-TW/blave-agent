@@ -629,6 +629,20 @@ check(order.sweep_orphan_stops(ENV, []) == [], "an unreadable plan list skips th
 route("GET", "/api/v2/mix/order/orders-plan-pending", plan_pending)
 check(order.cancel_algo_order(ENV, "NVDAUSDT", "nope", "pos_loss")["status"] == "order_not_found",
       "cancelling a gone plan order (failureList 43025) → order_not_found")
+route("POST", "/api/v2/mix/order/cancel-plan-order", lambda p: ok({"successList": [], "failureList": []}))
+check(order.cancel_algo_order(ENV, "NVDAUSDT", "nope", "pos_loss")["status"] == "order_not_found",
+      "an unknown plan id answered with both lists empty (measured R9) and absent from the open list → order_not_found")
+PLANS["still"] = {"orderId": "still", "symbol": "NVDAUSDT", "planType": "pos_loss", "triggerPrice": "170", "posSide": "long"}
+try:
+    order.cancel_algo_order(ENV, "NVDAUSDT", "still", "pos_loss")
+    check(False, "both lists empty while the plan is still open raises")
+except acct.BitgetError:
+    check(True, "both lists empty but the plan still listed open → raises (never read as cancelled)")
+PLANS.pop("still")
+route("POST", "/api/v2/mix/order/cancel-plan-order", cancel_plan)
+route("POST", "/api/v2/mix/order/cancel-order", lambda p: err("43001", "The order does not exist"))
+check(order.cancel_order(ENV, "NVDAUSDT", order_id="404")["status"] == "order_not_found",
+      "classic cancel refused with 43001 (measured R9) → order_not_found")
 
 # cancel_all is symbol-scoped: never Bitget's account-wide cancel-all-orders
 route("GET", "/api/v2/mix/order/orders-pending", lambda p: ok({"entrustedList": [

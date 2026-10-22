@@ -90,7 +90,7 @@ RULES_TTL_S = 600  # symbolStatus moves (limit_open / restrictedAPI): not an hou
 BELOW_MIN = {"45110", "43027"}  # classic / UTA: order value under the minimum → quiet False
 UNKNOWN_SYMBOL = "40034"  # "Parameter NOPEUSDT does not exist" — public contracts, measured 2026-10-20
 # order gone / never existed — replies ccxt records; T7 of the live script measures them
-_CANCEL_GONE = {"40768", "43001", "40109"}
+_CANCEL_GONE = {"40768", "43001", "40109"}  # classic cancel: 43001 measured live (R9, 2026-10-22)
 # UTA order-info: the ONLY answers that mean "no such order" — 40109 (ccxt-recorded, the
 # v2 not-found), ORDER_ABSENT (success with no order in it). R9U measures the v3 code.
 ORDER_ABSENT = "order_absent"
@@ -904,6 +904,11 @@ def cancel_algo_order(env, symbol, order_id, plan_type=None):
         raise
     if any(str(x.get("orderId")) == str(order_id) for x in res.get("successList") or []):
         return {"status": "canceled", "order_id": str(order_id)}
+    if not res.get("successList") and not res.get("failureList"):
+        # measured on a classic key (R9, 2026-10-22): an id Bitget does not know answers both
+        # lists empty, no code — gone only if the open plan list agrees
+        if all(o["order_id"] != str(order_id) for o in get_open_algo_orders(env, symbol)):
+            return {"status": "order_not_found", "order_id": str(order_id)}
     fail = next((x for x in res.get("failureList") or [] if str(x.get("orderId")) == str(order_id)), {})
     if str(fail.get("errorCode")) in _PLAN_GONE:
         return {"status": "order_not_found", "order_id": str(order_id)}
