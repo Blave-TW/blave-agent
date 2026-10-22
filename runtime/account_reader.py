@@ -188,6 +188,8 @@ def _venues(env):
         if prefix.upper() in _RESERVED_PREFIXES or prefix.upper().startswith("DATA_"):
             continue
         vid = prefix.lower()
+        if not venue_traits.get(vid, "live_verified"):
+            continue  # libs ship unverified: nothing of this venue reaches the web or the app
         if os.path.isfile(os.path.join(WORKSPACE, "lib", f"account_{vid}.py")):
             out.append(vid)
     return sorted(set(out))

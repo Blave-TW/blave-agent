@@ -1551,8 +1551,9 @@ const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
    整段做完之前不列在這台電腦的下拉裡 */
 const CAPL_LOCAL_ON = false;
 const cxCaplListed = () => CAPL_LOCAL_ON || CXF.venue === CAPITAL;
-// 不在 CX_VENUES 裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py)
-const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD" };
+// 不在 CX_VENUES 裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py、account_bitget.py;
+// bitget 真帳驗證前 runtime 不上報它,這格只是幣別表要跟 lib 一一對齊)
+const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD", bitget: "USDT" };
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)
 function trVenueCcy(id) {
   if (Object.prototype.hasOwnProperty.call(TR_VENUE_CCY_OTHER, id)) return TR_VENUE_CCY_OTHER[id];

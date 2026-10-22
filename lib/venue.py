@@ -26,7 +26,8 @@ VENUES = {
     "stockcoin": ("API_KEY", "SECRET_KEY"),
 }
 _ELSEWHERE = {
-    **{v: venue_traits.get(v, "reference") for v in venue_traits.venues("auto_wire", False)},
+    **{v: venue_traits.get(v, "reference") for v in
+       venue_traits.venues("auto_wire", False) | venue_traits.venues("live_verified", False)},
     "paper": "the web 自動下單 page (paper has no keys)",
 }
 _WS_MARK_RE = re.compile(r"\s")

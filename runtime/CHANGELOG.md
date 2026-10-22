@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **`account_reader` 不讀還沒真帳驗證的交易所**(`venue_traits` 的 `live_verified: False`,目前是 `bitget`):機器上有 `BITGET_*` 金鑰也不會出現在投資組合頁;lib 自己的簽章閘門另外擋住所有私有呼叫。
+- **下單 lib 名單加 `bitget`(`turn_stop` 的 Stop 豁免、排程守門 `SCHED_ORDER_LIB`)**:同 stockcoin 那一次,workspace 新的 `lib/order_bitget.py` 載入的行程不被聊天 Stop 砍、排程指令照下單 lib 守門。
+
 ## 1.1.138 — 2026-10-21(desktop 0.1.28)
 
 - **1.1.137 內容＋併入 1.1.136(排程回合凍住 manager/ 等)**:1.1.137 已先發 canary(未含 1.1.136),為了不讓 promote 蓋掉 1.1.136 的安全修正，合併後以 1.1.138 重發；內容＝下面 1.1.137 與 1.1.136 兩節。

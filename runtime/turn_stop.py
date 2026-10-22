@@ -46,7 +46,7 @@ MONEY_ARGV = re.compile(
     r"close_symbol|stop_strategy|manager[./\\]flatten|close_all|update_workspace|seed_ledger|reconciler\.py"
     r"|capital_worker|president_worker|lib[./\\](?:order_|execute|venue|portfolio)"
     r"|from\s+lib\s+import\s[^;\n]*\b(?:order_\w+|execute|venue|portfolio)\b"
-    r"|\border_(?:binance|bingx|bybit|okx|gateio|paper|capital|sinopac|president|stockcoin)\b",
+    r"|\border_(?:binance|bingx|bybit|okx|gateio|paper|capital|sinopac|president|stockcoin|bitget)\b",
     re.I)  # Windows: PowerShell paths use \, and the file system ignores case
 # Hand-written scripts (`python tmp/close.py`) don't show it in argv: every lib/order_*
 # marks its process here at import (lib/guard.mark_money_process), until it exits.

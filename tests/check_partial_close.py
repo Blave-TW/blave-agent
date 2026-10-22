@@ -143,5 +143,18 @@ for fill, want_ok in ((0.004, False), (0.01, True)):
         check(rc != cs.OK and any("未平完" in str(e) for e in cs_errs) and abs(qty - 0.006) < 1e-12,
               f"close_symbol, 0.004 of 0.01: not OK, 未平完, 0.006 stays in the book ({rc}, {qty})")
 
+# a lib that sends nothing (False: nothing closable on that leg / below the minimum) is not a close
+_close = order.close_position_partial
+order.close_position_partial = lambda env, sym, side, size, client_order_id=None: False
+fresh()
+acct.get_positions = lambda env: [{"symbol": "BTCUSDT", "side": "long", "size": 0.01, "mark_price": 70000.0}]
+del cs_errs[:]
+rc = cs.run_close(cs.Ctx(venue="okx", sym="BTCUSDT", side="long", env={}, key="k", generic=True,
+                         acct=acct, order=order))
+qty = (pf.ledger_positions("okx").get("BTCUSDT") or {}).get("qty", 0)
+check(rc != cs.OK and abs(qty - 0.01) < 1e-12 and any("not sent" in str(e) for e in cs_errs),
+      f"close_symbol, the lib returns False: not OK, never reported closed, the book keeps 0.01 ({rc}, {qty})")
+order.close_position_partial = _close
+
 print("\n" + ("all ok" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)

@@ -63,7 +63,7 @@ _ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # libs whose get_open_orders already includes conditional orders
 _CONDITIONAL_IN_REGULAR = {"order_bingx"}
 # libs whose cancel_all_orders clears regular AND conditional orders
-_CANCEL_ALL_COVERS_CONDITIONAL = {"order_bingx", "order_binance", "order_gateio", "order_bybit", "order_stockcoin"}
+_CANCEL_ALL_COVERS_CONDITIONAL = {"order_bingx", "order_binance", "order_gateio", "order_bybit", "order_stockcoin", "order_bitget"}
 # code and config only — data dumps (.csv) and logs mention every symbol ever traded
 _SCAN_EXT = (".py", ".json", ".yaml", ".yml", ".toml", ".txt", ".env", ".ini", ".cfg", ".conf")
 _MAX_SCAN_BYTES = 2_000_000
@@ -539,6 +539,15 @@ def run_close(ctx, dry_run=False):
                 print(f"close failed: {type(e).__name__}: {e}")
                 print(unprotected)
                 _record_order_error(sym, ctx.venue, f"close_symbol: {e}")
+                result, ok = None, False
+            if closed and result is False:
+                # the lib sent nothing (nothing closable on that leg, or below the minimum):
+                # the position may still be there — never report it closed
+                closed = False
+                print(f"close not sent: the venue lib found nothing to close on {side} {sym} {size} "
+                      f"(or it is below the minimum) — check the position")
+                print(unprotected)
+                _record_order_error(sym, ctx.venue, f"close_symbol: {side} {sym} close not sent (nothing closable)")
                 result, ok = None, False
             if closed:
                 r = result if isinstance(result, dict) else {}

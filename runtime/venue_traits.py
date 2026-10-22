@@ -27,6 +27,13 @@ account currency). Trait meanings:
   close_needs_fill   flatten books a close as done only on a confirmed fill
   reference          the onboarding doc chat binding points to
   label              the broker's name in user-facing messages
+  live_verified      False: its libs ship but Wei's real-account run has not
+                     passed (venue-onboarding §3) — never auto-wired, never
+                     read by runtime/account_reader, not bindable from chat,
+                     and the venue's own libs refuse to sign any private call
+                     unless the row says True (they read the raw cell, so a
+                     deleted row stays closed). Flipped by the backend in the
+                     commit that merges the verified libs.
   cred_env           the venue's own .env names that do not follow the
                      {ID}_API_KEY / _PASSWORD pair shape, with their role
                      (API_KEY = the name that says "bound", PASSWORD = its
@@ -58,6 +65,13 @@ TRAITS = {
         "reference": "references/sinopac-broker.md",
         "label": "永豐金",
     },
+    # libs shipped, real-account run pending (.claude/output/backend/bitget-real-verify-0.1.29.md):
+    # a machine with BITGET_* in .env (the web's old Bitget row) must not start trading on an update
+    "bitget": {
+        "live_verified": False,
+        "reference": "references/exchange-connect.md",
+        "label": "Bitget",
+    },
     PRESIDENT: {
         "auto_wire": False,
         "hand_wired": True,
@@ -80,7 +94,7 @@ TRAITS = {
     },
 }
 
-_DEFAULTS = {"auto_wire": True, "perp": True}
+_DEFAULTS = {"auto_wire": True, "perp": True, "live_verified": True}
 
 
 def get(venue, trait):
@@ -96,6 +110,13 @@ def has(venue, trait):
 def venues(trait, value=True):
     """Venue ids whose `trait` equals `value` (defaults applied)."""
     return frozenset(v for v in TRAITS if get(v, trait) == value)
+
+
+def live_verified(venue):
+    """True only when the venue's row says so explicitly — what an unverified venue's own
+    libs ask. Every other caller uses get(): a venue with no row (an agent-written lib)
+    keeps the default and still wires."""
+    return isinstance(venue, str) and TRAITS.get(venue, {}).get("live_verified") is True
 
 
 def cred_env(name):

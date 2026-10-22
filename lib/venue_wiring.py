@@ -35,7 +35,8 @@ from lib.portfolio import load_portfolio_config, market_key, split_key, spot_sco
 
 _ENV_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_API_KEY\s*=", re.IGNORECASE)
 _RESERVED_PREFIXES = {"BLAVE"}
-_NON_AUTO = venue_traits.venues("auto_wire", False)  # TW brokers: signed-diff contract
+# TW brokers (signed-diff contract) and venues whose libs ship unverified
+_NON_AUTO = venue_traits.venues("auto_wire", False) | venue_traits.venues("live_verified", False)
 
 
 def read_env(path=".env"):
@@ -226,7 +227,7 @@ def _cid():
 # class of a symbol is what the strategy was backtested on. The same ticker can be a
 # coin there and a stock swap elsewhere (OKX BB/QNT/ON-USDT-SWAP, Bybit ONUSDT).
 # BingX is absent: its stock swaps are NCSK…, a name only lib/stock_perps maps to, never a coin's
-_VENUE_LABELS = {"okx": "OKX", "bybit": "Bybit", "gateio": "Gate.io"}
+_VENUE_LABELS = {"okx": "OKX", "bybit": "Bybit", "gateio": "Gate.io", "bitget": "Bitget"}
 
 
 def _binance_class(sym):

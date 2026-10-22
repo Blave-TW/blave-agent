@@ -7,6 +7,8 @@ stock under the same name; two do not:
           displayName carries the ticker, except where a coin owns it: AMDUS-USDT).
   Bybit — AMDSTOCKUSDT, NOKIAUSDT … where a coin owns the bare name; underlyingTicker
           carries the ticker.
+  Bitget — isRwa=YES rows; ACNSTOCKUSDT, BBSTOCKUSDT … where a coin owns the bare name
+          (baseCoin ACNSTOCK: the ticker is baseCoin without the STOCK suffix).
 Only names read from the venues' own public lists are used — never a guessed spelling:
 a near-name is a different instrument (BingX NCSKSKHYNIX2USD is a KRW listing at 7×
 the price of SKHY). Anything other than EQUITY keeps the plain mapping it had before.
@@ -33,7 +35,7 @@ INFO_RETRY_S = 300
 _binance = {"rows": None, "at": 0.0, "failed_at": 0.0}
 
 STOCK = "EQUITY"
-_LABELS = {"bingx": "BingX", "bybit": "Bybit"}
+_LABELS = {"bingx": "BingX", "bybit": "Bybit", "bitget": "Bitget"}
 
 
 def binance_rows():
@@ -65,6 +67,8 @@ _BINGX_ASSET = re.compile(r"^NC(?:SK|SI)(.+)2USD$")
 def _is_stock_row(vid, r):
     if vid == "bingx":
         return str(r.get("symbol", "")).startswith(_BINGX_STOCK)
+    if vid == "bitget":
+        return r.get("isRwa") == "YES"
     return r.get("symbolType") in ("stock", "ETF")
 
 
@@ -80,6 +84,11 @@ def _tickers(vid, r):
         if d.endswith("-USDT"):
             out.add(d[:-5].strip())
         return out
+    if vid == "bitget":
+        # isRwa also covers commodities and HK names; only a Binance EQUITY ticker ever
+        # looks a row up, so those never match one
+        base = str(r.get("baseCoin") or "")
+        return {base[:-5]} if base.endswith("STOCK") and len(base) > 5 else ({base} if base else set())
     t = r.get("underlyingTicker")
     if t:
         return {t} if r.get("marketRegion") == "US" else set()
@@ -142,7 +151,7 @@ def canonical(vid, venue_sym, rows):
     tickers = _tickers(vid, row)
     b = binance_rows()
     if b is None:
-        if vid == "bybit" and tickers == {key[:-4]}:
+        if vid in ("bybit", "bitget") and tickers == {key[:-4]}:
             return key
         raise requests.exceptions.ConnectionError(
             f"Binance exchangeInfo unreadable — cannot name {_LABELS.get(vid, vid)} position {venue_sym}")
@@ -190,3 +199,33 @@ def us_signal_refusal(symbol, tickers):
     if t[1] and t[1].upper() != base:
         return f"{sym} 在 Binance 對應的是 {t[1]},不是 {base}"
     return None
+
+
+# Bitget's Taiwan stock perps — the only venue listing any (8, since 2026-10-19). Hand-written
+# on purpose: the contract names are not TWSE tickers, and a prefix rule would be wrong
+# (TWLOUSDT is Twilio, TWSTUSDT Twist Bioscience). 2492 is 華新科, not 1605 華新:
+# 364 TWD / 11.18 USDT = 32.55 TWD per USDT on 2026-10-19, the day's USDTWD.
+# One contract unit = one share, priced at the TWSE price ÷ USDTWD and settled in USDT (a
+# converted price, not a quanto) — so a share count is the order's base qty as is, and its
+# USDT value moves with USDTWD as well as the stock.
+TW_TOKENS = {
+    "2330": "TWTSMUSDT",    # 台積電
+    "2308": "TWDELTAUSDT",  # 台達電
+    "3711": "TWASXUSDT",    # 日月光投控
+    "2303": "TWUMCUSDT",    # 聯電
+    "2408": "NANYAUSDT",    # 南亞科
+    "2344": "WINBONDUSDT",  # 華邦電
+    "2327": "YAGEOUSDT",    # 國巨
+    "2492": "WALSINUSDT",   # 華新科
+}
+_TW_CODES = {v: k for k, v in TW_TOKENS.items()}
+
+
+def tw_token(code):
+    """Bitget's contract for a TWSE stock code ('2330' → 'TWTSMUSDT'); None = no token."""
+    return TW_TOKENS.get(str(code or "").strip())
+
+
+def tw_code(venue_sym):
+    """The TWSE code a Bitget contract tracks ('TWTSMUSDT' → '2330'); None = not a TW token."""
+    return _TW_CODES.get(str(venue_sym or "").replace("-", "").upper())

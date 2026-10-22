@@ -11,6 +11,13 @@
    hand_wired venue without one would otherwise fall through to the crypto
    auto-wire with lot counts.
 4. The derived venue sets match what the table encodes today.
+5. Enumeration: every repo-shipped lib/order_<id>.py is either in SHIPPED (went
+   through its real-account run before this gate existed) or its row says
+   live_verified False — a new venue lib cannot ship unclassified. Every
+   unverified venue, with keys in .env, both libs on disk AND listed in the
+   bind manifest, is not wired, not read by runtime/account_reader, not
+   bindable from chat, and its account lib's own gate is shut. An agent-written
+   venue with no row still wires (exchange-connect rule 6).
 
 Run: cd blave-agent && python3 tests/check_venue_traits.py
 """
@@ -85,7 +92,8 @@ from manager import close_symbol, reconciler  # noqa: E402
 check(set(reconciler._HAND_WIRED) == set(venue_traits.venues("hand_wired")),
       "reconciler._HAND_WIRED covers exactly the hand_wired venues",
       (sorted(reconciler._HAND_WIRED), sorted(venue_traits.venues("hand_wired"))))
-check(venue_wiring._NON_AUTO == {"sinopac", "president", "capital"}, "venue_wiring._NON_AUTO",
+# bitget: libs shipped, not live-verified — out of the auto-wire until it is
+check(venue_wiring._NON_AUTO == {"sinopac", "president", "capital", "bitget"}, "venue_wiring._NON_AUTO",
       venue_wiring._NON_AUTO)
 check(close_symbol._NOT_PERP == {"capital", "sinopac", "president"}, "close_symbol._NOT_PERP",
       close_symbol._NOT_PERP)
@@ -107,6 +115,53 @@ try:
     check(False, "a hand_wired venue without a reconciler block raises")
 except RuntimeError:
     check(True, "a hand_wired venue without a reconciler block raises")
+
+# ── 5. unverified venue libs: enumerated, and shut on every surface ─────────
+import importlib, json, subprocess  # noqa: E401,E402
+
+SHIPPED = {"binance", "bingx", "bybit", "capital", "gateio", "okx", "paper", "president", "sinopac",
+           "stockcoin"}
+tracked = subprocess.run(["git", "-C", ROOT, "ls-files", "lib/order_*.py"], capture_output=True,
+                         text=True, check=True).stdout.split()
+order_ids = {os.path.basename(f)[len("order_"):-3] for f in tracked} - {"TEMPLATE"}
+unverified = set(venue_traits.venues("live_verified", False))
+check(order_ids and order_ids == SHIPPED | unverified and not SHIPPED & unverified,
+      "every shipped lib/order_<id>.py is in SHIPPED or marked live_verified False (and not both)",
+      (sorted(order_ids - SHIPPED - unverified), sorted(SHIPPED & unverified)))
+check("bitget" in unverified, "bitget ships unverified", sorted(unverified))
+check(not venue_traits.live_verified("nosuchvenue") and venue_traits.get("nosuchvenue", "live_verified"),
+      "live_verified(): only an explicit True opens a venue's own lib; get() keeps the default for agent libs")
+
+ws = tempfile.mkdtemp(prefix="vtraits-unverified-")
+os.makedirs(os.path.join(ws, "lib"))
+os.makedirs(os.path.join(ws, "manager"))
+for vid in sorted(unverified) + ["acme"]:
+    for kind in ("account", "order"):
+        open(os.path.join(ws, "lib", f"{kind}_{vid}.py"), "w").close()
+env = {}
+for vid in sorted(unverified) + ["acme"]:
+    env.update({f"{vid.upper()}_API_KEY": "k", f"{vid.upper()}_SECRET_KEY": "s"})
+here = os.getcwd()
+os.chdir(ws)
+venue_wiring.read_env = lambda path=".env": env
+check(venue_wiring.official_venues(env) == ["acme"], "official_venues without a manifest: only the agent-written venue",
+      venue_wiring.official_venues(env))
+with open("manager/credentials.ui.json", "w") as f:
+    json.dump({"ids": sorted(unverified) + ["acme"]}, f)
+check(venue_wiring.official_venues(env) == ["acme"],
+      "official_venues with the manifest listing them: still only the agent-written venue",
+      venue_wiring.official_venues(env))
+os.chdir(here)
+sys.path.insert(0, os.path.join(ROOT, "runtime"))
+account_reader = importlib.import_module("account_reader")
+account_reader.WORKSPACE = ws
+check(account_reader._venues(env) == ["acme"], "runtime/account_reader reads no unverified venue",
+      account_reader._venues(env))
+from lib import venue as chat_venue  # noqa: E402
+for vid in sorted(unverified):
+    check(vid not in chat_venue.VENUES and vid in chat_venue._ELSEWHERE, f"{vid}: not bindable from chat")
+    mod = importlib.import_module(f"lib.account_{vid}")
+    check(getattr(mod, "LIVE_VERIFIED", None) is False, f"lib/account_{vid}.LIVE_VERIFIED is False as shipped")
 
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all passed'}")
 sys.exit(1 if fails else 0)
