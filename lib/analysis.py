@@ -394,10 +394,10 @@ def random_bh_benchmark(close_df, strat_total_ret, strat_sharpe, n=1000, seed=42
 
 
 
-def bh_benchmark(bench_close, close_df, kind, symbol):
+def bh_benchmark(bench_close, close_df, kind, symbol, adjusted=True):
     """Buy-and-hold of one benchmark series over the strategy's own bars: bought at the first
     bar's close, held to the last, no fees (the stats say so). bench_close is the benchmark's
-    adjusted Close; it is carried forward onto close_df.index, so a day the benchmark did not
+    Close — adjusted (dividends) unless `adjusted` says otherwise; it is carried forward onto close_df.index, so a day the benchmark did not
     trade (a split halt) is flat. series is the day-end equity multiple (1.0 at the start) per
     calendar day, the days of lib.pnl.daily_returns_typeC — the benchmark_band contract.
     Returns (stats, per-bar equity Series for pnl.png); (None, None) when the benchmark has no
@@ -416,7 +416,7 @@ def bh_benchmark(bench_close, close_df, kind, symbol):
     equity = px / px[0]
     day_end = (pd.Series(np.arange(len(idx)), index=idx)
                .resample('1D').last().ffill().astype(int).values)
-    stats = {'kind': kind, 'symbol': symbol, 'adjusted': True, 'fee_pct': 0,
+    stats = {'kind': kind, 'symbol': symbol, 'adjusted': adjusted, 'fee_pct': 0,
             'ret_pct':  round(float(equity[-1] - 1) * 100, 2),
             'cagr_pct': round(float(ann) * 100, 2) if math.isfinite(ann) else None,
             'mdd_pct':  round(float(mdd) * 100, 2),

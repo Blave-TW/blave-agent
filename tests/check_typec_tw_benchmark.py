@@ -87,15 +87,17 @@ def compute(data):
     return w.ffill().fillna(0.0).values, pd.concat({"close": c, "open": o}, axis=1)
 
 
-def run(name, cols, fetch, src=None):
+def run(name, cols, fetch, src=None, close=None, interval="1d"):
     D.fetch_twstock_price_adj = fetch
     if src is not None:   # what the runner reads the price fetchers off
         (WS / "strategies" / name).mkdir(parents=True, exist_ok=True)
         (WS / "strategies" / name / "strategy.py").write_text(src)
-    c, o = CLOSE.set_axis(cols, axis=1), OPEN.set_axis(cols, axis=1)
+    close = CLOSE if close is None else close
+    c = close.set_axis(cols, axis=1)
+    o = c.shift(1).fillna(c.iloc[0])
     with contextlib.redirect_stdout(io.StringIO()):
-        runner.run({"STRATEGY_NAME": name, "INTERVAL": "1d", "START": "2024-01-02", "FEE": 0.003,
-                    "WARMUP": 20}, lambda h: (c.copy(), o.copy()), compute)
+        runner.run({"STRATEGY_NAME": name, "INTERVAL": interval, "START": str(close.index[0].date()),
+                    "FEE": 0.003, "WARMUP": 20}, lambda h: (c.copy(), o.copy()), compute)
     return json.loads((WS / "strategies" / name / "stats.json").read_text())
 
 
@@ -177,9 +179,17 @@ BTC_CLOSE = pd.Series(40000 * np.exp(np.cumsum(rng.normal(0.0005, 0.02, len(BTC_
 kcalls = []
 
 
+H_IDX = pd.date_range("2024-03-01", periods=24 * 40, freq="1h")
+H_CLOSE = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0.0001, 0.004, (len(H_IDX), 5)), axis=0)),
+                       index=H_IDX, columns=list("ABCDE"))
+BTC_H = pd.Series(40000 * np.exp(np.cumsum(rng.normal(0.0001, 0.005, len(H_IDX) + 48))),
+                  index=pd.date_range(H_IDX[0] - pd.Timedelta(hours=48), periods=len(H_IDX) + 48, freq="1h"))
+
+
 def fake_kline(symbol, interval, start, end, headers, max_retries=6):
     kcalls.append(("binance", symbol, interval, start, end))
-    return pd.DataFrame({"Open": BTC_CLOSE, "Close": BTC_CLOSE})[start:end]
+    b = BTC_H if interval == "1h" else BTC_CLOSE
+    return pd.DataFrame({"Open": b, "Close": b})[start:end]
 
 
 def fake_bingx(symbol, interval, start, end):
@@ -237,6 +247,46 @@ check((st.get("benchmark_bh") or {}).get("kind") == "BTC_bh" and kcalls and kcal
       and not [k for k in RANDOM_KEYS if k in st],
       "crypto klines + funding rate / OI: BTC_bh, no random portfolios")
 
+# ── names in a docstring / string do not count; the source is read off _REPO_ROOT, not the cwd ──
+kcalls.clear()
+here = os.getcwd()
+os.chdir(tempfile.mkdtemp(dir=os.environ.get("SCRATCHPAD") or None))
+try:
+    st = run("crypto_doc", CRYPTO, fake_0050,
+             '"""Uses fetch_twstock_price_adj? No."""\nX = "fetch_usstock_price"\nfrom lib.data import fetch_kline_batch\n')
+finally:
+    os.chdir(here)
+check((st.get("benchmark_bh") or {}).get("kind") == "BTC_bh",
+      "fetcher names in a docstring / string ignored; strategy.py found from another cwd")
+
+# ── 1h crypto Type C: BTC on the strategy's own 1h bars ──
+kcalls.clear()
+st = run("crypto_1h", CRYPTO, fake_0050, BTC_SRC, close=H_CLOSE, interval="1h")
+bh = st.get("benchmark_bh") or {}
+bars_1h = plots["crypto_1h"].index   # the strategy's own bars after warmup
+want = (BTC_H[bars_1h[-1]] / BTC_H[bars_1h[0]] - 1) * 100
+check(bh.get("kind") == "BTC_bh" and kcalls and kcalls[-1][2] == "1h"
+      and abs(bh.get("ret_pct", math.nan) - want) <= 0.0051
+      and len(bh.get("series") or []) == len(st["daily_dates"]),
+      f"1h crypto Type C: hourly BTC, ret_pct {bh.get('ret_pct')} vs {want:.2f}, one series point per day")
+
+# ── a performance refresh whose BTC fetch fails keeps the last benchmark_bh ──
+prev = json.loads((WS / "strategies" / "crypto" / "stats.json").read_text())["benchmark_bh"]
+stale = dict(json.loads((WS / "strategies" / "crypto" / "stats.json").read_text()), **{"Trades": -1})
+(WS / "strategies" / "crypto" / "stats.json").write_text(json.dumps(stale))   # proves the refresh rewrote it
+D.fetch_kline = boom
+os.environ["BLAVE_MODE"] = "live"
+os.environ[runner.STATS_REFRESH_ENV] = "1"
+try:
+    st = run("crypto", CRYPTO, fake_0050, BTC_SRC)
+finally:
+    os.environ["BLAVE_MODE"] = "backtest"
+    os.environ.pop(runner.STATS_REFRESH_ENV, None)
+    D.fetch_kline = fake_kline
+check(st.get("Trades") != -1 and isinstance(st.get("benchmark_bh"), dict) and st["benchmark_bh"].get("ret_pct") == prev["ret_pct"]
+      and st["benchmark_bh"].get("kind") == "BTC_bh",
+      "refresh with BTC unavailable: previous benchmark_bh kept, not nulled")
+
 # ── US-only Type C → SPY buy-and-hold on fetch_usstock_price ──
 ucalls = []
 
@@ -255,6 +305,8 @@ want = (px[last] / px[first] - 1) * 100
 check(bh.get("kind") == "SPY_bh" and bh.get("symbol") == "SPY" and abs(bh.get("ret_pct", math.nan) - want) <= 0.0051
       and ucalls and ucalls[-1][0] == "SPY" and not [k for k in RANDOM_KEYS if k in st],
       f"US Type C writes benchmark_bh SPY_bh from fetch_usstock_price ({bh.get('kind')}, {bh.get('ret_pct')} vs {want:.2f})")
+st = run("us_signal", US, fake_0050, "from lib.data import fetch_usstock_price, fetch_fear_greed\n")
+check((st.get("benchmark_bh") or {}).get("kind") == "SPY_bh", "US prices + a signal feed (fear & greed): SPY_bh")
 D.fetch_usstock_price = boom
 st = run("us_down", US, fake_0050, "from lib.data import fetch_usstock_price\n")
 check("benchmark_bh" in st and st["benchmark_bh"] is None and not [k for k in RANDOM_KEYS if k in st],
@@ -269,7 +321,9 @@ for name, cols, src in (("crypto_nosrc", CRYPTO, None),
                         ("crypto_us", ["BTCUSDT", "ETHUSDT", "AAPL", "MSFT", "NVDA"],
                          "from lib.data import fetch_kline_batch, fetch_usstock_price\n"),
                         ("crypto_twprice", CRYPTO,
-                         "from lib.data import fetch_kline_batch, fetch_twstock_price_adj_batch\n")):
+                         "from lib.data import fetch_kline_batch, fetch_twstock_price_adj_batch\n"),
+                        ("crypto_txf_public", CRYPTO,
+                         "from lib.data import fetch_kline_batch, fetch_txf_daily_public\n")):
     calls.clear()
     kcalls.clear()
     st = run(name, cols, fake_0050, src)

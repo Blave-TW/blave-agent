@@ -1344,8 +1344,9 @@
     const tailTrades = sanitizeTrades(stats && stats.trades);
     if (!tailTrades.length) {
       // 組合策略(Type C)的回測只有成交次數、沒有逐筆紀錄(lib/runner.py:它調的是一籃子的權重):講這件事,不要講成「沒有進出場」——
-      // 回測數據那一頁明明寫著 182 筆。認法同轉出選單:stats 帶隨機投組基準 benchmark_n
-      container.appendChild(el("div", "pf-state", t(stats && typeof stats.benchmark_n === "number" ? "tr.emptyPf" : "tr.empty")));
+      // 回測數據那一頁明明寫著 182 筆。認法同轉出選單:stats 帶隨機投組基準 benchmark_n,或買進持有基準的 benchmark_bh 鍵
+      const isPf = !!stats && (typeof stats.benchmark_n === "number" || "benchmark_bh" in stats);
+      container.appendChild(el("div", "pf-state", t(isPf ? "tr.emptyPf" : "tr.empty")));
       return;
     }
     const candles = sanitizeCandles(stats.candles);
