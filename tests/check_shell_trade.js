@@ -2005,6 +2005,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && J(trRejectCode("RuntimeError: NEEDS_ROUTING: 「a」、「b」、「c」 還沒有對應的交易所").names) === J(["a", "b", "c"])
       && ((x) => x.market === "台股" && x.crypto === true)(trRejectCode("ValueError: MARKET_VENUE: 「tw」是台股策略,binance 是加密貨幣交易所、下不了"))
       && trRejectCode("ValueError: amounts must be numbers") === null && trRejectCode("SOME_CODE: 「a b」x") === null && trRejectText("ValueError: SOME_CODE: 「x」y") === "「x」y" && trRejectText("ValueError: bad strategy name") === "bad strategy name");
+    // 0.1.29 埋點:啟動還沒生效時按暫停、框打開就記(同網頁 GA4 trade_stop_while_starting);一般暫停不記
+    ok("trAskStop:啟動待生效才送 feature_used trade_stop_start", /function trAskStop\(opener\) \{\n  const r = trReport\(\) \|\| \{\};\n  if \(trStartPending\(TR\.pending\)\) trackFeature\("trade_stop_start"\);/.test(src) && (src.match(/"trade_stop_start"/g) || []).length === 1);
     { const sctx = vm.createContext({ LANG: "zh", TR: { list: L, env: "local" }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), String, JSON, Object, Array, trKindOf, trErrorKind, trRejectCode, trRejectText });
       vm.runInContext(["trDisplay", "trTwVenueName", "trRejectSentence", "trSendError"].map(cutF).join("\n"), sctx);
       const se = (err, kind, env) => vm.runInContext("trSendError(" + JSON.stringify({ ok: false, error: err }) + ", " + JSON.stringify(kind) + ", " + JSON.stringify(env) + ")", sctx);
@@ -2028,6 +2030,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         const tw = se("ValueError: MARKET_VENUE: 「grid」是台股策略,binance 是加密貨幣交易所、下不了——請改綁台灣期貨商,或取消勾選後再儲存", "save", env);
         const st = se("RuntimeError: NEEDS_ROUTING: 「a」 還沒有對應的交易所——請先到策略組合存一次下單設定,再啟動下單", "start", env);
         ok(`啟動被拒(${env}):NEEDS_ROUTING 走 trSendError 翻成 tr.needsRouting.rejected(按啟動下單時那一句)`, /^tr\.needsRouting\.rejected /.test(st), st);
+        // runtime _cmd_amounts BAD_ROUTE(exchanges 裡的值不是交易所代號):原句只有中文、帶 manager/ 路徑——一碼一句,不落 trRejectText
+        const br = se("ValueError: BAD_ROUTE: 「b2」、「b3」 的交易所設定壞了(不是交易所代號),沒有儲存;請 agent 修好 manager/portfolio_config.json 的 exchanges", "save", env);
+        ok(`存檔被拒(${env}):BAD_ROUTE → tr.badRoute.rejected,兩支都點名、不帶原句與路徑`, br === 'tr.badRoute.rejected {"name":"b2tr.rejNameSepb3","more":""}', br);
         ok(`被拒(${env}):五支點名 → 列前三支 + 「和另外 2 支」;台股策略綁加密 → tr.marketVenue.crypto 帶市場名(台股)`,
           many === 'tr.needsRouting.rejected {"name":"atr.rejNameSepbtr.rejNameSepc","more":"tr.rejMore {\\"n\\":2}"}' && tw === 'tr.marketVenue.crypto {"name":"grid","more":"","market":"tr.mktName.twStock"}', J([many, tw])); } }
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");

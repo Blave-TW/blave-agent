@@ -2104,6 +2104,7 @@ function trRejectSentence(rc) {
   if (rc.code === "TYPE_B") return t("tr.typeB.rejected", { name, more });
   if (rc.code === "NOT_TXF") return t("tr.notTxf.rejected", { name, more, venue: trTwVenueName("president") });
   if (rc.code === "NEEDS_ROUTING") return t("tr.needsRouting.rejected", { name, more });
+  if (rc.code === "BAD_ROUTE") return t("tr.badRoute.rejected", { name, more });   // runtime 原句帶檔案路徑、只有中文:留給 agent 與 log
   if (rc.code === "SAVE_FAILED") return t("tr.saveFailed.rejected");   // runtime:存設定時檔案被占用,這次什麼都沒改   // runtime 拒絕啟動:解綁後重新綁定、還沒存過下單設定
   // 台指期／個股期貨／台股策略綁到加密交易所:講到它是哪個市場(稽核 r4 P2:原句只講台指期)
   if (rc.code === "MARKET_VENUE" && rc.crypto && rc.market) return t("tr.marketVenue.crypto", { name, more, market: t({ "\u53f0\u6307\u671f": "tr.mktName.txf", "\u500b\u80a1\u671f\u8ca8": "tr.mktName.stockFut", "\u53f0\u80a1": "tr.mktName.twStock" }[rc.market]) });
@@ -2593,6 +2594,7 @@ function trStopAfterStartLead(canFlatten) {
 }
 function trAskStop(opener) {
   const r = trReport() || {};
+  if (trStartPending(TR.pending)) trackFeature("trade_stop_start");
   confirmBox(trCloudBox({
     title: t("tr.stop"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lead: trStartPending(TR.pending) ? trStopAfterStartLead(r.can_flatten === true) : null,

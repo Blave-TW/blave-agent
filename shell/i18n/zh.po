@@ -861,13 +861,13 @@ msgid "bt.tip.benchmarkRank"
 msgstr "跟 1000 組隨機權重的投組比（同一批標的、持股數約同這支策略，每天調回原權重、不計手續費），這支策略的總報酬贏過其中多少。"
 
 msgid "bt.tip.benchmarkBhAdj"
-msgstr "同一段期間買進後一直持有 {sym} 的報酬（還原價、含配息，不計手續費）。策略要贏過它，才算比直接買 {sym} 好。"
+msgstr "同期間持有 {sym} 的報酬，還原價、不計手續費。"
 
 msgid "bt.tip.benchmarkBhRaw"
-msgstr "同一段期間買進後一直持有 {sym} 的報酬（永續合約價格、未調整，不計手續費與資金費率）。策略要贏過它，才算比直接抱著 {sym} 好。"
+msgstr "同期間持有 {sym} 永續的報酬，不計手續費與資金費率。"
 
 msgid "bt.tip.benchmarkBhAsOf"
-msgstr "基準截至 {date}（這次沒抓到之後的價格，沿用上次的數字）。"
+msgstr "基準只算到 {date}，之後的價格沒抓到。"
 
 msgid "bt.tip.benchmarkBhNa"
 msgstr "這次回測抓不到買進持有基準的價格可比。"
@@ -1423,7 +1423,7 @@ msgid "cx.linkOk"
 msgstr "串接成功：金鑰讀得到帳戶。交易權限在第一筆下單時確認。"
 
 msgid "cx.perfNote"
-msgstr "模擬交易的績效不代表真實成交的結果（成本照策略的手續費設定，預設已含滑價、偏保守）。"
+msgstr "模擬績效不代表真實成交，成本照策略的手續費設定。"
 
 msgid "cx.retest"
 msgstr "重新測試"
@@ -3391,13 +3391,13 @@ msgid "tr.cloud.saveStale"
 msgstr "雲端的狀態不是最新的，現在儲存可能蓋掉別處剛改的金額。這一頁更新後就能存。"
 
 msgid "tr.stopAfterStart"
-msgstr "啟動的指令已經送出，可能已經生效。暫停會排在它後面執行，所以最後會停在暫停；在那之前如果已經下了單，部位會留著。"
+msgstr "啟動可能已經生效，暫停後已下的單部位會留著。"
 
 msgid "tr.stopAfterStartFlat"
 msgstr "要一起平掉，選「暫停並關閉部位」。"
 
 msgid "tr.startingHint"
-msgstr "啟動指令還在路上。要停下來，按旁邊的「暫停下單」。"
+msgstr "啟動指令還在路上。要停，按「暫停下單」。"
 
 msgid "tr.cloud.hidden"
 msgstr "有 {n} 支策略暫時讀不到，金額照原樣保留。"
@@ -7973,6 +7973,10 @@ msgstr "優化失敗：{e}"
 msgid "mg.optRun"
 msgstr "跑優化"
 
+# 優化分頁:機器上的權重是別的方法算的(portfolio.js mgPropOtherAlloc,同網頁 workspace_mg_prop_other_alloc)
+msgid "mg.propOtherAlloc"
+msgstr "這份權重是用「{method}」算的，按「跑優化」重算。"
+
 msgid "mg.optRunning"
 msgstr "優化中…"
 
@@ -8271,6 +8275,10 @@ msgstr "按儲存，策略就下到目前綁定的帳戶。"
 msgid "tr.needsRouting.rejected"
 msgstr "「{name}」{more}還沒有對應的交易所：先到策略組合存一次下單設定，再啟動下單。"
 
+# runtime 存檔拒絕 BAD_ROUTE(exchanges 裡那支的值不是交易所代號):trade.js trRejectSentence
+msgid "tr.badRoute.rejected"
+msgstr "「{name}」{more}的交易所設定壞了，沒有儲存。請 agent 修好它。"
+
 msgid "tr.haltUnbound"
 msgstr "解除綁定時自動暫停：不開新倉；平倉與停損停利照常執行。"
 
@@ -8329,10 +8337,10 @@ msgstr "顆"
 
 # 存金額框:剛加入的策略算出來空手(沒有單、沒有目標變動),框裡唯一的一句。只能做多的(現貨、模擬盤台股現股)寫翻多,其餘寫訊號出現
 msgid "tr.cf.flatLong"
-msgstr "目前訊號空手，存檔後不會下單；訊號翻多時才會進場。"
+msgstr "目前訊號空手，存檔後不會下單。訊號翻多時才會進場。"
 
 msgid "tr.cf.flat"
-msgstr "目前訊號空手，存檔後不會下單；訊號出現時才會進場。"
+msgstr "目前訊號空手，存檔後不會下單。訊號出現時才會進場。"
 
 # 同上,但下單程式沒在跑、暫停中、沒綁帳戶或這家下不了:訊號翻了也不會進場,只講前半句
 msgid "tr.cf.flatNoOrder"
@@ -8627,7 +8635,7 @@ msgid "cx.paper.q"
 msgstr "模擬怎麼成交？"
 
 msgid "cx.paper.fill"
-msgstr "用市場上實際的最新價成交、扣交易成本（照策略的手續費設定，預設已含滑價、偏保守）：加密貨幣用 Binance 最新成交價（連不上改用 Blave 最新一分鐘價，再不行用策略自己的收盤價），台指期用近月最新一分鐘價，台股、美股用未還原收盤價（台股分 K 策略用最新一根未還原價）。股利不入帳。"
+msgstr "用市場上實際的最新價成交，扣策略設定的交易成本（預設含滑價）：加密貨幣用 Binance 最新成交價（連不上改用 Blave 最新一分鐘價，再不行用策略自己的收盤價），台指期用近月最新一分鐘價，台股、美股用未還原收盤價（台股分 K 策略用最新一根未還原價）。股利不入帳。"
 
 # 期貨商(統一／群益)的第一行事實:期貨商用的是憑證、不是 API 金鑰
 msgid "cx.fact.cert"

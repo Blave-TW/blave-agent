@@ -234,8 +234,8 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   ok("統計列:標籤 0050 持有、0050 包 .mono、值 +61.75% 中性色",
     !!btn && btn.children[0].className === "mono" && btn.children[0].textContent === "0050" && btn.textContent === "0050 持有"
     && row.children[1].textContent === "+61.75%" && !/pos|neg/.test(row.children[1].className), row && JSON.stringify([btn && btn.textContent, btn && btn.children.map((c) => c.className + ":" + c.textContent), row.children[1].textContent, row.children[1].className]));
-  ok("統計列 tooltip:還原價那句(含配息)", row && row.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "0050")
-    && row.children[0].children[1].textContent.includes("含配息"));
+  ok("統計列 tooltip:還原價那句", row && row.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "0050")
+    && row.children[0].children[1].textContent.includes("還原價"));
   r.h.fireResize();
   ok("resize 之後圖例照樣三項", r.head.children.length === 3);
 
@@ -279,15 +279,15 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
     rowAs && rowAs.children[0].children[1].textContent);
   const rAsBad = render(tw(bhOf({ as_of: "<b>x</b>" })));
   ok("as_of 不是 YYYY-MM-DD:不接那句", mrow(rAsBad.box).children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "0050"));
-  ok("as_of 那句兩語都有、{date} 在、zh 開頭是「基準截至」",
-    STR.zh["bt.tip.benchmarkBhAsOf"].startsWith("基準截至 {date}") && STR.en["bt.tip.benchmarkBhAsOf"].startsWith("Benchmark as of {date}"));
+  ok("as_of 那句兩語都有、{date} 在、zh 開頭是「基準只算到」(v029 文案密度 D7)",
+    STR.zh["bt.tip.benchmarkBhAsOf"].startsWith("基準只算到 {date}") && STR.en["bt.tip.benchmarkBhAsOf"].startsWith("Benchmark runs only to {date}"));
   const k5 = ["bt.benchmarkBh", "bt.chartAriaBh", "bt.tip.benchmarkBhAdj", "bt.tip.benchmarkBhRaw", "bt.tip.benchmarkBhNa"];
   ok("五個字串兩語都有,{sym} 在該在的地方", k5.every((k) => STR.zh[k] && STR.en[k] && (k === "bt.tip.benchmarkBhNa" ? !STR.en[k].includes("{sym}") : STR.en[k].includes("{sym}") && STR.zh[k].includes("{sym}"))));
   ok("字串照定稿逐字", STR.zh["bt.benchmarkBh"] === "{sym} 持有" && STR.en["bt.benchmarkBh"] === "{sym} buy & hold"
     && STR.en["bt.chartAriaBh"] === "Equity curve, {sym} buy & hold and drawdown over the backtest period"
     && STR.zh["bt.tip.benchmarkBhNa"] === "這次回測抓不到買進持有基準的價格可比。"
-    && STR.zh["bt.tip.benchmarkBhAdj"].includes("含配息") && !STR.zh["bt.tip.benchmarkBhRaw"].includes("配息")
-    && STR.en["bt.tip.benchmarkBhAdj"].includes("dividends") && !STR.en["bt.tip.benchmarkBhRaw"].includes("dividend"));
+    && STR.zh["bt.tip.benchmarkBhAdj"].includes("還原價") && !STR.zh["bt.tip.benchmarkBhRaw"].includes("還原")
+    && STR.en["bt.tip.benchmarkBhAdj"].includes("dividend") && !STR.en["bt.tip.benchmarkBhRaw"].includes("dividend"));
   const tok = fs.readFileSync(path.join(R, "tokens.css"), "utf8");
   ok("tokens.css:--chart-band 亮 #818f97、暗 greyDark", /:root \{[\s\S]*--chart-band: #818f97;[\s\S]*\[data-theme="dark"\] \{[\s\S]*--chart-band: var\(--color-greyDark\);/.test(tok));
 }

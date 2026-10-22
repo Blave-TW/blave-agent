@@ -218,7 +218,9 @@ const EVENTS = {
     // 連接框(0.1.28;renderer/trade.js):cx_open = 打開(不分從哪裡開);cx_paper_ok / cx_real_ok = 模擬／真實帳戶綁定成功(群益、統一走各自的 cap_* / pres_*)
     "cx_open", "cx_paper_ok", "cx_real_ok",
     // 歡迎頁右欄的試用文字鈕(0.1.28;renderer/welcome.js wdNote,方案制、有試用資格又沒卡):按下直接開瀏覽器綁卡頁(bindGo)
-    "bind_welcome"] },
+    "bind_welcome",
+    // 啟動還沒生效時按「暫停下單」、確認框打開(0.1.29;renderer/trade.js trAskStop)。同網頁 GA4 trade_stop_while_starting(名字超過 16 字,電腦版縮寫)
+    "trade_stop_start"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
