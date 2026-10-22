@@ -25,7 +25,7 @@ MARKET        = "swap"            # "swap" | "spot" — part of the instrument's
 INTERVAL      = "1h"              # the platform's signal-refresh schedule follows this
 START         = "2024-01-01"
 END           = None
-FEE           = 0.0005            # PER SIDE (one-way) — VERIFIED for this symbol/venue, never 0, never copied unchecked (strategy-code.md › Key Rules)
+FEE           = 0.001             # PER SIDE (one-way) — never 0; Blave default for this market incl. slippage (BTCUSDT perp 0.1%), adjust to the user's venue/tier (references/trading-costs.md)
 
 # PARAM1 = ...
 # PARAM2 = ...
