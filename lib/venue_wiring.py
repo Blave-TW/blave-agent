@@ -36,7 +36,7 @@ from lib.portfolio import load_portfolio_config, market_key, split_key, spot_sco
 _ENV_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_API_KEY\s*=", re.IGNORECASE)
 _RESERVED_PREFIXES = {"BLAVE"}
 # TW brokers (signed-diff contract) and venues whose libs ship unverified
-_NON_AUTO = venue_traits.venues("auto_wire", False) | venue_traits.venues("live_verified", False)
+_NON_AUTO = venue_traits.venues("auto_wire", False) | venue_traits.unverified()
 
 
 def read_env(path=".env"):

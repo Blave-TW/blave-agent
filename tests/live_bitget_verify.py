@@ -1,13 +1,21 @@
 """Live Bitget verification — a REAL account, run by hand. Not part of tests/run_all.sh.
 
 What it measures is everything lib/order_bitget.py and lib/account_bitget.py take on
-faith from Bitget's docs and ccxt's recorded replies (venue-onboarding.md §3). Run it
-once per account type — a UTA key and a classic sub-account's key; the libs pick the
-API by account_bitget.account_mode() and so does every raw step here. Read-only by
-default; the order steps need BOTH --trade and --confirm <today's date, UTC,
-YYYY-MM-DD>, print a cost bound first and wait for "y" on the terminal.
+faith from Bitget's docs and ccxt's recorded replies (venue-onboarding.md §3). Run on
+Wei's MAIN account: it verifies whichever account type that is (R0 says which); the
+other type stays unverified (lib/venue_traits verified_modes). Read-only by default; the
+order steps need BOTH --trade and --confirm <today's date, UTC, YYYY-MM-DD>, refuse to
+start unless the whole account is bare (no position, open order or TP/SL — exit 3 with
+the list), print a cost bound and wait for "y" on the terminal.
 
-    .venv/bin/python tests/live_bitget_verify.py --env /path/to/bitget.env
+MAIN-ACCOUNT SAFETY: every clientOid this process mints starts with PREFIX; every order
+over MAX_ORDER_USDT (size × limit price or mark) or without the prefix is refused before
+it is signed; CLEANUP cancels only orders / TP/SL that are its own (prefix, or an id
+Bitget gave one of its POSTs) and closes legs only on the symbols it traded, in pieces
+under the cap; T12 switches the position mode only on a bare account and reads the
+original mode back at the end.
+
+    .venv/bin/python tests/live_bitget_verify.py --env ~/bitget-main.env
     .venv/bin/python tests/live_bitget_verify.py --env ... --noop-write          (+ R9 / R10)
     .venv/bin/python tests/live_bitget_verify.py --env ... --trade --confirm 2026-10-21 [--only T1,T5]
     .venv/bin/python tests/live_bitget_verify.py --env ... --watch-switch        (W1, read-only)
@@ -42,12 +50,14 @@ READ steps (no money moves)
   R9  (--noop-write) cancel a nonexistent order and a nonexistent TP/SL: proves the POST
       signature and measures the "gone" codes (UTA: the lib reads the order back instead)
   R10 (--noop-write, classic only) set BTC leverage to its current value: a harmless POST
-ORDER steps (each the minimum size, ≈5–10 USDT notional; everything is closed at the end)
-  T1  BTC: open the minimum long through place_market_order → raw order detail
+ORDER steps (each the minimum size, ≤ MAX_ORDER_USDT per order; everything is closed at
+the end). T1–T4 trade BTC when its minimum + one step fits the cap, else NVDA; run order
+T1, T3, T2, T4.
+  T1  open the minimum long through place_market_order → raw order detail
+  T3  over-close raw (the lib's own side table): close the held size + one step → refused
+      (which code), partial, or capped — a reverse leg here means the side table is WRONG: stop
   T2  resend T1's clientOid raw: is a FILLED id rejected (and with which code) or filled again?
-  T3  over-close raw (the lib's own side table): close twice the held size → refused (which
-      code), partial, or capped — a reverse leg here means the side table is WRONG: stop
-  T4  close through close_position_partial → flat
+  T4  close through close_position_partial (in pieces under the cap) → flat
   T5  NVDA and TWTSM: open + close the minimum through the lib; positions read back under
       the canonical names
   T6  a 33-character and a 50-character clientOid on a resting limit far from the book:
@@ -64,30 +74,34 @@ ORDER steps (each the minimum size, ≈5–10 USDT notional; everything is close
   T10 a position's TP/SL when the position goes away: open → SL → close → list 3 s later
       ([] = Bitget drops it with the position) → cancel what is left → []
   T11 audit round on NVDA: (a) a short leg with SL/TP, closed through the lib; (b) a
-      larger long held 90 s, equity / uPnL every 15 s to compare with the app, closed in
-      two halves; (c) an SL 0.05% under the mark that should fire, then sweep_orphan_stops
-      must cancel the orphan TP; (d) a LIMIT sized at 5× equity × leverage — expected
-      refused (the margin-refusal code)
-  T12 position mode: if the account is flat, switch one-way ↔ hedge, open long + open
+      long (two minimums if they fit the cap) held 90 s, equity / uPnL every 15 s to compare
+      with the app, closed in two halves when it can; (c) an SL 0.05% under the mark that
+      should fire, then sweep_orphan_stops must cancel the orphan TP; (d) not run on a main
+      account (a limit at 5× the margin is far over the cap)
+  T12 position mode: only on a bare account, switch one-way ↔ hedge and read it back, open long + open
       short + close both through the lib in the other mode (UTA hedge: closes carry
       reduceOnly yes — a refusal here means flip order_bitget.UTA_HEDGE_REDUCE_ONLY),
-      SL/TP on each leg in hedge mode, switch back; --t12-bare-close (UTA, Wei's call)
+      SL/TP on each leg in hedge mode, switch back and read the original mode back (not
+      back = "NOT BACK IN THE ORIGINAL MODE", exit 2); --t12-bare-close (UTA, Wei's call)
       also closes the long WITHOUT reduceOnly at exactly its size — the table the lib
       falls back to if Bitget refuses reduceOnly in hedge mode (40774 expected then)
 SWITCH step
   W1  (--watch-switch) every 5 s for up to 30 min, print account_mode(), the mode file,
       get_positions() (or its error), session_open('NVDAUSDT') and get_account_id() —
-      while Wei upgrades this classic sub-account to UTA in the app with a small position
-      open. Ends with W1 PASS / FAIL / INCONCLUSIVE: FAIL = a positions read without a
+      while a classic account is upgraded to UTA in the app with a small position open.
+      Only needed before BOTH account types are verified (with one type verified, a
+      switch to the other is refused outright) — not part of the main-account round. Ends with W1 PASS / FAIL / INCONCLUSIVE: FAIL = a positions read without a
       leg held before the switch, session_open True while the hold is open, or a
       changed uid; PASS = the legs read back under UTA, same uid. Read-only step.
-  CLEANUP  every open order and TP/SL of the symbols touched is cancelled and every leg
-           closed (runs even after a failure); exit 2 if anything is left
+  CLEANUP  its own orders and TP/SL on the symbols it traded are cancelled and those
+           symbols' legs closed (runs even after a failure); anything not its own is
+           listed and left alone; exit 2 if anything of its own is left
 Run order: read steps first, compare R2–R5 with the app, then --noop-write, then --trade.
 Not covered yet: a resting limit killed with its process and swept at restart, the full
 web → reconciler round.
 """
 import argparse
+import inspect
 import json
 import os
 import stat
@@ -123,6 +137,156 @@ def load_env(path):
     if missing:
         sys.exit(f"{', '.join(missing)} missing from the env file")
     return env
+
+
+# ── main-account safety (Wei runs this on his main account, not a sub-account) ──
+PREFIX = "bv"  # every clientOid this script's process mints starts with it
+MAX_ORDER_USDT = 10.0  # per order, entry or close; a bigger one is refused before it is sent
+PLACE_PATHS = ("/api/v2/mix/order/place-order", "/api/v3/trade/place-order")
+PLAN_PATHS = ("/api/v2/mix/order/place-tpsl-order", "/api/v3/trade/place-strategy-order")
+
+
+def precheck(env, acct, order):
+    """Why the order steps must not start: any position, open order or TP/SL on the whole
+    account (they are Wei's and must never be touched) — or a read that failed (unknown
+    is not empty). [] = the account is flat and bare."""
+    why = []
+    for label, fn in (("position", lambda: [p for p in acct.leg_rows(env) if p["total"] != 0]),
+                      ("open order", lambda: order.get_open_orders(env)),
+                      ("open TP/SL", lambda: order.get_open_algo_orders(env))):
+        try:
+            rows = fn()
+        except Exception as e:
+            why.append(f"{label}s unreadable ({str(e)[:160]}) — cannot prove the account is bare")
+            continue
+        for r in rows:
+            why.append(f"{label}: {r.get('symbol')} {r.get('side') or ''} "
+                       f"{r.get('total') or r.get('qty') or r.get('stop_order_type') or ''}".rstrip())
+    return why
+
+
+def own(row, own_ids):
+    """An order or TP/SL this script placed: its clientOid carries PREFIX, or Bitget
+    answered its POST with this id."""
+    return str(row.get("client_order_id") or "").startswith(PREFIX) or str(row.get("order_id")) in own_ids
+
+
+def prefix_cids(*mods):
+    """Every clientOid minted in this process starts with PREFIX (lib/execute's
+    fingerprint is a search for rc + digits, so it still matches)."""
+    for m in mods:
+        mint = m._cid
+        if getattr(mint, "_prefixed", False):
+            continue
+        if inspect.signature(mint).parameters:  # order_bitget._cid(client_order_id=None)
+            def wrapped(client_order_id=None, _mint=mint):
+                return _mint(client_order_id) if client_order_id else PREFIX + _mint()
+        else:
+            def wrapped(_mint=mint):
+                return PREFIX + _mint()
+        wrapped._prefixed = True
+        m._cid = wrapped
+
+
+def install_cap(order, mark_of, own_ids, cap=MAX_ORDER_USDT):
+    """Wrap the lib's transport (raw steps go through it too): a place-order whose
+    size × price (the limit price, else the mark) is over `cap` USDT is refused before
+    it is signed; every order / TP/SL Bitget accepts is remembered as ours."""
+    send = order._send
+    if getattr(send, "_capped", False):
+        return
+
+    def capped(method, path, env, params=None, retries=3):
+        body = params or {}
+        if method.upper() == "POST" and path in PLACE_PATHS:
+            qty = float(body.get("qty") or body.get("size") or 0)
+            px = float(body.get("price") or 0) or mark_of(body.get("symbol"))
+            if qty * px > cap:
+                raise RuntimeError(f"refused by the script: {body.get('symbol')} {qty} × {px} = "
+                                   f"{qty * px:.2f} USDT is over the {cap:g} USDT per-order cap")
+            if not str(body.get("clientOid") or "").startswith(PREFIX):
+                raise RuntimeError(f"refused by the script: clientOid {body.get('clientOid')!r} lacks {PREFIX!r}")
+        data = send(method, path, env, params, retries)
+        if method.upper() == "POST" and path in PLACE_PATHS + PLAN_PATHS and isinstance(data, dict) \
+                and data.get("orderId"):
+            own_ids.add(str(data["orderId"]))
+        return data
+
+    capped._capped = True
+    order._send = capped
+
+
+def close_chunked(env, order, sym, side, total, step_qty, say, tag):
+    """Close `total` of one leg in pieces each under the per-order cap."""
+    left = total
+    while left > 1e-12:
+        q = min(left, step_qty)
+        say(f"{tag} close {side} {q}", order.close_position_partial(env, sym, side, q))
+        left -= q
+
+
+def cleanup(env, acct, order, touched, own_ids, say, max_qty):
+    """Only what this script made: its own orders / TP/SL (own()) and the legs of the
+    symbols it traded — the order steps start only on a bare account (precheck), so
+    those legs are its own. Anything else is listed and left alone. Returns the symbols
+    not left clean."""
+    unclean = []
+    for sym in sorted(touched):
+        try:
+            for o in order.get_open_orders(env, sym):
+                if own(o, own_ids):
+                    say(f"CLEANUP {sym} cancel order", order.cancel_order(env, sym, order_id=o["order_id"]))
+                else:
+                    say(f"CLEANUP {sym} NOT OURS, left alone", o)
+            for o in order.get_open_algo_orders(env, sym):
+                if own(o, own_ids):
+                    say(f"CLEANUP {sym} cancel plan",
+                        order.cancel_algo_order(env, sym, o["order_id"], o["stop_order_type"]))
+                else:
+                    say(f"CLEANUP {sym} NOT OURS, left alone", o)
+            for p in [p for p in acct.leg_rows(env) if p["total"] != 0
+                      and order.canonical_symbol(p["symbol"]) == sym]:
+                close_chunked(env, order, sym, p["side"], p["total"], max_qty(sym), say, f"CLEANUP {sym}")
+            left = [p for p in acct.leg_rows(env) if p["total"] != 0 and order.canonical_symbol(p["symbol"]) == sym]
+            mine = [o for o in order.get_open_algo_orders(env, sym) + order.get_open_orders(env, sym)
+                    if own(o, own_ids)]
+            say(f"CLEANUP {sym} legs (want [])", left)
+            if left or mine:
+                unclean.append(sym)
+        except Exception as e:
+            say(f"CLEANUP {sym} FAILED — check and close it in the app", str(e))
+            unclean.append(sym)
+    return unclean
+
+
+def switch_and_restore(set_mode, read_mode, flat, target, say, body):
+    """T12: switch the position mode to `target`, read it back, run body(), then switch
+    back to the mode read before and read THAT back. Never switches with anything open
+    (`flat()`); returns True only when the original mode is confirmed at the end."""
+    original = read_mode()
+    if original == target:
+        say("T12 skipped", f"already in {target}")
+        return True
+    if not flat():
+        say("T12 skipped", "positions, orders or TP/SL are open — the mode only changes on a bare account")
+        return True
+    say(f"T12 switch {original} → {target}", set_mode(target))
+    try:
+        now = read_mode()
+        say("T12 mode read back", now)
+        if now == target:
+            body()
+        else:
+            say("T12 switch did not take", now)
+    finally:
+        restored = False
+        if flat():
+            say(f"T12 switch back → {original}", set_mode(original))
+            restored = read_mode() == original
+            say("T12 mode after switching back (want the original)", {"want": original, "read": read_mode()})
+        if not restored:
+            say("T12 NOT BACK IN THE ORIGINAL MODE", f"set {original} in the Bitget app by hand")
+    return restored
 
 
 def main():
@@ -165,7 +329,10 @@ def main():
 
     requests.adapters.HTTPAdapter.send = guarded_send
     from lib import account_bitget as acct, order_bitget as order, stock_perps
-    acct.LIVE_VERIFIED = True  # this script is what verifies it — the gate opens for this process only
+    acct.VERIFIED_MODES = frozenset({"uta", "classic"})  # this script is what verifies it — this process only
+    own_ids = set()
+    prefix_cids(order)
+    install_cap(order, lambda vsym: order.get_mark_price(env, acct.canonical(vsym)), own_ids)
 
     def raw(method, path, params=None, e=None):
         try:
@@ -307,7 +474,21 @@ def main():
         return
 
     def rc():
-        return "rc" + uuid.uuid4().hex[:16]
+        return PREFIX + "rc" + uuid.uuid4().hex[:16]
+
+    def max_qty(sym):
+        """The largest qty on the step that stays under the per-order cap."""
+        r = order.get_contract_rules(env, sym)
+        return float(order._floor_str(MAX_ORDER_USDT * 0.95 / order.get_mark_price(env, sym), r["step"]))
+
+    why = precheck(env, acct, order)
+    if why:
+        print("\nOrder steps NOT run — this account is not bare (they never touch what is already there):")
+        for w in why:
+            print(f"  - {w}")
+        print("Close every futures position and cancel every order / TP/SL in the Bitget app, then rerun. "
+              "The read-only and --noop-write steps above are unaffected.")
+        sys.exit(3)
 
     def minimum(sym, k=1.0):
         """The smallest qty that clears both the size and the 5 USDT minimums (× k), on the step."""
@@ -354,14 +535,18 @@ def main():
                    {"productType": PRODUCT, "planType": "profit_loss", "symbol": order.venue_symbol(sym)})
 
     # cost bound: every round trip the selected steps make, at the taker fee + the spread
+    base = "BTCUSDT"
+    r_ = order.get_contract_rules(env, base)
+    if (minimum(base) + float(r_["step"])) * order.get_mark_price(env, base) > MAX_ORDER_USDT:
+        base = "NVDAUSDT"  # BTC's minimum plus one step does not fit under the per-order cap
     plan = []
     if any(want(t) for t in ("T1", "T2", "T3", "T4")):
-        plan += [("BTCUSDT", minimum("BTCUSDT"), 2)]  # T2 may fill a second time
+        plan += [(base, minimum(base), 2)]  # T2 may fill a second time
     if want("T5"):
         plan += [("NVDAUSDT", minimum("NVDAUSDT"), 1), ("TWTSMUSDT", minimum("TWTSMUSDT"), 1)]
     if want("T7"):
         plan += [("NVDAUSDT", minimum("NVDAUSDT"), 1)]  # a crossing post_only that fills
-    for t, k, n in (("T8", 1, 1), ("T9", 1, 2), ("T10", 1, 1), ("T11", 3, 3), ("T12", 1, 1)):
+    for t, k, n in (("T8", 1, 1), ("T9", 1, 2), ("T10", 1, 1), ("T11", 1, 3), ("T12", 1, 1)):
         if want(t):
             plan += [("NVDAUSDT", minimum("NVDAUSDT", k), n)]
     fee = spread = peak = 0.0
@@ -372,7 +557,8 @@ def main():
         spread += qty * (bbo["ask"] - bbo["bid"]) * n
         peak = max(peak, qty * px)
     print(f"\n{sum(n for *_, n in plan)} round trips, one position at a time; largest notional "
-          f"{peak:.2f} USDT (the futures account needs at least that as margin at 1×; 20 USDT is plenty).")
+          f"{peak:.2f} USDT; every single order is capped at {MAX_ORDER_USDT:g} USDT (refused before it is sent).")
+    print(f"T1–T4 trade {base}. Do not trade on this Bitget account until the script ends.")
     print(f"Fees (taker {TAKER_FALLBACK:.2%} each side): <= {fee:.4f} USDT")
     print(f"Spread crossed:                     <= {spread:.4f} USDT")
     print(f"Estimated cost upper bound:         <= {fee + spread:.4f} USDT (+ price moves inside each round trip; "
@@ -386,31 +572,33 @@ def main():
         return
 
     touched = set()
+    t12_not_restored = False
     try:
         if any(want(t) for t in ("T1", "T2", "T3", "T4")):
-            touched.add("BTCUSDT")
-            q = minimum("BTCUSDT")
+            touched.add(base)
+            q = minimum(base)
+            step = float(order.get_contract_rules(env, base)["step"])
             cid = rc()
             if want("T1"):
-                say("T1 place_market_order", order.place_market_order(env, "BTCUSDT", "long", q, client_order_id=cid))
-                say("T1 raw detail", raw_detail("BTCUSDT", clientOid=cid))
-                say("T1 legs", legs("BTCUSDT"))
-            if want("T2"):
-                say("T2 resend the filled clientOid", raw_order("BTCUSDT", "long", format(q, "f"), cid=cid))
-                time.sleep(2)
-                say("T2 legs (twice T1's size = a filled id is NOT deduplicated)", legs("BTCUSDT"))
-            if want("T3"):
-                h = held("BTCUSDT", "long")
-                say("T3 modes", mode_of("BTCUSDT"))
-                say("T3 over-close", raw_order(
-                    "BTCUSDT", "long", order._floor_str(h * 2, order.get_contract_rules(env, "BTCUSDT")["step"]),
+                say("T1 place_market_order", order.place_market_order(env, base, "long", q, client_order_id=cid))
+                say("T1 raw detail", raw_detail(base, clientOid=cid))
+                say("T1 legs", legs(base))
+            if want("T3"):  # before T2: the over-close is held + one step, under the cap
+                h = held(base, "long")
+                say("T3 modes", mode_of(base))
+                say("T3 over-close (held + one step)", raw_order(
+                    base, "long", order._floor_str(h + step, order.get_contract_rules(env, base)["step"]),
                     reduce_only=True))
                 time.sleep(2)
-                say("T3 legs (a short leg = the side table is WRONG — stop and report)", legs("BTCUSDT"))
+                say("T3 legs (a short leg = the side table is WRONG — stop and report)", legs(base))
+            if want("T2"):
+                say("T2 resend the filled clientOid", raw_order(base, "long", format(q, "f"), cid=cid))
+                time.sleep(2)
+                say("T2 legs (one more of T1's size = a filled id is NOT deduplicated)", legs(base))
             if want("T4"):
-                for p in legs("BTCUSDT"):
-                    say("T4 close", order.close_position_partial(env, "BTCUSDT", p["side"], p["total"]))
-                say("T4 legs (want [])", legs("BTCUSDT"))
+                for p in legs(base):
+                    close_chunked(env, order, base, p["side"], p["total"], max_qty(base), say, "T4")
+                say("T4 legs (want [])", legs(base))
         if want("T5"):
             for sym in ("NVDAUSDT", "TWTSMUSDT"):
                 touched.add(sym)
@@ -435,7 +623,7 @@ def main():
             far = order.format_price(env, "NVDAUSDT", bbo["bid"] * 0.9)
             if want("T6"):
                 for n in (33, 50):
-                    oid = limit(f"T6 {n}-char clientOid", far, cid=("rc" + uuid.uuid4().hex * 2)[:n])
+                    oid = limit(f"T6 {n}-char clientOid", far, cid=(PREFIX + uuid.uuid4().hex * 2)[:n])
                     if oid:
                         say(f"T6 {n} cancel", order.cancel_order(env, "NVDAUSDT", order_id=oid))
             if want("T7"):
@@ -487,6 +675,7 @@ def main():
             fd = os.open(".env", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as fh:
                 fh.write("".join(f"{k}={env[k]}\n" for k in NAMES))
+            prefix_cids(ex, vw)
             ex._RESIDUAL_USD = 0.001
             ex._own_only = vw._own_only = lambda: False
             vw._NON_AUTO = vw._NON_AUTO - {"bitget"}  # not auto-wired until verified: this run only
@@ -541,7 +730,9 @@ def main():
             say("T11a sweep_orphan_stops", order.sweep_orphan_stops(env, acct.get_positions(env)))
             say("T11a plan list after the sweep (want [])", plans())
 
-            big = minimum("NVDAUSDT", 3)
+            big = minimum("NVDAUSDT", 2)
+            if big * order.get_mark_price(env, "NVDAUSDT") > MAX_ORDER_USDT:
+                big = minimum("NVDAUSDT")  # two minimums do not fit under the cap: one leg, closed in one go
             say(f"T11b open {big}", order.place_market_order(env, "NVDAUSDT", "long", big))
             for i in range(7):
                 if i:
@@ -551,8 +742,9 @@ def main():
                     {"get_equity": acct.get_equity(env)["equity"], "uPnL": [p.get("upnl") for p in pos],
                      "raw_rows": raw_rows()})
             half = float(order._floor_str(big / 2, order.get_contract_rules(env, "NVDAUSDT")["step"]))
-            say("T11b partial close", order.close_position_partial(env, "NVDAUSDT", "long", half))
-            say("T11b legs (want the rest)", legs("NVDAUSDT"))
+            if half >= minimum("NVDAUSDT"):
+                say("T11b partial close", order.close_position_partial(env, "NVDAUSDT", "long", half))
+                say("T11b legs (want the rest)", legs("NVDAUSDT"))
             say("T11b close the rest", order.close_position_partial(env, "NVDAUSDT", "long", held("NVDAUSDT", "long")))
             say("T11b legs (want [])", legs("NVDAUSDT"))
 
@@ -575,91 +767,54 @@ def main():
             say("T11c sweep_orphan_stops", order.sweep_orphan_stops(env, acct.get_positions(env)))
             say("T11c plan list after the sweep (want [])", plans())
 
-            eq = acct.get_equity(env)["equity"]
-            if uta:
-                cfg = [c for c in acct.uta_settings(env).get("symbolConfigList") or [] if c.get("symbol") == "NVDAUSDT"]
-                lev = float((cfg[0] if cfg else {}).get("leverage") or 0)
-            else:
-                a_ = raw("GET", "/api/v2/mix/account/account",
-                         {"symbol": "NVDAUSDT", "productType": PRODUCT, "marginCoin": MARGIN})
-                lev = float((a_ or {}).get("crossedMarginLeverage") or 0) if isinstance(a_, dict) else 0.0
-            lev = lev or 10.0
-            bbo = order.get_bbo(env, "NVDAUSDT")
-            px = bbo["bid"] * 0.9
-            size = order._floor_str(5 * eq * lev / px, order.get_contract_rules(env, "NVDAUSDT")["step"])
-            say("T11d LIMIT sized at 5x the margin, 10% under the bid", {"equity": eq, "leverage": lev, "size": size})
-            r = raw_order("NVDAUSDT", "long", size, order_type="limit",
-                          price=order.format_price(env, "NVDAUSDT", px), force="gtc")
-            say("T11d reply (want a margin error code)", r)
-            if isinstance(r, dict) and r.get("orderId"):
-                say("T11d it rested — cancelling", order.cancel_order(env, "NVDAUSDT", order_id=r["orderId"]))
+            say("T11d not run", "a limit sized at 5× the margin is far over the per-order cap on a main account")
         if want("T12"):
             touched.add("NVDAUSDT")
-            if legs() or order.get_open_orders(env):
-                say("T12 skipped", "the account holds positions or open orders — the mode can only change when flat")
-            else:
-                pm = mode_of("NVDAUSDT")[1]
-                other = "hedge_mode" if pm == "oneway" else "one_way_mode"
-                back = "one_way_mode" if pm == "oneway" else "hedge_mode"
+            names = {"oneway": "one_way_mode", "hedge": "hedge_mode"}
 
-                def set_mode(m):
-                    if uta:
-                        return raw("POST", "/api/v3/account/set-hold-mode", {"holdMode": m})
-                    return raw("POST", "/api/v2/mix/account/set-position-mode", {"productType": PRODUCT, "posMode": m})
+            def set_mode(m):
+                if uta:
+                    return raw("POST", "/api/v3/account/set-hold-mode", {"holdMode": names[m]})
+                return raw("POST", "/api/v2/mix/account/set-position-mode", {"productType": PRODUCT, "posMode": names[m]})
 
-                say(f"T12 switch to {other}", set_mode(other))
-                try:
-                    q = minimum("NVDAUSDT")
-                    say("T12 mode now", mode_of("NVDAUSDT"))
-                    say("T12 open long", order.place_market_order(env, "NVDAUSDT", "long", q))
-                    say("T12 open short", order.place_market_order(env, "NVDAUSDT", "short", q))
-                    say("T12 legs (hedge: two legs; one-way: flat)", legs("NVDAUSDT"))
-                    if mode_of("NVDAUSDT")[1] == "hedge":
-                        last = order.get_mark_price(env, "NVDAUSDT")
-                        for d, sl, tp in (("long", 0.8, 1.2), ("short", 1.2, 0.8)):
-                            say(f"T12 hedge {d} SL/TP", order.place_protective_orders(
-                                env, "NVDAUSDT", d, sl_price=last * sl, tp_price=last * tp))
-                        say("T12 hedge TP/SL list (want four, each on its own leg)", raw_plans("NVDAUSDT"))
-                        say("T12 cancel_protective_orders", order.cancel_protective_orders(env, "NVDAUSDT"))
-                        if a.t12_bare_close and uta:
-                            # the table without the reduceOnly safety (what runs if UTA_HEDGE_REDUCE_ONLY
-                            # has to go): close the long, exactly its size
-                            order.UTA_HEDGE_REDUCE_ONLY = False
-                            try:
-                                h = held("NVDAUSDT", "long")
-                                say("T12 bare close long (sell + posSide long, no reduceOnly)",
-                                    raw_order("NVDAUSDT", "long", format(h, "f"), reduce_only=True))
-                                time.sleep(2)
-                                say("T12 legs after the bare close (want: the short only; a second short or "
-                                    "a bigger one = the table is WRONG)", legs("NVDAUSDT"))
-                            finally:
-                                order.UTA_HEDGE_REDUCE_ONLY = True
-                    for p in legs("NVDAUSDT"):
-                        say(f"T12 close {p['side']}", order.close_position_partial(env, "NVDAUSDT", p["side"], p["total"]))
-                    say("T12 legs (want [])", legs("NVDAUSDT"))
-                finally:
-                    if not legs():
-                        say(f"T12 switch back to {back}", set_mode(back))
-                    else:
-                        say("T12 NOT switched back — legs left", legs())
+            def t12_body():
+                q = minimum("NVDAUSDT")
+                say("T12 open long", order.place_market_order(env, "NVDAUSDT", "long", q))
+                say("T12 open short", order.place_market_order(env, "NVDAUSDT", "short", q))
+                say("T12 legs (hedge: two legs; one-way: flat)", legs("NVDAUSDT"))
+                if mode_of("NVDAUSDT")[1] == "hedge":
+                    last = order.get_mark_price(env, "NVDAUSDT")
+                    for d, sl, tp in (("long", 0.8, 1.2), ("short", 1.2, 0.8)):
+                        say(f"T12 hedge {d} SL/TP", order.place_protective_orders(
+                            env, "NVDAUSDT", d, sl_price=last * sl, tp_price=last * tp))
+                    say("T12 hedge TP/SL list (want four, each on its own leg)", raw_plans("NVDAUSDT"))
+                    say("T12 cancel_protective_orders", order.cancel_protective_orders(env, "NVDAUSDT"))
+                    if a.t12_bare_close and uta:
+                        # the table without the reduceOnly safety (what runs if UTA_HEDGE_REDUCE_ONLY
+                        # has to go): close the long, exactly its size
+                        order.UTA_HEDGE_REDUCE_ONLY = False
+                        try:
+                            h = held("NVDAUSDT", "long")
+                            say("T12 bare close long (sell + posSide long, no reduceOnly)",
+                                raw_order("NVDAUSDT", "long", format(h, "f"), reduce_only=True))
+                            time.sleep(2)
+                            say("T12 legs after the bare close (want: the short only; a second short or "
+                                "a bigger one = the table is WRONG)", legs("NVDAUSDT"))
+                        finally:
+                            order.UTA_HEDGE_REDUCE_ONLY = True
+                for p in legs("NVDAUSDT"):
+                    close_chunked(env, order, "NVDAUSDT", p["side"], p["total"], max_qty("NVDAUSDT"), say, "T12")
+                say("T12 legs (want [])", legs("NVDAUSDT"))
+
+            pm = mode_of("NVDAUSDT")[1]
+            ok = switch_and_restore(set_mode, lambda: mode_of("NVDAUSDT")[1], lambda: not precheck(env, acct, order),
+                                    "hedge" if pm == "oneway" else "oneway", say, t12_body)
+            if not ok:
+                t12_not_restored = True
     finally:
-        unclean = []
-        for sym in sorted(touched):
-            try:
-                for o in order.get_open_orders(env, sym):
-                    say(f"CLEANUP {sym} cancel order", order.cancel_order(env, sym, order_id=o["order_id"]))
-                for o in order.get_open_algo_orders(env, sym):
-                    say(f"CLEANUP {sym} cancel plan", order.cancel_algo_order(env, sym, o["order_id"],
-                                                                              o["stop_order_type"]))
-                for p in legs(sym):
-                    say(f"CLEANUP {sym} {p['side']}", order.close_position_partial(env, sym, p["side"], p["total"]))
-                left = legs(sym)
-                say(f"CLEANUP {sym} legs (want [])", left)
-                if left or order.get_open_algo_orders(env, sym):
-                    unclean.append(sym)
-            except Exception as e:
-                say(f"CLEANUP {sym} FAILED — check and close it in the app", str(e))
-                unclean.append(sym)
+        unclean = cleanup(env, acct, order, touched, own_ids, say, max_qty)
+        if t12_not_restored:
+            unclean.append("position mode")
         if os.path.exists(".env"):
             os.remove(".env")
         say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")

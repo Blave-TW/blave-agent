@@ -103,10 +103,11 @@ from lib.data import normalize_symbol  # noqa: E402
 ENV = {"BITGET_API_KEY": "bg_not_a_real_key", "BITGET_SECRET_KEY": "not-a-real-secret",
        "BITGET_PASSPHRASE": "not-a-real-pass"}
 order.time.sleep = lambda s: None
-# the lib ships gated (acct.LIVE_VERIFIED False, see the unverified section below); the
+# the lib ships gated (acct.VERIFIED_MODES empty, see the unverified section below); the
 # checks run with the gate open, and with no minimum switch hold except in the switch section
-check(acct.LIVE_VERIFIED is False, "the lib ships closed: venue_traits' bitget row does not say live_verified True")
-acct.LIVE_VERIFIED = True
+check(acct.VERIFIED_MODES == frozenset(), "the lib ships closed: venue_traits' bitget row verifies no account type")
+BOTH = frozenset({"uta", "classic"})
+acct.VERIFIED_MODES = BOTH
 acct.SWITCH_HOLD_S = 0
 
 # Binance's class of each symbol (lib/stock_perps reads exchangeInfo; stubbed, no network)
@@ -649,7 +650,7 @@ try:
     check(False, "a client id with ':' is refused")
 except ValueError:
     check(True, "client ids with ':' or '/' are refused (urlencode would break the GET signature)")
-acct.LIVE_VERIFIED = False
+acct.VERIFIED_MODES = frozenset()
 del CALLS[:]
 POS[:] = [{"symbol": "NVDAUSDT", "holdSide": "long", "total": "0.05", "available": "0.05", "markPrice": "182"}]
 for label, fn in (("entry", lambda: order.place_market_order(ENV, "NVDAUSDT", "long", 0.03)),
@@ -671,9 +672,10 @@ for label, fn in (("entry", lambda: order.place_market_order(ENV, "NVDAUSDT", "l
               f"unverified lib: the {label} is refused, no signed request leaves the machine", str(e))
 check(acct.classify(acct.BitgetError("x", code=acct.UNVERIFIED)) == "unknown",
       "an unverified refusal classifies UNKNOWN (never TRANSIENT: it does not clear by itself)")
-acct.LIVE_VERIFIED = True
+acct.VERIFIED_MODES = BOTH
 POS[:] = []
-check(venue_traits.get("bitget", "live_verified") is False, "venue_traits: bitget is not live-verified (the lib gate reads it)")
+check(venue_traits.verified_modes("bitget") == () and "bitget" in venue_traits.unverified(),
+      "venue_traits: bitget verifies no account type yet (the lib gate reads it)")
 from lib import venue_wiring as vw  # noqa: E402
 
 if not os.path.exists("lib"):
@@ -1264,6 +1266,44 @@ except acct.BitgetError as e:
 check(acct._mode["mode"] == "uta", "…and the process now trades through v3")
 UPOS[:] = []
 SETTINGS["accountMode"] = "unified"
+
+# ── the gate per account type: only the verified type trades ─────────────────
+acct.SWITCH_HOLD_S = 0
+for verified, have, other in (("uta", "__classic__", "classic"), ("classic", "unified", "uta")):
+    acct.VERIFIED_MODES = frozenset({verified})
+    fresh_mode()
+    SETTINGS["accountMode"] = have
+    n, nposts = len(UPOSTS), len(CALLS)
+    for label, fn in (("account_mode", lambda: acct.account_mode(ENV)), ("equity", lambda: acct.get_equity(ENV)),
+                      ("positions", lambda: acct.get_positions(ENV)),
+                      ("entry", lambda: order.place_market_order(ENV, "NVDAUSDT", "long", 0.03))):
+        try:
+            fn()
+            check(False, f"only {verified} verified: a {other} key's {label} is refused")
+        except acct.BitgetError as e:
+            check(e.code == acct.UNVERIFIED and acct._MODE_NAMES[other] in str(e) and acct._MODE_NAMES[verified] in str(e)
+                  and not any(c["method"] == "POST" for c in CALLS[nposts:]),
+                  f"only {verified} verified: a {other} key's {label} is refused in words, nothing posted", str(e))
+    acct._mode.update(mode=other, at=acct.time.time())  # even a cached mode is re-checked
+    try:
+        acct.account_mode(ENV)
+        check(False, "a cached unverified mode is refused")
+    except acct.BitgetError as e:
+        check(e.code == acct.UNVERIFIED, f"only {verified} verified: a cached {other} mode is refused too")
+    path = "/api/v2/mix/order/place-order" if other == "classic" else "/api/v3/trade/place-order"
+    del CALLS[:]
+    try:
+        order._request("POST", path, ENV, {"symbol": "NVDAUSDT", "side": "buy", "clientOid": "x"})
+        check(False, "an order on the unverified API is refused")
+    except acct.BitgetError as e:
+        check(e.code == acct.UNVERIFIED and not CALLS,
+              f"only {verified} verified: an order on the {other} API is refused before the transport")
+fresh_mode()
+acct.VERIFIED_MODES = frozenset({"uta"})
+SETTINGS["accountMode"] = "unified"
+check(acct.account_mode(ENV) == "uta" and acct.get_equity(ENV)["currency"] == "USDT",
+      "only uta verified: a UTA key reads as before")
+acct.VERIFIED_MODES = BOTH
 
 print("\n" + ("all checks passed" if not fails else f"FAILED: {fails}"))
 sys.exit(1 if fails else 0)

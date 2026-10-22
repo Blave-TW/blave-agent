@@ -16,8 +16,9 @@ open_position / cancel_protective_orders, sweep_orphan_stops). Not here: spot.
 
 NOT YET MEASURED ON A LIVE KEY: every fact below comes from Bitget's docs and the
 requests / replies ccxt's bitget.py records; tests/live_bitget_verify.py turns them
-into measurements (venue-onboarding §3). Until then account_bitget.LIVE_VERIFIED is
-False (lib/venue_traits' bitget row): nothing is signed, nothing is sent.
+into measurements (venue-onboarding §3). Only the account types in
+account_bitget.VERIFIED_MODES (lib/venue_traits' bitget row) trade; empty = nothing is
+signed, nothing is sent.
 
 Broker attribution: none yet — account_bitget.BROKER_CHANNEL_CODE is empty until
 Wei has Blave's channel code from Bitget; every request then carries it.
@@ -176,7 +177,9 @@ def _request(method, path, env, params=None, retries=3):
         return _send(method, path, env, params, retries)
     fields = {k: params[k] for k in _AUDIT_KEYS if k in (params or {})}
     fields["intent"] = intent
-    if not acct.LIVE_VERIFIED:  # the signer refuses too; this leaves the attempt in the audit
+    if ("uta" if path.startswith("/api/v3/") else "classic") not in acct.VERIFIED_MODES:
+        # account_mode() refuses an unverified type too; this one reads the API off the
+        # request itself and leaves the attempt in the audit
         guard.audit("order_denied_unverified", **fields)
         raise BitgetError(f"Bitget 下單程式還沒通過真帳驗證，{fields.get('symbol')} 的單沒有送出（{intent}）："
                           f"Bitget 目前不能自動或手動下單", code=UNVERIFIED)
@@ -860,6 +863,7 @@ def get_open_algo_orders(env, symbol=None):
             sl = o.get("stopLoss") not in (None, "")
             out.append({
                 "order_id": str(o.get("orderId") or ""),
+                "client_order_id": str(o.get("clientOid") or ""),
                 "symbol": canonical_symbol(o.get("symbol")),
                 "side": o.get("side"),
                 "pos_side": o.get("posSide"),
@@ -873,6 +877,7 @@ def get_open_algo_orders(env, symbol=None):
     rows = (_request("GET", "/api/v2/mix/order/orders-plan-pending", env, q) or {}).get("entrustedList") or []
     return [{
         "order_id": str(o.get("orderId") or ""),
+        "client_order_id": str(o.get("clientOid") or ""),
         "symbol": canonical_symbol(o.get("symbol")),
         "side": o.get("side"),
         "pos_side": o.get("posSide"),

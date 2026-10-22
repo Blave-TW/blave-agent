@@ -13,7 +13,7 @@
 4. The derived venue sets match what the table encodes today.
 5. Enumeration: every repo-shipped lib/order_<id>.py is either in SHIPPED (went
    through its real-account run before this gate existed) or its row says
-   live_verified False — a new venue lib cannot ship unclassified. Every
+   verified_modes empty — a new venue lib cannot ship unclassified. Every
    unverified venue, with keys in .env, both libs on disk AND listed in the
    bind manifest, is not wired, not read by runtime/account_reader, not
    bindable from chat, and its account lib's own gate is shut. An agent-written
@@ -124,13 +124,13 @@ SHIPPED = {"binance", "bingx", "bybit", "capital", "gateio", "okx", "paper", "pr
 tracked = subprocess.run(["git", "-C", ROOT, "ls-files", "lib/order_*.py"], capture_output=True,
                          text=True, check=True).stdout.split()
 order_ids = {os.path.basename(f)[len("order_"):-3] for f in tracked} - {"TEMPLATE"}
-unverified = set(venue_traits.venues("live_verified", False))
+unverified = set(venue_traits.unverified())
 check(order_ids and order_ids == SHIPPED | unverified and not SHIPPED & unverified,
-      "every shipped lib/order_<id>.py is in SHIPPED or marked live_verified False (and not both)",
+      "every shipped lib/order_<id>.py is in SHIPPED or declares no verified account type (and not both)",
       (sorted(order_ids - SHIPPED - unverified), sorted(SHIPPED & unverified)))
 check("bitget" in unverified, "bitget ships unverified", sorted(unverified))
-check(not venue_traits.live_verified("nosuchvenue") and venue_traits.get("nosuchvenue", "live_verified"),
-      "live_verified(): only an explicit True opens a venue's own lib; get() keeps the default for agent libs")
+check(venue_traits.verified_modes("nosuchvenue") == () and "nosuchvenue" not in venue_traits.unverified(),
+      "verified_modes(): a venue without the cell gets () (its own lib stays shut); unverified() leaves agent libs alone")
 
 ws = tempfile.mkdtemp(prefix="vtraits-unverified-")
 os.makedirs(os.path.join(ws, "lib"))
@@ -161,7 +161,7 @@ from lib import venue as chat_venue  # noqa: E402
 for vid in sorted(unverified):
     check(vid not in chat_venue.VENUES and vid in chat_venue._ELSEWHERE, f"{vid}: not bindable from chat")
     mod = importlib.import_module(f"lib.account_{vid}")
-    check(getattr(mod, "LIVE_VERIFIED", None) is False, f"lib/account_{vid}.LIVE_VERIFIED is False as shipped")
+    check(getattr(mod, "VERIFIED_MODES", None) == frozenset(), f"lib/account_{vid}.VERIFIED_MODES is empty as shipped")
 
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all passed'}")
 sys.exit(1 if fails else 0)

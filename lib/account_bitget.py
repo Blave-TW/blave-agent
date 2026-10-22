@@ -71,11 +71,12 @@ MARGIN_COIN = "USDT"
 BROKER_HEADER = "X-CHANNEL-API-CODE"
 BROKER_CHANNEL_CODE = ""
 _time_offset = {"ms": 0}
-# THE gate until Wei's real-account run passes (venue-onboarding §3): False = no private call
-# of either lib is signed — no read, order, SL/TP or cancel. Read from lib/venue_traits'
-# "bitget" row (live_verified must say True there); tests/live_bitget_verify.py sets it True
-# for its own process only.
-LIVE_VERIFIED = bool(venue_traits and venue_traits.live_verified("bitget"))
+# THE gate (venue-onboarding §3): the account types whose real-account run passed, read from
+# lib/venue_traits' bitget row (verified_modes). Empty = no private call of either lib is
+# signed. A key whose account type is not in it is refused by account_mode() — every read,
+# order and bind check — with what to do. tests/live_bitget_verify.py widens it for its own
+# process only.
+VERIFIED_MODES = frozenset(venue_traits.verified_modes("bitget")) if venue_traits else frozenset()
 UNVERIFIED = "unverified"
 
 UTA_MODE = "40085"  # a v2 private endpoint on a UTA account
@@ -148,7 +149,7 @@ def sign(secret, ts, method, request_path, body=""):
 
 
 def headers(env, method, request_path, body=""):
-    if not LIVE_VERIFIED:
+    if not VERIFIED_MODES:
         raise BitgetError(f"Bitget 還沒通過真帳驗證，Blave 目前不支援 Bitget：{method.upper()} "
                           f"{request_path.split('?')[0]} 沒有送出", code=UNVERIFIED)
     api_key, secret, passphrase = _creds(env)
@@ -299,6 +300,7 @@ def account_mode(env, refresh=False):
     the reconciler HALTs if it lasts) after SWITCH_MAX_S."""
     now = time.time()
     if not refresh and _mode["mode"] and now - _mode["at"] < MODE_TTL_S:
+        _require_verified(_mode["mode"])
         return _mode["mode"]
     _mode.update(mode=None, at=0.0)
     mode, _ = _probe(env)
@@ -319,8 +321,23 @@ def account_mode(env, refresh=False):
         hold = {"since": now, "await": legs}
     if prev != mode or st.get("corrupt") or hold != st.get("hold"):
         _write_mode({"mode": mode, "legs": legs, "hold": hold})
+    _require_verified(mode)
     _mode.update(mode=mode, at=now)
     return mode
+
+
+_MODE_NAMES = {"uta": "統一帳戶", "classic": "經典帳戶"}
+
+
+def _require_verified(mode):
+    """A key whose account type has not been verified on a real account is refused — never
+    traded on the other type's measurements. Raised on every read (never cached)."""
+    if mode in VERIFIED_MODES:
+        return
+    ok = "、".join(_MODE_NAMES[m] for m in sorted(VERIFIED_MODES)) or "（還沒有）"
+    raise BitgetError(f"這組 Bitget 金鑰的帳戶是{_MODE_NAMES.get(mode, mode)}，Blave 目前只支援 Bitget 的{ok}："
+                      f"請到 Bitget App 把帳戶換成{ok}，或改綁其他交易所", code=UNVERIFIED,
+                      kind=reject_token.KEY_PERMISSION)
 
 
 def switched(env, cause):

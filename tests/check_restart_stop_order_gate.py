@@ -338,7 +338,7 @@ CASES = {  # lib: (call builder, {intent: request}) — intents as each lib clas
 import importlib  # noqa: E402
 
 MODULE = {"bitget_uta": "bitget"}  # a second request dialect of the same lib
-importlib.import_module("lib.account_bitget").LIVE_VERIFIED = True  # its own unverified gate sits in front
+importlib.import_module("lib.account_bitget").VERIFIED_MODES = frozenset({"uta", "classic"})  # its own gate sits in front
 for v, (call, reqs) in CASES.items():
     m = importlib.import_module(f"lib.order_{MODULE.get(v, v)}")
     sent = []
