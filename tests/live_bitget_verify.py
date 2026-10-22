@@ -210,6 +210,14 @@ def classic_plans(env, order, plan_type):
     return (data or {}).get("entrustedList") or []
 
 
+def uta_strategy_orders(env, order):
+    """Every open UTA strategy order, of any type (the lib reads only `tpsl`): the list
+    taken without a type filter. Whether Bitget answers that (or wants a type) is a
+    measurement (R6U); a refusal stops the order steps — unknown is not empty."""
+    data = order._send("GET", "/api/v3/trade/unfilled-strategy-orders", env, {"category": "USDT-FUTURES"})
+    return (data.get("list") if isinstance(data, dict) else data) or []
+
+
 def precheck(env, acct, order):
     """Why the order steps must not start: any position, open order, TP/SL, trigger or
     trailing order on the whole account (Wei's — never touched; a trigger firing mid-run
@@ -221,6 +229,8 @@ def precheck(env, acct, order):
               ("open TP/SL", lambda: order.get_open_algo_orders(env))]
     if acct.account_mode(env) == "classic":
         checks += [(f"open {t}", lambda t=t: classic_plans(env, order, t)) for t in CLASSIC_PLAN_TYPES]
+    else:
+        checks += [("open strategy order", lambda: uta_strategy_orders(env, order))]
     for label, fn in checks:
         try:
             rows = fn()
@@ -384,6 +394,8 @@ def futures_available(env, acct, uta):
     if uta:
         rows = acct._uta_assets(env).get("assets") or []
         row = next((r for r in rows if r.get("coin") == "USDT"), {})
+        if row and "available" not in row:  # field name not measured on UTA yet (R2 prints the raw row)
+            raise RuntimeError(f"UTA USDT asset row has no 'available' field: {sorted(row)}")
     else:
         row = acct._futures_row(env) or {}
     return float(row.get("available") or 0)
@@ -567,6 +579,8 @@ def main():
             say("R6 open orders", raw("GET", "/api/v3/trade/unfilled-orders", {"category": PRODUCT}))
             say("R6 open TP/SL", raw("GET", "/api/v3/trade/unfilled-strategy-orders",
                                      {"category": PRODUCT, "type": "tpsl"}))
+            say("R6U open strategy orders, no type (the precheck asks this — an error here blocks the order steps)",
+                raw("GET", "/api/v3/trade/unfilled-strategy-orders", {"category": PRODUCT}))
         else:
             say("R6 open orders", raw("GET", "/api/v2/mix/order/orders-pending", {"productType": PRODUCT}))
             say("R6 open TP/SL plans", raw("GET", "/api/v2/mix/order/orders-plan-pending",
@@ -743,7 +757,11 @@ def main():
         spread += qty * (bbo["ask"] - bbo["bid"]) * n
         peak = max(peak, qty * px)
     need = 2 * peak  # T12 holds a long and a short at once
-    avail = futures_available(env, acct, uta)
+    try:
+        avail = futures_available(env, acct, uta)
+    except Exception as e:
+        emit(f"\nOrder steps NOT run — the margin available cannot be read ({e}). Send the R log to the backend.")
+        sys.exit(3)
     if avail < need:
         emit(f"\nOrder steps NOT run — the {'unified' if uta else 'USDT-M futures'} account has {avail:.2f} USDT "
              f"available, below {need:.2f} (twice the largest order, {peak:.2f}).")
