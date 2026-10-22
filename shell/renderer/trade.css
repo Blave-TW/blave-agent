@@ -732,17 +732,14 @@ html.ws-sc .side-gate { display: none; }
 .mg-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-16); margin: var(--space-12) 0; }
 .mg-stat .sl { font-size: 11px; line-height: 1.5; color: var(--ink-3); }   /* 釘死:normal 隨字體變,中文 label 行盒比英文高,會把該格值行往下推 */
 .mg-stat .sv { margin-top: var(--space-4); font: 600 18px/1.1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
-.mg-stat:first-child .sv { font-size: 28px; }   /* 主指標 28,同網頁 .bt-stats.cols3 的 hero */
-/* 分開的 grid cell 做不到真 baseline:18px 兩格補到 28px 那格的行盒高再底對齊,值與「贏過」各自同一條線(同網頁 .bt-stats.cols3) */
-.mg-stat:not(:first-child) .sv { min-height: calc(28px * 1.1); display: flex; align-items: flex-end; }
+.mg-stat .sv.buy { color: var(--color-greenText); }   /* 通用的 .buy／.sell 特異度比 .mg-stat .sv 低,會被那條的 var(--ink) 蓋掉,這裡要寫到同一層 */
+.mg-stat .sv.sell { color: var(--color-redText); }
 .mg-stat .sv.na { color: var(--ink-disabled); }
-/* 三欄只在中欄夠寬時成立:28px 的主指標(例如 +1234.56%)要約 150px,中欄 ≤600 時每格就逼近這個寬,字會擠出格子。
-   折法照網頁 cols3 ≤1300:主指標整列在上、兩格在下,撤掉補高(兩格同為 18 自然對齊)。
-   量的是中欄(.pane-main 的 container),不是視窗;要排在上面三條之後,同特異度靠 source order 蓋過 */
-@container (max-width: 600px) {
+/* 三格同為 18(Terminal stat 條的 .sv 字階,Wei 10-22:不再放大總報酬)。最寬的值(+4714.16%)約 100px,
+   中欄 ≤400 時每格不到這個寬,折成兩欄;量的是中欄(.pane-main 的 container),排在 base 之後靠 source order 蓋過 */
+@container (max-width: 400px) {
   .mg-stats { grid-template-columns: repeat(2, 1fr); }
-  .mg-stat:first-child { grid-column: span 2; }
-  .mg-stat:not(:first-child) .sv { min-height: 0; display: block; }
+  .mg-stat:last-child .tip { left: 10px; right: auto; }   /* 折成 2+1 後 Max DD 在左欄,氣泡改回往右展,不往左溢出中欄 */
 }
 .mg-frame { background: var(--surface-card); border-radius: var(--radius-lg); overflow: hidden; padding: var(--space-16) var(--space-16) var(--space-8); }
 .mg-frame .chart-cap { font: 600 11px var(--font-sans); color: var(--ink-3); margin-bottom: var(--space-8); }

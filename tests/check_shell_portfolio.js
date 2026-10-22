@@ -107,11 +107,18 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   && !/const ctCloses = /.test(src));
 { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
   const c700 = (css.match(/@container \(max-width: 700px\) \{([\s\S]*?)\n\}/) || [])[1] || "";
-  { const base = css.indexOf(".mg-stat:not(:first-child) .sv { min-height: calc(28px * 1.1)"), fold = css.indexOf("@container (max-width: 600px) {\n  .mg-stats {"),
-      body = fold < 0 ? "" : css.slice(fold, css.indexOf("\n}", fold));
-    ok("移動窗格三格:主指標 28、另兩格補到 28 行盒;中欄 ≤600 折兩欄(主指標整列、撤補高),而且排在 base 之後(同特異度靠 source order)",
-      /\.mg-stat:first-child \.sv \{ font-size: 28px; \}/.test(css) && base > 0 && fold > base
-      && /\.mg-stats \{ grid-template-columns: repeat\(2, 1fr\); \}/.test(body) && /\.mg-stat:first-child \{ grid-column: span 2; \}/.test(body) && /min-height: 0; display: block;/.test(body)); }
+  { const fold = css.indexOf("@container (max-width: 400px) {\n  .mg-stats {"), body = fold < 0 ? "" : css.slice(fold, css.indexOf("\n}", fold));
+    const bt = cutF(psrc, "mgBacktestSec");
+    ok("移動窗格三格同一級字(18,沒有放大的主指標、沒有補高);中欄 ≤400 才折兩欄、排在 base 之後;雲端與本機同一支 render(不分模式)",
+      /\.mg-stat \.sv \{[^}]*font: 600 18px\/1\.1 var\(--font-mono\)/.test(css) && !/\.mg-stat[^{]*:(first|nth|last)-child[^{]*\.sv|\.mg-stat[^{}]*\.sv \{[^}]*(font-size|min-height)/.test(css)
+      && fold > css.indexOf(".mg-stat .sv {") && /\.mg-stats \{ grid-template-columns: repeat\(2, 1fr\); \}/.test(body) && !/span 2/.test(body)
+      && !/ENV\.cur|TR_BAGS|\bRPC\b|\bRP\b|cloud/.test(bt)); }
+  ok("移動窗格三格的漲跌色不被 .mg-stat .sv 的墨色蓋掉:.sv.buy／.sv.sell 用 greenText／redText,排在 base 之後",
+    /\.mg-stat \.sv\.buy \{ color: var\(--color-greenText\); \}/.test(css) && /\.mg-stat \.sv\.sell \{ color: var\(--color-redText\); \}/.test(css)
+    && css.indexOf(".mg-stat .sv.buy {") > css.indexOf(".mg-stat .sv {") && css.indexOf(".mg-stat .sv.sell {") > css.indexOf(".mg-stat .sv {"));
+  { const f4 = css.indexOf("@container (max-width: 400px) {\n  .mg-stats {"), b4 = f4 < 0 ? "" : css.slice(f4, css.indexOf("\n}", f4));
+    ok("中欄 ≤400 折成 2+1 後,Max DD(最後一格、落在左欄)的「贏過」氣泡改回 left 10／right auto,不往左溢出",
+      /\.mg-stat:last-child \.tip \{ left: 10px; right: auto; \}/.test(b4) && f4 > css.indexOf(".mg-stat:last-child .tip { left: auto; right: 0; }")); }
   ok("0.1.26 複看 N1:中欄 ≤700 投資組合標的格可換行時用 text-wrap: pretty,不會只剩「檔」「more」一個字掉到第二行(1180–1300／聊天欄 452 實測)", /\.pf-tbl td\.c-sym \{ white-space: normal; \}\n\s*\.pf-tbl td\.c-sym \{ text-wrap: pretty; \}/.test(c700));
   ok("必改 6:.pf-total 靠右、間距 12(同網頁 units §9.7)", /\.pf-total \{[^}]*justify-content: flex-end;[^}]*gap: var\(--space-12\);/.test(css));
   ok("必改 8:窄欄的合約鈕跟策略名左緣對齊(-8,同觸發器左右 padding 8);優化表那顆接在名字後面維持 8", /\.ct-trig \{[^}]*padding: 0 var\(--space-8\); margin-left: calc\(-1 \* var\(--space-8\)\);/.test(css) && /\.sub-sym \.ct-trig \{ margin-left: calc\(-1 \* var\(--space-8\)\); \}/.test(css) && /\.mg-tbl \.ct-trig \{ margin-left: var\(--space-8\); \}/.test(css)); }
