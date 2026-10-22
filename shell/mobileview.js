@@ -29,6 +29,8 @@ const ALLOWED_KEYS = ["config", "states", "previews", "backtest_previews", "tw_l
   "reconciler", "command_listener", "halt", "account_guard", "venues", "self_ledger",
   "downtime_pause", "portfolio_configured", "reported_at", "error", "daemon", "strategy_names"];
 const NAME_MAX_CHARS = 80;   // = api desktop_portfolio.NAME_MAX_CHARS
+// Cc 與 bidi 控制字元(名稱是 agent 寫的,RLO 會把 App 同一列後面的金額顯示反過來);ZWJ 留著。= api desktop_portfolio._NAME_STRIP_RE(測試逐字比對)
+const NAME_STRIP_RE = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 const FREE_TEXT_KEYS = ["error", "msg", "reason", "last_read_error"];
 const HOME_RE = /(\/Users\/|\/home\/|[A-Za-z]:[\\/]+Users[\\/]+)[^/\\\s"']+/gi;
 const URL_QUERY_RE = /(https?:\/\/[^\s"'?]*)\?[^\s"']*/g;
@@ -74,10 +76,18 @@ function strategyNames(amounts, list) {
   if (!amounts || typeof amounts !== "object" || !Array.isArray(list)) return out;
   for (const s of list) {
     if (!s || !Object.prototype.hasOwnProperty.call(amounts, s.name)) continue;
-    const n = typeof s.displayName === "string" ? s.displayName.trim() : "";
+    const n = typeof s.displayName === "string" ? s.displayName.replace(NAME_STRIP_RE, "").trim() : "";
     if (n && n !== s.name) out[s.name] = Array.from(n).slice(0, NAME_MAX_CHARS).join("");
   }
   return out;
+}
+/* 主行程傳給 createMobileView 的 status():host 那份補上 strategy_names。淺拷貝,不改 host 的物件;
+   讀名稱出錯就照舊回 host 那份(沒有名稱的快照照送)。listStrategies 有快取,不重讀 strategy.py */
+function withStrategyNames(st, listStrategies, log) {
+  const amounts = st && st.report && st.report.config && st.report.config.amounts;
+  if (!amounts || typeof amounts !== "object") return st;
+  try { return { ...st, report: { ...st.report, strategy_names: strategyNames(amounts, listStrategies()) } }; }
+  catch (e) { if (log) log("strategy names: " + (e && e.message)); return st; }
 }
 // 「值得提早送」的那幾格:心跳、讀帳時間這種每 15 秒都在變的不算
 function signature(line, r) {
@@ -237,5 +247,5 @@ function createMobileView(opts) {
   return { start, stop, tick, kick, setOn, signOut, closing, wantsClosing, state, refreshFlag, isVisible: () => flag };
 }
 
-module.exports = { createMobileView, cleanReport, strategyNames, deviceOf, signature, ALLOWED_KEYS, NAME_MAX_CHARS, MAX_BYTES, REPORT_MAX_BYTES, TICK_MS, EARLY_MIN_GAP_MS,
+module.exports = { createMobileView, cleanReport, strategyNames, withStrategyNames, NAME_STRIP_RE, deviceOf, signature, ALLOWED_KEYS, NAME_MAX_CHARS, MAX_BYTES, REPORT_MAX_BYTES, TICK_MS, EARLY_MIN_GAP_MS,
   FLAG_ENDPOINT, REPORT_ENDPOINT, DELETE_ENDPOINT, CLOSING_TIMEOUT_MS, CLOSING_SETTLE_MS, DELETE_TIMEOUT_MS, FREE_TEXT_KEYS };

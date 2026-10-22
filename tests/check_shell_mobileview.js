@@ -255,9 +255,30 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     const b = m.posts()[0] && m.posts()[0][2];
     ok("9 上傳 body 帶 strategy_names", b && b.report.strategy_names && b.report.strategy_names.momo === "BTC 唐奇安 4H", b && b.report);
     ok("9 signature 不看 strategy_names(改名不提早送)", MV.signature(null, { ...r, strategy_names: { momo: "x" } }) === MV.signature(null, r));
-    ok("9 main.js:createMobileView 的 status 補 strategyNames(config.amounts, listStrategies())",
-      /status: mobileViewStatus,/.test(mainSrc) && /strategy_names: require\("\.\/mobileview"\)\.strategyNames\(amounts, listStrategies\(\)\)/.test(mainSrc)
-      && /function mobileViewStatus\(\)[\s\S]{0,400}\.\.\.st\.report/.test(mainSrc)); }
+    ok("9 main.js:createMobileView 的 status 走 withStrategyNames(host.status(), listStrategies)",
+      /status: \(\) => require\("\.\/mobileview"\)\.withStrategyNames\(_tradeHost \? _tradeHost\.status\(\) : null, listStrategies,/.test(mainSrc)); }
+  { const strip = MV.strategyNames({ rlo: 1, zw: 1, c0: 1, zwj: 1, only: 1, cut: 1 }, [
+      { name: "rlo", displayName: "BTC \u202e4H\u202c 多單" }, { name: "zw", displayName: "\u200fETH\u200e\u2066x\u2069\u061c" },
+      { name: "c0", displayName: "a\x00b\tc\x1fd\x7f\x85e" }, { name: "zwj", displayName: "家\u{1F468}\u200d\u{1F469}" },
+      { name: "only", displayName: "\u202e\u200f\x01 " }, { name: "cut", displayName: "\u202e".repeat(5) + "名".repeat(80) }]);
+    ok("9 去掉 bidi 覆寫、零寬方向字元與 C0/C1 控制字元;ZWJ 保留(同 api 測試同一組輸入與結果)", strip.rlo === "BTC 4H 多單" && strip.zw === "ETHx"
+      && strip.c0 === "abcde" && strip.zwj === "家\u{1F468}\u200d\u{1F469}", strip);
+    ok("9 去掉之後只剩空白 → 不放;先去再截", !("only" in strip) && strip.cut === "名".repeat(80), strip);
+    const hostReport = { config: { amounts: { momo: 1 } }, states: {} }, host = { running: true, report: hostReport };
+    const got = MV.withStrategyNames(host, () => [{ name: "momo", displayName: "BTC 唐奇安" }]);
+    ok("9 withStrategyNames 補上名稱,host 的 report 沒被改(同一個參照、沒有 strategy_names)", got.report.strategy_names.momo === "BTC 唐奇安"
+      && host.report === hostReport && !("strategy_names" in hostReport) && got.report !== hostReport && got.running === true);
+    const logs = [], fb = MV.withStrategyNames(host, () => { throw new Error("EACCES"); }, (m) => logs.push(m));
+    ok("9 讀名稱出錯 → 回 host 原物件(沒有名稱)、寫一行 log", fb === host && !("strategy_names" in fb.report) && logs.length === 1, logs);
+    ok("9 沒有 amounts / host 沒回 status → 原樣回、不叫 listStrategies", MV.withStrategyNames(null, () => { throw 1; }) === null
+      && MV.withStrategyNames({ report: { config: null } }, () => { throw 1; }).report.config === null);
+    const m = mk(); m.setReport({ ...REPORT() });
+    const mv = MV.createMobileView({ dir: m.dir, apiBase: API, home: HOME, installId: () => INSTALL, now: () => 1e9, log: () => {},
+      get: async () => ({ status: 200, body: { enabled: true } }), post: async (u, b) => { m.calls.push(["POST", u, b]); return { status: 200, body: { ok: true } }; },
+      getCreds: () => ({ token: "acct-A", appSecret: "appsec-A", who: "w-A" }),
+      status: () => MV.withStrategyNames({ report: REPORT() }, () => { throw new Error("boom"); }), line: () => ({ state: "on" }) });
+    await mv.tick(); const p = m.posts().filter(isReport);
+    ok("9 讀名稱出錯時照常上傳(body 沒有 strategy_names)", p.length === 1 && !("strategy_names" in p[0][2].report), m.calls); }
 
   // ---- 8. 兩端允許清單
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_portfolio.py");
@@ -268,6 +289,8 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     ok("允許清單 = api desktop_portfolio.ALLOWED_KEYS(逐項、同順序)", JSON.stringify(keys) === JSON.stringify(MV.ALLOWED_KEYS), keys);
     ok("上限 = api desktop_portfolio.MAX_BYTES / STORED_MAX_BYTES", /\nMAX_BYTES = 512 \* 1024/.test(py) && MV.MAX_BYTES === 512 * 1024
       && /\nSTORED_MAX_BYTES = 64 \* 1024/.test(py) && MV.REPORT_MAX_BYTES === 64 * 1024);
+    const pyStrip = /_NAME_STRIP_RE = re\.compile\(r"(\[[^\]]*\])"\)/.exec(py);
+    ok("去除字元類 = api desktop_portfolio._NAME_STRIP_RE(逐字)", pyStrip && pyStrip[1] === MV.NAME_STRIP_RE.source, [pyStrip && pyStrip[1], MV.NAME_STRIP_RE.source]);
     ok("名稱上限 = api desktop_portfolio.NAME_MAX_CHARS", new RegExp("\\nNAME_MAX_CHARS = " + MV.NAME_MAX_CHARS + "\\n").test(py), MV.NAME_MAX_CHARS);
   }
 
