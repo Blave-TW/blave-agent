@@ -157,6 +157,13 @@ account_reader = importlib.import_module("account_reader")
 account_reader.WORKSPACE = ws
 check(account_reader._venues(env) == ["acme"], "runtime/account_reader reads no unverified venue",
       account_reader._venues(env))
+from manager import flatten  # noqa: E402
+check(flatten._venues({"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s", **env}) == ["acme", "binance"],
+      "manager/flatten lists no unverified venue (binance + acme + the unverified ones bound)",
+      flatten._venues({"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s", **env}))
+check(flatten._venues({"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s", "BITGET_API_KEY": "k",
+                       "BITGET_SECRET_KEY": "s", "BITGET_PASSPHRASE": "p"}) == ["binance"],
+      "manager/flatten: .env with binance and bitget → binance only")
 from lib import venue as chat_venue  # noqa: E402
 for vid in sorted(unverified):
     check(vid not in chat_venue.VENUES and vid in chat_venue._ELSEWHERE, f"{vid}: not bindable from chat")

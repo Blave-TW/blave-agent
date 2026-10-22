@@ -9,6 +9,11 @@
    is set and READ back at the end, also when the body fails.
 4. install_cap / prefix_cids: an order over the per-order cap or without the prefix is refused
    before the transport; an accepted one's id is remembered as the script's own.
+5. The real --trade flow, end to end, against a fake classic Bitget (the real lib.order_bitget,
+   lib.account_bitget, lib.execute, lib.venue_wiring; every HTTP request answered in-process,
+   sockets refused): it reaches T12 and leaves the account flat in its original position mode,
+   with Wei's own trigger order and the clock untouched; a trigger order on the account stops
+   it at the precheck.
 
 Run: cd blave-agent && .venv/bin/python tests/check_bitget_live_script.py
 """
@@ -46,6 +51,9 @@ class Acct:
 
     def leg_rows(self, env, mode=None):
         return [dict(p) for p in self.legs]
+
+    def account_mode(self, env):
+        return "uta"
 
 
 class Order:
@@ -219,6 +227,303 @@ for label, body in (("over the cap", {"symbol": "NVDAUSDT", "qty": "0.06", "clie
 Mod._send("POST", "/api/v2/mix/order/place-order", {}, {"symbol": "NVDAUSDT", "size": "0.04", "clientOid": V.PREFIX + "c"})
 Mod._send("GET", "/api/v3/trade/order-info", {}, {"orderId": "1"})
 check(len(sent) == 2 and ids == {"777"}, "an order under the cap goes out and its id is remembered as ours; reads pass", ids)
+
+# ── 3b. T12 body fails with legs open: no switch back then, the cleanup retries it ──
+mode["m"], sets[:] = "oneway", []
+legs_open = {"v": False}
+
+
+def failing_body():
+    legs_open["v"] = True  # two legs opened, then a step raises
+    raise RuntimeError("ProtectionFailed")
+
+
+try:
+    V.switch_and_restore(set_mode, lambda: mode["m"], lambda: not legs_open["v"], "hedge", say, failing_body)
+    check(False, "the failing body propagates")
+except RuntimeError:
+    check(sets == ["hedge"] and mode["m"] == "hedge", "T12: a body failing with legs open does not switch back yet")
+legs_open["v"] = False  # the cleanup closed them
+check(V.restore_mode_after_cleanup((set_mode, lambda: mode["m"], "oneway"), lambda: True, say)
+      and mode["m"] == "oneway" and sets == ["hedge", "oneway"],
+      "…the cleanup's retry switches back and reads the original mode back", sets)
+mode["m"] = "hedge"
+check(V.restore_mode_after_cleanup((set_mode, lambda: mode["m"], "oneway"), lambda: False, say) is False,
+      "…and reports it when the account is still not bare")
+
+# ── emit survives a dead pipe ────────────────────────────────────────────────
+import builtins, io, tempfile  # noqa: E401,E402
+real_print = builtins.print
+
+
+def dead_pipe(*a, **k):
+    raise BrokenPipeError(32, "Broken pipe")
+
+
+logf = os.path.join(tempfile.mkdtemp(prefix="bvlog-"), "v.log")
+V.open_log(logf)
+builtins.print = dead_pipe
+try:
+    V.emit("[CLEANUP] still logged")
+    ok_emit = True
+except OSError:
+    ok_emit = False
+builtins.print = real_print
+check(ok_emit and "still logged" in open(logf).read(), "emit: a broken stdout never raises; the log file keeps the line")
+
+# ── 5. the real --trade flow against a fake classic Bitget ───────────────────
+import json, signal, threading, time  # noqa: E401,E402
+from datetime import datetime, timezone  # noqa: E402
+from urllib.parse import parse_qsl, urlsplit  # noqa: E402
+
+sys.path.insert(0, ROOT)
+import requests  # noqa: E402
+from lib import account_bitget as acct_mod, order_bitget as order_mod, venue_wiring as vw_mod  # noqa: E402,F401
+from lib import execute as ex_mod  # noqa: E402,F401
+
+clock = {"t": time.time()}
+
+
+def _tick():  # every read moves the fake clock a little, as a real one does (clientOids embed it)
+    clock["t"] += 0.0005
+    return clock["t"]
+
+
+time.time = _tick
+time.sleep = lambda s: clock.__setitem__("t", clock["t"] + max(float(s), 0.001))
+_real_wait = threading.Event.wait
+
+
+def _fake_wait(self, timeout=None):  # the executors wait on an Event: advance the fake clock instead
+    if timeout is not None:
+        clock["t"] += max(float(timeout), 0.001)
+    return self.is_set()
+
+
+threading.Event.wait = _fake_wait
+MARK = {"BTCUSDT": 82283.9, "NVDAUSDT": 217.99, "TWTSMUSDT": 73.53, "ACNSTOCKUSDT": 239.76}
+STEP = {"BTCUSDT": "0.0001"}
+
+
+class Bitget:
+    def __init__(self):
+        self.pos_mode = "hedge_mode"
+        self.legs = {}  # (sym, side) -> qty
+        self.orders = {}
+        self.plans = {}
+        self.wei_plans = []  # trigger / trailing orders of Wei's own
+        self.n = 0
+        self.posts = []
+
+    def oid(self):
+        self.n += 1
+        return str(10000 + self.n)
+
+    def book(self, sym):  # on the 0.01 tick the fake contracts carry
+        m = MARK[sym]
+        return round(m - 0.01, 2), round(m + 0.01, 2)
+
+    def move(self, sym, side, qty, reduce):
+        """side = the leg (long/short) the qty goes to (+ open, − close). Returns the qty done."""
+        k = (sym, side)
+        if reduce:
+            qty = min(qty, self.legs.get(k, 0.0))
+            self.legs[k] = round(self.legs.get(k, 0.0) - qty, 8)
+        else:
+            self.legs[k] = round(self.legs.get(k, 0.0) + qty, 8)
+        if self.legs.get(k, 0) <= 1e-12:
+            self.legs.pop(k, None)
+        return qty
+
+    def fill(self, o):
+        sym, side, qty = o["symbol"], o["side"], float(o["size"])
+        if self.pos_mode == "hedge_mode":
+            leg = ("long" if side == "buy" else "short") if o.get("tradeSide") == "open" else \
+                  ("long" if side == "buy" else "short")
+            done = self.move(sym, leg, qty, o.get("tradeSide") == "close")
+        else:
+            opp = "short" if side == "buy" else "long"
+            done = self.move(sym, opp, qty, True)
+            if o.get("reduceOnly") != "YES" and qty - done > 1e-12:
+                self.move(sym, "long" if side == "buy" else "short", qty - done, False)
+            elif o.get("reduceOnly") == "YES":
+                qty = done
+        o.update(state="filled", baseVolume=str(qty), priceAvg=str(MARK[sym]), fee="-0.001")
+        if not any(k[0] == sym for k in self.legs):  # the position is gone: Bitget drops its TP/SL
+            self.plans = {i: p for i, p in self.plans.items() if p["symbol"] != sym}
+
+    def rest(self):
+        for o in self.orders.values():
+            if o["state"] == "live":
+                bid, ask = self.book(o["symbol"])
+                px = float(o["price"])
+                if (o["side"] == "buy" and px >= bid) or (o["side"] == "sell" and px <= ask):
+                    self.fill(o)
+
+    def handle(self, method, path, q):
+        ok = lambda d: {"code": "00000", "msg": "success", "data": d}  # noqa: E731
+        if path == "/fapi/v1/exchangeInfo":
+            return 200, {"symbols": [{"symbol": "BTCUSDT", "underlyingType": "COIN", "baseAsset": "BTC"},
+                                     {"symbol": "NVDAUSDT", "underlyingType": "EQUITY", "baseAsset": "NVDA"}]}
+        if path == "/api/v3/account/settings":
+            return 400, {"code": "40084", "msg": "You are in Classic Account mode", "data": None}
+        if path == "/api/v2/public/time":
+            return 200, ok({"serverTime": str(int(clock["t"] * 1000))})
+        if path == "/api/v2/mix/market/contracts":
+            rows = [{"symbol": s, "baseCoin": s[:-4], "quoteCoin": "USDT", "sizeMultiplier": STEP.get(s, "0.01"),
+                     "minTradeNum": STEP.get(s, "0.01"), "minTradeUSDT": "5", "pricePlace": "2", "priceEndStep": "1",
+                     "volumePlace": "4", "symbolStatus": "normal", "isRwa": "NO" if s == "BTCUSDT" else "YES",
+                     "symbolType": "perpetual", "maxLever": "20"} for s in MARK]
+            return 200, ok([r for r in rows if r["symbol"] == q.get("symbol", r["symbol"])])
+        if path == "/api/v2/mix/market/ticker":
+            bid, ask = self.book(q["symbol"])
+            m = str(MARK[q["symbol"]])
+            return 200, ok([{"symbol": q["symbol"], "lastPr": m, "markPrice": m, "bidPr": str(bid), "askPr": str(ask)}])
+        if path == "/api/v2/spot/market/tickers":
+            return 200, ok([])
+        if path == "/api/v2/mix/account/account":
+            return 200, ok({"marginCoin": "USDT", "posMode": self.pos_mode, "marginMode": "crossed",
+                            "crossedMarginLeverage": "10"})
+        if path == "/api/v2/mix/account/accounts":
+            return 200, ok([{"marginCoin": "USDT", "accountEquity": "30", "available": "30", "unrealizedPL": "0"}])
+        if path == "/api/v2/account/all-account-balance":
+            return 200, ok([{"accountType": "futures", "usdtBalance": "30"}, {"accountType": "spot", "usdtBalance": "70"}])
+        if path in ("/api/v2/spot/account/assets", "/api/v2/account/funding-assets"):
+            return 200, ok([])
+        if path == "/api/v2/spot/account/info":
+            return 200, ok({"userId": "6188905811", "authorities": []})
+        if path == "/api/v2/mix/position/all-position":
+            self.rest()
+            return 200, ok([{"symbol": s, "holdSide": side, "total": str(v), "available": str(v),
+                             "markPrice": str(MARK[s]), "openPriceAvg": str(MARK[s]), "unrealizedPL": "0",
+                             "marginSize": "1", "leverage": "10", "marginMode": "crossed"}
+                            for (s, side), v in sorted(self.legs.items())])
+        if path == "/api/v2/mix/account/set-position-mode":
+            if self.legs or any(o["state"] == "live" for o in self.orders.values()):
+                return 400, {"code": "40774", "msg": "has position or order", "data": None}
+            self.pos_mode = q["posMode"]
+            return 200, ok({"posMode": self.pos_mode})
+        if path == "/api/v2/mix/order/place-order":
+            if any(o.get("clientOid") == q.get("clientOid") for o in self.orders.values()):
+                return 400, {"code": "25212", "msg": "Duplicate clientOid", "data": None}
+            self.posts.append(dict(q))
+            o = dict(q, orderId=self.oid(), state="live", baseVolume="0", priceAvg="", fee="0")
+            self.orders[o["orderId"]] = o
+            if q.get("orderType") == "market":
+                self.fill(o)
+            else:
+                bid, ask = self.book(q["symbol"])
+                cross = float(q["price"]) >= ask if q["side"] == "buy" else float(q["price"]) <= bid
+                if cross and q.get("force") == "post_only":
+                    o["state"] = "canceled"
+                elif cross:
+                    self.fill(o)
+            return 200, ok({"orderId": o["orderId"], "clientOid": q.get("clientOid")})
+        if path == "/api/v2/mix/order/detail":
+            self.rest()
+            o = self.orders.get(q.get("orderId")) or next(
+                (x for x in self.orders.values() if x.get("clientOid") == q.get("clientOid")), None)
+            return (200, ok(o)) if o else (400, {"code": "40109", "msg": "not found", "data": None})
+        if path == "/api/v2/mix/order/orders-pending":
+            self.rest()
+            rows = [o for o in self.orders.values() if o["state"] == "live" and q.get("symbol") in (None, o["symbol"])]
+            return 200, ok({"entrustedList": rows or None})
+        if path == "/api/v2/mix/order/cancel-order":
+            o = self.orders.get(q.get("orderId"))
+            if not o or o["state"] != "live":
+                return 400, {"code": "40768", "msg": "Order does not exist", "data": None}
+            o["state"] = "canceled"
+            return 200, ok({"orderId": o["orderId"]})
+        if path == "/api/v2/mix/order/place-tpsl-order":
+            i = self.oid()
+            self.plans[i] = {"orderId": i, "clientOid": q.get("clientOid"), "symbol": q["symbol"],
+                             "planType": q["planType"], "triggerPrice": q["triggerPrice"], "holdSide": q["holdSide"],
+                             "side": q["holdSide"], "posSide": q["holdSide"]}
+            return 200, ok({"orderId": i, "clientOid": q.get("clientOid")})
+        if path == "/api/v2/mix/order/orders-plan-pending":
+            if q.get("planType") in ("normal_plan", "track_plan"):
+                rows = [p for p in self.wei_plans if p["planType"] == q["planType"]]
+            else:
+                rows = [p for p in self.plans.values() if q.get("symbol") in (None, p["symbol"])]
+            return 200, ok({"entrustedList": rows or None})
+        if path == "/api/v2/mix/order/cancel-plan-order":
+            for x in q.get("orderIdList") or []:
+                self.plans.pop(x.get("orderId"), None)
+            return 200, ok({"successList": q.get("orderIdList"), "failureList": []})
+        if path.startswith("/api/v2/spot/wallet/"):
+            return 200, ok([])
+        raise AssertionError(f"unmocked {method} {path}")
+
+
+BG = Bitget()
+
+
+def fake_adapter_send(self, req, **kw):
+    u = urlsplit(req.url)
+    q = dict(parse_qsl(u.query))
+    if req.body:
+        q.update(json.loads(req.body))
+    status, body = BG.handle(req.method, u.path, q)
+    r = requests.Response()
+    r.status_code, r._content, r.url, r.request = status, json.dumps(body).encode(), req.url, req
+    r.headers["Content-Type"] = "application/json"
+    return r
+
+
+requests.adapters.HTTPAdapter.send = fake_adapter_send
+envdir = tempfile.mkdtemp(prefix="bvenv-")
+envp = os.path.join(envdir, "fake.env")
+with open(envp, "w") as f:
+    f.write("BITGET_API_KEY=bg_not_a_real_key\nBITGET_SECRET_KEY=not-a-real-secret\nBITGET_PASSPHRASE=not\"real\\pass\n")
+os.chmod(envp, 0o600)
+today = datetime.fromtimestamp(clock["t"], timezone.utc).strftime("%Y-%m-%d")
+here, argv0 = os.getcwd(), list(sys.argv)
+builtins.input = lambda prompt="": "y"
+
+
+def run_trade(extra=()):
+    sys.argv = ["live_bitget_verify.py", "--env", envp, "--trade", "--confirm", today,
+                "--log", os.path.join(envdir, "trade.log"), *extra]
+    code = 0
+    try:
+        V.main()
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else 1
+    except Exception as e:  # a crash is a FAIL below, not the end of this test
+        code = f"crashed: {type(e).__name__}: {e}"
+    finally:
+        os.chdir(here)
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, signal.default_int_handler if sig == signal.SIGINT else signal.SIG_DFL)
+    return code
+
+
+BG.wei_plans = [{"orderId": "w1", "clientOid": "app", "symbol": "NVDAUSDT", "planType": "normal_plan",
+                 "side": "buy", "size": "0.05", "triggerPrice": "200"}]
+code = run_trade()
+check(code == 3 and not BG.posts, "--trade with Wei's trigger order open: refused at the precheck (exit 3), nothing placed",
+      code)
+BG.wei_plans = []
+open(os.path.join(envdir, "trade.log"), "w").close()
+code = run_trade()
+log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
+check("[T12 mode after switching back (want the original)]" in log and '"read": "hedge"' in log,
+      "--trade runs through T12 on the real modules and reads the original position mode back")
+check("[T9 venue] \"bitget\"" in log or "[T9 venue] bitget" in log, "T9 ran (prefix on lib.venue_wiring, not lib.execute)")
+check(code == 0 and not BG.legs and BG.pos_mode == "hedge_mode" and not BG.plans
+      and not any(o["state"] == "live" for o in BG.orders.values()),
+      "…and leaves the account flat, no own order or TP/SL, in its original mode", (code, BG.legs, BG.pos_mode))
+check(len({p["clientOid"] for p in BG.posts}) == len(BG.posts),
+      "every accepted order carries its own clientOid (the fake refuses a repeat with 25212, as T2 measures)",
+      len(BG.posts) - len({p["clientOid"] for p in BG.posts}))
+check(all(str(p.get("clientOid", "")).startswith(V.PREFIX) for p in BG.posts)
+      and all(float(p["size"]) * MARK[p["symbol"]] <= V.MAX_ORDER_USDT + 1e-9 for p in BG.posts),
+      "every order the flow sent carries the prefix and stays under the per-order cap",
+      [(p["symbol"], p["size"]) for p in BG.posts if float(p["size"]) * MARK[p["symbol"]] > V.MAX_ORDER_USDT])
+check("not\"real\\pass" not in log and "not-a-real-secret" not in log and "bg_not_a_real_key" not in log,
+      "the log holds no key value (the passphrase's JSON-escaped form included)")
+check("Traceback" not in log and "FAILED" not in log, "no step crashed", [l for l in log.splitlines() if "FAILED" in l][:3])
+sys.argv = argv0
 
 print("\n" + ("all ok" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)

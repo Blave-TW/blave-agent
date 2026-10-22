@@ -243,7 +243,9 @@ def _venues(env):
         if not m or m.group(1).upper() in _RESERVED or m.group(1).upper().startswith("DATA_"):
             continue
         out.append(m.group(1).lower())
-    return sorted(set(out))
+    # libs shipped but no account type verified: never traded, so nothing to flatten (and its
+    # refusal must not fail the sweep of the venue that is)
+    return sorted(set(out) - venue_traits.unverified())
 
 
 def _flatten_spot(vid, order, env, book=None):
