@@ -1,7 +1,7 @@
 """Minimal check: a Taiwan Type C (every column a TW stock / ETF code) is benchmarked against
 0050 buy-and-hold on the adjusted close — stats['benchmark_bh'] — and draws no random
-portfolios; a crypto-only Type C (lib.portfolio._crypto_only on its strategy.py) is benchmarked
-against BTCUSDT buy-and-hold on its own interval and kline source; a US-only one (every fetcher
+portfolios; a crypto-only Type C (every price fetcher in its strategy.py a crypto kline; funding
+rate / OI beside them do not count) is benchmarked against BTCUSDT buy-and-hold on its own interval and kline source; a US-only one (every fetcher
 fetch_usstock_price) against SPY buy-and-hold; a mixed universe keeps the random benchmark; a failed or late-starting benchmark leaves benchmark_bh null
 without failing the backtest; every shape still reads as a portfolio to
 strategy_reporter.is_portfolio_stats.
@@ -89,7 +89,7 @@ def compute(data):
 
 def run(name, cols, fetch, src=None):
     D.fetch_twstock_price_adj = fetch
-    if src is not None:   # what lib.portfolio._crypto_only reads the fetchers off
+    if src is not None:   # what the runner reads the price fetchers off
         (WS / "strategies" / name).mkdir(parents=True, exist_ok=True)
         (WS / "strategies" / name / "strategy.py").write_text(src)
     c, o = CLOSE.set_axis(cols, axis=1), OPEN.set_axis(cols, axis=1)
@@ -229,6 +229,14 @@ check("benchmark_bh" in st and st["benchmark_bh"] is None and "BTCUSDT buy-and-h
       "BTC starting after the first bar: benchmark_bh null, a warning, no random fallback")
 D.fetch_kline = fake_kline
 
+# ── crypto prices + crypto-derived feeds (funding rate, OI): still crypto-only → BTC ──
+kcalls.clear()
+st = run("crypto_funding", CRYPTO, fake_0050,
+         "from lib.data import fetch_kline_batch, fetch_funding_rate, fetch_open_interest_history\n")
+check((st.get("benchmark_bh") or {}).get("kind") == "BTC_bh" and kcalls and kcalls[-1][1] == "BTCUSDT"
+      and not [k for k in RANDOM_KEYS if k in st],
+      "crypto klines + funding rate / OI: BTC_bh, no random portfolios")
+
 # ── US-only Type C → SPY buy-and-hold on fetch_usstock_price ──
 ucalls = []
 
@@ -260,9 +268,8 @@ for name, cols, src in (("crypto_nosrc", CRYPTO, None),
                          "from lib.data import fetch_kline_batch, fetch_twstock_price_adj_batch\n"),
                         ("crypto_us", ["BTCUSDT", "ETHUSDT", "AAPL", "MSFT", "NVDA"],
                          "from lib.data import fetch_kline_batch, fetch_usstock_price\n"),
-                        # known limit of _crypto_only: any non-kline fetcher → not crypto-only
-                        ("crypto_funding", CRYPTO,
-                         "from lib.data import fetch_kline_batch, fetch_funding_rate\n")):
+                        ("crypto_twprice", CRYPTO,
+                         "from lib.data import fetch_kline_batch, fetch_twstock_price_adj_batch\n")):
     calls.clear()
     kcalls.clear()
     st = run(name, cols, fake_0050, src)

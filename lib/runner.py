@@ -2023,25 +2023,30 @@ US_BENCHMARK = 'SPY'
 
 
 def _fetcher_benchmark(strategy_name, interval, hdrs):
-    """(symbol, kind, adjusted, fetch(start, end) -> Close) for a Type C whose lib.data fetchers,
-    read off strategies/<name>/strategy.py from the workspace root like the rest of the runner,
-    are all crypto klines (lib.portfolio._crypto_only: BTC on the strategy's own interval and
-    kline source) or all fetch_usstock_price (SPY daily). The fetcher, not the column names,
-    decides: 'BTC' is also a US ETF. None = anything else (mixed, futures), which keeps the
-    random benchmark."""
+    """(symbol, kind, adjusted, fetch(start, end) -> Close) for a Type C whose PRICE fetchers
+    (lib.quality_check._PRICE_OR_META_FETCHERS named in strategies/<name>/strategy.py, read from
+    the workspace root like the rest of the runner) are all crypto klines
+    (lib.portfolio._CRYPTO_FETCHERS: BTC on the strategy's own interval and kline source) or
+    all fetch_usstock_price (SPY daily). Other feeds (funding rate, OI …) do not count: they
+    are signals, not the universe. The fetcher, not the column names, decides: 'BTC' is also
+    a US ETF, and a Binance stock perp (NVDAUSDT) via fetch_kline counts as crypto. None =
+    anything else (Taiwan or US prices beside crypto, futures), which keeps the random
+    benchmark."""
     from lib import data as D
-    from lib.portfolio import _crypto_only, _FETCHER_RE, _strategy_source, _strip_py_comments
+    from lib.portfolio import _CRYPTO_FETCHERS, _FETCHER_RE, _strategy_source, _strip_py_comments
+    from lib.quality_check import _PRICE_OR_META_FETCHERS
     try:
         found = set(_FETCHER_RE.findall(_strip_py_comments(_strategy_source(strategy_name))))
     except (OSError, ValueError):
         return None
-    if _crypto_only(strategy_name):
-        if found == {'fetch_bingx_kline'}:   # BingX-only: BTC from BingX too, not Binance
+    price = found & (_PRICE_OR_META_FETCHERS - {'fetch_data', 'fetch_economic_calendar'})
+    if price and price <= _CRYPTO_FETCHERS:
+        if price == {'fetch_bingx_kline'}:   # BingX-only: BTC from BingX too, not Binance
             fetch = lambda s, e: D.fetch_bingx_kline('BTC-USDT', interval, s, e)['Close']
         else:
             fetch = lambda s, e: D.fetch_kline(CRYPTO_BENCHMARK, interval, s, e, hdrs)['Close']
         return CRYPTO_BENCHMARK, 'BTC_bh', False, fetch
-    if found == {'fetch_usstock_price'}:
+    if price == {'fetch_usstock_price'}:
         return (US_BENCHMARK, f'{US_BENCHMARK}_bh', True,
                 lambda s, e: D.fetch_usstock_price(US_BENCHMARK, s, e, hdrs)['Close'])
     return None
