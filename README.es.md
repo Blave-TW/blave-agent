@@ -6,13 +6,13 @@ Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> Esta traducción parte del README en inglés en el commit [`00971e7`](https://github.com/Blave-TW/blave-agent/blob/00971e7/README.md) y cubre solo las secciones que cambian poco. Los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.es.png" alt="Descargar para Mac" width="241"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.es.png" alt="Descargar para Windows" width="241"></a>
 
-![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
+> Esta traducción parte del README en inglés en el commit [`b2584e3`](https://github.com/Blave-TW/blave-agent/blob/b2584e3/README.md) y cubre solo las secciones que cambian poco. Los exchanges y datos, la nube, la estructura del repositorio, cómo contribuir y las notas para mantenedores están en la [versión en inglés](README.md). Si algo no coincide, prevalece el original en inglés.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Descargar para macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Descargar para Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Inicio rápido](#quick-start) · [Que siga funcionando con el PC apagado](https://blave.org/agent/es)
+[Inicio rápido](#quick-start) · [Que siga funcionando con el PC apagado](https://blave.org/agent/es)
 
 Si te resulta útil, dale una estrella al repositorio, y activa Watch › Releases para enterarte de cada versión nueva.
 
@@ -52,7 +52,7 @@ Pulsa **Search the Web for Ideas** (Buscar ideas en la web) y el agente lee una 
 
 ## Inicio rápido
 
-Descarga la app para [macOS](https://github.com/Blave-TW/blave-agent/releases/latest) o [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13 o posterior, o Windows 10/11 x64) y ábrela.
+Descarga la app para [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) o [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13 o posterior, o Windows 10/11 x64) y ábrela.
 
 En el primer inicio eliges qué impulsa al agente:
 

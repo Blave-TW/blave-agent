@@ -668,7 +668,8 @@ function trTypeC(st, n) {
   if (!w) return null;
   const out = { n: 0, long: 0, short: 0, keys: Object.keys(w), held: [] }, paperTw = n != null && trPaperOf(n);
   (Array.isArray(st.universe) ? st.universe : []).forEach((k) => { if (typeof k === "string" && k && out.keys.indexOf(k) < 0) out.keys.push(k); });
-  out.keys.forEach((k) => { let x = Number(w[k]); if (!isFinite(x) || (x < 0 && (st.market === "spot" || (paperTw && trTwCash(k, true))))) x = 0;
+  out.keys.forEach((k) => { let x = Number(w[k]); if (x < 0 && st.market !== "spot" && paperTw && trTwCash(k, true)) out.paperShort = true;
+    if (!isFinite(x) || (x < 0 && (st.market === "spot" || (paperTw && trTwCash(k, true))))) x = 0;
     if (!x) return; out.n++; out.held.push(k); if (x > 0) out.long += x; else out.short -= x; });
   return out;
 }
@@ -685,7 +686,8 @@ function trTypeCLabel(tc, tf, nameOf, universe) {
   const sep = tf("ak.sep"), codes = keys.map(trShortSym), names = keys.map((k) => (typeof nameOf === "function" && nameOf(k)) || "");
   const shown = codes.map((c, i) => names[i] || c), list = codes.map((c, i) => (names[i] ? tf("tr.twNameCode", { name: names[i], code: c }) : c)).join(sep);
   const text = shown.length <= 3 ? shown.join(sep) : tf("tr.typecSymsMore", { list: shown.slice(0, 3).join(sep), n: shown.length, k: shown.length - 3 });
-  return { text, tip: held ? tf("tr.typecHeld", { list }) : tc.n ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
+  // 模擬盤把台股空頭壓成 0 的空手:原因寫在部位格,這裡不再說「目前空手」(設計稽核 M1)
+  return { text, tip: held ? tf("tr.typecHeld", { list }) : tc.n || tc.paperShort ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
 }
 // 台指期目標口數取整 = 機器對帳器的規則 sign(x)·floor(|x|+0.5)(−0.5 → −1;Math.round(−0.5) 是 −0,會差一口)
 function trRoundLots(x) { return (x < 0 ? -1 : 1) * Math.floor(Math.abs(x) + 0.5 + 1e-9); }   // 1e-9 = 機器 lib/portfolio 與網頁 pfRoundLots 同一個:浮點加總的 2.4999… 歸到 3
@@ -944,6 +946,7 @@ function trSigned(p) {
 function trPaperOf(n) {
   if (typeof PAPER === "undefined" || typeof trPaperTwOk !== "function" || !trPaperTwOk()) return false;
   const r = (typeof trReport === "function" && trReport()) || {}, ex = r.config && typeof r.config.exchanges === "object" ? r.config.exchanges : null;
+  if (TR_AS_SAVED) return trSavedRoute(n, r) === PAPER;
   if (ex && Object.prototype.hasOwnProperty.call(ex, n)) return ex[n] === PAPER;
   const ids = trVenueIds(r);
   return ids.length === 1 && ids[0] === PAPER;
@@ -953,8 +956,32 @@ function trPaperOf(n) {
 // 那是「只看訊號」,照訊號算目標與張數,不當沒路由
 function trRouteBlank(n) {
   const r = (typeof trReport === "function" && trReport()) || {}, c = r.config, ex = c && typeof c.exchanges === "object" ? c.exchanges : null;
+  if (TR_AS_SAVED) { const sr = trSaveRouting(r); return (sr ? sr.bound.length : trVenueIds(r).length) > 0 && trSavedRoute(n, r) === ""; }
   return !!ex && Object.prototype.hasOwnProperty.call(ex, n) && ex[n] === "" && trVenueIds(r).length > 0;
 }
+/* 存檔後的路由(同 runtime command_listener._cmd_amounts):路由指著還綁著的那家就留;其餘(""、沒有紀錄、指著已解綁的)繼承 default——
+   各成員還綁著的路由只有一家就是它,否則只綁一家就是那家,都不是 = ""(沒路由,對帳器不下)。 */
+// 報告帶 save_routing(新 runtime;runtime save_routing.report:存檔真的用的那套 .env ∩ 綁定清單,不看 lib):{bound, default, routes}
+function trSaveRouting(r) {
+  const s = r && r.save_routing;
+  return s && typeof s === "object" && Array.isArray(s.bound) && typeof s.default === "string" && s.routes && typeof s.routes === "object" && !Array.isArray(s.routes) ? s : null;
+}
+function trSavedRoute(n, r) {
+  const sr = trSaveRouting(r);
+  if (sr) return Object.prototype.hasOwnProperty.call(sr.routes, n) && typeof sr.routes[n] === "string" ? sr.routes[n] : sr.default;
+  // 舊 runtime:照 _cmd_amounts 自己推(綁定集合用畫面那份,可能跟 runtime 差 manifest／lib)
+  const ids = trVenueIds(r), ex = r && r.config && typeof r.config.exchanges === "object" && r.config.exchanges ? r.config.exchanges : {};
+  const keep = (v) => typeof v === "string" && ids.indexOf(v) >= 0;
+  if (Object.prototype.hasOwnProperty.call(ex, n) && keep(ex[n])) return ex[n];
+  const used = Object.keys(ex).map((k) => ex[k]).filter(keep).filter((v, i, a) => a.indexOf(v) === i);
+  return used.length === 1 ? used[0] : ids.length === 1 ? ids[0] : "";
+}
+/* 照存檔後的路由算(trSavedRoute)。
+   策略組合 › 配置是存檔前的編輯面,畫的是按下儲存之後會下的:綁好交易所、還沒重存時沒路由的那支照草稿算,不畫成 0(0.1.28 Wei 實測 0 TWD)。
+   金額表的部位欄、存檔框的「新」那側(列出的單、目標的新值)同一條:綁好之後按儲存,存了會買的台股那一列要列出來(Wei 10-22)。
+   自動下單 › 部位、對帳、存檔框的「原」照對帳器現況(on = false) */
+let TR_AS_SAVED = false;
+function trAsSaved(fn, on = true) { const was = TR_AS_SAVED; TR_AS_SAVED = on; try { return fn(); } finally { TR_AS_SAVED = was; } }
 function trTwCash(sym, paper) { return !!paper && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
 function trClientTargets(amounts, states, contracts) {
@@ -3143,6 +3170,10 @@ function trPaintPosCell(td, a, pos, tc, f) {
   const word = (k) => td.appendChild(trEl("span", "pos-word", t(k)));
   if (!a) { word("tr.amtOff"); return; }
   const rawTip = f.txf && raw !== lots ? t("po.lotsRawTip", { n: trLotsTgtFmt(raw) }) : "";
+  if (zero && f.paperShort) {
+    // 模擬盤的台股是現股:策略的空頭壓成 0(lib/portfolio,同總訊號部位表),副行講原因,不讓人以為策略壞了(設計稽核 M1)
+    const box = trEl("span", "cell2"); box.append(trEl("span", "pos-word", t("tr.flat")), trEl("span", "pos-sub", t("tr.paperTwNoShort"))); td.appendChild(box); return;
+  }
   if (zero) { const w = word("tr.flat"); if (rawTip) w.title = rawTip; return; }
   const leg = (v, num) => { const g = trEl("span", "pos-leg"); g.append(trEl("span", "dir " + (v > 0 ? "buy" : "sell"), t(v > 0 ? "tr.rel.long" : "tr.rel.short")), " ", num); return g; };
   const money = (v) => trEl("span", "num", trFmt(Math.abs(v)));
@@ -3160,6 +3191,7 @@ function trPaintPosCell(td, a, pos, tc, f) {
   const box = trEl("span", "cell2"); box.append(main, trEl("span", "pos-sub", sub)); td.appendChild(box);
 }
 function trAmountTable(names, stored, states) {
+  if (!TR_AS_SAVED) return trAsSaved(() => trAmountTable(names, stored, states));   // 配置頁是存檔前的編輯面(trSavedRoute)
   const frag = document.createDocumentFragment();
   frag.appendChild(poCfgSec());
   const total = trEl("div", "pf-total"), bar = trEl("div", "pf-savebar"), cloud = TR.env === "cloud";
@@ -3322,7 +3354,9 @@ function trAmountTable(names, stored, states) {
       // 投資組合還沒算出成分(沒有權重):一樣是「—」,不是空手(同網頁 3b67fa10)
       const cNotYet = isC && !tc && !noSig;
       const tgt = trEl("td", "n pos");
-      const pos = typeof st.position === "number" ? st.position : 0;
+      const pos0 = typeof st.position === "number" ? st.position : 0;
+      // 單一標的的台股做空、路由模擬交易:對帳器目標是 0(現股不放空,lib 逐支壓 0),部位欄同樣寫空手;加密現貨的空頭會抵別支的多單,不壓
+      const paperShort = !isC && !txf && pos0 < 0 && trTwCash(sym || "", trPaperOf(n)), pos = paperShort ? 0 : pos0;
       // 最小進場額:機器端只在門檻大於平台那顆 10 時才回報;填得比它小就永遠不會進場,而且完全靜音
       const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" || trTwCash(sym, trPaperOf(n)) ? "@spot" : "")] : null;
       const gate = g0 && typeof g0.entry_usd === "number" ? g0.entry_usd : g0 && g0.side !== "reduce" && typeof g0.usd === "number" ? g0.usd : null;
@@ -3335,7 +3369,7 @@ function trAmountTable(names, stored, states) {
       }
       const repaint = () => {
         const a = TR.edits[n] != null ? TR.edits[n] : stored[n] || 0;
-        trPaintPosCell(tgt, a, pos, tc, { noSig, notYet: notYet || cNotYet, txf, sentOn });
+        trPaintPosCell(tgt, a, pos, tc, { noSig, notYet: notYet || cNotYet, txf, sentOn, paperShort: paperShort || (!!tc && !!tc.paperShort) });
         if (gateRow) {
           const show = a > 0 && a < gate;
           if (show && !gateRow.parentNode) row.insertAdjacentElement("afterend", gateRow);
@@ -3561,6 +3595,7 @@ function trCfLongOnly(s, n) {
    其他算不出的(過了等待窗、舊 lib)沒有貢獻:對帳器只算有 state.json 的,帳上那些檔下一輪照樣賣,照列。
    回傳另帶 held = {wait: [這一輪不動、沒列單的標的], names: [在等的策略], gate: [被訊號閘擋下的標的], unknown: 目標不知道的那檔這次有動}(框的說明句與標題用) */
 function trCfRows(o) {
+  if (!TR_AS_SAVED) return trAsSaved(() => trCfRows(o));
   /* 被換掉、帳上還撐著的那段(同 lib/portfolio _first_signal_targets):離開的成員(沒金額、或自己又在等)只算帳上 as 扣掉留下成員那份之後
      還有的,同號且不超過;閘中的離開成員自己的目標沒到帳,取剩下的全部。快照已在窗內(an.inWin)就從它的 frozen 接著扣這次才離開的 */
   function trCfHold(an, sending, ws, as, acct) {
@@ -3583,12 +3618,12 @@ function trCfRows(o) {
   }
   const st = trCfStates(o.r, o.stored, o.sending, o.contractsAfter);
   const known = (am) => { const x = {}; Object.keys(am).forEach((n) => { if (st.missing.indexOf(n) < 0) x[n] = am[n]; }); return x; };
-  const before = trClientTargets(known(o.stored), st.states, o.contractsBefore), after = trClientTargets(known(o.sending), st.states, o.contractsAfter);
+  const before = trAsSaved(() => trClientTargets(known(o.stored), st.states, o.contractsBefore), false), after = trClientTargets(known(o.sending), st.states, o.contractsAfter);
   const holds = trCfHolds(o.r, o.stored, o.sending, o.contractsAfter, st), gated = new Set(holds.gate), blind = new Set();
   Object.keys(holds.wait).forEach((k) => { if (holds.wait[k].some((n) => st.missing.indexOf(n) >= 0)) blind.add(k); });
   const held = { wait: [], names: [], gate: [] }, hit = (a, k) => { if (a.indexOf(k) < 0) a.push(k); };
   // 區(單位)跟部位表同一個判法:只看撐這個標的的那幾支策略的計價(trContribs)
-  const qmap = trQuoteMap() || {}, cs0 = trContribs(known(o.stored), st.states, o.contractsBefore), cs1 = trContribs(known(o.sending), st.states, o.contractsAfter);
+  const qmap = trQuoteMap() || {}, cs0 = trAsSaved(() => trContribs(known(o.stored), st.states, o.contractsBefore), false), cs1 = trContribs(known(o.sending), st.states, o.contractsAfter);
   const zoneOf = (sym) => { const cs = (cs1[sym] || []).concat(cs0[sym] || []); return trSymZone(sym, cs.map((c) => qmap[c.name]), cs.map((c) => trSrcMarket(o.r, c.name))); };
   // 每列的貢獻策略(移出的只在 cs0):表頭時間只看這幾支用的預覽
   const by = (sym) => (cs1[sym] || []).concat(cs0[sym] || []).map((c) => c.name);
@@ -3628,7 +3663,8 @@ function trCfRows(o) {
     const lot = o.lot(sym), was = before[sym] || 0, now = after[sym] || 0;
     const same = lot ? trRoundLots(was) === trRoundLots(now) : Math.round(was) === Math.round(now);
     if (same) return;
-    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym] };
+    // kept:撐這列的策略原本就存著——現況 0 也畫「0 → 新值」(綁好之後原樣存、暫停中存,設計稽核 S3);新加的策略照舊只寫新值
+    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym], kept: by(sym).some((n) => n in o.stored) };
     // 不會自動下單的美股列只寫金額:不換數量、也不算預覽撐的列(表頭不寫依哪一根),同網頁 pfUsNoAuto
     if (trUsNoAuto(o.r, sym, by(sym))) row.noAuto = true;
     else if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym), trUsPerp(o.r, sym, by(sym))) : null;
@@ -3709,7 +3745,7 @@ function trSaveAmounts(names, stored, opener, o) {
   const relevant = (n) => (!(n in stored) && Number(sending[n]) > 0) || ((n in stored) && Number(sending[n]) !== old(n));
   const pvReq = (S.pvReq = S.pvReq || {});
   // 框開著時 trCfTick 可能在另一個視角是 TR 的時候叫進來:那時借 trWith 換過去算
-  const paintBody = () => (TR === S ? (f) => f() : (f) => trWith(S, f))(() => {
+  const paintBody = () => (TR === S ? (f) => f() : (f) => trWith(S, f))(() => trAsSaved(() => {
     const r = trReport() || {}, firing = trCfFiring(S.st, S.pending), recon = trHasAccount(r);
     const ctBefore = trContracts(), ctAfter = Object.assign({}, ctBefore, ctAll || {});
     const tgt0 = trClientTargets(sending, poPartStates(sending, r.states || {}), ctAfter);
@@ -3769,7 +3805,7 @@ function trSaveAmounts(names, stored, opener, o) {
             if (x.closed && nOpen) dd.appendChild(trEl("span", "tag", t("po.twClosedHold")));
           } else {
             const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
-            if (x.was) arrow(dd, f(x.was));
+            if (x.was || x.kept) arrow(dd, f(x.was));
             dd.append(trEl("span", "n", f(x.now)));
             // 讀過帳:只有這家下得了、帳上真的有部位的才標平倉;第一次讀帳前不知道,照標
             const close = trCloseTag(x.was, x.now, fire, recon && !firstRead ? x.held : null); if (close) dd.appendChild(trEl("span", "tag", close));
@@ -3813,7 +3849,7 @@ function trSaveAmounts(names, stored, opener, o) {
     }
     cf.title = title; cf.firing = fire; cf.wait = wait; cf.rows = m.rows.length + amtOnly.length; cf.notes = (!wait && !m.rows.length && !amtOnly.length && flatNew.length ? 1 : 0) + codeChanged.length + hostOld.length + (late ? 1 : 0) + (wait ? 1 : 0) + (unread ? 1 : 0) + (oldPv.length ? 1 : 0) + (held.wait.length ? 1 : 0) + (held.gate.length ? 1 : 0);
     if (wait && cf.timer == null) cf.timer = setTimeout(() => { cf.timer = null; trCfTick(); }, Math.max(0, cf.until - Date.now()) + 50);
-  });
+  }));
   // 草稿的預覽不是最新那一根(按 A1 之後過了一根 K 棒或收盤):背景再算一次,框不等它;完全沒有預覽的也在這裡請(§3-2、§3-3)
   { const r = trReport() || {}; if (trPvHost(r)) { const m0 = trCfStates(r, stored, sending, Object.assign({}, trContracts(), ctAll || {}));
       m0.stale.concat(m0.missing.filter(relevant)).forEach((n) => trPvRequest(S, n)); } }
@@ -4015,6 +4051,7 @@ function poPartStates(stored, states) {
      差額只在下單執行中上色、拒單掛在那一列底下;門檻腳注與淨值倍數在表底合計列。帳上、差額、拒單、門檻、淨值×只在這一頁(同一個差額不在兩頁出現)
    投資組合每個持有的成分一列,權重 0 的不列;還沒算過的投資組合在它的計價區尾列一列講原因 */
 function poSigTable(r, stored, states, mode) {
+  if (mode === "cfg" && !TR_AS_SAVED) return trAsSaved(() => poSigTable(r, stored, states, mode));
   const frag = document.createDocumentFragment(), trade = mode === "trade";
   const st2 = poPartStates(stored, states), target = trClientTargets(stored, st2, trContracts()), contribs = trContribs(stored, st2, trContracts());
   const recon = trade && trHasAccount(r), bk = recon ? trBook(r, target) : null, mine = bk ? bk.mine : {}, last = bk ? bk.last : null, gates = (last || {}).gates || {};
@@ -4963,6 +5000,14 @@ function trEventText(type, d) {
   if (type === "market_check_off") return out(t("tr.ov.evMarketCheckOff"), t("tr.ov.evMarketCheckOffNote"));
   return null;
 }
+/* 這一筆暫停是「暫停並關閉部位」:這台電腦記的 halt_close 帶 closing(daemon 照 close_all 的 ack 判,只掛暫停的是 false;舊紀錄沒有這欄當有);
+   雲端事件與現在的 HALT 沒有指令型別,認 runtime command_listener._cmd_close_all 與 manager/flatten.py 寫進 HALT 的固定 reason */
+const TR_CLOSE_ALL_REASON = "close all positions";
+function trHaltCloses(type, d) {
+  if (type === "halt_close") return !d || d.closing !== false;
+  // runtime 判完才寫的 closing(command_listener._mark_halt_closing;HALT 與平台 halt 事件都帶);沒有這欄(舊 runtime)才認 reason
+  return !!d && (typeof d.closing === "boolean" ? d.closing : d.reason === TR_CLOSE_ALL_REASON);
+}
 // 標題:字串整段上級別色;[key, vars] 照網頁 evFill,字上級別色、代進去的值(交易所、分鐘)包 .mono。包一層,×N 才接在整句後面
 function trEvHead(head, cls) {
   if (!Array.isArray(head)) return trEl("span", cls, head);
@@ -4988,9 +5033,10 @@ function trEvBody(body, head, note, lv, tip, count, code, tail) {
   if (note) { const n = trEl("span", "dim", "— " + note); if (tip) n.title = tip; body.append(" ", n); }
 }
 /* 事件 = 狀態改變或要人看的事;成交不是事件(spec-0.1.19 §1.1)——買進／賣出列只在交易歷史分頁,
-   這裡標題列右側數同一區間的成交筆數帶路過去。0 筆整行不出 */
-function trOvFills(r, from) {
-  const n = trOrdersShown(r).filter((o) => { const ms = trMs(o.ts); return ms != null && ms >= from; }).length;
+   這裡標題列右側數成交筆數帶路過去。數的是連結打開的那一組(交易歷史畫的 trOrdersShown,不分區間):
+   只數事件區間內的話,區間外的舊單會讓「成交 6 筆」對上 7 列(0.1.28 Wei 實測)。0 筆整行不出 */
+function trOvFills(r) {
+  const n = trOrdersShown(r).length;
   if (!n) return null;
   const acts = trEl("div", "pf-acts ev-fills"), cnt = trEl("span", "");
   const parts = t(n === 1 ? "tr.ov.evFillsOne" : "tr.ov.evFills").split("{n}");   // 數字單獨一個 .mono,字串自己決定數字落在哪
@@ -5002,7 +5048,7 @@ function trOvFills(r, from) {
 function trOvEvents(r, z) {
   const frag = document.createDocumentFragment(), label = trEl("span", "label", t("tr.ov.events")); label.id = "tr-ev-label";
   const from = Date.now() - TR.ov.days * 86400000, rows = [];
-  frag.appendChild(trSec(label, trOvFills(r, from)));
+  frag.appendChild(trSec(label, trOvFills(r)));
   const push = (ms, build) => { if (ms != null && ms >= from) rows.push({ ms, build }); };
   /* 這台電腦:從這個 app 的畫面做的動作(宿主在指令 ack 成功時記的;聊天裡做的不會有)。
      雲端:平台的事件流(/cloud/events),欄位包在 data 裡、型別也多得多——認不得的型別不畫(沒有文案就是一行代號)。
@@ -5021,7 +5067,7 @@ function trOvEvents(r, z) {
     let head = null, note = null, lv = 3, tip = null, code = null, tail = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
-    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); head = t(lv === 1 ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, d); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];
@@ -5037,8 +5083,10 @@ function trOvEvents(r, z) {
   if (halt.halted && !uiHalts.some((x) => haltMs != null && Math.abs(x - haltMs) < 120000)) push(haltMs, (body) => {
     // 顏色照級別(execute / settings 的暫停由 execution_interrupted / settings_unsafe 那列當 P1,這列不再紅一次);字照舊
     const auto = !!halt.source && halt.source !== "web";
-    body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t("tr.ov.evHalt")));
-    body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
+    const closes = !auto && trHaltCloses("halt", halt);
+    body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt")));
+    // 平倉那一列標題已經講完,不再帶「平倉與停損停利照常執行」(設計稽核 S2);什麼單都不下那句照舊
+    if (trHaltStopsAll(halt) || !closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
   });
   (Array.isArray(r.order_errors) ? r.order_errors : []).forEach((e) => {
     if (!e || typeof e !== "object") return;

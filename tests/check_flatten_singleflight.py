@@ -202,12 +202,24 @@ def _fake_popen(argv, *a, **kw):
 
 
 cl.subprocess.Popen = _fake_popen
+HALT_FILE = os.path.join(WS, "state", "HALT")
+
+
+def halt_closing():
+    import json
+    return json.load(open(HALT_FILE)).get("closing")
+
+
+# the pages word the pause row from HALT `closing`: only a running flatten is "closing positions"
+check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=halted_only" and halt_closing() is False and not popens,
+      "close_all with no flatten.py: halted_only, HALT closing false (nothing is being closed)")
 open(os.path.join(WS, "manager", "flatten.py"), "w").write("")
 WS_LOCK = os.path.join(WS, "state", "flatten.lock")
 
 check(cl._flatten_already_running() is False, "no lock file → the probe says free")
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started" and len(popens) == 1,
       "close_all with nothing running: started, one process launched")
+check(halt_closing() is True, "...HALT closing true")
 # the runtime's own kick (a workspace whose flatten.py predates the kick): only
 # once the flatten has exited — a kick before the fills would re-read the
 # pre-flatten positions
@@ -226,6 +238,7 @@ check(said5 == "held", f"a flatten now holds the workspace lock ({said5})")
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=already_running",
       "close_all while one is running acks already_running")
 check(len(popens) == 1, "...and launched NO second flatten")
+check(halt_closing() is True, "...HALT closing true (the running one is closing)")
 check(os.path.isfile(os.path.join(WS, "state", "HALT")),
       "...while still tripping HALT — the stop half of the button always fires")
 busy.kill()

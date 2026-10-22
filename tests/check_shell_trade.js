@@ -293,7 +293,7 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
   okTw = true; const tcPaper = trTypeC(tw.c, "c"), tcNoName = trTypeC(tw.c);
   vid = "binance"; const tcBn = trTypeC(tw.c, "c"); vid = "paper";
   ok("trTypeC:模擬交易的台股負權重壓 0(不算持有);加密的負權重照舊算空頭;別家交易所、沒給策略名照舊",
-    J(tcPaper) === J({ n: 2, long: 0.5, short: 0.5, keys: ["2317", "2454", "BTCUSDT"], held: ["2454", "BTCUSDT"] })
+    J(tcPaper) === J({ n: 2, long: 0.5, short: 0.5, keys: ["2317", "2454", "BTCUSDT"], held: ["2454", "BTCUSDT"], paperShort: true }) && !("paperShort" in tcBn)
     && tcBn.n === 3 && tcBn.short === 1 && tcNoName.n === 3
     && (src.match(/tc = trTypeC\(st, n\)/g) || []).length === 2 && !/trTypeC\(st\)/.test(src));
   delete globalThis.trReport; delete globalThis.trPaperTwOk; delete globalThis.PAPER;
@@ -761,7 +761,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         /const symText = isC \? \(tcl \? tcl\.text : "—"\) : txf \? t\(txf\.prod\) : sym \|\| "—";/.test(tp)
         && /symInto\(trEl\("span", "sub-sym" \+ \(isC \|\| txf \? "" : " mono"\)\)\); if \(symTip\) sub\.title = symTip;/.test(tp) && /const symTd = symInto\(trEl\("td", \(txf \|\| isC \? "sname" : "sym"\) \+ " c-sym"\)\); if \(symTip\) symTd\.title = symTip;/.test(tp)
         && /else \{ host\.append\(symText\);/.test(tp)
-        && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn \}\);/.test(tp)
+        && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn, paperShort: paperShort \|\| \(!!tc && !!tc\.paperShort\) \}\);/.test(tp)
         && /if \(tc\.long && tc\.short\) \{ main\.classList\.add\("split"\);/.test(fnOf("trPaintPosCell")) && !/tr\.grossTip/.test(tsrc)); }
     const tp = fnOf("trAmountTable");
     ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」(策略列與標的列都是;框裡不再有合計列,canon 確認 modal 只列會變的)",
@@ -1088,7 +1088,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const head = fnS("trPaintHead");
     ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\)\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\);/.test(src)
+    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -2301,8 +2301,24 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && link && link.className === "btn-quiet" && link.textContent === "tr.ov.evFillsLink" && link.attrs.type !== "submit", J(fills && fills.textContent));
       link.on.click(); ok("§1.4 點了切到交易歷史分頁(trSetTab hist,焦點跟到分頁)", J(ctx.tabbed) === J(["hist", true]));
       ok("§1.4 1 筆用單數 key", (() => { const f = paintEv({ orders: [CAP] }).find((n) => n.className === "pf-acts ev-fills"); return !!f && f.kids[0].textContent.includes("tr.ov.evFillsOne") && !f.kids[0].textContent.includes("tr.ov.evFills|"); })());
-      ok("§1.4 N 照事件區間與連著的交易所算:7 天前的單不算;0 筆整行不出(事件也空時只剩 label + 空態句)",
-        !paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
+      // 0.1.28 Wei 實測「成交 6 筆」、交易歷史 7 列:N 改數連結打開的那一組(交易歷史 = trOrdersShown 全部,不分區間),不再只數事件區間內
+      { const hist7 = paintHist([CAP, { ...CAP, ts: now - 31 * 86400 }]).filter((n) => n.className === "pf-log-row").length;
+        const f = paintEv({ orders: [CAP, { ...CAP, ts: now - 31 * 86400 }] }, 30).find((n) => n.className === "pf-acts ev-fills");
+        ok("§1.4 N = 交易歷史的列數:區間外(31 天前)的單也算,兩邊對得上", hist7 === 2 && !!f && f.kids[0].kids.some((k) => k && k.className === "mono" && k.textContent === "2"), J([hist7, f && f.textContent])); }
+      { const evRows = (ui, halt) => { ctx.TR = { st: { report: { orders: [], halt } }, list: [], ov: { days: 30, ui, uiErr: false } };
+          return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((n) => n.className === "ev-row").map((x) => x.textContent); };
+        const rc = evRows([{ ts: now - 60, type: "halt_close", closing: true }]), rh = evRows([{ ts: now - 60, type: "halt_close", closing: false }]), rp = evRows([{ ts: now - 60, type: "halt" }]);
+        const rn = evRows([], { halted: true, at: new Date((now - 600) * 1000).toISOString(), source: "web", reason: "close all positions" });
+        ok("暫停並關閉部位(0.1.28 Wei 實測只寫已暫停):halt_close 真的開始平倉寫 evHaltClose;只掛了暫停、一般暫停寫 evHalt;沒有畫面紀錄的 close-all HALT 也寫 evHaltClose",
+          rc.length === 1 && /tr\.ov\.evHaltClose/.test(rc[0]) && rh.length === 1 && /tr\.ov\.evHalt(?!Close)/.test(rh[0]) && !/evHaltClose/.test(rh[0])
+          && rp.length === 1 && !/evHaltClose/.test(rp[0]) && rn.length === 1 && /tr\.ov\.evHaltClose/.test(rn[0]), J([rc, rh, rp, rn]));
+        // 設計稽核 S2:平倉那一列標題已經講完,不帶「平倉與停損停利照常執行」;一般暫停照帶
+        ok("暫停並關閉部位那一列不帶 evHaltNote 說明;一般暫停、只掛了暫停照帶", !/evHaltNote/.test(rc[0]) && !/evHaltNote/.test(rn[0]) && /evHaltNote/.test(rp[0]) && /evHaltNote/.test(rh[0]), J([rc, rn, rp, rh]));
+        // 稽核 B-3:HALT 的 closing(runtime 判完才寫)優先於 reason——只掛了暫停(halted_only／群益手動)寫已暫停
+        const rf = evRows([], { halted: true, at: new Date((now - 600) * 1000).toISOString(), source: "web", reason: "close all positions", closing: false });
+        ok("現在的 HALT:closing false(沒開始平倉)即使 reason 是 close all positions 也寫已暫停下單", rf.length === 1 && !/evHaltClose/.test(rf[0]) && /tr\.ov\.evHalt/.test(rf[0]), J(rf)); }
+      ok("§1.4 N 照連著的交易所算;0 筆整行不出(事件也空時只剩 label + 空態句)",
+        !!paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
         && !paintEv({ orders: [{ ...CAP, exchange: "paper" }], venues: { president: { credentials: true, pair: true, order: true, account: true } } }).some((n) => n.className === "pf-acts ev-fills")
         && (() => { const e = paintEv({ orders: [] }); return e.some((n) => n.className === "pf-state" && n.textContent === "tr.ov.evEmpty") && !e.some((n) => n.className === "ev-list"); })());
       { const d0 = Math.floor(Date.now() / 1000), e2 = [{ ts: d0 - 60, symbol: "A", error: "x" }, { ts: d0 - 120, symbol: "B", error: "y" }, { ts: d0 - 86400 - 60, symbol: "C", error: "z" }];
@@ -2473,7 +2489,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const bound = (...ids) => ({ orders: rows, venues: Object.fromEntries(ids.map((i) => [i, { credentials: true, pair: true, order: true, account: true }])) });
     ok("下單紀錄／事件只列目前連著的交易所:綁統一時模擬交易那幾筆不列、沒寫交易所的舊列照列;沒綁任何交易所全列;壞列丟掉", J(trOrdersShown(bound("president")).map((o) => o.symbol)) === J(["TMF", "TXF"])
       && J(trOrdersShown(bound("paper")).map((o) => o.symbol)) === J(["BTCUSDT", "TXF"]) && trOrdersShown(bound()).length === 3 && trOrdersShown(null).length === 0
-      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /const n = trOrdersShown\(r\)\.filter\(/.test(src)); }
+      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /const n = trOrdersShown\(r\)\.length;/.test(src)); }
   // 0.1.18 設計師裁定 A:統一在倉橫幅整塊拿掉,改在狀態句「自動下單執行中」尾接「統一有 {n} 口在倉,電腦保持清醒」(只在這台電腦 + Windows;不講「不會平倉」)
   { const vm = require("vm"), R = path.join(__dirname, "..", "shell", "renderer");
     const cutB = (x, y) => src.slice(src.indexOf(x), src.indexOf(y));

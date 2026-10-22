@@ -493,5 +493,21 @@ def _boom(hb=None, last=None):
 pr.halt_freezes = _boom
 check(pr.halt_state(hb=1, last={})["freeze"] is True, "F6 halt_freezes itself raises → the report still says freeze")
 
+# 「暫停並關閉部位」的 closing(command_listener._mark_halt_closing):只有布林才往畫面送,其他 HALT 沒有這欄
+_hp = os.path.join(pr.WORKSPACE_STATE, "HALT")
+_had = open(_hp).read() if os.path.exists(_hp) else None
+os.makedirs(os.path.dirname(_hp), exist_ok=True)
+_seen = []
+for _doc in ({"reason": "close all positions", "source": "web", "closing": True},
+             {"reason": "close all positions", "source": "web", "closing": False},
+             {"reason": "close all positions", "source": "web", "closing": "yes"}, {"reason": "user request"}):
+    open(_hp, "w").write(json.dumps(_doc))
+    _seen.append(pr.halt_state(hb=1, last={}).get("closing", "absent"))
+if _had is None:
+    os.remove(_hp)
+else:
+    open(_hp, "w").write(_had)
+check(_seen == [True, False, "absent", "absent"], f"F7 halt_state carries HALT closing only when it is a bool ({_seen})")
+
 print(f"\ncheck_halt_freeze: {red} FAILED" if red else "\ncheck_halt_freeze: all ok")
 sys.exit(1 if red else 0)

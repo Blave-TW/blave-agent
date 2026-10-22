@@ -6,13 +6,13 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> この文書は英語版 README の commit [`00971e7`](https://github.com/Blave-TW/blave-agent/blob/00971e7/README.md) から翻訳したもので、変更の少ない節だけを訳しています。対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.ja.png" alt="Mac 版をダウンロード" width="250"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.ja.png" alt="Windows 版をダウンロード" width="250"></a>
 
-![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
+> この文書は英語版 README の commit [`b2584e3`](https://github.com/Blave-TW/blave-agent/blob/b2584e3/README.md) から翻訳したもので、変更の少ない節だけを訳しています。対応取引所とデータ、クラウドサーバー、ディレクトリ構成、コントリビュート方法、メンテナー向けの説明は[英語版](README.md)をご覧ください。内容に食い違いがある場合は、英語の原文が優先されます。
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[macOS 版をダウンロード](https://github.com/Blave-TW/blave-agent/releases/latest) · [Windows 版をダウンロード](https://download.blave.org/desktop/win/Blave-Setup.exe) · [クイックスタート](#quick-start) · [PC を閉じても動かす](https://blave.org/agent/ja)
+[クイックスタート](#quick-start) · [PC を閉じても動かす](https://blave.org/agent/ja)
 
 役に立ったらリポジトリに Star を。新しいバージョンの通知を受け取るには Watch › Releases を選んでください。
 
@@ -52,7 +52,7 @@ Claude Code や Codex でも売買ボットは書けます。難しいのは、�
 
 ## クイックスタート
 
-[macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest)または[Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe)（macOS 13 以降、または Windows 10／11 x64）をダウンロードして開きます。
+[macOS 版](https://download.blave.org/desktop/mac/Blave-universal.dmg)または[Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe)（macOS 13 以降、または Windows 10／11 x64）をダウンロードして開きます。
 
 初回起動時に、エージェントを動かす AI を選びます：
 

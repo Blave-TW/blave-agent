@@ -7,13 +7,13 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-> 本文译自英文版 README 的 commit [`00971e7`](https://github.com/Blave-TW/blave-agent/blob/00971e7/README.md)，只涵盖变动较少的段落；交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.zh-CN.png" alt="下载 Mac 版" width="173"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.zh-CN.png" alt="下载 Windows 版" width="173"></a>
 
-![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
+> 本文译自英文版 README 的 commit [`b2584e3`](https://github.com/Blave-TW/blave-agent/blob/b2584e3/README.md)，只涵盖变动较少的段落；交易场所与数据、云端主机、目录结构、贡献方式与维护者说明请看[英文版](README.md)。内容有出入时，以英文原文为准。
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
-[下载 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [下载 Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe) · [快速开始](#quick-start) · [关电脑也照跑](https://blave.org/agent/cn)
+[快速开始](#quick-start) · [关电脑也照跑](https://blave.org/agent/cn)
 
 觉得有用就点个 Star；想在新版发布时收到通知，请点 Watch › Releases。
 
@@ -53,7 +53,7 @@ Claude Code 或 Codex 写得出交易 bot，难的是真的拿来跑。在终端
 
 ## 快速开始
 
-下载 [macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest)或[Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe)（macOS 13 及以上，或 Windows 10／11 x64），打开就能用。
+下载 [macOS 版](https://download.blave.org/desktop/mac/Blave-universal.dmg)或[Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe)（macOS 13 及以上，或 Windows 10／11 x64），打开就能用。
 
 第一次打开时，选 agent 用哪个 AI：
 

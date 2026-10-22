@@ -53,6 +53,7 @@ import atomic_file
 import events
 import exec_style
 import kline_cache_heal
+import save_routing
 import sdk_sync
 import venue_traits
 
@@ -1391,6 +1392,9 @@ def halt_state(hb=None, last=None):
         "at": info.get("ts"),
         "reason": info.get("reason"),
         "source": info.get("source"),
+        # 「暫停並關閉部位」: true only when a flatten really started (command_listener._mark_halt_closing);
+        # absent on every other HALT and on runtimes before it
+        **({"closing": info["closing"]} if isinstance(info.get("closing"), bool) else {}),
         "blocked": _halt_denials(info.get("ts")),
         # true = no Blave order of any kind, closes and exits included: every
         # HALT on a freezing lib (`freeze`), or on an older one an account-guard
@@ -2098,6 +2102,9 @@ def build_report():
         # this as venues[id] (web/.../workspace.html cxSupport()) — id present
         # with order/account both false = key saved, modules not built yet.
         "venues": vens,
+        # where each member routes after the next 下單設定 save (save_routing.report, the same
+        # rule _cmd_amounts runs): {bound, default, routes}; the save dialog lists its orders from it
+        "save_routing": save_routing.report(cfg, WORKSPACE),
         # capability signals: the web hides controls the machine can't honor —
         # without this the 「暫停並全部平倉」 button halts only and LOOKS
         # successful. can_flatten keys on the actual artifact (flatten.py in

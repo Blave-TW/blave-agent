@@ -94,7 +94,16 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
 { const loop = cut("const ui = (Array.isArray(TR.ov.ui)", "// 目前的 HALT");
   ok("ui:平台格式的欄位包在 data 裡,這台電腦那一份在最外層——兩邊同一支迴圈", /const d = ev\.data && typeof ev\.data === "object" \? ev\.data : ev;/.test(loop) && /String\(d\.venue \|\| ""\)/.test(loop));
   ok("ui:認不得的型別交給 trEventText(雲端才有的 desktop_action / 交易所連不上…),還是認不得就不畫", /else \{ const txt = trEventText\(ev\.type, d\); if \(txt\) \[head, note, lv, tip, code, tail\] = txt; \}/.test(loop) && /if \(!head\) return;/.test(loop));
-  ok("ui:halt 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);沒有 source = 人按的", /lv = trEvLevel\(ev\.type, d\); head = t\(lv === 1 \? "tr\.ov\.evHaltAuto" : "tr\.ov\.evHalt"\)/.test(loop));
+  ok("ui:halt 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);沒有 source = 人按的", /lv = trEvLevel\(ev\.type, d\); const closes = lv !== 1 && trHaltCloses\(ev\.type, d\); head = t\(lv === 1 \? "tr\.ov\.evHaltAuto" : closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(loop));
+  // 0.1.28 Wei 實測:按「暫停並關閉部位」事件只寫「已暫停下單」。這台電腦的 halt_close 看 daemon 記的 closing;
+  // 雲端 halt 與現在的 HALT 看 runtime 判完才寫的 closing(稽核 B-3),沒有這欄(舊 runtime)才退回寫死的 reason
+  ok("ui:暫停並關閉部位寫成關閉部位;只掛了暫停(closing false)、一般暫停、別的 reason 照舊寫已暫停",
+    trHaltCloses("halt_close", { closing: true }) && trHaltCloses("halt_close", {}) && !trHaltCloses("halt_close", { closing: false })
+    && trHaltCloses("halt", { source: "web", reason: "close all positions" }) && trHaltCloses("halt", { source: "flatten", reason: "close all positions" })
+    && !trHaltCloses("halt", { source: "web", reason: "user request" }) && !trHaltCloses("halt", {}) && !trHaltCloses("halt", null)
+    && !trHaltCloses("halt", { source: "web", reason: "close all positions", closing: false }) && trHaltCloses("halt", { source: "web", reason: "close all positions", closing: true })
+    && /const closes = !auto && trHaltCloses\("halt", halt\);/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)"))
+    && /t\(closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)")));
   ok("ui:下單失敗不在這一段(雲端的 portfolio 仍帶 order_errors,兩邊都畫會重複)", !/order_error/.test(loop));
   ok("ui:時間仍然是秒(平台與這台電腦同一個單位)", /uiHalts\.push\(ev\.ts \* 1000\)/.test(loop) && /push\(ev\.ts \* 1000,/.test(loop));
   ok("ui:雲端記的 venue_disconnected P2、這台電腦自己按的一般字", /lv = d !== ev \? 2 : 3;/.test(loop));

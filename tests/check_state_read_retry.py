@@ -281,8 +281,6 @@ EXEMPT = [
      'vault', 'admin password file / .env for it'),
     ('runtime/command_listener.py', '_capital_admin_password', 'pw_path',
      'vault', 'credential / cert: PermissionError means ACL and must surface at once'),
-    ('runtime/command_listener.py', '_cmd_amounts', 'os.path.join(WORKSPACE, ".env")',
-     'env', '.env read by its only replacer, or a loud failure'),
     ('runtime/command_listener.py', '_cmd_close_all', 'flatten_path',
      'code', 'manager/flatten.py source probe'),
     ('runtime/command_listener.py', '_cmd_credentials', 'path',

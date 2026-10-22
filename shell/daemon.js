@@ -266,7 +266,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
       const a = readAck(id);
       if (a && a.ok && cmd === "credentials_remove") { eqAppend({ ts: Math.floor(Date.now() / 1000), reset: true }); eqLast = null; }
       if (a && a.ok && (cmd === "credentials" || cmd === "retest_accounts")) setTimeout(eqTick, 12000);   // 連上後第一筆:等帳戶讀取器讀完
-      if (a && a.ok) uiEvent(cmd);
+      if (a && a.ok) uiEvent(cmd, cmd === "close_all" ? { closing: closeAllStarted(a.result) } : undefined);
       if (a) return a.ok ? { ok: true, result: a.result } : { ok: false, error: String(a.error || "FAILED") };
       if (!child) return { ok: false, error: withdraw(id) ? "DAEMON_DOWN" : "UNKNOWN_RESULT" };
       await new Promise((r) => setTimeout(r, 150));
@@ -389,7 +389,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
        往上拋——畫面才會說「讀不到」,而不是替資料斷言「這段期間沒有發生事情」。 */
     let txt = ""; try { txt = fs.readFileSync(uiFile, "utf8"); } catch (e) { if (e && e.code === "ENOENT") return []; throw e; }
     const from = Date.now() / 1000 - (Number(days) > 0 ? Math.min(Number(days), 3660) : 30) * 86400, out = [];
-    for (const line of txt.split("\n")) { if (!line) continue; try { const r = JSON.parse(line); if (r && typeof r.ts === "number" && r.ts >= from && typeof r.type === "string") out.push({ ts: r.ts, type: r.type, venue: typeof r.venue === "string" ? r.venue : null, ...(typeof r.holds_all === "boolean" ? { holds_all: r.holds_all } : {}) }); } catch (_) { /* 壞行跳過 */ } }
+    for (const line of txt.split("\n")) { if (!line) continue; try { const r = JSON.parse(line); if (r && typeof r.ts === "number" && r.ts >= from && typeof r.type === "string") out.push({ ts: r.ts, type: r.type, venue: typeof r.venue === "string" ? r.venue : null, ...(typeof r.holds_all === "boolean" ? { holds_all: r.holds_all } : {}), ...(typeof r.closing === "boolean" ? { closing: r.closing } : {}) }); } catch (_) { /* 壞行跳過 */ } }
     return out.slice(-500);
   }
 
@@ -407,4 +407,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
 
   return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, twHeld, _eqTick: eqTick, isRunning: () => !!child };
 }
-module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, argsOk };
+/* close_all 的 ack(runtime command_listener._cmd_close_all):只有 started / already_running 真的有平倉程式在跑;
+   halted_only、halted_capital_manual、nothing_closed、capital_manual 只掛了暫停(或什麼都沒送),事件列不能寫成在平倉 */
+function closeAllStarted(result) { return /^close_all=(?:restart_stopped:)?(?:started|already_running)$/.test(String(result || "")); }
+module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, argsOk, closeAllStarted };
