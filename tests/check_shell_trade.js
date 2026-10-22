@@ -167,6 +167,11 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
     && ["__proto__", "constructor", "toString"].every((k) => trErrToken("[order_reject:" + k + "] x") === null && !Object.prototype.hasOwnProperty.call(TR_REJECT_TEXT, k)));   // 稽核 S5:原型上的名字不能被當成分類
   ok("order-copy #14 對照表:六種 → tr.err.margin / minSize / symbol / key / reduceOnly / paperMargin", J(K.map((k) => TR_REJECT_TEXT[k])) === J(["tr.err.margin", "tr.err.minSize", "tr.err.symbol", "tr.err.key", "tr.err.reduceOnly", "tr.err.paperMargin"])
     && /if \(p && Object\.prototype\.hasOwnProperty\.call\(TR_REJECT_TEXT, p\.kind\)\) return t\(TR_REJECT_TEXT\[p\.kind\], \{ sym \}\);/.test(src));
+  // Bitget 40092(lib/account_bitget error_of 的句子形狀):固定標記先認,不落成通用的 tr.err.symbol;前面有呼叫端前綴也認
+  { const b = "[order_reject:symbol_unavailable] Bitget 依所在地區或帳戶資格不開放這項交易給這個帳戶 [bitget_account_eligibility]（code=40092），跟策略本身無關：換一個能交易的標的";
+    ok("Bitget 40092:[bitget_account_eligibility] → tr.err.bitgetEligibility(帶 {sym});沒有那個標記的 symbol_unavailable 照舊 tr.err.symbol",
+      trErrToken(b) === "bitget_account_eligibility" && trErrToken("close_symbol: " + b) === "bitget_account_eligibility" && TR_REJECT_TEXT.bitget_account_eligibility === "tr.err.bitgetEligibility"
+      && trErrToken("[order_reject:symbol_unavailable] bitget code=45119: x") === "symbol_unavailable"); }
   const vm = require("vm"), ta = { value: "", focused: false, focus() { this.focused = true; } }, ctx = { $: () => ta, t: (k, v) => k + "|" + v.sym + "|" + v.err, TR: { env: "local" }, autosize() {}, tracked: [], String,
     paneSt: { chat: { off: true } }, opened: [], paneToggle(k, off) { ctx.opened.push([k, off]); }, trackFeature: (x) => ctx.tracked.push(x) };
   vm.createContext(ctx); vm.runInContext(src.slice(src.indexOf("function trErrAsk("), src.indexOf("function trLivePositions(")), ctx);

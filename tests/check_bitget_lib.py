@@ -97,7 +97,7 @@ requests.request = fake_request
 requests.get = lambda url, params=None, headers=None, timeout=None: fake_request("GET", url, headers, None, timeout)
 requests.post = requests.put = requests.delete = _no_net
 
-from lib import account_bitget as acct, guard, order_bitget as order, stock_perps  # noqa: E402
+from lib import account_bitget as acct, guard, order_bitget as order, reject_token, stock_perps  # noqa: E402
 from lib.data import normalize_symbol  # noqa: E402
 
 ENV = {"BITGET_API_KEY": "bg_not_a_real_key", "BITGET_SECRET_KEY": "not-a-real-secret",
@@ -680,6 +680,8 @@ try:
 except acct.BitgetError as e:
     check(e.code == "40092" and str(e).startswith("[order_reject:symbol_unavailable]") and "地區或帳戶資格" in str(e),
           "40092 (measured): symbol_unavailable, in words — Bitget's region / eligibility rule, not the strategy", str(e))
+    check(acct.ELIGIBILITY_TAG in str(e)[:200] and acct.ELIGIBILITY_TAG in reject_token.to_front("close_symbol: " + str(e))[:200],
+          "40092: the fixed [bitget_account_eligibility] marker survives order_errors' 200-char cut (desktop reads it, not the words)", str(e))
 route("POST", "/api/v2/mix/order/place-order", place)
 route("POST", "/api/v2/mix/order/cancel-order", lambda p: err("43001", "The order does not exist"))
 check(order.cancel_order(ENV, "NVDAUSDT", order_id="404")["status"] == "order_not_found",
@@ -1337,6 +1339,7 @@ for verified, have, other in (("uta", "__classic__", "classic"), ("classic", "un
             check(False, f"only {verified} verified: a {other} key's {label} is refused")
         except acct.BitgetError as e:
             check(e.code == acct.UNVERIFIED and acct._MODE_NAMES[other] in str(e) and acct._MODE_NAMES[verified] in str(e)
+                  and f"[{acct.MODE_TAG}:{other}]" in str(e)
                   and not any(c["method"] == "POST" for c in CALLS[nposts:]),
                   f"only {verified} verified: a {other} key's {label} is refused in words, nothing posted", str(e))
     acct._mode.update(mode=other, at=acct.time.time())  # even a cached mode is re-checked

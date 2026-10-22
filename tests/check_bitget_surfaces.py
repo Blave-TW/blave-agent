@@ -145,8 +145,10 @@ check(v["passHint"], "② passphrase 提示:OKX 照舊,其他家用 cx.passHintV
 
 o = shell_view(True, {
     "uta": "ValueError: REJECTED: bitget did not accept this key (BitgetError: [order_reject:key_permission] "
-           "這組 Bitget 金鑰的帳戶是統一帳戶，Blave 目前只支援 Bitget 的經典帳戶：請到 Bitget App 把帳戶換成經典帳戶，或改綁其他交易所) — not saved",
-    "classic": "ValueError: REJECTED: bitget did not accept this key (BitgetError: 這組 Bitget 金鑰的帳戶是經典帳戶，但……) — not saved",
+           "這組 Bitget 金鑰的帳戶是統一帳戶 [bitget_account_mode:uta]，Blave 目前只支援 Bitget 的經典帳戶：請到 Bitget App 把帳戶換成經典帳戶，或改綁其他交易所) — not saved",
+    "classic": "ValueError: REJECTED: bitget did not accept this key (BitgetError: 這組 Bitget 金鑰的帳戶是經典帳戶 [bitget_account_mode:classic]，但……) — not saved",
+    # the old Chinese opening without the marker: words are no longer read
+    "words": "ValueError: REJECTED: bitget did not accept this key (BitgetError: 這組 Bitget 金鑰的帳戶是統一帳戶，Blave 目前只支援 Bitget 的經典帳戶) — not saved",
     "other": "ValueError: REJECTED: bitget did not accept this key (BitgetError: bitget /api/v2/mix/account/accounts code=40037: Apikey does not exist) — not saved"})
 check("bitget" in o["local"] and "bitget" in o["cloud"] and o["label"] == "Bitget" and o["pass"],
       "② 翻開 classic:兩個視角都列 Bitget、多一格 passphrase")
@@ -159,8 +161,8 @@ check(o["trusted"] is True and o["renderer"] is False, "② 翻開:daemon 只在
 check(o["noteKey"] == "cx.note.bitgetClassicOnly", "② 翻開 classic:說明區講統一帳戶會被拒")
 me = o["modeErr"]
 check(me["uta"] == {"ok": False, "code": "MODE_UNVERIFIED", "detail": {"mode": "uta"}}
-      and me["classic"]["code"] == "REJECTED" and me["other"]["code"] == "REJECTED" and o["modeText"],
-      "② 翻開 classic:統一帳戶的拒絕 → MODE_UNVERIFIED(畫面 cx.err.bitgetUta);經典帳戶與其他原因照原文 REJECTED")
+      and me["classic"]["code"] == "REJECTED" and me["other"]["code"] == "REJECTED" and me["words"]["code"] == "REJECTED" and o["modeText"],
+      "② 翻開 classic:帶 [bitget_account_mode:uta] 的拒絕 → MODE_UNVERIFIED(畫面 cx.err.bitgetUta);經典帳戶、其他原因、沒有標記的中文句照原文 REJECTED")
 
 # ── ③ runtime 放行清單 = local_daemon 那一行 ──
 src = open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()

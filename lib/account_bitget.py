@@ -81,6 +81,10 @@ UNVERIFIED = "unverified"
 
 UTA_MODE = "40085"  # a v2 private endpoint on a UTA account
 ELIGIBILITY = "40092"  # "unavailable due to applicable regulatory requirements or account eligibility"
+# fixed markers the desktop reads instead of this file's Chinese wording (same idea as OKX's
+# [okx_account_mode]); kept near the front so manager/order_errors.json's 200-char cut keeps them
+ELIGIBILITY_TAG = "[bitget_account_eligibility]"
+MODE_TAG = "bitget_account_mode"  # "[bitget_account_mode:uta|classic]"
 MODE_SWITCH = "mode_switch"  # ours: the account type changed or is changing — skip this round
 MODE_UNSUPPORTED = "mode_unsupported"  # ours: an account type this lib does not trade
 TIMESTAMP_CODES = {"40008", "40004", "40005"}
@@ -204,7 +208,7 @@ def error_of(env, r, path):
         return BitgetError(f"bitget {path} code={code}: 這個 Bitget 帳戶是統一帳戶（UTA）（{msg}）",
                            code=code, http_status=r.status_code)
     if code == ELIGIBILITY:
-        return BitgetError(f"Bitget 依所在地區或帳戶資格不開放這項交易給這個帳戶（code={code}），跟策略本身無關："
+        return BitgetError(f"Bitget 依所在地區或帳戶資格不開放這項交易給這個帳戶 {ELIGIBILITY_TAG}（code={code}），跟策略本身無關："
                            f"換一個能交易的標的，或洽 Bitget 客服確認帳戶資格（{msg[:120]}）",
                            code=code, http_status=r.status_code)
     return BitgetError(f"bitget {path} code={code}: {msg}", code=code, http_status=r.status_code)
@@ -283,7 +287,7 @@ def _probe(env):
                 raise
             # a UTA whose key cannot read the account settings (where the hold mode lives)
             raise BitgetError(
-                f"這組 Bitget 金鑰的帳戶是統一帳戶，但讀不到帳戶設定（{e}）：請在 Bitget 建金鑰時勾選統一帳戶的讀取權限",
+                f"這組 Bitget 金鑰的帳戶是統一帳戶 [{MODE_TAG}:uta]，但讀不到帳戶設定（{e}）：請在 Bitget 建金鑰時勾選統一帳戶的讀取權限",
                 code=MODE_UNSUPPORTED, kind=reject_token.KEY_PERMISSION) from e
         return "classic", None
     am = str((st or {}).get("accountMode") or "")
@@ -347,7 +351,8 @@ def _require_verified(mode):
     if mode in VERIFIED_MODES:
         return
     ok = "、".join(_MODE_NAMES[m] for m in sorted(VERIFIED_MODES)) or "（還沒有）"
-    raise BitgetError(f"這組 Bitget 金鑰的帳戶是{_MODE_NAMES.get(mode, mode)}，Blave 目前只支援 Bitget 的{ok}："
+    tag = f" [{MODE_TAG}:{mode}]" if mode in _MODE_NAMES else ""
+    raise BitgetError(f"這組 Bitget 金鑰的帳戶是{_MODE_NAMES.get(mode, mode)}{tag}，Blave 目前只支援 Bitget 的{ok}："
                       f"請到 Bitget App 把帳戶換成{ok}，或改綁其他交易所", code=UNVERIFIED,
                       kind=reject_token.KEY_PERMISSION)
 

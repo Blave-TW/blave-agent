@@ -1084,6 +1084,8 @@ function trWhereTidy(s) { return String(s || "").split("·").map((x) => x.trim()
    訊息開頭本來就是給人看的中文,token 才是畫面認的東西:en 介面也要有一句,中文介面不出後面那串交易所原文。認不得回 null */
 function trErrToken(err) {
   const e = String(err == null ? "" : err);
+  // Bitget 40092(地區／帳戶資格):lib 照樣標 symbol_unavailable(舊外殼走 tr.err.symbol),後面多一個固定標記——要先認,不然被通用那條吃掉
+  if (/\[bitget_account_eligibility\]/.test(e)) return "bitget_account_eligibility";
   // lib/order_reject 的拒單分類(spec-0.1.13-order-copy #14):lib 放在最前面、六種之一;舊 lib 沒有 → 照舊認下面那兩個或原文
   const r = /^\[order_reject:(insufficient_margin|below_min_size|symbol_unavailable|key_permission|reduce_only_rejected|paper_margin)\]/.exec(e);
   if (r) return r[1];
@@ -1092,7 +1094,8 @@ function trErrToken(err) {
 }
 // 拒單分類 → 那一句的 key(每句自己帶標的)
 const TR_REJECT_TEXT = { insufficient_margin: "tr.err.margin", below_min_size: "tr.err.minSize", symbol_unavailable: "tr.err.symbol",
-  key_permission: "tr.err.key", reduce_only_rejected: "tr.err.reduceOnly", paper_margin: "tr.err.paperMargin" };
+  key_permission: "tr.err.key", reduce_only_rejected: "tr.err.reduceOnly", paper_margin: "tr.err.paperMargin",
+  bitget_account_eligibility: "tr.err.bitgetEligibility" };
 /* 拒單原文 → { kind, … }:lib 的 token 先認;lib/order_paper.py 比對英文原文是權宜(之後 order_errors[] 有 code 欄位就改認 code)。比不到回 null */
 function trOrderErrParse(err) {
   const tok = trErrToken(err);

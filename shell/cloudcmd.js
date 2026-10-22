@@ -255,10 +255,11 @@ function interpretConnect(r, secrets) {
    「no permission check exists」(這台的 lib 缺那一支)→ NO_CHECK;
    "LIB_BROKEN: lib/account_x.py could not load (…)"(lib 在、import 失敗;尾巴的「— not saved」可有可無)→ LIB_BROKEN,
    detail.reason = 冒號後整句(遮過、截 200)——是這台電腦的程式壞了,不是交易所拒絕;daemon 自己的代號(DAEMON_DOWN…)→ SEND_FAILED */
-/* Bitget 拒收的帳戶類型(lib/account_bitget 的 _require_verified 與「統一帳戶但讀不到帳戶設定」兩句都這樣開頭;後者在統一帳戶
-   沒開放時叫人去勾權限是白做工)→ MODE_UNVERIFIED + detail.mode,畫面換成那一語的句子。開放的類型照原文(那時是權限問題)。
+/* Bitget 拒收的帳戶類型:lib/account_bitget 的 _require_verified 與「統一帳戶但讀不到帳戶設定」兩句都帶固定標記
+   [bitget_account_mode:uta|classic](account_bitget.MODE_TAG;不比對中文句子,lib 改措辭不會漏認;後者在統一帳戶沒開放時叫人去勾
+   權限是白做工)→ MODE_UNVERIFIED + detail.mode,畫面換成那一語的句子。開放的類型照原文(那時是權限問題)。
    tests/check_bitget_surfaces.py 拿 lib 真的句子對這個式子 */
-const BITGET_MODE_RE = /這組 Bitget 金鑰的帳戶是(統一帳戶|經典帳戶)/;
+const BITGET_MODE_RE = /\[bitget_account_mode:(uta|classic)\]/;
 function interpretVenueBind(r, secrets) {
   if (r && r.ok) return { ok: true, code: "READ_OK", detail: {} };
   const err = r && typeof r.error === "string" ? r.error : "DAEMON_DOWN";
@@ -270,7 +271,7 @@ function interpretVenueBind(r, secrets) {
   if (/no permission check exists|Bitget 還沒通過真帳驗證/.test(shown)) return { ok: false, code: "NO_CHECK", detail: {} };
   const lb = /^\s*ValueError:\s*LIB_BROKEN:\s*(.*?)(?:\s*—\s*not saved)?\s*$/.exec(shown);
   if (lb) return { ok: false, code: "LIB_BROKEN", detail: { reason: lb[1].slice(0, 200) } };
-  const bm = BITGET_MODE_RE.exec(shown), bmode = bm ? (bm[1] === "統一帳戶" ? "uta" : "classic") : null;
+  const bm = BITGET_MODE_RE.exec(shown), bmode = bm ? bm[1] : null;
   if (bmode && BITGET_VERIFIED_MODES.indexOf(bmode) < 0) return { ok: false, code: "MODE_UNVERIFIED", detail: { mode: bmode } };
   const m = /^\s*ValueError:\s*REJECTED:[^(]*\((.*)\)\s*—\s*not saved\s*$/.exec(shown) || /^\s*ValueError:\s*REJECTED:\s*(.*)$/.exec(shown);
   if (m) return { ok: false, code: "REJECTED", detail: { reason: m[1].slice(0, 200) } };
