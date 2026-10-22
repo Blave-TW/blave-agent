@@ -34,7 +34,7 @@ const consts = (src.match(/^const TR_CF = [^\n]*\n/m) || [""])[0].replace(/^cons
 vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSeq = 0, psMode = 'amounts', psToAmt = false;\n" + ["trEl", "trFmt", "trFmt2", "trFmtPrice", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-  "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper",
+  "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper", "trCfPaperOnly",
   "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
   + "\n" + ["poAddBtn", "poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
@@ -566,7 +566,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
       const orders = [], changes = {}, arrows = {};
       rows.forEach((row) => { const [dt, dd] = row.kids, side = dt.kids.find((k) => k && /^side /.test(k.className)), n = dd.kids.find((k) => k && k.className === "n");
         const sym = dt.textContent.replace(side ? side.textContent : "", ""), was = dd.kids.find((k) => k && k.className === "was");
-        if (side) orders.push({ side: side.className.slice(5), sym, qty: num(n.textContent) }); else { changes[sym] = num(n.textContent); arrows[sym] = was ? num(was.textContent) : null; } });
+        if (side) orders.push({ side: side.className.slice(5), sym, qty: num(n.textContent), tags: dd.kids.filter((k) => k && k.className === "tag").map((k) => k.textContent) }); else { changes[sym] = num(n.textContent); arrows[sym] = was ? num(was.textContent) : null; } });
       return { opened: true, fire: b.title === "tr.cf.titleFire", orders, changes, arrows }; };
     const isV = (v) => !!v && v.credentials && v.pair && v.order && v.account;
     const run = (sc) => {
@@ -594,7 +594,8 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
       return Object.keys(L.targets).concat(Object.keys(bk)).filter((k, i, a) => a.indexOf(k) === i).map((k) => ({ k, d: (L.targets[k] || 0) - (bk[k] || 0) }))
         .filter((x) => Math.abs(x.d) >= 10).map(({ k, d }) => { const sym = canon(k), px = pxOf(L, sym), q = Math.abs(d) / px;
           return { side: d > 0 ? "buy" : "sell", sym, qty: /^\d{4}/.test(sym) ? Math.floor(q + 1e-9) : q }; }).filter((o) => o.qty > 0).sort((a, b) => (a.sym < b.sym ? -1 : 1)); };
-    const sameOrders = (a, b) => a.length === b.length && a.slice().sort((x, y) => (x.sym < y.sym ? -1 : 1)).every((o, i) => o.side === b[i].side && o.sym === b[i].sym && Math.abs(o.qty - b[i].qty) <= 1e-6 * Math.max(1, b[i].qty));
+    const sameOrders = (a0, b) => { const a = a0.map(({ side, sym, qty }) => ({ side, sym, qty }));
+      return a.length === b.length && a.slice().sort((x, y) => (x.sym < y.sym ? -1 : 1)).every((o, i) => o.side === b[i].side && o.sym === b[i].sym && Math.abs(o.qty - b[i].qty) <= 1e-6 * Math.max(1, b[i].qty)); };
     const wantChanges = (L) => { const out = {}; Object.keys(L.before).concat(Object.keys(L.targets)).forEach((k) => { const a = L.before[k] || 0, b = L.targets[k] || 0;
       if (Math.round(a) !== Math.round(b)) out[canon(k)] = Math.round(b); }); return out; };
     const BTC = { symbol: "BTCUSDT", market: null, position: 1 }, TW = { symbol: "2330", market: null, position: 1, raw_closes: { 2330: 1000 } };   // 台股策略不寫 MARKET(實際的樣子:回報 swap、清單 srcMarket tw_stock)
@@ -636,6 +637,16 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     { const sc = { ...P, firing: true, before: { amounts: { btc: 500 }, exchanges: { btc: "" } }, send: { btc: 500 }, strategies: { btc: BTC } };
       const a = run(sc).B, b = run({ ...sc, env: ["kucoin", "paper"], manifest: ["kucoin", "paper"], libs: { paper: ["order", "account"] } }).B;
       ok("存檔後的路由 · 綁定集合讀報告的 save_routing:同一份畫面綁定,runtime 的集合不同,框跟著 runtime(單一模擬列單、多綁 kucoin 不列)", a.orders.length === 1 && b.orders.length === 0 && !b.fire, J([a, b])); }
+    // 設計稽核 r2 M2:〔模擬〕只在只綁模擬時;統一＋模擬同綁(排序 paper 在 president 前)也寫〔實盤〕(同網頁 pfIsPaper)
+    { bag({ firing: true, paper: true, edits: { btc: 1000 } }); const r = ctx.TR.st.report; r.venues = { paper: V, president: V };
+      r.account.venues.president = { ok: true, equity: 1e6, currency: "TWD", positions: {} }; const f = open();
+      bag({ firing: true, paper: true, edits: { btc: 1000 } }); const g = open();
+      ok("存檔後的路由 · 框的模式標記:統一＋模擬同綁 → 〔實盤〕;只綁模擬 → 〔模擬〕", f.mark === "tr.mode.real" && g.mark === "tr.mode.paper", J([f.mark, g.mark])); }
+    // 設計稽核 r2 S6:框裡的單跨了兩家 → 送到模擬交易的那幾列標「模擬交易」;只有一家照舊不標
+    { const split = run(cases.find((c) => /加密路由 Binance、台股路由模擬/.test(c[0]))[1]).B, one = run(cases.find((c) => /^綁模擬帳戶、沒路由、下單程式在跑/.test(c[0]))[1]).B;
+      const tagOf = (B, sym) => (B.orders.find((o) => o.sym === sym) || {}).tags;
+      ok("存檔後的路由 · 混了兩家的框:台股(模擬)那列標 cx.paperShort、BTC(Binance)不標;只綁模擬一家都不標",
+        J(tagOf(split, "2330")) === J(["cx.paperShort"]) && J(tagOf(split, "BTCUSDT")) === J([]) && one.orders.length === 2 && one.orders.every((o) => !o.tags.length), J([split.orders, one.orders])); }
     { const { L, B } = run({ env: [], manifest: [], firing: false, before: { amounts: both, exchanges: blank2 }, send: { btc: 500, tw: 200000 }, strategies: { btc: BTC, tw: TW } });
       ok("存檔後的路由 · 沒綁交易所:框不列單;存檔後對帳器也一筆都不送(沒路由的目標全 0)", !L.error && B.opened && !B.fire && B.orders.length === 0 && Object.keys(L.targets).every((k) => L.targets[k] === 0), J({ box: B, lib: L })); }
     { const { L, B } = run({ env: ["sinopac"], manifest: ["sinopac"], libs: { sinopac: ["order"] }, firing: false, before: { amounts: { tw: 100000 }, exchanges: { tw: "" } }, send: { tw: 100000 }, strategies: { tw: TW } });

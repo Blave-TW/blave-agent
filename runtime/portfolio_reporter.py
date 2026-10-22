@@ -2021,6 +2021,16 @@ def tg_pair_gen():
     return gen if isinstance(gen, str) else None
 
 
+def _save_routing(cfg):
+    """save_routing.report, never fatal: None (the pages then derive routes themselves, as on an
+    older runtime) rather than a report that fails whole over one config the save would refuse."""
+    try:
+        return save_routing.report(cfg, WORKSPACE)
+    except Exception as e:
+        print(f"[portfolio_reporter] save_routing failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
 def build_report():
     # generation BEFORE the chat ids: a reset landing between the two reads then pairs
     # an old generation with the cleared chats (refused / harmless), never an old chat
@@ -2104,7 +2114,7 @@ def build_report():
         "venues": vens,
         # where each member routes after the next 下單設定 save (save_routing.report, the same
         # rule _cmd_amounts runs): {bound, default, routes}; the save dialog lists its orders from it
-        "save_routing": save_routing.report(cfg, WORKSPACE),
+        "save_routing": _save_routing(cfg),
         # capability signals: the web hides controls the machine can't honor —
         # without this the 「暫停並全部平倉」 button halts only and LOOKS
         # successful. can_flatten keys on the actual artifact (flatten.py in

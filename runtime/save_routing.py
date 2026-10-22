@@ -111,7 +111,9 @@ def plan(old_exchanges, bound):
     zombie back in), and the venue every other member inherits: the one venue
     those kept routes use, else the machine's one bound venue, else ""."""
     old = old_exchanges if isinstance(old_exchanges, dict) else {}
-    kept = {k: (v if v in bound else "") for k, v in old.items()}
+    # a hand-edited route that is not a string (list / dict) is no venue: treat it as "" instead
+    # of raising (unhashable) — the report must not go dark over one bad value
+    kept = {k: (v if isinstance(v, str) and v in bound else "") for k, v in old.items()}
     venues = {v for v in kept.values() if v}
     default = venues.pop() if len(venues) == 1 else ""
     if not default and len(bound) == 1:

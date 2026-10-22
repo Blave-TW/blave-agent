@@ -668,7 +668,8 @@ function trTypeC(st, n) {
   if (!w) return null;
   const out = { n: 0, long: 0, short: 0, keys: Object.keys(w), held: [] }, paperTw = n != null && trPaperOf(n);
   (Array.isArray(st.universe) ? st.universe : []).forEach((k) => { if (typeof k === "string" && k && out.keys.indexOf(k) < 0) out.keys.push(k); });
-  out.keys.forEach((k) => { let x = Number(w[k]); if (x < 0 && st.market !== "spot" && paperTw && trTwCash(k, true)) out.paperShort = true;
+  // clamped:空頭被壓成 0 的原因(部位格副行用)。現貨規則對每家都成立,兩個原因同時在時寫現貨
+  out.keys.forEach((k) => { let x = Number(w[k]); if (x < 0 && st.market === "spot") out.clamped = "spot"; else if (x < 0 && out.clamped !== "spot" && paperTw && trTwCash(k, true)) out.clamped = "paper";
     if (!isFinite(x) || (x < 0 && (st.market === "spot" || (paperTw && trTwCash(k, true))))) x = 0;
     if (!x) return; out.n++; out.held.push(k); if (x > 0) out.long += x; else out.short -= x; });
   return out;
@@ -687,7 +688,7 @@ function trTypeCLabel(tc, tf, nameOf, universe) {
   const shown = codes.map((c, i) => names[i] || c), list = codes.map((c, i) => (names[i] ? tf("tr.twNameCode", { name: names[i], code: c }) : c)).join(sep);
   const text = shown.length <= 3 ? shown.join(sep) : tf("tr.typecSymsMore", { list: shown.slice(0, 3).join(sep), n: shown.length, k: shown.length - 3 });
   // 模擬盤把台股空頭壓成 0 的空手:原因寫在部位格,這裡不再說「目前空手」(設計稽核 M1)
-  return { text, tip: held ? tf("tr.typecHeld", { list }) : tc.n || tc.paperShort ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
+  return { text, tip: held ? tf("tr.typecHeld", { list }) : tc.n || tc.clamped ? tf("tr.typecMembers", { list }) : tf("tr.typecMembersFlat", { list }) };
 }
 // 台指期目標口數取整 = 機器對帳器的規則 sign(x)·floor(|x|+0.5)(−0.5 → −1;Math.round(−0.5) 是 −0,會差一口)
 function trRoundLots(x) { return (x < 0 ? -1 : 1) * Math.floor(Math.abs(x) + 0.5 + 1e-9); }   // 1e-9 = 機器 lib/portfolio 與網頁 pfRoundLots 同一個:浮點加總的 2.4999… 歸到 3
@@ -1609,6 +1610,9 @@ function trVenueLabel(id, short) {
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
 function trIsPaper() { return trVenueId() === PAPER; }
+/* 存金額框的〔模擬〕／〔實盤〕(同網頁 pfIsPaper):只綁模擬交易才寫模擬;綁了任何一家真的交易所就是實盤——
+   只看排第一的那家(trIsPaper)時,統一＋模擬同綁會把送到統一的真錢單標成模擬(設計稽核 r2 M2) */
+function trCfPaperOnly() { const ids = trVenueIds(trReport() || {}); return ids.length > 0 && ids.every((id) => id === PAPER); }
 // 部位表判斷交不交易用(trTradesSym):台灣期貨券商 "tw"、連接框那五家與模擬交易 "crypto"、其他(自訂交易所、沒綁)null
 function trVenueKind(id) { return !id ? null : trTwBroker(id) ? "tw" : id === PAPER ? "paper" : Object.prototype.hasOwnProperty.call(CX_VENUES, id) ? "crypto" : null; }
 function trCcy() { const id = trVenueId(), e = trLiveEntry(trReport(), id); return (e && e.currency) || trVenueCcy(id); }
@@ -3176,9 +3180,9 @@ function trPaintPosCell(td, a, pos, tc, f) {
   const word = (k) => td.appendChild(trEl("span", "pos-word", t(k)));
   if (!a) { word("tr.amtOff"); return; }
   const rawTip = f.txf && raw !== lots ? t("po.lotsRawTip", { n: trLotsTgtFmt(raw) }) : "";
-  if (zero && f.paperShort) {
-    // 模擬盤的台股是現股:策略的空頭壓成 0(lib/portfolio,同總訊號部位表),副行講原因,不讓人以為策略壞了(設計稽核 M1)
-    const box = trEl("span", "cell2"); box.append(trEl("span", "pos-word", t("tr.flat")), trEl("span", "pos-sub", t("tr.paperTwNoShort"))); td.appendChild(box); return;
+  if (zero && f.clamped) {
+    // 空頭被壓成 0(模擬盤的台股是現股、或策略寫 MARKET = "spot";lib/portfolio,同總訊號部位表):副行講原因,不讓人以為策略壞了(設計稽核 M1、r2 S4)
+    const box = trEl("span", "cell2"); box.append(trEl("span", "pos-word", t("tr.flat")), trEl("span", "pos-sub", t(f.clamped === "spot" ? "tr.spotNoShort" : "tr.paperTwNoShort"))); td.appendChild(box); return;
   }
   if (zero) { const w = word("tr.flat"); if (rawTip) w.title = rawTip; return; }
   const leg = (v, num) => { const g = trEl("span", "pos-leg"); g.append(trEl("span", "dir " + (v > 0 ? "buy" : "sell"), t(v > 0 ? "tr.rel.long" : "tr.rel.short")), " ", num); return g; };
@@ -3362,7 +3366,7 @@ function trAmountTable(names, stored, states) {
       const tgt = trEl("td", "n pos");
       const pos0 = typeof st.position === "number" ? st.position : 0;
       // 單一標的的台股做空、路由模擬交易:對帳器目標是 0(現股不放空,lib 逐支壓 0),部位欄同樣寫空手;加密現貨的空頭會抵別支的多單,不壓
-      const paperShort = !isC && !txf && pos0 < 0 && trTwCash(sym || "", trPaperOf(n)), pos = paperShort ? 0 : pos0;
+      const paperShort = !isC && !txf && pos0 < 0 && trTwCash(sym || "", trPaperOf(n)), pos = paperShort ? 0 : pos0;   // Type A 只有這一種:現貨的空頭是加總後才壓
       // 最小進場額:機器端只在門檻大於平台那顆 10 時才回報;填得比它小就永遠不會進場,而且完全靜音
       const g0 = sym ? gates[trCanonSym(sym) + (market === "spot" || trTwCash(sym, trPaperOf(n)) ? "@spot" : "")] : null;
       const gate = g0 && typeof g0.entry_usd === "number" ? g0.entry_usd : g0 && g0.side !== "reduce" && typeof g0.usd === "number" ? g0.usd : null;
@@ -3375,7 +3379,7 @@ function trAmountTable(names, stored, states) {
       }
       const repaint = () => {
         const a = TR.edits[n] != null ? TR.edits[n] : stored[n] || 0;
-        trPaintPosCell(tgt, a, pos, tc, { noSig, notYet: notYet || cNotYet, txf, sentOn, paperShort: paperShort || (!!tc && !!tc.paperShort) });
+        trPaintPosCell(tgt, a, pos, tc, { noSig, notYet: notYet || cNotYet, txf, sentOn, clamped: paperShort ? "paper" : (tc && tc.clamped) || null });
         if (gateRow) {
           const show = a > 0 && a < gate;
           if (show && !gateRow.parentNode) row.insertAdjacentElement("afterend", gateRow);
@@ -3656,7 +3660,8 @@ function trCfRows(o) {
       const gs = lot ? null : trGateSide(o.gates[sym], ts, as), acts = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
       if (acts && gated.has(sym)) { hit(held.gate, sym); return; }
       if (!acts) { if (ws.length && o.mine[sym] && (froze || !an0)) { hit(held.wait, sym); ws.forEach((n) => hit(held.names, n)); } return; }
-      const row = { sym, side: d > 0 ? "buy" : "sell", money: Math.abs(d), z: zoneOf(sym), by: by(sym) };
+      const row = { sym, side: d > 0 ? "buy" : "sell", money: Math.abs(d), z: zoneOf(sym), by: by(sym),
+        venues: by(sym).map((n) => trSavedRoute(n, o.r)).filter((v, i, a) => v && a.indexOf(v) === i) };   // 存檔後送到哪幾家(混了兩家時標模擬)
       if (lot) row.lots = Math.round(Math.abs(d));
       else { const q = trCfQty(sym, d, priceOf(sym), trUsPerp(o.r, sym, by(sym))); if (q && q.n === 0) return; row.qty = q; }
       if (twClosed(sym)) row.closed = true;
@@ -3799,7 +3804,7 @@ function trSaveAmounts(names, stored, opener, o) {
         // 全部台股都留到開盤(這一輪一筆都不送):表頭講開盤後要送,逐列不再標休市(稽核 0.1.27 batch2 P2-2)
         sub.textContent = (m.kind === "orders" ? t(nOpen ? "tr.cf.capOrders" : "tr.cf.capOrdersOpen", { n: String(nOpen || m.rows.length) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys })) + asofTail;
         if (sub.textContent) body.appendChild(sub);
-        const dl = trEl("dl", "cf-rows cf-amt");
+        const dl = trEl("dl", "cf-rows cf-amt"), mixed = m.kind === "orders" && m.rows.map((x) => x.venues || []).flat().filter((v, i, a) => a.indexOf(v) === i).length > 1;
         m.rows.forEach((x) => {
           const label = trEl("dt", ""), dd = document.createElement("dd"), sp = x.lots != null && x.lots !== false ? trTxfSpec(trCapitalCanon(x.sym.replace(/@spot$/, ""))) : null;
           const symText = sp ? t(sp.prod) : x.sym.replace(/@spot$/, ""), tw = sp ? "" : trTwName(x.sym);
@@ -3809,6 +3814,8 @@ function trSaveAmounts(names, stored, opener, o) {
           if (m.kind === "orders") {
             dd.append(trEl("span", "n", x.lots != null ? trFmt(x.lots) + unit("lots", x.lots) : x.qty ? x.qty.text + unit(x.qty.unit) : trFmt(Math.round(x.money)) + (x.z && x.z !== TR_ZONE_UNKNOWN ? " " + x.z : "")));
             if (x.closed && nOpen) dd.appendChild(trEl("span", "tag", t("po.twClosedHold")));
+            // 框裡的單跨了兩家:送到模擬交易的那幾列標「模擬交易」,混在〔實盤〕框裡才看得出不是真錢(設計稽核 r2 S6);只有一家照舊不標
+            if (mixed && x.venues && x.venues.length && x.venues.every((v) => v === PAPER)) dd.appendChild(trEl("span", "tag", t("cx.paperShort")));
           } else {
             const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
             if (x.was || x.kept) arrow(dd, f(x.was));
@@ -3851,7 +3858,7 @@ function trSaveAmounts(names, stored, opener, o) {
     const title = t(fire ? "tr.cf.titleFire" : "tr.cf.title");
     if (cf.ctx && delCtx === cf.ctx) {
       $("del-title").textContent = title; $("del-ok").textContent = t(fire ? "tr.cf.titleFire" : "tr.save"); $("del-ok").disabled = blocked || wait;
-      const mk = $("del-mark"), paper = trIsPaper(); mk.hidden = !fire; mk.className = "mode " + (paper ? "paper" : "real"); mk.textContent = fire ? t(paper ? "tr.mode.paper" : "tr.mode.real") : "";
+      const mk = $("del-mark"), paper = trCfPaperOnly(); mk.hidden = !fire; mk.className = "mode " + (paper ? "paper" : "real"); mk.textContent = fire ? t(paper ? "tr.mode.paper" : "tr.mode.real") : "";
     }
     cf.title = title; cf.firing = fire; cf.wait = wait; cf.rows = m.rows.length + amtOnly.length; cf.notes = (!wait && !m.rows.length && !amtOnly.length && flatNew.length ? 1 : 0) + codeChanged.length + hostOld.length + (late ? 1 : 0) + (wait ? 1 : 0) + (unread ? 1 : 0) + (oldPv.length ? 1 : 0) + (held.wait.length ? 1 : 0) + (held.gate.length ? 1 : 0);
     if (wait && cf.timer == null) cf.timer = setTimeout(() => { cf.timer = null; trCfTick(); }, Math.max(0, cf.until - Date.now()) + 50);
@@ -3863,7 +3870,7 @@ function trSaveAmounts(names, stored, opener, o) {
   const frag = document.createDocumentFragment(); frag.append(body, extra);
   const anyChange = cf.rows > 0 || cf.notes > 0 || cf.wait || stratRows.length > 0 || blank.length > 0 || Object.keys(sending).some((n) => Number(sending[n]) !== old(n));
   const box = trCloudBox({
-    title: cf.title, mark: cf.firing ? t(trIsPaper() ? "tr.mode.paper" : "tr.mode.real") : null, markKind: trIsPaper() ? "paper" : "real", lines: [], extra: frag,
+    title: cf.title, mark: cf.firing ? t(trCfPaperOnly() ? "tr.mode.paper" : "tr.mode.real") : null, markKind: trCfPaperOnly() ? "paper" : "real", lines: [], extra: frag,
     okDisabled: blocked || cf.wait, ok: cf.firing ? t("tr.cf.titleFire") : t("tr.save"), opener,
     onCancel: () => { TR_CF.cur = null; clearTimeout(cf.timer); if (opt.onCancel) opt.onCancel(); },
     onOk: async () => {
@@ -5014,6 +5021,15 @@ function trHaltCloses(type, d) {
   // runtime 判完才寫的 closing(command_listener._mark_halt_closing;HALT 與平台 halt 事件都帶);沒有這欄(舊 runtime)才認 reason
   return !!d && (typeof d.closing === "boolean" ? d.closing : d.reason === TR_CLOSE_ALL_REASON);
 }
+/* 雲端的 halt 事件是 HALT 剛掛上那一刻凍住的:它就是現在這筆 HALT(事件 ts = halt.at,同一秒;reason 也相同)時,
+   closing 先看報告裡現在的值(runtime 判完平倉才改 true),事件那份只在對不上時用。這台電腦記的那一筆照它自己的(daemon 照 ack 記)。
+   同網頁 ovHaltCloses 一條規則(稽核 r2 P2-2:不用「兩分鐘內」,會把一般暫停對到後來的平倉) */
+function trHaltNow(ev, d, r) {
+  const h = r && r.halt;
+  if (d === ev || ev.type !== "halt" || !h || !h.halted || typeof h.closing !== "boolean" || typeof ev.ts !== "number") return d;
+  const ms = trMs(h.at);
+  return ms != null && Math.floor(ms / 1000) === Math.floor(ev.ts) && d.reason === h.reason ? Object.assign({}, d, { closing: h.closing }) : d;
+}
 // 標題:字串整段上級別色;[key, vars] 照網頁 evFill,字上級別色、代進去的值(交易所、分鐘)包 .mono。包一層,×N 才接在整句後面
 function trEvHead(head, cls) {
   if (!Array.isArray(head)) return trEl("span", cls, head);
@@ -5073,7 +5089,7 @@ function trOvEvents(r, z) {
     let head = null, note = null, lv = 3, tip = null, code = null, tail = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
-    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, d); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];

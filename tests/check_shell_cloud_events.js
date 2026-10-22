@@ -94,7 +94,7 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
 { const loop = cut("const ui = (Array.isArray(TR.ov.ui)", "// 目前的 HALT");
   ok("ui:平台格式的欄位包在 data 裡,這台電腦那一份在最外層——兩邊同一支迴圈", /const d = ev\.data && typeof ev\.data === "object" \? ev\.data : ev;/.test(loop) && /String\(d\.venue \|\| ""\)/.test(loop));
   ok("ui:認不得的型別交給 trEventText(雲端才有的 desktop_action / 交易所連不上…),還是認不得就不畫", /else \{ const txt = trEventText\(ev\.type, d\); if \(txt\) \[head, note, lv, tip, code, tail\] = txt; \}/.test(loop) && /if \(!head\) return;/.test(loop));
-  ok("ui:halt 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);沒有 source = 人按的", /lv = trEvLevel\(ev\.type, d\); const closes = lv !== 1 && trHaltCloses\(ev\.type, d\); head = t\(lv === 1 \? "tr\.ov\.evHaltAuto" : closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(loop));
+  ok("ui:halt 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);沒有 source = 人按的", /lv = trEvLevel\(ev\.type, d\); const closes = lv !== 1 && trHaltCloses\(ev\.type, trHaltNow\(ev, d, r\)\); head = t\(lv === 1 \? "tr\.ov\.evHaltAuto" : closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(loop));
   // 0.1.28 Wei 實測:按「暫停並關閉部位」事件只寫「已暫停下單」。這台電腦的 halt_close 看 daemon 記的 closing;
   // 雲端 halt 與現在的 HALT 看 runtime 判完才寫的 closing(稽核 B-3),沒有這欄(舊 runtime)才退回寫死的 reason
   ok("ui:暫停並關閉部位寫成關閉部位;只掛了暫停(closing false)、一般暫停、別的 reason 照舊寫已暫停",

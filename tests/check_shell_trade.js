@@ -293,7 +293,7 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
   okTw = true; const tcPaper = trTypeC(tw.c, "c"), tcNoName = trTypeC(tw.c);
   vid = "binance"; const tcBn = trTypeC(tw.c, "c"); vid = "paper";
   ok("trTypeC:模擬交易的台股負權重壓 0(不算持有);加密的負權重照舊算空頭;別家交易所、沒給策略名照舊",
-    J(tcPaper) === J({ n: 2, long: 0.5, short: 0.5, keys: ["2317", "2454", "BTCUSDT"], held: ["2454", "BTCUSDT"], paperShort: true }) && !("paperShort" in tcBn)
+    J(tcPaper) === J({ n: 2, long: 0.5, short: 0.5, keys: ["2317", "2454", "BTCUSDT"], held: ["2454", "BTCUSDT"], clamped: "paper" }) && !("clamped" in tcBn)
     && tcBn.n === 3 && tcBn.short === 1 && tcNoName.n === 3
     && (src.match(/tc = trTypeC\(st, n\)/g) || []).length === 2 && !/trTypeC\(st\)/.test(src));
   delete globalThis.trReport; delete globalThis.trPaperTwOk; delete globalThis.PAPER;
@@ -303,7 +303,7 @@ ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbo
     && SJ(crypto) === SJ({ 2330: -20000, 2454: 5000, 2317: -5000, BTCUSDT: -6000 }) && SJ(old) === SJ(crypto)); }
 { const pr = trTypeC({ weights: { BTCUSDT: 0.5, ETHUSDT: -0.3, SOLUSDT: 0 }, market: "swap" });
   ok("units §8.2/§8.3 投資組合那一列:檔數只數持有的(w' ≠ 0,universe 裡的 0 權重不算);多、空各自加總", pr && pr.n === 2 && Math.abs(pr.long - 0.5) < 1e-9 && Math.abs(pr.short - 0.3) < 1e-9 && J(pr.keys) === J(["BTCUSDT", "ETHUSDT", "SOLUSDT"]));
-  ok("…現貨的負權重壓 0(同 trClientTargets)、壞權重當 0、都不算持有;單一標的策略回 null", J(trTypeC({ weights: { A: -0.5, B: 0.5, C: "x" }, market: "spot" })) === J({ n: 1, long: 0.5, short: 0, keys: ["A", "B", "C"], held: ["B"] })
+  ok("…現貨的負權重壓 0(同 trClientTargets)、壞權重當 0、都不算持有;單一標的策略回 null", J(trTypeC({ weights: { A: -0.5, B: 0.5, C: "x" }, market: "spot" })) === J({ n: 1, long: 0.5, short: 0, keys: ["A", "B", "C"], held: ["B"], clamped: "spot" })
     && trTypeC({ symbol: "BTCUSDT", position: 1 }) === null && trTypeC(null) === null && trTypeC({ weights: [0.5] }) === null);
   // 0.1.26 用戶回報:權重全 0 的 Type C(GOOGL 順勢＋AMZN 逆勢)回報的 weights 是 {},標的寫「0 檔」、分到「幣別未定」。
   // runtime 另帶 universe(含 0 權重):keys 用它,n 照舊只數持有的;舊 runtime 沒這欄 = 現行行為
@@ -761,7 +761,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         /const symText = isC \? \(tcl \? tcl\.text : "—"\) : txf \? t\(txf\.prod\) : sym \|\| "—";/.test(tp)
         && /symInto\(trEl\("span", "sub-sym" \+ \(isC \|\| txf \? "" : " mono"\)\)\); if \(symTip\) sub\.title = symTip;/.test(tp) && /const symTd = symInto\(trEl\("td", \(txf \|\| isC \? "sname" : "sym"\) \+ " c-sym"\)\); if \(symTip\) symTd\.title = symTip;/.test(tp)
         && /else \{ host\.append\(symText\);/.test(tp)
-        && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn, paperShort: paperShort \|\| \(!!tc && !!tc\.paperShort\) \}\);/.test(tp)
+        && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn, clamped: paperShort \? "paper" : \(tc && tc\.clamped\) \|\| null \}\);/.test(tp)
         && /if \(tc\.long && tc\.short\) \{ main\.classList\.add\("split"\);/.test(fnOf("trPaintPosCell")) && !/tr\.grossTip/.test(tsrc)); }
     const tp = fnOf("trAmountTable");
     ok("查證 #1 接線:輸入與離開欄位都走 parse(口數列 trParseLots);最小進場額那句口數列不掛;確認框口數列列「N 口商品」(策略列與標的列都是;框裡不再有合計列,canon 確認 modal 只列會變的)",
@@ -2309,6 +2309,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((n) => n.className === "ev-row").map((x) => x.textContent); };
         const rc = evRows([{ ts: now - 60, type: "halt_close", closing: true }]), rh = evRows([{ ts: now - 60, type: "halt_close", closing: false }]), rp = evRows([{ ts: now - 60, type: "halt" }]);
         const rn = evRows([], { halted: true, at: new Date((now - 600) * 1000).toISOString(), source: "web", reason: "close all positions" });
+        // 稽核 r2 P2-2:雲端 halt 事件只在 ts = halt.at(同一秒)、reason 也相同時才是現在這筆 HALT,closing 先看報告裡現在的值
+        const T = now - 600, curClose = { halted: true, at: new Date(T * 1000).toISOString(), source: "web", reason: "close all positions", closing: true };
+        const same = evRows([{ ts: T, type: "halt", data: { source: "web", reason: "close all positions", closing: false } }], curClose);
+        const earlier = evRows([{ ts: T - 60, type: "halt", data: { source: "web", reason: "user request" } }], curClose);
+        const otherReason = evRows([{ ts: T, type: "halt", data: { source: "web", reason: "user request" } }], curClose);
+        ok("雲端 halt 事件對到現在的 HALT(同一秒、同 reason):事件凍住 closing false,現在 true → 寫並開始關閉部位;一分鐘前的一般暫停、同秒不同 reason 不對過去",
+          same.some((x) => /evHaltClose/.test(x)) && earlier.length === 1 && !/evHaltClose/.test(earlier[0]) && otherReason.length === 1 && !/evHaltClose/.test(otherReason[0]), J([same, earlier, otherReason])); 
         ok("暫停並關閉部位(0.1.28 Wei 實測只寫已暫停):halt_close 真的開始平倉寫 evHaltClose;只掛了暫停、一般暫停寫 evHalt;沒有畫面紀錄的 close-all HALT 也寫 evHaltClose",
           rc.length === 1 && /tr\.ov\.evHaltClose/.test(rc[0]) && rh.length === 1 && /tr\.ov\.evHalt(?!Close)/.test(rh[0]) && !/evHaltClose/.test(rh[0])
           && rp.length === 1 && !/evHaltClose/.test(rp[0]) && rn.length === 1 && /tr\.ov\.evHaltClose/.test(rn[0]), J([rc, rh, rp, rn]));

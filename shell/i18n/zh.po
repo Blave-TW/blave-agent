@@ -2356,6 +2356,9 @@ msgstr "昨天"
 msgid "tr.ov.evHalt"
 msgstr "已暫停下單"
 
+msgid "tr.spotNoShort"
+msgstr "現貨不放空"
+
 msgid "tr.paperTwNoShort"
 msgstr "模擬盤不放空台股"
 

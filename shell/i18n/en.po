@@ -2345,6 +2345,9 @@ msgstr "Yesterday"
 msgid "tr.ov.evHalt"
 msgstr "Trading paused"
 
+msgid "tr.spotNoShort"
+msgstr "Spot can't go short"
+
 msgid "tr.paperTwNoShort"
 msgstr "Paper trading doesn't short Taiwan stocks"
 

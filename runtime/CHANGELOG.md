@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **報告帶 `save_routing`(下一次下單設定存檔後的路由;新模組 `runtime/save_routing.py`)**:`_cmd_amounts` 的路由繼承(還綁著的保留、其餘繼承唯一那家;綁定集合 = .env 成對 ∩ 綁定清單,不看 lib)抽成 `save_routing.plan`/`bound_ids`,存檔與 reporter 共用同一份;報告 `save_routing = {bound, default, routes}`(成員在 routes 就照它、草稿照 default、"" = 沒路由)。電腦版存金額框照它算「存了會送的單」,不再各自猜綁定集合(稽核 v029-028bugs B-1:.env 與綁定清單不一致、綁了沒 lib 的交易所時框跟 runtime 對不上)。憑證名解析(`_venue_cred_ids` 等)搬進同一模組、`command_listener` 原名轉匯,行為不變。測試 `tests/check_shell_a1_save.js`(經 `tests/_cf_lib_after.py` 跑真的存檔＋reporter＋lib)。
+- **報告帶 `save_routing`(下一次下單設定存檔後的路由;新模組 `runtime/save_routing.py`)**:`_cmd_amounts` 的路由繼承(還綁著的保留、其餘繼承唯一那家;綁定集合 = .env 成對 ∩ 綁定清單,不看 lib)抽成 `save_routing.plan`/`bound_ids`,存檔與 reporter 共用同一份;報告 `save_routing = {bound, default, routes}`(成員在 routes 就照它、草稿照 default、"" = 沒路由)。電腦版存金額框照它算「存了會送的單」,不再各自猜綁定集合(稽核 v029-028bugs B-1:.env 與綁定清單不一致、綁了沒 lib 的交易所時框跟 runtime 對不上)。憑證名解析(`_venue_cred_ids` 等)搬進同一模組、`command_listener` 原名轉匯,路由規則不變(兩處更寬鬆:`exchanges` 不是 dict、或某個值不是字串(list／dict)時當成沒路由、照常繼承,原本存檔會失敗;讀 .env 改 UTF-8 解碼加讀檔重試)。報告算 `save_routing` 失敗只回 None、不拖垮整份報告。測試 `tests/check_shell_a1_save.js`(經 `tests/_cf_lib_after.py` 跑真的存檔＋reporter＋lib)。
 - **「暫停並關閉部位」的 HALT 帶 `closing`(`_cmd_close_all`、`_mark_halt_closing`;`portfolio_reporter.halt_state`)**:先掛 HALT(照舊)並記 `closing: false`,判完真的起了平倉程式(started／already_running)才改 true;halted_only／halted_capital_manual／nothing_closed 留 false。報告 `halt.closing` 只在是布林時帶。畫面靠它決定事件列寫不寫「並開始關閉部位」(原本只能比對 reason 字面值,那句在判斷之前就寫了;稽核 B-3)。平台 halt 事件要 api `agent_events` 白名單加 `closing` 才會帶到雲端事件。測試 `tests/check_flatten_singleflight.py`、`tests/check_capital_flatten_identity.py`、`tests/check_halt_freeze.py` F7。
 
 ## 1.1.139 — 2026-10-22(desktop 0.1.29)
