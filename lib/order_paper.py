@@ -13,9 +13,11 @@ PRICE (the whole model, Wei 2026-10-20):
   lib/paper_data.current_price: crypto Binance USDT-M's last trade, TAIFEX the
   near-month 1m series, TW / US stocks the unadjusted daily close (TW: the one
   the portfolio page sizes shares with); dividends are not booked.
-  * one price per symbol — NO bid/ask, NO spread, NO
-    slippage. Beginner-tier fidelity (Webull/TradingView do the same); fees are
-    the one realism kept.
+  * one price per symbol — NO bid/ask, NO spread. Beginner-tier fidelity
+    (Webull/TradingView do the same); the fee is the one realism kept, and it
+    is the backtest's (_fee_rate): the owning strategy's FEE, else lib.costs'
+    per-market default, which already includes slippage — in a covered market
+    every fill, market or resting, pays that one rate per side.
   * fills are IMMEDIATE at that price — no wait for the next bar (the live-paper
     convention, e.g. Freqtrade dry-run). Paper therefore diverges a little from
     the next-bar-open backtest; that is normal and a useful look-ahead check.
@@ -120,6 +122,17 @@ except ImportError:  # half-updated workspace (lib/paper_data.py without TW stoc
         return True
 
 try:
+    from lib.paper_data import strategy_fee
+except ImportError:  # half-updated workspace (lib/paper_data.py before FEE overrides)
+    def strategy_fee(symbol):
+        return None
+try:
+    from lib.costs import default_fee
+except ImportError:  # half-updated workspace (lib/costs.py not landed): the fixed rates below
+    def default_fee(symbol=None, market=None, universe=None, fees=None):
+        return None
+
+try:
     import fcntl
 except ImportError:  # Windows
     fcntl = None
@@ -132,6 +145,8 @@ VENUE = "paper"
 LEDGER_PATH = "state/paper_ledger.json"
 LOCK_PATH = "state/paper_ledger.lock"
 DEFAULT_CASH = 100_000.0  # new ledgers only — an existing ledger keeps its initial_cash
+# only for a market lib.costs has no default for (US stocks, CME, TAIFEX stock futures)
+# and no strategy FEE covers
 TAKER_FEE = 0.0005   # market / crossing-limit / protective-trigger
 MAKER_FEE = 0.0002   # resting-limit fill
 SPOT_FEE = 0.001     # spot both sides
@@ -143,6 +158,14 @@ log = logging.getLogger("order_paper")
 
 class PaperError(Exception):
     """Simulated-venue refusal with a readable reason."""
+
+
+def _fee_rate(sym, fallback, spot=False):
+    """Per-side fee a paper fill of `sym` pays — the rate its backtest charged."""
+    rate = strategy_fee(sym)
+    if rate is None:
+        rate = default_fee(sym, "spot" if spot else "swap")
+    return fallback if rate is None else rate
 
 
 # ── price (the market's latest, lib/paper_data) ──────────────────────────────
@@ -832,7 +855,7 @@ def _settle(env, led):
         fill_px = px
         if o["market"] == "spot":
             try:
-                _fill_spot(led, o, qty, fill_px, SPOT_FEE, env=env)
+                _fill_spot(led, o, qty, fill_px, _fee_rate(sym, SPOT_FEE, spot=True), env=env)
             except PaperError as e:
                 o["status"] = "canceled"
                 o["reason"] = str(e)
@@ -851,7 +874,7 @@ def _settle(env, led):
                 o["reason"] = "under one share"
                 continue
             fx = _fill_fx(env, led, sym, None, _adds(led, sym, signed))
-            fee = abs(signed) * fill_px * MAKER_FEE / fx[1]
+            fee = abs(signed) * fill_px * _fee_rate(sym, MAKER_FEE) / fx[1]
             realized = _apply_swap_fill(env, led, sym, signed, fill_px, fee, marks, fx=fx)
         except PaperError as e:
             o["status"] = "canceled"
@@ -881,7 +904,7 @@ def _settle(env, led):
         signed = -pos["qty"]
         cv = _cv(pos) if pos.get("unit") == "contracts" else None
         fx = _fill_fx(env, led, sym, None, False)
-        fee = abs(signed) * mark * (cv or 1.0) * TAKER_FEE / fx[1]
+        fee = abs(signed) * mark * (cv or 1.0) * _fee_rate(sym, TAKER_FEE) / fx[1]
         o = _new_order(led, sym, "swap", "sell" if long else "buy", "market", mark,
                        abs(signed), None, reduce_only=True,
                        direction="long" if long else "short")
@@ -977,7 +1000,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
                 guard.audit("order_ok", order_id="", note="under one share", **fields)
                 return False
             fx = _fill_fx(env, led, sym, None, _adds(led, sym, signed))
-            fee = abs(signed) * price * TAKER_FEE / fx[1]
+            fee = abs(signed) * price * _fee_rate(sym, TAKER_FEE) / fx[1]
             o = _new_order(led, sym, "swap", side, "market", price, abs(signed),
                            client_order_id, reduce_only=reduce_only, direction=direction)
             if fx[0] != "USD":
@@ -1057,7 +1080,7 @@ def place_contract_market_order(env, symbol, direction, lots, contract_value,
                 # row's own fx), refuse only the opening part
                 refused_open, signed = abs(signed) - abs(q0), -q0
                 fx = _fill_fx(env, led, sym, currency, False)
-            fee = abs(signed) * price * cv * TAKER_FEE / fx[1]
+            fee = abs(signed) * price * cv * _fee_rate(sym, TAKER_FEE) / fx[1]
             o = _new_order(led, sym, "swap", side, "market", price, abs(signed),
                            client_order_id, reduce_only=reduce_only, direction=direction)
             o.update(unit="contracts", contract_value=cv, quote_ccy=fx[0], fx=fx[1])
@@ -1139,7 +1162,7 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
                     o["reason"] = "under one share"
                     return {"order_id": o["order_id"], "status": "canceled"}
                 fx = _fill_fx(env, led, sym, None, _adds(led, sym, signed))
-                fee = abs(signed) * mark * TAKER_FEE / fx[1]
+                fee = abs(signed) * mark * _fee_rate(sym, TAKER_FEE) / fx[1]
                 if fx[0] != "USD":
                     o.update(quote_ccy=fx[0], fx=fx[1])
                 realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks, fx=fx)
@@ -1275,8 +1298,20 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
             if q <= 0:
                 guard.audit("order_ok", order_id="", note="zero/again", **fields)
                 return False
+            rate = _fee_rate(sym, SPOT_FEE, spot=True)
+            if side == "buy" and rate > SPOT_FEE:
+                # a buy the cash covered at the old 0.1% is trimmed to fit the higher rate
+                # instead of being refused every round
+                fx = _spot_fx(env, base)
+                if q * price / fx * (1 + SPOT_FEE) <= led["cash"] < q * price / fx * (1 + rate):
+                    q = led["cash"] * fx / (price * (1 + rate)) * (1 - 1e-9)
+                    if is_tw_stock(sym):
+                        q = math.floor(q)
+                if q <= 0:
+                    guard.audit("order_ok", order_id="", note="zero/again", **fields)
+                    return False
             o = _new_order(led, sym, "spot", side, "market", price, q, client_order_id)
-            _fill_spot(led, o, q, price, SPOT_FEE, env=env)
+            _fill_spot(led, o, q, price, rate, env=env)
             guard.audit("order_ok", order_id=o["order_id"], price=price, **fields)
             return _fill_view(o)
     except guard.Halted:
@@ -1313,7 +1348,8 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
                 if base_qty <= 0:
                     guard.audit("order_ok", order_id="", note="under one share", **fields)
                     return False
-            if side == "buy" and led["cash"] < float(base_qty) * px * (1 + SPOT_FEE) / _spot_fx(env, base):
+            rate = _fee_rate(sym, SPOT_FEE, spot=True)
+            if side == "buy" and led["cash"] < float(base_qty) * px * (1 + rate) / _spot_fx(env, base):
                 raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash to rest a {sym} buy"))
             if side == "sell" and led["spot"].get(base, 0.0) + 1e-12 < float(base_qty):
                 raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient {base} to rest a sell"))
@@ -1326,7 +1362,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
                 guard.audit("order_ok", order_id=o["order_id"], note="post_only_rejected", **fields)
                 return {"status": "post_only_rejected", "order_id": o["order_id"]}
             if crosses:
-                _fill_spot(led, o, float(base_qty), mark, SPOT_FEE, env=env)
+                _fill_spot(led, o, float(base_qty), mark, rate, env=env)
             guard.audit("order_ok", order_id=o["order_id"], **fields)
             return {"order_id": o["order_id"], "status": o["status"],
                     "client_order_id": client_order_id or ""}

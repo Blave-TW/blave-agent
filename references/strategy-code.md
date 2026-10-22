@@ -738,17 +738,19 @@ def compute_signals(df):
 
 ### FEE is PER SIDE (one-way)
 
-The engine charges `|Δw| × FEE` on every position change, in the backtest, scans, walk-forward and MCPT alike — open then close = `2 × FEE`, a long→short flip = `2 × FEE` at once. So `FEE` is the cost of ONE side: commission + that side's tax + slippage (≈ half the spread or 1 tick). Never put a round-trip total in it. When the two sides cost differently (a tax only on the sell), use their average.
+The engine charges `|Δw| × FEE` on every position change, in the backtest, scans, walk-forward and MCPT alike — open then close = `2 × FEE`, a long→short flip = `2 × FEE` at once. So `FEE` is the cost of ONE side: commission + that side's tax + slippage. Never put a round-trip total in it. Paper trading charges the same `FEE` on every fill.
 
-| Market | Per-side `FEE` | How |
-|---|---|---|
-| Binance USDT-M perp, taker | `0.0005` | 0.05% taker per side (regular tier); lower only for a verified VIP / maker fill |
-| Taiwan stocks | `0.003` (list-price ceiling) | commission ≤ 0.1425% each side + securities transaction tax 0.3% on the sell only → (0.1425 + 0.1425 + 0.3) / 2 ≈ 0.29%. A broker's e-trading discount lowers the commission part — recompute with the user's actual discount |
-| Taiwan ETFs | `0.002` (ceiling) | same, with the ETF sell tax of 0.1% → (0.285 + 0.1) / 2 ≈ 0.19% |
-| TAIFEX index futures TXF / MXF / TMF | per instrument | `references/lib.md` › Taiwan index futures — `FEE ≈ 0.00002 + commission/(multiplier·index) + tick/index` |
-| CME / NYMEX | verify with the broker | commission + spread per side, as a fraction of notional (`examples/cl_sma` uses `0.0003`) |
+Defaults per side (`lib/costs.DEFAULT_FEES`), **already including slippage — conservative; adjust to the user's broker rate or the instrument's liquidity** (`references/trading-costs.md`):
 
-Rates are sources, not defaults: confirm the user's venue and tier before a backtest you will report.
+| Market | Default per-side `FEE` |
+|---|---|
+| Taiwan stocks (day trades included) | `0.005` |
+| Taiwan ETFs (bond ETFs included; `lib.costs.is_tw_etf`) | `0.003` |
+| Crypto perps | `0.001` |
+| Crypto spot | `0.0015` |
+| TAIFEX index futures TXF / MXF / TMF | `0.0001` |
+
+Other markets (US stocks, CME) have no default — `references/trading-costs.md` › *Markets without a default*.
 
 ---
 

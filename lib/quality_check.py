@@ -158,7 +158,7 @@ def _check_fee(tree: ast.AST) -> list[dict]:
                     node.lineno,
                     "FEE=0 — backtest reports zero transaction cost, inflating "
                     "apparent Sharpe/return. Confirm the venue genuinely charges "
-                    "none; otherwise use a realistic fee (e.g. 0.0005).",
+                    "none; otherwise use the market default (lib.costs.DEFAULT_FEES, references/trading-costs.md).",
                 ))
             elif not isinstance(value, ast.Constant):
                 # FEE = 0.0*1, FEE = X if Y else Z, … — can't statically verify;

@@ -2179,8 +2179,8 @@ def ed07(w):
             signals={"a1": 1, "s1": 1})
     w.settle()
     led = w.ledger()
-    w.eq(round(led["cash"], 4), round(100000 - 1000 * 0.0005 - 500 - 500 * 0.001, 4),
-         "fees from cash: swap taker 0.05%, spot 0.1% (plus the spot purchase)")
+    w.eq(round(led["cash"], 4), round(100000 - 1000 * 0.001 - 500 - 500 * 0.0015, 4),
+         "fees from cash: lib.costs defaults, perp 0.1%, spot 0.15% (plus the spot purchase)")
     w.eq(w.book(), {B: (0.02, 1000.0), E + "@spot": (0.25, 500.0)}, "fees never change the book's qty")
     w.marks(BTCUSDT=55000.0)
     w.sig("a1", 0)

@@ -44,7 +44,7 @@ def offline():
 paper_data._fetch_fx = lambda env: offline()
 ENV = {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper", "PAPER_BOUND_TS": "1",
        "PAPER_INITIAL_EQUITY": "100000"}
-CV, MARGIN, FEE = 200, 701000, order_paper.TAKER_FEE
+CV, MARGIN, FEE = 200, 701000, order_paper._fee_rate("TXF", None)  # lib.costs default 0.01%
 
 
 def mark(px):

@@ -51,9 +51,10 @@ account. quote_ccy() says which currency a symbol's contract money is in.
 Fills are immediate at this price (no wait for the next bar — the live-paper
 convention every serious system uses, e.g. Freqtrade dry-run; paper deliberately
 diverges a little from the next-bar-open backtest, which is normal and even
-useful as a look-ahead detector). No bid/ask, no slippage — beginner-tier
-fidelity (Webull/TradingView do the same); fees are modelled, that is the one
-realism worth keeping.
+useful as a look-ahead detector). No bid/ask and no separate slippage — beginner-tier
+fidelity (Webull/TradingView do the same). The fee is the realism kept, and it is
+the backtest's: the FEE the strategy trading the symbol declares (strategy_fee),
+else lib.costs' per-market default, which already includes slippage.
 """
 import glob
 import importlib.util
@@ -121,6 +122,47 @@ def _strategy_symbol(name):
     except OSError:
         pass
     return None
+
+
+_FEE_RE = re.compile(r'^FEE\s*(?::\s*float)?\s*=\s*([0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*(?:#.*)?$', re.M)
+
+
+def _declared_fee(name):
+    """The strategy's FEE when it is a plain number — the same constant its backtest
+    charges. A computed FEE is not evaluated here (lib/quality_check warns on one)."""
+    try:
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8") as f:
+            m = _FEE_RE.search(f.read())
+    except (OSError, ValueError):
+        return None
+    return float(m.group(1)) if m else None
+
+
+def _owns(name, want):
+    sym = _strategy_symbol(name)
+    if sym == want or (_txf_root(want) and _txf_root(sym)):
+        return True
+    try:
+        with open(f"strategies/{name}/state.json") as f:
+            w = json.load(f).get("weights")
+    except (OSError, ValueError, AttributeError):
+        return False
+    return isinstance(w, dict) and want in {_norm(k) for k in w}
+
+
+def strategy_fee(symbol):
+    """Per-side FEE the strategies trading `symbol` declare (Type A SYMBOL, TXF family, or a
+    Type C weight), so a paper fill pays what the backtest charged. The order does not say
+    which strategy sized it: with several owners the highest FEE wins. None = no owner
+    declares one — the caller uses lib.costs' default."""
+    want = _norm(symbol)
+    fees = []
+    for path in sorted(glob.glob("strategies/*/strategy.py")):
+        name = os.path.basename(os.path.dirname(path))
+        fee = _declared_fee(name) if _owns(name, want) else None
+        if fee is not None:
+            fees.append(fee)
+    return max(fees) if fees else None
 
 
 def _load_strategy(name):
