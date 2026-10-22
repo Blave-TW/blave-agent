@@ -50,6 +50,9 @@ check(all(default_fee(c) == 0.005 for c in ("030001", "089999", "03001P", "08999
       "warrants (TWSE 03–08, TPEx 70–73) take the stock rate, conservative")
 check(default_fee("AAPL") is None and default_fee("CL") is None and default_fee("CDF") is None,
       "uncovered markets → None")
+check(default_fee("AAPL", us=True) == 0.001 and default_fee("BRK.B", us=True) == 0.001
+      and default_fee("TMF", us=True) == 0.001 and default_fee(universe=["SPY", "QQQ"], us=True) == 0.001,
+      "US stocks (a fetch_usstock_price strategy) 0.1%, the stock-perp rate; TMF there is the US ETF")
 check(default_fee(universe=["0050", "00878"]) == 0.003 and default_fee(universe=["0050", "2330"]) == 0.005,
       "Type C universe: ETFs 0.3%, mixed → the stock rate")
 
@@ -66,6 +69,12 @@ logging.getLogger().addHandler(Grab())
 check(fee_of({}) == 0.0005 and fee_of({"SYMBOL": "CL"}) == 0.0005 and len(seen) == 2
       and "no SYMBOL or UNIVERSE" in seen[0] and "not in lib.costs.DEFAULT_FEES" in seen[1],
       "fee_of: market unknown → 0.0005 with a warning saying why")
+
+open("us_strat.py", "w").write('SYMBOL = "SPY"\nfrom lib.data import fetch_usstock_price\n')
+class UsMod:
+    SYMBOL = "SPY"
+    __file__ = os.path.abspath("us_strat.py")
+check(fee_of(UsMod) == 0.001, "fee_of: a US strategy without FEE → 0.1%, not 0.0005")
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -84,6 +93,11 @@ R.run({"STRATEGY_NAME": "nofee", "SYMBOL": "ETHUSDT", "MARKET": "spot", "INTERVA
       lambda h: DF.copy(), lambda df: (df["Close"] > df["Close"].rolling(20).mean()).astype(float))
 st = json.load(open("strategies/nofee/stats.json"))
 check(near(st.get("fee [%]"), 0.15), f"run() without FEE backtests at the market default ({st.get('fee [%]')}%)")
+R.run({"STRATEGY_NAME": "usnofee", "SYMBOL": "SPY", "INTERVAL": "1h", "START": "2025-01-01", "WARMUP": 20,
+       "MCPT": False, "__file__": os.path.abspath("us_strat.py")},
+      lambda h: DF.copy(), lambda df: (df["Close"] > df["Close"].rolling(20).mean()).astype(float))
+st = json.load(open("strategies/usnofee/stats.json"))
+check(near(st.get("fee [%]"), 0.1), f"run() of a US strategy without FEE backtests at 0.1% ({st.get('fee [%]')}%)")
 
 from lib.param_scan import scan_grid  # noqa: E402
 from lib.walk_forward import run_walk_forward  # noqa: E402
@@ -197,7 +211,9 @@ strat("warrant", 'SYMBOL = "711394"\nFEE = 0.02\n')
 strat("weird", 'SYMBOL = "DOGEUSDT"\nFEE = 0.004\nFEE = {[1]: 2}\n')
 strat("last", '"""\nFEE = 0.02\n"""\nSYMBOL = "ETHUSDT"\nFEE = 0.001\nFEE = 0.004\n')
 strat("computed", 'SYMBOL = "SOLUSDT"\nFEE = 0.003\nFEE = 0.001 * 2\n')
-picked("live_tw", "perp", "perp_v2", "spot", "basket", "mixed_nofee", "mxf", "mxf_next", "warrant", "weird", "last", "computed")
+strat("us_spy", 'SYMBOL = "SPY"\nfrom lib.data import fetch_usstock_price\n')
+strat("us_qqq", 'SYMBOL = "QQQ"\nfrom lib.data import fetch_usstock_price\n')
+picked("live_tw", "us_spy", "perp", "perp_v2", "spot", "basket", "mixed_nofee", "mxf", "mxf_next", "warrant", "weird", "last", "computed")
 
 check(paper_data.strategy_fee("2330", spot=True) == 0.002, "a draft outside the 下單設定 never counts (0.002, not 0.01)")
 check(paper_data.strategy_fee("BTCUSDT", spot=False) == 0.0009 and paper_data.strategy_fee("BTCUSDT", spot=True) == 0.003,
@@ -207,6 +223,9 @@ check(paper_data.strategy_fee("0050", spot=True) == 0.005, "Type C without FEE: 
 check(paper_data.strategy_fee("TXF") == 0.0003, "TXF family: MXF and MXFR2 owners cover a TXF fill (the higher, 0.0003)")
 check(paper_data.strategy_fee("711394", spot=True) == 0.02, "a TPEx warrant strategy without MARKET still owns its share fill")
 check(paper_data.strategy_fee("DOGEUSDT") == 0.001, "an unhashable last FEE literal (TypeError) is unknown: the market default, the fill goes on")
+check(paper_data.strategy_fee("SPY") == 0.001, "a picked US strategy without FEE: paper charges 0.1%")
+check(order_paper._fee_rate("QQQ", order_paper.TAKER_FEE) == 0.001,
+      "a US ticker only an unpicked fetch_usstock_price strategy reads: 0.1%, not TAKER_FEE")
 check(paper_data.strategy_fee("ETHUSDT") == 0.004, "the LAST FEE assignment wins; a docstring FEE line is not code")
 check(paper_data.strategy_fee("SOLUSDT") == 0.001, "a computed last FEE is unknown: the market default, not the earlier literal")
 path = "strategies/live_tw/strategy.py"

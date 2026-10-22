@@ -13,6 +13,7 @@ One rate per market, per side, **already including commission, tax and slippage 
 | Crypto perps (USDT / USDC, stock perps such as `NVDAUSDT` included) | `0.001` (0.1%) | taker 0.05–0.06% + spread on smaller coins |
 | Crypto spot | `0.0015` (0.15%) | taker ~0.1% + spread |
 | TAIFEX index futures TXF / MXF / TMF | `0.0001` (0.01%) | futures tax 0.002% + commission + slippage (≈ 4.6 index points at 46,293) |
+| US stocks / ETFs (a strategy that prices with `fetch_usstock_price`) | `0.001` (0.1%) | Blave trades US stocks live as a venue's stock perp (`AAPLUSDT`-style), so they take the crypto perp rate — taker + spread. A user backtesting for their own broker (複委託 ≈ 0.12–0.15% a side, a zero-commission US broker ≈ 0.02%) should set `FEE` to that |
 
 **The default is a starting point: adjust it to the user's own broker rate or the instrument's liquidity, and say which you used.**
 - Lower it only with a real reason: the user's broker commission discount (e.g. 2.8折 → commission ≈ 0.04%), a confirmed VIP tier, a strategy that truly fills by resting limits, BTC/ETH on a top venue (taker 0.05% + almost no spread).
@@ -24,13 +25,11 @@ Write the number into `FEE` as a plain constant with what it is in the comment, 
 ## Where the rate is used
 
 - **Backtest, scans, walk-forward, MCPT**: `lib.costs.fee_of(s)` — the strategy's `FEE`, else the default for its `SYMBOL` / `MARKET` / `UNIVERSE`; a market not in the table (or a Type C whose universe is built inside `fetch_data`) gets `0.0005` with a warning — set `FEE` there. `run()` calls it itself; `scan_grid`, `run_walk_forward` and a manual `mcpt` take `fee=fee_of(s)` and refuse a missing `fee`.
-- **Paper trading** (`lib/order_paper.py`): every fill — market, crossing limit, resting limit, SL/TP — pays one per-side rate, the one the backtest charged: from the strategies **in the 下單設定** that trade that symbol (its `SYMBOL`, the TXF family, or a Type C weight) **on that market** (spot vs perp; a TW code is shares either way) — their `FEE`, else their market default (a Type C: the highest over its universe). Drafts and copies outside the 下單設定 never count; several owners → the highest; none → the market default. A market the table does not cover and no owner covers keeps paper's fixed rates (taker 0.05%, maker 0.02%, spot 0.10%). Changing `FEE` changes the next paper fill; past fills stay as booked.
+- **Paper trading** (`lib/order_paper.py`): every fill — market, crossing limit, resting limit, SL/TP — pays one per-side rate, the one the backtest charged: from the strategies **in the 下單設定** that trade that symbol (its `SYMBOL`, the TXF family, or a Type C weight) **on that market** (spot vs perp; a TW code is shares either way) — their `FEE`, else their market default (a Type C: the highest over its universe). Drafts and copies outside the 下單設定 never count; several owners → the highest; none → the market default. A US ticker no owner covers but some strategy prices with `fetch_usstock_price` pays the US default. A market the table does not cover and no owner covers keeps paper's fixed rates (taker 0.05%, maker 0.02%, spot 0.10%). Changing `FEE` changes the next paper fill; past fills stay as booked.
 
 ## Markets without a default
 
 | Market | Per-side `FEE` | How |
 |---|---|---|
-| US stocks via a Taiwan broker (複委託), e-trading | ≈ `0.0012`–`0.0015` | commission ≈ 0.08–0.25% + a share of the TWD↔USD conversion spread + half spread — estimate, confirm with the user's broker |
-| US stocks, zero-commission US broker | ≈ `0.0002` | SEC fee on the sell + FINRA TAF + half spread — estimate |
 | CME / NYMEX and other futures | verify with the broker | commission + exchange fee + 1 tick per side as a fraction of notional (`examples/cl_sma` uses `0.0003`) |
 | TAIFEX stock futures (CDF…) | verify with the broker | not modelled |

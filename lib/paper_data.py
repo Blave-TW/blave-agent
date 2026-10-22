@@ -133,7 +133,7 @@ def _strategy_symbol(name):
 
 
 _CONSTS = ("FEE", "SYMBOL", "MARKET", "UNIVERSE")
-_file_cache = {}  # path -> (mtime, parsed) — strategy files and state.json, read inside the ledger lock
+_file_cache = {}  # (path, parse) -> ((mtime_ns, size), parsed) — strategy files and state.json, read inside the ledger lock
 
 
 def _cached(path, parse):
@@ -144,7 +144,7 @@ def _cached(path, parse):
     except OSError:
         return None
     key = (st.st_mtime_ns, st.st_size)
-    hit = _file_cache.get(path)
+    hit = _file_cache.get((path, parse))
     if hit and hit[0] == key:
         return hit[1]
     try:
@@ -154,7 +154,7 @@ def _cached(path, parse):
         log.warning(f"[paper_data] {path} unreadable for the paper fee, using the default: "
                     f"{type(e).__name__}: {e}")
         val = None
-    _file_cache[path] = (key, val)
+    _file_cache[(path, parse)] = (key, val)
     return val
 
 
@@ -183,8 +183,9 @@ def _owner_fee(name, want, spot):
     """The FEE strategy `name` is backtested with, when it trades `want` on this market
     (spot vs perp — a TW code is held as shares whatever MARKET says): its own FEE, else
     its market default (a Type C: the highest over its universe). None = not an owner."""
-    from lib.costs import default_fee
-    c = _cached(f"strategies/{name}/strategy.py", _consts) or {}
+    from lib.costs import default_fee, reads_usstock
+    path = f"strategies/{name}/strategy.py"
+    c = _cached(path, _consts) or {}
     state = _cached(f"strategies/{name}/state.json", json.loads)
     state = state if isinstance(state, dict) else {}
     weights = state.get("weights") if isinstance(state.get("weights"), dict) else {}
@@ -199,7 +200,8 @@ def _owner_fee(name, want, spot):
     if isinstance(fee, (int, float)) and not isinstance(fee, bool):
         return float(fee)
     universe = c.get("UNIVERSE") if isinstance(c.get("UNIVERSE"), (list, tuple)) else list(weights)
-    return default_fee(c.get("SYMBOL") or sym, market, universe or None)
+    return default_fee(c.get("SYMBOL") or sym, market, universe or None,
+                       bool(_cached(path, reads_usstock)))
 
 
 def strategy_fee(symbol, spot=False):

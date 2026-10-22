@@ -129,8 +129,13 @@ except ImportError:  # half-updated workspace (lib/paper_data.py before FEE over
 try:
     from lib.costs import default_fee
 except ImportError:  # half-updated workspace (lib/costs.py not landed): the fixed rates below
-    def default_fee(symbol=None, market=None, universe=None):
+    def default_fee(symbol=None, market=None, universe=None, us=False):
         return None
+try:
+    from lib.paper_data import _us_owned
+except ImportError:  # half-updated workspace (lib/paper_data.py before US stocks)
+    def _us_owned(sym):
+        return False
 
 try:
     import fcntl
@@ -145,7 +150,7 @@ VENUE = "paper"
 LEDGER_PATH = "state/paper_ledger.json"
 LOCK_PATH = "state/paper_ledger.lock"
 DEFAULT_CASH = 100_000.0  # new ledgers only — an existing ledger keeps its initial_cash
-# only for a market lib.costs has no default for (US stocks, CME, TAIFEX stock futures)
+# only for a market lib.costs has no default for (CME, TAIFEX stock futures)
 # and no strategy FEE covers
 TAKER_FEE = 0.0005   # market / crossing-limit / protective-trigger
 MAKER_FEE = 0.0002   # resting-limit fill
@@ -165,6 +170,8 @@ def _fee_rate(sym, fallback, spot=False):
     rate = strategy_fee(sym, spot)
     if rate is None:
         rate = default_fee(sym, "spot" if spot else "swap")
+    if rate is None and _us_owned(sym):  # a US ticker some strategy prices with fetch_usstock_price
+        rate = default_fee(sym, us=True)
     return fallback if rate is None else rate
 
 
