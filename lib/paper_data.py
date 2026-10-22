@@ -543,10 +543,13 @@ def _taifex_public_last(sym, root):
 
 
 def _us_owned(sym):
-    """A strategy prices `sym` with fetch_usstock_price (its SYMBOL, or a Type C weight,
-    as lib.costs.us_members tells it). The ticker alone is not enough: 'BTC' is also a US
-    ETF, and a TXF strategy may read SPY as a signal. Files go through _cached: this runs
-    on fills and marks, inside the ledger lock."""
+    """A strategy prices `sym` with fetch_usstock_price: `sym` is its SYMBOL or a Type C
+    weight, and a call names it — or a call's ticker cannot be read (a function parameter),
+    where the strategy's own SYMBOL is the evidence (XLF / IWF / GEF / KOF also fit the
+    TAIFEX pattern, so a miss here prices them at TAIFEX). lib.costs.us_members' stricter
+    rule is for the fee. The ticker alone is not enough: 'BTC' is also a US ETF, and a TXF
+    strategy may read SPY as a signal. Files go through _cached: this runs on fills and
+    marks, inside the ledger lock."""
     from lib.costs import us_members
     from lib.data import _price_fetcher_scan
     for path in sorted(glob.glob("strategies/*/strategy.py")):
@@ -558,7 +561,7 @@ def _us_owned(sym):
         w = state.get("weights")
         owned = {_norm(state.get("symbol") or (_cached(path, _consts) or {}).get("SYMBOL"))}
         owned |= {_norm(k) for k in w} if isinstance(w, dict) else set()
-        if sym in owned and us_members(scan, [sym]):
+        if sym in owned and (None in scan[1] or not scan[1] or us_members(scan, [sym])):
             return True
     return False
 

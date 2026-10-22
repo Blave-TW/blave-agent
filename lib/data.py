@@ -7645,40 +7645,51 @@ _NON_PRICE_FETCHERS = frozenset({
 
 def _price_fetcher_scan(src):
     """(the _PRICE_FETCHERS names strategy source `src` uses as code, the tickers its
-    fetch_usstock_price calls pass) — NAME tokens, so a docstring, a comment or a string that
-    mentions a fetcher does not count. A ticker is the first argument (or symbol=) when it is
-    a string literal or a module-level name bound once to one; anything else (a loop variable
-    over UNIVERSE) is None in the set. Raises tokenize.TokenError / SyntaxError on a file that
-    does not tokenize. Known blind spot: fetches inside a helper module it imports."""
+    fetch_usstock_price calls pass) — read with `ast`, so a comment, a docstring or a string
+    that mentions a fetcher does not count (a name inside an f-string's {…} does). An import
+    alias counts as the fetcher it names. A ticker is the first argument (or symbol=) when it
+    is a string literal or a module-level name whose LAST assignment is one (plain, annotated,
+    tuple-unpacked); anything else (a loop variable over UNIVERSE, a function parameter) is
+    None in the set. Raises SyntaxError / ValueError on a file that does not parse. Known blind
+    spot: fetches inside a helper module it imports."""
     import ast
-    import tokenize
-    toks = [t for t in tokenize.generate_tokens(io.StringIO(src).readline)
-            if t.type not in (tokenize.COMMENT, tokenize.NL)]
+    tree = ast.parse(src)
 
-    def literal(t):
-        if t.type != tokenize.STRING:
-            return None
-        try:
-            v = ast.literal_eval(t.string)
-        except (ValueError, SyntaxError):   # an f-string before 3.12 is one STRING token
-            return None
-        return v if isinstance(v, str) else None
+    def text(node):
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
-    consts, args = {}, []
-    for i, t in enumerate(toks):
-        if t.type != tokenize.NAME:
+    consts = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            pairs = [(t, node.value) for t in node.targets]
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            pairs = [(node.target, node.value)]
+        else:
             continue
-        nxt = toks[i + 1:i + 6]
-        if t.start[1] == 0 and len(nxt) >= 3 and nxt[0].string == "=":
-            once = t.string not in consts
-            consts[t.string] = literal(nxt[1]) if once and nxt[2].type in (
-                tokenize.NEWLINE, tokenize.ENDMARKER) else None
-        elif t.string == "fetch_usstock_price" and nxt and nxt[0].string == "(":
-            a = nxt[1:]
-            if len(a) >= 3 and a[0].string == "symbol" and a[1].string == "=":
-                a = a[2:]
-            args.append(a[0] if len(a) >= 2 and a[1].string in (",", ")") else None)
-    names = {t.string for t in toks if t.type == tokenize.NAME and t.string in _PRICE_FETCHERS}
-    tickers = {None if a is None else literal(a) if a.type == tokenize.STRING
-               else consts.get(a.string) if a.type == tokenize.NAME else None for a in args}
+        for t, v in pairs:
+            if isinstance(t, ast.Tuple) and isinstance(v, ast.Tuple) and len(t.elts) == len(v.elts):
+                pairs += list(zip(t.elts, v.elts))
+            elif isinstance(t, ast.Name):
+                consts[t.id] = text(v)
+            elif isinstance(t, ast.Tuple):   # unpacked from something computed
+                consts.update((e.id, None) for e in t.elts if isinstance(e, ast.Name))
+    alias = {a.asname or a.name: a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+             for a in n.names}
+
+    def name_of(node):
+        n = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
+        return alias.get(n, n)
+
+    names, tickers = set(), set()
+    for node in ast.walk(tree):
+        n = name_of(node) if isinstance(node, (ast.Name, ast.Attribute)) else None
+        if isinstance(node, ast.ImportFrom):
+            names.update(a.name for a in node.names if a.name in _PRICE_FETCHERS)
+        elif n in _PRICE_FETCHERS:
+            names.add(n)
+        if isinstance(node, ast.Call) and name_of(node.func) == "fetch_usstock_price":
+            arg = node.args[0] if node.args else next(
+                (k.value for k in node.keywords if k.arg == "symbol"), None)
+            tickers.add(text(arg) if isinstance(arg, ast.Constant)
+                        else consts.get(arg.id) if isinstance(arg, ast.Name) else None)
     return names, tickers

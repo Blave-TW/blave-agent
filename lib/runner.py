@@ -2097,7 +2097,7 @@ def _price_markets(strategy_name):
     try:
         with tokenize.open(_REPO_ROOT / 'strategies' / strategy_name / 'strategy.py') as f:
             names, _ = _price_fetcher_scan(f.read())
-    except (OSError, SyntaxError, ValueError, tokenize.TokenError):
+    except (OSError, SyntaxError, ValueError):
         return None
     return {n: _PRICE_FETCHERS[n] for n in names}
 

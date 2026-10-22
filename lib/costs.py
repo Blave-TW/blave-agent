@@ -7,7 +7,6 @@ the backtest, scans, walk-forward and MCPT; lib/paper_data.strategy_fee for pape
 """
 import logging
 import re
-import tokenize
 
 from lib.paper_data import _TW_STOCK_RE, _norm, _txf_family
 
@@ -99,7 +98,7 @@ def fee_of(strategy):
         try:
             with open(path, encoding="utf-8") as f:
                 us = bool(us_members(_price_fetcher_scan(f.read()), members))
-        except (OSError, ValueError, SyntaxError, tokenize.TokenError) as e:
+        except (OSError, ValueError, SyntaxError) as e:
             unread = f"{path}: {type(e).__name__}"
     fee = default_fee(sym, get("MARKET"), universe, us)
     if fee is None:

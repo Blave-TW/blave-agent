@@ -99,6 +99,17 @@ check(fee_of(src_mod("us_loop", "UNIVERSE = ['AAPL', 'MSFT']\nfrom lib.data impo
                      "def fetch_data(h):\n    return {t: fetch_usstock_price(t, '2020-01-01', None) for t in UNIVERSE}\n",
                      UNIVERSE=["AAPL", "MSFT"])) == 0.001,
       "fee_of: a Type C looping fetch_usstock_price over its UNIVERSE (its only price fetcher) is US, 0.1%")
+ES = "from lib.data import fetch_db_kline\nes = fetch_db_kline('ES')\n"
+for name, src in (("annotated", 'SYMBOL: str = "AAPL"\n'),
+                  ("tuple", 'SYMBOL, MARKET = "AAPL", "swap"\n'),
+                  ("semicolon", 'SYMBOL = "AAPL"; X = 1\n'),
+                  ("alias", 'SYMBOL = "AAPL"\nfrom lib.data import fetch_usstock_price as fu\n')):
+    call = "fu(SYMBOL, '2020-01-01', None)" if name == "alias" else "fetch_usstock_price(SYMBOL, '2020-01-01', None)"
+    check(fee_of(src_mod("us_" + name, src + ES + "px = " + call + "\n", SYMBOL="AAPL")) == 0.001,
+          f"fee_of: a module constant written {name}, beside a second price fetcher → US 0.1%")
+check(fee_of(src_mod("us_reassign", 'T = "AAPL"\nT = "MSFT"\n' + ES + "fetch_usstock_price(T)\n",
+                     SYMBOL="AAPL")) == 0.0005,
+      "fee_of: the LAST assignment of the constant is the ticker (MSFT, not the strategy's AAPL)")
 seen.clear()
 check(fee_of({"SYMBOL": "SPY"}) == 0.0005 and seen and "no __file__" in seen[-1],
       "fee_of: no __file__ → the warning names the unread source, not only the table")
@@ -241,6 +252,11 @@ strat("computed", 'SYMBOL = "SOLUSDT"\nFEE = 0.003\nFEE = 0.001 * 2\n')
 strat("us_spy", 'SYMBOL = "SPY"\nfrom lib.data import fetch_usstock_price\n')
 strat("us_qqq", 'SYMBOL = "QQQ"\nfrom lib.data import fetch_usstock_price\n')
 strat("txf_spy", 'SYMBOL = "TXF"\n' + SPY_SIGNAL)
+strat("xlf_param", 'SYMBOL = "XLF"\nfrom lib.data import fetch_usstock_price, fetch_db_kline\n'
+      "def fetch_data(h, symbol=SYMBOL):\n    es = fetch_db_kline('ES')\n"
+      "    return fetch_usstock_price(symbol, '2020-01-01', None), es\n")
+strat("iwf_annot", 'SYMBOL: str = "IWF"\nfrom lib.data import fetch_usstock_price, fetch_db_kline\n'
+      "def fetch_data(h):\n    return fetch_usstock_price(SYMBOL, '2020-01-01', None), fetch_db_kline('ES')\n")
 strat("cdf_spy", 'SYMBOL = "CDF"\n' + SPY_SIGNAL)
 picked("live_tw", "us_spy", "perp", "perp_v2", "spot", "basket", "mixed_nofee", "mxf", "mxf_next", "warrant", "weird", "last", "computed")
 
@@ -259,6 +275,10 @@ check(not paper_data._us_owned("TXF") and not paper_data._us_owned("CDF"),
       "paper: TXF / CDF strategies reading SPY as a signal do not make TXF / CDF US tickers")
 check(paper_data._us_owned("SPY") and paper_data._us_owned("QQQ"),
       "paper: _us_owned (cached) still finds the US strategies")
+check(paper_data._us_owned("XLF") and paper_data.quote_ccy("XLF") == "USD",
+      "paper: XLF priced by fetch_usstock_price(symbol) (a parameter) beside fetch_db_kline is US — USD, not TAIFEX")
+check(paper_data._us_owned("IWF") and paper_data.quote_ccy("IWF") == "USD",
+      "paper: IWF from `SYMBOL: str = \"IWF\"` beside a second fetcher is US — USD")
 check(order_paper._fee_rate("CDF", order_paper.TAKER_FEE) == order_paper.TAKER_FEE,
       "paper: a CDF fill is not charged the US 0.1% because its strategy reads SPY")
 check(paper_data.strategy_fee("ETHUSDT") == 0.004, "the LAST FEE assignment wins; a docstring FEE line is not code")
