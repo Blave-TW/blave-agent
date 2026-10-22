@@ -496,10 +496,19 @@ function blaveCreds() {
 const currentWho = () => { const c = blaveCreds(); return c ? c.who : null; };
 /* 在手機 App 上查看這台電腦的部位(mobileview.js):憑證只在這裡用,狀態檔只有三個布林;平台旗標關著時什麼都不送(契約 §14) */
 let _mv = null;
+/* 外殼補 strategy_names(名稱在 strategy.py,不在 runtime 狀態檔)。kick 每 20 秒叫一次:listStrategies 有快取不重讀 strategy.py;
+   淺拷貝,不改 host 那份;讀名稱出錯就照舊送沒有名稱的快照 */
+function mobileViewStatus() {
+  const st = _tradeHost ? _tradeHost.status() : null;
+  const amounts = st && st.report && st.report.config && st.report.config.amounts;
+  if (!amounts || typeof amounts !== "object") return st;
+  try { return { ...st, report: { ...st.report, strategy_names: require("./mobileview").strategyNames(amounts, listStrategies()) } }; }
+  catch (e) { console.error("[mobile] strategy names:", e && e.message); return st; }
+}
 function mobileView() {
   if (!_mv) _mv = require("./mobileview").createMobileView({
     dir: app.getPath("userData"), apiBase: API_BASE, post: (u, b) => postJSON(u, b), get: (u) => getJSON(u),
-    getCreds: blaveCreds, status: () => (_tradeHost ? _tradeHost.status() : null),
+    getCreds: blaveCreds, status: mobileViewStatus,
     line: (st) => (st ? TT.localLine(st, lastVenue) : null), installId: () => tm().installId(), home: os.homedir(),
     log: (m) => console.error("[mobile]", m),
   });

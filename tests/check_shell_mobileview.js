@@ -8,6 +8,7 @@
 //   6. 登出:先刪再撤 token;上傳失敗只寫 log,不碰 daemon
 //   7. 憑證不出主行程:IPC 回的沒有憑證、狀態檔只有三個布林
 //   8. 允許清單與 api 那份逐項相同(要 monorepo 版面)
+//   9. strategy_names:只放策略組合裡有、名稱跟代號不同的;截 80 字(按字元);cleanReport 保留;main.js 的 status 有接上
 // 跑法:node tests/check_shell_mobileview.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -236,6 +237,28 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     sample.forEach((rep) => { const s = JSON.stringify(MV.cleanReport(poison(rep), HOME)); if (s.includes("AbCdEfGhIjKl") || s.includes("/Users/wei")) leaks.push(1); });
     ok("P3-1 列舉:每一個字串葉節點都換成例外原文,清過之後一個都沒漏", leaks.length === 0); }
 
+  // ---- 9. strategy_names
+  { const list = [{ name: "momo", displayName: "BTC 唐奇安 4H" }, { name: "same", displayName: "same" }, { name: "none", displayName: null },
+      { name: "blank", displayName: "  " }, { name: "notInPf", displayName: "不在組合裡" }, { name: "long", displayName: "名".repeat(81) },
+      { name: "emoji", displayName: "😀".repeat(81) }];
+    const names = MV.strategyNames({ momo: 1, same: 1, none: 1, blank: 1, long: 1, emoji: 1 }, list);
+    ok("9 只放組合裡有、有名稱、名稱≠代號的", JSON.stringify(Object.keys(names).sort()) === JSON.stringify(["emoji", "long", "momo"]), names);
+    ok("9 名稱照原樣", names.momo === "BTC 唐奇安 4H");
+    ok("9 超過 80 字截到 80(按字元,不切壞代理對)", names.long === "名".repeat(80) && Array.from(names.emoji).length === 80
+      && names.emoji === "😀".repeat(80), [names.long.length, names.emoji.length]);
+    ok("9 amounts 不是物件 / list 不是陣列 → 空物件", JSON.stringify(MV.strategyNames(null, list)) === "{}"
+      && JSON.stringify(MV.strategyNames({ momo: 1 }, null)) === "{}");
+    const r = MV.cleanReport({ ...REPORT(), strategy_names: names }, HOME);
+    ok("9 cleanReport 保留 strategy_names(帶空白的名稱沒被當亂碼遮)", r.strategy_names && r.strategy_names.momo === "BTC 唐奇安 4H"
+      && r.strategy_names.long === "名".repeat(80), r.strategy_names);
+    const m = mk(); m.setReport({ ...REPORT(), strategy_names: { momo: "BTC 唐奇安 4H" } }); await m.h.tick();
+    const b = m.posts()[0] && m.posts()[0][2];
+    ok("9 上傳 body 帶 strategy_names", b && b.report.strategy_names && b.report.strategy_names.momo === "BTC 唐奇安 4H", b && b.report);
+    ok("9 signature 不看 strategy_names(改名不提早送)", MV.signature(null, { ...r, strategy_names: { momo: "x" } }) === MV.signature(null, r));
+    ok("9 main.js:createMobileView 的 status 補 strategyNames(config.amounts, listStrategies())",
+      /status: mobileViewStatus,/.test(mainSrc) && /strategy_names: require\("\.\/mobileview"\)\.strategyNames\(amounts, listStrategies\(\)\)/.test(mainSrc)
+      && /function mobileViewStatus\(\)[\s\S]{0,400}\.\.\.st\.report/.test(mainSrc)); }
+
   // ---- 8. 兩端允許清單
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_portfolio.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 允許清單比對(需要 monorepo 版面:../api/openclaw/desktop_portfolio.py)");
@@ -245,6 +268,7 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     ok("允許清單 = api desktop_portfolio.ALLOWED_KEYS(逐項、同順序)", JSON.stringify(keys) === JSON.stringify(MV.ALLOWED_KEYS), keys);
     ok("上限 = api desktop_portfolio.MAX_BYTES / STORED_MAX_BYTES", /\nMAX_BYTES = 512 \* 1024/.test(py) && MV.MAX_BYTES === 512 * 1024
       && /\nSTORED_MAX_BYTES = 64 \* 1024/.test(py) && MV.REPORT_MAX_BYTES === 64 * 1024);
+    ok("名稱上限 = api desktop_portfolio.NAME_MAX_CHARS", new RegExp("\\nNAME_MAX_CHARS = " + MV.NAME_MAX_CHARS + "\\n").test(py), MV.NAME_MAX_CHARS);
   }
 
   finished = true; clearInterval(keepAlive);
