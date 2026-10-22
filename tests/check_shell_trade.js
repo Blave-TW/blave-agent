@@ -2301,8 +2301,19 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && link && link.className === "btn-quiet" && link.textContent === "tr.ov.evFillsLink" && link.attrs.type !== "submit", J(fills && fills.textContent));
       link.on.click(); ok("§1.4 點了切到交易歷史分頁(trSetTab hist,焦點跟到分頁)", J(ctx.tabbed) === J(["hist", true]));
       ok("§1.4 1 筆用單數 key", (() => { const f = paintEv({ orders: [CAP] }).find((n) => n.className === "pf-acts ev-fills"); return !!f && f.kids[0].textContent.includes("tr.ov.evFillsOne") && !f.kids[0].textContent.includes("tr.ov.evFills|"); })());
-      ok("§1.4 N 照事件區間與連著的交易所算:7 天前的單不算;0 筆整行不出(事件也空時只剩 label + 空態句)",
-        !paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
+      // 0.1.28 Wei 實測「成交 6 筆」、交易歷史 7 列:N 改數連結打開的那一組(交易歷史 = trOrdersShown 全部,不分區間),不再只數事件區間內
+      { const hist7 = paintHist([CAP, { ...CAP, ts: now - 31 * 86400 }]).filter((n) => n.className === "pf-log-row").length;
+        const f = paintEv({ orders: [CAP, { ...CAP, ts: now - 31 * 86400 }] }, 30).find((n) => n.className === "pf-acts ev-fills");
+        ok("§1.4 N = 交易歷史的列數:區間外(31 天前)的單也算,兩邊對得上", hist7 === 2 && !!f && f.kids[0].kids.some((k) => k && k.className === "mono" && k.textContent === "2"), J([hist7, f && f.textContent])); }
+      { const evRows = (ui, halt) => { ctx.TR = { st: { report: { orders: [], halt } }, list: [], ov: { days: 30, ui, uiErr: false } };
+          return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((n) => n.className === "ev-row").map((x) => x.textContent); };
+        const rc = evRows([{ ts: now - 60, type: "halt_close", closing: true }]), rh = evRows([{ ts: now - 60, type: "halt_close", closing: false }]), rp = evRows([{ ts: now - 60, type: "halt" }]);
+        const rn = evRows([], { halted: true, at: new Date((now - 600) * 1000).toISOString(), source: "web", reason: "close all positions" });
+        ok("暫停並關閉部位(0.1.28 Wei 實測只寫已暫停):halt_close 真的開始平倉寫 evHaltClose;只掛了暫停、一般暫停寫 evHalt;沒有畫面紀錄的 close-all HALT 也寫 evHaltClose",
+          rc.length === 1 && /tr\.ov\.evHaltClose/.test(rc[0]) && rh.length === 1 && /tr\.ov\.evHalt(?!Close)/.test(rh[0]) && !/evHaltClose/.test(rh[0])
+          && rp.length === 1 && !/evHaltClose/.test(rp[0]) && rn.length === 1 && /tr\.ov\.evHaltClose/.test(rn[0]), J([rc, rh, rp, rn])); }
+      ok("§1.4 N 照連著的交易所算;0 筆整行不出(事件也空時只剩 label + 空態句)",
+        !!paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
         && !paintEv({ orders: [{ ...CAP, exchange: "paper" }], venues: { president: { credentials: true, pair: true, order: true, account: true } } }).some((n) => n.className === "pf-acts ev-fills")
         && (() => { const e = paintEv({ orders: [] }); return e.some((n) => n.className === "pf-state" && n.textContent === "tr.ov.evEmpty") && !e.some((n) => n.className === "ev-list"); })());
       { const d0 = Math.floor(Date.now() / 1000), e2 = [{ ts: d0 - 60, symbol: "A", error: "x" }, { ts: d0 - 120, symbol: "B", error: "y" }, { ts: d0 - 86400 - 60, symbol: "C", error: "z" }];
@@ -2473,7 +2484,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const bound = (...ids) => ({ orders: rows, venues: Object.fromEntries(ids.map((i) => [i, { credentials: true, pair: true, order: true, account: true }])) });
     ok("下單紀錄／事件只列目前連著的交易所:綁統一時模擬交易那幾筆不列、沒寫交易所的舊列照列;沒綁任何交易所全列;壞列丟掉", J(trOrdersShown(bound("president")).map((o) => o.symbol)) === J(["TMF", "TXF"])
       && J(trOrdersShown(bound("paper")).map((o) => o.symbol)) === J(["BTCUSDT", "TXF"]) && trOrdersShown(bound()).length === 3 && trOrdersShown(null).length === 0
-      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /const n = trOrdersShown\(r\)\.filter\(/.test(src)); }
+      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /const n = trOrdersShown\(r\)\.length;/.test(src)); }
   // 0.1.18 設計師裁定 A:統一在倉橫幅整塊拿掉,改在狀態句「自動下單執行中」尾接「統一有 {n} 口在倉,電腦保持清醒」(只在這台電腦 + Windows;不講「不會平倉」)
   { const vm = require("vm"), R = path.join(__dirname, "..", "shell", "renderer");
     const cutB = (x, y) => src.slice(src.indexOf(x), src.indexOf(y));

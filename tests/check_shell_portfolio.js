@@ -336,6 +336,17 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     const a1 = A.lots("2330"), ac = A.cells().map((n) => n.textContent || n.text || "");
     ok("沒綁交易所、台股 Type A 路由 \"\":目標 5,000,000、2330 寫 2 張(swap 照自己的 MARKET,不併 @spot)",
       J(A.t) === J({ 2330: 5000000 }) && !!a1 && a1.unit === "lots" && a1.lots === 2 && ac.some((x) => /^po\.twLots /.test(x) && x.includes('"n":"2"')), J([A.t, a1, ac.filter((x) => /^po\.tw/.test(x))])); }
+  // 0.1.28 Wei Mac 實測:沒綁交易所時存的台股組合(路由 "")、之後綁模擬交易、還沒重存——配置頁是存檔前的編輯面,照存檔後(runtime 繼承唯一綁著那家)畫股數,
+  // 不是 0 TWD;自動下單 › 部位與對帳那條照對帳器現況(沒路由 = 0)
+  { ctx.TR = bag({ paper: V }, { can_paper_twstock: true }); ctx.TR.edits = {}; const rp = ctx.TR.st.report;
+    const am = { c: 1000000 }, sts = { c: { market: "swap", weights: { 2330: 0.5 }, raw_closes: { 2330: 1000 }, raw_close_dates: { 2330: "2026-10-21" } } };
+    rp.config.amounts = am; rp.config.exchanges = { c: "" }; rp.states = sts; rp.quote_ccy = { c: "TWD" }; rp.last_reconcile = null;
+    vm.runInContext("TR = this.TR;", ctx); ctx.__m = [am, sts];
+    const cells = flat(vm.runInContext("poSigTable(TR.st.report, __m[0], __m[1], 'cfg')", ctx)).map((n) => n.textContent || n.text || "");
+    const live = vm.runInContext("trClientTargets(__m[0], __m[1], null)", ctx);
+    ok("綁模擬交易後、路由還是 \"\"(存檔前):配置頁台股寫 500 股＋小字 500,000 TWD,不是 0 TWD;對帳現況(trClientTargets)照舊 0、離開配置頁後不殘留存檔後的路由",
+      cells.some((x) => x === 'po.twShares {"n":"500"}500,000 TWD') && !cells.some((x) => /^0 TWD$/.test(x)) && J(live) === J({ 2330: 0 })
+      && vm.runInContext("trPaperOf('c') === false && trRouteBlank('c') === true", ctx), J([cells.filter((x) => /TWD|tw/.test(x)), live])); }
   // post-connect-flow 第 7 列:回報的 states 裡還沒有這支(還沒跑出第一次 live tick)→ 部位「—」+ tooltip;有這支、position 0 → 空手
   { ctx.TR = bag({}); ctx.TR.st.report.states = { tw: { symbol: "2330", position: 1, market: "spot" } }; ctx.TR.edits = {};
     const am = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));

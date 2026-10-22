@@ -2353,6 +2353,9 @@ msgstr "昨天"
 msgid "tr.ov.evHalt"
 msgstr "已暫停下單"
 
+msgid "tr.ov.evHaltClose"
+msgstr "已暫停下單，並開始關閉部位"
+
 msgid "tr.ov.evHaltAuto"
 msgstr "已自動暫停下單"
 

@@ -2342,6 +2342,9 @@ msgstr "Yesterday"
 msgid "tr.ov.evHalt"
 msgstr "Trading paused"
 
+msgid "tr.ov.evHaltClose"
+msgstr "Trading paused; closing positions"
+
 msgid "tr.ov.evHaltAuto"
 msgstr "Trading auto-paused"
 
