@@ -67,9 +67,9 @@ if (!process.versions.electron) {
   // ── ② 原文鎖 ──
   const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl-fold"'));
   const wcBox = html.slice(html.indexOf('id="main-empty"'), html.indexOf("</section>", html.indexOf('id="main-empty"')));
-  ok("② index.html(onboarding E/F):#main-empty 裡是 .wc-inner#wc(步驟清單,預設 hidden)與 .wf#wf(完成後首頁,預設 hidden);#wc 由上到下 記號 → 市場題 → ①(#chat-idea、#onb-lib)→ ②(#st-rows、#chat-ns、#wl-fold、#wl)→ ③ → ④ → #onb-fin;#chat-lib、起手籤 #chat-eg、三張卡 #wc-reco 退役",
+  ok("② index.html(onboarding E/F):#main-empty 裡是 .wc-inner#wc(步驟清單,預設 hidden)與 .wf#wf(完成後首頁,預設 hidden);#wc 由上到下 記號 → ①(#chat-idea、#onb-lib)→ ②(#st-rows、#chat-ns、#wl-fold、#wl)→ ③ → #onb-fin(0.1.29 拿掉市場題與④);#chat-lib、起手籤 #chat-eg、三張卡 #wc-reco 退役",
     /<div class="wc-inner" id="wc" hidden>/.test(wcBox) && /<div class="wf" id="wf" hidden>/.test(wcBox) && wcBox.split('class="wc-inner"').length === 2 && !html.includes('id="chat-lib"') && !html.includes('id="chat-eg"') && !html.includes('id="wc-reco"') && !/ws\.chatExample/.test(html + appSrc)
-    && ['class="wc-mark"', 'class="onb-mq"', 'id="chat-idea"', 'id="onb-lib"', 'id="st-rows"', 'id="chat-ns"', 'id="wl-fold"', 'id="wl"', 'id="onb-po"', 'id="onb-paper"', 'id="onb-fin"', 'id="wf"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
+    && ['class="wc-mark"', 'id="chat-idea"', 'id="onb-lib"', 'id="st-rows"', 'id="chat-ns"', 'id="wl-fold"', 'id="wl"', 'id="onb-po"', 'id="onb-fin"', 'id="wf"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
   { const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]), dup = ids.filter((x, i) => ids.indexOf(x) !== i);
     ok("② 入口籤的 id 不重複:index.html 每一個 id 都只出現一次(列舉全部 " + ids.length + " 個)", ids.length > 100 && dup.length === 0, dup.join(", ")); }
   ok("② 標題拿掉(Wei 10-19):沒有 .wc-head / h4.wc-h,兩語字串表與 .po 都沒有 workspace_wel_h;記號 svg.wc-mark 直接在 #wc 第一個;起手句容器 role=group、aria-labelledby 指到步驟②的標題列",
@@ -407,7 +407,7 @@ app.whenReady().then(async () => {
     return { tok, cols: [...$("wl-body").querySelectorAll(".wl-col")].map((c) => [...c.querySelectorAll(".wd-row")].map((b) => { const s = getComputedStyle(b), r = b.getBoundingClientRect();
         return { bg: s.backgroundColor, rad: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].join(" "), bb: s.borderBottomWidth, go: getComputedStyle(b, "::after").content, kids: b.children.length, l: r.left, r: r.right, t: r.top, b: r.bottom }; })),
       axis: { chip: q("#onb-b1 .wc-chip:not([hidden])").getBoundingClientRect().left, st: tx(q(".st-row .g")).left, ns: $("chat-ns").getBoundingClientRect().left, colh: q(".wl-colh .wl-cap") ? tx(q(".wl-colh .wl-cap")).left : null, card: q(".wd-row").getBoundingClientRect().left, all: all.left },
-      order: [q(".onb-mq").getBoundingClientRect().bottom, q("#st-rows").getBoundingClientRect().top, q("#st-rows").getBoundingClientRect().bottom, q("#onb-b2 .onb-opts").getBoundingClientRect().top, q("#onb-b2 .onb-opts").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
+      order: [q(".wc-mark").getBoundingClientRect().bottom, q("#st-rows").getBoundingClientRect().top, q("#st-rows").getBoundingClientRect().bottom, q("#onb-b2 .onb-opts").getBoundingClientRect().top, q("#onb-b2 .onb-opts").getBoundingClientRect().bottom, q(".wl").getBoundingClientRect().top],
       head: { toOpts: q("#onb-b2 .onb-opts").getBoundingClientRect().top - q("#st-rows").getBoundingClientRect().bottom, indent: tx(q(".st-row .g")).left - q(".wc-mark").getBoundingClientRect().left },
       stIn: st.parentElement === q(".wl-foot") && st.previousElementSibling === $("wl-all"), stMid: st.textContent ? (tx(st).top + tx(st).bottom) / 2 - (all.top + all.bottom) / 2 : null, stRight: st.textContent ? foot.right - tx(st).right : null, footRight: foot.right - Math.max(...[...document.querySelectorAll(".wd-row")].map((b) => b.getBoundingClientRect().right)),
       over: $("main-empty").scrollWidth - $("main-empty").clientWidth }; })()`);
@@ -417,7 +417,7 @@ app.whenReady().then(async () => {
   let k = await card();
   ok("③ A2 兩欄:兩欄各自是一張完整的卡(列 = --surface-card;各欄第一列上兩角、最後一列下兩角 = --radius-lg,中間的列直角;列間 1px 線、最後一列沒有;列緊貼;行尾 › 是 ::after、列裡沒有多的節點),兩張卡之間有欄距 16、等寬",
     k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
-  ok("③ 步驟內容同一條左軸:①的第一顆籤、起手句的送出 icon、新增策略、欄小標、卡、「看全部資料」的左緣同一條 x,比記號內縮 32;由上到下 市場題 → 起手句 →(隔 8)新增策略那一列 → 清單",
+  ok("③ 步驟內容同一條左軸:①的第一顆籤、起手句的送出 icon、新增策略、欄小標、卡、「看全部資料」的左緣同一條 x,比記號內縮 32;由上到下 記號 → 起手句 →(隔 8)新增策略那一列 → 清單",
     axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toOpts - 8) < 0.6 && Math.abs(k.head.indent - 32) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
   { // 起手句的列(§1.4):tag 欄三列等寬(subgrid)、句子不溢出、送出 icon 不進讀屏名字;只填不送 / 回合中 disabled
     const geoSt = () => js(`[...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tg = b.querySelector(".tag"), tx = b.querySelector(".txt"), sn = b.querySelector(".since"), r = (e) => e.getBoundingClientRect();

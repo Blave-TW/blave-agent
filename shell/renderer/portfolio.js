@@ -225,8 +225,8 @@ function poAddSync() {
 async function poAdd(S, name, inPo) {
   if (S !== TR_BAGS[ENV.cur]) return;
   trackFeature(inPo ? "po_add_go" : "po_add");
-  // 這台電腦的清單只在開過策略組合後才載入:建草稿前先讀一次(鎖不鎖、標的與幣別都看它)
-  if (!S.listLoaded && S.env === "local") { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
+  // 這台電腦的清單只在策略組合／自動下單頁開著時才跟著輪詢重讀:建草稿前一律重讀(剛裝好的那支才找得到;鎖不鎖、標的與幣別都看它)
+  if (S.env === "local") { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
   if (S !== TR_BAGS[ENV.cur]) return;
   let locked = false;
   if (!inPo) trWith(S, () => {
@@ -246,9 +246,20 @@ async function poAdd(S, name, inPo) {
   await poOpen("cfg");
   if (TR !== S || S.view !== "po") return;
   S.sig.cfg = null; poPaintCfg();
-  if (locked) { const pk = $("tr-pick"); if (pk && !pk.disabled) { psOpen(pk); return; } }
+  if (locked) { const pk = $("tr-pick"); if (pk && !pk.disabled) { psOpen(pk, null, S.env === "local"); return; } }   // 上面剛重讀過
   const inp = [...$("po-cfg").querySelectorAll(".amt-in")].find((y) => y.dataset.amt === name);
   if (inp && !inp.disabled && inp.offsetParent) inp.focus(); else $("po-h").focus();
+}
+// 歡迎頁③(welcome.js):到策略組合頁、直接打開選擇策略框,不替用戶勾任何一支;焦點回來時落在頁上的〔選擇策略〕。
+// amt = 已經勾了沒存或存了 0:不開框,焦點落在第一個金額格(同頁首〔設定金額〕trZGo)
+async function poPick(amt) {
+  const S = TR_BAGS.local;
+  if (S !== TR_BAGS[ENV.cur]) return;
+  await poOpen("cfg");
+  if (TR !== S || S.view !== "po") return;
+  if (amt) { trFocusFirstAmt(); return; }
+  const pk = $("tr-pick");
+  await psOpen(pk && pk.isConnected ? pk : null);
 }
 function poSetTab(tab, focus) {
   if (PO_TABS.indexOf(tab) < 0) return;

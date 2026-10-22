@@ -127,7 +127,7 @@ const COPY = {
   "tr.startOffNoVenueStrat": ["還沒有{venue}能下的策略。", "No strategies {venue} can trade yet."],
   "tr.fogPosPick": ["選好策略，就能啟動下單。", "Pick strategies to start trading."],
   "tr.fogPosNew": ["請代理做一支策略，回測完成就能下單。", "Ask the agent for a strategy. Once it’s backtested, it can trade."],
-  "po.goAmounts": ["設定金額", "Set amounts"],
+  "po.goAmounts": ["設定金額", "Set Amounts"],
   "tr.startOffDraft": ["勾好的策略還沒儲存。", "Picked strategies aren’t saved yet."],
   "tr.runningZDraft": ["下單程式在跑 · 勾好的策略還沒儲存", "Order program running · picked strategies aren’t saved yet"],
   "tr.runningZPick": ["下單程式在跑 · 還沒選策略", null], "tr.runningZNoStrat": ["下單程式在跑 · 還沒有回測完成的策略", null],
@@ -213,7 +213,7 @@ ok("部位:有霧就上霧(pick → pos-pick,draft → pos-draft,其餘 → pos-
 ok("切分頁時頁首跟著重畫(部位上霧時導引鈕收、狀態行空)", /trPaintHead\(\);[^\n]*\n\s*trPaintTab\(\);\n\}/.test(cutF(src, "trSetTab")));
 ok("頁首鈕行為:選擇策略 = 到配置頁開框(opener 是配置頁 #tr-pick,確定後焦點到第一個金額格);設定金額 = 到配置頁、焦點第一個金額格;新增策略 = nsOpen",
   /if \(kind === "noStrat" \|\| kind === "noVenue"\) \{ if \(typeof nsOpen === "function"\) nsOpen\(from\); return; \}/.test(go) && /await poOpen\("cfg"\);/.test(go)
-  && /if \(kind !== "pick" && kind !== "amt" && kind !== "draft"\) \{ poOpen\("cfg", true\); return; \}/.test(go) && /if \(kind === "amt" \|\| kind === "draft"\) \{ trFocusFirstAmt\(\); return; \}/.test(go) && /const b = \$\("tr-pick"\);[\s\S]*psToAmt = true; psOpen\(b\);/.test(go)
+  && /if \(kind !== "pick" && kind !== "amt" && kind !== "draft"\) \{ poOpen\("cfg", true\); return; \}/.test(go) && /if \(kind === "amt" \|\| kind === "draft"\) \{ trFocusFirstAmt\(\); return; \}/.test(go) && /const b = \$\("tr-pick"\);[\s\S]*psToAmt = true; await psOpen\(b\);/.test(go)
   && /querySelector\("\.amt-in:not\(:disabled\)"\)/.test(cutF(src, "trFocusFirstAmt")));
 ok("選擇策略框:從導引開的,確定後焦點落在第一個金額格;取消回 opener(#tr-pick),旗標在關框時收掉", /const refocus = psToAmt \? trFocusFirstAmt : psRefocus;/.test(cutF(src, "psApply"))
   && !/psRefocus\(\)/.test(cutF(src, "psApply")) && /psOpener = null; psToAmt = false;/.test(cutF(src, "psClose")));

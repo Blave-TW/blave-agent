@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld("blave", {
   theme: () => ipcRenderer.invoke("theme"),
   themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
   welcomePrefs: () => ipcRenderer.invoke("welcome-prefs"),
-  welcomePrefsSet: (p) => ipcRenderer.invoke("welcome-prefs-set", { ...(p && "mkt" in p ? { mkt: p.mkt } : {}), ...(p && "done" in p ? { done: p.done === true } : {}) }),
+  welcomePrefsSet: (p) => ipcRenderer.invoke("welcome-prefs-set", { ...(p && "done" in p ? { done: p.done === true } : {}) }),
   stratPrefs: () => ipcRenderer.invoke("strat-prefs"),
   stratPrefsSet: (p) => ipcRenderer.invoke("strat-prefs-set", { stratOrder: p && p.stratOrder, stratFlags: p && p.stratFlags }),
   // 雲端那一袋的部位大小(renderer/portfolio.js):存 ui-prefs.json、主行程綁這次登入;換人讀回 null

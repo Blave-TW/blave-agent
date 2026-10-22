@@ -44,10 +44,11 @@ ok("report-wf.js 的 canvas 字族從 --font-mono 讀,不寫死", /ctx\.font = "
 // ── 3. Windows 的 11px Mini tag 字重 400(正黑體沒有 600;只掛 win32,mac 照 canon 600) ──
 const app = read("app.css");
 const winTag = app.match(/html\[data-platform="win32"\] \.lib \.tag,[^{]*\{ font-weight: 400; \}/);
-const tagSels = [".lib .tag", ".main-empty .tag", ".rb-report .rb-news-tag", ".pf-wallet-row .mini_tag", ".mode", ".envm", ".shr-tag", ".tag-you"];
+const tagSels = [".lib .tag", ".rb-report .rb-news-tag", ".pf-wallet-row .mini_tag", ".mode", ".envm", ".shr-tag", ".tag-you"];
 ok("app.css 有 win32 專屬的 Mini tag 字重 400 規則", !!winTag);
+// 歡迎頁起手句的市場 tag(.main-empty .tag)0.1.29 拿掉(設計稽核 P2-4),規則跟著收
 ok("規則涵蓋外殼所有 11px/600 的 tag 元件", !!winTag && tagSels.every((sel) => winTag[0].includes('html[data-platform="win32"] ' + sel)));
-const base = { ".lib .tag": read("library.css"), ".main-empty .tag": read("welcome.css"), ".rb-report .rb-news-tag": read("report-blocks.css"), ".pf-wallet-row .mini_tag": read("trade.css"), ".mode": read("trade.css"), ".envm": app, ".shr-tag": read("report-share.css"), ".tag-you": read("browser.css") };
+const base = { ".lib .tag": read("library.css"), ".rb-report .rb-news-tag": read("report-blocks.css"), ".pf-wallet-row .mini_tag": read("trade.css"), ".mode": read("trade.css"), ".envm": app, ".shr-tag": read("report-share.css"), ".tag-you": read("browser.css") };
 ok("那些 tag 的基礎規則仍是 11px/600(mac 不變、win32 只蓋字重)", tagSels.every((sel) => new RegExp(sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-size: 11px;[^}]*font-weight: 600;|" + sel.replace(/[.]/g, "\\.") + " \\{[^}]*font-weight: 600;[^}]*font-size: 11px;").test(base[sel])));
 ok("規則也涵蓋 versions.css 的 .vtag(11px;live / drift 600)", !!winTag && winTag[0].includes('html[data-platform="win32"] .vtag')
   && /\.vtag \{[^}]*font-size: 11px;/.test(read("versions.css")) && /\.vtag\.live \{[^}]*font-weight: 600;/.test(read("versions.css")) && /\.vtag\.drift \{[^}]*font-weight: 600;/.test(read("versions.css")));

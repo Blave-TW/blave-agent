@@ -211,10 +211,10 @@ const EVENTS = {
     "crypto_topup",
     // 0.1.28 設定 › 隱私「在手機 App 上查看這台電腦的部位」開關切成開 / 關(主行程 mobile-view-set 送,真的切換了才送)
     "mobile_view_on", "mobile_view_off",
-    // 歡迎頁入門步驟(0.1.28;renderer/welcome.js,spec agent-onboarding-e-f §5):onb_mkt_* = 市場題選了某個值(選同一個不送);
-    // onb_go_po / _paper / _trade = ③④的鈕;onb_reopen = 點完成那一行重新展開;onb_replay = 設定 › 一般〔重看〕;
-    // onb_done_trade / _tw = 當下做完最後一步(既有用戶上線那天直接進完成後首頁的不送)。不帶市場以外的任何內容
-    "onb_mkt_crypto", "onb_mkt_tw", "onb_mkt_txf", "onb_go_po", "onb_go_paper", "onb_go_trade", "onb_reopen", "onb_replay", "onb_done_trade", "onb_done_tw",
+    // 歡迎頁入門步驟(0.1.28;renderer/welcome.js,spec agent-onboarding-e-f §5):onb_go_po = ③的鈕(0.1.29 起是到策略組合頁開選擇策略框);
+    // onb_reopen = 點完成那一行重新展開;onb_replay = 設定 › 一般〔重看〕;onb_done = 0.1.29 起當下做完③(三步、不分市場;既有用戶上線那天直接進完成後首頁的不送)。
+    // onb_mkt_* / onb_go_paper / onb_go_trade / onb_done_trade / onb_done_tw:0.1.28 的市場題與④,0.1.29 起沒有送出點,0.1.28 還在送(tests/check_shell_telemetry.js LEGACY)
+    "onb_mkt_crypto", "onb_mkt_tw", "onb_mkt_txf", "onb_go_po", "onb_go_paper", "onb_go_trade", "onb_reopen", "onb_replay", "onb_done_trade", "onb_done_tw", "onb_done",
     // 連接框(0.1.28;renderer/trade.js):cx_open = 打開(不分從哪裡開);cx_paper_ok / cx_real_ok = 模擬／真實帳戶綁定成功(群益、統一走各自的 cap_* / pres_*)
     "cx_open", "cx_paper_ok", "cx_real_ok",
     // 歡迎頁右欄的試用文字鈕(0.1.28;renderer/welcome.js wdNote,方案制、有試用資格又沒卡):按下直接開瀏覽器綁卡頁(bindGo)

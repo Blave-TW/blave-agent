@@ -1015,7 +1015,7 @@ function libChartDraw(host, r) {
   g("lib-body").addEventListener("scroll", () => { const B = libBag(); if (!B.detail) B.scroll = g("lib-body").scrollTop; });
   window.addEventListener("focus", () => { libRefresh(); libIdeaSync(); });
   window.addEventListener("blave:theme", () => { if (LIB.chart && LIB.chart.blaveRetheme) try { LIB.chart.blaveRetheme(); } catch (_) { } });   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
-  g("chat-idea").addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(g("chat-idea"), "welcome", typeof onbIdeaMkt === "function" ? onbIdeaMkt() : "any"); });   // 歡迎頁①:開找點子框,市場帶市場題的值(沒選 = 不限)
+  g("chat-idea").addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(g("chat-idea"), "welcome", "any"); });   // 歡迎頁①:開找點子框,不限市場
   libIdeaSync();
   window.blave.libraryInstalled().then((m) => { if (m && typeof m === "object") { LIB.installed = m; } }).catch(() => {});
 })();
