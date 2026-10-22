@@ -76,6 +76,11 @@ except ImportError:  # half-updated workspace (lib/winreplace.py without load_js
     def load_json(path, **open_kw):
         with open(path, **open_kw) as f:
             return json.load(f)
+try:
+    from lib.winreplace import read_retry
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): no read retry
+    def read_retry(read, *args, **kwargs):
+        return read(*args, **kwargs)
 
 log = logging.getLogger("paper_data")
 
@@ -153,14 +158,18 @@ def _cached(path, parse):
     if hit and hit[0] == key:
         return hit[1]
     try:
-        with open(path, encoding="utf-8") as f:
-            val = parse(f.read())
+        val = parse(read_retry(_read_text, path))
     except Exception as e:
         log.warning(f"[paper_data] {path} unreadable for the paper fee, using the default: "
                     f"{type(e).__name__}: {e}")
         val = None
     _file_cache[(path, parse)] = (key, val)
     return val
+
+
+def _read_text(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
 
 
 def _consts(src):

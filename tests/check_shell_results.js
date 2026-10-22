@@ -160,7 +160,7 @@ function box(extra) {
       .every((x) => x.length === 1 && x[0].facts.no_bt === undefined && line(x[0]) === "雲端新策略")); }
   // J:組合策略(Type C)的回測沒有逐筆紀錄(只有成交次數):「進出場紀錄」分頁講這件事,不講成「沒有進出場」
   { const trJs = read("report-trades.js");
-    ok("J 進出場紀錄分頁:Type C(stats 有 benchmark_n)用自己的那一句,其餘照舊", /t\(stats && typeof stats\.benchmark_n === "number" \? "tr\.emptyPf" : "tr\.empty"\)/.test(trJs)
+    ok("J 進出場紀錄分頁:Type C(stats 有 benchmark_n 或 benchmark_bh 鍵)用自己的那一句,其餘照舊", /const isPf = !!stats && \(typeof stats\.benchmark_n === "number" \|\| "benchmark_bh" in stats\);/.test(trJs) && /t\(isPf \? "tr\.emptyPf" : "tr\.empty"\)/.test(trJs)
       && /沒有逐筆進出場紀錄/.test(S.t("tr.emptyPf")) && /回測數據/.test(S.t("tr.emptyPf")) && S.t("tr.empty") === "這支策略沒有進出場紀錄。");
     // 0.1.12 實測 04a:SPY 日線的進出場紀錄全是「08:00」——日期當 UTC 午夜寫進來、照台北時間印。日線以上只印日期,而且用 UTC 取(UTC 以西也不退一天)
     const sb = { window: {} }; vm.createContext(sb); vm.runInContext(trJs, sb); const TP = sb.window.BlaveReport._tradesPure;

@@ -2159,8 +2159,7 @@ def _previous_bh(out_dir, kind):
     """The last stats.json's benchmark_bh when it is the same benchmark, else None: a
     performance refresh whose fetch failed keeps it rather than blanking the row."""
     try:
-        with open(Path(out_dir) / 'stats.json', encoding='utf-8') as f:
-            old = json.load(f).get('benchmark_bh')
+        old = load_json(Path(out_dir) / 'stats.json', encoding='utf-8').get('benchmark_bh')
     except (OSError, ValueError, AttributeError):
         return None
     return dict(old) if isinstance(old, dict) and old.get('kind') == kind else None
