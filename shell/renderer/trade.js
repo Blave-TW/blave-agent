@@ -2115,7 +2115,11 @@ function trRejectSentence(rc) {
 }
 function trSendError(res, kind, env) {
   const e = res && res.error ? String(res.error) : "", k = trKindOf(res);
-  const rc = k === "rejected" ? trRejectCode(e) : null, known = rc ? trRejectSentence(rc) : null;
+  const rc = k === "rejected" ? trRejectCode(e) : null;
+  // BAD_ROUTE 的前提就是 exchanges 被手改過,key 可能不是合格的策略名、解析不出名字:照樣在地化,只是不點名(不落 runtime 的中文原句)
+  // 任何一個名字不合格、清單解析不乾淨(空名字、名字裡有 」、裸的 BAD_ROUTE)都用這句;同網頁 workspace_pf_rej_bad_route_any 的判法
+  const badRoute = k === "rejected" && /^(?:\w+Error: )?BAD_ROUTE\b/.test(e.trim()), routeNamed = /^(?:\w+Error: )?BAD_ROUTE: (?:、?「[A-Za-z0-9_-]{1,64}」)+(?: |$)/.test(e.trim());
+  const known = badRoute && !routeNamed ? t("tr.badRoute.rejectedAny") : rc ? trRejectSentence(rc) : null;
   if (e === "UPDATE_REQUIRED") return t(kind === "release" ? "minv.release" : "minv.trade");   // 最低版本閘:只擋啟動,暫停不受影響;叫人重按沒有用,要講去哪裡更新
   if ((env || TR.env) === "cloud") {
     // 409:api 不排隊、不記稽核 = 真的什麼都沒送出,不可沿用本機 daemon 沒跑時「已排隊」的說法。

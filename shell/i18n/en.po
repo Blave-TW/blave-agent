@@ -8262,6 +8262,10 @@ msgstr "“{name}”{more} has no exchange yet. Save the order settings once in 
 msgid "tr.badRoute.rejected"
 msgstr "“{name}”{more} has a broken exchange setting, so nothing was saved. Ask the agent to fix it."
 
+# 同上,但點名的那支不是合格的策略名(解析不出名字)
+msgid "tr.badRoute.rejectedAny"
+msgstr "A strategy has a broken exchange setting, so nothing was saved. Ask the agent to fix it."
+
 msgid "tr.haltUnbound"
 msgstr "Paused automatically when the exchange was unbound: no new positions; closes and stops still run."
 

@@ -66,6 +66,13 @@ STRATS = {
                     "UNIVERSE = ['AAPL', 'MSFT']\n", None, None),
     "mix_us_c_code": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
                       "UNIVERSE = sorted(['AAPL', 'MSFT'])\n", None, None),
+    # audit v029-wave2 A-P1-2: the LAST assignment decides; computed or += after a literal → None
+    "mix_us_c_rewrite": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                         "UNIVERSE = ['AAPL', 'NVDA']\nUNIVERSE = [s + 'USDT' for s in UNIVERSE]\n", None, None),
+    "mix_us_c_aug": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                     "UNIVERSE = ['AAPL', 'NVDA']\nUNIVERSE += ['BTCUSDT']\n", None, None),
+    "mix_us_c_last_lit": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                          "UNIVERSE = ['NVDAUSDT']\nUNIVERSE: list = ['AAPL', 'MSFT']\n", None, "USD"),
     "us_perp_c_new": ("from lib.data import fetch_usstock_price\n# Type: C\n"
                       "UNIVERSE = ('NVDAUSDT', 'AAPLUSDT')\n", None, "USDT"),
     "mix_us_c_live": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"

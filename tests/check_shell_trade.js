@@ -2033,6 +2033,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         // runtime _cmd_amounts BAD_ROUTE(exchanges 裡的值不是交易所代號):原句只有中文、帶 manager/ 路徑——一碼一句,不落 trRejectText
         const br = se("ValueError: BAD_ROUTE: 「b2」、「b3」 的交易所設定壞了(不是交易所代號),沒有儲存;請 agent 修好 manager/portfolio_config.json 的 exchanges", "save", env);
         ok(`存檔被拒(${env}):BAD_ROUTE → tr.badRoute.rejected,兩支都點名、不帶原句與路徑`, br === 'tr.badRoute.rejected {"name":"b2tr.rejNameSepb3","more":""}', br);
+        // 稽核 v029-wave2 A-P2-1:手改的 key 不是合格策略名 → 解析不出名字,照樣在地化、不點名,不落原句
+        const brBad = se("ValueError: BAD_ROUTE: 「b 2」 的交易所設定壞了(不是交易所代號),沒有儲存;請 agent 修好 manager/portfolio_config.json 的 exchanges", "save", env);
+        const brAny = ["ValueError: BAD_ROUTE: 「b2」、「b 3」 的交易所設定壞了", "ValueError: BAD_ROUTE: 「」 的交易所設定壞了", "ValueError: BAD_ROUTE: 「a」」 的交易所設定壞了",
+          "ValueError: BAD_ROUTE", "BAD_ROUTE: 「b2」、「x/y」 的"].map((x) => se(x, "save", env));
+        ok(`存檔被拒(${env}):BAD_ROUTE 名字不合格(第一個或後面任一個)、空名字、名字裡有 」、裸的代碼 → 一律 tr.badRoute.rejectedAny;全合格才點名`,
+          brBad === "tr.badRoute.rejectedAny" && brAny.every((x) => x === "tr.badRoute.rejectedAny"), J([brBad, brAny]));
         ok(`被拒(${env}):五支點名 → 列前三支 + 「和另外 2 支」;台股策略綁加密 → tr.marketVenue.crypto 帶市場名(台股)`,
           many === 'tr.needsRouting.rejected {"name":"atr.rejNameSepbtr.rejNameSepc","more":"tr.rejMore {\\"n\\":2}"}' && tw === 'tr.marketVenue.crypto {"name":"grid","more":"","market":"tr.mktName.twStock"}', J([many, tw])); } }
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");

@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **美股 Type C 剛建好不再落「幣別未定」(`portfolio_reporter.strategy_quote_ccy`;用戶回報 0.1.29)**:還沒有 `state.json` 權重、檔案也沒有 `SYMBOL` 時,美股價格的策略(`us_stock`,以及美股＋加密濾網的 `mixed`)改讀檔內字面的 `UNIVERSE` 清單(`_universe_const`,ast;程式算出來的清單不猜):全是美股純代號 → USD、全是股票永續 → 那個報價幣(原本一律當 USD)、混了加密對或混台股／全球期貨照舊 None。抓價函式表 runtime(`strategy_reporter._PRICE_FETCHERS`)比 lib(`lib/data._PRICE_FETCHERS`)少六個(`fetch_binance_ticker_24h`、`fetch_twmarket_index(_public)`、`fetch_twse_day_all_public`、`fetch_twstock_quote(_batch)`),這次不收(收了會改 `strategy_market` 與 `wait_for_bar` 的判法),由 `tests/check_price_fetchers.py` 釘住差集與共同名字的市場對應,再長就紅。測試 `tests/check_report_quote_ccy.py`。
+- **美股 Type C 剛建好不再落「幣別未定」(`portfolio_reporter.strategy_quote_ccy`;用戶回報 0.1.29)**:還沒有 `state.json` 權重、檔案也沒有 `SYMBOL` 時,美股價格的策略(`us_stock`,以及美股＋加密濾網的 `mixed`)改讀檔內 `UNIVERSE` 最後一次賦值的字面清單(`_universe_const`,ast,同 `lib/paper_data._consts` 取最後一次;最後一次是程式算的、或之後有 `UNIVERSE += …` 就不猜、回 None):全是美股純代號 → USD、全是股票永續 → 那個報價幣(原本一律當 USD)、混了加密對或混台股／全球期貨照舊 None。抓價函式表 runtime(`strategy_reporter._PRICE_FETCHERS`)比 lib(`lib/data._PRICE_FETCHERS`)少六個(`fetch_binance_ticker_24h`、`fetch_twmarket_index(_public)`、`fetch_twse_day_all_public`、`fetch_twstock_quote(_batch)`),這次不收(收了會改 `strategy_market` 與 `wait_for_bar` 的判法),由 `tests/check_price_fetchers.py` 釘住差集與共同名字的市場對應,再長就紅。測試 `tests/check_report_quote_ccy.py`。
 
 ## 1.1.139 — 2026-10-22(desktop 0.1.29)
 

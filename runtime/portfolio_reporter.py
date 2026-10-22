@@ -744,7 +744,7 @@ def signals_frozen(cfg):
 # null instead.
 QUOTE_SUFFIXES = ("FDUSD", "USDT", "USDC", "BUSD")
 _MARKET_QUOTE = {"tw_stock": "TWD", "tw_index_futures": "TWD", "tw_stock_futures": "TWD"}
-_quote_cache = {}  # strategy.py path -> ((mtime, size), market) — ast.parse once per edit
+_quote_cache = {}  # strategy.py path -> ((mtime, size), (market, SYMBOL, uses_us, UNIVERSE)) — ast.parse once per edit
 # A bare US ticker (AMZN, BRK.B): no quote suffix, so not a crypto pair
 _US_TICKER_RE = re.compile(r"[A-Z][A-Z.\-]{0,9}")
 
@@ -758,21 +758,32 @@ def _pair_quote(sym):
 
 
 def _universe_const(src):
-    """The strategy file's module-level UNIVERSE when it is a literal list / tuple of strings
-    (TEMPLATE_C's shape), else None — a universe built in code is not guessed."""
+    """The strategy file's module-level UNIVERSE as Python ends up with it: the LAST plain or
+    annotated assignment (same rule as lib/paper_data._consts), when that is a literal list /
+    tuple of strings (TEMPLATE_C's shape). A computed last value, or any `UNIVERSE += …`
+    after it, is None — never an earlier literal."""
     try:
         tree = ast.parse(src)
     except (SyntaxError, ValueError):
         return None
+    out = None
     for node in tree.body:
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "UNIVERSE"
-                                                for t in node.targets):
-            v = node.value
-            if isinstance(v, (ast.List, ast.Tuple)) and v.elts and all(
-                    isinstance(e, ast.Constant) and isinstance(e.value, str) for e in v.elts):
-                return [e.value for e in v.elts]
-            return None
-    return None
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        elif isinstance(node, ast.AugAssign):
+            targets, value = [node.target], None
+        else:
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "UNIVERSE" for t in targets):
+            continue
+        try:
+            v = ast.literal_eval(value) if value is not None else None
+        except (ValueError, TypeError, SyntaxError):
+            v = None
+        out = list(v) if isinstance(v, (list, tuple)) and v and all(isinstance(x, str) for x in v) else None
+    return out
 
 
 def strategy_quote_ccy(name, state):
