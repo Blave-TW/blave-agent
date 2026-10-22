@@ -11,8 +11,18 @@
      somehow never reaches the head runs after MAX_WAIT; a cancelled ticket frees the queue.
   T  timing: five 1m ticks at the bench's concurrent wall (7.4 s, scaled 1:100) through a
      2-slot gate all launch within ~15 s of the cycle — far from the :45 late-launch mark.
+  P  across cycles: a 1m name queued this cycle starts before 1h names still waiting from the
+     last one; a <5m waiter is let through at its release_at (the scheduler's :45) even with
+     every slot taken.
+  F  failures: a tick thread that cannot start cancels itself and everyone queued behind it
+     (the next name starts at once, not after MAX_WAIT); _get_tick_gate raising → gate off,
+     ticks still start; Windows reads ullTotalPhys (fake struct) for the total, the smaller of
+     ullAvailPhys / ullAvailPageFile for free memory.
+  E  per cycle each strategy.py is read at most twice (type split + INTERVAL minutes), and
+     the deployment registry takes the same minutes.
   G  the "queued … launched at :SS" log line: written for a <5m tick launched past :45 (judged on
-     the launch second, not when the tick finished) or any tick queued ≥ 10 s.
+     the launch second, not when the tick finished) or any tick queued ≥ 10 s; at most one line
+     an hour per strategy.
   R  the real _run_scheduler_cycle: gate on → cap held, all ticked, 1m before 1h; gate off →
      every tick spawned at once with target=_tick_one, exactly as before (a barrier of N only
      opens if all N run together).
@@ -209,6 +219,94 @@ check(len(starts) == 5 and last < 2 * 7.4 + 10,
       f"late mark :{cl.LATE_LAUNCH_SECOND})")
 check(cl.SCHEDULER_PHASE_SECONDS + last < cl.LATE_LAUNCH_SECOND, "…well before the late-launch mark")
 
+# ── P ──────────────────────────────────────────────────────────────────────────────────────
+gate, hold, tr = tg.TickGate(1), threading.Event(), Tracker()
+gate.enqueue([("blk", 1)])
+tb = threading.Thread(target=gate.run, args=("blk", hold.wait))
+tb.start(); time.sleep(0.05)
+ws = [threading.Thread(target=gate.run, args=(n, tr.body(n, 0.01))) for n in gate.enqueue([("h1", 60), ("h2", 60)])]
+for t in ws:
+    t.start()
+time.sleep(0.05)
+ws += [threading.Thread(target=gate.run, args=(n, tr.body(n, 0.01))) for n in gate.enqueue([("m1", 1)])]
+ws[-1].start(); time.sleep(0.05)
+hold.set()
+for t in ws + [tb]:
+    t.join(5)
+check(tr.order[0] == "m1" and sorted(tr.order) == ["h1", "h2", "m1"],
+      f"next cycle's 1m starts ahead of last cycle's waiting 1h ({tr.order})")
+
+gate, hold, tr = tg.TickGate(1), threading.Event(), Tracker()
+gate.enqueue([("blk", 1), ("late1m", 1)])
+tb = threading.Thread(target=gate.run, args=("blk", hold.wait))
+tb.start(); time.sleep(0.05)
+t0 = time.monotonic()
+tl = threading.Thread(target=gate.run, args=("late1m", tr.body("late1m", 0)), kwargs={"release_at": time.time() + 0.3})
+tl.start(); tl.join(5)
+check(tr.order == ["late1m"] and tb.is_alive() and 0.2 <= time.monotonic() - t0 < 2,
+      "a <5m waiter runs at its release_at while the only slot is still held")
+hold.set(); tb.join(5)
+
+# ── F ──────────────────────────────────────────────────────────────────────────────────────
+real_thread = cl.threading.Thread
+
+
+class _Flaky(threading.Thread):
+    n = 0
+
+    def start(self):
+        _Flaky.n += 1
+        if _Flaky.n == 2:
+            raise RuntimeError("can't start new thread")
+        super().start()
+
+
+gate, tr = tg.TickGate(1), Tracker()
+cl._tick_gate, cl._tick_gate_read = gate, True
+real_tick = cl._tick_one
+cl._tick_one = lambda n: tr.body(n, 0.01)()
+cl.threading.Thread = _Flaky
+try:
+    cl._start_ticks({"fa": 1, "fb": 1, "fc": 1, "fd": 1})
+    raised = False
+except RuntimeError:
+    raised = True
+finally:
+    cl.threading.Thread = real_thread
+time.sleep(0.2)
+check(raised and tr.order == ["fa"] and not gate._waiting,
+      f"thread start fails on the 2nd: it and everyone behind it are cancelled, the 1st still ran ({tr.order})")
+t0 = time.monotonic()
+cl._start_ticks({"fe": 1})
+for t in threading.enumerate():
+    if t.name == "strategy-tick-fe":
+        t.join(5)
+check("fe" in tr.order and time.monotonic() - t0 < 1, "…and the next cycle's tick starts at once, not after MAX_WAIT")
+cl._tick_one = real_tick
+
+real_cfg, logged2, real_log = tg.configured_limit, [], cl._log
+tg.configured_limit = lambda *a, **k: (_ for _ in ()).throw(TypeError("ctypes oddity"))
+cl._log = logged2.append
+cl._tick_gate, cl._tick_gate_read = "stale", False
+try:
+    g = cl._get_tick_gate()
+finally:
+    tg.configured_limit, cl._log = real_cfg, real_log
+check(g is None and cl._tick_gate_read and any("gate off" in m for m in logged2),
+      f"_get_tick_gate raising → gate off, logged, not retried every minute ({logged2})")
+
+rc = cl.refresh_capacity
+real_sys, real_ms = rc.platform.system, rc._win_memory_status
+GiB = 1024 ** 3
+rc.platform.system = lambda: "Windows"
+rc._win_memory_status = lambda: type("MS", (), {"ullTotalPhys": 8 * GiB, "ullAvailPhys": 1 * GiB,
+                                               "ullAvailPageFile": 3 * GiB})()
+try:
+    tot, avail = rc.total_memory_mb(), rc.available_memory_mb()
+finally:
+    rc.platform.system, rc._win_memory_status = real_sys, real_ms
+check(tot == 8192 and avail == 1024, f"Windows: total = ullTotalPhys ({tot}), free = min(avail phys, commit left) ({avail})")
+
 # ── R ──────────────────────────────────────────────────────────────────────────────────────
 cl._ac_migration_done = True   # never touch this computer's crontab
 cl._sync_deployment_registry = cl._prune_deployment_registry = lambda names: None
@@ -244,7 +342,7 @@ def cycle(tick):
     return _T.spawned
 
 
-cl._tick_gate, cl._tick_gate_read = tg.TickGate(2), True
+cl._tick_gate, cl._tick_gate_read = tg.TickGate(2, wall=lambda: 0.0), True   # never at :45: the cap alone
 tr = Tracker()
 cycle(lambda n: tr.body(n, 0.05)())
 check(tr.peak <= 2 and sorted(tr.order) == sorted(strats), f"gate on: all 7 ticked, at most 2 at once (peak {tr.peak})")
@@ -285,7 +383,7 @@ class StubGate:
     def __init__(self, launch_wall, waited):
         self.launch_wall, self.waited = launch_wall, waited
 
-    def run(self, name, fn):   # what TickGate.run does, minus the waiting: launch, run, report
+    def run(self, name, fn, release_at=None):   # TickGate.run minus the waiting: launch, run, report
         wall[0] = self.launch_wall
         fn()
         return self.waited
@@ -302,8 +400,34 @@ try:
     logged.clear()
     cl._gated_tick(StubGate(M0 + 12, 11.0), "slow", 60)
     check(any("queued 11.0s" in m for m in logged), "any tick queued ≥ 10 s is logged")
+    logged.clear()
+    for k in range(5):
+        cl._gated_tick(StubGate(M0 + 60 * (k + 1) + 12, 11.0), "slow", 60)
+    cl._gated_tick(StubGate(M0 + 3600 + 72, 11.0), "slow", 60)
+    check(len(logged) == 1, f"the same strategy queued every minute: one line, then the next an hour later ({len(logged)})")
 finally:
     cl._log, cl.time, cl._tick_one = real_log, real_time, real_tick
+
+# ── E ──
+reads, real_src = {}, cl._strategy_source
+
+
+def counting(name):
+    reads[name] = reads.get(name, 0) + 1
+    return real_src(name)
+
+
+reg, real_sync = [], cl._sync_deployment_registry
+cl._strategy_source, cl._sync_deployment_registry = counting, reg.append
+cl._tick_gate, cl._tick_gate_read = None, True
+try:
+    cycle(lambda n: None)
+finally:
+    cl._strategy_source, cl._sync_deployment_registry = real_src, real_sync
+check(reads and max(reads.values()) <= 2, f"strategy.py reads per strategy per cycle ≤ 2 ({reads})")
+check(reg and reg[0] == {n: (1 if iv == "1m" else 60) for n, iv in strats.items()},
+      "the deployment registry gets the same {name: minutes} the gate uses")
+cl._sync_deployment_registry = lambda names: None
 
 for env, want in (("off", None), ("0", None), ("2", 2)):
     os.environ["BLAVE_TICK_CONCURRENCY"] = env

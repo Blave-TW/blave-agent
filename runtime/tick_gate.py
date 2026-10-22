@@ -17,8 +17,9 @@ Rules:
 - A slot is held until the tick exits or LEASE_SECONDS pass, whichever is first: one slow
   fetch (up to the 1800 s tick timeout) must not stall every other strategy — the uid 21894
   starvation the parallel scheduler exists to prevent.
-- A waiter is let through after MAX_WAIT_SECONDS whatever the count: a bug here must cost
-  CPU, never signals.
+- A waiter is let through after MAX_WAIT_SECONDS whatever the count, and a <5m one at its
+  caller's `release_at` (the scheduler passes :45 of the minute): a 1m bar is gone in 60 s, so
+  waiting longer only trades CPU for a bar never computed.
 """
 import itertools
 import os
@@ -65,9 +66,10 @@ def configured_limit(value, mem_mb=None, cpus=None):
 
 class TickGate:
     def __init__(self, limit, lease=LEASE_SECONDS, max_wait=MAX_WAIT_SECONDS,
-                 clock=time.monotonic, poll=POLL_SECONDS):
+                 clock=time.monotonic, poll=POLL_SECONDS, wall=time.time):
         self.limit = limit
         self._lease, self._max_wait, self._clock, self._poll = lease, max_wait, clock, poll
+        self._wall = wall
         self._cond = threading.Condition()
         self._seq = itertools.count()
         self._cycle = 0
@@ -104,8 +106,9 @@ class TickGate:
     def _busy(self, now):
         return sum(1 for t in self._running.values() if now - t < self._lease)
 
-    def run(self, name, fn):
-        """Wait for `name`'s turn, run fn(), free the slot. Returns seconds waited."""
+    def run(self, name, fn, release_at=None):
+        """Wait for `name`'s turn (or until wall-clock `release_at`), run fn(), free the slot.
+        Returns seconds waited."""
         start = self._clock()
         with self._cond:
             while True:
@@ -113,7 +116,8 @@ class TickGate:
                     raise KeyError(name)
                 now = self._clock()
                 head = min(self._waiting.values()) == self._waiting[name]
-                if (head and self._busy(now) < self.limit) or now - start >= self._max_wait:
+                if ((head and self._busy(now) < self.limit) or now - start >= self._max_wait
+                        or (release_at is not None and self._wall() >= release_at)):
                     break
                 self._cond.wait(self._poll)
             del self._waiting[name]
