@@ -106,7 +106,7 @@ try {
   ok("④ 旗標鈕 aria-expanded:建時 false、面板開 true、收 false", /fb\.setAttribute\("aria-expanded", "false"\)/.test(cutFn(sfSrc, "sfRowActions"))
     && /anchor\.setAttribute\("aria-expanded", "true"\)/.test(cutFn(sfSrc, "sfPopOpen")) && /if \(ret\) ret\.setAttribute\("aria-expanded", "false"\);/.test(cutFn(sfSrc, "sfPopClose")));
   ok("④ 面板底不再印按鍵提示(Wei 10-12 拿掉;Alt+↑/↓ 仍可用);移動後 srSay「已移到第 N 位」",
-    !/hint\.className = "hint"/.test(sfSrc) && /sfPop\.append\(sep\(\), rm, d2, del\);/.test(sfSrc)
+    !/hint\.className = "hint"/.test(sfSrc) && /sfPop\.append\(d1, rm, d2, del\);/.test(sfSrc)
     && !/side\.sortHint/.test(sfSrc)
     && /if \(e\.key === "ArrowUp"\) sib\.before\(row\); else sib\.after\(row\);\n\s*const b = row\.querySelector\("\.strat-row"\); if \(b\) b\.focus\(\);\n\s*sfMoved\(sc\);\n\s*srSay\(t\("side\.moved", \{ n: \[\.\.\.box\.querySelectorAll\(":scope > \.strat-wrap"\)\]\.indexOf\(row\) \+ 1 \}\)\);/.test(sfSrc)
     && !/\.flag-pop \.hint/.test(css));

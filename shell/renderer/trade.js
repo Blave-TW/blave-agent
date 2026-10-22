@@ -5638,6 +5638,9 @@ async function psOpen(opener, mode, fresh) {
   const list = $("ps-list"); list.textContent = "";
   if (!rows.length) list.appendChild(trEl("div", "pf-state", t("tr.pick.empty")));
   else rows.forEach((r, i) => list.appendChild(psRow(r, cloud, i)));
+  // 清單是空的(一列都沒有;全部鎖住的不算):沒有東西可「確定」,底部只留一顆「關閉」(0.1.29 e2e 稽核建議 5)
+  const cancel = $("ps-cancel"); $("ps-ok").hidden = !rows.length;
+  cancel.dataset.i18n = rows.length ? "del.cancel" : "set.close"; cancel.textContent = t(cancel.dataset.i18n);
   // 統一而且每一列都被「只下台指期」鎖住(post-connect-flow 第 9 列):清單底下一行出口,到策略庫(有官方的台指期策略)
   if (!mg && rows.length && rows.every((r) => r.note === "txf")) {
     const p = trEl("p", "ps-next", t("tr.pick.noTxf") + " "), b = trEl("button", "btn-quiet", t("lib.nav")); b.type = "button"; b.dataset.fk = "pick-notxf";

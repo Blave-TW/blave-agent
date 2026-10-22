@@ -89,6 +89,8 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 #strat-list-cloud .strat-wrap.dragging .strat-row { padding-right: var(--space-12); }   /* 拖拉中名字吃滿(同 app.css .dragging;上面兩條是 id 權重) */
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
+/* 停在列上 / 聚焦 / 旗標面板開著時列尾多了旗標鈕與 ✕(155 寬的列名字只剩 22):狀態字讓位、只留狀態點;字留在讀屏名稱裡(同 .sr-only)。刪除中那列不收:「刪除中…」是它唯一的狀態說明 */
+.strat-wrap:not(.is-deleting):is(:hover, :has(:focus-visible), .flag-open) .strat-row .stx { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ---- 雲端視角的開通頁(沒有主機可看;規格 §3 .cv-open)---- */
 .cv-open { max-width: 48ch; margin-top: var(--space-24); }
@@ -477,6 +479,7 @@ html.ws-sc .side-gate { display: none; }
      那顆鈕還會浮在標題與狀態句之間的空白裡(spec §12-4 第 3、4 條) */
   .main-head:has(.act button + button) .act { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; margin-top: var(--space-12); margin-bottom: 0; }   /* 鈕底到狀態句由狀態句的 12 負責,換列時也是同一個 12 */
   .main-head:has(.act button + button) .act > button { flex: 1; }
+  .main-head:has(.act button + button) .act > .tr-go-stop { flex: none; }   /* 文字鈕照字寬靠右,不跟兩顆框線鈕均分(不然像一行浮在空格中間的字) */
   .main-tabs { padding: 0 var(--space-16) 1px; gap: var(--space-16); }   /* 底下的 1 是 hairline 的位子,不能跟著收 */
   .pf { padding: var(--space-16); }
   .pf-tbl .c-sym { display: none; }
