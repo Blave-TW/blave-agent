@@ -982,6 +982,12 @@ function trSavedRoute(n, r) {
    自動下單 › 部位、對帳、存檔框的「原」照對帳器現況(on = false) */
 let TR_AS_SAVED = false;
 function trAsSaved(fn, on = true) { const was = TR_AS_SAVED; TR_AS_SAVED = on; try { return fn(); } finally { TR_AS_SAVED = was; } }
+/* 存檔後這幾支策略各自下到哪一家的 kind(trSavedRoute;同時綁兩家時路由不一定是畫面第一家):框裡「這家下不下得了這個標的」照它判。
+   沒有策略(只在帳上的標的)或都沒路由:退回畫面第一家 */
+function trSavedKinds(names, r) {
+  const ks = (Array.isArray(names) ? names : []).map((n) => trSavedRoute(n, r)).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).map(trVenueKind);
+  return ks.length ? ks : [trVenueKind(trVenueId())];
+}
 function trTwCash(sym, paper) { return !!paper && TR_TWSTOCK_RE.test(trCanonSym(sym)); }
 // 目標部位 = 已存金額 × 訊號,按標的加總(同機器端 aggregate;現貨不能做空,負的壓 0)
 function trClientTargets(amounts, states, contracts) {
@@ -1262,7 +1268,7 @@ function trCfSymsOf(n, s, contracts) {
    草稿列「存了就會下單」與存金額框的保守判斷(第一次讀帳前、預覽不是最新那根)共用這一條 */
 function trCfWillOrder(n, s, contracts) {
   if (!trCfFiring(TR.st, TR.pending) || !trHasAccount(trReport() || {})) return false;
-  const syms = trCfSymsOf(n, s, contracts), vk = trVenueKind(trVenueId()), r = trReport() || {};
+  const syms = trCfSymsOf(n, s, contracts), r = trReport() || {}, vk = trSavedKinds(TR_AS_SAVED ? [n] : [], r)[0];
   if (!syms) return !trUsNoAuto(r, null, [n]);
   return syms.some((k) => trTradesSym(vk, k) && !trUsNoAuto(r, k, [n]));
 }
@@ -3587,7 +3593,7 @@ function trCfLongOnly(s, n) {
   const tc = trTypeC(s, n), paper = trPaperOf(n), keys = tc ? tc.keys : s && s.symbol ? [s.symbol] : [];
   return keys.length > 0 && keys.every((k) => trTwCash(k, paper));
 }
-/* 框的內容(純計算,畫面在 trSaveAmounts)。o = { r, stored, sending, firing, contractsBefore, contractsAfter, mine, gates, covered(sym), lot(sym), lastAt }
+/* 框的內容(純計算,畫面在 trSaveAmounts)。o = { r, stored, sending, firing, contractsBefore, contractsAfter, mine, gates, covered(sym, 撐它的策略), lot(sym), lastAt }
    回 { kind: "orders" | "changes", rows: [...], zones: [...], st }:
      orders  = [{ sym, side: "buy"|"sell", lots?, qty?, money, z, by }](會送單:新目標 − 帳上,過了下單門檻才列;門檻同部位表 sigRow)
      changes = [{ sym, was, now, lots, qty?, z, by }](目標有變的,口數列比取整後的口數);by = 撐這一列的策略
@@ -3634,7 +3640,7 @@ function trCfRows(o) {
        照列但標 closed、排最後,不算進「下一輪要送的 N 筆」 */
     const r0 = o.r || {}, twShut = !trTwSessionOpen(Date.now(), r0.tw_trading_day), twHeld = trTwClosedKeys(r0.last_reconcile);
     const twClosed = (sym) => TR_TWSTOCK_RE.test(trCanonSym(sym.replace(/@spot$/i, ""))) && (twShut || twHeld.has(sym));
-    const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && o.covered(k) && !trUsNoAuto(o.r, k, by(k)));
+    const syms = Object.keys(after).concat(Object.keys(o.mine).filter((k) => o.mine[k])).filter((k, i, a) => a.indexOf(k) === i && o.covered(k, by(k)) && !trUsNoAuto(o.r, k, by(k)));
     syms.forEach((sym) => {
       // 新成員算不出(沒預覽):下一輪 = 其他成員這次存的 + 被換掉的那段,照算。基準未寫／pending 時對帳器整檔不動(沒有 anchor),
       // 目標不知道:這次又動到它已知的那一半,等它算出來可能就有單(框照「儲存並下單」)
@@ -3749,9 +3755,9 @@ function trSaveAmounts(names, stored, opener, o) {
     const r = trReport() || {}, firing = trCfFiring(S.st, S.pending), recon = trHasAccount(r);
     const ctBefore = trContracts(), ctAfter = Object.assign({}, ctBefore, ctAll || {});
     const tgt0 = trClientTargets(sending, poPartStates(sending, r.states || {}), ctAfter);
-    const bk = recon ? trBook(r, tgt0) : null, last = bk ? bk.last : null, vk = trVenueKind(trVenueId());
+    const bk = recon ? trBook(r, tgt0) : null, last = bk ? bk.last : null;
     const args = { r, stored, sending, contractsBefore: ctBefore, contractsAfter: ctAfter,
-      mine: bk ? bk.mine : {}, gates: (last || {}).gates || {}, covered: (sym) => !recon || trTradesSym(vk, sym),
+      mine: bk ? bk.mine : {}, gates: (last || {}).gates || {}, covered: (sym, names) => !recon || trSavedKinds(names, r).some((k) => trTradesSym(k, sym)),
       lot: (sym) => trIsLot(last, sym) || !!trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))) };
     // 會送單:列下一輪要送的單。草稿還在算也照會送單那一種開(標題「儲存並下單」),表的位置先寫計算中
     const firstRead = firing && recon && trFirstReadPending(r);
