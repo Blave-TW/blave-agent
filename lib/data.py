@@ -7593,3 +7593,51 @@ def join_tw_flow(df, kind, interval, start, end, headers, id=None, prefix=None):
     aligned = align_feed(df, flow, source, interval, bar_tz=bar_tz)
     pre = default_prefix if prefix is None else prefix
     return df.loc[aligned.index].join(aligned.add_prefix(pre))
+
+
+# ── Which fetchers return a market's PRICES ───────────────────────────────────
+# lib.runner picks a Type C's buy-and-hold benchmark from the markets its price fetchers
+# cover (all crypto → BTC, all US → SPY); a signal feed (funding rate, institutional flows,
+# a symbol list) says nothing about the universe. Every fetch_* in this module is in exactly
+# one of the two — tests/check_price_fetchers.py fails on a new one left out.
+_PRICE_FETCHERS = {
+    'fetch_kline': 'crypto', 'fetch_kline_batch': 'crypto', 'fetch_bingx_kline': 'crypto',
+    'fetch_binance_ticker_24h': 'crypto',
+    'fetch_twstock_price': 'tw', 'fetch_twstock_price_adj': 'tw',
+    'fetch_twstock_price_batch': 'tw', 'fetch_twstock_price_adj_batch': 'tw',
+    'fetch_twstock_ohlcv': 'tw', 'fetch_twstock_quote': 'tw', 'fetch_twstock_quote_batch': 'tw',
+    'fetch_twse_day_all_public': 'tw', 'fetch_twmarket_index': 'tw',
+    'fetch_twmarket_index_public': 'tw',
+    'fetch_twfutures_ohlcv': 'twfutures', 'fetch_twfutures_ohlcv_batch': 'twfutures',
+    'fetch_stock_futures_batch_daily': 'twfutures', 'fetch_txf_daily_public': 'twfutures',
+    'fetch_usstock_price': 'us',
+    'fetch_db_kline': 'cme',
+}
+_NON_PRICE_FETCHERS = frozenset({
+    'fetch_capital_shortage', 'fetch_cme_cot', 'fetch_cvd_coin', 'fetch_cvd_table',
+    'fetch_economic_calendar', 'fetch_fear_greed', 'fetch_funding_rate',
+    'fetch_holder_concentration', 'fetch_liquidation', 'fetch_liquidation_coin',
+    'fetch_liquidation_exchanges', 'fetch_liquidation_map', 'fetch_long_short_ratio_coin',
+    'fetch_long_short_ratio_table', 'fetch_market_direction', 'fetch_market_sentiment',
+    'fetch_news', 'fetch_open_interest_coin', 'fetch_open_interest_history',
+    'fetch_open_interest_table', 'fetch_squeeze_momentum', 'fetch_stock_futures_ohlcv_symbols',
+    'fetch_taker_intensity', 'fetch_top_trader_exposure', 'fetch_unusual_movement',
+    'fetch_whale_hunter',
+    'fetch_tw_announcements_public', 'fetch_tw_breadth_public', 'fetch_tw_sector_breadth',
+    'fetch_twfutures_bid_ask_vol', 'fetch_twfutures_carrying_cost',
+    'fetch_twfutures_institutional', 'fetch_twfutures_institutional_public',
+    'fetch_twfutures_pcr', 'fetch_twmarket_dividend_points', 'fetch_twmarket_institutional',
+    'fetch_twmarket_institutional_public', 'fetch_twmarket_margin',
+    'fetch_twmarket_margin_public', 'fetch_twmarket_turnover', 'fetch_twmarket_turnover_public',
+    'fetch_twstock_alerts', 'fetch_twstock_all_broker_net', 'fetch_twstock_balance_sheet',
+    'fetch_twstock_balance_sheet_batch', 'fetch_twstock_branch_daily_net',
+    'fetch_twstock_broker_net', 'fetch_twstock_dividend', 'fetch_twstock_dividend_batch',
+    'fetch_twstock_financials', 'fetch_twstock_financials_batch',
+    'fetch_twstock_foreign_shareholding_batch', 'fetch_twstock_holidays', 'fetch_twstock_info',
+    'fetch_twstock_institutional', 'fetch_twstock_institutional_batch', 'fetch_twstock_list',
+    'fetch_twstock_market_value_all', 'fetch_twstock_monthly_revenue',
+    'fetch_twstock_monthly_revenue_batch', 'fetch_twstock_ohlcv_symbols', 'fetch_twstock_per',
+    'fetch_twstock_per_batch', 'fetch_twstock_ratios', 'fetch_twstock_ratios_batch',
+    'fetch_twstock_shareholding', 'fetch_twstock_shareholding_batch',
+    'fetch_twstock_trader_flows',
+})

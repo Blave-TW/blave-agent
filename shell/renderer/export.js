@@ -21,7 +21,7 @@ function xpIsCrypto(d) {
   return /USD[TC]$/.test(sym) || !!(d && d.cryptoKline === true);
 }
 /* 組合策略(Type C):一份腳本只跑一個標的,三個平台都轉不了(references 三份都寫 Type A only)。
-   認法:回測的 stats 帶隨機投組基準 benchmark_n,或台股 Type C 的 benchmark_bh 鍵(值可能是 null;只有 Type C 寫這兩個),或檔頭 `# Type: C`。判不出來就當不是(照常給選,agent 讀過碼再拒) */
+   認法:回測的 stats 帶隨機投組基準 benchmark_n,或買進持有基準的 benchmark_bh 鍵(值可能是 null;只有 Type C 寫這兩個),或檔頭 `# Type: C`。判不出來就當不是(照常給選,agent 讀過碼再拒) */
 function xpIsPortfolio(d) {
   if (!d) return false;
   if (d.stats && typeof d.stats.benchmark_n === "number") return true;

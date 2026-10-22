@@ -2080,29 +2080,90 @@ _TW_LISTED_RE = re.compile(r"^\d{4,6}(?:[A-Z]\d?)?(?:\.TWO?)?$")
 
 def _is_tw_universe(columns):
     """A Type C whose every column is a Taiwan stock / ETF code: benchmarked against 0050
-    buy-and-hold instead of random portfolios. A mixed or crypto universe keeps the random one."""
+    buy-and-hold instead of random portfolios."""
     return len(columns) > 0 and all(isinstance(c, str) and _TW_LISTED_RE.match(c) for c in columns)
 
 
-def _tw_bh_benchmark(close_df, hdrs):
-    """(stats['benchmark_bh'], its per-bar equity for pnl.png) for a Taiwan Type C; None when 0050 cannot be fetched — the key
-    stays, since strategy_reporter.is_portfolio_stats tells Type C apart by a benchmark_* key."""
+CRYPTO_BENCHMARK = 'BTCUSDT'
+US_BENCHMARK = 'SPY'
+
+
+def _price_markets(strategy_name):
+    """{lib.data fetcher name: market} for the PRICE fetchers strategies/<name>/strategy.py
+    (under _REPO_ROOT) names as code — NAME tokens, so a docstring, a comment or a string that
+    mentions one does not count. None when the file cannot be read. Known blind spot: prices
+    fetched inside a helper module the strategy imports are not seen."""
+    import io
+    import tokenize
+    from lib.data import _PRICE_FETCHERS
+    try:
+        with tokenize.open(_REPO_ROOT / 'strategies' / strategy_name / 'strategy.py') as f:
+            toks = list(tokenize.generate_tokens(io.StringIO(f.read()).readline))
+    except (OSError, SyntaxError, ValueError, tokenize.TokenError):
+        return None
+    return {t.string: _PRICE_FETCHERS[t.string] for t in toks
+            if t.type == tokenize.NAME and t.string in _PRICE_FETCHERS}
+
+
+def _pick_benchmark(close_df, strategy_name, interval, hdrs):
+    """(symbol, kind, adjusted, fetch(start, end) -> Close) of a Type C's buy-and-hold
+    benchmark, or None for the random-portfolio one:
+      every column a Taiwan stock / ETF code          → 0050 (adjusted)
+      every price fetcher a crypto kline               → BTCUSDT on the strategy's interval and
+                                                         kline source (a stock perp such as
+                                                         NVDAUSDT via fetch_kline counts too)
+      every price fetcher fetch_usstock_price          → SPY daily (adjusted)
+    Signal feeds (funding rate, OI, fear & greed …) do not count; prices of two markets, or no
+    readable strategy.py, keep the random one. The fetcher decides, not the column names:
+    'BTC' is also a US ETF. INTERVAL defaults to '1h' in _run, so a daily Type C that leaves it
+    out is benchmarked on hourly BTC bars (the 00:00 bar's close on each day) — accepted."""
+    from lib import data as D
+    if _is_tw_universe(close_df.columns):
+        return (TW_BENCHMARK, f'{TW_BENCHMARK}_bh', True,
+                lambda s, e: D.fetch_twstock_price_adj(TW_BENCHMARK, s, e, hdrs)['Close'])
+    price = _price_markets(strategy_name)
+    markets = set(price.values()) if price else set()
+    if markets == {'crypto'}:
+        if set(price) == {'fetch_bingx_kline'}:   # BingX-only: BTC from BingX too, not Binance
+            return (CRYPTO_BENCHMARK, 'BTC_bh', False,
+                    lambda s, e: D.fetch_bingx_kline('BTC-USDT', interval, s, e)['Close'])
+        return (CRYPTO_BENCHMARK, 'BTC_bh', False,
+                lambda s, e: D.fetch_kline(CRYPTO_BENCHMARK, interval, s, e, hdrs)['Close'])
+    if markets == {'us'}:
+        return (US_BENCHMARK, f'{US_BENCHMARK}_bh', True,
+                lambda s, e: D.fetch_usstock_price(US_BENCHMARK, s, e, hdrs)['Close'])
+    return None
+
+
+def _bh_benchmark(close_df, symbol, kind, fetch_close, adjusted):
+    """(stats['benchmark_bh'], its per-bar equity for pnl.png); None when the benchmark cannot
+    be fetched or starts after the first bar — the key stays, since
+    strategy_reporter.is_portfolio_stats tells Type C apart by a benchmark_* key."""
     from lib.analysis import bh_benchmark
-    from lib.data import fetch_twstock_price_adj
     try:
         start = (close_df.index[0] - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
-        end = close_df.index[-1].strftime('%Y-%m-%d')
-        df = fetch_twstock_price_adj(TW_BENCHMARK, start, end, hdrs)
-        out, line = bh_benchmark(df['Close'], close_df, f'{TW_BENCHMARK}_bh', TW_BENCHMARK)
+        end = (close_df.index[-1] + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        out, line = bh_benchmark(fetch_close(start, end), close_df, kind, symbol, adjusted)
     except Exception as e:
-        logging.warning("0050 benchmark skipped: %s", e)
+        logging.warning("%s benchmark skipped: %s", symbol, e)
         out, line = None, None
     if out is None:
-        print("  ⚠️ WARNING: 0050 buy-and-hold benchmark unavailable for this period")
+        print(f"  ⚠️ WARNING: {symbol} buy-and-hold benchmark unavailable for this period")
     else:
-        print(f"  Benchmark 0050 buy & hold: {out['ret_pct']:.1f}%  "
+        print(f"  Benchmark {symbol} buy & hold: {out['ret_pct']:.1f}%  "
               f"(CAGR {out['cagr_pct']}%, MDD {out['mdd_pct']}%)")
     return out, line
+
+
+def _previous_bh(out_dir, kind):
+    """The last stats.json's benchmark_bh when it is the same benchmark, else None: a
+    performance refresh whose fetch failed keeps it rather than blanking the row."""
+    try:
+        with open(Path(out_dir) / 'stats.json', encoding='utf-8') as f:
+            old = json.load(f).get('benchmark_bh')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return dict(old) if isinstance(old, dict) and old.get('kind') == kind else None
 
 
 def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
@@ -2654,8 +2715,17 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             print("  ⚠️ WARNING: 0 trades — the weight vector never changed; "
                   "all stats are meaningless. Check thresholds against the data's actual range.")
 
-        if _is_tw_universe(close_df.columns):
-            bh, bench_line = _tw_bh_benchmark(close_df, hdrs)
+        try:
+            picked = _pick_benchmark(close_df, strategy_name, interval, hdrs)
+        except Exception as e:   # the random benchmark, as before
+            logging.warning("buy-and-hold benchmark check skipped: %s", e)
+            picked = None
+        bench_sym = picked[0] if picked else None
+        if picked:
+            bench_sym, kind, adjusted, bench_close = picked
+            bh, bench_line = _bh_benchmark(close_df, bench_sym, kind, bench_close, adjusted)
+            if bh is None and refresh:
+                bh = _previous_bh(out_dir, kind)
             bench_stats, bench_pct = {'benchmark_bh': bh}, None
         else:
             bench_line = None
@@ -2725,7 +2795,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             plot_pnl_portfolio(pf_series, close_df, title=strategy_name,
                                output_path=str(out_dir / 'pnl.png'),
                                bench_pct=bench_pct, bench_line=bench_line,
-                               bench_label=f'{TW_BENCHMARK} buy & hold')
+                               bench_label=f'{bench_sym} buy & hold' if bench_sym else None)
             if not muted:
                 # Mirror into the web workspace chat (no-op off web), regardless of the
                 # Telegram gate below.

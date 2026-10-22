@@ -31,11 +31,12 @@
     const rets = Array.isArray(stats && stats.daily_returns) ? stats.daily_returns : [];
     const n = Math.min(dates.length, rets.length);
     const out = { dates: [], equity: [], drawdown: [], band: null, bh: null };
-    // 帶與 0050 線跟權益走同一組索引:跳過的日期它們也跳過,第 i 點才會是同一天
+    // 帶與買進持有基準線跟權益走同一組索引:跳過的日期它們也跳過,第 i 點才會是同一天
     const raw = readBand(stats);
     const band = raw ? { p5: [], p50: [], p95: [] } : null;
     const rawBh = readBh(stats);
     const bh = rawBh ? [] : null;
+    out.bhSym = rawBh ? bhSym(stats) : null;
     let cum = 1;
     let peak = 1;
     for (let i = 0; i < n; i++) {
@@ -176,7 +177,7 @@
    * 回傳的仍以 daily_dates 為索引;對到圖上的哪一天由 buildSeries 決定。 */
   const BAND_KEYS = ["p5", "p25", "p50", "p75", "p95"];
   function readBand(stats) {
-    if (hasBh(stats)) return null; // 台股 Type C 改比 0050,有這個鍵就不讀隨機帶
+    if (hasBh(stats)) return null; // 台股／加密／美股 Type C 改比買進持有,有這個鍵就不讀隨機帶
     const b = stats && stats.benchmark_band;
     const dates = stats && stats.daily_dates;
     if (!b || typeof b !== "object" || !Array.isArray(dates)) return null;
@@ -190,11 +191,17 @@
     return out;
   }
 
-  /* 台股 Type C 的基準是 0050 買進持有:只看鍵在不在——值是 null(抓不到 0050)也是新版,
-   * 不能退回隨機投組那套。series 同 readBand 的契約(倍數、與 daily_dates 等長、全為正),
-   * 不合就不畫線,統計列的數字照出。 */
+  /* 台股／加密／美股 Type C 的基準是單一標的買進持有(0050、BTCUSDT、SPY):只看鍵在不在——
+   * 值是 null(抓不到基準)也是新版,不能退回隨機投組那套。series 同 readBand 的契約(倍數、
+   * 與 daily_dates 等長、全為正),不合就不畫線,統計列的數字照出。 */
   function hasBh(stats) {
     return !!stats && typeof stats === "object" && "benchmark_bh" in stats;
+  }
+  // 畫面上的代號:BTCUSDT 寫 BTC;null(抓不到,不知道是哪一檔)回 null
+  function bhSym(stats) {
+    const b = hasBh(stats) ? stats.benchmark_bh : null;
+    const s = b && typeof b === "object" && typeof b.symbol === "string" ? b.symbol.trim() : "";
+    return s ? s.replace(/USDT$/, "") : null;
   }
   function readBh(stats) {
     const b = hasBh(stats) ? stats.benchmark_bh : null;
@@ -306,12 +313,16 @@
     const br = stats["Benchmark Return [%]"];
     const rank = stats["benchmark_strategy_ret_pct"];
     const bhRet = hasBh(stats) && stats.benchmark_bh && typeof stats.benchmark_bh === "object" ? stats.benchmark_bh.ret_pct : null;
-    const bench = hasBh(stats) ? tip(plain(fmtSignedPct(bhRet)), isNum(bhRet) ? "bt.tip.benchmark0050" : "bt.tip.benchmark0050Na")
+    const sym = bhSym(stats);
+    // 「含配息」只對還原價(adjusted)成立;BTC 是未調整的永續價格,另一句
+    const bhTip = !isNum(bhRet) || !sym ? "bt.tip.benchmarkBhNa"
+      : stats.benchmark_bh.adjusted === false ? "bt.tip.benchmarkBhRaw" : "bt.tip.benchmarkBhAdj";
+    const bench = hasBh(stats) ? Object.assign(plain(fmtSignedPct(bhRet)), { tip: t(bhTip, { sym: sym || "" }) })
       : !isNum(br) && isNum(rank)
         ? tip({ text: t("bt.benchmarkRank", { n: String(Math.round(rank)) }), tone: "", prose: true }, "bt.tip.benchmarkRank")
         : tip(plain(fmtSignedPct(br)), "bt.tip.benchmark");
     // 投組的 meta 列沒有單一標的,比較對象直接寫在標籤上;代號包 .mono(canon › Type)
-    const benchLabel = hasBh(stats) ? monoToken(t("bt.benchmark0050"), "0050") : t("bt.benchmark");
+    const benchLabel = sym ? monoToken(t("bt.benchmarkBh", { sym: sym }), sym) : t("bt.benchmark");
 
     const fees = fmtFixed(stats["Total Fees Paid [%]"]);
     const n = stats["Trades"];
@@ -456,7 +467,7 @@
       if (series.equity[i] > max) max = series.equity[i];
       // p5 / p95 也要進視野,不然寬帶被裁掉看起來像 bug
       if (band) { if (band.p5[i] < min) min = band.p5[i]; if (band.p95[i] > max) max = band.p95[i]; }
-      // 0050 是第二條權益曲線,不是水平參考線:被裁掉會像 bug
+      // 買進持有基準是第二條權益曲線,不是水平參考線:被裁掉會像 bug
       if (bh) { if (bh[i] < min) min = bh[i]; if (bh[i] > max) max = bh[i]; }
     }
     if (!(min > 0) || min === max) { min = Math.max(min * 0.9, 1e-6); max = max * 1.1 || 1; }
@@ -491,7 +502,7 @@
       ctx.stroke();
       ctx.restore();
     }
-    // 0050 跟隨機中位數同一套「比較基準 = 灰虛線」(兩者不會同圖);策略線照樣最後畫
+    // 買進持有基準跟隨機中位數同一套「比較基準 = 灰虛線」(兩者不會同圖);策略線照樣最後畫
     if (bh) {
       ctx.save();
       ctx.setLineDash([4, 4]);
@@ -567,7 +578,7 @@
 
   /* 收不收合要畫過才知道(看像素厚度),所以隨機那幾項由 redraw 依 drawChart 的結果換;
    * 沒有帶就永遠是「權益 / 回撤」兩項,跟加帶之前一樣。 */
-  function setLegend(head, band, narrow, bh) {
+  function setLegend(head, band, narrow, bh, sym) {
     head.textContent = "";
     head.appendChild(legendItem("", t("bt.equity")));
     if (band && narrow) {
@@ -576,19 +587,20 @@
       head.appendChild(legendItem("band", t("bt.legendBand"), t("bt.tip.band")));
       head.appendChild(legendItem("med", t("bt.legendMedian")));
     }
-    if (bh) head.appendChild(legendItem("bh", monoToken(t("bt.benchmark0050"), "0050"))); // 說明只放統計列,這裡不掛 tooltip
+    if (bh && sym) head.appendChild(legendItem("bh", monoToken(t("bt.benchmarkBh", { sym: sym }), sym))); // 說明只放統計列,這裡不掛 tooltip
     head.appendChild(legendItem("dd", t("bt.drawdown")));
   }
 
   function buildChart(series) {
     const wrap = el("div", "bt-block");
     const head = el("div", "bt-label");
-    setLegend(head, null, false, series.bh);
+    setLegend(head, null, false, series.bh, series.bhSym);
     wrap.appendChild(head);
     const frame = el("div", "bt-frame");
     const canvas = el("canvas", "bt-canvas");
     canvas.setAttribute("role", "img");
-    canvas.setAttribute("aria-label", t(series.bh ? "bt.chartAria0050" : series.band ? "bt.chartAriaBand" : "bt.chartAria"));
+    canvas.setAttribute("aria-label", series.bh && series.bhSym ? t("bt.chartAriaBh", { sym: series.bhSym })
+      : t(series.band ? "bt.chartAriaBand" : "bt.chartAria"));
     frame.appendChild(canvas);
     wrap.appendChild(frame);
     return { node: wrap, canvas: canvas, head: head, narrow: null };
@@ -848,7 +860,7 @@
           // ResizeObserver 每一下都會進來;圖例只在收合狀態真的變了才重建
           if (g && series.band && g.narrow !== chart.narrow) {
             chart.narrow = g.narrow;
-            setLegend(chart.head, series.band, g.narrow, series.bh);
+            setLegend(chart.head, series.band, g.narrow, series.bh, series.bhSym);
           }
         } catch (e) { console.warn("[backtest]", e); }
         if (mcptChart) try { drawMcpt(mcptChart.canvas, mcptChart.dist, mcptChart.labels); } catch (e) { console.warn("[backtest]", e); }
