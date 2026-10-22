@@ -8,8 +8,8 @@
      only at :20/:35, one full cycle per minute, no accumulated drift.
   W  wakes (a 下單設定 save) and startup: before :45 a full cycle runs at once; at :45 or later
      nothing runs until the :05 cycle (report jobs are still armed at startup); neither shifts
-     the grid. A timer firing > 2 s late (sleep) skips its slot and re-aligns — but never two
-     slots in a row. Timers that fire up to 30 ms
+     the grid. A late timer (sleep, a starved thread) runs its slot unless it landed at :45 or
+     later; landing in a later minute it runs a full cycle — every active minute has one. Timers that fire up to 30 ms
      early (Windows) still give exactly one full cycle a minute.
   O  BLAVE_SCHEDULER_PHASE=off: the old loop — wait 60 s after the work, no retries.
   L  late feed, through the REAL wait_for_bar._tick (stub strategy, fake clock), the real
@@ -137,8 +137,8 @@ def drive(rounds, work=lambda r: 0.5, retry_work=lambda r: 0.1, wake_p=0.0, earl
                 for th in threading.enumerate():
                     if th.name.startswith("strategy-tick-"):
                         th.join(10)
-            if len(runs) >= rounds:
-                raise Stop()
+            if len(runs) >= rounds or waits[0] > rounds * 5:
+                raise Stop()   # the second: a loop that never runs fails here, not at a timeout
             if rng.random() < wake_p:
                 clock[0] += rng.uniform(0, timeout)
                 woke[0] = True
@@ -183,7 +183,7 @@ def phase_err(t, phase=PHASE):
 runs = drive(3000, work=lambda r: r.uniform(0, 50) if r.random() > 0.02 else r.uniform(60, 130))
 fulls = [t for k, t, w in runs[1:] if k == "full"]
 retries = [t for k, t, w in runs if k == "retry"]
-check(max(phase_err(t) for t in fulls) < 1e-6,
+check(len(runs) >= 3000 and max((phase_err(t) for t in fulls), default=1.0) < 1e-6,
       f"{len(runs)} slots, work 0–50 s (2% over a minute): every full cycle at :{PHASE:02d}")
 check(retries and all(min(abs(sec(t) - (PHASE + o)) for o in cl.SCHEDULER_RETRY_OFFSETS) < 1e-6 for t in retries),
       f"retry rounds only at :20 / :35 ({len(retries)})")
@@ -220,13 +220,33 @@ drive(5, start=T0 + 50, reports=reps)
 check(reps and reps[0] == (T0 + 50, 0),
       "process started at :50: report jobs are armed at :50, before any cycle (a job due at :00 is not skipped)")
 
-runs = drive(2000, late_every=10, late_s=3 * 60 + 47, seed=13)
-fulls = [(t, w) for k, t, w in runs[1:] if k == "full"]
-check(all(phase_err(t) < 1e-6 for t, w in fulls if not w),
-      f"timers that fire minutes late (sleep): no full cycle off the :05 grid ({len(fulls)} full cycles)")
-runs = drive(300, late_every=1, late_s=2.5, seed=17)
-check(len([r for r in runs if r[0] == "full"]) >= 300 // 3 // 2 - 1,
-      "a thread late on every timer still ticks (a late slot is skipped at most once in a row)")
+
+
+def minutes_without_full(runs):
+    """Minutes the loop was active in (any slot ran) that had no full cycle."""
+    active = {int(t // 60) for k, t, w in runs}
+    full = {int(t // 60) for k, t, w in runs if k == "full"}
+    return sorted(active - full)
+
+
+for every, late_s, why in ((1, 2.5, "every timer 2.5 s late"),
+                           (3, 4.0, "only the :05 timer 4 s late"),
+                           (7, 3.0, "every 7th timer 3 s late"),
+                           (10, 3 * 60 + 47, "every 10th timer 3 min 47 s late (sleep)")):
+    runs = drive(1500, late_every=every, late_s=late_s, seed=13)
+    fulls = [t for k, t, w in runs if k == "full"]
+    lost = minutes_without_full(runs)
+    check(len(runs) >= 1500 and not lost and all(sec(t) < cl.LATE_LAUNCH_SECOND for t in fulls),
+          f"{why}: every minute has a full cycle, none starts at :45 or later "
+          f"({len(fulls)} full cycles, {len(lost)} minutes without one)")
+runs = drive(1500, late_every=3, late_s=4.0, seed=13)
+check(any(abs(sec(t) - (PHASE + 4)) < 1e-6 for k, t, w in runs if k == "full"),
+      "…the :05-only case does hit the full cycle (it runs at :09)")
+runs = drive(1500, late_every=3, late_s=41, seed=19)   # the :05 timer lands at :46
+fulls = [t for k, t, w in runs if k == "full"]
+check(len(fulls) > 300 and all(sec(t) < cl.LATE_LAUNCH_SECOND for t in fulls) and not minutes_without_full(runs),
+      f"timers landing past :45 (41 s late) wait for the next :05: no full cycle at :45+, every active "
+      f"minute still has one ({len(fulls)} full cycles)")
 
 # ── O ──────────────────────────────────────────────────────────────────────────────────────
 os.environ["BLAVE_SCHEDULER_PHASE"] = "off"

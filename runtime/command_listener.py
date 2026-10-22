@@ -1708,7 +1708,6 @@ _tick_gate_read = False
 _retry_minutes = {}       # <5m Type A/C name -> INTERVAL minutes, from the last full cycle
 _queued_logged = {}       # name -> when its last "queued" line was written
 LATE_LAUNCH_SECOND = 45   # a <5m tick launched past this in its minute may compute the next bar
-LATE_TIMER_SECONDS = 2    # a slot timer this late (sleep, clock jump) skips its slot
 
 
 def _scheduler_delay(now, phase=SCHEDULER_PHASE_SECONDS):
@@ -1800,9 +1799,11 @@ def _start_ticks(minutes):
 
 def _not_ready_this_minute(name, now):
     """This minute's tick found the bar not ready, read off wait_for_bar's state file: written
-    this minute (only its not-ready path saves without clearing pending_since — fast path,
-    throttle and a busy lock do not write; a computed bar clears it), pending_since set, no
-    stall alerted. pending_since is NOT compared with this minute: it is written once when a
+    this minute with pending_since set and no stall alerted. A computed bar clears pending_since;
+    fast path, throttle and a busy lock do not write. A fetch_error, a failed run or a wrapper
+    error also save and keep pending_since: those get one retry, which wait_for_bar's own
+    RETRY_BACKOFF_SECONDS turns away at once — at most two cheap extra starts a minute while
+    the backoff lasts. pending_since is NOT compared with this minute: it is written once when a
     wait begins and kept until a bar computes, so after one bar landing past :35 it stays in
     that minute while every later minute still needs its retry. A row due later than now
     (an align_feed wait) is not retried — nothing can land before it is due."""
@@ -3018,7 +3019,7 @@ def _scheduler_loop():
             _fire_due_reports()
         except Exception as e:
             _log(f"report trigger at startup failed: {type(e).__name__}: {e}")
-    target, skipped = None, False
+    target = None
     while True:
         if full:
             try:
@@ -3049,14 +3050,15 @@ def _scheduler_loop():
             woke = _scheduler_wake.wait(timeout=target - now)
             _scheduler_wake.clear()
             if not woke:
-                # Woke from sleep / a clock jump: skip that slot and re-align instead of a cycle at
-                # an arbitrary second. Never twice in a row — a thread starved past 2 s on every
-                # slot must still tick.
-                if time.time() - target > LATE_TIMER_SECONDS and not skipped:
-                    target, skipped = None, True
+                # A late timer (sleep, a clock jump, a starved thread) still runs: until :45 a 1m
+                # tick judges the same bar the :phase one would. Past :45 it waits for the next
+                # :phase, like a late save or start. Landing in a later minute than its slot, that
+                # minute has had no full cycle yet, so this is one.
+                late = time.time()
+                if late % SCHEDULER_INTERVAL_SECONDS >= LATE_LAUNCH_SECOND:
+                    target = None
                     continue
-                skipped = False
-                full = is_full
+                full = is_full or late // SCHEDULER_INTERVAL_SECONDS != target // SCHEDULER_INTERVAL_SECONDS
                 target, is_full = _next_slot(target, phase)
                 break
             # A 下單設定 save. Late in the minute a 1m tick would judge one bar and fetch the
