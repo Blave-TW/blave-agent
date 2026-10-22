@@ -6,11 +6,11 @@ Build, backtest and trade strategies live with Claude Code or Codex. Free and op
 
 **English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.en.png" alt="Download for Mac" width="228"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.en.png" alt="Download for Windows" width="228"></a>
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Download for macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Download for Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Quick start](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
+[Quick start](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
 
 Star the repo if this is useful — and Watch › Releases to get notified of new versions.
 
@@ -50,7 +50,7 @@ Press **Search the Web for Ideas** and the agent reads a dozen-odd sites, then b
 
 ## Quick Start
 
-Download the app for [macOS](https://github.com/Blave-TW/blave-agent/releases/latest) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13+, or Windows 10/11 x64) and open it.
+Download the app for [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13+, or Windows 10/11 x64) and open it.
 
 On first launch you choose what powers the agent:
 
