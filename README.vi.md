@@ -6,13 +6,13 @@ Xây dựng chiến lược, backtest và giao dịch thật với Claude Code h
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | **Tiếng Việt**
 
-> Bản dịch này dịch từ README tiếng Anh tại commit [`00971e7`](https://github.com/Blave-TW/blave-agent/blob/00971e7/README.md) và chỉ gồm các phần ít thay đổi. Sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.vi.png" alt="Tải cho Mac" width="177"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.vi.png" alt="Tải cho Windows" width="177"></a>
 
-![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
+> Bản dịch này dịch từ README tiếng Anh tại commit [`b2584e3`](https://github.com/Blave-TW/blave-agent/blob/b2584e3/README.md) và chỉ gồm các phần ít thay đổi. Sàn giao dịch và dữ liệu, đám mây, cấu trúc thư mục, cách đóng góp và ghi chú cho người bảo trì xem ở [bản tiếng Anh](README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Tải cho macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Tải cho Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Bắt đầu nhanh](#quick-start) · [Vẫn chạy khi tắt máy](https://blave.org/agent/vi)
+[Bắt đầu nhanh](#quick-start) · [Vẫn chạy khi tắt máy](https://blave.org/agent/vi)
 
 Nếu thấy hữu ích, hãy Star repo — và bật Watch › Releases để được báo khi có phiên bản mới.
 
@@ -52,7 +52,7 @@ Nhấn **Search the Web for Ideas** (tìm ý tưởng trên web) và agent sẽ 
 
 ## Bắt đầu nhanh
 
-Tải app cho [macOS](https://github.com/Blave-TW/blave-agent/releases/latest) hoặc [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13 trở lên, hoặc Windows 10/11 x64) rồi mở lên.
+Tải app cho [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) hoặc [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13 trở lên, hoặc Windows 10/11 x64) rồi mở lên.
 
 Lần mở đầu tiên, bạn chọn AI nào chạy agent:
 
