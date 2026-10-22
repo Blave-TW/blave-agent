@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **排程對齊整分鐘、同時跑的 live tick 設上限(稽核 merge-interpreter 10-22 §4 R1＋P1 排程飄移;`command_listener._scheduler_loop`／`_scheduler_delay`／`_run_scheduler_cycle`、新 `runtime/tick_gate.py`、`refresh_capacity.total_memory_mb`)**:①排程原本一輪做完才 `wait(60)`,每分鐘往後飄約 1.7 秒,起跑時間繞遍整分鐘;在一分鐘最後十幾秒起跑的 tick,wait_for_bar 判的是 M-1、策略 fetch 時 M 已收、算的是 M,M-1 從沒被當成最新一根算過(10-22 Windows 測試機 1m 約 5%)。現在每輪照牆上時鐘排在下一個 :05(`SCHEDULER_PHASE_SECONDS`;不放 :00,頭兩秒資料可能還沒到、1m 的 not-ready 一樣會丟一根),一輪超過一分鐘就落到下一個 :05、不補跑;下單設定存檔的提早喚醒不改格線。②同一分鐘的 tick 不再一次全起:上限 = min(核心數, 總記憶體 ÷ 768 MB)、至少 1(2 GB／2 vCPU = 2),`BLAVE_TICK_CONCURRENCY=<n>` 覆寫、`0`／`off` 關掉(照舊全部並行、spawn 形狀不變);短週期先跑、同週期每輪輪替;已在排隊或執行中的名字這輪不重排;一個名額最多佔 20 秒(卡住的 fetch 不會拖住其他策略)、排隊超過 300 秒照跑(閘門出錯只多花 CPU、不丟訊號);<5m 策略排隊後在 :45 之後才起跑、或排隊 ≥10 秒,listener.log 記一行。只改「什麼時候起子行程」,wait_for_bar／runner／判 bar 一行沒動。測試 `tests/check_tick_gate.py`、`tests/check_scheduler_alignment.py`(舊迴圈同一套檢查會抓到 K3)。
+
 ## 1.1.139 — 2026-10-22(desktop 0.1.29)
 
 - **美股 Type C 剛建好不再落「幣別未定」(`portfolio_reporter.strategy_quote_ccy`;用戶回報 0.1.29)**:還沒有 `state.json` 權重、檔案也沒有 `SYMBOL` 時,美股價格的策略(`us_stock`,以及美股＋加密濾網的 `mixed`)改讀檔內 `UNIVERSE` 最後一次賦值的字面清單(`_universe_const`,ast,同 `lib/paper_data._consts` 取最後一次;最後一次是程式算的、或之後有 `UNIVERSE += …` 就不猜、回 None):全是美股純代號 → USD、全是股票永續 → 那個報價幣(原本一律當 USD)、混了加密對或混台股／全球期貨照舊 None。抓價函式表 runtime(`strategy_reporter._PRICE_FETCHERS`)比 lib(`lib/data._PRICE_FETCHERS`)少六個(`fetch_binance_ticker_24h`、`fetch_twmarket_index(_public)`、`fetch_twse_day_all_public`、`fetch_twstock_quote(_batch)`),這次不收(收了會改 `strategy_market` 與 `wait_for_bar` 的判法),由 `tests/check_price_fetchers.py` 釘住差集與共同名字的市場對應,再長就紅。測試 `tests/check_report_quote_ccy.py`。

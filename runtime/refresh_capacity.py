@@ -51,17 +51,8 @@ def available_memory_mb():
             return _parse_vm_stat(subprocess.run(["vm_stat"], capture_output=True, text=True,
                                                  timeout=5).stdout)
         if system == "Windows":
-            import ctypes
-
-            class MEMORYSTATUSEX(ctypes.Structure):
-                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-            st = MEMORYSTATUSEX()
-            st.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+            st = _win_memory_status()
+            if st is None:
                 return None
             # Windows does not overcommit: when the commit limit runs out, the allocation that
             # fails may be the reconciler's, not the refresh's — so the smaller of the two
@@ -69,6 +60,31 @@ def available_memory_mb():
     except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
         return None
     return None
+
+
+def _win_memory_status():
+    import ctypes
+
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+    st = MEMORYSTATUSEX()
+    st.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+    return st if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)) else None
+
+
+def total_memory_mb():
+    """Physical memory installed, in MB; None when it cannot be read."""
+    try:
+        if platform.system() == "Windows":
+            st = _win_memory_status()
+            return int(st.ullTotalPhys // (1024 * 1024)) if st is not None else None
+        return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // (1024 * 1024))
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def win_available_mb(avail_phys, avail_pagefile):

@@ -53,6 +53,7 @@ import capital_local
 import telegram_pairing
 import refresh_capacity
 import save_routing
+import tick_gate
 import turn_slots
 import venue_traits
 
@@ -1679,6 +1680,13 @@ def _sync_strategy_crons(names):
 # down with it).
 
 SCHEDULER_INTERVAL_SECONDS = 60  # matches wait_for_bar.py's own cron cadence
+# Cycles fire at :05 of every minute by the wall clock. A fixed 60 s wait after the cycle's own
+# work drifted ~1.7 s a minute, so the start walked through the whole minute; started in its
+# last ~15 s, wait_for_bar judged bar M-1 while the strategy fetched after M closed and computed
+# M — M-1 was never computed as the latest bar (5% of 1m bars on the 10-22 Windows run). Not at
+# :00: a fetch in the first seconds can find bar M-1 not served yet, and a 1m strategy's
+# not-ready minute is a bar lost too (fewer ticks ran at :01–:02 than at :03+ on that run).
+SCHEDULER_PHASE_SECONDS = 5
 # Generous: fetch_data() can legitimately take minutes (wait_for_bar.py's own
 # cost-note docstring) on top of the strategy run's own 1200s budget inside
 # it (wait_for_bar.py trims that budget to what the probe left of this one,
@@ -1688,6 +1696,42 @@ SCHEDULER_INTERVAL_SECONDS = 60  # matches wait_for_bar.py's own cron cadence
 SCHEDULER_TICK_TIMEOUT_SECONDS = 1800
 
 _scheduler_wake = threading.Event()  # lets a fresh 下單設定 save skip the wait
+_tick_gate = None
+_tick_gate_read = False
+LATE_LAUNCH_SECOND = 45   # a <5m tick launched past this in its minute may compute the next bar
+
+
+def _scheduler_delay(now):
+    """Seconds from wall-clock `now` to the next :SCHEDULER_PHASE_SECONDS, in (0, 60]."""
+    return SCHEDULER_INTERVAL_SECONDS - (now - SCHEDULER_PHASE_SECONDS) % SCHEDULER_INTERVAL_SECONDS
+
+
+def _get_tick_gate():
+    global _tick_gate, _tick_gate_read
+    if not _tick_gate_read:
+        limit, note = tick_gate.configured_limit(os.environ.get(tick_gate.ENV))
+        if note:
+            _log(f"scheduler: {note}")
+        _tick_gate = tick_gate.TickGate(limit) if limit else None
+        _tick_gate_read = True
+        _log(f"scheduler: live ticks {'at most %d at once' % limit if limit else 'all at once (gate off)'}")
+    return _tick_gate
+
+
+def _gated_tick(gate, name, interval_min):
+    launched = []
+
+    def body():
+        launched.append(time.time())
+        _tick_one(name)
+
+    waited = gate.run(name, body)
+    second = launched[0] % SCHEDULER_INTERVAL_SECONDS
+    if waited >= 10 or (waited >= 1 and interval_min < 5 and second >= LATE_LAUNCH_SECOND):
+        _log(f"scheduler tick {name}: queued {waited:.1f}s for a slot (limit {gate.limit}), "
+             f"launched at :{int(second):02d}")
+
+
 _ac_migration_done = False  # see _run_scheduler_cycle's transition handling
 
 
@@ -2732,7 +2776,8 @@ def _run_scheduler_cycle():
     exit) and N is small (a user's whole portfolio, not a fleet) — one spawn
     per name per minute is cheap, and per-strategy overlap is already
     prevented by wait_for_bar.py's own file lock (state/bar_wait/<name>.lock),
-    not by anything in this loop."""
+    not by anything in this loop. How many of those threads run their tick at
+    once: runtime/tick_gate.py (BLAVE_TICK_CONCURRENCY=off spawns as before)."""
     if _signals_frozen():
         return
     global _ac_migration_done
@@ -2776,9 +2821,22 @@ def _run_scheduler_cycle():
     if not ac_names:
         return
     _sync_deployment_registry(ac_names)
-    for name in sorted(ac_names):
-        threading.Thread(target=_tick_one, args=(name,),
-                         daemon=True, name=f"strategy-tick-{name}").start()
+    gate = _get_tick_gate()
+    if gate is None:
+        for name in sorted(ac_names):
+            threading.Thread(target=_tick_one, args=(name,),
+                             daemon=True, name=f"strategy-tick-{name}").start()
+        return
+    minutes = {n: _strategy_interval_minutes(n) for n in ac_names}
+    queued = gate.enqueue(list(minutes.items()))
+    for i, name in enumerate(queued):
+        try:
+            threading.Thread(target=_gated_tick, args=(gate, name, minutes[name]),
+                             daemon=True, name=f"strategy-tick-{name}").start()
+        except Exception:
+            for n in queued[i:]:
+                gate.cancel(n)   # a queued name with no thread would block everyone behind it
+            raise
 
 
 def _migrate_legacy_ac_crons():
@@ -2867,7 +2925,7 @@ def _scheduler_loop():
         except Exception as e:
             _log(f"scheduler cycle failed: {type(e).__name__}: {e}")
         _fire_due_reports()  # independent of venue binding — reports run unbound too
-        _scheduler_wake.wait(timeout=SCHEDULER_INTERVAL_SECONDS)
+        _scheduler_wake.wait(timeout=_scheduler_delay(time.time()))
         _scheduler_wake.clear()
 
 
