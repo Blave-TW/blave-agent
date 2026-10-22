@@ -38,9 +38,9 @@ do not assume casing or invent names.
    (`lib/account_bybit.py` + `lib/order_bybit.py` — UTA accounts only), StockCoin
    (`lib/account_stockcoin.py` + `lib/order_stockcoin.py` — FUTURES-type key; market,
    limit / chase / TWAP and SL/TP layers; no spot, no fund-flow history), Bitget
-   (`lib/account_bitget.py` + `lib/order_bitget.py` — NOT live-verified: neither lib signs
-   any request, not auto-wired, not offered in any connect menu; Bitget is not
-   supported yet — do not import them), Paper trading
+   (`lib/account_bitget.py` + `lib/order_bitget.py` — classic accounts only, a UTA key is
+   refused with what to do; USDT-M perps incl. US stock perps; market, limit / chase / TWAP
+   and SL/TP layers; no spot), Paper trading
    (`lib/account_paper.py` + `lib/order_paper.py` — simulated venue, no keys;
    the web handoff for it needs only rule 5 plus one sentence on how fills
    are priced, see `references/lib.md`) and SinoPac
