@@ -44,7 +44,7 @@ app.whenReady().then(async () => {
   // 雲端視角、主機運行中;輪詢停掉(狀態由測試直接換)
   const setState = (report) => js(`(() => { TR_BAGS.cloud.st = { alive: true, cloud: { code: "OK", machine: { state: "running", public_ip: "203.0.113.9", os_type: "windows" }, strategies: [] }, report: ${J(report)} }; capPaint(); })()`);
   await js(`(() => { trPollSoon = () => {}; trPoll = async () => {}; if (ENV.cur !== "cloud") envSwitch("cloud"); })()`);
-  const open = async (report, venue) => { await setState(report); await js(`(() => { if (!$("cx-scrim").hidden) cxModalClose(false); window.__calls = []; cxModalOpen(null, ${J(venue || null)}, "real"); if (${J(!venue)}) { const s = $("cx-venue"); s.value = "capital"; s.dispatchEvent(new Event("change")); } })()`); await wait(100); };
+  const open = async (report, venue) => { await setState(report); await js(`(() => { if (!$("cx-scrim").hidden) cxModalClose(false); window.__calls = []; cxModalOpen(null, ${J(venue || null)}), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); if (${J(!venue)}) { const s = $("cx-venue"); s.value = "capital"; s.dispatchEvent(new Event("change")); } })()`); await wait(100); };
   const view = () => js(`CAP.view`);
   const calls = (k) => js(`window.__calls.filter((c) => c[0] === ${J(k)}).map((c) => c[1])`);
   const fill = (o) => js(`(() => { for (const [id, v] of Object.entries(${J(o)})) { const i = $(id); i.value = v; i.dispatchEvent(new Event("input")); } })()`);

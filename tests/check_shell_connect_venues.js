@@ -111,7 +111,7 @@ app.whenReady().then(async () => {
   // 雲端視角
   await js(`(() => { trPollSoon = () => {}; trPoll = async () => {};
     TR_BAGS.cloud.st = { alive: true, cloud: { code: "OK", machine: { state: "running", public_ip: "203.0.113.9" }, strategies: [] }, report: {} };
-    if (ENV.cur !== "cloud") envSwitch("cloud"); cxModalOpen(null, null, "real"); })()`);
+    if (ENV.cur !== "cloud") envSwitch("cloud"); cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); })()`);
   await wait(150);
   const cloudOpts = await js(`[...$("cx-venue").options].map((o) => o.value)`);
   ok("③ 雲端視角(「真實帳戶」;模擬是框頂的大選項、不在選單裡):六家(Binance / OKX / BingX / Gate.io / Bybit / StockCoin)+ 台股那一組的群益(renderer/capital.js)", J(cloudOpts) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "capital"]));
@@ -144,7 +144,7 @@ app.whenReady().then(async () => {
 
   // 雲端被拒 = 主機拒絕這個指令(設計稽核 005 第 2 條):講主機、帶 detail.error;不是「OKX 沒有接受這把金鑰：—」
   const errOf = () => js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`);
-  await js(`cxModalOpen(null, null, "real")`); await wait(100); await pick("okx");
+  await js(`cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real"))`); await wait(100); await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__over.cloudConnect = async () => ({ ok: false, code: "REJECTED", detail: { error: "unsupported venue: okx" } })`);
   await js(`$("cx-go").click()`); await wait(300);
@@ -156,7 +156,7 @@ app.whenReady().then(async () => {
   await js(`cxModalClose(false)`); await wait(100);
 
   // 這台電腦
-  await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null, null, "real"); })()`);
+  await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); })()`);
   await wait(150);
   // 群益只在雲端(Wei 0.1.18 拿掉這台電腦那條:電腦版不接群益);統一只在這台電腦視角,而且受 trade.js PRES_LOCAL_ON 管
   // (0.1.18 關著只藏入口、0.1.19 開):關著時「台股」那一組整個不出;開著時那一組只有統一
@@ -183,7 +183,7 @@ app.whenReady().then(async () => {
   ok("③ 成功:講「串接成功:讀得到帳戶,交易權限在第一筆下單時確認」、框關掉、金鑰清空", await js(`$("cx-scrim").hidden && CXF.apiKey === "" && CXF.passphrase === ""`)
     && (await js(`$("sr-live").textContent`)) === (await js(`t("cx.linkOk")`)) && /交易權限/.test(await js(`STRINGS.zh["cx.linkOk"]`)));
   // 那一家拒絕:講原因,框留著、欄位照舊(沒有儲存,讓人改完再按)
-  await js(`(() => { cxModalOpen(null, null, "real"); })()`); await wait(100); await pick("okx");
+  await js(`(() => { cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); })()`); await wait(100); await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__over.venueConnect = async () => ({ ok: false, code: "REJECTED", detail: { reason: "RuntimeError: 50113 Invalid Sign" } })`);
   await js(`$("cx-go").click()`); await wait(300);
@@ -238,7 +238,7 @@ app.whenReady().then(async () => {
   // 模擬交易那條路:鈕短暫變灰(圓環照放)即關框,**不**出現 cx.gate.checking(本機寫 .env,次秒完成)
   // 上一段的報告留著 OKX 帳戶 → 框會鎖在已綁定的那一家;模擬那條要的是還沒綁任何帳戶的第一次
   await run(`TR_BAGS.local.st = { alive: true, report: { venues: {} } }`);
-  await js(`cxModalOpen(null, null, "paper")`); await wait(100);
+  await js(`cxModalOpen(null, null)`); await wait(100);
   await run(`window.__over.tradeSend = () => new Promise((r) => { window.__release = r; })`);
   await js(`$("cx-go").click()`); await wait(200);
   ok("③ 模擬交易 pending:鈕有圓環、狀態槽空的(沒有 cx.gate.checking)", (await js(`!!$("cx-go").querySelector(".spin16")`)) && (await slotOf()) === "");

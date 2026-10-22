@@ -16,6 +16,7 @@ if (!process.versions.electron) {
 }
 
 const { app, Menu } = require("electron");
+app.setPath("userData", fs.mkdtempSync(path.join(require("os").tmpdir(), "blave-menu-")));  // 不落到預設的 Electron userData
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 setTimeout(() => { console.log("FAIL  逾時(30 秒)"); process.exit(1); }, 30000).unref();
 

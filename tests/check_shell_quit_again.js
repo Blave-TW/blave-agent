@@ -16,6 +16,7 @@ const WIRE = cut(mainSrc, "function quitOnSignals(");
 if (process.versions.electron) {
   // ② 的子行程:沒有視窗。argv 最後一個是 "wired" | "bare"
   const { app } = require("electron");
+  app.setPath("userData", fs.mkdtempSync(path.join(require("os").tmpdir(), "blave-quit-")));  // 不落到預設的 Electron userData
   const wired = process.argv[process.argv.length - 1] === "wired";
   let asked = 0, allow = false;
   app.on("window-all-closed", () => {});

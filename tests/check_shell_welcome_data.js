@@ -420,19 +420,18 @@ app.whenReady().then(async () => {
   ok("③ 步驟內容同一條左軸:①的第一顆籤、起手句的送出 icon、新增策略、欄小標、卡、「看全部資料」的左緣同一條 x,比記號內縮 32;由上到下 記號 → 起手句 →(隔 8)新增策略那一列 → 清單",
     axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.toOpts - 8) < 0.6 && Math.abs(k.head.indent - 32) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
   { // 起手句的列(§1.4):tag 欄三列等寬(subgrid)、句子不溢出、送出 icon 不進讀屏名字;只填不送 / 回合中 disabled
-    const geoSt = () => js(`[...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tg = b.querySelector(".tag"), tx = b.querySelector(".txt"), sn = b.querySelector(".since"), r = (e) => e.getBoundingClientRect();
-      return { mk: b.dataset.starter, tagW: r(tg).width, tagL: r(tg).left, tagOn: getComputedStyle(tg).display !== "none", txtL: r(tx).left, txtT: r(tx).top, sinceT: r(sn).top, sinceL: r(sn).left, over: tx.scrollWidth - tx.clientWidth, rowOver: b.scrollWidth - b.clientWidth, h: r(b).height, txt: tx.textContent, since: sn.textContent }; })`);
+    const geoSt = () => js(`[...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tx = b.querySelector(".txt"), sn = b.querySelector(".since"), r = (e) => e.getBoundingClientRect();
+      return { mk: b.dataset.starter, tag: !!b.querySelector(".tag"), txtL: r(tx).left, txtT: r(tx).top, sinceT: r(sn).top, sinceL: r(sn).left, over: tx.scrollWidth - tx.clientWidth, rowOver: b.scrollWidth - b.clientWidth, h: r(b).height, txt: tx.textContent, since: sn.textContent }; })`);
     const g1 = await geoSt();
-    ok("③ 起手句 1600 寬:tag 靠左(不撐滿欄;spec §9)、三列 tag 左緣同一條 x、句子左緣同一條 x(tag 欄照最長的那個等寬)、起始年在同一行、句子不溢出、列高 ≥ 36;字是定稿列上那句與「{y} 起」",
-      g1.length === 3 && g1.every((x) => x.tagOn && Math.abs(x.tagL - g1[0].tagL) < 0.6 && Math.abs(x.txtL - g1[0].txtL) < 0.6 && Math.abs(x.sinceT - x.txtT) < 4 && x.over <= 0 && x.rowOver <= 0 && x.h >= 36)
-      && Math.min(...g1.map((x) => x.tagW)) < Math.max(...g1.map((x) => x.tagW)) - 4   /* 加密 / 台股 比 台指期 窄:沒被撐滿欄 */
+    ok("③ 起手句 1600 寬:沒有市場 tag(0.1.29 設計稽核:句子開頭就講了市場)、三列句子左緣同一條 x、起始年在同一行、句子不溢出、列高 ≥ 36;字是定稿列上那句與「{y} 起」",
+      g1.length === 3 && g1.every((x) => !x.tag && Math.abs(x.txtL - g1[0].txtL) < 0.6 && Math.abs(x.sinceT - x.txtT) < 4 && x.over <= 0 && x.rowOver <= 0 && x.h >= 36)
       && g1.map((x) => x.txt).join("|") === ["crypto", "tw", "txf"].map((mk) => Z["starter_" + mk + "_row"]).join("|") && g1.map((x) => x.since).join() === "2020 起,2022 起,2015 起", JSON.stringify(g1));
     { const pt = await js(`(() => { const b = $("st-rows").querySelector(".st-row"); b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
       const look = () => js(`(() => { const b = $("st-rows").querySelector(".st-row"), pr = document.createElement("i"); pr.style.cssText = "position:absolute;background:var(--surface-card)"; document.body.appendChild(pr); const card = getComputedStyle(pr).backgroundColor; pr.remove();
-        return { on: b.matches(":hover"), bg: getComputedStyle(b).backgroundColor, tag: getComputedStyle(b.querySelector(".tag")).backgroundColor, card, name: b.textContent }; })()`);
+        return { on: b.matches(":hover"), bg: getComputedStyle(b).backgroundColor, card, name: b.textContent }; })()`);
       w.webContents.sendInputEvent({ type: "mouseMove", x: pt.x, y: pt.y }); await wait(400); const h = await look(); w.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 }); await wait(300);
-      ok("③ 起手句 hover:底色 = --surface-card(spec §10-1),跟市場 tag 不同色、tag 看得到;按鈕名字裡 tag、句子、起始年之間有空白(讀屏不黏在一起)、名字前面沒有 icon 的字",
-        h.on && h.bg === h.card && h.bg !== h.tag && h.name === Z["wd.mk.crypto"] + " " + Z["starter_crypto_row"] + " " + Z["starter_since"].replace("{y}", "2020"), JSON.stringify(h)); }
+      ok("③ 起手句 hover:底色 = --surface-card(spec §10-1);按鈕名字裡句子與起始年之間有空白(讀屏不黏在一起)、名字前面沒有 icon 的字",
+        h.on && h.bg === h.card && h.name === Z["starter_crypto_row"] + " " + Z["starter_since"].replace("{y}", "2020"), JSON.stringify(h)); }
     const fill = await js(`(() => { window.__tf.length = 0; cur = "blave"; hasToken = true; acct = { can_run: false, reason: "NO_CARD" }; $("ta").value = "my idea"; WD.filled = ""; WD.pre = "";
       $("st-rows").querySelector('[data-starter="txf"]').click(); const r = { ta: $("ta").value, tf: window.__tf.slice(), msgs: $("chat-scroll").querySelectorAll(".msg").length, running, seg: $("wl-seg").querySelector('[aria-pressed="true"]').dataset.mk };
       $("st-rows").querySelector('[data-starter="crypto"]').click(); r.ta2 = $("ta").value; r.tf2 = window.__tf.slice(); return r; })()`);
@@ -454,8 +453,8 @@ app.whenReady().then(async () => {
   // 窄:上下疊、免費在上
   w.setSize(1000, 900); await wait(400); s = await snap();
   ok("③ 1000 寬(中欄 < 760):上下疊、免費欄在上", s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cmp2 && s.cols.length === 2 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
-  { const nw = await js(`({ w: $("main-empty").clientWidth, rows: [...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tx = b.querySelector(".txt"), sn = b.querySelector(".since"); return { tag: getComputedStyle(b.querySelector(".tag")).display, below: sn.getBoundingClientRect().top >= tx.getBoundingClientRect().bottom - 1, left: Math.abs(sn.getBoundingClientRect().left - tx.getBoundingClientRect().left), over: b.scrollWidth - b.clientWidth }; }) })`);
-    ok("③ 1000 寬(中欄 < 480):起手句的 tag 欄藏起來、起始年折到句子下一行且跟句子同左緣、不溢出", nw.w - 48 < 480 && nw.rows.length === 3 && nw.rows.every((x) => x.tag === "none" && x.below && x.left < 0.6 && x.over <= 0), JSON.stringify(nw)); }
+  { const nw = await js(`({ w: $("main-empty").clientWidth, rows: [...$("st-rows").querySelectorAll(".st-row")].map((b) => { const tx = b.querySelector(".txt"), sn = b.querySelector(".since"); return { tag: !!b.querySelector(".tag"), below: sn.getBoundingClientRect().top >= tx.getBoundingClientRect().bottom - 1, left: Math.abs(sn.getBoundingClientRect().left - tx.getBoundingClientRect().left), over: b.scrollWidth - b.clientWidth }; }) })`);
+    ok("③ 1000 寬(中欄 < 480):起手句沒有 tag、起始年折到句子下一行且跟句子同左緣、不溢出", nw.w - 48 < 480 && nw.rows.length === 3 && nw.rows.every((x) => !x.tag && x.below && x.left < 0.6 && x.over <= 0), JSON.stringify(nw)); }
   w.setSize(1600, 900); await wait(400);
   // 台指期:免費欄是日線那一列(期交所),分線在 Blave 欄
   await js(`$("wl-seg").querySelector('[data-mk="txf"]').click()`); await wait(50); s = await snap();
