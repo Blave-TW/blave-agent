@@ -266,7 +266,8 @@ function interpretVenueBind(r, secrets) {
   const out = interpretConnect({ ok: false, kind: "rejected", error: err }, secrets);
   if (out.code === "INCOMPLETE_PAIR" || out.code === "UNKNOWN") return { ok: false, code: out.code, detail: {} };
   const shown = (out.detail && out.detail.error) || "";
-  if (/no permission check exists/.test(shown)) return { ok: false, code: "NO_CHECK", detail: {} };
+  // 外殼與 runtime 已開放 Bitget、這台 workspace 的 lib 還是關著的舊版:跟「缺讀取器」同一個解法(先更新)
+  if (/no permission check exists|Bitget 還沒通過真帳驗證/.test(shown)) return { ok: false, code: "NO_CHECK", detail: {} };
   const lb = /^\s*ValueError:\s*LIB_BROKEN:\s*(.*?)(?:\s*—\s*not saved)?\s*$/.exec(shown);
   if (lb) return { ok: false, code: "LIB_BROKEN", detail: { reason: lb[1].slice(0, 200) } };
   const bm = BITGET_MODE_RE.exec(shown), bmode = bm ? (bm[1] === "統一帳戶" ? "uta" : "classic") : null;

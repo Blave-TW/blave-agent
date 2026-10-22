@@ -211,6 +211,8 @@ r = refused()
 check(r is not None and r.startswith("REJECTED: bitget did not accept this key") and "沒有送出" in r
       and not os.path.exists(ENV_PATH) and not wire,
       "④ 放行了但 lib 還關著:不簽章、不連網、不寫,拒絕句子講得出 Bitget 還沒開放")
+stale = shell_view(True, {"stale": "ValueError: " + (r or "")})["modeErr"]["stale"]
+check(stale == {"ok": False, "code": "NO_CHECK", "detail": {}}, "④ 那一句到外殼 = NO_CHECK(畫面叫人先更新,不是「Bitget 拒絕」)")
 
 ab.VERIFIED_MODES = frozenset({"classic"})
 ab._mode.update(mode=None, at=0.0)
