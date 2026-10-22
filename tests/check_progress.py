@@ -65,7 +65,7 @@ check(out_quiet == "", "silenced run prints nothing")
 pos = compute_signals(df).ffill().fillna(0).values
 def run_mcpt(seed):
     with contextlib.redirect_stdout(io.StringIO()):
-        return mcpt(close, pos, n=300, periods_per_year=8760, vol_window=100,
+        return mcpt(close, pos, fee=0.0005, n=300, periods_per_year=8760, vol_window=100,
                     rng=np.random.default_rng(seed))
 a1, p1, d1 = run_mcpt(3)
 a2, p2, d2 = run_mcpt(3)
@@ -110,7 +110,7 @@ try:
     for m in (lib.validation, lib.param_scan, lib.data):
         importlib.reload(m)
     with contextlib.redirect_stdout(io.StringIO()):
-        a3, p3, d3 = lib.validation.mcpt(close, pos, n=300, periods_per_year=8760, vol_window=100,
+        a3, p3, d3 = lib.validation.mcpt(close, pos, fee=0.0005, n=300, periods_per_year=8760, vol_window=100,
                                          rng=np.random.default_rng(3))
         g3 = lib.param_scan.scan_grid(df, compute_signals, rows, cols, fee=0.0005, warmup=50, valid_fn=valid)
     check(np.array_equal(d3, d1, equal_nan=True) and np.array_equal(g3, grid_loud, equal_nan=True),

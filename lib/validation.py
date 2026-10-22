@@ -38,7 +38,7 @@ def mcpt(
     close,
     position,
     n=2000,
-    fee=0.0005,
+    fee=None,
     target_vol=0.30,
     max_lev=2.0,
     vol_window=720,
@@ -69,7 +69,7 @@ def mcpt(
     close            : 1D array of close prices
     position         : 1D array of position fractions (0.0=flat, 1.0=full long)
     n                : number of permutations (default 2000)
-    fee              : one-way fee rate (default 0.0005)
+    fee              : one-way fee rate — required: fee=lib.costs.fee_of(s)
     target_vol       : vol-targeting annualized target vol (default 0.30)
     max_lev          : vol-targeting cap (default 2.0)
     vol_window       : rolling window for realized vol (default 720 bars)
@@ -90,6 +90,9 @@ def mcpt(
     p_value : float  — fraction of permuted Sharpes >= actual
     dist    : array  — full permuted Sharpe distribution (length n)
     """
+    if fee is None:
+        raise ValueError("fee is required: pass fee=lib.costs.fee_of(s) — the strategy's FEE, "
+                         "else its market default (references/trading-costs.md)")
     close    = np.asarray(close, dtype=float)
     position = np.asarray(position, dtype=float)
 

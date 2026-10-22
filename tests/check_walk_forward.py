@@ -200,7 +200,7 @@ check(len(bad["runs"]) == bad["n_runs"] and bad["current"] is None
 short_dir = tempfile.mkdtemp(prefix="wf-short-", dir=os.environ.get("SCRATCHPAD") or None)
 try:
     run_walk_forward(make_df(days=330), compute_signals, ENTRY_VALS, EXIT_VALS, short_dir,
-                     row_param="ENTRY_TH", col_param="EXIT_TH", lookback_days=240,
+                     row_param="ENTRY_TH", col_param="EXIT_TH", fee=0.0005, lookback_days=240,
                      step_days=60, warmup=WARMUP)
     check(False, f"少於 {WF_MIN_RUNS} 輪要 raise")
 except ValueError as e:

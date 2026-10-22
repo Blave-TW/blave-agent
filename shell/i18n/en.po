@@ -1412,7 +1412,7 @@ msgid "cx.linkOk"
 msgstr "Connected: the key can read the account. Trading permission is confirmed on the first order."
 
 msgid "cx.perfNote"
-msgstr "Paper results do not represent real fills (no slippage)."
+msgstr "Paper results do not represent real fills (costs follow the strategy's fee setting; the default already includes slippage and is conservative)."
 
 msgid "cx.retest"
 msgstr "Retest connection"
@@ -8596,7 +8596,7 @@ msgid "cx.paper.q"
 msgstr "How do paper fills work?"
 
 msgid "cx.paper.fill"
-msgstr "Fills at the latest real market price, with fees (no slippage): crypto at Binance's last trade (if Binance is unreachable, Blave's latest 1-minute bar, then your strategy's own close); TAIEX futures at the near-month's latest 1-minute price; Taiwan and US stocks at the unadjusted close (intraday strategies at the latest unadjusted bar); dividends not credited."
+msgstr "Fills at the latest real market price, minus trading costs (the strategy's fee setting; the default already includes slippage and is conservative): crypto at Binance's last trade (if Binance is unreachable, Blave's latest 1-minute bar, then your strategy's own close); TAIEX futures at the near-month's latest 1-minute price; Taiwan and US stocks at the unadjusted close (intraday strategies at the latest unadjusted bar); dividends not credited."
 
 # Futures brokers (President / Capital): first fact line — brokers use certificates, not API keys
 msgid "cx.fact.cert"

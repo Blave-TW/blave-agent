@@ -9,7 +9,9 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 from dotenv import dotenv_values
-from strategy import fetch_data, compute_signals, FEE, WARMUP
+from strategy import fetch_data, compute_signals, WARMUP
+import strategy as s
+from lib.costs import fee_of  # the strategy's FEE, else its market default
 from lib.param_scan import scan_grid, find_plateau, plot_heatmap
 
 MOM_VALS = [60, 80, 100, 120, 140, 160, 200, 250]
@@ -25,7 +27,7 @@ grid = scan_grid(
     data, compute_signals,
     row_vals=MOM_VALS, col_vals=TOP_VALS,
     row_param='mom_window', col_param='top_n',
-    fee=FEE, warmup=max(MOM_VALS),  # trim to the longest window for fair comparison
+    fee=fee_of(s), warmup=max(MOM_VALS),  # trim to the longest window for fair comparison
 )
 
 best_idx, _, best_mw, best_tn, best_sharpe = find_plateau(grid, MOM_VALS, TOP_VALS)

@@ -5,7 +5,7 @@
 //            hold in between (dead zone) — the same two-threshold shape as examples/btc_ti_5min (ENTRY_TH / EXIT_TH).
 // Blave ref: examples/btc_ti_5min/strategy.py (threshold on an indicator column), RSI via ta.rsi
 // Chart:     set symbol and timeframe by hand. overlay = false: RSI draws in its own pane.
-// Costs:     commission 0.05 % per side = Blave FEE 0.0005; slippage 0 like Blave.
+// Costs:     commission_value = Blave FEE × 100 per side (0.05 here = FEE 0.0005); slippage 0 because Blave FEE already includes it.
 // Not compiled by Blave Agent. Add to a chart, open the Strategy Tester, check the trade list before use.
 strategy("Blave: RSI Mean Reversion", overlay = false, initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 0, pyramiding = 1, process_orders_on_close = false, calc_on_every_tick = false)
 

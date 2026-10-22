@@ -17,7 +17,7 @@ STRATEGY_NAME = "twstock_momentum"
 INTERVAL      = "1d"
 START         = "2015-01-01"
 END           = None
-FEE           = 0.003          # 單邊(per side):手續費 0.1425% ×2 + 證交稅 0.3%(賣方)平均 ≈ 0.29%
+FEE           = 0.005          # 單邊(per side):Blave 台股預設 0.5%,已含手續費、證交稅、滑價(偏保守,references/trading-costs.md)
 
 MOM_WINDOW     = 120           # 動能回望窗格（交易日）
 TOP_N          = 30            # 每週持有前 N 名

@@ -6,7 +6,7 @@
 //            bottom of the orders block and delete the two flip branches.
 // Blave ref: examples/btc_sma_cross/strategy.py with signal -1.0 on the death-cross side
 // Chart:     set symbol and timeframe by hand; shorting needs a symbol the user can short (perp / futures / margin).
-// Costs:     commission 0.05 % per side = Blave FEE 0.0005; slippage 0 like Blave.
+// Costs:     commission_value = Blave FEE × 100 per side (0.05 here = FEE 0.0005); slippage 0 because Blave FEE already includes it.
 // Not compiled by Blave Agent. Add to a chart, open the Strategy Tester, check the trade list before use.
 strategy("Blave: SMA Cross Long/Short", overlay = true, initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 0, pyramiding = 1, process_orders_on_close = false, calc_on_every_tick = false)
 

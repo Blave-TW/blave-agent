@@ -169,11 +169,11 @@ ppy = periods_per_year(DF.index[50:], N - 50)
 check(seen.get("vol_window") == max(20, round(ppy / 12)) == 736, f"1h 資料 vol_window = max(20, round(ppy/12)) → {seen.get('vol_window')} (ppy={ppy:.0f})")
 check(max(20, round(252 / 12)) == 21 and max(20, round(8760 / 12)) == 730, "日 K → 21、1h 24/7 → 730(≈ 既有 720)")
 check(isinstance(seen.get("rng"), np.random.Generator) and "max_lev" not in seen and "target_vol" not in seen, "傳入私有 rng;max_lev / target_vol 維持 lib 預設")
-d1 = V.mcpt(DF["Close"].values, compute(DF).values, n=50, rng=np.random.default_rng(42))[2]
-d2 = V.mcpt(DF["Close"].values, compute(DF).values, n=50, rng=np.random.default_rng(42))[2]
-d3 = V.mcpt(DF["Close"].values, compute(DF).values, n=50, rng=np.random.RandomState(42))[2]
+d1 = V.mcpt(DF["Close"].values, compute(DF).values, fee=0.0005, n=50, rng=np.random.default_rng(42))[2]
+d2 = V.mcpt(DF["Close"].values, compute(DF).values, fee=0.0005, n=50, rng=np.random.default_rng(42))[2]
+d3 = V.mcpt(DF["Close"].values, compute(DF).values, fee=0.0005, n=50, rng=np.random.RandomState(42))[2]
 check(np.array_equal(d1, d2) and np.isfinite(d3).all() and len(d3) == 50, "mcpt(rng=default_rng(42)) 兩次 dist 相同;RandomState 也可用")
-check(len(V.mcpt(DF["Close"].values, compute(DF).values, n=20)[2]) == 20, "rng=None 維持全域行為")
+check(len(V.mcpt(DF["Close"].values, compute(DF).values, fee=0.0005, n=20)[2]) == 20, "rng=None 維持全域行為")
 
 # ── 3. failure is a warning, not a failed backtest ────────────────────────────
 R.run(cfg("flat"), fetch, lambda df: pd.Series(0.0, index=df.index))  # 0 trades

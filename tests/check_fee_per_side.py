@@ -4,8 +4,7 @@
      open + close = 2·FEE, a long→short flip = 2·FEE on one bar;
   2. every FEE line in the templates and the shipped examples says per side, and nothing near a
      FEE line in them, AGENTS.md or references/ calls it a round trip;
-  3. the example values are inside the per-side ceilings in references/strategy-code.md
-     (TW stocks 0.003; TAIFEX index futures under AGENTS.md's 0.03% conservative ceiling).
+  3. the templates and examples of a covered market ship lib.costs' default for it.
 Run: cd blave-agent && .venv/bin/python tests/check_fee_per_side.py
 """
 import glob, os, re, sys
@@ -65,13 +64,18 @@ for p in TRACKED + [os.path.join(ROOT, "AGENTS.md")] + sorted(glob.glob(os.path.
         ok = not ROUND.search(near) or re.search(r"round trip (is charged twice|pays it twice)|open then close = `2 × FEE`", near)
         check(bool(ok), f"{os.path.relpath(p, ROOT)}:{i + 1}: FEE is not described as a round trip")
 
-TW_STOCK = ["examples/tsmc_ma/strategy.py", "examples/tw100_foreign_zscore/strategy.py",
-            "examples/tw2317_broker_zscore/strategy.py", "examples/twstock_momentum/strategy.py",
-            "strategies/TEMPLATE_C.py"]
-for rel in TW_STOCK:
-    check(0 < values.get(rel, 9) <= 0.003, f"{rel}: TW stock FEE {values.get(rel)} ≤ 0.003 per-side ceiling")
-check(0 < values.get("examples/txf_ma_1m/strategy.py", 9) <= 0.0003,
-      f"examples/txf_ma_1m: TAIFEX FEE {values.get('examples/txf_ma_1m/strategy.py')} ≤ 0.03% ceiling")
+from lib.costs import default_fee
+DEFAULTS = {"examples/tsmc_ma/strategy.py": default_fee("2330"),
+            "examples/tw2317_broker_zscore/strategy.py": default_fee("2317"),
+            "examples/tw100_foreign_zscore/strategy.py": default_fee(universe=["2330", "2317"]),
+            "examples/twstock_momentum/strategy.py": default_fee(universe=["2330", "2317"]),
+            "strategies/TEMPLATE_C.py": default_fee(universe=["2330", "0050"]),
+            "strategies/TEMPLATE_A.py": default_fee("BTCUSDT", "swap"),
+            "examples/btc_sma_cross/strategy.py": default_fee("BTCUSDT"),
+            "examples/btc_ti_5min/strategy.py": default_fee("BTCUSDT"),
+            "examples/txf_ma_1m/strategy.py": default_fee("TXF")}
+for rel, want in DEFAULTS.items():
+    check(values.get(rel) == want, f"{rel}: FEE {values.get(rel)} = the market default {want}")
 
 print("all ok" if not fails else "FAILED")
 sys.exit(1 if fails else 0)

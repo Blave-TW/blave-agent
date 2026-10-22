@@ -51,10 +51,12 @@ account. quote_ccy() says which currency a symbol's contract money is in.
 Fills are immediate at this price (no wait for the next bar — the live-paper
 convention every serious system uses, e.g. Freqtrade dry-run; paper deliberately
 diverges a little from the next-bar-open backtest, which is normal and even
-useful as a look-ahead detector). No bid/ask, no slippage — beginner-tier
-fidelity (Webull/TradingView do the same); fees are modelled, that is the one
-realism worth keeping.
+useful as a look-ahead detector). No bid/ask and no separate slippage — beginner-tier
+fidelity (Webull/TradingView do the same). The fee is the realism kept, and it is
+the backtest's (strategy_fee): the FEE of the 下單設定 strategy trading the symbol
+on that market, else lib.costs' per-market default, which already includes slippage.
 """
+import ast
 import glob
 import importlib.util
 import json
@@ -109,6 +111,13 @@ def _txf_root(sym):
     return s if s in ("TXF", "MXF", "TMF") else None
 
 
+def _txf_family(sym):
+    """TXF / MXF / TMF for any month alias (R1 or R2) — who owns a fill, what it costs.
+    Pricing keeps _txf_root: R2 is another month's series there."""
+    s = sym or ""
+    return _txf_root(s[:-2] if s.endswith("R2") else s)
+
+
 def _strategy_symbol(name):
     """The symbol a strategy trades — state.json first (what it actually set at
     runtime), else the SYMBOL constant parsed from strategy.py."""
@@ -126,6 +135,95 @@ def _strategy_symbol(name):
     except OSError:
         pass
     return None
+
+
+_CONSTS = ("FEE", "SYMBOL", "MARKET", "UNIVERSE")
+_file_cache = {}  # (path, parse) -> ((mtime_ns, size), parsed) — strategy files and state.json, read inside the ledger lock
+
+
+def _cached(path, parse):
+    """parse(file text), kept until the file's (mtime_ns, size) changes. A file that does
+    not parse is None (logged) — a fee lookup never fails the fill."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _file_cache.get((path, parse))
+    if hit and hit[0] == key:
+        return hit[1]
+    try:
+        with open(path, encoding="utf-8") as f:
+            val = parse(f.read())
+    except Exception as e:
+        log.warning(f"[paper_data] {path} unreadable for the paper fee, using the default: "
+                    f"{type(e).__name__}: {e}")
+        val = None
+    _file_cache[(path, parse)] = (key, val)
+    return val
+
+
+def _consts(src):
+    """Module-level FEE / SYMBOL / MARKET / UNIVERSE as Python ends up with them: the LAST
+    assignment of each (plain or annotated), parsed, never executed. A computed last value
+    is unknown (absent), not an earlier literal."""
+    out = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        else:
+            continue
+        for t in targets:
+            if isinstance(t, ast.Name) and t.id in _CONSTS:
+                try:
+                    out[t.id] = ast.literal_eval(node.value)
+                except (ValueError, TypeError):  # computed, or an unhashable literal
+                    out.pop(t.id, None)
+    return out
+
+
+def _owner_fee(name, want, spot):
+    """The FEE strategy `name` is backtested with, when it trades `want` on this market
+    (spot vs perp — a TW code is held as shares whatever MARKET says): its own FEE, else
+    its market default (a Type C: the highest over its universe). None = not an owner."""
+    from lib.costs import default_fee, reads_usstock
+    path = f"strategies/{name}/strategy.py"
+    c = _cached(path, _consts) or {}
+    state = _cached(f"strategies/{name}/state.json", json.loads)
+    state = state if isinstance(state, dict) else {}
+    weights = state.get("weights") if isinstance(state.get("weights"), dict) else {}
+    sym = _norm(state.get("symbol") or c.get("SYMBOL"))
+    if not (sym == want or (_txf_family(want) and _txf_family(sym))
+            or want in {_norm(k) for k in weights}):
+        return None
+    market = str(state.get("market") or c.get("MARKET") or "swap").lower()
+    if not is_tw_stock(want) and (market == "spot") != spot:
+        return None
+    fee = c.get("FEE")
+    if isinstance(fee, (int, float)) and not isinstance(fee, bool):
+        return float(fee)
+    universe = c.get("UNIVERSE") if isinstance(c.get("UNIVERSE"), (list, tuple)) else list(weights)
+    return default_fee(c.get("SYMBOL") or sym, market, universe or None,
+                       bool(_cached(path, reads_usstock)))
+
+
+def strategy_fee(symbol, spot=False):
+    """Per-side FEE a paper fill of `symbol` pays: the one its backtest charges, taken from
+    the strategies in the 下單設定 (lib.portfolio.strategy_amounts — the same membership
+    as runner._picked_for_trading) that trade it on this market; drafts and copies outside
+    it never count. The order does not say which strategy sized it: several owners → the
+    highest. None = no owner — the caller uses lib.costs' default."""
+    try:
+        from lib.portfolio import strategy_amounts
+        picked = sorted(strategy_amounts())
+    except Exception as e:
+        log.warning(f"[paper_data] order settings unreadable, paper fee uses the market default: {e}")
+        return None
+    want = _norm(symbol)
+    fees = [f for f in (_owner_fee(n, want, spot) for n in picked) if f is not None]
+    return max(fees) if fees else None
 
 
 def _load_strategy(name):

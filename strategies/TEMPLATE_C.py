@@ -24,7 +24,7 @@ MARKET        = "spot"          # "spot" | "swap" — ask the user at creation; 
 INTERVAL      = "1d"            # '1d' for equities, '1h'/'4h' for crypto; the platform's signal-refresh schedule follows this
 START         = "2015-01-01"
 END           = None
-FEE           = 0.003           # PER SIDE (one-way) — VERIFIED, never 0; TW stocks ≈ 0.29% per side at list commission (strategy-code.md › Key Rules)
+FEE           = 0.005           # PER SIDE (one-way) — never 0; Blave default for this market incl. slippage (TW stocks 0.5%, TW ETFs 0.3%), adjust to the user's broker (references/trading-costs.md)
 
 PARAM1         = ...             # primary signal parameter (e.g. lookback window)
 PARAM2         = ...             # secondary parameter (e.g. top-N, threshold)

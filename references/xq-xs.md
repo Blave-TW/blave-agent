@@ -213,8 +213,8 @@ Rules that shape every script:
   adjusted. XQ uses raw prices on 日線 and adjusted prices on 還原日線 (`BarFreq = "AD"`);
   its 自動交易 backtest reinvests dividends for stocks and removes roll gaps for futures.
   Tell the user to pick 還原值 under 執行頻率 to get closest to Blave; results still differ.
-- **Costs.** Blave `FEE` is a per-trade rate applied on every position change (e.g. 0.003
-  for TWSE). XQ takes 單邊交易成本(%) from the strategy settings (commonly 0.2 % for stocks,
+- **Costs.** Blave `FEE` is a per-trade rate applied on every position change (e.g. 0.005
+  for a TWSE stock — the default, slippage included, `references/trading-costs.md`). XQ takes 單邊交易成本(%) from the strategy settings (commonly 0.2 % for stocks,
   commission + tax combined); day-trade tax reductions are not applied in backtest.
 - **Fills.** Blave's default is signal at bar close → fill at the next bar's open; only
   strategies that return an `exec_at_close` series fill at the signal bar's close. The `[1]`

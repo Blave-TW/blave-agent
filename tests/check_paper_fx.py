@@ -44,7 +44,7 @@ def offline():
 paper_data._fetch_fx = lambda env: offline()
 ENV = {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper", "PAPER_BOUND_TS": "1",
        "PAPER_INITIAL_EQUITY": "100000"}
-CV, MARGIN, FEE = 200, 701000, order_paper.TAKER_FEE
+CV, MARGIN, FEE = 200, 701000, 0.0001  # lib.costs TAIFEX index futures default
 
 
 def mark(px):

@@ -114,8 +114,9 @@ cash0 = snap()["cash"]
 shares = 100000 / 1000
 order_paper.place_market_order(ENV, "2330", "long", shares)
 s = snap()
-fee_in = 100000 * order_paper.TAKER_FEE / R
-check(abs((cash0 - s["cash"]) - fee_in) < 1e-9, f"entry fee 50 TWD = {fee_in:.6f} USD ({cash0 - s['cash']:.6f})")
+TW_FEE = 0.005  # lib.costs TW stock default
+fee_in = 100000 * TW_FEE / R
+check(abs((cash0 - s["cash"]) - fee_in) < 1e-9, f"entry fee 500 TWD = {fee_in:.6f} USD ({cash0 - s['cash']:.6f})")
 row = s["positions"][0]
 check(row["quote_ccy"] == "TWD" and row["size"] == shares, "row is 100 shares, quoted TWD")
 mark(1100)
@@ -131,7 +132,7 @@ s = snap()
 fill = s["fills"][-1]
 check(abs(fill["realized"] - 10000 / R) < 1e-9 and fill.get("ccy") == "TWD" and fill.get("fx") == R,
       f"realized booked ÷ rate with ccy/fx on the fill ({fill['realized']:.4f})")
-check(abs((s["cash"] - cash1) - (10000 / R - 110000 * order_paper.TAKER_FEE / R)) < 1e-9 and s["positions"] == [],
+check(abs((s["cash"] - cash1) - (10000 / R - 110000 * TW_FEE / R)) < 1e-9 and s["positions"] == [],
       "close: cash moves by realized − fee, both USD; flat")
 check(account_paper.get_equity(ENV)["currency"] == "USDT", "the account stays USD")
 
@@ -140,7 +141,7 @@ mark(1000)
 before = snap()["cash"]
 order_paper.place_market_order(ENV, "BTCUSDT", "long", 0.1)
 s = snap()
-check(abs((before - s["cash"]) - 5000 * order_paper.TAKER_FEE) < 1e-9 and "quote_ccy" not in
+check(abs((before - s["cash"]) - 5000 * 0.001) < 1e-9 and "quote_ccy" not in
       json.load(open(order_paper.LEDGER_PATH))["positions"]["BTCUSDT"], "BTC fee in USD, row not stamped")
 order_paper.place_market_order(ENV, "BTCUSDT", "long", 0.1, reduce_only=True)
 
@@ -162,7 +163,7 @@ check(venue_wiring._spot_base("2330") == "2330" and venue_wiring._spot_base("BTC
 cash0 = snap()["cash"]
 order_paper.place_spot_market_order(ENV, "2330", "buy", quote_qty=100000)
 s = snap()
-cost = 100000 / R * (1 + order_paper.SPOT_FEE)
+cost = 100000 / R * (1 + TW_FEE)
 check(abs((cash0 - s["cash"]) - cost) < 1e-9, f"buy 100,000 TWD costs {cost:.4f} USD ({cash0 - s['cash']:.4f})")
 check(abs(order_paper.get_spot_balances(ENV)["2330"] - 100) < 1e-9, "100 shares held under '2330'")
 mark(1100)
@@ -174,7 +175,7 @@ check(abs(h["usdt_value"] - 110000 / R) < 1e-9, "holdings usdt_value is USD")
 cash1 = s["cash"]
 order_paper.place_spot_market_order(ENV, "2330", "sell", base_qty=100)
 s = snap()
-check(abs((s["cash"] - cash1) - 110000 / R * (1 - order_paper.SPOT_FEE)) < 1e-9 and "2330" not in s["spot"],
+check(abs((s["cash"] - cash1) - 110000 / R * (1 - TW_FEE)) < 1e-9 and "2330" not in s["spot"],
       "sell proceeds ÷ 32, inventory gone")
 msg = refused(order_paper._spot_base, "2330TWD")
 check(msg and "TW stocks" in msg, f"other quotes still refused ({msg})")

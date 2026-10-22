@@ -6,7 +6,7 @@
 // Blave ref: Type A signal (examples/btc_sma_cross) + a percent SL/TP the Python applies to the entry price.
 //            Blave has no built-in bracket: if the Python exits via a signal only, use sma_cross_long instead.
 // Chart:     set symbol and timeframe by hand.
-// Costs:     commission 0.05 % per side = Blave FEE 0.0005; slippage 0 like Blave.
+// Costs:     commission_value = Blave FEE × 100 per side (0.05 here = FEE 0.0005); slippage 0 because Blave FEE already includes it.
 // Not compiled by Blave Agent. Add to a chart, open the Strategy Tester, check the trade list before use.
 strategy("Blave: Signal + SL/TP", overlay = true, initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 0, pyramiding = 1, process_orders_on_close = false, calc_on_every_tick = false)
 

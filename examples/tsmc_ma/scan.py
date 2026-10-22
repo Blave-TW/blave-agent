@@ -9,7 +9,9 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 from dotenv import dotenv_values
-from strategy import fetch_data, compute_signals, FEE
+from strategy import fetch_data, compute_signals
+import strategy as s
+from lib.costs import fee_of  # the strategy's FEE, else its market default
 from lib.param_scan import scan_grid, find_plateau, plot_heatmap
 
 FAST_VALS = [5, 10, 20, 40, 60]
@@ -25,7 +27,7 @@ grid = scan_grid(
     df, compute_signals,
     row_vals=FAST_VALS, col_vals=SLOW_VALS,
     row_param='fast', col_param='slow',
-    fee=FEE, warmup=max(SLOW_VALS),
+    fee=fee_of(s), warmup=max(SLOW_VALS),
     valid_fn=lambda f, s: f < s,
 )
 

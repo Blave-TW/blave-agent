@@ -2151,7 +2151,11 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         src0 = Path(config['__file__']).read_bytes() if config.get('__file__') else None
     except OSError:
         src0 = None
-    fee           = config.get('FEE', 0.0005)
+    try:
+        from lib.costs import fee_of
+        fee       = fee_of(config)      # FEE, else the market default (references/trading-costs.md)
+    except ImportError:  # half-updated workspace (lib/costs.py not landed)
+        fee       = config.get('FEE', 0.0005)
     interval      = config.get('INTERVAL', '1h')
 
     # TAIFEX settlement-mask enforcement — an unmasked backtest on the unadjusted

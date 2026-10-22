@@ -158,7 +158,7 @@ def _check_fee(tree: ast.AST) -> list[dict]:
                     node.lineno,
                     "FEE=0 — backtest reports zero transaction cost, inflating "
                     "apparent Sharpe/return. Confirm the venue genuinely charges "
-                    "none; otherwise use a realistic fee (e.g. 0.0005).",
+                    "none; otherwise use the market default (lib.costs.DEFAULT_FEES, references/trading-costs.md).",
                 ))
             elif not isinstance(value, ast.Constant):
                 # FEE = 0.0*1, FEE = X if Y else Z, … — can't statically verify;
@@ -831,7 +831,7 @@ USER_EFFECT = {
 # edit: the user decides whether a warning gets fixed; this is what fixing it would mean.
 EDIT_FIX = {
     "template": "fill in the unfinished template logic",
-    "fee": "use the venue's real fee",
+    "fee": "use the market default FEE (references/trading-costs.md) or the user's own rate",
     "plot_series": "declare PLOT_SERIES",
     "spot_short": "make compute_signals long-only",
     "exit_loop": "use lib.exits.apply_exits",
