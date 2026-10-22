@@ -120,7 +120,9 @@ REJECT_CODES = {"45110": reject_token.BELOW_MIN_SIZE, "45119": reject_token.SYMB
                 # the product from THIS account (region / eligibility). symbol_unavailable, not a new
                 # kind: to the user "this symbol cannot be traded here" is the answer either way, and
                 # it is the token web and desktop already render
-                ELIGIBILITY: reject_token.SYMBOL_UNAVAILABLE}
+                ELIGIBILITY: reject_token.SYMBOL_UNAVAILABLE,
+                # measured 2026-10-22 (classic one-way): "closed positions cannot exceed positions held"
+                "40804": reject_token.REDUCE_ONLY_REJECTED}
 
 
 def _creds(env):

@@ -85,8 +85,9 @@ T1, T3, T2, T4.
       should fire, then sweep_orphan_stops must cancel the orphan TP; (d) not run on a main
       account (a limit at 5× the margin is far over the cap)
   T12 position mode: only on a bare account, switch one-way ↔ hedge and read it back;
-      in one-way: per direction open → SL/TP (holdSide buy/sell) → over-close held + one step
-      reduceOnly (want flat, never the opposite leg) → reopen → close through the lib; then open long + open
+      in one-way (--t12-sides long,short): per direction on a flat account, open → SL/TP
+      (holdSide buy/sell) → over-close held + one step reduceOnly (Bitget refuses it whole,
+      40804, or closes — never the opposite leg) → close what is held through the lib; in hedge: open long + open
       short + close both through the lib in the other mode (UTA hedge: closes carry
       reduceOnly yes — a refusal here means flip order_bitget.UTA_HEDGE_REDUCE_ONLY),
       SL/TP on each leg in hedge mode, switch back and read the original mode back (not
@@ -440,6 +441,8 @@ def main():
     ap.add_argument("--only", default="")
     ap.add_argument("--noop-write", action="store_true")
     ap.add_argument("--watch-switch", action="store_true")
+    ap.add_argument("--t12-sides", default="long,short",
+                    help="T12 one-way: which directions to measure (long, short or both)")
     ap.add_argument("--log", default="", help="the script's own log (default ~/bitget-verify-<UTC time>.log)")
     ap.add_argument("--t12-bare-close", action="store_true",
                     help="T12 hedge: also close one leg WITHOUT reduceOnly (if the side table were wrong this "
@@ -450,6 +453,9 @@ def main():
     if a.trade and a.confirm != today:
         sys.exit(f"--trade needs --confirm {today} (today, UTC)")
     only = {s.strip().upper() for s in a.only.split(",") if s.strip()}
+    t12_sides = {x.strip().lower() for x in a.t12_sides.split(",") if x.strip()}
+    if not t12_sides or t12_sides - {"long", "short"}:
+        sys.exit("--t12-sides takes long, short or long,short")
     secrets = [env[k] for k in NAMES]
 
     # the JSON-escaped form too: a passphrase with " or \ is written differently inside dumps
@@ -1000,12 +1006,25 @@ def main():
                     return raw("POST", "/api/v3/account/set-hold-mode", {"holdMode": names[m]})
                 return raw("POST", "/api/v2/mix/account/set-position-mode", {"productType": PRODUCT, "posMode": names[m]})
 
+            def flatten_nvda(tag):
+                """Close whatever NVDA legs are left (the script's own: the account was bare) and
+                prove it is flat before the next step builds on it."""
+                for p in legs("NVDAUSDT"):
+                    close_chunked(env, order, "NVDAUSDT", p["side"], p["total"], max_qty("NVDAUSDT"), say, tag,
+                                  min_qty("NVDAUSDT"))
+                left = legs("NVDAUSDT")
+                say(f"{tag} legs (want [])", left)
+                if left:
+                    raise RuntimeError(f"{tag}: NVDA not flat ({left}) — stopping before the next step")
+
             def t12_oneway():
-                """One-way: the side table's reduce half (reduceOnly YES) and one-way TP/SL
-                (holdSide buy / sell), for each direction — the leg a reduce must never flip."""
+                """One-way: per direction, on a flat account — open → SL/TP (holdSide buy / sell)
+                → cancel own → over-close held + one step reduceOnly (Bitget refuses it whole with
+                40804, or closes; never the opposite leg) → close what is held through the lib."""
                 q = minimum("NVDAUSDT")
                 step = float(order.get_contract_rules(env, "NVDAUSDT")["step"])
-                for d, sl, tp in (("long", 0.8, 1.2), ("short", 1.2, 0.8)):
+                for d, sl, tp in [x for x in (("long", 0.8, 1.2), ("short", 1.2, 0.8)) if x[0] in t12_sides]:
+                    flatten_nvda(f"T12 one-way before {d}")
                     say(f"T12 one-way open {d}", order.place_market_order(env, "NVDAUSDT", d, q))
                     last = order.get_mark_price(env, "NVDAUSDT")
                     say(f"T12 one-way {d} SL/TP", order.place_protective_orders(
@@ -1017,15 +1036,21 @@ def main():
                         "NVDAUSDT", d, order._floor_str(h + step, order.get_contract_rules(env, "NVDAUSDT")["step"]),
                         reduce_only=True))
                     time.sleep(2)
-                    say(f"T12 one-way legs after the over-close (want []; an opposite leg = the side table is "
-                        f"WRONG — stop and report)", legs("NVDAUSDT"))
-                    say(f"T12 one-way open {d} again", order.place_market_order(env, "NVDAUSDT", d, q))
-                    say(f"T12 one-way close {d} through the lib", order.close_position_partial(env, "NVDAUSDT", d, q))
-                    say(f"T12 one-way legs (want [])", legs("NVDAUSDT"))
+                    after = legs("NVDAUSDT")
+                    say(f"T12 one-way legs after the over-close (want the {d} leg kept (40804) or []; an opposite "
+                        f"leg = the side table is WRONG — stop and report)", after)
+                    if any(p["side"] != d for p in after):
+                        raise RuntimeError(f"T12 one-way over-close {d} opened the opposite leg: {after}")
+                    h = held("NVDAUSDT", d)
+                    if h:
+                        say(f"T12 one-way close {d} through the lib ({h})",
+                            order.close_position_partial(env, "NVDAUSDT", d, h))
+                    flatten_nvda(f"T12 one-way after {d}")
 
             def t12_body():
                 if mode_of("NVDAUSDT")[1] == "oneway":
-                    t12_oneway()
+                    t12_oneway()  # the open long + open short below nets to flat here: measured already
+                    return
                 q = minimum("NVDAUSDT")
                 say("T12 open long", order.place_market_order(env, "NVDAUSDT", "long", q))
                 say("T12 open short", order.place_market_order(env, "NVDAUSDT", "short", q))

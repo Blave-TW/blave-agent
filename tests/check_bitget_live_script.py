@@ -438,6 +438,12 @@ class Bitget:
                          "regulatory requirements or account eligibility conditions.", "data": None}
         if path == "/api/v2/mix/order/place-order" and getattr(self, "broke", False):
             return 400, {"code": "40762", "msg": "The order amount exceeds the balance", "data": None}
+        if path == "/api/v2/mix/order/place-order" and self.pos_mode == "one_way_mode" \
+                and q.get("reduceOnly") == "YES":
+            leg = "short" if q["side"] == "buy" else "long"
+            if float(q["size"]) > self.legs.get((q["symbol"], leg), 0.0) + 1e-12:  # measured T12 2026-10-22
+                return 400, {"code": "40804", "msg": "The number of closed positions cannot exceed the number "
+                             "of positions held", "data": None}
         if path == "/api/v2/mix/order/place-order":
             if any(o.get("clientOid") == q.get("clientOid") for o in self.orders.values()):
                 return 400, {"code": "25212", "msg": "Duplicate clientOid", "data": None}
@@ -544,11 +550,14 @@ code = run_trade()
 log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
 check("[T12 mode after switching back (want the original)]" in log and '"read": "hedge"' in log,
       "--trade runs through T12 on the real modules and reads the original position mode back")
-check(all(f"[T12 one-way {x}" in log for x in ("over-close long", "over-close short", "close long through",
-                                                  "close short through"))
-      and "[T12 one-way legs after the over-close (want []; an opposite leg" in log
-      and not [l for l in log.splitlines() if l.startswith("[T12 one-way legs") and not l.endswith("[]")],
-      "T12 in one-way: reduceOnly over-close and lib close for both directions, flat after each")
+oneway = [l for l in log.splitlines() if l.startswith("[T12 one-way")]
+check(all(any(l.startswith(f"[T12 one-way {x}") for l in oneway)
+          for x in ("open long", "long SL/TP", "over-close long", "close long through", "open short", "short SL/TP",
+                    "over-close short", "close short through"))
+      and all(l.endswith("[]") for l in oneway if "legs (want [])" in l)
+      and sum('"code": "40804"' in l for l in oneway if l.startswith("[T12 one-way over-close")) == 2,
+      "T12 one-way, both directions: SL/TP, the over-close refused whole (40804), the lib closes, flat after each",
+      [l[:120] for l in oneway if "legs" in l])
 check("[T9 venue] \"bitget\"" in log or "[T9 venue] bitget" in log, "T9 ran (prefix on lib.venue_wiring, not lib.execute)")
 check(code == 0 and not BG.legs and BG.pos_mode == "hedge_mode" and not BG.plans
       and not any(o["state"] == "live" for o in BG.orders.values()),
@@ -626,6 +635,15 @@ check(code == 0 and "T5 TWTSMUSDT NOT TRADABLE ON THIS ACCOUNT (40092)" in log a
 check("[order_reject:symbol_unavailable]" in log and "跟策略本身無關" in log,
       "…the refusal is tagged symbol_unavailable and says it is Bitget's region / eligibility rule, not the strategy")
 del BG.withheld
+
+# --t12-sides short: only the one-way short is measured
+BG.__init__()
+open(os.path.join(envdir, "trade.log"), "w").close()
+code = run_trade(["--only", "T12", "--t12-sides", "short"])
+log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
+check(code == 0 and "[T12 one-way short SL/TP]" in log and "[T12 one-way open long]" not in log
+      and '"read": "hedge"' in log and not BG.legs,
+      "--t12-sides short: only the short leg is measured; flat, back in hedge, exit 0", code)
 
 # R10: a leverage that reads back changed is set back and shouted about
 BG.__init__()

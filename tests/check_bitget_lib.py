@@ -640,6 +640,38 @@ except acct.BitgetError:
     check(True, "both lists empty but the plan still listed open → raises (never read as cancelled)")
 PLANS.pop("still")
 route("POST", "/api/v2/mix/order/cancel-plan-order", cancel_plan)
+# one-way close over the held size is refused whole with 40804 (measured): the leg shrank between
+# the read and the send — re-read, send what is left; nothing left → False, never an error
+MODE["posMode"] = "one_way_mode"
+sent = []
+
+
+def shrink_then_place(p):
+    sent.append(p["size"])
+    if len(sent) == 1:
+        POS[:] = [dict(POS[0], total=shrink_to, available=shrink_to)] if shrink_to != "0" else []
+        return err("40804", "The number of closed positions cannot exceed the number of positions held")
+    return place(p)
+
+
+for shrink_to, want_sent, want_res in (("0.02", ["0.05", "0.02"], 0.02), ("0", ["0.05"], False)):
+    POS[:] = [{"symbol": "NVDAUSDT", "holdSide": "long", "total": "0.05", "available": "0.05", "markPrice": "182"}]
+    del sent[:]
+    route("POST", "/api/v2/mix/order/place-order", shrink_then_place)
+    res = order.close_position_partial(ENV, "NVDAUSDT", "long", 0.05)
+    got = res if res is False else res["executed_qty"]
+    check(sent == want_sent and got == want_res,
+          f"one-way close meets 40804 (leg now {shrink_to}): re-read, {'resend the rest' if want_res else 'nothing left → False'}",
+          (sent, res))
+route("POST", "/api/v2/mix/order/place-order", lambda p: err("40804", "The number of closed positions cannot exceed"))
+POS[:] = [{"symbol": "NVDAUSDT", "holdSide": "long", "total": "0.05", "available": "0.05", "markPrice": "182"}]
+try:
+    order.close_position_partial(ENV, "NVDAUSDT", "long", 0.05)
+    check(False, "40804 twice raises")
+except acct.BitgetError as e:
+    check(str(e).startswith("[order_reject:reduce_only_rejected]"), "40804 that persists: reduce_only_rejected", str(e))
+POS[:] = []
+route("POST", "/api/v2/mix/order/place-order", place)
 route("POST", "/api/v2/mix/order/place-order", lambda p: err("40092", "This service is currently unavailable due to "
                                                               "applicable regulatory requirements or account eligibility"))
 try:

@@ -88,6 +88,9 @@ UTA_HEDGE_REDUCE_ONLY = True
 
 RULES_TTL_S = 600  # symbolStatus moves (limit_open / restrictedAPI): not an hour-old read
 BELOW_MIN = {"45110", "43027"}  # classic / UTA: order value under the minimum → quiet False
+# classic one-way, reduceOnly over the held size: refused whole, nothing closed (measured T12
+# 2026-10-22; hedge mode instead caps the close at the leg, T3)
+OVER_CLOSE = "40804"
 UNKNOWN_SYMBOL = "40034"  # "Parameter NOPEUSDT does not exist" — public contracts, measured 2026-10-20
 # order gone / never existed — replies ccxt records; T7 of the live script measures them
 _CANCEL_GONE = {"40768", "43001", "40109"}  # classic cancel: 43001 measured live (R9, 2026-10-22)
@@ -608,7 +611,17 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None, reduce
     except BitgetError as e:
         if e.code in BELOW_MIN:  # value under minTradeUSDT after the venue's own rounding
             return False
-        raise
+        if not (reduce_only and e.code == OVER_CLOSE):
+            raise
+        # the leg shrank between the read and the send (a stop fired, a resting close filled):
+        # a one-way close over the held size is refused whole (measured) — re-read, send what is left
+        sized = _sized(env, symbol, vsym, direction, qty, reduce_only, rules)
+        if sized is None:
+            return False
+        cid = _cid()
+        body = _order_body(api, vsym, sized, "market", cid,
+                           _sides(direction, reduce_only, pos_mode, api), margin_mode)
+        placed = _post_order(env, api, body)
     oid = (placed or {}).get("orderId")
     o = _confirm(env, symbol, oid, cid)
     if o["status"] != "filled":
