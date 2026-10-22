@@ -29,6 +29,7 @@ const EXEMPT = [
   [/^cap\.ho\.prompt|^tr\.err\.askPrompt/, "送給 agent 的提示詞(群益開通交接、下單失敗請 agent 查)"],
   [/^starter_\w+_send$/, "起手句點了直接送給 agent 的提示詞"],
   [/^rpt\.new\.tpl\./, "新報告範本,填進描述欄後送給 agent 的提示詞"],
+  [/^cx\.paper\.fill$/, "同頁展開內文(「模擬怎麼成交？」),canon 文案密度 #4 不設字數"],
 ];
 
 function parsePo(text) {

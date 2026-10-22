@@ -2104,6 +2104,7 @@ function trRejectSentence(rc) {
   if (rc.code === "TYPE_B") return t("tr.typeB.rejected", { name, more });
   if (rc.code === "NOT_TXF") return t("tr.notTxf.rejected", { name, more, venue: trTwVenueName("president") });
   if (rc.code === "NEEDS_ROUTING") return t("tr.needsRouting.rejected", { name, more });
+  if (rc.code === "BAD_ROUTE") return t("tr.badRoute.rejected", { name, more });   // runtime 原句帶檔案路徑、只有中文:留給 agent 與 log
   if (rc.code === "SAVE_FAILED") return t("tr.saveFailed.rejected");   // runtime:存設定時檔案被占用,這次什麼都沒改   // runtime 拒絕啟動:解綁後重新綁定、還沒存過下單設定
   // 台指期／個股期貨／台股策略綁到加密交易所:講到它是哪個市場(稽核 r4 P2:原句只講台指期)
   if (rc.code === "MARKET_VENUE" && rc.crypto && rc.market) return t("tr.marketVenue.crypto", { name, more, market: t({ "\u53f0\u6307\u671f": "tr.mktName.txf", "\u500b\u80a1\u671f\u8ca8": "tr.mktName.stockFut", "\u53f0\u80a1": "tr.mktName.twStock" }[rc.market]) });
@@ -2114,7 +2115,11 @@ function trRejectSentence(rc) {
 }
 function trSendError(res, kind, env) {
   const e = res && res.error ? String(res.error) : "", k = trKindOf(res);
-  const rc = k === "rejected" ? trRejectCode(e) : null, known = rc ? trRejectSentence(rc) : null;
+  const rc = k === "rejected" ? trRejectCode(e) : null;
+  // BAD_ROUTE 的前提就是 exchanges 被手改過,key 可能不是合格的策略名、解析不出名字:照樣在地化,只是不點名(不落 runtime 的中文原句)
+  // 任何一個名字不合格、清單解析不乾淨(空名字、名字裡有 」、裸的 BAD_ROUTE)都用這句;同網頁 workspace_pf_rej_bad_route_any 的判法
+  const badRoute = k === "rejected" && /^(?:\w+Error: )?BAD_ROUTE\b/.test(e.trim()), routeNamed = /^(?:\w+Error: )?BAD_ROUTE: (?:、?「[A-Za-z0-9_-]{1,64}」)+(?: |$)/.test(e.trim());
+  const known = badRoute && !routeNamed ? t("tr.badRoute.rejectedAny") : rc ? trRejectSentence(rc) : null;
   if (e === "UPDATE_REQUIRED") return t(kind === "release" ? "minv.release" : "minv.trade");   // 最低版本閘:只擋啟動,暫停不受影響;叫人重按沒有用,要講去哪裡更新
   if ((env || TR.env) === "cloud") {
     // 409:api 不排隊、不記稽核 = 真的什麼都沒送出,不可沿用本機 daemon 沒跑時「已排隊」的說法。
@@ -2593,6 +2598,7 @@ function trStopAfterStartLead(canFlatten) {
 }
 function trAskStop(opener) {
   const r = trReport() || {};
+  if (trStartPending(TR.pending)) trackFeature("trade_stop_start");
   confirmBox(trCloudBox({
     title: t("tr.stop"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lead: trStartPending(TR.pending) ? trStopAfterStartLead(r.can_flatten === true) : null,

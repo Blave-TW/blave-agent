@@ -56,6 +56,28 @@ STRATS = {
     "global":  ("from lib.data import fetch_db_kline\nSYMBOL = 'CL'\n", None, None),
     "mixed":   ("from lib.data import fetch_kline, fetch_twstock_price\nSYMBOL = 'BTCUSDT'\n",
                 None, None),
+    # user report 0.1.29: a US Type C with a BTC filter, just created (no state.json, no SYMBOL)
+    # → its literal UNIVERSE decides; a US + TW mix stays unknown; a universe built in code too
+    "mix_us_c_new": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                     "UNIVERSE = ['AAPL', 'MSFT', 'NVDA', 'BRK.B']\n", None, "USD"),
+    "mix_us_c_pair": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                      "UNIVERSE = ['AAPL', 'BTCUSDT']\n", None, None),
+    "mix_us_tw_c": ("from lib.data import fetch_usstock_price, fetch_twstock_price\n# Type: C\n"
+                    "UNIVERSE = ['AAPL', 'MSFT']\n", None, None),
+    "mix_us_c_code": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                      "UNIVERSE = sorted(['AAPL', 'MSFT'])\n", None, None),
+    # audit v029-wave2 A-P1-2: the LAST assignment decides; computed or += after a literal → None
+    "mix_us_c_rewrite": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                         "UNIVERSE = ['AAPL', 'NVDA']\nUNIVERSE = [s + 'USDT' for s in UNIVERSE]\n", None, None),
+    "mix_us_c_aug": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                     "UNIVERSE = ['AAPL', 'NVDA']\nUNIVERSE += ['BTCUSDT']\n", None, None),
+    "mix_us_c_last_lit": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                          "UNIVERSE = ['NVDAUSDT']\nUNIVERSE: list = ['AAPL', 'MSFT']\n", None, "USD"),
+    "us_perp_c_new": ("from lib.data import fetch_usstock_price\n# Type: C\n"
+                      "UNIVERSE = ('NVDAUSDT', 'AAPLUSDT')\n", None, "USDT"),
+    "mix_us_c_live": ("from lib.data import fetch_usstock_price, fetch_kline\n# Type: C\n"
+                      "UNIVERSE = ['AAPL', 'MSFT']\n",
+                      {"type": "portfolio", "weights": {"AAPL": 0.5, "MSFTUSDT": 0.5}}, None),
     # US prices + a crypto filter (strategy_market = mixed): bare tickers are the US leg
     "mix_us_a": ("from lib.data import fetch_usstock_price, fetch_kline\nSYMBOL = 'AMZN'\n",
                  None, "USD"),

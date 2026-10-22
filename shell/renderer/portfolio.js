@@ -775,7 +775,11 @@ function mgSuggest() {
   }
   if (mgMembers().length === 1 && !mgBlocked()) { const box = trEl("div", "mg-warn"); box.appendChild(trEl("p", "", t("mg.single", { n: 1 }))); frag.appendChild(box); }
   const prop = mgProposal();
-  if (!prop) return frag;
+  if (!prop) {
+    const other = mgPropOtherAlloc();
+    if (other) frag.appendChild(trEl("p", "ns-hint mg-other-alloc", t("mg.propOtherAlloc", { method: mgAllocLabel(other) })));
+    return frag;
+  }
   const sec = trEl("div", "pf-sec");
   sec.appendChild(poHelpGroup(trEl("span", "label", t("mg.secAmounts")), "optimize", "po-help-opt"));
   sec.appendChild(mgSizeChip());
@@ -788,6 +792,17 @@ function mgSuggest() {
   const wrap = trEl("div", "pf-scroll"); frag.appendChild(wrap);
   mgSuggestTable(wrap, ap);
   return frag;
+}
+/* 機器上那份權重是別的方法算的(proposal.json 只有一份,誰最後跑優化就是誰的):權重區不畫,改一句講清楚(同網頁 mgPropOtherAlloc)。
+   成員不同、被丟棄、優化正在跑、在等更新績效或機器落後時不講——那時候的下一步不是「換方法重算」 */
+function mgPropOtherAlloc() {
+  const m = mgManager(), G = mgBag(), p = m && m.proposal;
+  if (!p || typeof p !== "object" || !Array.isArray(p.members) || G.optBusy || mgBlocked()) return null;
+  if (G.wait.opt && G.wait.opt.left.length) return null;
+  const a = mgNormAlloc(p.allocator);
+  if (a === G.alloc || !mgNotDropped("prop", p)) return null;
+  const mine = mgMembers().slice().sort(), theirs = p.members.map(String).sort();
+  return theirs.length === mine.length && theirs.every((n, i) => n === mine[i]) ? a : null;
 }
 function mgSizeChip() {
   const G = mgBag(), b = trEl("button", "tb-fld mg-size-btn"); b.type = "button"; b.dataset.fk = "mg-size"; b.setAttribute("aria-haspopup", "dialog"); b.title = t("sz.title");

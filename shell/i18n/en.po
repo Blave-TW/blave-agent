@@ -854,13 +854,13 @@ msgid "bt.tip.benchmarkRank"
 msgstr "Share of 1,000 random-weight portfolios (same assets, about as many holdings as this strategy, rebalanced daily to their weights, no fees) that this strategy’s total return beats."
 
 msgid "bt.tip.benchmarkBhAdj"
-msgstr "What buying and holding {sym} over the same period would have returned (adjusted for dividends, no fees). The strategy has to beat it to be better than just owning {sym}."
+msgstr "Return from holding {sym} over the same period, dividend-adjusted, no fees."
 
 msgid "bt.tip.benchmarkBhRaw"
-msgstr "What buying and holding {sym} over the same period would have returned (perpetual price, unadjusted, no fees or funding). The strategy has to beat it to be better than just holding {sym}."
+msgstr "Return from holding the {sym} perpetual over the same period, no fees or funding."
 
 msgid "bt.tip.benchmarkBhAsOf"
-msgstr "Benchmark as of {date} (later prices could not be fetched this time, so the last figures are kept)."
+msgstr "Benchmark runs only to {date}. Later prices weren't available."
 
 msgid "bt.tip.benchmarkBhNa"
 msgstr "No buy-and-hold benchmark prices were available to compare for this backtest."
@@ -1415,7 +1415,7 @@ msgid "cx.linkOk"
 msgstr "Connected: the key can read the account. Trading permission is confirmed on the first order."
 
 msgid "cx.perfNote"
-msgstr "Paper results do not represent real fills (costs follow the strategy's fee setting; the default already includes slippage and is conservative)."
+msgstr "Paper results aren't real fills. Costs follow the strategy's fee setting."
 
 msgid "cx.retest"
 msgstr "Retest connection"
@@ -3380,13 +3380,13 @@ msgid "tr.cloud.saveStale"
 msgstr "The cloud’s state isn’t current, so saving now could overwrite amounts changed elsewhere. You can save once this page updates."
 
 msgid "tr.stopAfterStart"
-msgstr "The start command has been sent and may already be in effect. The pause runs after it, so trading ends up paused. Any orders placed before then leave their positions open."
+msgstr "The start may already be in effect. Positions from any orders it placed stay open."
 
 msgid "tr.stopAfterStartFlat"
 msgstr "To close them too, choose Pause and close positions."
 
 msgid "tr.startingHint"
-msgstr "The start command is on its way. To stop it, press Pause trading next to it."
+msgstr "The start command is on its way. To stop it, press Pause trading."
 
 msgid "tr.cloud.hidden"
 msgstr "Strategies that can’t be read right now: {n}. Their amounts are kept as they are."
@@ -7956,6 +7956,10 @@ msgstr "Optimize failed: {e}"
 msgid "mg.optRun"
 msgstr "Optimize"
 
+# 優化分頁:機器上的權重是別的方法算的(portfolio.js mgPropOtherAlloc,同網頁 workspace_mg_prop_other_alloc)
+msgid "mg.propOtherAlloc"
+msgstr "These weights use {method}. Press Optimize to recompute."
+
 msgid "mg.optRunning"
 msgstr "Optimizing…"
 
@@ -8253,6 +8257,14 @@ msgstr "Save to route your strategies to the linked account."
 
 msgid "tr.needsRouting.rejected"
 msgstr "“{name}”{more} has no exchange yet. Save the order settings once in Portfolio, then start trading."
+
+# runtime 存檔拒絕 BAD_ROUTE(exchanges 裡那支的值不是交易所代號):trade.js trRejectSentence
+msgid "tr.badRoute.rejected"
+msgstr "“{name}”{more} has a broken exchange setting, so nothing was saved. Ask the agent to fix it."
+
+# 同上,但點名的那支不是合格的策略名(解析不出名字)
+msgid "tr.badRoute.rejectedAny"
+msgstr "A strategy has a broken exchange setting, so nothing was saved. Ask the agent to fix it."
 
 msgid "tr.haltUnbound"
 msgstr "Paused automatically when the exchange was unbound: no new positions; closes and stops still run."
@@ -8608,7 +8620,7 @@ msgid "cx.paper.q"
 msgstr "How do paper fills work?"
 
 msgid "cx.paper.fill"
-msgstr "Fills at the latest real market price, minus trading costs (the strategy's fee setting; the default already includes slippage and is conservative): crypto at Binance's last trade (if Binance is unreachable, Blave's latest 1-minute bar, then your strategy's own close); TAIEX futures at the near-month's latest 1-minute price; Taiwan and US stocks at the unadjusted close (intraday strategies at the latest unadjusted bar); dividends not credited."
+msgstr "Fills at the latest real market price, minus the strategy's trading costs (the default includes slippage): crypto at Binance's last trade (if Binance is unreachable, Blave's latest 1-minute bar, then your strategy's own close); TAIEX futures at the near-month's latest 1-minute price; Taiwan and US stocks at the unadjusted close (intraday strategies at the latest unadjusted bar); dividends not credited."
 
 # Futures brokers (President / Capital): first fact line — brokers use certificates, not API keys
 msgid "cx.fact.cert"

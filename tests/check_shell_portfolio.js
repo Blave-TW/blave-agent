@@ -1034,4 +1034,17 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     && run({ before: OLD, job: OLD, later: 120001 }) === false && run({ before: OLD, job: OLD, later: 120001, acked: false }) === true);
   ok("…按下去就記住當下的 job(等更新績效之前),不再拿 finished_at 比",
     /G\.btSending = true; G\.btSentAt = 0; G\.btBaseJob = mgJobKey\(mgJobAny\(\)\);[\s\S]*G\.btWaiting = true;/.test(cutF(psrc, "mgRunBacktest")) && !/finished_at/.test(cutF(psrc, "mgBtSendingSync"))); }
+// 用戶回報①(0.1.29):換方法後權重區整段不畫、沒說為什麼 → 機器上那份提案是別的方法算的時候講一句(同網頁 mgPropOtherAlloc)
+{ const env = {};
+  const ctx = vm.createContext({ JSON, Object, Array, String, MG_SLOPE: "slope",
+    mgManager: () => ({ proposal: env.prop }), mgBag: () => ({ alloc: env.alloc, optBusy: !!env.busy, wait: { opt: env.wait ? { left: ["a"] } : null } }),
+    mgBlocked: () => !!env.blocked, mgMembers: () => env.members, mgNotDropped: () => !env.dropped });
+  vm.runInContext(cutF(psrc, "mgNormAlloc") + "\n" + cutF(psrc, "mgPropOtherAlloc"), ctx);
+  const run = (o) => { Object.keys(env).forEach((k) => delete env[k]); Object.assign(env, { prop: { members: ["b", "a"], allocator: "slope" }, alloc: "equal", members: ["a", "b"] }, o); return vm.runInContext("mgPropOtherAlloc()", ctx); };
+  ok("優化分頁:提案是 slope、目前選等權 → 回 slope(舊腳本 allocator null 也算 slope);同方法、成員不同、丟棄、跑優化中、等績效、機器落後、沒提案 → null",
+    run({}) === "slope" && run({ prop: { members: ["a", "b"], allocator: null } }) === "slope" && run({ alloc: "slope" }) === null && run({ members: ["a"] }) === null
+    && run({ members: ["a", "c"] }) === null && run({ dropped: true }) === null && run({ busy: true }) === null && run({ wait: true }) === null && run({ blocked: true }) === null
+    && run({ prop: null }) === null && run({ prop: { allocator: "slope" } }) === null);
+  ok("…只在沒有對得上的提案時、權重區原位置畫那一句(ns-hint、點名提案用的方法)",
+    /const prop = mgProposal\(\);\n  if \(!prop\) \{\n    const other = mgPropOtherAlloc\(\);\n    if \(other\) frag\.appendChild\(trEl\("p", "ns-hint mg-other-alloc", t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\)\)\);\n    return frag;\n  \}/.test(cutF(psrc, "mgSuggest"))); }
 Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
