@@ -46,7 +46,8 @@ check(default_fee("020000") == 0.003 and default_fee("01001T") == 0.003, "ETN 02
 check(default_fee("BTCUSDT") == 0.001 and default_fee("NVDAUSDT", "swap") == 0.001, "crypto perp 0.1%")
 check(default_fee("BTCUSDT", "spot") == 0.0015, "crypto spot 0.15%")
 check(all(default_fee(s) == 0.0001 for s in ("TXF", "MXF", "TMF", "TXFR1", "MXFR2")), "TAIFEX index futures 0.01%")
-check(default_fee("030001") is None and default_fee("081234") is None, "warrants: no default")
+check(all(default_fee(c) == 0.005 for c in ("030001", "089999", "03001P", "08999Y", "711394", "70006C", "73001U")),
+      "warrants (TWSE 03–08, TPEx 70–73) take the stock rate, conservative")
 check(default_fee("AAPL") is None and default_fee("CL") is None and default_fee("CDF") is None,
       "uncovered markets → None")
 check(default_fee(universe=["0050", "00878"]) == 0.003 and default_fee(universe=["0050", "2330"]) == 0.005,
@@ -162,6 +163,14 @@ try:
     check(False, "a buy far past the cash is still refused")
 except order_paper.PaperError:
     check(True, "a buy far past the cash is still refused")
+fresh()
+order_paper.place_spot_market_order(ENV, "BTCUSDT", "buy", quote_qty=99800)  # big holding, ~50 cash left
+cash = led()["cash"]
+try:  # an add inside 2 × fee × holding (~296) — only cash ~0 makes it the trim's gap
+    order_paper.place_spot_market_order(ENV, "BTCUSDT", "buy", quote_qty=cash + 200)
+    check(False, "a small add with only part of it in cash is refused, not skipped")
+except order_paper.PaperError:
+    check(True, f"a small add with only part of it in cash ({cash:.0f} of {cash + 200:.0f}) is refused, not skipped")
 
 # ── 4. owner FEE ──────────────────────────────────────────────────────────────
 def strat(name, src, state=None):
@@ -183,18 +192,28 @@ strat("basket", 'MARKET = "spot"\nFEE = 0.004\nUNIVERSE = [c for c in ("2454",)]
       {"type": "portfolio", "weights": {"2454": 0.5, "2317": 0.5}})
 strat("mixed_nofee", 'MARKET = "spot"\nUNIVERSE = ["0050", "2330"]\n', {"type": "portfolio", "weights": {"0050": 1.0}})
 strat("mxf", 'SYMBOL = "MXF"\nFEE = 0.0002\n')
+strat("mxf_next", 'SYMBOL = "MXFR2"\nFEE = 0.0003\n')
+strat("warrant", 'SYMBOL = "711394"\nFEE = 0.02\n')
+strat("weird", 'SYMBOL = "DOGEUSDT"\nFEE = 0.004\nFEE = {[1]: 2}\n')
 strat("last", '"""\nFEE = 0.02\n"""\nSYMBOL = "ETHUSDT"\nFEE = 0.001\nFEE = 0.004\n')
 strat("computed", 'SYMBOL = "SOLUSDT"\nFEE = 0.003\nFEE = 0.001 * 2\n')
-picked("live_tw", "perp", "perp_v2", "spot", "basket", "mixed_nofee", "mxf", "last", "computed")
+picked("live_tw", "perp", "perp_v2", "spot", "basket", "mixed_nofee", "mxf", "mxf_next", "warrant", "weird", "last", "computed")
 
 check(paper_data.strategy_fee("2330", spot=True) == 0.002, "a draft outside the 下單設定 never counts (0.002, not 0.01)")
 check(paper_data.strategy_fee("BTCUSDT", spot=False) == 0.0009 and paper_data.strategy_fee("BTCUSDT", spot=True) == 0.003,
       "MARKET: perp fills take the perp owners' FEE (two → the higher), spot fills the spot one's (FEE: float = 3e-3)")
 check(paper_data.strategy_fee("2317", spot=True) == 0.004, "Type C owner found by its state.json weights")
 check(paper_data.strategy_fee("0050", spot=True) == 0.005, "Type C without FEE: the highest over its universe, as the backtest")
-check(paper_data.strategy_fee("TXF") == 0.0002, "TXF family: an MXF strategy's FEE covers a TXF fill")
+check(paper_data.strategy_fee("TXF") == 0.0003, "TXF family: MXF and MXFR2 owners cover a TXF fill (the higher, 0.0003)")
+check(paper_data.strategy_fee("711394", spot=True) == 0.02, "a TPEx warrant strategy without MARKET still owns its share fill")
+check(paper_data.strategy_fee("DOGEUSDT") == 0.001, "an unhashable last FEE literal (TypeError) is unknown: the market default, the fill goes on")
 check(paper_data.strategy_fee("ETHUSDT") == 0.004, "the LAST FEE assignment wins; a docstring FEE line is not code")
 check(paper_data.strategy_fee("SOLUSDT") == 0.001, "a computed last FEE is unknown: the market default, not the earlier literal")
+path = "strategies/live_tw/strategy.py"
+st0 = os.stat(path)
+open(path, "w").write('SYMBOL = "2330"\nFEE = 0.0035 # per side\n')
+os.utime(path, ns=(st0.st_atime_ns, st0.st_mtime_ns))  # same mtime (cp -p / rsync -t), new size
+check(paper_data.strategy_fee("2330", spot=True) == 0.0035, "the cache sees a rewrite that kept the mtime (the size changed)")
 picked("perp")
 check(paper_data.strategy_fee("2330", spot=True) is None, "owner left the 下單設定 → no owner")
 order_paper.reset_account(ENV)

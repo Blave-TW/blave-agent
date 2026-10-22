@@ -7,10 +7,13 @@ the backtest, scans, walk-forward and MCPT; lib/paper_data.strategy_fee for pape
 """
 import logging
 
-from lib.paper_data import _TW_STOCK_RE, _norm, _txf_root
+from lib.paper_data import _TW_STOCK_RE, _norm, _txf_family
 
 DEFAULT_FEES = {
-    "tw_stock": 0.005,             # TWSE / TPEx shares, day trades included
+    # TWSE / TPEx shares, day trades included — and warrants (TWSE 030001–089999 and
+    # 03001P/U/T/F/Q/C/B/X/Y–08999…, TWSE warrant FAQ; TPEx 70…–73… six characters, TPEx
+    # warrant quotes 2026-10-22): their spread is wider than a stock's, so this is conservative
+    "tw_stock": 0.005,
     "tw_etf": 0.003,               # ETF / ETN / REIT codes (is_tw_etf), bond ETFs included
     "crypto_perp": 0.001,          # USDT / USDC perps, stock perps included
     "crypto_spot": 0.0015,
@@ -29,22 +32,13 @@ def is_tw_etf(symbol):
     return _code(symbol).split(".")[0].startswith(("00", "01", "02"))
 
 
-def is_tw_warrant(symbol):
-    """Six-digit 03…–08… codes: warrants, with their own tax, tick ladder and far wider
-    spreads — neither the stock nor the ETF rate describes them, so no default."""
-    c = _code(symbol).split(".")[0]
-    return len(c) == 6 and c[:2] in ("03", "04", "05", "06", "07", "08")
-
-
 def market_of(symbol, market=None):
     """DEFAULT_FEES key for `symbol` (market = the strategy's MARKET, "spot" | "swap";
     only crypto tells the two apart), or None for a market the table does not cover."""
     s = _code(symbol)
-    if _txf_root(s[:-2] if s.endswith("R2") else s):
+    if _txf_family(s):
         return "tw_index_futures"
     if _TW_STOCK_RE.match(s):
-        if is_tw_warrant(s):
-            return None
         return "tw_etf" if is_tw_etf(s) else "tw_stock"
     if s.endswith(("USDT", "USDC")) and len(s) > 4:
         return "crypto_spot" if str(market or "").lower() == "spot" else "crypto_perp"

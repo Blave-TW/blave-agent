@@ -8,7 +8,7 @@ One rate per market, per side, **already including commission, tax and slippage 
 
 | Market | Default per-side `FEE` | Covers |
 |---|---|---|
-| Taiwan stocks (TWSE / TPEx, day trades included) | `0.005` (0.5%) | list commission 0.1425% + sell tax 0.3% ÷ 2 + spread, with room for a thin book |
+| Taiwan stocks (TWSE / TPEx, day trades included) and warrants (TWSE `030001`–`089999` and `03001P`…`08999Y`; TPEx six characters `70…`–`73…`) | `0.005` (0.5%) | list commission 0.1425% + sell tax 0.3% ÷ 2 + spread, with room for a thin book. Warrants: a lower tax (0.1%) but wider spreads, so they take the stock rate as the conservative default; a thin warrant can still cost more — set `FEE` from its own spread then |
 | Taiwan ETFs / ETNs / REITs (`lib.costs.is_tw_etf`: codes `00…`, `01…`, `02…`; bond ETFs included) | `0.003` (0.3%) | list commission + ETF sell tax 0.1% ÷ 2 + spread |
 | Crypto perps (USDT / USDC, stock perps such as `NVDAUSDT` included) | `0.001` (0.1%) | taker 0.05–0.06% + spread on smaller coins |
 | Crypto spot | `0.0015` (0.15%) | taker ~0.1% + spread |
@@ -34,4 +34,3 @@ Write the number into `FEE` as a plain constant with what it is in the comment, 
 | US stocks, zero-commission US broker | ≈ `0.0002` | SEC fee on the sell + FINRA TAF + half spread — estimate |
 | CME / NYMEX and other futures | verify with the broker | commission + exchange fee + 1 tick per side as a fraction of notional (`examples/cl_sma` uses `0.0003`) |
 | TAIFEX stock futures (CDF…) | verify with the broker | not modelled |
-| TW warrants (six-digit `03…`–`08…`) | verify with the broker | own tax (0.1%) and tick ladder, spreads far wider than a stock's — no default fits |

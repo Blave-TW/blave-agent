@@ -291,6 +291,25 @@ t("③ 只因字串路徑豁免的模組(%s)沒有 import 任何閉包裡的模�
   not any(bad_imports.values()) and REVIEWED_PATH_ONLY <= set(REVIEWED), bad_imports)
 stale = sorted(k for k in REVIEWED if k not in closure)
 t("③ REVIEWED 的例外仍在閉包裡(不在就刪掉那一條)", not stale, stale)
+# 豁免不是空白支票:每個 REVIEWED 模組進閉包的邊要等於審過的那幾條,多 import 一個會下單的模組就紅
+REVIEWED_EDGES = {
+    "lib.account_paper": {"lib.order_paper"},
+    "lib.paper_data": {"lib.portfolio"},
+    "lib.runner": {"lib.execute", "lib.paper_data", "lib.portfolio", "lib.strategy"},
+    "lib.strategy": {"lib.portfolio"},
+    "runtime.agent_turn": {"manager.close_symbol", "manager.stop_strategy"},
+    "runtime.reconciler_presence": {"manager.reconciler"},
+}
+got_edges = {k: EDGES[k] & closure for k in REVIEWED}
+t("③ REVIEWED 每個模組進閉包的邊 = 審過的白名單", got_edges == REVIEWED_EDGES and set(REVIEWED) == set(REVIEWED_EDGES),
+  {k: sorted(v ^ REVIEWED_EDGES.get(k, set())) for k, v in got_edges.items() if v != REVIEWED_EDGES.get(k)})
+_pd_from_portfolio = {a.name for n in ast.walk(ast.parse(open(os.path.join(ROOT, "lib", "paper_data.py"), encoding="utf-8").read()))
+                      if isinstance(n, ast.ImportFrom) and n.module == "lib.portfolio" for a in n.names}
+_pd_plain = [n for n in ast.walk(ast.parse(open(os.path.join(ROOT, "lib", "paper_data.py"), encoding="utf-8").read()))
+             if isinstance(n, ast.Import) and any(a.name == "lib.portfolio" for a in n.names)
+             or isinstance(n, ast.ImportFrom) and n.module == "lib" and any(a.name == "portfolio" for a in n.names)]
+t("③ lib.paper_data 從 lib.portfolio 只拿 strategy_amounts", _pd_from_portfolio == {"strategy_amounts"} and not _pd_plain,
+  sorted(_pd_from_portfolio))
 
 # 下單 / 撤單 / 對帳的函式入口:在閉包模組裡、函式本體直接呼叫 order 模組(`order.x(...)`、`_paper.x(...)`)的,逐一列出並斷言
 ENTRY_RE = re.compile(r"\b(?:order|_paper|order_\w+)\.\w+\(")

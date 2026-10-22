@@ -1307,8 +1307,8 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
                     # what the cash covers instead of refusing every round
                     q = cash * fx / (price * (1 + rate)) * (1 - 1e-9)
                     q = math.floor(q) if is_tw_stock(sym) else q
-                elif cash < cost <= 2 * rate * led["spot"].get(base, 0.0) * price / fx:
-                    q = 0  # the fee-sized gap such a buy leaves: nothing to buy, not an error
+                elif cash <= cost * rate and cost <= 2 * rate * led["spot"].get(base, 0.0) * price / fx:
+                    q = 0  # the fee-sized gap such a trim leaves, cash ~0: nothing to buy, not an error
                 if q <= 0:
                     guard.audit("order_ok", order_id="", note="no paper cash left", **fields)
                     return False

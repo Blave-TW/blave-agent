@@ -105,6 +105,13 @@ def _txf_root(sym):
     return s if s in ("TXF", "MXF", "TMF") else None
 
 
+def _txf_family(sym):
+    """TXF / MXF / TMF for any month alias (R1 or R2) — who owns a fill, what it costs.
+    Pricing keeps _txf_root: R2 is another month's series there."""
+    s = sym or ""
+    return _txf_root(s[:-2] if s.endswith("R2") else s)
+
+
 def _strategy_symbol(name):
     """The symbol a strategy trades — state.json first (what it actually set at
     runtime), else the SYMBOL constant parsed from strategy.py."""
@@ -130,19 +137,24 @@ _file_cache = {}  # path -> (mtime, parsed) — strategy files and state.json, r
 
 
 def _cached(path, parse):
+    """parse(file text), kept until the file's (mtime_ns, size) changes. A file that does
+    not parse is None (logged) — a fee lookup never fails the fill."""
     try:
-        mtime = os.path.getmtime(path)
+        st = os.stat(path)
     except OSError:
         return None
+    key = (st.st_mtime_ns, st.st_size)
     hit = _file_cache.get(path)
-    if hit and hit[0] == mtime:
+    if hit and hit[0] == key:
         return hit[1]
     try:
         with open(path, encoding="utf-8") as f:
             val = parse(f.read())
-    except (OSError, ValueError, SyntaxError):
+    except Exception as e:
+        log.warning(f"[paper_data] {path} unreadable for the paper fee, using the default: "
+                    f"{type(e).__name__}: {e}")
         val = None
-    _file_cache[path] = (mtime, val)
+    _file_cache[path] = (key, val)
     return val
 
 
@@ -162,7 +174,7 @@ def _consts(src):
             if isinstance(t, ast.Name) and t.id in _CONSTS:
                 try:
                     out[t.id] = ast.literal_eval(node.value)
-                except ValueError:
+                except (ValueError, TypeError):  # computed, or an unhashable literal
                     out.pop(t.id, None)
     return out
 
@@ -171,18 +183,17 @@ def _owner_fee(name, want, spot):
     """The FEE strategy `name` is backtested with, when it trades `want` on this market
     (spot vs perp — a TW code is held as shares whatever MARKET says): its own FEE, else
     its market default (a Type C: the highest over its universe). None = not an owner."""
-    from lib.costs import default_fee, market_of
+    from lib.costs import default_fee
     c = _cached(f"strategies/{name}/strategy.py", _consts) or {}
     state = _cached(f"strategies/{name}/state.json", json.loads)
     state = state if isinstance(state, dict) else {}
     weights = state.get("weights") if isinstance(state.get("weights"), dict) else {}
     sym = _norm(state.get("symbol") or c.get("SYMBOL"))
-    if not (sym == want or (_txf_root(want) and _txf_root(sym))
+    if not (sym == want or (_txf_family(want) and _txf_family(sym))
             or want in {_norm(k) for k in weights}):
         return None
-    tw = market_of(want) in ("tw_stock", "tw_etf")
     market = str(state.get("market") or c.get("MARKET") or "swap").lower()
-    if not tw and (market == "spot") != spot:
+    if not is_tw_stock(want) and (market == "spot") != spot:
         return None
     fee = c.get("FEE")
     if isinstance(fee, (int, float)) and not isinstance(fee, bool):
