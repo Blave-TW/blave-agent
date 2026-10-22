@@ -7,16 +7,18 @@
      0–50 s at random (2% over a minute): every timed full cycle starts exactly at :05, retries
      only at :20/:35, one full cycle per minute, no accumulated drift.
   W  wakes (a 下單設定 save) and startup: before :45 a full cycle runs at once; at :45 or later
-     nothing runs until the :05 cycle; neither shifts the grid. Timers that fire up to 30 ms
+     nothing runs until the :05 cycle (report jobs are still armed at startup); neither shifts
+     the grid. A timer firing > 2 s late (sleep) skips its slot and re-aligns — but never two
+     slots in a row. Timers that fire up to 30 ms
      early (Windows) still give exactly one full cycle a minute.
   O  BLAVE_SCHEDULER_PHASE=off: the old loop — wait 60 s after the work, no retries.
-  L  late feed — the 1m bar always lands at :07, i.e. after the :05 tick: the real
-     _run_scheduler_cycle / _run_retry_cycle / gate with a model of wait_for_bar's state file
-     (pending_since / last_processed_bar) compute every bar exactly once, from the :20 retry.
-     Without the retry the same strategy computes nothing (the audit's P1); a bar landing at :03
-     needs no retry and gets none; a wait that began in an earlier minute (a stall) or with a
-     stall already alerted is not retried. The state-file fields it reads are pinned in
-     wait_for_bar.py's own source.
+  L  late feed, through the REAL wait_for_bar._tick (stub strategy, fake clock), the real
+     _run_scheduler_cycle / _run_retry_cycle / gate: a bar served at :07 every minute is computed
+     every minute, exactly once, from the :20 retry; one bar at :40 among them loses only that
+     bar, not the ones after it (pending_since stays from the earlier minute — the retry goes by
+     the state file being written this minute, not by pending_since); no retry round → nothing
+     computed (the audit's P1); :03 → no retry started; :22 → the :35 retry; a feed that stops
+     gets alerted and is not retried after. _not_ready_this_minute case by case.
   K  K3 — "bar M-1 never computed as the latest": launch times come from the REAL gate (scaled
      1:100, its wall clock on the same scale): 5×1m through 2 slots, and 10×1m through 1 slot
      (the :45 release lets the tail through). wait_for_bar's real _expected_closed_bar_open
@@ -110,10 +112,11 @@ class Stop(BaseException):
 
 
 def drive(rounds, work=lambda r: 0.5, retry_work=lambda r: 0.1, wake_p=0.0, early_ms=0.0, seed=1,
-          start=T0 + 17.3, real_cycle=False, join_ticks=False):
+          start=T0 + 17.3, real_cycle=False, join_ticks=False, late_every=0, late_s=0.0, reports=None):
     """Run the real _scheduler_loop on a fake clock → [(kind, start, woken)] kind 'full'|'retry'."""
     rng = random.Random(seed)
     clock = [start]
+    waits = [0]
     runs, woke = [], [False]
 
     def full():
@@ -141,6 +144,9 @@ def drive(rounds, work=lambda r: 0.5, retry_work=lambda r: 0.1, wake_p=0.0, earl
                 woke[0] = True
             else:
                 clock[0] += max(0.0, timeout - (rng.uniform(0, early_ms) / 1000 if early_ms else 0))
+                waits[0] += 1
+                if late_every and waits[0] % late_every == 0:
+                    clock[0] += late_s   # the machine slept through the timer
                 woke[0] = False
             return woke[0]
 
@@ -152,7 +158,8 @@ def drive(rounds, work=lambda r: 0.5, retry_work=lambda r: 0.1, wake_p=0.0, earl
              "_scheduler_wake", "time")
     saved = {k: getattr(cl, k) for k in names}
     saved_full, saved_retry = saved["_run_scheduler_cycle"], saved["_run_retry_cycle"]
-    cl._sweep_legacy_report_schedules = cl._downtime_watch_loop = cl._fire_due_reports = lambda: None
+    cl._sweep_legacy_report_schedules = cl._downtime_watch_loop = lambda: None
+    cl._fire_due_reports = (lambda: reports.append((clock[0], len(runs)))) if reports is not None else (lambda: None)
     cl._downtime_check = lambda now=None: None
     cl._downtime_pending = lambda: False
     cl._run_scheduler_cycle, cl._run_retry_cycle = full, retry
@@ -208,6 +215,18 @@ runs = drive(20, start=T0 + 50)
 check(runs[0][0] == "retry" and [r for r in runs if r[0] == "full"][0][1] == T0 + 60 + PHASE,
       "process started at :50: no cycle before the next :05 (startup is a late wake too)")
 check(drive(5, start=T0 + 17)[0][:2] == ("full", T0 + 17), "process started at :17: the first cycle runs at once")
+reps = []
+drive(5, start=T0 + 50, reports=reps)
+check(reps and reps[0] == (T0 + 50, 0),
+      "process started at :50: report jobs are armed at :50, before any cycle (a job due at :00 is not skipped)")
+
+runs = drive(2000, late_every=10, late_s=3 * 60 + 47, seed=13)
+fulls = [(t, w) for k, t, w in runs[1:] if k == "full"]
+check(all(phase_err(t) < 1e-6 for t, w in fulls if not w),
+      f"timers that fire minutes late (sleep): no full cycle off the :05 grid ({len(fulls)} full cycles)")
+runs = drive(300, late_every=1, late_s=2.5, seed=17)
+check(len([r for r in runs if r[0] == "full"]) >= 300 // 3 // 2 - 1,
+      "a thread late on every timer still ticks (a late slot is skipped at most once in a row)")
 
 # ── O ──────────────────────────────────────────────────────────────────────────────────────
 os.environ["BLAVE_SCHEDULER_PHASE"] = "off"
@@ -218,90 +237,156 @@ check(all(k == "full" for k, _, _ in runs) and all(abs(g - 61.7) < 1e-6 for g in
       "phase off: the old loop — every round a full cycle, 60 s after the work (1.7 s work → 61.7 s apart)")
 
 # ── L ──────────────────────────────────────────────────────────────────────────────────────
+# The REAL wait_for_bar._tick runs every tick, in this process, on the fake clock; the strategy is
+# a stub whose fetch_data serves the bars that have "landed" by then. Only its subprocess run
+# (_run_strategy_protected) and the alerts are replaced. State is written by wait_for_bar itself,
+# so a change in what it writes (field, format, when) is tested here, not modelled.
 cl._ac_migration_done = True   # never touch this computer's crontab
 cl._sync_deployment_registry = cl._prune_deployment_registry = lambda names: None
 cl._signals_frozen = lambda: False
 os.makedirs(os.path.join(WS, "strategies", "late1m"))
 with open(os.path.join(WS, "strategies", "late1m", "strategy.py"), "w") as f:
-    f.write('INTERVAL = "1m"\n')
+    f.write('INTERVAL = "1m"\nSYMBOL = "BTCUSDT"\n\n\ndef fetch_data(headers):\n'
+            '    import sys\n    return sys.modules["sched_align_feed"].frame()\n')
 json.dump({"amounts": {"late1m": 100}}, open(os.path.join(WS, "manager", "portfolio_config.json"), "w"))
 STATE = os.path.join(WS, "state", "bar_wait", "late1m.json")
-os.makedirs(os.path.dirname(STATE))
+os.chdir(WS)   # wait_for_bar works in workspace-relative paths
 
 
-def feed_model(delay, ticks, computed):
-    """wait_for_bar as far as its state file goes: fast path, not-ready → pending_since, ready →
-    computed, pending cleared. The bar opening at M is served at M + 60 + delay."""
+def fake_now():
+    return cl.time.time()
+
+
+class FakeDT(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        d = datetime.fromtimestamp(fake_now(), timezone.utc)
+        return d if tz else d.replace(tzinfo=None)
+
+
+feed = types.ModuleType("sched_align_feed")
+sys.modules["sched_align_feed"] = feed
+
+
+def late_feed(delay_of, retries=True, rounds=360, stop_after=None):
+    """delay_of(bar_open_datetime) → seconds after the bar closes that it is served (None = never).
+    → (wanted minutes, computed bar labels, tick times, stall alerts, runs)."""
+    for f in os.listdir(os.path.dirname(STATE)) if os.path.isdir(os.path.dirname(STATE)) else []:
+        os.remove(os.path.join(os.path.dirname(STATE), f))
+    ticks, computed, stalls = [], [], []
+    origin = utc(T0) - timedelta(minutes=200)
+
+    def frame():
+        now = fake_now()
+        n = int((utc(now) - origin).total_seconds() // 60) + 2
+        idx = [origin + timedelta(minutes=i) for i in range(n)]
+        served = []
+        for b in idx:
+            d = delay_of(b)
+            close = (b - datetime(1970, 1, 1)).total_seconds() + 60
+            if d is None or close + d > now:
+                break
+            served.append(b)
+        return pd.DataFrame({"close": 1.0}, index=pd.DatetimeIndex(served))
+
+    feed.frame = frame
+
+    def run_protected(name):
+        computed.append(feed.frame().index[-1].to_pydatetime())
+        return True
+
+    real_save = wfb._save_state
+
+    def save(name, state):
+        real_save(name, state)
+        os.utime(f"{wfb.STATE_DIR}/{name}.json", (fake_now(), fake_now()))   # mtime on the fake clock
+
+    patches = {"datetime": FakeDT, "time": types.SimpleNamespace(time=fake_now, monotonic=_time.monotonic, sleep=_time.sleep),
+               "_run_strategy_protected": run_protected, "_save_state": save,
+               "_alert_stale": lambda *a, **k: stalls.append(fake_now()),
+               "_alert_failure": lambda: types.SimpleNamespace(alert=lambda *a, **k: None)}
+    saved_w = {k: getattr(wfb, k) for k in patches}
+    for k, v in patches.items():
+        setattr(wfb, k, v)
+
     def tick(name):
-        now = cl.time.time()
-        ticks.append(now)
-        try:
-            st = json.load(open(STATE))
-        except (OSError, ValueError):
-            st = {"last_processed_bar": None, "pending_since": None, "stall_alert_at": None}
-        expected = wfb._expected_closed_bar_open("1m", utc(now))
-        if st["last_processed_bar"] == expected.isoformat():
-            return
-        if now >= (expected - datetime(1970, 1, 1)).total_seconds() + 60 + delay:
-            computed.append(expected)
-            st["last_processed_bar"], st["pending_since"] = expected.isoformat(), None
-        elif st["pending_since"] is None:
-            st["pending_since"] = utc(now).isoformat()
-        json.dump(st, open(STATE, "w"))
-    return tick
+        ticks.append(fake_now())
+        wfb._tick(name)
 
-
-def late_feed(delay, retries=True, rounds=360):
-    if os.path.exists(STATE):
-        os.remove(STATE)
-    ticks, computed = [], []
     real_tick, real_retry = cl._tick_one, cl._run_retry_cycle
-    cl._tick_one = feed_model(delay, ticks, computed)
+    cl._tick_one = tick
     cl._tick_gate, cl._tick_gate_read = tg.TickGate(2), True
     if not retries:
         cl._run_retry_cycle = lambda: None
     try:
-        runs = drive(rounds, start=T0 + 1, real_cycle=True, join_ticks=True)   # startup cycle at :01, bar not in yet
+        runs = drive(rounds, start=T0 + 1, real_cycle=True, join_ticks=True)   # startup at :01, bar not in yet
     finally:
         cl._tick_one, cl._run_retry_cycle = real_tick, real_retry
+        for k, v in saved_w.items():
+            setattr(wfb, k, v)
     first = utc(runs[1][1]).replace(second=0) - timedelta(minutes=1)
     last = utc(runs[-1][1]).replace(second=0) - timedelta(minutes=2)
     want = {first + timedelta(minutes=i) for i in range(int((last - first).total_seconds() // 60) + 1)}
-    return want, computed, ticks, runs
+    if stop_after is not None:
+        want = {w for w in want if w < stop_after}
+    return want, computed, ticks, stalls, runs
 
 
-want, computed, ticks, runs = late_feed(7)
-nmin = len([r for r in runs if r[0] == "full"])
+def fulls_of(runs):
+    return len([r for r in runs if r[0] == "full"])
+
+
+want, computed, ticks, stalls, runs = late_feed(lambda b: 7)
 check(want <= set(computed) and len(computed) == len(set(computed)),
-      f"bar served at :07 every minute: all {len(want)} bars computed, none twice ({len(computed)} computed)")
-check(len(ticks) <= 2 * nmin + 2, f"…one :05 tick plus one :20 retry a minute ({len(ticks)} ticks over {nmin} minutes)")
-want, computed, ticks, runs = late_feed(7, retries=False)
-check(not computed, f"same feed, no retry round: {len(computed)} bars computed — the strategy stops (audit P1)")
-want, computed, ticks, runs = late_feed(3)
-nmin = len([r for r in runs if r[0] == "full"])
-check(want <= set(computed) and len(ticks) <= nmin + 1,
-      f"bar served at :03: every bar at :05, no retry started ({len(ticks)} ticks over {nmin} minutes)")
-want, computed, ticks, runs = late_feed(22)
-check(want <= set(computed), "bar served at :22: computed at the :35 retry")
+      f"real wait_for_bar, bar served at :07 every minute: all {len(want)} bars computed, none twice")
+check(len(ticks) <= 2 * fulls_of(runs) + 2 and not stalls,
+      f"…one :05 tick plus one :20 retry a minute ({len(ticks)} ticks over {fulls_of(runs)} minutes), no stall alert")
 
+BLIP = utc(T0) + timedelta(minutes=30)
+want, computed, ticks, stalls, runs = late_feed(lambda b: 40 if b == BLIP else 7)
+missing = sorted(want - set(computed))
+check(missing == [BLIP] and len(computed) == len(set(computed)) and not stalls,
+      f"one bar at :40, the rest at :07: only that bar is lost, every bar after it computed "
+      f"(missing {[m.strftime('%H:%M') for m in missing]}, {len(computed)} computed)")
+
+want, computed, ticks, stalls, runs = late_feed(lambda b: 7, retries=False)
+check(not computed, f"bar at :07, no retry round: {len(computed)} bars computed — the strategy stops (audit P1)")
+
+want, computed, ticks, stalls, runs = late_feed(lambda b: 3)
+check(want <= set(computed) and len(ticks) <= fulls_of(runs) + 1,
+      f"bar at :03: every bar at :05, no retry started ({len(ticks)} ticks over {fulls_of(runs)} minutes)")
+want, computed, ticks, stalls, runs = late_feed(lambda b: 22)
+check(want <= set(computed), "bar at :22: computed at the :35 retry")
+
+STOP = utc(T0) + timedelta(minutes=20)
+want, computed, ticks, stalls, runs = late_feed(lambda b: 7 if b < STOP else None, stop_after=STOP)
+after = [t for t in ticks if utc(t) > STOP + timedelta(minutes=30)]
+check(want <= set(computed) and stalls, f"feed stops: bars before it computed, stall alerted ({len(stalls)} alert(s))")
+check(all(sec(t) < PHASE + 1 for t in after),
+      f"…once alerted, no more retries: {len(after)} ticks in the last minutes, all at :05")
+
+# _not_ready_this_minute on its own
 now = T0 + 25
-for pend, alert, want_retry, why in ((utc(T0 + 5), None, True, "went not-ready at :05 this minute"),
-                                     (utc(T0 - 55), None, False, "waiting since last minute (a stall)"),
-                                     (utc(T0 + 5), 123.0, False, "stall already alerted"),
-                                     (None, None, False, "not pending")):
-    json.dump({"pending_since": pend.isoformat() if pend else None, "stall_alert_at": alert}, open(STATE, "w"))
+
+
+def state_file(doc, mtime):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    json.dump(doc, open(STATE, "w"))
+    os.utime(STATE, (mtime, mtime))
+
+
+for doc, mt, want_retry, why in (
+        ({"pending_since": utc(T0 + 5).isoformat(), "stall_alert_at": None}, T0 + 5, True, "ticked at :05 this minute, not ready"),
+        ({"pending_since": utc(T0 - 300).isoformat(), "stall_alert_at": None}, T0 + 5, True,
+         "waiting since 5 minutes ago (one bar missed), ticked not-ready this minute"),
+        ({"pending_since": utc(T0 - 300).isoformat(), "stall_alert_at": None}, T0 - 55, False, "last written last minute"),
+        ({"pending_since": utc(T0 + 5).isoformat(), "stall_alert_at": 123.0}, T0 + 5, False, "stall already alerted"),
+        ({"pending_since": None, "stall_alert_at": None}, T0 + 5, False, "computed (pending cleared)"),
+        ({"pending_since": utc(T0 + 3600).isoformat(), "stall_alert_at": None}, T0 + 5, False, "feed row due in an hour"),
+        ({"pending_since": T0 + 5.0, "stall_alert_at": None}, T0 + 5, True, "pending_since not an ISO string")):
+    state_file(doc, mt)
     check(cl._not_ready_this_minute("late1m", now) is want_retry, f"retry? {why} → {want_retry}")
 check(cl._not_ready_this_minute("no_such", now) is False, "retry? no state file → False")
-
-# The retry reads wait_for_bar's state file: pin the fields it relies on in wait_for_bar itself, so a
-# rename there turns this red instead of silently ending the retries.
-wsrc = open(os.path.join(ROOT, "manager", "wait_for_bar.py"), encoding="utf-8").read()
-for frag, why in (('STATE_DIR = "state/bar_wait"', "state lives in state/bar_wait/<name>.json"),
-                  ("now = datetime.now(timezone.utc).replace(tzinfo=None)", "`now` is naive UTC"),
-                  ('state["pending_since"] = now.isoformat()', "not-ready writes pending_since as an ISO string"),
-                  ('state["pending_since"] = None', "a computed bar clears pending_since"),
-                  ('state["stall_alert_at"] = time.time()', "a stall alert sets stall_alert_at")):
-    check(frag in wsrc, f"wait_for_bar contract: {why}")
 
 
 # ── K ──────────────────────────────────────────────────────────────────────────────────────

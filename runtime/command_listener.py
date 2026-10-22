@@ -1708,6 +1708,7 @@ _tick_gate_read = False
 _retry_minutes = {}       # <5m Type A/C name -> INTERVAL minutes, from the last full cycle
 _queued_logged = {}       # name -> when its last "queued" line was written
 LATE_LAUNCH_SECOND = 45   # a <5m tick launched past this in its minute may compute the next bar
+LATE_TIMER_SECONDS = 2    # a slot timer this late (sleep, clock jump) skips its slot
 
 
 def _scheduler_delay(now, phase=SCHEDULER_PHASE_SECONDS):
@@ -1798,20 +1799,33 @@ def _start_ticks(minutes):
 
 
 def _not_ready_this_minute(name, now):
-    """wait_for_bar's own state says this strategy's tick found its bar not ready this minute
-    (pending_since set this minute, no stall alerted yet). Read only; a wait that began in an
-    earlier minute is a stall, and wait_for_bar's own throttle/alert handles it."""
+    """This minute's tick found the bar not ready, read off wait_for_bar's state file: written
+    this minute (only its not-ready path saves without clearing pending_since — fast path,
+    throttle and a busy lock do not write; a computed bar clears it), pending_since set, no
+    stall alerted. pending_since is NOT compared with this minute: it is written once when a
+    wait begins and kept until a bar computes, so after one bar landing past :35 it stays in
+    that minute while every later minute still needs its retry. A row due later than now
+    (an align_feed wait) is not retried — nothing can land before it is due."""
     from datetime import datetime, timezone
+    path = os.path.join(WORKSPACE, "state", "bar_wait", f"{name}.json")
     try:
-        with open(os.path.join(WORKSPACE, "state", "bar_wait", f"{name}.json"), encoding="utf-8") as f:
-            st = json.load(f)
-        since = st.get("pending_since")
-        if not isinstance(since, str) or st.get("stall_alert_at") is not None:
+        if os.path.getmtime(path) < now - now % SCHEDULER_INTERVAL_SECONDS:
             return False
-        t = datetime.fromisoformat(since).replace(tzinfo=timezone.utc).timestamp()
-    except (OSError, ValueError, TypeError, AttributeError):
+        with open(path, encoding="utf-8") as f:
+            st = json.load(f)
+        if not isinstance(st, dict):
+            return False
+    except (OSError, ValueError):
         return False
-    return now - now % SCHEDULER_INTERVAL_SECONDS <= t <= now
+    since = st.get("pending_since")
+    if since is None or st.get("stall_alert_at") is not None:
+        return False
+    try:
+        if datetime.fromisoformat(since).replace(tzinfo=timezone.utc).timestamp() > now:
+            return False
+    except (TypeError, ValueError):
+        pass   # not an ISO string: the mtime and the two fields above already decided
+    return True
 
 
 def _run_retry_cycle():
@@ -2997,7 +3011,14 @@ def _scheduler_loop():
     phase = _scheduler_phase()
     # Started late in a minute (the same K3 window as a late wake): the first cycle waits for :phase.
     full = phase is None or time.time() % SCHEDULER_INTERVAL_SECONDS < LATE_LAUNCH_SECOND
-    target = None
+    if not full:
+        # Arms the report jobs now (a first sight only arms, never fires): armed at :05 instead,
+        # a job due at the coming :00 would be skipped — on desktop logged as missed, app closed.
+        try:
+            _fire_due_reports()
+        except Exception as e:
+            _log(f"report trigger at startup failed: {type(e).__name__}: {e}")
+    target, skipped = None, False
     while True:
         if full:
             try:
@@ -3028,6 +3049,13 @@ def _scheduler_loop():
             woke = _scheduler_wake.wait(timeout=target - now)
             _scheduler_wake.clear()
             if not woke:
+                # Woke from sleep / a clock jump: skip that slot and re-align instead of a cycle at
+                # an arbitrary second. Never twice in a row — a thread starved past 2 s on every
+                # slot must still tick.
+                if time.time() - target > LATE_TIMER_SECONDS and not skipped:
+                    target, skipped = None, True
+                    continue
+                skipped = False
                 full = is_full
                 target, is_full = _next_slot(target, phase)
                 break
