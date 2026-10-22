@@ -1537,11 +1537,16 @@ const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益只�
    由 command_listener._local_real_key_gate 在寫入前讀一次帳戶)。 */
 /* ccy = 那家 lib/account_*.py get_equity 回的幣別(字面值;BingX 是動態 row.asset,這裡是它的預設值)。
    讀帳失敗時 runtime 寫 currency: null,畫面靠它推幣別(tests/check_venue_ccy.py 逐支對 lib) */
+/* Bitget 閘門 = cloudcmd.BITGET_VERIFIED_MODES = lib/venue_traits.py bitget 列的 verified_modes(tests/check_bitget_surfaces.py 釘住同值)。
+   空 = 兩個視角都不列;只開一種 = 說明區講另一種會被拒 */
+const BITGET_VERIFIED_MODES = [];
 const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, okx: { label: "OKX", env: "OKX", pass: true, ccy: "USD" },
   bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" },
-  stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" } };
-const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit", "stockcoin"];
-const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
+  stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" },
+  bitget: { label: "Bitget", env: "BITGET", pass: true, ccy: "USDT", modes: BITGET_VERIFIED_MODES } };
+const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "bitget"];
+const cxVenueOpen = (id) => !Array.isArray(CX_VENUES[id].modes) || CX_VENUES[id].modes.length > 0;
+const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => cxVenueOpen(id) && (env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0));
 /* 統一期貨入口:0.1.18 藏、統一行情(lib/president_quote 實盤 tick)驗過後開。關著時只藏連接框的下拉那一項,其餘(帳戶列、
    部位頁、狀態句、開通中／開通過的「繼續」鈕)對已綁定的機器照舊。tests/check_shell_connect_venues 讀這個值決定期望清單 */
 const PRES_LOCAL_ON = true;
@@ -1551,9 +1556,8 @@ const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
    整段做完之前不列在這台電腦的下拉裡 */
 const CAPL_LOCAL_ON = false;
 const cxCaplListed = () => CAPL_LOCAL_ON || CXF.venue === CAPITAL;
-// 不在 CX_VENUES 裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py、account_bitget.py;
-// bitget 真帳驗證前 runtime 不上報它,這格只是幣別表要跟 lib 一一對齊)
-const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD", bitget: "USDT" };
+// 不在 CX_VENUES 裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py)
+const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD" };
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)
 function trVenueCcy(id) {
   if (Object.prototype.hasOwnProperty.call(TR_VENUE_CCY_OTHER, id)) return TR_VENUE_CCY_OTHER[id];
@@ -5168,6 +5172,7 @@ function cxChkTextVenue(r) {
   const c = r && r.code, name = trVenueLabel(CXF.venue, true), d = (r && r.detail) || {};
   if (c === "BAD_KEY_FORMAT") return t("cx.chk.keyFormatV", { venue: name });
   if (c === "INCOMPLETE_PAIR") return CX_VENUES[CXF.venue] && CX_VENUES[CXF.venue].pass ? t("cx.chk.incompletePass") : t("cx.chk.incomplete");
+  if (c === "MODE_UNVERIFIED") return d.mode === "uta" ? t("cx.err.bitgetUta") : t("cx.err.bitgetClassic");
   if (c === "REJECTED") return trErrToken(d.reason) === "okx_account_mode" ? t("cx.err.okxMode") : t("cx.chk.rejectedV", { venue: name, reason: String(d.reason || "—").slice(0, 200) });
   if (c === "UNKNOWN") return t("cx.chk.unknownV", { venue: name });
   if (c === "NO_CHECK") return t("cx.chk.noCheckV", { venue: name });
@@ -5330,10 +5335,12 @@ function cxModalPaint() {
     };
     fld("cx-api", t("cx.apiKey"), "apiKey"); fld("cx-secret", t("cx.secretKey"), "secret");
     // OKX 的 Passphrase 是建立 API 金鑰時自己設的那組:最常見的錯是填成登入密碼(設計稽核 005 第 10 條)
-    if (CX_VENUES[venue] && CX_VENUES[venue].pass) fld("cx-pass", t("cx.passphrase"), "passphrase", t("cx.passHint"));
+    if (CX_VENUES[venue] && CX_VENUES[venue].pass) fld("cx-pass", t("cx.passphrase"), "passphrase", venue === "okx" ? t("cx.passHint") : t("cx.passHintV", { venue: trVenueLabel(venue, true) }));
     const note = trEl("div", "cx-note");
     // StockCoin 目前只讀得到合約帳戶,這句只對它講(同網頁 cx_note_stockcoin)
     if (venue === "stockcoin") note.appendChild(trEl("p", "", t("cx.note.stockcoin")));
+    // Bitget 只開了一種帳戶類型:送出前先講另一種會被拒(兩種都開就不講)
+    if (venue === "bitget" && BITGET_VERIFIED_MODES.length === 1) note.appendChild(trEl("p", "", BITGET_VERIFIED_MODES[0] === "classic" ? t("cx.note.bitgetClassicOnly") : t("cx.note.bitgetUtaOnly")));
     note.appendChild(trEl("p", "", venue === BINANCE ? t("cx.note.one") : t("cx.note.oneV", { venue: trVenueLabel(venue, true) })));
     if (cloud) {   // 雲端的五處差異之 2:主機的 IP,不查、沒有「再查一次」;拿不到不擋(白名單本來就不強制)
       if (cip) note.appendChild(cxIpChip(cip));

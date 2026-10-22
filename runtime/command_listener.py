@@ -295,6 +295,8 @@ _LOCAL_KEY_CHECKS = {
     "GATEIO": ("GATEIO_API_KEY", "GATEIO_SECRET_KEY"),
     "BYBIT": ("BYBIT_API_KEY", "BYBIT_SECRET_KEY"),
     "STOCKCOIN": ("STOCKCOIN_API_KEY", "STOCKCOIN_SECRET_KEY"),
+    # reachable only once local_daemon opens BITGET (venue_traits verified_modes non-empty)
+    "BITGET": ("BITGET_API_KEY", "BITGET_SECRET_KEY", "BITGET_PASSPHRASE"),
 }
 
 
@@ -3511,7 +3513,7 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
 
 _TW_MARKETS = {"tw_index_futures": "台指期", "tw_stock_futures": "個股期貨", "tw_stock": "台股"}
 _VENUE_NAMES = {"binance": "Binance", "bingx": "BingX", "okx": "OKX", "bybit": "Bybit",
-                "gateio": "Gate.io", "stockcoin": "StockCoin"}
+                "gateio": "Gate.io", "stockcoin": "StockCoin", "bitget": "Bitget"}
 
 
 def _strategy_source(name):

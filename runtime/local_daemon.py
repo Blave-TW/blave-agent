@@ -1373,8 +1373,11 @@ class Daemon:
         # permission where the venue exposes it) decides, before any write.
         # 統一期貨: only through president_local's cert step
         # (president_connect.local_bind_gate) — the chat bind still cannot.
+        # Bitget: only once its real-account run passed (venue_traits verified_modes) — the
+        # shell's connect screen and trusted set follow the same cell
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
-                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "STOCKCOIN", "PRESIDENT", "CAPITAL"})
+                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "STOCKCOIN", "PRESIDENT", "CAPITAL"}
+                                         | ({"BITGET"} if cl.venue_traits.verified_modes("bitget") else set()))
         self.pc.set_seal_key(self.secret)
         self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("統一期貨 credentials handed over")
         self.pc._LOCAL["worker"].reap_orphan(cl._pid_cmdline)

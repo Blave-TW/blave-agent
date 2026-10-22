@@ -1387,6 +1387,13 @@ msgstr "When you create the key on {venue}: if you set an IP whitelist, add this
 msgid "cx.note.stockcoin"
 msgstr "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance."
 
+# 連接框選 Bitget、閘門只開一種帳戶類型時說明區多一句(trade.js BITGET_VERIFIED_MODES)
+msgid "cx.note.bitgetClassicOnly"
+msgstr "Blave currently supports only Bitget Classic accounts. A key from a Unified Trading Account (UTA) is refused and not saved: switch the account back to Classic in the Bitget app, or connect another exchange."
+
+msgid "cx.note.bitgetUtaOnly"
+msgstr "Blave currently supports only Bitget Unified Trading Accounts (UTA). A key from a Classic account is refused and not saved: upgrade the account to UTA in the Bitget app, or connect another exchange."
+
 msgid "cx.store.q"
 msgstr "Where are my keys stored?"
 
@@ -1428,6 +1435,13 @@ msgstr "Login stopped. Press Continue to confirm login."
 
 msgid "cx.err.okxMode"
 msgstr "This OKX account mode can't trade futures. In OKX, go to Settings → Account mode and switch to Futures mode or Multi-currency margin."
+
+# Bitget 拒收沒驗過的帳戶類型(lib/account_bitget 的句子 → trade.js cxBitgetModeErr)
+msgid "cx.err.bitgetUta"
+msgstr "This key's Bitget account is a Unified Trading Account (UTA). Blave currently supports only Classic accounts, so nothing was saved. Switch the account back to Classic in the Bitget app and connect again, or connect another exchange."
+
+msgid "cx.err.bitgetClassic"
+msgstr "This key's Bitget account is a Classic account. Blave currently supports only Unified Trading Accounts (UTA), so nothing was saved. Upgrade the account to UTA in the Bitget app and connect again, or connect another exchange."
 
 msgid "cx.failShort"
 msgstr "Connection failed"
@@ -3000,6 +3014,10 @@ msgstr "Passphrase"
 
 msgid "cx.passHint"
 msgstr "The one you set when creating the API key, not your OKX login password."
+
+# Passphrase 提示:OKX 以外有 passphrase 的那家(Bitget)
+msgid "cx.passHintV"
+msgstr "The one you set when creating the API key, not your {venue} login password."
 
 msgid "cx.group.crypto"
 msgstr "Crypto"

@@ -189,7 +189,14 @@ function cloudArgsOk(cmd, a) {
 /* 電腦版連得了的真實交易所(env 名同網頁 CX_VENUES、同 lib/order_* / account_*;群益在 Mac 上跑不起來,不在這裡)。
    pass = 要第三個欄位 <ENV>_PASSPHRASE(OKX)。Binance 的形狀由 binance_link.keyShapeOk 驗;其餘四家金鑰長相各不同
    (OKX 是帶連字號的 UUID),只擋明顯不是金鑰的:4–256 個可見 ASCII、不含空白;passphrase 是用戶自訂的字,只擋換行與長度 */
-const CONNECT_VENUES = { binance: { env: "BINANCE" }, okx: { env: "OKX", pass: true }, bingx: { env: "BINGX" }, gateio: { env: "GATEIO" }, bybit: { env: "BYBIT" }, stockcoin: { env: "STOCKCOIN" } };
+/* Bitget 的閘門 = lib/venue_traits.py bitget 列的 verified_modes(真帳驗過的帳戶類型);這裡、trade.js 與 runtime 那份必須同值
+   (tests/check_bitget_surfaces.py 釘住),翻開是同一個 commit 一起改。空 = 連接框不列、connectSecrets 不收、daemon 不收;
+   解除綁定的名字照給——網頁舊的 Bitget 那一列綁過的機器 .env 可能已有 BITGET_* */
+const BITGET_VERIFIED_MODES = [];
+const CONNECT_VENUES = { binance: { env: "BINANCE" }, okx: { env: "OKX", pass: true }, bingx: { env: "BINGX" }, gateio: { env: "GATEIO" }, bybit: { env: "BYBIT" }, stockcoin: { env: "STOCKCOIN" },
+  bitget: { env: "BITGET", pass: true, modes: BITGET_VERIFIED_MODES } };
+// 帶 modes 的那家(真帳只驗了部分帳戶類型)= 空清單時整家關著
+const venueOpen = (v) => !!v && (!Array.isArray(v.modes) || v.modes.length > 0);
 const KEY_SHAPE = /^[\x21-\x7e]{4,256}$/, PASS_SHAPE = /^[^\r\n]{1,256}$/;
 // 一家的憑證 env 名(送出、解除綁定、daemon 白名單共用這一份)
 function venueEnvNames(venue) {
@@ -200,7 +207,7 @@ function connectSecrets(a, shapeOk, nowSec) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return { error: "BAD_ARGS" };
   if (a.venue === "paper") return { venue: "paper", secrets: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: String(Math.floor(nowSec)) } };
   const v = typeof a.venue === "string" && Object.prototype.hasOwnProperty.call(CONNECT_VENUES, a.venue) ? CONNECT_VENUES[a.venue] : null;
-  if (!v) return { error: "BAD_ARGS" };
+  if (!venueOpen(v)) return { error: "BAD_ARGS" };
   const k = typeof a.apiKey === "string" ? a.apiKey.trim() : "", s = typeof a.secret === "string" ? a.secret.trim() : "";
   const p = typeof a.passphrase === "string" ? a.passphrase.trim() : "";
   if (!k || !s || (v.pass && !p)) return { error: a.venue === "binance" ? "BAD_KEY_FORMAT" : "INCOMPLETE_PAIR" };   // Binance 照舊(空欄 = 格式不對)
@@ -248,6 +255,10 @@ function interpretConnect(r, secrets) {
    「no permission check exists」(這台的 lib 缺那一支)→ NO_CHECK;
    "LIB_BROKEN: lib/account_x.py could not load (…)"(lib 在、import 失敗;尾巴的「— not saved」可有可無)→ LIB_BROKEN,
    detail.reason = 冒號後整句(遮過、截 200)——是這台電腦的程式壞了,不是交易所拒絕;daemon 自己的代號(DAEMON_DOWN…)→ SEND_FAILED */
+/* Bitget 拒收的帳戶類型(lib/account_bitget 的 _require_verified 與「統一帳戶但讀不到帳戶設定」兩句都這樣開頭;後者在統一帳戶
+   沒開放時叫人去勾權限是白做工)→ MODE_UNVERIFIED + detail.mode,畫面換成那一語的句子。開放的類型照原文(那時是權限問題)。
+   tests/check_bitget_surfaces.py 拿 lib 真的句子對這個式子 */
+const BITGET_MODE_RE = /這組 Bitget 金鑰的帳戶是(統一帳戶|經典帳戶)/;
 function interpretVenueBind(r, secrets) {
   if (r && r.ok) return { ok: true, code: "READ_OK", detail: {} };
   const err = r && typeof r.error === "string" ? r.error : "DAEMON_DOWN";
@@ -258,9 +269,11 @@ function interpretVenueBind(r, secrets) {
   if (/no permission check exists/.test(shown)) return { ok: false, code: "NO_CHECK", detail: {} };
   const lb = /^\s*ValueError:\s*LIB_BROKEN:\s*(.*?)(?:\s*—\s*not saved)?\s*$/.exec(shown);
   if (lb) return { ok: false, code: "LIB_BROKEN", detail: { reason: lb[1].slice(0, 200) } };
+  const bm = BITGET_MODE_RE.exec(shown), bmode = bm ? (bm[1] === "統一帳戶" ? "uta" : "classic") : null;
+  if (bmode && BITGET_VERIFIED_MODES.indexOf(bmode) < 0) return { ok: false, code: "MODE_UNVERIFIED", detail: { mode: bmode } };
   const m = /^\s*ValueError:\s*REJECTED:[^(]*\((.*)\)\s*—\s*not saved\s*$/.exec(shown) || /^\s*ValueError:\s*REJECTED:\s*(.*)$/.exec(shown);
   if (m) return { ok: false, code: "REJECTED", detail: { reason: m[1].slice(0, 200) } };
   return { ok: false, code: "SEND_FAILED", detail: { error: shown } };
 }
 
-module.exports = { interpretVenueBind, createCloudCmd, interpret, interpretAck, KIND, CLOUD_ONLY_COMMANDS, cloudArgsOk, connectSecrets, CONNECT_VENUES, venueEnvNames, interpretConnect, CONNECT_CODES, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };
+module.exports = { interpretVenueBind, createCloudCmd, interpret, interpretAck, KIND, CLOUD_ONLY_COMMANDS, cloudArgsOk, connectSecrets, CONNECT_VENUES, BITGET_VERIFIED_MODES, venueOpen, venueEnvNames, interpretConnect, CONNECT_CODES, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };

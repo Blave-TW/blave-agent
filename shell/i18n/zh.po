@@ -1395,6 +1395,13 @@ msgstr "在 {venue} 建金鑰時，有設 IP 白名單的話，把這個 IP 加�
 msgid "cx.note.stockcoin"
 msgstr "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。"
 
+# 連接框選 Bitget、閘門只開一種帳戶類型時說明區多一句(trade.js BITGET_VERIFIED_MODES)
+msgid "cx.note.bitgetClassicOnly"
+msgstr "Blave 目前只支援 Bitget 的經典帳戶。統一帳戶（UTA）的金鑰會被拒絕、不會儲存：請到 Bitget App 把帳戶換回經典帳戶，或改綁其他交易所。"
+
+msgid "cx.note.bitgetUtaOnly"
+msgstr "Blave 目前只支援 Bitget 的統一帳戶（UTA）。經典帳戶的金鑰會被拒絕、不會儲存：請到 Bitget App 把帳戶升級成統一帳戶，或改綁其他交易所。"
+
 msgid "cx.store.q"
 msgstr "金鑰存在哪？"
 
@@ -1436,6 +1443,13 @@ msgstr "登入已停止，按「繼續」確認登入。"
 
 msgid "cx.err.okxMode"
 msgstr "OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金。"
+
+# Bitget 拒收沒驗過的帳戶類型(lib/account_bitget 的句子 → trade.js cxBitgetModeErr)
+msgid "cx.err.bitgetUta"
+msgstr "這把金鑰的 Bitget 帳戶是統一帳戶（UTA），Blave 目前只支援經典帳戶，所以沒有儲存。請到 Bitget App 把帳戶換回經典帳戶後再連一次，或改綁其他交易所。"
+
+msgid "cx.err.bitgetClassic"
+msgstr "這把金鑰的 Bitget 帳戶是經典帳戶，Blave 目前只支援統一帳戶（UTA），所以沒有儲存。請到 Bitget App 把帳戶升級成統一帳戶後再連一次，或改綁其他交易所。"
 
 msgid "cx.failShort"
 msgstr "串接失敗"
@@ -3011,6 +3025,10 @@ msgstr "Passphrase"
 
 msgid "cx.passHint"
 msgstr "建立 API 金鑰時自己設的那組，不是 OKX 的登入密碼。"
+
+# Passphrase 提示:OKX 以外有 passphrase 的那家(Bitget)
+msgid "cx.passHintV"
+msgstr "建立 API 金鑰時自己設的那組，不是 {venue} 的登入密碼。"
 
 msgid "cx.group.crypto"
 msgstr "加密貨幣"
