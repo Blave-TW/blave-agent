@@ -30,7 +30,7 @@ const ALLOWED_KEYS = ["config", "states", "previews", "backtest_previews", "tw_l
   "downtime_pause", "portfolio_configured", "reported_at", "error", "daemon", "strategy_names"];
 const NAME_MAX_CHARS = 80;   // = api desktop_portfolio.NAME_MAX_CHARS
 // Cc 與 bidi 控制字元(名稱是 agent 寫的,RLO 會把 App 同一列後面的金額顯示反過來);ZWJ 留著。= api desktop_portfolio._NAME_STRIP_RE(測試逐字比對)
-const NAME_STRIP_RE = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+const NAME_STRIP_RE = /[\x00-\x1f\x7f-\x9f\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 const FREE_TEXT_KEYS = ["error", "msg", "reason", "last_read_error"];
 const HOME_RE = /(\/Users\/|\/home\/|[A-Za-z]:[\\/]+Users[\\/]+)[^/\\\s"']+/gi;
 const URL_QUERY_RE = /(https?:\/\/[^\s"'?]*)\?[^\s"']*/g;

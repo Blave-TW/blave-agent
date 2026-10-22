@@ -257,12 +257,12 @@ process.on("exit", () => { if (!finished) { console.log("FAIL  測試沒跑完�
     ok("9 signature 不看 strategy_names(改名不提早送)", MV.signature(null, { ...r, strategy_names: { momo: "x" } }) === MV.signature(null, r));
     ok("9 main.js:createMobileView 的 status 走 withStrategyNames(host.status(), listStrategies)",
       /status: \(\) => require\("\.\/mobileview"\)\.withStrategyNames\(_tradeHost \? _tradeHost\.status\(\) : null, listStrategies,/.test(mainSrc)); }
-  { const strip = MV.strategyNames({ rlo: 1, zw: 1, c0: 1, zwj: 1, only: 1, cut: 1 }, [
+  { const strip = MV.strategyNames({ rlo: 1, zw: 1, c0: 1, zwj: 1, only: 1, cut: 1, zwsp: 1 }, [
       { name: "rlo", displayName: "BTC \u202e4H\u202c 多單" }, { name: "zw", displayName: "\u200fETH\u200e\u2066x\u2069\u061c" },
       { name: "c0", displayName: "a\x00b\tc\x1fd\x7f\x85e" }, { name: "zwj", displayName: "家\u{1F468}\u200d\u{1F469}" },
-      { name: "only", displayName: "\u202e\u200f\x01 " }, { name: "cut", displayName: "\u202e".repeat(5) + "名".repeat(80) }]);
-    ok("9 去掉 bidi 覆寫、零寬方向字元與 C0/C1 控制字元;ZWJ 保留(同 api 測試同一組輸入與結果)", strip.rlo === "BTC 4H 多單" && strip.zw === "ETHx"
-      && strip.c0 === "abcde" && strip.zwj === "家\u{1F468}\u200d\u{1F469}", strip);
+      { name: "only", displayName: "\u202e\u200f\x01 " }, { name: "zwsp", displayName: "\ufeffB\u200bT\u2060C" }, { name: "cut", displayName: "\u202e".repeat(5) + "名".repeat(80) }]);
+    ok("9 去掉 bidi 覆寫、零寬字元(ZWSP/WJ/BOM)、零寬方向字元與 C0/C1 控制字元;ZWJ 保留(同 api 測試同一組輸入與結果)", strip.rlo === "BTC 4H 多單" && strip.zw === "ETHx"
+      && strip.c0 === "abcde" && strip.zwj === "家\u{1F468}\u200d\u{1F469}" && strip.zwsp === "BTC", strip);
     ok("9 去掉之後只剩空白 → 不放;先去再截", !("only" in strip) && strip.cut === "名".repeat(80), strip);
     const hostReport = { config: { amounts: { momo: 1 } }, states: {} }, host = { running: true, report: hostReport };
     const got = MV.withStrategyNames(host, () => [{ name: "momo", displayName: "BTC 唐奇安" }]);
