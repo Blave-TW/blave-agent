@@ -629,11 +629,11 @@ msgstr "回測期間的權益曲線與回撤"
 msgid "bt.chartAriaBand"
 msgstr "回測期間的權益曲線、隨機投組範圍與回撤"
 
-msgid "bt.benchmark0050"
-msgstr "0050 持有"
+msgid "bt.benchmarkBh"
+msgstr "{sym} 持有"
 
-msgid "bt.chartAria0050"
-msgstr "回測期間的權益曲線、0050 持有與回撤"
+msgid "bt.chartAriaBh"
+msgstr "回測期間的權益曲線、{sym} 持有與回撤"
 
 msgid "bt.legendBand"
 msgstr "隨機 p5–p95"
@@ -860,11 +860,14 @@ msgstr "同一段期間買進後一直持有這個標的的報酬。策略要贏
 msgid "bt.tip.benchmarkRank"
 msgstr "跟 1000 組隨機權重的投組比（同一批標的、持股數約同這支策略，每天調回原權重、不計手續費），這支策略的總報酬贏過其中多少。"
 
-msgid "bt.tip.benchmark0050"
-msgstr "同一段期間買進後一直持有 0050 的報酬（還原價、含配息，不計手續費）。策略要贏過它，才算比直接買 0050 好。"
+msgid "bt.tip.benchmarkBhAdj"
+msgstr "同一段期間買進後一直持有 {sym} 的報酬（還原價、含配息，不計手續費）。策略要贏過它，才算比直接買 {sym} 好。"
 
-msgid "bt.tip.benchmark0050Na"
-msgstr "這次回測沒有 0050 的價格可比。"
+msgid "bt.tip.benchmarkBhRaw"
+msgstr "同一段期間買進後一直持有 {sym} 的報酬（永續合約價格、未調整，不計手續費與資金費率）。策略要贏過它，才算比直接抱著 {sym} 好。"
+
+msgid "bt.tip.benchmarkBhNa"
+msgstr "這次回測抓不到買進持有基準的價格可比。"
 
 msgid "bt.tip.annVol"
 msgstr "每日報酬的標準差換算成一年。數字越大，權益的起伏越劇烈。"

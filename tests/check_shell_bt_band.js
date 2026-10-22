@@ -214,7 +214,8 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   const s2 = RR._bt.buildSeries(tw(bhOf(), { daily_dates: d2 }));
   ok("buildSeries:跳過非字串日期時 0050 也跳過同一天", !!s2.bh && s2.bh.length === s2.equity.length && s2.bh[3] === SER[4] * 100);
 
-  const mrow = (box) => byCls(box, "bt-mrow").find((r) => /0050|基準報酬/.test(r.children[0].textContent));
+  const mrow = (box) => byCls(box, "bt-mrow").find((r) => /0050|BTC|SPY|基準報酬/.test(r.children[0].textContent));
+  const tipOf = (key, sym) => STR.zh[key].split("{sym}").join(sym);
   const r = render(tw(bhOf()));
   const ev = scan(r.h.calls);
   const dash = ev.filter((e) => e.op === "stroke" && e.stroke === TOK["--color-greyMedium"] && e.lw === 1.2 && e.dash === "[4,4]");
@@ -227,25 +228,26 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   ok("0050:y 範圍含它(1.9× 也在權益區內)", ys.length === N && ys.every((y) => y >= EQ_TOP - 1e-6 && y <= EQ_TOP + EQ_H + 1e-6), ys.length + " 點");
   ok("0050 圖例:權益 → 0050 持有(不掛 tooltip)→ 回撤", JSON.stringify(r.legend()) === JSON.stringify([["bt-legend", "權益"], ["bt-legend bh", "0050 持有"], ["bt-legend dd", "回撤"]]), JSON.stringify(r.legend()));
   ok("0050 圖例:代號 0050 包 .mono(同統計列)", byCls(r.head, "bt-legend").filter((c) => / bh$/.test(c.className)).some((c) => byCls(c, "mono").some((m) => m.textContent === "0050")));
-  ok("0050:canvas aria 用 0050 那句", r.chart.getAttribute("aria-label") === STR.zh["bt.chartAria0050"]);
+  ok("0050:canvas aria 用 0050 那句", r.chart.getAttribute("aria-label") === "回測期間的權益曲線、0050 持有與回撤");
   const row = mrow(r.box), btn = row && row.children[0].children[0];
   ok("統計列:標籤 0050 持有、0050 包 .mono、值 +61.75% 中性色",
     !!btn && btn.children[0].className === "mono" && btn.children[0].textContent === "0050" && btn.textContent === "0050 持有"
     && row.children[1].textContent === "+61.75%" && !/pos|neg/.test(row.children[1].className), row && JSON.stringify([btn && btn.textContent, btn && btn.children.map((c) => c.className + ":" + c.textContent), row.children[1].textContent, row.children[1].className]));
-  ok("統計列 tooltip:正常句", row && row.children[0].children[1].textContent === STR.zh["bt.tip.benchmark0050"]);
+  ok("統計列 tooltip:還原價那句(含配息)", row && row.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "0050")
+    && row.children[0].children[1].textContent.includes("含配息"));
   r.h.fireResize();
   ok("resize 之後圖例照樣三項", r.head.children.length === 3);
 
   const rn = render(tw(null));
   const rowN = mrow(rn.box);
-  ok("benchmark_bh = null:標籤照寫、值「—」(na)、tooltip 換原因句、不畫線、圖例兩項",
-    rowN && rowN.children[0].children[0].textContent === "0050 持有" && rowN.children[1].textContent === "—" && / na/.test(rowN.children[1].className)
-    && rowN.children[0].children[1].textContent === STR.zh["bt.tip.benchmark0050Na"]
+  ok("benchmark_bh = null(不知道是哪一檔):標籤寫基準報酬、值「—」(na)、tooltip 換原因句、不畫線、圖例兩項",
+    rowN && rowN.children[0].children[0].textContent === "基準報酬" && rowN.children[1].textContent === "—" && / na/.test(rowN.children[1].className)
+    && rowN.children[0].children[1].textContent === STR.zh["bt.tip.benchmarkBhNa"]
     && !scan(rn.h.calls).some((e) => e.dash === "[4,4]") && rn.head.children.length === 2 && rn.chart.getAttribute("aria-label") === STR.zh["bt.chartAria"]);
   const rs = render(tw(noSer));
   const rowS = mrow(rs.box);
   ok("沒有 series:數字照出、正常 tooltip、不畫線、圖例兩項",
-    rowS && rowS.children[1].textContent === "+61.75%" && rowS.children[0].children[1].textContent === STR.zh["bt.tip.benchmark0050"]
+    rowS && rowS.children[1].textContent === "+61.75%" && rowS.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "0050")
     && !scan(rs.h.calls).some((e) => e.dash === "[4,4]") && rs.head.children.length === 2);
   const ro = render({ ...base, benchmark_band: WIDE });
   const rowO = mrow(ro.box);
@@ -255,10 +257,27 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   const ra = render({ "Benchmark Return [%]": 12.3, "Total Return [%]": 50, daily_dates: dates, daily_returns: rets });
   const rowA = mrow(ra.box);
   ok("Type A 照舊:基準報酬 +12.30%、Type A 的 tooltip", rowA && rowA.children[1].textContent === "+12.30%" && rowA.children[0].children[1].textContent === STR.zh["bt.tip.benchmark"]);
-  const k4 = ["bt.benchmark0050", "bt.tip.benchmark0050", "bt.tip.benchmark0050Na", "bt.chartAria0050"];
-  ok("四個新字串兩語都有,0050 不翻", k4.every((k) => STR.zh[k] && STR.en[k] && (k === "bt.tip.benchmark0050Na" || STR.en[k].includes("0050")) && STR.zh[k].includes("0050")));
-  ok("字串照 spec 逐字", STR.zh["bt.benchmark0050"] === "0050 持有" && STR.en["bt.benchmark0050"] === "0050 buy & hold"
-    && STR.zh["bt.tip.benchmark0050Na"] === "這次回測沒有 0050 的價格可比。" && STR.en["bt.chartAria0050"] === "Equity curve, 0050 buy & hold and drawdown over the backtest period");
+  // 加密 Type C:BTCUSDT 顯示 BTC、tooltip 是未調整那句(不寫含配息);美股 SPY 是還原價那句
+  const rb = render(tw(bhOf({ kind: "BTC_bh", symbol: "BTCUSDT", adjusted: false })));
+  const rowB = mrow(rb.box), btnB = rowB && rowB.children[0].children[0];
+  ok("BTC:統計列標籤 BTC 持有、BTC 包 .mono、tooltip 未調整那句(沒有含配息)",
+    !!btnB && btnB.textContent === "BTC 持有" && btnB.children[0].className === "mono" && btnB.children[0].textContent === "BTC"
+    && rowB.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhRaw", "BTC") && !rowB.children[0].children[1].textContent.includes("配息"),
+    rowB && rowB.children[0].textContent);
+  ok("BTC:圖例 BTC 持有、aria 用 BTC", JSON.stringify(rb.legend()) === JSON.stringify([["bt-legend", "權益"], ["bt-legend bh", "BTC 持有"], ["bt-legend dd", "回撤"]])
+    && rb.chart.getAttribute("aria-label") === "回測期間的權益曲線、BTC 持有與回撤", JSON.stringify(rb.legend()));
+  const rsp = render(tw(bhOf({ kind: "SPY_bh", symbol: "SPY", adjusted: true })));
+  const rowP = mrow(rsp.box);
+  ok("SPY:統計列標籤 SPY 持有、tooltip 還原價那句",
+    rowP && rowP.children[0].children[0].textContent === "SPY 持有" && rowP.children[0].children[1].textContent === tipOf("bt.tip.benchmarkBhAdj", "SPY")
+    && JSON.stringify(rsp.legend()[1]) === JSON.stringify(["bt-legend bh", "SPY 持有"]), rowP && rowP.children[0].textContent);
+  const k5 = ["bt.benchmarkBh", "bt.chartAriaBh", "bt.tip.benchmarkBhAdj", "bt.tip.benchmarkBhRaw", "bt.tip.benchmarkBhNa"];
+  ok("五個字串兩語都有,{sym} 在該在的地方", k5.every((k) => STR.zh[k] && STR.en[k] && (k === "bt.tip.benchmarkBhNa" ? !STR.en[k].includes("{sym}") : STR.en[k].includes("{sym}") && STR.zh[k].includes("{sym}"))));
+  ok("字串照定稿逐字", STR.zh["bt.benchmarkBh"] === "{sym} 持有" && STR.en["bt.benchmarkBh"] === "{sym} buy & hold"
+    && STR.en["bt.chartAriaBh"] === "Equity curve, {sym} buy & hold and drawdown over the backtest period"
+    && STR.zh["bt.tip.benchmarkBhNa"] === "這次回測抓不到買進持有基準的價格可比。"
+    && STR.zh["bt.tip.benchmarkBhAdj"].includes("含配息") && !STR.zh["bt.tip.benchmarkBhRaw"].includes("配息")
+    && STR.en["bt.tip.benchmarkBhAdj"].includes("dividends") && !STR.en["bt.tip.benchmarkBhRaw"].includes("dividend"));
   const tok = fs.readFileSync(path.join(R, "tokens.css"), "utf8");
   ok("tokens.css:--chart-band 亮 #818f97、暗 greyDark", /:root \{[\s\S]*--chart-band: #818f97;[\s\S]*\[data-theme="dark"\] \{[\s\S]*--chart-band: var\(--color-greyDark\);/.test(tok));
 }
