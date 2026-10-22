@@ -9,7 +9,9 @@
   W  wakes (a 下單設定 save) and startup: before :45 a full cycle runs at once; at :45 or later
      nothing runs until the :05 cycle (report jobs are still armed at startup); neither shifts
      the grid. A late timer (sleep, a starved thread) runs its slot unless it landed at :45 or
-     later; landing in a later minute it runs a full cycle — every active minute has one. Timers that fire up to 30 ms
+     later; landing in a later minute it runs a full cycle — every active minute has one. :44.9
+     runs, :45.0 waits. The wall clock set back (15–45 s, onto the :05 slot) re-aligns instead of
+     running the slot early, so that minute's full cycle still runs. Timers that fire up to 30 ms
      early (Windows) still give exactly one full cycle a minute.
   O  BLAVE_SCHEDULER_PHASE=off: the old loop — wait 60 s after the work, no retries.
   L  late feed, through the REAL wait_for_bar._tick (stub strategy, fake clock), the real
@@ -112,7 +114,8 @@ class Stop(BaseException):
 
 
 def drive(rounds, work=lambda r: 0.5, retry_work=lambda r: 0.1, wake_p=0.0, early_ms=0.0, seed=1,
-          start=T0 + 17.3, real_cycle=False, join_ticks=False, late_every=0, late_s=0.0, reports=None):
+          start=T0 + 17.3, real_cycle=False, join_ticks=False, late_every=0, late_s=0.0, reports=None,
+          late_at=(), back_every=0, back_s=0.0):
     """Run the real _scheduler_loop on a fake clock → [(kind, start, woken)] kind 'full'|'retry'."""
     rng = random.Random(seed)
     clock = [start]
@@ -145,8 +148,10 @@ def drive(rounds, work=lambda r: 0.5, retry_work=lambda r: 0.1, wake_p=0.0, earl
             else:
                 clock[0] += max(0.0, timeout - (rng.uniform(0, early_ms) / 1000 if early_ms else 0))
                 waits[0] += 1
-                if late_every and waits[0] % late_every == 0:
+                if (late_every and waits[0] % late_every == 0) or waits[0] in late_at:
                     clock[0] += late_s   # the machine slept through the timer
+                if back_every and waits[0] % back_every == 0:
+                    clock[0] -= back_s   # the wall clock was set back while waiting
                 woke[0] = False
             return woke[0]
 
@@ -247,6 +252,19 @@ fulls = [t for k, t, w in runs if k == "full"]
 check(len(fulls) > 300 and all(sec(t) < cl.LATE_LAUNCH_SECOND for t in fulls) and not minutes_without_full(runs),
       f"timers landing past :45 (41 s late) wait for the next :05: no full cycle at :45+, every active "
       f"minute still has one ({len(fulls)} full cycles)")
+
+for every, back in ((3, 30), (3, 44), (3, 15), (2, 20)):
+    runs = drive(1500, back_every=every, back_s=back, seed=23)
+    check(len(runs) >= 1500 and not minutes_without_full(runs),
+          f"wall clock set back {back} s on every timer no. {every}: every active minute still has a full cycle")
+
+# the :45 edge, on the first :05 timer after a start at :50 (startup defers to that :05)
+runs = drive(4, start=T0 + 50, late_at={1}, late_s=39.9)
+check([(k, round(sec(t), 1)) for k, t, w in runs[:2]] == [("retry", 50.0), ("full", 44.9)],
+      f"a :05 timer that fires at :44.9 runs its full cycle there ({[(k, round(sec(t), 1)) for k, t, w in runs[:2]]})")
+runs = drive(4, start=T0 + 50, late_at={1}, late_s=40.0)
+check([(k, round(t - T0, 1)) for k, t, w in runs[:2]] == [("retry", 50.0), ("full", 125.0)],
+      f"one that fires at :45.0 waits for the next :05 ({[(k, round(t - T0, 1)) for k, t, w in runs[:2]]})")
 
 # ── O ──────────────────────────────────────────────────────────────────────────────────────
 os.environ["BLAVE_SCHEDULER_PHASE"] = "off"

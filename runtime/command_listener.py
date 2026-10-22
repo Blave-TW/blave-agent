@@ -1708,6 +1708,7 @@ _tick_gate_read = False
 _retry_minutes = {}       # <5m Type A/C name -> INTERVAL minutes, from the last full cycle
 _queued_logged = {}       # name -> when its last "queued" line was written
 LATE_LAUNCH_SECOND = 45   # a <5m tick launched past this in its minute may compute the next bar
+EARLY_TIMER_TOLERANCE = 1  # a timer may fire this early (Windows: a few ms) and still be its slot
 
 
 def _scheduler_delay(now, phase=SCHEDULER_PHASE_SECONDS):
@@ -3055,6 +3056,9 @@ def _scheduler_loop():
                 # :phase, like a late save or start. Landing in a later minute than its slot, that
                 # minute has had no full cycle yet, so this is one.
                 late = time.time()
+                if late < target - EARLY_TIMER_TOLERANCE:   # the clock went back: re-align from now
+                    target = None
+                    continue
                 if late % SCHEDULER_INTERVAL_SECONDS >= LATE_LAUNCH_SECOND:
                     target = None
                     continue
