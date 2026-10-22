@@ -1003,7 +1003,6 @@ body.resizing * { cursor: col-resize !important; }
 .plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
 .plan-pane .plan-rule{text-wrap:pretty}
-.plan-more{margin-top:var(--space-16);display:inline-block}
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 設定左欄底部的帳號區 */
 .set-cats{display:flex;flex-direction:column}

@@ -3370,8 +3370,8 @@ const cryptoTopupUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=de
 // 方案頁(web /agent/<lang>/usage#plan;api 通知連結也指這裡):重新付款、換卡、取消、升級、月繳↔年繳都在那邊
 const planPayUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#plan";
 const usageUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop";
-// 網站定價頁:API 方案(api ERR007 的 next_steps.api_plan 同一頁)與 Blave Agent 方案內容都在這一頁,不用登入
-const apiPlanUrl = () => "https://blave.org/landing/" + LANG + "/pricing";
+// 網站定價頁的 API 卡(api ERR007 的 next_steps.api_plan 同一處):#api 讓手機直接落在 API 卡而不是排第二的 Pro;from=desktop 給定價頁事件分來源
+const apiPlanUrl = () => "https://blave.org/landing/" + LANG + "/pricing?from=desktop#api";
 function planRepay() { trackFeature("plan_repay"); window.blave.openExternal(planPayUrl()); }
 // 換卡、改階、恢復這些電腦版沒有入口的事:外開方案頁(不記 plan_repay——那顆只算「重新付款」)
 function planWebGo() { window.blave.openExternal(planPayUrl()); }
@@ -3784,8 +3784,6 @@ function planPaint() {
   sc.append(el("h5", null, t(V.h, v)));
   if (V.lead) sc.append(el("p", "plan-lead", V.lead));
   if (V.list) { const ul = el("ul", "plan-list"); V.list.forEach((x) => ul.append(el("li", null, x))); sc.append(ul); }
-  // 外開網站定價頁:不用登入、不靠價格,每一格都出
-  { const more = btn("btn-quiet plan-more", t("pv.more"), ext(apiPlanUrl())); more.dataset.k = "more"; sc.append(more); }
   // 底列:錯誤(有才出)→ 鈕上方那行(這顆鈕會帶來的錢)→ 鈕左小字 + 鈕
   if (err) { const e = el("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); e.append(el("span", "fault-mark"), el("span", null, t(err.key))); foot.append(e); }
   if (V.rule) foot.append(el("p", "plan-rule", V.rule));

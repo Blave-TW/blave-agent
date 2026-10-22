@@ -876,20 +876,20 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       ok("內部帳號(free)、不是試用:底列不再空白 → pv.f.running.free;planOn(沒主機)同一句", tr("running", { next_charge_source: "free" }).rule === "pv.f.running.free"
         && paintOf({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_starter", paid_until: AHEAD, next_charge_source: "free" } }).rule === "pv.f.running.free");
       ok("試用句的日期退路:paid_until 拿不到用 trial_free_until(v.d);兩個都沒有整行不印", (PV_N = 5, PV_U = "", PV_D = "10 月 15 日", /^pv\.f\.running\.trial\{.*"u":"10 月 15 日"/.test(tr("running", {}).rule)) && (PV_D = "", tr("running", {}).rule === "") && ((PV_U = "10 月 15 日"), true));
-      // 「方案內容與計費」:外開網站定價頁(不用登入的那一頁),原地不展開;不靠價格,每一格都出
+      // 「到網站看方案內容與計費」已拿掉:它把缺資料的電腦版用戶帶到定價頁頁首的 Pro 試用鈕(uid 33771 買錯 Pro)
       PV_N = 0;
       {
-        const PRICING = "ext:https://blave.org/landing/zh/pricing";
         const moreOf = (a, signedIn = true) => { const keep = hasToken; hasToken = signedIn; if (a === null) { acct = null; planPaint(); } else paintOf(a); hasToken = keep;
-          const all = walk(dom["set-plan"]), b = all.filter((n) => n.dataset && n.dataset.k === "more");
-          seen.length = 0; featured.length = 0; if (b[0]) b[0]._click();
-          return { n: b.length, cls: b[0] && b[0].className, txt: b[0] && b[0].textContent, attrs: b[0] ? Object.keys(b[0].attrs).join() : "", seen: seen.join(), featured: featured.join(),
+          const all = walk(dom["set-plan"]);
+          return { n: all.filter((n) => (n.dataset && n.dataset.k === "more") || /plan-more/.test(n.className || "")).length,
             detail: all.some((n) => n.id === "plan-detail" || /plan-detail|plan-sec|plan-lbl|plan-inc/.test(n.className || "")), texts: all.map((n) => n.textContent).join("|") }; };
         const cases = [["方案制・有主機", { ...MO, data_access: "included", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } }], ["方案制・沒方案", { ...MO, data_access: "plan_required" }],
           ["舊制・運行中", { plan: { state: "running" } }], ["舊制・沒主機", { data_access: "none" }], ["未登入", null, false]];
         const bad = [];
-        for (const P of ["1,440", ""]) { PV_P = P; for (const [name, a, si] of cases) { const m = moreOf(a, si); if (!(m.n === 1 && m.cls === "btn-quiet plan-more" && m.txt === "pv.more" && m.attrs === "" && m.seen === PRICING && m.featured === "" && !m.detail)) bad.push(name + (P ? "" : "(沒價格)") + ":" + JSON.stringify(m)); } }
-        ok("每一格(方案制／舊制、有沒有主機、未登入)、價格查不到也一樣:一顆安靜鈕 pv.more,沒有 aria-expanded／aria-controls,按下外開 landing/zh/pricing、不送 feature_used;沒有展開區塊", bad.length === 0, bad.join("\n"));
+        for (const P of ["1,440", ""]) { PV_P = P; for (const [name, a, si] of cases) { const m = moreOf(a, si); if (m.n !== 0 || m.detail || /(^|\|)pv\.more(\||$)/.test(m.texts)) bad.push(name + (P ? "" : "(沒價格)") + ":" + JSON.stringify(m)); } }
+        ok("每一格(方案制／舊制、有沒有主機、未登入)、價格查不到也一樣:沒有 pv.more 外開鈕、沒有展開區塊", bad.length === 0, bad.join("\n"));
+        ok("pv.more 從 app.js、app.css、strings 全部拿掉", !/"pv\.more"/.test(src) && !/plan-more/.test(src + css) && !/"pv\.more":/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
+        ok("apiPlanUrl 落在定價頁 API 卡、帶 from=desktop", /const apiPlanUrl = \(\) => "https:\/\/blave\.org\/landing\/" \+ LANG \+ "\/pricing\?from=desktop#api";/.test(src));
         PV_P = "1,440"; PV_D = "10 月 15 日"; PV_A = "50"; PV_TOP = "300";
         const gone = /plan\.inc\b|plan\.bill|plan\.rule(\.one|\.running)?\b|pv\.inc\.|pv\.more\.once|plan\.trialFree|plan\.yearNoNum/;
         const leak = cases.map(([name, a, si]) => [name, moreOf(a, si).texts]).filter(([, tx]) => gone.test(tx)).map(([name, tx]) => name + ":" + tx.match(gone)[0]);
