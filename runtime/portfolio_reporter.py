@@ -757,11 +757,30 @@ def _pair_quote(sym):
     return None
 
 
+def _universe_const(src):
+    """The strategy file's module-level UNIVERSE when it is a literal list / tuple of strings
+    (TEMPLATE_C's shape), else None — a universe built in code is not guessed."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "UNIVERSE"
+                                                for t in node.targets):
+            v = node.value
+            if isinstance(v, (ast.List, ast.Tuple)) and v.elts and all(
+                    isinstance(e, ast.Constant) and isinstance(e.value, str) for e in v.elts):
+                return [e.value for e in v.elts]
+            return None
+    return None
+
+
 def strategy_quote_ccy(name, state):
     """The currency `name`'s amount is in, or None when it cannot be told for sure.
     Market from the strategy file (strategy_reporter.strategy_market: its lib.data price
     fetchers); crypto symbols from state.json (Type A `symbol`, Type C every `weights`
-    key — all must agree), else the file's literal SYMBOL. US-stock prices: the traded symbols'
+    key — all must agree), else the file's literal SYMBOL (US prices: else its literal
+    UNIVERSE, so a Type C that has not ticked yet is not left unknown). US-stock prices: the traded symbols'
     common quote suffix (NVDAUSDT → USDT), bare tickers → USD; next to crypto
     ones, trading only bare tickers (no quote suffix) → USD. Other mixed markets, mixed quotes,
     global futures, user data → None."""
@@ -771,7 +790,7 @@ def strategy_quote_ccy(name, state):
         sig = (st.st_mtime, st.st_size)
         hit = _quote_cache.get(path)
         if hit and hit[0] == sig:
-            market, file_symbol, uses_us = hit[1]
+            market, file_symbol, uses_us, universe = hit[1]
         else:
             import strategy_reporter
             with open(path, encoding="utf-8", errors="replace") as f:
@@ -782,25 +801,30 @@ def strategy_quote_ccy(name, state):
             # bare-letter symbol traded (TXF, CDF, CL), so that mix stays unknown
             kinds = {strategy_reporter._PRICE_FETCHERS[n] for n in fetchers}
             uses_us = "us_stock" in kinds and kinds <= {"us_stock", "crypto"}
-            _quote_cache[path] = (sig, (market, file_symbol, uses_us))
+            universe = _universe_const(src)
+            _quote_cache[path] = (sig, (market, file_symbol, uses_us, universe))
     except Exception:
         return None
     if market in _MARKET_QUOTE:
         return _MARKET_QUOTE[market]
     state = state if isinstance(state, dict) else {}
     weights = state.get("weights")
+    # what is traded: live weights, else the live / literal SYMBOL, else (a Type C not yet
+    # ticked) its literal UNIVERSE
+    if isinstance(weights, dict) and weights:
+        syms = list(weights)
+    elif state.get("symbol") or file_symbol or not universe:
+        syms = [state.get("symbol") or file_symbol]
+    else:
+        syms = universe
     if market == "us_stock":
         # US prices as the signal, an exchange's stock perp traded (NVDA → NVDAUSDT): the amount
         # is in what is traded. Bare tickers (AAPL) → USD; a mix of the two → None
-        syms = list(weights) if isinstance(weights, dict) and weights \
-            else [state.get("symbol") or file_symbol]
         quotes = {_pair_quote(x) for x in syms}
         if quotes == {None}:
             return "USD"
         return quotes.pop() if len(quotes) == 1 else None
     if market == "mixed" and uses_us:
-        syms = list(weights) if isinstance(weights, dict) and weights \
-            else [state.get("symbol") or file_symbol]
         # BTCUSD is a crypto pair read as unknown above, not a ticker
         bare = all(isinstance(x, str) and _US_TICKER_RE.fullmatch(x.upper()) and not _pair_quote(x)
                    and not x.upper().endswith("USD") for x in syms)

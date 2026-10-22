@@ -19,5 +19,22 @@ for label, bad in (("unclassified", names - price - other), ("in both lists", pr
                                        if m not in ("crypto", "tw", "twfutures", "us", "cme")})):
     print(("  PASS  " if not bad else "  FAIL  ") + f"{label}: {sorted(bad)}")
     fails += bool(bad)
+# runtime/strategy_reporter keeps its own table (runtime ships apart from lib and stays stdlib-only;
+# manager/wait_for_bar mirrors runtime's, tests/check_tw_stock_bar_calendar.py). Shared names must
+# mean the same market; the names lib has and runtime lacks are pinned so the gap cannot grow
+# silently — closing it changes strategy_market (e.g. US + fetch_twmarket_index: us_stock → mixed).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime"))
+import strategy_reporter as SR  # noqa: E402
+SAME = {"crypto": "crypto", "tw_stock": "tw", "tw_futures": "twfutures", "tw_stock_futures": "twfutures",
+        "us_stock": "us", "global_futures": "cme"}
+RUNTIME_GAP = {"fetch_binance_ticker_24h", "fetch_twmarket_index", "fetch_twmarket_index_public",
+               "fetch_twse_day_all_public", "fetch_twstock_quote", "fetch_twstock_quote_batch"}
+rt = SR._PRICE_FETCHERS
+for label, bad in (("runtime names not in lib", set(rt) - price),
+                   ("runtime / lib disagree on the market", {n for n in set(rt) & price
+                                                             if SAME.get(rt[n]) != D._PRICE_FETCHERS[n]}),
+                   ("lib-only names != the pinned runtime gap", (price - set(rt)) ^ RUNTIME_GAP)):
+    print(("  PASS  " if not bad else "  FAIL  ") + f"{label}: {sorted(bad)}")
+    fails += bool(bad)
 print(f"{len(names)} fetchers: {len(price)} price, {len(other)} non-price")
 sys.exit(1 if fails else 0)

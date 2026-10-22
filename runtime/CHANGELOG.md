@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **美股 Type C 剛建好不再落「幣別未定」(`portfolio_reporter.strategy_quote_ccy`;用戶回報 0.1.29)**:還沒有 `state.json` 權重、檔案也沒有 `SYMBOL` 時,美股價格的策略(`us_stock`,以及美股＋加密濾網的 `mixed`)改讀檔內字面的 `UNIVERSE` 清單(`_universe_const`,ast;程式算出來的清單不猜):全是美股純代號 → USD、全是股票永續 → 那個報價幣(原本一律當 USD)、混了加密對或混台股／全球期貨照舊 None。抓價函式表 runtime(`strategy_reporter._PRICE_FETCHERS`)比 lib(`lib/data._PRICE_FETCHERS`)少六個(`fetch_binance_ticker_24h`、`fetch_twmarket_index(_public)`、`fetch_twse_day_all_public`、`fetch_twstock_quote(_batch)`),這次不收(收了會改 `strategy_market` 與 `wait_for_bar` 的判法),由 `tests/check_price_fetchers.py` 釘住差集與共同名字的市場對應,再長就紅。測試 `tests/check_report_quote_ccy.py`。
+
 ## 1.1.139 — 2026-10-22(desktop 0.1.29)
 
 - **報告帶 `save_routing`(下一次下單設定存檔後的路由;新模組 `runtime/save_routing.py`)**:`_cmd_amounts` 的路由繼承(還綁著的保留、其餘繼承唯一那家;綁定集合 = .env 成對 ∩ 綁定清單,不看 lib)抽成 `save_routing.plan`/`bound_ids`,存檔與 reporter 共用同一份;報告 `save_routing = {bound, default, routes}`(成員在 routes 就照它、草稿照 default、"" = 沒路由)。電腦版存金額框照它算「存了會送的單」,不再各自猜綁定集合(稽核 v029-028bugs B-1:.env 與綁定清單不一致、綁了沒 lib 的交易所時框跟 runtime 對不上)。憑證名解析(`_venue_cred_ids` 等)搬進同一模組、`command_listener` 原名轉匯,路由規則不變(較寬鬆的一處:`exchanges` 整個不是 dict 時當成空的;讀 .env 改 UTF-8 解碼加讀檔重試)。`exchanges` 裡某支策略的值不是字串(手改成 list／dict)時,存檔明確拒絕 `BAD_ROUTE` 並點名那支,mirror 不動、對帳器照舊——不當成沒路由去繼承別家(稽核 r3 P1-1:那會把它改送到真錢交易所);報告那邊同樣的值只當沒路由,算 `save_routing` 失敗也只回 None、不拖垮整份報告。測試 `tests/check_shell_a1_save.js`(經 `tests/_cf_lib_after.py` 跑真的存檔＋reporter＋lib)。
