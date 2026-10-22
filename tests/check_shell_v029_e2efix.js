@@ -15,9 +15,11 @@ const block = (css, head) => { const i = css.indexOf(head); if (i < 0) return ""
 const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags.js"), po = read("portfolio.js"), tr = read("trade.js");
 
 // ── 必修 2 ──
-{ const m = trCss.match(/^\.strat-wrap:is\(:hover, :has\(:focus-visible\), \.flag-open\) \.strat-row \.stx \{([^}]*)\}/m);
+{ const m = trCss.match(/^\.strat-wrap:not\(\.is-deleting\):is\(:hover, :has\(:focus-visible\), \.flag-open\) \.strat-row \.stx \{([^}]*)\}/m);
   ok("必修 2:hover／聚焦／面板開著時 .stx 收成 1px(版面讓位),不是 display:none(讀屏名稱照念「已暫停」)",
     !!m && /position: absolute;/.test(m[1]) && /width: 1px;/.test(m[1]) && /clip-path: inset\(50%\);/.test(m[1]) && !/display:\s*none|visibility:\s*hidden/.test(m[1]), m && m[1]);
+  ok("必修 2:刪除中那列不收(「刪除中…」是它唯一的狀態說明):收起規則帶 :not(.is-deleting),也沒有別條規則收 .stx",
+    (trCss.match(/\.stx \{ position: absolute;/g) || []).length === 1 && /^\.strat-wrap:not\(\.is-deleting\):is\(/m.test(trCss));
   ok("必修 2:本機側欄沒有狀態字(stratRefresh 不畫 .stx),同一個問題不存在", !/"stx"/.test(cutFn(read("app.js"), "stratRefresh"))); }
 
 // ── 建議 1 ──
@@ -34,6 +36,13 @@ const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags
   ok("建議 3:右邊放不下 → 夾回視窗內(右緣留 8)", b.left === 1280 - 8 - 120, JSON.stringify(b));
   const c = C.f({ left: 172, right: 196, top: 740, bottom: 764 }, 120, 110, 1280, 800);
   ok("建議 3:下方放不下 → 翻到鈕上方", c.up === true && c.top === 740 - 8 - 110, JSON.stringify(c));
+  // 鈕下 8 + 面板剛好碰到視窗底(還沒出界)但壓進底部 8 的邊距:要翻;離底剛好 8:不翻
+  const e = C.f({ left: 172, right: 196, top: 664, bottom: 688 }, 120, 100, 1280, 800);   // 688+8+100 = 796 > 792
+  const e2 = C.f({ left: 172, right: 196, top: 660, bottom: 684 }, 120, 100, 1280, 800);  // 684+8+100 = 792 = 800-8
+  ok("建議 3:翻上的判斷算進底部 8 的邊距(796 翻、792 不翻)", e.up === true && e.top === 664 - 8 - 100 && e2.up === false && e2.top === 692, JSON.stringify([e, e2]));
+  const n = C.f({ left: 40, right: 64, top: 100, bottom: 124 }, 120, 100, 130, 800);   // 視窗比面板 + 兩邊 8 還窄
+  const n2 = C.f({ left: -30, right: -6, top: 100, bottom: 124 }, 120, 100, 1280, 800);
+  ok("建議 3:左側夾回視窗內(窄視窗、鈕在左緣外 → left = 8)", n.left === 8 && n2.left === 8, JSON.stringify([n, n2]));
   const open = cutFn(sf, "sfPopOpen");
   ok("建議 3:sfPopOpen 用 sfPopPlace 定位,而且在量尺寸之前就照目前旗標藏「移除旗標」與它上面那條線",
     /sfPopPlace\(anchor\.getBoundingClientRect\(\)/.test(open) && open.indexOf('querySelectorAll("[data-rm]").forEach((n) => { n.hidden = !cur; })') > 0
@@ -42,7 +51,7 @@ const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags
   ok("建議 3:開閉動效的原點跟著改到左側(面板從鈕往右長)", /\.flag-pop \{[^}]*transform-origin: top left;/.test(appCss) && /\.flag-pop\.up \{ transform: translateY\(2px\); transform-origin: bottom left; \}/.test(appCss)); }
 
 // ── 建議 4 ──
-{ const C = {}; vm.runInNewContext(cutFn(po, "mgPrimary") + "\nthis.f = mgPrimary;", C);
+{ const C = { blocked: false }; vm.runInNewContext("function mgBlocked() { return this.blocked; }\n" + cutFn(po, "mgPrimary") + "\nthis.f = (b, G) => mgPrimary(b, G || {});", C);
   const btn = (cls, disabled) => { const s = new Set(cls.split(" ")); return { disabled, classList: { toggle: (c, on) => (on ? s.add(c) : s.delete(c)), has: (c) => s.has(c) } }; };
   const box = (opt, ap) => ({ querySelector: (q) => (q === ".tb-run" ? opt : q === "#mg-apply" ? ap : null) });
   const fills = (...bs) => bs.filter((b) => b && b.classList.has("btn-fill")).length;
@@ -52,16 +61,23 @@ const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags
   ok("建議 4:套用停用(沒有新權重／缺報價…) → 跑優化實心、套用框線", opt.classList.has("btn-fill") && ap.classList.has("btn-out") && fills(opt, ap) === 1);
   opt = btn("btn-out tb-run", false); C.f(box(opt, null));
   ok("建議 4:還沒有建議(沒有套用鈕) → 跑優化實心", opt.classList.has("btn-fill") && !opt.classList.has("btn-out"));
+  opt = btn("btn-fill tb-run", true); ap = btn("btn-fill", false); C.f(box(opt, ap), { optBusy: true });
+  ok("建議 4:優化正在跑(手上的建議是舊的)→ 套用不當主鈕,跑優化實心", opt.classList.has("btn-fill") && ap.classList.has("btn-out") && fills(opt, ap) === 1);
+  C.blocked = true; opt = btn("btn-fill tb-run", true); ap = btn("btn-fill", false); C.f(box(opt, ap));
+  ok("建議 4:機器版本落後(mgBlocked)→ 套用不當主鈕", opt.classList.has("btn-fill") && ap.classList.has("btn-out"));
+  C.blocked = false;
   ap = btn("btn-fill", false); C.f(box(null, ap));
   ok("建議 4:工具列不在也不炸,套用照可不可按定", ap.classList.has("btn-fill"));
   const paint = cutFn(po, "mgPaint");
-  ok("建議 4:mgPaint 在兩顆鈕都畫完之後才判(套用的停用條件在 mgSuggestTable 裡算)", paint.indexOf("mgPrimary(box);") > paint.indexOf("mgSuggest()")); }
+  ok("建議 4:mgPaint 在兩顆鈕都畫完之後才判(套用的停用條件在 mgSuggestTable 裡算)", paint.indexOf("mgPrimary(box, G);") > paint.indexOf("mgSuggest()")); }
 
 // ── 建議 5 ──
-{ const run = (rows) => {
+{ let els = null;
+  const run = (rows, keep) => {
     const el = (id) => ({ id, hidden: false, dataset: {}, textContent: "", kids: [], classList: { add() {}, remove() {}, toggle() {} }, focus() { C.focused = id; },
       appendChild(x) { this.kids.push(x); return x; }, querySelector: () => null, querySelectorAll: () => [] });
-    const els = { "ps-scrim": Object.assign(el("ps-scrim"), { hidden: true }), "ps-modal": Object.assign(el("ps-modal"), { querySelector: () => el("head") }), "ps-env": el("ps-env"), "ps-list": el("ps-list"), "ps-cancel": el("ps-cancel"), "ps-ok": el("ps-ok"), "view-ws": el("view-ws") };
+    if (!keep || !els) els = { "ps-scrim": Object.assign(el("ps-scrim"), { hidden: true }), "ps-modal": Object.assign(el("ps-modal"), { querySelector: () => el("head") }), "ps-env": el("ps-env"), "ps-list": el("ps-list"), "ps-cancel": el("ps-cancel"), "ps-ok": el("ps-ok"), "view-ws": el("view-ws") };
+    els["ps-scrim"].hidden = true;
     const S = { env: "cloud", list: [], open: true, view: "po", st: null, just: null };
     var C = { TR: S, TR_BAGS: { cloud: S }, ENV: { cur: "cloud" }, $: (id) => els[id], t: (k) => "«" + k + "»", requestAnimationFrame: (f) => f(), trackFeature() {}, trPickOff: () => false,
       trNames: () => [], trReport: () => ({}), trVenueId: () => null, trPaperTwOk: () => true, trTwBroker: () => false, PAPER: "paper", trPickPrefs: () => ({ order: [], flags: {} }),
@@ -78,6 +94,10 @@ const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags
     const f = await run([{ name: "a", checked: false }]);
     ok("建議 5:有策略 → 「取消／確定」都在(換語言時照 data-i18n 重套的也是「取消」)",
       f.els["ps-ok"].hidden === false && f.els["ps-cancel"].textContent === "«del.cancel»" && f.els["ps-cancel"].dataset.i18n === "del.cancel");
+    // 同一組元件:先空(「確定」藏起來)、裝好策略再開 → 「確定」要回來,不能沿用上一次的 hidden
+    await run([], false); const g = await run([{ name: "a", checked: false }], true);
+    ok("建議 5:同一個框先空後有 → 「確定」重新出現、取消鈕寫回「取消」",
+      g.els["ps-ok"].hidden === false && g.els["ps-cancel"].dataset.i18n === "del.cancel" && g.els["ps-cancel"].textContent === "«del.cancel»", JSON.stringify({ ok: g.els["ps-ok"].hidden, c: g.els["ps-cancel"].textContent }));
   }).catch((e) => ok("建議 5:psOpen 跑得起來", false, e && e.stack)).then(() => {
     console.log(red ? red + " FAILED" : "ALL PASS"); process.exit(red ? 1 : 0);
   });

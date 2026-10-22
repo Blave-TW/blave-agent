@@ -697,15 +697,16 @@ function mgPaint() {
     if (fog) box.appendChild(poFog("opt"));
     else { box.appendChild(mgSuggest()); box.appendChild(mgBacktestSec()); }
   }
-  mgPrimary(box);
+  mgPrimary(box, G);
   trPosFocusBack(box, keep, $("po-h"));
   mgDrawChart();
 }
 /* 一個視窗只有一顆實心鈕(canon › Hierarchy):有新權重可以套用時下一步是「套用金額」,「跑優化」退成框線;
-   套用停用(跟目前金額全等、缺報價…)或還沒有建議時,下一步是「跑優化」。套用的停用條件在 mgSuggestTable 才算完,所以畫完才判 */
-function mgPrimary(box) {
+   套用停用(跟目前金額全等、缺報價…)、還沒有建議、優化正在跑(新權重還在算,手上那份是舊的)或機器版本落後時,下一步不是套用。
+   套用的停用條件在 mgSuggestTable 才算完,所以畫完才判 */
+function mgPrimary(box, G) {
   const opt = box.querySelector(".tb-run"), ap = box.querySelector("#mg-apply");
-  const applyLeads = !!ap && !ap.disabled;
+  const applyLeads = !!ap && !ap.disabled && !G.optBusy && !mgBlocked();
   if (opt) { opt.classList.toggle("btn-fill", !applyLeads); opt.classList.toggle("btn-out", applyLeads); }
   if (ap) { ap.classList.toggle("btn-fill", applyLeads); ap.classList.toggle("btn-out", !applyLeads); }
 }
