@@ -115,6 +115,30 @@ why = V.precheck({}, A, O)
 check(len(why) == 1 and "unreadable" in why[0], "an unreadable list stops them too (unknown is not empty)", why)
 O.fail = None
 
+# classic account: trigger (normal_plan) and trailing (track_plan) orders have their own lists
+A.account_mode = lambda env: "classic"
+PLANS = {"normal_plan": [], "track_plan": [{"orderId": "t9", "symbol": "BTCUSDT", "planType": "track_plan",
+                                            "side": "sell", "size": "0.002"}]}
+asked = []
+
+
+def plan_send(method, path, env, params=None, retries=3):
+    asked.append((path, params.get("planType")))
+    return {"entrustedList": PLANS[params["planType"]] or None}
+
+
+O._send = plan_send
+why = V.precheck({}, A, O)
+check(sorted(t for _, t in asked) == ["normal_plan", "track_plan"] and len(why) == 1
+      and why[0].startswith("open track_plan: BTCUSDT sell 0.002"),
+      "classic: the precheck asks both plan lists; a trailing order alone stops the order steps", why)
+PLANS["track_plan"], asked[:] = [], []
+check(V.precheck({}, A, O) == [] and len(asked) == 2, "classic, both plan lists empty (null): bare")
+O._send = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("HTTP 502"))
+why = V.precheck({}, A, O)
+check(len(why) == 2 and all("unreadable" in w for w in why), "classic: an unreadable plan list stops them too", why)
+del A.account_mode
+
 # ── 2. cleanup: only its own ─────────────────────────────────────────────────
 A.legs = [{"symbol": "NVDAUSDT", "side": "long", "total": 0.08}, {"symbol": "BTCUSDT", "side": "long", "total": 0.01}]
 O.orders = [{"order_id": "1", "client_order_id": V.PREFIX + "rc123", "symbol": "NVDAUSDT"},
@@ -252,7 +276,7 @@ check(V.restore_mode_after_cleanup((set_mode, lambda: mode["m"], "oneway"), lamb
       "…and reports it when the account is still not bare")
 
 # ── emit survives a dead pipe ────────────────────────────────────────────────
-import builtins, io, tempfile  # noqa: E401,E402
+import builtins, glob, io, tempfile  # noqa: E401,E402
 real_print = builtins.print
 
 
@@ -383,7 +407,12 @@ class Bitget:
             return 200, ok([])
         if path == "/api/v2/mix/account/account":
             return 200, ok({"marginCoin": "USDT", "posMode": self.pos_mode, "marginMode": "crossed",
-                            "crossedMarginLeverage": "10"})
+                            "crossedMarginLeverage": getattr(self, "lev", "10")})
+        if path == "/api/v2/mix/account/set-leverage":
+            drift = getattr(self, "drift", 0)
+            self.lev = "20" if drift else q["leverage"]  # drift: Bitget applies something else once
+            self.drift = max(drift - 1, 0)
+            return 200, ok({"crossMarginLeverage": self.lev})
         if path == "/api/v2/mix/account/accounts":
             return 200, ok([{"marginCoin": "USDT", "accountEquity": "30", "available": "30", "unrealizedPL": "0"}])
         if path == "/api/v2/account/all-account-balance":
@@ -523,6 +552,48 @@ check(all(str(p.get("clientOid", "")).startswith(V.PREFIX) for p in BG.posts)
 check("not\"real\\pass" not in log and "not-a-real-secret" not in log and "bg_not_a_real_key" not in log,
       "the log holds no key value (the passphrase's JSON-escaped form included)")
 check("Traceback" not in log and "FAILED" not in log, "no step crashed", [l for l in log.splitlines() if "FAILED" in l][:3])
+# Bitget unreachable from T12's first mode switch on: the cleanup cannot reach it, yet the .env
+# (T9's, with the keys) is gone, the audit and the closing warnings are printed
+BG.__init__()
+BG.down_after_switch = True
+orig_handle = Bitget.handle
+
+
+def flaky(self, method, path, q):
+    if getattr(self, "down", False):
+        raise requests.exceptions.ConnectionError("network is down")
+    out = orig_handle(self, method, path, q)
+    if path == "/api/v2/mix/account/set-position-mode" and getattr(self, "down_after_switch", False):
+        self.down = True
+    return out
+
+
+Bitget.handle = flaky
+before = set(glob.glob(os.path.join(tempfile.gettempdir(), "bitget-live-*")))
+open(os.path.join(envdir, "trade.log"), "w").close()
+code = run_trade(["--only", "T9,T12"])
+log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
+left = [d for d in set(glob.glob(os.path.join(tempfile.gettempdir(), "bitget-live-*"))) - before
+        if os.path.exists(os.path.join(d, ".env"))]
+check(code == 2 and not left, "Bitget down mid-T12: exit 2 and no .env left behind", (code, left))
+check("[audit]" in log and "NOT FLAT" in log and "NOT BACK IN THE ORIGINAL POSITION MODE" in log,
+      "…the audit, NOT FLAT and NOT BACK are all printed",
+      [l[:80] for l in log.splitlines() if l.startswith(("[audit", "NOT"))])
+Bitget.handle = orig_handle
+
+# R10: a leverage that reads back changed is set back and shouted about
+BG.__init__()
+BG.drift = 1
+open(os.path.join(envdir, "trade.log"), "w").close()
+sys.argv = ["live_bitget_verify.py", "--env", envp, "--noop-write", "--only", "R10",
+            "--log", os.path.join(envdir, "trade.log")]
+try:
+    V.main()
+finally:
+    os.chdir(here)
+log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
+check(BG.lev == "10" and "R10 WARNING" in log and "!!! R10" in log and "NOT RESTORED" not in log,
+      "R10: a changed leverage is set back to the original and warned about loudly", BG.lev)
 sys.argv = argv0
 
 print("\n" + ("all ok" if not fails else f"{fails} FAILED"))

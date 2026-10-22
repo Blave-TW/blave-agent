@@ -594,8 +594,22 @@ def main():
                 "symbol": "BTCUSDT", "productType": PRODUCT, "marginCoin": MARGIN, "leverage": str(lev)}))
             after = raw("GET", "/api/v2/mix/account/account",
                         {"symbol": "BTCUSDT", "productType": PRODUCT, "marginCoin": MARGIN})
-            say("R10 leverage before / after", {"before": lev, "after": after.get("crossedMarginLeverage")
-                                                if isinstance(after, dict) else after})
+            now = after.get("crossedMarginLeverage") if isinstance(after, dict) else after
+            say("R10 leverage before / after", {"before": lev, "after": now,
+                                                "isolated before": [cur.get("isolatedLongLever"),
+                                                                    cur.get("isolatedShortLever")],
+                                                "isolated after": [after.get("isolatedLongLever"),
+                                                                   after.get("isolatedShortLever")]
+                                                if isinstance(after, dict) else None})
+            if str(now) != str(lev):
+                say("R10 WARNING — the leverage CHANGED; setting it back", raw(
+                    "POST", "/api/v2/mix/account/set-leverage",
+                    {"symbol": "BTCUSDT", "productType": PRODUCT, "marginCoin": MARGIN, "leverage": str(lev)}))
+                back = raw("GET", "/api/v2/mix/account/account",
+                           {"symbol": "BTCUSDT", "productType": PRODUCT, "marginCoin": MARGIN})
+                back = back.get("crossedMarginLeverage") if isinstance(back, dict) else back
+                emit(f"!!! R10: BTC cross leverage was {lev}, read {now} after the POST, {back} after setting it back"
+                     f"{'' if str(back) == str(lev) else ' — NOT RESTORED: set it in the Bitget app'} !!!")
         else:
             say("R10 skipped — no cross leverage read", cur)
 
@@ -816,32 +830,36 @@ def main():
             fd = os.open(".env", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as fh:
                 fh.write("".join(f"{k}={env[k]}\n" for k in NAMES))
-            prefix_cids(vw)  # the executors' clientOids come from lib.venue_wiring._cid
-            ex._RESIDUAL_USD = 0.001
-            ex._own_only = vw._own_only = lambda: False
-            vw._NON_AUTO = vw._NON_AUTO - {"bitget"}  # not auto-wired until verified: this run only
-            ex._notify_fn = lambda m: say("T9 notify", m)
-            say("T9 venue", vw.detect_venue(vw.read_env()))
-            usd = minimum("NVDAUSDT") * order.get_mark_price(env, "NVDAUSDT")
+            try:  # the .env holds the three key values: gone the moment T9 is done
+                prefix_cids(vw)  # the executors' clientOids come from lib.venue_wiring._cid
+                ex._RESIDUAL_USD = 0.001
+                ex._own_only = vw._own_only = lambda: False
+                vw._NON_AUTO = vw._NON_AUTO - {"bitget"}  # not auto-wired until verified: this run only
+                ex._notify_fn = lambda m: say("T9 notify", m)
+                say("T9 venue", vw.detect_venue(vw.read_env()))
+                usd = minimum("NVDAUSDT") * order.get_mark_price(env, "NVDAUSDT")
 
-            def jsonl_tail(path):
-                try:
-                    return open(path).read().splitlines()[-1]
-                except (OSError, IndexError):
-                    return None
+                def jsonl_tail(path):
+                    try:
+                        return open(path).read().splitlines()[-1]
+                    except (OSError, IndexError):
+                        return None
 
-            for tag, signed, reduce_only in (("chase open", usd, False), ("chase close", -usd, True)):
-                ex._chase_thread("NVDAUSDT", signed, None, reduce_only, "bitget", [],
-                                 vw.auto_limit_toolkit("NVDAUSDT", reduce_only), threading.Event())
-                say(f"T9 {tag} orders.jsonl", jsonl_tail("manager/orders.jsonl"))
-                say(f"T9 {tag} legs", legs("NVDAUSDT"))
-                say(f"T9 {tag} open orders (want [])", order.get_open_orders(env, "NVDAUSDT"))
-            for tag, signed, reduce_only in (("twap open", usd, False), ("twap close", -usd, True)):
-                ex._twap_thread("NVDAUSDT", signed, None, reduce_only, "bitget", [], 1, 1, threading.Event())
-                say(f"T9 {tag} orders.jsonl", jsonl_tail("manager/orders.jsonl"))
-                twap = sorted(os.listdir("manager/twap")) if os.path.isdir("manager/twap") else []
-                say(f"T9 {tag} twap summary", [jsonl_tail(os.path.join("manager/twap", f)) for f in twap])
-                say(f"T9 {tag} legs", legs("NVDAUSDT"))
+                for tag, signed, reduce_only in (("chase open", usd, False), ("chase close", -usd, True)):
+                    ex._chase_thread("NVDAUSDT", signed, None, reduce_only, "bitget", [],
+                                     vw.auto_limit_toolkit("NVDAUSDT", reduce_only), threading.Event())
+                    say(f"T9 {tag} orders.jsonl", jsonl_tail("manager/orders.jsonl"))
+                    say(f"T9 {tag} legs", legs("NVDAUSDT"))
+                    say(f"T9 {tag} open orders (want [])", order.get_open_orders(env, "NVDAUSDT"))
+                for tag, signed, reduce_only in (("twap open", usd, False), ("twap close", -usd, True)):
+                    ex._twap_thread("NVDAUSDT", signed, None, reduce_only, "bitget", [], 1, 1, threading.Event())
+                    say(f"T9 {tag} orders.jsonl", jsonl_tail("manager/orders.jsonl"))
+                    twap = sorted(os.listdir("manager/twap")) if os.path.isdir("manager/twap") else []
+                    say(f"T9 {tag} twap summary", [jsonl_tail(os.path.join("manager/twap", f)) for f in twap])
+                    say(f"T9 {tag} legs", legs("NVDAUSDT"))
+            finally:
+                if os.path.exists(".env"):
+                    os.remove(".env")
         if want("T10"):
             touched.add("NVDAUSDT")
             q = minimum("NVDAUSDT")
@@ -959,13 +977,30 @@ def main():
     finally:
         shield_signals()
         emit("cleaning up — do not press Ctrl-C again or close this window; wait for the last line")
-        unclean = cleanup(env, acct, order, touched, own_ids, say, max_qty, min_qty)
-        if not restore_mode_after_cleanup(t12_retry, lambda: not precheck(env, acct, order), say):
-            emit(f"NOT BACK IN THE ORIGINAL POSITION MODE ({t12_retry[2]}) — set it in the Bitget app")
+        # every step below is guarded: an offline Bitget must not skip the .env removal, the
+        # audit or the closing warnings
+        try:
+            unclean = cleanup(env, acct, order, touched, own_ids, say, max_qty, min_qty)
+        except Exception as e:
+            say("CLEANUP FAILED — check every symbol in the Bitget app", str(e))
+            unclean = sorted(touched) or ["cleanup"]
+        try:
+            restored = restore_mode_after_cleanup(t12_retry, lambda: not precheck(env, acct, order), say)
+        except Exception as e:
+            say("T12 switch back FAILED", str(e))
+            restored = False
+        if not restored:
+            emit(f"NOT BACK IN THE ORIGINAL POSITION MODE ({(t12_retry or ('', '', '?'))[2]}) — set it in the Bitget app")
             unclean.append("position mode")
-        if os.path.exists(".env"):
-            os.remove(".env")
-        say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")
+        try:
+            if os.path.exists(".env"):
+                os.remove(".env")
+        except OSError as e:
+            emit(f"could not remove {os.path.abspath('.env')} ({e}) — delete it by hand, it holds the key")
+        try:
+            say("audit", open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else "none")
+        except OSError as e:
+            say("audit unreadable", str(e))
         if unclean:
             emit(f"NOT FLAT: {', '.join(unclean)} — close in the Bitget app now")
             sys.exit(2)
