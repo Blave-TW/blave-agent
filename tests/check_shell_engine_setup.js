@@ -117,7 +117,8 @@ function rig(o = {}) {
     fs, path, spawn, base, ws, venvPy, venvBin: "bin", win: false, basePython: () => "/bundled/python3", envPath: o.envPath || (async () => "/usr/bin:/bin"),
     pyEnv: { PYTHONUTF8: "1" }, copyOfficial: () => { fs.mkdirSync(path.join(ws, "lib"), { recursive: true }); }, isPackaged: true,
     sdkPins: o.sdk || SDK, deps: o.deps || DEPS, lock: o.lock, optional: o.optional || OPT, firstRunMB: 200, venvMs: 300000, engineMs: 600000, pkgMs: o.pkgMs || 600000,
-    idleMs: o.idleMs, watchMs: 5, alive: o.alive, sleep: o.sleep, lockWaitMs: o.lockWaitMs, setPriority: (pid) => prio.push(pid),
+    // 假子行程的 pid(5000+n)可能撞到本機真的行程:探針預設當它死了,否則 waitLock 在假時鐘下永遠等不完
+    idleMs: o.idleMs, watchMs: 5, alive: o.alive || (() => false), sleep: o.sleep, lockWaitMs: o.lockWaitMs, setPriority: (pid) => prio.push(pid),
     groupMB: o.groupMB === undefined ? { core: 100, us: 10 } : o.groupMB, pipCacheDir: o.pipCacheDir, procStart: o.procStart, killPid: o.killPid,
     now: o.realNow ? Date.now : () => clock, onChange: (s) => snaps.push(s), log: (m) => logs.push(m), track: (ev, p) => tracked.push(ev + ":" + p.result),
   });
