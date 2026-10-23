@@ -94,10 +94,11 @@ OVER_CLOSE = "40804"
 UNKNOWN_SYMBOL = "40034"  # "Parameter NOPEUSDT does not exist" — public contracts, measured 2026-10-20
 # order gone / never existed — replies ccxt records; T7 of the live script measures them
 _CANCEL_GONE = {"40768", "43001", "40109"}  # classic cancel: 43001 measured live (R9, 2026-10-22)
-# UTA order-info: the ONLY answers that mean "no such order" — 40109 (ccxt-recorded, the
-# v2 not-found), ORDER_ABSENT (success with no order in it). R9U measures the v3 code.
+# UTA order-info: the ONLY answers that mean "no such order" — 25204 (measured R9
+# 2026-10-23, cancel-order answers it too), 40109 (ccxt-recorded, the v2 not-found),
+# ORDER_ABSENT (success with no order in it)
 ORDER_ABSENT = "order_absent"
-_V3_ORDER_GONE = {"40109", ORDER_ABSENT}
+_V3_ORDER_GONE = {"25204", "40109", ORDER_ABSENT}
 _PLAN_GONE = {"43025"}
 UNVERIFIED = acct.UNVERIFIED
 # the order may have landed — query by clientOid (UTA Place-Order doc names the first three);
@@ -661,9 +662,10 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
 
 
 def _cancel_v3(env, symbol, order_id, client_order_id):
-    """UTA cancel: orderId | clientOid + category (no symbol on this endpoint). The v3 code
-    for an order that is gone is not measured yet (R9U): a refused cancel is answered by
-    reading the order — terminal or unknown to Bitget → order_not_found; still open → raise."""
+    """UTA cancel: orderId | clientOid + category (no symbol on this endpoint). A refused
+    cancel (25204 for an unknown id, measured R9) is answered by reading the order — the
+    code alone does not say a filled order from a missing one: terminal or unknown to
+    Bitget → order_not_found; still open → raise."""
     body = {"category": CATEGORY}
     body.update({"orderId": str(order_id)} if order_id else {"clientOid": client_order_id})
     try:
@@ -932,7 +934,7 @@ def cancel_algo_order(env, symbol, order_id, plan_type=None):
 
 def _cancel_strategy_v3(env, symbol, order_id):
     """UTA: cancel-strategy-order answers data null; whether it worked is read back off
-    the pending list (the v3 "gone" code is not measured yet — R9U)."""
+    the pending list (an unknown id answers 25575, measured R9 — the list stays the judge)."""
     try:
         _request("POST", "/api/v3/trade/cancel-strategy-order", env, {"orderId": str(order_id)})
         err = None

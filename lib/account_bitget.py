@@ -574,8 +574,11 @@ def uta_position_rows(env, symbol=None):
     if symbol:
         q["symbol"] = symbol
     data = _get(env, "/api/v3/position/current-position", q)
-    # flat is {"list": []}; any other shape raises — never read as flat
-    rows = data.get("list") if isinstance(data, dict) else None
+    # flat is {"list": null} (measured 2026-10-23) or {"list": []}; any other shape
+    # (no data, no list key, a non-list) raises — never read as flat
+    if not isinstance(data, dict) or "list" not in data:
+        raise BitgetError(f"bitget current-position: expected data.list, got {str(data)[:120]}")
+    rows = [] if data["list"] is None else data["list"]
     if not isinstance(rows, list):
         raise BitgetError(f"bitget current-position: expected data.list, got {str(data)[:120]}")
     return rows

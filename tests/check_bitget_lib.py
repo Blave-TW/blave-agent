@@ -836,6 +836,13 @@ check([(x["asset"], x["wallet"]) for x in h] == [("BTC", "unified"), ("BGB", "fu
       "UTA holdings: the unified non-USDT coins + the funding account (the unified USDT is the equity, not listed)", h)
 route("GET", "/api/v3/account/assets", lambda p: ok({"accountEquity": "0", "assets": []}))
 check(acct.get_equity(ENV)["equity"] == 0.0, "UTA: no USDT asset = equity 0, not an error")
+for bad in (None, {"assets": None}, {"assets": "x"}, []):
+    route("GET", "/api/v3/account/assets", lambda p, bad=bad: ok(bad))
+    try:
+        acct.get_equity(ENV)
+        check(False, f"an assets reply {bad!r} raises")
+    except acct.BitgetError:
+        check(True, f"UTA assets reply {bad!r} raises")
 route("GET", "/api/v3/account/assets", lambda p: ok(ASSETS))
 check(acct.get_account_id(ENV) == "5151", "UTA get_account_id = the settings' uid")
 
@@ -846,12 +853,16 @@ check([(p["symbol"], p["side"], p["size"], p["mark_price"]) for p in pos]
       == [("ACNUSDT", "long", 0.03, 250.2), ("NVDAUSDT", "short", 0.02, 182.0)]
       and pos[0]["entry_price"] == 180.0 and pos[0]["unrealized_pnl"] == 0.06 and pos[0]["margin"] == 5.4,
       "UTA positions: posSide / total / markPrice / avgPrice / unrealisedPnl, canonical names", pos)
-route("GET", "/api/v3/position/current-position", lambda p: ok(None))
-try:
-    acct.get_positions(ENV)
-    check(False, "a positions reply without data.list raises")
-except acct.BitgetError:
-    check(True, "UTA positions without data.list raise — never read as flat")
+route("GET", "/api/v3/position/current-position", lambda p: ok({"list": None}))
+check(acct.get_positions(ENV) == [] and acct.uta_position_rows(ENV, "NVDAUSDT") == [],
+      "UTA flat account: data.list null (measured on a real UTA) reads as no positions")
+for bad in (None, {}, {"list": "x"}, []):
+    route("GET", "/api/v3/position/current-position", lambda p, bad=bad: ok(bad))
+    try:
+        acct.get_positions(ENV)
+        check(False, f"a positions reply {bad!r} raises")
+    except acct.BitgetError:
+        check(True, f"UTA positions reply {bad!r} raises — never read as flat")
 route("GET", "/api/v3/position/current-position",
       lambda p: ok({"list": [x for x in UPOS if not p.get("symbol") or x["symbol"] == p["symbol"]]}))
 UPOS[:] = [upos("NVDAUSDT", "long", "0.02", mark="0")]
@@ -1083,6 +1094,9 @@ for label, reply in (("rate-limited", err("429", "Too Many Requests", 429)),
 route("GET", "/api/v3/trade/order-info", lambda p: ok(None))
 check(order.cancel_order(ENV, "NVDAUSDT", order_id=res["order_id"])["status"] == "order_not_found",
       "UTA: a refused cancel whose read-back answers success with no order → order_not_found")
+route("GET", "/api/v3/trade/order-info", lambda p: err("25204", "Order does not exist"))
+check(order.cancel_order(ENV, "NVDAUSDT", order_id="1")["status"] == "order_not_found",
+      "UTA: cancel and read-back both 25204 (measured R9) → order_not_found")
 route("GET", "/api/v3/trade/order-info", uinfo)
 UORD[res["order_id"]]["orderStatus"] = "live"
 try:
@@ -1097,6 +1111,8 @@ route("GET", "/api/v3/trade/unfilled-orders", lambda p: ok({"list": [
 oo = order.get_open_orders(ENV)
 check(oo[0]["symbol"] == "ACNUSDT" and oo[0]["reduce_only"] and oo[0]["qty"] == 0.03 and oo[0]["client_order_id"] == "rc2",
       "UTA open orders: data.list, canonical symbol, a sell on posSide long counts as reduce", oo)
+route("GET", "/api/v3/trade/unfilled-orders", lambda p: ok({"list": None, "cursor": None}))
+check(order.get_open_orders(ENV) == [], "UTA open orders: data.list null = none")
 
 # ── protective (tpsl strategy orders) ────────────────────────────────────────
 STRAT = {}
@@ -1116,12 +1132,14 @@ def ustrat_list(p):
 
 def ustrat_cancel(p):
     if p["orderId"] not in STRAT:
-        return err("25205", "strategy order does not exist")
+        return err("25575", "Failed to stop the strategy because the corresponding strategy ID could not be found")
     STRAT.pop(p["orderId"])
     return ok(None)
 
 
 route("POST", "/api/v3/trade/place-strategy-order", ustrat)
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": None, "cursor": None}))
+check(order.get_open_algo_orders(ENV) == [], "UTA strategy orders: data.list null = none")
 route("GET", "/api/v3/trade/unfilled-strategy-orders", ustrat_list)
 route("POST", "/api/v3/trade/cancel-strategy-order", ustrat_cancel)
 del CALLS[:]

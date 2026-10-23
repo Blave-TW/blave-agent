@@ -625,6 +625,7 @@ def main():
         say("R9 UTA cancel a nonexistent TP/SL", raw("POST", "/api/v3/trade/cancel-strategy-order", {"orderId": "1"}))
         say("R9 UTA order-info of a nonexistent order", raw("GET", "/api/v3/trade/order-info", {"orderId": "1"}))
         say("R9 lib cancel_order on it (want order_not_found)", order.cancel_order(env, "BTCUSDT", order_id="1"))
+        say("R9 lib cancel_algo_order on it (want order_not_found)", order.cancel_algo_order(env, "BTCUSDT", "1"))
     if a.noop_write and want("R9") and not uta:
         say("R9 cancel a nonexistent order (want a 'does not exist' code; 40009 = POST signature wrong)",
             raw("POST", "/api/v2/mix/order/cancel-order",
