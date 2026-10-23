@@ -291,12 +291,16 @@ if (!process.versions.electron) {
       && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");
     ok("② 起手句的列:button.st-row[data-starter]、送出 icon(SEND_ROW_IC)aria-hidden、tag + 句子 + 起始年;送出照 suggest 的寫法(submitMessage 回 true 才記 starter_<mk> 與 pending);回合中是鎖(aria-disabled,點了在輸入框上方講原因;busy-lock spec)",
       /wdEl\("button", "st-row"\); b\.type = "button"; b\.dataset\.starter = mk; busyLock\(b, runningNow\(\)\);/.test(cutFn(src, "stPaint")) && /if \(runningNow\(\)\) \{ busySendTell\(\); return; \}/.test(cutFn(src, "stGo")) && /g\.setAttribute\("aria-hidden", "true"\); g\.innerHTML = SEND_ROW_IC;/.test(cutFn(src, "stPaint"))
-      && /submitMessage\(text\)\.then\(\(ok\) => \{ if \(ok\) \{ trackFeature\(ST_FEATURE\[mk\]\); ST\.pending = \{ before \}; \} \}\);/.test(cutFn(src, "stGo")) && /busyLock\(b, runningNow\(\)\)/.test(cutFn(src, "stSync")));
+      && /submitMessage\(text\)\.then\(\(ok\) => \{ if \(ok\) \{ trackFeature\(ST_FEATURE\[mk\]\); ST\.pending = \{ before, env \}; \} \}\);/.test(cutFn(src, "stGo")) && /busyLock\(b, runningNow\(\)\)/.test(cutFn(src, "stSync")));
     // stTurnEnd:原文接假的 RP / trackFeature 跑
     const turn = (before, after, pending) => { const tf = [], C = { RP: { list: after.map((name) => ({ name })) }, trackFeature: (n) => tf.push(n), ST: { pending: pending ? { before: new Set(before) } : null } };
       vm.createContext(C); vm.runInContext(cutFn(src, "stTurnEnd") + "\nstTurnEnd(); stTurnEnd();", C); return tf.join(); };
     ok("② stTurnEnd:起手句那一輪結束、清單多了一支 → starter_new;沒多(含停止、出錯、只是改名以外的動)→ starter_no_new;只算一次;沒送過起手句不記",
       turn(["a"], ["a", "b"], true) === "starter_new" && turn(["a"], ["a"], true) === "starter_no_new" && turn([], [], true) === "starter_no_new" && turn(["a", "b"], ["a"], true) === "starter_no_new" && turn([], ["x"], false) === "");
+    // 0.1.30 雲端歡迎頁:在雲端送的起手句比雲端那份清單(本機清單多了一支不算)
+    { const tf = [], C = { RP: { list: [{ name: "a" }, { name: "local_new" }] }, TR_BAGS: { cloud: { list: [{ name: "a" }, { name: "cloud_new" }] } }, trackFeature: (n) => tf.push(n), ST: { pending: { before: new Set(["a", "local_new"]), env: "cloud" } } };
+      vm.createContext(C); vm.runInContext(cutFn(src, "stTurnEnd") + "\nstTurnEnd();", C);
+      ok("② stTurnEnd 雲端:比的是送出時那一邊(雲端)的清單", tf.join() === "starter_new", tf.join()); }
     ok("② app.js 接線:stratRefresh 畫完清單設 RP.loaded 再叫 wcSync(不閃:#wc / #wf 在那之前一直 hidden,由 onbPaint 決定出哪一個);送出／unlock／回合結束三排都叫 stSync;回合結束在 libTurnEnd 那條 then 裡、排在最前面叫 stTurnEnd(清單重讀完才比;後面任一支拋例外 pending 也不會漏到下一輪,稽核 B3);enterWorkspace 叫 wcArm(3 秒保底從進工作頁起算,稽核 B1)",
       /RP\.loaded = true; if \(typeof wcSync === "function"\) wcSync\(\);/.test(cutFn(appSrc, "stratRefresh")) && (appSrc.match(/if \(typeof nsSync === "function"\) nsSync\(\); if \(typeof stSync === "function"\) stSync\(\);/g) || []).length === 3
       && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof stTurnEnd === "function"\) stTurnEnd\(\); if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc)
@@ -304,7 +308,7 @@ if (!process.versions.electron) {
       && /function wcSync\(\) \{\n  if \(!WC\.shown\) WC\.shown = true;\n  onbPaint\(\);\n\}/.test(src));
     // 新策略開新對話(Wei):這條對話講過話(csTitle)就先 csStartNew,送出與只填不送兩條都一樣;聊天欄收著先展開;只填不送時補回預檢卡
     { const run = (title, fill) => { const log = [], C = { csTitle: title, sessionId: "old", RP: { list: [] }, WD: {}, ST: {}, ST_FEATURE: { crypto: "starter_crypto" }, hasToken: true, cur: "blave", acct: { can_run: !fill },
-          paneSt: { chat: { off: true } }, paneToggle: () => log.push("pane"), runningNow: () => false, wdPaint: () => {}, t: (k) => k, stFill: (c) => c.canRun === false,
+          paneSt: { chat: { off: true } }, paneToggle: () => log.push("pane"), runningNow: () => false, onbEnv: () => "local", wdPaint: () => {}, t: (k) => k, stFill: (c) => c.canRun === false,
           csStartNew: () => { log.push("new"); C.sessionId = "new"; C.csTitle = ""; }, wdFillText: (x) => log.push("fill:" + C.sessionId), trackFeature: () => {}, acctPrecheck: () => log.push("precheck"),
           submitMessage: (x) => { log.push("send:" + C.sessionId); return Promise.resolve(false); } };
         vm.createContext(C); vm.runInContext(cutFn(src, "stGo"), C); C.stGo("crypto"); return { log: log.join(), sid: C.sessionId }; };

@@ -2204,7 +2204,11 @@ msgid "tr.ov.rangeAll"
 msgstr "全部"
 
 msgid "tr.ov.empty"
-msgstr "還沒有權益紀錄。每個整點記一筆：這台電腦要 Blave 開著，雲端主機要在運作中；關著或停機的時段不會有紀錄。"
+msgstr "還沒有權益快照。連上交易所後，Blave 開著時每個整點記一筆。"
+
+# 雲端視角的權益空狀態(trade.js trPaintOver);本機那句要 Blave 開著,雲端是主機自己記
+msgid "tr.ov.emptyCloud"
+msgstr "還沒有權益快照。連上交易所後，主機每個整點記一筆。"
 
 msgid "tr.ov.emptyBaseline"
 msgstr "紀錄還不夠畫出曲線，要兩筆。每個整點記一筆：這台電腦要 Blave 開著，雲端主機要在運作中；關著或停機的時段不會有紀錄。"
@@ -3392,9 +3396,6 @@ msgstr "雲端的狀態不是最新的，現在儲存可能蓋掉別處剛改的
 
 msgid "tr.stopAfterStart"
 msgstr "啟動可能已經生效，已下單的部位暫停後會留著。"
-
-msgid "tr.stopAfterStartFlat"
-msgstr "要一起平掉，選「暫停並關閉部位」。"
 
 msgid "tr.startingHint"
 msgstr "啟動指令還在路上。要停，按「暫停下單」。"
@@ -5926,7 +5927,7 @@ msgid "xp.off.nosignal"
 msgstr "只能轉出有回測的策略"
 
 msgid "xp.why.tm"
-msgstr "正在看 {v}。轉出只做目前這一版。"
+msgstr "轉出只做目前這一版。"
 
 msgid "xp.cf.title.xq"
 msgstr "轉出 XQ（XS）版"
@@ -7953,7 +7954,7 @@ msgid "mg.legendWeights"
 msgstr "權重佔比"
 
 msgid "mg.lookbackRange"
-msgstr "lookback 需為 10–5000 的整數"
+msgstr "回看天數需為 10–5000 的整數"
 
 msgid "mg.methodTitle"
 msgstr "管理方法"
@@ -7973,9 +7974,9 @@ msgstr "優化失敗：{e}"
 msgid "mg.optRun"
 msgstr "跑優化"
 
-# 優化分頁:機器上的權重是別的方法算的(portfolio.js mgPropOtherAlloc,同網頁 workspace_mg_prop_other_alloc)
+# 優化分頁「套用金額」停用的原因:手上那份權重是別的方法算的,表照畫(portfolio.js mgSuggestTable;C 案)
 msgid "mg.propOtherAlloc"
-msgstr "這份權重是用「{method}」算的，按「跑優化」重算。"
+msgstr "這份是「{method}」算的"
 
 msgid "mg.optRunning"
 msgstr "優化中…"
@@ -8012,7 +8013,7 @@ msgid "mg.secBt"
 msgstr "移動窗格回測"
 
 msgid "mg.short"
-msgstr "資料不足：歷史 {n} 天 ≤ lookback {l} 天，還缺 {d} 天；回測已停用"
+msgstr "資料不足：歷史 {n} 天 ≤ 回看 {l} 天，還缺 {d} 天。回測已停用。"
 
 msgid "mg.shortDismiss"
 msgstr "先不跑"
@@ -8021,7 +8022,7 @@ msgid "mg.shortRun"
 msgstr "改跑 {n} 天"
 
 msgid "mg.shortTip"
-msgstr "歷史 {n} 天 ≤ lookback {l} 天，無法回測"
+msgstr "歷史 {n} 天 ≤ 回看 {l} 天，無法回測"
 
 msgid "mg.single"
 msgstr "僅 {n} 檔策略，無法對比隨機組合；回測已停用"
@@ -8039,7 +8040,7 @@ msgid "mg.sharpe"
 msgstr "最佳化 Sharpe"
 
 msgid "mg.sharpeDesc"
-msgstr "讓組合的 Sharpe 最高，不放空、權重加總 100%；期間內沒有任何一檔賺錢時改用等權"
+msgstr "讓組合的 Sharpe 最高，不放空、權重加總 100%。期間內沒有一檔賺錢時改用等權。"
 
 msgid "mg.stratEmpty"
 msgstr "主機上還沒有回測完成的策略"
@@ -8061,6 +8062,10 @@ msgstr "主機沒有回應，稍後再試"
 
 msgid "mg.totalReturn"
 msgstr "總報酬"
+
+# 方法框的 lookback 參數(portfolio.js mgMethodFields);自訂方法的其他參數照程式裡的名字
+msgid "mg.paramLookback"
+msgstr "回看"
 
 msgid "mg.unitDays"
 msgstr "天"
@@ -8601,12 +8606,9 @@ msgstr "{step}，已完成"
 msgid "onb.fin"
 msgstr "都設好了"
 
-# 設定 › 一般:清掉「已進完成後首頁」,回歡迎頁看步驟。列名也是步驟清單的讀屏名
+# 歡迎頁步驟清單的讀屏名(index.html #onb-steps)
 msgid "set.onb"
 msgstr "入門步驟"
-
-msgid "set.onb.replay"
-msgstr "重看"
 
 # 連接框(spec §7-4、7-5):標題與霧上的鈕同一句;兩個大選項預設模擬
 msgid "cx.title"

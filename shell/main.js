@@ -2787,14 +2787,15 @@ function themeSet(v) {
   return v;
 }
 /* 入門步驟(歡迎頁 onboarding;renderer/welcome.js;IPC welcome-prefs):「已進完成後首頁」旗標,只存這台電腦的 ui-prefs、不上傳。
-   形狀不對當沒設:done 只收 true(0.1.28 存的 onbMkt 市場題已退役,留在檔裡不讀) */
+   兩個視角分開:done = 這台電腦、cloudDone = 雲端(0.1.30)。形狀不對當沒設:只收 true(0.1.28 存的 onbMkt 市場題已退役,留在檔裡不讀) */
 function onbPrefsGet() {
   let o = {}; try { o = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")) || {}; } catch (_) { o = {}; }
-  return { done: o.onbDone === true };
+  return { done: o.onbDone === true, cloudDone: o.onbCloudDone === true };
 }
 function onbPrefsSet(patch) {
   const p = patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {}, w = {};
   if ("done" in p) w.onbDone = p.done === true;
+  if ("cloudDone" in p) w.onbCloudDone = p.cloudDone === true;
   if (Object.keys(w).length) try { uiPrefsPatch(w); } catch (_) { /* 寫不進去:這一次只在畫面上 */ }
   return onbPrefsGet();
 }
@@ -3520,8 +3521,8 @@ app.whenReady().then(() => {
   handle("keep-awake-set", (_e, on) => keepAwakeSet(on === true), null);
   handle("theme", () => themeGet(), "system");
   handle("theme-set", (_e, v) => themeSet(v), null);
-  handle("welcome-prefs", () => onbPrefsGet(), { done: false });
-  handle("welcome-prefs-set", (_e, p) => onbPrefsSet(p), { done: false });
+  handle("welcome-prefs", () => onbPrefsGet(), { done: false, cloudDone: false });
+  handle("welcome-prefs-set", (_e, p) => onbPrefsSet(p), { done: false, cloudDone: false });
   handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
   handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);

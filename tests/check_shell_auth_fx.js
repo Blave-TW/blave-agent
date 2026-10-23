@@ -38,7 +38,7 @@ ok("用的是上次存下的匯率時,優化表下講是哪一天的(≈);字串
     revFx === "mg.applyWhyLogin" && okFx === "mg.applyWhyFx" && why(quoteRow, true, true) === "mg.applyWhyQuote" && why({ rows: [], eff: null }, false, true) === "mg.applyWhySize"
     && why({ rows: [], eff: 100 }, false, false) === "mg.applyWhySame" && (ctx.mgSameAsAmounts = () => false, why(fxRow, true, true)) === "mg.applyDiffSet", J([revFx, okFx]));
   ok("原因寫在鈕旁那一格(每次停用條件重算時一起寫);字串兩語",
-    /if \(whyEl\) whyEl\.textContent = ap\.disabled \? t\(mgApplyWhy\(d, quoteMissing, changed\)\) : "";/.test(pf)
+    /if \(whyEl\) whyEl\.textContent = other \? t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\) : ap\.disabled \? t\(mgApplyWhy\(d, quoteMissing, changed\)\) : "";/.test(pf)
     && S.includes('"mg.applyWhyLogin": "需要登入 Blave 才拿得到台幣匯率，台指期口數換算不出來"') && /"mg\.applyWhyLogin": "Sign in to Blave/.test(S)); }
 
 // ② 登入狀態單一來源

@@ -336,7 +336,7 @@ function libIdeaPaint() {
 /* ── 開 / 關 ──────────────────────────────────────────── */
 async function libOpen() {
   const B = libBag();
-  if (typeof trLeave === "function") trLeave();
+  if (typeof trLeave === "function") trLeave(libEnv());
   if (typeof rptLeave === "function") rptLeave();   // 報告與策略庫互斥(renderer/reports.js)
   if (libEnv() === "local") { if (typeof stratSelect === "function") await stratSelect(null); }
   else if (typeof rpCloudSelect === "function") await rpCloudSelect(null);

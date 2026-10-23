@@ -48,10 +48,10 @@ const entry = (src, anchor, env) => {
     entry(libSrc, 'g("lib-nav")', env(false)) === "open" && entry(libSrc, 'g("lib-nav")', env(true)) === "reclick,leave:undefined", [entry(libSrc, 'g("lib-nav")', env(false)), entry(libSrc, 'g("lib-nav")', env(true))]);
 }
 {
-  const env = (cur, current) => (log) => ({ ENV: { cur }, $: () => ({ hasAttribute: (a) => a === "aria-current" && current }), trOpen: () => log.push("open"), trLeave: () => log.push("leave") });
+  const env = (cur, current) => (log) => ({ ENV: { cur }, $: () => ({ hasAttribute: (a) => a === "aria-current" && current }), trOpen: () => log.push("open"), trLeave: (e) => log.push("leave:" + e) });
   const r = [entry(trSrc, '$("tr-nav")', env("local", false)), entry(trSrc, '$("tr-nav")', env("local", true)), entry(trSrc, '$("tr-nav")', env("cloud", true)), entry(trSrc, '$("tr-nav")', env("cloud", false))];
-  ok("② 自動下單:沒選中 → trOpen;這台電腦選中 → sideReclick(trLeave);雲端選中(它就是雲端的預設頁)→ sideReclick 但 leave 仍是 trOpen,不去收這台電腦那一袋",
-    r.join("|") === "open|reclick,leave|reclick,open|open", r);
+  ok("② 自動下單:沒選中 → trOpen;選中 → sideReclick(trLeave(那一邊)):收的是現在這一邊那一袋,落回那一邊的歡迎頁(0.1.30 雲端也有歡迎頁)",
+    r.join("|") === "open|reclick,leave:local|reclick,leave:cloud|open", r);
 }
 {
   const env = (sel) => (log) => ({ x: { name: "a" }, RP: { name: sel }, stratSelect: (n) => log.push("select:" + n) });

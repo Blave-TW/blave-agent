@@ -18,16 +18,25 @@ const pp = block(psrc, "/* ── 純邏輯(", "/* ── 純邏輯到此");
 ok("portfolio.js 的純邏輯區塊不碰 DOM", !/\bdocument\b|\$\(|window\./.test(pp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
 const P = {}; vm.runInNewContext(pp.replace(/^const /gm, "var ") + "\nthis.out = { mgSameSel, mgShortDaysOf, mgFitParams, mgWeightPct, mpsSizingClean, mpsSeriesOf, mpsMddAt, mpsSolveLev, mpsLevFor, mgErrLine, mpsChipParts, mgBeatsOf, mpsFundAs, mpsSizingPin, mpsTargetOf, mgLotsOver, mgSharpeText, mgPctText };", P);
 const F = P.out;
+// 0.1.30 文案:優化頁不出英文參數名與「Max DD」;暫停框開頭句不再叫人去選「暫停並關閉部位」(設計稽核 S3)
+{ const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"), S = (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")");
+  ok("優化頁:Sharpe／最大回撤用回測頁那組標籤(同網頁);方法框 lookback → 回看、錯誤句「回看天數」;資料不足句不出英文;自訂方法的參數名照舊 mono",
+    S.zh["mg.paramLookback"] === "回看" && /^回看天數/.test(S.zh["mg.lookbackRange"]) && !("mg.maxDd" in S.zh)
+    && ["mg.lookbackRange", "mg.short", "mg.shortTip"].every((k) => !/lookback/.test(S.zh[k]) && /回看/.test(S.zh[k]))
+    && /k === "lookback" \? trEl\("label", "", t\("mg\.paramLookback"\)\) : trEl\("label", "mono", k\)/.test(cutF(psrc, "mgMethodFields")) && !/"Max DD"|stat\("Sharpe"/.test(psrc));
+  ok("時光機原因句只留「轉出只做目前這一版。」(S2,同網頁):不重講橫幅已經寫的「正在看 vN」", S.zh["xp.why.tm"] === "轉出只做目前這一版。" && !/\{v\}/.test(S.en["xp.why.tm"]));
+  ok("暫停框開頭句只講啟動可能已生效(S3):tr.stopAfterStartFlat 拿掉",
+    !("tr.stopAfterStartFlat" in S.zh) && !("tr.stopAfterStartFlat" in S.en) && /function trStopAfterStartLead\(\) \{/.test(src) && !/stopAfterStartFlat/.test(src)); }
 ok("移動窗格回測各指標的贏過:三個欄位各自取整;舊 workspace 只有 Sharpe 時另兩格不畫",
   J(F.mgBeatsOf({ managed_beats_pct_total_return: 61.4, managed_beats_pct_sharpe: 85.5, managed_beats_pct_max_drawdown: 12 })) === J({ ret: "61%", sharpe: "86%", mdd: "12%" })
   && J(F.mgBeatsOf({ managed_beats_pct_sharpe: 85 })) === J({ ret: null, sharpe: "85%", mdd: null }) && J(F.mgBeatsOf({})) === J({ ret: null, sharpe: null, mdd: null }));
 ok("稽核 0127b1 P2-28／v027-integ2 P3-3:三格的 Sharpe 負值用 U+2212、先取整再判正負(-0.004 寫 0.00,不寫 −0.00);壞值 null",
   F.mgSharpeText(-0.5) === "\u22120.50" && F.mgSharpeText(-0.004) === "0.00" && F.mgSharpeText(-0.005) === "\u22120.01" && F.mgSharpeText(0) === "0.00" && F.mgSharpeText(1.234) === "1.23"
-  && F.mgSharpeText(NaN) === null && F.mgSharpeText(null) === null && /stat\("Sharpe", mgSharpeText\(man\.sharpe\)/.test(psrc));
+  && F.mgSharpeText(NaN) === null && F.mgSharpeText(null) === null && /stat\(t\("bt\.sharpe"\), mgSharpeText\(man\.sharpe\)/.test(psrc));
 ok("報酬／Max DD 的百分比先取到兩位再判正負與上色:±0.004 寫 0.00%、v 0(不上色);壞值 null;三格都走 mgPctText",
   J([F.mgPctText(0.004), F.mgPctText(-0.004), F.mgPctText(-1.5), F.mgPctText(2), F.mgPctText(0.005)]) === J([{ s: "0.00%", v: 0 }, { s: "0.00%", v: 0 }, { s: "\u22121.50%", v: -1.5 }, { s: "+2.00%", v: 2 }, { s: "+0.01%", v: 0.01 }])
   && F.mgPctText(NaN) === null && F.mgPctText(undefined) === null
-  && /stat\(t\("mg\.totalReturn"\), tr0 && tr0\.s, !tr0 \? "" : tr0\.v > 0 \? "buy" : tr0\.v < 0 \? "sell"/.test(psrc) && /stat\("Max DD", dd && dd\.s, dd && dd\.v < 0 \? "sell"/.test(psrc)
+  && /stat\(t\("mg\.totalReturn"\), tr0 && tr0\.s, !tr0 \? "" : tr0\.v > 0 \? "buy" : tr0\.v < 0 \? "sell"/.test(psrc) && /stat\(t\("bt\.maxDrawdown"\), dd && dd\.s, dd && dd\.v < 0 \? "sell"/.test(psrc)
   && /mgPctText\(man\["total_return_%"\]\), dd = mgPctText\(man\["max_drawdown_%"\]\)/.test(psrc));
 ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display_name)", /name === MG_SHARPE\) return t\("mg\.sharpe"\)/.test(psrc) && /MG_SHARPE \? t\("mg\.sharpeDesc"\)/.test(psrc));
 { const prop = { members: ["b", "a"], allocator: null, params: { lookback: 180 } };
@@ -176,6 +185,10 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ok("現貨 Type C 負權重當 0:只算做多那支(1,600,000 ÷ 800 = 2 張)", shortC.tw && shortC.tw.text === 'po.twLots {"n":"2"}' && shortC.tw.kids.some((k) => k.text === "1,600,000 TWD"), J(shortC.tds.map((c) => c.textContent)));
     ok("混加密:台股列照寫張數,加密列不動(+500)", mix.tw && mix.tw.text === 'po.twLots {"n":"2"} po.twShares {"n":"105"}' && mix.tds.some((c) => c.textContent === "+500"), J(mix.tds.map((c) => c.textContent)));
     const subs = (c) => (c ? c.kids.filter((k) => k && k.className === "sub").map((k) => k.text) : []);
+    // 0.1.29 Mac 實測:組合權重乘出來的台幣目標帶小數(33,241.20 TWD);台幣金額跟其他地方一樣寫整數
+    const frac = twRun({ tc: 100000 }, { tc: { market: "spot", weights: { 2330: 0.332412 }, raw_closes: { 2330: 1000 }, raw_close_dates: { 2330: "2026-10-16" } } });
+    const fracNo = twRun({ tc: 100000 }, { tc: { market: "spot", weights: { 2330: 0.332412 } } });
+    ok("台股目標金額取整:小字 33,241 TWD、沒價格的列 +33,241 TWD(不寫 .20)", subs(frac.tw)[0] === "33,241 TWD" && fracNo.tw && fracNo.tw.text === "+33,241 TWD", J([frac.tw && frac.tw.textContent, fracNo.tw && fracNo.tw.textContent]));
     ok("沒連交易所、不足一股(500 TWD ÷ 1,000):寫 0 股、灰字,原因寫在格子裡(小字 po.twSharesZero),不只 title", sub1.tw && sub1.tw.text === 'po.twShares {"n":"0"}' && /\bna\b/.test(sub1.tw.className)
       && subs(sub1.tw).some((x) => /^po\.twSharesZero /.test(x)), J(sub1.tw && [sub1.tw.textContent, subs(sub1.tw)]));
     ok("剛好整張不帶零股:1,000 股 → 只寫「1 張」;trTwLots 的 odd = 零股(同 runtime odd_shares)", one.tw && one.tw.text === 'po.twLot {"n":"1"}'
@@ -1003,12 +1016,12 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
   const miss = want.filter((v) => !has(v));
   ok("A 案字串兩語逐字同網頁(帳上、策略外、細節三段、門檻前導、到策略組合修改、啟動那句、原因行縮短版)", !miss.length, J(miss)); }
 // 實機 integ2 10-18:優化分頁選了 2 檔、還沒跑優化也沒跑回測時下方整片空白 → Setup fog(CTA 跑優化,工具列那顆藏起來)
-{ const st = { blocked: false, members: ["a", "b"], prop: null, bt: null, running: false, job: null, short: null };
-  const ctx = vm.createContext({ mgBlocked: () => st.blocked, mgMembers: () => st.members, mgProposal: () => st.prop, mgBacktest: () => st.bt, mgRunning: () => st.running, mgJob: () => st.job, mgShort: () => st.short });
+{ const st = { blocked: false, members: ["a", "b"], prop: null, other: null, bt: null, running: false, job: null, short: null };
+  const ctx = vm.createContext({ mgBlocked: () => st.blocked, mgMembers: () => st.members, mgProposal: () => st.prop, mgOtherProp: () => st.other, mgBacktest: () => st.bt, mgRunning: () => st.running, mgJob: () => st.job, mgShort: () => st.short });
   vm.runInContext(cutF(psrc, "mgFogOn"), ctx);
   const G0 = () => ({ err: null, optBusy: false, btSending: false, shortDismissed: false, wait: { opt: null, bt: null } }), on = (o, g) => { const keep = Object.assign({}, st); Object.assign(st, o || {}); try { return vm.runInContext("mgFogOn", ctx)(Object.assign(G0(), g || {})); } finally { Object.assign(st, keep); } };
-  ok("優化分頁的霧:2 檔、沒權重沒回測 → 開;1 檔／0 檔、有權重、有回測、回測在跑、回測失敗、資料不足警示、送出中、等績效、機器落後 → 不開",
-    on() === true && on({ members: ["a"] }) === false && on({ members: [] }) === false && on({ prop: {} }) === false && on({ bt: {} }) === false && on({ running: true }) === false
+  ok("優化分頁的霧:2 檔、沒權重沒回測 → 開;1 檔／0 檔、有權重、有別的方法算的權重(C 案)、有回測、回測在跑、回測失敗、資料不足警示、送出中、等績效、機器落後 → 不開",
+    on() === true && on({ members: ["a"] }) === false && on({ members: [] }) === false && on({ prop: {} }) === false && on({ other: {} }) === false && on({ bt: {} }) === false && on({ running: true }) === false
     && on({ job: { status: "error" } }) === false && on({ short: { n: 10, l: 60 } }) === false && on({ short: { n: 10, l: 60 } }, { shortDismissed: true }) === true
     && on({}, { optBusy: true }) === false && on({}, { btSending: true }) === false && on({}, { wait: { opt: { left: ["a"] }, bt: null } }) === false && on({ blocked: true }) === false && on({}, { err: "x" }) === false);
   ok("…霧開著時工具列的「跑優化」藏起來、霧上 CTA 是 mg.optRun 接 mgRunOptimize;兩語都有 mg.fogOpt 帶 {n}、只有一句(canon 一句話＋一顆鈕,不講工具列已有的跑回測)",
@@ -1045,6 +1058,10 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     run({}) === "slope" && run({ prop: { members: ["a", "b"], allocator: null } }) === "slope" && run({ alloc: "slope" }) === null && run({ members: ["a"] }) === null
     && run({ members: ["a", "c"] }) === null && run({ dropped: true }) === null && run({ busy: true }) === null && run({ wait: true }) === null && run({ blocked: true }) === null
     && run({ prop: null }) === null && run({ prop: { allocator: "slope" } }) === null);
-  ok("…只在沒有對得上的提案時、權重區原位置畫那一句(ns-hint、點名提案用的方法)",
-    /const prop = mgProposal\(\);\n  if \(!prop\) \{\n    const other = mgPropOtherAlloc\(\);\n    if \(other\) frag\.appendChild\(trEl\("p", "ns-hint mg-other-alloc", t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\)\)\);\n    return frag;\n  \}/.test(cutF(psrc, "mgSuggest"))); }
+  // C 案(Wei 10-23):不出霧、照畫那份權重表;套用停用、原因「這份是「{method}」算的」寫在 .mg-apply-why,實心交回〔跑優化〕
+  ok("…別的方法算的那份:權重表照畫(mpsProp 也認它)、不出霧;套用停用、原因寫進 .mg-apply-why;套用本身只認 mgProposal",
+    /const other = mgProposal\(\) \? null : mgPropOtherAlloc\(\);\n  if \(!mgProposal\(\) && !other\) return frag;/.test(cutF(psrc, "mgSuggest")) && /mgSuggestTable\(wrap, ap, other\);/.test(cutF(psrc, "mgSuggest"))
+    && /function mpsProp\(\) \{ return mgProposal\(\) \|\| mgOtherProp\(\); \}/.test(psrc) && /mgProposal\(\) \|\| mgOtherProp\(\) \|\| mgBacktest\(\)/.test(cutF(psrc, "mgFogOn"))
+    && /ap\.disabled = !!other \|\|/.test(cutF(psrc, "mgSuggestTable")) && /whyEl\.textContent = other \? t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\)/.test(cutF(psrc, "mgSuggestTable"))
+    && /if \(!mgProposal\(\) \|\|/.test(cutF(psrc, "mgApply")) && !/mg-other-alloc/.test(psrc)); }
 Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

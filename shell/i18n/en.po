@@ -2193,7 +2193,11 @@ msgid "tr.ov.rangeAll"
 msgstr "All"
 
 msgid "tr.ov.empty"
-msgstr "No equity records yet. One is recorded on the hour — on this computer while Blave is open, on the cloud machine while it is running; nothing is recorded while it is closed or stopped."
+msgstr "No equity snapshots yet. Once an exchange is connected, one is recorded each hour while Blave is open."
+
+# 雲端視角的權益空狀態(trade.js trPaintOver);本機那句要 Blave 開著,雲端是主機自己記
+msgid "tr.ov.emptyCloud"
+msgstr "No equity snapshots yet. Once an exchange is connected, the machine records one each hour."
 
 msgid "tr.ov.emptyBaseline"
 msgstr "Not enough records to draw the curve yet — it takes two. One is recorded on the hour — on this computer while Blave is open, on the cloud machine while it is running; nothing is recorded while it is closed or stopped."
@@ -3381,9 +3385,6 @@ msgstr "The cloud’s state isn’t current, so saving now could overwrite amoun
 
 msgid "tr.stopAfterStart"
 msgstr "The start may already be in effect. Positions from any orders it placed stay open."
-
-msgid "tr.stopAfterStartFlat"
-msgstr "To close them too, choose Pause and close positions."
 
 msgid "tr.startingHint"
 msgstr "The start command is on its way. To stop it, press Pause trading."
@@ -5912,7 +5913,7 @@ msgid "xp.off.nosignal"
 msgstr "Backtested strategies only"
 
 msgid "xp.why.tm"
-msgstr "Viewing {v}. Only the current version can be exported."
+msgstr "Only the current version can be exported."
 
 msgid "xp.cf.title.xq"
 msgstr "Export to XQ (XS)"
@@ -7936,7 +7937,7 @@ msgid "mg.legendWeights"
 msgstr "Weights"
 
 msgid "mg.lookbackRange"
-msgstr "lookback must be an integer from 10 to 5000"
+msgstr "Lookback days must be an integer from 10 to 5000"
 
 msgid "mg.methodTitle"
 msgstr "Method"
@@ -7956,9 +7957,9 @@ msgstr "Optimize failed: {e}"
 msgid "mg.optRun"
 msgstr "Optimize"
 
-# 優化分頁:機器上的權重是別的方法算的(portfolio.js mgPropOtherAlloc,同網頁 workspace_mg_prop_other_alloc)
+# 優化分頁「套用金額」停用的原因:手上那份權重是別的方法算的,表照畫(portfolio.js mgSuggestTable;C 案)
 msgid "mg.propOtherAlloc"
-msgstr "These weights use {method}. Press Optimize to recompute."
+msgstr "These weights use {method}"
 
 msgid "mg.optRunning"
 msgstr "Optimizing…"
@@ -7995,7 +7996,7 @@ msgid "mg.secBt"
 msgstr "Walk-Forward Backtest"
 
 msgid "mg.short"
-msgstr "Not enough history: {n} days ≤ lookback {l} days, {d} days short; backtest disabled"
+msgstr "Not enough history: {n} days ≤ lookback {l} days, {d} days short. Backtest disabled."
 
 msgid "mg.shortDismiss"
 msgstr "Not now"
@@ -8022,7 +8023,7 @@ msgid "mg.sharpe"
 msgstr "Max Sharpe"
 
 msgid "mg.sharpeDesc"
-msgstr "Highest portfolio Sharpe; long-only, weights sum to 100%. Falls back to equal weight when nothing made money in the window."
+msgstr "Maximizes portfolio Sharpe, long-only, weights summing to 100%. Falls back to equal weight if nothing made money in the window."
 
 msgid "mg.stratEmpty"
 msgstr "No backtested strategies on the machine yet"
@@ -8044,6 +8045,10 @@ msgstr "No response from the machine — try again later"
 
 msgid "mg.totalReturn"
 msgstr "Total Return"
+
+# 方法框的 lookback 參數(portfolio.js mgMethodFields);自訂方法的其他參數照程式裡的名字
+msgid "mg.paramLookback"
+msgstr "Lookback"
 
 msgid "mg.unitDays"
 msgstr "days"
@@ -8582,12 +8587,9 @@ msgstr "{step}, done"
 msgid "onb.fin"
 msgstr "You're All Set"
 
-# Settings › General: clears the after-onboarding flag and shows the steps again. The row name is also the steps list's accessible name
+# Accessible name of the welcome steps list (index.html #onb-steps)
 msgid "set.onb"
 msgstr "Getting started"
-
-msgid "set.onb.replay"
-msgstr "Show Again"
 
 # Connect dialog (spec §7-4, 7-5): the title and the fog button use the same phrase; two big options, paper preselected
 msgid "cx.title"

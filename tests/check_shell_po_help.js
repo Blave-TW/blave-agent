@@ -28,7 +28,7 @@ b.on.click(); make("optimize", "po-help-opt").kids[1].on.click();
 ok("按下:外開教學頁帶段落錨點,記 po_help_cfg／po_help_opt(一顆一個名字)", JSON.stringify(opened) === JSON.stringify(["https://blave.org/docs/zh/portfolio#amounts", "https://blave.org/docs/zh/portfolio#optimize"]) && JSON.stringify(tracked) === JSON.stringify(["po_help_cfg", "po_help_opt"]));
 ok("配置的三種標籤狀態(載入中、讀不到設定、有表)都走 poCfgSec;霧後面的示意底不放問號",
   (cutF(src, "poPaintCfg").match(/poCfgSec\(\)/g) || []).length === 2 && /poCfgSec\(\)/.test(cutF(src, "trAmountTable")) && !/poHelpGroup|poCfgSec/.test(cutF(psrc, "poFogCfg")));
-ok("優化:只在「權重分配」區段畫出來時才有(mgSuggest 在 !prop return 之後)", /if \(!prop\) \{[\s\S]*?return frag;\n  \}[\s\S]*poHelpGroup\(trEl\("span", "label", t\("mg\.secAmounts"\)\), "optimize", "po-help-opt"\)/.test(cutF(psrc, "mgSuggest")));
+ok("優化:只在「權重分配」區段畫出來時才有(mgSuggest 在 !prop return 之後)", /if \(!mgProposal\(\) && !other\) return frag;[\s\S]*poHelpGroup\(trEl\("span", "label", t\("mg\.secAmounts"\)\), "optimize", "po-help-opt"\)/.test(cutF(psrc, "mgSuggest")));
 ok("CSS:熱區 44(上下 10、右 14、左 6)、z-index 2、hover 延遲 --motion-tooltip-delay、focus 立刻、觸控不出;token 0.5s",
   /\.pf-help::before \{[^}]*inset: -10px -14px -10px -6px/.test(css) && /\.pf-help \{[^}]*z-index: 2/.test(css)
   && /\.pf-help:hover \.pf-help-tip \{[^}]*transition-delay: var\(--motion-tooltip-delay\)/.test(css) && /\.pf-help:focus-visible \.pf-help-tip \{[^}]*transition-delay: 0s/.test(css)

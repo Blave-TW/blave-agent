@@ -111,6 +111,8 @@ async function hoBack(id) {
    立刻重畫、不等下一輪輪詢:那顆鈕連同整張卡會被藏起來,焦點得在重畫完成之後交給落地那一頁的標題,不然掉回 body。 */
 function hoStay() {
   HO.pending = null;
+  // 雲端第一次的落點(trade.js trCloudLand)在這裡由人決定了:自動下單頁,不改落歡迎頁(焦點要交給那一頁的標題)
+  const C = TR_BAGS.cloud; C.landDone = true; C.open = true; C.view = "tr";
   trPaint();
   const h = $("tr-h"); if (h && h.offsetParent) h.focus();
 }
