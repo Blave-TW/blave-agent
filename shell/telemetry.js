@@ -1,6 +1,6 @@
 // Blave 電腦版 — 使用追蹤(主行程用)。契約:blave-canon output/backend/2026-09-21-desktop-telemetry-contract.md
 //
-// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十七個事件、每個事件的屬性都是列舉——
+// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十八個事件、每個事件的屬性都是列舉——
 // 這個檔**沒有任何自由文字的入口**:對話、策略碼、策略名、標的、金額、部位、金鑰、路徑進不來,
 // 不是靠呼叫端自律,是 track() 只認下面這張表(api 端還有同一張白名單再擋一次)。
 //
@@ -63,6 +63,9 @@ const EVENTS = {
   strat_deployed: { kind: STRAT_KINDS },
   // 這台是筆電或桌機(0.1.28;主行程送,判法在 devicetype.js)。每天送:某次偵測失敗記成 unknown,隔天自己更正
   device_type: { kind: ["laptop", "desktop", "unknown"] },
+  // 回合結束提示(0.1.30;主行程 main.js replyCue / replyNotifySet):該型系統通知真的出了(show)、點了、作業系統關了通知(failed)、
+  // 設定 › 一般切開關。不帶對話標題、摘錄或對話 id
+  reply_notif: { act: ["done", "await", "fail", "click", "os_off", "on", "off"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -227,7 +230,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
-  "strat_created", "strat_backtested", "strat_deployed", "device_type"];
+  "strat_created", "strat_backtested", "strat_deployed", "device_type", "reply_notif"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)

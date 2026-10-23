@@ -28,7 +28,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed;0.1.28 +device_type)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 27 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed;0.1.28 +device_type;0.1.30 +reply_notif)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 28 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -419,6 +419,21 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       /startStep\("device type", \(\) => require\("\.\/devicetype"\)\.detectDeviceType\(\)\.then\(\(kind\) => \{ _deviceKind = kind; tm\(\)\.track\("device_type", \{ kind \}\); \}\)\);/.test(main9)
       && /deviceType: \(\) => _deviceKind,/.test(main9));
   }
+
+  // ── 0.1.30 reply_notif:回合結束提示,主行程送(main.js replyCue / replyNotifySet)、每日一列、畫面送不了、不帶內容 ──
+  { const tmSrc30 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8"), main30 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    const ACT = ["done", "await", "fail", "click", "os_off", "on", "off"];
+    t("reply_notif:一個屬性 act、七個值逐序、名字與值 ≤16 字、DAILY、不是 once、畫面送不了",
+      JSON.stringify(EVENTS.reply_notif) === JSON.stringify({ act: ACT }) && ACT.every((v) => v.length <= 16) && /const DAILY = \[[^\]]*"reply_notif"/.test(tmSrc30) && !/const ONCE = \[[^\]]*"reply_notif"/.test(tmSrc30) && !FROM_RENDERER.includes("reply_notif"));
+    const sends = [...main30.matchAll(/track\("reply_notif", \{ act: ([^}]+) \}\)/g)].map((m) => m[1].trim());
+    t("main.js 送出點:show 送型別、click、os_off、開關 on／off,沒有別的值", JSON.stringify(sends) === JSON.stringify(['now ? "on" : "off"', "show", '"click"', '"os_off"']));
+    const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
+    t("每個值都送得出去;表外的值與塞內容不送", ACT.every((v) => x.tm.track("reply_notif", { act: v }) === true) && x.tm.track("reply_notif", { act: "ETH 突破回測" }) === false && x.tm.track("reply_notif") === false); await tick();
+    t("…出門的 props 只有 act", x.sent.filter((b) => b.event === "reply_notif").every((b) => JSON.stringify(Object.keys(b.props)) === '["act"]'));
+    const apiPy30 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
+    if (!fs.existsSync(apiPy30)) console.log("SKIP  api 端 reply_notif 比對(需要 monorepo 版面)");
+    else { const got = {}; for (const m of fs.readFileSync(apiPy30, "utf8").matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
+      t("api desktop_telemetry.EVENTS 的 reply_notif = 外殼這份(act 七個值逐序、不是 once)——api 還沒上就紅,出貨順序 api 先", !!got.reply_notif && got.reply_notif.key === "act" && JSON.stringify(got.reply_notif.vals) === JSON.stringify(ACT) && got.reply_notif.once === false); } }
 
   // ── 0.1.12 引擎安裝(shell/enginesetup.js,主行程送):一個 prop、值是列舉、16 字以內、每日去重、畫面送不了 ──
   { const ENG = { engine_setup: ["result", ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"]],

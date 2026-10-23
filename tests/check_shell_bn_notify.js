@@ -23,6 +23,8 @@ const cut = (src, name) => { const i = src.indexOf("function " + name + "("); if
   t("{ip} 用函式代入:$& 這類替換樣式不會被展開", x.made[0].a.body === "新的 IP 是 $&$1");
   x = mk(); t("四種 reason(= binance_check.VERDICT_LEVEL 全部)都有對應的字;表外的 reason 不發、回 false", (() => { const L = Object.keys(require("../shell/binance_check.js").VERDICT_LEVEL); return L.length === 4 && L.every((k) => x.call({ reason: k, level: "P2" }) === true); })() && x.call({ reason: "constructor" }) === false && x.call({ reason: "NOPE" }) === false && x.call(null) === false);
   x = mk({ labels: {} }); t("字還沒交過來 → 不發、回 false(binance_link 不會記成已通知,下一輪再試)", x.call({ reason: "TRADING_LOST", level: "P2" }) === false && x.made.length === 0);
+  x = mk({ focused: true }); t("視窗在前景:不發系統通知、回 false(畫面已重畫;binance_link 不記成已通知,背景時重查補發)", x.call({ reason: "IP_CHANGED", level: "P2", ip: "203.0.113.7" }) === false && x.made.length === 0);
+  t("…binance_link 的 onChange 照推 binance-state(畫面內提示走既有那條),跟前景無關", /onChange: \(st\) => \{ for \(const w of BrowserWindow\.getAllWindows\(\)\) if \(!w\.isDestroyed\(\) && isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("binance-state", st\); \},/.test(mainSrc));
   x = mk({ supported: false }); t("系統不支援通知 → 不發、回 false", x.call({ reason: "TRADING_LOST", level: "P2" }) === false && x.made.length === 0);
   x = mk(); x.call({ reason: "TRADING_LOST", level: "P2" }); x.made[0].emit("failed", {}, "not signed");
   t("failed:留一行 log(含哪一種)、從存活集合拿掉", x.logs.length === 1 && /binance TRADING_LOST failed: not signed/.test(x.logs[0]) && x.ctx.p1Alive.size === 0);

@@ -439,7 +439,7 @@ function setCat(cat) {
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "rules") rulesOpen(); else rulesClear();   // Agent 規則(renderer/rules.js):離開這一類就丟掉沒存的編輯
   if (cat === "display") aboutIdLoad();
-  if (cat === "display" && typeof awakeLoad === "function") { themeLoad(); awakeLoad(); }   // 設定 › 一般的外觀與防睡開關
+  if (cat === "display" && typeof awakeLoad === "function") { themeLoad(); awakeLoad(); rnLoad(); }   // 設定 › 一般的外觀與防睡開關
   if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
   if (cat === "priv") privLoad();
   if (cat === "plan" && typeof mvLoad === "function") mvLoad();   // 登出確認框要知道手機查看開著沒
@@ -986,6 +986,28 @@ $("set-awake-sw").addEventListener("click", async () => {
   if (typeof r !== "boolean") return;   // 沒切成:畫面維持原狀
   if (AWAKE && !r) trackFeature("awake_off");
   AWAKE = r; awakePaint(); srSay($("set-awake-lead").textContent);
+});
+/* 設定 › 一般:回覆好了通知我(主行程 ui-prefs replyNotify,缺 = 開)。osOff = 這次啟動後系統通知收到過 failed、之後還沒有一則成功出現 */
+let RN = { on: true, osOff: false };
+async function rnLoad() { try { const r = await window.blave.replyNotify(); RN = { on: !(r && r.on === false), osOff: !!(r && r.osOff) }; } catch (_) { RN = { on: true, osOff: false }; } rnPaint(); }
+function rnPaint() {
+  const sw = $("set-rn-sw"); if (!sw) return;
+  sw.classList.toggle("off", !RN.on); sw.setAttribute("aria-checked", RN.on ? "true" : "false");
+  const os = RN.on && RN.osOff; $("set-rn-os").hidden = !os;
+  if (os) sw.setAttribute("aria-describedby", "set-rn-os"); else sw.removeAttribute("aria-describedby");
+}
+$("set-rn-sw").addEventListener("click", async () => {
+  let r = null;
+  try { r = await window.blave.replyNotifySet(!RN.on); } catch (_) { r = null; }
+  if (typeof r !== "boolean") return;   // 沒切成:畫面維持原狀
+  RN.on = r; rnPaint();
+});
+$("set-rn-os-go").addEventListener("click", () => { window.blave.replyNotifyOs().catch(() => {}); });
+/* 點了回合結束的系統通知:主行程已叫出視窗,這裡打開那條對話。已經是那條、回合進行中、那條被刪了 → 不動(只叫出視窗) */
+window.blave.onOpenSession(async (id) => {
+  if (!id || id === sessionId || busyOn()) return;
+  let list = []; try { list = await window.blave.listSessions(); } catch (_) { return; }
+  if (Array.isArray(list) && list.some((m) => m && m.id === id) && !busyOn()) csOpen(id);
 });
 /* 設定 › 一般 › 入門步驟〔重看〕:關掉設定、回到這台電腦的歡迎頁(雲端視角沒有歡迎頁,只清旗標,切回來就是步驟) */
 $("set-onb").addEventListener("click", async () => {
@@ -2348,6 +2370,37 @@ function paintAi(el, raw, live) {
   el.textContent = "";
   mdPaint(el, r.blocks);
 }
+/* 回合結束系統通知的摘錄(spec agent-reply-notifications-0130 §3.3;網頁工作頁有同一支、同一組測資):原文 → 前 60 字純文字,有截斷接「…」。
+   剝完是空的回 "",空摘錄的字由主行程依型別補。純函式(tests/check_shell_reply_snippet.js) */
+const RS_MAX = 60;
+function replySnippet(raw) {
+  let s = String(raw == null ? "" : raw).replace(/\r\n?/g, "\n").replace(CARD_TAG, "").replace(SUG_BLOCK, " ").replace(SUG_OPEN_TAIL, "").replace(AWAIT_TAG, " ");
+  const keep = [];
+  let fence = null;
+  for (const line of s.split("\n")) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !line.trim().slice(f[1].length).trim()) fence = null; continue; }
+    if (f) { fence = f[1]; continue; }                     // 圍欄程式碼整段刪(沒收尾的也刪到底)
+    if (/^\s*\|/.test(line)) continue;                       // 表格(含 |---| 分隔列)
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) continue;   // 水平線
+    keep.push(line.replace(/^\s{0,3}#{1,6}\s+/, "").replace(/^\s*(>\s?)+/, "").replace(/^\s*(?:[-*+]|\d+[.)])\s+/, ""));
+  }
+  const code = [];
+  s = keep.join("\n")
+    .replace(/`+([^`\n]+?)`+/g, (_m, x) => { code.push(x); return "\u0000" + (code.length - 1) + "\u0000"; })   // 行內程式碼留字,不讓下面的粗斜體吃掉裡面的記號
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<\/?[A-Za-z][^<>]*>/g, "")
+    .replace(/\b(?:https?:\/\/|www\.)\S+/g, "")
+    .replace(/(\*\*|__|~~)(?=\S)([\s\S]*?\S)\1/g, "$2")
+    .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, "$1$2")
+    .replace(/(^|[^\w])_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2")   // snake_case 的底線不動
+    .replace(/\u0000(\d+)\u0000/g, (_m, i) => code[Number(i)])
+    .replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  let g; try { g = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)].map((x) => x.segment); } catch (_) { g = Array.from(s); }
+  return g.length > RS_MAX ? g.slice(0, RS_MAX).join("").trimEnd() + "…" : s;
+}
 /* 送出後泡泡末行的附件:迴紋針(複製輸入框那顆 .icon-attach,不另畫一個)+ 檔名。建 element,檔名走文字節點(不拼 HTML 字串) */
 function attachLine(name) {
   const s = document.createElement("span"); s.className = "msg-attach";
@@ -3016,7 +3069,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
-  liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
+  liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
   const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); csLock(false); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof stSync === "function") stSync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 引擎還沒裝好時由安裝進度卡交代(engine.js),指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
@@ -4016,6 +4069,7 @@ window.addEventListener("focus", () => {
 
 function addFault(f) {
   const card = faultCard();
+  turnFaultEl = card.el;   // 回合沒做完時系統通知用這張卡的那一句(replyCueSend)
   if (f.flow === "local") return localLoginFlow(card, f.kind);
   if (f.flow === "blave") return blaveLoginFlow(card);
   if (f.flow === "credit") return creditFlow(card);
@@ -4062,7 +4116,7 @@ function draftPromote() {
   const fail = turnFailOf(f, text); if (fail) turnFail = fail;
   if (f) { faultShown = true; turnFaulted = true; turnLimit = !!f.limit; addFault(f); liveBubble = null; return; }
   busyHide();   // 回覆定稿了:指示器收起(同以前「回覆在串流了,字本身就是還在跑」)
-  if (!liveBubble) liveBubble = addMsg("ai", "");
+  if (!liveBubble) { liveBubble = addMsg("ai", ""); turnAiBubbles.push(liveBubble); }
   paintAi(liveBubble, (liveBubble._raw || "") + text); turnGotReply = true;
   if (!fail) trackEvent("first_reply_done", { kind: cur });   // 每安裝只送一次(telemetry.js ONCE);錯誤字串不算回覆
   if (liveBubble._cards.length) turnCards = liveBubble._cards.slice();
@@ -4127,6 +4181,20 @@ let turnBubble = null, turnHadTool = false;   // 這一輪「你的那則」與�
 // 這一輪的回覆帶了哪些卡片標記(paintAi 從文字裡拿出來的);回合結束才出卡,不插在串流中間
 let turnCards = [];
 let pendingErr = [];
+let turnAiBubbles = [], turnFaultEl = null;   // 這一輪的回覆泡泡、最後一張錯誤卡:回合結束的系統通知摘錄用
+/* 回合結束交給主行程判斷要不要發系統通知(spec agent-reply-notifications-0130 §4):kind = done|fail|stopped;「等你回覆」由主行程看 runtime 的 done 判。
+   摘錄:回覆(還在畫面上的泡泡,依序接起來);沒做完又沒有回覆時用錯誤卡那一句(在地化的字,不是 errTail、不是錯誤代碼) */
+function replyCueSend(kind, binMissing, keyMissing) {
+  if (typeof window.blave.replyCue !== "function") return;
+  const reply = turnAiBubbles.filter((b) => b.parentNode && b._raw).map((b) => b._raw).join("\n\n");
+  let snip = kind === "stopped" ? "" : replySnippet(reply);
+  if (!snip && kind === "fail") {
+    // calm 的卡是中性句(額度卡還在問 account_status 時的「確認中」、登入中),不是錯誤那一句:不拿來當摘錄
+    const tx = turnFaultEl && turnFaultEl.parentNode && !turnFaultEl.classList.contains("is-calm") ? turnFaultEl.querySelector(".fault-body > div") : null;
+    snip = replySnippet(tx && tx.textContent ? tx.textContent : binMissing ? t("AGENT_BIN_MISSING") : keyMissing ? t("APIKEY_MISSING") : "");
+  }
+  window.blave.replyCue(kind, snip);
+}
 const holdErrors = () => (cur === "claude" || cur === "codex") && !turnGotReply && !turnFaulted;
 window.blave.onTurnEnd(async (r) => {
   draftPromote();   // runtime 沒送到 done 就結束(被殺、崩潰):手上那段仍是這一輪最後的字
@@ -4165,6 +4233,7 @@ window.blave.onTurnEnd(async (r) => {
   else if (!stopped && cur === "apikey" && turnCap && !turnFaulted && typeof akFault === "function") { turnFaulted = true; addFault(akFault("API Error: 429", true)); }
   else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); if (pendingErr.length || exitLine) scrollChat(true); }
   pendingErr = [];
+  replyCueSend(stopped ? "stopped" : faulted ? "fail" : "done", /AGENT_BIN_MISSING/.test(r.errTail || ""), /APIKEY_MISSING/.test(r.errTail || ""));
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
   if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeq, faulted || stopped, { refetch: rpWfRefetch });

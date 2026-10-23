@@ -915,7 +915,8 @@ body.resizing * { cursor: col-resize !important; }
 .set-row + .set-row { margin-top: var(--space-16); }
 /* 設定 › 顯示幣別:切換失敗那一句(下拉底下;同網頁 setFail 的字) */
 .set-ccy-err { margin: var(--space-8) 0 0; font-size: 12px; color: var(--color-redText); }
-.set-awake { margin-top: var(--space-24); }
+.set-rn, .set-awake { margin-top: var(--space-24); }
+.set-rn-os .btn-quiet { margin-inline-start: var(--space-4); }
 .set-onb { margin-top: var(--space-24); justify-content: space-between; }
 /* 設定 › 隱私:整頁沒有分隔線。開關 = canon 的 Switch(黑白、無橘);視覺 36×20、熱區上下各補 12 */
 .sw-row { display: flex; align-items: center; gap: var(--space-12); }
