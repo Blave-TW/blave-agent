@@ -1850,7 +1850,10 @@ function trCloudOwnerCheck(C) {
     // 上一個人的過場與在途那一趟也不是這個人的:不清的話,B 按的暫停會併進 A 那一趟(trSend 單飛)而根本沒送出(稽核 M2)
     C.pending = null; C.sending = {}; C.cxSaved = null; C.cxPend = null; trAlert("", null, C);
     C.just = { picked: {}, removed: {} };   // 呼吸點 5 分鐘樂觀標記也是上一個人的
-    CDEL.gone.clear(); CDEL.busy.clear(); CDEL.ids = {}; }   // 上一個人的刪除在途 / 壓抑不是這個人的
+    CDEL.gone.clear(); CDEL.busy.clear(); CDEL.ids = {};   // 上一個人的刪除在途 / 壓抑不是這個人的
+    // 落點與歡迎頁的第一次判斷也是上一個人的:A 落歡迎頁之後換成正在下單的 B,要重判成自動下單頁(稽核 v030 P1-1)
+    C.landDone = false; C.landWait = false;
+    if (typeof ONB !== "undefined" && typeof onbV === "function") ONB.v.cloud = onbV(); }
   // S5 收斂:「已存到」→ 報告裡長出交易所就換成分頁(讀屏播一次);「已送出、等回報」→ 帳戶讀取時間比送出新 / 解除的那一家消失
   const r = C.st && C.st.report;
   // 模擬帳戶在送出當下就念過「已連接」了(畫面也已經是骨架):報告追上時不再念第二次

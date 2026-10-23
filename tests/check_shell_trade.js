@@ -844,6 +844,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("換帳號也清雲端刪除的在途 / 壓抑 / request_id(上一個人的)", CDEL.gone.size === 0 && CDEL.busy.size === 0 && J(CDEL.ids) === "{}");
     O = ob(3, "signedOut"); trCloudOwnerCheck(O);
     ok("#8 登出:一樣全清", O.sent === null && J(O.reqIds) === "{}");
+    // 稽核 v030 P1-1:A(從沒下過單)落歡迎頁 → 不重開 app 換成 B(雲端正在下單)→ 要重判成自動下單頁,歡迎頁的第一次判斷也重來
+    { var ONB = { v: { cloud: { base: true, fin: true, open: [true, false, false] } } }, onbV = () => ({ base: null, fin: false, open: [false, false, false] });
+      const land = new Function("trExecState", "trStartPending", "RPC", "trVenueIds", "trLiveEntry", "return " + fnOf("trCloudLand").trim())(
+        (st) => st.kind, () => false, { name: null }, () => [], () => null);
+      const X = Object.assign(ob(5), { epoch: 5, open: true, view: "tr", st: { kind: "noaccount", cloud: { epoch: 5 }, report: {} } });
+      land(X); trCloudOwnerCheck(X); const a = X.open, kept = X.landDone;
+      X.st = { kind: "running", cloud: { epoch: 6 }, report: { last_reconcile: { ts: 1 } } }; trCloudOwnerCheck(X); land(X);
+      ok("換帳號:A 落歡迎頁、B 在下單 → 換成 B 後落自動下單頁;歡迎頁的第一次判斷也重設(同一個人不重判)", a === false && kept === true && X.open === true && X.landDone === true && ONB.v.cloud.base === null && ONB.v.cloud.fin === false, J({ a, open: X.open, onb: ONB.v.cloud })); }
     ok("S4 §4 過了收斂窗口:request_id 換掉(再按是新的意圖)", C.reqIds.amounts === undefined && C.saveUnknownAt === 0); }
   /* ── 09-22 第三批 ── */
   { // 「暫停中…」整段真的停用(Wei 09-22 選 B;audit 2-4):ack 之後、結果不明都一樣,收斂或過了上限才恢復

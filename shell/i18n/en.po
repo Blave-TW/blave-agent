@@ -5942,6 +5942,9 @@ msgstr "Backtested strategies only"
 msgid "xp.why.tm"
 msgstr "Only the current version can be exported."
 
+msgid "xp.why.busy"
+msgstr "The agent is replying. Export after it finishes."
+
 msgid "xp.cf.title.xq"
 msgstr "Export to XQ (XS)"
 

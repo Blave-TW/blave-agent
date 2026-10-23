@@ -5956,6 +5956,9 @@ msgstr "只能轉出有回測的策略"
 msgid "xp.why.tm"
 msgstr "轉出只做目前這一版。"
 
+msgid "xp.why.busy"
+msgstr "agent 正在回覆，回覆完再轉出。"
+
 msgid "xp.cf.title.xq"
 msgstr "轉出 XQ（XS）版"
 
