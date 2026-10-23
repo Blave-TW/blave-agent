@@ -126,7 +126,10 @@ REJECT_CODES = {"45110": reject_token.BELOW_MIN_SIZE, "45119": reject_token.SYMB
                 # it is the token web and desktop already render
                 ELIGIBILITY: reject_token.SYMBOL_UNAVAILABLE,
                 # measured 2026-10-22 (classic one-way): "closed positions cannot exceed positions held"
-                "40804": reject_token.REDUCE_ONLY_REJECTED}
+                "40804": reject_token.REDUCE_ONLY_REJECTED,
+                # measured 2026-10-23 (UTA hedge): "posSide and reduceOnly do not assign values at
+                # the same" — order_bitget no longer sends both; a lib that still does gets this
+                "25238": reject_token.REDUCE_ONLY_REJECTED}
 
 
 def _creds(env):

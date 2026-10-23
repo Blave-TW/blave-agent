@@ -62,7 +62,10 @@ T1, T3, T2, T4.
   T1  open the minimum long through place_market_order → raw order detail
   T3  over-close raw (the lib's own side table): close the held size + one step → refused
       (which code), partial, or capped — a reverse leg here means the side table is WRONG: stop
-  T2  resend T1's clientOid raw: is a FILLED id rejected (and with which code) or filled again?
+  T2  classic: resend T1's clientOid raw — is a FILLED id rejected (40786, measured) or filled again?
+      UTA (a filled id IS filled again, measured 2026-10-23): place_market_order with T1's clientOid
+      must return T1's order and send nothing; then a fresh order raw, its clientOid read back at
+      once and 0.3 s later (does a just-placed order answer 25204 — the pre-send lookup's blind spot)
   T4  close through close_position_partial (in pieces under the cap) → flat
   T5  NVDA and TWTSM: open + close the minimum through the lib; positions read back under
       the canonical names
@@ -88,12 +91,10 @@ T1, T3, T2, T4.
       in one-way (--t12-sides long,short): per direction on a flat account, open → SL/TP
       (holdSide buy/sell) → over-close held + one step reduceOnly (Bitget refuses it whole,
       40804, or closes — never the opposite leg) → close what is held through the lib; in hedge: open long + open
-      short + close both through the lib in the other mode (UTA hedge: closes carry
-      reduceOnly yes — a refusal here means flip order_bitget.UTA_HEDGE_REDUCE_ONLY),
+      short + close both through the lib in the other mode (UTA hedge: closes carry no
+      reduceOnly — Bitget refuses it next to posSide, 25238, measured T3 2026-10-23),
       SL/TP on each leg in hedge mode, switch back and read the original mode back (not
-      back = "NOT BACK IN THE ORIGINAL MODE", exit 2); --t12-bare-close (UTA, Wei's call)
-      also closes the long WITHOUT reduceOnly at exactly its size — the table the lib
-      falls back to if Bitget refuses reduceOnly in hedge mode (40774 expected then)
+      back = "NOT BACK IN THE ORIGINAL MODE", exit 2)
 SWITCH step
   W1  (--watch-switch) every 5 s for up to 30 min, print account_mode(), the mode file,
       get_positions() (or its error), session_open('NVDAUSDT') and get_account_id() —
@@ -456,9 +457,6 @@ def main():
     ap.add_argument("--t12-sides", default="long,short",
                     help="T12 one-way: which directions to measure (long, short or both)")
     ap.add_argument("--log", default="", help="the script's own log (default ~/bitget-verify-<UTC time>.log)")
-    ap.add_argument("--t12-bare-close", action="store_true",
-                    help="T12 hedge: also close one leg WITHOUT reduceOnly (if the side table were wrong this "
-                         "opens a reverse leg of the minimum size, closed by CLEANUP)")
     a = ap.parse_args()
     env = load_env(os.path.abspath(a.env))
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -579,6 +577,8 @@ def main():
             say("R6 open orders", raw("GET", "/api/v3/trade/unfilled-orders", {"category": PRODUCT}))
             say("R6 open TP/SL", raw("GET", "/api/v3/trade/unfilled-strategy-orders",
                                      {"category": PRODUCT, "type": "tpsl"}))
+            say("R6C order-info by an unknown clientOid (the pre-send lookup wants 25204)",
+                raw("GET", "/api/v3/trade/order-info", {"clientOid": "bvnope" + uuid.uuid4().hex[:12]}))
             say("R6U open strategy orders, no type (the precheck asks this — an error here blocks the order steps)",
                 raw("GET", "/api/v3/trade/unfilled-strategy-orders", {"category": PRODUCT}))
         else:
@@ -742,7 +742,7 @@ def main():
             break
     plan = []
     if base and any(want(t) for t in ("T1", "T2", "T3", "T4")):
-        plan += [(base, minimum(base), 2)]  # T2 may fill a second time
+        plan += [(base, minimum(base), 2)]  # T2 classic may fill a second time; UTA T2L does
     if want("T5"):
         plan += [("NVDAUSDT", minimum("NVDAUSDT"), 1), ("TWTSMUSDT", minimum("TWTSMUSDT"), 1)]
     if want("T7"):
@@ -805,6 +805,7 @@ def main():
                 say("T1 raw detail", raw_detail(base, clientOid=cid))
                 say("T1 legs", legs(base))
             if want("T3"):  # before T2: the over-close is held + one step, under the cap
+                # UTA hedge: no reduceOnly — what Bitget does with a close over the leg is the measurement
                 cur["step"] = "T3"
                 h = held(base, "long")
                 say("T3 modes", mode_of(base))
@@ -813,11 +814,28 @@ def main():
                     reduce_only=True))
                 time.sleep(2)
                 say("T3 legs (a short leg = the side table is WRONG — stop and report)", legs(base))
-            if want("T2"):
+            if want("T2") and not uta:
                 cur["step"] = "T2"
                 say("T2 resend the filled clientOid", raw_order(base, "long", format(q, "f"), cid=cid))
                 time.sleep(2)
                 say("T2 legs (one more of T1's size = a filled id is NOT deduplicated)", legs(base))
+            if want("T2") and uta:
+                cur["step"] = "T2"
+                h0 = held(base, "long")
+                again = order.place_market_order(env, base, "long", q, client_order_id=cid)
+                say("T2 place_market_order with T1's clientOid (want T1's order back, nothing sent)", again)
+                time.sleep(2)
+                h1 = held(base, "long")
+                say("T2 legs (want unchanged)", {"before": h0, "after": h1, "legs": legs(base)})
+                if abs(h1 - h0) > 1e-12:
+                    raise RuntimeError(f"T2: the lib re-sent a filled clientOid — long {h0} → {h1}")
+                lag = rc()
+                t0 = time.time()
+                say("T2L fresh order raw", raw_order(base, "long", format(q, "f"), cid=lag))
+                say(f"T2L order-info by clientOid at once (+{time.time() - t0:.2f}s; 25204 = the lookup's blind spot)",
+                    raw_detail(base, clientOid=lag))
+                time.sleep(0.3)
+                say(f"T2L order-info by clientOid again (+{time.time() - t0:.2f}s)", raw_detail(base, clientOid=lag))
             if want("T4"):
                 cur["step"] = "T4"
                 for p in legs(base):
@@ -1081,19 +1099,6 @@ def main():
                             env, "NVDAUSDT", d, sl_price=last * sl, tp_price=last * tp))
                     say("T12 hedge TP/SL list (want four, each on its own leg)", raw_plans("NVDAUSDT"))
                     cancel_own_plans(env, order, "NVDAUSDT", own_ids, say, "T12")
-                    if a.t12_bare_close and uta:
-                        # the table without the reduceOnly safety (what runs if UTA_HEDGE_REDUCE_ONLY
-                        # has to go): close the long, exactly its size
-                        order.UTA_HEDGE_REDUCE_ONLY = False
-                        try:
-                            h = held("NVDAUSDT", "long")
-                            say("T12 bare close long (sell + posSide long, no reduceOnly)",
-                                raw_order("NVDAUSDT", "long", format(h, "f"), reduce_only=True))
-                            time.sleep(2)
-                            say("T12 legs after the bare close (want: the short only; a second short or "
-                                "a bigger one = the table is WRONG)", legs("NVDAUSDT"))
-                        finally:
-                            order.UTA_HEDGE_REDUCE_ONLY = True
                 for p in legs("NVDAUSDT"):
                     close_chunked(env, order, "NVDAUSDT", p["side"], p["total"], max_qty("NVDAUSDT"), say, "T12",
                                   min_qty("NVDAUSDT"))
@@ -1101,8 +1106,6 @@ def main():
 
             pm = mode_of("NVDAUSDT")[1]
             read_pm = lambda: mode_of("NVDAUSDT")[1]  # noqa: E731
-            if a.t12_bare_close and not uta:
-                say("T12 note", "--t12-bare-close only applies to a UTA account — ignored here")
             t12_retry = (set_mode, read_pm, pm)  # held until the original mode is read back (the body may raise)
             if switch_and_restore(set_mode, read_pm, lambda: not precheck(env, acct, order),
                                   "hedge" if pm == "oneway" else "oneway", say, t12_body):

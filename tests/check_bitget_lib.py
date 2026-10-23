@@ -889,9 +889,13 @@ def uplace(p):
     return ok({"orderId": oid, "clientOid": p["clientOid"]})
 
 
+def UORD_BY_CID(cid):
+    return next(k for k, x in UORD.items() if x["clientOid"] == cid)
+
+
 def uinfo(p):
     o = UORD.get(p.get("orderId")) or next((x for x in UORD.values() if x["clientOid"] == p.get("clientOid")), None)
-    return ok(o) if o else err("40109", "The data of the order cannot be found")
+    return ok(o) if o else err("25204", "Order does not exist")
 
 
 route("POST", "/api/v3/trade/place-order", uplace)
@@ -905,6 +909,18 @@ check(b == {"category": "USDT-FUTURES", "symbol": "NVDAUSDT", "qty": "0.03", "or
       "UTA one-way entry long: v3 place-order, qty base on the step, no marginCoin / productType / posSide", b)
 check(res == {"avg_price": 182.11, "executed_qty": 0.03, "commission": 0.0033, "order_id": "7001"},
       "UTA fill read off order-info (cumExecQty, avgPrice, feeDetail as a positive cost)", res)
+# a UTA fills a filled clientOid again (measured T2): uplace, like Bitget, does not refuse it
+n = len(UPOSTS)
+again = order.place_market_order(ENV, "NVDAUSDT", "long", 0.0399, client_order_id="rcuta0001")
+check(len(UPOSTS) == n and again["order_id"] == "7001",
+      "UTA: the same clientOid again → the earlier order is returned, nothing re-sent (no double fill)", again)
+route("GET", "/api/v3/trade/order-info", lambda p: err("40010", "Request timed out"))
+try:
+    order.place_market_order(ENV, "NVDAUSDT", "long", 0.03, client_order_id="rcutaunk")
+    check(False, "a clientOid lookup that fails raises")
+except acct.BitgetError:
+    check(len(UPOSTS) == n, "UTA: a clientOid lookup that fails (40010) → raised, nothing sent")
+route("GET", "/api/v3/trade/order-info", uinfo)
 
 # Every combination, both APIs, both position modes: (api, hold mode, direction, reduce) → body
 # fields and the intent lib/guard reads off that body. A UTA hedge close copied from the classic
@@ -919,9 +935,9 @@ WANT = {
     ("classic", "oneway", "short", False): ({"side": "sell"}, "entry"),
     ("classic", "oneway", "short", True): ({"side": "buy", "reduceOnly": "YES"}, "reduce"),
     ("uta", "hedge", "long", False): ({"side": "buy", "posSide": "long"}, "entry"),
-    ("uta", "hedge", "long", True): ({"side": "sell", "posSide": "long", "reduceOnly": "yes"}, "reduce"),
+    ("uta", "hedge", "long", True): ({"side": "sell", "posSide": "long"}, "reduce"),
     ("uta", "hedge", "short", False): ({"side": "sell", "posSide": "short"}, "entry"),
-    ("uta", "hedge", "short", True): ({"side": "buy", "posSide": "short", "reduceOnly": "yes"}, "reduce"),
+    ("uta", "hedge", "short", True): ({"side": "buy", "posSide": "short"}, "reduce"),
     ("uta", "oneway", "long", False): ({"side": "buy"}, "entry"),
     ("uta", "oneway", "long", True): ({"side": "sell", "reduceOnly": "yes"}, "reduce"),
     ("uta", "oneway", "short", False): ({"side": "sell"}, "entry"),
@@ -935,12 +951,10 @@ for (api, pm, d, red), (fields, intent) in WANT.items():
         bad.append(((api, pm, d, red), got, order._order_intent("POST", path, got)))
 check(not bad and len(WANT) == 16, "side table: 16 cases (2 APIs × 2 position modes × 2 legs × open/close) "
       "give the documented body and the right guard intent", bad)
-_r = order.UTA_HEDGE_REDUCE_ONLY
-order.UTA_HEDGE_REDUCE_ONLY = False
-check(order._order_intent("POST", order.V3_ORDER_PATH, order._sides("long", True, "hedge", "uta")) == "reduce"
-      and order._order_intent("POST", order.V3_ORDER_PATH, order._sides("short", True, "hedge", "uta")) == "reduce",
-      "a UTA hedge close without reduceOnly is still a reduce to the guard (side opposite its posSide)")
-order.UTA_HEDGE_REDUCE_ONLY = _r
+check(order.UTA_HEDGE_REDUCE_ONLY is False,
+      "UTA hedge closes carry no reduceOnly (Bitget refuses it next to posSide: 25238, measured T3)")
+check(acct.REJECT_CODES.get("25238") == acct.reject_token.REDUCE_ONLY_REJECTED,
+      "25238 is in the reject table as reduce_only_rejected")
 
 # the same through the order functions, hedge mode
 SETTINGS["holdMode"] = "hedge_mode"
@@ -949,16 +963,16 @@ check(UPOSTS[-1]["side"] == "sell" and UPOSTS[-1]["posSide"] == "short" and "red
       "UTA hedge open short: sell + posSide short")
 UPOS[:] = [upos("NVDAUSDT", "long", "0.05", avail="0.04")]
 order.close_position_partial(ENV, "NVDAUSDT", "long", 0.09)
-check(UPOSTS[-1]["side"] == "sell" and UPOSTS[-1]["posSide"] == "long" and UPOSTS[-1]["reduceOnly"] == "yes"
-      and UPOSTS[-1]["qty"] == "0.04", "UTA hedge close long: SELL + posSide long + reduceOnly yes, capped at available",
-      UPOSTS[-1])
+check(UPOSTS[-1]["side"] == "sell" and UPOSTS[-1]["posSide"] == "long" and "reduceOnly" not in UPOSTS[-1]
+      and UPOSTS[-1]["qty"] == "0.04", "UTA hedge close long: SELL + posSide long, no reduceOnly, capped at available "
+      "(the only over-close guard there)", UPOSTS[-1])
 UPOS[:] = [upos("NVDAUSDT", "short", "0.05")]
 n = len(UPOSTS)
 check(order.close_position_partial(ENV, "NVDAUSDT", "long", 0.03) is False and len(UPOSTS) == n,
       "UTA hedge: closing the long leg while only a short is held → False, nothing sent (never the short leg)")
 order.close_position_partial(ENV, "NVDAUSDT", "short", 0.03)
-check(UPOSTS[-1]["side"] == "buy" and UPOSTS[-1]["posSide"] == "short" and UPOSTS[-1]["reduceOnly"] == "yes",
-      "UTA hedge close short: BUY + posSide short")
+check(UPOSTS[-1]["side"] == "buy" and UPOSTS[-1]["posSide"] == "short" and "reduceOnly" not in UPOSTS[-1],
+      "UTA hedge close short: BUY + posSide short, no reduceOnly")
 check(order.get_position_mode(ENV) == "hedge", "UTA position mode = settings holdMode")
 SETTINGS["symbolConfigList"] = [{"category": "USDT-FUTURES", "symbol": "NVDAUSDT", "marginMode": "isolated", "leverage": "5"}]
 order.place_market_order(ENV, "NVDAUSDT", "long", 0.03)
@@ -1005,8 +1019,23 @@ check(res and sum(c["method"] == "POST" for c in CALLS) == 1,
 route("POST", "/api/v3/trade/place-order", lambda p: err("25212", "Duplicate clientOid"))
 del CALLS[:]
 res = order.place_market_order(ENV, "NVDAUSDT", "long", 0.03, client_order_id="rcuta40010")
+check(res and res["order_id"] == UORD_BY_CID("rcuta40010") and sum(c["method"] == "POST" for c in CALLS) == 0,
+      "UTA: a clientOid that already names an order is found before the POST — nothing sent")
+_lag = {"n": 0}
+
+
+def uinfo_lag(p):
+    # the earlier send is not readable yet on the first lookup (index lag), then it is
+    _lag["n"] += 1
+    return err("25204", "Order does not exist") if _lag["n"] == 1 else uinfo(p)
+
+
+route("GET", "/api/v3/trade/order-info", uinfo_lag)
+del CALLS[:]
+res = order.place_market_order(ENV, "NVDAUSDT", "long", 0.03, client_order_id="rcuta40010")
 check(res and sum(c["method"] == "POST" for c in CALLS) == 1,
-      "UTA: 25212 duplicate clientOid is looked up (the earlier send landed), never resent")
+      "UTA: 25212 after the pre-lookup missed → looked up again (the earlier send landed), never resent")
+route("GET", "/api/v3/trade/order-info", uinfo)
 route("POST", "/api/v3/trade/place-order", lambda p: err("43027", "notional below the minimum"))
 check(order.place_market_order(ENV, "NVDAUSDT", "long", 0.03) is False, "UTA 43027 below the minimum value → quiet False")
 route("POST", "/api/v3/trade/place-order", lambda p: err("12001", "insufficient balance"))

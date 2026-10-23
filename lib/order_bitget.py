@@ -27,15 +27,16 @@ THE SIDE TABLE (the one place a mistake opens the opposite position). `side` mea
 the LEG on classic hedge but the ORDER DIRECTION on UTA hedge:
                   classic v2                       UTA v3
   hedge open L    side buy  + tradeSide open       side buy  + posSide long
-  hedge close L   side buy  + tradeSide close      side sell + posSide long (+ reduceOnly yes)
+  hedge close L   side buy  + tradeSide close      side sell + posSide long
   hedge open S    side sell + tradeSide open       side sell + posSide short
-  hedge close S   side sell + tradeSide close      side buy  + posSide short (+ reduceOnly yes)
+  hedge close S   side sell + tradeSide close      side buy  + posSide short
   one-way open    side = direction                 side = direction
   one-way close   opposite side + reduceOnly YES   opposite side + reduceOnly yes
 (v2: Bitget's Place-Order doc; v3: the UTA Place-Order and Strategy docs, and ccxt's
-create_uta_order_request.) UTA hedge closes also carry reduceOnly yes — not required
-by the doc, a server-side refusal if the table above were ever wrong (T3U measures
-that Bitget accepts it; UTA_HEDGE_REDUCE_ONLY switches it off if not).
+create_uta_order_request.) UTA hedge closes carry NO reduceOnly: Bitget refuses posSide
+and reduceOnly together (25238, measured T3 2026-10-23), and sell + posSide long closed a
+long without opening a short (Wei's close, same day). With nothing on the venue's side
+capping a hedge close, _sized caps it at the leg's available size.
 
 Other facts this lib relies on:
 - size / qty is BASE coin; sizeMultiplier is the step, minTradeNum the minimum, and
@@ -84,7 +85,8 @@ V3_CANCEL_PATH = "/api/v3/trade/cancel-order"
 V3_DETAIL_PATH = "/api/v3/trade/order-info"
 V3_STRATEGY_PATH = "/api/v3/trade/place-strategy-order"
 V3_CANCEL_STRATEGY_PATH = "/api/v3/trade/cancel-strategy-order"
-UTA_HEDGE_REDUCE_ONLY = True
+# measured 2026-10-23 (UTA hedge): reduceOnly next to posSide is refused whole, 25238
+UTA_HEDGE_REDUCE_ONLY = False
 
 RULES_TTL_S = 600  # symbolStatus moves (limit_open / restrictedAPI): not an hour-old read
 BELOW_MIN = {"45110", "43027"}  # classic / UTA: order value under the minimum → quiet False
@@ -103,7 +105,9 @@ _PLAN_GONE = {"43025"}
 UNVERIFIED = acct.UNVERIFIED
 # the order may have landed — query by clientOid (UTA Place-Order doc names the first three);
 # duplicate clientOid — 25212 (UTA error page), 40786 (classic, measured T2 2026-10-22): an
-# earlier send of this very order landed
+# earlier send of this very order landed. A UTA does NOT refuse the clientOid of a FILLED
+# order — it fills it again (measured T2 2026-10-23) — so every v3 place-order is preceded by
+# a clientOid lookup (_v3_existing)
 _UNCERTAIN = {"40725", "45001", "40010", "25212", "40786"}
 
 _FILLED = {"filled", "full_fill"}
@@ -219,6 +223,10 @@ def _send(method, path, env, params=None, retries=3):
     last_err = None
     resynced = False
     for attempt in range(retries):
+        if method == "POST" and path == V3_ORDER_PATH:
+            found = _v3_existing(env, params)
+            if found:
+                return found
         if method == "GET":
             rp, payload = acct.request_path(path, params), ""
         else:
@@ -264,6 +272,24 @@ def _send(method, path, env, params=None, retries=3):
                 return found
         raise err
     raise last_err
+
+
+def _v3_existing(env, params):
+    """The UTA order this clientOid already names ({'orderId','clientOid'}), or None when
+    Bitget says there is none. A UTA re-fills a filled clientOid, so a send is only safe
+    after this says None; a lookup that fails any other way raises and nothing is sent."""
+    cid = (params or {}).get("clientOid")
+    if not cid:
+        raise BitgetError("bitget: a UTA order without clientOid cannot be checked for an earlier send")
+    try:
+        row = _send("GET", V3_DETAIL_PATH, env, {"clientOid": cid})
+    except BitgetError as e:
+        if e.code in _V3_ORDER_GONE:
+            return None
+        raise
+    if isinstance(row, dict) and row.get("orderId"):
+        return {"orderId": row.get("orderId"), "clientOid": cid}
+    return None
 
 
 def _lookup_cid(env, params):
@@ -552,7 +578,8 @@ def _confirm(env, symbol, order_id, cid, timeout=20):
 
 
 def _sized(env, symbol, vsym, direction, qty, reduce_only, rules):
-    """Base qty on the step, a reduce capped at the leg's available size; None = skip."""
+    """Base qty on the step, a reduce capped at the leg's available size; None = skip.
+    The cap is the only over-close guard on a UTA hedge close (no reduceOnly there)."""
     step = rules["step"]
     sized = Decimal(_floor_str(abs(float(qty)), step))
     if reduce_only:

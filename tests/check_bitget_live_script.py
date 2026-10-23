@@ -651,8 +651,9 @@ check(code == 0 and "[T12 one-way short SL/TP]" in log and "[T12 one-way open lo
 # ── 5b. the same --trade flow on a fake UTA (v3) account ─────────────────────
 class BitgetUTA(Bitget):
     """v3 private API; v2 private → 40085. Hedge: side = order direction, posSide = the leg.
-    `over`: "cap" = an over-sized reduce closes what is held; "40774" = EVERY hedge-mode reduceOnly
-    close is refused (the open risk of UTA_HEDGE_REDUCE_ONLY) — neither is measured on UTA yet."""
+    As measured 2026-10-23: posSide + reduceOnly → 25238; a reused clientOid is filled again
+    (no dedupe); an unknown order → 25204, an unknown strategy order → 25575. `over` "cap": an
+    over-sized close closes what is held (not measured on UTA yet)."""
     def __init__(self, hold="hedge_mode", over="cap"):
         super().__init__()
         self.hold, self.over, self.strat, self.ustrat_other = hold, over, {}, []
@@ -708,16 +709,8 @@ class BitgetUTA(Bitget):
             self.hold = q["holdMode"]
             return 200, ok(None)
         if path == "/api/v3/trade/place-order":
-            if any(o.get("clientOid") == q.get("clientOid") for o in self.orders.values()):
-                return bad("25212", "Duplicate clientOid")
-            if q.get("reduceOnly") == "yes":
-                if self.hold == "hedge_mode":
-                    leg = q.get("posSide")
-                else:
-                    leg = "short" if q["side"] == "buy" else "long"
-                if self.over == "40774" and self.hold == "hedge_mode":
-                    return bad("40774", "The order type for unilateral position must also be the unilateral "
-                               "position type (fake)")
+            if q.get("reduceOnly") == "yes" and q.get("posSide"):
+                return bad("25238", "posSide and reduceOnly do not assign values at the same")
             self.posts.append(dict(q, size=q["qty"]))
             o = dict(q, orderId=self.oid(), orderStatus="live", cumExecQty="0", avgPrice="",
                      feeDetail=[{"feeCoin": "", "fee": ""}], cancelReason="")
@@ -736,7 +729,7 @@ class BitgetUTA(Bitget):
             self.urest()
             o = self.orders.get(q.get("orderId")) or next(
                 (x for x in self.orders.values() if x.get("clientOid") == q.get("clientOid")), None)
-            return (200, ok(o)) if o else bad("40109", "The data of the order cannot be found")
+            return (200, ok(o)) if o else bad("25204", "Order does not exist")
         if path == "/api/v3/trade/unfilled-orders":
             self.urest()
             rows = [o for o in self.orders.values() if o.get("orderStatus") == "live"
@@ -745,7 +738,7 @@ class BitgetUTA(Bitget):
         if path == "/api/v3/trade/cancel-order":
             o = self.orders.get(q.get("orderId"))
             if not o or o.get("orderStatus") != "live":
-                return bad("40109", "order does not exist")
+                return bad("25204", "Order does not exist")
             o["orderStatus"] = "cancelled"
             return 200, ok({"orderId": o["orderId"]})
         if path == "/api/v3/trade/place-strategy-order":
@@ -761,7 +754,7 @@ class BitgetUTA(Bitget):
             return 200, ok({"list": rows})
         if path == "/api/v3/trade/cancel-strategy-order":
             if q["orderId"] not in self.strat:
-                return bad("25205", "strategy order does not exist")
+                return bad("25575", "Failed to stop the strategy because the corresponding strategy ID could not be found")
             self.strat.pop(q["orderId"])
             return 200, ok(None)
         if path.startswith("/api/v3/account/") and path.endswith("-records"):
@@ -771,19 +764,18 @@ class BitgetUTA(Bitget):
 
 acct_mod.MODE_TTL_S = 0  # every run re-reads the account type (the fake switches between classic and UTA)
 BG_CLASSIC = BG
-for hold, over in (("hedge_mode", "cap"), ("one_way_mode", "cap"), ("hedge_mode", "40774")):
+for hold, over in (("hedge_mode", "cap"), ("one_way_mode", "cap")):
     BG = BitgetUTA(hold, over)
     acct_mod._mode.update(mode=None, at=0.0)
     open(os.path.join(envdir, "trade.log"), "w").close()
-    code = run_trade(["--t12-bare-close"])
+    code = run_trade()
     log = open(os.path.join(envdir, "trade.log"), encoding="utf-8").read()
     ul = [l for l in log.splitlines() if l.startswith("[T12")]
-    if over == "40774":
-        check(code == 2 and "40774" in log and "NOT FLAT" in log and BG.legs,
-              "UTA hedge closes refused with 40774: no close goes through (lib or cleanup), the run says NOT FLAT "
-              "(exit 2) — that account could not close at all, so UTA_HEDGE_REDUCE_ONLY must go first", code)
-        BG.legs.clear()
-        continue
+    t1 = next(p["clientOid"] for p in BG.posts)
+    check(sum(p["clientOid"] == t1 for p in BG.posts) == 1 and "[T2L order-info by clientOid at once" in log
+          and "25238" not in log,
+          f"UTA {hold}: T2 re-uses T1's clientOid through the lib and nothing is re-sent (the fake, like Bitget, "
+          f"would fill it again); T2L reads a fresh order back at once; no 25238 anywhere", code)
     check(code in (0, 4) and not BG.legs and BG.hold == hold and not BG.strat
           and not any(o.get("orderStatus") == "live" for o in BG.orders.values())
           and "[T12 mode" in log and "NOT FLAT" not in log,
@@ -795,9 +787,8 @@ for hold, over in (("hedge_mode", "cap"), ("one_way_mode", "cap"), ("hedge_mode"
         check(any(l.startswith("[T12 one-way over-close") for l in ul) and any("one-way short SL/TP" in l for l in ul),
               "UTA hedge account: T12 measures one-way (over-close, SL/TP both directions)")
     if hold == "one_way_mode":
-        check(any(l.startswith("[T12 hedge long SL/TP]") for l in ul)
-              and any(l.startswith("[T12 bare close long") for l in ul),
-              "UTA one-way account: T12 measures hedge (SL/TP per leg, the bare close without reduceOnly)")
+        check(any(l.startswith("[T12 hedge long SL/TP]") for l in ul),
+              "UTA one-way account: T12 measures hedge (SL/TP per leg, both legs closed through the lib)")
 # a UTA trigger order of Wei's (not tpsl) stops the order steps
 BG = BitgetUTA()
 BG.ustrat_other = [{"orderId": "w9", "symbol": "NVDAUSDT", "side": "buy", "planType": "trigger", "size": "0.05"}]
