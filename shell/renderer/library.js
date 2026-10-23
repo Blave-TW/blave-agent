@@ -29,7 +29,7 @@ function libMarket(s) {
   return Object.prototype.hasOwnProperty.call(LIB_CATEGORY_MARKET, s.category) ? LIB_CATEGORY_MARKET[s.category] : null;
 }
 // 找點子框只認 crypto / tw / txf / any:美股沒有對應的那句話,交給「不限」
-function libIdeaMkt(mkt) { return mkt === "crypto" ? "crypto" : mkt === "twstock" ? "tw" : mkt === "txf" ? "txf" : "any"; }
+function libIdeaMkt(mkt) { return mkt === "crypto" ? "crypto" : mkt === "twstock" ? "tw" : mkt === "txf" ? "txf" : mkt === "usstock" ? "us" : "any"; }
 function libDays(from, to) {
   const t0 = Date.parse(typeof from === "string" ? from : ""), t1 = Date.parse(typeof to === "string" ? to : "");
   return isFinite(t0) && isFinite(t1) && t1 >= t0 ? Math.round((t1 - t0) / LIB_DAY) : null;

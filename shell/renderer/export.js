@@ -33,7 +33,7 @@ function xpIsPortfolio(d) {
 function xpIsTypeB(d) { return !!d && typeof d.code === "string" && /^#\s*Type:\s*B\b/m.test(d.code.slice(0, 2000)); }
 // 不能選的原因;null = 可以選。外殼只擋這三種,其餘轉不轉得了由 agent 讀過程式碼再講
 function xpOff(target, d) { return xpIsPortfolio(d) ? "portfolio" : xpIsTypeB(d) ? "nosignal" : target === "xq" && xpIsCrypto(d) ? "crypto" : null; }
-// 三個平台都不能選、而且是同一個原因:原因只在選單頂端講一次(設計稽核 0.1.8 第三批);否則 null,各列自己講
+// 三個平台都不能選、而且是同一個原因:回那個原因(觸發器停用、按了在 #xp-note 講,xpOffNow);否則 null,各列自己講
 function xpOffAll(d) { const r = XP_ORDER.map((k) => xpOff(k, d)); return r[0] && r.every((x) => x === r[0]) ? r[0] : null; }
 function xpAvail(target, d) { return xpOff(target, d) === null; }
 // 送給 agent 的那句。壞 id / 壞 target / 範本不是恰好一個 {id} → null
@@ -90,6 +90,8 @@ const xpTitle = (k) => (k === "xq" ? t("xp.cf.title.xq") : k === "mc" ? t("xp.cf
 const xpTpl = () => ({ xq: t("xp.msg.xq"), mc: t("xp.msg.mc"), pine: t("xp.msg.pine") });
 const xpLocal = () => typeof ENV === "undefined" || ENV.cur !== "cloud";
 const xpDisabled = () => running === true || !!XP.tm;
+// 三個平台都轉不了(組合、Type B):選單打開會一個能選的都沒有,觸發器直接停用、按了講原因(設計稽核 S6,同時光機)
+const xpOffNow = () => (typeof RP !== "undefined" && RP ? xpOffAll(RP.data) : null);
 const XP_OFF_KEY = { portfolio: "xp.off.portfolio", nosignal: "xp.off.nosignal", crypto: "xp.off.crypto" };
 
 /* ── 觸發器 + 選單(分頁列右端;同 web .tab-act)── */
@@ -123,25 +125,26 @@ function xpPaint() {
 function xpSync() {
   if (typeof tvRepaintAll === "function") tvRepaintAll();   // Pine 動作槽(送進 TradingView)跟著同一組條件重畫
   const b = $("xp-btn"); if (!b) return;
-  if (xpDisabled()) { b.setAttribute("aria-disabled", "true"); if (!$("xp-menu").hidden) xpClose(false); }
+  if (xpDisabled() || xpOffNow()) { b.setAttribute("aria-disabled", "true"); if (!$("xp-menu").hidden) xpClose(false); }
   else { b.removeAttribute("aria-disabled"); xpNote(null); }
   const again = $("xp-again"); if (again) { if (running === true) again.setAttribute("aria-disabled", "true"); else again.removeAttribute("aria-disabled"); }
 }
 /* 策略版本(另案)的時光機進出時呼叫:label = 正在看的那一版(如 "v5"),null = 回到目前版。
    時光機裡觸發器 aria-disabled、程式碼分頁只剩 Python(轉出檔只屬於目前版本) */
-function xpSetTimeMachine(label) { XP.tm = label || null; if (XP.tm) XP.sel = "py"; xpSync(); xpCodePaint(); }
+// 進出時光機都收掉原因句:離開時若這支仍三平台都轉不了,鈕照樣停用,舊的時光機那句不能留著
+function xpSetTimeMachine(label) { XP.tm = label || null; if (XP.tm) XP.sel = "py"; xpNote(null); xpSync(); xpCodePaint(); }
 // data-busy 只屬於回合中那句(busyFixLink 掛〔停止〕時才記):換成別的原因(時光機)先拿掉,回合結束 busySync 才不會連它一起收
 function xpNote(text) { const n = $("xp-note"); if (!n) return; delete n.dataset.busy; n.textContent = text || ""; n.hidden = !text; }
 function xpOpen() {
   const b = $("xp-btn"), m = $("xp-menu");
-  if (xpDisabled()) { if (running === true) { busyHit("send"); xpNote(t("turn.busy")); busyFixLink($("xp-note"), "stop"); } else xpNote(t("xp.why.tm", { v: XP.tm })); return; }
-  const d = RP.data, all = xpOffAll(d); m.textContent = "";
-  if (all) m.appendChild(xpMk("p", "xp-why", t(XP_OFF_KEY[all])));
+  if (xpDisabled()) { if (running === true) { busyHit("send"); xpNote(t("turn.busy")); busyFixLink($("xp-note"), "stop"); } else xpNote(t("xp.why.tm")); return; }
+  const off0 = xpOffNow(); if (off0) { xpNote(t(XP_OFF_KEY[off0])); return; }
+  const d = RP.data; m.textContent = "";
   for (const k of XP_ORDER) {
     const lang = xpMk("span", "lang", "· " + xpLang(k));
     const off = xpOff(k, d);
     if (off) {   // Unavailable info 列:不是鈕、不進 Tab 序——沒有補救動作
-      const r = xpMk("div", "xp-off"); r.append(XP_PLATFORM[k] + " ", lang); if (!all) r.appendChild(xpMk("span", "d", t(XP_OFF_KEY[off]))); m.appendChild(r); continue;
+      const r = xpMk("div", "xp-off"); r.append(XP_PLATFORM[k] + " ", lang, xpMk("span", "d", t(XP_OFF_KEY[off]))); m.appendChild(r); continue;
     }
     const it = xpMk("button", "xp-it"); it.type = "button"; it.setAttribute("role", "menuitem"); it.tabIndex = -1; it.dataset.xp = k;
     it.append(XP_PLATFORM[k] + " ", lang);

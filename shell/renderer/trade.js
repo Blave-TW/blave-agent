@@ -5874,17 +5874,20 @@ function envPaint() {
   if (cloud) { trCloudLand(TR); envShowMain(); }
   return true;
 }
-/* 雲端這次開著第一次看得到主機時落在哪(0.1.30 Wei:雲端也有歡迎頁)。在下單(或剛按啟動、重開沒停住、對帳器停了)→ 自動下單頁:
-   狀態不能被歡迎頁擋住;其餘 → 歡迎頁(同這台電腦開 app 的落點)。只判一次,之後照用戶自己走到哪。
+/* 雲端這次開著第一次看得到主機時落在哪(0.1.30 Wei:雲端也有歡迎頁)。只有從沒下過單的才落歡迎頁(同這台電腦開 app 的落點);
+   在下單、已暫停、帳上有部位都落自動下單頁——狀態不能被歡迎頁擋住。「下過單」看 last_reconcile(對帳器跑過一輪 = 按過啟動,
+   重開機也留著)、最近的下單紀錄、暫停旗標與帳上部位,任一個有就算。只判一次,之後照用戶自己走到哪。
    狀態還沒讀到先開自動下單頁(它有自己的載入態);讀到時用戶還停在那裡、沒選策略也沒開別頁,才改落歡迎頁 */
 function trCloudLand(C) {
   if (C.landDone) return;
-  const s = trExecState(C.st);
+  const s = trExecState(C.st), r = (C.st && C.st.report) || {};
   if (s === "loading") { if (!C.landWait) { C.landWait = true; C.open = true; C.view = "tr"; } return; }
   C.landDone = true;
-  const trading = s === "running" || s === "unconfirmed" || s === "dead" || trStartPending(C.pending);
+  const held = trVenueIds(r).some((id) => { const e = trLiveEntry(r, id); return !!(e && e.ok && e.positions && Object.keys(e.positions).length); });
+  const traded = s === "running" || s === "unconfirmed" || s === "dead" || s === "halted" || trStartPending(C.pending)
+    || !!r.last_reconcile || (Array.isArray(r.orders) && r.orders.length > 0) || held;
   const still = !C.landWait || (C.open && C.view === "tr" && !(typeof RPC !== "undefined" && RPC.name) && !(typeof libBag === "function" && libBag("cloud").open) && !(typeof rptBag === "function" && rptBag("cloud").open));
-  if (trading) C.open = true; else if (still) C.open = false;
+  if (traded) C.open = true; else if (still) C.open = false;
 }
 const ENV_ICONS = {   // lucide monitor / cloud(寫死的常數,不吃任何外來資料)
   local: ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 21h8", "M12 17v4"],

@@ -5304,6 +5304,9 @@ msgstr "Taiwan stock "
 msgid "idea.mkt.txf"
 msgstr "TAIEX futures (TXF/MXF/TMF) "
 
+msgid "idea.mkt.us"
+msgstr "US stock "
+
 msgid "idea.topicTpl"
 msgstr " around \"{t}\""
 

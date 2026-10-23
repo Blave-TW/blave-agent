@@ -112,14 +112,17 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("每一個送指令的地方都是「自己那一份狀態的 api」(S.api / L.api),共 " + sends.length + " 處", sends.length >= 5 && sends.every((x) => x === "S.api.tradeSend(" || x === "L.api.tradeSend("));
   // L = TR_BAGS.local(設定 › 連線這一刀永遠是這台電腦的);S = 進來那一刻的 TR
   const fn = (name) => { const i = code.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = code.indexOf("\nfunction ", i + 1), k = code.indexOf("\nasync function ", i + 1); return code.slice(i, Math.min(j < 0 ? 1e9 : j, k < 0 ? 1e9 : k)); };
-  // 0.1.30 雲端歡迎頁:第一次看得到主機時,在下單中 → 自動下單頁,其餘 → 歡迎頁;狀態還沒讀到先開自動下單頁,讀到後用戶沒動過才改判;只判一次
-  { const land = (states, o) => { const C = Object.assign({ open: false, view: null }, o && o.bag), seq = states.slice(), V = { RPC: { name: (o && o.rpc) || null }, s: null };
-      const f = new Function("trExecState", "trStartPending", "RPC", "return " + fn("trCloudLand").trim())((st) => V.s, (p) => !!(p && p.want === "running"), V.RPC);
-      const out = []; seq.forEach((x) => { V.s = x; f(C); out.push(C.open ? C.view || "tr" : "welcome"); }); return out.join(","); };
-    const r = [land(["halted"]), land(["noaccount"]), land(["running"]), land(["unconfirmed"]), land(["dead"]), land(["halted"], { bag: { pending: { want: "running" } } }),
-      land(["loading", "noaccount"]), land(["loading", "running"]), land(["loading", "noaccount"], { rpc: "a" }), land(["noaccount", "running"])];
-    ok("雲端落點:沒在下單(已暫停／沒連交易所)→ 歡迎頁;在下單／重開沒停住／對帳器停了／剛按啟動 → 自動下單頁;還沒讀到先開自動下單頁、讀到沒在下單改歡迎頁(用戶已選了策略就不動);只判一次",
-      r.join("|") === "welcome|welcome|tr|tr|tr|tr|tr,welcome|tr,tr|tr,tr|welcome,welcome", r.join("|")); }
+  // 0.1.30 雲端歡迎頁:只有從沒下過單的才落歡迎頁;在下單、已暫停、帳上有部位、對帳器跑過、有下單紀錄都落自動下單頁;狀態還沒讀到先開自動下單頁,讀到後用戶沒動過才改判;只判一次
+  { const land = (states, o) => { o = o || {}; const C = Object.assign({ open: false, view: null, st: { report: o.rep || {} } }, o.bag), V = { s: null };
+      const f = new Function("trExecState", "trStartPending", "RPC", "trVenueIds", "trLiveEntry", "return " + fn("trCloudLand").trim())(() => V.s, (p) => !!(p && p.want === "running"), { name: o.rpc || null },
+        (r) => Object.keys((r.account && r.account.venues) || {}), (r, id) => r.account.venues[id]);
+      const out = []; states.forEach((x) => { V.s = x; f(C); out.push(C.open ? C.view || "tr" : "welcome"); }); return out.join(","); };
+    const pos = { account: { venues: { binance: { ok: true, positions: { BTCUSDT: { size: 1 } } } } } }, flat = { account: { venues: { binance: { ok: true, positions: {} } } } };
+    const r = [land(["noaccount"]), land(["dead"]) === "tr" && land(["running"]) === "tr" && land(["unconfirmed"]) === "tr" ? "tr" : "x", land(["halted"]), land(["noaccount"], { bag: { pending: { want: "running" } } }),
+      land(["idle"], { rep: flat }), land(["idle"], { rep: pos }), land(["idle"], { rep: { last_reconcile: { ts: "x" } } }), land(["idle"], { rep: { orders: [{ id: 1 }] } }),
+      land(["loading", "noaccount"]), land(["loading", "halted"]), land(["loading", "noaccount"], { rpc: "a" }), land(["noaccount", "running"])];
+    ok("雲端落點:從沒下過單 → 歡迎頁;在下單／重開沒停住／對帳器停了／已暫停／剛按啟動／帳上有部位／對帳器跑過／有下單紀錄 → 自動下單頁;還沒讀到先開自動下單頁、讀到從沒下過單改歡迎頁(已選策略不動);只判一次",
+      r.join("|") === "welcome|tr|tr|tr|welcome|tr|tr|tr|tr,welcome|tr,tr|tr,tr|welcome,welcome", r.join("|")); }
   // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
   // psApply 不在這裡:0.1.26 起 picker 的勾選是草稿,儲存才走 trSaveAmounts 送出;trExecSend:下單方式(0.1.26)
   // trPvRequest:存金額框請機器重算草稿的預覽(stats_refresh,0.1.27;同 perf.js 不帶 request_id,重送 = 機器回 BUSY)
